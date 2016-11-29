@@ -130,6 +130,7 @@ void logBinary( char *x, int n )
 		if( args.IsConstructCall() ) {
 			char *mount_name;
 			char *filename = "default.vfs";
+			LOGICAL defaultFilename = TRUE;
 			char *key = NULL;
 			char *key2 = NULL;
 			int argc = args.Length();
@@ -139,6 +140,7 @@ void logBinary( char *x, int n )
 			}
 			if( argc > 1 ) {
 				String::Utf8Value fName( args[1]->ToString() );
+				defaultFilename = FALSE;
 				filename = StrDup( *fName );
 			}
 			if( argc > 2 ) {
@@ -155,7 +157,8 @@ void logBinary( char *x, int n )
 			args.GetReturnValue().Set( args.This() );
 
 			Deallocate( char*, mount_name );
-			Deallocate( char*, filename );
+			if( !defaultFilename )
+				Deallocate( char*, filename );
 			Deallocate( char*, key );
 			Deallocate( char*, key2 );
 		}
