@@ -1,0 +1,151 @@
+cmake_minimum_required(VERSION 3.0)
+
+project (vfs_module)
+
+set( DEFINITIONS   __STATIC__ __NO_OPTIONS__ __NO_INTERFACE_SUPPORT__ 
+		USE_SQLITE USE_SQLITE_INTERFACE FORCE_COLOR_MACROS 
+                __NO_ODBC__ )
+                
+include_directories( "../node_modules/nan" )
+
+if( CMAKE_SIZEOF_VOID_P EQUAL 8 )
+    ADD_DEFINITIONS( -D__64__ )
+endif( CMAKE_SIZEOF_VOID_P EQUAL 8 )
+
+
+set( SACK_BASE M:/sack )
+set( SACK_BINARY_SDK_BASE C:/general/build/mingw64-x86/sack-r/release_out/binary  )
+
+
+
+set( INCLUDES
+	-I${SACK_BASE}/include 
+	-I${SACK_BASE}/src/contrib/sha1lib 
+	-I${SACK_BASE}/src/contrib/sqlite/3.10.2  )
+
+include_directories(${CMAKE_JS_INC} 
+	${SACK_BASE}/include 
+	${SACK_BASE}/src/contrib/sha1lib 
+	${SACK_BASE}/src/contrib/sqlite/3.10.2 
+        )
+
+
+# __NO_OPTIONS__ __NO_INTERFACE_SUPPORT__ __NO_ODBC__
+set( DEFINITIONS   __STATIC__ 
+		USE_SQLITE USE_SQLITE_INTERFACE FORCE_COLOR_MACROS 
+                 )
+FILE( WRITE ${CMAKE_BINARY_DIR}/config.ppc "/*CMake Option defined*/\n" )
+
+foreach( DEF ${DEFINITIONS} )
+   ADD_DEFINITIONS( -D${DEF} )
+   FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define ${DEF}\n" )
+ENDFOREACH()
+
+
+
+
+if( WIN32 )
+	set( MORE_NETWORK_SOURCES ${SACK_BASE}/src/netlib/net_winsock2.c )
+endif( WIN32 )
+
+SET( EXTRA_HEADERS
+	${SACK_BASE}/include/stdhdrs.h
+        ${SACK_BASE}/include/network.h
+        ${SACK_BASE}/include/pssql.h
+        ${SACK_BASE}/include/sqlgetoption.h
+        ${SACK_BASE}/include/idle.h
+        ${SACK_BASE}/include/filesys.h
+        ${SACK_BASE}/include/sack_vfs.h
+)
+
+SET( EXTRA_SOURCES 
+	${SACK_BASE}/src/utils/virtual_file_system/vfs.c 
+	${SACK_BASE}/src/utils/virtual_file_system/vfs_internal.h
+        ${SACK_BASE}/src/salty_random_generator/salty_generator.c
+        ${SACK_BASE}/src/salty_random_generator/crypt_util.c
+        ${SACK_BASE}/src/contrib/sha1lib/sha1.c
+        ${SACK_BASE}/src/contrib/sha2lib/sha2.c
+	${SACK_BASE}/src/deadstart/deadstart_core.c
+	${SACK_BASE}/src/sysloglib/syslog.c
+	${SACK_BASE}/src/systemlib/system.c
+	${SACK_BASE}/src/systemlib/spawntask.c
+	${SACK_BASE}/src/systemlib/args.c
+	${SACK_BASE}/src/systemlib/oswin.c
+	${SACK_BASE}/src/systemlib/taskinfo.h
+	${SACK_BASE}/src/timerlib/timers.c
+	${SACK_BASE}/src/idlelib/idle.c
+	${SACK_BASE}/src/procreglib/names.c
+	${SACK_BASE}/src/procreglib/registry.h
+	${SACK_BASE}/src/memlib/sharemem.c
+	${SACK_BASE}/src/memlib/memory_operations.c
+	${SACK_BASE}/src/memlib/sharestruc.h
+	${SACK_BASE}/src/filesyslib/winfiles.c
+	${SACK_BASE}/src/filesyslib/filescan.c
+	${SACK_BASE}/src/filesyslib/pathops.c
+	${SACK_BASE}/src/filesyslib/filesys_local.h
+	${SACK_BASE}/src/typelib/typecode.c
+	${SACK_BASE}/src/typelib/text.c
+	${SACK_BASE}/src/typelib/binarylist.c
+	${SACK_BASE}/src/typelib/familytree.c
+	${SACK_BASE}/src/typelib/sets.c
+	
+	${SACK_BASE}/src/netlib/network.c
+	${SACK_BASE}/src/netlib/tcpnetwork.c
+	${SACK_BASE}/src/netlib/udpnetwork.c
+	${MORE_NETWORK_SOURCES}
+	${SACK_BASE}/src/contrib/sqlite/sqlite_interface.c
+        ${SACK_BASE}/src/sqllib/sqlstruc.h
+        ${SACK_BASE}/src/configlib/configscript.c
+        ${SACK_BASE}/src/sqllib/sqlstub.c
+        ${SACK_BASE}/src/sqllib/sqlwrap.c
+        ${SACK_BASE}/src/sqllib/sqlutil.c
+        ${SACK_BASE}/src/sqllib/guid.c
+        ${SACK_BASE}/src/sqllib/sqlparse3.c
+        ${SACK_BASE}/src/sqllib/optlib/getoption.c
+        ${SACK_BASE}/src/sqllib/optlib/getoption_new.c
+        ${SACK_BASE}/src/sqllib/optlib/getoption_v4.c
+        ${SACK_BASE}/src/sqllib/optlib/optionutil.c
+        ${SACK_BASE}/src/sqllib/optlib/optionutil_new.c
+        ${SACK_BASE}/src/sqllib/optlib/optionutil_v4.c
+	${SACK_BASE}/src/deadstart/deadstart_lib.c
+)
+
+set( C_SOURCES
+        ${SACK_BASE}/src/contrib/sqlite/3.10.2/sqlite3.c
+)
+add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${C_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/src
+				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+#if( NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc )
+
+set( AMALG_COMMAND c:/general/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
+set( AMALG_COMMAND2 c:/general/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
+
+  add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc
+  			#COMMAND cmake -E echo ${AMALG_COMMAND}
+   			 COMMAND ${AMALG_COMMAND}
+                        #COMMAND cmake -E echo ${AMALG_COMMAND2}
+   			COMMAND ${AMALG_COMMAND2}
+                   DEPENDS ${EXTRA_SOURCES} ${HEADER_SOURCES}
+				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+  )                                   
+  add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc )
+#endif( NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc )
+
+
+
+add_library(${PROJECT_NAME} SHARED 
+	vfs_module.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc
+        )
+
+
+set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
+set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_DEFINITIONS "TARGETNAME=\"${PROJECT_NAME}.node\"" )
+target_link_libraries(${PROJECT_NAME} ${CMAKE_JS_LIB})
+if( WIN32 )
+   target_link_libraries(${PROJECT_NAME} winmm ws2_32 rpcrt4 iphlpapi odbc32 )
+endif( WIN32 )
