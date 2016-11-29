@@ -1,6 +1,6 @@
 {
   "name": "sack.vfs",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Node.js VFS Addon",
   "main": "vfs_module.js",
   "private": false,
@@ -8,8 +8,5 @@
     "test": "node vfs.js",
     "install" : "cmake-js compile",
     "build": "cmake-js build"
-  },
-  "dependencies": {
-    "cmake-js": "~3.3.0"
   }
 }
