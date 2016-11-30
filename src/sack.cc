@@ -69628,7 +69628,7 @@ GetFreeBlock( vol, TRUE );
   return SaveText( text_guid );
  }
  #else
- #ifdef __INTERNAL_UUID__
+ #  ifdef __INTERNAL_UUID__
  /*
  **  OSSP uuid - Universally Unique Identifier
  **  Copyright (c) 2004-2008 Ralf S. Engelschall <rse@engelschall.com>
@@ -69738,10 +69738,11 @@ GetFreeBlock( vol, TRUE );
  UUID_PROC( unsigned long, uuid_version  )(void);
  DECLARATION_END
  #endif
- #else
- #include <uuid/uuid.h>
- #endif
+ #  else
+ #    include <uuid/uuid.h>
+ #  endif
  SQL_NAMESPACE
+ #  ifdef __INTERNAL_UUID__
  CTEXTSTR GetGUID( void )
  {
   uuid_t *tmp;
@@ -69770,6 +69771,38 @@ GetFreeBlock( vol, TRUE );
   Release( out_guid );
   return out_guid2;
  }
+ #  else
+ CTEXTSTR GetGUID( void )
+ {
+  uuid_t tmp;
+    char str[37];
+  TEXTCHAR *out_guid;
+  CTEXTSTR out_guid2;
+  uuid_generate_random ( &tmp );
+    uuid_unparse( tmp, str );
+    //uuid_unparse_lower( tmp, str );
+    //uuid_unparse_upper( tmp, str );
+  out_guid = DupCharToText( str );
+  out_guid2 = SaveText( out_guid );
+  Release( out_guid );
+  return out_guid2;
+ }
+ CTEXTSTR GetSeqGUID( void )
+ {
+  uuid_t tmp;
+    char str[37];
+  TEXTCHAR *out_guid;
+  CTEXTSTR out_guid2;
+  uuid_generate_time( &tmp );
+    uuid_unparse( tmp, str );
+    //uuid_unparse_lower( tmp, str );
+    //uuid_unparse_upper( tmp, str );
+  out_guid = DupCharToText( str );
+  out_guid2 = SaveText( out_guid );
+  Release( out_guid );
+  return out_guid2;
+ }
+ #  endif
  #endif
  uint8_t* GetGUIDBinaryEx( CTEXTSTR guid, LOGICAL little_endian )
  {
