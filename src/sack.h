@@ -18,15 +18,12 @@
  #include <stdlib.h>
  #include <stddef.h>
  #include <stdio.h>
+ #include <stdint.h>
  #if _MSC_VER
  #  ifdef EXCLUDE_SAFEINT_H
  #    define _INTSAFE_H_INCLUDED_
  #  endif
  //_MSC_VER
- #endif
- #if ( _MSC_VER > 1600 )
- // I don't use these limit anyway... so not having them should be harmless
- #  include <stdint.h>
  #endif
  #ifndef WINVER
  #  define WINVER 0x0601
