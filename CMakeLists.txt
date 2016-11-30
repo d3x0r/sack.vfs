@@ -42,10 +42,6 @@ foreach( DEF ${DEFINITIONS} )
    FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define ${DEF}\n" )
 ENDFOREACH()
 
-if( WIN32 )
-	set( MORE_NETWORK_SOURCES ${SACK_BASE}/src/netlib/net_winsock2.c )
-endif( WIN32 )
-
 SET( EXTRA_HEADERS
 	${SACK_BASE}/include/stdhdrs.h
         ${SACK_BASE}/include/network.h
@@ -90,7 +86,8 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/netlib/network.c
 	${SACK_BASE}/src/netlib/tcpnetwork.c
 	${SACK_BASE}/src/netlib/udpnetwork.c
-	${MORE_NETWORK_SOURCES}
+        ${SACK_BASE}/src/netlib/net_winsock2.c
+        
 	${SACK_BASE}/src/contrib/sqlite/sqlite_interface.c
         ${SACK_BASE}/src/sqllib/sqlstruc.h
         ${SACK_BASE}/src/configlib/configscript.c

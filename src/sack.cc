@@ -406,6 +406,7 @@
  #include <wchar.h>
  #endif
  #ifdef _MSC_VER
+ #include <sys/types.h>
  #include <sys/stat.h>
  #endif
  #endif
@@ -610,10 +611,6 @@
  // private thing left as a note, and forgotten.  some compilers did not define offsetof
  #define my_offsetof( ppstruc, member ) ((uintptr_t)&((*ppstruc)->member)) - ((uintptr_t)(*ppstruc))
  SACK_NAMESPACE
- #ifndef __LINUX__
- //#include <sys/types.h>
- //typedef int pid_t;
- #endif
  #ifdef BCC16
  #define __inline__
  #define MAINPROC(type,name)     type _pascal name
@@ -5146,7 +5143,6 @@
  //#endif
  #elif defined( __LINUX__ )
  #if defined( FBSD )
- #include <sys/types.h>
  #endif
  // INADDR_ANY/NONE
  #include <netinet/in.h>
@@ -16170,6 +16166,7 @@ GetFreeBlock( vol, TRUE );
  }
  #endif
  //--------------------------------------------------------------------------
+ #ifdef WIN32
  #if _MSC_VER
  #pragma runtime_checks( "sru", off )
  #endif
@@ -16179,6 +16176,7 @@ GetFreeBlock( vol, TRUE );
  }
  #if _MSC_VER
  #pragma runtime_checks( "sru", restore )
+ #endif
  #endif
  LOGICAL CPROC StopProgram( PTASK_INFO task )
  {
@@ -16224,7 +16222,7 @@ GetFreeBlock( vol, TRUE );
   else
    return TRUE;
  #else
-     // kill( ) ?
+    lprintf( "need to send kill() to signal process to top" );
  #endif
    return FALSE;
  }
@@ -31282,7 +31280,7 @@ GetFreeBlock( vol, TRUE );
  #ifdef WIN32
   tnprintf( spacename, sizeof( spacename ), WIDE( "memory:%08lX" ), GetCurrentProcessId() );
  #else
-  tnprintf( spacename, sizeof( spacename ), WIDE( "%" )_S WIDE( ":%08X" ), name, getpid() );
+  tnprintf( spacename, sizeof( spacename ), WIDE( "memory:%08X" ), name, getpid() );
  #  ifdef DEBUG_FIRST_UNICODE_OPERATION
   {
    wchar_t buf[32];
@@ -50161,6 +50159,7 @@ GetFreeBlock( vol, TRUE );
  }
  _UDP_NAMESPACE_END
  SACK_NETWORK_NAMESPACE_END
+ #ifndef __LINUX__
  ///////////////////////////////////////////////////////////////////////////
  //
  // Filename    -  Network.C
@@ -50274,6 +50273,7 @@ GetFreeBlock( vol, TRUE );
   return 0;
  }
  SACK_NETWORK_NAMESPACE_END
+ #endif
  #define NO_UNICODE_C
  #ifdef __WATCOMC__
  // definition of SH_DENYNO

@@ -398,6 +398,7 @@
  #include <wchar.h>
  #endif
  #ifdef _MSC_VER
+ #include <sys/types.h>
  #include <sys/stat.h>
  #endif
  #endif
@@ -602,10 +603,6 @@
  // private thing left as a note, and forgotten.  some compilers did not define offsetof
  #define my_offsetof( ppstruc, member ) ((uintptr_t)&((*ppstruc)->member)) - ((uintptr_t)(*ppstruc))
  SACK_NAMESPACE
- #ifndef __LINUX__
- //#include <sys/types.h>
- //typedef int pid_t;
- #endif
  #ifdef BCC16
  #define __inline__
  #define MAINPROC(type,name)     type _pascal name
@@ -5138,7 +5135,6 @@
  //#endif
  #elif defined( __LINUX__ )
  #if defined( FBSD )
- #include <sys/types.h>
  #endif
  // INADDR_ANY/NONE
  #include <netinet/in.h>
