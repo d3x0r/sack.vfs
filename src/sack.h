@@ -397,12 +397,10 @@
  // wchar for X_16 definition
  #include <wchar.h>
  #endif
- #ifdef _MSC_VER
+ #endif
+ #endif
  #include <sys/types.h>
  #include <sys/stat.h>
- #endif
- #endif
- #endif
  #ifndef MY_TYPES_INCLUDED
  #define MY_TYPES_INCLUDED
  // include this before anything else

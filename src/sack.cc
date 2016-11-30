@@ -405,12 +405,10 @@
  // wchar for X_16 definition
  #include <wchar.h>
  #endif
- #ifdef _MSC_VER
+ #endif
+ #endif
  #include <sys/types.h>
  #include <sys/stat.h>
- #endif
- #endif
- #endif
  #ifndef MY_TYPES_INCLUDED
  #define MY_TYPES_INCLUDED
  // include this before anything else
@@ -31280,7 +31278,7 @@ GetFreeBlock( vol, TRUE );
  #ifdef WIN32
   tnprintf( spacename, sizeof( spacename ), WIDE( "memory:%08lX" ), GetCurrentProcessId() );
  #else
-  tnprintf( spacename, sizeof( spacename ), WIDE( "memory:%08X" ), name, getpid() );
+  tnprintf( spacename, sizeof( spacename ), WIDE( "memory:%08X" ), getpid() );
  #  ifdef DEBUG_FIRST_UNICODE_OPERATION
   {
    wchar_t buf[32];
