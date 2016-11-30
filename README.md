@@ -9,7 +9,7 @@ var volume = vfs.Volume( "MountName", "fileName.vfs" );
 var file = volume.File( "filename" );
 var fileString = file.read();
 var fileOut = volume.File( "filename.out" );
-file.write( fileString );
+fileOut.write( fileString );
 
 ```
 
