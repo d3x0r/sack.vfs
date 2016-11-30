@@ -8,9 +8,16 @@ set( DEFINITIONS   __STATIC__ __NO_OPTIONS__ __NO_INTERFACE_SUPPORT__
                 
 include_directories( "../node_modules/nan" )
 
+if( NOT WIN32 )
+    ADD_DEFINITIONS( -D__LINUX__ )
+endif( NOT WIN32 )
 if( CMAKE_SIZEOF_VOID_P EQUAL 8 )
     ADD_DEFINITIONS( -D__64__ )
 endif( CMAKE_SIZEOF_VOID_P EQUAL 8 )
+
+if( NOT WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 )
+    ADD_DEFINITIONS( -D__LINUX64__ )
+endif( NOT WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 )
 
 
 set( SACK_BASE M:/sack )
@@ -111,8 +118,8 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
 
 
 
-set( AMALG_COMMAND c:/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
-set( AMALG_COMMAND2 c:/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
+set( AMALG_COMMAND c:/general/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
+set( AMALG_COMMAND2 c:/general/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
 
   add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc
   			#COMMAND cmake -E echo ${AMALG_COMMAND}
@@ -137,8 +144,9 @@ add_library(${PROJECT_NAME} SHARED
         )
 
 
+
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
-set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_DEFINITIONS "TARGETNAME=\"${PROJECT_NAME}.node\"" )
+set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_DEFINITIONS "TARGETNAME=\"${PROJECT_NAME}.node\";${MOREDEFS}" )
 target_link_libraries(${PROJECT_NAME} ${CMAKE_JS_LIB})
 if( WIN32 )
    target_link_libraries(${PROJECT_NAME} winmm ws2_32 rpcrt4 iphlpapi odbc32 )

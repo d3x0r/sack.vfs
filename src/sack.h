@@ -60,40 +60,40 @@
  // #define NOGDI                     // All GDI defines and routines
  // #define NOKERNEL                  // All KERNEL defines and routines
  // #define NOUSER                    // All USER defines and routines
- #ifndef _ARM_
- #  ifndef _INCLUDE_NLS
+ #  ifndef _ARM_
+ #    ifndef _INCLUDE_NLS
                      // All NLS defines and routines
- #    define NONLS
+ #      define NONLS
+ #    endif
  #  endif
- #endif
  // #define NOMB                      // MB_* and MessageBox()
                   // GMEM_*, LMEM_*, GHND, LHND, associated routines
- #define NOMEMMGR
+ #  define NOMEMMGR
                 // typedef METAFILEPICT
- #define NOMETAFILE
+ #  define NOMETAFILE
  // #define NOMINMAX                  // Macros min(a,b) and max(a,b)
  // #define NOMSG                     // typedef MSG and associated routines
  // #define NOOPENFILE                // OpenFile(), OemToAnsi, AnsiToOem, and OF_*
  // #define NOSCROLL                  // SB_* and scrolling routines
                  // All Service Controller routines, SERVICE_ equates, etc.
- #define NOSERVICE
+ #  define NOSERVICE
  //#define NOSOUND                   // Sound driver routines
  // #define NOTEXTMETRIC              // typedef TEXTMETRIC and associated routines
  // #define NOWH                      // SetWindowsHook and WH_*
  // #define NOWINOFFSETS              // GWL_*, GCL_*, associated routines
  // #define NOCOMM                    // COMM driver routines
                    // Kanji support stuff.
- #define NOKANJI
+ #  define NOKANJI
  // #define NOHELP                    // Help engine interface.
                 // Profiler interface.
- #define NOPROFILER
+ #  define NOPROFILER
  //#define NODEFERWINDOWPOS          // DeferWindowPos routines
                      // Modem Configuration Extensions
- #define NOMCX
+ #  define NOMCX
    // no StrCat StrCmp StrCpy etc functions.  (used internally)
- #define NO_SHLWAPI_STRFCNS
+ #  define NO_SHLWAPI_STRFCNS
   // This also has defines that override StrCmp StrCpy etc... but no override
- #define STRSAFE_NO_DEPRECATE
+ #  define STRSAFE_NO_DEPRECATE
  #  ifdef _MSC_VER
  #    ifndef _WIN32_WINDOWS
  // needed at least this for what - updatelayeredwindow?
@@ -5017,23 +5017,23 @@
  // Initial commit
  //
  //
- #if defined( HAVE_ENVIRONMENT )
- #define getenv(name)       OSALOT_GetEnvironmentVariable(name)
- #define setenv(name,val)   SetEnvironmentVariable(name,val)
- #endif
- #define Relinquish()       Sleep(0)
+ #  if defined( HAVE_ENVIRONMENT )
+ #    define getenv(name)       OSALOT_GetEnvironmentVariable(name)
+ #    define setenv(name,val)   SetEnvironmentVariable(name,val)
+ #  endif
+ #  define Relinquish()       Sleep(0)
  //#pragma pragnoteonly("GetFunctionAddress is lazy and has no library cleanup - needs to be a lib func")
  //#define GetFunctionAddress( lib, proc ) GetProcAddress( LoadLibrary( lib ), (proc) )
- #ifdef __cplusplus
- #  ifdef __GNUC__
- #    ifndef min
- #      define min(a,b) ((a)<(b))?(a):(b)
+ #  ifdef __cplusplus
+ #    ifdef __GNUC__
+ #      ifndef min
+ #        define min(a,b) ((a)<(b))?(a):(b)
+ #      endif
  #    endif
  #  endif
- #endif
  #  ifdef __cplusplus_cli
 /*lprintf( */
- # define DebugBreak() System::Console::WriteLine(gcnew System::String( WIDE__FILE__ WIDE("(") STRSYM(__LINE__) WIDE(") Would DebugBreak here...") ) );
+ #    define DebugBreak() System::Console::WriteLine(gcnew System::String( WIDE__FILE__ WIDE("(") STRSYM(__LINE__) WIDE(") Would DebugBreak here...") ) );
  //typedef unsigned int HANDLE;
  //typedef unsigned int HMODULE;
  //typedef unsigned int HWND;
@@ -5042,10 +5042,6 @@
  //typedef unsigned int HICON;
  //typedef unsigned int HINSTANCE;
  #  endif
- #if !defined( UNDER_CE ) ||defined( ELTANIN)
- #include <fcntl.h>
- #include <io.h>
- #endif
  /* A header for doing .NET /CLR compatiblity changes. Things
     like fopen needing to be _fopen_s and junk.               */
  #ifndef FILE_DOT_NET_COMPAT
@@ -5069,7 +5065,9 @@
  #include <share.h>
  #endif
  #if !defined( UNDER_CE )
+ #include <fcntl.h>
  #if !defined( __LINUX__ )
+ #include <io.h>
  #else
  #define LPFILETIME uint64_t*
  #define FILETIME uint64_t
@@ -5517,14 +5515,14 @@
  // end with a newline please.
  // ifdef unix/linux
  #else
- #include <pthread.h>
- #include <sched.h>
- #include <unistd.h>
- #include <sys/time.h>
- #include <errno.h>
- #if defined( __ARM__ )
- #  define DebugBreak()
- #else
+ #  include <pthread.h>
+ #  include <sched.h>
+ #  include <unistd.h>
+ #  include <sys/time.h>
+ #  include <errno.h>
+ #  if defined( __ARM__ )
+ #    define DebugBreak()
+ #  else
  /* A symbol used to cause a debugger to break at a certain
     point. Sometimes dynamicly loaded plugins can be hard to set
     the breakpoint in the debugger, so it becomes easier to
@@ -5533,31 +5531,32 @@
     <code lang="c++">
     DebugBreak();
   </code>                                                      */
- #  ifdef __ANDROID__
- #    define DebugBreak()
- #  else
- #    define DebugBreak()  asm("int $3\n" )
+ #    ifdef __ANDROID__
+ #      define DebugBreak()
+ #    else
+ #      define DebugBreak()  asm("int $3\n" )
+ #    endif
  #  endif
- #endif
- #ifdef __ANDROID_OLD_PLATFORM_SUPPORT__
+ #  ifdef __ANDROID_OLD_PLATFORM_SUPPORT__
  extern __sighandler_t bsd_signal(int, __sighandler_t);
- #endif
+ #  endif
  // moved into timers - please linnk vs timers to get Sleep...
  //#define Sleep(n) (usleep((n)*1000))
- #define Relinquish() sched_yield()
- #define GetLastError() (int32_t)errno
+ #  define Relinquish() sched_yield()
+ #  define GetLastError() (int32_t)errno
  /* return with a THREAD_ID that is a unique, universally
     identifier for the thread for inter process communication. */
- #define GetCurrentProcessId() ((uint32_t)getpid())
- #define GetCurrentThreadId() ((uint32_t)getpid())
+ #  define GetCurrentProcessId() ((uint32_t)getpid())
+ #  define GetCurrentThreadId() ((uint32_t)getpid())
  /* Define a min(a,b) macro when the compiler lacks it. */
- #ifndef min
- #  define min(a,b) (((a)<(b))?(a):(b))
- #endif
+ #  ifndef min
+ #    define min(a,b) (((a)<(b))?(a):(b))
+ #  endif
  /* Why not add the max macro, also? */
- #ifndef max
- #  define max(a,b) (((a)>(b))?(a):(b))
- #endif
+ #  ifndef max
+ #    define max(a,b) (((a)>(b))?(a):(b))
+ #  endif
+  // end if( !__LINUX__ )
  #endif
  #if defined( _MSC_VER )|| defined(__LCC__) || defined( __WATCOMC__ ) || defined( __GNUC__ )
  /* Includes networking as appropriate for the target platform. Providing
@@ -7193,7 +7192,7 @@
  #else
  #endif
  #  ifdef _MSC_VER
- #define SUFFER_WITH_NO_SNPRINTF
+ #    define SUFFER_WITH_NO_SNPRINTF
  #    ifndef SUFFER_WITH_NO_SNPRINTF
  #      define vnsprintf protable_vsnprintf
  //   this one gives deprication warnings
@@ -7242,9 +7241,9 @@
  #    define swcanf swscanf_s
  // _MSC_VER
  #  endif
- #ifdef  __GNUC__
+ #  ifdef  __GNUC__
  #      if defined( _UNICODE )
- #define VSNPRINTF_FAILS_RETURN_SIZE
+ #        define VSNPRINTF_FAILS_RETURN_SIZE
  #        define tnprintf  swprintf
  #        define vtnprintf vswprintf
  #        if !defined( NO_UNICODE_C )
@@ -7265,8 +7264,8 @@
  #    endif
  #      endif
  // __GNUC__
- #endif
- #ifdef __WATCOMC__
+ #  endif
+ #  ifdef __WATCOMC__
  #      if defined( _UNICODE )
  #        define tnprintf  _snwprintf
  #        define vtnprintf _vsnwprintf
@@ -7284,7 +7283,7 @@
  #      endif
  #        define snwprintf  _snwprintf
  // __WATCOMC__
- #endif
+ #  endif
  #endif
  #endif
  #ifndef NETWORK_HEADER_INCLUDED
