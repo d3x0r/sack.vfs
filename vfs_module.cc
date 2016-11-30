@@ -92,7 +92,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 		SqlObject::Init( exports );
 		// Prepare constructor template
 		volumeTemplate = FunctionTemplate::New( isolate, New );
-		volumeTemplate->SetClassName( String::NewFromUtf8( isolate, "Volume" ) );
+		volumeTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Volume" ) );
 		volumeTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 		// Prototype
@@ -251,7 +251,7 @@ void FileObject::seekFile(const FunctionCallbackInfo<Value>& args) {
 		Local<FunctionTemplate> fileTemplate;
 		// Prepare constructor template
 		fileTemplate = FunctionTemplate::New( isolate, openFile );
-		fileTemplate->SetClassName( String::NewFromUtf8( isolate, "File" ) );
+		fileTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.File" ) );
 		fileTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 		// Prototype
@@ -346,8 +346,8 @@ void SqlObject::Init( Handle<Object> exports ) {
 	Local<FunctionTemplate> sqlTemplate;
 	// Prepare constructor template
 	sqlTemplate = FunctionTemplate::New( isolate, New );
-	sqlTemplate->SetClassName( String::NewFromUtf8( isolate, "Sqlite" ) );
-	sqlTemplate->InstanceTemplate()->SetInternalFieldCount( 7 );  // have to add 1 implicit constructor.
+	sqlTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Sqlite" ) );
+	sqlTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "do", query );
