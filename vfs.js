@@ -15,6 +15,7 @@ file = vol.File( "default file" );
 file2 = vol.File( "Another file" );
 //file.on( "close", ()=>{console.log( "closed." );} );
 
+console.log( "directory:", vol.dir() );
 console.log( "vol prototype", Object.getPrototypeOf( vol ) );
 
 // this shows the methods of the original file.

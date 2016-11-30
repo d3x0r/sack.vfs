@@ -25,6 +25,7 @@ public:
 	VolumeObject( const char *mount, const char *filename, const char *key, const char *key2 );
 
 	static void New( const FunctionCallbackInfo<Value>& args );
+	static void getDirectory( const FunctionCallbackInfo<Value>& args );
 
    ~VolumeObject();
 };
@@ -92,10 +93,12 @@ void VolumeObject::Init( Handle<Object> exports ) {
 		// Prepare constructor template
 		volumeTemplate = FunctionTemplate::New( isolate, New );
 		volumeTemplate->SetClassName( String::NewFromUtf8( isolate, "Volume" ) );
-		volumeTemplate->InstanceTemplate()->SetInternalFieldCount( 2 );
+		volumeTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 		// Prototype
 		NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "File", FileObject::openFile );
+		NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "dir", getDirectory );
+
 		//NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "Sqlite", SqlObject::New );
 
 		constructor.Reset( isolate, volumeTemplate->GetFunction() );
@@ -124,6 +127,20 @@ void logBinary( char *x, int n )
 		}
 	}
 }
+
+	void VolumeObject::getDirectory( const FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		struct find_info *fi = sack_vfs_find_create_cursor( (uintptr_t)vol->vol, NULL, NULL );
+		Local<Array> result = Array::New( isolate );
+		int found;
+		int n = 0;
+		for( found = sack_vfs_find_first( fi ); found; found = sack_vfs_find_next( fi ) ) {
+			char *name = sack_vfs_find_get_name( fi );
+			result->Set( n++, String::NewFromUtf8( isolate, name ) );
+		} 
+		args.GetReturnValue().Set( result );
+	}
 
 	void VolumeObject::New( const FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
@@ -190,14 +207,40 @@ void FileObject::Emitter(const FunctionCallbackInfo<Value>& args)
 
 
 void FileObject::readFile(const FunctionCallbackInfo<Value>& args) {
-
+	Isolate* isolate = Isolate::GetCurrent();
+	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
+	//SACK_VFS_PROC size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t length );
+	if( args.Length() == 0 ) {
+		size_t fileSize = sack_vfs_size( file->file );
+		char *buf = NewArray( char, fileSize );
+		sack_vfs_read( file->file, buf, fileSize );
+		Local<String> result = String::NewFromUtf8( isolate, buf );
+		Deallocate( char*, buf );
+		args.GetReturnValue().Set( result );
+	}
 }
 
 void FileObject::writeFile(const FunctionCallbackInfo<Value>& args) {
+	Isolate* isolate = Isolate::GetCurrent();
+	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
+
+	//SACK_VFS_PROC size_t CPROC sack_vfs_write( struct sack_vfs_file *file, char * data, size_t length );
+	if( args.Length() == 1 && args[0]->IsString() ) {
+		String::Utf8Value data( args[0]->ToString() );		
+		sack_vfs_write( file->file, *data, data.length() );
+	}
 
 }
 
 void FileObject::seekFile(const FunctionCallbackInfo<Value>& args) {
+	Isolate* isolate = Isolate::GetCurrent();
+	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
+	if( args.Length() == 1 && args[0]->IsNumber() ) {
+		sack_vfs_seek( file->file, args[0]->ToNumber()->Value(), SEEK_SET );
+	}
+	if( args.Length() == 2 && args[0]->IsNumber() && args[1]->IsNumber() ) {
+		sack_vfs_seek( file->file, args[0]->ToNumber()->Value(), args[1]->ToNumber()->Value() );
+	}
 
 }
 
@@ -209,14 +252,13 @@ void FileObject::seekFile(const FunctionCallbackInfo<Value>& args) {
 		// Prepare constructor template
 		fileTemplate = FunctionTemplate::New( isolate, openFile );
 		fileTemplate->SetClassName( String::NewFromUtf8( isolate, "File" ) );
-		fileTemplate->InstanceTemplate()->SetInternalFieldCount( 13 );
+		fileTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 		// Prototype
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "read", readFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "write", writeFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "seek", seekFile );
 		// read stream methods
-		//NODE_SET_PROTOTYPE_METHOD( fileTemplate, "dir", getDirectory );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "pause", openFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "resume", openFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "setEncoding", openFile );
@@ -329,7 +371,6 @@ void SqlObject::New( const FunctionCallbackInfo<Value>& args ) {
 		char *dsn;
 		String::Utf8Value arg( args[0] );
 		dsn = *arg;
-		VolumeObject* vol;
 		SqlObject* obj;
 		if( args.Length() < 2 ) {
 			obj = new SqlObject( dsn, isolate, args.Holder() );
