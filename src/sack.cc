@@ -3,6 +3,7 @@
  #define USE_SQLITE
  #define USE_SQLITE_INTERFACE
  #define FORCE_COLOR_MACROS
+ #define _CRT_SECURE_NO_WARNINGS
  /*
   BLOCKINDEX BAT[BLOCKS_PER_BAT] // link of next blocks; 0 if free, FFFFFFFF if end of file block
   uint8_t  block_data[BLOCKS_PER_BAT][BLOCK_SIZE];
@@ -10570,7 +10571,7 @@ GetFreeBlock( vol, TRUE );
   int b = 0;
  // this block has free data; should be last BAT?
   int found_free;
-  int last_block = 0;
+  BLOCKINDEX last_block = 0;
   int last_bat = 0;
   BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, BLOCK_CACHE_FILE );
   do {
@@ -10650,8 +10651,8 @@ GetFreeBlock( vol, TRUE );
    {
     {
      int n;
-     int this_dir_block = 0;
-     int next_dir_block;
+     BLOCKINDEX this_dir_block = 0;
+     BLOCKINDEX next_dir_block;
      BLOCKINDEX *next_entries;
      do {
       next_entries = BTSEEK( BLOCKINDEX *, vol, this_dir_block, BLOCK_CACHE_DATAKEY );
@@ -10687,8 +10688,8 @@ GetFreeBlock( vol, TRUE );
  }
  static struct directory_entry * ScanDirectory( struct volume *vol, const char * filename, struct directory_entry *dirkey ) {
   int n;
-  int this_dir_block = 0;
-  int next_dir_block;
+  BLOCKINDEX this_dir_block = 0;
+  BLOCKINDEX next_dir_block;
   struct directory_entry *next_entries;
   do {
    next_entries = BTSEEK( struct directory_entry *, vol, this_dir_block, BLOCK_CACHE_DIRECTORY );
@@ -10722,7 +10723,7 @@ GetFreeBlock( vol, TRUE );
  // this results in an absolute disk position
  static FPI SaveFileName( struct volume *vol, const char * filename ) {
   size_t n;
-  int this_name_block = 1;
+  BLOCKINDEX this_name_block = 1;
   while( 1 ) {
    TEXTSTR names = BTSEEK( TEXTSTR, vol, this_name_block, BLOCK_CACHE_NAMES );
    unsigned char *name = (unsigned char*)names;
@@ -10754,7 +10755,7 @@ GetFreeBlock( vol, TRUE );
  }
  static struct directory_entry * GetNewDirectory( struct volume *vol, const char * filename ) {
   int n;
-  int this_dir_block = 0;
+  BLOCKINDEX this_dir_block = 0;
   struct directory_entry *next_entries;
   do {
    next_entries = BTSEEK( struct directory_entry *, vol, this_dir_block, BLOCK_CACHE_DIRECTORY );
@@ -10836,7 +10837,7 @@ GetFreeBlock( vol, TRUE );
   }
   {
    size_t n = 0;
-   int b = file->entry->first_block ^ file->dirent_key.first_block;
+   BLOCKINDEX b = file->entry->first_block ^ file->dirent_key.first_block;
    while( n * BLOCK_SIZE < ( pos & ~BLOCK_MASK ) ) {
     b = vfs_GetNextBlock( file->vol, b, FALSE, TRUE );
     n++;
@@ -10846,7 +10847,7 @@ GetFreeBlock( vol, TRUE );
   file->vol->lock = 0;
   return file->fpi;
  }
- static void MaskBlock( struct volume *vol, uint8_t* usekey, uint8_t* block, BLOCKINDEX block_ofs, int ofs, const char *data, size_t length ) {
+ static void MaskBlock( struct volume *vol, uint8_t* usekey, uint8_t* block, BLOCKINDEX block_ofs, size_t ofs, const char *data, size_t length ) {
   size_t n;
   block += block_ofs;
   usekey += ofs;
@@ -10950,7 +10951,7 @@ GetFreeBlock( vol, TRUE );
   return written;
  }
  static void sack_vfs_unlink_file_entry( struct volume *vol, struct directory_entry *entry, struct directory_entry *entkey ) {
-  int block, _block;
+  BLOCKINDEX block, _block;
   struct sack_vfs_file *file_found = NULL;
   struct sack_vfs_file *file;
   INDEX idx;
@@ -11342,7 +11343,7 @@ GetFreeBlock( vol, TRUE );
   if( ctx->use_version2 )
   {
    if( ctx->salt_size )
-    sha512_update( &ctx->sha512, (const uint8_t*)ctx->salt, ctx->salt_size );
+    sha512_update( &ctx->sha512, (const uint8_t*)ctx->salt, (unsigned int)ctx->salt_size );
    sha512_final( &ctx->sha512, ctx->entropy2 );
    sha512_init( &ctx->sha512 );
    sha512_update( &ctx->sha512, ctx->entropy2, SHA512_DIGEST_SIZE );
@@ -11390,7 +11391,7 @@ GetFreeBlock( vol, TRUE );
  {
   uint32_t tmp;
   uint32_t partial_tmp;
-  int partial_bits = 0;
+  uint32_t partial_bits = 0;
   uint32_t get_bits;
   do
   {
@@ -25392,7 +25393,7 @@ GetFreeBlock( vol, TRUE );
   uint32_t remove_timer;
   uint32_t CurrentTimerID;
   int32_t last_sleep;
- #define g (*global_timer_structure)
+ #define globalTimerData (*global_timer_structure)
   uintptr_t lock_thread_create;
   // should be a short list... 10 maybe 15...
   PLIST thread_events;
@@ -25459,16 +25460,16 @@ GetFreeBlock( vol, TRUE );
   // there is a small chance the local is already initialized.
   if( !global_timer_structure )
    SimpleRegisterAndCreateGlobal( global_timer_structure );
-  if( !g.timerID )
+  if( !globalTimerData.timerID )
   {
  #if defined( WIN32 )
-   g.my_thread_info_tls = TlsAlloc();
+   globalTimerData.my_thread_info_tls = TlsAlloc();
  #elif defined( __LINUX__ )
-   pthread_key_create( &g.my_thread_info_tls, NULL );
+   pthread_key_create( &globalTimerData.my_thread_info_tls, NULL );
  #endif
-   InitializeCriticalSec( &g.csGrab );
+   InitializeCriticalSec( &globalTimerData.csGrab );
    // this may have initialized early?
-   g.timerID = 1000;
+   globalTimerData.timerID = 1000;
    //lprintf( "thread global will be %p %p", global_timer_structure, &global_timer_structure );
   }
  }
@@ -25476,11 +25477,11 @@ GetFreeBlock( vol, TRUE );
  {
  #ifndef __NO_OPTIONS__
  #  ifdef ENABLE_CRITICALSEC_LOGGING
-  g.flags.bLogCriticalSections = SACK_GetProfileInt( GetProgramName(), WIDE( "SACK/Memory Library/Log critical sections" ), 0 );
+  globalTimerData.flags.bLogCriticalSections = SACK_GetProfileInt( GetProgramName(), WIDE( "SACK/Memory Library/Log critical sections" ), 0 );
  #  endif
-  g.flags.bLogThreadCreate = SACK_GetProfileInt( GetProgramName(), WIDE( "SACK/Timers/Log Thread Create" ), 0 );
-  g.flags.bLogSleeps = SACK_GetProfileInt( GetProgramName(), WIDE( "SACK/Timers/Log Sleeps" ), 0 );
-  g.flags.bLogTimerDispatch = SACK_GetProfileInt( GetProgramName(), WIDE( "SACK/Timers/Log Timer Dispatch" ), 0 );
+  globalTimerData.flags.bLogThreadCreate = SACK_GetProfileInt( GetProgramName(), WIDE( "SACK/Timers/Log Thread Create" ), 0 );
+  globalTimerData.flags.bLogSleeps = SACK_GetProfileInt( GetProgramName(), WIDE( "SACK/Timers/Log Sleeps" ), 0 );
+  globalTimerData.flags.bLogTimerDispatch = SACK_GetProfileInt( GetProgramName(), WIDE( "SACK/Timers/Log Timer Dispatch" ), 0 );
  #endif
  }
  //--------------------------------------------------------------------------
@@ -25534,14 +25535,14 @@ GetFreeBlock( vol, TRUE );
  {
   //pid_t mypid = getppid();
   // not sure if mypid is needed...
-  while( ForAllInSet( THREAD, g.threadset, threadrunning, 0 ) )
+  while( ForAllInSet( THREAD, globalTimerData.threadset, threadrunning, 0 ) )
    Relinquish();
   lprintf( WIDE("Destroy thread semaphores...") );
-  ForAllInSet( THREAD, g.threadset, closesem, (uintptr_t)0 );
-  DeleteSet( (GENERICSET**)&g.threadset );
-  g.pTimerThread = NULL;
-  //g.threads = NULL;
-  g.timers = NULL;
+  ForAllInSet( THREAD, globalTimerData.threadset, closesem, (uintptr_t)0 );
+  DeleteSet( (GENERICSET**)&globalTimerData.threadset );
+  globalTimerData.pTimerThread = NULL;
+  //globalTimerData.threads = NULL;
+  globalTimerData.timers = NULL;
  }
  #endif
  // sharemem exit priority +1 (exit after everything else, except emmory)
@@ -25551,15 +25552,15 @@ GetFreeBlock( vol, TRUE );
   //pid_t mypid = getppid();
   // not sure if mypid is needed...
   if( global_timer_structure ) {
-   g.flags.bExited = 1;
-   if( g.pTimerThread )
-    WakeThread( g.pTimerThread );
-   while( g.pTimerThread )
+   globalTimerData.flags.bExited = 1;
+   if( globalTimerData.pTimerThread )
+    WakeThread( globalTimerData.pTimerThread );
+   while( globalTimerData.pTimerThread )
    {
     tries++;
     if( tries > 10 )
      return;
-    WakeThread( g.pTimerThread );
+    WakeThread( globalTimerData.pTimerThread );
     Relinquish();
    }
   }
@@ -25584,7 +25585,7 @@ GetFreeBlock( vol, TRUE );
    thread_event = New( THREAD_EVENT );
    thread_event->name = StrDup( name );
    thread_event->hEvent = CreateEvent( NULL, TRUE, FALSE, name );
-   AddLink( &g.thread_events, thread_event );
+   AddLink( &globalTimerData.thread_events, thread_event );
    thread->thread_event = thread_event;
   }
  #else
@@ -25687,7 +25688,7 @@ GetFreeBlock( vol, TRUE );
   if( global_timer_structure )
   {
    // don't need locks if init didn't finish, there's now way to have threads in loader lock.
-   while( LockedExchangePtrSzVal( &g.lock_thread_create, 1 ) )
+   while( LockedExchangePtrSzVal( &globalTimerData.lock_thread_create, 1 ) )
     Relinquish();
   }
   else
@@ -25695,19 +25696,19 @@ GetFreeBlock( vol, TRUE );
    if( IsRootDeadstartStarted() )
     SimpleRegisterAndCreateGlobal( global_timer_structure );
   }
-  check = (PTHREAD)ForAllInSet( THREAD, g.threadset, check_thread_name, (uintptr_t)name );
+  check = (PTHREAD)ForAllInSet( THREAD, globalTimerData.threadset, check_thread_name, (uintptr_t)name );
   if( !check )
   {
  #ifdef _DEBUG
    //lprintf( DBG_FILELINEFMT "Failed to find the thread - so let's add it" );
  #endif
-   check = GetFromSet( THREAD, &g.threadset );
+   check = GetFromSet( THREAD, &globalTimerData.threadset );
    MemSet( check, 0, sizeof( THREAD ) );
    check->thread_ident = GetMyThreadID();
    InitWakeup( check, name );
    check->flags.bReady = 1;
   }
-  g.lock_thread_create = 0;
+  globalTimerData.lock_thread_create = 0;
   return check;
  }
  //--------------------------------------------------------------------------
@@ -25734,7 +25735,7 @@ GetFreeBlock( vol, TRUE );
   if( global_timer_structure )
   {
    // don't need locks if init didn't finish, there's now way to have threads in loader lock.
-   while( LockedExchangePtrSzVal( &g.lock_thread_create, 1 ) )
+   while( LockedExchangePtrSzVal( &globalTimerData.lock_thread_create, 1 ) )
     Relinquish();
   }
   else
@@ -25742,19 +25743,19 @@ GetFreeBlock( vol, TRUE );
    if( IsRootDeadstartStarted() )
     SimpleRegisterAndCreateGlobal( global_timer_structure );
   }
-  check = (PTHREAD)ForAllInSet( THREAD, g.threadset, check_thread_name_and_id, (uintptr_t)&params );
+  check = (PTHREAD)ForAllInSet( THREAD, globalTimerData.threadset, check_thread_name_and_id, (uintptr_t)&params );
   if( !check )
   {
  #ifdef _DEBUG
    //lprintf( DBG_FILELINEFMT "Failed to find the thread - so let's add it" );
  #endif
-   check = GetFromSet( THREAD, &g.threadset );
+   check = GetFromSet( THREAD, &globalTimerData.threadset );
    MemSet( check, 0, sizeof( THREAD ) );
    check->thread_ident = thread;
    InitWakeup( check, name );
    check->flags.bReady = 1;
   }
-  g.lock_thread_create = 0;
+  globalTimerData.lock_thread_create = 0;
   return check;
  }
  //--------------------------------------------------------------------------
@@ -25774,7 +25775,7 @@ GetFreeBlock( vol, TRUE );
   if( global_timer_structure )
   {
    // don't need locks if init didn't finish, there's now way to have threads in loader lock.
-   while( LockedExchangePtrSzVal( &g.lock_thread_create, 1 ) )
+   while( LockedExchangePtrSzVal( &globalTimerData.lock_thread_create, 1 ) )
     Relinquish();
   }
   else
@@ -25782,19 +25783,19 @@ GetFreeBlock( vol, TRUE );
    if( IsRootDeadstartStarted() )
     SimpleRegisterAndCreateGlobal( global_timer_structure );
   }
-  check = (PTHREAD)ForAllInSet( THREAD, g.threadset, check_thread, (uintptr_t)&thread );
+  check = (PTHREAD)ForAllInSet( THREAD, globalTimerData.threadset, check_thread, (uintptr_t)&thread );
   if( !check )
   {
  #ifdef _DEBUG
    //lprintf( DBG_FILELINEFMT "Failed to find the thread - so let's add it" );
  #endif
-   check = GetFromSet( THREAD, &g.threadset );
+   check = GetFromSet( THREAD, &globalTimerData.threadset );
    MemSet( check, 0, sizeof( THREAD ) );
    check->thread_ident = thread;
    InitWakeup( check, NULL );
    check->flags.bReady = 1;
   }
-  g.lock_thread_create = 0;
+  globalTimerData.lock_thread_create = 0;
   return check;
  }
  //--------------------------------------------------------------------------
@@ -25832,7 +25833,7 @@ GetFreeBlock( vol, TRUE );
         , thread->thread_event_name, (uint32_t)(thread->thread_ident >> 32)
         , (uint32_t)(thread->thread_ident & 0xFFFFFFFF));
     name[sizeof(name)/sizeof(name[0])-1] = 0;
-    LIST_FORALL( g.thread_events, idx, PTHREAD_EVENT, thread_event )
+    LIST_FORALL( globalTimerData.thread_events, idx, PTHREAD_EVENT, thread_event )
     {
      if( StrCmp( thread_event->name, name ) == 0 )
       break;
@@ -25853,14 +25854,14 @@ GetFreeBlock( vol, TRUE );
     thread_event->name = StrDup( name );
 /*EVENT_MODIFY_STATE */
     thread_event->hEvent = OpenEvent( EVENT_ALL_ACCESS, FALSE, name );
-    AddLink( &g.thread_events, thread_event );
+    AddLink( &globalTimerData.thread_events, thread_event );
     thread->thread_event = thread_event;
    }
    if( thread_event->hEvent )
    {
     //lprintf( WIDE("event opened successfully... %d"), WaitForSingleObject( hEvent, 0 ) );
  #ifndef NO_LOGGING
-    if( g.flags.bLogSleeps )
+    if( globalTimerData.flags.bLogSleeps )
      _xlprintf(1 DBG_RELAY )( WIDE("About to wake on %d Thread event created...%016llx")
               , thread->thread_event->hEvent
               , thread->thread_ident );
@@ -25995,7 +25996,7 @@ GetFreeBlock( vol, TRUE );
   {
  #ifdef _WIN32
  #ifndef NO_LOGGING
-   if( g.flags.bLogSleeps )
+   if( globalTimerData.flags.bLogSleeps )
     _xlprintf(1 DBG_RELAY )( WIDE("About to sleep on %d Thread event created...%s:%016llx")
              , pThread->thread_event->hEvent
              , pThread->thread_event_name
@@ -26219,21 +26220,21 @@ GetFreeBlock( vol, TRUE );
  static void AlarmSignal( int sig )
  {
   //lprintf( "Received alarm" );
-  WakeThread( g.pTimerThread );
+  WakeThread( globalTimerData.pTimerThread );
  }
  static void TimerWakeableSleep( uint32_t n )
  {
-  if( g.pTimerThread )
+  if( globalTimerData.pTimerThread )
   {
  #ifndef USE_PIPE_SEMS
-   if( !g.flags.set_timer_signal )
+   if( !globalTimerData.flags.set_timer_signal )
    {
  #  if defined __ANDROID_OLD_PLATFORM_SUPPORT__
     bsd_signal( SIGALRM, AlarmSignal );
  #  else
     signal( SIGALRM, AlarmSignal );
  #  endif
-    g.flags.set_timer_signal = 1;
+    globalTimerData.flags.set_timer_signal = 1;
    }
    if( n != SLEEP_FOREVER )
    {
@@ -26247,7 +26248,7 @@ GetFreeBlock( vol, TRUE );
     setitimer( ITIMER_REAL, &val, NULL );
    }
  #endif
-   if( g.pTimerThread && g.pTimerThread->semaphore != -1 )
+   if( globalTimerData.pTimerThread && globalTimerData.pTimerThread->semaphore != -1 )
    {
  #ifdef USE_PIPE_SEMS
     InternalWakeableNamedSleepEx( NULL, n, FALSE DBG_SRC );
@@ -26257,34 +26258,34 @@ GetFreeBlock( vol, TRUE );
     semdo.sem_op = -1;
     semdo.sem_flg = 0;
     //lprintf( WIDE("Before semval = %d %08lx")
-    //   , semctl( g.pTimerThread->semaphore, 0, GETVAL )
-    //   , g.pTimerThread->semaphore );
-    while( semop( g.pTimerThread->semaphore, &semdo, 1 ) < 0 )
+    //   , semctl( globalTimerData.pTimerThread->semaphore, 0, GETVAL )
+    //   , globalTimerData.pTimerThread->semaphore );
+    while( semop( globalTimerData.pTimerThread->semaphore, &semdo, 1 ) < 0 )
     {
-     if( !g.pTimerThread )
+     if( !globalTimerData.pTimerThread )
       return;
      if( errno == EIDRM )
      {
  // closed.
-      g.pTimerThread->semaphore = -1;
+      globalTimerData.pTimerThread->semaphore = -1;
       return;
      }
-     //lprintf( WIDE("Before semval = %d"), semctl( g.pTimerThread->semaphore, 0, GETVAL ) );
+     //lprintf( WIDE("Before semval = %d"), semctl( globalTimerData.pTimerThread->semaphore, 0, GETVAL ) );
      if( errno == EINTR )
      {
-      //lprintf( WIDE("Before semval = %d"), semctl( g.pTimerThread->semaphore, 0, GETVAL ) );
+      //lprintf( WIDE("Before semval = %d"), semctl( globalTimerData.pTimerThread->semaphore, 0, GETVAL ) );
       continue;
      }
      else
      {
-      lprintf( WIDE("Semop failed: %d %08x"), errno, g.pTimerThread->semaphore );
+      lprintf( WIDE("Semop failed: %d %08x"), errno, globalTimerData.pTimerThread->semaphore );
       break;
      }
     }
  #endif
     //lprintf( WIDE("After semval = %d %08lx")
-    //   , semctl( g.pTimerThread->semaphore, 0, GETVAL )
-    //   , g.pTimerThread->semaphore );
+    //   , semctl( globalTimerData.pTimerThread->semaphore, 0, GETVAL )
+    //   , globalTimerData.pTimerThread->semaphore );
    }
   }
  }
@@ -26327,7 +26328,7 @@ GetFreeBlock( vol, TRUE );
  {
   PTHREAD pThread;
   struct my_thread_info* _MyThreadInfo = GetThreadTLS();
-  while( LockedExchangePtrSzVal( &g.lock_thread_create, (uintptr_t)_MyThreadInfo->nThread ) )
+  while( LockedExchangePtrSzVal( &globalTimerData.lock_thread_create, (uintptr_t)_MyThreadInfo->nThread ) )
    Relinquish();
   pThread
  #ifdef HAS_TLS
@@ -26348,7 +26349,7 @@ GetFreeBlock( vol, TRUE );
  #else
    closesem( (POINTER)pThread, 0 );
  #endif
-   // unlink from g.threads list.
+   // unlink from globalTimerData.threads list.
    //if( ( (*pThread->me)=pThread->next ) )
    // pThread->next->me = pThread->me;
    {
@@ -26357,16 +26358,16 @@ GetFreeBlock( vol, TRUE );
  #ifdef _WIN32
     Deallocate( TEXTSTR, pThread->thread_event->name );
     if( global_timer_structure )
-     DeleteLink( &g.thread_events, pThread->thread_event );
+     DeleteLink( &globalTimerData.thread_events, pThread->thread_event );
     Deallocate( PTHREAD_EVENT, pThread->thread_event );
  #endif
     if( global_timer_structure )
 /*Release( pThread )*/
-     DeleteFromSet( THREAD, g.threadset, pThread );
+     DeleteFromSet( THREAD, globalTimerData.threadset, pThread );
     SetAllocateLogging( tmp );
    }
   }
-  g.lock_thread_create = 0;
+  globalTimerData.lock_thread_create = 0;
  }
  //--------------------------------------------------------------------------
  #ifdef __WATCOMC__
@@ -26477,16 +26478,16 @@ GetFreeBlock( vol, TRUE );
    {
     uintptr_t oldval;
     LOGICAL dontUnlock = FALSE;
-    while( ( oldval = LockedExchangePtrSzVal( &g.lock_thread_create, (uintptr_t)thread_ident ) ) && oldval != thread_ident )
+    while( ( oldval = LockedExchangePtrSzVal( &globalTimerData.lock_thread_create, (uintptr_t)thread_ident ) ) && oldval != thread_ident )
     {
      if( oldval != thread_ident )
-      g.lock_thread_create = oldval;
+      globalTimerData.lock_thread_create = oldval;
      Relinquish();
     }
     if( oldval == thread_ident )
      dontUnlock = TRUE;
 /*Allocate( sizeof( THREAD ) )*/
-    pThread = GetFromSet( THREAD, &g.threadset );;
+    pThread = GetFromSet( THREAD, &globalTimerData.threadset );;
     //lprintf( WIDE("Get Thread %p"), pThread );
     MemSet( pThread, 0, sizeof( THREAD ) );
     pThread->flags.bLocal = TRUE;
@@ -26494,13 +26495,13 @@ GetFreeBlock( vol, TRUE );
     pThread->param = 0;
     pThread->thread_ident = thread_ident;
     pThread->flags.bReady = 1;
-    //if( ( pThread->next = g.threads ) )
-    // g.threads->me = &pThread->next;
-    //pThread->me = &g.threads;
-    //g.threads = pThread;
+    //if( ( pThread->next = globalTimerData.threads ) )
+    // globalTimerData.threads->me = &pThread->next;
+    //pThread->me = &globalTimerData.threads;
+    //globalTimerData.threads = pThread;
     InitWakeup( pThread, NULL );
     if( !dontUnlock )
-     g.lock_thread_create = 0;
+     globalTimerData.lock_thread_create = 0;
  #ifdef LOG_THREAD
     Log3( WIDE("Created thread address: %p %"PRIxFAST64" at %p")
       , pThread->proc, pThread->thread_ident, pThread );
@@ -26542,16 +26543,16 @@ GetFreeBlock( vol, TRUE );
  {
   int success;
   PTHREAD pThread;
-  while( LockedExchangePtrSzVal( &g.lock_thread_create, 1 ) )
+  while( LockedExchangePtrSzVal( &globalTimerData.lock_thread_create, 1 ) )
    Relinquish();
   do
   {
-   pThread = GetFromSet( THREAD, &g.threadset );
+   pThread = GetFromSet( THREAD, &globalTimerData.threadset );
    if( !pThread )
     xlprintf(LOG_ALWAYS)( WIDE( "Thread to pThread allocation failed!" ) );
   } while( !pThread );
   /*AllocateEx( sizeof( THREAD ) DBG_RELAY );*/
-  if( g.flags.bLogThreadCreate )
+  if( globalTimerData.flags.bLogThreadCreate )
    _lprintf(DBG_RELAY)( WIDE("Create New thread %p"), pThread );
   MemSet( pThread, 0, sizeof( THREAD ) );
   pThread->flags.bLocal = TRUE;
@@ -26562,7 +26563,7 @@ GetFreeBlock( vol, TRUE );
   pThread->pFile = pFile;
   pThread->nLine = nLine;
  #endif
-    g.lock_thread_create = 0;
+    globalTimerData.lock_thread_create = 0;
  #ifdef LOG_THREAD
   Log( WIDE("Begin Create Thread") );
  #endif
@@ -26588,10 +26589,10 @@ GetFreeBlock( vol, TRUE );
   {
    // link into list... it's a valid thread
    // the system claims that it can start one.
-   //if( ( ( pThread->next = g.threads ) ) )
-   //   g.threads->me = &pThread->next;
-   //pThread->me = &g.threads;
-   //g.threads = pThread;
+   //if( ( ( pThread->next = globalTimerData.threads ) ) )
+   //   globalTimerData.threads->me = &pThread->next;
+   //pThread->me = &globalTimerData.threads;
+   //globalTimerData.threads = pThread;
    pThread->flags.bReady = 1;
    {
     uint32_t now = GetTickCount();
@@ -26605,12 +26606,12 @@ GetFreeBlock( vol, TRUE );
   }
   else
   {
-   // unlink from g.threads list.
-   while( LockedExchangePtrSzVal( &g.lock_thread_create, 1 ) )
+   // unlink from globalTimerData.threads list.
+   while( LockedExchangePtrSzVal( &globalTimerData.lock_thread_create, 1 ) )
     Relinquish();
 /*Release( pThread )*/
-   DeleteFromSet( THREAD, &g.threadset, pThread );
-   g.lock_thread_create = 0;
+   DeleteFromSet( THREAD, &globalTimerData.threadset, pThread );
+   globalTimerData.lock_thread_create = 0;
    pThread = NULL;
   }
   return pThread;
@@ -26620,9 +26621,9 @@ GetFreeBlock( vol, TRUE );
  {
   int success;
   PTHREAD pThread;
-  while( LockedExchangePtrSzVal( &g.lock_thread_create, 1 ) )
+  while( LockedExchangePtrSzVal( &globalTimerData.lock_thread_create, 1 ) )
    Relinquish();
-  pThread = GetFromSet( THREAD, &g.threadset );
+  pThread = GetFromSet( THREAD, &globalTimerData.threadset );
   /*AllocateEx( sizeof( THREAD ) DBG_RELAY );*/
  #ifdef LOG_THREAD
   Log( WIDE("Creating a new thread... ") );
@@ -26637,7 +26638,7 @@ GetFreeBlock( vol, TRUE );
   pThread->pFile = pFile;
   pThread->nLine = nLine;
  #endif
-  g.lock_thread_create = 0;
+  globalTimerData.lock_thread_create = 0;
  #ifdef LOG_THREAD
   Log( WIDE("Begin Create Thread") );
  #endif
@@ -26663,10 +26664,10 @@ GetFreeBlock( vol, TRUE );
   {
    // link into list... it's a valid thread
    // the system claims that it can start one.
-   //if( ( ( pThread->next = g.threads ) ) )
-   //   g.threads->me = &pThread->next;
-   //pThread->me = &g.threads;
-   //g.threads = pThread;
+   //if( ( ( pThread->next = globalTimerData.threads ) ) )
+   //   globalTimerData.threads->me = &pThread->next;
+   //pThread->me = &globalTimerData.threads;
+   //globalTimerData.threads = pThread;
    pThread->flags.bReady = 1;
    while( !pThread->thread_ident )
     Relinquish();
@@ -26677,12 +26678,12 @@ GetFreeBlock( vol, TRUE );
   }
   else
   {
-   // unlink from g.threads list.
-   while( LockedExchangePtrSzVal( &g.lock_thread_create, 1 ) )
+   // unlink from globalTimerData.threads list.
+   while( LockedExchangePtrSzVal( &globalTimerData.lock_thread_create, 1 ) )
     Relinquish();
 /*Release( pThread )*/
-   DeleteFromSet( THREAD, &g.threadset, pThread );
-   g.lock_thread_create = 0;
+   DeleteFromSet( THREAD, &globalTimerData.threadset, pThread );
+   globalTimerData.lock_thread_create = 0;
    pThread = NULL;
   }
   return pThread;
@@ -26718,33 +26719,33 @@ GetFreeBlock( vol, TRUE );
  {
   PTIMER check;
  #ifdef ENABLE_CRITICALSEC_LOGGING
-  BIT_FIELD bLock = g.flags.bLogCriticalSections;
+  BIT_FIELD bLock = globalTimerData.flags.bLogCriticalSections;
   SetCriticalLogging( 0 );
-  g.flags.bLogCriticalSections = 0;
+  globalTimerData.flags.bLogCriticalSections = 0;
  #endif
-  EnterCriticalSec( &g.csGrab );
+  EnterCriticalSec( &globalTimerData.csGrab );
  #ifdef ENABLE_CRITICALSEC_LOGGING
-  g.flags.bLogCriticalSections = bLock;
+  globalTimerData.flags.bLogCriticalSections = bLock;
   SetCriticalLogging( bLock );
  #endif
-  if( !(check = g.timers) )
+  if( !(check = globalTimerData.timers) )
   {
  #ifdef LOG_INSERTS
    Log( WIDE("First(only known) timer!") );
  #endif
    // subtract already existing time... (ONLY if first timer)
-   //timer->delta -= ( g.this_tick - g.last_tick );
-   (*(timer->me = &g.timers))=timer;
+   //timer->delta -= ( globalTimerData.this_tick - globalTimerData.last_tick );
+   (*(timer->me = &globalTimerData.timers))=timer;
  #ifdef LOG_INSERTS
    Log( WIDE("Done with addition") );
  #endif
  #ifdef ENABLE_CRITICALSEC_LOGGING
    SetCriticalLogging( 0 );
-   g.flags.bLogCriticalSections = 0;
+   globalTimerData.flags.bLogCriticalSections = 0;
  #endif
-   LeaveCriticalSec( &g.csGrab );
+   LeaveCriticalSec( &globalTimerData.csGrab );
  #ifdef ENABLE_CRITICALSEC_LOGGING
-   g.flags.bLogCriticalSections = bLock;
+   globalTimerData.flags.bLogCriticalSections = bLock;
    SetCriticalLogging( bLock );
  #endif
    return;
@@ -26788,11 +26789,11 @@ GetFreeBlock( vol, TRUE );
    Log( WIDE("Fatal! Didn't add the timer!") );
  #ifdef ENABLE_CRITICALSEC_LOGGING
   SetCriticalLogging( 0 );
-  g.flags.bLogCriticalSections = 0;
+  globalTimerData.flags.bLogCriticalSections = 0;
  #endif
-  LeaveCriticalSec( &g.csGrab );
+  LeaveCriticalSec( &globalTimerData.csGrab );
  #ifdef ENABLE_CRITICALSEC_LOGGING
-  g.flags.bLogCriticalSections = bLock;
+  globalTimerData.flags.bLogCriticalSections = bLock;
   SetCriticalLogging( bLock );
  #endif
  }
@@ -26808,10 +26809,10 @@ GetFreeBlock( vol, TRUE );
  }
  static void  DoRemoveTimer( uint32_t timerID DBG_PASS )
  {
-  EnterCriticalSec( &g.csGrab );
+  EnterCriticalSec( &globalTimerData.csGrab );
   {
-   PTIMER timer = g.timers;
-   uintptr_t psvTimerResult = ForAllInSet( TIMER, &g.timer_pool, find_timer, (uintptr_t)timerID );
+   PTIMER timer = globalTimerData.timers;
+   uintptr_t psvTimerResult = ForAllInSet( TIMER, &globalTimerData.timer_pool, find_timer, (uintptr_t)timerID );
    if( psvTimerResult )
     timer = (PTIMER)psvTimerResult;
    else
@@ -26832,56 +26833,56 @@ GetFreeBlock( vol, TRUE );
      tmp->delta += timer->delta;
      tmp->me = timer->me;
     }
-    DeleteFromSet( TIMER, &g.timer_pool, timer );
+    DeleteFromSet( TIMER, &globalTimerData.timer_pool, timer );
    }
    else
     _lprintf(DBG_RELAY)( WIDE("Failed to find timer to grab") );
   }
-  LeaveCriticalSec( &g.csGrab );
+  LeaveCriticalSec( &globalTimerData.csGrab );
  }
  //--------------------------------------------------------------------------
  static void InsertTimer( PTIMER timer DBG_PASS )
  {
   if( NotTimerThread() )
   {
-   if( g.flags.away_in_timer )
+   if( globalTimerData.flags.away_in_timer )
  // if it's away - should be safe to add a new timer
    {
-    g.flags.insert_while_away = 1;
+    globalTimerData.flags.insert_while_away = 1;
     // set that we're adding a timer while away
-    if( g.flags.away_in_timer )
+    if( globalTimerData.flags.away_in_timer )
     {
      // if the thread is still away - we can add the timer...
  #ifdef LOG_SLEEPS
      lprintf( "Timer is away, just add this new timer back in.." );
  #endif
      DoInsertTimer( timer );
-     g.flags.insert_while_away = 0;
+     globalTimerData.flags.insert_while_away = 0;
      return;
     }
     // otherwise he came back before we set our addin
     // therefore it should be safe to schedule.
-    g.flags.insert_while_away = 0;
+    globalTimerData.flags.insert_while_away = 0;
    }
  #ifdef LOG_INSERTS
    Log( WIDE("Inserting timer...to wait for change allow") );
  #endif
               // lockout multiple additions...
-   EnterCriticalSec( &g.cs_timer_change );
+   EnterCriticalSec( &globalTimerData.cs_timer_change );
  #ifdef LOG_INSERTS
    Log( WIDE("Inserting timer...to wait for free add") );
  #endif
    // don't add a timer while there's one being added...
-   while( g.add_timer )
+   while( globalTimerData.add_timer )
    {
-    WakeThread(g.pTimerThread);
+    WakeThread(globalTimerData.pTimerThread);
     //Relinquish();
    }
  #ifdef LOG_INSERTS
    Log( WIDE("Inserting timer...setup dataa") );
  #endif
-   g.add_timer = timer;
-   LeaveCriticalSec( &g.cs_timer_change );
+   globalTimerData.add_timer = timer;
+   LeaveCriticalSec( &globalTimerData.cs_timer_change );
    // it might be sleeping....
  #ifdef LOG_INSERTS
    Log( WIDE("Inserting timer...wake and done") );
@@ -26891,11 +26892,11 @@ GetFreeBlock( vol, TRUE );
  #endif
    // wake this thread because it's current scheduled delta (ex 1000ms)
    // may put it's sleep beyond the frequency of this timer (ex 10ms)
-   WakeThreadEx(g.pTimerThread DBG_RELAY);
+   WakeThreadEx(globalTimerData.pTimerThread DBG_RELAY);
   }
   else
   {
-   EnterCriticalSec( &g.csGrab );
+   EnterCriticalSec( &globalTimerData.csGrab );
    // have to assume that we're away in callback
    // in order to get here... there's no other way
    // for this routine to be called and BE the timer thread.
@@ -26904,14 +26905,14 @@ GetFreeBlock( vol, TRUE );
  #ifdef LOG_SLEEPS
    lprintf( "Insert timer not dispatched." );
  #endif
-   if( g.timers == timer )
+   if( globalTimerData.timers == timer )
    {
  #ifdef LOG_SLEEPS
     lprintf( "Wake timer thread." );
  #endif
-    WakeThread(g.pTimerThread);
+    WakeThread(globalTimerData.pTimerThread);
    }
-   LeaveCriticalSec( &g.csGrab );
+   LeaveCriticalSec( &globalTimerData.csGrab );
   }
  }
  //--------------------------------------------------------------------------
@@ -26943,12 +26944,12 @@ GetFreeBlock( vol, TRUE );
   {
   PTIMER timer;
  #ifdef ENABLE_CRITICALSEC_LOGGING
-  BIT_FIELD bLock = g.flags.bLogCriticalSections;
+  BIT_FIELD bLock = globalTimerData.flags.bLogCriticalSections;
  #endif
   uint32_t newtick;
-  if( g.flags.bExited )
+  if( globalTimerData.flags.bExited )
    return -1;
-  if( !psvForce && !IsThisThread( g.pTimerThread ) )
+  if( !psvForce && !IsThisThread( globalTimerData.pTimerThread ) )
   {
    //Log( WIDE("Unknown thread attempting to process timers...") );
    return -1;
@@ -26959,7 +26960,7 @@ GetFreeBlock( vol, TRUE );
   {
    // there are timers - and there's one which wants to be added...
    // if there's no timers - just sleep here...
-   while( !g.add_timer && !g.timers || g.flags.bHaltTimers )
+   while( !globalTimerData.add_timer && !globalTimerData.timers || globalTimerData.flags.bHaltTimers )
    {
     if( !psvForce )
      return 1;
@@ -26967,7 +26968,7 @@ GetFreeBlock( vol, TRUE );
     lprintf( WIDE("Timer thread sleeping forever...") );
  #endif
  #ifdef __LINUX__
-    if( g.pTimerThread )
+    if( globalTimerData.pTimerThread )
      TimerWakeableSleep( SLEEP_FOREVER );
  #else
     WakeableSleep( SLEEP_FOREVER );
@@ -26978,69 +26979,69 @@ GetFreeBlock( vol, TRUE );
     Log( WIDE("Re-synch first tick...") );
  #endif
 //GetTickCount();
-    g.last_tick = timeGetTime();
+    globalTimerData.last_tick = timeGetTime();
    }
    // add and delete new/old timers here...
    // should be the next event after sleeping (low var-sleep top const-sleep)
-   if( g.add_timer )
+   if( globalTimerData.add_timer )
    {
  #ifdef LOG_INSERTS
     Log( WIDE("Adding timer really...") );
  #endif
-    DoInsertTimer( g.add_timer );
-    g.add_timer = NULL;
+    DoInsertTimer( globalTimerData.add_timer );
+    globalTimerData.add_timer = NULL;
    }
-   if( g.del_timer )
+   if( globalTimerData.del_timer )
    {
  #ifdef LOG_INSERTS
     Log( WIDE("Scheduled remove timer...") );
  #endif
-    DoRemoveTimer( g.del_timer DBG_SRC );
-    g.del_timer = 0;
+    DoRemoveTimer( globalTimerData.del_timer DBG_SRC );
+    globalTimerData.del_timer = 0;
    }
    // get the time now....
 //GetTickCount();
-   newtick = g.this_tick = timeGetTime();
+   newtick = globalTimerData.this_tick = timeGetTime();
  #ifdef LOG_LATENCY
-   Log3( WIDE("total - Tick: %u Last: %u  delta: %u"), g.this_tick, g.last_tick, g.this_tick-g.last_tick );
+   Log3( WIDE("total - Tick: %u Last: %u  delta: %u"), globalTimerData.this_tick, globalTimerData.last_tick, globalTimerData.this_tick-globalTimerData.last_tick );
  #endif
-   //if( g.timers )
-   //  delay_skew = g.this_tick-g.last_tick - g.timers->delta;
+   //if( globalTimerData.timers )
+   //  delay_skew = globalTimerData.this_tick-globalTimerData.last_tick - globalTimerData.timers->delta;
    // delay_skew = 0; // already chaotic...
    //if( timers )
    // Log1( WIDE("timer delta: %ud"), timers->delta );
  #ifdef ENABLE_CRITICALSEC_LOGGING
    SetCriticalLogging( 0 );
-   g.flags.bLogCriticalSections = 0;
+   globalTimerData.flags.bLogCriticalSections = 0;
  #endif
-   while( ( EnterCriticalSec( &g.csGrab ), timer = g.timers ) &&
-     ( (int32_t)( newtick - g.last_tick ) >= timer->delta ) )
+   while( ( EnterCriticalSec( &globalTimerData.csGrab ), timer = globalTimerData.timers ) &&
+     ( (int32_t)( newtick - globalTimerData.last_tick ) >= timer->delta ) )
    {
  #ifdef ENABLE_CRITICALSEC_LOGGING
-    g.flags.bLogCriticalSections = bLock;
+    globalTimerData.flags.bLogCriticalSections = bLock;
     SetCriticalLogging( bLock );
  #endif
  #ifdef LOG_LATENCY
  #ifdef _DEBUG
     _xlprintf( 1, timer->pFile, timer->nLine )( WIDE("Tick: %u Last: %u  delta: %u Timerdelta: %u")
-                  , g.this_tick, g.last_tick, g.this_tick-g.last_tick, timer->delta );
+                  , globalTimerData.this_tick, globalTimerData.last_tick, globalTimerData.this_tick-globalTimerData.last_tick, timer->delta );
  #else
     lprintf( WIDE("Tick: %u Last: %u  delta: %u Timerdelta: %u")
-       , g.this_tick, g.last_tick, g.this_tick-g.last_tick, timer->delta );
+       , globalTimerData.this_tick, globalTimerData.last_tick, globalTimerData.this_tick-globalTimerData.last_tick, timer->delta );
  #endif
  #endif
     // also enters csGrab... should be ok.
     GrabTimer( timer );
  #ifdef ENABLE_CRITICALSEC_LOGGING
     SetCriticalLogging( 0 );
-    g.flags.bLogCriticalSections = 0;
+    globalTimerData.flags.bLogCriticalSections = 0;
  #endif
-    LeaveCriticalSec( &g.csGrab );
+    LeaveCriticalSec( &globalTimerData.csGrab );
  #ifdef ENABLE_CRITICALSEC_LOGGING
-    g.flags.bLogCriticalSections = bLock;
+    globalTimerData.flags.bLogCriticalSections = bLock;
     SetCriticalLogging( bLock );
  #endif
-    g.last_tick += timer->delta;
+    globalTimerData.last_tick += timer->delta;
     if( timer->callback )
     {
  #ifdef _WIN32
@@ -27056,7 +27057,7 @@ GetFreeBlock( vol, TRUE );
      {
       //#ifdef LOG_DISPATCH
       static int level;
-      if( g.flags.bLogTimerDispatch )
+      if( globalTimerData.flags.bLogTimerDispatch )
       {
        level++;
  #ifdef _DEBUG
@@ -27067,24 +27068,24 @@ GetFreeBlock( vol, TRUE );
  #endif
       }
       //#endif
-      g.current_timer = timer;
+      globalTimerData.current_timer = timer;
       timer->flags.bRescheduled = 0;
-      g.flags.away_in_timer = 1;
-      g.CurrentTimerID = timer->ID;
+      globalTimerData.flags.away_in_timer = 1;
+      globalTimerData.CurrentTimerID = timer->ID;
       timer->callback( timer->userdata );
-      if( g.flags.bLogTimerDispatch )
+      if( globalTimerData.flags.bLogTimerDispatch )
       {
        level--;
        lprintf( WIDE("timer done. (%d)"), level );
       }
-      g.flags.away_in_timer = 0;
-      while( g.flags.insert_while_away )
+      globalTimerData.flags.away_in_timer = 0;
+      while( globalTimerData.flags.insert_while_away )
       {
        // request for insert while away... allow it to
        // get scheduled...
        Relinquish();
       }
-      g.current_timer = NULL;
+      globalTimerData.current_timer = NULL;
      }
      // allow timers to be added while away in this
      // timer's callback... so wait for it to finish.
@@ -27107,12 +27108,12 @@ GetFreeBlock( vol, TRUE );
      }
      else
      {
-      if( ( newtick - g.last_tick ) > timer->frequency )
+      if( ( newtick - globalTimerData.last_tick ) > timer->frequency )
       {
  #ifdef LOG_LATENCY_LIGHT
        lprintf( WIDE("Timer used more time than its frequency.  Scheduling at 1 ms.") );
  #endif
-       timer->delta = ( newtick - g.last_tick ) + 1;
+       timer->delta = ( newtick - globalTimerData.last_tick ) + 1;
       }
       else
       {
@@ -27131,17 +27132,17 @@ GetFreeBlock( vol, TRUE );
      lprintf( WIDE("Removing one shot timer. %d"), timer->ID );
  #endif
      // was a one shot timer.
-     DeleteFromSet( TIMER, &g.timer_pool, timer );
+     DeleteFromSet( TIMER, &globalTimerData.timer_pool, timer );
      timer = NULL;
     }
    }
  #ifdef ENABLE_CRITICALSEC_LOGGING
    SetCriticalLogging( 0 );
-   g.flags.bLogCriticalSections = 0;
+   globalTimerData.flags.bLogCriticalSections = 0;
  #endif
-   LeaveCriticalSec( &g.csGrab );
+   LeaveCriticalSec( &globalTimerData.csGrab );
  #ifdef ENABLE_CRITICALSEC_LOGGING
-   g.flags.bLogCriticalSections = bLock;
+   globalTimerData.flags.bLogCriticalSections = bLock;
    SetCriticalLogging( bLock );
  #endif
    if( timer )
@@ -27149,35 +27150,35 @@ GetFreeBlock( vol, TRUE );
  #ifdef LOG_LATENCY
     lprintf( WIDE("Pending timer in: %d Sleeping %d (%d) [%d]")
        , timer->delta
-       , timer->delta - (newtick-g.last_tick)
-       , timer->delta - (g.this_tick-g.last_tick)
-       , newtick - g.this_tick
+       , timer->delta - (newtick-globalTimerData.last_tick)
+       , timer->delta - (globalTimerData.this_tick-globalTimerData.last_tick)
+       , newtick - globalTimerData.this_tick
        );
  #endif
-    g.last_sleep = ( timer->delta - ( g.this_tick - g.last_tick ) );
-    if( g.last_sleep < 0 )
+    globalTimerData.last_sleep = ( timer->delta - ( globalTimerData.this_tick - globalTimerData.last_tick ) );
+    if( globalTimerData.last_sleep < 0 )
     {
-     lprintf( WIDE( "next pending sleep is %d" ), g.last_sleep );
-     g.last_sleep = 1;
+     lprintf( WIDE( "next pending sleep is %d" ), globalTimerData.last_sleep );
+     globalTimerData.last_sleep = 1;
     }
  #ifdef LOG_LATENCY
-    Log1( WIDE("Sleeping %d"), g.last_sleep );
+    Log1( WIDE("Sleeping %d"), globalTimerData.last_sleep );
  #endif
     if( !psvForce )
      return 1;
-    if( g.last_sleep )
+    if( globalTimerData.last_sleep )
     {
  #ifdef __LINUX__
-     TimerWakeableSleep( g.last_sleep );
+     TimerWakeableSleep( globalTimerData.last_sleep );
  #else
  #if defined( _DEBUG ) || defined( _DEBUG_INFO )
-     WakeableSleepEx( g.last_sleep, timer->pFile, timer->nLine );
+     WakeableSleepEx( globalTimerData.last_sleep, timer->pFile, timer->nLine );
  #else
-     WakeableSleepEx( g.last_sleep );
+     WakeableSleepEx( globalTimerData.last_sleep );
  #endif
  #endif
     }
-    if( !global_timer_structure || g.flags.bExited )
+    if( !global_timer_structure || globalTimerData.flags.bExited )
      return -1;
    }
    // else no timers - go back up to the top - where we sleep.
@@ -27190,8 +27191,8 @@ GetFreeBlock( vol, TRUE );
  //--------------------------------------------------------------------------
  uintptr_t CPROC ThreadProc( PTHREAD pThread )
  {
-  InitializeCriticalSec( &g.cs_timer_change );
-  g.pTimerThread = pThread;
+  InitializeCriticalSec( &globalTimerData.cs_timer_change );
+  globalTimerData.pTimerThread = pThread;
  #ifndef __NO_IDLE__
   AddIdleProc( ProcessTimers, (uintptr_t)0 );
  #endif
@@ -27200,13 +27201,13 @@ GetFreeBlock( vol, TRUE );
   nice( -3 );
  #endif
   //Log( WIDE("Permanently lock timers - indicates that thread is running...") );
-  g.lock_timers = 1;
+  globalTimerData.lock_timers = 1;
   //Log( WIDE("Get first tick") );
 //GetTickCount();
-  g.last_tick = timeGetTime();
+  globalTimerData.last_tick = timeGetTime();
   while( ProcessTimers( 1 ) > 0 );
   //Log( WIDE("Timer thread is exiting...") );
-  g.pTimerThread = NULL;
+  globalTimerData.pTimerThread = NULL;
   return 0;
  }
  //--------------------------------------------------------------------------
@@ -27223,7 +27224,7 @@ GetFreeBlock( vol, TRUE );
  //--------------------------------------------------------------------------
  uint32_t  AddTimerExx( uint32_t start, uint32_t frequency, TimerCallbackProc callback, uintptr_t user DBG_PASS )
  {
-  PTIMER timer = GetFromSet( TIMER, &g.timer_pool );
+  PTIMER timer = GetFromSet( TIMER, &globalTimerData.timer_pool );
        //timer = AllocateEx( sizeof( TIMER ) DBG_RELAY );
   MemSet( timer, 0, sizeof( TIMER ) );
   if( start && !frequency )
@@ -27234,13 +27235,13 @@ GetFreeBlock( vol, TRUE );
   timer->delta  = (int32_t)start;
   timer->frequency = frequency;
   timer->callback = callback;
-  timer->ID = g.timerID++;
+  timer->ID = globalTimerData.timerID++;
   timer->userdata = user;
  #ifdef _DEBUG
   timer->pFile = pFile;
   timer->nLine = nLine;
  #endif
-  if( !g.pTimerThread )
+  if( !globalTimerData.pTimerThread )
   {
    //Log( WIDE("Starting \"a\" timer thread!!!!" ) );
    if( !( ThreadTo( ThreadProc, 0 ) ) )
@@ -27248,7 +27249,7 @@ GetFreeBlock( vol, TRUE );
     //Log1( WIDE("Failed to start timer ThreadProc... %d"), GetLastError() );
     return 0;
    }
-   while( !g.lock_timers )
+   while( !globalTimerData.lock_timers )
     Relinquish();
    //Log1( WIDE("Thread started successfully? %d"), GetLastError() );
     // make sure that the thread is running, and had setup its
@@ -27276,15 +27277,15 @@ GetFreeBlock( vol, TRUE );
  // IS timer thread..
   if( !NotTimerThread() &&
  // and not in THIS timer...
-   ( ID != g.CurrentTimerID ) )
+   ( ID != globalTimerData.CurrentTimerID ) )
   {
    // is timer thread itself... safe to remove the timer....
    DoRemoveTimer( ID DBG_SRC );
    return;
   }
-  EnterCriticalSec( &g.cs_timer_change );
+  EnterCriticalSec( &globalTimerData.cs_timer_change );
   // only allow one delete at a time...
-  while( g.del_timer )
+  while( globalTimerData.del_timer )
   {
  #ifdef LOG_INSERTS
    lprintf( "pending timer delete, wait." );
@@ -27295,15 +27296,15 @@ GetFreeBlock( vol, TRUE );
  #ifdef LOG_INSERTS
     lprintf( "is not the timer." );
  #endif
-    if( g.del_timer != g.CurrentTimerID )
+    if( globalTimerData.del_timer != globalTimerData.CurrentTimerID )
     {
  #ifdef LOG_INSERTS
      lprintf( "schedule timer is not the current timer..." );
  #endif
-     DoRemoveTimer( g.del_timer DBG_SRC );
-     g.del_timer = 0;
+     DoRemoveTimer( globalTimerData.del_timer DBG_SRC );
+     globalTimerData.del_timer = 0;
     }
-    if( ID != g.CurrentTimerID )
+    if( ID != globalTimerData.CurrentTimerID )
     {
  #ifdef LOG_INSERTS
      lprintf( "removing timer is not the current timer" );
@@ -27319,15 +27320,15 @@ GetFreeBlock( vol, TRUE );
  #ifdef LOG_INSERTS
   _lprintf(DBG_RELAY)( "Set del_timer to schedule delete." );
  #endif
-  g.del_timer = ID;
-  LeaveCriticalSec( &g.cs_timer_change );
+  globalTimerData.del_timer = ID;
+  LeaveCriticalSec( &globalTimerData.cs_timer_change );
   if( NotTimerThread() )
   {
  #ifdef LOG_INSERTS
    lprintf( "wake thread, scheduled delete" );
  #endif
    //Log( WIDE("waking timer thread to indicate deletion...") );
-   WakeThread( g.pTimerThread );
+   WakeThread( globalTimerData.pTimerThread );
   }
  }
  #undef RemoveTimer
@@ -27351,12 +27352,12 @@ GetFreeBlock( vol, TRUE );
    {
     //lprintf( WIDE("Rescheduling timer...") );
     DoInsertTimer( timer );
-    if( timer == g.timers )
+    if( timer == globalTimerData.timers )
     {
  #ifdef LOG_SLEEPS
      lprintf( "We cheated to insert - so create a wake." );
  #endif
-     WakeThread( g.pTimerThread );
+     WakeThread( globalTimerData.pTimerThread );
     }
    }
   }
@@ -27366,62 +27367,62 @@ GetFreeBlock( vol, TRUE );
  void  RescheduleTimerEx( uint32_t ID, uint32_t delay )
  {
   PTIMER timer;
-  EnterCriticalSec( &g.csGrab );
+  EnterCriticalSec( &globalTimerData.csGrab );
   if( !ID )
   {
-   timer =g.current_timer;
+   timer =globalTimerData.current_timer;
   }
   else
   {
-   timer = g.timers;
+   timer = globalTimerData.timers;
    while( timer && timer->ID != ID )
     timer = timer->next;
    if( !timer )
    {
     // this timer is not part of the list if it's
     // dispatched and we get here (timer itself rescheduling itself)
-    if( g.current_timer && g.current_timer->ID == ID )
-     timer = g.current_timer;
+    if( globalTimerData.current_timer && globalTimerData.current_timer->ID == ID )
+     timer = globalTimerData.current_timer;
    }
   }
   InternalRescheduleTimerEx( timer, delay );
-  LeaveCriticalSec( &g.csGrab );
+  LeaveCriticalSec( &globalTimerData.csGrab );
  }
  //--------------------------------------------------------------------------
  void  RescheduleTimer( uint32_t ID )
  {
-  PTIMER timer = g.timers;
-  EnterCriticalSec( &g.csGrab );
+  PTIMER timer = globalTimerData.timers;
+  EnterCriticalSec( &globalTimerData.csGrab );
   while( timer && timer->ID != ID )
    timer = timer->next;
   if( !timer )
   {
-   if( g.current_timer && g.current_timer->ID == ID )
-    timer = g.current_timer;
+   if( globalTimerData.current_timer && globalTimerData.current_timer->ID == ID )
+    timer = globalTimerData.current_timer;
   }
   if( timer )
   {
    InternalRescheduleTimerEx( timer, timer->frequency );
   }
-  LeaveCriticalSec( &g.csGrab );
+  LeaveCriticalSec( &globalTimerData.csGrab );
  }
  //--------------------------------------------------------------------------
  static void OnDisplayPause( WIDE("@Internal Timers") _WIDE(TARGETNAME) )( void )
  {
-  g.flags.bHaltTimers = 1;
+  globalTimerData.flags.bHaltTimers = 1;
  }
  //--------------------------------------------------------------------------
  static void OnDisplayResume( WIDE("@Internal Timers") _WIDE(TARGETNAME))( void )
  {
-  g.flags.bHaltTimers = 0;
-  if( g.pTimerThread )
-   WakeThread( g.pTimerThread );
+  globalTimerData.flags.bHaltTimers = 0;
+  if( globalTimerData.pTimerThread )
+   WakeThread( globalTimerData.pTimerThread );
  }
  //--------------------------------------------------------------------------
  void  ChangeTimerEx( uint32_t ID, uint32_t initial, uint32_t frequency )
  {
-  PTIMER timer = g.timers;
-  EnterCriticalSec( &g.csGrab );
+  PTIMER timer = globalTimerData.timers;
+  EnterCriticalSec( &globalTimerData.csGrab );
   while( timer && timer->ID != ID )
    timer = timer->next;
   if( timer )
@@ -27429,7 +27430,7 @@ GetFreeBlock( vol, TRUE );
    timer->frequency = frequency;
    InternalRescheduleTimerEx( timer, initial );
   }
-  LeaveCriticalSec( &g.csGrab );
+  LeaveCriticalSec( &globalTimerData.csGrab );
  }
  //--------------------------------------------------------------------------
  #ifndef USE_NATIVE_CRITICAL_SECTION
@@ -27439,7 +27440,7 @@ GetFreeBlock( vol, TRUE );
   THREAD_ID prior = 0;
  #ifdef ENABLE_CRITICALSEC_LOGGING
  #ifdef _DEBUG
-  if( global_timer_structure && g.flags.bLogCriticalSections )
+  if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
    _lprintf( DBG_RELAY )( WIDE("Enter critical section %p %")_64fx, pcs, GetMyThreadID() );
  #endif
  #endif
@@ -27473,14 +27474,14 @@ GetFreeBlock( vol, TRUE );
     {
  #ifdef ENABLE_CRITICALSEC_LOGGING
  #  ifdef _DEBUG
-     if( global_timer_structure && g.flags.bLogCriticalSections )
+     if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
       lprintf( WIDE("Failed to enter section... sleeping...") );
  #  endif
  #endif
      WakeableNamedThreadSleepEx( WIDE("sack.critsec"), SLEEP_FOREVER DBG_RELAY );
  #ifdef ENABLE_CRITICALSEC_LOGGING
  #  ifdef _DEBUG
-     if( global_timer_structure && g.flags.bLogCriticalSections )
+     if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
       lprintf( WIDE("Allowed to retry section entry, woken up...") );
  #  endif
  #endif
@@ -27489,7 +27490,7 @@ GetFreeBlock( vol, TRUE );
  #  ifdef _DEBUG
     else
     {
-     if( global_timer_structure && g.flags.bLogCriticalSections )
+     if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
       lprintf( WIDE("Lock Released while we logged?") );
     }
  #  endif
@@ -27513,7 +27514,7 @@ GetFreeBlock( vol, TRUE );
   uint32_t curtick = timeGetTime();
  #endif
  #ifdef ENABLE_CRITICALSEC_LOGGING
-  if( global_timer_structure && g.flags.bLogCriticalSections )
+  if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
    _xlprintf( LOG_NOISE DBG_RELAY )( WIDE("Begin leave critical section %p %") _64fx, pcs, GetMyThreadID() );
  #endif
   while( LockedExchange( &pcs->dwUpdating, 1 )
@@ -27524,7 +27525,7 @@ GetFreeBlock( vol, TRUE );
   )
   {
  #ifdef ENABLE_CRITICALSEC_LOGGING
-   if( global_timer_structure && g.flags.bLogCriticalSections )
+   if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
     _lprintf( DBG_RELAY )( WIDE("On leave - section is updating, wait...") );
  #endif
    Relinquish();
@@ -27541,7 +27542,7 @@ GetFreeBlock( vol, TRUE );
   if( !( pcs->dwLocks & ~SECTION_LOGGED_WAIT ) )
   {
  #ifdef ENABLE_CRITICALSEC_LOGGING
-   if( global_timer_structure && g.flags.bLogCriticalSections )
+   if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
     _lprintf( DBG_RELAY )( WIDE("Leaving a blank critical section") );
  #endif
    pcs->dwUpdating = 0;
@@ -27555,7 +27556,7 @@ GetFreeBlock( vol, TRUE );
  #endif
    pcs->dwLocks--;
  #ifdef ENABLE_CRITICALSEC_LOGGING
-   if( global_timer_structure && g.flags.bLogCriticalSections )
+   if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
     lprintf( WIDE("Remaining locks... %08") _32fx, pcs->dwLocks );
  #endif
    if( !( pcs->dwLocks & ~(SECTION_LOGGED_WAIT) ) )
@@ -27571,7 +27572,7 @@ GetFreeBlock( vol, TRUE );
      //pcs->dwThreadWaiting = 0;
      pcs->dwUpdating = 0;
  #ifdef ENABLE_CRITICALSEC_LOGGING
-     if( global_timer_structure && g.flags.bLogCriticalSections )
+     if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
       _lprintf( DBG_RELAY )( WIDE("%8")_64fx WIDE(" Waking a thread which is waiting..."), wake );
  #endif
      // don't clear waiting... so the proper thread can
@@ -27588,7 +27589,7 @@ GetFreeBlock( vol, TRUE );
   else
   {
  #ifdef ENABLE_CRITICALSEC_LOGGING
-   if( global_timer_structure && g.flags.bLogCriticalSections )
+   if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
    {
     _lprintf( DBG_RELAY )( WIDE("Sorry - you can't leave a section owned by %016")_64fx WIDE(" locks:%08" )_32fx
  #  ifdef DEBUG_CRITICAL_SECTIONS
@@ -29848,7 +29849,6 @@ GetFreeBlock( vol, TRUE );
  #ifndef __NO_OPTIONS__
   PARAM( args, TEXTSTR, key );
   PARAM( args, CTEXTSTR, value );
-  TEXTCHAR buf[256];
   if( l.flags.bFindEndif || l.flags.bFindElse )
    return psv;
   if( key[0] != '/' && key[0] != '\\' )
@@ -32358,11 +32358,11 @@ GetFreeBlock( vol, TRUE );
  #endif
    if( alignment && ( (uintptr_t)pc->byData & ~masks[alignment] ) ) {
     uintptr_t retval = ((((uintptr_t)pc->byData) + (alignment - 1)) & masks[alignment]);
-    if( dwAlignPad < 4 ) {
+    if( dwAlignPad < sizeof(uintptr_t) ) {
      DebugBreak();
     }
-    pc->dwPad = dwAlignPad - 4;
-    ((uint32_t*)(retval - 4))[0] = pc->to_chunk_start = ((((uintptr_t)pc->byData) + (alignment - 1)) & masks[alignment]) - (uintptr_t)pc->byData;
+    pc->dwPad = dwAlignPad - sizeof(uintptr_t);
+    ((uintptr_t*)(retval - sizeof(uintptr_t)))[0] = pc->to_chunk_start = ((((uintptr_t)pc->byData) + (alignment - 1)) & masks[alignment]) - (uintptr_t)pc->byData;
     return (POINTER)retval;
    }
    else {
@@ -32491,7 +32491,7 @@ GetFreeBlock( vol, TRUE );
      if( ExpandSpace( pMem, dwSize + (CHUNK_SIZE*4) + MEM_SIZE + 8 * MAGIC_SIZE ) )
      {
  #ifndef NO_LOGGING
-      _lprintf(DBG_RELAY)( WIDE("Creating a new expanded space... %d"), dwSize + (CHUNK_SIZE*4) + MEM_SIZE + 8 * MAGIC_SIZE );
+      _lprintf(DBG_RELAY)( WIDE("Creating a new expanded space... %")_size_fs, dwSize + (CHUNK_SIZE*4) + MEM_SIZE + 8 * MAGIC_SIZE );
  #endif
       goto search_for_free_memory;
      }
@@ -33495,7 +33495,8 @@ GetFreeBlock( vol, TRUE );
  {
   GetHeapMemStatsEx( pHeap, pFree, pUsed, pChunks, pFreeChunks DBG_SRC );
  }
- #ifdef _MSC_VER
+ #if 0
+ #  ifdef _MSC_VER
  //>= 900
  _CRT_ALLOC_HOOK prior_hook;
  int allocHook(int allocType, void *userData, size_t size, int
@@ -33552,6 +33553,7 @@ GetFreeBlock( vol, TRUE );
   //prior_hook = _CrtSetAllocHook( allocHook );
   //_set_new_handler( pn );
  }
+ #  endif
  #endif
  #ifdef __cplusplus
 //namespace sack {
@@ -34129,7 +34131,7 @@ GetFreeBlock( vol, TRUE );
  #ifdef _WIN32
   TEXTCHAR path[MAX_PATH];
   TEXTCHAR *realpath;
-  int len;
+  size_t len;
  #ifndef SHGFP_TYPE_CURRENT
  #define SHGFP_TYPE_CURRENT 0
  #endif
@@ -34737,7 +34739,7 @@ GetFreeBlock( vol, TRUE );
    if( file->mount )
    {
     file->mount->fsi->truncate( (void*)file_handle );
-    lprintf( WIDE("result is %d"), file->mount->fsi->size( (void*)file_handle ) );
+    //lprintf( WIDE("result is %d"), file->mount->fsi->size( (void*)file_handle ) );
    }
    else
    {
@@ -34879,7 +34881,7 @@ GetFreeBlock( vol, TRUE );
   }
   LeaveCriticalSec( &(*winfile_local).cs_files );
   if( (*winfile_local).flags.bLogOpenClose )
-   lprintf( WIDE( "return iopen of [%s]=%d(%")_size_f WIDE(")?" ), filename, h, result );
+   lprintf( WIDE( "return iopen of [%s]=%p(%")_size_f WIDE(")?" ), filename, h, (size_t)result );
   return result;
  }
  int sack_iclose( INDEX file_handle )
@@ -34904,7 +34906,7 @@ GetFreeBlock( vol, TRUE );
     HANDLE *holder = (HANDLE*)GetLink( &(*winfile_local).handles, file_handle );
     HANDLE handle = holder?holder[0]:INVALID_HANDLE_VALUE;
  #ifdef _WIN32
-   result = SetFilePointer(handle,pos,NULL,whence);
+   result = SetFilePointer(handle,(LONG)pos,NULL,whence);
  #else
    result = lseek( handle, pos, whence );
  #endif
@@ -35089,7 +35091,7 @@ GetFreeBlock( vol, TRUE );
     {
      file->fullname = PrependBasePathEx( group, filegroup, file->name, !mount );
      if( (*winfile_local).flags.bLogOpenClose )
-      lprintf( WIDE("full is %s %d"), file->fullname, group );
+      lprintf( WIDE("full is %s %d"), file->fullname, (int)group );
     }
     //file->fullname = file->name;
    }
@@ -35407,7 +35409,7 @@ GetFreeBlock( vol, TRUE );
    size_t length;
    fseek( file_file, 0, SEEK_END );
    length = ftell( file_file );
-   fseek( file_file, here, SEEK_SET );
+   fseek( file_file, (long)here, SEEK_SET );
    return length;
   }
  }
@@ -35427,7 +35429,7 @@ GetFreeBlock( vol, TRUE );
   {
    return file->mount->fsi->seek( file_file, pos, whence );
   }
-  if( fseek( file_file, pos, whence ) )
+  if( fseek( file_file, (long)pos, whence ) )
    return -1;
   //struct file *file = FindFileByFILE( file_file );
   return ftell( file_file );
@@ -35544,7 +35546,7 @@ GetFreeBlock( vol, TRUE );
     return buffer;
    return NULL;
   }
-  return fgets( buffer, size, file_file );
+  return fgets( buffer, (int)size, file_file );
  #endif
  }
  LOGICAL sack_existsEx ( const char *filename, struct file_system_mounted_interface *fsi )
@@ -35730,7 +35732,7 @@ GetFreeBlock( vol, TRUE );
  static int CPROC sack_filesys_close( void*file ) { return fclose(  (FILE*)file ); }
  static size_t CPROC sack_filesys_read( void*file, char*buf, size_t len ) { return fread( buf, 1, len, (FILE*)file ); }
  static size_t CPROC sack_filesys_write( void*file, const char*buf, size_t len ) { return fwrite( buf, 1, len, (FILE*)file ); }
- static size_t CPROC sack_filesys_seek( void*file, size_t pos, int whence) { return fseek( (FILE*)file, pos, whence ); }
+ static size_t CPROC sack_filesys_seek( void*file, size_t pos, int whence) { return fseek( (FILE*)file, (long)pos, whence ); }
  static void CPROC sack_filesys_truncate( void*file ) { sack_ftruncate( (FILE*)file ); }
  static void CPROC sack_filesys_unlink( uintptr_t psv, const char*filename ) {
  #ifdef UNICODE
@@ -44882,7 +44884,7 @@ GetFreeBlock( vol, TRUE );
  #define LOCATION extern
  #endif
  //LOCATION CRITICALSECTION csNetwork;
- #define MAX_NETCLIENTS  g.nMaxClients
+ #define MAX_NETCLIENTS  globalNetworkData.nMaxClients
  typedef struct client_slab_tag {
   uint32_t count;
     CLIENT client[1];
@@ -44940,9 +44942,9 @@ GetFreeBlock( vol, TRUE );
   WNDCLASS wc;
  #endif
  }
- // aka 'g'
+ // aka 'globalNetworkData'
  *global_network_data;
- #define g (*global_network_data)
+ #define globalNetworkData (*global_network_data)
  #ifdef _WIN32
  #ifndef errno
  #define errno WSAGetLastError()
@@ -45018,16 +45020,16 @@ GetFreeBlock( vol, TRUE );
  PRELOAD( InitNetworkGlobalOptions )
  {
  #ifndef __NO_OPTIONS__
-  g.flags.bLogProtocols = SACK_GetProfileIntEx( WIDE("SACK"), WIDE( "Network/Log Protocols" ), 0, TRUE );
-  g.flags.bShortLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data(64 byte max)" ), 0, TRUE );
-  g.flags.bLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data" ), 0, TRUE );
-  g.flags.bLogSentData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Sent Data" ), g.flags.bLogReceivedData, TRUE );
-  g.flags.bLogNotices = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Notifications" ), 0, TRUE );
-  g.dwReadTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Read wait timeout" ), 5000, TRUE );
-  g.dwConnectTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Connect timeout" ), 10000, TRUE );
+  globalNetworkData.flags.bLogProtocols = SACK_GetProfileIntEx( WIDE("SACK"), WIDE( "Network/Log Protocols" ), 0, TRUE );
+  globalNetworkData.flags.bShortLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data(64 byte max)" ), 0, TRUE );
+  globalNetworkData.flags.bLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data" ), 0, TRUE );
+  globalNetworkData.flags.bLogSentData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Sent Data" ), globalNetworkData.flags.bLogReceivedData, TRUE );
+  globalNetworkData.flags.bLogNotices = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Notifications" ), 0, TRUE );
+  globalNetworkData.dwReadTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Read wait timeout" ), 5000, TRUE );
+  globalNetworkData.dwConnectTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Connect timeout" ), 10000, TRUE );
  #else
-  g.dwReadTimeout = 5000;
-  g.dwConnectTimeout = 10000;
+  globalNetworkData.dwReadTimeout = 5000;
+  globalNetworkData.dwConnectTimeout = 10000;
  #endif
  }
  void LowLevelInit( void )
@@ -45038,9 +45040,9 @@ GetFreeBlock( vol, TRUE );
  PRIORITY_PRELOAD( InitNetworkGlobal, CONFIG_SCRIPT_PRELOAD_PRIORITY - 1 )
  {
   LowLevelInit();
-  if( !g.system_name )
+  if( !globalNetworkData.system_name )
   {
-   g.system_name = WIDE("no.network");
+   globalNetworkData.system_name = WIDE("no.network");
   }
  }
  //----------------------------------------------------------------------------
@@ -45238,7 +45240,7 @@ GetFreeBlock( vol, TRUE );
  {
   int c = 0;
   PCLIENT pc;
-  for( pc = g.AvailableClients; c < 50 && pc; pc = pc->next )
+  for( pc = globalNetworkData.AvailableClients; c < 50 && pc; pc = pc->next )
   {
    //lprintf( WIDE("Available %p"), pc );
    if( (*pc->me) != pc )
@@ -45251,7 +45253,7 @@ GetFreeBlock( vol, TRUE );
    //DebugBreak();
   }
   c = 0;
-  for( pc = g.ActiveClients; c < 50 && pc; pc = pc->next )
+  for( pc = globalNetworkData.ActiveClients; c < 50 && pc; pc = pc->next )
   {
    //lprintf( WIDE( WIDE( "Active %p(%d)" ) ), pc, pc->Socket );
    if( (*pc->me) != pc )
@@ -45264,7 +45266,7 @@ GetFreeBlock( vol, TRUE );
    DebugBreak();
   }
   c = 0;
-  for( pc = g.ClosedClients; c < 50 && pc; pc = pc->next )
+  for( pc = globalNetworkData.ClosedClients; c < 50 && pc; pc = pc->next )
   {
    //lprintf( WIDE( "Closed %p(%d)" ), pc, pc->Socket );
    if( (*pc->me) != pc )
@@ -45348,9 +45350,9 @@ GetFreeBlock( vol, TRUE );
    _lprintf(DBG_RELAY)( WIDE( "grabbed client %p(%d)" ), pClient, pClient->Socket );
    lprintf( WIDE( "grabbed client %p Ac:%p(%p(%d)) Av:%p(%p(%d)) Cl:%p(%p(%d))" )
       , pClient->me
-       , &g.ActiveClients, g.ActiveClients, g.ActiveClients?g.ActiveClients->Socket:0
-       , &g.AvailableClients, g.AvailableClients, g.AvailableClients?g.AvailableClients->Socket:0
-       , &g.ClosedClients, g.ClosedClients, g.ClosedClients?g.ClosedClients->Socket:0
+       , &globalNetworkData.ActiveClients, globalNetworkData.ActiveClients, globalNetworkData.ActiveClients?globalNetworkData.ActiveClients->Socket:0
+       , &globalNetworkData.AvailableClients, globalNetworkData.AvailableClients, globalNetworkData.AvailableClients?globalNetworkData.AvailableClients->Socket:0
+       , &globalNetworkData.ClosedClients, globalNetworkData.ClosedClients, globalNetworkData.ClosedClients?globalNetworkData.ClosedClients->Socket:0
       );
    DumpLists();
  #endif
@@ -45372,10 +45374,10 @@ GetFreeBlock( vol, TRUE );
  #endif
    pClient->dwFlags |= CF_AVAILABLE;
    pClient->LastEvent = GetTickCount();
-   pClient->me = &g.AvailableClients;
-   if( ( pClient->next = g.AvailableClients ) )
-    g.AvailableClients->me = &pClient->next;
-   g.AvailableClients = pClient;
+   pClient->me = &globalNetworkData.AvailableClients;
+   if( ( pClient->next = globalNetworkData.AvailableClients ) )
+    globalNetworkData.AvailableClients->me = &pClient->next;
+   globalNetworkData.AvailableClients = pClient;
   }
   return pClient;
  }
@@ -45390,10 +45392,10 @@ GetFreeBlock( vol, TRUE );
  #endif
    pClient->dwFlags |= CF_ACTIVE;
    pClient->LastEvent = GetTickCount();
-   pClient->me = &g.ActiveClients;
-   if( ( pClient->next = g.ActiveClients ) )
-    g.ActiveClients->me = &pClient->next;
-   g.ActiveClients = pClient;
+   pClient->me = &globalNetworkData.ActiveClients;
+   if( ( pClient->next = globalNetworkData.ActiveClients ) )
+    globalNetworkData.ActiveClients->me = &pClient->next;
+   globalNetworkData.ActiveClients = pClient;
   }
   return pClient;
  }
@@ -45408,10 +45410,10 @@ GetFreeBlock( vol, TRUE );
  #endif
    pClient->dwFlags |= CF_CLOSED;
    pClient->LastEvent = GetTickCount();
-   pClient->me = &g.ClosedClients;
-   if( ( pClient->next = g.ClosedClients ) )
-    g.ClosedClients->me = &pClient->next;
-   g.ClosedClients = pClient;
+   pClient->me = &globalNetworkData.ClosedClients;
+   if( ( pClient->next = globalNetworkData.ClosedClients ) )
+    globalNetworkData.ClosedClients->me = &pClient->next;
+   globalNetworkData.ClosedClients = pClient;
   }
   return pClient;
  }
@@ -45435,7 +45437,7 @@ GetFreeBlock( vol, TRUE );
   ReleaseAddress( pc->saSource );
   // sets socket to 0 - so it's not quite == INVALID_SOCKET
  #if LOG_NETWORK_EVENT_THREAD
-  if( g.flags.bLogNotices )
+  if( globalNetworkData.flags.bLogNotices )
    lprintf( WIDE( "Clear Client %p" ), pc );
  #endif
  // clear all information...
@@ -45443,7 +45445,7 @@ GetFreeBlock( vol, TRUE );
   pc->csLock = cs;
   pc->lpUserData = (uint8_t*)pbtemp;
   if( pc->lpUserData )
-   MemSet( pc->lpUserData, 0, g.nUserData * sizeof( uintptr_t ) );
+   MemSet( pc->lpUserData, 0, globalNetworkData.nUserData * sizeof( uintptr_t ) );
   pc->next = next;
   pc->me = me;
   pc->dwFlags = dwFlags;
@@ -45460,7 +45462,7 @@ GetFreeBlock( vol, TRUE );
   {
    PendingBuffer * lpNext;
    //lprintf( "Terminate Closed Client" );
-   EnterCriticalSec( &g.csNetwork );
+   EnterCriticalSec( &globalNetworkData.csNetwork );
    //lprintf( WIDE( "Terminating closed client..." ) );
    if( IsValid( pc->Socket ) )
    {
@@ -45496,11 +45498,11 @@ GetFreeBlock( vol, TRUE );
     }
    }
    ClearClient( pc );
-   // this should move from g.close to g.available.
+   // this should move from globalNetworkData.close to globalNetworkData.available.
    AddAvailable( GrabClient( pc ) );
  // it's no longer closing.  (was set during the course of closure)
    pc->dwFlags &= ~CF_CLOSING;
-   LeaveCriticalSec( &g.csNetwork );
+   LeaveCriticalSec( &globalNetworkData.csNetwork );
    //NetworkUnlock( pc );
   }
   else
@@ -45513,7 +45515,7 @@ GetFreeBlock( vol, TRUE );
  #ifdef VERBOSE_DEBUG
   lprintf( WIDE("Enter timer network lock...") );
  #endif
-  EnterCriticalSec( &g.csNetwork );
+  EnterCriticalSec( &globalNetworkData.csNetwork );
  #ifdef VERBOSE_DEBUG
   lprintf( WIDE("Have network lock.") );
  #endif
@@ -45521,7 +45523,7 @@ GetFreeBlock( vol, TRUE );
   lprintf( WIDE("pending timer in global") );
  #endif
  restart:
-  for( pc = g.ActiveClients; pc; pc = next )
+  for( pc = globalNetworkData.ActiveClients; pc; pc = next )
   {
    // pc can go away during check, so just grab his next now.
    next = pc->next;
@@ -45534,7 +45536,7 @@ GetFreeBlock( vol, TRUE );
     //lprintf( WIDE("Entering non UDP client lock...") );
     if( EnterCriticalSecNoWait( &pc->csLock, NULL ) == 1 )
     {
-     LeaveCriticalSec( &g.csNetwork );
+     LeaveCriticalSec( &globalNetworkData.csNetwork );
  #ifdef LOG_NETWORK_LOCKING
      lprintf( WIDE("pending timer left global") );
  #endif
@@ -45564,7 +45566,7 @@ GetFreeBlock( vol, TRUE );
       }
      }
      LeaveCriticalSec( &pc->csLock );
-     EnterCriticalSec( &g.csNetwork );
+     EnterCriticalSec( &globalNetworkData.csNetwork );
  #ifdef LOG_NETWORK_LOCKING
      lprintf( WIDE("pending timer in global") );
  #endif
@@ -45574,7 +45576,7 @@ GetFreeBlock( vol, TRUE );
    }
   }
   // fortunatly closed clients are owned by this timer...
-  for( pc = g.ClosedClients; pc; pc = next )
+  for( pc = globalNetworkData.ClosedClients; pc; pc = next )
   {
  // will dissappear when closed so save it.
    next = pc->next;
@@ -45585,7 +45587,7 @@ GetFreeBlock( vol, TRUE );
    }
   }
   //lprintf( WIDE("Leaving network lock.") );
-  LeaveCriticalSec( &g.csNetwork );
+  LeaveCriticalSec( &globalNetworkData.csNetwork );
  #ifdef LOG_NETWORK_LOCKING
   lprintf( WIDE("pending timer left global") );
  #endif
@@ -45606,7 +45608,7 @@ GetFreeBlock( vol, TRUE );
     switch( nStep )
     {
   case 0 :
-   //lprintf( "Global is %d %p", sizeof( g ), &g.uNetworkPauseTimer, &g.nProtos );
+   //lprintf( "Global is %d %p", sizeof( globalNetworkData ), &globalNetworkData.uNetworkPauseTimer, &globalNetworkData.nProtos );
    SystemCheck();
        /*
        if( WSAStartup( MAKEWORD(2,0), &ws ) )
@@ -45699,16 +45701,16 @@ GetFreeBlock( vol, TRUE );
   nResult = NetworkStartup();
   if( nResult == 0 )
   {
-      while( !g.uNetworkPauseTimer )
+      while( !globalNetworkData.uNetworkPauseTimer )
        Relinquish();
-   RemoveTimer( g.uNetworkPauseTimer );
-   g.flags.bNetworkReady = TRUE;
-   g.flags.bThreadInitOkay = TRUE;
+   RemoveTimer( globalNetworkData.uNetworkPauseTimer );
+   globalNetworkData.flags.bNetworkReady = TRUE;
+   globalNetworkData.flags.bThreadInitOkay = TRUE;
   }
   else if( nResult == -1 )
   {
-   g.flags.bNetworkReady = TRUE;
-   g.flags.bThreadInitOkay = FALSE;
+   globalNetworkData.flags.bNetworkReady = TRUE;
+   globalNetworkData.flags.bThreadInitOkay = FALSE;
    // exiting ... bad stuff happens
   }
   else if( nResult == -2 )
@@ -45721,7 +45723,7 @@ GetFreeBlock( vol, TRUE );
  void HandleEvent( PCLIENT pClient )
  {
   WSANETWORKEVENTS networkEvents;
-  if( g.bQuit )
+  if( globalNetworkData.bQuit )
   {
    lprintf( WIDE( "Task is shutting down network... don't handle event." ) );
    return;
@@ -45733,7 +45735,7 @@ GetFreeBlock( vol, TRUE );
   }
   pClient->dwFlags |= CF_PROCESSING;
  #if LOG_NETWORK_EVENT_THREAD
-  if( g.flags.bLogNotices )
+  if( globalNetworkData.flags.bLogNotices )
    lprintf( WIDE( "Client event on %p" ), pClient );
  #endif
   if( WSAEnumNetworkEvents( pClient->Socket, pClient->event, &networkEvents ) == ERROR_SUCCESS )
@@ -45743,7 +45745,7 @@ GetFreeBlock( vol, TRUE );
     {
      if( networkEvents.lNetworkEvents & FD_READ )
      {
-      if( g.flags.bLogNotices )
+      if( globalNetworkData.flags.bLogNotices )
        lprintf( WIDE( "Got UDP FD_READ" ) );
       FinishUDPRead( pClient );
      }
@@ -45753,9 +45755,9 @@ GetFreeBlock( vol, TRUE );
      THREAD_ID prior = 0;
  #ifdef LOG_CLIENT_LISTS
      lprintf( WIDE( "client lists Ac:%p(%p(%d)) Av:%p(%p(%d)) Cl:%p(%p(%d))" )
-        , &g.ActiveClients, g.ActiveClients, g.ActiveClients?g.ActiveClients->Socket:0
-        , &g.AvailableClients, g.AvailableClients, g.AvailableClients?g.AvailableClients->Socket:0
-        , &g.ClosedClients, g.ClosedClients, g.ClosedClients?g.ClosedClients->Socket:0
+        , &globalNetworkData.ActiveClients, globalNetworkData.ActiveClients, globalNetworkData.ActiveClients?globalNetworkData.ActiveClients->Socket:0
+        , &globalNetworkData.AvailableClients, globalNetworkData.AvailableClients, globalNetworkData.AvailableClients?globalNetworkData.AvailableClients->Socket:0
+        , &globalNetworkData.ClosedClients, globalNetworkData.ClosedClients, globalNetworkData.ClosedClients?globalNetworkData.ClosedClients->Socket:0
         );
  #endif
      while( !NetworkLock( pClient ) )
@@ -45774,20 +45776,20 @@ GetFreeBlock( vol, TRUE );
      // if an unknown socket issued a
      // notification - close it - unknown handling of unknown socket.
  #if LOG_NETWORK_EVENT_THREAD
-     if( g.flags.bLogNotices )
+     if( globalNetworkData.flags.bLogNotices )
       lprintf( WIDE( "events : %08x on %p" ), networkEvents.lNetworkEvents, pClient );
  #endif
      if( networkEvents.lNetworkEvents & FD_CONNECT )
      {
       {
        uint16_t wError = networkEvents.iErrorCode[FD_CONNECT_BIT];
-       if( g.flags.bLogNotices )
+       if( globalNetworkData.flags.bLogNotices )
         lprintf( WIDE("FD_CONNECT on %p"), pClient );
        if( !wError )
         pClient->dwFlags |= CF_CONNECTED;
        else
        {
-        if( g.flags.bLogNotices )
+        if( globalNetworkData.flags.bLogNotices )
          lprintf( WIDE("Connect error: %d"), wError );
         pClient->dwFlags |= CF_CONNECTERROR;
        }
@@ -45803,7 +45805,7 @@ GetFreeBlock( vol, TRUE );
        pClient->dwFlags &= ~CF_CONNECTING;
        if( pClient->connect.ThisConnected )
        {
-        if( g.flags.bLogNotices )
+        if( globalNetworkData.flags.bLogNotices )
          lprintf( WIDE( "Post connect to application %p  error:%d" ), pClient, wError );
         if( pClient->dwFlags & CF_CPPCONNECT )
          pClient->connect.CPPThisConnected( pClient->psvConnect, wError );
@@ -45824,14 +45826,14 @@ GetFreeBlock( vol, TRUE );
        }
        if( pClient->pWaiting )
         WakeThread( pClient->pWaiting );
-       if( g.flags.bLogNotices )
+       if( globalNetworkData.flags.bLogNotices )
         lprintf( WIDE( "FD_CONNECT Completed" ) );
        //lprintf( WIDE("Returned from application inital read complete.") );
       }
      }
      if( networkEvents.lNetworkEvents & FD_READ )
      {
-      if( g.flags.bLogNotices )
+      if( globalNetworkData.flags.bLogNotices )
        lprintf( WIDE( "FD_READ" ) );
       if( pClient->bDraining )
       {
@@ -45854,7 +45856,7 @@ GetFreeBlock( vol, TRUE );
      }
      if( networkEvents.lNetworkEvents & FD_WRITE )
      {
-      if( g.flags.bLogNotices )
+      if( globalNetworkData.flags.bLogNotices )
        lprintf( WIDE("FD_Write") );
       TCPWrite(pClient);
      }
@@ -45875,8 +45877,8 @@ GetFreeBlock( vol, TRUE );
         //InternalRemoveClientEx( pc, TRUE, FALSE );
        }
       }
-      if( g.flags.bLogNotices )
-       lprintf(WIDE( "FD_CLOSE... %d" ), pClient->Socket );
+      if( globalNetworkData.flags.bLogNotices )
+       lprintf(WIDE( "FD_CLOSE... %p" ), pClient );
       if( pClient->dwFlags & CF_ACTIVE )
       {
        // might already be cleared and gone..
@@ -45889,7 +45891,7 @@ GetFreeBlock( vol, TRUE );
      }
      if( networkEvents.lNetworkEvents & FD_ACCEPT )
      {
-      if( g.flags.bLogNotices )
+      if( globalNetworkData.flags.bLogNotices )
        lprintf( WIDE("FD_ACCEPT on %p"), pClient );
       AcceptClient(pClient);
      }
@@ -45907,7 +45909,7 @@ GetFreeBlock( vol, TRUE );
     // no longer a socket, probably in a closed or closing state.
    }
    else
-    lprintf( WIDE( "Event enum failed... do what? close socket? %d %d" ), pClient->Socket, dwError );
+    lprintf( WIDE( "Event enum failed... do what? close socket? %p %" _32f ), pClient, dwError );
   }
   pClient->dwFlags &= ~CF_PROCESSING;
  }
@@ -45988,16 +45990,16 @@ GetFreeBlock( vol, TRUE );
   struct peer_thread_info *first_peer = info;
   struct peer_thread_info *peer;
  #if LOG_NETWORK_EVENT_THREAD
-  if( g.flags.bLogNotices )
+  if( globalNetworkData.flags.bLogNotices )
    lprintf( WIDE( "Clear Events." ) );
  #endif
   {
    PCLIENT pc;
    PCLIENT next;
-   for( pc = g.ClosedClients; pc; pc = next )
+   for( pc = globalNetworkData.ClosedClients; pc; pc = next )
    {
  #if LOG_NETWORK_EVENT_THREAD
-    if( g.flags.bLogNotices )
+    if( globalNetworkData.flags.bLogNotices )
      lprintf( WIDE( "reclaim closed client... %p" ), pc );
  #endif
  // will dissappear when closed so save it.
@@ -46021,10 +46023,10 @@ GetFreeBlock( vol, TRUE );
    {
     // have to make sure threads reset to the new list.
     WSASetEvent( peer->hThread );
-    LeaveCriticalSec( &g.csNetwork );
+    LeaveCriticalSec( &globalNetworkData.csNetwork );
     while( peer->nWaitEvents != 1 )
      Relinquish();
-    EnterCriticalSec( &g.csNetwork );
+    EnterCriticalSec( &globalNetworkData.csNetwork );
    }
    // have to set the list to clear state after thread ack's having 1 event.
    // otherwise - it might wake and get a socket event.
@@ -46043,7 +46045,7 @@ GetFreeBlock( vol, TRUE );
   if( pc->dwFlags & CF_PROCESSING )
   {
  #if LOG_NETWORK_EVENT_THREAD
-   if( g.flags.bLogNotices )
+   if( globalNetworkData.flags.bLogNotices )
     lprintf( WIDE("This is a socket that is processing, don't put in schedule.") );
  #endif
    return;
@@ -46058,10 +46060,10 @@ GetFreeBlock( vol, TRUE );
   if( !peer )
   {
  #if LOG_NETWORK_EVENT_THREAD
-   if( g.flags.bLogNotices )
+   if( globalNetworkData.flags.bLogNotices )
     lprintf( WIDE( "Now at event capacity, creating another thread" ) );
  #endif
-   AddLink( &g.pThreads, ThreadTo( NetworkThreadProc, (uintptr_t)last_peer ) );
+   AddLink( &globalNetworkData.pThreads, ThreadTo( NetworkThreadProc, (uintptr_t)last_peer ) );
    while( !last_peer->child_peer )
     Relinquish();
    last_peer = last_peer->child_peer;
@@ -46074,7 +46076,7 @@ GetFreeBlock( vol, TRUE );
   AddDataItem( &peer->event_list, &pc->event );
   pc->this_thread = peer;
   peer->nEvents++;
-  //if( g.flags.bLogNotices )
+  //if( globalNetworkData.flags.bLogNotices )
   // lprintf( WIDE( "Added event %p %p(%d) %d" ), pc->this_thread, pc, pc->Socket, pc->event );
  }
  static void WakeNewThreadEvents( struct peer_thread_info *info )
@@ -46082,7 +46084,7 @@ GetFreeBlock( vol, TRUE );
   struct peer_thread_info *first_peer = info;
   struct peer_thread_info *peer;
  #if LOG_NETWORK_EVENT_THREAD
-  if( g.flags.bLogNotices )
+  if( globalNetworkData.flags.bLogNotices )
    lprintf( WIDE( "Wake New Events." ) );
  #endif
   while( first_peer && first_peer->parent_peer )
@@ -46093,7 +46095,7 @@ GetFreeBlock( vol, TRUE );
    if( peer->parent_peer && peer->nEvents != peer->nWaitEvents )
    {
  #if LOG_NETWORK_EVENT_THREAD
-    if( g.flags.bLogNotices )
+    if( globalNetworkData.flags.bLogNotices )
      lprintf( WIDE( "wake parent thread %p" ), peer );
  #endif
     WSASetEvent( peer->hThread );
@@ -46110,7 +46112,7 @@ GetFreeBlock( vol, TRUE );
  int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t quick_check )
  {
   //lprintf( WIDE("Check messages.") );
-  if( g.bQuit )
+  if( globalNetworkData.bQuit )
    return -1;
   if( IsNetworkThread( ) )
   {
@@ -46124,13 +46126,13 @@ GetFreeBlock( vol, TRUE );
    PCLIENT pc;
    // disallow changing of the lists.
  #if LOG_NETWORK_EVENT_THREAD
-   if( g.flags.bLogNotices )
+   if( globalNetworkData.flags.bLogNotices )
     lprintf( WIDE("End - thread processing") );
  #endif
    thread->flags.bProcessing = 0;
    if( !thread->parent_peer )
    {
-    EnterCriticalSec( &g.csNetwork );
+    EnterCriticalSec( &globalNetworkData.csNetwork );
  #ifdef LOG_NETWORK_LOCKING
     lprintf( WIDE( "Process Network in global" ) );
  #endif
@@ -46140,7 +46142,7 @@ GetFreeBlock( vol, TRUE );
     // once first is set ot something else, then we have that, and we need to just test if the next link
     // dequeued is the first again.
     // if the scheduled one is the one we're looking for; don't put it back in the queue, and end searching.
-    for( pc = g.ActiveClients; pc; pc = pc->next )
+    for( pc = globalNetworkData.ActiveClients; pc; pc = pc->next )
     {
      // use this for "added to schedule".  Closing removes from schedule.
      if( !pc->flags.bAddedToEvents )
@@ -46151,16 +46153,16 @@ GetFreeBlock( vol, TRUE );
        continue;
       }
  #if LOG_NETWORK_EVENT_THREAD
-      if( g.flags.bLogNotices )
+      if( globalNetworkData.flags.bLogNotices )
        lprintf( WIDE( "Added to schedule : %p" ), pc );
  #endif
-      EnqueLink( &g.event_schedule, pc );
+      EnqueLink( &globalNetworkData.event_schedule, pc );
       pc->flags.bAddedToEvents = 1;
      }
     }
-    for( pc = (PCLIENT)DequeLink( &g.event_schedule );
+    for( pc = (PCLIENT)DequeLink( &globalNetworkData.event_schedule );
       pc && pc != first;
-       pc = (PCLIENT)DequeLink( &g.event_schedule ) )
+       pc = (PCLIENT)DequeLink( &globalNetworkData.event_schedule ) )
     {
      // have to set this in the loop; otherwise as an initial condition
      // it triggers the end of the loop
@@ -46184,16 +46186,16 @@ GetFreeBlock( vol, TRUE );
      if( first == pc )
       first_added = 1;
      // don't schedule things that are invalid... so move this down.
-     EnqueLink( &g.event_schedule, pc );
+     EnqueLink( &globalNetworkData.event_schedule, pc );
      AddThreadEvent( pc, thread );
     }
     // and put the first back in... (it was just dequeued... so add it back) (provides rotation)
     if( pc && first_added )
-     EnqueLink( &g.event_schedule, pc );
+     EnqueLink( &globalNetworkData.event_schedule, pc );
     WakeNewThreadEvents( thread );
     // okay, we have a picture of what was active
     // they could still go away in the middle.
-    LeaveCriticalSec( &g.csNetwork );
+    LeaveCriticalSec( &globalNetworkData.csNetwork );
  #ifdef LOG_NETWORK_LOCKING
     lprintf( WIDE( "Process Network left global" ) );
  #endif
@@ -46209,7 +46211,7 @@ GetFreeBlock( vol, TRUE );
     int32_t result;
     // want to wait here anyhow...
  #if LOG_NETWORK_EVENT_THREAD
-    if( g.flags.bLogNotices )
+    if( globalNetworkData.flags.bLogNotices )
      lprintf( WIDE( "%p Waiting on %d events" ), thread, thread->nEvents );
  #endif
     thread->nWaitEvents = thread->nEvents;
@@ -46224,14 +46226,14 @@ GetFreeBlock( vol, TRUE );
     if( result != WSA_WAIT_EVENT_0 )
     {
  #if LOG_NETWORK_EVENT_THREAD
-     if( g.flags.bLogNotices )
+     if( globalNetworkData.flags.bLogNotices )
       lprintf( WIDE("Begin - thread processing %d"), result );
  #endif
      thread->flags.bProcessing = 1;
      thread->nWaitEvents = 0;
     }
  #if LOG_NETWORK_EVENT_THREAD
-    if( g.flags.bLogNotices )
+    if( globalNetworkData.flags.bLogNotices )
      lprintf( WIDE("Event Wait Result was %d"), result );
  #endif
     if( result == WSA_WAIT_FAILED )
@@ -46268,14 +46270,14 @@ GetFreeBlock( vol, TRUE );
       {
        // if this is a child worker, wait for main to rebuild events.
        // if this was the main thread, it would wake us anyway...
-       WSASetEvent( g.hMonitorThreadControlEvent );
+       WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
        while( thread->nEvents != 1 )
         Relinquish();
       }
      }
      else
      {
-      if( g.flags.bLogNotices )
+      if( globalNetworkData.flags.bLogNotices )
        lprintf( WIDE( "RESET GLOBAL EVENT" ) );
       WSAResetEvent( thread->hThread );
      }
@@ -46295,7 +46297,7 @@ GetFreeBlock( vol, TRUE );
      Msg.message == SOCKMSG_CLOSE )
     {
      //lprintf( WIDE("Got a message... dispatching to network.") );
-     StandardNetworkProcess( g.ghWndNetwork, Msg.message,
+     StandardNetworkProcess( globalNetworkData.ghWndNetwork, Msg.message,
                                      Msg.wParam, Msg.lParam );
     }
     else
@@ -46327,11 +46329,11 @@ GetFreeBlock( vol, TRUE );
   // and when unloading should remove these timers.
   if( !peer_thread )
   {
-   //g.uPendingTimer = AddTimer( 5000, PendingTimer, 0 );
-   g.uNetworkPauseTimer = AddTimerEx( 1, 1000, NetworkPauseTimer, 0 );
-   if( !g.event_schedule )
-    g.event_schedule = CreateLinkQueue();
-   //g.hMonitorThreadControlEvent = CreateEvent( NULL, 0, FALSE, NULL );
+   //globalNetworkData.uPendingTimer = AddTimer( 5000, PendingTimer, 0 );
+   globalNetworkData.uNetworkPauseTimer = AddTimerEx( 1, 1000, NetworkPauseTimer, 0 );
+   if( !globalNetworkData.event_schedule )
+    globalNetworkData.event_schedule = CreateLinkQueue();
+   //globalNetworkData.hMonitorThreadControlEvent = CreateEvent( NULL, 0, FALSE, NULL );
   }
   this_thread.monitor_list = NULL;
   this_thread.event_list = CreateDataList( sizeof( WSAEVENT ) );
@@ -46347,16 +46349,16 @@ GetFreeBlock( vol, TRUE );
   if( peer_thread )
    peer_thread->child_peer = &this_thread;
   else
-   g.root_thread = &this_thread;
+   globalNetworkData.root_thread = &this_thread;
   if( !peer_thread )
-       g.hMonitorThreadControlEvent = this_thread.hThread;
+       globalNetworkData.hMonitorThreadControlEvent = this_thread.hThread;
  #  endif
  // creator won't pass until bThreadInitComplete is set.
-  while( !g.pThreads )
+  while( !globalNetworkData.pThreads )
    Relinquish();
-  g.flags.bThreadInitOkay = TRUE;
-  g.flags.bThreadInitComplete = TRUE;
-  while( !g.bQuit )
+  globalNetworkData.flags.bThreadInitOkay = TRUE;
+  globalNetworkData.flags.bThreadInitComplete = TRUE;
+  while( !globalNetworkData.bQuit )
   {
    if( !ProcessNetworkMessages( &this_thread, 0) )
    {
@@ -46366,14 +46368,14 @@ GetFreeBlock( vol, TRUE );
    }
   }
   xlprintf(2100)( WIDE( "Enter global network on shutdown... (thread exiting)" ) );
-  EnterCriticalSec( &g.csNetwork );
+  EnterCriticalSec( &globalNetworkData.csNetwork );
  #  ifdef LOG_NETWORK_LOCKING
   lprintf( WIDE( "NetworkThread(exit) in global" ) );
  #  endif
  #  ifdef USE_WSA_EVENTS
   if( !this_thread.parent_peer )
   {
-   if( g.root_thread = this_thread.child_peer )
+   if( globalNetworkData.root_thread = this_thread.child_peer )
     this_thread.child_peer->parent_peer = NULL;
   }
   else
@@ -46382,41 +46384,41 @@ GetFreeBlock( vol, TRUE );
     this_thread.child_peer->parent_peer = this_thread.parent_peer;
   }
     // this used to be done in the WM_DESTROY
-    DeleteLink( &g.pThreads, thread );
+    DeleteLink( &globalNetworkData.pThreads, thread );
  #  endif
-  g.flags.bThreadExit = TRUE;
+  globalNetworkData.flags.bThreadExit = TRUE;
   xlprintf(2100)( WIDE("Shut down network thread.") );
  #if 0
  #  ifdef USE_WSA_EVENTS
-  if( !g.root_thread )
+  if( !globalNetworkData.root_thread )
  #  endif
   {
  // should be first one pointed to...
-   Deallocate( uint8_t*, g.pUserData );
+   Deallocate( uint8_t*, globalNetworkData.pUserData );
    {
     INDEX idx;
     PCLIENT_SLAB slab;
-    LIST_FORALL( g.ClientSlabs, idx, PCLIENT_SLAB, slab )
+    LIST_FORALL( globalNetworkData.ClientSlabs, idx, PCLIENT_SLAB, slab )
     {
      Release( slab );
     }
-    DeleteList( &g.ClientSlabs );
+    DeleteList( &globalNetworkData.ClientSlabs );
    }
-   g.AvailableClients = NULL;
-   g.ActiveClients = NULL;
-   g.ClosedClients = NULL;
-   g.pUserData = NULL;
+   globalNetworkData.AvailableClients = NULL;
+   globalNetworkData.ActiveClients = NULL;
+   globalNetworkData.ClosedClients = NULL;
+   globalNetworkData.pUserData = NULL;
   }
  #endif
-  g.flags.bThreadInitComplete = FALSE;
-  g.pThread = NULL;
-  g.flags.bNetworkReady = FALSE;
-  LeaveCriticalSec( &g.csNetwork );
+  globalNetworkData.flags.bThreadInitComplete = FALSE;
+  globalNetworkData.pThread = NULL;
+  globalNetworkData.flags.bNetworkReady = FALSE;
+  LeaveCriticalSec( &globalNetworkData.csNetwork );
  #  ifdef LOG_NETWORK_LOCKING
   lprintf( WIDE( "NetworkThread(exit) left global" ) );
  #  endif
     //spv:980303
-  DeleteCriticalSec( &g.csNetwork );
+  DeleteCriticalSec( &globalNetworkData.csNetwork );
     return 0;
  }
  // if !__LINUX__
@@ -46427,16 +46429,16 @@ GetFreeBlock( vol, TRUE );
   int cnt, maxcnt;
   PCLIENT pc;
   struct timeval time;
-  if( g.bQuit )
+  if( globalNetworkData.bQuit )
    return -1;
-  if( IsThisThread( g.pThread ) )
+  if( IsThisThread( globalNetworkData.pThread ) )
   {
    FD_ZERO( &read );
    FD_ZERO( &write );
    FD_ZERO( &except );
    maxcnt = 0;
-   EnterCriticalSec( &g.csNetwork );
-   for( pc = g.ActiveClients; pc; pc = pc->next )
+   EnterCriticalSec( &globalNetworkData.csNetwork );
+   for( pc = globalNetworkData.ActiveClients; pc; pc = pc->next )
    {
           // socket might not be quite opened yet...
     if( !IsValid( pc->Socket ) )
@@ -46447,7 +46449,7 @@ GetFreeBlock( vol, TRUE );
       maxcnt = pc->Socket+1;
      FD_SET( pc->Socket, &read );
  #ifdef LOG_NOTICES
-     if( g.flags.bLogNotices )
+     if( globalNetworkData.flags.bLogNotices )
       lprintf( WIDE( "Added for read select %p(%d)" ), pc, pc->Socket );
  #endif
     }
@@ -46460,7 +46462,7 @@ GetFreeBlock( vol, TRUE );
       maxcnt = pc->Socket+1;
      pc->dwFlags |= CF_WRITEISPENDED;
  #ifdef LOG_NOTICES
-     if( g.flags.bLogNotices )
+     if( globalNetworkData.flags.bLogNotices )
       lprintf( WIDE("Pending write... Setting socket into write list...") );
  #endif
      FD_SET( pc->Socket, &write );
@@ -46469,11 +46471,11 @@ GetFreeBlock( vol, TRUE );
      maxcnt = pc->Socket+1;
     FD_SET( pc->Socket, &except );
  #ifdef LOG_NOTICES
-    if( g.flags.bLogNotices )
+    if( globalNetworkData.flags.bLogNotices )
      lprintf( WIDE( "Added for except event %p(%d)" ), pc, pc->Socket );
  #endif
    }
-   LeaveCriticalSec( &g.csNetwork );
+   LeaveCriticalSec( &globalNetworkData.csNetwork );
    if( !maxcnt )
     return 0;
    time.tv_sec = 5;
@@ -46481,7 +46483,7 @@ GetFreeBlock( vol, TRUE );
    time.tv_usec = 0;
    // should be able to make a signal handle
  #ifdef LOG_NOTICES
-   if( g.flags.bLogNotices )
+   if( globalNetworkData.flags.bLogNotices )
     lprintf( WIDE("Entering select....") );
  #endif
    cnt = select( maxcnt, &read, &write, &except, &time );
@@ -46492,8 +46494,8 @@ GetFreeBlock( vol, TRUE );
     if( errno == EBADF )
     {
              PCLIENT next;
-     EnterCriticalSec( &g.csNetwork );
-     for( pc = g.ActiveClients; pc; pc = next )
+     EnterCriticalSec( &globalNetworkData.csNetwork );
+     for( pc = globalNetworkData.ActiveClients; pc; pc = next )
      {
                 next = pc->next;
       if( IsValid( pc->Socket ) )
@@ -46511,13 +46513,13 @@ GetFreeBlock( vol, TRUE );
         {
          Log1( WIDE("Bad descriptor is : %d"), pc->Socket );
          InternalRemoveClient( pc );
-         LeaveCriticalSec( &g.csNetwork );
+         LeaveCriticalSec( &globalNetworkData.csNetwork );
          return 1;
         }
        }
       }
      }
-     LeaveCriticalSec( &g.csNetwork );
+     LeaveCriticalSec( &globalNetworkData.csNetwork );
     }
     Log1( WIDE("Sorry Select call failed... %d"), errno );
    }
@@ -46527,15 +46529,15 @@ GetFreeBlock( vol, TRUE );
     THREAD_ID prior = 0;
           PCLIENT next;
    start_lock:
-    EnterCriticalSec( &g.csNetwork );
-    for( pc = g.ActiveClients; pc; pc = next )
+    EnterCriticalSec( &globalNetworkData.csNetwork );
+    for( pc = globalNetworkData.ActiveClients; pc; pc = next )
     {
      next = pc->next;
      if( !IsValid( pc->Socket ) )
                 continue;
      if( pc->dwFlags & CF_WANTS_GLOBAL_LOCK)
      {
-      LeaveCriticalSec( &g.csNetwork );
+      LeaveCriticalSec( &globalNetworkData.csNetwork );
       goto start_lock;
      }
      if( FD_ISSET( pc->Socket, &read ) )
@@ -46544,11 +46546,11 @@ GetFreeBlock( vol, TRUE );
       {
        // unlock the global section for a moment..
        // client may be requiring both local and global locks (already has local lock)
-       LeaveCriticalSec( &g.csNetwork );
+       LeaveCriticalSec( &globalNetworkData.csNetwork );
        goto start_lock;
       }
       //EnterCriticalSec( &pc->csLock );
-      LeaveCriticalSec( &g.csNetwork );
+      LeaveCriticalSec( &globalNetworkData.csNetwork );
       if( !(pc->dwFlags & CF_ACTIVE ) )
       {
        // change to inactive status by the time we got here...
@@ -46558,7 +46560,7 @@ GetFreeBlock( vol, TRUE );
       if( pc->dwFlags & CF_LISTEN )
       {
  #ifdef LOG_NOTICES
-       if( g.flags.bLogNotices )
+       if( globalNetworkData.flags.bLogNotices )
         lprintf( WIDE("accepting...") );
  #endif
        AcceptClient( pc );
@@ -46566,7 +46568,7 @@ GetFreeBlock( vol, TRUE );
       else if( pc->dwFlags & CF_UDP )
       {
  #ifdef LOG_NOTICES
-       if( g.flags.bLogNotices )
+       if( globalNetworkData.flags.bLogNotices )
         lprintf( WIDE("UDP Read Event..."));
  #endif
        FinishUDPRead( pc );
@@ -46574,7 +46576,7 @@ GetFreeBlock( vol, TRUE );
       else if( pc->bDraining )
       {
  #ifdef LOG_NOTICES
-       if( g.flags.bLogNotices )
+       if( globalNetworkData.flags.bLogNotices )
         lprintf( WIDE("TCP Drain Event..."));
  #endif
        TCPDrainRead( pc );
@@ -46582,7 +46584,7 @@ GetFreeBlock( vol, TRUE );
       else if( pc->dwFlags & CF_READPENDING )
       {
  #ifdef LOG_NOTICES
-       if( g.flags.bLogNotices )
+       if( globalNetworkData.flags.bLogNotices )
         lprintf( WIDE("TCP Read Event..."));
  #endif
        // packet oriented things may probably be reading only
@@ -46591,7 +46593,7 @@ GetFreeBlock( vol, TRUE );
        if( pc->dwFlags & CF_TOCLOSE )
        {
  #ifdef LOG_NOTICES
-        if( g.flags.bLogNotices )
+        if( globalNetworkData.flags.bLogNotices )
          lprintf( WIDE( "Pending read failed - reset connection." ) );
  #endif
         InternalRemoveClientEx( pc, FALSE, FALSE );
@@ -46603,7 +46605,7 @@ GetFreeBlock( vol, TRUE );
       else
       {
  #ifdef LOG_NOTICES
-       if( g.flags.bLogNotices )
+       if( globalNetworkData.flags.bLogNotices )
         lprintf( WIDE("TCP Set read ready...") );
  #endif
        pc->dwFlags |= CF_READREADY;
@@ -46619,11 +46621,11 @@ GetFreeBlock( vol, TRUE );
       {
        // unlock the global section for a moment..
        // client may be requiring both local and global locks (already has local lock)
-       LeaveCriticalSec( &g.csNetwork );
+       LeaveCriticalSec( &globalNetworkData.csNetwork );
        goto start_lock;
       }
       //EnterCriticalSec( &pc->csLock );
-      LeaveCriticalSec( &g.csNetwork );
+      LeaveCriticalSec( &globalNetworkData.csNetwork );
       if( !(pc->dwFlags & CF_ACTIVE ) )
       {
        // change to inactive status by the time we got here...
@@ -46633,7 +46635,7 @@ GetFreeBlock( vol, TRUE );
       if( pc->dwFlags & CF_CONNECTING )
       {
  #ifdef LOG_NOTICES
-       if( g.flags.bLogNotices )
+       if( globalNetworkData.flags.bLogNotices )
         lprintf( WIDE("Connected!") );
  #endif
        pc->dwFlags |= CF_CONNECTED;
@@ -46648,7 +46650,7 @@ GetFreeBlock( vol, TRUE );
         if( pc->pWaiting )
         {
  #ifdef LOG_NOTICES
-         if( g.flags.bLogNotices )
+         if( globalNetworkData.flags.bLogNotices )
           lprintf( WIDE( "Got connect event, waking waiter.." ) );
  #endif
             WakeThread( pc->pWaiting );
@@ -46685,7 +46687,7 @@ GetFreeBlock( vol, TRUE );
       else
       {
  #ifdef LOG_NOTICES
-       if( g.flags.bLogNotices )
+       if( globalNetworkData.flags.bLogNotices )
         lprintf( WIDE("TCP Write Event...") );
  #endif
        pc->dwFlags &= ~CF_WRITEISPENDED;
@@ -46702,13 +46704,13 @@ GetFreeBlock( vol, TRUE );
       {
        // unlock the global section for a moment..
        // client may be requiring both local and global locks (already has local lock)
-       LeaveCriticalSec( &g.csNetwork );
+       LeaveCriticalSec( &globalNetworkData.csNetwork );
        goto start_lock;
       }
       //EnterCriticalSec( &pc->csLock );
-      LeaveCriticalSec( &g.csNetwork );
+      LeaveCriticalSec( &globalNetworkData.csNetwork );
  #ifdef LOG_NOTICES
-      if( g.flags.bLogNotices )
+      if( globalNetworkData.flags.bLogNotices )
        lprintf( WIDE("Except Event...") );
  #endif
       if( !(pc->dwFlags & CF_ACTIVE ) )
@@ -46725,7 +46727,7 @@ GetFreeBlock( vol, TRUE );
          && bytes_read != (size_t)-1 );
       }
  #ifdef LOG_NOTICES
-      if( g.flags.bLogNotices )
+      if( globalNetworkData.flags.bLogNotices )
        lprintf(" FD_CLOSE...\n");
  #endif
       InternalRemoveClient( pc );
@@ -46737,12 +46739,12 @@ GetFreeBlock( vol, TRUE );
      }
     }
     // had some event  - return 1 to continue working...
-    LeaveCriticalSec( &g.csNetwork );
+    LeaveCriticalSec( &globalNetworkData.csNetwork );
    }
    return 1;
   }
   //lprintf( WIDE("Attempting to wake thread (send sighup!)") );
-  //WakeThread( g.pThread );
+  //WakeThread( globalNetworkData.pThread );
   //lprintf( WIDE("Only reason should get here is if it's not this thread...") );
   return -1;
  }
@@ -46761,30 +46763,30 @@ GetFreeBlock( vol, TRUE );
  // a second time... and this may result from the parent thread
  // before even starting the first, invalidating this wait
  // for global thread.
-  //if( g.pThread )
+  //if( globalNetworkData.pThread )
   //{
     //   lprintf( WIDE("Thread has already been started.") );
   // return 0;
   //}
   //Relinquish();
-  g.uPendingTimer = AddTimer( 5000, PendingTimer, 0 );
+  globalNetworkData.uPendingTimer = AddTimer( 5000, PendingTimer, 0 );
  #if defined( __ANDROID__ ) && defined( __ANDROID_OLD_PLATFORM_SUPPORT__ )
   bsd_signal( SIGPIPE, SIG_IGN );
  #else
   signal( SIGPIPE, SIG_IGN );
  #endif
-  while( !g.pThreads )
+  while( !globalNetworkData.pThreads )
   {
  // wait for pThread to be done
    Relinquish();
   }
-  g.pThread = thread;
-  g.flags.bThreadInitOkay = TRUE;
-  g.flags.bThreadInitComplete = TRUE;
-  g.flags.bNetworkReady = TRUE;
+  globalNetworkData.pThread = thread;
+  globalNetworkData.flags.bThreadInitOkay = TRUE;
+  globalNetworkData.flags.bThreadInitComplete = TRUE;
+  globalNetworkData.flags.bNetworkReady = TRUE;
   //lprintf( "So we're good to go; set all flags as sucess, and begin doing nothing." );
   //lprintf( WIDE("Network Thread Began...") );
-    while( !g.bQuit )
+    while( !globalNetworkData.bQuit )
   {
        int n = ProcessNetworkMessages( NULL, 0 );
        if( n < 0 )
@@ -46799,7 +46801,7 @@ GetFreeBlock( vol, TRUE );
   {
    INDEX idx;
    PCLIENT_SLAB slab;
-   LIST_FORALL( g.ClientSlabs, idx, PCLIENT_SLAB, slab )
+   LIST_FORALL( globalNetworkData.ClientSlabs, idx, PCLIENT_SLAB, slab )
    {
           Deallocate( PCLIENT_SLAB, slab );
    }
@@ -46807,12 +46809,12 @@ GetFreeBlock( vol, TRUE );
  #ifdef LOG_NETWORK_EVENT_THREAD
   lprintf( WIDE("Exiting network thread...") );
  #endif
-  DeleteListEx( &g.ClientSlabs DBG_SRC );
-  Deallocate( uint8_t*, g.pUserData );
-  g.pUserData = NULL;
+  DeleteListEx( &globalNetworkData.ClientSlabs DBG_SRC );
+  Deallocate( uint8_t*, globalNetworkData.pUserData );
+  globalNetworkData.pUserData = NULL;
  // confirm thread exit.
-  g.pThreads = NULL;
-  g.flags.bNetworkReady = FALSE;
+  globalNetworkData.pThreads = NULL;
+  globalNetworkData.flags.bNetworkReady = FALSE;
     return 0;
  }
  #endif
@@ -46820,7 +46822,7 @@ GetFreeBlock( vol, TRUE );
  {
   struct peer_thread_info *thread;
   PTHREAD this_thread = MakeThread();
-  for( thread = g.root_thread; thread; thread = thread->child_peer )
+  for( thread = globalNetworkData.root_thread; thread; thread = thread->child_peer )
   {
    if( thread->thread == this_thread )
     return thread;
@@ -46832,58 +46834,58 @@ GetFreeBlock( vol, TRUE );
  {
   if( !global_network_data )
    return 0;
-  if( g.uPendingTimer )
+  if( globalNetworkData.uPendingTimer )
   {
-   RemoveTimer( g.uPendingTimer );
-   g.uPendingTimer = 0;
+   RemoveTimer( globalNetworkData.uPendingTimer );
+   globalNetworkData.uPendingTimer = 0;
   }
-  while( g.ActiveClients )
+  while( globalNetworkData.ActiveClients )
   {
-   if( g.flags.bLogNotices )
-    lprintf( WIDE("Remove active client %p"), g.ActiveClients );
-   InternalRemoveClient( g.ActiveClients );
+   if( globalNetworkData.flags.bLogNotices )
+    lprintf( WIDE("Remove active client %p"), globalNetworkData.ActiveClients );
+   InternalRemoveClient( globalNetworkData.ActiveClients );
   }
-  g.bQuit = TRUE;
+  globalNetworkData.bQuit = TRUE;
  #ifdef USE_WSA_EVENTS
-  if( g.flags.bLogNotices )
+  if( globalNetworkData.flags.bLogNotices )
    lprintf( WIDE( "SET GLOBAL EVENT (trigger quit)" ) );
-  WSASetEvent( g.hMonitorThreadControlEvent );
+  WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
  #else
  #  ifndef __LINUX__
-    if( IsWindow( g.ghWndNetwork ) )
+    if( IsWindow( globalNetworkData.ghWndNetwork ) )
   {
    // okay forget this... at exit, cannot guarantee that
    // any other thread other than myself has any rights to do anything.
  #    ifdef LOG_NOTICES
-   if( g.flags.bLogNotices )
+   if( globalNetworkData.flags.bLogNotices )
     lprintf( WIDE( "Post SOCKMSG_CLOSE" ) );
  #    endif
-   PostMessage( g.ghWndNetwork, SOCKMSG_CLOSE, 0, 0 );
+   PostMessage( globalNetworkData.ghWndNetwork, SOCKMSG_CLOSE, 0, 0 );
        // also remove PCLIENT clients, and all client->pUserData allocated...
     }
  #  else
-  //while( g.pThread )
+  //while( globalNetworkData.pThread )
   // Sleep(0);
   // should kill Our thread.... and close any active ockets...
  #  endif
  #endif
-  g.flags.bThreadInitComplete = FALSE;
+  globalNetworkData.flags.bThreadInitComplete = FALSE;
   //RemoveIdleProc( ProcessNetworkMessages );
-    if( g.pThreads )
+    if( globalNetworkData.pThreads )
   {
    uint32_t started = timeGetTime() + 500;
  // allow network thread to gracefully exit
    Relinquish();
-   while( g.flags.bNetworkReady && timeGetTime() < started )
+   while( globalNetworkData.flags.bNetworkReady && timeGetTime() < started )
     IdleFor( 20 );
-   if( g.flags.bNetworkReady )
+   if( globalNetworkData.flags.bNetworkReady )
    {
  #ifdef LOG_STARTUP_SHUTDOWN
     lprintf( WIDE( "Network was locked up?  Failed to allow network to exit in half a second (500ms)" ) );
  #endif
    }
   }
-    g.root_thread = NULL;
+    globalNetworkData.root_thread = NULL;
     return -1;
  }
  ATEXIT( NetworkShutdown )
@@ -46893,7 +46895,7 @@ GetFreeBlock( vol, TRUE );
  //----------------------------------------------------------------------------
  LOGICAL NetworkAlive( void )
  {
-  return !g.flags.bThreadExit;
+  return !globalNetworkData.flags.bThreadExit;
  }
  //----------------------------------------------------------------------------
  void ReallocClients( uint32_t wClients, int nUserData )
@@ -46905,11 +46907,11 @@ GetFreeBlock( vol, TRUE );
   if( !MAX_NETCLIENTS )
   {
    //lprintf( WIDE("Starting Network Init!") );
-   InitializeCriticalSec( &g.csNetwork );
+   InitializeCriticalSec( &globalNetworkData.csNetwork );
   }
   // else lprintf( WIDE("Restarting network init!") );
   // protect all structures.
-  EnterCriticalSec( &g.csNetwork );
+  EnterCriticalSec( &globalNetworkData.csNetwork );
   if( !wClients )
   // default 16 clients...
    wClients = 16;
@@ -46933,40 +46935,40 @@ GetFreeBlock( vol, TRUE );
     pClientSlab->client[n].Socket = INVALID_SOCKET;
     AddAvailable( pClientSlab->client + n );
    }
-   AddLink( &g.ClientSlabs, pClientSlab );
+   AddLink( &globalNetworkData.ClientSlabs, pClientSlab );
   }
     // keep the max of specified data..
-  if( nUserData < g.nUserData )
-   nUserData = g.nUserData;
-  if( nUserData > g.nUserData || wClients > MAX_NETCLIENTS )
+  if( nUserData < globalNetworkData.nUserData )
+   nUserData = globalNetworkData.nUserData;
+  if( nUserData > globalNetworkData.nUserData || wClients > MAX_NETCLIENTS )
   {
    INDEX idx;
    PCLIENT_SLAB slab;
    uint32_t n;
    int tot = 0;
-   //g.nUserData = nUserData;
+   //globalNetworkData.nUserData = nUserData;
    pUserData = (uint8_t*)NewArray( uint8_t, nUserData * sizeof( uintptr_t ) * wClients );
    MemSet( pUserData, 0, nUserData * sizeof( uintptr_t ) * wClients );
-   LIST_FORALL( g.ClientSlabs, idx, PCLIENT_SLAB, slab )
+   LIST_FORALL( globalNetworkData.ClientSlabs, idx, PCLIENT_SLAB, slab )
    {
     for( n = 0; n < slab->count; n++ )
     {
      if( slab->client[n].lpUserData )
       MemCpy( (char*)pUserData + (tot * (nUserData * sizeof( uintptr_t )))
         , slab->client[n].lpUserData
-                      , g.nUserData * sizeof( uintptr_t ) );
+                      , globalNetworkData.nUserData * sizeof( uintptr_t ) );
      slab->client[n].lpUserData = (unsigned char*)pUserData + (tot * (nUserData * sizeof( uintptr_t )));
      InitializeCriticalSec( &slab->client[n].csLock );
      tot++;
     }
    }
-   if( g.pUserData )
-    Deallocate( uint8_t*, g.pUserData );
-   g.pUserData = pUserData;
+   if( globalNetworkData.pUserData )
+    Deallocate( uint8_t*, globalNetworkData.pUserData );
+   globalNetworkData.pUserData = pUserData;
   }
   MAX_NETCLIENTS = wClients;
-  g.nUserData = nUserData;
-  LeaveCriticalSec( &g.csNetwork );
+  globalNetworkData.nUserData = nUserData;
+  LeaveCriticalSec( &globalNetworkData.csNetwork );
  }
  #ifdef __LINUX__
  NETWORK_PROC( LOGICAL, NetworkWait )(POINTER unused,uint32_t wClients,int wUserData)
@@ -46977,11 +46979,11 @@ GetFreeBlock( vol, TRUE );
   // want to start the thead; clear quit.
   if( !global_network_data )
    LowLevelInit();
-  g.bQuit = FALSE;
+  globalNetworkData.bQuit = FALSE;
   ReallocClients( wClients, wUserData );
   //-------------------------
   // please be mindful of the following data declared immediate...
-  if( g.pThreads )
+  if( globalNetworkData.pThreads )
     {
    xlprintf(2400)( WIDE("Thread already active...") );
        // might do something... might not...
@@ -46989,44 +46991,44 @@ GetFreeBlock( vol, TRUE );
    return TRUE;
     }
 /*peer_thread==*/
-  AddLink( &g.pThreads, ThreadTo( NetworkThreadProc, (uintptr_t)NULL ) );
+  AddLink( &globalNetworkData.pThreads, ThreadTo( NetworkThreadProc, (uintptr_t)NULL ) );
   AddIdleProc( IdleProcessNetworkMessages, 1 );
   //lprintf( WIDE("Network Initialize..."));
   //lprintf( WIDE("Create network thread.") );
-  while( !g.flags.bThreadInitComplete )
+  while( !globalNetworkData.flags.bThreadInitComplete )
   {
    Relinquish();
   }
-  if( !g.flags.bThreadInitOkay )
+  if( !globalNetworkData.flags.bThreadInitOkay )
   {
    lprintf( WIDE("Abort network, init is NOT ok.") );
    return FALSE;
   }
-  while( !g.flags.bNetworkReady )
+  while( !globalNetworkData.flags.bNetworkReady )
  // wait for actual network...
    Relinquish();
   {
    char buffer[256];
    if( gethostname( buffer, sizeof( buffer ) ) == 0)
-    g.system_name = DupCStr( buffer );
+    globalNetworkData.system_name = DupCStr( buffer );
   }
  #ifdef WIN32
   {
    struct addrinfo *result;
    struct addrinfo *test;
  #ifdef _UNICODE
-       char *tmp = WcharConvert( g.system_name );
+       char *tmp = WcharConvert( globalNetworkData.system_name );
    getaddrinfo( tmp, NULL, NULL, (struct addrinfo**)&result );
        Deallocate( char*, tmp );
  #else
-   getaddrinfo( g.system_name, NULL, NULL, (struct addrinfo**)&result );
+   getaddrinfo( globalNetworkData.system_name, NULL, NULL, (struct addrinfo**)&result );
  #endif
    for( test = result; test; test = test->ai_next )
    {
     //if( test->ai_family == AF_INET )
     {
              SOCKADDR *tmp;
-     AddLink( &g.addresses, tmp = AllocAddr() );
+     AddLink( &globalNetworkData.addresses, tmp = AllocAddr() );
              ((uintptr_t*)tmp)[-1] = test->ai_addrlen;
              MemCpy( tmp, test->ai_addr, test->ai_addrlen );
     }
@@ -47035,18 +47037,18 @@ GetFreeBlock( vol, TRUE );
  #endif
     //lprintf( WIDE("Network Initialize Complete!") );
   // return status of thread initialization
-    return g.flags.bThreadInitOkay;
+    return globalNetworkData.flags.bThreadInitOkay;
  }
  //----------------------------------------------------------------------------
  PCLIENT GetFreeNetworkClientEx( DBG_VOIDPASS )
  {
   PCLIENT pClient = NULL;
  get_client:
-  EnterCriticalSec( &g.csNetwork );
+  EnterCriticalSec( &globalNetworkData.csNetwork );
  #ifdef LOG_NETWORK_LOCKING
   lprintf( WIDE("GetFreeNetworkClient in global") );
  #endif
-  for( pClient = g.AvailableClients; pClient; pClient = pClient->next )
+  for( pClient = globalNetworkData.AvailableClients; pClient; pClient = pClient->next )
    if( !( pClient->dwFlags & CF_CLOSING ) )
     break;
   if( pClient )
@@ -47066,13 +47068,13 @@ GetFreeBlock( vol, TRUE );
   }
   else
   {
-   LeaveCriticalSec( &g.csNetwork );
+   LeaveCriticalSec( &globalNetworkData.csNetwork );
  #ifdef LOG_NETWORK_LOCKING
    lprintf( WIDE("GetFreeNetworkClient left global") );
  #endif
-   RescheduleTimerEx( g.uPendingTimer, 1 );
+   RescheduleTimerEx( globalNetworkData.uPendingTimer, 1 );
    Relinquish();
-   if( g.AvailableClients )
+   if( globalNetworkData.AvailableClients )
    {
     lprintf( WIDE( "there were clients available... just in a closing state..." ) );
     goto get_client;
@@ -47080,7 +47082,7 @@ GetFreeBlock( vol, TRUE );
    lprintf( WIDE("No unused network clients are available.") );
    return NULL;
   }
-  LeaveCriticalSec( &g.csNetwork );
+  LeaveCriticalSec( &globalNetworkData.csNetwork );
  #ifdef LOG_NETWORK_LOCKING
   lprintf( WIDE("GetFreeNetworkClient left global") );
  #endif
@@ -47089,7 +47091,7 @@ GetFreeBlock( vol, TRUE );
  //----------------------------------------------------------------------------
  NETWORK_PROC( void, SetNetworkLong )(PCLIENT lpClient, int nLong, uintptr_t dwValue)
  {
-    if( lpClient && ( nLong < g.nUserData ) )
+    if( lpClient && ( nLong < globalNetworkData.nUserData ) )
     {
        *(uintptr_t*)(lpClient->lpUserData+(nLong * sizeof(uintptr_t))) = dwValue;
     }
@@ -47152,7 +47154,7 @@ GetFreeBlock( vol, TRUE );
     //TODO if less than zero return a (high/low)portion of the  hardware address (MAC).
    }
   }
-  else if( nLong < g.nUserData )
+  else if( nLong < globalNetworkData.nUserData )
   {
    return(*(uintptr_t*)(lpClient->lpUserData + (nLong * sizeof(uintptr_t))));
   }
@@ -47165,7 +47167,7 @@ GetFreeBlock( vol, TRUE );
  {
     if( !lpClient )
        return 0xFFFF;
-    if( nWord < (g.nUserData *2) )
+    if( nWord < (globalNetworkData.nUserData *2) )
      return(*(uint16_t*)(lpClient->lpUserData + (nWord * 2)));
   return 0xFFFF;
  }
@@ -47336,7 +47338,7 @@ GetFreeBlock( vol, TRUE );
       for( test = result; test; test = test->ai_next )
       {
        //SOCKADDR *tmp;
-       //AddLink( &g.addresses, tmp = AllocAddr() );
+       //AddLink( &globalNetworkData.addresses, tmp = AllocAddr() );
        MemCpy( lpsaAddr, test->ai_addr, test->ai_addrlen );
        SET_SOCKADDR_LENGTH( lpsaAddr, test->ai_addrlen );
        break;
@@ -47614,14 +47616,14 @@ GetFreeBlock( vol, TRUE );
  //----------------------------------------------------------------------------
  PLIST GetLocalAddresses( void )
  {
-    return g.addresses;
+    return globalNetworkData.addresses;
  }
  //----------------------------------------------------------------------------
  LOGICAL IsThisAddressMe( SOCKADDR *addr, uint16_t myport )
  {
   SOCKADDR *test_addr;
   INDEX idx;
-  LIST_FORALL( g.addresses, idx, SOCKADDR*, test_addr )
+  LIST_FORALL( globalNetworkData.addresses, idx, SOCKADDR*, test_addr )
   {
    if( ((SOCKADDR_IN*)addr)->sin_family == ((SOCKADDR_IN*)test_addr)->sin_family )
    {
@@ -47700,9 +47702,9 @@ GetFreeBlock( vol, TRUE );
    //lpClient->dwFlags |= CF_WANTS_GLOBAL_LOCK;
    //_lprintf(DBG_RELAY)( WIDE( "Lock %p" ), lpClient );
  #ifdef USE_NATIVE_CRITICAL_SECTION
-   if( EnterCriticalSecNoWait( &g.csNetwork, &prior_g ) < 1 )
+   if( EnterCriticalSecNoWait( &globalNetworkData.csNetwork, &prior_g ) < 1 )
  #else
-   if( EnterCriticalSecNoWaitEx( &g.csNetwork, &prior_g DBG_RELAY ) < 1 )
+   if( EnterCriticalSecNoWaitEx( &globalNetworkData.csNetwork, &prior_g DBG_RELAY ) < 1 )
  #endif
    {
     lpClient->dwFlags &= ~CF_WANTS_GLOBAL_LOCK;
@@ -47725,18 +47727,18 @@ GetFreeBlock( vol, TRUE );
     // unlock the global section for a moment..
     // client may be requiring both local and global locks (already has local lock)
  #ifdef USE_NATIVE_CRITICAL_SECTION
-    LeaveCriticalSec( &g.csNetwork);
+    LeaveCriticalSec( &globalNetworkData.csNetwork);
  #else
-    LeaveCriticalSecEx( &g.csNetwork  DBG_RELAY);
+    LeaveCriticalSecEx( &globalNetworkData.csNetwork  DBG_RELAY);
  #endif
     Idle();
     goto start_lock;
    }
    //EnterCriticalSec( &lpClient->csLock );
  #ifdef USE_NATIVE_CRITICAL_SECTION
-   LeaveCriticalSec( &g.csNetwork );
+   LeaveCriticalSec( &globalNetworkData.csNetwork );
  #else
-   LeaveCriticalSecEx( &g.csNetwork  DBG_RELAY);
+   LeaveCriticalSecEx( &globalNetworkData.csNetwork  DBG_RELAY);
  #endif
    if( !(lpClient->dwFlags & CF_ACTIVE ) )
    {
@@ -47890,7 +47892,7 @@ GetFreeBlock( vol, TRUE );
     lprintf( WIDE( "blocknotify on close..." ) );
  #endif
    }
-   EnterCriticalSec( &g.csNetwork );
+   EnterCriticalSec( &globalNetworkData.csNetwork );
  #ifdef LOG_DEBUG_CLOSING
    lprintf( WIDE( "Adding current client to closed clients." ) );
  #endif
@@ -47901,21 +47903,21 @@ GetFreeBlock( vol, TRUE );
     // once first is set ot something else, then we have that, and we need to just test if the next link
     // dequeued is the first again.
     // if the scheduled one is the one we're looking for; don't put it back in the queue, and end searching.
-    for( tmp_scheduled = (PCLIENT)DequeLink( &g.event_schedule );
+    for( tmp_scheduled = (PCLIENT)DequeLink( &globalNetworkData.event_schedule );
       tmp_scheduled && ( tmp_scheduled != first ) && ( tmp_scheduled != lpClient );
-      tmp_scheduled = (PCLIENT)DequeLink( &g.event_schedule ) )
+      tmp_scheduled = (PCLIENT)DequeLink( &globalNetworkData.event_schedule ) )
     {
      if( !first )
       first = tmp_scheduled;
-     EnqueLink( &g.event_schedule, tmp_scheduled );
+     EnqueLink( &globalNetworkData.event_schedule, tmp_scheduled );
     }
     if( tmp_scheduled && tmp_scheduled != lpClient )
     {
-     EnqueLink( &g.event_schedule, tmp_scheduled );
+     EnqueLink( &globalNetworkData.event_schedule, tmp_scheduled );
     }
     else
     {
-     if( g.flags.bLogNotices )
+     if( globalNetworkData.flags.bLogNotices )
       lprintf( WIDE( "Removed from schedule : %p" ), tmp_scheduled );
     }
     // no longer in events.
@@ -47927,7 +47929,7 @@ GetFreeBlock( vol, TRUE );
  #endif
    //LeaveCriticalSec( &lpClient->csLock );
    //lprintf( WIDE( "Leaving network critical section" ) );
-   LeaveCriticalSec( &g.csNetwork );
+   LeaveCriticalSec( &globalNetworkData.csNetwork );
        NetworkUnlock( lpClient );
    //lprintf( WIDE( "And no nothing is locked?!" ) );
   }
@@ -47999,11 +48001,11 @@ GetFreeBlock( vol, TRUE );
   }
   else
  #endif
-   g.system_name = WIDE("No Name Available");
+   globalNetworkData.system_name = WIDE("No Name Available");
  #else
     NetworkStart();
  #endif
-    return g.system_name;
+    return globalNetworkData.system_name;
  }
  #undef NetworkLock
  #undef NetworkUnlock
@@ -48173,7 +48175,7 @@ GetFreeBlock( vol, TRUE );
    pNewClient->event = WSACreateEvent();
    WSAEventSelect( pNewClient->Socket, pNewClient->event, FD_READ|FD_WRITE|FD_CLOSE );
  #  else
-   if( WSAAsyncSelect( pNewClient->Socket,g.ghWndNetwork,SOCKMSG_TCP,
+   if( WSAAsyncSelect( pNewClient->Socket,globalNetworkData.ghWndNetwork,SOCKMSG_TCP,
                                 FD_READ | FD_WRITE | FD_CLOSE))
  // if there was a select error...
    {
@@ -48282,7 +48284,7 @@ GetFreeBlock( vol, TRUE );
   pListen->event = WSACreateEvent();
   WSAEventSelect( pListen->Socket, pListen->event, FD_ACCEPT|FD_CLOSE );
  #  else
-  if( WSAAsyncSelect( pListen->Socket, g.ghWndNetwork,
+  if( WSAAsyncSelect( pListen->Socket, globalNetworkData.ghWndNetwork,
                         SOCKMSG_TCP, FD_ACCEPT|FD_CLOSE ) )
   {
    lprintf( WIDE("Windows AsynchSelect failed: %d"), WSAGetLastError() );
@@ -48326,12 +48328,12 @@ GetFreeBlock( vol, TRUE );
   AddActive( pListen );
     // make sure to schedule this socket for events (connect)
  #ifdef USE_WSA_EVENTS
-  if( g.flags.bLogNotices )
+  if( globalNetworkData.flags.bLogNotices )
    lprintf( WIDE( "SET GLOBAL EVENT (listener added)" ) );
-  WSASetEvent( g.hMonitorThreadControlEvent );
+  WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
  #endif
  #ifdef __LINUX__
-  WakeThread( g.pThread );
+  WakeThread( globalNetworkData.pThread );
  #endif
   return pListen;
  }
@@ -48452,7 +48454,7 @@ GetFreeBlock( vol, TRUE );
     pResult->event = WSACreateEvent();
     WSAEventSelect( pResult->Socket, pResult->event, FD_READ|FD_WRITE|FD_CONNECT|FD_CLOSE );
  #  else
-    if( WSAAsyncSelect( pResult->Socket,g.ghWndNetwork,SOCKMSG_TCP,
+    if( WSAAsyncSelect( pResult->Socket,globalNetworkData.ghWndNetwork,SOCKMSG_TCP,
            FD_READ|FD_WRITE|FD_CLOSE|FD_CONNECT) )
     {
      lprintf( WIDE(" Select NewClient Fail! %d"), WSAGetLastError() );
@@ -48533,21 +48535,21 @@ GetFreeBlock( vol, TRUE );
     NetworkUnlock( pResult );
     // socket should now get scheduled for events, after unlocking it?
  #ifdef USE_WSA_EVENTS
-    if( g.flags.bLogNotices )
+    if( globalNetworkData.flags.bLogNotices )
      lprintf( WIDE( "SET GLOBAL EVENT (wait for connect)" ) );
-    WSASetEvent( g.hMonitorThreadControlEvent );
-    if( this_thread == g.root_thread )
+    WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
+    if( this_thread == globalNetworkData.root_thread )
      ProcessNetworkMessages( this_thread, 1 );
     else
-     WSASetEvent( g.hMonitorThreadControlEvent );
+     WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
     while( !pResult->this_thread )
  // wait for it to be added to waiting lists?
      Idle();
  #endif
  #ifdef __LINUX__
     {
-     //kill( (uint32_t)(g.pThread->ThreadID), SIGHUP );
-     WakeThread( g.pThread );
+     //kill( (uint32_t)(globalNetworkData.pThread->ThreadID), SIGHUP );
+     WakeThread( globalNetworkData.pThread );
     }
  #endif
     if( !pConnectComplete )
@@ -48558,7 +48560,7 @@ GetFreeBlock( vol, TRUE );
      pResult->dwFlags |= CF_CONNECT_WAITING;
      // caller was expecting connect to block....
      while( !( pResult->dwFlags & (CF_CONNECTED|CF_CONNECTERROR|CF_CONNECT_CLOSED) ) &&
-       ( ( (GetTickCount()&0xFFFFFFF) - Start ) < g.dwConnectTimeout ) )
+       ( ( (GetTickCount()&0xFFFFFFF) - Start ) < globalNetworkData.dwConnectTimeout ) )
      {
       // may be this thread itself which connects...
       if( this_thread )
@@ -48584,7 +48586,7 @@ GetFreeBlock( vol, TRUE );
       if( bProcessing == 2 )
       {
        pResult->pWaiting = MakeThread();
-       if( g.flags.bLogNotices )
+       if( globalNetworkData.flags.bLogNotices )
         lprintf( WIDE( "Falling asleep 3 seconds waiting for connect on %p." ), pResult );
        pResult->tcp_delay_count++;
        WakeableSleep( 3000 );
@@ -48932,12 +48934,12 @@ GetFreeBlock( vol, TRUE );
     }
     else
     {
-     if( g.flags.bShortLogReceivedData )
+     if( globalNetworkData.flags.bShortLogReceivedData )
      {
       LogBinary( (uint8_t*)lpClient->RecvPending.buffer.p +
          lpClient->RecvPending.dwUsed, min( nRecv, 64 ) );
      }
-     if( g.flags.bLogReceivedData )
+     if( globalNetworkData.flags.bLogReceivedData )
      {
       LogBinary( (uint8_t*)lpClient->RecvPending.buffer.p +
          lpClient->RecvPending.dwUsed, nRecv );
@@ -49142,7 +49144,7 @@ GetFreeBlock( vol, TRUE );
     //  no data to read...
     //lprintf( WIDE( "Not sure if READREADY" ) );
     if( !( lpClient->dwFlags & CF_PROCESSING ) )
-     WakeThread( g.pThread );
+     WakeThread( globalNetworkData.pThread );
    }
  #else
    //FinishPendingRead( lpClient DBG_SRC );
@@ -49167,7 +49169,7 @@ GetFreeBlock( vol, TRUE );
   }
   if( bWait )
   {
-   int this_timeout = user_timeout?user_timeout:g.dwReadTimeout;
+   int this_timeout = user_timeout?user_timeout:globalNetworkData.dwReadTimeout;
    int timeout = 0;
    //lprintf( WIDE("Waiting for TCP data result...") );
    {
@@ -49267,7 +49269,7 @@ GetFreeBlock( vol, TRUE );
  #endif
    if( pc->lpFirstPending->dwAvail )
    {
-    if( g.flags.bLogSentData )
+    if( globalNetworkData.flags.bLogSentData )
     {
      LogBinary( (uint8_t*)pc->lpFirstPending->buffer.c +
          pc->lpFirstPending->dwUsed,
@@ -49291,7 +49293,7 @@ GetFreeBlock( vol, TRUE );
       //if( !(pc->dwFlags & CF_WRITEISPENDED ) )
       //{
       //    lprintf( WIDE("Sending signal") );
-      //    WakeThread( g.pThread );
+      //    WakeThread( globalNetworkData.pThread );
       //}
       //else
       //    lprintf( WIDE("Yes... it was already pending..(no signal)") );
@@ -49389,13 +49391,13 @@ GetFreeBlock( vol, TRUE );
       {
        pc->dwFlags |= CF_WRITEPENDING;
  #ifdef USE_WSA_EVENTS
-       if( g.flags.bLogNotices )
+       if( globalNetworkData.flags.bLogNotices )
         lprintf( WIDE( "SET GLOBAL EVENT (write pending)" ) );
-       WSASetEvent( g.hMonitorThreadControlEvent );
+       WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
  #endif
  #ifdef __LINUX__
-       //kill( (uint32_t)(g.pThread->ThreadID), SIGHUP );
-       WakeThread( g.pThread );
+       //kill( (uint32_t)(globalNetworkData.pThread->ThreadID), SIGHUP );
+       WakeThread( globalNetworkData.pThread );
  #endif
       }
       return TRUE;
@@ -49522,7 +49524,7 @@ GetFreeBlock( vol, TRUE );
              pClient->nDrainLength = 0;
      break;
     }
-    lprintf(WIDE(" Network Error during drain: %d (from: %d  to: %p  has: %") _size_f WIDE("  toget: %") _size_f WIDE(")"),
+    lprintf(WIDE(" Network Error during drain: %d (from: %p  to: %p  has: %") _size_f WIDE("  toget: %") _size_f WIDE(")"),
                        WSAGetLastError(),
                        pClient->Socket,
                        pClient->RecvPending.buffer.p,
@@ -49534,11 +49536,11 @@ GetFreeBlock( vol, TRUE );
    }
    else
    {
-    if( g.flags.bShortLogReceivedData )
+    if( globalNetworkData.flags.bShortLogReceivedData )
     {
      LogBinary( (uint8_t*)byBuffer, min( nDrainRead, 64 ) );
     }
-    if( g.flags.bLogReceivedData )
+    if( globalNetworkData.flags.bLogReceivedData )
     {
      LogBinary( (uint8_t*)byBuffer, nDrainRead );
     }
@@ -49704,7 +49706,7 @@ GetFreeBlock( vol, TRUE );
   WSAEventSelect( pc->Socket, pc->event, FD_READ|FD_WRITE );
  #  else
   if (WSAAsyncSelect( pc->Socket,
-                        g.ghWndNetwork,
+                        globalNetworkData.ghWndNetwork,
                         SOCKMSG_UDP,
                         FD_READ|FD_WRITE ) )
   {
@@ -49739,9 +49741,9 @@ GetFreeBlock( vol, TRUE );
   AddActive( pc );
   NetworkUnlock( pc );
  #ifdef USE_WSA_EVENTS
-  if( g.flags.bLogNotices )
+  if( globalNetworkData.flags.bLogNotices )
    lprintf( WIDE( "SET GLOBAL EVENT (new udp socket %p)" ), pc );
-  WSASetEvent( g.hMonitorThreadControlEvent );
+  WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
  #endif
     return pc;
  }
@@ -50053,13 +50055,13 @@ GetFreeBlock( vol, TRUE );
    pc->dwFlags |= CF_READPENDING;
    // we are now able to read, so schedule the socket.
  #ifdef USE_WSA_EVENTS
-   if( g.flags.bLogNotices )
+   if( globalNetworkData.flags.bLogNotices )
     lprintf( WIDE( "SET GLOBAL EVENT (set readpending)" ) );
-   WSASetEvent( g.hMonitorThreadControlEvent );
+   WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
  #endif
  #ifdef __LINUX__
    {
-    WakeThread( g.pThread );
+    WakeThread( globalNetworkData.pThread );
    }
  #endif
   }
@@ -50105,13 +50107,13 @@ GetFreeBlock( vol, TRUE );
    case WSAEWOULDBLOCK:
     pc->dwFlags |= CF_READPENDING;
  #ifdef USE_WSA_EVENTS
-    if( g.flags.bLogNotices )
+    if( globalNetworkData.flags.bLogNotices )
       lprintf( WIDE( "SET GLOBAL EVENT (set read pending)" ) );
-    WSASetEvent( g.hMonitorThreadControlEvent );
+    WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
  #endif
  #ifdef __LINUX__
     {
-     WakeThread( g.pThread );
+     WakeThread( globalNetworkData.pThread );
     }
  #endif
     return TRUE;
@@ -50130,13 +50132,13 @@ GetFreeBlock( vol, TRUE );
    }
     }
     //Log1( WIDE("UDPRead:%d bytes"), nReturn );
-  if( g.flags.bShortLogReceivedData )
+  if( globalNetworkData.flags.bShortLogReceivedData )
   {
    DumpAddr( WIDE("UDPRead at"), pc->saSource );
    LogBinary( (uint8_t*)pc->RecvPending.buffer.p +
        pc->RecvPending.dwUsed, min( nReturn, 64 ) );
   }
-  if( g.flags.bLogReceivedData )
+  if( globalNetworkData.flags.bLogReceivedData )
   {
    DumpAddr( WIDE("UDPRead at"), pc->saSource );
    LogBinary( (uint8_t*)pc->RecvPending.buffer.p +
@@ -50189,11 +50191,11 @@ GetFreeBlock( vol, TRUE );
             , 0
             , v4
              ?bStream
-             ?g.pProtos+g.tcp_protocol
-             :g.pProtos+g.udp_protocol
+             ?globalNetworkData.pProtos+globalNetworkData.tcp_protocol
+             :globalNetworkData.pProtos+globalNetworkData.udp_protocol
              :bStream
-             ?g.pProtos+g.tcp_protocolv6
-             :g.pProtos+g.udp_protocolv6
+             ?globalNetworkData.pProtos+globalNetworkData.tcp_protocolv6
+             :globalNetworkData.pProtos+globalNetworkData.udp_protocolv6
             , 0, 0 );
    return result;
   }
@@ -50204,11 +50206,11 @@ GetFreeBlock( vol, TRUE );
             , 0
             , v4
              ?bStream
-             ?g.pProtos+g.tcp_protocol
-             :g.pProtos+g.udp_protocol
+             ?globalNetworkData.pProtos+globalNetworkData.tcp_protocol
+             :globalNetworkData.pProtos+globalNetworkData.udp_protocol
              :bStream
-             ?g.pProtos+g.tcp_protocolv6
-             :g.pProtos+g.udp_protocolv6
+             ?globalNetworkData.pProtos+globalNetworkData.tcp_protocolv6
+             :globalNetworkData.pProtos+globalNetworkData.udp_protocolv6
             , 0, 0 );
    return result;
   }
@@ -50219,16 +50221,16 @@ GetFreeBlock( vol, TRUE );
   int i;
   int protoIndex = -1;
   int size;
-  //lprintf( "Global is %d %p", sizeof( g ), &g.uNetworkPauseTimer, &g.nProtos );
+  //lprintf( "Global is %d %p", sizeof( globalNetworkData ), &globalNetworkData.uNetworkPauseTimer, &globalNetworkData.nProtos );
   if (WSAStartup(MAKEWORD(2, 0), &wd) != 0)
   {
    lprintf(WIDE( "WSAStartup 2.0 failed: %d" ), h_errno);
    return 0;
   }
-  if( g.flags.bLogProtocols )
+  if( globalNetworkData.flags.bLogProtocols )
    lprintf(WIDE( "Winsock Version: %d.%d" ), LOBYTE(wd.wVersion), HIBYTE(wd.wVersion));
   size = 0;
-  if ((g.nProtos = WSAEnumProtocols(NULL, NULL, (DWORD *) &size)) == -1)
+  if ((globalNetworkData.nProtos = WSAEnumProtocols(NULL, NULL, (DWORD *) &size)) == -1)
   {
    if( WSAGetLastError() != WSAENOBUFS )
    {
@@ -50236,35 +50238,35 @@ GetFreeBlock( vol, TRUE );
     return 0;
    }
   }
-  g.pProtos = (WSAPROTOCOL_INFO*)Allocate( size );
-  if ((g.nProtos = WSAEnumProtocols(NULL, g.pProtos, (DWORD *) &size)) == -1)
+  globalNetworkData.pProtos = (WSAPROTOCOL_INFO*)Allocate( size );
+  if ((globalNetworkData.nProtos = WSAEnumProtocols(NULL, globalNetworkData.pProtos, (DWORD *) &size)) == -1)
   {
    lprintf(WIDE( "WSAEnumProtocols: %d" ), h_errno);
    return 0;
   }
-  for (i = 0; i < g.nProtos; i++)
+  for (i = 0; i < globalNetworkData.nProtos; i++)
   {
    // IPv6
-   if (strcmp(g.pProtos[i].szProtocol, WIDE( "MSAFD Tcpip [TCP/IP]" )) == 0)
+   if (strcmp(globalNetworkData.pProtos[i].szProtocol, WIDE( "MSAFD Tcpip [TCP/IP]" )) == 0)
    {
-    g.tcp_protocol = i;
+    globalNetworkData.tcp_protocol = i;
     protoIndex = i;
    }
-   if (strcmp(g.pProtos[i].szProtocol, WIDE( "MSAFD Tcpip [UDP/IP]" )) == 0)
+   if (strcmp(globalNetworkData.pProtos[i].szProtocol, WIDE( "MSAFD Tcpip [UDP/IP]" )) == 0)
    {
-    g.udp_protocol = i;
+    globalNetworkData.udp_protocol = i;
    }
-   if (strcmp(g.pProtos[i].szProtocol, WIDE( "MSAFD Tcpip [TCP/IPv6]" )) == 0)
+   if (strcmp(globalNetworkData.pProtos[i].szProtocol, WIDE( "MSAFD Tcpip [TCP/IPv6]" )) == 0)
    {
-    g.tcp_protocolv6 = i;
+    globalNetworkData.tcp_protocolv6 = i;
    }
-   if (strcmp(g.pProtos[i].szProtocol, WIDE( "MSAFD Tcpip [UDP/IPv6]" )) == 0)
+   if (strcmp(globalNetworkData.pProtos[i].szProtocol, WIDE( "MSAFD Tcpip [UDP/IPv6]" )) == 0)
    {
-    g.udp_protocolv6 = i;
+    globalNetworkData.udp_protocolv6 = i;
    }
-   if( g.flags.bLogProtocols )
-    lprintf(WIDE( "Index #%d - name: '%s', type: %d, proto: %d" ), i, g.pProtos[i].szProtocol,
-        g.pProtos[i].iSocketType, g.pProtos[i].iProtocol);
+   if( globalNetworkData.flags.bLogProtocols )
+    lprintf(WIDE( "Index #%d - name: '%s', type: %d, proto: %d" ), i, globalNetworkData.pProtos[i].szProtocol,
+        globalNetworkData.pProtos[i].iSocketType, globalNetworkData.pProtos[i].iProtocol);
   }
   if (protoIndex == -1)
   {
@@ -73853,7 +73855,7 @@ GetFreeBlock( vol, TRUE );
      {
       PushSQLQueryEx(odbc);
       tnprintf( query, sizeof( query )
-          , WIDE("select node_id,value_id from option_map where parent_node_id=%ld and name_id=%") _size_fs
+          , WIDE("select node_id,value_id from option_map where parent_node_id=%")_size_f WIDE(" and name_id=%") _size_f
           , parent->id
           , IDName );
      }
@@ -73864,7 +73866,7 @@ GetFreeBlock( vol, TRUE );
        // this is the only place where ID must be set explicit...
        // otherwise our root node creation failes if said root is gone.
        //lprintf( "New entry... create it..." );
-       tnprintf( query, sizeof( query ), WIDE("Insert into option_map(`parent_node_id`,`name_id`) values (%ld,%lu)"), parent->id, IDName );
+       tnprintf( query, sizeof( query ), WIDE("Insert into option_map(`parent_node_id`,`name_id`) values (%")_size_f WIDE(",%")_size_f WIDE(")"), parent->id, IDName );
        OpenWriterEx( tree DBG_RELAY );
        if( SQLCommand( tree->odbc_writer, query ) )
        {
@@ -73897,7 +73899,7 @@ GetFreeBlock( vol, TRUE );
        continue;
       }
  #ifdef DETAILED_LOGGING
-      _lprintf(DBG_RELAY)( WIDE("Option tree corrupt.  No option node_id=%ld"), ID );
+      _lprintf(DBG_RELAY)( WIDE("Option tree corrupt.  No option node_id=%"), ID );
  #endif
       if( !bIKnowItDoesntExist )
        PopODBCEx( odbc );
@@ -73964,13 +73966,13 @@ GetFreeBlock( vol, TRUE );
    CTEXTSTR result = NULL;
    if( ID )
    {
-    tnprintf( query, sizeof( query ), WIDE("select value_id from option_map where node_id=%ld"), ID->id );
+    tnprintf( query, sizeof( query ), WIDE("select value_id from option_map where node_id=%")_size_f , ID->id );
     //lprintf( WIDE("push get value index.") );
     PushSQLQueryEx( odbc );
     if( !SQLQuery( odbc, query, &result )
      || !result )
     {
-     lprintf( WIDE("Option tree corrupt.  No option node_id=%ld"), ID->id );
+     lprintf( WIDE("Option tree corrupt.  No option node_id=%")_size_f , ID->id );
      return NULL;
     }
     //lprintf( WIDE("okay and then we pop!?") );
@@ -74030,7 +74032,7 @@ GetFreeBlock( vol, TRUE );
   if( results && results[0] )
   {
    tnprintf( query, sizeof( query )
-      , WIDE( "replace into " )OPTION_VALUES WIDE( " (option_id,`string`) values (%ld,%s)" )
+      , WIDE( "replace into " )OPTION_VALUES WIDE( " (option_id,`string`) values (%")_size_f WIDE(",%s)" )
        , iNewOption->id, tmp = EscapeSQLBinaryOpt( odbc, results[0], StrLen( results[0] ), TRUE ) );
    Release( tmp );
    SQLEndQuery( odbc );
@@ -74040,7 +74042,7 @@ GetFreeBlock( vol, TRUE );
   if( results && results[0] )
   {
    tnprintf( query, sizeof( query )
-       , WIDE( "replace into " )OPTION_BLOBS WIDE( " (option_id,`binary`) values (%ld,%s)" )
+       , WIDE( "replace into " )OPTION_BLOBS WIDE( " (option_id,`binary`) values (%")_size_f WIDE(",%s)" )
        , iNewOption->id, tmp = EscapeSQLBinaryOpt( odbc, results[0], StrLen( results[0] ), TRUE ) );
    Release( tmp );
    SQLEndQuery( odbc );
@@ -74071,7 +74073,7 @@ GetFreeBlock( vol, TRUE );
   {
    TEXTCHAR query[256];
    tnprintf( query, sizeof( query )
-       , WIDE( "insert into option_values select 0,`string`,`binary` from option_values where value_id=%ld" )
+       , WIDE( "insert into option_values select 0,`string`,`binary` from option_values where value_id=%")_size_f WIDE("" )
        , iOriginalValue->value_id );
    OpenWriter( tree );
    SQLCommand( tree->odbc_writer, query );
@@ -74105,8 +74107,8 @@ GetFreeBlock( vol, TRUE );
    tnprintf( query, sizeof( query ), WIDE( "select override_value_id from option_exception " )
      WIDE( "where ( apply_from<=now() or apply_from=0 )" )
      WIDE( "and ( apply_until>now() or apply_until=0 )" )
-     WIDE( "and ( system_id=%")_size_fs WIDE(" or system_id=0 )" )
-     WIDE( "and value_id=%" ) _size_fs
+     WIDE( "and ( system_id=%")_size_f WIDE(" or system_id=0 )" )
+     WIDE( "and value_id=%" ) _size_f
        , og.SystemID
        , optval->value_id );
    last_was_session = 0;
@@ -74119,7 +74121,7 @@ GetFreeBlock( vol, TRUE );
      optval = _optval;
     optval->value_id = IndexCreateFromText( result );
    }
-   tnprintf( query, sizeof( query ), WIDE("select string from option_values where value_id=%ld"), optval->value_id );
+   tnprintf( query, sizeof( query ), WIDE("select string from option_values where value_id=%")_size_f , optval->value_id );
    // have to push here, the result of the prior is kept outstanding
    // if this was not pushed, the prior result would evaporate.
    PushSQLQueryEx( odbc );
@@ -74164,7 +74166,7 @@ GetFreeBlock( vol, TRUE );
     len = &tmplen;
    PushSQLQueryEx( odbc );
    if( SQLRecordQueryf( odbc, NULL, &result, NULL
-          , WIDE("select `binary`,length(`binary`) from ")OPTION_BLOBS WIDE(" where option_id=%lu")
+          , WIDE("select `binary`,length(`binary`) from ")OPTION_BLOBS WIDE(" where option_id=%")_size_f
           , optval->id ) )
    {
     int success = FALSE;
@@ -74213,7 +74215,7 @@ GetFreeBlock( vol, TRUE );
    lprintf( WIDE("do query for value string...") );
  #endif
    if( SQLRecordQueryf( odbc, NULL, &result, NULL
-          , WIDE("select `binary`,length(`binary`) from option_values where value_id=%ld")
+          , WIDE("select `binary`,length(`binary`) from option_values where value_id=%")_size_f
           , optval->value_id ) )
    {
     int success = FALSE;
@@ -74303,7 +74305,7 @@ GetFreeBlock( vol, TRUE );
    TEXTCHAR update[128];
    CTEXTSTR result = NULL;
    // should escape quotes passed in....
-   tnprintf( update, sizeof( update ), WIDE("update option_map set value_id=%ld where node_id=%ld"), optval->value_id, optval->id );
+   tnprintf( update, sizeof( update ), WIDE("update option_map set value_id=%")_size_f WIDE(" where node_id=%")_size_f , optval->value_id, optval->id );
    if( !SQLCommand( tree->odbc_writer, update ) )
    {
     FetchSQLResult( tree->odbc_writer, &result );
@@ -74403,7 +74405,7 @@ GetFreeBlock( vol, TRUE );
   {
    // should escape quotes passed in....
    //if( IDValue && IDValue != INVALID_INDEX )
-   // tnprintf( update, sizeof( update ), WIDE("select string from %s where %s=%lu")
+   // tnprintf( update, sizeof( update ), WIDE("select string from %s where %s=%")_size_f
    //     , tree->flags.bNewVersion?OPTION_VALUES:"option_values"
    //     , tree->flags.bNewVersion?"option_id":"value_id"
    //     , IDValue );
@@ -74434,7 +74436,7 @@ GetFreeBlock( vol, TRUE );
    //lprintf( "ID is %d", IDValue );
    if( optval && ( optval->value_id != INVALID_INDEX ) )
    {
-    tnprintf( update, sizeof( update ), WIDE("replace into %s (string,%s) values (%s,%ld)")
+    tnprintf( update, sizeof( update ), WIDE("replace into %s (string,%s) values (%s,%")_size_f WIDE(")")
         , tree->flags.bNewVersion?OPTION_VALUES:WIDE( "option_values" )
         , tree->flags.bNewVersion?WIDE( "option_id" ):WIDE( "value_id" )
         , newval
@@ -74475,7 +74477,7 @@ GetFreeBlock( vol, TRUE );
    {
     TEXTSTR newval = EscapeSQLBinaryOpt( tree->odbc_writer, (CTEXTSTR)buffer, length, TRUE );
     LOGICAL retval =
-     SQLCommandf( tree->odbc_writer, WIDE( "replace into " )OPTION_BLOBS WIDE( " (`option_id`,`binary` ) values (%lu,%s)" )
+     SQLCommandf( tree->odbc_writer, WIDE( "replace into " )OPTION_BLOBS WIDE( " (`option_id`,`binary` ) values (%")_size_f WIDE(",%s)" )
           , optval->id
           , newval
           );
@@ -74512,7 +74514,7 @@ GetFreeBlock( vol, TRUE );
    if( retval )
    {
     TEXTCHAR *tmp = EscapeSQLBinaryOpt( tree->odbc_writer, (CTEXTSTR)buffer, length, TRUE );
-    if( !SQLCommandf( tree->odbc_writer, WIDE("update option_values set `binary`=%s where value_id=%ld"), tmp, optval->value_id ) )
+    if( !SQLCommandf( tree->odbc_writer, WIDE("update option_values set `binary`=%s where value_id=%")_size_f , tmp, optval->value_id ) )
     {
      FetchSQLError( tree->odbc_writer, &result );
      lprintf( WIDE("Update value failed: %s"), result );
@@ -75003,8 +75005,8 @@ GetFreeBlock( vol, TRUE );
    INDEX system;
    INDEX IDValue = CreateValue( og.Option, optval,pValue );
    system = GetSystemIndex( pSystemName );
-   tnprintf( exception, sizeof( exception ), WIDE("insert into option_exception (`apply_from`,`apply_to`,`value_id`,`override_value_idvalue_id`,`system`) ")
-                    WIDE( "values( \'%04d%02d%02d%02d%02d\', \'%04d%02d%02d%02d%02d\', %ld, %ld,%" _size_f )
+   tnprintf( exception, sizeof( exception ), WIDE("insert into option_exception (`apply_from`,`apply_to`,`value_id`,`override_value_id`,`system`) ")
+                    WIDE( "values( \'%04d%02d%02d%02d%02d\', \'%04d%02d%02d%02d%02d\', %")_size_f WIDE(", %")_size_f WIDE(",%" _size_f )
               , wYrFrom, wMoFrom, wDyFrom
               , wHrFrom, wMnFrom,wScFrom
               , wYrTo, wMoTo, wDyTo
@@ -75399,7 +75401,7 @@ GetFreeBlock( vol, TRUE );
       // this is the only place where ID must be set explicit...
        // otherwise our root node creation failes if said root is gone.
       //lprintf( WIDE( "New entry... create it..." ) );
-       tnprintf( query, sizeof( query ), WIDE( "Insert into " )OPTION_MAP WIDE( "(`parent_option_id`,`name_id`) values (%ld,%lu)" ), parent->id, IDName );
+       tnprintf( query, sizeof( query ), WIDE( "Insert into " )OPTION_MAP WIDE( "(`parent_option_id`,`name_id`) values (%")_size_f WIDE(",%")_size_f WIDE(")" ), parent->id, IDName );
       OpenWriter( tree );
       if( SQLCommand( tree->odbc_writer, query ) )
       {
@@ -75434,7 +75436,7 @@ GetFreeBlock( vol, TRUE );
       continue;
      }
  #ifdef DETAILED_LOGGING
-     _lprintf(DBG_RELAY)( WIDE("Option tree corrupt.  No option option_id=%ld"), ID );
+     _lprintf(DBG_RELAY)( WIDE("Option tree corrupt.  No option option_id=%")_size_f WIDE(""), ID );
  #endif
      if( !bIKnowItDoesntExist )
       PopODBCEx( tree->odbc );
@@ -75493,7 +75495,7 @@ GetFreeBlock( vol, TRUE );
   }
  #endif
   PushSQLQueryEx( odbc );
-  tnprintf( query, sizeof( query ), WIDE( "select string from " )OPTION_VALUES WIDE( " where option_id=%ld" ), optval->id );
+  tnprintf( query, sizeof( query ), WIDE( "select string from " )OPTION_VALUES WIDE( " where option_id=%")_size_f WIDE("" ), optval->id );
   // have to push here, the result of the prior is kept outstanding
   // if this was not pushed, the prior result would evaporate.
   buffer[0] = 0;
@@ -75531,7 +75533,7 @@ GetFreeBlock( vol, TRUE );
   lprintf( WIDE("do query for value string...") );
  #endif
   if( SQLRecordQueryf( odbc, NULL, &result, NULL
-          , WIDE( "select `binary`,length(`binary`) from " )OPTION_BLOBS WIDE( " where option_id=%ld" )
+          , WIDE( "select `binary`,length(`binary`) from " )OPTION_BLOBS WIDE( " where option_id=%")_size_f
           , optval->id ) )
   {
        int success = FALSE;
@@ -75556,11 +75558,11 @@ GetFreeBlock( vol, TRUE );
   TEXTSTR newval = EscapeSQLBinaryOpt( tree->odbc_writer, pValue, StrLen( pValue ), TRUE );
   LOGICAL retval = TRUE;
   if( pValue == NULL )
-   tnprintf( insert, sizeof( insert ), WIDE( "insert into " )OPTION_BLOBS WIDE( " (`option_id`,`binary` ) values (%lu,'')" )
+   tnprintf( insert, sizeof( insert ), WIDE( "insert into " )OPTION_BLOBS WIDE( " (`option_id`,`binary` ) values (%")_size_f WIDE(",'')" )
        , value->id
        );
   else
-   tnprintf( insert, sizeof( insert ), WIDE( "insert into " )OPTION_VALUES WIDE( " (`option_id`,`string` ) values (%lu,%s)" )
+   tnprintf( insert, sizeof( insert ), WIDE( "insert into " )OPTION_VALUES WIDE( " (`option_id`,`string` ) values (%")_size_f WIDE(",%s)" )
        , value->id
        , pValue?newval:WIDE( "NULL" )
        );
@@ -76120,7 +76122,7 @@ GetFreeBlock( vol, TRUE );
        , WIDE( "select node_id,m.name_id,value_id,n.name" )
       WIDE( " from option_map as m" )
       WIDE( " join option_name as n on n.name_id=m.name_id" )
-      WIDE( " where parent_node_id=%ld" )
+      WIDE( " where parent_node_id=%")_size_f WIDE("" )
                 WIDE( " order by name" )
        , parent?parent->id:0 );
    popodbc = 0;
@@ -76131,7 +76133,7 @@ GetFreeBlock( vol, TRUE );
     CTEXTSTR optname;
     POPTION_TREE_NODE tmp_node = New( OPTION_TREE_NODE );
     popodbc = 1;
-    tscanf( result, WIDE("%lu,%lu,%lu"), &tmp_node->id, &tmp_node->name_id, &tmp_node->value_id );
+    tscanf( result, WIDE("%")_size_f WIDE(",%")_size_f WIDE(",%")_size_f , &tmp_node->id, &tmp_node->name_id, &tmp_node->value_id );
     optname = strrchr( result, ',' );
     if( optname )
      optname++;
@@ -76187,7 +76189,7 @@ GetFreeBlock( vol, TRUE );
    NewDuplicateOption( odbc, iRoot, pNewName );
    return;
   }
-  if( SQLQueryf( odbc, &result, WIDE("select parent_node_id from option_map where node_id=%ld"), iRoot ) && result )
+  if( SQLQueryf( odbc, &result, WIDE("select parent_node_id from option_map where node_id=%")_size_f , iRoot ) && result )
   {
    POPTION_TREE_NODE tmp_node = New( OPTION_TREE_NODE );
    tmp_node->id = IndexCreateFromText( result );
@@ -76237,9 +76239,9 @@ GetFreeBlock( vol, TRUE );
      if( (parent > 1) && !GetLink( &options, parent-1 ) )
      {
       deleted = 1;
-      lprintf( WIDE("node %ld has parent id %ld which does not exist."), idx, parent-1 );
+      lprintf( WIDE("node %")_size_f WIDE(" has parent id %")_size_f WIDE(" which does not exist."), idx, parent-1 );
       SetLink( &options, idx, NULL );
-      SQLCommandf( odbc, WIDE("delete from option_map where node_id=%ld"), idx );
+      SQLCommandf( odbc, WIDE("delete from option_map where node_id=%")_size_f , idx );
      }
     }
    }while( deleted );
@@ -76261,7 +76263,7 @@ GetFreeBlock( vol, TRUE );
   }
   else
   {
-   SQLCommandf( odbc, WIDE("delete from option_map where node_id=%ld"), iRoot->id );
+   SQLCommandf( odbc, WIDE("delete from option_map where node_id=%")_size_f , iRoot->id );
       FixOrphanedBranches();
   }
   DropOptionODBC( odbc );
