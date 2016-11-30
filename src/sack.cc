@@ -18438,6 +18438,7 @@ GetFreeBlock( vol, TRUE );
   }
  }
  SACK_SYSTEM_NAMESPACE_END
+ #ifndef __LINUX__
  #include <objbase.h>
  #ifdef __cplusplus
  namespace sack { namespace system{
@@ -18449,6 +18450,7 @@ GetFreeBlock( vol, TRUE );
  #ifdef __cplusplus
  }
  }
+ #endif
  #endif
  /*
   *  Crafted by James Buckeyne
