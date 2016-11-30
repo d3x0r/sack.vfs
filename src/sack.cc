@@ -385,28 +385,26 @@
  /* Defined when SACK_BAG_EXPORTS is defined. This was an
     individual library module once upon a time.           */
   /* define RENDER SOURCE when building monolithic. */
- #ifndef RENDER_LIBRARY_SOURCE
- #define RENDER_LIBRARY_SOURCE
- #endif
- #ifndef __NO_WIN32API__
+ #     ifndef RENDER_LIBRARY_SOURCE
+ #       define RENDER_LIBRARY_SOURCE
+ #     endif
+ #     ifndef __NO_WIN32API__
  // this is moved to a CMake option (based on whter it's arm or not right now)
  //#define _OPENGL_ENABLED
- #endif
+ #     endif
  // define a type that is a public name struct type...
  // good thing that typedef and struct were split
  // during the process of port to /clr option.
  //#define PUBLIC_TYPE public
- #else
+ #  else
  //#define PUBLIC_TYPE
- #ifdef __cplusplus_CLR
+ #    ifdef __cplusplus_CLR
  //using namespace System;
+ #    endif
+ #  endif
  #endif
- #ifdef __CYGWIN__
  // wchar for X_16 definition
  #include <wchar.h>
- #endif
- #endif
- #endif
  #include <sys/types.h>
  #include <sys/stat.h>
  #ifndef MY_TYPES_INCLUDED
