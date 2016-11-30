@@ -14,7 +14,7 @@ static struct local {
    PLIST volumes;
 } l;
 
-class VolumeObject : node::ObjectWrap {
+class VolumeObject : public node::ObjectWrap {
 public:
 	struct volume *vol;
 	static v8::Persistent<v8::Function> constructor;
@@ -30,7 +30,7 @@ public:
    ~VolumeObject();
 };
 
-class SqlObject : node::ObjectWrap {
+class SqlObject : public node::ObjectWrap {
 public:
 	PODBC odbc;
    int optionInitialized;
