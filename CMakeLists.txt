@@ -16,33 +16,24 @@ endif( CMAKE_SIZEOF_VOID_P EQUAL 8 )
 set( SACK_BASE M:/sack )
 set( SACK_BINARY_SDK_BASE C:/general/build/mingw64-x86/sack-r/release_out/binary  )
 
-
+if( EXISTS ${SACK_BASE} )
 
 set( INCLUDES
 	-I${SACK_BASE}/include 
 	-I${SACK_BASE}/src/contrib/sha1lib 
 	-I${SACK_BASE}/src/contrib/sqlite/3.10.2  )
 
-include_directories(${CMAKE_JS_INC} 
-	${SACK_BASE}/include 
-	${SACK_BASE}/src/contrib/sha1lib 
-	${SACK_BASE}/src/contrib/sqlite/3.10.2 
-        )
-
-
 # __NO_OPTIONS__ __NO_INTERFACE_SUPPORT__ __NO_ODBC__
 set( DEFINITIONS   __STATIC__ 
 		USE_SQLITE USE_SQLITE_INTERFACE FORCE_COLOR_MACROS 
+                _CRT_SECURE_NO_WARNINGS
                  )
 FILE( WRITE ${CMAKE_BINARY_DIR}/config.ppc "/*CMake Option defined*/\n" )
 
 foreach( DEF ${DEFINITIONS} )
-   ADD_DEFINITIONS( -D${DEF} )
+   #ADD_DEFINITIONS( -D${DEF} )
    FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define ${DEF}\n" )
 ENDFOREACH()
-
-
-
 
 if( WIN32 )
 	set( MORE_NETWORK_SOURCES ${SACK_BASE}/src/netlib/net_winsock2.c )
@@ -118,10 +109,10 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
-#if( NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc )
 
-set( AMALG_COMMAND c:/general/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
-set( AMALG_COMMAND2 c:/general/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
+
+set( AMALG_COMMAND c:/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
+set( AMALG_COMMAND2 c:/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
 
   add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc
   			#COMMAND cmake -E echo ${AMALG_COMMAND}
@@ -132,7 +123,10 @@ set( AMALG_COMMAND2 c:/general/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   )                                   
   add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc )
-#endif( NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc )
+endif( EXISTS ${SACK_BASE} )
+
+
+include_directories(${CMAKE_JS_INC} ${INCLUDES} src )
 
 
 
