@@ -132,6 +132,77 @@
  #  ifdef NEED_V4W
  #    include <vfw.h>
  #  endif
+ #  if defined( HAVE_ENVIRONMENT )
+ #    define getenv(name)       OSALOT_GetEnvironmentVariable(name)
+ #    define setenv(name,val)   SetEnvironmentVariable(name,val)
+ #  endif
+ #  define Relinquish()       Sleep(0)
+ //#pragma pragnoteonly("GetFunctionAddress is lazy and has no library cleanup - needs to be a lib func")
+ //#define GetFunctionAddress( lib, proc ) GetProcAddress( LoadLibrary( lib ), (proc) )
+ #  ifdef __cplusplus
+ #    ifdef __GNUC__
+ #      ifndef min
+ #        define min(a,b) ((a)<(b))?(a):(b)
+ #      endif
+ #    endif
+ #  endif
+ #  ifdef __cplusplus_cli
+ #    include <vcclr.h>
+/*lprintf( */
+ #    define DebugBreak() System::Console::WriteLine(gcnew System::String( WIDE__FILE__ WIDE("(") STRSYM(__LINE__) WIDE(") Would DebugBreak here...") ) );
+ //typedef unsigned int HANDLE;
+ //typedef unsigned int HMODULE;
+ //typedef unsigned int HWND;
+ //typedef unsigned int HRC;
+ //typedef unsigned int HMENU;
+ //typedef unsigned int HICON;
+ //typedef unsigned int HINSTANCE;
+ #  endif
+ // ifdef unix/linux
+ #else
+ #  include <pthread.h>
+ #  include <sched.h>
+ #  include <unistd.h>
+ #  include <sys/time.h>
+ #  include <errno.h>
+ #  if defined( __ARM__ )
+ #    define DebugBreak()
+ #  else
+ /* A symbol used to cause a debugger to break at a certain
+    point. Sometimes dynamicly loaded plugins can be hard to set
+    the breakpoint in the debugger, so it becomes easier to
+    recompile with a breakpoint in the right place.
+    Example
+    <code lang="c++">
+    DebugBreak();
+  </code>                                                      */
+ #    ifdef __ANDROID__
+ #      define DebugBreak()
+ #    else
+ #      define DebugBreak()  asm("int $3\n" )
+ #    endif
+ #  endif
+ #  ifdef __ANDROID_OLD_PLATFORM_SUPPORT__
+ extern __sighandler_t bsd_signal(int, __sighandler_t);
+ #  endif
+ // moved into timers - please linnk vs timers to get Sleep...
+ //#define Sleep(n) (usleep((n)*1000))
+ #  define Relinquish() sched_yield()
+ #  define GetLastError() (int32_t)errno
+ /* return with a THREAD_ID that is a unique, universally
+    identifier for the thread for inter process communication. */
+ #  define GetCurrentProcessId() ((uint32_t)getpid())
+ #  define GetCurrentThreadId() ((uint32_t)getpid())
+ /* Define a min(a,b) macro when the compiler lacks it. */
+ #  ifndef min
+ #    define min(a,b) (((a)<(b))?(a):(b))
+ #  endif
+ /* Why not add the max macro, also? */
+ #  ifndef max
+ #    define max(a,b) (((a)>(b))?(a):(b))
+ #  endif
+  // end if( !__LINUX__ )
+ #endif
  /* please Include sthdrs.h */
  /* Define most of the sack core types on which everything else is
     based. Also defines some of the primitive container
@@ -183,7 +254,6 @@
  #ifdef SACK_BAG_EXPORTS
  // maybe only do this while building sack_bag project itself...
  #if !defined( ZCONF_H )  && !defined( __FT2_BUILD_GENERIC_H__ )  && !defined( ZUTIL_H )  && !defined( SQLITE_PRIVATE )  && !defined( NETSERVICE_SOURCE )  && !defined( LIBRARY_DEF )
- #include <vcclr.h>
  //using namespace System;
  #endif
  #endif
@@ -5017,547 +5087,6 @@
  // Initial commit
  //
  //
- #  if defined( HAVE_ENVIRONMENT )
- #    define getenv(name)       OSALOT_GetEnvironmentVariable(name)
- #    define setenv(name,val)   SetEnvironmentVariable(name,val)
- #  endif
- #  define Relinquish()       Sleep(0)
- //#pragma pragnoteonly("GetFunctionAddress is lazy and has no library cleanup - needs to be a lib func")
- //#define GetFunctionAddress( lib, proc ) GetProcAddress( LoadLibrary( lib ), (proc) )
- #  ifdef __cplusplus
- #    ifdef __GNUC__
- #      ifndef min
- #        define min(a,b) ((a)<(b))?(a):(b)
- #      endif
- #    endif
- #  endif
- #  ifdef __cplusplus_cli
-/*lprintf( */
- #    define DebugBreak() System::Console::WriteLine(gcnew System::String( WIDE__FILE__ WIDE("(") STRSYM(__LINE__) WIDE(") Would DebugBreak here...") ) );
- //typedef unsigned int HANDLE;
- //typedef unsigned int HMODULE;
- //typedef unsigned int HWND;
- //typedef unsigned int HRC;
- //typedef unsigned int HMENU;
- //typedef unsigned int HICON;
- //typedef unsigned int HINSTANCE;
- #  endif
- /* A header for doing .NET /CLR compatiblity changes. Things
-    like fopen needing to be _fopen_s and junk.               */
- #ifndef FILE_DOT_NET_COMPAT
- /* Header multiple inclusion protection symbol. */
- #define FILE_DOT_NET_COMPAT
- /*
-  *  Created By Jim Buckeyne
-  *
-  *  Purpose:
-  *    Provides some cross platform/library functionatlity for
-  *  filesystem activities.
-  *  - File dates, times, stuff like that
-  *  - make paths, change paths
-  *  - path parsing (like strchr, strrchr, but looking for closest / or \)
-  *  - scan a directory for a set of files... using a recursive callback method
-  */
- #ifndef FILESYSTEM_UTILS_DEFINED
- /* Header multiple inclusion protection symbol. */
- #define FILESYSTEM_UTILS_DEFINED
- #if _MSC_VER >= 1600
- #include <share.h>
- #endif
- #if !defined( UNDER_CE )
- #include <fcntl.h>
- #if !defined( __LINUX__ )
- #include <io.h>
- #else
- #define LPFILETIME uint64_t*
- #define FILETIME uint64_t
- #endif
- #endif
- /* uhmm in legacy usage this was not CPROC, but was unspecified */
- #define FILESYS_API CPROC
- // DOM-IGNORE-BEGIN
- #ifdef FILESYSTEM_LIBRARY_SOURCE
- #  define FILESYS_PROC EXPORT_METHOD
- #else
- #  define FILESYS_PROC IMPORT_METHOD
- #endif
- // DOM-IGNORE-END
- #ifdef __cplusplus
- /* defined the file system partial namespace (under
-    SACK_NAMESPACE probably)                         */
- #define _FILESYS_NAMESPACE  namespace filesys {
- /* Define the ending symbol for file system namespace. */
- #define _FILESYS_NAMESPACE_END }
- /* Defined the namespace of file montior utilities. File monitor
-    provides event notification based on file system changes.     */
- #define _FILEMON_NAMESPACE  namespace monitor {
- /* Define the end symbol for file monitor namespace. */
- #define _FILEMON_NAMESPACE_END }
- #else
- #define _FILESYS_NAMESPACE
- #define _FILESYS_NAMESPACE_END
- #define _FILEMON_NAMESPACE
- #define _FILEMON_NAMESPACE_END
- #endif
- /* define the file system namespace end. */
- #define FILESYS_NAMESPACE_END _FILESYS_NAMESPACE_END SACK_NAMESPACE_END
- /* define the file system namespace. */
- #define FILESYS_NAMESPACE SACK_NAMESPACE _FILESYS_NAMESPACE
- /* Define end file monitor namespace. */
- #define FILEMON_NAMESPACE_END _FILEMON_NAMESPACE_END _FILESYS_NAMESPACE_END SACK_NAMESPACE_END
- /* Defines the file montior namespace when compiling C++. */
- #define FILEMON_NAMESPACE SACK_NAMESPACE _FILESYS_NAMESPACE _FILEMON_NAMESPACE
- SACK_NAMESPACE
- /* \File system abstractions. A few things like get current path
-    may or may not exist on a function.
-    Primarily this defines functions 'pathchr' and 'pathrchr'
-    which resemble 'strchr' and 'strrchr' but search a string for
-    a path character. A path character is either a / or a \\.
-    Also in this area is file monitoring functions which support
-    methods on windows and linux to get event notifications when
-    directories and, by filtering, files that have changed.
-                                                                  */
- _FILESYS_NAMESPACE
-  enum ScanFileFlags {
- // go into subdirectories
- SFF_SUBCURSE    = 1,
- // return directory names also
- SFF_DIRECTORIES = 2,
- // don't concatenate base with filename to result.
- SFF_NAMEONLY    = 4,
- // when matching filename - do not match case.
- SFF_IGNORECASE  = 8,
- // don't concatenate base with filename to result, but do build path relative to root specified
- SFF_SUBPATHONLY    = 16,
-  };
-  // flags sent to Process when called with a matching name
- enum ScanFileProcessFlags{
- // is a directory...
- SFF_DIRECTORY  = 1,
- // this is a drive...
-   SFF_DRIVE      = 2,
- };
- struct file_system_mounted_interface;
- /* Extended external file system interface to be able to use external file systems */
- struct file_system_interface {
-                                                  //filename
-  void* (CPROC *open)(uintptr_t psvInstance, const char *);
-                                                 //file *
-  int (CPROC *_close)(void *);
-                    //file *, buffer, length (to read)
-  size_t (CPROC *_read)(void *,char *, size_t);
-                    //file *, buffer, length (to write)
-  size_t (CPROC *_write)(void*,const char *, size_t);
-  size_t (CPROC *seek)( void *, size_t, int whence);
-  void  (CPROC *truncate)( void *);
-  void (CPROC *_unlink)( uintptr_t psvInstance, const char *);
- // get file size
-  size_t (CPROC *size)( void *);
- // get file current position
-  size_t (CPROC *tell)( void *);
-  int (CPROC *flush )(void *kp);
-  int (CPROC *exists)( uintptr_t psvInstance, const char *file );
-  LOGICAL (CPROC*copy_write_buffer)(void );
-  struct find_cursor *(CPROC *find_create_cursor )( uintptr_t psvInstance, const char *root, const char *filemask );
-  int (CPROC *find_first)( struct find_cursor *cursor );
-  int (CPROC *find_close)( struct find_cursor *cursor );
-  int (CPROC *find_next)( struct find_cursor *cursor );
-  char * (CPROC *find_get_name)( struct find_cursor *cursor );
-  size_t (CPROC *find_get_size)( struct find_cursor *cursor );
-  // ftell can be done with seek( file, 0, SEEK_CUR );
-  // if is_directory is NULL; assume result is false (file system does not support directories)
-  LOGICAL (CPROC *is_directory)( const char *pathname );
-  LOGICAL (CPROC *rename )( uintptr_t psvInstance, const char *original_name, const char *new_name );
- };
- /* \ \
-    Parameters
-    mask :      This is the mask used to compare
-    name :      this is the name to compare against using the mask.
-    keepcase :  if TRUE, must match case also.
-    Returns
-    TRUE if name is matched by mask. Otherwise returns FALSE.
-    Example
-    <code lang="c++">
-    if( CompareMask( "*.exe", "program.exe", FALSE ) )
-    {
-        // then program.exe is matched by the mask.
-    }
-    </code>
-    Remarks
-    The mask support standard 'globbing' characters.
-    ? matches one character
-    \* matches 0 or more characters
-    otherwise the literal character must match, unless comparing
-    case insensitive, in which case 'A' == 'a' also.                */
- FILESYS_PROC  int FILESYS_API  CompareMask ( CTEXTSTR mask, CTEXTSTR name, int keepcase );
- // ScanFiles usage:
- //   base - base path to scan
- //   mask - file mask to process if NULL or "*" is everything "*.*" must contain a .
- //   pInfo is a pointer to a void* - this pointer is used to maintain
- //        internal information...
- //   Process is called with the full name of any matching files
- //   subcurse is a flag - set to go into all subdirectories looking for files.
- // There is no way to abort the scan...
- FILESYS_PROC  int FILESYS_API  ScanFilesEx ( CTEXTSTR base
-            , CTEXTSTR mask
-            , void **pInfo
-            , void CPROC Process( uintptr_t psvUser, CTEXTSTR name, int flags )
-            , int flags
-      , uintptr_t psvUser, LOGICAL begin_sub_path, struct file_system_mounted_interface *mount );
- FILESYS_PROC  int FILESYS_API  ScanFiles ( CTEXTSTR base
-            , CTEXTSTR mask
-            , void **pInfo
-            , void CPROC Process( uintptr_t psvUser, CTEXTSTR name, int flags )
-            , int flags
-            , uintptr_t psvUser );
- FILESYS_PROC  void FILESYS_API  ScanDrives ( void (CPROC *Process)(uintptr_t user, CTEXTSTR letter, int flags)
-             , uintptr_t user );
- // result is length of name filled into pResult if pResult == NULL && nResult = 0
- // the result will the be length of the name matching the file.
- FILESYS_PROC  int FILESYS_API  GetMatchingFileName ( CTEXTSTR filemask, int flags, TEXTSTR pResult, int nResult );
- // searches a path for the last '/' or '\'
- FILESYS_PROC  CTEXTSTR FILESYS_API  pathrchr ( CTEXTSTR path );
- #ifdef __cplusplus
- FILESYS_PROC  TEXTSTR FILESYS_API  pathrchr ( TEXTSTR path );
- #endif
- // searches a path for the first '/' or '\'
- FILESYS_PROC  CTEXTSTR FILESYS_API  pathchr ( CTEXTSTR path );
- // returns pointer passed (if it worked?)
- FILESYS_PROC  TEXTSTR FILESYS_API  GetCurrentPath ( TEXTSTR path, int buffer_len );
- FILESYS_PROC  int FILESYS_API  SetCurrentPath ( CTEXTSTR path );
- /* Creates a directory. If parent peices of the directory do not
-    exist, those parts are created also.
-    Example
-    <code lang="c#">
-    MakePath( "c:\\where\\I'm/going/to/store/data" );
-    </code>                                                       */
- FILESYS_PROC  int FILESYS_API  MakePath ( CTEXTSTR path );
- /* A boolean result function whether a specified name is a
-    directory or not. (if not, assumes it's a file).
-    Example
-    <code lang="c#">
-    if( IsPath( "c:/windows" ) )
-    {
-        // if yes, then c:\\windows is a directory.
-    }
-    </code>                                                 */
- FILESYS_PROC LOGICAL  FILESYS_API  IsPath ( CTEXTSTR path );
- FILESYS_PROC LOGICAL  FILESYS_API  IsAbsolutePath( CTEXTSTR path );
- FILESYS_PROC  uint64_t     FILESYS_API  GetFileWriteTime ( CTEXTSTR name );
- FILESYS_PROC  uint64_t     FILESYS_API  GetTimeAsFileTime ( void );
- FILESYS_PROC  LOGICAL FILESYS_API  SetFileWriteTime( CTEXTSTR name, uint64_t filetime );
- FILESYS_PROC  LOGICAL FILESYS_API  SetFileTimes( CTEXTSTR name
-  // last modification time.
-                  , uint64_t filetime_create
- // last modification time.
-                  , uint64_t filetime_modify
-  // last modification time.
-                  , uint64_t filetime_access
-                  );
- FILESYS_PROC  void    FILESYS_API  SetDefaultFilePath ( CTEXTSTR path );
- FILESYS_PROC  INDEX   FILESYS_API  SetGroupFilePath ( CTEXTSTR group, CTEXTSTR path );
- FILESYS_PROC  TEXTSTR FILESYS_API  sack_prepend_path ( INDEX group, CTEXTSTR filename );
- /* This is a new feature added for supporting systems without a
-    current file location. This gets an integer ID of a group of
-    files by name.
-    the name 'default' is used to specify files to go into the
-    'current working directory'
-  There are some special symbols.
-  . = use CurrentPath
-  @ = use program path base
-    ^ = use program startup path (may not be current)
-    Parameters
-    groupname :     name of the group
-    default_path :  the path of the group, if the name is not
-                    found.
-    Returns
-    the ID of a file group.
-    Example
-    <code lang="c++">
-    int group = GetFileGroup( "fonts", "./fonts" );
-    </code>                                                      */
- FILESYS_PROC INDEX FILESYS_API  GetFileGroup ( CTEXTSTR groupname, CTEXTSTR default_path );
- FILESYS_PROC TEXTSTR FILESYS_API GetFileGroupText ( INDEX group, TEXTSTR path, int path_chars );
- FILESYS_PROC TEXTSTR FILESYS_API ExpandPathEx( CTEXTSTR path, struct file_system_interface *fsi );
- FILESYS_PROC TEXTSTR FILESYS_API ExpandPath( CTEXTSTR path );
- FILESYS_PROC LOGICAL FILESYS_API SetFileLength( CTEXTSTR path, size_t length );
- /* \Returns the size of the file.
-    Parameters
-    name :  name of the file to get information about
-    Returns
-    \Returns the size of the file. or -1 if the file did not
-    exist.                                                   */
- FILESYS_PROC  size_t FILESYS_API  GetSizeofFile ( TEXTCHAR *name, uint32_t* unused );
- #ifndef __ANDROID__
- /* An extended function, which returns a uint64_t bit time
-    appropriate for the current platform. This is meant to
-    replace 'stat'. It can get all commonly checked attributes of
-    a file.
-    Parameters
-    name :              name of the file to get information about
-    lpCreationTime :    pointer to a FILETIME type to get creation
-                        time. can be NULL.
-    lpLastAccessTime :  pointer to a FILETIME type to get access
-                        time. can be NULL.
-    lpLastWriteTime :   pointer to a FILETIME type to get write
-                        time. can be NULL.
-    IsDirectory :       pointer to a LOGICAL to receive indicator
-                        whether the file was a directory. can be
-                        NULL.
-    Returns
-    \Returns the size of the file. or -1 if the file did not
-  exist.                                                         */
- FILESYS_PROC  uint32_t FILESYS_API  GetFileTimeAndSize ( CTEXTSTR name
-              , LPFILETIME lpCreationTime
-              ,  LPFILETIME lpLastAccessTime
-              ,  LPFILETIME lpLastWriteTime
-              , int *IsDirectory
-              );
- FILESYS_PROC void FILESYS_API ConvertFileIntToFileTime( uint64_t int_filetime, FILETIME *filetime );
- FILESYS_PROC uint64_t FILESYS_API ConvertFileTimeToInt( const FILETIME *filetime );
- #endif
- // can use 0 as filegroup default - single 'current working directory'
- #ifndef NEED_OLDNAMES
- #define _NO_OLDNAMES
- #endif
- //#ifdef UNDER_CE
- # ifndef O_RDONLY
- #define O_RDONLY       0x0000
- #define O_WRONLY       0x0001
- #define O_RDWR         0x0002
- #define O_APPEND       0x0008
- #define O_CREAT        0x0100
- #define O_TRUNC        0x0200
- #define O_EXCL         0x0400
- #endif
- #ifndef __ANDROID__
- #  ifndef S_IRUSR
- #    define S_IRUSR 1
- #    define S_IWUSR 2
- #  endif
- #endif
- //# endif
- #ifndef __LINUX__
- FILESYS_PROC  HANDLE FILESYS_API  sack_open ( INDEX group, CTEXTSTR filename, int opts, ... );
- FILESYS_PROC  LOGICAL FILESYS_API  sack_set_eof ( HANDLE file_handle );
- FILESYS_PROC  long  FILESYS_API   sack_tell( INDEX file_handle );
- FILESYS_PROC  HANDLE FILESYS_API  sack_openfile ( INDEX group, CTEXTSTR filename, OFSTRUCT *of, int flags );
- FILESYS_PROC  HANDLE FILESYS_API  sack_creat ( INDEX group, CTEXTSTR file, int opts, ... );
- FILESYS_PROC  int FILESYS_API  sack_close ( HANDLE file_handle );
- FILESYS_PROC  int FILESYS_API  sack_lseek ( HANDLE file_handle, int pos, int whence );
- FILESYS_PROC  int FILESYS_API  sack_read ( HANDLE file_handle, POINTER buffer, int size );
- FILESYS_PROC  int FILESYS_API  sack_write ( HANDLE file_handle, CPOINTER buffer, int size );
- #endif
- FILESYS_PROC  INDEX FILESYS_API  sack_iopen ( INDEX group, CTEXTSTR filename, int opts, ... );
- FILESYS_PROC  INDEX FILESYS_API  sack_iopenfile ( INDEX group, CTEXTSTR filename, int opts, int flags );
- FILESYS_PROC  INDEX FILESYS_API  sack_icreat ( INDEX group, CTEXTSTR file, int opts, ... );
- FILESYS_PROC  LOGICAL FILESYS_API  sack_iset_eof ( INDEX file_handle );
- FILESYS_PROC  int FILESYS_API  sack_iclose ( INDEX file_handle );
- FILESYS_PROC  int FILESYS_API  sack_ilseek ( INDEX file_handle, size_t pos, int whence );
- FILESYS_PROC  int FILESYS_API  sack_iread ( INDEX file_handle, POINTER buffer, int size );
- FILESYS_PROC  int FILESYS_API  sack_iwrite ( INDEX file_handle, CPOINTER buffer, int size );
- /* internal (c library) file system is registered as prority 1000.... lower priorities are checked first for things like
-   ScanFiles(), fopen( ..., "r" ), ... exists(), */
- FILESYS_PROC struct file_system_mounted_interface * FILESYS_API sack_mount_filesystem( const char *name, struct file_system_interface *, int priority, uintptr_t psvInstance, LOGICAL writable );
- FILESYS_PROC void FILESYS_API sack_unmount_filesystem( struct file_system_mounted_interface *mount );
- FILESYS_PROC struct file_system_mounted_interface * FILESYS_API sack_get_mounted_filesystem( const char *name );
- /* sometimes you want scanfiles to only scan external files...
-   so this is how to get that mount */
- FILESYS_PROC struct file_system_mounted_interface * FILESYS_API sack_get_default_mount( void );
- /* specify a mounted system to open... multiple volumes of the same type need a different handle */
- FILESYS_PROC  FILE* FILESYS_API  sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_system_mounted_interface *fsi );
- /* if mode is read, all mounted file systems are attempted... */
- FILESYS_PROC  FILE* FILESYS_API  sack_fopen ( INDEX group, CTEXTSTR filename, CTEXTSTR opts );
- /* specify a mounted system to open... multiple volumes of the same type need a different handle */
- FILESYS_PROC  FILE* FILESYS_API  sack_fsopenEx ( INDEX group, CTEXTSTR filename, CTEXTSTR opts, int share_mode, struct file_system_mounted_interface *fsi );
- /* if mode is read, all mounted file systems are attempted...
-    if mode is write/create only the first writable file system is used...
- */
- FILESYS_PROC  FILE* FILESYS_API  sack_fsopen ( INDEX group, CTEXTSTR filename, CTEXTSTR opts, int share_mode );
- FILESYS_PROC  struct file_system_interface * FILESYS_API sack_get_filesystem_interface( CTEXTSTR name );
- FILESYS_PROC  void FILESYS_API sack_set_default_filesystem_interface( struct file_system_interface *fsi );
- FILESYS_PROC  void FILESYS_API sack_register_filesystem_interface( CTEXTSTR name, struct file_system_interface *fsi );
- FILESYS_PROC  int FILESYS_API  sack_fclose ( FILE *file_file );
- FILESYS_PROC  size_t FILESYS_API  sack_fseek ( FILE *file_file, size_t pos, int whence );
- FILESYS_PROC  size_t FILESYS_API  sack_ftell ( FILE *file_file );
- FILESYS_PROC  size_t FILESYS_API  sack_fsize ( FILE *file_file );
- FILESYS_PROC  LOGICAL FILESYS_API  sack_existsEx ( const char * filename, struct file_system_mounted_interface *mount );
- FILESYS_PROC  LOGICAL FILESYS_API  sack_exists ( const char *file_file );
- FILESYS_PROC  size_t FILESYS_API  sack_fread ( POINTER buffer, size_t size, int count,FILE *file_file );
- FILESYS_PROC  size_t FILESYS_API  sack_fwrite ( CPOINTER buffer, size_t size, int count,FILE *file_file );
- FILESYS_PROC  TEXTSTR FILESYS_API  sack_fgets ( TEXTSTR  buffer, size_t size,FILE *file_file );
- FILESYS_PROC  int FILESYS_API  sack_fflush ( FILE *file );
- FILESYS_PROC  int FILESYS_API  sack_ftruncate ( FILE *file );
- FILESYS_PROC int FILESYS_API sack_vfprintf( FILE *file_handle, const char *format, va_list args );
- FILESYS_PROC int FILESYS_API sack_fprintf( FILE *file, const char *format, ... );
- FILESYS_PROC int FILESYS_API sack_fputs( const char *format, FILE *file );
- FILESYS_PROC  int FILESYS_API  sack_unlinkEx ( INDEX group, CTEXTSTR filename, struct file_system_mounted_interface *mount );
- FILESYS_PROC  int FILESYS_API  sack_unlink ( INDEX group, CTEXTSTR filename );
- FILESYS_PROC  int FILESYS_API  sack_rmdir( INDEX group, CTEXTSTR filename );
- FILESYS_PROC  int FILESYS_API  sack_renameEx ( CTEXTSTR file_source, CTEXTSTR new_name, struct file_system_mounted_interface *mount );
- FILESYS_PROC  int FILESYS_API  sack_rename ( CTEXTSTR file_source, CTEXTSTR new_name );
- FILESYS_PROC  void FILESYS_API sack_set_common_data_application( CTEXTSTR name );
- FILESYS_PROC  void FILESYS_API sack_set_common_data_producer( CTEXTSTR name );
- #ifndef NO_FILEOP_ALIAS
- #  ifndef NO_OPEN_MACRO
- # define open(a,...) sack_iopen(0,a,##__VA_ARGS__)
- # define set_eof(a)  sack_iset_eof(a)
- #  endif
- #ifdef WIN32
- #if !defined( SACK_BAG_EXPORTS ) && !defined( BAG_EXTERNALS ) && !defined( FILESYSTEM_LIBRARY_SOURCE )
- # define _lopen(a,...) sack_open(0,a,##__VA_ARGS__)
- # define tell(a)      sack_tell(a)
- # define lseek(a,b,c) sack_ilseek(a,b,c)
- # define _llseek(a,b,c) sack_lseek(a,b,c)
- # define HFILE HANDLE
- # undef HFILE_ERROR
- # define HFILE_ERROR INVALID_HANDLE_VALUE
- # define creat(a,...)  sack_icreat( 0,a,##__VA_ARGS__ )
- # define close(a)  sack_iclose(a)
- # define OpenFile(a,b,c) sack_openfile(0,a,b,c)
- # define _lclose(a)  sack_close(a)
- # define read(a,b,c) sack_iread(a,b,c)
- # define write(a,b,c) sack_iwrite(a,b,c)
- # define _lread(a,b,c) sack_read(a,b,c)
- # define _lwrite(a,b,c) sack_write(a,b,c)
- # define _lcreat(a,b) sack_creat(0,a,b)
- # define remove(a)   sack_unlink(0,a)
- # define unlink(a)   sack_unlink(0,a)
- #endif
- #endif
- //NO_FILEOP_ALIAS
- #endif
- #ifdef __LINUX__
- #define SYSPATHCHAR WIDE("/")
- #else
- #define SYSPATHCHAR WIDE("\\")
- #endif
- FILESYS_NAMESPACE_END
- #ifdef __cplusplus
- using namespace sack::filesys;
- #endif
- #endif
- #ifdef __cplusplus_cli
- #define Fopen( result, name, opts ) { char *tmp1 = CStrDup( name ); char *tmp2 = CStrDup( opts ); result = fopen( tmp1, tmp2 ); Deallocate( char *, tmp1 ); Deallocate( char *, tmp2 ); }
- #if asdfasdlfkajsdflkj
- #define fputs( msg, file ) { char *tmp = CStrDup( msg ); fputs( tmp, file ); Release( tmp ); }
- #define unlink( name ) { char *tmp = CStrDup( name ); unlink( tmp ); Release( tmp ); }
- #define rename( name1, name2 ) { char *tmp1 = CStrDup( name1 ); char *tmp2 = CStrDup( name2 ); rename( tmp1, tmp2 ); Release( tmp1 ); Release( tmp2 ); }
- #define fprintf Fprintf
- #endif
- //int Fprintf( FILE *file, CTEXTSTR fmt, ... );
- /*
- using namespace Win32;
- #define CreateEvent(a,b,c,d) Win32::Kernel::CreateEvent((SECURITY_ATTRIBUTES)a,b,c,d)
- #define OpenEvent(a,b,c)     Win32::Kernel::OpenEvent(a,b,c)
- #define Sleep(a)             Win32::Kernel::Sleep(a)
- #define GetTickCount()       Win32::Kernel::GetTickCount()
- #define GetCurrentProcessId() Win32::Kernel::GetCurrentProcessId()
- #define GetCurrentThreadId()  Win32::Kernel::GetCurrentThreadId()
- #define GetLastError()  Win32::Kernel::GetLastError()
- #define SetEvent(a) Win32::Kernel::SetEvent(a)
- #define ResetEvent(a) Win32::Kernel::ResetEvent(a)
- #define CloseHandle(a) Win32::Kernel::CloseHandle(a)
- #define WaitForSingleObject(a,b) Win32::Kernel::WaitForSingleObject(a,b)
- #define PeekMessage(a,b,c,d,e)  Win32::User::PeekMessage(a,b,c,d,e)
- #define DispatchMessage(a)   Win32::User::DispatchMessage(a)
- #define GetModuleFileName(a,b) Win32::Kernel::GetModuleFileName(a,b)
- */
- #if 0
- typedef struct MyFile MYFILE;
- MYFILE *Fopen( CTEXTSTR filename, CTEXTSTR mode );
- int Fread( POINTER data, int count, int size, MYFILE *file );
- int Fwrite( POINTER data, int count, int size, MYFILE *file );
- int Fclose( MYFILE *file );
- int Fseek( MYFILE *file, int64_t pos, int whence );
- uint64_t Ftell( MYFILE *file );
- MYFILE *Fdopen( int fd, CTEXTSTR mode );
- int Ferror( MYFILE *file );
- int Fflush( MYFILE *file );
- int Rewind( MYFILE *file );
- int Fputc( int c, MYFILE *file );
- int Fgets( TEXTSTR buf, int buflen, MYFILE *file );
- int Fputs( CTEXTSTR but, MYFILE *file );
- int Unlink( CTEXTSTR filename );
- int Rename( CTEXTSTR from, CTEXTSTR to );
- #define rename Rename
- #define unlink Unlink
- #define FILE MYFILE
- #define fopen Fopen
- #define fseek Fseek
- #define fclose Fclose
- #define fprintf Fprintf
- #define ftell Ftell
- #define fread Fread
- #define fwrite Fwrite
- //#define fdopen Fdopen
- #define ferror Ferror
- #define fflush Fflush
- #define rewind Rewind
- #define fputc Fputc
- #define fgets Fgets
- #define fputs Fputs
- #endif
- #else
- /* A macro which can be translated into microsoft so-called safe
-    methods.                                                      */
- #define Fopen( result, name, opts ) result = sack_fopen( 0, name, opts )
- //#define MYFILE  FILE
- //#define Fopen   fopen
- //#define Fread   fread
- //#define Fwrite  fread
- //#define Fclose  fclose
- //#define Fprintf fprintf
- //#define Fseek   fseek
- //#define Ftell   ftell
- #endif
- #endif
- // end with a newline please.
- // ifdef unix/linux
- #else
- #  include <pthread.h>
- #  include <sched.h>
- #  include <unistd.h>
- #  include <sys/time.h>
- #  include <errno.h>
- #  if defined( __ARM__ )
- #    define DebugBreak()
- #  else
- /* A symbol used to cause a debugger to break at a certain
-    point. Sometimes dynamicly loaded plugins can be hard to set
-    the breakpoint in the debugger, so it becomes easier to
-    recompile with a breakpoint in the right place.
-    Example
-    <code lang="c++">
-    DebugBreak();
-  </code>                                                      */
- #    ifdef __ANDROID__
- #      define DebugBreak()
- #    else
- #      define DebugBreak()  asm("int $3\n" )
- #    endif
- #  endif
- #  ifdef __ANDROID_OLD_PLATFORM_SUPPORT__
- extern __sighandler_t bsd_signal(int, __sighandler_t);
- #  endif
- // moved into timers - please linnk vs timers to get Sleep...
- //#define Sleep(n) (usleep((n)*1000))
- #  define Relinquish() sched_yield()
- #  define GetLastError() (int32_t)errno
- /* return with a THREAD_ID that is a unique, universally
-    identifier for the thread for inter process communication. */
- #  define GetCurrentProcessId() ((uint32_t)getpid())
- #  define GetCurrentThreadId() ((uint32_t)getpid())
- /* Define a min(a,b) macro when the compiler lacks it. */
- #  ifndef min
- #    define min(a,b) (((a)<(b))?(a):(b))
- #  endif
- /* Why not add the max macro, also? */
- #  ifndef max
- #    define max(a,b) (((a)>(b))?(a):(b))
- #  endif
-  // end if( !__LINUX__ )
- #endif
  #if defined( _MSC_VER )|| defined(__LCC__) || defined( __WATCOMC__ ) || defined( __GNUC__ )
  /* Includes networking as appropriate for the target platform. Providing
     compatibility definitions as are lacking between platforms...
@@ -11203,6 +10732,396 @@
 //namespace sack {
  };
  using namespace sack::timers;
+ #endif
+ #endif
+ /*
+  *  Created By Jim Buckeyne
+  *
+  *  Purpose:
+  *    Provides some cross platform/library functionatlity for
+  *  filesystem activities.
+  *  - File dates, times, stuff like that
+  *  - make paths, change paths
+  *  - path parsing (like strchr, strrchr, but looking for closest / or \)
+  *  - scan a directory for a set of files... using a recursive callback method
+  */
+ #ifndef FILESYSTEM_UTILS_DEFINED
+ /* Header multiple inclusion protection symbol. */
+ #define FILESYSTEM_UTILS_DEFINED
+ #if _MSC_VER >= 1600
+ #include <share.h>
+ #endif
+ #if !defined( UNDER_CE )
+ #include <fcntl.h>
+ #if !defined( __LINUX__ )
+ #include <io.h>
+ #else
+ #define LPFILETIME uint64_t*
+ #define FILETIME uint64_t
+ #endif
+ #endif
+ /* uhmm in legacy usage this was not CPROC, but was unspecified */
+ #define FILESYS_API CPROC
+ // DOM-IGNORE-BEGIN
+ #ifdef FILESYSTEM_LIBRARY_SOURCE
+ #  define FILESYS_PROC EXPORT_METHOD
+ #else
+ #  define FILESYS_PROC IMPORT_METHOD
+ #endif
+ // DOM-IGNORE-END
+ #ifdef __cplusplus
+ /* defined the file system partial namespace (under
+    SACK_NAMESPACE probably)                         */
+ #define _FILESYS_NAMESPACE  namespace filesys {
+ /* Define the ending symbol for file system namespace. */
+ #define _FILESYS_NAMESPACE_END }
+ /* Defined the namespace of file montior utilities. File monitor
+    provides event notification based on file system changes.     */
+ #define _FILEMON_NAMESPACE  namespace monitor {
+ /* Define the end symbol for file monitor namespace. */
+ #define _FILEMON_NAMESPACE_END }
+ #else
+ #define _FILESYS_NAMESPACE
+ #define _FILESYS_NAMESPACE_END
+ #define _FILEMON_NAMESPACE
+ #define _FILEMON_NAMESPACE_END
+ #endif
+ /* define the file system namespace end. */
+ #define FILESYS_NAMESPACE_END _FILESYS_NAMESPACE_END SACK_NAMESPACE_END
+ /* define the file system namespace. */
+ #define FILESYS_NAMESPACE SACK_NAMESPACE _FILESYS_NAMESPACE
+ /* Define end file monitor namespace. */
+ #define FILEMON_NAMESPACE_END _FILEMON_NAMESPACE_END _FILESYS_NAMESPACE_END SACK_NAMESPACE_END
+ /* Defines the file montior namespace when compiling C++. */
+ #define FILEMON_NAMESPACE SACK_NAMESPACE _FILESYS_NAMESPACE _FILEMON_NAMESPACE
+ SACK_NAMESPACE
+ /* \File system abstractions. A few things like get current path
+    may or may not exist on a function.
+    Primarily this defines functions 'pathchr' and 'pathrchr'
+    which resemble 'strchr' and 'strrchr' but search a string for
+    a path character. A path character is either a / or a \\.
+    Also in this area is file monitoring functions which support
+    methods on windows and linux to get event notifications when
+    directories and, by filtering, files that have changed.
+                                                                  */
+ _FILESYS_NAMESPACE
+  enum ScanFileFlags {
+ // go into subdirectories
+ SFF_SUBCURSE    = 1,
+ // return directory names also
+ SFF_DIRECTORIES = 2,
+ // don't concatenate base with filename to result.
+ SFF_NAMEONLY    = 4,
+ // when matching filename - do not match case.
+ SFF_IGNORECASE  = 8,
+ // don't concatenate base with filename to result, but do build path relative to root specified
+ SFF_SUBPATHONLY    = 16,
+  };
+  // flags sent to Process when called with a matching name
+ enum ScanFileProcessFlags{
+ // is a directory...
+ SFF_DIRECTORY  = 1,
+ // this is a drive...
+   SFF_DRIVE      = 2,
+ };
+ struct file_system_mounted_interface;
+ /* Extended external file system interface to be able to use external file systems */
+ struct file_system_interface {
+                                                  //filename
+  void* (CPROC *open)(uintptr_t psvInstance, const char *);
+                                                 //file *
+  int (CPROC *_close)(void *);
+                    //file *, buffer, length (to read)
+  size_t (CPROC *_read)(void *,char *, size_t);
+                    //file *, buffer, length (to write)
+  size_t (CPROC *_write)(void*,const char *, size_t);
+  size_t (CPROC *seek)( void *, size_t, int whence);
+  void  (CPROC *truncate)( void *);
+  void (CPROC *_unlink)( uintptr_t psvInstance, const char *);
+ // get file size
+  size_t (CPROC *size)( void *);
+ // get file current position
+  size_t (CPROC *tell)( void *);
+  int (CPROC *flush )(void *kp);
+  int (CPROC *exists)( uintptr_t psvInstance, const char *file );
+  LOGICAL (CPROC*copy_write_buffer)(void );
+  struct find_cursor *(CPROC *find_create_cursor )( uintptr_t psvInstance, const char *root, const char *filemask );
+  int (CPROC *find_first)( struct find_cursor *cursor );
+  int (CPROC *find_close)( struct find_cursor *cursor );
+  int (CPROC *find_next)( struct find_cursor *cursor );
+  char * (CPROC *find_get_name)( struct find_cursor *cursor );
+  size_t (CPROC *find_get_size)( struct find_cursor *cursor );
+  // ftell can be done with seek( file, 0, SEEK_CUR );
+  // if is_directory is NULL; assume result is false (file system does not support directories)
+  LOGICAL (CPROC *is_directory)( const char *pathname );
+  LOGICAL (CPROC *rename )( uintptr_t psvInstance, const char *original_name, const char *new_name );
+ };
+ /* \ \
+    Parameters
+    mask :      This is the mask used to compare
+    name :      this is the name to compare against using the mask.
+    keepcase :  if TRUE, must match case also.
+    Returns
+    TRUE if name is matched by mask. Otherwise returns FALSE.
+    Example
+    <code lang="c++">
+    if( CompareMask( "*.exe", "program.exe", FALSE ) )
+    {
+        // then program.exe is matched by the mask.
+    }
+    </code>
+    Remarks
+    The mask support standard 'globbing' characters.
+    ? matches one character
+    \* matches 0 or more characters
+    otherwise the literal character must match, unless comparing
+    case insensitive, in which case 'A' == 'a' also.                */
+ FILESYS_PROC  int FILESYS_API  CompareMask ( CTEXTSTR mask, CTEXTSTR name, int keepcase );
+ // ScanFiles usage:
+ //   base - base path to scan
+ //   mask - file mask to process if NULL or "*" is everything "*.*" must contain a .
+ //   pInfo is a pointer to a void* - this pointer is used to maintain
+ //        internal information...
+ //   Process is called with the full name of any matching files
+ //   subcurse is a flag - set to go into all subdirectories looking for files.
+ // There is no way to abort the scan...
+ FILESYS_PROC  int FILESYS_API  ScanFilesEx ( CTEXTSTR base
+            , CTEXTSTR mask
+            , void **pInfo
+            , void CPROC Process( uintptr_t psvUser, CTEXTSTR name, int flags )
+            , int flags
+      , uintptr_t psvUser, LOGICAL begin_sub_path, struct file_system_mounted_interface *mount );
+ FILESYS_PROC  int FILESYS_API  ScanFiles ( CTEXTSTR base
+            , CTEXTSTR mask
+            , void **pInfo
+            , void CPROC Process( uintptr_t psvUser, CTEXTSTR name, int flags )
+            , int flags
+            , uintptr_t psvUser );
+ FILESYS_PROC  void FILESYS_API  ScanDrives ( void (CPROC *Process)(uintptr_t user, CTEXTSTR letter, int flags)
+             , uintptr_t user );
+ // result is length of name filled into pResult if pResult == NULL && nResult = 0
+ // the result will the be length of the name matching the file.
+ FILESYS_PROC  int FILESYS_API  GetMatchingFileName ( CTEXTSTR filemask, int flags, TEXTSTR pResult, int nResult );
+ // searches a path for the last '/' or '\'
+ FILESYS_PROC  CTEXTSTR FILESYS_API  pathrchr ( CTEXTSTR path );
+ #ifdef __cplusplus
+ FILESYS_PROC  TEXTSTR FILESYS_API  pathrchr ( TEXTSTR path );
+ #endif
+ // searches a path for the first '/' or '\'
+ FILESYS_PROC  CTEXTSTR FILESYS_API  pathchr ( CTEXTSTR path );
+ // returns pointer passed (if it worked?)
+ FILESYS_PROC  TEXTSTR FILESYS_API  GetCurrentPath ( TEXTSTR path, int buffer_len );
+ FILESYS_PROC  int FILESYS_API  SetCurrentPath ( CTEXTSTR path );
+ /* Creates a directory. If parent peices of the directory do not
+    exist, those parts are created also.
+    Example
+    <code lang="c#">
+    MakePath( "c:\\where\\I'm/going/to/store/data" );
+    </code>                                                       */
+ FILESYS_PROC  int FILESYS_API  MakePath ( CTEXTSTR path );
+ /* A boolean result function whether a specified name is a
+    directory or not. (if not, assumes it's a file).
+    Example
+    <code lang="c#">
+    if( IsPath( "c:/windows" ) )
+    {
+        // if yes, then c:\\windows is a directory.
+    }
+    </code>                                                 */
+ FILESYS_PROC LOGICAL  FILESYS_API  IsPath ( CTEXTSTR path );
+ FILESYS_PROC LOGICAL  FILESYS_API  IsAbsolutePath( CTEXTSTR path );
+ FILESYS_PROC  uint64_t     FILESYS_API  GetFileWriteTime ( CTEXTSTR name );
+ FILESYS_PROC  uint64_t     FILESYS_API  GetTimeAsFileTime ( void );
+ FILESYS_PROC  LOGICAL FILESYS_API  SetFileWriteTime( CTEXTSTR name, uint64_t filetime );
+ FILESYS_PROC  LOGICAL FILESYS_API  SetFileTimes( CTEXTSTR name
+  // last modification time.
+                  , uint64_t filetime_create
+ // last modification time.
+                  , uint64_t filetime_modify
+  // last modification time.
+                  , uint64_t filetime_access
+                  );
+ FILESYS_PROC  void    FILESYS_API  SetDefaultFilePath ( CTEXTSTR path );
+ FILESYS_PROC  INDEX   FILESYS_API  SetGroupFilePath ( CTEXTSTR group, CTEXTSTR path );
+ FILESYS_PROC  TEXTSTR FILESYS_API  sack_prepend_path ( INDEX group, CTEXTSTR filename );
+ /* This is a new feature added for supporting systems without a
+    current file location. This gets an integer ID of a group of
+    files by name.
+    the name 'default' is used to specify files to go into the
+    'current working directory'
+  There are some special symbols.
+  . = use CurrentPath
+  @ = use program path base
+    ^ = use program startup path (may not be current)
+    Parameters
+    groupname :     name of the group
+    default_path :  the path of the group, if the name is not
+                    found.
+    Returns
+    the ID of a file group.
+    Example
+    <code lang="c++">
+    int group = GetFileGroup( "fonts", "./fonts" );
+    </code>                                                      */
+ FILESYS_PROC INDEX FILESYS_API  GetFileGroup ( CTEXTSTR groupname, CTEXTSTR default_path );
+ FILESYS_PROC TEXTSTR FILESYS_API GetFileGroupText ( INDEX group, TEXTSTR path, int path_chars );
+ FILESYS_PROC TEXTSTR FILESYS_API ExpandPathEx( CTEXTSTR path, struct file_system_interface *fsi );
+ FILESYS_PROC TEXTSTR FILESYS_API ExpandPath( CTEXTSTR path );
+ FILESYS_PROC LOGICAL FILESYS_API SetFileLength( CTEXTSTR path, size_t length );
+ /* \Returns the size of the file.
+    Parameters
+    name :  name of the file to get information about
+    Returns
+    \Returns the size of the file. or -1 if the file did not
+    exist.                                                   */
+ FILESYS_PROC  size_t FILESYS_API  GetSizeofFile ( TEXTCHAR *name, uint32_t* unused );
+ #ifndef __ANDROID__
+ /* An extended function, which returns a uint64_t bit time
+    appropriate for the current platform. This is meant to
+    replace 'stat'. It can get all commonly checked attributes of
+    a file.
+    Parameters
+    name :              name of the file to get information about
+    lpCreationTime :    pointer to a FILETIME type to get creation
+                        time. can be NULL.
+    lpLastAccessTime :  pointer to a FILETIME type to get access
+                        time. can be NULL.
+    lpLastWriteTime :   pointer to a FILETIME type to get write
+                        time. can be NULL.
+    IsDirectory :       pointer to a LOGICAL to receive indicator
+                        whether the file was a directory. can be
+                        NULL.
+    Returns
+    \Returns the size of the file. or -1 if the file did not
+  exist.                                                         */
+ FILESYS_PROC  uint32_t FILESYS_API  GetFileTimeAndSize ( CTEXTSTR name
+              , LPFILETIME lpCreationTime
+              ,  LPFILETIME lpLastAccessTime
+              ,  LPFILETIME lpLastWriteTime
+              , int *IsDirectory
+              );
+ FILESYS_PROC void FILESYS_API ConvertFileIntToFileTime( uint64_t int_filetime, FILETIME *filetime );
+ FILESYS_PROC uint64_t FILESYS_API ConvertFileTimeToInt( const FILETIME *filetime );
+ #endif
+ // can use 0 as filegroup default - single 'current working directory'
+ #ifndef NEED_OLDNAMES
+ #define _NO_OLDNAMES
+ #endif
+ //#ifdef UNDER_CE
+ # ifndef O_RDONLY
+ #define O_RDONLY       0x0000
+ #define O_WRONLY       0x0001
+ #define O_RDWR         0x0002
+ #define O_APPEND       0x0008
+ #define O_CREAT        0x0100
+ #define O_TRUNC        0x0200
+ #define O_EXCL         0x0400
+ #endif
+ #ifndef __ANDROID__
+ #  ifndef S_IRUSR
+ #    define S_IRUSR 1
+ #    define S_IWUSR 2
+ #  endif
+ #endif
+ //# endif
+ #ifndef __LINUX__
+ FILESYS_PROC  HANDLE FILESYS_API  sack_open ( INDEX group, CTEXTSTR filename, int opts, ... );
+ FILESYS_PROC  LOGICAL FILESYS_API  sack_set_eof ( HANDLE file_handle );
+ FILESYS_PROC  long  FILESYS_API   sack_tell( INDEX file_handle );
+ FILESYS_PROC  HANDLE FILESYS_API  sack_openfile ( INDEX group, CTEXTSTR filename, OFSTRUCT *of, int flags );
+ FILESYS_PROC  HANDLE FILESYS_API  sack_creat ( INDEX group, CTEXTSTR file, int opts, ... );
+ FILESYS_PROC  int FILESYS_API  sack_close ( HANDLE file_handle );
+ FILESYS_PROC  int FILESYS_API  sack_lseek ( HANDLE file_handle, int pos, int whence );
+ FILESYS_PROC  int FILESYS_API  sack_read ( HANDLE file_handle, POINTER buffer, int size );
+ FILESYS_PROC  int FILESYS_API  sack_write ( HANDLE file_handle, CPOINTER buffer, int size );
+ #endif
+ FILESYS_PROC  INDEX FILESYS_API  sack_iopen ( INDEX group, CTEXTSTR filename, int opts, ... );
+ FILESYS_PROC  INDEX FILESYS_API  sack_iopenfile ( INDEX group, CTEXTSTR filename, int opts, int flags );
+ FILESYS_PROC  INDEX FILESYS_API  sack_icreat ( INDEX group, CTEXTSTR file, int opts, ... );
+ FILESYS_PROC  LOGICAL FILESYS_API  sack_iset_eof ( INDEX file_handle );
+ FILESYS_PROC  int FILESYS_API  sack_iclose ( INDEX file_handle );
+ FILESYS_PROC  int FILESYS_API  sack_ilseek ( INDEX file_handle, size_t pos, int whence );
+ FILESYS_PROC  int FILESYS_API  sack_iread ( INDEX file_handle, POINTER buffer, int size );
+ FILESYS_PROC  int FILESYS_API  sack_iwrite ( INDEX file_handle, CPOINTER buffer, int size );
+ /* internal (c library) file system is registered as prority 1000.... lower priorities are checked first for things like
+   ScanFiles(), fopen( ..., "r" ), ... exists(), */
+ FILESYS_PROC struct file_system_mounted_interface * FILESYS_API sack_mount_filesystem( const char *name, struct file_system_interface *, int priority, uintptr_t psvInstance, LOGICAL writable );
+ FILESYS_PROC void FILESYS_API sack_unmount_filesystem( struct file_system_mounted_interface *mount );
+ FILESYS_PROC struct file_system_mounted_interface * FILESYS_API sack_get_mounted_filesystem( const char *name );
+ /* sometimes you want scanfiles to only scan external files...
+   so this is how to get that mount */
+ FILESYS_PROC struct file_system_mounted_interface * FILESYS_API sack_get_default_mount( void );
+ /* specify a mounted system to open... multiple volumes of the same type need a different handle */
+ FILESYS_PROC  FILE* FILESYS_API  sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_system_mounted_interface *fsi );
+ /* if mode is read, all mounted file systems are attempted... */
+ FILESYS_PROC  FILE* FILESYS_API  sack_fopen ( INDEX group, CTEXTSTR filename, CTEXTSTR opts );
+ /* specify a mounted system to open... multiple volumes of the same type need a different handle */
+ FILESYS_PROC  FILE* FILESYS_API  sack_fsopenEx ( INDEX group, CTEXTSTR filename, CTEXTSTR opts, int share_mode, struct file_system_mounted_interface *fsi );
+ /* if mode is read, all mounted file systems are attempted...
+    if mode is write/create only the first writable file system is used...
+ */
+ FILESYS_PROC  FILE* FILESYS_API  sack_fsopen ( INDEX group, CTEXTSTR filename, CTEXTSTR opts, int share_mode );
+ FILESYS_PROC  struct file_system_interface * FILESYS_API sack_get_filesystem_interface( CTEXTSTR name );
+ FILESYS_PROC  void FILESYS_API sack_set_default_filesystem_interface( struct file_system_interface *fsi );
+ FILESYS_PROC  void FILESYS_API sack_register_filesystem_interface( CTEXTSTR name, struct file_system_interface *fsi );
+ FILESYS_PROC  int FILESYS_API  sack_fclose ( FILE *file_file );
+ FILESYS_PROC  size_t FILESYS_API  sack_fseek ( FILE *file_file, size_t pos, int whence );
+ FILESYS_PROC  size_t FILESYS_API  sack_ftell ( FILE *file_file );
+ FILESYS_PROC  size_t FILESYS_API  sack_fsize ( FILE *file_file );
+ FILESYS_PROC  LOGICAL FILESYS_API  sack_existsEx ( const char * filename, struct file_system_mounted_interface *mount );
+ FILESYS_PROC  LOGICAL FILESYS_API  sack_exists ( const char *file_file );
+ FILESYS_PROC  size_t FILESYS_API  sack_fread ( POINTER buffer, size_t size, int count,FILE *file_file );
+ FILESYS_PROC  size_t FILESYS_API  sack_fwrite ( CPOINTER buffer, size_t size, int count,FILE *file_file );
+ FILESYS_PROC  TEXTSTR FILESYS_API  sack_fgets ( TEXTSTR  buffer, size_t size,FILE *file_file );
+ FILESYS_PROC  int FILESYS_API  sack_fflush ( FILE *file );
+ FILESYS_PROC  int FILESYS_API  sack_ftruncate ( FILE *file );
+ FILESYS_PROC int FILESYS_API sack_vfprintf( FILE *file_handle, const char *format, va_list args );
+ FILESYS_PROC int FILESYS_API sack_fprintf( FILE *file, const char *format, ... );
+ FILESYS_PROC int FILESYS_API sack_fputs( const char *format, FILE *file );
+ FILESYS_PROC  int FILESYS_API  sack_unlinkEx ( INDEX group, CTEXTSTR filename, struct file_system_mounted_interface *mount );
+ FILESYS_PROC  int FILESYS_API  sack_unlink ( INDEX group, CTEXTSTR filename );
+ FILESYS_PROC  int FILESYS_API  sack_rmdir( INDEX group, CTEXTSTR filename );
+ FILESYS_PROC  int FILESYS_API  sack_renameEx ( CTEXTSTR file_source, CTEXTSTR new_name, struct file_system_mounted_interface *mount );
+ FILESYS_PROC  int FILESYS_API  sack_rename ( CTEXTSTR file_source, CTEXTSTR new_name );
+ FILESYS_PROC  void FILESYS_API sack_set_common_data_application( CTEXTSTR name );
+ FILESYS_PROC  void FILESYS_API sack_set_common_data_producer( CTEXTSTR name );
+ #ifndef NO_FILEOP_ALIAS
+ #  ifndef NO_OPEN_MACRO
+ # define open(a,...) sack_iopen(0,a,##__VA_ARGS__)
+ # define set_eof(a)  sack_iset_eof(a)
+ #  endif
+ #ifdef WIN32
+ #if !defined( SACK_BAG_EXPORTS ) && !defined( BAG_EXTERNALS ) && !defined( FILESYSTEM_LIBRARY_SOURCE )
+ # define _lopen(a,...) sack_open(0,a,##__VA_ARGS__)
+ # define tell(a)      sack_tell(a)
+ # define lseek(a,b,c) sack_ilseek(a,b,c)
+ # define _llseek(a,b,c) sack_lseek(a,b,c)
+ # define HFILE HANDLE
+ # undef HFILE_ERROR
+ # define HFILE_ERROR INVALID_HANDLE_VALUE
+ # define creat(a,...)  sack_icreat( 0,a,##__VA_ARGS__ )
+ # define close(a)  sack_iclose(a)
+ # define OpenFile(a,b,c) sack_openfile(0,a,b,c)
+ # define _lclose(a)  sack_close(a)
+ # define read(a,b,c) sack_iread(a,b,c)
+ # define write(a,b,c) sack_iwrite(a,b,c)
+ # define _lread(a,b,c) sack_read(a,b,c)
+ # define _lwrite(a,b,c) sack_write(a,b,c)
+ # define _lcreat(a,b) sack_creat(0,a,b)
+ # define remove(a)   sack_unlink(0,a)
+ # define unlink(a)   sack_unlink(0,a)
+ #endif
+ #endif
+ //NO_FILEOP_ALIAS
+ #endif
+ #ifdef __LINUX__
+ #define SYSPATHCHAR WIDE("/")
+ #else
+ #define SYSPATHCHAR WIDE("\\")
+ #endif
+ FILESYS_NAMESPACE_END
+ #ifdef __cplusplus
+ using namespace sack::filesys;
  #endif
  #endif
  #ifndef SACK_VFS_DEFINED
