@@ -75,7 +75,9 @@ public:
 
 class FileObject : public node::ObjectWrap {
 	struct sack_vfs_file *file;
-   //Local<Object> volume;
+	//Local<Object> volume;
+   char* buf;
+   size_t size;
    Persistent<Object> volume;
 public:
 	static v8::Persistent<v8::Function> constructor;
@@ -85,6 +87,7 @@ public:
 	static void readFile( const FunctionCallbackInfo<Value>& args );
 	static void writeFile( const FunctionCallbackInfo<Value>& args );
 	static void seekFile( const FunctionCallbackInfo<Value>& args );
+	static void truncateFile( const FunctionCallbackInfo<Value>& args );
 
 	//static void readFile( const FunctionCallbackInfo<Value>& args );
 
@@ -231,12 +234,17 @@ void FileObject::readFile(const FunctionCallbackInfo<Value>& args) {
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	//SACK_VFS_PROC size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t length );
 	if( args.Length() == 0 ) {
-		size_t fileSize = sack_vfs_size( file->file );
-		char *buf = NewArray( char, fileSize );
-		sack_vfs_read( file->file, buf, fileSize );
-		Local<String> result = String::NewFromUtf8( isolate, buf );
-		Deallocate( char*, buf );
-		args.GetReturnValue().Set( result );
+		if( !file->buf ) {
+			file->size = sack_vfs_size( file->file );
+			file->buf = NewArray( char, file->size );
+			sack_vfs_read( file->file, file->buf, file->size );
+		}
+		{
+			Local<Object> arrayBuffer = ArrayBuffer::New( isolate, file->buf, file->size );
+			args.GetReturnValue().Set( arrayBuffer );
+		}
+		//Local<String> result = String::NewFromUtf8( isolate, buf );
+		//args.GetReturnValue().Set( result );
 	}
 }
 
@@ -245,21 +253,35 @@ void FileObject::writeFile(const FunctionCallbackInfo<Value>& args) {
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 
 	//SACK_VFS_PROC size_t CPROC sack_vfs_write( struct sack_vfs_file *file, char * data, size_t length );
-	if( args.Length() == 1 && args[0]->IsString() ) {
-		String::Utf8Value data( args[0]->ToString() );		
-		sack_vfs_write( file->file, *data, data.length() );
+	if( args.Length() == 1 ) {
+		if( args[0]->IsString() ) {
+			String::Utf8Value data( args[0]->ToString() );
+			sack_vfs_write( file->file, *data, data.length() );
+		} else if( args[0]->IsArrayBuffer() ) {
+			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+			ArrayBuffer::Contents contents = ab->GetContents();
+			//file->buf = (char*)contents.Data();
+			//file->size = contents.ByteLength();
+			sack_vfs_write( file->file, (char*)contents.Data(), contents.ByteLength() );
+		}
 	}
 
+}
+
+void FileObject::truncateFile(const FunctionCallbackInfo<Value>& args) {
+	Isolate* isolate = Isolate::GetCurrent();
+	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
+	sack_vfs_truncate( file->file ); // sets end of file mark to current position.
 }
 
 void FileObject::seekFile(const FunctionCallbackInfo<Value>& args) {
 	Isolate* isolate = Isolate::GetCurrent();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	if( args.Length() == 1 && args[0]->IsNumber() ) {
-		sack_vfs_seek( file->file, args[0]->ToNumber()->Value(), SEEK_SET );
+		sack_vfs_seek( file->file, (size_t)args[0]->ToNumber()->Value(), SEEK_SET );
 	}
 	if( args.Length() == 2 && args[0]->IsNumber() && args[1]->IsNumber() ) {
-		sack_vfs_seek( file->file, args[0]->ToNumber()->Value(), args[1]->ToNumber()->Value() );
+		sack_vfs_seek( file->file, (size_t)args[0]->ToNumber()->Value(), (int)args[1]->ToNumber()->Value() );
 	}
 
 }
@@ -278,6 +300,7 @@ void FileObject::seekFile(const FunctionCallbackInfo<Value>& args) {
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "read", readFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "write", writeFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "seek", seekFile );
+		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "trunc", truncateFile );
 		// read stream methods
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "pause", openFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "resume", openFile );
@@ -334,7 +357,8 @@ void FileObject::seekFile(const FunctionCallbackInfo<Value>& args) {
 
 	FileObject::FileObject( VolumeObject* vol, const char *filename, Isolate* isolate, Local<Object> o ) : 
 		volume( isolate, o )
-	{
+   {
+      buf = NULL;
 		file = sack_vfs_openfile( vol->vol, filename );
 	}
 
@@ -349,6 +373,8 @@ VolumeObject::~VolumeObject() {
 
 FileObject::~FileObject() {
 	//printf( "File object evaporated.\n" );
+	if( buf )
+      Deallocate( char*, buf );
 	sack_vfs_close( file );
 	volume.Reset();
 }
