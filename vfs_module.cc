@@ -104,8 +104,9 @@ static void moduleExit( void *arg ) {
 void VolumeObject::Init( Handle<Object> exports ) {
 	InvokeDeadstart();
 	node::AtExit( moduleExit );
-	SetSystemLog( SYSLOG_FILE, stdout );
-	lprintf( "Stdout Logging Enabled." );
+	
+	//SetSystemLog( SYSLOG_FILE, stdout );
+	//lprintf( "Stdout Logging Enabled." );
 	{
 		//extern void Syslog
 	}
