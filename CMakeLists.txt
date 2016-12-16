@@ -2,15 +2,20 @@ cmake_minimum_required(VERSION 3.0)
 
 project (vfs_module)
 
-set( DEFINITIONS   __STATIC__ __NO_OPTIONS__ __NO_INTERFACE_SUPPORT__ 
-		USE_SQLITE USE_SQLITE_INTERFACE FORCE_COLOR_MACROS 
-                __NO_ODBC__ )
-                
+
 include_directories( "../node_modules/nan" )
 
+if( NOT WIN32 )
+    ADD_DEFINITIONS( -D__LINUX__ )
+endif( NOT WIN32 )
 if( CMAKE_SIZEOF_VOID_P EQUAL 8 )
     ADD_DEFINITIONS( -D__64__ )
 endif( CMAKE_SIZEOF_VOID_P EQUAL 8 )
+
+if( NOT WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 )
+    ADD_DEFINITIONS( -D__LINUX64__ )
+endif( NOT WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 )
+ADD_DEFINITIONS( -DNO_OPEN_MACRO )
 
 
 set( SACK_BASE M:/sack )
@@ -26,7 +31,8 @@ set( INCLUDES
 # __NO_OPTIONS__ __NO_INTERFACE_SUPPORT__ __NO_ODBC__
 set( DEFINITIONS   __STATIC__ 
 		USE_SQLITE USE_SQLITE_INTERFACE FORCE_COLOR_MACROS 
-                _CRT_SECURE_NO_WARNINGS
+                _CRT_SECURE_NO_WARNINGS  NEED_SHLAPI NEED_SHLOBJ 
+                NO_SSL
                  )
 FILE( WRITE ${CMAKE_BINARY_DIR}/config.ppc "/*CMake Option defined*/\n" )
 
@@ -34,10 +40,6 @@ foreach( DEF ${DEFINITIONS} )
    #ADD_DEFINITIONS( -D${DEF} )
    FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define ${DEF}\n" )
 ENDFOREACH()
-
-if( WIN32 )
-	set( MORE_NETWORK_SOURCES ${SACK_BASE}/src/netlib/net_winsock2.c )
-endif( WIN32 )
 
 SET( EXTRA_HEADERS
 	${SACK_BASE}/include/stdhdrs.h
@@ -47,6 +49,7 @@ SET( EXTRA_HEADERS
         ${SACK_BASE}/include/idle.h
         ${SACK_BASE}/include/filesys.h
         ${SACK_BASE}/include/sack_vfs.h
+        ${SACK_BASE}/include/json_emitter.h
 )
 
 SET( EXTRA_SOURCES 
@@ -54,6 +57,7 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/utils/virtual_file_system/vfs_internal.h
         ${SACK_BASE}/src/salty_random_generator/salty_generator.c
         ${SACK_BASE}/src/salty_random_generator/crypt_util.c
+        ${SACK_BASE}/src/contrib/md5lib/md5c.c
         ${SACK_BASE}/src/contrib/sha1lib/sha1.c
         ${SACK_BASE}/src/contrib/sha2lib/sha2.c
 	${SACK_BASE}/src/deadstart/deadstart_core.c
@@ -79,11 +83,20 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/typelib/binarylist.c
 	${SACK_BASE}/src/typelib/familytree.c
 	${SACK_BASE}/src/typelib/sets.c
+	${SACK_BASE}/src/typelib/http.c
+	${SACK_BASE}/src/typelib/url.c
 	
+	${SACK_BASE}/src/netlib/html5.websocket/html5.websocket.common.c
+	${SACK_BASE}/src/netlib/html5.websocket/client/html5.websocket.client.c
+	${SACK_BASE}/src/netlib/html5.websocket/server/html5.websocket.c
+	${SACK_BASE}/src/netlib/html5.websocket/json/json.h
+	${SACK_BASE}/src/netlib/html5.websocket/json/json_parser.c
+	${SACK_BASE}/src/netlib/html5.websocket/json/json_emitter.c
 	${SACK_BASE}/src/netlib/network.c
 	${SACK_BASE}/src/netlib/tcpnetwork.c
 	${SACK_BASE}/src/netlib/udpnetwork.c
-	${MORE_NETWORK_SOURCES}
+        ${SACK_BASE}/src/netlib/net_winsock2.c
+        
 	${SACK_BASE}/src/contrib/sqlite/sqlite_interface.c
         ${SACK_BASE}/src/sqllib/sqlstruc.h
         ${SACK_BASE}/src/configlib/configscript.c
@@ -137,9 +150,14 @@ add_library(${PROJECT_NAME} SHARED
         )
 
 
+
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
-set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_DEFINITIONS "TARGETNAME=\"${PROJECT_NAME}.node\"" )
+set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_DEFINITIONS "TARGETNAME=\"${PROJECT_NAME}.node\";${MOREDEFS}" )
 target_link_libraries(${PROJECT_NAME} ${CMAKE_JS_LIB})
 if( WIN32 )
    target_link_libraries(${PROJECT_NAME} winmm ws2_32 rpcrt4 iphlpapi odbc32 )
 endif( WIN32 )
+if( UNIX )
+   target_link_libraries( ${PROJECT_NAME} uuid )
+endif( UNIX )
+

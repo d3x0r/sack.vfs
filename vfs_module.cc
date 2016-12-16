@@ -3,6 +3,7 @@
 #include <node.h>
 #include <node_object_wrap.h>
 #include <v8.h>
+#include <uv.h>
 //#include <nan.h>
 
 #include "src/sack.h"
@@ -14,7 +15,7 @@ static struct local {
    PLIST volumes;
 } l;
 
-class VolumeObject : node::ObjectWrap {
+class VolumeObject : public node::ObjectWrap {
 public:
 	struct volume *vol;
 	static v8::Persistent<v8::Function> constructor;
@@ -30,7 +31,7 @@ public:
    ~VolumeObject();
 };
 
-class SqlObject : node::ObjectWrap {
+class SqlObject : public node::ObjectWrap {
 public:
 	PODBC odbc;
    int optionInitialized;
@@ -38,20 +39,37 @@ public:
 	int columns;
 	CTEXTSTR *result;
 	CTEXTSTR *fields;
-	Persistent<Object> volume;
+	//Persistent<Object> volume;
 public:
 
 	static void Init( Handle<Object> exports );
 	SqlObject( const char *dsn, Isolate* isolate, Local<Object> o );
 
 	static void New( const FunctionCallbackInfo<Value>& args );
-
 	static void query( const FunctionCallbackInfo<Value>& args );
 	static void option( const FunctionCallbackInfo<Value>& args );
 	static void setOption( const FunctionCallbackInfo<Value>& args );
 	static void makeTable( const FunctionCallbackInfo<Value>& args );
 
    ~SqlObject();
+};
+
+
+class ThreadObject : public node::ObjectWrap {
+public:
+	static v8::Persistent<v8::Function> constructor;
+   	Persistent<Function, CopyablePersistentTraits<Function>> idleProc;
+public:
+
+	static void Init( Handle<Object> exports );
+	ThreadObject();
+
+	static void New( const FunctionCallbackInfo<Value>& args );
+
+	static void relinquish( const FunctionCallbackInfo<Value>& args );
+	static void wake( const FunctionCallbackInfo<Value>& args );
+
+   ~ThreadObject();
 };
 
 
@@ -83,11 +101,14 @@ static void moduleExit( void *arg ) {
 void VolumeObject::Init( Handle<Object> exports ) {
 	InvokeDeadstart();
 	node::AtExit( moduleExit );
+	SetSystemLog( SYSLOG_FILE, stdout );
+	lprintf( "Stdout Logging Enabled." );
 	{
 		//extern void Syslog
 	}
 		Isolate* isolate = Isolate::GetCurrent();
 		Local<FunctionTemplate> volumeTemplate;
+		ThreadObject::Init( exports );
 		FileObject::Init();
 		SqlObject::Init( exports );
 		// Prepare constructor template
@@ -99,8 +120,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "File", FileObject::openFile );
 		NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "dir", getDirectory );
 
-		//NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "Sqlite", SqlObject::New );
-
+		
 		constructor.Reset( isolate, volumeTemplate->GetFunction() );
 		exports->Set( String::NewFromUtf8( isolate, "Volume" ),
 			volumeTemplate->GetFunction() );
@@ -321,7 +341,6 @@ void FileObject::seekFile(const FunctionCallbackInfo<Value>& args) {
 
 Persistent<Function> VolumeObject::constructor;
 Persistent<Function> FileObject::constructor;
-Persistent<Function> SqlObject::constructor;
 
 VolumeObject::~VolumeObject() {
 	//printf( "Volume object evaporated.\n" );
@@ -435,8 +454,8 @@ void SqlObject::query( const FunctionCallbackInfo<Value>& args ) {
 //-----------------------------------------------------------
 
 
-SqlObject::SqlObject( const char *dsn, Isolate* isolate, Local<Object> o ) :
-	volume( isolate, o )
+Persistent<Function> SqlObject::constructor;
+SqlObject::SqlObject( const char *dsn, Isolate* isolate, Local<Object> o )
 {
    odbc = ConnectToDatabase( dsn );
    optionInitialized = FALSE;
@@ -444,7 +463,6 @@ SqlObject::SqlObject( const char *dsn, Isolate* isolate, Local<Object> o ) :
 
 SqlObject::~SqlObject() {
 	CloseDatabase( odbc );
-	volume.Reset();
 }
 
 //-----------------------------------------------------------
@@ -588,6 +606,103 @@ void SqlObject::makeTable( const FunctionCallbackInfo<Value>& args ) {
 }
 
 //-----------------------------------------------------------
+
+
+void ThreadObject::Init( Handle<Object> exports ) {
+	Isolate* isolate = Isolate::GetCurrent();
+
+	Local<FunctionTemplate> threadTemplate;
+	// Prepare constructor template
+	threadTemplate = FunctionTemplate::New( isolate, New );
+	threadTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.Thread" ) );
+	threadTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
+
+	// Prototype
+	NODE_SET_PROTOTYPE_METHOD( threadTemplate, "Δ", relinquish );
+	//NODE_SET_PROTOTYPE_METHOD( threadTemplate, "wake", wake );
+
+	constructor.Reset( isolate, threadTemplate->GetFunction() );
+	exports->Set( String::NewFromUtf8( isolate, "Thread" ),
+		threadTemplate->GetFunction() );
+}
+
+//-----------------------------------------------------------
+
+void ThreadObject::New( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.IsConstructCall() ) {
+		ThreadObject* obj;
+		if( args.Length() < 2 ) {
+			obj = new ThreadObject( );
+		}
+		else {
+			obj = new ThreadObject( );
+			Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+         	Persistent<Function> cb( isolate, arg0 );
+         	obj->idleProc = cb;
+		}
+		obj->Wrap( args.This() );
+		args.GetReturnValue().Set( args.This() );
+	} else {
+		const int argc = 2;
+		Local<Value> argv[argc] = { args[0], args.Holder() };
+		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+	}
+}
+//-----------------------------------------------------------
+
+//static int CPROC   
+//static PTHREAD nodeThread;
+//-----------------------------------------------------------
+
+//void ThreadObject::wake( const FunctionCallbackInfo<Value>& args ) {
+//	if( nodeThread )
+//		WakeThread( nodeThread );
+//}
+
+//-----------------------------------------------------------
+
+void ThreadObject::relinquish( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = Isolate::GetCurrent();
+	ThreadObject *obj = ObjectWrap::Unwrap<ThreadObject>( args.Holder() );
+	//int delay = 0;
+	//if( args.Length() > 0 && args[0]->IsNumber() )
+	//	delay = (int)args[0]->ToNumber()->Value();
+
+	//	nodeThread = MakeThread();
+	Local<Function>cb = Local<Function>::New( isolate, obj->idleProc );
+   cb->Call(Null(isolate), 0, NULL );
+	uv_run( uv_default_loop(), UV_RUN_DEFAULT);
+   /*
+	if( delay ) {
+
+		lprintf( "short sleep", delay, delay );
+		WakeableSleep( 20 );
+		lprintf( "short wake", delay, delay );
+   	cb->Call(Null(isolate), 0, NULL );
+      uv_run( uv_default_loop(), UV_RUN_DEFAULT);
+	
+		lprintf( "sleep for %08x, %d", delay, delay );
+		WakeableSleep( delay );
+	}
+   cb->Call(Null(isolate), 0, NULL );
+	uv_run( uv_default_loop(), UV_RUN_DEFAULT);
+	*/
+}
+
+//-----------------------------------------------------------
+
+Persistent<Function> ThreadObject::constructor;
+ThreadObject::ThreadObject( )
+{
+}
+
+ThreadObject::~ThreadObject() {
+}
+
+//-----------------------------------------------------------
+
 
 NODE_MODULE( vfs_module, VolumeObject::Init)
 

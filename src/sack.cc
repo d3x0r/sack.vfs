@@ -4,6 +4,9 @@
  #define USE_SQLITE_INTERFACE
  #define FORCE_COLOR_MACROS
  #define _CRT_SECURE_NO_WARNINGS
+ #define NEED_SHLAPI
+ #define NEED_SHLOBJ
+ #define NO_SSL
  /*
   BLOCKINDEX BAT[BLOCKS_PER_BAT] // link of next blocks; 0 if free, FFFFFFFF if end of file block
   uint8_t  block_data[BLOCKS_PER_BAT][BLOCK_SIZE];
@@ -26,15 +29,12 @@
  #include <stdlib.h>
  #include <stddef.h>
  #include <stdio.h>
+ #include <stdint.h>
  #if _MSC_VER
  #  ifdef EXCLUDE_SAFEINT_H
  #    define _INTSAFE_H_INCLUDED_
  #  endif
  //_MSC_VER
- #endif
- #if ( _MSC_VER > 1600 )
- // I don't use these limit anyway... so not having them should be harmless
- #  include <stdint.h>
  #endif
  #ifndef WINVER
  #  define WINVER 0x0601
@@ -68,40 +68,42 @@
  // #define NOGDI                     // All GDI defines and routines
  // #define NOKERNEL                  // All KERNEL defines and routines
  // #define NOUSER                    // All USER defines and routines
- #ifndef _ARM_
- #  ifndef _INCLUDE_NLS
+ #  ifndef _ARM_
+ #    ifndef _INCLUDE_NLS
                      // All NLS defines and routines
- #    define NONLS
+ #      define NONLS
+ #    endif
  #  endif
- #endif
  // #define NOMB                      // MB_* and MessageBox()
                   // GMEM_*, LMEM_*, GHND, LHND, associated routines
- #define NOMEMMGR
+ #  define NOMEMMGR
                 // typedef METAFILEPICT
- #define NOMETAFILE
+ #  define NOMETAFILE
  // #define NOMINMAX                  // Macros min(a,b) and max(a,b)
  // #define NOMSG                     // typedef MSG and associated routines
  // #define NOOPENFILE                // OpenFile(), OemToAnsi, AnsiToOem, and OF_*
  // #define NOSCROLL                  // SB_* and scrolling routines
                  // All Service Controller routines, SERVICE_ equates, etc.
- #define NOSERVICE
+ #  define NOSERVICE
  //#define NOSOUND                   // Sound driver routines
- // #define NOTEXTMETRIC              // typedef TEXTMETRIC and associated routines
+              // typedef TEXTMETRIC and associated routines
+ #  define NOTEXTMETRIC
  // #define NOWH                      // SetWindowsHook and WH_*
  // #define NOWINOFFSETS              // GWL_*, GCL_*, associated routines
  // #define NOCOMM                    // COMM driver routines
                    // Kanji support stuff.
- #define NOKANJI
- // #define NOHELP                    // Help engine interface.
+ #  define NOKANJI
+                    // Help engine interface.
+ #  define NOHELP
                 // Profiler interface.
- #define NOPROFILER
+ #  define NOPROFILER
  //#define NODEFERWINDOWPOS          // DeferWindowPos routines
                      // Modem Configuration Extensions
- #define NOMCX
+ #  define NOMCX
    // no StrCat StrCmp StrCpy etc functions.  (used internally)
- #define NO_SHLWAPI_STRFCNS
+ #  define NO_SHLWAPI_STRFCNS
   // This also has defines that override StrCmp StrCpy etc... but no override
- #define STRSAFE_NO_DEPRECATE
+ #  define STRSAFE_NO_DEPRECATE
  #  ifdef _MSC_VER
  #    ifndef _WIN32_WINDOWS
  // needed at least this for what - updatelayeredwindow?
@@ -127,19 +129,94 @@
  #  define _WINSOCKAPI_
  #  include <windows.h>
  #  undef _WINSOCKAPI_
- #  if defined( WIN32 ) && !defined( NO_SHLOBJ )
+ #  if defined( WIN32 ) && defined( NEED_SHLOBJ )
  #    include <shlobj.h>
  #  endif
- #  include <windowsx.h>
+ //#  include <windowsx.h>
  // we like timeGetTime() instead of GetTickCount()
- #  include <mmsystem.h>
- #  ifndef NO_SHLWAPI
+ //#  include <mmsystem.h>
+ #ifdef __cplusplus
+ extern "C"
+ #endif
+ __declspec(dllimport) DWORD WINAPI timeGetTime(void);
+ #  if defined( NEED_SHLAPI )
  #    include <shlwapi.h>
  #    include <shellapi.h>
  #  endif
  #  ifdef NEED_V4W
  #    include <vfw.h>
  #  endif
+ #  if defined( HAVE_ENVIRONMENT )
+ #    define getenv(name)       OSALOT_GetEnvironmentVariable(name)
+ #    define setenv(name,val)   SetEnvironmentVariable(name,val)
+ #  endif
+ #  define Relinquish()       Sleep(0)
+ //#pragma pragnoteonly("GetFunctionAddress is lazy and has no library cleanup - needs to be a lib func")
+ //#define GetFunctionAddress( lib, proc ) GetProcAddress( LoadLibrary( lib ), (proc) )
+ #  ifdef __cplusplus
+ #    ifdef __GNUC__
+ #      ifndef min
+ #        define min(a,b) ((a)<(b))?(a):(b)
+ #      endif
+ #    endif
+ #  endif
+ #  ifdef __cplusplus_cli
+ #    include <vcclr.h>
+/*lprintf( */
+ #    define DebugBreak() System::Console::WriteLine(gcnew System::String( WIDE__FILE__ WIDE("(") STRSYM(__LINE__) WIDE(") Would DebugBreak here...") ) );
+ //typedef unsigned int HANDLE;
+ //typedef unsigned int HMODULE;
+ //typedef unsigned int HWND;
+ //typedef unsigned int HRC;
+ //typedef unsigned int HMENU;
+ //typedef unsigned int HICON;
+ //typedef unsigned int HINSTANCE;
+ #  endif
+ // ifdef unix/linux
+ #else
+ #  include <pthread.h>
+ #  include <sched.h>
+ #  include <unistd.h>
+ #  include <sys/time.h>
+ #  include <errno.h>
+ #  if defined( __ARM__ )
+ #    define DebugBreak()
+ #  else
+ /* A symbol used to cause a debugger to break at a certain
+    point. Sometimes dynamicly loaded plugins can be hard to set
+    the breakpoint in the debugger, so it becomes easier to
+    recompile with a breakpoint in the right place.
+    Example
+    <code lang="c++">
+    DebugBreak();
+  </code>                                                      */
+ #    ifdef __ANDROID__
+ #      define DebugBreak()
+ #    else
+ #      define DebugBreak()  asm("int $3\n" )
+ #    endif
+ #  endif
+ #  ifdef __ANDROID_OLD_PLATFORM_SUPPORT__
+ extern __sighandler_t bsd_signal(int, __sighandler_t);
+ #  endif
+ // moved into timers - please linnk vs timers to get Sleep...
+ //#define Sleep(n) (usleep((n)*1000))
+ #  define Relinquish() sched_yield()
+ #  define GetLastError() (int32_t)errno
+ /* return with a THREAD_ID that is a unique, universally
+    identifier for the thread for inter process communication. */
+ #  define GetCurrentProcessId() ((uint32_t)getpid())
+ #  define GetCurrentThreadId() ((uint32_t)getpid())
+ /* Define a min(a,b) macro when the compiler lacks it. */
+ #  ifndef min
+ #    define min(a,b) (((a)<(b))?(a):(b))
+ #  endif
+ /* Why not add the max macro, also? */
+ #  ifndef max
+ #    define max(a,b) (((a)>(b))?(a):(b))
+ #  endif
+  // end if( !__LINUX__ )
+ #endif
  /* please Include sthdrs.h */
  /* Define most of the sack core types on which everything else is
     based. Also defines some of the primitive container
@@ -191,7 +268,6 @@
  #ifdef SACK_BAG_EXPORTS
  // maybe only do this while building sack_bag project itself...
  #if !defined( ZCONF_H )  && !defined( __FT2_BUILD_GENERIC_H__ )  && !defined( ZUTIL_H )  && !defined( SQLITE_PRIVATE )  && !defined( NETSERVICE_SOURCE )  && !defined( LIBRARY_DEF )
- #include <vcclr.h>
  //using namespace System;
  #endif
  #endif
@@ -318,31 +394,28 @@
  /* Defined when SACK_BAG_EXPORTS is defined. This was an
     individual library module once upon a time.           */
   /* define RENDER SOURCE when building monolithic. */
- #ifndef RENDER_LIBRARY_SOURCE
- #define RENDER_LIBRARY_SOURCE
- #endif
- #ifndef __NO_WIN32API__
+ #     ifndef RENDER_LIBRARY_SOURCE
+ #       define RENDER_LIBRARY_SOURCE
+ #     endif
+ #     ifndef __NO_WIN32API__
  // this is moved to a CMake option (based on whter it's arm or not right now)
  //#define _OPENGL_ENABLED
- #endif
+ #     endif
  // define a type that is a public name struct type...
  // good thing that typedef and struct were split
  // during the process of port to /clr option.
  //#define PUBLIC_TYPE public
- #else
+ #  else
  //#define PUBLIC_TYPE
- #ifdef __cplusplus_CLR
+ #    ifdef __cplusplus_CLR
  //using namespace System;
+ #    endif
+ #  endif
  #endif
- #ifdef __CYGWIN__
  // wchar for X_16 definition
  #include <wchar.h>
- #endif
- #ifdef _MSC_VER
+ #include <sys/types.h>
  #include <sys/stat.h>
- #endif
- #endif
- #endif
  #ifndef MY_TYPES_INCLUDED
  #define MY_TYPES_INCLUDED
  // include this before anything else
@@ -543,10 +616,6 @@
  // private thing left as a note, and forgotten.  some compilers did not define offsetof
  #define my_offsetof( ppstruc, member ) ((uintptr_t)&((*ppstruc)->member)) - ((uintptr_t)(*ppstruc))
  SACK_NAMESPACE
- #ifndef __LINUX__
- //#include <sys/types.h>
- //typedef int pid_t;
- #endif
  #ifdef BCC16
  #define __inline__
  #define MAINPROC(type,name)     type _pascal name
@@ -5025,548 +5094,6 @@
  // Initial commit
  //
  //
- #if defined( HAVE_ENVIRONMENT )
- #define getenv(name)       OSALOT_GetEnvironmentVariable(name)
- #define setenv(name,val)   SetEnvironmentVariable(name,val)
- #endif
- #define Relinquish()       Sleep(0)
- //#pragma pragnoteonly("GetFunctionAddress is lazy and has no library cleanup - needs to be a lib func")
- //#define GetFunctionAddress( lib, proc ) GetProcAddress( LoadLibrary( lib ), (proc) )
- #ifdef __cplusplus
- #  ifdef __GNUC__
- #    ifndef min
- #      define min(a,b) ((a)<(b))?(a):(b)
- #    endif
- #  endif
- #endif
- #  ifdef __cplusplus_cli
-/*lprintf( */
- # define DebugBreak() System::Console::WriteLine(gcnew System::String( WIDE__FILE__ WIDE("(") STRSYM(__LINE__) WIDE(") Would DebugBreak here...") ) );
- //typedef unsigned int HANDLE;
- //typedef unsigned int HMODULE;
- //typedef unsigned int HWND;
- //typedef unsigned int HRC;
- //typedef unsigned int HMENU;
- //typedef unsigned int HICON;
- //typedef unsigned int HINSTANCE;
- #  endif
- #if !defined( UNDER_CE ) ||defined( ELTANIN)
- #include <fcntl.h>
- #include <io.h>
- #endif
- /* A header for doing .NET /CLR compatiblity changes. Things
-    like fopen needing to be _fopen_s and junk.               */
- #ifndef FILE_DOT_NET_COMPAT
- /* Header multiple inclusion protection symbol. */
- #define FILE_DOT_NET_COMPAT
- /*
-  *  Created By Jim Buckeyne
-  *
-  *  Purpose:
-  *    Provides some cross platform/library functionatlity for
-  *  filesystem activities.
-  *  - File dates, times, stuff like that
-  *  - make paths, change paths
-  *  - path parsing (like strchr, strrchr, but looking for closest / or \)
-  *  - scan a directory for a set of files... using a recursive callback method
-  */
- #ifndef FILESYSTEM_UTILS_DEFINED
- /* Header multiple inclusion protection symbol. */
- #define FILESYSTEM_UTILS_DEFINED
- #if _MSC_VER >= 1600
- #include <share.h>
- #endif
- #if !defined( UNDER_CE )
- #if !defined( __LINUX__ )
- #else
- #define LPFILETIME uint64_t*
- #define FILETIME uint64_t
- #endif
- #endif
- /* uhmm in legacy usage this was not CPROC, but was unspecified */
- #define FILESYS_API CPROC
- // DOM-IGNORE-BEGIN
- #ifdef FILESYSTEM_LIBRARY_SOURCE
- #  define FILESYS_PROC EXPORT_METHOD
- #else
- #  define FILESYS_PROC IMPORT_METHOD
- #endif
- // DOM-IGNORE-END
- #ifdef __cplusplus
- /* defined the file system partial namespace (under
-    SACK_NAMESPACE probably)                         */
- #define _FILESYS_NAMESPACE  namespace filesys {
- /* Define the ending symbol for file system namespace. */
- #define _FILESYS_NAMESPACE_END }
- /* Defined the namespace of file montior utilities. File monitor
-    provides event notification based on file system changes.     */
- #define _FILEMON_NAMESPACE  namespace monitor {
- /* Define the end symbol for file monitor namespace. */
- #define _FILEMON_NAMESPACE_END }
- #else
- #define _FILESYS_NAMESPACE
- #define _FILESYS_NAMESPACE_END
- #define _FILEMON_NAMESPACE
- #define _FILEMON_NAMESPACE_END
- #endif
- /* define the file system namespace end. */
- #define FILESYS_NAMESPACE_END _FILESYS_NAMESPACE_END SACK_NAMESPACE_END
- /* define the file system namespace. */
- #define FILESYS_NAMESPACE SACK_NAMESPACE _FILESYS_NAMESPACE
- /* Define end file monitor namespace. */
- #define FILEMON_NAMESPACE_END _FILEMON_NAMESPACE_END _FILESYS_NAMESPACE_END SACK_NAMESPACE_END
- /* Defines the file montior namespace when compiling C++. */
- #define FILEMON_NAMESPACE SACK_NAMESPACE _FILESYS_NAMESPACE _FILEMON_NAMESPACE
- SACK_NAMESPACE
- /* \File system abstractions. A few things like get current path
-    may or may not exist on a function.
-    Primarily this defines functions 'pathchr' and 'pathrchr'
-    which resemble 'strchr' and 'strrchr' but search a string for
-    a path character. A path character is either a / or a \\.
-    Also in this area is file monitoring functions which support
-    methods on windows and linux to get event notifications when
-    directories and, by filtering, files that have changed.
-                                                                  */
- _FILESYS_NAMESPACE
-  enum ScanFileFlags {
- // go into subdirectories
- SFF_SUBCURSE    = 1,
- // return directory names also
- SFF_DIRECTORIES = 2,
- // don't concatenate base with filename to result.
- SFF_NAMEONLY    = 4,
- // when matching filename - do not match case.
- SFF_IGNORECASE  = 8,
- // don't concatenate base with filename to result, but do build path relative to root specified
- SFF_SUBPATHONLY    = 16,
-  };
-  // flags sent to Process when called with a matching name
- enum ScanFileProcessFlags{
- // is a directory...
- SFF_DIRECTORY  = 1,
- // this is a drive...
-   SFF_DRIVE      = 2,
- };
- struct file_system_mounted_interface;
- /* Extended external file system interface to be able to use external file systems */
- struct file_system_interface {
-                                                  //filename
-  void* (CPROC *open)(uintptr_t psvInstance, const char *);
-                                                 //file *
-  int (CPROC *_close)(void *);
-                    //file *, buffer, length (to read)
-  size_t (CPROC *_read)(void *,char *, size_t);
-                    //file *, buffer, length (to write)
-  size_t (CPROC *_write)(void*,const char *, size_t);
-  size_t (CPROC *seek)( void *, size_t, int whence);
-  void  (CPROC *truncate)( void *);
-  void (CPROC *_unlink)( uintptr_t psvInstance, const char *);
- // get file size
-  size_t (CPROC *size)( void *);
- // get file current position
-  size_t (CPROC *tell)( void *);
-  int (CPROC *flush )(void *kp);
-  int (CPROC *exists)( uintptr_t psvInstance, const char *file );
-  LOGICAL (CPROC*copy_write_buffer)(void );
-  struct find_cursor *(CPROC *find_create_cursor )( uintptr_t psvInstance, const char *root, const char *filemask );
-  int (CPROC *find_first)( struct find_cursor *cursor );
-  int (CPROC *find_close)( struct find_cursor *cursor );
-  int (CPROC *find_next)( struct find_cursor *cursor );
-  char * (CPROC *find_get_name)( struct find_cursor *cursor );
-  size_t (CPROC *find_get_size)( struct find_cursor *cursor );
-  // ftell can be done with seek( file, 0, SEEK_CUR );
-  // if is_directory is NULL; assume result is false (file system does not support directories)
-  LOGICAL (CPROC *is_directory)( const char *pathname );
-  LOGICAL (CPROC *rename )( uintptr_t psvInstance, const char *original_name, const char *new_name );
- };
- /* \ \
-    Parameters
-    mask :      This is the mask used to compare
-    name :      this is the name to compare against using the mask.
-    keepcase :  if TRUE, must match case also.
-    Returns
-    TRUE if name is matched by mask. Otherwise returns FALSE.
-    Example
-    <code lang="c++">
-    if( CompareMask( "*.exe", "program.exe", FALSE ) )
-    {
-        // then program.exe is matched by the mask.
-    }
-    </code>
-    Remarks
-    The mask support standard 'globbing' characters.
-    ? matches one character
-    \* matches 0 or more characters
-    otherwise the literal character must match, unless comparing
-    case insensitive, in which case 'A' == 'a' also.                */
- FILESYS_PROC  int FILESYS_API  CompareMask ( CTEXTSTR mask, CTEXTSTR name, int keepcase );
- // ScanFiles usage:
- //   base - base path to scan
- //   mask - file mask to process if NULL or "*" is everything "*.*" must contain a .
- //   pInfo is a pointer to a void* - this pointer is used to maintain
- //        internal information...
- //   Process is called with the full name of any matching files
- //   subcurse is a flag - set to go into all subdirectories looking for files.
- // There is no way to abort the scan...
- FILESYS_PROC  int FILESYS_API  ScanFilesEx ( CTEXTSTR base
-            , CTEXTSTR mask
-            , void **pInfo
-            , void CPROC Process( uintptr_t psvUser, CTEXTSTR name, int flags )
-            , int flags
-      , uintptr_t psvUser, LOGICAL begin_sub_path, struct file_system_mounted_interface *mount );
- FILESYS_PROC  int FILESYS_API  ScanFiles ( CTEXTSTR base
-            , CTEXTSTR mask
-            , void **pInfo
-            , void CPROC Process( uintptr_t psvUser, CTEXTSTR name, int flags )
-            , int flags
-            , uintptr_t psvUser );
- FILESYS_PROC  void FILESYS_API  ScanDrives ( void (CPROC *Process)(uintptr_t user, CTEXTSTR letter, int flags)
-             , uintptr_t user );
- // result is length of name filled into pResult if pResult == NULL && nResult = 0
- // the result will the be length of the name matching the file.
- FILESYS_PROC  int FILESYS_API  GetMatchingFileName ( CTEXTSTR filemask, int flags, TEXTSTR pResult, int nResult );
- // searches a path for the last '/' or '\'
- FILESYS_PROC  CTEXTSTR FILESYS_API  pathrchr ( CTEXTSTR path );
- #ifdef __cplusplus
- FILESYS_PROC  TEXTSTR FILESYS_API  pathrchr ( TEXTSTR path );
- #endif
- // searches a path for the first '/' or '\'
- FILESYS_PROC  CTEXTSTR FILESYS_API  pathchr ( CTEXTSTR path );
- // returns pointer passed (if it worked?)
- FILESYS_PROC  TEXTSTR FILESYS_API  GetCurrentPath ( TEXTSTR path, int buffer_len );
- FILESYS_PROC  int FILESYS_API  SetCurrentPath ( CTEXTSTR path );
- /* Creates a directory. If parent peices of the directory do not
-    exist, those parts are created also.
-    Example
-    <code lang="c#">
-    MakePath( "c:\\where\\I'm/going/to/store/data" );
-    </code>                                                       */
- FILESYS_PROC  int FILESYS_API  MakePath ( CTEXTSTR path );
- /* A boolean result function whether a specified name is a
-    directory or not. (if not, assumes it's a file).
-    Example
-    <code lang="c#">
-    if( IsPath( "c:/windows" ) )
-    {
-        // if yes, then c:\\windows is a directory.
-    }
-    </code>                                                 */
- FILESYS_PROC LOGICAL  FILESYS_API  IsPath ( CTEXTSTR path );
- FILESYS_PROC LOGICAL  FILESYS_API  IsAbsolutePath( CTEXTSTR path );
- FILESYS_PROC  uint64_t     FILESYS_API  GetFileWriteTime ( CTEXTSTR name );
- FILESYS_PROC  uint64_t     FILESYS_API  GetTimeAsFileTime ( void );
- FILESYS_PROC  LOGICAL FILESYS_API  SetFileWriteTime( CTEXTSTR name, uint64_t filetime );
- FILESYS_PROC  LOGICAL FILESYS_API  SetFileTimes( CTEXTSTR name
-  // last modification time.
-                  , uint64_t filetime_create
- // last modification time.
-                  , uint64_t filetime_modify
-  // last modification time.
-                  , uint64_t filetime_access
-                  );
- FILESYS_PROC  void    FILESYS_API  SetDefaultFilePath ( CTEXTSTR path );
- FILESYS_PROC  INDEX   FILESYS_API  SetGroupFilePath ( CTEXTSTR group, CTEXTSTR path );
- FILESYS_PROC  TEXTSTR FILESYS_API  sack_prepend_path ( INDEX group, CTEXTSTR filename );
- /* This is a new feature added for supporting systems without a
-    current file location. This gets an integer ID of a group of
-    files by name.
-    the name 'default' is used to specify files to go into the
-    'current working directory'
-  There are some special symbols.
-  . = use CurrentPath
-  @ = use program path base
-    ^ = use program startup path (may not be current)
-    Parameters
-    groupname :     name of the group
-    default_path :  the path of the group, if the name is not
-                    found.
-    Returns
-    the ID of a file group.
-    Example
-    <code lang="c++">
-    int group = GetFileGroup( "fonts", "./fonts" );
-    </code>                                                      */
- FILESYS_PROC INDEX FILESYS_API  GetFileGroup ( CTEXTSTR groupname, CTEXTSTR default_path );
- FILESYS_PROC TEXTSTR FILESYS_API GetFileGroupText ( INDEX group, TEXTSTR path, int path_chars );
- FILESYS_PROC TEXTSTR FILESYS_API ExpandPathEx( CTEXTSTR path, struct file_system_interface *fsi );
- FILESYS_PROC TEXTSTR FILESYS_API ExpandPath( CTEXTSTR path );
- FILESYS_PROC LOGICAL FILESYS_API SetFileLength( CTEXTSTR path, size_t length );
- /* \Returns the size of the file.
-    Parameters
-    name :  name of the file to get information about
-    Returns
-    \Returns the size of the file. or -1 if the file did not
-    exist.                                                   */
- FILESYS_PROC  size_t FILESYS_API  GetSizeofFile ( TEXTCHAR *name, uint32_t* unused );
- #ifndef __ANDROID__
- /* An extended function, which returns a uint64_t bit time
-    appropriate for the current platform. This is meant to
-    replace 'stat'. It can get all commonly checked attributes of
-    a file.
-    Parameters
-    name :              name of the file to get information about
-    lpCreationTime :    pointer to a FILETIME type to get creation
-                        time. can be NULL.
-    lpLastAccessTime :  pointer to a FILETIME type to get access
-                        time. can be NULL.
-    lpLastWriteTime :   pointer to a FILETIME type to get write
-                        time. can be NULL.
-    IsDirectory :       pointer to a LOGICAL to receive indicator
-                        whether the file was a directory. can be
-                        NULL.
-    Returns
-    \Returns the size of the file. or -1 if the file did not
-  exist.                                                         */
- FILESYS_PROC  uint32_t FILESYS_API  GetFileTimeAndSize ( CTEXTSTR name
-              , LPFILETIME lpCreationTime
-              ,  LPFILETIME lpLastAccessTime
-              ,  LPFILETIME lpLastWriteTime
-              , int *IsDirectory
-              );
- FILESYS_PROC void FILESYS_API ConvertFileIntToFileTime( uint64_t int_filetime, FILETIME *filetime );
- FILESYS_PROC uint64_t FILESYS_API ConvertFileTimeToInt( const FILETIME *filetime );
- #endif
- // can use 0 as filegroup default - single 'current working directory'
- #ifndef NEED_OLDNAMES
- #define _NO_OLDNAMES
- #endif
- //#ifdef UNDER_CE
- # ifndef O_RDONLY
- #define O_RDONLY       0x0000
- #define O_WRONLY       0x0001
- #define O_RDWR         0x0002
- #define O_APPEND       0x0008
- #define O_CREAT        0x0100
- #define O_TRUNC        0x0200
- #define O_EXCL         0x0400
- #endif
- #ifndef __ANDROID__
- #  ifndef S_IRUSR
- #    define S_IRUSR 1
- #    define S_IWUSR 2
- #  endif
- #endif
- //# endif
- #ifndef __LINUX__
- FILESYS_PROC  HANDLE FILESYS_API  sack_open ( INDEX group, CTEXTSTR filename, int opts, ... );
- FILESYS_PROC  LOGICAL FILESYS_API  sack_set_eof ( HANDLE file_handle );
- FILESYS_PROC  long  FILESYS_API   sack_tell( INDEX file_handle );
- FILESYS_PROC  HANDLE FILESYS_API  sack_openfile ( INDEX group, CTEXTSTR filename, OFSTRUCT *of, int flags );
- FILESYS_PROC  HANDLE FILESYS_API  sack_creat ( INDEX group, CTEXTSTR file, int opts, ... );
- FILESYS_PROC  int FILESYS_API  sack_close ( HANDLE file_handle );
- FILESYS_PROC  int FILESYS_API  sack_lseek ( HANDLE file_handle, int pos, int whence );
- FILESYS_PROC  int FILESYS_API  sack_read ( HANDLE file_handle, POINTER buffer, int size );
- FILESYS_PROC  int FILESYS_API  sack_write ( HANDLE file_handle, CPOINTER buffer, int size );
- #endif
- FILESYS_PROC  INDEX FILESYS_API  sack_iopen ( INDEX group, CTEXTSTR filename, int opts, ... );
- FILESYS_PROC  INDEX FILESYS_API  sack_iopenfile ( INDEX group, CTEXTSTR filename, int opts, int flags );
- FILESYS_PROC  INDEX FILESYS_API  sack_icreat ( INDEX group, CTEXTSTR file, int opts, ... );
- FILESYS_PROC  LOGICAL FILESYS_API  sack_iset_eof ( INDEX file_handle );
- FILESYS_PROC  int FILESYS_API  sack_iclose ( INDEX file_handle );
- FILESYS_PROC  int FILESYS_API  sack_ilseek ( INDEX file_handle, size_t pos, int whence );
- FILESYS_PROC  int FILESYS_API  sack_iread ( INDEX file_handle, POINTER buffer, int size );
- FILESYS_PROC  int FILESYS_API  sack_iwrite ( INDEX file_handle, CPOINTER buffer, int size );
- /* internal (c library) file system is registered as prority 1000.... lower priorities are checked first for things like
-   ScanFiles(), fopen( ..., "r" ), ... exists(), */
- FILESYS_PROC struct file_system_mounted_interface * FILESYS_API sack_mount_filesystem( const char *name, struct file_system_interface *, int priority, uintptr_t psvInstance, LOGICAL writable );
- FILESYS_PROC void FILESYS_API sack_unmount_filesystem( struct file_system_mounted_interface *mount );
- FILESYS_PROC struct file_system_mounted_interface * FILESYS_API sack_get_mounted_filesystem( const char *name );
- /* sometimes you want scanfiles to only scan external files...
-   so this is how to get that mount */
- FILESYS_PROC struct file_system_mounted_interface * FILESYS_API sack_get_default_mount( void );
- /* specify a mounted system to open... multiple volumes of the same type need a different handle */
- FILESYS_PROC  FILE* FILESYS_API  sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_system_mounted_interface *fsi );
- /* if mode is read, all mounted file systems are attempted... */
- FILESYS_PROC  FILE* FILESYS_API  sack_fopen ( INDEX group, CTEXTSTR filename, CTEXTSTR opts );
- /* specify a mounted system to open... multiple volumes of the same type need a different handle */
- FILESYS_PROC  FILE* FILESYS_API  sack_fsopenEx ( INDEX group, CTEXTSTR filename, CTEXTSTR opts, int share_mode, struct file_system_mounted_interface *fsi );
- /* if mode is read, all mounted file systems are attempted...
-    if mode is write/create only the first writable file system is used...
- */
- FILESYS_PROC  FILE* FILESYS_API  sack_fsopen ( INDEX group, CTEXTSTR filename, CTEXTSTR opts, int share_mode );
- FILESYS_PROC  struct file_system_interface * FILESYS_API sack_get_filesystem_interface( CTEXTSTR name );
- FILESYS_PROC  void FILESYS_API sack_set_default_filesystem_interface( struct file_system_interface *fsi );
- FILESYS_PROC  void FILESYS_API sack_register_filesystem_interface( CTEXTSTR name, struct file_system_interface *fsi );
- FILESYS_PROC  int FILESYS_API  sack_fclose ( FILE *file_file );
- FILESYS_PROC  size_t FILESYS_API  sack_fseek ( FILE *file_file, size_t pos, int whence );
- FILESYS_PROC  size_t FILESYS_API  sack_ftell ( FILE *file_file );
- FILESYS_PROC  size_t FILESYS_API  sack_fsize ( FILE *file_file );
- FILESYS_PROC  LOGICAL FILESYS_API  sack_existsEx ( const char * filename, struct file_system_mounted_interface *mount );
- FILESYS_PROC  LOGICAL FILESYS_API  sack_exists ( const char *file_file );
- FILESYS_PROC  size_t FILESYS_API  sack_fread ( POINTER buffer, size_t size, int count,FILE *file_file );
- FILESYS_PROC  size_t FILESYS_API  sack_fwrite ( CPOINTER buffer, size_t size, int count,FILE *file_file );
- FILESYS_PROC  TEXTSTR FILESYS_API  sack_fgets ( TEXTSTR  buffer, size_t size,FILE *file_file );
- FILESYS_PROC  int FILESYS_API  sack_fflush ( FILE *file );
- FILESYS_PROC  int FILESYS_API  sack_ftruncate ( FILE *file );
- FILESYS_PROC int FILESYS_API sack_vfprintf( FILE *file_handle, const char *format, va_list args );
- FILESYS_PROC int FILESYS_API sack_fprintf( FILE *file, const char *format, ... );
- FILESYS_PROC int FILESYS_API sack_fputs( const char *format, FILE *file );
- FILESYS_PROC  int FILESYS_API  sack_unlinkEx ( INDEX group, CTEXTSTR filename, struct file_system_mounted_interface *mount );
- FILESYS_PROC  int FILESYS_API  sack_unlink ( INDEX group, CTEXTSTR filename );
- FILESYS_PROC  int FILESYS_API  sack_rmdir( INDEX group, CTEXTSTR filename );
- FILESYS_PROC  int FILESYS_API  sack_renameEx ( CTEXTSTR file_source, CTEXTSTR new_name, struct file_system_mounted_interface *mount );
- FILESYS_PROC  int FILESYS_API  sack_rename ( CTEXTSTR file_source, CTEXTSTR new_name );
- FILESYS_PROC  void FILESYS_API sack_set_common_data_application( CTEXTSTR name );
- FILESYS_PROC  void FILESYS_API sack_set_common_data_producer( CTEXTSTR name );
- #ifndef NO_FILEOP_ALIAS
- #  ifndef NO_OPEN_MACRO
- # define open(a,...) sack_iopen(0,a,##__VA_ARGS__)
- # define set_eof(a)  sack_iset_eof(a)
- #  endif
- #ifdef WIN32
- #if !defined( SACK_BAG_EXPORTS ) && !defined( BAG_EXTERNALS ) && !defined( FILESYSTEM_LIBRARY_SOURCE )
- # define _lopen(a,...) sack_open(0,a,##__VA_ARGS__)
- # define tell(a)      sack_tell(a)
- # define lseek(a,b,c) sack_ilseek(a,b,c)
- # define _llseek(a,b,c) sack_lseek(a,b,c)
- # define HFILE HANDLE
- # undef HFILE_ERROR
- # define HFILE_ERROR INVALID_HANDLE_VALUE
- # define creat(a,...)  sack_icreat( 0,a,##__VA_ARGS__ )
- # define close(a)  sack_iclose(a)
- # define OpenFile(a,b,c) sack_openfile(0,a,b,c)
- # define _lclose(a)  sack_close(a)
- # define read(a,b,c) sack_iread(a,b,c)
- # define write(a,b,c) sack_iwrite(a,b,c)
- # define _lread(a,b,c) sack_read(a,b,c)
- # define _lwrite(a,b,c) sack_write(a,b,c)
- # define _lcreat(a,b) sack_creat(0,a,b)
- # define remove(a)   sack_unlink(0,a)
- # define unlink(a)   sack_unlink(0,a)
- #endif
- #endif
- //NO_FILEOP_ALIAS
- #endif
- #ifdef __LINUX__
- #define SYSPATHCHAR WIDE("/")
- #else
- #define SYSPATHCHAR WIDE("\\")
- #endif
- FILESYS_NAMESPACE_END
- #ifdef __cplusplus
- using namespace sack::filesys;
- #endif
- #endif
- #ifdef __cplusplus_cli
- #define Fopen( result, name, opts ) { char *tmp1 = CStrDup( name ); char *tmp2 = CStrDup( opts ); result = fopen( tmp1, tmp2 ); Deallocate( char *, tmp1 ); Deallocate( char *, tmp2 ); }
- #if asdfasdlfkajsdflkj
- #define fputs( msg, file ) { char *tmp = CStrDup( msg ); fputs( tmp, file ); Release( tmp ); }
- #define unlink( name ) { char *tmp = CStrDup( name ); unlink( tmp ); Release( tmp ); }
- #define rename( name1, name2 ) { char *tmp1 = CStrDup( name1 ); char *tmp2 = CStrDup( name2 ); rename( tmp1, tmp2 ); Release( tmp1 ); Release( tmp2 ); }
- #define fprintf Fprintf
- #endif
- //int Fprintf( FILE *file, CTEXTSTR fmt, ... );
- /*
- using namespace Win32;
- #define CreateEvent(a,b,c,d) Win32::Kernel::CreateEvent((SECURITY_ATTRIBUTES)a,b,c,d)
- #define OpenEvent(a,b,c)     Win32::Kernel::OpenEvent(a,b,c)
- #define Sleep(a)             Win32::Kernel::Sleep(a)
- #define GetTickCount()       Win32::Kernel::GetTickCount()
- #define GetCurrentProcessId() Win32::Kernel::GetCurrentProcessId()
- #define GetCurrentThreadId()  Win32::Kernel::GetCurrentThreadId()
- #define GetLastError()  Win32::Kernel::GetLastError()
- #define SetEvent(a) Win32::Kernel::SetEvent(a)
- #define ResetEvent(a) Win32::Kernel::ResetEvent(a)
- #define CloseHandle(a) Win32::Kernel::CloseHandle(a)
- #define WaitForSingleObject(a,b) Win32::Kernel::WaitForSingleObject(a,b)
- #define PeekMessage(a,b,c,d,e)  Win32::User::PeekMessage(a,b,c,d,e)
- #define DispatchMessage(a)   Win32::User::DispatchMessage(a)
- #define GetModuleFileName(a,b) Win32::Kernel::GetModuleFileName(a,b)
- */
- #if 0
- typedef struct MyFile MYFILE;
- MYFILE *Fopen( CTEXTSTR filename, CTEXTSTR mode );
- int Fread( POINTER data, int count, int size, MYFILE *file );
- int Fwrite( POINTER data, int count, int size, MYFILE *file );
- int Fclose( MYFILE *file );
- int Fseek( MYFILE *file, int64_t pos, int whence );
- uint64_t Ftell( MYFILE *file );
- MYFILE *Fdopen( int fd, CTEXTSTR mode );
- int Ferror( MYFILE *file );
- int Fflush( MYFILE *file );
- int Rewind( MYFILE *file );
- int Fputc( int c, MYFILE *file );
- int Fgets( TEXTSTR buf, int buflen, MYFILE *file );
- int Fputs( CTEXTSTR but, MYFILE *file );
- int Unlink( CTEXTSTR filename );
- int Rename( CTEXTSTR from, CTEXTSTR to );
- #define rename Rename
- #define unlink Unlink
- #define FILE MYFILE
- #define fopen Fopen
- #define fseek Fseek
- #define fclose Fclose
- #define fprintf Fprintf
- #define ftell Ftell
- #define fread Fread
- #define fwrite Fwrite
- //#define fdopen Fdopen
- #define ferror Ferror
- #define fflush Fflush
- #define rewind Rewind
- #define fputc Fputc
- #define fgets Fgets
- #define fputs Fputs
- #endif
- #else
- /* A macro which can be translated into microsoft so-called safe
-    methods.                                                      */
- #define Fopen( result, name, opts ) result = sack_fopen( 0, name, opts )
- //#define MYFILE  FILE
- //#define Fopen   fopen
- //#define Fread   fread
- //#define Fwrite  fread
- //#define Fclose  fclose
- //#define Fprintf fprintf
- //#define Fseek   fseek
- //#define Ftell   ftell
- #endif
- #endif
- // end with a newline please.
- // ifdef unix/linux
- #else
- #include <pthread.h>
- #include <sched.h>
- #include <unistd.h>
- #include <sys/time.h>
- #include <errno.h>
- #if defined( __ARM__ )
- #  define DebugBreak()
- #else
- /* A symbol used to cause a debugger to break at a certain
-    point. Sometimes dynamicly loaded plugins can be hard to set
-    the breakpoint in the debugger, so it becomes easier to
-    recompile with a breakpoint in the right place.
-    Example
-    <code lang="c++">
-    DebugBreak();
-  </code>                                                      */
- #  ifdef __ANDROID__
- #    define DebugBreak()
- #  else
- #    define DebugBreak()  asm("int $3\n" )
- #  endif
- #endif
- #ifdef __ANDROID_OLD_PLATFORM_SUPPORT__
- extern __sighandler_t bsd_signal(int, __sighandler_t);
- #endif
- // moved into timers - please linnk vs timers to get Sleep...
- //#define Sleep(n) (usleep((n)*1000))
- #define Relinquish() sched_yield()
- #define GetLastError() (int32_t)errno
- /* return with a THREAD_ID that is a unique, universally
-    identifier for the thread for inter process communication. */
- #define GetCurrentProcessId() ((uint32_t)getpid())
- #define GetCurrentThreadId() ((uint32_t)getpid())
- /* Define a min(a,b) macro when the compiler lacks it. */
- #ifndef min
- #  define min(a,b) (((a)<(b))?(a):(b))
- #endif
- /* Why not add the max macro, also? */
- #ifndef max
- #  define max(a,b) (((a)>(b))?(a):(b))
- #endif
- #endif
  #if defined( _MSC_VER )|| defined(__LCC__) || defined( __WATCOMC__ ) || defined( __GNUC__ )
  /* Includes networking as appropriate for the target platform. Providing
     compatibility definitions as are lacking between platforms...
@@ -5621,7 +5148,6 @@
  //#endif
  #elif defined( __LINUX__ )
  #if defined( FBSD )
- #include <sys/types.h>
  #endif
  // INADDR_ANY/NONE
  #include <netinet/in.h>
@@ -7201,7 +6727,7 @@
  #else
  #endif
  #  ifdef _MSC_VER
- #define SUFFER_WITH_NO_SNPRINTF
+ #    define SUFFER_WITH_NO_SNPRINTF
  #    ifndef SUFFER_WITH_NO_SNPRINTF
  #      define vnsprintf protable_vsnprintf
  //   this one gives deprication warnings
@@ -7250,9 +6776,9 @@
  #    define swcanf swscanf_s
  // _MSC_VER
  #  endif
- #ifdef  __GNUC__
+ #  ifdef  __GNUC__
  #      if defined( _UNICODE )
- #define VSNPRINTF_FAILS_RETURN_SIZE
+ #        define VSNPRINTF_FAILS_RETURN_SIZE
  #        define tnprintf  swprintf
  #        define vtnprintf vswprintf
  #        if !defined( NO_UNICODE_C )
@@ -7273,8 +6799,8 @@
  #    endif
  #      endif
  // __GNUC__
- #endif
- #ifdef __WATCOMC__
+ #  endif
+ #  ifdef __WATCOMC__
  #      if defined( _UNICODE )
  #        define tnprintf  _snwprintf
  #        define vtnprintf _vsnwprintf
@@ -7292,11 +6818,401 @@
  #      endif
  #        define snwprintf  _snwprintf
  // __WATCOMC__
- #endif
+ #  endif
  #endif
  #endif
  // tolower on linux
  #include <ctype.h>
+ /*
+  *  Created By Jim Buckeyne
+  *
+  *  Purpose:
+  *    Provides some cross platform/library functionatlity for
+  *  filesystem activities.
+  *  - File dates, times, stuff like that
+  *  - make paths, change paths
+  *  - path parsing (like strchr, strrchr, but looking for closest / or \)
+  *  - scan a directory for a set of files... using a recursive callback method
+  */
+ #ifndef FILESYSTEM_UTILS_DEFINED
+ /* Header multiple inclusion protection symbol. */
+ #define FILESYSTEM_UTILS_DEFINED
+ #if _MSC_VER >= 1600
+ #include <share.h>
+ #endif
+ #if !defined( UNDER_CE )
+ #include <fcntl.h>
+ #if !defined( __LINUX__ )
+ #include <io.h>
+ #else
+ #define LPFILETIME uint64_t*
+ #define FILETIME uint64_t
+ #endif
+ #endif
+ /* uhmm in legacy usage this was not CPROC, but was unspecified */
+ #define FILESYS_API CPROC
+ // DOM-IGNORE-BEGIN
+ #ifdef FILESYSTEM_LIBRARY_SOURCE
+ #  define FILESYS_PROC EXPORT_METHOD
+ #else
+ #  define FILESYS_PROC IMPORT_METHOD
+ #endif
+ // DOM-IGNORE-END
+ #ifdef __cplusplus
+ /* defined the file system partial namespace (under
+    SACK_NAMESPACE probably)                         */
+ #define _FILESYS_NAMESPACE  namespace filesys {
+ /* Define the ending symbol for file system namespace. */
+ #define _FILESYS_NAMESPACE_END }
+ /* Defined the namespace of file montior utilities. File monitor
+    provides event notification based on file system changes.     */
+ #define _FILEMON_NAMESPACE  namespace monitor {
+ /* Define the end symbol for file monitor namespace. */
+ #define _FILEMON_NAMESPACE_END }
+ #else
+ #define _FILESYS_NAMESPACE
+ #define _FILESYS_NAMESPACE_END
+ #define _FILEMON_NAMESPACE
+ #define _FILEMON_NAMESPACE_END
+ #endif
+ /* define the file system namespace end. */
+ #define FILESYS_NAMESPACE_END _FILESYS_NAMESPACE_END SACK_NAMESPACE_END
+ /* define the file system namespace. */
+ #define FILESYS_NAMESPACE SACK_NAMESPACE _FILESYS_NAMESPACE
+ /* Define end file monitor namespace. */
+ #define FILEMON_NAMESPACE_END _FILEMON_NAMESPACE_END _FILESYS_NAMESPACE_END SACK_NAMESPACE_END
+ /* Defines the file montior namespace when compiling C++. */
+ #define FILEMON_NAMESPACE SACK_NAMESPACE _FILESYS_NAMESPACE _FILEMON_NAMESPACE
+ SACK_NAMESPACE
+ /* \File system abstractions. A few things like get current path
+    may or may not exist on a function.
+    Primarily this defines functions 'pathchr' and 'pathrchr'
+    which resemble 'strchr' and 'strrchr' but search a string for
+    a path character. A path character is either a / or a \\.
+    Also in this area is file monitoring functions which support
+    methods on windows and linux to get event notifications when
+    directories and, by filtering, files that have changed.
+                                                                  */
+ _FILESYS_NAMESPACE
+  enum ScanFileFlags {
+ // go into subdirectories
+ SFF_SUBCURSE    = 1,
+ // return directory names also
+ SFF_DIRECTORIES = 2,
+ // don't concatenate base with filename to result.
+ SFF_NAMEONLY    = 4,
+ // when matching filename - do not match case.
+ SFF_IGNORECASE  = 8,
+ // don't concatenate base with filename to result, but do build path relative to root specified
+ SFF_SUBPATHONLY    = 16,
+  };
+  // flags sent to Process when called with a matching name
+ enum ScanFileProcessFlags{
+ // is a directory...
+ SFF_DIRECTORY  = 1,
+ // this is a drive...
+   SFF_DRIVE      = 2,
+ };
+ struct file_system_mounted_interface;
+ /* Extended external file system interface to be able to use external file systems */
+ struct file_system_interface {
+                                                  //filename
+  void* (CPROC *open)(uintptr_t psvInstance, const char *);
+                                                 //file *
+  int (CPROC *_close)(void *);
+                    //file *, buffer, length (to read)
+  size_t (CPROC *_read)(void *,char *, size_t);
+                    //file *, buffer, length (to write)
+  size_t (CPROC *_write)(void*,const char *, size_t);
+  size_t (CPROC *seek)( void *, size_t, int whence);
+  void  (CPROC *truncate)( void *);
+  void (CPROC *_unlink)( uintptr_t psvInstance, const char *);
+ // get file size
+  size_t (CPROC *size)( void *);
+ // get file current position
+  size_t (CPROC *tell)( void *);
+  int (CPROC *flush )(void *kp);
+  int (CPROC *exists)( uintptr_t psvInstance, const char *file );
+  LOGICAL (CPROC*copy_write_buffer)(void );
+  struct find_cursor *(CPROC *find_create_cursor )( uintptr_t psvInstance, const char *root, const char *filemask );
+  int (CPROC *find_first)( struct find_cursor *cursor );
+  int (CPROC *find_close)( struct find_cursor *cursor );
+  int (CPROC *find_next)( struct find_cursor *cursor );
+  char * (CPROC *find_get_name)( struct find_cursor *cursor );
+  size_t (CPROC *find_get_size)( struct find_cursor *cursor );
+  // ftell can be done with seek( file, 0, SEEK_CUR );
+  // if is_directory is NULL; assume result is false (file system does not support directories)
+  LOGICAL (CPROC *is_directory)( const char *pathname );
+  LOGICAL (CPROC *rename )( uintptr_t psvInstance, const char *original_name, const char *new_name );
+ };
+ /* \ \
+    Parameters
+    mask :      This is the mask used to compare
+    name :      this is the name to compare against using the mask.
+    keepcase :  if TRUE, must match case also.
+    Returns
+    TRUE if name is matched by mask. Otherwise returns FALSE.
+    Example
+    <code lang="c++">
+    if( CompareMask( "*.exe", "program.exe", FALSE ) )
+    {
+        // then program.exe is matched by the mask.
+    }
+    </code>
+    Remarks
+    The mask support standard 'globbing' characters.
+    ? matches one character
+    \* matches 0 or more characters
+    otherwise the literal character must match, unless comparing
+    case insensitive, in which case 'A' == 'a' also.                */
+ FILESYS_PROC  int FILESYS_API  CompareMask ( CTEXTSTR mask, CTEXTSTR name, int keepcase );
+ // ScanFiles usage:
+ //   base - base path to scan
+ //   mask - file mask to process if NULL or "*" is everything "*.*" must contain a .
+ //   pInfo is a pointer to a void* - this pointer is used to maintain
+ //        internal information...
+ //   Process is called with the full name of any matching files
+ //   subcurse is a flag - set to go into all subdirectories looking for files.
+ // There is no way to abort the scan...
+ FILESYS_PROC  int FILESYS_API  ScanFilesEx ( CTEXTSTR base
+            , CTEXTSTR mask
+            , void **pInfo
+            , void CPROC Process( uintptr_t psvUser, CTEXTSTR name, int flags )
+            , int flags
+      , uintptr_t psvUser, LOGICAL begin_sub_path, struct file_system_mounted_interface *mount );
+ FILESYS_PROC  int FILESYS_API  ScanFiles ( CTEXTSTR base
+            , CTEXTSTR mask
+            , void **pInfo
+            , void CPROC Process( uintptr_t psvUser, CTEXTSTR name, int flags )
+            , int flags
+            , uintptr_t psvUser );
+ FILESYS_PROC  void FILESYS_API  ScanDrives ( void (CPROC *Process)(uintptr_t user, CTEXTSTR letter, int flags)
+             , uintptr_t user );
+ // result is length of name filled into pResult if pResult == NULL && nResult = 0
+ // the result will the be length of the name matching the file.
+ FILESYS_PROC  int FILESYS_API  GetMatchingFileName ( CTEXTSTR filemask, int flags, TEXTSTR pResult, int nResult );
+ // searches a path for the last '/' or '\'
+ FILESYS_PROC  CTEXTSTR FILESYS_API  pathrchr ( CTEXTSTR path );
+ #ifdef __cplusplus
+ FILESYS_PROC  TEXTSTR FILESYS_API  pathrchr ( TEXTSTR path );
+ #endif
+ // searches a path for the first '/' or '\'
+ FILESYS_PROC  CTEXTSTR FILESYS_API  pathchr ( CTEXTSTR path );
+ // returns pointer passed (if it worked?)
+ FILESYS_PROC  TEXTSTR FILESYS_API  GetCurrentPath ( TEXTSTR path, int buffer_len );
+ FILESYS_PROC  int FILESYS_API  SetCurrentPath ( CTEXTSTR path );
+ /* Creates a directory. If parent peices of the directory do not
+    exist, those parts are created also.
+    Example
+    <code lang="c#">
+    MakePath( "c:\\where\\I'm/going/to/store/data" );
+    </code>                                                       */
+ FILESYS_PROC  int FILESYS_API  MakePath ( CTEXTSTR path );
+ /* A boolean result function whether a specified name is a
+    directory or not. (if not, assumes it's a file).
+    Example
+    <code lang="c#">
+    if( IsPath( "c:/windows" ) )
+    {
+        // if yes, then c:\\windows is a directory.
+    }
+    </code>                                                 */
+ FILESYS_PROC LOGICAL  FILESYS_API  IsPath ( CTEXTSTR path );
+ FILESYS_PROC LOGICAL  FILESYS_API  IsAbsolutePath( CTEXTSTR path );
+ FILESYS_PROC  uint64_t     FILESYS_API  GetFileWriteTime ( CTEXTSTR name );
+ FILESYS_PROC  uint64_t     FILESYS_API  GetTimeAsFileTime ( void );
+ FILESYS_PROC  LOGICAL FILESYS_API  SetFileWriteTime( CTEXTSTR name, uint64_t filetime );
+ FILESYS_PROC  LOGICAL FILESYS_API  SetFileTimes( CTEXTSTR name
+  // last modification time.
+                  , uint64_t filetime_create
+ // last modification time.
+                  , uint64_t filetime_modify
+  // last modification time.
+                  , uint64_t filetime_access
+                  );
+ FILESYS_PROC  void    FILESYS_API  SetDefaultFilePath ( CTEXTSTR path );
+ FILESYS_PROC  INDEX   FILESYS_API  SetGroupFilePath ( CTEXTSTR group, CTEXTSTR path );
+ FILESYS_PROC  TEXTSTR FILESYS_API  sack_prepend_path ( INDEX group, CTEXTSTR filename );
+ /* This is a new feature added for supporting systems without a
+    current file location. This gets an integer ID of a group of
+    files by name.
+    the name 'default' is used to specify files to go into the
+    'current working directory'
+  There are some special symbols.
+  . = use CurrentPath
+  @ = use program path base
+    ^ = use program startup path (may not be current)
+    Parameters
+    groupname :     name of the group
+    default_path :  the path of the group, if the name is not
+                    found.
+    Returns
+    the ID of a file group.
+    Example
+    <code lang="c++">
+    int group = GetFileGroup( "fonts", "./fonts" );
+    </code>                                                      */
+ FILESYS_PROC INDEX FILESYS_API  GetFileGroup ( CTEXTSTR groupname, CTEXTSTR default_path );
+ FILESYS_PROC TEXTSTR FILESYS_API GetFileGroupText ( INDEX group, TEXTSTR path, int path_chars );
+ FILESYS_PROC TEXTSTR FILESYS_API ExpandPathEx( CTEXTSTR path, struct file_system_interface *fsi );
+ FILESYS_PROC TEXTSTR FILESYS_API ExpandPath( CTEXTSTR path );
+ FILESYS_PROC LOGICAL FILESYS_API SetFileLength( CTEXTSTR path, size_t length );
+ /* \Returns the size of the file.
+    Parameters
+    name :  name of the file to get information about
+    Returns
+    \Returns the size of the file. or -1 if the file did not
+    exist.                                                   */
+ FILESYS_PROC  size_t FILESYS_API  GetSizeofFile ( TEXTCHAR *name, uint32_t* unused );
+ #ifndef __ANDROID__
+ /* An extended function, which returns a uint64_t bit time
+    appropriate for the current platform. This is meant to
+    replace 'stat'. It can get all commonly checked attributes of
+    a file.
+    Parameters
+    name :              name of the file to get information about
+    lpCreationTime :    pointer to a FILETIME type to get creation
+                        time. can be NULL.
+    lpLastAccessTime :  pointer to a FILETIME type to get access
+                        time. can be NULL.
+    lpLastWriteTime :   pointer to a FILETIME type to get write
+                        time. can be NULL.
+    IsDirectory :       pointer to a LOGICAL to receive indicator
+                        whether the file was a directory. can be
+                        NULL.
+    Returns
+    \Returns the size of the file. or -1 if the file did not
+  exist.                                                         */
+ FILESYS_PROC  uint32_t FILESYS_API  GetFileTimeAndSize ( CTEXTSTR name
+              , LPFILETIME lpCreationTime
+              ,  LPFILETIME lpLastAccessTime
+              ,  LPFILETIME lpLastWriteTime
+              , int *IsDirectory
+              );
+ FILESYS_PROC void FILESYS_API ConvertFileIntToFileTime( uint64_t int_filetime, FILETIME *filetime );
+ FILESYS_PROC uint64_t FILESYS_API ConvertFileTimeToInt( const FILETIME *filetime );
+ #endif
+ // can use 0 as filegroup default - single 'current working directory'
+ #ifndef NEED_OLDNAMES
+ #define _NO_OLDNAMES
+ #endif
+ //#ifdef UNDER_CE
+ # ifndef O_RDONLY
+ #define O_RDONLY       0x0000
+ #define O_WRONLY       0x0001
+ #define O_RDWR         0x0002
+ #define O_APPEND       0x0008
+ #define O_CREAT        0x0100
+ #define O_TRUNC        0x0200
+ #define O_EXCL         0x0400
+ #endif
+ #ifndef __ANDROID__
+ #  ifndef S_IRUSR
+ #    define S_IRUSR 1
+ #    define S_IWUSR 2
+ #  endif
+ #endif
+ //# endif
+ #ifndef __LINUX__
+ FILESYS_PROC  HANDLE FILESYS_API  sack_open ( INDEX group, CTEXTSTR filename, int opts, ... );
+ FILESYS_PROC  LOGICAL FILESYS_API  sack_set_eof ( HANDLE file_handle );
+ FILESYS_PROC  long  FILESYS_API   sack_tell( INDEX file_handle );
+ FILESYS_PROC  HANDLE FILESYS_API  sack_openfile ( INDEX group, CTEXTSTR filename, OFSTRUCT *of, int flags );
+ FILESYS_PROC  HANDLE FILESYS_API  sack_creat ( INDEX group, CTEXTSTR file, int opts, ... );
+ FILESYS_PROC  int FILESYS_API  sack_close ( HANDLE file_handle );
+ FILESYS_PROC  int FILESYS_API  sack_lseek ( HANDLE file_handle, int pos, int whence );
+ FILESYS_PROC  int FILESYS_API  sack_read ( HANDLE file_handle, POINTER buffer, int size );
+ FILESYS_PROC  int FILESYS_API  sack_write ( HANDLE file_handle, CPOINTER buffer, int size );
+ #endif
+ FILESYS_PROC  INDEX FILESYS_API  sack_iopen ( INDEX group, CTEXTSTR filename, int opts, ... );
+ FILESYS_PROC  INDEX FILESYS_API  sack_iopenfile ( INDEX group, CTEXTSTR filename, int opts, int flags );
+ FILESYS_PROC  INDEX FILESYS_API  sack_icreat ( INDEX group, CTEXTSTR file, int opts, ... );
+ FILESYS_PROC  LOGICAL FILESYS_API  sack_iset_eof ( INDEX file_handle );
+ FILESYS_PROC  int FILESYS_API  sack_iclose ( INDEX file_handle );
+ FILESYS_PROC  int FILESYS_API  sack_ilseek ( INDEX file_handle, size_t pos, int whence );
+ FILESYS_PROC  int FILESYS_API  sack_iread ( INDEX file_handle, POINTER buffer, int size );
+ FILESYS_PROC  int FILESYS_API  sack_iwrite ( INDEX file_handle, CPOINTER buffer, int size );
+ /* internal (c library) file system is registered as prority 1000.... lower priorities are checked first for things like
+   ScanFiles(), fopen( ..., "r" ), ... exists(), */
+ FILESYS_PROC struct file_system_mounted_interface * FILESYS_API sack_mount_filesystem( const char *name, struct file_system_interface *, int priority, uintptr_t psvInstance, LOGICAL writable );
+ FILESYS_PROC void FILESYS_API sack_unmount_filesystem( struct file_system_mounted_interface *mount );
+ FILESYS_PROC struct file_system_mounted_interface * FILESYS_API sack_get_mounted_filesystem( const char *name );
+ /* sometimes you want scanfiles to only scan external files...
+   so this is how to get that mount */
+ FILESYS_PROC struct file_system_mounted_interface * FILESYS_API sack_get_default_mount( void );
+ /* specify a mounted system to open... multiple volumes of the same type need a different handle */
+ FILESYS_PROC  FILE* FILESYS_API  sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_system_mounted_interface *fsi );
+ /* if mode is read, all mounted file systems are attempted... */
+ FILESYS_PROC  FILE* FILESYS_API  sack_fopen ( INDEX group, CTEXTSTR filename, CTEXTSTR opts );
+ /* specify a mounted system to open... multiple volumes of the same type need a different handle */
+ FILESYS_PROC  FILE* FILESYS_API  sack_fsopenEx ( INDEX group, CTEXTSTR filename, CTEXTSTR opts, int share_mode, struct file_system_mounted_interface *fsi );
+ /* if mode is read, all mounted file systems are attempted...
+    if mode is write/create only the first writable file system is used...
+ */
+ FILESYS_PROC  FILE* FILESYS_API  sack_fsopen ( INDEX group, CTEXTSTR filename, CTEXTSTR opts, int share_mode );
+ FILESYS_PROC  struct file_system_interface * FILESYS_API sack_get_filesystem_interface( CTEXTSTR name );
+ FILESYS_PROC  void FILESYS_API sack_set_default_filesystem_interface( struct file_system_interface *fsi );
+ FILESYS_PROC  void FILESYS_API sack_register_filesystem_interface( CTEXTSTR name, struct file_system_interface *fsi );
+ FILESYS_PROC  int FILESYS_API  sack_fclose ( FILE *file_file );
+ FILESYS_PROC  size_t FILESYS_API  sack_fseek ( FILE *file_file, size_t pos, int whence );
+ FILESYS_PROC  size_t FILESYS_API  sack_ftell ( FILE *file_file );
+ FILESYS_PROC  size_t FILESYS_API  sack_fsize ( FILE *file_file );
+ FILESYS_PROC  LOGICAL FILESYS_API  sack_existsEx ( const char * filename, struct file_system_mounted_interface *mount );
+ FILESYS_PROC  LOGICAL FILESYS_API  sack_exists ( const char *file_file );
+ FILESYS_PROC  size_t FILESYS_API  sack_fread ( POINTER buffer, size_t size, int count,FILE *file_file );
+ FILESYS_PROC  size_t FILESYS_API  sack_fwrite ( CPOINTER buffer, size_t size, int count,FILE *file_file );
+ FILESYS_PROC  TEXTSTR FILESYS_API  sack_fgets ( TEXTSTR  buffer, size_t size,FILE *file_file );
+ FILESYS_PROC  int FILESYS_API  sack_fflush ( FILE *file );
+ FILESYS_PROC  int FILESYS_API  sack_ftruncate ( FILE *file );
+ FILESYS_PROC int FILESYS_API sack_vfprintf( FILE *file_handle, const char *format, va_list args );
+ FILESYS_PROC int FILESYS_API sack_fprintf( FILE *file, const char *format, ... );
+ FILESYS_PROC int FILESYS_API sack_fputs( const char *format, FILE *file );
+ FILESYS_PROC  int FILESYS_API  sack_unlinkEx ( INDEX group, CTEXTSTR filename, struct file_system_mounted_interface *mount );
+ FILESYS_PROC  int FILESYS_API  sack_unlink ( INDEX group, CTEXTSTR filename );
+ FILESYS_PROC  int FILESYS_API  sack_rmdir( INDEX group, CTEXTSTR filename );
+ FILESYS_PROC  int FILESYS_API  sack_renameEx ( CTEXTSTR file_source, CTEXTSTR new_name, struct file_system_mounted_interface *mount );
+ FILESYS_PROC  int FILESYS_API  sack_rename ( CTEXTSTR file_source, CTEXTSTR new_name );
+ FILESYS_PROC  void FILESYS_API sack_set_common_data_application( CTEXTSTR name );
+ FILESYS_PROC  void FILESYS_API sack_set_common_data_producer( CTEXTSTR name );
+ #ifndef NO_FILEOP_ALIAS
+ #  ifndef NO_OPEN_MACRO
+ # define open(a,...) sack_iopen(0,a,##__VA_ARGS__)
+ # define set_eof(a)  sack_iset_eof(a)
+ #  endif
+ #ifdef WIN32
+ #if !defined( SACK_BAG_EXPORTS ) && !defined( BAG_EXTERNALS ) && !defined( FILESYSTEM_LIBRARY_SOURCE )
+ # define _lopen(a,...) sack_open(0,a,##__VA_ARGS__)
+ # define tell(a)      sack_tell(a)
+ # define lseek(a,b,c) sack_ilseek(a,b,c)
+ # define _llseek(a,b,c) sack_lseek(a,b,c)
+ # define HFILE HANDLE
+ # undef HFILE_ERROR
+ # define HFILE_ERROR INVALID_HANDLE_VALUE
+ # define creat(a,...)  sack_icreat( 0,a,##__VA_ARGS__ )
+ # define close(a)  sack_iclose(a)
+ # define OpenFile(a,b,c) sack_openfile(0,a,b,c)
+ # define _lclose(a)  sack_close(a)
+ # define read(a,b,c) sack_iread(a,b,c)
+ # define write(a,b,c) sack_iwrite(a,b,c)
+ # define _lread(a,b,c) sack_read(a,b,c)
+ # define _lwrite(a,b,c) sack_write(a,b,c)
+ # define _lcreat(a,b) sack_creat(0,a,b)
+ # define remove(a)   sack_unlink(0,a)
+ # define unlink(a)   sack_unlink(0,a)
+ #endif
+ #endif
+ //NO_FILEOP_ALIAS
+ #endif
+ #ifdef __LINUX__
+ #define SYSPATHCHAR WIDE("/")
+ #else
+ #define SYSPATHCHAR WIDE("\\")
+ #endif
+ FILESYS_NAMESPACE_END
+ #ifdef __cplusplus
+ using namespace sack::filesys;
+ #endif
+ #endif
  /*
   * Create: James Buckeyne
   *
@@ -12188,6 +12104,295 @@ GetFreeBlock( vol, TRUE );
  {
   return SRG_EncryptData( (uint8_t*)buffer, StrLen( buffer ) + 1 );
  }
+ /* MD5C.C - RSA Data Security, Inc., MD5 message-digest algorithm
+  */
+ /* Copyright (C) 1991-2, RSA Data Security, Inc. Created 1991. All
+ rights reserved.
+ License to copy and use this software is granted provided that it
+ is identified as the "RSA Data Security, Inc. MD5 Message-Digest
+ Algorithm" in all material mentioning or referencing this software
+ or this function.
+ License is also granted to make and use derivative works provided
+ that such works are identified as "derived from the RSA Data
+ Security, Inc. MD5 Message-Digest Algorithm" in all material
+ mentioning or referencing the derived work.
+ RSA Data Security, Inc. makes no representations concerning either
+ the merchantability of this software or the suitability of this
+ software for any particular purpose. It is provided "as is"
+ without express or implied warranty of any kind.
+ These notices must be retained in any copies of any part of this
+ documentation and/or software.
+  */
+ #define MD5_SOURCE
+ /* MD5.H - header file for MD5C.C
+  */
+ /* Copyright (C) 1991-2, RSA Data Security, Inc. Created 1991. All
+ rights reserved.
+ License to copy and use this software is granted provided that it
+ is identified as the "RSA Data Security, Inc. MD5 Message-Digest
+ Algorithm" in all material mentioning or referencing this software
+ or this function.
+ License is also granted to make and use derivative works provided
+ that such works are identified as "derived from the RSA Data
+ Security, Inc. MD5 Message-Digest Algorithm" in all material
+ mentioning or referencing the derived work.
+ RSA Data Security, Inc. makes no representations concerning either
+ the merchantability of this software or the suitability of this
+ software for any particular purpose. It is provided "as is"
+ without express or implied warranty of any kind.
+ These notices must be retained in any copies of any part of this
+ documentation and/or software.
+  */
+ #ifndef MD5_ALGORITHM_DEFINED
+ #define MD5_ALGORITHM_DEFINED
+ #ifdef MD5_SOURCE
+ #define MD5_PROC(type,name) EXPORT_METHOD type name
+ #else
+ #define MD5_PROC(type,name) IMPORT_METHOD type name
+ #endif
+ /* MD5 context. */
+ typedef struct {
+  uint32_t state[4];
+  uint32_t count[2];
+   unsigned char buffer[64];
+ } MD5_CTX;
+ MD5_PROC( void, MD5Init )(MD5_CTX *);
+ MD5_PROC( void, MD5Update )(MD5_CTX *, unsigned char *, unsigned int);
+ MD5_PROC( void, MD5Final )(unsigned char [16], MD5_CTX *);
+ #endif
+ /* Constants for MD5Transform routine.
+  */
+ #define S11 7
+ #define S12 12
+ #define S13 17
+ #define S14 22
+ #define S21 5
+ #define S22 9
+ #define S23 14
+ #define S24 20
+ #define S31 4
+ #define S32 11
+ #define S33 16
+ #define S34 23
+ #define S41 6
+ #define S42 10
+ #define S43 15
+ #define S44 21
+ static void MD5Transform (uint32_t [4], unsigned char [64]);
+ static void Encode (unsigned char *, uint32_t *, unsigned int);
+ static void Decode (uint32_t *, unsigned char *, unsigned int);
+ static void MD5_memcpy (uint8_t*, uint8_t*, unsigned int);
+ static void MD5_memset (uint8_t*, int, unsigned int);
+ static unsigned char PADDING[64] = {
+   0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+ };
+ /* F, G, H and I are basic MD5 functions.
+  */
+ #define F(x, y, z) (((x) & (y)) | ((~x) & (z)))
+ #define G(x, y, z) (((x) & (z)) | ((y) & (~z)))
+ #define H(x, y, z) ((x) ^ (y) ^ (z))
+ #define I(x, y, z) ((y) ^ ((x) | (~z)))
+ /* ROTATE_LEFT rotates x left n bits.
+  */
+ #define ROTATE_LEFT(x, n) (((x) << (n)) | ((x) >> (32-(n))))
+ /* FF, GG, HH, and II transformations for rounds 1, 2, 3, and 4.
+ Rotation is separate from addition to prevent recomputation.
+  */
+ #define FF(a, b, c, d, x, s, ac) {  (a) += F ((b), (c), (d)) + (x) + (uint32_t)(ac);  (a) = ROTATE_LEFT ((a), (s));  (a) += (b);   }
+ #define GG(a, b, c, d, x, s, ac) {  (a) += G ((b), (c), (d)) + (x) + (uint32_t)(ac);  (a) = ROTATE_LEFT ((a), (s));  (a) += (b);   }
+ #define HH(a, b, c, d, x, s, ac) {  (a) += H ((b), (c), (d)) + (x) + (uint32_t)(ac);  (a) = ROTATE_LEFT ((a), (s));  (a) += (b);   }
+ #define II(a, b, c, d, x, s, ac) {  (a) += I ((b), (c), (d)) + (x) + (uint32_t)(ac);  (a) = ROTATE_LEFT ((a), (s));  (a) += (b);   }
+ /* MD5 initialization. Begins an MD5 operation, writing a new context.
+  */
+ MD5_PROC( void, MD5Init )( MD5_CTX *context )
+ {
+   context->count[0] = context->count[1] = 0;
+   /* Load magic initialization constants.
+ */
+   context->state[0] = 0x67452301;
+   context->state[1] = 0xefcdab89;
+   context->state[2] = 0x98badcfe;
+   context->state[3] = 0x10325476;
+ }
+ /* MD5 block update operation. Continues an MD5 message-digest
+   operation, processing another message block, and updating the
+   context.
+  */
+ MD5_PROC( void, MD5Update ) ( MD5_CTX *context
+           , unsigned char *input
+           , unsigned int inputLen)
+ {
+   unsigned int i, index, partLen;
+   /* Compute number of bytes mod 64 */
+   index = (unsigned int)((context->count[0] >> 3) & 0x3F);
+   /* Update number of bits */
+   if ((context->count[0] += ((uint32_t)inputLen << 3))
+    < ((uint32_t)inputLen << 3))
+  context->count[1]++;
+   context->count[1] += ((uint32_t)inputLen >> 29);
+   partLen = 64 - index;
+   /* Transform as many times as possible.
+ */
+   if (inputLen >= partLen) {
+  MD5_memcpy
+    ((uint8_t*)&context->buffer[index], (uint8_t*)input, partLen);
+  MD5Transform (context->state, context->buffer);
+  for (i = partLen; i + 63 < inputLen; i += 64)
+    MD5Transform (context->state, &input[i]);
+  index = 0;
+   }
+   else
+  i = 0;
+   /* Buffer remaining input */
+   MD5_memcpy
+  ((uint8_t*)&context->buffer[index], (uint8_t*)&input[i],
+   inputLen-i);
+ }
+ /* MD5 finalization. Ends an MD5 message-digest operation, writing the
+   the message digest and zeroizing the context.
+  */
+ MD5_PROC( void, MD5Final )(unsigned char *digest, MD5_CTX *context)
+ {
+   unsigned char bits[8];
+   unsigned int index, padLen;
+   /* Save number of bits */
+   Encode (bits, context->count, 8);
+   /* Pad out to 56 mod 64.
+ */
+   index = (unsigned int)((context->count[0] >> 3) & 0x3f);
+   padLen = (index < 56) ? (56 - index) : (120 - index);
+   MD5Update (context, PADDING, padLen);
+   /* Append length (before padding) */
+   MD5Update (context, bits, 8);
+   /* Store state in digest */
+   Encode (digest, context->state, 16);
+   /* Zeroize sensitive information.
+ */
+   MD5_memset ((uint8_t*)context, 0, sizeof (*context));
+ }
+ /* MD5 basic transformation. Transforms state based on block.
+  */
+ static void MD5Transform (uint32_t state[4], unsigned char block[64])
+ {
+   uint32_t a = state[0], b = state[1], c = state[2], d = state[3], x[16];
+   Decode (x, block, 64);
+   /* Round 1 */
+   FF (a, b, c, d, x[ 0], S11, 0xd76aa478);
+   FF (d, a, b, c, x[ 1], S12, 0xe8c7b756);
+   FF (c, d, a, b, x[ 2], S13, 0x242070db);
+   FF (b, c, d, a, x[ 3], S14, 0xc1bdceee);
+   FF (a, b, c, d, x[ 4], S11, 0xf57c0faf);
+   FF (d, a, b, c, x[ 5], S12, 0x4787c62a);
+   FF (c, d, a, b, x[ 6], S13, 0xa8304613);
+   FF (b, c, d, a, x[ 7], S14, 0xfd469501);
+   FF (a, b, c, d, x[ 8], S11, 0x698098d8);
+   FF (d, a, b, c, x[ 9], S12, 0x8b44f7af);
+   FF (c, d, a, b, x[10], S13, 0xffff5bb1);
+   FF (b, c, d, a, x[11], S14, 0x895cd7be);
+   FF (a, b, c, d, x[12], S11, 0x6b901122);
+   FF (d, a, b, c, x[13], S12, 0xfd987193);
+   FF (c, d, a, b, x[14], S13, 0xa679438e);
+   FF (b, c, d, a, x[15], S14, 0x49b40821);
+  /* Round 2 */
+   GG (a, b, c, d, x[ 1], S21, 0xf61e2562);
+   GG (d, a, b, c, x[ 6], S22, 0xc040b340);
+   GG (c, d, a, b, x[11], S23, 0x265e5a51);
+   GG (b, c, d, a, x[ 0], S24, 0xe9b6c7aa);
+   GG (a, b, c, d, x[ 5], S21, 0xd62f105d);
+   GG (d, a, b, c, x[10], S22,  0x2441453);
+   GG (c, d, a, b, x[15], S23, 0xd8a1e681);
+   GG (b, c, d, a, x[ 4], S24, 0xe7d3fbc8);
+   GG (a, b, c, d, x[ 9], S21, 0x21e1cde6);
+   GG (d, a, b, c, x[14], S22, 0xc33707d6);
+   GG (c, d, a, b, x[ 3], S23, 0xf4d50d87);
+   GG (b, c, d, a, x[ 8], S24, 0x455a14ed);
+   GG (a, b, c, d, x[13], S21, 0xa9e3e905);
+   GG (d, a, b, c, x[ 2], S22, 0xfcefa3f8);
+   GG (c, d, a, b, x[ 7], S23, 0x676f02d9);
+   GG (b, c, d, a, x[12], S24, 0x8d2a4c8a);
+   /* Round 3 */
+   HH (a, b, c, d, x[ 5], S31, 0xfffa3942);
+   HH (d, a, b, c, x[ 8], S32, 0x8771f681);
+   HH (c, d, a, b, x[11], S33, 0x6d9d6122);
+   HH (b, c, d, a, x[14], S34, 0xfde5380c);
+   HH (a, b, c, d, x[ 1], S31, 0xa4beea44);
+   HH (d, a, b, c, x[ 4], S32, 0x4bdecfa9);
+   HH (c, d, a, b, x[ 7], S33, 0xf6bb4b60);
+   HH (b, c, d, a, x[10], S34, 0xbebfbc70);
+   HH (a, b, c, d, x[13], S31, 0x289b7ec6);
+   HH (d, a, b, c, x[ 0], S32, 0xeaa127fa);
+   HH (c, d, a, b, x[ 3], S33, 0xd4ef3085);
+   HH (b, c, d, a, x[ 6], S34,  0x4881d05);
+   HH (a, b, c, d, x[ 9], S31, 0xd9d4d039);
+   HH (d, a, b, c, x[12], S32, 0xe6db99e5);
+   HH (c, d, a, b, x[15], S33, 0x1fa27cf8);
+   HH (b, c, d, a, x[ 2], S34, 0xc4ac5665);
+   /* Round 4 */
+   II (a, b, c, d, x[ 0], S41, 0xf4292244);
+   II (d, a, b, c, x[ 7], S42, 0x432aff97);
+   II (c, d, a, b, x[14], S43, 0xab9423a7);
+   II (b, c, d, a, x[ 5], S44, 0xfc93a039);
+   II (a, b, c, d, x[12], S41, 0x655b59c3);
+   II (d, a, b, c, x[ 3], S42, 0x8f0ccc92);
+   II (c, d, a, b, x[10], S43, 0xffeff47d);
+   II (b, c, d, a, x[ 1], S44, 0x85845dd1);
+   II (a, b, c, d, x[ 8], S41, 0x6fa87e4f);
+   II (d, a, b, c, x[15], S42, 0xfe2ce6e0);
+   II (c, d, a, b, x[ 6], S43, 0xa3014314);
+   II (b, c, d, a, x[13], S44, 0x4e0811a1);
+   II (a, b, c, d, x[ 4], S41, 0xf7537e82);
+   II (d, a, b, c, x[11], S42, 0xbd3af235);
+   II (c, d, a, b, x[ 2], S43, 0x2ad7d2bb);
+   II (b, c, d, a, x[ 9], S44, 0xeb86d391);
+   state[0] += a;
+   state[1] += b;
+   state[2] += c;
+   state[3] += d;
+   /* Zeroize sensitive information.
+    */
+   MD5_memset ((uint8_t*)x, 0, sizeof (x));
+ }
+ /* Encodes input (uint32_t) into output (unsigned char). Assumes len is
+   a multiple of 4.
+  */
+ static void Encode (unsigned char *output, uint32_t *input, unsigned int len)
+ {
+   unsigned int i, j;
+   for (i = 0, j = 0; j < len; i++, j += 4) {
+  output[j] = (unsigned char)(input[i] & 0xff);
+  output[j+1] = (unsigned char)((input[i] >> 8) & 0xff);
+  output[j+2] = (unsigned char)((input[i] >> 16) & 0xff);
+  output[j+3] = (unsigned char)((input[i] >> 24) & 0xff);
+   }
+ }
+ /* Decodes input (unsigned char) into output (uint32_t). Assumes len is
+   a multiple of 4.
+  */
+ static void Decode (uint32_t *output, unsigned char *input, unsigned int len)
+ {
+   unsigned int i, j;
+   for (i = 0, j = 0; j < len; i++, j += 4)
+  output[i] = ((uint32_t)input[j]) | (((uint32_t)input[j+1]) << 8) |
+    (((uint32_t)input[j+2]) << 16) | (((uint32_t)input[j+3]) << 24);
+ }
+ /* Note: Replace "for loop" with standard memcpy if possible.
+  */
+ static void MD5_memcpy (uint8_t* output, uint8_t* input, unsigned int len)
+ {
+   unsigned int i;
+   for (i = 0; i < len; i++)
+     output[i] = input[i];
+ }
+ /* Note: Replace "for loop" with standard memset if possible.
+  */
+ static void MD5_memset (uint8_t* output, int value, unsigned int len)
+ {
+   unsigned int i;
+   for (i = 0; i < len; i++)
+  ((char *)output)[i] = (char)value;
+ }
  /*
   *  sha1.c
   *
@@ -16255,6 +16460,7 @@ GetFreeBlock( vol, TRUE );
  }
  #endif
  //--------------------------------------------------------------------------
+ #ifdef WIN32
  #if _MSC_VER
  #pragma runtime_checks( "sru", off )
  #endif
@@ -16264,6 +16470,7 @@ GetFreeBlock( vol, TRUE );
  }
  #if _MSC_VER
  #pragma runtime_checks( "sru", restore )
+ #endif
  #endif
  LOGICAL CPROC StopProgram( PTASK_INFO task )
  {
@@ -16309,7 +16516,7 @@ GetFreeBlock( vol, TRUE );
   else
    return TRUE;
  #else
-     // kill( ) ?
+    lprintf( "need to send kill() to signal process to top" );
  #endif
    return FALSE;
  }
@@ -18520,6 +18727,7 @@ GetFreeBlock( vol, TRUE );
   }
  }
  SACK_SYSTEM_NAMESPACE_END
+ #ifndef __LINUX__
  #include <objbase.h>
  #ifdef __cplusplus
  namespace sack { namespace system{
@@ -18531,6 +18739,7 @@ GetFreeBlock( vol, TRUE );
  #ifdef __cplusplus
  }
  }
+ #endif
  #endif
  /*
   *  Crafted by James Buckeyne
@@ -30480,6 +30689,87 @@ GetFreeBlock( vol, TRUE );
  #endif
  #endif
  #define DEFINE_MEMORY_STRUCT
+ /* A header for doing .NET /CLR compatiblity changes. Things
+    like fopen needing to be _fopen_s and junk.               */
+ #ifndef FILE_DOT_NET_COMPAT
+ /* Header multiple inclusion protection symbol. */
+ #define FILE_DOT_NET_COMPAT
+ #ifdef __cplusplus_cli
+ #define Fopen( result, name, opts ) { char *tmp1 = CStrDup( name ); char *tmp2 = CStrDup( opts ); result = fopen( tmp1, tmp2 ); Deallocate( char *, tmp1 ); Deallocate( char *, tmp2 ); }
+ #if asdfasdlfkajsdflkj
+ #define fputs( msg, file ) { char *tmp = CStrDup( msg ); fputs( tmp, file ); Release( tmp ); }
+ #define unlink( name ) { char *tmp = CStrDup( name ); unlink( tmp ); Release( tmp ); }
+ #define rename( name1, name2 ) { char *tmp1 = CStrDup( name1 ); char *tmp2 = CStrDup( name2 ); rename( tmp1, tmp2 ); Release( tmp1 ); Release( tmp2 ); }
+ #define fprintf Fprintf
+ #endif
+ //int Fprintf( FILE *file, CTEXTSTR fmt, ... );
+ /*
+ using namespace Win32;
+ #define CreateEvent(a,b,c,d) Win32::Kernel::CreateEvent((SECURITY_ATTRIBUTES)a,b,c,d)
+ #define OpenEvent(a,b,c)     Win32::Kernel::OpenEvent(a,b,c)
+ #define Sleep(a)             Win32::Kernel::Sleep(a)
+ #define GetTickCount()       Win32::Kernel::GetTickCount()
+ #define GetCurrentProcessId() Win32::Kernel::GetCurrentProcessId()
+ #define GetCurrentThreadId()  Win32::Kernel::GetCurrentThreadId()
+ #define GetLastError()  Win32::Kernel::GetLastError()
+ #define SetEvent(a) Win32::Kernel::SetEvent(a)
+ #define ResetEvent(a) Win32::Kernel::ResetEvent(a)
+ #define CloseHandle(a) Win32::Kernel::CloseHandle(a)
+ #define WaitForSingleObject(a,b) Win32::Kernel::WaitForSingleObject(a,b)
+ #define PeekMessage(a,b,c,d,e)  Win32::User::PeekMessage(a,b,c,d,e)
+ #define DispatchMessage(a)   Win32::User::DispatchMessage(a)
+ #define GetModuleFileName(a,b) Win32::Kernel::GetModuleFileName(a,b)
+ */
+ #if 0
+ typedef struct MyFile MYFILE;
+ MYFILE *Fopen( CTEXTSTR filename, CTEXTSTR mode );
+ int Fread( POINTER data, int count, int size, MYFILE *file );
+ int Fwrite( POINTER data, int count, int size, MYFILE *file );
+ int Fclose( MYFILE *file );
+ int Fseek( MYFILE *file, int64_t pos, int whence );
+ uint64_t Ftell( MYFILE *file );
+ MYFILE *Fdopen( int fd, CTEXTSTR mode );
+ int Ferror( MYFILE *file );
+ int Fflush( MYFILE *file );
+ int Rewind( MYFILE *file );
+ int Fputc( int c, MYFILE *file );
+ int Fgets( TEXTSTR buf, int buflen, MYFILE *file );
+ int Fputs( CTEXTSTR but, MYFILE *file );
+ int Unlink( CTEXTSTR filename );
+ int Rename( CTEXTSTR from, CTEXTSTR to );
+ #define rename Rename
+ #define unlink Unlink
+ #define FILE MYFILE
+ #define fopen Fopen
+ #define fseek Fseek
+ #define fclose Fclose
+ #define fprintf Fprintf
+ #define ftell Ftell
+ #define fread Fread
+ #define fwrite Fwrite
+ //#define fdopen Fdopen
+ #define ferror Ferror
+ #define fflush Fflush
+ #define rewind Rewind
+ #define fputc Fputc
+ #define fgets Fgets
+ #define fputs Fputs
+ #endif
+ #else
+ /* A macro which can be translated into microsoft so-called safe
+    methods.                                                      */
+ #define Fopen( result, name, opts ) result = sack_fopen( 0, name, opts )
+ //#define MYFILE  FILE
+ //#define Fopen   fopen
+ //#define Fread   fread
+ //#define Fwrite  fread
+ //#define Fclose  fclose
+ //#define Fprintf fprintf
+ //#define Fseek   fseek
+ //#define Ftell   ftell
+ #endif
+ #endif
+ // end with a newline please.
  #ifndef _SHARED_MEMORY_LIBRARY
  #if !defined( MEMORY_STRUCT_DEFINED ) || defined( DEFINE_MEMORY_STRUCT )
  //#define ENABLE_NATIVE_MALLOC_PROTECTOR
@@ -31284,7 +31574,7 @@ GetFreeBlock( vol, TRUE );
  #ifdef WIN32
   tnprintf( spacename, sizeof( spacename ), WIDE( "memory:%08lX" ), GetCurrentProcessId() );
  #else
-  tnprintf( spacename, sizeof( spacename ), WIDE( "%" )_S WIDE( ":%08X" ), name, getpid() );
+  tnprintf( spacename, sizeof( spacename ), WIDE( "memory:%08X" ), getpid() );
  #  ifdef DEBUG_FIRST_UNICODE_OPERATION
   {
    wchar_t buf[32];
@@ -43507,25 +43797,6 @@ GetFreeBlock( vol, TRUE );
  // Revision 1.3  2003/03/25 08:45:58  panther
  // Added CVS logging tag
  //
- ///////////////////////////////////////////////////////////////////////////
- //
- // Filename    -  Network.C
- //
- // Description -  Network services for Communications Client
- //
- // Author      -  James Buckeyne
- //
- // Create Date -  Before now.
- // Conversion update for Linux GLIBC 2.1 9/26/2000
- //
- ///////////////////////////////////////////////////////////////////////////
- //
- //  DEBUG FLAGS IN netstruc.h
- //
- #define FIX_RELEASE_COM_COLLISION
- #define NO_UNICODE_C
- #define MAIN_PROGRAM
- // critical section
  #ifndef NETWORK_HEADER_INCLUDED
  #define NETWORK_HEADER_INCLUDED
  #ifdef NETWORK_SOURCE
@@ -44674,6 +44945,7301 @@ GetFreeBlock( vol, TRUE );
  #define getsockopt ?
  #define heh yeah these have exact equivalents ....
  */
+ /* Generalized HTTP Processing. All POST, GET, RESPONSE packets
+    all fit within this structure.
+                                                                 */
+ #ifndef HTTP_PROCESSING_INCLUDED
+ /* Multiple inclusion protection symbol */
+ #define HTTP_PROCESSING_INCLUDED
+ #ifdef HTTP_SOURCE
+ #define HTTP_EXPORT EXPORT_METHOD
+ #else
+ /* Defines how external functions are referenced
+    (dllimport/export/extern)                     */
+ #define HTTP_EXPORT IMPORT_METHOD
+ #endif
+ /* The API type of HTTP functions - default to CPROC. */
+ #define HTTPAPI CPROC
+ #ifdef __cplusplus
+ /* A symbol to define the sub-namespace of HTTP_NAMESPACE  */
+ #define _HTTP_NAMESPACE namespace http {
+ /* A macro to end just the HTTP sub namespace. */
+ #define _HTTP_NAMESPACE_END }
+ #else
+ #define _HTTP_NAMESPACE
+ #define _HTTP_NAMESPACE_END
+ #endif
+ /* HTTP full namespace  */
+ #define HTTP_NAMESPACE TEXT_NAMESPACE _HTTP_NAMESPACE
+ /* Macro to use to define where http utility namespace ends. */
+ #define HTTP_NAMESPACE_END _HTTP_NAMESPACE_END TEXT_NAMESPACE_END
+ SACK_CONTAINER_NAMESPACE
+ /* Text library functions. PTEXT is kept as a linked list of
+    segments of text. Each text segment has a size and the data,
+    and additional format flags. PTEXT may also be indirect
+    segments (that is this segment points at another list of
+    segments that are the actualy content for this place.
+                                                                 */
+ _TEXT_NAMESPACE
+  /* Simple HTTP Packet processing state. Its only intelligence is
+     that there are fields of http header, and that one of those
+     fields might be content-length; so it can seperate individual
+     fields name-value pairs and the packet content.               */
+  _HTTP_NAMESPACE
+ typedef struct HttpState *HTTPState;
+ enum ProcessHttpResult{
+  HTTP_STATE_RESULT_NOTHING = 0,
+  HTTP_STATE_RESULT_CONTENT = 200,
+     HTTP_STATE_RESULT_CONTINUE = 100,
+  HTTP_STATE_INTERNAL_SERVER_ERROR=500,
+  HTTP_STATE_RESOURCE_NOT_FOUND=404,
+    HTTP_STATE_BAD_REQUEST=400,
+ };
+ HTTP_EXPORT
+ /* Creates an empty http state, the next operation should be
+    AddHttpData.                                              */
+ HTTPState  HTTPAPI CreateHttpState( void );
+ HTTP_EXPORT
+ /* Destroys a http state, releasing all resources associated
+    with it.                                                  */
+ void HTTPAPI DestroyHttpState( HTTPState pHttpState );
+ HTTP_EXPORT
+ /* Add another bit of data to the block. After adding data,
+    ProcessHttp should be called to see if the data has completed
+    a packet.
+    Parameters
+    pHttpState :  state to add data to
+    buffer :      pointer to some data bytes
+    size :        length of data bytes
+    Returns: TRUE if content is added... if collecting chunked encoding may return FALSE.
+    */
+ LOGICAL HTTPAPI AddHttpData( HTTPState pHttpState, POINTER buffer, size_t size );
+ /* \returns TRUE if completed until content-length if
+    content-length is not specified, data is still collected, but
+    the status never results TRUE.
+  Parameters
+  pc : Occasionally the http processor needs to send data on the
+       socket without application being aware it did.
+    pHttpState :  Http State to process (after having added data to
+                  it)
+    Return Value List
+    TRUE :   A completed HTTP packet has been gathered \- according
+             to 'content\-length' meta tag.
+    FALSE :  Still collecting full packet                           */
+ //HTTP_EXPORT int HTTPAPI ProcessHttp( HTTPState pHttpState );
+ HTTP_EXPORT int HTTPAPI ProcessHttp( PCLIENT pc, HTTPState pHttpState );
+ HTTP_EXPORT
+ /* Gets the specific result code at the header of the packet -
+    http 2.0 OK sort of thing.                                  */
+ PTEXT HTTPAPI GetHttpResponce( HTTPState pHttpState );
+ HTTP_EXPORT
+ /*Get the value of a HTTP header field, by name
+    Parameters
+  pHttpState: the state to get the header field from.
+  name: name of the field to get (checked case insensitive)
+ */
+ PTEXT HTTPAPI GetHTTPField( HTTPState pHttpState, CTEXTSTR name );
+ HTTP_EXPORT
+ /* Gets the specific request code at the header of the packet -
+    http 2.0 OK sort of thing.                                  */
+ PTEXT HTTPAPI GetHttpRequest( HTTPState pHttpState );
+ HTTP_EXPORT
+ /* \Returns the body of the HTTP packet (the part of data
+    specified by content-length or by termination of the
+    connection(? think I didn't implement that right)      */
+ PTEXT HTTPAPI GetHttpContent( HTTPState pHttpState );
+ HTTP_EXPORT
+ /* \Returns the resource path/name of the HTTP packet (the part of data
+    specified by content-length or by termination of the
+    connection(? think I didn't implement that right)      */
+ PTEXT HTTPAPI GetHttpResource( HTTPState pHttpState );
+ HTTP_EXPORT
+ /* Enumerates the various http header fields by passing them
+    each sequentially to the specified callback.
+    Parameters
+    pHttpState :  _nt_
+    _nt_ :        _nt_
+    psv :         _nt_                                        */
+ void HTTPAPI ProcessCGIFields( HTTPState pHttpState, void (CPROC*f)( uintptr_t psv, PTEXT name, PTEXT value ), uintptr_t psv );
+ HTTP_EXPORT
+ /* Enumerates the various http header fields by passing them
+    each sequentially to the specified callback.
+    Parameters
+    pHttpState :  _nt_
+    _nt_ :        _nt_
+    psv :         _nt_                                        */
+ void HTTPAPI ProcessHttpFields( HTTPState pHttpState, void (CPROC*f)( uintptr_t psv, PTEXT name, PTEXT value ), uintptr_t psv );
+ HTTP_EXPORT
+ /* Resets a processing state, so it can start collecting the
+    next state. After a ProcessHttp results with true, this
+    should be called after processing the packet content.
+    Parameters
+    pHttpState :  state to reset for next read...             */
+ void HTTPAPI EndHttp( HTTPState pHttpState );
+ HTTP_EXPORT
+ /* reply message - 200/OK with this body, sent as Content-Type that was requested */
+ void HTTPAPI SendHttpMessage( HTTPState pHttpState, PCLIENT pc, PTEXT body );
+ HTTP_EXPORT
+ /* generate response message, specifies the numeric (200), the text (OK), the content type field value, and the body to send */
+ void HTTPAPI SendHttpResponse ( HTTPState pHttpState, PCLIENT pc, int numeric, CTEXTSTR text, CTEXTSTR content_type, PTEXT body );
+ /* Callback type used when creating an http server.
+  If there is no registered handler match, then this is called.
+  This should return FALSE if there was no content, allowing a 404 status result.
+  Additional ways of dispatching need to be implemented (like handlers for paths, wildcards...)
+  */
+ typedef LOGICAL (CPROC *ProcessHttpRequest)( uintptr_t psv
+              , HTTPState pHttpState );
+ HTTP_EXPORT
+ /* Intended to create a generic http service, which you can
+    attach URL handlers to. Incomplete
+    Works mostly?  OnGet has been known to get called....
+    */
+ struct HttpServer *CreateHttpServerEx( CTEXTSTR interface_address, CTEXTSTR TargetName, CTEXTSTR site, ProcessHttpRequest handle_request, uintptr_t psv );
+ HTTP_EXPORT
+ /* Intended to create a generic http service, which you can
+    attach URL handlers to. Incomplete
+    Works mostly?  OnGet has been known to get called....
+    */
+ struct HttpServer *CreateHttpsServerEx( CTEXTSTR interface_address, CTEXTSTR TargetName, CTEXTSTR site, ProcessHttpRequest handle_request, uintptr_t psv );
+ /* results with just the content of the message; no access to other information avaialble */
+ HTTP_EXPORT PTEXT HTTPAPI PostHttp( PTEXT site, PTEXT resource, PTEXT content );
+ /* results with just the content of the message; no access to other information avaialble */
+ HTTP_EXPORT PTEXT HTTPAPI GetHttp( PTEXT site, PTEXT resource, LOGICAL secure );
+ /* results with just the content of the message; no access to other information avaialble */
+ HTTP_EXPORT PTEXT HTTPAPI GetHttps( PTEXT address, PTEXT url );
+ /* results with the http state of the message response; Allows getting other detailed information about the result */
+ HTTP_EXPORT HTTPState  HTTPAPI PostHttpQuery( PTEXT site, PTEXT resource, PTEXT content );
+ /* results with the http state of the message response; Allows getting other detailed information about the result */
+ HTTP_EXPORT HTTPState  HTTPAPI GetHttpQuery( PTEXT site, PTEXT resource );
+ /* results with the http state of the message response; Allows getting other detailed information about the result */
+ HTTP_EXPORT HTTPState HTTPAPI GetHttpsQuery( PTEXT site, PTEXT resource );
+ #define CreateHttpServer(interface_address,site,psv) CreateHttpServerEx( interface_address,NULL,site,NULL,psv )
+ #define CreateHttpServer2(interface_address,site,default_handler,psv) CreateHttpServerEx( interface_address,NULL,site,default_handler,psv )
+ // receives events for either GET if aspecific OnHttpRequest has not been defined for the specific resource
+ // Return TRUE if processed, otherwise will attempt to match other Get Handlers
+ #define OnHttpGet( site, resource )  __DefineRegistryMethod(WIDE( "SACK/Http/Methods" ),OnHttpGet,site,resource,WIDE( "Get" ),LOGICAL,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
+ // receives events for either GET if aspecific OnHttpRequest has not been defined for the specific resource
+ // Return TRUE if processed, otherwise will attempt to match other Get Handlers
+ #define OnHttpPost( site, resource )  __DefineRegistryMethod(WIDE( "SACK/Http/Methods" ),OnHttpPost,site,resource,WIDE( "Post" ),LOGICAL,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
+ // define a specific handler for a specific resource name on a host
+ #define OnHttpRequest( site, resource )  __DefineRegistryMethod(WIDE( "SACK/Http/Methods" ),OnHttpRequest,WIDE( "something" ),site WIDE( "/" ) resource,WIDE( "Get" ),void,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
+ //--------------------------------------------------------------
+ //  URL.c  (url parsing utility)
+ struct url_cgi_data
+ {
+  CTEXTSTR name;
+  CTEXTSTR value;
+ };
+ struct url_data
+ {
+  CTEXTSTR protocol;
+  CTEXTSTR user;
+  CTEXTSTR password;
+  CTEXTSTR host;
+  int default_port;
+  // encoding RFC3986 http://tools.ietf.org/html/rfc3986  specifies port characters are in the set of digits.
+  int port;
+  //CTEXTSTR port_data;  // during collection, the password may be in the place of 'port'
+  CTEXTSTR resource_path;
+  CTEXTSTR resource_file;
+  CTEXTSTR resource_extension;
+  CTEXTSTR resource_anchor;
+    // list of struct url_cgi_data *
+  PLIST cgi_parameters;
+ };
+ HTTP_EXPORT struct url_data * HTTPAPI SACK_URLParse( CTEXTSTR url );
+ HTTP_EXPORT CTEXTSTR HTTPAPI SACK_BuildURL( struct url_data *data );
+ HTTP_EXPORT void HTTPAPI SACK_ReleaseURL( struct url_data *data );
+  _HTTP_NAMESPACE_END
+ TEXT_NAMESPACE_END
+ #ifdef __cplusplus
+ using namespace sack::containers::text::http;
+ #endif
+ #endif
+ HTTP_NAMESPACE
+ struct HttpField {
+  PTEXT name;
+  PTEXT value;
+ };
+ enum ReadChunkState {
+  READ_VALUE, READ_VALUE_CR, READ_VALUE_LF, READ_CR, READ_LF, READ_BYTES
+ };
+ struct HttpState {
+  // add input into pvt_collector
+  PVARTEXT pvt_collector;
+  // an accumulator that moves data from collector into whatever we've got leftover
+  PTEXT partial;
+ // the first line of the http responce... (or request)
+  PTEXT response_status;
+ // the path of the resource - mostly for when this is used to receive requests.
+  PTEXT resource;
+ // list of struct HttpField *, these other the other meta fields in the header.
+  PLIST fields;
+ // list of HttpField *, taken in from the URL or content (get or post)
+  PLIST cgi_fields;
+  uint32_t content_length;
+ // content of the message, POST,PUT,PATCH and replies have this.
+  PTEXT content;
+ // boolean flag - indicates that the header portion of the http request is finished.
+  int final;
+ //for handling requests, have to read somewhere
+  POINTER buffer;
+  int numeric_code;
+  int response_version;
+  TEXTSTR text_code;
+ // when a request comes in to the server, it is kept in a new http state, this is set for Send Response
+  PCLIENT request_socket;
+  LOGICAL ssl;
+ // this is filled with a request ready to go out; used for HTTPS
+  PVARTEXT pvtOut;
+  LOGICAL read_chunks;
+  size_t read_chunk_byte;
+  size_t read_chunk_length;
+  size_t read_chunk_total_length;
+  enum ReadChunkState read_chunk_state;
+  uint32_t last_read_tick;
+  PTHREAD waiter;
+ };
+ struct HttpServer {
+  PCLIENT server;
+  PLIST clients;
+  ProcessHttpRequest handle_request;
+  uintptr_t psvRequest;
+  CTEXTSTR site;
+  PCLASSROOT methods;
+ };
+ static struct local_http_data
+ {
+  struct http_data_flags {
+   BIT_FIELD bLogReceived : 1;
+  } flags;
+ }local_http_data;
+ #define l local_http_data
+ void GatherHttpData( struct HttpState *pHttpState )
+ {
+  if( pHttpState->content_length )
+  {
+   PTEXT pMergedLine;
+   PTEXT pInput = VarTextGet( pHttpState->pvt_collector );
+   PTEXT pNewLine = SegAppend( pHttpState->partial, pInput );
+   pMergedLine = SegConcat( NULL, pNewLine, 0, GetTextSize( pHttpState->partial ) + GetTextSize( pInput ) );
+   LineRelease( pNewLine );
+   pHttpState->partial = pMergedLine;
+   if( GetTextSize( pHttpState->partial ) >= pHttpState->content_length )
+   {
+    pHttpState->content = SegSplit( &pHttpState->partial, pHttpState->content_length );
+    pHttpState->partial = NEXTLINE( pHttpState->partial );
+    SegGrab( pHttpState->partial );
+   }
+  }
+  else
+  {
+   PTEXT pMergedLine;
+   PTEXT pInput = VarTextGet( pHttpState->pvt_collector );
+   PTEXT pNewLine = SegAppend( pHttpState->partial, pInput );
+   pMergedLine = SegConcat( NULL, pNewLine, 0, GetTextSize( pHttpState->partial ) + GetTextSize( pInput ) );
+   LineRelease( pNewLine );
+   pHttpState->partial = pMergedLine;
+   pHttpState->content = pHttpState->partial;
+  }
+ }
+ void ProcessURL_CGI( struct HttpState *pHttpState, PTEXT params )
+ {
+  PTEXT start = TextParse( params, WIDE( "&=" ), NULL, 1, 1 DBG_SRC );
+  PTEXT next = start;
+  PTEXT tmp;
+  //lprintf( "Input was %s", GetText( params ) );
+  while( tmp = next )
+  {
+   PTEXT name = tmp;
+   PTEXT equals = ( next = NEXTLINE( tmp ) );
+   PTEXT value = ( next = NEXTLINE( next ) );
+   PTEXT ampersand = ( next = NEXTLINE( next ) );
+   struct HttpField *field = New( struct HttpField );
+   field->name = SegDuplicate( name );
+   field->value = SegDuplicate( value );
+   //lprintf( "Added %s=%s", GetText( field->name ), GetText( field->value ) );
+   AddLink( &pHttpState->cgi_fields, field );
+   next = NEXTLINE( next );
+  }
+  LineRelease( start );
+ }
+ //int ProcessHttp( struct HttpState *pHttpState )
+ int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
+ {
+  if( pHttpState->final )
+  {
+   GatherHttpData( pHttpState );
+   if( pHttpState->content )
+    return HTTP_STATE_RESULT_CONTENT;
+  }
+  else
+  {
+   PTEXT pCurrent, pStart;
+   PTEXT pLine = NULL,
+     pHeader = NULL;
+   TEXTCHAR *c, *line;
+   size_t size, pos, len;
+   int bLine;
+   INDEX start = 0;
+   PTEXT pMergedLine;
+   PTEXT pInput = VarTextGet( pHttpState->pvt_collector );
+   PTEXT pNewLine = SegAppend( pHttpState->partial, pInput );
+   pMergedLine = SegConcat( NULL, pNewLine, 0, GetTextSize( pHttpState->partial ) + GetTextSize( pInput ) );
+   LineRelease( pNewLine );
+   pHttpState->partial = pMergedLine;
+   pCurrent = pHttpState->partial;
+ // at lest is this block....
+   pStart = pCurrent;
+   len = 0;
+   // we always start without having a line yet, because all input is already merged
+   bLine = 0;
+   {
+    //lprintf( "%s", GetText( pCurrent ) );
+    size = GetTextSize( pCurrent );
+    c = GetText( pCurrent );
+    if( bLine < 4 )
+    {
+     //start = 0; // new packet and still collecting header....
+     for( pos = 0; ( pos < size ) && !pHttpState->final; pos++ )
+     {
+      if( c[pos] == '\r' )
+       bLine++;
+      else if( c[pos] == '\n' )
+       bLine++;
+ // non end of line character....
+      else
+      {
+  FinalCheck:
+ // had an end of line...
+       if( bLine >= 2 )
+       {
+        // response status is the data from the fist bit of the packet (on receiving http 1.1/OK ...)
+        if( pHttpState->response_status )
+        {
+         CTEXTSTR field_start;
+         CTEXTSTR colon;
+         CTEXTSTR field_end;
+         CTEXTSTR val_start;
+         PTEXT field_name;
+         PTEXT value;
+         pLine = SegCreate( pos - start - bLine );
+         if( (pos-start) < bLine )
+         {
+          lprintf( WIDE("Failure.") );
+         }
+         MemCpy( line = GetText( pLine ), c + start, (pos - start - bLine)*sizeof(TEXTCHAR));
+         line[pos-start-bLine] = 0;
+         field_start = GetText( pLine );
+         // this is a  request field.
+         colon = StrChr( field_start, ':' );
+         if( colon )
+         {
+          PTEXT trash;
+          val_start = colon + 1;
+          field_end = colon;
+          while( ( field_end > field_start )&& field_end[-1] == ' ' )
+           field_end--;
+          while( ( val_start[0] && ( val_start[0] == ' ' ) ) )
+           val_start++;
+          SegSplit( &pLine, val_start - field_start );
+          value = NEXTLINE( pLine );
+          field_name = SegSplit( &pLine, field_end - field_start );
+          trash = NEXTLINE( field_name );
+          {
+           struct HttpField *field = New( struct HttpField );
+           field->name = SegGrab( field_name );
+           field->value = SegGrab( value );
+           LineRelease( trash );
+           AddLink( &pHttpState->fields, field );
+          }
+         }
+         else
+         {
+          lprintf( WIDE( "Header field [%s] invalid" ), GetText( pLine ) );
+          LineRelease( pLine );
+         }
+        }
+        else
+        {
+         pLine = SegCreate( pos - start - bLine );
+         MemCpy( line = GetText( pLine ), c + start, (pos - start - bLine)*sizeof(TEXTCHAR));
+         line[pos-start-bLine] = 0;
+         pHttpState->response_status = pLine;
+ // initialize to assume it's incomplete; NOT OK.  (requests should be OK)
+         pHttpState->numeric_code = 0;
+         {
+          PTEXT request = TextParse( pHttpState->response_status, WIDE( "?#" ), WIDE( " " ), 1, 1 DBG_SRC );
+          {
+           PTEXT tmp;
+           PTEXT resource_path = NULL;
+           PTEXT next;
+           if( TextSimilar( request, WIDE( "GET" ) ) )
+           {
+ // initialize to assume it's incomplete; NOT OK.  (requests should be OK)
+            pHttpState->numeric_code = HTTP_STATE_RESULT_CONTENT;
+            request = NEXTLINE( request );
+           }
+           if( TextSimilar( request, WIDE( "POST" ) ) )
+           {
+ // initialize to assume it's incomplete; NOT OK.  (requests should be OK)
+            pHttpState->numeric_code = HTTP_STATE_RESULT_CONTENT;
+            lprintf( WIDE("probably shouldn't post final until content length is also received...") );
+            request = NEXTLINE( request );
+           }
+           for( tmp = request; tmp; tmp = next )
+           {
+            //lprintf( WIDE( "word %s" ), GetText( tmp ) );
+            next = NEXTLINE( tmp );
+            //lprintf( "Line : %s", GetText( pLine ) );
+            if( TextSimilar( tmp, WIDE("HTTP/") ) )
+            {
+             TEXTCHAR *tmp2 = (TEXTCHAR*)StrChr( GetText( tmp ), '.' );
+             pHttpState->response_version = ( IntCreateFromText( GetText( tmp ) + 5 ) * 100 ) + IntCreateFromText( tmp2 + 1 );
+             {
+              PTEXT nextword = next;
+              if( nextword )
+              {
+               next = NEXTLINE( nextword );
+               // cast from int64_t
+               pHttpState->numeric_code = (int)IntCreateFromText( GetText( nextword ) );
+               nextword = next;
+               if( nextword )
+               {
+                next = NEXTLINE( nextword );
+                if( pHttpState->text_code )
+                 Release( pHttpState->text_code );
+                pHttpState->text_code = StrDup( GetText( nextword ) );
+               }
+              }
+              else
+              {
+               lprintf( WIDE( "failed to find result code in %s" ), line );
+              }
+             }
+            }
+            else if( GetText(tmp)[0] == '?' )
+            {
+             ProcessURL_CGI( pHttpState, next );
+             next = NEXTLINE( next );
+            }
+            else if( GetText(tmp)[0] == '#' )
+            {
+             lprintf( WIDE("Page anchor is lost... %s"), GetText( next ) );
+             next = NEXTLINE( next );
+            }
+            else
+            {
+             if( (resource_path && tmp->format.position.offset.spaces) )
+             {
+              break;
+             }
+             else
+             {
+              resource_path = SegAppend( resource_path, SegGrab( tmp ) );
+             }
+            }
+           }
+           pHttpState->resource = resource_path;
+          }
+          LineRelease( request );
+         }
+         //else
+         // lprintf( "Not Http header?" );
+        }
+        // could perhaps append a newline segment block...
+        // but probably do not need such a thing....
+        // since the return should be assumed as a continuous
+        // stream of datas....
+        start = pos;
+        if( bLine == 2 )
+         bLine = 0;
+       }
+       // may not receive anything other than header information?
+       if( bLine == 4 )
+       {
+        // end of header
+        // copy the previous line out...
+        pStart = pCurrent;
+ // remaing size
+        len = size - pos;
+        break;
+       }
+      }
+      if( bLine == 4 )
+      {
+       pos++;
+       pHttpState->final = 1;
+       goto FinalCheck;
+      }
+     }
+     if( pos == size &&
+      bLine == 4 &&
+      start != pos )
+     {
+      pHttpState->final = 1;
+      goto FinalCheck;
+     }
+    }
+    else
+     len += size;
+    //pCurrent = NEXTLINE( pCurrent );
+    /* Move the remaining data into a single binary data packet...*/
+   }
+   if( start )
+   {
+    PTEXT tmp = SegSplit( &pCurrent, start );
+    pHttpState->partial = NEXTLINE( pCurrent );
+    LineRelease( SegGrab( pCurrent ) );
+    start = 0;
+   }
+   // final is having received the end of the HTTP header, not nessecarily all data
+   if( pHttpState->final )
+   {
+    INDEX idx;
+    struct HttpField *field;
+    LIST_FORALL( pHttpState->fields, idx, struct HttpField *, field )
+    {
+     if( TextLike( field->name, WIDE( "content-length" ) ) )
+     {
+      // down convert from int64_t
+      pHttpState->content_length = (int)IntCreateFromSeg( field->value );
+     }
+     if( TextLike( field->name, WIDE( "Transfer-Encoding" ) ) )
+     {
+      if( TextLike( field->value, "chunked" ) )
+      {
+       pHttpState->content_length = 0xFFFFFFF;
+       pHttpState->read_chunks = TRUE;
+       pHttpState->read_chunk_state = READ_VALUE;
+       pHttpState->read_chunk_length = 0;
+                   pHttpState->read_chunk_total_length = 0;
+      }
+     }
+     if( TextLike( field->name, WIDE( "Expect" ) ) )
+     {
+      if( TextLike( field->value, WIDE( "100-continue" ) ) )
+      {
+       if( l.flags.bLogReceived )
+        lprintf( WIDE("Generating 100-continue response...") );
+       SendTCP( pc, "HTTP/1.1 100 Continue\r\n\r\n", 25 );
+      }
+     }
+    }
+    // do one gather here... with whatever remainder we had.
+    GatherHttpData( pHttpState );
+   }
+  }
+  if( pHttpState->final &&
+   ( ( pHttpState->content_length && ( GetTextSize( pHttpState->partial ) >= pHttpState->content_length ) )
+    || ( !pHttpState->content_length )
+    ) )
+  {
+   if( pHttpState->numeric_code == 500 )
+    return HTTP_STATE_INTERNAL_SERVER_ERROR;
+   if( pHttpState->content && ( pHttpState->numeric_code == 200 ) )
+    return HTTP_STATE_RESULT_CONTENT;
+   if( pHttpState->numeric_code == 100 )
+    return HTTP_STATE_RESULT_CONTINUE;
+   if( pHttpState->numeric_code == 404 )
+    return HTTP_STATE_RESOURCE_NOT_FOUND;
+   if( pHttpState->numeric_code == 400 )
+    return HTTP_STATE_BAD_REQUEST;
+   return pHttpState->numeric_code;
+  }
+  return HTTP_STATE_RESULT_NOTHING;
+ }
+ LOGICAL AddHttpData( struct HttpState *pHttpState, POINTER buffer, size_t size )
+ {
+  pHttpState->last_read_tick = GetTickCount();
+  if( pHttpState->read_chunks )
+  {
+   uint8_t* buf = (uint8_t*)buffer;
+   int ofs = 0;
+   while( ofs < size )
+   {
+    switch( pHttpState->read_chunk_state )
+    {
+    case READ_VALUE:
+     if( buf[ofs] >= '0' && buf[ofs] <= '9' )
+     {
+      pHttpState->read_chunk_length *= 16;
+      pHttpState->read_chunk_length += buf[ofs] - '0';
+     }
+     else if( buf[ofs] >= 'a' && buf[ofs] <= 'f' )
+     {
+      pHttpState->read_chunk_length *= 16;
+      pHttpState->read_chunk_length += buf[ofs] - 'a' + 10;
+     }
+     else if( buf[ofs] >= 'A' && buf[ofs] <= 'F' )
+     {
+      pHttpState->read_chunk_length *= 16;
+      pHttpState->read_chunk_length += buf[ofs] - 'A' + 10;
+     }
+     else if( buf[ofs] == '\r' )
+     {
+      pHttpState->read_chunk_total_length += pHttpState->read_chunk_length;
+      if( l.flags.bLogReceived ) {
+       lprintf( "Chunck will be %d", pHttpState->read_chunk_length );
+      }
+      pHttpState->read_chunk_state = READ_VALUE_LF;
+     }
+     else
+     {
+      lprintf( "Chunk Processing Error expected \\n, found %d(%c)", buf[ofs], buf[ofs] );
+      RemoveClient( pHttpState->request_socket );
+      return FALSE;
+     }
+     break;
+    case READ_VALUE_LF:
+     if( buf[ofs] == '\n' )
+     {
+      if( pHttpState->read_chunk_length == 0 )
+       pHttpState->read_chunk_state = READ_CR;
+      else
+       pHttpState->read_chunk_state = READ_BYTES;
+     }
+     else
+     {
+      lprintf( "Chunk Processing Error expected \\n, found %d(%c)", buf[ofs], buf[ofs] );
+      RemoveClient( pHttpState->request_socket );
+      return FALSE;
+     }
+     break;
+    case READ_CR:
+     if( buf[ofs] == '\r' )
+     {
+      pHttpState->read_chunk_state = READ_LF;
+     }
+     else
+     {
+      lprintf( "Chunk Processing Error expected \\r, found %d(%c)", buf[ofs], buf[ofs] );
+      RemoveClient( pHttpState->request_socket );
+      return FALSE;
+     }
+     break;
+    case READ_LF:
+     if( buf[ofs] == '\n' )
+     {
+      if( pHttpState->read_chunk_length )
+      {
+       pHttpState->read_chunk_length = 0;
+       pHttpState->read_chunk_state = READ_VALUE;
+      }
+      else
+      {
+       pHttpState->content_length = GetTextSize( VarTextPeek( pHttpState->pvt_collector ) );
+       if( pHttpState->waiter )
+        WakeThread( pHttpState->waiter );
+       return TRUE;
+      }
+     }
+     else
+     {
+      lprintf( "Chunk Processing Error expected \\n, found %d(%c)", buf[ofs], buf[ofs] );
+      RemoveClient( pHttpState->request_socket );
+      return FALSE;
+     }
+     break;
+    case READ_BYTES:
+     VarTextAddData( pHttpState->pvt_collector, (CTEXTSTR)(buf + ofs), 1 );
+     pHttpState->read_chunk_byte++;
+     if( pHttpState->read_chunk_byte == pHttpState->read_chunk_length )
+      pHttpState->read_chunk_state = READ_CR;
+     break;
+    }
+    ofs++;
+   }
+   if( l.flags.bLogReceived ) {
+    lprintf( "chunk read is %d of %d", pHttpState->read_chunk_byte, pHttpState->read_chunk_total_length );
+   }
+   return FALSE;
+  }
+  else
+  {
+   VarTextAddData( pHttpState->pvt_collector, (CTEXTSTR)buffer, size );
+   return TRUE;
+  }
+ }
+ struct HttpState *CreateHttpState( void )
+ {
+  struct HttpState *pHttpState;
+ #ifndef __NO_OPTIONS__
+  l.flags.bLogReceived = SACK_GetProfileIntEx( GetProgramName(), WIDE("SACK/HTTP/Enable Logging Received Data"), 0, TRUE );
+ #endif
+  pHttpState = New( struct HttpState );
+  MemSet( pHttpState, 0, sizeof( struct HttpState ) );
+  pHttpState->pvt_collector = VarTextCreate();
+  return pHttpState;
+ }
+ void EndHttp( struct HttpState *pHttpState )
+ {
+  pHttpState->final = 0;
+  pHttpState->content_length = 0;
+  LineRelease( pHttpState->content );
+  if( pHttpState->partial != pHttpState->content )
+  {
+   LineRelease( pHttpState->partial );
+  }
+  pHttpState->partial = NULL;
+  pHttpState->content = NULL;
+  LineRelease( pHttpState->response_status );
+  pHttpState->response_status = NULL;
+  pHttpState->numeric_code = 0;
+  if( pHttpState->text_code )
+  {
+   Release( pHttpState->text_code );
+   pHttpState->text_code = NULL;
+  }
+  {
+   INDEX idx;
+   struct HttpField *field;
+   LIST_FORALL( pHttpState->fields, idx, struct HttpField *, field )
+   {
+    LineRelease( field->name );
+    LineRelease( field->value );
+    Release( field );
+   }
+   EmptyList( &pHttpState->fields );
+  }
+ }
+ PTEXT GetHttpContent( struct HttpState *pHttpState )
+ {
+  if( pHttpState->read_chunks )
+  {
+   /* did a timeout happen? */
+   if( pHttpState->content_length == pHttpState->read_chunk_total_length )
+    return pHttpState->content;
+   return NULL;
+  }
+  if( pHttpState->content_length )
+   return pHttpState->content;
+  return NULL;
+ }
+ void ProcessHttpFields( struct HttpState *pHttpState, void (CPROC*f)( uintptr_t psv, PTEXT name, PTEXT value ), uintptr_t psv )
+ {
+  INDEX idx;
+  struct HttpField *field;
+  LIST_FORALL( pHttpState->fields, idx, struct HttpField *, field )
+  {
+   f( psv, field->name, field->value );
+  }
+ }
+ void ProcessCGIFields( struct HttpState *pHttpState, void (CPROC*f)( uintptr_t psv, PTEXT name, PTEXT value ), uintptr_t psv )
+ {
+  INDEX idx;
+  struct HttpField *field;
+  LIST_FORALL( pHttpState->cgi_fields, idx, struct HttpField *, field )
+  {
+   f( psv, field->name, field->value );
+  }
+ }
+ PTEXT GetHttpField( struct HttpState *pHttpState, CTEXTSTR name )
+ {
+  INDEX idx;
+  struct HttpField *field;
+  LIST_FORALL( pHttpState->fields, idx, struct HttpField *, field )
+  {
+   if( StrCaseCmp( GetText( field->name ), name ) == 0 )
+    return field->value;
+  }
+  return NULL;
+ }
+ PTEXT GetHttpResponce( struct HttpState *pHttpState )
+ {
+  return pHttpState->response_status;
+ }
+ PTEXT GetHttpRequest( struct HttpState *pHttpState )
+ {
+  return pHttpState->resource;
+ }
+ void DestroyHttpState( struct HttpState *pHttpState )
+ {
+ // empties variables
+  EndHttp( pHttpState );
+  DeleteList( &pHttpState->fields );
+  VarTextDestroy( &pHttpState->pvt_collector );
+  if( pHttpState->buffer )
+   Release( pHttpState->buffer );
+  Release( pHttpState );
+ }
+ void SendHttpResponse ( struct HttpState *pHttpState, PCLIENT pc, int numeric, CTEXTSTR text, CTEXTSTR content_type, PTEXT body )
+ {
+  int offset = 0;
+  PVARTEXT pvt_message = VarTextCreate();
+  PTEXT header;
+  PTEXT tmp_content;
+  //TEXTCHAR message[500];
+  vtprintf( pvt_message, WIDE( "HTTP/1.1 %d %s\r\n" ), numeric, text );
+  if( content_type )
+  {
+   vtprintf( pvt_message, WIDE( "Content-Length: %d\r\n" ), GetTextSize(body));
+   vtprintf( pvt_message, WIDE( "Content-Type: %s\r\n" )
+       , content_type?content_type
+      :(tmp_content=GetHttpField( pHttpState, WIDE("Accept") ))?GetText(tmp_content)
+      :WIDE("text/plain; charset=utf-8")  );
+  }
+  else
+   vtprintf( pvt_message, WIDE( "%s\r\n" ), GetText( body ) );
+  vtprintf( pvt_message, WIDE( "Server: SACK Core Library 2.x\r\n" )  );
+  vtprintf( pvt_message, WIDE( "\r\n" )  );
+  header = VarTextGet( pvt_message );
+  //offset += snprintf( message + offset, sizeof( message ) - offset, WIDE( "%s" ),  "Body");
+  if( l.flags.bLogReceived )
+  {
+   lprintf( WIDE("Sending response...") );
+   LogBinary( (uint8_t*)GetText( header ), GetTextSize( header ) );
+   if( content_type )
+    LogBinary( (uint8_t*)GetText( body ), GetTextSize( body ) );
+  }
+  if( !pc )
+   pc = pHttpState->request_socket;
+  SendTCP( pc, GetText( header ), GetTextSize( header ) );
+  if( content_type )
+   SendTCP( pc, GetText( body ), GetTextSize( body ) );
+ }
+ void SendHttpMessage ( struct HttpState *pHttpState, PCLIENT pc, PTEXT body )
+ {
+  PTEXT message;
+  size_t offset = 0;
+  PVARTEXT pvt_message = VarTextCreate();
+  PTEXT content_type;
+  offset += vtprintf( pvt_message, WIDE( "%s" ),  WIDE("HTTP/1.1 200 OK\r\n") );
+  offset += vtprintf( pvt_message, WIDE( "Content-Length: %d\r\n" ), GetTextSize( body ));
+  offset += vtprintf( pvt_message, WIDE( "Content-Type: %s\r\n" )
+   , (content_type = GetHttpField( pHttpState, WIDE("Accept") ))?GetText(content_type):WIDE("text/plain" ));
+  offset += vtprintf( pvt_message, WIDE( "\r\n" )  );
+  offset += vtprintf( pvt_message, WIDE( "%s" ), GetText( body ));
+  message = VarTextGet( pvt_message );
+  if( l.flags.bLogReceived )
+  {
+   lprintf( WIDE(" Response Message:" ));
+   LogBinary( (uint8_t*)GetText( message ), GetTextSize( message ));
+  }
+  SendTCP( pc, GetText( message ), GetTextSize( message ));
+ }
+ //---------- CLIENT --------------------------------------------
+ static void CPROC HttpReader( PCLIENT pc, POINTER buffer, size_t size )
+ {
+  struct HttpState *state = (struct HttpState *)GetNetworkLong( pc, 2 );
+  if( !buffer )
+  {
+   struct HttpState *state = (struct HttpState *)GetNetworkLong( pc, 2 );
+   if( state && state->ssl )
+   {
+    Deallocate( POINTER, (POINTER)GetNetworkLong( pc, 1 ) );
+    SetNetworkLong( pc, 1, 0 );
+    {
+     PTEXT send = VarTextGet( state->pvtOut );
+     if( l.flags.bLogReceived )
+     {
+      lprintf( WIDE("Sending Request...") );
+      LogBinary( (uint8_t*)GetText( send ), GetTextSize( send ) );
+     }
+ #ifndef NO_SSL
+     // had to wait for handshake, so NULL event
+     // on secure has already had time to build the send
+     // but had to wait until now to do that.
+     ssl_Send( pc, GetText( send ), GetTextSize( send ) );
+ #endif
+     LineRelease( send );
+    }
+   }
+   else
+   {
+    buffer = Allocate( 4096 );
+    SetNetworkLong( pc, 1, (uintptr_t)buffer );
+   }
+  }
+  else
+  {
+   struct HttpState *state = (struct HttpState *)GetNetworkLong( pc, 2 );
+   if( l.flags.bLogReceived )
+   {
+    lprintf( WIDE("Received web request... %d"), size );
+    //LogBinary( buffer, size );
+   }
+   if( AddHttpData( state, buffer, size ) )
+    if( ProcessHttp( pc, state ) )
+    {
+     RemoveClient( pc );
+     return;
+    }
+  }
+  // read is handled by the SSL layer instead of here.  Just trust that someone will give us data later
+  if( buffer && ( state && !state->ssl ) )
+  {
+   ReadTCP( pc, buffer, 4096 );
+  }
+ }
+ static void CPROC HttpReaderClose( PCLIENT pc )
+ {
+  POINTER buf = (POINTER)GetNetworkLong( pc, 1 );
+  if( buf )
+   Release( buf );
+  {
+   PCLIENT *ppc = (PCLIENT*)GetNetworkLong( pc, 0 );
+   if( ppc )
+    ppc[0] = NULL;
+  }
+ }
+ HTTPState PostHttpQuery( PTEXT address, PTEXT url, PTEXT content )
+ {
+  PCLIENT pc = OpenTCPClient( GetText( address ), 80, HttpReader );
+  struct HttpState *state = CreateHttpState();
+  PVARTEXT pvtOut = VarTextCreate();
+  vtprintf( pvtOut, WIDE( "POST %s HTTP/1.1\r\n" ), url );
+  vtprintf( pvtOut, WIDE( "content-length:%d\r\n" ), GetTextSize( content ) );
+  vtprintf( pvtOut, WIDE( "\r\n\r\n" ) );
+  VarTextAddData( pvtOut, GetText( content ), GetTextSize( content ) );
+  if( pc )
+  {
+   PTEXT send = VarTextGet( pvtOut );
+   SetNetworkLong( pc, 0, (uintptr_t)&pc );
+   SetNetworkLong( pc, 2, (uintptr_t)state );
+   SetNetworkCloseCallback( pc, HttpReaderClose );
+   if( l.flags.bLogReceived )
+   {
+    lprintf( WIDE("Sending POST...") );
+    LogBinary( (uint8_t*)GetText( send ), GetTextSize( send ) );
+   }
+   SendTCP( pc, GetText( send ), GetTextSize( send ) );
+   LineRelease( send );
+   while( pc )
+   {
+    WakeableSleep( 100 );
+   }
+  }
+  VarTextDestroy( &pvtOut );
+  return state;
+ }
+ PTEXT PostHttp( PTEXT address, PTEXT url, PTEXT content )
+ {
+  HTTPState state = PostHttpQuery( address, url, content );
+  if( state )
+  {
+   PTEXT result = GetHttpContent( state );
+   if( result )
+    Hold( result );
+   DestroyHttpState( state );
+   return result;
+  }
+  return NULL;
+ }
+ HTTPState GetHttpQuery( PTEXT address, PTEXT url )
+ {
+  if( !address )
+   return NULL;
+  {
+   PCLIENT pc = OpenTCPClient( GetText( address ), 80, HttpReader );
+   struct HttpState *state = CreateHttpState();
+   PVARTEXT pvtOut = VarTextCreate();
+   vtprintf( pvtOut, WIDE( "GET %s HTTP/1.1\r\n" ), GetText( url ) );
+   vtprintf( pvtOut, WIDE( "host: %s\r\n" ), GetText( address ) );
+   vtprintf( pvtOut, WIDE( "\r\n\r\n" ) );
+   if( pc )
+   {
+    PTEXT send = VarTextGet( pvtOut );
+    SetNetworkLong( pc, 0, (uintptr_t)&pc );
+    SetNetworkLong( pc, 2, (uintptr_t)state );
+    SetNetworkCloseCallback( pc, HttpReaderClose );
+    if( l.flags.bLogReceived )
+    {
+     lprintf( WIDE("Sending POST...") );
+     LogBinary( (uint8_t*)GetText( send ), GetTextSize( send ) );
+    }
+    SendTCP( pc, GetText( send ), GetTextSize( send ) );
+    LineRelease( send );
+    while( pc )
+    {
+     WakeableSleep( 100 );
+    }
+   }
+   VarTextDestroy( &pvtOut );
+   return state;
+  }
+  return NULL;
+ }
+ HTTPState GetHttpsQuery( PTEXT address, PTEXT url )
+ {
+  if( !address )
+   return NULL;
+  {
+   struct HttpState *state = CreateHttpState();
+   static PCLIENT pc;
+   pc = OpenTCPClient( GetText( address ), 443, NULL );
+   if( pc )
+   {
+    state->last_read_tick = GetTickCount();
+    SetNetworkLong( pc, 0, (uintptr_t)&pc );
+    SetNetworkLong( pc, 2, (uintptr_t)state );
+    SetNetworkCloseCallback( pc, HttpReaderClose );
+    SetNetworkReadComplete( pc, HttpReader );
+    state->ssl = TRUE;
+    state->pvtOut = VarTextCreate();
+    vtprintf( state->pvtOut, WIDE( "GET %s HTTP/1.1\r\n" ), GetText( url ) );
+    vtprintf( state->pvtOut, WIDE( "host: %s\r\n" ), GetText( address ) );
+    vtprintf( state->pvtOut, WIDE( "\r\n\r\n" ) );
+ #ifndef NO_SSL
+    if( ssl_BeginClientSession( pc, NULL, 0 ) )
+    {
+     state->waiter = MakeThread();
+     while( pc && ( state->last_read_tick > ( GetTickCount() - 20000 ) ) )
+     {
+      WakeableSleep( 1000 );
+     }
+    }
+    else
+     RemoveClient( pc );
+ #endif
+    VarTextDestroy( &state->pvtOut );
+    if( !pc )
+     return state;
+   }
+   else
+   {
+    RemoveClient( pc );
+    DestroyHttpState( state );
+   }
+  }
+  return NULL;
+ }
+ PTEXT GetHttp( PTEXT address, PTEXT url, LOGICAL secure )
+ {
+  if( secure )
+   return GetHttps( address, url );
+  else
+  {
+  HTTPState state = GetHttpQuery( address, url );
+  if( state )
+  {
+   PTEXT result = GetHttpContent( state );
+   if( result )
+    Hold( result );
+   DestroyHttpState( state );
+   return result;
+  }}
+  return NULL;
+ }
+ PTEXT GetHttps( PTEXT address, PTEXT url )
+ {
+  HTTPState state = GetHttpsQuery( address, url );
+  if( state )
+  {
+   PTEXT result = GetHttpContent( state );
+   if( result )
+    Hold( result );
+   DestroyHttpState( state );
+   return result;
+  }
+  return NULL;
+ }
+ //---------- SERVER --------------------------------------------
+ static LOGICAL InvokeMethod( PCLIENT pc, struct HttpServer *server, struct HttpState *pHttpState )
+ {
+  PTEXT request = TextParse( pHttpState->response_status, WIDE( "?#" ), WIDE( " " ), 1, 1 DBG_SRC );
+  if( TextLike( request, WIDE( "get" ) ) || TextLike( request, WIDE( "post" ) ) )
+  {
+   PCLASSROOT data = NULL;
+   //lprintf( "is a get or post? ");
+   {
+    LOGICAL (CPROC *f)(uintptr_t, PCLIENT, struct HttpState *, PTEXT);
+    LOGICAL status = FALSE;
+    //lprintf( "is %s==%s?", name, GetText( pHttpState->resource ) + 1 );
+    //if( CompareMask( name, GetText( pHttpState->resource ) + 1, FALSE ) )
+    {
+     f = (LOGICAL (CPROC*)(uintptr_t, PCLIENT, struct HttpState *, PTEXT))GetRegisteredProcedureExxx( server->methods, (PCLASSROOT)(GetText( pHttpState->resource ) + 1), "LOGICAL", GetText(request), "(uintptr_t, PCLIENT, struct HttpState *, PTEXT)" );
+     //lprintf( "got for %s %s", (PCLASSROOT)(GetText( pHttpState->resource ) + 1),  GetText( request ) );
+     //if( !f )
+     if( f )
+      status = f( server->psvRequest, pc, pHttpState, pHttpState->content );
+    }
+    if( !status )
+    {
+     if( server->handle_request )
+      status = server->handle_request( server->psvRequest, pHttpState );
+    }
+    if( !status )
+    {
+     PTEXT body = SegCreateFromText( WIDE( "<HTML><HEAD><TITLE>Bad Request</TITLE></HEAD><BODY>Resource handler not found" ) );
+     SendHttpResponse( pHttpState, NULL, 404, WIDE("NOT FOUND"), WIDE("text/html"), body );
+     LineRelease( body );
+    }
+   }
+   LineRelease( request );
+   return 1;
+  }
+  else
+   lprintf( WIDE("not a get or a post?") );
+  LineRelease( request );
+  return 0;
+ }
+ static void CPROC HandleRequest( PCLIENT pc, POINTER buffer, size_t length )
+ {
+  if( !buffer )
+  {
+   struct HttpServer *server = (struct HttpServer *)GetNetworkLong( pc, 0 );
+   struct HttpState *pHttpState = CreateHttpState();
+   buffer = pHttpState->buffer = Allocate( 4096 );
+   pHttpState->request_socket = pc;
+   SetNetworkLong( pc, 1, (uintptr_t)pHttpState );
+  }
+  else
+  {
+   int result;
+   //struct HttpServer *server = (struct HttpServer *)GetNetworkLong( pc, 0 );
+   struct HttpState *pHttpState = (struct HttpState *)GetNetworkLong( pc, 1 );
+   if( l.flags.bLogReceived )
+   {
+    lprintf( WIDE("Received web request...") );
+    LogBinary( (uint8_t*)buffer, length );
+   }
+   AddHttpData( pHttpState, buffer, length );
+   while( ( result = ProcessHttp( pc, pHttpState ) ) )
+   {
+    struct HttpServer *server = (struct HttpServer *)GetNetworkLong( pc, 0 );
+    //lprintf( "result = %d", result );
+    switch( result )
+    {
+    case HTTP_STATE_RESULT_CONTENT:
+     InvokeMethod( pc, server, pHttpState );
+     EndHttp( pHttpState );
+     break;
+    case HTTP_STATE_RESULT_CONTINUE:
+     break;
+    }
+   }
+  }
+  ReadTCP( pc, buffer, 4096 );
+ }
+ static void CPROC RequestorClosed( PCLIENT pc )
+ {
+  struct HttpServer *server = (struct HttpServer *)GetNetworkLong( pc, 0 );
+  struct HttpState *pHttpState = (struct HttpState *)GetNetworkLong( pc, 1 );
+  DeleteLink( &server->clients, pc );
+  if( pHttpState )
+   DestroyHttpState( pHttpState );
+ }
+ static void CPROC AcceptHttpClient( PCLIENT pc_server, PCLIENT pc_new )
+ {
+  struct HttpServer *server;
+  while( !(server = (struct HttpServer *)GetNetworkLong( pc_server, 0 )) ) {
+   Relinquish();
+  }
+  AddLink( &server->clients, pc_new );
+  SetNetworkLong( pc_new, 0, (uintptr_t)server );
+  SetNetworkReadComplete( pc_new, HandleRequest );
+  SetNetworkCloseCallback( pc_new, RequestorClosed );
+ }
+ #ifndef NO_SSL
+ struct HttpServer *CreateHttpsServerEx( CTEXTSTR interface_address, CTEXTSTR TargetName, CTEXTSTR site, ProcessHttpRequest handle_request, uintptr_t psv ) {
+  struct HttpServer *server = New( struct HttpServer );
+  SOCKADDR *tmp;
+  TEXTCHAR class_name[256];
+ #ifndef __NO_OPTIONS__
+  l.flags.bLogReceived = SACK_GetProfileIntEx( GetProgramName(), WIDE( "SACK/HTTP/Enable Logging Received Data" ), 0, TRUE );
+ #endif
+  server->clients = NULL;
+  server->handle_request = handle_request;
+  server->psvRequest = psv;
+  server->site = StrDup( site );
+  tnprintf( class_name, sizeof( class_name ), WIDE( "SACK/Http/Methods/%s%s%s" )
+   , TargetName ? TargetName : WIDE( "" )
+   , (TargetName && site) ? WIDE( "/" ) : WIDE( "" )
+   , site ? site : WIDE( "" ) );
+  //lprintf( "Server root = %s", class_name );
+  server->methods = GetClassRoot( class_name );
+  NetworkStart();
+  server->server = OpenTCPListenerAddrEx( tmp = CreateSockAddress( interface_address ? interface_address : WIDE( "0.0.0.0" ), 80 )
+   , AcceptHttpClient );
+  SetNetworkLong( server->server, 0, (uintptr_t)server );
+  ssl_BeginServer( server->server, NULL, 0, NULL, 0 );
+  ReleaseAddress( tmp );
+  if( !server->server )
+  {
+   Release( server );
+   return NULL;
+  }
+  return server;
+ }
+ #endif
+ struct HttpServer *CreateHttpServerEx( CTEXTSTR interface_address, CTEXTSTR TargetName, CTEXTSTR site, ProcessHttpRequest handle_request, uintptr_t psv )
+ {
+  struct HttpServer *server = New( struct HttpServer );
+  SOCKADDR *tmp;
+  TEXTCHAR class_name[256];
+ #ifndef __NO_OPTIONS__
+  l.flags.bLogReceived = SACK_GetProfileIntEx( GetProgramName(), WIDE("SACK/HTTP/Enable Logging Received Data"), 0, TRUE );
+ #endif
+  server->clients = NULL;
+  server->handle_request = handle_request;
+  server->psvRequest = psv;
+  server->site = StrDup( site );
+  tnprintf( class_name, sizeof( class_name ), WIDE( "SACK/Http/Methods/%s%s%s" )
+      , TargetName?TargetName:WIDE("")
+      , ( TargetName && site )?WIDE( "/" ):WIDE( "" )
+      , site?site:WIDE( "" ) );
+  //lprintf( "Server root = %s", class_name );
+  server->methods = GetClassRoot( class_name );
+  NetworkStart();
+  server->server = OpenTCPListenerAddrEx( tmp = CreateSockAddress( interface_address?interface_address:WIDE( "0.0.0.0" ), 80 )
+                , AcceptHttpClient );
+  ReleaseAddress( tmp );
+  if( !server->server )
+  {
+   Release( server );
+   return NULL;
+  }
+  SetNetworkLong( server->server, 0, (uintptr_t)server );
+  return server;
+ }
+ PTEXT GetHTTPField( struct HttpState *pHttpState, CTEXTSTR name )
+ {
+  INDEX idx;
+  struct HttpField *field;
+  LIST_FORALL( pHttpState->fields, idx, struct HttpField *, field )
+  {
+   if( TextLike( field->name, name ) )
+    return field->value;
+  }
+  return NULL;
+ }
+ PTEXT GetHttpResource( struct HttpState *pHttpState )
+ {
+  return pHttpState->resource;
+ }
+ HTTP_NAMESPACE_END
+ // not really, but close enough
+ #define HTTP_SOURCE
+ HTTP_NAMESPACE
+ struct default_port
+ {
+  CTEXTSTR name;
+  int number;
+ };
+ #define num_defaults (sizeof(default_ports)/sizeof(default_ports[0]))
+ static struct default_port default_ports[] = { { WIDE("http"), 80 }
+                , { WIDE("ftp"), 21 }
+                , { WIDE("ssh"), 22 }
+                , { WIDE("telnet"), 23 }
+                , { WIDE("https"), 443 }
+                , { WIDE("ws"), 80 }
+                , { WIDE("wss"), 443 }
+                , { WIDE("file"), 0 }
+                };
+ // TEXTSTR result = ConvertURIText( addr, length )
+ // SACK_ParseURL takes a URL string and gets the peices it can identify
+ // if a peice is not specified, the result will be NULL.
+ enum URLParseState
+ {
+  // find ':', store characters in buffer
+  PARSE_STATE_COLLECT_PROTOCOL = 0
+  // find '/', eat /
+  , PARSE_STATE_COLLECT_PROTOCOL_1
+  // eat '/', eat /
+  , PARSE_STATE_COLLECT_PROTOCOL_2
+   , PARSE_STATE_COLLECT_USER
+   , PARSE_STATE_COLLECT_PASSWORD
+   , PARSE_STATE_COLLECT_ADDRESS
+   , PARSE_STATE_COLLECT_PORT
+   , PARSE_STATE_COLLECT_RESOURCE_PATH
+   , PARSE_STATE_COLLECT_RESOURCE_NAME
+   , PARSE_STATE_COLLECT_RESOURCE_EXTENSION
+   , PARSE_STATE_COLLECT_RESOURCE_ANCHOR
+   , PARSE_STATE_COLLECT_CGI_NAME
+   , PARSE_STATE_COLLECT_CGI_VALUE
+ };
+ static void AppendBuffer( CTEXTSTR *output, CTEXTSTR seperator, CTEXTSTR input )
+ {
+  CTEXTSTR tmpbuf = ConvertURIText( input, StrLen( input ) + 1 );
+  TEXTSTR newout;
+  if( *output )
+  {
+   size_t len;
+   len = StrLen( *output ) + StrLen( tmpbuf ) + 1;
+   if( seperator )
+    len += StrLen( seperator );
+   newout = NewArray( TEXTCHAR, len );
+   tnprintf( newout, len, WIDE("%s%s%s"), (*output), seperator?seperator:WIDE(""), tmpbuf );
+   Release( (POINTER)*output );
+   (*output) = newout;
+   Release( (POINTER)tmpbuf );
+  }
+  else
+  {
+   (*output) = tmpbuf;
+  }
+ }
+ struct url_data * SACK_URLParse( CTEXTSTR url )
+ {
+  struct url_data *data = New( struct url_data );
+  struct url_cgi_data *cgi_data;
+  int inchar = 0;
+  int outchar = 0;
+  TEXTSTR outbuf = NewArray( TEXTCHAR, StrLen( url ) + 1 );
+  int _state, state;
+  _state = -1;
+  state = PARSE_STATE_COLLECT_PROTOCOL;
+  MemSet( data, 0, sizeof( struct url_data ) );
+  while( url[inchar] )
+  {
+   int use_char;
+   use_char = 0;
+   switch( url[inchar] )
+   {
+   case '&':
+    if( state == PARSE_STATE_COLLECT_CGI_NAME )
+    {
+     cgi_data = New( struct url_cgi_data );
+     cgi_data->name = NULL;
+     cgi_data->value = NULL;
+     AddLink( &data->cgi_parameters, cgi_data );
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &cgi_data->name, NULL, outbuf );
+  // same state, just a blank cgi param
+     state = PARSE_STATE_COLLECT_CGI_NAME;
+    }
+    if( state == PARSE_STATE_COLLECT_CGI_VALUE )
+    {
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &cgi_data->value, NULL, outbuf );
+     state = PARSE_STATE_COLLECT_CGI_NAME;
+    }
+    break;
+   case '=':
+    if( state == PARSE_STATE_COLLECT_CGI_NAME )
+    {
+     cgi_data = New( struct url_cgi_data );
+     cgi_data->name = NULL;
+     cgi_data->value = NULL;
+     AddLink( &data->cgi_parameters, cgi_data );
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &cgi_data->name, NULL, outbuf );
+     state = PARSE_STATE_COLLECT_CGI_VALUE;
+    }
+    break;
+   case '?':
+    if( state == PARSE_STATE_COLLECT_RESOURCE_EXTENSION )
+    {
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &data->resource_extension, NULL, outbuf );
+     state = PARSE_STATE_COLLECT_CGI_NAME;
+    }
+    if( state == PARSE_STATE_COLLECT_RESOURCE_NAME )
+    {
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &data->resource_file, NULL, outbuf );
+     state = PARSE_STATE_COLLECT_CGI_NAME;
+    }
+    if( state == PARSE_STATE_COLLECT_RESOURCE_ANCHOR )
+    {
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &data->resource_anchor, NULL, outbuf );
+     state = PARSE_STATE_COLLECT_CGI_NAME;
+    }
+    break;
+   case '#':
+    if( state == PARSE_STATE_COLLECT_RESOURCE_EXTENSION )
+    {
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &data->resource_extension, NULL, outbuf );
+     state = PARSE_STATE_COLLECT_RESOURCE_ANCHOR;
+    }
+    else if( ( state == PARSE_STATE_COLLECT_RESOURCE_NAME )
+     || ( state == PARSE_STATE_COLLECT_RESOURCE_PATH ) )
+    {
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &data->resource_file, NULL, outbuf );
+     state = PARSE_STATE_COLLECT_RESOURCE_ANCHOR;
+    }
+    break;
+   case '.':
+    // I just want to process the '.' when finding the extension.
+    // just because we will always want to know it for other reasons later
+    if( state == PARSE_STATE_COLLECT_RESOURCE_PATH
+     || state == PARSE_STATE_COLLECT_RESOURCE_NAME )
+    {
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &data->resource_file, NULL, outbuf );
+     state = PARSE_STATE_COLLECT_RESOURCE_EXTENSION;
+    }
+    else
+     use_char = 1;
+    break;
+   case '/':
+    if( state == PARSE_STATE_COLLECT_PROTOCOL_1 )
+    {
+     if( outchar > 0 )
+      lprintf( WIDE("Characters between protocol ':' and first slash") );
+     state = PARSE_STATE_COLLECT_PROTOCOL_2;
+    }
+    else if( state == PARSE_STATE_COLLECT_PROTOCOL_2 )
+    {
+     if( outchar > 0 )
+      lprintf( WIDE("Characters between protocol first and second slash") );
+     state = PARSE_STATE_COLLECT_USER;
+    }
+    else if( state == PARSE_STATE_COLLECT_USER )
+    {
+     // what was collected was really
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &data->host, NULL, outbuf );
+     state = PARSE_STATE_COLLECT_RESOURCE_PATH;
+    }
+    else if( state == PARSE_STATE_COLLECT_PASSWORD )
+    {
+     // what was collected was really the ip:port not user:password
+     data->host = data->user;
+     data->user = NULL;
+     outbuf[outchar] = 0;
+     outchar = 0;
+     // should validate port is in numeric.
+     data->port = IntCreateFromText( outbuf );
+     state = PARSE_STATE_COLLECT_RESOURCE_PATH;
+    }
+    else if( state == PARSE_STATE_COLLECT_ADDRESS )
+    {
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &data->host, NULL, outbuf );
+     state = PARSE_STATE_COLLECT_RESOURCE_PATH;
+    }
+    else if( state == PARSE_STATE_COLLECT_PORT )
+    {
+     outbuf[outchar] = 0;
+     outchar = 0;
+     data->port = IntCreateFromText( outbuf );
+     //AppendBuffer( &data->port, NULL, outbuf );
+     state = PARSE_STATE_COLLECT_RESOURCE_PATH;
+    }
+    else if( state == PARSE_STATE_COLLECT_RESOURCE_PATH )
+    {
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &data->resource_path, WIDE("/"), outbuf );
+     state = PARSE_STATE_COLLECT_RESOURCE_NAME;
+    }
+    else if( state == PARSE_STATE_COLLECT_RESOURCE_NAME )
+    {
+     // this isn't really the name, it's another part of the resource path
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &data->resource_path, WIDE("/"), outbuf );
+     state = PARSE_STATE_COLLECT_RESOURCE_NAME;
+    }
+    break;
+   case '@':
+  // hit the colon between user and password
+    if( state == PARSE_STATE_COLLECT_USER )
+    {
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &data->user, NULL, outbuf );
+     state = PARSE_STATE_COLLECT_ADDRESS;
+    }
+    if( state == PARSE_STATE_COLLECT_PASSWORD )
+    {
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &data->password, NULL, outbuf );
+     state = PARSE_STATE_COLLECT_ADDRESS;
+    }
+    break;
+   case ':':
+    if( state == PARSE_STATE_COLLECT_PROTOCOL )
+    {
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &data->protocol, NULL, outbuf );
+     {
+      int n;
+      for( n = 0; n < num_defaults; n++ )
+      {
+       if( strcmp( outbuf, default_ports[n].name ) == 0 )
+       {
+        data->default_port = default_ports[n].number;
+       }
+      }
+     }
+     state = PARSE_STATE_COLLECT_PROTOCOL_1;
+    }
+  // hit the colon between user and password
+    else if( state == PARSE_STATE_COLLECT_USER )
+    {
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &data->user, NULL, outbuf );
+     state = PARSE_STATE_COLLECT_PASSWORD;
+    }
+  // hit the colon between address and port
+    else if( state == PARSE_STATE_COLLECT_ADDRESS )
+    {
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &data->host, NULL, outbuf );
+     state = PARSE_STATE_COLLECT_PORT;
+    }
+    else
+    {
+ // error
+     ;
+    }
+    break;
+   default:
+    switch( state )
+    {
+    case PARSE_STATE_COLLECT_PROTOCOL_1:
+     // the thing after the ':' was not a '/', so this isn't the protocol.
+     break;
+    case PARSE_STATE_COLLECT_PROTOCOL_2:
+     break;
+    default:
+     use_char = 1;
+    }
+    break;
+   }
+   if( use_char )
+    outbuf[outchar++] = url[inchar++];
+   else
+   {
+    if( _state == state
+  // after starting the path, look for fliename, if the extension or other is not found
+     && ( state != PARSE_STATE_COLLECT_RESOURCE_NAME )
+ // blank cgi names go & to & and stay in the same state
+     && ( state != PARSE_STATE_COLLECT_CGI_NAME )
+     )
+     lprintf( WIDE("Dropping character (%d) '%c' in %s"), inchar, url[inchar], url );
+    inchar++;
+   }
+   _state = state;
+  }
+  switch( state )
+  {
+  // this means user name, but if we hit the end of the buffer, it's the address
+  case PARSE_STATE_COLLECT_USER:
+   outbuf[outchar] = 0;
+   outchar = 0;
+   AppendBuffer( &data->host, NULL, outbuf );
+   break;
+  // this is the first colon, but no @ found, but end of buffer name is host and this is port.
+  case PARSE_STATE_COLLECT_PASSWORD:
+   data->host = data->user;
+   data->user = NULL;
+   outbuf[outchar] = 0;
+   outchar = 0;
+   data->port = IntCreateFromText( outbuf );
+   //AppendBuffer( &data->port, NULL, outbuf );
+   break;
+  case PARSE_STATE_COLLECT_CGI_NAME:
+   cgi_data = New( struct url_cgi_data );
+   cgi_data->name = NULL;
+   cgi_data->value = NULL;
+   AddLink( &data->cgi_parameters, cgi_data );
+   outbuf[outchar] = 0;
+   outchar = 0;
+   AppendBuffer( &cgi_data->name, NULL, outbuf );
+   break;
+  case PARSE_STATE_COLLECT_CGI_VALUE:
+   outbuf[outchar] = 0;
+   outchar = 0;
+   AppendBuffer( &cgi_data->value, NULL, outbuf );
+   break;
+  case PARSE_STATE_COLLECT_RESOURCE_PATH:
+   outbuf[outchar] = 0;
+   outchar = 0;
+   AppendBuffer( &data->resource_file, NULL, outbuf );
+   // this would be one word, no slashes, collecting a path . this is resource name
+   break;
+  default:
+   if( outchar )
+   {
+    if( state == PARSE_STATE_COLLECT_RESOURCE_NAME )
+    {
+     outbuf[outchar] = 0;
+     outchar = 0;
+     AppendBuffer( &data->resource_path, WIDE("/"), outbuf );
+     state = PARSE_STATE_COLLECT_RESOURCE_NAME;
+    }
+    else
+    {
+     outbuf[outchar] = 0;
+     lprintf( WIDE("Unused output: state %d [%s]"), state, outbuf );
+    }
+   }
+   break;
+  }
+  Release( outbuf );
+  return data;
+ }
+ CTEXTSTR SACK_BuildURL( struct url_data *data )
+ {
+  PVARTEXT pvt = VarTextCreate();
+  CTEXTSTR tmp = NULL;
+  CTEXTSTR tmp2 = NULL;
+  if( data->protocol )
+   vtprintf( pvt, WIDE("%s://"), tmp = ConvertTextURI( data->protocol, StrLen( data->protocol ), 0 ) );
+  if( tmp )
+  {
+   Release( (POINTER)tmp );
+   tmp = NULL;
+  }
+  // must be a user to use the password, setting just a password is an error really
+  if( data->user )
+   vtprintf( pvt, WIDE("%s%s%s@")
+       , tmp = ConvertTextURI( data->user, StrLen( data->user ), 0 )
+       , data->password?WIDE(":"):WIDE("")
+       , data->password?(tmp2 = ConvertTextURI( data->password, StrLen( data->password ), 0 )):WIDE("") );
+  if( tmp )
+  {
+   Release( (POINTER)tmp );
+   tmp = NULL;
+  }
+  if( tmp2 )
+  {
+   Release( (POINTER)tmp2 );
+   tmp2 = NULL;
+  }
+  if( data->host )
+   vtprintf( pvt, WIDE("%s")
+       , tmp = ConvertTextURI( data->host, StrLen( data->host ), 0 ) );
+  if( tmp )
+  {
+   Release( (POINTER)tmp );
+   tmp = NULL;
+  }
+  if( data->port )
+   vtprintf( pvt, WIDE(":%d"), data->port );
+  if( tmp )
+  {
+   Release( (POINTER)tmp );
+   tmp = NULL;
+  }
+  if( data->resource_path )
+   vtprintf( pvt, WIDE("/%s")
+       , tmp = ConvertTextURI( data->resource_path, StrLen( data->resource_path), 1 ) );
+  if( tmp )
+  {
+   Release( (POINTER)tmp );
+   tmp = NULL;
+  }
+  if( data->resource_file )
+   vtprintf( pvt, WIDE("/%s")
+       , tmp = ConvertTextURI( data->resource_file, StrLen( data->resource_file), 0 ) );
+  if( tmp )
+  {
+   Release( (POINTER)tmp );
+   tmp = NULL;
+  }
+  if( data->resource_extension )
+   vtprintf( pvt, WIDE(".%s")
+       , tmp = ConvertTextURI( data->resource_extension, StrLen( data->resource_extension), 0 ) );
+  if( tmp )
+  {
+   Release( (POINTER)tmp );
+   tmp = NULL;
+  }
+  if( data->resource_anchor )
+   vtprintf( pvt, WIDE("#%s")
+       , tmp = ConvertTextURI( data->resource_anchor, StrLen( data->resource_anchor), 0 ) );
+  if( tmp )
+  {
+   Release( (POINTER)tmp );
+   tmp = NULL;
+  }
+  if( data->cgi_parameters )
+  {
+   int first = 1;
+   INDEX idx;
+   struct url_cgi_data *cgi_data;
+   LIST_FORALL( data->cgi_parameters, idx, struct url_cgi_data *, cgi_data )
+   {
+    if( cgi_data->value )
+     vtprintf( pvt, WIDE("%s%s=%s"), first?WIDE("?"):WIDE("&"), cgi_data->name, cgi_data->value );
+    else
+     vtprintf( pvt, WIDE("%s%s"), first?WIDE("?"):WIDE("&"), cgi_data->name );
+    first = 0;
+   }
+  }
+  {
+   PTEXT text_result = VarTextGet( pvt );
+   CTEXTSTR result = StrDup( GetText( text_result ) );
+   return result;
+  }
+ }
+ void SACK_ReleaseURL( struct url_data *data )
+ {
+  struct url_cgi_data *cgi_data;
+  INDEX idx;
+  LIST_FORALL( data->cgi_parameters, idx, struct url_cgi_data *, cgi_data )
+  {
+   Release( (POINTER)cgi_data->name );
+   Release( (POINTER)cgi_data->value );
+  }
+  DeleteList( &data->cgi_parameters );
+  Release( (POINTER)data->protocol );
+  Release( (POINTER)data->user );
+  Release( (POINTER)data->password );
+  Release( (POINTER)data->host );
+  Release( (POINTER)data->resource_path );
+  Release( (POINTER)data->resource_file );
+  Release( (POINTER)data->resource_extension );
+  Release( (POINTER)data->resource_anchor );
+  Release( data );
+ }
+ HTTP_NAMESPACE_END
+ #define SACK_WEBSOCKET_CLIENT_SOURCE
+ #define WEBSOCKET_COMMON_SOURCE
+ #ifndef SACK_HTML5_WEBSOCKET_COMMON_DEFINED
+ #define SACK_HTML5_WEBSOCKET_COMMON_DEFINED
+ #ifndef HTML5_WEBSOCKET_CLIENT_INCLUDED
+ #define HTML5_WEBSOCKET_CLIENT_INCLUDED
+ /*****************************************************
+ so... what does the client provide?
+ websocket protocol is itself wrapped in a frame, so messages are described with exact
+ length, and what is received will be exactly like the block that was sent.
+ *****************************************************/
+ #ifdef __cplusplus
+ #else
+ #endif
+ #ifdef SACK_WEBSOCKET_CLIENT_SOURCE
+ #define WEBSOCKET_EXPORT EXPORT_METHOD
+ #else
+ #define WEBSOCKET_EXPORT IMPORT_METHOD
+ #endif
+ // the result returned from the web_socket_opened event will
+ // become the new value used for future uintptr_t parameters to other events.
+ typedef uintptr_t (*web_socket_opened)( PCLIENT pc, uintptr_t psv );
+ typedef void (*web_socket_closed)( PCLIENT pc, uintptr_t psv );
+ typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
+ typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, POINTER buffer, int msglen );
+ // create a websocket connection.
+ //  If web_socket_opened is passed as NULL, this function will wait until the negotiation has passed.
+ //  since these packets are collected at a lower layer, buffers passed to receive event are allocated for
+ //  the application, and the application does not need to setup an  initial read.
+ WEBSOCKET_EXPORT PCLIENT WebSocketOpen( CTEXTSTR address
+                 , int options
+                 , web_socket_opened
+                 , web_socket_event
+                 , web_socket_closed
+                 , web_socket_error
+                 , uintptr_t psv );
+ // end a websocket connection nicely.
+ WEBSOCKET_EXPORT void WebSocketClose( PCLIENT );
+ // there is a control bit for whether the content is text or binary or a continuation
+ // UTF8 RFC3629
+ WEBSOCKET_EXPORT void WebSocketBeginSendText( PCLIENT, POINTER, size_t );
+ // literal binary sending; this may happen to be base64 encoded too
+ WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT, POINTER, size_t );
+ // there is a control bit for whether the content is text or binary or a continuation
+ // UTF8 RFC3629
+ WEBSOCKET_EXPORT void WebSocketSendText( PCLIENT, POINTER, size_t );
+ // literal binary sending; this may happen to be base64 encoded too
+ WEBSOCKET_EXPORT void WebSocketSendBinary( PCLIENT, POINTER, size_t );
+ WEBSOCKET_EXPORT void WebSocketEnableAutoPing( PCLIENT websock, uint32_t delay );
+ WEBSOCKET_EXPORT void WebSocketPing( PCLIENT websock, uint32_t timeout );
+ #endif
+ #ifndef WEBSOCKET_COMMON_SOURCE
+ #define EXTERN extern
+ #else
+ #define EXTERN
+ #endif
+ typedef struct web_socket_input_state *WebSocketInputState;
+ struct web_socket_input_state
+ {
+  struct web_socket_common_flags
+  {
+   BIT_FIELD closed : 1;
+   BIT_FIELD received_pong : 1;
+   BIT_FIELD sent_ping : 1;
+  } flags;
+  size_t fragment_collection_avail;
+  size_t fragment_collection_length;
+  // used for selecting mask byte
+  size_t fragment_collection_index;
+  uint8_t* fragment_collection;
+ // for automatic ping/keep alive/idle death
+  uint32_t last_reception;
+  LOGICAL final;
+  LOGICAL mask;
+  uint8_t mask_key[4];
+  int opcode;
+  size_t frame_length;
+  int input_msg_state;
+ // text or binary
+  int input_type;
+  web_socket_event on_event;
+  web_socket_closed on_close;
+  web_socket_opened on_open;
+  web_socket_error on_error;
+  uintptr_t psv_on;
+ // result of the open, to pass to read
+  uintptr_t psv_open;
+ };
+ struct web_socket_output_state
+ {
+  struct web_socket_output_flags
+  {
+   BIT_FIELD sent_type : 1;
+   // apparently clients did not implement back masking??
+       // I get a close; probably because of the length exception
+   BIT_FIELD expect_masking : 1;
+  } flags;
+ };
+ EXTERN void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, uint8_t* payload, size_t length );
+ EXTERN void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, uint8_t* msg, size_t length );
+ #endif
+ #ifdef __ANDROID_OLD_PLATFORM_SUPPORT__
+ #define rand lrand48
+ #endif
+ void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, uint8_t* payload, size_t length )
+ {
+  uint8_t* msgout;
+  uint8_t* use_mask;
+  uint32_t zero = 0;
+ // minimum additional is the opcode and tiny payload length (2 bytes)
+  size_t length_out = length + 2;
+  if( ( opcode & 8 ) && ( length > 125 ) )
+  {
+   lprintf( WIDE("Invalid send, control packet with large payload. (opcode %d  length %") _size_f WIDE(")"), opcode, length );
+   return;
+  }
+  if( length > 125 )
+  {
+   if( length > 32767 )
+   {
+ // auto fragment large packets
+    if( 1 )
+    {
+     int block;
+     for( block = 0; block < ( length / 8100 ); block++ )
+     {
+      SendWebSocketMessage( pc, block == 0 ?opcode:0, 0, do_mask, payload + block * 8100, 8100);
+     }
+     SendWebSocketMessage( pc, 0, final, do_mask, payload + block * 8100, length - block * 8100 );
+     return;
+    }
+ // need 8 more bytes for a really long length
+    length_out += 8;
+   }
+   else
+ // need 2 more bytes for a longer length
+    length_out += 2;
+  }
+  if( do_mask )
+  {
+   static uint32_t newmask;
+   newmask ^= rand() ^ ( rand() << 13 ) ^ ( rand() << 26 );
+   use_mask = (uint8_t*)&newmask;
+ // need 4 more bytes for the mask
+   length_out += 4;
+  }
+  else
+  {
+   use_mask = (uint8_t*)&zero;
+  }
+  msgout = NewArray( uint8_t, length_out );
+  MemSet( msgout, 0x12345678, length_out );
+  msgout[0] = (final?0x80:0x00) | opcode;
+  if( length > 125 )
+  {
+   if( length > 32767 )
+   {
+    msgout[1] = 127;
+ #if __64__
+    // size_t will be 32 bits on non 64 bit builds
+    msgout[2] = (uint8_t)(length >> 56);
+    msgout[3] = (uint8_t)(length >> 48);
+    msgout[4] = (uint8_t)(length >> 40);
+    msgout[5] = (uint8_t)(length >> 32);
+ #else
+    msgout[2] = 0;
+    msgout[3] = 0;
+    msgout[4] = 0;
+    msgout[5] = 0;
+ #endif
+    msgout[6] = (uint8_t)(length >> 24);
+    msgout[7] = (uint8_t)(length >> 16);
+    msgout[8] = (uint8_t)(length >> 8);
+    msgout[9] = (uint8_t)length;
+   }
+   else
+   {
+    msgout[1] = 126;
+    msgout[2] = (uint8_t)(length >> 8);
+    msgout[3] = (uint8_t)(length);
+   }
+  }
+  else
+   msgout[1] = length;
+  if( do_mask )
+  {
+   int mask_offset = (length_out-length) - 4;
+   msgout[1] |= 0x80;
+   msgout[mask_offset+0] = (uint8_t)(use_mask[3]);
+   msgout[mask_offset+1] = (uint8_t)(use_mask[2]);
+   msgout[mask_offset+2] = (uint8_t)(use_mask[1]);
+   msgout[mask_offset+3] = (uint8_t)(use_mask[0]);
+   use_mask = msgout + mask_offset;
+  }
+  {
+   size_t n;
+   uint8_t* data_out = msgout + (length_out-length);
+   for( n = 0; n < length; n++ )
+   {
+    (*data_out++) = payload[n] ^ use_mask[n&3];
+   }
+  }
+  SendTCP( pc, msgout, length_out );
+  Deallocate( uint8_t*, msgout );
+ }
+ static void ResetInputState( WebSocketInputState websock )
+ {
+  websock->input_msg_state = 0;
+  websock->final = 0;
+  websock->mask = 0;
+ // mask index counter
+  websock->fragment_collection_index = 0;
+ // assume text input; binary will set flag opposite
+  websock->input_type = 0;
+  // just always process the mask key, so set it to 0 for a no-op on XOR
+  websock->mask_key[0] = 0;
+  websock->mask_key[1] = 0;
+  websock->mask_key[2] = 0;
+  websock->mask_key[3] = 0;
+ }
+ /* opcodes
+       *  %x0 denotes a continuation frame
+       *  %x1 denotes a text frame
+       *  %x2 denotes a binary frame
+       *  %x3-7 are reserved for further non-control frames
+       *  %x8 denotes a connection close
+       *  %x9 denotes a ping
+       *  %xA denotes a pong
+       *  %xB-F are reserved for further control frames
+ */
+ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, uint8_t* msg, size_t length )
+ {
+  size_t n;
+  for( n = 0; n < length; n++ )
+  {
+   switch( websock->input_msg_state )
+   {
+ // opcode/final
+   case 0:
+    if( msg[n] & 0x80 )
+     websock->final = 1;
+    websock->opcode = ( msg[n] & 0xF );
+    websock->input_msg_state++;
+    break;
+ // mask bit, and 7 bits of frame_length(payload)
+   case 1:
+    websock->mask = (msg[n] & 0x80) != 0;
+    websock->frame_length = (msg[n] & 0x7f );
+    // control opcodes are limited to the one byte size limit; they can never be encoded with extended payload length
+    if( websock->opcode & 0x8 )
+    {
+     if( websock->frame_length > 125 )
+     {
+      lprintf( WIDE("Bad length of control packet: %")_size_f, length );
+      // RemoveClient( websock->pc );
+      ResetInputState( websock );
+      // drop the rest of the data, maybe the beginning of the next packet will make us happy
+      return;
+     }
+    }
+    if( websock->frame_length == 126 )
+    {
+     websock->frame_length = 0;
+     websock->input_msg_state = 2;
+    }
+    else if( websock->frame_length == 127 )
+    {
+     websock->frame_length = 0;
+     websock->input_msg_state = 4;
+    }
+    else
+    {
+     if( websock->mask )
+      websock->input_msg_state = 12;
+     else
+      websock->input_msg_state = 16;
+    }
+    break;
+ // byte 1, extended payload uint16_t
+   case 2:
+    websock->frame_length = msg[n] << 8;
+    websock->input_msg_state++;
+    break;
+ // byte 1, extended payload uint16_t
+   case 3:
+    websock->frame_length |= msg[3];
+    if( websock->mask )
+     websock->input_msg_state = 12;
+    else
+     websock->input_msg_state = 16;
+    break;
+ // byte 1, extended payload uint64_t
+   case 4:
+ // byte 2, extended payload uint64_t
+   case 5:
+ // byte 3, extended payload uint64_t
+   case 6:
+ // byte 4, extended payload uint64_t
+   case 7:
+ // byte 5, extended payload uint64_t
+   case 8:
+ // byte 6, extended payload uint64_t
+   case 9:
+ // byte 7, extended payload uint64_t
+   case 10:
+    websock->frame_length |= msg[n] << ( ( 11 - websock->input_msg_state ) * 8 );
+    websock->input_msg_state++;
+    break;
+ // byte 8, extended payload uint64_t
+   case 11:
+    websock->frame_length |= msg[n];
+    if( websock->mask )
+     websock->input_msg_state++;
+    else
+     websock->input_msg_state = 16;
+    break;
+ // mask data byte 1
+   case 12:
+ // mask data byte 2
+   case 13:
+ // mask data byte 3
+   case 14:
+ // mask data byte 4
+   case 15:
+    websock->mask_key[websock->input_msg_state-12] = msg[n];
+    websock->input_msg_state++;
+    break;
+ // extended data or application data byte 1.
+   case 16:
+    // might have already collected fragments (non final packets, so increase the full buffer )
+    // first byte of data, check we have enough room for the remaining bytes; the frame_length is valid now.
+    if( websock->fragment_collection_avail < ( websock->fragment_collection_length + websock->frame_length ) )
+    {
+     uint8_t* new_fragbuf;
+     websock->fragment_collection_avail += websock->frame_length;
+     new_fragbuf = (uint8_t*)Allocate( websock->fragment_collection_avail );
+     if( websock->fragment_collection_length )
+      MemCpy( new_fragbuf, websock->fragment_collection, websock->fragment_collection_length );
+     Deallocate( uint8_t*, websock->fragment_collection );
+     websock->fragment_collection = new_fragbuf;
+ // start with mask byte 0 on this new packet
+     websock->fragment_collection_index = 0;
+    }
+    websock->input_msg_state++;
+    // fall through, no break statement; add the byte to the buffer
+   case 17:
+    // if there was no data, then there's nothing to demask
+    if( websock->fragment_collection )
+    {
+     if( websock->fragment_collection_length >= websock->fragment_collection_avail )
+     {
+      int a  =3 ;;
+     }
+     websock->fragment_collection[websock->fragment_collection_length++]
+      = msg[n] ^ websock->mask_key[(websock->fragment_collection_index++) % 4];
+    }
+    // if final packet, and we have all the bytes for this packet
+    // dispatch the opcode.
+    if( websock->final && ( websock->fragment_collection_length == websock->frame_length ) )
+    {
+     //lprintf( WIDE("Final: %d  opcode %d  mask %d length %Ld ")
+     //   , websock->final, websock->opcode, websock->mask, websock->frame_length );
+     websock->last_reception = timeGetTime();
+     switch( websock->opcode )
+     {
+ //binary
+     case 0x02:
+      websock->input_type = 1;
+ //text
+     case 0x01:
+ // continuation
+     case 0x00:
+      /// single packet, final...
+      //LogBinary( websock->fragment_collection, websock->fragment_collection_length );
+      if( websock->on_event )
+       websock->on_event( pc, websock->psv_open, websock->fragment_collection, websock->fragment_collection_length );
+      websock->fragment_collection_length = 0;
+      break;
+ // close
+     case 0x08:
+      // close may have app data with a reason.
+      // if it has a reason, then the first two bytes are a code
+      //  1000 - normal
+      //  1001 - end point going away (page close, server shutdown)
+      //  1002 - termination from protocol error
+      //  1003 - binary/text mismatch (if supported)
+      // 1004 - reserved
+      // 1005 - No status code (reserved, must not send in close)
+      // 1006 - reserved for not in clude; connection terminated unexpected ( guess there are local-only, not sent)
+      // 1007 - inconsistant data for data in message
+      // 1008 - ereceived a message that violates policy (generic message for nothing better)
+      // 1009 - message too big
+      // 1010 - server did not negotiate extension
+      // 1011 - excpetion in handling message.
+      // 1015 - reservd, must not send in close; failure to perform TLS handshake (or bad server verification)
+      //  0-999 = not used;
+      // 1000-2999 - reserved for this protocol, reserved for specification
+      // 3000-3999 - libarry/framework/application.  Registered with IANA.  Defined by protocol.
+      // 4000-4999 - reserved for private use; cannot be registerd;
+      if( !websock->flags.closed )
+      {
+       struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
+       SendWebSocketMessage( pc, 0x08, 1, output->flags.expect_masking, websock->fragment_collection, websock->frame_length );
+       websock->flags.closed = 1;
+      }
+      if( websock->on_close )
+       websock->on_close( pc, websock->psv_open );
+      websock->fragment_collection_length = 0;
+      break;
+ // ping
+     case 0x09:
+      {
+       struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
+       SendWebSocketMessage( pc, 0x0a, 1, output->flags.expect_masking, websock->fragment_collection, websock->frame_length );
+       websock->fragment_collection_length = 0;
+      }
+      break;
+ // pong
+     case 0x0A:
+      {
+       // this is for the ping routine to wait (or rather to end wait)
+       websock->flags.received_pong = 1;
+      }
+      websock->fragment_collection_length = 0;
+      break;
+     default:
+      lprintf( WIDE("Bad WebSocket opcode: %d"), websock->opcode );
+      return;
+     }
+     // after processing any opcode (this is IN final, and length match) we're done, start next message
+     ResetInputState( websock );
+    }
+    break;
+   }
+  }
+ }
+ void WebSocketPing( PCLIENT pc, uint32_t timeout )
+ {
+  uint32_t start_at = timeGetTime();
+  uint32_t target = start_at + timeout;
+  uint32_t now;
+  struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 2 );
+  struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
+  SendWebSocketMessage( pc, 9, 1, output->flags.expect_masking, NULL, 0 );
+  while( !input_state->flags.received_pong
+    && ( ( ( now=timeGetTime() ) - start_at ) < timeout ) )
+   IdleFor( target-now );
+  input_state->flags.received_pong = 0;
+ }
+ // there is a control bit for whether the content is text or binary or a continuation
+ // UTF8 RFC3629
+ void WebSocketSendText( PCLIENT pc, POINTER buffer, size_t length )
+ {
+  struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
+  if( output )
+  {
+ #ifdef _UNICODE
+   char *outbuf = WcharConvertExx( (CTEXTSTR)buffer, length DBG_SRC );
+   int real_len = CStrLen( outbuf );
+   //lprintf( WIDE( "send %s"), buffer );
+   SendWebSocketMessage( pc, output->flags.sent_type?0:1, 1, output->flags.expect_masking, (uint8_t*)outbuf, length );
+   Deallocate( char *, outbuf );
+ #else
+   SendWebSocketMessage( pc, output->flags.sent_type?0:1, 1, output->flags.expect_masking, (uint8_t*)buffer, length );
+ #endif
+   output->flags.sent_type = 0;
+  }
+ }
+ // there is a control bit for whether the content is text or binary or a continuation
+ // UTF8 RFC3629
+ void WebSocketBeginSendText( PCLIENT pc, POINTER buffer, size_t length )
+ {
+    struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
+    SendWebSocketMessage( pc, 1, 0, output->flags.expect_masking, (uint8_t*)buffer, length );
+    output->flags.sent_type = 1;
+ }
+ // literal binary sending; this may happen to be base64 encoded too
+ void WebSocketSendBinary( PCLIENT pc, POINTER buffer, size_t length )
+ {
+    struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
+  SendWebSocketMessage( pc, output->flags.sent_type?0:2, 1, output->flags.expect_masking, (uint8_t*)buffer, length );
+ }
+ // literal binary sending; this may happen to be base64 encoded too
+ void WebSocketBeginSendBinary( PCLIENT pc, POINTER buffer, size_t length )
+ {
+    struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
+    SendWebSocketMessage( pc, 2, 0, output->flags.expect_masking, (uint8_t*)buffer, length );
+    output->flags.sent_type = 1;
+ }
+ #define SACK_WEBSOCKET_CLIENT_SOURCE
+ #ifndef SACK_HTML5_WEBSOCKET_COMMON_DEFINED
+ #define SACK_HTML5_WEBSOCKET_COMMON_DEFINED
+ #ifndef WEBSOCKET_COMMON_SOURCE
+ #define EXTERN extern
+ #else
+ #define EXTERN
+ #endif
+ typedef struct web_socket_input_state *WebSocketInputState;
+ struct web_socket_input_state
+ {
+  struct web_socket_common_flags
+  {
+   BIT_FIELD closed : 1;
+   BIT_FIELD received_pong : 1;
+   BIT_FIELD sent_ping : 1;
+  } flags;
+  size_t fragment_collection_avail;
+  size_t fragment_collection_length;
+  // used for selecting mask byte
+  size_t fragment_collection_index;
+  uint8_t* fragment_collection;
+ // for automatic ping/keep alive/idle death
+  uint32_t last_reception;
+  LOGICAL final;
+  LOGICAL mask;
+  uint8_t mask_key[4];
+  int opcode;
+  size_t frame_length;
+  int input_msg_state;
+ // text or binary
+  int input_type;
+  web_socket_event on_event;
+  web_socket_closed on_close;
+  web_socket_opened on_open;
+  web_socket_error on_error;
+  uintptr_t psv_on;
+ // result of the open, to pass to read
+  uintptr_t psv_open;
+ };
+ struct web_socket_output_state
+ {
+  struct web_socket_output_flags
+  {
+   BIT_FIELD sent_type : 1;
+   // apparently clients did not implement back masking??
+       // I get a close; probably because of the length exception
+   BIT_FIELD expect_masking : 1;
+  } flags;
+ };
+ EXTERN void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, uint8_t* payload, size_t length );
+ EXTERN void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, uint8_t* msg, size_t length );
+ #endif
+ typedef struct web_socket_client *WebSocketClient;
+ struct web_socket_client
+ {
+ // this value must be 0x20130911
+    uint32_t Magic;
+  struct web_socket_client_flags
+  {
+ // if not connected, then parse data as http, otherwise process as websock protocol.
+   BIT_FIELD connected : 1;
+ // schedule to close
+   BIT_FIELD want_close : 1;
+  } flags;
+  PCLIENT pc;
+  CTEXTSTR host;
+  CTEXTSTR address_url;
+  struct url_data *url;
+  POINTER buffer;
+  HTTPState pHttpState;
+ // when set by enable auto_ping is the delay between packets to generate a ping
+  uint32_t ping_delay;
+  struct web_socket_input_state input_state;
+    struct web_socket_output_state output_state;
+ };
+ struct web_socket_client_local
+ {
+    uint32_t timer;
+  PLIST clients;
+    CRITICALSECTION cs_opening;
+  struct web_socket_client *opening_client;
+ } wsc_local;
+ static void SendRequestHeader( WebSocketClient websock )
+ {
+  PVARTEXT pvtHeader = VarTextCreate();
+  vtprintf( pvtHeader, WIDE("GET /%s%s%s%s%s HTTP/1.1\r\n")
+      , websock->url->resource_path?websock->url->resource_path:WIDE("")
+      , websock->url->resource_path?WIDE("/"):WIDE("")
+      , websock->url->resource_file
+      , websock->url->resource_extension?WIDE("."):WIDE("")
+      , websock->url->resource_extension?websock->url->resource_extension:WIDE("")
+      );
+  vtprintf( pvtHeader, WIDE("Host: %s:%d\r\n")
+      , websock->url->host
+      , websock->url->port?websock->url->port:websock->url->default_port );
+  vtprintf( pvtHeader, WIDE("Upgrade: websocket\r\n"));
+  vtprintf( pvtHeader, WIDE("Connection: Upgrade\r\n"));
+  vtprintf( pvtHeader, WIDE("Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\n") );
+  vtprintf( pvtHeader, WIDE("Sec-WebSocket-Version: 13\r\n") );
+  vtprintf( pvtHeader, WIDE("\r\n") );
+  {
+ // just leave the buffer in-place
+   PTEXT text = VarTextPeek( pvtHeader );
+   SendTCP( websock->pc, GetText( text ), GetTextSize( text ) );
+  }
+  VarTextDestroy( &pvtHeader );
+ }
+ static void CPROC WebSocketTimer( uintptr_t psv )
+ {
+  uint32_t now;
+  INDEX idx;
+  WebSocketClient websock;
+  LIST_FORALL( wsc_local.clients, idx, WebSocketClient, websock )
+  {
+   now = timeGetTime();
+   // close is delay notified
+   if( websock->flags.want_close )
+   {
+    struct {
+     uint16_t reason;
+    } msg;
+ // normal
+    msg.reason = 1000;
+    websock->input_state.flags.closed = 1;
+    SendWebSocketMessage( websock->pc, 8, 1, 0, (uint8_t*)&msg, 2 );
+   }
+   // do auto ping...
+   if( !websock->input_state.flags.closed )
+   {
+    if( websock->ping_delay )
+     if( !websock->input_state.flags.sent_ping )
+     {
+      if( ( now - websock->input_state.last_reception ) > websock->ping_delay )
+      {
+       SendWebSocketMessage( websock->pc, 0x09, 1, 0, NULL, 0 );
+      }
+     }
+     else
+     {
+      if( ( now - websock->input_state.last_reception ) > ( websock->ping_delay * 2 ) )
+      {
+       websock->flags.want_close = 1;
+       // send close immediately
+       RescheduleTimerEx( wsc_local.timer, 0 );
+      }
+     }
+   }
+  }
+ }
+ static void CPROC WebSocketClientReceive( PCLIENT pc, POINTER buffer, size_t len )
+ {
+  WebSocketClient websock = (WebSocketClient)GetNetworkLong( pc, 0 );
+  if( !buffer )
+  {
+   if( !websock )
+   {
+    if( wsc_local.opening_client )
+    {
+     SetTCPNoDelay( pc, TRUE );
+     SetNetworkLong( pc, 0, (uintptr_t)wsc_local.opening_client );
+     SetNetworkLong( pc, 1, (uintptr_t)&wsc_local.opening_client->output_state );
+ // clear this to allow open to return.
+     wsc_local.opening_client = NULL;
+    }
+    else
+    {
+     lprintf( WIDE("Fatality; didn't have a related structure, and no client opening") );
+    }
+   }
+   else
+    buffer = websock->buffer;
+  }
+  else
+  {
+   WebSocketClient websock = (WebSocketClient)GetNetworkLong( pc, 0 );
+   if( !websock->flags.connected )
+   {
+    int result;
+    // this is HTTP state...
+    AddHttpData( websock->pHttpState, buffer, len );
+    result = ProcessHttp( pc, websock->pHttpState );
+    //lprintf( WIDE("reply is %d"), result );
+    if( (int)result == 101 )
+    {
+     websock->flags.connected = 1;
+     {
+      PTEXT content = GetHttpContent( websock->pHttpState );
+      if( websock->input_state.on_open )
+       websock->input_state.on_open( pc, websock->input_state.psv_on );
+      if( content )
+       ProcessWebSockProtocol( &websock->input_state, websock->pc, (uint8_t*)GetText( content ), GetTextSize( content ) );
+     }
+    }
+    else if( (int)result >= 300 && (int)result < 400 )
+    {
+     lprintf( WIDE("Redirection of some sort") );
+     // redirect, disconnect, reconnect to new address offered.
+    }
+    else if( (int)result )
+    {
+     lprintf( WIDE("Some other error: %d"), result );
+    }
+    else
+    {
+     // not a full header yet. (something about no content-length?)
+    }
+   }
+   else
+   {
+    ProcessWebSockProtocol( &websock->input_state, websock->pc, (uint8_t*)buffer, len );
+   }
+   // process buffer?
+  }
+    ReadTCP( pc, buffer, 4096 );
+ }
+ static void CPROC WebSocketClientClosed( PCLIENT pc )
+ {
+  WebSocketClient websock = (WebSocketClient)GetNetworkLong( pc, 0 );
+    if( websock )
+  {
+   Release( websock->buffer );
+   DestroyHttpState( websock->pHttpState );
+       SACK_ReleaseURL( websock->url );
+       Release( websock );
+  }
+ }
+ static void CPROC WebSocketClientConnected( PCLIENT pc, int error )
+ {
+  WebSocketClient websock;
+  while( !( websock = (WebSocketClient)GetNetworkLong( pc, 0 ) ) )
+   Relinquish();
+  if( !error )
+  {
+   // connect succeeded.
+   SendRequestHeader( websock );
+   SetTCPNoDelay( pc, TRUE );
+  }
+  else
+  {
+   wsc_local.opening_client = NULL;
+   if( websock->input_state.on_close )
+          websock->input_state.on_close( NULL, websock->input_state.psv_on );
+  }
+ }
+ // create a websocket connection.
+ //  If web_socket_opened is passed as NULL, this function will wait until the negotiation has passed.
+ //  since these packets are collected at a lower layer, buffers passed to receive event are allocated for
+ //  the application, and the application does not need to setup an  initial read.
+ PCLIENT WebSocketOpen( CTEXTSTR url_address
+        , int options
+        , web_socket_opened on_open
+        , web_socket_event on_event
+        , web_socket_closed on_closed
+        , web_socket_error on_error
+        , uintptr_t psv )
+ {
+  WebSocketClient websock = New( struct web_socket_client );
+  if( !wsc_local.timer )
+   wsc_local.timer = AddTimer( 2000, WebSocketTimer, 0 );
+  websock->buffer = Allocate( 4096 );
+  websock->pHttpState = CreateHttpState();
+  websock->input_state.on_open = on_open;
+  websock->input_state.on_event = on_event;
+  websock->input_state.on_close = on_closed;
+  websock->input_state.on_error = on_error;
+  websock->input_state.psv_on = psv;
+ // client to server is MUST mask because of proxy handling in that direction
+  websock->output_state.flags.expect_masking = 1;
+  websock->url = SACK_URLParse( url_address );
+  EnterCriticalSec( &wsc_local.cs_opening );
+  wsc_local.opening_client = websock;
+  {
+   websock->pc = OpenTCPClientExx( websock->url->host
+             , websock->url->port?websock->url->port:websock->url->default_port
+             , WebSocketClientReceive
+             , WebSocketClientClosed
+             , NULL
+ // if there is an on-open event, then register for async open
+             , on_open?WebSocketClientConnected:NULL
+             );
+   if( websock->pc )
+   {
+    if( !on_open )
+    {
+     // send request if we got connected, if there is a on_open callback, then we're delay waiting
+     // so this will be sent in the socket on-open event.
+     SendRequestHeader( websock );
+     while( !websock->flags.connected && !websock->input_state.flags.closed )
+      Idle();
+    }
+    else
+    {
+     SetNetworkLong( websock->pc, 0, (uintptr_t)websock );
+     SetNetworkLong( websock->pc, 1, (uintptr_t)&websock->output_state );
+    }
+    while( wsc_local.opening_client )
+     Idle();
+   }
+   else
+    wsc_local.opening_client = NULL;
+  }
+  LeaveCriticalSec( &wsc_local.cs_opening );
+  return  websock->pc;
+ }
+ // end a websocket connection nicely.
+ void WebSocketClose( PCLIENT pc )
+ {
+    RemoveClient( pc );
+ }
+ void WebSocketEnableAutoPing( PCLIENT pc, uint32_t delay )
+ {
+  WebSocketClient websock = (WebSocketClient)GetNetworkLong( pc, 0 );
+  if( websock->Magic == 0x20130911 )
+  {
+   websock->ping_delay = delay;
+  }
+ }
+ PRELOAD( InitWebSocketServer )
+ {
+ //   wsc_local.timer = AddTimer( 2000, WebSocketTimer, 0 );
+ }
+ #define NO_UNICODE_C
+ #ifdef SACK_CORE_BUILD
+ #define MD5_SOURCE
+ #endif
+ #define HTML5_WEBSOCKET_SOURCE
+ /* MD5.H - header file for MD5C.C
+  */
+ /* Copyright (C) 1991-2, RSA Data Security, Inc. Created 1991. All
+ rights reserved.
+ License to copy and use this software is granted provided that it
+ is identified as the "RSA Data Security, Inc. MD5 Message-Digest
+ Algorithm" in all material mentioning or referencing this software
+ or this function.
+ License is also granted to make and use derivative works provided
+ that such works are identified as "derived from the RSA Data
+ Security, Inc. MD5 Message-Digest Algorithm" in all material
+ mentioning or referencing the derived work.
+ RSA Data Security, Inc. makes no representations concerning either
+ the merchantability of this software or the suitability of this
+ software for any particular purpose. It is provided "as is"
+ without express or implied warranty of any kind.
+ These notices must be retained in any copies of any part of this
+ documentation and/or software.
+  */
+ #ifndef MD5_ALGORITHM_DEFINED
+ #define MD5_ALGORITHM_DEFINED
+ #ifdef MD5_SOURCE
+ #define MD5_PROC(type,name) EXPORT_METHOD type name
+ #else
+ #define MD5_PROC(type,name) IMPORT_METHOD type name
+ #endif
+ /* MD5 context. */
+ typedef struct {
+  uint32_t state[4];
+  uint32_t count[2];
+   unsigned char buffer[64];
+ } MD5_CTX;
+ MD5_PROC( void, MD5Init )(MD5_CTX *);
+ MD5_PROC( void, MD5Update )(MD5_CTX *, unsigned char *, unsigned int);
+ MD5_PROC( void, MD5Final )(unsigned char [16], MD5_CTX *);
+ #endif
+ /*
+  * SACK extension to define methods to render to javascript/HTML5 WebSocket event interface
+  *
+  * Crafted by: Jim Buckeyne
+  *
+  * Purpose: Provide a well defined, concise structure to
+  *   provide websocket server support to C applications.
+  *
+  *
+  *
+  * (c)Freedom Collective, Jim Buckeyne 2012+; SACK Collection.
+  *
+  */
+ #ifndef HTML5_WEBSOCKET_STUFF_DEFINED
+ #define HTML5_WEBSOCKET_STUFF_DEFINED
+ #ifndef SOURCE_PSI2
+ #define SOURCE_PSI2
+ #endif
+ #ifndef __CONTROLS_DEFINED__
+ #define __CONTROLS_DEFINED__
+ //---------------------------------------------------------------
+ // PSI Version comments
+ //   1.1 )
+ //     - added PSI_VERSION so that after this required features
+ //       may be commented out...
+ //     - added fonts to common structure - controls and frames may define
+ //       frames an apply a scale factor to itself and or its children..
+ //
+ // copied from win.h distributed with lcc
+ //#define MF_BITMAP 4
+ //#define MF_CHECKED 8
+ //#define MF_DISABLED 2
+ //#define MF_ENABLED 0
+ //#define MF_GRAYED 1
+ //#define MF_MENUBARBREAK 32
+ //#define MF_MENUBREAK 64
+ //#define MF_OWNERDRAW 256
+ //#define MF_POPUP 16
+ //#define MF_SEPARATOR 0x800
+ //#define MF_STRING 0
+ //#define MF_UNCHECKED 0
+ //#define MF_DEFAULT 4096
+ //#define MF_SYSMENU 0x2000
+ //#define MF_HELP  0x4000
+ //#define MF_END 128
+ //#define MF_RIGHTJUSTIFY 0x4000
+ //#define MF_MOUSESELECT 0x8000
+ // duplicated from a section futher down...
+ //#define MF_BYCOMMAND 0
+ //#define MF_BYPOSITION 0x400
+ //#define MF_UNCHECKED 0
+ //#define MF_HILITE 128
+ //#define MF_UNHILITE 0
+ #ifndef MF_BYPOSITION
+ #define MF_BYPOSITION 0x400
+ #endif
+ #ifndef MF_BYCOMMAND
+ #define MF_BYCOMMAND 0
+ #endif
+ #ifndef MF_HILITE
+ #define MF_HILITE 0x80
+ #endif
+ #ifndef MF_UNHILITE
+ #define MF_UNHILITE 0
+ #endif
+ #ifndef MF_BITMAP
+ #define MF_BITMAP 4
+ #endif
+ #ifndef MF_CHECKED
+ #define MF_CHECKED 8
+ #endif
+ #ifndef MF_DISABLED
+ #define MF_DISABLED 0x0010
+ #endif
+ #ifndef MF_ENABLED
+ #define MF_ENABLED 0
+ #endif
+ #ifndef MF_GRAYED
+ #define MF_GRAYED 1
+ #endif
+ #ifndef MF_MENUBARBREK
+ #define MF_MENUBARBREK 0x0020
+ #endif
+ #ifndef MF_MENUBREAK
+ #define MF_MENUBREAK 0x0040
+ #endif
+ #ifndef MF_OWNERDRAW
+ #define MF_OWNERDRAW 0x0100
+ #endif
+ #ifndef MF_POPUP
+ #define MF_POPUP 0x0010
+ #endif
+ #ifndef MF_SEPARATOR
+ #define MF_SEPARATOR 0x0800
+ #endif
+ #ifndef MF_STRING
+ #define MF_STRING 0
+ #endif
+ #ifndef MF_UNCHECKED
+ /* Menu item is not checked. */
+ #define MF_UNCHECKED 0
+ #endif
+ #ifndef MF_DEFAULT
+ #define MF_DEFAULT 0x1000
+ #endif
+ #ifndef MF_SYSMENU
+ /* Not sure what menu flag SYSMENU is for */
+ #define MF_SYSMENU 0x2000
+ #endif
+ /*
+ #ifndef MF_
+ #define MF_ 0
+ #endif
+ */
+ // $Log: $
+ #ifndef __panthers_slick_interface_namespace__
+ #define __panthers_slick_interface_namespace__
+ #ifdef __cplusplus
+ #define PSI_NAMESPACE SACK_NAMESPACE namespace PSI {
+ #define _PSI_NAMESPACE namespace PSI {
+ #define _PSI_NAMESPACE_END }
+ #define PSI_NAMESPACE_END _PSI_NAMESPACE_END SACK_NAMESPACE_END
+ #define USE_PSI_NAMESPACE using namespace sack::PSI;
+ #   define _PSI_INTERFACE_NAMESPACE namespace Interface {
+ #   define _PSI_INTERFACE_NAMESPACE_END }
+ #   define _BUTTON_NAMESPACE namespace button {
+ #   define _BUTTON_NAMESPACE_END }
+ #   define USE_BUTTON_NAMESPACE using namespace button;
+ #   define USE_PSI_BUTTON_NAMESPACE using namespace sack::PSI::button;
+ #   define _COLORWELL_NAMESPACE namespace colorwell {
+ #   define _COLORWELL_NAMESPACE_END }
+ #   define USE_COLORWELL_NAMESPACE using namespace colorwell;
+ #   define USE_PSI_COLORWELL_NAMESPACE using namespace sack::PSI::colorwell;
+ #   define _MENU_NAMESPACE namespace popup {
+ #   define _MENU_NAMESPACE_END }
+ #   define USE_MENU_NAMESPACE using namespace popup;
+ #   define USE_PSI_MENU_NAMESPACE using namespace sack::PSI::popup;
+ #   define _TEXT_NAMESPACE namespace text {
+ #   define _TEXT_NAMESPACE_END }
+ #   define USE_TEXT_NAMESPACE using namespace text;
+ #   define USE_PSI_TEXT_NAMESPACE using namespace sack::PSI::text;
+ #   define _EDIT_NAMESPACE namespace edit {
+ #   define _EDIT_NAMESPACE_END }
+ #   define USE_EDIT_NAMESPACE using namespace edit;
+ #   define USE_PSI_EDIT_NAMESPACE using namespace sack::PSI::edit;
+ #   define _SLIDER_NAMESPACE namespace slider {
+ #   define _SLIDER_NAMESPACE_END }
+ #   define USE_SLIDER_NAMESPACE using namespace slider;
+ #   define USE_PSI_SLIDER_NAMESPACE using namespace sack::PSI::slider;
+ #   define _FONTS_NAMESPACE namespace font {
+ #   define _FONTS_NAMESPACE_END }
+ #   define USE_FONTS_NAMESPACE using namespace font;
+ #   define USE_PSI_FONTS_NAMESPACE using namespace sack::PSI::font;
+ #   define _COMBOBOX_NAMESPACE namespace listbox {
+ #   define _COMBOBOX_NAMESPACE_END }
+ #   define USE_COMBOBOX_NAMESPACE using namespace listbox;
+ #   define USE_PSI_COMBOBOX_NAMESPACE using namespace sack::PSI::listbox;
+ #   define _LISTBOX_NAMESPACE namespace listbox {
+ #   define _LISTBOX_NAMESPACE_END }
+ #   define USE_LISTBOX_NAMESPACE using namespace listbox;
+ #   define USE_PSI_LISTBOX_NAMESPACE using namespace sack::PSI::listbox;
+ #   define _SCROLLBAR_NAMESPACE namespace scrollbar {
+ #   define _SCROLLBAR_NAMESPACE_END }
+ #   define USE_SCROLLBAR_NAMESPACE using namespace scrollbar;
+ #   define USE_PSI_SCROLLBAR_NAMESPACE using namespace sack::PSI::scrollbar;
+ #   define _SHEETS_NAMESPACE namespace sheet_control {
+ #   define _SHEETS_NAMESPACE_END }
+ #   define USE_SHEETS_NAMESPACE using namespace sheet_control;
+ #   define USE_PSI_SHEETS_NAMESPACE using namespace sack::PSI::sheet_control;
+ #   define _MOUSE_NAMESPACE namespace _mouse {
+ #   define _MOUSE_NAMESPACE_END }
+ #   define USE_MOUSE_NAMESPACE using namespace _mouse;
+ #   define USE_PSI_MOUSE_NAMESPACE using namespace sack::PSI::_mouse;
+ #   define _XML_NAMESPACE namespace xml {
+ #   define _XML_NAMESPACE_END }
+ #   define USE_XML_NAMESPACE using namespace xml;
+ #   define USE_PSI_XML_NAMESPACE using namespace sack::PSI::xml;
+ #   define _PROP_NAMESPACE namespace properties {
+ #   define _PROP_NAMESPACE_END }
+ #   define USE_PROP_NAMESPACE using namespace properties;
+ #   define USE_PSI_PROP_NAMESPACE using namespace sack::PSI::properties;
+ #   define _CLOCK_NAMESPACE namespace clock {
+ #   define _CLOCK_NAMESPACE_END }
+ #   define USE_CLOCK_NAMESPACE using namespace clock;
+ #   define USE_PSI_CLOCK_NAMESPACE using namespace sack::PSI::clock;
+ #else
+ #define PSI_NAMESPACE SACK_NAMESPACE
+ #define _PSI_NAMESPACE
+ #define PSI_NAMESPACE_END SACK_NAMESPACE_END
+ #define USE_PSI_NAMESPACE
+ #   define _PSI_INTERFACE_NAMESPACE
+ #   define _PSI_INTERFACE_NAMESPACE_END
+ #   define _BUTTON_NAMESPACE
+ #   define _BUTTON_NAMESPACE_END
+ #   define USE_BUTTON_NAMESPACE
+ #   define USE_PSI_BUTTON_NAMESPACE
+ #   define _COLORWELL_NAMESPACE
+ #   define _COLORWELL_NAMESPACE_END
+ #   define USE_COLORWELL_NAMESPACE
+ #   define USE_PSI_COLORWELL_NAMESPACE
+ #   define _MENU_NAMESPACE
+ #   define _MENU_NAMESPACE_END
+ #   define USE_MENU_NAMESPACE
+ #   define USE_PSI_MENU_NAMESPACE
+ #   define _TEXT_NAMESPACE
+ #   define _TEXT_NAMESPACE_END
+ #   define USE_TEXT_NAMESPACE
+ #   define USE_PSI_TEXT_NAMESPACE
+ #   define _EDIT_NAMESPACE
+ #   define _EDIT_NAMESPACE_END
+ #   define USE_EDIT_NAMESPACE
+ #   define USE_PSI_EDIT_NAMESPACE
+ #   define _SLIDER_NAMESPACE
+ #   define _SLIDER_NAMESPACE_END
+ #   define USE_SLIDER_NAMESPACE
+ #   define USE_PSI_SLIDER_NAMESPACE
+ #   define _FONTS_NAMESPACE
+ #   define _FONTS_NAMESPACE_END
+ #   define USE_FONTS_NAMESPACE
+ #   define USE_PSI_FONTS_NAMESPACE
+ #   define _COMBOBOX_NAMESPACE
+ #   define _COMBOBOX_NAMESPACE_END
+ #   define USE_COMBOBOX_NAMESPACE
+ #   define USE_PSI_COMBOBOX_NAMESPACE
+ #   define _LISTBOX_NAMESPACE
+ #   define _LISTBOX_NAMESPACE_END
+ #   define USE_LISTBOX_NAMESPACE
+ #   define USE_PSI_LISTBOX_NAMESPACE
+ #   define _SCROLLBAR_NAMESPACE
+ #   define _SCROLLBAR_NAMESPACE_END
+ #   define USE_SCROLLBAR_NAMESPACE
+ #   define USE_PSI_SCROLLBAR_NAMESPACE
+ #   define _SHEETS_NAMESPACE
+ #   define _SHEETS_NAMESPACE_END
+ #   define USE_SHEETS_NAMESPACE
+ #   define USE_PSI_SHEETS_NAMESPACE
+ #   define _MOUSE_NAMESPACE
+ #   define _MOUSE_NAMESPACE_END
+ #   define USE_MOUSE_NAMESPACE
+ #   define USE_PSI_MOUSE_NAMESPACE
+ #   define _XML_NAMESPACE
+ #   define _XML_NAMESPACE_END
+ #   define USE_XML_NAMESPACE
+ #   define USE_PSI_XML_NAMESPACE
+ #   define _PROP_NAMESPACE
+ #   define _PROP_NAMESPACE_END
+ #   define USE_PROP_NAMESPACE
+ #   define USE_PSI_PROP_NAMESPACE
+ #   define _CLOCK_NAMESPACE
+ #   define _CLOCK_NAMESPACE_END
+ #   define USE_CLOCK_NAMESPACE
+ #   define USE_PSI_CLOCK_NAMESPACE
+ #endif
+ #define PSI_BUTTON_NAMESPACE PSI_NAMESPACE _BUTTON_NAMESPACE
+ #define PSI_BUTTON_NAMESPACE_END _BUTTON_NAMESPACE_END PSI_NAMESPACE_END
+ #define PSI_COLORWELL_NAMESPACE PSI_NAMESPACE _COLORWELL_NAMESPACE
+ #define PSI_COLORWELL_NAMESPACE_END _COLORWELL_NAMESPACE_END PSI_NAMESPACE_END
+ #define PSI_MENU_NAMESPACE PSI_NAMESPACE _MENU_NAMESPACE
+ #define PSI_MENU_NAMESPACE_END _MENU_NAMESPACE_END PSI_NAMESPACE_END
+ #define PSI_TEXT_NAMESPACE PSI_NAMESPACE _TEXT_NAMESPACE
+ #define PSI_TEXT_NAMESPACE_END _TEXT_NAMESPACE_END PSI_NAMESPACE_END
+ #define PSI_EDIT_NAMESPACE PSI_NAMESPACE _EDIT_NAMESPACE
+ #define PSI_EDIT_NAMESPACE_END _EDIT_NAMESPACE_END PSI_NAMESPACE_END
+ #define PSI_SLIDER_NAMESPACE PSI_NAMESPACE _SLIDER_NAMESPACE
+ #define PSI_SLIDER_NAMESPACE_END _SLIDER_NAMESPACE_END PSI_NAMESPACE_END
+ #define PSI_FONTS_NAMESPACE PSI_NAMESPACE _FONTS_NAMESPACE
+ #define PSI_FONTS_NAMESPACE_END _FONTS_NAMESPACE_END PSI_NAMESPACE_END
+ #define PSI_COMBOBOX_NAMESPACE PSI_NAMESPACE _COMBOBOX_NAMESPACE
+ #define PSI_COMBOBOX_NAMESPACE_END _COMBOBOX_NAMESPACE_END PSI_NAMESPACE_END
+ #define PSI_LISTBOX_NAMESPACE PSI_NAMESPACE _LISTBOX_NAMESPACE
+ #define PSI_LISTBOX_NAMESPACE_END _LISTBOX_NAMESPACE_END PSI_NAMESPACE_END
+ #define PSI_SCROLLBAR_NAMESPACE PSI_NAMESPACE _SCROLLBAR_NAMESPACE
+ #define PSI_SCROLLBAR_NAMESPACE_END _SCROLLBAR_NAMESPACE_END PSI_NAMESPACE_END
+ #define PSI_SHEETS_NAMESPACE PSI_NAMESPACE _SHEETS_NAMESPACE
+ #define PSI_SHEETS_NAMESPACE_END _SHEETS_NAMESPACE_END PSI_NAMESPACE_END
+ #define PSI_MOUSE_NAMESPACE PSI_NAMESPACE _MOUSE_NAMESPACE
+ #define PSI_MOUSE_NAMESPACE_END _MOUSE_NAMESPACE_END PSI_NAMESPACE_END
+ #define PSI_XML_NAMESPACE PSI_NAMESPACE _XML_NAMESPACE
+ #define PSI_XML_NAMESPACE_END _XML_NAMESPACE_END PSI_NAMESPACE_END
+ #define PSI_PROP_NAMESPACE PSI_NAMESPACE _PROP_NAMESPACE
+ #define PSI_PROP_NAMESPACE_END _PROP_NAMESPACE_END PSI_NAMESPACE_END
+ #define PSI_CLOCK_NAMESPACE PSI_NAMESPACE _CLOCK_NAMESPACE
+ #define PSI_CLOCK_NAMESPACE_END _CLOCK_NAMESPACE_END PSI_NAMESPACE_END
+ #endif
+ /* It's called System Abstraction Component Kit - that is almost
+    what it is, self descriptively, but that's not what it
+    entirely. It's more appropriately just a sack-o-goodies. A
+    grab-bag of tidbits. The basic aggregation of group of
+    objects in sack is bag. Bag contains everything that is not
+    graphic.
+    It abstracts loading external libraries (.dll and .so shared
+    objects) so applications can be unbothered by platform
+    details.
+    It abstracts system features like threads into a consistent
+    API.
+    It abstracts system shared memory allocation and management,
+    does have a custom allocation and release method, but
+    currently falls back to using malloc and free.
+    It abstracts access to system file system browsing; getting
+    the contents of directories.
+    It abstracts creating external processes, and the use of
+    standard input-output methods to communicate with those
+    tasks.
+    It has a custom timer implementation using a thread and
+    posting timer events as calls to user callbacks.
+    It contains a variety of structures to manage data from
+    lists, stack and queues to complex linked list of slab
+    allocated structures, and management for text as words and
+    phrases.
+    It contains an event based networking system, using an
+    external thread to coordinate network socket events.
+    It contains methods to work with images.
+    It contains methods to display images on a screen. This is
+    also a system abstraction point, since to put a display out
+    under Linux and Windows is entirely different.
+    It contains a control system based on the above images and
+    display, managing events to controls as user event callbacks.
+    It contains a method of registering values, code, and even
+    structures, and methods to browse and invoke registered code,
+    create registered structures, and get back registered values.
+    It contains a SQL abstraction that boils SQL communication to
+    basically 2 methods, Commands and Queries.
+    It provides application logging features, for debug, and
+    crash diagnostics. This is basically a single command
+    'lprintf'.
+    It provides a vector and matrix library for 3D and even 4D
+    graphics projects.
+    Beyond that - it uses libpng, jpeg, and freetype for dealing
+    with images. These are included in this one package for
+    windows where they are not system libraries. Internal are up
+    to date as of march 2010. Also includes sqlite. All of these
+    \version compile as C++ replacing extern "C"{} with an
+    appropriate namespace XXX {}.
+    Example
+    The current build system is CMake. Previously I had a bunch
+    of makefiles, but then required gnu make to compile with open
+    watcom, with cmake, the correct makefiles appropriate for
+    each package is generated. Visual studio support is a little
+    lacking in cmake. So installed output should be compatible
+    with cmake find XXX.
+    <code>
+    PROJECT( new_project )
+    ADD_EXECTUABLE( my_program my_source.c )
+    LINK_TARGET_LIBRARIES( my_program ${SACK_LIBRARY} )
+    </code>
+    The problem with this... depends on the mode of sack being
+    built against... maybe I should have a few families of
+    compile-options and link libraries.
+    Remarks
+    If sack is built 'monolithic' then everything that is any
+    sort of library is compiled together.
+    If sack is not built monolithic, then it produces
+      * \  bag &#45; everything that requires no system display,
+        it is all the logic components for lists, SQL, processes,
+        threads, networking
+        * ODBC is currently linked here, so unixodbc or odbc32
+          will be required as appropriate. Considering moving SQL
+          entirely to a seperate module, but the core library can take
+          advantage options, which may require SQL.
+      * \  bag.external &#45; external libraries zlib, libpng,
+        jpeg, freetype.
+      * bag.sqlite3.external &#45; external sqlite library, with
+        sqlite interface structure. This could be split to be just
+        the sqlite interface, and link to a system sqlite library.
+      * bag.image &#45; library that provides an image namespace
+        interface.
+      * bag.video &#45; library that provides a render namespace
+        interface. Windows system only. Provides OpenGL support for
+        displays also.
+      * bag.display.image &#45; a client library that
+        communicates to a remote image namespace interface.
+      * bag.image.video &#45; a client library that communicates
+        to a remote render namespace interface.
+      * bag.display &#45; a host library that provides window
+        management for render interface, which allows the application
+        multliple windows. bag.display was built against SDL, and SDL
+        only supplies a single display surface for an application, so
+        popup dialogs and menus needed to be tracked internally.
+        Bag.display can be loaded as a display service, and shared
+        between multiple applications. SDL Can provide OpenGL support
+        for render interface also. This can be mounted against
+        bag.video also, for developing window support. This has
+        fallen by the wayside... and really a display interface
+        should be provided that can just open X displays directly to
+        copy <link sack::image::Image, Images> to.
+      * bag.psi &#45; provides the PSI namespace.                      */
+ SACK_NAMESPACE
+ /* PSI is Panther's Slick Interface.
+    This is a control library which handles custom controls and
+    regions within a form. This isn't a window manager.
+    PSI_CONTROL is the primary structure that this uses. It
+    esists as a pointer to a structure, the content of which
+    should never be accessed by the real world. For purposes of
+    documentation these structures (in controlstruc.h) are
+    presented, but they are inaccessable from outside of SACK
+    itself, and will not be provided in the SDK.
+    A PSI_CONTROL can represent a 'Frame' which contains other
+    controls. A Frame owns a PRENDERER which it uses to present
+    its content to the display. A frame can have an outside
+    border, and provides the ability to click on the border and
+    resize the form. The frame can use a custom image, which will
+    be automatically portioned up and used as corner pieces, edge
+    pieces, and may automatically set the default background
+    color for forms. The frame draws directly on the Image from
+    the PRENDERER, and all controls know only their image.
+    Controls are based on sub-images on the frame's displayed
+    image, so when they draw they are drawing directly on the
+    buffer targeted to the display. The image library prohibits
+    any operations that go outside the bounds of a sub-image;
+    though, the user can request the color buffer pointer from an
+    image, and may draw directly anywhere on that surface.
+    Controls are implemented as a pair of sub-images on the color
+    buffer of the renderer. The pair is the image containing the
+    border of the control, and a sub-image inside that
+    representing the drawable area of a control. When created,
+    controls are always sized including their frame, this allow
+    positioning controls inside a frame without regard to how
+    much extra space might have been added. The size of the Frame
+    control outside, is handled differently, and is created with
+    the size of the inside of the control. The area of the render
+    surface is expanded outside this. There are BorderOptionTypes
+    that can control whether the border on the frame is handled
+    as an expansion or not.
+    Controls are all drawn using an internal table of colors
+    which can be index using ControlColorTypes with SetBaseColor
+    and GetBaseColor.
+    If the fancy border frame image is used for a control, then
+    the color of the center pixel is set into the NORMAL color
+    index.
+    What else can I say about controls...
+    Any control can contain any other control, but there is a
+    specific container type Frame that is commonly used for
+    dialogs. The top level control can display on a renderer. If
+    a sub-control is told to show, then it is divorced from and
+    opened in a new popup renderer.
+    History
+    Control registration was done original by filling in a
+    CONTROL_REGISTRATION structure, and passing that structure to
+    PSI to register. This method is still available, and is
+    certainly more straight forward method of use, but it's not
+    the easier method or the current method.
+    Currently, a registration structure is still used, but only
+    the first few elements are actually filled out, the functions
+    to handle a control's events are declared by fancy macros.
+    This relies on the deadstart features of compiler working,
+    but there are fewer places to have to remember to make
+    changes, and controls are much more straight forward to
+    implement, and extend as required, without necessarily
+    requiring everything to be done all at once. Methods
+    registered this way MUST be static, otherwise compiler errors
+    will result; they MUST have the correct return type for the
+    method specified, and they must have the correct parameters.
+    \Examples of each method supported will be provided with each
+    method's documentation. These are nasty macros that insert a
+    bit of magic code between the 'static int' and the parameters
+    specified. The names of the parameter values to the callback
+    are up to the user, but the types must match. This is a very
+    exact method, that cannot be circumvented using bad
+    typecasting.
+    Example
+    This is a custom control that shows red or green.
+    <code lang="c++">
+    struct control_data
+    {
+        // declare some data that you want to have associated with your control.
+        CDATA color;
+        uint32_t last_buttons; // used to track when a click happens
+    };
+    EasyRegisterControl( WIDE( "simple" ), sizeof( struct ball_timer_data ) );
+    // define the function called when a new 'simple' control is created.
+    static int OnCreateCommon( WIDE( "simple" ) )( PSI_CONTROL pc )
+    {
+        MyValidatedControlData( struct control_data*, my_data, pc );
+        if( my_data )
+        {
+            // assign a color to start
+            my_data-\>color = BASE_COLOR_RED;
+            return 1;
+        }
+        return 0;
+    }
+    // define a method to draw the control
+    static int OnDrawCommon( WIDE( "simple" ) )( PSI_CONTROL pc )
+    {
+        MyValidatedControlData( struct control_data*, my_data, pc );
+        if( my_data )
+        {
+            Image image = GetControlSufrace( pc );
+            BlatColor( image, my_data-\>color );
+            return 1;  // return that the draw happened.
+        }
+        return 0;  // return no draw - prevents update.
+    }
+    // define a handler when the simple control is clicked.
+    static int OnMouseCommon( WIDE( "simple" ) )( PSI_CONTROL pc, int32_t x, int32_t y, uint32_t b )
+    {
+    </code>
+    <code>
+        MyValidatedControlData( struct control_data*, my_data, pc );
+        // this checks to see if any mouse button goes down
+        if( MAKE_NEWBUTTON( b, my_data-\>last_buttons ) )
+        {
+            if( my_data-\>color == BASE_COLOR_RED )
+                my_data-\>color = BASE_COLOR_GREEN;
+            else
+                my_data-\>color = BASE_COLOR_RED;
+            // tell the control to update.
+            SmudgeCommon( pc );
+        }
+        // save this button state as the prior button state for future checks
+        my_data-\>last_buttons = b;
+    </code>
+    <code lang="c++">
+    }
+    </code>
+    See Also
+    OnCreateCommon
+    OnDrawCommon
+    OnMouseCommon
+    OnKeyCommon
+    OnCommonFocus
+    OnDestroyCommon
+    \-- Less common
+    OnMoveCommon
+    OnSizeCommon
+    OnMotionCommon
+    OnHideCommon
+    OnRevealCommon
+    OnPropertyEdit
+    OnPropertyEditOkay
+    OnPropertyEditCancel
+    OnPropertyEditDone
+    \--- Much Less used
+    OnEditFrame                                                                           */
+ _PSI_NAMESPACE
+ // this was never implemented.
+ #define MK_PSI_VERSION(ma,mi)  (((ma)<<8)|(mi))
+ // this was never implemented.
+ #define PSI_VERSION            MK_PSI_VERSION(1,1)
+ // this was never implemented.
+ #define REQUIRE_PSI(ma,mi)    ( PSI_VERSION >= MK_PSI_VERSION(ma,mi) )
+ #ifdef PSI_SOURCE
+ #define PSI_PROC(type,name) EXPORT_METHOD type CPROC name
+ #else
+ #define PSI_PROC(type,name) IMPORT_METHOD type CPROC name
+ #endif
+ // Control callback functions NEED to be declared in the same source as what
+ // created the control/frame...
+ #ifdef SOURCE_PSI2
+/*PSI_PROC( PSI_CONTROL, Make##name )( PSI_CONTROL pFrame, int attr */
+/*, int x, int y, int w, int h*/
+ #define CONTROL_PROC( name,_args )   PSI_PROC( PSI_CONTROL, Get##name##PropertyPage )( PSI_CONTROL pc );  PSI_PROC( void, Apply##name##PropertyPage )( PSI_CONTROL pc, PSI_CONTROL page );    PSI_PROC( int, Config##name)( PSI_CONTROL );
+/*PSI_PROC( PSI_CONTROL, Make##name )( PSI_CONTROL pFrame, int attr */
+/*, int x, int y, int w, int h  */
+ #define CAPTIONED_CONTROL_PROC( name,_args )   PSI_PROC( PSI_CONTROL, Get##name##PropertyPage )( PSI_CONTROL pc );  PSI_PROC( void, Apply##name##PropertyPage )( PSI_CONTROL pc, PSI_CONTROL page );    PSI_PROC( int, Config##name)( PSI_CONTROL );
+ #else
+/*PSI_PROC( PSI_CONTROL, Make##name )( PSI_CONTROL pFrame, int attr*/
+/*, int x, int y, int w, int h*/
+ #define CONTROL_PROC( name,_args )   PSI_PROC( PSI_CONTROL, Get##name##PropertyPage )( PSI_CONTROL pc );  PSI_PROC( void, Apply##name##PropertyPage )( PSI_CONTROL pc, PSI_CONTROL page );    PSI_PROC( PSI_CONTROL, Config##name)( PSI_CONTROL );
+/*PSI_PROC( PSI_CONTROL, Make##name )( PSI_CONTROL pFrame, int attr */
+/*, int x, int y, int w, int h */
+ #define CAPTIONED_CONTROL_PROC( name,_args )   PSI_PROC( PSI_CONTROL, Get##name##PropertyPage )( PSI_CONTROL pc );  PSI_PROC( void, Apply##name##PropertyPage )( PSI_CONTROL pc, PSI_CONTROL page );    PSI_PROC( PSI_CONTROL, Config##name)( PSI_CONTROL );
+ #endif
+ enum {
+     COMMON_PROC_ANY
+      , COMMON_PROC_DRAW
+      , COMMON_PROC_MOUSE
+      , COMMON_PROC_KEY
+ };
+ #define RegisterControl(name)  do { extern CTEXTSTR  ControlMakeProcName_##name, ControlLoadProcName_##name;     RegisterControlProcName( ControlMakeProcName_##name     , (POINTER)Make##name            , ControlLoadProcName_##name     , (POINTER)Load##name );     } while(0)
+ #define RegisterFrame(name)       RegisterControlProcName( FrameProcName_##name     , (POINTER)Make##name      , (POINTER)Load##name )
+ //PSI_PROC( int, RegisterControlProcName )( CTEXTSTR name, POINTER MakeProc, POINTER LoadProc );
+ #ifndef CONTROL_SOURCE
+ #define MKPFRAME(hVid) (((uintptr_t)(hVid))|1)
+ //typedef POINTER PSI_CONTROL;
+ // any remaining code should reference PSI_CONTROL
+ #define PCOMMON PSI_CONTROL
+ #define PCONTROL PSI_CONTROL
+ #endif
+ typedef struct frame_border *PFrameBorder;
+ /* <combine sack::PSI>
+    A handle to a PSI control or frame. The User's data is stored
+    as the first member of this structure, so de-referencing the
+    pointer twice gets the user data. All PSI functions work
+    against PSI_CONTROL. Once upon a time this was just PSI_CONTROL,
+    and so the methods for registering to handle events on the
+    control still reference 'Common'.
+    Remarks
+    <code lang="c++">
+    PSI_CONTROL control;
+    POINTER user_data;
+    user_data = *(POINTER*)control;
+    </code>                                                       */
+ typedef struct common_control_frame *PSI_CONTROL;
+ #define COMMON_BUTTON_WIDTH 55
+ #define COMMON_BUTTON_HEIGHT 19
+ #define COMMON_BUTTON_PAD 5
+ /* This enumeration defines flags that can be used to specify
+    the border of controls.                                    */
+ enum BorderOptionTypes {
+ // normal case needs to be 0 - but this is the thickest - go figure.
+  BORDER_NORMAL        =     0,
+  BORDER_NONE          =     3,
+ /* The control has no border - this overrides all other styles;
+     no caption, no border at all, the surface drawable area is
+     the same as the control's outer area.                        */
+  BORDER_THIN          =     1,
+  BORDER_THINNER       =     2,
+  BORDER_DENT          =     4,
+ /* A dent is a 3 pixel line which is a thin etch-line that is 1
+     step in, 1 across and 1 step up.                             */
+  BORDER_THIN_DENT     =     5,
+  BORDER_THICK_DENT    =     6,
+ /* A thick etch line - that is a step in, and a step out, so the
+     content is the same level as its parent.                      */
+  BORDER_USER_PROC     =     7,
+ /* External user code is used to draw the border when required
+     use PSI_SetCustomBorder to set this border type...
+     or define an OnBorderDraw and OnBorderMeasure routine for custom controls */
+ // 16 different frame types standard...
+  BORDER_TYPE          =  0x0f,
+  BORDER_INVERT        =  0x80,
+ /* This modifies styles like BORDER_BUMP to make them
+     BORDER_DENT.                                       */
+  BORDER_CAPTION       =  0x40,
+ /* Border should include a space to show the text of the control
+     as a caption.                                                 */
+  BORDER_NOCAPTION     =  0x20,
+  BORDER_INVERT_THINNER=  (BORDER_THINNER|BORDER_INVERT),
+  BORDER_INVERT_THIN   =  (BORDER_THIN|BORDER_INVERT),
+ /* It's a thin frame (3 pixels?) which is a descent step frame
+     ... so instead of being stacked 'up' it's stacked 'down'.   */
+  BORDER_BUMP          =  (BORDER_DENT|BORDER_INVERT),
+ /* Draws a 3 pixel frame around a control - it is 1 up 1 acros
+     and 1 down - a thin bump line.                              */
+  BORDER_NOMOVE        =  0x0100,
+ // well okay maybe these are border traits
+  BORDER_CLOSE         =  0x0200,
+ // can resize this window with a mouse
+  BORDER_RESIZABLE     =  0x0400,
+ // frame is on the surface of parent...
+  BORDER_WITHIN        =  0x0800,
+ // frame surface desires any unclaimed mouse calls
+  BORDER_WANTMOUSE     =  0x1000,
+ // frame wants exclusive application input.
+  BORDER_EXCLUSIVE     =  0x2000,
+ // marks controls which were done with 'create frame', and without BORDER_WITHIN
+  BORDER_FRAME         =  0x4000,
+ // scale does not apply to coordinates... otherwise it will be... by default controls are scalable.
+  BORDER_FIXED         =  0x8000,
+ // control is private to psi library(used for scrollbars in listboxes, etc) and as such does not call 'extra init'
+  BORDER_NO_EXTRA_INIT           =  0x010000,
+ //add a close button to the caption bar (has to have text, and a caption)
+  BORDER_CAPTION_CLOSE_BUTTON    =  0x020000,
+ //do not allow a close button on the caption bar (has to have text, and a caption)
+  BORDER_CAPTION_NO_CLOSE_BUTTON =  0x040000,
+ //add a close button to the caption bar (has to have text, and a caption)
+  BORDER_CAPTION_CLOSE_IS_DONE   =  0x080000,
+ };
+ enum BorderAnchorFlags {
+  BORDER_ANCHOR_TOP_MIN    = 1,
+  BORDER_ANCHOR_TOP_CENTER = 2,
+  BORDER_ANCHOR_TOP_MAX    = 3,
+  BORDER_ANCHOR_TOP_MASK   = 3,
+  BORDER_ANCHOR_TOP_SHIFT  = 0,
+  BORDER_ANCHOR_LEFT_MIN    = 4,
+  BORDER_ANCHOR_LEFT_CENTER = 8,
+  BORDER_ANCHOR_LEFT_MAX    = 12,
+  BORDER_ANCHOR_LEFT_MASK   = 0x0c,
+  BORDER_ANCHOR_LEFT_SHIFT  = 2,
+  BORDER_ANCHOR_RIGHT_MIN    = 0x10,
+  BORDER_ANCHOR_RIGHT_CENTER = 0x20,
+  BORDER_ANCHOR_RIGHT_MAX    = 0x30,
+  BORDER_ANCHOR_RIGHT_MASK   = 0x30,
+  BORDER_ANCHOR_RIGHT_SHIFT  = 4,
+  BORDER_ANCHOR_BOTTOM_MIN    = 0x40,
+  BORDER_ANCHOR_BOTTOM_CENTER = 0x80,
+  BORDER_ANCHOR_BOTTOM_MAX    = 0xC0,
+  BORDER_ANCHOR_BOTTOM_MASK   = 0xC0,
+  BORDER_ANCHOR_BOTTOM_SHIFT  = 6
+ };
+ // these are the indexes for base color
+ enum ControlColorTypes {
+  HIGHLIGHT           = 0,
+  NORMAL              = 1,
+  SHADE               = 2,
+  SHADOW              = 3,
+  TEXTCOLOR           = 4,
+  CAPTION             = 5,
+  CAPTIONTEXTCOLOR    = 6,
+  INACTIVECAPTION     = 7,
+  INACTIVECAPTIONTEXTCOLOR = 8,
+  SELECT_BACK         = 9,
+  SELECT_TEXT         = 10,
+  EDIT_BACKGROUND     = 11,
+  EDIT_TEXT           = 12,
+  SCROLLBAR_BACK      = 13
+ };
+ // these IDs are used to designate default control IDs for
+ // buttons...
+ #define TXT_STATIC -1
+ #ifndef IDOK
+ #  define IDOK BTN_OKAY
+ #endif
+ #ifndef IDCANCEL
+ #  define IDCANCEL BTN_CANCEL
+ #endif
+ #ifndef BTN_OKAY
+ #  define BTN_OKAY   1
+ #  define BTN_CANCEL 2
+ #endif
+ #ifdef __cplusplus
+ namespace old_constants {
+ #endif
+ // enumeration for control->nType
+ //enum {
+// master level control framing...
+ #define CONTROL_FRAME  0
+// master level control framing...
+ #define CONTROL_FRAME_NAME  WIDE("Frame")
+// returns a default control to user - type 1
+ #define  UNDEFINED_CONTROL  1
+// returns a default control to user - type 1
+ #define  UNDEFINED_CONTROL_NAME  WIDE("Undefined")
+ #define  CONTROL_SUB_FRAME 2
+ #define  CONTROL_SUB_FRAME_NAME WIDE("SubFrame")
+ #define  STATIC_TEXT 3
+ #define  STATIC_TEXT_NAME WIDE("TextControl")
+ #define  NORMAL_BUTTON 4
+ #define  NORMAL_BUTTON_NAME WIDE("Button")
+ #define  CUSTOM_BUTTON 5
+ #define  CUSTOM_BUTTON_NAME WIDE("CustomDrawnButton")
+ #define  IMAGE_BUTTON 6
+ #define  IMAGE_BUTTON_NAME WIDE("ImageButton")
+// also subtype radio button
+ #define  RADIO_BUTTON 7
+// also subtype radio button
+ #define  RADIO_BUTTON_NAME WIDE("CheckButton")
+ #define  EDIT_FIELD 8
+ #define  EDIT_FIELD_NAME WIDE("EditControl")
+ #define  SLIDER_CONTROL 9
+ #define  SLIDER_CONTROL_NAME WIDE("Slider")
+ #define  LISTBOX_CONTROL 10
+ #define  LISTBOX_CONTROL_NAME WIDE("ListBox")
+ #define  SCROLLBAR_CONTROL 11
+ #define  SCROLLBAR_CONTROL_NAME WIDE("ScrollBar")
+ // TBI (to be implemented)
+ #define  GRIDBOX_CONTROL  12
+ // TBI (to be implemented)
+ #define  GRIDBOX_CONTROL_NAME  WIDE("Gridbox")
+ // TBI (to be implemented)
+ #define  CONSOLE_CONTROL  13
+ // TBI (to be implemented)
+ #define  CONSOLE_CONTROL_NAME  WIDE("Console")
+ #define  SHEET_CONTROL    14
+ #define  SHEET_CONTROL_NAME    WIDE("SheetControl")
+ #define  COMBOBOX_CONTROL 15
+ #define  COMBOBOX_CONTROL_NAME WIDE("Combo Box")
+ // last known builtin control...
+ #define  BUILTIN_CONTROL_COUNT 16
+ // should be sufficiently high as to not conflict with common controls
+ #define  USER_CONTROL   128
+ #ifdef __cplusplus
+ }
+ #endif
+ //};
+ _MENU_NAMESPACE
+ /* This is an item on a menu. (AppendMenuItem can return this I
+    think)                                                       */
+ typedef struct menuitem_tag *PMENUITEM;
+ /* This is a popup menu or sub-menu. */
+ typedef struct menu_tag *PMENU;
+ #ifndef MENU_DRIVER_SOURCE
+ /* <combine sack::PSI::popup::draw_popup_item_tag>
+    \ \                                             */
+ typedef struct draw_popup_item_tag  DRAWPOPUPITEM;
+ /* <combine sack::PSI::popup::draw_popup_item_tag>
+    \ \                                             */
+ typedef struct draw_popup_item_tag *PDRAWPOPUPITEM;
+ /* This is used when a custom drawn menu item is used. Allows
+    user code to draw onto the menu.                           */
+ struct draw_popup_item_tag
+ {
+    // ID param of append menu item
+     uintptr_t psvUser;
+     /* Optional states an item might be in. */
+     /* <combine sack::containers::text::format_info_tag::flags@1>
+        \ \                                                        */
+     struct {
+         /* Menu item is in a selected state. (Mouse Over) */
+         BIT_FIELD selected : 1;
+         /* Menu item has a checkmark on it. */
+         BIT_FIELD checked  : 1;
+     } flags;
+     /* Define options which may be passed to measure an item or to
+        have an item drawn.                                         */
+     union {
+         /* Information which should be filled in when measuring popup
+            items.                                                     */
+         /* <combine sack::PSI::popup::draw_popup_item_tag::union@1::measure@1>
+            \ \                                                                 */
+         struct {
+             /* Height of the menu item. */
+             /* Width of the menu item. */
+             uint32_t width, height;
+         } measure;
+         /* Contains information passed when the draw is required. */
+         /* <combine sack::PSI::popup::draw_popup_item_tag::union@1::draw@1>
+            \ \                                                              */
+         struct {
+             /* x to draw into */
+             /* y coordinate to start drawing at. */
+             int32_t x, y;
+             /* Width to draw. */
+             /* Height to draw. */
+             uint32_t width, height;
+             /* Image to draw into. */
+             Image image;
+         } draw;
+     };
+ };
+ #endif
+ _MENU_NAMESPACE_END
+ USE_MENU_NAMESPACE
+ //-------- Initialize colors to current windows colors -----------
+ PSI_PROC( PRENDER_INTERFACE, SetControlInterface)( PRENDER_INTERFACE DisplayInterface );
+ PSI_PROC( PIMAGE_INTERFACE, SetControlImageInterface )( PIMAGE_INTERFACE DisplayInterface );
+ PSI_PROC( void, AlignBaseToWindows)( void );
+ PSI_PROC( void, SetBaseColor )( INDEX idx, CDATA c );
+ PSI_PROC( CDATA, GetBaseColor )( INDEX idx );
+ PSI_PROC( void, SetControlColor )( PSI_CONTROL pc, INDEX idx, CDATA c );
+ PSI_PROC( CDATA, GetControlColor )( PSI_CONTROL pc, INDEX idx );
+ //-------- Frame and generic control functions --------------
+ #ifdef CONTROL_SOURCE
+ #define MKPFRAME(hvideo) ((PSI_CONTROL)(((uintptr_t)(hvideo))|1))
+ #endif
+ /* Update the border type of a control.  See BorderOptionTypes
+    Parameters
+    pc :      control to modify the border
+    BorderType :  new border style
+  */
+ PSI_PROC( void, SetCommonBorderEx )( PSI_CONTROL pc, uint32_t BorderType DBG_PASS);
+ /* Update the border type of a control.  See BorderOptionTypes
+    Parameters
+    pc :      control to modify the border
+    b :  new border style
+  */
+ #define SetCommonBorder(pc,b) SetCommonBorderEx(pc,b DBG_SRC)
+ /* Update the border type of a control.  Border is drawn by routine
+    Parameters
+  pc :      control to modify the border draw routine
+  proc:     draw routine; image parameter is the 'window' in which the surface is...
+  measure_proc : get how much the outside border should be offset (or inside image should be inset)
+  */
+ PSI_PROC( void, PSI_SetCustomBorder )( PSI_CONTROL pc, void (CPROC*proc)(PSI_CONTROL,Image)
+                                       , void (CPROC*measure_proc)( PSI_CONTROL, int *x_offset, int *y_offset, int *right_inset, int *bottom_inset )
+              );
+ // update to current border type drawing.
+ PSI_PROC( void, SetDrawBorder )( PSI_CONTROL pc );
+ PSI_PROC( PSI_CONTROL, CreateFrame)( CTEXTSTR caption, int x, int y
+           , int w, int h
+           , uint32_t BorderFlags
+              , PSI_CONTROL hAbove );
+ // 1) causes all updates to be done in video thread, otherwise selecting opengl context fails.
+ // 2) ...
+ PSI_PROC( void, EnableControlOpenGL )( PSI_CONTROL pc );
+ //PSI_PROC( void, SetFrameDraw )( PSI_CONTROL pc, void (CPROC*OwnerDraw)(PSI_CONTROL pc) );
+ //PSI_PROC( void, SetFrameMouse )( PSI_CONTROL pc, void (CPROC*OwnerMouse)(PSI_CONTROL pc, int32_t x, int32_t y, uint32_t b) );
+ // Control Init Proc is called each time a control is created
+ // a control may be created either with a 'make' routine
+ // or by loading a dialog resource.
+ #ifdef SOURCE_PSI2
+ typedef int (CPROC*ControlInitProc)( PSI_CONTROL, va_list );
+ #else
+ typedef int (CPROC*ControlInitProc)( uintptr_t, PSI_CONTROL, uint32_t ID );
+ #endif
+ /* \Internal event callback definition. After creation, an
+    initializer is available to call on controls to pass
+    \arguments to. This is more useful for loading from an XML
+    \file where the control may have specified extra data.     */
+ typedef int (CPROC*FrameInitProc)( uintptr_t, PSI_CONTROL, uint32_t ID );
+ PSI_PROC( void, SetFrameInit )( PSI_CONTROL, ControlInitProc, uintptr_t );
+ PSI_PROC( CTEXTSTR, GetControlTypeName)( PSI_CONTROL pc );
+ // internal routine now exposed... results in a frame from a given
+ // renderer - a more stable solution than MKPFRAME which
+ // would require MUCH work to implement all checks everywhere...
+ PSI_PROC( PSI_CONTROL, CreateFrameFromRenderer )( CTEXTSTR caption
+                                                          , uint32_t BorderTypeFlags
+                , PRENDERER pActImg );
+ /* Attach a frame to a renderer. Not sure which is sized to
+    which if they are not the same size... probably the control
+    is sized to the display.
+    Parameters
+    pcf :      control to attach to the display frame
+    pActImg :  the display surface to use to show the control.
+    Returns
+    the control which was being attached to a display surface.  */
+ PSI_PROC( PSI_CONTROL, AttachFrameToRenderer )( PSI_CONTROL pcf, PRENDERER pActImg );
+ // any control on a frame may be passed, and
+ // the top level
+ PSI_PROC( PRENDERER, GetFrameRenderer )( PSI_CONTROL );
+ PSI_PROC( PSI_CONTROL, GetFrameFromRenderer )( PRENDERER renderer );
+ PSI_PROC( void, GetPhysicalCoordinate )( PSI_CONTROL relative_to, int32_t *_x, int32_t *_y, int include_surface );
+ //PSI_PROC( void, DestroyFrameEx)( PSI_CONTROL pf DBG_PASS );
+ #ifdef SOURCE_PSI2
+ #define DestroyFrame(pf) DestroyCommonEx( pf DBG_SRC )
+ #else
+ #define DestroyFrame(pf) DestroyControlEx( pf DBG_SRC )
+ #endif
+ PSI_PROC( int, SaveFrame )( PSI_CONTROL pFrame, CTEXTSTR file );
+ /* This is actually a load/save namespace. These functions are
+    used to save and load frames and their layouts to and from
+    XML.                                                        */
+ _XML_NAMESPACE
+ /* Unused. Please Delete. */
+ PSI_PROC( void, SetFrameInitProc )( PSI_CONTROL pFrame, ControlInitProc InitProc, uintptr_t psvInit );
+ /* Saves the current layout and controls of a frame. Can be
+    recreated later with LoadXMLFrame.
+    Parameters
+    frame :  Frame to save with all of its contents.
+    file\ :  filename to save XML frame into.                */
+ PSI_PROC( int, SaveXMLFrame )( PSI_CONTROL frame, CTEXTSTR file );
+ /* results with the frame and all controls created
+    whatever extra init needs to be done... needs to be done
+    if parent, use DisplayFrameOver().
+                                                           If frame is specified in parameters, and is not NULL, then
+                                                           this window is stacked against the other one so it is always
+                                                           above the other window.
+                                                           Parameters
+                                                           file\ :     name of XML file to read and pass to ParseXMLFrame
+                                                           frame :     frame to stack this frame against. (specify parent
+                                                                       window.)
+                                                           DBG_PASS :  passed to track allocation responsiblity.          */
+  PSI_PROC( PSI_CONTROL, LoadXMLFrameEx )( CTEXTSTR file DBG_PASS );
+  /* Handles recreating a frame from an XML description.
+    Parameters
+    buffer :    buffer to parse with XML frame loader
+    size :      length of the buffer in bytes.
+    DBG_PASS :  passed to track allocation responsiblity. */
+ PSI_PROC( PSI_CONTROL, ParseXMLFrameEx )( POINTER buffer, size_t size DBG_PASS );
+ /* <combine sack::PSI::xml::LoadXMLFrameEx@CTEXTSTR file>
+    \ \                                                    */
+ PSI_PROC( PSI_CONTROL, LoadXMLFrameOverExx )( PSI_CONTROL frame, CTEXTSTR file, LOGICAL create DBG_PASS );
+ /* <combine sack::PSI::xml::LoadXMLFrameEx@CTEXTSTR file>
+    \ \                                                    */
+ PSI_PROC( PSI_CONTROL, LoadXMLFrameOverEx )( PSI_CONTROL frame, CTEXTSTR file DBG_PASS );
+ /* <combine sack::PSI::xml::LoadXMLFrameOverEx@PSI_CONTROL@CTEXTSTR file>
+    \ \                                                                    */
+ #define LoadXMLFrameOverOption(parent,file,create) LoadXMLFrameOverExx( parent,file,create DBG_SRC )
+ /* <combine sack::PSI::xml::LoadXMLFrameOverEx@PSI_CONTROL@CTEXTSTR file>
+    \ \                                                                    */
+ #define LoadXMLFrameOver(parent,file) LoadXMLFrameOverEx( parent,file DBG_SRC )
+ /* <combine sack::PSI::xml::LoadXMLFrameEx@CTEXTSTR file>
+    \ \                                                    */
+ #define LoadXMLFrame(file) LoadXMLFrameEx( file DBG_SRC )
+ /* <combine sack::PSI::xml::ParseXMLFrameEx@POINTER@uint32_t size>
+    \ \                                                        */
+ #define ParseXMLFrame(p,s) ParseXMLFrameEx( (p),(s) DBG_SRC )
+ _XML_NAMESPACE_END
+ USE_XML_NAMESPACE
+ PSI_PROC( PSI_CONTROL, LoadFrameFromMemory )( POINTER info, uint32_t size, PSI_CONTROL hAbove, FrameInitProc InitProc, uintptr_t psv  );
+ PSI_PROC( PSI_CONTROL, LoadFrameFromFile )( FILE *in, PSI_CONTROL hAbove, FrameInitProc InitProc, uintptr_t psv  );
+ PSI_PROC( PSI_CONTROL, LoadFrame )( CTEXTSTR file, PSI_CONTROL hAbove, FrameInitProc InitProc, uintptr_t psv );
+ /* methods to edit frames at runtime. */
+ _PROP_NAMESPACE
+ /* Turns edit features of a frame on and off.
+    Parameters
+    pf :       frame to set the edit state of
+    bEnable :  if TRUE, enable edit. if FALSE, disable edit.
+    Example
+    <code lang="c#">
+    PSI_CONTROL frame = CreateFrame( "test", 0, 0, 100, 100, BORDER_NORMAL, NULL );
+    EditFrame( frame );
+    </code>
+    This turns on edit features of a frame, right click you can
+    add a new registered control, controls have hotspots on them,
+    if you right click on a hotspot, then you can edit properties
+    of that control like it's control ID.
+    Note
+    When LoadXMLFrame fails to find the file, a frame is created
+    and edit enabled like this.                                                     */
+ PSI_PROC( void, EditFrame )( PSI_CONTROL pf, int bEnable );
+ _PROP_NAMESPACE_END
+ PSI_PROC( void, GetFramePosition )( PSI_CONTROL pf, int32_t *x, int32_t *y );
+ PSI_PROC( void, GetFrameSize )( PSI_CONTROL pf, uint32_t *w, uint32_t *h );
+ // results in the total width (left and right) of the frame
+ PSI_PROC( int, FrameBorderX )( PSI_CONTROL pc, uint32_t BorderFlags );
+ // results in left offset of the surface within the frame...
+ PSI_PROC( int, FrameBorderXOfs )( PSI_CONTROL pc, uint32_t BorderFlags );
+ // results in the total height (top and bottom) of frame (and caption)
+ PSI_PROC( int, FrameBorderY )( PSI_CONTROL pc, uint32_t BorderFlags, CTEXTSTR caption );
+ // results in top offset of the surface within the frame...
+ PSI_PROC( int, FrameBorderYOfs )( PSI_CONTROL pc, uint32_t BorderFlags, CTEXTSTR caption );
+ PSI_PROC( int, CaptionHeight )( PSI_CONTROL pf, CTEXTSTR text );
+ PSI_PROC( void, DisplayFrameOverOn )( PSI_CONTROL pc, PSI_CONTROL over, PRENDERER pActImg );
+ // stacks the physical display behind this other frame...
+ PSI_PROC( void, DisplayFrameUnder )( PSI_CONTROL pc, PSI_CONTROL under );
+ PSI_PROC( void, DisplayFrameOver )( PSI_CONTROL pc, PSI_CONTROL over );
+ PSI_PROC( void, DisplayFrameOn )( PSI_CONTROL pc, PRENDERER pActImg );
+ PSI_PROC( void, DisplayFrame)( PSI_CONTROL pf );
+ PSI_PROC( void, HideControl )( PSI_CONTROL pf );
+ PSI_PROC( LOGICAL, IsControlHidden )( PSI_CONTROL pc );
+ PSI_PROC( void, RevealCommonEx )( PSI_CONTROL pf DBG_PASS );
+ #define RevealCommon(pc) RevealCommonEx(pc DBG_SRC );
+ PSI_PROC( void, SizeCommon)( PSI_CONTROL pf, uint32_t w, uint32_t h );
+ #define SizeControl(c,x,y) SizeCommon((PSI_CONTROL)c,x,y)
+ #define SizeFrame(c,x,y) SizeCommon((PSI_CONTROL)c,x,y)
+ PSI_PROC( void, SizeCommonRel)( PSI_CONTROL pf, uint32_t w, uint32_t h );
+ #define SizeControlRel(c,x,y) SizeCommonRel((PSI_CONTROL)c,x,y)
+ #define SizeFrameRel(c,x,y) SizeCommonRel((PSI_CONTROL)c,x,y)
+ PSI_PROC( void, MoveCommon)( PSI_CONTROL pf, int32_t x, int32_t y );
+ #define MoveControl(c,x,y) MoveCommon((PSI_CONTROL)c,x,y)
+ #define MoveFrame(c,x,y) MoveCommon((PSI_CONTROL)c,x,y)
+ PSI_PROC( void, MoveCommonRel)( PSI_CONTROL pf, int32_t x, int32_t y );
+ #define MoveControlRel(c,x,y) MoveCommonRel((PSI_CONTROL)c,x,y)
+ #define MoveFrameRel(c,x,y) MoveCommonRel((PSI_CONTROL)c,x,y)
+ PSI_PROC( void, MoveSizeCommon)( PSI_CONTROL pf, int32_t x, int32_t y, uint32_t width, uint32_t height );
+ #define MoveSizeControl(c,x,y,w,h) MoveSizeCommon((PSI_CONTROL)c,x,y,w,h)
+ #define MoveSizeFrame(c,x,y,w,h) MoveSizeCommon((PSI_CONTROL)c,x,y,w,h)
+ PSI_PROC( void, MoveSizeCommonRel)( PSI_CONTROL pf, int32_t x, int32_t y, uint32_t width, uint32_t height );
+ #define MoveSizeControlRel(c,x,y,w,h) MoveSizeCommonRel((PSI_CONTROL)c,x,y,w,h)
+ #define MoveSizeFrameRel(c,x,y,w,h) MoveSizeCommonRel((PSI_CONTROL)c,x,y,w,h)
+ PSI_PROC( PSI_CONTROL, GetControl )( PSI_CONTROL pContainer, int ID );
+ #ifdef PSI_SOURCE
+ //#define GetControl(pc,id) GetControl( &((pc)->common),id)
+ #define GetControl(pc,id) GetControl( (PSI_CONTROL)(pc),id)
+ #endif
+ //PSI_PROC( PSI_CONTROL, GetControl)( PSI_CONTROL pf, int ID );
+ PSI_PROC( uintptr_t, GetCommonUserData )( PSI_CONTROL pf );
+ #define GetFrameUserData(pf) GetCommonUserData( (PSI_CONTROL)pf )
+ PSI_PROC( void, SetCommonUserData )( PSI_CONTROL pf, uintptr_t psv );
+ #define SetFrameUserData(pf,d) SetCommonUserData( (PSI_CONTROL)pf,d )
+ PSI_PROC( PFrameBorder, PSI_CreateBorder )( Image image, int width, int height, int anchors, LOGICAL defines_colors );
+ PSI_PROC( void, PSI_SetFrameBorder )( PSI_CONTROL pc, PFrameBorder border );
+ PSI_PROC( void, BeginUpdate )( PSI_CONTROL pc );
+ PSI_PROC( void, EndUpdate )( PSI_CONTROL pc );
+ // do the draw to the display...
+ PSI_PROC( void, UpdateFrameEx )( PSI_CONTROL pf
+                                       , int x, int y
+            , int w, int h DBG_PASS );
+ #define UpdateFrame(pf,x,y,w,h) UpdateFrameEx(pf,x,y,w,h DBG_SRC )
+ /* \INTERNAL
+    This is for internal organization, events and routines the
+    mouse uses and features it adds to the PSI control... like
+    issuing auto updates on unlock... well... it's internal
+    anyhow                                                     */
+ _MOUSE_NAMESPACE
+ /* Releases a use. This is the oppsite of AddWait(). */
+ PSI_PROC( void, ReleaseCommonUse )( PSI_CONTROL pc );
+ /* This one is public, Sets the mouse position relative to a
+    point in a frame.
+    Parameters
+    frame :  frame to position the mouse relative to
+    x :      x of the mouse
+    y :      y of the mouse                                   */
+ PSI_PROC( void, SetFrameMousePosition )( PSI_CONTROL frame, int x, int y );
+ /* Captures the mouse to the current control, it's like an
+    OwnMouse for a control.                                 */
+ PSI_PROC( void, CaptureCommonMouse )( PSI_CONTROL pc, LOGICAL bCapture );
+ _MOUSE_NAMESPACE_END
+ USE_MOUSE_NAMESPACE
+ PSI_PROC( SFTFont, GetCommonFontEx )( PSI_CONTROL pc DBG_PASS );
+ #define GetCommonFont(pc) GetCommonFontEx( pc DBG_SRC )
+ #define GetFrameFont(pf) GetCommonFont((PSI_CONTROL)pf)
+ PSI_PROC( void, SetCommonFont )( PSI_CONTROL pc, SFTFont font );
+ #define SetFrameFont(pf,font) SetCommonFont((PSI_CONTROL)pf,font)
+ // setting scale of this control immediately scales all contained
+ // controls, but the control itself remains at it's current size.
+ PSI_PROC( void, SetCommonScale )( PSI_CONTROL pc, PFRACTION scale_x, PFRACTION scale_y );
+ // use scale_x and scale_y to scale a, b, results are done in a, b
+ void ScaleCoords( PSI_CONTROL pc, int32_t* a, int32_t* b );
+ // bOwn sets the ownership of mouse events to a control, where it remains
+ // until released.  Some other control has no way to steal it.
+ //PSI_PROC( void, OwnCommonMouse)( PSI_CONTROL pc, int bOwn );
+ //PSI_PROC void SetDefaultOkayID( PSI_CONTROL pFrame, int nID );
+ //PSI_PROC void SetDefaultCancelID( PSI_CONTROL pFrame, int nID );
+ //-------- Generic control functions --------------
+ // previously this was used;
+ PSI_PROC( PSI_CONTROL, GetCommonParent )( PSI_CONTROL pc );
+ #define GetCommonParent(pc)  GetParentControl(pc)
+ /* Return the container control of this control.
+    NULL if there is no parent container. */
+ PSI_PROC( PSI_CONTROL, GetParentControl )( PSI_CONTROL pc );
+ /* Return the first control contained in the specified control.
+  returns NULL if there is no child control
+  <code>
+  void enum_all_controls( PSI_CONTROL a_control )
+  {
+      PSI_CONTROL root_control = a_control;
+    PSI_CONTROL current_control;
+    while( current_control = GetParentControl( root_control ) )
+        root_control = current_control;
+    for( current_control = GetFirstChildControl( root_control );
+               current_control;
+       current_control = GetNextControl( current_control ) )
+    {
+              // hmm some sort of recursion on each of these too...
+    }
+  }
+    </code>
+  */
+ PSI_PROC( PSI_CONTROL, GetFirstChildControl )( PSI_CONTROL pc );
+ /* Return the next control after this one.
+     returns NULL if there are no other controls after this one*/
+ PSI_PROC( PSI_CONTROL, GetNextControl )( PSI_CONTROL pc );
+ PSI_PROC( PSI_CONTROL, GetFrame)( PSI_CONTROL pc );
+ #define GetFrame(c) GetFrame((PSI_CONTROL)(c))
+ PSI_PROC( PSI_CONTROL, GetNearControl)( PSI_CONTROL pc, int ID );
+ PSI_PROC( void, GetCommonTextEx)( PSI_CONTROL pc, TEXTSTR  buffer, int buflen, int bCString );
+ #define GetControlTextEx(pc,b,len,str) GetCommonTextEx(pc,b,len,str)
+ #define GetControlText( pc, buffer, buflen ) GetCommonTextEx( (PSI_CONTROL)(pc), buffer, buflen, FALSE )
+ #define GetFrameText( pc, buffer, buflen ) GetCommonTextEx( (PSI_CONTROL)(pc), buffer, buflen, FALSE )
+ //PSI_PROC( void, SetCommonText )( PSI_CONTROL pc, CTEXTSTR text );
+ PSI_PROC( void, SetControlText )( PSI_CONTROL pc, CTEXTSTR text );
+ PSI_PROC( void, SetControlCaptionImage )( PSI_CONTROL pc, Image image, int pad );
+ PSI_PROC( void, SetFrameText )( PSI_CONTROL pc, CTEXTSTR text );
+ // this is used to set the height of the caption bar when OnDrawCaption is defined for a control
+ PSI_PROC( void, SetCaptionHeight )( PSI_CONTROL pc, int height );
+ // set focus to this control,
+ // it's container which needs to be updated
+ // is discoverable from the control itself.
+ PSI_PROC( void, SetCommonFocus)( PSI_CONTROL pc );
+ PSI_PROC( void, EnableControl)( PSI_CONTROL pc, int bEnable );
+ PSI_PROC( int, IsControlFocused )( PSI_CONTROL pc );
+ PSI_PROC( int, IsControlEnabled)( PSI_CONTROL pc );
+ PSI_PROC( struct physical_device_caption_button *, AddCaptionButton )( PSI_CONTROL frame, Image normal, Image pressed, Image highlight, int extra_pad, void (CPROC*event)(PSI_CONTROL) );
+ PSI_PROC( void, SetCaptionButtonImages )( struct physical_device_caption_button *, Image normal, Image pressed, Image rollover );
+ PSI_PROC( void, HideCaptionButton )( struct physical_device_caption_button * );
+ PSI_PROC( void, ShowCaptionButton )( struct physical_device_caption_button * );
+ PSI_PROC( void, SetCaptionButtonOffset )( PSI_CONTROL frame, int32_t x, int32_t y );
+ /*
+ PSI_PROC( PSI_CONTROL, CreateCommonExx)( PSI_CONTROL pContainer
+              , CTEXTSTR pTypeName
+              , uint32_t nType
+              , int x, int y
+              , int w, int h
+              , uint32_t nID
+              , CTEXTSTR caption
+              , uint32_t ExtraBorderType
+              , PTEXT parameters
+              //, va_list args
+             DBG_PASS );
+ #define CreateCommonEx(pc,nt,x,y,w,h,id,caption) CreateCommonExx(pc,NULL,nt,x,y,w,h,id,caption,0,NULL DBG_SRC)
+ #define CreateCommon(pc,nt,x,y,w,h,id,caption) CreateCommonExx(pc,NULL,nt,x,y,w,h,id,caption,0,NULL DBG_SRC)
+ */
+ /* returns the TypeID of the control, this can be used to validate the data received from the control.*/
+ #undef ControlType
+ PSI_PROC( INDEX, ControlType)( PSI_CONTROL pc );
+ PSI_PROC( PSI_CONTROL, MakeControl )( PSI_CONTROL pContainer
+             , uint32_t nType
+             , int x, int y
+             , int w, int h
+             , uint32_t nID
+             //, ...
+             );
+ // init is called with an extra parameter on the stack
+ // works as long as we guarantee C stack call basis...
+ // the register_control structure allows this override.
+ PSI_PROC( PSI_CONTROL, MakeControlParam )( PSI_CONTROL pContainer
+                , uint32_t nType
+                , int x, int y
+                , int w, int h
+                , uint32_t nID
+                , POINTER param
+                );
+ // MakePrivateControl passes BORDER_NO_EXTRA_INIT...
+ PSI_PROC( PSI_CONTROL, MakePrivateControl )( PSI_CONTROL pContainer
+              , uint32_t nType
+              , int x, int y
+              , int w, int h
+              , uint32_t nID
+              //, ...
+              );
+ // MakePrivateControl passes BORDER_NO_EXTRA_INIT...
+ PSI_PROC( PSI_CONTROL, MakePrivateNamedControl )( PSI_CONTROL pContainer
+              , CTEXTSTR pType
+              , int x, int y
+              , int w, int h
+              , uint32_t nID
+              );
+ PSI_PROC( PSI_CONTROL, MakeCaptionedControl )( PSI_CONTROL pContainer
+                , uint32_t nType
+                , int x, int y
+                , int w, int h
+                , uint32_t nID
+                , CTEXTSTR caption
+                //, ...
+                );
+ PSI_PROC( PSI_CONTROL, VMakeCaptionedControl )( PSI_CONTROL pContainer
+               , uint32_t nType
+               , int x, int y
+               , int w, int h
+               , uint32_t nID
+               , CTEXTSTR caption
+               //, va_list args
+               );
+ PSI_PROC( PSI_CONTROL, MakeNamedControl )( PSI_CONTROL pContainer
+              , CTEXTSTR pType
+              , int x, int y
+              , int w, int h
+              , uint32_t nID
+              //, ...
+              );
+ PSI_PROC( PSI_CONTROL, MakeNamedCaptionedControlByName )( PSI_CONTROL pContainer
+                   , CTEXTSTR pType
+                   , int x, int y
+                   , int w, int h
+                   , CTEXTSTR pIDName
+ // also pass this (if known)
+                                                     , uint32_t nID
+                   , CTEXTSTR caption
+                   );
+ PSI_PROC( PSI_CONTROL, MakeNamedCaptionedControl )( PSI_CONTROL pContainer
+                 , CTEXTSTR pType
+                 , int x, int y
+                 , int w, int h
+                 , uint32_t nID
+                 , CTEXTSTR caption
+                 //, ...
+                 );
+ PSI_PROC( PSI_CONTROL, VMakeControl )( PSI_CONTROL pContainer
+            , uint32_t nType
+            , int x, int y
+            , int w, int h
+            , uint32_t nID
+            //, va_list args
+            );
+ /*
+  depricated
+  PSI_PROC( PSI_CONTROL, CreateControl)( PSI_CONTROL pFrame
+  , int nID
+  , int x, int y
+  , int w, int h
+  , int BorderType
+  , int extra );
+  */
+ PSI_PROC( Image,GetControlSurface)( PSI_CONTROL pc );
+ // result with an image pointer, will sue the image passed
+ // as prior_image to copy into (resizing if nessecary), if prior_image is NULL
+ // then a new Image will be returned.  If the surface has not been
+ // marked as parent_cleaned, then NULL results, as no Original image is
+ // available.  The image passed as a destination for the surface copy is
+ // not released, it is resized, and copied into.  THe result may still be NULL
+ // the image will still be the last valid copy of the surface.
+ PSI_PROC( Image, CopyOriginalSurface )( PSI_CONTROL pc, Image prior_image );
+ // this allows the application to toggle the transparency
+ // characteristic of a control.  If a control is transparent, then it behaves
+ // automatically as one should using CopyOriginalSurface and restoring that surface
+ // before doing the draw.  The application does not need to concern itself
+ // with restoring the prior image, but it must also assume that the entire surface
+ // has been destroyed, and partial updates are not possible.
+ PSI_PROC( void, SetCommonTransparent )( PSI_CONTROL pc, LOGICAL bTransparent );
+ PSI_PROC( void, OrphanCommonEx )( PSI_CONTROL pc, LOGICAL bDraw );
+ PSI_PROC( void, OrphanCommon )( PSI_CONTROL pc );
+ #define OrphanFrame(pf) OrphanCommonEx((PSI_CONTROL)pf, FALSE)
+ #define OrphanControl(pc) OrphanCommonEx((PSI_CONTROL)pc, FALSE)
+ #define OrphanControlEx(pc,d) OrphanCommonEx((PSI_CONTROL)pc, d)
+ PSI_PROC( void, AdoptCommonEx )( PSI_CONTROL pFoster, PSI_CONTROL pElder, PSI_CONTROL pOrphan, LOGICAL bDraw );
+ PSI_PROC( void, AdoptCommon )( PSI_CONTROL pFoster, PSI_CONTROL pElder, PSI_CONTROL pOrphan );
+ #define AdoptFrame(pff,pfe,pfo) AdoptCommonEx((PSI_CONTROL)pff,(PSI_CONTROL)pfe,(PSI_CONTROL)pfo, TRUE)
+ #define AdoptControl(pcf,pce,pco) AdoptCommonEx((PSI_CONTROL)pcf,(PSI_CONTROL)pce,(PSI_CONTROL)pco, TRUE)
+ #define AdoptControlEx(pcf,pce,pco,d) AdoptCommonEx((PSI_CONTROL)pcf,(PSI_CONTROL)pce,(PSI_CONTROL)pco, d)
+ PSI_PROC( void, SetCommonDraw )( PSI_CONTROL pf, int (CPROC*Draw)( PSI_CONTROL pc ) );
+ PSI_PROC( void, SetCommonDrawDecorations )( PSI_CONTROL pc, void(CPROC*DrawDecorations)(PSI_CONTROL) );
+ PSI_PROC( void, SetCommonKey )( PSI_CONTROL pf, int (CPROC*Key)(PSI_CONTROL,uint32_t) );
+ typedef int (CPROC*psi_mouse_callback)(PSI_CONTROL, int32_t x, int32_t y, uint32_t b );
+ PSI_PROC( void, SetCommonMouse)( PSI_CONTROL pc, psi_mouse_callback MouseMethod );
+ PSI_PROC( void, AddCommonDraw )( PSI_CONTROL pf, int (CPROC*Draw)( PSI_CONTROL pc ) );
+ PSI_PROC( void, AddCommonKey )( PSI_CONTROL pf, int (CPROC*Key)(PSI_CONTROL,uint32_t) );
+ PSI_PROC( void, AddCommonMouse)( PSI_CONTROL pc, int (CPROC*MouseMethod)(PSI_CONTROL, int32_t x, int32_t y, uint32_t b ) );
+ PSI_PROC( void, SetCommonAcceptDroppedFiles)( PSI_CONTROL pc, LOGICAL (CPROC*AcceptDroppedFilesMethod)(PSI_CONTROL, CTEXTSTR file, int32_t x, int32_t y ) );
+ PSI_PROC( void, AddCommonAcceptDroppedFiles)( PSI_CONTROL pc, LOGICAL (CPROC*AcceptDroppedFilesMethod)(PSI_CONTROL, CTEXTSTR file, int32_t x, int32_t y ) );
+ PSI_PROC( void, SetCommonSave)( PSI_CONTROL pc, void (CPROC*)(int PSI_CONTROL) );
+ #define SetControlSave(pc,mm)   SetCommonSave((PSI_CONTROL)pc,(void (CPROC*)(int, PSI_CONTROL))mm)
+ #define SetFrameSave(pc,mm)     SetCommonSave((PSI_CONTROL)pc,(void (CPROC*)(int, PSI_CONTROL))mm)
+ PSI_PROC( void, SetCommonLoad)( PSI_CONTROL pc, void (CPROC*)(int PSI_CONTROL) );
+ #define SetControlLoad(pc,mm)   SetCommonLoad((PSI_CONTROL)pc,(void (CPROC*)(int, PSI_CONTROL))mm)
+ #define SetFrameLoad(pc,mm)     SetCommonLoad((PSI_CONTROL)pc,(void (CPROC*)(int, PSI_CONTROL))mm)
+ // ---
+ // restore background restores the prior background of the control
+ // so that semi-opaque controls can draw over the correct surface.
+ PSI_PROC( void, RestoreBackground )( PSI_CONTROL pc, P_IMAGE_RECTANGLE r );
+ // --
+ // output to the physical surface the rectangle of the control's surface specified.
+ PSI_PROC( void, UpdateSomeControls )( PSI_CONTROL pc, P_IMAGE_RECTANGLE pRect );
+ PSI_PROC( void, SetUpdateRegionEx )( PSI_CONTROL pc, int32_t rx, int32_t ry, uint32_t rw, uint32_t rh DBG_PASS );
+ #define SetUpdateRegion(pc,x,y,w,h) SetUpdateRegionEx( pc,x,y,w,h DBG_SRC )
+ PSI_PROC( void, EnableCommonUpdates )( PSI_CONTROL frame, int bEnable );
+ #define EnableFrameUpdates(pf,e) EnableCommonUpdates( (PSI_CONTROL)pf, e )
+ #define EnableControlUpdates(pc,e) EnableCommonUpdates( (PSI_CONTROL)pc, e )
+ //PSI_PROC void SetControlKey( PSI_CONTROL pc, void (*KeyMethod)( PSI_CONTROL pc, int key ) );
+ PSI_PROC( void, UpdateCommonEx )( PSI_CONTROL pc, int bDraw DBG_PASS );
+ PSI_PROC( void, SmudgeCommonAreaEx )( PSI_CONTROL pc, P_IMAGE_RECTANGLE rect DBG_PASS );
+ #define SmudgeCommonArea( pc, area ) SmudgeCommonAreaEx( pc, area DBG_SRC )
+ PSI_PROC( void, SmudgeCommonEx )( PSI_CONTROL pc DBG_PASS );
+ #define SmudgeCommon(pc) SmudgeCommonEx( pc DBG_SRC )
+ //#ifdef SOURCE_PSI2
+ #define UpdateCommon(pc) SmudgeCommon(pc)
+ //#else
+ //#define UpdateCommon(pc) UpdateCommonEx(pc,TRUE DBG_SRC)
+ //#endif
+ //#define UpdateControlEx(pc,draw) UpdateCommonEx( (PSI_CONTROL)pc, draw )
+ //#define UpdateFrameEx(pc,draw)   UpdateCommonEx( (PSI_CONTROL)pc, draw )
+ PSI_PROC( void, UpdateControlEx)( PSI_CONTROL pc DBG_PASS );
+ #define UpdateControl(pc) UpdateControlEx( pc DBG_SRC )
+ PSI_PROC( int, GetControlID)( PSI_CONTROL pc );
+ PSI_PROC( void, SetControlID )( PSI_CONTROL pc, int ID );
+ PSI_PROC( void, DestroyCommonEx)( PSI_CONTROL *ppc DBG_PASS);
+ #define DestroyCommon(ppc) DestroyCommonEx(ppc DBG_SRC )
+ PSI_PROC( void, DestroyControlEx)( PSI_CONTROL pc DBG_PASS);
+ #define DestroyControl(pc) DestroyControlEx( pc DBG_SRC )
+ PSI_PROC( void, SetNoFocus)( PSI_CONTROL pc );
+ PSI_PROC( void *, ControlExtraData)( PSI_CONTROL pc );
+ _PROP_NAMESPACE
+ /* Show a dialog to edit a control's properties.
+    Parameters
+    control :  pointer to a control to edit the properties of.
+    TODO
+    Add an example image of this.                              */
+ PSI_PROC( int, EditControlProperties )( PSI_CONTROL control );
+ /* Shows a dialog to edit the properties of the frame (the outer
+    container control.) Borders matter, title, size, position...
+    TODO
+    Add ability to specify parent frame for stacking.
+    Parameters
+    frame :  frame to edit properties of
+    x :      x of the left of the edit dialog
+    y :      y of the top of the edit dialog                      */
+ PSI_PROC( int, EditFrameProperties )( PSI_CONTROL frame, int32_t x, int32_t y );
+ _PROP_NAMESPACE_END
+ USE_PROP_NAMESPACE
+ //------ General Utilities ------------
+ // adds OK and Cancel buttons based off the
+ // bottom right of the frame, and when pressed set
+ // either done (cancel) or okay(OK) ...
+ // could do done&ok or just done - but we're bein cheesey
+ PSI_PROC( void, AddCommonButtonsEx)( PSI_CONTROL pf
+                                 , int *done, CTEXTSTR donetext
+                                 , int *okay, CTEXTSTR okaytext );
+ PSI_PROC( void, AddCommonButtons)( PSI_CONTROL pf, int *done, int *okay );
+ PSI_PROC( void, SetCommonButtons)( PSI_CONTROL pf, int *pdone, int *pokay );
+ PSI_PROC( void, InitCommonButton )( PSI_CONTROL pc, int *value );
+ // perhaps give a callback for within the loop?
+ PSI_PROC( void, CommonLoop)( int *done, int *okay );
+ // perhaps give a callback for within the loop?
+ PSI_PROC( void, CommonWait)( PSI_CONTROL pf );
+ // a frame in edit mode, once edit mode done, continue
+ PSI_PROC( void, CommonWaitEndEdit)( PSI_CONTROL *pf );
+ PSI_PROC( void, ProcessControlMessages)(void);
+ /* Buttons. Clickable buttons, Radio buttons and checkboxes. */
+ _BUTTON_NAMESPACE
+ /* Symbol which can be used as an attribute of a button to not
+    show the button border (custom drawn buttons)               */
+ #define BUTTON_NO_BORDER 0x0001
+ /* Defined function signature for the event attached to a button
+    when the button is clicked.                                   */
+ typedef void (CPROC *ButtonPushMethod)(uintptr_t,PSI_CONTROL);
+ /* A function signature for the event attached to a "Custom
+    Button" when it is drawn, this function is called.       */
+ typedef void (CPROC*ButtonDrawMethod)(uintptr_t psv, PSI_CONTROL pc);
+ CONTROL_PROC(Button,(CTEXTSTR,void (CPROC*PushMethod)(uintptr_t psv, PSI_CONTROL pc)
+         , uintptr_t Data));
+ // this method invokes the button push method...
+ PSI_PROC( void, InvokeButton )( PSI_CONTROL pc );
+ PSI_PROC( void, GetButtonPushMethod )( PSI_CONTROL pc, ButtonPushMethod *method, uintptr_t *psv );
+ PSI_PROC( PSI_CONTROL, SetButtonPushMethod )( PSI_CONTROL pc, ButtonPushMethod method, uintptr_t psv );
+ // BUTTON_ flags...
+ PSI_PROC( PSI_CONTROL, SetButtonAttributes )( PSI_CONTROL pc, int attr );
+ PSI_PROC( PSI_CONTROL, SetButtonDrawMethod )( PSI_CONTROL pc, ButtonDrawMethod method, uintptr_t psv );
+ /* An all-in-one macro to create a Slider control, set the
+    callback, and set direction options.
+    Parameters
+    f :            frame to create the button in
+    x :            left coordinate of the control
+    y :            top coordinate of the control
+    w :            how wide the control is
+    h :            how tall to make the control
+    nID :          ID of the control (any numeric ID you want to
+                   call it)
+    a :            SliderDirection
+    c :            caption \- text for the button.
+    update_proc :  button click callback function.
+                   ButtonPushMethod.
+    user_data :    user data to pass to callback when it is
+                   invoked.
+    Returns
+    PSI_CONTROL that is a button.                                */
+ #define MakeButton(f,x,y,w,h,id,c,a,p,d) SetButtonAttributes( SetButtonPushMethod( MakeCaptionedControl(f,NORMAL_BUTTON,x,y,w,h,id,c), p, d ), a )
+ PSI_CONTROL PSIMakeImageButton( PSI_CONTROL parent, int x, int y, int w, int h, uint32_t ID
+         , Image pImage
+         , void (CPROC*PushMethod)(uintptr_t psv, PSI_CONTROL pc)
+         , uintptr_t Data );
+ /* An all-in-one macro to create a Slider control, set the
+    callback, and set direction options.
+    Parameters
+    f :            frame to create the button in
+    x :            left coordinate of the control
+    y :            top coordinate of the control
+    w :            how wide the control is
+    h :            how tall to make the control
+    nID :          ID of the control (any numeric ID you want to
+                   call it)
+    a :            SliderDirection
+    c :            caption \- text for the button.
+    update_proc :  button click callback function.
+                   ButtonPushMethod.
+    user_data :    user data to pass to callback when it is
+                   invoked.
+    Returns
+    PSI_CONTROL that is a button.                                */
+ #define MakeImageButton(f,x,y,w,h,id,c,a,p,d) SetButtonPushMethod( SetButtonAttributes( SetButtonImage( MakeControl(f,IMAGE_BUTTON,x,y,w,h,id),c),a),p,d)
+ PSI_PROC( PSI_CONTROL, SetButtonImage )( PSI_CONTROL pc, Image image );
+ // set up/down state images for button ( NORMAL_BUTTON or IMAGE_BUTTON_NAME )
+ PSI_PROC( PSI_CONTROL, SetButtonImages )( PSI_CONTROL pc, Image normal_image, Image pressed_image );
+ // set up/down state images for button ( NORMAL_BUTTON or IMAGE_BUTTON_NAME )
+ PSI_PROC( PSI_CONTROL, SetButtonSlicedImages )( PSI_CONTROL pc, SlicedImage normal_image, SlicedImage pressed_image );
+ // set up/down state images for button with mouse rollover ( NORMAL_BUTTON or IMAGE_BUTTON_NAME )
+ PSI_PROC( PSI_CONTROL, SetButtonRolloverImages )( PSI_CONTROL pc, Image pRollover, Image pRollover_pressed );
+ // set up/down state images for button with mouse rollover ( NORMAL_BUTTON or IMAGE_BUTTON_NAME )
+ PSI_PROC( PSI_CONTROL, SetButtonSlicedRolloverImages )( PSI_CONTROL pc, SlicedImage pRollover, SlicedImage pRollover_pressed );
+ // set an offset for button caption text (left/right bias for non-symetric backgrounds)
+ PSI_PROC( PSI_CONTROL, SetButtonTextOffset )( PSI_CONTROL pc, int32_t x, int32_t y );
+ // set up/down state images for button for focused state; overrides drawing focus underline.
+ //  ( NORMAL_BUTTON or IMAGE_BUTTON_NAME )
+ PSI_PROC( PSI_CONTROL, SetButtonFocusedImages )( PSI_CONTROL pc, Image pImage, Image pImage_pressed );
+ // set up/down state images for button for focused state; overrides drawing focus underline.
+ //  ( NORMAL_BUTTON or IMAGE_BUTTON_NAME )
+ PSI_PROC( PSI_CONTROL, SetButtonSlicedFocusedImages )( PSI_CONTROL pc, SlicedImage pImage, SlicedImage pImage_pressed );
+ /* An all-in-one macro to create a Slider control, set the
+    callback, and set direction options.
+    Parameters
+    f :            frame to create the button in
+    x :            left coordinate of the control
+    y :            top coordinate of the control
+    w :            how wide the control is
+    h :            how tall to make the control
+    nID :          ID of the control (any numeric ID you want to
+                   call it)
+    a :            SliderDirection
+    c :            caption \- text for the button.
+    update_proc :  button click callback function.
+                   ButtonPushMethod.
+    user_data :    user data to pass to callback when it is
+                   invoked.
+    Returns
+    PSI_CONTROL that is a button.                                */
+ #define MakeCustomDrawnButton(f,x,y,w,h,id,a,dr,p,d) SetButtonPushMethod( SetButtonDrawMethod( SetButtonAttributes( MakeControl(f,CUSTOM_BUTTON,x,y,w,h,id),a ), dr, d ), p,d)
+ PSI_PROC( void, PressButton)( PSI_CONTROL pc, int bPressed );
+ PSI_PROC( void, SetButtonFont)( PSI_CONTROL pc, SFTFont font );
+ PSI_PROC( int, IsButtonPressed)( PSI_CONTROL pc );
+ PSI_PROC( PSI_CONTROL, SetButtonGroupID )(PSI_CONTROL pc, int nGroupID );
+ PSI_PROC( PSI_CONTROL, SetButtonCheckedProc )( PSI_CONTROL pc
+               , void (CPROC*CheckProc)(uintptr_t psv, PSI_CONTROL pc)
+                , uintptr_t psv );
+ /* Attributes that affect behavior of radio buttons. */
+ enum RadioButtonAttributes{
+  RADIO_CALL_ALL       = 0,
+  RADIO_CALL_CHECKED   = 1,
+  RADIO_CALL_UNCHECKED = 2,
+   RADIO_CALL_CHANGED   = (RADIO_CALL_CHECKED|RADIO_CALL_UNCHECKED)
+ };
+ /* An all-in-one macro to create a Slider control, set the
+    callback, and set direction options.
+    Parameters
+    f :            frame to create the button in
+    x :            left coordinate of the control
+    y :            top coordinate of the control
+    w :            how wide the control is
+    h :            how tall to make the control
+    nID :          ID of the control (any numeric ID you want to
+                   call it)
+    a :            SliderDirection
+    c :            caption \- text for the button.
+    update_proc :  button click callback function.
+                   ButtonPushMethod.
+    user_data :    user data to pass to callback when it is
+                   invoked.
+    Returns
+    PSI_CONTROL that is a button.                                */
+ #define MakeRadioButton(f,x,y,w,h,id,t,gr,a,p,d) SetCheckButtonHandler( SetButtonGroupID( SetButtonAttributes( MakeCaptionedControl(f,RADIO_BUTTON,x,y,w,h,id,t), a ), gr ), p, d )
+ /* An all-in-one macro to create a Slider control, set the
+    callback, and set direction options.
+    Parameters
+    f :            frame to create the button in
+    x :            left coordinate of the control
+    y :            top coordinate of the control
+    w :            how wide the control is
+    h :            how tall to make the control
+    nID :          ID of the control (any numeric ID you want to
+                   call it)
+    a :            SliderDirection
+    c :            caption \- text for the button.
+    update_proc :  button click callback function.
+                   ButtonPushMethod.
+    user_data :    user data to pass to callback when it is
+                   invoked.
+    Returns
+    PSI_CONTROL that is a button.                                */
+ #define MakeCheckButton(f,x,y,w,h,id,t,a,p,d) SetCheckButtonHandler( SetButtonAttributes( SetButtonGroupID( MakeCaptionedControl(f,RADIO_BUTTON,x,y,w,h,id,t),0),a),p,d)
+ PSI_PROC( PSI_CONTROL, SetRadioButtonGroup )( PSI_CONTROL, int group_id );
+ PSI_PROC( PSI_CONTROL, SetCheckButtonHandler )( PSI_CONTROL
+                 , void (CPROC*CheckProc)(uintptr_t psv, PSI_CONTROL pc)
+                 , uintptr_t psv );
+ PSI_PROC( int, GetCheckState)( PSI_CONTROL pc );
+ PSI_PROC( void, SetCheckState)( PSI_CONTROL pc, int nState );
+ // set the button's background color...
+ PSI_PROC( void, SetButtonColor )( PSI_CONTROL pc, CDATA color );
+ _BUTTON_NAMESPACE_END
+ USE_BUTTON_NAMESPACE
+ /* Static Text - this control just shows simple text on a
+    dialog. Non selectable.
+                                                           */
+  _TEXT_NAMESPACE
+  /* Attributes which can be passed to SetTextControlAttributes. */
+  enum TextControlAttributes {
+  TEXT_NORMAL     = 0x00,
+  TEXT_VERTICAL   = 0x01,
+  TEXT_CENTER     = 0x02,
+  TEXT_RIGHT      = 0x04,
+  TEXT_FRAME_BUMP = 0x10,
+ /* frame of the text control is bump frame (1 up, 1 down thin
+     frame)                                                     */
+    TEXT_FRAME_DENT = 0x20,
+  TEXT_SHADOW_TEXT = 0x40
+  };
+ /* \ \
+    Parameters
+    pf :   frame to create the control in
+    x :   left coordinate of control
+    y :   top coordinate of the control
+    w :   width of the control
+    h :   height of the control
+    ID :  an integer to identify the control
+    text :   text to initialize the control with
+    flags :   Attributes \- can be one or more of TextControlAttributes
+    Returns
+    a PSI_CONTROL which is an text control.               */
+ #define MakeTextControl( pf,x,y,w,h,id,text,flags ) SetTextControlAttributes( MakeCaptionedControl( pf, STATIC_TEXT, x, y, w,h, id, text ), flags )
+ /* Set the alignment of the text in the TextControl.
+    Parameters
+    pc :     a "TextControl" control.
+    align :  A flag from TextControlAttributes        */
+ PSI_PROC( void, SetControlAlignment )( PSI_CONTROL pc, int align );
+ /* offset is a pixel specifier... +/- amount from it's normal
+    position. returns if any text remains visible (true is
+    visible, false is no longer visible, allowing upper level
+    application to reset to 0 offset.
+    The least amount and maximum effective amount can be received
+    from GetControlTextOffsetMinMax.
+    Parameters
+    pc :      a Text control.
+    offset :  offset to apply to the text.
+    Returns
+    TRUE if ti was a valid control, else FALSE.                   */
+ PSI_PROC( LOGICAL, SetControlTextOffset )( PSI_CONTROL pc, int offset );
+ /* Get the minimum and maximum offsets that can be applied to a
+    text control based on its justification attributes before the
+    text will not be drawn in the control. This can be used to
+    marquee the text in from the left with the first update
+    showing text, until the last bit of text scrolls out at the
+    end.
+    Parameters
+    pc :          A STATIC_TEXT_NAME control.
+    min_offset :  pointer to an integer that is filled with the
+                  least amount that can be set for an offset
+                  before text is not shown.
+    max_offset :  pointer to an integer that is filled with the
+                  most amount of offset that can be set before
+                  text is not shown.
+    Returns
+    TRUE if a valid Text control was passed.
+    FALSE otherwise.
+    See Also
+    SetControlTextOffset                                          */
+ PSI_PROC( LOGICAL, GetControlTextOffsetMinMax )( PSI_CONTROL pc, int *min_offset, int *max_offset );
+ CAPTIONED_CONTROL_PROC( TextControl, (void) );
+ /* Sets attributes of the text control.
+    Parameters
+    pc :     a STATIC_TEXT_NAME control.
+    flags :  one or move values combined from
+             TextControlAttributes.           */
+ PSI_PROC( PSI_CONTROL, SetTextControlAttributes )( PSI_CONTROL pc, int flags );
+ /* Sets the foreground and background of a text control.
+    Parameters
+    pc :    a Text control
+    fore :  CDATA describing the foreground color to use
+    back :  CDATA describing the background color to use. 0 is no
+            color, and only the foreground text is output. See
+            PutString.                                            */
+ PSI_PROC( void, SetTextControlColors )( PSI_CONTROL pc, CDATA fore, CDATA back );
+ _TEXT_NAMESPACE_END
+ USE_TEXT_NAMESPACE
+ /* Edit Control. This is a control that allows for text input. It
+    also works as a drop file acceptor, and the name of the file
+    or folder being dropped on it is entered as text.              */
+  _EDIT_NAMESPACE
+  /* Options which can be passed to the MakeEditControl macro. */
+  enum EditControlOptions {
+   EDIT_READONLY = 0x01,
+   EDIT_PASSWORD = 0x02
+  };
+ CAPTIONED_CONTROL_PROC( EditControl, (CTEXTSTR text) );
+ /* This enters the text into the edit field as if it were typed.
+    This respects things like marked region auto delete. It's not
+    the same as SetText, but will insert at the position the
+    cursor is at.
+    Parameters
+    control :  control to type into
+    text :     the text to type.                                  */
+ PSI_PROC( void, TypeIntoEditControl )( PSI_CONTROL control, CTEXTSTR text );
+ /* \ \
+    Parameters
+    f :   frame to create the control in
+    x :   left coordinate of control
+    y :   top coordinate of the control
+    w :   width of the control
+    h :   height of the control
+    ID :  an integer to identify the control
+    t :   text to initialize the control with
+    a :   Attributes \- can be one or more of EditControlOptions
+    Returns
+    a PSI_CONTROL which is an edit control.               */
+ #define MakeEditControl(f,x,y,w,h,id,t,a) SetEditControlPassword( SetEditControlReadOnly( MakeCaptionedControl( f,EDIT_FIELD,x,y,w,h,id,t )  , ( a & EDIT_READONLY)?TRUE:FALSE )    , ( a & EDIT_PASSWORD)?TRUE:FALSE )
+ /* Sets an edit control into read only mode. This actually means
+    that the user cannot enter data, and can only see what is in
+    it. The difference between this and a text control is the
+    border and background style.
+    Parameters
+    pc :         edit control to set readonly
+    bReadOnly :  if TRUE, sets readonly. If false, clears readonly.
+    Returns
+    The PSI Control passed is returned, for nesting.                */
+ PSI_PROC( PSI_CONTROL, SetEditControlReadOnly )( PSI_CONTROL pc, LOGICAL bReadOnly );
+ /* If password style is set, then the text in the edit field is
+    shown as ******.
+    Parameters
+    pc :         pointer to an edit control
+    bPassword :  if TRUE, Sets style to password, if FALSE, clears
+                 password style.                                   */
+ PSI_PROC( PSI_CONTROL, SetEditControlPassword )( PSI_CONTROL pc, LOGICAL bPassword );
+ //PSI_PROC( void, SetEditFont )( PSI_CONTROL pc, SFTFont font );
+ // Use GetControlText/SetControlText
+ _EDIT_NAMESPACE_END
+ USE_EDIT_NAMESPACE
+ /* Slider Control - this is a generic control that has a minimum
+    value, and a maximum value, and a clickable knob that can
+    select a value inbetween.
+    the maximum value may be less than the minimum value, the
+    current selected value will be between these.
+    A horizontal slider, the value for minimum is on the left. A
+    vertical slider, the value for minimum is on the bottom.      */
+  _SLIDER_NAMESPACE
+  /* These are values to pass to SetSliderOptions to control the
+     slider's direction.                                         */
+  enum SliderDirection {
+   SLIDER_HORIZ =1,
+ /* Slider is horizontal. That is the knob moves left and right. The
+      value as minimum is at the left, and the value maximum is at
+      the right. numerically minimum can be more than maximum.         */
+    SLIDER_VERT  =0
+ /* Slider is vertical. That is the knob moves up and down. The
+       value as minimum is at the bottom, and the value maximum is
+       at the top. numerically minimum can be more than maximum.   */
+  };
+ /* An all-in-one macro to create a Slider control, set the
+    callback, and set direction options.
+    Parameters
+    pf :           frame to create the slider in
+    x :            left coordinate of the control
+    y :            top coordinate of the control
+    w :            how wide the control is
+    h :            how tall to make the control
+    nID :          ID of the control (any numeric ID you want to
+                   call it)
+    opt :          SliderDirection
+    update_proc :  callback to which gets called when the slider's
+                   current value changes.
+    user_data :    user data to pass to callback when it is
+                   invoked.                                        */
+ #define MakeSlider(pf,x,y,w,h,nID,opt,updateproc,updateval) SetSliderOptions( SetSliderUpdateHandler( MakeControl(pf,SLIDER_CONTROL,x,y,w,h,nID ), updateproc,updateval ), opt)
+ //CONTROL_PROC( Slider, (
+ typedef void (CPROC*SliderUpdateProc)(uintptr_t psv, PSI_CONTROL pc, int val);
+ /* Set the new minimum, maximum and current for the slider.
+    Parameters
+    pc :       pointer to a slider control \- does nothing
+               otherwise.
+    min :      new minimum value for the mimimum amount to scale.
+    current :  the current selected value. (should be between
+               min\-max)
+    max :      new maximum value which can be selected.           */
+ PSI_PROC( void, SetSliderValues)( PSI_CONTROL pc, int min, int current, int max );
+ /* Set's the slider's direction. (horizontal or vertical)
+    Parameters
+    pc :    slider control
+    opts :  SliderDirection                                */
+ PSI_PROC( PSI_CONTROL, SetSliderOptions )( PSI_CONTROL pc, int opts );
+ /* Set a callback function to allow responding to changes in the
+    slider.
+    Parameters
+    pc :                 pointer to a slider control
+    SliderUpdateEvent :  callback to a user function when the
+                         slider's value changes.
+    psvUser :            data to pass to callback function when
+                         invoked.                                 */
+ PSI_PROC( PSI_CONTROL, SetSliderUpdateHandler )( PSI_CONTROL pc, SliderUpdateProc, uintptr_t psvUser );
+ _SLIDER_NAMESPACE_END
+ USE_SLIDER_NAMESPACE
+ /* SFTFont Control - Really this is all about a font picker. The
+    data used to create the font to show can be retreived to be
+    saved for later recreation.                                 */
+ _FONTS_NAMESPACE
+ #ifndef FONT_RENDER_SOURCE
+ // types of data which may result...
+ //typedef struct font_data_tag *PFONTDATA;
+ //typedef struct render_font_data_tag *PRENDER_FONTDATA;
+ #endif
+ // common dialog to get a font which is then available for all
+ // Image text operations (PutString, PutCharacter)
+ // result font selection data can be resulted in the area referenced by
+ // the pointer, and size pointer...
+ //
+ // actual work done here for pUpdateFontFor(NULL) ...
+ // if pUpdateFontFor is not null, an apply button will appear, allowing the actual
+ // control to be updated to the chosen font.
+ //
+ /* scale_width, height magically apply... and are saved in the
+    font data structure for re-rendering... if a font is rendered
+    here the same exact font result will be acheived using
+    RenderScaledFont( pdata )
+    Parameters
+    width_scale :   pointer to a scalar fraction to scale
+                    the font by
+    height_scale :  pointer to a scalar fraction to scale
+                    the font by                                          */
+ PSI_PROC( SFTFont, PickScaledFontWithUpdate )( int32_t x, int32_t y
+               , PFRACTION width_scale
+               , PFRACTION height_scale
+               , size_t *pFontDataSize
+                // resulting parameters for the data and size of data
+                // which may be passe dto RenderFontData
+               , POINTER *pFontData
+               , PSI_CONTROL pAbove
+               , void (CPROC *UpdateFont)( uintptr_t psv, SFTFont font )
+               , uintptr_t psvUpdate );
+ /* <combine sack::PSI::font::PickScaledFontWithUpdate@int32_t@int32_t@PFRACTION@PFRACTION@uint32_t*@POINTER *@PSI_CONTROL@void __cdecl *UpdateFont uintptr_t psv\, SFTFont font@uintptr_t>
+    PickFontWithUpdate can be used to receive event notices when
+    the font is changed, allowing immediately refresh using the
+    changed font.
+    Parameters
+    x :              x screen position to put the dialog
+    y :              y screen position to put the dialog
+    pFontDataSize :  pointer to a 32 bit value to receive the font
+                     data length. (can ba NULL to ignore)
+    pFontData :      pointer to pointer to get font_data. (can ba
+                     NULL to ignore)
+    pAbove :         pointer to a frame to stack this one above.
+    UpdateFont :     user callback passed the psvUpdate data and
+                     the SFTFont that has been updated.
+    psvUpdate :      user data to pass to use callback when
+                     invoked.                                                                                                                                           */
+ PSI_PROC( SFTFont, PickFontWithUpdate )( int32_t x, int32_t y
+             , size_t *pFontDataSize
+            // resulting parameters for the data and size of data
+            // which may be passe dto RenderFontData
+             , POINTER *pFontData
+             , PSI_CONTROL pAbove
+             , void (CPROC *UpdateFont)( uintptr_t psv, SFTFont font )
+             , uintptr_t psvUpdate );
+ // pick font for uses pickfontwithupdate where the update procedure
+ // sets the font on a control.
+ PSI_PROC( SFTFont, PickFontFor )( int32_t x, int32_t y
+           , size_t *pFontDataSize
+          // resulting parameters for the data and size of data
+                            // which may be passe dto RenderFontData
+           , POINTER *pFontData
+            , PSI_CONTROL pAbove
+            , PSI_CONTROL pUpdateFontFor );
+ /* Pick a font. This shows a dialog
+    Parameters
+    x :          screen location of the dialog
+    y :          screen location of the dialog
+    size :       pointer to a 32 bit value to receive the length
+                 of the font's data
+    pFontData :  pointer to a pointer to be filled with the
+                 address of a FONTDATA describing the chosen font.
+    pAbove :     parent window to make sure this is stacked above.
+    Example
+    <code lang="c++">
+    POINTER data = NULL; // gets filled with font data - initialize to NULL or a previously returned FONTDATA.
+    uint32_t data_length = 0; // result font data length.
+    SFTFont font = PickFont( 0, 0, &amp;data_length, &amp;data, NULL );
+    {
+        // and like I really need to exemplify saving a block of data...
+        \FILE *file = fopen( "font_description", "wb" );
+        fwrite( data, 1, data_length, file );
+        fclose( file );
+    }
+    </code>                                                                                                    */
+ PSI_PROC( SFTFont, PickFont)( int32_t x, int32_t y
+                                   , size_t * size, POINTER *pFontData
+          , PSI_CONTROL pAbove );
+ /* <combine sack::PSI::font::PickScaledFontWithUpdate@int32_t@int32_t@PFRACTION@PFRACTION@uint32_t*@POINTER *@PSI_CONTROL@void __cdecl *UpdateFont uintptr_t psv\, SFTFont font@uintptr_t>
+    \ \                                                                                                                                                                 */
+ #define PickScaledFont( x,y,ws,hs,size,fd,pa) PickScaledFontWithUpdate( x,y,ws,hs,size,fd,pa,NULL,0)
+ // this can take the resulting data from a pick font operation
+ // and result in a font... concerns at the moment are for cases
+ // of trying to use the same  string on different systems (different font
+ // locations) and getting a same (even similar?) result
+ //PSI_PROC( void, DestroyFont)( SFTFont *font );
+ // takes an already rendered font, and writes it to a file.
+ // at the moment this will not work with display services....
+ //PSI_PROC( void, DumpFontFile )( CTEXTSTR name, SFTFont font );
+ _FONTS_NAMESPACE_END
+ USE_FONTS_NAMESPACE
+ PSI_PROC( void, DumpFrameContents )( PSI_CONTROL pc );
+ //------- common between combobox and listbox
+ typedef struct listitem_tag *PLISTITEM;
+ typedef void (CPROC*SelectionChanged )( uintptr_t psvUser, PSI_CONTROL pc, PLISTITEM hli );
+ /* PopupEvent will be called just before the menu pops up, and just after it is hidden,
+   LOGICAL parameter is TRUE on show, and FALSE on hide.*/
+ PSI_PROC( void, SetComboBoxPopupEventCallback )( PSI_CONTROL pc, void (CPROC*PopupEvent)( uintptr_t,LOGICAL ), uintptr_t psvEvent );
+ PSI_PROC( void, SetComboBoxSelectedItem )( PSI_CONTROL pc, PLISTITEM hli );
+ //------- ComboBox Control --------
+ _COMBOBOX_NAMESPACE
+ PSI_PROC( PLISTITEM, AddComboBoxItem )( PSI_CONTROL pc, CTEXTSTR text );
+ PSI_PROC( void, SetComboBoxSelChangeHandler )( PSI_CONTROL pc, SelectionChanged proc, uintptr_t psvUser );
+ PSI_PROC( void, ResetComboBox )( PSI_CONTROL pc );
+ _COMBOBOX_NAMESPACE_END
+ USE_COMBOBOX_NAMESPACE
+ //------- ListBox Control --------
+ _LISTBOX_NAMESPACE
+ #define LISTOPT_TREE   2
+ #define LISTOPT_SORT   1
+ CONTROL_PROC( ListBox, (void) );
+ #define MakeListBox(pf,x,y,w,h,nID,opt) SetListboxIsTree( MakeControl(pf,LISTBOX_CONTROL,x,y,w,h,nID), (opt & LISTOPT_TREE)?TRUE:FALSE )
+ PSI_PROC( PSI_CONTROL, SetListboxIsTree )( PSI_CONTROL pc, int bTree );
+ #define LISTBOX_SORT_NORMAL 1
+ #define LISTBOX_SORT_DISABLE 0
+ // may someday add SORT_INVERSE?
+ PSI_PROC( PSI_CONTROL, SetListboxSort )( PSI_CONTROL pc, int bSortTrue );
+ PSI_PROC( PSI_CONTROL, SetListboxMultiSelect )( PSI_CONTROL, int bEnable );
+ PSI_PROC( PSI_CONTROL, SetListboxMultiSelectEx )( PSI_CONTROL, int bEnable, int bLazy );
+ PSI_PROC( int, GetListboxMultiSelectEx )( PSI_CONTROL, int *multi, int *lazy );
+ // returns only multiselect option, not lazy with multselect
+ PSI_PROC( int, GetListboxMultiSelect )( PSI_CONTROL );
+ PSI_PROC( void, ResetList)( PSI_CONTROL pc );
+ // put an item at end of list.
+ PSI_PROC( PLISTITEM, AddListItem)( PSI_CONTROL pc, CTEXTSTR text );
+ PSI_PROC( PLISTITEM, AddListItemEx)( PSI_CONTROL pc, int nLevel, CTEXTSTR text );
+ // put an item after a known item... NULL to add at head of list.
+ PSI_PROC( PLISTITEM, InsertListItem)( PSI_CONTROL pc, PLISTITEM pAfter, CTEXTSTR text );
+ PSI_PROC( PLISTITEM, InsertListItemEx)( PSI_CONTROL pc, PLISTITEM pAfter, int nLevel, CTEXTSTR text );
+ PSI_PROC( void, DeleteListItem)( PSI_CONTROL pc, PLISTITEM hli );
+ PSI_PROC( PLISTITEM, SetItemData)( PLISTITEM hli, uintptr_t psv );
+ PSI_PROC( uintptr_t, GetItemData)( PLISTITEM hli );
+ PSI_PROC( void, GetListItemText)( PLISTITEM hli, TEXTSTR buffer, int bufsize );
+ /* depreicated, use GetListItemText instead, please */
+ PSI_PROC( void, GetItemText)( PLISTITEM hli, int bufsize, TEXTSTR buffer );
+ #define GetItemText(hli,bufsize,buf) GetListItemText(hli,buf,bufsize)
+ PSI_PROC( void, SetItemText )( PLISTITEM hli, CTEXTSTR buffer );
+ PSI_PROC( PLISTITEM, GetSelectedItem)( PSI_CONTROL pc );
+ PSI_PROC( void, ClearSelectedItems )( PSI_CONTROL plb );
+ PSI_PROC( void, SetSelectedItem)( PSI_CONTROL pc, PLISTITEM hli );
+ PSI_PROC( void, SetItemSelected)( PSI_CONTROL pc, PLISTITEM hli, int bSelect );
+ PSI_PROC( void, SetCurrentItem)( PSI_CONTROL pc, PLISTITEM hli );
+ PSI_PROC( PLISTITEM, FindListItem)( PSI_CONTROL pc, CTEXTSTR text );
+ PSI_PROC( PLISTITEM, GetNthTreeItem )( PSI_CONTROL pc, PLISTITEM pli, int level, int idx );
+ PSI_PROC( PLISTITEM, GetNthItem )( PSI_CONTROL pc, int idx );
+ PSI_PROC( void, SetSelChangeHandler)( PSI_CONTROL pc, SelectionChanged proc, uintptr_t psvUser );
+ typedef void (CPROC*DoubleClicker)( uintptr_t psvUser, PSI_CONTROL pc, PLISTITEM hli );
+ PSI_PROC( void, SetDoubleClickHandler)( PSI_CONTROL pc, DoubleClicker proc, uintptr_t psvUser );
+ // if bopened - branch is being expanded, else it is being closed (collapsed)
+ typedef void (CPROC*ListItemOpened)( uintptr_t psvUser, PSI_CONTROL pc, PLISTITEM hli, LOGICAL bOpened );
+ PSI_PROC( void, SetListItemOpenHandler )( PSI_CONTROL pc, ListItemOpened proc, uintptr_t psvUser );
+ // returns the prior state of disabledness
+ PSI_PROC( int, DisableUpdateListBox )( PSI_CONTROL pc, LOGICAL bDisable );
+ // on right click down,up this proc is triggered...
+ PSI_PROC( void, SetItemContextMenu )( PLISTITEM pli, PMENU pMenu, void (CPROC*MenuProc)(uintptr_t, PLISTITEM, uint32_t menuopt ), uintptr_t psv );
+ PSI_PROC( int, OpenListItem )( PLISTITEM pli, int bOpen );
+ PSI_PROC( void, SetListBoxTabStops )( PSI_CONTROL pc, int nStops, int *pStops );
+ PSI_PROC( void, EnumListItems )( PSI_CONTROL pc
+            , PLISTITEM pliStart
+            , void (CPROC *HandleListItem )(uintptr_t,PSI_CONTROL,PLISTITEM)
+            , uintptr_t psv );
+ PSI_PROC( void, EnumSelectedListItems )( PSI_CONTROL pc
+              , PLISTITEM pliStart
+              , void (CPROC *HandleListItem )(uintptr_t,PSI_CONTROL,PLISTITEM)
+              , uintptr_t psv );
+ PSI_PROC( PSI_CONTROL, GetItemListbox )( PLISTITEM pli );
+ PSI_PROC( void, MoveListItemEx )( PSI_CONTROL pc, PLISTITEM pli, int level_direction, int direction );
+ PSI_PROC( void, MoveListItem )( PSI_CONTROL pc, PLISTITEM pli, int direction );
+ _LISTBOX_NAMESPACE_END
+ USE_LISTBOX_NAMESPACE
+ //------- GridBox Control --------
+ #ifdef __LINUX__
+ typedef uintptr_t HGRIDITEM;
+ PSI_PROC(PSI_CONTROL, MakeGridBox)( PSI_CONTROL pf, int options, int x, int y, int w, int h,
+                                  int viewport_x, int viewport_y, int total_x, int total_y,
+                                  int row_thickness, int column_thickness, uintptr_t nID );
+ #endif
+ /* * ------ Popup Menus ----------- *
+    popup interface.... these are mimics of windows... and at
+    some point should internally alias to popup code - if I ever
+    get it back.
+    Actually, I depricated my own implementation (maybe on Linux
+    they could resemble working), but since I cloned the Windows
+    API, I just fell back to standard windows popups instead.    */
+ _MENU_NAMESPACE
+ /* Create a popup menu which can have items added to it. This is
+    not shown until TrackPopup is called.
+    Parameters
+    None.                                                         */
+ PSI_PROC( PMENU, CreatePopup)( void );
+ /* Destroys a popup menu.
+    Parameters
+    pm :  menu to delete   */
+ PSI_PROC( void, DestroyPopup)( PMENU pm );
+ /* Clears all entries on a menu.
+    Parameters
+    pm :  menu to clear           */
+ PSI_PROC( void, ResetPopup)( PMENU pm );
+ /* get sub-menu data...
+    Parameters
+    pm :    PMENU to get popup data for...
+    item :  Item on the menu to get the popup menu for. */
+ PSI_PROC( void *,GetPopupData)( PMENU pm, int item );
+ /* Add a new item to a popup menu
+    Parameters
+    pm :     menu to add items to
+    type :   type of the item (MF_STRING,MF_POPUP, MF_SEPARATOR ?)
+    dwID :   ID of item. (PMENU of a popup menu if it's a popup
+             item)
+    pData :  text data of the item (unless separator)             */
+ PSI_PROC( PMENUITEM, AppendPopupItem)( PMENU pm, int type, uintptr_t dwID, CPOINTER pData );
+ /* Set a checkmark on a menu item.
+    Parameters
+    pm :     menu containing the item to check
+    dwID :   ID of the item to check
+    state :  (MF_CHECKED, MF_UNCHECKED?)       */
+ PSI_PROC( PMENUITEM, CheckPopupItem)( PMENU pm, uintptr_t dwID, uint32_t state );
+ /* Delete a single item from a menu.
+    Parameters
+    pm :     menu containing the item to delete
+    dwID :   ID of the item to delete
+    state :  (?)                                */
+ PSI_PROC( PMENUITEM, DeletePopupItem)( PMENU pm, uintptr_t dwID, uint32_t state );
+ /* This Shows a popup on the screen, and waits until it returns
+    with a result. I guess this is actually the internal routine
+    used for handling selected popup items on popup menus.
+    Parameters
+    hMenuSub :  sub menu to track
+    parent :    parent menu that has started tracking a
+                submenu.                                         */
+ PSI_PROC( int, TrackPopup)( PMENU hMenuSub, PSI_CONTROL parent );
+ _MENU_NAMESPACE_END
+ USE_MENU_NAMESPACE
+ //------- File Selector Control --------
+ // these are basic basic file selection dialogs...
+  // the concept is valid, and they should be common like controls...
+  // types are tab sepeared list of default extensions to open.
+  // returns TRUE if the filename is selected and the result buffer is filled.
+    // returns FALSE if the filename selection is canceled, result is not modified.
+  // if bcreate is used, then the filename does not HAVE to exist..
+    // bCreate may also be read as !bMustExist
+ PSI_PROC( int, PSI_PickFile)( PSI_CONTROL parent, CTEXTSTR basepath, CTEXTSTR types, TEXTSTR result, uint32_t result_len, int bCreate );
+ PSI_PROC( int, PSI_OpenFile)( CTEXTSTR basepath, CTEXTSTR types, TEXTSTR result );
+ // this may be used for save I think....
+ //PSI_PROC( int, PSI_OpenFileEx)( PSI_CONTROL parent, CTEXTSTR basepath, CTEXTSTR types, CTEXTSTR result, uint32_t result_len, int Create );
+ //------- Scroll Control --------
+ #define SCROLL_HORIZONTAL 1
+ #define SCROLL_VERITCAL   0
+ /* This is a scrollbar type control. It's got an up/down or
+    left/right arrow, and a thumb that can be clicked on. Used by
+    the listbox control.                                          */
+ _SCROLLBAR_NAMESPACE
+  // types values for MoveScrollBar
+  enum MoveScrollBarTypes{
+  UPD_1UP       = 0,
+  UPD_1DOWN     = 1,
+  UPD_RANGEUP   = 2,
+  UPD_RANGEDOWN = 3,
+  UPD_THUMBTO   = 4
+  };
+ /* \ \
+    Parameters
+    pc :     SCROLLBAR_CONTROL_NAME
+    min :    minimum value (needs to be less than max)
+    cur :    current value (should be between min to max
+    range :  how many of the values to span
+    max :    max value
+    Remarks
+    The range of the control controls how wide the thumb control
+    is. It should reflect things like how many of the maximum
+    items are showing in a list.                                 */
+ PSI_PROC( void, SetScrollParams)( PSI_CONTROL pc, int min, int cur, int range, int max );
+ CONTROL_PROC( ScrollBar, (uint32_t attr) );
+ /* Set the event callback for when the position on the control
+    changes.
+    Parameters
+    pc :        a SCROLLBAR_CONTROL_NAME.
+    callback :  the address of the function to call when the
+                position changes.
+    data :      user data passed to the event function when it is
+                invoked.                                          */
+ PSI_PROC( void, SetScrollUpdateMethod)( PSI_CONTROL pc
+                     , void (CPROC*UpdateProc)(uintptr_t psv, int type, int current)
+                                                   , uintptr_t data );
+ /* move the scrollbar. operations to specify move are +1, -1, +1
+    range, -1 range. the MOVE_THUMB operation is actually passed
+    to the event callback?
+    Parameters
+    pc :    control that is a SCROLLBAR_CONTROL_NAME
+    type :  a value from MoveScrollBarTypes                       */
+ PSI_PROC( void, MoveScrollBar )( PSI_CONTROL pc, int type );
+ _SCROLLBAR_NAMESPACE_END
+ USE_SCROLLBAR_NAMESPACE
+ //------- Misc Controls (and widgets) --------
+ _SHEETS_NAMESPACE
+ #define MakeSheetControl(c,x,y,w,h,id) MakeControl(c,SHEET_CONTROL,x,y,w,h,id)
+ /* Adds a sheet to a tab control. A sheet is just another
+    PSI_CONTROL frame.
+    Parameters
+    pControl :  control to add the page to
+    contents :  frame control to add                       */
+ PSI_PROC( void, AddSheet )( PSI_CONTROL pControl, PSI_CONTROL contents );
+ /* Removes a sheet from a tab control.
+    Parameters
+    pControl :  tab control to remove the sheet from
+    ID :        identifier of the sheet to remove.   */
+ PSI_PROC( int, RemoveSheet )( PSI_CONTROL pControl, uint32_t ID );
+ /* Request a sheet control by ID.
+    Parameters
+    pControl :  tab control to get a sheet from.
+    ID :        the ID of the page to get from the tab control.
+    Returns
+    Control that is the sheet that was added as the specified ID. */
+ PSI_PROC( PSI_CONTROL, GetSheet )( PSI_CONTROL pControl, uint32_t ID );
+ /* Gets a control from a specific sheet in the tab control
+    Parameters
+    pControl :   tab control to get the control from a sheet of.
+    IDSheet :    identifier of the sheet to get a control from
+    IDControl :  identifier of the control on a sheet in the tab
+                 control.
+    Returns
+    Control that has the requested ID on the requested page, if
+    found. Otherwise NULL.                                       */
+ PSI_PROC( PSI_CONTROL, GetSheetControl )( PSI_CONTROL pControl, uint32_t IDSheet, uint32_t IDControl );
+ /* \returns the integer ID of the selected sheet.
+    Parameters
+    pControl :  Sheet control to get the current sheet ID from. */
+ PSI_PROC( PSI_CONTROL, GetCurrentSheet )( PSI_CONTROL pControl );
+ /* Set which property sheet is currently selected.
+    Parameters
+    pControl :  Sheet Control.
+    ID :        ID of the page control to select.   */
+ PSI_PROC( void, SetCurrentSheet )( PSI_CONTROL pControl, uint32_t ID );
+ /* Get the size of sheets for this sheet control. So the page
+    creator can create a page that is the correct size for the
+    sheet dialog.
+    Parameters
+    pControl :  tab control to get the sheet size for
+    width :     pointer to a 32 bit unsigned value to receive the
+                width sheets should be.
+    height :    pointer to a 32 bit unsigned value to receive the
+                height sheets should be.                          */
+ PSI_PROC( int, GetSheetSize )( PSI_CONTROL pControl, uint32_t *width, uint32_t *height );
+ /* Sets a page as disabled. Disabled tabs cannot be clicked on
+    to select.
+    Parameters
+    pControl :  tab control containing sheet to disable or enable.
+    ID :        ID of the sheet to disable.
+    bDisable :  TRUE to disable the page, FALSE to re\-enable the
+                page.                                              */
+ PSI_PROC( void, DisableSheet )( PSI_CONTROL pControl, uint32_t ID, LOGICAL bDisable );
+ // Tab images are sliced and diced across the vertical center of the image
+ // the center is then spread as wide as the caption requires.
+ // set default tabs for the sheet control itself
+ PSI_PROC( void, SetTabImages )( PSI_CONTROL pControl, Image active, Image inactive );
+ // set tab images on a per-sheet basis, overriding the defaults specified.
+ PSI_PROC( void, SetSheetTabImages )( PSI_CONTROL pControl, uint32_t ID, Image active, Image inactive );
+ // with the ability to set the image for the tab, suppose it would be
+ // wise to set the sheet's text color on the tab...
+ // Initial tabs are black and white, with inverse black/white text...
+ PSI_PROC( void, SetTabTextColors )( PSI_CONTROL pControl, CDATA cActive, CDATA cInactive );
+ /* Sets the active and inactive colors for text.
+    Parameters
+    pControl :   sheet control to set the tab attribute of
+    ID :         ID of the sheet to set the tab color attributes for
+    cActive :    Color of the text when the tab is active.
+    cInactive :  Color of the text when the tab is inactive.         */
+ PSI_PROC( void, SetSheetTabTextColors )( PSI_CONTROL pControl, uint32_t ID, CDATA cActive, CDATA cInactive );
+ _SHEETS_NAMESPACE_END
+ USE_SHEETS_NAMESPACE
+ //------- Misc Controls (and widgets) --------
+ PSI_PROC( void, SimpleMessageBox )( PSI_CONTROL parent, CTEXTSTR title, CTEXTSTR content );
+ // result is the address of a user buffer to read into, reslen is the size of that buffer.
+ // question is put above the question... pAbove is the window which this one should be placed above (lock-stacked)
+ PSI_PROC( int, SimpleUserQuery )( TEXTSTR result, int reslen, CTEXTSTR question, PSI_CONTROL pAbove );
+ PSI_PROC( int, SimpleUserQueryEx )( TEXTSTR result, int reslen, CTEXTSTR question, PSI_CONTROL pAbove
+            , void (CPROC*query_success_callback)(uintptr_t, LOGICAL)
+            , uintptr_t query_user_data );
+ PSI_PROC( void, RegisterResource )( CTEXTSTR appname, CTEXTSTR resource_name, int ID, int resource_name_range, CTEXTSTR type_name );
+ // assuming one uses a
+ #define SimpleRegisterResource( name, typename ) RegisterResource( WIDE("application"), WIDE(#name), name, 1, typename );
+ #define EasyRegisterResource( domain, name, typename ) RegisterResource( domain, WIDE(#name), name, 1, typename );
+ #define EasyRegisterResourceRange( domain, name, range, typename ) RegisterResource( domain, WIDE(#name), name, range, typename );
+ #define SimpleRegisterAppResource( name, typename, class ) RegisterResource( WIDE("application/") class, WIDE(#name), name, 1, typename );
+ PSI_PROC( size_t, _SQLPromptINIValue )(
+             CTEXTSTR lpszSection,
+             CTEXTSTR lpszEntry,
+             CTEXTSTR lpszDefault,
+             TEXTSTR lpszReturnBuffer,
+             size_t cbReturnBuffer,
+             CTEXTSTR filename
+              );
+ //------------------------ Image Display -------------------------------------
+ #define IMAGE_DISPLAY_CONTROL_NAME WIDE( "Image Display" )
+ PSI_PROC( void, SetImageControlImage )( PSI_CONTROL pc, Image show_image );
+ //------------------------ Tool Tip Hover-over -------------------------------------
+ #define TOOL_TIP_CONTROL_NAME WIDE( "Tool Tip Display" )
+ PSI_PROC( void, SetControlHoverTip )( PSI_CONTROL pc, CTEXTSTR text );
+ //------------------------ Progress Bar --------------------------------------
+ #define PROGRESS_BAR_CONTROL_NAME  WIDE( "Progress Bar" )
+ // Set Range of progress bar (maximum value)
+ PSI_PROC( void, ProgressBar_SetRange )( PSI_CONTROL pc, int range );
+ // Set progress of progress bar (maximum value)
+ PSI_PROC( void, ProgressBar_SetProgress )( PSI_CONTROL pc, int progress );
+ // Set Colors for progress bar
+ PSI_PROC( void, ProgressBar_SetColors )( PSI_CONTROL pc, CDATA background, CDATA foreground );
+ // Enable/Disable showing text as a percentage on progress bar.
+ PSI_PROC( void, ProgressBar_EnableText )( PSI_CONTROL pc, LOGICAL enable );
+ #define GetFrameSurface GetControlSurface
+ PSI_NAMESPACE_END
+ USE_PSI_NAMESPACE
+ PSI_EDIT_NAMESPACE
+ // for convenience of migration, return pc
+ PSI_PROC( PSI_CONTROL, SetEditControlReadOnly )( PSI_CONTROL pc, LOGICAL bEnable );
+ PSI_EDIT_NAMESPACE_END
+ USE_PSI_EDIT_NAMESPACE
+ #ifndef BUTTON_METHODS_DEFINED
+ #define BUTTON_METHODS_DEFINED
+ #define BUTTON_CLICK( name, args ) PUBLIC( void, name )args;    PRELOAD( name##_Init ) { SimpleRegisterMethod( PSI_ROOT_REGISTRY WIDE("/methods/Button/Click")                                          , name, WIDE("void"), _WIDE(#name), WIDE("(uintptr_t,PCOMMON)") ); }  void CPROC name args
+ #define BUTTON_DRAW( name, args ) PUBLIC( void, name )args;    PRELOAD( name##_Init ) { SimpleRegisterMethod( PSI_ROOT_REGISTRY WIDE("/methods/Button/Draw")                                          , name, WIDE("void"), _WIDE(#name), WIDE("(uintptr_t,PCOMMON)") ); }  void CPROC name args
+ #define BUTTON_CHECK( name, args ) PUBLIC( void, name )args;    PRELOAD( name##_Init ) { SimpleRegisterMethod( PSI_ROOT_REGISTRY WIDE("/methods/Button/Check")                                          , name, WIDE("void"), _WIDE(#name), WIDE("(uintptr_t,PCOMMON)") ); }  void CPROC name args
+ #endif
+ #define SLIDER_UPDATE( name, args ) PUBLIC( void, name )args;    PRELOAD( name##_Init ) { SimpleRegisterMethod( PSI_ROOT_REGISTRY WIDE("/control/Slider/Update")                                          , name, WIDE("void"), _WIDE(#name), WIDE("(uintptr_t,PCONTROL,int)") ); }  void CPROC name args
+ //#include <psi/controls.h>
+ PSI_NAMESPACE
+ /* A colorwell is a indented control that contains a color.
+    Often, if clicked, the color well will show the palette color
+    selector to allow the color to be changed. The color may be a
+    full alpha representation. When drawn in the well, I think
+    the control itself draws the color with 255 alpha.
+    Color well controls are "Color Well"
+    Shade well controls are "Shade Well"
+    Palette Shader grid is "Color Matrix"
+    Example
+    <code lang="c++">
+    PSI_CONTROL color_well = MakeColorWell( NULL, 5, 5, 25, 25, -1, BASE_COLOR_WHITE );
+    </code>
+    Or using the natrual forms now...
+    <code lang="c++">
+    PSI_CONTROL shade_well = MakeNamedControl( frame, "Shade Well", 5, 5, 25, 150, -1 );
+    SetShadeMin( shade_well, BASE_COLOR_WHITE );
+    SetShadeMax( shade_well, BASE_COLOR_RED );
+    SetShadeMid( shade_well, BSAE_COLOR_LIGHTBLUE );
+    </code>                                                                              */
+ _COLORWELL_NAMESPACE
+ // common dialog to get a color... returns TRUE if *result is set
+ // if result is NULL color is not returned, but still can set presets...
+ #define  COLORWELL_NAME WIDE("Color Well")
+ /* <combine sack::psi::colorwell::PickColor@CDATA *@CDATA@PSI_CONTROL>
+    \ \
+    Parameters
+    x :  position of the color choice dialog, otherwise uses the
+         mouse position.
+    y :  position of the color choice dialog, otherwise uses the
+         mouse position.                                                */
+ PSI_PROC( int, PickColorEx )( CDATA *result, CDATA original, PSI_CONTROL hAbove, int x, int y );
+ /* Shows a color picking dialog. Results with a chosen color.
+    Parameters
+    result\ :   pointer to CDATA to result into
+    original :  CDATA that is the color to start from.
+    pAbove :    frame to stack this dialog over.
+    Returns
+    TRUE if *result is set, else FALSE. (Reflects the Ok/Cancel
+    of the dialog)                                              */
+ PSI_PROC( int, PickColor)( CDATA *result, CDATA original, PSI_CONTROL pAbove );
+ // creates a control which can then select a color
+ CONTROL_PROC( ColorWell, (CDATA color) );
+ /* Macro to create a colorwell.
+    Parameters
+    f :   frame to create the control in
+    x :   x coordinate of the left of the control in the frame
+    y :   y coordinate of the left of the control in the frame
+    w :   width of the control
+    h :   height of the control
+    ID :  an integer identifier for the control
+    c :   a CDATA color to initialize with.
+    Returns
+    \Returns a PSI_CONTROL that is a color well.               */
+ #define MakeColorWell(f,x,y,w,h,id,c) SetColorWell( MakeNamedControl(f,COLORWELL_NAME,x,y,w,h,id ),c)
+ /* Three colors define the gradient in a shade well. They can be
+    all the same and show a solid color, but this is for picking
+    colors from linear gradients. The 'Min' is one end, the 'Mid'
+    is the center and 'Max' is the other end. Control also only
+    does this vertically.
+    Parameters
+    pc :     "Shade Well" control
+    color :  Color to set the max end to.                         */
+ PSI_PROC( void, SetShadeMin )( PSI_CONTROL pc, CDATA color );
+ /* Three colors define the gradient in a shade well. They can be
+    all the same and show a solid color, but this is for picking
+    colors from linear gradients. The 'Min' is one end, the 'Mid'
+    is the center and 'Max' is the other end. Control also only
+    does this vertically.
+    Parameters
+    pc :     Shade Well control
+    color :  color to set the max to.                             */
+ PSI_PROC( void, SetShadeMax )( PSI_CONTROL pc, CDATA color );
+ /* Three colors define the gradient in a shade well. They can be
+    all the same and show a solid color, but this is for picking
+    colors from linear gradients. The 'Min' is one end, the 'Mid'
+    is the center and 'Max' is the other end. Control also only
+    does this vertically.
+    Parameters
+    pc :     "Shade Well" control
+    color :  sets the mid color of the control                    */
+ PSI_PROC( void, SetShadeMid )( PSI_CONTROL pc, CDATA color );
+ /* Sets the current color of a "Color Well"
+    Parameters
+    pc :     a "Color Well" control
+    color :  CDATA to set the color to.      */
+ PSI_PROC( PSI_CONTROL, SetColorWell )( PSI_CONTROL pc, CDATA color );
+ /* Enables clicking in a color well to auto show the dialog.
+    Parameters
+    pc :       "Color Well" control to enable auto pick
+    bEnable :  If TRUE, enable autopick; if FALSE, disable autopick. */
+ PSI_PROC( PSI_CONTROL, EnableColorWellPick )( PSI_CONTROL pc, LOGICAL bEnable );
+ /* Sets the handler for when the control is clicked. (or when
+    it's changed?)
+    Parameters
+    PC :             pointer to a "Color Well"
+    EventCallback :  This routine is called when the color is
+                     changed.
+    user_data :      user data to be passed to the callback when
+                     invoked.                                    */
+ PSI_PROC( PSI_CONTROL, SetOnUpdateColorWell )( PSI_CONTROL PC, void(CPROC*EventCallback)(uintptr_t,CDATA), uintptr_t user_data);
+ /* Gets the CDATA color in a color well.
+    Parameters
+    pc :  "Color Well" control to get the color from */
+ PSI_PROC( CDATA, GetColorFromWell )( PSI_CONTROL pc );
+ PSI_COLORWELL_NAMESPACE_END
+ USE_PSI_COLORWELL_NAMESPACE
+ #endif
+ // should consider merging these headers(?)
+ #ifdef __cplusplus
+ #define _HTML5_WEBSOCKET_NAMESPACE namespace Html5WebSocket {
+ #define HTML5_WEBSOCKET_NAMESPACE SACK_NAMESPACE _NETWORK_NAMESPACE _HTML5_WEBSOCKET_NAMESPACE
+ #define HTML5_WEBSOCKET_NAMESPACE_END } _NETWORK_NAMESPACE_END SACK_NAMESPACE_END
+ #define USE_HTML5_WEBSOCKET_NAMESPACE using namespace sack::network::Html5WebSocket;
+ #else
+ #define _HTML5_WEBSOCKET_NAMESPACE
+ #define HTML5_WEBSOCKET_NAMESPACE
+ #define HTML5_WEBSOCKET_NAMESPACE_END
+ #define USE_HTML5_WEBSOCKET_NAMESPACE
+ #endif
+ HTML5_WEBSOCKET_NAMESPACE
+ #ifdef HTML5_WEBSOCKET_SOURCE
+ #define HTML5_WEBSOCKET_PROC(type,name) EXPORT_METHOD type CPROC name
+ #else
+ #define HTML5_WEBSOCKET_PROC(type,name) IMPORT_METHOD type CPROC name
+ #endif
+ // need some sort of other methods to work with an HTML5WebSocket...
+ // server side.
+  HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketCreate )( CTEXTSTR server_url
+                  , web_socket_opened on_open
+                  , web_socket_event on_event
+                  , web_socket_closed on_closed
+                  , web_socket_error on_error
+                  , uintptr_t psv
+                  );
+ /* define a callback which uses a HTML5WebSocket collector to build javascipt to render the control.
+  * example:
+  *       static int OnDrawToHTML("Control Name")(CONTROL, HTML5WebSocket ){ }
+  */
+ //#define OnDrawToHTML(name)  // __DefineRegistryMethodP(PRELOAD_PRIORITY,ROOT_REGISTRY,_OnDrawCommon,WIDE("control"),name WIDE("/rtti"),WIDE("draw_to_canvas"),int,(CONTROL, HTML5WebSocket ), __LINE__)
+ HTML5_WEBSOCKET_NAMESPACE_END
+ USE_HTML5_WEBSOCKET_NAMESPACE
+ #endif
+ HTML5_WEBSOCKET_NAMESPACE
+ typedef struct html5_web_socket *HTML5WebSocket;
+ struct html5_web_socket {
+ // this value must be 0x20130912
+    uint32_t Magic;
+  HTTPState http_state;
+  PCLIENT pc;
+  struct web_socket_flags
+  {
+   BIT_FIELD initial_handshake_done : 1;
+   BIT_FIELD rfc6455 : 1;
+  } flags;
+    struct web_socket_input_state input_state;
+    struct web_socket_output_state output_state;
+ };
+ const TEXTCHAR *base64 = WIDE("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=");
+ static void encodeblock( unsigned char in[3], TEXTCHAR out[4], int len )
+ {
+     out[0] = base64[ in[0] >> 2 ];
+     out[1] = base64[ ((in[0] & 0x03) << 4) | ((in[1] & 0xf0) >> 4) ];
+     out[2] = (unsigned char) (len > 1 ? base64[ ((in[1] & 0x0f) << 2) | ((in[2] & 0xc0) >> 6) ] : '=');
+     out[3] = (unsigned char) (len > 2 ? base64[ in[2] & 0x3f ] : '=');
+ }
+ static LOGICAL ComputeReplyKey2( PVARTEXT pvt_output, HTML5WebSocket socket, PTEXT key1, PTEXT key2 )
+ {
+  TEXTCHAR buf1[24];
+  int buf1_idx = 0;
+  uint64_t number1;
+  TEXTCHAR buf2[24];
+  int buf2_idx = 0;
+  uint64_t number2;
+  int spaces1 = 0;
+  int spaces2 = 0;
+  int c;
+  size_t len;
+  TEXTCHAR *check;
+  // test overrides
+  //key1 = SegCreateFromText( WIDE("4 @1  46546xW%0l 1 5" ) );
+  //key2 = SegCreateFromText( WIDE("12998 5 Y3 1  .P00" ) );
+  len = GetTextSize( key1 );
+  check = GetText( key1 );
+  for( c = 0; c < len; c++ )
+  {
+   if( check[c] == ' ' )
+    spaces1++;
+   if( check[c] >= '0' && check[c] <= WIDE( '9' ) )
+    buf1[buf1_idx++] = check[c];
+  }
+  buf1[buf1_idx++] = 0;
+  number1 = IntCreateFromText( buf1 );
+  len = GetTextSize( key2 );
+  check = GetText( key2 );
+  for( c = 0; c < len; c++ )
+  {
+   if( check[c] == ' ' )
+    spaces2++;
+   if( check[c] >= '0' && check[c] <= WIDE( '9' ) )
+    buf2[buf2_idx++] = check[c];
+  }
+  buf2[buf2_idx++] = 0;
+  number2 = IntCreateFromText( buf2 );
+  if( !spaces1 || !spaces2 )
+   return FALSE;
+  {
+   int a = number1 % spaces1;
+   int b = number2 % spaces2;
+   if( a || b )
+    return FALSE;
+  }
+  if( number1 % spaces1 || number2 % spaces2 )
+   return FALSE;
+  number1 = number1 / spaces1;
+  number2 = number2 / spaces2;
+  {
+   struct replybuf
+   {
+    uint8_t result1[4];
+    uint8_t result2[4];
+    uint8_t extra[8];
+   } buf;
+   buf.result1[0] = (uint8_t)(( number1 & 0xFF000000 ) >> 24);
+   buf.result1[1] = (uint8_t)(( number1 & 0xFF0000 ) >> 16);
+   buf.result1[2] = (uint8_t)(( number1 & 0xFF00 ) >> 8);
+   buf.result1[3] = (uint8_t)(( number1 & 0xFF ) >> 0);
+   buf.result2[0] = (uint8_t)(( number2 & 0xFF000000 ) >> 24);
+   buf.result2[1] = (uint8_t)(( number2 & 0xFF0000 ) >> 16);
+   buf.result2[2] = (uint8_t)(( number2 & 0xFF00 ) >> 8);
+   buf.result2[3] = (uint8_t)(( number2 & 0xFF ) >> 0);
+   {
+    int n;
+    // override text_content with....
+    //SegCreateFromText( WIDE("^n:ds[4U" ) );
+    PTEXT text_content = GetHttpContent( socket->http_state );
+    TEXTCHAR *content = GetText( text_content );
+    for( n = 0; n < 8; n++ )
+    {
+     buf.extra[n] = ((char*)content)[n];
+    }
+   }
+   {
+    MD5_CTX ctx;
+    uint8_t result[16];
+    int n;
+    MD5Init( &ctx );
+    if( sizeof( buf ) != 16 )
+     xlprintf(LOG_ALWAYS)( WIDE("padding has been injected, and all will be bad.") );
+    MD5Update( &ctx, (unsigned char*)&buf, 16 );
+    MD5Final(result, &ctx);
+    for( n = 0; n < 16; n++ )
+     VarTextAddCharacter( pvt_output, result[n] );
+   }
+   //md5( buf );
+   //vtprintf(
+  }
+ // passes test here
+ // Sec-WebSocket-Key1: 18x 6]8vM;54 *(5:  {   U1]8  z [  8
+ //  Sec-WebSocket-Key2: 1_ tx7X d  <  nw  334J702) 7]o}` 0
+ //  Tm[K T2u
+ //  fQJ,fN/4F4!~K~MH
+ // passes test here
+ // 4 @1  46546xW%0l 1 5
+ // 12998 5 Y3 1  .P00
+ // ^n:ds[4U
+ // 8jKS'y:G*Co,Wxa-
+ // not sure all example data lined up.
+ //  Sec-WebSocket-Key1: 3e6b263  4 17 80
+               //Sec-WebSocket-Key2: 17  9 G`ZD9   2 2b 7X 3 /r90
+               //WjN}|M(6
+ //
+ //result:  0x09 0x65 0x65 0x0A 0xB9 0x67 0x33 0x57 0x6A 0x4E 0x7D 0x7C 0x4D
+ //        0x28 0x36.
+  return TRUE;
+ }
+ /* opcodes
+       *  %x0 denotes a continuation frame
+       *  %x1 denotes a text frame
+       *  %x2 denotes a binary frame
+       *  %x3-7 are reserved for further non-control frames
+       *  %x8 denotes a connection close
+       *  %x9 denotes a ping
+       *  %xA denotes a pong
+       *  %xB-F are reserved for further control frames
+ */
+ static void HandleData( HTML5WebSocket socket, PCLIENT pc, POINTER buffer, size_t length )
+ {
+  size_t n;
+  uint8_t okay = 0;
+  int randNum;
+  TEXTCHAR output[25];
+  uint8_t* bytes = (uint8_t*)buffer;
+  for( n = 0; n < length; n++ )
+  {
+   if( bytes[n] == 0 )
+   {
+    if( socket->input_state.fragment_collection_length )
+    {
+     lprintf( WIDE("Message start with a message outstanding, double null chars?!") );
+     socket->input_state.fragment_collection_length = 0;
+    }
+   }
+   if( bytes[n] == 0xFF )
+   {
+    lprintf( WIDE("Completed message...") );
+    LogBinary( socket->input_state.fragment_collection, socket->input_state.fragment_collection_length );
+    socket->input_state.fragment_collection_length = 0;
+   }
+   {
+    if( socket->input_state.fragment_collection_avail == socket->input_state.fragment_collection_length )
+    {
+     uint8_t* new_fragment = NewArray( uint8_t, socket->input_state.fragment_collection_avail + 64 );
+     socket->input_state.fragment_collection_avail += 64;
+     MemCpy( new_fragment, socket->input_state.fragment_collection, socket->input_state.fragment_collection_length );
+     Deallocate( POINTER, socket->input_state.fragment_collection );
+     socket->input_state.fragment_collection = new_fragment;
+    }
+    socket->input_state.fragment_collection[socket->input_state.fragment_collection_length++] = bytes[n];
+   }
+  }
+ }
+ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
+ {
+  if( buffer )
+  {
+   HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc, 0 );
+   int result;
+ #ifdef _UNICODE
+   TEXTSTR tmp = CharWConvertExx( (const char*)buffer, length DBG_SRC );
+ #else
+   TEXTSTR tmp = (TEXTSTR)buffer;
+ #endif
+   //LogBinary( buffer, length );
+   if( !socket->flags.initial_handshake_done )
+   {
+    //lprintf( WIDE("Initial handshake is not done...") );
+ // make sure nul terminated.
+    ((char*)buffer)[length] = 0;
+    AddHttpData( socket->http_state, tmp, length );
+    while( ( result = ProcessHttp( pc, socket->http_state ) ) )
+    {
+     switch( result )
+     {
+     default:
+      lprintf( WIDE("unexpected result is %d"), result );
+      break;
+     case HTTP_STATE_RESULT_CONTENT:
+      {
+       PVARTEXT pvt_output = VarTextCreate();
+       PTEXT value;
+       PTEXT key1, key2;
+       char *output;
+       key1 = GetHTTPField( socket->http_state, WIDE( "Sec-WebSocket-Key1" ) );
+       key2 = GetHTTPField( socket->http_state, WIDE( "Sec-WebSocket-Key2" ) );
+       if( key1 && key2 )
+        socket->flags.rfc6455 = 0;
+       else
+        socket->flags.rfc6455 = 1;
+       if( key1 && key2 )
+        vtprintf( pvt_output, WIDE("HTTP/1.1 101 WebSocket Protocol Handshake\r\n") );
+       else
+        vtprintf( pvt_output, WIDE("HTTP/1.1 101 Switching Protocols\r\n") );
+       vtprintf( pvt_output, WIDE("Upgrade: WebSocket\r\n") );
+       vtprintf( pvt_output, WIDE("Connection: Upgrade\r\n") );
+       value = GetHTTPField( socket->http_state, WIDE( "Origin" ) );
+       if( value )
+       {
+        if( key1 && key2 )
+         vtprintf( pvt_output, WIDE("Sec-WebSocket-Origin: %s\r\n"), GetText( value ) );
+        else
+         vtprintf( pvt_output, WIDE("WebSocket-Origin: %s\r\n"), GetText( value ) );
+       }
+       if( key1 && key2 )
+       {
+        vtprintf( pvt_output, WIDE("Sec-WebSocket-Location: ws://%s%s\r\n" )
+         , GetText( GetHTTPField( socket->http_state, WIDE("Host") ) )
+         , GetText( GetHttpRequest( socket->http_state ) )
+         );
+       }
+       value = GetHTTPField( socket->http_state, WIDE( "Sec-webSocket-Key" ) );
+       if( value )
+       {
+        {
+         const TEXTCHAR guid[] = WIDE("258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+         size_t len;
+         TEXTCHAR *resultval = NewArray( TEXTCHAR, len = ( GetTextSize( value ) + sizeof(guid)/sizeof(TEXTCHAR)));
+         tnprintf( resultval, len, WIDE("%s%s")
+          , GetText(value)
+          , guid );
+         {
+          TEXTCHAR output[32];
+          char *tmpval = DupTextToChar( resultval );
+          SHA1Context context;
+          int n;
+          struct convert_64 {
+           BIT_FIELD filler : 6;
+           BIT_FIELD char1 : 6;
+           BIT_FIELD char2a : 2;
+           BIT_FIELD char2b : 4;
+           BIT_FIELD char3b : 4;
+           BIT_FIELD char3c : 2;
+           BIT_FIELD char4 : 6;
+           BIT_FIELD junk2 : 2;
+          };
+          uint8_t Message_Digest[SHA1HashSize + 2];
+          SHA1Reset( &context );
+          SHA1Input( &context, (uint8_t*)tmpval, len - 1 );
+          SHA1Result( &context, Message_Digest );
+          Message_Digest[SHA1HashSize] = 0;
+          Message_Digest[SHA1HashSize+1] = 0;
+          for( n = 0; n < (SHA1HashSize+2)/3; n++ )
+          {
+           int blocklen;
+           blocklen = SHA1HashSize - n*3;
+           if( blocklen > 3 )
+            blocklen = 3;
+           encodeblock( Message_Digest + n * 3, output + n*4, blocklen );
+          }
+          output[n*4+0] = 0;
+          // s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+          vtprintf( pvt_output, WIDE("Sec-WebSocket-Accept: %s\r\n"), output );
+          Deallocate( char*, tmpval );
+         }
+        }
+       }
+       value = GetHTTPField( socket->http_state, WIDE( "Sec-WebSocket-Protocol" ) );
+       if( value )
+        vtprintf( pvt_output, WIDE("Sec-WebSocket-Protocol: %s\r\n"), GetText( value ) );
+       vtprintf( pvt_output, WIDE("\r\n" ) );
+       if( key1 && key2 )
+       {
+        ComputeReplyKey2( pvt_output, socket, key1, key2 );
+       }
+       value = VarTextGet( pvt_output );
+       output = DupTextToChar( GetText( value ) );
+       //LogBinary( output, GetTextSize( value ) );
+       SendTCP( pc, output, GetTextSize( value ) );
+      }
+      if( socket->input_state.on_open )
+       socket->input_state.psv_open = socket->input_state.on_open( pc, socket->input_state.psv_on );
+      EndHttp( socket->http_state );
+      socket->flags.initial_handshake_done = 1;
+      break;
+     case HTTP_STATE_RESULT_CONTINUE:
+      break;
+     }
+    }
+   }
+   else
+   {
+    //lprintf( WIDE("Okay then hand this as data to process... within protocol") );
+    if( socket->flags.rfc6455 )
+    {
+     ProcessWebSockProtocol( &socket->input_state, pc, (uint8_t*)buffer, length );
+    }
+    else
+     HandleData( socket, pc, buffer, length );
+   }
+  }
+  else
+  {
+   buffer = Allocate( 4096 );
+  }
+  ReadTCP( pc, buffer, 4096 );
+ }
+ static void CPROC connected( PCLIENT pc_server, PCLIENT pc_new )
+ {
+  HTML5WebSocket server_socket = (HTML5WebSocket)GetNetworkLong( pc_server, 0 );
+  HTML5WebSocket socket = New( struct html5_web_socket );
+  MemSet( socket, 0, sizeof( struct html5_web_socket ) );
+  socket->Magic = 0x20130912;
+  socket->pc = pc_new;
+  socket->input_state = server_socket->input_state;
+  socket->http_state = CreateHttpState();
+  SetNetworkLong( pc_new, 0, (uintptr_t)socket );
+  SetNetworkLong( pc_new, 1, (uintptr_t)&socket->output_state );
+  SetNetworkLong( pc_new, 2, (uintptr_t)&socket->input_state );
+  SetNetworkReadComplete( pc_new, read_complete );
+ }
+ static LOGICAL CPROC HandleRequest( uintptr_t psv, HTTPState pHttpState )
+ {
+    return 0;
+ }
+ PCLIENT WebSocketCreate( CTEXTSTR hosturl
+        , web_socket_opened on_open
+        , web_socket_event on_event
+        , web_socket_closed on_closed
+        , web_socket_error on_error
+        , uintptr_t psv )
+ {
+  struct url_data *url;
+  HTML5WebSocket socket = New( struct html5_web_socket );
+  NetworkStart();
+  MemSet( socket, 0, sizeof( struct html5_web_socket ) );
+  socket->Magic = 0x20130912;
+  socket->input_state.on_open = on_open;
+  socket->input_state.on_event = on_event;
+  socket->input_state.on_close = on_closed;
+  socket->input_state.on_error = on_error;
+  socket->input_state.psv_on = psv;
+  url = SACK_URLParse( hosturl );
+  socket->pc = OpenTCPListenerAddrEx( CreateSockAddress( url->host, url->port ), connected );
+  SACK_ReleaseURL( url );
+  socket->http_state = CreateHttpState();
+  SetNetworkLong( socket->pc, 0, (uintptr_t)socket );
+  SetNetworkLong( socket->pc, 1, (uintptr_t)&socket->output_state );
+  SetNetworkLong( socket->pc, 2, (uintptr_t)&socket->input_state );
+  return socket->pc;
+ }
+ HTML5_WEBSOCKET_NAMESPACE_END
+ #ifdef __cplusplus
+ SACK_NAMESPACE namespace network { namespace json {
+ #endif
+ struct json_context_object_element
+ {
+     // type of the element at this offset
+  enum JSON_ObjectElementTypes type;
+     // type of the element at this offset
+  enum JSON_ObjectElementTypes content_type;
+  // how big this element is.
+  size_t object_size;
+   // offset into the structure
+  size_t offset;
+ // name of this element in the object
+  CTEXTSTR name;
+ // at offset, this number of these is there; (array)
+  size_t count;
+ // at count_offset, is the number of elements that the pointer at this offset
+  size_t count_offset;
+  void (*user_formatter)(PVARTEXT pvt_output,CPOINTER msg_data);
+  struct json_context_object *object;
+ };
+ struct json_context_object
+ {
+  struct json_context *context;
+   // list of members of this object struct json_context_object_element *
+  PLIST members;
+ // if set is an array format, otherwise is an object format.
+  int is_array;
+  size_t object_size;
+  size_t offset;
+  struct json_context_object_flags
+  {
+  // this is not a root object
+   BIT_FIELD keep_phrase : 1;
+   BIT_FIELD dynamic_size : 1;
+  } flags;
+  struct json_context_object *parent;
+ };
+ struct json_context
+ {
+  int levels;
+  PVARTEXT pvt;
+  PLIST object_types;
+  int human_readable;
+ };
+ #ifdef __cplusplus
+ } } SACK_NAMESPACE_END
+ #endif
+ #define JSON_EMITTER_SOURCE
+ #ifndef JSON_EMITTER_HEADER_INCLUDED
+ #define JSON_EMITTER_HEADER_INCLUDED
+ #ifdef JSON_EMITTER_SOURCE
+ #define JSON_EMITTER_PROC(type,name) EXPORT_METHOD type CPROC name
+ #else
+ #define JSON_EMITTER_PROC(type,name) IMPORT_METHOD type CPROC name
+ #endif
+ #ifdef __cplusplus
+ SACK_NAMESPACE namespace network { namespace json {
+ #endif
+ enum JSON_ObjectElementTypes
+ {
+    JSON_Element_Integer_8,
+    JSON_Element_Integer_16,
+    JSON_Element_Integer_32,
+    JSON_Element_Integer_64,
+    JSON_Element_Unsigned_Integer_8,
+    JSON_Element_Unsigned_Integer_16,
+    JSON_Element_Unsigned_Integer_32,
+    JSON_Element_Unsigned_Integer_64,
+    JSON_Element_String,
+    JSON_Element_CharArray,
+    JSON_Element_Float,
+    JSON_Element_Double,
+  // result will fill a PLIST
+    JSON_Element_Array,
+    JSON_Element_Object,
+    JSON_Element_ObjectPointer,
+    JSON_Element_List,
+  // ptext type
+    JSON_Element_Text,
+    JSON_Element_PTRSZVAL,
+    JSON_Element_PTRSZVAL_BLANK_0,
+  JSON_Element_UserRoutine,
+ // unparsed object remainder.  Includes bounding { } object indicator for re-parsing
+  JSON_Element_Raw_Object,
+    //JSON_Element_StaticText,  // text type; doesn't happen very often.
+ };
+ struct json_context_object_element;
+ struct json_context_object;
+ struct json_context;
+ #define JSON_NO_OFFSET (size_t)-1
+ // Get a context, which can track message formats.
+ // Will eventually expose the low level routines so one can use a context
+ // and the simple message building utility functions to product json output
+ // without defining objects and members....
+ JSON_EMITTER_PROC( struct json_context *, json_create_context )( void );
+ // Begin the definition of a json formatting object.
+ // the root element must be a array or an object
+ JSON_EMITTER_PROC( struct json_context_object *, json_create_object )( struct json_context *context
+                        , size_t object_size );
+ // Begin the definition of a json formatting object.
+ // the root element must be a array or an object
+ JSON_EMITTER_PROC( struct json_context_object *, json_create_array )( struct json_context *context
+                         , size_t offset
+                         , enum JSON_ObjectElementTypes type
+                         , size_t count
+                         , size_t count_offset
+                         );
+ // add a member element to a json object
+ // if the member element is a object type, then a new context_object results, to which members may be added.
+ JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member )( struct json_context_object *object
+                          , CTEXTSTR name
+                          , size_t offset
+                          , enum JSON_ObjectElementTypes type
+                          , size_t object_size
+                          );
+ // more complex method; add_object_member actually calls this to implement a 0 byte array of the same type.
+ //  object_size is used if the type is JSON_Element_ObjectPointer for the parsing to be able to allocate
+ // the message part.
+ JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_array )( struct json_context_object *format
+                            , CTEXTSTR name
+                            , size_t offset
+                            , enum JSON_ObjectElementTypes type
+                                                                                , size_t object_size
+                            , size_t count
+                            , size_t count_offset
+                            );
+ // more complex method; add_object_member actually calls this to implement a 0 byte array of the same type.
+ //  object_size is used if the type is JSON_Element_ObjectPointer for the parsing to be able to allocate
+ // the message part.  array is represented as a pointer, which will be dynamically allocated
+ JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_array_pointer )( struct json_context_object *format
+                            , CTEXTSTR name
+                            , size_t offset
+                            , enum JSON_ObjectElementTypes type
+                            , size_t count_offset
+                            );
+ // adds a reference to a PLIST as an array with the content of the array specified as the type
+ JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_list )( struct json_context_object *object
+                           , CTEXTSTR name
+  // offset of the list
+                           , size_t offset
+ // of of the members of the list
+                           , enum JSON_ObjectElementTypes content_type
+  // object size if required
+                           , size_t object_size
+                           );
+ // this allows recursive structures, so the structure may contain a reference to itself.
+ // this allows buildling other objects and referencing them instead of building them in-place
+ JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_object )( struct json_context_object *object
+                             , CTEXTSTR name
+                             , size_t offset
+                             , enum JSON_ObjectElementTypes type
+                             , struct json_context_object *child_object
+                             );
+ JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_user_routine )( struct json_context_object *object
+                               , CTEXTSTR name
+                               , size_t offset, enum JSON_ObjectElementTypes type
+                               , size_t object_size
+                               , void (*user_formatter)(PVARTEXT,CPOINTER) );
+ // take a object format and a pointer to data and return a json message string
+ JSON_EMITTER_PROC( TEXTSTR, json_build_message )( struct json_context_object *format
+                                              , POINTER msg );
+ // take a json string and a format and fill in a structure from the text.
+ // tests all formats, to first-match;
+ // take a json string and a format and fill in a structure from the text.
+ // if object does not fit all members (may have extra, but must have at least all members in message in format to return TRUE)
+ // then it returns false; that is if a member is in the 'msg' parameter that is not in
+ // the format, then the result is FALSE.
+ //  PDATALIST is full of struct json_value_container
+ JSON_EMITTER_PROC( LOGICAL, json_parse_message )(  CTEXTSTR msg
+              , size_t msglen
+              , PDATALIST *msg_data_out
+                 );
+ JSON_EMITTER_PROC( LOGICAL, json_decode_message )(  struct json_context *format
+                  , PDATALIST parsedMsg
+                                                  , struct json_context_object **result_format
+                 , POINTER *msg_data_out
+             );
+ enum json_value_types {
+  VALUE_UNDEFINED = -1
+  , VALUE_NULL = 1
+  , VALUE_TRUE = 2
+  , VALUE_FALSE = 3
+  , VALUE_STRING = 4
+  , VALUE_NUMBER = 5
+  , VALUE_OBJECT = 6
+ };
+ struct json_value_container {
+  PTEXT name;
+  enum json_value_types value_type;
+  PTEXT string;
+  int result_value;
+  int float_result;
+  double result_d;
+  int64_t result_n;
+  PDATALIST contains;
+ };
+ // any allocate mesage parts are released.
+ JSON_EMITTER_PROC( void, json_dispose_message )( PDATALIST *msg_data );
+ JSON_EMITTER_PROC( void, json_dispose_decoded_message )(struct json_context_object *format
+  , POINTER msg_data);
+ #ifdef __cplusplus
+ } } SACK_NAMESPACE_END
+ using namespace sack::network::json;
+ #endif
+ #endif
+ #ifdef __cplusplus
+ SACK_NAMESPACE namespace network { namespace json {
+ #endif
+ enum json_parse_state{
+  JSON_PARSE_STATE_PICK_WHATS_NEXT       = 0x01
+       , JSON_PARSE_STATE_GET_NUMBER       = 0x02
+       , JSON_PARSE_STATE_GET_NAME         = 0x04
+       , JSON_PARSE_STATE_GET_STRING       = 0x08
+       , JSON_PARSE_STATE_GET_ARRAY_MEMBER = 0x10
+ };
+ enum word_char_states {
+  WORD_POS_RESET = 0,
+  WORD_POS_TRUE_1,
+  WORD_POS_TRUE_2,
+  WORD_POS_TRUE_3,
+  WORD_POS_TRUE_4,
+ // 11
+  WORD_POS_FALSE_1,
+  WORD_POS_FALSE_2,
+  WORD_POS_FALSE_3,
+  WORD_POS_FALSE_4,
+ // 21  get u
+  WORD_POS_NULL_1,
+ //  get l
+  WORD_POS_NULL_2,
+ //  get l
+  WORD_POS_NULL_3,
+ };
+ #define CONTEXT_UNKNOWN 0
+ #define CONTEXT_IN_ARRAY 1
+ #define CONTEXT_IN_OBJECT 2
+ struct json_parse_context {
+  int context;
+  PDATALIST elements;
+  struct json_context_object *object;
+ };
+ LOGICAL json_parse_message( CTEXTSTR msg
+                                  , size_t msglen
+                                  , PDATALIST *_msg_output )
+ {
+  PVARTEXT pvt_collector;
+  /* I guess this is a good parser */
+  PDATALIST elements = NULL;
+ // character index;
+  size_t n = 0;
+  int word;
+  TEXTRUNE c;
+  LOGICAL status = TRUE;
+  TEXTRUNE quote = 0;
+  LOGICAL use_char = FALSE;
+  PLINKSTACK element_lists = NULL;
+  PLINKSTACK context_stack = NULL;
+  LOGICAL first_token = TRUE;
+  //enum json_parse_state state;
+  int parse_context = CONTEXT_UNKNOWN;
+  struct json_value_container val;
+  POINTER msg_output;
+  if( !_msg_output )
+   return FALSE;
+  elements = CreateDataList( sizeof( val ) );
+  msg_output = (*_msg_output);
+  val.value_type = VALUE_UNDEFINED;
+  val.result_value = 0;
+  val.name = NULL;
+  pvt_collector = VarTextCreate();
+ // static CTEXTSTR keyword[3] = { "false", "null", "true" };
+  while( status && ( n < msglen ) && ( c = GetUtfCharIndexed( msg, &n ) ) )
+  {
+   switch( c )
+   {
+   case '{':
+    {
+     struct json_parse_context *old_context = New( struct json_parse_context );
+     old_context->context = parse_context;
+     old_context->elements = elements;
+     elements = CreateDataList( sizeof( val ) );
+     PushLink( &context_stack, old_context );
+     parse_context = CONTEXT_IN_OBJECT;
+    }
+    break;
+   case '[':
+    {
+     struct json_parse_context *old_context = New( struct json_parse_context );
+     old_context->context = parse_context;
+     old_context->elements = elements;
+     elements = CreateDataList( sizeof( val ) );
+     PushLink( &context_stack, old_context );
+     parse_context = CONTEXT_IN_ARRAY;
+    }
+    break;
+   case ':':
+    if( parse_context == CONTEXT_IN_OBJECT )
+    {
+     if( val.name ) {
+      lprintf( "two names single value?" );
+      LineRelease( val.name );
+     }
+     val.name = VarTextGet( pvt_collector );
+    }
+    else
+    {
+     lprintf( WIDE("(in array, got colon out of string):parsing fault; unexpected %c at %") _size_f, c, n );
+     status = FALSE;
+    }
+    break;
+   case '}':
+    if( parse_context == CONTEXT_IN_OBJECT )
+    {
+     // first, add the last value
+     if( VarTextLength( pvt_collector ) ) {
+      val.value_type = VALUE_STRING;
+      val.string = VarTextGet( pvt_collector );
+     }
+     if( val.value_type != VALUE_UNDEFINED )
+      AddDataItem( &elements, &val );
+     val.value_type = VALUE_UNDEFINED;
+     val.name = NULL;
+     {
+      struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &context_stack );
+      parse_context = old_context->context;
+      elements = old_context->elements;
+      Release( old_context );
+     }
+     //n++;
+    }
+    else
+    {
+     lprintf( WIDE("Fault parsing, unexpected %c at %") _size_f, c, n );
+    }
+    break;
+   case ']':
+    if( parse_context == CONTEXT_IN_ARRAY )
+    {
+     if( VarTextLength( pvt_collector ) ) {
+      val.value_type = VALUE_STRING;
+      val.string = VarTextGet( pvt_collector );
+     }
+     if( val.value_type != VALUE_UNDEFINED )
+      AddDataItem( &elements, &val );
+     val.value_type = VALUE_UNDEFINED;
+     val.name = NULL;
+     {
+      struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &context_stack );
+      parse_context = old_context->context;
+      elements = old_context->elements;
+      Release( old_context );
+     }
+    }
+    else
+    {
+// fault
+     lprintf( WIDE("bad context %d; fault parsing '%c' unexpected %") _size_f, parse_context, c, n );
+    }
+    break;
+   case ',':
+    if( ( parse_context == CONTEXT_IN_ARRAY )
+       || ( parse_context == CONTEXT_IN_OBJECT ) )
+    {
+     if( VarTextLength( pvt_collector ) ) {
+      val.value_type = VALUE_STRING;
+      val.string = VarTextGet( pvt_collector );
+     }
+     if( val.value_type != VALUE_UNDEFINED )
+      AddDataItem( &elements, &val );
+     val.value_type = VALUE_UNDEFINED;
+     val.name = NULL;
+    }
+    else
+    {
+// fault
+     lprintf( WIDE("bad context; fault parsing '%c' unexpected %") _size_f, c, n );
+    }
+    //n++;
+    break;
+   default:
+    if( first_token )
+    {
+// fault
+     lprintf( WIDE("first token; fault parsing '%c' unexpected %") _size_f, c, n );
+     //status = FALSE;
+    }
+    switch( c )
+    {
+    case '"':
+     {
+      // collect a string
+      int escape = 0;
+      while( ( n < msglen ) && ( c = GetUtfCharIndexed( msg, &n ) ) )
+      {
+       if( c == '\\' )
+       {
+        if( escape ) VarTextAddCharacter( pvt_collector, '\\' );
+        else escape = 1;
+       }
+       else if( c == '"' )
+       {
+        if( escape ) VarTextAddCharacter( pvt_collector, '\"' );
+        else break;
+       }
+       else
+       {
+        if( escape )
+        {
+         switch( c )
+         {
+         case '/':
+         case '\\':
+         case '"':
+          VarTextAddRune( pvt_collector, c );
+          break;
+         case 't':
+          VarTextAddCharacter( pvt_collector, '\t' );
+          break;
+         case 'b':
+          VarTextAddCharacter( pvt_collector, '\b' );
+          break;
+         case 'n':
+          VarTextAddCharacter( pvt_collector, '\n' );
+          break;
+         case 'r':
+          VarTextAddCharacter( pvt_collector, '\r' );
+          break;
+         case 'f':
+          VarTextAddCharacter( pvt_collector, '\f' );
+          break;
+         case 'u':
+          {
+           TEXTRUNE hex_char = 0;
+           int ofs;
+           for( ofs = 0; ofs < 4; ofs++ )
+           {
+            c = GetUtfCharIndexed( msg, &n );
+            hex_char *= 16;
+            if( c >= '0' && c <= '9' )      hex_char += c - '0';
+            else if( c >= 'A' && c <= 'F' ) hex_char += ( c - 'A' ) + 10;
+            else if( c >= 'a' && c <= 'f' ) hex_char += ( c - 'F' ) + 10;
+            else
+             lprintf( WIDE("(escaped character, parsing hex of \\u) fault parsing '%c' unexpected at %")_size_f WIDE(" (near %*.*s[%c]%s)"), c, n
+                , (int)( (n>3)?3:n ), (int)( (n>3)?3:n )
+                , msg + n - ( (n>3)?3:n )
+                , c
+                , msg + n + 1
+// fault
+                );
+           }
+           VarTextAddRune( pvt_collector, hex_char );
+          }
+          break;
+         default:
+          lprintf( WIDE("(escaped character) fault parsing '%c' unexpected %")_size_f WIDE(" (near %*.*s[%c]%s)"), c, n
+             , (int)( (n>3)?3:n ), (int)( (n>3)?3:n )
+             , msg + n - ( (n>3)?3:n )
+             , c
+             , msg + n + 1
+// fault
+             );
+          break;
+         }
+         escape = 0;
+        }
+        else
+         VarTextAddRune( pvt_collector, c );
+       }
+      }
+      val.result_value = VALUE_STRING;
+      break;
+     }
+    case ' ':
+    case '\t':
+    case '\r':
+    case '\n':
+     // skip whitespace
+     //n++;
+     break;
+   //----------------------------------------------------------
+   //  catch characters for true/false/null which are values outside of quotes
+    case 't':
+     if( word == WORD_POS_RESET ) word = WORD_POS_TRUE_1;
+// fault
+     else lprintf( WIDE("fault parsing '%c' unexpected at %")_size_f, c, n );
+     break;
+    case 'r':
+     if( word == WORD_POS_TRUE_1 ) word = WORD_POS_TRUE_2;
+// fault
+     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     break;
+    case 'u':
+     if( word == WORD_POS_TRUE_2 ) word = WORD_POS_TRUE_3;
+     else if( word == WORD_POS_NULL_1 ) word = WORD_POS_NULL_2;
+// fault
+     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     break;
+    case 'e':
+     if( word == WORD_POS_TRUE_3 ) {
+      val.value_type = VALUE_TRUE;
+      word = WORD_POS_RESET;
+     } else if( word == WORD_POS_FALSE_4 ) {
+      val.value_type = VALUE_FALSE;
+      word = WORD_POS_RESET;
+// fault
+     } else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     break;
+    case 'n':
+     if( word == WORD_POS_RESET ) word = WORD_POS_NULL_1;
+// fault
+     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     break;
+    case 'l':
+     if( word == WORD_POS_NULL_2 ) word = WORD_POS_NULL_3;
+     else if( word == WORD_POS_NULL_3 ) {
+      val.result_value = VALUE_NULL;
+      word = WORD_POS_RESET;
+     } else if( word == WORD_POS_FALSE_2 ) word = WORD_POS_FALSE_3;
+// fault
+     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     break;
+    case 'f':
+     if( word == WORD_POS_RESET ) word = WORD_POS_FALSE_1;
+// fault
+     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     break;
+    case 'a':
+     if( word == WORD_POS_FALSE_1 ) word = WORD_POS_FALSE_2;
+// fault
+     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     break;
+    case 's':
+     if( word == WORD_POS_FALSE_3 ) word = WORD_POS_FALSE_4;
+// fault
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
+     break;
+   //
+     //----------------------------------------------------------
+    default:
+     if( ( c >= '0' && c <= '9' )
+      || ( c == '-' ) )
+     {
+      // always reset this here....
+      // keep it set to determine what sort of value is ready.
+      val.float_result = 0;
+      VarTextAddRune( pvt_collector, c );
+      while( ( n < msglen ) && ( c = GetUtfCharIndexed( msg, &n) ) )
+      {
+       // leading zeros should be forbidden.
+       if( ( c >= '0' && c <= '9' )
+        || ( c == '-' )
+        || ( c == '+' )
+        || ( c == '+' )
+         )
+       {
+        VarTextAddRune( pvt_collector, c );
+       }
+       else if( ( c =='e' ) || ( c == 'E' ) || ( c == '.' ) )
+       {
+        val.float_result = 1;
+        VarTextAddRune( pvt_collector, c );
+       }
+       else
+       {
+        break;
+       }
+      }
+      {
+       PTEXT number = VarTextGet( pvt_collector );
+       if( val.float_result )
+       {
+        val.result_d = FloatCreateFromSeg( number );
+       }
+       else
+       {
+        val.result_n = IntCreateFromSeg( number );
+       }
+       LineRelease( number );
+      }
+      val.result_value = VALUE_NUMBER;
+     }
+     else if( ( c >= ' ' )
+         || ( c == '\t' )
+         || ( c == '\r' )
+         || ( c == '\n' )
+        )
+     {
+      // do nothing; white space is allowed.
+     }
+     else
+     {
+      // fault, illegal characer (whitespace?)
+      lprintf( WIDE("fault parsing '%c' unexpected %")_size_f WIDE(" (near %*.*s[%c]%s)"), c, n
+         , (int)( (n>3)?3:n ), (int)( (n>3)?3:n )
+         , msg + n - ( (n>3)?3:n )
+         , c
+         , msg + n + 1
+// fault
+         );
+     }
+ // default
+     break;
+    }
+ // default of high level switch
+    break;
+   }
+  }
+  {
+   struct json_parse_context *old_context;
+   while( old_context = (struct json_parse_context *)PopLink( &context_stack ) ) {
+    lprintf( "warning unclosed contexts...." );
+    Release( old_context );
+   }
+   if( context_stack )
+    DeleteLinkStack( &context_stack );
+  }
+  if( element_lists )
+   DeleteLinkStack( &element_lists );
+  if( !elements->Cnt )
+   if( val.value_type != VALUE_UNDEFINED )
+    AddDataItem( &elements, &val );
+  (*_msg_output) = elements;
+  // clean all contexts
+  VarTextDestroy( &pvt_collector );
+  if( !status )
+  {
+   //Release( (*_msg_output) );
+   //(*_msg_output) = NULL;
+  }
+  return status;
+ }
+ void json_dispose_decoded_message( struct json_context_object *format
+                                  , POINTER msg_data )
+ {
+  // a complex format might have sub-parts .... but for now we'll assume simple flat structures
+  Release( msg_data );
+ }
+ void json_dispose_message( PDATALIST *msg_data )
+ {
+  struct json_value_container *val;
+  INDEX idx;
+  DATA_FORALL( (*msg_data), idx, struct json_value_container*, val )
+  {
+   if( val->name ) LineRelease( val->name );
+   if( val->string ) LineRelease( val->string );
+   if( val->value_type == VALUE_OBJECT )
+    json_dispose_message( &val->contains );
+  }
+  // quick method
+  DeleteDataList( msg_data );
+ }
+ // puts the current collected value into the element; assumes conversion was correct
+ static void FillDataToElement( struct json_context_object_element *element
+            , size_t object_offset
+         , struct json_value_container *val
+         , POINTER msg_output )
+ {
+  PTEXT string;
+  if( !val->name )
+   return;
+  // remove name; indicate that the value has been used.
+  LineRelease( val->name );
+  val->name = NULL;
+  switch( element->type )
+  {
+  case JSON_Element_String:
+   if( element->count )
+   {
+   }
+   else if( element->count_offset != JSON_NO_OFFSET )
+   {
+   }
+   else
+   {
+    switch( val->result_value )
+    {
+    case VALUE_NULL:
+     ((CTEXTSTR*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = NULL;
+     break;
+    case VALUE_STRING:
+     ((CTEXTSTR*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = StrDup( GetText( val->string ) );
+     break;
+    default:
+     lprintf( WIDE("Expected a string, but parsed result was a %d"), val->result_value );
+     break;
+    }
+   }
+       break;
+  case JSON_Element_Integer_64:
+  case JSON_Element_Integer_32:
+  case JSON_Element_Integer_16:
+  case JSON_Element_Integer_8:
+  case JSON_Element_Unsigned_Integer_64:
+  case JSON_Element_Unsigned_Integer_32:
+  case JSON_Element_Unsigned_Integer_16:
+  case JSON_Element_Unsigned_Integer_8:
+   if( element->count )
+   {
+   }
+   else if( element->count_offset != JSON_NO_OFFSET )
+   {
+   }
+   else
+   {
+    switch( val->result_value )
+    {
+    case VALUE_TRUE:
+     switch( element->type )
+     {
+     case JSON_Element_Integer_64:
+     case JSON_Element_Unsigned_Integer_64:
+      ((int8_t*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = 1;
+                break;
+     case JSON_Element_Integer_32:
+     case JSON_Element_Unsigned_Integer_32:
+      ((int16_t*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = 1;
+                break;
+     case JSON_Element_Integer_16:
+     case JSON_Element_Unsigned_Integer_16:
+      ((int32_t*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = 1;
+                break;
+     case JSON_Element_Integer_8:
+     case JSON_Element_Unsigned_Integer_8:
+      ((int64_t*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = 1;
+      break;
+     }
+     break;
+    case VALUE_FALSE:
+     switch( element->type )
+     {
+     case JSON_Element_Integer_64:
+     case JSON_Element_Unsigned_Integer_64:
+      ((int8_t*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = 0;
+                break;
+     case JSON_Element_Integer_32:
+     case JSON_Element_Unsigned_Integer_32:
+      ((int16_t*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = 0;
+                break;
+     case JSON_Element_Integer_16:
+     case JSON_Element_Unsigned_Integer_16:
+      ((int32_t*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = 0;
+                break;
+     case JSON_Element_Integer_8:
+     case JSON_Element_Unsigned_Integer_8:
+      ((int64_t*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = 0;
+      break;
+     }
+     break;
+    case VALUE_NUMBER:
+     if( val->float_result )
+     {
+      lprintf( WIDE("warning received float, converting to int") );
+      ((int64_t*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = (int64_t)val->result_d;
+     }
+     else
+     {
+      ((int64_t*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = val->result_n;
+     }
+     break;
+    default:
+     lprintf( WIDE("Expected a string, but parsed result was a %d"), val->result_value );
+     break;
+    }
+   }
+   break;
+  case JSON_Element_Float:
+  case JSON_Element_Double:
+   if( element->count )
+   {
+   }
+   else if( element->count_offset != JSON_NO_OFFSET )
+   {
+   }
+   else
+   {
+    switch( val->result_value )
+    {
+    case VALUE_NUMBER:
+     if( val->float_result )
+     {
+      if( element->type == JSON_Element_Float )
+       ((float*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = (float)val->result_d;
+      else
+       ((double*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = val->result_d;
+     }
+     else
+     {
+                // this is probably common (0 for instance)
+      lprintf( WIDE("warning received int, converting to float") );
+      if( element->type == JSON_Element_Float )
+       ((float*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = (float)val->result_n;
+      else
+       ((double*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = (double)val->result_n;
+     }
+     break;
+    default:
+     lprintf( WIDE("Expected a float, but parsed result was a %d"), val->result_value );
+     break;
+    }
+   }
+   break;
+  case JSON_Element_PTRSZVAL_BLANK_0:
+  case JSON_Element_PTRSZVAL:
+   if( element->count )
+   {
+   }
+   else if( element->count_offset != JSON_NO_OFFSET )
+   {
+   }
+   else
+   {
+    switch( val->result_value )
+    {
+    case VALUE_NUMBER:
+     if( val->float_result )
+     {
+      lprintf( WIDE("warning received float, converting to int (uintptr_t)") );
+      ((uintptr_t*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = (uintptr_t)val->result_d;
+     }
+     else
+     {
+      // this is probably common (0 for instance)
+      ((uintptr_t*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = (uintptr_t)val->result_n;
+     }
+     break;
+    }
+   }
+   break;
+  }
+ }
+ LOGICAL json_decode_message( struct json_context *format
+         , PDATALIST msg_data
+         , struct json_context_object **result_format
+         , POINTER *_msgbuf )
+ {
+  #if 0
+  PLIST elements = format->elements;
+  struct json_context_object_element *element;
+  // message is allcoated +7 bytes in case last part is a uint8_t type
+  // all integer stores use uint64_t type to store the collected value.
+  if( !msg_output )
+   msg_output = (*_msg_output)
+    = NewArray( uint8_t, format->object_size + 7  );
+  LOGICAL first_token = TRUE;
+     if( first_token )
+     {
+      // begin an object.
+      // content is
+      elements = format->members;
+      PushLink( &element_lists, elements );
+      first_token = 0;
+      //n++;
+     }
+     else
+     {
+      INDEX idx;
+      // begin a sub object, we should have just had a name for it
+      // since this will be the value of that name.
+      // this will eet 'element' to NULL (fall out of loop) or the current one to store values into
+      LIST_FORALL( elements, idx, struct json_context_object_element *, element )
+      {
+       if( StrCaseCmp( element->name, GetText( val.name ) ) == 0 )
+       {
+        if( ( element->type == JSON_Element_Object )
+         || ( element->type == JSON_Element_ObjectPointer ) )
+        {
+         if( element->object )
+         {
+          // save prior element list; when we return to this one?
+          struct json_parse_context *old_context = New( struct json_parse_context );
+          old_context->context = parse_context;
+          old_context->elements = elements;
+          old_context->object = format;
+          PushLink( &context_stack, old_context );
+          format = element->object;
+          elements = element->object->members;
+          //n++;
+          break;
+         }
+         else
+         {
+          lprintf( WIDE("Error; object type does not have an object") );
+          status = FALSE;
+         }
+        }
+        else
+        {
+         lprintf( WIDE("Incompatible value expected object type, type is %d"), element->type );
+        }
+       }
+      }
+     }
+ #endif
+  return FALSE;
+ }
+ #ifdef __cplusplus
+ } } SACK_NAMESPACE_END
+ #endif
+ #define JSON_EMITTER_SOURCE
+ /***********
+  <Alternative, instead of object format thing, provide a registration mechanism to specify
+   bindings similar to ODBC>
+  Structure member notation...
+  ###<T>
+  [padding]name:[offset][type][(p/a)count][{subformat}],name:[offset][type][(p/a)count][{subformat}],...
+  padding is an optional number that is minimum offset in the object (structure)
+  offset is an optional number before the type; otherwise the offset is relative from prior members
+  count is an optional number after the type for array types (is the size of the array)
+   if count is (*) then the next member describes the array length
+   if count is (-*) then the prior member describes the array length
+  type can be one of
+   i  (integer)
+   ip (integer array (int*) )
+   ia (integer array (int[]) )
+   s  (string (char*))
+   sa (string array (char**))
+   c  (char; unused?)
+   ca (char aray (string, but not from a pointer)(char[]))
+   f  (float)
+   fa (float array float[])
+   fp (float array float* )
+   d  (float)
+   da (float array float[])
+   dp (float array float* )
+   o  (object) (begin another level of breakdown (void*) )
+   op  (object) (begin another level of breakdown (void*) )
+   struct outer {
+     int a;
+     struct inner {
+       char *name;
+     } *substruct;
+     }
+   4a:i,substruct:op{name:s}
+  *************/
+ #ifdef __cplusplus
+ SACK_NAMESPACE namespace network { namespace json {
+ #endif
+ uintptr_t json_add_object( struct json_context *context, CTEXTSTR name, struct json_context_object *format, POINTER object );
+ static CTEXTSTR tab_filler = WIDE("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t");
+ //----------------------------------------------------------------------------------------------
+ struct json_context *json_create_context( void )
+ {
+  struct json_context *context = New( struct json_context );
+  MemSet( context, 0, sizeof( struct json_context ) );
+  context->pvt = VarTextCreateExx( 1024, 16384 );
+  return context;
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_begin_object( struct json_context *context, CTEXTSTR name )
+ {
+  if( context->human_readable )
+   if( context->levels && name )
+    vtprintf( context->pvt, WIDE("%*.*s\"%s\":{\n")
+        , context->levels, context->levels, tab_filler
+        , name );
+   else
+    vtprintf( context->pvt, WIDE("%*.*s{\n")
+        , context->levels, context->levels, tab_filler );
+  else
+   if( context->levels && name )
+    vtprintf( context->pvt, WIDE("\"%s\":{")
+        , name );
+   else
+    VarTextAddCharacter( context->pvt, '{' );
+  context->levels++;
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_end_object( struct json_context *context )
+ {
+  context->levels--;
+  if( context->human_readable )
+   vtprintf( context->pvt, WIDE("%*.*s}\n")
+       , context->levels, context->levels, tab_filler );
+  else
+   VarTextAddCharacter( context->pvt, '}');
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_begin_array( struct json_context *context, CTEXTSTR name )
+ {
+  if( context->human_readable )
+   if( context->levels && name )
+    vtprintf( context->pvt, WIDE("%*.*s\"%s\":[\n")
+        , context->levels, context->levels, tab_filler
+        , name );
+   else
+    vtprintf( context->pvt, WIDE("%*.*s[\n")
+        , context->levels, context->levels, tab_filler );
+  else
+   if( context->levels && name )
+    vtprintf( context->pvt, WIDE("\"%s\":[")
+        , name );
+   else
+    VarTextAddCharacter( context->pvt, '[');
+  context->levels++;
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_end_array( struct json_context *context )
+ {
+  context->levels--;
+  if( context->human_readable )
+   vtprintf( context->pvt, WIDE("%*.*s]\n")
+       , context->levels, context->levels, tab_filler );
+  else
+   VarTextAddCharacter( context->pvt, ']');
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_value( struct json_context *context, CTEXTSTR name, CTEXTSTR value )
+ {
+  if( context->human_readable )
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":\"%s\"\n")
+       , context->levels, context->levels, tab_filler
+       , name, value );
+  else
+   vtprintf( context->pvt, WIDE("\"%s\":\"%s\"")
+       , name, value );
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_list_value( struct json_context_object *object, struct json_context *context, CTEXTSTR name, PLIST values )
+ {
+  INDEX idx;
+  POINTER p;
+  int first = 1;
+  vtprintf( context->pvt, WIDE( "\"%s\":[" ), name );
+  LIST_FORALL( values, idx, POINTER, p )
+  {
+   if( !first )
+    vtprintf( context->pvt, WIDE( "," ) );
+   else
+    first = 0;
+   json_build_message( object, p );
+  }
+  vtprintf( context->pvt, WIDE( "]" ) );
+ }
+ void json_add_int_64_value( struct json_context *context, CTEXTSTR name, int64_t value )
+ {
+  if( context->human_readable )
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":%") _64fs WIDE("\n")
+       , context->levels, context->levels, tab_filler
+       , name, value );
+  else
+   vtprintf( context->pvt, WIDE("\"%s\":%") _64fs
+       , name, value );
+ }
+ void json_add_int_32_value( struct json_context *context, CTEXTSTR name, int32_t value )
+ {
+  if( context->human_readable )
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":%") _32fs WIDE("\n")
+       , context->levels, context->levels, tab_filler
+       , name, value );
+  else
+   vtprintf( context->pvt, WIDE("\"%s\":%") _32fs
+       , name, value );
+ }
+ void json_add_int_16_value( struct json_context *context, CTEXTSTR name, int16_t value )
+ {
+  if( context->human_readable )
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":%") _16fs WIDE("\n")
+       , context->levels, context->levels, tab_filler
+       , name, value );
+  else
+   vtprintf( context->pvt, WIDE("\"%s\":%") _16fs
+       , name, value );
+ }
+ void json_add_int_8_value( struct json_context *context, CTEXTSTR name, int8_t value )
+ {
+  if( context->human_readable )
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":%") _8fs WIDE("\n")
+       , context->levels, context->levels, tab_filler
+       , name, value );
+  else
+   vtprintf( context->pvt, WIDE("\"%s\":%") _8fs
+       , name, value );
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_uint_64_value( struct json_context *context, CTEXTSTR name, uint64_t value )
+ {
+  if( context->human_readable )
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":%") _64f WIDE("\n")
+       , context->levels, context->levels, tab_filler
+       , name, value );
+  else
+   vtprintf( context->pvt, WIDE("\"%s\":%") _64f
+       , name, value );
+ }
+ void json_add_uint_32_value( struct json_context *context, CTEXTSTR name, uint32_t value )
+ {
+  if( context->human_readable )
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":%") _32f WIDE("\n")
+       , context->levels, context->levels, tab_filler
+       , name, value );
+  else
+   vtprintf( context->pvt, WIDE("\"%s\":%") _32f
+       , name, value );
+ }
+ void json_add_uint_16_value( struct json_context *context, CTEXTSTR name, uint16_t value )
+ {
+  if( context->human_readable )
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":%") _16f WIDE("\n")
+       , context->levels, context->levels, tab_filler
+       , name, value );
+  else
+   vtprintf( context->pvt, WIDE("\"%s\":%") _16f
+       , name, value );
+ }
+ void json_add_uint_8_value( struct json_context *context, CTEXTSTR name, uint8_t value )
+ {
+  if( context->human_readable )
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":%") _8f WIDE("\n")
+       , context->levels, context->levels, tab_filler
+       , name, value );
+  else
+   vtprintf( context->pvt, WIDE("\"%s\":%") _8f
+       , name, value );
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_float_value( struct json_context *context, CTEXTSTR name, double value )
+ {
+  if( context->human_readable )
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":%g\n")
+       , context->levels, context->levels, tab_filler
+       , name, value );
+  else
+   vtprintf( context->pvt, WIDE("\"%s\":%g")
+       , name, value );
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_value_array( struct json_context *context, CTEXTSTR name, CTEXTSTR* pValue, size_t nValues )
+ {
+  size_t n;
+  if( context->human_readable )
+  {
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":[")
+       , context->levels, context->levels, tab_filler
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%s"), (n==0)?WIDE(""):WIDE(","), pValue[nValues] );
+   vtprintf( context->pvt, WIDE("]\n") );
+  }
+  else
+  {
+   vtprintf( context->pvt, WIDE("\"%s\":[")
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%s"), (n==0)?WIDE(""):WIDE(","), pValue[nValues] );
+   VarTextAddCharacter( context->pvt, ']' );
+  }
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_int_64_value_array( struct json_context *context, CTEXTSTR name, int64_t* pValues, size_t nValues )
+ {
+  size_t n;
+  if( context->human_readable )
+  {
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":[")
+       , context->levels, context->levels, tab_filler
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%") _64fs, (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   vtprintf( context->pvt, WIDE("]\n") );
+  }
+  else
+  {
+   vtprintf( context->pvt, WIDE("\"%s\":[")
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%") _64fs, (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   VarTextAddCharacter( context->pvt, ']' );
+  }
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_int_32_value_array( struct json_context *context, CTEXTSTR name, int32_t* pValues, size_t nValues )
+ {
+  size_t n;
+  if( context->human_readable )
+  {
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":[")
+       , context->levels, context->levels, tab_filler
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%") _32fs, (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   vtprintf( context->pvt, WIDE("]\n") );
+  }
+  else
+  {
+   vtprintf( context->pvt, WIDE("\"%s\":[")
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%") _32fs, (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   VarTextAddCharacter( context->pvt, ']' );
+  }
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_int_16_value_array( struct json_context *context, CTEXTSTR name, int16_t* pValues, size_t nValues )
+ {
+  size_t n;
+  if( context->human_readable )
+  {
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":[")
+       , context->levels, context->levels, tab_filler
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%d"), (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   vtprintf( context->pvt, WIDE("]\n") );
+  }
+  else
+  {
+   vtprintf( context->pvt, WIDE("\"%s\":[")
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%d"), (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   VarTextAddCharacter( context->pvt, ']' );
+  }
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_int_8_value_array( struct json_context *context, CTEXTSTR name, int8_t* pValues, size_t nValues )
+ {
+  size_t n;
+  if( context->human_readable )
+  {
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":[")
+       , context->levels, context->levels, tab_filler
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%d"), (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   vtprintf( context->pvt, WIDE("]\n") );
+  }
+  else
+  {
+   vtprintf( context->pvt, WIDE("\"%s\":[")
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%d"), (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   VarTextAddCharacter( context->pvt, ']' );
+  }
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_uint_64_value_array( struct json_context *context, CTEXTSTR name, uint64_t* pValues, size_t nValues )
+ {
+  size_t n;
+  if( context->human_readable )
+  {
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":[")
+       , context->levels, context->levels, tab_filler
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%") _64f, (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   vtprintf( context->pvt, WIDE("]\n") );
+  }
+  else
+  {
+   vtprintf( context->pvt, WIDE("\"%s\":[")
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%") _64f, (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   VarTextAddCharacter( context->pvt, ']' );
+  }
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_uint_32_value_array( struct json_context *context, CTEXTSTR name, uint32_t* pValues, size_t nValues )
+ {
+  size_t n;
+  if( context->human_readable )
+  {
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":[")
+       , context->levels, context->levels, tab_filler
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%") _32f, (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   vtprintf( context->pvt, WIDE("]\n") );
+  }
+  else
+  {
+   vtprintf( context->pvt, WIDE("\"%s\":[")
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%") _32f, (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   VarTextAddCharacter( context->pvt, ']' );
+  }
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_uint_16_value_array( struct json_context *context, CTEXTSTR name, uint16_t* pValues, size_t nValues )
+ {
+  size_t n;
+  if( context->human_readable )
+  {
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":[")
+       , context->levels, context->levels, tab_filler
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%d"), (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   vtprintf( context->pvt, WIDE("]\n") );
+  }
+  else
+  {
+   vtprintf( context->pvt, WIDE("\"%s\":[")
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%d"), (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   VarTextAddCharacter( context->pvt, ']' );
+  }
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_uint_8_value_array( struct json_context *context, CTEXTSTR name, uint8_t* pValues, size_t nValues )
+ {
+  size_t n;
+  if( context->human_readable )
+  {
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":[")
+       , context->levels, context->levels, tab_filler
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%d"), (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   vtprintf( context->pvt, WIDE("]\n") );
+  }
+  else
+  {
+   vtprintf( context->pvt, WIDE("\"%s\":[")
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%d"), (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   VarTextAddCharacter( context->pvt, ']' );
+  }
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_int_array( struct json_context *context, CTEXTSTR name, int* pValues, size_t nValues )
+ {
+  size_t n;
+  if( context->human_readable )
+  {
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":[")
+       , context->levels, context->levels, tab_filler
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%d"), (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   vtprintf( context->pvt, WIDE("]\n") );
+  }
+  else
+  {
+   vtprintf( context->pvt, WIDE("\"%s\":[")
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%d"), (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   VarTextAddCharacter( context->pvt, ']' );
+  }
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_float_value_array( struct json_context *context, CTEXTSTR name, float* pValues, size_t nValues )
+ {
+  size_t n;
+  if( context->human_readable )
+  {
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":[")
+       , context->levels, context->levels, tab_filler
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%g"), (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   vtprintf( context->pvt, WIDE("]\n") );
+  }
+  else
+  {
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":[")
+       , context->levels, context->levels, tab_filler
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%g"), (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   VarTextAddCharacter( context->pvt, ']' );
+  }
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_double_value_array( struct json_context *context, CTEXTSTR name, double* pValues, size_t nValues )
+ {
+  size_t n;
+  if( context->human_readable )
+  {
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":[")
+       , context->levels, context->levels, tab_filler
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%g"), (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   vtprintf( context->pvt, WIDE("]\n") );
+  }
+  else
+  {
+   vtprintf( context->pvt, WIDE("%*.*s\"%s\":[")
+       , context->levels, context->levels, tab_filler
+       , name );
+   for( n = 0; n < nValues; n++ )
+    vtprintf( context->pvt, WIDE("%s%g"), (n==0)?WIDE(""):WIDE(","), pValues[nValues] );
+   VarTextAddCharacter( context->pvt, ']' );
+  }
+ }
+ //----------------------------------------------------------------------------------------------
+ static int GetNumber( CTEXTSTR *start )
+ {
+  int result = 0;
+  while( (*start)[0] <= '9' && (*start)[0] >= '0' )
+  {
+   result *= 10;
+   result += (*start)[0] - '0';
+   (*start)++;
+  }
+  return result;
+ }
+ //----------------------------------------------------------------------------------------------
+ uintptr_t ParseFormat( struct json_context *context, CTEXTSTR format, uintptr_t object )
+ {
+  int padding = 0;
+  int member_offset;
+  uintptr_t current_obj_ofs = object;
+  CTEXTSTR start = format;
+  CTEXTSTR _start;
+  TEXTCHAR namebuf[256];
+ #define namebuf_size (sizeof(namebuf)/sizeof(namebuf[0]))
+  int name_end;
+  padding = GetNumber( &start );
+  name_end = 0;
+  _start = start;
+  while( name_end < namebuf_size && start[0] && start[0] != ':' )
+  {
+   namebuf[name_end++] = start[0];
+   start++;
+  }
+  namebuf[name_end] = 0;
+  if( !start[0] )
+  {
+   lprintf( WIDE("Object description format error: no colon after (%s)"), _start );
+   return 0;
+  }
+ // skip the ':'
+  start++;
+  member_offset = GetNumber( &start );
+  if( member_offset )
+   current_obj_ofs = ((uintptr_t)object)+member_offset;
+ #define padded_add(n) ((n)<padding?padding:(n))
+  switch( start[0] )
+  {
+  case 'i':
+   {
+    int int_size;
+    start++;
+    int_size = GetNumber( &start );
+    switch( start[0] )
+    {
+    case 'p':
+     break;
+    case 'a':
+     break;
+    default:
+     switch( int_size )
+     {
+     case 1:
+      current_obj_ofs += padded_add( 1 );
+      break;
+     case 2:
+      current_obj_ofs += padded_add( 2 );
+      break;
+     case 4:
+      current_obj_ofs += padded_add( 4 );
+      break;
+     case 8:
+      current_obj_ofs += padded_add( 8 );
+      break;
+     default:
+      current_obj_ofs += padded_add( sizeof(int) );
+     }
+    }
+   }
+   break;
+  case 's':
+   current_obj_ofs += padded_add( sizeof(char*) );
+   break;
+  case 'c':
+   current_obj_ofs += padded_add( sizeof(char) );
+   break;
+  case 'f':
+   current_obj_ofs += padded_add( sizeof(float) );
+   break;
+  case 'd':
+   current_obj_ofs += padded_add( sizeof(double) );
+   break;
+  case 'o':
+   switch( start[1] )
+   {
+   case 'p':
+    if( start[2] == '{' )
+    {
+     // add_object doesn't work like this now
+     //json_add_object( context, namebuf, start + 3, *(POINTER*)current_obj_ofs );
+    }
+    current_obj_ofs += padded_add( sizeof( POINTER ) );
+    break;
+   case '{':
+    // add_object doesn't work like this now
+    //current_obj_ofs = json_add_object( context, namebuf, start + 2, (POINTER)current_obj_ofs );
+    break;
+   default:
+    lprintf( WIDE("Didn't find object description for object (%s) near (%s)"), namebuf, start );
+    break;
+   }
+   break;
+  default:
+   lprintf( WIDE("Unrecognize type format character at (%s) for value (%s)"), start, namebuf );
+  }
+  return current_obj_ofs;
+ }
+ static size_t GetDefaultObjectSize( enum JSON_ObjectElementTypes type )
+ {
+  switch( type )
+  {
+  case JSON_Element_Integer_8:
+   return sizeof( int8_t );
+  case JSON_Element_Integer_16:
+   return sizeof( int16_t );
+  case JSON_Element_Integer_32:
+    return sizeof( int32_t );
+  case JSON_Element_Integer_64:
+    return sizeof( int64_t );
+  case JSON_Element_Unsigned_Integer_8:
+    return sizeof( uint8_t );
+  case JSON_Element_Unsigned_Integer_16:
+   return sizeof( uint16_t );
+  case JSON_Element_Unsigned_Integer_32:
+   return sizeof( uint32_t );
+  case JSON_Element_Unsigned_Integer_64:
+   return sizeof( uint64_t );
+  case JSON_Element_String:
+   return sizeof( POINTER );
+  case JSON_Element_CharArray:
+   return 0;
+  case JSON_Element_Float:
+   return sizeof( float );
+  case JSON_Element_Double:
+   return sizeof( double );
+  case JSON_Element_Object:
+   return 0;
+  case JSON_Element_ObjectPointer:
+  case JSON_Element_List:
+  // ptext type
+  case JSON_Element_Text:
+   return sizeof( POINTER );
+  case JSON_Element_PTRSZVAL:
+  case JSON_Element_PTRSZVAL_BLANK_0:
+   return sizeof( uintptr_t );
+   break;
+  }
+  return 0;
+ }
+ //----------------------------------------------------------------------------------------------
+ uintptr_t json_add_object( struct json_context *context, CTEXTSTR name, struct json_context_object *format, POINTER object )
+ {
+  return 0;
+ }
+ //----------------------------------------------------------------------------------------------
+ void json_add_object_array( struct json_context *context, CTEXTSTR name, struct json_context_object *format, POINTER pValues, size_t nValues  )
+ {
+ }
+ //----------------------------------------------------------------------------------------------
+ struct json_context_object *json_create_object( struct json_context *context, size_t object_size )
+ {
+  struct json_context_object *format = New( struct json_context_object );
+  MemSet( format, 0, sizeof( struct json_context_object ) );
+  format->context = context;
+  if( object_size )
+   format->object_size = object_size;
+  else
+   format->flags.dynamic_size = 1;
+  // keep a reference for cleanup
+  AddLink( &context->object_types, format );
+  return format;
+ }
+ //----------------------------------------------------------------------------------------------
+ struct json_context_object *json_create_array( struct json_context *context
+                , size_t offset
+                , enum JSON_ObjectElementTypes type
+                , size_t count
+                , size_t count_offset
+             )
+ {
+  struct json_context_object *format = New( struct json_context_object );
+  format->context = context;
+  format->members = NULL;
+  format->is_array = TRUE;
+  {
+   struct json_context_object_element *element;
+   element = New( struct json_context_object_element );
+   MemSet( element, 0, sizeof( struct json_context_object_element ) );
+   element->name = NULL;
+   element->object = format;
+   element->offset = offset;
+   element->type = type;
+   element->count = count;
+   element->count_offset = count_offset;
+   AddLink( &format->members, element );
+  }
+  // keep a reference for cleanup
+  AddLink( &context->object_types, format );
+  return format;
+ }
+ //----------------------------------------------------------------------------------------------
+ struct json_context_object *json_add_object_member_array( struct json_context_object *format
+                     , CTEXTSTR name
+                     , size_t offset
+                     , enum JSON_ObjectElementTypes type
+                     , size_t object_size
+                     , size_t count
+                     , size_t count_offset
+                     )
+ {
+  struct json_context *context = format->context;
+  struct json_context_object_element *member = New( struct json_context_object_element );
+  MemSet( member, 0, sizeof( struct json_context_object_element ) );
+  if( !object_size )
+   object_size = GetDefaultObjectSize(type);
+  if( format->flags.dynamic_size )
+  {
+   struct json_context_object *parent;
+   for( parent = format; parent; parent = parent->parent )
+   {
+    parent->object_size += object_size;
+   }
+  }
+  member->name = StrDup( name );
+  member->offset = offset;
+  member->type = type;
+  member->count = count;
+  member->count_offset = count_offset;
+  switch( type )
+  {
+  case JSON_Element_Object:
+  case JSON_Element_ObjectPointer:
+   member->object = json_create_object( context, object_size );
+   member->object->parent = format;
+   member->object->offset = offset;
+   member->object->flags.keep_phrase = TRUE;
+   break;
+  }
+  AddLink( &format->members, member );
+  if( member->object )
+   return member->object;
+  return format;
+ }
+ struct json_context_object *json_add_object_member_user_routine( struct json_context_object *object
+                 , CTEXTSTR name
+                   , size_t offset, enum JSON_ObjectElementTypes type
+                   , size_t object_size
+                   , void (*user_formatter)(PVARTEXT,CPOINTER) )
+ {
+  struct json_context_object *new_object = json_add_object_member_array( object
+                                                                       , name
+                                                                       , offset
+                                                                       , JSON_Element_UserRoutine
+                                                                       , object_size?object_size:GetDefaultObjectSize( type )
+                                                                       , 0
+                                                                       , JSON_NO_OFFSET );
+  struct json_context_object_element *last_element = NULL;
+  struct json_context_object_element *element;
+  INDEX idx;
+  LIST_FORALL( object->members, idx, struct json_context_object_element *, element )
+  {
+   last_element = element;
+  }
+  if( last_element )
+  {
+   last_element->content_type = type;
+   last_element->user_formatter = user_formatter;
+  }
+  return new_object;
+ }
+ //----------------------------------------------------------------------------------------------
+ struct json_context_object *json_add_object_member( struct json_context_object *format
+                   , CTEXTSTR name
+                   , size_t offset, enum JSON_ObjectElementTypes type
+                   , size_t object_size )
+ {
+  return json_add_object_member_array( format, name, offset, type, object_size, 0, JSON_NO_OFFSET );
+ }
+ // adds a reference to a PLIST as an array with the content of the array specified as the type
+ struct json_context_object *json_add_object_member_list( struct json_context_object *object
+                    , CTEXTSTR name
+                    , size_t offset
+                    , enum JSON_ObjectElementTypes content_type
+                    , size_t object_size
+                    )
+ {
+  // this is a double pointer... implement as a specific type?
+  //return json_add_object_member_array( format, name, offset, content_type, object_size, 0, offsetof(
+  struct json_context *context = object->context;
+  struct json_context_object_element *member = New( struct json_context_object_element );
+  MemSet( member, 0, sizeof( struct json_context_object_element ) );
+  member->name = StrDup( name );
+  if( object->flags.dynamic_size )
+  {
+   struct json_context_object *parent;
+   for( parent = object; parent; parent = parent->parent )
+    parent->object_size += object_size;
+  }
+  member->object_size = object_size;
+  member->offset = offset;
+  member->type = JSON_Element_List;
+  member->content_type = content_type;
+  member->count = 0;
+  member->count_offset = offsetof( LIST, Cnt );
+  member->object = json_create_object( context, 0 );
+  member->object->flags.keep_phrase = TRUE;
+  AddLink( &object->members, member );
+  if( member->object )
+   return member->object;
+  return object;
+ }
+ // this allows recursive structures, so the structure may contain a reference to itself.
+ // this allows buildling other objects and referencing them instead of building them in-place
+ JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_object_array )( struct json_context_object *object
+                               , CTEXTSTR name
+                               , size_t offset
+                               , enum JSON_ObjectElementTypes type
+                               , struct json_context_object *child_object
+                               , int count
+                               , size_t count_offset
+                               )
+ {
+  struct json_context *context = object->context;
+  struct json_context_object_element *member = New( struct json_context_object_element );
+  MemSet( member, 0, sizeof( struct json_context_object_element ) );
+  member->name = StrDup( name );
+  member->offset = offset;
+  member->type = type;
+  member->count = count;
+  member->count_offset = count_offset;
+  switch( type )
+  {
+  case JSON_Element_Object:
+  case JSON_Element_ObjectPointer:
+   member->object = child_object;
+   break;
+  default:
+   lprintf( WIDE("incompatible type") );
+   break;
+  }
+  AddLink( &object->members, member );
+  if( member->object )
+   return member->object;
+  return object;
+ }
+ JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_object )( struct json_context_object *object
+                          , CTEXTSTR name
+                          , size_t offset
+                          , enum JSON_ObjectElementTypes type
+                          , struct json_context_object *child_object
+                          )
+ {
+  return json_add_object_member_object_array( object, name, offset, type, child_object, 0, JSON_NO_OFFSET );
+ }
+ //----------------------------------------------------------------------------------------------
+ struct json_context_object * json_add_object_member_array_pointer( struct json_context_object *object
+                , CTEXTSTR name
+                , size_t offset, enum JSON_ObjectElementTypes type
+                , size_t count_offset )
+ {
+  struct json_context *context = object->context;
+  struct json_context_object_element *member = New( struct json_context_object_element );
+  MemSet( member, 0, sizeof( struct json_context_object_element ) );
+  member->name = StrDup( name );
+  member->offset = offset;
+  member->type = type;
+  member->count_offset = count_offset;
+    return object;
+ }
+ //----------------------------------------------------------------------------------------------
+ TEXTSTR json_build_message( struct json_context_object *object
+          , POINTER msg )
+ {
+  struct json_context *context = object->context;
+  TEXTSTR result;
+  int n = 0;
+  INDEX idx;
+  struct json_context_object_element *member;
+  if( !object->flags.keep_phrase )
+   VarTextEmpty( context->pvt );
+  if( object->is_array )
+   json_begin_array( context, NULL );
+  else
+   json_begin_object( context, NULL );
+  LIST_FORALL( object->members, idx, struct json_context_object_element *, member )
+  {
+   if( n && ( member->type != JSON_Element_PTRSZVAL_BLANK_0 ) )
+    vtprintf( context->pvt, WIDE(",") );
+   n++;
+   switch( member->type )
+   {
+   default:
+    lprintf( WIDE("Unhandled json_emitter type: %d"), member->type );
+    break;
+   case JSON_Element_List:
+    //if( member->count )
+    // ;
+    //else if( member->count_offset != JSON_NO_OFFSET )
+    // ;
+    //else
+     json_add_list_value( member->object, context, member->name, *(PLIST*)(((uintptr_t)msg)+member->offset) );
+    break;
+   case JSON_Element_Integer_64:
+    if( member->count )
+     json_add_int_64_value_array( context, member->name, (int64_t*)(((uintptr_t)msg)+member->offset), member->count );
+    else if( member->count_offset != JSON_NO_OFFSET )
+     json_add_int_64_value_array( context, member->name
+           , *(int64_t**)(((uintptr_t)msg)+member->offset)
+           , *(size_t*)(((uintptr_t)msg)+member->count_offset)
+           );
+    else
+     json_add_int_64_value( context, member->name, *(int64_t*)(((uintptr_t)msg)+member->offset) );
+    break;
+   case JSON_Element_Integer_32:
+    if( member->count )
+     json_add_int_32_value_array( context, member->name, (int32_t*)(((uintptr_t)msg)+member->offset), member->count );
+    else if( member->count_offset != JSON_NO_OFFSET )
+     json_add_int_32_value_array( context, member->name
+           , *(int32_t**)(((uintptr_t)msg)+member->offset)
+           , *(size_t*)(((uintptr_t)msg)+member->count_offset)
+           );
+    else
+     json_add_int_32_value( context, member->name, *(int32_t*)(((uintptr_t)msg)+member->offset) );
+    break;
+   case JSON_Element_Integer_16:
+    if( member->count )
+     json_add_int_16_value_array( context, member->name, (int16_t*)(((uintptr_t)msg)+member->offset), member->count );
+    else if( member->count_offset != JSON_NO_OFFSET )
+     json_add_int_16_value_array( context, member->name
+           , *(int16_t**)(((uintptr_t)msg)+member->offset)
+           , *(size_t*)(((uintptr_t)msg)+member->count_offset)
+           );
+    else
+     json_add_int_16_value( context, member->name, *(int16_t*)(((uintptr_t)msg)+member->offset) );
+    break;
+   case JSON_Element_Integer_8:
+    if( member->count )
+     json_add_int_8_value_array( context, member->name, (int8_t*)(((uintptr_t)msg)+member->offset), member->count );
+    else if( member->count_offset != JSON_NO_OFFSET )
+     json_add_int_8_value_array( context, member->name
+           , *(int8_t**)(((uintptr_t)msg)+member->offset)
+           , *(size_t*)(((uintptr_t)msg)+member->count_offset)
+           );
+    else
+     json_add_int_8_value( context, member->name, *(int8_t*)(((uintptr_t)msg)+member->offset) );
+    break;
+   case JSON_Element_Unsigned_Integer_64:
+    if( member->count )
+     json_add_uint_64_value_array( context, member->name, (uint64_t*)(((uintptr_t)msg)+member->offset), member->count );
+    else if( member->count_offset != JSON_NO_OFFSET )
+     json_add_uint_64_value_array( context, member->name
+           , *(uint64_t**)(((uintptr_t)msg)+member->offset)
+           , *(size_t*)(((uintptr_t)msg)+member->count_offset)
+           );
+    else
+     json_add_uint_64_value( context, member->name, *(uint64_t*)(((uintptr_t)msg)+member->offset) );
+    break;
+   case JSON_Element_Unsigned_Integer_32:
+    if( member->count )
+     json_add_uint_32_value_array( context, member->name, (uint32_t*)(((uintptr_t)msg)+member->offset), member->count );
+    else if( member->count_offset != JSON_NO_OFFSET )
+     json_add_uint_32_value_array( context, member->name
+           , *(uint32_t**)(((uintptr_t)msg)+member->offset)
+           , *(size_t*)(((uintptr_t)msg)+member->count_offset)
+           );
+    else
+     json_add_uint_32_value( context, member->name, *(uint32_t*)(((uintptr_t)msg)+member->offset) );
+    break;
+   case JSON_Element_Unsigned_Integer_16:
+    if( member->count )
+     json_add_uint_16_value_array( context, member->name, (uint16_t*)(((uintptr_t)msg)+member->offset), member->count );
+    else if( member->count_offset != JSON_NO_OFFSET )
+     json_add_uint_16_value_array( context, member->name
+           , *(uint16_t**)(((uintptr_t)msg)+member->offset)
+           , *(size_t*)(((uintptr_t)msg)+member->count_offset)
+           );
+    else
+     json_add_uint_16_value( context, member->name, *(uint16_t*)(((uintptr_t)msg)+member->offset) );
+    break;
+   case JSON_Element_Unsigned_Integer_8:
+    if( member->count )
+     json_add_uint_8_value_array( context, member->name, (uint8_t*)(((uintptr_t)msg)+member->offset), member->count );
+    else if( member->count_offset != JSON_NO_OFFSET )
+     json_add_uint_8_value_array( context, member->name
+           , *(uint8_t**)(((uintptr_t)msg)+member->offset)
+           , *(size_t*)(((uintptr_t)msg)+member->count_offset)
+           );
+    else
+     json_add_uint_8_value( context, member->name, *(uint8_t*)(((uintptr_t)msg)+member->offset) );
+    break;
+   case JSON_Element_Float:
+    if( member->count )
+     json_add_float_value_array( context, member->name, (float*)(((uintptr_t)msg)+member->offset), member->count );
+    else if( member->count_offset != JSON_NO_OFFSET )
+     json_add_float_value_array( context, member->name
+           , *(float**)(((uintptr_t)msg)+member->offset)
+           , *(size_t*)(((uintptr_t)msg)+member->count_offset)
+           );
+    else
+     json_add_float_value( context, member->name, *(float*)(((uintptr_t)msg)+member->offset) );
+    break;
+   case JSON_Element_Double:
+    if( member->count )
+     json_add_double_value_array( context, member->name, (double*)(((uintptr_t)msg)+member->offset), member->count );
+    else if( member->count_offset != JSON_NO_OFFSET )
+     json_add_double_value_array( context, member->name
+           , *(double**)(((uintptr_t)msg)+member->offset)
+           , *(size_t*)(((uintptr_t)msg)+member->count_offset)
+           );
+    else
+     json_add_float_value( context, member->name, *(double*)(((uintptr_t)msg)+member->offset) );
+    break;
+   case JSON_Element_String:
+    if( member->count )
+     json_add_value_array( context, member->name, *(CTEXTSTR**)(((uintptr_t)msg)+member->offset), member->count );
+    else if( member->count_offset != JSON_NO_OFFSET )
+     json_add_value_array( context, member->name
+           , (CTEXTSTR*)(((uintptr_t)msg)+member->offset)
+           , *(int*)(((uintptr_t)msg)+member->count_offset)
+           );
+    else
+     json_add_value( context, member->name, *(CTEXTSTR*)(((uintptr_t)msg)+member->offset) );
+    break;
+   case JSON_Element_CharArray:
+    if( member->count )
+     json_add_value_array( context, member->name, (CTEXTSTR*)(((uintptr_t)msg)+member->offset), member->count );
+    else if( member->count_offset != JSON_NO_OFFSET )
+     json_add_value_array( context, member->name
+           , (CTEXTSTR*)(((uintptr_t)msg)+member->offset)
+           , *(int*)(((uintptr_t)msg)+member->count_offset)
+           );
+    else
+     json_add_value( context, member->name, (CTEXTSTR)(((uintptr_t)msg)+member->offset) );
+    break;
+   case JSON_Element_ObjectPointer:
+    {
+     vtprintf( context->pvt, WIDE("\"%s\":")
+         , member->name );
+     json_build_message( member->object, *((POINTER*)(((uintptr_t)msg)+member->offset)) );
+    }
+    break;
+   case JSON_Element_Object:
+    {
+     vtprintf( context->pvt, WIDE("\"%s\":")
+         , member->name );
+     json_build_message( member->object, (POINTER)(((uintptr_t)msg)+member->offset) );
+    }
+    break;
+   case JSON_Element_PTRSZVAL:
+    {
+     uintptr_t psv;
+ #ifdef __64__
+     if( ( psv = *(int64_t*)(((uintptr_t)msg)+member->offset) ) == INVALID_INDEX )
+      json_add_int_64_value( context, member->name, *(int64_t*)(((uintptr_t)msg)+member->offset) );
+     else
+      json_add_uint_64_value( context, member->name, *(int64_t*)(((uintptr_t)msg)+member->offset) );
+ #else
+     if( ( psv = *(int32_t*)(((uintptr_t)msg)+member->offset) ) == INVALID_INDEX )
+      json_add_int_32_value( context, member->name, *(int32_t*)(((uintptr_t)msg)+member->offset) );
+     else
+      json_add_uint_32_value( context, member->name, *(int32_t*)(((uintptr_t)msg)+member->offset) );
+ #endif
+    }
+    break;
+   case JSON_Element_PTRSZVAL_BLANK_0:
+    {
+     uintptr_t psv;
+ #ifdef __64__
+     if( psv = *(int64_t*)(((uintptr_t)msg)+member->offset) )
+     {
+      if( n )
+       vtprintf( context->pvt, WIDE(",") );
+      if( psv == INVALID_INDEX )
+       json_add_int_64_value( context, member->name, psv );
+      else
+       json_add_uint_64_value( context, member->name, psv );
+     }
+ #else
+     if( psv = *(int32_t*)(((uintptr_t)msg)+member->offset) )
+     {
+      if( n )
+       vtprintf( context->pvt, WIDE(",") );
+      if( psv == INVALID_INDEX )
+       json_add_int_32_value( context, member->name, psv );
+      else
+       json_add_uint_32_value( context, member->name, psv );
+     }
+ #endif
+    }
+    break;
+   case JSON_Element_UserRoutine:
+    vtprintf( context->pvt, WIDE("\"%s\":"), member->name );
+    member->user_formatter( context->pvt, (CPOINTER)(((uintptr_t)msg)+member->offset) );
+    break;
+   }
+  }
+  if( object->is_array )
+   json_end_array( context );
+  else
+   json_end_object( context );
+  if( !object->flags.keep_phrase )
+  {
+   PTEXT tmp = VarTextGet( context->pvt );
+   result = StrDup( GetText( tmp ) );
+   LineRelease( tmp );
+   return result;
+  }
+  // will be incomplete...
+  return NULL;
+ }
+ //----------------------------------------------------------------------------------------------
+ #ifdef __cplusplus
+ } } }
+ #endif
+ ///////////////////////////////////////////////////////////////////////////
+ //
+ // Filename    -  Network.C
+ //
+ // Description -  Network services for Communications Client
+ //
+ // Author      -  James Buckeyne
+ //
+ // Create Date -  Before now.
+ // Conversion update for Linux GLIBC 2.1 9/26/2000
+ //
+ ///////////////////////////////////////////////////////////////////////////
+ //
+ //  DEBUG FLAGS IN netstruc.h
+ //
+ #define FIX_RELEASE_COM_COLLISION
+ #define NO_UNICODE_C
+ #define MAIN_PROGRAM
+ // critical section
  //#include "../contrib/MatrixSSL/3.7.1/matrixssl/matrixsslApi.h"
  // debugging flag for socket creation/closing
  //#define LOG_SOCKET_CREATION
@@ -44914,7 +52480,7 @@ GetFreeBlock( vol, TRUE );
   CTEXTSTR system_name;
  #ifdef WIN32
     int nProtos;
-  WSAPROTOCOL_INFO *pProtos;
+  WSAPROTOCOL_INFOW *pProtos;
   INDEX tcp_protocol;
   INDEX udp_protocol;
   INDEX tcp_protocolv6;
@@ -50163,6 +57729,7 @@ GetFreeBlock( vol, TRUE );
  }
  _UDP_NAMESPACE_END
  SACK_NETWORK_NAMESPACE_END
+ #ifndef __LINUX__
  ///////////////////////////////////////////////////////////////////////////
  //
  // Filename    -  Network.C
@@ -50186,7 +57753,7 @@ GetFreeBlock( vol, TRUE );
   {
    SOCKET result;
        // need to index into saved sockets and try another provider.
-   result = WSASocket(v4?AF_INET:AF_INET6
+   result = WSASocketW(v4?AF_INET:AF_INET6
             , bRaw?SOCK_RAW:0
             , 0
             , v4
@@ -50201,7 +57768,7 @@ GetFreeBlock( vol, TRUE );
   }
   else
   {
-   SOCKET result = WSASocket(v4?AF_INET:AF_INET6
+   SOCKET result = WSASocketW(v4?AF_INET:AF_INET6
             , bRaw?SOCK_RAW:0
             , 0
             , v4
@@ -50230,7 +57797,7 @@ GetFreeBlock( vol, TRUE );
   if( globalNetworkData.flags.bLogProtocols )
    lprintf(WIDE( "Winsock Version: %d.%d" ), LOBYTE(wd.wVersion), HIBYTE(wd.wVersion));
   size = 0;
-  if ((globalNetworkData.nProtos = WSAEnumProtocols(NULL, NULL, (DWORD *) &size)) == -1)
+  if ((globalNetworkData.nProtos = WSAEnumProtocolsW(NULL, NULL, (DWORD *) &size)) == -1)
   {
    if( WSAGetLastError() != WSAENOBUFS )
    {
@@ -50238,8 +57805,8 @@ GetFreeBlock( vol, TRUE );
     return 0;
    }
   }
-  globalNetworkData.pProtos = (WSAPROTOCOL_INFO*)Allocate( size );
-  if ((globalNetworkData.nProtos = WSAEnumProtocols(NULL, globalNetworkData.pProtos, (DWORD *) &size)) == -1)
+  globalNetworkData.pProtos = (WSAPROTOCOL_INFOW*)Allocate( size );
+  if ((globalNetworkData.nProtos = WSAEnumProtocolsW(NULL, globalNetworkData.pProtos, (DWORD *) &size)) == -1)
   {
    lprintf(WIDE( "WSAEnumProtocols: %d" ), h_errno);
    return 0;
@@ -50247,25 +57814,25 @@ GetFreeBlock( vol, TRUE );
   for (i = 0; i < globalNetworkData.nProtos; i++)
   {
    // IPv6
-   if (strcmp(globalNetworkData.pProtos[i].szProtocol, WIDE( "MSAFD Tcpip [TCP/IP]" )) == 0)
+   if (wcscmp(globalNetworkData.pProtos[i].szProtocol, L"MSAFD Tcpip [TCP/IP]" ) == 0)
    {
     globalNetworkData.tcp_protocol = i;
     protoIndex = i;
    }
-   if (strcmp(globalNetworkData.pProtos[i].szProtocol, WIDE( "MSAFD Tcpip [UDP/IP]" )) == 0)
+   if (wcscmp(globalNetworkData.pProtos[i].szProtocol, L"MSAFD Tcpip [UDP/IP]" ) == 0)
    {
     globalNetworkData.udp_protocol = i;
    }
-   if (strcmp(globalNetworkData.pProtos[i].szProtocol, WIDE( "MSAFD Tcpip [TCP/IPv6]" )) == 0)
+   if (wcscmp(globalNetworkData.pProtos[i].szProtocol, L"MSAFD Tcpip [TCP/IPv6]" ) == 0)
    {
     globalNetworkData.tcp_protocolv6 = i;
    }
-   if (strcmp(globalNetworkData.pProtos[i].szProtocol, WIDE( "MSAFD Tcpip [UDP/IPv6]" )) == 0)
+   if (wcscmp(globalNetworkData.pProtos[i].szProtocol, L"MSAFD Tcpip [UDP/IPv6]" ) == 0)
    {
     globalNetworkData.udp_protocolv6 = i;
    }
    if( globalNetworkData.flags.bLogProtocols )
-    lprintf(WIDE( "Index #%d - name: '%s', type: %d, proto: %d" ), i, globalNetworkData.pProtos[i].szProtocol,
+    lprintf(WIDE( "Index #%d - name: '%S', type: %d, proto: %d" ), i, globalNetworkData.pProtos[i].szProtocol,
         globalNetworkData.pProtos[i].iSocketType, globalNetworkData.pProtos[i].iProtocol);
   }
   if (protoIndex == -1)
@@ -50276,6 +57843,7 @@ GetFreeBlock( vol, TRUE );
   return 0;
  }
  SACK_NETWORK_NAMESPACE_END
+ #endif
  #define NO_UNICODE_C
  #ifdef __WATCOMC__
  // definition of SH_DENYNO
@@ -64019,9 +71587,9 @@ GetFreeBlock( vol, TRUE );
      attempt++;
      // this is going to be more hassle to conserve
      // than benefit merits.
-     Fopen( g.pSQLLog, logname, WIDE("at+") );
+     g.pSQLLog = sack_fopen( 0, logname, WIDE("at+") );
      if( !g.pSQLLog )
-      Fopen( g.pSQLLog, logname, WIDE("wt") );
+      g.pSQLLog = sack_fopen( 0, logname, WIDE("wt") );
     }
     while( !g.pSQLLog );
    }
@@ -64151,8 +71719,8 @@ GetFreeBlock( vol, TRUE );
  int OpenSQLConnectionEx( PODBC odbc DBG_PASS )
  {
   int state = 0;
-  RETCODE rc;
  #ifdef USE_ODBC
+  RETCODE rc;
   PTEXT pConnect;
  #endif
   if( !odbc->info.pDSN )
@@ -64214,7 +71782,6 @@ GetFreeBlock( vol, TRUE );
    }
    if( !odbc->hdbc && !odbc->flags.bSkipODBC )
    {
-    RETCODE rc;
  #ifdef LOG_EVERYTHING
     lprintf( WIDE("get hdbc") );
  #endif
@@ -65454,7 +73021,9 @@ GetFreeBlock( vol, TRUE );
  int __DoSQLCommandEx( PODBC odbc, PCOLLECT collection DBG_PASS )
  {
   int retry = 0;
+ #ifdef USE_ODBC
   RETCODE rc;
+ #endif
   PTEXT cmd;
   if( !odbc )
   {
@@ -65890,7 +73459,9 @@ GetFreeBlock( vol, TRUE );
  #endif
     )
   {
+ #ifdef USE_ODBC
    RETCODE rc;
+ #endif
  #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
    int rc3;
  #endif
@@ -66483,7 +74054,9 @@ GetFreeBlock( vol, TRUE );
   size_t querylen;
   PTEXT tmp = NULL;
   int retry = 0;
+ #ifdef USE_ODBC
   RETCODE rc;
+ #endif
  #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
   int rc3;
  #endif
@@ -66665,7 +74238,7 @@ GetFreeBlock( vol, TRUE );
    if( rc != SQL_SUCCESS && rc != SQL_SUCCESS_WITH_INFO )
    {
  #ifdef LOG_EVERYTHING
-    lprintf( WIDE( "rc is %d [not success]" ), rc );
+    lprintf( WIDE( "rc is %d [not success]" ),rc );
  #endif
     in_error = 1;
    }
@@ -68334,7 +75907,7 @@ GetFreeBlock( vol, TRUE );
    TEXTCHAR sec_file[284];
    FILE *file;
        sec_file[0] = 0;
-   Fopen( file, filename, WIDE("rt") );
+   file = sack_fopen( 0, filename, WIDE("rt") );
    if( !file )
    {
     if( !pathchr( filename ) )
@@ -68345,7 +75918,7 @@ GetFreeBlock( vol, TRUE );
  #else
      tnprintf( sec_file, sizeof( sec_file ), WIDE( "%s" ), filename );
  #endif
-             Fopen( file, sec_file, WIDE("rt") );
+             file = sack_fopen( 0, sec_file, WIDE("rt") );
     }
    }
    if( file )
@@ -68358,7 +75931,7 @@ GetFreeBlock( vol, TRUE );
     INDEX nOfs = 0;
     if( !odbc->flags.bNoLogging )
      lprintf( WIDE("Opened %s to read for table %s(%s)"), sec_file[0]?sec_file:filename, tablename,templatename );
-    while( fgets( fgets_buf, sizeof( fgets_buf ), file ) )
+    while( sack_fgets( fgets_buf, sizeof( fgets_buf ), file ) )
     {
      TEXTCHAR *p;
      buf = fgets_buf;
@@ -68463,7 +76036,7 @@ GetFreeBlock( vol, TRUE );
     }
     //lprintf( WIDE("Done with create...") );
     VarTextDestroy( &pvt_cmd );
-    fclose( file );
+    sack_fclose( file );
    }
    else
    {
@@ -69534,6 +77107,7 @@ GetFreeBlock( vol, TRUE );
     return FALSE;
  }
  SQL_NAMESPACE_END
+ #define NEED_SHLOBJ
  #if !defined( __LINUX__ ) && !defined( __INTERNAL_UUID__ )
  #include <rpc.h>
  SQL_NAMESPACE
@@ -69629,7 +77203,7 @@ GetFreeBlock( vol, TRUE );
   return SaveText( text_guid );
  }
  #else
- #ifdef __INTERNAL_UUID__
+ #  ifdef __INTERNAL_UUID__
  /*
  **  OSSP uuid - Universally Unique Identifier
  **  Copyright (c) 2004-2008 Ralf S. Engelschall <rse@engelschall.com>
@@ -69739,10 +77313,11 @@ GetFreeBlock( vol, TRUE );
  UUID_PROC( unsigned long, uuid_version  )(void);
  DECLARATION_END
  #endif
- #else
- #include <uuid/uuid.h>
- #endif
+ #  else
+ #    include <uuid/uuid.h>
+ #  endif
  SQL_NAMESPACE
+ #  ifdef __INTERNAL_UUID__
  CTEXTSTR GetGUID( void )
  {
   uuid_t *tmp;
@@ -69771,6 +77346,38 @@ GetFreeBlock( vol, TRUE );
   Release( out_guid );
   return out_guid2;
  }
+ #  else
+ CTEXTSTR GetGUID( void )
+ {
+  uuid_t tmp;
+    char str[37];
+  TEXTCHAR *out_guid;
+  CTEXTSTR out_guid2;
+  uuid_generate_random ( tmp );
+    uuid_unparse( tmp, str );
+    //uuid_unparse_lower( tmp, str );
+    //uuid_unparse_upper( tmp, str );
+  out_guid = DupCharToText( str );
+  out_guid2 = SaveText( out_guid );
+  Release( out_guid );
+  return out_guid2;
+ }
+ CTEXTSTR GetSeqGUID( void )
+ {
+  uuid_t tmp;
+    char str[37];
+  TEXTCHAR *out_guid;
+  CTEXTSTR out_guid2;
+  uuid_generate_time( tmp );
+    uuid_unparse( tmp, str );
+    //uuid_unparse_lower( tmp, str );
+    //uuid_unparse_upper( tmp, str );
+  out_guid = DupCharToText( str );
+  out_guid2 = SaveText( out_guid );
+  Release( out_guid );
+  return out_guid2;
+ }
+ #  endif
  #endif
  uint8_t* GetGUIDBinaryEx( CTEXTSTR guid, LOGICAL little_endian )
  {
@@ -70311,22 +77918,22 @@ GetFreeBlock( vol, TRUE );
  void LogTable( PTABLE table )
  {
   FILE *out;
-  Fopen( out, WIDE("sparse.txt"), WIDE("at") );
+  out = sack_fopen( 0, WIDE("sparse.txt"), WIDE("at") );
   if( out )
   {
    if( table )
    {
     int n;
-    fprintf( out, WIDE( "\n" ) );
-    fprintf( out, WIDE( "//--------------------------------------------------------------------------\n" ) );
-    fprintf( out, WIDE( "// %s \n" ), table->name );
-    fprintf( out, WIDE( "// Total number of fields = %d\n" ), table->fields.count );
-    fprintf( out, WIDE( "// Total number of keys = %d\n" ), table->keys.count );
-    fprintf( out, WIDE( "//--------------------------------------------------------------------------\n" ) );
-    fprintf( out, WIDE( "\n" ) );
-    fprintf( out, WIDE( "FIELD %s_fields[] = {\n" ), table->name );
+    sack_fprintf( out, WIDE( "\n" ) );
+    sack_fprintf( out, WIDE( "//--------------------------------------------------------------------------\n" ) );
+    sack_fprintf( out, WIDE( "// %s \n" ), table->name );
+    sack_fprintf( out, WIDE( "// Total number of fields = %d\n" ), table->fields.count );
+    sack_fprintf( out, WIDE( "// Total number of keys = %d\n" ), table->keys.count );
+    sack_fprintf( out, WIDE( "//--------------------------------------------------------------------------\n" ) );
+    sack_fprintf( out, WIDE( "\n" ) );
+    sack_fprintf( out, WIDE( "FIELD %s_fields[] = {\n" ), table->name );
     for( n = 0; n < table->fields.count; n++ )
-     fprintf( out, WIDE( "\t%s{%s%s%s, %s%s%s, %s%s%s }\n" )
+     sack_fprintf( out, WIDE( "\t%s{%s%s%s, %s%s%s, %s%s%s }\n" )
       , n?WIDE( ", " ):WIDE( "" )
       , table->fields.field[n].name?WIDE("\""):WIDE( "" )
       , table->fields.field[n].name?table->fields.field[n].name:WIDE( "NULL" )
@@ -70338,16 +77945,16 @@ GetFreeBlock( vol, TRUE );
       , table->fields.field[n].extra?table->fields.field[n].extra:WIDE( "NULL" )
       , table->fields.field[n].extra?WIDE("\""):WIDE( "" )
      );
-    fprintf( out, WIDE( "};\n" ) );
-    fprintf( out, WIDE( "\n" ) );
+    sack_fprintf( out, WIDE( "};\n" ) );
+    sack_fprintf( out, WIDE( "\n" ) );
     if( table->keys.count )
     {
-     fprintf( out, WIDE( "DB_KEY_DEF %s_keys[] = { \n" ), table->name );
+     sack_fprintf( out, WIDE( "DB_KEY_DEF %s_keys[] = { \n" ), table->name );
      for( n = 0; n < table->keys.count; n++ )
      {
       int m;
-      fprintf( out, WIDE( "#ifdef __cplusplus\n" ) );
-      fprintf( out, WIDE("\t%srequired_key_def( %d, %d, %s%s%s, \"%s\" )\n")
+      sack_fprintf( out, WIDE( "#ifdef __cplusplus\n" ) );
+      sack_fprintf( out, WIDE("\t%srequired_key_def( %d, %d, %s%s%s, \"%s\" )\n")
          , n?", ":""
          , table->keys.key[n].flags.bPrimary
          , table->keys.key[n].flags.bUnique
@@ -70356,9 +77963,9 @@ GetFreeBlock( vol, TRUE );
          , table->keys.key[n].name?WIDE("\""):WIDE("")
          , table->keys.key[n].colnames[0] );
       if( table->keys.key[n].colnames[1] )
-       fprintf( out, WIDE( ", ... columns are short this is an error.\n" ) );
-      fprintf( out, WIDE( "#else\n" ) );
-      fprintf( out, WIDE( "\t%s{ {%d,%d}, %s%s%s, { " )
+       sack_fprintf( out, WIDE( ", ... columns are short this is an error.\n" ) );
+      sack_fprintf( out, WIDE( "#else\n" ) );
+      sack_fprintf( out, WIDE( "\t%s{ {%d,%d}, %s%s%s, { " )
          , n?WIDE( ", " ):WIDE( "" )
          , table->keys.key[n].flags.bPrimary
          , table->keys.key[n].flags.bUnique
@@ -70367,36 +77974,36 @@ GetFreeBlock( vol, TRUE );
          , table->keys.key[n].name?WIDE("\""):WIDE( "" )
          );
       for( m = 0; table->keys.key[n].colnames[m]; m++ )
-       fprintf( out, WIDE("%s\"%s\"")
+       sack_fprintf( out, WIDE("%s\"%s\"")
           , m?WIDE( ", " ):WIDE( "" )
           , table->keys.key[n].colnames[m] );
-      fprintf( out, WIDE( " } }\n" ) );
-      fprintf( out, WIDE( "#endif\n" ) );
+      sack_fprintf( out, WIDE( " } }\n" ) );
+      sack_fprintf( out, WIDE( "#endif\n" ) );
      }
-     fprintf( out, WIDE( "};\n" ) );
-     fprintf( out, WIDE( "\n" ) );
+     sack_fprintf( out, WIDE( "};\n" ) );
+     sack_fprintf( out, WIDE( "\n" ) );
     }
-    fprintf( out, WIDE( "\n" ) );
-    fprintf( out, WIDE("TABLE %s = { \"%s\" \n"), table->name, table->name );
-    fprintf( out, WIDE( "  , FIELDS( %s_fields )\n" ), table->name );
+    sack_fprintf( out, WIDE( "\n" ) );
+    sack_fprintf( out, WIDE("TABLE %s = { \"%s\" \n"), table->name, table->name );
+    sack_fprintf( out, WIDE( "  , FIELDS( %s_fields )\n" ), table->name );
           if( table->keys.count )
-     fprintf( out, WIDE( "  , TABLE_KEYS( %s_keys )\n" ), table->name );
+     sack_fprintf( out, WIDE( "  , TABLE_KEYS( %s_keys )\n" ), table->name );
           else
-     fprintf( out, WIDE( "  , { 0, NULL }\n" ) );
-    fprintf( out, WIDE( " , { 0 }\n" ) );
-    fprintf( out, WIDE( " , NULL\n" ) );
-    fprintf( out, WIDE( " , NULL\n" ) );
-    fprintf( out, WIDE( " ,NULL\n" ) );
-    fprintf( out, WIDE( "};\n" ) );
-    fprintf( out, WIDE( "\n" ) );
+     sack_fprintf( out, WIDE( "  , { 0, NULL }\n" ) );
+    sack_fprintf( out, WIDE( " , { 0 }\n" ) );
+    sack_fprintf( out, WIDE( " , NULL\n" ) );
+    sack_fprintf( out, WIDE( " , NULL\n" ) );
+    sack_fprintf( out, WIDE( " ,NULL\n" ) );
+    sack_fprintf( out, WIDE( "};\n" ) );
+    sack_fprintf( out, WIDE( "\n" ) );
    }
    else
    {
-    fprintf( out, WIDE( "//--------------------------------------------------------------------------\n" ) );
-    fprintf( out, WIDE( "// No Table\n" ) );
-    fprintf( out, WIDE( "//--------------------------------------------------------------------------\n" ) );
+    sack_fprintf( out, WIDE( "//--------------------------------------------------------------------------\n" ) );
+    sack_fprintf( out, WIDE( "// No Table\n" ) );
+    sack_fprintf( out, WIDE( "//--------------------------------------------------------------------------\n" ) );
    }
-   fclose( out );
+   sack_fclose( out );
   }
  }
  //----------------------------------------------------------------------
@@ -70470,2246 +78077,6 @@ GetFreeBlock( vol, TRUE );
  // we want access to GLOBAL from sqltub
  #define SQLLIB_SOURCE
  // INI prompt
- #ifndef SOURCE_PSI2
- #define SOURCE_PSI2
- #endif
- #ifndef __CONTROLS_DEFINED__
- #define __CONTROLS_DEFINED__
- //---------------------------------------------------------------
- // PSI Version comments
- //   1.1 )
- //     - added PSI_VERSION so that after this required features
- //       may be commented out...
- //     - added fonts to common structure - controls and frames may define
- //       frames an apply a scale factor to itself and or its children..
- //
- // copied from win.h distributed with lcc
- //#define MF_BITMAP 4
- //#define MF_CHECKED 8
- //#define MF_DISABLED 2
- //#define MF_ENABLED 0
- //#define MF_GRAYED 1
- //#define MF_MENUBARBREAK 32
- //#define MF_MENUBREAK 64
- //#define MF_OWNERDRAW 256
- //#define MF_POPUP 16
- //#define MF_SEPARATOR 0x800
- //#define MF_STRING 0
- //#define MF_UNCHECKED 0
- //#define MF_DEFAULT 4096
- //#define MF_SYSMENU 0x2000
- //#define MF_HELP  0x4000
- //#define MF_END 128
- //#define MF_RIGHTJUSTIFY 0x4000
- //#define MF_MOUSESELECT 0x8000
- // duplicated from a section futher down...
- //#define MF_BYCOMMAND 0
- //#define MF_BYPOSITION 0x400
- //#define MF_UNCHECKED 0
- //#define MF_HILITE 128
- //#define MF_UNHILITE 0
- #ifndef MF_BYPOSITION
- #define MF_BYPOSITION 0x400
- #endif
- #ifndef MF_BYCOMMAND
- #define MF_BYCOMMAND 0
- #endif
- #ifndef MF_HILITE
- #define MF_HILITE 0x80
- #endif
- #ifndef MF_UNHILITE
- #define MF_UNHILITE 0
- #endif
- #ifndef MF_BITMAP
- #define MF_BITMAP 4
- #endif
- #ifndef MF_CHECKED
- #define MF_CHECKED 8
- #endif
- #ifndef MF_DISABLED
- #define MF_DISABLED 0x0010
- #endif
- #ifndef MF_ENABLED
- #define MF_ENABLED 0
- #endif
- #ifndef MF_GRAYED
- #define MF_GRAYED 1
- #endif
- #ifndef MF_MENUBARBREK
- #define MF_MENUBARBREK 0x0020
- #endif
- #ifndef MF_MENUBREAK
- #define MF_MENUBREAK 0x0040
- #endif
- #ifndef MF_OWNERDRAW
- #define MF_OWNERDRAW 0x0100
- #endif
- #ifndef MF_POPUP
- #define MF_POPUP 0x0010
- #endif
- #ifndef MF_SEPARATOR
- #define MF_SEPARATOR 0x0800
- #endif
- #ifndef MF_STRING
- #define MF_STRING 0
- #endif
- #ifndef MF_UNCHECKED
- /* Menu item is not checked. */
- #define MF_UNCHECKED 0
- #endif
- #ifndef MF_DEFAULT
- #define MF_DEFAULT 0x1000
- #endif
- #ifndef MF_SYSMENU
- /* Not sure what menu flag SYSMENU is for */
- #define MF_SYSMENU 0x2000
- #endif
- /*
- #ifndef MF_
- #define MF_ 0
- #endif
- */
- // $Log: $
- #ifndef __panthers_slick_interface_namespace__
- #define __panthers_slick_interface_namespace__
- #ifdef __cplusplus
- #define PSI_NAMESPACE SACK_NAMESPACE namespace PSI {
- #define _PSI_NAMESPACE namespace PSI {
- #define _PSI_NAMESPACE_END }
- #define PSI_NAMESPACE_END _PSI_NAMESPACE_END SACK_NAMESPACE_END
- #define USE_PSI_NAMESPACE using namespace sack::PSI;
- #   define _PSI_INTERFACE_NAMESPACE namespace Interface {
- #   define _PSI_INTERFACE_NAMESPACE_END }
- #   define _BUTTON_NAMESPACE namespace button {
- #   define _BUTTON_NAMESPACE_END }
- #   define USE_BUTTON_NAMESPACE using namespace button;
- #   define USE_PSI_BUTTON_NAMESPACE using namespace sack::PSI::button;
- #   define _COLORWELL_NAMESPACE namespace colorwell {
- #   define _COLORWELL_NAMESPACE_END }
- #   define USE_COLORWELL_NAMESPACE using namespace colorwell;
- #   define USE_PSI_COLORWELL_NAMESPACE using namespace sack::PSI::colorwell;
- #   define _MENU_NAMESPACE namespace popup {
- #   define _MENU_NAMESPACE_END }
- #   define USE_MENU_NAMESPACE using namespace popup;
- #   define USE_PSI_MENU_NAMESPACE using namespace sack::PSI::popup;
- #   define _TEXT_NAMESPACE namespace text {
- #   define _TEXT_NAMESPACE_END }
- #   define USE_TEXT_NAMESPACE using namespace text;
- #   define USE_PSI_TEXT_NAMESPACE using namespace sack::PSI::text;
- #   define _EDIT_NAMESPACE namespace edit {
- #   define _EDIT_NAMESPACE_END }
- #   define USE_EDIT_NAMESPACE using namespace edit;
- #   define USE_PSI_EDIT_NAMESPACE using namespace sack::PSI::edit;
- #   define _SLIDER_NAMESPACE namespace slider {
- #   define _SLIDER_NAMESPACE_END }
- #   define USE_SLIDER_NAMESPACE using namespace slider;
- #   define USE_PSI_SLIDER_NAMESPACE using namespace sack::PSI::slider;
- #   define _FONTS_NAMESPACE namespace font {
- #   define _FONTS_NAMESPACE_END }
- #   define USE_FONTS_NAMESPACE using namespace font;
- #   define USE_PSI_FONTS_NAMESPACE using namespace sack::PSI::font;
- #   define _COMBOBOX_NAMESPACE namespace listbox {
- #   define _COMBOBOX_NAMESPACE_END }
- #   define USE_COMBOBOX_NAMESPACE using namespace listbox;
- #   define USE_PSI_COMBOBOX_NAMESPACE using namespace sack::PSI::listbox;
- #   define _LISTBOX_NAMESPACE namespace listbox {
- #   define _LISTBOX_NAMESPACE_END }
- #   define USE_LISTBOX_NAMESPACE using namespace listbox;
- #   define USE_PSI_LISTBOX_NAMESPACE using namespace sack::PSI::listbox;
- #   define _SCROLLBAR_NAMESPACE namespace scrollbar {
- #   define _SCROLLBAR_NAMESPACE_END }
- #   define USE_SCROLLBAR_NAMESPACE using namespace scrollbar;
- #   define USE_PSI_SCROLLBAR_NAMESPACE using namespace sack::PSI::scrollbar;
- #   define _SHEETS_NAMESPACE namespace sheet_control {
- #   define _SHEETS_NAMESPACE_END }
- #   define USE_SHEETS_NAMESPACE using namespace sheet_control;
- #   define USE_PSI_SHEETS_NAMESPACE using namespace sack::PSI::sheet_control;
- #   define _MOUSE_NAMESPACE namespace _mouse {
- #   define _MOUSE_NAMESPACE_END }
- #   define USE_MOUSE_NAMESPACE using namespace _mouse;
- #   define USE_PSI_MOUSE_NAMESPACE using namespace sack::PSI::_mouse;
- #   define _XML_NAMESPACE namespace xml {
- #   define _XML_NAMESPACE_END }
- #   define USE_XML_NAMESPACE using namespace xml;
- #   define USE_PSI_XML_NAMESPACE using namespace sack::PSI::xml;
- #   define _PROP_NAMESPACE namespace properties {
- #   define _PROP_NAMESPACE_END }
- #   define USE_PROP_NAMESPACE using namespace properties;
- #   define USE_PSI_PROP_NAMESPACE using namespace sack::PSI::properties;
- #   define _CLOCK_NAMESPACE namespace clock {
- #   define _CLOCK_NAMESPACE_END }
- #   define USE_CLOCK_NAMESPACE using namespace clock;
- #   define USE_PSI_CLOCK_NAMESPACE using namespace sack::PSI::clock;
- #else
- #define PSI_NAMESPACE SACK_NAMESPACE
- #define _PSI_NAMESPACE
- #define PSI_NAMESPACE_END SACK_NAMESPACE_END
- #define USE_PSI_NAMESPACE
- #   define _PSI_INTERFACE_NAMESPACE
- #   define _PSI_INTERFACE_NAMESPACE_END
- #   define _BUTTON_NAMESPACE
- #   define _BUTTON_NAMESPACE_END
- #   define USE_BUTTON_NAMESPACE
- #   define USE_PSI_BUTTON_NAMESPACE
- #   define _COLORWELL_NAMESPACE
- #   define _COLORWELL_NAMESPACE_END
- #   define USE_COLORWELL_NAMESPACE
- #   define USE_PSI_COLORWELL_NAMESPACE
- #   define _MENU_NAMESPACE
- #   define _MENU_NAMESPACE_END
- #   define USE_MENU_NAMESPACE
- #   define USE_PSI_MENU_NAMESPACE
- #   define _TEXT_NAMESPACE
- #   define _TEXT_NAMESPACE_END
- #   define USE_TEXT_NAMESPACE
- #   define USE_PSI_TEXT_NAMESPACE
- #   define _EDIT_NAMESPACE
- #   define _EDIT_NAMESPACE_END
- #   define USE_EDIT_NAMESPACE
- #   define USE_PSI_EDIT_NAMESPACE
- #   define _SLIDER_NAMESPACE
- #   define _SLIDER_NAMESPACE_END
- #   define USE_SLIDER_NAMESPACE
- #   define USE_PSI_SLIDER_NAMESPACE
- #   define _FONTS_NAMESPACE
- #   define _FONTS_NAMESPACE_END
- #   define USE_FONTS_NAMESPACE
- #   define USE_PSI_FONTS_NAMESPACE
- #   define _COMBOBOX_NAMESPACE
- #   define _COMBOBOX_NAMESPACE_END
- #   define USE_COMBOBOX_NAMESPACE
- #   define USE_PSI_COMBOBOX_NAMESPACE
- #   define _LISTBOX_NAMESPACE
- #   define _LISTBOX_NAMESPACE_END
- #   define USE_LISTBOX_NAMESPACE
- #   define USE_PSI_LISTBOX_NAMESPACE
- #   define _SCROLLBAR_NAMESPACE
- #   define _SCROLLBAR_NAMESPACE_END
- #   define USE_SCROLLBAR_NAMESPACE
- #   define USE_PSI_SCROLLBAR_NAMESPACE
- #   define _SHEETS_NAMESPACE
- #   define _SHEETS_NAMESPACE_END
- #   define USE_SHEETS_NAMESPACE
- #   define USE_PSI_SHEETS_NAMESPACE
- #   define _MOUSE_NAMESPACE
- #   define _MOUSE_NAMESPACE_END
- #   define USE_MOUSE_NAMESPACE
- #   define USE_PSI_MOUSE_NAMESPACE
- #   define _XML_NAMESPACE
- #   define _XML_NAMESPACE_END
- #   define USE_XML_NAMESPACE
- #   define USE_PSI_XML_NAMESPACE
- #   define _PROP_NAMESPACE
- #   define _PROP_NAMESPACE_END
- #   define USE_PROP_NAMESPACE
- #   define USE_PSI_PROP_NAMESPACE
- #   define _CLOCK_NAMESPACE
- #   define _CLOCK_NAMESPACE_END
- #   define USE_CLOCK_NAMESPACE
- #   define USE_PSI_CLOCK_NAMESPACE
- #endif
- #define PSI_BUTTON_NAMESPACE PSI_NAMESPACE _BUTTON_NAMESPACE
- #define PSI_BUTTON_NAMESPACE_END _BUTTON_NAMESPACE_END PSI_NAMESPACE_END
- #define PSI_COLORWELL_NAMESPACE PSI_NAMESPACE _COLORWELL_NAMESPACE
- #define PSI_COLORWELL_NAMESPACE_END _COLORWELL_NAMESPACE_END PSI_NAMESPACE_END
- #define PSI_MENU_NAMESPACE PSI_NAMESPACE _MENU_NAMESPACE
- #define PSI_MENU_NAMESPACE_END _MENU_NAMESPACE_END PSI_NAMESPACE_END
- #define PSI_TEXT_NAMESPACE PSI_NAMESPACE _TEXT_NAMESPACE
- #define PSI_TEXT_NAMESPACE_END _TEXT_NAMESPACE_END PSI_NAMESPACE_END
- #define PSI_EDIT_NAMESPACE PSI_NAMESPACE _EDIT_NAMESPACE
- #define PSI_EDIT_NAMESPACE_END _EDIT_NAMESPACE_END PSI_NAMESPACE_END
- #define PSI_SLIDER_NAMESPACE PSI_NAMESPACE _SLIDER_NAMESPACE
- #define PSI_SLIDER_NAMESPACE_END _SLIDER_NAMESPACE_END PSI_NAMESPACE_END
- #define PSI_FONTS_NAMESPACE PSI_NAMESPACE _FONTS_NAMESPACE
- #define PSI_FONTS_NAMESPACE_END _FONTS_NAMESPACE_END PSI_NAMESPACE_END
- #define PSI_COMBOBOX_NAMESPACE PSI_NAMESPACE _COMBOBOX_NAMESPACE
- #define PSI_COMBOBOX_NAMESPACE_END _COMBOBOX_NAMESPACE_END PSI_NAMESPACE_END
- #define PSI_LISTBOX_NAMESPACE PSI_NAMESPACE _LISTBOX_NAMESPACE
- #define PSI_LISTBOX_NAMESPACE_END _LISTBOX_NAMESPACE_END PSI_NAMESPACE_END
- #define PSI_SCROLLBAR_NAMESPACE PSI_NAMESPACE _SCROLLBAR_NAMESPACE
- #define PSI_SCROLLBAR_NAMESPACE_END _SCROLLBAR_NAMESPACE_END PSI_NAMESPACE_END
- #define PSI_SHEETS_NAMESPACE PSI_NAMESPACE _SHEETS_NAMESPACE
- #define PSI_SHEETS_NAMESPACE_END _SHEETS_NAMESPACE_END PSI_NAMESPACE_END
- #define PSI_MOUSE_NAMESPACE PSI_NAMESPACE _MOUSE_NAMESPACE
- #define PSI_MOUSE_NAMESPACE_END _MOUSE_NAMESPACE_END PSI_NAMESPACE_END
- #define PSI_XML_NAMESPACE PSI_NAMESPACE _XML_NAMESPACE
- #define PSI_XML_NAMESPACE_END _XML_NAMESPACE_END PSI_NAMESPACE_END
- #define PSI_PROP_NAMESPACE PSI_NAMESPACE _PROP_NAMESPACE
- #define PSI_PROP_NAMESPACE_END _PROP_NAMESPACE_END PSI_NAMESPACE_END
- #define PSI_CLOCK_NAMESPACE PSI_NAMESPACE _CLOCK_NAMESPACE
- #define PSI_CLOCK_NAMESPACE_END _CLOCK_NAMESPACE_END PSI_NAMESPACE_END
- #endif
- /* It's called System Abstraction Component Kit - that is almost
-    what it is, self descriptively, but that's not what it
-    entirely. It's more appropriately just a sack-o-goodies. A
-    grab-bag of tidbits. The basic aggregation of group of
-    objects in sack is bag. Bag contains everything that is not
-    graphic.
-    It abstracts loading external libraries (.dll and .so shared
-    objects) so applications can be unbothered by platform
-    details.
-    It abstracts system features like threads into a consistent
-    API.
-    It abstracts system shared memory allocation and management,
-    does have a custom allocation and release method, but
-    currently falls back to using malloc and free.
-    It abstracts access to system file system browsing; getting
-    the contents of directories.
-    It abstracts creating external processes, and the use of
-    standard input-output methods to communicate with those
-    tasks.
-    It has a custom timer implementation using a thread and
-    posting timer events as calls to user callbacks.
-    It contains a variety of structures to manage data from
-    lists, stack and queues to complex linked list of slab
-    allocated structures, and management for text as words and
-    phrases.
-    It contains an event based networking system, using an
-    external thread to coordinate network socket events.
-    It contains methods to work with images.
-    It contains methods to display images on a screen. This is
-    also a system abstraction point, since to put a display out
-    under Linux and Windows is entirely different.
-    It contains a control system based on the above images and
-    display, managing events to controls as user event callbacks.
-    It contains a method of registering values, code, and even
-    structures, and methods to browse and invoke registered code,
-    create registered structures, and get back registered values.
-    It contains a SQL abstraction that boils SQL communication to
-    basically 2 methods, Commands and Queries.
-    It provides application logging features, for debug, and
-    crash diagnostics. This is basically a single command
-    'lprintf'.
-    It provides a vector and matrix library for 3D and even 4D
-    graphics projects.
-    Beyond that - it uses libpng, jpeg, and freetype for dealing
-    with images. These are included in this one package for
-    windows where they are not system libraries. Internal are up
-    to date as of march 2010. Also includes sqlite. All of these
-    \version compile as C++ replacing extern "C"{} with an
-    appropriate namespace XXX {}.
-    Example
-    The current build system is CMake. Previously I had a bunch
-    of makefiles, but then required gnu make to compile with open
-    watcom, with cmake, the correct makefiles appropriate for
-    each package is generated. Visual studio support is a little
-    lacking in cmake. So installed output should be compatible
-    with cmake find XXX.
-    <code>
-    PROJECT( new_project )
-    ADD_EXECTUABLE( my_program my_source.c )
-    LINK_TARGET_LIBRARIES( my_program ${SACK_LIBRARY} )
-    </code>
-    The problem with this... depends on the mode of sack being
-    built against... maybe I should have a few families of
-    compile-options and link libraries.
-    Remarks
-    If sack is built 'monolithic' then everything that is any
-    sort of library is compiled together.
-    If sack is not built monolithic, then it produces
-      * \  bag &#45; everything that requires no system display,
-        it is all the logic components for lists, SQL, processes,
-        threads, networking
-        * ODBC is currently linked here, so unixodbc or odbc32
-          will be required as appropriate. Considering moving SQL
-          entirely to a seperate module, but the core library can take
-          advantage options, which may require SQL.
-      * \  bag.external &#45; external libraries zlib, libpng,
-        jpeg, freetype.
-      * bag.sqlite3.external &#45; external sqlite library, with
-        sqlite interface structure. This could be split to be just
-        the sqlite interface, and link to a system sqlite library.
-      * bag.image &#45; library that provides an image namespace
-        interface.
-      * bag.video &#45; library that provides a render namespace
-        interface. Windows system only. Provides OpenGL support for
-        displays also.
-      * bag.display.image &#45; a client library that
-        communicates to a remote image namespace interface.
-      * bag.image.video &#45; a client library that communicates
-        to a remote render namespace interface.
-      * bag.display &#45; a host library that provides window
-        management for render interface, which allows the application
-        multliple windows. bag.display was built against SDL, and SDL
-        only supplies a single display surface for an application, so
-        popup dialogs and menus needed to be tracked internally.
-        Bag.display can be loaded as a display service, and shared
-        between multiple applications. SDL Can provide OpenGL support
-        for render interface also. This can be mounted against
-        bag.video also, for developing window support. This has
-        fallen by the wayside... and really a display interface
-        should be provided that can just open X displays directly to
-        copy <link sack::image::Image, Images> to.
-      * bag.psi &#45; provides the PSI namespace.                      */
- SACK_NAMESPACE
- /* PSI is Panther's Slick Interface.
-    This is a control library which handles custom controls and
-    regions within a form. This isn't a window manager.
-    PSI_CONTROL is the primary structure that this uses. It
-    esists as a pointer to a structure, the content of which
-    should never be accessed by the real world. For purposes of
-    documentation these structures (in controlstruc.h) are
-    presented, but they are inaccessable from outside of SACK
-    itself, and will not be provided in the SDK.
-    A PSI_CONTROL can represent a 'Frame' which contains other
-    controls. A Frame owns a PRENDERER which it uses to present
-    its content to the display. A frame can have an outside
-    border, and provides the ability to click on the border and
-    resize the form. The frame can use a custom image, which will
-    be automatically portioned up and used as corner pieces, edge
-    pieces, and may automatically set the default background
-    color for forms. The frame draws directly on the Image from
-    the PRENDERER, and all controls know only their image.
-    Controls are based on sub-images on the frame's displayed
-    image, so when they draw they are drawing directly on the
-    buffer targeted to the display. The image library prohibits
-    any operations that go outside the bounds of a sub-image;
-    though, the user can request the color buffer pointer from an
-    image, and may draw directly anywhere on that surface.
-    Controls are implemented as a pair of sub-images on the color
-    buffer of the renderer. The pair is the image containing the
-    border of the control, and a sub-image inside that
-    representing the drawable area of a control. When created,
-    controls are always sized including their frame, this allow
-    positioning controls inside a frame without regard to how
-    much extra space might have been added. The size of the Frame
-    control outside, is handled differently, and is created with
-    the size of the inside of the control. The area of the render
-    surface is expanded outside this. There are BorderOptionTypes
-    that can control whether the border on the frame is handled
-    as an expansion or not.
-    Controls are all drawn using an internal table of colors
-    which can be index using ControlColorTypes with SetBaseColor
-    and GetBaseColor.
-    If the fancy border frame image is used for a control, then
-    the color of the center pixel is set into the NORMAL color
-    index.
-    What else can I say about controls...
-    Any control can contain any other control, but there is a
-    specific container type Frame that is commonly used for
-    dialogs. The top level control can display on a renderer. If
-    a sub-control is told to show, then it is divorced from and
-    opened in a new popup renderer.
-    History
-    Control registration was done original by filling in a
-    CONTROL_REGISTRATION structure, and passing that structure to
-    PSI to register. This method is still available, and is
-    certainly more straight forward method of use, but it's not
-    the easier method or the current method.
-    Currently, a registration structure is still used, but only
-    the first few elements are actually filled out, the functions
-    to handle a control's events are declared by fancy macros.
-    This relies on the deadstart features of compiler working,
-    but there are fewer places to have to remember to make
-    changes, and controls are much more straight forward to
-    implement, and extend as required, without necessarily
-    requiring everything to be done all at once. Methods
-    registered this way MUST be static, otherwise compiler errors
-    will result; they MUST have the correct return type for the
-    method specified, and they must have the correct parameters.
-    \Examples of each method supported will be provided with each
-    method's documentation. These are nasty macros that insert a
-    bit of magic code between the 'static int' and the parameters
-    specified. The names of the parameter values to the callback
-    are up to the user, but the types must match. This is a very
-    exact method, that cannot be circumvented using bad
-    typecasting.
-    Example
-    This is a custom control that shows red or green.
-    <code lang="c++">
-    struct control_data
-    {
-        // declare some data that you want to have associated with your control.
-        CDATA color;
-        uint32_t last_buttons; // used to track when a click happens
-    };
-    EasyRegisterControl( WIDE( "simple" ), sizeof( struct ball_timer_data ) );
-    // define the function called when a new 'simple' control is created.
-    static int OnCreateCommon( WIDE( "simple" ) )( PSI_CONTROL pc )
-    {
-        MyValidatedControlData( struct control_data*, my_data, pc );
-        if( my_data )
-        {
-            // assign a color to start
-            my_data-\>color = BASE_COLOR_RED;
-            return 1;
-        }
-        return 0;
-    }
-    // define a method to draw the control
-    static int OnDrawCommon( WIDE( "simple" ) )( PSI_CONTROL pc )
-    {
-        MyValidatedControlData( struct control_data*, my_data, pc );
-        if( my_data )
-        {
-            Image image = GetControlSufrace( pc );
-            BlatColor( image, my_data-\>color );
-            return 1;  // return that the draw happened.
-        }
-        return 0;  // return no draw - prevents update.
-    }
-    // define a handler when the simple control is clicked.
-    static int OnMouseCommon( WIDE( "simple" ) )( PSI_CONTROL pc, int32_t x, int32_t y, uint32_t b )
-    {
-    </code>
-    <code>
-        MyValidatedControlData( struct control_data*, my_data, pc );
-        // this checks to see if any mouse button goes down
-        if( MAKE_NEWBUTTON( b, my_data-\>last_buttons ) )
-        {
-            if( my_data-\>color == BASE_COLOR_RED )
-                my_data-\>color = BASE_COLOR_GREEN;
-            else
-                my_data-\>color = BASE_COLOR_RED;
-            // tell the control to update.
-            SmudgeCommon( pc );
-        }
-        // save this button state as the prior button state for future checks
-        my_data-\>last_buttons = b;
-    </code>
-    <code lang="c++">
-    }
-    </code>
-    See Also
-    OnCreateCommon
-    OnDrawCommon
-    OnMouseCommon
-    OnKeyCommon
-    OnCommonFocus
-    OnDestroyCommon
-    \-- Less common
-    OnMoveCommon
-    OnSizeCommon
-    OnMotionCommon
-    OnHideCommon
-    OnRevealCommon
-    OnPropertyEdit
-    OnPropertyEditOkay
-    OnPropertyEditCancel
-    OnPropertyEditDone
-    \--- Much Less used
-    OnEditFrame                                                                           */
- _PSI_NAMESPACE
- // this was never implemented.
- #define MK_PSI_VERSION(ma,mi)  (((ma)<<8)|(mi))
- // this was never implemented.
- #define PSI_VERSION            MK_PSI_VERSION(1,1)
- // this was never implemented.
- #define REQUIRE_PSI(ma,mi)    ( PSI_VERSION >= MK_PSI_VERSION(ma,mi) )
- #ifdef PSI_SOURCE
- #define PSI_PROC(type,name) EXPORT_METHOD type CPROC name
- #else
- #define PSI_PROC(type,name) IMPORT_METHOD type CPROC name
- #endif
- // Control callback functions NEED to be declared in the same source as what
- // created the control/frame...
- #ifdef SOURCE_PSI2
-/*PSI_PROC( PSI_CONTROL, Make##name )( PSI_CONTROL pFrame, int attr */
-/*, int x, int y, int w, int h*/
- #define CONTROL_PROC( name,_args )   PSI_PROC( PSI_CONTROL, Get##name##PropertyPage )( PSI_CONTROL pc );  PSI_PROC( void, Apply##name##PropertyPage )( PSI_CONTROL pc, PSI_CONTROL page );    PSI_PROC( int, Config##name)( PSI_CONTROL );
-/*PSI_PROC( PSI_CONTROL, Make##name )( PSI_CONTROL pFrame, int attr */
-/*, int x, int y, int w, int h  */
- #define CAPTIONED_CONTROL_PROC( name,_args )   PSI_PROC( PSI_CONTROL, Get##name##PropertyPage )( PSI_CONTROL pc );  PSI_PROC( void, Apply##name##PropertyPage )( PSI_CONTROL pc, PSI_CONTROL page );    PSI_PROC( int, Config##name)( PSI_CONTROL );
- #else
-/*PSI_PROC( PSI_CONTROL, Make##name )( PSI_CONTROL pFrame, int attr*/
-/*, int x, int y, int w, int h*/
- #define CONTROL_PROC( name,_args )   PSI_PROC( PSI_CONTROL, Get##name##PropertyPage )( PSI_CONTROL pc );  PSI_PROC( void, Apply##name##PropertyPage )( PSI_CONTROL pc, PSI_CONTROL page );    PSI_PROC( PSI_CONTROL, Config##name)( PSI_CONTROL );
-/*PSI_PROC( PSI_CONTROL, Make##name )( PSI_CONTROL pFrame, int attr */
-/*, int x, int y, int w, int h */
- #define CAPTIONED_CONTROL_PROC( name,_args )   PSI_PROC( PSI_CONTROL, Get##name##PropertyPage )( PSI_CONTROL pc );  PSI_PROC( void, Apply##name##PropertyPage )( PSI_CONTROL pc, PSI_CONTROL page );    PSI_PROC( PSI_CONTROL, Config##name)( PSI_CONTROL );
- #endif
- enum {
-     COMMON_PROC_ANY
-      , COMMON_PROC_DRAW
-      , COMMON_PROC_MOUSE
-      , COMMON_PROC_KEY
- };
- #define RegisterControl(name)  do { extern CTEXTSTR  ControlMakeProcName_##name, ControlLoadProcName_##name;     RegisterControlProcName( ControlMakeProcName_##name     , (POINTER)Make##name            , ControlLoadProcName_##name     , (POINTER)Load##name );     } while(0)
- #define RegisterFrame(name)       RegisterControlProcName( FrameProcName_##name     , (POINTER)Make##name      , (POINTER)Load##name )
- //PSI_PROC( int, RegisterControlProcName )( CTEXTSTR name, POINTER MakeProc, POINTER LoadProc );
- #ifndef CONTROL_SOURCE
- #define MKPFRAME(hVid) (((uintptr_t)(hVid))|1)
- //typedef POINTER PSI_CONTROL;
- // any remaining code should reference PSI_CONTROL
- #define PCOMMON PSI_CONTROL
- #define PCONTROL PSI_CONTROL
- #endif
- typedef struct frame_border *PFrameBorder;
- /* <combine sack::PSI>
-    A handle to a PSI control or frame. The User's data is stored
-    as the first member of this structure, so de-referencing the
-    pointer twice gets the user data. All PSI functions work
-    against PSI_CONTROL. Once upon a time this was just PSI_CONTROL,
-    and so the methods for registering to handle events on the
-    control still reference 'Common'.
-    Remarks
-    <code lang="c++">
-    PSI_CONTROL control;
-    POINTER user_data;
-    user_data = *(POINTER*)control;
-    </code>                                                       */
- typedef struct common_control_frame *PSI_CONTROL;
- #define COMMON_BUTTON_WIDTH 55
- #define COMMON_BUTTON_HEIGHT 19
- #define COMMON_BUTTON_PAD 5
- /* This enumeration defines flags that can be used to specify
-    the border of controls.                                    */
- enum BorderOptionTypes {
- // normal case needs to be 0 - but this is the thickest - go figure.
-  BORDER_NORMAL        =     0,
-  BORDER_NONE          =     3,
- /* The control has no border - this overrides all other styles;
-     no caption, no border at all, the surface drawable area is
-     the same as the control's outer area.                        */
-  BORDER_THIN          =     1,
-  BORDER_THINNER       =     2,
-  BORDER_DENT          =     4,
- /* A dent is a 3 pixel line which is a thin etch-line that is 1
-     step in, 1 across and 1 step up.                             */
-  BORDER_THIN_DENT     =     5,
-  BORDER_THICK_DENT    =     6,
- /* A thick etch line - that is a step in, and a step out, so the
-     content is the same level as its parent.                      */
-  BORDER_USER_PROC     =     7,
- /* External user code is used to draw the border when required
-     use PSI_SetCustomBorder to set this border type...
-     or define an OnBorderDraw and OnBorderMeasure routine for custom controls */
- // 16 different frame types standard...
-  BORDER_TYPE          =  0x0f,
-  BORDER_INVERT        =  0x80,
- /* This modifies styles like BORDER_BUMP to make them
-     BORDER_DENT.                                       */
-  BORDER_CAPTION       =  0x40,
- /* Border should include a space to show the text of the control
-     as a caption.                                                 */
-  BORDER_NOCAPTION     =  0x20,
-  BORDER_INVERT_THINNER=  (BORDER_THINNER|BORDER_INVERT),
-  BORDER_INVERT_THIN   =  (BORDER_THIN|BORDER_INVERT),
- /* It's a thin frame (3 pixels?) which is a descent step frame
-     ... so instead of being stacked 'up' it's stacked 'down'.   */
-  BORDER_BUMP          =  (BORDER_DENT|BORDER_INVERT),
- /* Draws a 3 pixel frame around a control - it is 1 up 1 acros
-     and 1 down - a thin bump line.                              */
-  BORDER_NOMOVE        =  0x0100,
- // well okay maybe these are border traits
-  BORDER_CLOSE         =  0x0200,
- // can resize this window with a mouse
-  BORDER_RESIZABLE     =  0x0400,
- // frame is on the surface of parent...
-  BORDER_WITHIN        =  0x0800,
- // frame surface desires any unclaimed mouse calls
-  BORDER_WANTMOUSE     =  0x1000,
- // frame wants exclusive application input.
-  BORDER_EXCLUSIVE     =  0x2000,
- // marks controls which were done with 'create frame', and without BORDER_WITHIN
-  BORDER_FRAME         =  0x4000,
- // scale does not apply to coordinates... otherwise it will be... by default controls are scalable.
-  BORDER_FIXED         =  0x8000,
- // control is private to psi library(used for scrollbars in listboxes, etc) and as such does not call 'extra init'
-  BORDER_NO_EXTRA_INIT           =  0x010000,
- //add a close button to the caption bar (has to have text, and a caption)
-  BORDER_CAPTION_CLOSE_BUTTON    =  0x020000,
- //do not allow a close button on the caption bar (has to have text, and a caption)
-  BORDER_CAPTION_NO_CLOSE_BUTTON =  0x040000,
- //add a close button to the caption bar (has to have text, and a caption)
-  BORDER_CAPTION_CLOSE_IS_DONE   =  0x080000,
- };
- enum BorderAnchorFlags {
-  BORDER_ANCHOR_TOP_MIN    = 1,
-  BORDER_ANCHOR_TOP_CENTER = 2,
-  BORDER_ANCHOR_TOP_MAX    = 3,
-  BORDER_ANCHOR_TOP_MASK   = 3,
-  BORDER_ANCHOR_TOP_SHIFT  = 0,
-  BORDER_ANCHOR_LEFT_MIN    = 4,
-  BORDER_ANCHOR_LEFT_CENTER = 8,
-  BORDER_ANCHOR_LEFT_MAX    = 12,
-  BORDER_ANCHOR_LEFT_MASK   = 0x0c,
-  BORDER_ANCHOR_LEFT_SHIFT  = 2,
-  BORDER_ANCHOR_RIGHT_MIN    = 0x10,
-  BORDER_ANCHOR_RIGHT_CENTER = 0x20,
-  BORDER_ANCHOR_RIGHT_MAX    = 0x30,
-  BORDER_ANCHOR_RIGHT_MASK   = 0x30,
-  BORDER_ANCHOR_RIGHT_SHIFT  = 4,
-  BORDER_ANCHOR_BOTTOM_MIN    = 0x40,
-  BORDER_ANCHOR_BOTTOM_CENTER = 0x80,
-  BORDER_ANCHOR_BOTTOM_MAX    = 0xC0,
-  BORDER_ANCHOR_BOTTOM_MASK   = 0xC0,
-  BORDER_ANCHOR_BOTTOM_SHIFT  = 6
- };
- // these are the indexes for base color
- enum ControlColorTypes {
-  HIGHLIGHT           = 0,
-  NORMAL              = 1,
-  SHADE               = 2,
-  SHADOW              = 3,
-  TEXTCOLOR           = 4,
-  CAPTION             = 5,
-  CAPTIONTEXTCOLOR    = 6,
-  INACTIVECAPTION     = 7,
-  INACTIVECAPTIONTEXTCOLOR = 8,
-  SELECT_BACK         = 9,
-  SELECT_TEXT         = 10,
-  EDIT_BACKGROUND     = 11,
-  EDIT_TEXT           = 12,
-  SCROLLBAR_BACK      = 13
- };
- // these IDs are used to designate default control IDs for
- // buttons...
- #define TXT_STATIC -1
- #ifndef IDOK
- #  define IDOK BTN_OKAY
- #endif
- #ifndef IDCANCEL
- #  define IDCANCEL BTN_CANCEL
- #endif
- #ifndef BTN_OKAY
- #  define BTN_OKAY   1
- #  define BTN_CANCEL 2
- #endif
- #ifdef __cplusplus
- namespace old_constants {
- #endif
- // enumeration for control->nType
- //enum {
-// master level control framing...
- #define CONTROL_FRAME  0
-// master level control framing...
- #define CONTROL_FRAME_NAME  WIDE("Frame")
-// returns a default control to user - type 1
- #define  UNDEFINED_CONTROL  1
-// returns a default control to user - type 1
- #define  UNDEFINED_CONTROL_NAME  WIDE("Undefined")
- #define  CONTROL_SUB_FRAME 2
- #define  CONTROL_SUB_FRAME_NAME WIDE("SubFrame")
- #define  STATIC_TEXT 3
- #define  STATIC_TEXT_NAME WIDE("TextControl")
- #define  NORMAL_BUTTON 4
- #define  NORMAL_BUTTON_NAME WIDE("Button")
- #define  CUSTOM_BUTTON 5
- #define  CUSTOM_BUTTON_NAME WIDE("CustomDrawnButton")
- #define  IMAGE_BUTTON 6
- #define  IMAGE_BUTTON_NAME WIDE("ImageButton")
-// also subtype radio button
- #define  RADIO_BUTTON 7
-// also subtype radio button
- #define  RADIO_BUTTON_NAME WIDE("CheckButton")
- #define  EDIT_FIELD 8
- #define  EDIT_FIELD_NAME WIDE("EditControl")
- #define  SLIDER_CONTROL 9
- #define  SLIDER_CONTROL_NAME WIDE("Slider")
- #define  LISTBOX_CONTROL 10
- #define  LISTBOX_CONTROL_NAME WIDE("ListBox")
- #define  SCROLLBAR_CONTROL 11
- #define  SCROLLBAR_CONTROL_NAME WIDE("ScrollBar")
- // TBI (to be implemented)
- #define  GRIDBOX_CONTROL  12
- // TBI (to be implemented)
- #define  GRIDBOX_CONTROL_NAME  WIDE("Gridbox")
- // TBI (to be implemented)
- #define  CONSOLE_CONTROL  13
- // TBI (to be implemented)
- #define  CONSOLE_CONTROL_NAME  WIDE("Console")
- #define  SHEET_CONTROL    14
- #define  SHEET_CONTROL_NAME    WIDE("SheetControl")
- #define  COMBOBOX_CONTROL 15
- #define  COMBOBOX_CONTROL_NAME WIDE("Combo Box")
- // last known builtin control...
- #define  BUILTIN_CONTROL_COUNT 16
- // should be sufficiently high as to not conflict with common controls
- #define  USER_CONTROL   128
- #ifdef __cplusplus
- }
- #endif
- //};
- _MENU_NAMESPACE
- /* This is an item on a menu. (AppendMenuItem can return this I
-    think)                                                       */
- typedef struct menuitem_tag *PMENUITEM;
- /* This is a popup menu or sub-menu. */
- typedef struct menu_tag *PMENU;
- #ifndef MENU_DRIVER_SOURCE
- /* <combine sack::PSI::popup::draw_popup_item_tag>
-    \ \                                             */
- typedef struct draw_popup_item_tag  DRAWPOPUPITEM;
- /* <combine sack::PSI::popup::draw_popup_item_tag>
-    \ \                                             */
- typedef struct draw_popup_item_tag *PDRAWPOPUPITEM;
- /* This is used when a custom drawn menu item is used. Allows
-    user code to draw onto the menu.                           */
- struct draw_popup_item_tag
- {
-    // ID param of append menu item
-     uintptr_t psvUser;
-     /* Optional states an item might be in. */
-     /* <combine sack::containers::text::format_info_tag::flags@1>
-        \ \                                                        */
-     struct {
-         /* Menu item is in a selected state. (Mouse Over) */
-         BIT_FIELD selected : 1;
-         /* Menu item has a checkmark on it. */
-         BIT_FIELD checked  : 1;
-     } flags;
-     /* Define options which may be passed to measure an item or to
-        have an item drawn.                                         */
-     union {
-         /* Information which should be filled in when measuring popup
-            items.                                                     */
-         /* <combine sack::PSI::popup::draw_popup_item_tag::union@1::measure@1>
-            \ \                                                                 */
-         struct {
-             /* Height of the menu item. */
-             /* Width of the menu item. */
-             uint32_t width, height;
-         } measure;
-         /* Contains information passed when the draw is required. */
-         /* <combine sack::PSI::popup::draw_popup_item_tag::union@1::draw@1>
-            \ \                                                              */
-         struct {
-             /* x to draw into */
-             /* y coordinate to start drawing at. */
-             int32_t x, y;
-             /* Width to draw. */
-             /* Height to draw. */
-             uint32_t width, height;
-             /* Image to draw into. */
-             Image image;
-         } draw;
-     };
- };
- #endif
- _MENU_NAMESPACE_END
- USE_MENU_NAMESPACE
- //-------- Initialize colors to current windows colors -----------
- PSI_PROC( PRENDER_INTERFACE, SetControlInterface)( PRENDER_INTERFACE DisplayInterface );
- PSI_PROC( PIMAGE_INTERFACE, SetControlImageInterface )( PIMAGE_INTERFACE DisplayInterface );
- PSI_PROC( void, AlignBaseToWindows)( void );
- PSI_PROC( void, SetBaseColor )( INDEX idx, CDATA c );
- PSI_PROC( CDATA, GetBaseColor )( INDEX idx );
- PSI_PROC( void, SetControlColor )( PSI_CONTROL pc, INDEX idx, CDATA c );
- PSI_PROC( CDATA, GetControlColor )( PSI_CONTROL pc, INDEX idx );
- //-------- Frame and generic control functions --------------
- #ifdef CONTROL_SOURCE
- #define MKPFRAME(hvideo) ((PSI_CONTROL)(((uintptr_t)(hvideo))|1))
- #endif
- /* Update the border type of a control.  See BorderOptionTypes
-    Parameters
-    pc :      control to modify the border
-    BorderType :  new border style
-  */
- PSI_PROC( void, SetCommonBorderEx )( PSI_CONTROL pc, uint32_t BorderType DBG_PASS);
- /* Update the border type of a control.  See BorderOptionTypes
-    Parameters
-    pc :      control to modify the border
-    b :  new border style
-  */
- #define SetCommonBorder(pc,b) SetCommonBorderEx(pc,b DBG_SRC)
- /* Update the border type of a control.  Border is drawn by routine
-    Parameters
-  pc :      control to modify the border draw routine
-  proc:     draw routine; image parameter is the 'window' in which the surface is...
-  measure_proc : get how much the outside border should be offset (or inside image should be inset)
-  */
- PSI_PROC( void, PSI_SetCustomBorder )( PSI_CONTROL pc, void (CPROC*proc)(PSI_CONTROL,Image)
-                                       , void (CPROC*measure_proc)( PSI_CONTROL, int *x_offset, int *y_offset, int *right_inset, int *bottom_inset )
-              );
- // update to current border type drawing.
- PSI_PROC( void, SetDrawBorder )( PSI_CONTROL pc );
- PSI_PROC( PSI_CONTROL, CreateFrame)( CTEXTSTR caption, int x, int y
-           , int w, int h
-           , uint32_t BorderFlags
-              , PSI_CONTROL hAbove );
- // 1) causes all updates to be done in video thread, otherwise selecting opengl context fails.
- // 2) ...
- PSI_PROC( void, EnableControlOpenGL )( PSI_CONTROL pc );
- //PSI_PROC( void, SetFrameDraw )( PSI_CONTROL pc, void (CPROC*OwnerDraw)(PSI_CONTROL pc) );
- //PSI_PROC( void, SetFrameMouse )( PSI_CONTROL pc, void (CPROC*OwnerMouse)(PSI_CONTROL pc, int32_t x, int32_t y, uint32_t b) );
- // Control Init Proc is called each time a control is created
- // a control may be created either with a 'make' routine
- // or by loading a dialog resource.
- #ifdef SOURCE_PSI2
- typedef int (CPROC*ControlInitProc)( PSI_CONTROL, va_list );
- #else
- typedef int (CPROC*ControlInitProc)( uintptr_t, PSI_CONTROL, uint32_t ID );
- #endif
- /* \Internal event callback definition. After creation, an
-    initializer is available to call on controls to pass
-    \arguments to. This is more useful for loading from an XML
-    \file where the control may have specified extra data.     */
- typedef int (CPROC*FrameInitProc)( uintptr_t, PSI_CONTROL, uint32_t ID );
- PSI_PROC( void, SetFrameInit )( PSI_CONTROL, ControlInitProc, uintptr_t );
- PSI_PROC( CTEXTSTR, GetControlTypeName)( PSI_CONTROL pc );
- // internal routine now exposed... results in a frame from a given
- // renderer - a more stable solution than MKPFRAME which
- // would require MUCH work to implement all checks everywhere...
- PSI_PROC( PSI_CONTROL, CreateFrameFromRenderer )( CTEXTSTR caption
-                                                          , uint32_t BorderTypeFlags
-                , PRENDERER pActImg );
- /* Attach a frame to a renderer. Not sure which is sized to
-    which if they are not the same size... probably the control
-    is sized to the display.
-    Parameters
-    pcf :      control to attach to the display frame
-    pActImg :  the display surface to use to show the control.
-    Returns
-    the control which was being attached to a display surface.  */
- PSI_PROC( PSI_CONTROL, AttachFrameToRenderer )( PSI_CONTROL pcf, PRENDERER pActImg );
- // any control on a frame may be passed, and
- // the top level
- PSI_PROC( PRENDERER, GetFrameRenderer )( PSI_CONTROL );
- PSI_PROC( PSI_CONTROL, GetFrameFromRenderer )( PRENDERER renderer );
- PSI_PROC( void, GetPhysicalCoordinate )( PSI_CONTROL relative_to, int32_t *_x, int32_t *_y, int include_surface );
- //PSI_PROC( void, DestroyFrameEx)( PSI_CONTROL pf DBG_PASS );
- #ifdef SOURCE_PSI2
- #define DestroyFrame(pf) DestroyCommonEx( pf DBG_SRC )
- #else
- #define DestroyFrame(pf) DestroyControlEx( pf DBG_SRC )
- #endif
- PSI_PROC( int, SaveFrame )( PSI_CONTROL pFrame, CTEXTSTR file );
- /* This is actually a load/save namespace. These functions are
-    used to save and load frames and their layouts to and from
-    XML.                                                        */
- _XML_NAMESPACE
- /* Unused. Please Delete. */
- PSI_PROC( void, SetFrameInitProc )( PSI_CONTROL pFrame, ControlInitProc InitProc, uintptr_t psvInit );
- /* Saves the current layout and controls of a frame. Can be
-    recreated later with LoadXMLFrame.
-    Parameters
-    frame :  Frame to save with all of its contents.
-    file\ :  filename to save XML frame into.                */
- PSI_PROC( int, SaveXMLFrame )( PSI_CONTROL frame, CTEXTSTR file );
- /* results with the frame and all controls created
-    whatever extra init needs to be done... needs to be done
-    if parent, use DisplayFrameOver().
-                                                           If frame is specified in parameters, and is not NULL, then
-                                                           this window is stacked against the other one so it is always
-                                                           above the other window.
-                                                           Parameters
-                                                           file\ :     name of XML file to read and pass to ParseXMLFrame
-                                                           frame :     frame to stack this frame against. (specify parent
-                                                                       window.)
-                                                           DBG_PASS :  passed to track allocation responsiblity.          */
-  PSI_PROC( PSI_CONTROL, LoadXMLFrameEx )( CTEXTSTR file DBG_PASS );
-  /* Handles recreating a frame from an XML description.
-    Parameters
-    buffer :    buffer to parse with XML frame loader
-    size :      length of the buffer in bytes.
-    DBG_PASS :  passed to track allocation responsiblity. */
- PSI_PROC( PSI_CONTROL, ParseXMLFrameEx )( POINTER buffer, size_t size DBG_PASS );
- /* <combine sack::PSI::xml::LoadXMLFrameEx@CTEXTSTR file>
-    \ \                                                    */
- PSI_PROC( PSI_CONTROL, LoadXMLFrameOverExx )( PSI_CONTROL frame, CTEXTSTR file, LOGICAL create DBG_PASS );
- /* <combine sack::PSI::xml::LoadXMLFrameEx@CTEXTSTR file>
-    \ \                                                    */
- PSI_PROC( PSI_CONTROL, LoadXMLFrameOverEx )( PSI_CONTROL frame, CTEXTSTR file DBG_PASS );
- /* <combine sack::PSI::xml::LoadXMLFrameOverEx@PSI_CONTROL@CTEXTSTR file>
-    \ \                                                                    */
- #define LoadXMLFrameOverOption(parent,file,create) LoadXMLFrameOverExx( parent,file,create DBG_SRC )
- /* <combine sack::PSI::xml::LoadXMLFrameOverEx@PSI_CONTROL@CTEXTSTR file>
-    \ \                                                                    */
- #define LoadXMLFrameOver(parent,file) LoadXMLFrameOverEx( parent,file DBG_SRC )
- /* <combine sack::PSI::xml::LoadXMLFrameEx@CTEXTSTR file>
-    \ \                                                    */
- #define LoadXMLFrame(file) LoadXMLFrameEx( file DBG_SRC )
- /* <combine sack::PSI::xml::ParseXMLFrameEx@POINTER@uint32_t size>
-    \ \                                                        */
- #define ParseXMLFrame(p,s) ParseXMLFrameEx( (p),(s) DBG_SRC )
- _XML_NAMESPACE_END
- USE_XML_NAMESPACE
- PSI_PROC( PSI_CONTROL, LoadFrameFromMemory )( POINTER info, uint32_t size, PSI_CONTROL hAbove, FrameInitProc InitProc, uintptr_t psv  );
- PSI_PROC( PSI_CONTROL, LoadFrameFromFile )( FILE *in, PSI_CONTROL hAbove, FrameInitProc InitProc, uintptr_t psv  );
- PSI_PROC( PSI_CONTROL, LoadFrame )( CTEXTSTR file, PSI_CONTROL hAbove, FrameInitProc InitProc, uintptr_t psv );
- /* methods to edit frames at runtime. */
- _PROP_NAMESPACE
- /* Turns edit features of a frame on and off.
-    Parameters
-    pf :       frame to set the edit state of
-    bEnable :  if TRUE, enable edit. if FALSE, disable edit.
-    Example
-    <code lang="c#">
-    PSI_CONTROL frame = CreateFrame( "test", 0, 0, 100, 100, BORDER_NORMAL, NULL );
-    EditFrame( frame );
-    </code>
-    This turns on edit features of a frame, right click you can
-    add a new registered control, controls have hotspots on them,
-    if you right click on a hotspot, then you can edit properties
-    of that control like it's control ID.
-    Note
-    When LoadXMLFrame fails to find the file, a frame is created
-    and edit enabled like this.                                                     */
- PSI_PROC( void, EditFrame )( PSI_CONTROL pf, int bEnable );
- _PROP_NAMESPACE_END
- PSI_PROC( void, GetFramePosition )( PSI_CONTROL pf, int32_t *x, int32_t *y );
- PSI_PROC( void, GetFrameSize )( PSI_CONTROL pf, uint32_t *w, uint32_t *h );
- // results in the total width (left and right) of the frame
- PSI_PROC( int, FrameBorderX )( PSI_CONTROL pc, uint32_t BorderFlags );
- // results in left offset of the surface within the frame...
- PSI_PROC( int, FrameBorderXOfs )( PSI_CONTROL pc, uint32_t BorderFlags );
- // results in the total height (top and bottom) of frame (and caption)
- PSI_PROC( int, FrameBorderY )( PSI_CONTROL pc, uint32_t BorderFlags, CTEXTSTR caption );
- // results in top offset of the surface within the frame...
- PSI_PROC( int, FrameBorderYOfs )( PSI_CONTROL pc, uint32_t BorderFlags, CTEXTSTR caption );
- PSI_PROC( int, CaptionHeight )( PSI_CONTROL pf, CTEXTSTR text );
- PSI_PROC( void, DisplayFrameOverOn )( PSI_CONTROL pc, PSI_CONTROL over, PRENDERER pActImg );
- // stacks the physical display behind this other frame...
- PSI_PROC( void, DisplayFrameUnder )( PSI_CONTROL pc, PSI_CONTROL under );
- PSI_PROC( void, DisplayFrameOver )( PSI_CONTROL pc, PSI_CONTROL over );
- PSI_PROC( void, DisplayFrameOn )( PSI_CONTROL pc, PRENDERER pActImg );
- PSI_PROC( void, DisplayFrame)( PSI_CONTROL pf );
- PSI_PROC( void, HideControl )( PSI_CONTROL pf );
- PSI_PROC( LOGICAL, IsControlHidden )( PSI_CONTROL pc );
- PSI_PROC( void, RevealCommonEx )( PSI_CONTROL pf DBG_PASS );
- #define RevealCommon(pc) RevealCommonEx(pc DBG_SRC );
- PSI_PROC( void, SizeCommon)( PSI_CONTROL pf, uint32_t w, uint32_t h );
- #define SizeControl(c,x,y) SizeCommon((PSI_CONTROL)c,x,y)
- #define SizeFrame(c,x,y) SizeCommon((PSI_CONTROL)c,x,y)
- PSI_PROC( void, SizeCommonRel)( PSI_CONTROL pf, uint32_t w, uint32_t h );
- #define SizeControlRel(c,x,y) SizeCommonRel((PSI_CONTROL)c,x,y)
- #define SizeFrameRel(c,x,y) SizeCommonRel((PSI_CONTROL)c,x,y)
- PSI_PROC( void, MoveCommon)( PSI_CONTROL pf, int32_t x, int32_t y );
- #define MoveControl(c,x,y) MoveCommon((PSI_CONTROL)c,x,y)
- #define MoveFrame(c,x,y) MoveCommon((PSI_CONTROL)c,x,y)
- PSI_PROC( void, MoveCommonRel)( PSI_CONTROL pf, int32_t x, int32_t y );
- #define MoveControlRel(c,x,y) MoveCommonRel((PSI_CONTROL)c,x,y)
- #define MoveFrameRel(c,x,y) MoveCommonRel((PSI_CONTROL)c,x,y)
- PSI_PROC( void, MoveSizeCommon)( PSI_CONTROL pf, int32_t x, int32_t y, uint32_t width, uint32_t height );
- #define MoveSizeControl(c,x,y,w,h) MoveSizeCommon((PSI_CONTROL)c,x,y,w,h)
- #define MoveSizeFrame(c,x,y,w,h) MoveSizeCommon((PSI_CONTROL)c,x,y,w,h)
- PSI_PROC( void, MoveSizeCommonRel)( PSI_CONTROL pf, int32_t x, int32_t y, uint32_t width, uint32_t height );
- #define MoveSizeControlRel(c,x,y,w,h) MoveSizeCommonRel((PSI_CONTROL)c,x,y,w,h)
- #define MoveSizeFrameRel(c,x,y,w,h) MoveSizeCommonRel((PSI_CONTROL)c,x,y,w,h)
- PSI_PROC( PSI_CONTROL, GetControl )( PSI_CONTROL pContainer, int ID );
- #ifdef PSI_SOURCE
- //#define GetControl(pc,id) GetControl( &((pc)->common),id)
- #define GetControl(pc,id) GetControl( (PSI_CONTROL)(pc),id)
- #endif
- //PSI_PROC( PSI_CONTROL, GetControl)( PSI_CONTROL pf, int ID );
- PSI_PROC( uintptr_t, GetCommonUserData )( PSI_CONTROL pf );
- #define GetFrameUserData(pf) GetCommonUserData( (PSI_CONTROL)pf )
- PSI_PROC( void, SetCommonUserData )( PSI_CONTROL pf, uintptr_t psv );
- #define SetFrameUserData(pf,d) SetCommonUserData( (PSI_CONTROL)pf,d )
- PSI_PROC( PFrameBorder, PSI_CreateBorder )( Image image, int width, int height, int anchors, LOGICAL defines_colors );
- PSI_PROC( void, PSI_SetFrameBorder )( PSI_CONTROL pc, PFrameBorder border );
- PSI_PROC( void, BeginUpdate )( PSI_CONTROL pc );
- PSI_PROC( void, EndUpdate )( PSI_CONTROL pc );
- // do the draw to the display...
- PSI_PROC( void, UpdateFrameEx )( PSI_CONTROL pf
-                                       , int x, int y
-            , int w, int h DBG_PASS );
- #define UpdateFrame(pf,x,y,w,h) UpdateFrameEx(pf,x,y,w,h DBG_SRC )
- /* \INTERNAL
-    This is for internal organization, events and routines the
-    mouse uses and features it adds to the PSI control... like
-    issuing auto updates on unlock... well... it's internal
-    anyhow                                                     */
- _MOUSE_NAMESPACE
- /* Releases a use. This is the oppsite of AddWait(). */
- PSI_PROC( void, ReleaseCommonUse )( PSI_CONTROL pc );
- /* This one is public, Sets the mouse position relative to a
-    point in a frame.
-    Parameters
-    frame :  frame to position the mouse relative to
-    x :      x of the mouse
-    y :      y of the mouse                                   */
- PSI_PROC( void, SetFrameMousePosition )( PSI_CONTROL frame, int x, int y );
- /* Captures the mouse to the current control, it's like an
-    OwnMouse for a control.                                 */
- PSI_PROC( void, CaptureCommonMouse )( PSI_CONTROL pc, LOGICAL bCapture );
- _MOUSE_NAMESPACE_END
- USE_MOUSE_NAMESPACE
- PSI_PROC( SFTFont, GetCommonFontEx )( PSI_CONTROL pc DBG_PASS );
- #define GetCommonFont(pc) GetCommonFontEx( pc DBG_SRC )
- #define GetFrameFont(pf) GetCommonFont((PSI_CONTROL)pf)
- PSI_PROC( void, SetCommonFont )( PSI_CONTROL pc, SFTFont font );
- #define SetFrameFont(pf,font) SetCommonFont((PSI_CONTROL)pf,font)
- // setting scale of this control immediately scales all contained
- // controls, but the control itself remains at it's current size.
- PSI_PROC( void, SetCommonScale )( PSI_CONTROL pc, PFRACTION scale_x, PFRACTION scale_y );
- // use scale_x and scale_y to scale a, b, results are done in a, b
- void ScaleCoords( PSI_CONTROL pc, int32_t* a, int32_t* b );
- // bOwn sets the ownership of mouse events to a control, where it remains
- // until released.  Some other control has no way to steal it.
- //PSI_PROC( void, OwnCommonMouse)( PSI_CONTROL pc, int bOwn );
- //PSI_PROC void SetDefaultOkayID( PSI_CONTROL pFrame, int nID );
- //PSI_PROC void SetDefaultCancelID( PSI_CONTROL pFrame, int nID );
- //-------- Generic control functions --------------
- // previously this was used;
- PSI_PROC( PSI_CONTROL, GetCommonParent )( PSI_CONTROL pc );
- #define GetCommonParent(pc)  GetParentControl(pc)
- /* Return the container control of this control.
-    NULL if there is no parent container. */
- PSI_PROC( PSI_CONTROL, GetParentControl )( PSI_CONTROL pc );
- /* Return the first control contained in the specified control.
-  returns NULL if there is no child control
-  <code>
-  void enum_all_controls( PSI_CONTROL a_control )
-  {
-      PSI_CONTROL root_control = a_control;
-    PSI_CONTROL current_control;
-    while( current_control = GetParentControl( root_control ) )
-        root_control = current_control;
-    for( current_control = GetFirstChildControl( root_control );
-               current_control;
-       current_control = GetNextControl( current_control ) )
-    {
-              // hmm some sort of recursion on each of these too...
-    }
-  }
-    </code>
-  */
- PSI_PROC( PSI_CONTROL, GetFirstChildControl )( PSI_CONTROL pc );
- /* Return the next control after this one.
-     returns NULL if there are no other controls after this one*/
- PSI_PROC( PSI_CONTROL, GetNextControl )( PSI_CONTROL pc );
- PSI_PROC( PSI_CONTROL, GetFrame)( PSI_CONTROL pc );
- #define GetFrame(c) GetFrame((PSI_CONTROL)(c))
- PSI_PROC( PSI_CONTROL, GetNearControl)( PSI_CONTROL pc, int ID );
- PSI_PROC( void, GetCommonTextEx)( PSI_CONTROL pc, TEXTSTR  buffer, int buflen, int bCString );
- #define GetControlTextEx(pc,b,len,str) GetCommonTextEx(pc,b,len,str)
- #define GetControlText( pc, buffer, buflen ) GetCommonTextEx( (PSI_CONTROL)(pc), buffer, buflen, FALSE )
- #define GetFrameText( pc, buffer, buflen ) GetCommonTextEx( (PSI_CONTROL)(pc), buffer, buflen, FALSE )
- //PSI_PROC( void, SetCommonText )( PSI_CONTROL pc, CTEXTSTR text );
- PSI_PROC( void, SetControlText )( PSI_CONTROL pc, CTEXTSTR text );
- PSI_PROC( void, SetControlCaptionImage )( PSI_CONTROL pc, Image image, int pad );
- PSI_PROC( void, SetFrameText )( PSI_CONTROL pc, CTEXTSTR text );
- // this is used to set the height of the caption bar when OnDrawCaption is defined for a control
- PSI_PROC( void, SetCaptionHeight )( PSI_CONTROL pc, int height );
- // set focus to this control,
- // it's container which needs to be updated
- // is discoverable from the control itself.
- PSI_PROC( void, SetCommonFocus)( PSI_CONTROL pc );
- PSI_PROC( void, EnableControl)( PSI_CONTROL pc, int bEnable );
- PSI_PROC( int, IsControlFocused )( PSI_CONTROL pc );
- PSI_PROC( int, IsControlEnabled)( PSI_CONTROL pc );
- PSI_PROC( struct physical_device_caption_button *, AddCaptionButton )( PSI_CONTROL frame, Image normal, Image pressed, Image highlight, int extra_pad, void (CPROC*event)(PSI_CONTROL) );
- PSI_PROC( void, SetCaptionButtonImages )( struct physical_device_caption_button *, Image normal, Image pressed, Image rollover );
- PSI_PROC( void, HideCaptionButton )( struct physical_device_caption_button * );
- PSI_PROC( void, ShowCaptionButton )( struct physical_device_caption_button * );
- PSI_PROC( void, SetCaptionButtonOffset )( PSI_CONTROL frame, int32_t x, int32_t y );
- /*
- PSI_PROC( PSI_CONTROL, CreateCommonExx)( PSI_CONTROL pContainer
-              , CTEXTSTR pTypeName
-              , uint32_t nType
-              , int x, int y
-              , int w, int h
-              , uint32_t nID
-              , CTEXTSTR caption
-              , uint32_t ExtraBorderType
-              , PTEXT parameters
-              //, va_list args
-             DBG_PASS );
- #define CreateCommonEx(pc,nt,x,y,w,h,id,caption) CreateCommonExx(pc,NULL,nt,x,y,w,h,id,caption,0,NULL DBG_SRC)
- #define CreateCommon(pc,nt,x,y,w,h,id,caption) CreateCommonExx(pc,NULL,nt,x,y,w,h,id,caption,0,NULL DBG_SRC)
- */
- /* returns the TypeID of the control, this can be used to validate the data received from the control.*/
- #undef ControlType
- PSI_PROC( INDEX, ControlType)( PSI_CONTROL pc );
- PSI_PROC( PSI_CONTROL, MakeControl )( PSI_CONTROL pContainer
-             , uint32_t nType
-             , int x, int y
-             , int w, int h
-             , uint32_t nID
-             //, ...
-             );
- // init is called with an extra parameter on the stack
- // works as long as we guarantee C stack call basis...
- // the register_control structure allows this override.
- PSI_PROC( PSI_CONTROL, MakeControlParam )( PSI_CONTROL pContainer
-                , uint32_t nType
-                , int x, int y
-                , int w, int h
-                , uint32_t nID
-                , POINTER param
-                );
- // MakePrivateControl passes BORDER_NO_EXTRA_INIT...
- PSI_PROC( PSI_CONTROL, MakePrivateControl )( PSI_CONTROL pContainer
-              , uint32_t nType
-              , int x, int y
-              , int w, int h
-              , uint32_t nID
-              //, ...
-              );
- // MakePrivateControl passes BORDER_NO_EXTRA_INIT...
- PSI_PROC( PSI_CONTROL, MakePrivateNamedControl )( PSI_CONTROL pContainer
-              , CTEXTSTR pType
-              , int x, int y
-              , int w, int h
-              , uint32_t nID
-              );
- PSI_PROC( PSI_CONTROL, MakeCaptionedControl )( PSI_CONTROL pContainer
-                , uint32_t nType
-                , int x, int y
-                , int w, int h
-                , uint32_t nID
-                , CTEXTSTR caption
-                //, ...
-                );
- PSI_PROC( PSI_CONTROL, VMakeCaptionedControl )( PSI_CONTROL pContainer
-               , uint32_t nType
-               , int x, int y
-               , int w, int h
-               , uint32_t nID
-               , CTEXTSTR caption
-               //, va_list args
-               );
- PSI_PROC( PSI_CONTROL, MakeNamedControl )( PSI_CONTROL pContainer
-              , CTEXTSTR pType
-              , int x, int y
-              , int w, int h
-              , uint32_t nID
-              //, ...
-              );
- PSI_PROC( PSI_CONTROL, MakeNamedCaptionedControlByName )( PSI_CONTROL pContainer
-                   , CTEXTSTR pType
-                   , int x, int y
-                   , int w, int h
-                   , CTEXTSTR pIDName
- // also pass this (if known)
-                                                     , uint32_t nID
-                   , CTEXTSTR caption
-                   );
- PSI_PROC( PSI_CONTROL, MakeNamedCaptionedControl )( PSI_CONTROL pContainer
-                 , CTEXTSTR pType
-                 , int x, int y
-                 , int w, int h
-                 , uint32_t nID
-                 , CTEXTSTR caption
-                 //, ...
-                 );
- PSI_PROC( PSI_CONTROL, VMakeControl )( PSI_CONTROL pContainer
-            , uint32_t nType
-            , int x, int y
-            , int w, int h
-            , uint32_t nID
-            //, va_list args
-            );
- /*
-  depricated
-  PSI_PROC( PSI_CONTROL, CreateControl)( PSI_CONTROL pFrame
-  , int nID
-  , int x, int y
-  , int w, int h
-  , int BorderType
-  , int extra );
-  */
- PSI_PROC( Image,GetControlSurface)( PSI_CONTROL pc );
- // result with an image pointer, will sue the image passed
- // as prior_image to copy into (resizing if nessecary), if prior_image is NULL
- // then a new Image will be returned.  If the surface has not been
- // marked as parent_cleaned, then NULL results, as no Original image is
- // available.  The image passed as a destination for the surface copy is
- // not released, it is resized, and copied into.  THe result may still be NULL
- // the image will still be the last valid copy of the surface.
- PSI_PROC( Image, CopyOriginalSurface )( PSI_CONTROL pc, Image prior_image );
- // this allows the application to toggle the transparency
- // characteristic of a control.  If a control is transparent, then it behaves
- // automatically as one should using CopyOriginalSurface and restoring that surface
- // before doing the draw.  The application does not need to concern itself
- // with restoring the prior image, but it must also assume that the entire surface
- // has been destroyed, and partial updates are not possible.
- PSI_PROC( void, SetCommonTransparent )( PSI_CONTROL pc, LOGICAL bTransparent );
- PSI_PROC( void, OrphanCommonEx )( PSI_CONTROL pc, LOGICAL bDraw );
- PSI_PROC( void, OrphanCommon )( PSI_CONTROL pc );
- #define OrphanFrame(pf) OrphanCommonEx((PSI_CONTROL)pf, FALSE)
- #define OrphanControl(pc) OrphanCommonEx((PSI_CONTROL)pc, FALSE)
- #define OrphanControlEx(pc,d) OrphanCommonEx((PSI_CONTROL)pc, d)
- PSI_PROC( void, AdoptCommonEx )( PSI_CONTROL pFoster, PSI_CONTROL pElder, PSI_CONTROL pOrphan, LOGICAL bDraw );
- PSI_PROC( void, AdoptCommon )( PSI_CONTROL pFoster, PSI_CONTROL pElder, PSI_CONTROL pOrphan );
- #define AdoptFrame(pff,pfe,pfo) AdoptCommonEx((PSI_CONTROL)pff,(PSI_CONTROL)pfe,(PSI_CONTROL)pfo, TRUE)
- #define AdoptControl(pcf,pce,pco) AdoptCommonEx((PSI_CONTROL)pcf,(PSI_CONTROL)pce,(PSI_CONTROL)pco, TRUE)
- #define AdoptControlEx(pcf,pce,pco,d) AdoptCommonEx((PSI_CONTROL)pcf,(PSI_CONTROL)pce,(PSI_CONTROL)pco, d)
- PSI_PROC( void, SetCommonDraw )( PSI_CONTROL pf, int (CPROC*Draw)( PSI_CONTROL pc ) );
- PSI_PROC( void, SetCommonDrawDecorations )( PSI_CONTROL pc, void(CPROC*DrawDecorations)(PSI_CONTROL) );
- PSI_PROC( void, SetCommonKey )( PSI_CONTROL pf, int (CPROC*Key)(PSI_CONTROL,uint32_t) );
- typedef int (CPROC*psi_mouse_callback)(PSI_CONTROL, int32_t x, int32_t y, uint32_t b );
- PSI_PROC( void, SetCommonMouse)( PSI_CONTROL pc, psi_mouse_callback MouseMethod );
- PSI_PROC( void, AddCommonDraw )( PSI_CONTROL pf, int (CPROC*Draw)( PSI_CONTROL pc ) );
- PSI_PROC( void, AddCommonKey )( PSI_CONTROL pf, int (CPROC*Key)(PSI_CONTROL,uint32_t) );
- PSI_PROC( void, AddCommonMouse)( PSI_CONTROL pc, int (CPROC*MouseMethod)(PSI_CONTROL, int32_t x, int32_t y, uint32_t b ) );
- PSI_PROC( void, SetCommonAcceptDroppedFiles)( PSI_CONTROL pc, LOGICAL (CPROC*AcceptDroppedFilesMethod)(PSI_CONTROL, CTEXTSTR file, int32_t x, int32_t y ) );
- PSI_PROC( void, AddCommonAcceptDroppedFiles)( PSI_CONTROL pc, LOGICAL (CPROC*AcceptDroppedFilesMethod)(PSI_CONTROL, CTEXTSTR file, int32_t x, int32_t y ) );
- PSI_PROC( void, SetCommonSave)( PSI_CONTROL pc, void (CPROC*)(int PSI_CONTROL) );
- #define SetControlSave(pc,mm)   SetCommonSave((PSI_CONTROL)pc,(void (CPROC*)(int, PSI_CONTROL))mm)
- #define SetFrameSave(pc,mm)     SetCommonSave((PSI_CONTROL)pc,(void (CPROC*)(int, PSI_CONTROL))mm)
- PSI_PROC( void, SetCommonLoad)( PSI_CONTROL pc, void (CPROC*)(int PSI_CONTROL) );
- #define SetControlLoad(pc,mm)   SetCommonLoad((PSI_CONTROL)pc,(void (CPROC*)(int, PSI_CONTROL))mm)
- #define SetFrameLoad(pc,mm)     SetCommonLoad((PSI_CONTROL)pc,(void (CPROC*)(int, PSI_CONTROL))mm)
- // ---
- // restore background restores the prior background of the control
- // so that semi-opaque controls can draw over the correct surface.
- PSI_PROC( void, RestoreBackground )( PSI_CONTROL pc, P_IMAGE_RECTANGLE r );
- // --
- // output to the physical surface the rectangle of the control's surface specified.
- PSI_PROC( void, UpdateSomeControls )( PSI_CONTROL pc, P_IMAGE_RECTANGLE pRect );
- PSI_PROC( void, SetUpdateRegionEx )( PSI_CONTROL pc, int32_t rx, int32_t ry, uint32_t rw, uint32_t rh DBG_PASS );
- #define SetUpdateRegion(pc,x,y,w,h) SetUpdateRegionEx( pc,x,y,w,h DBG_SRC )
- PSI_PROC( void, EnableCommonUpdates )( PSI_CONTROL frame, int bEnable );
- #define EnableFrameUpdates(pf,e) EnableCommonUpdates( (PSI_CONTROL)pf, e )
- #define EnableControlUpdates(pc,e) EnableCommonUpdates( (PSI_CONTROL)pc, e )
- //PSI_PROC void SetControlKey( PSI_CONTROL pc, void (*KeyMethod)( PSI_CONTROL pc, int key ) );
- PSI_PROC( void, UpdateCommonEx )( PSI_CONTROL pc, int bDraw DBG_PASS );
- PSI_PROC( void, SmudgeCommonAreaEx )( PSI_CONTROL pc, P_IMAGE_RECTANGLE rect DBG_PASS );
- #define SmudgeCommonArea( pc, area ) SmudgeCommonAreaEx( pc, area DBG_SRC )
- PSI_PROC( void, SmudgeCommonEx )( PSI_CONTROL pc DBG_PASS );
- #define SmudgeCommon(pc) SmudgeCommonEx( pc DBG_SRC )
- //#ifdef SOURCE_PSI2
- #define UpdateCommon(pc) SmudgeCommon(pc)
- //#else
- //#define UpdateCommon(pc) UpdateCommonEx(pc,TRUE DBG_SRC)
- //#endif
- //#define UpdateControlEx(pc,draw) UpdateCommonEx( (PSI_CONTROL)pc, draw )
- //#define UpdateFrameEx(pc,draw)   UpdateCommonEx( (PSI_CONTROL)pc, draw )
- PSI_PROC( void, UpdateControlEx)( PSI_CONTROL pc DBG_PASS );
- #define UpdateControl(pc) UpdateControlEx( pc DBG_SRC )
- PSI_PROC( int, GetControlID)( PSI_CONTROL pc );
- PSI_PROC( void, SetControlID )( PSI_CONTROL pc, int ID );
- PSI_PROC( void, DestroyCommonEx)( PSI_CONTROL *ppc DBG_PASS);
- #define DestroyCommon(ppc) DestroyCommonEx(ppc DBG_SRC )
- PSI_PROC( void, DestroyControlEx)( PSI_CONTROL pc DBG_PASS);
- #define DestroyControl(pc) DestroyControlEx( pc DBG_SRC )
- PSI_PROC( void, SetNoFocus)( PSI_CONTROL pc );
- PSI_PROC( void *, ControlExtraData)( PSI_CONTROL pc );
- _PROP_NAMESPACE
- /* Show a dialog to edit a control's properties.
-    Parameters
-    control :  pointer to a control to edit the properties of.
-    TODO
-    Add an example image of this.                              */
- PSI_PROC( int, EditControlProperties )( PSI_CONTROL control );
- /* Shows a dialog to edit the properties of the frame (the outer
-    container control.) Borders matter, title, size, position...
-    TODO
-    Add ability to specify parent frame for stacking.
-    Parameters
-    frame :  frame to edit properties of
-    x :      x of the left of the edit dialog
-    y :      y of the top of the edit dialog                      */
- PSI_PROC( int, EditFrameProperties )( PSI_CONTROL frame, int32_t x, int32_t y );
- _PROP_NAMESPACE_END
- USE_PROP_NAMESPACE
- //------ General Utilities ------------
- // adds OK and Cancel buttons based off the
- // bottom right of the frame, and when pressed set
- // either done (cancel) or okay(OK) ...
- // could do done&ok or just done - but we're bein cheesey
- PSI_PROC( void, AddCommonButtonsEx)( PSI_CONTROL pf
-                                 , int *done, CTEXTSTR donetext
-                                 , int *okay, CTEXTSTR okaytext );
- PSI_PROC( void, AddCommonButtons)( PSI_CONTROL pf, int *done, int *okay );
- PSI_PROC( void, SetCommonButtons)( PSI_CONTROL pf, int *pdone, int *pokay );
- PSI_PROC( void, InitCommonButton )( PSI_CONTROL pc, int *value );
- // perhaps give a callback for within the loop?
- PSI_PROC( void, CommonLoop)( int *done, int *okay );
- // perhaps give a callback for within the loop?
- PSI_PROC( void, CommonWait)( PSI_CONTROL pf );
- // a frame in edit mode, once edit mode done, continue
- PSI_PROC( void, CommonWaitEndEdit)( PSI_CONTROL *pf );
- PSI_PROC( void, ProcessControlMessages)(void);
- /* Buttons. Clickable buttons, Radio buttons and checkboxes. */
- _BUTTON_NAMESPACE
- /* Symbol which can be used as an attribute of a button to not
-    show the button border (custom drawn buttons)               */
- #define BUTTON_NO_BORDER 0x0001
- /* Defined function signature for the event attached to a button
-    when the button is clicked.                                   */
- typedef void (CPROC *ButtonPushMethod)(uintptr_t,PSI_CONTROL);
- /* A function signature for the event attached to a "Custom
-    Button" when it is drawn, this function is called.       */
- typedef void (CPROC*ButtonDrawMethod)(uintptr_t psv, PSI_CONTROL pc);
- CONTROL_PROC(Button,(CTEXTSTR,void (CPROC*PushMethod)(uintptr_t psv, PSI_CONTROL pc)
-         , uintptr_t Data));
- // this method invokes the button push method...
- PSI_PROC( void, InvokeButton )( PSI_CONTROL pc );
- PSI_PROC( void, GetButtonPushMethod )( PSI_CONTROL pc, ButtonPushMethod *method, uintptr_t *psv );
- PSI_PROC( PSI_CONTROL, SetButtonPushMethod )( PSI_CONTROL pc, ButtonPushMethod method, uintptr_t psv );
- // BUTTON_ flags...
- PSI_PROC( PSI_CONTROL, SetButtonAttributes )( PSI_CONTROL pc, int attr );
- PSI_PROC( PSI_CONTROL, SetButtonDrawMethod )( PSI_CONTROL pc, ButtonDrawMethod method, uintptr_t psv );
- /* An all-in-one macro to create a Slider control, set the
-    callback, and set direction options.
-    Parameters
-    f :            frame to create the button in
-    x :            left coordinate of the control
-    y :            top coordinate of the control
-    w :            how wide the control is
-    h :            how tall to make the control
-    nID :          ID of the control (any numeric ID you want to
-                   call it)
-    a :            SliderDirection
-    c :            caption \- text for the button.
-    update_proc :  button click callback function.
-                   ButtonPushMethod.
-    user_data :    user data to pass to callback when it is
-                   invoked.
-    Returns
-    PSI_CONTROL that is a button.                                */
- #define MakeButton(f,x,y,w,h,id,c,a,p,d) SetButtonAttributes( SetButtonPushMethod( MakeCaptionedControl(f,NORMAL_BUTTON,x,y,w,h,id,c), p, d ), a )
- PSI_CONTROL PSIMakeImageButton( PSI_CONTROL parent, int x, int y, int w, int h, uint32_t ID
-         , Image pImage
-         , void (CPROC*PushMethod)(uintptr_t psv, PSI_CONTROL pc)
-         , uintptr_t Data );
- /* An all-in-one macro to create a Slider control, set the
-    callback, and set direction options.
-    Parameters
-    f :            frame to create the button in
-    x :            left coordinate of the control
-    y :            top coordinate of the control
-    w :            how wide the control is
-    h :            how tall to make the control
-    nID :          ID of the control (any numeric ID you want to
-                   call it)
-    a :            SliderDirection
-    c :            caption \- text for the button.
-    update_proc :  button click callback function.
-                   ButtonPushMethod.
-    user_data :    user data to pass to callback when it is
-                   invoked.
-    Returns
-    PSI_CONTROL that is a button.                                */
- #define MakeImageButton(f,x,y,w,h,id,c,a,p,d) SetButtonPushMethod( SetButtonAttributes( SetButtonImage( MakeControl(f,IMAGE_BUTTON,x,y,w,h,id),c),a),p,d)
- PSI_PROC( PSI_CONTROL, SetButtonImage )( PSI_CONTROL pc, Image image );
- // set up/down state images for button ( NORMAL_BUTTON or IMAGE_BUTTON_NAME )
- PSI_PROC( PSI_CONTROL, SetButtonImages )( PSI_CONTROL pc, Image normal_image, Image pressed_image );
- // set up/down state images for button ( NORMAL_BUTTON or IMAGE_BUTTON_NAME )
- PSI_PROC( PSI_CONTROL, SetButtonSlicedImages )( PSI_CONTROL pc, SlicedImage normal_image, SlicedImage pressed_image );
- // set up/down state images for button with mouse rollover ( NORMAL_BUTTON or IMAGE_BUTTON_NAME )
- PSI_PROC( PSI_CONTROL, SetButtonRolloverImages )( PSI_CONTROL pc, Image pRollover, Image pRollover_pressed );
- // set up/down state images for button with mouse rollover ( NORMAL_BUTTON or IMAGE_BUTTON_NAME )
- PSI_PROC( PSI_CONTROL, SetButtonSlicedRolloverImages )( PSI_CONTROL pc, SlicedImage pRollover, SlicedImage pRollover_pressed );
- // set an offset for button caption text (left/right bias for non-symetric backgrounds)
- PSI_PROC( PSI_CONTROL, SetButtonTextOffset )( PSI_CONTROL pc, int32_t x, int32_t y );
- // set up/down state images for button for focused state; overrides drawing focus underline.
- //  ( NORMAL_BUTTON or IMAGE_BUTTON_NAME )
- PSI_PROC( PSI_CONTROL, SetButtonFocusedImages )( PSI_CONTROL pc, Image pImage, Image pImage_pressed );
- // set up/down state images for button for focused state; overrides drawing focus underline.
- //  ( NORMAL_BUTTON or IMAGE_BUTTON_NAME )
- PSI_PROC( PSI_CONTROL, SetButtonSlicedFocusedImages )( PSI_CONTROL pc, SlicedImage pImage, SlicedImage pImage_pressed );
- /* An all-in-one macro to create a Slider control, set the
-    callback, and set direction options.
-    Parameters
-    f :            frame to create the button in
-    x :            left coordinate of the control
-    y :            top coordinate of the control
-    w :            how wide the control is
-    h :            how tall to make the control
-    nID :          ID of the control (any numeric ID you want to
-                   call it)
-    a :            SliderDirection
-    c :            caption \- text for the button.
-    update_proc :  button click callback function.
-                   ButtonPushMethod.
-    user_data :    user data to pass to callback when it is
-                   invoked.
-    Returns
-    PSI_CONTROL that is a button.                                */
- #define MakeCustomDrawnButton(f,x,y,w,h,id,a,dr,p,d) SetButtonPushMethod( SetButtonDrawMethod( SetButtonAttributes( MakeControl(f,CUSTOM_BUTTON,x,y,w,h,id),a ), dr, d ), p,d)
- PSI_PROC( void, PressButton)( PSI_CONTROL pc, int bPressed );
- PSI_PROC( void, SetButtonFont)( PSI_CONTROL pc, SFTFont font );
- PSI_PROC( int, IsButtonPressed)( PSI_CONTROL pc );
- PSI_PROC( PSI_CONTROL, SetButtonGroupID )(PSI_CONTROL pc, int nGroupID );
- PSI_PROC( PSI_CONTROL, SetButtonCheckedProc )( PSI_CONTROL pc
-               , void (CPROC*CheckProc)(uintptr_t psv, PSI_CONTROL pc)
-                , uintptr_t psv );
- /* Attributes that affect behavior of radio buttons. */
- enum RadioButtonAttributes{
-  RADIO_CALL_ALL       = 0,
-  RADIO_CALL_CHECKED   = 1,
-  RADIO_CALL_UNCHECKED = 2,
-   RADIO_CALL_CHANGED   = (RADIO_CALL_CHECKED|RADIO_CALL_UNCHECKED)
- };
- /* An all-in-one macro to create a Slider control, set the
-    callback, and set direction options.
-    Parameters
-    f :            frame to create the button in
-    x :            left coordinate of the control
-    y :            top coordinate of the control
-    w :            how wide the control is
-    h :            how tall to make the control
-    nID :          ID of the control (any numeric ID you want to
-                   call it)
-    a :            SliderDirection
-    c :            caption \- text for the button.
-    update_proc :  button click callback function.
-                   ButtonPushMethod.
-    user_data :    user data to pass to callback when it is
-                   invoked.
-    Returns
-    PSI_CONTROL that is a button.                                */
- #define MakeRadioButton(f,x,y,w,h,id,t,gr,a,p,d) SetCheckButtonHandler( SetButtonGroupID( SetButtonAttributes( MakeCaptionedControl(f,RADIO_BUTTON,x,y,w,h,id,t), a ), gr ), p, d )
- /* An all-in-one macro to create a Slider control, set the
-    callback, and set direction options.
-    Parameters
-    f :            frame to create the button in
-    x :            left coordinate of the control
-    y :            top coordinate of the control
-    w :            how wide the control is
-    h :            how tall to make the control
-    nID :          ID of the control (any numeric ID you want to
-                   call it)
-    a :            SliderDirection
-    c :            caption \- text for the button.
-    update_proc :  button click callback function.
-                   ButtonPushMethod.
-    user_data :    user data to pass to callback when it is
-                   invoked.
-    Returns
-    PSI_CONTROL that is a button.                                */
- #define MakeCheckButton(f,x,y,w,h,id,t,a,p,d) SetCheckButtonHandler( SetButtonAttributes( SetButtonGroupID( MakeCaptionedControl(f,RADIO_BUTTON,x,y,w,h,id,t),0),a),p,d)
- PSI_PROC( PSI_CONTROL, SetRadioButtonGroup )( PSI_CONTROL, int group_id );
- PSI_PROC( PSI_CONTROL, SetCheckButtonHandler )( PSI_CONTROL
-                 , void (CPROC*CheckProc)(uintptr_t psv, PSI_CONTROL pc)
-                 , uintptr_t psv );
- PSI_PROC( int, GetCheckState)( PSI_CONTROL pc );
- PSI_PROC( void, SetCheckState)( PSI_CONTROL pc, int nState );
- // set the button's background color...
- PSI_PROC( void, SetButtonColor )( PSI_CONTROL pc, CDATA color );
- _BUTTON_NAMESPACE_END
- USE_BUTTON_NAMESPACE
- /* Static Text - this control just shows simple text on a
-    dialog. Non selectable.
-                                                           */
-  _TEXT_NAMESPACE
-  /* Attributes which can be passed to SetTextControlAttributes. */
-  enum TextControlAttributes {
-  TEXT_NORMAL     = 0x00,
-  TEXT_VERTICAL   = 0x01,
-  TEXT_CENTER     = 0x02,
-  TEXT_RIGHT      = 0x04,
-  TEXT_FRAME_BUMP = 0x10,
- /* frame of the text control is bump frame (1 up, 1 down thin
-     frame)                                                     */
-    TEXT_FRAME_DENT = 0x20,
-  TEXT_SHADOW_TEXT = 0x40
-  };
- /* \ \
-    Parameters
-    pf :   frame to create the control in
-    x :   left coordinate of control
-    y :   top coordinate of the control
-    w :   width of the control
-    h :   height of the control
-    ID :  an integer to identify the control
-    text :   text to initialize the control with
-    flags :   Attributes \- can be one or more of TextControlAttributes
-    Returns
-    a PSI_CONTROL which is an text control.               */
- #define MakeTextControl( pf,x,y,w,h,id,text,flags ) SetTextControlAttributes( MakeCaptionedControl( pf, STATIC_TEXT, x, y, w,h, id, text ), flags )
- /* Set the alignment of the text in the TextControl.
-    Parameters
-    pc :     a "TextControl" control.
-    align :  A flag from TextControlAttributes        */
- PSI_PROC( void, SetControlAlignment )( PSI_CONTROL pc, int align );
- /* offset is a pixel specifier... +/- amount from it's normal
-    position. returns if any text remains visible (true is
-    visible, false is no longer visible, allowing upper level
-    application to reset to 0 offset.
-    The least amount and maximum effective amount can be received
-    from GetControlTextOffsetMinMax.
-    Parameters
-    pc :      a Text control.
-    offset :  offset to apply to the text.
-    Returns
-    TRUE if ti was a valid control, else FALSE.                   */
- PSI_PROC( LOGICAL, SetControlTextOffset )( PSI_CONTROL pc, int offset );
- /* Get the minimum and maximum offsets that can be applied to a
-    text control based on its justification attributes before the
-    text will not be drawn in the control. This can be used to
-    marquee the text in from the left with the first update
-    showing text, until the last bit of text scrolls out at the
-    end.
-    Parameters
-    pc :          A STATIC_TEXT_NAME control.
-    min_offset :  pointer to an integer that is filled with the
-                  least amount that can be set for an offset
-                  before text is not shown.
-    max_offset :  pointer to an integer that is filled with the
-                  most amount of offset that can be set before
-                  text is not shown.
-    Returns
-    TRUE if a valid Text control was passed.
-    FALSE otherwise.
-    See Also
-    SetControlTextOffset                                          */
- PSI_PROC( LOGICAL, GetControlTextOffsetMinMax )( PSI_CONTROL pc, int *min_offset, int *max_offset );
- CAPTIONED_CONTROL_PROC( TextControl, (void) );
- /* Sets attributes of the text control.
-    Parameters
-    pc :     a STATIC_TEXT_NAME control.
-    flags :  one or move values combined from
-             TextControlAttributes.           */
- PSI_PROC( PSI_CONTROL, SetTextControlAttributes )( PSI_CONTROL pc, int flags );
- /* Sets the foreground and background of a text control.
-    Parameters
-    pc :    a Text control
-    fore :  CDATA describing the foreground color to use
-    back :  CDATA describing the background color to use. 0 is no
-            color, and only the foreground text is output. See
-            PutString.                                            */
- PSI_PROC( void, SetTextControlColors )( PSI_CONTROL pc, CDATA fore, CDATA back );
- _TEXT_NAMESPACE_END
- USE_TEXT_NAMESPACE
- /* Edit Control. This is a control that allows for text input. It
-    also works as a drop file acceptor, and the name of the file
-    or folder being dropped on it is entered as text.              */
-  _EDIT_NAMESPACE
-  /* Options which can be passed to the MakeEditControl macro. */
-  enum EditControlOptions {
-   EDIT_READONLY = 0x01,
-   EDIT_PASSWORD = 0x02
-  };
- CAPTIONED_CONTROL_PROC( EditControl, (CTEXTSTR text) );
- /* This enters the text into the edit field as if it were typed.
-    This respects things like marked region auto delete. It's not
-    the same as SetText, but will insert at the position the
-    cursor is at.
-    Parameters
-    control :  control to type into
-    text :     the text to type.                                  */
- PSI_PROC( void, TypeIntoEditControl )( PSI_CONTROL control, CTEXTSTR text );
- /* \ \
-    Parameters
-    f :   frame to create the control in
-    x :   left coordinate of control
-    y :   top coordinate of the control
-    w :   width of the control
-    h :   height of the control
-    ID :  an integer to identify the control
-    t :   text to initialize the control with
-    a :   Attributes \- can be one or more of EditControlOptions
-    Returns
-    a PSI_CONTROL which is an edit control.               */
- #define MakeEditControl(f,x,y,w,h,id,t,a) SetEditControlPassword( SetEditControlReadOnly( MakeCaptionedControl( f,EDIT_FIELD,x,y,w,h,id,t )  , ( a & EDIT_READONLY)?TRUE:FALSE )    , ( a & EDIT_PASSWORD)?TRUE:FALSE )
- /* Sets an edit control into read only mode. This actually means
-    that the user cannot enter data, and can only see what is in
-    it. The difference between this and a text control is the
-    border and background style.
-    Parameters
-    pc :         edit control to set readonly
-    bReadOnly :  if TRUE, sets readonly. If false, clears readonly.
-    Returns
-    The PSI Control passed is returned, for nesting.                */
- PSI_PROC( PSI_CONTROL, SetEditControlReadOnly )( PSI_CONTROL pc, LOGICAL bReadOnly );
- /* If password style is set, then the text in the edit field is
-    shown as ******.
-    Parameters
-    pc :         pointer to an edit control
-    bPassword :  if TRUE, Sets style to password, if FALSE, clears
-                 password style.                                   */
- PSI_PROC( PSI_CONTROL, SetEditControlPassword )( PSI_CONTROL pc, LOGICAL bPassword );
- //PSI_PROC( void, SetEditFont )( PSI_CONTROL pc, SFTFont font );
- // Use GetControlText/SetControlText
- _EDIT_NAMESPACE_END
- USE_EDIT_NAMESPACE
- /* Slider Control - this is a generic control that has a minimum
-    value, and a maximum value, and a clickable knob that can
-    select a value inbetween.
-    the maximum value may be less than the minimum value, the
-    current selected value will be between these.
-    A horizontal slider, the value for minimum is on the left. A
-    vertical slider, the value for minimum is on the bottom.      */
-  _SLIDER_NAMESPACE
-  /* These are values to pass to SetSliderOptions to control the
-     slider's direction.                                         */
-  enum SliderDirection {
-   SLIDER_HORIZ =1,
- /* Slider is horizontal. That is the knob moves left and right. The
-      value as minimum is at the left, and the value maximum is at
-      the right. numerically minimum can be more than maximum.         */
-    SLIDER_VERT  =0
- /* Slider is vertical. That is the knob moves up and down. The
-       value as minimum is at the bottom, and the value maximum is
-       at the top. numerically minimum can be more than maximum.   */
-  };
- /* An all-in-one macro to create a Slider control, set the
-    callback, and set direction options.
-    Parameters
-    pf :           frame to create the slider in
-    x :            left coordinate of the control
-    y :            top coordinate of the control
-    w :            how wide the control is
-    h :            how tall to make the control
-    nID :          ID of the control (any numeric ID you want to
-                   call it)
-    opt :          SliderDirection
-    update_proc :  callback to which gets called when the slider's
-                   current value changes.
-    user_data :    user data to pass to callback when it is
-                   invoked.                                        */
- #define MakeSlider(pf,x,y,w,h,nID,opt,updateproc,updateval) SetSliderOptions( SetSliderUpdateHandler( MakeControl(pf,SLIDER_CONTROL,x,y,w,h,nID ), updateproc,updateval ), opt)
- //CONTROL_PROC( Slider, (
- typedef void (CPROC*SliderUpdateProc)(uintptr_t psv, PSI_CONTROL pc, int val);
- /* Set the new minimum, maximum and current for the slider.
-    Parameters
-    pc :       pointer to a slider control \- does nothing
-               otherwise.
-    min :      new minimum value for the mimimum amount to scale.
-    current :  the current selected value. (should be between
-               min\-max)
-    max :      new maximum value which can be selected.           */
- PSI_PROC( void, SetSliderValues)( PSI_CONTROL pc, int min, int current, int max );
- /* Set's the slider's direction. (horizontal or vertical)
-    Parameters
-    pc :    slider control
-    opts :  SliderDirection                                */
- PSI_PROC( PSI_CONTROL, SetSliderOptions )( PSI_CONTROL pc, int opts );
- /* Set a callback function to allow responding to changes in the
-    slider.
-    Parameters
-    pc :                 pointer to a slider control
-    SliderUpdateEvent :  callback to a user function when the
-                         slider's value changes.
-    psvUser :            data to pass to callback function when
-                         invoked.                                 */
- PSI_PROC( PSI_CONTROL, SetSliderUpdateHandler )( PSI_CONTROL pc, SliderUpdateProc, uintptr_t psvUser );
- _SLIDER_NAMESPACE_END
- USE_SLIDER_NAMESPACE
- /* SFTFont Control - Really this is all about a font picker. The
-    data used to create the font to show can be retreived to be
-    saved for later recreation.                                 */
- _FONTS_NAMESPACE
- #ifndef FONT_RENDER_SOURCE
- // types of data which may result...
- //typedef struct font_data_tag *PFONTDATA;
- //typedef struct render_font_data_tag *PRENDER_FONTDATA;
- #endif
- // common dialog to get a font which is then available for all
- // Image text operations (PutString, PutCharacter)
- // result font selection data can be resulted in the area referenced by
- // the pointer, and size pointer...
- //
- // actual work done here for pUpdateFontFor(NULL) ...
- // if pUpdateFontFor is not null, an apply button will appear, allowing the actual
- // control to be updated to the chosen font.
- //
- /* scale_width, height magically apply... and are saved in the
-    font data structure for re-rendering... if a font is rendered
-    here the same exact font result will be acheived using
-    RenderScaledFont( pdata )
-    Parameters
-    width_scale :   pointer to a scalar fraction to scale
-                    the font by
-    height_scale :  pointer to a scalar fraction to scale
-                    the font by                                          */
- PSI_PROC( SFTFont, PickScaledFontWithUpdate )( int32_t x, int32_t y
-               , PFRACTION width_scale
-               , PFRACTION height_scale
-               , size_t *pFontDataSize
-                // resulting parameters for the data and size of data
-                // which may be passe dto RenderFontData
-               , POINTER *pFontData
-               , PSI_CONTROL pAbove
-               , void (CPROC *UpdateFont)( uintptr_t psv, SFTFont font )
-               , uintptr_t psvUpdate );
- /* <combine sack::PSI::font::PickScaledFontWithUpdate@int32_t@int32_t@PFRACTION@PFRACTION@uint32_t*@POINTER *@PSI_CONTROL@void __cdecl *UpdateFont uintptr_t psv\, SFTFont font@uintptr_t>
-    PickFontWithUpdate can be used to receive event notices when
-    the font is changed, allowing immediately refresh using the
-    changed font.
-    Parameters
-    x :              x screen position to put the dialog
-    y :              y screen position to put the dialog
-    pFontDataSize :  pointer to a 32 bit value to receive the font
-                     data length. (can ba NULL to ignore)
-    pFontData :      pointer to pointer to get font_data. (can ba
-                     NULL to ignore)
-    pAbove :         pointer to a frame to stack this one above.
-    UpdateFont :     user callback passed the psvUpdate data and
-                     the SFTFont that has been updated.
-    psvUpdate :      user data to pass to use callback when
-                     invoked.                                                                                                                                           */
- PSI_PROC( SFTFont, PickFontWithUpdate )( int32_t x, int32_t y
-             , size_t *pFontDataSize
-            // resulting parameters for the data and size of data
-            // which may be passe dto RenderFontData
-             , POINTER *pFontData
-             , PSI_CONTROL pAbove
-             , void (CPROC *UpdateFont)( uintptr_t psv, SFTFont font )
-             , uintptr_t psvUpdate );
- // pick font for uses pickfontwithupdate where the update procedure
- // sets the font on a control.
- PSI_PROC( SFTFont, PickFontFor )( int32_t x, int32_t y
-           , size_t *pFontDataSize
-          // resulting parameters for the data and size of data
-                            // which may be passe dto RenderFontData
-           , POINTER *pFontData
-            , PSI_CONTROL pAbove
-            , PSI_CONTROL pUpdateFontFor );
- /* Pick a font. This shows a dialog
-    Parameters
-    x :          screen location of the dialog
-    y :          screen location of the dialog
-    size :       pointer to a 32 bit value to receive the length
-                 of the font's data
-    pFontData :  pointer to a pointer to be filled with the
-                 address of a FONTDATA describing the chosen font.
-    pAbove :     parent window to make sure this is stacked above.
-    Example
-    <code lang="c++">
-    POINTER data = NULL; // gets filled with font data - initialize to NULL or a previously returned FONTDATA.
-    uint32_t data_length = 0; // result font data length.
-    SFTFont font = PickFont( 0, 0, &amp;data_length, &amp;data, NULL );
-    {
-        // and like I really need to exemplify saving a block of data...
-        \FILE *file = fopen( "font_description", "wb" );
-        fwrite( data, 1, data_length, file );
-        fclose( file );
-    }
-    </code>                                                                                                    */
- PSI_PROC( SFTFont, PickFont)( int32_t x, int32_t y
-                                   , size_t * size, POINTER *pFontData
-          , PSI_CONTROL pAbove );
- /* <combine sack::PSI::font::PickScaledFontWithUpdate@int32_t@int32_t@PFRACTION@PFRACTION@uint32_t*@POINTER *@PSI_CONTROL@void __cdecl *UpdateFont uintptr_t psv\, SFTFont font@uintptr_t>
-    \ \                                                                                                                                                                 */
- #define PickScaledFont( x,y,ws,hs,size,fd,pa) PickScaledFontWithUpdate( x,y,ws,hs,size,fd,pa,NULL,0)
- // this can take the resulting data from a pick font operation
- // and result in a font... concerns at the moment are for cases
- // of trying to use the same  string on different systems (different font
- // locations) and getting a same (even similar?) result
- //PSI_PROC( void, DestroyFont)( SFTFont *font );
- // takes an already rendered font, and writes it to a file.
- // at the moment this will not work with display services....
- //PSI_PROC( void, DumpFontFile )( CTEXTSTR name, SFTFont font );
- _FONTS_NAMESPACE_END
- USE_FONTS_NAMESPACE
- PSI_PROC( void, DumpFrameContents )( PSI_CONTROL pc );
- //------- common between combobox and listbox
- typedef struct listitem_tag *PLISTITEM;
- typedef void (CPROC*SelectionChanged )( uintptr_t psvUser, PSI_CONTROL pc, PLISTITEM hli );
- /* PopupEvent will be called just before the menu pops up, and just after it is hidden,
-   LOGICAL parameter is TRUE on show, and FALSE on hide.*/
- PSI_PROC( void, SetComboBoxPopupEventCallback )( PSI_CONTROL pc, void (CPROC*PopupEvent)( uintptr_t,LOGICAL ), uintptr_t psvEvent );
- PSI_PROC( void, SetComboBoxSelectedItem )( PSI_CONTROL pc, PLISTITEM hli );
- //------- ComboBox Control --------
- _COMBOBOX_NAMESPACE
- PSI_PROC( PLISTITEM, AddComboBoxItem )( PSI_CONTROL pc, CTEXTSTR text );
- PSI_PROC( void, SetComboBoxSelChangeHandler )( PSI_CONTROL pc, SelectionChanged proc, uintptr_t psvUser );
- PSI_PROC( void, ResetComboBox )( PSI_CONTROL pc );
- _COMBOBOX_NAMESPACE_END
- USE_COMBOBOX_NAMESPACE
- //------- ListBox Control --------
- _LISTBOX_NAMESPACE
- #define LISTOPT_TREE   2
- #define LISTOPT_SORT   1
- CONTROL_PROC( ListBox, (void) );
- #define MakeListBox(pf,x,y,w,h,nID,opt) SetListboxIsTree( MakeControl(pf,LISTBOX_CONTROL,x,y,w,h,nID), (opt & LISTOPT_TREE)?TRUE:FALSE )
- PSI_PROC( PSI_CONTROL, SetListboxIsTree )( PSI_CONTROL pc, int bTree );
- #define LISTBOX_SORT_NORMAL 1
- #define LISTBOX_SORT_DISABLE 0
- // may someday add SORT_INVERSE?
- PSI_PROC( PSI_CONTROL, SetListboxSort )( PSI_CONTROL pc, int bSortTrue );
- PSI_PROC( PSI_CONTROL, SetListboxMultiSelect )( PSI_CONTROL, int bEnable );
- PSI_PROC( PSI_CONTROL, SetListboxMultiSelectEx )( PSI_CONTROL, int bEnable, int bLazy );
- PSI_PROC( int, GetListboxMultiSelectEx )( PSI_CONTROL, int *multi, int *lazy );
- // returns only multiselect option, not lazy with multselect
- PSI_PROC( int, GetListboxMultiSelect )( PSI_CONTROL );
- PSI_PROC( void, ResetList)( PSI_CONTROL pc );
- // put an item at end of list.
- PSI_PROC( PLISTITEM, AddListItem)( PSI_CONTROL pc, CTEXTSTR text );
- PSI_PROC( PLISTITEM, AddListItemEx)( PSI_CONTROL pc, int nLevel, CTEXTSTR text );
- // put an item after a known item... NULL to add at head of list.
- PSI_PROC( PLISTITEM, InsertListItem)( PSI_CONTROL pc, PLISTITEM pAfter, CTEXTSTR text );
- PSI_PROC( PLISTITEM, InsertListItemEx)( PSI_CONTROL pc, PLISTITEM pAfter, int nLevel, CTEXTSTR text );
- PSI_PROC( void, DeleteListItem)( PSI_CONTROL pc, PLISTITEM hli );
- PSI_PROC( PLISTITEM, SetItemData)( PLISTITEM hli, uintptr_t psv );
- PSI_PROC( uintptr_t, GetItemData)( PLISTITEM hli );
- PSI_PROC( void, GetListItemText)( PLISTITEM hli, TEXTSTR buffer, int bufsize );
- /* depreicated, use GetListItemText instead, please */
- PSI_PROC( void, GetItemText)( PLISTITEM hli, int bufsize, TEXTSTR buffer );
- #define GetItemText(hli,bufsize,buf) GetListItemText(hli,buf,bufsize)
- PSI_PROC( void, SetItemText )( PLISTITEM hli, CTEXTSTR buffer );
- PSI_PROC( PLISTITEM, GetSelectedItem)( PSI_CONTROL pc );
- PSI_PROC( void, ClearSelectedItems )( PSI_CONTROL plb );
- PSI_PROC( void, SetSelectedItem)( PSI_CONTROL pc, PLISTITEM hli );
- PSI_PROC( void, SetItemSelected)( PSI_CONTROL pc, PLISTITEM hli, int bSelect );
- PSI_PROC( void, SetCurrentItem)( PSI_CONTROL pc, PLISTITEM hli );
- PSI_PROC( PLISTITEM, FindListItem)( PSI_CONTROL pc, CTEXTSTR text );
- PSI_PROC( PLISTITEM, GetNthTreeItem )( PSI_CONTROL pc, PLISTITEM pli, int level, int idx );
- PSI_PROC( PLISTITEM, GetNthItem )( PSI_CONTROL pc, int idx );
- PSI_PROC( void, SetSelChangeHandler)( PSI_CONTROL pc, SelectionChanged proc, uintptr_t psvUser );
- typedef void (CPROC*DoubleClicker)( uintptr_t psvUser, PSI_CONTROL pc, PLISTITEM hli );
- PSI_PROC( void, SetDoubleClickHandler)( PSI_CONTROL pc, DoubleClicker proc, uintptr_t psvUser );
- // if bopened - branch is being expanded, else it is being closed (collapsed)
- typedef void (CPROC*ListItemOpened)( uintptr_t psvUser, PSI_CONTROL pc, PLISTITEM hli, LOGICAL bOpened );
- PSI_PROC( void, SetListItemOpenHandler )( PSI_CONTROL pc, ListItemOpened proc, uintptr_t psvUser );
- // returns the prior state of disabledness
- PSI_PROC( int, DisableUpdateListBox )( PSI_CONTROL pc, LOGICAL bDisable );
- // on right click down,up this proc is triggered...
- PSI_PROC( void, SetItemContextMenu )( PLISTITEM pli, PMENU pMenu, void (CPROC*MenuProc)(uintptr_t, PLISTITEM, uint32_t menuopt ), uintptr_t psv );
- PSI_PROC( int, OpenListItem )( PLISTITEM pli, int bOpen );
- PSI_PROC( void, SetListBoxTabStops )( PSI_CONTROL pc, int nStops, int *pStops );
- PSI_PROC( void, EnumListItems )( PSI_CONTROL pc
-            , PLISTITEM pliStart
-            , void (CPROC *HandleListItem )(uintptr_t,PSI_CONTROL,PLISTITEM)
-            , uintptr_t psv );
- PSI_PROC( void, EnumSelectedListItems )( PSI_CONTROL pc
-              , PLISTITEM pliStart
-              , void (CPROC *HandleListItem )(uintptr_t,PSI_CONTROL,PLISTITEM)
-              , uintptr_t psv );
- PSI_PROC( PSI_CONTROL, GetItemListbox )( PLISTITEM pli );
- PSI_PROC( void, MoveListItemEx )( PSI_CONTROL pc, PLISTITEM pli, int level_direction, int direction );
- PSI_PROC( void, MoveListItem )( PSI_CONTROL pc, PLISTITEM pli, int direction );
- _LISTBOX_NAMESPACE_END
- USE_LISTBOX_NAMESPACE
- //------- GridBox Control --------
- #ifdef __LINUX__
- typedef uintptr_t HGRIDITEM;
- PSI_PROC(PSI_CONTROL, MakeGridBox)( PSI_CONTROL pf, int options, int x, int y, int w, int h,
-                                  int viewport_x, int viewport_y, int total_x, int total_y,
-                                  int row_thickness, int column_thickness, uintptr_t nID );
- #endif
- /* * ------ Popup Menus ----------- *
-    popup interface.... these are mimics of windows... and at
-    some point should internally alias to popup code - if I ever
-    get it back.
-    Actually, I depricated my own implementation (maybe on Linux
-    they could resemble working), but since I cloned the Windows
-    API, I just fell back to standard windows popups instead.    */
- _MENU_NAMESPACE
- /* Create a popup menu which can have items added to it. This is
-    not shown until TrackPopup is called.
-    Parameters
-    None.                                                         */
- PSI_PROC( PMENU, CreatePopup)( void );
- /* Destroys a popup menu.
-    Parameters
-    pm :  menu to delete   */
- PSI_PROC( void, DestroyPopup)( PMENU pm );
- /* Clears all entries on a menu.
-    Parameters
-    pm :  menu to clear           */
- PSI_PROC( void, ResetPopup)( PMENU pm );
- /* get sub-menu data...
-    Parameters
-    pm :    PMENU to get popup data for...
-    item :  Item on the menu to get the popup menu for. */
- PSI_PROC( void *,GetPopupData)( PMENU pm, int item );
- /* Add a new item to a popup menu
-    Parameters
-    pm :     menu to add items to
-    type :   type of the item (MF_STRING,MF_POPUP, MF_SEPARATOR ?)
-    dwID :   ID of item. (PMENU of a popup menu if it's a popup
-             item)
-    pData :  text data of the item (unless separator)             */
- PSI_PROC( PMENUITEM, AppendPopupItem)( PMENU pm, int type, uintptr_t dwID, CPOINTER pData );
- /* Set a checkmark on a menu item.
-    Parameters
-    pm :     menu containing the item to check
-    dwID :   ID of the item to check
-    state :  (MF_CHECKED, MF_UNCHECKED?)       */
- PSI_PROC( PMENUITEM, CheckPopupItem)( PMENU pm, uintptr_t dwID, uint32_t state );
- /* Delete a single item from a menu.
-    Parameters
-    pm :     menu containing the item to delete
-    dwID :   ID of the item to delete
-    state :  (?)                                */
- PSI_PROC( PMENUITEM, DeletePopupItem)( PMENU pm, uintptr_t dwID, uint32_t state );
- /* This Shows a popup on the screen, and waits until it returns
-    with a result. I guess this is actually the internal routine
-    used for handling selected popup items on popup menus.
-    Parameters
-    hMenuSub :  sub menu to track
-    parent :    parent menu that has started tracking a
-                submenu.                                         */
- PSI_PROC( int, TrackPopup)( PMENU hMenuSub, PSI_CONTROL parent );
- _MENU_NAMESPACE_END
- USE_MENU_NAMESPACE
- //------- File Selector Control --------
- // these are basic basic file selection dialogs...
-  // the concept is valid, and they should be common like controls...
-  // types are tab sepeared list of default extensions to open.
-  // returns TRUE if the filename is selected and the result buffer is filled.
-    // returns FALSE if the filename selection is canceled, result is not modified.
-  // if bcreate is used, then the filename does not HAVE to exist..
-    // bCreate may also be read as !bMustExist
- PSI_PROC( int, PSI_PickFile)( PSI_CONTROL parent, CTEXTSTR basepath, CTEXTSTR types, TEXTSTR result, uint32_t result_len, int bCreate );
- PSI_PROC( int, PSI_OpenFile)( CTEXTSTR basepath, CTEXTSTR types, TEXTSTR result );
- // this may be used for save I think....
- //PSI_PROC( int, PSI_OpenFileEx)( PSI_CONTROL parent, CTEXTSTR basepath, CTEXTSTR types, CTEXTSTR result, uint32_t result_len, int Create );
- //------- Scroll Control --------
- #define SCROLL_HORIZONTAL 1
- #define SCROLL_VERITCAL   0
- /* This is a scrollbar type control. It's got an up/down or
-    left/right arrow, and a thumb that can be clicked on. Used by
-    the listbox control.                                          */
- _SCROLLBAR_NAMESPACE
-  // types values for MoveScrollBar
-  enum MoveScrollBarTypes{
-  UPD_1UP       = 0,
-  UPD_1DOWN     = 1,
-  UPD_RANGEUP   = 2,
-  UPD_RANGEDOWN = 3,
-  UPD_THUMBTO   = 4
-  };
- /* \ \
-    Parameters
-    pc :     SCROLLBAR_CONTROL_NAME
-    min :    minimum value (needs to be less than max)
-    cur :    current value (should be between min to max
-    range :  how many of the values to span
-    max :    max value
-    Remarks
-    The range of the control controls how wide the thumb control
-    is. It should reflect things like how many of the maximum
-    items are showing in a list.                                 */
- PSI_PROC( void, SetScrollParams)( PSI_CONTROL pc, int min, int cur, int range, int max );
- CONTROL_PROC( ScrollBar, (uint32_t attr) );
- /* Set the event callback for when the position on the control
-    changes.
-    Parameters
-    pc :        a SCROLLBAR_CONTROL_NAME.
-    callback :  the address of the function to call when the
-                position changes.
-    data :      user data passed to the event function when it is
-                invoked.                                          */
- PSI_PROC( void, SetScrollUpdateMethod)( PSI_CONTROL pc
-                     , void (CPROC*UpdateProc)(uintptr_t psv, int type, int current)
-                                                   , uintptr_t data );
- /* move the scrollbar. operations to specify move are +1, -1, +1
-    range, -1 range. the MOVE_THUMB operation is actually passed
-    to the event callback?
-    Parameters
-    pc :    control that is a SCROLLBAR_CONTROL_NAME
-    type :  a value from MoveScrollBarTypes                       */
- PSI_PROC( void, MoveScrollBar )( PSI_CONTROL pc, int type );
- _SCROLLBAR_NAMESPACE_END
- USE_SCROLLBAR_NAMESPACE
- //------- Misc Controls (and widgets) --------
- _SHEETS_NAMESPACE
- #define MakeSheetControl(c,x,y,w,h,id) MakeControl(c,SHEET_CONTROL,x,y,w,h,id)
- /* Adds a sheet to a tab control. A sheet is just another
-    PSI_CONTROL frame.
-    Parameters
-    pControl :  control to add the page to
-    contents :  frame control to add                       */
- PSI_PROC( void, AddSheet )( PSI_CONTROL pControl, PSI_CONTROL contents );
- /* Removes a sheet from a tab control.
-    Parameters
-    pControl :  tab control to remove the sheet from
-    ID :        identifier of the sheet to remove.   */
- PSI_PROC( int, RemoveSheet )( PSI_CONTROL pControl, uint32_t ID );
- /* Request a sheet control by ID.
-    Parameters
-    pControl :  tab control to get a sheet from.
-    ID :        the ID of the page to get from the tab control.
-    Returns
-    Control that is the sheet that was added as the specified ID. */
- PSI_PROC( PSI_CONTROL, GetSheet )( PSI_CONTROL pControl, uint32_t ID );
- /* Gets a control from a specific sheet in the tab control
-    Parameters
-    pControl :   tab control to get the control from a sheet of.
-    IDSheet :    identifier of the sheet to get a control from
-    IDControl :  identifier of the control on a sheet in the tab
-                 control.
-    Returns
-    Control that has the requested ID on the requested page, if
-    found. Otherwise NULL.                                       */
- PSI_PROC( PSI_CONTROL, GetSheetControl )( PSI_CONTROL pControl, uint32_t IDSheet, uint32_t IDControl );
- /* \returns the integer ID of the selected sheet.
-    Parameters
-    pControl :  Sheet control to get the current sheet ID from. */
- PSI_PROC( PSI_CONTROL, GetCurrentSheet )( PSI_CONTROL pControl );
- /* Set which property sheet is currently selected.
-    Parameters
-    pControl :  Sheet Control.
-    ID :        ID of the page control to select.   */
- PSI_PROC( void, SetCurrentSheet )( PSI_CONTROL pControl, uint32_t ID );
- /* Get the size of sheets for this sheet control. So the page
-    creator can create a page that is the correct size for the
-    sheet dialog.
-    Parameters
-    pControl :  tab control to get the sheet size for
-    width :     pointer to a 32 bit unsigned value to receive the
-                width sheets should be.
-    height :    pointer to a 32 bit unsigned value to receive the
-                height sheets should be.                          */
- PSI_PROC( int, GetSheetSize )( PSI_CONTROL pControl, uint32_t *width, uint32_t *height );
- /* Sets a page as disabled. Disabled tabs cannot be clicked on
-    to select.
-    Parameters
-    pControl :  tab control containing sheet to disable or enable.
-    ID :        ID of the sheet to disable.
-    bDisable :  TRUE to disable the page, FALSE to re\-enable the
-                page.                                              */
- PSI_PROC( void, DisableSheet )( PSI_CONTROL pControl, uint32_t ID, LOGICAL bDisable );
- // Tab images are sliced and diced across the vertical center of the image
- // the center is then spread as wide as the caption requires.
- // set default tabs for the sheet control itself
- PSI_PROC( void, SetTabImages )( PSI_CONTROL pControl, Image active, Image inactive );
- // set tab images on a per-sheet basis, overriding the defaults specified.
- PSI_PROC( void, SetSheetTabImages )( PSI_CONTROL pControl, uint32_t ID, Image active, Image inactive );
- // with the ability to set the image for the tab, suppose it would be
- // wise to set the sheet's text color on the tab...
- // Initial tabs are black and white, with inverse black/white text...
- PSI_PROC( void, SetTabTextColors )( PSI_CONTROL pControl, CDATA cActive, CDATA cInactive );
- /* Sets the active and inactive colors for text.
-    Parameters
-    pControl :   sheet control to set the tab attribute of
-    ID :         ID of the sheet to set the tab color attributes for
-    cActive :    Color of the text when the tab is active.
-    cInactive :  Color of the text when the tab is inactive.         */
- PSI_PROC( void, SetSheetTabTextColors )( PSI_CONTROL pControl, uint32_t ID, CDATA cActive, CDATA cInactive );
- _SHEETS_NAMESPACE_END
- USE_SHEETS_NAMESPACE
- //------- Misc Controls (and widgets) --------
- PSI_PROC( void, SimpleMessageBox )( PSI_CONTROL parent, CTEXTSTR title, CTEXTSTR content );
- // result is the address of a user buffer to read into, reslen is the size of that buffer.
- // question is put above the question... pAbove is the window which this one should be placed above (lock-stacked)
- PSI_PROC( int, SimpleUserQuery )( TEXTSTR result, int reslen, CTEXTSTR question, PSI_CONTROL pAbove );
- PSI_PROC( int, SimpleUserQueryEx )( TEXTSTR result, int reslen, CTEXTSTR question, PSI_CONTROL pAbove
-            , void (CPROC*query_success_callback)(uintptr_t, LOGICAL)
-            , uintptr_t query_user_data );
- PSI_PROC( void, RegisterResource )( CTEXTSTR appname, CTEXTSTR resource_name, int ID, int resource_name_range, CTEXTSTR type_name );
- // assuming one uses a
- #define SimpleRegisterResource( name, typename ) RegisterResource( WIDE("application"), WIDE(#name), name, 1, typename );
- #define EasyRegisterResource( domain, name, typename ) RegisterResource( domain, WIDE(#name), name, 1, typename );
- #define EasyRegisterResourceRange( domain, name, range, typename ) RegisterResource( domain, WIDE(#name), name, range, typename );
- #define SimpleRegisterAppResource( name, typename, class ) RegisterResource( WIDE("application/") class, WIDE(#name), name, 1, typename );
- PSI_PROC( size_t, _SQLPromptINIValue )(
-             CTEXTSTR lpszSection,
-             CTEXTSTR lpszEntry,
-             CTEXTSTR lpszDefault,
-             TEXTSTR lpszReturnBuffer,
-             size_t cbReturnBuffer,
-             CTEXTSTR filename
-              );
- //------------------------ Image Display -------------------------------------
- #define IMAGE_DISPLAY_CONTROL_NAME WIDE( "Image Display" )
- PSI_PROC( void, SetImageControlImage )( PSI_CONTROL pc, Image show_image );
- //------------------------ Tool Tip Hover-over -------------------------------------
- #define TOOL_TIP_CONTROL_NAME WIDE( "Tool Tip Display" )
- PSI_PROC( void, SetControlHoverTip )( PSI_CONTROL pc, CTEXTSTR text );
- //------------------------ Progress Bar --------------------------------------
- #define PROGRESS_BAR_CONTROL_NAME  WIDE( "Progress Bar" )
- // Set Range of progress bar (maximum value)
- PSI_PROC( void, ProgressBar_SetRange )( PSI_CONTROL pc, int range );
- // Set progress of progress bar (maximum value)
- PSI_PROC( void, ProgressBar_SetProgress )( PSI_CONTROL pc, int progress );
- // Set Colors for progress bar
- PSI_PROC( void, ProgressBar_SetColors )( PSI_CONTROL pc, CDATA background, CDATA foreground );
- // Enable/Disable showing text as a percentage on progress bar.
- PSI_PROC( void, ProgressBar_EnableText )( PSI_CONTROL pc, LOGICAL enable );
- #define GetFrameSurface GetControlSurface
- PSI_NAMESPACE_END
- USE_PSI_NAMESPACE
- PSI_EDIT_NAMESPACE
- // for convenience of migration, return pc
- PSI_PROC( PSI_CONTROL, SetEditControlReadOnly )( PSI_CONTROL pc, LOGICAL bEnable );
- PSI_EDIT_NAMESPACE_END
- USE_PSI_EDIT_NAMESPACE
- #ifndef BUTTON_METHODS_DEFINED
- #define BUTTON_METHODS_DEFINED
- #define BUTTON_CLICK( name, args ) PUBLIC( void, name )args;    PRELOAD( name##_Init ) { SimpleRegisterMethod( PSI_ROOT_REGISTRY WIDE("/methods/Button/Click")                                          , name, WIDE("void"), _WIDE(#name), WIDE("(uintptr_t,PCOMMON)") ); }  void CPROC name args
- #define BUTTON_DRAW( name, args ) PUBLIC( void, name )args;    PRELOAD( name##_Init ) { SimpleRegisterMethod( PSI_ROOT_REGISTRY WIDE("/methods/Button/Draw")                                          , name, WIDE("void"), _WIDE(#name), WIDE("(uintptr_t,PCOMMON)") ); }  void CPROC name args
- #define BUTTON_CHECK( name, args ) PUBLIC( void, name )args;    PRELOAD( name##_Init ) { SimpleRegisterMethod( PSI_ROOT_REGISTRY WIDE("/methods/Button/Check")                                          , name, WIDE("void"), _WIDE(#name), WIDE("(uintptr_t,PCOMMON)") ); }  void CPROC name args
- #endif
- #define SLIDER_UPDATE( name, args ) PUBLIC( void, name )args;    PRELOAD( name##_Init ) { SimpleRegisterMethod( PSI_ROOT_REGISTRY WIDE("/control/Slider/Update")                                          , name, WIDE("void"), _WIDE(#name), WIDE("(uintptr_t,PCONTROL,int)") ); }  void CPROC name args
- //#include <psi/controls.h>
- PSI_NAMESPACE
- /* A colorwell is a indented control that contains a color.
-    Often, if clicked, the color well will show the palette color
-    selector to allow the color to be changed. The color may be a
-    full alpha representation. When drawn in the well, I think
-    the control itself draws the color with 255 alpha.
-    Color well controls are "Color Well"
-    Shade well controls are "Shade Well"
-    Palette Shader grid is "Color Matrix"
-    Example
-    <code lang="c++">
-    PSI_CONTROL color_well = MakeColorWell( NULL, 5, 5, 25, 25, -1, BASE_COLOR_WHITE );
-    </code>
-    Or using the natrual forms now...
-    <code lang="c++">
-    PSI_CONTROL shade_well = MakeNamedControl( frame, "Shade Well", 5, 5, 25, 150, -1 );
-    SetShadeMin( shade_well, BASE_COLOR_WHITE );
-    SetShadeMax( shade_well, BASE_COLOR_RED );
-    SetShadeMid( shade_well, BSAE_COLOR_LIGHTBLUE );
-    </code>                                                                              */
- _COLORWELL_NAMESPACE
- // common dialog to get a color... returns TRUE if *result is set
- // if result is NULL color is not returned, but still can set presets...
- #define  COLORWELL_NAME WIDE("Color Well")
- /* <combine sack::psi::colorwell::PickColor@CDATA *@CDATA@PSI_CONTROL>
-    \ \
-    Parameters
-    x :  position of the color choice dialog, otherwise uses the
-         mouse position.
-    y :  position of the color choice dialog, otherwise uses the
-         mouse position.                                                */
- PSI_PROC( int, PickColorEx )( CDATA *result, CDATA original, PSI_CONTROL hAbove, int x, int y );
- /* Shows a color picking dialog. Results with a chosen color.
-    Parameters
-    result\ :   pointer to CDATA to result into
-    original :  CDATA that is the color to start from.
-    pAbove :    frame to stack this dialog over.
-    Returns
-    TRUE if *result is set, else FALSE. (Reflects the Ok/Cancel
-    of the dialog)                                              */
- PSI_PROC( int, PickColor)( CDATA *result, CDATA original, PSI_CONTROL pAbove );
- // creates a control which can then select a color
- CONTROL_PROC( ColorWell, (CDATA color) );
- /* Macro to create a colorwell.
-    Parameters
-    f :   frame to create the control in
-    x :   x coordinate of the left of the control in the frame
-    y :   y coordinate of the left of the control in the frame
-    w :   width of the control
-    h :   height of the control
-    ID :  an integer identifier for the control
-    c :   a CDATA color to initialize with.
-    Returns
-    \Returns a PSI_CONTROL that is a color well.               */
- #define MakeColorWell(f,x,y,w,h,id,c) SetColorWell( MakeNamedControl(f,COLORWELL_NAME,x,y,w,h,id ),c)
- /* Three colors define the gradient in a shade well. They can be
-    all the same and show a solid color, but this is for picking
-    colors from linear gradients. The 'Min' is one end, the 'Mid'
-    is the center and 'Max' is the other end. Control also only
-    does this vertically.
-    Parameters
-    pc :     "Shade Well" control
-    color :  Color to set the max end to.                         */
- PSI_PROC( void, SetShadeMin )( PSI_CONTROL pc, CDATA color );
- /* Three colors define the gradient in a shade well. They can be
-    all the same and show a solid color, but this is for picking
-    colors from linear gradients. The 'Min' is one end, the 'Mid'
-    is the center and 'Max' is the other end. Control also only
-    does this vertically.
-    Parameters
-    pc :     Shade Well control
-    color :  color to set the max to.                             */
- PSI_PROC( void, SetShadeMax )( PSI_CONTROL pc, CDATA color );
- /* Three colors define the gradient in a shade well. They can be
-    all the same and show a solid color, but this is for picking
-    colors from linear gradients. The 'Min' is one end, the 'Mid'
-    is the center and 'Max' is the other end. Control also only
-    does this vertically.
-    Parameters
-    pc :     "Shade Well" control
-    color :  sets the mid color of the control                    */
- PSI_PROC( void, SetShadeMid )( PSI_CONTROL pc, CDATA color );
- /* Sets the current color of a "Color Well"
-    Parameters
-    pc :     a "Color Well" control
-    color :  CDATA to set the color to.      */
- PSI_PROC( PSI_CONTROL, SetColorWell )( PSI_CONTROL pc, CDATA color );
- /* Enables clicking in a color well to auto show the dialog.
-    Parameters
-    pc :       "Color Well" control to enable auto pick
-    bEnable :  If TRUE, enable autopick; if FALSE, disable autopick. */
- PSI_PROC( PSI_CONTROL, EnableColorWellPick )( PSI_CONTROL pc, LOGICAL bEnable );
- /* Sets the handler for when the control is clicked. (or when
-    it's changed?)
-    Parameters
-    PC :             pointer to a "Color Well"
-    EventCallback :  This routine is called when the color is
-                     changed.
-    user_data :      user data to be passed to the callback when
-                     invoked.                                    */
- PSI_PROC( PSI_CONTROL, SetOnUpdateColorWell )( PSI_CONTROL PC, void(CPROC*EventCallback)(uintptr_t,CDATA), uintptr_t user_data);
- /* Gets the CDATA color in a color well.
-    Parameters
-    pc :  "Color Well" control to get the color from */
- PSI_PROC( CDATA, GetColorFromWell )( PSI_CONTROL pc );
- PSI_COLORWELL_NAMESPACE_END
- USE_PSI_COLORWELL_NAMESPACE
- #endif
  #ifdef __WATCOMC__
  // unlink
  #endif

@@ -4,6 +4,8 @@ function test () {
 var vfs = require( "./vfs_module.js" )
 //var vfs = require( "./build/Release/vfs_module.node" )
 
+console.log( "result", vfs )
+vfs.Δ();
 
 console.log( "keys: ", Object.keys( vfs ) );
 console.log( "vfs obj: ", vfs );
@@ -16,12 +18,12 @@ file2 = vol.File( "Another file" );
 //file.on( "close", ()=>{console.log( "closed." );} );
 
 console.log( "directory:", vol.dir() );
-console.log( "vol prototype", Object.getPrototypeOf( vol ) );
+//console.log( "vol prototype", Object.getPrototypeOf( vol ) );
 
 // this shows the methods of the original file.
-console.log( "file prototype", Object.keys(Object.getPrototypeOf( file )) );
+//console.log( "file prototype", Object.keys(Object.getPrototypeOf( file )) );
 // this shows the event emitter methods...
-console.log( "file prototype", Object.keys(file) );
+//console.log( "file prototype", Object.keys(file) );
 
 var db = vfs.Sqlite( "$sack@mount-name$chatment.db" );
 db.makeTable( "create table if not exists tmp (id int);" );
