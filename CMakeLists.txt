@@ -32,7 +32,6 @@ set( INCLUDES
 set( DEFINITIONS   __STATIC__ 
 		USE_SQLITE USE_SQLITE_INTERFACE FORCE_COLOR_MACROS 
                 _CRT_SECURE_NO_WARNINGS  NEED_SHLAPI NEED_SHLOBJ 
-                NO_SSL
                  )
 FILE( WRITE ${CMAKE_BINARY_DIR}/config.ppc "/*CMake Option defined*/\n" )
 
@@ -96,6 +95,7 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/netlib/tcpnetwork.c
 	${SACK_BASE}/src/netlib/udpnetwork.c
         ${SACK_BASE}/src/netlib/net_winsock2.c
+	${SACK_BASE}/src/netlib/ssl_layer.c
         
 	${SACK_BASE}/src/contrib/sqlite/sqlite_interface.c
         ${SACK_BASE}/src/sqllib/sqlstruc.h

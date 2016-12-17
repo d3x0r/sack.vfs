@@ -6,7 +6,6 @@
  #define _CRT_SECURE_NO_WARNINGS
  #define NEED_SHLAPI
  #define NEED_SHLOBJ
- #define NO_SSL
  /* Includes the system platform as required or appropriate. If
     under a linux system, include appropriate basic linux type
     headers, if under windows pull "windows.h".
