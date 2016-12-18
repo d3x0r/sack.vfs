@@ -58,7 +58,7 @@ public:
 class ThreadObject : public node::ObjectWrap {
 public:
 	static v8::Persistent<v8::Function> constructor;
-   	Persistent<Function, CopyablePersistentTraits<Function>> idleProc;
+   	static Persistent<Function, CopyablePersistentTraits<Function>> idleProc;
 public:
 
 	static void Init( Handle<Object> exports );
@@ -105,8 +105,8 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	InvokeDeadstart();
 	node::AtExit( moduleExit );
 	
-	//SetSystemLog( SYSLOG_FILE, stdout );
-	//lprintf( "Stdout Logging Enabled." );
+	SetSystemLog( SYSLOG_FILE, stdout );
+	lprintf( "Stdout Logging Enabled." );
 	{
 		//extern void Syslog
 	}
@@ -358,8 +358,8 @@ void FileObject::seekFile(const FunctionCallbackInfo<Value>& args) {
 
 	FileObject::FileObject( VolumeObject* vol, const char *filename, Isolate* isolate, Local<Object> o ) : 
 		volume( isolate, o )
-   {
-      buf = NULL;
+	{
+		buf = NULL;
 		file = sack_vfs_openfile( vol->vol, filename );
 	}
 
@@ -638,6 +638,8 @@ void SqlObject::makeTable( const FunctionCallbackInfo<Value>& args ) {
 void ThreadObject::Init( Handle<Object> exports ) {
 	Isolate* isolate = Isolate::GetCurrent();
 
+	NODE_SET_METHOD(exports, "Δ", relinquish );
+	NODE_SET_METHOD(exports, "Λ", wake );
 	Local<FunctionTemplate> threadTemplate;
 	// Prepare constructor template
 	threadTemplate = FunctionTemplate::New( isolate, New );
@@ -645,8 +647,6 @@ void ThreadObject::Init( Handle<Object> exports ) {
 	threadTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 
 	// Prototype
-	NODE_SET_PROTOTYPE_METHOD( threadTemplate, "Δ", relinquish );
-	//NODE_SET_PROTOTYPE_METHOD( threadTemplate, "wake", wake );
 
 	constructor.Reset( isolate, threadTemplate->GetFunction() );
 	exports->Set( String::NewFromUtf8( isolate, "Thread" ),
@@ -654,66 +654,52 @@ void ThreadObject::Init( Handle<Object> exports ) {
 }
 
 //-----------------------------------------------------------
+Persistent<Function, CopyablePersistentTraits<Function>> ThreadObject::idleProc;
 
 void ThreadObject::New( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	if( args.IsConstructCall() ) {
-		ThreadObject* obj;
-		if( args.Length() < 2 ) {
-			obj = new ThreadObject( );
-		}
-		else {
-			obj = new ThreadObject( );
-			Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
-         	Persistent<Function> cb( isolate, arg0 );
-         	obj->idleProc = cb;
-		}
-		obj->Wrap( args.This() );
-		args.GetReturnValue().Set( args.This() );
-	} else {
-		const int argc = 2;
-		Local<Value> argv[argc] = { args[0], args.Holder() };
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
-	}
+	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+	Persistent<Function> cb( isolate, arg0 );
+	idleProc = cb;
 }
 //-----------------------------------------------------------
 
-//static int CPROC   
-//static PTHREAD nodeThread;
-//-----------------------------------------------------------
+static bool cbWoke;
 
-//void ThreadObject::wake( const FunctionCallbackInfo<Value>& args ) {
-//	if( nodeThread )
-//		WakeThread( nodeThread );
-//}
+void ThreadObject::wake( const FunctionCallbackInfo<Value>& args ) {
+	cbWoke = true;
+}
 
 //-----------------------------------------------------------
-
 void ThreadObject::relinquish( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = Isolate::GetCurrent();
-	ThreadObject *obj = ObjectWrap::Unwrap<ThreadObject>( args.Holder() );
 	//int delay = 0;
 	//if( args.Length() > 0 && args[0]->IsNumber() )
 	//	delay = (int)args[0]->ToNumber()->Value();
 
 	//	nodeThread = MakeThread();
-	Local<Function>cb = Local<Function>::New( isolate, obj->idleProc );
-   cb->Call(Null(isolate), 0, NULL );
-	uv_run( uv_default_loop(), UV_RUN_DEFAULT);
-   /*
+	Local<Function>cb = Local<Function>::New( isolate, idleProc );
+	/*Local<Value> r = */cb->Call(Null(isolate), 0, NULL );
+	// r was always undefined.... so inner must wake.
+	//String::Utf8Value fName( r->ToString() );
+	//lprintf( "tick callback resulted %s", (char*)*fName);
+	if( !cbWoke )
+		if( uv_run( uv_default_loop(), UV_RUN_NOWAIT ) )
+			uv_run( uv_default_loop(), UV_RUN_ONCE);
+	cbWoke = false;
+	/*
 	if( delay ) {
 
 		lprintf( "short sleep", delay, delay );
 		WakeableSleep( 20 );
 		lprintf( "short wake", delay, delay );
-   	cb->Call(Null(isolate), 0, NULL );
-      uv_run( uv_default_loop(), UV_RUN_DEFAULT);
+		cb->Call(Null(isolate), 0, NULL );
+		uv_run( uv_default_loop(), UV_RUN_DEFAULT);
 	
 		lprintf( "sleep for %08x, %d", delay, delay );
 		WakeableSleep( delay );
 	}
-   cb->Call(Null(isolate), 0, NULL );
+	cb->Call(Null(isolate), 0, NULL );
 	uv_run( uv_default_loop(), UV_RUN_DEFAULT);
 	*/
 }
