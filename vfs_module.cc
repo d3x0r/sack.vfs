@@ -436,6 +436,74 @@ void SqlObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 //-----------------------------------------------------------
 
+int IsTextAnyNumber( CTEXTSTR text, double *fNumber, int64_t *iNumber )
+{
+	CTEXTSTR pCurrentCharacter;
+	int decimal_count, s, begin = TRUE, digits;
+	// remember where we started...
+	// if the first segment is indirect, collect it and only it
+	// as the number... making indirects within a number what then?
+
+	decimal_count = 0;
+	s = 0;
+	digits = 0;
+	pCurrentCharacter = text;
+	while( pCurrentCharacter[0] )
+	{
+		pCurrentCharacter = text;
+		while( pCurrentCharacter && *pCurrentCharacter )
+		{
+			if( *pCurrentCharacter == '.' )
+			{
+				if( !decimal_count && digits )
+					decimal_count++;
+				else
+					break;
+			}
+			else if( ((*pCurrentCharacter) == '-') && begin)
+			{
+				s++;
+			}
+			else if( ((*pCurrentCharacter) < '0') || ((*pCurrentCharacter) > '9') )
+			{
+				break;
+			}
+			else {
+				digits++;
+				if( !decimal_count && digits > 11 )
+               return 0;
+			}
+			begin = FALSE;
+			pCurrentCharacter++;
+		}
+		// invalid character - stop, we're to abort.
+		if( *pCurrentCharacter )
+			break;
+
+		//while( pText );
+	}
+
+	if( *pCurrentCharacter || ( decimal_count > 1 ) || !digits )
+	{
+		// didn't collect enough meaningful info to be a number..
+		// or information in this state is
+		return 0;
+	}
+	if( decimal_count == 1 )
+	{
+		if( fNumber )
+			(*fNumber) = FloatCreateFromText( text, NULL );
+		// return specifically it's a floating point number
+		return 2;
+	}
+	if( iNumber )
+		(*iNumber) = IntCreateFromText( text );
+	// return yes, and it's an int number
+	return 1;
+}
+//-----------------------------------------------------------
+
+
 void SqlObject::query( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 
@@ -462,8 +530,27 @@ void SqlObject::query( const FunctionCallbackInfo<Value>& args ) {
 			do {
 				record = Object::New( isolate );
 				for( int n = 0; n < sql->columns; n++ ) {
-					record->Set( String::NewFromUtf8( isolate, sql->fields[n] )
-						, String::NewFromUtf8( isolate, sql->result[n] ) );
+					if( sql->result[n] ) {
+						double f;
+						int64_t i;
+						int type = IsTextAnyNumber( sql->result[n], &f, &i );
+						if( type == 2 )
+							record->Set( String::NewFromUtf8( isolate, sql->fields[n] )
+										  , Number::New( isolate, f )
+										  );
+						else if( type == 1 )
+							record->Set( String::NewFromUtf8( isolate, sql->fields[n] )
+										  , Number::New( isolate, i )
+										  );
+						else
+							record->Set( String::NewFromUtf8( isolate, sql->fields[n] )
+										  , String::NewFromUtf8( isolate, sql->result[n] )
+										  );
+					}
+					else
+						record->Set( String::NewFromUtf8( isolate, sql->fields[n] )
+									  , Null(isolate)
+									  );
 				}
 				records->Set( row++, record );
 			} while( FetchSQLRecord( sql->odbc, &sql->result ) );
