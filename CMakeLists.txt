@@ -106,10 +106,8 @@ SET( EXTRA_SOURCES
         ${SACK_BASE}/src/sqllib/guid.c
         ${SACK_BASE}/src/sqllib/sqlparse3.c
         ${SACK_BASE}/src/sqllib/optlib/getoption.c
-        ${SACK_BASE}/src/sqllib/optlib/getoption_new.c
         ${SACK_BASE}/src/sqllib/optlib/getoption_v4.c
         ${SACK_BASE}/src/sqllib/optlib/optionutil.c
-        ${SACK_BASE}/src/sqllib/optlib/optionutil_new.c
         ${SACK_BASE}/src/sqllib/optlib/optionutil_v4.c
 	${SACK_BASE}/src/deadstart/deadstart_lib.c
 )
@@ -123,7 +121,7 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
 )
 
 
-
+if( EXISTS c:/tools/ppc.exe )
 set( AMALG_COMMAND c:/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
 set( AMALG_COMMAND2 c:/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
 
@@ -138,6 +136,7 @@ set( AMALG_COMMAND2 c:/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CM
   add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc )
 endif( EXISTS ${SACK_BASE} )
 
+endif( EXISTS c:/tools/ppc.exe )
 
 include_directories(${CMAKE_JS_INC} ${INCLUDES} src )
 

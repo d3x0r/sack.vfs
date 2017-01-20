@@ -1,5 +1,4 @@
 
-
 #include <node.h>
 #include <node_object_wrap.h>
 #include <v8.h>
@@ -12,7 +11,7 @@
 using namespace v8;
 
 static struct local {
-   PLIST volumes;
+	PLIST volumes;
 } l;
 
 class VolumeObject : public node::ObjectWrap {
@@ -31,10 +30,11 @@ public:
    ~VolumeObject();
 };
 
+
 class SqlObject : public node::ObjectWrap {
 public:
 	PODBC odbc;
-   int optionInitialized;
+   	int optionInitialized;
 	static v8::Persistent<v8::Function> constructor;
 	int columns;
 	CTEXTSTR *result;
@@ -51,7 +51,36 @@ public:
 	static void setOption( const FunctionCallbackInfo<Value>& args );
 	static void makeTable( const FunctionCallbackInfo<Value>& args );
 
+	static void enumOptionNodes( const FunctionCallbackInfo<Value>& args );
+	static void findOptionNode( const FunctionCallbackInfo<Value>& args );
+	static void getOptionNode( const FunctionCallbackInfo<Value>& args );
+
    ~SqlObject();
+};
+
+class OptionTreeObject : public node::ObjectWrap {
+public:
+	POPTION_TREE_NODE node;
+	SqlObject *db;
+	static v8::Persistent<v8::Function> constructor;
+	
+public:
+
+	static void Init( );
+	OptionTreeObject(  );
+
+	static void New( const FunctionCallbackInfo<Value>& args );
+
+	static void enumOptionNodes( const FunctionCallbackInfo<Value>& args );
+	static void findOptionNode( const FunctionCallbackInfo<Value>& args );
+	static void getOptionNode( const FunctionCallbackInfo<Value>& args );
+	static void writeOptionNode( v8::Local<v8::String> field,
+		v8::Local<v8::Value> val,
+		const PropertyCallbackInfo<void>&info );
+	static void readOptionNode( v8::Local<v8::String> field,
+		const PropertyCallbackInfo<v8::Value>& info );
+
+   ~OptionTreeObject();
 };
 
 
@@ -114,6 +143,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 		Local<FunctionTemplate> volumeTemplate;
 		ThreadObject::Init( exports );
 		FileObject::Init();
+		OptionTreeObject::Init();
 		SqlObject::Init( exports );
 		// Prepare constructor template
 		volumeTemplate = FunctionTemplate::New( isolate, New );
@@ -397,6 +427,19 @@ void SqlObject::Init( Handle<Object> exports ) {
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "do", query );
+
+   // read a portion of the tree (passed to a callback)
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "eo", enumOptionNodes );
+   // get without create
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "fo", findOptionNode );
+   // get the node.
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "go", getOptionNode );
+   // update the value from option node
+	//NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "wo", writeOptionNode );
+   // read value from the option node
+	//NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "ro", readOptionNode );
+
+
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "op", option );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "getOption", option );
 	//NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "so", setOption );
@@ -581,6 +624,254 @@ SqlObject::~SqlObject() {
 
 //-----------------------------------------------------------
 
+Persistent<Function> OptionTreeObject::constructor;
+OptionTreeObject::OptionTreeObject()  {
+}
+
+OptionTreeObject::~OptionTreeObject() {
+}
+
+void OptionTreeObject::New(const FunctionCallbackInfo<Value>& args) {
+	Isolate* isolate = args.GetIsolate();
+
+	if (args.IsConstructCall()) {
+		// Invoked as constructor: `new MyObject(...)`
+
+		//double value = args[0]->IsUndefined() ? 0 : args[0]->NumberValue();
+		OptionTreeObject* obj = new OptionTreeObject();
+
+		obj->Wrap(args.This());
+		args.GetReturnValue().Set(args.This());
+	} else {
+		// Invoked as plain function `MyObject(...)`, turn into construct call.
+
+		const int argc = 1;
+		Local<Value> argv[argc] = { args[0] };
+		Local<Function> cons = Local<Function>::New(isolate, constructor);
+		Local<Context> context = isolate->GetCurrentContext();
+		Local<Object> instance =
+			cons->NewInstance(context, argc, argv).ToLocalChecked();
+		args.GetReturnValue().Set(instance);
+	}
+}
+
+
+void OptionTreeObject::Init(  ) {
+	Isolate* isolate = Isolate::GetCurrent();
+
+	Local<FunctionTemplate> optionTemplate;
+	// Prepare constructor template
+	optionTemplate = FunctionTemplate::New( isolate, New );
+	optionTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.option.node" ) );
+	optionTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
+
+	// Prototype
+	NODE_SET_PROTOTYPE_METHOD( optionTemplate, "eo", enumOptionNodes );
+	NODE_SET_PROTOTYPE_METHOD( optionTemplate, "fo", findOptionNode );
+	NODE_SET_PROTOTYPE_METHOD( optionTemplate, "go", getOptionNode );
+	optionTemplate->SetNativeDataProperty( String::NewFromUtf8( isolate, "value" )
+			, readOptionNode
+			, writeOptionNode );
+
+	//NODE_SET_PROTOTYPE_METHOD( optionTemplate, "ro", readOptionNode );
+	//NODE_SET_PROTOTYPE_METHOD( optionTemplate, "wo", writeOptionNode );
+
+	constructor.Reset( isolate, optionTemplate->GetFunction() );
+}
+
+
+void SqlObject::getOptionNode( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+
+	int argc = args.Length();
+
+	if( argc < 1 ) {
+		return;
+	}
+
+	SqlObject *sqlParent = ObjectWrap::Unwrap<SqlObject>( args.This() );
+
+	String::Utf8Value tmp( args[0] );
+	char *optionPath = StrDup( *tmp );
+
+	Local<Function> cons = Local<Function>::New( isolate, constructor );
+	Local<Object> o;
+	args.GetReturnValue().Set( o = cons->NewInstance( 0, NULL ) );
+
+	OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o );
+	oto->db = sqlParent;
+	oto->node =  GetOptionIndexExx( sqlParent->odbc, NULL, optionPath, NULL, NULL, NULL, TRUE, TRUE DBG_SRC );
+}
+
+
+void OptionTreeObject::getOptionNode( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+
+	int argc = args.Length();
+
+	if( argc < 1 ) {
+		return;
+	}
+
+	OptionTreeObject *parent = ObjectWrap::Unwrap<OptionTreeObject>( args.This() );
+
+	String::Utf8Value tmp( args[0] );
+	char *optionPath = StrDup( *tmp );
+
+	Local<Function> cons = Local<Function>::New( isolate, constructor );
+	Local<Object> o;
+	args.GetReturnValue().Set( o = cons->NewInstance( 0, NULL ) );
+
+	OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o );
+	oto->db = parent->db;
+	oto->node =  GetOptionIndexExx( parent->db->odbc, parent->node, optionPath, NULL, NULL, NULL, TRUE, TRUE DBG_SRC );
+	Release( optionPath );
+}
+
+void SqlObject::findOptionNode( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+
+	int argc = args.Length();
+
+	if( argc < 1 ) {
+		return;
+	}
+	String::Utf8Value tmp( args[0] );
+	char *optionPath = StrDup( *tmp );
+	SqlObject *sqlParent = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	POPTION_TREE_NODE newNode = GetOptionIndexExx( sqlParent->odbc, NULL, optionPath, NULL, NULL, NULL, FALSE, TRUE DBG_SRC );
+
+	if( newNode ) {
+		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		Local<Object> o;
+		args.GetReturnValue().Set( o = cons->NewInstance( 0, NULL ) );
+
+		OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o );
+		oto->db = sqlParent;
+		oto->node = newNode;
+	}
+	Release( optionPath );
+	args.GetReturnValue().Set( Null(isolate) );
+}
+
+
+void OptionTreeObject::findOptionNode( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+
+	int argc = args.Length();
+
+	if( argc < 1 ) {
+		return;
+	}
+
+	POPTION_TREE_NODE newOption;
+	OptionTreeObject *parent = ObjectWrap::Unwrap<OptionTreeObject>( args.This() );
+
+	String::Utf8Value tmp( args[0] );
+	char *optionPath = StrDup( *tmp );
+	newOption = GetOptionIndexExx( parent->db->odbc, parent->node, optionPath, NULL, NULL, NULL, FALSE, TRUE DBG_SRC );
+	if( newOption ) {
+		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		Local<Object> o;
+		args.GetReturnValue().Set( o = cons->NewInstance( 0, NULL ) );
+
+		OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o );
+		oto->db = parent->db;
+		oto->node = newOption;
+	}
+	Release( optionPath );
+	args.GetReturnValue().Set( Null( isolate ) );
+}
+
+struct enumArgs {
+	Local<Function>cb;
+	Isolate *isolate;
+	SqlObject *db;
+};
+
+int CPROC invokeCallback( uintptr_t psv, CTEXTSTR name, POPTION_TREE_NODE ID, int flags ) {
+	struct enumArgs *args = (struct enumArgs*)psv;
+	Local<Value> argv[2];
+
+	Local<Function> cons = Local<Function>::New( args->isolate, OptionTreeObject::constructor );
+	Local<Object> o;
+	o = cons->NewInstance( 0, NULL );
+
+	OptionTreeObject *oto = OptionTreeObject::Unwrap<OptionTreeObject>( o );
+	oto->db = args->db;
+	oto->node = ID;
+
+	argv[0] = o;
+	argv[1] = String::NewFromUtf8( args->isolate, name );
+
+	/*Local<Value> r = */args->cb->Call(Null(args->isolate), 1, argv );
+	return 0;
+}
+
+
+void SqlObject::enumOptionNodes( const FunctionCallbackInfo<Value>& args ) {
+	struct enumArgs callbackArgs;
+	callbackArgs.isolate = args.GetIsolate();
+
+	int argc = args.Length();
+	if( argc < 1 ) {
+		return;
+	}
+
+	
+	Isolate* isolate = args.GetIsolate();
+	SqlObject *sqlParent = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+	Persistent<Function> cb( isolate, arg0 );
+
+	callbackArgs.db = sqlParent;
+	callbackArgs.cb = Local<Function>::New( isolate, cb );
+	callbackArgs.isolate = isolate;
+
+	EnumOptionsEx( sqlParent->odbc, NULL, invokeCallback, (uintptr_t)&callbackArgs );
+}
+
+void OptionTreeObject::enumOptionNodes( const FunctionCallbackInfo<Value>& args ) {
+	struct enumArgs callbackArgs;
+	callbackArgs.isolate = args.GetIsolate();
+
+	int argc = args.Length();
+	if( argc < 1 ) {
+		return;
+	}
+
+	
+	Isolate* isolate = args.GetIsolate();
+	OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( args.This() );
+	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+	Persistent<Function> cb( isolate, arg0 );
+
+	callbackArgs.db = oto->db;
+	callbackArgs.cb = Local<Function>::New( isolate, cb );
+	callbackArgs.isolate = isolate;
+
+	EnumOptionsEx( oto->db->odbc, oto->node, invokeCallback, (uintptr_t)&callbackArgs );
+}
+
+void OptionTreeObject::readOptionNode( v8::Local<v8::String> field,
+                              const PropertyCallbackInfo<v8::Value>& info ) {
+	
+	OptionTreeObject* oto = node::ObjectWrap::Unwrap<OptionTreeObject>( info.Holder() );
+	char *buffer;
+	size_t buflen;
+	GetOptionStringValueEx( oto->db->odbc, oto->node, &buffer, &buflen DBG_SRC );
+	info.GetReturnValue().Set( String::NewFromUtf8( info.GetIsolate(), buffer ) );
+}
+
+void OptionTreeObject::writeOptionNode( v8::Local<v8::String> field,
+                              v8::Local<v8::Value> val,
+                              const PropertyCallbackInfo<void>&info ) {
+	String::Utf8Value tmp( val );
+	OptionTreeObject* oto = node::ObjectWrap::Unwrap<OptionTreeObject>( info.Holder() );
+	SetOptionStringValueEx( oto->db->odbc, oto->node, *tmp );
+}
+
+
 void SqlObject::option( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 
@@ -618,7 +909,7 @@ void SqlObject::option( const FunctionCallbackInfo<Value>& args ) {
 	sql->fields = 0;
 
 	if( !sql->optionInitialized ) {
-		SetOptionDatabaseOption( sql->odbc, 2 );
+		SetOptionDatabaseOption( sql->odbc );
       sql->optionInitialized = TRUE;
 	}
 

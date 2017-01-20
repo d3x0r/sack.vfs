@@ -10679,26 +10679,25 @@
     PODBC                                                        */
  SQLGETOPTION_PROC( POPTION_TREE, SetOptionDatabase )( PODBC odbc );
  SQLGETOPTION_PROC( CTEXTSTR, GetDefaultOptionDatabaseDSN )( void );
- SQLGETOPTION_PROC( void, SetOptionDatabaseOption )( PODBC odbc, int bNewVersion );
+ SQLGETOPTION_PROC( void, SetOptionDatabaseOption )( PODBC odbc );
  SQLGETOPTION_PROC( void, BeginBatchUpdate )( void );
  SQLGETOPTION_PROC( void, EndBatchUpdate )( void );
- SQLGETOPTION_PROC( POPTION_TREE_NODE, GetOptionIndexEx )( POPTION_TREE_NODE parent, const TEXTCHAR *file, const TEXTCHAR *pBranch, const TEXTCHAR *pValue, int bCreate DBG_PASS );
- SQLGETOPTION_PROC( POPTION_TREE_NODE, GetOptionIndexExx )( PODBC odbc, POPTION_TREE_NODE parent, CTEXTSTR program, const TEXTCHAR *file, const TEXTCHAR *pBranch, const TEXTCHAR *pValue, int bCreate DBG_PASS );
+ SQLGETOPTION_PROC( POPTION_TREE_NODE, GetOptionIndexEx )( POPTION_TREE_NODE parent, const TEXTCHAR *file, const TEXTCHAR *pBranch, const TEXTCHAR *pValue, int bCreate, int bBypassParsing DBG_PASS );
+ SQLGETOPTION_PROC( POPTION_TREE_NODE, GetOptionIndexExx )( PODBC odbc, POPTION_TREE_NODE parent, CTEXTSTR program, const TEXTCHAR *file, const TEXTCHAR *pBranch, const TEXTCHAR *pValue, int bCreate, int bBypassParsing DBG_PASS );
  #define GetOptionIndex(p,f,b,v) GetOptionIndexEx( p,f,b,v,FALSE DBG_SRC )
- SQLGETOPTION_PROC( size_t, GetOptionStringValueEx )( PODBC odbc, POPTION_TREE_NODE optval, TEXTCHAR *buffer, size_t len DBG_PASS );
- SQLGETOPTION_PROC( size_t, GetOptionStringValue )( POPTION_TREE_NODE optval, TEXTCHAR *buffer, size_t len );
- SQLGETOPTION_PROC( POPTION_TREE_NODE, GetOptionValueIndex )( POPTION_TREE_NODE ID );
- SQLGETOPTION_PROC( POPTION_TREE_NODE, GetOptionValueIndexEx )( PODBC odbc, POPTION_TREE_NODE ID );
+ SQLGETOPTION_PROC( size_t, GetOptionStringValueEx )( PODBC odbc, POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len DBG_PASS );
+ SQLGETOPTION_PROC( void,SetOptionStringValueEx )( PODBC odbc, POPTION_TREE_NODE node, CTEXTSTR value );
+ SQLGETOPTION_PROC( size_t, GetOptionStringValue )( POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len );
  SQLGETOPTION_PROC( LOGICAL, SetOptionStringValue )( POPTION_TREE tree, POPTION_TREE_NODE optval, CTEXTSTR pValue );
  SQLGETOPTION_PROC( void, DeleteOption )( POPTION_TREE_NODE iRoot );
  SQLGETOPTION_PROC( void, DuplicateOption )( POPTION_TREE_NODE iRoot, CTEXTSTR pNewName );
  // flush the map cache.
  SQLGETOPTION_PROC( void, ResetOptionMap )( PODBC odbc );
- SQLGETOPTION_PROC( PODBC, GetOptionODBCEx )( CTEXTSTR dsn, int version DBG_PASS );
+ SQLGETOPTION_PROC( PODBC, GetOptionODBCEx )( CTEXTSTR dsn DBG_PASS );
  SQLGETOPTION_PROC( void, DropOptionODBCEx )( PODBC odbc DBG_PASS );
- SQLGETOPTION_PROC( PODBC, GetOptionODBC )( CTEXTSTR dsn, int version );
+ SQLGETOPTION_PROC( PODBC, GetOptionODBC )( CTEXTSTR dsn );
  SQLGETOPTION_PROC( void, DropOptionODBC )( PODBC odbc );
- #define GetOptionODBC( a,b) GetOptionODBCEx( a,b DBG_SRC )
+ #define GetOptionODBC( b) GetOptionODBCEx( b DBG_SRC )
  #define DropOptionODBC(a) DropOptionODBCEx( a DBG_SRC )
  SQLGETOPTION_PROC( void, FindOptions )( PODBC odbc, PLIST *result_list, CTEXTSTR name );
  _OPTION_NAMESPACE_END _SQL_NAMESPACE_END SACK_NAMESPACE_END
