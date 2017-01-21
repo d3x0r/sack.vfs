@@ -4314,7 +4314,7 @@
  TYPELIB_PROC  void TYPELIB_CALLTYPE  FamilyTreeClear ( PFAMILYTREE option_tree );
  /* <unfinished>
     Incomplete Work in progress (maybe) */
- TYPELIB_PROC  PFAMILYNODE TYPELIB_CALLTYPE  FamilyTreeAddChild ( PFAMILYTREE *root, POINTER userdata, uintptr_t key );
+ TYPELIB_PROC  PFAMILYNODE TYPELIB_CALLTYPE  FamilyTreeAddChild ( PFAMILYTREE *root, PFAMILYNODE parent, POINTER userdata, uintptr_t key );
  TYPELIB_PROC LOGICAL TYPELIB_CALLTYPE FamilyTreeForEachChild( PFAMILYTREE root, PFAMILYNODE node
     , LOGICAL (CPROC *ProcessNode)( uintptr_t psvForeach, uintptr_t psvNodeData )
     , uintptr_t psvUserData );
@@ -14739,8 +14739,6 @@ GetFreeBlock( vol, TRUE );
     * it is opened on demand.
     */
     logtype = SYSLOG_AUTO_FILE;
-    logtype = SYSLOG_FILE;
-          (*syslog_local).file = stderr;
     (*syslog_local).flags.bLogOpenBackup = 1;
     (*syslog_local).flags.bUseDeltaTime = 1;
     (*syslog_local).flags.bLogCPUTime = 1;
@@ -43171,7 +43169,7 @@ GetFreeBlock( vol, TRUE );
   (*option_tree)->current = NULL;
  }
  //----------------------------------------------------------------------------
- PFAMILYNODE  FamilyTreeAddChild ( PFAMILYTREE *root, POINTER userdata, uintptr_t key )
+ PFAMILYNODE  FamilyTreeAddChild ( PFAMILYTREE *root, PFAMILYNODE parent, POINTER userdata, uintptr_t key )
  {
   if( root )
   {
@@ -43185,7 +43183,8 @@ GetFreeBlock( vol, TRUE );
    node->flags.bUsed = 0;
    node->userdata = userdata;
    node->key = key;
-   node->parent = (*root)->prior;
+//(*root)->prior;
+   node->parent = parent;
    if( !node->parent )
    {
     if( ( node->elder = (*root)->family ) )
@@ -79232,9 +79231,9 @@ GetFreeBlock( vol, TRUE );
  //typedef struct sack_option_tree_family *POPTION_TREE;
  typedef struct sack_option_tree_family_node OPTION_TREE_NODE;
  struct sack_option_tree_family_node {
-  INDEX id;
-  INDEX name_id;
-  INDEX value_id;
+  //INDEX id;
+  //INDEX name_id;
+  //INDEX value_id;
   CTEXTSTR name;
   CTEXTSTR guid;
   CTEXTSTR name_guid;
@@ -79476,8 +79475,6 @@ GetFreeBlock( vol, TRUE );
    MemSet( tree, 0, sizeof( struct sack_option_tree_family ) );
    tree->root = GetFromSet( OPTION_TREE_NODE, &tree->nodes );
    //MemSet( tree->root, 0, sizeof( struct sack_option_tree_family_node ) );
-   tree->root->name_id = INVALID_INDEX;
-   tree->root->value_id = INVALID_INDEX;
    tree->root->guid = GuidZero();
    tree->root->name_guid = NULL;
    tree->root->value_guid = NULL;
@@ -80740,6 +80737,8 @@ GetFreeBlock( vol, TRUE );
  POPTION_TREE_NODE New4GetOptionIndexExxx( PODBC odbc, POPTION_TREE tree, POPTION_TREE_NODE parent, const TEXTCHAR *system, const TEXTCHAR *program, const TEXTCHAR *file, const TEXTCHAR *pBranch, const TEXTCHAR *pValue, int bCreate, int bBypassParsing, int bIKnowItDoesntExist DBG_PASS )
  //#define GetOptionIndex( f,b,v ) GetOptionIndexEx( OPTION_ROOT_VALUE, f, b, v, FALSE )
  {
+ // temp
+  POPTION_TREE_NODE node;
   const TEXTCHAR **start = NULL;
   TEXTCHAR namebuf[256];
   TEXTCHAR query[256];
@@ -80819,37 +80818,12 @@ GetFreeBlock( vol, TRUE );
    lprintf( "Find [%s]", namebuf );
  #endif
    //DumpFamilyTree( tree->option_tree );
-   {
-    POPTION_TREE_NODE node = (POPTION_TREE_NODE)FamilyTreeFindChild( tree->option_tree, (uintptr_t)namebuf );
-    if( node )
-    {
- #ifdef DETAILED_LOGGING
-     lprintf( WIDE("Which is found, and new parent ID result...%p %s"), node, node->guid );
- #endif
-     if( !node->guid )
-     {
-      node->guid = GetSeqGUID();
-      OpenWriter( tree );
-      if( SQLCommandf( tree->odbc_writer
-           , WIDE( "Insert into " )OPTION4_MAP WIDE( "(`option_id`,`parent_option_id`,`name_id`) values ('%s','%s','%s')" )
-           , parent?parent->guid:WIDE("00000000-0000-0000-0000-000000000000")
-           , node->guid, node->name_guid ) )
-      {
-      }
-      else
-      {
-       CTEXTSTR error;
-       FetchSQLError( tree->odbc, &error );
- #ifdef DETAILED_LOGGING
-       lprintf( WIDE("Error inserting option: %s"), error );
- #endif
-       node->guid = NULL;
-      }
-     }
-     parent = node;
-     continue;
-    }
+   node = (POPTION_TREE_NODE)FamilyTreeFindChildEx( tree->option_tree, parent?parent->node:NULL, (uintptr_t)namebuf );
+   if( node ) {
+    parent = node;
+    continue;
    }
+   // else parent is ; and new node needs to be...
    {
     CTEXTSTR IDName = New4ReadOptionNameTable(tree,namebuf,OPTION4_NAME,WIDE( "name_id" ),WIDE( "name" ),1 DBG_RELAY);
     if( !bIKnowItDoesntExist )
@@ -80857,7 +80831,7 @@ GetFreeBlock( vol, TRUE );
      PushSQLQueryExEx(tree->odbc DBG_RELAY );
      tnprintf( query, sizeof( query )
          , WIDE( "select option_id from " )OPTION4_MAP WIDE( " where parent_option_id='%s' and name_id='%s'" )
-         , parent->guid
+         , parent?parent->guid:"00000000-0000-0000-0000-000000000000"
          , IDName );
     }
     //lprintf( WIDE( "doing %s" ), query );
@@ -80896,7 +80870,7 @@ GetFreeBlock( vol, TRUE );
        new_node->name_guid = IDName;
        new_node->name = SaveText( namebuf );
        new_node->value = NULL;
-       new_node->node = FamilyTreeAddChild( &tree->option_tree, new_node, (uintptr_t)new_node->name );
+       new_node->node = FamilyTreeAddChild( &tree->option_tree, parent?parent->node:NULL, new_node, (uintptr_t)new_node->name );
        //lprintf( "New parent has been created in the tree... %p %s", new_node, new_node->guid );
        parent = new_node;
       }
@@ -80924,7 +80898,7 @@ GetFreeBlock( vol, TRUE );
      new_node->name_guid = IDName;
      new_node->name = SaveText( namebuf );
      new_node->value = NULL;
-     new_node->node = FamilyTreeAddChild( &tree->option_tree, new_node, (uintptr_t)new_node->name );
+     new_node->node = FamilyTreeAddChild( &tree->option_tree, parent?parent->node:NULL, new_node, (uintptr_t)new_node->name );
      //lprintf( "New parent has been created in the tree...2 %p %s", new_node, new_node->guid );
      parent = new_node;
     }
@@ -81236,7 +81210,7 @@ GetFreeBlock( vol, TRUE );
   POPTION_TREE_NODE option_node = (POPTION_TREE_NODE)psvNode;
   struct new4_enum_params *params = (struct new4_enum_params *)psvForeach;
   return params->Process( params->psvEnum, option_node->name, option_node
-          , ((option_node->value_id)?1:0) );
+          , ((option_node->value_guid)?1:0) );
  }
  void New4EnumOptions( PODBC odbc
                , POPTION_TREE_NODE parent
@@ -81296,17 +81270,17 @@ GetFreeBlock( vol, TRUE );
     {
      tmp_node = New( OPTION_TREE_NODE );
      MemSet( tmp_node, 0, sizeof( struct sack_option_tree_family_node ) );
-     tmp_node->guid = StrDup( results[0] );
-     tmp_node->name_guid = StrDup( results[2] );
+     tmp_node->guid = SaveText( results[0] );
+     tmp_node->name_guid = SaveText( results[2] );
      tmp_node->value_guid = NULL;
      popodbc = 1;
      tmp_node->name = SaveText( results[1] );
-     tmp_node->node = FamilyTreeAddChild( &node->option_tree, tmp_node, (uintptr_t)tmp_node->name );
+     tmp_node->node = FamilyTreeAddChild( &node->option_tree, parent->node, tmp_node, (uintptr_t)tmp_node->name );
      // psv is a pointer to args in some cases...
      //lprintf( WIDE( "Enum %s %ld" ), optname, node );
      //ReadFromNameTable( name, WIDE(""OPTION_NAME""), WIDE("name_id"), &result);
      if( !Process( psvUser, tmp_node->name, tmp_node
-         , ((tmp_node->value_id)?1:0)
+         , ((tmp_node->value_guid)?1:0)
          ) )
      {
       break;

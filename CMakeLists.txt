@@ -125,9 +125,9 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
-if( EXISTS c:/general/tools/ppc.exe )
-set( AMALG_COMMAND c:/general/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
-set( AMALG_COMMAND2 c:/general/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
+if( EXISTS c:/tools/ppc.exe )
+set( AMALG_COMMAND c:/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
+set( AMALG_COMMAND2 c:/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
 
 
 #set( LIBRE_INCLUDES
