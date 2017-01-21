@@ -112,6 +112,11 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/deadstart/deadstart_lib.c
 )
 
+SET( BUILD_AMALGAM on )
+#SET( LIBRE_SOURCES "" CACHE INTERNAL "" FORCE )
+#add_subdirectory( ${SACK_BASE}/src/contrib/libressl/2.4.2 libressl )
+#message( "MAYBE WE GET" ${LIBRE_SOURCES} )
+
 set( C_SOURCES
         ${SACK_BASE}/src/contrib/sqlite/3.10.2/sqlite3.c
 )
@@ -120,23 +125,32 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
+if( EXISTS c:/general/tools/ppc.exe )
+set( AMALG_COMMAND c:/general/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
+set( AMALG_COMMAND2 c:/general/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
 
-if( EXISTS c:/tools/ppc.exe )
-set( AMALG_COMMAND c:/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
-set( AMALG_COMMAND2 c:/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
 
+#set( LIBRE_INCLUDES
+#	-I${SACK_BASE}/src/contrib/libressl/2.4.2/include -I${SACK_BASE}/src/contrib/libressl/2.4.2/include/compat   )
+#set( AMALG_COMMAND3 c:/general/tools/ppc.exe -c -K -once -ssio -sd "${LIBRE_INCLUDES}" -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/libressl.c ${LIBRE_SOURCES} )
+#set( OUT "${AMALG_COMMAND3}" )
+#STRING( REPLACE ";" " " AMALG_COMMAND3  "${OUT}" )
+
+FILE( WRITE ${CMAKE_BINARY_DIR}/zz.bat "${AMALG_COMMAND3}" )
   add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc
   			#COMMAND cmake -E echo ${AMALG_COMMAND}
    			 COMMAND ${AMALG_COMMAND}
                         #COMMAND cmake -E echo ${AMALG_COMMAND2}
    			COMMAND ${AMALG_COMMAND2}
+   			#COMMAND ${CMAKE_BINARY_DIR}/zz.bat
                    DEPENDS ${EXTRA_SOURCES} ${HEADER_SOURCES}
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   )                                   
   add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc )
+endif( EXISTS c:/general/tools/ppc.exe )
+
 endif( EXISTS ${SACK_BASE} )
 
-endif( EXISTS c:/tools/ppc.exe )
 
 include_directories(${CMAKE_JS_INC} ${INCLUDES} src )
 

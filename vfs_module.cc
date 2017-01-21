@@ -690,16 +690,21 @@ void SqlObject::getOptionNode( const FunctionCallbackInfo<Value>& args ) {
 	}
 
 	SqlObject *sqlParent = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	if( !sqlParent->optionInitialized ) {
+		SetOptionDatabaseOption( sqlParent->odbc );
+      sqlParent->optionInitialized = TRUE;
+	}
 
 	String::Utf8Value tmp( args[0] );
 	char *optionPath = StrDup( *tmp );
 
-	Local<Function> cons = Local<Function>::New( isolate, constructor );
+	Local<Function> cons = Local<Function>::New( isolate, OptionTreeObject::constructor );
 	Local<Object> o;
 	args.GetReturnValue().Set( o = cons->NewInstance( 0, NULL ) );
 
 	OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o );
 	oto->db = sqlParent;
+	lprintf( "SO Get %p ", sqlParent->odbc );
 	oto->node =  GetOptionIndexExx( sqlParent->odbc, NULL, optionPath, NULL, NULL, NULL, TRUE, TRUE DBG_SRC );
 }
 
@@ -724,6 +729,7 @@ void OptionTreeObject::getOptionNode( const FunctionCallbackInfo<Value>& args ) 
 
 	OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o );
 	oto->db = parent->db;
+	lprintf( "OTO Get %p  %p", parent->db->odbc, parent->node );
 	oto->node =  GetOptionIndexExx( parent->db->odbc, parent->node, optionPath, NULL, NULL, NULL, TRUE, TRUE DBG_SRC );
 	Release( optionPath );
 }
@@ -739,10 +745,14 @@ void SqlObject::findOptionNode( const FunctionCallbackInfo<Value>& args ) {
 	String::Utf8Value tmp( args[0] );
 	char *optionPath = StrDup( *tmp );
 	SqlObject *sqlParent = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	if( !sqlParent->optionInitialized ) {
+		SetOptionDatabaseOption( sqlParent->odbc );
+      sqlParent->optionInitialized = TRUE;
+	}
 	POPTION_TREE_NODE newNode = GetOptionIndexExx( sqlParent->odbc, NULL, optionPath, NULL, NULL, NULL, FALSE, TRUE DBG_SRC );
 
 	if( newNode ) {
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		Local<Function> cons = Local<Function>::New( isolate, OptionTreeObject::constructor );
 		Local<Object> o;
 		args.GetReturnValue().Set( o = cons->NewInstance( 0, NULL ) );
 
@@ -817,10 +827,15 @@ void SqlObject::enumOptionNodes( const FunctionCallbackInfo<Value>& args ) {
 	if( argc < 1 ) {
 		return;
 	}
-
 	
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sqlParent = ObjectWrap::Unwrap<SqlObject>( args.This() );
+
+	if( !sqlParent->optionInitialized ) {
+		SetOptionDatabaseOption( sqlParent->odbc );
+      sqlParent->optionInitialized = TRUE;
+	}
+
 	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
 	Persistent<Function> cb( isolate, arg0 );
 

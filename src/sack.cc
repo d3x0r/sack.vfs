@@ -10047,7 +10047,7 @@
  SQLGETOPTION_PROC( void, EndBatchUpdate )( void );
  SQLGETOPTION_PROC( POPTION_TREE_NODE, GetOptionIndexEx )( POPTION_TREE_NODE parent, const TEXTCHAR *file, const TEXTCHAR *pBranch, const TEXTCHAR *pValue, int bCreate, int bBypassParsing DBG_PASS );
  SQLGETOPTION_PROC( POPTION_TREE_NODE, GetOptionIndexExx )( PODBC odbc, POPTION_TREE_NODE parent, CTEXTSTR program, const TEXTCHAR *file, const TEXTCHAR *pBranch, const TEXTCHAR *pValue, int bCreate, int bBypassParsing DBG_PASS );
- #define GetOptionIndex(p,f,b,v) GetOptionIndexEx( p,f,b,v,FALSE DBG_SRC )
+ #define GetOptionIndex(p,f,b,v) GetOptionIndexEx( p,f,b,v,FALSE,FALSE DBG_SRC )
  SQLGETOPTION_PROC( size_t, GetOptionStringValueEx )( PODBC odbc, POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len DBG_PASS );
  SQLGETOPTION_PROC( void,SetOptionStringValueEx )( PODBC odbc, POPTION_TREE_NODE node, CTEXTSTR value );
  SQLGETOPTION_PROC( size_t, GetOptionStringValue )( POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len );
@@ -14739,6 +14739,8 @@ GetFreeBlock( vol, TRUE );
     * it is opened on demand.
     */
     logtype = SYSLOG_AUTO_FILE;
+    logtype = SYSLOG_FILE;
+          (*syslog_local).file = stderr;
     (*syslog_local).flags.bLogOpenBackup = 1;
     (*syslog_local).flags.bUseDeltaTime = 1;
     (*syslog_local).flags.bLogCPUTime = 1;
@@ -30937,17 +30939,17 @@ GetFreeBlock( vol, TRUE );
  #define CHUNK_SIZE ( offsetof( CHUNK, byData ) )
  #define MEM_SIZE  ( offsetof( MEM, pRoot ) )
  // using lower level syslog bypasses some allocation requirements...
- #undef lprintf
- #undef _lprintf
+ //#undef lprintf
+ //#undef _lprintf
  #ifndef NO_LOGGING
  #  ifdef _DEBUG
- #    define lprintf( f, ... ) { TEXTCHAR buf[256]; tnprintf( buf, 256, f,##__VA_ARGS__ ); SystemLogFL( buf FILELINE_SRC ); }
+ #    define ll_lprintf( f, ... ) { TEXTCHAR buf[256]; tnprintf( buf, 256, f,##__VA_ARGS__ ); SystemLogFL( buf FILELINE_SRC ); }
  #    define _lprintf2( f, ... ) { TEXTCHAR buf[256]; tnprintf( buf, 256, FILELINE_FILELINEFMT f,_pFile,_nLine,##__VA_ARGS__ ); SystemLogFL( buf FILELINE_SRC ); } }
- #    define _lprintf( a ) {const TEXTCHAR *_pFile = pFile; int _nLine = nLine; _lprintf2
+ #    define ll__lprintf( a ) {const TEXTCHAR *_pFile = pFile; int _nLine = nLine; _lprintf2
  #  else
- #    define lprintf( f, ... ) { TEXTCHAR buf[256]; tnprintf( buf, 256, f,##__VA_ARGS__ ); SystemLog( buf ); }
+ #    define ll_lprintf( f, ... ) { TEXTCHAR buf[256]; tnprintf( buf, 256, f,##__VA_ARGS__ ); SystemLog( buf ); }
  #    define _lprintf2( f, ... ) { TEXTCHAR buf[256]; tnprintf( buf, 256, f,##__VA_ARGS__ ); SystemLog( buf ); } }
- #    define _lprintf( a ) { _lprintf2
+ #    define ll__lprintf( a ) { _lprintf2
  #  endif
  #else
  #  define lprintf( f,... )
@@ -31087,7 +31089,7 @@ GetFreeBlock( vol, TRUE );
   g.bLogCritical = SACK_GetProfileIntEx( GetProgramName(), WIDE( "SACK/Memory Library/Log critical sections" ), g.bLogCritical, TRUE );
   g.bLogAllocate = SACK_GetProfileIntEx( GetProgramName(), WIDE( "SACK/Memory Library/Enable Logging" ), g.bLogAllocate, TRUE );
   if( g.bLogAllocate )
-   lprintf( WIDE( "Memory allocate logging enabled." ) );
+   ll_lprintf( WIDE( "Memory allocate logging enabled." ) );
   g.bLogAllocateWithHold = SACK_GetProfileIntEx( GetProgramName(), WIDE( "SACK/Memory Library/Enable Logging Holds" ), g.bLogAllocateWithHold, TRUE );
   //USE_CUSTOM_ALLOCER = SACK_GetProfileIntEx( GetProgramName(), WIDE( "SACK/Memory Library/Custom Allocator" ), USE_CUSTOM_ALLOCER, TRUE );
   g.bDisableDebug = SACK_GetProfileIntEx( GetProgramName(), WIDE( "SACK/Memory Library/Disable Debug" ), !USE_DEBUG_LOGGING, TRUE );
@@ -31209,12 +31211,12 @@ GetFreeBlock( vol, TRUE );
  #if 0
  static void DumpSection( PCRITICALSECTION pcs )
  {
-  lprintf( WIDE( "Critical Section....." ) );
-  lprintf( WIDE( "------------------------------" ) );
-  lprintf( WIDE( "Update: %08x" ), pcs->dwUpdating );
-  lprintf( WIDE( "Current Process: %16"_64fx"" ), pcs->dwThreadID );
-  lprintf( WIDE( "Next Process:    %16"_64fx"" ), pcs->dwThreadWaiting );
-  lprintf( WIDE( "Last update: %s(%d)" ), pcs->pFile ? pcs->pFile : "unknown", pcs->nLine );
+  ll_lprintf( WIDE( "Critical Section....." ) );
+  ll_lprintf( WIDE( "------------------------------" ) );
+  ll_lprintf( WIDE( "Update: %08x" ), pcs->dwUpdating );
+  ll_lprintf( WIDE( "Current Process: %16"_64fx"" ), pcs->dwThreadID );
+  ll_lprintf( WIDE( "Next Process:    %16"_64fx"" ), pcs->dwThreadWaiting );
+  ll_lprintf( WIDE( "Last update: %s(%d)" ), pcs->pFile ? pcs->pFile : "unknown", pcs->nLine );
  }
  #endif
  #endif
@@ -31239,7 +31241,7 @@ GetFreeBlock( vol, TRUE );
     dwCurProc = GetMyThreadID();
  #ifndef NO_LOGGING
     if( g.bLogCritical > 0 && g.bLogCritical < 2 )
-     _lprintf( DBG_RELAY )(WIDE( " [%16" )_64fx WIDE( "] Attempt enter critical Section %p %08" ) _32fx
+     ll__lprintf( DBG_RELAY )(WIDE( " [%16" )_64fx WIDE( "] Attempt enter critical Section %p %08" ) _32fx
       , dwCurProc
       , pcs
       , pcs->dwLocks);
@@ -31260,14 +31262,14 @@ GetFreeBlock( vol, TRUE );
     {
  #  ifndef NO_LOGGING
      if( g.bLogCritical > 0 && g.bLogCritical < 2 )
-      _lprintf( DBG_RELAY )(WIDE( "Section is was updating %" ) _32f WIDE( " cycles" ), pcs->bCollisions);
+      ll__lprintf( DBG_RELAY )(WIDE( "Section is was updating %" ) _32f WIDE( " cycles" ), pcs->bCollisions);
  #  endif
      pcs->bCollisions = 0;
     }
  #  ifndef NO_LOGGING
     else
      if( g.bLogCritical > 0 && g.bLogCritical < 2 )
-      _lprintf( DBG_RELAY )(WIDE( "Locked....for enter" ));
+      ll__lprintf( DBG_RELAY )(WIDE( "Locked....for enter" ));
  #  endif
  #endif
     if( !pcs->dwThreadID )
@@ -31279,12 +31281,12 @@ GetFreeBlock( vol, TRUE );
       if( pcs->dwThreadWaiting != dwCurProc )
       {
  #ifdef DEBUG_CRITICAL_SECTIONS
-       lprintf( WIDE( "waiter is not myself... someone else wanted to own this section (more recently) than me." ) );
+       ll_lprintf( WIDE( "waiter is not myself... someone else wanted to own this section (more recently) than me." ) );
  #endif
        if( prior && !(*prior) )
        {
  #ifdef DEBUG_CRITICAL_SECTIONS
-        lprintf( WIDE( "Inserting myself as waiter..." ) );
+        ll_lprintf( WIDE( "Inserting myself as waiter..." ) );
  #endif
         (*prior) = pcs->dwThreadWaiting;
         pcs->dwThreadWaiting = dwCurProc;
@@ -31306,7 +31308,7 @@ GetFreeBlock( vol, TRUE );
       {
  #ifdef DEBUG_CRITICAL_SECTIONS
        if( g.bLogCritical )
-        lprintf( WIDE( "Was woken up as wrong thread.. %016Lx %016Lx %016Lx" ), dwCurProc, pcs->dwThreadWaiting, prior ? (*prior) : 0 );
+        ll_lprintf( WIDE( "Was woken up as wrong thread.. %016Lx %016Lx %016Lx" ), dwCurProc, pcs->dwThreadWaiting, prior ? (*prior) : 0 );
  #endif
        // wake the correct thread...
        if( prior && !(*prior) )
@@ -31316,7 +31318,7 @@ GetFreeBlock( vol, TRUE );
  #ifdef DEBUG_CRITICAL_SECTIONS
        else if( prior )
        {
-        lprintf( WIDE( "Already saved the prior waiter and are setting self as waiter." ) );
+        ll_lprintf( WIDE( "Already saved the prior waiter and are setting self as waiter." ) );
        }
  #endif
        pcs->dwThreadWaiting = dwCurProc;
@@ -31330,13 +31332,13 @@ GetFreeBlock( vol, TRUE );
       {
  #ifdef DEBUG_CRITICAL_SECTIONS
        if( g.bLogCritical )
-        lprintf( WIDE( "Was woken up as correct thread.. %016Lx %016Lx %016Lx" ), dwCurProc, pcs->dwThreadWaiting, prior ? (*prior) : 0 );
+        ll_lprintf( WIDE( "Was woken up as correct thread.. %016Lx %016Lx %016Lx" ), dwCurProc, pcs->dwThreadWaiting, prior ? (*prior) : 0 );
  #endif
        // is me... unowned section, and prior waiter is me.
        if( prior && (*prior) )
        {
  #ifdef DEBUG_CRITICAL_SECTIONS
-        lprintf( WIDE( "Moving prior into waiting... %08x %08x" ), pcs->dwThreadWaiting, *prior );
+        ll_lprintf( WIDE( "Moving prior into waiting... %08x %08x" ), pcs->dwThreadWaiting, *prior );
  #endif
         pcs->dwThreadWaiting = *prior;
         *prior = 0;
@@ -31355,7 +31357,7 @@ GetFreeBlock( vol, TRUE );
      // or 2) there was not someone waiting...
      pcs->dwLocks++;
      if( g.bLogCritical > 0 && g.bLogCritical < 2 )
-      lprintf( WIDE( "Locks are %08" )_32fx, pcs->dwLocks );
+      ll_lprintf( WIDE( "Locks are %08" )_32fx, pcs->dwLocks );
  #ifdef DEBUG_CRITICAL_SECTIONS
  #  ifndef NO_LOGGING
      if( (pcs->dwLocks & 0xFFFFF) > 1 )
@@ -31373,7 +31375,7 @@ GetFreeBlock( vol, TRUE );
      pcs->dwThreadID = dwCurProc;
      pcs->dwUpdating = 0;
      if( g.bLogCritical > 0 && g.bLogCritical < 2 )
-      lprintf( WIDE( "Entered, and unlocked for entry" ) );
+      ll_lprintf( WIDE( "Entered, and unlocked for entry" ) );
      //nEntry--;
      return 1;
     }
@@ -31385,7 +31387,7 @@ GetFreeBlock( vol, TRUE );
       pcs->dwLocks |= SECTION_LOGGED_WAIT;
  #ifdef DEBUG_CRITICAL_SECTIONS
       if( g.bLogCritical )
-       lprintf( WIDE( "Waiting on critical section owned by %s(%d) %08lx %016Lx." ), (pcs->pFile) ? (pcs->pFile) : WIDE( "Unknown" ), pcs->nLine, pcs->dwLocks, pcs->dwThreadID );
+       ll_lprintf( WIDE( "Waiting on critical section owned by %s(%d) %08lx %016Lx." ), (pcs->pFile) ? (pcs->pFile) : WIDE( "Unknown" ), pcs->nLine, pcs->dwLocks, pcs->dwThreadID );
  #endif
      }
      // if the prior is wante to be saved...
@@ -31395,7 +31397,7 @@ GetFreeBlock( vol, TRUE );
       {
        if( pcs->dwThreadWaiting != dwCurProc )
        {
-        lprintf( WIDE( "thread to wake is not this one... fail. %016" )_64fx WIDE( " %016" )_64fx, pcs->dwThreadWaiting, dwCurProc );
+        ll_lprintf( WIDE( "thread to wake is not this one... fail. %016" )_64fx WIDE( " %016" )_64fx, pcs->dwThreadWaiting, dwCurProc );
         // assume that someone else kept our waiting ID...
         // cause we're not the one waiting, and we have someone elses ID..
         // we are awake out of order..
@@ -31409,13 +31411,13 @@ GetFreeBlock( vol, TRUE );
        {
  #ifdef DEBUG_CRITICAL_SECTIONS
         if( g.bLogCritical )
-         lprintf( WIDE( "Setting prior to %016Lx and prior was %016Lx" ), pcs->dwThreadWaiting, (*prior) );
+         ll_lprintf( WIDE( "Setting prior to %016Lx and prior was %016Lx" ), pcs->dwThreadWaiting, (*prior) );
  #endif
         *prior = pcs->dwThreadWaiting;
        }
        else if( prior && (*prior) )
        {
-        lprintf( WIDE( "prior was set already... no room to store dwThreadWaiting..." ) );
+        ll_lprintf( WIDE( "prior was set already... no room to store dwThreadWaiting..." ) );
         DebugBreak();
        }
        pcs->dwThreadWaiting = dwCurProc;
@@ -31426,7 +31428,7 @@ GetFreeBlock( vol, TRUE );
       // else no prior... so don't set the dwthreadwaiting...
  #ifdef DEBUG_CRITICAL_SECTIONS
     // this is enter try no wait...
-    //_lprintf(DBG_RELAY)( WIDE( "No prior... not setting wake ID" ) );
+    //ll__lprintf(DBG_RELAY)( WIDE( "No prior... not setting wake ID" ) );
  #endif
      }
      //else
@@ -31434,11 +31436,11 @@ GetFreeBlock( vol, TRUE );
      pcs->dwUpdating = 0;
  #  ifndef NO_LOGGING
      if( g.bLogCritical > 0 && g.bLogCritical < 2 )
-      _lprintf( DBG_RELAY )(WIDE( "Unlocked... for enter" ));
+      ll__lprintf( DBG_RELAY )(WIDE( "Unlocked... for enter" ));
  #  endif
      //nEntry--;
     }
-    //lprintf( WIDE("Enter section : %"PRIdFAST64"\n"),tick2-tick );
+    //ll_lprintf( WIDE("Enter section : %"PRIdFAST64"\n"),tick2-tick );
     return 0;
    }
  #endif
@@ -31452,19 +31454,19 @@ GetFreeBlock( vol, TRUE );
      Relinquish();
  #  ifndef NO_LOGGING
     if( g.bLogCritical > 0 && g.bLogCritical < 2 )
-     _lprintf( DBG_RELAY )(WIDE( "Locked %p for leaving..." ), pcs);
+     ll__lprintf( DBG_RELAY )(WIDE( "Locked %p for leaving..." ), pcs);
  #  endif
     if( !(pcs->dwLocks & ~SECTION_LOGGED_WAIT) )
     {
      if( g.bLogCritical > 0 && g.bLogCritical < 2 )
-      lprintf( DBG_FILELINEFMT WIDE( "Leaving a blank critical section" ) DBG_RELAY );
+      ll_lprintf( DBG_FILELINEFMT WIDE( "Leaving a blank critical section" ) DBG_RELAY );
      //while( 1 );
      pcs->dwUpdating = 0;
      return FALSE;
     }
  #ifdef DEBUG_CRITICAL_SECTIONS
     //if( g.bLogCritical > 1 )
-    // lprintf( DBG_FILELINEFMT WIDE( "Leaving %"_64fx"x %"_64fx"x %p" ) DBG_RELAY ,pcs->dwThreadID, dwCurProc, pcs );
+    // ll_lprintf( DBG_FILELINEFMT WIDE( "Leaving %"_64fx"x %"_64fx"x %p" ) DBG_RELAY ,pcs->dwThreadID, dwCurProc, pcs );
  #endif
     if( pcs->dwThreadID == dwCurProc )
     {
@@ -31516,7 +31518,7 @@ GetFreeBlock( vol, TRUE );
     pcs->dwUpdating = 0;
  #  ifndef NO_LOGGING
     if( g.bLogCritical > 0 && g.bLogCritical < 2 )
-     _lprintf( DBG_RELAY )(WIDE( "Unocked %p for leaving..." ), pcs);
+     ll__lprintf( DBG_RELAY )(WIDE( "Unocked %p for leaving..." ), pcs);
  #  endif
     return TRUE;
    }
@@ -31528,7 +31530,7 @@ GetFreeBlock( vol, TRUE );
    void  InitializeCriticalSec( PCRITICALSECTION pcs )
    {
     if( g.bLogCritical )
-     lprintf( WIDE( "CLEARING CRITICAL SECTION" ) );
+     ll_lprintf( WIDE( "CLEARING CRITICAL SECTION" ) );
     MemSet( pcs, 0, sizeof( CRITICALSECTION ) );
     return;
    }
@@ -31562,7 +31564,7 @@ GetFreeBlock( vol, TRUE );
    return FALSE;
   }
  #ifdef DEBUG_GLOBAL_REGISTRATION
-  lprintf( WIDE( "Opening space..." ) );
+  ll_lprintf( WIDE( "Opening space..." ) );
  #endif
  #ifdef UNICODE
  #define _S WIDE("ls")
@@ -31614,8 +31616,8 @@ GetFreeBlock( vol, TRUE );
  {
  #ifdef __SKIP_RELEASE_OPEN_SPACES__
   // actually, under linux, it releases /tmp/.shared files.
-  //lprintf( WIDE( "No super significant reason to release all memory blocks?" ) );
-  //lprintf( WIDE( "Short circuit on memory shutdown." ) );
+  //ll_lprintf( WIDE( "No super significant reason to release all memory blocks?" ) );
+  //ll_lprintf( WIDE( "Short circuit on memory shutdown." ) );
   return;
  #else
   // need to try and close /tmp/.shared region files...  so we only close
@@ -31638,8 +31640,8 @@ GetFreeBlock( vol, TRUE );
  #ifdef _DEBUG
      if( !g.bDisableDebug )
      {
-      lprintf( WIDE("Space: %p mem: %p-%p"), ps, ps->pMem, (uint8_t*)ps->pMem + ps->dwSmallSize );
-      lprintf( WIDE("Closing tracked space...") );
+      ll_lprintf( WIDE("Space: %p mem: %p-%p"), ps, ps->pMem, (uint8_t*)ps->pMem + ps->dwSmallSize );
+      ll_lprintf( WIDE("Closing tracked space...") );
      }
  #endif
  */
@@ -31658,7 +31660,7 @@ GetFreeBlock( vol, TRUE );
    CloseHandle( ps->hMem );
    CloseHandle( ps->hFile );
  #else
-   //lprintf( WIDE("unmaping space tracking structure...") );
+   //ll_lprintf( WIDE("unmaping space tracking structure...") );
    munmap( ps, MAX_PER_BLOCK * sizeof( SPACE ) );
    //close( (int)ps->pMem );
    //if( ps->hFile >= 0 )
@@ -31920,10 +31922,10 @@ GetFreeBlock( vol, TRUE );
          , 0 );
     if( pMem == (POINTER)-1 )
     {
-     lprintf( WIDE("Something bad about this region sized %") _PTRSZVALfs WIDE("(%d)"), *dwSize, errno );
+     ll_lprintf( WIDE("Something bad about this region sized %") _PTRSZVALfs WIDE("(%d)"), *dwSize, errno );
      DebugBreak();
     }
-    //lprintf( WIDE("Clearing anonymous mmap %p %") _size_f WIDE(""), pMem, *dwSize );
+    //ll_lprintf( WIDE("Clearing anonymous mmap %p %") _size_f WIDE(""), pMem, *dwSize );
     MemSet( pMem, 0, *dwSize );
    }
  // name doesn't matter, same file cannot be called another name
@@ -31937,7 +31939,7 @@ GetFreeBlock( vol, TRUE );
  #ifdef __ANDROID__
     //if( !IsPath( "./tmp" ) )
     // if( !MakePath( "./tmp" ) )
-    //  lprintf( "Failed to create a temporary space" );
+    //  ll_lprintf( "Failed to create a temporary space" );
  #ifdef UNICODE
     {
      char *tmp_pWhat = CStrDup( pWhat );
@@ -31956,7 +31958,7 @@ GetFreeBlock( vol, TRUE );
  #endif
     bTemp = TRUE;
    }
-   //lprintf( "Open Space: %s", filename?filename:"anonymous" );
+   //ll_lprintf( "Open Space: %s", filename?filename:"anonymous" );
    if( !pMem && filename )
    {
  #ifdef __ANDROID__
@@ -31969,16 +31971,16 @@ GetFreeBlock( vol, TRUE );
                 int ret;
       if( !(*dwSize ) )
       {
-       lprintf( WIDE("Region didn't exist... and no size... return") );
+       ll_lprintf( WIDE("Region didn't exist... and no size... return") );
                    return NULL;
       }
  #   ifdef DEBUG_SHARED_REGION_CREATE
-      lprintf( WIDE("Shared region didn't already exist...: %s"), filename );
+      ll_lprintf( WIDE("Shared region didn't already exist...: %s"), filename );
  #   endif
       fd = open("/dev/ashmem", O_RDWR);
       if( fd < 0 )
       {
-       lprintf( WIDE("Failed to open core device...") );
+       ll_lprintf( WIDE("Failed to open core device...") );
        return NULL;
       }
       if( bCreated )
@@ -31987,13 +31989,13 @@ GetFreeBlock( vol, TRUE );
       ret = ioctl(fd, ASHMEM_SET_NAME, filename + 12 );
       if (ret < 0)
       {
-       lprintf( WIDE("Failed to set the name of ashmem region: %s"), filename + 12 );
+       ll_lprintf( WIDE("Failed to set the name of ashmem region: %s"), filename + 12 );
        //       goto error;
       }
       ret = ioctl(fd, ASHMEM_SET_SIZE, (*dwSize) );
       if (ret < 0)
       {
-       lprintf( WIDE("Failed to set IOCTL size to %d"), (*dwSize) );
+       ll_lprintf( WIDE("Failed to set IOCTL size to %d"), (*dwSize) );
        //goto error;
       }
                 /*
@@ -32025,7 +32027,7 @@ GetFreeBlock( vol, TRUE );
     }
     if( fd == -1 )
     {
-     //lprintf( "open is %d %s %d", errno, filename, prior );
+     //ll_lprintf( "open is %d %s %d", errno, filename, prior );
      // if we didn't create the file...
      // then it can't be marked as temporary...
      bTemp = FALSE;
@@ -32128,7 +32130,7 @@ GetFreeBlock( vol, TRUE );
    *dwSize = ( ( (*dwSize) + ( FILE_GRAN - 1 ) ) / FILE_GRAN ) * FILE_GRAN;
    if( !pWhat && !pWhere )
    {
-    //lprintf( "ALLOCATE %"_64fx"d", (*dwSize)>>32, 0 );
+    //ll_lprintf( "ALLOCATE %"_64fx"d", (*dwSize)>>32, 0 );
     hMem = CreateFileMapping( INVALID_HANDLE_VALUE, NULL
             , PAGE_READWRITE
             |SEC_COMMIT
@@ -32144,10 +32146,10 @@ GetFreeBlock( vol, TRUE );
             , pWhat );
     if( !hMem )
     {
-     //lprintf( "Failed to allocate pagefile memory?! %p %d", *dwSize, GetLastError() );
+     //ll_lprintf( "Failed to allocate pagefile memory?! %p %d", *dwSize, GetLastError() );
      {
       POINTER p = malloc( *dwSize );
-      //lprintf(" but we could allocate it %p", p  );
+      //ll_lprintf(" but we could allocate it %p", p  );
  #ifndef USE_SIMPLE_LOCK_ON_OPEN
       if( g.deadstart_finished )
       {
@@ -32179,7 +32181,7 @@ GetFreeBlock( vol, TRUE );
     else
     {
  #ifdef DEBUG_OPEN_SPACE
-     lprintf( WIDE("Failed to open region named %s %d"), pWhat, GetLastError() );
+     ll_lprintf( WIDE("Failed to open region named %s %d"), pWhat, GetLastError() );
  #endif
   // don't continue... we're expecting open-existing behavior
      if( (*dwSize) == 0 )
@@ -32214,8 +32216,8 @@ GetFreeBlock( vol, TRUE );
           //| FILE_FLAG_DELETE_ON_CLOSE
           , NULL );
  #ifdef DEBUG_OPEN_SPACE
-    lprintf( WIDE("Create file %s result %d"), pWhere, hFile );
-    lprintf( WIDE("File result is %ld (error %ld)"), hFile, GetLastError() );
+    ll_lprintf( WIDE("Create file %s result %d"), pWhere, hFile );
+    ll_lprintf( WIDE("File result is %ld (error %ld)"), hFile, GetLastError() );
  #endif
     if( hFile == INVALID_HANDLE_VALUE )
     {
@@ -32223,7 +32225,7 @@ GetFreeBlock( vol, TRUE );
      if( ( dwSize && (!(*dwSize )) ) && ( GetLastError() == ERROR_PATH_NOT_FOUND || GetLastError() == ERROR_FILE_NOT_FOUND ) )
      {
  #ifdef DEBUG_OPEN_SPACE
-      lprintf( WIDE("File did not exist, and we're not creating the file (0 size passed)") );
+      ll_lprintf( WIDE("File did not exist, and we're not creating the file (0 size passed)") );
  #endif
  #ifndef USE_SIMPLE_LOCK_ON_OPEN
       if( g.deadstart_finished )
@@ -32249,7 +32251,7 @@ GetFreeBlock( vol, TRUE );
            //| FILE_FLAG_DELETE_ON_CLOSE
            , NULL );
  #ifdef DEBUG_OPEN_SPACE
-     lprintf( WIDE("Create file %s result %d"), pWhere, hFile );
+     ll_lprintf( WIDE("Create file %s result %d"), pWhere, hFile );
  #endif
      if( hFile != INVALID_HANDLE_VALUE ) {
  // lie...
@@ -32264,7 +32266,7 @@ GetFreeBlock( vol, TRUE );
     {
      readonly = 0;
  #ifdef DEBUG_OPEN_SPACE
-     lprintf( WIDE("file is still invalid(alreadyexist?)... new size is %d %d on %p"), (*dwSize), FILE_GRAN, hFile );
+     ll_lprintf( WIDE("file is still invalid(alreadyexist?)... new size is %d %d on %p"), (*dwSize), FILE_GRAN, hFile );
  #endif
  // is INVALID_HANDLE_VALUE, but is consistant
      hMem = CreateFileMapping( hFile
@@ -32285,7 +32287,7 @@ GetFreeBlock( vol, TRUE );
       goto isokay;
      }
  #ifdef DEBUG_OPEN_SPACE
-     lprintf( WIDE("Sorry - Nothing good can happen with a filename like that...%s %d"), pWhat, GetLastError());
+     ll_lprintf( WIDE("Sorry - Nothing good can happen with a filename like that...%s %d"), pWhat, GetLastError());
  #endif
        //bOpening = FALSE;
  #ifndef USE_SIMPLE_LOCK_ON_OPEN
@@ -32305,12 +32307,12 @@ GetFreeBlock( vol, TRUE );
     // mark status for memory... dunno why?
      // in theory this is a memory image of valid memory already...
  #ifdef DEBUG_OPEN_SPACE
-     lprintf( WIDE("Getting existing size of region...") );
+     ll_lprintf( WIDE("Getting existing size of region...") );
  #endif
      if( SUS_LT( lSize.QuadPart, LONGLONG, (*dwSize), uintptr_t ) )
      {
  #ifdef DEBUG_OPEN_SPACE
-      lprintf( WIDE("Expanding file to size requested.") );
+      ll_lprintf( WIDE("Expanding file to size requested.") );
  #endif
       didCreate = 1;
       SetFilePointer( hFile, (LONG)*dwSize, NULL, FILE_BEGIN );
@@ -32319,7 +32321,7 @@ GetFreeBlock( vol, TRUE );
      else
      {
  #ifdef DEBUG_OPEN_SPACE
-      lprintf( WIDE("Setting size to size of file (which was larger..") );
+      ll_lprintf( WIDE("Setting size to size of file (which was larger..") );
  #endif
       (*dwSize) = (uintptr_t)(lSize.QuadPart);
      }
@@ -32327,7 +32329,7 @@ GetFreeBlock( vol, TRUE );
     else
     {
  #ifdef DEBUG_OPEN_SPACE
-     lprintf( WIDE("New file, setting size to requested %d"), *dwSize );
+     ll_lprintf( WIDE("New file, setting size to requested %d"), *dwSize );
  #endif
      SetFilePointer( hFile, (LONG)*dwSize, NULL, FILE_BEGIN );
      SetEndOfFile( hFile );
@@ -32337,7 +32339,7 @@ GetFreeBlock( vol, TRUE );
      (*bCreated) = didCreate;
     //(*dwSize) = GetFileSize( hFile, NULL );
  #ifdef DEBUG_OPEN_SPACE
-    lprintf( WIDE("%s Readonly? %d  hFile %d"), pWhat, readonly, hFile );
+    ll_lprintf( WIDE("%s Readonly? %d  hFile %d"), pWhat, readonly, hFile );
  #endif
     hMem = CreateFileMapping( hFile
             , NULL
@@ -32348,7 +32350,7 @@ GetFreeBlock( vol, TRUE );
     if( pWhat && !hMem )
     {
  #ifdef DEBUG_OPEN_SPACE
-     lprintf( WIDE("Create of mapping failed on object specified? %d %p"), GetLastError(), hFile );
+     ll_lprintf( WIDE("Create of mapping failed on object specified? %d %p"), GetLastError(), hFile );
  #endif
      (*dwSize) = 1;
      CloseHandle( hFile );
@@ -32410,7 +32412,7 @@ GetFreeBlock( vol, TRUE );
     VirtualQuery( pMem, &meminfo, sizeof( meminfo ) );
     (*dwSize) = meminfo.RegionSize;
  #ifdef DEBUG_OPEN_SPACE
-    lprintf( WIDE("Fixup memory size to %ld %s:%s(reported by system on view opened)")
+    ll_lprintf( WIDE("Fixup memory size to %ld %s:%s(reported by system on view opened)")
       , *dwSize, pWhat?pWhat:"ANON", pWhere?pWhere:"ANON" );
  #endif
    }
@@ -32460,15 +32462,15 @@ GetFreeBlock( vol, TRUE );
   {
    if( pMem->dwHeapID != 0xbab1f1ea )
    {
-    lprintf( WIDE("Memory has content, and is NOT a heap!") );
+    ll_lprintf( WIDE("Memory has content, and is NOT a heap!") );
     return FALSE;
    }
-   lprintf( WIDE("Memory was already initialized as a heap?") );
+   ll_lprintf( WIDE("Memory was already initialized as a heap?") );
    return FALSE;
   }
   if( !FindSpace( pMem ) )
   {
-   //lprintf( WIDE("space for heap has not been tracked yet....") );
+   //ll_lprintf( WIDE("space for heap has not been tracked yet....") );
    // a heap must be in the valid space pool.
    // it may not have come from a file, and will not have
    // a file or memory handle.
@@ -32492,7 +32494,7 @@ GetFreeBlock( vol, TRUE );
   if( !g.bDisableDebug )
   {
  #ifdef VERBOSE_LOGGING
-   lprintf( WIDE("Initializing %p %d")
+   ll_lprintf( WIDE("Initializing %p %d")
      , pMem->pRoot[0].byData
      , pMem->pRoot[0].dwSize );
  #endif
@@ -32518,7 +32520,7 @@ GetFreeBlock( vol, TRUE );
   if( !pMem )
   {
    // did reference BASE_MEMORY...
-   lprintf( WIDE("Create view of file for memory access failed at ??????") );
+   ll_lprintf( WIDE("Create view of file for memory access failed at ??????") );
    CloseSpace( (POINTER)pMem );
    return NULL;
   }
@@ -32536,11 +32538,11 @@ GetFreeBlock( vol, TRUE );
  {
   PSPACE pspace = FindSpace( (POINTER)pHeap ), pnewspace;
   PMEM pExtend;
-  //lprintf( WIDE("Expanding by %d %d"), dwAmount );
+  //ll_lprintf( WIDE("Expanding by %d %d"), dwAmount );
   pExtend = DigSpace( NULL, NULL, &dwAmount );
   if( !pExtend )
   {
-   lprintf( WIDE("Failed to expand space by %") _PTRSZVALfs, dwAmount );
+   ll_lprintf( WIDE("Failed to expand space by %") _PTRSZVALfs, dwAmount );
    return FALSE;
   }
   pnewspace = FindSpace( pExtend );
@@ -32577,7 +32579,7 @@ GetFreeBlock( vol, TRUE );
    else
     return 0;
   }
-  //lprintf( WIDE("grabbing memory %p"), pMem );
+  //ll_lprintf( WIDE("grabbing memory %p"), pMem );
   {
    int log = g.bLogCritical;
    g.bLogCritical = 0;
@@ -32602,7 +32604,7 @@ GetFreeBlock( vol, TRUE );
  {
   if( !pMem )
    return;
-    //lprintf( WIDE("dropping memory %p"), pMem );
+    //ll_lprintf( WIDE("dropping memory %p"), pMem );
   {
        int log = g.bLogCritical;
    g.bLogCritical = 0;
@@ -32641,7 +32643,7 @@ GetFreeBlock( vol, TRUE );
  #ifndef NO_LOGGING
    if( g.bLogAllocate )
    {
-    _lprintf(DBG_RELAY)( WIDE( "alloc %p(%p) %" ) _PTRSZVALfs, pc, pc->byData, dwSize );
+    ll__lprintf(DBG_RELAY)( WIDE( "alloc %p(%p) %" ) _PTRSZVALfs, pc, pc->byData, dwSize );
    }
  #endif
    if( alignment && ( (uintptr_t)pc->byData & ~masks[alignment] ) ) {
@@ -32664,7 +32666,7 @@ GetFreeBlock( vol, TRUE );
    PMEM pMem, pCurMem = NULL;
    PSPACE pMemSpace;
    uint32_t dwPad = 0;
-   //_lprintf(DBG_RELAY)( WIDE( "..." ) );
+   //ll__lprintf(DBG_RELAY)( WIDE( "..." ) );
  #ifdef _DEBUG
    if( !g.bDisableAutoCheck )
     GetHeapMemStatsEx(pHeap, &dwFree,&dwAllocated,&dwBlocks,&dwFreeBlocks DBG_RELAY);
@@ -32699,7 +32701,7 @@ GetFreeBlock( vol, TRUE );
      dwPad += MAGIC_SIZE*2;
  // pFile, nLine per block...
      dwSize += MAGIC_SIZE*2;
-     //lprintf( WIDE("Adding 8 bytes to block size...") );
+     //ll_lprintf( WIDE("Adding 8 bytes to block size...") );
     }
    }
  #endif
@@ -32715,7 +32717,7 @@ GetFreeBlock( vol, TRUE );
      DropMem( pCurMem );
     // then mark that this block is our current block.
     pCurMem = (PMEM)pMemSpace->pMem;
-    //lprintf( WIDE("region %p is now owned."), pCurMem );
+    //ll_lprintf( WIDE("region %p is now owned."), pCurMem );
     for( pc = pCurMem->pFirstFree; pc; pc = pc->next )
     {
  // if free block size is big enough...
@@ -32779,7 +32781,7 @@ GetFreeBlock( vol, TRUE );
      if( ExpandSpace( pMem, dwSize + (CHUNK_SIZE*4) + MEM_SIZE + 8 * MAGIC_SIZE ) )
      {
  #ifndef NO_LOGGING
-      _lprintf(DBG_RELAY)( WIDE("Creating a new expanded space... %")_size_fs, dwSize + (CHUNK_SIZE*4) + MEM_SIZE + 8 * MAGIC_SIZE );
+      ll__lprintf(DBG_RELAY)( WIDE("Creating a new expanded space... %")_size_fs, dwSize + (CHUNK_SIZE*4) + MEM_SIZE + 8 * MAGIC_SIZE );
  #endif
       goto search_for_free_memory;
      }
@@ -32925,7 +32927,7 @@ GetFreeBlock( vol, TRUE );
     temp = *prior;
     if( temp->next == temp )
     {
-     lprintf( WIDE("OOps this block is way bad... how'd that happen? %s(%d)"), BLOCK_FILE( temp ), BLOCK_LINE( temp ) );
+     ll_lprintf( WIDE("OOps this block is way bad... how'd that happen? %s(%d)"), BLOCK_FILE( temp ), BLOCK_LINE( temp ) );
      DebugBreak();
     }
     next = temp->next;
@@ -32998,14 +33000,14 @@ GetFreeBlock( vol, TRUE );
      if( g.bLogAllocate )
      {
  #ifndef NO_LOGGING
-      _lprintf(DBG_RELAY)( WIDE( "Release %p(%p)" ), pc, pc->byData );
+      ll__lprintf(DBG_RELAY)( WIDE( "Release %p(%p)" ), pc, pc->byData );
  #endif
      }
  #ifdef ENABLE_NATIVE_MALLOC_PROTECTOR
      if( !MemChk( pc->LeadProtect, LEAD_PROTECT_TAG, sizeof( pc->LeadProtect ) ) ||
       !MemChk( pc->byData + pc->dwSize, LEAD_PROTECT_BLOCK_TAIL, sizeof( pc->LeadProtect ) ) )
      {
-      lprintf( WIDE( "overflow block (%p) %p" ), pData, pc );
+      ll_lprintf( WIDE( "overflow block (%p) %p" ), pData, pc );
       DebugBreak();
      }
  #endif
@@ -33017,7 +33019,7 @@ GetFreeBlock( vol, TRUE );
      if( g.bLogAllocate && g.bLogAllocateWithHold )
      {
  #ifndef NO_LOGGING
-      _lprintf(DBG_RELAY)( WIDE( "Release(holding) %p(%p)" ), pc, pc->byData );
+      ll__lprintf(DBG_RELAY)( WIDE( "Release(holding) %p(%p)" ), pc, pc->byData );
  #endif
      }
     }
@@ -33050,7 +33052,7 @@ GetFreeBlock( vol, TRUE );
     if( !pMem )
     {
  #ifndef NO_LOGGING
-     _lprintf( DBG_RELAY )( WIDE("ERROR: Chunk to free does not reference a heap!") );
+     ll__lprintf( DBG_RELAY )( WIDE("ERROR: Chunk to free does not reference a heap!") );
  #endif
      DebugDumpHeapMemEx( pc->pRoot, 1 );
      DebugBreak();
@@ -33069,10 +33071,10 @@ GetFreeBlock( vol, TRUE );
     {
  #ifndef NO_LOGGING
  #  ifdef _DEBUG
-     _lprintf( DBG_RELAY )( WIDE("This Block is NOT within the managed heap! : %p" ), pData );
+     ll__lprintf( DBG_RELAY )( WIDE("This Block is NOT within the managed heap! : %p" ), pData );
  #  endif
  #endif
-     lprintf( WIDE("this may not be an error.  This could be an old block from not using customallocer...") );
+     ll_lprintf( WIDE("this may not be an error.  This could be an old block from not using customallocer...") );
      DebugDumpHeapMemEx( pc->pRoot, 1 );
      DebugBreak();
      DropMem( pMem );
@@ -33108,7 +33110,7 @@ GetFreeBlock( vol, TRUE );
        // data in the block has alse been squished.
        //if( !(pCurMem->dwFlags & HEAP_FLAG_NO_DEBUG ) )
        //{
-       //lprintf( WIDE("%s(%d): Application overflowed memory:%p")
+       //ll_lprintf( WIDE("%s(%d): Application overflowed memory:%p")
        //  , BLOCK_FILE(pc)
        //  , BLOCK_LINE(pc)
        //  , pc->byData
@@ -33116,7 +33118,7 @@ GetFreeBlock( vol, TRUE );
        //}
        //else
        {
-        lprintf( WIDE("Application overflowed memory:%p"), pc->byData );
+        ll_lprintf( WIDE("Application overflowed memory:%p"), pc->byData );
        }
        DebugDumpHeapMemEx( pc->pRoot, 1 );
        DebugBreak();
@@ -33173,7 +33175,7 @@ GetFreeBlock( vol, TRUE );
  #ifdef _DEBUG
         //if( bLogAllocate )
         {
-         //lprintf( WIDE("Collapsing freed block with prior block...%p %p"), pc, pPrior );
+         //ll_lprintf( WIDE("Collapsing freed block with prior block...%p %p"), pc, pPrior );
         }
         if( !g.bDisableDebug )
         {
@@ -33224,7 +33226,7 @@ GetFreeBlock( vol, TRUE );
  #ifdef _DEBUG
         //if( bLogAllocate )
         {
-         //lprintf( WIDE("Collapsing freed block with next block...%p %p"), pc, next );
+         //ll_lprintf( WIDE("Collapsing freed block with next block...%p %p"), pc, next );
         }
         if( !g.bDisableDebug )
         {
@@ -33277,7 +33279,7 @@ GetFreeBlock( vol, TRUE );
    if( !USE_CUSTOM_ALLOCER )
    {
     PMALLOC_CHUNK pc = (PMALLOC_CHUNK)((char*)pData - MALLOC_CHUNK_SIZE(pData));
-    //_lprintf( DBG_RELAY )( "holding block %p", pc );
+    //ll__lprintf( DBG_RELAY )( "holding block %p", pc );
  #ifndef NO_LOGGING
     if( g.bLogAllocate && g.bLogAllocateWithHold )
      _xlprintf( 2 DBG_RELAY)( WIDE("Hold  : %p - %") _PTRSZVALfs WIDE(" bytes"),pc, pc->dwSize );
@@ -33296,7 +33298,7 @@ GetFreeBlock( vol, TRUE );
  #endif
     if( !pc->dwOwners )
     {
-     lprintf( WIDE("Held block has already been released!  too late to hold it!") );
+     ll_lprintf( WIDE("Held block has already been released!  too late to hold it!") );
      DebugBreak();
      DropMem( pMem );
      return pData;
@@ -33328,7 +33330,7 @@ GetFreeBlock( vol, TRUE );
    PSPACE pMemSpace;
    PMEM pMem = GrabMem( pHeap ), pCurMem;
    pc = pMem->pRoot;
-   lprintf(WIDE(" ------ Memory Dump ------- ") );
+   ll_lprintf(WIDE(" ------ Memory Dump ------- ") );
    {
     xlprintf(LOG_ALWAYS)( WIDE("FirstFree : %p"),
            pMem->pFirstFree );
@@ -33383,7 +33385,7 @@ GetFreeBlock( vol, TRUE );
      pc = (PCHUNK)(pc->byData + pc->dwSize );
      if( pc == _pc )
      {
-      lprintf( WIDE("Next block is the current block...") );
+      ll_lprintf( WIDE("Next block is the current block...") );
  // broken memory chain
       DebugBreak();
       break;
@@ -33641,7 +33643,7 @@ GetFreeBlock( vol, TRUE );
      {
       if( pc->dwSize > pMemCheck->dwSize )
       {
-       lprintf( WIDE("Memory block %p has a corrupt size."), pc->byData );
+       ll_lprintf( WIDE("Memory block %p has a corrupt size."), pc->byData );
        DebugBreak();
       }
       else
@@ -33649,7 +33651,7 @@ GetFreeBlock( vol, TRUE );
        if( BLOCK_TAG(pc) != BLOCK_TAG_ID )
        {
  #ifndef NO_LOGGING
-        lprintf( WIDE("memory block: %p %08x insted of %08x"), pc->byData, BLOCK_TAG(pc), BLOCK_TAG_ID );
+        ll_lprintf( WIDE("memory block: %p %08x insted of %08x"), pc->byData, BLOCK_TAG(pc), BLOCK_TAG_ID );
         if( !(pMemCheck->dwFlags & HEAP_FLAG_NO_DEBUG ) )
         {
          CTEXTSTR file = BLOCK_FILE(pc);
@@ -33683,7 +33685,7 @@ GetFreeBlock( vol, TRUE );
      }
      if( pc->pPrior != _pc )
      {
-      lprintf( WIDE("Block's prior is not the last block we checked! prior %p sz: %") _PTRSZVALfs WIDE(" current: %p currentprior: %p")
+      ll_lprintf( WIDE("Block's prior is not the last block we checked! prior %p sz: %") _PTRSZVALfs WIDE(" current: %p currentprior: %p")
        , _pc
        , _pc->dwSize
        , pc
@@ -33701,7 +33703,7 @@ GetFreeBlock( vol, TRUE );
     if( pc->dwOwners )
   // owned block is in free memory chain ! ?
     {
-     lprintf( WIDE("Owned block %p is in free memory chain!"), pc );
+     ll_lprintf( WIDE("Owned block %p is in free memory chain!"), pc );
      DebugBreak();
      break;
     }
@@ -33798,19 +33800,19 @@ GetFreeBlock( vol, TRUE );
   switch( allocType )
   {
   case _HOOK_ALLOC:
-   lprintf( WIDE( "CRT Alloc: %d bytes %s(%d)" )
+   ll_lprintf( WIDE( "CRT Alloc: %d bytes %s(%d)" )
     , size
     , filename, lineNumber
     );
    break;
   case _HOOK_REALLOC:
-   lprintf( WIDE( "CRT Realloc: %d bytes %s(%d)" )
+   ll_lprintf( WIDE( "CRT Realloc: %d bytes %s(%d)" )
     , size
     , filename, lineNumber
     );
    break;
   case _HOOK_FREE:
-   lprintf( WIDE( "CRT Free: %p[%"_PTRSZVALfs"](%d) %s(%d)" )
+   ll_lprintf( WIDE( "CRT Free: %p[%"_PTRSZVALfs"](%d) %s(%d)" )
     , userData
     , (uintptr_t)userData
     , size
@@ -72192,17 +72194,6 @@ GetFreeBlock( vol, TRUE );
   return pCollect;
  }
  //----------------------------------------------------------------------
- #define BYTEOP_ENCODE(n)  (char)((((uint16_t)(n))+20) & 0xFF)
- #define BYTEOP_DECODE(n)  (char)((((uint16_t)(n))-20) & 0xFF)
- PTEXT CPROC TranslateINICrypt( PTEXT buffer )
- {
-  size_t n;
-  TEXTSTR out = GetText( buffer );
-  size_t len = GetTextSize( buffer );
-  for( n = 0; n < len; n++ )
-   out[n] = BYTEOP_DECODE( out[n] );
-  return buffer;
- }
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  static uintptr_t CPROC SetPrimaryDSN( uintptr_t psv, arg_list args )
  {
@@ -72447,7 +72438,7 @@ GetFreeBlock( vol, TRUE );
     AddConfigurationMethod( pch, WIDE("Require Primary Connection=%b"), SetRequirePrimaryConnection );
     AddConfigurationMethod( pch, WIDE("Require Backup Connection=%b"), SetRequireBackupConnection );
     // If source is encrypted enable tranlation
-    //AddConfigurationFilter( pch, TranslateINICrypt );
+    //AddConfigurationFilter( pch, TranslateCrypt );
     {
      TEXTCHAR tmp[256];
      tnprintf( tmp, 256, WIDE("%s.sql.config"), GetProgramName() );
@@ -74273,6 +74264,7 @@ GetFreeBlock( vol, TRUE );
    uintptr_t byTmpResultLen = 0;
    // SQLPrepare
    // includes the table to list... therefore list the fields in the table.
+   //lprintf( "am I logging: %d %d %d", (!odbc->flags.bNoLogging) , (!g.flags.bNoLog) , g.flags.bLogData )
    if( (!odbc->flags.bNoLogging) && (!g.flags.bNoLog) && g.flags.bLogData )
     pvtData = VarTextCreate();
    else
@@ -74685,6 +74677,9 @@ GetFreeBlock( vol, TRUE );
    }
    if( pvtData )
    {
+    PTEXT data = VarTextGet( pvtData );
+    lprintf( "%s", GetText( data ) );
+          LineRelease( data );
     //lprintf( WIDE( "%s" ), GetText( VarTextPeek( pvtData ) ) );
     VarTextDestroy( &pvtData );
    }
@@ -79831,7 +79826,8 @@ GetFreeBlock( vol, TRUE );
  size_t GetOptionStringValueEx( PODBC odbc, POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len DBG_PASS )
  {
   POPTION_TREE tree = GetOptionTreeExxx( odbc, NULL DBG_RELAY );
-  return New4GetOptionStringValue( odbc, optval, buffer, len DBG_RELAY );
+  size_t res = New4GetOptionStringValue( odbc, optval, buffer, len DBG_RELAY );
+  return res;
  }
  size_t GetOptionStringValue( POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len )
  {
@@ -80139,9 +80135,12 @@ GetFreeBlock( vol, TRUE );
    else
    {
     TEXTCHAR *buf;
+    TEXTCHAR **ppBuf = &buf;
     size_t buflen;
-    size_t x = GetOptionStringValueEx( odbc, opt_node, &buf, &buflen DBG_RELAY );
-    MemCpy( pBuffer, buf, x = min(buflen,(nBuffer-1) ) );
+    (*ppBuf) = (TEXTCHAR*)0x12345;
+    size_t x = GetOptionStringValueEx( odbc, opt_node, ppBuf, &buflen DBG_RELAY );
+    if( buf )
+     MemCpy( pBuffer, buf, x = min(buflen+1,(nBuffer) ) );
     if( (x == (size_t)-1) && pDefaultbuf && pDefaultbuf[0] )
     {
      if( global_sqlstub_data->flags.bLogOptionConnection )
@@ -80975,6 +80974,7 @@ GetFreeBlock( vol, TRUE );
    StrCpyEx( buf->buffer, optval->value, result_len+1 );
    buf->buffer[result_len-1] = 0;
    (*buffer) = buf->buffer;
+   (*len) = result_len-1;
    return result_len-1;
   }
  #if 0
@@ -81014,24 +81014,25 @@ GetFreeBlock( vol, TRUE );
   if( pvtResult )
   {
    PTEXT pResult = VarTextGet( pvtResult );
-   result_len = GetTextSize( pResult );
+   result_len = GetTextSize( pResult ) + 1;
    if( result_len > buf->buflen )  expandResultBuffer( buf, result_len * 2 );
    (*buffer) = buf->buffer;
+   (*len) = result_len-1;
    StrCpyEx( (*buffer), GetText( pResult ), result_len );
-   (*buffer)[result_len] = 0;
+   (*buffer)[result_len-1] = 0;
    optval->value = StrDup( GetText( pResult ) );
    LineRelease( pResult );
    VarTextDestroy( &pvtResult );
   }
   PopODBCEx( odbc );
-  return result_len;
+  return result_len-1;
  }
  int New4GetOptionBlobValueOdbc( PODBC odbc, POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len )
  {
   CTEXTSTR *result = NULL;
   size_t tmplen;
   if( !len )
-       len = &tmplen;
+   len = &tmplen;
   PushSQLQueryEx( odbc );
  #ifdef DETAILED_LOGGING
   lprintf( WIDE("do query for value string...") );
