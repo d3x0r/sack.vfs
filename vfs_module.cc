@@ -236,13 +236,13 @@ void logBinary( char *x, int n )
 		else {
 			// Invoked as plain function `MyObject(...)`, turn into construct call.
 			int argc = args.Length();
-		   Local<Value> *argv = new Local<Value>[argc];
+			Local<Value> *argv = new Local<Value>[argc];
 			for( int n = 0; n < argc; n++ )
-            argv[n] = args[n];
+				argv[n] = args[n];
 
 			Local<Function> cons = Local<Function>::New( isolate, constructor );
 			args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
-         delete argv;
+			delete argv;
 		}
 	}
 
@@ -704,7 +704,7 @@ void SqlObject::getOptionNode( const FunctionCallbackInfo<Value>& args ) {
 
 	OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o );
 	oto->db = sqlParent;
-	lprintf( "SO Get %p ", sqlParent->odbc );
+	//lprintf( "SO Get %p ", sqlParent->odbc );
 	oto->node =  GetOptionIndexExx( sqlParent->odbc, NULL, optionPath, NULL, NULL, NULL, TRUE, TRUE DBG_SRC );
 }
 
@@ -729,7 +729,7 @@ void OptionTreeObject::getOptionNode( const FunctionCallbackInfo<Value>& args ) 
 
 	OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o );
 	oto->db = parent->db;
-	lprintf( "OTO Get %p  %p", parent->db->odbc, parent->node );
+	//lprintf( "OTO Get %p  %p", parent->db->odbc, parent->node );
 	oto->node =  GetOptionIndexExx( parent->db->odbc, parent->node, optionPath, NULL, NULL, NULL, TRUE, TRUE DBG_SRC );
 	Release( optionPath );
 }
@@ -814,8 +814,8 @@ int CPROC invokeCallback( uintptr_t psv, CTEXTSTR name, POPTION_TREE_NODE ID, in
 	argv[0] = o;
 	argv[1] = String::NewFromUtf8( args->isolate, name );
 
-	/*Local<Value> r = */args->cb->Call(Null(args->isolate), 1, argv );
-	return 0;
+	/*Local<Value> r = */args->cb->Call(Null(args->isolate), 2, argv );
+	return 1;
 }
 
 
@@ -837,7 +837,7 @@ void SqlObject::enumOptionNodes( const FunctionCallbackInfo<Value>& args ) {
 	}
 
 	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
-	Persistent<Function> cb( isolate, arg0 );
+	Local<Function> cb( arg0 );
 
 	callbackArgs.db = sqlParent;
 	callbackArgs.cb = Local<Function>::New( isolate, cb );
@@ -859,7 +859,7 @@ void OptionTreeObject::enumOptionNodes( const FunctionCallbackInfo<Value>& args 
 	Isolate* isolate = args.GetIsolate();
 	OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( args.This() );
 	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
-	Persistent<Function> cb( isolate, arg0 );
+	Local<Function> cb( arg0 );
 
 	callbackArgs.db = oto->db;
 	callbackArgs.cb = Local<Function>::New( isolate, cb );
@@ -1051,9 +1051,15 @@ Persistent<Function, CopyablePersistentTraits<Function>> ThreadObject::idleProc;
 
 void ThreadObject::New( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
-	Persistent<Function> cb( isolate, arg0 );
-	idleProc = cb;
+	if( args.Length() ) {
+		if( idleProc.IsEmpty() ) {
+			Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+			Persistent<Function> cb( isolate, arg0 );
+			idleProc = cb;
+		}
+	}
+	else
+		idleProc.Reset();
 }
 //-----------------------------------------------------------
 
@@ -1105,6 +1111,7 @@ ThreadObject::ThreadObject( )
 }
 
 ThreadObject::~ThreadObject() {
+	lprintf( "no thread object..." );
 }
 
 //-----------------------------------------------------------

@@ -72989,13 +72989,7 @@ GetFreeBlock( vol, TRUE );
    // if there is NOT a last command tick, then we add the timer
    if( !odbc->last_command_tick )
    {
-    if( !(g.flags.bNoLog) )
-    {
-     if( !odbc->flags.bNoLogging )
-      lprintf(WIDE( "so add a comit thread..." ) );
-    }
     odbc->last_command_tick = newtick;
-    //odbc->commit_timer = AddTimer( 100, CommitTimer, (uintptr_t)odbc );
     if( !odbc->auto_commit_thread )
     {
      odbc->auto_commit_thread = ThreadTo( CommitThread, (uintptr_t)odbc );
