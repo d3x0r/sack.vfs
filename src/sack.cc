@@ -85,8 +85,10 @@
                  // All Service Controller routines, SERVICE_ equates, etc.
  #  define NOSERVICE
  //#define NOSOUND                   // Sound driver routines
+ #  ifndef _INCLUDE_TEXTMETRIC
               // typedef TEXTMETRIC and associated routines
- #  define NOTEXTMETRIC
+ #    define NOTEXTMETRIC
+ #  endif
  // #define NOWH                      // SetWindowsHook and WH_*
  // #define NOWINOFFSETS              // GWL_*, GCL_*, associated routines
  // #define NOCOMM                    // COMM driver routines
@@ -10182,6 +10184,7 @@
   struct directory_entry zero_entkey;
   uint8_t zerokey[BLOCK_SIZE];
  } l;
+ #define EOFBLOCK  (~(BLOCKINDEX)0)
  static BLOCKINDEX GetFreeBlock( struct volume *vol, LOGICAL init );
  static char mytolower( int c ) { if( c == '\\' ) return '/'; return tolower( c ); }
  // read the byte from namespace at offset; decrypt byte in-register
@@ -10231,7 +10234,7 @@
     for( m = 0; m < BLOCKS_PER_BAT; m++ )
     {
      BLOCKINDEX block = BAT[m] ^ ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[m];
-     if( block == ~0 ) continue;
+     if( block == EOFBLOCK ) continue;
      if( block >= last_block ) return FALSE;
     }
     //vol->key_lock[BLOCK_CACHE_BAT] = 0;
@@ -10242,7 +10245,7 @@
     BLOCKINDEX *BAT = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE);
     for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
      BLOCKINDEX block = BAT[m];
-     if( block == ~0 ) continue;
+     if( block == EOFBLOCK ) continue;
      if( block >= last_block ) return FALSE;
     }
    }
@@ -10295,8 +10298,8 @@
   if( !oldsize ) {
    // can't recover dirents and nameents dynamically; so just assume
    // use the GetFreeBlock because it will update encypted
-   //vol->disk->BAT[0] = ~0;  // allocate 1 directory entry block
-   //vol->disk->BAT[1] = ~0;  // allocate 1 name block
+   //vol->disk->BAT[0] = EOFBLOCK;  // allocate 1 directory entry block
+   //vol->disk->BAT[1] = EOFBLOCK;  // allocate 1 name block
    /* vol->dirents = */
 GetFreeBlock( vol, TRUE );
    /* vol->nameents = */
@@ -10345,7 +10348,7 @@ GetFreeBlock( vol, TRUE );
      // adn thsi result will overwrite previous EOF.
      if( vol->key )
      {
-      current_BAT[n] = ~0 ^ ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_FILE])[n];
+      current_BAT[n] = EOFBLOCK ^ ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_FILE])[n];
       if( init )
       {
        vol->segment[BLOCK_CACHE_FILE] = b * (BLOCKS_PER_SECTOR) + n + 1 + 1;
@@ -10355,7 +10358,7 @@ GetFreeBlock( vol, TRUE );
        memcpy( ((uint8_t*)vol->disk) + (vol->segment[BLOCK_CACHE_FILE]-1) * BLOCK_SIZE, vol->usekey[BLOCK_CACHE_FILE], BLOCK_SIZE );
       }
      } else {
-      current_BAT[n] = ~0;
+      current_BAT[n] = EOFBLOCK;
      }
      return b * BLOCKS_PER_BAT + n;
     }
@@ -10378,7 +10381,7 @@ GetFreeBlock( vol, TRUE );
    }
    check_val ^= ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_FILE])[block & (BLOCKS_PER_BAT-1)];
   }
-  if( check_val == ~0 ) {
+  if( check_val == EOFBLOCK ) {
    if( expand ) {
     BLOCKINDEX key = vol->key?((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_FILE])[block & (BLOCKS_PER_BAT-1)]:0;
     check_val = GetFreeBlock( vol, init );
@@ -10579,7 +10582,7 @@ GetFreeBlock( vol, TRUE );
        DebugBreak();
       this_dir_block = next_dir_block;
      }
-     while( next_dir_block != ~0 );
+     while( next_dir_block != EOFBLOCK );
     }
    }
    if( !vol->entropy )
@@ -10888,7 +10891,7 @@ GetFreeBlock( vol, TRUE );
     block = vfs_GetNextBlock( vol, block, FALSE, FALSE );
     this_BAT[_block & (BLOCKS_PER_BAT-1)] = _thiskey;
     _block = block;
-   } while( block != ~0 );
+   } while( block != EOFBLOCK );
   }
  }
  size_t CPROC sack_vfs_truncate( struct sack_vfs_file *file ) { file->entry->filesize = file->fpi ^ file->dirent_key.filesize; return file->fpi; }
@@ -10973,7 +10976,7 @@ GetFreeBlock( vol, TRUE );
    info->thisent = 0;
    info->this_dir_block = vfs_GetNextBlock( info->vol, info->this_dir_block, FALSE, FALSE );
   }
-  while( info->this_dir_block != ~0 );
+  while( info->this_dir_block != EOFBLOCK );
   return 0;
  }
  int CPROC sack_vfs_find_first( struct find_info *info ) {
@@ -34963,7 +34966,7 @@ GetFreeBlock( vol, TRUE );
   return result;
  #else
  #undef OpenFile
-  return (HANDLE)OpenFile(filename,of,flags);
+  return (HANDLE)(uintptr_t)OpenFile(filename,of,flags);
  #endif
  }
  #endif
@@ -79231,9 +79234,6 @@ GetFreeBlock( vol, TRUE );
  //typedef struct sack_option_tree_family *POPTION_TREE;
  typedef struct sack_option_tree_family_node OPTION_TREE_NODE;
  struct sack_option_tree_family_node {
-  //INDEX id;
-  //INDEX name_id;
-  //INDEX value_id;
   CTEXTSTR name;
   CTEXTSTR guid;
   CTEXTSTR name_guid;
@@ -79267,7 +79267,6 @@ GetFreeBlock( vol, TRUE );
  struct option_odbc_tracker
  {
   CTEXTSTR name;
-  int version;
   PLINKQUEUE available;
   PLIST outstanding;
   PFAMILYTREE shared_option_tree;
@@ -79555,12 +79554,14 @@ GetFreeBlock( vol, TRUE );
     {
      // this needs a self-looped root to satisfy constraints.
      CTEXTSTR result;
-     if( !SQLQueryf( tree->odbc, &result, WIDE("select parent_option_id from option4_map where option_id='00000000-0000-0000-0000-000000000000'") )
+     if( !SQLQueryf( tree->odbc, &result, WIDE("select parent_option_id from option4_map where option_id='%s'"), GuidZero() )
       || !result )
      {
       OpenWriter( tree );
-      SQLCommandf( tree->odbc_writer, WIDE("insert into option4_map (option_id,parent_option_id,name_id)values('00000000-0000-0000-0000-000000000000','00000000-0000-0000-0000-000000000000','%s' )")
-          , New4ReadOptionNameTable(tree,WIDE("."),OPTION4_NAME,WIDE( "name_id" ),WIDE( "name" ),1 DBG_SRC)
+      SQLCommandf( tree->odbc_writer
+                 , WIDE("insert into option4_map (option_id,parent_option_id,name_id)values('%s','%s','%s' )")
+                 , GuidZero(), GuidZero()
+                 , New4ReadOptionNameTable(tree,WIDE("."),OPTION4_NAME,WIDE( "name_id" ),WIDE( "name" ),1 DBG_SRC)
           );
      }
      SQLEndQuery( tree->odbc );
@@ -80080,11 +80081,16 @@ GetFreeBlock( vol, TRUE );
   {
    // first try, do it as false, so we can fill in default values.
    POPTION_TREE_NODE opt_node;
+   char *buffer;
+   size_t buflen;
    // maybe do an if( l.flags.bLogOptionsRead )
    if( global_sqlstub_data->flags.bLogOptionConnection )
     _lprintf(DBG_RELAY)( WIDE( "Getting option {%s}[%s]%s=%s" ), pINIFile, pSection, pOptname, pDefaultbuf );
    opt_node = GetOptionIndexExx( odbc, OPTION_ROOT_VALUE, NULL, pINIFile, pSection, pOptname, TRUE, FALSE DBG_RELAY );
-   if( !opt_node )
+   // used to have a test - get option value index; but option index == node_id
+   // so it just returned the same node; but not quite, huh?
+   GetOptionStringValue( opt_node, &buffer, &buflen );
+   if( !buffer )
    {
     int x;
     // this actually implies to delete the entry... but since it doesn't exist no worries...
@@ -80103,48 +80109,37 @@ GetFreeBlock( vol, TRUE );
     //}
     //else
     {
-     if( pDefaultbuf )
+     if( pDefaultbuf ){
       StrCpyEx( pBuffer, pDefaultbuf, nBuffer/sizeof( TEXTCHAR ) );
-     else
+      buflen = StrLen( pBuffer );
+     } else {
       pBuffer[0] = 0;
+      buflen = 0;
+     }
     }
     // create the option branch since it doesn't exist...
     {
-     if( SetOptionStringValue( GetOptionTreeExxx( odbc, NULL DBG_SRC ), opt_node, pBuffer ) )
-      x = (int)StrLen( pBuffer );
-     else
-      x = 0;
+     SetOptionStringValue( GetOptionTreeExxx( odbc, NULL DBG_SRC ), opt_node, pBuffer );
      if( global_sqlstub_data->flags.bLogOptionConnection )
-      lprintf( WIDE("Result [%s]"), pBuffer );
+      lprintf( WIDE("default Result [%s]"), pBuffer );
      if( drop_odbc )
       DropOptionODBC( odbc );
      LeaveCriticalSec( &og.cs_option );
-     return x;
+     return buflen;
     }
     //strcpy( pBuffer, pDefaultbuf );
    }
    else
    {
-    TEXTCHAR *buf;
-    TEXTCHAR **ppBuf = &buf;
-    size_t buflen;
-    (*ppBuf) = (TEXTCHAR*)0x12345;
-    size_t x = GetOptionStringValueEx( odbc, opt_node, ppBuf, &buflen DBG_RELAY );
-    if( buf )
-     MemCpy( pBuffer, buf, x = min(buflen+1,(nBuffer) ) );
-    if( (x == (size_t)-1) && pDefaultbuf && pDefaultbuf[0] )
-    {
-     if( global_sqlstub_data->flags.bLogOptionConnection )
-      lprintf( WIDE( "No value result, get or set default..." ) );
-     // if there's no default, doesn't matter if it's set or not.
-     goto do_defaulting;
-    }
+    MemCpy( pBuffer, buffer, buflen = min(buflen+1,(nBuffer) ) );
+    buflen--;
+    pBuffer[buflen] = 0;
     if( global_sqlstub_data->flags.bLogOptionConnection )
      lprintf( WIDE( "buffer result is [%s]" ), pBuffer );
     if( drop_odbc )
      DropOptionODBC( odbc );
     LeaveCriticalSec( &og.cs_option );
-    return x;
+    return buflen;
    }
   }
  }
@@ -80831,7 +80826,7 @@ GetFreeBlock( vol, TRUE );
      PushSQLQueryExEx(tree->odbc DBG_RELAY );
      tnprintf( query, sizeof( query )
          , WIDE( "select option_id from " )OPTION4_MAP WIDE( " where parent_option_id='%s' and name_id='%s'" )
-         , parent?parent->guid:"00000000-0000-0000-0000-000000000000"
+         , parent?parent->guid:GuidZero()
          , IDName );
     }
     //lprintf( WIDE( "doing %s" ), query );
@@ -81098,9 +81093,8 @@ GetFreeBlock( vol, TRUE );
  int ResolveOptionName( POPTION_TREE options, CTEXTSTR parent_id, CTEXTSTR option_id, CTEXTSTR name_id, CTEXTSTR option_name, TEXTSTR output_buffer, size_t output_buffer_size )
  {
   CTEXTSTR *results;
-  if( StrCaseCmp( parent_id, WIDE("00000000-0000-0000-0000-000000000000") ) == 0 )
+  if( StrCaseCmp( parent_id, GuidZero() ) == 0 )
   {
-   output_buffer[0] = 0;
    return tnprintf( output_buffer, output_buffer_size, WIDE("%s"), option_name );
   }
   PushSQLQueryEx( options->odbc );

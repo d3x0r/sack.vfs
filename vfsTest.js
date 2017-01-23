@@ -3,21 +3,22 @@ function test () {
 //console.log( 'require', "./build/Release/vfs_module.js" )
 var vfs = require( "./vfs_module.js" )
 //var vfs = require( "./build/Release/vfs_module.node" )
-
-console.log( "result", vfs )
-vfs.Δ();
-
 console.log( "keys: ", Object.keys( vfs ) );
-console.log( "vfs obj: ", vfs );
 
 var vol = null;
-vol = vfs.Volume( "mount-name", "./data.vfs" );//, "some key text", "Some other Key" )
-file = vol.File( "default file" );
-//file.on( "close", ()=>{console.log( "closed." );} );
-file2 = vol.File( "Another file" );
-//file.on( "close", ()=>{console.log( "closed." );} );
+try {
+    vol = vfs.Volume( "mount-name", "./data.vfs", "a", "b" );//, "some key text", "Some other Key" )
+} catch( err ) { console.log( err ) } ;
+if( vol ) {
+    console.log( "read file1" );
+    file = vol.File( "default file" );
+    //file.on( "close", ()=>{console.log( "closed." );} );
+    console.log( "read file2" );
+    file2 = vol.File( "Another file" );
+    //file.on( "close", ()=>{console.log( "closed." );} );
 
-console.log( "directory:", vol.dir() );
+    console.log( "directory:", vol.dir() );
+
 //console.log( "vol prototype", Object.getPrototypeOf( vol ) );
 
 // this shows the methods of the original file.
@@ -37,6 +38,9 @@ console.log( test );
 var val = test[0].b;
 var test = db.do( `select decrypt( '${val}' )d` );
 console.log( test );
+
+}
+
 
 db = null;
 vol = null;

@@ -162,8 +162,11 @@ void VolumeObject::Init( Handle<Object> exports ) {
 
 VolumeObject::VolumeObject( const char *mount, const char *filename, const char *key, const char *key2 )  {
 	vol = sack_vfs_load_crypt_volume( filename, key, key2 );
-	sack_mount_filesystem( mount, sack_get_filesystem_interface( SACK_VFS_FILESYSTEM_NAME )
-			, 2000, (uintptr_t)vol, TRUE );
+	if( !vol )
+		;// lprintf( "Failed to open volume: %s %s %s", filename, key, key2 );
+	else
+		sack_mount_filesystem( mount, sack_get_filesystem_interface( SACK_VFS_FILESYSTEM_NAME )
+				, 2000, (uintptr_t)vol, TRUE );
 }
 
 
@@ -185,6 +188,8 @@ void logBinary( char *x, int n )
 	void VolumeObject::getDirectory( const FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		if( !vol->vol )
+			return;
 		struct find_info *fi = sack_vfs_find_create_cursor( (uintptr_t)vol->vol, NULL, NULL );
 		Local<Array> result = Array::New( isolate );
 		int found;
@@ -224,8 +229,14 @@ void logBinary( char *x, int n )
 			}
 			// Invoked as constructor: `new MyObject(...)`
 			VolumeObject* obj = new VolumeObject( mount_name, filename, key, key2 );
-			obj->Wrap( args.This() );
-			args.GetReturnValue().Set( args.This() );
+			if( !obj->vol ) {
+				isolate->ThrowException( Exception::Error(
+					String::NewFromUtf8( isolate, "Volume failed to open." ) ) );
+			}
+			else {
+				obj->Wrap( args.This() );
+				args.GetReturnValue().Set( args.This() );
+			}
 
 			Deallocate( char*, mount_name );
 			if( !defaultFilename )
@@ -390,6 +401,8 @@ void FileObject::seekFile(const FunctionCallbackInfo<Value>& args) {
 		volume( isolate, o )
 	{
 		buf = NULL;
+		if( !vol->vol )
+			return;
 		file = sack_vfs_openfile( vol->vol, filename );
 	}
 
@@ -583,7 +596,7 @@ void SqlObject::query( const FunctionCallbackInfo<Value>& args ) {
 										  );
 						else if( type == 1 )
 							record->Set( String::NewFromUtf8( isolate, sql->fields[n] )
-										  , Number::New( isolate, i )
+										  , Number::New( isolate, (double)i )
 										  );
 						else
 							record->Set( String::NewFromUtf8( isolate, sql->fields[n] )
@@ -639,18 +652,14 @@ void OptionTreeObject::New(const FunctionCallbackInfo<Value>& args) {
 
 		//double value = args[0]->IsUndefined() ? 0 : args[0]->NumberValue();
 		OptionTreeObject* obj = new OptionTreeObject();
-
+		//lprintf( "Wrap a new OTO %p in %p", obj, args.This()->ToObject() );
 		obj->Wrap(args.This());
 		args.GetReturnValue().Set(args.This());
 	} else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-
-		const int argc = 1;
-		Local<Value> argv[argc] = { args[0] };
 		Local<Function> cons = Local<Function>::New(isolate, constructor);
-		Local<Context> context = isolate->GetCurrentContext();
-		Local<Object> instance =
-			cons->NewInstance(context, argc, argv).ToLocalChecked();
+		Local<Object> instance = cons->NewInstance( 0, NULL );
+		//cons->NewInstance(context, argc, argv).ToLocalChecked();
 		args.GetReturnValue().Set(instance);
 	}
 }
@@ -669,7 +678,9 @@ void OptionTreeObject::Init(  ) {
 	NODE_SET_PROTOTYPE_METHOD( optionTemplate, "eo", enumOptionNodes );
 	NODE_SET_PROTOTYPE_METHOD( optionTemplate, "fo", findOptionNode );
 	NODE_SET_PROTOTYPE_METHOD( optionTemplate, "go", getOptionNode );
-	optionTemplate->SetNativeDataProperty( String::NewFromUtf8( isolate, "value" )
+	Local<Template> proto = optionTemplate->InstanceTemplate();
+
+	proto->SetNativeDataProperty( String::NewFromUtf8( isolate, "value" )
 			, readOptionNode
 			, writeOptionNode );
 
@@ -692,7 +703,7 @@ void SqlObject::getOptionNode( const FunctionCallbackInfo<Value>& args ) {
 	SqlObject *sqlParent = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	if( !sqlParent->optionInitialized ) {
 		SetOptionDatabaseOption( sqlParent->odbc );
-      sqlParent->optionInitialized = TRUE;
+		sqlParent->optionInitialized = TRUE;
 	}
 
 	String::Utf8Value tmp( args[0] );
@@ -718,19 +729,21 @@ void OptionTreeObject::getOptionNode( const FunctionCallbackInfo<Value>& args ) 
 		return;
 	}
 
-	OptionTreeObject *parent = ObjectWrap::Unwrap<OptionTreeObject>( args.This() );
+	OptionTreeObject *parent = ObjectWrap::Unwrap<OptionTreeObject>( args.Holder() );
 
 	String::Utf8Value tmp( args[0] );
 	char *optionPath = StrDup( *tmp );
 
 	Local<Function> cons = Local<Function>::New( isolate, constructor );
 	Local<Object> o;
+	//lprintf( "objecttreeobject constructor..." );
 	args.GetReturnValue().Set( o = cons->NewInstance( 0, NULL ) );
 
 	OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o );
 	oto->db = parent->db;
 	//lprintf( "OTO Get %p  %p", parent->db->odbc, parent->node );
 	oto->node =  GetOptionIndexExx( parent->db->odbc, parent->node, optionPath, NULL, NULL, NULL, TRUE, TRUE DBG_SRC );
+	//lprintf( "result node: %s %p %p", optionPath, oto->node, o );
 	Release( optionPath );
 }
 
@@ -747,7 +760,7 @@ void SqlObject::findOptionNode( const FunctionCallbackInfo<Value>& args ) {
 	SqlObject *sqlParent = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	if( !sqlParent->optionInitialized ) {
 		SetOptionDatabaseOption( sqlParent->odbc );
-      sqlParent->optionInitialized = TRUE;
+		sqlParent->optionInitialized = TRUE;
 	}
 	POPTION_TREE_NODE newNode = GetOptionIndexExx( sqlParent->odbc, NULL, optionPath, NULL, NULL, NULL, FALSE, TRUE DBG_SRC );
 
@@ -833,7 +846,7 @@ void SqlObject::enumOptionNodes( const FunctionCallbackInfo<Value>& args ) {
 
 	if( !sqlParent->optionInitialized ) {
 		SetOptionDatabaseOption( sqlParent->odbc );
-      sqlParent->optionInitialized = TRUE;
+		sqlParent->optionInitialized = TRUE;
 	}
 
 	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
@@ -870,11 +883,12 @@ void OptionTreeObject::enumOptionNodes( const FunctionCallbackInfo<Value>& args 
 
 void OptionTreeObject::readOptionNode( v8::Local<v8::String> field,
                               const PropertyCallbackInfo<v8::Value>& info ) {
-	
-	OptionTreeObject* oto = node::ObjectWrap::Unwrap<OptionTreeObject>( info.Holder() );
+	OptionTreeObject* oto = node::ObjectWrap::Unwrap<OptionTreeObject>( info.This() );
 	char *buffer;
 	size_t buflen;
-	GetOptionStringValueEx( oto->db->odbc, oto->node, &buffer, &buflen DBG_SRC );
+	size_t res = GetOptionStringValueEx( oto->db->odbc, oto->node, &buffer, &buflen DBG_SRC );
+	if( !buffer || res < 0 )
+		return;
 	info.GetReturnValue().Set( String::NewFromUtf8( info.GetIsolate(), buffer ) );
 }
 

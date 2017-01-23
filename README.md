@@ -43,11 +43,21 @@ Sqlite = {
              Additional columns will be added, old columns are untouched, even if the type specified changes.
              Addtional indexes and constraints can be added...
              
-             
+    fo - find an option node under this one (returns null if node doesn't exist)   fo( "name" )
+    go - get an option node      go( "name" )
+    eo - enum option nodes from root of options  eo( callback ) ... eo( (node,name)=>{console.log( "got", name, node.value );} )
+     
     var results = sqlite.do(sql);  // do a sql command, if command doesn't generate data result will be true instead of an array
     
 }
-```
+
+
+OptionNode = {
+    fo - find an option node under this one (returns null if node doesn't exist)   fo( "name" )
+    go - get an option node      go( "name" )
+    eo - enum option nodes from root of options  eo( callback ) ... eo( (node,name)=>{console.log( "got", name, node.value );} )
+    value - set/get current value
+}```
 
 ---
 

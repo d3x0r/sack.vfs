@@ -77,8 +77,10 @@
                  // All Service Controller routines, SERVICE_ equates, etc.
  #  define NOSERVICE
  //#define NOSOUND                   // Sound driver routines
+ #  ifndef _INCLUDE_TEXTMETRIC
               // typedef TEXTMETRIC and associated routines
- #  define NOTEXTMETRIC
+ #    define NOTEXTMETRIC
+ #  endif
  // #define NOWH                      // SetWindowsHook and WH_*
  // #define NOWINOFFSETS              // GWL_*, GCL_*, associated routines
  // #define NOCOMM                    // COMM driver routines
