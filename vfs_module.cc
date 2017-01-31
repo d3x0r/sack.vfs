@@ -10,6 +10,9 @@
 
 using namespace v8;
 
+#include "global.h"
+
+
 static struct local {
 	PLIST volumes;
 } l;
@@ -145,6 +148,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 		FileObject::Init();
 		OptionTreeObject::Init();
 		SqlObject::Init( exports );
+		ComObject::Init( exports );
 		// Prepare constructor template
 		volumeTemplate = FunctionTemplate::New( isolate, New );
 		volumeTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Volume" ) );

@@ -49,6 +49,7 @@ SET( EXTRA_HEADERS
         ${SACK_BASE}/include/filesys.h
         ${SACK_BASE}/include/sack_vfs.h
         ${SACK_BASE}/include/json_emitter.h
+        ${SACK_BASE}/include/sackcomm.h
 )
 
 SET( EXTRA_SOURCES 
@@ -85,6 +86,8 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/typelib/http.c
 	${SACK_BASE}/src/typelib/url.c
 	
+        ${SACK_BASE}/src/commlib/sackcomm.c
+
 	${SACK_BASE}/src/netlib/html5.websocket/html5.websocket.common.c
 	${SACK_BASE}/src/netlib/html5.websocket/client/html5.websocket.client.c
 	${SACK_BASE}/src/netlib/html5.websocket/server/html5.websocket.c
@@ -125,9 +128,9 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
-if( EXISTS c:/tools/ppc.exe )
-set( AMALG_COMMAND c:/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
-set( AMALG_COMMAND2 c:/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
+if( EXISTS c:/general/tools/ppc.exe )
+set( AMALG_COMMAND c:/general/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
+set( AMALG_COMMAND2 c:/general/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
 
 
 #set( LIBRE_INCLUDES
@@ -158,6 +161,7 @@ include_directories(${CMAKE_JS_INC} ${INCLUDES} src )
 
 add_library(${PROJECT_NAME} SHARED 
 	vfs_module.cc
+        com_interface.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
         ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc
         )
