@@ -66,13 +66,12 @@ static void asyncmsg( uv_async_t* handle ) {
 	ComObject* myself = (ComObject*)handle->data;
 
 	HandleScope scope(isolate);
-	//lprintf( "async message notice. %p", myself );
 	{
 		struct msgbuf *msg;
 		while( msg = (struct msgbuf *)DequeLink( &myself->readQueue ) ) {
 			size_t length;
-			Local<SharedArrayBuffer> ab =
-				SharedArrayBuffer::New( isolate,
+			Local<ArrayBuffer> ab =
+				ArrayBuffer::New( isolate,
 											  msg->buf,
 											  length = msg->buflen );
 			Local<Uint8Array> ui = Uint8Array::New( ab, 0, length );
@@ -108,8 +107,8 @@ void ComObject::New( const FunctionCallbackInfo<Value>& args ) {
 				isolate->ThrowException( Exception::Error( String::NewFromUtf8(isolate, msg) ) );
 			}
 			else {
-
-				MemSet( &obj->async, 0, sizeof( obj->async ) );
+            //lprintf( "empty async...." );
+				//MemSet( &obj->async, 0, sizeof( obj->async ) );
 				//Environment* env = Environment::GetCurrent(args);
 				if( !l.loop )
 					l.loop = uv_default_loop();
@@ -143,7 +142,7 @@ static void CPROC dispatchRead( uintptr_t psv, int nCommId, POINTER buffer, int 
 	msgbuf->buflen = len;
 	ComObject *com = (ComObject*)psv;
 	EnqueLink( &com->readQueue, msgbuf );
-  	uv_async_send( &com->async );
+	uv_async_send( &com->async );
 }
 
 
@@ -168,10 +167,29 @@ void ComObject::onRead( const FunctionCallbackInfo<Value>& args ) {
 }
 
 void ComObject::writeCom( const FunctionCallbackInfo<Value>& args ) {
-
+	int argc = args.Length();
+	if( argc < 1 ) {
+		//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "required parameter missing" ) ) );
+		return;
+	}
+	Isolate* isolate = args.GetIsolate();
+	ComObject *com = ObjectWrap::Unwrap<ComObject>( args.This() );
+	
+	//assert(args[i]->IsFloat32Array());
+	if( args[0]->IsUint8Array() ) {
+		Local<Uint8Array> myarr = args[0].As<Uint8Array>();
+		ArrayBuffer::Contents ab_c = myarr->Buffer()->GetContents();
+		char *buf = static_cast<char*>(ab_c.Data()) + myarr->ByteOffset();
+		//LogBinary( buf, myarr->Length() );
+		SackWriteComm( com->handle, buf, myarr->Length() );	
+	}
+	
 }
 
 void ComObject::closeCom( const FunctionCallbackInfo<Value>& args ) {
-
+	
+	ComObject *com = ObjectWrap::Unwrap<ComObject>( args.This() );
+	SackCloseComm( com->handle );
+	com->handle = -1;
 }
 
