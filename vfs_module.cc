@@ -209,7 +209,7 @@ void logBinary( char *x, int n )
 		Isolate* isolate = args.GetIsolate();
 		if( args.IsConstructCall() ) {
 			char *mount_name;
-			char *filename = "default.vfs";
+			char *filename = (char*)"default.vfs";
 			LOGICAL defaultFilename = TRUE;
 			char *key = NULL;
 			char *key2 = NULL;
@@ -918,7 +918,7 @@ void SqlObject::option( const FunctionCallbackInfo<Value>& args ) {
 		defaultVal = StrDup( *tmp );
 	}
 	else
-		defaultVal = "";
+		defaultVal = StrDup( "" );
 
 	if( argc > 1 ) {
 		String::Utf8Value tmp( args[1] );
@@ -943,7 +943,7 @@ void SqlObject::option( const FunctionCallbackInfo<Value>& args ) {
 
 	if( !sql->optionInitialized ) {
 		SetOptionDatabaseOption( sql->odbc );
-      sql->optionInitialized = TRUE;
+		sql->optionInitialized = TRUE;
 	}
 
 	SACK_GetPrivateProfileStringExxx( sql->odbc
@@ -980,7 +980,7 @@ void SqlObject::setOption( const FunctionCallbackInfo<Value>& args ) {
 		defaultVal = StrDup( *tmp );
 	}
 	else
-		defaultVal = "";
+		defaultVal = StrDup( "" );
 
 	if( argc > 1 ) {
 		String::Utf8Value tmp( args[1] );

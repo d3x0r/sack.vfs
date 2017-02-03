@@ -10142,7 +10142,7 @@
   size_t filesize;
   //uint32_t filler;  // extra data(unused)
  } PACKED;
- #define ENTRIES ( BLOCK_SIZE/sizeof( struct directory_entry) )
+ #define VFS_DIRECTORY_ENTRIES ( BLOCK_SIZE/sizeof( struct directory_entry) )
  struct disk
  {
   // BAT is at 0 of every BLOCK_SIZE blocks (4097 total)
@@ -10610,12 +10610,12 @@ GetFreeBlock( vol, TRUE );
   struct directory_entry *next_entries;
   do {
    next_entries = BTSEEK( struct directory_entry *, vol, this_dir_block, BLOCK_CACHE_DIRECTORY );
-   for( n = 0; n < ENTRIES; n++ ) {
+   for( n = 0; n < VFS_DIRECTORY_ENTRIES; n++ ) {
     struct directory_entry *entkey = ( vol->key)?((struct directory_entry *)vol->usekey[BLOCK_CACHE_DIRECTORY])+n:&l.zero_entkey;
     const char * testname;
     FPI name_ofs = next_entries[n].name_offset ^ entkey->name_offset;
     if( !name_ofs ) return NULL;
-    LoG( "%d name_ofs = %"_size_f"(%"_size_f") block = %d"
+    LoG( "%d name_ofs = %" _size_f "(%" _size_f ") block = %d"
        , n, name_ofs
        , next_entries[n].name_offset ^ entkey->name_offset
        , next_entries[n].first_block ^ entkey->first_block );
@@ -10624,7 +10624,7 @@ GetFreeBlock( vol, TRUE );
     testname = TSEEK( const char *, vol, name_ofs, BLOCK_CACHE_NAMES );
     if( MaskStrCmp( vol, filename, name_ofs ) == 0 ) {
      dirkey[0] = (*entkey);
-     LoG( "return found entry: %p (%"_size_f":%"_size_f")", next_entries+n, name_ofs, next_entries[n].first_block ^ dirkey->first_block );
+     LoG( "return found entry: %p (%" _size_f ":%" _size_f ")", next_entries+n, name_ofs, next_entries[n].first_block ^ dirkey->first_block );
      return next_entries + n;
     }
    }
@@ -10676,7 +10676,7 @@ GetFreeBlock( vol, TRUE );
   struct directory_entry *next_entries;
   do {
    next_entries = BTSEEK( struct directory_entry *, vol, this_dir_block, BLOCK_CACHE_DIRECTORY );
-   for( n = 0; n < ENTRIES; n++ ) {
+   for( n = 0; n < VFS_DIRECTORY_ENTRIES; n++ ) {
     struct directory_entry *entkey = ( vol->key )?((struct directory_entry *)vol->usekey[BLOCK_CACHE_DIRECTORY])+n:&l.zero_entkey;
     struct directory_entry *ent = next_entries + n;
     FPI name_ofs = ent->name_offset ^ entkey->name_offset;
@@ -10939,7 +10939,7 @@ GetFreeBlock( vol, TRUE );
   int n;
   do {
    next_entries = BTSEEK( struct directory_entry *, info->vol, info->this_dir_block, BLOCK_CACHE_DIRECTORY );
-   for( n = info->thisent; n < ENTRIES; n++ ) {
+   for( n = info->thisent; n < VFS_DIRECTORY_ENTRIES; n++ ) {
     struct directory_entry *entkey = ( info->vol->key)?((struct directory_entry *)info->vol->usekey[BLOCK_CACHE_DIRECTORY])+n:&l.zero_entkey;
     const char * testname;
     FPI name_ofs = next_entries[n].name_offset ^ entkey->name_offset;
@@ -26625,7 +26625,11 @@ GetFreeBlock( vol, TRUE );
   //lprintf( WIDE("%s(%d):Thread is exiting... "), pThread->pFile, pThread->nLine );
   //DeAttachThreadToLibraries( FALSE );
   UnmakeThread();
+ #ifdef __LINUX__
+  pThread->hThread = 0;
+ #else
   pThread->hThread = NULL;
+ #endif
   //lprintf( WIDE("%s(%d):Thread is exiting... "), pThread->pFile, pThread->nLine );
  #ifdef __WATCOMC__
   return (void*)result;
@@ -35026,12 +35030,12 @@ GetFreeBlock( vol, TRUE );
  LOGICAL sack_set_eof ( HANDLE file_handle )
  {
   struct file *file;
-  file = FindFileByFILE( (FILE*)file_handle );
+  file = FindFileByFILE( (FILE*)(uintptr_t)file_handle );
   if( file )
   {
    if( file->mount )
    {
-    file->mount->fsi->truncate( (void*)file_handle );
+    file->mount->fsi->truncate( (void*)(uintptr_t)file_handle );
     //lprintf( WIDE("result is %d"), file->mount->fsi->size( (void*)file_handle ) );
    }
    else
@@ -35039,7 +35043,7 @@ GetFreeBlock( vol, TRUE );
  #ifdef _WIN32
     ;
  #else
-    truncate( file->fullname, sack_ftell( (FILE*)file_handle ) );
+    truncate( file->fullname, sack_ftell( (FILE*)(uintptr_t)file_handle ) );
  #endif
    }
    return TRUE;
@@ -36155,7 +36159,7 @@ GetFreeBlock( vol, TRUE );
   PVARTEXT pvt = VarTextCreate();
   PTEXT output;
   struct file *file;
-  file = FindFileByFILE( (FILE*)file_handle );
+  file = FindFileByFILE( file_handle );
   if( file->mount && file->mount->fsi )
   {
    int r;
