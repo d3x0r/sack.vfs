@@ -46716,7 +46716,7 @@ GetFreeBlock( vol, TRUE );
  #if defined( __LINUX__ )
  #include <sys/ioctl.h>
  #include <termios.h>
- //#include <fcntl.h>
+ // O_RDWR
  #endif
  #define USE_REAL_FUNCTIONS
  #ifndef SACKCOMM_PROTECT_ME_AGAINST_DOBULE_INCLUSION
@@ -51792,56 +51792,6 @@ GetFreeBlock( vol, TRUE );
   return socket->pc;
  }
  HTML5_WEBSOCKET_NAMESPACE_END
- #ifdef __cplusplus
- SACK_NAMESPACE namespace network { namespace json {
- #endif
- struct json_context_object_element
- {
-     // type of the element at this offset
-  enum JSON_ObjectElementTypes type;
-     // type of the element at this offset
-  enum JSON_ObjectElementTypes content_type;
-  // how big this element is.
-  size_t object_size;
-   // offset into the structure
-  size_t offset;
- // name of this element in the object
-  CTEXTSTR name;
- // at offset, this number of these is there; (array)
-  size_t count;
- // at count_offset, is the number of elements that the pointer at this offset
-  size_t count_offset;
-  void (*user_formatter)(PVARTEXT pvt_output,CPOINTER msg_data);
-  struct json_context_object *object;
- };
- struct json_context_object
- {
-  struct json_context *context;
-   // list of members of this object struct json_context_object_element *
-  PLIST members;
- // if set is an array format, otherwise is an object format.
-  int is_array;
-  size_t object_size;
-  size_t offset;
-  struct json_context_object_flags
-  {
-  // this is not a root object
-   BIT_FIELD keep_phrase : 1;
-   BIT_FIELD dynamic_size : 1;
-  } flags;
-  struct json_context_object *parent;
- };
- struct json_context
- {
-  int levels;
-  PVARTEXT pvt;
-  PLIST object_types;
-  int human_readable;
- };
- #ifdef __cplusplus
- } } SACK_NAMESPACE_END
- #endif
- #define JSON_EMITTER_SOURCE
  #ifndef JSON_EMITTER_HEADER_INCLUDED
  #define JSON_EMITTER_HEADER_INCLUDED
  #ifdef JSON_EMITTER_SOURCE
@@ -51999,6 +51949,56 @@ GetFreeBlock( vol, TRUE );
  using namespace sack::network::json;
  #endif
  #endif
+ #ifdef __cplusplus
+ SACK_NAMESPACE namespace network { namespace json {
+ #endif
+ struct json_context_object_element
+ {
+     // type of the element at this offset
+  enum JSON_ObjectElementTypes type;
+     // type of the element at this offset
+  enum JSON_ObjectElementTypes content_type;
+  // how big this element is.
+  size_t object_size;
+   // offset into the structure
+  size_t offset;
+ // name of this element in the object
+  CTEXTSTR name;
+ // at offset, this number of these is there; (array)
+  size_t count;
+ // at count_offset, is the number of elements that the pointer at this offset
+  size_t count_offset;
+  void (*user_formatter)(PVARTEXT pvt_output,CPOINTER msg_data);
+  struct json_context_object *object;
+ };
+ struct json_context_object
+ {
+  struct json_context *context;
+   // list of members of this object struct json_context_object_element *
+  PLIST members;
+ // if set is an array format, otherwise is an object format.
+  int is_array;
+  size_t object_size;
+  size_t offset;
+  struct json_context_object_flags
+  {
+  // this is not a root object
+   BIT_FIELD keep_phrase : 1;
+   BIT_FIELD dynamic_size : 1;
+  } flags;
+  struct json_context_object *parent;
+ };
+ struct json_context
+ {
+  int levels;
+  PVARTEXT pvt;
+  PLIST object_types;
+  int human_readable;
+ };
+ #ifdef __cplusplus
+ } } SACK_NAMESPACE_END
+ #endif
+ #define JSON_EMITTER_SOURCE
  #ifdef __cplusplus
  SACK_NAMESPACE namespace network { namespace json {
  #endif
@@ -79690,12 +79690,12 @@ GetFreeBlock( vol, TRUE );
  CTEXTSTR GetGUID( void )
  {
   uuid_t *tmp;
-    char *str = NULL;
+  char *str = NULL;
   TEXTCHAR *out_guid;
   CTEXTSTR out_guid2;
   uuid_create( &tmp );
   uuid_make( tmp, UUID_MAKE_V1 );
-    uuid_export( tmp, UUID_FMT_STR, &str, NULL );
+  uuid_export( tmp, UUID_FMT_STR, &str, NULL );
   out_guid = DupCharToText( str );
   out_guid2 = SaveText( out_guid );
   Release( out_guid );
@@ -79704,12 +79704,12 @@ GetFreeBlock( vol, TRUE );
  CTEXTSTR GetSeqGUID( void )
  {
   uuid_t *tmp;
-    char *str = NULL;
+  char *str = NULL;
   TEXTCHAR *out_guid;
   CTEXTSTR out_guid2;
   uuid_create( &tmp );
   uuid_make( tmp, UUID_MAKE_V1 );
-    uuid_export( tmp, UUID_FMT_STR, &str, NULL );
+  uuid_export( tmp, UUID_FMT_STR, &str, NULL );
   out_guid = DupCharToText( str );
   out_guid2 = SaveText( out_guid );
   Release( out_guid );
