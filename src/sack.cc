@@ -10052,7 +10052,7 @@
  #define GetOptionIndex(p,f,b,v) GetOptionIndexEx( p,f,b,v,FALSE,FALSE DBG_SRC )
  SQLGETOPTION_PROC( size_t, GetOptionStringValueEx )( PODBC odbc, POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len DBG_PASS );
  SQLGETOPTION_PROC( void,SetOptionStringValueEx )( PODBC odbc, POPTION_TREE_NODE node, CTEXTSTR value );
- SQLGETOPTION_PROC( size_t, GetOptionStringValue )( POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len );
+ //SQLGETOPTION_PROC( size_t, GetOptionStringValue )( POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len );
  SQLGETOPTION_PROC( LOGICAL, SetOptionStringValue )( POPTION_TREE tree, POPTION_TREE_NODE optval, CTEXTSTR pValue );
  SQLGETOPTION_PROC( void, DeleteOption )( POPTION_TREE_NODE iRoot );
  SQLGETOPTION_PROC( void, DuplicateOption )( POPTION_TREE_NODE iRoot, CTEXTSTR pNewName );
@@ -81055,7 +81055,7 @@ GetFreeBlock( vol, TRUE );
   }
   if( !tree )
   {
-   //lprintf( WIDE( "need a new option tree for %p" ), odbc );
+   //_lprintf(DBG_RELAY)( WIDE( "need a new option tree for %p" ), odbc );
    tree = New( struct sack_option_tree_family );
    MemSet( tree, 0, sizeof( struct sack_option_tree_family ) );
    tree->root = GetFromSet( OPTION_TREE_NODE, &tree->nodes );
@@ -81407,14 +81407,6 @@ GetFreeBlock( vol, TRUE );
   size_t res = New4GetOptionStringValue( odbc, optval, buffer, len DBG_RELAY );
   return res;
  }
- size_t GetOptionStringValue( POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len )
- {
-  size_t result;
-  PODBC odbc = GetOptionODBC( GetDefaultOptionDatabaseDSN() );
-  result = GetOptionStringValueEx( odbc, optval, buffer, len DBG_SRC );
-  DropOptionODBC( odbc );
-  return result;
- }
  int GetOptionBlobValueOdbc( PODBC odbc, POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len )
  {
   POPTION_TREE tree = GetOptionTreeExxx( odbc, NULL DBG_SRC );
@@ -81675,7 +81667,7 @@ GetFreeBlock( vol, TRUE );
    opt_node = GetOptionIndexExx( odbc, OPTION_ROOT_VALUE, NULL, pINIFile, pSection, pOptname, TRUE, FALSE DBG_RELAY );
    // used to have a test - get option value index; but option index == node_id
    // so it just returned the same node; but not quite, huh?
-   GetOptionStringValue( opt_node, &buffer, &buflen );
+   GetOptionStringValueEx( odbc, opt_node, &buffer, &buflen DBG_RELAY );
    if( !buffer )
    {
     int x;
