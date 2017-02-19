@@ -157,11 +157,14 @@ endif( EXISTS ${SACK_BASE} )
 
 include_directories(${CMAKE_JS_INC} ${INCLUDES} src )
 
-
+if( WIN32 )
+	set( MORE_MODULE_SOURCES reg_access.cc )
+endif( WIN32 )
 
 add_library(${PROJECT_NAME} SHARED 
 	vfs_module.cc
         com_interface.cc
+	${MORE_MODULE_SOURCES}
         ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
         ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc
         )

@@ -149,6 +149,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 		OptionTreeObject::Init();
 		SqlObject::Init( exports );
 		ComObject::Init( exports );
+		RegObject::Init( exports );
 		// Prepare constructor template
 		volumeTemplate = FunctionTemplate::New( isolate, New );
 		volumeTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Volume" ) );
