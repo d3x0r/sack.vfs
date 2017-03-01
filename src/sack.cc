@@ -8880,6 +8880,10 @@
     Parameters
     odbc :  connection to database to commit                      */
  PSSQL_PROC( void, SQLCommit )( PODBC odbc );
+ /* generates the begin transaction for a commection.
+    Parameters
+    odbc :  connection to database to start a transaction        */
+ PSSQL_PROC( void, SQLBeginTransact )( PODBC odbc );
  // parameters to this are pairs of "name", type, WIDE("value")
  //  type == 0 - value is text, do not quote
  //  type == 1 - value is text, add quotes appropriate for database
@@ -9775,7 +9779,9 @@
  /* Enable using 'BEGIN TRANSACTION' and 'COMMIT' commands automatically
     around commands. If there is a lull of 500ms (1/2 second),
     then the commit automatically fires. SQLCommit can be called
-    to trigger this process early.
+  to trigger this process early.
+  if Callback is set, automatically enables AutoTransact
+    if Callback is NULL, automatically clears AutoTransact
     Parameters
     odbc :     connection to set auto transact on
     callback :  not NULL to enable, NULL to disable.                         */
@@ -46895,8 +46901,13 @@ GetFreeBlock( vol, TRUE );
  {
   if( !sack_com_local.flags.bInited )
   {
+ #ifdef __NO_OPTIONS__
+   bLogDataXfer = 0;
+   gbLog = 0;
+ #else
    bLogDataXfer = SACK_GetPrivateProfileInt( WIDE("COM PORTS"), WIDE("Log IO"), 0, WIDE("comports.ini") );
    gbLog = SACK_GetPrivateProfileIntEx( WIDE("COM PORTS"), WIDE("allow logging"), 0, WIDE("comports.ini"), TRUE );
+ #endif
    sack_com_local.flags.bInited = 1;
   }
  }
@@ -46957,7 +46968,12 @@ GetFreeBlock( vol, TRUE );
             , OPEN_EXISTING
             , FILE_ATTRIBUTE_NORMAL
             , NULL );
-   timeout.ReadIntervalTimeout = SACK_GetPrivateProfileInt( name, WIDE( "port timeout" ), 100, WIDE( "comports.ini" ) );
+   timeout.ReadIntervalTimeout =
+ #ifndef __NO_OPTIONS__
+      SACK_GetPrivateProfileInt( name, WIDE( "port timeout" ), 100, WIDE( "comports.ini" ) );
+ #else
+      100;
+ #endif
    timeout.ReadTotalTimeoutMultiplier = 1;
    timeout.ReadTotalTimeoutConstant = 1;
    timeout.WriteTotalTimeoutMultiplier = 1;
@@ -47537,7 +47553,14 @@ GetFreeBlock( vol, TRUE );
     TEXTCHAR szInit[64];
     // capital letters on carrier, rts, rtsflow mean to enable - otherwise
     // don't pay attention to those signals.
+ #ifndef __NO_OPTIONS__
     SACK_GetPrivateProfileString( WIDE("COM PORTS"), szPort, WIDE("57600,N,8,1,cARRIER,RTS,rTSFLOW"), szInit, sizeof( szInit ), WIDE("comports.ini") );
+ #else
+    GetPrivateProfileString( WIDE("COM PORTS"), szPort, WIDE(""), szInit, sizeof( szInit ), WIDE("comports.ini") );
+   if( !szPort[0] ) {
+      WritePrivateProfileString( WIDE("COM PORTS"), szPort, WIDE("57600,N,8,1,cARRIER,RTS,rTSFLOW"), WIDE("comports.ini") );
+   }
+ #endif
  #if defined(  _WIN32 ) || defined( __LINUX__ )
     if( !iTimerId )
     {
@@ -59598,7 +59621,11 @@ GetFreeBlock( vol, TRUE );
      Build the CA list first for potential client auth usage
      */
     priv_key_len = 0;
+ #ifndef __NO_OPTIONS__
     SACK_GetProfileString( "SSL/Private Key", "filename", "myprivkey.pem", privkey_buf, 256 );
+ #else
+          strcpy( prikey_buf, "myprivkey.pem" );
+ #endif
     file = sack_fopen( fileGroup, privkey_buf, "rb" );
     if( file )
     {
@@ -59610,7 +59637,11 @@ GetFreeBlock( vol, TRUE );
     else
      priv_key = NULL;
    }
+ #ifndef __NO_OPTIONS__
    SACK_GetProfileString( "SSL/Cert Authority Extra", "filename", "mycert.pem", cert_buf, 256 );
+ #else
+          strcpy( cer_buf, "mycert.pem" );
+ #endif
    file = sack_fopen( fileGroup, cert_buf, "rb" );
    if( file )
    {
@@ -59648,7 +59679,11 @@ GetFreeBlock( vol, TRUE );
    Build the CA list first for potential client auth usage
   */
    cert_key_len = 0;
+ #ifndef __NO_OPTIONS__
    SACK_GetProfileString( "SSL/Certificate", "filename", "mycert.pem", cert_buf, 256 );
+ #else
+   strcpy( cert_buf, "mycert.pem" );
+ #endif
    file = sack_fopen( fileGroup, cert_buf, "rb" );
    if( file )
    {
@@ -60120,19 +60155,31 @@ GetFreeBlock( vol, TRUE );
    //
    if( !(cert->pkey = EVP_PKEY_new()) )
     fatal( "Could not create EVP object" );
+ #ifndef __NO_OPTIONS__
    ca_len = SACK_GetProfileInt( "TLS", "CA Length", 0 );
+ #else
+   ca_len = 0;
+ #endif
    if( ca_len ) {
     ca = NewArray( char, ca_len + 2 );
+ #ifndef __NO_OPTIONS__
     SACK_GetProfileString( "TLS", "CA Cert", "", ca, ca_len + 1 );
+ #endif
     BIO_write( keybuf, ca, ca_len );
     Deallocate( void *, ca );
     cert->x509 = X509_new();
     PEM_read_bio_X509( keybuf, &cert->x509, NULL, NULL );
    }
-  key_len = SACK_GetProfileInt( "TLS", "Key Length", 0 );
+ #ifndef __NO_OPTIONS__
+   key_len = SACK_GetProfileInt( "TLS", "Key Length", 0 );
+ #else
+   key_len = 0;
+ #endif
   if( key_len ) {
     key = NewArray( char, key_len + 2 );
+ #ifndef __NO_OPTIONS__
     SACK_GetProfileString( "TLS", "Key", "", (TEXTCHAR*)key, key_len + 1 );
+ #endif
     BIO_write( keybuf, key, key_len );
     Deallocate( void *, key );
     PEM_read_bio_PrivateKey( keybuf, &cert->pkey, NULL, NULL );
@@ -60196,9 +60243,15 @@ GetFreeBlock( vol, TRUE );
     TEXTCHAR commonName[48];
     TEXTCHAR org[48];
     TEXTCHAR country[8];
+ #ifndef __NO_OPTIONS__
     SACK_GetProfileString( "TLS", "Default CA Common Name", "d3x0r.org", commonName, 48 );
     SACK_GetProfileString( "TLS", "Default CA Org", "Freedom Collective", org, 48 );
     SACK_GetProfileString( "TLS", "Default CA Country", "US", country, 8 );
+ #else
+    strcpy( commonName, "d3x0r.org" );
+    strcpy( org, "Freedom Collective" );
+          strcpy( country, "US" );
+ #endif
     name = X509_get_subject_name( x509 );
     X509_NAME_add_entry_by_txt( name, "C", MBSTRING_ASC,
      (unsigned char *)country, -1, -1, 0 );
@@ -71543,9 +71596,59 @@ GetFreeBlock( vol, TRUE );
  void errorLogCallback(void *pArg, int iErrCode, const char *zMsg){
   lprintf( "Sqlite3 Err: (%d) %s", iErrCode, zMsg);
  }
+ static POINTER SimpleAllocate( int size )
+ {
+  return Allocate( size );
+ }
+ static POINTER SimpleReallocate( POINTER p, int size )
+ {
+  return Reallocate( p, size );
+ }
+ static void SimpleFree( POINTER size )
+ {
+  Release( size );
+ }
+ // this routine must return 'int' which is what sqlite expects for its interface
+ static int SimpleSize( POINTER p )
+ {
+  return (int)SizeOfMemBlock( p );
+ }
+ static int SimpleRound( int size )
+ {
+  return size;
+ }
+ static int SimpleInit( POINTER p )
+ {
+  return TRUE;
+ }
+ static void SimpleShutdown( POINTER p )
+ {
+ }
  static void DoInitVFS( void )
  {
   sqlite3_config( SQLITE_CONFIG_LOG, errorLogCallback, 0);
+    {
+ #if SQLITE_VERSION_NUMBER >= 3006011
+   static sqlite3_mem_methods mem_routines;
+   if( mem_routines.pAppData == NULL )
+   {
+    sqlite3_config( SQLITE_CONFIG_GETMALLOC, &mem_routines );
+    mem_routines.xMalloc = SimpleAllocate;
+    mem_routines.xFree = SimpleFree;
+    mem_routines.xRealloc = SimpleReallocate;
+    mem_routines.xSize = SimpleSize;
+    //mem_routines.xRoundUp = SimpleRound;
+    //mem_routines.xInit = SimpleInit;
+    //mem_routines.xShutdown = SimpleShutdown;
+    mem_routines.pAppData = &mem_routines;
+ //#if SQLITE_VERSION_NUMBER >= 3006023
+ //   sqlite3_db_config( odbc->db, SQLITE_CONFIG_MALLOC, &mem_routines );
+ //#else
+    sqlite3_config( SQLITE_CONFIG_MALLOC, &mem_routines );
+ //#endif
+   }
+ #endif
+  }
   InitVFS( WIDE("sack"), NULL );
  }
  static POINTER CPROC GetSQLiteInterface( void )
@@ -75124,11 +75227,11 @@ GetFreeBlock( vol, TRUE );
  }
  static void computePassword(sqlite3_context*onwhat,int argc,sqlite3_value**argv)
  {
-    PVARTEXT pvt = VarTextCreate();
+  PVARTEXT pvt = VarTextCreate();
   PODBC odbc = (PODBC)sqlite3_user_data(onwhat);
   const unsigned char *val = sqlite3_value_text( argv[0] );
   static TEXTCHAR *result;
-    if( result ) Release( result );
+  if( result ) Release( result );
   result = SRG_EncryptString( (CTEXTSTR)val );
  #ifdef _UNICODE
   {
@@ -75147,7 +75250,7 @@ GetFreeBlock( vol, TRUE );
   PODBC odbc = (PODBC)sqlite3_user_data(onwhat);
   const unsigned char *val = sqlite3_value_text( argv[0] );
   static TEXTCHAR *result;
-    if( result ) Release( result );
+  if( result ) Release( result );
   result = SRG_DecryptString( (CTEXTSTR)val );
  #ifdef _UNICODE
   {
@@ -75163,34 +75266,6 @@ GetFreeBlock( vol, TRUE );
  #endif
    //void (*xStep)(sqlite3_context*,int,sqlite3_value**),
    //void (*xFinal)(sqlite3_context*)
- static POINTER SimpleAllocate( int size )
- {
-  return Allocate( size );
- }
- static POINTER SimpleReallocate( POINTER p, int size )
- {
-  return Reallocate( p, size );
- }
- static void SimpleFree( POINTER size )
- {
-  Release( size );
- }
- // this routine must return 'int' which is what sqlite expects for its interface
- static int SimpleSize( POINTER p )
- {
-  return (int)SizeOfMemBlock( p );
- }
- static int SimpleRound( int size )
- {
-  return size;
- }
- static int SimpleInit( POINTER p )
- {
-  return TRUE;
- }
- static void SimpleShutdown( POINTER p )
- {
- }
  void ExtendConnection( PODBC odbc )
  {
   int rc = sqlite3_create_function(
@@ -75354,28 +75429,6 @@ GetFreeBlock( vol, TRUE );
    lprintf( WIDE( "auto commit off?" ) );
    //DebugBreak();
   }
-  {
- #if SQLITE_VERSION_NUMBER >= 3006011
-   static sqlite3_mem_methods mem_routines;
-   if( mem_routines.pAppData == NULL )
-   {
-    sqlite3_config( SQLITE_CONFIG_GETMALLOC, &mem_routines );
-    mem_routines.xMalloc = SimpleAllocate;
-    mem_routines.xFree = SimpleFree;
-    mem_routines.xRealloc = SimpleReallocate;
-    mem_routines.xSize = SimpleSize;
-    //mem_routines.xRoundUp = SimpleRound;
-    //mem_routines.xInit = SimpleInit;
-    //mem_routines.xShutdown = SimpleShutdown;
-    mem_routines.pAppData = &mem_routines;
- #if SQLITE_VERSION_NUMBER >= 3006023
-    sqlite3_db_config( odbc->db, SQLITE_CONFIG_MALLOC, &mem_routines );
- #else
-    sqlite3_config( SQLITE_CONFIG_MALLOC, &mem_routines );
- #endif
-   }
- #endif
-  }
   //SQLCommandf( odbc, "PRAGMA read_uncommitted=True" );
   //if( !odbc->flags.bVFS )
   {
@@ -75397,7 +75450,7 @@ GetFreeBlock( vol, TRUE );
  {
   if( g.odbc && odbc == g.odbc )
   {
-   lprintf( WIDE( "GLBOAL ODBC:" ) );
+   lprintf( WIDE( "GLOBAL ODBC:" ) );
   }
   if( !odbc )
    return;
@@ -76233,7 +76286,7 @@ GetFreeBlock( vol, TRUE );
  void SQLCommit( PODBC odbc )
  {
   // someone might not want it now, but we already started a thread for it....
-  if( odbc->flags.bAutoTransact )
+  //if( odbc->flags.bAutoTransact )
   {
    EnterCriticalSec( &odbc->cs );
    // we will own the odbc here, so the timer will either block, or
@@ -76345,7 +76398,7 @@ GetFreeBlock( vol, TRUE );
   return 0;
  }
  //----------------------------------------------------------------------
- void BeginTransact( PODBC odbc )
+ static void BeginTransactEx( PODBC odbc, int force )
  {
   // I Only test this for SQLITE, specifically the optiondb.
   // this transaction phrase is not really as important on server based systems.
@@ -76354,7 +76407,7 @@ GetFreeBlock( vol, TRUE );
    odbc = g.odbc;
   if( !odbc )
    return;
-  if( odbc->flags.bAutoTransact )
+  if( odbc->flags.bAutoTransact || force )
   {
    uint32_t newtick = timeGetTime();
    //lprintf( WIDE( "Allowed. %lu" ), odbc->last_command_tick );
@@ -76363,15 +76416,17 @@ GetFreeBlock( vol, TRUE );
    //    okay if there IS a tick, then the OR is triggered, which sets the time, and it will be non zero,
    //    so that will fail the IF, but set the time.
    // if there is NOT a last command tick, then we add the timer
-   if( !odbc->last_command_tick )
+   if( force || !odbc->last_command_tick )
    {
+    int prior;
     odbc->last_command_tick = newtick;
-    if( !odbc->auto_commit_thread )
+    if( !force && !odbc->auto_commit_thread )
     {
      odbc->auto_commit_thread = ThreadTo( CommitThread, (uintptr_t)odbc );
     }
+    prior = odbc->flags.bAutoTransact;
     odbc->flags.bAutoTransact = 0;
- #ifdef USE_SQLITE
+ #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
     if( odbc->flags.bSQLite_native )
     {
      SQLCommand( odbc, WIDE( "BEGIN TRANSACTION" ) );
@@ -76379,13 +76434,14 @@ GetFreeBlock( vol, TRUE );
     else
  #endif
      if( odbc->flags.bAccess )
-    {
+     {
+      lprintf( "Unhandled; access driver, begintransaction..." );
     }
     else
     {
      SQLCommand( odbc, WIDE( "START TRANSACTION" ) );
     }
-    odbc->flags.bAutoTransact = 1;
+    odbc->flags.bAutoTransact = prior;
    }
  // update the tick.
    else
@@ -76394,6 +76450,10 @@ GetFreeBlock( vol, TRUE );
   }
   //else
   //   lprintf( WIDE( "No auto transact here." ) );
+ }
+ //----------------------------------------------------------------------
+ void SQLBeginTransact( PODBC odbc ) {
+  BeginTransactEx( odbc, 1 );
  }
  //----------------------------------------------------------------------
  void DispatchPriorRequests( PODBC odbc )
@@ -77143,7 +77203,7 @@ GetFreeBlock( vol, TRUE );
  void CloseDatabaseEx( PODBC odbc, LOGICAL ReleaseConnection )
  {
   ReleaseODBC( odbc );
- #ifdef USE_SQLITE
+ #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
   if( odbc->flags.bSQLite_native )
   {
    int err = sqlite3_close( odbc->db );
@@ -77414,7 +77474,7 @@ GetFreeBlock( vol, TRUE );
   if( use_odbc )
   {
    PCOLLECT pCollector;
-   BeginTransact( use_odbc );
+   BeginTransactEx( use_odbc, 0 );
    do
    {
  #ifdef LOG_COLLECTOR_STATES
@@ -78049,7 +78109,7 @@ GetFreeBlock( vol, TRUE );
    {
     PTEXT data = VarTextGet( pvtData );
     lprintf( "%s", GetText( data ) );
-          LineRelease( data );
+    LineRelease( data );
     //lprintf( WIDE( "%s" ), GetText( VarTextPeek( pvtData ) ) );
     VarTextDestroy( &pvtData );
    }
@@ -78543,6 +78603,9 @@ GetFreeBlock( vol, TRUE );
    (*result) = NULL;
   if( nResults )
    *nResults = 0;
+  // if not a [sS]elect then begin a transaction.... some code uses query record for everything.
+  if( query[0] != 's' && query[0] != 'S' )
+   BeginTransactEx( use_odbc, 0 );
   do
   {
    if( !IsSQLOpenEx( odbc DBG_RELAY ) )
@@ -78609,6 +78672,9 @@ GetFreeBlock( vol, TRUE );
   // clean up our result data....
   if( *result )
    (*result) = NULL;
+  // if not a [sS]elect then begin a transaction.... some code might use query for everything.
+  if( query[0] != 's' && query[0] != 'S' )
+   BeginTransactEx( use_odbc, 0 );
   do
   {
    if( !IsSQLOpen( odbc ) )
@@ -79618,7 +79684,7 @@ GetFreeBlock( vol, TRUE );
    }
   }
  #endif
- #ifdef USE_SQLITE
+ #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
   // extended sqlite functions with LAST_INSERT_ID() so the following code would work alos.
   if( odbc->flags.bSQLite_native )
   {
@@ -79676,7 +79742,7 @@ GetFreeBlock( vol, TRUE );
   unsigned int n;
   int targetlen;
   if( odbc && ( odbc->flags.bSQLite
- #ifdef USE_SQLITE
+ #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
        || odbc->flags.bSQLite_native
  #endif
       ) )
@@ -80598,7 +80664,7 @@ GetFreeBlock( vol, TRUE );
   }
   cmd = NewArray( TEXTCHAR, 1024);
   buflen = 0;
- #ifdef USE_SQLITE
+ #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
   if( odbc->flags.bSQLite_native )
    buflen += tnprintf( cmd+buflen , 1024-buflen,WIDE("select tbl_name,sql from sqlite_master where type='table' and name='%s'")
          , table->name );
@@ -80825,7 +80891,7 @@ GetFreeBlock( vol, TRUE );
      vtprintf( pvtCreate, WIDE("create table `%s` ("), table->name );
      for( n = 0; n < table->fields.count; n++ )
      {
- #ifdef USE_SQLITE
+ #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
       if( odbc->flags.bSQLite_native )
       {
        if( table->fields.field[n].extra
@@ -80887,7 +80953,7 @@ GetFreeBlock( vol, TRUE );
            , table->fields.field[n].extra?WIDE(" "):WIDE("")
            , table->fields.field[n].extra?table->fields.field[n].extra:WIDE("")
            );
- #ifdef USE_SQLITE
+ #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
                 if( odbc->flags.bSQLite_native )
       {
        int k;
@@ -80913,7 +80979,7 @@ GetFreeBlock( vol, TRUE );
       int colfirst = 1;
       if( table->keys.key[n].flags.bPrimary )
       {
- #ifdef USE_SQLITE
+ #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
        if( odbc->flags.bSQLite_native )
        {
         if( auto_increment_column )
@@ -80958,7 +81024,7 @@ GetFreeBlock( vol, TRUE );
       }
       else
       {
- #ifdef USE_SQLITE
+ #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
        if( odbc->flags.bSQLite_native )
        {
         if( table->keys.key[n].flags.bUnique )
@@ -81052,7 +81118,7 @@ GetFreeBlock( vol, TRUE );
      }
  // closing paren of all columns...
      vtprintf( pvtCreate, WIDE(")") ) ;
- #ifdef USE_SQLITE
+ #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
      if( !odbc->flags.bSQLite_native )
  #endif
      {
@@ -82734,7 +82800,7 @@ GetFreeBlock( vol, TRUE );
  WIDE( "  `system_id` int(11) NOT NULL default '0',\n" )
  WIDE( "  `override_value_id` char(36) NOT NULL default '0',\n" )
  WIDE( "  `option_id` char(36) NOT NULL default '0',\n" )
- WIDE( "   UNIQUE KEY `option_exception_idkey` (`option_exception_id`),\n" )
+ WIDE( "   UNIQUE `option_exception_idkey` (`option_exception_id`),\n" )
  WIDE( "   KEY `FK_map_exception` (`option_id`),\n" )
  WIDE( "   CONSTRAINT `FK_map_exception` FOREIGN KEY (`option_id`) REFERENCES `option4_map` (`option_id`) ON DELETE CASCADE ON UPDATE CASCADE\n" )
  WIDE( " ) TYPE=InnoDB;\n" ) );
@@ -82760,7 +82826,7 @@ GetFreeBlock( vol, TRUE );
  WIDE( "  `name_id` char(36) NOT NULL,\n" )
  WIDE( "  `name` varchar(255) NOT NULL default '',\n" )
  WIDE( "  PRIMARY KEY  (`name_id`),\n" )
- WIDE( "  UNIQUE KEY `name` (`name`)" )
+ WIDE( "  UNIQUE `name` (`name`)" )
  WIDE( " ) TYPE=InnoDB;\n" ) );
  //# Table: 'option4_values'
  //#
@@ -82769,7 +82835,7 @@ GetFreeBlock( vol, TRUE );
  WIDE( "  `option_id` char(36) default '0',\n" )
  WIDE( "  `string` varchar(100) default NULL,\n" )
  WIDE( "  `segment` int(11) default 0,\n" )
- WIDE( "  UNIQUE KEY `value_id` (`option_id`,`segment`),\n" )
+ WIDE( "  UNIQUE `value_id` (`option_id`,`segment`),\n" )
  WIDE( "  CONSTRAINT `FK_map_values` FOREIGN KEY (`option_id`) REFERENCES `option4_map` (`option_id`) ON DELETE CASCADE ON UPDATE CASCADE\n" )
  WIDE( " ) TYPE=InnoDB;\n" ) );
  //# Table: 'option4_blobs'
@@ -82778,7 +82844,7 @@ GetFreeBlock( vol, TRUE );
  OPT_EXTERN( CTEXTSTR, option4_blobs, WIDE( "CREATE TABLE `option4_blobs` (" )
  WIDE( "  `option_id` char(36) default '0',\n" )
  WIDE( "  `binary` blob,\n" )
- WIDE( "  UNIQUE KEY `value_id` (`option_id`)," )
+ WIDE( "  UNIQUE `value_id` (`option_id`)," )
  WIDE( "  CONSTRAINT `FK_map_blobs` FOREIGN KEY (`option_id`) REFERENCES `option4_map` (`option_id`) ON DELETE CASCADE ON UPDATE CASCADE\n" )
  WIDE( " ) TYPE=InnoDB;\n" ) );
  //#SELECT
@@ -82904,6 +82970,9 @@ GetFreeBlock( vol, TRUE );
  }
  SQLGETOPTION_PROC( void, CreateOptionDatabaseEx )( PODBC odbc, POPTION_TREE tree )
  {
+ #ifdef DETAILED_LOGGING
+  lprintf( "Create Option Database. %d", tree->flags.bCreated );
+ #endif
   if( !global_sqlstub_data->flags.bLogOptionConnection )
    SetSQLLoggingDisable( tree->odbc, TRUE );
   {
@@ -83918,7 +83987,9 @@ GetFreeBlock( vol, TRUE );
    PODBC odbc = (PODBC)DequeLink( &tracker->available );
    if( !odbc )
    {
-    //lprintf( "none available, create new connection." );
+ #ifdef DETAILED_LOGGING
+    lprintf( "none available, create new connection." );
+ #endif
     odbc = ConnectToDatabaseExx( tracker->name, TRUE DBG_RELAY );
     if( !tracker->shared_option_tree )
     {
@@ -83928,6 +83999,9 @@ GetFreeBlock( vol, TRUE );
     }
     else
     {
+ #ifdef DETAILED_LOGGING
+     lprintf( "get the tree...." );
+ #endif
      GetOptionTreeExxx( odbc, tracker->shared_option_tree DBG_RELAY );
     }
     // only if it's a the first connection should we leave created as false.
@@ -83940,7 +84014,9 @@ GetFreeBlock( vol, TRUE );
    }
    AddLink( &tracker->outstanding, odbc );
    //xx++;
-   //_lprintf( DBG_RELAY )( "%d  %p result...", xx, odbc );
+ #ifdef DETAILED_LOGGING
+   _lprintf( DBG_RELAY )( "%d  %p result...", xx, odbc );
+ #endif
    return odbc;
   }
  }

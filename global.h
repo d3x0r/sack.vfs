@@ -1,4 +1,65 @@
 
+
+class SqlObject : public node::ObjectWrap {
+public:
+	PODBC odbc;
+   	int optionInitialized;
+	static v8::Persistent<v8::Function> constructor;
+	int columns;
+	CTEXTSTR *result;
+	CTEXTSTR *fields;
+	//Persistent<Object> volume;
+public:
+
+	static void Init( Handle<Object> exports );
+	SqlObject( const char *dsn, Isolate* isolate, Local<Object> o );
+
+	static void New( const FunctionCallbackInfo<Value>& args );
+	static void query( const FunctionCallbackInfo<Value>& args );
+	static void option( const FunctionCallbackInfo<Value>& args );
+	static void setOption( const FunctionCallbackInfo<Value>& args );
+	static void makeTable( const FunctionCallbackInfo<Value>& args );
+	static void closeDb( const FunctionCallbackInfo<Value>& args );
+	static void commit( const FunctionCallbackInfo<Value>& args );
+	static void transact( const FunctionCallbackInfo<Value>& args );
+	static void autoTransact( const FunctionCallbackInfo<Value>& args );
+
+	static void enumOptionNodes( const FunctionCallbackInfo<Value>& args );
+	static void findOptionNode( const FunctionCallbackInfo<Value>& args );
+	static void getOptionNode( const FunctionCallbackInfo<Value>& args );
+
+   ~SqlObject();
+};
+
+
+class OptionTreeObject : public node::ObjectWrap {
+public:
+	POPTION_TREE_NODE node;
+	SqlObject *db;
+	static v8::Persistent<v8::Function> constructor;
+	
+public:
+
+	static void Init( );
+	OptionTreeObject(  );
+
+	static void New( const FunctionCallbackInfo<Value>& args );
+
+	static void enumOptionNodes( const FunctionCallbackInfo<Value>& args );
+	static void findOptionNode( const FunctionCallbackInfo<Value>& args );
+	static void getOptionNode( const FunctionCallbackInfo<Value>& args );
+	static void writeOptionNode( v8::Local<v8::String> field,
+		v8::Local<v8::Value> val,
+		const PropertyCallbackInfo<void>&info );
+	static void readOptionNode( v8::Local<v8::String> field,
+		const PropertyCallbackInfo<v8::Value>& info );
+
+   ~OptionTreeObject();
+};
+
+
+
+
 class ComObject : public node::ObjectWrap {
 public:
 	int handle;

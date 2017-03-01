@@ -19,7 +19,6 @@ ADD_DEFINITIONS( -DNO_OPEN_MACRO )
 
 
 set( SACK_BASE M:/sack )
-set( SACK_BINARY_SDK_BASE C:/general/build/mingw64-x86/sack-r/release_out/binary  )
 
 if( EXISTS ${SACK_BASE} )
 
@@ -128,14 +127,15 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
-if( EXISTS c:/general/tools/ppc.exe )
-set( AMALG_COMMAND c:/general/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
-set( AMALG_COMMAND2 c:/general/tools/ppc.exe -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
+set( PPCTOOL c:/tools/ppc.exe )
+if( EXISTS ${PPCTOOL} )
+set( AMALG_COMMAND ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
+set( AMALG_COMMAND2 ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
 
 
 #set( LIBRE_INCLUDES
 #	-I${SACK_BASE}/src/contrib/libressl/2.4.2/include -I${SACK_BASE}/src/contrib/libressl/2.4.2/include/compat   )
-#set( AMALG_COMMAND3 c:/general/tools/ppc.exe -c -K -once -ssio -sd "${LIBRE_INCLUDES}" -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/libressl.c ${LIBRE_SOURCES} )
+#set( AMALG_COMMAND3 ${PPCTOOL} -c -K -once -ssio -sd "${LIBRE_INCLUDES}" -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/libressl.c ${LIBRE_SOURCES} )
 #set( OUT "${AMALG_COMMAND3}" )
 #STRING( REPLACE ";" " " AMALG_COMMAND3  "${OUT}" )
 
@@ -150,7 +150,7 @@ FILE( WRITE ${CMAKE_BINARY_DIR}/zz.bat "${AMALG_COMMAND3}" )
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   )                                   
   add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc )
-endif( EXISTS c:/general/tools/ppc.exe )
+endif( EXISTS ${PPCTOOL} )
 
 endif( EXISTS ${SACK_BASE} )
 
@@ -163,6 +163,7 @@ endif( WIN32 )
 
 add_library(${PROJECT_NAME} SHARED 
 	vfs_module.cc
+	sql_module.cc
         com_interface.cc
 	${MORE_MODULE_SOURCES}
         ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
