@@ -76288,7 +76288,11 @@ GetFreeBlock( vol, TRUE );
   // someone might not want it now, but we already started a thread for it....
   //if( odbc->flags.bAutoTransact )
   {
-   EnterCriticalSec( &odbc->cs );
+   if( odbc->flags.bThreadProtect )
+   {
+    EnterCriticalSec( &odbc->cs );
+    odbc->nProtect++;
+   }
    // we will own the odbc here, so the timer will either block, or
    // have completed, releasing this.
    // maybe we don't have a pending commit.... (wouldn't if the timer hit just before we ran)
@@ -76314,7 +76318,11 @@ GetFreeBlock( vol, TRUE );
     if( odbc->auto_commit_callback )
      odbc->auto_commit_callback( odbc->auto_commit_callback_psv, odbc );
    }
-   LeaveCriticalSec( &odbc->cs );
+   if( odbc->flags.bThreadProtect )
+   {
+    odbc->nProtect--;
+    LeaveCriticalSec( &odbc->cs );
+   }
   }
  }
  //----------------------------------------------------------------------
