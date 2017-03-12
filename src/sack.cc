@@ -10115,6 +10115,8 @@
  PREFIX_PACKED struct volume {
   const char * volname;
   struct disk *disk;
+ // disk might be offset from diskReal because it's a .exe attached.
+  struct disk *diskReal;
   //uint32_t dirents;  // constant 0
   //uint32_t nameents; // constant 1
   uintptr_t dwSize;
@@ -10135,6 +10137,7 @@
  // when reopened file structures need to be updated also...
   PLIST files;
   LOGICAL read_only;
+  LOGICAL external_memory;
   LOGICAL closed;
   uint32_t lock;
  } PACKED;
@@ -10258,6 +10261,60 @@
   }
   return TRUE;
  }
+ //-------------------------------------------------------
+ // function to process a currently loaded program to get the
+ // data offset at the end of the executable.
+ static POINTER GetExtraData( POINTER block )
+ {
+ #ifdef WIN32
+ #  define Seek(a,b) (((uintptr_t)a)+(b))
+  //uintptr_t source_memory_length = block_len;
+  POINTER source_memory = block;
+  {
+   PIMAGE_DOS_HEADER source_dos_header = (PIMAGE_DOS_HEADER)source_memory;
+   PIMAGE_NT_HEADERS source_nt_header = (PIMAGE_NT_HEADERS)Seek( source_memory, source_dos_header->e_lfanew );
+   if( source_dos_header->e_magic != IMAGE_DOS_SIGNATURE ) {
+    lprintf( "Basic signature check failed; not a library" );
+    return NULL;
+   }
+   if( source_nt_header->Signature != IMAGE_NT_SIGNATURE ) {
+    lprintf( "Basic NT signature check failed; not a library" );
+    return NULL;
+   }
+   if( source_nt_header->FileHeader.SizeOfOptionalHeader )
+   {
+    if( source_nt_header->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR_MAGIC )
+    {
+     lprintf( "Optional header signature is incorrect..." );
+     return NULL;
+    }
+   }
+   {
+    int n;
+    long FPISections = source_dos_header->e_lfanew
+     + sizeof( DWORD ) + sizeof( IMAGE_FILE_HEADER )
+     + source_nt_header->FileHeader.SizeOfOptionalHeader;
+    PIMAGE_SECTION_HEADER source_section = (PIMAGE_SECTION_HEADER)Seek( source_memory, FPISections );
+    uintptr_t dwSize = 0;
+    uintptr_t newSize;
+    source_section = (PIMAGE_SECTION_HEADER)Seek( source_memory, FPISections );
+    for( n = 0; n < source_nt_header->FileHeader.NumberOfSections; n++ )
+    {
+     newSize = (source_section[n].PointerToRawData) + source_section[n].SizeOfRawData;
+     if( newSize > dwSize )
+      dwSize = newSize;
+    }
+    dwSize += 0xFFF;
+    dwSize &= ~0xFFF;
+    return (POINTER)Seek( source_memory, dwSize );
+   }
+  }
+ #  undef Seek
+ #else
+  // need to get elf size...
+  return 0;
+ #endif
+ }
  // add some space to the volume....
  static void ExpandVolume( struct volume *vol ) {
   LOGICAL created;
@@ -10267,12 +10324,21 @@
   if( !vol->dwSize ) {
    new_disk = (struct disk*)OpenSpaceExx( NULL, vol->volname, 0, &vol->dwSize, &created );
    if( new_disk && vol->dwSize ) {
+    vol->diskReal = new_disk;
+ #ifdef WIN32
+ // elf has a different signature to check for .so extended data...
+    struct disk *actual_disk;
+    if( ((char*)new_disk)[0] == 'M' && ((char*)new_disk)[1] == 'Z' ) {
+     actual_disk = (struct disk*)GetExtraData( new_disk );
+     if( actual_disk ) new_disk = actual_disk;
+    }
+ #endif
     vol->disk = new_disk;
     return;
    } else
     created = 1;
   }
-  if( oldsize ) CloseSpace( vol->disk );
+  if( oldsize ) CloseSpace( vol->diskReal );
   // a BAT plus the sectors it references... ( BLOCKS_PER_BAT + 1 ) * BLOCK_SIZE
   vol->dwSize += BLOCKS_PER_SECTOR*BLOCK_SIZE;
   new_disk = (struct disk*)OpenSpaceExx( NULL, vol->volname, 0, &vol->dwSize, &created );
@@ -10283,6 +10349,17 @@
    LIST_FORALL( vol->files, idx, struct sack_vfs_file *, file ) {
     file->entry = (struct directory_entry*)((uintptr_t)file->entry - (uintptr_t)vol->disk + (uintptr_t)new_disk );
    }
+   vol->diskReal = new_disk;
+ #ifdef WIN32
+   // elf has a different signature to check for .so extended data...
+   {
+    struct disk *actual_disk;
+    if( ((char*)new_disk)[0] == 'M' && ((char*)new_disk)[1] == 'Z' ) {
+     actual_disk = (struct disk*)GetExtraData( new_disk );
+     if( actual_disk ) new_disk = actual_disk;
+    }
+   }
+ #endif
    vol->disk = new_disk;
   }
   if( vol->key ) {
@@ -10460,7 +10537,7 @@ GetFreeBlock( vol, TRUE );
   vol->devkey = devkey;
   AssignKey( vol, userkey, devkey );
   ExpandVolume( vol );
-  if( !ValidateBAT( vol ) ) { Deallocate( struct disk *, vol->disk ); return NULL; }
+  if( !ValidateBAT( vol ) ) { sack_vfs_unload_volume( vol ); return NULL; }
   return vol;
  }
  struct volume *sack_vfs_use_crypt_volume( POINTER memory, size_t sz, const char * userkey, const char * devkey ) {
@@ -10468,9 +10545,10 @@ GetFreeBlock( vol, TRUE );
   MemSet( vol, 0, sizeof( struct volume ) );
   vol->read_only = 1;
   AssignKey( vol, userkey, devkey );
+  vol->external_memory = TRUE;
   vol->disk = (struct disk*)memory;
   vol->dwSize = sz;
-  if( !ValidateBAT( vol ) ) { Deallocate( struct volume*, vol ); return NULL; }
+  if( !ValidateBAT( vol ) ) { sack_vfs_unload_volume( vol );  return NULL; }
   return vol;
  }
  void sack_vfs_unload_volume( struct volume * vol ) {
@@ -10483,7 +10561,7 @@ GetFreeBlock( vol, TRUE );
    return;
   }
   DeleteListEx( &vol->files DBG_SRC );
-  Deallocate( struct disk *, vol->disk );
+  if( !vol->external_memory ) Deallocate( struct disk *, vol->diskReal );
   if( vol->key ) {
    Deallocate( uint8_t*, vol->key );
    SRG_DestroyEntropy( &vol->entropy );
@@ -10515,6 +10593,7 @@ GetFreeBlock( vol, TRUE );
    } else
     break;
   }while( 1 );
+  Deallocate( struct disk *, vol->diskReal );
   Deallocate( struct disk *, vol->disk );
   SetFileLength( vol->volname, last_bat * BLOCKS_PER_SECTOR * BLOCK_SIZE + ( last_block + 1 + 1 )* BLOCK_SIZE );
   // setting 0 size will cause expand to do an initial open instead of expanding
