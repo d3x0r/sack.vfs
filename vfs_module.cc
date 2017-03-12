@@ -1,5 +1,6 @@
 
 #include <node.h>
+#include <nan.h>
 #include <node_object_wrap.h>
 #include <v8.h>
 #include <uv.h>
@@ -203,7 +204,7 @@ void logBinary( char *x, int n )
 				argv[n] = args[n];
 
 			Local<Function> cons = Local<Function>::New( isolate, constructor );
-			args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+			args.GetReturnValue().Set( Nan::NewInstance( cons, argc, argv ).ToLocalChecked() );
 			delete argv;
 		}
 	}
@@ -344,7 +345,7 @@ void FileObject::seekFile(const FunctionCallbackInfo<Value>& args) {
 			const int argc = 2;
 			Local<Value> argv[argc] = { args[0], args.Holder() };
 			Local<Function> cons = Local<Function>::New( isolate, constructor );
-			args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+			args.GetReturnValue().Set( Nan::NewInstance( cons, argc, argv ).ToLocalChecked() );
 		}
 	}
 

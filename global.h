@@ -1,5 +1,4 @@
 
-
 class SqlObject : public node::ObjectWrap {
 public:
 	PODBC odbc;

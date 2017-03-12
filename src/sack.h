@@ -1,11 +1,3 @@
- /*CMake Option defined*/
- #define __STATIC__
- #define USE_SQLITE
- #define USE_SQLITE_INTERFACE
- #define FORCE_COLOR_MACROS
- #define _CRT_SECURE_NO_WARNINGS
- #define NEED_SHLAPI
- #define NEED_SHLOBJ
  /* Includes the system platform as required or appropriate. If
     under a linux system, include appropriate basic linux type
     headers, if under windows pull "windows.h".

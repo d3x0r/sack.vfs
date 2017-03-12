@@ -1,4 +1,5 @@
 #include <node.h>
+#include <nan.h>
 #include <node_object_wrap.h>
 #include <v8.h>
 #include <uv.h>
@@ -128,7 +129,7 @@ void ComObject::New( const FunctionCallbackInfo<Value>& args ) {
 				argv[n] = args[n];
 
 			Local<Function> cons = Local<Function>::New( isolate, constructor );
-			args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+			args.GetReturnValue().Set( Nan::NewInstance( cons, argc, argv ).ToLocalChecked() );
 			delete argv;
 		}
 }

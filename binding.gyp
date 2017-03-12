@@ -23,7 +23,7 @@
     }
   ],
   "target_defaults": {
-  	'include_dirs': ['src']
+  	'include_dirs': ['src',    "<!(node -e \"require('nan')\")" ]
   }
   
 }

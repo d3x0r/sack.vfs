@@ -1,11 +1,3 @@
- /*CMake Option defined*/
- #define __STATIC__
- #define USE_SQLITE
- #define USE_SQLITE_INTERFACE
- #define FORCE_COLOR_MACROS
- #define _CRT_SECURE_NO_WARNINGS
- #define NEED_SHLAPI
- #define NEED_SHLOBJ
  /*
   BLOCKINDEX BAT[BLOCKS_PER_BAT] // link of next blocks; 0 if free, FFFFFFFF if end of file block
   uint8_t  block_data[BLOCKS_PER_BAT][BLOCK_SIZE];
