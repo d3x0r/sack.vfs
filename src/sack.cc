@@ -10330,7 +10330,10 @@
     struct disk *actual_disk;
     if( ((char*)new_disk)[0] == 'M' && ((char*)new_disk)[1] == 'Z' ) {
      actual_disk = (struct disk*)GetExtraData( new_disk );
-     if( actual_disk ) new_disk = actual_disk;
+     if( actual_disk ) {
+      vol->dwSize -= ((uintptr_t)actual_disk - (uintptr_t)new_disk);
+      new_disk = actual_disk;
+     }
     }
  #endif
     vol->disk = new_disk;
@@ -10346,9 +10349,6 @@
   if( new_disk != vol->disk ) {
    INDEX idx;
    struct sack_vfs_file *file;
-   LIST_FORALL( vol->files, idx, struct sack_vfs_file *, file ) {
-    file->entry = (struct directory_entry*)((uintptr_t)file->entry - (uintptr_t)vol->disk + (uintptr_t)new_disk );
-   }
    vol->diskReal = new_disk;
  #ifdef WIN32
    // elf has a different signature to check for .so extended data...
@@ -10356,10 +10356,16 @@
     struct disk *actual_disk;
     if( ((char*)new_disk)[0] == 'M' && ((char*)new_disk)[1] == 'Z' ) {
      actual_disk = (struct disk*)GetExtraData( new_disk );
-     if( actual_disk ) new_disk = actual_disk;
+     if( actual_disk ) {
+      vol->dwSize -= ((uintptr_t)actual_disk - (uintptr_t)new_disk);
+      new_disk = actual_disk;
+     }{}
     }
    }
  #endif
+   LIST_FORALL( vol->files, idx, struct sack_vfs_file *, file ) {
+    file->entry = (struct directory_entry*)((uintptr_t)file->entry - (uintptr_t)vol->disk + (uintptr_t)new_disk);
+   }
    vol->disk = new_disk;
   }
   if( vol->key ) {
@@ -10594,7 +10600,6 @@ GetFreeBlock( vol, TRUE );
     break;
   }while( 1 );
   Deallocate( struct disk *, vol->diskReal );
-  Deallocate( struct disk *, vol->disk );
   SetFileLength( vol->volname, last_bat * BLOCKS_PER_SECTOR * BLOCK_SIZE + ( last_block + 1 + 1 )* BLOCK_SIZE );
   // setting 0 size will cause expand to do an initial open instead of expanding
   vol->dwSize = 0;
