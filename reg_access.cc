@@ -1,13 +1,3 @@
-#include <node.h>
-#include <node_object_wrap.h>
-#include <v8.h>
-#include <uv.h>
-//#include <nan.h>
-
-#include "src/sack.h"
-#undef New
-
-using namespace v8;
 
 
 #include "global.h"

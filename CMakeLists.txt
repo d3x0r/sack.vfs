@@ -25,7 +25,7 @@ if( EXISTS ${SACK_BASE} )
 set( INCLUDES
 	-I${SACK_BASE}/include 
 	-I${SACK_BASE}/src/contrib/sha1lib 
-	-I${SACK_BASE}/src/contrib/sqlite/3.16.2  )
+	-I${SACK_BASE}/src/contrib/sqlite/3.17.0  )
 
 # __NO_OPTIONS__ __NO_INTERFACE_SUPPORT__ __NO_ODBC__
 set( DEFINITIONS   __STATIC__ 
@@ -120,7 +120,7 @@ SET( BUILD_AMALGAM on )
 #message( "MAYBE WE GET" ${LIBRE_SOURCES} )
 
 set( C_SOURCES
-        ${SACK_BASE}/src/contrib/sqlite/3.16.2/sqlite3.c
+        ${SACK_BASE}/src/contrib/sqlite/3.17.0/sqlite3.c
 )
 add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
 			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${C_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -154,7 +154,7 @@ endif( EXISTS ${PPCTOOL} )
 
 endif( EXISTS ${SACK_BASE} )
 
-
+message( ${CMAKE_JS_INC} )
 include_directories(${CMAKE_JS_INC} ${INCLUDES} src )
 
 if( WIN32 )
@@ -163,6 +163,7 @@ endif( WIN32 )
 
 add_library(${PROJECT_NAME} SHARED 
 	vfs_module.cc
+	thread_module.cc
 	sql_module.cc
         com_interface.cc
 	${MORE_MODULE_SOURCES}

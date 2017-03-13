@@ -1,81 +1,10 @@
 
-#include <node.h>
-#include <nan.h>
-#include <node_object_wrap.h>
-#include <v8.h>
-#include <uv.h>
-//#include <nan.h>
-
-#include "src/sack.h"
-#undef New
-
-using namespace v8;
-
 #include "global.h"
-
 
 static struct local {
 	PLIST volumes;
 } l;
 
-class VolumeObject : public node::ObjectWrap {
-public:
-	struct volume *vol;
-	static v8::Persistent<v8::Function> constructor;
-	
-public:
-
-	static void Init( Handle<Object> exports );
-	VolumeObject( const char *mount, const char *filename, const char *key, const char *key2 );
-
-	static void New( const FunctionCallbackInfo<Value>& args );
-	static void getDirectory( const FunctionCallbackInfo<Value>& args );
-
-   ~VolumeObject();
-};
-
-
-class ThreadObject : public node::ObjectWrap {
-public:
-	static v8::Persistent<v8::Function> constructor;
-   	static Persistent<Function, CopyablePersistentTraits<Function>> idleProc;
-public:
-
-	static void Init( Handle<Object> exports );
-	ThreadObject();
-
-	static void New( const FunctionCallbackInfo<Value>& args );
-
-	static void relinquish( const FunctionCallbackInfo<Value>& args );
-	static void wake( const FunctionCallbackInfo<Value>& args );
-
-   ~ThreadObject();
-};
-
-
-class FileObject : public node::ObjectWrap {
-	struct sack_vfs_file *file;
-	//Local<Object> volume;
-   char* buf;
-   size_t size;
-   Persistent<Object> volume;
-public:
-	static v8::Persistent<v8::Function> constructor;
-	static void Init(  );
-
-	static void openFile( const FunctionCallbackInfo<Value>& args );
-	static void readFile( const FunctionCallbackInfo<Value>& args );
-	static void writeFile( const FunctionCallbackInfo<Value>& args );
-	static void seekFile( const FunctionCallbackInfo<Value>& args );
-	static void truncateFile( const FunctionCallbackInfo<Value>& args );
-
-	//static void readFile( const FunctionCallbackInfo<Value>& args );
-
-	static void Emitter( const FunctionCallbackInfo<Value>& args );
-
-	FileObject( VolumeObject* vol, const char *filename, Isolate*, Local<Object> o );
-   ~FileObject();
-};
 
 static void moduleExit( void *arg ) {
 	InvokeExits();
@@ -87,30 +16,28 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	
 	SetSystemLog( SYSLOG_FILE, stdout );
 	lprintf( "Stdout Logging Enabled." );
-	{
-		//extern void Syslog
-	}
-		Isolate* isolate = Isolate::GetCurrent();
-		Local<FunctionTemplate> volumeTemplate;
-		ThreadObject::Init( exports );
-		FileObject::Init();
-		SqlObject::Init( exports );
-		ComObject::Init( exports );
-		RegObject::Init( exports );
-		// Prepare constructor template
-		volumeTemplate = FunctionTemplate::New( isolate, New );
-		volumeTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Volume" ) );
-		volumeTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
-		// Prototype
-		NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "File", FileObject::openFile );
-		NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "dir", getDirectory );
+	Isolate* isolate = Isolate::GetCurrent();
+	Local<FunctionTemplate> volumeTemplate;
+	ThreadObject::Init( exports );
+	FileObject::Init();
+	SqlObject::Init( exports );
+	ComObject::Init( exports );
+	RegObject::Init( exports );
+	// Prepare constructor template
+	volumeTemplate = FunctionTemplate::New( isolate, New );
+	volumeTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Volume" ) );
+	volumeTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
-		
-		constructor.Reset( isolate, volumeTemplate->GetFunction() );
-		exports->Set( String::NewFromUtf8( isolate, "Volume" ),
-			volumeTemplate->GetFunction() );
-	}
+	// Prototype
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "File", FileObject::openFile );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "dir", getDirectory );
+
+	
+	constructor.Reset( isolate, volumeTemplate->GetFunction() );
+	exports->Set( String::NewFromUtf8( isolate, "Volume" ),
+		volumeTemplate->GetFunction() );
+}
 
 VolumeObject::VolumeObject( const char *mount, const char *filename, const char *key, const char *key2 )  {
 	vol = sack_vfs_load_crypt_volume( filename, key, key2 );
@@ -375,95 +302,6 @@ FileObject::~FileObject() {
 	volume.Reset();
 }
 
-
-//-----------------------------------------------------------
-
-
-void ThreadObject::Init( Handle<Object> exports ) {
-	Isolate* isolate = Isolate::GetCurrent();
-
-	NODE_SET_METHOD(exports, "Δ", relinquish );
-	NODE_SET_METHOD(exports, "Λ", wake );
-	Local<FunctionTemplate> threadTemplate;
-	// Prepare constructor template
-	threadTemplate = FunctionTemplate::New( isolate, New );
-	threadTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.Thread" ) );
-	threadTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
-
-	// Prototype
-
-	constructor.Reset( isolate, threadTemplate->GetFunction() );
-	exports->Set( String::NewFromUtf8( isolate, "Thread" ),
-		threadTemplate->GetFunction() );
-}
-
-//-----------------------------------------------------------
-Persistent<Function, CopyablePersistentTraits<Function>> ThreadObject::idleProc;
-
-void ThreadObject::New( const FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	if( args.Length() ) {
-		if( idleProc.IsEmpty() ) {
-			Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
-			Persistent<Function> cb( isolate, arg0 );
-			idleProc = cb;
-		}
-	}
-	else
-		idleProc.Reset();
-}
-//-----------------------------------------------------------
-
-static bool cbWoke;
-
-void ThreadObject::wake( const FunctionCallbackInfo<Value>& args ) {
-	cbWoke = true;
-}
-
-//-----------------------------------------------------------
-void ThreadObject::relinquish( const FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = Isolate::GetCurrent();
-	//int delay = 0;
-	//if( args.Length() > 0 && args[0]->IsNumber() )
-	//	delay = (int)args[0]->ToNumber()->Value();
-
-	//	nodeThread = MakeThread();
-	Local<Function>cb = Local<Function>::New( isolate, idleProc );
-	/*Local<Value> r = */cb->Call(Null(isolate), 0, NULL );
-	// r was always undefined.... so inner must wake.
-	//String::Utf8Value fName( r->ToString() );
-	//lprintf( "tick callback resulted %s", (char*)*fName);
-	if( !cbWoke )
-		if( uv_run( uv_default_loop(), UV_RUN_NOWAIT ) )
-			uv_run( uv_default_loop(), UV_RUN_ONCE);
-	cbWoke = false;
-	/*
-	if( delay ) {
-
-		lprintf( "short sleep", delay, delay );
-		WakeableSleep( 20 );
-		lprintf( "short wake", delay, delay );
-		cb->Call(Null(isolate), 0, NULL );
-		uv_run( uv_default_loop(), UV_RUN_DEFAULT);
-	
-		lprintf( "sleep for %08x, %d", delay, delay );
-		WakeableSleep( delay );
-	}
-	cb->Call(Null(isolate), 0, NULL );
-	uv_run( uv_default_loop(), UV_RUN_DEFAULT);
-	*/
-}
-
-//-----------------------------------------------------------
-
-Persistent<Function> ThreadObject::constructor;
-ThreadObject::ThreadObject( )
-{
-}
-
-ThreadObject::~ThreadObject() {
-	lprintf( "no thread object..." );
-}
 
 //-----------------------------------------------------------
 

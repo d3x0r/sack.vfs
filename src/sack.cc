@@ -8432,27 +8432,66 @@
  /* define the file system namespace. */
  #define SACK_VFS_NAMESPACE SACK_NAMESPACE _SACK_VFS_NAMESPACE
  SACK_VFS_NAMESPACE
+ // if the option to auto mount a file system is used, this is the
+ // name of the 'file system interface'  ( sack_get_filesystem_interface( SACK_VFS_FILESYSTEM_NAME ) )
  #define SACK_VFS_FILESYSTEM_NAME WIDE("sack_shmem")
+ // open a volume at the specified pathname.
+ // if the volume does not exist, will create it.
+ // if the volume does exist, a quick validity check is made on it, and then the result is opened
+ // returns NULL if failure.  (permission denied to the file, or invalid filename passed, could be out of space... )
+ // same as load_cyrypt_volume with userkey and devkey NULL.
  SACK_VFS_PROC struct volume * CPROC sack_vfs_load_volume( CTEXTSTR filepath );
+ // open a volume at the specified pathname.  Use the specified keys to encrypt it.
+ // if the volume does not exist, will create it.
+ // if the volume does exist, a quick validity check is made on it, and then the result is opened
+ // returns NULL if failure.  (permission denied to the file, or invalid filename passed, could be out of space... )
+ // if the keys are NULL same as load_volume.
  SACK_VFS_PROC struct volume * CPROC sack_vfs_load_crypt_volume( CTEXTSTR filepath, CTEXTSTR userkey, CTEXTSTR devkey );
+ // pass some memory and a memory length of the memory to use as a volume.
+ // if userkey and/or devkey are not NULL the memory is assume to be encrypted with those keys.
+ // the space is opened as readonly; write accesses/expanding operations will fail.
  SACK_VFS_PROC struct volume * CPROC sack_vfs_use_crypt_volume( POINTER filemem, size_t size, CTEXTSTR userkey, CTEXTSTR devkey );
+ // close a volume; release all resources; any open files will keep the volume open.
+ // when the final file closes the volume will complete closing.
  SACK_VFS_PROC void            CPROC sack_vfs_unload_volume( struct volume * vol );
+ // remove unused extra allocated space at end of volume.  During working process, extra space is preallocated for
+ // things to be stored in.
  SACK_VFS_PROC void            CPROC sack_vfs_shrink_volume( struct volume * vol );
+ // remove encryption from volume.
  SACK_VFS_PROC LOGICAL         CPROC sack_vfs_decrypt_volume( struct volume *vol );
+ // change the key applied to a volume.
  SACK_VFS_PROC LOGICAL         CPROC sack_vfs_encrypt_volume( struct volume *vol, CTEXTSTR key1, CTEXTSTR key2 );
+ // create a signature of current directory of volume.
+ // can be used to validate content.  Returns 256 character hex string.
  SACK_VFS_PROC const char *    CPROC sack_vfs_get_signature( struct volume *vol );
+ // pass an offset from memory start and the memory start...
+ // computes the distance, uses that to generate a signature
+ // returns BLOCK_SIZE length signature; recommend using at least 128 bits of it.
+ SACK_VFS_PROC const uint8_t * CPROC sack_vfs_get_signature2( POINTER disk, POINTER diskReal );
+ // ---------- Operations on files in volumes ------------------
+ // open a file, creates if does not exist.
  SACK_VFS_PROC struct sack_vfs_file * CPROC sack_vfs_openfile( struct volume *vol, CTEXTSTR filename );
+ // check if a file exists (if it does not exist, and you don't want it created, can use this and not openfile)
  SACK_VFS_PROC int CPROC sack_vfs_exists( uintptr_t psvInstance, const char * file );
+ // close a file.
  SACK_VFS_PROC int CPROC sack_vfs_close( struct sack_vfs_file *file );
+ // get the current File Position Index (FPI).
  SACK_VFS_PROC size_t CPROC sack_vfs_tell( struct sack_vfs_file *file );
+ // get the length of the file
  SACK_VFS_PROC size_t CPROC sack_vfs_size( struct sack_vfs_file *file );
+ // set the current File Position Index (FPI).
  SACK_VFS_PROC size_t CPROC sack_vfs_seek( struct sack_vfs_file *file, size_t pos, int whence );
+ // write starting at the current FPI.
  SACK_VFS_PROC size_t CPROC sack_vfs_write( struct sack_vfs_file *file, const char * data, size_t length );
+ // read starting at the current FPI.
  SACK_VFS_PROC size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t length );
+ // sets the file length to the current FPI.
  SACK_VFS_PROC size_t CPROC sack_vfs_truncate( struct sack_vfs_file *file );
  // psv should be struct volume *vol;
+ // delete a filename.  Clear the space it was occupying.
  SACK_VFS_PROC void CPROC sack_vfs_unlink_file( uintptr_t psv, const char * filename );
- // directory interface commands.  returns find_info which is then used in subsequent commands.
+ // -----------  directory interface commands. ----------------------
+ // returns find_info which is then used in subsequent commands.
  SACK_VFS_PROC struct find_info * CPROC sack_vfs_find_create_cursor(uintptr_t psvInst,const char *base,const char *mask );
  // reset find_info to the first directory entry.  returns 0 if no entry.
  SACK_VFS_PROC int CPROC sack_vfs_find_first( struct find_info *info );
@@ -10068,7 +10107,7 @@
  #endif
  SACK_VFS_NAMESPACE
  //#define PARANOID_INIT
- //#define DEBUG_TRACE_LOG
+ #define DEBUG_TRACE_LOG
  #ifdef DEBUG_TRACE_LOG
  #define LoG( a,... ) lprintf( a,##__VA_ARGS__ )
  #else
@@ -10124,6 +10163,11 @@
   uint8_t* key;
   // allow byte encrypting... key based on sector volume file index
   uint8_t* segkey;
+  // signature of executable attached as header
+  uint8_t* sigkey;
+  // signature of executable attached as header
+  uint8_t* sigsalt;
+  size_t sigkeyLength;
  // composite key
   uint8_t* usekey[BLOCK_CACHE_COUNT];
  // when reopened file structures need to be updated also...
@@ -10266,18 +10310,18 @@
    PIMAGE_DOS_HEADER source_dos_header = (PIMAGE_DOS_HEADER)source_memory;
    PIMAGE_NT_HEADERS source_nt_header = (PIMAGE_NT_HEADERS)Seek( source_memory, source_dos_header->e_lfanew );
    if( source_dos_header->e_magic != IMAGE_DOS_SIGNATURE ) {
-    lprintf( "Basic signature check failed; not a library" );
+    LoG( "Basic signature check failed; not a library" );
     return NULL;
    }
    if( source_nt_header->Signature != IMAGE_NT_SIGNATURE ) {
-    lprintf( "Basic NT signature check failed; not a library" );
+    LoG( "Basic NT signature check failed; not a library" );
     return NULL;
    }
    if( source_nt_header->FileHeader.SizeOfOptionalHeader )
    {
     if( source_nt_header->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR_MAGIC )
     {
-     lprintf( "Optional header signature is incorrect..." );
+     LoG( "Optional header signature is incorrect..." );
      return NULL;
     }
    }
@@ -10296,8 +10340,10 @@
      if( newSize > dwSize )
       dwSize = newSize;
     }
-    dwSize += 0xFFF;
-    dwSize &= ~0xFFF;
+ // pad 1 full block, plus all but 1 byte of a full block(round up)
+    dwSize += (BLOCK_SIZE*2)-1;
+ // mask off the low bits; floor result to block boundary
+    dwSize &= ~(BLOCK_SIZE-1);
     return (POINTER)Seek( source_memory, dwSize );
    }
   }
@@ -10307,12 +10353,35 @@
   return 0;
  #endif
  }
+ static void AddSalt2( uintptr_t psv, POINTER *salt, size_t *salt_size ) {
+  struct datatype { void* start; size_t length; } *data = (struct datatype*)psv;
+  (*salt_size) = data->length;
+  (*salt) = (POINTER)data->start;
+  // only need to make one pass of it....
+  data->length = 0;
+  data->start = NULL;
+ }
+ const uint8_t *sack_vfs_get_signature2( POINTER disk, POINTER diskReal ) {
+   if( disk != diskReal ) {
+    static uint8_t usekey[BLOCK_SIZE];
+    static struct random_context *entropy;
+    static struct datatype { void* start; size_t length; } data;
+    data.start = diskReal;
+    data.length = ((uintptr_t)disk - (uintptr_t)diskReal) - BLOCK_SIZE;
+    if( !entropy ) entropy = SRG_CreateEntropy2( AddSalt2, (uintptr_t)&data );
+    SRG_ResetEntropy( entropy );
+    SRG_GetEntropyBuffer( entropy, (uint32_t*)usekey, BLOCK_SIZE*CHAR_BIT );
+    return usekey;
+   }
+   return NULL;
+ }
  // add some space to the volume....
- static void ExpandVolume( struct volume *vol ) {
+ static LOGICAL ExpandVolume( struct volume *vol ) {
   LOGICAL created;
   struct disk* new_disk;
+  struct disk* old_disk;
   size_t oldsize = vol->dwSize;
-  if( vol->read_only ) return;
+  if( vol->read_only ) return TRUE;
   if( !vol->dwSize ) {
    new_disk = (struct disk*)OpenSpaceExx( NULL, vol->volname, 0, &vol->dwSize, &created );
    if( new_disk && vol->dwSize ) {
@@ -10323,13 +10392,29 @@
     if( ((char*)new_disk)[0] == 'M' && ((char*)new_disk)[1] == 'Z' ) {
      actual_disk = (struct disk*)GetExtraData( new_disk );
      if( actual_disk ) {
-      vol->dwSize -= ((uintptr_t)actual_disk - (uintptr_t)new_disk);
-      new_disk = actual_disk;
+      if( ( ( (uintptr_t)actual_disk - (uintptr_t)new_disk ) < vol->dwSize ) ) {
+       const uint8_t *sig = sack_vfs_get_signature2( (POINTER)((uintptr_t)actual_disk-BLOCK_SIZE), new_disk );
+       if( memcmp( sig, (POINTER)(((uintptr_t)actual_disk)-BLOCK_SIZE), BLOCK_SIZE ) ) {
+        LoG( "Signature failed comparison; the core has changed since it was attached" );
+        CloseSpace( vol->diskReal );
+        vol->diskReal = NULL;
+        vol->dwSize = 0;
+        return FALSE;
+       }
+       vol->dwSize -= ((uintptr_t)actual_disk - (uintptr_t)new_disk);
+       new_disk = actual_disk;
+      } else {
+       LoG( "Signature failed comparison; the core is not attached to anything." );
+       CloseSpace( vol->diskReal );
+       vol->diskReal = NULL;
+       vol->dwSize = 0;
+       return FALSE;
+      }
      }
     }
  #endif
     vol->disk = new_disk;
-    return;
+    return TRUE;
    } else
     created = 1;
   }
@@ -10337,6 +10422,7 @@
          vol->dwSize += ((uintptr_t)vol->disk - (uintptr_t)vol->diskReal);
   // a BAT plus the sectors it references... ( BLOCKS_PER_BAT + 1 ) * BLOCK_SIZE
   vol->dwSize += BLOCKS_PER_SECTOR*BLOCK_SIZE;
+         old_disk = vol->diskReal;
   new_disk = (struct disk*)OpenSpaceExx( NULL, vol->volname, 0, &vol->dwSize, &created );
   LoG( "created expanded volume: %p from %p size:%" _size_f, new_disk, vol->disk, vol->dwSize );
   if( new_disk != vol->disk ) {
@@ -10350,6 +10436,14 @@
     if( ((char*)new_disk)[0] == 'M' && ((char*)new_disk)[1] == 'Z' ) {
      actual_disk = (struct disk*)GetExtraData( new_disk );
      if( actual_disk ) {
+      const uint8_t *sig = sack_vfs_get_signature2( (POINTER)((uintptr_t)actual_disk-BLOCK_SIZE), new_disk );
+      if( memcmp( sig, (POINTER)(((uintptr_t)actual_disk)-BLOCK_SIZE), BLOCK_SIZE ) ) {
+       LoG( "Signature failed comparison; the core has changed since it was attached" );
+       CloseSpace( vol->diskReal );
+       vol->diskReal = NULL;
+       vol->dwSize = 0;
+       return FALSE;
+      }
       vol->dwSize -= ((uintptr_t)actual_disk - (uintptr_t)new_disk);
       new_disk = actual_disk;
      }{}
@@ -10388,9 +10482,11 @@ GetFreeBlock( vol, TRUE );
    /* vol->nameents = */
 GetFreeBlock( vol, TRUE );
   }
+  return TRUE;
  }
+ // shared with fuse module
  uintptr_t vfs_SEEK( struct volume *vol, FPI offset, enum block_cache_entries cache_index ) {
-  while( offset >= vol->dwSize ) ExpandVolume( vol );
+  while( offset >= vol->dwSize ) if( !ExpandVolume( vol ) ) return 0;
   if( vol->key ) {
    BLOCKINDEX seg = ( offset / BLOCK_SIZE ) + 1;
    if( seg != vol->segment[cache_index] ) {
@@ -10400,9 +10496,10 @@ GetFreeBlock( vol, TRUE );
   }
   return ((uintptr_t)vol->disk) + offset;
  }
+ // shared with fuse module
  uintptr_t vfs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries cache_index ) {
   BLOCKINDEX b = BLOCK_SIZE + (block >> BLOCK_SHIFT) * (BLOCKS_PER_SECTOR*BLOCK_SIZE) + ( block & (BLOCKS_PER_BAT-1) ) * BLOCK_SIZE;
-  while( b >= vol->dwSize ) ExpandVolume( vol );
+  while( b >= vol->dwSize ) if( !ExpandVolume( vol ) ) return 0;
   if( vol->key ) {
    BLOCKINDEX seg = ( b / BLOCK_SIZE ) + 1;
    if( seg != vol->segment[cache_index] ) {
@@ -10417,6 +10514,7 @@ GetFreeBlock( vol, TRUE );
   int n;
   int b = 0;
   BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, BLOCK_CACHE_FILE );
+  if( !current_BAT ) return 0;
   do
   {
    BLOCKINDEX check_val;
@@ -10436,8 +10534,10 @@ GetFreeBlock( vol, TRUE );
       {
        vol->segment[BLOCK_CACHE_FILE] = b * (BLOCKS_PER_SECTOR) + n + 1 + 1;
        UpdateSegmentKey( vol, BLOCK_CACHE_FILE );
-       while( ((vol->segment[BLOCK_CACHE_FILE]-1)*BLOCK_SIZE) > vol->dwSize )
-        ExpandVolume( vol );
+       while( ((vol->segment[BLOCK_CACHE_FILE]-1)*BLOCK_SIZE) > vol->dwSize ){
+        LoG( "looping to get a side %d", ((vol->segment[BLOCK_CACHE_FILE]-1)*BLOCK_SIZE) );
+        if( !ExpandVolume( vol ) ) return 0;
+       }
        memcpy( ((uint8_t*)vol->disk) + (vol->segment[BLOCK_CACHE_FILE]-1) * BLOCK_SIZE, vol->usekey[BLOCK_CACHE_FILE], BLOCK_SIZE );
       }
      } else {
@@ -10456,6 +10556,8 @@ GetFreeBlock( vol, TRUE );
   BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX *, vol, sector * (BLOCKS_PER_SECTOR*BLOCK_SIZE), BLOCK_CACHE_FILE );
   BLOCKINDEX seg;
   BLOCKINDEX check_val = (this_BAT[block & (BLOCKS_PER_BAT-1)]);
+ // if this passes, later ones will also.
+  if( !this_BAT ) return 0;
   if( vol->key ) {
    seg = ( ((uintptr_t)this_BAT - (uintptr_t)vol->disk) / BLOCK_SIZE ) + 1;
    if( seg != vol->segment[BLOCK_CACHE_FILE] ) {
@@ -10470,6 +10572,7 @@ GetFreeBlock( vol, TRUE );
     check_val = GetFreeBlock( vol, init );
     // free block might have expanded...
     this_BAT = TSEEK( BLOCKINDEX*, vol, sector * ( BLOCKS_PER_SECTOR*BLOCK_SIZE ), BLOCK_CACHE_FILE );
+    if( !this_BAT ) return 0;
     // segment could already be set from the GetFreeBlock...
     this_BAT[block & (BLOCKS_PER_BAT-1)] = check_val ^ key;
    }
@@ -10481,13 +10584,16 @@ GetFreeBlock( vol, TRUE );
   struct volume *vol = New( struct volume );
   memset( vol, 0, sizeof( struct volume ) );
   vol->volname = SaveText( filepath );
-  ExpandVolume( vol );
-  if( !ValidateBAT( vol ) ) { vol->lock = 0; return NULL; }
+  if( !ExpandVolume( vol ) || !ValidateBAT( vol ) ) { Deallocate( struct volume*, vol ); return NULL; }
   return vol;
  }
  static void AddSalt( uintptr_t psv, POINTER *salt, size_t *salt_size ) {
   struct volume *vol = (struct volume *)psv;
-  if( vol->datakey ) {
+  if( vol->sigsalt ) {
+   (*salt_size) = vol->sigkeyLength;
+   (*salt) = (POINTER)vol->sigsalt;
+   vol->sigsalt = NULL;
+  } else if( vol->datakey ) {
    (*salt_size) = BLOCK_SIZE;
    (*salt) = (POINTER)vol->datakey;
    vol->datakey = NULL;
@@ -10511,7 +10617,7 @@ GetFreeBlock( vol, TRUE );
   vol->devkey = key2;
   if( key1 || key2 )
   {
-   uintptr_t size = BLOCK_SIZE + BLOCK_SIZE * BLOCK_CACHE_COUNT + SHORTKEY_LENGTH;
+   uintptr_t size = BLOCK_SIZE + BLOCK_SIZE * BLOCK_CACHE_COUNT + BLOCK_SIZE + SHORTKEY_LENGTH;
    int n;
    if( !vol->entropy )
     vol->entropy = SRG_CreateEntropy2( AddSalt, (uintptr_t)vol );
@@ -10520,7 +10626,8 @@ GetFreeBlock( vol, TRUE );
    vol->key = (uint8_t*)OpenSpace( NULL, NULL, &size );
    for( n = 0; n < BLOCK_CACHE_COUNT; n++ )
     vol->usekey[n] = vol->key + (n+1) * BLOCK_SIZE;
-   vol->segkey = vol->key + BLOCK_SIZE * (n+1);
+   vol->segkey = vol->key + BLOCK_SIZE * (BLOCK_CACHE_COUNT+1);
+   vol->sigkey = vol->key + BLOCK_SIZE * (BLOCK_CACHE_COUNT+1) + SHORTKEY_LENGTH;
    vol->curseg = BLOCK_CACHE_DIRECTORY;
    vol->segment[BLOCK_CACHE_DIRECTORY] = 0;
    SRG_GetEntropyBuffer( vol->entropy, (uint32_t*)vol->key, BLOCK_SIZE * 8 );
@@ -10535,8 +10642,7 @@ GetFreeBlock( vol, TRUE );
   vol->userkey = userkey;
   vol->devkey = devkey;
   AssignKey( vol, userkey, devkey );
-  ExpandVolume( vol );
-  if( !ValidateBAT( vol ) ) { sack_vfs_unload_volume( vol ); return NULL; }
+  if( !ExpandVolume( vol ) || !ValidateBAT( vol ) ) { sack_vfs_unload_volume( vol ); return NULL; }
   return vol;
  }
  struct volume *sack_vfs_use_crypt_volume( POINTER memory, size_t sz, const char * userkey, const char * devkey ) {
@@ -10575,6 +10681,8 @@ GetFreeBlock( vol, TRUE );
   BLOCKINDEX last_block = 0;
   int last_bat = 0;
   BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, BLOCK_CACHE_FILE );
+ // expand failed, tseek failed in response, so don't do anything
+  if( !current_BAT ) return;
   do {
    BLOCKINDEX check_val;
    for( n = 0; n < BLOCKS_PER_BAT; n++ ) {
@@ -10593,7 +10701,9 @@ GetFreeBlock( vol, TRUE );
     break;
   }while( 1 );
   Deallocate( struct disk *, vol->diskReal );
-  SetFileLength( vol->volname, last_bat * BLOCKS_PER_SECTOR * BLOCK_SIZE + ( last_block + 1 + 1 )* BLOCK_SIZE );
+  SetFileLength( vol->volname,
+    ((uintptr_t)vol->disk - (uintptr_t)vol->diskReal) +
+    last_bat * BLOCKS_PER_SECTOR * BLOCK_SIZE + ( last_block + 1 + 1 )* BLOCK_SIZE );
   // setting 0 size will cause expand to do an initial open instead of expanding
   vol->dwSize = 0;
  }
@@ -10675,7 +10785,7 @@ GetFreeBlock( vol, TRUE );
    vol->curseg = BLOCK_CACHE_DIRECTORY;
    vol->segment[vol->curseg] = 0;
    vol->datakey = (const char *)datakey;
-   SRG_GetEntropyBuffer( vol->entropy, (uint32_t*)usekey, BLOCK_SIZE * 8 );
+   SRG_GetEntropyBuffer( vol->entropy, (uint32_t*)usekey, 128 );
    {
     int n;
     for( n = 0; n < 128; n++ ) {
@@ -10971,7 +11081,7 @@ GetFreeBlock( vol, TRUE );
   }
   if( !file_found ) {
    _block = block = entry->first_block ^ entkey->first_block;
-   LoG( "entry starts at %d", entkey->first_block );
+   LoG( "entry starts at %d", entry->first_block ^ entkey->first_block );
  // zero the block... keep the name.
    entry->first_block = entkey->first_block;
    // wipe out file chain BAT
@@ -10979,13 +11089,45 @@ GetFreeBlock( vol, TRUE );
     BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX*, vol, ( ( block >> BLOCK_SHIFT ) * ( BLOCKS_PER_SECTOR*BLOCK_SIZE) ), BLOCK_CACHE_FILE );
     BLOCKINDEX _thiskey;
     _thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_FILE])[_block & (BLOCKS_PER_BAT-1)]:0;
+    uint8_t* blockData = (uint8_t*)vfs_BSEEK( vol, block, BLOCK_CACHE_DATAKEY );
+    //LoG( "Clearing file datablock...%p", (uintptr_t)blockData - (uintptr_t)vol->disk );
+    memset( blockData, 0, BLOCK_SIZE );
     block = vfs_GetNextBlock( vol, block, FALSE, FALSE );
     this_BAT[_block & (BLOCKS_PER_BAT-1)] = _thiskey;
     _block = block;
    } while( block != EOFBLOCK );
   }
  }
- size_t CPROC sack_vfs_truncate( struct sack_vfs_file *file ) { file->entry->filesize = file->fpi ^ file->dirent_key.filesize; return file->fpi; }
+ static void shrinkBAT( struct sack_vfs_file *file ) {
+  struct volume *vol = file->vol;
+  struct directory_entry *entry = file->entry;
+  struct directory_entry *entkey = &file->dirent_key;
+  BLOCKINDEX block, _block;
+  size_t bsize = 0;
+   _block = block = entry->first_block ^ entkey->first_block;
+   do {
+    BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX*, vol, ( ( block >> BLOCK_SHIFT ) * ( BLOCKS_PER_SECTOR*BLOCK_SIZE) ), BLOCK_CACHE_FILE );
+    BLOCKINDEX _thiskey;
+    _thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_FILE])[_block & (BLOCKS_PER_BAT-1)]:0;
+    block = vfs_GetNextBlock( vol, block, FALSE, FALSE );
+    if( bsize > (entry->filesize ^ entkey->filesize) ) {
+     uint8_t* blockData = (uint8_t*)vfs_BSEEK( file->vol, _block, BLOCK_CACHE_DATAKEY );
+     //LoG( "clearing a datablock after a file..." );
+     memset( blockData, 0, BLOCK_SIZE );
+     this_BAT[_block & (BLOCKS_PER_BAT-1)] = _thiskey;
+    } else {
+     bsize++;
+     if( bsize > (entry->filesize ^ entkey->filesize) ) {
+      uint8_t* blockData = (uint8_t*)vfs_BSEEK( file->vol, _block, BLOCK_CACHE_DATAKEY );
+      //LoG( "clearing a partial datablock after a file..., %d, %d", BLOCK_SIZE-(entry->filesize & (BLOCK_SIZE-1)), ( entry->filesize & (BLOCK_SIZE-1)) );
+      memset( blockData + ( entry->filesize & (BLOCK_SIZE-1)), 0, BLOCK_SIZE-(entry->filesize & (BLOCK_SIZE-1)) );
+      this_BAT[_block & (BLOCKS_PER_BAT-1)] = ~_thiskey;
+     }
+    }
+    _block = block;
+   } while( block != EOFBLOCK );
+ }
+ size_t CPROC sack_vfs_truncate( struct sack_vfs_file *file ) { file->entry->filesize = file->fpi ^ file->dirent_key.filesize; shrinkBAT( file ); return file->fpi; }
  int CPROC sack_vfs_close( struct sack_vfs_file *file ) {
   while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
   DeleteLink( &file->vol->files, file );
@@ -60533,9 +60675,9 @@ GetFreeBlock( vol, TRUE );
  ** [sqlite3_libversion_number()], [sqlite3_sourceid()],
  ** [sqlite_version()] and [sqlite_source_id()].
  */
- #define SQLITE_VERSION        "3.16.2"
- #define SQLITE_VERSION_NUMBER 3016002
- #define SQLITE_SOURCE_ID      "2017-01-06 16:32:41 a65a62893ca8319e89e48b8a38cf8a59c69a8209"
+ #define SQLITE_VERSION        "3.17.0"
+ #define SQLITE_VERSION_NUMBER 3017000
+ #define SQLITE_SOURCE_ID      "2017-02-13 16:02:40 ada05cfa86ad7f5645450ac7a2a21c9aa6e57d2c"
  /*
  ** CAPI3REF: Run-Time Library Version Numbers
  ** KEYWORDS: sqlite3_version sqlite3_sourceid
@@ -60666,7 +60808,11 @@ GetFreeBlock( vol, TRUE );
  */
  #ifdef SQLITE_INT64_TYPE
    typedef SQLITE_INT64_TYPE sqlite_int64;
-   typedef unsigned SQLITE_INT64_TYPE sqlite_uint64;
+ # ifdef SQLITE_UINT64_TYPE
+     typedef SQLITE_UINT64_TYPE sqlite_uint64;
+ # else
+     typedef unsigned SQLITE_INT64_TYPE sqlite_uint64;
+ # endif
  #elif defined(_MSC_VER) || defined(__BORLANDC__)
    typedef __int64 sqlite_int64;
    typedef unsigned __int64 sqlite_uint64;
@@ -60970,7 +61116,7 @@ GetFreeBlock( vol, TRUE );
  ** file that were written at the application level might have changed
  ** and that adjacent bytes, even bytes within the same sector are
  ** guaranteed to be unchanged.  The SQLITE_IOCAP_UNDELETABLE_WHEN_OPEN
- ** flag indicate that a file cannot be deleted when open.  The
+ ** flag indicates that a file cannot be deleted when open.  The
  ** SQLITE_IOCAP_IMMUTABLE flag indicates that the file is on
  ** read-only media and cannot be changed even by processes with
  ** elevated privileges.
@@ -61116,6 +61262,9 @@ GetFreeBlock( vol, TRUE );
  ** <li> [SQLITE_IOCAP_ATOMIC64K]
  ** <li> [SQLITE_IOCAP_SAFE_APPEND]
  ** <li> [SQLITE_IOCAP_SEQUENTIAL]
+ ** <li> [SQLITE_IOCAP_UNDELETABLE_WHEN_OPEN]
+ ** <li> [SQLITE_IOCAP_POWERSAFE_OVERWRITE]
+ ** <li> [SQLITE_IOCAP_IMMUTABLE]
  ** </ul>
  **
  ** The SQLITE_IOCAP_ATOMIC property means that all writes of
@@ -65707,7 +65856,7 @@ GetFreeBlock( vol, TRUE );
  ** ^The update hook is not invoked when [WITHOUT ROWID] tables are modified.
  **
  ** ^In the current implementation, the update hook
- ** is not invoked when duplication rows are deleted because of an
+ ** is not invoked when conflicting rows are deleted because of an
  ** [ON CONFLICT | ON CONFLICT REPLACE] clause.  ^Nor is the update hook
  ** invoked when rows are deleted using the [truncate optimization].
  ** The exceptions defined in this paragraph might change in a future
@@ -66463,6 +66612,12 @@ GetFreeBlock( vol, TRUE );
  ** [database connection] error code and message accessible via
  ** [sqlite3_errcode()] and [sqlite3_errmsg()] and related functions.
  **
+ ** A BLOB referenced by sqlite3_blob_open() may be read using the
+ ** [sqlite3_blob_read()] interface and modified by using
+ ** [sqlite3_blob_write()].  The [BLOB handle] can be moved to a
+ ** different row of the same table using the [sqlite3_blob_reopen()]
+ ** interface.  However, the column, table, or database of a [BLOB handle]
+ ** cannot be changed after the [BLOB handle] is opened.
  **
  ** ^(If the row that a BLOB handle points to is modified by an
  ** [UPDATE], [DELETE], or by [ON CONFLICT] side-effects
@@ -66486,6 +66641,10 @@ GetFreeBlock( vol, TRUE );
  **
  ** To avoid a resource leak, every open [BLOB handle] should eventually
  ** be released by a call to [sqlite3_blob_close()].
+ **
+ ** See also: [sqlite3_blob_close()],
+ ** [sqlite3_blob_reopen()], [sqlite3_blob_read()],
+ ** [sqlite3_blob_bytes()], [sqlite3_blob_write()].
  */
  SQLITE_API int sqlite3_blob_open(
    sqlite3*,
@@ -66500,11 +66659,11 @@ GetFreeBlock( vol, TRUE );
  ** CAPI3REF: Move a BLOB Handle to a New Row
  ** METHOD: sqlite3_blob
  **
- ** ^This function is used to move an existing blob handle so that it points
+ ** ^This function is used to move an existing [BLOB handle] so that it points
  ** to a different row of the same database table. ^The new row is identified
  ** by the rowid value passed as the second argument. Only the row can be
  ** changed. ^The database, table and column on which the blob handle is open
- ** remain the same. Moving an existing blob handle to a new row can be
+ ** remain the same. Moving an existing [BLOB handle] to a new row is
  ** faster than closing the existing handle and opening a new one.
  **
  ** ^(The new row must meet the same criteria as for [sqlite3_blob_open()] -
@@ -68385,7 +68544,7 @@ GetFreeBlock( vol, TRUE );
  **
  ** ^The [sqlite3_preupdate_hook()] interface registers a callback function
  ** that is invoked prior to each [INSERT], [UPDATE], and [DELETE] operation
- ** on a [rowid table].
+ ** on a database table.
  ** ^At most one preupdate hook may be registered at a time on a single
  ** [database connection]; each call to [sqlite3_preupdate_hook()] overrides
  ** the previous setting.
@@ -68394,9 +68553,9 @@ GetFreeBlock( vol, TRUE );
  ** ^The third parameter to [sqlite3_preupdate_hook()] is passed through as
  ** the first parameter to callbacks.
  **
- ** ^The preupdate hook only fires for changes to [rowid tables]; the preupdate
- ** hook is not invoked for changes to [virtual tables] or [WITHOUT ROWID]
- ** tables.
+ ** ^The preupdate hook only fires for changes to real database tables; the
+ ** preupdate hook is not invoked for changes to [virtual tables] or to
+ ** system tables like sqlite_master or sqlite_stat1.
  **
  ** ^The second parameter to the preupdate callback is a pointer to
  ** the [database connection] that registered the preupdate hook.
@@ -68410,12 +68569,16 @@ GetFreeBlock( vol, TRUE );
  ** databases.)^
  ** ^The fifth parameter to the preupdate callback is the name of the
  ** table that is being modified.
- ** ^The sixth parameter to the preupdate callback is the initial [rowid] of the
- ** row being changes for SQLITE_UPDATE and SQLITE_DELETE changes and is
- ** undefined for SQLITE_INSERT changes.
- ** ^The seventh parameter to the preupdate callback is the final [rowid] of
- ** the row being changed for SQLITE_UPDATE and SQLITE_INSERT changes and is
- ** undefined for SQLITE_DELETE changes.
+ **
+ ** For an UPDATE or DELETE operation on a [rowid table], the sixth
+ ** parameter passed to the preupdate callback is the initial [rowid] of the
+ ** row being modified or deleted. For an INSERT operation on a rowid table,
+ ** or any operation on a WITHOUT ROWID table, the value of the sixth
+ ** parameter is undefined. For an INSERT or UPDATE on a rowid table the
+ ** seventh parameter is the final rowid value of the row being inserted
+ ** or updated. The value of the seventh parameter passed to the callback
+ ** function is not defined for operations on WITHOUT ROWID tables, or for
+ ** INSERT operations on rowid tables.
  **
  ** The [sqlite3_preupdate_old()], [sqlite3_preupdate_new()],
  ** [sqlite3_preupdate_count()], and [sqlite3_preupdate_depth()] interfaces
@@ -68819,7 +68982,7 @@ GetFreeBlock( vol, TRUE );
  ** attached database. It is not an error if database zDb is not attached
  ** to the database when the session object is created.
  */
- int sqlite3session_create(
+ SQLITE_API int sqlite3session_create(
    sqlite3 *db,
    const char *zDb,
    sqlite3_session **ppSession
@@ -68836,7 +68999,7 @@ GetFreeBlock( vol, TRUE );
  ** are attached is closed. Refer to the documentation for
  ** [sqlite3session_create()] for details.
  */
- void sqlite3session_delete(sqlite3_session *pSession);
+ SQLITE_API void sqlite3session_delete(sqlite3_session *pSession);
  /*
  ** CAPI3REF: Enable Or Disable A Session Object
  **
@@ -68854,7 +69017,7 @@ GetFreeBlock( vol, TRUE );
  ** The return value indicates the final state of the session object: 0 if
  ** the session is disabled, or 1 if it is enabled.
  */
- int sqlite3session_enable(sqlite3_session *pSession, int bEnable);
+ SQLITE_API int sqlite3session_enable(sqlite3_session *pSession, int bEnable);
  /*
  ** CAPI3REF: Set Or Clear the Indirect Change Flag
  **
@@ -68882,7 +69045,7 @@ GetFreeBlock( vol, TRUE );
  ** The return value indicates the final state of the indirect flag: 0 if
  ** it is clear, or 1 if it is set.
  */
- int sqlite3session_indirect(sqlite3_session *pSession, int bIndirect);
+ SQLITE_API int sqlite3session_indirect(sqlite3_session *pSession, int bIndirect);
  /*
  ** CAPI3REF: Attach A Table To A Session Object
  **
@@ -68911,7 +69074,7 @@ GetFreeBlock( vol, TRUE );
  ** SQLITE_OK is returned if the call completes without error. Or, if an error
  ** occurs, an SQLite error code (e.g. SQLITE_NOMEM) is returned.
  */
- int sqlite3session_attach(
+ SQLITE_API int sqlite3session_attach(
    sqlite3_session *pSession,
    const char *zTab
  );
@@ -68924,7 +69087,7 @@ GetFreeBlock( vol, TRUE );
  ** If xFilter returns 0, changes is not tracked. Note that once a table is
  ** attached, xFilter will not be called again.
  */
- void sqlite3session_table_filter(
+ SQLITE_API void sqlite3session_table_filter(
    sqlite3_session *pSession,
    int(*xFilter)(
      void *pCtx,
@@ -69036,7 +69199,7 @@ GetFreeBlock( vol, TRUE );
  ** another field of the same row is updated while the session is enabled, the
  ** resulting changeset will contain an UPDATE change that updates both fields.
  */
- int sqlite3session_changeset(
+ SQLITE_API int sqlite3session_changeset(
    sqlite3_session *pSession,
    int *pnChangeset,
    void **ppChangeset
@@ -69079,7 +69242,8 @@ GetFreeBlock( vol, TRUE );
  **     the from-table, a DELETE record is added to the session object.
  **
  **   <li> For each row (primary key) that exists in both tables, but features
- **     different in each, an UPDATE record is added to the session.
+ **     different non-PK values in each, an UPDATE record is added to the
+ **     session.
  ** </ul>
  **
  ** To clarify, if this function is called and then a changeset constructed
@@ -69096,7 +69260,7 @@ GetFreeBlock( vol, TRUE );
  ** message. It is the responsibility of the caller to free this buffer using
  ** sqlite3_free().
  */
- int sqlite3session_diff(
+ SQLITE_API int sqlite3session_diff(
    sqlite3_session *pSession,
    const char *zFromDb,
    const char *zTbl,
@@ -69130,7 +69294,7 @@ GetFreeBlock( vol, TRUE );
  ** a single table are grouped together, tables appear in the order in which
  ** they were attached to the session object).
  */
- int sqlite3session_patchset(
+ SQLITE_API int sqlite3session_patchset(
    sqlite3_session *pSession,
    int *pnPatchset,
    void **ppPatchset
@@ -69150,7 +69314,7 @@ GetFreeBlock( vol, TRUE );
  ** guaranteed that a call to sqlite3session_changeset() will return a
  ** changeset containing zero changes.
  */
- int sqlite3session_isempty(sqlite3_session *pSession);
+ SQLITE_API int sqlite3session_isempty(sqlite3_session *pSession);
  /*
  ** CAPI3REF: Create An Iterator To Traverse A Changeset
  **
@@ -69184,7 +69348,7 @@ GetFreeBlock( vol, TRUE );
  ** the applies to table X, then one for table Y, and then later on visit
  ** another change for table X.
  */
- int sqlite3changeset_start(
+ SQLITE_API int sqlite3changeset_start(
    sqlite3_changeset_iter **pp,
    int nChangeset,
    void *pChangeset
@@ -69211,7 +69375,7 @@ GetFreeBlock( vol, TRUE );
  ** codes include SQLITE_CORRUPT (if the changeset buffer is corrupt) or
  ** SQLITE_NOMEM.
  */
- int sqlite3changeset_next(sqlite3_changeset_iter *pIter);
+ SQLITE_API int sqlite3changeset_next(sqlite3_changeset_iter *pIter);
  /*
  ** CAPI3REF: Obtain The Current Operation From A Changeset Iterator
  **
@@ -69238,7 +69402,7 @@ GetFreeBlock( vol, TRUE );
  ** SQLite error code is returned. The values of the output variables may not
  ** be trusted in this case.
  */
- int sqlite3changeset_op(
+ SQLITE_API int sqlite3changeset_op(
    sqlite3_changeset_iter *pIter,
    const char **pzTab,
    int *pnCol,
@@ -69270,7 +69434,7 @@ GetFreeBlock( vol, TRUE );
  ** SQLITE_OK is returned and the output variables populated as described
  ** above.
  */
- int sqlite3changeset_pk(
+ SQLITE_API int sqlite3changeset_pk(
    sqlite3_changeset_iter *pIter,
    unsigned char **pabPK,
    int *pnCol
@@ -69299,7 +69463,7 @@ GetFreeBlock( vol, TRUE );
  ** If some other error occurs (e.g. an OOM condition), an SQLite error code
  ** is returned and *ppValue is set to NULL.
  */
- int sqlite3changeset_old(
+ SQLITE_API int sqlite3changeset_old(
    sqlite3_changeset_iter *pIter,
    int iVal,
    sqlite3_value **ppValue
@@ -69331,7 +69495,7 @@ GetFreeBlock( vol, TRUE );
  ** If some other error occurs (e.g. an OOM condition), an SQLite error code
  ** is returned and *ppValue is set to NULL.
  */
- int sqlite3changeset_new(
+ SQLITE_API int sqlite3changeset_new(
    sqlite3_changeset_iter *pIter,
    int iVal,
    sqlite3_value **ppValue
@@ -69357,7 +69521,7 @@ GetFreeBlock( vol, TRUE );
  ** If some other error occurs (e.g. an OOM condition), an SQLite error code
  ** is returned and *ppValue is set to NULL.
  */
- int sqlite3changeset_conflict(
+ SQLITE_API int sqlite3changeset_conflict(
    sqlite3_changeset_iter *pIter,
    int iVal,
    sqlite3_value **ppValue
@@ -69372,7 +69536,7 @@ GetFreeBlock( vol, TRUE );
  **
  ** In all other cases this function returns SQLITE_MISUSE.
  */
- int sqlite3changeset_fk_conflicts(
+ SQLITE_API int sqlite3changeset_fk_conflicts(
    sqlite3_changeset_iter *pIter,
    int *pnOut
  );
@@ -69403,7 +69567,7 @@ GetFreeBlock( vol, TRUE );
  **     // An error has occurred
  **   }
  */
- int sqlite3changeset_finalize(sqlite3_changeset_iter *pIter);
+ SQLITE_API int sqlite3changeset_finalize(sqlite3_changeset_iter *pIter);
  /*
  ** CAPI3REF: Invert A Changeset
  **
@@ -69432,7 +69596,7 @@ GetFreeBlock( vol, TRUE );
  ** WARNING/TODO: This function currently assumes that the input is a valid
  ** changeset. If it is not, the results are undefined.
  */
- int sqlite3changeset_invert(
+ SQLITE_API int sqlite3changeset_invert(
    int nIn, const void *pIn,
    int *pnOut, void **ppOut
  );
@@ -69460,7 +69624,7 @@ GetFreeBlock( vol, TRUE );
  **
  ** Refer to the sqlite3_changegroup documentation below for details.
  */
- int sqlite3changeset_concat(
+ SQLITE_API int sqlite3changeset_concat(
    int nA,
    void *pA,
    int nB,
@@ -69641,7 +69805,7 @@ GetFreeBlock( vol, TRUE );
  ** <ul>
  **   <li> The table has the same name as the name recorded in the
  **        changeset, and
- **   <li> The table has the same number of columns as recorded in the
+ **   <li> The table has at least as many columns as recorded in the
  **        changeset, and
  **   <li> The table has primary key columns in the same position as
  **        recorded in the changeset.
@@ -69686,7 +69850,11 @@ GetFreeBlock( vol, TRUE );
  **   If a row with matching primary key values is found, but one or more of
  **   the non-primary key fields contains a value different from the original
  **   row value stored in the changeset, the conflict-handler function is
- **   invoked with [SQLITE_CHANGESET_DATA] as the second argument.
+ **   invoked with [SQLITE_CHANGESET_DATA] as the second argument. If the
+ **   database table has more columns than are recorded in the changeset,
+ **   only the values of those non-primary key fields are compared against
+ **   the current database contents - any trailing database table columns
+ **   are ignored.
  **
  **   If no row with matching primary key values is found in the database,
  **   the conflict-handler function is invoked with [SQLITE_CHANGESET_NOTFOUND]
@@ -69701,7 +69869,9 @@ GetFreeBlock( vol, TRUE );
  **
  ** <dt>INSERT Changes<dd>
  **   For each INSERT change, an attempt is made to insert the new row into
- **   the database.
+ **   the database. If the changeset row contains fewer fields than the
+ **   database table, the trailing fields are populated with their default
+ **   values.
  **
  **   If the attempt to insert the row fails because the database already
  **   contains a row with the same primary key values, the conflict handler
@@ -69719,13 +69889,13 @@ GetFreeBlock( vol, TRUE );
  **   For each UPDATE change, this function checks if the target database
  **   contains a row with the same primary key value (or values) as the
  **   original row values stored in the changeset. If it does, and the values
- **   stored in all non-primary key columns also match the values stored in
- **   the changeset the row is updated within the target database.
+ **   stored in all modified non-primary key columns also match the values
+ **   stored in the changeset the row is updated within the target database.
  **
  **   If a row with matching primary key values is found, but one or more of
- **   the non-primary key fields contains a value different from an original
- **   row value stored in the changeset, the conflict-handler function is
- **   invoked with [SQLITE_CHANGESET_DATA] as the second argument. Since
+ **   the modified non-primary key fields contains a value different from an
+ **   original row value stored in the changeset, the conflict-handler function
+ **   is invoked with [SQLITE_CHANGESET_DATA] as the second argument. Since
  **   UPDATE changes only contain values for non-primary key fields that are
  **   to be modified, only those fields need to match the original values to
  **   avoid the SQLITE_CHANGESET_DATA conflict-handler callback.
@@ -69753,7 +69923,7 @@ GetFreeBlock( vol, TRUE );
  ** rolled back, restoring the target database to its original state, and an
  ** SQLite error code returned.
  */
- int sqlite3changeset_apply(
+ SQLITE_API int sqlite3changeset_apply(
    sqlite3 *db,
    int nChangeset,
    void *pChangeset,
@@ -69951,7 +70121,7 @@ GetFreeBlock( vol, TRUE );
  ** parameter set to a value less than or equal to zero. Other than this,
  ** no guarantees are made as to the size of the chunks of data returned.
  */
- int sqlite3changeset_apply_strm(
+ SQLITE_API int sqlite3changeset_apply_strm(
    sqlite3 *db,
    int (*xInput)(void *pIn, void *pData, int *pnData),
    void *pIn,
@@ -69966,7 +70136,7 @@ GetFreeBlock( vol, TRUE );
    ),
    void *pCtx
  );
- int sqlite3changeset_concat_strm(
+ SQLITE_API int sqlite3changeset_concat_strm(
    int (*xInputA)(void *pIn, void *pData, int *pnData),
    void *pInA,
    int (*xInputB)(void *pIn, void *pData, int *pnData),
@@ -69974,23 +70144,23 @@ GetFreeBlock( vol, TRUE );
    int (*xOutput)(void *pOut, const void *pData, int nData),
    void *pOut
  );
- int sqlite3changeset_invert_strm(
+ SQLITE_API int sqlite3changeset_invert_strm(
    int (*xInput)(void *pIn, void *pData, int *pnData),
    void *pIn,
    int (*xOutput)(void *pOut, const void *pData, int nData),
    void *pOut
  );
- int sqlite3changeset_start_strm(
+ SQLITE_API int sqlite3changeset_start_strm(
    sqlite3_changeset_iter **pp,
    int (*xInput)(void *pIn, void *pData, int *pnData),
    void *pIn
  );
- int sqlite3session_changeset_strm(
+ SQLITE_API int sqlite3session_changeset_strm(
    sqlite3_session *pSession,
    int (*xOutput)(void *pOut, const void *pData, int nData),
    void *pOut
  );
- int sqlite3session_patchset_strm(
+ SQLITE_API int sqlite3session_patchset_strm(
    sqlite3_session *pSession,
    int (*xOutput)(void *pOut, const void *pData, int nData),
    void *pOut

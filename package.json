@@ -6,7 +6,10 @@
   "private": false,
   "scripts": {
     "test": "node vfs.js",
-    "install" : "cmake-js compile",
+    "install": "cmake-js compile",
     "build": "cmake-js build"
+  },
+  "dependencies": {
+    "nan": "^2.5.1"
   }
 }

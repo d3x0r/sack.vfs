@@ -1,3 +1,76 @@
+#include <node.h>
+#include <nan.h>
+#include <node_object_wrap.h>
+#include <v8.h>
+#include <uv.h>
+//#include <nan.h>
+
+#include "src/sack.h"
+#undef New
+
+using namespace v8;
+
+
+class VolumeObject : public node::ObjectWrap {
+public:
+	struct volume *vol;
+	static v8::Persistent<v8::Function> constructor;
+	
+public:
+
+	static void Init( Handle<Object> exports );
+	VolumeObject( const char *mount, const char *filename, const char *key, const char *key2 );
+
+	static void New( const FunctionCallbackInfo<Value>& args );
+	static void getDirectory( const FunctionCallbackInfo<Value>& args );
+
+   ~VolumeObject();
+};
+
+
+class ThreadObject : public node::ObjectWrap {
+public:
+	static v8::Persistent<v8::Function> constructor;
+   	static Persistent<Function, CopyablePersistentTraits<Function>> idleProc;
+public:
+
+	static void Init( Handle<Object> exports );
+	ThreadObject();
+
+	static void New( const FunctionCallbackInfo<Value>& args );
+
+	static void relinquish( const FunctionCallbackInfo<Value>& args );
+	static void wake( const FunctionCallbackInfo<Value>& args );
+
+   ~ThreadObject();
+};
+
+
+class FileObject : public node::ObjectWrap {
+	struct sack_vfs_file *file;
+	//Local<Object> volume;
+   char* buf;
+   size_t size;
+   Persistent<Object> volume;
+public:
+	static v8::Persistent<v8::Function> constructor;
+	static void Init(  );
+
+	static void openFile( const FunctionCallbackInfo<Value>& args );
+	static void readFile( const FunctionCallbackInfo<Value>& args );
+	static void writeFile( const FunctionCallbackInfo<Value>& args );
+	static void seekFile( const FunctionCallbackInfo<Value>& args );
+	static void truncateFile( const FunctionCallbackInfo<Value>& args );
+
+	//static void readFile( const FunctionCallbackInfo<Value>& args );
+
+	static void Emitter( const FunctionCallbackInfo<Value>& args );
+
+	FileObject( VolumeObject* vol, const char *filename, Isolate*, Local<Object> o );
+   ~FileObject();
+};
+
+
 
 class SqlObject : public node::ObjectWrap {
 public:
