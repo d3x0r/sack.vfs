@@ -9,6 +9,7 @@
            "com_interface.cc",
            "sql_module.cc",
            "reg_access.cc",
+           "thread_module.cc",
           ],
 	'defines': [
           '__64__=1',

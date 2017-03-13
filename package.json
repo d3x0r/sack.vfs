@@ -1,13 +1,13 @@
 {
   "name": "sack.vfs",
-  "version": "0.1.99214",
+  "version": "0.1.99215",
   "description": "Node.js VFS Addon",
   "main": "vfs_module.js",
   "private": false,
   "scripts": {
     "test": "node vfs.js",
-    "install": "cmake-js compile",
-    "build": "cmake-js build"
+    "install": "node-gyp configure build",
+    "build": "node-gyp configure build"
   },
   "dependencies": {
     "nan": "^2.5.1"
