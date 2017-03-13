@@ -35,8 +35,8 @@ set( DEFINITIONS   __STATIC__
 FILE( WRITE ${CMAKE_BINARY_DIR}/config.ppc "/*CMake Option defined*/\n" )
 
 foreach( DEF ${DEFINITIONS} )
-   #ADD_DEFINITIONS( -D${DEF} )
-   FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define ${DEF}\n" )
+   ADD_DEFINITIONS( -D${DEF} )
+   #FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define ${DEF}\n" )
 ENDFOREACH()
 
 SET( EXTRA_HEADERS
