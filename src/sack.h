@@ -1,3 +1,4 @@
+ /*CMake Option defined*/
  /* Includes the system platform as required or appropriate. If
     under a linux system, include appropriate basic linux type
     headers, if under windows pull "windows.h".

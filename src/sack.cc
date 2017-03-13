@@ -1,3 +1,4 @@
+ /*CMake Option defined*/
  /*
   BLOCKINDEX BAT[BLOCKS_PER_BAT] // link of next blocks; 0 if free, FFFFFFFF if end of file block
   uint8_t  block_data[BLOCKS_PER_BAT][BLOCK_SIZE];
@@ -10107,7 +10108,7 @@
  #endif
  SACK_VFS_NAMESPACE
  //#define PARANOID_INIT
- #define DEBUG_TRACE_LOG
+ //#define DEBUG_TRACE_LOG
  #ifdef DEBUG_TRACE_LOG
  #define LoG( a,... ) lprintf( a,##__VA_ARGS__ )
  #else
@@ -10395,7 +10396,7 @@
       if( ( ( (uintptr_t)actual_disk - (uintptr_t)new_disk ) < vol->dwSize ) ) {
        const uint8_t *sig = sack_vfs_get_signature2( (POINTER)((uintptr_t)actual_disk-BLOCK_SIZE), new_disk );
        if( memcmp( sig, (POINTER)(((uintptr_t)actual_disk)-BLOCK_SIZE), BLOCK_SIZE ) ) {
-        LoG( "Signature failed comparison; the core has changed since it was attached" );
+        lprintf( "Signature failed comparison; the core has changed since it was attached" );
         CloseSpace( vol->diskReal );
         vol->diskReal = NULL;
         vol->dwSize = 0;
@@ -10404,7 +10405,7 @@
        vol->dwSize -= ((uintptr_t)actual_disk - (uintptr_t)new_disk);
        new_disk = actual_disk;
       } else {
-       LoG( "Signature failed comparison; the core is not attached to anything." );
+       lprintf( "Signature failed comparison; the core is not attached to anything." );
        CloseSpace( vol->diskReal );
        vol->diskReal = NULL;
        vol->dwSize = 0;
@@ -10438,7 +10439,7 @@
      if( actual_disk ) {
       const uint8_t *sig = sack_vfs_get_signature2( (POINTER)((uintptr_t)actual_disk-BLOCK_SIZE), new_disk );
       if( memcmp( sig, (POINTER)(((uintptr_t)actual_disk)-BLOCK_SIZE), BLOCK_SIZE ) ) {
-       LoG( "Signature failed comparison; the core has changed since it was attached" );
+       lprintf( "Signature failed comparison; the core has changed since it was attached" );
        CloseSpace( vol->diskReal );
        vol->diskReal = NULL;
        vol->dwSize = 0;
@@ -10651,8 +10652,38 @@ GetFreeBlock( vol, TRUE );
   vol->read_only = 1;
   AssignKey( vol, userkey, devkey );
   vol->external_memory = TRUE;
-  vol->disk = (struct disk*)memory;
+  vol->diskReal = (struct disk*)memory;
   vol->dwSize = sz;
+ #ifdef WIN32
+ // elf has a different signature to check for .so extended data...
+    struct disk *actual_disk;
+    if( ((char*)memory)[0] == 'M' && ((char*)memory)[1] == 'Z' ) {
+     actual_disk = (struct disk*)GetExtraData( memory );
+     if( actual_disk ) {
+     lprintf( "%d %d",  ( (uintptr_t)actual_disk - (uintptr_t)memory ), vol->dwSize );
+      if( ( ( (uintptr_t)actual_disk - (uintptr_t)memory ) < vol->dwSize ) ) {
+       const uint8_t *sig = sack_vfs_get_signature2( (POINTER)((uintptr_t)actual_disk-BLOCK_SIZE), memory );
+       if( memcmp( sig, (POINTER)(((uintptr_t)actual_disk)-BLOCK_SIZE), BLOCK_SIZE ) ) {
+        lprintf( "Signature failed comparison; the core has changed since it was attached" );
+        vol->diskReal = NULL;
+        vol->dwSize = 0;
+        sack_vfs_unload_volume( vol );
+        return FALSE;
+       }
+       vol->dwSize -= ((uintptr_t)actual_disk - (uintptr_t)memory);
+       memory = (POINTER)actual_disk;
+      } else {
+       lprintf( "Signature failed comparison; the core is not attached to anything." );
+       vol->diskReal = NULL;
+       vol->disk = NULL;
+       vol->dwSize = 0;
+       sack_vfs_unload_volume( vol );
+       return NULL;
+      }
+     }
+    }
+ #endif
+  vol->disk = (struct disk*)memory;
   if( !ValidateBAT( vol ) ) { sack_vfs_unload_volume( vol );  return NULL; }
   return vol;
  }
