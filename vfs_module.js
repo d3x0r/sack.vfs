@@ -2,8 +2,8 @@
 
 var vfs;
 try{
-  vfs = require( "./build/Debug/vfs_module.node" );
-} catch(err) { try { /*console.log( err ); */vfs = require( "./build/Release/vfs_module.node" ); } catch( err ){  console.log( err )} }
+  vfs = require( "./build/Debug/sack_vfs.node" );
+} catch(err) { try { /*console.log( err ); */vfs = require( "./build/Release/sack_vfs.node" ); } catch( err ){  console.log( err )} }
 process.on( 'beforeExit', ()=>vfs.Thread() );
 //process.on( 'exit', ()=>vfs.Thread() );
 const thread = vfs.Thread(process._tickDomainCallback);

@@ -13,7 +13,7 @@
           ],
 	'defines': [
           '__64__=1',
-          'TARGETNAME="vfs_module.node"',
+          'TARGETNAME="sack_vfs.node"',
            "__STATIC__","USE_SQLITE","USE_SQLITE_INTERFACE","FORCE_COLOR_MACROS","_CRT_SECURE_NO_WARNINGS","NEED_SHLAPI","NEED_SHLOBJ" 
                 
 

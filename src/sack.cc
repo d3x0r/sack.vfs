@@ -4962,6 +4962,7 @@
  #define LPP_OPTION_FIRST_ARG_IS_ARG      4
  #define LPP_OPTION_NEW_GROUP             8
  #define LPP_OPTION_NEW_CONSOLE          16
+ #define LPP_OPTION_SUSPEND              32
  SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramExx )( CTEXTSTR program, CTEXTSTR path, PCTEXTSTR args
                   , int flags
                   , TaskOutput OutputHandler
@@ -4977,6 +4978,8 @@
  // abort task, no kill signal, sigabort basically.  Use StopProgram for a more graceful terminate.
  // if (!StopProgram(task)) TerminateProgram(task) would be appropriate.
  SYSTEM_PROC( uintptr_t, TerminateProgram )( PTASK_INFO task );
+ SYSTEM_PROC( void, ResumeProgram )( PTASK_INFO task );
+ SYSTEM_PROC( uintptr_t, GetProramAddress )( PTASK_INFO task );
  // before luanchProgramEx, there was no userdata...
  SYSTEM_PROC( void, SetProgramUserData )( PTASK_INFO task, uintptr_t psv );
  // attempt to implement a method on windows that allows a service to launch a user process
@@ -18321,6 +18324,101 @@ GetFreeBlock( vol, TRUE );
     return 0;
  }
  //--------------------------------------------------------------------------
+ void ResumeProgram( PTASK_INFO task )
+ {
+ #ifdef WIN32
+  //DWORD WINAPI ResumeThread(  _In_ HANDLE hThread);
+  ResumeThread( task->pi.hThread );
+ #endif
+ }
+ uintptr_t GetProramAddress( PTASK_INFO task ) {
+ #ifdef WIN32
+    /*
+    BOOL WINAPI GetThreadContext(
+   _In_    HANDLE    hThread,
+   _Inout_ LPCONTEXT lpContext
+   );
+   */
+  uintptr_t memstart;
+    CONTEXT ctx;
+ #ifdef __64__
+    WOW64_CONTEXT ctx64;
+  ctx64.ContextFlags = CONTEXT_INTEGER;
+  Wow64GetThreadContext( task->pi.hThread, &ctx64 );
+  memstart = ctx64.Ebx;
+  ctx.ContextFlags = CONTEXT_INTEGER;
+  GetThreadContext( task->pi.hThread, &ctx );
+  //memstart = ctx.Ebx;
+    return memstart;
+ #else
+  GetThreadContext( task->pi.hThread, &ctx );
+  memstart = ctx.Ebx;
+    return memstart;
+ #endif
+ #endif
+ }
+ void LoadReadExe( PTASK_INFO task, uintptr_t base )
+    //-------------------------------------------------------
+ // function to process a currently loaded program to get the
+ // data offset at the end of the executable.
+ {
+ #ifdef WIN32
+ #  define Seek(a,b) (((uintptr_t)a)+(b))
+  //uintptr_t source_memory_length = block_len;
+  //POINTER source_memory = block;
+  {
+// = (PIMAGE_DOS_HEADER)source_memory;
+   IMAGE_DOS_HEADER source_dos_header;
+// = (PIMAGE_NT_HEADERS)Seek( source_memory, source_dos_header->e_lfanew );
+   PIMAGE_NT_HEADERS source_nt_header;
+        SIZE_T nRead;
+   ReadProcessMemory( task->pi.hProcess, (void*)base, (void*)&source_dos_header, sizeof( source_dos_header ), &nRead );
+       LogBinary((uint8_t*) &source_dos_header, sizeof( source_dos_header ));
+   if( source_dos_header.e_magic != IMAGE_DOS_SIGNATURE ) {
+    LoG( "Basic signature check failed; not a library" );
+    return ;
+   }
+ /*
+   if( source_nt_header->Signature != IMAGE_NT_SIGNATURE ) {
+    LoG( "Basic NT signature check failed; not a library" );
+    return NULL;
+   }
+   if( source_nt_header->FileHeader.SizeOfOptionalHeader )
+   {
+    if( source_nt_header->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR_MAGIC )
+    {
+     LoG( "Optional header signature is incorrect..." );
+     return NULL;
+    }
+   }
+   {
+    int n;
+    long FPISections = source_dos_header->e_lfanew
+     + sizeof( DWORD ) + sizeof( IMAGE_FILE_HEADER )
+     + source_nt_header->FileHeader.SizeOfOptionalHeader;
+    PIMAGE_SECTION_HEADER source_section = (PIMAGE_SECTION_HEADER)Seek( source_memory, FPISections );
+    uintptr_t dwSize = 0;
+    uintptr_t newSize;
+    source_section = (PIMAGE_SECTION_HEADER)Seek( source_memory, FPISections );
+    for( n = 0; n < source_nt_header->FileHeader.NumberOfSections; n++ )
+    {
+     newSize = (source_section[n].PointerToRawData) + source_section[n].SizeOfRawData;
+     if( newSize > dwSize )
+      dwSize = newSize;
+    }
+    dwSize += (BLOCK_SIZE*2)-1; // pad 1 full block, plus all but 1 byte of a full block(round up)
+    dwSize &= ~(BLOCK_SIZE-1); // mask off the low bits; floor result to block boundary
+    return (POINTER)Seek( source_memory, dwSize );
+    }
+       */
+  }
+ #  undef Seek
+ #else
+  // need to get elf size...
+  return 0;
+ #endif
+ }
+ //--------------------------------------------------------------------------
  #ifdef WIN32
  extern HANDLE GetImpersonationToken( void );
  #endif
@@ -18341,6 +18439,7 @@ GetFreeBlock( vol, TRUE );
  #ifdef WIN32
    int launch_flags = ( ( flags & LPP_OPTION_NEW_CONSOLE ) ? CREATE_NEW_CONSOLE : 0 )
                     | ( ( flags & LPP_OPTION_NEW_GROUP ) ? CREATE_NEW_PROCESS_GROUP : 0 )
+                    | ( ( flags & LPP_OPTION_SUSPEND ) ? CREATE_SUSPENDED : 0 )
     ;
    PVARTEXT pvt = VarTextCreateEx( DBG_VOIDRELAY );
    PTEXT cmdline;
@@ -52055,7 +52154,7 @@ GetFreeBlock( vol, TRUE );
   SetNetworkLong( pc_new, 2, (uintptr_t)&socket->input_state );
   SetNetworkReadComplete( pc_new, read_complete );
  }
- static LOGICAL CPROC HandleRequest( uintptr_t psv, HTTPState pHttpState )
+ static LOGICAL CPROC HandleWebsockRequest( uintptr_t psv, HTTPState pHttpState )
  {
     return 0;
  }
@@ -54476,14 +54575,14 @@ GetFreeBlock( vol, TRUE );
   globalNetworkData.dwConnectTimeout = 10000;
  #endif
  }
- void LowLevelInit( void )
+ static void LowLevelNetworkInit( void )
  {
   if( !global_network_data )
    SimpleRegisterAndCreateGlobal( global_network_data );
  }
  PRIORITY_PRELOAD( InitNetworkGlobal, CONFIG_SCRIPT_PRELOAD_PRIORITY - 1 )
  {
-  LowLevelInit();
+  LowLevelNetworkInit();
   if( !globalNetworkData.system_name )
   {
    globalNetworkData.system_name = WIDE("no.network");
@@ -59727,11 +59826,11 @@ GetFreeBlock( vol, TRUE );
  LOGICAL ssl_Send( PCLIENT pc, POINTER buffer, size_t length ) {
     return FALSE;
  }
- LOGICAL ssl_BeginServer( PCLIENT pc ) {
-    return FALSE;
+ LOGICAL ssl_BeginServer( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen ) {
+  return FALSE;
  }
- LOGICAL ssl_BeginClientSession( PCLIENT pc ) {
-    return FALSE;
+ LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t client_keypairlen ) {
+  return FALSE;
  }
  SACK_NETWORK_NAMESPACE_END
  #else
@@ -78883,14 +78982,12 @@ GetFreeBlock( vol, TRUE );
          , CTEXTSTR **result, CTEXTSTR **fields DBG_PASS )
  {
   PODBC use_odbc;
+    int once = 0;
   // clean up what we think of as our result set data (reset to nothing)
   if( result )
    (*result) = NULL;
   if( nResults )
    *nResults = 0;
-  // if not a [sS]elect then begin a transaction.... some code uses query record for everything.
-  if( query[0] != 's' && query[0] != 'S' )
-   BeginTransactEx( use_odbc, 0 );
   do
   {
    if( !IsSQLOpenEx( odbc DBG_RELAY ) )
@@ -78900,6 +78997,11 @@ GetFreeBlock( vol, TRUE );
     // setup error as invalid databse handle... well.. try the default one also
     // but mostly fail.
     use_odbc = g.odbc;
+   }
+   // if not a [sS]elect then begin a transaction.... some code uses query record for everything.
+   if( !once && query[0] != 's' && query[0] != 'S' ) {
+          once = 1;
+    BeginTransactEx( use_odbc, 0 );
    }
    // collection is very important to have - even if we will have to be opened,
    // we ill need one, so make at least one.
@@ -78954,12 +79056,11 @@ GetFreeBlock( vol, TRUE );
  int SQLQueryEx( PODBC odbc, CTEXTSTR query, CTEXTSTR *result DBG_PASS )
  {
   PODBC use_odbc;
+  LOGICAL once = 0;
   // clean up our result data....
   if( *result )
    (*result) = NULL;
   // if not a [sS]elect then begin a transaction.... some code might use query for everything.
-  if( query[0] != 's' && query[0] != 'S' )
-   BeginTransactEx( use_odbc, 0 );
   do
   {
    if( !IsSQLOpen( odbc ) )
@@ -78969,6 +79070,10 @@ GetFreeBlock( vol, TRUE );
     // setup error as invalid databse handle... well.. try the default one also
     // but mostly fail.
     use_odbc = g.odbc;
+   }
+   if( !once && query[0] != 's' && query[0] != 'S' ) {
+    BeginTransactEx( use_odbc, 0 );
+    once = 1;
    }
    // this would be hard to come by...
    // there's a collector stil around from the open command.
@@ -79835,7 +79940,7 @@ GetFreeBlock( vol, TRUE );
   else
    return 1;
  }
- static int CPROC MyStrCmp( uintptr_t s1, uintptr_t s2 )
+ static int CPROC MySqlUtilStrCmp( uintptr_t s1, uintptr_t s2 )
  {
   return StrCaseCmp( (TEXTCHAR*)s1, (TEXTCHAR*)s2 );
  }
@@ -79862,7 +79967,7 @@ GetFreeBlock( vol, TRUE );
    //lprintf( WIDE("Failed to find entry, create new tree for cache") );
    AddBinaryNode( tables
         , newcache = CreateBinaryTreeExx( BT_OPT_NODUPLICATES
-                  , MyStrCmp
+                  , MySqlUtilStrCmp
                   , NULL )
         , (uintptr_t)saveparams );
   }
@@ -81623,7 +81728,7 @@ GetFreeBlock( vol, TRUE );
  #if !defined( __LINUX__ ) && !defined( __INTERNAL_UUID__ )
  #include <rpc.h>
  SQL_NAMESPACE
- PRELOAD( InitCo )
+ PRELOAD( SqlPreloadInitCo )
  {
     CoInitializeEx( NULL, COINIT_MULTITHREADED );
  }

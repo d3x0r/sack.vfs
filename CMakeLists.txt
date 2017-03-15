@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0)
 
-project (vfs_module)
+project (sack_vfs)
 
 
 include_directories( "../node_modules/nan" )
@@ -158,7 +158,8 @@ message( ${CMAKE_JS_INC} )
 include_directories(${CMAKE_JS_INC} ${INCLUDES} src )
 
 if( WIN32 )
-	set( MORE_MODULE_SOURCES reg_access.cc )
+	set( MORE_MODULE_SOURCES reg_access.cc 
+		fixup_windows_executable.cc  )
 endif( WIN32 )
 
 add_library(${PROJECT_NAME} SHARED 
