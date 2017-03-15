@@ -170,7 +170,7 @@ void ComObject::writeCom( const FunctionCallbackInfo<Value>& args ) {
 		ArrayBuffer::Contents ab_c = myarr->Buffer()->GetContents();
 		char *buf = static_cast<char*>(ab_c.Data()) + myarr->ByteOffset();
 		//LogBinary( buf, myarr->Length() );
-		SackWriteComm( com->handle, buf, myarr->Length() );	
+		SackWriteComm( com->handle, buf, (int)myarr->Length() );	
 	}
 	
 }

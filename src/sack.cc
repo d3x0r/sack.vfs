@@ -11591,7 +11591,7 @@ GetFreeBlock( vol, TRUE );
    {
     if( ctx->bits_avail - ctx->bits_used )
     {
-     partial_bits = ctx->bits_avail - ctx->bits_used;
+     partial_bits = (uint32_t)(ctx->bits_avail - ctx->bits_used);
      if( partial_bits > sizeof( partial_tmp ) * 8 )
       partial_bits = sizeof( partial_tmp ) * 8;
      if( ctx->use_version2 )
@@ -18357,6 +18357,7 @@ GetFreeBlock( vol, TRUE );
  #endif
  #endif
  }
+ #if 0
  void LoadReadExe( PTASK_INFO task, uintptr_t base )
     //-------------------------------------------------------
  // function to process a currently loaded program to get the
@@ -18418,6 +18419,7 @@ GetFreeBlock( vol, TRUE );
   return 0;
  #endif
  }
+ #endif
  //--------------------------------------------------------------------------
  #ifdef WIN32
  extern HANDLE GetImpersonationToken( void );
@@ -33024,8 +33026,8 @@ GetFreeBlock( vol, TRUE );
     if( dwAlignPad < sizeof(uintptr_t) ) {
      DebugBreak();
     }
-    pc->dwPad = dwAlignPad - sizeof(uintptr_t);
-    ((uintptr_t*)(retval - sizeof(uintptr_t)))[0] = pc->to_chunk_start = ((((uintptr_t)pc->byData) + (alignment - 1)) & masks[alignment]) - (uintptr_t)pc->byData;
+    pc->dwPad = (uint16_t)( dwAlignPad - sizeof(uintptr_t) );
+    ((uintptr_t*)(retval - sizeof(uintptr_t)))[0] = pc->to_chunk_start = (uint32_t)(((((uintptr_t)pc->byData) + (alignment - 1)) & masks[alignment]) - (uintptr_t)pc->byData);
     return (POINTER)retval;
    }
    else {
@@ -33196,7 +33198,7 @@ GetFreeBlock( vol, TRUE );
    //#endif
    if( alignment && ((uintptr_t)pc->byData & ~masks[alignment]) ) {
     uintptr_t retval = ((((uintptr_t)pc->byData) + (alignment - 1)) & masks[alignment]);
-    ((uint32_t*)(retval - 4))[0] = pc->to_chunk_start = ((((uintptr_t)pc->byData) + (alignment - 1)) & masks[alignment]) - (uintptr_t)pc->byData;
+    ((uint32_t*)(retval - 4))[0] = pc->to_chunk_start = (uint32_t)(((((uintptr_t)pc->byData) + (alignment - 1)) & masks[alignment]) - (uintptr_t)pc->byData);
     return (POINTER)retval;
    }
    else {
@@ -36539,7 +36541,7 @@ GetFreeBlock( vol, TRUE );
    Deallocate( TEXTCHAR*, _format );
  #  undef format
  #endif
-   r = file->mount->fsi->_write( file_handle, (char*)GetText( output ), GetTextSize( output ) * sizeof( TEXTCHAR ) );
+   r = (int)file->mount->fsi->_write( file_handle, (char*)GetText( output ), GetTextSize( output ) * sizeof( TEXTCHAR ) );
    LineRelease( output );
    return r;
   }
@@ -36557,7 +36559,7 @@ GetFreeBlock( vol, TRUE );
   if( format )
   {
    size_t len = strlen( format );
-   return sack_fwrite( format, 1, len, file );
+   return (int)( sack_fwrite( format, 1, (int)len, file ) & 0x7FFFFFFF );
   }
   return 0;
  }
@@ -38648,7 +38650,7 @@ GetFreeBlock( vol, TRUE );
  //--------------------------------------------------------------------------
  POINTER  PeekQueueEx  ( PLINKQUEUE plq, int idx )
  {
-  int top;
+  size_t top;
   if( !plq )
    return NULL;
   if( idx < 0 )
@@ -45557,7 +45559,7 @@ GetFreeBlock( vol, TRUE );
   PLIST fields;
  // list of HttpField *, taken in from the URL or content (get or post)
   PLIST cgi_fields;
-  uint32_t content_length;
+  size_t content_length;
  // content of the message, POST,PUT,PATCH and replies have this.
   PTEXT content;
  // boolean flag - indicates that the header portion of the http request is finished.
@@ -45775,7 +45777,7 @@ GetFreeBlock( vol, TRUE );
             if( TextSimilar( tmp, WIDE("HTTP/") ) )
             {
              TEXTCHAR *tmp2 = (TEXTCHAR*)StrChr( GetText( tmp ), '.' );
-             pHttpState->response_version = ( IntCreateFromText( GetText( tmp ) + 5 ) * 100 ) + IntCreateFromText( tmp2 + 1 );
+             pHttpState->response_version = (int)(( IntCreateFromText( GetText( tmp ) + 5 ) * 100 ) + IntCreateFromText( tmp2 + 1 ));
              {
               PTEXT nextword = next;
               if( nextword )
@@ -46785,7 +46787,7 @@ GetFreeBlock( vol, TRUE );
      outbuf[outchar] = 0;
      outchar = 0;
      // should validate port is in numeric.
-     data->port = IntCreateFromText( outbuf );
+     data->port = (int)IntCreateFromText( outbuf );
      state = PARSE_STATE_COLLECT_RESOURCE_PATH;
     }
     else if( state == PARSE_STATE_COLLECT_ADDRESS )
@@ -46799,7 +46801,7 @@ GetFreeBlock( vol, TRUE );
     {
      outbuf[outchar] = 0;
      outchar = 0;
-     data->port = IntCreateFromText( outbuf );
+     data->port = (int)IntCreateFromText( outbuf );
      //AppendBuffer( &data->port, NULL, outbuf );
      state = PARSE_STATE_COLLECT_RESOURCE_PATH;
     }
@@ -46918,7 +46920,7 @@ GetFreeBlock( vol, TRUE );
    data->user = NULL;
    outbuf[outchar] = 0;
    outchar = 0;
-   data->port = IntCreateFromText( outbuf );
+   data->port = (int)IntCreateFromText( outbuf );
    //AppendBuffer( &data->port, NULL, outbuf );
    break;
   case PARSE_STATE_COLLECT_CGI_NAME:
@@ -47199,7 +47201,7 @@ GetFreeBlock( vol, TRUE );
  #define DEFAULT_READ_BUFFER 1024
  typedef struct com_tracking_tag {
   TEXTCHAR  portname[24];
-  int     iCommId;
+  uintptr_t     iCommId;
   int     iUsers;
   struct {
    BIT_FIELD bUseCarrierDetect : 1;
@@ -47448,7 +47450,7 @@ GetFreeBlock( vol, TRUE );
   return NULL;
  }
  //-----------------------------------------------------------------------
- PCOM_TRACK AddComTracking( CTEXTSTR szPort, int iCommId )
+ PCOM_TRACK AddComTracking( CTEXTSTR szPort, uintptr_t iCommId )
  {
   PCOM_TRACK pComTrack = New( COM_TRACK );
   memset( pComTrack, 0, sizeof( *pComTrack ) );
@@ -47787,7 +47789,7 @@ GetFreeBlock( vol, TRUE );
     int len;
     pct->flags.bInTimer = 1;
           EnterCriticalSec( &pct->csOp );
-    len = ReadComm( pct->iCommId
+    len = ReadComm( (int)pct->iCommId
           , pct->pReadBuffer + pct->nReadLen
           , pct->nReadTotal - pct->nReadLen);
     LeaveCriticalSec( &pct->csOp );
@@ -47837,7 +47839,7 @@ GetFreeBlock( vol, TRUE );
        {
         if( !pcc->flags.skip_read )
          pcc->func( pcc->psvUserRead
-            , pct->iCommId
+            , (int)pct->iCommId
             , pct->pReadBuffer
             , pct->nReadLen );
        }
@@ -47951,7 +47953,7 @@ GetFreeBlock( vol, TRUE );
     if( gbLog )
      Log1( WIDE("Resulting in comm already open...: %s"), szPort );
     pct->iUsers++;
-    return pct->iCommId;
+    return (int)pct->iCommId;
    }
    else
    {
@@ -47964,8 +47966,8 @@ GetFreeBlock( vol, TRUE );
      if( StrCaseCmpEx( szPort, WIDE("lpt"), 3 ) != 0 )
      {
       pct->flags.bOutputOnly = 0;
-        SackFlushComm( iCommId, 0 );
-         SackFlushComm( iCommId, 1 );
+         SackFlushComm( (int)iCommId, 0 );
+         SackFlushComm( (int)iCommId, 1 );
  #ifndef __LINUX__
  #ifdef BCC16
        pct->dcb.Id          = iCommId;
@@ -48010,7 +48012,7 @@ GetFreeBlock( vol, TRUE );
  #ifdef _WIN32
       lprintf( WIDE("Open: Invalid initialization string %d"), GetLastError() );
  #endif
-     SackCloseComm( iCommId );
+     SackCloseComm( (int)iCommId );
      iCommId = -1;
      }
  #else
@@ -48065,7 +48067,7 @@ GetFreeBlock( vol, TRUE );
      }
     }
     //xlprintf(LOG_NOISE)( WIDE("Resulting to the client...") );
-    return  iCommId;
+    return  (int)iCommId;
    }
   }
  #else
@@ -48585,8 +48587,8 @@ GetFreeBlock( vol, TRUE );
   PCOM_TRACK pct = FindComByNumber( nCommID );
   if( pct )
   {
-   FlushComm( pct->iCommId, 0 );
-   FlushComm( pct->iCommId, 1 );
+   FlushComm( (int)pct->iCommId, 0 );
+   FlushComm( (int)pct->iCommId, 1 );
   }
   {
  //#if 0
@@ -48598,7 +48600,7 @@ GetFreeBlock( vol, TRUE );
      PCOM_TRACK pComTrack = FindComByNumber( nCommID );
      do
      {
-     nCharsRead = ReadComm ( pComTrack->iCommId
+     nCharsRead = ReadComm ( (int)pComTrack->iCommId
                  , cBuf
                  , 100 );
          //Log1( WIDE("Read com chars: %d"), nCharsRead );
@@ -48699,7 +48701,7 @@ GetFreeBlock( vol, TRUE );
  typedef uintptr_t (*web_socket_opened)( PCLIENT pc, uintptr_t psv );
  typedef void (*web_socket_closed)( PCLIENT pc, uintptr_t psv );
  typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
- typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, POINTER buffer, int msglen );
+ typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, POINTER buffer, size_t msglen );
  // create a websocket connection.
  //  If web_socket_opened is passed as NULL, this function will wait until the negotiation has passed.
  //  since these packets are collected at a lower layer, buffers passed to receive event are allocated for
@@ -48858,10 +48860,10 @@ GetFreeBlock( vol, TRUE );
    }
   }
   else
-   msgout[1] = length;
+   msgout[1] = (uint8_t)length;
   if( do_mask )
   {
-   int mask_offset = (length_out-length) - 4;
+   int mask_offset = (int)(length_out-length) - 4;
    msgout[1] |= 0x80;
    msgout[mask_offset+0] = (uint8_t)(use_mask[3]);
    msgout[mask_offset+1] = (uint8_t)(use_mask[2]);
@@ -51964,8 +51966,8 @@ GetFreeBlock( vol, TRUE );
  {
   size_t n;
   uint8_t okay = 0;
-  int randNum;
-  TEXTCHAR output[25];
+  //int randNum;
+  //TEXTCHAR output[25];
   uint8_t* bytes = (uint8_t*)buffer;
   for( n = 0; n < length; n++ )
   {
@@ -52844,7 +52846,6 @@ GetFreeBlock( vol, TRUE );
          , struct json_value_container *val
          , POINTER msg_output )
  {
-  PTEXT string;
   if( !val->name )
    return;
   // remove name; indicate that the value has been used.
@@ -54678,9 +54679,11 @@ GetFreeBlock( vol, TRUE );
  #ifdef WIN32
      HRESULT hr;
      ULONG   ulLen;
-  ulLen = (*buflen);
+  // I don't understand this useless cast - from size_t to ULONG?
+  // isn't that the same thing?
+  ulLen = (ULONG)(*buflen);
   //needs ws2_32.lib and iphlpapi.lib in the linker.
-  hr = SendARP ( GetNetworkLong(pc,GNL_MYIP), GetNetworkLong(pc,GNL_MYIP), (PULONG)buf, &ulLen);
+  hr = SendARP ( (IPAddr)GetNetworkLong(pc,GNL_MYIP), (IPAddr)GetNetworkLong(pc,GNL_MYIP), (PULONG)buf, &ulLen);
   (*buflen) = ulLen;
  //  The second parameter of SendARP is a PULONG, which is typedef'ed to a pointer to
  //  an unsigned long.  The pc->hwClient is a pointer to an array of uint8_t (unsigned chars),
@@ -54764,7 +54767,7 @@ GetFreeBlock( vol, TRUE );
   uint8_t hwClient[6];
   ulLen = 6;
   //needs ws2_32.lib and iphlpapi.lib in the linker.
-  hr = SendARP (GetNetworkLong(NULL,GNL_IP), 0x100007f, (PULONG)&hwClient, &ulLen);
+  hr = SendARP ((IPAddr)GetNetworkLong(NULL,GNL_IP), 0x100007f, (PULONG)&hwClient, &ulLen);
  //  The second parameter of SendARP is a PULONG, which is typedef'ed to a pointer to
  //  an unsigned long.  The pc->hwClient is a pointer to an array of uint8_t (unsigned chars),
  //  actually defined in netstruc.h as uint8_t hwClient[6]; Well, in the end, they are all
@@ -56725,7 +56728,7 @@ GetFreeBlock( vol, TRUE );
   MemCpy( tmp2, tmp, MAGIC_SOCKADDR_LENGTH + 2*sizeof(uintptr_t) );
   if( (POINTER)( ( (uintptr_t)pAddr ) - sizeof(uintptr_t) ) )
    ( (char**)( ( (uintptr_t)dup ) - sizeof(uintptr_t) ) )[0]
-     = strdup( ((char**)( ( (uintptr_t)pAddr ) - sizeof(uintptr_t) ))[0] );
+     = StrDup( ((char**)( ( (uintptr_t)pAddr ) - sizeof(uintptr_t) ))[0] );
   return dup;
  }
  //---------------------------------------------------------------------------
@@ -59855,8 +59858,8 @@ GetFreeBlock( vol, TRUE );
  struct internalCert * MakeRequest( void );
  EVP_PKEY *genKey() {
   EVP_PKEY *keypair = EVP_PKEY_new();
-  int keylen;
-  char *pem_key;
+  //int keylen;
+  //char *pem_key;
   //BN_GENCB cb = { }
   BIGNUM          *bne = BN_new();
   RSA *rsa = RSA_new();
@@ -60112,7 +60115,7 @@ GetFreeBlock( vol, TRUE );
     }
     if (SSL_ERROR_WANT_READ == r)
     {
-     int pending = BIO_ctrl_pending( ses->wbio);
+     size_t pending = BIO_ctrl_pending( ses->wbio);
      if (pending > 0) {
       int read;
       if( pending > ses->obuflen ) {
@@ -60120,7 +60123,7 @@ GetFreeBlock( vol, TRUE );
         Deallocate( uint8_t *, ses->obuffer );
        ses->obuffer = NewArray( uint8_t, ses->obuflen = pending*2 );
       }
-      read = BIO_read(ses->wbio, ses->obuffer, pending);
+      read = BIO_read(ses->wbio, ses->obuffer, (int)pending);
       lprintf( "send %d for handshake", read );
       if (read > 0)
        SendTCP( pc, ses->obuffer, read );
@@ -60145,10 +60148,9 @@ GetFreeBlock( vol, TRUE );
   {
    if( buffer )
    {
-    unsigned char *buf;
-    int len;
+    size_t len;
     int hs_rc;
-    len = BIO_write( pc->ssl_session->rbio, buffer, length );
+    len = BIO_write( pc->ssl_session->rbio, buffer, (int)length );
     lprintf( "Wrote %d", len );
     if( len < length ) {
      lprintf( "Protocol failure?" );
@@ -60172,7 +60174,7 @@ GetFreeBlock( vol, TRUE );
     }
     else if( hs_rc == 1 )
     {
-     len = SSL_read( pc->ssl_session->ssl, pc->ssl_session->dbuffer, pc->ssl_session->dbuflen );
+     len = SSL_read( pc->ssl_session->ssl, pc->ssl_session->dbuffer, (int)pc->ssl_session->dbuflen );
      lprintf( "normal read - just get the data from the other buffer : %d", len );
       if( len == -1 ) {
       lprintf( "SSL_Read failed." );
@@ -60185,10 +60187,10 @@ GetFreeBlock( vol, TRUE );
      len = 0;
     {
      // the read generated write data, output that data
-     int pending = BIO_ctrl_pending( pc->ssl_session->wbio );
+     size_t pending = BIO_ctrl_pending( pc->ssl_session->wbio );
      lprintf( "pending to send is %d", pending );
      if( pending > 0 ) {
-      int read = BIO_read( pc->ssl_session->wbio, pc->ssl_session->obuffer, pc->ssl_session->obuflen );
+      int read = BIO_read( pc->ssl_session->wbio, pc->ssl_session->obuffer, (int)pc->ssl_session->obuflen );
       lprintf( "Send pending %p %d", pc->ssl_session->obuffer, read );
       SendTCP( pc, pc->ssl_session->obuffer, read );
      }
@@ -60222,7 +60224,7 @@ GetFreeBlock( vol, TRUE );
   int32_t len_out;
   struct ssl_session *ses = pc->ssl_session;
   while( length ) {
-   len = SSL_write( pc->ssl_session->ssl, buffer, length );
+   len = SSL_write( pc->ssl_session->ssl, buffer, (int)length );
    if (len < 0) {
     ERR_print_errors_cb(logerr, (void*)__LINE__);
     return FALSE;
@@ -60234,7 +60236,7 @@ GetFreeBlock( vol, TRUE );
     ses->obuffer = NewArray( uint8_t, len * 2 );
     ses->obuflen = len * 2;
    }
-   len_out = BIO_read( pc->ssl_session->wbio, ses->obuffer, ses->obuflen );
+   len_out = BIO_read( pc->ssl_session->wbio, ses->obuffer, (int)ses->obuflen );
    SendTCP( pc, ses->obuffer, len_out );
   }
   return TRUE;
@@ -60334,7 +60336,7 @@ GetFreeBlock( vol, TRUE );
   } else {
    struct internalCert *cert = New( struct internalCert );
    BIO *keybuf = BIO_new( BIO_s_mem() );
-   BIO_write( keybuf, cert, certlen );
+   BIO_write( keybuf, cert, (int)certlen );
    PEM_read_bio_X509( keybuf, &cert->x509, NULL, NULL );
    BIO_free( keybuf );
    ses->cert = cert;
@@ -60345,7 +60347,7 @@ GetFreeBlock( vol, TRUE );
     ses->privkey = genKey();
   } else {
    BIO *keybuf = BIO_new( BIO_s_mem() );
-   BIO_write( keybuf, keypair, keylen );
+   BIO_write( keybuf, keypair, (int)keylen );
    PEM_read_bio_PrivateKey( keybuf, &ses->privkey, NULL, NULL );
    BIO_free( keybuf );
   }
@@ -60368,7 +60370,7 @@ GetFreeBlock( vol, TRUE );
    PEM_write_bio_PrivateKey( keybuf, ses->privkey, NULL, NULL, 0, NULL, NULL );
    (*keylen) = BIO_pending( keybuf );
    (*keyoutbuf) = NewArray( uint8_t, (*keylen) + 1 );
-   BIO_read( keybuf, (*keyoutbuf), (*keylen) );
+   BIO_read( keybuf, (*keyoutbuf), (int)(*keylen) );
    ((char*)*keyoutbuf)[(*keylen)] = 0;
    return TRUE;
   }
@@ -60380,9 +60382,6 @@ GetFreeBlock( vol, TRUE );
  // void BIO_set_callback(BIO *b, BIO_callack_fn cb);
  LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t client_keypairlen )
  {
-  int32_t result;
-  unsigned char *ext;
-  int32_t   extLen;
   const char *hostname = GetAddrName( pc->saClient );
   struct ssl_session * ses;
   int r;
@@ -60396,7 +60395,7 @@ GetFreeBlock( vol, TRUE );
     ses->privkey = genKey();
    else {
     BIO *keybuf = BIO_new( BIO_s_mem() );
-    BIO_write( keybuf, client_keypair, client_keypairlen );
+    BIO_write( keybuf, client_keypair, (int)client_keypairlen );
     PEM_read_bio_PrivateKey( keybuf, &ses->privkey, NULL, NULL );
     BIO_free( keybuf );
    }
@@ -60423,7 +60422,7 @@ GetFreeBlock( vol, TRUE );
    }
    {
     // the read generated write data, output that data
-    int pending = BIO_ctrl_pending( pc->ssl_session->wbio );
+    size_t pending = BIO_ctrl_pending( pc->ssl_session->wbio );
     if( pending > 0 ) {
      int read;
      if( pending > ses->obuflen ) {
@@ -60431,7 +60430,7 @@ GetFreeBlock( vol, TRUE );
        Deallocate( uint8_t *, ses->obuffer );
       ses->obuffer = NewArray( uint8_t, ses->obuflen = pending * 2 );
      }
-     read = BIO_read( pc->ssl_session->wbio, pc->ssl_session->obuffer, pc->ssl_session->obuflen );
+     read = BIO_read( pc->ssl_session->wbio, pc->ssl_session->obuffer, (int)pc->ssl_session->obuflen );
      SendTCP( pc, pc->ssl_session->obuffer, read );
     }
    }
@@ -60485,12 +60484,6 @@ GetFreeBlock( vol, TRUE );
  //int main(int argc, char *argv[])
  struct internalCert * MakeRequest( void )
  {
-     int i;
-     RSA *rsakey;
-   RSA *rsakey_ca;
-     X509_NAME *subj;
-     EVP_MD *digest;
-   FILE *fp;
    struct internalCert *cert = NewArray( struct internalCert, 1 );
    int ca_len;
  // already cached key
@@ -60610,7 +60603,6 @@ GetFreeBlock( vol, TRUE );
     X509_set_issuer_name( x509, name );
     X509_sign( x509, cert->pkey, EVP_sha512() );
     {
-     FILE * f;
      PEM_write_bio_X509( keybuf, x509 );
      ca_len = BIO_pending( keybuf );
      ca = NewArray( char, ca_len + 1 );
@@ -71541,7 +71533,7 @@ GetFreeBlock( vol, TRUE );
  #endif
   {
    size_t filesize = sack_fsize( my_file->file );
-   if( filesize < iOfst )
+   if( USS_LT( filesize, size_t, iOfst, sqlite3_int64 ) )
    {
     static unsigned char *filler;
     if( !filler )
@@ -71550,7 +71542,7 @@ GetFreeBlock( vol, TRUE );
      MemSet( filler, 0, 512 );
     }
     sack_fseek( my_file->file, 0, SEEK_END );
-    while( filesize < iOfst )
+    while( USS_LT( filesize, size_t, iOfst, sqlite3_int64 ) )
     {
      if( ( iOfst - filesize ) >= 512 )
      {
@@ -71559,7 +71551,7 @@ GetFreeBlock( vol, TRUE );
      }
      else
      {
-      sack_fwrite( filler, 1, ( iOfst - filesize ), my_file->file );
+      sack_fwrite( filler, 1, (int)( iOfst - filesize ), my_file->file );
       filesize += ( iOfst - filesize );
      }
     }
@@ -71873,7 +71865,6 @@ GetFreeBlock( vol, TRUE );
   if( flags==SQLITE_ACCESS_READ )   eAccess = R_OK;
   //if( flags & SQLITE_ACCESS_EXISTS )
   {
-   FILE *tmp;
  #ifdef UNICODE
    CTEXTSTR _zPath = DupCStr(zPath);
  #       define zPath _zPath
@@ -75598,7 +75589,7 @@ GetFreeBlock( vol, TRUE );
    Deallocate( char *, tmp_str );
   }
  #else
-  sqlite3_result_text( onwhat, GetText( result ), GetTextSize( result ), 0 );
+  sqlite3_result_text( onwhat, GetText( result ), (int)GetTextSize( result ), 0 );
  #endif
  }
  static void computePassword(sqlite3_context*onwhat,int argc,sqlite3_value**argv)
@@ -75616,7 +75607,7 @@ GetFreeBlock( vol, TRUE );
    Deallocate( char *, tmp_str );
   }
  #else
-  sqlite3_result_text( onwhat, result, StrLen( result ), 0 );
+  sqlite3_result_text( onwhat, result, (int)StrLen( result ), 0 );
  #endif
   //Release( result );
  }
@@ -75635,7 +75626,7 @@ GetFreeBlock( vol, TRUE );
    Deallocate( char *, tmp_str );
   }
  #else
-  sqlite3_result_text( onwhat, result, StrLen( result ), 0 );
+  sqlite3_result_text( onwhat, result, (int)StrLen( result ), 0 );
  #endif
   //Release( result );
  }
@@ -78260,7 +78251,6 @@ GetFreeBlock( vol, TRUE );
     do
     {
      SQLULEN colsize;
-     short coltype;
  #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
      if( odbc->flags.bSQLite_native )
      {
@@ -78300,6 +78290,7 @@ GetFreeBlock( vol, TRUE );
  #endif
  #ifdef USE_ODBC
      {
+      short coltype;
       rc = SQLDescribeCol( collection->hstmt
              , (SQLUSMALLINT)idx
  // colname, bufsize
@@ -81724,7 +81715,9 @@ GetFreeBlock( vol, TRUE );
     return FALSE;
  }
  SQL_NAMESPACE_END
- #define NEED_SHLOBJ
+ #ifndef NEED_SHLOBJ
+ #  define NEED_SHLOBJ
+ #endif
  #if !defined( __LINUX__ ) && !defined( __INTERNAL_UUID__ )
  #include <rpc.h>
  SQL_NAMESPACE
@@ -83687,6 +83680,7 @@ GetFreeBlock( vol, TRUE );
    PopODBCEx( odbc );
    return success;
   }
+    return FALSE;
  }
  int GetOptionBlobValue( POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len )
  {
@@ -83927,7 +83921,6 @@ GetFreeBlock( vol, TRUE );
    GetOptionStringValueEx( odbc, opt_node, &buffer, &buflen DBG_RELAY );
    if( !buffer )
    {
-    int x;
     // this actually implies to delete the entry... but since it doesn't exist no worries...
     if( !pDefaultbuf )
     {
@@ -83937,7 +83930,7 @@ GetFreeBlock( vol, TRUE );
      return 0;
     }
     // issue dialog
-   do_defaulting:
+   //do_defaulting:
     //if( !bQuiet && og.flags.bPromptDefault )
     //{
     // SQLPromptINIValue( pSection, pOptname, pDefaultbuf, pBuffer, nBuffer, pINIFile );
@@ -84644,7 +84637,7 @@ GetFreeBlock( vol, TRUE );
     continue;
    // trim trailing spaces from option names.
    {
-    int n = StrLen( namebuf ) - 1;
+    size_t n = StrLen( namebuf ) - 1;
     while( n >= 0 && namebuf[n] == ' ' )
     {
      namebuf[n] = 0;
@@ -84750,7 +84743,7 @@ GetFreeBlock( vol, TRUE );
   TEXTCHAR *buffer;
   size_t buflen;
  };
- static void expandResultBuffer( struct resultBuffer *buf, int x ) {
+ static void expandResultBuffer( struct resultBuffer *buf, size_t x ) {
   TEXTCHAR *newbuf = NewArray( TEXTCHAR, buf->buflen+x );
   MemCpy( newbuf, buf->buffer, buf->buflen );
   buf->buflen += x;

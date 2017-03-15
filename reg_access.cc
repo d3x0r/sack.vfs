@@ -266,7 +266,7 @@ void RegObject::setRegItem(const FunctionCallbackInfo<Value>& args ) {
 			String::Utf8Value val( args[0] );
 			dwStatus = RegSetValueEx(hTemp, keyStart, 0
 										  , REG_SZ
-										  , (const BYTE *)*val, StrLen( *val ) );
+										  , (const BYTE *)*val, (DWORD)StrLen( *val ) );
 
 
 		} else {

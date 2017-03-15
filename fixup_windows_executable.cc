@@ -92,7 +92,7 @@ static HANDLE WINAPI CreateFileA_stub(   LPCSTR               lpFileName,
 	DWORD dwError = ERROR_SUCCESS;
 	LOGICAL trunc = FALSE;
 	FILE * file;
-	lprintf( "create fileA called %s %08x %08x %08x %08x %p", lpFileName, dwCreationDisposition, dwFlagsAndAttributes, dwShareMode, dwDesiredAccess, hTemplateFile );
+	lprintf( "create fileA called %s cre %08x attr %08x shr %08x acc %08x %p", lpFileName, dwCreationDisposition, dwFlagsAndAttributes, dwShareMode, dwDesiredAccess, hTemplateFile );
 	if( !(dwCreationDisposition & CREATE_ALWAYS) ) {
 		if( dwCreationDisposition & CREATE_NEW ) {
 			if( sack_exists( f ) ) {
@@ -138,7 +138,7 @@ static HANDLE WINAPI CreateFileW_stub(   LPCWSTR               lpFileName,
 	DWORD dwError = ERROR_SUCCESS;
 	LOGICAL trunc = FALSE;
 	FILE * file;
-	lprintf( "create fileW called %S %08x %08x %08x %08x %p", lpFileName
+	lprintf( "create fileW called %S cre %08x attr %08x shr %08x acc %08x %p", lpFileName
 		, dwCreationDisposition, dwFlagsAndAttributes
 		, dwShareMode, dwDesiredAccess, hTemplateFile );
 	if( !(dwCreationDisposition & CREATE_ALWAYS) ) {
@@ -214,10 +214,23 @@ static BOOL WINAPI ReadFile_stub(
 	LPDWORD lpNumberOfBytesRead,
 	LPOVERLAPPED lpOverlapped
 ) {
-	size_t read = sack_fread( lpBuffer, 1, nNumberOfBytesToRead, GetFileFromHandle( hFile) );
-	if( lpNumberOfBytesRead ) lpNumberOfBytesRead[0] = read;
-	if( lpOverlapped ) {
-		lprintf( "Overlap conditions to satisfy?" );
+	FILE *f = GetFileFromHandle( hFile );
+	if( f ) {
+		size_t read;
+		if( lpOverlapped ) {
+			size_t pos = (uintptr_t)lpOverlapped->Pointer;
+			sack_fseek( f, pos, SEEK_SET );
+		}
+		read = sack_fread( lpBuffer, 1, nNumberOfBytesToRead, GetFileFromHandle( hFile) );
+		if( lpNumberOfBytesRead ) lpNumberOfBytesRead[0] = (DWORD)read;
+		if( lpOverlapped ) {
+			if( lpOverlapped->hEvent ) SetEvent( lpOverlapped->hEvent );
+			lpOverlapped->Internal = STATUS_WAIT_0;
+			lprintf( "Overlap conditions to satisfy?" );
+		}
+	}else{
+		lprintf( "this was an untraced read to %p", hFile );
+		return ReadFile( hFile, lpBuffer, nNumberOfBytesToRead, lpNumberOfBytesRead, lpOverlapped );
 	}
 	return TRUE;
 	//return ReadFile( hFile, lpBuffer, nNumberOfBytesToRead, lpNumberOfBytesRead, lpOverlapped );
@@ -232,17 +245,23 @@ static BOOL WINAPI WriteFile_stub(
 ) {
 	FILE *f = GetFileFromHandle( hFile );
 	if( f ) {
-		size_t read = sack_fwrite( lpBuffer, 1, nNumberOfBytesToRead, f );
-		lprintf( "this was a write" );
-		if( lpNumberOfBytesRead ) lpNumberOfBytesRead[0] = read;
+		size_t read;
 		if( lpOverlapped ) {
+			size_t pos = (uintptr_t)lpOverlapped->Pointer;
+			sack_fseek( f, pos, SEEK_SET );
+		}
+		read = sack_fwrite( lpBuffer, 1, nNumberOfBytesToRead, f );
+		lprintf( "this was a write" );
+		if( lpNumberOfBytesRead ) lpNumberOfBytesRead[0] = (DWORD)read;
+		if( lpOverlapped ) {
+			if( lpOverlapped->hEvent ) SetEvent( lpOverlapped->hEvent );
+			lpOverlapped->Internal = STATUS_WAIT_0;
 			lprintf( "Overlap conditions to satisfy?" );
 		}
 		return TRUE;
 	}
 	else {
 		lprintf( "this was an untraced write to %p", hFile );
-
 		//CreateFileMapping
 		return WriteFile( hFile, lpBuffer, nNumberOfBytesToRead, lpNumberOfBytesRead, lpOverlapped );
 	}
