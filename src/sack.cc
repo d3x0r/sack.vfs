@@ -56449,7 +56449,7 @@ GetFreeBlock( vol, TRUE );
   uint8_t* pUserData;
   PCLIENT_SLAB pClientSlab;
   if( !global_network_data )
-   LowLevelInit();
+   LowLevelNetworkInit();
   if( !MAX_NETCLIENTS )
   {
    //lprintf( WIDE("Starting Network Init!") );
@@ -56524,7 +56524,7 @@ GetFreeBlock( vol, TRUE );
  {
   // want to start the thead; clear quit.
   if( !global_network_data )
-   LowLevelInit();
+   LowLevelNetworkInit();
   globalNetworkData.bQuit = FALSE;
   ReallocClients( wClients, wUserData );
   //-------------------------
