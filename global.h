@@ -179,3 +179,6 @@ public:
 
    ~RegObject();
 };
+
+
+void InitFS( const FunctionCallbackInfo<Value>& args );

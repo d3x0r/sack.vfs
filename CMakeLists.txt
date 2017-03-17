@@ -127,7 +127,7 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
-set( PPCTOOL c:/general/tools/ppc.exe )
+set( PPCTOOL c:/tools/ppc.exe )
 if( EXISTS ${PPCTOOL} )
 set( AMALG_COMMAND ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
 set( AMALG_COMMAND2 ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
@@ -178,7 +178,7 @@ set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
 set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_DEFINITIONS "TARGETNAME=\"${PROJECT_NAME}.node\";${MOREDEFS}" )
 target_link_libraries(${PROJECT_NAME} ${CMAKE_JS_LIB})
 if( WIN32 )
-   target_link_libraries(${PROJECT_NAME} winmm ws2_32 rpcrt4 iphlpapi odbc32 )
+   target_link_libraries(${PROJECT_NAME} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi )
 endif( WIN32 )
 if( UNIX )
    target_link_libraries( ${PROJECT_NAME} uuid )

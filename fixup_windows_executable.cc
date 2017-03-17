@@ -1,5 +1,7 @@
-
-#include <sack.h>
+#define _WIN32_WINNT 0x601
+#include "global.h"
+//#include <sack.h>
+#include <psapi.h>
 #include <TlHelp32.h>
 
 #include "ntundoc.h"
@@ -13,9 +15,6 @@ struct fixup_table_entry {
 	LOGICAL fixed;
 };
 
-
-static void FakeAbort( void );
-
 struct fileHandleMap {
 	FILE *file;
 	HANDLE handle;
@@ -25,7 +24,40 @@ static struct fixup_local_data {
 	PLIST handleMap;
 	int usedHandles;
 	HANDLE pipe[2];
+	TEXTSTR leadinPath;
+	size_t leadinLen;
+	LOGICAL _debug;
+	struct file_system_mounted_interface *rom;
+	struct file_system_interface *fsi;
 } fld;
+
+void InitFS( const FunctionCallbackInfo<Value>& args ){
+	// next open will be for internal hook code?
+	// arg passed should be source VFS name to use...
+	if( args.Length() ) {
+		struct volume *vol;
+		String::Utf8Value fName( args[0]->ToString() );
+		char *mount_name = StrDup( *fName );
+		size_t sz = 0;         
+		char *key1, *key2;
+		if( args.Length() > 1 ) {
+			String::Utf8Value fName2( args[1]->ToString() );
+			key1 = StrDup( *fName2 );
+		} else key1 = NULL;
+		if( args.Length() > 2 ) {
+			String::Utf8Value fName3( args[2]->ToString() );
+			key2 = StrDup( *fName3 );
+		} else key2 = NULL;
+
+	
+		POINTER memory = OpenSpace( NULL, mount_name, &sz );
+		vol = sack_vfs_use_crypt_volume( memory, sz, key1, key2 );
+		fld.rom = sack_mount_filesystem( "self", fld.fsi, 100, (uintptr_t)vol, FALSE );
+		Deallocate( char*, key1 );
+		Deallocate( char*, key2 );
+		Deallocate( char*, mount_name );
+	}
+}
 
 
 static FILE* GetFileFromHandle( HANDLE h ) {
@@ -40,7 +72,7 @@ static FILE* GetFileFromHandle( HANDLE h ) {
 
 static HANDLE MapFileHandle( HANDLE h, FILE *f ) {
 	if( f ) {
-		struct fileHandleMap *ent = New( struct fileHandleMap );
+		struct fileHandleMap *ent = NewArray( struct fileHandleMap, 1 );
 		ent->file = f;
 		ent->handle = h;
 		AddLink( &fld.handleMap, ent );
@@ -57,6 +89,7 @@ static HANDLE MapFileHandle( HANDLE h, FILE *f ) {
 		}
 		if( ent ) {
 			f = ent->file;
+			CloseHandle( h );
 			Deallocate( struct fileHandleMap*, ent );
 			return (HANDLE)f;
 		}
@@ -134,37 +167,83 @@ static HANDLE WINAPI CreateFileW_stub(   LPCWSTR               lpFileName,
       DWORD                 dwCreationDisposition,
       DWORD                 dwFlagsAndAttributes,
       HANDLE                hTemplateFile ) {
-	TEXTSTR f = DupWideToText( lpFileName );
+
+	TEXTSTR fDel = DupWideToText( lpFileName );
+lprintf( "input filename: %s", fDel );
+LogBinary( lpFileName, 64 );
+	TEXTSTR f = fDel;
+	if( fld.leadinPath ) {
+		if( StrCmpEx( f, fld.leadinPath, fld.leadinLen ) == 0 ) {
+			f += fld.leadinLen;
+		}
+	}
+//lprintf( "path in is %s", 
+	TEXTSTR fTmp = pathrchr( (TEXTSTR)f );// + 1;
 	DWORD dwError = ERROR_SUCCESS;
 	LOGICAL trunc = FALSE;
 	FILE * file;
-	lprintf( "create fileW called %S cre %08x attr %08x shr %08x acc %08x %p", lpFileName
-		, dwCreationDisposition, dwFlagsAndAttributes
-		, dwShareMode, dwDesiredAccess, hTemplateFile );
-	if( !(dwCreationDisposition & CREATE_ALWAYS) ) {
-		if( dwCreationDisposition & CREATE_NEW ) {
-			if( sack_exists( f ) ) {
-			    SetLastError( ERROR_ALREADY_EXISTS );
-			    return INVALID_HANDLE_VALUE;
-			}
-		}
-		if( dwCreationDisposition & OPEN_ALWAYS ) {
-			if( sack_exists( f ) ) {
-			    dwError = ERROR_ALREADY_EXISTS;
-			}
-		}
-		else if( dwCreationDisposition & OPEN_EXISTING) {
-			if( !sack_exists( f ) ) {
-				SetLastError( ERROR_FILE_NOT_FOUND );
-				return INVALID_HANDLE_VALUE;
-			}
-		}
+	if( fld._debug ) 
+		lprintf( "create fileW called %s cre %08x attr %08x shr %08x acc %08x %p", f
+			, dwCreationDisposition, dwFlagsAndAttributes
+			, dwShareMode, dwDesiredAccess, hTemplateFile );
+	if( !fTmp ) 
+		fTmp = f; 
+	else
+		fTmp += 1;
+	TEXTRUNE c = GetUtfChar( (CTEXTSTR*)&fTmp );
+	if( fld._debug ) 
+		lprintf( "c = %d", c );
+
+	if( dwDesiredAccess & 0x80 ) {
+		// this is like a stat mode...
+		return MapFileHandle( getHandle(), (FILE*)1 );
+
 	}
-	if( dwCreationDisposition & TRUNCATE_EXISTING ) {
-		if( sack_exists( f ) ) 
-			trunc = TRUE;
+	if( /*c == L'' ||*/ c && c == 916 && !GetUtfChar( (CTEXTSTR*)&fTmp ) ) {
+		if( !fld.leadinPath ) {
+			fld.leadinPath = StrDup( f );
+			fTmp = pathrchr( fld.leadinPath );
+			fTmp++;
+			fTmp[0] = 0;
+			fld.leadinLen = fTmp - fld.leadinPath;
+		}else {
+			lprintf( "new leadin? %s", f );
+		}
+		if( fld._debug ) 
+			lprintf( "is this 916?" );        
+		//file = sack_fopen( 0, "inject.js", "r" );
+		return MapFileHandle( getHandle(), NULL );
+		
 	}
-	file = sack_fopen( 0, f, "r" );
+lprintf( "..." );
+	if( f[0] ) {
+		if( !(dwCreationDisposition & CREATE_ALWAYS) ) {
+			if( dwCreationDisposition & CREATE_NEW ) {
+				if( sack_exists( f ) ) {
+				    SetLastError( ERROR_ALREADY_EXISTS );
+				    return INVALID_HANDLE_VALUE;
+				}
+			}
+			if( dwCreationDisposition & OPEN_ALWAYS ) {
+				if( sack_exists( f ) ) {
+				    dwError = ERROR_ALREADY_EXISTS;
+				}
+			}
+			else if( dwCreationDisposition & OPEN_EXISTING) {
+				if( !sack_exists( f ) ) {
+					SetLastError( ERROR_FILE_NOT_FOUND );
+					return INVALID_HANDLE_VALUE;
+				}
+			}
+		}
+		if( dwCreationDisposition & TRUNCATE_EXISTING ) {
+			if( sack_exists( f ) ) 
+				trunc = TRUE;
+		}
+		file = sack_fopen( 0, f, "r" );
+	}
+	else
+		file = NULL;
 
 	if( file ) {
 		if( trunc ) sack_ftruncate( file );
@@ -173,8 +252,9 @@ static HANDLE WINAPI CreateFileW_stub(   LPCWSTR               lpFileName,
 	}
 	else {
 		dwError = ERROR_FILE_NOT_FOUND;
+lprintf( "..." );
 		HANDLE h = CreateFileW( lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile );
-		lprintf( "hmm...%p", h );
+		//lprintf( "hmm...%p %s", h, fDel );
 		return h;
 	}
 	SetLastError( dwError );
@@ -206,6 +286,24 @@ static HANDLE WINAPI CreateFileMappingW_stub(
 	return CreateFileMappingW( hFile, lpFileMappingAttributes, flProtect, dwMaximumSizeHigh, dwMaximumSizeLow, lpName );
 }
 
+static HANDLE WINAPI OpenFileMappingW_stub(
+	DWORD dwDesiredAccess,
+	BOOL bInheritHandle,
+	LPCWSTR lpName
+) {
+	lprintf( "OpenFilemappingW : %s", lpName );
+	return OpenFileMappingW( dwDesiredAccess, bInheritHandle, lpName );
+}
+
+
+static HFILE WINAPI OpenFile_stub(
+	LPCSTR lpFileName,
+	LPOFSTRUCT lpReOpenBuff,
+	UINT uStyle
+) {
+	lprintf( "OpenFile : %s", lpFileName );
+	return (HFILE)OpenFile( lpFileName, lpReOpenBuff, uStyle );
+}
 
 static BOOL WINAPI ReadFile_stub(
 	HANDLE hFile,
@@ -221,6 +319,7 @@ static BOOL WINAPI ReadFile_stub(
 			size_t pos = (uintptr_t)lpOverlapped->Pointer;
 			sack_fseek( f, pos, SEEK_SET );
 		}
+		//lprintf( "read some of the file... %d", nNumberOfBytesToRead );
 		read = sack_fread( lpBuffer, 1, nNumberOfBytesToRead, GetFileFromHandle( hFile) );
 		if( lpNumberOfBytesRead ) lpNumberOfBytesRead[0] = (DWORD)read;
 		if( lpOverlapped ) {
@@ -282,7 +381,8 @@ static HANDLE WINAPI FindFirstFileExA_stub(
 static HANDLE WINAPI FindFirstFileA_stub(
 	LPCSTR lpFileName,
 	LPWIN32_FIND_DATAA lpFindFileData
-) {
+){
+	lprintf( "findfirstfileA" );
 	return FindFirstFileA( lpFileName, lpFindFileData );
 }
 
@@ -298,9 +398,55 @@ static HANDLE WINAPI FindFirstFileExW_stub(
 	return FindFirstFileExW( lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags );
 }
 
+static TEXTSTR Extract( CTEXTSTR name )
+{
+	if( sack_existsEx( name, fld.rom ) )
+	{
+		FILE *file;
+#ifdef DEBUG_LIBRARY_LOADING
+
+		lprintf( "%s exists...", name );
+#endif
+		file = sack_fopenEx( 0, name, "rb", fld.rom );
+		if( file )
+		{
+			CTEXTSTR path = ExpandPath( "*/tmp" );
+			TEXTCHAR* tmpnam = NewArray( TEXTCHAR, 256 );
+			size_t sz = sack_fsize( file );
+			FILE *tmp;
+#ifdef DEBUG_LIBRARY_LOADING
+			lprintf( "library is %d %s", sz, name );
+#endif
+			MakePath( path );
+			snprintf( tmpnam, 256, "%s/%s", path, name );
+			tmp = sack_fopenEx( 0, tmpnam, "wb", sack_get_default_mount() );
+#ifdef DEBUG_LIBRARY_LOADING
+			lprintf( "Loading %s(%p)", tmpnam, tmp );
+#endif
+			if( sz && tmp )
+			{
+				int written, read ;
+				POINTER data = NewArray( uint8_t, sz );
+				read = sack_fread( data, 1, sz, file );
+				written = sack_fwrite( data, 1, sz, tmp );
+				sack_fclose( tmp );
+				Release( data );
+			}
+			sack_fclose( file );
+			return tmpnam;
+		}
+	}
+	return NULL;
+}
+
+
 
 static HMODULE WINAPI LoadLibraryW_stub( LPCWSTR lpLibFileName ) {
 	TEXTSTR a = DupWideToText( lpLibFileName );
+	if( sack_exists( a ) ) {
+		TEXTSTR b = Extract( a );
+		return LoadLibrary( b );
+	}
 	lprintf( "LoadLibraryW %s", a );
 	return LoadLibraryW( lpLibFileName );
 }
@@ -338,16 +484,33 @@ static BOOL FindClose_stub( HANDLE hFile ) {
 }
 
 static BOOL WINAPI CloseHandle_stub( HANDLE hFile ) {
-	lprintf( "closefile stub called" );
+	lprintf( "closefile stub called %p", hFile );
 	if( hFile != INVALID_HANDLE_VALUE ) {
+		// MapFileHandle closes the file handle too when unmapping
 		FILE *f = (FILE*)MapFileHandle( hFile, NULL );
-		if( f )
+		if( f ) {
+			if( (uintptr_t)f == 1 )
+				return TRUE;
 			return sack_fclose( f );
-		lprintf( "this wasn't one of mine...." );
+		}
+		//lprintf( "this wasn't one of mine...." );
 		return CloseHandle( hFile ); 
 	}
 	return FALSE;
 }
+
+
+static DWORD WINAPI GetFullPathNameW_stub(
+	LPCWSTR lpFileName,
+	DWORD nBufferLength,
+	LPWSTR lpBuffer,
+	LPWSTR * lpFilePart
+)
+{
+	lprintf( "GetFullPathNameW" );
+	return GetFullPathNameW( lpFileName, nBufferLength, lpBuffer, lpFilePart );
+}
+
 
 static DWORD WINAPI GetLongPathNameW_stub(
 	LPCWSTR lpszShortPath,
@@ -382,14 +545,31 @@ static BOOL WINAPI GetFileAttributesExW_stub(
 	LPVOID lpFileInformation
 )
 {
+	lprintf( "GetFileAttributesExW.... (missing logging?)" );
 	return GetFileAttributesExW( lpFileName, fInfoLevelId, lpFileInformation );
 }
 
 static DWORD WINAPI GetCurrentDirectoryW_stub( DWORD nBufferLength, LPWSTR lpBuffer ) {
-	lpBuffer[0] = '.';
-	lpBuffer[1] = 0;
+	lprintf( "Directory: %s", DupWideToText( lpBuffer ));
+	lpBuffer[0] = '\\';
+	lpBuffer[1] = '\\';
+	lpBuffer[2] = '.';
+	lpBuffer[3] = '\\';
+	lpBuffer[4] = 'c';
+	lpBuffer[5] = ':';
+	lpBuffer[6] = '\\';
+	lpBuffer[7] = 'a';
+	lpBuffer[8] = '\\';
+	lpBuffer[9] = 'b';
+	lpBuffer[10] = '\\';
+	lpBuffer[11] = '\\';
+	lpBuffer[12] = 0;
+
+	//lpBuffer[0] = '.';
+	//lpBuffer[1] = 0;
 	lprintf( "return current directory..." );
-	return 1;
+	return GetCurrentDirectoryW( nBufferLength, lpBuffer );
+	return 10;
 }
 static BOOL WINAPI SetCurrentDirectoryW_stub( LPCWSTR lpBuffer ) {
 	BOOL x = SetCurrentDirectoryW( lpBuffer );
@@ -403,24 +583,51 @@ static DWORD WINAPI GetFileAttributesW_stub( LPCWSTR lpFileName ) {
 	return GetFileAttributesW( lpFileName );
 }
 
+static BOOL WINAPI GetFileInformationByHandleEx_stub( HANDLE hFile,
+	FILE_INFO_BY_HANDLE_CLASS FileInformationClass, LPVOID lpFileInformation,DWORD dwBufferSize
+) {
+	lprintf( "getfileinformationbyhandleEx" );
+	return GetFileInformationByHandleEx( hFile, FileInformationClass, lpFileInformation, dwBufferSize );
+}
 static BOOL WINAPI GetFileInformationByHandle_stub( HANDLE hFile,
 	LPBY_HANDLE_FILE_INFORMATION lpFileInformation ) {
-	lprintf( "getfileinformationbyhandleW" );
+	lprintf( "getfileinformationbyhandle" );
 	return  GetFileInformationByHandle( hFile, lpFileInformation );
 }
 
 static DWORD WINAPI GetFileType_stub( HANDLE hFile ) {
 	FILE *f = GetFileFromHandle( hFile );
 	if( f ) {
-		lprintf( "getFileType: %p", hFile );  // stdin stdout probably
+		//lprintf( "getFileType: %p", hFile );  // stdin stdout probably
 		return FILE_TYPE_DISK;
 	}
 	else {
 		DWORD dwVal = GetFileType( hFile );
 		//2 = FILE_TYPE_CHAR
-		lprintf( "getFileType: %p %d", hFile, dwVal );  // stdin stdout probably
+		//lprintf( "getFileType: %p %d", hFile, dwVal );  // stdin stdout probably
 		return dwVal;
 	}
+}
+
+static LPVOID WINAPI MapViewOfFile_stub( HANDLE hFileMappingObject,
+	DWORD dwDesiredAccess,
+	DWORD dwFileOffsetHigh,
+	DWORD dwFileOffsetLow,
+	SIZE_T dwNumberOfBytesToMap ) {
+	//SetFilePointerEx
+	lprintf( "MapViewOfFile..." );
+	return MapViewOfFile( hFileMappingObject, dwDesiredAccess, dwFileOffsetHigh, dwFileOffsetLow, dwNumberOfBytesToMap );
+}
+
+static LPVOID WINAPI MapViewOfFileEx_stub( HANDLE hFileMappingObject,
+	 DWORD dwDesiredAccess,
+	DWORD dwFileOffsetHigh,
+	DWORD dwFileOffsetLow,
+	SIZE_T dwNumberOfBytesToMap,
+	LPVOID lpBaseAddress ) {
+	//SetFilePointerEx
+	lprintf( "MapViewOfFileEx..." );
+	return MapViewOfFileEx( hFileMappingObject, dwDesiredAccess, dwFileOffsetHigh, dwFileOffsetLow, dwNumberOfBytesToMap, lpBaseAddress );
 }
 
 static BOOL WINAPI SetFilePointerEx_stub( HANDLE hFile,
@@ -432,6 +639,95 @@ static BOOL WINAPI SetFilePointerEx_stub( HANDLE hFile,
 	return SetFilePointerEx( hFile, liDistanceToMove, lpNewFilePointer, dwMoveMethod );
 }
 
+
+static BOOL WINAPI SetFilePointer_stub( HANDLE hFile,
+	LONG lDistanceToMove,
+	PLONG lpDistanceToMoveHigh,
+	DWORD dwMoveMethod ) {
+	//SetFilePointerEx
+	lprintf( "SetFilePointer" );
+	return SetFilePointer( hFile, lDistanceToMove, lpDistanceToMoveHigh, dwMoveMethod );
+}
+
+static BOOL WINAPI DuplicateHandle_stub( HANDLE hSourceProcessHandle,
+	HANDLE hSourceHandle,
+	HANDLE hTargetProcessHandle,
+	LPHANDLE lpTargetHandle,
+	DWORD dwDesiredAccess,
+	BOOL bInheritHandle,
+	DWORD dwOptions ) {
+	//SetFilePointerEx
+	lprintf( "DuplicateHandle" );
+	return DuplicateHandle( hSourceProcessHandle, hSourceHandle, hTargetProcessHandle, 
+			lpTargetHandle, dwDesiredAccess, 
+			bInheritHandle, dwOptions );
+}
+
+static BOOL WINAPI GetFileSize_stub( HANDLE hFile,
+	LPDWORD lpFileSizeHigh ) {
+	//SetFilePointerEx
+	lprintf( "GetFileSize" );
+	return GetFileSize( hFile, lpFileSizeHigh );
+}
+
+static BOOL WINAPI GetFileSizeEx_stub( HANDLE hFile,
+	PLARGE_INTEGER lpFileSizeHigh ) {
+	//SetFilePointerEx
+	lprintf( "GetFileSizeEx" );
+	return GetFileSizeEx( hFile, lpFileSizeHigh );
+}
+
+static BOOL WINAPI CreateDirectoryW_stub( LPCWSTR lpPathName,
+	 LPSECURITY_ATTRIBUTES lpSecurityAttributes ) {
+	//SetFilePointerEx
+	lprintf( "CreateDirectoryW" );
+	return CreateDirectoryW( lpPathName, lpSecurityAttributes );
+}
+static FILE * fopen_stub( const char*a, const char *b ) {
+	lprintf( "fopen hook." );
+		return sack_fopen( 0, a, b );
+}
+static int fclose_stub( FILE *a ) {
+	lprintf( "fclose hook." );
+		return sack_fclose( a );
+}
+
+static int fread_stub( char *a, int b, int c, FILE *d ) {
+	lprintf( "fclose hook." );
+		return sack_fread( a,b,c,d );
+}
+
+static int fwrite_stub( const char *a, int b, int c, FILE *d ) {
+	lprintf( "fclose hook." );
+		return sack_fwrite( a,b,c,d );
+}
+
+static int _wfsopen_stub( const char *a, int b, int c, FILE *d ) {
+	lprintf( "_wfsopen hook." );
+		return sack_fwrite( a, b, c, d );
+}
+
+static int _wsopen_stub( const wchar_t *a, int b, int c, int d ) {
+	lprintf( "_wsopen hook." );
+		return _wsopen( a, b, c, d );
+}
+
+static int _lopen_stub( LPCSTR lpPathName, int iReadWrite ) {
+	lprintf( "_lopen hook." );
+		return _lopen( lpPathName, iReadWrite );
+}
+static int _open_osfhandle_stub( intptr_t _OSFileHandle,
+	int      _Flags ) {
+	lprintf( "_open_osfhandle hook" );
+		return _open_osfhandle( _OSFileHandle, _Flags );
+}
+
+
+static void FakeAbort( void )
+{
+	TerminateProcess( GetCurrentProcess(), 0 );
+}
+
 static struct fixup_table_entry fixup_entries[] = { { "libgcc_s_dw2-1.dll", "msvcrt.dll", "abort", (POINTER)FakeAbort } 
 					, { "kernel32.dll", "kernel32.dll", "CreateFileA", CreateFileA_stub }
 					, { "kernel32.dll", "kernel32.dll", "CreateFileW", CreateFileW_stub }
@@ -440,9 +736,11 @@ static struct fixup_table_entry fixup_entries[] = { { "libgcc_s_dw2-1.dll", "msv
 	,{ "kernel32.dll", "kernel32.dll", "LoadLibraryW", LoadLibraryW_stub }
 	,{ "kernel32.dll", "kernel32.dll", "LoadLibraryW", LoadLibraryExW_stub }
 	,{ "kernel32.dll", "kernel32.dll", "WriteFile", WriteFile_stub }
+	,{ "kernel32.dll", "kernel32.dll", "OpenFile", OpenFile_stub }
 	,{ "kernel32.dll", "kernel32.dll", "CloseHandle", CloseHandle_stub }
 	,{ "kernel32.dll", "kernel32.dll", "CreateFileMappingA", CreateFileMappingA_stub }
 	,{ "kernel32.dll", "kernel32.dll", "CreateFileMappingW", CreateFileMappingW_stub }
+	,{ "kernel32.dll", "kernel32.dll", "OpenFileMappingW", OpenFileMappingW_stub }
 	,{ "kernel32.dll", "kernel32.dll", "FindFirstFileExA", FindFirstFileExA_stub }
 	,{ "kernel32.dll", "kernel32.dll", "FindFirstFileA", FindFirstFileA_stub }
 	,{ "kernel32.dll", "kernel32.dll", "FindFirstFileExW", FindFirstFileExW_stub }
@@ -452,21 +750,32 @@ static struct fixup_table_entry fixup_entries[] = { { "libgcc_s_dw2-1.dll", "msv
 	,{ "kernel32.dll", "kernel32.dll", "GetFileAttributesW", GetFileAttributesW_stub }
 	,{ "kernel32.dll", "kernel32.dll", "GetLongPathNameW", GetLongPathNameW_stub }
 	,{ "kernel32.dll", "kernel32.dll", "GetShortPathNameW", GetShortPathNameW_stub }
+	,{ "kernel32.dll", "kernel32.dll", "GetFullPathNameW", GetFullPathNameW_stub }
 	,{ "kernel32.dll", "kernel32.dll", "GetCurrentDirectoryW", GetCurrentDirectoryW_stub }
 	,{ "kernel32.dll", "kernel32.dll", "GetFileAttributesExW", GetFileAttributesExW_stub }
 	,{ "kernel32.dll", "kernel32.dll", "SetFileAttributesExW", SetFileAttributesW_stub }
 	,{ "kernel32.dll", "kernel32.dll", "GetFileInformationByHandle", GetFileInformationByHandle_stub }
 	,{ "kernel32.dll", "kernel32.dll", "GetFileType", GetFileType_stub }
 	,{ "kernel32.dll", "kernel32.dll", "SetFilePointerEx", SetFilePointerEx_stub }
-
+	,{ "kernel32.dll", "kernel32.dll", "SetFilePointer", SetFilePointer_stub }
+	,{ "kernel32.dll", "kernel32.dll", "CreateDirectoryW", CreateDirectoryW_stub }
+	,{ "kernel32.dll", "kernel32.dll", "GetFileInformationByHandleEx", GetFileInformationByHandleEx_stub }
+	,{ "kernel32.dll", "kernel32.dll", "GetFileSize", GetFileSize_stub }
+	,{ "kernel32.dll", "kernel32.dll", "GetFileSizeEx", GetFileSizeEx_stub }
+	,{ "kernel32.dll", "kernel32.dll", "MapViewOfFile", MapViewOfFile_stub }
+	,{ "kernel32.dll", "kernel32.dll", "DuplicateHandle", DuplicateHandle_stub }
+#define MSC(n)	{ "msvcrt.dll", "msvcrt.dll", #n, n##_stub }
+	,{ "msvcrt.dll", "msvcrt.dll", "fopen", fopen_stub }
+	,MSC(fclose)
+	, MSC(fread)
+	,MSC(fwrite)
+	,MSC(_wfsopen)
+	,MSC( _wsopen )
+	,MSC( _lopen )
+	,MSC( _open_osfhandle )
+	
 	, {NULL }
 					};
-
-
-static void FakeAbort( void )
-{
-	TerminateProcess( GetCurrentProcess(), 0 );
-}
 
 static void *MyAlloc( size_t size )
 {
@@ -485,35 +794,14 @@ static void * MyRealloc( void *p, size_t size )
 #define Seek(a,b) (((uintptr_t)a)+(b))
 
 
-uintptr_t ConvertVirtualToPhysical( PIMAGE_SECTION_HEADER sections, int nSections, uintptr_t base )
-{
-	int n;
-	for( n = 0; n < nSections; n++ )
-	{
-		if( base >= sections[n].VirtualAddress && base < sections[n].VirtualAddress + sections[n].SizeOfRawData )
-			return base - sections[n].VirtualAddress + sections[n].PointerToRawData;
-	}
-	return 0;
-}
 
-PRELOAD( FixLink )
+static void FixupImage( POINTER base )
 {
-	POINTER base = (POINTER)GetModuleHandle(NULL);
 	struct fixup_table_entry *entry = fixup_entries;
 	LOGICAL gcclib = TRUE;
 	POINTER source_memory = base;
-#if 0
-	char file[256];
-	size_t dwSize;
-	GetModuleFileName( NULL, file, 256 );
-	POINTER disk_memory = OpenSpace( NULL, file, &dwSize );
-#endif
 	//printf( "Load %s (%d:%d)\n", name, generation, level );
 	{
-#if 0
-		PIMAGE_DOS_HEADER static_source_dos_header = (PIMAGE_DOS_HEADER)disk_memory;
-		PIMAGE_NT_HEADERS static_source_nt_header = (PIMAGE_NT_HEADERS)Seek( disk_memory, static_source_dos_header->e_lfanew );
-#endif
 		PIMAGE_DOS_HEADER source_dos_header = (PIMAGE_DOS_HEADER)source_memory;
 		PIMAGE_NT_HEADERS source_nt_header = (PIMAGE_NT_HEADERS)Seek( source_memory, source_dos_header->e_lfanew );
 //		lprintf( "v1 v2 %p %p", static_source_nt_header->OptionalHeader.ImageBase, source_nt_header->OptionalHeader.ImageBase );
@@ -532,7 +820,16 @@ PRELOAD( FixLink )
 		}
 		{
 			//int n;
+
 			PIMAGE_DATA_DIRECTORY dir = (PIMAGE_DATA_DIRECTORY)source_nt_header->OptionalHeader.DataDirectory;
+			PIMAGE_EXPORT_DIRECTORY exp_dir = (PIMAGE_EXPORT_DIRECTORY)Seek( source_memory, dir[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress );
+			const char *dll_name = (const char*) Seek( source_memory, exp_dir->Name );
+			if( strcmp( dll_name, TARGETNAME ) == 0 ) {
+				// skiping self.
+				return;
+			}
+			lprintf( " ------------- Loading %s -------------", dll_name );
+
 			long FPISections = source_dos_header->e_lfanew
 				+ sizeof( DWORD ) + sizeof( IMAGE_FILE_HEADER )
 				+ source_nt_header->FileHeader.SizeOfOptionalHeader;
@@ -540,37 +837,15 @@ PRELOAD( FixLink )
 			PIMAGE_IMPORT_DESCRIPTOR real_import_base;
 			PIMAGE_SECTION_HEADER source_import_section = NULL;
 			PIMAGE_SECTION_HEADER source_text_section = NULL;
-#if 0
-
-			PIMAGE_DATA_DIRECTORY static_dir = (PIMAGE_DATA_DIRECTORY)static_source_nt_header->OptionalHeader.DataDirectory;
-			long static_FPISections = static_source_dos_header->e_lfanew
-				+ sizeof( DWORD ) + sizeof( IMAGE_FILE_HEADER )
-				+ static_source_nt_header->FileHeader.SizeOfOptionalHeader;
-			PIMAGE_SECTION_HEADER static_source_section;
-			PIMAGE_IMPORT_DESCRIPTOR static_real_import_base;
-			PIMAGE_SECTION_HEADER static_source_import_section = NULL;
-			PIMAGE_SECTION_HEADER static_source_text_section = NULL;
-#endif
 			uintptr_t dwSize = 0;
 			//uintptr_t newSize;
 			source_section = (PIMAGE_SECTION_HEADER)Seek( source_memory, FPISections );
-#if 0
-			static_source_section = (PIMAGE_SECTION_HEADER)Seek( disk_memory, static_FPISections );
-#endif
 			for( int n = 0; n < source_nt_header->FileHeader.NumberOfSections; n++ )
 			{
 				uintptr_t newSize = (source_section[n].VirtualAddress) + source_section[n].SizeOfRawData;
 				if( newSize > dwSize )
 					dwSize = newSize;
 			}
-#if 0
-			uintptr_t diskBias = ((uintptr_t)source_import_section->VirtualAddress - (uintptr_t)source_import_section->PointerToRawData);
-
-			{
-				//uintptr_t source_address = ConvertVirtualToPhysical( source_import_section, source_nt_header->FileHeader.NumberOfSections, dir[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress );
-				static_real_import_base = (PIMAGE_IMPORT_DESCRIPTOR)Seek( disk_memory, static_dir[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress - diskBias );
-			}
-#endif
 
 			// compute size of total of sections
 			// mark a few known sections for later processing
@@ -585,11 +860,6 @@ PRELOAD( FixLink )
 					int f;
 					uintptr_t *dwFunc;
 					uintptr_t *dwTargetFunc;
-#if 0
-					uintptr_t *dwFuncStatic;
-					uintptr_t *dwTargetFuncStatic;
-					PIMAGE_IMPORT_BY_NAME import_desc2;
-#endif
 					PIMAGE_IMPORT_BY_NAME import_desc;
 					if( real_import_base[n].Name )
 						dll_name = (const char*) Seek( real_import_base, real_import_base[n].Name - dir[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress/*source_import_section->VirtualAddress*/ );
@@ -605,35 +875,24 @@ PRELOAD( FixLink )
 						if( !entry[e].import_libname )
 							continue;
 					}
-					lprintf( "import %s", dll_name );
+					//lprintf( "import %s", dll_name );
 					//char * function_name = (char*) Seek( import_base, import_base[n]. - source_import_section->VirtualAddress );
-					//printf( "thing %s\n", dll_name );
 #if __WATCOMC__ && __WATCOMC__ < 1200
 					dwFunc = (uintptr_t*)Seek( real_import_base, real_import_base[n].OrdinalFirstThunk - dir[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress );
 #else
 					dwFunc = (uintptr_t*)Seek( real_import_base, real_import_base[n].OriginalFirstThunk - dir[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress );
 #endif
 					dwTargetFunc = (uintptr_t*)Seek( base, real_import_base[n].FirstThunk );
-#if 0
-					uintptr_t diskaddress = ConvertVirtualToPhysical( source_import_section, source_nt_header->FileHeader.NumberOfSections, static_dir[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress );
-					dwTargetFuncStatic = (uintptr_t*)Seek( static_real_import_base, real_import_base[n].FirstThunk - dir[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress - diskBias );
-#endif
 					for( f = 0; dwFunc[f]; f++ )
 					{
 						if( dwFunc[f] & ( (uintptr_t)1 << ( ( sizeof( uintptr_t ) * 8 ) - 1 ) ) )
 						{
-							lprintf( "Oridinal is %d", dwFunc[f] & 0xFFFF );
-							//dwTargetFunc[f] = (uintptr_t)LoadFunction( dll_name, (CTEXTSTR)(dwFunc[f] & 0xFFFF) );
+							//lprintf( "Oridinal is %d", dwFunc[f] & 0xFFFF );
 						}
 						else
 						{
 							import_desc = (PIMAGE_IMPORT_BY_NAME)Seek( source_memory, dwFunc[f] );
-							//import_desc2 = (PIMAGE_IMPORT_BY_NAME)Seek( disk_memory, dwTargetFunc[f] );
-	
-//////lprintf( "Addr of targetfunc is %p %p", dwFunc, !IsBadReadPtr( dwFunc + f*sizeof(void*), sizeof(void*) )?dwFunc[f]:NULL );
-//lprintf( "Addr of targetfunc is %p %p", dwTargetFunc, !IsBadReadPtr( dwTargetFunc + f*sizeof(void*), sizeof(void*) )?dwTargetFunc[f]:NULL );
-		////					//lprintf( " sub thing2 %p  %p", import_desc2->Name, import_desc2->Hint );
-							lprintf( " sub thing %s", import_desc->Name );
+							lprintf( " sub thing %s %s", dll_name, import_desc->Name );
 							if( gcclib )
 							{
 								int e;
@@ -645,53 +904,47 @@ PRELOAD( FixLink )
 											, 4
 											, PAGE_EXECUTE_READWRITE
 											, &old_protect );
-#ifdef __64__
-										lprintf( "No solution for 64bit; these are all 0 in a 64bit program" );
-#else
-										lprintf( "Fixed abort...%s  %p to %p", entry[e].import_name, dwTargetFunc + f, entry->pointer );
+										lprintf( "(FIXED) %s", import_desc->Name );
 										dwTargetFunc[f] = (uintptr_t)entry[e].pointer;
-#endif
 										break;
 									}
 								}
 							}
-#if 0
-							else
-							{
-			{
-				DWORD old_protect;
-				VirtualProtect( (POINTER)( dwTargetFunc + f )
-						, 4
-						, PAGE_EXECUTE_READWRITE
-						, &old_protect );
-								if( StrCmp( (CTEXTSTR)import_desc->Name, "malloc" ) == 0 )
-								{
-									dwTargetFunc[f] = (uintptr_t)MyAlloc;
-									//return;
-								}
-								if( StrCmp( (CTEXTSTR)import_desc->Name, "free" ) == 0 )
-								{
-									dwTargetFunc[f] = (uintptr_t)MyFree;
-									//return;
-								}
-								if( StrCmp( (CTEXTSTR)import_desc->Name, "realloc" ) == 0 )
-								{
-									dwTargetFunc[f] = (uintptr_t)MyRealloc;
-									//return;
-								}
-
-				VirtualProtect( (POINTER)( dwTargetFunc + f )
-						, 4
-						, old_protect
-						, &old_protect );
-			}
-							}
-#endif
 						}
 					}
 				}
 			}
 		}
 	}
+}
+
+
+
+PRELOAD( FixLink )
+{
+	MessageBox( NULL, "STOP", "PAUSE", MB_OK );
+	fld._debug = 1;
+	fld.fsi = sack_get_filesystem_interface( "sack_shmem" );
+	//POINTER base = (POINTER)GetModuleHandle(NULL);
+	//FixupImage( base );
+
+	{
+		DWORD pid = GetCurrentProcessId();
+		HANDLE hProcess = OpenProcess( PROCESS_ALL_ACCESS, FALSE, pid);
+		HMODULE *modules = NULL;
+		DWORD cb = 0;
+		DWORD needed = 0;
+		if( EnumProcessModules( hProcess, modules, cb,&needed ) ) {
+			needed /= sizeof( HMODULE );
+			modules = NewArray( HMODULE, needed );		
+			EnumProcessModules( hProcess, modules, needed*sizeof(HMODULE),&cb );
+			for( cb = 0; cb < needed; cb++ ) {
+				//lprintf( "Fixup: %p", modules[cb] );
+				FixupImage( modules[cb] );
+			}
+		}
+		Deallocate( HMODULE*, modules );
+	}
+
 }
 

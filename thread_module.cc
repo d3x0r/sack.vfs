@@ -7,8 +7,8 @@
 void ThreadObject::Init( Handle<Object> exports ) {
 	Isolate* isolate = Isolate::GetCurrent();
 
-	NODE_SET_METHOD(exports, "?", relinquish );
-	NODE_SET_METHOD(exports, "?", wake );
+	NODE_SET_METHOD(exports, "Δ", relinquish );
+	NODE_SET_METHOD(exports, "Λ", wake );
 	Local<FunctionTemplate> threadTemplate;
 	// Prepare constructor template
 	threadTemplate = FunctionTemplate::New( isolate, New );
@@ -87,6 +87,5 @@ ThreadObject::ThreadObject( )
 }
 
 ThreadObject::~ThreadObject() {
-	lprintf( "no thread object..." );
 }
 

@@ -37,6 +37,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	constructor.Reset( isolate, volumeTemplate->GetFunction() );
 	exports->Set( String::NewFromUtf8( isolate, "Volume" ),
 		volumeTemplate->GetFunction() );
+	NODE_SET_METHOD( exports, "InitFS", InitFS );
 }
 
 VolumeObject::VolumeObject( const char *mount, const char *filename, const char *key, const char *key2 )  {

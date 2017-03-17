@@ -18464,7 +18464,7 @@ GetFreeBlock( vol, TRUE );
     }
    }
  #ifdef _DEBUG
-   xlprintf(LOG_NOISE)( WIDE("%s[%s]"), path, expanded_working_path );
+   //xlprintf(LOG_NOISE)( WIDE("%s[%s]"), path, expanded_working_path );
  #endif
    if( StrCmp( path, WIDE(".") ) == 0 )
    {
@@ -18514,7 +18514,7 @@ GetFreeBlock( vol, TRUE );
    MemSet( &task->si, 0, sizeof( STARTUPINFO ) );
    task->si.cb = sizeof( STARTUPINFO );
  #ifdef _DEBUG
-   xlprintf(LOG_NOISE)( WIDE( "quotes?%s path [%s] program [%s]  [cmd.exe (%s)]"), needs_quotes?WIDE( "yes"):WIDE( "no"), expanded_working_path, expanded_path, GetText( final_cmdline ) );
+   //xlprintf(LOG_NOISE)( WIDE( "quotes?%s path [%s] program [%s]  [cmd.exe (%s)]"), needs_quotes?WIDE( "yes"):WIDE( "no"), expanded_working_path, expanded_path, GetText( final_cmdline ) );
  #endif
        /*
    if( path )
@@ -18600,17 +18600,7 @@ GetFreeBlock( vol, TRUE );
     else
  #endif
     {
- //program
-     if( ( CreateProcess( NULL
-            , GetText( cmdline )
-            , NULL, NULL, TRUE
-//CREATE_NEW_PROCESS_GROUP
-            , launch_flags | ( OutputHandler?CREATE_NO_WINDOW:0 )
-            , NULL
-            , expanded_working_path
-            , &task->si
-            , &task->pi ) || FixHandles(task) || DumpError() ) ||
-      ( CreateProcess( program
+     if( ( CreateProcess( program
            , GetText( cmdline )
            , NULL, NULL, TRUE
 //CREATE_NEW_PROCESS_GROUP
@@ -18619,6 +18609,16 @@ GetFreeBlock( vol, TRUE );
            , expanded_working_path
            , &task->si
            , &task->pi ) || FixHandles(task) || DumpError() ) ||
+ //program
+      ( CreateProcess( NULL
+            , GetText( cmdline )
+            , NULL, NULL, TRUE
+//CREATE_NEW_PROCESS_GROUP
+            , launch_flags | ( OutputHandler?CREATE_NO_WINDOW:0 )
+            , NULL
+            , expanded_working_path
+            , &task->si
+            , &task->pi ) || FixHandles(task) || DumpError() ) ||
       ( CreateProcess( program
  // GetText( cmdline )
            , NULL
@@ -18651,7 +18651,7 @@ GetFreeBlock( vol, TRUE );
      //CloseHandle( task->hReadIn );
      //CloseHandle( task->hWriteOut );
  #ifdef _DEBUG
-     xlprintf(LOG_NOISE)( WIDE("Success running %s[%s] in %s (%p): %d"), program, GetText( cmdline ), expanded_working_path, task->pi.hProcess, GetLastError() );
+     //xlprintf(LOG_NOISE)( WIDE("Success running %s[%s] in %s (%p): %d"), program, GetText( cmdline ), expanded_working_path, task->pi.hProcess, GetLastError() );
  #endif
      if( OutputHandler )
      {
@@ -30214,6 +30214,7 @@ GetFreeBlock( vol, TRUE );
   PCLASSROOT pcr = GetClassRoot( WIDE("system/interfaces") );
   if( GetRegisteredProcedureExx( pcr, (PCLASSROOT)servicename, WIDE("POINTER"), WIDE("load"), WIDE("void") ) )
   {
+   DebugBreak();
    lprintf( WIDE("Service: %s has multiple definitions, will use last first.")
       , servicename );
    return FALSE;
