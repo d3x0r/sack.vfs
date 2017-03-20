@@ -14,6 +14,8 @@ using namespace v8;
 class VolumeObject : public node::ObjectWrap {
 public:
 	struct volume *vol;
+	bool volNative;
+	struct file_system_mounted_interface* fsMount;
 	static v8::Persistent<v8::Function> constructor;
 	
 public:
@@ -23,6 +25,9 @@ public:
 
 	static void New( const FunctionCallbackInfo<Value>& args );
 	static void getDirectory( const FunctionCallbackInfo<Value>& args );
+	static void fileRead( const FunctionCallbackInfo<Value>& args );
+	static void fileWrite( const FunctionCallbackInfo<Value>& args );
+	static void fileExists( const FunctionCallbackInfo<Value>& args );
 
    ~VolumeObject();
 };
@@ -47,7 +52,9 @@ public:
 
 
 class FileObject : public node::ObjectWrap {
+	VolumeObject *vol;
 	struct sack_vfs_file *file;
+	FILE *cfile;
 	//Local<Object> volume;
    char* buf;
    size_t size;

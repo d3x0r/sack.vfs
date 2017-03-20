@@ -159,7 +159,8 @@ include_directories(${CMAKE_JS_INC} ${INCLUDES} src )
 
 if( WIN32 )
 	set( MORE_MODULE_SOURCES reg_access.cc 
-		fixup_windows_executable.cc  )
+#		fixup_windows_executable.cc 
+		)
 endif( WIN32 )
 
 add_library(${PROJECT_NAME} SHARED 
@@ -178,9 +179,11 @@ set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
 set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_DEFINITIONS "TARGETNAME=\"${PROJECT_NAME}.node\";${MOREDEFS}" )
 target_link_libraries(${PROJECT_NAME} ${CMAKE_JS_LIB})
 if( WIN32 )
-   target_link_libraries(${PROJECT_NAME} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi )
+   target_link_libraries(${PROJECT_NAME} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll )
 endif( WIN32 )
 if( UNIX )
    target_link_libraries( ${PROJECT_NAME} uuid )
 endif( UNIX )
 
+#add_library( ntdll SHARED ntdll.c )
+#add_library( kernel32 SHARED kernel32.c )

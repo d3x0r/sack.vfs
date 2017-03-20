@@ -257,3 +257,108 @@ typedef struct _TEB {
 	PVOID					StackCommitMax;
 	PVOID					StackReserved;
 } TEB, *PTEB;
+
+
+typedef struct _IO_STATUS_BLOCK {
+	union {
+		NTSTATUS Status;
+		PVOID Pointer;
+	};
+	ULONG_PTR Information;
+} IO_STATUS_BLOCK, *PIO_STATUS_BLOCK;
+
+typedef enum _FILE_INFORMATION_CLASS {
+	FileDirectoryInformation = 1,
+	FileFullDirectoryInformation,
+	FileBothDirectoryInformation,
+	FileBasicInformation,
+	FileStandardInformation,
+	FileInternalInformation,
+	FileEaInformation,
+	FileAccessInformation,
+	FileNameInformation,
+	FileRenameInformation,
+	FileLinkInformation,
+	FileNamesInformation,
+	FileDispositionInformation,
+	FilePositionInformation,
+	FileFullEaInformation,
+	FileModeInformation,
+	FileAlignmentInformation,
+	FileAllInformation,
+	FileAllocationInformation,
+	FileEndOfFileInformation,
+	FileAlternateNameInformation,
+	FileStreamInformation,
+	FilePipeInformation,
+	FilePipeLocalInformation,
+	FilePipeRemoteInformation,
+	FileMailslotQueryInformation,
+	FileMailslotSetInformation,
+	FileCompressionInformation,
+	FileObjectIdInformation,
+	FileCompletionInformation,
+	FileMoveClusterInformation,
+	FileQuotaInformation,
+	FileReparsePointInformation,
+	FileNetworkOpenInformation,
+	FileAttributeTagInformation,
+	FileTrackingInformation,
+	FileIdBothDirectoryInformation,
+	FileIdFullDirectoryInformation,
+	FileValidDataLengthInformation,
+	FileShortNameInformation,
+	FileIoCompletionNotificationInformation,
+	FileIoStatusBlockRangeInformation,
+	FileIoPriorityHintInformation,
+	FileSfioReserveInformation,
+	FileSfioVolumeInformation,
+	FileHardLinkInformation,
+	FileProcessIdsUsingFileInformation,
+	FileNormalizedNameInformation,
+	FileNetworkPhysicalNameInformation,
+	FileIdGlobalTxDirectoryInformation,
+	FileIsRemoteDeviceInformation,
+	FileAttributeCacheInformation,
+	FileNumaNodeInformation,
+	FileStandardLinkInformation,
+	FileRemoteProtocolInformation,
+	FileMaximumInformation
+} FILE_INFORMATION_CLASS, *PFILE_INFORMATION_CLASS;
+
+// -- winternl.h actually
+typedef
+VOID
+( NTAPI *PIO_APC_ROUTINE ) (
+	IN PVOID ApcContext,
+	IN PIO_STATUS_BLOCK IoStatusBlock,
+	IN ULONG Reserved
+	);
+
+// -- libuv winapi.h
+typedef enum _FS_INFORMATION_CLASS {
+	FileFsVolumeInformation = 1,
+	FileFsLabelInformation = 2,
+	FileFsSizeInformation = 3,
+	FileFsDeviceInformation = 4,
+	FileFsAttributeInformation = 5,
+	FileFsControlInformation = 6,
+	FileFsFullSizeInformation = 7,
+	FileFsObjectIdInformation = 8,
+	FileFsDriverPathInformation = 9,
+	FileFsVolumeFlagsInformation = 10,
+	FileFsSectorSizeInformation = 11
+} FS_INFORMATION_CLASS, *PFS_INFORMATION_CLASS;
+
+typedef enum _SYSTEM_INFORMATION_CLASS {
+	SystemBasicInformation = 0,
+	SystemPerformanceInformation = 2,
+	SystemTimeOfDayInformation = 3,
+	SystemProcessInformation = 5,
+	SystemProcessorPerformanceInformation = 8,
+	SystemInterruptInformation = 23,
+	SystemExceptionInformation = 33,
+	SystemRegistryQuotaInformation = 37,
+	SystemLookasideInformation = 45,
+	SystemPolicyInformation = 134,
+} SYSTEM_INFORMATION_CLASS;

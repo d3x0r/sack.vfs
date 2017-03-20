@@ -11092,7 +11092,7 @@
  #  endif
  #ifdef WIN32
  #if !defined( SACK_BAG_EXPORTS ) && !defined( BAG_EXTERNALS ) && !defined( FILESYSTEM_LIBRARY_SOURCE )
- //# define _lopen(a,...) sack_open(0,a,##__VA_ARGS__)
+ # define _lopen(a,...) sack_open(0,a,##__VA_ARGS__)
  # define tell(a)      sack_tell(a)
  # define lseek(a,b,c) sack_ilseek(a,b,c)
  # define _llseek(a,b,c) sack_lseek(a,b,c)
@@ -11101,7 +11101,7 @@
  # define HFILE_ERROR INVALID_HANDLE_VALUE
  # define creat(a,...)  sack_icreat( 0,a,##__VA_ARGS__ )
  # define close(a)  sack_iclose(a)
- //# define OpenFile(a,b,c) sack_openfile(0,a,b,c)
+ # define OpenFile(a,b,c) sack_openfile(0,a,b,c)
  # define _lclose(a)  sack_close(a)
  # define read(a,b,c) sack_iread(a,b,c)
  # define write(a,b,c) sack_iwrite(a,b,c)

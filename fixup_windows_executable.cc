@@ -2,6 +2,7 @@
 #include "global.h"
 //#include <sack.h>
 #include <psapi.h>
+//#include <winapi.h>
 #include <TlHelp32.h>
 
 #include "ntundoc.h"
@@ -194,7 +195,7 @@ LogBinary( lpFileName, 64 );
 	if( fld._debug ) 
 		lprintf( "c = %d", c );
 
-	if( dwDesiredAccess & 0x80 ) {
+	if( dwDesiredAccess & FILE_READ_ATTRIBUTES ) {
 		// this is like a stat mode...
 		return MapFileHandle( getHandle(), (FILE*)1 );
 
@@ -425,10 +426,10 @@ static TEXTSTR Extract( CTEXTSTR name )
 #endif
 			if( sz && tmp )
 			{
-				int written, read ;
+				size_t written, read ;
 				POINTER data = NewArray( uint8_t, sz );
-				read = sack_fread( data, 1, sz, file );
-				written = sack_fwrite( data, 1, sz, tmp );
+				read = sack_fread( data, sz, 1, file );
+				written = sack_fwrite( data, sz, 1, tmp );
 				sack_fclose( tmp );
 				Release( data );
 			}
@@ -649,6 +650,29 @@ static BOOL WINAPI SetFilePointer_stub( HANDLE hFile,
 	return SetFilePointer( hFile, lDistanceToMove, lpDistanceToMoveHigh, dwMoveMethod );
 }
 
+typedef NTSTATUS( NTAPI *sNtQueryInformationFile )
+(HANDLE FileHandle,
+	PIO_STATUS_BLOCK IoStatusBlock,
+	PVOID FileInformation,
+	ULONG Length,
+	FILE_INFORMATION_CLASS FileInformationClass);
+//extern "C" sNtQueryInformationFile pNtQueryInformationFile;
+static  NTSTATUS  NTAPI pNtQueryInformationFile_stub( HANDLE FileHandle,
+	PIO_STATUS_BLOCK IoStatusBlock,
+	PVOID FileInformation,
+	ULONG Length,
+	FILE_INFORMATION_CLASS FileInformationClass)
+{
+	FILE *f = (FILE*)MapFileHandle( FileHandle, NULL );
+	if( f ) {
+		if( (uintptr_t)f == 1 ) {
+
+			return TRUE;
+		}
+	}
+	return 0;// pNtQueryInformationFile( FileHandle, IoStatusBlock, FileInformation, Length, FileInformationClass );
+}
+
 static BOOL WINAPI DuplicateHandle_stub( HANDLE hSourceProcessHandle,
 	HANDLE hSourceHandle,
 	HANDLE hTargetProcessHandle,
@@ -692,12 +716,12 @@ static int fclose_stub( FILE *a ) {
 		return sack_fclose( a );
 }
 
-static int fread_stub( char *a, int b, int c, FILE *d ) {
+static size_t fread_stub( char *a, size_t b, int c, FILE *d ) {
 	lprintf( "fclose hook." );
 		return sack_fread( a,b,c,d );
 }
 
-static int fwrite_stub( const char *a, int b, int c, FILE *d ) {
+static size_t fwrite_stub( const char *a, int b, int c, FILE *d ) {
 	lprintf( "fclose hook." );
 		return sack_fwrite( a,b,c,d );
 }
@@ -712,7 +736,7 @@ static int _wsopen_stub( const wchar_t *a, int b, int c, int d ) {
 		return _wsopen( a, b, c, d );
 }
 
-static int _lopen_stub( LPCSTR lpPathName, int iReadWrite ) {
+static HFILE _lopen_stub( LPCSTR lpPathName, int iReadWrite ) {
 	lprintf( "_lopen hook." );
 		return _lopen( lpPathName, iReadWrite );
 }
@@ -764,6 +788,8 @@ static struct fixup_table_entry fixup_entries[] = { { "libgcc_s_dw2-1.dll", "msv
 	,{ "kernel32.dll", "kernel32.dll", "GetFileSizeEx", GetFileSizeEx_stub }
 	,{ "kernel32.dll", "kernel32.dll", "MapViewOfFile", MapViewOfFile_stub }
 	,{ "kernel32.dll", "kernel32.dll", "DuplicateHandle", DuplicateHandle_stub }
+#define NTDLL(n) { "ntdll.dll", "ntdll.dll", #n, n##_stub }
+	, NTDLL( pNtQueryInformationFile )
 #define MSC(n)	{ "msvcrt.dll", "msvcrt.dll", #n, n##_stub }
 	,{ "msvcrt.dll", "msvcrt.dll", "fopen", fopen_stub }
 	,MSC(fclose)
