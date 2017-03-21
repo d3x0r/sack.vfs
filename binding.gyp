@@ -19,7 +19,7 @@
             'defines': [
               '__LINUX__',
             ],
-            'cflags_cc': ['-Wno-address', '-Wno-strict-aliasing', '-Wno-switch ],
+            'cflags_cc': ['-Wno-address', '-Wno-strict-aliasing', '-Wno-switch', '-Wno-missing-field-initializers' ],
             'include_dirs': [
               'include/linux',
             ],
