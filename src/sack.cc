@@ -10934,9 +10934,10 @@ GetFreeBlock( vol, TRUE );
   if( filename[0] == '.' && filename[1] == '/' ) filename += 2;
   LoG( "sack_vfs open %s = %p on %s", filename, file, vol->volname );
   file->entry = ScanDirectory( vol, filename, &file->dirent_key );
-  if( !file->entry )
+  if( !file->entry ) {
    if( vol->read_only ) { LoG( "Fail open: readonly" ); vol->lock = 0; Deallocate( struct sack_vfs_file *, file ); return NULL; }
    else file->entry = GetNewDirectory( vol, filename );
+  }
   if( vol->key )
    memcpy( &file->dirent_key, vol->usekey[BLOCK_CACHE_DIRECTORY] + ( (uintptr_t)file->entry & BLOCK_MASK ), sizeof( struct directory_entry ) );
   else
@@ -11189,7 +11190,7 @@ GetFreeBlock( vol, TRUE );
   size_t filenamelen;
   size_t filesize;
   CTEXTSTR mask;
-  int thisent;
+  size_t thisent;
  };
  struct find_info * CPROC sack_vfs_find_create_cursor(uintptr_t psvInst,const char *base,const char *mask )
  {
@@ -11207,7 +11208,7 @@ GetFreeBlock( vol, TRUE );
    next_entries = BTSEEK( struct directory_entry *, info->vol, info->this_dir_block, BLOCK_CACHE_DIRECTORY );
    for( n = info->thisent; n < VFS_DIRECTORY_ENTRIES; n++ ) {
     struct directory_entry *entkey = ( info->vol->key)?((struct directory_entry *)info->vol->usekey[BLOCK_CACHE_DIRECTORY])+n:&l.zero_entkey;
-    const char * testname;
+    //const char * testname;
     FPI name_ofs = next_entries[n].name_offset ^ entkey->name_offset;
     if( !name_ofs )
      return 0;
@@ -11215,7 +11216,8 @@ GetFreeBlock( vol, TRUE );
     if( !(next_entries[n].first_block ^ entkey->first_block ) )
      continue;
     info->filesize = next_entries[n].filesize ^ entkey->filesize;
-    testname = TSEEK( const char *, info->vol, name_ofs, BLOCK_CACHE_NAMES );
+    //testname =
+     TSEEK( const char *, info->vol, name_ofs, BLOCK_CACHE_NAMES );
     if( info->vol->key ) {
      int c;
      info->filenamelen = 0;
@@ -14680,7 +14682,7 @@ GetFreeBlock( vol, TRUE );
   for( n = 0; n < 10000000; n++ )
   {
  #ifdef GCC
-       //asm( "cpuid\n" );
+   //asm( "cpuid\n" );
  #endif
    tick = GetCPUTick();
    if( tick > _tick )
@@ -14690,9 +14692,9 @@ GetFreeBlock( vol, TRUE );
    }
    else
    {
-          lprintf( "CPU TICK FAILED!" );
+    lprintf( "CPU TICK FAILED!" );
     bCPUTickWorks = 0;
-          break;
+    break;
    }
    Relinquish();
   }
@@ -14818,7 +14820,7 @@ GetFreeBlock( vol, TRUE );
    cpu_tick_freq = 0;
 /*GetTickCount()*/
    while( bCPUTickWorks && ( ( tick = timeGetTime() ) - _tick ) < 25 );
-     cpu_tick = GetCPUTick();
+   cpu_tick = GetCPUTick();
    if( bCPUTickWorks )
  // microseconds;
     cpu_tick_freq = ( ( cpu_tick - _cpu_tick ) / ( tick - _tick ) )  / 1000;
@@ -14826,7 +14828,7 @@ GetFreeBlock( vol, TRUE );
  #else
   cpu_tick_freq = 1;
  #endif
-    return cpu_tick_freq;
+  return cpu_tick_freq;
  }
  void SetDefaultName( CTEXTSTR path, CTEXTSTR name, CTEXTSTR extra )
  {
@@ -14839,7 +14841,7 @@ GetFreeBlock( vol, TRUE );
   if( path )
   {
    if( filepath )
-          Release( (POINTER)filepath );
+    Release( (POINTER)filepath );
    filepath = StrDup( path );
   }
   if( name )
@@ -14853,9 +14855,9 @@ GetFreeBlock( vol, TRUE );
   if( !filename )
    filename = StrDup( GetProgramName() );
   if( !filename )
-       filename = "org.d3x0r.sack";
+   filename = "org.d3x0r.sack";
   // this has to come from C heap.. my init isn't done yet probably and
-    // sharemem will just fai(*syslog_local).  (it's probably trying to log... )
+  // sharemem will just fai(*syslog_local).  (it's probably trying to log... )
   newpath = (TEXTCHAR*)malloc( len = sizeof(TEXTCHAR)*(9 + StrLen( filepath ) + StrLen( filename ) + (extra?StrLen(extra):0) + 5) );
  #ifdef __cplusplus_cli
   tnprintf( newpath, len, WIDE("%s/%s%s.cli.log"), filepath, filename, extra?extra:WIDE("") );
@@ -15045,7 +15047,7 @@ GetFreeBlock( vol, TRUE );
  }
  PRIORITY_PRELOAD( InitSyslogPreload, SYSLOG_PRELOAD_PRIORITY )
  {
-    InitSyslog( 1 );
+  InitSyslog( 1 );
  }
  // delay reading options (unless we had to because of a logging requirement) but all core
  // logging should be disabled (usually) until after init.
@@ -15053,16 +15055,16 @@ GetFreeBlock( vol, TRUE );
  // but still fairly early...
  PRIORITY_PRELOAD( InitSyslogPreloadWithOptions, NAMESPACE_PRELOAD_PRIORITY + 1 )
  {
-    InitSyslog( 0 );
+  InitSyslog( 0 );
  }
  PRIORITY_PRELOAD( InitSyslogPreloadAllowGroups, DEFAULT_PRELOAD_PRIORITY + 1 )
  {
-    (*syslog_local).flags.group_ok = 1;
+  (*syslog_local).flags.group_ok = 1;
  }
  //----------------------------------------------------------------------------
  CTEXTSTR GetTimeEx( int bUseDay )
  {
-    /* used by sqlite extension to support now() */
+  /* used by sqlite extension to support now() */
  #ifdef _WIN32
  #ifndef WIN32
  #define WIN32 _WIN32
@@ -15070,15 +15072,15 @@ GetFreeBlock( vol, TRUE );
  #endif
  #if defined( WIN32 ) && !defined( __ANDROID__ )
   static TEXTCHAR timebuffer[256];
-    SYSTEMTIME st;
+  SYSTEMTIME st;
   GetLocalTime( &st );
   if( bUseDay )
-     tnprintf( timebuffer, sizeof(timebuffer), WIDE("%02d/%02d/%d %02d:%02d:%02d")
-                       , st.wMonth, st.wDay, st.wYear
-                       , st.wHour, st.wMinute, st.wSecond );
+   tnprintf( timebuffer, sizeof(timebuffer), WIDE("%02d/%02d/%d %02d:%02d:%02d")
+          , st.wMonth, st.wDay, st.wYear
+          , st.wHour, st.wMinute, st.wSecond );
   else
-     tnprintf( timebuffer, sizeof(timebuffer), WIDE("%02d:%02d:%02d")
-                       , st.wHour, st.wMinute, st.wSecond );
+   tnprintf( timebuffer, sizeof(timebuffer), WIDE("%02d:%02d:%02d")
+          , st.wHour, st.wMinute, st.wSecond );
  #else
   static TEXTCHAR *timebuffer;
   static char c_timebuffer[256];
@@ -15092,17 +15094,17 @@ GetFreeBlock( vol, TRUE );
       , timething );
   if( timebuffer )
    Release( timebuffer );
-    timebuffer = DupCStr( c_timebuffer );
+  timebuffer = DupCStr( c_timebuffer );
  #endif
   return timebuffer;
  }
  CTEXTSTR GetTime( void )
  {
-    return GetTimeEx( (*syslog_local).flags.bUseDay );
+  return GetTimeEx( (*syslog_local).flags.bUseDay );
  }
  CTEXTSTR GetPackedTime( void )
  {
-    /* used by sqlite extension to support now() */
+  /* used by sqlite extension to support now() */
  #ifdef _WIN32
  #ifndef WIN32
  #define WIN32 _WIN32
@@ -15113,9 +15115,9 @@ GetFreeBlock( vol, TRUE );
   SYSTEMTIME st;
   GetLocalTime( &st );
   tnprintf( timebuffer, sizeof(timebuffer), WIDE("%04d%02d%02d%02d%02d%02d")
-      , st.wYear
-      , st.wMonth, st.wDay
-      , st.wHour, st.wMinute, st.wSecond );
+          , st.wYear
+          , st.wMonth, st.wDay
+          , st.wHour, st.wMinute, st.wSecond );
  #else
   static TEXTCHAR *timebuffer;
   static char c_timebuffer[256];
@@ -15124,9 +15126,9 @@ GetFreeBlock( vol, TRUE );
   time(&timevalnow);
   timething = localtime( &timevalnow );
   strftime( c_timebuffer
-     , sizeof( c_timebuffer )
-     , "%Y%m%d%H%M%S"
-     , timething );
+          , sizeof( c_timebuffer )
+          , "%Y%m%d%H%M%S"
+          , timething );
   if( timebuffer )
    Release( timebuffer );
   timebuffer = DupCStr( c_timebuffer );
@@ -15139,7 +15141,7 @@ GetFreeBlock( vol, TRUE );
  static TEXTCHAR *GetTimeHigh( void )
  {
  #if defined WIN32 && !defined( __ANDROID__ )
-     static TEXTCHAR timebuffer[256];
+   static TEXTCHAR timebuffer[256];
   static SYSTEMTIME _st;
   SYSTEMTIME st, st_save;
   if( (*syslog_local).flags.bUseDeltaTime )
@@ -15182,7 +15184,7 @@ GetFreeBlock( vol, TRUE );
            , st.wHour, st.wMinute, st.wSecond, st.wMilliseconds );
  #else
   static TEXTCHAR *timebuffer;
-    static char c_timebuffer[256];
+  static char c_timebuffer[256];
   static struct timeval _tv;
   static struct tm _tm;
   struct timeval tv, tv_save;
@@ -15229,15 +15231,15 @@ GetFreeBlock( vol, TRUE );
    tm = *timething;
   }
   len = strftime( c_timebuffer
-                   , sizeof( c_timebuffer )
-                   , ((*syslog_local).flags.bUseDay)?"%m/%d/%Y %H:%M:%S":"%H:%M:%S"
+                 , sizeof( c_timebuffer )
+                 , ((*syslog_local).flags.bUseDay)?"%m/%d/%Y %H:%M:%S":"%H:%M:%S"
         , &tm );
  #undef snprintf
   snprintf( c_timebuffer + len, 5, ".%03ld", tv.tv_usec / 1000 );
   if( timebuffer )
    Release( timebuffer );
-    timebuffer = DupCStr( c_timebuffer );
-    /*
+  timebuffer = DupCStr( c_timebuffer );
+  /*
      // this code is kept in case borland's compiler don't like it.
      {
      time_t timevalnow;
@@ -15248,7 +15250,7 @@ GetFreeBlock( vol, TRUE );
      , WIDE("%m/%d/%Y %H:%M:%S.000")
      , timething );
      }
-     */
+   */
  #endif
   return timebuffer;
  }
@@ -15266,7 +15268,7 @@ GetFreeBlock( vol, TRUE );
    return (uint32_t)(tick / cpu_tick_freq);
   }
   else
-       return (uint32_t)tick;
+   return (uint32_t)tick;
  }
  void PrintCPUDelta( TEXTCHAR *buffer, size_t buflen, uint64_t tick_start, uint64_t tick_end )
  {
@@ -15278,7 +15280,7 @@ GetFreeBlock( vol, TRUE );
       , ((tick_end-tick_start) / cpu_tick_freq ) / 1000
       , ((tick_end-tick_start) / cpu_tick_freq ) % 1000
       );
-    else
+  else
  #endif
    tnprintf( buffer, buflen, WIDE("%")_64fs, tick_end - tick_start
         );
@@ -15468,12 +15470,12 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  {
   static FILE *maps;
   //return FALSE;
-    //DebugBreak();
+  //DebugBreak();
   if( !maps )
    maps = fopen( "/proc/self/maps", "rt" );
   else
-       fseek( maps, 0, SEEK_SET );
-    //fprintf( stderr, WIDE("Testing a pointer..\n") );
+   fseek( maps, 0, SEEK_SET );
+  //fprintf( stderr, WIDE("Testing a pointer..\n") );
   if( maps )
   {
    uintptr_t ptr = (uintptr_t)pointer;
@@ -15492,8 +15494,8 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
    }
    //fclose( maps );
   }
-    //fprintf( stderr, WIDE("%p is not valid. %d"), pointer, errno );
-    return TRUE;
+  //fprintf( stderr, WIDE("%p is not valid. %d"), pointer, errno );
+  return TRUE;
  }
  //---------------------------------------------------------------------------
  #endif
@@ -15564,7 +15566,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
    UDPSystemLog( buffer );
  #else
   if( 0 )
-       ;
+   ;
  #endif
   else if( ( logtype == SYSLOG_FILE ) || ( logtype == SYSLOG_AUTO_FILE ) )
   {
@@ -15635,12 +15637,12 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  #  else
  #    ifdef __ANDROID__
    {
-          static char *program_string;
+    static char *program_string;
     char *string = CStrDup( buffer );
     if( !program_string )
      program_string = CStrDup( GetProgramName() );
     if( !program_string )
-             program_string = "com.unknown.app";
+     program_string = "com.unknown.app";
     __android_log_print( ANDROID_LOG_INFO, program_string, string );
     Release( string );
    }
@@ -15748,7 +15750,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
     }
   }
  #endif
-    // should make this expression something in signed_usigned_comparison...
+  // should make this expression something in signed_usigned_comparison...
   while( nOut && !( nOut & ( ((size_t)1) << ( ( sizeof( nOut ) * CHAR_BIT ) - 1 ) ) ) )
   {
    TEXTCHAR cOut[96];
@@ -15876,12 +15878,12 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  }
  static INDEX CPROC _null_vlprintf ( CTEXTSTR format, va_list args )
  {
-    return 0;
+  return 0;
  }
  static INDEX CPROC _real_vlprintf ( CTEXTSTR format, va_list args )
  {
  #ifdef _DEBUG
-    // this can be used to force logging early to stdout
+  // this can be used to force logging early to stdout
   struct next_lprint_info *_next_lprintf = GetNextInfo();
  #endif
   if( cannot_log )
@@ -15917,7 +15919,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
    {
     StringCbPrintf( buffer, 4096, WIDE("%s|")
           , logtime );
-      ofs = StrLen( buffer );
+    ofs = StrLen( buffer );
    }
  #else
     ofs = tnprintf( buffer, 4095, WIDE("%s|")
@@ -15955,7 +15957,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
     {
      if( (*syslog_local).flags.bProtectLoggedFilenames )
       if( IsBadReadPtr( pFile, 2 ) )
-                   pFile = WIDE("(Unloaded file?)");
+       pFile = WIDE("(Unloaded file?)");
  #   ifndef _LOG_FULL_FILE_NAMES
      for( p = pFile + StrLen(pFile) -1;p > pFile;p-- )
       if( p[0] == '/' || p[0] == '\\' )
@@ -17659,7 +17661,9 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
    }
    InvokeLibraryLoad();
   //}
-  get_function_name:
+ #ifdef _WIN32
+ get_function_name:
+ #endif
   if( funcname )
   {
    PFUNCTION function = library->functions;
@@ -35195,7 +35199,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
    //SetDefaultFilePath( GetProgramPath() );
    if( !group )
    {
-    if( groupid >= 0 )
+    if( groupid < 4096 )
      group = (struct Group *)GetLink( &(*winfile_local).groups, groupid );
    }
   }
@@ -35573,7 +35577,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
   }
   LeaveCriticalSec( &(*winfile_local).cs_files );
   if( (*winfile_local).flags.bLogOpenClose )
-   lprintf( WIDE( "return iopen of [%s]=%p(%")_size_f WIDE(")?" ), filename, h, (size_t)result );
+   lprintf( WIDE( "return iopen of [%s]=%p(%")_size_f WIDE(")?" ), filename, (void*)h, (size_t)result );
   return result;
  }
  int sack_iclose( INDEX file_handle )
@@ -36452,6 +36456,8 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
    , sack_filesys_flush
    , sack_filesys_exists
  // same as sack_filesys_copy_write_buffer() { return FALSE; }
+   , NULL
+ // find_create_cursor( uintptr_t psvInstance, const char *root, const char *filemask );
    , NULL
  // sack_filesys_find_first
    , NULL
@@ -37422,7 +37428,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
  #   ifdef UNICODE
   {
    char _path[256];
-   TEXTCHAR *tmppath;
+   //TEXTCHAR *tmppath;
    //getcwd( _path, 256 );
    //tmppath = DupCStr( _path );
    //StrCpyEx( path, tmppath, len );
@@ -37494,7 +37500,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
    Release( tmpname );
   }
  #else
-  stat( name, &statbuf );
+  stat( tmppath, &statbuf );
  #endif
   convert( &realtime, (time_t*)&statbuf.st_mtime );
   return realtime;
@@ -37673,10 +37679,10 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
  //-----------------------------------------------------------------------
   int  MakePath ( CTEXTSTR path )
  {
-  int status;
   if( !path )
    return 0;
  #ifdef _WIN32
+  int status;
   status = CreateDirectory( path, NULL );
   if( !status )
   {
@@ -37844,7 +37850,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   while( LockedExchange( list_local_lock, 1 ) )
    Relinquish();
   if( pList &&
- #if defined( _WIN64 ) || defined( __LINUX64__ )
+ #if defined( _WIN64 ) || defined( __LINUX64__ ) || defined( __64__ )
    ( ppList = (PLIST)LockedExchange64( (uint64_t*)pList, 0 ) )
  #else
    ( ppList = (PLIST)LockedExchange( (volatile uint32_t*)pList, 0 ) )
@@ -38705,9 +38711,8 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
       ; )
    {
     idx++;
-    top--;
-    if( (top)< 0)
-     top = (top) + plq->Cnt;
+    if( !top ) top = plq->Cnt - 1;
+    else top--;
    }
    if( idx == 0 )
    {
@@ -38719,18 +38724,17 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   else
   {
    for( top = plq->Bottom
-     ; idx != INVALID_INDEX && top != plq->Top
+     ; idx != -1 && top != plq->Top
       ; )
    {
-    idx--;
-    if( idx != INVALID_INDEX )
-    {
+    if( idx ) {
      top++;
-     if( SUS_GTE(top,int,plq->Cnt,uint32_t) )
-      top=(top)-plq->Cnt;
-    }
+     if( top >= plq->Cnt )
+      top-=plq->Cnt;
+     idx--;
+    }else { idx = -1; break; }
    }
-   if( idx == INVALID_INDEX )
+   if( idx == -1 )
     return plq->pNode[top];
   }
   return NULL;
@@ -38753,7 +38757,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
  #if USE_CUSTOM_ALLOCER
  retry_lock:
  #endif
-   while( priorline = LockedExchange( link_queue_local_lock, __LINE__ ) )
+   while( ( priorline = LockedExchange( link_queue_local_lock, __LINE__ ) ) )
    {
  #if USE_CUSTOM_ALLOCER
     if( link_queue_local_thread == MakeThread() )
@@ -40089,11 +40093,12 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
      } else if(0) {
   // work seperations flaming-long-sword
      case '-':
-      if( has_minus == -1 )
+      if( has_minus == -1 ) {
        if( !punctuation || StrChr( punctuation, '-' ) )
         has_minus = 1;
        else
         has_minus = 0;
+      }
       if( !has_minus )
       {
        VarTextAddCharacterEx( &out, '-' DBG_OVERRIDE );
@@ -40102,11 +40107,12 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
      case '+':
      {
       int c;
-      if( has_plus == -1 )
+      if( has_plus == -1 ) {
        if( !punctuation || StrChr( punctuation, '-' ) )
         has_plus = 1;
        else
         has_plus = 0;
+      }
       if( !has_plus )
       {
        VarTextAddCharacterEx( &out, '-' DBG_OVERRIDE );
@@ -40962,7 +40968,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   {
    if( vp )
     (*vp) = p;
-    return 0;
+   return 0;
   }
   s = 0;
   num = 0;
@@ -41354,7 +41360,6 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
  INDEX vvtprintf( PVARTEXT pvt, CTEXTSTR format, va_list args )
  {
   INDEX len;
-  int tries = 0;
 // this might be unicode...
  #if ( defined( UNDER_CE ) || defined( _WIN32 ) ) && !defined( MINGW_SUX )
  #  ifdef USE_UCRT
@@ -41385,6 +41390,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
    vsnprintf( pvt->collect_text + pvt->collect_used, len+1, format, args );
   }
  #  else
+  int tries = 0;
   while( 1 )
   {
    size_t destlen;
@@ -41746,7 +41752,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
     out_pos[0] = text[i];
     out_pos++;
    }
-   else if( char_pos = StrChr( reserved_uri, text[i] ) )
+   else if( ( char_pos = StrChr( reserved_uri, text[i] ) ) )
    {
  #ifdef __cplusplus
     sack::memory::
@@ -41904,7 +41910,6 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   // WideCharToMultiByte()
   // wcstombs_s()
   // ... etc
-  size_t convertedChars = 0;
   size_t  sizeInBytes;
   char  tmp[2];
   char  *ch;
@@ -42061,7 +42066,6 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   // WideCharToMultiByte()
   // wcstombs_s()
   // ... etc
-  size_t convertedChars = 0;
   size_t  sizeInBytes;
   wchar_t *ch;
   wchar_t   *_ch;
@@ -42374,7 +42378,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
  {
   int ch;
   size_t count = 0;
-  while( ch = Step( &string, &max_bytes ) )
+  while( ( ch = Step( &string, &max_bytes ) ) )
   {
    count++;
   }
@@ -42383,7 +42387,6 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
  CTEXTSTR GetDisplayableCharactersAtCount( CTEXTSTR string, size_t nLen )
  {
   int ch;
-  size_t count = 0;
   while( nLen > 0 &&
     ( ch = Step( &string, NULL ) ) )
   {
@@ -43719,7 +43722,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
    int n;
    set = *pSet;
  ExtendSet:
-   while( set->nUsed == maxcnt )
+   while( (size_t)set->nUsed == (size_t)maxcnt )
    {
     if( !set->next )
     {
@@ -44150,8 +44153,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   if( f )
   {
    int total = 0;
-   int ofs, n;
-   ofs = ( ( max + 31) / 32 ) * 4;
+   int n;
    while( pSet )
    {
     int nFound = 0;
@@ -45675,10 +45677,11 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   PTEXT next = start;
   PTEXT tmp;
   //lprintf( "Input was %s", GetText( params ) );
-  while( tmp = next )
+  while( ( tmp = next ) )
   {
    PTEXT name = tmp;
-   PTEXT equals = ( next = NEXTLINE( tmp ) );
+   /*PTEXT equals = */
+( next = NEXTLINE( tmp ) );
    PTEXT value = ( next = NEXTLINE( next ) );
    PTEXT ampersand = ( next = NEXTLINE( next ) );
    struct HttpField *field = New( struct HttpField );
@@ -45701,12 +45704,12 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   }
   else
   {
-   PTEXT pCurrent, pStart;
-   PTEXT pLine = NULL,
-     pHeader = NULL;
+//, pStart;
+   PTEXT pCurrent;
+   PTEXT pLine = NULL;
    TEXTCHAR *c, *line;
    size_t size, pos, len;
-   int bLine;
+   size_t bLine;
    INDEX start = 0;
    PTEXT pMergedLine;
    PTEXT pInput = VarTextGet( pHttpState->pvt_collector );
@@ -45715,8 +45718,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
    LineRelease( pNewLine );
    pHttpState->partial = pMergedLine;
    pCurrent = pHttpState->partial;
- // at lest is this block....
-   pStart = pCurrent;
+   //pStart = pCurrent; // at lest is this block....
    len = 0;
    // we always start without having a line yet, because all input is already merged
    bLine = 0;
@@ -45886,7 +45888,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
        {
         // end of header
         // copy the previous line out...
-        pStart = pCurrent;
+        //pStart = pCurrent;
  // remaing size
         len = size - pos;
         break;
@@ -45914,7 +45916,8 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
    }
    if( start )
    {
-    PTEXT tmp = SegSplit( &pCurrent, start );
+    /*PTEXT tmp = */
+SegSplit( &pCurrent, start );
     pHttpState->partial = NEXTLINE( pCurrent );
     LineRelease( SegGrab( pCurrent ) );
     start = 0;
@@ -45981,7 +45984,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   if( pHttpState->read_chunks )
   {
    uint8_t* buf = (uint8_t*)buffer;
-   int ofs = 0;
+   size_t ofs = 0;
    while( ofs < size )
    {
     switch( pHttpState->read_chunk_state )
@@ -46017,6 +46020,9 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
       return FALSE;
      }
      break;
+    case READ_VALUE_CR:
+             // didn't actually implement to get into this state... just looks for newlines really.
+             break;
     case READ_VALUE_LF:
      if( buf[ofs] == '\n' )
      {
@@ -46077,7 +46083,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
     ofs++;
    }
    if( l.flags.bLogReceived ) {
-    lprintf( "chunk read is %d of %d", pHttpState->read_chunk_byte, pHttpState->read_chunk_total_length );
+    lprintf( "chunk read is %u of %u", pHttpState->read_chunk_byte, pHttpState->read_chunk_total_length );
    }
    return FALSE;
   }
@@ -46282,7 +46288,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
    struct HttpState *state = (struct HttpState *)GetNetworkLong( pc, 2 );
    if( l.flags.bLogReceived )
    {
-    lprintf( WIDE("Received web request... %d"), size );
+    lprintf( WIDE("Received web request... %u"), size );
     //LogBinary( buffer, size );
    }
    if( AddHttpData( state, buffer, size ) )
@@ -46466,7 +46472,6 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   PTEXT request = TextParse( pHttpState->response_status, WIDE( "?#" ), WIDE( " " ), 1, 1 DBG_SRC );
   if( TextLike( request, WIDE( "get" ) ) || TextLike( request, WIDE( "post" ) ) )
   {
-   PCLASSROOT data = NULL;
    //lprintf( "is a get or post? ");
    {
     LOGICAL (CPROC *f)(uintptr_t, PCLIENT, struct HttpState *, PTEXT);
@@ -46504,7 +46509,6 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
  {
   if( !buffer )
   {
-   struct HttpServer *server = (struct HttpServer *)GetNetworkLong( pc, 0 );
    struct HttpState *pHttpState = CreateHttpState();
    buffer = pHttpState->buffer = Allocate( 4096 );
    pHttpState->request_socket = pc;
@@ -46513,7 +46517,6 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   else
   {
    int result;
-   //struct HttpServer *server = (struct HttpServer *)GetNetworkLong( pc, 0 );
    struct HttpState *pHttpState = (struct HttpState *)GetNetworkLong( pc, 1 );
    if( l.flags.bLogReceived )
    {
@@ -46889,7 +46892,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
      outchar = 0;
      AppendBuffer( &data->protocol, NULL, outbuf );
      {
-      int n;
+      size_t n;
       for( n = 0; n < num_defaults; n++ )
       {
        if( strcmp( outbuf, default_ports[n].name ) == 0 )
