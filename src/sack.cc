@@ -1728,8 +1728,8 @@
   inline iList &operator+=( POINTER &p ){ AddLinkEx( &list, p DBG_SRC ); return *this; }
   inline void add( POINTER p ) { AddLinkEx( &list, p DBG_SRC ); }
   inline void remove( POINTER p ) { DeleteLink( &list, p ); }
-  inline POINTER first( void ) { POINTER p; for( idx = 0, p = NULL;list && (idx < list->Cnt) && (( p = GetLink( &list, idx ) )==0); idx++ ); return p; }
-  inline POINTER next( void ) { POINTER p; for( idx++;list && (( p = GetLink( &list, idx ) )==0) && idx < list->Cnt; idx++ ); return p; }
+  inline POINTER first( void ) { POINTER p; for( idx = 0, p = NULL;list && (idx < list->Cnt) && (( p = GetLink( &list, idx ) )==0); )idx++; return p; }
+  inline POINTER next( void ) { POINTER p; for( idx++;list && (( p = GetLink( &list, idx ) )==0) && idx < list->Cnt; )idx++; return p; }
   inline POINTER get(INDEX idx) { return GetLink( &list, idx ); }
  } *piList;
  #endif
@@ -5208,11 +5208,8 @@
  // Revision 1.5  2003/03/25 08:38:11  panther
  // Add logging
  //
- #  if defined( __MAC__ )
- #  else
                // _heapmin() included here
- #    include <malloc.h>
- #  endif
+ #  include <malloc.h>
  #else
  //#include "loadsock.h"
  #endif
@@ -10278,7 +10275,7 @@
   BLOCKINDEX n;
   if( vol->key ) {
    for( n = first_slab; n < slab; n += BLOCKS_PER_SECTOR  ) {
-    int m;
+    size_t m;
     BLOCKINDEX *BAT = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE);
     vol->segment[BLOCK_CACHE_BAT] = n + 1;
     //while( LockedExchange( &vol->key_lock[BLOCK_CACHE_BAT], 1 ) ) Relinquish();
@@ -10293,7 +10290,7 @@
    }
   } else {
    for( n = first_slab; n < slab; n += BLOCKS_PER_SECTOR  ) {
-    int m;
+    size_t m;
     BLOCKINDEX *BAT = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE);
     for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
      BLOCKINDEX block = BAT[m];
@@ -10386,7 +10383,6 @@
  static LOGICAL ExpandVolume( struct volume *vol ) {
   LOGICAL created;
   struct disk* new_disk;
-  struct disk* old_disk;
   size_t oldsize = vol->dwSize;
   if( vol->read_only ) return TRUE;
   if( !vol->dwSize ) {
@@ -10429,7 +10425,6 @@
          vol->dwSize += ((uintptr_t)vol->disk - (uintptr_t)vol->diskReal);
   // a BAT plus the sectors it references... ( BLOCKS_PER_BAT + 1 ) * BLOCK_SIZE
   vol->dwSize += BLOCKS_PER_SECTOR*BLOCK_SIZE;
-         old_disk = vol->diskReal;
   new_disk = (struct disk*)OpenSpaceExx( NULL, vol->volname, 0, &vol->dwSize, &created );
   LoG( "created expanded volume: %p from %p size:%" _size_f, new_disk, vol->disk, vol->dwSize );
   if( new_disk != vol->disk ) {
@@ -10518,7 +10513,7 @@ GetFreeBlock( vol, TRUE );
  }
  static BLOCKINDEX GetFreeBlock( struct volume *vol, LOGICAL init )
  {
-  int n;
+  size_t n;
   int b = 0;
   BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, BLOCK_CACHE_FILE );
   if( !current_BAT ) return 0;
@@ -10710,7 +10705,7 @@ GetFreeBlock( vol, TRUE );
   Deallocate( struct volume*, vol );
  }
  void sack_vfs_shrink_volume( struct volume * vol ) {
-  int n;
+  size_t n;
   int b = 0;
  // this block has free data; should be last BAT?
   int found_free;
@@ -10752,7 +10747,7 @@ GetFreeBlock( vol, TRUE );
    size_t n;
    BLOCKINDEX slab = vol->dwSize / ( BLOCK_SIZE );
    for( n = 0; n < slab; n++  ) {
-    int m;
+    size_t m;
     BLOCKINDEX *block = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE);
     vol->segment[BLOCK_CACHE_BAT] = n + 1;
     UpdateSegmentKey( vol, BLOCK_CACHE_BAT );
@@ -10773,7 +10768,7 @@ GetFreeBlock( vol, TRUE );
    size_t n;
    BLOCKINDEX slab = vol->dwSize / ( BLOCK_SIZE );
    for( n = 0; n < slab; n++  ) {
-    int m;
+    size_t m;
     BLOCKINDEX *block = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE);
     vol->segment[BLOCK_CACHE_BAT] = n + 1;
     UpdateSegmentKey( vol, BLOCK_CACHE_BAT );
@@ -10797,7 +10792,7 @@ GetFreeBlock( vol, TRUE );
    memset( datakey, 0, sizeof( datakey ) );
    {
     {
-     int n;
+     size_t n;
      BLOCKINDEX this_dir_block = 0;
      BLOCKINDEX next_dir_block;
      BLOCKINDEX *next_entries;
@@ -11178,7 +11173,7 @@ GetFreeBlock( vol, TRUE );
   struct directory_entry entkey;
   struct directory_entry *entry;
   while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
-  if( entry  = ScanDirectory( vol, filename, &entkey ) )
+  if( ( entry  = ScanDirectory( vol, filename, &entkey ) ) )
    sack_vfs_unlink_file_entry( vol, entry, &entkey );
   vol->lock = 0;
  }
@@ -11267,10 +11262,10 @@ GetFreeBlock( vol, TRUE );
    struct directory_entry entkey;
    struct directory_entry *entry;
    while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
-   if( entry  = ScanDirectory( vol, original, &entkey ) ) {
+   if( ( entry  = ScanDirectory( vol, original, &entkey ) ) ) {
     struct directory_entry new_entkey;
     struct directory_entry *new_entry;
-    if( new_entry = ScanDirectory( vol, newname, &new_entkey ) ) return FALSE;
+    if( ( new_entry = ScanDirectory( vol, newname, &new_entkey ) ) ) return FALSE;
     entry->name_offset = SaveFileName( vol, newname ) ^ entkey.name_offset;
     vol->lock = 0;
     return TRUE;
@@ -13976,7 +13971,7 @@ GetFreeBlock( vol, TRUE );
   PSTARTUP_PROC last;
    if( proc->next || proc->me )
    {
-    if( (*proc->me) = proc->next )
+    if( ( (*proc->me) = proc->next ) )
      proc->next->me = proc->me;
    }
    for( last = check = (*root); check; check = check->next )
@@ -15887,8 +15882,10 @@ GetFreeBlock( vol, TRUE );
  }
  static INDEX CPROC _real_vlprintf ( CTEXTSTR format, va_list args )
  {
+ #ifdef _DEBUG
     // this can be used to force logging early to stdout
   struct next_lprint_info *_next_lprintf = GetNextInfo();
+ #endif
   if( cannot_log )
    return 0;
   if( logtype != SYSLOG_NONE )
@@ -16014,6 +16011,7 @@ GetFreeBlock( vol, TRUE );
   struct next_lprint_info *_next_lprintf;
   //EnterCriticalSec( &next_lprintf.cs );
   _next_lprintf = GetNextInfo();
+  next_lprintf.nLevel = level;
  #if _DEBUG
   next_lprintf.pFile = pFile;
   next_lprintf.nLine = nLine;
@@ -71854,12 +71852,12 @@ GetFreeBlock( vol, TRUE );
   struct my_sqlite3_vfs *my_vfs = (struct my_sqlite3_vfs *)pVfs;
   int rc = 0;
   int eAccess = F_OK;
-  /*
-  assert( flags==SQLITE_ACCESS_EXISTS       /* access(zPath, F_OK)
-        || flags==SQLITE_ACCESS_READ         /* access(zPath, R_OK)
-        || flags==SQLITE_ACCESS_READWRITE    /* access(zPath, R_OK|W_OK)
+ #if 0
+  assert( flags==SQLITE_ACCESS_EXISTS
+        || flags==SQLITE_ACCESS_READ
+        || flags==SQLITE_ACCESS_READWRITE
    );
-   */
+ #endif
  #ifdef LOG_OPERATIONS
   //lprintf( "Open file: %s (vfs:%s)", zName, vfs->zName );
   //lprintf( "Access on %s %s", zPath, pVfs->zName );

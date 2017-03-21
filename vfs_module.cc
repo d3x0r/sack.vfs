@@ -1,9 +1,6 @@
 
 #include "global.h"
 
-static struct local {
-	PLIST volumes;
-} l;
 
 
 static void moduleExit( void *arg ) {
@@ -133,7 +130,6 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 		}
 
 		String::Utf8Value fName( args[0] );
-		char *tmp = StrDup( *fName );
 	
 		if(args[1]->IsArrayBuffer()) {
 			Local<ArrayBuffer> myarr = args[1].As<ArrayBuffer>();
@@ -201,10 +197,10 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 				args.GetReturnValue().Set( args.This() );
 			}
 			else {
-				if( argc > 0 ) {
-					String::Utf8Value fName( args[0]->ToString() );
-					mount_name = StrDup( *fName );
-				}
+				//if( argc > 0 ) {
+				String::Utf8Value fName( args[0]->ToString() );
+				mount_name = StrDup( *fName );
+				//}
 				if( argc > 1 ) {
 					String::Utf8Value fName( args[1]->ToString() );
 					defaultFilename = FALSE;
@@ -285,7 +281,7 @@ void FileObject::readFile(const FunctionCallbackInfo<Value>& args) {
 
 
 void FileObject::writeFile(const FunctionCallbackInfo<Value>& args) {
-	Isolate* isolate = Isolate::GetCurrent();
+	//Isolate* isolate = Isolate::GetCurrent();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 
 	//SACK_VFS_PROC size_t CPROC sack_vfs_write( struct sack_vfs_file *file, char * data, size_t length );
@@ -305,13 +301,13 @@ void FileObject::writeFile(const FunctionCallbackInfo<Value>& args) {
 }
 
 void FileObject::truncateFile(const FunctionCallbackInfo<Value>& args) {
-	Isolate* isolate = Isolate::GetCurrent();
+	//Isolate* isolate = Isolate::GetCurrent();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	sack_vfs_truncate( file->file ); // sets end of file mark to current position.
 }
 
 void FileObject::seekFile(const FunctionCallbackInfo<Value>& args) {
-	Isolate* isolate = Isolate::GetCurrent();
+	//Isolate* isolate = Isolate::GetCurrent();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	if( args.Length() == 1 && args[0]->IsNumber() ) {
 		sack_vfs_seek( file->file, (size_t)args[0]->ToNumber()->Value(), SEEK_SET );
