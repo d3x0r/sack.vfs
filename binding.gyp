@@ -17,7 +17,7 @@
     'conditions': [
           ['OS=="linux"', {
             'defines': [
-              '__LINUX__',
+              '__LINUX__'
             ],
             'cflags_cc': ['-Wno-address', '-Wno-strict-aliasing', '-Wno-switch', '-Wno-missing-field-initializers' ],
             'include_dirs': [
