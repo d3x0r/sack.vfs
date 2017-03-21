@@ -10554,7 +10554,6 @@ GetFreeBlock( vol, TRUE );
  }
  BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, LOGICAL init, LOGICAL expand ) {
   BLOCKINDEX sector = block >> BLOCK_SHIFT;
-  BLOCKINDEX new_block = 0;
   BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX *, vol, sector * (BLOCKS_PER_SECTOR*BLOCK_SIZE), BLOCK_CACHE_FILE );
   BLOCKINDEX seg;
   BLOCKINDEX check_val = (this_BAT[block & (BLOCKS_PER_BAT-1)]);
@@ -10707,8 +10706,7 @@ GetFreeBlock( vol, TRUE );
  void sack_vfs_shrink_volume( struct volume * vol ) {
   size_t n;
   int b = 0;
- // this block has free data; should be last BAT?
-  int found_free;
+  //int found_free; // this block has free data; should be last BAT?
   BLOCKINDEX last_block = 0;
   int last_bat = 0;
   BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, BLOCK_CACHE_FILE );
@@ -10723,7 +10721,7 @@ GetFreeBlock( vol, TRUE );
      last_bat = b;
      last_block = n;
     }
-    if( !check_val ) found_free = TRUE;
+    //if( !check_val ) found_free = TRUE;
    }
    b++;
    if( b * ( BLOCKS_PER_SECTOR*BLOCK_SIZE) < vol->dwSize ) {
@@ -10829,7 +10827,7 @@ GetFreeBlock( vol, TRUE );
   return signature;
  }
  static struct directory_entry * ScanDirectory( struct volume *vol, const char * filename, struct directory_entry *dirkey ) {
-  int n;
+  size_t n;
   BLOCKINDEX this_dir_block = 0;
   BLOCKINDEX next_dir_block;
   struct directory_entry *next_entries;
@@ -10837,7 +10835,7 @@ GetFreeBlock( vol, TRUE );
    next_entries = BTSEEK( struct directory_entry *, vol, this_dir_block, BLOCK_CACHE_DIRECTORY );
    for( n = 0; n < VFS_DIRECTORY_ENTRIES; n++ ) {
     struct directory_entry *entkey = ( vol->key)?((struct directory_entry *)vol->usekey[BLOCK_CACHE_DIRECTORY])+n:&l.zero_entkey;
-    const char * testname;
+    //const char * testname;
     FPI name_ofs = next_entries[n].name_offset ^ entkey->name_offset;
     if( !name_ofs ) return NULL;
     //LoG( "%d name_ofs = %" _size_f "(%" _size_f ") block = %d  vs %s"
@@ -10847,7 +10845,9 @@ GetFreeBlock( vol, TRUE );
     //   , filename );
     // if file is deleted; don't check it's name.
     if( !(next_entries[n].first_block ^ entkey->first_block ) ) continue;
-    testname = TSEEK( const char *, vol, name_ofs, BLOCK_CACHE_NAMES );
+    //testname =
+ // have to do the seek to the name block otherwise it might not be loaded.
+    TSEEK( const char *, vol, name_ofs, BLOCK_CACHE_NAMES );
     if( MaskStrCmp( vol, filename, name_ofs ) == 0 ) {
      dirkey[0] = (*entkey);
      LoG( "return found entry: %p (%" _size_f ":%" _size_f ") %s", next_entries+n, name_ofs, next_entries[n].first_block ^ dirkey->first_block, filename );
@@ -10902,7 +10902,7 @@ GetFreeBlock( vol, TRUE );
   }
  }
  static struct directory_entry * GetNewDirectory( struct volume *vol, const char * filename ) {
-  int n;
+  size_t n;
   BLOCKINDEX this_dir_block = 0;
   struct directory_entry *next_entries;
   do {
@@ -11202,7 +11202,7 @@ GetFreeBlock( vol, TRUE );
  }
  static int iterate_find( struct find_info *info ) {
   struct directory_entry *next_entries;
-  int n;
+  size_t n;
   do {
    next_entries = BTSEEK( struct directory_entry *, info->vol, info->this_dir_block, BLOCK_CACHE_DIRECTORY );
    for( n = info->thisent; n < VFS_DIRECTORY_ENTRIES; n++ ) {
@@ -11219,7 +11219,7 @@ GetFreeBlock( vol, TRUE );
     if( info->vol->key ) {
      int c;
      info->filenamelen = 0;
-     while( c = ( ((uint8_t*)info->vol->disk)[name_ofs] ^ info->vol->usekey[BLOCK_CACHE_NAMES][name_ofs&BLOCK_MASK] ) ) {
+     while( ( c = ( ((uint8_t*)info->vol->disk)[name_ofs] ^ info->vol->usekey[BLOCK_CACHE_NAMES][name_ofs&BLOCK_MASK] ) ) ) {
       info->filename[info->filenamelen++] = c;
       name_ofs++;
      }
@@ -14262,7 +14262,7 @@ GetFreeBlock( vol, TRUE );
     (1
  #endif
      && l.flags.bLog ))
-   lprintf( WIDE("Exit Proc %s(%p) from %s(%d) registered...")
+   lprintf( WIDE("Exit Proc %s(%p) from ") DBG_FILELINEFMT_MIN WIDE(" registered...")
       , func
       , proc DBG_RELAY );
   shutdown_procs[nShutdownProcs].proc = proc;
@@ -14818,9 +14818,7 @@ GetFreeBlock( vol, TRUE );
    cpu_tick_freq = 0;
 /*GetTickCount()*/
    while( bCPUTickWorks && ( ( tick = timeGetTime() ) - _tick ) < 25 );
-   {
-    cpu_tick = GetCPUTick();
-   }
+     cpu_tick = GetCPUTick();
    if( bCPUTickWorks )
  // microseconds;
     cpu_tick_freq = ( ( cpu_tick - _cpu_tick ) / ( tick - _tick ) )  / 1000;
@@ -15387,7 +15385,7 @@ GetFreeBlock( vol, TRUE );
  #endif
   }
   {
-   INDEX nSent;
+   //INDEX nSent;
    int nSend;
    static TEXTCHAR realmsg[1024];
 /*"[%s]"*/
@@ -15401,7 +15399,8 @@ GetFreeBlock( vol, TRUE );
  #else
  #define SENDBUF message
  #endif
-   nSent = sendto( hSock, (const char *)SENDBUF, nSend, 0
+   /*nSent = */
+sendto( hSock, (const char *)SENDBUF, nSend, 0
          ,(logtype == SYSLOG_UDPBROADCAST)?&saLogBroadcast:&saLog, sizeof( SOCKADDR ) );
  #ifdef __cplusplus_cli
    Release( tmp );
@@ -15433,7 +15432,6 @@ GetFreeBlock( vol, TRUE );
   (*syslog_local).bSyslogdLogging = 1;
   if( (*syslog_local).hSyslogdSock == INVALID_SOCKET )
   {
-   LOGICAL bEnable = TRUE;
    (*syslog_local).hSyslogdSock = socket(AF_UNIX,SOCK_DGRAM,0);
    if( (*syslog_local).hSyslogdSock == INVALID_SOCKET )
    {
@@ -17667,12 +17665,10 @@ GetFreeBlock( vol, TRUE );
    PFUNCTION function = library->functions;
    while( function )
    {
-    if( ((uintptr_t)function->name & 0xFFFF ) == (uintptr_t)function->name )
+    if( ((uintptr_t)function->name & 0xFFFF ) == (uintptr_t)function->name ) {
      if( function->name == funcname )
       break;
-     else
-      ;
-    else
+    } else
      if( StrCmp( function->name, funcname ) == 0 )
       break;
     function = function->next;
@@ -17873,10 +17869,6 @@ GetFreeBlock( vol, TRUE );
     if( !l.pFunctionTree )
      l.pFunctionTree = CreateBinaryTree();
     //lprintf( WIDE("Adding function %p"), function->function );
-    if( (uintptr_t)function->name & 0xFF000000 )
-    {
-     int a =3;
-    }
     AddBinaryNode( l.pFunctionTree, function, (uintptr_t)function->function );
     LinkThing( library->functions, function );
    }
@@ -18163,7 +18155,7 @@ GetFreeBlock( vol, TRUE );
     done = lastloop = FALSE;
     do
     {
-     uint32_t dwRead, dwAvail;
+     uint32_t dwRead;
      if( done )
       lastloop = TRUE;
  #ifdef _WIN32
@@ -18228,6 +18220,7 @@ GetFreeBlock( vol, TRUE );
        else
        {
         DWORD dwError = GetLastError();
+        int32_t dwAvail;
         if( ( dwError == ERROR_OPERATION_ABORTED ) && task->flags.process_ended )
         {
          if( PeekNamedPipe( phi->handle, NULL, 0, NULL, (LPDWORD)&dwAvail, NULL ) )
@@ -18251,26 +18244,26 @@ GetFreeBlock( vol, TRUE );
      //allow a minor time for output to be gathered before sending
      // partial gathers...
      if( task->flags.process_ended )
- #ifdef _WIN32
      {
+ #ifdef _WIN32
       // Ending system thread because of process exit!
       done = TRUE;
-     }
  #else
-     //if( !dwRead )
-     // break;
-     if( task->pid == waitpid( task->pid, NULL, WNOHANG ) )
-     {
-      Log( WIDE( "Setting done event on system reader." ) );
+      //if( !dwRead )
+      // break;
+      if( task->pid == waitpid( task->pid, NULL, WNOHANG ) )
+      {
+       Log( WIDE( "Setting done event on system reader." ) );
  // do one pass to make sure we completed read
-      done = TRUE;
-     }
-     else
-     {
-      //lprintf( WIDE( "process active..." ) );
-      Relinquish();
-     }
+       done = TRUE;
+      }
+      else
+      {
+       //lprintf( WIDE( "process active..." ) );
+       Relinquish();
+      }
  #endif
+     }
     }
     while( !lastloop );
  #ifdef _DEBUG
@@ -18332,7 +18325,7 @@ GetFreeBlock( vol, TRUE );
   ResumeThread( task->pi.hThread );
  #endif
  }
- uintptr_t GetProramAddress( PTASK_INFO task ) {
+ uintptr_t GetProgramAddress( PTASK_INFO task ) {
  #ifdef WIN32
     /*
     BOOL WINAPI GetThreadContext(
@@ -18356,6 +18349,9 @@ GetFreeBlock( vol, TRUE );
   memstart = ctx.Ebx;
     return memstart;
  #endif
+ #else
+    lprintf( "non-windows system; cannot find program address... yet" );
+    return 0;
  #endif
  }
  #if 0
@@ -18952,8 +18948,7 @@ GetFreeBlock( vol, TRUE );
   TEXTCHAR *args = lpCmdLine;
   TEXTCHAR  *p;
   TEXTCHAR **pp;
- // result variable, count is a temp counter...
-    TEXTCHAR argc;
+    //TEXTCHAR argc; // result variable, count is a temp counter...
  // result variable, pp is a temp pointer
     TEXTCHAR **argv;
   TEXTCHAR quote = 0;
@@ -19021,7 +19016,7 @@ GetFreeBlock( vol, TRUE );
    lastchar = ' ';
        //lprintf( "Array is %d (+2?)", count );
    pp = argv = NewArray( TEXTCHAR*, count + 2 );
-   argc = count - 2;
+   //argc = count - 2;
    p = args;
    quote = 0;
    count = 0;
@@ -27545,7 +27540,7 @@ GetFreeBlock( vol, TRUE );
   {
    // there are timers - and there's one which wants to be added...
    // if there's no timers - just sleep here...
-   while( !globalTimerData.add_timer && !globalTimerData.timers || globalTimerData.flags.bHaltTimers )
+   while( ( !globalTimerData.add_timer && !globalTimerData.timers ) || globalTimerData.flags.bHaltTimers )
    {
     if( !psvForce )
      return 1;
@@ -27649,7 +27644,7 @@ GetFreeBlock( vol, TRUE );
        lprintf( WIDE("%d Dispatching timer %")_32fs WIDE(" freq %")_32fs WIDE(" %s(%d)"), level, timer->ID, timer->frequency
           , timer->pFile, timer->nLine );
  #else
-       lprintf( WIDE("%d Dispatching timer %ld freq %ld"), level, timer->ID, timer->frequency );
+       lprintf( WIDE("%d Dispatching timer %") _32fs WIDE(" freq %") _32fs, level, timer->ID, timer->frequency );
  #endif
       }
       //#endif
@@ -28153,8 +28148,6 @@ GetFreeBlock( vol, TRUE );
      DebugBreak();
     if( pcs->dwThreadWaiting )
     {
-     THREAD_ID wake = pcs->dwThreadWaiting;
-     //pcs->dwThreadWaiting = 0;
      pcs->dwUpdating = 0;
  #ifdef ENABLE_CRITICALSEC_LOGGING
      if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
@@ -29086,7 +29079,7 @@ GetFreeBlock( vol, TRUE );
   {
    PushLink( &pls, current->self );
   }
-  while( name = (PNAME)PopLink( &pls ) )
+  while( ( name = (PNAME)PopLink( &pls ) ) )
   {
    //pcr->
    ofs += tnprintf( out + ofs, len - ofs, WIDE("/%s"), name->name );
@@ -29130,13 +29123,13 @@ GetFreeBlock( vol, TRUE );
   {
    if( end1 < end2 )
     return end1;
-    return end2;
+   return end2;
   }
   else if( end1 )
    return end1;
   else if( end2 )
-    return end2;
-    return NULL;
+   return end2;
+  return NULL;
  }
  //---------------------------------------------------------------------------
  // if name_class is NULL then root is returned.
@@ -30326,7 +30319,7 @@ GetFreeBlock( vol, TRUE );
   const TEXTCHAR *start = name;
   const TEXTCHAR *this_var = name;
   const TEXTCHAR *end;
-  while( this_var = StrChr( start, '%' ) )
+  while( ( this_var = StrChr( start, '%' ) ) )
   {
    // allow specifying %% for a single %.
    // emit the stuff from start to the variable
@@ -31395,7 +31388,17 @@ GetFreeBlock( vol, TRUE );
               , 0
               , 0
               , 0
-              , USE_CUSTOM_ALLOCER
+                    , USE_CUSTOM_ALLOCER
+                    , 0
+                    , 0
+                    , NULL
+ #ifdef _WIN32
+                    , { 0 }
+ #endif
+                    , 0
+                    , 0
+                    , FALSE
+                                                      , NULL
  };
  #  define g (global_memory_data)
  #else
@@ -31410,8 +31413,18 @@ GetFreeBlock( vol, TRUE );
                 , 0
                 , 0
                 , 0
-/* custom allocer*/
-                , USE_CUSTOM_ALLOCER };
+                 , USE_CUSTOM_ALLOCER
+                    , 0
+                    , 0
+                    , NULL
+ #ifdef _WIN32
+                    , { 0 }
+ #endif
+                    , 0
+                    , 0
+                    , FALSE
+                                                      , NULL
+ };
  // this one has memory logging enabled by default...
  //struct global_memory_tag global_memory_data = { 0x10000 * 0x08, 0, 1, 0, 0, 0, 1 };
  #  else
@@ -31424,6 +31437,16 @@ GetFreeBlock( vol, TRUE );
                 , 0
   // custom allocer
                 , USE_CUSTOM_ALLOCER
+                    , 0
+                    , 0
+                    , NULL
+ #ifdef _WIN32
+                    , { 0 }
+ #endif
+                    , 0
+                    , 0
+                    , FALSE
+                                                      , NULL
  };
  // this one has memory logging enabled by default...
  //struct global_memory_tag global_memory_data = { 0x10000 * 0x08, 0, 1, 0, 0, 0, 1 };
@@ -32249,7 +32272,9 @@ GetFreeBlock( vol, TRUE );
   POINTER  OpenSpaceExx ( CTEXTSTR pWhat, CTEXTSTR pWhere, uintptr_t address, uintptr_t *dwSize, uint32_t* bCreated )
  {
   POINTER pMem = NULL;
+ #ifdef USE_SIMPLE_LOCK_ON_OPEN
   static uint32_t bOpening;
+ #endif
  #ifndef USE_SIMPLE_LOCK_ON_OPEN
   static CRITICALSECTION cs;
   static int first = 1;
@@ -32276,7 +32301,6 @@ GetFreeBlock( vol, TRUE );
    Relinquish();
  #endif
   {
-   LOGICAL didCreate = FALSE;
  #ifdef __LINUX__
    char *filename = NULL;
    int fd = -1;
@@ -32501,6 +32525,7 @@ GetFreeBlock( vol, TRUE );
    return pMem;
  #elif defined( _WIN32 )
  #ifndef UNDER_CE
+   LOGICAL didCreate = FALSE;
    HANDLE hFile;
    HANDLE hMem = NULL;
    *dwSize = ( ( (*dwSize) + ( FILE_GRAN - 1 ) ) / FILE_GRAN ) * FILE_GRAN;
@@ -33730,10 +33755,12 @@ GetFreeBlock( vol, TRUE );
  #ifndef NO_LOGGING
       if( bVerbose )
       {
+ #ifdef _DEBUG
        CTEXTSTR pFile =  !IsBadReadPtr( BLOCK_FILE(pc), 1 )
         ?BLOCK_FILE(pc)
         :WIDE("Unknown");
        uint32_t nLine = BLOCK_LINE(pc);
+ #endif
        _xlprintf(LOG_ALWAYS DBG_RELAY)( WIDE("Free at %p size: %") _PTRSZVALfs WIDE("(%") _PTRSZVALfx WIDE(") Prior:%p NF:%p"),
                   pc, pc->dwSize, pc->dwSize,
                   pc->pPrior,
@@ -33747,10 +33774,12 @@ GetFreeBlock( vol, TRUE );
  #ifndef NO_LOGGING
       if( bVerbose )
       {
+ #ifdef _DEBUG
        CTEXTSTR pFile =  !IsBadReadPtr( BLOCK_FILE(pc), 1 )
         ?BLOCK_FILE(pc)
         :WIDE("Unknown");
        uint32_t nLine = BLOCK_LINE(pc);
+ #endif
        _xlprintf(LOG_ALWAYS DBG_RELAY)( WIDE("Used at %p size: %") _PTRSZVALfs WIDE("(%") _PTRSZVALfx WIDE(") Prior:%p"),
                   pc, pc->dwSize, pc->dwSize,
                   pc->pPrior );
@@ -34530,22 +34559,19 @@ GetFreeBlock( vol, TRUE );
    {
     t1 = *(unsigned char*)s1;
     t2 = *(unsigned char*)s2;
-    if( ( t1 ) == ( t2 ) )
-    {
+    if( ( t1 ) == ( t2 ) ) {
      (pos)++;
      s1 = (void*)(((uintptr_t)s1) + 1);
      s2 = (void*)(((uintptr_t)s2) + 1);
-    }
-    else if( t1 > t2 )
-    {
+    } else if( t1 > t2 ) {
      if( r )
       *r = pos;
      return 1;
-    }
-    else
+    } else {
      if( r )
       *r = pos;
      return -1;
+    }
    }
   }
   if( r )
@@ -34698,9 +34724,9 @@ GetFreeBlock( vol, TRUE );
  // ==0 is success.
        return 0;
   for( ;s1[0] && s2[0] && ( s1[0] == s2[0] ) && maxlen; s1++, s2++, maxlen-- );
-    if( maxlen )
+  if( maxlen )
    return s1[0] - s2[0];
-    return 0;
+  return 0;
  }
   int  StrCaseCmpEx ( CTEXTSTR s1, CTEXTSTR s2, size_t maxlen )
  {
@@ -34718,9 +34744,9 @@ GetFreeBlock( vol, TRUE );
   for( ;s1[0] && s2[0] && (((s1[0] >='a' && s1[0] <='z' )?s1[0]-('a'-'A'):s1[0])
            == ((s2[0] >='a' && s2[0] <='z' )?s2[0]-('a'-'A'):s2[0]) ) && maxlen;
      s1++, s2++, maxlen-- );
-    if( maxlen )
+  if( maxlen )
    return tolower(s1[0]) - tolower(s2[0]);
-    return 0;
+  return 0;
  }
   int  StriCmp ( CTEXTSTR pOne, CTEXTSTR pTwo )
  {
@@ -34952,7 +34978,7 @@ GetFreeBlock( vol, TRUE );
   struct  Group* filegroup;
   if( path )
   {
-   while( subst_path = (TEXTSTR)StrChr( tmp_path, '%' ) )
+   while( ( subst_path = (TEXTSTR)StrChr( tmp_path, '%' ) ) )
    {
     end = (TEXTSTR)StrChr( ++subst_path, '%' );
     //lprintf( WIDE( "Found magic subst in string" ) );
@@ -36222,7 +36248,7 @@ GetFreeBlock( vol, TRUE );
    int result = fsi->fsi->exists( fsi->psvInstance, filename );
    return result;
   }
-  else if( tmp = fopen( filename, "rb" ) )
+  else if( ( tmp = fopen( filename, "rb" ) ) )
   {
    fclose( tmp );
    return TRUE;
@@ -36326,7 +36352,6 @@ GetFreeBlock( vol, TRUE );
         )
  {
   uint32_t size;
-  uint32_t extra_size;
  #ifdef __LINUX__
  #  ifdef UNICODE
   char *tmpname = CStrDup( name );
@@ -36351,6 +36376,7 @@ GetFreeBlock( vol, TRUE );
    return (uint32_t)-1;
  #else
   HANDLE hFile = CreateFile( name, 0, 0, NULL, OPEN_EXISTING, 0, NULL );
+  uint32_t extra_size;
   if( hFile != INVALID_HANDLE_VALUE )
   {
    size = GetFileSize( hFile, (DWORD*)&extra_size );
@@ -36427,8 +36453,21 @@ GetFreeBlock( vol, TRUE );
    , sack_filesys_exists
  // same as sack_filesys_copy_write_buffer() { return FALSE; }
    , NULL
-   ,
- };
+ // sack_filesys_find_first
+   , NULL
+ // sack_filesys_find_close
+   , NULL
+ // sack_filesys_find_next
+   , NULL
+ // find_get_name
+   , NULL
+ // find_get_size
+   , NULL
+ // is_directory( path)
+                  , NULL
+ // rename
+                                                  , NULL
+ } ;
  PRIORITY_PRELOAD( InitWinFileSysEarly, OSALOT_PRELOAD_PRIORITY - 1 )
  {
   LocalInit();
@@ -37174,10 +37213,10 @@ GetFreeBlock( vol, TRUE );
  #  define pDataBuffer pData->buffer
  #endif
   //lprintf( "Check if %s is a directory...", pData->buffer );
-  if( (flags & (SFF_DIRECTORIES | SFF_SUBCURSE))
+  if( ((flags & (SFF_DIRECTORIES | SFF_SUBCURSE))
    && (pData->scanning_mount && pData->scanning_mount->fsi
     && (pData->scanning_mount->fsi->is_directory
-     && pData->scanning_mount->fsi->is_directory( pDataBuffer )))
+     && pData->scanning_mount->fsi->is_directory( pDataBuffer ))))
    || (!(pData->scanning_mount ? pData->scanning_mount->fsi : NULL)
  #ifdef WIN32
  #  ifdef UNDER_CE
@@ -37208,30 +37247,34 @@ GetFreeBlock( vol, TRUE );
    }
    if( flags & SFF_SUBCURSE )
    {
-    void *data = NULL;
-    int ofs = 0;
+    //int ofs = 0;
     TEXTCHAR tmpbuf[MAX_PATH_NAME];
     if( flags & SFF_NAMEONLY )
     {
      // even in name only - need to have this full buffer for subcurse.
      if( pData->scanning_mount && pData->scanning_mount->fsi )
      {
-      ofs = tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), pData->scanning_mount->fsi->find_get_name( findcursor( pInfo ) ) );
+      /*ofs = */
+tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), pData->scanning_mount->fsi->find_get_name( findcursor( pInfo ) ) );
      }
      else
      {
  #ifdef WIN32
  #  ifdef UNDER_CE
-      ofs = tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), finddata( pInfo )->cFileName );
+      /*ofs = */
+tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), finddata( pInfo )->cFileName );
  #  else
  #    ifdef UNICODE
-      ofs = snwprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), finddata( pInfo )->name );
+      /*ofs = */
+snwprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), finddata( pInfo )->name );
  #    else
-      ofs = tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), finddata( pInfo )->name );
+      /*ofs = */
+tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), finddata( pInfo )->name );
  #    endif
  #  endif
  #else
-      ofs = tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->d_name );
+      /*ofs = */
+tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->d_name );
  #endif
      }
      //lprintf( "process sub... %s %s", tmpbuf, findmask(pInfo)  );
