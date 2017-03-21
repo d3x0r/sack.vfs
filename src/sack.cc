@@ -48003,7 +48003,7 @@ SegSplit( &pCurrent, start );
    {
     uintptr_t iCommId = OpenComm( szPort, uiRcvQ, uiSendQ );
     if( gbLog )
-     lprintf( WIDE("attempted to open: %s result %d"), szPort, iCommId );
+     lprintf( WIDE("attempted to open: %s result %p"), szPort, (void*)iCommId );
     if( (int)iCommId >= 0 )
     {
      pct = AddComTracking( szPort, iCommId );
@@ -48095,7 +48095,7 @@ SegSplit( &pCurrent, start );
     }
     //else
     // xlprintf(LOG_NOISE)( WIDE("Failed!") );
-    if( iCommId >= 0 )
+    if( (int)iCommId >= 0 )
     {
      if( func )
      {
@@ -48567,7 +48567,9 @@ SegSplit( &pCurrent, start );
   int  SackCommWriteBufferEx( int iCommId, char *buffer, int len
                , uint32_t timeout DBG_PASS)
  {
+ #ifndef __LINUX__
   PCOM_TRACK pComTrack = FindComByNumber( iCommId );
+ #endif
   int sendofs = 0;
   int sendlen = len;
   uint32_t dwEnd = GetTickCount() + timeout;
@@ -52482,19 +52484,19 @@ SegSplit( &pCurrent, start );
   int word;
   TEXTRUNE c;
   LOGICAL status = TRUE;
-  TEXTRUNE quote = 0;
-  LOGICAL use_char = FALSE;
+  //TEXTRUNE quote = 0;
+  //LOGICAL use_char = FALSE;
   PLINKSTACK element_lists = NULL;
   PLINKSTACK context_stack = NULL;
   LOGICAL first_token = TRUE;
   //enum json_parse_state state;
   int parse_context = CONTEXT_UNKNOWN;
   struct json_value_container val;
-  POINTER msg_output;
+  //POINTER msg_output;
   if( !_msg_output )
    return FALSE;
   elements = CreateDataList( sizeof( val ) );
-  msg_output = (*_msg_output);
+  //msg_output = (*_msg_output);
   val.value_type = VALUE_UNDEFINED;
   val.result_value = 0;
   val.name = NULL;
@@ -52838,7 +52840,7 @@ SegSplit( &pCurrent, start );
   }
   {
    struct json_parse_context *old_context;
-   while( old_context = (struct json_parse_context *)PopLink( &context_stack ) ) {
+   while( ( old_context = (struct json_parse_context *)PopLink( &context_stack ) ) ) {
     lprintf( "warning unclosed contexts...." );
     Release( old_context );
    }
@@ -52937,6 +52939,21 @@ SegSplit( &pCurrent, start );
     case VALUE_TRUE:
      switch( element->type )
      {
+     case JSON_Element_String:
+     case JSON_Element_CharArray:
+     case JSON_Element_Float:
+     case JSON_Element_Double:
+     case JSON_Element_Array:
+     case JSON_Element_Object:
+     case JSON_Element_ObjectPointer:
+     case JSON_Element_List:
+     case JSON_Element_Text:
+     case JSON_Element_PTRSZVAL:
+     case JSON_Element_PTRSZVAL_BLANK_0:
+     case JSON_Element_UserRoutine:
+     case JSON_Element_Raw_Object:
+      lprintf( "Uhandled element conversion." );
+      break;
      case JSON_Element_Integer_64:
      case JSON_Element_Unsigned_Integer_64:
       ((int8_t*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = 1;
@@ -52958,6 +52975,21 @@ SegSplit( &pCurrent, start );
     case VALUE_FALSE:
      switch( element->type )
      {
+     case JSON_Element_String:
+     case JSON_Element_CharArray:
+     case JSON_Element_Float:
+     case JSON_Element_Double:
+     case JSON_Element_Array:
+     case JSON_Element_Object:
+     case JSON_Element_ObjectPointer:
+     case JSON_Element_List:
+     case JSON_Element_Text:
+     case JSON_Element_PTRSZVAL:
+     case JSON_Element_PTRSZVAL_BLANK_0:
+     case JSON_Element_UserRoutine:
+     case JSON_Element_Raw_Object:
+      lprintf( "Uhandled element conversion." );
+      break;
      case JSON_Element_Integer_64:
      case JSON_Element_Unsigned_Integer_64:
       ((int8_t*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = 0;
@@ -53634,14 +53666,14 @@ SegSplit( &pCurrent, start );
  //----------------------------------------------------------------------------------------------
  uintptr_t ParseFormat( struct json_context *context, CTEXTSTR format, uintptr_t object )
  {
-  int padding = 0;
+  size_t padding = 0;
   int member_offset;
   uintptr_t current_obj_ofs = object;
   CTEXTSTR start = format;
   CTEXTSTR _start;
   TEXTCHAR namebuf[256];
  #define namebuf_size (sizeof(namebuf)/sizeof(namebuf[0]))
-  int name_end;
+  size_t name_end;
   padding = GetNumber( &start );
   name_end = 0;
   _start = start;
@@ -53737,6 +53769,11 @@ SegSplit( &pCurrent, start );
  {
   switch( type )
   {
+  case JSON_Element_Array:
+  case JSON_Element_UserRoutine:
+  case JSON_Element_Raw_Object:
+   lprintf( "Returning invalid object size for this type." );
+   return 0;
   case JSON_Element_Integer_8:
    return sizeof( int8_t );
   case JSON_Element_Integer_16:
@@ -53962,6 +53999,25 @@ SegSplit( &pCurrent, start );
   case JSON_Element_ObjectPointer:
    member->object = child_object;
    break;
+  case JSON_Element_Integer_8:
+  case JSON_Element_Integer_16:
+  case JSON_Element_Integer_32:
+  case JSON_Element_Integer_64:
+  case JSON_Element_Unsigned_Integer_8:
+  case JSON_Element_Unsigned_Integer_16:
+  case JSON_Element_Unsigned_Integer_32:
+  case JSON_Element_Unsigned_Integer_64:
+  case JSON_Element_Float:
+  case JSON_Element_Double:
+  case JSON_Element_Array:
+  case JSON_Element_List:
+  case JSON_Element_Text:
+  case JSON_Element_CharArray:
+  case JSON_Element_String:
+  case JSON_Element_PTRSZVAL:
+  case JSON_Element_PTRSZVAL_BLANK_0:
+  case JSON_Element_UserRoutine:
+  case JSON_Element_Raw_Object:
   default:
    lprintf( WIDE("incompatible type") );
    break;
@@ -60422,9 +60478,7 @@ SegSplit( &pCurrent, start );
  // void BIO_set_callback(BIO *b, BIO_callack_fn cb);
  LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t client_keypairlen )
  {
-  const char *hostname = GetAddrName( pc->saClient );
   struct ssl_session * ses;
-  int r;
   ssl_InitLibrary();
   ses = New( struct ssl_session );
   MemSet( ses, 0, sizeof( struct ssl_session ) );
@@ -60439,7 +60493,7 @@ SegSplit( &pCurrent, start );
     PEM_read_bio_PrivateKey( keybuf, &ses->privkey, NULL, NULL );
     BIO_free( keybuf );
    }
-   r = SSL_CTX_use_PrivateKey( ssl_global.ssl_ctx_client, ses->privkey );
+   SSL_CTX_use_PrivateKey( ssl_global.ssl_ctx_client, ses->privkey );
   }
   ses->ssl = SSL_new( ssl_global.ssl_ctx_client );
   ssl_InitSession( ses );
@@ -71550,7 +71604,7 @@ SegSplit( &pCurrent, start );
   lprintf( "read %s %d  %d", my_file->filename, iAmt, iOfst );
  #endif
   sack_fseek( my_file->file, (size_t)iOfst, SEEK_SET );
-  if( ( actual = sack_fread( buffer, 1, iAmt, my_file->file ) ) == iAmt )
+  if( ( actual = sack_fread( buffer, 1, iAmt, my_file->file ) ) == (size_t)iAmt )
   {
  #ifdef LOG_OPERATIONS
    //LogBinary( buffer, iAmt );
@@ -71598,7 +71652,7 @@ SegSplit( &pCurrent, start );
    }
   }
   sack_fseek( my_file->file, (size_t)iOfst, SEEK_SET );
-  if( iAmt == ( actual = sack_fwrite( buffer, 1, iAmt, my_file->file ) ) )
+  if( (size_t)iAmt == ( actual = sack_fwrite( buffer, 1, iAmt, my_file->file ) ) )
   {
  #ifdef LOG_OPERATIONS
    lprintf( "file  %s is now %d", my_file->filename, sack_fsize( my_file->file ) );
@@ -71692,8 +71746,8 @@ SegSplit( &pCurrent, start );
  }
  int xFileControl(sqlite3_file*file, int op, void *pArg)
  {
-  struct my_file_data *my_file = (struct my_file_data*)file;
  #ifdef LOG_OPERATIONS
+  struct my_file_data *my_file = (struct my_file_data*)file;
   lprintf( WIDE("file %s control op: %d %p"), my_file->filename, op, pArg );
  #endif
   switch( op )
@@ -71730,7 +71784,7 @@ SegSplit( &pCurrent, start );
   case SQLITE_FCNTL_PRAGMA:
    {
     char **files = (char**)pArg;
-    char *name = files[3];
+    //char *name = files[3];
     files[0] = sqlite3_mprintf( "%s", files[2] );
     //xOpen( my_file->
    }
@@ -71740,12 +71794,12 @@ SegSplit( &pCurrent, start );
  }
  int xSectorSize(sqlite3_file*file)
  {
-  struct my_file_data *my_file = (struct my_file_data*)file;
+  //struct my_file_data *my_file = (struct my_file_data*)file;
   return 512;
  }
  int xDeviceCharacteristics(sqlite3_file*file)
  {
-  struct my_file_data *my_file = (struct my_file_data*)file;
+  //struct my_file_data *my_file = (struct my_file_data*)file;
   return SQLITE_IOCAP_ATOMIC|SQLITE_IOCAP_SAFE_APPEND|SQLITE_IOCAP_UNDELETABLE_WHEN_OPEN|SQLITE_IOCAP_POWERSAFE_OVERWRITE;
  }
    int xShmMap(sqlite3_file*file, int iPg, int pgsz, int a, void volatile**b)
