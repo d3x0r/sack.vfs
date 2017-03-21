@@ -23,7 +23,9 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	FileObject::Init();
 	SqlObject::Init( exports );
 	ComObject::Init( exports );
+#ifdef WIN32
 	RegObject::Init( exports );
+#endif
 	// Prepare constructor template
 	volumeTemplate = FunctionTemplate::New( isolate, New );
 	volumeTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Volume" ) );

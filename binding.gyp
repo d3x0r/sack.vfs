@@ -23,7 +23,7 @@
             'include_dirs': [
               'include/linux',
             ],
-	        'libraries':[ 'uuid' ]
+            'libraries':[ '-luuid' ]
           }],
           ['OS=="mac"', {
             'defines': [
