@@ -222,15 +222,20 @@
  #else
  #define USE_CUSTOM_ALLOCER 0
  #endif
+ #ifndef __64__
+ #  if defined( _WIN64 ) || defined( ENVIRONMENT64) || defined( __x86_64__ ) || defined( __ia64 )
+ #    define __64__ 1
+ #  endif
+ #endif
  #ifdef _MSC_VER
- #ifndef _WIN32_WINNT
- #define _WIN32_WINNT 0x501
- #endif
- #ifndef WIN32
- #ifdef _WIN32
- #define WIN32 _WIN32
- #endif
- #endif
+ #  ifndef _WIN32_WINNT
+ #    define _WIN32_WINNT 0x501
+ #  endif
+ #  ifndef WIN32
+ #    ifdef _WIN32
+ #      define WIN32 _WIN32
+ #    endif
+ #  endif
  // force windows on __MSVC
  #  ifndef WIN32
  #    define WIN32
@@ -9677,7 +9682,7 @@
      __type_rtp  scheduled;
  // - priority (0-highest 255-lowest)
      __type_rtp  priority;
- #if defined( __LINUX64__ ) ||defined( __arm__ )||defined( __GNUC__ )
+ #if defined( __64__ ) ||defined( __arm__ )||defined( __GNUC__ )
  #define INIT_PADDING ,{0}
  // need this otherwise it's 23 bytes and that'll be bad.
    char padding[1];
@@ -9747,7 +9752,7 @@
      __type_rtp  scheduled;
  // - priority (0-highest 255-lowest)
      __type_rtp  priority;
- #if defined( __GNUC__ ) || defined( __LINUX64__ ) || defined( __arm__ ) || defined( __CYGWIN__ )
+ #if defined( __GNUC__ ) || defined( __64__ ) || defined( __arm__ ) || defined( __CYGWIN__ )
  #define INIT_PADDING ,{0}
  // need this otherwise it's 23 bytes and that'll be bad.
    char padding[1];

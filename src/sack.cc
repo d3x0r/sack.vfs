@@ -230,15 +230,20 @@
  #else
  #define USE_CUSTOM_ALLOCER 0
  #endif
+ #ifndef __64__
+ #  if defined( _WIN64 ) || defined( ENVIRONMENT64) || defined( __x86_64__ ) || defined( __ia64 )
+ #    define __64__ 1
+ #  endif
+ #endif
  #ifdef _MSC_VER
- #ifndef _WIN32_WINNT
- #define _WIN32_WINNT 0x501
- #endif
- #ifndef WIN32
- #ifdef _WIN32
- #define WIN32 _WIN32
- #endif
- #endif
+ #  ifndef _WIN32_WINNT
+ #    define _WIN32_WINNT 0x501
+ #  endif
+ #  ifndef WIN32
+ #    ifdef _WIN32
+ #      define WIN32 _WIN32
+ #    endif
+ #  endif
  // force windows on __MSVC
  #  ifndef WIN32
  #    define WIN32
@@ -7576,7 +7581,7 @@
      __type_rtp  scheduled;
  // - priority (0-highest 255-lowest)
      __type_rtp  priority;
- #if defined( __LINUX64__ ) ||defined( __arm__ )||defined( __GNUC__ )
+ #if defined( __64__ ) ||defined( __arm__ )||defined( __GNUC__ )
  #define INIT_PADDING ,{0}
  // need this otherwise it's 23 bytes and that'll be bad.
    char padding[1];
@@ -7646,7 +7651,7 @@
      __type_rtp  scheduled;
  // - priority (0-highest 255-lowest)
      __type_rtp  priority;
- #if defined( __GNUC__ ) || defined( __LINUX64__ ) || defined( __arm__ ) || defined( __CYGWIN__ )
+ #if defined( __GNUC__ ) || defined( __64__ ) || defined( __arm__ ) || defined( __CYGWIN__ )
  #define INIT_PADDING ,{0}
  // need this otherwise it's 23 bytes and that'll be bad.
    char padding[1];
@@ -31466,7 +31471,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  #  define ODS(s)
  #endif
  #define MAGIC_SIZE sizeof( void* )
- #ifdef __LINUX64__
+ #ifdef __64__
  #define BLOCK_TAG(pc)  (*(uint64_t*)((pc)->byData + (pc)->dwSize - (pc)->dwPad ))
  // so when we look at memory this stamp is 0123456789ABCDEF
  #define BLOCK_TAG_ID 0xefcdab8967452301LL
@@ -31539,7 +31544,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  #  endif
  #else
  //&& !( defined __ARM__ || defined __ANDROID__ )
- #  if ( defined( __LINUX__ ) || defined( __LINUX64__ ) )
+ #  if ( defined( __LINUX__ ) )
   return XCHG( p, val );
   //   return __atomic_exchange_n(p,val,__ATOMIC_RELAXED);
  #  else
@@ -32904,11 +32909,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
      , pMem->pRoot[0].dwSize );
  #endif
    MemSet( pMem->pRoot[0].byData, 0x1BADCAFE, pMem->pRoot[0].dwSize );
- #ifdef __LINUX64__
    BLOCK_TAG( pMem->pRoot ) = BLOCK_TAG_ID;
- #else
-   BLOCK_TAG( pMem->pRoot ) = BLOCK_TAG_ID;
- #endif
   }
   {
    pMem->pRoot[0].dwPad += 2*MAGIC_SIZE;
@@ -37850,11 +37851,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   while( LockedExchange( list_local_lock, 1 ) )
    Relinquish();
   if( pList &&
- #if defined( _WIN64 ) || defined( __LINUX64__ ) || defined( __64__ )
-   ( ppList = (PLIST)LockedExchange64( (uint64_t*)pList, 0 ) )
- #else
-   ( ppList = (PLIST)LockedExchange( (volatile uint32_t*)pList, 0 ) )
- #endif
+   ( ppList = (PLIST)LockedExchangePtrSzVal( (uintptr_t*)pList, 0 ) )
     )
   {
    ReleaseEx( ppList DBG_RELAY );
@@ -54530,7 +54527,7 @@ SegSplit( &pCurrent, start );
    BIT_FIELD bLogProtocols : 1;
   } flags;
   struct peer_thread_info *root_thread;
- #if !defined( USE_WSA_EVENTS ) && !( defined( __LINUX__ ) || defined( __LINUX64__ ) )
+ #if !defined( USE_WSA_EVENTS ) && defined( WIN32 )
   WNDCLASS wc;
  #endif
  }

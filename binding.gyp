@@ -11,7 +11,6 @@
            "thread_module.cc",
           ],
 	'defines': [
-          '__64__=1',
           'TARGETNAME="sack_vfs.node"',
            "__STATIC__","USE_SQLITE","USE_SQLITE_INTERFACE","FORCE_COLOR_MACROS","NO_OPEN_MACRO"
         ],
@@ -49,7 +48,8 @@
           }]
         ],
 
-	'otherDefinss': [ "__NO_OPTIONS__","__NO_INTERFACE_SUPPORT__","__NO_ODBC__" ],
+	'otherDefinss': [ '__64__=1',
+		"__NO_OPTIONS__","__NO_INTERFACE_SUPPORT__","__NO_ODBC__" ],
 
     }
   ],
