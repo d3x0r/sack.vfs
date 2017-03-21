@@ -23,6 +23,15 @@
             'include_dirs': [
               'include/linux',
             ],
+	        'libraries':[ 'uuid' ]
+          }],
+          ['OS=="mac"', {
+            'defines': [
+              '__LINUX__',
+            ],
+            'include_dirs': [
+              'include/linux',
+            ],
           }],
           ['OS=="win"', {
             'defines': [
