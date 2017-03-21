@@ -5208,8 +5208,11 @@
  // Revision 1.5  2003/03/25 08:38:11  panther
  // Add logging
  //
+ #  if defined( __MAC__ )
+ #  else
                // _heapmin() included here
- #  include <malloc.h>
+ #    include <malloc.h>
+ #  endif
  #else
  //#include "loadsock.h"
  #endif
@@ -30214,7 +30217,6 @@ GetFreeBlock( vol, TRUE );
   PCLASSROOT pcr = GetClassRoot( WIDE("system/interfaces") );
   if( GetRegisteredProcedureExx( pcr, (PCLASSROOT)servicename, WIDE("POINTER"), WIDE("load"), WIDE("void") ) )
   {
-   DebugBreak();
    lprintf( WIDE("Service: %s has multiple definitions, will use last first.")
       , servicename );
    return FALSE;

@@ -27,7 +27,7 @@
           }],
           ['OS=="mac"', {
             'defines': [
-              '__LINUX__',
+              '__LINUX__','__MAC__'
             ],
             'include_dirs': [
               'include/linux',

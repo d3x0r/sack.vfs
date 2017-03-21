@@ -5200,8 +5200,11 @@
  // Revision 1.5  2003/03/25 08:38:11  panther
  // Add logging
  //
+ #  if defined( __MAC__ )
+ #  else
                // _heapmin() included here
- #  include <malloc.h>
+ #    include <malloc.h>
+ #  endif
  #else
  //#include "loadsock.h"
  #endif
