@@ -53985,7 +53985,7 @@ SegSplit( &pCurrent, start );
                                , size_t count_offset
                                )
  {
-  struct json_context *context = object->context;
+  //struct json_context *context = object->context;
   struct json_context_object_element *member = New( struct json_context_object_element );
   MemSet( member, 0, sizeof( struct json_context_object_element ) );
   member->name = StrDup( name );
@@ -54826,7 +54826,6 @@ SegSplit( &pCurrent, start );
     /* this code queries the arp table to figure out who the other side is */
   //int fd;
   struct arpreq arpr;
-  struct ifconf ifc;
   MemSet( &arpr, 0, sizeof( arpr ) );
  #if 0
   lprintf( WIDE( "this is broken." ) );
@@ -59158,7 +59157,8 @@ SegSplit( &pCurrent, start );
    nDrainRead = recv( pClient->Socket
           , byBuffer
         , (int)nDrainRead, 0 );
-   if( nDrainRead == SOCKET_ERROR )
+//SOCKET_ERROR )
+   if( nDrainRead == 0 )
    {
     if( WSAGetLastError() == WSAEWOULDBLOCK )
     {
@@ -60239,7 +60239,7 @@ SegSplit( &pCurrent, start );
  }
  static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
  {
-  lprintf( "SSL Read complete %p %d", buffer, length );
+  lprintf( "SSL Read complete %p %zd", buffer, length );
   if( pc->ssl_session )
   {
    if( buffer )
@@ -60247,7 +60247,7 @@ SegSplit( &pCurrent, start );
     size_t len;
     int hs_rc;
     len = BIO_write( pc->ssl_session->rbio, buffer, (int)length );
-    lprintf( "Wrote %d", len );
+    lprintf( "Wrote %zd", len );
     if( len < length ) {
      lprintf( "Protocol failure?" );
      Release( pc->ssl_session );
@@ -60271,7 +60271,7 @@ SegSplit( &pCurrent, start );
     else if( hs_rc == 1 )
     {
      len = SSL_read( pc->ssl_session->ssl, pc->ssl_session->dbuffer, (int)pc->ssl_session->dbuflen );
-     lprintf( "normal read - just get the data from the other buffer : %d", len );
+     lprintf( "normal read - just get the data from the other buffer : %zd", len );
       if( len == -1 ) {
       lprintf( "SSL_Read failed." );
       ERR_print_errors_cb( logerr, (void*)__LINE__ );
@@ -60284,7 +60284,7 @@ SegSplit( &pCurrent, start );
     {
      // the read generated write data, output that data
      size_t pending = BIO_ctrl_pending( pc->ssl_session->wbio );
-     lprintf( "pending to send is %d", pending );
+     lprintf( "pending to send is %zd", pending );
      if( pending > 0 ) {
       int read = BIO_read( pc->ssl_session->wbio, pc->ssl_session->obuffer, (int)pc->ssl_session->obuflen );
       lprintf( "Send pending %p %d", pc->ssl_session->obuffer, read );

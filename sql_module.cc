@@ -142,28 +142,28 @@ int IsTextAnyNumber( CTEXTSTR text, double *fNumber, int64_t *iNumber )
 }
 //-----------------------------------------------------------
 void SqlObject::closeDb( const FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	CloseDatabase( sql->odbc );
 }
 
 void SqlObject::autoTransact( const FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	SetSQLAutoTransact( sql->odbc, args[0]->BooleanValue() );
 }
 //-----------------------------------------------------------
 void SqlObject::transact( const FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	SQLBeginTransact( sql->odbc );
 }
 //-----------------------------------------------------------
 void SqlObject::commit( const FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	SQLCommit( sql->odbc );
@@ -494,7 +494,7 @@ void OptionTreeObject::readOptionNode( v8::Local<v8::String> field,
 	OptionTreeObject* oto = node::ObjectWrap::Unwrap<OptionTreeObject>( info.This() );
 	char *buffer;
 	size_t buflen;
-	size_t res = GetOptionStringValueEx( oto->db->odbc, oto->node, &buffer, &buflen DBG_SRC );
+	int res = GetOptionStringValueEx( oto->db->odbc, oto->node, &buffer, &buflen DBG_SRC );
 	if( !buffer || res < 0 )
 		return;
 	info.GetReturnValue().Set( String::NewFromUtf8( info.GetIsolate(), buffer ) );
