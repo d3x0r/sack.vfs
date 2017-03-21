@@ -16808,12 +16808,12 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  #endif
    if( !task->flags.closed )
    {
-    int nowait = 0;
     task->flags.closed = 1;
     //lprintf( WIDE( "%ld, %ld %p %p" ), task->pi.dwProcessId, task->pi.dwThreadId, task->pi.hProcess, task->pi.hThread );
  #if defined( WIN32 )
     if( WaitForSingleObject( task->pi.hProcess, 0 ) != WAIT_OBJECT_0 )
     {
+     int nowait = 0;
      // try using ctrl-c, ctrl-break to end process...
      if( !StopProgram( task ) )
      {
@@ -35578,7 +35578,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
   }
   LeaveCriticalSec( &(*winfile_local).cs_files );
   if( (*winfile_local).flags.bLogOpenClose )
-   lprintf( WIDE( "return iopen of [%s]=%p(%")_size_f WIDE(")?" ), filename, (void*)h, (size_t)result );
+   lprintf( WIDE( "return iopen of [%s]=%p(%")_size_f WIDE(")?" ), filename, (void*)(uintptr_t)h, (size_t)result );
   return result;
  }
  int sack_iclose( INDEX file_handle )
@@ -45680,7 +45680,8 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
    /*PTEXT equals = */
 ( next = NEXTLINE( tmp ) );
    PTEXT value = ( next = NEXTLINE( next ) );
-   PTEXT ampersand = ( next = NEXTLINE( next ) );
+   /*PTEXT ampersand = */
+( next = NEXTLINE( next ) );
    struct HttpField *field = New( struct HttpField );
    field->name = SegDuplicate( name );
    field->value = SegDuplicate( value );
@@ -46006,7 +46007,7 @@ SegSplit( &pCurrent, start );
      {
       pHttpState->read_chunk_total_length += pHttpState->read_chunk_length;
       if( l.flags.bLogReceived ) {
-       lprintf( "Chunck will be %d", pHttpState->read_chunk_length );
+       lprintf( "Chunck will be %zd", pHttpState->read_chunk_length );
       }
       pHttpState->read_chunk_state = READ_VALUE_LF;
      }
@@ -46080,7 +46081,7 @@ SegSplit( &pCurrent, start );
     ofs++;
    }
    if( l.flags.bLogReceived ) {
-    lprintf( "chunk read is %u of %u", pHttpState->read_chunk_byte, pHttpState->read_chunk_total_length );
+    lprintf( "chunk read is %zd of %zd", pHttpState->read_chunk_byte, pHttpState->read_chunk_total_length );
    }
    return FALSE;
   }
@@ -46194,7 +46195,7 @@ SegSplit( &pCurrent, start );
  }
  void SendHttpResponse ( struct HttpState *pHttpState, PCLIENT pc, int numeric, CTEXTSTR text, CTEXTSTR content_type, PTEXT body )
  {
-  int offset = 0;
+  //int offset = 0;
   PVARTEXT pvt_message = VarTextCreate();
   PTEXT header;
   PTEXT tmp_content;
@@ -46230,15 +46231,14 @@ SegSplit( &pCurrent, start );
  void SendHttpMessage ( struct HttpState *pHttpState, PCLIENT pc, PTEXT body )
  {
   PTEXT message;
-  size_t offset = 0;
   PVARTEXT pvt_message = VarTextCreate();
   PTEXT content_type;
-  offset += vtprintf( pvt_message, WIDE( "%s" ),  WIDE("HTTP/1.1 200 OK\r\n") );
-  offset += vtprintf( pvt_message, WIDE( "Content-Length: %d\r\n" ), GetTextSize( body ));
-  offset += vtprintf( pvt_message, WIDE( "Content-Type: %s\r\n" )
+  vtprintf( pvt_message, WIDE( "%s" ),  WIDE("HTTP/1.1 200 OK\r\n") );
+  vtprintf( pvt_message, WIDE( "Content-Length: %d\r\n" ), GetTextSize( body ));
+  vtprintf( pvt_message, WIDE( "Content-Type: %s\r\n" )
    , (content_type = GetHttpField( pHttpState, WIDE("Accept") ))?GetText(content_type):WIDE("text/plain" ));
-  offset += vtprintf( pvt_message, WIDE( "\r\n" )  );
-  offset += vtprintf( pvt_message, WIDE( "%s" ), GetText( body ));
+  vtprintf( pvt_message, WIDE( "\r\n" )  );
+  vtprintf( pvt_message, WIDE( "%s" ), GetText( body ));
   message = VarTextGet( pvt_message );
   if( l.flags.bLogReceived )
   {
@@ -46285,7 +46285,7 @@ SegSplit( &pCurrent, start );
    struct HttpState *state = (struct HttpState *)GetNetworkLong( pc, 2 );
    if( l.flags.bLogReceived )
    {
-    lprintf( WIDE("Received web request... %u"), size );
+    lprintf( WIDE("Received web request... %zu"), size );
     //LogBinary( buffer, size );
    }
    if( AddHttpData( state, buffer, size ) )
@@ -47487,7 +47487,7 @@ SegSplit( &pCurrent, start );
   PCOM_TRACK check = pTracking;
   while( check )
   {
-   if( check->iCommId == iCommId )
+   if( check->iCommId == (uintptr_t)iCommId )
     return check;
    check = check->next;
   }
@@ -48844,7 +48844,7 @@ SegSplit( &pCurrent, start );
  // auto fragment large packets
     if( 1 )
     {
-     int block;
+     size_t block;
      for( block = 0; block < ( length / 8100 ); block++ )
      {
       SendWebSocketMessage( pc, block == 0 ?opcode:0, 0, do_mask, payload + block * 8100, 8100);
@@ -49070,10 +49070,6 @@ SegSplit( &pCurrent, start );
     // if there was no data, then there's nothing to demask
     if( websock->fragment_collection )
     {
-     if( websock->fragment_collection_length >= websock->fragment_collection_avail )
-     {
-      int a  =3 ;;
-     }
      websock->fragment_collection[websock->fragment_collection_length++]
       = msg[n] ^ websock->mask_key[(websock->fragment_collection_index++) % 4];
     }
@@ -49340,7 +49336,7 @@ SegSplit( &pCurrent, start );
    // do auto ping...
    if( !websock->input_state.flags.closed )
    {
-    if( websock->ping_delay )
+    if( websock->ping_delay ) {
      if( !websock->input_state.flags.sent_ping )
      {
       if( ( now - websock->input_state.last_reception ) > websock->ping_delay )
@@ -49357,6 +49353,7 @@ SegSplit( &pCurrent, start );
        RescheduleTimerEx( wsc_local.timer, 0 );
       }
      }
+    }
    }
   }
  }
@@ -51896,7 +51893,7 @@ SegSplit( &pCurrent, start );
   uint64_t number2;
   int spaces1 = 0;
   int spaces2 = 0;
-  int c;
+  size_t c;
   size_t len;
   TEXTCHAR *check;
   // test overrides
@@ -52009,7 +52006,6 @@ SegSplit( &pCurrent, start );
  static void HandleData( HTML5WebSocket socket, PCLIENT pc, POINTER buffer, size_t length )
  {
   size_t n;
-  uint8_t okay = 0;
   //int randNum;
   //TEXTCHAR output[25];
   uint8_t* bytes = (uint8_t*)buffer;
@@ -71790,10 +71786,18 @@ SegSplit( &pCurrent, start );
               , xFileControl
               , xSectorSize
               , xDeviceCharacteristics
-              //, xShmMap
-              //, xShmLock
-              //, xShmBarrier
-              //, xShmUnmap
+ //, xShmMap
+                                        , NULL
+ //, xShmLock
+                                        , NULL
+ //, xShmBarrier
+                                        , NULL
+ //, xShmUnmap
+                                        , NULL
+  // xfetch
+                                        , NULL
+ // xunfetch
+                                        , NULL
  };
  int xOpen(sqlite3_vfs* vfs, const char *zName, sqlite3_file*file,
      int flags, int *pOutFlags)
@@ -71894,7 +71898,7 @@ SegSplit( &pCurrent, start );
  ){
   struct my_sqlite3_vfs *my_vfs = (struct my_sqlite3_vfs *)pVfs;
   int rc = 0;
-  int eAccess = F_OK;
+  //int eAccess = F_OK;             /* Second argument to access() */
  #if 0
   assert( flags==SQLITE_ACCESS_EXISTS
         || flags==SQLITE_ACCESS_READ
@@ -71905,8 +71909,8 @@ SegSplit( &pCurrent, start );
   //lprintf( "Open file: %s (vfs:%s)", zName, vfs->zName );
   //lprintf( "Access on %s %s", zPath, pVfs->zName );
  #endif
-  if( flags==SQLITE_ACCESS_READWRITE ) eAccess = R_OK|W_OK;
-  if( flags==SQLITE_ACCESS_READ )   eAccess = R_OK;
+  //if( flags==SQLITE_ACCESS_READWRITE ) eAccess = R_OK|W_OK;
+  //if( flags==SQLITE_ACCESS_READ )   eAccess = R_OK;
   //if( flags & SQLITE_ACCESS_EXISTS )
   {
  #ifdef UNICODE
@@ -73105,7 +73109,7 @@ SegSplit( &pCurrent, start );
       {
        if( !one_more_read )
        {
-        if( readlen = sack_fread( wbuffer, sizeof( wchar_t ), WORKSPACE-1, source ) )
+        if( ( readlen = sack_fread( wbuffer, sizeof( wchar_t ), WORKSPACE-1, source ) ) )
         {
          wbuffer[readlen] = 0;
          newline = SegCreateFromWideLen( wbuffer, readlen );
@@ -73123,7 +73127,7 @@ SegSplit( &pCurrent, start );
       {
        if( !one_more_read )
        {
-        if( readlen = sack_fread( buffer, sizeof( char ), WORKSPACE-1, source ) )
+        if( ( readlen = sack_fread( buffer, sizeof( char ), WORKSPACE-1, source ) ) )
         {
          buffer[readlen] = 0;
          newline = SegCreateFromCharLen( buffer, readlen );
@@ -73354,8 +73358,8 @@ SegSplit( &pCurrent, start );
    int c;
    for( c = 0; charset2[c]; c++ )
    {
-    reverse1[charset1[c]] = c;
-    reverse2[charset2[c]] = c;
+    reverse1[(int)charset1[c]] = c;
+    reverse2[(int)charset2[c]] = c;
    }
   }
   if( !buflen )
@@ -73408,13 +73412,13 @@ SegSplit( &pCurrent, start );
    // HANLDE_BURST_EXPLOIT converts .0, .1, .2 into .-+ characters... and sets 'ch'
    // to the character to find.
    HANDLE_BURST_PECULIARITY_WITH_DECIMALS_AND_NUMBER_COLLATION();
-   convert.base.data1 = reverse[ch];
+   convert.base.data1 = reverse[(int)ch];
    HANDLE_BURST_PECULIARITY_WITH_DECIMALS_AND_NUMBER_COLLATION();
-   convert.base.data2 = reverse[ch];
+   convert.base.data2 = reverse[(int)ch];
    HANDLE_BURST_PECULIARITY_WITH_DECIMALS_AND_NUMBER_COLLATION();
-   convert.base.data3 = reverse[ch];
+   convert.base.data3 = reverse[(int)ch];
    HANDLE_BURST_PECULIARITY_WITH_DECIMALS_AND_NUMBER_COLLATION();
-   convert.base.data4 = reverse[ch];
+   convert.base.data4 = reverse[(int)ch];
    q = (char*)buflen;
    q[0] = convert.bin.bytes[0];
    q[1] = convert.bin.bytes[1];
@@ -73425,13 +73429,13 @@ SegSplit( &pCurrent, start );
    while( p[0] && len )
    {
     HANDLE_BURST_PECULIARITY_WITH_DECIMALS_AND_NUMBER_COLLATION();
-    convert.base.data1 = reverse[ch];
+    convert.base.data1 = reverse[(int)ch];
     HANDLE_BURST_PECULIARITY_WITH_DECIMALS_AND_NUMBER_COLLATION();
-    convert.base.data2 = reverse[ch];
+    convert.base.data2 = reverse[(int)ch];
     HANDLE_BURST_PECULIARITY_WITH_DECIMALS_AND_NUMBER_COLLATION();
-    convert.base.data3 = reverse[ch];
+    convert.base.data3 = reverse[(int)ch];
     HANDLE_BURST_PECULIARITY_WITH_DECIMALS_AND_NUMBER_COLLATION();
-    convert.base.data4 = reverse[ch];
+    convert.base.data4 = reverse[(int)ch];
     if( len && len-- )
      (q++)[0] = convert.bin.bytes[0];
     if( len && len-- )
@@ -74481,7 +74485,7 @@ SegSplit( &pCurrent, start );
     return_pos = 2;
     pch->flags.bUnicode = 1;
    }
-   else if( ( charbuf[0] == 0xef ) && ( charbuf[1] == 0xbb ) && ( charbuf[0] == 0xbf ) )
+   else if( ( charbuf[0] == (char)0xef ) && ( charbuf[1] == (char)0xbb ) && ( charbuf[0] == (char)0xbf ) )
    {
     return_pos = 1;
     pch->flags.bUnicode8 = 1;
@@ -75216,6 +75220,7 @@ SegSplit( &pCurrent, start );
   case CONFIG_INTEGER:
   case CONFIG_FRACTION:
   case CONFIG_FLOAT:
+  case CONFIG_NOTHING:
    break;
   }
   DeleteFromSet( CONFIG_ELEMENT, pch->elements, pce );
@@ -75638,9 +75643,7 @@ SegSplit( &pCurrent, start );
  }
  static void computePassword(sqlite3_context*onwhat,int argc,sqlite3_value**argv)
  {
-  PVARTEXT pvt = VarTextCreate();
-  PODBC odbc = (PODBC)sqlite3_user_data(onwhat);
-  const unsigned char *val = sqlite3_value_text( argv[0] );
+    const unsigned char *val = sqlite3_value_text( argv[0] );
   static TEXTCHAR *result;
   if( result ) Release( result );
   result = SRG_EncryptString( (CTEXTSTR)val );
@@ -75657,9 +75660,7 @@ SegSplit( &pCurrent, start );
  }
  static void decomputePassword(sqlite3_context*onwhat,int n,sqlite3_value**argv)
  {
-  PVARTEXT pvt = VarTextCreate();
-  PODBC odbc = (PODBC)sqlite3_user_data(onwhat);
-  const unsigned char *val = sqlite3_value_text( argv[0] );
+    const unsigned char *val = sqlite3_value_text( argv[0] );
   static TEXTCHAR *result;
   if( result ) Release( result );
   result = SRG_DecryptString( (CTEXTSTR)val );
@@ -77309,8 +77310,8 @@ SegSplit( &pCurrent, start );
  void DestroyCollectorEx( PCOLLECT pCollect DBG_PASS )
  #define DestroyCollector(c) DestroyCollectorEx(c DBG_SRC )
  {
-  PODBC odbc = pCollect?pCollect->odbc:NULL;
  #ifdef LOG_COLLECTOR_STATES
+  PODBC odbc = pCollect?pCollect->odbc:NULL;
   // added to supprot 'collectors'
   _lprintf(DBG_RELAY)( "Destroying a state, restoring prior if any... %s"
          ,odbc?odbc->collection?odbc->collection->flags.bPushed?"pushed":"":"":"No ODBC"
@@ -78101,7 +78102,6 @@ SegSplit( &pCurrent, start );
  #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
    int rc3;
  #endif
-   int bDuplicated = FALSE;
    //INDEX idx;
    int lines = 0;
  #ifdef USE_ODBC
@@ -78110,7 +78110,10 @@ SegSplit( &pCurrent, start );
  #endif
    PVARTEXT pvtData;
    TEXTCHAR *tmpResult = NULL;
+ #ifdef USE_ODBC
+       // used as a buffer length to get odbc result
    uintptr_t byTmpResultLen = 0;
+ #endif
    // SQLPrepare
    // includes the table to list... therefore list the fields in the table.
    //lprintf( "am I logging: %d %d %d", (!odbc->flags.bNoLogging) , (!g.flags.bNoLog) , g.flags.bLogData )
@@ -78290,7 +78293,6 @@ SegSplit( &pCurrent, start );
  #endif
     idx = 1;
     lines++;
-    bDuplicated = TRUE;
     //lprintf( WIDE("Yes, so lets' get the data to result with..") );
     do
     {
@@ -79829,7 +79831,7 @@ SegSplit( &pCurrent, start );
    if( StrCaseCmp( dsn, queue->name ) == 0 )
    {
     PODBC odbc;
-    while( odbc = (PODBC)DequeLink( &queue->connections ) )
+    while( ( odbc = (PODBC)DequeLink( &queue->connections ) ) )
      CloseDatabase( odbc );
     break;
    }
@@ -80100,6 +80102,7 @@ SegSplit( &pCurrent, start );
     //lprintf( "getting last insert ID?" );
  #ifdef POSGRES_BACKEND
   {
+   CTEXTSTR result = NULL;
    TEXTCHAR query[256];
    sprintf( query, WIDE("select currval('%s_%s_seq')"), table, col );
    if( SQLQueryEx( odbc, query, &result ) && result DBG_RELAY )
@@ -80122,11 +80125,13 @@ SegSplit( &pCurrent, start );
   PushSQLQueryEx( odbc );
   if( odbc->flags.bAccess )
   {
+   CTEXTSTR result = NULL;
    if( SQLQueryEx( odbc, WIDE( "select @@IDENTITY" ), &result DBG_RELAY ) && result )
     RecordID = StrDup( result );
   }
   else if( odbc->flags.bODBC )
   {
+   CTEXTSTR result = NULL;
    if( SQLQueryEx( odbc, WIDE("select LAST_INSERT_ID()"), &result DBG_RELAY ) && result )
    {
     RecordID = StrDup( result );
@@ -82059,7 +82064,7 @@ SegSplit( &pCurrent, start );
   }
   for( b = n = 0; guid[n]; n++ )
   {
-   if( char_lookup[guid[n]] < 0 )
+   if( char_lookup[(int)guid[n]] < 0 )
     continue;
        if( !( b & 1 ) )
     buf[b / 2] = char_lookup[guid[n]] << 4;
@@ -83295,11 +83300,6 @@ SegSplit( &pCurrent, start );
  //#left join option_name as ong on ong.name_id=g.name_id
  //#left join option_name as onh on onh.name_id=h.name_id
  ;
- static int CPROC MyStrCaseCmp( const TEXTCHAR *a, const TEXTCHAR *b )
- {
-  lprintf( WIDE("compare %s with %s"),a , b );
-  return StrCaseCmp( a, b );
- }
  SQLGETOPTION_PROC( void,SetOptionStringValueEx )( PODBC odbc, POPTION_TREE_NODE node, CTEXTSTR pValue )
  {
   int drop_odbc = FALSE;
@@ -83689,7 +83689,6 @@ SegSplit( &pCurrent, start );
  //------------------------------------------------------------------------
  size_t GetOptionStringValueEx( PODBC odbc, POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len DBG_PASS )
  {
-  POPTION_TREE tree = GetOptionTreeExxx( odbc, NULL DBG_RELAY );
   size_t res = New4GetOptionStringValue( odbc, optval, buffer, len DBG_RELAY );
   return res;
  }
@@ -83703,7 +83702,6 @@ SegSplit( &pCurrent, start );
  }
  int GetOptionBlobValueOdbc( PODBC odbc, POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len )
  {
-  POPTION_TREE tree = GetOptionTreeExxx( odbc, NULL DBG_SRC );
   CTEXTSTR *result = NULL;
   size_t tmplen;
   if( !len )
@@ -83745,11 +83743,13 @@ SegSplit( &pCurrent, start );
   return FALSE;
  }
  //------------------------------------------------------------------------
+ /*
  static LOGICAL CreateValue( POPTION_TREE tree, POPTION_TREE_NODE iOption, CTEXTSTR pValue )
  {
   OpenWriter( tree );
   return New4CreateValue( tree, iOption, pValue );
  }
+ */
  //------------------------------------------------------------------------
  // result with option value ID
  LOGICAL SetOptionStringValue( POPTION_TREE tree, POPTION_TREE_NODE optval, CTEXTSTR pValue )
@@ -83859,71 +83859,71 @@ SegSplit( &pCurrent, start );
  //------------------------------------------------------------------------
  static CTEXTSTR CPROC ResolveININame( PODBC odbc, CTEXTSTR pSection, TEXTCHAR *buf, CTEXTSTR pINIFile )
  {
-  if( pINIFile[0] == '.' && pINIFile[1] == '/' || pINIFile[1] == '\\' )
+  if( pINIFile[0] == '.' && ( pINIFile[1] == '/' || pINIFile[1] == '\\' ) )
    pINIFile += 2;
-   while( pINIFile[0] == '/' || pINIFile[0] == '\\' )
-    pINIFile++;
-   if( !pathchr( pINIFile ) )
+  while( pINIFile[0] == '/' || pINIFile[0] == '\\' )
+  pINIFile++;
+  if( !pathchr( pINIFile ) )
+  {
+   if( ( pINIFile != DEFAULT_PUBLIC_KEY )
+    && ( StrCaseCmp( pINIFile, DEFAULT_PUBLIC_KEY ) != 0 ) )
    {
-    if( ( pINIFile != DEFAULT_PUBLIC_KEY )
-     && ( StrCaseCmp( pINIFile, DEFAULT_PUBLIC_KEY ) != 0 ) )
+    //lprintf( "(Convert %s)", pINIFile );
+    if( og.flags.bEnableSystemMapping == 2 )
+     og.flags.bEnableSystemMapping = SACK_GetPrivateProfileIntExx( odbc, WIDE( "System Settings")
+                           , WIDE( "Enable System Mapping" ), 0, NULL, TRUE DBG_SRC );
+    if( og.flags.bEnableSystemMapping )
     {
-     //lprintf( "(Convert %s)", pINIFile );
-     if( og.flags.bEnableSystemMapping == 2 )
-      og.flags.bEnableSystemMapping = SACK_GetPrivateProfileIntExx( odbc, WIDE( "System Settings")
-                            , WIDE( "Enable System Mapping" ), 0, NULL, TRUE DBG_SRC );
-     if( og.flags.bEnableSystemMapping )
+     TEXTCHAR resultbuf[12];
+     struct check_mask_param params;
+     params.is_mapped = FALSE;
+     params.is_found = FALSE;
+     // check masks first for wildcarded relocations.
      {
-      TEXTCHAR resultbuf[12];
-      struct check_mask_param params;
-      params.is_mapped = FALSE;
-      params.is_found = FALSE;
-      // check masks first for wildcarded relocations.
+      POPTION_TREE_NODE node;
+      params.section_name = pSection;
+      params.file_name = pINIFile;
+      params.odbc = odbc;
+      //lprintf( "FILE is not mapped entirly, check enumerated options..." );
+      tnprintf( buf, 128, WIDE("System Settings/Map INI Local Masks/%s"), pINIFile );
+      //lprintf( "buf is %s", buf );
+      node = GetOptionIndexExxx( odbc, NULL, DEFAULT_PUBLIC_KEY, NULL, NULL, buf, TRUE, FALSE, FALSE DBG_SRC );
+      if( node )
       {
-       POPTION_TREE_NODE node;
-       params.section_name = pSection;
-       params.file_name = pINIFile;
-       params.odbc = odbc;
-       //lprintf( "FILE is not mapped entirly, check enumerated options..." );
-       tnprintf( buf, 128, WIDE("System Settings/Map INI Local Masks/%s"), pINIFile );
-       //lprintf( "buf is %s", buf );
-       node = GetOptionIndexExxx( odbc, NULL, DEFAULT_PUBLIC_KEY, NULL, NULL, buf, TRUE, FALSE, FALSE DBG_SRC );
-       if( node )
-       {
-        //lprintf( "Node is %p?", node );
-        EnumOptionsEx( odbc, node, CheckMasks, (uintptr_t)&params );
-        //lprintf( "Done enumerating..." );
-       }
+       //lprintf( "Node is %p?", node );
+       EnumOptionsEx( odbc, node, CheckMasks, (uintptr_t)&params );
+       //lprintf( "Done enumerating..." );
       }
-      if( !params.is_found )
-      {
-       SACK_GetPrivateProfileStringExxx( odbc, WIDE("System Settings/Map INI Local"), pINIFile, WIDE("0"), resultbuf, 12, NULL, TRUE DBG_SRC );
-       if( resultbuf[0] != '0' )
-       {
-        params.is_found = 1;
-        params.is_mapped = 1;
-       }
-      }
-      if( !params.is_found )
-      {
-       tnprintf( buf, 128, WIDE("System Settings/Map INI Local/%s"), pINIFile );
-       SACK_GetPrivateProfileStringExxx( odbc, buf, pSection, WIDE("0"), resultbuf, 12, NULL, TRUE DBG_SRC );
-       if( resultbuf[0] != '0' )
-        params.is_mapped = TRUE;
-      }
- #ifndef __NO_NETWORK__
-      if( params.is_mapped )
-      {
-       tnprintf( buf, 128, WIDE("System Settings/%s/%s"), GetSystemName(), pINIFile );
-       buf[127] = 0;
-       pINIFile = buf;
-      }
- #endif
      }
-     //lprintf( "(result %s)", pINIFile );
+     if( !params.is_found )
+     {
+      SACK_GetPrivateProfileStringExxx( odbc, WIDE("System Settings/Map INI Local"), pINIFile, WIDE("0"), resultbuf, 12, NULL, TRUE DBG_SRC );
+      if( resultbuf[0] != '0' )
+      {
+       params.is_found = 1;
+       params.is_mapped = 1;
+      }
+     }
+     if( !params.is_found )
+     {
+      tnprintf( buf, 128, WIDE("System Settings/Map INI Local/%s"), pINIFile );
+      SACK_GetPrivateProfileStringExxx( odbc, buf, pSection, WIDE("0"), resultbuf, 12, NULL, TRUE DBG_SRC );
+      if( resultbuf[0] != '0' )
+       params.is_mapped = TRUE;
+     }
+ #ifndef __NO_NETWORK__
+     if( params.is_mapped )
+     {
+      tnprintf( buf, 128, WIDE("System Settings/%s/%s"), GetSystemName(), pINIFile );
+      buf[127] = 0;
+      pINIFile = buf;
+     }
+ #endif
+      }
+      //lprintf( "(result %s)", pINIFile );
+     }
     }
-   }
-       return pINIFile;
+    return pINIFile;
  }
  //------------------------------------------------------------------------
  SQLGETOPTION_PROC( size_t, SACK_GetPrivateProfileStringExxx )( PODBC odbc
@@ -84382,7 +84382,6 @@ SegSplit( &pCurrent, start );
  {
   return global_sqlstub_data->OptionDb.info.pDSN;
  }
- static int xx;
  PODBC GetOptionODBCEx( CTEXTSTR dsn  DBG_PASS )
  {
   INDEX idx;
@@ -84440,9 +84439,8 @@ SegSplit( &pCurrent, start );
     SetOptionDatabaseOption( odbc );
    }
    AddLink( &tracker->outstanding, odbc );
-   //xx++;
  #ifdef DETAILED_LOGGING
-   _lprintf( DBG_RELAY )( "%d  %p result...", xx, odbc );
+   _lprintf( DBG_RELAY )( "%p result...", odbc );
  #endif
    return odbc;
   }
@@ -84456,8 +84454,7 @@ SegSplit( &pCurrent, start );
  {
   INDEX idx;
   struct option_odbc_tracker *tracker;
-  //xx--;
-  //_lprintf( DBG_RELAY )( "%d  %p Drop...", xx, odbc );
+  //_lprintf( DBG_RELAY )( "%p Drop...", odbc );
   LIST_FORALL( og.odbc_list, idx, struct option_odbc_tracker *, tracker )
   {
    INDEX idx2;
@@ -85019,7 +85016,6 @@ SegSplit( &pCurrent, start );
        , int (CPROC *Process)(uintptr_t psv, CTEXTSTR name, POPTION_TREE_NODE ID, int flags )
               , uintptr_t psvUser )
  {
-  POPTION_TREE tree = GetOptionTreeExxx( odbc, NULL DBG_SRC );
   New4EnumOptions( odbc, parent, Process, psvUser );
  }
  SQLGETOPTION_PROC( void, EnumOptions )( POPTION_TREE_NODE parent
@@ -85032,7 +85028,6 @@ SegSplit( &pCurrent, start );
  }
  SQLGETOPTION_PROC( void, DuplicateOptionEx )( PODBC odbc, POPTION_TREE_NODE iRoot, CTEXTSTR pNewName )
  {
-  POPTION_TREE tree = GetOptionTreeExxx( odbc, NULL DBG_SRC );
   New4DuplicateOption( odbc, iRoot, pNewName );
  }
  SQLGETOPTION_PROC( void, DuplicateOption )( POPTION_TREE_NODE iRoot, CTEXTSTR pNewName )
@@ -85044,7 +85039,6 @@ SegSplit( &pCurrent, start );
  SQLGETOPTION_PROC( void, DeleteOption )( POPTION_TREE_NODE iRoot )
  {
   PODBC odbc = GetOptionODBC( GetDefaultOptionDatabaseDSN() );
-  POPTION_TREE tree = GetOptionTreeExxx( odbc, NULL DBG_SRC );
   New4DeleteOption( odbc, iRoot );
   DropOptionODBC( odbc );
  }
@@ -85096,7 +85090,6 @@ SegSplit( &pCurrent, start );
   POPTION_TREE node = GetOptionTreeExxx( odbc, NULL DBG_SRC );
   TEXTCHAR query[256];
   static PODBC pending;
-  int first_result, popodbc;
   POPTION_TREE_NODE tmp_node;
   CTEXTSTR *results = NULL;
   if( !odbc )
@@ -85129,8 +85122,7 @@ SegSplit( &pCurrent, start );
      WIDE( "where parent_option_id='%s' " )
      WIDE( "order by n.name" )
       , parent->guid?parent->guid:GuidZero() );
-   popodbc = 0;
-   for( first_result = SQLRecordQuery( odbc, query, NULL, &results, NULL );
+   for( SQLRecordQuery( odbc, query, NULL, &results, NULL );
      results;
       FetchSQLRecord( odbc, &results ) )
    {
@@ -85146,7 +85138,6 @@ SegSplit( &pCurrent, start );
      tmp_node->guid = SaveText( results[0] );
      tmp_node->name_guid = SaveText( results[2] );
      tmp_node->value_guid = NULL;
-     popodbc = 1;
      tmp_node->name = SaveText( results[1] );
      tmp_node->node = FamilyTreeAddChild( &node->option_tree, parent->node, tmp_node, (uintptr_t)tmp_node->name );
      // psv is a pointer to args in some cases...
