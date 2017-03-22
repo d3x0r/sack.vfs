@@ -10043,12 +10043,15 @@
     \ \                                                                                                            */
  SQLGETOPTION_PROC( int, SACK_WriteProfileBlobOdbc )( PODBC odbc, CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR *pBuffer, size_t nBuffer );
  /* <combinewith sack::sql::options::SACK_WritePrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@CTEXTSTR@LOGICAL>
+    returns boolean true/false whether the write worked or not.
     \ \                                                                                                            */
  SQLGETOPTION_PROC( int, SACK_WritePrivateProfileBlob )( CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR *pBuffer, size_t nBuffer, CTEXTSTR app );
  /* <combinewith sack::sql::options::SACK_WritePrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@CTEXTSTR@LOGICAL>
+    returns boolean true/false whether the write worked or not.
     \ \                                                                                                            */
  SQLGETOPTION_PROC( int, SACK_WritePrivateProfileBlobOdbc )( PODBC odbc, CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR *pBuffer, size_t nBuffer,  CTEXTSTR app);
  /* <combinewith sack::sql::options::SACK_WritePrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@CTEXTSTR@LOGICAL>
+    returns boolean true/false whether the write worked or not.
     \ \                                                                                                            */
  SQLGETOPTION_PROC( int32_t, SACK_WriteProfileInt )( CTEXTSTR pSection, CTEXTSTR pName, int32_t value );
  /* <combinewith sack::sql::options::SACK_WritePrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@CTEXTSTR@LOGICAL>
@@ -60279,9 +60282,10 @@ SegSplit( &pCurrent, start );
     }
     else if( hs_rc == 1 )
     {
-     len = SSL_read( pc->ssl_session->ssl, pc->ssl_session->dbuffer, (int)pc->ssl_session->dbuflen );
-     lprintf( "normal read - just get the data from the other buffer : %zd", len );
-      if( len == -1 ) {
+     int result;
+     result = SSL_read( pc->ssl_session->ssl, pc->ssl_session->dbuffer, (int)pc->ssl_session->dbuflen );
+     lprintf( "normal read - just get the data from the other buffer : %d", result );
+     if( result == -1 ) {
       lprintf( "SSL_Read failed." );
       ERR_print_errors_cb( logerr, (void*)__LINE__ );
       RemoveClient( pc );
@@ -60325,7 +60329,7 @@ SegSplit( &pCurrent, start );
  }
  LOGICAL ssl_Send( PCLIENT pc, POINTER buffer, size_t length )
  {
-  int32_t len;
+  int len;
   int32_t len_out;
   struct ssl_session *ses = pc->ssl_session;
   while( length ) {
@@ -60334,7 +60338,10 @@ SegSplit( &pCurrent, start );
     ERR_print_errors_cb(logerr, (void*)__LINE__);
     return FALSE;
    }
-   length -= len;
+   length -= (size_t)len;
+   // signed/unsigned comparison here.
+   // the signed value is known to be greater than 0 and less than max unsigned int
+   // so it is in a valid range to check, and is NOT a warning or error condition EVER.
    if( len > ses->obuflen )
    {
     Release( ses->obuffer );
@@ -82104,7 +82111,7 @@ SegSplit( &pCurrent, start );
  uint8_t* GetGUIDBinaryEx( CTEXTSTR guid, LOGICAL little_endian )
  {
   static uint8_t buf[18];
-  static uint8_t char_lookup[256];
+  static int8_t char_lookup[256];
   int n;
     int b;
   if( char_lookup['1'] == 0 )
@@ -84276,7 +84283,7 @@ SegSplit( &pCurrent, start );
   else
   {
    POPTION_TREE tree = GetOptionTreeExxx( odbc, NULL DBG_SRC );
-   return SetOptionBlobValueEx( tree, optval, pBuffer, nBuffer ) != INVALID_INDEX;
+   return SetOptionBlobValueEx( tree, optval, pBuffer, nBuffer );
   }
   return 0;
  }
@@ -84741,7 +84748,7 @@ SegSplit( &pCurrent, start );
     continue;
    // trim trailing spaces from option names.
    {
-    size_t n = StrLen( namebuf ) - 1;
+    int n = (int)(StrLen( namebuf ) - 1);
     while( n >= 0 && namebuf[n] == ' ' )
     {
      namebuf[n] = 0;

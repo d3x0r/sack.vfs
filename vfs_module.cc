@@ -98,24 +98,34 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 
 		if( vol->volNative ) {
 			struct sack_vfs_file *file = sack_vfs_openfile( vol->vol, (*fName) );
-			size_t len = sack_vfs_size( file );
-			uint8_t *buf = NewArray( uint8_t, len );
-			sack_vfs_read( file, (char*)buf, len );
-			sack_vfs_close( file );
+			if( file ) {
+				size_t len = sack_vfs_size( file );
+				uint8_t *buf = NewArray( uint8_t, len );
+				sack_vfs_read( file, (char*)buf, len );
+				
+				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
+				NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
+				args.GetReturnValue().Set( arrayBuffer );
+			
+				sack_vfs_close( file );
+			}
 
-			Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
-			NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
-			args.GetReturnValue().Set( arrayBuffer );
 		} else {
 			FILE *file = sack_fopenEx( 0, (*fName), "r", vol->fsMount );
-			size_t len = sack_fsize( file );
-			uint8_t *buf = NewArray( uint8_t, len );
-			sack_fread( buf, len, 1, file );
-			sack_fclose( file );
+			if( file ) {
+				size_t len = sack_fsize( file );
+				// CAN open directories; and they have 7ffffffff sizes.
+				if( len < 0x10000000 ) {
+					uint8_t *buf = NewArray( uint8_t, len );
+					sack_fread( buf, len, 1, file );
 
-			Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
-			NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
-			args.GetReturnValue().Set( arrayBuffer );
+					Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
+					NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
+					args.GetReturnValue().Set( arrayBuffer );
+				}
+				sack_fclose( file );
+			}
+
 		}
 	}
 
