@@ -15338,15 +15338,21 @@ GetFreeBlock( vol, TRUE );
  }
  //----------------------------------------------------------------------------
  #ifndef __DISABLE_UDP_SYSLOG__
- #if !defined( FBSD ) && !defined(__QNX__)
+ #  if !defined( FBSD ) && !defined(__QNX__)
+ #    if defined( __MAC__ )
+ static SOCKADDR saLogBroadcast  = { 8, 2, { 0x02, 0x02, (char)0xff, (char)0xff, (char)0xff, (char)0xff } };
+ static SOCKADDR saLog  = { 8, 2, { 0x02, 0x02, 0x7f, 0x00, 0x00, 0x01 } };
+ static SOCKADDR saBind = { 8, 2, { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } };
+ #    else
  static SOCKADDR saLogBroadcast  = { 2, { 0x02, 0x02, (char)0xff, (char)0xff, (char)0xff, (char)0xff } };
  static SOCKADDR saLog  = { 2, { 0x02, 0x02, 0x7f, 0x00, 0x00, 0x01 } };
  static SOCKADDR saBind = { 2, { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } };
- #else
+ #    endif
+ #  else
  static SOCKADDR saLogBroadcast  = { 2, 0x02, 0x02, (char)0xff, (char)0xff, (char)0xff, (char)0xff };
  static SOCKADDR saLog  = { 2, 0x02, 0x02, 0x7f, 0x00, 0x00, 0x01  };
  static SOCKADDR saBind = { 2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00  };
- #endif
+ #  endif
  static void UDPSystemLog( const TEXTCHAR *message )
  {
  #ifdef HAVE_IDLE
@@ -15426,7 +15432,11 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  #ifdef __LINUX__
  #  ifndef __DISABLE_SYSLOGD_SYSLOG__
  #    if !defined( FBSD ) && !defined(__QNX__)
+ #       if defined( __MAC__ )
+ static struct sockaddr_un saSyslogdAddr  = { 11, AF_UNIX, "/dev/log" };
+ #       else
  static struct sockaddr_un saSyslogdAddr  = { AF_UNIX, "/dev/log" };
+ #       endif
  #    else
  static struct sockaddr_un saSyslogdAddr  = { AF_UNIX, {"/dev/log"} };
  #    endif
@@ -16166,7 +16176,9 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  #ifdef __LINUX__
  #include <sys/wait.h>
  extern char **environ;
- #include <elf.h>
+ #  ifndef __MAC__
+ #    include <elf.h>
+ #  endif
  #endif
  #ifdef __cplusplus
  using namespace sack::timers;
@@ -17365,6 +17377,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
      scanned = sscanf( buf, "%zx-%zx %s %zx", &start, &end, perms, &offset );
      if( scanned == 4 && offset == 0 )
      {
+ #ifndef __MAC__
       if( ( perms[2] == 'x' )
        && ( ( end - start ) > 4 ) )
        if( ( ((unsigned char*)start)[0] == ELFMAG0 )
@@ -17375,6 +17388,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
         //lprintf( "Add library %s %p", dll_name + 1, start );
         AddMappedLibrary( dll_name + 1, (POINTER)start );
        }
+ #endif
      }
     }
    }
@@ -54347,7 +54361,11 @@ SegSplit( &pCurrent, start );
  #define MAGIC_SOCKADDR_LENGTH ( sizeof(SOCKADDR_IN)< 256?256:sizeof( SOCKADDR_IN) )
  // this might have to be like sock_addr_len_t
  #define SOCKADDR_LENGTH(sa) ( (int)*(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) )
- #define SET_SOCKADDR_LENGTH(sa,size) ( ( *(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) ) = size )
+ #ifdef __MAC__
+ #  define SET_SOCKADDR_LENGTH(sa,size) ( ( ( *(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) ) = size ), ( sa->sa_len = size ) )
+ #else
+ #  define SET_SOCKADDR_LENGTH(sa,size) ( ( *(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) ) = size )
+ #endif
  // used by the network thread dispatched network layer messages...
   // messages for UDP use this window Message
  #define SOCKMSG_UDP (WM_USER+1)
@@ -56846,6 +56864,9 @@ SegSplit( &pCurrent, start );
  #if defined( __LINUX__ ) && !defined( __CYGWIN__ )
   #define UNIX_PATH_MAX    108
  struct sockaddr_un {
+ #ifdef __MAC__
+  u_char   sa_len;
+ #endif
   sa_family_t  sun_family;
   char        sun_path[UNIX_PATH_MAX];
  };
@@ -56866,6 +56887,9 @@ SegSplit( &pCurrent, start );
  #else
   strncpy( lpsaAddr->sun_path, path, 107 );
  #endif
+ #ifdef __MAC__
+    lpsaAddr->sa_len = 2+strlen( lpsaAddr->sun_path );
+ #endif
     return((SOCKADDR*)lpsaAddr);
  }
  #else
@@ -56881,7 +56905,7 @@ SegSplit( &pCurrent, start );
     SOCKADDR_IN *lpsaAddr=(SOCKADDR_IN*)AllocAddr();
     if (!lpsaAddr)
        return(NULL);
-  SET_SOCKADDR_LENGTH( lpsaAddr, 16 );
+    SET_SOCKADDR_LENGTH( lpsaAddr, 16 );
          // InetAddress Type.
     lpsaAddr->sin_family       = AF_INET;
     lpsaAddr->sin_addr.S_un.S_addr  = dwIP;
