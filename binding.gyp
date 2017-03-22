@@ -19,7 +19,10 @@
             'defines': [
               '__LINUX__'
             ],
-            'cflags_cc': ['-Wno-address', '-Wno-strict-aliasing', '-Wno-switch', '-Wno-missing-field-initializers' ],
+            'cflags_cc': ['-Wno-self-assign' '-Wno-null-conversion', '-Wno-parentheses-equality', '-Wno-parentheses'
+			,'-Wno-char-subscripts'
+			,'-Wno-empty-body','-Wno-format', '-Wno-address'
+			, '-Wno-strict-aliasing', '-Wno-switch', '-Wno-missing-field-initializers' ],
             'include_dirs': [
               'include/linux',
             ],
@@ -29,6 +32,10 @@
             'defines': [
               '__LINUX__','__MAC__'
             ],
+            'cflags_cc': ['-Wno-self-assign' '-Wno-null-conversion', '-Wno-parentheses-equality', '-Wno-parentheses'
+			,'-Wno-char-subscripts'
+			,'-Wno-empty-body','-Wno-format', '-Wno-address'
+			, '-Wno-strict-aliasing', '-Wno-switch', '-Wno-missing-field-initializers' ],
             'include_dirs': [
               'include/linux',
             ],
