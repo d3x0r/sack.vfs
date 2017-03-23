@@ -494,7 +494,7 @@ void OptionTreeObject::readOptionNode( v8::Local<v8::String> field,
 	OptionTreeObject* oto = node::ObjectWrap::Unwrap<OptionTreeObject>( info.This() );
 	char *buffer;
 	size_t buflen;
-	int res = GetOptionStringValueEx( oto->db->odbc, oto->node, &buffer, &buflen DBG_SRC );
+	int res = (int)GetOptionStringValueEx( oto->db->odbc, oto->node, &buffer, &buflen DBG_SRC );
 	if( !buffer || res < 0 )
 		return;
 	info.GetReturnValue().Set( String::NewFromUtf8( info.GetIsolate(), buffer ) );

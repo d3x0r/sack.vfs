@@ -139,13 +139,6 @@
  #  define Relinquish()       Sleep(0)
  //#pragma pragnoteonly("GetFunctionAddress is lazy and has no library cleanup - needs to be a lib func")
  //#define GetFunctionAddress( lib, proc ) GetProcAddress( LoadLibrary( lib ), (proc) )
- #  ifdef __cplusplus
- #    ifdef __GNUC__
- #      ifndef min
- #        define min(a,b) ((a)<(b))?(a):(b)
- #      endif
- #    endif
- #  endif
  #  ifdef __cplusplus_cli
  #    include <vcclr.h>
 /*lprintf( */
@@ -193,6 +186,16 @@
     identifier for the thread for inter process communication. */
  #  define GetCurrentProcessId() ((uint32_t)getpid())
  #  define GetCurrentThreadId() ((uint32_t)getpid())
+  // end if( !__LINUX__ )
+ #endif
+ #ifndef NO_MIN_MAX_MACROS
+ #  ifdef __cplusplus
+ #    ifdef __GNUC__
+ #      ifndef min
+ #        define min(a,b) ((a)<(b))?(a):(b)
+ #      endif
+ #    endif
+ #  endif
  /* Define a min(a,b) macro when the compiler lacks it. */
  #  ifndef min
  #    define min(a,b) (((a)<(b))?(a):(b))
@@ -201,7 +204,6 @@
  #  ifndef max
  #    define max(a,b) (((a)>(b))?(a):(b))
  #  endif
-  // end if( !__LINUX__ )
  #endif
  /* please Include sthdrs.h */
  /* Define most of the sack core types on which everything else is
@@ -5166,31 +5168,36 @@
  #define INADDR_NONE (0)
  #endif
  struct win_in_addr {
-         union {
-                 struct { uint8_t s_b1,s_b2,s_b3,s_b4; } S_un_b;
-                 struct { uint16_t s_w1,s_w2; } S_un_w;
-                 uint32_t S_addr;
-         } S_un;
+  union {
+   struct { uint8_t s_b1,s_b2,s_b3,s_b4; } S_un_b;
+   struct { uint16_t s_w1,s_w2; } S_un_w;
+   uint32_t S_addr;
+  } S_un;
  #ifndef __ANDROID__
  #define s_addr  S_un.S_addr
-                                 /* can be used for most tcp & ip code */
+ /* can be used for most tcp & ip code */
  #define s_host  S_un.S_un_b.s_b2
-                                 /* host on imp */
+  /* host on imp */
  #define s_net   S_un.S_un_b.s_b1
-                                 /* network */
+  /* network */
  #define s_imp   S_un.S_un_w.s_w2
-                                 /* imp */
+  /* imp */
  #define s_impno S_un.S_un_b.s_b4
-                                 /* imp # */
+  /* imp # */
  #define s_lh    S_un.S_un_b.s_b3
-     /* logical host */
+  /* logical host */
  #endif
  };
  struct win_sockaddr_in {
-         short   sin_family;
-         uint16_t sin_port;
-         struct  win_in_addr sin_addr;
-         char    sin_zero[8];
+ #ifdef __MAC__
+  uint8_t sa_len;
+  uint8_t sin_family;
+ #else
+  short   sin_family;
+ #endif
+  uint16_t sin_port;
+  struct  win_in_addr sin_addr;
+  char    sin_zero[8];
  };
  typedef struct win_sockaddr_in SOCKADDR_IN;
  #endif
@@ -10641,15 +10648,12 @@
     \ \                                                                                                            */
  SQLGETOPTION_PROC( int, SACK_WriteProfileBlobOdbc )( PODBC odbc, CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR *pBuffer, size_t nBuffer );
  /* <combinewith sack::sql::options::SACK_WritePrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@CTEXTSTR@LOGICAL>
-    returns boolean true/false whether the write worked or not.
     \ \                                                                                                            */
  SQLGETOPTION_PROC( int, SACK_WritePrivateProfileBlob )( CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR *pBuffer, size_t nBuffer, CTEXTSTR app );
  /* <combinewith sack::sql::options::SACK_WritePrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@CTEXTSTR@LOGICAL>
-    returns boolean true/false whether the write worked or not.
     \ \                                                                                                            */
  SQLGETOPTION_PROC( int, SACK_WritePrivateProfileBlobOdbc )( PODBC odbc, CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR *pBuffer, size_t nBuffer,  CTEXTSTR app);
  /* <combinewith sack::sql::options::SACK_WritePrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@CTEXTSTR@LOGICAL>
-    returns boolean true/false whether the write worked or not.
     \ \                                                                                                            */
  SQLGETOPTION_PROC( int32_t, SACK_WriteProfileInt )( CTEXTSTR pSection, CTEXTSTR pName, int32_t value );
  /* <combinewith sack::sql::options::SACK_WritePrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@CTEXTSTR@LOGICAL>
