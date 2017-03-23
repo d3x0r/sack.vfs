@@ -147,13 +147,6 @@
  #  define Relinquish()       Sleep(0)
  //#pragma pragnoteonly("GetFunctionAddress is lazy and has no library cleanup - needs to be a lib func")
  //#define GetFunctionAddress( lib, proc ) GetProcAddress( LoadLibrary( lib ), (proc) )
- #  ifdef __cplusplus
- #    ifdef __GNUC__
- #      ifndef min
- #        define min(a,b) ((a)<(b))?(a):(b)
- #      endif
- #    endif
- #  endif
  #  ifdef __cplusplus_cli
  #    include <vcclr.h>
 /*lprintf( */
@@ -201,6 +194,16 @@
     identifier for the thread for inter process communication. */
  #  define GetCurrentProcessId() ((uint32_t)getpid())
  #  define GetCurrentThreadId() ((uint32_t)getpid())
+  // end if( !__LINUX__ )
+ #endif
+ #ifndef NO_MIN_MAX_MACROS
+ #  ifdef __cplusplus
+ #    ifdef __GNUC__
+ #      ifndef min
+ #        define min(a,b) ((a)<(b))?(a):(b)
+ #      endif
+ #    endif
+ #  endif
  /* Define a min(a,b) macro when the compiler lacks it. */
  #  ifndef min
  #    define min(a,b) (((a)<(b))?(a):(b))
@@ -209,7 +212,6 @@
  #  ifndef max
  #    define max(a,b) (((a)>(b))?(a):(b))
  #  endif
-  // end if( !__LINUX__ )
  #endif
  /* please Include sthdrs.h */
  /* Define most of the sack core types on which everything else is
@@ -5174,31 +5176,36 @@
  #define INADDR_NONE (0)
  #endif
  struct win_in_addr {
-         union {
-                 struct { uint8_t s_b1,s_b2,s_b3,s_b4; } S_un_b;
-                 struct { uint16_t s_w1,s_w2; } S_un_w;
-                 uint32_t S_addr;
-         } S_un;
+  union {
+   struct { uint8_t s_b1,s_b2,s_b3,s_b4; } S_un_b;
+   struct { uint16_t s_w1,s_w2; } S_un_w;
+   uint32_t S_addr;
+  } S_un;
  #ifndef __ANDROID__
  #define s_addr  S_un.S_addr
-                                 /* can be used for most tcp & ip code */
+ /* can be used for most tcp & ip code */
  #define s_host  S_un.S_un_b.s_b2
-                                 /* host on imp */
+  /* host on imp */
  #define s_net   S_un.S_un_b.s_b1
-                                 /* network */
+  /* network */
  #define s_imp   S_un.S_un_w.s_w2
-                                 /* imp */
+  /* imp */
  #define s_impno S_un.S_un_b.s_b4
-                                 /* imp # */
+  /* imp # */
  #define s_lh    S_un.S_un_b.s_b3
-     /* logical host */
+  /* logical host */
  #endif
  };
  struct win_sockaddr_in {
-         short   sin_family;
-         uint16_t sin_port;
-         struct  win_in_addr sin_addr;
-         char    sin_zero[8];
+ #ifdef __MAC__
+  uint8_t sa_len;
+  uint8_t sin_family;
+ #else
+  short   sin_family;
+ #endif
+  uint16_t sin_port;
+  struct  win_in_addr sin_addr;
+  char    sin_zero[8];
  };
  typedef struct win_sockaddr_in SOCKADDR_IN;
  #endif
@@ -15341,15 +15348,21 @@ GetFreeBlock( vol, TRUE );
  }
  //----------------------------------------------------------------------------
  #ifndef __DISABLE_UDP_SYSLOG__
- #if !defined( FBSD ) && !defined(__QNX__)
+ #  if !defined( FBSD ) && !defined(__QNX__)
+ #    if defined( __MAC__ )
+ static SOCKADDR saLogBroadcast  = { 8, 2, { 0x02, 0x02, (char)0xff, (char)0xff, (char)0xff, (char)0xff } };
+ static SOCKADDR saLog  = { 8, 2, { 0x02, 0x02, 0x7f, 0x00, 0x00, 0x01 } };
+ static SOCKADDR saBind = { 8, 2, { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } };
+ #    else
  static SOCKADDR saLogBroadcast  = { 2, { 0x02, 0x02, (char)0xff, (char)0xff, (char)0xff, (char)0xff } };
  static SOCKADDR saLog  = { 2, { 0x02, 0x02, 0x7f, 0x00, 0x00, 0x01 } };
  static SOCKADDR saBind = { 2, { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } };
- #else
+ #    endif
+ #  else
  static SOCKADDR saLogBroadcast  = { 2, 0x02, 0x02, (char)0xff, (char)0xff, (char)0xff, (char)0xff };
  static SOCKADDR saLog  = { 2, 0x02, 0x02, 0x7f, 0x00, 0x00, 0x01  };
  static SOCKADDR saBind = { 2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00  };
- #endif
+ #  endif
  static void UDPSystemLog( const TEXTCHAR *message )
  {
  #ifdef HAVE_IDLE
@@ -15429,7 +15442,11 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  #ifdef __LINUX__
  #  ifndef __DISABLE_SYSLOGD_SYSLOG__
  #    if !defined( FBSD ) && !defined(__QNX__)
+ #       if defined( __MAC__ )
+ static struct sockaddr_un saSyslogdAddr  = { 11, AF_UNIX, "/dev/log" };
+ #       else
  static struct sockaddr_un saSyslogdAddr  = { AF_UNIX, "/dev/log" };
+ #       endif
  #    else
  static struct sockaddr_un saSyslogdAddr  = { AF_UNIX, {"/dev/log"} };
  #    endif
@@ -16169,9 +16186,9 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  #ifdef __LINUX__
  #include <sys/wait.h>
  extern char **environ;
- #ifndef __MAC__
- #  include <elf.h>
- #endif
+ #  ifndef __MAC__
+ #    include <elf.h>
+ #  endif
  #endif
  #ifdef __cplusplus
  using namespace sack::timers;
@@ -17372,9 +17389,9 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
      scanned = sscanf( buf, "%zx-%zx %s %zx", &start, &end, perms, &offset );
      if( scanned == 4 && offset == 0 )
      {
+ #ifndef __MAC__
       if( ( perms[2] == 'x' )
        && ( ( end - start ) > 4 ) )
- #ifndef __MAC__
        if( ( ((unsigned char*)start)[0] == ELFMAG0 )
           && ( ((unsigned char*)start)[1] == ELFMAG1 )
           && ( ((unsigned char*)start)[2] == ELFMAG2 )
@@ -19146,7 +19163,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  #if __ANDROID__
  #define USE_PIPE_SEMS
  #endif
- #ifdef __QNX__
+ #if defined( __QNX__ ) || defined( __MAC__)
  #define USE_PIPE_SEMS
  // no semtimedop; no semctl, etc
  //#include <sys/sem.h>
@@ -54356,7 +54373,11 @@ SegSplit( &pCurrent, start );
  #define MAGIC_SOCKADDR_LENGTH ( sizeof(SOCKADDR_IN)< 256?256:sizeof( SOCKADDR_IN) )
  // this might have to be like sock_addr_len_t
  #define SOCKADDR_LENGTH(sa) ( (int)*(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) )
- #define SET_SOCKADDR_LENGTH(sa,size) ( ( *(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) ) = size )
+ #ifdef __MAC__
+ #  define SET_SOCKADDR_LENGTH(sa,size) ( ( ( *(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) ) = size ), ( sa->sa_len = size ) )
+ #else
+ #  define SET_SOCKADDR_LENGTH(sa,size) ( ( *(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) ) = size )
+ #endif
  // used by the network thread dispatched network layer messages...
   // messages for UDP use this window Message
  #define SOCKMSG_UDP (WM_USER+1)
@@ -54722,13 +54743,15 @@ SegSplit( &pCurrent, start );
  //    GetMacAddress( version cpg01032007 )
  //
  //----------------------------------------------------------------------------
- #define INCLUDE_MAC_SUPPORT
+ #ifndef __MAC__
+ #  define INCLUDE_MAC_SUPPORT
+ #endif
 //int get_mac_addr (char *device, unsigned char *buffer)
  NETWORK_PROC( int, GetMacAddress)(PCLIENT pc, uint8_t* buf, size_t *buflen )
  {
  #ifdef INCLUDE_MAC_SUPPORT
- #ifdef __LINUX__
- #ifdef __THIS_CODE_GETS_MY_MAC_ADDRESS___
+ #  ifdef __LINUX__
+ #    ifdef __THIS_CODE_GETS_MY_MAC_ADDRESS___
   int fd;
   struct ifreq ifr;
   fd = socket(PF_UNIX, SOCK_DGRAM, 0);
@@ -54751,7 +54774,7 @@ SegSplit( &pCurrent, start );
   close (fd);
   memcpy (pc->hwClient, ifr.ifr_hwaddr.sa_data, 6);
   return 0;
- #endif
+ #    endif
     /* this code queries the arp table to figure out who the other side is */
   //int fd;
   struct arpreq arpr;
@@ -54783,8 +54806,8 @@ SegSplit( &pCurrent, start );
    DebugBreak();
   }
   return 0;
- #endif
- #ifdef WIN32
+ #  endif
+ #  ifdef WIN32
      HRESULT hr;
      ULONG   ulLen;
   // I don't understand this useless cast - from size_t to ULONG?
@@ -54801,7 +54824,7 @@ SegSplit( &pCurrent, start );
   //hr = SendARP (GetNetworkLong(pc,GNL_IP), 0, (PULONG)pc->hwClient, &ulLen);
      //lprintf (WIDE("Return %08x, length %8d\n"), hr, ulLen);
   return hr == S_OK;
- #endif
+ #  endif
  #else
   return 0;
  #endif
@@ -56855,6 +56878,9 @@ SegSplit( &pCurrent, start );
  #if defined( __LINUX__ ) && !defined( __CYGWIN__ )
   #define UNIX_PATH_MAX    108
  struct sockaddr_un {
+ #ifdef __MAC__
+  u_char   sa_len;
+ #endif
   sa_family_t  sun_family;
   char        sun_path[UNIX_PATH_MAX];
  };
@@ -56875,6 +56901,9 @@ SegSplit( &pCurrent, start );
  #else
   strncpy( lpsaAddr->sun_path, path, 107 );
  #endif
+ #ifdef __MAC__
+    lpsaAddr->sa_len = 2+strlen( lpsaAddr->sun_path );
+ #endif
     return((SOCKADDR*)lpsaAddr);
  }
  #else
@@ -56890,7 +56919,7 @@ SegSplit( &pCurrent, start );
     SOCKADDR_IN *lpsaAddr=(SOCKADDR_IN*)AllocAddr();
     if (!lpsaAddr)
        return(NULL);
-  SET_SOCKADDR_LENGTH( lpsaAddr, 16 );
+    SET_SOCKADDR_LENGTH( lpsaAddr, 16 );
          // InetAddress Type.
     lpsaAddr->sin_family       = AF_INET;
     lpsaAddr->sin_addr.S_un.S_addr  = dwIP;
