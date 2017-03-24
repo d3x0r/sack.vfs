@@ -1,8 +1,6 @@
 
 function test () {
-//console.log( 'require', "./build/Release/vfs_module.js" )
 var vfs = require( "./vfs_module.js" )
-//var vfs = require( "./build/Release/vfs_module.node" )
 console.log( "keys: ", Object.keys( vfs ) );
 var more = require( "./testaux.js" );
 var vol = null;
