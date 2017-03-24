@@ -58619,7 +58619,7 @@ SegSplit( &pCurrent, start );
      if( globalNetworkData.flags.bShortLogReceivedData )
      {
       LogBinary( (uint8_t*)lpClient->RecvPending.buffer.p +
-         lpClient->RecvPending.dwUsed, min( nRecv, 64 ) );
+         lpClient->RecvPending.dwUsed,  (nRecv < 64) ? nRecv:64 );
      }
      if( globalNetworkData.flags.bLogReceivedData )
      {
@@ -59221,7 +59221,7 @@ SegSplit( &pCurrent, start );
    {
     if( globalNetworkData.flags.bShortLogReceivedData )
     {
-     LogBinary( (uint8_t*)byBuffer, min( nDrainRead, 64 ) );
+     LogBinary( (uint8_t*)byBuffer, (nDrainRead<64 )?nDrainRead:64 );
     }
     if( globalNetworkData.flags.bLogReceivedData )
     {
@@ -59819,7 +59819,7 @@ SegSplit( &pCurrent, start );
   {
    DumpAddr( WIDE("UDPRead at"), pc->saSource );
    LogBinary( (uint8_t*)pc->RecvPending.buffer.p +
-       pc->RecvPending.dwUsed, min( nReturn, 64 ) );
+       pc->RecvPending.dwUsed, ( nReturn< 64 )?nReturn:64 );
   }
   if( globalNetworkData.flags.bLogReceivedData )
   {
@@ -84102,7 +84102,7 @@ SegSplit( &pCurrent, start );
    }
    else
    {
-    MemCpy( pBuffer, buffer, buflen = min(buflen+1,(nBuffer) ) );
+    MemCpy( pBuffer, buffer, buflen = ((buflen+1<(nBuffer) )?(buflen+1):nBuffer) );
     buflen--;
     pBuffer[buflen] = 0;
     if( global_sqlstub_data->flags.bLogOptionConnection )
