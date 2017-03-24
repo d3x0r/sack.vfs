@@ -220,9 +220,9 @@
   // this has to be a compile option (option from cmake)
     // enables debug dump mem...
  #ifdef USE_SACK_CUSTOM_MEMORY_ALLOCATION
- #define USE_CUSTOM_ALLOCER 1
+ #  define USE_CUSTOM_ALLOCER 1
  #else
- #define USE_CUSTOM_ALLOCER 0
+ #  define USE_CUSTOM_ALLOCER 0
  #endif
  #ifndef __64__
  #  if defined( _WIN64 ) || defined( ENVIRONMENT64) || defined( __x86_64__ ) || defined( __ia64 )
@@ -258,26 +258,26 @@
  #ifdef __cplusplus_cli
  // these things define a type called 'Byte'
   // which causes confusion... so don't include vcclr for those guys.
- #ifdef SACK_BAG_EXPORTS
+ #  ifdef SACK_BAG_EXPORTS
  // maybe only do this while building sack_bag project itself...
- #if !defined( ZCONF_H )  && !defined( __FT2_BUILD_GENERIC_H__ )  && !defined( ZUTIL_H )  && !defined( SQLITE_PRIVATE )  && !defined( NETSERVICE_SOURCE )  && !defined( LIBRARY_DEF )
+ #    if !defined( ZCONF_H )        && !defined( __FT2_BUILD_GENERIC_H__ )        && !defined( ZUTIL_H )        && !defined( SQLITE_PRIVATE )        && !defined( NETSERVICE_SOURCE )        && !defined( LIBRARY_DEF )
  //using namespace System;
- #endif
- #endif
+ #    endif
+ #  endif
  #endif
  // Defined for building visual studio monolithic build.  These symbols are not relavent with cmakelists.
  #ifdef SACK_BAG_EXPORTS
- #define SACK_BAG_CORE_EXPORTS
+ #  define SACK_BAG_CORE_EXPORTS
  // exports don't really matter with CLI compilation.
  #  ifndef BAG
  //#ifndef TARGETNAME
  //#  define TARGETNAME "sack_bag.dll"  //$(TargetFileName)
  //#endif
- #ifndef __cplusplus_cli
+ #    ifndef __cplusplus_cli
  // cli mode, we use this directly, and build the exports in sack_bag.dll directly
- #else
- #define LIBRARY_DEADSTART
- #endif
+ #    else
+ #      define LIBRARY_DEADSTART
+ #    endif
  #define USE_SACK_FILE_IO
  /* Defined when SACK_BAG_EXPORTS is defined. This was an
     individual library module once upon a time.           */
@@ -352,16 +352,16 @@
  /* Defined when SACK_BAG_EXPORTS is defined. This was an
     individual library module once upon a time.           */
  #define PSI_SOURCE
- #ifdef _MSC_VER
- #ifndef JPEG_SOURCE
+ #  ifdef _MSC_VER
+ #    ifndef JPEG_SOURCE
  //wouldn't matter... the external things wouldn't need to define this
  //#error projects were not generated with CMAKE, and JPEG_SORUCE needs to be defined
- #endif
+ #    endif
  //#define JPEG_SOURCE
  //#define __PNG_LIBRARY_SOURCE__
  //#define FT2_BUILD_LIBRARY   // freetype is internal
  //#define FREETYPE_SOURCE  // build Dll Export
- #endif
+ #  endif
  /* Defined when SACK_BAG_EXPORTS is defined. This was an
     individual library module once upon a time.           */
  #define MNG_BUILD_DLL
@@ -371,7 +371,7 @@
  /* Defined when SACK_BAG_EXPORTS is defined. This was an
   individual library module once upon a time.           */
  #ifndef IMAGE_LIBRARY_SOURCE
- #define IMAGE_LIBRARY_SOURCE
+ #  define IMAGE_LIBRARY_SOURCE
  #endif
  /* Defined when SACK_BAG_EXPORTS is defined. This was an
     individual library module once upon a time.           */
@@ -5225,7 +5225,7 @@
  // provided by -lgcc
  // lots of things end up including 'setjmp.h' which lacks sigset_t defined here.
  // lots of things end up including 'setjmp.h' which lacks sigset_t defined here.
- #include <sys/signal.h>
+ #  include <sys/signal.h>
  #endif
  // GetTickCount() and Sleep(n) Are typically considered to be defined by including stdhdrs...
  /*
