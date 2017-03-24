@@ -48477,6 +48477,8 @@ SegSplit( &pCurrent, start );
        int  nCommError;
  #ifndef __LINUX__
     nCommError = SackGetCommError ( iCommId, &pComTrack->cs );
+ #else
+  nCommError = 0;
  #endif
        tnprintf ( cOut, sizeof( cOut ), WIDE("SackCommReadBuffer: read %d chars, error=%d")
                 , nCharsRead, nCommError );
@@ -80033,8 +80035,10 @@ SegSplit( &pCurrent, start );
    result = SQLCommandEx( odbc, GetText( cmd ) DBG_ARGS(SQLCommandf) );
    LineRelease( cmd );
   }
-  else
+  else {
+       result = 0;
    lprintf( WIDE("ERROR: Sql format failed: %s"), fmt );
+  }
   return result;
  }
  int SQLQueryf( PODBC odbc, CTEXTSTR *result, CTEXTSTR fmt, ... )

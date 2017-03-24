@@ -42,7 +42,7 @@
 			,'-Wno-empty-body','-Wno-format', '-Wno-address'
 			, '-Wno-strict-aliasing', '-Wno-switch', '-Wno-missing-field-initializers' 
 			, '-Wno-unused-variable', '-Wno-unused-function'
-			, '-Wno-sign-compare'
+			, '-Wno-sign-compare', '-Wno-null-dereference'
                 ],
              },
             'include_dirs': [
