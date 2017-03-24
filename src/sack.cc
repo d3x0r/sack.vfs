@@ -228,9 +228,9 @@
   // this has to be a compile option (option from cmake)
     // enables debug dump mem...
  #ifdef USE_SACK_CUSTOM_MEMORY_ALLOCATION
- #define USE_CUSTOM_ALLOCER 1
+ #  define USE_CUSTOM_ALLOCER 1
  #else
- #define USE_CUSTOM_ALLOCER 0
+ #  define USE_CUSTOM_ALLOCER 0
  #endif
  #ifndef __64__
  #  if defined( _WIN64 ) || defined( ENVIRONMENT64) || defined( __x86_64__ ) || defined( __ia64 )
@@ -266,26 +266,26 @@
  #ifdef __cplusplus_cli
  // these things define a type called 'Byte'
   // which causes confusion... so don't include vcclr for those guys.
- #ifdef SACK_BAG_EXPORTS
+ #  ifdef SACK_BAG_EXPORTS
  // maybe only do this while building sack_bag project itself...
- #if !defined( ZCONF_H )  && !defined( __FT2_BUILD_GENERIC_H__ )  && !defined( ZUTIL_H )  && !defined( SQLITE_PRIVATE )  && !defined( NETSERVICE_SOURCE )  && !defined( LIBRARY_DEF )
+ #    if !defined( ZCONF_H )        && !defined( __FT2_BUILD_GENERIC_H__ )        && !defined( ZUTIL_H )        && !defined( SQLITE_PRIVATE )        && !defined( NETSERVICE_SOURCE )        && !defined( LIBRARY_DEF )
  //using namespace System;
- #endif
- #endif
+ #    endif
+ #  endif
  #endif
  // Defined for building visual studio monolithic build.  These symbols are not relavent with cmakelists.
  #ifdef SACK_BAG_EXPORTS
- #define SACK_BAG_CORE_EXPORTS
+ #  define SACK_BAG_CORE_EXPORTS
  // exports don't really matter with CLI compilation.
  #  ifndef BAG
  //#ifndef TARGETNAME
  //#  define TARGETNAME "sack_bag.dll"  //$(TargetFileName)
  //#endif
- #ifndef __cplusplus_cli
+ #    ifndef __cplusplus_cli
  // cli mode, we use this directly, and build the exports in sack_bag.dll directly
- #else
- #define LIBRARY_DEADSTART
- #endif
+ #    else
+ #      define LIBRARY_DEADSTART
+ #    endif
  #define USE_SACK_FILE_IO
  /* Defined when SACK_BAG_EXPORTS is defined. This was an
     individual library module once upon a time.           */
@@ -360,16 +360,16 @@
  /* Defined when SACK_BAG_EXPORTS is defined. This was an
     individual library module once upon a time.           */
  #define PSI_SOURCE
- #ifdef _MSC_VER
- #ifndef JPEG_SOURCE
+ #  ifdef _MSC_VER
+ #    ifndef JPEG_SOURCE
  //wouldn't matter... the external things wouldn't need to define this
  //#error projects were not generated with CMAKE, and JPEG_SORUCE needs to be defined
- #endif
+ #    endif
  //#define JPEG_SOURCE
  //#define __PNG_LIBRARY_SOURCE__
  //#define FT2_BUILD_LIBRARY   // freetype is internal
  //#define FREETYPE_SOURCE  // build Dll Export
- #endif
+ #  endif
  /* Defined when SACK_BAG_EXPORTS is defined. This was an
     individual library module once upon a time.           */
  #define MNG_BUILD_DLL
@@ -379,7 +379,7 @@
  /* Defined when SACK_BAG_EXPORTS is defined. This was an
   individual library module once upon a time.           */
  #ifndef IMAGE_LIBRARY_SOURCE
- #define IMAGE_LIBRARY_SOURCE
+ #  define IMAGE_LIBRARY_SOURCE
  #endif
  /* Defined when SACK_BAG_EXPORTS is defined. This was an
     individual library module once upon a time.           */
@@ -5233,7 +5233,7 @@
  // provided by -lgcc
  // lots of things end up including 'setjmp.h' which lacks sigset_t defined here.
  // lots of things end up including 'setjmp.h' which lacks sigset_t defined here.
- #include <sys/signal.h>
+ #  include <sys/signal.h>
  #endif
  // GetTickCount() and Sleep(n) Are typically considered to be defined by including stdhdrs...
  /*
@@ -10050,12 +10050,15 @@
     \ \                                                                                                            */
  SQLGETOPTION_PROC( int, SACK_WriteProfileBlobOdbc )( PODBC odbc, CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR *pBuffer, size_t nBuffer );
  /* <combinewith sack::sql::options::SACK_WritePrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@CTEXTSTR@LOGICAL>
+    returns boolean true/false whether the write worked or not.
     \ \                                                                                                            */
  SQLGETOPTION_PROC( int, SACK_WritePrivateProfileBlob )( CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR *pBuffer, size_t nBuffer, CTEXTSTR app );
  /* <combinewith sack::sql::options::SACK_WritePrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@CTEXTSTR@LOGICAL>
+    returns boolean true/false whether the write worked or not.
     \ \                                                                                                            */
  SQLGETOPTION_PROC( int, SACK_WritePrivateProfileBlobOdbc )( PODBC odbc, CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR *pBuffer, size_t nBuffer,  CTEXTSTR app);
  /* <combinewith sack::sql::options::SACK_WritePrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@CTEXTSTR@LOGICAL>
+    returns boolean true/false whether the write worked or not.
     \ \                                                                                                            */
  SQLGETOPTION_PROC( int32_t, SACK_WriteProfileInt )( CTEXTSTR pSection, CTEXTSTR pName, int32_t value );
  /* <combinewith sack::sql::options::SACK_WritePrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@CTEXTSTR@LOGICAL>
@@ -19160,7 +19163,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  #if __ANDROID__
  #define USE_PIPE_SEMS
  #endif
- #ifdef __QNX__
+ #if defined( __QNX__ ) || defined( __MAC__)
  #define USE_PIPE_SEMS
  // no semtimedop; no semctl, etc
  //#include <sys/sem.h>
@@ -33279,16 +33282,16 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
   POINTER  HeapReallocateEx ( PMEM pHeap, POINTER source, uintptr_t size DBG_PASS )
  {
   POINTER dest;
-  uintptr_t min;
+  uintptr_t minSize;
   dest = HeapAllocateAlignedEx( pHeap, size, 0 DBG_RELAY );
   if( source )
   {
-   min = SizeOfMemBlock( source );
-   if( size < min )
-    min = size;
-   MemCpy( dest, source, min );
-   if( min < size )
-    MemSet( ((uint8_t*)dest) + min, 0, size - min );
+   minSize = SizeOfMemBlock( source );
+   if( size < minSize )
+    minSize = size;
+   MemCpy( dest, source, minSize );
+   if( minSize < size )
+    MemSet( ((uint8_t*)dest) + minSize, 0, size - minSize );
    ReleaseEx( source DBG_RELAY );
   }
   else
@@ -33299,16 +33302,16 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
   POINTER  HeapPreallocateEx ( PMEM pHeap, POINTER source, uintptr_t size DBG_PASS )
  {
   POINTER dest;
-  uintptr_t min;
+  uintptr_t minSize;
   dest = HeapAllocateAlignedEx( pHeap, size, 0 DBG_RELAY );
   if( source )
   {
-   min = SizeOfMemBlock( source );
-   if( size < min )
-    min = size;
-   MemCpy( (uint8_t*)dest + (size-min), source, min );
-   if( min < size )
-    MemSet( dest, 0, size - min );
+   minSize = SizeOfMemBlock( source );
+   if( size < minSize )
+    minSize = size;
+   MemCpy( (uint8_t*)dest + (size-minSize), source, minSize );
+   if( minSize < size )
+    MemSet( dest, 0, size - minSize );
    ReleaseEx( source DBG_RELAY );
   }
   else
@@ -33378,12 +33381,12 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
   {
    if( USE_CUSTOM_ALLOCER )
    {
-    register PCHUNK pc = (PCHUNK)(((uintptr_t)pData) - (((uint32_t*)pData)[-1] + offsetof( CHUNK, byData )));
+    PCHUNK pc = (PCHUNK)(((uintptr_t)pData) - (((uint32_t*)pData)[-1] + offsetof( CHUNK, byData )));
     return pc->dwSize - pc->dwPad;
    }
    else
    {
-    register PMALLOC_CHUNK pc = (PMALLOC_CHUNK)(((uintptr_t)pData) - (((uint32_t*)pData)[-1] + offsetof( MALLOC_CHUNK, byData )));
+    PMALLOC_CHUNK pc = (PMALLOC_CHUNK)(((uintptr_t)pData) - (((uint32_t*)pData)[-1] + offsetof( MALLOC_CHUNK, byData )));
     return pc->dwSize - ( pc->to_chunk_start + pc->dwPad );
    }
   }
@@ -33422,8 +33425,8 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
    }
    if( !USE_CUSTOM_ALLOCER )
    {
-    // register PMEM pMem = (PMEM)(pData - offsetof( MEM, pRoot ));
-    register PMALLOC_CHUNK pc = (PMALLOC_CHUNK)(((uintptr_t)pData) - ( ((uint32_t*)pData)[-1] +
+    //PMEM pMem = (PMEM)(pData - offsetof( MEM, pRoot ));
+    PMALLOC_CHUNK pc = (PMALLOC_CHUNK)(((uintptr_t)pData) - ( ((uint32_t*)pData)[-1] +
               offsetof( MALLOC_CHUNK, byData ) ) );
     pc->dwOwners--;
     if( !pc->dwOwners )
@@ -33459,7 +33462,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
    }
        else
    {
-    register PCHUNK pc = (PCHUNK)(((uintptr_t)pData) - ( ( (uint32_t*)pData)[-1] +
+    PCHUNK pc = (PCHUNK)(((uintptr_t)pData) - ( ( (uint32_t*)pData)[-1] +
               offsetof( CHUNK, byData ) ) );
     PMEM pMem, pCurMem;
     PSPACE pMemSpace;
@@ -34582,7 +34585,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  // *r contains the position of difference
   int  CmpMem8 ( void *s1, void *s2, unsigned long n, unsigned long *r )
  {
-  register int t1, t2;
+  int t1, t2;
   uint32_t pos;
   {
    pos = 0;
@@ -58616,7 +58619,7 @@ SegSplit( &pCurrent, start );
      if( globalNetworkData.flags.bShortLogReceivedData )
      {
       LogBinary( (uint8_t*)lpClient->RecvPending.buffer.p +
-         lpClient->RecvPending.dwUsed, min( nRecv, 64 ) );
+         lpClient->RecvPending.dwUsed,  (nRecv < 64) ? nRecv:64 );
      }
      if( globalNetworkData.flags.bLogReceivedData )
      {
@@ -59218,7 +59221,7 @@ SegSplit( &pCurrent, start );
    {
     if( globalNetworkData.flags.bShortLogReceivedData )
     {
-     LogBinary( (uint8_t*)byBuffer, min( nDrainRead, 64 ) );
+     LogBinary( (uint8_t*)byBuffer, (nDrainRead<64 )?nDrainRead:64 );
     }
     if( globalNetworkData.flags.bLogReceivedData )
     {
@@ -59816,7 +59819,7 @@ SegSplit( &pCurrent, start );
   {
    DumpAddr( WIDE("UDPRead at"), pc->saSource );
    LogBinary( (uint8_t*)pc->RecvPending.buffer.p +
-       pc->RecvPending.dwUsed, min( nReturn, 64 ) );
+       pc->RecvPending.dwUsed, ( nReturn< 64 )?nReturn:64 );
   }
   if( globalNetworkData.flags.bLogReceivedData )
   {
@@ -60308,9 +60311,10 @@ SegSplit( &pCurrent, start );
     }
     else if( hs_rc == 1 )
     {
-     len = SSL_read( pc->ssl_session->ssl, pc->ssl_session->dbuffer, (int)pc->ssl_session->dbuflen );
-     lprintf( "normal read - just get the data from the other buffer : %zd", len );
-      if( len == -1 ) {
+     int result;
+     result = SSL_read( pc->ssl_session->ssl, pc->ssl_session->dbuffer, (int)pc->ssl_session->dbuflen );
+     lprintf( "normal read - just get the data from the other buffer : %d", result );
+     if( result == -1 ) {
       lprintf( "SSL_Read failed." );
       ERR_print_errors_cb( logerr, (void*)__LINE__ );
       RemoveClient( pc );
@@ -60354,7 +60358,7 @@ SegSplit( &pCurrent, start );
  }
  LOGICAL ssl_Send( PCLIENT pc, POINTER buffer, size_t length )
  {
-  int32_t len;
+  int len;
   int32_t len_out;
   struct ssl_session *ses = pc->ssl_session;
   while( length ) {
@@ -60363,7 +60367,10 @@ SegSplit( &pCurrent, start );
     ERR_print_errors_cb(logerr, (void*)__LINE__);
     return FALSE;
    }
-   length -= len;
+   length -= (size_t)len;
+   // signed/unsigned comparison here.
+   // the signed value is known to be greater than 0 and less than max unsigned int
+   // so it is in a valid range to check, and is NOT a warning or error condition EVER.
    if( len > ses->obuflen )
    {
     Release( ses->obuffer );
@@ -60921,16 +60928,16 @@ SegSplit( &pCurrent, start );
  ** system</a>.  ^The SQLITE_SOURCE_ID macro evaluates to
  ** a string which identifies a particular check-in of SQLite
  ** within its configuration management system.  ^The SQLITE_SOURCE_ID
- ** string contains the date and time of the check-in (UTC) and an SHA1
- ** hash of the entire source tree.
+ ** string contains the date and time of the check-in (UTC) and a SHA1
+ ** or SHA3-256 hash of the entire source tree.
  **
  ** See also: [sqlite3_libversion()],
  ** [sqlite3_libversion_number()], [sqlite3_sourceid()],
  ** [sqlite_version()] and [sqlite_source_id()].
  */
- #define SQLITE_VERSION        "3.17.0"
- #define SQLITE_VERSION_NUMBER 3017000
- #define SQLITE_SOURCE_ID      "2017-02-13 16:02:40 ada05cfa86ad7f5645450ac7a2a21c9aa6e57d2c"
+ #define SQLITE_VERSION        "3.18.0"
+ #define SQLITE_VERSION_NUMBER 3018000
+ #define SQLITE_SOURCE_ID      "2017-03-24 17:59:56 2556014514f36808e6d18b25722eae0daeeb8fbb5d18af13a9698ea6c6db1679"
  /*
  ** CAPI3REF: Run-Time Library Version Numbers
  ** KEYWORDS: sqlite3_version sqlite3_sourceid
@@ -62810,20 +62817,30 @@ SegSplit( &pCurrent, start );
  ** the table has a column of type [INTEGER PRIMARY KEY] then that column
  ** is another alias for the rowid.
  **
- ** ^The sqlite3_last_insert_rowid(D) interface returns the [rowid] of the
- ** most recent successful [INSERT] into a rowid table or [virtual table]
- ** on database connection D.
- ** ^Inserts into [WITHOUT ROWID] tables are not recorded.
- ** ^If no successful [INSERT]s into rowid tables
- ** have ever occurred on the database connection D,
- ** then sqlite3_last_insert_rowid(D) returns zero.
+ ** ^The sqlite3_last_insert_rowid(D) interface usually returns the [rowid] of
+ ** the most recent successful [INSERT] into a rowid table or [virtual table]
+ ** on database connection D. ^Inserts into [WITHOUT ROWID] tables are not
+ ** recorded. ^If no successful [INSERT]s into rowid tables have ever occurred
+ ** on the database connection D, then sqlite3_last_insert_rowid(D) returns
+ ** zero.
  **
- ** ^(If an [INSERT] occurs within a trigger or within a [virtual table]
- ** method, then this routine will return the [rowid] of the inserted
- ** row as long as the trigger or virtual table method is running.
- ** But once the trigger or virtual table method ends, the value returned
- ** by this routine reverts to what it was before the trigger or virtual
- ** table method began.)^
+ ** As well as being set automatically as rows are inserted into database
+ ** tables, the value returned by this function may be set explicitly by
+ ** [sqlite3_set_last_insert_rowid()]
+ **
+ ** Some virtual table implementations may INSERT rows into rowid tables as
+ ** part of committing a transaction (e.g. to flush data accumulated in memory
+ ** to disk). In this case subsequent calls to this function return the rowid
+ ** associated with these internal INSERT operations, which leads to
+ ** unintuitive results. Virtual table implementations that do write to rowid
+ ** tables in this way can avoid this problem by restoring the original
+ ** rowid value using [sqlite3_set_last_insert_rowid()] before returning
+ ** control to the user.
+ **
+ ** ^(If an [INSERT] occurs within a trigger then this routine will
+ ** return the [rowid] of the inserted row as long as the trigger is
+ ** running. Once the trigger program ends, the value returned
+ ** by this routine reverts to what it was before the trigger was fired.)^
  **
  ** ^An [INSERT] that fails due to a constraint violation is not a
  ** successful [INSERT] and does not change the value returned by this
@@ -62849,6 +62866,15 @@ SegSplit( &pCurrent, start );
  ** last insert [rowid].
  */
  SQLITE_API sqlite3_int64 sqlite3_last_insert_rowid(sqlite3*);
+ /*
+ ** CAPI3REF: Set the Last Insert Rowid value.
+ ** METHOD: sqlite3
+ **
+ ** The sqlite3_set_last_insert_rowid(D, R) method allows the application to
+ ** set the value returned by calling sqlite3_last_insert_rowid(D) to R
+ ** without inserting a row into the database.
+ */
+ SQLITE_API void sqlite3_set_last_insert_rowid(sqlite3*,sqlite3_int64);
  /*
  ** CAPI3REF: Count The Number Of Rows Modified
  ** METHOD: sqlite3
@@ -64149,9 +64175,9 @@ SegSplit( &pCurrent, start );
  **
  ** [[SQLITE_LIMIT_VDBE_OP]] ^(<dt>SQLITE_LIMIT_VDBE_OP</dt>
  ** <dd>The maximum number of instructions in a virtual machine program
- ** used to implement an SQL statement.  This limit is not currently
- ** enforced, though that might be added in some future release of
- ** SQLite.</dd>)^
+ ** used to implement an SQL statement.  If [sqlite3_prepare_v2()] or
+ ** the equivalent tries to allocate space for more than this many opcodes
+ ** in a single prepared statement, an SQLITE_NOMEM error is returned.</dd>)^
  **
  ** [[SQLITE_LIMIT_FUNCTION_ARG]] ^(<dt>SQLITE_LIMIT_FUNCTION_ARG</dt>
  ** <dd>The maximum number of arguments on a function.</dd>)^
@@ -82133,7 +82159,7 @@ SegSplit( &pCurrent, start );
  uint8_t* GetGUIDBinaryEx( CTEXTSTR guid, LOGICAL little_endian )
  {
   static uint8_t buf[18];
-  static uint8_t char_lookup[256];
+  static int8_t char_lookup[256];
   int n;
     int b;
   if( char_lookup['1'] == 0 )
@@ -84095,7 +84121,7 @@ SegSplit( &pCurrent, start );
    }
    else
    {
-    MemCpy( pBuffer, buffer, buflen = min(buflen+1,(nBuffer) ) );
+    MemCpy( pBuffer, buffer, buflen = ((buflen+1<(nBuffer) )?(buflen+1):nBuffer) );
     buflen--;
     pBuffer[buflen] = 0;
     if( global_sqlstub_data->flags.bLogOptionConnection )
@@ -84305,7 +84331,7 @@ SegSplit( &pCurrent, start );
   else
   {
    POPTION_TREE tree = GetOptionTreeExxx( odbc, NULL DBG_SRC );
-   return SetOptionBlobValueEx( tree, optval, pBuffer, nBuffer ) != INVALID_INDEX;
+   return SetOptionBlobValueEx( tree, optval, pBuffer, nBuffer );
   }
   return 0;
  }
@@ -84770,7 +84796,7 @@ SegSplit( &pCurrent, start );
     continue;
    // trim trailing spaces from option names.
    {
-    size_t n = StrLen( namebuf ) - 1;
+    int n = (int)(StrLen( namebuf ) - 1);
     while( n >= 0 && namebuf[n] == ' ' )
     {
      namebuf[n] = 0;

@@ -20,7 +20,7 @@
               '__LINUX__'
             ],
             'cflags_cc': ['-Wno-self-assign', '-Wno-null-conversion', '-Wno-parentheses'
-			,'-Wno-char-subscripts','-Wno-maybe-uninitialized'
+			,'-Wno-char-subscripts'
 			,'-Wno-empty-body','-Wno-format', '-Wno-address'
 			, '-Wno-strict-aliasing', '-Wno-switch', '-Wno-missing-field-initializers' 
 			, '-Wno-unused-variable', '-Wno-unused-function', '-Wno-unused-but-set-variable', '-Wno-maybe-uninitialized'
@@ -35,13 +35,16 @@
             'defines': [
               '__LINUX__','__MAC__'
             ],
-            'cflags_cc': ['-Wno-self-assign' '-Wno-null-conversion', '-Wno-parentheses-equality', '-Wno-parentheses'
-			,'-Wno-char-subscripts','-Wno-maybe-uninitialized'
+            'xcode_settings': {
+                'OTHER_CFLAGS': [
+                       '-Wno-self-assign', '-Wno-null-conversion', '-Wno-parentheses-equality', '-Wno-parentheses'
+			,'-Wno-char-subscripts', '-Wno-null-conversion'
 			,'-Wno-empty-body','-Wno-format', '-Wno-address'
 			, '-Wno-strict-aliasing', '-Wno-switch', '-Wno-missing-field-initializers' 
-			, '-Wno-unused-variable', '-Wno-unused-function', '-Wunused-but-set-variable', '-Wno-maybe-uninitialized'
+			, '-Wno-unused-variable', '-Wno-unused-function'
 			, '-Wno-sign-compare'
-			],
+                ],
+             },
             'include_dirs': [
               'include/linux',
             ],
