@@ -1,4 +1,5 @@
  /*CMake Option defined*/
+ #define NO_AUTO_VECTLIB_NAMES
  /* Includes the system platform as required or appropriate. If
     under a linux system, include appropriate basic linux type
     headers, if under windows pull "windows.h".
@@ -11398,6 +11399,890 @@
  using namespace sack::network::json;
  #endif
  #endif
+ #ifndef HTML5_WEBSOCKET_CLIENT_INCLUDED
+ #define HTML5_WEBSOCKET_CLIENT_INCLUDED
+ /*****************************************************
+ so... what does the client provide?
+ websocket protocol is itself wrapped in a frame, so messages are described with exact
+ length, and what is received will be exactly like the block that was sent.
+ *****************************************************/
+ #ifdef __cplusplus
+ #else
+ #endif
+ #ifdef SACK_WEBSOCKET_CLIENT_SOURCE
+ #define WEBSOCKET_EXPORT EXPORT_METHOD
+ #else
+ #define WEBSOCKET_EXPORT IMPORT_METHOD
+ #endif
+ // the result returned from the web_socket_opened event will
+ // become the new value used for future uintptr_t parameters to other events.
+ typedef uintptr_t (*web_socket_opened)( PCLIENT pc, uintptr_t psv );
+ typedef void (*web_socket_closed)( PCLIENT pc, uintptr_t psv );
+ typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
+ typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, POINTER buffer, size_t msglen );
+ // create a websocket connection.
+ //  If web_socket_opened is passed as NULL, this function will wait until the negotiation has passed.
+ //  since these packets are collected at a lower layer, buffers passed to receive event are allocated for
+ //  the application, and the application does not need to setup an  initial read.
+ WEBSOCKET_EXPORT PCLIENT WebSocketOpen( CTEXTSTR address
+                 , int options
+                 , web_socket_opened
+                 , web_socket_event
+                 , web_socket_closed
+                 , web_socket_error
+                 , uintptr_t psv );
+ // end a websocket connection nicely.
+ WEBSOCKET_EXPORT void WebSocketClose( PCLIENT );
+ // there is a control bit for whether the content is text or binary or a continuation
+ // UTF8 RFC3629
+ WEBSOCKET_EXPORT void WebSocketBeginSendText( PCLIENT, POINTER, size_t );
+ // literal binary sending; this may happen to be base64 encoded too
+ WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT, POINTER, size_t );
+ // there is a control bit for whether the content is text or binary or a continuation
+ // UTF8 RFC3629
+ WEBSOCKET_EXPORT void WebSocketSendText( PCLIENT, POINTER, size_t );
+ // literal binary sending; this may happen to be base64 encoded too
+ WEBSOCKET_EXPORT void WebSocketSendBinary( PCLIENT, POINTER, size_t );
+ WEBSOCKET_EXPORT void WebSocketEnableAutoPing( PCLIENT websock, uint32_t delay );
+ WEBSOCKET_EXPORT void WebSocketPing( PCLIENT websock, uint32_t timeout );
+ #endif
+ /*
+  * SACK extension to define methods to render to javascript/HTML5 WebSocket event interface
+  *
+  * Crafted by: Jim Buckeyne
+  *
+  * Purpose: Provide a well defined, concise structure to
+  *   provide websocket server support to C applications.
+  *
+  *
+  *
+  * (c)Freedom Collective, Jim Buckeyne 2012+; SACK Collection.
+  *
+  */
+ #ifndef HTML5_WEBSOCKET_STUFF_DEFINED
+ #define HTML5_WEBSOCKET_STUFF_DEFINED
+ //#include <controls.h>
+ // should consider merging these headers(?)
+ #ifdef __cplusplus
+ #define _HTML5_WEBSOCKET_NAMESPACE namespace Html5WebSocket {
+ #define HTML5_WEBSOCKET_NAMESPACE SACK_NAMESPACE _NETWORK_NAMESPACE _HTML5_WEBSOCKET_NAMESPACE
+ #define HTML5_WEBSOCKET_NAMESPACE_END } _NETWORK_NAMESPACE_END SACK_NAMESPACE_END
+ #define USE_HTML5_WEBSOCKET_NAMESPACE using namespace sack::network::Html5WebSocket;
+ #else
+ #define _HTML5_WEBSOCKET_NAMESPACE
+ #define HTML5_WEBSOCKET_NAMESPACE
+ #define HTML5_WEBSOCKET_NAMESPACE_END
+ #define USE_HTML5_WEBSOCKET_NAMESPACE
+ #endif
+ HTML5_WEBSOCKET_NAMESPACE
+ #ifdef HTML5_WEBSOCKET_SOURCE
+ #define HTML5_WEBSOCKET_PROC(type,name) EXPORT_METHOD type CPROC name
+ #else
+ #define HTML5_WEBSOCKET_PROC(type,name) IMPORT_METHOD type CPROC name
+ #endif
+ // need some sort of other methods to work with an HTML5WebSocket...
+ // server side.
+  HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketCreate )( CTEXTSTR server_url
+                  , web_socket_opened on_open
+                  , web_socket_event on_event
+                  , web_socket_closed on_closed
+                  , web_socket_error on_error
+                  , uintptr_t psv
+                  );
+ /* define a callback which uses a HTML5WebSocket collector to build javascipt to render the control.
+  * example:
+  *       static int OnDrawToHTML("Control Name")(CONTROL, HTML5WebSocket ){ }
+  */
+ //#define OnDrawToHTML(name)  // __DefineRegistryMethodP(PRELOAD_PRIORITY,ROOT_REGISTRY,_OnDrawCommon,WIDE("control"),name WIDE("/rtti"),WIDE("draw_to_canvas"),int,(CONTROL, HTML5WebSocket ), __LINE__)
+ HTML5_WEBSOCKET_NAMESPACE_END
+ USE_HTML5_WEBSOCKET_NAMESPACE
+ #endif
+ /* Generalized HTTP Processing. All POST, GET, RESPONSE packets
+    all fit within this structure.
+                                                                 */
+ #ifndef HTTP_PROCESSING_INCLUDED
+ /* Multiple inclusion protection symbol */
+ #define HTTP_PROCESSING_INCLUDED
+ #ifdef HTTP_SOURCE
+ #define HTTP_EXPORT EXPORT_METHOD
+ #else
+ /* Defines how external functions are referenced
+    (dllimport/export/extern)                     */
+ #define HTTP_EXPORT IMPORT_METHOD
+ #endif
+ /* The API type of HTTP functions - default to CPROC. */
+ #define HTTPAPI CPROC
+ #ifdef __cplusplus
+ /* A symbol to define the sub-namespace of HTTP_NAMESPACE  */
+ #define _HTTP_NAMESPACE namespace http {
+ /* A macro to end just the HTTP sub namespace. */
+ #define _HTTP_NAMESPACE_END }
+ #else
+ #define _HTTP_NAMESPACE
+ #define _HTTP_NAMESPACE_END
+ #endif
+ /* HTTP full namespace  */
+ #define HTTP_NAMESPACE TEXT_NAMESPACE _HTTP_NAMESPACE
+ /* Macro to use to define where http utility namespace ends. */
+ #define HTTP_NAMESPACE_END _HTTP_NAMESPACE_END TEXT_NAMESPACE_END
+ SACK_CONTAINER_NAMESPACE
+ /* Text library functions. PTEXT is kept as a linked list of
+    segments of text. Each text segment has a size and the data,
+    and additional format flags. PTEXT may also be indirect
+    segments (that is this segment points at another list of
+    segments that are the actualy content for this place.
+                                                                 */
+ _TEXT_NAMESPACE
+  /* Simple HTTP Packet processing state. Its only intelligence is
+     that there are fields of http header, and that one of those
+     fields might be content-length; so it can seperate individual
+     fields name-value pairs and the packet content.               */
+  _HTTP_NAMESPACE
+ typedef struct HttpState *HTTPState;
+ enum ProcessHttpResult{
+  HTTP_STATE_RESULT_NOTHING = 0,
+  HTTP_STATE_RESULT_CONTENT = 200,
+     HTTP_STATE_RESULT_CONTINUE = 100,
+  HTTP_STATE_INTERNAL_SERVER_ERROR=500,
+  HTTP_STATE_RESOURCE_NOT_FOUND=404,
+    HTTP_STATE_BAD_REQUEST=400,
+ };
+ HTTP_EXPORT
+ /* Creates an empty http state, the next operation should be
+    AddHttpData.                                              */
+ HTTPState  HTTPAPI CreateHttpState( void );
+ HTTP_EXPORT
+ /* Destroys a http state, releasing all resources associated
+    with it.                                                  */
+ void HTTPAPI DestroyHttpState( HTTPState pHttpState );
+ HTTP_EXPORT
+ /* Add another bit of data to the block. After adding data,
+    ProcessHttp should be called to see if the data has completed
+    a packet.
+    Parameters
+    pHttpState :  state to add data to
+    buffer :      pointer to some data bytes
+    size :        length of data bytes
+    Returns: TRUE if content is added... if collecting chunked encoding may return FALSE.
+    */
+ LOGICAL HTTPAPI AddHttpData( HTTPState pHttpState, POINTER buffer, size_t size );
+ /* \returns TRUE if completed until content-length if
+    content-length is not specified, data is still collected, but
+    the status never results TRUE.
+  Parameters
+  pc : Occasionally the http processor needs to send data on the
+       socket without application being aware it did.
+    pHttpState :  Http State to process (after having added data to
+                  it)
+    Return Value List
+    TRUE :   A completed HTTP packet has been gathered \- according
+             to 'content\-length' meta tag.
+    FALSE :  Still collecting full packet                           */
+ //HTTP_EXPORT int HTTPAPI ProcessHttp( HTTPState pHttpState );
+ HTTP_EXPORT int HTTPAPI ProcessHttp( PCLIENT pc, HTTPState pHttpState );
+ HTTP_EXPORT
+ /* Gets the specific result code at the header of the packet -
+    http 2.0 OK sort of thing.                                  */
+ PTEXT HTTPAPI GetHttpResponce( HTTPState pHttpState );
+ HTTP_EXPORT
+ /*Get the value of a HTTP header field, by name
+    Parameters
+  pHttpState: the state to get the header field from.
+  name: name of the field to get (checked case insensitive)
+ */
+ PTEXT HTTPAPI GetHTTPField( HTTPState pHttpState, CTEXTSTR name );
+ HTTP_EXPORT
+ /* Gets the specific request code at the header of the packet -
+    http 2.0 OK sort of thing.                                  */
+ PTEXT HTTPAPI GetHttpRequest( HTTPState pHttpState );
+ HTTP_EXPORT
+ /* \Returns the body of the HTTP packet (the part of data
+    specified by content-length or by termination of the
+    connection(? think I didn't implement that right)      */
+ PTEXT HTTPAPI GetHttpContent( HTTPState pHttpState );
+ HTTP_EXPORT
+ /* \Returns the resource path/name of the HTTP packet (the part of data
+    specified by content-length or by termination of the
+    connection(? think I didn't implement that right)      */
+ PTEXT HTTPAPI GetHttpResource( HTTPState pHttpState );
+ HTTP_EXPORT
+ /* Enumerates the various http header fields by passing them
+    each sequentially to the specified callback.
+    Parameters
+    pHttpState :  _nt_
+    _nt_ :        _nt_
+    psv :         _nt_                                        */
+ void HTTPAPI ProcessCGIFields( HTTPState pHttpState, void (CPROC*f)( uintptr_t psv, PTEXT name, PTEXT value ), uintptr_t psv );
+ HTTP_EXPORT
+ /* Enumerates the various http header fields by passing them
+    each sequentially to the specified callback.
+    Parameters
+    pHttpState :  _nt_
+    _nt_ :        _nt_
+    psv :         _nt_                                        */
+ void HTTPAPI ProcessHttpFields( HTTPState pHttpState, void (CPROC*f)( uintptr_t psv, PTEXT name, PTEXT value ), uintptr_t psv );
+ HTTP_EXPORT
+ /* Resets a processing state, so it can start collecting the
+    next state. After a ProcessHttp results with true, this
+    should be called after processing the packet content.
+    Parameters
+    pHttpState :  state to reset for next read...             */
+ void HTTPAPI EndHttp( HTTPState pHttpState );
+ HTTP_EXPORT
+ /* reply message - 200/OK with this body, sent as Content-Type that was requested */
+ void HTTPAPI SendHttpMessage( HTTPState pHttpState, PCLIENT pc, PTEXT body );
+ HTTP_EXPORT
+ /* generate response message, specifies the numeric (200), the text (OK), the content type field value, and the body to send */
+ void HTTPAPI SendHttpResponse ( HTTPState pHttpState, PCLIENT pc, int numeric, CTEXTSTR text, CTEXTSTR content_type, PTEXT body );
+ /* Callback type used when creating an http server.
+  If there is no registered handler match, then this is called.
+  This should return FALSE if there was no content, allowing a 404 status result.
+  Additional ways of dispatching need to be implemented (like handlers for paths, wildcards...)
+  */
+ typedef LOGICAL (CPROC *ProcessHttpRequest)( uintptr_t psv
+              , HTTPState pHttpState );
+ HTTP_EXPORT
+ /* Intended to create a generic http service, which you can
+    attach URL handlers to. Incomplete
+    Works mostly?  OnGet has been known to get called....
+    */
+ struct HttpServer *CreateHttpServerEx( CTEXTSTR interface_address, CTEXTSTR TargetName, CTEXTSTR site, ProcessHttpRequest handle_request, uintptr_t psv );
+ HTTP_EXPORT
+ /* Intended to create a generic http service, which you can
+    attach URL handlers to. Incomplete
+    Works mostly?  OnGet has been known to get called....
+    */
+ struct HttpServer *CreateHttpsServerEx( CTEXTSTR interface_address, CTEXTSTR TargetName, CTEXTSTR site, ProcessHttpRequest handle_request, uintptr_t psv );
+ /* results with just the content of the message; no access to other information avaialble */
+ HTTP_EXPORT PTEXT HTTPAPI PostHttp( PTEXT site, PTEXT resource, PTEXT content );
+ /* results with just the content of the message; no access to other information avaialble */
+ HTTP_EXPORT PTEXT HTTPAPI GetHttp( PTEXT site, PTEXT resource, LOGICAL secure );
+ /* results with just the content of the message; no access to other information avaialble */
+ HTTP_EXPORT PTEXT HTTPAPI GetHttps( PTEXT address, PTEXT url );
+ /* results with the http state of the message response; Allows getting other detailed information about the result */
+ HTTP_EXPORT HTTPState  HTTPAPI PostHttpQuery( PTEXT site, PTEXT resource, PTEXT content );
+ /* results with the http state of the message response; Allows getting other detailed information about the result */
+ HTTP_EXPORT HTTPState  HTTPAPI GetHttpQuery( PTEXT site, PTEXT resource );
+ /* results with the http state of the message response; Allows getting other detailed information about the result */
+ HTTP_EXPORT HTTPState HTTPAPI GetHttpsQuery( PTEXT site, PTEXT resource );
+ #define CreateHttpServer(interface_address,site,psv) CreateHttpServerEx( interface_address,NULL,site,NULL,psv )
+ #define CreateHttpServer2(interface_address,site,default_handler,psv) CreateHttpServerEx( interface_address,NULL,site,default_handler,psv )
+ // receives events for either GET if aspecific OnHttpRequest has not been defined for the specific resource
+ // Return TRUE if processed, otherwise will attempt to match other Get Handlers
+ #define OnHttpGet( site, resource )  __DefineRegistryMethod(WIDE( "SACK/Http/Methods" ),OnHttpGet,site,resource,WIDE( "Get" ),LOGICAL,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
+ // receives events for either GET if aspecific OnHttpRequest has not been defined for the specific resource
+ // Return TRUE if processed, otherwise will attempt to match other Get Handlers
+ #define OnHttpPost( site, resource )  __DefineRegistryMethod(WIDE( "SACK/Http/Methods" ),OnHttpPost,site,resource,WIDE( "Post" ),LOGICAL,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
+ // define a specific handler for a specific resource name on a host
+ #define OnHttpRequest( site, resource )  __DefineRegistryMethod(WIDE( "SACK/Http/Methods" ),OnHttpRequest,WIDE( "something" ),site WIDE( "/" ) resource,WIDE( "Get" ),void,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
+ //--------------------------------------------------------------
+ //  URL.c  (url parsing utility)
+ struct url_cgi_data
+ {
+  CTEXTSTR name;
+  CTEXTSTR value;
+ };
+ struct url_data
+ {
+  CTEXTSTR protocol;
+  CTEXTSTR user;
+  CTEXTSTR password;
+  CTEXTSTR host;
+  int default_port;
+  // encoding RFC3986 http://tools.ietf.org/html/rfc3986  specifies port characters are in the set of digits.
+  int port;
+  //CTEXTSTR port_data;  // during collection, the password may be in the place of 'port'
+  CTEXTSTR resource_path;
+  CTEXTSTR resource_file;
+  CTEXTSTR resource_extension;
+  CTEXTSTR resource_anchor;
+    // list of struct url_cgi_data *
+  PLIST cgi_parameters;
+ };
+ HTTP_EXPORT struct url_data * HTTPAPI SACK_URLParse( CTEXTSTR url );
+ HTTP_EXPORT CTEXTSTR HTTPAPI SACK_BuildURL( struct url_data *data );
+ HTTP_EXPORT void HTTPAPI SACK_ReleaseURL( struct url_data *data );
+  _HTTP_NAMESPACE_END
+ TEXT_NAMESPACE_END
+ #ifdef __cplusplus
+ using namespace sack::containers::text::http;
+ #endif
+ #endif
+ /*
+  *  Creator: Jim Buckeyne
+  *  Header for configscript.lib(bag.lib)
+  *  Provides definitions for handling configuration files
+  *  or any particular file which has machine generated
+  *  characteristics, it can handle translators to decrypt
+  *  encrypt.  Method of operation is to create a configuration
+  *  evaluator, then AddConfiguratMethod()s to it.
+  *  configuration methods are format descriptors for the lines
+  *  and a routine which is called when such a line is matched.
+  *  One might think of it as a trigger library for MUDs ( a
+  *  way to trigger an event based on certain text input,
+  *  variations in the text input may be assigned as variables
+  *  to be used within the event.
+  *
+  *  More about configuration string parsing is available in
+  *  $(SACK_BASE)/src/configlib/config.rules text file.
+  *
+  *  A vague attempt at providing a class to derrive a config-
+  *  uration reader class, which may contain private data
+  *  within such a class, or otherwise provide an object with
+  *  simple namespace usage. ( add(), go() )
+  *
+  *  This library also imlements several PTEXT based methods
+  *  which can evaluate text segments into valid binary types
+  *  such as text to integer, float, color, etc.  Some of the type
+  *  validators applied for the format argument matching of added
+  *  methods are available for external reference.
+  *
+  */
+ #ifndef CONFIGURATION_SCRIPT_HANDLER
+ #define CONFIGURATION_SCRIPT_HANDLER
+ /* Define COLOR type. Basically the image library regards color
+    as 32 bits of data. User applications end up needing to
+    specify colors in the correct method for the platform they
+    are working on. This provides aliases to rearrange colors.
+    For instance the colors on windows and the colors for OpenGL
+    are not exactly the same. If the OpenGL driver is specified
+    as the output device, the entire code would need to be
+    rebuilt for specifying colors correctly for opengl. While
+    otherwise they are both 32 bits, and peices work, they get
+    very ugly colors output.
+    See Also
+    <link Colors>                                                */
+ #ifndef COLOR_STRUCTURE_DEFINED
+ /* An exclusion symbol for defining CDATA and color operations. */
+ #define COLOR_STRUCTURE_DEFINED
+ #ifdef __cplusplus
+ SACK_NAMESPACE
+  namespace image {
+ #endif
+   // byte index values for colors on the video buffer...
+   enum color_byte_index {
+  I_BLUE  = 0,
+  I_GREEN = 1,
+  I_RED   = 2,
+  I_ALPHA = 3
+   };
+ #if defined( __ANDROID__ ) || defined( _OPENGL_DRIVER )
+ #  define USE_OPENGL_COMPAT_COLORS
+ #endif
+ #if ( !defined( IMAGE_LIBRARY_SOURCE_MAIN ) && ( !defined( FORCE_NO_INTERFACE ) || defined( ALLOW_IMAGE_INTERFACE ) ) )      && !defined( FORCE_COLOR_MACROS )
+ #define Color( r,g,b ) MakeColor(r,g,b)
+ #define AColor( r,g,b,a ) MakeAlphaColor(r,g,b,a)
+ #define SetAlpha( rgb, a ) SetAlphaValue( rgb, a )
+ #define SetGreen( rgb, g ) SetGreeValue(rgb,g )
+ #define AlphaVal(color) GetAlphaValue( color )
+ #define RedVal(color)   GetRedValue(color)
+ #define GreenVal(color) GetGreenValue(color)
+ #define BlueVal(color)  GetBlueValue(color)
+ #else
+ #if defined( _OPENGL_DRIVER ) || defined( USE_OPENGL_COMPAT_COLORS )
+ #  define Color( r,g,b ) (((uint32_t)( ((uint8_t)(r))|((uint16_t)((uint8_t)(g))<<8))|(((uint32_t)((uint8_t)(b))<<16)))|0xFF000000)
+ #  define AColor( r,g,b,a ) (((uint32_t)( ((uint8_t)(r))|((uint16_t)((uint8_t)(g))<<8))|(((uint32_t)((uint8_t)(b))<<16)))|((a)<<24))
+ #  define SetAlpha( rgb, a ) ( ((rgb)&0x00FFFFFF) | ( (a)<<24 ) )
+ #  define SetGreen( rgb, g ) ( ((rgb)&0xFFFF00FF) | ( ((g)&0xFF)<<8 ) )
+ #  define SetBlue( rgb, b )  ( ((rgb)&0xFF00FFFF) | ( ((b)&0xFF)<<16 ) )
+ #  define SetRed( rgb, r )   ( ((rgb)&0xFFFFFF00) | ( ((r)&0xFF)<<0 ) )
+ #  define GLColor( c )  (c)
+ #  define AlphaVal(color) ((color&0xFF000000) >> 24)
+ #  define RedVal(color)   ((color&0x000000FF) >> 0)
+ #  define GreenVal(color) ((color&0x0000FF00) >> 8)
+ #  define BlueVal(color)  ((color&0x00FF0000) >> 16)
+ #else
+ #  ifdef _WIN64
+ #    define AND_FF &0xFF
+ #  else
+ /* This is a macro to cure a 64bit warning in visual studio. */
+ #    define AND_FF
+ #  endif
+ /* A macro to create a solid color from R G B coordinates.
+    Example
+    <code lang="c++">
+    CDATA color1 = Color( 255,0,0 ); // Red only, so this is bright red
+    CDATA color2 = Color( 0,255,0); // green only, this is bright green
+    CDATA color3 = Color( 0,0,255); // blue only, this is birght blue
+    CDATA color4 = Color(93,93,32); // this is probably a goldish grey
+    </code>                                                             */
+ #define Color( r,g,b ) (((uint32_t)( ((uint8_t)((b)AND_FF))|((uint16_t)((uint8_t)((g))AND_FF)<<8))|(((uint32_t)((uint8_t)((r))AND_FF)<<16)))|0xFF000000)
+ /* Build a color with alpha specified. */
+ #define AColor( r,g,b,a ) (((uint32_t)( ((uint8_t)((b)AND_FF))|((uint16_t)((uint8_t)((g))AND_FF)<<8))|(((uint32_t)((uint8_t)((r))AND_FF)<<16)))|(((a)AND_FF)<<24))
+ /* Sets the alpha part of a color. (0-255 value, 0 being
+    transparent, and 255 solid(opaque))
+    Example
+    <code lang="c++">
+    CDATA color = BASE_COLOR_RED;
+    CDATA hazy_color = SetAlpha( color, 128 );
+    </code>
+  */
+ #define SetAlpha( rgb, a ) ( ((rgb)&0x00FFFFFF) | ( (a)<<24 ) )
+ /* Sets the green channel of a color. Expects a value 0-255.  */
+ #define SetGreen( rgb, g ) ( ((rgb)&0xFFFF00FF) | ( ((g)&0x0000FF)<<8 ) )
+ /* Sets the blue channel of a color. Expects a value 0-255.  */
+ #define SetBlue( rgb, b ) ( ((rgb)&0xFFFFFF00) | ( ((b)&0x0000FF)<<0 ) )
+ /* Sets the red channel of a color. Expects a value 0-255.  */
+ #define SetRed( rgb, r ) ( ((rgb)&0xFF00FFFF) | ( ((r)&0x0000FF)<<16 ) )
+ /* Return a CDATA that is meant for output to OpenGL. */
+ #define GLColor( c )  (((c)&0xFF00FF00)|(((c)&0xFF0000)>>16)|(((c)&0x0000FF)<<16))
+ /* Get the alpha value of a color. This is a 0-255 unsigned
+    byte.                                                    */
+ #define AlphaVal(color) (((color) >> 24) & 0xFF)
+ /* Get the red value of a color. This is a 0-255 unsigned byte. */
+ #define RedVal(color)   (((color) >> 16) & 0xFF)
+ /* Get the green value of a color. This is a 0-255 unsigned
+    byte.                                                    */
+ #define GreenVal(color) (((color) >> 8) & 0xFF)
+ /* Get the blue value of a color. This is a 0-255 unsigned byte. */
+ #define BlueVal(color)  (((color)) & 0xFF)
+ #endif
+ // IMAGE_LIBRARY_SOURCE
+ #endif
+   /* a definition for a single color channel - for function replacements for ___Val macros*/
+   typedef unsigned char COLOR_CHANNEL;
+         /* a 4 byte array of color (not really used, we mostly went with CDATA and PCDATA instead of COLOR and PCOLOR */
+   typedef COLOR_CHANNEL COLOR[4];
+   // color data raw...
+   typedef uint32_t CDATA;
+   /* pointer to an array of 32 bit colors */
+   typedef uint32_t *PCDATA;
+   /* A Pointer to <link COLOR>. Probably an array of color (a
+    block of pixels for instance)                            */
+   typedef COLOR *PCOLOR;
+ //-----------------------------------------------
+ // common color definitions....
+ //-----------------------------------------------
+ // both yellows need to be fixed.
+ #define BASE_COLOR_BLACK         Color( 0,0,0 )
+ #define BASE_COLOR_BLUE          Color( 0, 0, 128 )
+ #define BASE_COLOR_DARKBLUE          Color( 0, 0, 42 )
+ /* An opaque Green.
+    See Also
+    <link Colors>    */
+ #define BASE_COLOR_GREEN         Color( 0, 128, 0 )
+ /* An opaque cyan - kind of a light sky like blue.
+    See Also
+    <link Colors>                                   */
+ #define BASE_COLOR_CYAN          Color( 0, 128, 128 )
+ /* An opaque red.
+    See Also
+    <link Colors>  */
+ #define BASE_COLOR_RED           Color( 192, 32, 32 )
+ /* An opaque BROWN. Brown is dark yellow... so this might be
+    more like a gold sort of color instead.
+    See Also
+    <link Colors>                                             */
+ #define BASE_COLOR_BROWN         Color( 140, 140, 0 )
+ #define BASE_COLOR_LIGHTBROWN         Color( 221, 221, 85 )
+ #define BASE_COLOR_MAGENTA       Color( 160, 0, 160 )
+ #define BASE_COLOR_LIGHTGREY     Color( 192, 192, 192 )
+ /* An opaque darker grey (gray?).
+    See Also
+    <link Colors>                  */
+ #define BASE_COLOR_DARKGREY      Color( 128, 128, 128 )
+ /* An opaque a bight or light color blue.
+    See Also
+    <link Colors>                          */
+ #define BASE_COLOR_LIGHTBLUE     Color( 0, 0, 255 )
+ /* An opaque lighter, brighter green color.
+    See Also
+    <link Colors>                            */
+ #define BASE_COLOR_LIGHTGREEN    Color( 0, 255, 0 )
+ /* An opaque a lighter, more bight cyan color.
+    See Also
+    <link Colors>                               */
+ #define BASE_COLOR_LIGHTCYAN     Color( 0, 255, 255 )
+ /* An opaque bright red.
+    See Also
+    <link Colors>         */
+ #define BASE_COLOR_LIGHTRED      Color( 255, 0, 0 )
+ /* An opaque Lighter pink sort of red-blue color.
+    See Also
+    <link Colors>                                  */
+ #define BASE_COLOR_LIGHTMAGENTA  Color( 255, 0, 255 )
+ /* An opaque bright yellow.
+    See Also
+    <link Colors>            */
+ #define BASE_COLOR_YELLOW        Color( 255, 255, 0 )
+ /* An opaque White.
+    See Also
+    <link Colors>    */
+ #define BASE_COLOR_WHITE         Color( 255, 255, 255 )
+ #define BASE_COLOR_ORANGE        Color( 204,96,7 )
+ #define BASE_COLOR_NICE_ORANGE   Color( 0xE9, 0x7D, 0x26 )
+ #define BASE_COLOR_PURPLE        Color( 0x7A, 0x11, 0x7C )
+ #ifdef __cplusplus
+ //  namespace image {
+ };
+ SACK_NAMESPACE_END
+ using namespace sack::image;
+ #endif
+ #endif
+ // $Log: colordef.h,v $
+ // Revision 1.4  2003/04/24 00:03:49  panther
+ // Added ColorAverage to image... Fixed a couple macros
+ //
+ // Revision 1.3  2003/03/25 08:38:11  panther
+ // Add logging
+ //
+ /* Defines a simple FRACTION type. Fractions are useful for
+    scaling one value to another. These operations are handles
+    continously. so iterating a fraction like 13 denominations of
+    100 will be smooth.                                           */
+ #ifndef FRACTIONS_DEFINED
+ /* Multiple inclusion protection symbol. */
+ #define FRACTIONS_DEFINED
+ #ifdef __cplusplus
+ #  define _FRACTION_NAMESPACE namespace fraction {
+ #  define _FRACTION_NAMESPACE_END }
+ #  ifndef _MATH_NAMESPACE
+ #    define _MATH_NAMESPACE namespace math {
+ #  endif
+ #  define  SACK_MATH_FRACTION_NAMESPACE_END } } }
+ #else
+ #  define _FRACTION_NAMESPACE
+ #  define _FRACTION_NAMESPACE_END
+ #  ifndef _MATH_NAMESPACE
+ #    define _MATH_NAMESPACE
+ #  endif
+ #  define  SACK_MATH_FRACTION_NAMESPACE_END
+ #endif
+ SACK_NAMESPACE
+  /* Namespace of custom math routines.  Contains operators
+   for Vectors and fractions. */
+  _MATH_NAMESPACE
+  /* Fraction namespace contains a PFRACTION type which is used to
+    store integer fraction values. Provides for ration and
+    proportion scaling. Can also represent fractions that contain
+    a whole part and a fractional part (5 2/3 : five and
+  two-thirds).                                                  */
+  _FRACTION_NAMESPACE
+ /* Define the call type of the function. */
+ #define FRACTION_API CPROC
+ #  ifdef FRACTION_SOURCE
+ #    define FRACTION_PROC EXPORT_METHOD
+ #  else
+ /* Define the library linkage for a these functions. */
+ #    define FRACTION_PROC IMPORT_METHOD
+ #  endif
+ /* The faction type. Stores a fraction as integer
+    numerator/denominator instead of a floating point scalar. */
+ /* Pointer to a <link sack::math::fraction::FRACTION, FRACTION>. */
+ /* The faction type. Stores a fraction as integer
+    numerator/denominator instead of a floating point scalar. */
+ typedef struct fraction_tag {
+  /* Numerator of the fraction. (This is the number on top of a
+     fraction.)                                                 */
+  int numerator;
+  /* Denominator of the fraction. (This is the number on bottom of
+     a fraction.) This specifies the denominations.                */
+  int denominator;
+ } FRACTION, *PFRACTION;
+ #ifdef HAVE_ANONYMOUS_STRUCTURES
+ typedef struct coordpair_tag {
+  union {
+   FRACTION x;
+   FRACTION width;
+  };
+  union {
+   FRACTION y;
+   FRACTION height;
+  };
+ } COORDPAIR, *PCOORDPAIR;
+ #else
+ /* A coordinate pair is a 2 dimensional fraction expression. can
+    be regarded as x, y or width,height. Each coordiante is a
+    Fraction type.                                                */
+ typedef struct coordpair_tag {
+         /* The x part of the coordpair. */
+         FRACTION x;
+         /* The y part of the coordpair. */
+         FRACTION y;
+ } COORDPAIR, *PCOORDPAIR;
+ #endif
+ /* \ \
+    Parameters
+    fraction :     the fraction to set
+    numerator :    numerator of the fraction
+    demoninator :  denominator of the fraction */
+ #define SetFraction(f,n,d) ((((f).numerator=((int)(n)) ),((f).denominator=((int)(d)))),(f))
+ /* Sets the value of a FRACTION. This is passed as the whole
+    number and the fraction.
+    Parameters
+    fraction :  the fraction to set
+    w :         this is the whole number to set
+    n :         numerator of remainder to set
+    d :         denominator of fraction to set.
+    Example
+    Fraction f = 3 1/2;
+    <code lang="c++">
+    FRACTION f;
+    SetFractionV( f, 3, 1, 2 );
+    // the resulting fraction will be 7/2
+    </code>                                                   */
+ #define SetFractionV(f,w,n,d) (  (d)?  ((((f).numerator=((int)((n)*(w))) )   ,((f).denominator=((int)(d)))),(f))   :  ((((f).numerator=((int)((w))) )   ,((f).denominator=((int)(1)))),(f))  )
+ /* \ \
+    Parameters
+    base :    origin point (content is modified by adding offset
+              to it)
+    offset :  offset point                                       */
+ FRACTION_PROC  void FRACTION_API  AddCoords ( PCOORDPAIR base, PCOORDPAIR offset );
+ /* Add one fraction to another.
+    Parameters
+    base :    This is the starting value, and recevies the result
+              of (base+offset)
+    offset :  This is the fraction to add to base.
+    Returns
+    base                                                          */
+ FRACTION_PROC  PFRACTION FRACTION_API  AddFractions ( PFRACTION base, PFRACTION offset );
+ /* Add one fraction to another.
+    Parameters
+    base :    This is the starting value, and recevies the result
+              of (base+offset)
+    offset :  This is the fraction to add to base.
+    Returns
+    base                                                          */
+ FRACTION_PROC  PFRACTION FRACTION_API  SubtractFractions ( PFRACTION base, PFRACTION offset );
+ /* NOT IMPLEMENTED */
+ FRACTION_PROC  PFRACTION FRACTION_API  MulFractions ( PFRACTION f, PFRACTION x );
+ /* Log a fraction into a string. */
+ FRACTION_PROC  int FRACTION_API  sLogFraction ( TEXTCHAR *string, PFRACTION x );
+ /* Unsafe log of a coordinate pair's value into a string. The
+    string should be at least 69 characters long.
+    Parameters
+    string :  the string to print the fraction into
+    pcp :     the coordinate pair to print                     */
+ FRACTION_PROC  int FRACTION_API  sLogCoords ( TEXTCHAR *string, PCOORDPAIR pcp );
+ /* Log coordpair to logfile. */
+ FRACTION_PROC  void FRACTION_API  LogCoords ( PCOORDPAIR pcp );
+ /* scales a fraction by a signed integer value.
+    Parameters
+    result\ :  pointer to a FRACTION to receive the result
+    value :    the amount to be scaled
+    f :        the fraction to multiply the value by
+    Returns
+    \result; the pointer the fraction to receive the result. */
+ FRACTION_PROC  PFRACTION FRACTION_API  ScaleFraction ( PFRACTION result, int32_t value, PFRACTION f );
+ /* Results in the integer part of the fraction. If the faction
+    was 330/10 then the result would be 33.                     */
+ FRACTION_PROC  int32_t FRACTION_API  ReduceFraction ( PFRACTION f );
+ /* Scales a 32 bit integer value by a fraction. The result is
+    the scaled value result.
+    Parameters
+    f :      pointer to the faction to multiply value by
+    value :  the value to scale
+    Returns
+    The (value * f) integer value of.                          */
+ FRACTION_PROC  uint32_t FRACTION_API  ScaleValue ( PFRACTION f, int32_t value );
+ /* \ \
+    Parameters
+    f :      The fraction to scale the value by
+    value :  the value to scale by (1/f)
+    Returns
+    the value of ( value * 1/ f )               */
+ FRACTION_PROC  uint32_t FRACTION_API  InverseScaleValue ( PFRACTION f, int32_t value );
+  SACK_MATH_FRACTION_NAMESPACE_END
+ #ifdef __cplusplus
+ using namespace sack::math::fraction;
+ #endif
+ #endif
+ //---------------------------------------------------------------------------
+ // $Log: fractions.h,v $
+ // Revision 1.6  2004/09/03 14:43:40  d3x0r
+ // flexible frame reactions to font changes...
+ //
+ // Revision 1.5  2003/03/25 08:38:11  panther
+ // Add logging
+ //
+ // Revision 1.4  2003/01/27 09:45:03  panther
+ // Fix lack of anonymous structures
+ //
+ // Revision 1.3  2002/10/09 13:16:02  panther
+ // Support for linux shared memory mapping.
+ // Support for better linux compilation of configuration scripts...
+ // Timers library is now Threads AND Timers.
+ //
+ //
+ #ifdef CONFIGURATION_LIBRARY_SOURCE
+ #define CONFIGSCR_PROC(type,name) EXPORT_METHOD type CPROC name
+ #else
+ #define CONFIGSCR_PROC(type,name) IMPORT_METHOD type CPROC name
+ #endif
+ #ifdef __cplusplus
+ SACK_NAMESPACE namespace config {
+ #endif
+ typedef char *__arg_list[1];
+ typedef __arg_list arg_list;
+ // declare 'va_list args = NULL;' to use successfully...
+ // the resulting thing is of type va_list.
+ typedef struct va_args_tag va_args;
+ struct va_args_tag {
+    int argsize; arg_list *args; arg_list *tmp_args;
+ };
+ //#define va_args struct { int argsize; arg_list *args; arg_list *tmp_args; }
+ #define init_args(name) name.argsize = 0; name.args = NULL;
+  // 32 bits.
+ #define ARG_STACK_SIZE 4
+ #define PushArgument( argset, type, arg ) ( (argset.args = (arg_list*)Preallocate( argset.args, argset.argsize += (sizeof( type ) + (ARG_STACK_SIZE-1) )&-ARG_STACK_SIZE) )?(*(type*)(argset.args) = (arg)),0:0)
+ #define PopArguments( argset ) { Release( argset.args ); argset.args=NULL; }
+ #define pass_args(argset) (( (argset).tmp_args = (argset).args ),(*(arg_list*)(&argset.tmp_args)))
+ /*
+  * Config methods are passed an arg_list
+  * parameters from arg_list are retrieved using
+  * PARAM( arg_list_param_name, arg_type, arg_name );
+  * ex.
+  *
+  *   PARAM( args, char *, name );
+  *    // results in a variable called name
+  *    // initialized from the first argument in arg_list args;
+  */
+ #define my_va_arg(ap,type)     ((ap)[0]+=        ((sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)),        (*(type *)((ap)[0]-((sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)))))
+ #define PARAM( args, type, name ) type name = my_va_arg( args, type )
+ #define FP_PARAM( args, type, name, fa ) type (CPROC*name)fa = (type (CPROC*)fa)(my_va_arg( args, void *))
+ typedef struct config_file_tag* PCONFIG_HANDLER;
+ CONFIGSCR_PROC( PCONFIG_HANDLER, CreateConfigurationEvaluator )( void );
+ #define CreateConfigurationHandler CreateConfigurationEvaluator
+ CONFIGSCR_PROC( void, DestroyConfigurationEvaluator )( PCONFIG_HANDLER pch );
+ #define DestroyConfigurationHandler DestroyConfigurationEvaluator
+ // this pushes all prior state information about configuration file
+ // processing, and allows a new set of rules to be made...
+ CONFIGSCR_PROC( void, BeginConfiguration )( PCONFIG_HANDLER pch );
+ // begins a sub configuration, and marks to save it for future use
+ // so we don't have to always recreate the configuration states...
+ CONFIGSCR_PROC( LOGICAL, BeginNamedConfiguration )( PCONFIG_HANDLER pch, CTEXTSTR name );
+ // then, when you're done with the new set of rules (end of config section)
+ // use this to restore the prior configuration state.
+ CONFIGSCR_PROC( void, EndConfiguration )( PCONFIG_HANDLER pch );
+ typedef uintptr_t (CPROC*USER_CONFIG_HANDLER)( uintptr_t, arg_list args );
+ CONFIGSCR_PROC( void, AddConfigurationEx )( PCONFIG_HANDLER pch
+               , CTEXTSTR format
+               , USER_CONFIG_HANDLER Process DBG_PASS );
+ //CONFIGSCR_PROC( void, AddConfiguration )( PCONFIG_HANDLER pch
+ //     , char *format
+ //              , USER_CONFIG_HANDLER Process );
+ // make a nice wrapper - otherwise we get billions of complaints.
+ //#define AddConfiguration(pch,format,process) AddConfiguration( (pch), (format), process )
+ #define AddConfiguration(pch,f,pr) AddConfigurationEx(pch,f,pr DBG_SRC )
+ #define AddConfigurationMethod AddConfiguration
+ // FILTER receives a uintptr_t that was given at configuration (addition to handler)
+ // it receives a PTEXT block of (binary) data... and must result with
+ // PTEXT segments which are lines which may or may not have \r\n\\ all
+ // of which are removed before being resulted to the application.
+ //   POINTER* is a pointer to a pointer, this pointer may be used
+ //      for private state data.  The last line of the configuration will
+ //      call the filter chain with NULL to flush data...
+ typedef PTEXT (CPROC*USER_FILTER)( POINTER *, PTEXT );
+ CONFIGSCR_PROC( void, AddConfigurationFilter )( PCONFIG_HANDLER pch, USER_FILTER filter );
+ CONFIGSCR_PROC( void, ClearDefaultFilters )( PCONFIG_HANDLER pch );
+ CONFIGSCR_PROC( void, SetConfigurationEndProc )( PCONFIG_HANDLER pch, uintptr_t (CPROC *Process)( uintptr_t ) );
+ CONFIGSCR_PROC( void, SetConfigurationUnhandled )( PCONFIG_HANDLER pch
+                 , uintptr_t (CPROC *Process)( uintptr_t, CTEXTSTR ) );
+ CONFIGSCR_PROC( int, ProcessConfigurationFile )( PCONFIG_HANDLER pch
+                  , CTEXTSTR name
+                  , uintptr_t psv
+                  );
+ CONFIGSCR_PROC( uintptr_t, ProcessConfigurationInput )( PCONFIG_HANDLER pch, CTEXTSTR block, int size, uintptr_t psv );
+ /*
+  * TO BE IMPLEMENTED
+  *
+ CONFIGSCR_PROC( int, vcsprintf )( PCONFIG_HANDLER pch, CTEXTSTR format, va_list args );
+ CONFIGSCR_PROC( int, csprintf )( PCONFIG_HANDLER pch, CTEXTSTR format, ... );
+ */
+ CONFIGSCR_PROC( int, GetBooleanVar )( PTEXT *start, LOGICAL *data );
+ CONFIGSCR_PROC( int, GetColorVar )( PTEXT *start, CDATA *data );
+ //CONFIGSCR_PROC( int, IsBooleanVar )( PCONFIG_ELEMENT pce, PTEXT *start );
+ //CONFIGSCR_PROC( int, IsColorVar )( PCONFIG_ELEMENT pce, PTEXT *start );
+ // takes a binary block of data and creates a base64-like string which may be stored.
+ CONFIGSCR_PROC( void, EncodeBinaryConfig )( TEXTSTR *encode, POINTER data, size_t length );
+ // this isn't REALLY the same function that's used, but serves the same purpose...
+ CONFIGSCR_PROC( int, DecodeBinaryConfig )( CTEXTSTR String, POINTER *binary_buffer, size_t *buflen );
+ CONFIGSCR_PROC( CTEXTSTR, FormatColor )( CDATA color );
+ CONFIGSCR_PROC( void, StripConfigString )( TEXTSTR out, CTEXTSTR in );
+ CONFIGSCR_PROC( void, ExpandConfigString )( TEXTSTR out, CTEXTSTR in );
+ #ifdef __cplusplus
+ //typedef uintptr_t CPROC ::(*USER_CONFIG_METHOD)( ... );
+ typedef class config_reader {
+    PCONFIG_HANDLER pch;
+ public:
+  config_reader() {
+       pch = CreateConfigurationEvaluator();
+  }
+  ~config_reader() {
+   if( pch ) DestroyConfigurationEvaluator( pch );
+       pch = (PCONFIG_HANDLER)NULL;
+  }
+  inline void add( CTEXTSTR format, USER_CONFIG_HANDLER Process )
+  {
+       AddConfiguration( pch, format, Process );
+  }
+    /*
+  inline void add( char *format, USER_CONFIG_METHOD Process )
+  {
+   union {
+    struct {
+     uint32_t junk;
+             USER_CONFIG_HANDLER Process
+    } c;
+          USER_CONFIG_METHOD Process;
+   } x;
+       x.Process = Process;
+       AddConfiguration( pch, format, x.c.Process );
+   }
+       */
+  inline int go( CTEXTSTR file, POINTER p )
+  {
+   return ProcessConfigurationFile( pch, file, (uintptr_t)p );
+  }
+ } CONFIG_READER;
+ #endif
+ #ifdef __cplusplus
+ //namespace sack { namespace config {
+ }
+ SACK_NAMESPACE_END
+ using namespace sack::config;
+ #endif
+ #endif
+ // $Log: configscript.h,v $
+ // Revision 1.17  2004/12/05 15:32:06  panther
+ // Some minor cleanups fixed a couple memory leaks
+ //
+ // Revision 1.16  2004/08/13 16:48:19  d3x0r
+ // added ability to put filters on config script data read.
+ //
+ // Revision 1.15  2004/02/18 20:46:37  d3x0r
+ // Add some aliases for badly named routines
+ //
+ // Revision 1.14  2004/02/08 23:33:15  d3x0r
+ // Add a iList class for c++, public access to building parameter va_lists
+ //
+ // Revision 1.13  2003/12/09 16:15:56  panther
+ // Define unhnalded callback set
+ //
+ // Revision 1.12  2003/11/09 22:31:58  panther
+ // Fix CPROC indication on endconfig method
+ //
+ // Revision 1.11  2003/10/13 04:25:14  panther
+ // Fix configscript library... make sure types are consistant (watcom)
+ //
+ // Revision 1.10  2003/10/12 02:47:05  panther
+ // Cleaned up most var-arg stack abuse ARM seems to work.
+ //
+ // Revision 1.9  2003/09/24 02:53:58  panther
+ // Define c++ wrapper for config script library
+ //
+ // Revision 1.8  2003/07/24 22:49:01  panther
+ // Modify addconfig method macro to auto typecast - dangerous by simpler
+ //
+ // Revision 1.7  2003/07/24 16:56:41  panther
+ // Updates to expliclity define C procedure model for callbacks and assembly modules - incomplete
+ //
+ // Revision 1.6  2003/04/17 09:32:51  panther
+ // Added true/false result from processconfigfile.  Added default load from /etc to msgsvr and display
+ //
+ // Revision 1.5  2003/03/25 08:38:11  panther
+ // Add logging
+ //
  #ifndef SACKCOMM_PROTECT_ME_AGAINST_DOBULE_INCLUSION
  #define SACKCOMM_PROTECT_ME_AGAINST_DOBULE_INCLUSION
  #ifdef SACKCOMM_SOURCE

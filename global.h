@@ -190,4 +190,31 @@ public:
 };
 
 
+class WebSockClientObject : public node::ObjectWrap {
+public:
+	static Persistent<Function> constructor;
+
+	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
+	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
+	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
+	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	PLINKQUEUE readQueue;
+	
+public:
+
+	static void Init( Handle<Object> exports );
+	WebSockClientObject();
+
+	static void New( const FunctionCallbackInfo<Value>& args );
+
+	static void open( const FunctionCallbackInfo<Value>& args );
+	static void on( const FunctionCallbackInfo<Value>& args );
+	static void send( const FunctionCallbackInfo<Value>& args );
+	static void close( const FunctionCallbackInfo<Value>& args );
+
+
+   ~WebSockClientObject();
+};
+
+
 void InitFS( const FunctionCallbackInfo<Value>& args );

@@ -38,6 +38,9 @@ foreach( DEF ${DEFINITIONS} )
    #FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define ${DEF}\n" )
 ENDFOREACH()
 
+FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define NO_AUTO_VECTLIB_NAMES\n" )
+
+
 SET( EXTRA_HEADERS
 	${SACK_BASE}/include/stdhdrs.h
         ${SACK_BASE}/include/network.h
@@ -47,6 +50,11 @@ SET( EXTRA_HEADERS
         ${SACK_BASE}/include/filesys.h
         ${SACK_BASE}/include/sack_vfs.h
         ${SACK_BASE}/include/json_emitter.h
+        ${SACK_BASE}/include/html5.websocket.client.h
+        ${SACK_BASE}/include/html5.websocket.h
+        ${SACK_BASE}/include/http.h
+        ${SACK_BASE}/include/procreg.h
+        ${SACK_BASE}/include/configscript.h
         ${SACK_BASE}/include/sackcomm.h
 )
 

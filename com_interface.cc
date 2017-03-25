@@ -86,7 +86,7 @@ void ComObject::New( const FunctionCallbackInfo<Value>& args ) {
 				String::Utf8Value fName( args[0]->ToString() );
 				portName = StrDup( *fName );
 			} else {
-				isolate->ThrowException( Exception::Error( "Must specify port name to open." ) );
+				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must specify port name to open." ) ) );
 				return;
 			}
 			// Invoked as constructor: `new MyObject(...)`
