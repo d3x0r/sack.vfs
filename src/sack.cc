@@ -17719,7 +17719,6 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
     {
  #ifdef WIN32
      PIMAGE_DOS_HEADER source_dos_header = (PIMAGE_DOS_HEADER)library->library;
- #  define Seek(a,b) (((uintptr_t)a)+(b))
      PIMAGE_NT_HEADERS source_nt_header = (PIMAGE_NT_HEADERS)Seek( library->library, source_dos_header->e_lfanew );
      if( source_dos_header->e_magic != IMAGE_DOS_SIGNATURE )
       lprintf( WIDE("Basic signature check failed; not a library") );
@@ -18139,6 +18138,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
   SystemInit();
   l.filename = filename;
  }
+ #undef Seek
  SACK_SYSTEM_NAMESPACE_END
  #define NO_UNICODE_C
  #define TASK_INFO_DEFINED
@@ -30679,8 +30679,8 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
     }
     if( !success )
     {
-     lprintf( WIDE("Failed to open interface configuration file:%s - assuming it will never exist, and aborting trying this again")
-        , l.config_filename?l.config_filename:WIDE("interface.conf") );
+     //lprintf( WIDE("Failed to open interface configuration file:%s - assuming it will never exist, and aborting trying this again")
+     //   , l.config_filename?l.config_filename:WIDE("interface.conf") );
     }
     if( loadname )
      Release( loadname );
@@ -48779,30 +48779,36 @@ SegSplit( &pCurrent, start );
  typedef uintptr_t (*web_socket_opened)( PCLIENT pc, uintptr_t psv );
  typedef void (*web_socket_closed)( PCLIENT pc, uintptr_t psv );
  typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
- typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, POINTER buffer, size_t msglen );
+ typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, CPOINTER buffer, size_t msglen );
+ //enum WebSockClientOptions {
+ //   WebSockClientOption_Protocols
+ //};
  // create a websocket connection.
  //  If web_socket_opened is passed as NULL, this function will wait until the negotiation has passed.
  //  since these packets are collected at a lower layer, buffers passed to receive event are allocated for
  //  the application, and the application does not need to setup an  initial read.
+ //  if protocols is NULL none are specified, otherwise the list of
+ //  available protocols is sent to the server.
  WEBSOCKET_EXPORT PCLIENT WebSocketOpen( CTEXTSTR address
-                 , int options
-                 , web_socket_opened
-                 , web_socket_event
-                 , web_socket_closed
-                 , web_socket_error
-                 , uintptr_t psv );
+                                       , int options
+                                       , web_socket_opened
+                                       , web_socket_event
+                                       , web_socket_closed
+                                       , web_socket_error
+                                       , uintptr_t psv
+                                       , const char *protocols );
  // end a websocket connection nicely.
  WEBSOCKET_EXPORT void WebSocketClose( PCLIENT );
  // there is a control bit for whether the content is text or binary or a continuation
  // UTF8 RFC3629
- WEBSOCKET_EXPORT void WebSocketBeginSendText( PCLIENT, POINTER, size_t );
+ WEBSOCKET_EXPORT void WebSocketBeginSendText( PCLIENT, CPOINTER, size_t );
  // literal binary sending; this may happen to be base64 encoded too
- WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT, POINTER, size_t );
+ WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT, CPOINTER, size_t );
  // there is a control bit for whether the content is text or binary or a continuation
  // UTF8 RFC3629
- WEBSOCKET_EXPORT void WebSocketSendText( PCLIENT, POINTER, size_t );
+ WEBSOCKET_EXPORT void WebSocketSendText( PCLIENT, CPOINTER, size_t );
  // literal binary sending; this may happen to be base64 encoded too
- WEBSOCKET_EXPORT void WebSocketSendBinary( PCLIENT, POINTER, size_t );
+ WEBSOCKET_EXPORT void WebSocketSendBinary( PCLIENT, CPOINTER, size_t );
  WEBSOCKET_EXPORT void WebSocketEnableAutoPing( PCLIENT websock, uint32_t delay );
  WEBSOCKET_EXPORT void WebSocketPing( PCLIENT websock, uint32_t timeout );
  #endif
@@ -48851,15 +48857,16 @@ SegSplit( &pCurrent, start );
    // apparently clients did not implement back masking??
        // I get a close; probably because of the length exception
    BIT_FIELD expect_masking : 1;
+   BIT_FIELD use_ssl : 1;
   } flags;
  };
- EXTERN void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, uint8_t* payload, size_t length );
- EXTERN void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, uint8_t* msg, size_t length );
+ EXTERN void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, const uint8_t* payload, size_t length, int use_ssl );
+ EXTERN void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint8_t* msg, size_t length );
  #endif
  #ifdef __ANDROID_OLD_PLATFORM_SUPPORT__
  #define rand lrand48
  #endif
- void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, uint8_t* payload, size_t length )
+ void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, const uint8_t* payload, size_t length, int use_ssl )
  {
   uint8_t* msgout;
   uint8_t* use_mask;
@@ -48881,9 +48888,9 @@ SegSplit( &pCurrent, start );
      size_t block;
      for( block = 0; block < ( length / 8100 ); block++ )
      {
-      SendWebSocketMessage( pc, block == 0 ?opcode:0, 0, do_mask, payload + block * 8100, 8100);
+      SendWebSocketMessage( pc, block == 0 ?opcode:0, 0, do_mask, payload + block * 8100, 8100, use_ssl);
      }
-     SendWebSocketMessage( pc, 0, final, do_mask, payload + block * 8100, length - block * 8100 );
+     SendWebSocketMessage( pc, 0, final, do_mask, payload + block * 8100, length - block * 8100, use_ssl );
      return;
     }
  // need 8 more bytes for a really long length
@@ -48957,7 +48964,10 @@ SegSplit( &pCurrent, start );
     (*data_out++) = payload[n] ^ use_mask[n&3];
    }
   }
-  SendTCP( pc, msgout, length_out );
+  if( use_ssl )
+   ssl_Send( pc, msgout, length_out );
+  else
+   SendTCP( pc, msgout, length_out );
   Deallocate( uint8_t*, msgout );
  }
  static void ResetInputState( WebSocketInputState websock )
@@ -49153,7 +49163,7 @@ SegSplit( &pCurrent, start );
       if( !websock->flags.closed )
       {
        struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
-       SendWebSocketMessage( pc, 0x08, 1, output->flags.expect_masking, websock->fragment_collection, websock->frame_length );
+       SendWebSocketMessage( pc, 0x08, 1, output->flags.expect_masking, websock->fragment_collection, websock->frame_length, output->flags.use_ssl );
        websock->flags.closed = 1;
       }
       if( websock->on_close )
@@ -49164,7 +49174,7 @@ SegSplit( &pCurrent, start );
      case 0x09:
       {
        struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
-       SendWebSocketMessage( pc, 0x0a, 1, output->flags.expect_masking, websock->fragment_collection, websock->frame_length );
+       SendWebSocketMessage( pc, 0x0a, 1, output->flags.expect_masking, websock->fragment_collection, websock->frame_length, output->flags.use_ssl );
        websock->fragment_collection_length = 0;
       }
       break;
@@ -49194,7 +49204,7 @@ SegSplit( &pCurrent, start );
   uint32_t now;
   struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 2 );
   struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
-  SendWebSocketMessage( pc, 9, 1, output->flags.expect_masking, NULL, 0 );
+  SendWebSocketMessage( pc, 9, 1, output->flags.expect_masking, NULL, 0, output->flags.use_ssl );
   while( !input_state->flags.received_pong
     && ( ( ( now=timeGetTime() ) - start_at ) < timeout ) )
    IdleFor( target-now );
@@ -49202,7 +49212,7 @@ SegSplit( &pCurrent, start );
  }
  // there is a control bit for whether the content is text or binary or a continuation
  // UTF8 RFC3629
- void WebSocketSendText( PCLIENT pc, POINTER buffer, size_t length )
+ void WebSocketSendText( PCLIENT pc, CPOINTER buffer, size_t length )
  {
   struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
   if( output )
@@ -49211,33 +49221,40 @@ SegSplit( &pCurrent, start );
    char *outbuf = WcharConvertExx( (CTEXTSTR)buffer, length DBG_SRC );
    int real_len = CStrLen( outbuf );
    //lprintf( WIDE( "send %s"), buffer );
-   SendWebSocketMessage( pc, output->flags.sent_type?0:1, 1, output->flags.expect_masking, (uint8_t*)outbuf, length );
+   SendWebSocketMessage( pc, output->flags.sent_type?0:1, 1, output->flags.expect_masking, (uint8_t*)outbuf, length, output->flags.use_ssl );
    Deallocate( char *, outbuf );
  #else
-   SendWebSocketMessage( pc, output->flags.sent_type?0:1, 1, output->flags.expect_masking, (uint8_t*)buffer, length );
+   SendWebSocketMessage( pc, output->flags.sent_type?0:1, 1, output->flags.expect_masking, (uint8_t*)buffer, length, output->flags.use_ssl );
  #endif
    output->flags.sent_type = 0;
   }
  }
  // there is a control bit for whether the content is text or binary or a continuation
  // UTF8 RFC3629
- void WebSocketBeginSendText( PCLIENT pc, POINTER buffer, size_t length )
+ void WebSocketBeginSendText( PCLIENT pc, CPOINTER buffer, size_t length )
  {
     struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
-    SendWebSocketMessage( pc, 1, 0, output->flags.expect_masking, (uint8_t*)buffer, length );
+ #ifdef _UNICODE
+    int real_len = CStrLen( outbuf );
+    //lprintf( WIDE( "send %s"), buffer );
+    SendWebSocketMessage( pc, output->flags.sent_type?0:1, 1, output->flags.expect_masking, (uint8_t*)outbuf, length, output->flags.use_ssl );
+    Deallocate( char *, outbuf );
+ #else
+    SendWebSocketMessage( pc, output->flags.sent_type?0:1, 0, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
+ #endif
     output->flags.sent_type = 1;
  }
  // literal binary sending; this may happen to be base64 encoded too
- void WebSocketSendBinary( PCLIENT pc, POINTER buffer, size_t length )
+ void WebSocketSendBinary( PCLIENT pc, CPOINTER buffer, size_t length )
  {
     struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
-  SendWebSocketMessage( pc, output->flags.sent_type?0:2, 1, output->flags.expect_masking, (uint8_t*)buffer, length );
+    SendWebSocketMessage( pc, output->flags.sent_type?0:2, 1, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
  }
  // literal binary sending; this may happen to be base64 encoded too
- void WebSocketBeginSendBinary( PCLIENT pc, POINTER buffer, size_t length )
+ void WebSocketBeginSendBinary( PCLIENT pc, CPOINTER buffer, size_t length )
  {
     struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
-    SendWebSocketMessage( pc, 2, 0, output->flags.expect_masking, (uint8_t*)buffer, length );
+    SendWebSocketMessage( pc, output->flags.sent_type?0:2, 0, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
     output->flags.sent_type = 1;
  }
  #define SACK_WEBSOCKET_CLIENT_SOURCE
@@ -49288,10 +49305,11 @@ SegSplit( &pCurrent, start );
    // apparently clients did not implement back masking??
        // I get a close; probably because of the length exception
    BIT_FIELD expect_masking : 1;
+   BIT_FIELD use_ssl : 1;
   } flags;
  };
- EXTERN void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, uint8_t* payload, size_t length );
- EXTERN void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, uint8_t* msg, size_t length );
+ EXTERN void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, const uint8_t* payload, size_t length, int use_ssl );
+ EXTERN void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint8_t* msg, size_t length );
  #endif
  typedef struct web_socket_client *WebSocketClient;
  struct web_socket_client
@@ -49304,11 +49322,13 @@ SegSplit( &pCurrent, start );
    BIT_FIELD connected : 1;
  // schedule to close
    BIT_FIELD want_close : 1;
+   BIT_FIELD use_ssl : 1;
   } flags;
   PCLIENT pc;
   CTEXTSTR host;
   CTEXTSTR address_url;
   struct url_data *url;
+  CTEXTSTR protocols;
   POINTER buffer;
   HTTPState pHttpState;
  // when set by enable auto_ping is the delay between packets to generate a ping
@@ -49338,13 +49358,18 @@ SegSplit( &pCurrent, start );
       , websock->url->port?websock->url->port:websock->url->default_port );
   vtprintf( pvtHeader, WIDE("Upgrade: websocket\r\n"));
   vtprintf( pvtHeader, WIDE("Connection: Upgrade\r\n"));
+  if( websock->protocols )
+   vtprintf( pvtHeader, WIDE("Sec-WebSocket-Protocol: %s\r\n"), websock->protocols );
   vtprintf( pvtHeader, WIDE("Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\n") );
   vtprintf( pvtHeader, WIDE("Sec-WebSocket-Version: 13\r\n") );
   vtprintf( pvtHeader, WIDE("\r\n") );
   {
  // just leave the buffer in-place
    PTEXT text = VarTextPeek( pvtHeader );
-   SendTCP( websock->pc, GetText( text ), GetTextSize( text ) );
+   if( websock->output_state.flags.use_ssl )
+    ssl_Send( websock->pc, GetText( text ), GetTextSize( text ) );
+   else
+    SendTCP( websock->pc, GetText( text ), GetTextSize( text ) );
   }
   VarTextDestroy( &pvtHeader );
  }
@@ -49365,7 +49390,7 @@ SegSplit( &pCurrent, start );
  // normal
     msg.reason = 1000;
     websock->input_state.flags.closed = 1;
-    SendWebSocketMessage( websock->pc, 8, 1, 0, (uint8_t*)&msg, 2 );
+    SendWebSocketMessage( websock->pc, 8, 1, 0, (uint8_t*)&msg, 2, websock->output_state.flags.use_ssl );
    }
    // do auto ping...
    if( !websock->input_state.flags.closed )
@@ -49375,7 +49400,7 @@ SegSplit( &pCurrent, start );
      {
       if( ( now - websock->input_state.last_reception ) > websock->ping_delay )
       {
-       SendWebSocketMessage( websock->pc, 0x09, 1, 0, NULL, 0 );
+       SendWebSocketMessage( websock->pc, 0x09, 1, 0, NULL, 0, websock->output_state.flags.use_ssl );
       }
      }
      else
@@ -49400,9 +49425,9 @@ SegSplit( &pCurrent, start );
    {
     if( wsc_local.opening_client )
     {
-     SetTCPNoDelay( pc, TRUE );
-     SetNetworkLong( pc, 0, (uintptr_t)wsc_local.opening_client );
-     SetNetworkLong( pc, 1, (uintptr_t)&wsc_local.opening_client->output_state );
+     //SetTCPNoDelay( pc, TRUE );
+     //SetNetworkLong( pc, 0, (uintptr_t)wsc_local.opening_client );
+     //SetNetworkLong( pc, 1, (uintptr_t)&wsc_local.opening_client->output_state );
  // clear this to allow open to return.
      wsc_local.opening_client = NULL;
     }
@@ -49413,6 +49438,7 @@ SegSplit( &pCurrent, start );
    }
    else
     buffer = websock->buffer;
+   SendRequestHeader( websock );
   }
   else
   {
@@ -49475,15 +49501,14 @@ SegSplit( &pCurrent, start );
    Relinquish();
   if( !error )
   {
-   // connect succeeded.
-   SendRequestHeader( websock );
-   SetTCPNoDelay( pc, TRUE );
+   if( websock->output_state.flags.use_ssl )
+    ssl_BeginClientSession( websock->pc, NULL, 0 );
   }
   else
   {
    wsc_local.opening_client = NULL;
    if( websock->input_state.on_close )
-          websock->input_state.on_close( NULL, websock->input_state.psv_on );
+    websock->input_state.on_close( NULL, websock->input_state.psv_on );
   }
  }
  // create a websocket connection.
@@ -49496,9 +49521,12 @@ SegSplit( &pCurrent, start );
         , web_socket_event on_event
         , web_socket_closed on_closed
         , web_socket_error on_error
-        , uintptr_t psv )
+        , uintptr_t psv
+  , const char *protocols )
  {
   WebSocketClient websock = New( struct web_socket_client );
+  //va_arg args;
+  //va_start( args, psv );
   if( !wsc_local.timer )
    wsc_local.timer = AddTimer( 2000, WebSocketTimer, 0 );
   websock->buffer = Allocate( 4096 );
@@ -49508,6 +49536,7 @@ SegSplit( &pCurrent, start );
   websock->input_state.on_close = on_closed;
   websock->input_state.on_error = on_error;
   websock->input_state.psv_on = psv;
+  websock->protocols = protocols;
  // client to server is MUST mask because of proxy handling in that direction
   websock->output_state.flags.expect_masking = 1;
   websock->url = SACK_URLParse( url_address );
@@ -49524,21 +49553,17 @@ SegSplit( &pCurrent, start );
              );
    if( websock->pc )
    {
+    SetNetworkLong( websock->pc, 0, (uintptr_t)websock );
+    SetNetworkLong( websock->pc, 1, (uintptr_t)&websock->output_state );
+ #ifndef NO_SSL
+    if( StrCaseCmp( websock->url->protocol, "wss" ) == 0 )
+     websock->output_state.flags.use_ssl = 1;
+ #endif
     if( !on_open )
     {
-     // send request if we got connected, if there is a on_open callback, then we're delay waiting
-     // so this will be sent in the socket on-open event.
-     SendRequestHeader( websock );
      while( !websock->flags.connected && !websock->input_state.flags.closed )
       Idle();
     }
-    else
-    {
-     SetNetworkLong( websock->pc, 0, (uintptr_t)websock );
-     SetNetworkLong( websock->pc, 1, (uintptr_t)&websock->output_state );
-    }
-    while( wsc_local.opening_client )
-     Idle();
    }
    else
     wsc_local.opening_client = NULL;
@@ -49562,6 +49587,7 @@ SegSplit( &pCurrent, start );
  PRELOAD( InitWebSocketServer )
  {
  //   wsc_local.timer = AddTimer( 2000, WebSocketTimer, 0 );
+  InitializeCriticalSec( &wsc_local.cs_opening );
  }
  #define NO_UNICODE_C
  #ifdef SACK_CORE_BUILD
@@ -49647,6 +49673,11 @@ SegSplit( &pCurrent, start );
                   , web_socket_error on_error
                   , uintptr_t psv
                   );
+ // during open, server may need to switch behavior based on protocols
+ // this can be used to return the protocols requested by the client.
+ HTML5_WEBSOCKET_PROC( const char *, WebSocketGetProtocols )( PCLIENT pc );
+ // after examining protocols, this is a reply to the client which protocol has been accepted.
+ HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketSetProtocols )( PCLIENT pc, const char *protocols );
  /* define a callback which uses a HTML5WebSocket collector to build javascipt to render the control.
   * example:
   *       static int OnDrawToHTML("Control Name")(CONTROL, HTML5WebSocket ){ }
@@ -57725,7 +57756,8 @@ SegSplit( &pCurrent, start );
  }
  SACK_NETWORK_NAMESPACE_END
  #endif
- #if 0
+ //#define DEBUG_SSL_IO
+ #if NO_SSL
  SACK_NETWORK_NAMESPACE
  LOGICAL ssl_Send( PCLIENT pc, POINTER buffer, size_t length ) {
     return FALSE;
@@ -57996,21 +58028,29 @@ SegSplit( &pCurrent, start );
     struct ssl_session *ses = pc->ssl_session;
   if (!SSL_is_init_finished(ses->ssl)) {
    int r;
+ #ifdef DEBUG_SSL_IO
    lprintf( "doing handshake...." );
+ #endif
    /* NOT INITIALISED */
    r = SSL_do_handshake(ses->ssl);
+ #ifdef DEBUG_SSL_IO
    lprintf( "handle data posted to SSL? %d", r );
+ #endif
    if( r == 0 ) {
     ERR_print_errors_cb( logerr, (void*)__LINE__ );
     r = SSL_get_error( ses->ssl, r );
     ERR_print_errors_cb( logerr, (void*)__LINE__ );
+ #ifdef DEBUG_SSL_IO
     lprintf( "SSL_Read failed... %d", r );
+ #endif
     return -1;
    }
    if (r < 0) {
     r = SSL_get_error(ses->ssl, r);
     if( SSL_ERROR_SSL == r ) {
+ #ifdef DEBUG_SSL_IO
      lprintf( "SSL_Read failed... %d", r );
+ #endif
      ERR_print_errors_cb( logerr, (void*)__LINE__ );
      return -1;
     }
@@ -58025,7 +58065,9 @@ SegSplit( &pCurrent, start );
        ses->obuffer = NewArray( uint8_t, ses->obuflen = pending*2 );
       }
       read = BIO_read(ses->wbio, ses->obuffer, (int)pending);
+ #ifdef DEBUG_SSL_IO
       lprintf( "send %d for handshake", read );
+ #endif
       if (read > 0)
        SendTCP( pc, ses->obuffer, read );
      }
@@ -58044,7 +58086,9 @@ SegSplit( &pCurrent, start );
  }
  static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
  {
+ #ifdef DEBUG_SSL_IO
   lprintf( "SSL Read complete %p %zd", buffer, length );
+ #endif
   if( pc->ssl_session )
   {
    if( buffer )
@@ -58052,7 +58096,9 @@ SegSplit( &pCurrent, start );
     size_t len;
     int hs_rc;
     len = BIO_write( pc->ssl_session->rbio, buffer, (int)length );
+ #ifdef DEBUG_SSL_IO
     lprintf( "Wrote %zd", len );
+ #endif
     if( len < length ) {
      lprintf( "Protocol failure?" );
      Release( pc->ssl_session );
@@ -58060,7 +58106,10 @@ SegSplit( &pCurrent, start );
      return;
     }
     if( !( hs_rc = handshake( pc ) ) ) {
+ #ifdef DEBUG_SSL_IO
+             // normal condition...
      lprintf( "Receive handshake not complete iBuffer" );
+ #endif
      ReadTCP( pc, pc->ssl_session->ibuffer, pc->ssl_session->ibuflen );
      return;
     }
@@ -58077,7 +58126,9 @@ SegSplit( &pCurrent, start );
     {
      int result;
      result = SSL_read( pc->ssl_session->ssl, pc->ssl_session->dbuffer, (int)pc->ssl_session->dbuflen );
+ #ifdef DEBUG_SSL_IO
      lprintf( "normal read - just get the data from the other buffer : %d", result );
+ #endif
      if( result == -1 ) {
       lprintf( "SSL_Read failed." );
       ERR_print_errors_cb( logerr, (void*)__LINE__ );
@@ -58090,10 +58141,14 @@ SegSplit( &pCurrent, start );
     {
      // the read generated write data, output that data
      size_t pending = BIO_ctrl_pending( pc->ssl_session->wbio );
+ #ifdef DEBUG_SSL_IO
      lprintf( "pending to send is %zd", pending );
+ #endif
      if( pending > 0 ) {
       int read = BIO_read( pc->ssl_session->wbio, pc->ssl_session->obuffer, (int)pc->ssl_session->obuflen );
+ #ifdef DEBUG_SSL_IO
       lprintf( "Send pending %p %d", pc->ssl_session->obuffer, read );
+ #endif
       SendTCP( pc, pc->ssl_session->obuffer, read );
      }
     }
@@ -58115,6 +58170,29 @@ SegSplit( &pCurrent, start );
    else {
     pc->ssl_session->ibuffer = NewArray( uint8_t, pc->ssl_session->ibuflen = 4096 );
     pc->ssl_session->dbuffer = NewArray( uint8_t, pc->ssl_session->dbuflen = 4096 );
+    {
+     int r;
+     if( ( r = SSL_do_handshake( pc->ssl_session->ssl ) ) < 0 ) {
+      //char buf[256];
+      //r = SSL_get_error( ses->ssl, r );
+      ERR_print_errors_cb( logerr, (void*)__LINE__ );
+      //lprintf( "err: %s", ERR_error_string( r, buf ) );
+     }
+     {
+      // the read generated write data, output that data
+      size_t pending = BIO_ctrl_pending( pc->ssl_session->wbio );
+      if( pending > 0 ) {
+       int read;
+       if( pending > pc->ssl_session->obuflen ) {
+        if( pc->ssl_session->obuffer )
+         Deallocate( uint8_t *, pc->ssl_session->obuffer );
+        pc->ssl_session->obuffer = NewArray( uint8_t, pc->ssl_session->obuflen = pending * 2 );
+       }
+       read = BIO_read( pc->ssl_session->wbio, pc->ssl_session->obuffer, (int)pc->ssl_session->obuflen );
+       SendTCP( pc, pc->ssl_session->obuffer, read );
+      }
+     }
+    }
    }
    if( pc->ssl_session )
     ReadTCP( pc, pc->ssl_session->ibuffer, pc->ssl_session->ibuflen );
@@ -58314,6 +58392,8 @@ SegSplit( &pCurrent, start );
   pc->dwFlags &= ~CF_CPPREAD;
   pc->ssl_session = ses;
   //ssl_accept( pc->ssl_session->ssl );
+  lprintf( "Warning: This is meant to be called during connect; no longer internally auto handshakes here; but should upon returning from here instead." );
+ /*
   ssl_ReadComplete( pc, NULL, 0 );
   {
    int r;
@@ -58338,6 +58418,7 @@ SegSplit( &pCurrent, start );
     }
    }
   }
+ */
   return TRUE;
  }
  //--------------------- Make Cert Request
@@ -58573,9 +58654,6 @@ SegSplit( &pCurrent, start );
  #define NO_UNICODE_C
  #ifdef __WATCOMC__
  // definition of SH_DENYNO
- #endif
- #ifndef USE_SQLITE_INTERFACE
- #define USE_SQLITE_INTERFACE
  #endif
  #define SQLLIB_SOURCE
  #define BUILDS_INTERFACE
@@ -69226,12 +69304,6 @@ SegSplit( &pCurrent, start );
  #    define FIXREF2
  #    define FIXDEREF2
  #  endif
- #else
- #  define FIXREF
- #  define FIXDEREF
- #  define FIXREF2
- #  define FIXDEREF2
- #endif
  struct sqlite_interface
  {
   void(FIXREF2 *sqlite3_result_text)(sqlite3_context*, const char*, int, void(*)(void*));
@@ -69259,9 +69331,9 @@ SegSplit( &pCurrent, start );
   const char* (FIXREF2*sqlite3_errmsg)(sqlite3*);
   int (FIXREF2*sqlite3_finalize)(sqlite3_stmt *);
   int (FIXREF2*sqlite3_close)(sqlite3*);
- #if ( SQLITE_VERSION_NUMBER > 3007013 )
+ #  if ( SQLITE_VERSION_NUMBER > 3007013 )
   int (FIXREF2*sqlite3_close_v2)(sqlite3*);
- #endif
+ #  endif
   int (FIXREF2*sqlite3_prepare_v2)(
     sqlite3 *db,
     const char *zSql,
@@ -69297,7 +69369,6 @@ SegSplit( &pCurrent, start );
   int ( FIXREF2*sqlite3_backup_finish)(sqlite3_backup *p);
   int ( FIXREF2*sqlite3_extended_errcode)(sqlite3 *db);
  };
- #ifdef USE_SQLITE_INTERFACE
  #  ifndef DEFINES_SQLITE_INTERFACE
  extern
  #  endif
@@ -69337,15 +69408,9 @@ SegSplit( &pCurrent, start );
  #    define sqlite3_extended_errcode     (FIXDEREF2 (sqlite_iface->sqlite3_extended_errcode))
  #  endif
  #endif
- //-----------------------------------------------
- // Private Exports for plugins to use...
- //#define SQL
  SQL_NAMESPACE_END
  #endif
-  // fix strings
- #ifndef UNICODE
- //#  define LOG_OPERATIONS
- #endif
+ #ifdef USE_SQLITE_INTERFACE
  SQL_NAMESPACE
  static void InitVFS( CTEXTSTR name, struct file_system_mounted_interface *fsi );
  struct sqlite_interface my_sqlite_interface = {
@@ -69969,6 +70034,7 @@ SegSplit( &pCurrent, start );
  }
  #endif
  SQL_NAMESPACE_END
+ #endif
  #ifndef SQL_STRUCT_DEFINED
  #define SQL_STRUCT_DEFINED
  # if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
@@ -70196,12 +70262,6 @@ SegSplit( &pCurrent, start );
  #    define FIXREF2
  #    define FIXDEREF2
  #  endif
- #else
- #  define FIXREF
- #  define FIXDEREF
- #  define FIXREF2
- #  define FIXDEREF2
- #endif
  struct sqlite_interface
  {
   void(FIXREF2 *sqlite3_result_text)(sqlite3_context*, const char*, int, void(*)(void*));
@@ -70229,9 +70289,9 @@ SegSplit( &pCurrent, start );
   const char* (FIXREF2*sqlite3_errmsg)(sqlite3*);
   int (FIXREF2*sqlite3_finalize)(sqlite3_stmt *);
   int (FIXREF2*sqlite3_close)(sqlite3*);
- #if ( SQLITE_VERSION_NUMBER > 3007013 )
+ #  if ( SQLITE_VERSION_NUMBER > 3007013 )
   int (FIXREF2*sqlite3_close_v2)(sqlite3*);
- #endif
+ #  endif
   int (FIXREF2*sqlite3_prepare_v2)(
     sqlite3 *db,
     const char *zSql,
@@ -70267,7 +70327,6 @@ SegSplit( &pCurrent, start );
   int ( FIXREF2*sqlite3_backup_finish)(sqlite3_backup *p);
   int ( FIXREF2*sqlite3_extended_errcode)(sqlite3 *db);
  };
- #ifdef USE_SQLITE_INTERFACE
  #  ifndef DEFINES_SQLITE_INTERFACE
  extern
  #  endif
@@ -70307,9 +70366,6 @@ SegSplit( &pCurrent, start );
  #    define sqlite3_extended_errcode     (FIXDEREF2 (sqlite_iface->sqlite3_extended_errcode))
  #  endif
  #endif
- //-----------------------------------------------
- // Private Exports for plugins to use...
- //#define SQL
  SQL_NAMESPACE_END
  #endif
  #define NO_UNICODE_C
@@ -75966,6 +76022,7 @@ SegSplit( &pCurrent, start );
  #endif
   if( bMore )
    result_cmd = WM_SQL_RESULT_MORE;
+ #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE ) || defined( USE_ODBC )
   if(
  #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
    ( odbc->flags.bSQLite_native && collection->stmt )
@@ -76453,6 +76510,7 @@ SegSplit( &pCurrent, start );
    lprintf( WIDE("result error") );
    result_cmd = WM_SQL_RESULT_ERROR;
   }
+ #endif
   GenerateResponce( collection, result_cmd );
   if( odbc->flags.bThreadProtect )
   {
@@ -79635,6 +79693,7 @@ SegSplit( &pCurrent, start );
  }
  LOGICAL BackupDatabase( PODBC source, PODBC dest )
  {
+ #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
   if( source->flags.bSQLite_native && dest->flags.bSQLite_native ) {
    sqlite3_backup *sb = sqlite3_backup_init( dest->db, "main", source->db, "main" );
    if( sb )
@@ -79645,6 +79704,7 @@ SegSplit( &pCurrent, start );
     return TRUE;
    }
   }
+ #endif
     return FALSE;
  }
  SQL_NAMESPACE_END
@@ -80851,12 +80911,6 @@ SegSplit( &pCurrent, start );
  #    define FIXREF2
  #    define FIXDEREF2
  #  endif
- #else
- #  define FIXREF
- #  define FIXDEREF
- #  define FIXREF2
- #  define FIXDEREF2
- #endif
  struct sqlite_interface
  {
   void(FIXREF2 *sqlite3_result_text)(sqlite3_context*, const char*, int, void(*)(void*));
@@ -80884,9 +80938,9 @@ SegSplit( &pCurrent, start );
   const char* (FIXREF2*sqlite3_errmsg)(sqlite3*);
   int (FIXREF2*sqlite3_finalize)(sqlite3_stmt *);
   int (FIXREF2*sqlite3_close)(sqlite3*);
- #if ( SQLITE_VERSION_NUMBER > 3007013 )
+ #  if ( SQLITE_VERSION_NUMBER > 3007013 )
   int (FIXREF2*sqlite3_close_v2)(sqlite3*);
- #endif
+ #  endif
   int (FIXREF2*sqlite3_prepare_v2)(
     sqlite3 *db,
     const char *zSql,
@@ -80922,7 +80976,6 @@ SegSplit( &pCurrent, start );
   int ( FIXREF2*sqlite3_backup_finish)(sqlite3_backup *p);
   int ( FIXREF2*sqlite3_extended_errcode)(sqlite3 *db);
  };
- #ifdef USE_SQLITE_INTERFACE
  #  ifndef DEFINES_SQLITE_INTERFACE
  extern
  #  endif
@@ -80962,9 +81015,6 @@ SegSplit( &pCurrent, start );
  #    define sqlite3_extended_errcode     (FIXDEREF2 (sqlite_iface->sqlite3_extended_errcode))
  #  endif
  #endif
- //-----------------------------------------------
- // Private Exports for plugins to use...
- //#define SQL
  SQL_NAMESPACE_END
  #endif
  // define this to show very verbose logging during creation and
@@ -82215,8 +82265,13 @@ SegSplit( &pCurrent, start );
  // delay reading options until after interface configuration is processed which has option defaults.
  PRIORITY_PRELOAD( ReadOptionOptions, NAMESPACE_PRELOAD_PRIORITY + 1 )
  {
+ #ifndef __NO_OPTIONS__
   og.flags.bUseProgramDefault = SACK_GetProfileIntEx( GetProgramName(), WIDE( "SACK/SQL/Options/Options Use Program Name Default" ), 1, TRUE );
   og.flags.bUseSystemDefault = SACK_GetProfileIntEx( GetProgramName(), WIDE( "SACK/SQL/Options/Options Use System Name Default" ), 0, TRUE );
+ #else
+  og.flags.bUseProgramDefault = 1;
+  og.flags.bUseSystemDefault = 0;
+ #endif
  }
  SQLGETOPTION_PROC( CTEXTSTR, GetSystemID )( void )
  {

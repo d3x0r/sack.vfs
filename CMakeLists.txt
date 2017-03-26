@@ -24,7 +24,8 @@ if( EXISTS ${SACK_BASE} )
 set( INCLUDES
 	-I${SACK_BASE}/include 
 	-I${SACK_BASE}/src/contrib/sha1lib 
-	-I${SACK_BASE}/src/contrib/sqlite/3.18.0  )
+	-I${SACK_BASE}/src/contrib/sqlite/3.18.0 
+ )
 
 # __NO_OPTIONS__ __NO_INTERFACE_SUPPORT__ __NO_ODBC__
 set( DEFINITIONS   __STATIC__ 
@@ -191,6 +192,8 @@ endif( WIN32 )
 if( UNIX )
    target_link_libraries( ${PROJECT_NAME} uuid )
 endif( UNIX )
+
+
 
 #add_library( ntdll SHARED ntdll.c )
 #add_library( kernel32 SHARED kernel32.c )
