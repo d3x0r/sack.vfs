@@ -74311,6 +74311,7 @@ SegSplit( &pCurrent, start );
    if( strstr( odbc->info.pDSN, ".mdb" ) )
    ;
    */
+ #if defined( USE_ODBC ) || defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
   do
   {
    if( g.flags.bDeadstartCompleted )
@@ -74623,6 +74624,11 @@ SegSplit( &pCurrent, start );
    }
   }
   while( odbc->flags.bForceConnection && !odbc->flags.bConnected );
+ #else
+   bOpening = FALSE;
+  // already open, and all is good...
+  return FALSE;
+ #endif
    bOpening = FALSE;
   // already open, and all is good...
   return TRUE;
