@@ -75,12 +75,10 @@ void logBinary( char *x, int n )
 }
 static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = Isolate::GetCurrent();
+	// can't get to this function except if it was an array buffer I allocated and attached this to.
 	Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args.This() );
-	ArrayBuffer::Contents contents = ab->GetContents();
-	char *strbuf = (char*)contents.Data();
-	MaybeLocal<String> retval = String::NewFromUtf8( isolate, (const char*)strbuf, NewStringType::kNormal, (int)ab->ByteLength() );
+	MaybeLocal<String> retval = String::NewFromUtf8( isolate, (const char*)ab->GetContents().Data(), NewStringType::kNormal, (int)ab->ByteLength() );
 	args.GetReturnValue().Set( retval.ToLocalChecked() );
-
 }
 
 
@@ -250,7 +248,9 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 				argv[n] = args[n];
 
 			Local<Function> cons = Local<Function>::New( isolate, constructor );
-			args.GetReturnValue().Set( Nan::NewInstance( cons, argc, argv ).ToLocalChecked() );
+			MaybeLocal<Object> mo = Nan::NewInstance( cons, argc, argv );
+			if( !mo.IsEmpty() )
+				args.GetReturnValue().Set( mo.ToLocalChecked() );
 			delete argv;
 		}
 	}
