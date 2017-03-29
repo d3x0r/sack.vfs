@@ -19,6 +19,7 @@ void SqlObject::Init( Handle<Object> exports ) {
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "do", query );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "escape", escape );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "end", closeDb );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "transaction", transact );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "commit", commit );
@@ -170,6 +171,16 @@ void SqlObject::commit( const FunctionCallbackInfo<Value>& args ) {
 }
 //-----------------------------------------------------------
 
+void SqlObject::escape( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	String::Utf8Value tmp( args[0] );
+   char *out = EscapeSQLString(sql->odbc, (*tmp) );
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, out ) );
+   Deallocate( char*, out );
+
+}
+//-----------------------------------------------------------
 void SqlObject::query( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 

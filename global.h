@@ -97,6 +97,7 @@ public:
 
 	static void New( const FunctionCallbackInfo<Value>& args );
 	static void query( const FunctionCallbackInfo<Value>& args );
+	static void escape( const FunctionCallbackInfo<Value>& args );
 	static void option( const FunctionCallbackInfo<Value>& args );
 	static void setOption( const FunctionCallbackInfo<Value>& args );
 	static void makeTable( const FunctionCallbackInfo<Value>& args );
