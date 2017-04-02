@@ -69214,7 +69214,10 @@ SegSplit( &pCurrent, start );
    BIT_FIELD bAutoClose : 1;
    BIT_FIELD bVFS : 1;
   } flags;
+ // this one tracks auto commit state; it is cleared when a commit happens
   uint32_t last_command_tick;
+ // this one tracks truly the last operation on a connection
+  uint32_t last_command_tick_;
   uint32_t commit_timer;
   PCOLLECT collection;
  // saved for resulting with native error code...
@@ -70172,7 +70175,10 @@ SegSplit( &pCurrent, start );
    BIT_FIELD bAutoClose : 1;
    BIT_FIELD bVFS : 1;
   } flags;
+ // this one tracks auto commit state; it is cleared when a commit happens
   uint32_t last_command_tick;
+ // this one tracks truly the last operation on a connection
+  uint32_t last_command_tick_;
   uint32_t commit_timer;
   PCOLLECT collection;
  // saved for resulting with native error code...
@@ -73620,6 +73626,12 @@ SegSplit( &pCurrent, start );
    //void (*xFinal)(sqlite3_context*)
  void ExtendConnection( PODBC odbc )
  {
+  if( odbc->flags.bAutoClose )
+  {
+   lprintf( "Extned found autoclose" );
+   if( !odbc->auto_close_thread )
+    odbc->auto_close_thread = ThreadTo( AutoCloseThread, (uintptr_t)odbc );
+  }
   int rc = sqlite3_create_function(
  //sqlite3 *,
              odbc->db
@@ -73791,6 +73803,8 @@ SegSplit( &pCurrent, start );
    //if( result )
    // lprintf( WIDE( "Journal is now %s" ), result );
    SQLEndQuery( odbc );
+   SQLQueryf( odbc, &result, WIDE( "PRAGMA wal_checkpoint;" ) );
+   SQLEndQuery( odbc );
    odbc->flags.bNoLogging = n;
    //SQLQueryf( odbc, &result, WIDE( "PRAGMA journal_mode" ) );
    //lprintf( WIDE( "Journal is now %s" ), result );
@@ -73871,6 +73885,22 @@ SegSplit( &pCurrent, start );
   g.feedback_handler = HandleSQLFeedback;
  }
  //----------------------------------------------------------------------
+ static LOGICAL IsOdbcIdle( PODBC odbc ) {
+  PCOLLECT pCollect;
+  pCollect = odbc?odbc->collection:NULL;
+  for( ;pCollect;pCollect=NextThing(pCollect) )
+ #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
+   // still has an active statement.
+   if( pCollect->stmt )
+    return FALSE;
+ #endif
+ #if defined( USE_ODBC )
+   // still has an active statement.
+   if( pCollect->hstmt )
+    return FALSE;
+ #endif
+  return TRUE;
+ }
  #ifdef LOG_COLLECTOR_STATES
    static int collectors;
  #endif
@@ -74128,7 +74158,9 @@ SegSplit( &pCurrent, start );
    odbc->flags.bAutoClose = bEnable;
    if( bEnable )
    {
-    if( !odbc->auto_close_thread )
+    // no thread already, and it is connected (otherwise later, connection will be made, and this scheduled)
+ lprintf( "Start autoclose..." );
+    if( !odbc->auto_close_thread && odbc->flags.bConnected )
      odbc->auto_close_thread = ThreadTo( AutoCloseThread, (uintptr_t)odbc );
    }
    else
@@ -74692,18 +74724,24 @@ SegSplit( &pCurrent, start );
   uintptr_t psv = GetThreadParam( thread );
   PODBC odbc = (PODBC)psv;
   int tick = 0;
-  //lprintf( "begin..." );
-  while( odbc->last_command_tick && odbc->flags.bAutoClose )
+  // initialize this to something; this is called when a connection opens...
+  // so that makes the first operation the database open tick.
+  odbc->last_command_tick_ = timeGetTime();
+  while( odbc->flags.bAutoClose )
   {
-   //lprintf( WIDE( "waiting..." ) );
    // if it expires, set tick and get out of loop
    // clearing last_command_tick will also end the thread (a manual sqlcommit on the connection)
-   if( odbc->last_command_tick < ( timeGetTime() - 1000 ) )
+ // let commits finish first...
+   if( !odbc->auto_commit_thread
+     &&( odbc->last_command_tick_ < ( timeGetTime() - 1000 ) )
+     // is idle; no statements active in the collections on the connection
+     && IsOdbcIdle( odbc ) )
    {
+    // make sure we still need to close (modeled more after commit; this could be less paranoid)
     if( ( !odbc->flags.bAutoClose )
-     || EnterCriticalSecNoWait( &odbc->cs, NULL ) )
+    // and then claim the thread protection to prevent more statements from starting while we close this
+      || (( odbc->flags.bThreadProtect )?EnterCriticalSecNoWait( &odbc->cs, NULL ):1) )
     {
-     //lprintf( WIDE( "tick and out " ));
      tick = 1;
      break;
     }
@@ -74711,15 +74749,15 @@ SegSplit( &pCurrent, start );
    WakeableSleep( 250 );
   }
   // a SQLCommit may have happened outside of this, which cleas last_command_tick
-  if( odbc->last_command_tick && tick && odbc->flags.bAutoClose )
+  if( tick && odbc->flags.bAutoClose )
   {
+   // this will close any in progress result sets... still need a check
    CloseDatabaseEx( odbc, FALSE );
-   odbc->auto_close_thread = NULL;
+   // release our lock allowing any statement that started JUST as this ticked to resume.
+   if( odbc->flags.bThreadProtect )
+    LeaveCriticalSec( &odbc->cs );
   }
-  else
-  {
-   odbc->auto_close_thread = NULL;
-  }
+  odbc->auto_close_thread = NULL;
   return 0;
  }
  //----------------------------------------------------------------------
@@ -74782,6 +74820,7 @@ SegSplit( &pCurrent, start );
    //    okay if there IS a tick, then the OR is triggered, which sets the time, and it will be non zero,
    //    so that will fail the IF, but set the time.
    // if there is NOT a last command tick, then we add the timer
+   odbc->last_command_tick_ = newtick;
    if( force || !odbc->last_command_tick )
    {
     int prior;
@@ -75678,8 +75717,9 @@ SegSplit( &pCurrent, start );
    const TEXTCHAR *tail;
    char *tmp_cmd;
  retry:
+   odbc->last_command_tick_ = timeGetTime();
    if( odbc->last_command_tick )
-    odbc->last_command_tick = timeGetTime();
+    odbc->last_command_tick = odbc->last_command_tick_;
    tmp_cmd = DupTextToChar( GetText( cmd ) );
    // can get back what was not used when parsing...
  #ifdef UNICODE
@@ -76017,6 +76057,9 @@ SegSplit( &pCurrent, start );
    return 0;
   }
  #if !defined( SQLPROXY_LIBRARY_SOURCE ) && !defined( SQLPROXY_SOURCE )
+  // really this shouldn't be done in get result
+  // if the connection failed between query and result there wouldn't be a result anyway?
+  // so I guess this is just to protect getresult if the connection did fail.?
   if( !OpenSQLConnectionEx( odbc DBG_SRC ) )
   {
    GenerateResponce( collection, WM_SQL_RESULT_ERROR );
@@ -76682,8 +76725,9 @@ SegSplit( &pCurrent, start );
   {
    return FALSE;
   }
+  odbc->last_command_tick_ = timeGetTime();
   if( odbc->last_command_tick )
-   odbc->last_command_tick = timeGetTime();
+   odbc->last_command_tick = odbc->last_command_tick_;
   if( odbc->flags.bThreadProtect )
   {
    EnterCriticalSec( &odbc->cs );
@@ -80827,7 +80871,10 @@ SegSplit( &pCurrent, start );
    BIT_FIELD bAutoClose : 1;
    BIT_FIELD bVFS : 1;
   } flags;
+ // this one tracks auto commit state; it is cleared when a commit happens
   uint32_t last_command_tick;
+ // this one tracks truly the last operation on a connection
+  uint32_t last_command_tick_;
   uint32_t commit_timer;
   PCOLLECT collection;
  // saved for resulting with native error code...
@@ -81391,8 +81438,6 @@ SegSplit( &pCurrent, start );
   POPTION_TREE tree = GetOptionTreeExxx( odbc, NULL DBG_SRC );
   if( tree )
   {
-   //tree->flags.bCreated = FALSE;
-   //lprintf( "Set tree %p to newversion %d", tree, bNewVersion );
    if( global_sqlstub_data->flags.bInited )
     CreateOptionDatabaseEx( odbc, tree );
   }
@@ -82364,6 +82409,7 @@ SegSplit( &pCurrent, start );
     lprintf( "none available, create new connection." );
  #endif
     odbc = ConnectToDatabaseExx( tracker->name, TRUE DBG_RELAY );
+    SetSQLAutoClose( odbc, TRUE );
     if( !tracker->shared_option_tree )
     {
      POPTION_TREE option = GetOptionTreeExxx( odbc, NULL DBG_RELAY );
