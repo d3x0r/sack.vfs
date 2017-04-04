@@ -144,7 +144,6 @@ int IsTextAnyNumber( CTEXTSTR text, double *fNumber, int64_t *iNumber )
 //-----------------------------------------------------------
 void SqlObject::closeDb( const FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
-
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	CloseDatabase( sql->odbc );
 }
@@ -249,6 +248,8 @@ Persistent<Function> SqlObject::constructor;
 SqlObject::SqlObject( const char *dsn, Isolate* isolate, Local<Object> o )
 {
    odbc = ConnectToDatabase( dsn );
+   SetSQLThreadProtect( odbc, FALSE );
+   SetSQLAutoClose( odbc, TRUE );
    optionInitialized = FALSE;
 }
 
