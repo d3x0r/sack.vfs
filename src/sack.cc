@@ -9845,6 +9845,16 @@
     odbc :     connection to enable auto close behavior on
     bEnable :  TRUE to enable auto close FALSE to disable.     */
  PSSQL_PROC( void, SetSQLAutoClose )( PODBC odbc, LOGICAL bEnable );
+ /* Relevant for SQLite databases. After a certain period of
+    inactivity the database is issued a PRAGMA wal_checkpoint
+    Parameters
+    odbc :     connection to enable auto checkpoint behavior on
+    bEnable :  TRUE to enable auto checkpoint FALSE to disable.     */
+ PSSQL_PROC( void, SetSQLAutoCheckpoint )( PODBC odbc, LOGICAL bEnable );
+ /* returns the current value of auto checkpoint mode on a conneciton
+    Parameters
+    odbc :     connection to enable auto checkpoint behavior on */
+ PSSQL_PROC( LOGICAL, GetSQLAutoCheckpoint )( PODBC odbc );
  /* A function to apply a time offset for fiscal time
     calculations; sometimes the day doesn't end at midnight, but
     a shift might last until 5 in the morning.
@@ -69212,6 +69222,8 @@ SegSplit( &pCurrent, start );
    BIT_FIELD bThreadProtect : 1;
  // don't leave the connection open 100%; open when required and close when idle
    BIT_FIELD bAutoClose : 1;
+ // sqlite; alternative to closing; generate wal_checkpoints automatically on idle.
+   BIT_FIELD bAutoCheckpoint : 1;
    BIT_FIELD bVFS : 1;
   } flags;
  // this one tracks auto commit state; it is cleared when a commit happens
@@ -69229,6 +69241,7 @@ SegSplit( &pCurrent, start );
   int nProtect;
   PTHREAD auto_commit_thread;
   PTHREAD auto_close_thread;
+  PTHREAD auto_checkpoint_thread;
   struct odbc_queue *queue;
   void (CPROC*auto_commit_callback)(uintptr_t,PODBC);
   uintptr_t auto_commit_callback_psv;
@@ -69282,6 +69295,8 @@ SegSplit( &pCurrent, start );
    BIT_FIELD  bLogOptionConnection : 1;
    BIT_FIELD bCriticalSectionInited : 1;
    BIT_FIELD bDeadstartCompleted : 1;
+   BIT_FIELD bAutoCheckpoint : 1;
+   BIT_FIELD bAutoCheckpointRecover : 1;
   } flags;
   struct update_task_def *UpdateTasks;
   PSERVICE_ROUTE SQLMsgBase;
@@ -69373,6 +69388,7 @@ SegSplit( &pCurrent, start );
   //int ( FIXREF2*sqlite3_backup_pagecount)(sqlite3_backup *p);
   int ( FIXREF2*sqlite3_backup_finish)(sqlite3_backup *p);
   int ( FIXREF2*sqlite3_extended_errcode)(sqlite3 *db);
+    int ( FIXREF2*sqlite3_stmt_readonly)(sqlite3_stmt *pStmt);
  };
  #  ifndef DEFINES_SQLITE_INTERFACE
  extern
@@ -69411,6 +69427,7 @@ SegSplit( &pCurrent, start );
  #    define sqlite3_backup_finish        (FIXDEREF2 (sqlite_iface->sqlite3_backup_finish))
  #    define sqlite3_backup_remaining     (FIXDEREF2 (sqlite_iface->sqlite3_backup_remaining))
  #    define sqlite3_extended_errcode     (FIXDEREF2 (sqlite_iface->sqlite3_extended_errcode))
+ #    define sqlite3_stmt_readonly        (FIXDEREF2 (sqlite_iface->sqlite3_stmt_readonly))
  #  endif
  #endif
  SQL_NAMESPACE_END
@@ -69448,6 +69465,7 @@ SegSplit( &pCurrent, start );
                  , sqlite3_backup_remaining
                  , sqlite3_backup_finish
                  , sqlite3_extended_errcode
+                                               , sqlite3_stmt_readonly
  };
  struct my_file_data
  {
@@ -69544,7 +69562,7 @@ SegSplit( &pCurrent, start );
      else
      {
       sack_fwrite( filler, 1, (int)( iOfst - filesize ), my_file->file );
-      filesize += ( iOfst - filesize );
+      filesize += ( (size_t)iOfst - filesize );
      }
     }
    }
@@ -69562,7 +69580,7 @@ SegSplit( &pCurrent, start );
  int xTruncate(sqlite3_file*file, sqlite3_int64 size)
  {
   struct my_file_data *my_file = (struct my_file_data*)file;
-  sack_fseek( my_file->file, size, SEEK_SET );
+  sack_fseek( my_file->file, (size_t)size, SEEK_SET );
  // works through file system interface...
   sack_ftruncate( my_file->file );
   //SetFileLength( my_file->filename, (size_t)size );
@@ -69787,7 +69805,7 @@ SegSplit( &pCurrent, start );
  #endif
     if( my_vfs->mount )
     {
-             //lprintf( "try on mount..%s .%p", my_file->filename, my_vfs->mount );
+     //lprintf( "try on mount..%s .%p", my_file->filename, my_vfs->mount );
 //KWfopen( zName );
      my_file->file = sack_fsopenEx( 0, my_file->filename, WIDE("rb+"), _SH_DENYNO, my_vfs->mount );
      if( my_file->file )
@@ -69795,7 +69813,7 @@ SegSplit( &pCurrent, start );
       InitializeCriticalSec( &my_file->cs );
       return SQLITE_OK;
      }
-             //lprintf( "failed..." );
+     //lprintf( "failed..." );
     }
     else
     {
@@ -69961,7 +69979,14 @@ SegSplit( &pCurrent, start );
   }
  }
  void errorLogCallback(void *pArg, int iErrCode, const char *zMsg){
-  lprintf( "Sqlite3 Err: (%d) %s", iErrCode, zMsg);
+  if( iErrCode == SQLITE_NOTICE_RECOVER_WAL ) {
+   extern struct pssql_global *global_sqlstub_data;
+   lprintf( "Sqlite3 Notice: wal recovered: generating checkpoint:%s", zMsg);
+   // after open returns, generate an automatic wal_checkpoint.
+   global_sqlstub_data->flags.bAutoCheckpointRecover = 1;
+  }
+  else
+   lprintf( "Sqlite3 Err: (%d) %s", iErrCode, zMsg);
  }
  static POINTER SimpleAllocate( int size )
  {
@@ -69994,7 +70019,7 @@ SegSplit( &pCurrent, start );
  static void DoInitVFS( void )
  {
   sqlite3_config( SQLITE_CONFIG_LOG, errorLogCallback, 0);
-    {
+  {
  #if SQLITE_VERSION_NUMBER >= 3006011
    static sqlite3_mem_methods mem_routines;
    if( mem_routines.pAppData == NULL )
@@ -70020,7 +70045,6 @@ SegSplit( &pCurrent, start );
  }
  static POINTER CPROC GetSQLiteInterface( void )
  {
-  //RealSQLiteInterface._global_font_data = GetGlobalFonts();
   //sqlite3_enable_shared_cache( 1 );
   DoInitVFS();
   return &my_sqlite_interface;
@@ -70173,6 +70197,8 @@ SegSplit( &pCurrent, start );
    BIT_FIELD bThreadProtect : 1;
  // don't leave the connection open 100%; open when required and close when idle
    BIT_FIELD bAutoClose : 1;
+ // sqlite; alternative to closing; generate wal_checkpoints automatically on idle.
+   BIT_FIELD bAutoCheckpoint : 1;
    BIT_FIELD bVFS : 1;
   } flags;
  // this one tracks auto commit state; it is cleared when a commit happens
@@ -70190,6 +70216,7 @@ SegSplit( &pCurrent, start );
   int nProtect;
   PTHREAD auto_commit_thread;
   PTHREAD auto_close_thread;
+  PTHREAD auto_checkpoint_thread;
   struct odbc_queue *queue;
   void (CPROC*auto_commit_callback)(uintptr_t,PODBC);
   uintptr_t auto_commit_callback_psv;
@@ -70243,6 +70270,8 @@ SegSplit( &pCurrent, start );
    BIT_FIELD  bLogOptionConnection : 1;
    BIT_FIELD bCriticalSectionInited : 1;
    BIT_FIELD bDeadstartCompleted : 1;
+   BIT_FIELD bAutoCheckpoint : 1;
+   BIT_FIELD bAutoCheckpointRecover : 1;
   } flags;
   struct update_task_def *UpdateTasks;
   PSERVICE_ROUTE SQLMsgBase;
@@ -70334,6 +70363,7 @@ SegSplit( &pCurrent, start );
   //int ( FIXREF2*sqlite3_backup_pagecount)(sqlite3_backup *p);
   int ( FIXREF2*sqlite3_backup_finish)(sqlite3_backup *p);
   int ( FIXREF2*sqlite3_extended_errcode)(sqlite3 *db);
+    int ( FIXREF2*sqlite3_stmt_readonly)(sqlite3_stmt *pStmt);
  };
  #  ifndef DEFINES_SQLITE_INTERFACE
  extern
@@ -70372,6 +70402,7 @@ SegSplit( &pCurrent, start );
  #    define sqlite3_backup_finish        (FIXDEREF2 (sqlite_iface->sqlite3_backup_finish))
  #    define sqlite3_backup_remaining     (FIXDEREF2 (sqlite_iface->sqlite3_backup_remaining))
  #    define sqlite3_extended_errcode     (FIXDEREF2 (sqlite_iface->sqlite3_extended_errcode))
+ #    define sqlite3_stmt_readonly        (FIXDEREF2 (sqlite_iface->sqlite3_stmt_readonly))
  #  endif
  #endif
  SQL_NAMESPACE_END
@@ -73442,6 +73473,7 @@ SegSplit( &pCurrent, start );
  #define PROXY_DOWN     WIDE( "PROXY_DOWN" )
  #define SQL_INI WIDE( "SQLPROXY.INI" )
  static uintptr_t CPROC AutoCloseThread( PTHREAD thread );
+ static uintptr_t CPROC AutoCheckpointThread( PTHREAD thread );
  void CloseDatabaseEx( PODBC odbc, LOGICAL ReleaseConnection );
  int __DoSQLQueryEx(  PODBC odbc, PCOLLECT collection, CTEXTSTR query DBG_PASS );
  #define __DoSQLQuery( o,c,q ) __DoSQLQueryEx(o,c,q DBG_SRC )
@@ -73482,12 +73514,12 @@ SegSplit( &pCurrent, start );
  #endif
  #define g (*global_sqlstub_data)
  //----------------------------------------------------------------------
- void InitLibrary( void );
+ static void SqlStubInitLibrary( void );
  PRIORITY_PRELOAD( InitGlobalData, SQL_PRELOAD_PRIORITY )
  {
   // is null initialized.
   SimpleRegisterAndCreateGlobal( global_sqlstub_data );
-  InitLibrary();
+  SqlStubInitLibrary();
  }
  ATEXIT_PRIORITY( CloseConnections, ATEXIT_PRIORITY_SYSLOG - 3 )
  {
@@ -73624,6 +73656,14 @@ SegSplit( &pCurrent, start );
  #endif
    //void (*xStep)(sqlite3_context*,int,sqlite3_value**),
    //void (*xFinal)(sqlite3_context*)
+ static void startAutoCheckpoint( PODBC odbc ) {
+  if( odbc->flags.bAutoCheckpoint )
+  {
+   lprintf( "enabling oneshot idle chckpoint generator" );
+   if( !odbc->auto_checkpoint_thread )
+    odbc->auto_checkpoint_thread = ThreadTo( AutoCheckpointThread, (uintptr_t)odbc );
+  }
+ }
  void ExtendConnection( PODBC odbc )
  {
   if( odbc->flags.bAutoClose )
@@ -73803,8 +73843,11 @@ SegSplit( &pCurrent, start );
    //if( result )
    // lprintf( WIDE( "Journal is now %s" ), result );
    SQLEndQuery( odbc );
-   SQLQueryf( odbc, &result, WIDE( "PRAGMA wal_checkpoint;" ) );
-   SQLEndQuery( odbc );
+   if( g.flags.bAutoCheckpointRecover ) {
+    SQLQueryf( odbc, &result, WIDE( "PRAGMA wal_checkpoint;" ) );
+    SQLEndQuery( odbc );
+    g.flags.bAutoCheckpointRecover = 0;
+   }
    odbc->flags.bNoLogging = n;
    //SQLQueryf( odbc, &result, WIDE( "PRAGMA journal_mode" ) );
    //lprintf( WIDE( "Journal is now %s" ), result );
@@ -74105,6 +74148,11 @@ SegSplit( &pCurrent, start );
   g.flags.bLogData = bEnable;
   return psv;
  }
+ static uintptr_t CPROC SetAutoCheckpoint( uintptr_t psv, arg_list args ) {
+  PARAM( args, LOGICAL, bEnable );
+  g.flags.bAutoCheckpoint = bEnable;
+  return psv;
+ }
  static uintptr_t CPROC SetLogOptions( uintptr_t psv, arg_list args )
  {
   PARAM( args, LOGICAL, bEnable );
@@ -74135,9 +74183,7 @@ SegSplit( &pCurrent, start );
  void SetSQLAutoTransact( PODBC odbc, LOGICAL bEnable )
  {
   if( odbc )
-  {
    odbc->flags.bAutoTransact = bEnable;
-  }
  }
  void SetSQLAutoTransactCallback( PODBC odbc, void (CPROC*callback)(uintptr_t,PODBC), uintptr_t psv )
  {
@@ -74159,7 +74205,6 @@ SegSplit( &pCurrent, start );
    if( bEnable )
    {
     // no thread already, and it is connected (otherwise later, connection will be made, and this scheduled)
- lprintf( "Start autoclose..." );
     if( !odbc->auto_close_thread && odbc->flags.bConnected )
      odbc->auto_close_thread = ThreadTo( AutoCloseThread, (uintptr_t)odbc );
    }
@@ -74171,6 +74216,31 @@ SegSplit( &pCurrent, start );
     }
    }
   }
+ }
+ void SetSQLAutoCheckpoint( PODBC odbc, LOGICAL bEnable )
+ {
+  if( odbc )
+  {
+   odbc->flags.bAutoCheckpoint = bEnable;
+   if( bEnable )
+   {
+    // next command will enable checkpoint thread.
+   }
+   else
+   {
+    // if disabling, wake up an in-progress thread so it can quit
+    if( odbc->auto_checkpoint_thread )
+    {
+     WakeThread( odbc->auto_checkpoint_thread );
+    }
+   }
+  }
+ }
+ LOGICAL GetSQLAutoCheckpoint( PODBC odbc )
+ {
+  if( odbc )
+   return odbc->flags.bAutoCheckpoint;
+  return 0;
  }
  LOGICAL EnsureLogOpen( PODBC odbc )
  {
@@ -74202,7 +74272,7 @@ SegSplit( &pCurrent, start );
   }
   return FALSE;
  }
- void InitLibrary( void )
+ void SqlStubInitLibrary( void )
  {
   if( !g.flags.bCriticalSectionInited )
   {
@@ -74231,9 +74301,11 @@ SegSplit( &pCurrent, start );
  #ifndef __NO_OPTIONS__
    //SetOptionDatabaseOption( &g.OptionDb, TRUE );
  #endif
+     g.flags.bAutoCheckpoint = 1;
    {
     LOGICAL success = FALSE;
     PCONFIG_HANDLER pch = CreateConfigurationHandler();
+    AddConfigurationMethod( pch, WIDE("Auto Checkpoint=%b"), SetAutoCheckpoint );
     AddConfigurationMethod( pch, WIDE("Option DSN=%m"), SetOptionDSN );
     AddConfigurationMethod( pch, WIDE("Primary DSN=%m"), SetPrimaryDSN );
     AddConfigurationMethod( pch, WIDE("Primary User=%m"), SetUser );
@@ -74269,6 +74341,7 @@ SegSplit( &pCurrent, start );
       );
      if( file )
      {
+      sack_fprintf( file, "Auto Checkpoint=Yes\n" );
       sack_fprintf( file, "Option DSN=%s\n", g.OptionDb.info.pDSN );
       sack_fprintf( file, "Primary DSN=MySQL\n" );
       sack_fprintf( file, "#Primary User=\n" );
@@ -74332,7 +74405,7 @@ SegSplit( &pCurrent, start );
    return TRUE;
   }
  #ifdef SQLPROXY_LIBRARY_SOURCE
-  InitLibrary();
+  SqlStubInitLibrary();
  #endif
   bOpening = TRUE;
   if( StrStr( odbc->info.pDSN, WIDE(".db") ) )
@@ -74502,8 +74575,11 @@ SegSplit( &pCurrent, start );
         lprintf( WIDE("Driver name = %s"), buffer );
        if( strcmp( buffer, WIDE("odbcjt32.dll") ) == 0 )
         odbc->flags.bAccess = 1;
-       if( strcmp( buffer, WIDE("sqlite3odbc.dll") ) == 0 || strcmp( buffer, WIDE("sqliteodbc.dll") ) == 0 )
+       if( strcmp( buffer, WIDE("sqlite3odbc.dll") ) == 0 || strcmp( buffer, WIDE("sqliteodbc.dll") ) == 0 ) {
         odbc->flags.bSQLite = 1;
+       }
+       if( !odbc->flags.bSQLite )
+        odbc->flags.bAutoCheckpoint = 0;
        SQLGetInfo( odbc->hdbc, SQL_DRIVER_ODBC_VER, buffer, (SQLSMALLINT)sizeof( buffer ), &reslen );
  #ifdef LOG_EVERYTHING
        lprintf( WIDE("Driver name = %s"), buffer );
@@ -74704,8 +74780,6 @@ SegSplit( &pCurrent, start );
     odbc->flags.bAutoTransact = 0;
     // the commit command itself will cause SQLCommit to be called - so we turn off autotransact and would create a transaction thread etc...
     SQLCommand( odbc, WIDE( "COMMIT" ) );
-    if( odbc->flags.bSQLite_native )
-     SQLCommand( odbc, WIDE( "PRAGMA wal_checkpoint" ) );
     odbc->flags.bAutoTransact = n;
     if( odbc->auto_commit_callback )
      odbc->auto_commit_callback( odbc->auto_commit_callback_psv, odbc );
@@ -74760,6 +74834,50 @@ SegSplit( &pCurrent, start );
     LeaveCriticalSec( &odbc->cs );
   }
   odbc->auto_close_thread = NULL;
+  return 0;
+ }
+ //----------------------------------------------------------------------
+ // had to create this thread - stalling out in the timer thread prevents
+ // all further commit action (which may unlock the Sqlite database this is
+ // intended for.
+ uintptr_t CPROC AutoCheckpointThread( PTHREAD thread )
+ {
+  uintptr_t psv = GetThreadParam( thread );
+  PODBC odbc = (PODBC)psv;
+  int tick = 0;
+  // initialize this to something; this is called when a connection opens...
+  // so that makes the first operation the database open tick.
+  odbc->last_command_tick_ = timeGetTime();
+  while( odbc->flags.bAutoCheckpoint )
+  {
+   // if it expires, set tick and get out of loop
+   // clearing last_command_tick will also end the thread (a manual sqlcommit on the connection)
+ // let commits finish first...
+   if( !odbc->auto_commit_thread
+     &&( odbc->last_command_tick_ < ( timeGetTime() - 250 ) )
+     // is idle; no statements active in the collections on the connection
+     && IsOdbcIdle( odbc ) )
+   {
+    tick = 1;
+    break;
+   }
+   WakeableSleep( 125 );
+  }
+  // a SQLCommit may have happened outside of this, which cleas last_command_tick
+  if( tick && odbc->flags.bAutoCheckpoint )
+  {
+   int oldCommit = odbc->flags.bAutoTransact;
+   if( odbc->flags.bThreadProtect )
+    EnterCriticalSec( &odbc->cs );
+   odbc->flags.bAutoTransact = 0;
+   // this will checkpoint any in progress result sets... still need a check
+   SQLCommand( odbc, WIDE( "PRAGMA wal_checkpoint" ) );
+   odbc->flags.bAutoTransact = oldCommit;
+   // release our lock allowing any statement that started JUST as this ticked to resume.
+   if( odbc->flags.bThreadProtect )
+    LeaveCriticalSec( &odbc->cs );
+  }
+  odbc->auto_checkpoint_thread = NULL;
   return 0;
  }
  //----------------------------------------------------------------------
@@ -75358,7 +75476,7 @@ SegSplit( &pCurrent, start );
  PODBC ConnectToDatabaseLogin( CTEXTSTR DSN, CTEXTSTR user, CTEXTSTR pass, LOGICAL bRequireConnection DBG_PASS )
  {
   PODBC pODBC;
-  InitLibrary();
+  SqlStubInitLibrary();
   pODBC = New( ODBC );
   AddLink( &g.pOpenODBC, pODBC );
   MemSet( pODBC, 0, sizeof( ODBC ) );
@@ -75367,6 +75485,7 @@ SegSplit( &pCurrent, start );
   if( pass )
    StrCpy( pODBC->info.pPASSWORD, pass );
   pODBC->info.pDSN = StrDup( DSN );
+  pODBC->flags.bAutoCheckpoint = g.flags.bAutoCheckpoint;
   pODBC->flags.bForceConnection = bRequireConnection;
   // source ID is not known...
   // is probably static link to library, rather than proxy operation
@@ -75381,13 +75500,13 @@ SegSplit( &pCurrent, start );
  #undef ConnectToDatabaseEx
  PODBC ConnectToDatabaseEx( CTEXTSTR DSN, LOGICAL bRequireConnection )
  {
-  return ConnectToDatabaseExx( DSN, bRequireConnection DBG_SRC );
+  return ConnectToDatabaseLogin( DSN, NULL, NULL, bRequireConnection DBG_SRC );
  }
  //----------------------------------------------------------------------
  #undef ConnectToDatabase
  PODBC ConnectToDatabase( CTEXTSTR DSN )
  {
-  return ConnectToDatabaseEx( DSN, g.flags.bRequireConnection );
+  return ConnectToDatabaseLogin( DSN, NULL, NULL, g.flags.bRequireConnection DBG_SRC );
  }
  //----------------------------------------------------------------------
  // result is 0, don't retry
@@ -75756,6 +75875,8 @@ SegSplit( &pCurrent, start );
    }
    else
    {
+    if( odbc->flags.bAutoCheckpoint && !sqlite3_stmt_readonly( collection->stmt ) )
+     startAutoCheckpoint( odbc );
     Release( tmp_cmd );
     rc3 = sqlite3_step( collection->stmt );
     switch( rc3 )
@@ -76799,6 +76920,7 @@ SegSplit( &pCurrent, start );
   {
    const TEXTCHAR *tail;
    // can get back what was not used when parsing...
+       startAutoCheckpoint( odbc );
    retry:
  #ifdef UNICODE
    rc3 = sqlite3_prepare16_v2( odbc->db, (void*)query, (int)(querylen) * sizeof( TEXTCHAR ), &collection->stmt, (const void**)&tail );
@@ -76830,6 +76952,9 @@ SegSplit( &pCurrent, start );
      fflush( g.pSQLLog );
     }
     in_error = 1;
+   } else {
+    if( odbc->flags.bAutoCheckpoint && !sqlite3_stmt_readonly( collection->stmt ) )
+     startAutoCheckpoint( odbc );
    }
    // here don't step, wait for the GetResult to step. (fetch row)
   }
@@ -77685,7 +77810,7 @@ SegSplit( &pCurrent, start );
  void SQLBeginService( void )
  //int main( void )
  {
-  InitLibrary();
+  SqlStubInitLibrary();
   // provide task interface
  #ifndef __NO_MSGSVR__
   RegisterServiceHandler( WIDE("SQL"), SQLServiceHandler );
@@ -80873,6 +80998,8 @@ SegSplit( &pCurrent, start );
    BIT_FIELD bThreadProtect : 1;
  // don't leave the connection open 100%; open when required and close when idle
    BIT_FIELD bAutoClose : 1;
+ // sqlite; alternative to closing; generate wal_checkpoints automatically on idle.
+   BIT_FIELD bAutoCheckpoint : 1;
    BIT_FIELD bVFS : 1;
   } flags;
  // this one tracks auto commit state; it is cleared when a commit happens
@@ -80890,6 +81017,7 @@ SegSplit( &pCurrent, start );
   int nProtect;
   PTHREAD auto_commit_thread;
   PTHREAD auto_close_thread;
+  PTHREAD auto_checkpoint_thread;
   struct odbc_queue *queue;
   void (CPROC*auto_commit_callback)(uintptr_t,PODBC);
   uintptr_t auto_commit_callback_psv;
@@ -80943,6 +81071,8 @@ SegSplit( &pCurrent, start );
    BIT_FIELD  bLogOptionConnection : 1;
    BIT_FIELD bCriticalSectionInited : 1;
    BIT_FIELD bDeadstartCompleted : 1;
+   BIT_FIELD bAutoCheckpoint : 1;
+   BIT_FIELD bAutoCheckpointRecover : 1;
   } flags;
   struct update_task_def *UpdateTasks;
   PSERVICE_ROUTE SQLMsgBase;
@@ -81034,6 +81164,7 @@ SegSplit( &pCurrent, start );
   //int ( FIXREF2*sqlite3_backup_pagecount)(sqlite3_backup *p);
   int ( FIXREF2*sqlite3_backup_finish)(sqlite3_backup *p);
   int ( FIXREF2*sqlite3_extended_errcode)(sqlite3 *db);
+    int ( FIXREF2*sqlite3_stmt_readonly)(sqlite3_stmt *pStmt);
  };
  #  ifndef DEFINES_SQLITE_INTERFACE
  extern
@@ -81072,6 +81203,7 @@ SegSplit( &pCurrent, start );
  #    define sqlite3_backup_finish        (FIXDEREF2 (sqlite_iface->sqlite3_backup_finish))
  #    define sqlite3_backup_remaining     (FIXDEREF2 (sqlite_iface->sqlite3_backup_remaining))
  #    define sqlite3_extended_errcode     (FIXDEREF2 (sqlite_iface->sqlite3_extended_errcode))
+ #    define sqlite3_stmt_readonly        (FIXDEREF2 (sqlite_iface->sqlite3_stmt_readonly))
  #  endif
  #endif
  SQL_NAMESPACE_END
