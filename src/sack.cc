@@ -74704,6 +74704,8 @@ SegSplit( &pCurrent, start );
     odbc->flags.bAutoTransact = 0;
     // the commit command itself will cause SQLCommit to be called - so we turn off autotransact and would create a transaction thread etc...
     SQLCommand( odbc, WIDE( "COMMIT" ) );
+    if( odbc->flags.bSQLite_native )
+     SQLCommand( odbc, WIDE( "PRAGMA wal_checkpoint" ) );
     odbc->flags.bAutoTransact = n;
     if( odbc->auto_commit_callback )
      odbc->auto_commit_callback( odbc->auto_commit_callback_psv, odbc );
@@ -82409,7 +82411,7 @@ SegSplit( &pCurrent, start );
     lprintf( "none available, create new connection." );
  #endif
     odbc = ConnectToDatabaseExx( tracker->name, TRUE DBG_RELAY );
-    SetSQLAutoClose( odbc, TRUE );
+    //SetSQLAutoClose( odbc, TRUE );
     if( !tracker->shared_option_tree )
     {
      POPTION_TREE option = GetOptionTreeExxx( odbc, NULL DBG_RELAY );

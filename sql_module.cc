@@ -249,7 +249,7 @@ SqlObject::SqlObject( const char *dsn, Isolate* isolate, Local<Object> o )
 {
    odbc = ConnectToDatabase( dsn );
    SetSQLThreadProtect( odbc, FALSE );
-   SetSQLAutoClose( odbc, TRUE );
+   //SetSQLAutoClose( odbc, TRUE );
    optionInitialized = FALSE;
 }
 
