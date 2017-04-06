@@ -76515,6 +76515,8 @@ SegSplit( &pCurrent, start );
     // or connection closes and destroyes the collection.
     collection->flags.bTemporary = 1;
     collection->flags.bEndOfFile = 1;
+    sqlite3_finalize( collection->stmt );
+    collection->stmt = NULL;
     //lprintf( WIDE("What about the remainging results?") );
     //ReleaseCollectionResults( collection );
    }
