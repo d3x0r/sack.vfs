@@ -9289,6 +9289,16 @@
     odbc :     connection to enable auto close behavior on
     bEnable :  TRUE to enable auto close FALSE to disable.     */
  PSSQL_PROC( void, SetSQLAutoClose )( PODBC odbc, LOGICAL bEnable );
+ /* Relevant for SQLite databases. After a certain period of
+    inactivity the database is issued a PRAGMA wal_checkpoint
+    Parameters
+    odbc :     connection to enable auto checkpoint behavior on
+    bEnable :  TRUE to enable auto checkpoint FALSE to disable.     */
+ PSSQL_PROC( void, SetSQLAutoCheckpoint )( PODBC odbc, LOGICAL bEnable );
+ /* returns the current value of auto checkpoint mode on a conneciton
+    Parameters
+    odbc :     connection to enable auto checkpoint behavior on */
+ PSSQL_PROC( LOGICAL, GetSQLAutoCheckpoint )( PODBC odbc );
  /* A function to apply a time offset for fiscal time
     calculations; sometimes the day doesn't end at midnight, but
     a shift might last until 5 in the morning.

@@ -109,7 +109,7 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 			}
 
 		} else {
-			FILE *file = sack_fopenEx( 0, (*fName), "r", vol->fsMount );
+			FILE *file = sack_fopenEx( 0, (*fName), "rb", vol->fsMount );
 			if( file ) {
 				size_t len = sack_fsize( file );
 				// CAN open directories; and they have 7ffffffff sizes.
@@ -151,7 +151,7 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 	        
 				args.GetReturnValue().Set( True(isolate) );
 			} else {
-				FILE *file = sack_fopenEx( 0, *fName, "w", vol->fsMount );
+				FILE *file = sack_fopenEx( 0, *fName, "wb", vol->fsMount );
 				size_t len = sack_fsize( file );
 				uint8_t *buf = NewArray( uint8_t, len );
 				sack_fwrite( buf, len, 1, file );
@@ -418,7 +418,7 @@ void FileObject::seekFile(const FunctionCallbackInfo<Value>& args) {
 				return;
 			file = sack_vfs_openfile( vol->vol, filename );
 		} else {
-			cfile = sack_fopenEx( 0, filename, "r", vol->fsMount );
+			cfile = sack_fopenEx( 0, filename, "rb", vol->fsMount );
 		}
 	}
 
