@@ -25,15 +25,15 @@ void SqlObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "commit", commit );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "autoTransact", autoTransact );
 
-   // read a portion of the tree (passed to a callback)
+	// read a portion of the tree (passed to a callback)
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "eo", enumOptionNodes );
-   // get without create
+	// get without create
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "fo", findOptionNode );
-   // get the node.
+	// get the node.
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "go", getOptionNode );
-   // update the value from option node
+	// update the value from option node
 	//NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "wo", writeOptionNode );
-   // read value from the option node
+	// read value from the option node
 	//NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "ro", readOptionNode );
 
 
