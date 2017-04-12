@@ -69,7 +69,7 @@ static Local<Value> makeValue( Isolate *isolate, struct json_value_container *va
 	case VALUE_FALSE:
 		return False( isolate );
 	case VALUE_STRING:
-		return String::NewFromUtf8( isolate, GetText( val->string ) );
+		return String::NewFromUtf8( isolate, val->string );
 	case VALUE_NUMBER:
 		if( val->float_result )
 			return Number::New( isolate, val->result_d );
@@ -90,11 +90,11 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate )
 	INDEX idx;
 	DATA_FORALL( msg_data, idx, struct json_value_container*, val )
 	{
-	switch( val->result_value ) {
+	switch( val->value_type ) {
 	default:
 		if( val->name )
-			o->Set( String::NewFromUtf8( isolate, GetText( val->name ) )
-   				, makeValue( isolate, val ) );
+			o->Set( String::NewFromUtf8( isolate, val->name )
+				, makeValue( isolate, val ) );
 		else
 			o->Set( (uint32_t)idx, makeValue( isolate, val ) );
 		break;
@@ -135,13 +135,13 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate )
 			break;
 */			
 	case VALUE_ARRAY:
-			o->Set( String::NewFromUtf8( isolate, GetText( val->name ) )
+			o->Set( String::NewFromUtf8( isolate, val->name )
 						, sub_o = Array::New( isolate )
 			 );
 			buildObject( val->contains, sub_o, isolate );
 			break;
 	case VALUE_OBJECT:
-			o->Set( String::NewFromUtf8( isolate, GetText( val->name ) )
+			o->Set( String::NewFromUtf8( isolate,val->name )
 						, sub_o = Object::New( isolate )
 			 );
 			buildObject( val->contains, sub_o, isolate );
@@ -157,8 +157,8 @@ static void internal_json_dispose_message( PDATALIST *msg_data )
 	INDEX idx;
 	DATA_FORALL( (*msg_data), idx, struct json_value_container*, val )
 	{
-		if( val->name ) LineRelease( val->name );
-		if( val->string ) LineRelease( val->string );
+		//if( val->name ) Release( val->name );
+		//if( val->string ) Release( val->string );
 		if( val->value_type == VALUE_OBJECT )
 			internal_json_dispose_message( &val->contains );
 	}
@@ -172,7 +172,7 @@ Local<Value> ParseJSON(  Isolate *isolate, const char *utf8String, size_t len) {
 	PDATALIST parsed = NULL;
 	Local<Object> o;// = Object::New( isolate );
 	Local<Value> v;// = Object::New( isolate );
-	json_parse_message( utf8String, len, &parsed );
+	json_parse_message( (char*)utf8String, len, &parsed );
 	if( parsed->Cnt > 1 ) {
 		lprintf( "Multiple values would result, invalid parse." );
 		return Undefined(isolate);
@@ -182,14 +182,16 @@ Local<Value> ParseJSON(  Isolate *isolate, const char *utf8String, size_t len) {
 	struct json_value_container *val;
 	val = (struct json_value_container *)GetDataItem( &parsed, 0 );
 	if( val && val->contains ) {
-		val = (struct json_value_container *)GetDataItem( &val->contains, 0 );
-		if( val->name )
-			o = Object::New(isolate);
+		if( val->value_type == VALUE_OBJECT )
+			o = Object::New( isolate );
+		else if( val->value_type == VALUE_ARRAY )
+			o = Array::New( isolate );
 		else
-			o = Array::New(isolate);
-		buildObject( parsed, o, isolate );
+			lprintf( "Value has contents, but is not a container type?!" );
+		buildObject( val->contains, o, isolate );
 	}
 	else if( val ) {
+		//lprintf( "was just a single, simple value type..." );
 		v = makeValue( isolate, val );
 		// this is illegal json
 		// cannot result from a simple value?	
