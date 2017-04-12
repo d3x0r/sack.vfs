@@ -50328,7 +50328,7 @@ SegSplit( &pCurrent, start );
   PDATALIST elements = NULL;
  // character index;
   size_t n = 0;
-  int word;
+  int word = WORD_POS_RESET;
   TEXTRUNE c;
   LOGICAL status = TRUE;
   //TEXTRUNE quote = 0;
@@ -50346,7 +50346,9 @@ SegSplit( &pCurrent, start );
   //msg_output = (*_msg_output);
   val.value_type = VALUE_UNDEFINED;
   val.result_value = 0;
+  val.contains = NULL;
   val.name = NULL;
+  val.string = NULL;
   pvt_collector = VarTextCreate();
  // static CTEXTSTR keyword[3] = { "false", "null", "true" };
   while( status && ( n < msglen ) && ( c = GetUtfCharIndexed( msg, &n ) ) )
@@ -50356,9 +50358,9 @@ SegSplit( &pCurrent, start );
    case '{':
     {
      struct json_parse_context *old_context = New( struct json_parse_context );
-     AddDataItem( &elements, &val );
-     val.value_type = VALUE_OBJECT;
-     val.contains = elements;
+	 val.value_type = VALUE_OBJECT;
+	 AddDataItem( &elements, &val );
+     //val.contains = elements;
      old_context->context = parse_context;
      old_context->elements = elements;
      elements = CreateDataList( sizeof( val ) );
@@ -50369,9 +50371,9 @@ SegSplit( &pCurrent, start );
    case '[':
     {
      struct json_parse_context *old_context = New( struct json_parse_context );
-     AddDataItem( &elements, &val );
-     val.value_type = VALUE_ARRAY;
-     val.contains = elements;
+	 val.value_type = VALUE_ARRAY;
+	 AddDataItem( &elements, &val );
+     //val.contains = elements;
      old_context->context = parse_context;
      old_context->elements = elements;
      elements = CreateDataList( sizeof( val ) );
@@ -50407,8 +50409,11 @@ SegSplit( &pCurrent, start );
      }
      if( val.value_type != VALUE_UNDEFINED )
       AddDataItem( &elements, &val );
+     lprintf( "don't know why whe're here but val is undefined now...(new val)");
      val.value_type = VALUE_UNDEFINED;
      val.name = NULL;
+     val.contains = NULL;
+     val.string = NULL;
      {
       struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &context_stack );
       struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt-1 );
@@ -50434,8 +50439,11 @@ SegSplit( &pCurrent, start );
      }
      if( val.value_type != VALUE_UNDEFINED )
       AddDataItem( &elements, &val );
+     lprintf( "don't know why whe're here but val is undefined now...(new val)");
      val.value_type = VALUE_UNDEFINED;
      val.name = NULL;
+     val.contains = NULL;
+     val.string = NULL;
      {
       struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &context_stack );
       struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt-1 );
@@ -50462,8 +50470,11 @@ SegSplit( &pCurrent, start );
      }
      if( val.value_type != VALUE_UNDEFINED )
       AddDataItem( &elements, &val );
+     lprintf( "don't know why whe're here but val is undefined now...(new val)");
      val.value_type = VALUE_UNDEFINED;
      val.name = NULL;
+     val.contains = NULL;
+     val.string = NULL;
     }
     else
     {
@@ -50480,8 +50491,8 @@ SegSplit( &pCurrent, start );
      //status = FALSE;
     }
     if( parse_context == CONTEXT_UNKNOWN ) {
-     lprintf( "parser does not support simple value results." );
-     return FALSE;
+     //lprintf( "parser does not support simple value results." );
+     //return FALSE;
     }
     switch( c )
     {
@@ -50489,6 +50500,7 @@ SegSplit( &pCurrent, start );
      {
       // collect a string
       int escape = 0;
+      lprintf( "start a quoted string..." );
       while( ( n < msglen ) && ( c = GetUtfCharIndexed( msg, &n ) ) )
       {
        if( c == '\\' )
@@ -50566,7 +50578,7 @@ SegSplit( &pCurrent, start );
          VarTextAddRune( pvt_collector, c );
        }
       }
-      val.result_value = VALUE_STRING;
+      val.value_type = VALUE_STRING;
       break;
      }
     case ' ':
@@ -50575,6 +50587,7 @@ SegSplit( &pCurrent, start );
     case '\n':
      // skip whitespace
      //n++;
+     lprintf( "whitespace skip..." );
      break;
    //----------------------------------------------------------
    //  catch characters for true/false/null which are values outside of quotes
@@ -50628,7 +50641,7 @@ SegSplit( &pCurrent, start );
     case 'l':
      if( word == WORD_POS_NULL_2 ) word = WORD_POS_NULL_3;
      else if( word == WORD_POS_NULL_3 ) {
-      val.result_value = VALUE_NULL;
+      val.value_type = VALUE_NULL;
       word = WORD_POS_RESET;
      } else if( word == WORD_POS_FALSE_2 ) word = WORD_POS_FALSE_3;
 // fault
@@ -50656,6 +50669,7 @@ SegSplit( &pCurrent, start );
      if( ( c >= '0' && c <= '9' )
       || ( c == '-' ) )
      {
+      lprintf( "start a number..." );
       // always reset this here....
       // keep it set to determine what sort of value is ready.
       val.float_result = 0;
@@ -50693,16 +50707,8 @@ SegSplit( &pCurrent, start );
        }
        LineRelease( number );
       }
-      val.result_value = VALUE_NUMBER;
-     }
-     else if( ( c >= ' ' )
-         || ( c == '\t' )
-         || ( c == '\r' )
-         || ( c == '\n' )
-         || ( c == ',' )
-        )
-     {
-      // do nothing; white space is allowed.
+      lprintf( "So it's a number...." );
+      val.value_type = VALUE_NUMBER;
      }
      else
      {
@@ -50733,6 +50739,11 @@ SegSplit( &pCurrent, start );
   }
   if( element_lists )
    DeleteLinkStack( &element_lists );
+  lprintf( "did we get a val? %d", val.value_type );
+  if( val.value_type == VALUE_STRING )
+   val.string = VarTextGet( pvt_collector );
+  if( val.value_type != VALUE_UNDEFINED )
+   AddDataItem( &elements, &val );
   if( !elements->Cnt )
    if( val.value_type != VALUE_UNDEFINED )
     AddDataItem( &elements, &val );
@@ -50788,7 +50799,7 @@ SegSplit( &pCurrent, start );
    }
    else
    {
-    switch( val->result_value )
+    switch( val->value_type )
     {
     case VALUE_NULL:
      ((CTEXTSTR*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = NULL;
@@ -50818,7 +50829,7 @@ SegSplit( &pCurrent, start );
    }
    else
    {
-    switch( val->result_value )
+    switch( val->value_type )
     {
     case VALUE_TRUE:
      switch( element->type )
@@ -50919,7 +50930,7 @@ SegSplit( &pCurrent, start );
    }
    else
    {
-    switch( val->result_value )
+    switch( val->value_type )
     {
     case VALUE_NUMBER:
      if( val->float_result )
@@ -50955,7 +50966,7 @@ SegSplit( &pCurrent, start );
    }
    else
    {
-    switch( val->result_value )
+    switch( val->value_type )
     {
     case VALUE_NUMBER:
      if( val->float_result )

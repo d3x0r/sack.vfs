@@ -56,7 +56,7 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 
 static Local<Value> makeValue( Isolate *isolate, struct json_value_container *val ) {
 
-	switch( val->result_value ) {
+	switch( val->value_type ) {
 	case VALUE_UNDEFINED:
 		return Undefined( isolate );
 	default:
@@ -181,7 +181,7 @@ Local<Value> ParseJSON(  Isolate *isolate, const char *utf8String, size_t len) {
 
 	struct json_value_container *val;
 	val = (struct json_value_container *)GetDataItem( &parsed, 0 );
-	if( val->contains ) {
+	if( val && val->contains ) {
 		val = (struct json_value_container *)GetDataItem( &val->contains, 0 );
 		if( val->name )
 			o = Object::New(isolate);
@@ -189,14 +189,14 @@ Local<Value> ParseJSON(  Isolate *isolate, const char *utf8String, size_t len) {
 			o = Array::New(isolate);
 		buildObject( parsed, o, isolate );
 	}
-	else {
+	else if( val ) {
 		v = makeValue( isolate, val );
 		// this is illegal json
 		// cannot result from a simple value?	
 	}
 
 	internal_json_dispose_message( &parsed );
-	if( !o->IsUndefined() ) 
+	if( !o.IsEmpty() ) 
 		return o;
 	return v;
 }
