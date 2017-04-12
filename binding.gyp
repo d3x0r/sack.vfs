@@ -9,6 +9,7 @@
            "com_interface.cc",
            "sql_module.cc",
            "thread_module.cc",
+           "jsonParse.cc",
           ],
 	'defines': [
           'TARGETNAME="sack_vfs.node"',

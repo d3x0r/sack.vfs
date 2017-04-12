@@ -11389,6 +11389,7 @@
   , VALUE_STRING = 4
   , VALUE_NUMBER = 5
   , VALUE_OBJECT = 6
+  , VALUE_ARRAY = 7
  };
  struct json_value_container {
   PTEXT name;

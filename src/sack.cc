@@ -50202,6 +50202,7 @@ SegSplit( &pCurrent, start );
   , VALUE_STRING = 4
   , VALUE_NUMBER = 5
   , VALUE_OBJECT = 6
+  , VALUE_ARRAY = 7
  };
  struct json_value_container {
   PTEXT name;
@@ -50299,6 +50300,16 @@ SegSplit( &pCurrent, start );
   WORD_POS_NULL_2,
  //  get l
   WORD_POS_NULL_3,
+  // 31
+  WORD_POS_UNDEFINED_1,
+  WORD_POS_UNDEFINED_2,
+  WORD_POS_UNDEFINED_3,
+  WORD_POS_UNDEFINED_4,
+  WORD_POS_UNDEFINED_5,
+  WORD_POS_UNDEFINED_6,
+  WORD_POS_UNDEFINED_7,
+  WORD_POS_UNDEFINED_8,
+  WORD_POS_UNDEFINED_9,
  };
  #define CONTEXT_UNKNOWN 0
  #define CONTEXT_IN_ARRAY 1
@@ -50345,6 +50356,9 @@ SegSplit( &pCurrent, start );
    case '{':
     {
      struct json_parse_context *old_context = New( struct json_parse_context );
+     AddDataItem( &elements, &val );
+     val.value_type = VALUE_OBJECT;
+     val.contains = elements;
      old_context->context = parse_context;
      old_context->elements = elements;
      elements = CreateDataList( sizeof( val ) );
@@ -50355,6 +50369,9 @@ SegSplit( &pCurrent, start );
    case '[':
     {
      struct json_parse_context *old_context = New( struct json_parse_context );
+     AddDataItem( &elements, &val );
+     val.value_type = VALUE_ARRAY;
+     val.contains = elements;
      old_context->context = parse_context;
      old_context->elements = elements;
      elements = CreateDataList( sizeof( val ) );
@@ -50373,7 +50390,10 @@ SegSplit( &pCurrent, start );
     }
     else
     {
-     lprintf( WIDE("(in array, got colon out of string):parsing fault; unexpected %c at %") _size_f, c, n );
+     if( parse_context == CONTEXT_IN_ARRAY )
+      lprintf( WIDE("(in array, got colon out of string):parsing fault; unexpected %c at %") _size_f, c, n );
+     else
+      lprintf( WIDE("(outside any object, got colon out of string):parsing fault; unexpected %c at %") _size_f, c, n );
      status = FALSE;
     }
     break;
@@ -50391,6 +50411,9 @@ SegSplit( &pCurrent, start );
      val.name = NULL;
      {
       struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &context_stack );
+      struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt-1 );
+  // save updated elements list in the old value in the last pushed list.
+      oldVal->contains = elements;
       parse_context = old_context->context;
       elements = old_context->elements;
       Release( old_context );
@@ -50415,6 +50438,9 @@ SegSplit( &pCurrent, start );
      val.name = NULL;
      {
       struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &context_stack );
+      struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt-1 );
+  // save updated elements list in the old value in the last pushed list.
+      oldVal->contains = elements;
       parse_context = old_context->context;
       elements = old_context->elements;
       Release( old_context );
@@ -50452,6 +50478,10 @@ SegSplit( &pCurrent, start );
 // fault
      lprintf( WIDE("first token; fault parsing '%c' unexpected %") _size_f, c, n );
      //status = FALSE;
+    }
+    if( parse_context == CONTEXT_UNKNOWN ) {
+     lprintf( "parser does not support simple value results." );
+     return FALSE;
     }
     switch( c )
     {
@@ -50551,18 +50581,19 @@ SegSplit( &pCurrent, start );
     case 't':
      if( word == WORD_POS_RESET ) word = WORD_POS_TRUE_1;
 // fault
-     else lprintf( WIDE("fault parsing '%c' unexpected at %")_size_f, c, n );
+     else lprintf( WIDE("fault parsing '%c' unexpected at %") _size_f, c, n );
      break;
     case 'r':
      if( word == WORD_POS_TRUE_1 ) word = WORD_POS_TRUE_2;
 // fault
-     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
      break;
     case 'u':
      if( word == WORD_POS_TRUE_2 ) word = WORD_POS_TRUE_3;
      else if( word == WORD_POS_NULL_1 ) word = WORD_POS_NULL_2;
+     else if( word == WORD_POS_RESET ) word = WORD_POS_UNDEFINED_1;
 // fault
-     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
      break;
     case 'e':
      if( word == WORD_POS_TRUE_3 ) {
@@ -50571,13 +50602,28 @@ SegSplit( &pCurrent, start );
      } else if( word == WORD_POS_FALSE_4 ) {
       val.value_type = VALUE_FALSE;
       word = WORD_POS_RESET;
+     } else if( word == WORD_POS_UNDEFINED_3 ) word = WORD_POS_UNDEFINED_4;
+     else if( word == WORD_POS_UNDEFINED_7 ) word = WORD_POS_UNDEFINED_8;
 // fault
-     } else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
      break;
     case 'n':
      if( word == WORD_POS_RESET ) word = WORD_POS_NULL_1;
+     else if( word == WORD_POS_UNDEFINED_1 ) word = WORD_POS_UNDEFINED_2;
+     else if( word == WORD_POS_UNDEFINED_6 ) word = WORD_POS_UNDEFINED_7;
 // fault
-     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
+     break;
+    case 'd':
+     if( word == WORD_POS_UNDEFINED_2 ) word = WORD_POS_UNDEFINED_3;
+     else if( word == WORD_POS_UNDEFINED_8 ) { val.value_type=VALUE_UNDEFINED; word = WORD_POS_RESET; }
+// fault
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
+     break;
+    case 'i':
+     if( word == WORD_POS_UNDEFINED_5 ) word = WORD_POS_UNDEFINED_6;
+// fault
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
      break;
     case 'l':
      if( word == WORD_POS_NULL_2 ) word = WORD_POS_NULL_3;
@@ -50586,17 +50632,18 @@ SegSplit( &pCurrent, start );
       word = WORD_POS_RESET;
      } else if( word == WORD_POS_FALSE_2 ) word = WORD_POS_FALSE_3;
 // fault
-     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
      break;
     case 'f':
      if( word == WORD_POS_RESET ) word = WORD_POS_FALSE_1;
+     else if( word == WORD_POS_UNDEFINED_4 ) word = WORD_POS_UNDEFINED_5;
 // fault
-     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
      break;
     case 'a':
      if( word == WORD_POS_FALSE_1 ) word = WORD_POS_FALSE_2;
 // fault
-     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
      break;
     case 's':
      if( word == WORD_POS_FALSE_3 ) word = WORD_POS_FALSE_4;
@@ -50652,6 +50699,7 @@ SegSplit( &pCurrent, start );
          || ( c == '\t' )
          || ( c == '\r' )
          || ( c == '\n' )
+         || ( c == ',' )
         )
      {
       // do nothing; white space is allowed.
@@ -73656,14 +73704,6 @@ SegSplit( &pCurrent, start );
  #endif
    //void (*xStep)(sqlite3_context*,int,sqlite3_value**),
    //void (*xFinal)(sqlite3_context*)
- static void startAutoCheckpoint( PODBC odbc ) {
-  if( odbc->flags.bAutoCheckpoint )
-  {
-   lprintf( "enabling oneshot idle chckpoint generator" );
-   if( !odbc->auto_checkpoint_thread )
-    odbc->auto_checkpoint_thread = ThreadTo( AutoCheckpointThread, (uintptr_t)odbc );
-  }
- }
  void ExtendConnection( PODBC odbc )
  {
   if( odbc->flags.bAutoClose )
@@ -73838,7 +73878,9 @@ SegSplit( &pCurrent, start );
   {
    CTEXTSTR result;
    int n = odbc->flags.bNoLogging;
+   int m = odbc->flags.bAutoCheckpoint;
    odbc->flags.bNoLogging = 1;
+   odbc->flags.bAutoCheckpoint = 0;
    SQLQueryf( odbc, &result, WIDE( "PRAGMA journal_mode=WAL;" ) );
    //if( result )
    // lprintf( WIDE( "Journal is now %s" ), result );
@@ -73849,6 +73891,7 @@ SegSplit( &pCurrent, start );
     g.flags.bAutoCheckpointRecover = 0;
    }
    odbc->flags.bNoLogging = n;
+   odbc->flags.bAutoCheckpoint = m;
    //SQLQueryf( odbc, &result, WIDE( "PRAGMA journal_mode" ) );
    //lprintf( WIDE( "Journal is now %s" ), result );
   }
@@ -73943,6 +73986,15 @@ SegSplit( &pCurrent, start );
     return FALSE;
  #endif
   return TRUE;
+ }
+ static void startAutoCheckpoint( PODBC odbc ) {
+  if( odbc->flags.bAutoCheckpoint )
+  {
+   lprintf( "enabling oneshot idle chckpoint generator" );
+   DumpODBCInfo( odbc );
+   if( !odbc->auto_checkpoint_thread )
+    odbc->auto_checkpoint_thread = ThreadTo( AutoCheckpointThread, (uintptr_t)odbc );
+  }
  }
  #ifdef LOG_COLLECTOR_STATES
    static int collectors;
@@ -74867,15 +74919,20 @@ SegSplit( &pCurrent, start );
   if( tick && odbc->flags.bAutoCheckpoint )
   {
    int oldCommit = odbc->flags.bAutoTransact;
+   int oldCheckpoint = odbc->flags.bAutoCheckpoint;
    if( odbc->flags.bThreadProtect )
     EnterCriticalSec( &odbc->cs );
    odbc->flags.bAutoTransact = 0;
+   odbc->flags.bAutoCheckpoint = 0;
    // this will checkpoint any in progress result sets... still need a check
    SQLCommand( odbc, WIDE( "PRAGMA wal_checkpoint" ) );
    odbc->flags.bAutoTransact = oldCommit;
+   odbc->flags.bAutoCheckpoint = oldCheckpoint;
    // release our lock allowing any statement that started JUST as this ticked to resume.
+   odbc->auto_checkpoint_thread = NULL;
    if( odbc->flags.bThreadProtect )
     LeaveCriticalSec( &odbc->cs );
+// redundant; because I want to claer this before unlocking the connection
   }
   odbc->auto_checkpoint_thread = NULL;
   return 0;
@@ -75875,7 +75932,7 @@ SegSplit( &pCurrent, start );
    }
    else
    {
-    if( odbc->flags.bAutoCheckpoint && !sqlite3_stmt_readonly( collection->stmt ) )
+    if( odbc->flags.bAutoCheckpoint && (!sqlite3_stmt_readonly( collection->stmt )) )
      startAutoCheckpoint( odbc );
     Release( tmp_cmd );
     rc3 = sqlite3_step( collection->stmt );
@@ -76920,7 +76977,6 @@ SegSplit( &pCurrent, start );
   {
    const TEXTCHAR *tail;
    // can get back what was not used when parsing...
-       startAutoCheckpoint( odbc );
    retry:
  #ifdef UNICODE
    rc3 = sqlite3_prepare16_v2( odbc->db, (void*)query, (int)(querylen) * sizeof( TEXTCHAR ), &collection->stmt, (const void**)&tail );

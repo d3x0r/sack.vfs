@@ -20,6 +20,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	FileObject::Init();
 	SqlObject::Init( exports );
 	ComObject::Init( exports );
+	InitJSON( isolate, exports );
 #ifdef WIN32
 	RegObject::Init( exports );
 #endif
