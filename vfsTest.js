@@ -24,7 +24,8 @@ if( vol ) {
 // this shows the event emitter methods...
 //console.log( "file prototype", Object.keys(file) );
 
-var db = vfs.Sqlite( "$sack@mount-name$chatment.db" );
+//var db = vfs.Sqlite( "$sack@mount-name$chatment.db" );
+var db = vfs.Sqlite( "chatment.db" );
 db.makeTable( "create table if not exists tmp (id int);" );
 db.do( "insert into tmp (id) values (1),(2),(3),(4)" );
 
@@ -36,11 +37,12 @@ console.log( test );
 var val = test[0].b;
 var test = db.do( `select decrypt( '${val}' )d` );
 console.log( test );
+setTimeout( ()=>{ console.log( "keep database..." ); vfs.Sqlite.so( "get option", "defaultVal" ); db.do( "select 1" ); }, 100 );
 
 }
 
 
-db = null;
+//db = null;
 vol = null;
 file = null;
 //file2 = null;
@@ -54,6 +56,8 @@ file = null;
 //setTimeout( ()=>{ global.gc();  console.log( "ticked" );}, 1500 );
 
  }
+
  
 // setTimeout( test, 1000 );
+setTimeout( ()=>{console.log( "was that long enough?")}, 20000 );
  test();
