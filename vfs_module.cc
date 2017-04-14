@@ -10,7 +10,9 @@ static void moduleExit( void *arg ) {
 void VolumeObject::Init( Handle<Object> exports ) {
 	InvokeDeadstart();
 	node::AtExit( moduleExit );
-	
+	//SetAllocateLogging( TRUE );
+	SetAllocateDebug( FALSE );
+	SetManualAllocateCheck( TRUE );
 	SetSystemLog( SYSLOG_FILE, stdout );
 	lprintf( "Stdout Logging Enabled." );
 
