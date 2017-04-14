@@ -10,7 +10,9 @@ static void moduleExit( void *arg ) {
 void VolumeObject::Init( Handle<Object> exports ) {
 	InvokeDeadstart();
 	node::AtExit( moduleExit );
-	
+	//SetAllocateLogging( TRUE );
+	SetAllocateDebug( FALSE );
+	SetManualAllocateCheck( TRUE );
 	SetSystemLog( SYSLOG_FILE, stdout );
 	lprintf( "Stdout Logging Enabled." );
 
@@ -20,6 +22,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	FileObject::Init();
 	SqlObject::Init( exports );
 	ComObject::Init( exports );
+	InitJSON( isolate, exports );
 #ifdef WIN32
 	RegObject::Init( exports );
 #endif

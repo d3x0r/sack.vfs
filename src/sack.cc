@@ -15696,32 +15696,33 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
   if( logtype == SYSLOG_CALLBACK )
    (*syslog_local).UserCallback( buffer );
  }
+  static uint32_t openLock;
+  static uint32_t lowLevelLock;
  void SystemLogFL( const TEXTCHAR *message FILELINE_PASS )
  {
   static TEXTCHAR buffer[4096];
   static TEXTCHAR threadid[32];
   static TEXTCHAR sourcefile[256];
   CTEXTSTR logtime;
-  static uint32_t lock;
  #ifndef __STATIC_GLOBALS__
   if( !syslog_local )
   {
-   if( !lock )
-    lock =1 ;
-   else
+   if( !openLock ) {
+    openLock = 1;
+    InitSyslog( 1 );
+   } else
     return;
-   InitSyslog( 1 );
-   lock = 0;
+   openLock = 0;
   }
  #endif
   if( cannot_log )
    return;
-  if( !(*syslog_local).flags.group_ok && lock )
+  if( !(*syslog_local).flags.group_ok && openLock )
    return;
  #ifdef WIN32
-  while( InterlockedExchange( (long volatile*)&lock, 1 ) ) Relinquish();
+  while( InterlockedExchange( (long volatile*)&lowLevelLock, 1 ) ) Relinquish();
  #else
-  while( LockedExchange( &lock, 1 ) ) Relinquish();
+  while( LockedExchange( &lowLevelLock, 1 ) ) Relinquish();
  #endif
   logtime = GetLogTime();
   if( (*syslog_local).flags.bLogSourceFile && pFile )
@@ -15758,7 +15759,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
        , (*syslog_local).flags.bLogProgram?WIDE("@"):WIDE("")
        , message );
   DoSystemLog( buffer );
-  lock = 0;
+  lowLevelLock = 0;
  }
  #undef SystemLogEx
  void SystemLogEx ( const TEXTCHAR *message DBG_PASS )
@@ -16074,14 +16075,13 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  #ifndef __STATIC_GLOBALS__
   if( !syslog_local )
   {
-   static int opening;
-   if( !opening )
-    opening = 1;
-   else
+   if( !openLock ) {
+    openLock = 1;
+    InitSyslog( 1 );
+   } else
     return _null_lprintf;
    //return _null_lprintf;
-   InitSyslog( 1 );
-   opening = 0;
+   openLock = 0;
   }
  #endif
   _next_lprintf = GetNextInfo();
@@ -34204,8 +34204,8 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  {
  #ifdef _DEBUG
   int save = g.bDisableDebug;
-  g.bDisableDebug = bDisable;
-  g.bDisableAutoCheck = bDisable;
+  g.bDisableDebug = !bDisable;
+  g.bDisableAutoCheck = !bDisable;
   return save;
  #else
     return 1;
@@ -38171,9 +38171,9 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
  //--------------------------------------------------------------------------
   PDATALIST  CreateDataListEx ( uintptr_t nSize DBG_PASS )
  {
-  PDATALIST pdl = (PDATALIST)AllocateEx( sizeof( DATALIST ) DBG_RELAY );
+  PDATALIST pdl = (PDATALIST)AllocateEx( sizeof( DATALIST ) + ( nSize * 8 ) - 1 DBG_RELAY );
   pdl->Cnt = 0;
-  pdl->Avail = 0;
+  pdl->Avail = 8;
   pdl->Size = nSize;
   return pdl;
  }
@@ -39116,10 +39116,10 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
  PRIORITY_PRELOAD( InitLocals, NAMESPACE_PRELOAD_PRIORITY + 1 )
  {
  #ifdef __cplusplus
-  RegisterAndCreateGlobal((POINTER*)&list::_list_local, sizeof( list::_list_local ), WIDE("_list_local") );
-  RegisterAndCreateGlobal((POINTER*)&data_list::_data_list_local, sizeof( data_list::_data_list_local ), WIDE("_data_list_local") );
-  RegisterAndCreateGlobal((POINTER*)&queue::_link_queue_local, sizeof( queue::_link_queue_local ), WIDE("_link_queue_local") );
-  RegisterAndCreateGlobal((POINTER*)&data_queue::_data_queue_local, sizeof( data_queue::_data_queue_local ), WIDE("_data_queue_local") );
+  RegisterAndCreateGlobal((POINTER*)&list::_list_local, sizeof( *list::_list_local ), WIDE("_list_local") );
+  RegisterAndCreateGlobal((POINTER*)&data_list::_data_list_local, sizeof( *data_list::_data_list_local ), WIDE("_data_list_local") );
+  RegisterAndCreateGlobal((POINTER*)&queue::_link_queue_local, sizeof( *queue::_link_queue_local ), WIDE("_link_queue_local") );
+  RegisterAndCreateGlobal((POINTER*)&data_queue::_data_queue_local, sizeof( *data_queue::_data_queue_local ), WIDE("_data_queue_local") );
  #else
   SimpleRegisterAndCreateGlobal( _list_local );
   SimpleRegisterAndCreateGlobal( _data_list_local );
@@ -50185,7 +50185,7 @@ SegSplit( &pCurrent, start );
  // then it returns false; that is if a member is in the 'msg' parameter that is not in
  // the format, then the result is FALSE.
  //  PDATALIST is full of struct json_value_container
- JSON_EMITTER_PROC( LOGICAL, json_parse_message )(  CTEXTSTR msg
+ JSON_EMITTER_PROC( LOGICAL, json_parse_message )(  TEXTSTR msg
               , size_t msglen
               , PDATALIST *msg_data_out
                  );
@@ -50202,15 +50202,20 @@ SegSplit( &pCurrent, start );
   , VALUE_STRING = 4
   , VALUE_NUMBER = 5
   , VALUE_OBJECT = 6
+  , VALUE_ARRAY = 7
  };
  struct json_value_container {
-  PTEXT name;
+  // name of this value (if it's contained in an object)
+  char * name;
+ // value from above indiciating the type of this value
   enum json_value_types value_type;
-  PTEXT string;
-  int result_value;
+   // the string value of this value (strings and number types only)
+  char *string;
+  // boolean whether to use result_n or result_d
   int float_result;
   double result_d;
   int64_t result_n;
+  // list of struct json_value_container that this contains.
   PDATALIST contains;
  };
  // any allocate mesage parts are released.
@@ -50299,6 +50304,16 @@ SegSplit( &pCurrent, start );
   WORD_POS_NULL_2,
  //  get l
   WORD_POS_NULL_3,
+  // 31
+  WORD_POS_UNDEFINED_1,
+  WORD_POS_UNDEFINED_2,
+  WORD_POS_UNDEFINED_3,
+  WORD_POS_UNDEFINED_4,
+  WORD_POS_UNDEFINED_5,
+  WORD_POS_UNDEFINED_6,
+  WORD_POS_UNDEFINED_7,
+  WORD_POS_UNDEFINED_8,
+  WORD_POS_UNDEFINED_9,
  };
  #define CONTEXT_UNKNOWN 0
  #define CONTEXT_IN_ARRAY 1
@@ -50308,57 +50323,73 @@ SegSplit( &pCurrent, start );
   PDATALIST elements;
   struct json_context_object *object;
  };
- LOGICAL json_parse_message( CTEXTSTR msg
+ #define RESET_VAL()  {   val.value_type = VALUE_UNDEFINED;  val.contains = NULL;               val.name = NULL;                   val.string = NULL; }
+ typedef struct json_parse_context PARSE_CONTEXT, *PPARSE_CONTEXT;
+ #define MAXPARSE_CONTEXTSPERSET 128
+ DeclareSet( PARSE_CONTEXT );
+ PPARSE_CONTEXTSET parseContexts;
+ LOGICAL json_parse_message( TEXTSTR msg
                                   , size_t msglen
                                   , PDATALIST *_msg_output )
  {
-  PVARTEXT pvt_collector;
   /* I guess this is a good parser */
   PDATALIST elements = NULL;
+ // m is the output path; leave text inline; but escaped chars can offset/change the content
+  size_t m = 0;
  // character index;
   size_t n = 0;
-  int word;
+ // character index; (restore1)
+  size_t _n = 0;
+  int word = WORD_POS_RESET;
   TEXTRUNE c;
   LOGICAL status = TRUE;
-  //TEXTRUNE quote = 0;
-  //LOGICAL use_char = FALSE;
-  PLINKSTACK element_lists = NULL;
   PLINKSTACK context_stack = NULL;
   LOGICAL first_token = TRUE;
   //enum json_parse_state state;
+  PPARSE_CONTEXT context = GetFromSet( PARSE_CONTEXT, &parseContexts );
   int parse_context = CONTEXT_UNKNOWN;
   struct json_value_container val;
-  //POINTER msg_output;
+  char const * msg_input = (char const *)msg;
+  char const * _msg_input;
+  char *token_begin;
   if( !_msg_output )
    return FALSE;
   elements = CreateDataList( sizeof( val ) );
-  //msg_output = (*_msg_output);
   val.value_type = VALUE_UNDEFINED;
-  val.result_value = 0;
+  val.contains = NULL;
   val.name = NULL;
-  pvt_collector = VarTextCreate();
+  val.string = NULL;
  // static CTEXTSTR keyword[3] = { "false", "null", "true" };
-  while( status && ( n < msglen ) && ( c = GetUtfCharIndexed( msg, &n ) ) )
+  while( status && ( n < msglen ) && ( c = GetUtfChar( &msg_input ) ) )
   {
+   n = msg_input - msg;
    switch( c )
    {
    case '{':
     {
-     struct json_parse_context *old_context = New( struct json_parse_context );
+     struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &parseContexts );
+     val.value_type = VALUE_OBJECT;
+     val.contains = CreateDataList( sizeof( val ) );
+     AddDataItem( &elements, &val );
      old_context->context = parse_context;
      old_context->elements = elements;
-     elements = CreateDataList( sizeof( val ) );
+     elements = val.contains;
      PushLink( &context_stack, old_context );
+     RESET_VAL();
      parse_context = CONTEXT_IN_OBJECT;
     }
     break;
    case '[':
     {
-     struct json_parse_context *old_context = New( struct json_parse_context );
+     struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &parseContexts );
+     val.value_type = VALUE_ARRAY;
+     val.contains = CreateDataList( sizeof( val ) );
+     AddDataItem( &elements, &val );
      old_context->context = parse_context;
      old_context->elements = elements;
-     elements = CreateDataList( sizeof( val ) );
+     elements = val.contains;
      PushLink( &context_stack, old_context );
+     RESET_VAL();
      parse_context = CONTEXT_IN_ARRAY;
     }
     break;
@@ -50367,13 +50398,17 @@ SegSplit( &pCurrent, start );
     {
      if( val.name ) {
       lprintf( "two names single value?" );
-      LineRelease( val.name );
      }
-     val.name = VarTextGet( pvt_collector );
+     val.name = val.string;
+     val.string = NULL;
+     val.value_type = VALUE_UNDEFINED;
     }
     else
     {
-     lprintf( WIDE("(in array, got colon out of string):parsing fault; unexpected %c at %") _size_f, c, n );
+     if( parse_context == CONTEXT_IN_ARRAY )
+      lprintf( WIDE("(in array, got colon out of string):parsing fault; unexpected %c at %") _size_f, c, n );
+     else
+      lprintf( WIDE("(outside any object, got colon out of string):parsing fault; unexpected %c at %") _size_f, c, n );
      status = FALSE;
     }
     break;
@@ -50381,19 +50416,18 @@ SegSplit( &pCurrent, start );
     if( parse_context == CONTEXT_IN_OBJECT )
     {
      // first, add the last value
-     if( VarTextLength( pvt_collector ) ) {
-      val.value_type = VALUE_STRING;
-      val.string = VarTextGet( pvt_collector );
-     }
-     if( val.value_type != VALUE_UNDEFINED )
+     if( val.value_type != VALUE_UNDEFINED ) {
       AddDataItem( &elements, &val );
-     val.value_type = VALUE_UNDEFINED;
-     val.name = NULL;
+     }
+     RESET_VAL();
      {
       struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &context_stack );
+      struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt-1 );
+  // save updated elements list in the old value in the last pushed list.
+      oldVal->contains = elements;
       parse_context = old_context->context;
       elements = old_context->elements;
-      Release( old_context );
+      DeleteFromSet( PARSE_CONTEXT, parseContexts, old_context );
      }
      //n++;
     }
@@ -50405,19 +50439,18 @@ SegSplit( &pCurrent, start );
    case ']':
     if( parse_context == CONTEXT_IN_ARRAY )
     {
-     if( VarTextLength( pvt_collector ) ) {
-      val.value_type = VALUE_STRING;
-      val.string = VarTextGet( pvt_collector );
-     }
-     if( val.value_type != VALUE_UNDEFINED )
+     if( val.value_type != VALUE_UNDEFINED ) {
       AddDataItem( &elements, &val );
-     val.value_type = VALUE_UNDEFINED;
-     val.name = NULL;
+     }
+     RESET_VAL();
      {
       struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &context_stack );
+      struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt-1 );
+  // save updated elements list in the old value in the last pushed list.
+      oldVal->contains = elements;
       parse_context = old_context->context;
       elements = old_context->elements;
-      Release( old_context );
+      DeleteFromSet( PARSE_CONTEXT, parseContexts, old_context );
      }
     }
     else
@@ -50430,14 +50463,10 @@ SegSplit( &pCurrent, start );
     if( ( parse_context == CONTEXT_IN_ARRAY )
        || ( parse_context == CONTEXT_IN_OBJECT ) )
     {
-     if( VarTextLength( pvt_collector ) ) {
-      val.value_type = VALUE_STRING;
-      val.string = VarTextGet( pvt_collector );
-     }
-     if( val.value_type != VALUE_UNDEFINED )
+     if( val.value_type != VALUE_UNDEFINED ) {
       AddDataItem( &elements, &val );
-     val.value_type = VALUE_UNDEFINED;
-     val.name = NULL;
+     }
+     RESET_VAL();
     }
     else
     {
@@ -50447,11 +50476,14 @@ SegSplit( &pCurrent, start );
     //n++;
     break;
    default:
-    if( first_token )
-    {
-// fault
-     lprintf( WIDE("first token; fault parsing '%c' unexpected %") _size_f, c, n );
+    //if( first_token )
+    //{
+     //lprintf( WIDE("first token; fault parsing '%c' unexpected %") _size_f, c, n );// fault
      //status = FALSE;
+    //}
+    if( parse_context == CONTEXT_UNKNOWN ) {
+     //lprintf( "parser does not support simple value results." );
+     //return FALSE;
     }
     switch( c )
     {
@@ -50459,17 +50491,22 @@ SegSplit( &pCurrent, start );
      {
       // collect a string
       int escape = 0;
-      while( ( n < msglen ) && ( c = GetUtfCharIndexed( msg, &n ) ) )
+      val.string = msg + m;
+      while( (_n=n), (( n < msglen ) && (c = GetUtfChar( &msg_input ) )) )
       {
        if( c == '\\' )
        {
-        if( escape ) VarTextAddCharacter( pvt_collector, '\\' );
+        if( escape ) msg[m++] = '\\';
         else escape = 1;
        }
        else if( c == '"' )
        {
-        if( escape ) VarTextAddCharacter( pvt_collector, '\"' );
-        else break;
+        if( escape ) msg[m++] = '\"';
+        else {
+         //AddDataItem( &elements, &val );
+         //RESET_VAL();
+         break;
+        }
        }
        else
        {
@@ -50480,22 +50517,22 @@ SegSplit( &pCurrent, start );
          case '/':
          case '\\':
          case '"':
-          VarTextAddRune( pvt_collector, c );
+          msg[m++] = c;
           break;
          case 't':
-          VarTextAddCharacter( pvt_collector, '\t' );
+          msg[m++] = '\t';
           break;
          case 'b':
-          VarTextAddCharacter( pvt_collector, '\b' );
+          msg[m++] = '\b';
           break;
          case 'n':
-          VarTextAddCharacter( pvt_collector, '\n' );
+          msg[m++] = '\n';
           break;
          case 'r':
-          VarTextAddCharacter( pvt_collector, '\r' );
+          msg[m++] = '\r';
           break;
          case 'f':
-          VarTextAddCharacter( pvt_collector, '\f' );
+          msg[m++] = '\f';
           break;
          case 'u':
           {
@@ -50503,7 +50540,7 @@ SegSplit( &pCurrent, start );
            int ofs;
            for( ofs = 0; ofs < 4; ofs++ )
            {
-            c = GetUtfCharIndexed( msg, &n );
+            c = GetUtfChar( &msg_input );
             hex_char *= 16;
             if( c >= '0' && c <= '9' )      hex_char += c - '0';
             else if( c >= 'A' && c <= 'F' ) hex_char += ( c - 'A' ) + 10;
@@ -50517,7 +50554,7 @@ SegSplit( &pCurrent, start );
 // fault
                 );
            }
-           VarTextAddRune( pvt_collector, hex_char );
+           m += ConvertToUTF8( msg + m, hex_char );
           }
           break;
          default:
@@ -50532,11 +50569,14 @@ SegSplit( &pCurrent, start );
          }
          escape = 0;
         }
-        else
-         VarTextAddRune( pvt_collector, c );
+        else {
+         m += ConvertToUTF8( msg + m, c );
+        }
        }
       }
-      val.result_value = VALUE_STRING;
+  // terminate the string.
+      msg[m++] = 0;
+      val.value_type = VALUE_STRING;
       break;
      }
     case ' ':
@@ -50545,24 +50585,26 @@ SegSplit( &pCurrent, start );
     case '\n':
      // skip whitespace
      //n++;
+     lprintf( "whitespace skip..." );
      break;
    //----------------------------------------------------------
    //  catch characters for true/false/null which are values outside of quotes
     case 't':
      if( word == WORD_POS_RESET ) word = WORD_POS_TRUE_1;
 // fault
-     else lprintf( WIDE("fault parsing '%c' unexpected at %")_size_f, c, n );
+     else lprintf( WIDE("fault parsing '%c' unexpected at %") _size_f, c, n );
      break;
     case 'r':
      if( word == WORD_POS_TRUE_1 ) word = WORD_POS_TRUE_2;
 // fault
-     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
      break;
     case 'u':
      if( word == WORD_POS_TRUE_2 ) word = WORD_POS_TRUE_3;
      else if( word == WORD_POS_NULL_1 ) word = WORD_POS_NULL_2;
+     else if( word == WORD_POS_RESET ) word = WORD_POS_UNDEFINED_1;
 // fault
-     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
      break;
     case 'e':
      if( word == WORD_POS_TRUE_3 ) {
@@ -50571,32 +50613,48 @@ SegSplit( &pCurrent, start );
      } else if( word == WORD_POS_FALSE_4 ) {
       val.value_type = VALUE_FALSE;
       word = WORD_POS_RESET;
+     } else if( word == WORD_POS_UNDEFINED_3 ) word = WORD_POS_UNDEFINED_4;
+     else if( word == WORD_POS_UNDEFINED_7 ) word = WORD_POS_UNDEFINED_8;
 // fault
-     } else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
      break;
     case 'n':
      if( word == WORD_POS_RESET ) word = WORD_POS_NULL_1;
+     else if( word == WORD_POS_UNDEFINED_1 ) word = WORD_POS_UNDEFINED_2;
+     else if( word == WORD_POS_UNDEFINED_6 ) word = WORD_POS_UNDEFINED_7;
 // fault
-     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
+     break;
+    case 'd':
+     if( word == WORD_POS_UNDEFINED_2 ) word = WORD_POS_UNDEFINED_3;
+     else if( word == WORD_POS_UNDEFINED_8 ) { val.value_type=VALUE_UNDEFINED; word = WORD_POS_RESET; }
+// fault
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
+     break;
+    case 'i':
+     if( word == WORD_POS_UNDEFINED_5 ) word = WORD_POS_UNDEFINED_6;
+// fault
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
      break;
     case 'l':
      if( word == WORD_POS_NULL_2 ) word = WORD_POS_NULL_3;
      else if( word == WORD_POS_NULL_3 ) {
-      val.result_value = VALUE_NULL;
+      val.value_type = VALUE_NULL;
       word = WORD_POS_RESET;
      } else if( word == WORD_POS_FALSE_2 ) word = WORD_POS_FALSE_3;
 // fault
-     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
      break;
     case 'f':
      if( word == WORD_POS_RESET ) word = WORD_POS_FALSE_1;
+     else if( word == WORD_POS_UNDEFINED_4 ) word = WORD_POS_UNDEFINED_5;
 // fault
-     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
      break;
     case 'a':
      if( word == WORD_POS_FALSE_1 ) word = WORD_POS_FALSE_2;
 // fault
-     else lprintf( WIDE("fault parsing '%c' unexpected %")_size_f, c, n );
+     else lprintf( WIDE("fault parsing '%c' unexpected %") _size_f, c, n );
      break;
     case 's':
      if( word == WORD_POS_FALSE_3 ) word = WORD_POS_FALSE_4;
@@ -50612,9 +50670,12 @@ SegSplit( &pCurrent, start );
       // always reset this here....
       // keep it set to determine what sort of value is ready.
       val.float_result = 0;
-      VarTextAddRune( pvt_collector, c );
-      while( ( n < msglen ) && ( c = GetUtfCharIndexed( msg, &n) ) )
+      val.string = msg + m;
+  // terminate the string.
+      msg[m++] = c;
+      while( (_msg_input=msg_input),(( n < msglen ) && (c = GetUtfChar( &msg_input )) ) )
       {
+       n = (msg_input - msg );
        // leading zeros should be forbidden.
        if( ( c >= '0' && c <= '9' )
         || ( c == '-' )
@@ -50622,12 +50683,12 @@ SegSplit( &pCurrent, start );
         || ( c == '+' )
          )
        {
-        VarTextAddRune( pvt_collector, c );
+        msg[m++] = c;
        }
        else if( ( c =='e' ) || ( c == 'E' ) || ( c == '.' ) )
        {
         val.float_result = 1;
-        VarTextAddRune( pvt_collector, c );
+        msg[m++] = c;
        }
        else
        {
@@ -50635,26 +50696,20 @@ SegSplit( &pCurrent, start );
        }
       }
       {
-       PTEXT number = VarTextGet( pvt_collector );
+       msg[m++] = 0;
        if( val.float_result )
        {
-        val.result_d = FloatCreateFromSeg( number );
+        CTEXTSTR endpos;
+        val.result_d = FloatCreateFromText( val.string, &endpos );
        }
        else
        {
-        val.result_n = IntCreateFromSeg( number );
+        val.result_n = IntCreateFromText( val.string );
        }
-       LineRelease( number );
       }
-      val.result_value = VALUE_NUMBER;
-     }
-     else if( ( c >= ' ' )
-         || ( c == '\t' )
-         || ( c == '\r' )
-         || ( c == '\n' )
-        )
-     {
-      // do nothing; white space is allowed.
+      msg_input = _msg_input;
+      n = msg_input - msg;
+      val.value_type = VALUE_NUMBER;
      }
      else
      {
@@ -50678,19 +50733,15 @@ SegSplit( &pCurrent, start );
    struct json_parse_context *old_context;
    while( ( old_context = (struct json_parse_context *)PopLink( &context_stack ) ) ) {
     lprintf( "warning unclosed contexts...." );
-    Release( old_context );
+    DeleteFromSet( PARSE_CONTEXT, parseContexts, old_context );
    }
    if( context_stack )
     DeleteLinkStack( &context_stack );
   }
-  if( element_lists )
-   DeleteLinkStack( &element_lists );
-  if( !elements->Cnt )
-   if( val.value_type != VALUE_UNDEFINED )
-    AddDataItem( &elements, &val );
+  if( val.value_type != VALUE_UNDEFINED )
+   AddDataItem( &elements, &val );
   (*_msg_output) = elements;
   // clean all contexts
-  VarTextDestroy( &pvt_collector );
   if( !status )
   {
    //Release( (*_msg_output) );
@@ -50710,8 +50761,8 @@ SegSplit( &pCurrent, start );
   INDEX idx;
   DATA_FORALL( (*msg_data), idx, struct json_value_container*, val )
   {
-   if( val->name ) LineRelease( val->name );
-   if( val->string ) LineRelease( val->string );
+   //if( val->name ) Release( val->name );
+   //if( val->string ) Release( val->string );
    if( val->value_type == VALUE_OBJECT )
     json_dispose_message( &val->contains );
   }
@@ -50727,7 +50778,7 @@ SegSplit( &pCurrent, start );
   if( !val->name )
    return;
   // remove name; indicate that the value has been used.
-  LineRelease( val->name );
+  Release( val->name );
   val->name = NULL;
   switch( element->type )
   {
@@ -50740,16 +50791,16 @@ SegSplit( &pCurrent, start );
    }
    else
    {
-    switch( val->result_value )
+    switch( val->value_type )
     {
     case VALUE_NULL:
      ((CTEXTSTR*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = NULL;
      break;
     case VALUE_STRING:
-     ((CTEXTSTR*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = StrDup( GetText( val->string ) );
+     ((CTEXTSTR*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = StrDup( val->string );
      break;
     default:
-     lprintf( WIDE("Expected a string, but parsed result was a %d"), val->result_value );
+     lprintf( WIDE("Expected a string, but parsed result was a %d"), val->value_type );
      break;
     }
    }
@@ -50770,7 +50821,7 @@ SegSplit( &pCurrent, start );
    }
    else
    {
-    switch( val->result_value )
+    switch( val->value_type )
     {
     case VALUE_TRUE:
      switch( element->type )
@@ -50856,7 +50907,7 @@ SegSplit( &pCurrent, start );
      }
      break;
     default:
-     lprintf( WIDE("Expected a string, but parsed result was a %d"), val->result_value );
+     lprintf( WIDE("Expected a string, but parsed result was a %d"), val->value_type );
      break;
     }
    }
@@ -50871,7 +50922,7 @@ SegSplit( &pCurrent, start );
    }
    else
    {
-    switch( val->result_value )
+    switch( val->value_type )
     {
     case VALUE_NUMBER:
      if( val->float_result )
@@ -50892,7 +50943,7 @@ SegSplit( &pCurrent, start );
      }
      break;
     default:
-     lprintf( WIDE("Expected a float, but parsed result was a %d"), val->result_value );
+     lprintf( WIDE("Expected a float, but parsed result was a %d"), val->value_type );
      break;
     }
    }
@@ -50907,7 +50958,7 @@ SegSplit( &pCurrent, start );
    }
    else
    {
-    switch( val->result_value )
+    switch( val->value_type )
     {
     case VALUE_NUMBER:
      if( val->float_result )
@@ -73656,14 +73707,6 @@ SegSplit( &pCurrent, start );
  #endif
    //void (*xStep)(sqlite3_context*,int,sqlite3_value**),
    //void (*xFinal)(sqlite3_context*)
- static void startAutoCheckpoint( PODBC odbc ) {
-  if( odbc->flags.bAutoCheckpoint )
-  {
-   lprintf( "enabling oneshot idle chckpoint generator" );
-   if( !odbc->auto_checkpoint_thread )
-    odbc->auto_checkpoint_thread = ThreadTo( AutoCheckpointThread, (uintptr_t)odbc );
-  }
- }
  void ExtendConnection( PODBC odbc )
  {
   if( odbc->flags.bAutoClose )
@@ -73838,7 +73881,9 @@ SegSplit( &pCurrent, start );
   {
    CTEXTSTR result;
    int n = odbc->flags.bNoLogging;
+   int m = odbc->flags.bAutoCheckpoint;
    odbc->flags.bNoLogging = 1;
+   odbc->flags.bAutoCheckpoint = 0;
    SQLQueryf( odbc, &result, WIDE( "PRAGMA journal_mode=WAL;" ) );
    //if( result )
    // lprintf( WIDE( "Journal is now %s" ), result );
@@ -73849,6 +73894,7 @@ SegSplit( &pCurrent, start );
     g.flags.bAutoCheckpointRecover = 0;
    }
    odbc->flags.bNoLogging = n;
+   odbc->flags.bAutoCheckpoint = m;
    //SQLQueryf( odbc, &result, WIDE( "PRAGMA journal_mode" ) );
    //lprintf( WIDE( "Journal is now %s" ), result );
   }
@@ -73943,6 +73989,15 @@ SegSplit( &pCurrent, start );
     return FALSE;
  #endif
   return TRUE;
+ }
+ static void startAutoCheckpoint( PODBC odbc ) {
+  if( odbc->flags.bAutoCheckpoint )
+  {
+   //lprintf( "enabling oneshot idle chckpoint generator" );
+   //DumpODBCInfo( odbc );
+   if( !odbc->auto_checkpoint_thread )
+    odbc->auto_checkpoint_thread = ThreadTo( AutoCheckpointThread, (uintptr_t)odbc );
+  }
  }
  #ifdef LOG_COLLECTOR_STATES
    static int collectors;
@@ -74867,15 +74922,20 @@ SegSplit( &pCurrent, start );
   if( tick && odbc->flags.bAutoCheckpoint )
   {
    int oldCommit = odbc->flags.bAutoTransact;
+   int oldCheckpoint = odbc->flags.bAutoCheckpoint;
    if( odbc->flags.bThreadProtect )
     EnterCriticalSec( &odbc->cs );
    odbc->flags.bAutoTransact = 0;
+   odbc->flags.bAutoCheckpoint = 0;
    // this will checkpoint any in progress result sets... still need a check
    SQLCommand( odbc, WIDE( "PRAGMA wal_checkpoint" ) );
    odbc->flags.bAutoTransact = oldCommit;
+   odbc->flags.bAutoCheckpoint = oldCheckpoint;
    // release our lock allowing any statement that started JUST as this ticked to resume.
+   odbc->auto_checkpoint_thread = NULL;
    if( odbc->flags.bThreadProtect )
     LeaveCriticalSec( &odbc->cs );
+// redundant; because I want to claer this before unlocking the connection
   }
   odbc->auto_checkpoint_thread = NULL;
   return 0;
@@ -75875,7 +75935,7 @@ SegSplit( &pCurrent, start );
    }
    else
    {
-    if( odbc->flags.bAutoCheckpoint && !sqlite3_stmt_readonly( collection->stmt ) )
+    if( odbc->flags.bAutoCheckpoint && (!sqlite3_stmt_readonly( collection->stmt )) )
      startAutoCheckpoint( odbc );
     Release( tmp_cmd );
     rc3 = sqlite3_step( collection->stmt );
@@ -76920,7 +76980,6 @@ SegSplit( &pCurrent, start );
   {
    const TEXTCHAR *tail;
    // can get back what was not used when parsing...
-       startAutoCheckpoint( odbc );
    retry:
  #ifdef UNICODE
    rc3 = sqlite3_prepare16_v2( odbc->db, (void*)query, (int)(querylen) * sizeof( TEXTCHAR ), &collection->stmt, (const void**)&tail );

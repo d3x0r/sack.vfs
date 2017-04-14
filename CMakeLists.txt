@@ -135,7 +135,7 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
-set( PPCTOOL c:/general/tools/ppc.exe )
+set( PPCTOOL c:/tools/ppc.exe )
 if( EXISTS ${PPCTOOL} )
 set( AMALG_COMMAND ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
 set( AMALG_COMMAND2 ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
@@ -176,6 +176,7 @@ add_library(${PROJECT_NAME} SHARED
 	thread_module.cc
 	sql_module.cc
         com_interface.cc
+        jsonParse.cc
 	${MORE_MODULE_SOURCES}
         ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
         ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc

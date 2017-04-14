@@ -11372,7 +11372,7 @@
  // then it returns false; that is if a member is in the 'msg' parameter that is not in
  // the format, then the result is FALSE.
  //  PDATALIST is full of struct json_value_container
- JSON_EMITTER_PROC( LOGICAL, json_parse_message )(  CTEXTSTR msg
+ JSON_EMITTER_PROC( LOGICAL, json_parse_message )(  TEXTSTR msg
               , size_t msglen
               , PDATALIST *msg_data_out
                  );
@@ -11389,15 +11389,20 @@
   , VALUE_STRING = 4
   , VALUE_NUMBER = 5
   , VALUE_OBJECT = 6
+  , VALUE_ARRAY = 7
  };
  struct json_value_container {
-  PTEXT name;
+  // name of this value (if it's contained in an object)
+  char * name;
+ // value from above indiciating the type of this value
   enum json_value_types value_type;
-  PTEXT string;
-  int result_value;
+   // the string value of this value (strings and number types only)
+  char *string;
+  // boolean whether to use result_n or result_d
   int float_result;
   double result_d;
   int64_t result_n;
+  // list of struct json_value_container that this contains.
   PDATALIST contains;
  };
  // any allocate mesage parts are released.

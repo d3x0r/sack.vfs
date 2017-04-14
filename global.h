@@ -12,6 +12,8 @@
 
 using namespace v8;
 
+void InitJSON( Isolate *isolate, Handle<Object> exports );
+
 
 class VolumeObject : public node::ObjectWrap {
 public:

@@ -12,11 +12,12 @@ process.on( 'beforeExit', ()=>vfs.Thread() );
 //process.on( 'exit', ()=>vfs.Thread() );
 const thread = vfs.Thread(process._tickDomainCallback);
 module.exports =exports= vfs;
-exports.Sqlite = vfs.Sqlite;
-exports.Volume = vfs.Volume;
+//exports.Sqlite = vfs.Sqlite;
+//exports.Volume = vfs.Volume;
 
-exports.Δ = vfs.Δ;
-exports.Λ = vfs.Λ;
+//exports.Δ = vfs.Δ;
+//exports.Λ = vfs.Λ;
+/*
 exports.Volume.read = (f)=>{
 	var buf = vfs.read( f );
 	console.log( "override tostring..." );
@@ -96,3 +97,4 @@ function Utf8ArrayToStr(array) {
 
     return out;
 }
+*/
