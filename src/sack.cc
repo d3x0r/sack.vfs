@@ -15696,32 +15696,33 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
   if( logtype == SYSLOG_CALLBACK )
    (*syslog_local).UserCallback( buffer );
  }
+  static uint32_t openLock;
+  static uint32_t lowLevelLock;
  void SystemLogFL( const TEXTCHAR *message FILELINE_PASS )
  {
   static TEXTCHAR buffer[4096];
   static TEXTCHAR threadid[32];
   static TEXTCHAR sourcefile[256];
   CTEXTSTR logtime;
-  static uint32_t lock;
  #ifndef __STATIC_GLOBALS__
   if( !syslog_local )
   {
-   if( !lock )
-    lock =1 ;
-   else
+   if( !openLock ) {
+    openLock = 1;
+    InitSyslog( 1 );
+   } else
     return;
-   InitSyslog( 1 );
-   lock = 0;
+   openLock = 0;
   }
  #endif
   if( cannot_log )
    return;
-  if( !(*syslog_local).flags.group_ok && lock )
+  if( !(*syslog_local).flags.group_ok && openLock )
    return;
  #ifdef WIN32
-  while( InterlockedExchange( (long volatile*)&lock, 1 ) ) Relinquish();
+  while( InterlockedExchange( (long volatile*)&lowLevelLock, 1 ) ) Relinquish();
  #else
-  while( LockedExchange( &lock, 1 ) ) Relinquish();
+  while( LockedExchange( &lowLevelLock, 1 ) ) Relinquish();
  #endif
   logtime = GetLogTime();
   if( (*syslog_local).flags.bLogSourceFile && pFile )
@@ -15758,7 +15759,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
        , (*syslog_local).flags.bLogProgram?WIDE("@"):WIDE("")
        , message );
   DoSystemLog( buffer );
-  lock = 0;
+  lowLevelLock = 0;
  }
  #undef SystemLogEx
  void SystemLogEx ( const TEXTCHAR *message DBG_PASS )
@@ -16074,14 +16075,13 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  #ifndef __STATIC_GLOBALS__
   if( !syslog_local )
   {
-   static int opening;
-   if( !opening )
-    opening = 1;
-   else
+   if( !openLock ) {
+    openLock = 1;
+    InitSyslog( 1 );
+   } else
     return _null_lprintf;
    //return _null_lprintf;
-   InitSyslog( 1 );
-   opening = 0;
+   openLock = 0;
   }
  #endif
   _next_lprintf = GetNextInfo();
@@ -34204,8 +34204,8 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  {
  #ifdef _DEBUG
   int save = g.bDisableDebug;
-  g.bDisableDebug = bDisable;
-  g.bDisableAutoCheck = bDisable;
+  g.bDisableDebug = !bDisable;
+  g.bDisableAutoCheck = !bDisable;
   return save;
  #else
     return 1;
@@ -39116,10 +39116,10 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
  PRIORITY_PRELOAD( InitLocals, NAMESPACE_PRELOAD_PRIORITY + 1 )
  {
  #ifdef __cplusplus
-  RegisterAndCreateGlobal((POINTER*)&list::_list_local, sizeof( list::_list_local ), WIDE("_list_local") );
-  RegisterAndCreateGlobal((POINTER*)&data_list::_data_list_local, sizeof( data_list::_data_list_local ), WIDE("_data_list_local") );
-  RegisterAndCreateGlobal((POINTER*)&queue::_link_queue_local, sizeof( queue::_link_queue_local ), WIDE("_link_queue_local") );
-  RegisterAndCreateGlobal((POINTER*)&data_queue::_data_queue_local, sizeof( data_queue::_data_queue_local ), WIDE("_data_queue_local") );
+  RegisterAndCreateGlobal((POINTER*)&list::_list_local, sizeof( *list::_list_local ), WIDE("_list_local") );
+  RegisterAndCreateGlobal((POINTER*)&data_list::_data_list_local, sizeof( *data_list::_data_list_local ), WIDE("_data_list_local") );
+  RegisterAndCreateGlobal((POINTER*)&queue::_link_queue_local, sizeof( *queue::_link_queue_local ), WIDE("_link_queue_local") );
+  RegisterAndCreateGlobal((POINTER*)&data_queue::_data_queue_local, sizeof( *data_queue::_data_queue_local ), WIDE("_data_queue_local") );
  #else
   SimpleRegisterAndCreateGlobal( _list_local );
   SimpleRegisterAndCreateGlobal( _data_list_local );
