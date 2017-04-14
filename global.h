@@ -100,6 +100,8 @@ public:
 	static void escape( const FunctionCallbackInfo<Value>& args );
 	static void option( const FunctionCallbackInfo<Value>& args );
 	static void setOption( const FunctionCallbackInfo<Value>& args );
+	static void optionInternal( const FunctionCallbackInfo<Value>& args );
+	static void setOptionInternal( const FunctionCallbackInfo<Value>& args );
 	static void makeTable( const FunctionCallbackInfo<Value>& args );
 	static void closeDb( const FunctionCallbackInfo<Value>& args );
 	static void commit( const FunctionCallbackInfo<Value>& args );

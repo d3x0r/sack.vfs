@@ -45,8 +45,14 @@ void SqlObject::Init( Handle<Object> exports ) {
 	//NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "makeTable", makeTable );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "makeTable", makeTable );
 	constructor.Reset( isolate, sqlTemplate->GetFunction() );
+
+	Local<Object> sqlfunc = sqlTemplate->GetFunction();
+
+	NODE_SET_METHOD(sqlfunc, "op", optionInternal );
+	NODE_SET_METHOD(sqlfunc, "so", setOptionInternal );
+
 	exports->Set( String::NewFromUtf8( isolate, "Sqlite" ),
-		sqlTemplate->GetFunction() );
+		sqlfunc );
 }
 
 //-----------------------------------------------------------
@@ -231,6 +237,7 @@ void SqlObject::query( const FunctionCallbackInfo<Value>& args ) {
 				records->Set( row++, record );
 			} while( FetchSQLRecord( sql->odbc, &sql->result ) );
 		}
+		SQLEndQuery( sql->odbc );
 		args.GetReturnValue().Set( records );
 	}
 	else
@@ -521,7 +528,7 @@ void OptionTreeObject::writeOptionNode( v8::Local<v8::String> field,
 }
 
 
-void SqlObject::option( const FunctionCallbackInfo<Value>& args ) {
+static void option_( const FunctionCallbackInfo<Value>& args, int internal ) {
 	Isolate* isolate = args.GetIsolate();
 
 	int argc = args.Length();
@@ -553,16 +560,20 @@ void SqlObject::option( const FunctionCallbackInfo<Value>& args ) {
 		optname = NULL;
 
 	TEXTCHAR readbuf[1024];
+	PODBC use_odbc = NULL;
+	if( internal ) {
+	} else 
+	{
+		SqlObject *sql = SqlObject::Unwrap<SqlObject>( args.This() );
+		sql->fields = 0;
 
-	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	sql->fields = 0;
-
-	if( !sql->optionInitialized ) {
-		SetOptionDatabaseOption( sql->odbc );
-		sql->optionInitialized = TRUE;
+		if( !sql->optionInitialized ) {
+			SetOptionDatabaseOption( sql->odbc );
+			sql->optionInitialized = TRUE;
+		}
+		use_odbc = sql->odbc;
 	}
-
-	SACK_GetPrivateProfileStringExxx( sql->odbc
+	SACK_GetPrivateProfileStringExxx( use_odbc
 		, sect
 		, optname
 		, defaultVal
@@ -581,9 +592,17 @@ void SqlObject::option( const FunctionCallbackInfo<Value>& args ) {
 	Deallocate( char*, defaultVal );
 }
 
+void SqlObject::option( const FunctionCallbackInfo<Value>& args ) {
+	option_( args, 0 );
+}
+
+void SqlObject::optionInternal( const FunctionCallbackInfo<Value>& args ) {
+	option_( args, 1 );
+}
+
 //-----------------------------------------------------------
 
-void SqlObject::setOption( const FunctionCallbackInfo<Value>& args ) {
+static void setOption( const FunctionCallbackInfo<Value>& args, int internal ) {
 	Isolate* isolate = args.GetIsolate();
 
 	int argc = args.Length();
@@ -616,10 +635,16 @@ void SqlObject::setOption( const FunctionCallbackInfo<Value>& args ) {
 
 	TEXTCHAR readbuf[1024];
 
-	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	sql->fields = 0;
+	PODBC use_odbc = NULL;
+	if( internal ) {
+	} else 
+	{
+		SqlObject *sql = SqlObject::Unwrap<SqlObject>( args.This() );
+		sql->fields = 0;
+		use_odbc = sql->odbc;
+	}
 
-	SACK_WriteOptionString( sql->odbc
+	SACK_WriteOptionString( use_odbc
 		, sect
 		, optname
 		, defaultVal
@@ -631,6 +656,13 @@ void SqlObject::setOption( const FunctionCallbackInfo<Value>& args ) {
 	Deallocate( char*, optname );
 	Deallocate( char*, sect );
 	Deallocate( char*, defaultVal );
+}
+
+void SqlObject::setOption( const FunctionCallbackInfo<Value>& args ) {
+	::setOption( args, 0 );
+}
+void SqlObject::setOptionInternal( const FunctionCallbackInfo<Value>& args ) {
+	::setOption( args, 1 );
 }
 
 //-----------------------------------------------------------
