@@ -179,10 +179,15 @@ void SqlObject::commit( const FunctionCallbackInfo<Value>& args ) {
 void SqlObject::escape( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	if( args[0]->IsUndefined() ) return; // undefined is still undefined
+	if( args[0]->IsNull() ) { 
+		args.GetReturnValue().Set( args[0] ); // undefined is still undefined
+		return;
+	}
 	String::Utf8Value tmp( args[0] );
-   char *out = EscapeSQLString(sql->odbc, (*tmp) );
+	char *out = EscapeSQLString(sql->odbc, (*tmp) );
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, out ) );
-   Deallocate( char*, out );
+	Deallocate( char*, out );
 
 }
 //-----------------------------------------------------------
