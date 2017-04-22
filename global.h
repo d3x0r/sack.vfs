@@ -19,6 +19,8 @@ class VolumeObject : public node::ObjectWrap {
 public:
 	struct volume *vol;
 	bool volNative;
+	char *mountName;
+	char *fileName;
 	struct file_system_mounted_interface* fsMount;
 	static v8::Persistent<v8::Function> constructor;
 	
@@ -32,8 +34,9 @@ public:
 	static void fileRead( const FunctionCallbackInfo<Value>& args );
 	static void fileWrite( const FunctionCallbackInfo<Value>& args );
 	static void fileExists( const FunctionCallbackInfo<Value>& args );
+	static void openVolDb( const FunctionCallbackInfo<Value>& args );
 
-   ~VolumeObject();
+	~VolumeObject();
 };
 
 
@@ -51,7 +54,7 @@ public:
 	static void relinquish( const FunctionCallbackInfo<Value>& args );
 	static void wake( const FunctionCallbackInfo<Value>& args );
 
-   ~ThreadObject();
+	~ThreadObject();
 };
 
 
@@ -60,9 +63,9 @@ class FileObject : public node::ObjectWrap {
 	struct sack_vfs_file *file;
 	FILE *cfile;
 	//Local<Object> volume;
-   char* buf;
-   size_t size;
-   Persistent<Object> volume;
+	char* buf;
+	size_t size;
+	Persistent<Object> volume;
 public:
 	static v8::Persistent<v8::Function> constructor;
 	static void Init(  );
@@ -78,7 +81,7 @@ public:
 	static void Emitter( const FunctionCallbackInfo<Value>& args );
 
 	FileObject( VolumeObject* vol, const char *filename, Isolate*, Local<Object> o );
-   ~FileObject();
+	~FileObject();
 };
 
 
@@ -95,7 +98,7 @@ public:
 public:
 
 	static void Init( Handle<Object> exports );
-	SqlObject( const char *dsn, Isolate* isolate, Local<Object> o );
+	SqlObject( const char *dsn );
 
 	static void New( const FunctionCallbackInfo<Value>& args );
 	static void query( const FunctionCallbackInfo<Value>& args );
@@ -114,7 +117,9 @@ public:
 	static void findOptionNode( const FunctionCallbackInfo<Value>& args );
 	static void getOptionNode( const FunctionCallbackInfo<Value>& args );
 
-   ~SqlObject();
+	static void SqlObject::doWrap( SqlObject *sql, Local<Object> o ); 
+
+	~SqlObject();
 };
 
 
@@ -140,7 +145,7 @@ public:
 	static void readOptionNode( v8::Local<v8::String> field,
 		const PropertyCallbackInfo<v8::Value>& info );
 
-   ~OptionTreeObject();
+	~OptionTreeObject();
 };
 
 
@@ -168,7 +173,7 @@ public:
 	static void closeCom( const FunctionCallbackInfo<Value>& args );
 
 
-   ~ComObject();
+	~ComObject();
 };
 
 
@@ -191,7 +196,7 @@ public:
 	static void setRegItem( const FunctionCallbackInfo<Value>& args );
 
 
-   ~RegObject();
+	~RegObject();
 };
 
 
@@ -218,7 +223,7 @@ public:
 	static void close( const FunctionCallbackInfo<Value>& args );
 
 
-   ~WebSockClientObject();
+	~WebSockClientObject();
 };
 
 
