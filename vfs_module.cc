@@ -14,7 +14,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	SetAllocateDebug( FALSE );
 	SetManualAllocateCheck( TRUE );
 	SetSystemLog( SYSLOG_FILE, stdout );
-	lprintf( "Stdout Logging Enabled." );
+	//lprintf( "Stdout Logging Enabled." );
 
 	Isolate* isolate = Isolate::GetCurrent();
 	Local<FunctionTemplate> volumeTemplate;
@@ -37,6 +37,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "exists", fileExists );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "read", fileRead );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "write", fileWrite );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "Sqlite", openVolDb );
 
 	
 	constructor.Reset( isolate, volumeTemplate->GetFunction() );
@@ -45,7 +46,10 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	//NODE_SET_METHOD( exports, "InitFS", InitFS );
 }
 
+
 VolumeObject::VolumeObject( const char *mount, const char *filename, const char *key, const char *key2 )  {
+	mountName = (char *)mount;
+	fileName = StrDup( filename );
 	if( !mount ) {
 		volNative = false;
 		fsMount = sack_get_default_mount();
@@ -76,6 +80,56 @@ void logBinary( char *x, int n )
 		}
 	}
 }
+
+void VolumeObject::openVolDb( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.IsConstructCall() ) {
+		int argc = args.Length();
+		if( argc == 0 ) {
+			isolate->ThrowException( Exception::Error(
+					String::NewFromUtf8( isolate, "Required filename missing." ) ) );
+			return;
+		}
+		else {
+
+			VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( (argc > 1)?args[1]->ToObject():args.Holder() );
+			if( !vol->mountName )
+			{
+				isolate->ThrowException( Exception::Error(
+						String::NewFromUtf8( isolate, "Volume is not mounted; cannot be used to open Sqlite database." ) ) );
+				return;
+				
+			}
+			String::Utf8Value fName( args[0] );
+			SqlObject* obj;
+			char dbName[256];
+			snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
+			obj = new SqlObject( dbName );
+			SqlObject::doWrap( obj, args.This() );
+
+			args.GetReturnValue().Set( args.This() );
+		}
+
+	}
+	else {
+		// Invoked as plain function `MyObject(...)`, turn into construct call.
+		int argc = args.Length();
+		Local<Value> *argv = new Local<Value>[argc+1];
+		int n;
+		for( n = 0; n < argc; n++ )
+			argv[n] = args[n];
+		argv[n] = args.Holder();
+
+		Local<Function> cons = Local<Function>::New( isolate, SqlObject::constructor );
+		MaybeLocal<Object> mo = Nan::NewInstance( cons, argc, argv );
+		if( !mo.IsEmpty() )
+			args.GetReturnValue().Set( mo.ToLocalChecked() );
+		delete argv;
+	}
+
+}
+
+
 static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = Isolate::GetCurrent();
 	// can't get to this function except if it was an array buffer I allocated and attached this to.
@@ -235,7 +289,7 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 					obj->Wrap( args.This() );
 					args.GetReturnValue().Set( args.This() );
 				}
-				Deallocate( char*, mount_name );
+				//Deallocate( char*, mount_name );
 				if( !defaultFilename )
 					Deallocate( char*, filename );
 				Deallocate( char*, key );
@@ -431,6 +485,8 @@ Persistent<Function> FileObject::constructor;
 
 VolumeObject::~VolumeObject() {
 	if( volNative ) {
+		Deallocate( char*, mountName );
+		Deallocate( char*, fileName );
 		//printf( "Volume object evaporated.\n" );
 		sack_unmount_filesystem( fsMount );
 		sack_vfs_unload_volume( vol );
