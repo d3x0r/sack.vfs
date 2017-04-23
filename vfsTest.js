@@ -8,6 +8,11 @@ try {
     vol = vfs.Volume( "mount-name", "./data.vfs", "a", "b" );//, "some key text", "Some other Key" )
 } catch( err ) { console.log( err ) } ;
 if( vol ) {
+	var volDb = vol.Sqlite( "option.db" );
+	var rows = volDb.do( "select * from sqlite_master" );
+	console.log( "read db in vfs?" );
+
+
     console.log( "read file1" );
     file = vol.File( "default file" );
     //file.on( "close", ()=>{console.log( "closed." );} );
