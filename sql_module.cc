@@ -65,10 +65,10 @@ void SqlObject::New( const FunctionCallbackInfo<Value>& args ) {
 		dsn = *arg;
 		SqlObject* obj;
 		if( args.Length() < 2 ) {
-			obj = new SqlObject( dsn, isolate, args.Holder() );
+			obj = new SqlObject( dsn );
 		}
 		else {
-			obj = new SqlObject( dsn, isolate, args[1]->ToObject() );
+			obj = new SqlObject( dsn );
 		}
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
@@ -78,6 +78,10 @@ void SqlObject::New( const FunctionCallbackInfo<Value>& args ) {
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
 		args.GetReturnValue().Set( Nan::NewInstance( cons, argc, argv ).ToLocalChecked() );
 	}
+}
+
+void SqlObject::doWrap( SqlObject *sql, Local<Object> o ) {
+	sql->Wrap( o );
 }
 
 //-----------------------------------------------------------
@@ -257,7 +261,7 @@ void SqlObject::query( const FunctionCallbackInfo<Value>& args ) {
 
 
 Persistent<Function> SqlObject::constructor;
-SqlObject::SqlObject( const char *dsn, Isolate* isolate, Local<Object> o )
+SqlObject::SqlObject( const char *dsn )
 {
    odbc = ConnectToDatabase( dsn );
    SetSQLThreadProtect( odbc, FALSE );
