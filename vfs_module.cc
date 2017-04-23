@@ -83,8 +83,8 @@ void logBinary( char *x, int n )
 
 void VolumeObject::openVolDb( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
 	if( args.IsConstructCall() ) {
-		int argc = args.Length();
 		if( argc == 0 ) {
 			isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, "Required filename missing." ) ) );
@@ -113,12 +113,21 @@ void VolumeObject::openVolDb( const FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
+  		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( (argc > 1)?args[1]->ToObject():args.Holder() );
+  		if( !vol->mountName )
+  		{
+  			isolate->ThrowException( Exception::Error(
+  					String::NewFromUtf8( isolate, "Volume is not mounted; cannot be used to open Sqlite database." ) ) );
+  			return;
+  		}
 		int argc = args.Length();
-		Local<Value> *argv = new Local<Value>[argc+1];
+		Local<Value> *argv = new Local<Value>[2];
 		int n;
-		for( n = 0; n < argc; n++ )
-			argv[n] = args[n];
-		argv[n] = args.Holder();
+  		char dbName[256];
+		String::Utf8Value fName( args[0] );
+  		snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
+  		argv[0] = String::NewFromUtf8( isolate, dbName );
+		argv[1] = args.Holder();
 
 		Local<Function> cons = Local<Function>::New( isolate, SqlObject::constructor );
 		MaybeLocal<Object> mo = Nan::NewInstance( cons, argc, argv );
