@@ -10411,9 +10411,11 @@
  // add some space to the volume....
  static LOGICAL ExpandVolume( struct volume *vol ) {
   LOGICAL created;
+  LOGICAL path_checked = FALSE;
   struct disk* new_disk;
   size_t oldsize = vol->dwSize;
   if( vol->read_only ) return TRUE;
+  do {
   if( !vol->dwSize ) {
    new_disk = (struct disk*)OpenSpaceExx( NULL, vol->volname, 0, &vol->dwSize, &created );
    if( new_disk && vol->dwSize ) {
@@ -10447,9 +10449,26 @@
  #endif
     vol->disk = new_disk;
     return TRUE;
-   } else
+   } else {
+    if( !new_disk ) if( !path_checked ) {
+     char *tmp = StrDup( vol->volname );
+     char *dir = pathrchr( tmp );
+     path_checked = TRUE;
+     if( dir ) {
+       dir[0] = 0;
+      if( !IsPath( tmp ) ) {
+       MakePath( tmp );
+       Deallocate( char*, tmp );
+       continue;
+      }
+     }
+     Deallocate( char*, tmp );
+    }
     created = 1;
+   }
+   break;
   }
+  } while(1);
   if( oldsize ) CloseSpace( vol->diskReal );
          vol->dwSize += ((uintptr_t)vol->disk - (uintptr_t)vol->diskReal);
   // a BAT plus the sectors it references... ( BLOCKS_PER_BAT + 1 ) * BLOCK_SIZE
@@ -10477,7 +10496,7 @@
       }
       vol->dwSize -= ((uintptr_t)actual_disk - (uintptr_t)new_disk);
       new_disk = actual_disk;
-     }{}
+     }
     }
    }
  #endif
@@ -15038,8 +15057,10 @@ GetFreeBlock( vol, TRUE );
     /* using SYSLOG_AUTO_FILE option does not require this to be open.
     * it is opened on demand.
     */
-    logtype = SYSLOG_FILE;
-    (*syslog_local).file = stderr;
+    logtype = SYSLOG_AUTO_FILE;
+    //(*syslog_local).file = stderr;
+    //logtype = SYSLOG_FILE;
+    //(*syslog_local).file = stderr;
     (*syslog_local).flags.bLogOpenBackup = 1;
     (*syslog_local).flags.bUseDeltaTime = 1;
     (*syslog_local).flags.bLogCPUTime = 1;
