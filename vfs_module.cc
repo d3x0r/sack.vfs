@@ -49,11 +49,11 @@ void VolumeObject::Init( Handle<Object> exports ) {
 
 VolumeObject::VolumeObject( const char *mount, const char *filename, const char *key, const char *key2 )  {
 	mountName = (char *)mount;
-	fileName = StrDup( filename );
-	if( !mount ) {
+	if( !mount && !filename ) {
 		volNative = false;
 		fsMount = sack_get_default_mount();
 	} else {
+		fileName = StrDup( filename );
 		volNative = true;
 		vol = sack_vfs_load_crypt_volume( filename, key, key2 );
 		if( vol )
@@ -204,7 +204,7 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 		}
 
 		String::Utf8Value fName( args[0] );
-	
+		
 		if(args[1]->IsArrayBuffer()) {
 			Local<ArrayBuffer> myarr = args[1].As<ArrayBuffer>();
 			Nan::TypedArrayContents<uint8_t> dest(myarr);
@@ -218,13 +218,33 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 				args.GetReturnValue().Set( True(isolate) );
 			} else {
 				FILE *file = sack_fopenEx( 0, *fName, "wb", vol->fsMount );
-				size_t len = sack_fsize( file );
-				uint8_t *buf = NewArray( uint8_t, len );
-				sack_fwrite( buf, len, 1, file );
+				sack_fwrite( buf, myarr->ByteLength(), 1, file );
 				sack_fclose( file );
 
 				args.GetReturnValue().Set( True(isolate) );
 			}
+		}
+		else if(args[1]->IsString()) {
+			char *f = StrDup( *fName );
+			String::Utf8Value buffer( args[1] );
+			//Local<ArrayBuffer> myarr = args[1].As<ArrayBuffer>();
+			//Nan::TypedArrayContents<uint8_t> dest(myarr);
+			char *buf = *buffer;
+
+			if( vol->volNative ) {
+				struct sack_vfs_file *file = sack_vfs_openfile( vol->vol, f );
+				sack_vfs_write( file, (const char*)buf, buffer.length()  );
+				sack_vfs_close( file );
+	        
+				args.GetReturnValue().Set( True(isolate) );
+			} else {
+				FILE *file = sack_fopenEx( 0, f, "wb", vol->fsMount );
+				sack_fwrite( buf, buffer.length(), 1, file );
+				sack_fclose( file );
+
+				args.GetReturnValue().Set( True(isolate) );
+			}
+			Deallocate( char*, f );
 		}
 	}
 
