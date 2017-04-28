@@ -10416,58 +10416,70 @@
   size_t oldsize = vol->dwSize;
   if( vol->read_only ) return TRUE;
   do {
-  if( !vol->dwSize ) {
-   new_disk = (struct disk*)OpenSpaceExx( NULL, vol->volname, 0, &vol->dwSize, &created );
-   if( new_disk && vol->dwSize ) {
-    vol->diskReal = new_disk;
+   if( !vol->dwSize ) {
+    new_disk = (struct disk*)OpenSpaceExx( NULL, vol->volname, 0, &vol->dwSize, &created );
+    if( new_disk && vol->dwSize ) {
+     vol->diskReal = new_disk;
  #ifdef WIN32
- // elf has a different signature to check for .so extended data...
-    struct disk *actual_disk;
-    if( ((char*)new_disk)[0] == 'M' && ((char*)new_disk)[1] == 'Z' ) {
-     actual_disk = (struct disk*)GetExtraData( new_disk );
-     if( actual_disk ) {
-      if( ( ( (uintptr_t)actual_disk - (uintptr_t)new_disk ) < vol->dwSize ) ) {
-       const uint8_t *sig = sack_vfs_get_signature2( (POINTER)((uintptr_t)actual_disk-BLOCK_SIZE), new_disk );
-       if( memcmp( sig, (POINTER)(((uintptr_t)actual_disk)-BLOCK_SIZE), BLOCK_SIZE ) ) {
-        lprintf( "Signature failed comparison; the core has changed since it was attached" );
+  // elf has a different signature to check for .so extended data...
+     struct disk *actual_disk;
+     if( ((char*)new_disk)[0] == 'M' && ((char*)new_disk)[1] == 'Z' ) {
+      actual_disk = (struct disk*)GetExtraData( new_disk );
+      if( actual_disk ) {
+       if( ( ( (uintptr_t)actual_disk - (uintptr_t)new_disk ) < vol->dwSize ) ) {
+        const uint8_t *sig = sack_vfs_get_signature2( (POINTER)((uintptr_t)actual_disk-BLOCK_SIZE), new_disk );
+        if( memcmp( sig, (POINTER)(((uintptr_t)actual_disk)-BLOCK_SIZE), BLOCK_SIZE ) ) {
+         lprintf( "Signature failed comparison; the core has changed since it was attached" );
+         CloseSpace( vol->diskReal );
+         vol->diskReal = NULL;
+         vol->dwSize = 0;
+         return FALSE;
+        }
+        vol->dwSize -= ((uintptr_t)actual_disk - (uintptr_t)new_disk);
+        new_disk = actual_disk;
+       } else {
+        lprintf( "Signature failed comparison; the core is not attached to anything." );
         CloseSpace( vol->diskReal );
         vol->diskReal = NULL;
         vol->dwSize = 0;
         return FALSE;
        }
-       vol->dwSize -= ((uintptr_t)actual_disk - (uintptr_t)new_disk);
-       new_disk = actual_disk;
-      } else {
-       lprintf( "Signature failed comparison; the core is not attached to anything." );
-       CloseSpace( vol->diskReal );
-       vol->diskReal = NULL;
-       vol->dwSize = 0;
-       return FALSE;
       }
      }
-    }
  #endif
-    vol->disk = new_disk;
-    return TRUE;
-   } else {
-    if( !new_disk ) if( !path_checked ) {
-     char *tmp = StrDup( vol->volname );
-     char *dir = pathrchr( tmp );
-     path_checked = TRUE;
-     if( dir ) {
-       dir[0] = 0;
-      if( !IsPath( tmp ) ) {
-       MakePath( tmp );
+     vol->disk = new_disk;
+     return TRUE;
+    }
+    else {
+     if( !new_disk ) {
+      if( !path_checked ) {
+       char *tmp = StrDup( vol->volname );
+       char *dir = (char*)pathrchr( tmp );
+       path_checked = TRUE;
+       if( dir ) {
+        dir[0] = 0;
+        if( !IsPath( tmp ) ) {
+         MakePath( tmp );
+         Deallocate( char*, tmp );
+         continue;
+        }
+        else {
+         // initial open failed.
+         lprintf( "Failed to open volume : %s", vol->volname );
+         Deallocate( char*, tmp );
+         return FALSE;
+        }
+       }
        Deallocate( char*, tmp );
-       continue;
       }
      }
-     Deallocate( char*, tmp );
+     else
+ // zero size result?, but with memory
+      created = 1;
     }
-    created = 1;
+    break;
    }
-   break;
-  }
+   else break;
   } while(1);
   if( oldsize ) CloseSpace( vol->diskReal );
          vol->dwSize += ((uintptr_t)vol->disk - (uintptr_t)vol->diskReal);
@@ -11184,28 +11196,28 @@ GetFreeBlock( vol, TRUE );
   struct directory_entry *entkey = &file->dirent_key;
   BLOCKINDEX block, _block;
   size_t bsize = 0;
-   _block = block = entry->first_block ^ entkey->first_block;
-   do {
-    BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX*, vol, ( ( block >> BLOCK_SHIFT ) * ( BLOCKS_PER_SECTOR*BLOCK_SIZE) ), BLOCK_CACHE_FILE );
-    BLOCKINDEX _thiskey;
-    _thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_FILE])[_block & (BLOCKS_PER_BAT-1)]:0;
-    block = vfs_GetNextBlock( vol, block, FALSE, FALSE );
+  _block = block = entry->first_block ^ entkey->first_block;
+  do {
+   BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX*, vol, ( ( block >> BLOCK_SHIFT ) * ( BLOCKS_PER_SECTOR*BLOCK_SIZE) ), BLOCK_CACHE_FILE );
+   BLOCKINDEX _thiskey;
+   _thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_FILE])[_block & (BLOCKS_PER_BAT-1)]:0;
+   block = vfs_GetNextBlock( vol, block, FALSE, FALSE );
+   if( bsize > (entry->filesize ^ entkey->filesize) ) {
+    uint8_t* blockData = (uint8_t*)vfs_BSEEK( file->vol, _block, BLOCK_CACHE_DATAKEY );
+    //LoG( "clearing a datablock after a file..." );
+    memset( blockData, 0, BLOCK_SIZE );
+    this_BAT[_block & (BLOCKS_PER_BAT-1)] = _thiskey;
+   } else {
+    bsize++;
     if( bsize > (entry->filesize ^ entkey->filesize) ) {
      uint8_t* blockData = (uint8_t*)vfs_BSEEK( file->vol, _block, BLOCK_CACHE_DATAKEY );
-     //LoG( "clearing a datablock after a file..." );
-     memset( blockData, 0, BLOCK_SIZE );
-     this_BAT[_block & (BLOCKS_PER_BAT-1)] = _thiskey;
-    } else {
-     bsize++;
-     if( bsize > (entry->filesize ^ entkey->filesize) ) {
-      uint8_t* blockData = (uint8_t*)vfs_BSEEK( file->vol, _block, BLOCK_CACHE_DATAKEY );
-      //LoG( "clearing a partial datablock after a file..., %d, %d", BLOCK_SIZE-(entry->filesize & (BLOCK_SIZE-1)), ( entry->filesize & (BLOCK_SIZE-1)) );
-      memset( blockData + ( entry->filesize & (BLOCK_SIZE-1)), 0, BLOCK_SIZE-(entry->filesize & (BLOCK_SIZE-1)) );
-      this_BAT[_block & (BLOCKS_PER_BAT-1)] = ~_thiskey;
-     }
+     //LoG( "clearing a partial datablock after a file..., %d, %d", BLOCK_SIZE-(entry->filesize & (BLOCK_SIZE-1)), ( entry->filesize & (BLOCK_SIZE-1)) );
+     memset( blockData + ( entry->filesize & (BLOCK_SIZE-1)), 0, BLOCK_SIZE-(entry->filesize & (BLOCK_SIZE-1)) );
+     this_BAT[_block & (BLOCKS_PER_BAT-1)] = ~_thiskey;
     }
-    _block = block;
-   } while( block != EOFBLOCK );
+   }
+   _block = block;
+  } while( block != EOFBLOCK );
  }
  size_t CPROC sack_vfs_truncate( struct sack_vfs_file *file ) { file->entry->filesize = file->fpi ^ file->dirent_key.filesize; shrinkBAT( file ); return file->fpi; }
  int CPROC sack_vfs_close( struct sack_vfs_file *file ) {
