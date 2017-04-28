@@ -35,6 +35,7 @@ public:
 	static void fileWrite( const FunctionCallbackInfo<Value>& args );
 	static void fileExists( const FunctionCallbackInfo<Value>& args );
 	static void openVolDb( const FunctionCallbackInfo<Value>& args );
+   static void makeDirectory( const FunctionCallbackInfo<Value>& args );
 
 	~VolumeObject();
 };

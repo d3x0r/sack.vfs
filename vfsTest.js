@@ -3,12 +3,16 @@ function test () {
 var vfs = require( "./vfs_module.js" )
 console.log( "keys: ", Object.keys( vfs ) );
 var more = require( "./testaux.js" );
+
+var vol0 = vfs.Volume();
+vol0.mkdir( "test/make/path" );
+
 var vol = null;
 try {
     vol = vfs.Volume( "mount-name", "./data.vfs", "a", "b" );//, "some key text", "Some other Key" )
 } catch( err ) { console.log( err ) } ;
 if( vol ) {
-	var volDb = vol.Sqlite( "option.db" );
+	var volDb = vol.Sqlite( "option-internal.db" );
 	var rows = volDb.do( "select * from sqlite_master" );
 	console.log( "read db in vfs?" );
 
