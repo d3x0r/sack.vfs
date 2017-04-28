@@ -36597,7 +36597,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
   struct file_system_mounted_interface *root = (*winfile_local).mounted_file_systems;
   while( root )
   {
-   if( stricmp( root->name, name ) == 0 ) break;
+   if( root->name ) if( stricmp( root->name, name ) == 0 ) break;
    root = NextThing( root );
   }
   return root;
@@ -36610,7 +36610,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
  {
   struct file_system_mounted_interface *root = (*winfile_local).mounted_file_systems;
   struct file_system_mounted_interface *mount = New( struct file_system_mounted_interface );
-  mount->name = strdup( name );
+  mount->name = name?strdup( name ):NULL;
   mount->priority = priority;
   mount->psvInstance = psvInstance;
   mount->writeable = writable;
