@@ -320,11 +320,17 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 				}
 				if( argc > 2 ) {
 					String::Utf8Value k( args[2] );
+					if( args[2]->IsNull() || args[2]->IsUndefined() )
+						key = NULL;
+					else
 					key = StrDup( *k );
 				}
 				if( argc > 3 ) {
 					String::Utf8Value k( args[3] );
-					key2 = StrDup( *k );
+					if( args[3]->IsNull() || args[3]->IsUndefined() )
+						key2 = NULL;
+					else
+						key2 = StrDup( *k );
 				}
 				// Invoked as constructor: `new MyObject(...)`
 				VolumeObject* obj = new VolumeObject( mount_name, filename, key, key2 );
