@@ -118,7 +118,7 @@ public:
 	static void findOptionNode( const FunctionCallbackInfo<Value>& args );
 	static void getOptionNode( const FunctionCallbackInfo<Value>& args );
 
-	static void SqlObject::doWrap( SqlObject *sql, Local<Object> o ); 
+	static void doWrap( SqlObject *sql, Local<Object> o ); 
 
 	~SqlObject();
 };
