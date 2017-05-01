@@ -10415,74 +10415,58 @@
   struct disk* new_disk;
   size_t oldsize = vol->dwSize;
   if( vol->read_only ) return TRUE;
-  do {
-   if( !vol->dwSize ) {
-    new_disk = (struct disk*)OpenSpaceExx( NULL, vol->volname, 0, &vol->dwSize, &created );
-    if( new_disk && vol->dwSize ) {
-     vol->diskReal = new_disk;
+  if( !vol->dwSize ) {
+   {
+    char *tmp = StrDup( vol->volname );
+    char *dir = (char*)pathrchr( tmp );
+    if( dir ) {
+     dir[0] = 0;
+     if( !IsPath( tmp ) ) MakePath( tmp );
+    }
+    Deallocate( char*, tmp );
+   }
+   new_disk = (struct disk*)OpenSpaceExx( NULL, vol->volname, 0, &vol->dwSize, &created );
+   if( new_disk && vol->dwSize ) {
+    vol->diskReal = new_disk;
  #ifdef WIN32
-  // elf has a different signature to check for .so extended data...
-     struct disk *actual_disk;
-     if( ((char*)new_disk)[0] == 'M' && ((char*)new_disk)[1] == 'Z' ) {
-      actual_disk = (struct disk*)GetExtraData( new_disk );
-      if( actual_disk ) {
-       if( ( ( (uintptr_t)actual_disk - (uintptr_t)new_disk ) < vol->dwSize ) ) {
-        const uint8_t *sig = sack_vfs_get_signature2( (POINTER)((uintptr_t)actual_disk-BLOCK_SIZE), new_disk );
-        if( memcmp( sig, (POINTER)(((uintptr_t)actual_disk)-BLOCK_SIZE), BLOCK_SIZE ) ) {
-         lprintf( "Signature failed comparison; the core has changed since it was attached" );
-         CloseSpace( vol->diskReal );
-         vol->diskReal = NULL;
-         vol->dwSize = 0;
-         return FALSE;
-        }
-        vol->dwSize -= ((uintptr_t)actual_disk - (uintptr_t)new_disk);
-        new_disk = actual_disk;
-       } else {
-        lprintf( "Signature failed comparison; the core is not attached to anything." );
+    // elf has a different signature to check for .so extended data...
+    struct disk *actual_disk;
+    if( ((char*)new_disk)[0] == 'M' && ((char*)new_disk)[1] == 'Z' ) {
+     actual_disk = (struct disk*)GetExtraData( new_disk );
+     if( actual_disk ) {
+      if( ( ( (uintptr_t)actual_disk - (uintptr_t)new_disk ) < vol->dwSize ) ) {
+       const uint8_t *sig = sack_vfs_get_signature2( (POINTER)((uintptr_t)actual_disk-BLOCK_SIZE), new_disk );
+       if( memcmp( sig, (POINTER)(((uintptr_t)actual_disk)-BLOCK_SIZE), BLOCK_SIZE ) ) {
+        lprintf( "Signature failed comparison; the core has changed since it was attached" );
         CloseSpace( vol->diskReal );
         vol->diskReal = NULL;
         vol->dwSize = 0;
         return FALSE;
        }
+       vol->dwSize -= ((uintptr_t)actual_disk - (uintptr_t)new_disk);
+       new_disk = actual_disk;
+      } else {
+       lprintf( "Signature failed comparison; the core is not attached to anything." );
+       CloseSpace( vol->diskReal );
+       vol->diskReal = NULL;
+       vol->dwSize = 0;
+       return FALSE;
       }
      }
+    }
  #endif
-     vol->disk = new_disk;
-     return TRUE;
-    }
-    else {
-     if( !new_disk ) {
-      if( !path_checked ) {
-       char *tmp = StrDup( vol->volname );
-       char *dir = (char*)pathrchr( tmp );
-       path_checked = TRUE;
-       if( dir ) {
-        dir[0] = 0;
-        if( !IsPath( tmp ) ) {
-         MakePath( tmp );
-         Deallocate( char*, tmp );
-         continue;
-        }
-        else {
-         // initial open failed.
-         lprintf( "Failed to open volume : %s", vol->volname );
-         Deallocate( char*, tmp );
-         return FALSE;
-        }
-       }
-       Deallocate( char*, tmp );
-      }
-     }
-     else
- // zero size result?, but with memory
-      created = 1;
-    }
-    break;
+    vol->disk = new_disk;
+    return TRUE;
    }
-   else break;
-  } while(1);
+   else {
+    // really this is bad anyway.
+    if( new_disk )
+ // zero size result?, but with memory
+     created = 1;
+   }
+  }
   if( oldsize ) CloseSpace( vol->diskReal );
-         vol->dwSize += ((uintptr_t)vol->disk - (uintptr_t)vol->diskReal);
+  vol->dwSize += ((uintptr_t)vol->disk - (uintptr_t)vol->diskReal);
   // a BAT plus the sectors it references... ( BLOCKS_PER_BAT + 1 ) * BLOCK_SIZE
   vol->dwSize += BLOCKS_PER_SECTOR*BLOCK_SIZE;
   new_disk = (struct disk*)OpenSpaceExx( NULL, vol->volname, 0, &vol->dwSize, &created );
@@ -32749,6 +32733,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
     }
     if( hFile == INVALID_HANDLE_VALUE )
     {
+             // might still be able to open it by shared name; even if the file share is disabled
      readonly = 0;
  #ifdef DEBUG_OPEN_SPACE
      ll_lprintf( WIDE("file is still invalid(alreadyexist?)... new size is %d %d on %p"), (*dwSize), FILE_GRAN, hFile );
