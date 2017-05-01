@@ -40,7 +40,8 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mkdir", makeDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "Sqlite", openVolDb );
 
-	
+	NODE_SET_METHOD(exports, "mkdir", mkdir );
+
 	constructor.Reset( isolate, volumeTemplate->GetFunction() );
 	exports->Set( String::NewFromUtf8( isolate, "Volume" ),
 		volumeTemplate->GetFunction() );
@@ -54,7 +55,7 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, const char 
 		volNative = false;
 		fsMount = sack_get_default_mount();
 	} else {
-		lprintf( "volume: %s %p %p", filename, key, key2 );
+		//lprintf( "volume: %s %p %p", filename, key, key2 );
 		fileName = StrDup( filename );
 		volNative = true;
 		vol = sack_vfs_load_crypt_volume( filename, key, key2 );
@@ -83,17 +84,27 @@ void logBinary( char *x, int n )
 	}
 }
 
+void VolumeObject::mkdir( const FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	if( argc > 0 ) {
+  		String::Utf8Value fName( args[0] );
+  		MakePath( *fName );
+	}
+}
+
 void VolumeObject::makeDirectory( const FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc > 0 ) {
-
-  		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
-		String::Utf8Value fName( args[0] );
-		if( vol->volNative ) {
-         // no directory support; noop.
-		} else {
-         MakePath( *fName );
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		if( vol ) {
+			String::Utf8Value fName( args[0] );
+			if( vol->volNative ) {
+				// no directory support; noop.
+			} else {
+				MakePath( *fName );
+			}
 		}
 	}
 }
