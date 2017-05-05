@@ -37741,12 +37741,12 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
  #endif
  }
  //-----------------------------------------------------------------------
-  int  MakePath ( CTEXTSTR path )
+ int  MakePath ( CTEXTSTR path )
  {
+  int status;
   if( !path )
    return 0;
  #ifdef _WIN32
-  int status;
   status = CreateDirectory( path, NULL );
   if( !status )
   {
@@ -37763,7 +37763,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   }
   return status;
  #else
- #ifdef UNICODE
+ #  ifdef UNICODE
   {
    int status;
    char *tmppath = CStrDup( path );
@@ -37772,7 +37772,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
    Release( tmppath );
    return !status;
   }
- #else
+ #  else
  // make directory with full umask permissions
   if( ( status = mkdir( path, -1 ) ) < 0 )
   {
@@ -37782,12 +37782,12 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
    {
     last[0] = 0;
     if( MakePath( tmppath ) )
-     status = mkdir
+     status = mkdir( path, -1 );
    }
    Release( tmppath );
   }
-  return !status
- #endif
+  return !status;
+ #  endif
  #endif
  }
  //-----------------------------------------------------------------------
