@@ -27149,7 +27149,7 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
     if( !dontUnlock )
      globalTimerData.lock_thread_create = 0;
  #ifdef LOG_THREAD
-    Log3( WIDE("Created thread address: %p %"PRIxFAST64" at %p")
+    Log3( WIDE("Created thread address: %p %" PRIxFAST64 " at %p")
       , pThread->proc, pThread->thread_ident, pThread );
  #endif
    }
