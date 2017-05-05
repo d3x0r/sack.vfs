@@ -3,6 +3,14 @@
 [![Join the chat at https://gitter.im/sack-vfs/Lobby](https://badges.gitter.im/sack-vfs/Lobby.svg)](https://gitter.im/sack-vfs/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 Node addon for a custom virtual file system interface
 
+# Requirements
+## npm
+	none
+
+## Centos  
+	yum install gcc-c++ libuuid-devel
+
+
 # Usage
 
 ```
