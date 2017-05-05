@@ -37727,11 +37727,14 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
     {
      int status;
      char *tmppath = CStrDup( path );
-     stat( tmppath, &statbuf );
+     status = stat( tmppath, &statbuf );
      Release( tmppath );
+     if( status < 0 )
+      return 0;
     }
  #else
-    stat( path, &statbuf );
+    if( stat( path, &statbuf ) < 0 )
+     return 0;
  #endif
     return S_ISDIR( statbuf.st_mode );
    }
