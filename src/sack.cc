@@ -37764,17 +37764,29 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   return status;
  #else
  #ifdef UNICODE
-   {
-    int status;
-     char *tmppath = CStrDup( path );
+  {
+   int status;
+   char *tmppath = CStrDup( path );
  // make directory with full umask permissions
-    status = mkdir( tmppath, -1 );
-    Release( tmppath );
-    return !status;
-   }
+   status = mkdir( tmppath, -1 );
+   Release( tmppath );
+   return !status;
+  }
  #else
  // make directory with full umask permissions
-   return !mkdir( path, -1 );
+  if( ( status = mkdir( path, -1 ) ) < 0 )
+  {
+   TEXTSTR tmppath = StrDup( path );
+   TEXTSTR last = (TEXTSTR)pathrchr( tmppath );
+   if( last )
+   {
+    last[0] = 0;
+    if( MakePath( tmppath ) )
+     status = mkdir
+   }
+   Release( tmppath );
+  }
+  return !status
  #endif
  #endif
  }

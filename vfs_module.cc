@@ -151,8 +151,7 @@ void VolumeObject::openVolDb( const FunctionCallbackInfo<Value>& args ) {
   		}
 		int argc = args.Length();
 		Local<Value> *argv = new Local<Value>[2];
-		int n;
-  		char dbName[256];
+		char dbName[256];
 		String::Utf8Value fName( args[0] );
   		snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
   		argv[0] = String::NewFromUtf8( isolate, dbName );
