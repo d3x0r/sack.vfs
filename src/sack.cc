@@ -37781,11 +37781,18 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
    if( last )
    {
     last[0] = 0;
-    if( MakePath( tmppath ) )
+    if( MakePath( tmppath ) ) {
      status = mkdir( path, -1 );
+     if( status < 0 )
+      if( EEXIST == errno )
+       status = 0;
+    }
    }
    Release( tmppath );
   }
+  if( status < 0 )
+   if( EEXIST == errno )
+    status = 0;
   return !status;
  #  endif
  #endif
