@@ -5,10 +5,10 @@ Node addon for a custom virtual file system interface
 
 ## Requirements
 ### npm
-	none
+        none
 
 ### Centos  
-	yum install gcc-c++ libuuid-devel
+        yum install gcc-c++ libuuid-devel
 
 
 # Usage
@@ -27,42 +27,85 @@ fileOut.write( fileString );
 
 ```
 vfs = {
-    Volume - a virtual disk partition that holds files.
-    Sqlite - an interface to sqlite which can open databases in the volume.
-}
-
-Volume = {
-    File - open a file (returns a new object)
-    dir - returns an array of filenames in the volume.
-}
-
-File = {
-    read - read from the file
-    write - write data to he file
-    seek - set file position to write
-    ... /*most other methods unimplemented*/
-}
-
-Sqlite = {
-    do - execute a sql command
-    op - get an option from sqlite option database
-    getOption - longer name of 'op'
-    so - set an option in sqlite option database
-    setOption - longer name of 'so'
-    makeTable - evalute a sql create table clause, and create or update a table based on its definitions.
-             Additional columns will be added, old columns are untouched, even if the type specified changes.
-             Addtional indexes and constraints can be added...
-             
-    fo - find an option node under this one (returns null if node doesn't exist)   fo( "name" )
-    go - get an option node      go( "name" )
-    eo - enum option nodes from root of options, takes a callback as a paraemter.
-              eo( callback ) ... the callback parameters get a node and a name.  The node is another option node that migth be enumerated with eo...
-                    function (node,name)  {console.log( "got", name, node.value );
-     
-    var results = sqlite.do(sql);  // do a sql command, if command doesn't generate data result will be true instead of an array
+    ComPort(comport) - access to com ports.
+    JSON - A json parser. has a method parse(string) which results with a V8 object created from the json.  1/2 the speed of Node's parser; no real reason to use this.
+    mkdir(pathname) - utility function to make directories which might not exist before volume does; (volume auto creates directories now)
+            parameters - (pathname)
+                path to create- will created missing parent path parts too.
+    Sqlite(dbName) - an interface to sqlite which can open databases in the volume.
+            parameters - ( databaseName )
+                databaseName maybe a simple ODBC name; if the name ends with .db, it is assumed to be a sqlite database.  If ODBC is not available, it may be assumed that the name will just be a sqlite database name.
+                extra syntax - if the name starts with a $, then the next word after $ and before the next @ or $ is used to select a sqlite vfs name.( https://sqlite.org/vfs.html )  if the name is 'sack' then after @ and before the next $ is specified a mounted filesystem name.
+        Sqlite has methods available on it to access native program options.
+        Sqlite.op( opName, defaultValue ) - read/write default option database option.
+        Sqlite.so( opName, newValue ) - write new value to default option database.
+    Volume(mountName,fileName,a,b) - a virtual disk partition that holds files.
+          mountName - the mount name used to mount to volume as a filesystem; it may be refernced later in the string passed to Sqlite.  It may be `null` if it is anonymous mount.
+          if no parameters are passed, a Volume object representing the native filesystem is returned.
     
 }
 
+### Volume Interface 
+ (result from vfs.Volume())
+
+Volume = {
+    File(filename) - open a file (returns a new object)
+            (filename) 
+                the file to open in the volume.
+    dir() - returns an array of filenames in the volume.
+    exists(file/path name) - boolean if filename exists (as a file or a directory)
+    read(fileName) - read a file from a volume; return an ArrayBuffer with a toString() that returns the buffer as utf8 as a string.
+    write(fileName,arrayBuffer/string) - writes a string or arraybuffer to a file. 
+    Sqlite(database) - an interface to sqlite database in this volume.
+    mkdir - utility function to make directories which might not exist before volume does; (volume auto creates directories now)
+            parameters - (pathname)
+                path to create- will created missing parent path parts too.
+}
+
+### File Interface opened within a Volume
+ (result from vfs.Volume().File())
+File = {
+    read(size) - read from the file; return an ArrayBuffer with a toString method to interpret it as utf8.
+    write(arrayBuffer/string) - write data to the file; at the current position
+    seek(pos) - set file position to write
+    trunc() - set file size to the curent file position.
+    ... /*most other methods unimplemented*/
+}
+
+### Sqlite Interface
+  (result from vfs.Sqlite() or vfs.Volume().Sqlite())
+
+Sqlite = {
+    escape(s) - returns an encoded string for (s) appropriate for the current database.  (may vary encoding based on ODBC drive used; otherwise escapes single quotes for Sqlite)
+    end() - close this database.  Another command on this database will re-open it.
+    transaction() - begin a sql transaction, ```do()``` commands issued after this will be in a transaction.
+    commit() - end a transaction successfully.
+    autoTransact(true/false) - enabled/disable auto transaction features.  A command will begin a transaction, a timer will be set such that if no other command between happens, then a commit will be generated.  So merely doing ```do()``` commands are optimized into transactions.
+    do(command) - execute a sql command
+    op(opName,defaultValue) - get an option from sqlite option database; return defaultValue if not set, and set the option int he database to the default value.
+    getOption(opName,defaultValue) - longer name of 'op'
+    so(opName,value) - set an option in sqlite option database
+    setOption(opName, value) - longer name of 'so'
+    makeTable(tableString) - evalute a sql create table clause, and create or update a table based on its definitions.
+             Additional columns will be added, old columns are untouched, even if the type specified changes.
+             Addtional indexes and constraints can be added...
+             
+    fo(opName) - find an option node under this one (returns null if node doesn't exist)   fo( "name" )
+    go(opName) - get an option node      go( "name" )
+    eo(callback) - enum option nodes from root of options, takes a callback as a paraemter.
+              eo( callback ) ... the callback parameters get a node and a name.  The node is another option node that migth be enumerated with eo...
+                    function callback(node,name)  {console.log( "got", name, node.value );
+     
+    
+}
+
+example sql command?
+```
+    var results = sqlite.do(sql);  // do a sql command, if command doesn't generate data result will be true instead of an array
+
+```
+### Option Database
+  (result from vfs.[Volume().Sqlite()/Sqlite()].[fo/go/eo]() or any of these own methods )
 
 OptionNode = {
     fo - find an option node under this one (returns null if node doesn't exist)   fo( "name" )
@@ -74,22 +117,43 @@ OptionNode = {
     value - set/get current value
 }
 
-RegObject = {
+### Registry
 
-Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
-	
-	static void getRegItem( const FunctionCallbackInfo<Value>& args );
-	static void setRegItem( const FunctionCallbackInfo<Value>& args );
-
-
-   ~RegObject();
-};
-
+registry = {
+     set( regPath, value );
+     get( regPath );
 }
 
 ```
+var reg = vfs.registry.set( "HKCU/something", value );
+var val = vfs.registry.get( "HKCU/something" );
+```
 
-## Sqlite
+### COM Ports
+   (result from vfs.ComPort() )
+ 
+ComObject = { 
+     onRead( callback ) - sets a callback to be called with a uint8Array parameter when data arrives on the port.
+     write( uint8Array ) - write buffer specfied to com port; only accepts uint8array.
+     close() - close the com port.
+}
+
+COM port settings are kept in the default option database under 
+  /comports.ini/COM PORTS/<comName> = 57600,N,8,1,carrier,RTS,rTSflow
+  /comports.ini/<comName>/port timeout = 100 
+
+     the com port settings string is semi-standard DOS string... the first paramaeters, baud, N/E/O/M/S (parity), 8/7 (data bits), 1/2 (stop bits); but then the next settings are toggles based on case...
+         [C/c]arrier - enable/disable respect carrier detect to send (lower case is disable)
+         [R/r]TS - enable/disable respect request to send (lower case is disable)
+         [R/r]TSflow - enable/disable using RTS for flow control. (lower case is disable)
+
+    port timeout is how long to wait for idle between sending com data.  (no data received for 100ms, post packet; this gives a slight delay between when the data is received and actually dispatched)
+
+
+
+
+## Sqlite Usage
+
 
 ```
 var dbName = "filename.db";
@@ -201,10 +265,10 @@ db.eo( callback );  Callback is passed option
 var level =0;
 db.eo( dumptree )
 function dumptree(opt, name){
-	if( name === "." ) return;
-	var leader = "";
-	for( var n = 0; n < level;n++ ) leader += "   ";
-	console.log( leader + "option:", name );
+        if( name === "." ) return;
+        var leader = "";
+        for( var n = 0; n < level;n++ ) leader += "   ";
+        console.log( leader + "option:", name );
         level++;
         opt.eo( dumptree );
         level--;
@@ -215,8 +279,8 @@ function dumptree(opt, name){
 This dumps the option tables internally option4_map, option4_name, option4_value I think are the tables it uses... there is option4_blob which should store ArrayBuffer types... (provide concat operations/block update internal for retry recovery?)
 ```
 function tick() {
-	console.log( "dump tables: \n"
-        	, db.do( "select * from option4_map" ) 
+        console.log( "dump tables: \n"
+                , db.do( "select * from option4_map" ) 
                 );
 }
 tick();
@@ -233,10 +297,10 @@ and capital longhand forms of above are supported.
 var vfs = require( "./vfs_module.js" )
 
 function update( newVal ) {
-	var oldval = vfs.registry.get( "HKCU/Software/Freedom Collective/ChangeMe" );
-	console.log( "Old Value is:", oldval );
-	if( oldval != newVal )
-		vfs.registry.set( "HKCU/Software/Freedom Collective/ChangeMe", newVal );
+        var oldval = vfs.registry.get( "HKCU/Software/Freedom Collective/ChangeMe" );
+        console.log( "Old Value is:", oldval );
+        if( oldval != newVal )
+                 vfs.registry.set( "HKCU/Software/Freedom Collective/ChangeMe", newVal );
 }
 update( Date.now() );
 ```
