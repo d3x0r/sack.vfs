@@ -24,18 +24,25 @@ fileOut.write( fileString );
 ```
 
 ## Objects
+This is the object returned from require( 'sack.vfs' );
 
 ```
 vfs = {
     ComPort(comport) - access to com ports.
-    JSON - A json parser. has a method parse(string) which results with a V8 object created from the json.  1/2 the speed of Node's parser; no real reason to use this.
+    JSON - A json parser. 
+        parse(string) - result with a V8 object created from the json string.  
+        1/2 the speed of Node's parser; no real reason to use this.
+        // var o = vfs.JSON.parse(s)
     mkdir(pathname) - utility function to make directories which might not exist before volume does; (volume auto creates directories now)
             parameters - (pathname)
                 path to create- will created missing parent path parts too.
     Sqlite(dbName) - an interface to sqlite which can open databases in the volume.
             parameters - ( databaseName )
-                databaseName maybe a simple ODBC name; if the name ends with .db, it is assumed to be a sqlite database.  If ODBC is not available, it may be assumed that the name will just be a sqlite database name.
-                extra syntax - if the name starts with a $, then the next word after $ and before the next @ or $ is used to select a sqlite vfs name.( https://sqlite.org/vfs.html )  if the name is 'sack' then after @ and before the next $ is specified a mounted filesystem name.
+                databaseName maybe a simple ODBC name; if the name ends with .db, it is assumed to be a sqlite database.  
+                If ODBC is not available, it may be assumed that the name will just be a sqlite database name.
+                extra syntax - if the name starts with a $, then the next word after $ and before 
+                   the next @ or $ is used to select a sqlite vfs name.( https://sqlite.org/vfs.html )  
+                   if the name is 'sack' then after @ and before the next $ is specified a mounted filesystem name.
         Sqlite has methods available on it to access native program options.
         Sqlite.op( opName, defaultValue ) - read/write default option database option.
         Sqlite.so( opName, newValue ) - write new value to default option database.
@@ -44,10 +51,12 @@ vfs = {
           if no parameters are passed, a Volume object representing the native filesystem is returned.
     
 }
+```
+
 
 ### Volume Interface 
  (result from vfs.Volume())
-
+```
 Volume = {
     File(filename) - open a file (returns a new object)
             (filename) 
@@ -61,7 +70,7 @@ Volume = {
             parameters - (pathname)
                 path to create- will created missing parent path parts too.
 }
-
+```
 ### File Interface opened within a Volume
  (result from vfs.Volume().File())
 File = {
@@ -71,18 +80,23 @@ File = {
     trunc() - set file size to the curent file position.
     ... /*most other methods unimplemented*/
 }
-
+```
 ### Sqlite Interface
   (result from vfs.Sqlite() or vfs.Volume().Sqlite())
-
+```
 Sqlite = {
-    escape(s) - returns an encoded string for (s) appropriate for the current database.  (may vary encoding based on ODBC drive used; otherwise escapes single quotes for Sqlite)
+    escape(s) - returns an encoded string for (s) appropriate for the current database.  
+        (may vary encoding based on ODBC drive used; otherwise escapes single quotes for Sqlite)
     end() - close this database.  Another command on this database will re-open it.
     transaction() - begin a sql transaction, ```do()``` commands issued after this will be in a transaction.
     commit() - end a transaction successfully.
-    autoTransact(true/false) - enabled/disable auto transaction features.  A command will begin a transaction, a timer will be set such that if no other command between happens, then a commit will be generated.  So merely doing ```do()``` commands are optimized into transactions.
+    autoTransact(true/false) - enabled/disable auto transaction features.  
+         A command will begin a transaction, a timer will be set such that 
+         if no other command between happens, then a commit will be generated.  
+         So merely doing ```do()``` commands are optimized into transactions.
     do(command) - execute a sql command
-    op(opName,defaultValue) - get an option from sqlite option database; return defaultValue if not set, and set the option int he database to the default value.
+    op(opName,defaultValue) - get an option from sqlite option database; return defaultValue 
+         if not set, and set the option int he database to the default value.
     getOption(opName,defaultValue) - longer name of 'op'
     so(opName,value) - set an option in sqlite option database
     setOption(opName, value) - longer name of 'so'
@@ -93,11 +107,13 @@ Sqlite = {
     fo(opName) - find an option node under this one (returns null if node doesn't exist)   fo( "name" )
     go(opName) - get an option node      go( "name" )
     eo(callback) - enum option nodes from root of options, takes a callback as a paraemter.
-              eo( callback ) ... the callback parameters get a node and a name.  The node is another option node that migth be enumerated with eo...
+              eo( callback ) ... the callback parameters get a node and a name.  
+                    The node is another option node that migth be enumerated with eo...
                     function callback(node,name)  {console.log( "got", name, node.value );
      
     
 }
+```
 
 example sql command?
 ```
@@ -106,7 +122,7 @@ example sql command?
 ```
 ### Option Database
   (result from vfs.[Volume().Sqlite()/Sqlite()].[fo/go/eo]() or any of these own methods )
-
+```
 OptionNode = {
     fo - find an option node under this one (returns null if node doesn't exist)   fo( "name" )
     go - get an option node      go( "name" )
@@ -116,7 +132,7 @@ OptionNode = {
                     
     value - set/get current value
 }
-
+```
 ### Registry
 
 registry = {
@@ -132,6 +148,7 @@ var val = vfs.registry.get( "HKCU/something" );
 ### COM Ports
    (result from vfs.ComPort() )
  
+```
 ComObject = { 
      onRead( callback ) - sets a callback to be called with a uint8Array parameter when data arrives on the port.
      write( uint8Array ) - write buffer specfied to com port; only accepts uint8array.
@@ -142,13 +159,17 @@ COM port settings are kept in the default option database under
   /comports.ini/COM PORTS/<comName> = 57600,N,8,1,carrier,RTS,rTSflow
   /comports.ini/<comName>/port timeout = 100 
 
-     the com port settings string is semi-standard DOS string... the first paramaeters, baud, N/E/O/M/S (parity), 8/7 (data bits), 1/2 (stop bits); but then the next settings are toggles based on case...
-         [C/c]arrier - enable/disable respect carrier detect to send (lower case is disable)
-         [R/r]TS - enable/disable respect request to send (lower case is disable)
-         [R/r]TSflow - enable/disable using RTS for flow control. (lower case is disable)
+     the com port settings string is semi-standard DOS string... the first paramaeters, 
+         baud, N/E/O/M/S (parity), 8/7 (data bits), 1/2 (stop bits); 
+         then the next settings are toggles based on case...
+            [C/c]arrier - enable/disable respect carrier detect to send (lower case is disable)
+            [R/r]TS - enable/disable respect request to send (lower case is disable)
+            [R/r]TSflow - enable/disable using RTS for flow control. (lower case is disable)
 
-    port timeout is how long to wait for idle between sending com data.  (no data received for 100ms, post packet; this gives a slight delay between when the data is received and actually dispatched)
-
+    port timeout is how long to wait for idle between sending com data.  
+        (no data received for 100ms, post packet; this gives a slight delay between when the 
+         data is received and actually dispatched)
+```
 
 
 
