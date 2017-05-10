@@ -33,21 +33,24 @@ vfs = {
         parse(string) - result with a V8 object created from the json string.  
         1/2 the speed of Node's parser; no real reason to use this.
         // var o = vfs.JSON.parse(s)
-    mkdir(pathname) - utility function to make directories which might not exist before volume does; (volume auto creates directories now)
+    mkdir(pathname) - utility function to make directories which might not exist before volume does; 
+            (Volume() auto creates directories now if specified path to filename does not exist)
             parameters - (pathname)
                 path to create- will created missing parent path parts too.
     Sqlite(dbName) - an interface to sqlite which can open databases in the volume.
             parameters - ( databaseName )
-                databaseName maybe a simple ODBC name; if the name ends with .db, it is assumed to be a sqlite database.  
-                If ODBC is not available, it may be assumed that the name will just be a sqlite database name.
-                extra syntax - if the name starts with a $, then the next word after $ and before 
-                   the next @ or $ is used to select a sqlite vfs name.( https://sqlite.org/vfs.html )  
-                   if the name is 'sack' then after @ and before the next $ is specified a mounted filesystem name.
+                databaseName maybe a simple ODBC name; if the name ends with .db, it is assumed to be 
+                a sqlite database.  If ODBC is not available, it may be assumed that the name will 
+                just be a sqlite database name. Extra syntax - if the name starts with a $, then the 
+                next word after $ and before the next @ or $ is used to select a sqlite vfs name.
+                ( https://sqlite.org/vfs.html )  
+                if the name is 'sack' then after @ and before the next $ is specified a mounted filesystem name.
         Sqlite has methods available on it to access native program options.
         Sqlite.op( opName, defaultValue ) - read/write default option database option.
         Sqlite.so( opName, newValue ) - write new value to default option database.
     Volume(mountName,fileName,a,b) - a virtual disk partition that holds files.
-          mountName - the mount name used to mount to volume as a filesystem; it may be refernced later in the string passed to Sqlite.  It may be `null` if it is anonymous mount.
+          mountName - the mount name used to mount to volume as a filesystem; it may be referenced 
+                later in the string passed to Sqlite.  It may be `null` if it is anonymous mount.
           if no parameters are passed, a Volume object representing the native filesystem is returned.
     
 }
@@ -73,6 +76,7 @@ Volume = {
 ```
 ### File Interface opened within a Volume
  (result from vfs.Volume().File())
+```
 File = {
     read(size) - read from the file; return an ArrayBuffer with a toString method to interpret it as utf8.
     write(arrayBuffer/string) - write data to the file; at the current position
