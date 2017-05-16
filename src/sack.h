@@ -3836,6 +3836,24 @@
  /* variable argument VARTEXT printf. Is passed a PVARTEXT to
     collect the formatted output using printf sort of formatting. */
  TYPELIB_PROC  INDEX TYPELIB_CALLTYPE  vvtprintf( PVARTEXT pvt, CTEXTSTR format, va_list args );
+ /* encode binary buffer into base64 encoding.
+    outsize is updated with the length of the buffer.
+  */
+ TYPELIB_PROC  TEXTCHAR * TYPELIB_CALLTYPE  EncodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const char *encoding );
+ /* decode base64 buffer into binary buffer
+    outsize is updated with the length of the buffer.
+    result should be Release()'d
+  */
+ TYPELIB_PROC  char * TYPELIB_CALLTYPE  DecodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const char *encoding );
+ /* xor a base64 encoded string over a utf8 string, keeping the utf8 characters in the same length...
+    although technically this can result in invalid character encoding where upper bits get zeroed
+    result should be Release()'d
+ */
+ TYPELIB_PROC  char * TYPELIB_CALLTYPE  u8xor( const char *a, const char *b, int *ofs );
+ /* xor two base64 encoded strings, resulting in a base64 string
+    result should be Release()'d
+ */
+ TYPELIB_PROC  char * TYPELIB_CALLTYPE  b64xor( const char *a, const char *b );
  //--------------------------------------------------------------------------
  // extended command entry stuff... handles editing buffers with insert/overwrite/copy/paste/etc...
  typedef struct user_input_buffer_tag {

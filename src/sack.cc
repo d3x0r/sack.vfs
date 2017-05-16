@@ -3844,6 +3844,24 @@
  /* variable argument VARTEXT printf. Is passed a PVARTEXT to
     collect the formatted output using printf sort of formatting. */
  TYPELIB_PROC  INDEX TYPELIB_CALLTYPE  vvtprintf( PVARTEXT pvt, CTEXTSTR format, va_list args );
+ /* encode binary buffer into base64 encoding.
+    outsize is updated with the length of the buffer.
+  */
+ TYPELIB_PROC  TEXTCHAR * TYPELIB_CALLTYPE  EncodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const char *encoding );
+ /* decode base64 buffer into binary buffer
+    outsize is updated with the length of the buffer.
+    result should be Release()'d
+  */
+ TYPELIB_PROC  char * TYPELIB_CALLTYPE  DecodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const char *encoding );
+ /* xor a base64 encoded string over a utf8 string, keeping the utf8 characters in the same length...
+    although technically this can result in invalid character encoding where upper bits get zeroed
+    result should be Release()'d
+ */
+ TYPELIB_PROC  char * TYPELIB_CALLTYPE  u8xor( const char *a, const char *b, int *ofs );
+ /* xor two base64 encoded strings, resulting in a base64 string
+    result should be Release()'d
+ */
+ TYPELIB_PROC  char * TYPELIB_CALLTYPE  b64xor( const char *a, const char *b );
  //--------------------------------------------------------------------------
  // extended command entry stuff... handles editing buffers with insert/overwrite/copy/paste/etc...
  typedef struct user_input_buffer_tag {
@@ -8429,6 +8447,8 @@
  // text result must release by user
  // calls EncrytpData with buffer and string length + 1 to include the null for decryption.
  SRG_EXPORT TEXTCHAR * SRG_EncryptString( CTEXTSTR buffer );
+ // return a unique ID
+ SRG_EXPORT char * SRG_ID_Generator( void );
  #ifndef SACK_VFS_DEFINED
  /* Header multiple inclusion protection symbol. */
  #define SACK_VFS_DEFINED
@@ -11694,6 +11714,20 @@ GetFreeBlock( vol, TRUE );
  void SRG_RestoreState( struct random_context *ctx, POINTER external_buffer_holder )
  {
   MemCpy( ctx, (external_buffer_holder), sizeof( struct random_context ) );
+ }
+ static void salt_generator(uintptr_t psv, POINTER *salt, size_t *salt_size ) {
+  static uint32_t tick;
+  tick = GetTickCount();
+  salt[0] = &tick;
+  salt_size[0] = sizeof( tick );
+ }
+ char *SRG_ID_Generator( void ) {
+  static struct random_context *ctx;
+  uint32_t buf[2*(16+16)];
+  size_t outlen;
+  if( !ctx ) ctx = SRG_CreateEntropy2( salt_generator, 0 );
+  SRG_GetEntropyBuffer( ctx, buf, 8*(16+16) );
+  return EncodeBase64Ex( (uint8*)buf, (16+16), &outlen, (const char *)1 );
  }
  #if WIN32
  #if 0
@@ -42523,6 +42557,118 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   }
   return FALSE;
  }
+ const char * const encodings = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$_";
+ const char * const encodings2 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+ static TEXTCHAR b64xor_table[256][256];
+ static TEXTCHAR u8xor_table[256][256];
+ PRELOAD( initTables ) {
+  int n, m;
+  for( n = 0; n < (sizeof( encodings )-1); n++ )
+   for( m = 0; m < (sizeof( encodings )-1); m++ ) {
+    b64xor_table[encodings[n]][encodings[m]] = encodings[n^m];
+    u8xor_table[encodings[n]][encodings[m]] = n^m;
+    b64xor_table[encodings2[n]][encodings2[m]] = encodings2[n^m];
+    u8xor_table[encodings2[n]][encodings2[m]] = n^m;
+  }
+  b64xor_table['=']['='] = '=';
+ }
+ char * b64xor( const char *a, const char *b ) {
+  int n;
+  char *out = NewArray( char, strlen(a) + 1);
+  for( n = 0; a[n]; n++ ) {
+   out[n] = b64xor_table[a[n]][b[n]];
+  }
+  out[n] = 0;
+  return out;
+ }
+ char * u8xor( const char *a, const char *b, int *ofs ) {
+  int n;
+  size_t keylen = strlen(b)-5;
+  int o = ofs[0];
+  size_t outlen;
+  char *out = NewArray( char, (outlen=strlen(a)) + 1);
+  for( n = 0; a[n]; n++ ) {
+   char v = a[n];
+   int mask = 0x3f;
+   if( (v & 0xE0) == 0xC0 )  {mask=0x3;}
+   else if( (v & 0xF0) == 0xE0 ) {mask=0xF;}
+   else if( (v & 0xF8) == 0xF0 ) {mask=0x7;}
+   out[n] = (v & ~mask ) | ( u8xor_table[v & mask ][b[(n+o)%(keylen)]] & mask );
+  }
+  out[n] = 0;
+  ofs[0] = (int)((ofs[0]+outlen)%keylen);
+  return out;
+ }
+ static const char * const _base642 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$_=";
+ static const char * const _base64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+ static void encodeblock( unsigned char in[3], TEXTCHAR out[4], size_t len, const char *base64 )
+ {
+  out[0] = base64[ in[0] >> 2 ];
+  out[1] = base64[ ((in[0] & 0x03) << 4) | ( ( len > 0 ) ? ((in[1] & 0xf0) >> 4) : 0 ) ];
+  out[2] = (len > 1 ? base64[ ((in[1] & 0x0f) << 2) | ( ( len > 2 ) ? ((in[2] & 0xc0) >> 6) : 0 ) ] : base64[64]);
+  out[3] = (len > 2 ? base64[ in[2] & 0x3f ] : base64[64]);
+ }
+ static void decodeblock( unsigned char in[4], char out[3], size_t len, const char *base64 )
+ {
+  const char *index[4];
+  int n;
+  for( n = 0; n < 4; n++ )
+  {
+   index[n] = strchr( base64, in[n] );
+   //if( ( index[n] - base64 ) == 64 )
+   // last_byte = 1;
+  }
+  //if(
+  out[0] = (char)(( index[0] - base64 ) << 2 | ( index[1] - base64 ) >> 4);
+  out[1] = (char)(( index[1] - base64 ) << 4 | ( ( ( index[2] - base64 ) >> 2 ) & 0x0f ));
+  out[2] = (char)(( index[2] - base64 ) << 6 | ( ( index[3] - base64 ) & 0x3F ));
+  //out[] = (len > 2 ? base64[ in[2] & 0x3f ] : 0);
+ }
+ TEXTCHAR *EncodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const char *base64 )
+ {
+  TEXTCHAR * real_output;
+  if( !base64 )
+   base64 = _base64;
+  else if( ((uintptr_t)base64) == 1 )
+   base64 = _base642;
+  real_output = NewArray( TEXTCHAR, 1 + ( ( length * 4 + 2) / 3 ) + 1 + 1 + 1 );
+  {
+   size_t n;
+   for( n = 0; n < (length+2)/3; n++ )
+   {
+    size_t blocklen;
+    blocklen = length - n*3;
+    if( blocklen > 3 )
+     blocklen = 3;
+    encodeblock( ((uint8_t*)buf) + n * 3, real_output + n*4, blocklen, base64 );
+   }
+   (*outsize) = n*4 + 1;
+   real_output[n*4] = 0;
+  }
+  return real_output;
+ }
+ char *DecodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const char *base64 )
+ {
+  char * real_output;
+  if( !base64 )
+   base64 = _base64;
+  else if( ((uintptr_t)base64) == 1 )
+   base64 = _base642;
+  real_output = NewArray( char, ( ( ( length + 1 ) * 3 ) / 4 ) + 1 );
+  {
+   size_t n;
+   for( n = 0; n < (length+3)/4; n++ )
+   {
+    size_t blocklen;
+    blocklen = length - n*4;
+    if( blocklen > 4 )
+     blocklen = 4;
+    decodeblock( ((uint8_t*)buf) + n * 4, real_output + n*3, blocklen, base64 );
+   }
+   real_output[n*3] = 0;
+  }
+  return real_output;
+ }
  #ifdef __cplusplus
  //namespace text {
  };
@@ -50386,7 +50532,7 @@ SegSplit( &pCurrent, start );
   struct json_value_container val;
   char const * msg_input = (char const *)msg;
   char const * _msg_input;
-  char *token_begin;
+  //char *token_begin;
   if( !_msg_output )
    return FALSE;
   elements = CreateDataList( sizeof( val ) );
