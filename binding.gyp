@@ -32,7 +32,23 @@
             ],
             'libraries':[ '-luuid' ]
           }],
-          ['OS=="mac"', {
+	['node_shared_openssl=="false"', {
+	      'include_dirs': [
+	        '<(node_root_dir)/deps/openssl/openssl/include'
+	      ],
+		"conditions" : [
+			["target_arch=='ia32'", {
+			 "include_dirs": [ "<(node_root_dir)/deps/openssl/config/piii" ]
+			}],
+			[target_arch=='x64'", {
+			 "include_dirs": [ "<(node_root_dir)/deps/openssl/config/k8" ]
+			}],
+			["target_arch=='arm'", {
+			 "include_dirs": [ "<(node_root_dir)/deps/openssl/config/arm" ]
+			}]
+        	]	
+	}],
+	['OS=="mac"', {
             'defines': [
               '__LINUX__','__MAC__'
             ],
@@ -44,6 +60,7 @@
 			, '-Wno-strict-aliasing', '-Wno-switch', '-Wno-missing-field-initializers' 
 			, '-Wno-unused-variable', '-Wno-unused-function'
 			, '-Wno-sign-compare', '-Wno-null-dereference'
+			, '-Waddress-of-packed-member'
                 ],
              },
             'include_dirs': [

@@ -30818,11 +30818,6 @@ sendto( hSock, (const char *)SENDBUF, nSend, 0
    unload( interface_drop );
  }
  //-----------------------------------------------------------------------
- static void DoDeleteRegistry( void )
- {
-  DoDeleteRegistry( );
- }
- //-----------------------------------------------------------------------
  PRIORITY_ATEXIT( CloseGlobalRegions, ATEXIT_PRIORITY_SHAREMEM + 1 )
  {
   PLIST *global_reference;

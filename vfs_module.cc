@@ -161,7 +161,7 @@ void VolumeObject::openVolDb( const FunctionCallbackInfo<Value>& args ) {
 		MaybeLocal<Object> mo = Nan::NewInstance( cons, argc, argv );
 		if( !mo.IsEmpty() )
 			args.GetReturnValue().Set( mo.ToLocalChecked() );
-		delete argv;
+		delete[] argv;
 	}
 
 }
@@ -371,7 +371,7 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 			MaybeLocal<Object> mo = Nan::NewInstance( cons, argc, argv );
 			if( !mo.IsEmpty() )
 				args.GetReturnValue().Set( mo.ToLocalChecked() );
-			delete argv;
+			delete[] argv;
 		}
 	}
 
