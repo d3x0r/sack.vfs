@@ -40,7 +40,7 @@
 			["target_arch=='ia32'", {
 			 "include_dirs": [ "<(node_root_dir)/deps/openssl/config/piii" ]
 			}],
-			[target_arch=='x64'", {
+			["target_arch=='x64'", {
 			 "include_dirs": [ "<(node_root_dir)/deps/openssl/config/k8" ]
 			}],
 			["target_arch=='arm'", {
