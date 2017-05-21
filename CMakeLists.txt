@@ -56,6 +56,7 @@ SET( EXTRA_HEADERS
         ${SACK_BASE}/include/http.h
         ${SACK_BASE}/include/procreg.h
         ${SACK_BASE}/include/configscript.h
+	${SACK_BASE}/include/salty_generator.h
         ${SACK_BASE}/include/sackcomm.h
 )
 

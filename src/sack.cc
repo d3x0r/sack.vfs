@@ -3857,7 +3857,7 @@
     although technically this can result in invalid character encoding where upper bits get zeroed
     result should be Release()'d
  */
- TYPELIB_PROC  char * TYPELIB_CALLTYPE  u8xor( const char *a, const char *b, int *ofs );
+ TYPELIB_PROC  char * TYPELIB_CALLTYPE  u8xor( const char *a, size_t alen, const char *b, size_t blen, int *ofs );
  /* xor two base64 encoded strings, resulting in a base64 string
     result should be Release()'d
  */
@@ -42557,19 +42557,22 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   }
   return FALSE;
  }
- const char * const encodings = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$_";
- const char * const encodings2 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+ const char encodings[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$_";
+ const char encodings2[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
  static TEXTCHAR b64xor_table[256][256];
  static TEXTCHAR u8xor_table[256][256];
+ static TEXTCHAR b64xor_table2[256][256];
+ static TEXTCHAR u8xor_table2[256][256];
  PRELOAD( initTables ) {
   int n, m;
   for( n = 0; n < (sizeof( encodings )-1); n++ )
    for( m = 0; m < (sizeof( encodings )-1); m++ ) {
     b64xor_table[encodings[n]][encodings[m]] = encodings[n^m];
-    u8xor_table[encodings[n]][encodings[m]] = n^m;
-    b64xor_table[encodings2[n]][encodings2[m]] = encodings2[n^m];
-    u8xor_table[encodings2[n]][encodings2[m]] = n^m;
+    u8xor_table[n][encodings[m]] = n^m;
+    b64xor_table2[encodings2[n]][encodings2[m]] = encodings2[n^m];
+    u8xor_table2[n][encodings2[m]] = n^m;
   }
+  //LogBinary( (uint8_t*)u8xor_table[0], sizeof( u8xor_table ) );
   b64xor_table['=']['='] = '=';
  }
  char * b64xor( const char *a, const char *b ) {
@@ -42581,19 +42584,21 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   out[n] = 0;
   return out;
  }
- char * u8xor( const char *a, const char *b, int *ofs ) {
+ char * u8xor( const char *a, size_t alen, const char *b, size_t blen, int *ofs ) {
   int n;
-  size_t keylen = strlen(b)-5;
+  size_t keylen = blen-5;
   int o = ofs[0];
   size_t outlen;
-  char *out = NewArray( char, (outlen=strlen(a)) + 1);
-  for( n = 0; a[n]; n++ ) {
+  char *out = NewArray( char, (outlen=alen) + 1);
+  for( n = 0; n < alen; n++ ) {
    char v = a[n];
    int mask = 0x3f;
-   if( (v & 0xE0) == 0xC0 )  {mask=0x3;}
+   if( (v & 0xE0) == 0xC0 )      {mask=0x1F;}
    else if( (v & 0xF0) == 0xE0 ) {mask=0xF;}
    else if( (v & 0xF8) == 0xF0 ) {mask=0x7;}
-   out[n] = (v & ~mask ) | ( u8xor_table[v & mask ][b[(n+o)%(keylen)]] & mask );
+   char bchar = b[(n+o)%(keylen)];
+   out[n] = (v & ~mask ) | ( u8xor_table[v & mask ][bchar] & mask );
+   //lprintf( "xor %d %d = %d", v, bchar, out[n] );
   }
   out[n] = 0;
   ofs[0] = (int)((ofs[0]+outlen)%keylen);
@@ -58457,7 +58462,7 @@ SegSplit( &pCurrent, start );
    // signed/unsigned comparison here.
    // the signed value is known to be greater than 0 and less than max unsigned int
    // so it is in a valid range to check, and is NOT a warning or error condition EVER.
-   if( len > ses->obuflen )
+   if( SUS_GT( len, int, ses->obuflen, size_t ) )
    {
     Release( ses->obuffer );
     ses->obuffer = NewArray( uint8_t, len * 2 );

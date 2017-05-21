@@ -7,6 +7,49 @@ static void moduleExit( void *arg ) {
 	InvokeExits();
 }
 
+static void vfs_b64xor(const FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	if( argc > 1 ) {
+  		String::Utf8Value xor1( args[0] );
+  		String::Utf8Value xor2( args[1] );
+		//lprintf( "is buffer overlapped? %s %s", *xor1, *xor2 );
+		char *r = b64xor( *xor1, *xor2 );
+		MaybeLocal<String> retval = String::NewFromUtf8( isolate, r );
+		args.GetReturnValue().Set( retval.ToLocalChecked() );
+		Deallocate( char*, r );
+		
+	}
+}
+
+static void vfs_u8xor(const FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	if( argc > 0 ) {
+  		String::Utf8Value xor1( args[0] );
+  		Local<Object> key = args[1]->ToObject();
+		//Handle<Object> 
+		Local<String> tmp;
+		Local<Value> keyValue = key->Get( String::NewFromUtf8( isolate, "key" ) );
+		Local<Value> stepValue = key->Get( tmp = String::NewFromUtf8( isolate, "step" ) );
+		int step = stepValue->IntegerValue();
+		String::Utf8Value xor2( keyValue );
+		//lprintf( "is buffer overlapped? %s %s %d", *xor1, *xor2, step );
+		char *out = u8xor( *xor1, (size_t)xor1.length(), *xor2, (size_t)xor2.length(), &step );
+		//lprintf( "encoded1:%s %d", out, step );
+		key->Set( tmp, Integer::New( isolate, step ) );
+		//lprintf( "length: %d %d", xor1.length(), StrLen( *xor1 ) );
+		args.GetReturnValue().Set( String::NewFromUtf8( isolate, out, NewStringType::kNormal, (int)xor1.length() ).ToLocalChecked() );
+		Deallocate( char*, out );
+	}
+}
+static void idGenerator(const FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	char *r = SRG_ID_Generator();
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, r ) );
+	Deallocate( char*, r );
+}
+
 void VolumeObject::Init( Handle<Object> exports ) {
 	InvokeDeadstart();
 	node::AtExit( moduleExit );
@@ -41,6 +84,9 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "Sqlite", openVolDb );
 
 	NODE_SET_METHOD(exports, "mkdir", mkdir );
+	NODE_SET_METHOD(exports, "u8xor", vfs_u8xor );
+	NODE_SET_METHOD(exports, "b64xor", vfs_b64xor );
+	NODE_SET_METHOD(exports, "id", idGenerator );
 
 	constructor.Reset( isolate, volumeTemplate->GetFunction() );
 	exports->Set( String::NewFromUtf8( isolate, "Volume" ),
