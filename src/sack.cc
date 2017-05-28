@@ -45868,6 +45868,10 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
   } flags;
  }local_http_data;
  #define l local_http_data
+ struct instance_data {
+  PTHREAD waiter;
+  PCLIENT *pc;
+ };
  void GatherHttpData( struct HttpState *pHttpState )
  {
   if( pHttpState->content_length )
@@ -46034,12 +46038,40 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
             pHttpState->numeric_code = HTTP_STATE_RESULT_CONTENT;
             request = NEXTLINE( request );
            }
-           if( TextSimilar( request, WIDE( "POST" ) ) )
+           else if( TextSimilar( request, WIDE( "POST" ) ) )
            {
  // initialize to assume it's incomplete; NOT OK.  (requests should be OK)
             pHttpState->numeric_code = HTTP_STATE_RESULT_CONTENT;
             lprintf( WIDE("probably shouldn't post final until content length is also received...") );
             request = NEXTLINE( request );
+           }
+           // this loop is used for both client and server http requests...
+           // this will be the first part of a HTTP response (this one will have a result code, the other is just version)
+           else if( TextSimilar( request, WIDE( "HTTP/" ) ) )
+           {
+            TEXTCHAR *tmp2 = (TEXTCHAR*)StrChr( GetText( request ), '.' );
+            pHttpState->response_version = (int)((IntCreateFromText( GetText( request ) + 5 ) * 100) + IntCreateFromText( tmp2 + 1 ));
+            {
+             PTEXT nextword = NEXTLINE( request );
+             if( nextword )
+             {
+              next = NEXTLINE( nextword );
+              // cast from int64_t
+              pHttpState->numeric_code = (int)IntCreateFromText( GetText( nextword ) );
+              nextword = next;
+              if( nextword )
+              {
+               next = NEXTLINE( nextword );
+               if( pHttpState->text_code )
+                Release( pHttpState->text_code );
+               pHttpState->text_code = StrDup( GetText( nextword ) );
+              }
+             }
+             else
+             {
+              lprintf( WIDE( "failed to find result code in %s" ), line );
+             }
+            }
            }
            for( tmp = request; tmp; tmp = next )
            {
@@ -46050,27 +46082,6 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
             {
              TEXTCHAR *tmp2 = (TEXTCHAR*)StrChr( GetText( tmp ), '.' );
              pHttpState->response_version = (int)(( IntCreateFromText( GetText( tmp ) + 5 ) * 100 ) + IntCreateFromText( tmp2 + 1 ));
-             {
-              PTEXT nextword = next;
-              if( nextword )
-              {
-               next = NEXTLINE( nextword );
-               // cast from int64_t
-               pHttpState->numeric_code = (int)IntCreateFromText( GetText( nextword ) );
-               nextword = next;
-               if( nextword )
-               {
-                next = NEXTLINE( nextword );
-                if( pHttpState->text_code )
-                 Release( pHttpState->text_code );
-                pHttpState->text_code = StrDup( GetText( nextword ) );
-               }
-              }
-              else
-              {
-               lprintf( WIDE( "failed to find result code in %s" ), line );
-              }
-             }
             }
             else if( GetText(tmp)[0] == '?' )
             {
@@ -46091,6 +46102,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
              else
              {
               resource_path = SegAppend( resource_path, SegGrab( tmp ) );
+              if( request == tmp ) request = next;
              }
             }
            }
@@ -46168,7 +46180,7 @@ SegSplit( &pCurrent, start );
        pHttpState->read_chunks = TRUE;
        pHttpState->read_chunk_state = READ_VALUE;
        pHttpState->read_chunk_length = 0;
-                   pHttpState->read_chunk_total_length = 0;
+       pHttpState->read_chunk_total_length = 0;
       }
      }
      if( TextLike( field->name, WIDE( "Expect" ) ) )
@@ -46186,7 +46198,9 @@ SegSplit( &pCurrent, start );
    }
   }
   if( pHttpState->final &&
-   ( ( pHttpState->content_length && ( GetTextSize( pHttpState->partial ) >= pHttpState->content_length ) )
+   ( ( pHttpState->content_length
+    && ( ( GetTextSize( pHttpState->partial ) >= pHttpState->content_length )
+     ||( GetTextSize( pHttpState->content ) >= pHttpState->content_length ) ) )
     || ( !pHttpState->content_length )
     ) )
   {
@@ -46524,7 +46538,7 @@ SegSplit( &pCurrent, start );
     }
   }
   // read is handled by the SSL layer instead of here.  Just trust that someone will give us data later
-  if( buffer && ( state && !state->ssl ) )
+  if( buffer && ( !state || !state->ssl ) )
   {
    ReadTCP( pc, buffer, 4096 );
   }
@@ -46535,9 +46549,12 @@ SegSplit( &pCurrent, start );
   if( buf )
    Release( buf );
   {
-   PCLIENT *ppc = (PCLIENT*)GetNetworkLong( pc, 0 );
+   struct instance_data *data = (struct instance_data*)GetNetworkLong( pc, 0 );
+// (PCLIENT*)GetNetworkLong( pc, 0 );
+   PCLIENT *ppc = data->pc;
    if( ppc )
     ppc[0] = NULL;
+   if( data->waiter ) WakeThread( data->waiter );
   }
  }
  HTTPState PostHttpQuery( PTEXT address, PTEXT url, PTEXT content )
@@ -46552,7 +46569,10 @@ SegSplit( &pCurrent, start );
   if( pc )
   {
    PTEXT send = VarTextGet( pvtOut );
-   SetNetworkLong( pc, 0, (uintptr_t)&pc );
+   struct instance_data inst;
+   inst.pc = &pc;
+   inst.waiter = MakeThread();
+   SetNetworkLong( pc, 0, (uintptr_t)&inst );
    SetNetworkLong( pc, 2, (uintptr_t)state );
    SetNetworkCloseCallback( pc, HttpReaderClose );
    if( l.flags.bLogReceived )
@@ -46589,31 +46609,38 @@ SegSplit( &pCurrent, start );
    return NULL;
   {
    PCLIENT pc = OpenTCPClient( GetText( address ), 80, HttpReader );
-   struct HttpState *state = CreateHttpState();
-   PVARTEXT pvtOut = VarTextCreate();
-   vtprintf( pvtOut, WIDE( "GET %s HTTP/1.1\r\n" ), GetText( url ) );
-   vtprintf( pvtOut, WIDE( "host: %s\r\n" ), GetText( address ) );
-   vtprintf( pvtOut, WIDE( "\r\n\r\n" ) );
-   if( pc )
-   {
-    PTEXT send = VarTextGet( pvtOut );
-    SetNetworkLong( pc, 0, (uintptr_t)&pc );
-    SetNetworkLong( pc, 2, (uintptr_t)state );
-    SetNetworkCloseCallback( pc, HttpReaderClose );
-    if( l.flags.bLogReceived )
+   if( pc ) {
+    struct HttpState *state = CreateHttpState();
+    PVARTEXT pvtOut = VarTextCreate();
+    SetTCPNoDelay( pc, TRUE );
+    vtprintf( pvtOut, WIDE( "GET %s HTTP/1.1\r\n" ), GetText( url ) );
+    vtprintf( pvtOut, WIDE( "host: %s\r\n" ), GetText( address ) );
+    vtprintf( pvtOut, WIDE( "\r\n\r\n" ) );
+    if( pc )
     {
-     lprintf( WIDE("Sending POST...") );
-     LogBinary( (uint8_t*)GetText( send ), GetTextSize( send ) );
+     PTEXT send = VarTextGet( pvtOut );
+     struct instance_data inst;
+     inst.pc = &pc;
+     inst.waiter = MakeThread();
+// pc );
+     SetNetworkLong( pc, 0, (uintptr_t)&inst );
+     SetNetworkLong( pc, 2, (uintptr_t)state );
+     SetNetworkCloseCallback( pc, HttpReaderClose );
+     if( l.flags.bLogReceived )
+     {
+      lprintf( WIDE( "Sending POST..." ) );
+      LogBinary( (uint8_t*)GetText( send ), GetTextSize( send ) );
+     }
+     SendTCP( pc, GetText( send ), GetTextSize( send ) );
+     LineRelease( send );
+     while( pc )
+     {
+      WakeableSleep( 100 );
+     }
     }
-    SendTCP( pc, GetText( send ), GetTextSize( send ) );
-    LineRelease( send );
-    while( pc )
-    {
-     WakeableSleep( 100 );
-    }
+    VarTextDestroy( &pvtOut );
+    return state;
    }
-   VarTextDestroy( &pvtOut );
-   return state;
   }
   return NULL;
  }
@@ -46627,8 +46654,11 @@ SegSplit( &pCurrent, start );
    pc = OpenTCPClient( GetText( address ), 443, NULL );
    if( pc )
    {
+    struct instance_data inst;
+    inst.pc = &pc;
+    inst.waiter = MakeThread();
     state->last_read_tick = GetTickCount();
-    SetNetworkLong( pc, 0, (uintptr_t)&pc );
+    SetNetworkLong( pc, 0, (uintptr_t)&inst );
     SetNetworkLong( pc, 2, (uintptr_t)state );
     SetNetworkCloseCallback( pc, HttpReaderClose );
     SetNetworkReadComplete( pc, HttpReader );
@@ -52819,7 +52849,7 @@ SegSplit( &pCurrent, start );
   memcpy (pc->hwClient, ifr.ifr_hwaddr.sa_data, 6);
   return 0;
  #    endif
-    /* this code queries the arp table to figure out who the other side is */
+     /* this code queries the arp table to figure out who the other side is */
   //int fd;
   struct arpreq arpr;
   struct ifconf ifc;
@@ -52833,7 +52863,7 @@ SegSplit( &pCurrent, start );
    ifc.ifc_buf = buf;
    ioctl( pc->Socket, SIOCGIFCONF, &ifc );
    {
-          int i;
+    int i;
     struct ifreq *IFR;
     IFR = ifc.ifc_req;
     for( i = ifc.ifc_len / sizeof( struct ifreq); --i >=0; IFR++ )
@@ -52852,8 +52882,8 @@ SegSplit( &pCurrent, start );
   return 0;
  #  endif
  #  ifdef WIN32
-     HRESULT hr;
-     ULONG   ulLen;
+  HRESULT hr;
+  ULONG   ulLen;
   // I don't understand this useless cast - from size_t to ULONG?
   // isn't that the same thing?
   ulLen = (ULONG)(*buflen);
@@ -52916,7 +52946,7 @@ SegSplit( &pCurrent, start );
    ifc.ifc_buf = buf;
    ioctl( pc->Socket, SIOCGIFCONF, &ifc );
    {
-          int i;
+    int i;
     struct ifreq *IFR;
     IFR = ifc.ifc_req;
     for( i = ifc.ifc_len / sizeof( struct ifreq); --i >=0; IFR++ )
@@ -52936,8 +52966,8 @@ SegSplit( &pCurrent, start );
   return 0;
  #endif
  #ifdef WIN32
-     HRESULT hr;
-     ULONG   ulLen;
+  HRESULT hr;
+  ULONG   ulLen;
   uint8_t hwClient[6];
   ulLen = 6;
   //needs ws2_32.lib and iphlpapi.lib in the linker.
@@ -52948,7 +52978,7 @@ SegSplit( &pCurrent, start );
  //  just addresses, whether they be address to information of eight bits in length, or
  //  of (sizeof(unsigned)) in length.  Although this may, in the future, throw a warning.
   //hr = SendARP (GetNetworkLong(pc,GNL_IP), 0, (PULONG)pc->hwClient, &ulLen);
-     lprintf (WIDE("Return %08x, length %8d\n"), hr, ulLen);
+  lprintf (WIDE("Return %08x, length %8d\n"), hr, ulLen);
   return 0;
  #endif
  #else
@@ -53316,33 +53346,33 @@ SegSplit( &pCurrent, start );
  //----------------------------------------------------------------------------
  static int NetworkStartup( void )
  {
-    static int attempt = 0;
-    static int nStep = 0,
-               nError;
-    static SOCKET sockMaster;
-    static SOCKADDR remSin;
-    //WSADATA ws;  // used to start up the socket services...
-    // can tick before the timer happens...
+  static int attempt = 0;
+  static int nStep = 0,
+            nError;
+  static SOCKET sockMaster;
+  static SOCKADDR remSin;
+  //WSADATA ws;  // used to start up the socket services...
+  // can tick before the timer happens...
   //if( !uNetworkPauseTimer )
   // return 2;
-    switch( nStep )
-    {
+  switch( nStep )
+  {
   case 0 :
    //lprintf( "Global is %d %p", sizeof( globalNetworkData ), &globalNetworkData.uNetworkPauseTimer, &globalNetworkData.nProtos );
    SystemCheck();
-       /*
-       if( WSAStartup( MAKEWORD(2,0), &ws ) )
-       {
-          nError = WSAGetLastError();
-          Log1( WIDE("Failed network startup! (%d)"), nError );
-          nStep = 0; // reset...
-          return NetworkQuit();
+   /*
+   if( WSAStartup( MAKEWORD(2,0), &ws ) )
+   {
+    nError = WSAGetLastError();
+    Log1( WIDE("Failed network startup! (%d)"), nError );
+    nStep = 0; // reset...
+    return NetworkQuit();
    }
    lprintf("Winsock Version: %d.%d", LOBYTE(ws.wVersion), HIBYTE(ws.wVersion));
-       */
-       nStep++;
-       attempt = 0;
-    case 1 :
+   */
+   nStep++;
+   attempt = 0;
+  case 1 :
    // Sit around, waiting for the network to start...
    //--------------------
    // sorry this is really really ugly to read!
@@ -53359,60 +53389,60 @@ SegSplit( &pCurrent, start );
    }
  #endif
    //--------------------
-       if( sockMaster == INVALID_SOCKET )
+   if( sockMaster == INVALID_SOCKET )
    {
     nError = WSAGetLastError();
     lprintf( WIDE( "Failed to create a socket - error is %ld" ), WSAGetLastError() );
  // provvider init fail )
     if( nError == 10106 )
     {
-             if( ++attempt >= 30 ) return NetworkQuit();
-             return -2;
+     if( ++attempt >= 30 ) return NetworkQuit();
+     return -2;
     }
-          if( nError == WSAENETDOWN )
-          {
-             if( ++attempt >= 30 ) return NetworkQuit();
-             //else return NetworkPause(WIDE( "Socket is delaying..." ));
-          }
+    if( nError == WSAENETDOWN )
+    {
+     if( ++attempt >= 30 ) return NetworkQuit();
+     //else return NetworkPause(WIDE( "Socket is delaying..." ));
+    }
  // reset...
-           nStep = 0;
+     nStep = 0;
     if( ++attempt >= 30 ) return NetworkQuit();
 //NetworkQuit();
-          return 1;
-       }
-       // Retrieve my IP address and UDP Port number
-       remSin.sa_family=AF_INET;
-       remSin.sa_data[0]=0;
-       remSin.sa_data[1]=0;
-       ((SOCKADDR_IN*)&remSin)->sin_addr.s_addr=INADDR_ANY;
-       nStep++;
-       attempt = 0;
-       // Fall into next state..............
-    case 2 :
+    return 1;
+   }
+   // Retrieve my IP address and UDP Port number
+   remSin.sa_family=AF_INET;
+   remSin.sa_data[0]=0;
+   remSin.sa_data[1]=0;
+   ((SOCKADDR_IN*)&remSin)->sin_addr.s_addr=INADDR_ANY;
+   nStep++;
+   attempt = 0;
+   // Fall into next state..............
+  case 2 :
    // Associate an address with a socket. (bind)
-       if( bind( sockMaster, (PSOCKADDR)&remSin, sizeof(remSin))
-           == SOCKET_ERROR )
-       {
-          if( WSAGetLastError() == WSAENETDOWN )
-          {
-             if( ++attempt >= 30 ) return NetworkQuit();
-             //else return NetworkPause(WIDE( "Bind is Delaying" ));
-          }
- // reset...
-          nStep = 0;
-          return NetworkQuit();
-       }
-       nStep++;
-       attempt = 0;
-       // Fall into next state..............
-  case 3 :
-       closesocket(sockMaster);
-       sockMaster = INVALID_SOCKET;
- // reset...
-       nStep = 0;
-       break;
+   if( bind( sockMaster, (PSOCKADDR)&remSin, sizeof(remSin))
+     == SOCKET_ERROR )
+   {
+    if( WSAGetLastError() == WSAENETDOWN )
+    {
+     if( ++attempt >= 30 ) return NetworkQuit();
+     //else return NetworkPause(WIDE( "Bind is Delaying" ));
     }
-    return 0;
+ // reset...
+    nStep = 0;
+    return NetworkQuit();
+   }
+   nStep++;
+   attempt = 0;
+   // Fall into next state..............
+  case 3 :
+   closesocket(sockMaster);
+   sockMaster = INVALID_SOCKET;
+ // reset...
+   nStep = 0;
+   break;
+  }
+  return 0;
  }
  //----------------------------------------------------------------------------
  void CPROC NetworkPauseTimer( uintptr_t psv )
@@ -53421,8 +53451,8 @@ SegSplit( &pCurrent, start );
   nResult = NetworkStartup();
   if( nResult == 0 )
   {
-      while( !globalNetworkData.uNetworkPauseTimer )
-       Relinquish();
+   while( !globalNetworkData.uNetworkPauseTimer )
+    Relinquish();
    RemoveTimer( globalNetworkData.uNetworkPauseTimer );
    globalNetworkData.flags.bNetworkReady = TRUE;
    globalNetworkData.flags.bThreadInitOkay = TRUE;
@@ -53482,7 +53512,7 @@ SegSplit( &pCurrent, start );
  #endif
      while( !NetworkLock( pClient ) )
      {
-                // done with events; inactive sockets can't have events
+      // done with events; inactive sockets can't have events
       if( !(pClient->dwFlags & CF_ACTIVE ) )
       {
        pClient->dwFlags &= ~CF_PROCESSING;
@@ -53562,7 +53592,7 @@ SegSplit( &pCurrent, start );
       else
       {
        // got a network event, and won't get another until recv is called.
-                   // mark that the socket has data, then the pend_read code will trigger the finishpendingread.
+       // mark that the socket has data, then the pend_read code will trigger the finishpendingread.
        if( FinishPendingRead( pClient DBG_SRC ) == 0 )
        {
         pClient->dwFlags |= CF_READREADY;
@@ -53641,64 +53671,64 @@ SegSplit( &pCurrent, start );
  NETWORK_PROC( void, SetNetworkWriteComplete)( PCLIENT pClient,
                                           cWriteComplete WriteComplete )
  {
-    if( pClient && IsValid( pClient->Socket ) )
-    {
-     pClient->write.WriteComplete = WriteComplete;
-    }
+  if( pClient && IsValid( pClient->Socket ) )
+  {
+   pClient->write.WriteComplete = WriteComplete;
+  }
  }
  //----------------------------------------------------------------------------
  NETWORK_PROC( void, SetCPPNetworkWriteComplete)( PCLIENT pClient
                                           , cppWriteComplete WriteComplete
                                           , uintptr_t psv)
  {
-    if( pClient && IsValid( pClient->Socket ) )
-    {
-     pClient->write.CPPWriteComplete = WriteComplete;
-     pClient->psvWrite = psv;
-     pClient->dwFlags |= CF_CPPWRITE;
-    }
+  if( pClient && IsValid( pClient->Socket ) )
+  {
+   pClient->write.CPPWriteComplete = WriteComplete;
+   pClient->psvWrite = psv;
+   pClient->dwFlags |= CF_CPPWRITE;
+  }
  }
  //----------------------------------------------------------------------------
  NETWORK_PROC( void, SetNetworkCloseCallback)( PCLIENT pClient,
                                           cCloseCallback CloseCallback )
  {
-    if( pClient && IsValid(pClient->Socket) )
-    {
-       pClient->close.CloseCallback = CloseCallback;
-    }
+  if( pClient && IsValid(pClient->Socket) )
+  {
+   pClient->close.CloseCallback = CloseCallback;
+  }
  }
  //----------------------------------------------------------------------------
  NETWORK_PROC( void, SetCPPNetworkCloseCallback)( PCLIENT pClient
                                           , cppCloseCallback CloseCallback
                                           , uintptr_t psv)
  {
-    if( pClient && IsValid(pClient->Socket) )
-    {
-       pClient->close.CPPCloseCallback = CloseCallback;
-       pClient->psvClose = psv;
-       pClient->dwFlags |= CF_CPPCLOSE;
-    }
+  if( pClient && IsValid(pClient->Socket) )
+  {
+   pClient->close.CPPCloseCallback = CloseCallback;
+   pClient->psvClose = psv;
+   pClient->dwFlags |= CF_CPPCLOSE;
+  }
  }
  //----------------------------------------------------------------------------
  NETWORK_PROC( void, SetNetworkReadComplete)( PCLIENT pClient,
                                          cReadComplete pReadComplete )
  {
-    if( pClient && IsValid(pClient->Socket) )
-    {
-       pClient->read.ReadComplete = pReadComplete;
-    }
+  if( pClient && IsValid(pClient->Socket) )
+  {
+   pClient->read.ReadComplete = pReadComplete;
+  }
  }
  //----------------------------------------------------------------------------
  NETWORK_PROC( void, SetCPPNetworkReadComplete)( PCLIENT pClient
                                          , cppReadComplete pReadComplete
                                          , uintptr_t psv)
  {
-    if( pClient && IsValid(pClient->Socket) )
-    {
-       pClient->read.CPPReadComplete = pReadComplete;
-       pClient->psvRead = psv;
-       pClient->dwFlags |= CF_CPPREAD;
-    }
+  if( pClient && IsValid(pClient->Socket) )
+  {
+   pClient->read.CPPReadComplete = pReadComplete;
+   pClient->psvRead = psv;
+   pClient->dwFlags |= CF_CPPREAD;
+  }
  }
  //----------------------------------------------------------------------------
  #ifndef __LINUX__
@@ -53811,7 +53841,7 @@ SegSplit( &pCurrent, start );
    first_peer = first_peer->parent_peer;
   for( peer = first_peer; peer; peer = peer->child_peer )
   {
-       // this will be the parent of all; so his parent will be null, and we're already awake.
+   // this will be the parent of all; so his parent will be null, and we're already awake.
    if( peer->parent_peer && peer->nEvents != peer->nWaitEvents )
    {
  #if LOG_NETWORK_EVENT_THREAD
@@ -54005,7 +54035,7 @@ SegSplit( &pCurrent, start );
     }
    }
    // result 0... we had nothing to do
-       // but we are this thread.
+   // but we are this thread.
    //DeleteList( &clients );
    //DeleteList( &events );
  #  else
@@ -54071,7 +54101,7 @@ SegSplit( &pCurrent, start );
   else
    globalNetworkData.root_thread = &this_thread;
   if( !peer_thread )
-       globalNetworkData.hMonitorThreadControlEvent = this_thread.hThread;
+   globalNetworkData.hMonitorThreadControlEvent = this_thread.hThread;
  #  endif
  // creator won't pass until bThreadInitComplete is set.
   while( !globalNetworkData.pThreads )
@@ -54103,8 +54133,8 @@ SegSplit( &pCurrent, start );
    if( this_thread.parent_peer->child_peer = this_thread.child_peer )
     this_thread.child_peer->parent_peer = this_thread.parent_peer;
   }
-    // this used to be done in the WM_DESTROY
-    DeleteLink( &globalNetworkData.pThreads, thread );
+  // this used to be done in the WM_DESTROY
+  DeleteLink( &globalNetworkData.pThreads, thread );
  #  endif
   globalNetworkData.flags.bThreadExit = TRUE;
   xlprintf(2100)( WIDE("Shut down network thread.") );
@@ -54137,9 +54167,9 @@ SegSplit( &pCurrent, start );
  #  ifdef LOG_NETWORK_LOCKING
   lprintf( WIDE( "NetworkThread(exit) left global" ) );
  #  endif
-    //spv:980303
+  //spv:980303
   DeleteCriticalSec( &globalNetworkData.csNetwork );
-    return 0;
+  return 0;
  }
  // if !__LINUX__
  #else
@@ -54160,7 +54190,7 @@ SegSplit( &pCurrent, start );
    EnterCriticalSec( &globalNetworkData.csNetwork );
    for( pc = globalNetworkData.ActiveClients; pc; pc = pc->next )
    {
-          // socket might not be quite opened yet...
+    // socket might not be quite opened yet...
     if( !IsValid( pc->Socket ) )
      continue;
     if( pc->dwFlags & (CF_LISTEN|CF_READPENDING) )
@@ -54213,11 +54243,11 @@ SegSplit( &pCurrent, start );
      return 1;
     if( errno == EBADF )
     {
-             PCLIENT next;
+     PCLIENT next;
      EnterCriticalSec( &globalNetworkData.csNetwork );
      for( pc = globalNetworkData.ActiveClients; pc; pc = next )
      {
-                next = pc->next;
+      next = pc->next;
       if( IsValid( pc->Socket ) )
       {
        if( pc->Socket >= maxcnt )
@@ -54247,14 +54277,14 @@ SegSplit( &pCurrent, start );
    if( cnt > 0 )
    {
     THREAD_ID prior = 0;
-          PCLIENT next;
+    PCLIENT next;
    start_lock:
     EnterCriticalSec( &globalNetworkData.csNetwork );
     for( pc = globalNetworkData.ActiveClients; pc; pc = next )
     {
      next = pc->next;
      if( !IsValid( pc->Socket ) )
-                continue;
+      continue;
      if( pc->dwFlags & CF_WANTS_GLOBAL_LOCK)
      {
       LeaveCriticalSec( &globalNetworkData.csNetwork );
@@ -54373,7 +54403,7 @@ SegSplit( &pCurrent, start );
          if( globalNetworkData.flags.bLogNotices )
           lprintf( WIDE( "Got connect event, waking waiter.." ) );
  #endif
-            WakeThread( pc->pWaiting );
+          WakeThread( pc->pWaiting );
         }
         if( pc->connect.ThisConnected )
          pc->connect.ThisConnected( pc, error );
@@ -54506,10 +54536,10 @@ SegSplit( &pCurrent, start );
   globalNetworkData.flags.bNetworkReady = TRUE;
   //lprintf( "So we're good to go; set all flags as sucess, and begin doing nothing." );
   //lprintf( WIDE("Network Thread Began...") );
-    while( !globalNetworkData.bQuit )
+  while( !globalNetworkData.bQuit )
   {
-       int n = ProcessNetworkMessages( NULL, 0 );
-       if( n < 0 )
+   int n = ProcessNetworkMessages( NULL, 0 );
+   if( n < 0 )
     break;
    else if( !n )
    {
@@ -54523,7 +54553,7 @@ SegSplit( &pCurrent, start );
    PCLIENT_SLAB slab;
    LIST_FORALL( globalNetworkData.ClientSlabs, idx, PCLIENT_SLAB, slab )
    {
-          Deallocate( PCLIENT_SLAB, slab );
+    Deallocate( PCLIENT_SLAB, slab );
    }
   }
  #ifdef LOG_NETWORK_EVENT_THREAD
@@ -54535,7 +54565,7 @@ SegSplit( &pCurrent, start );
  // confirm thread exit.
   globalNetworkData.pThreads = NULL;
   globalNetworkData.flags.bNetworkReady = FALSE;
-    return 0;
+  return 0;
  }
  #endif
  struct peer_thread_info *IsNetworkThread( void )
@@ -54572,7 +54602,7 @@ SegSplit( &pCurrent, start );
   WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
  #else
  #  ifndef __LINUX__
-    if( IsWindow( globalNetworkData.ghWndNetwork ) )
+  if( IsWindow( globalNetworkData.ghWndNetwork ) )
   {
    // okay forget this... at exit, cannot guarantee that
    // any other thread other than myself has any rights to do anything.
@@ -54581,8 +54611,8 @@ SegSplit( &pCurrent, start );
     lprintf( WIDE( "Post SOCKMSG_CLOSE" ) );
  #    endif
    PostMessage( globalNetworkData.ghWndNetwork, SOCKMSG_CLOSE, 0, 0 );
-       // also remove PCLIENT clients, and all client->pUserData allocated...
-    }
+   // also remove PCLIENT clients, and all client->pUserData allocated...
+  }
  #  else
   //while( globalNetworkData.pThread )
   // Sleep(0);
@@ -54591,7 +54621,7 @@ SegSplit( &pCurrent, start );
  #endif
   globalNetworkData.flags.bThreadInitComplete = FALSE;
   //RemoveIdleProc( ProcessNetworkMessages );
-    if( globalNetworkData.pThreads )
+  if( globalNetworkData.pThreads )
   {
    uint32_t started = timeGetTime() + 500;
  // allow network thread to gracefully exit
@@ -54605,8 +54635,8 @@ SegSplit( &pCurrent, start );
  #endif
    }
   }
-    globalNetworkData.root_thread = NULL;
-    return -1;
+  globalNetworkData.root_thread = NULL;
+  return -1;
  }
  ATEXIT( NetworkShutdown )
  {
@@ -54637,7 +54667,7 @@ SegSplit( &pCurrent, start );
    wClients = 16;
   if( !nUserData )
    nUserData = 16;
-    // keep the max of specified connections..
+  // keep the max of specified connections..
   if( wClients < MAX_NETCLIENTS )
    wClients = MAX_NETCLIENTS;
   if( wClients > MAX_NETCLIENTS )
@@ -54657,7 +54687,7 @@ SegSplit( &pCurrent, start );
    }
    AddLink( &globalNetworkData.ClientSlabs, pClientSlab );
   }
-    // keep the max of specified data..
+  // keep the max of specified data..
   if( nUserData < globalNetworkData.nUserData )
    nUserData = globalNetworkData.nUserData;
   if( nUserData > globalNetworkData.nUserData || wClients > MAX_NETCLIENTS )
@@ -54704,12 +54734,12 @@ SegSplit( &pCurrent, start );
   //-------------------------
   // please be mindful of the following data declared immediate...
   if( globalNetworkData.pThreads )
-    {
+  {
    xlprintf(2400)( WIDE("Thread already active...") );
-       // might do something... might not...
+   // might do something... might not...
  // network thread active, do not realloc
    return TRUE;
-    }
+  }
 /*peer_thread==*/
   AddLink( &globalNetworkData.pThreads, ThreadTo( NetworkThreadProc, (uintptr_t)NULL ) );
   AddIdleProc( IdleProcessNetworkMessages, 1 );
@@ -54737,9 +54767,9 @@ SegSplit( &pCurrent, start );
    struct addrinfo *result;
    struct addrinfo *test;
  #ifdef _UNICODE
-       char *tmp = WcharConvert( globalNetworkData.system_name );
+   char *tmp = WcharConvert( globalNetworkData.system_name );
    getaddrinfo( tmp, NULL, NULL, (struct addrinfo**)&result );
-       Deallocate( char*, tmp );
+   Deallocate( char*, tmp );
  #else
    getaddrinfo( globalNetworkData.system_name, NULL, NULL, (struct addrinfo**)&result );
  #endif
@@ -54747,17 +54777,17 @@ SegSplit( &pCurrent, start );
    {
     //if( test->ai_family == AF_INET )
     {
-             SOCKADDR *tmp;
+     SOCKADDR *tmp;
      AddLink( &globalNetworkData.addresses, tmp = AllocAddr() );
-             ((uintptr_t*)tmp)[-1] = test->ai_addrlen;
-             MemCpy( tmp, test->ai_addr, test->ai_addrlen );
+     ((uintptr_t*)tmp)[-1] = test->ai_addrlen;
+     MemCpy( tmp, test->ai_addr, test->ai_addrlen );
     }
    }
   }
  #endif
-    //lprintf( WIDE("Network Initialize Complete!") );
+  //lprintf( WIDE("Network Initialize Complete!") );
   // return status of thread initialization
-    return globalNetworkData.flags.bThreadInitOkay;
+  return globalNetworkData.flags.bThreadInitOkay;
  }
  //----------------------------------------------------------------------------
  PCLIENT GetFreeNetworkClientEx( DBG_VOIDPASS )
@@ -54776,7 +54806,7 @@ SegSplit( &pCurrent, start );
    // oterhwise we'll deadlock the closing client...
    // an opening condition has global lock (above)
    // and a closing socket will want the global lock before it's done.
-      pClient = GrabClient( pClient );
+   pClient = GrabClient( pClient );
  #ifdef USE_NATIVE_CRITICAL_SECTION
    EnterCriticalSec( &pClient->csLock );
  #else
@@ -54806,16 +54836,16 @@ SegSplit( &pCurrent, start );
  #ifdef LOG_NETWORK_LOCKING
   lprintf( WIDE("GetFreeNetworkClient left global") );
  #endif
-    return pClient;
+  return pClient;
  }
  //----------------------------------------------------------------------------
  NETWORK_PROC( void, SetNetworkLong )(PCLIENT lpClient, int nLong, uintptr_t dwValue)
  {
-    if( lpClient && ( nLong < globalNetworkData.nUserData ) )
-    {
-       *(uintptr_t*)(lpClient->lpUserData+(nLong * sizeof(uintptr_t))) = dwValue;
-    }
-    return;
+  if( lpClient && ( nLong < globalNetworkData.nUserData ) )
+  {
+   *(uintptr_t*)(lpClient->lpUserData+(nLong * sizeof(uintptr_t))) = dwValue;
+  }
+  return;
  }
  //----------------------------------------------------------------------------
  int GetAddressParts( SOCKADDR *sa, uint32_t *pdwIP, uint16_t *pdwPort )
@@ -54828,10 +54858,10 @@ SegSplit( &pCurrent, start );
      (*pdwIP) = (uint32_t)(((SOCKADDR_IN*)sa)->sin_addr.S_un.S_addr);
     if( pdwPort )
      (*pdwPort) = ntohs((uint16_t)( (SOCKADDR_IN*)sa)->sin_port);
-          return TRUE;
+    return TRUE;
    }
   }
-    return FALSE;
+  return FALSE;
  }
  NETWORK_PROC( uintptr_t, GetNetworkLong )(PCLIENT lpClient,int nLong)
  {
@@ -54885,10 +54915,10 @@ SegSplit( &pCurrent, start );
  /*
  NETWORK_PROC( uint16_t, GetNetworkWord )(PCLIENT lpClient,int nWord)
  {
-    if( !lpClient )
-       return 0xFFFF;
-    if( nWord < (globalNetworkData.nUserData *2) )
-     return(*(uint16_t*)(lpClient->lpUserData + (nWord * 2)));
+  if( !lpClient )
+   return 0xFFFF;
+  if( nWord < (globalNetworkData.nUserData *2) )
+   return(*(uint16_t*)(lpClient->lpUserData + (nWord * 2)));
   return 0xFFFF;
  }
  */
@@ -54902,25 +54932,25 @@ SegSplit( &pCurrent, start );
   MemCpy( tmp2, tmp, MAGIC_SOCKADDR_LENGTH + 2*sizeof(uintptr_t) );
   if( (POINTER)( ( (uintptr_t)pAddr ) - sizeof(uintptr_t) ) )
    ( (char**)( ( (uintptr_t)dup ) - sizeof(uintptr_t) ) )[0]
-     = StrDup( ((char**)( ( (uintptr_t)pAddr ) - sizeof(uintptr_t) ))[0] );
+     = strdup( ((char**)( ( (uintptr_t)pAddr ) - sizeof(uintptr_t) ))[0] );
   return dup;
  }
  //---------------------------------------------------------------------------
  NETWORK_PROC( SOCKADDR *,CreateAddress_hton)( uint32_t dwIP,uint16_t nHisPort)
  {
-    SOCKADDR_IN *lpsaAddr=(SOCKADDR_IN*)AllocAddr();
-    if (!lpsaAddr)
-       return(NULL);
+  SOCKADDR_IN *lpsaAddr=(SOCKADDR_IN*)AllocAddr();
+  if (!lpsaAddr)
+   return(NULL);
   SET_SOCKADDR_LENGTH( lpsaAddr, 16 );
          // InetAddress Type.
-    lpsaAddr->sin_family       = AF_INET;
-    lpsaAddr->sin_addr.S_un.S_addr  = htonl(dwIP);
-    lpsaAddr->sin_port         = htons(nHisPort);
-    return((SOCKADDR*)lpsaAddr);
+  lpsaAddr->sin_family       = AF_INET;
+  lpsaAddr->sin_addr.S_un.S_addr  = htonl(dwIP);
+  lpsaAddr->sin_port         = htons(nHisPort);
+  return((SOCKADDR*)lpsaAddr);
  }
  //---------------------------------------------------------------------------
  #if defined( __LINUX__ ) && !defined( __CYGWIN__ )
-  #define UNIX_PATH_MAX    108
+  #define UNIX_PATH_MAX  108
  struct sockaddr_un {
  #ifdef __MAC__
   u_char   sa_len;
@@ -54935,40 +54965,40 @@ SegSplit( &pCurrent, start );
   char *tmp_path = CStrDup( path );
  #endif
     lpsaAddr=(struct sockaddr_un*)AllocAddr();
-    if (!lpsaAddr)
+  if (!lpsaAddr)
    return(NULL);
   ((uintptr_t*)lpsaAddr)[-1] = StrLen( path ) + 1;
   lpsaAddr->sun_family = PF_UNIX;
  #ifdef UNICODE
   strncpy( lpsaAddr->sun_path, tmp_path, 107 );
-    Deallocate( char*, tmp_path );
+  Deallocate( char*, tmp_path );
  #else
   strncpy( lpsaAddr->sun_path, path, 107 );
  #endif
  #ifdef __MAC__
-    lpsaAddr->sa_len = 2+strlen( lpsaAddr->sun_path );
+  lpsaAddr->sa_len = 2+strlen( lpsaAddr->sun_path );
  #endif
-    return((SOCKADDR*)lpsaAddr);
+  return((SOCKADDR*)lpsaAddr);
  }
  #else
  NETWORK_PROC( SOCKADDR *,CreateUnixAddress)( CTEXTSTR path )
  {
-    lprintf( WIDE( "-- CreateUnixAddress -- not available. " ) );
-    return NULL;
+  lprintf( WIDE( "-- CreateUnixAddress -- not available. " ) );
+  return NULL;
  }
  #endif
  //---------------------------------------------------------------------------
  SOCKADDR *CreateAddress( uint32_t dwIP,uint16_t nHisPort)
  {
-    SOCKADDR_IN *lpsaAddr=(SOCKADDR_IN*)AllocAddr();
-    if (!lpsaAddr)
-       return(NULL);
-    SET_SOCKADDR_LENGTH( lpsaAddr, 16 );
+  SOCKADDR_IN *lpsaAddr=(SOCKADDR_IN*)AllocAddr();
+  if (!lpsaAddr)
+   return(NULL);
+  SET_SOCKADDR_LENGTH( lpsaAddr, 16 );
          // InetAddress Type.
-    lpsaAddr->sin_family       = AF_INET;
-    lpsaAddr->sin_addr.S_un.S_addr  = dwIP;
-    lpsaAddr->sin_port         = htons(nHisPort);
-    return((SOCKADDR*)lpsaAddr);
+  lpsaAddr->sin_family     = AF_INET;
+  lpsaAddr->sin_addr.S_un.S_addr  = dwIP;
+  lpsaAddr->sin_port         = htons(nHisPort);
+  return((SOCKADDR*)lpsaAddr);
  }
  //---------------------------------------------------------------------------
  SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
@@ -55024,7 +55054,7 @@ SegSplit( &pCurrent, start );
   else  if( lpName &&
      ( ( lpName[0] >= '0' && lpName[0] <= '9' )
       || ( lpName[0] >= 'a' && lpName[0] <= 'f' )
-              || ( lpName[0] >= 'A' && lpName[0] <= 'F' )
+      || ( lpName[0] >= 'A' && lpName[0] <= 'F' )
       || lpName[0] == ':' )
      && StrChr( lpName, ':' )!=StrRChr( lpName, ':' ) )
   {
@@ -55106,13 +55136,13 @@ SegSplit( &pCurrent, start );
          // InetAddress Type.
       lpsaAddr->sin_family = AF_INET6;
  #if note
-   {
-     __SOCKADDR_COMMON (sin6_);
-     in_port_t sin6_port;
-     uint32_t sin6_flowinfo;
-     struct in6_addr sin6_addr;
-     uint32_t sin6_scope_id;
-   };
+  {
+   __SOCKADDR_COMMON (sin6_);
+   n_port_t sin6_port;
+   uint32_t sin6_flowinfo;
+   struct in6_addr sin6_addr;
+   uint32_t sin6_scope_id;
+  };
  #endif
            // save IP address from host entry.
       memcpy( ((struct sockaddr_in6*)lpsaAddr)->sin6_addr.s6_addr,
@@ -55198,7 +55228,7 @@ SegSplit( &pCurrent, start );
  NETWORK_PROC( SOCKADDR *, SetNonDefaultPort )( SOCKADDR *pAddr, uint16_t nDefaultPort )
  {
   if( pAddr && !((SOCKADDR_IN *)pAddr)->sin_port )
-       ((SOCKADDR_IN *)pAddr)->sin_port = htons(nDefaultPort);
+   ((SOCKADDR_IN *)pAddr)->sin_port = htons(nDefaultPort);
   return pAddr;
  }
  //----------------------------------------------------------------------------
@@ -55245,13 +55275,13 @@ SegSplit( &pCurrent, start );
       //return NULL;
       wPort = nDefaultPort;
      }
-             else
+     else
       wPort = htons(se->s_port);
      //Log1( WIDE("port alpha - name resolve to %d"), wPort );
     }
    }
    else
-          wPort = nDefaultPort;
+    wPort = nDefaultPort;
  #ifdef UNICODE
  #  undef name
  #endif
@@ -55277,13 +55307,13 @@ SegSplit( &pCurrent, start );
  //----------------------------------------------------------------------------
  SOCKADDR *CreateLocal(uint16_t nMyPort)
  {
-    char lpHostName[HOSTNAME_LEN];
-    if (gethostname(lpHostName,HOSTNAME_LEN))
-    {
- //      EventLog(SOH_VER_HOST_NAME,gwCategory,0,NULL,0,NULL);
-       return(NULL);
-    }
-    return CreateRemote( WIDE("0.0.0.0"), nMyPort );
+  char lpHostName[HOSTNAME_LEN];
+  if (gethostname(lpHostName,HOSTNAME_LEN))
+  {
+ //  EventLog(SOH_VER_HOST_NAME,gwCategory,0,NULL,0,NULL);
+   return(NULL);
+  }
+  return CreateRemote( WIDE("0.0.0.0"), nMyPort );
  }
  //----------------------------------------------------------------------------
  LOGICAL CompareAddressEx( SOCKADDR *sa1, SOCKADDR *sa2, int method )
@@ -55337,12 +55367,12 @@ SegSplit( &pCurrent, start );
  //----------------------------------------------------------------------------
  LOGICAL CompareAddress( SOCKADDR *sa1, SOCKADDR *sa2 )
  {
-    return CompareAddressEx( sa1, sa2, SA_COMPARE_FULL );
+  return CompareAddressEx( sa1, sa2, SA_COMPARE_FULL );
  }
  //----------------------------------------------------------------------------
  PLIST GetLocalAddresses( void )
  {
-    return globalNetworkData.addresses;
+  return globalNetworkData.addresses;
  }
  //----------------------------------------------------------------------------
  LOGICAL IsThisAddressMe( SOCKADDR *addr, uint16_t myport )
@@ -55359,12 +55389,12 @@ SegSplit( &pCurrent, start );
      {
       if( MemCmp( &((SOCKADDR_IN*)addr)->sin_addr, &((SOCKADDR_IN*)test_addr)->sin_addr, sizeof(((SOCKADDR_IN*)addr)->sin_addr)  ) == 0 )
       {
-                   return TRUE;
+       return TRUE;
       }
      }
-             break;
+     break;
     default:
-             lprintf( WIDE( "Unknown comparison" ) );
+     lprintf( WIDE( "Unknown comparison" ) );
     }
    }
   }
@@ -55385,26 +55415,26 @@ SegSplit( &pCurrent, start );
  // creates class C broadcast address
  SOCKADDR *CreateBroadcast(uint16_t nPort)
  {
-    SOCKADDR_IN *bcast=(SOCKADDR_IN*)AllocAddr();
-    SOCKADDR *lpMyAddr;
-    if (!bcast)
-       return(NULL);
-    lpMyAddr = CreateLocal(0);
+  SOCKADDR_IN *bcast=(SOCKADDR_IN*)AllocAddr();
+  SOCKADDR *lpMyAddr;
+  if (!bcast)
+   return(NULL);
+  lpMyAddr = CreateLocal(0);
   SET_SOCKADDR_LENGTH( bcast, 16 );
-    bcast->sin_family       = AF_INET;
-    bcast->sin_addr.S_un.S_addr  = ((SOCKADDR_IN*)lpMyAddr)->sin_addr.S_un.S_addr;
+  bcast->sin_family     = AF_INET;
+  bcast->sin_addr.S_un.S_addr  = ((SOCKADDR_IN*)lpMyAddr)->sin_addr.S_un.S_addr;
  // Fake a subnet broadcast address
-    bcast->sin_addr.S_un.S_un_b.s_b4 = 0xFF;
-    bcast->sin_port        = htons(nPort);
-    ReleaseAddress(lpMyAddr);
-    return((SOCKADDR*)bcast);
+  bcast->sin_addr.S_un.S_un_b.s_b4 = 0xFF;
+  bcast->sin_port        = htons(nPort);
+  ReleaseAddress(lpMyAddr);
+  return((SOCKADDR*)bcast);
  }
  //----------------------------------------------------------------------------
  void DumpSocket( PCLIENT pc )
  {
   DumpAddr( WIDE("REMOT"), pc->saClient );
   DumpAddr( WIDE("LOCAL"), pc->saSource );
-    return;
+  return;
  }
  #ifdef __cplusplus
  namespace udp {
@@ -55412,7 +55442,7 @@ SegSplit( &pCurrent, start );
  #undef DumpAddr
  NETWORK_PROC( void, DumpAddr)( CTEXTSTR name, SOCKADDR *sa )
  {
-    DumpAddrEx( name, sa DBG_SRC );
+  DumpAddrEx( name, sa DBG_SRC );
  }
  #ifdef __cplusplus
  }
@@ -55526,7 +55556,7 @@ SegSplit( &pCurrent, start );
       }
      */
     }
-    if( 0 )
+    if( 1 )
     {
      struct linger lingerSet;
  // on , with no time = off.
@@ -55541,10 +55571,10 @@ SegSplit( &pCurrent, start );
      }
     }
    }
-     if( !(lpClient->dwFlags & CF_ACTIVE) )
-     {
-      if( lpClient->dwFlags & CF_AVAILABLE )
-      {
+  if( !(lpClient->dwFlags & CF_ACTIVE) )
+  {
+   if( lpClient->dwFlags & CF_AVAILABLE )
+   {
      lprintf( WIDE("Client was inactive?!?!?! removing from list and putting in available") );
      AddAvailable( GrabClient( lpClient ) );
     }
@@ -55558,10 +55588,10 @@ SegSplit( &pCurrent, start );
      AddClosed( GrabClient( lpClient ) );
     }
  #ifdef LOG_DEBUG_CLOSING
-      else
+   else
      lprintf( WIDE("Client's state is CLOSED") );
  #endif
-      return;
+   return;
    }
    while( !NetworkLock( lpClient ) )
    {
@@ -55589,14 +55619,14 @@ SegSplit( &pCurrent, start );
  #ifdef LOG_DEBUG_CLOSING
      lprintf( WIDE( "Marked closing first, and dispatching callback?" ) );
  #endif
-            lpClient->dwFlags |= CF_CLOSING;
+     lpClient->dwFlags |= CF_CLOSING;
      if( lpClient->close.CloseCallback )
      {
       // during thisi if it wants a lock... and the application
       // is dispatching like
-               if( lpClient->dwFlags & CF_CPPCLOSE )
+      if( lpClient->dwFlags & CF_CPPCLOSE )
        lpClient->close.CPPCloseCallback( lpClient->psvClose );
-               else
+      else
        lpClient->close.CloseCallback( lpClient );
      }
  #ifdef LOG_DEBUG_CLOSING
@@ -55605,7 +55635,7 @@ SegSplit( &pCurrent, start );
  #endif
      // leave the flag closing set... we'll use that later
      // to avoid the double-lock;
-            //lpClient->dwFlags &= ~CF_CLOSING;
+     //lpClient->dwFlags &= ~CF_CLOSING;
     }
  #ifdef LOG_DEBUG_CLOSING
     else
@@ -55656,13 +55686,13 @@ SegSplit( &pCurrent, start );
    //LeaveCriticalSec( &lpClient->csLock );
    //lprintf( WIDE( "Leaving network critical section" ) );
    LeaveCriticalSec( &globalNetworkData.csNetwork );
-       NetworkUnlock( lpClient );
+   NetworkUnlock( lpClient );
    //lprintf( WIDE( "And no nothing is locked?!" ) );
   }
  #ifdef LOG_DEBUG_CLOSING
   else
   {
-      lprintf( WIDE("No Client, or socket already closed?") );
+   lprintf( WIDE("No Client, or socket already closed?") );
   }
  #endif
  }
@@ -55687,7 +55717,7 @@ SegSplit( &pCurrent, start );
    struct ifconf buffer;
    struct ifreq ifr[10];
    int ifc_num;
-       int n;
+   int n;
    buffer.ifc_len = sizeof(ifr);
    buffer.ifc_ifcu.ifcu_buf = (char*)ifr;
    ioctl( sock_startup, SIOCGIFCONF, &buffer);
@@ -55697,31 +55727,31 @@ SegSplit( &pCurrent, start );
    {
     int sd, ifc_num, addr, bcast, mask, network;
     lprintf( "interface %d : %s", n, ifr[n].ifr_name );
-                 if (ifr[n].ifr_addr.sa_family != AF_INET)
-                 {
-                     continue;
-                 }
-                 /* display the interface name */
-                 lprintf("%d) interface: %s\n", n+1, ifr[n].ifr_name);
-                 /* Retrieve the IP address, broadcast address, and subnet mask. */
-                 if (ioctl(sd, SIOCGIFADDR, &ifr[n]) == 0)
-                 {
-                     addr = ((struct sockaddr_in *)(&ifr[n].ifr_addr))->sin_addr.s_addr;
-                     lprintf("%d) address: %d.%d.%d.%d\n", n+1, INT_TO_ADDR(addr));
-                 }
-                 if (ioctl(sd, SIOCGIFBRDADDR, &ifr[n]) == 0)
-                 {
-                     bcast = ((struct sockaddr_in *)(&ifr[n].ifr_broadaddr))->sin_addr.s_addr;
-                     lprintf("%d) broadcast: %d.%d.%d.%d\n", n+1, INT_TO_ADDR(bcast));
-                 }
-                 if (ioctl(sd, SIOCGIFNETMASK, &ifr[n]) == 0)
-                 {
-                     mask = ((struct sockaddr_in *)(&ifr[n].ifr_netmask))->sin_addr.s_addr;
-                     lprintf("%d) netmask: %d.%d.%d.%d\n", n+1, INT_TO_ADDR(mask));
-                 }
-                 /* Compute the current network value from the address and netmask. */
-                 network = addr & mask;
-                 lprintf("%d) network: %d.%d.%d.%d\n", n+1, INT_TO_ADDR(network));
+    if (ifr[n].ifr_addr.sa_family != AF_INET)
+    {
+     continue;
+    }
+    /* display the interface name */
+    lprintf("%d) interface: %s\n", n+1, ifr[n].ifr_name);
+    /* Retrieve the IP address, broadcast address, and subnet mask. */
+    if (ioctl(sd, SIOCGIFADDR, &ifr[n]) == 0)
+    {
+     addr = ((struct sockaddr_in *)(&ifr[n].ifr_addr))->sin_addr.s_addr;
+     lprintf("%d) address: %d.%d.%d.%d\n", n+1, INT_TO_ADDR(addr));
+    }
+    if (ioctl(sd, SIOCGIFBRDADDR, &ifr[n]) == 0)
+    {
+     bcast = ((struct sockaddr_in *)(&ifr[n].ifr_broadaddr))->sin_addr.s_addr;
+     lprintf("%d) broadcast: %d.%d.%d.%d\n", n+1, INT_TO_ADDR(bcast));
+    }
+    if (ioctl(sd, SIOCGIFNETMASK, &ifr[n]) == 0)
+    {
+     mask = ((struct sockaddr_in *)(&ifr[n].ifr_netmask))->sin_addr.s_addr;
+     lprintf("%d) netmask: %d.%d.%d.%d\n", n+1, INT_TO_ADDR(mask));
+    }
+    /* Compute the current network value from the address and netmask. */
+    network = addr & mask;
+    lprintf("%d) network: %d.%d.%d.%d\n", n+1, INT_TO_ADDR(network));
    }
    close( sock_startup );
   }
@@ -55729,19 +55759,19 @@ SegSplit( &pCurrent, start );
  #endif
    globalNetworkData.system_name = WIDE("No Name Available");
  #else
-    NetworkStart();
+  NetworkStart();
  #endif
-    return globalNetworkData.system_name;
+  return globalNetworkData.system_name;
  }
  #undef NetworkLock
  #undef NetworkUnlock
  NETWORK_PROC( PCLIENT, NetworkLock)( PCLIENT lpClient )
  {
-    return NetworkLockEx( lpClient DBG_SRC );
+  return NetworkLockEx( lpClient DBG_SRC );
  }
  NETWORK_PROC( void, NetworkUnlock)( PCLIENT lpClient )
  {
-    NetworkUnlockEx( lpClient DBG_SRC );
+  NetworkUnlockEx( lpClient DBG_SRC );
  }
  NETWORK_PROC( void, GetNetworkAddressBinary )( SOCKADDR *addr, uint8_t **data, size_t *datalen ) {
   if( addr ) {
@@ -74163,7 +74193,7 @@ SegSplit( &pCurrent, start );
  static LOGICAL IsOdbcIdle( PODBC odbc ) {
   PCOLLECT pCollect;
   pCollect = odbc?odbc->collection:NULL;
-  for( ;pCollect;pCollect=NextThing(pCollect) )
+  for( ; pCollect; pCollect = NextThing( pCollect ) ) {
  #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
    // still has an active statement.
    if( pCollect->stmt )
@@ -74174,6 +74204,7 @@ SegSplit( &pCurrent, start );
    if( pCollect->hstmt )
     return FALSE;
  #endif
+  }
   return TRUE;
  }
  static void startAutoCheckpoint( PODBC odbc ) {
