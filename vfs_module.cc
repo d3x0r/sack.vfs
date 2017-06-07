@@ -32,7 +32,7 @@ static void vfs_u8xor(const FunctionCallbackInfo<Value>& args ){
 		Local<String> tmp;
 		Local<Value> keyValue = key->Get( String::NewFromUtf8( isolate, "key" ) );
 		Local<Value> stepValue = key->Get( tmp = String::NewFromUtf8( isolate, "step" ) );
-		int step = stepValue->IntegerValue();
+		int step = (int)stepValue->IntegerValue();
 		String::Utf8Value xor2( keyValue );
 		//lprintf( "is buffer overlapped? %s %s %d", *xor1, *xor2, step );
 		char *out = u8xor( *xor1, (size_t)xor1.length(), *xor2, (size_t)xor2.length(), &step );
