@@ -10305,15 +10305,13 @@ static int MaskStrCmp( struct volume *vol, const char * filename, FPI name_offse
 	}
 }
 #ifdef DEBUG_TRACE_LOG
-static void MaskStrCpy( char *output, size_t outlen, struct volume *vol, const char * filename, FPI name_offset ) {
+static void MaskStrCpy( char *output, size_t outlen, struct volume *vol, FPI name_offset ) {
 	if( vol->key ) {
 		int c;
 		FPI name_start = name_offset;
-		while(  ( c = ( ((uint8_t*)vol->disk)[name_offset] ^ vol->usekey[BLOCK_CACHE_NAMES][name_offset&BLOCK_MASK] ) )
-			  && filename[0] ) {
+		while(  ( c = ( ((uint8_t*)vol->disk)[name_offset] ^ vol->usekey[BLOCK_CACHE_NAMES][name_offset&BLOCK_MASK] ) ) ) {
 			if( ( name_offset - name_start ) < outlen )
 				output[name_offset-name_start] = c;
-			filename++;
 			name_offset++;
 		}
 		if( ( name_offset - name_start ) < outlen )
@@ -10322,7 +10320,7 @@ static void MaskStrCpy( char *output, size_t outlen, struct volume *vol, const c
 			output[outlen-1] = 0;
 	} else {
 		//LoG( "doesn't volume always have a key?" );
-		StrCpyEx( filename, (const char *)(((uint8_t*)vol->disk) + name_offset), outlen );
+		StrCpyEx( output, (const char *)(((uint8_t*)vol->disk) + name_offset), outlen );
 	}
 }
 #endif
@@ -11248,13 +11246,13 @@ static void shrinkBAT( struct sack_vfs_file *file ) {
 size_t CPROC sack_vfs_truncate( struct sack_vfs_file *file ) { file->entry->filesize = file->fpi ^ file->dirent_key.filesize; shrinkBAT( file ); return file->fpi; }
 int CPROC sack_vfs_close( struct sack_vfs_file *file ) {
 	while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
-#if DEBUG_TRACE_LOG
+#ifdef DEBUG_TRACE_LOG
 	{
 		static char fname[256];
-		FPI name_ofs = file->entry.name_offset ^ file->dirent_key.name_offset;
+		FPI name_ofs = file->entry->name_offset ^ file->dirent_key.name_offset;
  // have to do the seek to the name block otherwise it might not be loaded.
-		TSEEK( const char *, vol, name_ofs, BLOCK_CACHE_NAMES );
-		MaskStrCpy( fname, sizeof( fname ), vol, filename, name_ofs );
+		TSEEK( const char *, file->vol, name_ofs, BLOCK_CACHE_NAMES );
+		MaskStrCpy( fname, sizeof( fname ), file->vol, name_ofs );
 		LoG( "close file:%s(%p)", fname, file );
 	}
 #endif
@@ -75082,7 +75080,7 @@ void SQLCommit( PODBC odbc )
 				while( odbc->auto_commit_thread && ( ( start + 500 )> timeGetTime() ) )
 					Relinquish();
 				if( odbc->auto_commit_thread )
-					lprintf( WIDE( "Thread is already dead?!" ) );
+					lprintf( WIDE( "Auto commit thread stalled." ) );
 			}
 			// need to end the thread here too....
 			odbc->flags.bAutoTransact = 0;
@@ -76042,6 +76040,17 @@ void ReleaseODBC( PODBC odbc )
 void CloseDatabaseEx( PODBC odbc, LOGICAL ReleaseConnection )
 {
 	ReleaseODBC( odbc );
+	odbc->flags.bAutoCheckpoint = 0;
+	odbc->last_command_tick = 0;
+	while( odbc->auto_checkpoint_thread ) {
+		WakeThread( odbc->auto_checkpoint_thread );
+		Relinquish();
+	}
+	while( odbc->auto_commit_thread )
+	{
+		SQLCommit( odbc );
+		WakeThread( odbc->auto_commit_thread );
+	}
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 	if( odbc->flags.bSQLite_native )
 	{
