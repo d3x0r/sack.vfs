@@ -1,2 +1,0 @@
-openssl req -new -x509 -days 9999 -config ca.cnf -keyout ca-key.pem -out ca-cert.pem -config ca.cnf
-openssl rsa -in ca-key.pem -out key.pem
