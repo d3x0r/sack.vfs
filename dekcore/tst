@@ -1,0 +1,3 @@
+#./clean
+node void.js >err 2>&1&tail -f err
+
