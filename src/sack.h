@@ -11427,6 +11427,9 @@ struct json_value_container {
 JSON_EMITTER_PROC( void, json_dispose_message )( PDATALIST *msg_data );
 JSON_EMITTER_PROC( void, json_dispose_decoded_message )(struct json_context_object *format
 	, POINTER msg_data);
+// sanitize strings to send in JSON so quotes don't prematurely end strings and output is still valid.
+// require Release the result.
+JSON_EMITTER_PROC( TEXTSTR, json_escape_string )( CTEXTSTR string );
 #ifdef __cplusplus
 } } SACK_NAMESPACE_END
 using namespace sack::network::json;

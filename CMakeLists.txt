@@ -129,7 +129,7 @@ SET( BUILD_AMALGAM on )
 #message( "MAYBE WE GET" ${LIBRE_SOURCES} )
 
 set( C_SOURCES
-        ${SACK_BASE}/src/contrib/sqlite/3.18.0/sqlite3.c
+        ${SACK_BASE}/src/contrib/sqlite/3.19.3/sqlite3.c
 )
 add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
 			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${C_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/src
