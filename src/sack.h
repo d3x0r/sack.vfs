@@ -10875,7 +10875,7 @@ struct file_system_mounted_interface;
 /* Extended external file system interface to be able to use external file systems */
 struct file_system_interface {
                                                   //filename
-	void* (CPROC *open)(uintptr_t psvInstance, const char *);
+	void* (CPROC *open)(uintptr_t psvInstance, const char *, const char *);
                                                  //file *
 	int (CPROC *_close)(void *);
                     //file *, buffer, length (to read)
@@ -10898,9 +10898,8 @@ struct file_system_interface {
 	int (CPROC *find_next)( struct find_cursor *cursor );
 	char * (CPROC *find_get_name)( struct find_cursor *cursor );
 	size_t (CPROC *find_get_size)( struct find_cursor *cursor );
-	// ftell can be done with seek( file, 0, SEEK_CUR );
-	// if is_directory is NULL; assume result is false (file system does not support directories)
-	LOGICAL (CPROC *is_directory)( const char *pathname );
+	LOGICAL (CPROC *find_is_directory)( struct find_cursor *cursor );
+	LOGICAL (CPROC *is_directory)( const char *cursor );
 	LOGICAL (CPROC *rename )( uintptr_t psvInstance, const char *original_name, const char *new_name );
 };
 /* \ \

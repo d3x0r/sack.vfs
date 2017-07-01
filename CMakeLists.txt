@@ -7,6 +7,8 @@ include_directories( "../node_modules/nan" )
 
 if( NOT WIN32 )
     ADD_DEFINITIONS( -D__LINUX__ )
+else( NOT WIN32 )
+    ADD_DEFINITIONS( -D_CRT_NONSTDC_NO_DEPRECATE )
 endif( NOT WIN32 )
 
 #if( CMAKE_SIZEOF_VOID_P EQUAL 8 )
@@ -29,7 +31,7 @@ set( INCLUDES
 
 # __NO_OPTIONS__ __NO_INTERFACE_SUPPORT__ __NO_ODBC__
 set( DEFINITIONS   __STATIC__ 
-		USE_SQLITE USE_SQLITE_INTERFACE FORCE_COLOR_MACROS 
+		USE_SQLITE USE_SQLITE_INTERFACE FORCE_COLOR_MACROS NO_FILEOP_ALIAS
                 _CRT_SECURE_NO_WARNINGS  NEED_SHLAPI NEED_SHLOBJ 
                  )
 FILE( WRITE ${CMAKE_BINARY_DIR}/config.ppc "/*CMake Option defined*/\n" )
@@ -148,13 +150,11 @@ set( AMALG_COMMAND2 ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CU
 #set( OUT "${AMALG_COMMAND3}" )
 #STRING( REPLACE ";" " " AMALG_COMMAND3  "${OUT}" )
 
-FILE( WRITE ${CMAKE_BINARY_DIR}/zz.bat "${AMALG_COMMAND3}" )
   add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc
   			#COMMAND cmake -E echo ${AMALG_COMMAND}
    			 COMMAND ${AMALG_COMMAND}
                         #COMMAND cmake -E echo ${AMALG_COMMAND2}
    			COMMAND ${AMALG_COMMAND2}
-   			#COMMAND ${CMAKE_BINARY_DIR}/zz.bat
                    DEPENDS ${EXTRA_SOURCES} ${HEADER_SOURCES}
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   )                                   

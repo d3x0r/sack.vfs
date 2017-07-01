@@ -347,6 +347,7 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 			char *name = sack_vfs_find_get_name( fi );
 			result->Set( n++, String::NewFromUtf8( isolate, name ) );
 		} 
+		sack_vfs_find_close( fi );
 		args.GetReturnValue().Set( result );
 	}
 

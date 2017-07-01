@@ -6948,7 +6948,7 @@ struct file_system_mounted_interface;
 /* Extended external file system interface to be able to use external file systems */
 struct file_system_interface {
                                                   //filename
-	void* (CPROC *open)(uintptr_t psvInstance, const char *);
+	void* (CPROC *open)(uintptr_t psvInstance, const char *, const char *);
                                                  //file *
 	int (CPROC *_close)(void *);
                     //file *, buffer, length (to read)
@@ -6971,9 +6971,8 @@ struct file_system_interface {
 	int (CPROC *find_next)( struct find_cursor *cursor );
 	char * (CPROC *find_get_name)( struct find_cursor *cursor );
 	size_t (CPROC *find_get_size)( struct find_cursor *cursor );
-	// ftell can be done with seek( file, 0, SEEK_CUR );
-	// if is_directory is NULL; assume result is false (file system does not support directories)
-	LOGICAL (CPROC *is_directory)( const char *pathname );
+	LOGICAL (CPROC *find_is_directory)( struct find_cursor *cursor );
+	LOGICAL (CPROC *is_directory)( const char *cursor );
 	LOGICAL (CPROC *rename )( uintptr_t psvInstance, const char *original_name, const char *new_name );
 };
 /* \ \
@@ -10270,20 +10269,23 @@ struct sack_vfs_file
 #define TSEEK(type,v,o,c) ((type)vfs_SEEK(v,o,c))
 #define BTSEEK(type,v,o,c) ((type)vfs_BSEEK(v,o,c))
 #ifdef __GNUC__
-#define HIDDEN
-//__attribute__ ((visibility ("hidden")))
+#define HIDDEN __attribute__ ((visibility ("hidden")))
 #else
 #define HIDDEN
 #endif
 uintptr_t vfs_SEEK( struct volume *vol, FPI offset, enum block_cache_entries cache_index ) HIDDEN;
 uintptr_t vfs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries cache_index ) HIDDEN;
-BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, LOGICAL init, LOGICAL expand );
+//BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int init, LOGICAL expand );
 static struct {
 	struct directory_entry zero_entkey;
 	uint8_t zerokey[BLOCK_SIZE];
 } l;
 #define EOFBLOCK  (~(BLOCKINDEX)0)
-static BLOCKINDEX GetFreeBlock( struct volume *vol, LOGICAL init );
+#define EOBBLOCK  ((BLOCKINDEX)1)
+#define GFB_INIT_NONE   0
+#define GFB_INIT_DIRENT 1
+#define GFB_INIT_NAMES  2
+static BLOCKINDEX GetFreeBlock( struct volume *vol, int init );
 static char mytolower( int c ) {	if( c == '\\' ) return '/'; return tolower( c ); }
 // read the byte from namespace at offset; decrypt byte in-register
 // compare against the filename bytes.
@@ -10349,10 +10351,11 @@ static LOGICAL ValidateBAT( struct volume *vol ) {
 			vol->segment[BLOCK_CACHE_BAT] = n + 1;
 			//while( LockedExchange( &vol->key_lock[BLOCK_CACHE_BAT], 1 ) ) Relinquish();
 			UpdateSegmentKey( vol, BLOCK_CACHE_BAT );
-			for( m = 0; m < BLOCKS_PER_BAT; m++ )
+			for( m = 0; ((BAT[m] & ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[m]) != EOBBLOCK ) && m < BLOCKS_PER_BAT; m++ )
 			{
 				BLOCKINDEX block = BAT[m] ^ ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[m];
 				if( block == EOFBLOCK ) continue;
+				if( block == EOBBLOCK ) break;
 				if( block >= last_block ) return FALSE;
 			}
 			//vol->key_lock[BLOCK_CACHE_BAT] = 0;
@@ -10361,9 +10364,10 @@ static LOGICAL ValidateBAT( struct volume *vol ) {
 		for( n = first_slab; n < slab; n += BLOCKS_PER_SECTOR  ) {
 			size_t m;
 			BLOCKINDEX *BAT = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE);
-			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
+			for( m = 0; ((BAT[m] & ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[m]) != EOBBLOCK ) && m < BLOCKS_PER_BAT; m++ ) {
 				BLOCKINDEX block = BAT[m];
 				if( block == EOFBLOCK ) continue;
+				if( block == EOBBLOCK ) break;
 				if( block >= last_block ) return FALSE;
 			}
 		}
@@ -10553,20 +10557,27 @@ static LOGICAL ExpandVolume( struct volume *vol ) {
 #else
 			else continue;
 #endif
-			memcpy( ((uint8_t*)vol->disk) + n * BLOCK_SIZE, vol->usekey[BLOCK_CACHE_BAT], BLOCK_SIZE );
+			//memcpy( ((uint8_t*)vol->disk) + n * BLOCK_SIZE, vol->usekey[BLOCK_CACHE_BAT], BLOCK_SIZE );
+			((BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE))[0] = EOBBLOCK ^ ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[0];
+			memset( ((BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE))+1, 0, BLOCK_SIZE - sizeof( BLOCKINDEX ) );
 		}
 	}
-	else if( !oldsize ) memset( vol->disk, 0, vol->dwSize );
-	else if( oldsize ) memset( ((uint8_t*)vol->disk) + oldsize, 0, vol->dwSize - oldsize );
+	else if( !oldsize )  {
+		memset( vol->disk, 0, vol->dwSize );
+		((BLOCKINDEX*)vol->disk)[0] = EOBBLOCK;
+	} else if( oldsize )  {
+		memset( ((uint8_t*)vol->disk) + oldsize, 0, vol->dwSize - oldsize );
+		((BLOCKINDEX*)(((uint8_t*)vol->disk) + oldsize))[0] = EOBBLOCK;
+	}
 	if( !oldsize ) {
 		// can't recover dirents and nameents dynamically; so just assume
 		// use the GetFreeBlock because it will update encypted
 		//vol->disk->BAT[0] = EOFBLOCK;  // allocate 1 directory entry block
 		//vol->disk->BAT[1] = EOFBLOCK;  // allocate 1 name block
 		/* vol->dirents = */
-GetFreeBlock( vol, TRUE );
+GetFreeBlock( vol, GFB_INIT_DIRENT );
 		/* vol->nameents = */
-GetFreeBlock( vol, TRUE );
+GetFreeBlock( vol, GFB_INIT_NAMES );
 	}
 	return TRUE;
 }
@@ -10595,11 +10606,11 @@ uintptr_t vfs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entr
 	}
 	return ((uintptr_t)vol->disk) + b;
 }
-static BLOCKINDEX GetFreeBlock( struct volume *vol, LOGICAL init )
+static BLOCKINDEX GetFreeBlock( struct volume *vol, int init )
 {
 	size_t n;
 	int b = 0;
-	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, BLOCK_CACHE_FILE );
+	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, BLOCK_CACHE_BAT );
 	if( !current_BAT ) return 0;
 	do
 	{
@@ -10608,35 +10619,42 @@ static BLOCKINDEX GetFreeBlock( struct volume *vol, LOGICAL init )
 		{
 			check_val = current_BAT[n];
 			if( vol->key )
-				check_val ^= ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_FILE])[n];
-			if( !check_val )
+				check_val ^= ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[n];
+			if( !check_val || (check_val == 1) )
 			{
 				// mark it as claimed; will be enf of file marker...
 				// adn thsi result will overwrite previous EOF.
 				if( vol->key )
 				{
-					current_BAT[n] = EOFBLOCK ^ ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_FILE])[n];
+					current_BAT[n] = EOFBLOCK ^ ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[n];
 					if( init )
 					{
 						vol->segment[BLOCK_CACHE_FILE] = b * (BLOCKS_PER_SECTOR) + n + 1 + 1;
 						UpdateSegmentKey( vol, BLOCK_CACHE_FILE );
 						while( ((vol->segment[BLOCK_CACHE_FILE]-1)*BLOCK_SIZE) > vol->dwSize ){
-							LoG( "looping to get a side %d", ((vol->segment[BLOCK_CACHE_FILE]-1)*BLOCK_SIZE) );
+							LoG( "looping to get a size %d", ((vol->segment[BLOCK_CACHE_FILE]-1)*BLOCK_SIZE) );
 							if( !ExpandVolume( vol ) ) return 0;
 						}
-						memcpy( ((uint8_t*)vol->disk) + (vol->segment[BLOCK_CACHE_FILE]-1) * BLOCK_SIZE, vol->usekey[BLOCK_CACHE_FILE], BLOCK_SIZE );
+						if( init == GFB_INIT_DIRENT )
+							((struct directory_entry*)(((uint8_t*)vol->disk) + (vol->segment[BLOCK_CACHE_FILE]-1) * BLOCK_SIZE))[0].first_block = 1^((struct directory_entry*)vol->usekey[BLOCK_CACHE_FILE])->first_block;
+						else if( init == GFB_INIT_NAMES )
+							((char*)(((uint8_t*)vol->disk) + (vol->segment[BLOCK_CACHE_FILE]-1) * BLOCK_SIZE))[0] = ((char*)vol->usekey[BLOCK_CACHE_FILE])[0];
+						else
+							memcpy( ((uint8_t*)vol->disk) + (vol->segment[BLOCK_CACHE_FILE]-1) * BLOCK_SIZE, vol->usekey[BLOCK_CACHE_FILE], BLOCK_SIZE );
 					}
 				} else {
 					current_BAT[n] = EOFBLOCK;
 				}
+				if( (check_val == EOBBLOCK) && (n < (BLOCKS_PER_BAT-1)) )
+					current_BAT[n+1] = EOBBLOCK ^ ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[n+1];
 				return b * BLOCKS_PER_BAT + n;
 			}
 		}
 		b++;
-		current_BAT = TSEEK( BLOCKINDEX*, vol, b * ( BLOCKS_PER_SECTOR*BLOCK_SIZE), BLOCK_CACHE_FILE );
+		current_BAT = TSEEK( BLOCKINDEX*, vol, b * ( BLOCKS_PER_SECTOR*BLOCK_SIZE), BLOCK_CACHE_BAT );
 	}while( 1 );
 }
-BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, LOGICAL init, LOGICAL expand ) {
+static BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int init, LOGICAL expand ) {
 	BLOCKINDEX sector = block >> BLOCK_SHIFT;
 	BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX *, vol, sector * (BLOCKS_PER_SECTOR*BLOCK_SIZE), BLOCK_CACHE_FILE );
 	BLOCKINDEX seg;
@@ -10664,36 +10682,33 @@ BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, LOGICAL init,
 	}
 	return check_val;
 }
-struct volume *sack_vfs_load_volume( const char * filepath )
-{
-	struct volume *vol = New( struct volume );
-	memset( vol, 0, sizeof( struct volume ) );
-	vol->volname = SaveText( filepath );
-	if( !ExpandVolume( vol ) || !ValidateBAT( vol ) ) { Deallocate( struct volume*, vol ); return NULL; }
-	return vol;
-}
 static void AddSalt( uintptr_t psv, POINTER *salt, size_t *salt_size ) {
 	struct volume *vol = (struct volume *)psv;
 	if( vol->sigsalt ) {
 		(*salt_size) = vol->sigkeyLength;
 		(*salt) = (POINTER)vol->sigsalt;
 		vol->sigsalt = NULL;
-	} else if( vol->datakey ) {
+	}
+	else if( vol->datakey ) {
 		(*salt_size) = BLOCK_SIZE;
 		(*salt) = (POINTER)vol->datakey;
 		vol->datakey = NULL;
-	} else if( vol->userkey ) {
+	}
+	else if( vol->userkey ) {
 		(*salt_size) = StrLen( vol->userkey );
 		(*salt) = (POINTER)vol->userkey;
 		vol->userkey = NULL;
-	} else if( vol->devkey ) {
+	}
+	else if( vol->devkey ) {
 		(*salt_size) = StrLen( vol->devkey );
 		(*salt) = (POINTER)vol->devkey;
 		vol->devkey = NULL;
-	} else if( vol->segment[vol->curseg] ) {
+	}
+	else if( vol->segment[vol->curseg] ) {
 		(*salt_size) = sizeof( vol->segment[vol->curseg] );
 		(*salt) = &vol->segment[vol->curseg];
-	} else
+	}
+	else
 		(*salt_size) = 0;
 }
 static void AssignKey( struct volume *vol, const char *key1, const char *key2 )
@@ -10710,15 +10725,30 @@ static void AssignKey( struct volume *vol, const char *key1, const char *key2 )
 			SRG_ResetEntropy( vol->entropy );
 		vol->key = (uint8_t*)OpenSpace( NULL, NULL, &size );
 		for( n = 0; n < BLOCK_CACHE_COUNT; n++ )
-			vol->usekey[n] = vol->key + (n+1) * BLOCK_SIZE;
-		vol->segkey = vol->key + BLOCK_SIZE * (BLOCK_CACHE_COUNT+1);
-		vol->sigkey = vol->key + BLOCK_SIZE * (BLOCK_CACHE_COUNT+1) + SHORTKEY_LENGTH;
+			vol->usekey[n] = vol->key + (n + 1) * BLOCK_SIZE;
+		vol->segkey = vol->key + BLOCK_SIZE * (BLOCK_CACHE_COUNT + 1);
+		vol->sigkey = vol->key + BLOCK_SIZE * (BLOCK_CACHE_COUNT + 1) + SHORTKEY_LENGTH;
 		vol->curseg = BLOCK_CACHE_DIRECTORY;
 		vol->segment[BLOCK_CACHE_DIRECTORY] = 0;
 		SRG_GetEntropyBuffer( vol->entropy, (uint32_t*)vol->key, BLOCK_SIZE * 8 );
 	}
-	else
+	else {
+		int n;
+		for( n = 0; n < BLOCK_CACHE_COUNT; n++ )
+			vol->usekey[n] = l.zerokey;
+		vol->segkey = l.zerokey;
+		vol->sigkey = l.zerokey;
 		vol->key = NULL;
+	}
+}
+struct volume *sack_vfs_load_volume( const char * filepath )
+{
+	struct volume *vol = New( struct volume );
+	memset( vol, 0, sizeof( struct volume ) );
+	vol->volname = SaveText( filepath );
+	AssignKey( vol, NULL, NULL );
+	if( !ExpandVolume( vol ) || !ValidateBAT( vol ) ) { Deallocate( struct volume*, vol ); return NULL; }
+	return vol;
 }
 struct volume *sack_vfs_load_crypt_volume( const char * filepath, const char * userkey, const char * devkey ) {
 	struct volume *vol = New( struct volume );
@@ -10882,7 +10912,7 @@ const char *sack_vfs_get_signature( struct volume *vol ) {
 					next_entries = BTSEEK( BLOCKINDEX *, vol, this_dir_block, BLOCK_CACHE_DATAKEY );
 					for( n = 0; n < BLOCKS_PER_BAT; n++ )
 						datakey[n] ^= next_entries[n] ^ ((BLOCKINDEX*)(((uint8_t*)usekey)))[n];
-					next_dir_block = vfs_GetNextBlock( vol, this_dir_block, TRUE, FALSE );
+					next_dir_block = vfs_GetNextBlock( vol, this_dir_block, GFB_INIT_DIRENT, FALSE );
 					if( this_dir_block == next_dir_block )
 						DebugBreak();
 					if( next_dir_block == 0 )
@@ -10898,7 +10928,7 @@ const char *sack_vfs_get_signature( struct volume *vol ) {
 		vol->curseg = BLOCK_CACHE_DIRECTORY;
 		vol->segment[vol->curseg] = 0;
 		vol->datakey = (const char *)datakey;
-		SRG_GetEntropyBuffer( vol->entropy, (uint32_t*)usekey, 128 );
+		SRG_GetEntropyBuffer( vol->entropy, (uint32_t*)usekey, 128 * 8 );
 		{
 			int n;
 			for( n = 0; n < 128; n++ ) {
@@ -10918,6 +10948,7 @@ static struct directory_entry * ScanDirectory( struct volume *vol, const char * 
 	do {
 		next_entries = BTSEEK( struct directory_entry *, vol, this_dir_block, BLOCK_CACHE_DIRECTORY );
 		for( n = 0; n < VFS_DIRECTORY_ENTRIES; n++ ) {
+			BLOCKINDEX bi;
 			struct directory_entry *entkey = ( vol->key)?((struct directory_entry *)vol->usekey[BLOCK_CACHE_DIRECTORY])+n:&l.zero_entkey;
 			//const char * testname;
 			FPI name_ofs = next_entries[n].name_offset ^ entkey->name_offset;
@@ -10927,8 +10958,12 @@ static struct directory_entry * ScanDirectory( struct volume *vol, const char * 
 			//   , next_entries[n].name_offset ^ entkey->name_offset
 			//   , next_entries[n].first_block ^ entkey->first_block
 			//   , filename );
+			bi = next_entries[n].first_block ^ entkey->first_block;
 			// if file is deleted; don't check it's name.
-			if( !(next_entries[n].first_block ^ entkey->first_block ) ) continue;
+			if( !bi ) continue;
+			// if file is end of directory, done sanning.
+ // done.
+			if( bi == 1 ) return NULL;
 			//testname =
  // have to do the seek to the name block otherwise it might not be loaded.
 			TSEEK( const char *, vol, name_ofs, BLOCK_CACHE_NAMES );
@@ -10938,7 +10973,7 @@ static struct directory_entry * ScanDirectory( struct volume *vol, const char * 
 				return next_entries + n;
 			}
 		}
-		next_dir_block = vfs_GetNextBlock( vol, this_dir_block, TRUE, TRUE );
+		next_dir_block = vfs_GetNextBlock( vol, this_dir_block, FALSE, TRUE );
 #ifdef _DEBUG
 		if( this_dir_block == next_dir_block ) DebugBreak();
 		if( next_dir_block == 0 ) DebugBreak();
@@ -10964,6 +10999,8 @@ static FPI SaveFileName( struct volume *vol, const char * filename ) {
 					if( vol->key ) {
 						for( n = 0; n < namelen + 1; n++ )
 							name[n] = filename[n] ^ vol->usekey[BLOCK_CACHE_NAMES][n + (name-(unsigned char*)names)];
+						if( (namelen + 1) < (size_t)(((unsigned char*)names + BLOCK_SIZE) - name) )
+							name[n] = vol->usekey[BLOCK_CACHE_NAMES][n + (name - (unsigned char*)names)];
 					} else
 						memcpy( name, filename, ( namelen + 1 ) );
 					return ((uintptr_t)name) - ((uintptr_t)vol->disk);
@@ -10981,7 +11018,7 @@ static FPI SaveFileName( struct volume *vol, const char * filename ) {
 				name = name + StrLen( (const char*)name ) + 1;
 			LoG( "new position is %" _size_f "  %" _size_f, this_name_block, (uintptr_t)name - (uintptr_t)names );
 		}
-		this_name_block = vfs_GetNextBlock( vol, this_name_block, TRUE, TRUE );
+		this_name_block = vfs_GetNextBlock( vol, this_name_block, GFB_INIT_DIRENT, TRUE );
 		LoG( "Need a new directory block....", this_name_block );
 	}
 }
@@ -10997,7 +11034,7 @@ static struct directory_entry * GetNewDirectory( struct volume *vol, const char 
 			FPI name_ofs = ent->name_offset ^ entkey->name_offset;
 			BLOCKINDEX first_blk = ent->first_block ^ entkey->first_block;
 			// not name_offset (end of list) or not first_block(free entry) use this entry
-			if( name_ofs && first_blk )	continue;
+			if( name_ofs && (first_blk > 1) )  continue;
 			name_ofs = SaveFileName( vol, filename ) ^ entkey->name_offset;
 			first_blk = GetFreeBlock( vol, FALSE ) ^ entkey->first_block;
 			// get free block might have expanded and moved the disk; reseek and get ent address
@@ -11006,9 +11043,16 @@ static struct directory_entry * GetNewDirectory( struct volume *vol, const char 
 			ent->filesize = entkey->filesize;
 			ent->name_offset = name_ofs;
 			ent->first_block = first_blk;
+			if( n < (VFS_DIRECTORY_ENTRIES - 1) ) {
+				struct directory_entry *enttmp = next_entries + (n+1);
+				enttmp->first_block = 1 ^ entkey[1].first_block;
+			} else {
+				// otherwise pre-init the next directory sector
+				this_dir_block = vfs_GetNextBlock( vol, this_dir_block, GFB_INIT_DIRENT, TRUE );
+			}
 			return ent;
 		}
-		this_dir_block = vfs_GetNextBlock( vol, this_dir_block, TRUE, TRUE );
+		this_dir_block = vfs_GetNextBlock( vol, this_dir_block, GFB_INIT_DIRENT, TRUE );
 	}
 	while( 1 );
 }
@@ -11034,7 +11078,9 @@ struct sack_vfs_file * CPROC sack_vfs_openfile( struct volume *vol, const char *
 	vol->lock = 0;
 	return file;
 }
-struct sack_vfs_file * CPROC sack_vfs_open( uintptr_t psvInstance, const char * filename ) { return sack_vfs_openfile( (struct volume*)psvInstance, filename ); }
+static struct sack_vfs_file * CPROC sack_vfs_open( uintptr_t psvInstance, const char * filename, const char *opts ) {
+	return sack_vfs_openfile( (struct volume*)psvInstance, filename );
+}
 int CPROC _sack_vfs_exists( struct volume *vol, const char * file ) {
 	struct directory_entry entkey;
 	struct directory_entry *ent;
@@ -11310,6 +11356,9 @@ static int iterate_find( struct find_info *info ) {
 			// if file is deleted; don't check it's name.
 			if( !(next_entries[n].first_block ^ entkey->first_block ) )
 				continue;
+			if( (next_entries[n].first_block ^ entkey->first_block ) == 1 )
+ // end of directory.
+				return 0;
 			info->filesize = next_entries[n].filesize ^ entkey->filesize;
 			//testname =
 				TSEEK( const char *, info->vol, name_ofs, BLOCK_CACHE_NAMES );
@@ -11353,6 +11402,8 @@ int CPROC sack_vfs_find_close( struct find_info *info ) { Deallocate( struct fin
 int CPROC sack_vfs_find_next( struct find_info *info ) { return iterate_find( info ); }
 char * CPROC sack_vfs_find_get_name( struct find_info *info ) { return info->filename; }
 size_t CPROC sack_vfs_find_get_size( struct find_info *info ) { return info->filesize; }
+LOGICAL CPROC sack_vfs_find_is_directory( struct find_cursor *cursor ) { return FALSE; }
+LOGICAL CPROC sack_vfs_is_directory( const char *cursor ) { return FALSE; }
 static LOGICAL CPROC sack_vfs_rename( uintptr_t psvInstance, const char *original, const char *newname ) {
 	struct volume *vol = (struct volume *)psvInstance;
 	if( vol ) {
@@ -11371,10 +11422,9 @@ static LOGICAL CPROC sack_vfs_rename( uintptr_t psvInstance, const char *origina
 	}
 	return FALSE;
 }
-static LOGICAL CPROC sack_vfs_is_directory( const char *name ) { return FALSE; }
 //#ifndef NO_SACK_INTERFACE
 static struct file_system_interface sack_vfs_fsi = {
-                                                     (void*(CPROC*)(uintptr_t,const char *))sack_vfs_open
+                                                     (void*(CPROC*)(uintptr_t,const char *, const char*))sack_vfs_open
                                                    , (int(CPROC*)(void*))sack_vfs_close
                                                    , (size_t(CPROC*)(void*,char*,size_t))sack_vfs_read
                                                    , (size_t(CPROC*)(void*,const char*,size_t))sack_vfs_write
@@ -11392,6 +11442,7 @@ static struct file_system_interface sack_vfs_fsi = {
                                                    , (int(CPROC*)(struct find_cursor*))             sack_vfs_find_next
                                                    , (char*(CPROC*)(struct find_cursor*))           sack_vfs_find_get_name
                                                    , (size_t(CPROC*)(struct find_cursor*))          sack_vfs_find_get_size
+                                                   , sack_vfs_find_is_directory
                                                    , sack_vfs_is_directory
                                                    , sack_vfs_rename
                                                    };
@@ -16263,7 +16314,9 @@ LOGGING_NAMESPACE_END
 #define SYSTEM_CORE_SOURCE
 #define FIX_RELEASE_COM_COLLISION
 #define TASK_INFO_DEFINED
-#define NO_FILEOP_ALIAS
+#ifndef NO_FILEOP_ALIAS
+#  define NO_FILEOP_ALIAS
+#endif
 #ifdef WIN32
 //#undef StrDup
 //#undef StrRChr
@@ -16579,16 +16632,16 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 	InitCo();
 	{
 		TEXTCHAR filepath[256];
-		TEXTCHAR *ext, *e1;
+		TEXTCHAR *ext, *ext1;
 		GetModuleFileName( NULL, filepath, sizeof( filepath ) );
 		ext = (TEXTSTR)StrRChr( (CTEXTSTR)filepath, '.' );
 		if( ext )
 			ext[0] = 0;
-		e1 = (TEXTSTR)pathrchr( filepath );
-		if( e1 )
+		ext1 = (TEXTSTR)pathrchr( filepath );
+		if( ext1 )
 		{
-			e1[0] = 0;
-			(*init_l).filename = StrDupEx( e1 + 1 DBG_SRC );
+			ext1[0] = 0;
+			(*init_l).filename = StrDupEx( ext1 + 1 DBG_SRC );
 			(*init_l).load_path = StrDupEx( filepath DBG_SRC );
 		}
 		else
@@ -16597,10 +16650,10 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 			(*init_l).load_path = StrDupEx( WIDE("") DBG_SRC );
 		}
 		GetModuleFileName( LoadLibrary( TARGETNAME ), filepath, sizeof( filepath ) );
-		e1 = (TEXTSTR)pathrchr( filepath );
-		if( e1 )
+		ext1 = (TEXTSTR)pathrchr( filepath );
+		if( ext1 )
 		{
-			e1[0] = 0;
+			ext1[0] = 0;
 			(*init_l).library_path = StrDupEx( filepath DBG_SRC );
 		}
 		else
@@ -29200,13 +29253,13 @@ PRIORITY_PRELOAD( InitProcreg, NAMESPACE_PRELOAD_PRIORITY )
 #endif
 }
 //---------------------------------------------------------------------------
-int GetClassPath( TEXTSTR out, size_t len, PTREEDEF root )
+int GetClassPath( TEXTSTR out, size_t len, PCLASSROOT root )
 {
 	int ofs = 0;
 	PLINKSTACK pls = CreateLinkStack();
 	PTREEDEF current;
 	PNAME name;
-	for( current = root; current->self && current; current = current->self->parent )
+	for( current = (PTREEDEF)root; current->self && current; current = current->self->parent )
 	{
 		PushLink( &pls, current->self );
 	}
@@ -29427,25 +29480,25 @@ PTREEDEF GetClassTreeEx( PTREEDEF root, PTREEDEF _name_class, PTREEDEF alias, LO
 //---------------------------------------------------------------------------
 PROCREG_PROC( PCLASSROOT, CheckClassRoot )( CTEXTSTR name_class )
 {
-	return GetClassTreeEx( NULL, (PCLASSROOT)name_class, NULL, FALSE );
+	return (PCLASSROOT)GetClassTreeEx( NULL, (PTREEDEF)name_class, NULL, FALSE );
 }
 //---------------------------------------------------------------------------
-PROCREG_PROC( PTREEDEF, GetClassRootEx )( PCLASSROOT root, CTEXTSTR name_class )
+PROCREG_PROC( PCLASSROOT, GetClassRootEx )( PCLASSROOT root, CTEXTSTR name_class )
 {
-	return GetClassTreeEx( root, (PCLASSROOT)name_class, NULL, TRUE );
+	return (PCLASSROOT)GetClassTreeEx( (PTREEDEF)root, (PTREEDEF)name_class, NULL, TRUE );
 }
-PROCREG_PROC( PTREEDEF, GetClassRoot )( CTEXTSTR name_class )
+PROCREG_PROC( PCLASSROOT, GetClassRoot )( CTEXTSTR name_class )
 {
-	return GetClassTreeEx( l.Names, (PCLASSROOT)name_class, NULL, TRUE );
+	return (PCLASSROOT)GetClassTreeEx( l.Names, (PTREEDEF)name_class, NULL, TRUE );
 }
 #ifdef __cplusplus
 PROCREG_PROC( PTREEDEF, GetClassRootEx )( PCLASSROOT root, PCLASSROOT name_class )
 {
-	return GetClassTreeEx( root, (PCLASSROOT)name_class, NULL, TRUE );
+	return GetClassTreeEx( root, (PTREEDEF)name_class, NULL, TRUE );
 }
 PROCREG_PROC( PTREEDEF, GetClassRoot )( PCLASSROOT name_class )
 {
-	return GetClassTreeEx( l.Names, (PCLASSROOT)name_class, NULL, TRUE );
+	return GetClassTreeEx( l.Names, (PTREEDEF)name_class, NULL, TRUE );
 }
 #endif
 //---------------------------------------------------------------------------
@@ -29792,7 +29845,7 @@ PROCREG_PROC( PROCEDURE, GetRegisteredProcedureExxx )( CTEXTSTR root, PCLASSROOT
 PROCREG_PROC( PROCEDURE, GetRegisteredProcedureEx )( PCLASSROOT name_class, CTEXTSTR returntype, CTEXTSTR name, CTEXTSTR args )
 {
 	Init();
-   return GetRegisteredProcedureExx( l.Names, name_class, returntype, name, args );
+   return GetRegisteredProcedureExx( (PCLASSROOT)l.Names, name_class, returntype, name, args );
 }
 #ifdef __cplusplus
 PROCREG_PROC( PROCEDURE, GetRegisteredProcedureEx )( CTEXTSTR name_class, CTEXTSTR returntype, CTEXTSTR name, CTEXTSTR args )
@@ -29878,8 +29931,8 @@ void DumpRegisteredNamesWork( PTREEDEF tree, int level )
 //---------------------------------------------------------------------------
 struct browse_index
 {
-	PCLASSROOT current_limbs;
-	PCLASSROOT current_branch;
+	PTREEDEF current_limbs;
+	PTREEDEF current_branch;
 };
 PROCREG_PROC( int, NameHasBranches )( PCLASSROOT *data )
 {
@@ -29914,7 +29967,7 @@ PROCREG_PROC( PCLASSROOT, GetCurrentRegisteredTree )( PCLASSROOT *data )
 	class_root = (PTREEDEF)*data;
 	name = (PNAME)GetCurrentNodeEx( class_root->Tree, &class_root->cursor );
 	if( name )
-		return &name->tree;
+		return (PCLASSROOT)&name->tree;
 	return NULL;
 }
 //---------------------------------------------------------------------------
@@ -29923,7 +29976,7 @@ PROCREG_PROC( CTEXTSTR, GetFirstRegisteredNameEx )( PCLASSROOT root, CTEXTSTR cl
 	PTREEDEF class_root;
 	PNAME name;
 	*data =
-		class_root = GetClassTree( root, (PCLASSROOT)classname );
+		class_root = (PTREEDEF)GetClassTree( (PTREEDEF)root, (PCLASSROOT)classname );
 	if( class_root )
 	{
 		name = (PNAME)GetLeastNodeEx( class_root->Tree, &class_root->cursor );
@@ -30034,7 +30087,7 @@ PROCREG_PROC( int, RegisterValueExx )( PCLASSROOT root, CTEXTSTR name_class, CTE
 PROCREG_PROC( int, RegisterValueEx )( CTEXTSTR name_class, CTEXTSTR name, int bIntVal, CTEXTSTR value )
 {
 	Init();
-	return RegisterValueExx( l.Names, name_class, name, bIntVal, value );
+	return RegisterValueExx( (PCLASSROOT)l.Names, name_class, name, bIntVal, value );
 }
 //---------------------------------------------------------------------------
 PROCREG_PROC( int, RegisterValue )( CTEXTSTR name_class, CTEXTSTR name, CTEXTSTR value )
@@ -30100,7 +30153,7 @@ PROCREG_PROC( CTEXTSTR, GetRegisteredValueExx )( CTEXTSTR root, CTEXTSTR name_cl
 PROCREG_PROC( CTEXTSTR, GetRegisteredValueEx )( CTEXTSTR name_class, CTEXTSTR name, int bIntVal )
 {
 	Init();
-	return GetRegisteredValueExx( l.Names, name_class, name, bIntVal );
+	return GetRegisteredValueExx( (PCLASSROOT)l.Names, name_class, name, bIntVal );
 }
 //---------------------------------------------------------------------------
 PROCREG_PROC( CTEXTSTR, GetRegisteredValue )( CTEXTSTR name_class, CTEXTSTR name )
@@ -30141,13 +30194,13 @@ PROCREG_PROC( int, GetRegisteredIntValue )( PCLASSROOT name_class, CTEXTSTR name
 PROCREG_PROC( PCLASSROOT, RegisterClassAliasEx )( PCLASSROOT root, CTEXTSTR original, CTEXTSTR alias )
 {
 	PTREEDEF class_root = GetClassTreeEx( root, (PCLASSROOT)original, NULL, TRUE );
-	return GetClassTreeEx( root, (PCLASSROOT)alias, class_root, TRUE );
+	return (PCLASSROOT)GetClassTreeEx( root, (PCLASSROOT)alias, class_root, TRUE );
 }
 //---------------------------------------------------------------------------
 PROCREG_PROC( PCLASSROOT, RegisterClassAlias )( CTEXTSTR original, CTEXTSTR alias )
 {
 	Init();
-	return RegisterClassAliasEx( l.Names, original, alias );
+	return (PCLASSROOT)RegisterClassAliasEx( (PCLASSROOT)l.Names, original, alias );
 }
 //---------------------------------------------------------------------------
 PROCREG_PROC( uintptr_t, RegisterDataTypeEx )( PCLASSROOT root
@@ -30192,7 +30245,7 @@ PROCREG_PROC( uintptr_t, RegisterDataType )( CTEXTSTR classname
 												 , void (CPROC *Close)(POINTER,uintptr_t) )
 {
 	Init();
-	return RegisterDataTypeEx( l.Names, classname, name, size, Open, Close );
+	return RegisterDataTypeEx( (PCLASSROOT)l.Names, classname, name, size, Open, Close );
 }
 //---------------------------------------------------------------------------
 PROCREG_PROC( uintptr_t, MakeRegisteredDataTypeEx)( PCLASSROOT root
@@ -30324,7 +30377,7 @@ PROCREG_PROC( uintptr_t, CreateRegisteredDataType)( CTEXTSTR classname
 																 , CTEXTSTR instancename )
 {
 	Init();
-	return CreateRegisteredDataTypeEx( l.Names, classname, name, instancename );
+	return CreateRegisteredDataTypeEx( (PCLASSROOT)l.Names, classname, name, instancename );
 }
 //---------------------------------------------------------------------------
 typedef POINTER (CPROC *LOADPROC)( void );
@@ -31005,13 +31058,13 @@ void RegisterAndCreateGlobalWithInit( POINTER *ppGlobal, uintptr_t global_size, 
 		Init();
 		// RTLD_DEFAULT
 		ppGlobalMain = &p;
-		p = (POINTER)CreateRegisteredDataTypeEx( l.Names, WIDE("system/global data"), name, name );
+		p = (POINTER)CreateRegisteredDataTypeEx( (PCLASSROOT)l.Names, WIDE("system/global data"), name, name );
 		if( !p )
 		{
 			RegisterDataType( WIDE("system/global data"), name, global_size
 								 , Open
 								 , NULL );
-			p = (POINTER)CreateRegisteredDataTypeEx( l.Names, WIDE("system/global data"), name, name );
+			p = (POINTER)CreateRegisteredDataTypeEx( (PCLASSROOT)l.Names, WIDE("system/global data"), name, name );
 			if( !p )
 				ppGlobalMain = NULL;
 #ifdef DEBUG_GLOBAL_REGISTRATION
@@ -31172,11 +31225,12 @@ PROCREG_NAMESPACE_END
 // becomes unusable, until a reboot happens.
 //#define DEBUG_OPEN_SPACE
 // this variable controls whether allocate/release is logged.
-#define NO_FILEOP_ALIAS
+#ifndef NO_FILEOP_ALIAS
+#  define NO_FILEOP_ALIAS
+#endif
 #define NO_UNICODE_C
 //#define USE_SIMPLE_LOCK_ON_OPEN
 #ifdef __LINUX__
-#define NO_FILEOP_ALIAS
 #include <sys/mman.h>
 #endif
 #ifdef _MSC_VER
@@ -34882,6 +34936,32 @@ SACK_MEMORY_NAMESPACE_END
 #define NO_UNICODE_C
 #define WINFILE_COMMON_SOURCE
 #define FIX_RELEASE_COM_COLLISION
+#if defined( _WIN32 ) && !defined( __TURBOC__ )
+#  ifndef UNDER_CE
+  // findfirst,findnext, fileinfo
+#  endif
+#  ifdef UNDER_CE
+#    define finddata_t WIN32_FIND_DATA
+#    define findfirst FindFirstFile
+#    define findnext  FindNextFile
+#    define findclose FindClose
+#  else
+#    ifdef UNICODE
+#      define finddata_t _wfinddata_t
+#      define findfirst _wfindfirst
+#      define findnext  _wfindnext
+#      define findclose _findclose
+#    else
+#      define finddata_t _finddata_t
+#      define findfirst _findfirst
+#      define findnext  _findnext
+#      define findclose _findclose
+#    endif
+#  endif
+#else
+ // opendir etc..
+#  include <dirent.h>
+#endif
 //#undef DeleteList
 #ifdef WIN32
 #endif
@@ -34890,6 +34970,21 @@ SACK_MEMORY_NAMESPACE_END
 //#include <io.h>
 #endif
 FILESYS_NAMESPACE
+enum textModes {
+	TM_BINARY = 0,
+	TM_UNKNOWN,
+	TM_UTF8,
+	TM_UTF16BE,
+	TM_UTF16LE,
+	TM_UTF32BE,
+	TM_UTF32LE,
+	TM_UTF7,
+	TM_UTF1,
+	TM_UTF_EBCDIC,
+	TM_UTF_SCSU,
+	TM_UTF_BOCU,
+	TM_UTF_GB_18030
+};
 struct file{
 	TEXTSTR name;
 	TEXTSTR fullname;
@@ -34899,6 +34994,9 @@ struct file{
  // FILE *'s
 	PLIST files;
 	INDEX group;
+	enum textModes textmode;
+  // text file modes; skip existing BOM for seek purposes.
+	size_t file_start_offset;
 	struct file_system_mounted_interface *mount;
 };
 struct file_interface_tracker
@@ -35141,6 +35239,8 @@ TEXTSTR ExpandPathVariable( CTEXTSTR path )
 						tmp_path = ExpandPathVariable( newest_path );
 						Deallocate( TEXTCHAR*, newest_path );
 					}
+					else
+						tmp_path = tmp;
 				}
 				if( (*winfile_local).flags.bLogOpenClose )
 					lprintf( WIDE( "transform subst [%s]" ), tmp_path );
@@ -35390,6 +35490,130 @@ TEXTSTR sack_prepend_path( INDEX group, CTEXTSTR filename )
 #define HANDLE int
 #define INVALID_HANDLE_VALUE -1
 #endif
+static int DetectUnicodeBOM( FILE *file ) {
+   //00 00 FE FF     UTF-32, big-endian
+   //FF FE 00 00     UTF-32, little-endian
+   //FE FF           UTF-16, big-endian
+   //FF FE           UTF-16, little-endian
+   //EF BB BF        UTF-8
+//Encoding	Representation (hexadecimal)	Representation (decimal)	Bytes as CP1252 characters
+//UTF-8[t 1]		EF BB BF		239 187 191	ï»¿
+//UTF-16 (BE)		FE FF			254 255	þÿ      þÿ
+//UTF-16 (LE)		FF FE			255 254	ÿþ      ÿþ
+//UTF-32 (BE)		00 00 FE FF		0 0 254 255	??þÿ (? refers to the ASCII null character)
+//UTF-32 (LE)		FF FE 00 00[t 2]	255 254 0 0	ÿþ?? (? refers to the ASCII null character)
+//UTF-7[t 1]		2B 2F 76 38             43 47 118 56	+/v9
+//			2B 2F 76 39		43 47 118 43	+/v+
+//			2B 2F 76 2B             43 47 118 47	+/v/
+//			2B 2F 76 2F[t 3]	43 47 118 57	+/v8
+//			2B 2F 76 38 2D[t 4]	43 47 118 56 45	+/v8-
+//
+//UTF-1[t 1]		F7 64 4C	247 100 76	÷dL
+//UTF-EBCDIC[t 1]	DD 73 66 73	221 115 102 115	Ýsfs
+//SCSU[t 1]		0E FE FF[t 5]	14 254 255	?þÿ (? represents the ASCII "shift out" character)
+//BOCU-1[t 1]		FB EE 28	251 238 40	ûî(
+//GB-18030[t 1]		84 31 95 33	132 49 149 51	„1•3
+	struct file* _file = (struct file*)file;
+	// file was opened with 't' flag, test what sort of 't' the file might be.
+	// can result in conversion based on UNICODE (utf-16) compilation flag is set or not (UTF8).
+	if( _file->textmode == TM_UNKNOWN ) {
+		uint8_t bytes[5];
+		enum textModes textmode = _file->textmode;
+		size_t bytelength;
+		_file->textmode = TM_BINARY;
+		bytelength = sack_fread( bytes, 1, 5, file );
+		sack_fseek( file, 0, SEEK_SET );
+		if( bytelength < 5 ) {
+			size_t n;
+			for( n = bytelength; n < 5; n++ )
+				bytes[n] = 0;
+		}
+		if( bytes[0] == 0xEF ) {
+			// UTF8 test
+			if( bytes[1] == 0xBB && bytes[2] == 0xBF ) {
+				_file->textmode = TM_UTF8;
+				sack_fseek( file, 3, SEEK_SET );
+			} else {
+				_file->textmode = TM_UTF8;
+			}
+		} else if( bytes[0] == 0xFF ) {
+			// UTF32/16 LE test
+			if( bytes[1] == 0xFE ) {
+				if( bytes[2] == 0 && bytes[3] == 0 ) {
+					_file->textmode = TM_UTF32LE;
+				}
+			}
+		} else if( bytes[0] == 0xFE ) {
+			// UTF16ZBE test
+			if( bytes[1] == 0xFF ) {
+				_file->textmode = TM_UTF16BE;
+			} else {
+				_file->textmode = TM_UTF8;
+			}
+		} else if( bytes[0] == 0 && bytes[1] == 0 ) {
+			// UTF32BE test...
+			if( bytes[2] == 0xFE && bytes[3] == 0xFF ) {
+				_file->textmode = TM_UTF32BE;
+			} else
+				_file->textmode = TM_UTF8;
+		} else {
+		}
+	}
+}
+static void DecodeFopenOpts( struct file *file, CTEXTSTR opts ) {
+	CTEXTSTR op = opts;
+	for( ; op[0]; op++ ) {
+		if( op[0] == 'w' || op[0] == 'a' || op[0] == 'r' || op[0] == '+' )
+			continue;
+		if( op[0] == ' ' ) continue;
+		if( op[0] == 't' ) {
+         file->textmode = TM_UNKNOWN;
+		} else if( op[0] == 'b' ) {
+ // also the default.
+         file->textmode = TM_BINARY;
+		} else if( op[0] == ',' ) {
+         const char *restore = op;
+			op++;
+			while( op[0] == ' ' ) op++;
+			if( op[0] == 'c' ) op++; else { op = restore; continue; }
+			if( op[0] == 'c' ) op++; else { op = restore; continue; }
+			if( op[0] == 's' ) op++; else { op = restore; continue; }
+			while( op[0] == ' ' ) op++;
+			if( op[0] == '=' ) op++; else { op = restore; continue; }
+			while( op[0] == ' ' ) op++;
+			if( StrCaseCmpEx( op, "unicode", 7 ) == 0 ) {
+				file->textmode = TM_UTF16LE;
+ // minus 1, becuase for loop will increment.
+            op += 6;
+			}
+			else if( StrCaseCmpEx( op, "utf-16le", 8 ) == 0 ) {
+				file->textmode = TM_UTF16LE;
+ // minus 1, becuase for loop will increment.
+            op += 7;
+			}
+			else if( ( StrCaseCmpEx( op, "utf-8", 5 ) == 0 ) ) {
+				file->textmode = TM_UTF8;
+ // minus 1, becuase for loop will increment.
+            op += 4;
+			}
+			else if( ( StrCaseCmpEx( op, "utf-16be", 8 ) == 0 ) ) {
+				file->textmode = TM_UTF16BE;
+ // minus 1, becuase for loop will increment.
+            op += 7;
+			}
+			else if( ( StrCaseCmpEx( op, "utf-32le", 8 ) == 0 ) ) {
+				file->textmode = TM_UTF32LE;
+ // minus 1, becuase for loop will increment.
+            op += 7;
+			}
+			else if( ( StrCaseCmpEx( op, "utf-32be", 8 ) == 0 ) ) {
+				file->textmode = TM_UTF32BE;
+ // minus 1, becuase for loop will increment.
+            op += 7;
+			}
+		}
+	}
+}
 HANDLE sack_open( INDEX group, CTEXTSTR filename, int opts, ... )
 {
 	HANDLE handle;
@@ -35516,6 +35740,7 @@ struct file *FindFileByHandle( HANDLE file_file )
 	LeaveCriticalSec( &(*winfile_local).cs_files );
 	return file;
 }
+//----------------------------------------------------------------------------
 LOGICAL sack_iset_eof ( INDEX file_handle )
 {
 	HANDLE *holder = (HANDLE*)GetLink( &(*winfile_local).handles, file_handle );
@@ -35526,6 +35751,7 @@ LOGICAL sack_iset_eof ( INDEX file_handle )
 	return ftruncate( handle, lseek( handle, 0, SEEK_CUR ) );
 #endif
 }
+//----------------------------------------------------------------------------
 struct file *FindFileByFILE( FILE *file_file )
 {
 	struct file *file;
@@ -35579,6 +35805,7 @@ LOGICAL sack_set_eof ( HANDLE file_handle )
 #endif
 	}
 }
+//----------------------------------------------------------------------------
 int sack_ftruncate( FILE *file_file )
 {
 	struct file *file;
@@ -35602,6 +35829,7 @@ int sack_ftruncate( FILE *file_file )
 	}
 	return FALSE;
 }
+//----------------------------------------------------------------------------
 long sack_tell( INDEX file_handle )
 {
 	HANDLE *holder = (HANDLE*)GetLink( &(*winfile_local).handles, file_handle );
@@ -35620,10 +35848,12 @@ long sack_tell( INDEX file_handle )
 	return lseek( handle, 0, SEEK_SET );
 #endif
 }
+//----------------------------------------------------------------------------
 HANDLE sack_creat( INDEX group, CTEXTSTR file, int opts, ... )
 {
 	return sack_open( group, file, opts | O_CREAT );
 }
+//----------------------------------------------------------------------------
 int sack_lseek( HANDLE file_handle, int pos, int whence )
 {
 #ifdef _WIN32
@@ -35632,6 +35862,7 @@ int sack_lseek( HANDLE file_handle, int pos, int whence )
 	return lseek( file_handle, pos, whence );
 #endif
 }
+//----------------------------------------------------------------------------
 int sack_read( HANDLE file_handle, POINTER buffer, int size )
 {
 #ifdef _WIN32
@@ -35642,6 +35873,7 @@ int sack_read( HANDLE file_handle, POINTER buffer, int size )
 	return read( file_handle, buffer, size );
 #endif
 }
+//----------------------------------------------------------------------------
 int sack_write( HANDLE file_handle, CPOINTER buffer, int size )
 {
 #ifdef _WIN32
@@ -35651,10 +35883,12 @@ int sack_write( HANDLE file_handle, CPOINTER buffer, int size )
 	return write( file_handle, buffer, size );
 #endif
 }
+//----------------------------------------------------------------------------
 INDEX sack_icreat( INDEX group, CTEXTSTR file, int opts, ... )
 {
 	return sack_iopen( group, file, opts | O_CREAT );
 }
+//----------------------------------------------------------------------------
 int sack_close( HANDLE file_handle )
 {
 	struct file *file = FindFileByHandle( (HANDLE)file_handle );
@@ -35678,6 +35912,7 @@ int sack_close( HANDLE file_handle )
 #endif
 	return 0;
 }
+//----------------------------------------------------------------------------
 INDEX sack_iopen( INDEX group, CTEXTSTR filename, int opts, ... )
 {
 	HANDLE h;
@@ -35701,6 +35936,7 @@ INDEX sack_iopen( INDEX group, CTEXTSTR filename, int opts, ... )
 		lprintf( WIDE( "return iopen of [%s]=%p(%")_size_f WIDE(")?" ), filename, (void*)(uintptr_t)h, (size_t)result );
 	return result;
 }
+//----------------------------------------------------------------------------
 int sack_iclose( INDEX file_handle )
 {
 	int result;
@@ -35715,6 +35951,7 @@ int sack_iclose( INDEX file_handle )
 	LeaveCriticalSec( &(*winfile_local).cs_files );
 	return result;
 }
+//----------------------------------------------------------------------------
 int sack_ilseek( INDEX file_handle, size_t pos, int whence )
 {
 	int result;
@@ -35731,6 +35968,7 @@ int sack_ilseek( INDEX file_handle, size_t pos, int whence )
 	LeaveCriticalSec( &(*winfile_local).cs_files );
 	return result;
 }
+//----------------------------------------------------------------------------
 int sack_iread( INDEX file_handle, POINTER buffer, int size )
 {
 	EnterCriticalSec( &(*winfile_local).cs_files );
@@ -35747,6 +35985,7 @@ int sack_iread( INDEX file_handle, POINTER buffer, int size )
 #endif
 	}
 }
+//----------------------------------------------------------------------------
 int sack_iwrite( INDEX file_handle, CPOINTER buffer, int size )
 {
 	EnterCriticalSec( &(*winfile_local).cs_files );
@@ -35762,6 +36001,7 @@ int sack_iwrite( INDEX file_handle, CPOINTER buffer, int size )
 #endif
 	}
 }
+//----------------------------------------------------------------------------
 int sack_unlinkEx( INDEX group, CTEXTSTR filename, struct file_system_mounted_interface *mount )
 {
 	while( mount )
@@ -35807,10 +36047,12 @@ int sack_unlinkEx( INDEX group, CTEXTSTR filename, struct file_system_mounted_in
 	}
 	return 0;
 }
+//----------------------------------------------------------------------------
 int sack_unlink( INDEX group, CTEXTSTR filename )
 {
 	return sack_unlinkEx( group, filename, (*winfile_local).mounted_file_systems );
 }
+//----------------------------------------------------------------------------
 int sack_rmdir( INDEX group, CTEXTSTR filename )
 {
 #ifdef __LINUX__
@@ -35837,6 +36079,7 @@ int sack_rmdir( INDEX group, CTEXTSTR filename )
 }
 #undef open
 #undef fopen
+//----------------------------------------------------------------------------
 FILE * sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_system_mounted_interface *mount )
 {
 	FILE *handle = NULL;
@@ -35875,6 +36118,7 @@ FILE * sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_
 		struct Group *filegroup = (struct Group *)GetLink( &(*winfile_local).groups, group );
 		file = New( struct file );
 		memalloc = TRUE;
+		DecodeFopenOpts( file, opts );
 		if( StrChr( filename, '%' ) )
 		{
 			tmpname = ExpandPathVariable( filename );
@@ -35912,27 +36156,27 @@ FILE * sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_
 			//file->fullname = file->name;
 		}
 		file->group = group;
+		if( (file->fullname[0] == '@') || (file->fullname[0] == '*') || (file->fullname[0] == '~') )
+		{
+			TEXTSTR tmpname = ExpandPathEx( file->fullname, NULL );
+			Deallocate( TEXTSTR, file->fullname );
+			file->fullname = tmpname;
+		}
+		if( StrChr( file->fullname, '%' ) )
+		{
+			if( memalloc )
+			{
+				DeleteLink( &(*winfile_local).files, file );
+				Deallocate( TEXTCHAR*, file->name );
+				Deallocate( TEXTCHAR*, file->fullname );
+				Deallocate( struct file *, file );
+			}
+			//DebugBreak();
+			return NULL;
+		}
 		EnterCriticalSec( &(*winfile_local).cs_files );
 		AddLink( &(*winfile_local).files,file );
 		LeaveCriticalSec( &(*winfile_local).cs_files );
-	}
-	if( (file->fullname[0] == '@') || (file->fullname[0] == '*') || (file->fullname[0] == '~') )
-	{
-		TEXTSTR tmpname = ExpandPathEx( file->fullname, NULL );
-		Deallocate( TEXTSTR, file->fullname );
-		file->fullname = tmpname;
-	}
-	if( StrChr( file->fullname, '%' ) )
-	{
-		if( memalloc )
-		{
-			DeleteLink( &(*winfile_local).files, file );
-			Deallocate( TEXTCHAR*, file->name );
-			Deallocate( TEXTCHAR*, file->fullname );
-			Deallocate( struct file *, file );
-		}
-		//DebugBreak();
-		return NULL;
 	}
 	if( (*winfile_local).flags.bLogOpenClose )
 		lprintf( WIDE( "Open File: [%s]" ), file->fullname );
@@ -35955,7 +36199,7 @@ FILE * sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_
 						lprintf( WIDE("Call mount %s to check if file exists %s"), test_mount->name, file->fullname );
 					if( test_mount->fsi->exists( test_mount->psvInstance, _fullname ) )
 					{
-						handle = (FILE*)test_mount->fsi->open( test_mount->psvInstance, _fullname );
+						handle = (FILE*)test_mount->fsi->open( test_mount->psvInstance, _fullname, opts );
 					}
 					else if( single_mount )
 					{
@@ -35991,7 +36235,7 @@ FILE * sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_
 #endif
 					if( (*winfile_local).flags.bLogOpenClose )
 						lprintf( WIDE("Call mount %s to open file %s"), test_mount->name, file->fullname );
-					handle = (FILE*)test_mount->fsi->open( test_mount->psvInstance, _fullname );
+					handle = (FILE*)test_mount->fsi->open( test_mount->psvInstance, _fullname, opts );
 #ifdef UNICODE
 					Deallocate( char*, _fullname );
 #else
@@ -36007,7 +36251,7 @@ FILE * sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_
 	if( !handle )
 	{
 default_fopen:
-		file->mount = NULL;
+		//file->mount = NULL;
 #ifdef __LINUX__
 #  ifdef UNICODE
 		char *tmpname = CStrDup( file->fullname );
@@ -36030,7 +36274,7 @@ default_fopen:
 		{
 			wchar_t *tmp = CharWConvert( file->fullname );
 			wchar_t *wopts = CharWConvert( opts );
-         handle = _wfopen( tmp, wopts );
+			handle = _wfopen( tmp, wopts );
 			//_wfopen_s( &handle, tmp, wopts );
 			Deallocate( wchar_t *, tmp );
 			Deallocate( wchar_t *, wopts );
@@ -36056,10 +36300,12 @@ default_fopen:
 		lprintf( WIDE( "Added FILE* %p and list is %p" ), handle, file->files );
 	return handle;
 }
+//----------------------------------------------------------------------------
 FILE*  sack_fopen ( INDEX group, CTEXTSTR filename, CTEXTSTR opts )
 {
 	return sack_fopenEx( group, filename, opts, NULL );
 }
+//----------------------------------------------------------------------------
 FILE*  sack_fsopenEx( INDEX group
 					 , CTEXTSTR filename
 					 , CTEXTSTR opts
@@ -36097,6 +36343,7 @@ FILE*  sack_fsopenEx( INDEX group
 	{
 		struct Group *filegroup = (struct Group *)GetLink( &(*winfile_local).groups, group );
 		file = New( struct file );
+      DecodeFopenOpts( file, opts );
 		file->handles = NULL;
 		file->files = NULL;
 		file->name = StrDup( filename );
@@ -36127,7 +36374,7 @@ FILE*  sack_fsopenEx( INDEX group
 					lprintf( WIDE("Call mount %s to check if file exists %s"), test_mount->name, file->fullname );
 				if( test_mount->fsi->exists( test_mount->psvInstance, _fullname ) )
 				{
-					handle = (FILE*)test_mount->fsi->open( test_mount->psvInstance, _fullname );
+					handle = (FILE*)test_mount->fsi->open( test_mount->psvInstance, _fullname, opts );
 				}
 #ifdef UNICODE
 				Deallocate( char *, _fullname );
@@ -36157,7 +36404,7 @@ FILE*  sack_fsopenEx( INDEX group
 #endif
 					if( (*winfile_local).flags.bLogOpenClose )
 						lprintf( WIDE("Call mount %s to open file %s"), test_mount->name, file->fullname );
-					handle = (FILE*)test_mount->fsi->open( test_mount->psvInstance, _fullname );
+					handle = (FILE*)test_mount->fsi->open( test_mount->psvInstance, _fullname, opts );
 #ifdef UNICODE
 					Deallocate( char*, _fullname );
 #else
@@ -36209,17 +36456,17 @@ default_fopen:
 		lprintf( WIDE( "Added FILE* %p and list is %p" ), handle, file->files );
 	return handle;
 }
+//----------------------------------------------------------------------------
 FILE*  sack_fsopen( INDEX group, CTEXTSTR filename, CTEXTSTR opts, int share_mode )
 {
 /*(*winfile_local).mounted_file_systems*/
 	return sack_fsopenEx( group, filename, opts, share_mode, NULL );
 }
-size_t sack_fsize ( FILE *file_file )
+//----------------------------------------------------------------------------
+static size_t sack_fsizeEx ( FILE *file_file, struct file_system_mounted_interface *mount )
 {
-	struct file *file;
-	file = FindFileByFILE( file_file );
-	if( file && file->mount && file->mount->fsi )
-		return file->mount->fsi->size( file_file );
+	if( mount && mount->fsi )
+		return mount->fsi->size( file_file );
 	{
 		size_t here = ftell( file_file );
 		size_t length;
@@ -36229,34 +36476,47 @@ size_t sack_fsize ( FILE *file_file )
 		return length;
 	}
 }
-size_t sack_ftell ( FILE *file_file )
-{
+size_t sack_fsize ( FILE *file_file ) {
 	struct file *file;
 	file = FindFileByFILE( file_file );
-	if( file && file->mount && file->mount->fsi )
-		return file->mount->fsi->seek( file_file, 0, SEEK_CUR );
+	return sack_fsizeEx( file_file, file?file->mount:NULL );
+}
+static size_t sack_ftellEx ( FILE *file_file, struct file_system_mounted_interface *mount )
+{
+	if( mount && mount->fsi )
+		return mount->fsi->tell( file_file );
 	return ftell( file_file );
 }
-size_t  sack_fseek ( FILE *file_file, size_t pos, int whence )
-{
+size_t sack_ftell ( FILE *file_file ) {
 	struct file *file;
 	file = FindFileByFILE( file_file );
 	if( file && file->mount && file->mount->fsi )
+		return sack_ftellEx(  file_file, file->mount );
+	return sack_ftellEx( file_file, NULL );
+}
+size_t  sack_fseekEx ( FILE *file_file, size_t pos, int whence, struct file_system_mounted_interface *mount )
+{
+	if( mount && mount->fsi )
 	{
-		return file->mount->fsi->seek( file_file, pos, whence );
+		return mount->fsi->seek( file_file, pos, whence );
 	}
 	if( fseek( file_file, (long)pos, whence ) )
 		return -1;
 	//struct file *file = FindFileByFILE( file_file );
 	return ftell( file_file );
 }
-int  sack_fflush ( FILE *file_file )
-{
+size_t  sack_fseek ( FILE *file_file, size_t pos, int whence ){
 	struct file *file;
 	file = FindFileByFILE( file_file );
 	if( file && file->mount && file->mount->fsi )
+		return sack_fseekEx( file_file, pos, whence, file->mount );
+	return sack_fseekEx( file_file, pos, whence, NULL );
+}
+static int  sack_fflushEx ( FILE *file_file, struct file_system_mounted_interface *mount )
+{
+	if( mount && mount->fsi )
 	{
-		return file->mount->fsi->flush( file_file );
+		return mount->fsi->flush( file_file );
 		//DeleteLink( &file->files, file_file );
 		//file->fsi->close( file_file );
 		//file_file = (FILE*)file->fsi->open( file->fullname );
@@ -36265,6 +36525,17 @@ int  sack_fflush ( FILE *file_file )
 	}
 	return fflush( file_file );
 }
+int  sack_fflush ( FILE *file_file )
+{
+	struct file *file;
+	file = FindFileByFILE( file_file );
+	if( file && file->mount && file->mount->fsi )
+	{
+		return sack_fflushEx( file_file, file->mount );
+	}
+	return fflush( file_file );
+}
+//----------------------------------------------------------------------------
 int  sack_fclose ( FILE *file_file )
 {
 	struct file *file;
@@ -36295,7 +36566,14 @@ int  sack_fclose ( FILE *file_file )
 	LeaveCriticalSec( &(*winfile_local).cs_files );
 	return fclose( file_file );
 }
- size_t  sack_fread ( POINTER buffer, size_t size, int count,FILE *file_file )
+//----------------------------------------------------------------------------
+static void transcodeOutputText( struct file *file, POINTER buffer, size_t size, POINTER *outbuf, size_t *outsize ) {
+}
+//----------------------------------------------------------------------------
+static void transcodeInputText( struct file *file, POINTER buffer, size_t size, POINTER *outbuf, size_t *outsize ) {
+}
+//----------------------------------------------------------------------------
+size_t  sack_fread ( POINTER buffer, size_t size, int count,FILE *file_file )
 {
 	struct file *file;
 	file = FindFileByFILE( file_file );
@@ -36303,7 +36581,8 @@ int  sack_fclose ( FILE *file_file )
 		return file->mount->fsi->_read( file_file, (char*)buffer, size * count );
 	return fread( buffer, size, count, file_file );
 }
- size_t  sack_fwrite ( CPOINTER buffer, size_t size, int count,FILE *file_file )
+//----------------------------------------------------------------------------
+size_t  sack_fwrite ( CPOINTER buffer, size_t size, int count,FILE *file_file )
 {
 	struct file *file;
 	file = FindFileByFILE( file_file );
@@ -36315,7 +36594,7 @@ int  sack_fclose ( FILE *file_file )
 			POINTER dupbuf = malloc( size*count + 3 );
 			memcpy( dupbuf, buffer, size*count );
 			result = file->mount->fsi->_write( file_file, (const char*)dupbuf, size * count );
-			Deallocate( POINTER, dupbuf );
+			free( dupbuf );
 		}
 		else
 			result = file->mount->fsi->_write( file_file, (const char*)buffer, size * count );
@@ -36323,6 +36602,7 @@ int  sack_fclose ( FILE *file_file )
 	}
 	return fwrite( (POINTER)buffer, size, count, file_file );
 }
+//----------------------------------------------------------------------------
 TEXTSTR sack_fgets ( TEXTSTR buffer, size_t size,FILE *file_file )
 {
 #ifdef _UNICODE
@@ -36365,6 +36645,7 @@ TEXTSTR sack_fgets ( TEXTSTR buffer, size_t size,FILE *file_file )
 	return fgets( buffer, (int)size, file_file );
 #endif
 }
+//----------------------------------------------------------------------------
 LOGICAL sack_existsEx ( const char *filename, struct file_system_mounted_interface *fsi )
 {
 	FILE *tmp;
@@ -36380,6 +36661,7 @@ LOGICAL sack_existsEx ( const char *filename, struct file_system_mounted_interfa
 	}
 	return FALSE;
 }
+//----------------------------------------------------------------------------
 LOGICAL sack_exists( const char * filename )
 {
 	struct file_system_mounted_interface *mount = (*winfile_local).mounted_file_systems;
@@ -36394,6 +36676,7 @@ LOGICAL sack_exists( const char * filename )
 	}
 	return FALSE;
 }
+//----------------------------------------------------------------------------
 int  sack_renameEx ( CTEXTSTR file_source, CTEXTSTR new_name, struct file_system_mounted_interface *mount )
 {
 	int status;
@@ -36425,10 +36708,12 @@ int  sack_renameEx ( CTEXTSTR file_source, CTEXTSTR new_name, struct file_system
 	}
 	return status;
 }
+//----------------------------------------------------------------------------
 int  sack_rename( CTEXTSTR file_source, CTEXTSTR new_name )
 {
 	return sack_renameEx( file_source, new_name, (*winfile_local).default_mount );
 }
+//----------------------------------------------------------------------------
 size_t GetSizeofFile( TEXTCHAR *name, uint32_t* unused )
 {
 	size_t size;
@@ -36544,26 +36829,119 @@ void sack_register_filesystem_interface( CTEXTSTR name, struct file_system_inter
 	LocalInit();
 	AddLink( &(*winfile_local).file_system_interface, fit );
 }
-static void * CPROC sack_filesys_open( uintptr_t psv, const char *filename );
+static void * CPROC sack_filesys_open( uintptr_t psv, const char *filename, const char *opts );
 static int CPROC sack_filesys_close( void*file ) { return fclose(  (FILE*)file ); }
 static size_t CPROC sack_filesys_read( void*file, char*buf, size_t len ) { return fread( buf, 1, len, (FILE*)file ); }
 static size_t CPROC sack_filesys_write( void*file, const char*buf, size_t len ) { return fwrite( buf, 1, len, (FILE*)file ); }
-static size_t CPROC sack_filesys_seek( void*file, size_t pos, int whence) { return fseek( (FILE*)file, (long)pos, whence ); }
+static size_t CPROC sack_filesys_seek( void*file, size_t pos, int whence) { return sack_fseekEx( (FILE*)file, (long)pos, whence, NULL ); }
 static void CPROC sack_filesys_truncate( void*file ) { sack_ftruncate( (FILE*)file ); }
 static void CPROC sack_filesys_unlink( uintptr_t psv, const char*filename ) {
 #ifdef UNICODE
 	TEXTCHAR *_filename = DupCStr( filename );
 #  define filename _filename
 #endif
-	sack_unlink( 0, filename);
+	sack_unlinkEx( 0, filename, NULL);
 #ifdef UNICODE
 #  undef filename
 #endif
 }
-static size_t CPROC sack_filesys_size( void*file ) { return sack_fsize( (FILE*)file ); }
-static size_t CPROC sack_filesys_tell( void*file ) { return sack_ftell( (FILE*)file ); }
-static int CPROC sack_filesys_flush( void*file ) { return sack_fflush( (FILE*)file ); }
+static size_t CPROC sack_filesys_size( void*file ) { return sack_fsizeEx( (FILE*)file, NULL ); }
+static size_t CPROC sack_filesys_tell( void*file ) { return sack_ftellEx( (FILE*)file, NULL ); }
+static int CPROC sack_filesys_flush( void*file ) { return sack_fflushEx( (FILE*)file, NULL ); }
 static int CPROC sack_filesys_exists( uintptr_t psv, const char*file );
+static LOGICAL CPROC sack_filesys_rename( uintptr_t psvInstance, const char *original_name, const char *new_name );
+static LOGICAL CPROC sack_filesys_copy_write_buffer( void ) { return FALSE; }
+struct find_cursor_data {
+	const char *root;
+	const char *filemask;
+#ifdef WIN32
+	intptr_t findHandle;
+	struct _finddata_t fileinfo;
+#else
+	DIR* handle;
+	struct dirent *de;
+#endif
+};
+static	struct find_cursor * CPROC sack_filesys_find_create_cursor ( uintptr_t psvInstance, const char *root, const char *filemask ){
+	struct find_cursor_data *cursor = New( struct find_cursor_data );
+	MemSet( cursor, 0, sizeof( cursor ) );
+	cursor->root = root;
+	cursor->filemask = filemask;
+#ifdef WIN32
+   // windows mode is delayed until findfirst
+#else
+	cursor->handle = opendir( root );
+#endif
+	return (struct find_cursor *)cursor;
+}
+static	int CPROC sack_filesys_find_first( struct find_cursor *_cursor ){
+	struct find_cursor_data *cursor = (struct find_cursor_data *)_cursor;
+#ifdef WIN32
+	cursor->findHandle = findfirst( cursor->filemask, &cursor->fileinfo );
+	return ( cursor->findHandle != -1 );
+#else
+	if( cursor->handle ) {
+		cursor->de = readdir( cursor->handle );
+		return ( cursor->de == NULL );
+	}
+#endif
+}
+static	int CPROC sack_filesys_find_close( struct find_cursor *_cursor ){
+	struct find_cursor_data *cursor = (struct find_cursor_data *)_cursor;
+#ifdef WIN32
+	findclose( cursor->findHandle );
+#else
+	if( cursor->handle )
+		closedir( cursor->handle );
+#endif
+	Deallocate( struct find_cursor_data *, cursor );
+	return 0;
+}
+static	int CPROC sack_filesys_find_next( struct find_cursor *_cursor ){
+   int r;
+   struct find_cursor_data *cursor = (struct find_cursor_data *)_cursor;
+#ifdef WIN32
+   r = findnext( cursor->findHandle, &cursor->fileinfo );
+#else
+	cursor->de = readdir( cursor->handle );
+   r = (cursor->de == NULL );
+#endif
+   return r;
+}
+static	char * CPROC sack_filesys_find_get_name( struct find_cursor *_cursor ){
+   struct find_cursor_data *cursor = (struct find_cursor_data *)_cursor;
+#ifdef WIN32
+#   ifdef UNDER_CE
+	return cursor->fileinfo.cFileName;
+#   else
+	return cursor->fileinfo.name;
+#   endif
+#else
+   return cursor->de->d_name;
+#endif
+}
+static	size_t CPROC sack_filesys_find_get_size( struct find_cursor *_cursor ){
+	struct find_cursor_data *cursor = (struct find_cursor_data *)_cursor;
+   lprintf( "This interface function is not complete." );
+   return 0;
+}
+static	LOGICAL CPROC sack_filesys_find_is_directory( struct find_cursor *_cursor ){
+   struct find_cursor_data *cursor = (struct find_cursor_data *)_cursor;
+#ifdef WIN32
+#  ifdef UNDER_CE
+	return ( cursor->fileinfo.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
+#  else
+	return (cursor->fileinfo.attrib & _A_SUBDIR );
+#  endif
+#else
+   char buffer[MAX_PATH_NAME];
+	snprintf( buffer, MAX_PATH_NAME, WIDE("%s%s%s"), cursor->base, cursor->base[0]?"/":"", cursor->de->d_name );
+	return IsPath( buffer )
+#endif
+}
+static	LOGICAL CPROC sack_filesys_is_directory( const char *buffer ){
+	return IsPath( buffer );
+}
 static struct file_system_interface native_fsi = {
 	sack_filesys_open
 		, sack_filesys_close
@@ -36576,24 +36954,18 @@ static struct file_system_interface native_fsi = {
 		, sack_filesys_tell
 		, sack_filesys_flush
 		, sack_filesys_exists
- // same as sack_filesys_copy_write_buffer() { return FALSE; }
-		, NULL
- // find_create_cursor( uintptr_t psvInstance, const char *root, const char *filemask );
-		, NULL
- // sack_filesys_find_first
-		, NULL
- // sack_filesys_find_close
-		, NULL
- // sack_filesys_find_next
-		, NULL
- // find_get_name
-		, NULL
- // find_get_size
-		, NULL
- // is_directory( path)
-																 , NULL
+		, sack_filesys_copy_write_buffer
+  //( uintptr_t psvInstance, const char *root, const char *filemask );
+		, sack_filesys_find_create_cursor
+		, sack_filesys_find_first
+		, sack_filesys_find_close
+		, sack_filesys_find_next
+		, sack_filesys_find_get_name
+		, sack_filesys_find_get_size
+																 , sack_filesys_find_is_directory
+																 , sack_filesys_is_directory
  // rename
-                                                 , NULL
+                                                 , sack_filesys_rename
 } ;
 PRIORITY_PRELOAD( InitWinFileSysEarly, OSALOT_PRELOAD_PRIORITY - 1 )
 {
@@ -36601,7 +36973,7 @@ PRIORITY_PRELOAD( InitWinFileSysEarly, OSALOT_PRELOAD_PRIORITY - 1 )
 	if( !sack_get_filesystem_interface( WIDE("native") ) )
 		sack_register_filesystem_interface( WIDE("native" ), &native_fsi );
 	if( !(*winfile_local).default_mount )
-		(*winfile_local).default_mount = sack_mount_filesystem( "native", NULL, 1000, (uintptr_t)NULL, TRUE );
+		(*winfile_local).default_mount = sack_mount_filesystem( "native", &native_fsi, 1000, (uintptr_t)NULL, TRUE );
 }
 #ifndef __NO_OPTIONS__
 PRELOAD( InitWinFileSys )
@@ -36610,13 +36982,21 @@ PRELOAD( InitWinFileSys )
 	(*winfile_local).flags.bDeallocateClosedFiles = SACK_GetProfileIntEx( WIDE( "SACK/filesys" ), WIDE( "Deallocate closed files" ), (*winfile_local).flags.bLogOpenClose, TRUE );
 }
 #endif
-static void * CPROC sack_filesys_open( uintptr_t psv, const char *filename ) {
+static void * CPROC sack_filesys_open( uintptr_t psv, const char *filename, const char *opts ) {
 	void *result;
+	static const char *opening;
 #ifdef UNICODE
 	TEXTCHAR *_filename = DupCStr( filename );
 #  define filename _filename
 #endif
-	result = sack_fopenEx( 0, filename, WIDE("wb+"), (*winfile_local).default_mount );
+	if( !opening )
+		opening = filename;
+	else if( StrCmp( opening, filename ) == 0 ) {
+		opening = NULL;
+		return NULL;
+	}
+	result = sack_fopenEx( 0, filename, opts, (*winfile_local).default_mount );
+	opening = NULL;
 #ifdef UNICODE
 	Deallocate( TEXTCHAR *, _filename );
 #  undef filename
@@ -36629,7 +37009,8 @@ static int CPROC sack_filesys_exists( uintptr_t psv, const char *filename ) {
 	TEXTSTR _filename = DupCStr( filename );
 #define filename _filename
 #endif
-	result = sack_existsEx( filename, (*winfile_local).default_mount );
+//(*winfile_local).default_mount );
+	result = sack_existsEx( filename, NULL );
 #ifdef UNICODE
 	Deallocate( TEXTSTR, _filename );
 #undef filename
@@ -36650,6 +37031,9 @@ struct file_system_mounted_interface *sack_get_mounted_filesystem( const char *n
 void sack_unmount_filesystem( struct file_system_mounted_interface *mount )
 {
 	UnlinkThing( mount );
+}
+LOGICAL CPROC sack_filesys_rename( uintptr_t psvInstance, const char *original_name, const char *new_name ){
+	return sack_renameEx( original_name, new_name, NULL );
 }
 struct file_system_mounted_interface *sack_mount_filesystem( const char *name, struct file_system_interface *fsi, int priority, uintptr_t psvInstance, LOGICAL writable )
 {
@@ -36744,7 +37128,6 @@ FILESYS_NAMESPACE_END
 #endif
 #else
  // opendir etc..
-#include <dirent.h>
 #endif
 FILESYS_NAMESPACE
 #define MAX_PATH_NAME 512
