@@ -13,7 +13,7 @@
           ],
 	'defines': [
           'TARGETNAME="sack_vfs.node"',
-           "__STATIC__","USE_SQLITE","USE_SQLITE_INTERFACE","FORCE_COLOR_MACROS","NO_OPEN_MACRO"
+           "__STATIC__","USE_SQLITE","USE_SQLITE_INTERFACE","FORCE_COLOR_MACROS","NO_OPEN_MACRO","NO_FILEOP_ALIAS"
         ],
     'conditions': [
           ['OS=="linux"', {
