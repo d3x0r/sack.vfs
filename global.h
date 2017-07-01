@@ -21,6 +21,7 @@ public:
 	bool volNative;
 	char *mountName;
 	char *fileName;
+	struct file_system_interface *fsInt;
 	struct file_system_mounted_interface* fsMount;
 	static v8::Persistent<v8::Function> constructor;
 	

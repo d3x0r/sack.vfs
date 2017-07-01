@@ -99,6 +99,7 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, const char 
 	mountName = (char *)mount;
 	if( !mount && !filename ) {
 		volNative = false;
+		fsInt = sack_get_filesystem_interface( "native" );
 		fsMount = sack_get_default_mount();
 	} else {
 		//lprintf( "volume: %s %p %p", filename, key, key2 );
@@ -106,7 +107,7 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, const char 
 		volNative = true;
 		vol = sack_vfs_load_crypt_volume( filename, key, key2 );
 		if( vol )
-			fsMount = sack_mount_filesystem( mount, sack_get_filesystem_interface( SACK_VFS_FILESYSTEM_NAME )
+			fsMount = sack_mount_filesystem( mount, fsInt = sack_get_filesystem_interface( SACK_VFS_FILESYSTEM_NAME )
 					, 2000, (uintptr_t)vol, TRUE );
 		else
 			fsMount = NULL;
@@ -337,17 +338,22 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 	void VolumeObject::getDirectory( const FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
-		if( !vol->vol )
-			return;
-		struct find_info *fi = sack_vfs_find_create_cursor( (uintptr_t)vol->vol, NULL, NULL );
+		if( !vol->vol )           {	
+			lprintf( "not actually a vol?" );
+			//return;
+		}
+lprintf( "Create cursor..." );
+		struct find_cursor *fi = vol->fsInt->find_create_cursor( (uintptr_t)vol->vol, ".", "*" );
 		Local<Array> result = Array::New( isolate );
 		int found;
 		int n = 0;
-		for( found = sack_vfs_find_first( fi ); found; found = sack_vfs_find_next( fi ) ) {
-			char *name = sack_vfs_find_get_name( fi );
+lprintf( "find first..." );
+		for( found = vol->fsInt->find_first( fi ); found; found = vol->fsInt->find_next( fi ) ) {
+			lprintf( "Got something..." );
+			char *name = vol->fsInt->find_get_name( fi );
 			result->Set( n++, String::NewFromUtf8( isolate, name ) );
 		} 
-		sack_vfs_find_close( fi );
+		vol->fsInt->find_close( fi );
 		args.GetReturnValue().Set( result );
 	}
 

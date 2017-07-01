@@ -36852,8 +36852,8 @@ static int CPROC sack_filesys_exists( uintptr_t psv, const char*file );
 static LOGICAL CPROC sack_filesys_rename( uintptr_t psvInstance, const char *original_name, const char *new_name );
 static LOGICAL CPROC sack_filesys_copy_write_buffer( void ) { return FALSE; }
 struct find_cursor_data {
-	const char *root;
-	const char *filemask;
+	char *root;
+	char *filemask;
 #ifdef WIN32
 	intptr_t findHandle;
 	struct _finddata_t fileinfo;
@@ -36865,8 +36865,8 @@ struct find_cursor_data {
 static	struct find_cursor * CPROC sack_filesys_find_create_cursor ( uintptr_t psvInstance, const char *root, const char *filemask ){
 	struct find_cursor_data *cursor = New( struct find_cursor_data );
 	MemSet( cursor, 0, sizeof( cursor ) );
-	cursor->root = root;
-	cursor->filemask = filemask;
+	cursor->root = StrDup( root?root:"." );
+	cursor->filemask = StrDup( filemask?filemask:"*" );
 #ifdef WIN32
    // windows mode is delayed until findfirst
 #else
@@ -36894,6 +36894,8 @@ static	int CPROC sack_filesys_find_close( struct find_cursor *_cursor ){
 	if( cursor->handle )
 		closedir( cursor->handle );
 #endif
+	Deallocate( char *, cursor->root );
+	Deallocate( char *, cursor->filemask );
 	Deallocate( struct find_cursor_data *, cursor );
 	return 0;
 }
@@ -36901,10 +36903,10 @@ static	int CPROC sack_filesys_find_next( struct find_cursor *_cursor ){
    int r;
    struct find_cursor_data *cursor = (struct find_cursor_data *)_cursor;
 #ifdef WIN32
-   r = findnext( cursor->findHandle, &cursor->fileinfo );
+   r = !findnext( cursor->findHandle, &cursor->fileinfo );
 #else
 	cursor->de = readdir( cursor->handle );
-   r = (cursor->de == NULL );
+   r = (cursor->de != NULL );
 #endif
    return r;
 }
