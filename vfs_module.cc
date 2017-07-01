@@ -338,18 +338,11 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 	void VolumeObject::getDirectory( const FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
-		if( !vol->vol )           {	
-			lprintf( "not actually a vol?" );
-			//return;
-		}
-lprintf( "Create cursor..." );
 		struct find_cursor *fi = vol->fsInt->find_create_cursor( (uintptr_t)vol->vol, ".", "*" );
 		Local<Array> result = Array::New( isolate );
 		int found;
 		int n = 0;
-lprintf( "find first..." );
 		for( found = vol->fsInt->find_first( fi ); found; found = vol->fsInt->find_next( fi ) ) {
-			lprintf( "Got something..." );
 			char *name = vol->fsInt->find_get_name( fi );
 			result->Set( n++, String::NewFromUtf8( isolate, name ) );
 		} 
