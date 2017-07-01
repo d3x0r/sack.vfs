@@ -36997,7 +36997,7 @@ static void * CPROC sack_filesys_open( uintptr_t psv, const char *filename, cons
 		opening = NULL;
 		return NULL;
 	}
-	result = sack_fopenEx( 0, filename, opts, (*winfile_local).default_mount );
+	result = sack_fopenEx( 0, filename, opts, NULL );
 	opening = NULL;
 #ifdef UNICODE
 	Deallocate( TEXTCHAR *, _filename );
