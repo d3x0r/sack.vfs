@@ -1,6 +1,6 @@
 {
   "name": "sack.vfs",
-  "version": "0.1.99279",
+  "version": "0.1.99280",
   "description": "Node.js VFS Addon",
   "main": "vfs_module.js",
   "private": false,
@@ -13,6 +13,7 @@
     "serial port",
     "filesystem",
     "fs", "io", "files", "crypto", "hashed", "memory mapped", "encrypt", "decrypt",
+    "configuration", "options", "windows registry", "database",
     "sack"
   ],
   "scripts": {
