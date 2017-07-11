@@ -1,7 +1,9 @@
 # sack.vfs
 
 [![Join the chat at https://gitter.im/sack-vfs/Lobby](https://badges.gitter.im/sack-vfs/Lobby.svg)](https://gitter.im/sack-vfs/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)[![Build Status](https://travis-ci.org/d3x0r/sack.vfs.svg?branch=master)](https://travis-ci.org/d3x0r/sack.vfs)
-Node addon for a custom virtual file system interface
+
+Node addon for a custom virtual file system interface.  Also exposes a JSON5 parser, COM/serial port access, Sqlite interface, an option/configuration database built on Sqlite.
+Windows specific registry access for application settings. Vulkan API to be added eventually... 
 
 ## Requirements
 ### npm
@@ -54,6 +56,10 @@ vfs = {
                 later in the string passed to Sqlite.  It may be `null` if it is anonymous mount.
           if no parameters are passed, a Volume object representing the native filesystem is returned.
     
+    // windows only
+    registry - an interface to windows registry options
+    	set( path, value ) - set a new value in the registry
+        get( path )  - get a value from the registry.
 }
 ```
 
