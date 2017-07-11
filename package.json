@@ -1,9 +1,20 @@
 {
   "name": "sack.vfs",
-  "version": "0.1.99278",
+  "version": "0.1.99279",
   "description": "Node.js VFS Addon",
   "main": "vfs_module.js",
   "private": false,
+  "keywords": [
+    "sqlite",
+    "vfs",
+    "JSON","JSON5",
+    "COM Port",
+    "serial",
+    "serial port",
+    "filesystem",
+    "fs", "io", "files", "crypto", "hashed", "memory mapped", "encrypt", "decrypt",
+    "sack"
+  ],
   "scripts": {
     "test": "node vfs.js",
     "install": "node-gyp configure build",
