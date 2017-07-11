@@ -36937,11 +36937,11 @@ static	char * CPROC sack_filesys_find_get_name( struct find_cursor *_cursor ){
 }
 static	size_t CPROC sack_filesys_find_get_size( struct find_cursor *_cursor ){
 	struct find_cursor_data *cursor = (struct find_cursor_data *)_cursor;
-   lprintf( "This interface function is not complete." );
-   return 0;
+	lprintf( "This interface function is not complete." );
+	return 0;
 }
 static	LOGICAL CPROC sack_filesys_find_is_directory( struct find_cursor *_cursor ){
-   struct find_cursor_data *cursor = (struct find_cursor_data *)_cursor;
+	struct find_cursor_data *cursor = (struct find_cursor_data *)_cursor;
 #ifdef WIN32
 #  ifdef UNDER_CE
 	return ( cursor->fileinfo.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY);
@@ -36949,9 +36949,9 @@ static	LOGICAL CPROC sack_filesys_find_is_directory( struct find_cursor *_cursor
 	return (cursor->fileinfo.attrib & _A_SUBDIR );
 #  endif
 #else
-   char buffer[MAX_PATH_NAME];
-	snprintf( buffer, MAX_PATH_NAME, WIDE("%s%s%s"), cursor->base, cursor->base[0]?"/":"", cursor->de->d_name );
-	return IsPath( buffer )
+	char buffer[MAX_PATH_NAME];
+	snprintf( buffer, MAX_PATH_NAME, WIDE("%s%s%s"), cursor->root, cursor->root[0]?"/":"", cursor->de->d_name );
+	return IsPath( buffer );
 #endif
 }
 static	LOGICAL CPROC sack_filesys_is_directory( const char *buffer ){
@@ -37134,11 +37134,12 @@ FILESYS_NAMESPACE_END
   // findfirst,findnext, fileinfo
 #endif
 #else
-#define
  // opendir etc..
 #endif
 FILESYS_NAMESPACE
-#define MAX_PATH_NAME 512
+#ifndef MAX_PATH_NAME
+#  define MAX_PATH_NAME 512
+#endif
 // DEBUG_COMPARE 1 == full debug
 // DEBUG_COMPARE 2 == quieter debug
 #ifdef _DEBUG
