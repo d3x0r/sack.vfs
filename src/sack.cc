@@ -51062,35 +51062,30 @@ LOGICAL json_parse_message( TEXTSTR msg
 	while( status && ( n < msglen ) && ( c = GetUtfChar( &msg_input ) ) )
 	{
 		n = msg_input - msg;
-		if( comment == 1 ) {
-			if( c == '*' ) { comment = 3; continue; }
-			if( c != '/' ) { lprintf( WIDE("Fault while parsing; unexpected %c at %") _size_f, c, n ); status = FALSE; }
-			else comment = 2;
-			continue;
-		}
-		if( comment == 2 ) {
-			if( c == '\n' ) { comment = 0; continue; }
-			else continue;
-		}
-		if( comment == 3 ){
-			if( c == '*' ) { comment = 4; continue; }
-			else continue;
-		}
-		if( comment == 4 ) {
-			if( c == '/' ) { comment = 0; continue; }
-			else { if( c != '*' ) comment = 3; continue; }
+		if( comment ) {
+			if( comment == 1 ) {
+				if( c == '*' ) { comment = 3; continue; }
+				if( c != '/' ) { lprintf( WIDE("Fault while parsing; unexpected %c at %") _size_f, c, n ); status = FALSE; }
+				else comment = 2;
+				continue;
+			}
+			if( comment == 2 ) {
+				if( c == '\n' ) { comment = 0; continue; }
+				else continue;
+			}
+			if( comment == 3 ){
+				if( c == '*' ) { comment = 4; continue; }
+				else continue;
+			}
+			if( comment == 4 ) {
+				if( c == '/' ) { comment = 0; continue; }
+				else { if( c != '*' ) comment = 3; continue; }
+			}
 		}
 		switch( c )
 		{
 		case '/':
 			if( !comment ) comment = 1;
-			else if( comment == 1 ) comment = 2;
-			else lprintf( WIDE("Fault while parsing; unexpected %c at %") _size_f, c, n );
-			break;
-		case '*':
-			if( comment == 1 ) comment = 3;
-			else if( comment == 3 ) comment = 4;
-			else lprintf( WIDE("Fault while parsing; unexpected %c at %") _size_f, c, n );
 			break;
 		case '{':
 			{
@@ -51200,18 +51195,8 @@ LOGICAL json_parse_message( TEXTSTR msg
 // fault
 				lprintf( WIDE("bad context; fault while parsing; '%c' unexpected at %") _size_f, c, n );
 			}
-			//n++;
 			break;
 		default:
-			//if( first_token )
-			//{
-				//lprintf( WIDE("first token; fault parsing '%c' unexpected %") _size_f, c, n );// fault
-				//status = FALSE;
-			//}
-			if( parse_context == CONTEXT_UNKNOWN ) {
-				//lprintf( "parser does not support simple value results." );
-				//return FALSE;
-			}
 			switch( c )
 			{
 			case '"':
