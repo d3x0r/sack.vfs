@@ -34971,6 +34971,9 @@ SACK_MEMORY_NAMESPACE_END
 #else
  // opendir etc..
 #  include <dirent.h>
+#ifndef MAX_PATH_NAME
+#   define MAX_PATH_NAME PATH_MAX
+#endif
 #endif
 //#undef DeleteList
 #ifdef WIN32
@@ -37131,6 +37134,7 @@ FILESYS_NAMESPACE_END
   // findfirst,findnext, fileinfo
 #endif
 #else
+#define
  // opendir etc..
 #endif
 FILESYS_NAMESPACE
