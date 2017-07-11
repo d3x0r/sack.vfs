@@ -29,9 +29,10 @@ This is the object returned from require( 'sack.vfs' );
 ```
 vfs = {
     ComPort(comport) - access to com ports.
-    JSON - A json parser. 
+    JSON - A json parser. (JSON5 Compatible)
         parse(string) - result with a V8 object created from the json string.  
-        1/2 the speed of Node's parser; no real reason to use this.
+        1/2 the speed of Node's parser; no real reason to use this. 
+        (3x faster than javascript JSON5 implementation)
         // var o = vfs.JSON.parse(s)
     mkdir(pathname) - utility function to make directories which might not exist before volume does; 
             (Volume() auto creates directories now if specified path to filename does not exist)
@@ -332,3 +333,11 @@ update( Date.now() );
 
 The above script reads the value, reports what it was, if the old value is not the new value, then write the new value.
 example was testing a constant like 526.  if typeof value is a number, value is set as a REG_DWORD.  Otherwise it's set as REG_SZ.
+
+
+### JSON(JSON5) - JSON5 compatible processor
+does not support 'reviver' parameter (yet)
+
+``` javascript
+var object = JSON.parse(string);
+```

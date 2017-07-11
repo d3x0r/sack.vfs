@@ -20699,6 +20699,9 @@ IMAGE_NAMESPACE_END
 #ifdef _D3D11_DRIVER
 #include <D3D11.h>
 #endif
+#ifdef _VULKAN_DRIVER
+#include <vulkan/vulkan.h>
+#endif
 // one day I'd like to make a multidimensional library
 // but for now - 3D is sufficient - it can handle everything
 // under 2D ignoring the Z axis... although it would be more
@@ -21883,6 +21886,13 @@ struct ImageFile_tag
 	/* gl context? */
 	PLIST Surfaces;
 	IDirect3DBaseTexture9 *pActiveSurface;
+#endif
+#ifdef _VULKAN_DRIVER
+	PLIST vkSurface;
+ // most things will still use this, since reload image is called first, reload will set active
+	int vkActiveSurface;
+  // updated with SetTransformRelation, otherwise defaults to image size.
+	VECTOR coords[4];
 #endif
 #ifdef __cplusplus
  // watcom limits protections in structs to protected and public
@@ -36986,22 +36996,11 @@ PRELOAD( InitWinFileSys )
 #endif
 static void * CPROC sack_filesys_open( uintptr_t psv, const char *filename, const char *opts ) {
 	void *result;
-//	static const char *opening;
 #ifdef UNICODE
 	TEXTCHAR *_filename = DupCStr( filename );
 #  define filename _filename
 #endif
-/*
-	if( !opening )
-		opening = filename;
-	else if( StrCmp( opening, filename ) == 0 ) {
-		opening = NULL;
-		return NULL;
-	}
-*/
 	result = fopen( filename, opts );
-	//result = sack_fopenEx( 0, filename, opts, NULL );
-//	opening = NULL;
 #ifdef UNICODE
 	Deallocate( TEXTCHAR *, _filename );
 #  undef filename
@@ -41438,9 +41437,11 @@ int64_t IntCreateFromText( CTEXTSTR p )
 	int s;
 	int begin;
 	int64_t num;
+	LOGICAL altBase = FALSE;
+	int64_t base = 10;
 	//p = GetText( pText );
 	if( !p )
-		return FALSE;
+		return 0;
 	//if( pText->flags & TF_INDIRECT )
 	//   return IntCreateFromSeg( GetIndirect( pText ) );
 	s = 0;
@@ -41459,17 +41460,36 @@ int64_t IntCreateFromText( CTEXTSTR p )
 		}
 		else if( *p < '0' || *p > '9' )
 		{
-			break;
+			if( !altBase ) {
+				if( *p == 'x' ) { altBase = TRUE; base = 16; }
+				else if( *p == 'b' ) { altBase = TRUE; base = 2; }
+				else break;
+			} else {
+				if( base > 10 ) {
+					if( *p >= 'a' && *p <= 'f' ) {
+						num *= base;
+						num += *p - 'a' + 10;
+					}
+					else if( *p >= 'A' && *p <= 'F' ) {
+						num *= base;
+						num += *p - 'A' + 10;
+					}
+					else break;
+				}
+				else break;
+			}
 		}
 		else
 		{
-			num *= 10;
+			if( !altBase ) { altBase = TRUE; base = 8; }
+			else if( (*p - '0') >= base ) break;
+			num *= base;
 			num += *p - '0';
 		}
 		begin = FALSE;
 		p++;
 	}
-	if( s )
+	if( s & 1 )
 		num *= -1;
 	return num;
 }
@@ -50838,6 +50858,10 @@ enum json_value_types {
 	, VALUE_NUMBER = 5
 	, VALUE_OBJECT = 6
 	, VALUE_ARRAY = 7
+	, VALUE_NEG_NAN = 8
+	, VALUE_NAN = 9
+	, VALUE_NEG_INFINITY = 10
+	, VALUE_INFINITY = 11
 };
 struct json_value_container {
   // name of this value (if it's contained in an object)
@@ -50951,7 +50975,18 @@ enum word_char_states {
 	WORD_POS_UNDEFINED_6,
 	WORD_POS_UNDEFINED_7,
 	WORD_POS_UNDEFINED_8,
-	WORD_POS_UNDEFINED_9,
+	//WORD_POS_UNDEFINED_9, // instead of stepping to this value here, go to RESET
+	WORD_POS_NAN_1,
+	WORD_POS_NAN_2,
+	//WORD_POS_NAN_3,// instead of stepping to this value here, go to RESET
+	WORD_POS_INFINITY_1,
+	WORD_POS_INFINITY_2,
+	WORD_POS_INFINITY_3,
+	WORD_POS_INFINITY_4,
+	WORD_POS_INFINITY_5,
+	WORD_POS_INFINITY_6,
+	WORD_POS_INFINITY_7,
+	//WORD_POS_INFINITY_8,// instead of stepping to this value here, go to RESET
 };
 #define CONTEXT_UNKNOWN 0
 #define CONTEXT_IN_ARRAY 1
@@ -50961,7 +50996,7 @@ struct json_parse_context {
 	PDATALIST elements;
 	struct json_context_object *object;
 };
-#define RESET_VAL()  {	  val.value_type = VALUE_UNDEFINED;	 val.contains = NULL;	              val.name = NULL;	                  val.string = NULL; }
+#define RESET_VAL()  {	  val.value_type = VALUE_UNDEFINED;	 val.contains = NULL;	              val.name = NULL;	                  val.string = NULL;	                negative = FALSE; }
 typedef struct json_parse_context PARSE_CONTEXT, *PPARSE_CONTEXT;
 #define MAXPARSE_CONTEXTSPERSET 128
 DeclareSet( PARSE_CONTEXT );
@@ -51000,12 +51035,14 @@ LOGICAL json_parse_message( TEXTSTR msg
 	int word = WORD_POS_RESET;
 	TEXTRUNE c;
 	LOGICAL status = TRUE;
+	LOGICAL negative = FALSE;
 	PLINKSTACK context_stack = NULL;
 	LOGICAL first_token = TRUE;
 	//enum json_parse_state state;
 	PPARSE_CONTEXT context = GetFromSet( PARSE_CONTEXT, &parseContexts );
 	int parse_context = CONTEXT_UNKNOWN;
 	struct json_value_container val;
+	int comment = 0;
 	char const * msg_input = (char const *)msg;
 	char const * _msg_input;
 	//char *token_begin;
@@ -51016,12 +51053,39 @@ LOGICAL json_parse_message( TEXTSTR msg
 	val.contains = NULL;
 	val.name = NULL;
 	val.string = NULL;
-//	static CTEXTSTR keyword[3] = { "false", "null", "true" };
 	while( status && ( n < msglen ) && ( c = GetUtfChar( &msg_input ) ) )
 	{
 		n = msg_input - msg;
+		if( comment == 1 ) {
+			if( c == '*' ) { comment = 3; continue; }
+			if( c != '/' ) { lprintf( WIDE("Fault while parsing; unexpected %c at %") _size_f, c, n ); status = FALSE; }
+			else comment = 2;
+			continue;
+		}
+		if( comment == 2 ) {
+			if( c == '\n' ) { comment = 0; continue; }
+			else continue;
+		}
+		if( comment == 3 ){
+			if( c == '*' ) { comment = 4; continue; }
+			else continue;
+		}
+		if( comment == 4 ) {
+			if( c == '/' ) { comment = 0; continue; }
+			else { if( c != '*' ) comment = 3; continue; }
+		}
 		switch( c )
 		{
+		case '/':
+			if( !comment ) comment = 1;
+			else if( comment == 1 ) comment = 2;
+			else lprintf( WIDE("Fault while parsing; unexpected %c at %") _size_f, c, n );
+			break;
+		case '*':
+			if( comment == 1 ) comment = 3;
+			else if( comment == 3 ) comment = 4;
+			else lprintf( WIDE("Fault while parsing; unexpected %c at %") _size_f, c, n );
+			break;
 		case '{':
 			{
 				struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &parseContexts );
@@ -51160,7 +51224,7 @@ LOGICAL json_parse_message( TEXTSTR msg
 						}
 						else if( ( c == '"' ) || ( c == '\'' ) )
 						{
-							if( escape ) msg[m++] = c;
+							if( escape ) { msg[m++] = c; escape = FALSE; }
 							else if( c == start_c ) {
 								//AddDataItem( &elements, &val );
 								//RESET_VAL();
@@ -51174,6 +51238,11 @@ LOGICAL json_parse_message( TEXTSTR msg
 							{
 								switch( c )
 								{
+								case '\r':
+									continue;
+								case '\n':
+									escape = FALSE;
+									continue;
 								case '/':
 								case '\\':
 								case '"':
@@ -51251,6 +51320,7 @@ LOGICAL json_parse_message( TEXTSTR msg
 		//  catch characters for true/false/null/undefined which are values outside of quotes
 			case 't':
 				if( word == WORD_POS_RESET ) word = WORD_POS_TRUE_1;
+				else if( word == WORD_POS_INFINITY_6 ) word = WORD_POS_INFINITY_7;
 // fault
 				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
 				break;
@@ -51282,6 +51352,8 @@ LOGICAL json_parse_message( TEXTSTR msg
 				if( word == WORD_POS_RESET ) word = WORD_POS_NULL_1;
 				else if( word == WORD_POS_UNDEFINED_1 ) word = WORD_POS_UNDEFINED_2;
 				else if( word == WORD_POS_UNDEFINED_6 ) word = WORD_POS_UNDEFINED_7;
+				else if( word == WORD_POS_INFINITY_1 ) word = WORD_POS_INFINITY_2;
+				else if( word == WORD_POS_INFINITY_5 ) word = WORD_POS_INFINITY_6;
 // fault
 				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
 				break;
@@ -51293,6 +51365,8 @@ LOGICAL json_parse_message( TEXTSTR msg
 				break;
 			case 'i':
 				if( word == WORD_POS_UNDEFINED_5 ) word = WORD_POS_UNDEFINED_6;
+				else if( word == WORD_POS_INFINITY_3 ) word = WORD_POS_INFINITY_4;
+				else if( word == WORD_POS_INFINITY_5 ) word = WORD_POS_INFINITY_6;
 // fault
 				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
 				break;
@@ -51308,11 +51382,13 @@ LOGICAL json_parse_message( TEXTSTR msg
 			case 'f':
 				if( word == WORD_POS_RESET ) word = WORD_POS_FALSE_1;
 				else if( word == WORD_POS_UNDEFINED_4 ) word = WORD_POS_UNDEFINED_5;
+				else if( word == WORD_POS_INFINITY_2 ) word = WORD_POS_INFINITY_3;
 // fault
 				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
 				break;
 			case 'a':
 				if( word == WORD_POS_FALSE_1 ) word = WORD_POS_FALSE_2;
+				else if( word == WORD_POS_NAN_1 ) word = WORD_POS_NAN_2;
 // fault
 				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
 				break;
@@ -51321,12 +51397,32 @@ LOGICAL json_parse_message( TEXTSTR msg
 // fault
 				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
 				break;
+			case 'I':
+				if( word == WORD_POS_RESET ) word = WORD_POS_INFINITY_1;
+// fault
+				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
+				break;
+			case 'N':
+				if( word == WORD_POS_RESET ) word = WORD_POS_NAN_1;
+				else if( word == WORD_POS_NAN_2 ) { val.value_type = negative ? VALUE_NEG_NAN : VALUE_NAN; word = WORD_POS_RESET; }
+// fault
+				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
+				break;
+			case 'y':
+				if( word == WORD_POS_INFINITY_7 ) { val.value_type = negative ? VALUE_NEG_INFINITY : VALUE_INFINITY; word = WORD_POS_RESET; }
+// fault
+				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
+				break;
 		//
 		  //----------------------------------------------------------
+			case '-':
+				negative = !negative;
+				break;
 			default:
-				if( ( c >= '0' && c <= '9' )
-					|| ( c == '-' ) )
+				if( ( c >= '0' && c <= '9' ) || ( c == '+' ) )
 				{
+					LOGICAL fromHex;
+					fromHex = FALSE;
 					// always reset this here....
 					// keep it set to determine what sort of value is ready.
 					val.float_result = 0;
@@ -51344,6 +51440,17 @@ LOGICAL json_parse_message( TEXTSTR msg
 						{
 							msg[m++] = c;
 						}
+						else if( c == 'x' ) {
+							// hex conversion.
+							if( !fromHex ) {
+								fromHex = TRUE;
+								msg[m++] = c;
+							}
+							else {
+								lprintf( WIDE("fault wile parsing; '%c' unexpected at %") _size_f, c, n );
+								break;
+							}
+						}
 						else if( ( c =='e' ) || ( c == 'E' ) || ( c == '.' ) )
 						{
 							val.float_result = 1;
@@ -51360,10 +51467,12 @@ LOGICAL json_parse_message( TEXTSTR msg
 						{
 							CTEXTSTR endpos;
 							val.result_d = FloatCreateFromText( val.string, &endpos );
+							if( negative ) { val.result_d = -val.result_d; negative = FALSE; }
 						}
 						else
 						{
 							val.result_n = IntCreateFromText( val.string );
+							if( negative ) { val.result_n = -val.result_n; negative = FALSE; }
 						}
 					}
 					msg_input = _msg_input;

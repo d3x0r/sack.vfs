@@ -11407,6 +11407,10 @@ enum json_value_types {
 	, VALUE_NUMBER = 5
 	, VALUE_OBJECT = 6
 	, VALUE_ARRAY = 7
+	, VALUE_NEG_NAN = 8
+	, VALUE_NAN = 9
+	, VALUE_NEG_INFINITY = 10
+	, VALUE_INFINITY = 11
 };
 struct json_value_container {
   // name of this value (if it's contained in an object)

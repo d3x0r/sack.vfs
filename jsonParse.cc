@@ -79,6 +79,15 @@ static Local<Value> makeValue( Isolate *isolate, struct json_value_container *va
 		return Array::New( isolate );
 	case VALUE_OBJECT:
 		return Object::New( isolate );
+	case VALUE_NEG_NAN:
+		return Number::New(isolate, -NAN);
+	case VALUE_NAN:
+		return Number::New(isolate, NAN);
+	case VALUE_NEG_INFINITY:
+		return Number::New(isolate, -INFINITY);
+	case VALUE_INFINITY:
+		return Number::New(isolate, INFINITY);
+	
 	}
 
 }
@@ -88,6 +97,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate )
 	struct json_value_container *val;
 	Local<Object> sub_o;
 	INDEX idx;
+	int index = 0;
 	DATA_FORALL( msg_data, idx, struct json_value_container*, val )
 	{
 	switch( val->value_type ) {
@@ -141,9 +151,14 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate )
 			buildObject( val->contains, sub_o, isolate );
 			break;
 	case VALUE_OBJECT:
-			o->Set( String::NewFromUtf8( isolate,val->name )
-						, sub_o = Object::New( isolate )
-			 );
+			if( val->name )
+				o->Set( String::NewFromUtf8( isolate,val->name )
+							, sub_o = Object::New( isolate )
+				 );
+			else
+				o->Set( index++, sub_o = Object::New( isolate )
+				 );
+
 			buildObject( val->contains, sub_o, isolate );
 			break;
 		}
