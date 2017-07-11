@@ -77,7 +77,7 @@ static void asyncmsg( uv_async_t* handle ) {
 	//lprintf( "done calling message notice." );
 }
 
-void ComObject::New( const FunctionCallbackInfo<Value>& args ) {
+void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		if( args.IsConstructCall() ) {
 			char *portName;
@@ -137,7 +137,7 @@ static void CPROC dispatchRead( uintptr_t psv, int nCommId, POINTER buffer, int 
 }
 
 
-void ComObject::onRead( const FunctionCallbackInfo<Value>& args ) {
+void ComObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc < 1 ) {
@@ -157,7 +157,7 @@ void ComObject::onRead( const FunctionCallbackInfo<Value>& args ) {
 	com->readCallback = cb;
 }
 
-void ComObject::writeCom( const FunctionCallbackInfo<Value>& args ) {
+void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 	int argc = args.Length();
 	if( argc < 1 ) {
 		//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "required parameter missing" ) ) );
@@ -177,7 +177,7 @@ void ComObject::writeCom( const FunctionCallbackInfo<Value>& args ) {
 	
 }
 
-void ComObject::closeCom( const FunctionCallbackInfo<Value>& args ) {
+void ComObject::closeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 	
 	ComObject *com = ObjectWrap::Unwrap<ComObject>( args.This() );
 	SackCloseComm( com->handle );

@@ -44,8 +44,8 @@ static char const * const json_value_type_strings_[] = {
 static char const *const *const json_value_type_strings = json_value_type_strings_+1;
 
 
-static void makeJSON( const FunctionCallbackInfo<Value>& args );
-static void parseJSON( const FunctionCallbackInfo<Value>& args );
+static void makeJSON( const v8::FunctionCallbackInfo<Value>& args );
+static void parseJSON( const v8::FunctionCallbackInfo<Value>& args );
 	
 void InitJSON( Isolate *isolate, Handle<Object> exports ){
 	Local<Object> o = Object::New( isolate );
@@ -218,7 +218,7 @@ Local<Value> ParseJSON(  Isolate *isolate, const char *utf8String, size_t len) {
 	return v;
 }
 
-void parseJSON( const FunctionCallbackInfo<Value>& args )
+void parseJSON( const v8::FunctionCallbackInfo<Value>& args )
 {
 	Isolate* isolate = Isolate::GetCurrent();
 	const char *msg;
@@ -230,6 +230,6 @@ void parseJSON( const FunctionCallbackInfo<Value>& args )
 }
 
 
-void makeJSON( const FunctionCallbackInfo<Value>& args ) {
+void makeJSON( const v8::FunctionCallbackInfo<Value>& args ) {
 	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), "undefined :)" ) );
 }

@@ -7,7 +7,7 @@ static void moduleExit( void *arg ) {
 	InvokeExits();
 }
 
-static void vfs_b64xor(const FunctionCallbackInfo<Value>& args ){
+static void vfs_b64xor(const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc > 1 ) {
@@ -22,7 +22,7 @@ static void vfs_b64xor(const FunctionCallbackInfo<Value>& args ){
 	}
 }
 
-static void vfs_u8xor(const FunctionCallbackInfo<Value>& args ){
+static void vfs_u8xor(const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc > 0 ) {
@@ -43,7 +43,7 @@ static void vfs_u8xor(const FunctionCallbackInfo<Value>& args ){
 		Deallocate( char*, out );
 	}
 }
-static void idGenerator(const FunctionCallbackInfo<Value>& args ){
+static void idGenerator(const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	char *r = SRG_ID_Generator();
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, r ) );
@@ -131,7 +131,7 @@ void logBinary( char *x, int n )
 	}
 }
 
-void VolumeObject::mkdir( const FunctionCallbackInfo<Value>& args ){
+void VolumeObject::mkdir( const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc > 0 ) {
@@ -140,7 +140,7 @@ void VolumeObject::mkdir( const FunctionCallbackInfo<Value>& args ){
 	}
 }
 
-void VolumeObject::makeDirectory( const FunctionCallbackInfo<Value>& args ){
+void VolumeObject::makeDirectory( const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc > 0 ) {
@@ -157,7 +157,7 @@ void VolumeObject::makeDirectory( const FunctionCallbackInfo<Value>& args ){
 }
 
 
-void VolumeObject::openVolDb( const FunctionCallbackInfo<Value>& args ) {
+void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( args.IsConstructCall() ) {
@@ -214,7 +214,7 @@ void VolumeObject::openVolDb( const FunctionCallbackInfo<Value>& args ) {
 }
 
 
-static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
+static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = Isolate::GetCurrent();
 	// can't get to this function except if it was an array buffer I allocated and attached this to.
 	Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args.This() );
@@ -223,7 +223,7 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 }
 
 
-	void VolumeObject::fileRead( const FunctionCallbackInfo<Value>& args ) {
+	void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
 
@@ -268,7 +268,7 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 		}
 	}
 
-	void VolumeObject::fileWrite( const FunctionCallbackInfo<Value>& args ) {
+	void VolumeObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
 
@@ -324,7 +324,7 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 	}
 
 
-	void VolumeObject::fileExists( const FunctionCallbackInfo<Value>& args ) {
+	void VolumeObject::fileExists( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
 		String::Utf8Value fName( args[0] );
@@ -335,7 +335,7 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 		}
 	}
 
-	void VolumeObject::getDirectory( const FunctionCallbackInfo<Value>& args ) {
+	void VolumeObject::getDirectory( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
 		struct find_cursor *fi = vol->fsInt->find_create_cursor( (uintptr_t)vol->vol, ".", "*" );
@@ -350,7 +350,7 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 		args.GetReturnValue().Set( result );
 	}
 
-	void VolumeObject::New( const FunctionCallbackInfo<Value>& args ) {
+	void VolumeObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		if( args.IsConstructCall() ) {
 			char *mount_name;
@@ -422,7 +422,7 @@ static void fileBufToString( const FunctionCallbackInfo<Value>& args ) {
 	}
 
 
-void FileObject::Emitter(const FunctionCallbackInfo<Value>& args)
+void FileObject::Emitter(const v8::FunctionCallbackInfo<Value>& args)
 {
 	Isolate* isolate = Isolate::GetCurrent();
 	//HandleScope scope;
@@ -434,7 +434,7 @@ void FileObject::Emitter(const FunctionCallbackInfo<Value>& args)
 	node::MakeCallback(isolate, args.This(), "emit", 2, argv);
 }
 
-void FileObject::readFile(const FunctionCallbackInfo<Value>& args) {
+void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 	Isolate* isolate = Isolate::GetCurrent();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	//SACK_VFS_PROC size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t length );
@@ -456,7 +456,7 @@ void FileObject::readFile(const FunctionCallbackInfo<Value>& args) {
 }
 
 
-void FileObject::writeFile(const FunctionCallbackInfo<Value>& args) {
+void FileObject::writeFile(const v8::FunctionCallbackInfo<Value>& args) {
 	//Isolate* isolate = Isolate::GetCurrent();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 
@@ -476,13 +476,13 @@ void FileObject::writeFile(const FunctionCallbackInfo<Value>& args) {
 
 }
 
-void FileObject::truncateFile(const FunctionCallbackInfo<Value>& args) {
+void FileObject::truncateFile(const v8::FunctionCallbackInfo<Value>& args) {
 	//Isolate* isolate = Isolate::GetCurrent();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	sack_vfs_truncate( file->file ); // sets end of file mark to current position.
 }
 
-void FileObject::seekFile(const FunctionCallbackInfo<Value>& args) {
+void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 #if  V8_AT_LEAST(5, 4)
 //	Isolate* isolate = Isolate::GetCurrent();
 	size_t num1 = (size_t)args[0]->ToNumber(Isolate::GetCurrent()->GetCurrentContext()).FromMaybe(Local<Number>())->Value();
@@ -541,7 +541,7 @@ void FileObject::seekFile(const FunctionCallbackInfo<Value>& args) {
 		//	fileTemplate->GetFunction() );
 	}
 
-	void FileObject::openFile( const FunctionCallbackInfo<Value>& args ) {
+	void FileObject::openFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		if( args.Length() < 1 ) {
 			isolate->ThrowException( Exception::TypeError(

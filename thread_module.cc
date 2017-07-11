@@ -25,7 +25,7 @@ void ThreadObject::Init( Handle<Object> exports ) {
 //-----------------------------------------------------------
 Persistent<Function, CopyablePersistentTraits<Function>> ThreadObject::idleProc;
 
-void ThreadObject::New( const FunctionCallbackInfo<Value>& args ) {
+void ThreadObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() ) {
 		if( idleProc.IsEmpty() ) {
@@ -41,12 +41,12 @@ void ThreadObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 static bool cbWoke;
 
-void ThreadObject::wake( const FunctionCallbackInfo<Value>& args ) {
+void ThreadObject::wake( const v8::FunctionCallbackInfo<Value>& args ) {
 	cbWoke = true;
 }
 
 //-----------------------------------------------------------
-void ThreadObject::relinquish( const FunctionCallbackInfo<Value>& args ) {
+void ThreadObject::relinquish( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = Isolate::GetCurrent();
 	//int delay = 0;
 	//if( args.Length() > 0 && args[0]->IsNumber() )

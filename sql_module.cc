@@ -57,7 +57,7 @@ void SqlObject::Init( Handle<Object> exports ) {
 
 //-----------------------------------------------------------
 
-void SqlObject::New( const FunctionCallbackInfo<Value>& args ) {
+void SqlObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.IsConstructCall() ) {
 		char *dsn;
@@ -152,27 +152,27 @@ int IsTextAnyNumber( CTEXTSTR text, double *fNumber, int64_t *iNumber )
 	return 1;
 }
 //-----------------------------------------------------------
-void SqlObject::closeDb( const FunctionCallbackInfo<Value>& args ) {
+void SqlObject::closeDb( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	CloseDatabase( sql->odbc );
 }
 
-void SqlObject::autoTransact( const FunctionCallbackInfo<Value>& args ) {
+void SqlObject::autoTransact( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	SetSQLAutoTransact( sql->odbc, args[0]->BooleanValue() );
 }
 //-----------------------------------------------------------
-void SqlObject::transact( const FunctionCallbackInfo<Value>& args ) {
+void SqlObject::transact( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	SQLBeginTransact( sql->odbc );
 }
 //-----------------------------------------------------------
-void SqlObject::commit( const FunctionCallbackInfo<Value>& args ) {
+void SqlObject::commit( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
@@ -180,7 +180,7 @@ void SqlObject::commit( const FunctionCallbackInfo<Value>& args ) {
 }
 //-----------------------------------------------------------
 
-void SqlObject::escape( const FunctionCallbackInfo<Value>& args ) {
+void SqlObject::escape( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	if( args[0]->IsUndefined() ) return; // undefined is still undefined
@@ -195,7 +195,7 @@ void SqlObject::escape( const FunctionCallbackInfo<Value>& args ) {
 
 }
 //-----------------------------------------------------------
-void SqlObject::query( const FunctionCallbackInfo<Value>& args ) {
+void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 
 	char *query;
@@ -282,7 +282,7 @@ OptionTreeObject::OptionTreeObject()  {
 OptionTreeObject::~OptionTreeObject() {
 }
 
-void OptionTreeObject::New(const FunctionCallbackInfo<Value>& args) {
+void OptionTreeObject::New(const v8::FunctionCallbackInfo<Value>& args) {
 	Isolate* isolate = args.GetIsolate();
 
 	if (args.IsConstructCall()) {
@@ -327,7 +327,7 @@ void OptionTreeObject::Init(  ) {
 }
 
 
-void SqlObject::getOptionNode( const FunctionCallbackInfo<Value>& args ) {
+void SqlObject::getOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 
 	int argc = args.Length();
@@ -356,7 +356,7 @@ void SqlObject::getOptionNode( const FunctionCallbackInfo<Value>& args ) {
 }
 
 
-void OptionTreeObject::getOptionNode( const FunctionCallbackInfo<Value>& args ) {
+void OptionTreeObject::getOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 
 	int argc = args.Length();
@@ -383,7 +383,7 @@ void OptionTreeObject::getOptionNode( const FunctionCallbackInfo<Value>& args ) 
 	Release( optionPath );
 }
 
-void SqlObject::findOptionNode( const FunctionCallbackInfo<Value>& args ) {
+void SqlObject::findOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 
 	int argc = args.Length();
@@ -414,7 +414,7 @@ void SqlObject::findOptionNode( const FunctionCallbackInfo<Value>& args ) {
 }
 
 
-void OptionTreeObject::findOptionNode( const FunctionCallbackInfo<Value>& args ) {
+void OptionTreeObject::findOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 
 	int argc = args.Length();
@@ -468,7 +468,7 @@ int CPROC invokeCallback( uintptr_t psv, CTEXTSTR name, POPTION_TREE_NODE ID, in
 }
 
 
-void SqlObject::enumOptionNodes( const FunctionCallbackInfo<Value>& args ) {
+void SqlObject::enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args ) {
 	struct enumArgs callbackArgs;
 	callbackArgs.isolate = args.GetIsolate();
 
@@ -495,7 +495,7 @@ void SqlObject::enumOptionNodes( const FunctionCallbackInfo<Value>& args ) {
 	EnumOptionsEx( sqlParent->odbc, NULL, invokeCallback, (uintptr_t)&callbackArgs );
 }
 
-void OptionTreeObject::enumOptionNodes( const FunctionCallbackInfo<Value>& args ) {
+void OptionTreeObject::enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args ) {
 	struct enumArgs callbackArgs;
 	callbackArgs.isolate = args.GetIsolate();
 
@@ -537,7 +537,7 @@ void OptionTreeObject::writeOptionNode( v8::Local<v8::String> field,
 }
 
 
-static void option_( const FunctionCallbackInfo<Value>& args, int internal ) {
+static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal ) {
 	Isolate* isolate = args.GetIsolate();
 
 	int argc = args.Length();
@@ -601,17 +601,17 @@ static void option_( const FunctionCallbackInfo<Value>& args, int internal ) {
 	Deallocate( char*, defaultVal );
 }
 
-void SqlObject::option( const FunctionCallbackInfo<Value>& args ) {
+void SqlObject::option( const v8::FunctionCallbackInfo<Value>& args ) {
 	option_( args, 0 );
 }
 
-void SqlObject::optionInternal( const FunctionCallbackInfo<Value>& args ) {
+void SqlObject::optionInternal( const v8::FunctionCallbackInfo<Value>& args ) {
 	option_( args, 1 );
 }
 
 //-----------------------------------------------------------
 
-static void setOption( const FunctionCallbackInfo<Value>& args, int internal ) {
+static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal ) {
 	Isolate* isolate = args.GetIsolate();
 
 	int argc = args.Length();
@@ -667,16 +667,16 @@ static void setOption( const FunctionCallbackInfo<Value>& args, int internal ) {
 	Deallocate( char*, defaultVal );
 }
 
-void SqlObject::setOption( const FunctionCallbackInfo<Value>& args ) {
+void SqlObject::setOption( const v8::FunctionCallbackInfo<Value>& args ) {
 	::setOption( args, 0 );
 }
-void SqlObject::setOptionInternal( const FunctionCallbackInfo<Value>& args ) {
+void SqlObject::setOptionInternal( const v8::FunctionCallbackInfo<Value>& args ) {
 	::setOption( args, 1 );
 }
 
 //-----------------------------------------------------------
 
-void SqlObject::makeTable( const FunctionCallbackInfo<Value>& args ) {
+void SqlObject::makeTable( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 
 	int argc = args.Length();

@@ -35,7 +35,7 @@ static HKEY resolveHive( char *name ) {
 
 
 
-void RegObject::getRegItem(const FunctionCallbackInfo<Value>& args ) {
+void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = Isolate::GetCurrent();
 	lprintf( "Get Item! Yay." );
 	int argc = args.Length();
@@ -176,7 +176,7 @@ void RegObject::getRegItem(const FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
-void RegObject::setRegItem(const FunctionCallbackInfo<Value>& args ) {
+void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = Isolate::GetCurrent();
 
 	lprintf( "Set Item! Yay." );

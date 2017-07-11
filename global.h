@@ -30,14 +30,14 @@ public:
 	static void Init( Handle<Object> exports );
 	VolumeObject( const char *mount, const char *filename, const char *key, const char *key2 );
 
-	static void New( const FunctionCallbackInfo<Value>& args );
-	static void getDirectory( const FunctionCallbackInfo<Value>& args );
-	static void fileRead( const FunctionCallbackInfo<Value>& args );
-	static void fileWrite( const FunctionCallbackInfo<Value>& args );
-	static void fileExists( const FunctionCallbackInfo<Value>& args );
-	static void openVolDb( const FunctionCallbackInfo<Value>& args );
-	static void makeDirectory( const FunctionCallbackInfo<Value>& args );
-	static void mkdir( const FunctionCallbackInfo<Value>& args );
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	static void getDirectory( const v8::FunctionCallbackInfo<Value>& args );
+	static void fileRead( const v8::FunctionCallbackInfo<Value>& args );
+	static void fileWrite( const v8::FunctionCallbackInfo<Value>& args );
+	static void fileExists( const v8::FunctionCallbackInfo<Value>& args );
+	static void openVolDb( const v8::FunctionCallbackInfo<Value>& args );
+	static void makeDirectory( const v8::FunctionCallbackInfo<Value>& args );
+	static void mkdir( const v8::FunctionCallbackInfo<Value>& args );
 
 	~VolumeObject();
 };
@@ -52,10 +52,10 @@ public:
 	static void Init( Handle<Object> exports );
 	ThreadObject();
 
-	static void New( const FunctionCallbackInfo<Value>& args );
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
 
-	static void relinquish( const FunctionCallbackInfo<Value>& args );
-	static void wake( const FunctionCallbackInfo<Value>& args );
+	static void relinquish( const v8::FunctionCallbackInfo<Value>& args );
+	static void wake( const v8::FunctionCallbackInfo<Value>& args );
 
 	~ThreadObject();
 };
@@ -73,15 +73,15 @@ public:
 	static v8::Persistent<v8::Function> constructor;
 	static void Init(  );
 
-	static void openFile( const FunctionCallbackInfo<Value>& args );
-	static void readFile( const FunctionCallbackInfo<Value>& args );
-	static void writeFile( const FunctionCallbackInfo<Value>& args );
-	static void seekFile( const FunctionCallbackInfo<Value>& args );
-	static void truncateFile( const FunctionCallbackInfo<Value>& args );
+	static void openFile( const v8::FunctionCallbackInfo<Value>& args );
+	static void readFile( const v8::FunctionCallbackInfo<Value>& args );
+	static void writeFile( const v8::FunctionCallbackInfo<Value>& args );
+	static void seekFile( const v8::FunctionCallbackInfo<Value>& args );
+	static void truncateFile( const v8::FunctionCallbackInfo<Value>& args );
 
-	//static void readFile( const FunctionCallbackInfo<Value>& args );
+	//static void readFile( const v8::FunctionCallbackInfo<Value>& args );
 
-	static void Emitter( const FunctionCallbackInfo<Value>& args );
+	static void Emitter( const v8::FunctionCallbackInfo<Value>& args );
 
 	FileObject( VolumeObject* vol, const char *filename, Isolate*, Local<Object> o );
 	~FileObject();
@@ -103,22 +103,22 @@ public:
 	static void Init( Handle<Object> exports );
 	SqlObject( const char *dsn );
 
-	static void New( const FunctionCallbackInfo<Value>& args );
-	static void query( const FunctionCallbackInfo<Value>& args );
-	static void escape( const FunctionCallbackInfo<Value>& args );
-	static void option( const FunctionCallbackInfo<Value>& args );
-	static void setOption( const FunctionCallbackInfo<Value>& args );
-	static void optionInternal( const FunctionCallbackInfo<Value>& args );
-	static void setOptionInternal( const FunctionCallbackInfo<Value>& args );
-	static void makeTable( const FunctionCallbackInfo<Value>& args );
-	static void closeDb( const FunctionCallbackInfo<Value>& args );
-	static void commit( const FunctionCallbackInfo<Value>& args );
-	static void transact( const FunctionCallbackInfo<Value>& args );
-	static void autoTransact( const FunctionCallbackInfo<Value>& args );
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	static void query( const v8::FunctionCallbackInfo<Value>& args );
+	static void escape( const v8::FunctionCallbackInfo<Value>& args );
+	static void option( const v8::FunctionCallbackInfo<Value>& args );
+	static void setOption( const v8::FunctionCallbackInfo<Value>& args );
+	static void optionInternal( const v8::FunctionCallbackInfo<Value>& args );
+	static void setOptionInternal( const v8::FunctionCallbackInfo<Value>& args );
+	static void makeTable( const v8::FunctionCallbackInfo<Value>& args );
+	static void closeDb( const v8::FunctionCallbackInfo<Value>& args );
+	static void commit( const v8::FunctionCallbackInfo<Value>& args );
+	static void transact( const v8::FunctionCallbackInfo<Value>& args );
+	static void autoTransact( const v8::FunctionCallbackInfo<Value>& args );
 
-	static void enumOptionNodes( const FunctionCallbackInfo<Value>& args );
-	static void findOptionNode( const FunctionCallbackInfo<Value>& args );
-	static void getOptionNode( const FunctionCallbackInfo<Value>& args );
+	static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args );
+	static void findOptionNode( const v8::FunctionCallbackInfo<Value>& args );
+	static void getOptionNode( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void doWrap( SqlObject *sql, Local<Object> o ); 
 
@@ -137,11 +137,11 @@ public:
 	static void Init( );
 	OptionTreeObject(  );
 
-	static void New( const FunctionCallbackInfo<Value>& args );
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
 
-	static void enumOptionNodes( const FunctionCallbackInfo<Value>& args );
-	static void findOptionNode( const FunctionCallbackInfo<Value>& args );
-	static void getOptionNode( const FunctionCallbackInfo<Value>& args );
+	static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args );
+	static void findOptionNode( const v8::FunctionCallbackInfo<Value>& args );
+	static void getOptionNode( const v8::FunctionCallbackInfo<Value>& args );
 	static void writeOptionNode( v8::Local<v8::String> field,
 		v8::Local<v8::Value> val,
 		const PropertyCallbackInfo<void>&info );
@@ -169,11 +169,11 @@ public:
 	static void Init( Handle<Object> exports );
 	ComObject( char *name );
 
-	static void New( const FunctionCallbackInfo<Value>& args );
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
 
-	static void onRead( const FunctionCallbackInfo<Value>& args );
-	static void writeCom( const FunctionCallbackInfo<Value>& args );
-	static void closeCom( const FunctionCallbackInfo<Value>& args );
+	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
+	static void writeCom( const v8::FunctionCallbackInfo<Value>& args );
+	static void closeCom( const v8::FunctionCallbackInfo<Value>& args );
 
 
 	~ComObject();
@@ -193,10 +193,10 @@ public:
 	static void Init( Handle<Object> exports );
 	RegObject();
 
-	static void New( const FunctionCallbackInfo<Value>& args );
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
 
-	static void getRegItem( const FunctionCallbackInfo<Value>& args );
-	static void setRegItem( const FunctionCallbackInfo<Value>& args );
+	static void getRegItem( const v8::FunctionCallbackInfo<Value>& args );
+	static void setRegItem( const v8::FunctionCallbackInfo<Value>& args );
 
 
 	~RegObject();
@@ -218,16 +218,16 @@ public:
 	static void Init( Handle<Object> exports );
 	WebSockClientObject();
 
-	static void New( const FunctionCallbackInfo<Value>& args );
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
 
-	static void open( const FunctionCallbackInfo<Value>& args );
-	static void on( const FunctionCallbackInfo<Value>& args );
-	static void send( const FunctionCallbackInfo<Value>& args );
-	static void close( const FunctionCallbackInfo<Value>& args );
+	static void open( const v8::FunctionCallbackInfo<Value>& args );
+	static void on( const v8::FunctionCallbackInfo<Value>& args );
+	static void send( const v8::FunctionCallbackInfo<Value>& args );
+	static void close( const v8::FunctionCallbackInfo<Value>& args );
 
 
 	~WebSockClientObject();
 };
 
 
-void InitFS( const FunctionCallbackInfo<Value>& args );
+void InitFS( const v8::FunctionCallbackInfo<Value>& args );
