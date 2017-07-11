@@ -20,7 +20,7 @@
             'defines': [
               '__LINUX__'
             ],
-            'cflags_cc': ['-Wno-self-assign', '-Wno-null-conversion', '-Wno-parentheses'
+            'cflags_cc': [`-Wno-implicit-fallthrough=','-Wno-misleading-indentation','-Wno-parentheses'
 			,'-Wno-char-subscripts'
 			,'-Wno-empty-body','-Wno-format', '-Wno-address'
 			, '-Wno-strict-aliasing', '-Wno-switch', '-Wno-missing-field-initializers' 

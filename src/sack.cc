@@ -35503,7 +35503,7 @@ TEXTSTR sack_prepend_path( INDEX group, CTEXTSTR filename )
 #define HANDLE int
 #define INVALID_HANDLE_VALUE -1
 #endif
-static int DetectUnicodeBOM( FILE *file ) {
+static void DetectUnicodeBOM( FILE *file ) {
    //00 00 FE FF     UTF-32, big-endian
    //FF FE 00 00     UTF-32, little-endian
    //FE FF           UTF-16, big-endian
@@ -78936,7 +78936,7 @@ using namespace sack::memory;
 struct params
 {
 	CTEXTSTR name;
-   PODBC odbc;
+	PODBC odbc;
 };
 static int CPROC MyParmCmp( uintptr_t s1, uintptr_t s2 )
 {
@@ -79053,7 +79053,7 @@ INDEX GetNameIndexExtended( PODBC odbc
 //-----------------------------------------------------------------------
 INDEX GetNameIndexExx( PODBC odbc, CTEXTSTR name, CTEXTSTR table, CTEXTSTR col, CTEXTSTR namecol, int bCreate DBG_PASS )
 {
-   return GetNameIndexExtended( odbc, name,table,col,namecol,bCreate,TRUE DBG_RELAY );
+	return GetNameIndexExtended( odbc, name,table,col,namecol,bCreate,TRUE DBG_RELAY );
 }
 //-----------------------------------------------------------------------
 CTEXTSTR FetchLastInsertKeyEx( PODBC odbc, CTEXTSTR table, CTEXTSTR col DBG_PASS )
@@ -79069,7 +79069,7 @@ CTEXTSTR FetchLastInsertKeyEx( PODBC odbc, CTEXTSTR table, CTEXTSTR col DBG_PASS
 		Release( RecordID );
 		RecordID = NULL;
 	}
-   //lprintf( "getting last insert ID?" );
+	//lprintf( "getting last insert ID?" );
 #ifdef POSGRES_BACKEND
 	{
 		CTEXTSTR result = NULL;
@@ -79086,7 +79086,7 @@ CTEXTSTR FetchLastInsertKeyEx( PODBC odbc, CTEXTSTR table, CTEXTSTR col DBG_PASS
 	// extended sqlite functions with LAST_INSERT_ID() so the following code would work alos.
 	if( odbc->flags.bSQLite_native )
 	{
-      // can also be done with 'select last_insert_rowid()'
+		// can also be done with 'select last_insert_rowid()'
 		RecordID = NewArray( TEXTCHAR, 32 );
 		tnprintf( RecordID, 32, WIDE("%") _size_f, (INDEX)sqlite3_last_insert_rowid( odbc->db ) );
 	}
@@ -79115,19 +79115,19 @@ CTEXTSTR FetchLastInsertKeyEx( PODBC odbc, CTEXTSTR table, CTEXTSTR col DBG_PASS
 //-----------------------------------------------------------------------
 INDEX FetchLastInsertIDEx( PODBC odbc, CTEXTSTR table, CTEXTSTR col DBG_PASS )
 {
-   CTEXTSTR result_key = FetchLastInsertKeyEx( odbc, table, col DBG_RELAY );
+	CTEXTSTR result_key = FetchLastInsertKeyEx( odbc, table, col DBG_RELAY );
 	INDEX result = result_key?(INDEX)IntCreateFromText( result_key ) : INVALID_INDEX;
-   return result;
+	return result;
 }
 //-----------------------------------------------------------------------
 CTEXTSTR  GetLastInsertKeyEx( CTEXTSTR table, CTEXTSTR col DBG_PASS )
 {
-   return FetchLastInsertKeyEx( NULL, table, col DBG_RELAY );
+	return FetchLastInsertKeyEx( NULL, table, col DBG_RELAY );
 }
 //-----------------------------------------------------------------------
  INDEX  GetLastInsertIDEx( CTEXTSTR table, CTEXTSTR col DBG_PASS )
 {
-   return FetchLastInsertIDEx( NULL, table, col DBG_RELAY );
+	return FetchLastInsertIDEx( NULL, table, col DBG_RELAY );
 }
 //---------------------------------------------------------------------------
 #undef EscapeBinary
@@ -79263,15 +79263,15 @@ TEXTCHAR * EscapeBinary ( CTEXTSTR blob, uintptr_t bloblen )
 //---------------------------------------------------------------------------
 TEXTCHAR * EscapeSQLStringEx ( PODBC odbc, CTEXTSTR name DBG_PASS )
 {
-   return EscapeSQLBinaryExx( odbc, name, strlen( name ), FALSE DBG_RELAY );
+	return EscapeSQLBinaryExx( odbc, name, strlen( name ), FALSE DBG_RELAY );
 }
 TEXTCHAR * EscapeStringEx ( CTEXTSTR name DBG_PASS )
 {
-   return EscapeSQLBinaryExx( NULL, name, (uint32_t)strlen( name ), FALSE DBG_RELAY );
+	return EscapeSQLBinaryExx( NULL, name, (uint32_t)strlen( name ), FALSE DBG_RELAY );
 }
 TEXTCHAR * EscapeString ( CTEXTSTR name )
 {
-   return EscapeSQLBinaryExx( NULL, name, strlen( name ), FALSE DBG_SRC );
+	return EscapeSQLBinaryExx( NULL, name, strlen( name ), FALSE DBG_SRC );
 }
 uint8_t hexbyte( TEXTCHAR *string )
 {
@@ -79289,7 +79289,7 @@ uint8_t hexbyte( TEXTCHAR *string )
 			value = (uint8_t)(digit - HEX);
 		}
 		else
-         return 0;
+			return 0;
 	}
 	else
 	{
@@ -79362,12 +79362,12 @@ TEXTSTR RevertEscapeBinary( CTEXTSTR blob, uintptr_t *bloblen )
 				blob[n] =='\'' ||
 				blob[n] == '\"' )
 			{
-            // targetlen is a subtraction for missing charactercount
-            targetlen++;
+				// targetlen is a subtraction for missing charactercount
+				targetlen++;
 			}
-         escape = 0;
+			escape = 0;
 		}
-      n++;
+		n++;
 	}
 	if( bloblen )
 	{
@@ -79401,13 +79401,13 @@ TEXTSTR RevertEscapeBinary( CTEXTSTR blob, uintptr_t *bloblen )
 			(*tmpnamebuf++) = blob[n];
 	}
  // best terminate this thing.
-   (*tmpnamebuf) = 0;
-   return result;
+	(*tmpnamebuf) = 0;
+	return result;
 }
 //---------------------------------------------------------------------------
 TEXTSTR RevertEscapeString( CTEXTSTR name )
 {
-   return RevertEscapeBinary( name, NULL );
+	return RevertEscapeBinary( name, NULL );
 }
 //---------------------------------------------------------------------------
  INDEX  SQLReadNameTableExEx( PODBC odbc, CTEXTSTR name, CTEXTSTR table, CTEXTSTR col, CTEXTSTR namecol, int bCreate DBG_PASS )
@@ -79464,7 +79464,7 @@ TEXTSTR RevertEscapeString( CTEXTSTR name )
 //---------------------------------------------------------------------------
  INDEX  ReadNameTableEx( CTEXTSTR name, CTEXTSTR table, CTEXTSTR col DBG_PASS )
 {
-   return ReadNameTableExEx( name,table,col,WIDE("name"),TRUE DBG_RELAY);
+	return ReadNameTableExEx( name,table,col,WIDE("name"),TRUE DBG_RELAY);
 }
 //---------------------------------------------------------------------------
  int  ReadFromNameTableEx ( INDEX id, CTEXTSTR table, CTEXTSTR id_colname, CTEXTSTR name_colname, CTEXTSTR *result DBG_PASS)
@@ -79474,7 +79474,7 @@ TEXTSTR RevertEscapeString( CTEXTSTR name )
 		return FALSE;
 	// the tree locally cached is in NAME order, but the data is
 	// the key, so we would have to scan the tree otherwise both directions
-   // keyed so that we could get the name key from the ID data..
+	// keyed so that we could get the name key from the ID data..
 	tnprintf( query, sizeof( query ), WIDE("select %s from %s where %s=%") _size_f
 			  , name_colname?name_colname:WIDE("name")
 			  , table
@@ -79499,7 +79499,7 @@ TEXTSTR RevertEscapeString( CTEXTSTR name )
 		return FALSE;
 	// the tree locally cached is in NAME order, but the data is
 	// the key, so we would have to scan the tree otherwise both directions
-   // keyed so that we could get the name key from the ID data..
+	// keyed so that we could get the name key from the ID data..
 	tnprintf( query, sizeof( query ), WIDE("select %s from %s where %s=%") _size_f
 			, colname
 			  , table
@@ -79533,19 +79533,19 @@ TEXTSTR RevertEscapeString( CTEXTSTR name )
 	{
 		TEXTCHAR sec_file[284];
 		FILE *file;
-      sec_file[0] = 0;
+		sec_file[0] = 0;
 		file = sack_fopen( 0, filename, WIDE("rt") );
 		if( !file )
 		{
 			if( !pathchr( filename ) )
 			{
 #ifndef HAVE_ENVIRONMENT
-            CTEXTSTR path = OSALOT_GetEnvironmentVariable( WIDE( "MY_LOAD_PATH" ) );
+				CTEXTSTR path = OSALOT_GetEnvironmentVariable( WIDE( "MY_LOAD_PATH" ) );
 				tnprintf( sec_file, sizeof( sec_file ), WIDE( "%s/%s" ), path, filename );
 #else
 				tnprintf( sec_file, sizeof( sec_file ), WIDE( "%s" ), filename );
 #endif
-            file = sack_fopen( 0, sec_file, WIDE("rt") );
+				file = sack_fopen( 0, sec_file, WIDE("rt") );
 			}
 		}
 		if( file )
@@ -79647,11 +79647,11 @@ TEXTSTR RevertEscapeString( CTEXTSTR name )
 							//DebugBreak();
 							{
 								PTABLE table;
-                        PTEXT cmd = VarTextGet( pvt_cmd );
+								PTEXT cmd = VarTextGet( pvt_cmd );
 								table = GetFieldsInSQL( GetText( cmd ), 1 );
 								CheckODBCTable( odbc, table, options );
 								DestroySQLTable( table );
-                        LineRelease( cmd );
+								LineRelease( cmd );
 							}
 							break;
 						}
@@ -79669,7 +79669,7 @@ TEXTSTR RevertEscapeString( CTEXTSTR name )
 		{
 			lprintf( WIDE("Unable to open templatefile: %s or %s/%s"), filename
 					 , OSALOT_GetEnvironmentVariable( WIDE( "MY_LOAD_PATH" ) )
-                 , filename );
+			        , filename );
 		}
 	}
 	return TRUE;
@@ -79732,14 +79732,14 @@ void DumpSQLTable( PTABLE table )
 	for( n = 0; n < table->fields.count; n++ )
 	{
 		lprintf( WIDE( "Column %d '%s' [%s] [%s]" )
-              , n
+		        , n
 				 ,( table->fields.field[n].name )
 				 ,( table->fields.field[n].type )
 				 ,( table->fields.field[n].extra )
 				 );
 		for( m = 0; table->fields.field[n].previous_names[m] && m < MAX_PREVIOUS_FIELD_NAMES; m++ )
 		{
-         //Release( (POINTER)table->fields.field[n].previous_names[m] );
+			//Release( (POINTER)table->fields.field[n].previous_names[m] );
 		}
 	}
 	for( n = 0; n < table->keys.count; n++ )
@@ -79755,10 +79755,10 @@ void DumpSQLTable( PTABLE table )
 }
  int  CreateTableEx ( CTEXTSTR filename, CTEXTSTR templatename, CTEXTSTR tablename, uint32_t options )
 {
-   OpenSQL( DBG_VOIDSRC );
-   if( g.odbc )
+	OpenSQL( DBG_VOIDSRC );
+	if( g.odbc )
 		return SQLCreateTableEx( g.odbc, filename, templatename, tablename, options );
-   return FALSE;
+	return FALSE;
 }
 #define FAILPARSE() do { if( ( start[0] < '0' ) || ( start[0] > '9' ) ) {  lprintf( WIDE("string fails date parsing... %s"), timestring );                  return 0; } } while (0);
  int  ConvertDBTimeString ( CTEXTSTR timestring
@@ -79767,39 +79767,39 @@ void DumpSQLTable( PTABLE table )
 													 , int *phr, int *pmn, int *psc )
 {
 	int mo,dy,yr;
-   int hr = 0,mn = 0,sc = 0;
+	int hr = 0,mn = 0,sc = 0;
 	CTEXTSTR start;
 	start = timestring;
 	if( !start )
 	{
-      if( pyr ) (*pyr) = 0;
-      if( pmo ) (*pmo) = 0;
-      if( pdy ) (*pdy) = 0;
-      if( phr ) (*phr) = 0;
-      if( pmn ) (*pmn) = 0;
-      if( psc ) (*psc) = 0;
+		if( pyr ) (*pyr) = 0;
+		if( pmo ) (*pmo) = 0;
+		if( pdy ) (*pdy) = 0;
+		if( phr ) (*phr) = 0;
+		if( pmn ) (*pmn) = 0;
+		if( psc ) (*psc) = 0;
 		return 0;
 	}
 	yr = 0;
-   FAILPARSE();
+	FAILPARSE();
 	yr = (yr * 10) + (*start++) - '0';
-   FAILPARSE();
+	FAILPARSE();
 	yr = (yr * 10) + (*start++) - '0';
-   FAILPARSE();
+	FAILPARSE();
 	yr = (yr * 10) + (*start++) - '0';
-   FAILPARSE();
+	FAILPARSE();
 	yr = (yr * 10) + (*start++) - '0';
 	if( (*start) == '-' ) start++;
 	mo = 0;
-   FAILPARSE();
+	FAILPARSE();
 	mo = (mo * 10) + (*start++) - '0';
-   FAILPARSE();
+	FAILPARSE();
 	mo = (mo * 10) + (*start++) - '0';
 	if( (*start) == '-' ) start++;
 	dy = 0;
-   FAILPARSE();
+	FAILPARSE();
 	dy = (dy * 10) + (*start++) - '0';
-   FAILPARSE();
+	FAILPARSE();
 	dy = (dy * 10) + (*start++) - '0';
 	if( (*start) == ' ' )
 	{
@@ -79833,7 +79833,7 @@ void DumpSQLTable( PTABLE table )
 		*pmn = mn;
 	if( psc )
 		*psc = sc;
-   return 1;
+	return 1;
 }
 LOGICAL CheckAccessODBCTable( PODBC odbc, PTABLE table, uint32_t options )
 {
@@ -79942,7 +79942,7 @@ retry:
 				// close all prior statement handles so it's not locked
 				// especially my own.
  // release so that the alter statement may be done.
-	            PopODBCEx( odbc );
+				PopODBCEx( odbc );
 				SQLCommand( odbc, GetText( pt_cmd ) );
 				LineRelease( pt_cmd );
 			}
@@ -79962,7 +79962,7 @@ retry:
 			// ODBC driver is old and does not support
 			// 'TOP' command... please try again, using a less fancy
 			// select... since it's file based, probably the data is not
-         // all read, but one row at a time is read from the database.
+			// all read, but one row at a time is read from the database.
 			if( !retry )
 			{
 				cmd = WIDE("select * from [%s]");
@@ -80006,7 +80006,7 @@ retry:
 							  , WIDE( "" )
 							  );
 				}
-            else
+				else
 				{
 					vtprintf( pvtCreate, WIDE("%s[%s] %s%s%s")
 							  , first?WIDE( "" ):WIDE( "," )
@@ -80022,10 +80022,10 @@ retry:
 			}
 			// not even sure where in the syntax key fields go...
 			// does access actually have key fields?  or just things
-         // called key fields
+			// called key fields
 			//for( n = 0; n < table->keys.count; n++ )
 			//{
-            // for implementation see Check MYSQL
+				// for implementation see Check MYSQL
 			//}
 			vtprintf( pvtCreate, WIDE(")") );
 			pt_cmd = VarTextGet( pvtCreate );
@@ -80039,7 +80039,7 @@ retry:
 	}
 	if( pvtCreate )
 		VarTextDestroy( &pvtCreate );
-   return 1;
+	return 1;
 }
 LOGICAL CPROC CheckMySQLODBCTable( PODBC odbc, PTABLE table, uint32_t options )
 {
@@ -80071,10 +80071,10 @@ LOGICAL CPROC CheckMySQLODBCTable( PODBC odbc, PTABLE table, uint32_t options )
 	else
 #endif
 		buflen += tnprintf( cmd+buflen , 1024-buflen,WIDE("show create table `%s`") ,table->name);
-   if( buflen < 1024 )
+	if( buflen < 1024 )
 		cmd[buflen] = 0;
 	else
-      cmd[1023] = 0;
+		cmd[1023] = 0;
 	retry = 0;
 retry:
 	PushSQLQueryEx( odbc );
@@ -80354,7 +80354,7 @@ retry:
 								  , table->fields.field[n].extra?table->fields.field[n].extra:WIDE("")
 								  );
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
-               if( odbc->flags.bSQLite_native )
+					if( odbc->flags.bSQLite_native )
 					{
 						int k;
 						for( k = 0; k < table->keys.count; k++ )
@@ -80522,7 +80522,7 @@ retry:
 				if( !odbc->flags.bSQLite_native )
 #endif
 				{
-               /* these are not supported under sqlite backend*/
+					/* these are not supported under sqlite backend*/
 					if( table->type )
 						vtprintf( pvtCreate, WIDE("TYPE=%s"),table->type ) ;
 					//else
@@ -80571,7 +80571,7 @@ LOGICAL CheckODBCTableEx( PODBC odbc, PTABLE table, uint32_t options DBG_PASS )
 #undef CheckODBCTable
 LOGICAL CheckODBCTable( PODBC odbc, PTABLE table, uint32_t options )
 {
-   return CheckODBCTableEx( odbc, table, options DBG_SRC );
+	return CheckODBCTableEx( odbc, table, options DBG_SRC );
 }
 static void CreateNameTable( PODBC odbc, CTEXTSTR table_name )
 {
