@@ -1,6 +1,6 @@
 
 #include "global.h"
-
+#include <math.h>
 
 static char const * const  JSON_ObjectElementTypeStrings[] =
 {
@@ -53,6 +53,9 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 	NODE_SET_METHOD( o, "stringify", makeJSON );
 	exports->Set( String::NewFromUtf8( isolate, "JSON" ), o );
 }
+
+#ifndef NAN
+#define NAN 
 
 static Local<Value> makeValue( Isolate *isolate, struct json_value_container *val ) {
 
