@@ -54,9 +54,6 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 	exports->Set( String::NewFromUtf8( isolate, "JSON" ), o );
 }
 
-#ifndef NAN
-#define NAN 
-
 static Local<Value> makeValue( Isolate *isolate, struct json_value_container *val ) {
 
 	switch( val->value_type ) {
