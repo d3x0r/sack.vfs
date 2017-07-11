@@ -1,7 +1,7 @@
 
 function test () {
 var vfs = require( "./vfs_module.js" )
-console.log( "keys: ", Object.keys( vfs ) );
+//console.log( "keys: ", Object.keys( vfs ) );
 var more = require( "./testaux.js" );
 
 var vol0 = vfs.Volume();
@@ -68,5 +68,5 @@ file = null;
 
  
 // setTimeout( test, 1000 );
-setTimeout( ()=>{console.log( "was that long enough?")}, 20000 );
+//setTimeout( ()=>{console.log( "was that long enough?")}, 20000 );
  test();
