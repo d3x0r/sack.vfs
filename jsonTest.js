@@ -4,27 +4,66 @@ var vfs = require( "." )
 
 var parse = vfs.JSON.parse;
 
+console.log( "Stringify Test:", vfs.JSON.stringify( { a:123 } ) );
+
+var x = '[' + JSON.stringify( new Date() ) + ']';
+
+console.log( "Date Output is:", x, JSON.stringify( new Date() ) );
+
 var o = parse( "123" );
-console.log( "o is", o );
+console.log( "123 is", o, typeof o );
+var o = parse( "0123" );
+console.log( "0123 is", o, typeof o );
+var o = parse( "0x123" );
+console.log( "0x123 is", o, typeof o );
+var o = parse( "0b1010101" );
+console.log( "0b1010101 is", o, typeof o );
 var o = parse( "\"123\"" );
-console.log( "o is", o );
+console.log( "o is", o, typeof o );
 var o = parse( "null" );
-console.log( "o is", o );
-var o = parse( "true" );
-console.log( "o is", o );
+console.log( "o is", o, typeof o );
+var o = parse( "true", typeof o );
+console.log( "o is", o, typeof o );
 var o = parse( "false" );
-console.log( "o is", o );
+console.log( "o is", o, typeof o );
 var o = parse( "undefined" );
+console.log( "o is", o, typeof o );
+var o = parse( "NaN" );
+console.log( "o is", o, typeof o );
+var o = parse( "-NaN" );
+console.log( "o is", o, typeof o );
+var o = parse( "Infinity" );
+console.log( "o is", o, typeof o );
+var o = parse( "-Infinity" );
+console.log( "o is", o, typeof o );
+
+
+var o = parse( "{a:123}" );
 console.log( "o is", o );
 
+var o = parse( "{a:`abcdef`}" );
+console.log( "o is", o );
+var o = parse( "{a:\"abcdef\"}" );
+console.log( "o is", o );
+
+var o = parse( "{a:'abc\ndef'}" );
+console.log( "o is", o );
+var o = parse( "{a:'abc\\\ndef'}" );
+console.log( "o is", o );
+var o = parse( "{a:'abc\\\r\ndef'}" );
+console.log( "o is", o );
 
 var o = parse( "{\"a\":123}" );
 console.log( "o is", o );
 var o = parse( "[123]" );
 console.log( "o is", o );
 var o = parse( "{\"a\":{\"b\":{\"c\":{\"d\":123}}}}" );
-console.log( "o is", o );
+console.log( "o is", JSON.stringify( o ) );
 
+
+// benchmark - needs some work; ended up somewhat divergent.
+if(false)
+{
 
 var start = Date.now();
 var n;
@@ -47,3 +86,4 @@ for( n = 0; n < 1000000; n++ ) {
 }
 end = Date.now();
 console.log( "1m in ", end-start );
+}
