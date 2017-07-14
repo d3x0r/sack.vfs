@@ -341,9 +341,13 @@ The above script reads the value, reports what it was, if the old value is not t
 example was testing a constant like 526.  if typeof value is a number, value is set as a REG_DWORD.  Otherwise it's set as REG_SZ.
 
 
-### JSON(JSON5) - JSON5 compatible processor
-does not support 'reviver' parameter (yet)
+### JSON([JSON6 https://www.github.com/d3x0r/json6]) - JSON and JSON6 compatible processor 
+Added support 'reviver' parameter.
 
 ``` javascript
-var object = JSON.parse(string);
+var vfs = require( sack.vfs );
+
+var object = vfs.JSON.parse(string [, reviver]);
+
+var object2 = vfs.JSON6.parse(string [, reviver]);
 ```
