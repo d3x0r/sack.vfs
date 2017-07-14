@@ -11406,6 +11406,7 @@ JSON_EMITTER_PROC( LOGICAL, json_parse_message )(  TEXTSTR msg
 //       unquoted field names must be a valid javascript keyword using unicode ID_Start/ID_Continue states to determine valid characters.
 //       this is arbitrary though; and could be reverted to just accepting any character other than ':'.
 //   JSON(6?) support - undefined keyword value
+//       accept \uXXXX, \xXX, \[0-3]xx octal, \u{xxxxx} encodings in strings
 JSON_EMITTER_PROC( LOGICAL, json6_parse_message )(  TEXTSTR msg
 													, size_t msglen
 													, PDATALIST *msg_data_out

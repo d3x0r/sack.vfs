@@ -2,13 +2,12 @@
 
 var vfs = require( "." )
 
-var parse = vfs.JSON.parse;
+var parse = vfs.JSON6.parse;
 
-console.log( "Stringify Test:", vfs.JSON.stringify( { a:123 } ) );
+//console.log( "Stringify Test:", vfs.JSON.stringify( { a:123 } ) );
 
-var x = '[' + JSON.stringify( new Date() ) + ']';
-
-console.log( "Date Output is:", x, JSON.stringify( new Date() ) );
+//var x = '[' + JSON.stringify( new Date() ) + ']';
+//console.log( "Date Output is:", x, JSON.stringify( new Date() ) );
 
 var o = parse( "123" );
 console.log( "123 is", o, typeof o );

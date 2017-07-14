@@ -4,15 +4,12 @@ var vfs;
 try{
   vfs = require( "./build/Debug/sack_vfs.node" );
 } catch(err) { try { /*console.log( err ); */vfs = require( "./build/Release/sack_vfs.node" ); } catch( err ){  console.log( err )} }
-//console.log( "vfs:", vfs );
 
-let tmpParse = vfs.JSON6.parse;
-vfs.JSON6.parse = JSONRevivierWrapper( tmpParse );
-
+let tmpParse6 = vfs.JSON6.parse;
 let tmpParse = vfs.JSON.parse;
-vfs.JSON.parse = JSONRevivierWrapper( tmpParse );
 
-function JSONRevivierWrapper = (parser)=>(string,reviver)=> {
+function JSONReviverWrapper (parser) {
+   return (string,reviver)=> {
 	var result = parser( string );
         return typeof reviver === 'function' ? (function walk(holder, key) {
             var k, v, value = holder[key];
@@ -30,7 +27,13 @@ function JSONRevivierWrapper = (parser)=>(string,reviver)=> {
             }
             return reviver.call(holder, key, value);
         }({'': result}, '')) : result;
+   }
 }
+
+vfs.JSON6.parse = JSONReviverWrapper( tmpParse6 );
+
+vfs.JSON.parse = JSONReviverWrapper( tmpParse );
+
 
 process.on( 'beforeExit', ()=>vfs.Thread() );
 const thread = vfs.Thread(process._tickDomainCallback);

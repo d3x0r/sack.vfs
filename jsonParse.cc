@@ -55,10 +55,10 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 	NODE_SET_METHOD( o, "stringify", makeJSON );
 	exports->Set( String::NewFromUtf8( isolate, "JSON" ), o );
 
-	o = Object::New( isolate );
-	NODE_SET_METHOD( o, "parse", parseJSON6 );
-	NODE_SET_METHOD( o, "stringify", makeJSON6 );
-	exports->Set( String::NewFromUtf8( isolate, "JSON6" ), o );
+	Local<Object> o2 = Object::New( isolate );
+	NODE_SET_METHOD( o2, "parse", parseJSON6 );
+	NODE_SET_METHOD( o2, "stringify", makeJSON6 );
+	exports->Set( String::NewFromUtf8( isolate, "JSON6" ), o2 );
 }
 
 static Local<Value> makeValue( Isolate *isolate, struct json_value_container *val ) {
@@ -282,7 +282,7 @@ void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
 	const char *msg;
 	String::Utf8Value tmp( args[0] );
 	msg = *tmp;
-	Local<Value> val = ParseJSON( isolate, msg, strlen( msg ) );
+	Local<Value> val = ParseJSON6( isolate, msg, strlen( msg ) );
 	args.GetReturnValue().Set( val );
 
 }

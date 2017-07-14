@@ -50848,6 +50848,7 @@ JSON_EMITTER_PROC( LOGICAL, json_parse_message )(  TEXTSTR msg
 //       unquoted field names must be a valid javascript keyword using unicode ID_Start/ID_Continue states to determine valid characters.
 //       this is arbitrary though; and could be reverted to just accepting any character other than ':'.
 //   JSON(6?) support - undefined keyword value
+//       accept \uXXXX, \xXX, \[0-3]xx octal, \u{xxxxx} encodings in strings
 JSON_EMITTER_PROC( LOGICAL, json6_parse_message )(  TEXTSTR msg
 													, size_t msglen
 													, PDATALIST *msg_data_out
@@ -51060,7 +51061,6 @@ LOGICAL json_parse_message( TEXTSTR msg
 	PPARSE_CONTEXT context = GetFromSet( PARSE_CONTEXT, &parseContexts );
 	int parse_context = CONTEXT_UNKNOWN;
 	struct json_value_container val;
-	int comment = 0;
 	char const * msg_input = (char const *)msg;
 	char const * _msg_input;
 	//char *token_begin;
@@ -51074,31 +51074,8 @@ LOGICAL json_parse_message( TEXTSTR msg
 	while( status && ( n < msglen ) && ( c = GetUtfChar( &msg_input ) ) )
 	{
 		n = msg_input - msg;
-		if( comment ) {
-			if( comment == 1 ) {
-				if( c == '*' ) { comment = 3; continue; }
-				if( c != '/' ) { lprintf( WIDE("Fault while parsing; unexpected %c at %") _size_f, c, n ); status = FALSE; }
-				else comment = 2;
-				continue;
-			}
-			if( comment == 2 ) {
-				if( c == '\n' ) { comment = 0; continue; }
-				else continue;
-			}
-			if( comment == 3 ){
-				if( c == '*' ) { comment = 4; continue; }
-				else continue;
-			}
-			if( comment == 4 ) {
-				if( c == '/' ) { comment = 0; continue; }
-				else { if( c != '*' ) comment = 3; continue; }
-			}
-		}
 		switch( c )
 		{
-		case '/':
-			if( !comment ) comment = 1;
-			break;
 		case '{':
 			{
 				struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &parseContexts );
@@ -51323,7 +51300,6 @@ LOGICAL json_parse_message( TEXTSTR msg
 		//  catch characters for true/false/null/undefined which are values outside of quotes
 			case 't':
 				if( word == WORD_POS_RESET ) word = WORD_POS_TRUE_1;
-				else if( word == WORD_POS_INFINITY_6 ) word = WORD_POS_INFINITY_7;
 // fault
 				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
 				break;
@@ -51355,8 +51331,6 @@ LOGICAL json_parse_message( TEXTSTR msg
 				if( word == WORD_POS_RESET ) word = WORD_POS_NULL_1;
 				else if( word == WORD_POS_UNDEFINED_1 ) word = WORD_POS_UNDEFINED_2;
 				else if( word == WORD_POS_UNDEFINED_6 ) word = WORD_POS_UNDEFINED_7;
-				else if( word == WORD_POS_INFINITY_1 ) word = WORD_POS_INFINITY_2;
-				else if( word == WORD_POS_INFINITY_5 ) word = WORD_POS_INFINITY_6;
 // fault
 				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
 				break;
@@ -51368,8 +51342,6 @@ LOGICAL json_parse_message( TEXTSTR msg
 				break;
 			case 'i':
 				if( word == WORD_POS_UNDEFINED_5 ) word = WORD_POS_UNDEFINED_6;
-				else if( word == WORD_POS_INFINITY_3 ) word = WORD_POS_INFINITY_4;
-				else if( word == WORD_POS_INFINITY_5 ) word = WORD_POS_INFINITY_6;
 // fault
 				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
 				break;
@@ -51385,34 +51357,16 @@ LOGICAL json_parse_message( TEXTSTR msg
 			case 'f':
 				if( word == WORD_POS_RESET ) word = WORD_POS_FALSE_1;
 				else if( word == WORD_POS_UNDEFINED_4 ) word = WORD_POS_UNDEFINED_5;
-				else if( word == WORD_POS_INFINITY_2 ) word = WORD_POS_INFINITY_3;
 // fault
 				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
 				break;
 			case 'a':
 				if( word == WORD_POS_FALSE_1 ) word = WORD_POS_FALSE_2;
-				else if( word == WORD_POS_NAN_1 ) word = WORD_POS_NAN_2;
 // fault
 				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
 				break;
 			case 's':
 				if( word == WORD_POS_FALSE_3 ) word = WORD_POS_FALSE_4;
-// fault
-				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
-				break;
-			case 'I':
-				if( word == WORD_POS_RESET ) word = WORD_POS_INFINITY_1;
-// fault
-				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
-				break;
-			case 'N':
-				if( word == WORD_POS_RESET ) word = WORD_POS_NAN_1;
-				else if( word == WORD_POS_NAN_2 ) { val.value_type = negative ? VALUE_NEG_NAN : VALUE_NAN; word = WORD_POS_RESET; }
-// fault
-				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
-				break;
-			case 'y':
-				if( word == WORD_POS_INFINITY_7 ) { val.value_type = negative ? VALUE_NEG_INFINITY : VALUE_INFINITY; word = WORD_POS_RESET; }
 // fault
 				else lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );
 				break;
@@ -53374,7 +53328,7 @@ LOGICAL json6_parse_message( TEXTSTR msg
 				negative = !negative;
 				break;
 			default:
-				if( ( c >= '0' && c <= '9' ) || ( c == '+' ) )
+				if( ( c >= '0' && c <= '9' ) || ( c == '+' ) || ( c == '.' ) )
 				{
 					LOGICAL fromHex;
 					fromHex = FALSE;
@@ -53390,7 +53344,6 @@ LOGICAL json6_parse_message( TEXTSTR msg
 						n = (msg_input - msg );
 						// leading zeros should be forbidden.
 						if( ( c >= '0' && c <= '9' )
-							|| ( c == '-' )
 							|| ( c == '+' )
 						  )
 						{
