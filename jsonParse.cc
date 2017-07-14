@@ -46,12 +46,19 @@ static char const *const *const json_value_type_strings = json_value_type_string
 
 static void makeJSON( const v8::FunctionCallbackInfo<Value>& args );
 static void parseJSON( const v8::FunctionCallbackInfo<Value>& args );
+static void makeJSON6( const v8::FunctionCallbackInfo<Value>& args );
+static void parseJSON6( const v8::FunctionCallbackInfo<Value>& args );
 	
 void InitJSON( Isolate *isolate, Handle<Object> exports ){
 	Local<Object> o = Object::New( isolate );
 	NODE_SET_METHOD( o, "parse", parseJSON );
 	NODE_SET_METHOD( o, "stringify", makeJSON );
 	exports->Set( String::NewFromUtf8( isolate, "JSON" ), o );
+
+	o = Object::New( isolate );
+	NODE_SET_METHOD( o, "parse", parseJSON6 );
+	NODE_SET_METHOD( o, "stringify", makeJSON6 );
+	exports->Set( String::NewFromUtf8( isolate, "JSON6" ), o );
 }
 
 static Local<Value> makeValue( Isolate *isolate, struct json_value_container *val ) {
@@ -212,7 +219,7 @@ Local<Value> ParseJSON(  Isolate *isolate, const char *utf8String, size_t len) {
 		// cannot result from a simple value?	
 	}
 
-	internal_json_dispose_message( &parsed );
+	json_dispose_message( &parsed );
 	if( !o.IsEmpty() ) 
 		return o;
 	return v;
@@ -231,5 +238,56 @@ void parseJSON( const v8::FunctionCallbackInfo<Value>& args )
 
 
 void makeJSON( const v8::FunctionCallbackInfo<Value>& args ) {
-	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), "undefined :)" ) );
+	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), "undefined :) Stringify is not completed" ) );
+}
+
+Local<Value> ParseJSON6(  Isolate *isolate, const char *utf8String, size_t len) {
+	PDATALIST parsed = NULL;
+	Local<Object> o;// = Object::New( isolate );
+	Local<Value> v;// = Object::New( isolate );
+	json6_parse_message( (char*)utf8String, len, &parsed );
+	if( parsed->Cnt > 1 ) {
+		lprintf( "Multiple values would result, invalid parse." );
+		return Undefined(isolate);
+		// outside should always be a single value
+	}
+
+	struct json_value_container *val;
+	val = (struct json_value_container *)GetDataItem( &parsed, 0 );
+	if( val && val->contains ) {
+		if( val->value_type == VALUE_OBJECT )
+			o = Object::New( isolate );
+		else if( val->value_type == VALUE_ARRAY )
+			o = Array::New( isolate );
+		else
+			lprintf( "Value has contents, but is not a container type?!" );
+		buildObject( val->contains, o, isolate );
+	}
+	else if( val ) {
+		//lprintf( "was just a single, simple value type..." );
+		v = makeValue( isolate, val );
+		// this is illegal json
+		// cannot result from a simple value?	
+	}
+
+	json6_dispose_message( &parsed );
+	if( !o.IsEmpty() ) 
+		return o;
+	return v;
+}
+
+void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
+{
+	Isolate* isolate = Isolate::GetCurrent();
+	const char *msg;
+	String::Utf8Value tmp( args[0] );
+	msg = *tmp;
+	Local<Value> val = ParseJSON( isolate, msg, strlen( msg ) );
+	args.GetReturnValue().Set( val );
+
+}
+
+
+void makeJSON6( const v8::FunctionCallbackInfo<Value>& args ) {
+	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), "undefined :) Stringify is not completed" ) );
 }

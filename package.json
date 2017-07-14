@@ -1,13 +1,13 @@
 {
   "name": "sack.vfs",
-  "version": "0.1.99282",
+  "version": "0.1.99283",
   "description": "Node.js VFS Addon",
   "main": "vfs_module.js",
   "private": false,
   "keywords": [
     "sqlite",
     "vfs",
-    "JSON","JSON5",
+    "JSON","JSON6",
     "COM Port",
     "serial",
     "serial port",

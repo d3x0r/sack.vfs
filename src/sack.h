@@ -11389,7 +11389,24 @@ JSON_EMITTER_PROC( TEXTSTR, json_build_message )( struct json_context_object *fo
 // then it returns false; that is if a member is in the 'msg' parameter that is not in
 // the format, then the result is FALSE.
 //  PDATALIST is full of struct json_value_container
+// turns out numbers can be  hex, octal and binary numbers  (0x[A-F,a-f,0-9]*, 0b[0-1]*, 0[0-9]*)
+// slightly faster (17%) than json6_parse_message because of fewer possible checks.
 JSON_EMITTER_PROC( LOGICAL, json_parse_message )(  TEXTSTR msg
+													, size_t msglen
+													, PDATALIST *msg_data_out
+																);
+// take a json string and a format and fill in a structure from the text.
+// tests all formats, to first-match;
+// take a json string and a format and fill in a structure from the text.
+// if object does not fit all members (may have extra, but must have at least all members in message in format to return TRUE)
+// then it returns false; that is if a member is in the 'msg' parameter that is not in
+// the format, then the result is FALSE.
+//  PDATALIST is full of struct json_value_container
+//   JSON5 support - Infinity/Nan, string continuations, and comments,unquoted field names; hex, octal and binary numbers
+//       unquoted field names must be a valid javascript keyword using unicode ID_Start/ID_Continue states to determine valid characters.
+//       this is arbitrary though; and could be reverted to just accepting any character other than ':'.
+//   JSON(6?) support - undefined keyword value
+JSON_EMITTER_PROC( LOGICAL, json6_parse_message )(  TEXTSTR msg
 													, size_t msglen
 													, PDATALIST *msg_data_out
 																);
@@ -11400,6 +11417,7 @@ JSON_EMITTER_PROC( LOGICAL, json_decode_message )(  struct json_context *format
 												);
 enum json_value_types {
 	VALUE_UNDEFINED = -1
+	, VALUE_UNSET = 0
 	, VALUE_NULL = 1
 	, VALUE_TRUE = 2
 	, VALUE_FALSE = 3
@@ -11428,11 +11446,16 @@ struct json_value_container {
 };
 // any allocate mesage parts are released.
 JSON_EMITTER_PROC( void, json_dispose_message )( PDATALIST *msg_data );
+// any allocate mesage parts are released.
+JSON_EMITTER_PROC( void, json6_dispose_message )( PDATALIST *msg_data );
 JSON_EMITTER_PROC( void, json_dispose_decoded_message )(struct json_context_object *format
 	, POINTER msg_data);
 // sanitize strings to send in JSON so quotes don't prematurely end strings and output is still valid.
 // require Release the result.
 JSON_EMITTER_PROC( TEXTSTR, json_escape_string )( CTEXTSTR string );
+// sanitize strings to send in JSON so quotes don't prematurely end strings and output is still valid.
+// require Release the result.  Also escapes not just double-quotes ("), but also single and ES6 Format quotes (', `)
+JSON_EMITTER_PROC( TEXTSTR, json6_escape_string )( CTEXTSTR string );
 #ifdef __cplusplus
 } } SACK_NAMESPACE_END
 using namespace sack::network::json;
