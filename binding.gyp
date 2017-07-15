@@ -60,7 +60,7 @@
 			, '-Wno-strict-aliasing', '-Wno-switch', '-Wno-missing-field-initializers' 
 			, '-Wno-unused-variable', '-Wno-unused-function'
 			, '-Wno-sign-compare', '-Wno-null-dereference'
-			, '-Waddress-of-packed-member'
+			, '-Wno-address-of-packed-member'
                 ],
              },
             'include_dirs': [
