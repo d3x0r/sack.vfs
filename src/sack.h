@@ -11391,7 +11391,7 @@ JSON_EMITTER_PROC( TEXTSTR, json_build_message )( struct json_context_object *fo
 //  PDATALIST is full of struct json_value_container
 // turns out numbers can be  hex, octal and binary numbers  (0x[A-F,a-f,0-9]*, 0b[0-1]*, 0[0-9]*)
 // slightly faster (17%) than json6_parse_message because of fewer possible checks.
-JSON_EMITTER_PROC( LOGICAL, json_parse_message )(  TEXTSTR msg
+JSON_EMITTER_PROC( LOGICAL, json_parse_message )( char * msg
 													, size_t msglen
 													, PDATALIST *msg_data_out
 																);
@@ -11407,7 +11407,7 @@ JSON_EMITTER_PROC( LOGICAL, json_parse_message )(  TEXTSTR msg
 //       this is arbitrary though; and could be reverted to just accepting any character other than ':'.
 //   JSON(6?) support - undefined keyword value
 //       accept \uXXXX, \xXX, \[0-3]xx octal, \u{xxxxx} encodings in strings
-JSON_EMITTER_PROC( LOGICAL, json6_parse_message )(  TEXTSTR msg
+JSON_EMITTER_PROC( LOGICAL, json6_parse_message )( char * msg
 													, size_t msglen
 													, PDATALIST *msg_data_out
 																);
@@ -11430,6 +11430,7 @@ enum json_value_types {
 	, VALUE_NAN = 9
 	, VALUE_NEG_INFINITY = 10
 	, VALUE_INFINITY = 11
+	, VALUE_DATE = 12
 };
 struct json_value_container {
   // name of this value (if it's contained in an object)
@@ -11453,10 +11454,10 @@ JSON_EMITTER_PROC( void, json_dispose_decoded_message )(struct json_context_obje
 	, POINTER msg_data);
 // sanitize strings to send in JSON so quotes don't prematurely end strings and output is still valid.
 // require Release the result.
-JSON_EMITTER_PROC( TEXTSTR, json_escape_string )( CTEXTSTR string );
+JSON_EMITTER_PROC( char*, json_escape_string )( const char * string );
 // sanitize strings to send in JSON so quotes don't prematurely end strings and output is still valid.
 // require Release the result.  Also escapes not just double-quotes ("), but also single and ES6 Format quotes (', `)
-JSON_EMITTER_PROC( TEXTSTR, json6_escape_string )( CTEXTSTR string );
+JSON_EMITTER_PROC( char*, json6_escape_string )( const char * string );
 #ifdef __cplusplus
 } } SACK_NAMESPACE_END
 using namespace sack::network::json;
@@ -12487,4 +12488,70 @@ SACKCOMM_PROC( void, SackSetBufferSize )( int iCommId
 // normal mode but all channels except this one will get notification
 #define COM_PORT_IGNORE 2
 SACKCOMM_PROC( void, SackCommOwnPort )( int nCommID, CommReadCallback func, int own_flags );
+#endif
+/* provides text translation.
+  Primary Usage:
+      SetTranslation( "some string" );
+	 CTEXTSTR result = TranslateText( "some string to translate" );
+	 lprintf( TranslateText( "Some format string %d:%d" ), x, y );
+*/
+#ifndef TRANSLATIONS_DEFINED
+/* Multiple inclusion protection symbol. */
+#define TRANSLATIONS_DEFINED
+#ifdef __cplusplus
+#  define _TRANSLATION_NAMESPACE namespace translation {
+#  define _TRANSLATION_NAMESPACE_END }
+#  define	 SACK_TRANSLATION_NAMESPACE_END } }
+#  define USE_TRANSLATION_NAMESPACE using namespace sack::translation;
+#else
+#  define _TRANSLATION_NAMESPACE
+#  define _TRANSLATION_NAMESPACE_END
+#  define	 SACK_TRANSLATION_NAMESPACE_END
+#  define USE_TRANSLATION_NAMESPACE
+#endif
+#  define TRANSLATION_NAMESPACE SACK_NAMESPACE _TRANSLATION_NAMESPACE
+#  define TRANSLATION_NAMESPACE_END _TRANSLATION_NAMESPACE_END  SACK_NAMESPACE_END
+SACK_NAMESPACE
+	/* Namespace of custom math routines.  Contains operators
+	 for Vectors and fractions. */
+	_TRANSLATION_NAMESPACE
+#define TRANSLATION_API CPROC
+#  ifdef TRANSLATION_SOURCE
+#    define TRANSLATION_PROC EXPORT_METHOD
+#  else
+/* Define the library linkage for a these functions. */
+#    define TRANSLATION_PROC IMPORT_METHOD
+#  endif
+struct translation {
+	TEXTSTR name;
+	PLIST strings;
+};
+typedef struct translation *PTranslation;
+TRANSLATION_PROC LOGICAL TRANSLATION_API SetCurrentTranslation( CTEXTSTR language );
+TRANSLATION_PROC CTEXTSTR TRANSLATION_API TranslateText( CTEXTSTR text );
+TRANSLATION_PROC PTranslation TRANSLATION_API CreateTranslation( CTEXTSTR language );
+TRANSLATION_PROC struct translation * TRANSLATION_API GetTranslation( CTEXTSTR language );
+TRANSLATION_PROC void TRANSLATION_API SetTranslatedString( PTranslation translation, INDEX idx, CTEXTSTR string );
+TRANSLATION_PROC CTEXTSTR TRANSLATION_API GetTranslationName( PTranslation translation );
+TRANSLATION_PROC void TRANSLATION_API SaveTranslationDataEx( const char *filename );
+TRANSLATION_PROC void TRANSLATION_API SaveTranslationData( void );
+TRANSLATION_PROC void TRANSLATION_API SaveTranslationDataToFile( FILE *output );
+TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataEx( const char *filename );
+TRANSLATION_PROC void TRANSLATION_API LoadTranslationData( void );
+TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataFromFile( FILE *input );
+/*
+   return: PLIST is a list of PTranslation
+*/
+TRANSLATION_PROC PLIST TRANSLATION_API GetTranslations( void );
+TRANSLATION_PROC CTEXTSTR TRANSLATION_API GetTranslationName( struct translation *translation );
+/*
+	return: PLIST of CTEXTSTR which are result strings of this translation
+*/
+TRANSLATION_PROC PLIST TRANSLATION_API GetTranslationStrings( struct translation *translation );
+/*
+  return: PLIST of CTEXTSTR which are source index strings
+  */
+TRANSLATION_PROC PLIST TRANSLATION_API GetTranslationIndexStrings( );
+SACK_TRANSLATION_NAMESPACE_END
+USE_TRANSLATION_NAMESPACE
 #endif

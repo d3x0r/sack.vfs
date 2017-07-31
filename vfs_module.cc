@@ -4,6 +4,8 @@
 
 
 static void moduleExit( void *arg ) {
+	//SaveTranslationDataEx( "^/strings.dat" );
+	SaveTranslationDataEx( "@/../../strings.json" );
 	InvokeExits();
 }
 
@@ -57,6 +59,9 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	SetAllocateDebug( FALSE );
 	SetManualAllocateCheck( TRUE );
 	SetSystemLog( SYSLOG_FILE, stdout );
+
+	//LoadTranslationDataEx( "^/strings.dat" );
+	LoadTranslationDataEx( "@/../../strings.json" );
 	//lprintf( "Stdout Logging Enabled." );
 
 	Isolate* isolate = Isolate::GetCurrent();
@@ -69,6 +74,8 @@ void VolumeObject::Init( Handle<Object> exports ) {
 #ifdef WIN32
 	RegObject::Init( exports );
 #endif
+	TLSObject::Init( isolate, exports );
+
 	// Prepare constructor template
 	volumeTemplate = FunctionTemplate::New( isolate, New );
 	volumeTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Volume" ) );
@@ -100,6 +107,7 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, const char 
 	if( !mount && !filename ) {
 		volNative = false;
 		fsInt = sack_get_filesystem_interface( "native" );
+lprintf( "open native mount" );
 		fsMount = sack_get_default_mount();
 	} else {
 		//lprintf( "volume: %s %p %p", filename, key, key2 );

@@ -35,7 +35,14 @@ vfs.JSON6.parse = JSONReviverWrapper( tmpParse6 );
 vfs.JSON.parse = JSONReviverWrapper( tmpParse );
 
 
-process.on( 'beforeExit', ()=>vfs.Thread() );
+process.on( 'beforeExit', ()=> {
+	vfs.Thread() 
+});
+process.on( 'exit', ()=> {
+});
+process.on( 'uncaughtException', (err)=> {
+	console.log( err )	
+});
 const thread = vfs.Thread(process._tickDomainCallback);
 module.exports =exports= vfs;
 

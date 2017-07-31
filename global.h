@@ -10,6 +10,16 @@
 #include "src/sack.h"
 #undef New
 
+//#include <openssl/ssl.h>
+#include <openssl/safestack.h>  // STACK_OF
+#include <openssl/tls1.h>
+#include <openssl/err.h>
+#include <openssl/rand.h>
+#include <openssl/rsa.h>
+#include <openssl/pem.h>
+#include <openssl/x509v3.h>
+//#include <openssl/>
+
 using namespace v8;
 
 void InitJSON( Isolate *isolate, Handle<Object> exports );
@@ -228,6 +238,41 @@ public:
 
 	~WebSockClientObject();
 };
+
+
+struct internalCert {
+	X509_REQ *req;
+	X509 * x509;
+	EVP_PKEY *pkey;
+};
+
+
+class TLSObject : public node::ObjectWrap {
+
+public:
+   struct internalCert cert;
+
+
+	static v8::Persistent<v8::Function> constructor;
+	
+public:
+
+	static void Init( Isolate *isolate, Handle<Object> exports );
+	TLSObject( );
+
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+
+	static void seed( const v8::FunctionCallbackInfo<Value>& args );
+	static void genKey( const v8::FunctionCallbackInfo<Value>& args );
+	static void genCert( const v8::FunctionCallbackInfo<Value>& args );
+	static void genReq( const v8::FunctionCallbackInfo<Value>& args );
+	static void signReq( const v8::FunctionCallbackInfo<Value>& args );
+	static void pubKey( const v8::FunctionCallbackInfo<Value>& args );
+	static void validate( const v8::FunctionCallbackInfo<Value>& args );
+
+	~TLSObject();
+};
+
 
 
 void InitFS( const v8::FunctionCallbackInfo<Value>& args );

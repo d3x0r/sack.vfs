@@ -60,6 +60,7 @@ SET( EXTRA_HEADERS
         ${SACK_BASE}/include/configscript.h
 	${SACK_BASE}/include/salty_generator.h
         ${SACK_BASE}/include/sackcomm.h
+	${SACK_BASE}/include/translation.h
 )
 
 SET( EXTRA_SOURCES 
@@ -123,6 +124,9 @@ SET( EXTRA_SOURCES
         ${SACK_BASE}/src/sqllib/optlib/getoption_v4.c
         ${SACK_BASE}/src/sqllib/optlib/optionutil.c
         ${SACK_BASE}/src/sqllib/optlib/optionutil_v4.c
+
+	${SACK_BASE}/src/translationlib/translate.c
+
 	${SACK_BASE}/src/deadstart/deadstart_lib.c
 )
 
@@ -179,6 +183,8 @@ add_library(${PROJECT_NAME} SHARED
 	sql_module.cc
         com_interface.cc
         jsonParse.cc
+        tls_interface.cc
+ 
 	${MORE_MODULE_SOURCES}
         ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
         ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc

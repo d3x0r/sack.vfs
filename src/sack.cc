@@ -16417,7 +16417,9 @@ typedef struct loaded_library_tag
  // points into full_name after last slash - just library name
 	TEXTCHAR *name;
 	int loading;
-// this is more than 1; allocation pads extra bytes for the name.
+// this is appended after full_name and is l.library_path
+	TEXTCHAR *alt_full_name;
+// this is more than 1; allocation pads extra bytes for the name. prefixed iwth l.load_path
 	TEXTCHAR full_name[1];
 } LIBRARY, *PLIBRARY;
 #ifndef SYSTEM_CORE_SOURCE
@@ -16654,7 +16656,10 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 		if( ext1 )
 		{
 			ext1[0] = 0;
-			(*init_l).library_path = StrDupEx( filepath DBG_SRC );
+			if( filepath[0] == '\\' && filepath[1] == '\\' && filepath[2] == '?' && filepath[3] == '\\' )
+				(*init_l).library_path = StrDupEx( filepath +4 DBG_SRC );
+			else
+				(*init_l).library_path = StrDupEx( filepath DBG_SRC );
 		}
 		else
 		{
@@ -16874,9 +16879,12 @@ PRIORITY_PRELOAD( SetupPath, OSALOT_PRELOAD_PRIORITY )
 #ifndef __NO_OPTIONS__
 PRELOAD( SetupSystemOptions )
 {
+	lprintf( "SYSTEM OPTION INIT" );
 	l.flags.bLog = SACK_GetProfileIntEx( GetProgramName(), WIDE( "SACK/System/Enable Logging" ), 0, TRUE );
-	if( SACK_GetProfileIntEx( GetProgramName(), WIDE( "SACK/System/Auto prepend program location to PATH environment" ), 0, TRUE ) )
+	if( SACK_GetProfileIntEx( GetProgramName(), WIDE( "SACK/System/Auto prepend program location to PATH environment" ), 0, TRUE ) ){
+		lprintf( "Add %s to path", l.load_path );
 		OSALOT_PrependEnvironmentVariable( WIDE("PATH"), l.load_path );
+	}
 }
 #endif
 //--------------------------------------------------------------------------
@@ -17689,20 +17697,24 @@ SYSTEM_PROC( generic_function, LoadFunctionExx )( CTEXTSTR libname, CTEXTSTR fun
 	// don't really NEED anything else, in case we need to start before deadstart invokes.
 	if( !library )
 	{
-		size_t maxlen = StrLen( l.load_path ) + 1 + StrLen( libname ) + 1;
+		size_t fullnameLen;
+		size_t maxlen = ( fullnameLen = StrLen( l.load_path ) + 1 + StrLen( libname ) + 1 ) + StrLen( l.library_path ) + 1 + StrLen(libname) + 1;
 		library = NewPlus( LIBRARY, sizeof(TEXTCHAR)*((maxlen<0xFFFFFF)?(uint32_t)maxlen:0) );
+		library->alt_full_name = library->full_name + fullnameLen;
 		//lprintf( "New library %s", libname );
 		if( !IsAbsolutePath( libname ) )
 		{
 			library->name = library->full_name
 				+ tnprintf( library->full_name, maxlen, WIDE("%s/"), l.load_path );
+			tnprintf( library->alt_full_name, maxlen, WIDE( "%s/%s" ), l.library_path, libname );
 			tnprintf( library->name
-				, maxlen - (library->name-library->full_name)
+				, fullnameLen - (library->name-library->full_name)
 				, WIDE("%s"), libname );
 		}
 		else
 		{
 			StrCpy( library->full_name, libname );
+			library->alt_full_name = library->full_name;
 			library->name = (char*)pathrchr( library->full_name );
 			library->loading = 0;
 			if( library->name )
@@ -17765,21 +17777,25 @@ SYSTEM_PROC( generic_function, LoadFunctionExx )( CTEXTSTR libname, CTEXTSTR fun
 			library->library = LoadLibrary( library->full_name );
 			if( !library->library )
 			{
-#  ifdef DEBUG_LIBRARY_LOADING
-				lprintf( "trying load...%s", library->name );
-#  endif
-				library->library = LoadLibrary( library->name );
+				library->library = LoadLibrary( library->alt_full_name );
 				if( !library->library )
 				{
-					if( !library->loading )
+#  ifdef DEBUG_LIBRARY_LOADING
+					lprintf( "trying load...%s", library->name );
+#  endif
+					library->library = LoadLibrary( library->name );
+					if( !library->library )
 					{
-						if( l.flags.bLog )
-							_xlprintf( 2 DBG_RELAY)( WIDE("Attempt to load %s[%s](%s) failed: %d."), libname, library->full_name, funcname?funcname:WIDE("all"), GetLastError() );
-						UnlinkThing( library );
-						ReleaseEx( library DBG_SRC );
+						if( !library->loading )
+						{
+							if( l.flags.bLog )
+								_xlprintf( 2 DBG_RELAY )(WIDE( "Attempt to load %s[%s](%s) failed: %d." ), libname, library->full_name, funcname ? funcname : WIDE( "all" ), GetLastError());
+							UnlinkThing( library );
+							ReleaseEx( library DBG_SRC );
+						}
+						ResumeDeadstart();
+						return NULL;
 					}
-					ResumeDeadstart();
-					return NULL;
 				}
 			}
 		}
@@ -40112,6 +40128,12 @@ PTEXT SegCreateFromWideEx( const wchar_t *text DBG_PASS )
 	return SegCreateFromWideLenEx( text, wcslen( text ) DBG_RELAY );
 }
 //---------------------------------------------------------------------------
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat"
+#endif
+//#pragma GCC diagnostic ignored "-Wformat-length"
+//#pragma GCC diagnostic ignored "-Wformat-truncation"
 PTEXT SegCreateFromIntEx( int value DBG_PASS )
 {
 	PTEXT pResult;
@@ -40150,6 +40172,9 @@ PTEXT SegCreateFromFloatEx( float value DBG_PASS )
 	pResult->data.data[31] = 0;
 	return pResult;
 }
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 //---------------------------------------------------------------------------
 PTEXT SegCreateIndirectEx( PTEXT pText DBG_PASS )
 {
@@ -41489,7 +41514,7 @@ int64_t IntCreateFromText( CTEXTSTR p )
 		else
 		{
 			if( ( !altBase ) && (*p == '0') ) { altBase = TRUE; base = 8; }
-			else if( (*p - '0') >= base ) { break; }
+			else { if( (*p - '0') >= base ) { break; } altBase = TRUE; }
 			num *= base;
 			num += *p - '0';
 		}
@@ -43423,7 +43448,7 @@ int AddBinaryNodeEx( PTREEROOT root
 }
 #undef AddBinaryNode
 int AddBinaryNode( PTREEROOT root
-						, POINTER userdata
+						, CPOINTER userdata
 					  , uintptr_t key )
 {
 	return AddBinaryNodeEx( root, userdata, key DBG_SRC );
@@ -43587,9 +43612,9 @@ void DumpTree( PTREEROOT root
 				 , int (*Dump)( CPOINTER user, uintptr_t key ) )
 {
 	maxlevel = 0;
-	lprintf( WIDE("Tree %p has %")_32f WIDE(" nodes. %p is root"), root, root->children, root->tree );
+	if( !Dump ) lprintf( WIDE("Tree %p has %")_32f WIDE(" nodes. %p is root"), root, root->children, root->tree );
 	DumpNode( root->tree, 1, Dump );
-	lprintf( WIDE("Tree had %d levels."), maxlevel );
+	if( !Dump ) lprintf( WIDE("Tree had %d levels."), maxlevel );
 }
 //---------------------------------------------------------------------------
 CPOINTER FindInBinaryTree( PTREEROOT root, uintptr_t key )
@@ -50833,7 +50858,7 @@ JSON_EMITTER_PROC( TEXTSTR, json_build_message )( struct json_context_object *fo
 //  PDATALIST is full of struct json_value_container
 // turns out numbers can be  hex, octal and binary numbers  (0x[A-F,a-f,0-9]*, 0b[0-1]*, 0[0-9]*)
 // slightly faster (17%) than json6_parse_message because of fewer possible checks.
-JSON_EMITTER_PROC( LOGICAL, json_parse_message )(  TEXTSTR msg
+JSON_EMITTER_PROC( LOGICAL, json_parse_message )( char * msg
 													, size_t msglen
 													, PDATALIST *msg_data_out
 																);
@@ -50849,7 +50874,7 @@ JSON_EMITTER_PROC( LOGICAL, json_parse_message )(  TEXTSTR msg
 //       this is arbitrary though; and could be reverted to just accepting any character other than ':'.
 //   JSON(6?) support - undefined keyword value
 //       accept \uXXXX, \xXX, \[0-3]xx octal, \u{xxxxx} encodings in strings
-JSON_EMITTER_PROC( LOGICAL, json6_parse_message )(  TEXTSTR msg
+JSON_EMITTER_PROC( LOGICAL, json6_parse_message )( char * msg
 													, size_t msglen
 													, PDATALIST *msg_data_out
 																);
@@ -50872,6 +50897,7 @@ enum json_value_types {
 	, VALUE_NAN = 9
 	, VALUE_NEG_INFINITY = 10
 	, VALUE_INFINITY = 11
+	, VALUE_DATE = 12
 };
 struct json_value_container {
   // name of this value (if it's contained in an object)
@@ -50895,10 +50921,10 @@ JSON_EMITTER_PROC( void, json_dispose_decoded_message )(struct json_context_obje
 	, POINTER msg_data);
 // sanitize strings to send in JSON so quotes don't prematurely end strings and output is still valid.
 // require Release the result.
-JSON_EMITTER_PROC( TEXTSTR, json_escape_string )( CTEXTSTR string );
+JSON_EMITTER_PROC( char*, json_escape_string )( const char * string );
 // sanitize strings to send in JSON so quotes don't prematurely end strings and output is still valid.
 // require Release the result.  Also escapes not just double-quotes ("), but also single and ES6 Format quotes (', `)
-JSON_EMITTER_PROC( TEXTSTR, json6_escape_string )( CTEXTSTR string );
+JSON_EMITTER_PROC( char*, json6_escape_string )( const char * string );
 #ifdef __cplusplus
 } } SACK_NAMESPACE_END
 using namespace sack::network::json;
@@ -51013,7 +51039,7 @@ DeclareSet( PARSE_CONTEXT );
 SACK_NAMESPACE namespace network { namespace json {
 #endif
 static PPARSE_CONTEXTSET parseContexts;
-TEXTSTR json_escape_string( CTEXTSTR string ) {
+char *json_escape_string( const char *string ) {
 	size_t n;
 	size_t m = 0;
 	TEXTSTR output;
@@ -51021,12 +51047,22 @@ TEXTSTR json_escape_string( CTEXTSTR string ) {
 	for( n = 0; string[n]; n++ ) {
 		if( string[n] == '"' )
 			m++;
+		if( string[n] == '\n' )
+         m++;
+		if( string[n] == '\t' )
+         m++;
 	}
-	output = NewArray( TEXTCHAR, n+m+1 );
+	output = NewArray( char, n+m+1 );
 	m = 0;
 	for( n = 0; string[n]; n++ ) {
 		if( string[n] == '"' ) {
 			output[m++] = '\\';
+		}
+		if( string[n] == '\n' ) {
+			output[m++] = '\\'; output[m++] = 'n'; continue;
+		}
+		if( string[n] == '\t' ) {
+			output[m++] = '\\'; output[m++] = 't'; continue;
 		}
 		output[m++] = string[n];
 	}
@@ -51038,7 +51074,7 @@ TEXTSTR json_escape_string( CTEXTSTR string ) {
 #define _4char(result,from)  ( ((*from) += 4), ( ( ( result & 0x7 ) << 18 )						     | ( ( result & 0x3F00 ) << 4 )						   | ( ( result & 0x3f0000 ) >> 10 )						    | ( ( result & 0x3f000000 ) >> 24 ) ) )
 #define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),		     ( ( !(result & 0xFF) )              ?0	                                                           :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
 #define GetUtfChar(x) __GetUtfChar(c,x)
-LOGICAL json_parse_message( TEXTSTR msg
+LOGICAL json_parse_message( char * msg
                                  , size_t msglen
                                  , PDATALIST *_msg_output )
 {
@@ -52483,7 +52519,7 @@ ID_Continue    XID_Continue     All of the above, plus nonspacing marks, spacing
 SACK_NAMESPACE namespace network { namespace json {
 #endif
 static PPARSE_CONTEXTSET parseContexts6;
-TEXTSTR json6_escape_string( CTEXTSTR string ) {
+char *json6_escape_string( const char *string ) {
 	size_t n;
 	size_t m = 0;
 	TEXTSTR output;
@@ -52703,7 +52739,7 @@ static LOGICAL gatherString( TEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TE
 	(*pmOut) = mOut;
 	return status;
 }
-LOGICAL json6_parse_message( TEXTSTR msg
+LOGICAL json6_parse_message( char * msg
                                  , size_t msglen
                                  , PDATALIST *_msg_output )
 {
@@ -53331,7 +53367,9 @@ LOGICAL json6_parse_message( TEXTSTR msg
 				if( ( c >= '0' && c <= '9' ) || ( c == '+' ) || ( c == '.' ) )
 				{
 					LOGICAL fromHex;
+					LOGICAL fromDate;
 					fromHex = FALSE;
+					fromDate = FALSE;
 					// always reset this here....
 					// keep it set to determine what sort of value is ready.
 					val.float_result = 0;
@@ -53349,6 +53387,17 @@ LOGICAL json6_parse_message( TEXTSTR msg
 						{
 							(*mOut++) = c;
 						}
+#if 0
+// to be implemented
+						 else if( c == ':' || c == '-' || c == 'Z' || c == '+' ) {
+/* toISOString()
+var today = new Date('05 October 2011 14:48 UTC');
+console.log(today.toISOString());
+// Returns 2011-10-05T14:48:00.000Z
+*/
+							(*mOut++) = c;
+						}
+#endif
 						else if( c == 'x' || c == 'b' ) {
 							// hex conversion.
 							if( !fromHex ) {
@@ -78472,10 +78521,11 @@ void ReleaseODBC( PODBC odbc )
 }
 void CloseDatabaseEx( PODBC odbc, LOGICAL ReleaseConnection )
 {
+	uint32_t tick = GetTickCount();
 	ReleaseODBC( odbc );
 	odbc->flags.bAutoCheckpoint = 0;
 	odbc->last_command_tick = 0;
-	while( odbc->auto_checkpoint_thread ) {
+	while( ( (GetTickCount()-tick) < 100 ) && odbc->auto_checkpoint_thread ) {
 		WakeThread( odbc->auto_checkpoint_thread );
 		Relinquish();
 	}
@@ -86096,6 +86146,412 @@ SACK_OPTION_NAMESPACE_END
 // Checkpoint
 //
 //
+#define TRANSLATION_SOURCE
+/* provides text translation.
+  Primary Usage:
+      SetTranslation( "some string" );
+	 CTEXTSTR result = TranslateText( "some string to translate" );
+	 lprintf( TranslateText( "Some format string %d:%d" ), x, y );
+*/
+#ifndef TRANSLATIONS_DEFINED
+/* Multiple inclusion protection symbol. */
+#define TRANSLATIONS_DEFINED
+#ifdef __cplusplus
+#  define _TRANSLATION_NAMESPACE namespace translation {
+#  define _TRANSLATION_NAMESPACE_END }
+#  define	 SACK_TRANSLATION_NAMESPACE_END } }
+#  define USE_TRANSLATION_NAMESPACE using namespace sack::translation;
+#else
+#  define _TRANSLATION_NAMESPACE
+#  define _TRANSLATION_NAMESPACE_END
+#  define	 SACK_TRANSLATION_NAMESPACE_END
+#  define USE_TRANSLATION_NAMESPACE
+#endif
+#  define TRANSLATION_NAMESPACE SACK_NAMESPACE _TRANSLATION_NAMESPACE
+#  define TRANSLATION_NAMESPACE_END _TRANSLATION_NAMESPACE_END  SACK_NAMESPACE_END
+SACK_NAMESPACE
+	/* Namespace of custom math routines.  Contains operators
+	 for Vectors and fractions. */
+	_TRANSLATION_NAMESPACE
+#define TRANSLATION_API CPROC
+#  ifdef TRANSLATION_SOURCE
+#    define TRANSLATION_PROC EXPORT_METHOD
+#  else
+/* Define the library linkage for a these functions. */
+#    define TRANSLATION_PROC IMPORT_METHOD
+#  endif
+struct translation {
+	TEXTSTR name;
+	PLIST strings;
+};
+typedef struct translation *PTranslation;
+TRANSLATION_PROC LOGICAL TRANSLATION_API SetCurrentTranslation( CTEXTSTR language );
+TRANSLATION_PROC CTEXTSTR TRANSLATION_API TranslateText( CTEXTSTR text );
+TRANSLATION_PROC PTranslation TRANSLATION_API CreateTranslation( CTEXTSTR language );
+TRANSLATION_PROC struct translation * TRANSLATION_API GetTranslation( CTEXTSTR language );
+TRANSLATION_PROC void TRANSLATION_API SetTranslatedString( PTranslation translation, INDEX idx, CTEXTSTR string );
+TRANSLATION_PROC CTEXTSTR TRANSLATION_API GetTranslationName( PTranslation translation );
+TRANSLATION_PROC void TRANSLATION_API SaveTranslationDataEx( const char *filename );
+TRANSLATION_PROC void TRANSLATION_API SaveTranslationData( void );
+TRANSLATION_PROC void TRANSLATION_API SaveTranslationDataToFile( FILE *output );
+TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataEx( const char *filename );
+TRANSLATION_PROC void TRANSLATION_API LoadTranslationData( void );
+TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataFromFile( FILE *input );
+/*
+   return: PLIST is a list of PTranslation
+*/
+TRANSLATION_PROC PLIST TRANSLATION_API GetTranslations( void );
+TRANSLATION_PROC CTEXTSTR TRANSLATION_API GetTranslationName( struct translation *translation );
+/*
+	return: PLIST of CTEXTSTR which are result strings of this translation
+*/
+TRANSLATION_PROC PLIST TRANSLATION_API GetTranslationStrings( struct translation *translation );
+/*
+  return: PLIST of CTEXTSTR which are source index strings
+  */
+TRANSLATION_PROC PLIST TRANSLATION_API GetTranslationIndexStrings( );
+SACK_TRANSLATION_NAMESPACE_END
+USE_TRANSLATION_NAMESPACE
+#endif
+TRANSLATION_NAMESPACE
+//struct translation {
+//	TEXTSTR name;
+//	PLIST strings;
+//};
+#define STRING_INDEX_TYPE uint32_t
+#define STRINGSPACE_SIZE (8192 - sizeof( uint32_t ) - 2 * sizeof( POINTER ))
+typedef struct stringspace_tag
+{
+	uint32_t nextname;
+	TEXTCHAR buffer[STRINGSPACE_SIZE];
+	DeclareLink( struct stringspace_tag );
+} STRINGSPACE, *PSTRINGSPACE;
+static struct translation_local_tag
+{
+	PTREEROOT index;
+	PLIST index_list;
+	PSTRINGSPACE index_strings;
+	PSTRINGSPACE translated_strings;
+	uint32_t string_count;
+	PLIST translations;
+	struct translation *current_translation;
+	LOGICAL updated;
+} *_translate_local;
+#define translate_local (*_translate_local)
+//---------------------------------------------------------------------------
+PRELOAD( InitTrasnlationLocal )
+{
+	SimpleRegisterAndCreateGlobal( _translate_local );
+	translate_local.index = CreateBinaryTreeEx( (GenericCompare)(int (MEM_API *)(CTEXTSTR , CTEXTSTR ))StrCmp, NULL );
+}
+//---------------------------------------------------------------------------
+static CTEXTSTR SaveString( PSTRINGSPACE *root, uint32_t index, CTEXTSTR text )
+{
+	PSTRINGSPACE space = root[0];
+	TEXTCHAR *p;
+	size_t len = StrLen( text ) + sizeof( TEXTCHAR );
+	translate_local.updated = TRUE;
+	for( ; space; space = space->next )
+	{
+		//lprintf( "Finding next name space free %p %p %p", l.NameSpace, space, space->next );
+		if( ( space->nextname + len ) < ( STRINGSPACE_SIZE - ( index?5:1 ) ) )
+		{
+			break;
+		}
+	}
+	if( !space )
+	{
+		space = New( STRINGSPACE );
+		space->nextname = 0;
+		//lprintf( "Adding new namespace %p", space );
+		if( space->next = root[0] )
+			root[0]->me = &space->next;
+		space->me = root;
+		root[0] = space;
+	}
+	if( index )
+	{
+		MemCpy( p = space->buffer + space->nextname + sizeof( STRING_INDEX_TYPE )
+			, text,(uint32_t)(sizeof( TEXTCHAR)*(len)) );
+		((STRING_INDEX_TYPE*)(space->buffer + space->nextname))[0] = index;
+		space->nextname += (uint32_t)len + sizeof( STRING_INDEX_TYPE );
+	}
+	else
+	{
+		MemCpy( p = space->buffer + space->nextname, text,(uint32_t)(sizeof( TEXTCHAR)*(len)) );
+		space->nextname += (uint32_t)len;
+	}
+	// +2 1 for byte of len, 1 for nul at end.
+#if defined( __ARM__ ) || defined( UNDER_CE )
+	space->nextname = ( space->nextname + 3 ) & 0xFFFFC;
+	// +3&0xFC rounds to next full dword segment
+	// arm requires this name be aligned on a dword boundry
+	// because later code references this as a DWORD value.
+#endif
+	return (CTEXTSTR)p;
+}
+//---------------------------------------------------------------------------
+static FILE *dumpOutput;
+static LOGICAL dumpFirst;
+static int Dump( CPOINTER user, uintptr_t key )
+{
+	sack_fprintf( dumpOutput, "\t\t%s\"%d\":\"%s\"\n", dumpFirst?"":",", (uint32_t)(uintptr_t)user, key );
+	dumpFirst = FALSE;
+	return 0;
+}
+//---------------------------------------------------------------------------
+void SaveTranslationDataToFile( FILE *output )
+{
+	//uint32_t n;
+	//PSTRINGSPACE strings;
+	/*
+	for( n = 0, strings = translate_local.index_strings;
+		 strings;
+		  n++, strings = strings->next );
+	sack_fwrite( &n, 1, sizeof( n ), output );
+	for( strings = translate_local.index_strings;
+		 strings;
+		  strings = strings->next )
+	{
+		sack_fwrite( strings, 1, sizeof( strings[0] ), output );
+	}
+	*/
+	sack_fprintf( output, "{\n" );
+	{
+		INDEX idx;
+		LOGICAL firstTranslation = TRUE;
+		LOGICAL first = TRUE;
+		//TEXTCHAR *string;
+		struct translation *translation;
+		sack_fprintf( output, "\t\"DEFAULT\":{\n" );
+		dumpOutput = output;
+		dumpFirst = TRUE;
+		DumpTree( translate_local.index, Dump );
+		sack_fprintf( output, "\t}\n" );
+		LIST_FORALL( translate_local.translations, idx, struct translation *, translation )
+		{
+			//size_t len;
+			INDEX string_idx;
+			//uint32_t tmp;
+			//uint8_t length[3];
+			CTEXTSTR string;
+			first = TRUE;
+			sack_fprintf( output,"\t,\"%s\":{\n", translation->name );
+			//len = StrLen( translation->name );
+			//sack_fwrite( &len, sizeof( len ), 1, output );
+			//sack_fwrite( translation->name, len, 1, output );
+			LIST_FORALL( translation->strings, string_idx, CTEXTSTR, string )
+			{
+				char *tmp;
+				sack_fprintf( output,"\t\t%s\"%d\":\"%s\"\n", (first)?"":",", string_idx, tmp = json_escape_string(string) );
+				first = FALSE;
+				Deallocate( char *, tmp );
+/*
+				tmp = (uint32_t)(string_idx + 1);
+				sack_fwrite( &tmp, 1, 4, output );
+				tmp = (uint32_t)StrLen( string );
+				if( tmp > 127 )
+				{
+					if( tmp > 32768 )
+					{
+						length[0] = 0x80 | ( ( tmp & 0x3FC000 ) >> 14 );
+						length[1] = 0x80 | ( ( tmp & 0x3F80 ) >> 7 );
+						length[2] =  ( tmp & 0x7F );
+						sack_fwrite( length, 1, 3, output );
+					}
+					else
+					{
+						length[0] = 0x80 | ( ( tmp & 0x3F80 ) >> 7 );
+						length[1] =  ( tmp & 0x7F );
+						sack_fwrite( length, 1, 2, output );
+					}
+				}
+				else
+					sack_fwrite( &tmp, 1, 1, output );
+				sack_fwrite( string, 1, tmp, output );
+*/
+			}
+			sack_fprintf( output, "\t}\n");
+			//tmp = 0;
+			//sack_fwrite( &tmp, 1, 4, output );
+		}
+	}
+	sack_fprintf( output, "}\n");
+}
+//---------------------------------------------------------------------------
+void SaveTranslationDataEx( const char *filename )
+{
+	if( translate_local.updated ) {
+		FILE *output = sack_fopen( 0, filename, WIDE("wb") );
+		if( !output )
+			return;
+		SaveTranslationDataToFile( output );
+		sack_fclose( output );
+	}
+}
+//---------------------------------------------------------------------------
+void SaveTranslationData( void )
+{
+	SaveTranslationDataEx( "strings.json" );
+}
+//---------------------------------------------------------------------------
+void LoadTranslationDataFromFile( POINTER input, size_t length )
+{
+	PDATALIST data = NULL;
+	char *_input = NewArray( char, length );
+	memcpy( _input, input, length );
+	if( json_parse_message( (char*)_input, length, &data ) ) {
+		struct json_value_container *val;
+		INDEX idx;
+		struct json_value_container *val3;
+		INDEX idx3;
+		DATA_FORALL( data, idx3, struct json_value_container *, val3 ) {
+			if( val3->value_type == VALUE_OBJECT ) {
+				DATA_FORALL( val3->contains, idx, struct json_value_container *, val ) {
+					if( val->value_type != VALUE_OBJECT )
+						continue;
+					struct json_value_container *val2;
+					INDEX idx2;
+					if( StrCmp( val->name, "DEFAULT" ) == 0 ) {
+						DATA_FORALL( val->contains, idx2, struct json_value_container *, val2 ) {
+							if( val2->value_type != VALUE_STRING ) continue;
+							CTEXTSTR index_text = SaveString( &translate_local.index_strings, (uint32_t)IntCreateFromText( val2->name ), val2->string );
+							PLIST list = SetLink( &translate_local.index_list, translate_local.string_count, index_text );
+							AddBinaryNode( translate_local.index, (CPOINTER)((uintptr_t)translate_local.string_count+1), (uintptr_t)index_text );
+							translate_local.string_count++;
+						}
+					} else {
+						struct translation *translation = CreateTranslation( val->name );
+						DATA_FORALL( val->contains, idx2, struct json_value_container *, val2 ) {
+							uint64_t index = IntCreateFromText( val2->name );
+							SetTranslatedString( translation, index, val2->string );
+						}
+					}
+				}
+			}
+		}
+		json_dispose_message( &data );
+	}
+	Deallocate( char *, _input );
+	translate_local.updated = FALSE;
+}
+//---------------------------------------------------------------------------
+void LoadTranslationDataEx( const char *filename )
+{
+	size_t size = 0;
+	char *tmp = ExpandPath( filename );
+	POINTER file = OpenSpace( NULL, tmp, &size );
+	Deallocate( char *, tmp );
+	//lprintf( "load file:%p", file );
+	if( file )
+	{
+		LoadTranslationDataFromFile( file, size );
+		CloseSpace( file );
+	}
+}
+//---------------------------------------------------------------------------
+void LoadTranslationData( void )
+{
+	LoadTranslationDataEx( "strings.json" );
+}
+//---------------------------------------------------------------------------
+CTEXTSTR TranslateText( CTEXTSTR text )
+{
+	uintptr_t psvIndex = (uintptr_t)FindInBinaryTree( translate_local.index, (uintptr_t)text );
+	if( !psvIndex )
+	{
+		text = SaveString( &translate_local.index_strings, translate_local.string_count+1, text );
+		SetLink( &translate_local.index_list, translate_local.string_count, text );
+		AddBinaryNode( translate_local.index, (CPOINTER)((uintptr_t)translate_local.string_count+1), (uintptr_t)text );
+		translate_local.string_count++;
+		psvIndex = translate_local.string_count;
+	}
+	if( translate_local.current_translation )
+	{
+		CTEXTSTR output = (CTEXTSTR)GetLink( &translate_local.current_translation->strings, psvIndex-1 );
+		if( output )
+			return output;
+	}
+	return text;
+}
+//---------------------------------------------------------------------------
+LOGICAL SetCurrentTranslation( CTEXTSTR language )
+{
+	INDEX idx;
+	struct translation *translation;
+	LIST_FORALL( translate_local.translations, idx, struct translation *, translation )
+	{
+		if( StrCaseCmp( translation->name, language ) == 0 )
+		{
+			translate_local.current_translation = translation;
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+//---------------------------------------------------------------------------
+struct translation * GetTranslation( CTEXTSTR language )
+{
+	INDEX idx;
+	struct translation *translation;
+	LIST_FORALL( translate_local.translations, idx, struct translation *, translation )
+	{
+		if( StrCaseCmp( translation->name, language ) == 0 )
+		{
+			return translation;
+		}
+	}
+	return NULL;
+}
+//---------------------------------------------------------------------------
+struct translation * CreateTranslation( CTEXTSTR language )
+{
+	INDEX idx;
+	struct translation *translation;
+	LIST_FORALL( translate_local.translations, idx, struct translation *, translation )
+	{
+		if( StrCaseCmp( translation->name, language ) == 0 )
+		{
+			translate_local.current_translation = translation;
+			return translation;
+		}
+	}
+	translate_local.updated = TRUE;
+	translation = New( struct translation );
+	translation->name = StrDup( language );
+	translation->strings = NULL;
+	AddLink( &translate_local.translations, translation );
+	return translation;
+}
+//---------------------------------------------------------------------------
+void SetTranslatedString( struct translation *translation, INDEX idx, CTEXTSTR string )
+{
+	if( translation )
+	{
+		SetLink( &translation->strings, idx - 1, SaveString( &translate_local.translated_strings, 0, string ) );
+	}
+}
+//---------------------------------------------------------------------------
+CTEXTSTR GetTranslationName( struct translation *translation )
+{
+	return translation->name;
+}
+//---------------------------------------------------------------------------
+PLIST GetTranslations( void )
+{
+	return translate_local.translations;
+}
+//---------------------------------------------------------------------------
+PLIST GetTranslationStrings( struct translation *translation )
+{
+	return translation->strings;
+}
+//---------------------------------------------------------------------------
+PLIST GetTranslationIndexStrings( void )
+{
+	return translate_local.index_list;
+}
+TRANSLATION_NAMESPACE_END
 #define DISABLE_DEBUG_REGISTER_AND_DISPATCH
 #if defined( __GNUC__ )
 #ifndef __cplusplus

@@ -10,6 +10,7 @@
            "sql_module.cc",
            "thread_module.cc",
            "jsonParse.cc",
+           "tls_interface.cc",
           ],
 	'defines': [
           'TARGETNAME="sack_vfs.node"',
@@ -20,12 +21,14 @@
             'defines': [
               '__LINUX__'
             ],
-            'cflags_cc': ['-Wno-implicit-fallthrough','-Wno-misleading-indentation','-Wno-parentheses','-Wno-unused-result'
+            'cflags_cc': ['-Wno-misleading-indentation','-Wno-parentheses','-Wno-unused-result'
 			,'-Wno-char-subscripts'
 			,'-Wno-empty-body','-Wno-format', '-Wno-address'
 			, '-Wno-strict-aliasing', '-Wno-switch', '-Wno-missing-field-initializers' 
 			, '-Wno-unused-variable', '-Wno-unused-function', '-Wno-unused-but-set-variable', '-Wno-maybe-uninitialized'
-			, '-Wno-sign-compare'
+			, '-Wno-sign-compare', '-Wno-unknown-warning'
+			],
+            'cflags': ['-Wno-implicit-fallthrough'
 			],
             'include_dirs': [
               'include/linux',
@@ -84,7 +87,7 @@
         ],
 
 	'otherDefinss': [ '__64__=1',
-		"__NO_OPTIONS__","__NO_INTERFACE_SUPPORT__","__NO_ODBC__" ],
+		"__NO_OPTIONS__","__NO_ODBC__" ],
 
     }
   ],
