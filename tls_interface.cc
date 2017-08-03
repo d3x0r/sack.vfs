@@ -89,7 +89,7 @@ struct info_params {
 	int keylen;
 	char *pubkey;
 	int pubkeylen;
-
+	int expire;
 	char *issuer;
 	int issuerlen;
 	char *subject;
@@ -355,7 +355,7 @@ void MakeCert(  struct info_params *params )
 		ASN1_INTEGER_set( X509_get_serialNumber( x509 ), (long)params->serial );
 		X509_gmtime_adj( X509_get_notBefore( x509 ), 0 );
 		// (60 seconds * 60 minutes * 24 hours * 365 days) = 31536000.
-		X509_gmtime_adj( X509_get_notAfter( x509 ), 31536000L );
+		X509_gmtime_adj( X509_get_notAfter( x509 ), params->expire?params->expire*(60*60*24):31536000 );
 		X509_set_pubkey( x509, pubkey );
 		{
 			X509_NAME *name = X509_get_subject_name( x509 );
@@ -584,20 +584,26 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 	}
 
-	Local<Object> issuer = opts->Get( String::NewFromUtf8(isolate,"issuer") )->ToObject();
+	Local<String> issuerString = String::NewFromUtf8( isolate, "issuer" );
 	String::Utf8Value *_issuer;
-	if( issuer.IsEmpty() ) {
-		//isolate->ThrowException( Exception::Error(
-		//			String::NewFromUtf8( isolate, TranslateText("Missing required option 'unit'.") ) ) );
-		//return;
+	if( !opts->Has( issuerString ) ) {
 		_issuer = NULL;
 		params.issuer = NULL;
 	}else {
+		Local<Object> issuer = opts->Get( issuerString )->ToObject();
 		_issuer = new String::Utf8Value( issuer->ToString() );
 		params.issuer = *_issuer[0];
 		params.issuerlen = _issuer[0].length();
 	}
 
+	Local<String> expireString = String::NewFromUtf8( isolate, "expire" );
+	if( !opts->Has( expireString ) ) {
+		params.expire = 0;
+	}
+	else {
+		Local<Integer> expire = opts->Get( expireString )->ToInteger();
+		params.expire = expire->Value();
+	}
 
 	
 	Local<String> passString = String::NewFromUtf8( isolate, "password" );
@@ -790,7 +796,6 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 	params.commonlen = _common.length();
 
 	Local<String> serialString = String::NewFromUtf8( isolate, "serial" );
-
 	if( !opts->Has( serialString ) ) {
 		isolate->ThrowException( Exception::Error(
 			String::NewFromUtf8( isolate, TranslateText( "Missing required option 'serial'." ) ) ) );
@@ -805,7 +810,6 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 			return;
 		}
 	}
-
 
 	Local<Object> key = opts->Get( String::NewFromUtf8(isolate,"key") )->ToObject();
 	if( key.IsEmpty() ) {
@@ -906,7 +910,8 @@ static void SignReq( struct info_params *params )
 	
 	// set time
 	X509_gmtime_adj(X509_get_notBefore(cert), 0);
-	X509_gmtime_adj(X509_get_notAfter(cert), 36500);
+	// (60 seconds * 60 minutes * 24 hours * 365 days) = 31536000.
+	X509_gmtime_adj(X509_get_notAfter(cert), params->expire?params->expire*(60*60*24):31536000);
  
 	// set subject from req
 	X509_NAME *subject, *tmpname;
@@ -1029,6 +1034,14 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 	String::Utf8Value _request( request->ToString() );
 	params.signReq = *_request;
 
+	Local<String> expireString = String::NewFromUtf8( isolate, "expire" );
+	if( !opts->Has( expireString ) ) {
+		params.expire = 0;
+	}
+	else {
+		Local<Integer> expire = opts->Get( expireString )->ToInteger();
+		params.expire = expire->Value();
+	}
 
 	Local<Object> key = opts->Get( String::NewFromUtf8(isolate,"key") )->ToObject();
 	if( key.IsEmpty() ) {
