@@ -3782,7 +3782,8 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextAddRuneEx( PVARTEXT pvt, TEXTRUNE c 
    pvt :       PVARTEXT to add data to
    block :     pointer to data to add
    size :      length of data block to add
-   DBG_PASS :  optional file and line parameters             */
+	DBG_PASS :  optional file and line parameters             */
+#define VARTEXT_ADD_DATA_NULTERM ((size_t)0xFF000000)
 TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextAddDataEx( PVARTEXT pvt, CTEXTSTR block, size_t length DBG_PASS );
 /* Adds a single character to a PVARTEXT collector.
    Example
@@ -41822,15 +41823,19 @@ void VarTextAddRuneEx( PVARTEXT pvt, TEXTRUNE c DBG_PASS )
 //---------------------------------------------------------------------------
 void VarTextAddDataEx( PVARTEXT pvt, CTEXTSTR block, size_t length DBG_PASS )
 {
+   LOGICAL endOnNul = FALSE;
 	if( !pvt->collect )
 		VarTextInitEx( pvt DBG_RELAY );
+	if( length > 0x1000000 )
+		endOnNul = TRUE;
 #ifdef VERBOSE_DEBUG_VARTEXT
-	Log1( WIDE("Adding character %c"), c );
+	Log1( WIDE("Adding string") );
 #endif
 	{
 		uint32_t n;
 		for( n = 0; n < length; n++ )
 		{
+			if( endOnNul && !block[n] ) break;
 			pvt->collect_text[pvt->collect_used++] = block[n];
 			if( pvt->collect_used >= pvt->collect_avail )
 			{

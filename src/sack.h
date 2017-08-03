@@ -3774,7 +3774,8 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextAddRuneEx( PVARTEXT pvt, TEXTRUNE c 
    pvt :       PVARTEXT to add data to
    block :     pointer to data to add
    size :      length of data block to add
-   DBG_PASS :  optional file and line parameters             */
+	DBG_PASS :  optional file and line parameters             */
+#define VARTEXT_ADD_DATA_NULTERM ((size_t)0xFF000000)
 TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextAddDataEx( PVARTEXT pvt, CTEXTSTR block, size_t length DBG_PASS );
 /* Adds a single character to a PVARTEXT collector.
    Example
