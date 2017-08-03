@@ -1,0 +1,12 @@
+{
+	"DEFAULT":{
+		"1":" issuer:"
+		,"2":" subject:"
+		,"3":"Missing required option 'key' or 'cert'."
+		,"4":"gencert : bad pubkey specified."
+		,"8":"pubkey: bad key or password"
+		,"5":"validate: bad certificate"
+		,"6":"validate: certificate signature failed:"
+		,"7":"validate: failed; unhandled error:"
+	}
+}
