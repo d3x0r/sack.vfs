@@ -87,6 +87,13 @@ struct info_params {
 	int commonlen;
 	char *key;
 	int keylen;
+	char *pubkey;
+	int pubkeylen;
+
+	char *issuer;
+	int issuerlen;
+	char *subject;
+	int subjectlen;
 
 	int64_t serial;
 	char *password;
@@ -135,7 +142,6 @@ void TLSObject::Init( Isolate *isolate, Handle<Object> exports )
 OpenSSL_add_all_algorithms();
 ERR_load_crypto_strings();
 
-
 	tlsTemplate = FunctionTemplate::New( isolate, New );
 	tlsTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Volume" ) );
 	tlsTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
@@ -167,20 +173,36 @@ TLSObject::~TLSObject()
 {
 }
 
-static void throwError( struct info_params *params, const char *message ) {
+static void flushErrors(void) {
+	int err;
+	char buf[256];
+	//lprintf( "----- FLUSH ERRORS ------" );
+	while( err = ERR_get_error() ) {
+		ERR_error_string_n( err, buf, 256 );
+		lprintf( "OUtstanding SSL Error:%s", buf );
+	}
+}
+
+static void _throwError( struct info_params *params, const char *message ) {
 	PVARTEXT pvt = VarTextCreate();
 	char buf[256];
 	int err;
-	vtprintf( pvt, "%s\n", TranslateText( message ) );
+	VarTextAddData( pvt, message, VARTEXT_ADD_DATA_NULTERM );
+	VarTextAddData( pvt, "\n", 1 );
 	while( err = ERR_get_error() ) {
 		ERR_error_string_n( err, buf, 256 );
 		//lprintf( "...%s", buf );
-		vtprintf( pvt, "%s\n", buf );
+		VarTextAddData( pvt, buf, VARTEXT_ADD_DATA_NULTERM );
+		VarTextAddData( pvt, "\n", 1 );
 	}
 	PTEXT result = VarTextPeek( pvt );
 	params->isolate->ThrowException( Exception::Error(
 				String::NewFromUtf8( params->isolate, GetText( result ) ) ) );
 	VarTextDestroy( &pvt );
+}
+
+static void throwError( struct info_params *params, const char *message ) {
+	_throwError( params, TranslateText( message ) );
 }
 
 void TLSObject::seed( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -299,13 +321,9 @@ int pem_password(char *buf, int size, int rwflag, void *u)
 
 void MakeCert(  struct info_params *params )
 { 
-	int ca_len;
-	char* ca;
-
-	//X509_REQ *req;
 	X509 * x509=NULL;
 	EVP_PKEY *pkey = NULL;
-
+	EVP_PKEY *pubkey = NULL;
 	params->ca = NULL;  // init no result
 
 	BIO *keybuf = BIO_new( BIO_s_mem() );
@@ -319,24 +337,26 @@ void MakeCert(  struct info_params *params )
 		goto free_all;
 	}
 
-	// seed openssl's prng 
-	// 
-	/* 
-	if (RAND_load_file("/dev/random", -1)) 
-		  fatal("Could not seed prng"); 
-	*/ 
-	// Generate the RSA key; we don't assign a callback to monitor progress 
-	// since generating keys is fast enough these days 
-	// 
-
+	if( params->pubkey ) {
+		BIO_reset( keybuf );
+		BIO_write( keybuf, params->pubkey, params->pubkeylen );
+		PEM_read_bio_PUBKEY( keybuf, &pubkey, NULL, NULL );
+		if( !pubkey ) {
+			throwError( params, "gencert : bad pubkey specified." );
+			goto free_all;
+		}
+	}
+	else
+		pubkey = pkey;
 	{
 		x509 = X509_new();
+		X509_set_version( x509, 2 ); // wikipedia says 0 is what is normal. (0=1, 1=2, 2=v3! )
 
 		ASN1_INTEGER_set( X509_get_serialNumber( x509 ), (long)params->serial );
 		X509_gmtime_adj( X509_get_notBefore( x509 ), 0 );
 		// (60 seconds * 60 minutes * 24 hours * 365 days) = 31536000.
 		X509_gmtime_adj( X509_get_notAfter( x509 ), 31536000L );
-		X509_set_pubkey( x509, pkey );
+		X509_set_pubkey( x509, pubkey );
 		{
 			X509_NAME *name = X509_get_subject_name( x509 );
 
@@ -381,7 +401,6 @@ void MakeCert(  struct info_params *params )
 				NID_policy_mappings,	/* 747 
 				NID_inhibit_any_policy	/* 748 
 
-
 				# define KU_DIGITAL_SIGNATURE    0x0080
 				# define KU_NON_REPUDIATION      0x0040
 				# define KU_KEY_ENCIPHERMENT     0x0020
@@ -397,7 +416,7 @@ void MakeCert(  struct info_params *params )
 				//ASN1_OCTET_STRING *data;
 				{
 					ASN1_STRING *data = ASN1_STRING_new();
-					char *r = SRG_ID_Generator();
+					char *r = params->issuer?params->issuer:SRG_ID_Generator();
 					ASN1_STRING_set( data, r, (int)strlen( r ) );
 					X509_add1_ext_i2d( x509, NID_subject_key_identifier, data, 0, X509V3_ADD_DEFAULT );
 
@@ -421,7 +440,6 @@ void MakeCert(  struct info_params *params )
 				}
 			}
 
-
 			if( X509_sign( x509, pkey, EVP_sha512() ) < 1 )
 			{
 				throwError( params, "gencert: signing failed." );
@@ -430,24 +448,18 @@ void MakeCert(  struct info_params *params )
 
 			{
 				PEM_write_bio_X509( keybuf, x509 );
-				ca_len = BIO_pending( keybuf );
-				ca = NewArray( char, ca_len + 1 );
-
-				BIO_read( keybuf, ca, ca_len );
-				ca[ca_len] = 0;
-
-				params->ca = ca;
-				params->ca_len = ca_len;
+				params->ca_len = BIO_pending( keybuf );
+				params->ca = NewArray( char, params->ca_len + 1 );
+				BIO_read( keybuf, params->ca, params->ca_len );
+				params->ca[params->ca_len] = 0;
 			}
-			// don't free the key; it will crash the 509 free later.
-			//X509_NAME_free( name );
-
 		}
 	}
 free_all:
+	if( pubkey != pkey )
+		EVP_PKEY_free( pubkey );
 	EVP_PKEY_free( pkey );
 	X509_free( x509 );
-	//X509_REQ_free( req );
 	BIO_free_all(keybuf);
 } 
 
@@ -543,6 +555,18 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 	params.key = *_key;
 	params.keylen = _key.length();
 
+	Local<String> pubkeyString = String::NewFromUtf8( isolate, "pubkey" );
+	String::Utf8Value *_pubkey = NULL;
+
+	if( opts->Has( pubkeyString ) ) {
+		Local<Object> key = opts->Get( pubkeyString )->ToObject();
+		_pubkey = new String::Utf8Value( key->ToString() );
+		params.pubkey = *_pubkey[0];
+		params.pubkeylen = _pubkey[0].length();
+	}
+	else
+		params.pubkey = NULL;
+
 
 	Local<String> serialString = String::NewFromUtf8( isolate, "serial" );
 	if( !opts->Has( serialString ) ) {
@@ -559,6 +583,22 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 			return;
 		}
 	}
+
+	Local<Object> issuer = opts->Get( String::NewFromUtf8(isolate,"issuer") )->ToObject();
+	String::Utf8Value *_issuer;
+	if( issuer.IsEmpty() ) {
+		//isolate->ThrowException( Exception::Error(
+		//			String::NewFromUtf8( isolate, TranslateText("Missing required option 'unit'.") ) ) );
+		//return;
+		_issuer = NULL;
+		params.issuer = NULL;
+	}else {
+		_issuer = new String::Utf8Value( issuer->ToString() );
+		params.issuer = *_issuer[0];
+		params.issuerlen = _issuer[0].length();
+	}
+
+
 	
 	Local<String> passString = String::NewFromUtf8( isolate, "password" );
 
@@ -580,6 +620,8 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		Deallocate( char *, params.ca );
 	}
 
+	if( _pubkey ) delete _pubkey;
+	if( _issuer ) delete _issuer;
 	if( _unit ) delete _unit;
 	if( _password ) delete _password;
 
@@ -630,7 +672,6 @@ void MakeReq( struct info_params *params )
 
 			X509_NAME_add_entry_by_txt( name, "C", MBSTRING_UTF8,
 				(unsigned char *)params->country, params->countrylen, -1, 0 );
-
 			X509_NAME_add_entry_by_txt( name, "ST", MBSTRING_UTF8,
 				(unsigned char *)params->state, params->statelen, -1, 0 );
 			X509_NAME_add_entry_by_txt( name, "L", MBSTRING_UTF8,
@@ -640,7 +681,6 @@ void MakeReq( struct info_params *params )
 					(unsigned char *)params->orgUnit, params->orgUnitlen, -1, 0 );
 			X509_NAME_add_entry_by_txt( name, "O", MBSTRING_UTF8,
 				(unsigned char *)params->org, params->orglen, -1, 0 );
-
 			X509_NAME_add_entry_by_txt( name, "CN", MBSTRING_UTF8,
 				(unsigned char *)params->common, params->commonlen, -1, 0 );
 
@@ -766,6 +806,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 	}
 
+
 	Local<Object> key = opts->Get( String::NewFromUtf8(isolate,"key") )->ToObject();
 	if( key.IsEmpty() ) {
 		isolate->ThrowException( Exception::Error(
@@ -809,6 +850,7 @@ static void SignReq( struct info_params *params )
 	X509_REQ *req = NULL;
 	X509 * x509 = NULL;
 	EVP_PKEY *pkey = NULL;
+	EVP_PKEY *pubkey = NULL;
 	params->ca = NULL;
 
 	BIO *keybuf = BIO_new( BIO_s_mem() );
@@ -817,32 +859,49 @@ static void SignReq( struct info_params *params )
 	PEM_read_bio_PrivateKey( keybuf, &pkey, params->password?pem_password:NULL, params->password?params:NULL );
 	if( !pkey ){
 		throwError( params, "signreq: bad key or password" );
-        	goto free_all;
+		goto free_all;
 	}
 
-
 	BIO_write( keybuf, params->signReq, (int)strlen( params->signReq ) );
-	PEM_read_bio_X509_REQ( keybuf, &req, NULL, NULL );
+	if( !PEM_read_bio_X509_REQ( keybuf, &req, NULL, NULL ) ) {
+		throwError( params, "signreq: failed to parse request" );
+		goto free_all;
+	}
 
 	BIO_write( keybuf, params->signingCert, (int)strlen( params->signingCert ) );
-	PEM_read_bio_X509( keybuf, &x509, NULL, NULL );
+	if( !PEM_read_bio_X509( keybuf, &x509, NULL, NULL )) {
+		throwError( params, "signreq: failed to parse signing cert" );
+		goto free_all;
+	}
+
+	if( params->pubkey ) {
+		BIO_reset( keybuf );
+		BIO_write( keybuf, params->pubkey, params->pubkeylen );
+		PEM_read_bio_PUBKEY( keybuf, &pubkey, NULL, NULL );
+		if( !pubkey ) {
+			throwError( params, "signreq : bad pubkey specified." );
+			goto free_all;
+		}
+	}
+	else
+		pubkey = X509_REQ_get_pubkey( req );;
 
 	X509* cert;
 	cert = X509_new();
 	// set version to X509 v3 certificate
 	if (!X509_set_version(cert,2)) {
 		throwError( params, "signreq: failed set version" );
-        	goto free_all;
+		goto free_all;
  
 	}
 
 	// set serial
 	ASN1_INTEGER_set(X509_get_serialNumber(cert), (long)params->serial);
 
-    	// set issuer name frome ca
+	// set issuer name frome ca
 	if (!X509_set_issuer_name(cert, X509_get_subject_name(x509))){
 		throwError( params, "signreq: failed to set issuer" );
-        	goto free_all;
+		goto free_all;
 	}
 	
 	// set time
@@ -855,14 +914,11 @@ static void SignReq( struct info_params *params )
 	subject = X509_NAME_dup(tmpname);
 	if (!X509_set_subject_name(cert, subject)){
 		throwError( params, "signreq: failed to set subject" );
-        	goto free_all;
+		goto free_all;
 	}
  
-	// set pubkey from req
-	EVP_PKEY *pktmp;
-	pktmp = X509_REQ_get_pubkey(req);
-	ret = X509_set_pubkey(cert, pktmp);
-	EVP_PKEY_free(pktmp);
+	ret = X509_set_pubkey(cert, pubkey);
+	//EVP_PKEY_free(pktmp);
 	if (!ret)  {
 		throwError( params, "signreq: Failed to set public key" );
 		goto free_all;
@@ -871,12 +927,18 @@ static void SignReq( struct info_params *params )
 	{
 		{
 			ASN1_STRING *data = ASN1_STRING_new();
-			char *r = SRG_ID_Generator();
+			char *r = params->subject?params->subject:SRG_ID_Generator();
 			ASN1_STRING_set( data, r, (int)strlen( r ) );
 			X509_add1_ext_i2d( cert, NID_subject_key_identifier, data, 0, X509V3_ADD_DEFAULT );
 
 			AUTHORITY_KEYID kid;
-			ASN1_STRING *subj = (ASN1_STRING *)X509_get_ext_d2i( x509, NID_subject_key_identifier, NULL, NULL );
+			ASN1_STRING *subj;
+			if( !params->issuer )
+				subj = (ASN1_STRING *)X509_get_ext_d2i( x509, NID_subject_key_identifier, NULL, NULL );
+			else {
+				subj = ASN1_STRING_new();
+				ASN1_STRING_set( subj, params->issuer, params->issuerlen );
+			}
 			kid.keyid = subj;
 			kid.serial = X509_get_serialNumber( x509 );
 			kid.issuer = NULL;
@@ -929,6 +991,8 @@ free_all:
  
 	X509_REQ_free(req);
 	X509_free(x509);
+	if( pubkey != pkey )
+		EVP_PKEY_free( pubkey );
 	EVP_PKEY_free(pkey);
 
 }
@@ -993,6 +1057,52 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 	}
 
+	Local<String> issuerString = String::NewFromUtf8( isolate, "issuer" );
+	Local<String> subjectString = String::NewFromUtf8( isolate, "subject" );
+
+	String::Utf8Value *_issuer;
+	if( !opts->Has( issuerString ) ) {
+		//isolate->ThrowException( Exception::Error(
+		//			String::NewFromUtf8( isolate, TranslateText("Missing required option 'unit'.") ) ) );
+		//return;
+		_issuer = NULL;
+		params.issuer = NULL;
+	}
+	else {
+		Local<Object> issuer = opts->Get( issuerString )->ToObject();
+		_issuer = new String::Utf8Value( issuer->ToString() );
+		params.issuer = *_issuer[0];
+		params.issuerlen = _issuer[0].length();
+	}
+
+	String::Utf8Value *_subject;
+	if( !opts->Has( subjectString ) ) {
+		//isolate->ThrowException( Exception::Error(
+		//			String::NewFromUtf8( isolate, TranslateText("Missing required option 'unit'.") ) ) );
+		//return;
+		_subject = NULL;
+		params.subject = NULL;
+	}
+	else {
+		Local<Object> subject = opts->Get( String::NewFromUtf8( isolate, "subject" ) )->ToObject();
+		_subject = new String::Utf8Value( subject->ToString() );
+		params.subject = *_subject[0];
+		params.subjectlen = _subject[0].length();
+	}
+
+	Local<String> pubkeyString = String::NewFromUtf8( isolate, "pubkey" );
+	String::Utf8Value *_pubkey = NULL;
+
+	if( opts->Has( pubkeyString ) ) {
+		lprintf( "using custom public key..." );
+		Local<Object> key = opts->Get( pubkeyString )->ToObject();
+		_pubkey = new String::Utf8Value( key->ToString() );
+		params.pubkey = *_pubkey[0];
+		params.pubkeylen = _pubkey[0].length();
+	}
+	else
+		params.pubkey = NULL;
+
 	Local<String> passString = String::NewFromUtf8( isolate, "password" );
 
 	String::Utf8Value *_password = NULL;
@@ -1013,7 +1123,8 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		Deallocate( char *, params.ca );
 		
 	}
-
+	if( _issuer ) delete _issuer;
+	if( _subject ) delete _subject;
 	if( _password ) delete _password;
 }
 
@@ -1033,19 +1144,19 @@ static void PubKey( struct info_params *params ) {
 		pkey = PEM_read_bio_PrivateKey( keybuf, NULL, params->password?pem_password:NULL, params->password?params:NULL );
 		if( !pkey ){
 			throwError( params, "pubkey: bad key or password" );
-        		goto free_all;
+			goto free_all;
 		}
 	} else {
 		BIO_write( keybuf, params->cert, (int)strlen( params->cert ) );
 		x509 = PEM_read_bio_X509( keybuf, &x509, NULL, NULL );
 		if( !x509 ) {
 			throwError( params, "pubkey: bad certificate" );
-	        	goto free_all;
+			goto free_all;
 		}
 		pkey = X509_get_pubkey( x509 );
 		if( !pkey ) {
 			throwError( params, "pubkey: certificate fialed to get pubkey" );
-	        	goto free_all;
+				goto free_all;
 		}
 	}
 /*
@@ -1141,7 +1252,7 @@ void TLSObject::pubKey( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 static void DumpCert( X509 *x509 ) {
-
+	return;
 	char *subj;
 	subj = X509_NAME_oneline( X509_get_subject_name( x509 ), NULL, 0 );
 	char *issuer;
@@ -1275,8 +1386,10 @@ static LOGICAL Validate( struct info_params *params ) {
 	STACK_OF( X509 ) *chain = sk_X509_new_null();
 
 	if( params->chain ) {
+		LOGICAL goodRead;
 		BIO_write( keybuf, params->chain, (int)strlen( params->chain ) );
-		while( PEM_read_bio_X509( keybuf, &x509, NULL, NULL ) ) {
+		while( ( BIO_pending( keybuf )?(goodRead=TRUE):(goodRead=FALSE) ) && 
+			PEM_read_bio_X509( keybuf, &x509, NULL, NULL ) ) {
 			if( X509_check_ca( x509 ) ) {
 				/* Function return 0, if it is not CA certificate, 1 if it is proper
 				X509v3 CA certificate with basicConstraints extension CA : TRUE,
@@ -1288,7 +1401,17 @@ static LOGICAL Validate( struct info_params *params ) {
 				sk_X509_push( chain, x509 );
 				x509 = NULL;
 			}
+			else {
+				throwError( params, "validate : failed to read cert chain" );
+				goto free_all;
+			}
 		}
+		if( goodRead ) {
+			throwError( params, "validate : failed to read cert chain" );
+			goto free_all;
+		}
+		// the last read
+		//flushErrors();
 	}
 
 	BIO_write( keybuf, params->cert, (int)strlen( params->cert ) );
@@ -1308,26 +1431,42 @@ static LOGICAL Validate( struct info_params *params ) {
 
 		//X509 *chain_ss = sk_X509_pop( x509_store->chain );
 		//x509_store->check_issued( x509_store, x509, chain_ss );
+		//lprintf( "before verify:" ); flushErrors();
 		int verified = X509_verify_cert( x509_store );
-		lprintf( "verified:%d", verified );
-		if( verified < 0 ) {
-			throwError( params, "validate: failed." );
-		}
-		if( !verified ) {
+		//lprintf( "verified:%d", verified );
+		if( verified <= 0 ) {
+			char subbuf[256];
+			char issbuf[256];
 			int err = X509_STORE_CTX_get_error( x509_store );
-			lprintf( "Err:%d  depth:%d", err, X509_STORE_CTX_get_error_depth( x509_store ) );
-
-			//X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY
 
 			X509 *badCert = X509_STORE_CTX_get_current_cert( x509_store );
 			char *subj;
-			subj = X509_NAME_oneline( X509_get_subject_name( x509 ), NULL, 0 );
+			subj = X509_NAME_oneline( X509_get_subject_name( badCert ), subbuf, 256 );
 			char *issuer;
-			//X509_V_ERR_CRL_NOT_YET_VALID
-			issuer = X509_NAME_oneline( X509_get_issuer_name( x509 ), NULL, 0 );
-			lprintf( "Error OneLiners (cert to verify):\n%s\n%s", subj, issuer );
-
-			DumpCert( x509 );
+			issuer = X509_NAME_oneline( X509_get_issuer_name( badCert ), issbuf, 256 );
+			//lprintf( "Error OneLiners (cert to verify):\n%s\n%s", subj, issuer );
+			PVARTEXT pvt = VarTextCreate();
+			switch( err ) {
+			case X509_V_ERR_CERT_SIGNATURE_FAILURE:
+				VarTextAddData( pvt, TranslateText( "validate: certificate signature failed:" ), VARTEXT_ADD_DATA_NULTERM );
+				VarTextAddData( pvt, TranslateText( " subject:" ), VARTEXT_ADD_DATA_NULTERM );
+				VarTextAddData( pvt, subj, VARTEXT_ADD_DATA_NULTERM );
+				VarTextAddData( pvt, TranslateText( " issuer:" ), VARTEXT_ADD_DATA_NULTERM );
+				VarTextAddData( pvt, issuer, VARTEXT_ADD_DATA_NULTERM );
+				_throwError( params, GetText( VarTextPeek( pvt ) ) );
+				break;
+			default:
+				VarTextAddData( pvt, TranslateText( "validate: failed; unhandled error:" ), VARTEXT_ADD_DATA_NULTERM );
+				vtprintf( pvt, "%d", err );
+				//VarTextAddData( pvt, TranslateText( " depth:" ), VARTEXT_ADD_DATA_NULTERM );
+				//vtprintf( pvt, "%d", X509_STORE_CTX_get_error_depth( x509_store ) );
+				_throwError( params, GetText( VarTextPeek( pvt ) ) );
+				break;
+			}
+			DumpCert( badCert );
+			//flushErrors();
+			VarTextDestroy( &pvt );
+			
 		}
 		else
 			valid = TRUE;
