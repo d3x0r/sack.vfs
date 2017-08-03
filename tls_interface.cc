@@ -154,9 +154,11 @@ ERR_load_crypto_strings();
 	i->Set( String::NewFromUtf8( isolate, "genkey" ), Function::New( isolate, genKey ) );
 	i->Set( String::NewFromUtf8( isolate, "gencert" ), Function::New( isolate, genCert ) ); // root cert
 	i->Set( String::NewFromUtf8( isolate, "genreq" ), Function::New( isolate, genReq ) );  // cert signing req
-	i->Set( String::NewFromUtf8( isolate, "pubkey" ), Function::New( isolate, pubKey ) ); // sign cert
+	i->Set( String::NewFromUtf8( isolate, "pubkey" ), Function::New( isolate, pubKey ) ); // get public key of private
 	i->Set( String::NewFromUtf8( isolate, "signreq" ), Function::New( isolate, signReq ) ); // sign cert
-	i->Set( String::NewFromUtf8( isolate, "validate" ), Function::New( isolate, validate ) ); // sign cert
+	i->Set( String::NewFromUtf8( isolate, "validate" ), Function::New( isolate, validate ) ); // validate a cert chain (returns true, or throws exception)
+	i->Set( String::NewFromUtf8( isolate, "expiration" ), Function::New( isolate, expiration ) ); // get certificate expiration date
+	//i->Set( String::NewFromUtf8( isolate, "certToString" ), Function::New( isolate, toString ) ); // dump cert to text string
 
 	//constructor.Reset( isolate, tlsTemplate->GetFunction() );
 	exports->Set( String::NewFromUtf8( isolate, "TLS" ),
@@ -353,9 +355,9 @@ void MakeCert(  struct info_params *params )
 		X509_set_version( x509, 2 ); // wikipedia says 0 is what is normal. (0=1, 1=2, 2=v3! )
 
 		ASN1_INTEGER_set( X509_get_serialNumber( x509 ), (long)params->serial );
-		X509_gmtime_adj( X509_get_notBefore( x509 ), 0 );
+		X509_gmtime_adj( X509_getm_notBefore( x509 ), 0 );
 		// (60 seconds * 60 minutes * 24 hours * 365 days) = 31536000.
-		X509_gmtime_adj( X509_get_notAfter( x509 ), params->expire?params->expire*(60*60*24):31536000 );
+		X509_gmtime_adj( X509_getm_notAfter( x509 ), params->expire?params->expire*(60*60*24):31536000 );
 		X509_set_pubkey( x509, pubkey );
 		{
 			X509_NAME *name = X509_get_subject_name( x509 );
@@ -602,7 +604,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		Local<Integer> expire = opts->Get( expireString )->ToInteger();
-		params.expire = expire->Value();
+		params.expire = (int)expire->Value();
 	}
 
 	
@@ -847,8 +849,6 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 
 static void SignReq( struct info_params *params )
 {
-	int ca_len;
-	char* ca;
 	int ret;
 
 	X509_REQ *req = NULL;
@@ -909,9 +909,9 @@ static void SignReq( struct info_params *params )
 	}
 	
 	// set time
-	X509_gmtime_adj(X509_get_notBefore(cert), 0);
+	X509_gmtime_adj(X509_getm_notBefore(cert), 0);
 	// (60 seconds * 60 minutes * 24 hours * 365 days) = 31536000.
-	X509_gmtime_adj(X509_get_notAfter(cert), params->expire?params->expire*(60*60*24):31536000);
+	X509_gmtime_adj(X509_getm_notAfter(cert), params->expire?params->expire*(60*60*24):31536000);
  
 	// set subject from req
 	X509_NAME *subject, *tmpname;
@@ -981,13 +981,10 @@ static void SignReq( struct info_params *params )
 	}
  
 	PEM_write_bio_X509(keybuf, cert);
-	ca_len = BIO_pending( keybuf );
-	ca = NewArray( char, ca_len + 1 );
-	BIO_read( keybuf, ca, ca_len );
-	ca[ca_len] = 0;
-
-	params->ca = ca;
-	params->ca_len = ca_len;
+	params->ca_len = BIO_pending( keybuf );
+	params->ca = NewArray( char, params->ca_len + 1 );
+	BIO_read( keybuf, params->ca, params->ca_len );
+	params->ca[params->ca_len] = 0;
 
 
 free_all:
@@ -1040,7 +1037,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		Local<Integer> expire = opts->Get( expireString )->ToInteger();
-		params.expire = expire->Value();
+		params.expire = (int)expire->Value();
 	}
 
 	Local<Object> key = opts->Get( String::NewFromUtf8(isolate,"key") )->ToObject();
@@ -1550,4 +1547,44 @@ void TLSObject::validate( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	if( chain ) delete chain;
 	if( _key ) delete _key;
+}
+
+void Expiration( struct info_params *params ) {
+	X509 * x509 = NULL;
+	params->ca = NULL;
+
+	BIO *keybuf = BIO_new( BIO_s_mem() );
+
+	BIO_write( keybuf, params->cert, params->certlen );
+	if( !PEM_read_bio_X509( keybuf, &x509, NULL, NULL )) {
+		throwError( params, "expiration : failed to parse cert" );
+		goto free_all;
+	}
+
+
+	ASN1_TIME *before = X509_getm_notBefore(x509);
+	// (60 seconds * 60 minutes * 24 hours * 365 days) = 31536000.
+	ASN1_TIME *after = X509_getm_notAfter(x509);
+	
+
+
+}
+
+
+void TLSObject::expiration( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	struct info_params params;
+
+	int argc = args.Length();
+	if( !argc ) {
+		isolate->ThrowException( Exception::Error(
+					String::NewFromUtf8( isolate, TranslateText("Missing required certificate data.") ) ) );
+		return;
+	}
+	params.isolate = isolate;
+
+	_key = new String::Utf8Value( args[0]->ToString() );
+	
+		
 }

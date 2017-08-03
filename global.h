@@ -269,6 +269,7 @@ public:
 	static void signReq( const v8::FunctionCallbackInfo<Value>& args );
 	static void pubKey( const v8::FunctionCallbackInfo<Value>& args );
 	static void validate( const v8::FunctionCallbackInfo<Value>& args );
+	static void expiration( const v8::FunctionCallbackInfo<Value>& args );
 
 	~TLSObject();
 };
