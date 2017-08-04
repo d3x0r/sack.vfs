@@ -107,7 +107,7 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, const char 
 	if( !mount && !filename ) {
 		volNative = false;
 		fsInt = sack_get_filesystem_interface( "native" );
-lprintf( "open native mount" );
+		//lprintf( "open native mount" );
 		fsMount = sack_get_default_mount();
 	} else {
 		//lprintf( "volume: %s %p %p", filename, key, key2 );
@@ -307,21 +307,33 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 				overlong = TRUE;
 		}
 		String::Utf8Value fName( args[0] );
-		
-		if(args[1]->IsArrayBuffer()) {
-			Local<ArrayBuffer> myarr = args[1].As<ArrayBuffer>();
-			Nan::TypedArrayContents<uint8_t> dest(myarr);
-			uint8_t *buf = *dest;
+		int type = 0;		
+		if( ( (type=1), args[1]->IsArrayBuffer()) || ((type=2),args[1]->IsUint8Array()) ) {
+			uint8_t *buf ;
+			size_t length;
+			if( type == 1 ) {
+				Local<ArrayBuffer> myarr = args[1].As<ArrayBuffer>();
+				Nan::TypedArrayContents<uint8_t> dest(myarr);
+				buf = *dest;
+				length = myarr->ByteLength();
+			} else if( type == 2 ) {
+				Local<Uint8Array> _myarr = args[1].As<Uint8Array>();
+				//Local<ArrayBuffer> myarr = _myarr->Buffer();
+				Nan::TypedArrayContents<uint8_t> dest( _myarr );
+				//Nan::TypedArrayContents<uint8_t> dest(myarr);
+				buf = *dest;
+				length = _myarr->Length();
+			}
 
 			if( vol->volNative ) {
 				struct sack_vfs_file *file = sack_vfs_openfile( vol->vol, *fName );
-				sack_vfs_write( file, (const char*)buf, myarr->ByteLength() );
+				sack_vfs_write( file, (const char*)buf, length );
 				sack_vfs_close( file );
 
 				args.GetReturnValue().Set( True(isolate) );
 			} else {
 				FILE *file = sack_fopenEx( 0, *fName, "wb", vol->fsMount );
-				sack_fwrite( buf, myarr->ByteLength(), 1, file );
+				sack_fwrite( buf, length, 1, file );
 				sack_fclose( file );
 
 				args.GetReturnValue().Set( True(isolate) );
@@ -389,6 +401,10 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 
 			}
 			Deallocate( char*, f );
+		} else {
+			isolate->ThrowException( Exception::Error(
+						String::NewFromUtf8( isolate, "Data to write is not an ArrayBuffer or String." ) ) );
+
 		}
 	}
 
@@ -442,6 +458,11 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 					String::Utf8Value fName( args[1]->ToString() );
 					defaultFilename = FALSE;
 					filename = StrDup( *fName );
+				}
+				else {
+					defaultFilename = FALSE;
+					filename = mount_name;
+					mount_name = NULL;
 				}
 				if( argc > 2 ) {
 					String::Utf8Value k( args[2] );

@@ -10820,7 +10820,7 @@ void sack_vfs_unload_volume( struct volume * vol ) {
 		return;
 	}
 	DeleteListEx( &vol->files DBG_SRC );
-	if( !vol->external_memory )	Deallocate( struct disk *, vol->diskReal );
+	if( !vol->external_memory )	CloseSpace( vol->diskReal );
 	if( vol->key ) {
 		Deallocate( uint8_t*, vol->key );
 		SRG_DestroyEntropy( &vol->entropy );
