@@ -285,7 +285,11 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 				String::NewFromUtf8( isolate, "Requires filename to open and data to write" ) ) );
 			return;
 		}
-
+		LOGICAL overlong = FALSE;
+		if( args.Length() > 2 ) {
+			if( args[2]->ToBoolean()->Value() )
+				overlong = TRUE;
+		}
 		String::Utf8Value fName( args[0] );
 		
 		if(args[1]->IsArrayBuffer()) {
@@ -297,7 +301,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 				struct sack_vfs_file *file = sack_vfs_openfile( vol->vol, *fName );
 				sack_vfs_write( file, (const char*)buf, myarr->ByteLength() );
 				sack_vfs_close( file );
-	        
+
 				args.GetReturnValue().Set( True(isolate) );
 			} else {
 				FILE *file = sack_fopenEx( 0, *fName, "wb", vol->fsMount );
@@ -312,20 +316,61 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 			String::Utf8Value buffer( args[1] );
 			//Local<ArrayBuffer> myarr = args[1].As<ArrayBuffer>();
 			//Nan::TypedArrayContents<uint8_t> dest(myarr);
-			char *buf = *buffer;
+			const char *buf = *buffer;
+			if( !overlong ) {
+				if( vol->volNative ) {
+					struct sack_vfs_file *file = sack_vfs_openfile( vol->vol, f );
+					if( file ) {
+						sack_vfs_write( file, (const char*)buf, buffer.length() );
+						sack_vfs_close( file );
 
-			if( vol->volNative ) {
-				struct sack_vfs_file *file = sack_vfs_openfile( vol->vol, f );
-				sack_vfs_write( file, (const char*)buf, buffer.length()  );
-				sack_vfs_close( file );
-	        
-				args.GetReturnValue().Set( True(isolate) );
-			} else {
-				FILE *file = sack_fopenEx( 0, f, "wb", vol->fsMount );
-				sack_fwrite( buf, buffer.length(), 1, file );
-				sack_fclose( file );
+						args.GetReturnValue().Set( True( isolate ) );
+					}
+					else
+						args.GetReturnValue().Set( False( isolate ) );
+				}
+				else {
+					FILE *file = sack_fopenEx( 0, f, "wb", vol->fsMount );
+					if( file ) {
+						sack_fwrite( buf, buffer.length(), 1, file );
+						sack_fclose( file );
 
-				args.GetReturnValue().Set( True(isolate) );
+						args.GetReturnValue().Set( True( isolate ) );
+					}
+					else
+						args.GetReturnValue().Set( False( isolate ) );
+				}
+			}
+			else {
+				PVARTEXT pvtOut = VarTextCreate();
+				TEXTRUNE c;
+				while( c = GetUtfChar( &buf ) )
+					VarTextAddRuneEx( pvtOut, c, TRUE DBG_SRC );
+				PTEXT out = VarTextPeek( pvtOut );
+
+				if( vol->volNative ) {
+					struct sack_vfs_file *file = sack_vfs_openfile( vol->vol, f );
+					if( file ) {
+						sack_vfs_write( file, (const char*)GetText(out), GetTextSize( out ) );
+						sack_vfs_close( file );
+
+						args.GetReturnValue().Set( True( isolate ) );
+					}
+					else
+						args.GetReturnValue().Set( False( isolate ) );
+				}
+				else {
+					FILE *file = sack_fopenEx( 0, f, "wb", vol->fsMount );
+					if( file ) {
+						sack_fwrite( GetText( out ), GetTextSize( out ), 1, file );
+						sack_fclose( file );
+
+						args.GetReturnValue().Set( True( isolate ) );
+					}
+					else
+						args.GetReturnValue().Set( False( isolate ) );
+				}
+
 			}
 			Deallocate( char*, f );
 		}

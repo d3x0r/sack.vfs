@@ -3633,15 +3633,22 @@ TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  FlattenLine ( PTEXT pLine );
 #define FORALLTEXT(start,var)  for(var=start;var; var=NEXTLINE(var))
 /* returns number of characters filled into output.  Output needs to be at maximum 6 chars */
 TYPELIB_PROC int TYPELIB_CALLTYPE ConvertToUTF8( char *output, TEXTRUNE rune );
+/* returns number of characters filled into output.  Output needs to be at maximum 6 chars;  if overlong is set
+   characters are deliberatly padded to be overlong */
+TYPELIB_PROC int TYPELIB_CALLTYPE ConvertToUTF8Ex( char *output, TEXTRUNE rune, LOGICAL overlong );
 /* returns number of wchar filled into output.  Output needs to be at maximum 2 wchar. */
 TYPELIB_PROC int TYPELIB_CALLTYPE ConvertToUTF16( wchar_t *output, TEXTRUNE rune );
-TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetUtfChar( CTEXTSTR *from );
-TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetUtfCharIndexed( CTEXTSTR from, size_t *index );
-TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetPriorUtfChar( CTEXTSTR *from );
-TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetPriorUtfCharIndexed( CTEXTSTR from, size_t *index );
-TYPELIB_PROC size_t TYPELIB_CALLTYPE GetDisplayableCharacterCount( CTEXTSTR string, size_t max_bytes );
-TYPELIB_PROC CTEXTSTR TYPELIB_CALLTYPE GetDisplayableCharactersAtCount( CTEXTSTR string, size_t character_index );
-TYPELIB_PROC size_t TYPELIB_CALLTYPE  GetDisplayableCharacterBytes( CTEXTSTR string, size_t character_count );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetUtfChar( const char **from );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetUtfCharIndexed( const char *from, size_t *index );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetPriorUtfChar( const char *start, const char **from );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetPriorUtfCharIndexed( const char *from, size_t *index );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetUtfCharW( const wchar_t **from );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetUtfCharIndexedW( const wchar_t *from, size_t *index );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetPriorUtfCharW( const wchar_t *start, const wchar_t **from );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetPriorUtfCharIndexedW( const wchar_t *from, size_t *index );
+TYPELIB_PROC size_t TYPELIB_CALLTYPE GetDisplayableCharacterCount( const char *string, size_t max_bytes );
+TYPELIB_PROC CTEXTSTR TYPELIB_CALLTYPE GetDisplayableCharactersAtCount( const char *string, size_t character_index );
+TYPELIB_PROC size_t TYPELIB_CALLTYPE  GetDisplayableCharacterBytes( const char *string, size_t character_count );
 /* You Must Deallocate the result */
 TYPELIB_PROC  char * TYPELIB_CALLTYPE  WcharConvertExx ( const wchar_t *wch, size_t len DBG_PASS );
 /* You Must Deallocate the result */
@@ -3753,7 +3760,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextEmptyEx( PVARTEXT pvt DBG_PASS);
    c :         character to add
    DBG_PASS :  optional debug information         */
 TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextAddCharacterEx( PVARTEXT pvt, TEXTCHAR c DBG_PASS );
-TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextAddRuneEx( PVARTEXT pvt, TEXTRUNE c DBG_PASS );
+TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextAddRuneEx( PVARTEXT pvt, TEXTRUNE c, LOGICAL overlong DBG_PASS );
 /* Adds a single character to a PVARTEXT collector.
    Example
    <code lang="c++">
@@ -3767,7 +3774,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextAddRuneEx( PVARTEXT pvt, TEXTRUNE c 
    PVARTEXT pvt = VarTextCreate();
    VarTextAddRune( pvt, 'a' );
    </code>                                          */
-#define VarTextAddRune(pvt,c) VarTextAddRuneEx( (pvt),(c) DBG_SRC )
+#define VarTextAddRune(pvt,c) VarTextAddRuneEx( (pvt),(c), FALSE DBG_SRC )
 /* Adds a length of data to the vartext. This allows strings
    with nuls included to be added.
    Parameters
@@ -12539,7 +12546,7 @@ TRANSLATION_PROC void TRANSLATION_API SaveTranslationData( void );
 TRANSLATION_PROC void TRANSLATION_API SaveTranslationDataToFile( FILE *output );
 TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataEx( const char *filename );
 TRANSLATION_PROC void TRANSLATION_API LoadTranslationData( void );
-TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataFromFile( FILE *input );
+TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataFromFile( POINTER data, size_t length );
 /*
    return: PLIST is a list of PTranslation
 */

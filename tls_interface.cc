@@ -103,6 +103,7 @@ struct info_params {
 	int ca_len;
 
 	char *cert;
+	int certlen;
 	char *chain;
 	char *signingCert;
 	char *signReq;
@@ -355,9 +356,9 @@ void MakeCert(  struct info_params *params )
 		X509_set_version( x509, 2 ); // wikipedia says 0 is what is normal. (0=1, 1=2, 2=v3! )
 
 		ASN1_INTEGER_set( X509_get_serialNumber( x509 ), (long)params->serial );
-		X509_gmtime_adj( X509_getm_notBefore( x509 ), 0 );
+		X509_gmtime_adj( X509_get_notBefore( x509 ), 0 );
 		// (60 seconds * 60 minutes * 24 hours * 365 days) = 31536000.
-		X509_gmtime_adj( X509_getm_notAfter( x509 ), params->expire?params->expire*(60*60*24):31536000 );
+		X509_gmtime_adj( X509_get_notAfter( x509 ), params->expire?params->expire*(60*60*24):31536000 );
 		X509_set_pubkey( x509, pubkey );
 		{
 			X509_NAME *name = X509_get_subject_name( x509 );
@@ -909,9 +910,9 @@ static void SignReq( struct info_params *params )
 	}
 	
 	// set time
-	X509_gmtime_adj(X509_getm_notBefore(cert), 0);
+	X509_gmtime_adj(X509_get_notBefore(cert), 0);
 	// (60 seconds * 60 minutes * 24 hours * 365 days) = 31536000.
-	X509_gmtime_adj(X509_getm_notAfter(cert), params->expire?params->expire*(60*60*24):31536000);
+	X509_gmtime_adj(X509_get_notAfter(cert), params->expire?params->expire*(60*60*24):31536000);
  
 	// set subject from req
 	X509_NAME *subject, *tmpname;
@@ -1518,7 +1519,7 @@ void TLSObject::validate( const v8::FunctionCallbackInfo<Value>& args ) {
 	MaybeLocal<Value> cert = opts->Get( context, certString );
 	_key = new String::Utf8Value( cert.ToLocalChecked()->ToString() );
 	params.cert = *_key[0];
-	//params.certlen = _key[0].length();
+	params.certlen = _key[0].length();
 	params.key = NULL;
 
 	String::Utf8Value *chain;
@@ -1549,7 +1550,7 @@ void TLSObject::validate( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( _key ) delete _key;
 }
 
-void Expiration( struct info_params *params ) {
+static Local<Value> Expiration( struct info_params *params ) {
 	X509 * x509 = NULL;
 	params->ca = NULL;
 
@@ -1558,16 +1559,116 @@ void Expiration( struct info_params *params ) {
 	BIO_write( keybuf, params->cert, params->certlen );
 	if( !PEM_read_bio_X509( keybuf, &x509, NULL, NULL )) {
 		throwError( params, "expiration : failed to parse cert" );
-		goto free_all;
+		BIO_free( keybuf );
+		return Undefined(params->isolate);// goto free_all;
 	}
 
 
-	ASN1_TIME *before = X509_getm_notBefore(x509);
-	// (60 seconds * 60 minutes * 24 hours * 365 days) = 31536000.
-	ASN1_TIME *after = X509_getm_notAfter(x509);
+	ASN1_TIME *before = x509->cert_info->validity->notAfter;
+
+#if 0
+//#ifdef _WIN32
+	// the system time
+	char *timestring = (char*)before->data;
+	//ASN1_TIME_adj
+	int val;
+	SYSTEMTIME systemTime;
+	systemTime.wMilliseconds = 0;
+	if( before->type == V_ASN1_UTCTIME )
+	if( (before->type == V_ASN1_UTCTIME) /*before->length == 13*/ ) {
+		val = 0;
+		val = val * 10 + ((timestring++)[0] - '0');
+		val = val * 10 + ((timestring++)[0] - '0');
+		//if( year < 70 ) year += 100;
+		systemTime.wYear = val + 2000;
+	}
+	if( (before->type == V_ASN1_GENERALIZEDTIME) /*before->length == 15*/ ) {
+		val = 0;
+		val = val * 10 + ((timestring++)[0] - '0');
+		val = val * 10 + ((timestring++)[0] - '0');
+		val = val * 10 + ((timestring++)[0] - '0');
+		val = val * 10 + ((timestring++)[0] - '0');
+		systemTime.wYear = val;
+	}
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	systemTime.wMonth = val;
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	systemTime.wDay = val;
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	systemTime.wHour = val;
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	systemTime.wMinute = val;
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	systemTime.wSecond = val;
+	//GetSystemTime( &systemTime );
+
+	// the current file time
+	FILETIME fileTime;
+	SystemTimeToFileTime( &systemTime, &fileTime );
+
+	// filetime in 100 nanosecond resolution
+	ULONGLONG fileTimeNano100;
+	fileTimeNano100 = (((ULONGLONG)fileTime.dwHighDateTime) << 32) + fileTime.dwLowDateTime;
+
+	//to milliseconds and unix windows epoche offset removed
+	ULONGLONG posixTime = fileTimeNano100 / 10000 - 11644473600000;
+
+	double dTime = posixTime;// IntCreateFromText( (char*)before->data ) * 1000;
+
+#endif
+	struct tm t;
+	char * timestring = (char*)before->data;
+	int val;
+	if( before->type == V_ASN1_UTCTIME )
+		if( (before->type == V_ASN1_UTCTIME) /*before->length == 13*/ ) {
+			val = 0;
+			val = val * 10 + ((timestring++)[0] - '0');
+			val = val * 10 + ((timestring++)[0] - '0');
+			//if( year < 70 ) year += 100;
+			t.tm_year = (val + 2000)-1900;
+		}
+	if( (before->type == V_ASN1_GENERALIZEDTIME) /*before->length == 15*/ ) {
+		val = 0;
+		val = val * 10 + ((timestring++)[0] - '0');
+		val = val * 10 + ((timestring++)[0] - '0');
+		val = val * 10 + ((timestring++)[0] - '0');
+		val = val * 10 + ((timestring++)[0] - '0');
+		t.tm_year = (val + 2000) - 1900;
+	}
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	t.tm_mon = val-1;
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	t.tm_mday = val;
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	t.tm_hour = val;
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	t.tm_min = val;
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	t.tm_sec = val;
+
+	Local<Value> date = Date::New( params->isolate, (double)mktime( &t ) * 1000.0 );
 	
-
-
+	return date;
 }
 
 
@@ -1584,7 +1685,12 @@ void TLSObject::expiration( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	params.isolate = isolate;
 
-	_key = new String::Utf8Value( args[0]->ToString() );
+	String::Utf8Value cert( args[0]->ToString() );
+	params.cert = *cert;
+	params.certlen = cert.length();
+
+	Local<Value> xx = Expiration( &params );
+	args.GetReturnValue().Set( xx );
 	
 		
 }

@@ -3641,15 +3641,22 @@ TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  FlattenLine ( PTEXT pLine );
 #define FORALLTEXT(start,var)  for(var=start;var; var=NEXTLINE(var))
 /* returns number of characters filled into output.  Output needs to be at maximum 6 chars */
 TYPELIB_PROC int TYPELIB_CALLTYPE ConvertToUTF8( char *output, TEXTRUNE rune );
+/* returns number of characters filled into output.  Output needs to be at maximum 6 chars;  if overlong is set
+   characters are deliberatly padded to be overlong */
+TYPELIB_PROC int TYPELIB_CALLTYPE ConvertToUTF8Ex( char *output, TEXTRUNE rune, LOGICAL overlong );
 /* returns number of wchar filled into output.  Output needs to be at maximum 2 wchar. */
 TYPELIB_PROC int TYPELIB_CALLTYPE ConvertToUTF16( wchar_t *output, TEXTRUNE rune );
-TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetUtfChar( CTEXTSTR *from );
-TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetUtfCharIndexed( CTEXTSTR from, size_t *index );
-TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetPriorUtfChar( CTEXTSTR *from );
-TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetPriorUtfCharIndexed( CTEXTSTR from, size_t *index );
-TYPELIB_PROC size_t TYPELIB_CALLTYPE GetDisplayableCharacterCount( CTEXTSTR string, size_t max_bytes );
-TYPELIB_PROC CTEXTSTR TYPELIB_CALLTYPE GetDisplayableCharactersAtCount( CTEXTSTR string, size_t character_index );
-TYPELIB_PROC size_t TYPELIB_CALLTYPE  GetDisplayableCharacterBytes( CTEXTSTR string, size_t character_count );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetUtfChar( const char **from );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetUtfCharIndexed( const char *from, size_t *index );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetPriorUtfChar( const char *start, const char **from );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetPriorUtfCharIndexed( const char *from, size_t *index );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetUtfCharW( const wchar_t **from );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetUtfCharIndexedW( const wchar_t *from, size_t *index );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetPriorUtfCharW( const wchar_t *start, const wchar_t **from );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetPriorUtfCharIndexedW( const wchar_t *from, size_t *index );
+TYPELIB_PROC size_t TYPELIB_CALLTYPE GetDisplayableCharacterCount( const char *string, size_t max_bytes );
+TYPELIB_PROC CTEXTSTR TYPELIB_CALLTYPE GetDisplayableCharactersAtCount( const char *string, size_t character_index );
+TYPELIB_PROC size_t TYPELIB_CALLTYPE  GetDisplayableCharacterBytes( const char *string, size_t character_count );
 /* You Must Deallocate the result */
 TYPELIB_PROC  char * TYPELIB_CALLTYPE  WcharConvertExx ( const wchar_t *wch, size_t len DBG_PASS );
 /* You Must Deallocate the result */
@@ -3761,7 +3768,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextEmptyEx( PVARTEXT pvt DBG_PASS);
    c :         character to add
    DBG_PASS :  optional debug information         */
 TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextAddCharacterEx( PVARTEXT pvt, TEXTCHAR c DBG_PASS );
-TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextAddRuneEx( PVARTEXT pvt, TEXTRUNE c DBG_PASS );
+TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextAddRuneEx( PVARTEXT pvt, TEXTRUNE c, LOGICAL overlong DBG_PASS );
 /* Adds a single character to a PVARTEXT collector.
    Example
    <code lang="c++">
@@ -3775,7 +3782,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextAddRuneEx( PVARTEXT pvt, TEXTRUNE c 
    PVARTEXT pvt = VarTextCreate();
    VarTextAddRune( pvt, 'a' );
    </code>                                          */
-#define VarTextAddRune(pvt,c) VarTextAddRuneEx( (pvt),(c) DBG_SRC )
+#define VarTextAddRune(pvt,c) VarTextAddRuneEx( (pvt),(c), FALSE DBG_SRC )
 /* Adds a length of data to the vartext. This allows strings
    with nuls included to be added.
    Parameters
@@ -40129,12 +40136,6 @@ PTEXT SegCreateFromWideEx( const wchar_t *text DBG_PASS )
 	return SegCreateFromWideLenEx( text, wcslen( text ) DBG_RELAY );
 }
 //---------------------------------------------------------------------------
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat"
-#endif
-//#pragma GCC diagnostic ignored "-Wformat-length"
-//#pragma GCC diagnostic ignored "-Wformat-truncation"
 PTEXT SegCreateFromIntEx( int value DBG_PASS )
 {
 	PTEXT pResult;
@@ -40173,9 +40174,6 @@ PTEXT SegCreateFromFloatEx( float value DBG_PASS )
 	pResult->data.data[31] = 0;
 	return pResult;
 }
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
 //---------------------------------------------------------------------------
 PTEXT SegCreateIndirectEx( PTEXT pText DBG_PASS )
 {
@@ -41469,12 +41467,9 @@ int64_t IntCreateFromText( CTEXTSTR p )
 	int s;
 	int begin;
 	int64_t num;
-	LOGICAL altBase = FALSE;
-	LOGICAL altBase2 = FALSE;
-	int64_t base = 10;
 	//p = GetText( pText );
 	if( !p )
-		return 0;
+		return FALSE;
 	//if( pText->flags & TF_INDIRECT )
 	//   return IntCreateFromSeg( GetIndirect( pText ) );
 	s = 0;
@@ -41493,36 +41488,17 @@ int64_t IntCreateFromText( CTEXTSTR p )
 		}
 		else if( *p < '0' || *p > '9' )
 		{
-			if( !altBase2 ) {
-				if( *p == 'x' ) { altBase2 = TRUE; base = 16; }
-				else if( *p == 'b' ) { altBase2 = TRUE; base = 2; }
-				else break;
-			} else {
-				if( base > 10 ) {
-					if( *p >= 'a' && *p <= 'f' ) {
-						num *= base;
-						num += *p - 'a' + 10;
-					}
-					else if( *p >= 'A' && *p <= 'F' ) {
-						num *= base;
-						num += *p - 'A' + 10;
-					}
-					else break;
-				}
-				else break;
-			}
+			break;
 		}
 		else
 		{
-			if( ( !altBase ) && (*p == '0') ) { altBase = TRUE; base = 8; }
-			else { if( (*p - '0') >= base ) { break; } altBase = TRUE; }
-			num *= base;
+			num *= 10;
 			num += *p - '0';
 		}
 		begin = FALSE;
 		p++;
 	}
-	if( s & 1 )
+	if( s )
 		num *= -1;
 	return num;
 }
@@ -41806,7 +41782,7 @@ void VarTextAddCharacterEx( PVARTEXT pvt, TEXTCHAR c DBG_PASS )
 		}
 	}
 }
-void VarTextAddRuneEx( PVARTEXT pvt, TEXTRUNE c DBG_PASS )
+void VarTextAddRuneEx( PVARTEXT pvt, TEXTRUNE c, LOGICAL overlong DBG_PASS )
 {
 	int chars;
 	int n;
@@ -41815,7 +41791,7 @@ void VarTextAddRuneEx( PVARTEXT pvt, TEXTRUNE c DBG_PASS )
 	chars = ConvertToUTF16( output, c );
 #else
 	char output[6];
-	chars = ConvertToUTF8( output, c );
+	chars = ConvertToUTF8Ex( output, c, overlong );
 #endif
 	for( n = 0; n < chars; n++ )
 		VarTextAddCharacterEx( pvt, output[n] DBG_RELAY );
@@ -41823,19 +41799,15 @@ void VarTextAddRuneEx( PVARTEXT pvt, TEXTRUNE c DBG_PASS )
 //---------------------------------------------------------------------------
 void VarTextAddDataEx( PVARTEXT pvt, CTEXTSTR block, size_t length DBG_PASS )
 {
-   LOGICAL endOnNul = FALSE;
 	if( !pvt->collect )
 		VarTextInitEx( pvt DBG_RELAY );
-	if( length > 0x1000000 )
-		endOnNul = TRUE;
 #ifdef VERBOSE_DEBUG_VARTEXT
-	Log1( WIDE("Adding string") );
+	Log1( WIDE("Adding character %c"), c );
 #endif
 	{
 		uint32_t n;
 		for( n = 0; n < length; n++ )
 		{
-			if( endOnNul && !block[n] ) break;
 			pvt->collect_text[pvt->collect_used++] = block[n];
 			if( pvt->collect_used >= pvt->collect_avail )
 			{
@@ -42486,6 +42458,57 @@ int ConvertToUTF8( char *output, TEXTRUNE rune )
 	// invalid rune (out of range)
 	return 0;
 }
+int ConvertToUTF8Ex( char *output, TEXTRUNE rune, LOGICAL overlong )
+{
+	if( !overlong ) return ConvertToUTF8( output, rune );
+	if( !( rune & 0xFFFFF80 ) )
+	{
+		// 11 bits
+		(*output++) = 0xC0 | ( ( ( rune & 0x7C ) >> 6 ) & 0xFF );
+		(*output++) = 0x80 | ( rune & 0x3F );
+		return 2;
+	}
+	else if( !( rune & 0xFFFFF800 ) )
+	{
+		// 16 bits
+		(*output++) = 0xE0 | ( ( ( rune & 0xF000 ) >> 12 ) & 0xFF );
+		(*output++) = 0x80 | ( ( ( rune & 0x0FC0 ) >> 6 ) & 0xFF );
+		(*output++) = 0x80 | ( ( ( rune & 0x003F ) ) );
+		return 3;
+	}
+	else if( !( rune & 0xFFFF0000 ) )
+	{
+		// 21 bits
+		(*output++) = 0xF0 | ( ( ( rune & 0x1C0000 ) >> 15 ) & 0xFF );
+		(*output++) = 0x80 | ( ( ( rune & 0x03F000 ) >> 12 ) & 0xFF );
+		(*output++) = 0x80 | ( ( ( rune & 0x000FC0 ) >> 6 ) & 0xFF );
+		(*output++) = 0x80 | ( ( ( rune & 0x00003F ) ) );
+		return 4;
+	}
+	else if( !( rune & 0xFFE00000 ) )
+	{
+		// 26 bits
+		(*output++) = 0xF8 | ( ( ( rune & 0x3000000 ) >> 24 ) & 0xFF );
+		(*output++) = 0x80 | ( ( ( rune & 0x0FC0000 ) >> 18 ) & 0xFF );
+		(*output++) = 0x80 | ( ( ( rune & 0x003F000 ) >> 12 ) & 0xFF );
+		(*output++) = 0x80 | ( ( ( rune & 0x0000FC0 ) >> 6 ) & 0xFF );
+		(*output++) = 0x80 | ( ( ( rune & 0x000003F ) ) );
+		return 5;
+	}
+	else if( !( rune & 0xFC000000 ) )
+	{
+		// 32 bits
+		(*output++) = 0xFC | ( ( ( rune & 0x40000000 ) >> 30 ) & 0xFF );
+		(*output++) = 0x80 | ( ( ( rune & 0x3F000000 ) >> 24 ) & 0xFF );
+		(*output++) = 0x80 | ( ( ( rune & 0x00FC0000 ) >> 18 ) & 0xFF );
+		(*output++) = 0x80 | ( ( ( rune & 0x0003F000 ) >> 12 ) & 0xFF );
+		(*output++) = 0x80 | ( ( ( rune & 0x00000FC0 ) >> 6 ) & 0xFF );
+		(*output++) = 0x80 | ( ( ( rune & 0x0000003F ) ) );
+		return 6;
+	}
+	// invalid rune (out of range)
+	return 0;
+}
 char * WcharConvertExx ( const wchar_t *wch, size_t len DBG_PASS )
 {
 	// Conversion to char* :
@@ -42530,7 +42553,7 @@ char * WcharConvertExx ( const wchar_t *wch, size_t len DBG_PASS )
  // hack a way to encode D800-DFFF
 				else if( ( longer_value >= 0xF0000 ) && ( longer_value < 0xF0800 ) )
 					sizeInBytes += 2;
-            else
+				else
 					sizeInBytes += 4;
 				wch++;
 			}
@@ -42576,7 +42599,7 @@ char * WcharConvertExx ( const wchar_t *wch, size_t len DBG_PASS )
  // hack a way to encode D800-DFFF
 					if( ( longer_value >= 0xF0000 ) && ( longer_value < 0xF0800 ) )
 					{
-                  longer_value = ( longer_value - 0xF0000 ) + 0xD800;
+						longer_value = ( longer_value - 0xF0000 ) + 0xD800;
 						sizeInBytes += 2;
 					}
 					wch++;
@@ -42595,7 +42618,7 @@ char * WcharConvertExx ( const wchar_t *wch, size_t len DBG_PASS )
 						(*ch++) = 0x80 | (char)( ( longer_value >> 6 ) & 0x3f );
 						(*ch++) = 0x80 | (char)( ( longer_value >> 0 ) & 0x3f );
 					}
-					/*  ** functionally removed from spec .....
+					/*  ** functionally removed from spec ..... surrogates cannot be this long.
 					else if( !( longer_value & 0xFC000000 ) )
 					{
 						(*ch++) = 0xF8 | ( longer_value >> 24 );
@@ -42757,82 +42780,134 @@ LOGICAL ParseStringVector( CTEXTSTR data, CTEXTSTR **pData, int *nData )
 	}
 	return FALSE;
 }
-TEXTRUNE GetUtfChar( CTEXTSTR *from )
+//---------------------------------------------------------------------------
+TEXTRUNE GetUtfChar( const char * *from )
 {
-	unsigned int result = (unsigned char)(*from)[0];
+	TEXTRUNE result = (unsigned char)(*from)[0];
 	if( !result ) return result;
-#ifdef _UNICODE
-	if( ( ( result & 0xFC00 ) >= 0xD800 )
-		&& ( ( result & 0xFC00 ) <= 0xDF00 ) )
+	if( (*from)[0] & 0x80 )
 	{
-		result = 0x10000 + ( ( ( result & 0x3ff ) << 10 ) | ( ( (*from)[1] & 0x3ff ) ) );
-		(*from) ++;
-	}
-#else
-	if( result & 0x80 )
-	{
-		if( ( result & 0xE0 ) == 0xC0 )
+		if( ( (*from)[0] & 0xE0 ) == 0xC0 )
 		{
 			if( ( (*from)[1] & 0xC0 ) == 0x80 )
 			{
-				result = ( ( (unsigned int)result & 0x1F ) << 6 ) | ( (unsigned int)(*from)[1] & 0x3f );
-				(*from) += 1;
-			}
-			else
-			{
-				result = 0;
-				//lprintf( "a 2 byte code with improper continuation encodings following it was found. %02x %02x"
-				//		, result
-				//		, (*from)[1]
-				//		);
-			}
-		}
-		else if( ( result & 0xF0 ) == 0xE0 )
-		{
-			if( ( ( (*from)[1] & 0xC0 ) == 0x80 ) && ( ( (*from)[2] & 0xC0 ) == 0x80 ) )
-			{
-				result = ( ( (unsigned int)result & 0xF ) << 12 ) | ( ( (unsigned int)(*from)[1] & 0x3F ) << 6 ) | ( (unsigned int)(*from)[2] & 0x3f );
+				result = ( ( (unsigned int)(*from)[0] & 0x1F ) << 6 ) | ( (unsigned int)(*from)[1] & 0x3f );
 				(*from) += 2;
 			}
 			else
 			{
 				result = 0;
-				//lprintf( "a 3 byte code with improper continuation encodings following it was found. %02x %02x %02x"
-				//	, result
-				//	, (*from)[1]
-				//	, (*from)[2]
-				//	);
+				//lprintf( "a 2 byte code with improper continuation encodings following it was found. %02x %02x"
+				//		, (*from)[0]
+				//		, (*from)[1]
+				//		);
+				(*from)++;
 			}
 		}
-		else if( ( result & 0xF8 ) == 0xF0 )
+		else if( ( (*from)[0] & 0xF0 ) == 0xE0 )
 		{
-			if( ( ( (*from)[1] & 0xC0 ) == 0x80 ) && ( ( (*from)[2] & 0xC0 ) == 0x80 ) && ( ( (*from)[3] & 0xC0 ) == 0x80 ) )
+			if( ( ( (*from)[1] & 0xC0 ) == 0x80 )
+			  && ( ( (*from)[2] & 0xC0 ) == 0x80 ) )
 			{
-				result =   ( ( (unsigned int)result & 0x7 ) << 18 )
-						| ( ( (unsigned int)(*from)[1] & 0x3F ) << 12 )
-						| ( ( (unsigned int)(*from)[2] & 0x3f ) << 6 )
-						| ( (unsigned int)(*from)[3] & 0x3f );
+				result = ( ( (unsigned int)(*from)[0] & 0xF ) << 12 ) | ( ( (unsigned int)(*from)[1] & 0x3F ) << 6 ) | ( (unsigned int)(*from)[2] & 0x3f );
 				(*from) += 3;
 			}
 			else
 			{
 				result = 0;
-				//lprintf( "a 4 byte code with improper continuation encodings following it was found." );
+				//lprintf( "a 3 byte code with improper continuation encodings following it was found. %02x %02x %02x"
+				//	, (*from)[0]
+				//	, (*from)[1]
+				//	, (*from)[2]
+				//	);
+				(*from)++;
 			}
 		}
-		else if( ( result & 0xC0 ) == 0x80 )
+		else if( ( (*from)[0] & 0xF8 ) == 0xF0 )
+		{
+			if( ( ( (*from)[1] & 0xC0 ) == 0x80 ) && ( ( (*from)[2] & 0xC0 ) == 0x80 ) && ( ( (*from)[3] & 0xC0 ) == 0x80 ) )
+			{
+				result =   ( ( (unsigned int)(*from)[0] & 0x7 ) << 18 )
+						| ( ( (unsigned int)(*from)[1] & 0x3F ) << 12 )
+						| ( ( (unsigned int)(*from)[2] & 0x3f ) << 6 )
+						| ( (unsigned int)(*from)[3] & 0x3f );
+				(*from) += 4;
+			}
+			else
+			{
+				result = 0;
+				//lprintf( "a 4 byte code with improper continuation encodings following it was found." );
+				(*from)++;
+			}
+		}
+		else if( ( (*from)[0] & 0xFC ) == 0xF8 )
+		{
+			if( ( ( (*from)[1] & 0xC0 ) == 0x80 )
+			  && ( ( (*from)[2] & 0xC0 ) == 0x80 )
+			  && ( ( (*from)[3] & 0xC0 ) == 0x80 )
+			  && ( ( (*from)[4] & 0xC0 ) == 0x80 )
+			  )
+			{
+				result =   ( ( (unsigned int)(*from)[0] & 0x3 ) << 24 )
+						| ( ( (unsigned int)(*from)[1] & 0x3F ) << 18 )
+						| ( ( (unsigned int)(*from)[2] & 0x3F ) << 12 )
+						| ( ( (unsigned int)(*from)[3] & 0x3f ) << 6 )
+						| ( (unsigned int)(*from)[4] & 0x3f );
+				(*from) += 5;
+			}
+			else
+			{
+				result = 0;
+				//lprintf( "a 4 byte code with improper continuation encodings following it was found." );
+				(*from)++;
+			}
+		}
+		else if( ( (*from)[0] & 0xFE ) == 0xFC )
+		{
+			if( ( ( (*from)[1] & 0xC0 ) == 0x80 )
+			  && ( ( (*from)[2] & 0xC0 ) == 0x80 )
+			  && ( ( (*from)[3] & 0xC0 ) == 0x80 )
+			  && ( ( (*from)[4] & 0xC0 ) == 0x80 )
+			  && ( ( (*from)[5] & 0xC0 ) == 0x80 )
+			  )
+			{
+				result =   ( ( (unsigned int)(*from)[0] & 0x1 ) << 30 )
+						| ( ( (unsigned int)(*from)[1] & 0x3F ) << 24 )
+						| ( ( (unsigned int)(*from)[2] & 0x3F ) << 18 )
+						| ( ( (unsigned int)(*from)[3] & 0x3F ) << 12 )
+						| ( ( (unsigned int)(*from)[4] & 0x3f ) << 6 )
+						| ( (unsigned int)(*from)[5] & 0x3f );
+				(*from) += 6;
+			}
+			else
+			{
+				result = 0;
+				//lprintf( "a 4 byte code with improper continuation encodings following it was found." );
+				(*from)++;
+			}
+		}
+		else if( ( (*from)[0] & 0xC0 ) == 0x80 )
 		{
 			// things like 0x9F, 0x9A is OK; is a single byte character, is a unicode application escape
 			//lprintf( "a continuation encoding was found." );
-			//result = (unsigned char)result;
-			//(*from)++;
+			//result = (unsigned char)(*from)[0];
+			(*from)++;
+		}
+		else
+		{
+			//result = (unsigned char)(*from)[0];
+			(*from)++;
 		}
 	}
-#endif
-	  (*from)++;
+	else
+	{
+		result = (unsigned char)(*from)[0];
+		(*from)++;
+	}
 	return result;
 }
-TEXTRUNE GetUtfCharIndexed( CTEXTSTR pc, size_t *n )
+//- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+TEXTRUNE GetUtfCharIndexed( const char * pc, size_t *n )
 {
 	CTEXTSTR orig = pc + n[0];
 	CTEXTSTR tmp = orig;
@@ -42840,11 +42915,52 @@ TEXTRUNE GetUtfCharIndexed( CTEXTSTR pc, size_t *n )
 	n[0] += tmp - orig;
 	return result;
 }
-TEXTRUNE GetPriorUtfChar( CTEXTSTR *from )
+//- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+TEXTRUNE GetPriorUtfChar( const char *start, const char * *from )
 {
-	unsigned int result = (unsigned char)(*from)[-1];
+	TEXTRUNE result;
+	if( (*from) == start ) return 0;
+	result = (unsigned char)(*from)[-1];
 	if( !result ) return result;
-#ifdef _UNICODE
+	if( (*from)[-1] & 0x80 )
+	{
+		CTEXTSTR end;
+		while( (*from > start) && ( (*from)[-1] & 0xC0 ) == 0x80 )
+			(*from)--;
+		if( (*from > start) ) {
+			(*from)--;
+			end = (*from);
+			result = GetUtfChar( from );
+			(*from) = end;
+		}
+		else
+			result = 0;
+	}
+	else
+	{
+		result = (unsigned char)(*from)[-1];
+		(*from)--;
+	}
+	return result;
+}
+//- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+TEXTRUNE GetPriorUtfCharIndexed( const char *pc, size_t *n )
+{
+	if( *n )
+	{
+		CTEXTSTR orig = pc + n[0];
+		CTEXTSTR tmp = orig;
+		TEXTRUNE result = GetPriorUtfChar( pc, &tmp );
+		n[0] += tmp - orig;
+		return result;
+	}
+	return 0;
+}
+//---------------------------------------------------------------------------
+TEXTRUNE GetUtfCharW( const wchar_t * *from )
+{
+	TEXTRUNE result = (unsigned)(*from)[0];
+	if( !result ) return result;
 	if( ( ( (*from)[0] & 0xFC00 ) >= 0xD800 )
 		&& ( ( (*from)[0] & 0xFC00 ) <= 0xDF00 ) )
 	{
@@ -42855,37 +42971,48 @@ TEXTRUNE GetPriorUtfChar( CTEXTSTR *from )
 	{
 		(*from)++;
 	}
-#else
-	if( (*from)[-1] & 0x80 )
+	return result;
+}
+//- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+TEXTRUNE GetUtfCharIndexedW( const wchar_t* pc, size_t *n )
+{
+	const wchar_t * orig = pc + n[0];
+	const wchar_t * tmp = orig;
+	TEXTRUNE result = GetUtfCharW( &tmp );
+	n[0] += tmp - orig;
+	return result;
+}
+//- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+TEXTRUNE GetPriorUtfCharW( const wchar_t*start, const wchar_t* *from )
+{
+	TEXTRUNE result = (unsigned)(*from)[-1];
+	if( !result ) return result;
+	if( ( ( (*from)[0] & 0xFC00 ) >= 0xD800 )
+		&& ( ( (*from)[0] & 0xFC00 ) <= 0xDF00 ) )
 	{
-		CTEXTSTR end;
-		while( ( (*from)[-1] & 0xC0 ) == 0x80 )
-			(*from)--;
-		(*from)--;
-		end = (*from);
-		result = GetUtfChar( from );
-		(*from) = end;
+		result = 0x10000 + ( ( ( (*from)[0] & 0x3ff ) << 10 ) | ( ( (*from)[1] & 0x3ff ) ) );
+		(*from) += 2;
 	}
 	else
 	{
-		result = (unsigned char)(*from)[-1];
-		(*from)--;
+		(*from)++;
 	}
-#endif
 	return result;
 }
-TEXTRUNE GetPriorUtfCharIndexed( CTEXTSTR pc, size_t *n )
+//- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+TEXTRUNE GetPriorUtfCharIndexedW( const wchar_t *pc, size_t *n )
 {
 	if( *n )
 	{
-		CTEXTSTR orig = pc + n[0];
-		CTEXTSTR tmp = orig;
-		TEXTRUNE result = GetPriorUtfChar( &tmp );
+		const wchar_t * orig = pc + n[0];
+		const wchar_t * tmp = orig;
+		TEXTRUNE result = GetPriorUtfCharW( pc, &tmp );
 		n[0] += tmp - orig;
 		return result;
 	}
 	return 0;
 }
+//---------------------------------------------------------------------------
 // Return the integer character from the string
 // using utf-8 or utf-16 decoding appropriately.  No more extended-ascii.
 static int Step( CTEXTSTR *pc, size_t *nLen )
@@ -42896,8 +43023,8 @@ static int Step( CTEXTSTR *pc, size_t *nLen )
 	if( nLen && !*nLen )
 		return 0;
 	ch = GetUtfChar( pc );
-	if( ch & 0xFFE00000 )
-		DebugBreak();
+	//if( ch & 0xFFE00000 )
+	//	DebugBreak();
 	if( nLen )
 		(*nLen) -= (*pc) - _pc;
 	_pc = (*pc);
@@ -86201,7 +86328,7 @@ TRANSLATION_PROC void TRANSLATION_API SaveTranslationData( void );
 TRANSLATION_PROC void TRANSLATION_API SaveTranslationDataToFile( FILE *output );
 TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataEx( const char *filename );
 TRANSLATION_PROC void TRANSLATION_API LoadTranslationData( void );
-TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataFromFile( FILE *input );
+TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataFromFile( POINTER data, size_t length );
 /*
    return: PLIST is a list of PTranslation
 */
