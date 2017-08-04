@@ -51592,6 +51592,8 @@ LOGICAL json_parse_message( char * msg
 					(*mOut++) = c;
 					while( (_msg_input=msg_input),(( n < msglen ) && (c = GetUtfChar( &msg_input )) ) )
 					{
+						if( c == '_' )
+							continue;
 						n = (msg_input - msg );
 						// leading zeros should be forbidden.
 						if( ( c >= '0' && c <= '9' )
@@ -53220,197 +53222,6 @@ LOGICAL json6_parse_message( char * msg
 				status = gatherString( msg, &msg_input, msglen, &mOut, &line, &col, c, FALSE );
 				if( status ) val.value_type = VALUE_STRING;
 				break;
-#if 0
-				{
-					// collect a string
-					int escape;
-					TEXTRUNE start_c;
-					LOGICAL cr_escaped;
-					escape = 0;
-					start_c = c;
-					cr_escaped = FALSE;
-					val.string = mOut;
-					while( (_n=n), (( n < msglen ) && (c = GetUtfChar( &msg_input ) )) && status )
-					{
-						if( c == '\\' )
-						{
-							if( escape ) (*mOut++) = '\\';
-							else escape = 1;
-						}
-						else if( ( c == '"' ) || ( c == '\'' ) || ( c == '`' ) )
-						{
-							if( escape ) { (*mOut++) = c; escape = FALSE; }
-							else if( c == start_c ) {
-								break;
- // other else is not valid close quote; just store as content.
-							} else (*mOut++) = c;
-						}
-						else
-						{
-							if( cr_escaped ) {
-								cr_escaped = FALSE;
-								if( c == '\n' ) {
-									escape = FALSE;
-									continue;
-								}
-							}
-							if( escape )
-							{
-								switch( c )
-								{
-								case '\r':
-									cr_escaped = TRUE;
-									continue;
-								case '\n':
-									if( cr_escaped ) cr_escaped = FALSE;
-									// fall through to clear escape status <CR><LF> support.
- // LS (Line separator)
-								case 2028:
- // PS (paragraph separate)
-								case 2029:
-									escape = FALSE;
-									continue;
-								case '/':
-								case '\\':
-								case '"':
-									(*mOut++) = c;
-									break;
-								case 't':
-									(*mOut++) = '\t';
-									break;
-								case 'b':
-									(*mOut++) = '\b';
-									break;
-								case 'n':
-									(*mOut++) = '\n';
-									break;
-								case 'r':
-									(*mOut++) = '\r';
-									break;
-								case 'f':
-									(*mOut++) = '\f';
-									break;
-								case '0': case '1': case '2': case '3':
-									{
-										TEXTRUNE oct_char = c - '0';
-										int ofs;
-										for( ofs = 0; ofs < 2; ofs++ )
-										{
-											c = GetUtfChar( &msg_input );
-											oct_char *= 8;
-											if( c >= '0' && c <= '9' )  hex_char += c - '0';
-											else { msg_input--; break; }
-										}
-										if( oct_char > 255 ) {
-											lprintf( WIDE("(escaped character, parsing octal escape val=%d) fault while parsing; )") WIDE(" (near %*.*s[%c]%s)")
-											                 , oct_char
-													 , (int)( (n>3)?3:n ), (int)( (n>3)?3:n )
-													 , msg + n - ( (n>3)?3:n )
-													 , c
-													 , msg + n + 1
-// fault
-													 );
-											status = FALSE;
-											break;
-										} else {
-											if( oct_char < 128 ) (*mOut++) = oct_char;
-											else mOut += ConvertToUTF8( mOut, oct_char );
-										}
-									}
-									break;
-								case 'x':
-									{
-										TEXTRUNE hex_char;
-										int ofs;
-										hex_char = 0;
-										for( ofs = 0; ofs < 2; ofs++ )
-										{
-											c = GetUtfChar( &msg_input );
-											hex_char *= 16;
-											if( c >= '0' && c <= '9' )      hex_char += c - '0';
-											else if( c >= 'A' && c <= 'F' ) hex_char += ( c - 'A' ) + 10;
-											else if( c >= 'a' && c <= 'f' ) hex_char += ( c - 'F' ) + 10;
-											else {
-												lprintf( WIDE("(escaped character, parsing hex of \\x) fault while parsing; '%c' unexpected at %")_size_f WIDE(" (near %*.*s[%c]%s)"), c, n
-														 , (int)( (n>3)?3:n ), (int)( (n>3)?3:n )
-														 , msg + n - ( (n>3)?3:n )
-														 , c
-														 , msg + n + 1
-// fault
-														 );
-												status = FALSE;
-											}
-										}
-										if( hex_char < 128 ) (*mOut++) = hex_char;
-										else mOut += ConvertToUTF8( mOut, hex_char );
-									}
-									break;
-								case 'u':
-									{
-										TEXTRUNE hex_char;
-										int ofs;
-										int codePointLen;
-										TEXTRUNE endCode;
-										hex_char = 0;
-										codePointLen = 4;
-										endCode = 0;
-										for( ofs = 0; ofs < codePointLen && ( c != endCode ); ofs++ )
-										{
-											c = GetUtfChar( &msg_input );
-											if( !ofs && c == '{' ) {
- // collect up to 5 chars.
-												codePointLen = 5;
-												endCode = '}';
-												continue;
-											}
-											if( c == '}' ) continue;
-											hex_char *= 16;
-											if( c >= '0' && c <= '9' )      hex_char += c - '0';
-											else if( c >= 'A' && c <= 'F' ) hex_char += ( c - 'A' ) + 10;
-											else if( c >= 'a' && c <= 'f' ) hex_char += ( c - 'F' ) + 10;
-											else
-												lprintf( WIDE("(escaped character, parsing hex of \\u) fault while parsing; '%c' unexpected at %")_size_f WIDE(" (near %*.*s[%c]%s)"), c, n
-														 , (int)( (n>3)?3:n ), (int)( (n>3)?3:n )
-														 , msg + n - ( (n>3)?3:n )
-														 , c
-														 , msg + n + 1
-// fault
-														 );
-										}
-										mOut += ConvertToUTF8( mOut, hex_char );
-									}
-									break;
-								default:
-									if( cr_escaped ) {
-										cr_escaped = FALSE;
-										escape = FALSE;
-										mOut += ConvertToUTF8( mOut, c );
-									}
-									else {
-										lprintf( WIDE("(escaped character) fault while parsing; '%c' unexpected %")_size_f WIDE(" (near %*.*s[%c]%s)"), c, n
-											 , (int)( (n>3)?3:n ), (int)( (n>3)?3:n )
-											 , msg + n - ( (n>3)?3:n )
-											 , c
-											 , msg + n + 1
-// fault
-											 );
-										status = FALSE;
-									}
-									break;
-								}
-								escape = 0;
-							}
-							else {
-								mOut += ConvertToUTF8( mOut, c );
-							}
-						}
-					}
-  // terminate the string.
-					(*mOut++) = 0;
-					val.value_type = VALUE_STRING;
-					break;
-				}
-#endif
 			case ' ':
 			case '\t':
 			case '\r':
@@ -53536,6 +53347,8 @@ LOGICAL json6_parse_message( char * msg
 				{
 					LOGICAL fromHex;
 					LOGICAL fromDate;
+					LOGICAL exponent;
+					exponent = FALSE;
 					fromHex = FALSE;
 					fromDate = FALSE;
 					// always reset this here....
@@ -53549,6 +53362,8 @@ LOGICAL json6_parse_message( char * msg
 						col++;
 						n = (msg_input - msg );
 						// leading zeros should be forbidden.
+						if( c == '_' )
+							continue;
 						if( ( c >= '0' && c <= '9' )
 							|| ( c == '+' )
 						  )
@@ -53578,10 +53393,28 @@ console.log(today.toISOString());
 								break;
 							}
 						}
-						else if( ( c =='e' ) || ( c == 'E' ) || ( c == '.' ) )
+						else if( ( c =='e' ) || ( c == 'E' ) )
 						{
-							val.float_result = 1;
-							(*mOut++) = c;
+							if( !exponent ) {
+								val.float_result = 1;
+								(*mOut++) = c;
+								exponent = TRUE;
+							} else {
+								status = FALSE;
+								lprintf( WIDE("fault wile parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col );
+								break;
+							}
+						}
+						else if( c == '.' )
+						{
+							if( !val.float_result ) {
+								val.float_result = 1;
+								(*mOut++) = c;
+							} else {
+								status = FALSE;
+								lprintf( WIDE("fault wile parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col );
+								break;
+							}
 						}
 						else
 						{
