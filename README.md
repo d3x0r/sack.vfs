@@ -341,7 +341,7 @@ The above script reads the value, reports what it was, if the old value is not t
 example was testing a constant like 526.  if typeof value is a number, value is set as a REG_DWORD.  Otherwise it's set as REG_SZ.
 
 
-### JSON([https://www.github.com/d3x0r/json6](JSON6)) - JSON and JSON6 compatible processor 
+### JSON( [JSON6](https://www.github.com/d3x0r/json6) ) - JSON and JSON6 compatible processor 
 Added support 'reviver' parameter.
 
 ``` javascript
