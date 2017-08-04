@@ -1122,6 +1122,8 @@ typedef char            TEXTCHAR;
 /* a character rune.  Strings should be interpreted as UTF-8 or 16 depending on UNICODE compile option.
    GetUtfChar() from strings.  */
 typedef uint32_t             TEXTRUNE;
+/* Used to handle returned values that are invalid runes; past end or beginning of string for instance */
+#define INVALID_RUNE  0x80000000
 //typedef enum { FALSE, TRUE } LOGICAL; // smallest information
 #ifndef FALSE
 #define FALSE 0
@@ -3647,7 +3649,7 @@ TYPELIB_PROC int TYPELIB_CALLTYPE ConvertToUTF8Ex( char *output, TEXTRUNE rune, 
 /* returns number of wchar filled into output.  Output needs to be at maximum 2 wchar. */
 TYPELIB_PROC int TYPELIB_CALLTYPE ConvertToUTF16( wchar_t *output, TEXTRUNE rune );
 TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetUtfChar( const char **from );
-TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetUtfCharIndexed( const char *from, size_t *index );
+TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetUtfCharIndexed( const char *from, size_t *index, size_t length );
 TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetPriorUtfChar( const char *start, const char **from );
 TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetPriorUtfCharIndexed( const char *from, size_t *index );
 TYPELIB_PROC TEXTRUNE TYPELIB_CALLTYPE GetUtfCharW( const wchar_t **from );
@@ -42907,13 +42909,19 @@ TEXTRUNE GetUtfChar( const char * *from )
 	return result;
 }
 //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-TEXTRUNE GetUtfCharIndexed( const char * pc, size_t *n )
+TEXTRUNE GetUtfCharIndexed( const char * pc, size_t *n, size_t length )
 {
 	CTEXTSTR orig = pc + n[0];
 	CTEXTSTR tmp = orig;
 	TEXTRUNE result = GetUtfChar( &tmp );
-	n[0] += tmp - orig;
-	return result;
+	if( (tmp-orig) <= length ) {
+		n[0] += tmp - orig;
+		return result;
+	}
+	// if illformed character was at the end... return 0
+   // cap result to length.
+   (*n) = length;
+	return 0;
 }
 //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 TEXTRUNE GetPriorUtfChar( const char *start, const char * *from )
@@ -42951,10 +42959,12 @@ TEXTRUNE GetPriorUtfCharIndexed( const char *pc, size_t *n )
 		CTEXTSTR orig = pc + n[0];
 		CTEXTSTR tmp = orig;
 		TEXTRUNE result = GetPriorUtfChar( pc, &tmp );
-		n[0] += tmp - orig;
-		return result;
+		if( orig <= tmp ) {
+			n[0] += tmp - orig;
+			return result;
+		}
 	}
-	return 0;
+	return INVALID_RUNE;
 }
 //---------------------------------------------------------------------------
 TEXTRUNE GetUtfCharW( const wchar_t * *from )

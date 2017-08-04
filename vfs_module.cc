@@ -226,8 +226,24 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = Isolate::GetCurrent();
 	// can't get to this function except if it was an array buffer I allocated and attached this to.
 	Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args.This() );
-	MaybeLocal<String> retval = String::NewFromUtf8( isolate, (const char*)ab->GetContents().Data(), NewStringType::kNormal, (int)ab->ByteLength() );
+	char *output = NewArray( char, ab->ByteLength() );
+	int out_index = 0;
+	{
+		const char *input = (const char*)ab->GetContents().Data();
+		size_t index = 0;
+		TEXTRUNE rune;
+		size_t len = ab->ByteLength();
+		while( index < len ) {
+			rune = GetUtfCharIndexed( input, &index, len );
+			if( rune != INVALID_RUNE )
+				out_index += ConvertToUTF8( output+out_index, rune );
+			else
+				out_index += ConvertToUTF8( output+out_index, 0xFFFD );
+		}
+	}
+	MaybeLocal<String> retval = String::NewFromUtf8( isolate, (const char*)output, NewStringType::kNormal, (int)out_index );
 	args.GetReturnValue().Set( retval.ToLocalChecked() );
+	Deallocate( char*, output );
 }
 
 
