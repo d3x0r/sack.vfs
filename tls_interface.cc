@@ -341,7 +341,8 @@ void MakeCert(  struct info_params *params )
 	}
 
 	if( params->pubkey ) {
-		BIO_reset( keybuf );
+		BIO_ctrl(keybuf,BIO_CTRL_RESET,0,NULL)
+		//BIO_reset( keybuf );
 		BIO_write( keybuf, params->pubkey, params->pubkeylen );
 		PEM_read_bio_PUBKEY( keybuf, &pubkey, NULL, NULL );
 		if( !pubkey ) {
@@ -392,17 +393,17 @@ void MakeCert(  struct info_params *params )
 				basicConstraints = [critical,] CA : true
 				keyUsage = [critical,] digitalSignature, cRLSign, keyCertSign
 
-				NID_netscape_cert_type, /* 71 
-				NID_key_usage,		/* 83 
-				NID_subject_alt_name,	/* 85 
-				NID_basic_constraints,	/* 87 
-				NID_certificate_policies, /* 89 
-				NID_ext_key_usage,	/* 126 
-				NID_policy_constraints,	/* 401 
-				NID_proxyCertInfo,	/* 663 
-				NID_name_constraints,	/* 666 
-				NID_policy_mappings,	/* 747 
-				NID_inhibit_any_policy	/* 748 
+				NID_netscape_cert_type, // 71 
+				NID_key_usage,		// 83 
+				NID_subject_alt_name,	// 85 
+				NID_basic_constraints,	// 87 
+				NID_certificate_policies, // 89 
+				NID_ext_key_usage,	// 126 
+				NID_policy_constraints,	// 401 
+				NID_proxyCertInfo,	// 663 
+				NID_name_constraints,	// 666 
+				NID_policy_mappings,	// 747 
+				NID_inhibit_any_policy	// 748 
 
 				# define KU_DIGITAL_SIGNATURE    0x0080
 				# define KU_NON_REPUDIATION      0x0040
@@ -880,7 +881,8 @@ static void SignReq( struct info_params *params )
 	}
 
 	if( params->pubkey ) {
-		BIO_reset( keybuf );
+		BIO_ctrl(keybuf,BIO_CTRL_RESET,0,NULL);
+		//BIO_reset( keybuf );
 		BIO_write( keybuf, params->pubkey, params->pubkeylen );
 		PEM_read_bio_PUBKEY( keybuf, &pubkey, NULL, NULL );
 		if( !pubkey ) {
