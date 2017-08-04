@@ -16813,13 +16813,32 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 			//lprintf( WIDE("My execution: %s"), buf);
 			(*init_l).filename = StrDupEx( pb + 1 DBG_SRC );
 			(*init_l).load_path = StrDupEx( buf DBG_SRC );
-			(*init_l).library_path = StrDupEx( buf DBG_SRC );
+			local_systemlib = init_l;
+			AddMappedLibrary( "dummy", NULL );
+			local_systemlib = NULL;
+			{
+				PLIBRARY library = (*init_l).libraries;
+				while( library )
+				{
+					if( StrCaseCmp( library->name, TARGETNAME ) == 0 )
+						break;
+					library = library->next;
+				}
+				{
+					char *dupname;
+					char *path;
+					dupname = StrDup( library->full_name );
+					path = strrchr( dupname, '/' );
+					if( path )
+						path[0] = 0;
+					(*init_l).library_path = dupname;
+				}
+			}
 			setenv( WIDE("MY_LOAD_PATH"), buf, TRUE );
 			//strcpy( pMyPath, buf );
 			GetCurrentPath( buf, sizeof( buf ) );
 			setenv( WIDE( "MY_WORK_PATH" ), buf, TRUE );
 			(*init_l).work_path = StrDupEx( buf DBG_SRC );
-			SetDefaultFilePath( (*init_l).work_path );
 		}
 		{
 			TEXTCHAR *oldpath;
@@ -16828,7 +16847,7 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 			if( oldpath )
 			{
 				newpath = NewArray( char, (uint32_t)((oldpath?StrLen( oldpath ):0) + 2 + StrLen((*init_l).load_path)) );
-				sprintf( newpath, WIDE("%s:%s"), (*init_l).load_path
+				sprintf( newpath, WIDE("%s:%s"), (*init_l).library_path
 						 , oldpath );
 				setenv( WIDE("LD_LIBRARY_PATH"), newpath, 1 );
 				ReleaseEx( newpath DBG_SRC );
@@ -17562,7 +17581,7 @@ static void LoadExistingLibraries( void )
 							&& ( ((unsigned char*)start)[3] == ELFMAG3 ) )
 						{
 							//lprintf( "Add library %s %p", dll_name + 1, start );
-							AddMappedLibrary( dll_name + 1, (POINTER)start );
+							AddMappedLibrary( libpath, (POINTER)start );
 						}
 #endif
 				}
@@ -17600,6 +17619,8 @@ SYSTEM_PROC( void, AddMappedLibrary)( CTEXTSTR libname, POINTER image_memory )
 		LoadExistingLibraries();
 		library = l.libraries;
 		loading = 0;
+		if( !image_memory )
+			return;
 	}
 	while( library )
 	{
@@ -17608,12 +17629,17 @@ SYSTEM_PROC( void, AddMappedLibrary)( CTEXTSTR libname, POINTER image_memory )
 		library = library->next;
 	}
 	// don't really NEED anything else, in case we need to start before deadstart invokes.
-	if( !library )
+	if( !library && image_memory )
 	{
 		size_t maxlen = StrLen( libname ) + 1;
 		library = NewPlus( LIBRARY, sizeof(TEXTCHAR)*((maxlen<0xFFFFFF)?(uint32_t)maxlen:0) );
-		library->name = library->full_name;
-		StrCpy( library->name, libname );
+		library->alt_full_name = NULL;
+		StrCpy( library->full_name, libname );
+		library->name = pathrchr( library->full_name );
+		if( library->name )
+			library->name++;
+		else
+			library->name = library->full_name;
 		library->functions = NULL;
 		library->mapped = TRUE;
 		library->library = (HLIBRARY)image_memory;

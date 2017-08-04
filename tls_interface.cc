@@ -341,7 +341,7 @@ void MakeCert(  struct info_params *params )
 	}
 
 	if( params->pubkey ) {
-		BIO_ctrl(keybuf,BIO_CTRL_RESET,0,NULL)
+		BIO_ctrl(keybuf,BIO_CTRL_RESET,0,NULL);
 		//BIO_reset( keybuf );
 		BIO_write( keybuf, params->pubkey, params->pubkeylen );
 		PEM_read_bio_PUBKEY( keybuf, &pubkey, NULL, NULL );
