@@ -1510,7 +1510,6 @@ void TLSObject::validate( const v8::FunctionCallbackInfo<Value>& args ) {
 	
 	Local<String> certString = String::NewFromUtf8( isolate, "cert" );
 	Local<String> chainString = String::NewFromUtf8( isolate, "chain" );
-	Local<String> passString = String::NewFromUtf8( isolate, "password" );
 
 	String::Utf8Value *_key;
 	if( !opts->Has( certString ) ) {

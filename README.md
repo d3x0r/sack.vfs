@@ -341,7 +341,7 @@ The above script reads the value, reports what it was, if the old value is not t
 example was testing a constant like 526.  if typeof value is a number, value is set as a REG_DWORD.  Otherwise it's set as REG_SZ.
 
 
-### JSON([JSON6 https://www.github.com/d3x0r/json6]) - JSON and JSON6 compatible processor 
+### JSON([https://www.github.com/d3x0r/json6](JSON6)) - JSON and JSON6 compatible processor 
 Added support 'reviver' parameter.
 
 ``` javascript
@@ -351,3 +351,68 @@ var object = vfs.JSON.parse(string [, reviver]);
 
 var object2 = vfs.JSON6.parse(string [, reviver]);
 ```
+
+
+## TLS Interface
+
+Exposes OpenSSL library functions to create key pairs, cerficates, and certificate chains.
+
+### Interface
+
+```
+  TLS={
+     genkey( length [,password]) - Generates a keypair, returns PEM string.  Requires length parameter, allows optional password to be specified.
+     pubkey( {options} ) - gets public key of a keypair or certificate
+     gencert( { options } ) - Generates a self signed certificate.
+     genreq( {options} ) - Generates a certification request
+     signcert( {options} ) - uses a certificate to sign a certificate request
+     validate( {options} ) - validate a certificate against a certificate chain.
+     expiration( certificate ) - gets the expiration of a certificate as a Date().     
+  }
+```
+ - pubkey options
+    - cert : a certificate to get a key from, will not be used if 'key' option is specified.  either this or key MUST be specified, but not both.
+    - key : a keypair to get the public key from.  Either this or cert MUST be specified, but not both.
+    - password : password for keypair if required.
+
+ - gencert options
+    - country : specified country of origin; must be a 2 character country specifier.
+    - state : specifies state or province of origin;
+    - locality : specifies city in state specified.
+    - org : specified organization for certificate
+    - orgUnit : specifies organizational unit.
+    - commonName : specifies common name, this is typically a domain name with possible wildcard at start.
+    - key : private/public key to use
+    - password : if required for key
+    - serial : serial number for this certificate (is a number type).
+    - expire : number of days before this certificate expires (is a number type).
+    - pubkey : override storing the public key of this certificate. (used to test certificate chain validity check; do not use)
+    - issuer : override the issuer/subject identifier of this certificate. (used to test certificate chain validity check; do not use)
+
+  - genreq options
+    - country : specified country of origin; must be a 2 character country specifier.
+    - state : specifies state or province of origin;
+    - locality : specifies city in state specified.
+    - org : specified organization for certificate
+    - orgUnit : specifies organizational unit.
+    - commonName : specifies common name, this is typically a domain name with possible wildcard at start.
+    - key : private/public key to use
+    - password : if required for key
+    - serial : serial number for this certificate (is a number type).
+
+ - signcert options
+    - signer : certificate to sign with
+    - request : certificate request to sign
+    - expire : number of days this certificate is valid for
+    - key : private key of the signer
+    - password : password of the signer's key.
+    - issuer : used to override issuer identifier. (used to test certificate chain validity check; do not use)
+    - subject : used to override subject identifier. (used to test certificate chain validity check; do not use)
+    - pubkey : used to override the public key stored in the output certificate. (used to test certificate chain validity check; do not use)
+
+ - validate options
+    - cert : certificate to validate
+    - chain : concatenated certificate chain to use for validation.  Order does not matter.  Not required if cert is self signed.
+
+See tlsTest.js for example usage.
+
