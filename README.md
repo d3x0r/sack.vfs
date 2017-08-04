@@ -414,5 +414,5 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
     - cert : certificate to validate
     - chain : concatenated certificate chain to use for validation.  Order does not matter.  Not required if cert is self signed.
 
-See tlsTest.js for example usage.
+See [tlsTest.js](./tlsTest.js) for example usage.
 
