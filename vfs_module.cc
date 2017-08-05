@@ -233,17 +233,17 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 		size_t index = 0;
 		TEXTRUNE rune;
 		size_t len = ab->ByteLength();
-		LogBinary( input, len );
+		//LogBinary( input, len );
 		while( index < len ) {
 			rune = GetUtfCharIndexed( input, &index, len );
-			lprintf( "rune:%d at %d of %d   to %d", rune, (int)index, (int)len, (int)out_index );
+			//lprintf( "rune:%d at %d of %d   to %d", rune, (int)index, (int)len, (int)out_index );
 			if( rune != INVALID_RUNE )
 				out_index += ConvertToUTF8( output+out_index, rune );
 			else
 				out_index += ConvertToUTF8( output+out_index, 0xFFFD );
-			lprintf( "new index:%d", (int)out_index );
+			//lprintf( "new index:%d", (int)out_index );
 		}
-		LogBinary( output, out_index );
+		//LogBinary( output, out_index );
 	}
 	MaybeLocal<String> retval = String::NewFromUtf8( isolate, (const char*)output, NewStringType::kNormal, (int)out_index );
 	args.GetReturnValue().Set( retval.ToLocalChecked() );

@@ -869,6 +869,7 @@ static void SignReq( struct info_params *params )
 	X509 * x509 = NULL;
 	EVP_PKEY *pkey = NULL;
 	EVP_PKEY *pubkey = NULL;
+	X509* cert = NULL;
 	params->ca = NULL;
 
 	BIO *keybuf = BIO_new( BIO_s_mem() );
@@ -905,7 +906,6 @@ static void SignReq( struct info_params *params )
 	else
 		pubkey = X509_REQ_get_pubkey( req );;
 
-	X509* cert;
 	cert = X509_new();
 	// set version to X509 v3 certificate
 	if (!X509_set_version(cert,2)) {
