@@ -840,48 +840,51 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 	params.altSubject.DNS = NULL;
 	params.altSubject.IP = NULL;
 	if( opts->Has( optName = strings->subjectString->Get( isolate ) ) ) {
-		Local<Object> subject = opts->Get( optName )->ToObject();
-		Local<String> dnsString = strings->DNSString->Get( isolate );
-		Local<String> ipString = strings->IPString->Get( isolate );
-		if( subject->Has( dnsString ) ) {
-			Local<Object> name = subject->Get( dnsString )->ToObject();
-			if( name->IsArray() ) {
-				//String::Utf8Value *entry;
-				Local<Array> values = name.As<Array>();
-				int count = values->Length();
-				int n;
-				for( n = 0; n < count; n++ ) {
-					String::Utf8Value val( values->Get( n ) );
+		Local<Value> subVal = opts->Get( optName );
+		if( subVal->IsObject() ) {
+			Local<Object> subject = subVal->ToObject();
+			Local<String> dnsString = strings->DNSString->Get( isolate );
+			Local<String> ipString = strings->IPString->Get( isolate );
+			if( subject->Has( dnsString ) ) {
+				Local<Object> name = subject->Get( dnsString )->ToObject();
+				if( name->IsArray() ) {
+					//String::Utf8Value *entry;
+					Local<Array> values = name.As<Array>();
+					int count = values->Length();
+					int n;
+					for( n = 0; n < count; n++ ) {
+						String::Utf8Value val( values->Get( n ) );
+						AddLink( &params.altSubject.DNS, StrDup( *val ) );
+					}
+				}
+				else {
+					String::Utf8Value val( name->ToString() );
 					AddLink( &params.altSubject.DNS, StrDup( *val ) );
 				}
 			}
-			else {
-				String::Utf8Value val( name->ToString() );
-				AddLink( &params.altSubject.DNS, StrDup( *val ) );
-			}
-		}
-		if( subject->Has( ipString ) ) {
-			Local<Object> name = subject->Get( ipString )->ToObject();
-			if( name->IsArray() ) {
-				//String::Utf8Value *entry;
-				Local<Array> values = name.As<Array>();
-				int count = values->Length();
-				int n;
-				for( n = 0; n < count; n++ ) {
-					String::Utf8Value val( values->Get( n ) );
+			if( subject->Has( ipString ) ) {
+				Local<Object> name = subject->Get( ipString )->ToObject();
+				if( name->IsArray() ) {
+					//String::Utf8Value *entry;
+					Local<Array> values = name.As<Array>();
+					int count = values->Length();
+					int n;
+					for( n = 0; n < count; n++ ) {
+						String::Utf8Value val( values->Get( n ) );
+						AddLink( &params.altSubject.IP, StrDup( *val ) );
+					}
+				}
+				else {
+					String::Utf8Value val( name->ToString() );
 					AddLink( &params.altSubject.IP, StrDup( *val ) );
 				}
 			}
-			else {
-				String::Utf8Value val( name->ToString() );
-				AddLink( &params.altSubject.IP, StrDup( *val ) );
-			}
 		}
 	}
-
+		
 	if( !opts->Has( optName = strings->locString->Get( isolate ) ) ) {
 		isolate->ThrowException( Exception::Error(
-					String::NewFromUtf8( isolate, TranslateText("Missing required option 'locality'(city).") ) ) );
+				String::NewFromUtf8( isolate, TranslateText("Missing required option 'locality'(city).") ) ) );
 		return;
 	}
 	String::Utf8Value _locality( opts->Get( optName )->ToString() );
