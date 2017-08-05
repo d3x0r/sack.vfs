@@ -381,7 +381,7 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
     - locality : specifies city in state specified.
     - org : specified organization for certificate
     - orgUnit : specifies organizational unit.
-    - commonName : specifies common name, this is typically a domain name with possible wildcard at start.
+    - name : specifies common name, this is typically a domain name with possible wildcard at start.
     - key : private/public key to use
     - password : if required for key
     - serial : serial number for this certificate (is a number type).
@@ -395,10 +395,9 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
     - locality : specifies city in state specified.
     - org : specified organization for certificate
     - orgUnit : specifies organizational unit.
-    - commonName : specifies common name, this is typically a domain name with possible wildcard at start.
+    - name : specifies common name, this is typically a domain name with possible wildcard at start.
     - key : private/public key to use
     - password : if required for key
-    - serial : serial number for this certificate (is a number type).
 
  - signcert options
     - signer : certificate to sign with
@@ -406,6 +405,7 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
     - expire : number of days this certificate is valid for
     - key : private key of the signer
     - password : password of the signer's key.
+    - serial : serial number for this certificate (is a number type).
     - issuer : used to override issuer identifier. (used to test certificate chain validity check; do not use)
     - subject : used to override subject identifier. (used to test certificate chain validity check; do not use)
     - pubkey : used to override the public key stored in the output certificate. (used to test certificate chain validity check; do not use)

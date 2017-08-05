@@ -41836,6 +41836,8 @@ void VarTextAddDataEx( PVARTEXT pvt, CTEXTSTR block, size_t length DBG_PASS )
 		uint32_t n;
 		for( n = 0; n < length; n++ )
 		{
+			if( !block[n] && ( length == VARTEXT_ADD_DATA_NULTERM ) )
+				break;
 			pvt->collect_text[pvt->collect_used++] = block[n];
 			if( pvt->collect_used >= pvt->collect_avail )
 			{
@@ -42441,8 +42443,8 @@ int ConvertToUTF8( char *output, TEXTRUNE rune )
 	else if( !( rune & 0xFFFFF800 ) )
 	{
 		// 11 bits
-		(*output++) = 0xC0 | ( ( ( rune & 0x7C ) >> 6 ) & 0xFF );
-		(*output++) = 0x80 | ( rune & 0x3F );
+		(*output++) = 0xC0 | ( ( ( rune & 0x07C0 ) >> 6 ) & 0xFF );
+		(*output++) = 0x80 |     ( rune & 0x003F );
 		return 2;
 	}
 	else if( !( rune & 0xFFFF0000 ) )

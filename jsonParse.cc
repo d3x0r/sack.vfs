@@ -115,42 +115,6 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate )
 		else
 			o->Set( (uint32_t)idx, makeValue( isolate, val ) );
 		break;
-/*		
-	case VALUE_UNDEFINED:
-		// skip undefined values (even if literally 'undefined' input
-		break;
-	case uninitialized:
-		lprintf( "Parser faulted; should never have a uninitilized value." );
-		break;
-	case VALUE_NULL:
-			 );
-			break;
-	case VALUE_TRUE:
-			o->Set( String::NewFromUtf8( isolate, GetText( val->name ) )
-						, True( isolate )
-			 );
-			break;
-	case VALUE_FALSE:
-			o->Set( String::NewFromUtf8( isolate, GetText( val->name ) )
-						, False( isolate )
-			 );
-			break;
-	case VALUE_STRING:
-			o->Set( String::NewFromUtf8( isolate, GetText( val->name ) )
-						, String::NewFromUtf8( isolate, GetText( val->string ) )
-			 );
-			break;
-	case VALUE_NUMBER:
-			if( val->float_result )
-				o->Set( String::NewFromUtf8( isolate, GetText( val->name ) )
-						, Number::New( isolate, val->result_d )
-					);
-			else
-				o->Set( String::NewFromUtf8( isolate, GetText( val->name ) )
-						, Number::New( isolate, val->result_n )
-					 );
-			break;
-*/			
 	case VALUE_ARRAY:
 			o->Set( String::NewFromUtf8( isolate, val->name )
 						, sub_o = Array::New( isolate )

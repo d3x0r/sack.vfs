@@ -67,6 +67,11 @@ struct optionStrings {
 	Persistent<String> *countryString;
 	Persistent<String> *stateString;
 	Persistent<String> *commonString;
+	Persistent<String> *pubkeyString;
+	Persistent<String> *issuerString;
+	Persistent<String> *expireString;
+	Persistent<String> *requestString;
+	Persistent<String> *signerString;
 };
 
 PLIST strings;
@@ -129,7 +134,12 @@ struct optionStrings *getStrings( Isolate *isolate ) {
 		check->locString = new Persistent<String>( isolate, String::NewFromUtf8( isolate, "locality" ) );
 		check->countryString = new Persistent<String>( isolate, String::NewFromUtf8( isolate, "country" ) );
 		check->stateString = new Persistent<String>( isolate, String::NewFromUtf8( isolate, "state" ) );
-		check->commonString = new Persistent<String>( isolate, String::NewFromUtf8( isolate, "commonName" ) );
+		check->commonString = new Persistent<String>( isolate, String::NewFromUtf8( isolate, "name" ) );
+		check->pubkeyString = new Persistent<String>( isolate, String::NewFromUtf8( isolate, "pubkey" ) );
+		check->issuerString = new Persistent<String>( isolate, String::NewFromUtf8( isolate, "issuer" ) );
+		check->expireString = new Persistent<String>( isolate, String::NewFromUtf8( isolate, "expire" ) );
+		check->requestString = new Persistent<String>( isolate, String::NewFromUtf8( isolate, "request" ) );
+		check->signerString = new Persistent<String>( isolate, String::NewFromUtf8( isolate, "signer" ) );
 		//check->String = new Persistent<String>( isolate, String::NewFromUtf8( isolate, "" ) );
 		AddLink( &strings, check );
 	}
@@ -484,49 +494,50 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	Local<Object> opts = args[0]->ToObject();
 
-	Local<Object> country = opts->Get( Local<String>::New( isolate,strings->countryString[0] ) )->ToObject();
-	if( country.IsEmpty() ) {
+	Local<String> optName;
+	if( !opts->Has( optName = strings->countryString->Get(isolate) ) ) {
 		isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'country'.") ) ) );
 		return;
 	}
+	Local<Object> country = opts->Get( optName )->ToObject();
 	String::Utf8Value _country( country->ToString() );
 	params.country = *_country;
 	params.countrylen = _country.length();
 
-	Local<Object> state = opts->Get( String::NewFromUtf8(isolate,"state") )->ToObject();
-	if( state.IsEmpty() ) {
+	if( !opts->Has( optName = strings->stateString->Get(isolate) ) ) {
 		isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'state' or province.") ) ) );
 		return;
 	}
+	Local<Object> state = opts->Get( optName )->ToObject();
 	String::Utf8Value _state( state->ToString() );
 	params.state = *_state;
 	params.statelen = _state.length();
 
-	Local<Object> locality = opts->Get( String::NewFromUtf8(isolate,"locality") )->ToObject();
-	if( state.IsEmpty() ) {
+	if( !opts->Has( optName = strings->locString->Get( isolate ) ) ) {
 		isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'locality'(city).") ) ) );
 		return;
 	}
+	Local<Object> locality = opts->Get( optName )->ToObject();
 	String::Utf8Value _locality( locality->ToString() );
 	params.locality = *_locality;
 	params.localitylen = _locality.length();
 
-	Local<Object> org = opts->Get( String::NewFromUtf8(isolate,"org") )->ToObject();
-	if( org.IsEmpty() ) {
+	if( !opts->Has( optName = strings->orgString->Get( isolate ) ) ) {
 		isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'org'.") ) ) );
 		return;
 	}
+	Local<Object> org = opts->Get( optName )->ToObject();
 	String::Utf8Value _org( org->ToString() );
 	params.org = *_org;
 	params.orglen = _org.length();
 
-	Local<String> unitString = String::NewFromUtf8( isolate, "unit" );
+	Local<String> unitString = strings->unitString->Get( isolate );
 	String::Utf8Value *_unit;
-	if( opts->Has( unitString ) ) {
+	if( !opts->Has( unitString ) ) {
 		//isolate->ThrowException( Exception::Error(
 		//			String::NewFromUtf8( isolate, TranslateText("Missing required option 'unit'.") ) ) );
 		//return;
@@ -539,27 +550,27 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.orgUnitlen = _unit[0].length();
 	}
 
-	Local<Object> common = opts->Get( String::NewFromUtf8(isolate,"commonName") )->ToObject();
-	if( common.IsEmpty() ) {
+	if( !opts->Has( optName = strings->commonString->Get( isolate ) ) ) {
 		isolate->ThrowException( Exception::Error(
-					String::NewFromUtf8( isolate, TranslateText("Missing required option 'commonName'.") ) ) );
+					String::NewFromUtf8( isolate, TranslateText("Missing required option 'name'.") ) ) );
 		return;
 	}
+	Local<Object> common = opts->Get( optName )->ToObject();
 	String::Utf8Value _common( common->ToString() );
 	params.common = *_common;
 	params.commonlen = _common.length();
 
-	Local<Object> key = opts->Get( String::NewFromUtf8(isolate,"key") )->ToObject();
-	if( key.IsEmpty() ) {
+	if( !opts->Has( optName = strings->keyString->Get( isolate ) ) ) {
 		isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'key'.") ) ) );
 		return;
 	}
+	Local<Object> key = opts->Get( optName )->ToObject();
 	String::Utf8Value _key( key->ToString() );
 	params.key = *_key;
 	params.keylen = _key.length();
 
-	Local<String> pubkeyString = String::NewFromUtf8( isolate, "pubkey" );
+	Local<String> pubkeyString = strings->pubkeyString->Get( isolate );// String::NewFromUtf8( isolate, "pubkey" );
 	String::Utf8Value *_pubkey = NULL;
 
 	if( opts->Has( pubkeyString ) ) {
@@ -572,7 +583,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.pubkey = NULL;
 
 
-	Local<String> serialString = String::NewFromUtf8( isolate, "serial" );
+	Local<String> serialString = strings->serialString->Get( isolate );// String::NewFromUtf8( isolate, "serial" );
 	if( !opts->Has( serialString ) ) {
 		isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'serial'.") ) ) );
@@ -588,7 +599,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 	}
 
-	Local<String> issuerString = String::NewFromUtf8( isolate, "issuer" );
+	Local<String> issuerString = strings->issuerString->Get( isolate );//String::NewFromUtf8( isolate, "issuer" );
 	String::Utf8Value *_issuer;
 	if( !opts->Has( issuerString ) ) {
 		_issuer = NULL;
@@ -600,7 +611,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.issuerlen = _issuer[0].length();
 	}
 
-	Local<String> expireString = String::NewFromUtf8( isolate, "expire" );
+	Local<String> expireString = strings->expireString->Get( isolate );
 	if( !opts->Has( expireString ) ) {
 		params.expire = 0;
 	}
@@ -610,7 +621,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 
 	
-	Local<String> passString = String::NewFromUtf8( isolate, "password" );
+	Local<String> passString = strings->passString->Get( isolate );;
 
 	String::Utf8Value *_password = NULL;
 	if( !opts->Has( passString ) ) {
@@ -733,72 +744,71 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	params.isolate = isolate;
 
+	struct optionStrings *strings = getStrings( isolate );
 	Local<Object> opts = args[0]->ToObject();
 
-	Local<Object> country = opts->Get( String::NewFromUtf8(isolate,"country") )->ToObject();
-	if( country.IsEmpty() ) {
+	Local<String> optName;
+
+	if( !opts->Has( optName = strings->countryString->Get( isolate ) ) ) {
 		isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'country'.") ) ) );
 		return;
 	}
+	Local<Object> country = opts->Get( optName )->ToObject();
 	String::Utf8Value _country( country->ToString() );
 	params.country = *_country;
 	params.countrylen = _country.length();
 
-	Local<Object> state = opts->Get( String::NewFromUtf8(isolate,"state") )->ToObject();
-	if( state.IsEmpty() ) {
+	if( !opts->Has( optName = strings->stateString->Get( isolate ) ) ) {
 		isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'state' or province.") ) ) );
 		return;
 	}
-	String::Utf8Value _state( state->ToString() );
+	String::Utf8Value _state( opts->Get( optName )->ToString() );
 	params.state = *_state;
 	params.statelen = _state.length();
 
-	Local<Object> locality = opts->Get( String::NewFromUtf8(isolate,"locality") )->ToObject();
-	if( state.IsEmpty() ) {
+	if( !opts->Has( optName = strings->locString->Get( isolate ) ) ) {
 		isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'locality'(city).") ) ) );
 		return;
 	}
-	String::Utf8Value _locality( locality->ToString() );
+	String::Utf8Value _locality( opts->Get( optName )->ToString() );
 	params.locality = *_locality;
 	params.localitylen = _locality.length();
 
-	Local<Object> org = opts->Get( String::NewFromUtf8(isolate,"org") )->ToObject();
-	if( org.IsEmpty() ) {
+	if( !opts->Has( optName = strings->orgString->Get( isolate ) ) ) {
 		isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'org'.") ) ) );
 		return;
 	}
-	String::Utf8Value _org( org->ToString() );
+	String::Utf8Value _org( opts->Get( optName )->ToString() );
 	params.org = *_org;
 	params.orglen = _org.length();
 
-	Local<Object> unit = opts->Get( String::NewFromUtf8(isolate,"unit") )->ToObject();
 	String::Utf8Value *_unit;
-	if( unit.IsEmpty() ) {
+	if( !opts->Has( optName = strings->unitString->Get( isolate ) ) ) {
 		//isolate->ThrowException( Exception::Error(
 		//			String::NewFromUtf8( isolate, TranslateText("Missing required option 'unit'.") ) ) );
 		//return;
 		_unit = NULL;
 		params.orgUnit = NULL;
 	}else {
-		_unit = new String::Utf8Value( unit->ToString() );
+		_unit = new String::Utf8Value( opts->Get( optName )->ToString() );
 		params.orgUnit = *_unit[0];
 		params.orgUnitlen = _unit[0].length();
 	}
 
-	Local<Object> common = opts->Get( String::NewFromUtf8(isolate,"commonName") )->ToObject();
-	if( common.IsEmpty() ) {
+	if( !opts->Has( optName = strings->commonString->Get( isolate ) ) ) {
 		isolate->ThrowException( Exception::Error(
-					String::NewFromUtf8( isolate, TranslateText("Missing required option 'commonName'.") ) ) );
+					String::NewFromUtf8( isolate, TranslateText("Missing required option 'name'.") ) ) );
 		return;
 	}
-	String::Utf8Value _common( common->ToString() );
+	String::Utf8Value _common( opts->Get( optName )->ToString() );
 	params.common = *_common;
 	params.commonlen = _common.length();
 
+	/*
 	Local<String> serialString = String::NewFromUtf8( isolate, "serial" );
 	if( !opts->Has( serialString ) ) {
 		isolate->ThrowException( Exception::Error(
@@ -814,18 +824,20 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 			return;
 		}
 	}
+	*/
 
-	Local<Object> key = opts->Get( String::NewFromUtf8(isolate,"key") )->ToObject();
-	if( key.IsEmpty() ) {
+	Local<String> keyString = strings->keyString->Get( isolate );
+	if( !opts->Has( keyString ) ) {
 		isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'key'.") ) ) );
 		return;
 	}
+	Local<Object> key = opts->Get( keyString )->ToObject();
 	String::Utf8Value _key( key->ToString() );
 	params.key = *_key;
 	params.keylen = _key.length();
 
-	Local<String> passString = String::NewFromUtf8( isolate, "password" );
+	Local<String> passString = strings->passString->Get( isolate );
 
 	String::Utf8Value *_password = NULL;
 	if( !opts->Has( passString ) ) {
@@ -1014,27 +1026,28 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	params.isolate = isolate;
 
-	Local<Object> opts = args[0]->ToObject();
+	struct optionStrings *strings = getStrings( isolate );
 
-	Local<Object> signingCert = opts->Get( String::NewFromUtf8(isolate,"signer") )->ToObject();
-	if( signingCert.IsEmpty() ) {
+	Local<Object> opts = args[0]->ToObject();
+	Local<String> optName;
+
+	if( !opts->Has( optName = strings->signerString->Get( isolate ) ) ) {
 		isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'signer'.") ) ) );
 		return;
 	}
-	String::Utf8Value _signingCert( signingCert->ToString() );
+	String::Utf8Value _signingCert( opts->Get( optName )->ToString() );
 	params.signingCert = *_signingCert;
 
-	Local<Object> request = opts->Get( String::NewFromUtf8(isolate,"request") )->ToObject();
-	if( request.IsEmpty() ) {
+	if( !opts->Has( optName = strings->requestString->Get( isolate ) ) ) {
 		isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'request'.") ) ) );
 		return;
 	}
-	String::Utf8Value _request( request->ToString() );
+	String::Utf8Value _request( opts->Get( optName )->ToString() );
 	params.signReq = *_request;
 
-	Local<String> expireString = String::NewFromUtf8( isolate, "expire" );
+	Local<String> expireString = strings->expireString->Get( isolate );
 	if( !opts->Has( expireString ) ) {
 		params.expire = 0;
 	}
@@ -1043,17 +1056,16 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.expire = (int)expire->Value();
 	}
 
-	Local<Object> key = opts->Get( String::NewFromUtf8(isolate,"key") )->ToObject();
-	if( key.IsEmpty() ) {
+	if( !opts->Has( optName = strings->keyString->Get( isolate ) ) ) {
 		isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'key'.") ) ) );
 		return;
 	}
-	String::Utf8Value _key( key->ToString() );
+	String::Utf8Value _key( opts->Get( optName )->ToString() );
 	params.key = *_key;
 	params.keylen = _key.length();
 
-	Local<String> serialString = String::NewFromUtf8( isolate, "serial" );
+	Local<String> serialString = strings->serialString->Get( isolate );
 
 	if( !opts->Has( serialString ) ) {
 		isolate->ThrowException( Exception::Error(
@@ -1103,7 +1115,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.subjectlen = _subject[0].length();
 	}
 
-	Local<String> pubkeyString = String::NewFromUtf8( isolate, "pubkey" );
+	Local<String> pubkeyString = strings->pubkeyString->Get( isolate );// String::NewFromUtf8( isolate, "pubkey" );
 	String::Utf8Value *_pubkey = NULL;
 
 	if( opts->Has( pubkeyString ) ) {
@@ -1116,7 +1128,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 	else
 		params.pubkey = NULL;
 
-	Local<String> passString = String::NewFromUtf8( isolate, "password" );
+	Local<String> passString = strings->passString->Get( isolate );;
 
 	String::Utf8Value *_password = NULL;
 	if( !opts->Has( passString ) ) {
@@ -1211,12 +1223,12 @@ void TLSObject::pubKey( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	params.isolate = isolate;
-
+	struct optionStrings *strings = getStrings( isolate );
 	Local<Object> opts = args[0]->ToObject();
 	
-	Local<String> keyString = String::NewFromUtf8( isolate, "key" );
-	Local<String> certString = String::NewFromUtf8( isolate, "cert" );
-	Local<String> passString = String::NewFromUtf8( isolate, "password" );
+	Local<String> keyString = strings->keyString->Get( isolate );
+	Local<String> certString = strings->certString->Get( isolate );
+	Local<String> passString = strings->passString->Get( isolate );
 
 	String::Utf8Value *_key;
 	if( !opts->Has( keyString ) ) {
@@ -1468,6 +1480,10 @@ static LOGICAL Validate( struct info_params *params ) {
 				VarTextAddData( pvt, issuer, VARTEXT_ADD_DATA_NULTERM );
 				_throwError( params, GetText( VarTextPeek( pvt ) ) );
 				break;
+			case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY:
+				VarTextAddData( pvt, TranslateText( "validate: unable to get issuer cert locally." ), VARTEXT_ADD_DATA_NULTERM );
+				_throwError( params, GetText( VarTextPeek( pvt ) ) );
+				break;
 			default:
 				VarTextAddData( pvt, TranslateText( "validate: failed; unhandled error:" ), VARTEXT_ADD_DATA_NULTERM );
 				vtprintf( pvt, "%d", err );
@@ -1528,6 +1544,7 @@ void TLSObject::validate( const v8::FunctionCallbackInfo<Value>& args ) {
 		//isolate->ThrowException( Exception::Error(
 		//	String::NewFromUtf8( isolate, TranslateText( "Missing required option 'cert'." ) ) ) );
 		//return;
+		chain = NULL;
 		params.chain = NULL;
 	}
 	else {
