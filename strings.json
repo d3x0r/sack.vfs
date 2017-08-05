@@ -13,6 +13,7 @@
 		,"11":"Missing required option 'serial'."
 		,"12":"Missing required option 'signer'."
 		,"13":"Missing required option 'state' or province."
+		,"20":"Something"
 		,"14":"gencert : bad pubkey specified."
 		,"15":"pubkey: bad key or password"
 		,"16":"validate: bad certificate"

@@ -396,6 +396,9 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
     - org : specified organization for certificate
     - orgUnit : specifies organizational unit.
     - name : specifies common name, this is typically a domain name with possible wildcard at start.
+    - subject : add fields to Subject Alternative Name...  This is an object containing arrays
+       - DNS : a single domain name or an array of domain name strings to add
+       - IP : a single IP address string or an array of IO addresses to add; does support IPv6 addresses.
     - key : private/public key to use
     - password : if required for key
 
