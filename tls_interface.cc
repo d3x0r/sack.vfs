@@ -379,9 +379,9 @@ void MakeCert(  struct info_params *params )
 		X509_set_version( x509, 2 ); // wikipedia says 0 is what is normal. (0=1, 1=2, 2=v3! )
 
 		ASN1_INTEGER_set( X509_get_serialNumber( x509 ), (long)params->serial );
-		X509_gmtime_adj( X509_get_notBefore( x509 ), 0 );
+		X509_time_adj_ex( X509_get_notBefore( x509 ), 0, 0, NULL );
 		// (60 seconds * 60 minutes * 24 hours * 365 days) = 31536000.
-		X509_gmtime_adj( X509_get_notAfter( x509 ), params->expire?params->expire*(60*60*24):31536000 );
+		X509_time_adj_ex( X509_get_notAfter( x509 ), params->expire?params->expire:365, 0, NULL );
 		X509_set_pubkey( x509, pubkey );
 		{
 			X509_NAME *name = X509_get_subject_name( x509 );
@@ -691,10 +691,6 @@ void MakeReq( struct info_params *params )
 	{
 		req = X509_REQ_new();
 		X509_REQ_set_version(req, 2); // wikipedia says 0 is what is normal. (0=1, 1=2, 2=v3! )
-		//ASN1_INTEGER_set( X509_REQ_get_serialNumber( req ), params->serial );
-		//X509_gmtime_adj( X509_get_notBefore( req ), 0 );
-		// (60 seconds * 60 minutes * 24 hours * 365 days) = 31536000.
-		//X509_REQ_gmtime_adj( X509_get_notAfter( req ), 31536000L );
 
 
 		X509_REQ_set_pubkey( req, pkey );
@@ -1038,9 +1034,9 @@ static void SignReq( struct info_params *params )
 	}
 	
 	// set time
-	X509_gmtime_adj(X509_get_notBefore(cert), 0);
+	X509_time_adj_ex(X509_get_notBefore(cert), 0, 0, NULL);
 	// (60 seconds * 60 minutes * 24 hours * 365 days) = 31536000.
-	X509_gmtime_adj(X509_get_notAfter(cert), params->expire?params->expire*(60*60*24):31536000);
+	X509_time_adj_ex(X509_get_notAfter(cert), params->expire?params->expire:365, 0, NULL);
  
 	// set subject from req
 	X509_NAME *subject, *tmpname;
