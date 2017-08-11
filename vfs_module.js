@@ -11,7 +11,7 @@ let tmpParse = vfs.JSON.parse;
 function JSONReviverWrapper (parser) {
    return (string,reviver)=> {
 	var result = parser( string );
-	if( !result && string ) throw new Error( "fault parsing json" );
+	//if( !result && string ) throw new Error( "fault parsing json" );
         return typeof reviver === 'function' ? (function walk(holder, key) {
             var k, v, value = holder[key];
             if (value && typeof value === 'object') {

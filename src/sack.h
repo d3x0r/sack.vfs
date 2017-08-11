@@ -339,7 +339,7 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #define TYPELIB_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-//#define SEXPAT_SOURCE
+#define JSON_EMITTER_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
 #define SERVICE_SOURCE
@@ -347,7 +347,7 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #    ifndef __NO_OPTIONS__
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.    and not NO_SQL and not NO_OPTIONS   */
-#define SQLGETOPTION_SOURCE
+#      define SQLGETOPTION_SOURCE
 #    endif
 #  endif
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
@@ -11402,9 +11402,23 @@ JSON_EMITTER_PROC( TEXTSTR, json_build_message )( struct json_context_object *fo
 // turns out numbers can be  hex, octal and binary numbers  (0x[A-F,a-f,0-9]*, 0b[0-1]*, 0[0-9]*)
 // slightly faster (17%) than json6_parse_message because of fewer possible checks.
 JSON_EMITTER_PROC( LOGICAL, json_parse_message )( char * msg
-													, size_t msglen
-													, PDATALIST *msg_data_out
+                                                , size_t msglen
+                                                , PDATALIST *msg_data_out
 																);
+// allocates a parsing context and begins parsing data.
+JSON_EMITTER_PROC( struct json_parse_state *, json_begin_parse )( void );
+// return TRUE when a completed value/object is available.
+// after returning TRUE, call json_parse_get_data.  It is possible that there is
+// still unconsumed data that can begin a new object.  Call this with NULL, 0 for data
+// to consume this internal data.  if this returns FALSE, then ther is no further object
+// to retrieve.
+JSON_EMITTER_PROC( LOGICAL, json_parse_add_data )( struct json_parse_state *context
+                                                 , char * msg
+                                                 , size_t msglen
+                                                 );
+JSON_EMITTER_PROC( PDATALIST, json_parse_get_data )( struct json_parse_state *context );
+JSON_EMITTER_PROC( void, json_parse_dispose_state )( struct json_parse_state **context );
+JSON_EMITTER_PROC( void, json_parse_clear_state )(struct json_parse_state *context);
 // take a json string and a format and fill in a structure from the text.
 // tests all formats, to first-match;
 // take a json string and a format and fill in a structure from the text.
@@ -11417,14 +11431,34 @@ JSON_EMITTER_PROC( LOGICAL, json_parse_message )( char * msg
 //       this is arbitrary though; and could be reverted to just accepting any character other than ':'.
 //   JSON(6?) support - undefined keyword value
 //       accept \uXXXX, \xXX, \[0-3]xx octal, \u{xxxxx} encodings in strings
+//       allow underscores in numbers to separate number groups ( works as ZWNBSP )
 JSON_EMITTER_PROC( LOGICAL, json6_parse_message )( char * msg
 													, size_t msglen
 													, PDATALIST *msg_data_out
 																);
-JSON_EMITTER_PROC( LOGICAL, json_decode_message )(  struct json_context *format
-																 , PDATALIST parsedMsg
-                                                 , struct json_context_object **result_format
-																, POINTER *msg_data_out
+JSON_EMITTER_PROC( LOGICAL, _json6_parse_message )(char * msg
+	, size_t msglen
+	, PDATALIST *msg_data_out
+	);
+JSON_EMITTER_PROC( struct json_parse_state *, json6_begin_parse )( void );
+// Add some data to parse for json stream (which may consist of multiple values)
+// return 1 when a completed value/object is available.
+// after returning 1, call json_parse_get_data.  It is possible that there is
+// still unconsumed data that can begin a new object.  Call this with NULL, 0 for data
+// to consume this internal data.  if this returns 0, then there is no further object
+// to retrieve.
+// if this returns -1, an error in parsing has occured, and no further parsing can happen.
+JSON_EMITTER_PROC( int, json6_parse_add_data )( struct json_parse_state *context
+                                                 , char * msg
+                                                 , size_t msglen
+                                                 );
+JSON_EMITTER_PROC( PDATALIST, json6_parse_get_data )( struct json_parse_state *context );
+JSON_EMITTER_PROC( void, json6_parse_dispose_state )( struct json_parse_state **context );
+JSON_EMITTER_PROC( void, json6_parse_clear_state )(struct json_parse_state *context);
+JSON_EMITTER_PROC( LOGICAL, json6_decode_message )(  struct json_context *format
+                                                  , PDATALIST parsedMsg
+                                                  , struct json_context_object **result_format
+                                                  , POINTER *msg_data_out
 												);
 enum json_value_types {
 	VALUE_UNDEFINED = -1

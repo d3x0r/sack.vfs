@@ -347,7 +347,7 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #define TYPELIB_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-//#define SEXPAT_SOURCE
+#define JSON_EMITTER_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
 #define SERVICE_SOURCE
@@ -355,7 +355,7 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #    ifndef __NO_OPTIONS__
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.    and not NO_SQL and not NO_OPTIONS   */
-#define SQLGETOPTION_SOURCE
+#      define SQLGETOPTION_SOURCE
 #    endif
 #  endif
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
@@ -17635,7 +17635,7 @@ SYSTEM_PROC( void, AddMappedLibrary)( CTEXTSTR libname, POINTER image_memory )
 		library = NewPlus( LIBRARY, sizeof(TEXTCHAR)*((maxlen<0xFFFFFF)?(uint32_t)maxlen:0) );
 		library->alt_full_name = NULL;
 		StrCpy( library->full_name, libname );
-		library->name = pathrchr( library->full_name );
+		library->name = (char*)pathrchr( library->full_name );
 		if( library->name )
 			library->name++;
 		else
@@ -41495,9 +41495,12 @@ int64_t IntCreateFromText( CTEXTSTR p )
 	int s;
 	int begin;
 	int64_t num;
+	LOGICAL altBase = FALSE;
+	LOGICAL altBase2 = FALSE;
+	int64_t base = 10;
 	//p = GetText( pText );
 	if( !p )
-		return FALSE;
+		return 0;
 	//if( pText->flags & TF_INDIRECT )
 	//   return IntCreateFromSeg( GetIndirect( pText ) );
 	s = 0;
@@ -41516,17 +41519,36 @@ int64_t IntCreateFromText( CTEXTSTR p )
 		}
 		else if( *p < '0' || *p > '9' )
 		{
-			break;
+			if( !altBase2 ) {
+				if( *p == 'x' ) { altBase2 = TRUE; base = 16; }
+				else if( *p == 'b' ) { altBase2 = TRUE; base = 2; }
+				else break;
+			} else {
+				if( base > 10 ) {
+					if( *p >= 'a' && *p <= 'f' ) {
+						num *= base;
+						num += *p - 'a' + 10;
+					}
+					else if( *p >= 'A' && *p <= 'F' ) {
+						num *= base;
+						num += *p - 'A' + 10;
+					}
+					else break;
+				}
+				else break;
+			}
 		}
 		else
 		{
-			num *= 10;
+			if( ( !altBase ) && (*p == '0') ) { altBase = TRUE; base = 8; }
+			else { if( (*p - '0') >= base ) { break; } altBase = TRUE; }
+			num *= base;
 			num += *p - '0';
 		}
 		begin = FALSE;
 		p++;
 	}
-	if( s )
+	if( s & 1 )
 		num *= -1;
 	return num;
 }
@@ -51029,9 +51051,23 @@ JSON_EMITTER_PROC( TEXTSTR, json_build_message )( struct json_context_object *fo
 // turns out numbers can be  hex, octal and binary numbers  (0x[A-F,a-f,0-9]*, 0b[0-1]*, 0[0-9]*)
 // slightly faster (17%) than json6_parse_message because of fewer possible checks.
 JSON_EMITTER_PROC( LOGICAL, json_parse_message )( char * msg
-													, size_t msglen
-													, PDATALIST *msg_data_out
+                                                , size_t msglen
+                                                , PDATALIST *msg_data_out
 																);
+// allocates a parsing context and begins parsing data.
+JSON_EMITTER_PROC( struct json_parse_state *, json_begin_parse )( void );
+// return TRUE when a completed value/object is available.
+// after returning TRUE, call json_parse_get_data.  It is possible that there is
+// still unconsumed data that can begin a new object.  Call this with NULL, 0 for data
+// to consume this internal data.  if this returns FALSE, then ther is no further object
+// to retrieve.
+JSON_EMITTER_PROC( LOGICAL, json_parse_add_data )( struct json_parse_state *context
+                                                 , char * msg
+                                                 , size_t msglen
+                                                 );
+JSON_EMITTER_PROC( PDATALIST, json_parse_get_data )( struct json_parse_state *context );
+JSON_EMITTER_PROC( void, json_parse_dispose_state )( struct json_parse_state **context );
+JSON_EMITTER_PROC( void, json_parse_clear_state )(struct json_parse_state *context);
 // take a json string and a format and fill in a structure from the text.
 // tests all formats, to first-match;
 // take a json string and a format and fill in a structure from the text.
@@ -51044,14 +51080,34 @@ JSON_EMITTER_PROC( LOGICAL, json_parse_message )( char * msg
 //       this is arbitrary though; and could be reverted to just accepting any character other than ':'.
 //   JSON(6?) support - undefined keyword value
 //       accept \uXXXX, \xXX, \[0-3]xx octal, \u{xxxxx} encodings in strings
+//       allow underscores in numbers to separate number groups ( works as ZWNBSP )
 JSON_EMITTER_PROC( LOGICAL, json6_parse_message )( char * msg
 													, size_t msglen
 													, PDATALIST *msg_data_out
 																);
-JSON_EMITTER_PROC( LOGICAL, json_decode_message )(  struct json_context *format
-																 , PDATALIST parsedMsg
-                                                 , struct json_context_object **result_format
-																, POINTER *msg_data_out
+JSON_EMITTER_PROC( LOGICAL, _json6_parse_message )(char * msg
+	, size_t msglen
+	, PDATALIST *msg_data_out
+	);
+JSON_EMITTER_PROC( struct json_parse_state *, json6_begin_parse )( void );
+// Add some data to parse for json stream (which may consist of multiple values)
+// return 1 when a completed value/object is available.
+// after returning 1, call json_parse_get_data.  It is possible that there is
+// still unconsumed data that can begin a new object.  Call this with NULL, 0 for data
+// to consume this internal data.  if this returns 0, then there is no further object
+// to retrieve.
+// if this returns -1, an error in parsing has occured, and no further parsing can happen.
+JSON_EMITTER_PROC( int, json6_parse_add_data )( struct json_parse_state *context
+                                                 , char * msg
+                                                 , size_t msglen
+                                                 );
+JSON_EMITTER_PROC( PDATALIST, json6_parse_get_data )( struct json_parse_state *context );
+JSON_EMITTER_PROC( void, json6_parse_dispose_state )( struct json_parse_state **context );
+JSON_EMITTER_PROC( void, json6_parse_clear_state )(struct json_parse_state *context);
+JSON_EMITTER_PROC( LOGICAL, json6_decode_message )(  struct json_context *format
+                                                  , PDATALIST parsedMsg
+                                                  , struct json_context_object **result_format
+                                                  , POINTER *msg_data_out
 												);
 enum json_value_types {
 	VALUE_UNDEFINED = -1
@@ -51147,7 +51203,10 @@ struct json_context
 	int human_readable;
 };
 enum word_char_states {
+ // not in a keyword
 	WORD_POS_RESET = 0,
+  // at end of a word, waiting for separator
+	WORD_POS_END,
 	WORD_POS_TRUE_1,
 	WORD_POS_TRUE_2,
 	WORD_POS_TRUE_3,
@@ -51187,24 +51246,77 @@ enum word_char_states {
 	WORD_POS_FIELD,
 	WORD_POS_AFTER_FIELD,
 };
-#define CONTEXT_UNKNOWN 0
-#define CONTEXT_IN_ARRAY 1
-#define CONTEXT_IN_OBJECT 2
-#define CONTEXT_OBJECT_FIELD 3
-#define CONTEXT_OBJECT_FIELD_VALUE 4
+enum parse_context_modes {
+ CONTEXT_UNKNOWN = 0,
+ CONTEXT_IN_ARRAY = 1,
+ CONTEXT_IN_OBJECT = 2,
+ CONTEXT_OBJECT_FIELD = 3,
+ CONTEXT_OBJECT_FIELD_VALUE = 4
+};
 struct json_parse_context {
-	int context;
+	enum parse_context_modes context;
 	PDATALIST elements;
 	struct json_context_object *object;
 };
 #define RESET_VAL()  {	  val.value_type = VALUE_UNSET;	 val.contains = NULL;	              val.name = NULL;	                  val.string = NULL;	                negative = FALSE; }
+#define RESET_STATE_VAL()  {	  state->val.value_type = VALUE_UNSET;	 state->val.contains = NULL;	              state->val.name = NULL;	                  state->val.string = NULL;	                state->negative = FALSE; }
 typedef struct json_parse_context PARSE_CONTEXT, *PPARSE_CONTEXT;
 #define MAXPARSE_CONTEXTSPERSET 128
 DeclareSet( PARSE_CONTEXT );
+struct json_input_buffer {
+      // prior input buffer
+	char const * buf;
+ // size of prior input buffer
+	size_t       size;
+  // last position in _input if context closed before end of buffer
+	char const * pos;
+};
+struct json_output_buffer {
+      // prior input buffer
+	char * buf;
+ // size of prior input buffer
+	size_t  size;
+  // last position in _input if context closed before end of buffer
+	char * pos;
+};
+typedef struct json_input_buffer PARSE_BUFFER, *PPARSE_BUFFER;
+#define MAXPARSE_BUFFERSPERSET 128
+DeclareSet( PARSE_BUFFER );
+struct json_parse_state {
+	/* I guess this is a good parser */
+	PDATALIST elements;
+ //
+	PLINKSTACK outBuffers;
+ // matches input queue
+	PLINKQUEUE outQueue;
+	//TEXTSTR mOut;// = NewArray( char, msglen );
+	size_t line;
+	size_t col;
+ // character index;
+	size_t n;
+	//size_t _n = 0; // character index; (restore1)
+	enum word_char_states word;
+	LOGICAL status;
+	LOGICAL negative;
+	LOGICAL literalString;
+	PLINKSTACK context_stack;
+	LOGICAL first_token;
+	PPARSE_CONTEXT context;
+	enum parse_context_modes parse_context;
+	struct json_value_container val;
+	int comment;
+	PLINKQUEUE inBuffers;
+	//char const * input;     // current input buffer start
+	//char const * msg_input; // current input buffer position (incremented while reading)
+	LOGICAL completed;
+	//char *token_begin;
+};
 #ifdef __cplusplus
 } } SACK_NAMESPACE_END
 #endif
-#define JSON_EMITTER_SOURCE
+#ifndef JSON_EMITTER_SOURCE
+#  define JSON_EMITTER_SOURCE
+#endif
 #ifdef __cplusplus
 SACK_NAMESPACE namespace network { namespace json {
 #endif
@@ -51244,6 +51356,32 @@ char *json_escape_string( const char *string ) {
 #define _4char(result,from)  ( ((*from) += 4), ( ( ( result & 0x7 ) << 18 )						     | ( ( result & 0x3F00 ) << 4 )						   | ( ( result & 0x3f0000 ) >> 10 )						    | ( ( result & 0x3f000000 ) >> 24 ) ) )
 #define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),		     ( ( !(result & 0xFF) )              ?0	                                                           :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
 #define GetUtfChar(x) __GetUtfChar(c,x)
+/* I guess this is a good parser */
+struct json_parse_state * json_begin_parse_message( void )
+{
+	struct json_parse_state *state = New( struct json_parse_state );
+	//size_t m = 0; // m is the output path; leave text inline; but escaped chars can offset/change the content
+	//TEXTSTR mOut = msg;// = NewArray( char, msglen );
+ // character index;
+	state->n = 0;
+	//state->_n = 0; // character index; (restore1)
+	state->word = WORD_POS_RESET;
+	state->status = TRUE;
+	state->negative = FALSE;
+	state->context_stack = NULL;
+	state->first_token = TRUE;
+	//enum json_parse_state state;
+	state->context = GetFromSet( PARSE_CONTEXT, &parseContexts );
+	state->parse_context = CONTEXT_UNKNOWN;
+	//char const * msg_input = (char const *)msg;
+	//char const * _msg_input;
+	state->elements = CreateDataList( sizeof( state->val ) );
+	state->val.value_type = VALUE_UNSET;
+	state->val.contains = NULL;
+	state->val.name = NULL;
+	state->val.string = NULL;
+	return state;
+}
 LOGICAL json_parse_message( char * msg
                                  , size_t msglen
                                  , PDATALIST *_msg_output )
@@ -51265,7 +51403,7 @@ LOGICAL json_parse_message( char * msg
 	LOGICAL first_token = TRUE;
 	//enum json_parse_state state;
 	PPARSE_CONTEXT context = GetFromSet( PARSE_CONTEXT, &parseContexts );
-	int parse_context = CONTEXT_UNKNOWN;
+	enum parse_context_modes parse_context = CONTEXT_UNKNOWN;
 	struct json_value_container val;
 	char const * msg_input = (char const *)msg;
 	char const * _msg_input;
@@ -52691,6 +52829,7 @@ ID_Continue    XID_Continue     All of the above, plus nonspacing marks, spacing
 SACK_NAMESPACE namespace network { namespace json {
 #endif
 static PPARSE_CONTEXTSET parseContexts6;
+static PPARSE_BUFFERSET parseBuffers6;
 char *json6_escape_string( const char *string ) {
 	size_t n;
 	size_t m = 0;
@@ -52804,7 +52943,7 @@ static LOGICAL gatherString( TEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TE
 						}
 						if( oct_char > 255 ) {
 							lprintf( WIDE("(escaped character, parsing octal escape val=%d) fault while parsing; )") WIDE(" (near %*.*s[%c]%s)")
-							                 , oct_char
+							         , oct_char
 									 , (int)( (n>3)?3:n ), (int)( (n>3)?3:n )
 									 , (*msg_input) - ( (n>3)?3:n )
 									 , c
@@ -52911,7 +53050,744 @@ static LOGICAL gatherString( TEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TE
 	(*pmOut) = mOut;
 	return status;
 }
+struct json_parse_state * json6_begin_parse( void )
+{
+	struct json_parse_state *state = New( struct json_parse_state );
+	state->elements = CreateDataList( sizeof( state->val ) );
+	state->outBuffers = CreateLinkStack();
+	state->inBuffers = CreateLinkQueue();
+	state->outQueue = CreateLinkQueue();
+	state->line = 1;
+	state->col = 1;
+ // character index;
+	state->n = 0;
+	state->word = WORD_POS_RESET;
+	state->status = TRUE;
+	state->negative = FALSE;
+	state->literalString = FALSE;
+	state->context_stack = NULL;
+	state->first_token = TRUE;
+	state->context = GetFromSet( PARSE_CONTEXT, &parseContexts6 );
+	state->parse_context = CONTEXT_UNKNOWN;
+	state->comment = 0;
+	state->completed = FALSE;
+	//state->mOut = msg;// = NewArray( char, msglen );
+	//state->msg_input = (char const *)msg;
+	state->val.value_type = VALUE_UNSET;
+	state->val.contains = NULL;
+	state->val.name = NULL;
+	state->val.string = NULL;
+	return state;
+}
+int json6_parse_add_data( struct json_parse_state *state
+                            , char * msg
+                            , size_t msglen )
+{
+	/* I guess this is a good parser */
+	TEXTRUNE c;
+	PPARSE_BUFFER input;
+	struct json_output_buffer* output;
+	if( !state->status )
+		return -1;
+	//char *token_begin;
+	if( msg && msglen ) {
+		input = GetFromSet( PARSE_BUFFER, &parseBuffers6 );
+		input->pos = input->buf = msg;
+		input->size = msglen;
+		EnqueLink( &state->inBuffers, input );
+		output = (struct json_output_buffer*)GetFromSet( PARSE_BUFFER, &parseBuffers6 );
+		output->pos = output->buf = NewArray( char, msglen );
+		output->size = msglen;
+		EnqueLink( &state->outQueue, output );
+	}
+	while( state->status && ( input = (PPARSE_BUFFER)DequeLink( &state->inBuffers ) ) ) {
+		output = (struct json_output_buffer*)DequeLink( &state->outQueue );
+		state->n = input->pos - input->buf;
+		while( state->status && (state->n < input->size) && (c = GetUtfChar( &input->pos )) )
+		{
+			state->col++;
+			state->n = input->pos - input->buf;
+			if( state->comment ) {
+				if( state->comment == 1 ) {
+					if( c == '*' ) { state->comment = 3; continue; }
+					if( c != '/' ) { lprintf( WIDE( "Fault while parsing; unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col ); state->status = FALSE; }
+					else state->comment = 2;
+					continue;
+				}
+				if( state->comment == 2 ) {
+					if( c == '\n' ) { state->comment = 0; continue; }
+					else continue;
+				}
+				if( state->comment == 3 ) {
+					if( c == '*' ) { state->comment = 4; continue; }
+					else continue;
+				}
+				if( state->comment == 4 ) {
+					if( c == '/' ) { state->comment = 0; continue; }
+					else { if( c != '*' ) state->comment = 3; continue; }
+				}
+			}
+			switch( c )
+			{
+			case '/':
+				if( !state->comment ) state->comment = 1;
+				break;
+			case '{':
+			{
+				struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &parseContexts6 );
+#ifdef _DEBUG_PARSING
+				lprintf( "Begin a new object; previously pushed into elements; but wait until trailing comma or close previously:%d", val.value_type );
+#endif
+				state->val.value_type = VALUE_OBJECT;
+				state->val.contains = CreateDataList( sizeof( state->val ) );
+				AddDataItem( &state->elements, &state->val );
+				old_context->context = state->parse_context;
+				old_context->elements = state->elements;
+				state->elements = state->val.contains;
+				PushLink( &state->context_stack, old_context );
+				RESET_STATE_VAL();
+				state->parse_context = CONTEXT_OBJECT_FIELD;
+			}
+			break;
+			case '[':
+				if( state->parse_context == CONTEXT_OBJECT_FIELD ) {
+					lprintf( WIDE( "Fault while parsing; while getting field name unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+					state->status = FALSE;
+					break;
+				}
+				{
+					struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &parseContexts6 );
+#ifdef _DEBUG_PARSING
+					lprintf( "Begin a new array; previously pushed into elements; but wait until trailing comma or close previously:%d", val.value_type );
+#endif
+					state->val.value_type = VALUE_ARRAY;
+					state->val.contains = CreateDataList( sizeof( state->val ) );
+					AddDataItem( &state->elements, &state->val );
+					old_context->context = state->parse_context;
+					old_context->elements = state->elements;
+					state->elements = state->val.contains;
+					PushLink( &state->context_stack, old_context );
+					RESET_STATE_VAL();
+					state->parse_context = CONTEXT_IN_ARRAY;
+				}
+				break;
+			case ':':
+				if( state->parse_context == CONTEXT_OBJECT_FIELD )
+				{
+					if( state->word != WORD_POS_RESET
+						&& state->word != WORD_POS_FIELD ) {
+						// allow starting a new word
+						state->status = FALSE;
+						lprintf( WIDE( "unquoted keyword used as object field name:parsing fault; unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+						break;
+					}
+					(*output->pos++) = 0;
+					state->word = WORD_POS_RESET;
+					if( state->val.name ) {
+						lprintf( "two names single value?" );
+					}
+					state->val.name = state->val.string;
+					state->val.string = NULL;
+					state->parse_context = CONTEXT_OBJECT_FIELD_VALUE;
+					state->val.value_type = VALUE_UNSET;
+				}
+				else
+				{
+					if( state->parse_context == CONTEXT_IN_ARRAY )
+						lprintf( WIDE( "(in array, got colon out of string):parsing fault; unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+					else
+						lprintf( WIDE( "(outside any object, got colon out of string):parsing fault; unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+					state->status = FALSE;
+				}
+				break;
+			case '}':
+				if( state->word == WORD_POS_END ) {
+					// allow starting a new word
+					state->word = WORD_POS_RESET;
+				}
+				// coming back after pushing an array or sub-object will reset the contxt to FIELD, so an end with a field should still push value.
+				if( (state->parse_context == CONTEXT_OBJECT_FIELD) ) {
+#ifdef _DEBUG_PARSING
+					lprintf( "close object; empty object %d", state->val.value_type );
+#endif
+					RESET_STATE_VAL();
+					{
+						struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &state->context_stack );
+						struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt - 1 );
+  // save updated elements list in the old value in the last pushed list.
+						oldVal->contains = state->elements;
+ // this will restore as IN_ARRAY or OBJECT_FIELD
+						state->parse_context = old_context->context;
+						state->elements = old_context->elements;
+						DeleteFromSet( PARSE_CONTEXT, parseContexts6, old_context );
+					}
+					if( state->parse_context == CONTEXT_UNKNOWN ) {
+						state->completed = TRUE;
+					}
+				}
+				else if( (state->parse_context == CONTEXT_OBJECT_FIELD_VALUE) )
+				{
+					// first, add the last value
+#ifdef _DEBUG_PARSING
+					lprintf( "close object; push item %s %d", state->val.name, state->val.value_type );
+#endif
+					if( state->val.value_type != VALUE_UNSET ) {
+						AddDataItem( &state->elements, &state->val );
+					}
+					RESET_STATE_VAL();
+					{
+						struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &state->context_stack );
+						struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt - 1 );
+  // save updated elements list in the old value in the last pushed list.
+						oldVal->contains = state->elements;
+ // this will restore as IN_ARRAY or OBJECT_FIELD
+						state->parse_context = old_context->context;
+						state->elements = old_context->elements;
+						DeleteFromSet( PARSE_CONTEXT, parseContexts6, old_context );
+					}
+					if( state->parse_context == CONTEXT_UNKNOWN ) {
+						state->completed = TRUE;
+					}
+					//n++;
+				}
+				else
+				{
+					lprintf( WIDE( "Fault while parsing; unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+					state->status = FALSE;
+				}
+				break;
+			case ']':
+				if( state->word == WORD_POS_END ) {
+					// allow starting a new word
+					state->word = WORD_POS_RESET;
+				}
+				if( state->parse_context == CONTEXT_IN_ARRAY )
+				{
+#ifdef _DEBUG_PARSING
+					lprintf( "close array, push last element: %d", state->val.value_type );
+#endif
+					if( state->val.value_type != VALUE_UNSET ) {
+						AddDataItem( &state->elements, &state->val );
+					}
+					RESET_STATE_VAL();
+					{
+						struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &state->context_stack );
+						struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt - 1 );
+  // save updated elements list in the old value in the last pushed list.
+						oldVal->contains = state->elements;
+						state->parse_context = old_context->context;
+						state->elements = old_context->elements;
+						DeleteFromSet( PARSE_CONTEXT, parseContexts6, old_context );
+					}
+					if( state->parse_context == CONTEXT_UNKNOWN ) {
+						state->completed = TRUE;
+					}
+				}
+				else
+				{
+// fault
+					lprintf( WIDE( "bad context %d; fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, state->parse_context, c, state->n, state->line, state->col );
+					state->status = FALSE;
+				}
+				break;
+			case ',':
+				if( state->word == WORD_POS_END ) {
+					// allow starting a new word
+					state->word = WORD_POS_RESET;
+				}
+				if( state->parse_context == CONTEXT_IN_ARRAY )
+				{
+					if( state->val.value_type != VALUE_UNSET ) {
+#ifdef _DEBUG_PARSING
+						lprintf( "back in array; push item %d", state->val.value_type );
+#endif
+						AddDataItem( &state->elements, &state->val );
+						RESET_STATE_VAL();
+					}
+ // in an array, elements after a comma should init as undefined...
+					state->val.value_type = VALUE_UNDEFINED;
+					// undefined allows [,,,] to be 4 values and [1,2,3,] to be 4 values with an undefined at end.
+				}
+				else if( state->parse_context == CONTEXT_OBJECT_FIELD_VALUE )
+				{
+					// after an array value, it will have returned to OBJECT_FIELD anyway
+#ifdef _DEBUG_PARSING
+					lprintf( "comma after field value, push field to object: %s", state->val.name );
+#endif
+					state->parse_context = CONTEXT_OBJECT_FIELD;
+					if( state->val.value_type != VALUE_UNSET )
+						AddDataItem( &state->elements, &state->val );
+					RESET_STATE_VAL();
+				}
+				else
+				{
+					state->status = FALSE;
+// fault
+					lprintf( WIDE( "bad context; fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+				}
+				break;
+			default:
+				if( state->parse_context == CONTEXT_OBJECT_FIELD ) {
+					if( c < 0xFF ) {
+						if( nonIdentifiers8[c] ) {
+							// invalid start/continue
+							state->status = FALSE;
+	// fault
+							lprintf( WIDE( "fault while parsing object field name; \\u00%02X unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+							break;
+						}
+					}
+					else {
+						int n;
+						for( n = 0; n < (sizeof( nonIdentifiers ) / sizeof( nonIdentifiers[0] )); n++ ) {
+							if( c == nonIdentifiers[n] ) {
+								state->status = FALSE;
+	// fault
+								lprintf( WIDE( "fault while parsing object field name; \\u00%02X unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+								break;
+							}
+						}
+						if( c < (sizeof( nonIdentifiers ) / sizeof( nonIdentifiers[0] )) )
+							break;
+					}
+					switch( c )
+					{
+					case '`':
+						state->val.string = output->pos;
+						state->status = gatherString( msg, &input->pos, input->size, &output->pos, &state->line, &state->col, c, TRUE );
+						state->n = input->pos - input->buf;
+						if( state->status ) state->val.value_type = VALUE_STRING;
+						break;
+						// yes, fall through to normal quote processing.
+					case '"':
+					case '\'':
+						state->val.string = output->pos;
+						state->status = gatherString( msg, &input->pos, input->size, &output->pos, &state->line, &state->col, c, FALSE );
+						state->n = input->pos - input->buf;
+						if( state->status ) state->val.value_type = VALUE_STRING;
+						break;
+					case '\n':
+						state->line++;
+						state->col = 1;
+						// fall through to normal space handling - just updated line/col position
+					case ' ':
+					case '\t':
+					case '\r':
+ // ZWNBS is WS though
+					case 0xFEFF:
+						if( state->word == WORD_POS_RESET )
+							break;
+						else if( state->word == WORD_POS_FIELD ) {
+							state->word = WORD_POS_AFTER_FIELD;
+							break;
+						}
+						state->status = FALSE;
+	// fault
+						lprintf( WIDE( "fault while parsing; whitespace unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, state->n, state->line, state->col );
+						// skip whitespace
+						//n++;
+						//lprintf( "whitespace skip..." );
+						break;
+					default:
+						if( state->word == WORD_POS_RESET ) {
+							state->word = WORD_POS_FIELD;
+							state->val.string = output->pos;
+						}
+						if( c < 128 ) (*output->pos++) = c;
+						else output->pos += ConvertToUTF8( output->pos, c );
+ // default
+						break;
+					}
+				}
+				else switch( c )
+				{
+				case '`':
+					state->val.string = output->pos;
+					state->status = gatherString( msg, &input->pos, input->size, &output->pos, &state->line, &state->col, c, TRUE );
+					state->n = input->pos - input->buf;
+					if( state->status ) state->val.value_type = VALUE_STRING;
+					if( state->parse_context == CONTEXT_UNKNOWN ) {
+						state->completed = TRUE;
+					}
+					break;
+					// yes, fall through to normal quote processing.
+				case '"':
+				case '\'':
+					state->val.string = output->pos;
+					state->status = gatherString( msg, &input->pos, input->size, &output->pos, &state->line, &state->col, c, FALSE );
+					state->n = input->pos - input->buf;
+					if( state->status ) state->val.value_type = VALUE_STRING;
+					if( state->parse_context == CONTEXT_UNKNOWN ) {
+						state->completed = TRUE;
+					}
+					break;
+				case '\n':
+					state->line++;
+					state->col = 1;
+					// FALLTHROUGH
+				case ' ':
+				case '\t':
+				case '\r':
+				case 0xFEFF:
+					if( state->word == WORD_POS_END ) {
+						state->word = WORD_POS_RESET;
+						if( state->parse_context == CONTEXT_UNKNOWN ) {
+							state->completed = TRUE;
+						}
+						break;
+					}
+					if( state->word == WORD_POS_RESET ) {
+						break;
+					}
+					state->status = FALSE;
+	// fault
+					lprintf( WIDE( "fault while parsing; whitespace unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, state->n );
+					// skip whitespace
+					//n++;
+					//lprintf( "whitespace skip..." );
+					break;
+					//----------------------------------------------------------
+					//  catch characters for true/false/null/undefined which are values outside of quotes
+				case 't':
+					if( state->word == WORD_POS_RESET ) state->word = WORD_POS_TRUE_1;
+					else if( state->word == WORD_POS_INFINITY_6 ) state->word = WORD_POS_INFINITY_7;
+// fault
+					else { state->status = FALSE; lprintf( WIDE( "fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col ); }
+					break;
+				case 'r':
+					if( state->word == WORD_POS_TRUE_1 ) state->word = WORD_POS_TRUE_2;
+// fault
+					else { state->status = FALSE; lprintf( WIDE( "fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col ); }
+					break;
+				case 'u':
+					if( state->word == WORD_POS_TRUE_2 ) state->word = WORD_POS_TRUE_3;
+					else if( state->word == WORD_POS_NULL_1 ) state->word = WORD_POS_NULL_2;
+					else if( state->word == WORD_POS_RESET ) state->word = WORD_POS_UNDEFINED_1;
+// fault
+					else { state->status = FALSE; lprintf( WIDE( "fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col ); }
+					break;
+				case 'e':
+					if( state->word == WORD_POS_TRUE_3 ) {
+						state->val.value_type = VALUE_TRUE;
+						state->word = WORD_POS_END;
+					}
+					else if( state->word == WORD_POS_FALSE_4 ) {
+						state->val.value_type = VALUE_FALSE;
+						state->word = WORD_POS_END;
+					}
+					else if( state->word == WORD_POS_UNDEFINED_3 ) state->word = WORD_POS_UNDEFINED_4;
+					else if( state->word == WORD_POS_UNDEFINED_7 ) state->word = WORD_POS_UNDEFINED_8;
+// fault
+					else { state->status = FALSE; lprintf( WIDE( "fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col ); }
+					break;
+				case 'n':
+					if( state->word == WORD_POS_RESET ) state->word = WORD_POS_NULL_1;
+					else if( state->word == WORD_POS_UNDEFINED_1 ) state->word = WORD_POS_UNDEFINED_2;
+					else if( state->word == WORD_POS_UNDEFINED_6 ) state->word = WORD_POS_UNDEFINED_7;
+					else if( state->word == WORD_POS_INFINITY_1 ) state->word = WORD_POS_INFINITY_2;
+					else if( state->word == WORD_POS_INFINITY_4 ) state->word = WORD_POS_INFINITY_5;
+// fault
+					else { state->status = FALSE; lprintf( WIDE( "fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col ); }
+					break;
+				case 'd':
+					if( state->word == WORD_POS_UNDEFINED_2 ) state->word = WORD_POS_UNDEFINED_3;
+					else if( state->word == WORD_POS_UNDEFINED_8 ) { state->val.value_type = VALUE_UNDEFINED; state->word = WORD_POS_END; }
+// fault
+					else { state->status = FALSE; lprintf( WIDE( "fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col ); }
+					break;
+				case 'i':
+					if( state->word == WORD_POS_UNDEFINED_5 ) state->word = WORD_POS_UNDEFINED_6;
+					else if( state->word == WORD_POS_INFINITY_3 ) state->word = WORD_POS_INFINITY_4;
+					else if( state->word == WORD_POS_INFINITY_5 ) state->word = WORD_POS_INFINITY_6;
+// fault
+					else { state->status = FALSE; lprintf( WIDE( "fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col ); }
+					break;
+				case 'l':
+					if( state->word == WORD_POS_NULL_2 ) state->word = WORD_POS_NULL_3;
+					else if( state->word == WORD_POS_NULL_3 ) {
+						state->val.value_type = VALUE_NULL;
+						state->word = WORD_POS_END;
+					}
+					else if( state->word == WORD_POS_FALSE_2 ) state->word = WORD_POS_FALSE_3;
+// fault
+					else { state->status = FALSE; lprintf( WIDE( "fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col ); }
+					break;
+				case 'f':
+					if( state->word == WORD_POS_RESET ) state->word = WORD_POS_FALSE_1;
+					else if( state->word == WORD_POS_UNDEFINED_4 ) state->word = WORD_POS_UNDEFINED_5;
+					else if( state->word == WORD_POS_INFINITY_2 ) state->word = WORD_POS_INFINITY_3;
+// fault
+					else { state->status = FALSE; lprintf( WIDE( "fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col ); }
+					break;
+				case 'a':
+					if( state->word == WORD_POS_FALSE_1 ) state->word = WORD_POS_FALSE_2;
+					else if( state->word == WORD_POS_NAN_1 ) state->word = WORD_POS_NAN_2;
+// fault
+					else { state->status = FALSE; lprintf( WIDE( "fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col ); }
+					break;
+				case 's':
+					if( state->word == WORD_POS_FALSE_3 ) state->word = WORD_POS_FALSE_4;
+// fault
+					else { state->status = FALSE; lprintf( WIDE( "fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col ); }
+					break;
+				case 'I':
+					if( state->word == WORD_POS_RESET ) state->word = WORD_POS_INFINITY_1;
+// fault
+					else { state->status = FALSE; lprintf( WIDE( "fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col ); }
+					break;
+				case 'N':
+					if( state->word == WORD_POS_RESET ) state->word = WORD_POS_NAN_1;
+					else if( state->word == WORD_POS_NAN_2 ) { state->val.value_type = state->negative ? VALUE_NEG_NAN : VALUE_NAN; state->word = WORD_POS_END; }
+// fault
+					else { state->status = FALSE; lprintf( WIDE( "fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col ); }
+					break;
+				case 'y':
+					if( state->word == WORD_POS_INFINITY_7 ) { state->val.value_type = state->negative ? VALUE_NEG_INFINITY : VALUE_INFINITY; state->word = WORD_POS_END; }
+// fault
+					else { state->status = FALSE; lprintf( WIDE( "fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col ); }
+					break;
+					//
+					//----------------------------------------------------------
+				case '-':
+					state->negative = !state->negative;
+					break;
+				default:
+					if( (c >= '0' && c <= '9') || (c == '+') || (c == '.') )
+					{
+						LOGICAL fromHex;
+						LOGICAL fromDate;
+						LOGICAL exponent;
+ // to unwind last character past number.
+						const char *_msg_input;
+						exponent = FALSE;
+						fromHex = FALSE;
+						fromDate = FALSE;
+						// always reset this here....
+						// keep it set to determine what sort of value is ready.
+						state->val.float_result = 0;
+						state->val.string = output->pos;
+  // terminate the string.
+						(*output->pos++) = c;
+						while( (_msg_input = input->pos), ((state->n < input->size) && (c = GetUtfChar( &input->pos ))) )
+						{
+							state->col++;
+							state->n = (input->pos - input->buf);
+							// leading zeros should be forbidden.
+							if( c == '_' )
+								continue;
+							if( (c >= '0' && c <= '9')
+								|| (c == '+')
+								)
+							{
+								(*output->pos++) = c;
+							}
+#if 0
+							// to be implemented
+							else if( c == ':' || c == '-' || c == 'Z' || c == '+' ) {
+								/* toISOString()
+								var today = new Date('05 October 2011 14:48 UTC');
+								console.log(today.toISOString());
+								// Returns 2011-10-05T14:48:00.000Z
+								*/
+								(*output->pos++) = c;
+							}
+#endif
+							else if( c == 'x' || c == 'b' ) {
+								// hex conversion.
+								if( !fromHex ) {
+									fromHex = TRUE;
+									(*output->pos++) = c;
+								}
+								else {
+									state->status = FALSE;
+									lprintf( WIDE( "fault wile parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									break;
+								}
+							}
+							else if( (c == 'e') || (c == 'E') )
+							{
+								if( !exponent ) {
+									state->val.float_result = 1;
+									(*output->pos++) = c;
+									exponent = TRUE;
+								}
+								else {
+									state->status = FALSE;
+									lprintf( WIDE( "fault wile parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									break;
+								}
+							}
+							else if( c == '.' )
+							{
+								if( !state->val.float_result ) {
+									state->val.float_result = 1;
+									(*output->pos++) = c;
+								}
+								else {
+									state->status = FALSE;
+									lprintf( WIDE( "fault wile parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									break;
+								}
+							}
+							else
+							{
+								break;
+							}
+						}
+						{
+							(*output->pos++) = 0;
+							if( state->val.float_result )
+							{
+								CTEXTSTR endpos;
+								state->val.result_d = FloatCreateFromText( state->val.string, &endpos );
+								if( state->negative ) { state->val.result_d = -state->val.result_d; state->negative = FALSE; }
+							}
+							else
+							{
+								state->val.result_n = IntCreateFromText( state->val.string );
+								if( state->negative ) { state->val.result_n = -state->val.result_n; state->negative = FALSE; }
+							}
+						}
+						input->pos = _msg_input;
+						state->n = input->pos - input->buf;
+						state->val.value_type = VALUE_NUMBER;
+						if( state->parse_context == CONTEXT_UNKNOWN ) {
+							state->completed = TRUE;
+						}
+					}
+					else
+					{
+						// fault, illegal characer
+						state->status = FALSE;
+						lprintf( WIDE( "fault parsing '%c' unexpected %" )_size_f WIDE( " (near %*.*s[%c]%s)" ), c, state->n
+							, (int)((state->n > 3) ? 3 : state->n), (int)((state->n > 3) ? 3 : state->n)
+							, msg + state->n - ((state->n > 3) ? 3 : state->n)
+							, c
+							, msg + state->n + 1
+// fault
+						);
+					}
+ // default
+					break;
+				}
+ // default of high level switch
+				break;
+			}
+			// got a completed value; skip out
+			if( state->completed ) {
+				if( state->word == WORD_POS_END ) {
+					state->word = WORD_POS_RESET;
+				}
+				break;
+			}
+		}
+		if( state->n == input->size ) {
+			DeleteFromSet( PARSE_BUFFER, parseBuffers6, input );
+			PushLink( &state->outBuffers, output );
+			if( state->parse_context == CONTEXT_UNKNOWN ) {
+				state->completed = TRUE;
+			}
+		}
+		else {
+			// put these back into the stack.
+			PrequeLink( &state->inBuffers, input );
+			PrequeLink( &state->outQueue, output );
+		}
+		if( state->completed )
+			break;
+ // while DequeInput
+	}
+	if( !state->status ) {
+		// some error condition; cannot resume parsing.
+		return -1;
+	}
+	if( state->val.value_type != VALUE_UNSET ) {
+		AddDataItem( &state->elements, &state->val );
+		RESET_STATE_VAL();
+	}
+	if( state->completed ) {
+		state->completed = FALSE;
+		return 1;
+	}
+	return 0;
+#if 0
+	{
+		struct json_parse_context *old_context;
+		while( ( old_context = (struct json_parse_context *)PopLink( &state->context_stack ) ) ) {
+			lprintf( "warning unclosed contexts...." );
+			DeleteFromSet( PARSE_CONTEXT, parseContexts6, old_context );
+		}
+		if( state->context_stack )
+			DeleteLinkStack( &state->context_stack );
+	}
+#endif
+	return state->status;
+}
+PDATALIST json6_parse_get_data( struct json_parse_state *state ) {
+	PDATALIST result = state->elements;
+	state->elements = CreateDataList( sizeof( state->val ) );
+	return result;
+}
+void json6_parse_clear_state( struct json_parse_state *state ) {
+	if( state ) {
+		PPARSE_BUFFER buffer;
+		while( buffer = (PPARSE_BUFFER)PopLink( &state->outBuffers ) ) {
+			Deallocate( const char *, buffer->buf );
+			DeleteFromSet( PARSE_BUFFER, parseBuffers6, buffer );
+		}
+		while( buffer = (PPARSE_BUFFER)DequeLink( &state->inBuffers ) )
+			DeleteFromSet( PARSE_BUFFER, parseBuffers6, buffer );
+		DeleteLinkQueue( &state->inBuffers );
+		DeleteLinkStack( &state->outBuffers );
+		state->status = TRUE;
+		state->parse_context = CONTEXT_UNKNOWN;
+		state->word = WORD_POS_RESET;
+		state->n = 0;
+		state->col = 1;
+		state->line = 1;
+	}
+}
+void json6_parse_dispose_state( struct json_parse_state **ppState ) {
+	struct json_parse_state *state = (*ppState);
+	struct json_parse_context *old_context;
+	PPARSE_BUFFER buffer;
+	DeleteDataList( &state->elements );
+	while( buffer = (PPARSE_BUFFER)PopLink( &state->outBuffers ) ) {
+		Deallocate( const char *, buffer->buf );
+		DeleteFromSet( PARSE_BUFFER, parseBuffers6, buffer );
+	}
+	while( buffer = (PPARSE_BUFFER)DequeLink( &state->inBuffers ) )
+		DeleteFromSet( PARSE_BUFFER, parseBuffers6, buffer );
+	DeleteLinkQueue( &state->inBuffers );
+	DeleteLinkStack( &state->outBuffers );
+	DeleteFromSet( PARSE_CONTEXT, parseContexts6, state->context );
+	while( (old_context = (struct json_parse_context *)PopLink( &state->context_stack )) ) {
+		lprintf( "warning unclosed contexts...." );
+		DeleteFromSet( PARSE_CONTEXT, parseContexts6, old_context );
+	}
+	if( state->context_stack )
+		DeleteLinkStack( &state->context_stack );
+	Deallocate( struct json_parse_state *, state );
+	(*ppState) = NULL;
+}
 LOGICAL json6_parse_message( char * msg
+	, size_t msglen
+	, PDATALIST *_msg_output ) {
+	struct json_parse_state *state = json6_begin_parse();
+	static struct json_parse_state *_state;
+	int result = json6_parse_add_data( state, msg, msglen );
+	if( _state ) json6_parse_dispose_state( &_state );
+	if( result > 0 ) {
+		(*_msg_output) = json6_parse_get_data( state );
+		_state = state;
+		//json6_parse_dispose_state( &state );
+		return TRUE;
+	}
+	(*_msg_output) = NULL;
+	json6_parse_dispose_state( &state );
+	return FALSE;
+}
+LOGICAL _json6_parse_message( char * msg
                                  , size_t msglen
                                  , PDATALIST *_msg_output )
 {
@@ -52933,7 +53809,7 @@ LOGICAL json6_parse_message( char * msg
 	PLINKSTACK context_stack = NULL;
 	LOGICAL first_token = TRUE;
 	PPARSE_CONTEXT context = GetFromSet( PARSE_CONTEXT, &parseContexts6 );
-	int parse_context = CONTEXT_UNKNOWN;
+	enum parse_context_modes parse_context = CONTEXT_UNKNOWN;
 	struct json_value_container val;
 	int comment = 0;
 	char const * msg_input = (char const *)msg;
@@ -53665,7 +54541,7 @@ static void FillDataToElement6( struct json_context_object_element *element
 				}
 				else
 				{
-               // this is probably common (0 for instance)
+					// this is probably common (0 for instance)
 					lprintf( WIDE("warning received int, converting to float") );
 					if( element->type == JSON_Element_Float )
 						((float*)( ((uintptr_t)msg_output) + element->offset + object_offset ))[0] = (float)val->result_n;
@@ -53777,7 +54653,9 @@ LOGICAL json6_decode_message( struct json_context *format
 #ifdef __cplusplus
 } } SACK_NAMESPACE_END
 #endif
-#define JSON_EMITTER_SOURCE
+#ifndef JSON_EMITTER_SOURCE
+#  define JSON_EMITTER_SOURCE
+#endif
 /***********
  <Alternative, instead of object format thing, provide a registration mechanism to specify
   bindings similar to ODBC>

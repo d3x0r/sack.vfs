@@ -20,7 +20,6 @@ static void vfs_b64xor(const v8::FunctionCallbackInfo<Value>& args ){
 		MaybeLocal<String> retval = String::NewFromUtf8( isolate, r );
 		args.GetReturnValue().Set( retval.ToLocalChecked() );
 		Deallocate( char*, r );
-		
 	}
 }
 
@@ -86,6 +85,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "dir", getDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "exists", fileExists );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "read", fileRead );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "readJSON6", fileReadJSON );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "write", fileWrite );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mkdir", makeDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "Sqlite", openVolDb );
@@ -94,6 +94,12 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	NODE_SET_METHOD(exports, "u8xor", vfs_u8xor );
 	NODE_SET_METHOD(exports, "b64xor", vfs_b64xor );
 	NODE_SET_METHOD(exports, "id", idGenerator );
+
+	Local<Object> fileObject = Object::New( isolate );	
+	fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekSet" ), Integer::New( isolate, SEEK_SET ), ReadOnlyProperty );
+	fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekCurrent" ), Integer::New( isolate, SEEK_CUR ), ReadOnlyProperty );
+	fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekEnd" ), Integer::New( isolate, SEEK_END ), ReadOnlyProperty );
+	exports->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "File" ), fileObject, ReadOnlyProperty );
 
 	constructor.Reset( isolate, volumeTemplate->GetFunction() );
 	exports->Set( String::NewFromUtf8( isolate, "Volume" ),
@@ -251,13 +257,13 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 
-	void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
+	void VolumeObject::fileReadJSON( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
 
 		if( args.Length() < 1 ) {
 			isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( isolate, "Requires filename to open" ) ) );
+				String::NewFromUtf8( isolate, "Requires filename to open and data callback" ) ) );
 			return;
 		}
 
@@ -278,6 +284,52 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 
 		} else {
+			FILE *file = sack_fopenEx( 0, (*fName), "rb", vol->fsMount );
+			if( file ) {
+				size_t len = sack_fsize( file );
+				// CAN open directories; and they have 7ffffffff sizes.
+				if( len < 0x10000000 ) {
+					uint8_t *buf = NewArray( uint8_t, len );
+					sack_fread( buf, len, 1, file );
+
+					Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
+					NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
+					args.GetReturnValue().Set( arrayBuffer );
+				}
+				sack_fclose( file );
+			}
+
+		}
+	}
+
+	void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+
+		if( args.Length() < 1 ) {
+			isolate->ThrowException( Exception::TypeError(
+				String::NewFromUtf8( isolate, "Requires filename to open" ) ) );
+			return;
+		}
+
+		String::Utf8Value fName( args[0] );
+
+		if( vol->volNative ) {
+			struct sack_vfs_file *file = sack_vfs_openfile( vol->vol, (*fName) );
+			if( file ) {
+				size_t len = sack_vfs_size( file );
+				uint8_t *buf = NewArray( uint8_t, len );
+				sack_vfs_read( file, (char*)buf, len );
+
+				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
+				NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
+				args.GetReturnValue().Set( arrayBuffer );
+
+				sack_vfs_close( file );
+			}
+
+		}
+		else {
 			FILE *file = sack_fopenEx( 0, (*fName), "rb", vol->fsMount );
 			if( file ) {
 				size_t len = sack_fsize( file );
@@ -534,18 +586,94 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 	//SACK_VFS_PROC size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t length );
 	if( args.Length() == 0 ) {
 		if( !file->buf ) {
-			file->size = sack_vfs_size( file->file );
-			file->buf = NewArray( char, file->size );
-			sack_vfs_read( file->file, file->buf, file->size );
+			if( file->vol->volNative ) {
+				file->size = sack_vfs_size( file->file );
+				file->buf = NewArray( char, file->size );
+				sack_vfs_read( file->file, file->buf, file->size );
+			}
+			else {
+				file->size = sack_fsize( file->cfile );
+				file->buf = NewArray( char, file->size );
+				sack_fread( file->buf, file->size, 1, file->cfile );
+			}
 		}
 		{
 			Local<Object> arrayBuffer = ArrayBuffer::New( isolate, file->buf, file->size );
 			NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
-
 			args.GetReturnValue().Set( arrayBuffer );
 		}
 		//Local<String> result = String::NewFromUtf8( isolate, buf );
 		//args.GetReturnValue().Set( result );
+	}
+	else {
+		size_t length;
+		size_t position;
+		int whence;
+		if( args.Length() == 1 ) {
+			length = args[1]->ToInteger()->Value();
+			whence = SEEK_CUR;
+		}
+		else if( args.Length() == 2 ) {
+			length = args[1]->ToInteger()->Value();
+			position = args[2]->ToInteger()->Value();
+			whence = SEEK_SET;
+		}
+		else {
+			isolate->ThrowException( Exception::TypeError(
+				String::NewFromUtf8( isolate, "Too many parameters passed to read. ([length [,offset]])" ) ) );
+			return;
+		}
+		if( length > file->size ) {
+			AddLink( &file->buffers, file->buf );
+			file->buf = NewArray( char, length );
+			file->size = length;
+		}
+	}
+}
+
+static void vfs_string_read( char buf, size_t maxlen, struct sack_vfs_file *file ) {
+	lprintf( "volume string read is not implemented yet." );
+}
+
+void FileObject::readLine(const v8::FunctionCallbackInfo<Value>& args) {
+	Isolate* isolate = Isolate::GetCurrent();
+	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
+	//SACK_VFS_PROC size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t length );
+	if( args.Length() == 0 ) {
+		if( !file->buf ) {
+			file->buf = NewArray( char, 4096 );
+		}
+		if( file->vol->volNative ) {
+			sack_vfs_read( file->file, file->buf, file->size );
+		}
+		else {
+			int lastChar;
+			if( sack_fgets( file->buf, 4096, file->cfile ) ) {
+				lastChar = strlen( file->buf );
+				if( lastChar > 0 ) {
+					if( file->buf[lastChar - 1] == '\n' )
+						file->buf[lastChar - 1] = 0;
+				}
+			}
+			else {
+				args.GetReturnValue().Set( Null(isolate) );
+				return;
+			}
+		}
+		{
+			MaybeLocal<String> result = String::NewFromUtf8( isolate, file->buf, NewStringType::kNormal, (int)strlen( file->buf ) );
+			args.GetReturnValue().Set( result.ToLocalChecked() );
+		}
+		//Local<String> result = String::NewFromUtf8( isolate, buf );
+		//args.GetReturnValue().Set( result );
+	}
+	else if( args.Length() == 1 ) {
+		// get offset
+	}
+	else {
+		// get length
+		isolate->ThrowException( Exception::TypeError(
+			String::NewFromUtf8( isolate, "Too many parameters passed to readLine. ([offset])" ) ) );
 	}
 }
 
@@ -567,13 +695,69 @@ void FileObject::writeFile(const v8::FunctionCallbackInfo<Value>& args) {
 			sack_vfs_write( file->file, (char*)contents.Data(), contents.ByteLength() );
 		}
 	}
+}
+
+void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
+	Isolate* isolate = Isolate::GetCurrent();
+	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
+
+	//SACK_VFS_PROC size_t CPROC sack_vfs_write( struct sack_vfs_file *file, char * data, size_t length );
+	if( args.Length() > 2 ) {
+		isolate->ThrowException( Exception::TypeError(
+			String::NewFromUtf8( isolate, "Too many parameters passed to writeLine.  ( buffer, [,offset])" ) ) );
+		return;
+	}
+	size_t offset;
+	LOGICAL setOffset = FALSE;
+	if( args.Length() == 2 ) {
+		offset = args[1]->ToInteger()->Value();
+		setOffset = TRUE;
+	}
+	if( args.Length() > 0 ) {
+		if( args[0]->IsString() ) {
+			String::Utf8Value data( args[0]->ToString() );
+			size_t datalen = data.length();
+			char *databuf = *data;
+			size_t check;
+			for( check = 0; check < datalen; check++ )
+				if( !databuf[check] ) {
+					lprintf( "Embedded NUL is unconverted." );
+					// need to convert nul to \xc0\x80
+					break;
+				}
+			if( file->vol->volNative ) {
+				sack_fseek( file->cfile, offset, SEEK_SET );
+				sack_vfs_write( file->file, *data, data.length() );
+				sack_vfs_write( file->file, "\n", 1 );
+			}
+			else {
+				if( setOffset )
+					sack_fseek( file->cfile, offset, SEEK_SET );
+				sack_fputs( *data, file->cfile );
+				sack_fputs( "\n", file->cfile );
+			}
+		} else if( args[0]->IsArrayBuffer() ) {
+			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+			ArrayBuffer::Contents contents = ab->GetContents();
+			//file->buf = (char*)contents.Data();
+			//file->size = contents.ByteLength();
+			lprintf( "Really should complain about binary data being passed to writeLine." );
+			if( file->vol->volNative )
+				sack_vfs_write( file->file, (char*)contents.Data(), contents.ByteLength() );
+			else
+				sack_fwrite( contents.Data(), contents.ByteLength(), 1, file->cfile );
+		}
+	}
 
 }
 
 void FileObject::truncateFile(const v8::FunctionCallbackInfo<Value>& args) {
 	//Isolate* isolate = Isolate::GetCurrent();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
-	sack_vfs_truncate( file->file ); // sets end of file mark to current position.
+	if( file->vol->volNative )
+		sack_vfs_truncate( file->file ); // sets end of file mark to current position.
+	else
+		sack_ftruncate( file->cfile );
 }
 
 void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
@@ -583,19 +767,29 @@ void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 #endif
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	if( args.Length() == 1 && args[0]->IsNumber() ) {
+		if( file->vol->volNative )
 #if  V8_AT_LEAST(5, 4)
-		sack_vfs_seek( file->file, num1, SEEK_SET );
+			sack_vfs_seek( file->file, num1, SEEK_SET );
 #else
-		sack_vfs_seek( file->file, (size_t)args[0]->ToNumber()->Value(), SEEK_SET );
+			sack_vfs_seek( file->file, (size_t)args[0]->ToNumber()->Value(), SEEK_SET );
 #endif
+		else
+			sack_fseek( file->cfile, num1, SEEK_SET );
 	}
 	if( args.Length() == 2 && args[0]->IsNumber() && args[1]->IsNumber() ) {
 #if  V8_AT_LEAST(5, 4)
-		int num2 = (int)args[1]->ToNumber(Isolate::GetCurrent()->GetCurrentContext()).FromMaybe(Local<Number>())->Value();
+		int num2 = (int)args[1]->ToNumber( Isolate::GetCurrent()->GetCurrentContext() ).FromMaybe( Local<Number>() )->Value();
+#endif
+		if( file->vol->volNative ) {
+#if  V8_AT_LEAST(5, 4)
 		sack_vfs_seek( file->file, num1, (int)num2 );
 #else
-		sack_vfs_seek( file->file, (size_t)args[0]->ToNumber()->Value(), (int)args[1]->ToNumber()->Value() );
+			sack_vfs_seek( file->file, (size_t)args[0]->ToNumber()->Value(), (int)args[1]->ToNumber()->Value() );
 #endif
+		}
+		else {
+			sack_fseek( file->cfile, num1, (int)num2 );
+		}
 	}
 
 }
@@ -612,7 +806,9 @@ void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 
 		// Prototype
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "read", readFile );
+		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "readLine", readLine );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "write", writeFile );
+		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "writeLine", writeLine );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "seek", seekFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "trunc", truncateFile );
 		// read stream methods
@@ -672,7 +868,10 @@ void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 	FileObject::FileObject( VolumeObject* vol, const char *filename, Isolate* isolate, Local<Object> o ) : 
 		volume( isolate, o )
 	{
+		buffers = NULL;
+		size = 0;
 		buf = NULL;
+		this->vol = vol;
 		if( vol->volNative ) {
 			if( !vol->vol )
 				return;

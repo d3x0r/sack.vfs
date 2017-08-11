@@ -2,7 +2,7 @@
 
 #include "global.h"
 
-Persistent<Function> RegObject::constructor;
+//Persistent<Function> RegObject::constructor;
 
 RegObject::RegObject() {
 }

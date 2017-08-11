@@ -41,14 +41,42 @@ static char const * const json_value_type_strings_[] = {
 	, "VALUE_ARRAY"
 };
 
+
+
 static char const *const *const json_value_type_strings = json_value_type_strings_+1;
+static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate );
+static Local<Value> makeValue( Isolate *isolate, struct json_value_container *val );
 
 
 static void makeJSON( const v8::FunctionCallbackInfo<Value>& args );
 static void parseJSON( const v8::FunctionCallbackInfo<Value>& args );
 static void makeJSON6( const v8::FunctionCallbackInfo<Value>& args );
 static void parseJSON6( const v8::FunctionCallbackInfo<Value>& args );
-	
+static void beginJSON6( const v8::FunctionCallbackInfo<Value>& args );
+static void writeJSON6( const v8::FunctionCallbackInfo<Value>& args );
+static void endJSON6( const v8::FunctionCallbackInfo<Value>& args );
+
+
+class parseObject : public node::ObjectWrap {
+	struct json_parse_state *state;
+public:
+	static Persistent<Function> constructor;
+	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
+
+public:
+
+	static void Init( Handle<Object> exports );
+	parseObject();
+
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	static void write( const v8::FunctionCallbackInfo<Value>& args );
+
+
+	~parseObject();
+};
+
+Persistent<Function> parseObject::constructor;
+
 void InitJSON( Isolate *isolate, Handle<Object> exports ){
 	Local<Object> o = Object::New( isolate );
 	NODE_SET_METHOD( o, "parse", parseJSON );
@@ -59,6 +87,121 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 	NODE_SET_METHOD( o2, "parse", parseJSON6 );
 	NODE_SET_METHOD( o2, "stringify", makeJSON6 );
 	exports->Set( String::NewFromUtf8( isolate, "JSON6" ), o2 );
+
+	{
+		Local<FunctionTemplate> parseTemplate;
+		parseTemplate = FunctionTemplate::New( isolate, parseObject::New );
+		parseTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.json6_parser" ) );
+		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
+		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write );
+
+		parseObject::constructor.Reset( isolate, parseTemplate->GetFunction() );
+
+		o2->Set( String::NewFromUtf8( isolate, "begin" ),
+			parseTemplate->GetFunction() );
+
+	}
+}
+
+parseObject::parseObject() {
+	state = json6_begin_parse();
+}
+
+parseObject::~parseObject() {
+	json6_parse_dispose_state( &state );
+}
+
+void parseObject::write(const v8::FunctionCallbackInfo<Value>& args) {
+	Isolate* isolate = args.GetIsolate();
+	parseObject *parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
+	int argc = args.Length();
+	if( argc == 0 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Missing data parameter." ) ) );
+		return;
+	}
+
+	String::Utf8Value data( args[0]->ToString() );
+	int result;
+	for( result = json6_parse_add_data( parser->state, *data, data.length() );
+		result > 0;
+		result = json6_parse_add_data( parser->state, NULL, 0 )
+		) {
+		struct json_value_container * val;
+		PDATALIST elements = json6_parse_get_data( parser->state );
+		Local<Object> o;
+		Local<Value> v;// = Object::New( isolate );
+
+		val = (struct json_value_container *)GetDataItem( &elements, 0 );
+		if( val && val->contains ) {
+			if( val->value_type == VALUE_OBJECT )
+				o = Object::New( isolate );
+			else if( val->value_type == VALUE_ARRAY )
+				o = Array::New( isolate );
+			else
+				lprintf( "Value has contents, but is not a container type?!" );
+			buildObject( val->contains, o, isolate );
+		}
+		else if( val ) {
+			//lprintf( "was just a single, simple value type..." );
+			v = makeValue( isolate, val );
+			// this is illegal json
+			// cannot result from a simple value?	
+		}
+		else {
+			json6_dispose_message( &elements );
+			return;
+		}
+
+		Local<Value> argv[1];
+		if( !o.IsEmpty() )
+			argv[0] = o;
+		else argv[0] = v;
+
+		Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
+		//lprintf( "callback ... %p", myself );
+		// using obj->jsThis  fails. here...
+		cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+
+		json6_dispose_message( &elements );
+	}
+	if( result < 0 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Invalid JSON passed" ) ) );
+		json6_parse_clear_state( parser->state );
+		return;
+	}
+
+}
+
+void parseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	if( argc == 0 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must specify port name to open." ) ) );
+		return;
+	}
+
+	if( args.IsConstructCall() ) {
+		// Invoked as constructor: `new MyObject(...)`
+		parseObject* obj = new parseObject();
+		Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+		Persistent<Function> cb( isolate, arg0 );
+		obj->readCallback = cb;
+
+		obj->Wrap( args.This() );
+		args.GetReturnValue().Set( args.This() );
+	}
+	else {
+		// Invoked as plain function `MyObject(...)`, turn into construct call.
+		int argc = args.Length();
+		Local<Value> *argv = new Local<Value>[argc];
+		for( int n = 0; n < argc; n++ )
+			argv[n] = args[n];
+
+		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		args.GetReturnValue().Set( Nan::NewInstance( cons, argc, argv ).ToLocalChecked() );
+		delete argv;
+	}
+
 }
 
 static Local<Value> makeValue( Isolate *isolate, struct json_value_container *val ) {
@@ -137,23 +280,6 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate )
 }
 
 
-static void internal_json_dispose_message( PDATALIST *msg_data )
-{
-	struct json_value_container *val;
-	INDEX idx;
-	DATA_FORALL( (*msg_data), idx, struct json_value_container*, val )
-	{
-		//if( val->name ) Release( val->name );
-		//if( val->string ) Release( val->string );
-		if( val->value_type == VALUE_OBJECT )
-			internal_json_dispose_message( &val->contains );
-	}
-	// quick method
-	DeleteDataList( msg_data );
-
-}
-
-
 Local<Value> ParseJSON(  Isolate *isolate, const char *utf8String, size_t len) {
 	PDATALIST parsed = NULL;
 	Local<Object> o;// = Object::New( isolate );
@@ -210,7 +336,7 @@ Local<Value> ParseJSON6(  Isolate *isolate, const char *utf8String, size_t len) 
 	Local<Object> o;// = Object::New( isolate );
 	Local<Value> v;// = Object::New( isolate );
 	json6_parse_message( (char*)utf8String, len, &parsed );
-	if( parsed->Cnt > 1 ) {
+	if( parsed && parsed->Cnt > 1 ) {
 		lprintf( "Multiple values would result, invalid parse." );
 		return Undefined(isolate);
 		// outside should always be a single value

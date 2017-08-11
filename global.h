@@ -25,6 +25,8 @@ using namespace v8;
 void InitJSON( Isolate *isolate, Handle<Object> exports );
 
 
+#define ReadOnlyProperty (PropertyAttribute)((int)PropertyAttribute::ReadOnly | PropertyAttribute::DontDelete)
+
 class VolumeObject : public node::ObjectWrap {
 public:
 	struct volume *vol;
@@ -43,6 +45,7 @@ public:
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void getDirectory( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileRead( const v8::FunctionCallbackInfo<Value>& args );
+	static void fileReadJSON( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileWrite( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileExists( const v8::FunctionCallbackInfo<Value>& args );
 	static void openVolDb( const v8::FunctionCallbackInfo<Value>& args );
@@ -76,6 +79,7 @@ class FileObject : public node::ObjectWrap {
 	struct sack_vfs_file *file;
 	FILE *cfile;
 	//Local<Object> volume;
+	PLIST buffers; // because these are passed as physical data buffers, don't release them willy-nilly
 	char* buf;
 	size_t size;
 	Persistent<Object> volume;
@@ -85,7 +89,9 @@ public:
 
 	static void openFile( const v8::FunctionCallbackInfo<Value>& args );
 	static void readFile( const v8::FunctionCallbackInfo<Value>& args );
+	static void readLine( const v8::FunctionCallbackInfo<Value>& args );
 	static void writeFile( const v8::FunctionCallbackInfo<Value>& args );
+	static void writeLine( const v8::FunctionCallbackInfo<Value>& args );
 	static void seekFile( const v8::FunctionCallbackInfo<Value>& args );
 	static void truncateFile( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -192,18 +198,16 @@ public:
 
 class RegObject : public node::ObjectWrap {
 public:
-	static Persistent<Function> constructor;
+	//static Persistent<Function> constructor;
 
-	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
-	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
-	PLINKQUEUE readQueue;
+	//Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
+	//uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	//PLINKQUEUE readQueue;
 	
 public:
 
 	static void Init( Handle<Object> exports );
 	RegObject();
-
-	static void New( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void getRegItem( const v8::FunctionCallbackInfo<Value>& args );
 	static void setRegItem( const v8::FunctionCallbackInfo<Value>& args );

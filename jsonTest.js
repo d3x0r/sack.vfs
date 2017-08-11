@@ -61,14 +61,14 @@ console.log( "o is", JSON.stringify( o ) );
 
 
 // benchmark - needs some work; ended up somewhat divergent.
-if(false)
+if(true)
 {
 
 var start = Date.now();
 var n;
 for( n = 0; n < 1000000; n++ ) {
 	parse( "{\"a\":{\"b\":{\"c\":{\"d\":123}}}}" );
-	parse( '"Simple String Value."' );
+	//parse( '"Simple String Value."' );
 }
 
 var end = Date.now();
