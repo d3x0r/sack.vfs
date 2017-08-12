@@ -4,12 +4,23 @@ var parser = vfs.JSON6.begin( (obj)=>{
 	console.log( "Got value:",typeof obj, ":", obj );
 } );
 
+parser.write( '"This ' );
+parser.write( 'is a Test"' );
+
+parser.write( '[1234,12');
+parser.write( '34,1234]');
 
 parser.write( 'true false null undefined NaN Infinity' );
 
-parser.write( "1" );
-parser.write( "0x123" );
+parser.write( "1 " );
+parser.write( "123" );
 parser.write( '"1"' );
+
+parser.write( '{ a:12' );
+parser.write( '34 }' );
+
+parser.write( '{ long');
+parser.write( 'key:1234 }' );
 
 parser.write( '{ a:1234 }' );
 console.log( "4 objects..." );
@@ -19,7 +30,8 @@ console.log( "got 4 objects?" );
 try {
 	parser.write( 'truefalse' );
 } catch(err) {
-	console.log( "success error" );
+	console.log( "success error", err );
 }
 
 parser.write( '1_234 0x55_33_22_11 0x1234' );
+

@@ -2,7 +2,7 @@
 
 var vfs = require( "." )
 
-var parse = vfs.JSON.parse;
+var parse = vfs.JSON6.parse;
 
 //console.log( "Stringify Test:", vfs.JSON.stringify( { a:123 } ) );
 
@@ -31,19 +31,30 @@ console.log( "o is", o, typeof o );
 var o = parse( "undefined" );
 console.log( "o is", o, typeof o );
 
-var o = parse( "{'a':123}" );
+if( extended ) {
+	var o = parse( "NaN" );
+	console.log( "o is", o, typeof o );
+	var o = parse( "-NaN" );
+	console.log( "o is", o, typeof o );
+	var o = parse( "Infinity" );
+	console.log( "o is", o, typeof o );
+	var o = parse( "-Infinity" );
+	console.log( "o is", o, typeof o );
+}
+
+var o = parse( "{a:123}" );
 console.log( "o is", o );
 
-var o = parse( "{`a':\"abcdef\"}" );
+var o = parse( "{a:`abcdef`}" );
 console.log( "o is", o );
-var o = parse( "{'a':\"abcdef\"}" );
+var o = parse( "{a:\"abcdef\"}" );
 console.log( "o is", o );
 
-var o = parse( "{'a':'abc\ndef'}" );
+var o = parse( "{a:'abc\ndef'}" );
 console.log( "o is", o );
-var o = parse( "{'a':'abc\\\ndef'}" );
+var o = parse( "{a:'abc\\\ndef'}" );
 console.log( "o is", o );
-var o = parse( "{'a':'abc\\\r\ndef'}" );
+var o = parse( "{a:'abc\\\r\ndef'}" );
 console.log( "o is", o );
 
 var o = parse( "{\"a\":123}" );

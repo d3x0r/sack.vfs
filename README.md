@@ -2,7 +2,7 @@
 
 [![Join the chat at https://gitter.im/sack-vfs/Lobby](https://badges.gitter.im/sack-vfs/Lobby.svg)](https://gitter.im/sack-vfs/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)[![Build Status](https://travis-ci.org/d3x0r/sack.vfs.svg?branch=master)](https://travis-ci.org/d3x0r/sack.vfs)
 
-Node addon for a custom virtual file system interface.  Also exposes a JSON5 parser, COM/serial port access, Sqlite interface, an option/configuration database built on Sqlite.
+Node addon for a custom virtual file system interface.  Also exposes a JSON6 parser, COM/serial port access, Sqlite interface, an option/configuration database built on Sqlite.
 Windows specific registry access for application settings. Vulkan API to be added eventually... 
 
 ## Requirements
@@ -31,7 +31,12 @@ This is the object returned from require( 'sack.vfs' );
 ```
 vfs = {
     ComPort(comport) - access to com ports.
-    JSON - A json parser. (JSON5 Compatible)
+    JSON6 - A json parser. (JSON5 Compatible)
+        parse(string) - result with a V8 object created from the json string.  
+        1/2 the speed of Node's parser; no real reason to use this. 
+        (3x faster than javascript JSON5 implementation)
+        // var o = vfs.JSON6.parse(s)
+    JSON - A json parser.
         parse(string) - result with a V8 object created from the json string.  
         1/2 the speed of Node's parser; no real reason to use this. 
         (3x faster than javascript JSON5 implementation)
@@ -74,6 +79,8 @@ Volume = {
     dir() - returns an array of filenames in the volume.
     exists(file/path name) - boolean if filename exists (as a file or a directory)
     read(fileName) - read a file from a volume; return an ArrayBuffer with a toString() that returns the buffer as utf8 as a string.
+    readJSON(fileName, callback) - read a file from a volume; calls callback with each object decoded from the file interpreted as JSON (unimplemented)
+    readJSON6(fileName, callback) - read a file from a volume; calls callback with each object decoded from the file interpreted as JSON6.
     write(fileName,arrayBuffer/string) - writes a string or arraybuffer to a file. 
     Sqlite(database) - an interface to sqlite database in this volume.
     mkdir - utility function to make directories which might not exist before volume does; (volume auto creates directories now)
@@ -85,8 +92,11 @@ Volume = {
  (result from vfs.Volume().File())
 ```
 File = {
-    read(size) - read from the file; return an ArrayBuffer with a toString method to interpret it as utf8.
+    read(size, position) - read from the file; return an ArrayBuffer with a toString method to interpret it as utf8.  Optional parameter
+                           position may set the position to read from.
+    readLine( [position] ) - reads a line from a text file; optional parameter position may set the position to read from.
     write(arrayBuffer/string) - write data to the file; at the current position
+    writeLine( line [, position] ) - output text to a file; a newline will be automatically appended to the line.
     seek(pos) - set file position to write
     trunc() - set file size to the curent file position.
     ... /*most other methods unimplemented*/
@@ -342,14 +352,49 @@ example was testing a constant like 526.  if typeof value is a number, value is 
 
 
 ### JSON( [JSON6](https://www.github.com/d3x0r/json6) ) - JSON and JSON6 compatible processor 
+
+Slightly extended json parser to allows simple types to be returned as values, not requiring { or [ to start
+the JSON input.
+
+Simple values, objects and arrays can result from parsing.  Simple values are true,false,null, Numbers and Strings.
+
 Added support 'reviver' parameter.
 
+
+  - JSON
+     - parse( string [,reviver] )
+  - JSON6
+     - parse( string [,revivier] )
+     - begin( callback )
+         - write( data )
+
+
 ``` javascript
-var vfs = require( sack.vfs );
+var vfs = require( "sack.vfs" );
 
 var object = vfs.JSON.parse(string [, reviver]);
 
 var object2 = vfs.JSON6.parse(string [, reviver]);
+```
+
+### Streaming JSON Parsing
+
+  - begin(cb)  returns a parser object, pass a callback which receives objects as they are recognized in the stream.
+    - parser.write( data )  Write data to the parser to parse into resulting objects.
+
+Simple values, objects and arrays can result from parsing.
+because a streaming input is expected, cannot pass just simple objects to be parsed, because an input of "1234" might
+be just part of a number, and more of the number might be added in the next write.  If there is a trailing newline or other 
+whitespace character after the number, the number will be sent to the callback registered in the begin.
+
+``` javascript
+var vfs = require( "sack.vfs" );
+
+var parser = vfs.JSON6.begin( objectCallback );
+parser.write( "123 " );
+function objectCallback( o ) {
+    console.write( "Received parsed object:", typeof o, o );
+}
 ```
 
 

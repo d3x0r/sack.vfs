@@ -122,8 +122,10 @@ void parseObject::write(const v8::FunctionCallbackInfo<Value>& args) {
 
 	String::Utf8Value data( args[0]->ToString() );
 	int result;
+	//lprintf( "add data..." );
 	for( result = json6_parse_add_data( parser->state, *data, data.length() );
 		result > 0;
+		//lprintf( "flush more..." ), 
 		result = json6_parse_add_data( parser->state, NULL, 0 )
 		) {
 		struct json_value_container * val;
@@ -163,9 +165,13 @@ void parseObject::write(const v8::FunctionCallbackInfo<Value>& args) {
 		cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
 
 		json6_dispose_message( &elements );
+		if( result < 2 )
+			break;
 	}
 	if( result < 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Invalid JSON passed" ) ) );
+		PTEXT error = json6_parse_get_error( parser->state );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ) ) ) );
+		LineRelease( error );
 		json6_parse_clear_state( parser->state );
 		return;
 	}
@@ -335,7 +341,11 @@ Local<Value> ParseJSON6(  Isolate *isolate, const char *utf8String, size_t len) 
 	PDATALIST parsed = NULL;
 	Local<Object> o;// = Object::New( isolate );
 	Local<Value> v;// = Object::New( isolate );
-	json6_parse_message( (char*)utf8String, len, &parsed );
+	if( !json6_parse_message( (char*)utf8String, len, &parsed ) ) {
+		//PTEXT error = json_parse_get_error( parser->state );
+
+
+	}
 	if( parsed && parsed->Cnt > 1 ) {
 		lprintf( "Multiple values would result, invalid parse." );
 		return Undefined(isolate);
