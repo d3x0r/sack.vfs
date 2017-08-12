@@ -31,7 +31,6 @@ console.log( "o is", o, typeof o );
 var o = parse( "undefined" );
 console.log( "o is", o, typeof o );
 
-if( extended ) {
 	var o = parse( "NaN" );
 	console.log( "o is", o, typeof o );
 	var o = parse( "-NaN" );
@@ -40,7 +39,6 @@ if( extended ) {
 	console.log( "o is", o, typeof o );
 	var o = parse( "-Infinity" );
 	console.log( "o is", o, typeof o );
-}
 
 var o = parse( "{a:123}" );
 console.log( "o is", o );
