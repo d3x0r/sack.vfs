@@ -11456,7 +11456,7 @@ JSON_EMITTER_PROC( PDATALIST, json6_parse_get_data )( struct json_parse_state *c
 JSON_EMITTER_PROC( void, json6_parse_dispose_state )( struct json_parse_state **context );
 JSON_EMITTER_PROC( void, json6_parse_clear_state )(struct json_parse_state *context);
 JSON_EMITTER_PROC( PTEXT, json6_parse_get_error )(struct json_parse_state *context);
-JSON_EMITTER_PROC( LOGICAL, json6_decode_message )(  struct json_context *format
+JSON_EMITTER_PROC( LOGICAL, json_decode_message )(  struct json_context *format
                                                   , PDATALIST parsedMsg
                                                   , struct json_context_object **result_format
                                                   , POINTER *msg_data_out
