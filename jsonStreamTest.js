@@ -10,6 +10,12 @@ parser.write( 'is a Test"' );
 parser.write( '[1234,12');
 parser.write( '34,1234]');
 
+parser.write( '[123,4');
+parser.write( '56,78');
+parser.write( '9,"abc","de');
+parser.write( 'f","ghi"]');
+
+
 parser.write( 'true false null undefined NaN Infinity' );
 
 parser.write( "1 " );
