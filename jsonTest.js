@@ -17,8 +17,6 @@ var o = parse( "0123" );
 console.log( "0123 is", o, typeof o );
 var o = parse( "0x123" );
 console.log( "0x123 is", o, typeof o );
-var o = parse( "0b1010101" );
-console.log( "0b1010101 is", o, typeof o );
 var o = parse( "\"123\"" );
 console.log( "o is", o, typeof o );
 var o = parse( "null" );
@@ -34,7 +32,7 @@ console.log( "o is", o, typeof o );
 var o = parse( "{'a':123}" );
 console.log( "o is", o );
 
-var o = parse( "{`a':\"abcdef\"}" );
+var o = parse( "{'a':\"abcdef\"}" );
 console.log( "o is", o );
 var o = parse( "{'a':\"abcdef\"}" );
 console.log( "o is", o );
