@@ -657,7 +657,7 @@ void FileObject::readLine(const v8::FunctionCallbackInfo<Value>& args) {
 		else {
 			int lastChar;
 			if( sack_fgets( file->buf, 4096, file->cfile ) ) {
-				lastChar = strlen( file->buf );
+				lastChar = (int)strlen( file->buf );
 				if( lastChar > 0 ) {
 					if( file->buf[lastChar - 1] == '\n' )
 						file->buf[lastChar - 1] = 0;
