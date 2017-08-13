@@ -1,8 +1,6 @@
 
 var vfs = require( "." );
 
-vfs.memDump();
-
 var parser = vfs.JSON6.begin( (obj)=>{
 	console.log( "Got value:",typeof obj, ":", obj );
 } );
@@ -44,4 +42,3 @@ try {
 
 parser.write( '1_234 0x55_33_22_11 0x1234' );
 
-vfs.memDump();
