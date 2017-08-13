@@ -1,7 +1,6 @@
 
 
 var vfs = require( "." )
-
 var parse = vfs.JSON6.parse;
 
 //console.log( "Stringify Test:", vfs.JSON.stringify( { a:123 } ) );
@@ -89,4 +88,6 @@ for( n = 0; n < 1000000; n++ ) {
 end = Date.now();
 console.log( "1m in ", end-start );
 }
+
+
 
