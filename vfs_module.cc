@@ -51,12 +51,19 @@ static void idGenerator(const v8::FunctionCallbackInfo<Value>& args ){
 	Deallocate( char*, r );
 }
 
+
+static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
+	DebugDumpMem( );
+}
+
+
 void VolumeObject::Init( Handle<Object> exports ) {
 	InvokeDeadstart();
 	node::AtExit( moduleExit );
+
 	//SetAllocateLogging( TRUE );
-	SetAllocateDebug( FALSE );
 	SetManualAllocateCheck( TRUE );
+	SetAllocateDebug( TRUE );
 	SetSystemLog( SYSLOG_FILE, stdout );
 
 	//LoadTranslationDataEx( "^/strings.dat" );
@@ -90,6 +97,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mkdir", makeDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "Sqlite", openVolDb );
 
+	NODE_SET_METHOD( exports, "memDump", dumpMem );
 	NODE_SET_METHOD(exports, "mkdir", mkdir );
 	NODE_SET_METHOD(exports, "u8xor", vfs_u8xor );
 	NODE_SET_METHOD(exports, "b64xor", vfs_b64xor );
