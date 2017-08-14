@@ -51363,6 +51363,7 @@ struct json_parse_state {
 	LOGICAL numberFromDate;
 	PVARTEXT pvtError;
 	LOGICAL fromHex;
+	LOGICAL exponent;
 	//char *token_begin;
 };
 struct json_parser_shared_data {
@@ -51379,7 +51380,9 @@ struct json_parser_shared_data jpsd;
 #ifndef JSON_EMITTER_SOURCE
 #  define JSON_EMITTER_SOURCE
 #endif
-#define JSON_PARSER_MAIN_SOURCE
+#ifndef JSON_PARSER_MAIN_SOURCE
+#  define JSON_PARSER_MAIN_SOURCE
+#endif
 #ifdef __cplusplus
 SACK_NAMESPACE namespace network { namespace json {
 #endif
@@ -51988,7 +51991,7 @@ int json_parse_add_data( struct json_parse_state *state
 						// always reset this here....
 						// keep it set to determine what sort of value is ready.
 						if( !state->gatheringNumber ) {
-							//exponent = FALSE;
+							state->exponent = FALSE;
 							state->fromHex = FALSE;
 							//fromDate = FALSE;
 							state->val.float_result = 0;
@@ -52025,7 +52028,32 @@ int json_parse_add_data( struct json_parse_state *state
 									break;
 								}
 							}
-							else if( (c == 'e') || (c == 'E') || (c == '.') )
+							else if( (c == 'e') || (c == 'E') )
+							{
+								if( !state->exponent ) {
+									state->val.float_result = 1;
+									(*output->pos++) = c;
+									state->exponent = TRUE;
+								}
+								else {
+									state->status = FALSE;
+									if( !state->pvtError ) state->pvtError = VarTextCreate();
+									vtprintf( state->pvtError, WIDE( "fault wile parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									break;
+								}
+							}
+							else if( c == '-' ) {
+								if( !state->exponent ) {
+									state->status = FALSE;
+									if( !state->pvtError ) state->pvtError = VarTextCreate();
+									vtprintf( state->pvtError, WIDE( "fault wile parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									break;
+								}
+								else {
+									(*output->pos++) = c;
+								}
+							}
+							else if( c == '.' )
 							{
 								state->val.float_result = 1;
 								(*output->pos++) = c;
@@ -53854,13 +53882,15 @@ int json6_parse_add_data( struct json_parse_state *state
 			output = (struct json_output_buffer*)DequeLink( &state->outQueue );
 			//lprintf( "output from before is %p", output );
 			offset = (output->pos - output->buf);
-			offset2 = state->val.string - output->buf;
+			offset2 = state->val.string ? (state->val.string - output->buf) : 0;
 			AddLink( &state->outValBuffers, output->buf );
 			output->buf = NewArray( char, output->size + msglen );
-			MemCpy( output->buf + offset2, state->val.string, offset-offset2 );
+			if( state->val.string ) {
+				MemCpy( output->buf + offset2, state->val.string, offset - offset2 );
+				state->val.string = output->buf + offset2;
+			}
 			output->size += msglen;
 			//lprintf( "previous val:%s", state->val.string, state->val.string );
-			state->val.string = output->buf + offset2;
 			output->pos = output->buf + offset;
 			PrequeLink( &state->outQueue, output );
 		}
@@ -53869,6 +53899,33 @@ int json6_parse_add_data( struct json_parse_state *state
 			output->pos = output->buf = NewArray( char, msglen );
 			output->size = msglen;
 			EnqueLink( &state->outQueue, output );
+		}
+	}
+	else {
+		// zero length input buffer... terminate a number.
+		if( state->gatheringNumber ) {
+			//console.log( "Force completed.")
+			output = (struct json_output_buffer*)DequeLink( &state->outQueue );
+			output->pos[0] = 0;
+			PushLink( &state->outBuffers, output );
+			state->gatheringNumber = FALSE;
+			//lprintf( "result with number:%s", state->val.string );
+			if( state->val.float_result )
+			{
+				CTEXTSTR endpos;
+				state->val.result_d = FloatCreateFromText( state->val.string, &endpos );
+				if( state->negative ) { state->val.result_d = -state->val.result_d; state->negative = FALSE; }
+			}
+			else
+			{
+				state->val.result_n = IntCreateFromText( state->val.string );
+				if( state->negative ) { state->val.result_n = -state->val.result_n; state->negative = FALSE; }
+			}
+			state->val.value_type = VALUE_NUMBER;
+			if( state->parse_context == CONTEXT_UNKNOWN ) {
+				state->completed = TRUE;
+			}
+			retval = 1;
 		}
 	}
 	while( state->status && ( input = (PPARSE_BUFFER)DequeLink( &state->inBuffers ) ) ) {
@@ -53971,7 +54028,8 @@ int json6_parse_add_data( struct json_parse_state *state
 				if( state->parse_context == CONTEXT_OBJECT_FIELD )
 				{
 					if( state->word != WORD_POS_RESET
-						&& state->word != WORD_POS_FIELD ) {
+						&& state->word != WORD_POS_FIELD
+						&& state->word != WORD_POS_AFTER_FIELD ) {
 						// allow starting a new word
 						state->status = FALSE;
 						if( !state->pvtError ) state->pvtError = VarTextCreate();
@@ -54257,10 +54315,15 @@ int json6_parse_add_data( struct json_parse_state *state
 					if( state->word == WORD_POS_RESET ) {
 						break;
 					}
-					state->status = FALSE;
-					if( !state->pvtError ) state->pvtError = VarTextCreate();
+					else if( state->word == WORD_POS_FIELD ) {
+						state->word = WORD_POS_AFTER_FIELD;
+					}
+					else {
+						state->status = FALSE;
+						if( !state->pvtError ) state->pvtError = VarTextCreate();
 	// fault
-					vtprintf( state->pvtError, WIDE( "fault while parsing; whitespace unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, state->n );
+						vtprintf( state->pvtError, WIDE( "fault while parsing; whitespace unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, state->n );
+					}
 					// skip whitespace
 					//n++;
 					//lprintf( "whitespace skip..." );
@@ -54444,14 +54507,12 @@ int json6_parse_add_data( struct json_parse_state *state
 					if( (c >= '0' && c <= '9') || (c == '+') || (c == '.') )
 					{
 						LOGICAL fromDate;
-						LOGICAL exponent;
  // to unwind last character past number.
 						const char *_msg_input;
-			continueNumber:
 						// always reset this here....
 						// keep it set to determine what sort of value is ready.
 						if( !state->gatheringNumber ) {
-							exponent = FALSE;
+							state->exponent = FALSE;
 							fromDate = FALSE;
 							state->fromHex = FALSE;
 							state->val.float_result = 0;
@@ -54461,7 +54522,7 @@ int json6_parse_add_data( struct json_parse_state *state
 						}
 						else
 						{
-							exponent = state->numberExponent;
+						continueNumber:
 							fromDate = state->numberFromDate;
 						}
 						while( (_msg_input = input->pos), ((state->n < input->size) && (c = GetUtfChar( &input->pos ))) )
@@ -54504,16 +54565,27 @@ int json6_parse_add_data( struct json_parse_state *state
 							}
 							else if( (c == 'e') || (c == 'E') )
 							{
-								if( !exponent ) {
+								if( !state->exponent ) {
 									state->val.float_result = 1;
 									(*output->pos++) = c;
-									exponent = TRUE;
+									state->exponent = TRUE;
 								}
 								else {
 									state->status = FALSE;
 									if( !state->pvtError ) state->pvtError = VarTextCreate();
 									vtprintf( state->pvtError, WIDE( "fault wile parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
 									break;
+								}
+							}
+							else if( c == '-' ) {
+								if( !state->exponent ) {
+									state->status = FALSE;
+									if( !state->pvtError ) state->pvtError = VarTextCreate();
+									vtprintf( state->pvtError, WIDE( "fault wile parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									break;
+								}
+								else {
+									(*output->pos++) = c;
 								}
 							}
 							else if( c == '.' )
@@ -54542,20 +54614,21 @@ int json6_parse_add_data( struct json_parse_state *state
 								break;
 							}
 						}
-						input->pos = _msg_input;
-						state->n = (input->pos - input->buf);
+						if( input ) {
+							input->pos = _msg_input;
+							state->n = (input->pos - input->buf);
+						}
 						//LogBinary( (uint8_t*)output->buf, output->size );
-						if( (!state->complete_at_end) && state->n == input->size )
+						if( input && (!state->complete_at_end) && state->n == input->size )
 						{
 							//lprintf( "completion mode is not end of string; and at end of string" );
 							state->gatheringNumber = TRUE;
-							state->numberExponent = exponent;
 							state->numberFromDate = fromDate;
 						}
 						else
 						{
-							state->gatheringNumber = FALSE;
 							(*output->pos++) = 0;
+							state->gatheringNumber = FALSE;
 							//lprintf( "result with number:%s", state->val.string );
 							if( state->val.float_result )
 							{
@@ -54602,29 +54675,31 @@ int json6_parse_add_data( struct json_parse_state *state
 			}
 		}
 		//lprintf( "at end... %d %d comp:%d", state->n, input->size, state->completed );
-		if( state->n == input->size ) {
-			DeleteFromSet( PARSE_BUFFER, jpsd.parseBuffers, input );
-			if( state->gatheringString || state->gatheringNumber || state->parse_context == CONTEXT_OBJECT_FIELD ) {
-				//lprintf( "output is still incomplete? " );
-				PrequeLink( &state->outQueue, output );
-				retval = 0;
+		if( input ) {
+			if( state->n == input->size ) {
+				DeleteFromSet( PARSE_BUFFER, jpsd.parseBuffers, input );
+				if( state->gatheringString || state->gatheringNumber || state->parse_context == CONTEXT_OBJECT_FIELD ) {
+					//lprintf( "output is still incomplete? " );
+					PrequeLink( &state->outQueue, output );
+					retval = 0;
+				}
+				else {
+					PushLink( &state->outBuffers, output );
+					if( state->parse_context == CONTEXT_UNKNOWN ) {
+						state->completed = TRUE;
+						retval = 1;
+					}
+				}
+				//lprintf( "Is complete already?%d", state->completed );
 			}
 			else {
-				PushLink( &state->outBuffers, output );
-				if( state->parse_context == CONTEXT_UNKNOWN ) {
-					state->completed = TRUE;
-					retval = 1;
-				}
-			}
-			//lprintf( "Is complete already?%d", state->completed );
-		}
-		else {
-			// put these back into the stack.
-			//lprintf( "put buffers back into queues..." );
-			PrequeLink( &state->inBuffers, input );
-			PrequeLink( &state->outQueue, output );
+				// put these back into the stack.
+				//lprintf( "put buffers back into queues..." );
+				PrequeLink( &state->inBuffers, input );
+				PrequeLink( &state->outQueue, output );
   // if returning buffers, then obviously there's more in this one.
-			retval = 2;
+				retval = 2;
+			}
 		}
 		if( state->completed )
 			break;
@@ -73919,6 +73994,8 @@ struct pssql_global
 	ODBC OptionDb;
 	PLIST date_offsets;
 	PLIST odbc_queues;
+	PLIST option_database_init;
+	PLIST database_init;
 };
 #endif
 INDEX GetIndexOfName(PODBC odbc, CTEXTSTR table,CTEXTSTR name);
@@ -74897,6 +74974,8 @@ struct pssql_global
 	ODBC OptionDb;
 	PLIST date_offsets;
 	PLIST odbc_queues;
+	PLIST option_database_init;
+	PLIST database_init;
 };
 #endif
 INDEX GetIndexOfName(PODBC odbc, CTEXTSTR table,CTEXTSTR name);
@@ -78447,12 +78526,22 @@ void ExtendConnection( PODBC odbc )
 		CTEXTSTR result;
 		int n = odbc->flags.bNoLogging;
 		int m = odbc->flags.bAutoCheckpoint;
-		odbc->flags.bNoLogging = 1;
+		odbc->flags.bNoLogging = 0;
 		odbc->flags.bAutoCheckpoint = 0;
-		SQLQueryf( odbc, &result, WIDE( "PRAGMA journal_mode=WAL;" ) );
+		{
+			INDEX idx;
+			CTEXTSTR cmd;
+			LIST_FORALL( g.database_init, idx, CTEXTSTR, cmd ) {
+				SQLQueryf( odbc, &result, cmd );
+				//if( result )
+				//	lprintf( WIDE( " %s" ), result );
+				SQLEndQuery( odbc );
+			}
+		}
+		//SQLQueryf( odbc, &result, WIDE( "PRAGMA journal_mode=WAL;" ) );
 		//if( result )
 		//	lprintf( WIDE( "Journal is now %s" ), result );
-		SQLEndQuery( odbc );
+		//SQLEndQuery( odbc );
 		if( g.flags.bAutoCheckpointRecover ) {
 			SQLQueryf( odbc, &result, WIDE( "PRAGMA wal_checkpoint;" ) );
 			SQLEndQuery( odbc );
@@ -78670,6 +78759,20 @@ static PCOLLECT CreateCollectorEx( PSERVICE_ROUTE SourceID, PODBC odbc, LOGICAL 
 }
 //----------------------------------------------------------------------
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+static uintptr_t CPROC AddDatabaseInit( uintptr_t psv, arg_list args )
+{
+	PARAM( args, CTEXTSTR, initSQL );
+	if( initSQL && strlen( initSQL ) )
+		AddLink( &g.option_database_init, StrDup( initSQL ) );
+	return psv;
+}
+static uintptr_t CPROC AddOptionDatabaseInit( uintptr_t psv, arg_list args )
+{
+	PARAM( args, CTEXTSTR, initSQL );
+	if( initSQL && strlen( initSQL ) )
+		AddLink( &g.database_init, StrDup( initSQL ) );
+	return psv;
+}
 static uintptr_t CPROC SetPrimaryDSN( uintptr_t psv, arg_list args )
 {
 	PARAM( args, CTEXTSTR, pDSN );
@@ -78943,6 +79046,8 @@ void SqlStubInitLibrary( void )
 			AddConfigurationMethod( pch, WIDE("Require Connection=%b"), SetRequireConnection );
 			AddConfigurationMethod( pch, WIDE("Require Primary Connection=%b"), SetRequirePrimaryConnection );
 			AddConfigurationMethod( pch, WIDE("Require Backup Connection=%b"), SetRequireBackupConnection );
+			AddConfigurationMethod( pch, WIDE("Database Init SQL=%m"), AddDatabaseInit );
+			AddConfigurationMethod( pch, WIDE("Option Database Init SQL=%m"), AddOptionDatabaseInit );
 			// If source is encrypted enable tranlation
 			//AddConfigurationFilter( pch, TranslateCrypt );
 			{
@@ -78978,6 +79083,8 @@ void SqlStubInitLibrary( void )
 					sack_fprintf( file, "Require Connection=No\n" );
 					sack_fprintf( file, "Require Primary Connection=Yes\n" );
 					sack_fprintf( file, "Require Backup Connection=No\n" );
+					sack_fprintf( file, "Database Init SQL=\n" );
+					sack_fprintf( file, "Option Database Init SQL=\n" );
 					sack_fclose( file );
 				}
 				ProcessConfigurationFile( pch, WIDE("sql.config"), 0 );
@@ -85719,6 +85826,8 @@ struct pssql_global
 	ODBC OptionDb;
 	PLIST date_offsets;
 	PLIST odbc_queues;
+	PLIST option_database_init;
+	PLIST database_init;
 };
 #endif
 INDEX GetIndexOfName(PODBC odbc, CTEXTSTR table,CTEXTSTR name);
@@ -87182,6 +87291,17 @@ PODBC GetOptionODBCEx( CTEXTSTR dsn  DBG_PASS )
 			lprintf( "none available, create new connection." );
 #endif
 			odbc = ConnectToDatabaseExx( tracker->name, TRUE DBG_RELAY );
+			{
+				INDEX idx;
+				CTEXTSTR cmd;
+				CTEXTSTR result;
+				LIST_FORALL( global_sqlstub_data->option_database_init, idx, CTEXTSTR, cmd ) {
+					SQLQueryf( odbc, &result, cmd );
+					//if( result )
+					//	lprintf( WIDE( " %s" ), result );
+					SQLEndQuery( odbc );
+				}
+			}
 			//SetSQLAutoClose( odbc, TRUE );
 			if( !tracker->shared_option_tree )
 			{
