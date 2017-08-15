@@ -51155,18 +51155,31 @@ JSON_EMITTER_PROC( LOGICAL, json_decode_message )(  struct json_context *format
 enum json_value_types {
 	VALUE_UNDEFINED = -1
 	, VALUE_UNSET = 0
-	, VALUE_NULL = 1
-	, VALUE_TRUE = 2
-	, VALUE_FALSE = 3
-	, VALUE_STRING = 4
-	, VALUE_NUMBER = 5
-	, VALUE_OBJECT = 6
-	, VALUE_ARRAY = 7
-	, VALUE_NEG_NAN = 8
-	, VALUE_NAN = 9
-	, VALUE_NEG_INFINITY = 10
-	, VALUE_INFINITY = 11
-	, VALUE_DATE = 12
+ //= 1
+	, VALUE_NULL
+ //= 2
+	, VALUE_TRUE
+ //= 3
+	, VALUE_FALSE
+ //= 4
+	, VALUE_STRING
+ //= 5
+	, VALUE_NUMBER
+ //= 6
+	, VALUE_OBJECT
+ //= 7
+	, VALUE_ARRAY
+ //= 8
+	, VALUE_NEG_NAN
+ //= 9
+	, VALUE_NAN
+ //= 10
+	, VALUE_NEG_INFINITY
+ //= 11
+	, VALUE_INFINITY
+  // = 12
+	, VALUE_DATE
+	, VALUE_EMPTY
 };
 struct json_value_container {
   // name of this value (if it's contained in an object)
@@ -54156,6 +54169,10 @@ int json6_parse_add_data( struct json_parse_state *state
 				}
 				if( state->parse_context == CONTEXT_IN_ARRAY )
 				{
+					if( state->val.value_type == VALUE_UNSET )
+ // in an array, elements after a comma should init as undefined...
+						state->val.value_type = VALUE_EMPTY;
+																 // undefined allows [,,,] to be 4 values and [1,2,3,] to be 4 values with an undefined at end.
 					if( state->val.value_type != VALUE_UNSET ) {
 #ifdef _DEBUG_PARSING
 						lprintf( "back in array; push item %d", state->val.value_type );
@@ -54163,9 +54180,6 @@ int json6_parse_add_data( struct json_parse_state *state
 						AddDataItem( &state->elements, &state->val );
 						RESET_STATE_VAL();
 					}
- // in an array, elements after a comma should init as undefined...
-					state->val.value_type = VALUE_UNDEFINED;
-					// undefined allows [,,,] to be 4 values and [1,2,3,] to be 4 values with an undefined at end.
 				}
 				else if( state->parse_context == CONTEXT_OBJECT_FIELD_VALUE )
 				{
@@ -54709,12 +54723,11 @@ int json6_parse_add_data( struct json_parse_state *state
 		// some error condition; cannot resume parsing.
 		return -1;
 	}
-	if( !state->gatheringNumber && !state->gatheringString )
+	if( state->completed ) {
 		if( state->val.value_type != VALUE_UNSET ) {
 			AddDataItem( &state->elements, &state->val );
 			RESET_STATE_VAL();
 		}
-	if( state->completed ) {
 		state->completed = FALSE;
 	}
 	return retval;

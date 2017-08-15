@@ -341,13 +341,19 @@ static Local<Value> makeValue( Isolate *isolate, struct json_value_container *va
 		return True( isolate );
 	case VALUE_FALSE:
 		return False( isolate );
+	case VALUE_EMPTY:
+		return Undefined(isolate);
 	case VALUE_STRING:
 		return String::NewFromUtf8( isolate, val->string );
 	case VALUE_NUMBER:
 		if( val->float_result )
 			return Number::New( isolate, val->result_d );
-		else
-			return Integer::New( isolate, (int32_t)val->result_n );
+		else {
+			if( val->result_n < 0x7FFFFFFF && val->result_n > -0x7FFFFFFF )
+				return Integer::New( isolate, (int32_t)val->result_n );
+			else
+				return Number::New( isolate, (double)val->result_n );
+		}
 	case VALUE_ARRAY:
 		return Array::New( isolate );
 	case VALUE_OBJECT:
@@ -373,28 +379,34 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate )
 	int index = 0;
 	DATA_FORALL( msg_data, idx, struct json_value_container*, val )
 	{
-	switch( val->value_type ) {
-	default:
-		if( val->name )
-			o->Set( String::NewFromUtf8( isolate, val->name )
-				, makeValue( isolate, val ) );
-		else
-			o->Set( (uint32_t)idx, makeValue( isolate, val ) );
-		break;
-	case VALUE_ARRAY:
-			o->Set( String::NewFromUtf8( isolate, val->name )
-						, sub_o = Array::New( isolate )
-			 );
+		//lprintf( "value name is : %d %s", val->value_type, val->name ? val->name : "(NULL)" );
+		switch( val->value_type ) {
+		default:
+			if( val->name )
+				o->Set( String::NewFromUtf8( isolate, val->name )
+					, makeValue( isolate, val ) );
+			else {
+				o->Set( index++, makeValue( isolate, val ) );
+				if( val->value_type == VALUE_EMPTY )
+					o->Delete( index - 1 );
+			}
+			break;
+		case VALUE_ARRAY:
+			if( val->name )
+				o->Set( String::NewFromUtf8( isolate, val->name )
+					, sub_o = Array::New( isolate ) );
+			else {
+				o->Set( index++, sub_o = Array::New( isolate ) );
+			}
 			buildObject( val->contains, sub_o, isolate );
 			break;
-	case VALUE_OBJECT:
+		case VALUE_OBJECT:
 			if( val->name )
 				o->Set( String::NewFromUtf8( isolate,val->name )
-							, sub_o = Object::New( isolate )
-				 );
-			else
-				o->Set( index++, sub_o = Object::New( isolate )
-				 );
+							, sub_o = Object::New( isolate ) );
+			else {
+				o->Set( index++, sub_o = Object::New( isolate ) );
+			}
 
 			buildObject( val->contains, sub_o, isolate );
 			break;

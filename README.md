@@ -464,3 +464,7 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
 
 See [tlsTest.js](https://github.com/d3x0r/sack.vfs/blob/master/tlsTest.js) for example usage.
 
+
+
+## Changelog
+- 0.1.99294 fix stream paring empty array elements; and a error stream parsing a break between a field label just at the colon.
