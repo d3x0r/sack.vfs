@@ -772,6 +772,8 @@ void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 #if  V8_AT_LEAST(5, 4)
 //	Isolate* isolate = Isolate::GetCurrent();
 	size_t num1 = (size_t)args[0]->ToNumber(Isolate::GetCurrent()->GetCurrentContext()).FromMaybe(Local<Number>())->Value();
+#else
+	size_t num1 = (size_t)args[0]->ToNumber()->Value();
 #endif
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	if( args.Length() == 1 && args[0]->IsNumber() ) {
@@ -787,6 +789,8 @@ void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 	if( args.Length() == 2 && args[0]->IsNumber() && args[1]->IsNumber() ) {
 #if  V8_AT_LEAST(5, 4)
 		int num2 = (int)args[1]->ToNumber( Isolate::GetCurrent()->GetCurrentContext() ).FromMaybe( Local<Number>() )->Value();
+#else 
+		size_t num2 = (size_t)args[1]->ToNumber()->Value();
 #endif
 		if( file->vol->volNative ) {
 #if  V8_AT_LEAST(5, 4)
