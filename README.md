@@ -467,6 +467,7 @@ See [tlsTest.js](https://github.com/d3x0r/sack.vfs/blob/master/tlsTest.js) for e
 
 
 ## Changelog
-- 0.1.99295 fix deprecated v8::Delete method to use Maybe version.
+- 0.1.99297 replace Persistent strings with Eternal, which work on nodev4.
+- 0.1.99296 fix deprecated v8::Delete method to use Maybe version.
 - 0.1.99295 fix build error on older versions of node.
 - 0.1.99294 fix stream paring empty array elements; and a error stream parsing a break between a field label just at the colon.
