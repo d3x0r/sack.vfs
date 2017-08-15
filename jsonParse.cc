@@ -388,7 +388,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate )
 			else {
 				o->Set( index++, makeValue( isolate, val ) );
 				if( val->value_type == VALUE_EMPTY )
-					o->Delete( index - 1 );
+					o->Delete( isolate->GetCurrentContext(), index - 1 );
 			}
 			break;
 		case VALUE_ARRAY:
