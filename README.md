@@ -467,6 +467,7 @@ See [tlsTest.js](https://github.com/d3x0r/sack.vfs/blob/master/tlsTest.js) for e
 
 
 ## Changelog
+- 0.1.99299 set default sql auto checkpoint to off.
 - 0.1.99298 add preferGlobal to package.json.
 - 0.1.99297 replace Persistent strings with Eternal, which work on nodev4.
 - 0.1.99296 fix deprecated v8::Delete method to use Maybe version.
