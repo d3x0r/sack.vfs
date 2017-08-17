@@ -79080,7 +79080,7 @@ void SqlStubInitLibrary( void )
 					);
 				if( file )
 				{
-					sack_fprintf( file, "Auto Checkpoint=Yes\n" );
+					sack_fprintf( file, "Auto Checkpoint=No\n" );
 					sack_fprintf( file, "Option DSN=%s\n", g.OptionDb.info.pDSN );
 					sack_fprintf( file, "Primary DSN=MySQL\n" );
 					sack_fprintf( file, "#Primary User=\n" );
