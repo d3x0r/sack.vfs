@@ -11736,20 +11736,36 @@ void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_
 	uint32_t partial_tmp;
 	uint32_t partial_bits = 0;
 	uint32_t get_bits;
+	uint32_t resultBits = 0;
 	do
 	{
 		if( bits > sizeof( tmp ) * 8 )
 			get_bits = sizeof( tmp ) * 8;
 		else
 			get_bits = bits;
+		// if there were 1-31 bits of data in partial, then can only get 32-partial max.
+		if( ( 32 - partial_bits ) < get_bits )
+			get_bits = 32-partial_bits;
+		// check1 :
+		//    if get_bits == 32
+		//    but bits_used is 1-7, then it would have to pull 5 bytes to get the 32 required
+		//    so truncate get_bits to 25-31 bits
+		if( ( 32 - ( ctx->bits_used & 0x7 ) ) < get_bits )
+			get_bits = ( 32 - ( ctx->bits_used & 0x7 ) );
+		// if resultBits is 1-7 offset, then would have to store up to 5 bytes of value
+		//    so have to truncate to just the up to 4 bytes that will fit.
+		if( get_bits > (32 - resultBits ) )
+			get_bits = 32-resultBits;
 		// only greater... if equal just grab the bits.
 		if( get_bits > ( ctx->bits_avail - ctx->bits_used ) )
 		{
+			// if there are any bits left, grab the partial bits.
 			if( ctx->bits_avail - ctx->bits_used )
 			{
 				partial_bits = (uint32_t)(ctx->bits_avail - ctx->bits_used);
-				if( partial_bits > sizeof( partial_tmp ) * 8 )
-					partial_bits = sizeof( partial_tmp ) * 8;
+				// partial can never be greater than 32; input is only max of 32
+				//if( partial_bits > (sizeof( partial_tmp ) * 8) )
+				//	partial_bits = (sizeof( partial_tmp ) * 8);
 				if( ctx->use_version2 )
 					partial_tmp = MY_GET_MASK( ctx->entropy2, ctx->bits_used, partial_bits );
 				else
@@ -11770,7 +11786,16 @@ void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_
 				tmp = partial_tmp | ( tmp << partial_bits );
 				partial_bits = 0;
 			}
-			(*buffer++) = tmp;
+			(*buffer) = tmp << resultBits;
+			resultBits += get_bits;
+			while( resultBits > 8 ) {
+#ifdef __cplusplus
+				buffer = (uint32_t*)(((uintptr_t)buffer) + 1);
+#else
+				((intptr_t)buffer)++;
+#endif
+				resultBits -= 8;
+			}
 			bits -= get_bits;
 		}
 	} while( bits );
