@@ -24,7 +24,7 @@ var tmp2 = vfs.u8xor( tmp, key );
 key.step = 0;
 var tmp3 = vfs.u8xor( tmp2, key );
 
-console.log( "ENcoder test of :", tmp, tmp2,  tmp3 );
+console.log( "ENcoder test of :", "source:", tmp, "encode:", tmp2,  "decode:", tmp3 );
 
 
 const runlength = 1000;

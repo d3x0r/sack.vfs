@@ -22,7 +22,13 @@
 
 using namespace v8;
 
+//fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekSet" ), Integer::New( isolate, SEEK_SET ), ReadOnlyProperty );
+
+#define SET_READONLY( object, name, data ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name), data, ReadOnlyProperty );
+#define SET_READONLY_METHOD( object, name, method ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name), v8::Function::New(isolate, method ), ReadOnlyProperty );
+
 void InitJSON( Isolate *isolate, Handle<Object> exports );
+void InitSRG( Isolate *isolate, Handle<Object> exports );
 
 
 #define ReadOnlyProperty (PropertyAttribute)((int)PropertyAttribute::ReadOnly | PropertyAttribute::DontDelete)
@@ -176,7 +182,7 @@ public:
 	char *name;
 	static Persistent<Function> constructor;
 
-	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
+	Persistent<Function, CopyablePersistentTraits<Function>> *readCallback; //
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE readQueue;
 	
@@ -185,35 +191,23 @@ public:
 	static void Init( Handle<Object> exports );
 	ComObject( char *name );
 
+private:
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
 	static void writeCom( const v8::FunctionCallbackInfo<Value>& args );
 	static void closeCom( const v8::FunctionCallbackInfo<Value>& args );
-
-
 	~ComObject();
 };
 
 
 class RegObject : public node::ObjectWrap {
 public:
-	//static Persistent<Function> constructor;
-
-	//Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
-	//uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
-	//PLINKQUEUE readQueue;
-	
-public:
-
 	static void Init( Handle<Object> exports );
-	RegObject();
 
+private:
 	static void getRegItem( const v8::FunctionCallbackInfo<Value>& args );
 	static void setRegItem( const v8::FunctionCallbackInfo<Value>& args );
-
-
-	~RegObject();
 };
 
 
@@ -243,22 +237,11 @@ public:
 	~WebSockClientObject();
 };
 
-
-struct internalCert {
-	X509_REQ *req;
-	X509 * x509;
-	EVP_PKEY *pkey;
-};
-
-
 class TLSObject : public node::ObjectWrap {
 
 public:
-   struct internalCert cert;
-
-
 	static v8::Persistent<v8::Function> constructor;
-	
+
 public:
 
 	static void Init( Isolate *isolate, Handle<Object> exports );

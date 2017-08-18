@@ -66,7 +66,7 @@ static void asyncmsg( uv_async_t* handle ) {
 			Local<Uint8Array> ui = Uint8Array::New( ab, 0, length );
 
 			Local<Value> argv[] = { ui };
-			Local<Function> cb = Local<Function>::New( isolate, myself->readCallback );
+			Local<Function> cb = Local<Function>::New( isolate, myself->readCallback[0] );
 			//lprintf( "callback ... %p", myself );
 			// using obj->jsThis  fails. here...
 			cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
@@ -152,9 +152,7 @@ void ComObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 
 	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
-	Persistent<Function> cb( isolate, arg0 );
-
-	com->readCallback = cb;
+	com->readCallback = new Persistent<Function,CopyablePersistentTraits<Function>>(isolate,arg0);
 }
 
 void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {

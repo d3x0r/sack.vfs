@@ -2,48 +2,6 @@
 #include "global.h"
 #include <math.h>
 
-static char const * const  JSON_ObjectElementTypeStrings[] =
-{
-   "JSON_Element_Integer_8",
-   "JSON_Element_Integer_16",
-   "JSON_Element_Integer_32",
-   "JSON_Element_Integer_64",
-   "JSON_Element_Unsigned_Integer_8",
-   "JSON_Element_Unsigned_Integer_16",
-   "JSON_Element_Unsigned_Integer_32",
-   "JSON_Element_Unsigned_Integer_64",
-   "JSON_Element_String",
-   "JSON_Element_CharArray",
-   "JSON_Element_Float",
-   "JSON_Element_Double",
-   "JSON_Element_Array",  // result will fill a PLIST
-   "JSON_Element_Object",
-   "JSON_Element_ObjectPointer",
-   "JSON_Element_List",
-   "JSON_Element_Text",  // ptext type
-   "JSON_Element_PTRSZVAL",  
-   "JSON_Element_PTRSZVAL_BLANK_0",
-	"JSON_Element_UserRoutine",
-	"JSON_Element_Raw_Object", // unparsed object remainder.  Includes bounding { } object indicator for re-parsing
-   //JSON_Element_StaticText,  // text type; doesn't happen very often.
-};
-
-
-static char const * const json_value_type_strings_[] = {
-	"VALUE_UNDEFINED"
-	, "uninitialized"
-	, "VALUE_NULL"
-	, "VALUE_TRUE"
-	, "VALUE_FALSE"
-	, "VALUE_STRING"
-	, "VALUE_NUMBER"
-	, "VALUE_OBJECT"
-	, "VALUE_ARRAY"
-};
-
-
-
-static char const *const *const json_value_type_strings = json_value_type_strings_+1;
 static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate );
 static Local<Value> makeValue( Isolate *isolate, struct json_value_container *val );
 

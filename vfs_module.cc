@@ -77,6 +77,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	SqlObject::Init( exports );
 	ComObject::Init( exports );
 	InitJSON( isolate, exports );
+	InitSRG( isolate, exports );
 #ifdef WIN32
 	RegObject::Init( exports );
 #endif
@@ -97,17 +98,21 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mkdir", makeDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "Sqlite", openVolDb );
 
-	NODE_SET_METHOD( exports, "memDump", dumpMem );
-	NODE_SET_METHOD(exports, "mkdir", mkdir );
-	NODE_SET_METHOD(exports, "u8xor", vfs_u8xor );
-	NODE_SET_METHOD(exports, "b64xor", vfs_b64xor );
-	NODE_SET_METHOD(exports, "id", idGenerator );
+	SET_READONLY_METHOD( exports, "memDump", dumpMem );
+	SET_READONLY_METHOD( exports, "mkdir", mkdir );
+	SET_READONLY_METHOD( exports, "u8xor", vfs_u8xor );
+	SET_READONLY_METHOD( exports, "b64xor", vfs_b64xor );
+	SET_READONLY_METHOD( exports, "id", idGenerator );
 
 	Local<Object> fileObject = Object::New( isolate );	
-	fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekSet" ), Integer::New( isolate, SEEK_SET ), ReadOnlyProperty );
-	fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekCurrent" ), Integer::New( isolate, SEEK_CUR ), ReadOnlyProperty );
-	fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekEnd" ), Integer::New( isolate, SEEK_END ), ReadOnlyProperty );
-	exports->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "File" ), fileObject, ReadOnlyProperty );
+	SET_READONLY( fileObject, "SeekSet", Integer::New( isolate, SEEK_SET ) );
+	SET_READONLY( fileObject, "SeekCurrent", Integer::New( isolate, SEEK_CUR ) );
+	SET_READONLY( fileObject, "SeekEnd", Integer::New( isolate, SEEK_END ) );
+	SET_READONLY( exports, "File", fileObject );
+	//fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekSet" ), Integer::New( isolate, SEEK_SET ), ReadOnlyProperty );
+	//fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekCurrent" ), Integer::New( isolate, SEEK_CUR ), ReadOnlyProperty );
+	//fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekEnd" ), Integer::New( isolate, SEEK_END ), ReadOnlyProperty );
+	//exports->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "File" ), fileObject, ReadOnlyProperty );
 
 	constructor.Reset( isolate, volumeTemplate->GetFunction() );
 	exports->Set( String::NewFromUtf8( isolate, "Volume" ),
