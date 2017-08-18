@@ -464,9 +464,46 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
 
 See [tlsTest.js](https://github.com/d3x0r/sack.vfs/blob/master/tlsTest.js) for example usage.
 
+## SRG Module
+
+Salty Random Generator 
+
+```
+  var SRG = SaltyRG( salt=>salt.push( new Date() ) )// callback is passed an array to add salt to.
+  var number = SRG.getBits(); // get a signed 32 bit number -  -2,147,483,648  to 2,147,483,647
+```
+
+  - SaltyRG( callback ), SaltyRG( initial_seed ), SaltyRG()
+     callback is called to request more salt.  An array is passed which can have values pushed into it.
+     initial_seed is a seed to use initially, then no callback is called.
+     no parameters results with a generator with no initial seed, and no callback
+     Results with a random_generator object.
+     
+     
+    - seed( toString ) : set the next seed to be used; any value passed is converted to a string.
+    - reset() : reset the generator to base state.
+    - getBits( [bitCount [, signed]] ) : if no parameters are passed, a 32 bit signed integer is returned.  If bitCount 
+       is passed, it must be less than 32 bits.  If signed is not passed or is false, the resulting value is the specified
+       number of bits as an unsigned integer, otherwise the top bit is sign extended, and a signed integer results.
+    - getBuffer( bits ) : returns an ArrayBuffer that is the specified number of bits long, rounded up to the next complete
+       byte count.  
+       
+
+```
+  // some examples
+  var vfs = require( "sack.vfs" );
+  var SRG = vfs.SaltyRG( salt=>salt.push( new Date() ) )// callback is passed an array to add salt to.
+  
+  var signed_byte = SRG.getBits( 8, true );
+  var unsigned_byte = SRG.getBits( 8 );
+  var someValue = SRG.getBits( 13, true );  // get 13 bits of randomness, sign extended.
+  var buffer = SRG.getBuffer( 1234 ); // get 155 bytes of random data (last byte only has 2 bits )
+```
+
 
 
 ## Changelog
+- 0.1.99301 add SaltyRandomGenerator interface.
 - 0.1.99300 fix random generator overflows.
 - 0.1.99299 set default sql auto checkpoint to off.
 - 0.1.99298 add preferGlobal to package.json.
