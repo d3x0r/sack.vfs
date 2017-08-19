@@ -10200,9 +10200,10 @@ enum block_cache_entries
 {
 	BLOCK_CACHE_DIRECTORY
 	, BLOCK_CACHE_NAMES
-	, BLOCK_CACHE_FILE
 	, BLOCK_CACHE_BAT
 	, BLOCK_CACHE_DATAKEY
+	, BLOCK_CACHE_FILE
+	, BLOCK_CACHE_FILE_LAST = BLOCK_CACHE_FILE + 10
 	, BLOCK_CACHE_COUNT
 };
 PREFIX_PACKED struct volume {
@@ -10218,8 +10219,12 @@ PREFIX_PACKED struct volume {
 	const char * userkey;
 	const char * devkey;
 	enum block_cache_entries curseg;
+// cached segment with usekey[n]
+	BLOCKINDEX _segment[BLOCK_CACHE_COUNT];
 // associated with usekey[n]
 	BLOCKINDEX segment[BLOCK_CACHE_COUNT];
+	uint8_t fileCacheAge[BLOCK_CACHE_FILE_LAST - BLOCK_CACHE_FILE];
+	uint8_t fileNextAge;
 	struct random_context *entropy;
   // allow byte encrypting...
 	uint8_t* key;
@@ -10276,15 +10281,15 @@ struct sack_vfs_file
   // someone already deleted this...
 	LOGICAL delete_on_close;
 };
-#define TSEEK(type,v,o,c) ((type)vfs_SEEK(v,o,c))
-#define BTSEEK(type,v,o,c) ((type)vfs_BSEEK(v,o,c))
+#define TSEEK(type,v,o,c) ((type)vfs_SEEK(v,o,&c))
+#define BTSEEK(type,v,o,c) ((type)vfs_BSEEK(v,o,&c))
 #ifdef __GNUC__
 #define HIDDEN __attribute__ ((visibility ("hidden")))
 #else
 #define HIDDEN
 #endif
-uintptr_t vfs_SEEK( struct volume *vol, FPI offset, enum block_cache_entries cache_index ) HIDDEN;
-uintptr_t vfs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries cache_index ) HIDDEN;
+uintptr_t vfs_SEEK( struct volume *vol, FPI offset, enum block_cache_entries *cache_index ) HIDDEN;
+uintptr_t vfs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index ) HIDDEN;
 //BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int init, LOGICAL expand );
 static struct {
 	struct directory_entry zero_entkey;
@@ -10336,18 +10341,74 @@ static void MaskStrCpy( char *output, size_t outlen, struct volume *vol, FPI nam
 	}
 }
 #endif
-static void UpdateSegmentKey( struct volume *vol, enum block_cache_entries cache_idx )
+static enum block_cache_entries UpdateSegmentKey( struct volume *vol, enum block_cache_entries cache_idx, BLOCKINDEX segment )
 {
+	if( cache_idx == BLOCK_CACHE_FILE ) {
+		int n, m;
+		int nLeast;
+		uint8_t next = 0;
+		for( n = 0; n < (BLOCK_CACHE_FILE_LAST - BLOCK_CACHE_FILE); n++ ) {
+			if( vol->segment[cache_idx + n] == segment ) {
+				cache_idx = (enum block_cache_entries)((cache_idx)+n);
+				for( m = 0; m < (BLOCK_CACHE_FILE_LAST - BLOCK_CACHE_FILE); m++ ) {
+					if( !vol->fileCacheAge[m] ) break;
+					if( vol->fileCacheAge[m] > vol->fileCacheAge[n] )
+						vol->fileCacheAge[m]--;
+				}
+				vol->fileCacheAge[n] = m;
+				break;
+			}
+			if( !vol->fileCacheAge[n] ) {
+				cache_idx = (enum block_cache_entries)((cache_idx)+n);
+				for( m = 0; m < (BLOCK_CACHE_FILE_LAST - BLOCK_CACHE_FILE); m++ ) {
+					if( !vol->fileCacheAge[m] ) break;
+					if( vol->fileCacheAge[m] >( n + 1 ) )
+						vol->fileCacheAge[m]--;
+				}
+				vol->fileCacheAge[n] = n + 1;
+				break;
+			}
+			if( vol->fileCacheAge[n] == 1 ) nLeast = n;
+		}
+		if( n == (BLOCK_CACHE_FILE_LAST - BLOCK_CACHE_FILE) ) {
+			for( n = 0; n < (BLOCK_CACHE_FILE_LAST - BLOCK_CACHE_FILE); n++ ) {
+				vol->fileCacheAge[n]--;
+			}
+			vol->fileCacheAge[nLeast] = (BLOCK_CACHE_FILE_LAST - BLOCK_CACHE_FILE);
+			cache_idx = (enum block_cache_entries)(BLOCK_CACHE_FILE + nLeast);
+		}
+	}
+	vol->segment[cache_idx] = segment;
+	if( vol->segment[cache_idx] == vol->_segment[cache_idx] )
+		return cache_idx;
 	SRG_ResetEntropy( vol->entropy );
+	vol->_segment[cache_idx] = vol->segment[cache_idx];
   // so we know which 'segment[idx]' to use.
 	vol->curseg = cache_idx;
 	SRG_GetEntropyBuffer( vol->entropy, (uint32_t*)vol->segkey, SHORTKEY_LENGTH * 8 );
 	{
 		int n;
-		uint8_t* usekey = vol->usekey[cache_idx];
-		for( n = 0; n < BLOCK_SIZE; n++ )
-			(*usekey++) = vol->key[n] ^ vol->segkey[n&(SHORTKEY_LENGTH-1)];
+#ifdef __64__
+		uint64_t* usekey = (uint64_t*)vol->usekey[cache_idx];
+		uint64_t* volkey = (uint64_t*)vol->key;
+		uint64_t* segkey = (uint64_t*)vol->segkey;
+		for( n = 0; n < (BLOCK_SIZE / SHORTKEY_LENGTH) / 8; n++ ) {
+			(*usekey++) = (*volkey++) ^ (segkey[0]);
+			(*usekey++) = (*volkey++) ^ (segkey[1]);
+		}
+#else
+		uint32_t* usekey = (uint32_t*)vol->usekey[cache_idx];
+		uint32_t* volkey = (uint32_t*)vol->key;
+		uint32_t* segkey = (uint32_t*)vol->segkey;
+		for( n = 0; n < (BLOCK_SIZE / SHORTKEY_LENGTH) / 4; n++ ) {
+			(*usekey++) = (*volkey++) ^ (segkey[0]);
+			(*usekey++) = (*volkey++) ^ (segkey[1]);
+			(*usekey++) = (*volkey++) ^ (segkey[2]);
+			(*usekey++) = (*volkey++) ^ (segkey[3]);
+		}
+#endif
 	}
+	return cache_idx;
 }
 static LOGICAL ValidateBAT( struct volume *vol ) {
 	BLOCKINDEX first_slab = 0;
@@ -10358,9 +10419,9 @@ static LOGICAL ValidateBAT( struct volume *vol ) {
 		for( n = first_slab; n < slab; n += BLOCKS_PER_SECTOR  ) {
 			size_t m;
 			BLOCKINDEX *BAT = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE);
-			vol->segment[BLOCK_CACHE_BAT] = n + 1;
+			//vol->segment[BLOCK_CACHE_BAT] = n + 1;
 			//while( LockedExchange( &vol->key_lock[BLOCK_CACHE_BAT], 1 ) ) Relinquish();
-			UpdateSegmentKey( vol, BLOCK_CACHE_BAT );
+			UpdateSegmentKey( vol, BLOCK_CACHE_BAT, n + 1 );
 			for( m = 0; ((BAT[m] & ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[m]) != EOBBLOCK ) && m < BLOCKS_PER_BAT; m++ )
 			{
 				BLOCKINDEX block = BAT[m] ^ ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[m];
@@ -10560,8 +10621,8 @@ static LOGICAL ExpandVolume( struct volume *vol ) {
 		BLOCKINDEX slab = vol->dwSize / ( BLOCK_SIZE );
 		BLOCKINDEX n;
 		for( n = first_slab; n < slab; n++  ) {
-			vol->segment[BLOCK_CACHE_BAT] = n + 1;
-			if( ( n % (BLOCKS_PER_SECTOR) ) == 0 )	 UpdateSegmentKey( vol, BLOCK_CACHE_BAT );
+			//vol->segment[BLOCK_CACHE_BAT] = n + 1;
+			if( ( n % (BLOCKS_PER_SECTOR) ) == 0 )	 UpdateSegmentKey( vol, BLOCK_CACHE_BAT, n + 1 );
 #ifdef PARANOID_INIT
 			else SRG_GetEntropyBuffer( vol->entropy, (uint32_t*)vol->usekey[BLOCK_CACHE_BAT], BLOCK_SIZE * 8 );
 #else
@@ -10592,26 +10653,26 @@ GetFreeBlock( vol, GFB_INIT_NAMES );
 	return TRUE;
 }
 // shared with fuse module
-uintptr_t vfs_SEEK( struct volume *vol, FPI offset, enum block_cache_entries cache_index ) {
+uintptr_t vfs_SEEK( struct volume *vol, FPI offset, enum block_cache_entries *cache_index ) {
 	while( offset >= vol->dwSize ) if( !ExpandVolume( vol ) ) return 0;
 	if( vol->key ) {
 		BLOCKINDEX seg = ( offset / BLOCK_SIZE ) + 1;
-		if( seg != vol->segment[cache_index] ) {
-			vol->segment[cache_index] = seg;
-			UpdateSegmentKey( vol, cache_index );
+		if( seg != vol->segment[cache_index[0]] ) {
+			//vol->segment[cache_index] = seg;
+			cache_index[0] = UpdateSegmentKey( vol, cache_index[0], seg );
 		}
 	}
 	return ((uintptr_t)vol->disk) + offset;
 }
 // shared with fuse module
-uintptr_t vfs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries cache_index ) {
+uintptr_t vfs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index ) {
 	BLOCKINDEX b = BLOCK_SIZE + (block >> BLOCK_SHIFT) * (BLOCKS_PER_SECTOR*BLOCK_SIZE) + ( block & (BLOCKS_PER_BAT-1) ) * BLOCK_SIZE;
 	while( b >= vol->dwSize ) if( !ExpandVolume( vol ) ) return 0;
 	if( vol->key ) {
 		BLOCKINDEX seg = ( b / BLOCK_SIZE ) + 1;
-		if( seg != vol->segment[cache_index] ) {
-			vol->segment[cache_index] = seg;
-			UpdateSegmentKey( vol, cache_index );
+		if( seg != vol->segment[cache_index[0]] ) {
+			//vol->segment[cache_index] = seg;
+			cache_index[0] = UpdateSegmentKey( vol, cache_index[0], seg );
 		}
 	}
 	return ((uintptr_t)vol->disk) + b;
@@ -10620,7 +10681,8 @@ static BLOCKINDEX GetFreeBlock( struct volume *vol, int init )
 {
 	size_t n;
 	int b = 0;
-	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, BLOCK_CACHE_BAT );
+	enum block_cache_entries cache = BLOCK_CACHE_BAT;
+	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, cache );
 	if( !current_BAT ) return 0;
 	do
 	{
@@ -10639,18 +10701,19 @@ static BLOCKINDEX GetFreeBlock( struct volume *vol, int init )
 					current_BAT[n] = EOFBLOCK ^ ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[n];
 					if( init )
 					{
-						vol->segment[BLOCK_CACHE_FILE] = b * (BLOCKS_PER_SECTOR) + n + 1 + 1;
-						UpdateSegmentKey( vol, BLOCK_CACHE_FILE );
-						while( ((vol->segment[BLOCK_CACHE_FILE]-1)*BLOCK_SIZE) > vol->dwSize ){
-							LoG( "looping to get a size %d", ((vol->segment[BLOCK_CACHE_FILE]-1)*BLOCK_SIZE) );
+						enum block_cache_entries cache;
+						//vol->segment[BLOCK_CACHE_FILE] = b * (BLOCKS_PER_SECTOR) + n + 1 + 1;
+						cache = UpdateSegmentKey( vol, BLOCK_CACHE_FILE, b * (BLOCKS_PER_SECTOR)+n + 1 + 1 );
+						while( ((vol->segment[cache]-1)*BLOCK_SIZE) > vol->dwSize ){
+							LoG( "looping to get a size %d", ((vol->segment[cache]-1)*BLOCK_SIZE) );
 							if( !ExpandVolume( vol ) ) return 0;
 						}
 						if( init == GFB_INIT_DIRENT )
-							((struct directory_entry*)(((uint8_t*)vol->disk) + (vol->segment[BLOCK_CACHE_FILE]-1) * BLOCK_SIZE))[0].first_block = 1^((struct directory_entry*)vol->usekey[BLOCK_CACHE_FILE])->first_block;
+							((struct directory_entry*)(((uint8_t*)vol->disk) + (vol->segment[cache]-1) * BLOCK_SIZE))[0].first_block = 1^((struct directory_entry*)vol->usekey[cache])->first_block;
 						else if( init == GFB_INIT_NAMES )
-							((char*)(((uint8_t*)vol->disk) + (vol->segment[BLOCK_CACHE_FILE]-1) * BLOCK_SIZE))[0] = ((char*)vol->usekey[BLOCK_CACHE_FILE])[0];
+							((char*)(((uint8_t*)vol->disk) + (vol->segment[cache]-1) * BLOCK_SIZE))[0] = ((char*)vol->usekey[cache])[0];
 						else
-							memcpy( ((uint8_t*)vol->disk) + (vol->segment[BLOCK_CACHE_FILE]-1) * BLOCK_SIZE, vol->usekey[BLOCK_CACHE_FILE], BLOCK_SIZE );
+							memcpy( ((uint8_t*)vol->disk) + (vol->segment[cache]-1) * BLOCK_SIZE, vol->usekey[cache], BLOCK_SIZE );
 					}
 				} else {
 					current_BAT[n] = EOFBLOCK;
@@ -10661,30 +10724,31 @@ static BLOCKINDEX GetFreeBlock( struct volume *vol, int init )
 			}
 		}
 		b++;
-		current_BAT = TSEEK( BLOCKINDEX*, vol, b * ( BLOCKS_PER_SECTOR*BLOCK_SIZE), BLOCK_CACHE_BAT );
+		current_BAT = TSEEK( BLOCKINDEX*, vol, b * ( BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
 	}while( 1 );
 }
 static BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int init, LOGICAL expand ) {
 	BLOCKINDEX sector = block >> BLOCK_SHIFT;
-	BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX *, vol, sector * (BLOCKS_PER_SECTOR*BLOCK_SIZE), BLOCK_CACHE_FILE );
+	enum block_cache_entries cache = BLOCK_CACHE_BAT;
+	BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX *, vol, sector * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
 	BLOCKINDEX seg;
 	BLOCKINDEX check_val = (this_BAT[block & (BLOCKS_PER_BAT-1)]);
  // if this passes, later ones will also.
 	if( !this_BAT ) return 0;
 	if( vol->key ) {
 		seg = ( ((uintptr_t)this_BAT - (uintptr_t)vol->disk) / BLOCK_SIZE ) + 1;
-		if( seg != vol->segment[BLOCK_CACHE_FILE] ) {
-			vol->segment[BLOCK_CACHE_FILE] = seg;
-			UpdateSegmentKey( vol, BLOCK_CACHE_FILE );
+		if( seg != vol->segment[BLOCK_CACHE_BAT] ) {
+			//vol->segment[BLOCK_CACHE_BAT] = seg;
+			UpdateSegmentKey( vol, BLOCK_CACHE_BAT, seg );
 		}
-		check_val ^= ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_FILE])[block & (BLOCKS_PER_BAT-1)];
+		check_val ^= ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[block & (BLOCKS_PER_BAT-1)];
 	}
 	if( check_val == EOFBLOCK ) {
 		if( expand ) {
-			BLOCKINDEX key = vol->key?((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_FILE])[block & (BLOCKS_PER_BAT-1)]:0;
+			BLOCKINDEX key = vol->key?((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[block & (BLOCKS_PER_BAT-1)]:0;
 			check_val = GetFreeBlock( vol, init );
 			// free block might have expanded...
-			this_BAT = TSEEK( BLOCKINDEX*, vol, sector * ( BLOCKS_PER_SECTOR*BLOCK_SIZE ), BLOCK_CACHE_FILE );
+			this_BAT = TSEEK( BLOCKINDEX*, vol, sector * ( BLOCKS_PER_SECTOR*BLOCK_SIZE ), cache );
 			if( !this_BAT ) return 0;
 			// segment could already be set from the GetFreeBlock...
 			this_BAT[block & (BLOCKS_PER_BAT-1)] = check_val ^ key;
@@ -10833,14 +10897,15 @@ void sack_vfs_shrink_volume( struct volume * vol ) {
 	//int found_free; // this block has free data; should be last BAT?
 	BLOCKINDEX last_block = 0;
 	int last_bat = 0;
-	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, BLOCK_CACHE_FILE );
+	enum block_cache_entries cache = BLOCK_CACHE_BAT;
+	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, cache );
  // expand failed, tseek failed in response, so don't do anything
 	if( !current_BAT ) return;
 	do {
 		BLOCKINDEX check_val;
 		for( n = 0; n < BLOCKS_PER_BAT; n++ ) {
 			check_val = current_BAT[n];
-			if( vol->key )	check_val ^= ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_FILE])[n];
+			if( vol->key )	check_val ^= ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[n];
 			if( check_val ) {
 				last_bat = b;
 				last_block = n;
@@ -10849,7 +10914,7 @@ void sack_vfs_shrink_volume( struct volume * vol ) {
 		}
 		b++;
 		if( b * ( BLOCKS_PER_SECTOR*BLOCK_SIZE) < vol->dwSize ) {
-			current_BAT = TSEEK( BLOCKINDEX*, vol, b * ( BLOCKS_PER_SECTOR*BLOCK_SIZE), BLOCK_CACHE_FILE );
+			current_BAT = TSEEK( BLOCKINDEX*, vol, b * ( BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
 		} else
 			break;
 	}while( 1 );
@@ -10871,8 +10936,8 @@ LOGICAL sack_vfs_decrypt_volume( struct volume *vol )
 		for( n = 0; n < slab; n++  ) {
 			size_t m;
 			BLOCKINDEX *block = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE);
-			vol->segment[BLOCK_CACHE_BAT] = n + 1;
-			UpdateSegmentKey( vol, BLOCK_CACHE_BAT );
+			//vol->segment[BLOCK_CACHE_BAT] = n + 1;
+			UpdateSegmentKey( vol, BLOCK_CACHE_BAT, n + 1 );
 			for( m = 0; m < BLOCKS_PER_BAT; m++ )
 				block[m] ^= ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[m];
 		}
@@ -10892,8 +10957,8 @@ LOGICAL sack_vfs_encrypt_volume( struct volume *vol, CTEXTSTR key1, CTEXTSTR key
 		for( n = 0; n < slab; n++  ) {
 			size_t m;
 			BLOCKINDEX *block = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE);
-			vol->segment[BLOCK_CACHE_BAT] = n + 1;
-			UpdateSegmentKey( vol, BLOCK_CACHE_BAT );
+			//vol->segment[BLOCK_CACHE_BAT] = n + 1;
+			UpdateSegmentKey( vol, BLOCK_CACHE_BAT, n + 1 );
 			for( m = 0; m < BLOCKS_PER_BAT; m++ )
 				block[m] ^= ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[m];
 		}
@@ -10919,7 +10984,8 @@ const char *sack_vfs_get_signature( struct volume *vol ) {
 				BLOCKINDEX next_dir_block;
 				BLOCKINDEX *next_entries;
 				do {
-					next_entries = BTSEEK( BLOCKINDEX *, vol, this_dir_block, BLOCK_CACHE_DATAKEY );
+					enum block_cache_entries cache = BLOCK_CACHE_DATAKEY;
+					next_entries = BTSEEK( BLOCKINDEX *, vol, this_dir_block, cache );
 					for( n = 0; n < BLOCKS_PER_BAT; n++ )
 						datakey[n] ^= next_entries[n] ^ ((BLOCKINDEX*)(((uint8_t*)usekey)))[n];
 					next_dir_block = vfs_GetNextBlock( vol, this_dir_block, GFB_INIT_DIRENT, FALSE );
@@ -10956,9 +11022,11 @@ static struct directory_entry * ScanDirectory( struct volume *vol, const char * 
 	BLOCKINDEX next_dir_block;
 	struct directory_entry *next_entries;
 	do {
-		next_entries = BTSEEK( struct directory_entry *, vol, this_dir_block, BLOCK_CACHE_DIRECTORY );
+		enum block_cache_entries cache = BLOCK_CACHE_DIRECTORY;
+		next_entries = BTSEEK( struct directory_entry *, vol, this_dir_block, cache );
 		for( n = 0; n < VFS_DIRECTORY_ENTRIES; n++ ) {
 			BLOCKINDEX bi;
+			enum block_cache_entries cache = BLOCK_CACHE_NAMES;
 			struct directory_entry *entkey = ( vol->key)?((struct directory_entry *)vol->usekey[BLOCK_CACHE_DIRECTORY])+n:&l.zero_entkey;
 			//const char * testname;
 			FPI name_ofs = next_entries[n].name_offset ^ entkey->name_offset;
@@ -10976,7 +11044,7 @@ static struct directory_entry * ScanDirectory( struct volume *vol, const char * 
 			if( bi == 1 ) return NULL;
 			//testname =
  // have to do the seek to the name block otherwise it might not be loaded.
-			TSEEK( const char *, vol, name_ofs, BLOCK_CACHE_NAMES );
+			TSEEK( const char *, vol, name_ofs, cache );
 			if( MaskStrCmp( vol, filename, name_ofs ) == 0 ) {
 				dirkey[0] = (*entkey);
 				LoG( "return found entry: %p (%" _size_f ":%" _size_f ") %s", next_entries+n, name_ofs, next_entries[n].first_block ^ dirkey->first_block, filename );
@@ -10997,7 +11065,8 @@ static FPI SaveFileName( struct volume *vol, const char * filename ) {
 	size_t n;
 	BLOCKINDEX this_name_block = 1;
 	while( 1 ) {
-		TEXTSTR names = BTSEEK( TEXTSTR, vol, this_name_block, BLOCK_CACHE_NAMES );
+		enum block_cache_entries cache = BLOCK_CACHE_NAMES;
+		TEXTSTR names = BTSEEK( TEXTSTR, vol, this_name_block, cache );
 		unsigned char *name = (unsigned char*)names;
 		while( name < ( (unsigned char*)names + BLOCK_SIZE ) ) {
 			int c = name[0];
@@ -11037,9 +11106,10 @@ static struct directory_entry * GetNewDirectory( struct volume *vol, const char 
 	BLOCKINDEX this_dir_block = 0;
 	struct directory_entry *next_entries;
 	do {
-		next_entries = BTSEEK( struct directory_entry *, vol, this_dir_block, BLOCK_CACHE_DIRECTORY );
+		enum block_cache_entries cache = BLOCK_CACHE_DIRECTORY;
+		next_entries = BTSEEK( struct directory_entry *, vol, this_dir_block, cache );
 		for( n = 0; n < VFS_DIRECTORY_ENTRIES; n++ ) {
-			struct directory_entry *entkey = ( vol->key )?((struct directory_entry *)vol->usekey[BLOCK_CACHE_DIRECTORY])+n:&l.zero_entkey;
+			struct directory_entry *entkey = ( vol->key )?((struct directory_entry *)vol->usekey[cache])+n:&l.zero_entkey;
 			struct directory_entry *ent = next_entries + n;
 			FPI name_ofs = ent->name_offset ^ entkey->name_offset;
 			BLOCKINDEX first_blk = ent->first_block ^ entkey->first_block;
@@ -11048,7 +11118,7 @@ static struct directory_entry * GetNewDirectory( struct volume *vol, const char 
 			name_ofs = SaveFileName( vol, filename ) ^ entkey->name_offset;
 			first_blk = GetFreeBlock( vol, FALSE ) ^ entkey->first_block;
 			// get free block might have expanded and moved the disk; reseek and get ent address
-			next_entries = BTSEEK( struct directory_entry *, vol, this_dir_block, BLOCK_CACHE_DIRECTORY );
+			next_entries = BTSEEK( struct directory_entry *, vol, this_dir_block, cache );
 			ent = next_entries + n;
 			ent->filesize = entkey->filesize;
 			ent->name_offset = name_ofs;
@@ -11151,9 +11221,10 @@ size_t CPROC sack_vfs_write( struct sack_vfs_file *file, const char * data, size
 	while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
 	LoG( "Write to file %p %" _size_f "  @%" _size_f, file, length, ofs );
 	if( ofs ) {
-		uint8_t* block = (uint8_t*)vfs_BSEEK( file->vol, file->block, BLOCK_CACHE_FILE );
+		enum block_cache_entries cache = BLOCK_CACHE_FILE;
+		uint8_t* block = (uint8_t*)vfs_BSEEK( file->vol, file->block, &cache );
 		if( length >= ( BLOCK_SIZE - ( ofs ) ) ) {
-			MaskBlock( file->vol, file->vol->usekey[BLOCK_CACHE_FILE], block, ofs, ofs, data, BLOCK_SIZE - ofs );
+			MaskBlock( file->vol, file->vol->usekey[cache], block, ofs, ofs, data, BLOCK_SIZE - ofs );
 			data += BLOCK_SIZE - ofs;
 			written += BLOCK_SIZE - ofs;
 			file->fpi += BLOCK_SIZE - ofs;
@@ -11162,7 +11233,7 @@ size_t CPROC sack_vfs_write( struct sack_vfs_file *file, const char * data, size
 			file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
 			length -= BLOCK_SIZE - ofs;
 		} else {
-			MaskBlock( file->vol, file->vol->usekey[BLOCK_CACHE_FILE], block, ofs, ofs, data, length );
+			MaskBlock( file->vol, file->vol->usekey[cache], block, ofs, ofs, data, length );
 			data += length;
 			written += length;
 			file->fpi += length;
@@ -11174,9 +11245,10 @@ size_t CPROC sack_vfs_write( struct sack_vfs_file *file, const char * data, size
 	// if there's still length here, FPI is now on the start of blocks
 	while( length )
 	{
-		uint8_t* block = (uint8_t*)vfs_BSEEK( file->vol, file->block, BLOCK_CACHE_FILE );
+		enum block_cache_entries cache = BLOCK_CACHE_FILE;
+		uint8_t* block = (uint8_t*)vfs_BSEEK( file->vol, file->block, &cache );
 		if( length >= BLOCK_SIZE ) {
-			MaskBlock( file->vol, file->vol->usekey[BLOCK_CACHE_FILE], block, 0, 0, data, BLOCK_SIZE - ofs );
+			MaskBlock( file->vol, file->vol->usekey[cache], block, 0, 0, data, BLOCK_SIZE - ofs );
 			data += BLOCK_SIZE;
 			written += BLOCK_SIZE;
 			file->fpi += BLOCK_SIZE;
@@ -11185,7 +11257,7 @@ size_t CPROC sack_vfs_write( struct sack_vfs_file *file, const char * data, size
 			file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
 			length -= BLOCK_SIZE;
 		} else {
-			MaskBlock( file->vol, file->vol->usekey[BLOCK_CACHE_FILE], block, 0, 0, data, length );
+			MaskBlock( file->vol, file->vol->usekey[cache], block, 0, 0, data, length );
 			data += length;
 			written += length;
 			file->fpi += length;
@@ -11205,16 +11277,17 @@ size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t leng
 		length = ( file->entry->filesize  ^ file->dirent_key.filesize ) - file->fpi;
 	if( !length ) {  file->vol->lock = 0; return 0; }
 	if( ofs ) {
-		uint8_t* block = (uint8_t*)vfs_BSEEK( file->vol, file->block, BLOCK_CACHE_FILE );
+		enum block_cache_entries cache = BLOCK_CACHE_FILE;
+		uint8_t* block = (uint8_t*)vfs_BSEEK( file->vol, file->block, &cache );
 		if( length >= ( BLOCK_SIZE - ( ofs ) ) ) {
-			MaskBlock( file->vol, file->vol->usekey[BLOCK_CACHE_FILE], (uint8_t*)data, 0, ofs, (const char*)(block+ofs), BLOCK_SIZE - ofs );
+			MaskBlock( file->vol, file->vol->usekey[cache], (uint8_t*)data, 0, ofs, (const char*)(block+ofs), BLOCK_SIZE - ofs );
 			written += BLOCK_SIZE - ofs;
 			data += BLOCK_SIZE - ofs;
 			length -= BLOCK_SIZE - ofs;
 			file->fpi += BLOCK_SIZE - ofs;
 			file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
 		} else {
-			MaskBlock( file->vol, file->vol->usekey[BLOCK_CACHE_FILE], (uint8_t*)data, 0, ofs, (const char*)(block+ofs), length );
+			MaskBlock( file->vol, file->vol->usekey[cache], (uint8_t*)data, 0, ofs, (const char*)(block+ofs), length );
 			written += length;
 			file->fpi += length;
 			length = 0;
@@ -11222,16 +11295,17 @@ size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t leng
 	}
 	// if there's still length here, FPI is now on the start of blocks
 	while( length ) {
-		uint8_t* block = (uint8_t*)vfs_BSEEK( file->vol, file->block, BLOCK_CACHE_FILE );
+		enum block_cache_entries cache = BLOCK_CACHE_FILE;
+		uint8_t* block = (uint8_t*)vfs_BSEEK( file->vol, file->block, &cache );
 		if( length >= BLOCK_SIZE ) {
-			MaskBlock( file->vol, file->vol->usekey[BLOCK_CACHE_FILE], (uint8_t*)data, 0, 0, (const char*)block, BLOCK_SIZE - ofs );
+			MaskBlock( file->vol, file->vol->usekey[cache], (uint8_t*)data, 0, 0, (const char*)block, BLOCK_SIZE - ofs );
 			written += BLOCK_SIZE;
 			data += BLOCK_SIZE;
 			length -= BLOCK_SIZE;
 			file->fpi += BLOCK_SIZE;
 			file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
 		} else {
-			MaskBlock( file->vol, file->vol->usekey[BLOCK_CACHE_FILE], (uint8_t*)data, 0, 0, (const char*)block, length );
+			MaskBlock( file->vol, file->vol->usekey[cache], (uint8_t*)data, 0, 0, (const char*)block, length );
 			written += length;
 			file->fpi += length;
 			length = 0;
@@ -11258,10 +11332,12 @@ static void sack_vfs_unlink_file_entry( struct volume *vol, struct directory_ent
 		entry->first_block = entkey->first_block;
 		// wipe out file chain BAT
 		do {
-			BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX*, vol, ( ( block >> BLOCK_SHIFT ) * ( BLOCKS_PER_SECTOR*BLOCK_SIZE) ), BLOCK_CACHE_FILE );
-			BLOCKINDEX _thiskey;
-			_thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_FILE])[_block & (BLOCKS_PER_BAT-1)]:0;
-			uint8_t* blockData = (uint8_t*)vfs_BSEEK( vol, block, BLOCK_CACHE_DATAKEY );
+			enum block_cache_entries cache = BLOCK_CACHE_BAT;
+			BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX*, vol, ( ( block >> BLOCK_SHIFT ) * ( BLOCKS_PER_SECTOR*BLOCK_SIZE) ), cache );
+			BLOCKINDEX _thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[_block & (BLOCKS_PER_BAT-1)]:0;
+			BLOCKINDEX b = BLOCK_SIZE + (block >> BLOCK_SHIFT) * (BLOCKS_PER_SECTOR*BLOCK_SIZE) + (block & (BLOCKS_PER_BAT - 1)) * BLOCK_SIZE;
+			//uint8_t* blockData = (uint8_t*)vfs_BSEEK( vol, block, BLOCK_CACHE_DATAKEY );
+			uint8_t* blockData = (uint8_t*)(((uintptr_t)vol->disk) + b);
 			//LoG( "Clearing file datablock...%p", (uintptr_t)blockData - (uintptr_t)vol->disk );
 			memset( blockData, 0, BLOCK_SIZE );
 			block = vfs_GetNextBlock( vol, block, FALSE, FALSE );
@@ -11278,19 +11354,21 @@ static void shrinkBAT( struct sack_vfs_file *file ) {
 	size_t bsize = 0;
 	_block = block = entry->first_block ^ entkey->first_block;
 	do {
-		BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX*, vol, ( ( block >> BLOCK_SHIFT ) * ( BLOCKS_PER_SECTOR*BLOCK_SIZE) ), BLOCK_CACHE_FILE );
+		enum block_cache_entries cache = BLOCK_CACHE_BAT;
+		enum block_cache_entries data_cache = BLOCK_CACHE_DATAKEY;
+		BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX*, vol, ( ( block >> BLOCK_SHIFT ) * ( BLOCKS_PER_SECTOR*BLOCK_SIZE) ), cache );
 		BLOCKINDEX _thiskey;
-		_thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_FILE])[_block & (BLOCKS_PER_BAT-1)]:0;
+		_thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[_block & (BLOCKS_PER_BAT-1)]:0;
 		block = vfs_GetNextBlock( vol, block, FALSE, FALSE );
 		if( bsize > (entry->filesize ^ entkey->filesize) ) {
-			uint8_t* blockData = (uint8_t*)vfs_BSEEK( file->vol, _block, BLOCK_CACHE_DATAKEY );
+			uint8_t* blockData = (uint8_t*)vfs_BSEEK( file->vol, _block, &data_cache );
 			//LoG( "clearing a datablock after a file..." );
 			memset( blockData, 0, BLOCK_SIZE );
 			this_BAT[_block & (BLOCKS_PER_BAT-1)] = _thiskey;
 		} else {
 			bsize++;
 			if( bsize > (entry->filesize ^ entkey->filesize) ) {
-				uint8_t* blockData = (uint8_t*)vfs_BSEEK( file->vol, _block, BLOCK_CACHE_DATAKEY );
+				uint8_t* blockData = (uint8_t*)vfs_BSEEK( file->vol, _block, &data_cache );
 				//LoG( "clearing a partial datablock after a file..., %d, %d", BLOCK_SIZE-(entry->filesize & (BLOCK_SIZE-1)), ( entry->filesize & (BLOCK_SIZE-1)) );
 				memset( blockData + ( entry->filesize & (BLOCK_SIZE-1)), 0, BLOCK_SIZE-(entry->filesize & (BLOCK_SIZE-1)) );
 				this_BAT[_block & (BLOCKS_PER_BAT-1)] = ~_thiskey;
@@ -11356,9 +11434,11 @@ static int iterate_find( struct find_info *info ) {
 	struct directory_entry *next_entries;
 	size_t n;
 	do {
-		next_entries = BTSEEK( struct directory_entry *, info->vol, info->this_dir_block, BLOCK_CACHE_DIRECTORY );
+		enum block_cache_entries cache = BLOCK_CACHE_DIRECTORY;
+		enum block_cache_entries name_cache = BLOCK_CACHE_NAMES;
+		next_entries = BTSEEK( struct directory_entry *, info->vol, info->this_dir_block, cache );
 		for( n = info->thisent; n < VFS_DIRECTORY_ENTRIES; n++ ) {
-			struct directory_entry *entkey = ( info->vol->key)?((struct directory_entry *)info->vol->usekey[BLOCK_CACHE_DIRECTORY])+n:&l.zero_entkey;
+			struct directory_entry *entkey = ( info->vol->key)?((struct directory_entry *)info->vol->usekey[cache])+n:&l.zero_entkey;
 			//const char * testname;
 			FPI name_ofs = next_entries[n].name_offset ^ entkey->name_offset;
 			if( !name_ofs )
@@ -11371,11 +11451,11 @@ static int iterate_find( struct find_info *info ) {
 				return 0;
 			info->filesize = next_entries[n].filesize ^ entkey->filesize;
 			//testname =
-				TSEEK( const char *, info->vol, name_ofs, BLOCK_CACHE_NAMES );
+				TSEEK( const char *, info->vol, name_ofs, name_cache );
 			if( info->vol->key ) {
 				int c;
 				info->filenamelen = 0;
-				while( ( c = ( ((uint8_t*)info->vol->disk)[name_ofs] ^ info->vol->usekey[BLOCK_CACHE_NAMES][name_ofs&BLOCK_MASK] ) ) ) {
+				while( ( c = ( ((uint8_t*)info->vol->disk)[name_ofs] ^ info->vol->usekey[name_cache][name_ofs&BLOCK_MASK] ) ) ) {
 					info->filename[info->filenamelen++] = c;
 					name_ofs++;
 				}
