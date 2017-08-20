@@ -359,9 +359,20 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate )
 			buildObject( val->contains, sub_o, isolate );
 			break;
 		case VALUE_OBJECT:
-			if( val->name )
-				o->Set( String::NewFromUtf8( isolate,val->name )
+			if( val->name ) {
+				//JSObject::DefinePropertyOrElementIgnoreAttributes(json_object, key, value)
+				//    .Check();
+				/*
+				lprintf( "namelen:%d", val->nameLen );
+				o->DefineOwnProperty( isolate->GetCurrentContext()
+					, (Local<Name>)String::NewFromUtf8( isolate, val->name, NewStringType::kNormal, -1 ).ToLocalChecked()
+					, sub_o = Object::New( isolate )
+					, PropertyAttribute::None );
+				*/
+				o->Set( //String::NewFromUtf8( isolate, val->name, NewStringType::kNormal, -1 ).ToLocalChecked()
+						String::NewFromUtf8( isolate,val->name )
 							, sub_o = Object::New( isolate ) );
+			} 
 			else {
 				o->Set( index++, sub_o = Object::New( isolate ) );
 			}
@@ -377,7 +388,14 @@ Local<Value> ParseJSON(  Isolate *isolate, const char *utf8String, size_t len) {
 	PDATALIST parsed = NULL;
 	Local<Object> o;// = Object::New( isolate );
 	Local<Value> v;// = Object::New( isolate );
-	json_parse_message( (char*)utf8String, len, &parsed );
+	if( !json_parse_message( (char*)utf8String, len, &parsed ) )
+	{
+		//lprintf( "Failed to parse data..." );
+		PTEXT error = json_parse_get_error( NULL );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ) ) ) );
+		LineRelease( error );
+		return Undefined( isolate );
+	}
 	if( parsed->Cnt > 1 ) {
 		lprintf( "Multiple values would result, invalid parse." );
 		return Undefined(isolate);
@@ -430,8 +448,11 @@ Local<Value> ParseJSON6(  Isolate *isolate, const char *utf8String, size_t len) 
 	Local<Value> v;// = Object::New( isolate );
 	if( !json6_parse_message( (char*)utf8String, len, &parsed ) ) {
 		//PTEXT error = json_parse_get_error( parser->state );
-
-
+		//lprintf( "Failed to parse data..." );
+		PTEXT error = json_parse_get_error( NULL );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ) ) ) );
+		LineRelease( error );
+		return Undefined(isolate);
 	}
 	if( parsed && parsed->Cnt > 1 ) {
 		lprintf( "Multiple values would result, invalid parse." );

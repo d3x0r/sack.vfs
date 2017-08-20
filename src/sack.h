@@ -11490,10 +11490,12 @@ enum json_value_types {
 struct json_value_container {
   // name of this value (if it's contained in an object)
 	char * name;
+	//size_t nameLen;
  // value from above indiciating the type of this value
 	enum json_value_types value_type;
    // the string value of this value (strings and number types only)
 	char *string;
+	//size_t stringLen;
   // boolean whether to use result_n or result_d
 	int float_result;
 	double result_d;
