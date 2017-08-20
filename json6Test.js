@@ -82,8 +82,58 @@ var ntrans = 0;
 
 start = end;
 for( n = 0; n < 1000000; n++ ) {
-	JSON.parse( translations[ntrans] );
-        ntrans = (ntrans+1)&3;
+	JSON.parse( "{\"a\":{\"b\":{\"c\":{\"d\":123}}}}" );
+	//JSON.parse( translations[ntrans] );
+        //ntrans = (ntrans+1)&3;
+}
+end = Date.now();
+console.log( "1m in ", end-start );
+}
+
+
+
+var varObjects = [];
+for( var n = 0; n < 100000; n++ ) {
+	varObjects.push( `{\"a${n}\":{\"b${n}\":{\"c${n}\":{\"d${n}\":123}}}}` );
+}
+
+var varStrings = [];
+for( var n = 0; n < 100000; n++ ) {
+	varStrings.push( `"SImple STring Value ${n}"` );
+}
+
+var varNumbers = [];
+for( var n = 0; n < 100000; n++ ) {
+	varNumbers.push( `${n}` );
+}
+
+// benchmark - needs some work; ended up somewhat divergent.
+if(true)
+{
+
+var start = Date.now();
+var n;
+for( n = 0; n < 100000; n++ ) {
+	parse( varObjects[n%100000] );
+	parse( varStrings[n%100000] );
+	parse( varNumbers[n%100000] );
+	//parse( "{\"a\":{\"b\":{\"c\":{\"d\":123}}}}" );
+	//parse( '"Simple String value"' );
+	//parse( '123456789' );
+}
+
+var end = Date.now();
+console.log( "1m in ", end-start );
+
+
+start = end;
+for( n = 0; n < 100000; n++ ) {
+	JSON.parse( varObjects[n%100000] );
+	JSON.parse( varStrings[n%100000] );
+	JSON.parse( varNumbers[n%100000] );
+	/*JSON.parse( "{\"a\":{\"b\":{\"c\":{\"d\":123}}}}" );*/
+	//JSON.parse( '"Simple String value"' );
+        //JSON.parse( '123456789' );
 }
 end = Date.now();
 console.log( "1m in ", end-start );
