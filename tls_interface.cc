@@ -21,8 +21,7 @@ const int kExp = RSA_F4;
   CN
   GN  // given name
   SN  // surname
-  initials 
-  friendlyName
+  initials friendlyName
   name
 
   associatedName     associatedName
@@ -1386,8 +1385,6 @@ void TLSObject::pubKey( const v8::FunctionCallbackInfo<Value>& args ) {
 	
 	if( _key ) delete _key;
 	if( _password ) delete _password;
-
-
 }
 
 static void DumpCert( X509 *x509 ) {
@@ -1513,7 +1510,6 @@ static void DumpCert( X509 *x509 ) {
 					LogBinary( v->data, v->length );
 		}
 	}
-
 }
 
 
@@ -1854,10 +1850,53 @@ void  vtLogBinary( PVARTEXT pvt, uint8_t* buffer, size_t size  )
 				vtprintf( pvt, WIDE( "." ) );
 		}
 		vtprintf( pvt, "\n" );
+		data += x;
 		nOut -= x;
 	}
 }
 
+
+static void ConvertTimeString( struct tm *t, ASN1_TIME *time ) {
+	char * timestring = (char*)time->data;
+	int val;
+	if( time->type == V_ASN1_UTCTIME )
+		if( (time->type == V_ASN1_UTCTIME) /*before->length == 13*/ ) {
+			val = 0;
+			val = val * 10 + ((timestring++)[0] - '0');
+			val = val * 10 + ((timestring++)[0] - '0');
+			//if( year < 70 ) year += 100;
+			t->tm_year = (val + 2000);
+		}
+	if( (time->type == V_ASN1_GENERALIZEDTIME) /*before->length == 15*/ ) {
+		val = 0;
+		val = val * 10 + ((timestring++)[0] - '0');
+		val = val * 10 + ((timestring++)[0] - '0');
+		val = val * 10 + ((timestring++)[0] - '0');
+		val = val * 10 + ((timestring++)[0] - '0');
+		t->tm_year = val;
+	}
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	t->tm_mon = val - 1;
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	t->tm_mday = val;
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	t->tm_hour = val;
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	t->tm_min = val;
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	t->tm_sec = val;
+
+}
 
 static Local<Value> CertToString( struct info_params *params ) {
 
@@ -1947,6 +1986,23 @@ static Local<Value> CertToString( struct info_params *params ) {
 		//stack_st_X509_NAME_ENTRY 
 		//name->entries
 	}
+
+	ASN1_TIME *before = x509->cert_info->validity->notBefore;
+	ASN1_TIME *after = x509->cert_info->validity->notAfter;
+	if( before ) {
+		struct tm t;
+		ConvertTimeString( &t, before );
+		vtprintf( pvt, "Not Before: %s %4d/%02d/%02d %02d:%02d:%02d\n", before->data, t.tm_year, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec );
+	} 
+	else
+		vtprintf( pvt, "Not Before: undefined\n" );
+	if( after ) {
+		struct tm t;
+		ConvertTimeString( &t, after );
+		vtprintf( pvt, "Not After: %s %4d/%02d/%02d %02d:%02d:%02d\n", after->data, t.tm_year, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec );
+	} 
+	else
+		vtprintf( pvt, "Not After: undefined\n" );
 
 	vtprintf( pvt, "Extensions ------------ \n" );
 	{
@@ -2079,3 +2135,22 @@ void TLSObject::certToString( const v8::FunctionCallbackInfo<Value>& args ) {
 	Local<Value> xx = CertToString( &params );
 	args.GetReturnValue().Set( xx );
 }
+
+
+
+#ifdef _WIN32
+
+void updateRootCert( BYTE *data, DWORD dataLen ) {
+#if 0
+   // CA, MY, ROOT, SPC
+   HCERTSTORE hRootCertStore = CertOpenSystemStore( NULL, "ROOT" );
+   CertAddEncodedCertificateToStore( hRootCertStore, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING
+			, data, dataLen, CERT_STORE_ADD_USE_EXISTING, NULL );
+   CertCloseStore( hRootCertStore, 0 );
+#endif
+   //CertAddEncodedCertificateToSystemStore( "ROOT"
+	//		, data, dataLen );
+}
+
+
+#endif
