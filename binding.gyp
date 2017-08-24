@@ -16,7 +16,7 @@
 	'defines': [
           'TARGETNAME="sack_vfs.node"',
            "__STATIC__","USE_SQLITE","USE_SQLITE_INTERFACE","FORCE_COLOR_MACROS",
-           "NO_OPEN_MACRO","NO_FILEOP_ALIAS","JSON_PARSER_MAIN_SOURCE"
+           "NO_OPEN_MACRO","NO_FILEOP_ALIAS","JSON_PARSER_MAIN_SOURCE", "SQLITE_ENABLE_LOCKING_STYLE=0"
         ],
     'conditions': [
           ['OS=="linux"', {

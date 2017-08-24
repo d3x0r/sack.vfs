@@ -79591,17 +79591,26 @@ int OpenSQLConnectionEx( PODBC odbc DBG_PASS )
 #endif
 					}
 					odbc->flags.bVFS = 1;
-					rc3 = sqlite3_open_v2( tmp, &odbc->db, SQLITE_OPEN_READWRITE, vfs_name );
+					rc3 = sqlite3_open_v2( tmp, &odbc->db, SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_URI, vfs_name );
 					Deallocate( char *, vfs_name );
+					Release( tmp );
+					Deallocate( TEXTCHAR *, tmp_name );
 				}
 				else
 				{
-					tmp_name = ExpandPath( odbc->info.pDSN);
-					tmp = CStrDup( tmp_name );
-					rc3 = sqlite3_open( tmp, &odbc->db );
+					if( StrCaseCmpEx( odbc->info.pDSN, "file:", 5 ) == 0
+						|| StrCaseCmpEx( odbc->info.pDSN, ":memory:", 8 ) == 0 ) {
+						//lprintf( "open:%s", odbc->info.pDSN );
+						rc3 = sqlite3_open_v2( odbc->info.pDSN, &odbc->db, SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_URI, NULL );
+					}
+					else {
+						tmp_name = ExpandPath( odbc->info.pDSN );
+						tmp = CStrDup( tmp_name );
+						rc3 = sqlite3_open( tmp, &odbc->db );
+						Release( tmp );
+						Deallocate( TEXTCHAR *, tmp_name );
+					}
 				}
-				Release( tmp );
-				Deallocate( TEXTCHAR *, tmp_name );
 				if( rc3 )
 				{
 					lprintf( WIDE("Failed to connect[%s]: %s")
