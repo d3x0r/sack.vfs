@@ -37079,9 +37079,12 @@ struct find_cursor_data {
 };
 static	struct find_cursor * CPROC sack_filesys_find_create_cursor ( uintptr_t psvInstance, const char *root, const char *filemask ){
 	struct find_cursor_data *cursor = New( struct find_cursor_data );
-	MemSet( cursor, 0, sizeof( cursor ) );
+	char maskbuf[512];
+	MemSet( cursor, 0, sizeof( *cursor ) );
+	snprintf( maskbuf, 512, "%s/*", root ? root : "." );
 	cursor->root = StrDup( root?root:"." );
-	cursor->filemask = StrDup( filemask?filemask:"*" );
+// StrDup( filemask ? filemask : "*" );
+	cursor->filemask = ExpandPath( maskbuf );
 #ifdef WIN32
    // windows mode is delayed until findfirst
 #else
@@ -37093,6 +37096,11 @@ static	int CPROC sack_filesys_find_first( struct find_cursor *_cursor ){
 	struct find_cursor_data *cursor = (struct find_cursor_data *)_cursor;
 #ifdef WIN32
 	cursor->findHandle = findfirst( cursor->filemask, &cursor->fileinfo );
+	if( cursor->findHandle == -1 )
+	{
+		int err = errno;
+		lprintf( "error:%d", err );
+	}
 	return ( cursor->findHandle != -1 );
 #else
 	if( cursor->handle ) {
@@ -37284,12 +37292,12 @@ struct file_system_mounted_interface *sack_mount_filesystem( const char *name, s
 }
 int sack_vfprintf( FILE *file_handle, const char *format, va_list args )
 {
-	PVARTEXT pvt = VarTextCreate();
-	PTEXT output;
 	struct file *file;
 	file = FindFileByFILE( file_handle );
 	if( file->mount && file->mount->fsi )
 	{
+		PVARTEXT pvt;
+		PTEXT output;
 		int r;
 #ifdef UNICODE
 		TEXTCHAR *_format = DupCStr( format );
@@ -37297,13 +37305,13 @@ int sack_vfprintf( FILE *file_handle, const char *format, va_list args )
 #endif
 		pvt = VarTextCreate();
 		vvtprintf( pvt, format, args );
-		output = VarTextGet( pvt );
+		output = VarTextPeek( pvt );
 #ifdef UNICODE
 		Deallocate( TEXTCHAR*, _format );
 #  undef format
 #endif
 		r = (int)file->mount->fsi->_write( file_handle, (char*)GetText( output ), GetTextSize( output ) * sizeof( TEXTCHAR ) );
-		LineRelease( output );
+		VarTextDestroy( &pvt );
 		return r;
 	}
 	else
@@ -37637,9 +37645,12 @@ typedef struct myfinddata {
 			}
 			if( pData->scanning_mount->fsi )
 			{
+				char *tmp1, *tmp2;
 				//lprintf( "create cursor" );
 				tmp_base = ExpandPathEx( base, pData->scanning_mount->fsi );
-				pData->cursor = pData->scanning_mount->fsi->find_create_cursor( pData->scanning_mount->psvInstance, CStrDup( tmp_base ), CStrDup( mask ) );
+				pData->cursor = pData->scanning_mount->fsi->find_create_cursor( pData->scanning_mount->psvInstance, tmp2 = CStrDup( tmp_base ), tmp1 = CStrDup( mask ) );
+				Deallocate( char*, tmp1 );
+				Deallocate( char*, tmp2 );
 			}
 			else
 			{
@@ -43272,6 +43283,7 @@ size_t GetDisplayableCharacterBytes( CTEXTSTR string, size_t character_count )
 {
 	CTEXTSTR original = string;
 	int ch;
+	if( !string ) return 0;
 	while( character_count &&
 		( ch = Step( &string, NULL ) ) )
 	{
@@ -43283,6 +43295,7 @@ size_t GetDisplayableCharacterCount( CTEXTSTR string, size_t max_bytes )
 {
 	int ch;
 	size_t count = 0;
+	if( !string ) return 0;
 	while( ( ch = Step( &string, &max_bytes ) ) )
 	{
 		count++;
@@ -43292,6 +43305,7 @@ size_t GetDisplayableCharacterCount( CTEXTSTR string, size_t max_bytes )
 CTEXTSTR GetDisplayableCharactersAtCount( CTEXTSTR string, size_t nLen )
 {
 	int ch;
+	if( !string ) return 0;
 	while( nLen > 0 &&
 		 ( ch = Step( &string, NULL ) ) )
 	{
@@ -84131,7 +84145,6 @@ LOGICAL CPROC CheckMySQLODBCTable( PODBC odbc, PTABLE table, uint32_t options )
 		cmd[1023] = 0;
 	retry = 0;
 retry:
-	PushSQLQueryEx( odbc );
 	if( ( success = SQLRecordQueryf( odbc, &columns, &result, &fields, cmd, table->name ) )
 		&& result )
 			//    if( DoSQLQuery( cmd, &result ) && result )
@@ -84140,6 +84153,7 @@ retry:
 		PTABLE pTestTable;
 		//lprintf("Does this work or not?");
 		pTestTable = GetFieldsInSQL( result[1] , 0 );
+		SQLEndQuery( odbc );
 		//lprintf(" ---------------Table to test-----------------------------------------" );
 		//DumpSQLTable( pTestTable );
 		//lprintf(" ---------------original table -----------------------------------------" );
@@ -84188,8 +84202,6 @@ retry:
 									SQLCommandf( odbc, WIDE("drop table `%s`"), table->name );
 								goto do_create_table;
 							}
- // release so that the alter statement may be done.
-							ReleaseODBC( odbc );
 							if( f_odbc )
 							{
 								fprintf( f_odbc
@@ -84221,8 +84233,6 @@ retry:
 											  , table->fields.field[m].previous_names[prev] );
 							}
 						}
- // release all prior locks on the table...
-						ReleaseODBC( odbc );
 						if( !( options & CTO_MERGE ) )
 						{
 							if( options & CTO_DROP )
@@ -84289,8 +84299,6 @@ retry:
 							  , table->fields.field[n].extra?table->fields.field[n].extra:WIDE("")
 							  );
 					txt_cmd = VarTextGet( pvtCreate );
- // release so that the alter statement may be done.
-					ReleaseODBC( odbc );
 					if( f_odbc )
 						fprintf( f_odbc, WIDE( "%s;\n" ), GetText( txt_cmd ) );
 					else
@@ -84299,7 +84307,6 @@ retry:
 				}
 			}
 		}
-		PopODBCEx(odbc);
 		DestroySQLTable( pTestTable );
 	}
 	else
