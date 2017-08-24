@@ -503,6 +503,7 @@ Salty Random Generator
 
 
 ## Changelog
+- 0.1.99302, 0.1.99303 improvements for sqlite interface.
 - 0.1.99301 add SaltyRandomGenerator interface.
 - 0.1.99300 fix random generator overflows.
 - 0.1.99299 set default sql auto checkpoint to off.
