@@ -397,6 +397,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( vol->volNative ) {
 				struct sack_vfs_file *file = sack_vfs_openfile( vol->vol, *fName );
 				sack_vfs_write( file, (const char*)buf, length );
+				sack_vfs_truncate( file );
 				sack_vfs_close( file );
 
 				args.GetReturnValue().Set( True(isolate) );
