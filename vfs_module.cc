@@ -95,7 +95,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "dir", getDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "exists", fileExists );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "read", fileRead );
-	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "readJSON6", fileReadJSON );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "readJSON", fileReadJSON );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "write", fileWrite );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mkdir", makeDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "Sqlite", openVolDb );
@@ -344,15 +344,17 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 						Local<Object> obj = Object::New( isolate );
 						PDATALIST data;
 						data = json_parse_get_data( parser );
-						struct reviver_data r;
-						r.revive = FALSE;
-						Local<Value> val = convertMessageToJS( isolate, data, &r );
-						{
-							MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
-							if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
-								json_dispose_message( &data );
-								json_parse_dispose_state( &parser );
-								return;
+						if( data->Cnt ) {
+							struct reviver_data r;
+							r.revive = FALSE;
+							Local<Value> val = convertMessageToJS( isolate, data, &r );
+							{
+								MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
+								if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
+									json_dispose_message( &data );
+									json_parse_dispose_state( &parser );
+									return;
+								}
 							}
 						}
 						json_dispose_message( &data );
@@ -439,8 +441,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 			size_t length;
 			if( type == 1 ) {
 				Local<ArrayBuffer> myarr = args[1].As<ArrayBuffer>();
-				Nan::TypedArrayContents<uint8_t> dest(myarr);
-				buf = *dest;
+				buf = (uint8_t*)myarr->GetContents().Data();
 				length = myarr->ByteLength();
 			} else if( type == 2 ) {
 				Local<Uint8Array> _myarr = args[1].As<Uint8Array>();

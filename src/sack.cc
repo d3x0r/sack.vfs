@@ -52110,6 +52110,7 @@ int json_parse_add_data( struct json_parse_state *state
 					if( state->status ) {
 						//state->val.stringLen = output->pos - state->val.string;
 						state->val.value_type = VALUE_STRING;
+						state->word = WORD_POS_END;
 						if( state->complete_at_end ) {
 							if( state->parse_context == CONTEXT_UNKNOWN ) {
 								state->completed = TRUE;
@@ -52376,7 +52377,7 @@ int json_parse_add_data( struct json_parse_state *state
 			}
 			else {
 				PushLink( &state->outBuffers, output );
-				if( state->parse_context == CONTEXT_UNKNOWN ) {
+				if( state->parse_context == CONTEXT_UNKNOWN && state->elements->Cnt ) {
 					state->completed = TRUE;
 					retval = 1;
 				}
@@ -54548,6 +54549,7 @@ int json6_parse_add_data( struct json_parse_state *state
 					state->n = input->pos - input->buf;
 					if( state->status ) {
 						state->val.value_type = VALUE_STRING;
+						state->word = WORD_POS_END;
 						if( state->complete_at_end ) {
 							if( state->parse_context == CONTEXT_UNKNOWN ) {
 								state->completed = TRUE;
@@ -54943,7 +54945,7 @@ int json6_parse_add_data( struct json_parse_state *state
 				}
 				else {
 					PushLink( &state->outBuffers, output );
-					if( state->parse_context == CONTEXT_UNKNOWN ) {
+					if( state->parse_context == CONTEXT_UNKNOWN && state->elements->Cnt ) {
 						state->completed = TRUE;
 						retval = 1;
 					}
