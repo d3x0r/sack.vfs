@@ -21,7 +21,7 @@ var o = parse( "\"123\"" );
 console.log( "o is", o, typeof o );
 var o = parse( "null" );
 console.log( "o is", o, typeof o );
-var o = parse( "true", typeof o );
+var o = parse( "true" );
 console.log( "o is", o, typeof o );
 var o = parse( "false" );
 console.log( "o is", o, typeof o );
@@ -44,11 +44,19 @@ console.log( "o is", o );
 var o = parse( "{\"a\":\"abc\\\r\ndef\"}" );
 console.log( "o is", o );
 
+try {
+var o = parse( "{\"a\":NaN}" );
+} catch(err){
+	console.log( "error:", err );
+}
+
 var o = parse( "{\"a\":123}" );
 console.log( "o is", o );
 var o = parse( "[123]" );
 console.log( "o is", o );
-var o = parse( "{\"a\":{\"b\":{\"c\":{\"d\":123}}}}" );
+var o = parse( '{\"a\":{\"b\":{\"c\":{\"d\":123}, "e":456}, "f":789}, "g": 987}', (a,b)=>{
+	console.log( a, b ); return b;
+	} );
 console.log( "o is", JSON.stringify( o ) );
 
 
