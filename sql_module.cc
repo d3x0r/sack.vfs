@@ -463,7 +463,9 @@ int CPROC invokeCallback( uintptr_t psv, CTEXTSTR name, POPTION_TREE_NODE ID, in
 	argv[0] = o;
 	argv[1] = String::NewFromUtf8( args->isolate, name );
 
-	/*Local<Value> r = */args->cb->Call(Null(args->isolate), 2, argv );
+	MaybeLocal<Value> r = args->cb->Call(Null(args->isolate), 2, argv );
+	if( r.IsEmpty() )
+		return 0;
 	return 1;
 }
 

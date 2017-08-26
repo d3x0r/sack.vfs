@@ -54,7 +54,10 @@ void ThreadObject::relinquish( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	//	nodeThread = MakeThread();
 	Local<Function>cb = Local<Function>::New( isolate, idleProc );
-	/*Local<Value> r = */cb->Call(Null(isolate), 0, NULL );
+	MaybeLocal<Value> r = cb->Call(Null(isolate), 0, NULL );
+	if( r.IsEmpty() ) {
+		// this should never happen... and I don't really care if there was an exception....
+	}
 	// r was always undefined.... so inner must wake.
 	//String::Utf8Value fName( r->ToString() );
 	//lprintf( "tick callback resulted %s", (char*)*fName);

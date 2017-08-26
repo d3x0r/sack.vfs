@@ -2,6 +2,8 @@
 #include "global.h"
 
 
+static void fileDelete( const v8::FunctionCallbackInfo<Value>& args );
+
 
 static void moduleExit( void *arg ) {
 	//SaveTranslationDataEx( "^/strings.dat" );
@@ -109,10 +111,12 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	SET_READONLY( fileObject, "SeekCurrent", Integer::New( isolate, SEEK_CUR ) );
 	SET_READONLY( fileObject, "SeekEnd", Integer::New( isolate, SEEK_END ) );
 	SET_READONLY( exports, "File", fileObject );
-	//fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekSet" ), Integer::New( isolate, SEEK_SET ), ReadOnlyProperty );
-	//fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekCurrent" ), Integer::New( isolate, SEEK_CUR ), ReadOnlyProperty );
-	//fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekEnd" ), Integer::New( isolate, SEEK_END ), ReadOnlyProperty );
-	//exports->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "File" ), fileObject, ReadOnlyProperty );
+
+	//Local<Function> VolFunc = volumeTemplate->GetFunction();
+
+	fileObject->Set( String::NewFromUtf8( isolate, "delete" ), Function::New( isolate, fileDelete ) );
+	fileObject->Set( String::NewFromUtf8( isolate, "unlink" ), Function::New( isolate, fileDelete ) );
+	fileObject->Set( String::NewFromUtf8( isolate, "rm" ), Function::New( isolate, fileDelete ) );
 
 	constructor.Reset( isolate, volumeTemplate->GetFunction() );
 	exports->Set( String::NewFromUtf8( isolate, "Volume" ),
@@ -328,6 +332,10 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 		String::Utf8Value fName( args[0] );
 
 		if( vol->volNative ) {
+			if( !sack_vfs_exists( vol->vol, *fName ) ) {
+				args.GetReturnValue().Set( Null( isolate ) );
+				return;
+			}
 			struct sack_vfs_file *file = sack_vfs_openfile( vol->vol, (*fName) );
 			if( file ) {
 				size_t len = sack_vfs_size( file );
@@ -357,7 +365,8 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 				}
 				sack_fclose( file );
 			}
-
+			else
+				args.GetReturnValue().Set( Null( isolate ) );
 		}
 	}
 
@@ -387,9 +396,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 				length = myarr->ByteLength();
 			} else if( type == 2 ) {
 				Local<Uint8Array> _myarr = args[1].As<Uint8Array>();
-				//Local<ArrayBuffer> myarr = _myarr->Buffer();
 				Nan::TypedArrayContents<uint8_t> dest( _myarr );
-				//Nan::TypedArrayContents<uint8_t> dest(myarr);
 				buf = *dest;
 				length = _myarr->Length();
 			}
@@ -420,6 +427,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 					struct sack_vfs_file *file = sack_vfs_openfile( vol->vol, f );
 					if( file ) {
 						sack_vfs_write( file, (const char*)buf, buffer.length() );
+						sack_vfs_truncate( file );
 						sack_vfs_close( file );
 
 						args.GetReturnValue().Set( True( isolate ) );
@@ -484,10 +492,16 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
 		String::Utf8Value fName( args[0] );
 		if( vol->volNative ) {
-			args.GetReturnValue().Set( sack_vfs_exists( (uintptr_t)vol->vol, *fName ) );
+			args.GetReturnValue().Set( sack_vfs_exists( vol->vol, *fName ) );
 		}else {
 			args.GetReturnValue().Set( sack_existsEx( *fName, vol->fsMount )?True(isolate):False(isolate) );
 		}
+	}
+
+	void fileDelete( const v8::FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		String::Utf8Value fName( args[0] );
+		args.GetReturnValue().Set( Boolean::New( isolate, sack_unlink( 0, *fName ) != 0 ) );
 	}
 
 	void VolumeObject::getDirectory( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -499,7 +513,11 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 		int n = 0;
 		for( found = vol->fsInt->find_first( fi ); found; found = vol->fsInt->find_next( fi ) ) {
 			char *name = vol->fsInt->find_get_name( fi );
-			result->Set( n++, String::NewFromUtf8( isolate, name ) );
+			size_t length = vol->fsInt->find_get_size( fi );
+			Local<Object> entry = Object::New( isolate );
+			entry->Set( String::NewFromUtf8( isolate, "name" ), String::NewFromUtf8( isolate, name ) );
+			entry->Set( String::NewFromUtf8( isolate, "length" ), Number::New( isolate, (double)length ) );
+			result->Set( n++, entry );
 		} 
 		vol->fsInt->find_close( fi );
 		args.GetReturnValue().Set( result );
@@ -795,6 +813,17 @@ void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 	}
 }
 
+void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate *isolate = Isolate::GetCurrent();
+	Local<Context> context = isolate->GetCurrentContext();
+	size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
+	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
+	if( file->vol->volNative )
+		args.GetReturnValue().Set( Number::New( isolate, (double)sack_vfs_tell( file->file ) ) );
+	else
+		args.GetReturnValue().Set( Number::New( isolate, (double)sack_ftell( file->cfile ) ) );
+}
+
 
 	void FileObject::Init(  ) {
 		Isolate* isolate = Isolate::GetCurrent();
@@ -811,6 +840,7 @@ void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "write", writeFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "writeLine", writeLine );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "seek", seekFile );
+		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "pos", tellFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "trunc", truncateFile );
 		// read stream methods
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "pause", openFile );
@@ -840,20 +870,18 @@ void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 			return;
 		}
 		VolumeObject* vol;
-		char *filename;
-		String::Utf8Value fName( args[0] );
-		filename = *fName;
 
 		if( args.IsConstructCall() ) {
+			String::Utf8Value fName( args[0] );
 			// Invoked as constructor: `new MyObject(...)`
 			FileObject* obj;
 			if( args.Length() < 2 ) {
 				vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
-				obj = new FileObject( vol, filename, isolate, args.Holder() );
+				obj = new FileObject( vol, *fName, isolate, args.Holder() );
 			}
 			else {
 				vol = ObjectWrap::Unwrap<VolumeObject>( args[1]->ToObject() );
-				obj = new FileObject( vol, filename, isolate, args[1]->ToObject() );
+				obj = new FileObject( vol, *fName, isolate, args[1]->ToObject() );
 			}
 			obj->Wrap( args.This() );
 			args.GetReturnValue().Set( args.This() );
@@ -878,7 +906,8 @@ void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 				return;
 			file = sack_vfs_openfile( vol->vol, filename );
 		} else {
-			cfile = sack_fopenEx( 0, filename, "rb", vol->fsMount );
+			cfile = sack_fopenEx( 0, filename, "wb+", vol->fsMount );
+			sack_fseekEx( cfile, 0, SEEK_SET, vol->fsMount );
 		}
 	}
 

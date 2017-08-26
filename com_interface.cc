@@ -69,7 +69,13 @@ static void asyncmsg( uv_async_t* handle ) {
 			Local<Function> cb = Local<Function>::New( isolate, myself->readCallback[0] );
 			//lprintf( "callback ... %p", myself );
 			// using obj->jsThis  fails. here...
-			cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+			{
+				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+				if( result.IsEmpty() ) {
+					Deallocate( struct msgbuf *, msg );
+					return;
+				}
+			}
 			//lprintf( "called ..." );
 			Deallocate( struct msgbuf *, msg );
 		}

@@ -136,8 +136,11 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 		Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 		//lprintf( "callback ... %p", myself );
 		// using obj->jsThis  fails. here...
-		cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
-
+		{
+			MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+			if( result.IsEmpty() ) // if an exception occurred stop, and return it.
+				return;
+		}
 		json_dispose_message( &elements );
 		if( result < 2 )
 			break;
@@ -237,8 +240,11 @@ void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 		Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 		//lprintf( "callback ... %p", myself );
 		// using obj->jsThis  fails. here...
-		cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
-
+		{
+			MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+			if( result.IsEmpty() ) // if an exception occurred stop, and return it.
+				return;
+		}
 		json_dispose_message( &elements );
 		if( result < 2 )
 			break;

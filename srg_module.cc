@@ -26,7 +26,12 @@ private:
 			Local<Function> cb = Local<Function>::New( obj->isolate, obj->seedCallback[0] );
 			Local<Array> ui = Array::New( obj->isolate );
 			Local<Value> argv[] = { ui };
-			cb->Call( obj->isolate->GetCurrentContext()->Global(), 1, argv );
+			{
+				// if the callback exceptions, this will blindly continue to generate random entropy....
+				MaybeLocal<Value> result = cb->Call( obj->isolate->GetCurrentContext()->Global(), 1, argv );
+				if( result.IsEmpty() )
+					return;
+			}
 			for( uint32_t n = 0; n < ui->Length(); n++ ) {
 				Local<Value> elem = ui->Get( n );
 				String::Utf8Value val(elem->ToString());

@@ -99,6 +99,7 @@ public:
 	static void writeFile( const v8::FunctionCallbackInfo<Value>& args );
 	static void writeLine( const v8::FunctionCallbackInfo<Value>& args );
 	static void seekFile( const v8::FunctionCallbackInfo<Value>& args );
+	static void tellFile( const v8::FunctionCallbackInfo<Value>& args );
 	static void truncateFile( const v8::FunctionCallbackInfo<Value>& args );
 
 	//static void readFile( const v8::FunctionCallbackInfo<Value>& args );
