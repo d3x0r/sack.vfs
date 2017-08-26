@@ -52247,7 +52247,7 @@ int json_parse_add_data( struct json_parse_state *state
 						{
 							if( c == '_' )
 								continue;
-							state->n = (input->pos - msg);
+							state->n = (input->pos - input->buf);
 							// leading zeros should be forbidden.
 							if( (c >= '0' && c <= '9')
 								|| (c == '-')
@@ -52347,9 +52347,9 @@ int json_parse_add_data( struct json_parse_state *state
 						state->status = FALSE;
 						lprintf( WIDE( "fault parsing '%c' unexpected %" )_size_f WIDE( " (near %*.*s[%c]%s)" ), c, state->n
 							, (int)((state->n > 4) ? 3 : (state->n - 1)), (int)((state->n > 4) ? 3 : (state->n - 1))
-							, msg + state->n - ((state->n > 4) ? 4 : state->n)
+							, input->pos + state->n - ((state->n > 4) ? 4 : state->n)
 							, c
-							, msg + state->n
+							, input->pos + state->n
 // fault
 						);
 					}
