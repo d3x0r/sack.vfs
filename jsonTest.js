@@ -45,7 +45,7 @@ var o = parse( "{\"a\":\"abc\\\r\ndef\"}" );
 console.log( "o is", o );
 
 try {
-var o = parse( "{\"a\":NaN}" );
+//var o = parse( "{\"a\":NaN}" );
 } catch(err){
 	console.log( "error:", err );
 }

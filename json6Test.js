@@ -117,8 +117,8 @@ var start = Date.now();
 var n;
 for( n = 0; n < 100000; n++ ) {
 	parse( varObjects[n%100000] );
-	parse( varStrings[n%100000] );
-	parse( varNumbers[n%100000] );
+	//parse( varStrings[n%100000] );
+	//parse( varNumbers[n%100000] );
 	//parse( "{\"a\":{\"b\":{\"c\":{\"d\":123}}}}" );
 	//parse( '"Simple String value"' );
 	//parse( '123456789' );
@@ -131,8 +131,8 @@ console.log( "1m in ", end-start );
 start = end;
 for( n = 0; n < 100000; n++ ) {
 	JSON.parse( varObjects[n%100000] );
-	JSON.parse( varStrings[n%100000] );
-	JSON.parse( varNumbers[n%100000] );
+	//JSON.parse( varStrings[n%100000] );
+	//JSON.parse( varNumbers[n%100000] );
 	/*JSON.parse( "{\"a\":{\"b\":{\"c\":{\"d\":123}}}}" );*/
 	//JSON.parse( '"Simple String value"' );
         //JSON.parse( '123456789' );
