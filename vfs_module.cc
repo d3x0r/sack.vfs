@@ -801,7 +801,7 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 			String::NewFromUtf8( isolate, TranslateText( "Too many parameters passed to writeLine.  ( buffer, [,offset])" ) ) ) );
 		return;
 	}
-	size_t offset;
+	size_t offset = 0;
 	LOGICAL setOffset = FALSE;
 	if( args.Length() == 2 ) {
 		offset = args[1]->ToInteger()->Value();
@@ -820,7 +820,8 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 					break;
 				}
 			if( file->vol->volNative ) {
-				sack_fseek( file->cfile, offset, SEEK_SET );
+				if( setOffset )
+					sack_vfs_seek( file->file, offset, SEEK_SET );
 				sack_vfs_write( file->file, *data, data.length() );
 				sack_vfs_write( file->file, "\n", 1 );
 			}
