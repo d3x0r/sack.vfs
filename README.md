@@ -92,13 +92,14 @@ Volume = {
  (result from vfs.Volume().File())
 ```
 File = {
-    read(size, position) - read from the file; return an ArrayBuffer with a toString method to interpret it as utf8.  Optional parameter
+    read(size[, position]) - read from the file; return an ArrayBuffer with a toString method to interpret it as utf8.  Optional parameter
                            position may set the position to read from.
     readLine( [position] ) - reads a line from a text file; optional parameter position may set the position to read from.
     write(arrayBuffer/string) - write data to the file; at the current position
     writeLine( line [, position] ) - output text to a file; a newline will be automatically appended to the line.
-    seek(pos) - set file position to write
+    seek(pos[,whence]) - set file position to write.  optional whence parameter can be vfs.File.seekSet(0), vfs.File.seekCurrent(1), or vfs.File.seekEnd(2)
     trunc() - set file size to the curent file position.
+    pos() - return the current position in the file.
     ... /*most other methods unimplemented*/
 }
 ```
@@ -503,6 +504,8 @@ Salty Random Generator
 
 
 ## Changelog
+- 0.1.99306 Fix handling exceptions triggered from callbacks. Fix missing truncate in more instances;  Sync sack filesystem updates; fix unlink return value; add pos() method to File.
+- 0.1.99305 fix missing truncate on file write (re-write over longer file left longer data in file)
 - 0.1.99304 fix clearing end of file on simple writes into a volume.
 - 0.1.99302, 0.1.99303 improvements for sqlite interface.
 - 0.1.99301 add SaltyRandomGenerator interface.
