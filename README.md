@@ -504,9 +504,8 @@ Salty Random Generator
 
 
 ## Changelog
-- 0.1.99306 Fix handling exceptions triggered from callbacks. Fix missing truncate in more instances;  Sync sack filesystem updates; fix unlink return value; add pos() method to File.
-- 0.1.99305 fix missing truncate on file write (re-write over longer file left longer data in file)
-- 0.1.99304 fix clearing end of file on simple writes into a volume.
+- 0.1.99305 Fix handling exceptions triggered from callbacks. Fix missing truncate in more instances;  Sync sack filesystem updates; fix unlink return value; add pos() method to File.
+- 0.1.99304 fix truncate on simple writes into a volume.
 - 0.1.99302, 0.1.99303 improvements for sqlite interface.
 - 0.1.99301 add SaltyRandomGenerator interface.
 - 0.1.99300 fix random generator overflows.
