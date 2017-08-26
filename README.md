@@ -36,11 +36,13 @@ vfs = {
         1/2 the speed of Node's parser; no real reason to use this. 
         (3x faster than javascript JSON5 implementation)
         // var o = vfs.JSON6.parse(s)
+        // var parser = vfs.JSON6.begin( callback ); ... parser.write( /*Some json data */ ); 
     JSON - A json parser.
         parse(string) - result with a V8 object created from the json string.  
         1/2 the speed of Node's parser; no real reason to use this. 
         (3x faster than javascript JSON5 implementation)
         // var o = vfs.JSON.parse(s)
+        // var parser = vfs.JSON.begin( callback ); ... parser.write( /*Some json data */ ); 
     mkdir(pathname) - utility function to make directories which might not exist before volume does; 
             (Volume() auto creates directories now if specified path to filename does not exist)
             parameters - (pathname)
@@ -60,7 +62,7 @@ vfs = {
           mountName - the mount name used to mount to volume as a filesystem; it may be referenced 
                 later in the string passed to Sqlite.  It may be `null` if it is anonymous mount.
           if no parameters are passed, a Volume object representing the native filesystem is returned.
-    
+    File - some native filsystem utility methods
     // windows only
     registry - an interface to windows registry options
     	set( path, value ) - set a new value in the registry
@@ -83,25 +85,38 @@ Volume = {
     readJSON6(fileName, callback) - read a file from a volume; calls callback with each object decoded from the file interpreted as JSON6.
     write(fileName,arrayBuffer/string) - writes a string or arraybuffer to a file. 
     Sqlite(database) - an interface to sqlite database in this volume.
+    rm(file),delete(file),unlink(file) - delete a file.
     mkdir - utility function to make directories which might not exist before volume does; (volume auto creates directories now)
             parameters - (pathname)
                 path to create- will created missing parent path parts too.
 }
+
+
 ```
 ### File Interface opened within a Volume
  (result from vfs.Volume().File())
 ```
+File instance methods (prototype methods)
 File = {
     read(size[, position]) - read from the file; return an ArrayBuffer with a toString method to interpret it as utf8.  Optional parameter
                            position may set the position to read from.
     readLine( [position] ) - reads a line from a text file; optional parameter position may set the position to read from.
     write(arrayBuffer/string) - write data to the file; at the current position
     writeLine( line [, position] ) - output text to a file; a newline will be automatically appended to the line.
-    seek(pos[,whence]) - set file position to write.  optional whence parameter can be vfs.File.seekSet(0), vfs.File.seekCurrent(1), or vfs.File.seekEnd(2)
+    seek(pos[,whence]) - set file position to write.  optional whence parameter can be vfs.File.SeekSet(0), vfs.File.SeekCurrent(1), or vfs.File.SeekEnd(2)
     trunc() - set file size to the curent file position.
     pos() - return the current position in the file.
     ... /*most other methods unimplemented*/
 }
+
+File Methods
+    rm(file),delete(file),unlink(file) - delete in the native filesystem; file may have to be closed before delete can work.
+
+File Constants
+    SeekSet - used in seek methods; value SEEK_SET(0)
+    SeekCurrent - used in seek methods; value SEEK_CUR(1)
+    SeekEnd - used in seek methods; value SEEK_END(2)
+
 ```
 ### Sqlite Interface
   (result from vfs.Sqlite() or vfs.Volume().Sqlite())
