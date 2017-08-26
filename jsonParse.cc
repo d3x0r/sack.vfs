@@ -19,6 +19,7 @@ class parseObject : public node::ObjectWrap {
 	struct json_parse_state *state;
 public:
 	static Persistent<Function> constructor;
+	static Persistent<Function> constructor6;
 	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
 
 public:
@@ -35,12 +36,13 @@ public:
 };
 
 Persistent<Function> parseObject::constructor;
+Persistent<Function> parseObject::constructor6;
 
 void InitJSON( Isolate *isolate, Handle<Object> exports ){
 	Local<Object> o = Object::New( isolate );
-	NODE_SET_METHOD( o, "parse", parseJSON );
-	NODE_SET_METHOD( o, "stringify", makeJSON );
-	exports->Set( String::NewFromUtf8( isolate, "JSON" ), o );
+	SET_READONLY_METHOD( o, "parse", parseJSON );
+	SET_READONLY_METHOD( o, "stringify", makeJSON );
+	SET_READONLY( exports, "JSON", o );
 
 	{
 		Local<FunctionTemplate> parseTemplate;
@@ -51,16 +53,13 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 
 		parseObject::constructor.Reset( isolate, parseTemplate->GetFunction() );
 
-		o->Set( String::NewFromUtf8( isolate, "begin" ),
-			parseTemplate->GetFunction() );
-
+		SET_READONLY( o, "begin", parseTemplate->GetFunction() );
 	}
 
 	Local<Object> o2 = Object::New( isolate );
-	NODE_SET_METHOD( o2, "parse", parseJSON6 );
-	NODE_SET_METHOD( o2, "stringify", makeJSON6 );
-	exports->Set( String::NewFromUtf8( isolate, "JSON6" ), o2 );
-
+	SET_READONLY_METHOD( o2, "parse", parseJSON6 );
+	SET_READONLY_METHOD( o2, "stringify", makeJSON6 );
+	SET_READONLY( exports, "JSON6", o2 );
 
 	{
 		Local<FunctionTemplate> parseTemplate;
@@ -69,11 +68,9 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write6 );
 
-		parseObject::constructor.Reset( isolate, parseTemplate->GetFunction() );
+		parseObject::constructor6.Reset( isolate, parseTemplate->GetFunction() );
 
-		o2->Set( String::NewFromUtf8( isolate, "begin" ),
-			parseTemplate->GetFunction() );
-
+		SET_READONLY( o2, "begin", parseTemplate->GetFunction() );
 	}
 }
 
@@ -107,39 +104,16 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 		Local<Object> o;
 		Local<Value> v;// = Object::New( isolate );
 
-		val = (struct json_value_container *)GetDataItem( &elements, 0 );
-		if( val && val->contains ) {
-			if( val->value_type == VALUE_OBJECT )
-				o = Object::New( isolate );
-			else if( val->value_type == VALUE_ARRAY )
-				o = Array::New( isolate );
-			else
-				lprintf( "Value has contents, but is not a container type?!" );
-			buildObject( val->contains, o, isolate );
-		}
-		else if( val ) {
-			//lprintf( "was just a single, simple value type..." );
-			v = makeValue( isolate, val );
-			// this is illegal json
-			// cannot result from a simple value?	
-		}
-		else {
-			json_dispose_message( &elements );
-			return;
-		}
-
 		Local<Value> argv[1];
-		if( !o.IsEmpty() )
-			argv[0] = o;
-		else argv[0] = v;
-
-		Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
-		//lprintf( "callback ... %p", myself );
-		// using obj->jsThis  fails. here...
-		{
-			MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
-			if( result.IsEmpty() ) // if an exception occurred stop, and return it.
-				return;
+		val = (struct json_value_container *)GetDataItem( &elements, 0 );
+		if( val ) {
+			argv[0] = convertMessageToJS( isolate, elements );
+			Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
+			{
+				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+				if( result.IsEmpty() ) // if an exception occurred stop, and return it.
+					return;
+			}
 		}
 		json_dispose_message( &elements );
 		if( result < 2 )
@@ -208,44 +182,18 @@ void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 		) {
 		struct json_value_container * val;
 		PDATALIST elements = json_parse_get_data( parser->state );
-		Local<Object> o;
-		Local<Value> v;// = Object::New( isolate );
-
 		val = (struct json_value_container *)GetDataItem( &elements, 0 );
-		if( val && val->contains ) {
-			if( val->value_type == VALUE_OBJECT )
-				o = Object::New( isolate );
-			else if( val->value_type == VALUE_ARRAY )
-				o = Array::New( isolate );
-			else
-				lprintf( "Value has contents, but is not a container type?!" );
-			buildObject( val->contains, o, isolate );
-		}
-		else if( val ) {
-			//lprintf( "was just a single, simple value type..." );
-			v = makeValue( isolate, val );
-			// this is illegal json
-			// cannot result from a simple value?	
-		}
-		else {
+		if( val ) {
+			Local<Value> argv[1];
+			argv[0] = convertMessageToJS( isolate, elements );
+			Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
+			{
+				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+				if( result.IsEmpty() ) // if an exception occurred stop, and return it.
+					return;
+			}
 			json_dispose_message( &elements );
-			return;
 		}
-
-		Local<Value> argv[1];
-		if( !o.IsEmpty() )
-			argv[0] = o;
-		else argv[0] = v;
-
-		Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
-		//lprintf( "callback ... %p", myself );
-		// using obj->jsThis  fails. here...
-		{
-			MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
-			if( result.IsEmpty() ) // if an exception occurred stop, and return it.
-				return;
-		}
-		json_dispose_message( &elements );
 		if( result < 2 )
 			break;
 	}
@@ -330,9 +278,7 @@ static Local<Value> makeValue( Isolate *isolate, struct json_value_container *va
 		return Number::New(isolate, -INFINITY);
 	case VALUE_INFINITY:
 		return Number::New(isolate, INFINITY);
-	
 	}
-
 }
 
 static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate ) {
@@ -389,6 +335,24 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate )
 	}
 }
 
+Local<Value> convertMessageToJS( Isolate *isolate, PDATALIST msg ) {
+	Local<Object> o;
+	Local<Value> v;// = Object::New( isolate );
+
+	struct json_value_container *val = (struct json_value_container *)GetDataItem( &msg, 0 );
+	if( val && val->contains ) {
+		if( val->value_type == VALUE_OBJECT )
+			o = Object::New( isolate );
+		else if( val->value_type == VALUE_ARRAY )
+			o = Array::New( isolate );
+		else
+			lprintf( "Value has contents, but is not a container type?!" );
+		buildObject( val->contains, o, isolate );
+		return o;
+	} 
+	return makeValue( isolate, val );
+}
+
 
 Local<Value> ParseJSON(  Isolate *isolate, const char *utf8String, size_t len) {
 	PDATALIST parsed = NULL;
@@ -408,28 +372,9 @@ Local<Value> ParseJSON(  Isolate *isolate, const char *utf8String, size_t len) {
 		// outside should always be a single value
 	}
 
-	struct json_value_container *val;
-	val = (struct json_value_container *)GetDataItem( &parsed, 0 );
-	if( val && val->contains ) {
-		if( val->value_type == VALUE_OBJECT )
-			o = Object::New( isolate );
-		else if( val->value_type == VALUE_ARRAY )
-			o = Array::New( isolate );
-		else
-			lprintf( "Value has contents, but is not a container type?!" );
-		buildObject( val->contains, o, isolate );
-	}
-	else if( val ) {
-		//lprintf( "was just a single, simple value type..." );
-		v = makeValue( isolate, val );
-		// this is illegal json
-		// cannot result from a simple value?	
-	}
-
+	Local<Value> value = convertMessageToJS( isolate, parsed );
 	json_dispose_message( &parsed );
-	if( !o.IsEmpty() ) 
-		return o;
-	return v;
+	return value;
 }
 
 void parseJSON( const v8::FunctionCallbackInfo<Value>& args )
@@ -438,9 +383,7 @@ void parseJSON( const v8::FunctionCallbackInfo<Value>& args )
 	const char *msg;
 	String::Utf8Value tmp( args[0] );
 	msg = *tmp;
-	Local<Value> val = ParseJSON( isolate, msg, strlen( msg ) );
-	args.GetReturnValue().Set( val );
-
+	args.GetReturnValue().Set( ParseJSON( isolate, msg, strlen( msg ) ) );
 }
 
 
@@ -450,8 +393,6 @@ void makeJSON( const v8::FunctionCallbackInfo<Value>& args ) {
 
 Local<Value> ParseJSON6(  Isolate *isolate, const char *utf8String, size_t len) {
 	PDATALIST parsed = NULL;
-	Local<Object> o;// = Object::New( isolate );
-	Local<Value> v;// = Object::New( isolate );
 	if( !json6_parse_message( (char*)utf8String, len, &parsed ) ) {
 		//PTEXT error = json_parse_get_error( parser->state );
 		//lprintf( "Failed to parse data..." );
@@ -465,29 +406,9 @@ Local<Value> ParseJSON6(  Isolate *isolate, const char *utf8String, size_t len) 
 		return Undefined(isolate);
 		// outside should always be a single value
 	}
-
-	struct json_value_container *val;
-	val = (struct json_value_container *)GetDataItem( &parsed, 0 );
-	if( val && val->contains ) {
-		if( val->value_type == VALUE_OBJECT )
-			o = Object::New( isolate );
-		else if( val->value_type == VALUE_ARRAY )
-			o = Array::New( isolate );
-		else
-			lprintf( "Value has contents, but is not a container type?!" );
-		buildObject( val->contains, o, isolate );
-	}
-	else if( val ) {
-		//lprintf( "was just a single, simple value type..." );
-		v = makeValue( isolate, val );
-		// this is illegal json
-		// cannot result from a simple value?	
-	}
-
-	json6_dispose_message( &parsed );
-	if( !o.IsEmpty() ) 
-		return o;
-	return v;
+	Local<Value> value = convertMessageToJS( isolate, parsed );
+	json_dispose_message( &parsed );
+	return value;
 }
 
 void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
@@ -496,9 +417,7 @@ void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
 	const char *msg;
 	String::Utf8Value tmp( args[0] );
 	msg = *tmp;
-	Local<Value> val = ParseJSON6( isolate, msg, strlen( msg ) );
-	args.GetReturnValue().Set( val );
-
+	args.GetReturnValue().Set( ParseJSON6( isolate, msg, strlen( msg ) ) );
 }
 
 

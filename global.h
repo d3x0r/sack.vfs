@@ -55,6 +55,7 @@ public:
 	static void fileWrite( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileExists( const v8::FunctionCallbackInfo<Value>& args );
 	static void openVolDb( const v8::FunctionCallbackInfo<Value>& args );
+	static void fileVolDelete( const v8::FunctionCallbackInfo<Value>& args );
 	static void makeDirectory( const v8::FunctionCallbackInfo<Value>& args );
 	static void mkdir( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -264,6 +265,6 @@ public:
 	~TLSObject();
 };
 
-
+Local<Value> convertMessageToJS( Isolate *isolate, PDATALIST msg_data );
 
 void InitFS( const v8::FunctionCallbackInfo<Value>& args );

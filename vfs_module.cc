@@ -99,9 +99,15 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "write", fileWrite );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mkdir", makeDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "Sqlite", openVolDb );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "delete", fileVolDelete );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "unlink", fileVolDelete );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "rm", fileVolDelete );
+
+	Local<Function> VolFunc = volumeTemplate->GetFunction();
+
 
 	SET_READONLY_METHOD( exports, "memDump", dumpMem );
-	SET_READONLY_METHOD( exports, "mkdir", mkdir );
+	SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
 	SET_READONLY_METHOD( exports, "u8xor", vfs_u8xor );
 	SET_READONLY_METHOD( exports, "b64xor", vfs_b64xor );
 	SET_READONLY_METHOD( exports, "id", idGenerator );
@@ -112,11 +118,9 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	SET_READONLY( fileObject, "SeekEnd", Integer::New( isolate, SEEK_END ) );
 	SET_READONLY( exports, "File", fileObject );
 
-	//Local<Function> VolFunc = volumeTemplate->GetFunction();
-
-	fileObject->Set( String::NewFromUtf8( isolate, "delete" ), Function::New( isolate, fileDelete ) );
-	fileObject->Set( String::NewFromUtf8( isolate, "unlink" ), Function::New( isolate, fileDelete ) );
-	fileObject->Set( String::NewFromUtf8( isolate, "rm" ), Function::New( isolate, fileDelete ) );
+	SET_READONLY_METHOD( fileObject, "delete", fileDelete );
+	SET_READONLY_METHOD( fileObject, "unlink", fileDelete );
+	SET_READONLY_METHOD( fileObject, "rm", fileDelete );
 
 	constructor.Reset( isolate, volumeTemplate->GetFunction() );
 	exports->Set( String::NewFromUtf8( isolate, "Volume" ),
@@ -194,7 +198,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 		if( argc == 0 ) {
 			isolate->ThrowException( Exception::Error(
-					String::NewFromUtf8( isolate, "Required filename missing." ) ) );
+					String::NewFromUtf8( isolate, TranslateText( "Required filename missing." ) ) ) );
 			return;
 		}
 		else {
@@ -203,7 +207,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( !vol->mountName )
 			{
 				isolate->ThrowException( Exception::Error(
-						String::NewFromUtf8( isolate, "Volume is not mounted; cannot be used to open Sqlite database." ) ) );
+						String::NewFromUtf8( isolate, TranslateText( "Volume is not mounted; cannot be used to open Sqlite database." ) ) ) );
 				return;
 				
 			}
@@ -224,7 +228,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
   		if( !vol->mountName )
   		{
   			isolate->ThrowException( Exception::Error(
-  					String::NewFromUtf8( isolate, "Volume is not mounted; cannot be used to open Sqlite database." ) ) );
+  					String::NewFromUtf8( isolate, TranslateText( "Volume is not mounted; cannot be used to open Sqlite database." ) ) ) );
   			return;
   		}
 		int argc = args.Length();
@@ -241,9 +245,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 			args.GetReturnValue().Set( mo.ToLocalChecked() );
 		delete[] argv;
 	}
-
 }
-
 
 static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = Isolate::GetCurrent();
@@ -273,49 +275,91 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 	Deallocate( char*, output );
 }
 
-
 	void VolumeObject::fileReadJSON( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
 
-		if( args.Length() < 1 ) {
+		if( args.Length() < 2 ) {
 			isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( isolate, "Requires filename to open and data callback" ) ) );
+				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data callback" ) ) ) );
 			return;
 		}
-
+		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		String::Utf8Value fName( args[0] );
 
 		if( vol->volNative ) {
 			struct sack_vfs_file *file = sack_vfs_openfile( vol->vol, (*fName) );
 			if( file ) {
+				char *buf = NewArray( char, 4096 );
 				size_t len = sack_vfs_size( file );
-				uint8_t *buf = NewArray( uint8_t, len );
-				sack_vfs_read( file, (char*)buf, len );
-				
-				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
-				NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
-				args.GetReturnValue().Set( arrayBuffer );
-			
+				size_t read = 0;
+				size_t newRead;
+				struct json_parse_state *parser = json_begin_parse();
+				// CAN open directories; and they have 7ffffffff sizes.
+				while( (read < len) && (newRead = sack_vfs_read( file, buf, 4096 )) ) {
+					read += newRead;
+					int result;
+					for( (result = json6_parse_add_data( parser, buf, newRead ));
+						result > 0;
+						result = json6_parse_add_data( parser, NULL, 0 ) ) {
+						Local<Object> obj = Object::New( isolate );
+						PDATALIST data;
+						data = json_parse_get_data( parser );
+						Local<Value> val = convertMessageToJS( isolate, data );
+						{
+							MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
+							if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
+								json_dispose_message( &data );
+								json_parse_dispose_state( &parser );
+								return;
+							}
+						}
+						json_dispose_message( &data );
+						if( result == 1 )
+							break;
+					}
+				}
+				json_parse_dispose_state( &parser );
+				Deallocate( char *, buf );
 				sack_vfs_close( file );
 			}
 
 		} else {
 			FILE *file = sack_fopenEx( 0, (*fName), "rb", vol->fsMount );
 			if( file ) {
+				char *buf = NewArray( char, 4096 );
 				size_t len = sack_fsize( file );
+				size_t read = 0;
+				size_t newRead;
+				struct json_parse_state *parser = json_begin_parse();
 				// CAN open directories; and they have 7ffffffff sizes.
-				if( len < 0x10000000 ) {
-					uint8_t *buf = NewArray( uint8_t, len );
-					sack_fread( buf, len, 1, file );
-
-					Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
-					NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
-					args.GetReturnValue().Set( arrayBuffer );
+				while( ( read < len ) && ( newRead = sack_fread( buf, 4096, 1, file ) ) ) {
+					read += newRead;
+					int result;
+					for( (result = json6_parse_add_data( parser, buf, newRead ));
+						result > 0; 
+						result = json6_parse_add_data(parser, NULL, 0) ) {
+						Local<Object> obj = Object::New( isolate );
+						PDATALIST data;
+						data = json_parse_get_data( parser );
+						Local<Value> val = convertMessageToJS( isolate, data );
+						{
+							MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
+							if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
+								json_dispose_message( &data );
+								json_parse_dispose_state( &parser );
+								return;
+							}
+						}
+						json_dispose_message( &data );
+						if( result == 1 )
+							break;
+					}
 				}
+				json_parse_dispose_state( &parser );
+				Deallocate( char *, buf );
 				sack_fclose( file );
 			}
-
 		}
 	}
 
@@ -325,7 +369,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		if( args.Length() < 1 ) {
 			isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( isolate, "Requires filename to open" ) ) );
+				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open" ) ) ) );
 			return;
 		}
 
@@ -376,7 +420,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		if( args.Length() < 2 ) {
 			isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( isolate, "Requires filename to open and data to write" ) ) );
+				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data to write" ) ) ) );
 			return;
 		}
 		LOGICAL overlong = FALSE;
@@ -481,7 +525,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 			Deallocate( char*, f );
 		} else {
 			isolate->ThrowException( Exception::Error(
-						String::NewFromUtf8( isolate, "Data to write is not an ArrayBuffer or String." ) ) );
+						String::NewFromUtf8( isolate, TranslateText( "Data to write is not an ArrayBuffer or String." ) ) ) );
 
 		}
 	}
@@ -495,6 +539,19 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 			args.GetReturnValue().Set( sack_vfs_exists( vol->vol, *fName ) );
 		}else {
 			args.GetReturnValue().Set( sack_existsEx( *fName, vol->fsMount )?True(isolate):False(isolate) );
+		}
+	}
+
+
+	void VolumeObject::fileVolDelete( const FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		String::Utf8Value fName( args[0] );
+		if( vol->volNative ) {
+			args.GetReturnValue().Set( Boolean::New( isolate, sack_vfs_unlink_file( vol->vol, *fName ) != 0 ) );
+		}
+		else {
+			args.GetReturnValue().Set( Boolean::New( isolate, sack_unlinkEx( 0, *fName, vol->fsMount ) != 0 ) );
 		}
 	}
 
@@ -570,7 +627,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 				VolumeObject* obj = new VolumeObject( mount_name, filename, key, key2 );
 				if( !obj->vol ) {
 					isolate->ThrowException( Exception::Error(
-						String::NewFromUtf8( isolate, "Volume failed to open." ) ) );
+						String::NewFromUtf8( isolate, TranslateText( "Volume failed to open." ) ) ) );
 
 				} else {
 					obj->Wrap( args.This() );
@@ -652,7 +709,7 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 		}
 		else {
 			isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( isolate, "Too many parameters passed to read. ([length [,offset]])" ) ) );
+				String::NewFromUtf8( isolate, TranslateText( "Too many parameters passed to read. ([length [,offset]])" ) ) ) );
 			return;
 		}
 		if( length > file->size ) {
@@ -705,7 +762,7 @@ void FileObject::readLine(const v8::FunctionCallbackInfo<Value>& args) {
 	else {
 		// get length
 		isolate->ThrowException( Exception::TypeError(
-			String::NewFromUtf8( isolate, "Too many parameters passed to readLine. ([offset])" ) ) );
+			String::NewFromUtf8( isolate, TranslateText( "Too many parameters passed to readLine. ([offset])" ) ) ) );
 	}
 }
 
@@ -736,7 +793,7 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 	//SACK_VFS_PROC size_t CPROC sack_vfs_write( struct sack_vfs_file *file, char * data, size_t length );
 	if( args.Length() > 2 ) {
 		isolate->ThrowException( Exception::TypeError(
-			String::NewFromUtf8( isolate, "Too many parameters passed to writeLine.  ( buffer, [,offset])" ) ) );
+			String::NewFromUtf8( isolate, TranslateText( "Too many parameters passed to writeLine.  ( buffer, [,offset])" ) ) ) );
 		return;
 	}
 	size_t offset;
@@ -866,7 +923,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		if( args.Length() < 1 ) {
 			isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( isolate, "Requires filename to open" ) ) );
+				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open" ) ) ) );
 			return;
 		}
 		VolumeObject* vol;
@@ -906,8 +963,9 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 				return;
 			file = sack_vfs_openfile( vol->vol, filename );
 		} else {
-			cfile = sack_fopenEx( 0, filename, "wb+", vol->fsMount );
-			sack_fseekEx( cfile, 0, SEEK_SET, vol->fsMount );
+			cfile = sack_fopenEx( 0, filename, "rb+", vol->fsMount );
+			if( !cfile )
+				cfile = sack_fopenEx( 0, filename, "wb", vol->fsMount );
 		}
 	}
 
