@@ -265,6 +265,14 @@ public:
 	~TLSObject();
 };
 
-Local<Value> convertMessageToJS( Isolate *isolate, PDATALIST msg_data );
+struct reviver_data {
+	LOGICAL revive;
+	int index;
+	Handle<Value> value;
+	Handle<Object> _this;
+	Handle<Function> reviver;
+};
+
+Local<Value> convertMessageToJS( Isolate *isolate, PDATALIST msg_data, struct reviver_data *reviver );
 
 void InitFS( const v8::FunctionCallbackInfo<Value>& args );

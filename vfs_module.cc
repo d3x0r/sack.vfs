@@ -305,7 +305,9 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 						Local<Object> obj = Object::New( isolate );
 						PDATALIST data;
 						data = json_parse_get_data( parser );
-						Local<Value> val = convertMessageToJS( isolate, data );
+						struct reviver_data r;
+						r.revive = FALSE;
+						Local<Value> val = convertMessageToJS( isolate, data, &r );
 						{
 							MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
 							if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
@@ -342,7 +344,9 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 						Local<Object> obj = Object::New( isolate );
 						PDATALIST data;
 						data = json_parse_get_data( parser );
-						Local<Value> val = convertMessageToJS( isolate, data );
+						struct reviver_data r;
+						r.revive = FALSE;
+						Local<Value> val = convertMessageToJS( isolate, data, &r );
 						{
 							MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
 							if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 

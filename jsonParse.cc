@@ -2,8 +2,8 @@
 #include "global.h"
 #include <math.h>
 
-static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate );
-static Local<Value> makeValue( Isolate *isolate, struct json_value_container *val );
+static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate, struct reviver_data *revive );
+static Local<Value> makeValue( Isolate *isolate, struct json_value_container *val, struct reviver_data *revive );
 
 
 static void makeJSON( const v8::FunctionCallbackInfo<Value>& args );
@@ -41,7 +41,7 @@ Persistent<Function> parseObject::constructor6;
 void InitJSON( Isolate *isolate, Handle<Object> exports ){
 	Local<Object> o = Object::New( isolate );
 	SET_READONLY_METHOD( o, "parse", parseJSON );
-	SET_READONLY_METHOD( o, "stringify", makeJSON );
+	NODE_SET_METHOD( o, "stringify", makeJSON );
 	SET_READONLY( exports, "JSON", o );
 
 	{
@@ -58,7 +58,7 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 
 	Local<Object> o2 = Object::New( isolate );
 	SET_READONLY_METHOD( o2, "parse", parseJSON6 );
-	SET_READONLY_METHOD( o2, "stringify", makeJSON6 );
+	NODE_SET_METHOD( o2, "stringify", makeJSON6 );
 	SET_READONLY( exports, "JSON6", o2 );
 
 	{
@@ -94,10 +94,10 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	String::Utf8Value data( args[0]->ToString() );
 	int result;
 	//lprintf( "add data..." );
-	for( result = json_parse_add_data( parser->state, *data, data.length() );
+	for( result = json6_parse_add_data( parser->state, *data, data.length() );
 		result > 0;
 		//lprintf( "flush more..." ), 
-		result = json_parse_add_data( parser->state, NULL, 0 )
+		result = json6_parse_add_data( parser->state, NULL, 0 )
 		) {
 		struct json_value_container * val;
 		PDATALIST elements = json_parse_get_data( parser->state );
@@ -107,7 +107,9 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 		Local<Value> argv[1];
 		val = (struct json_value_container *)GetDataItem( &elements, 0 );
 		if( val ) {
-			argv[0] = convertMessageToJS( isolate, elements );
+			struct reviver_data r;
+			r.revive = FALSE;
+			argv[0] = convertMessageToJS( isolate, elements, &r );
 			Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 			{
 				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
@@ -185,7 +187,9 @@ void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 		val = (struct json_value_container *)GetDataItem( &elements, 0 );
 		if( val ) {
 			Local<Value> argv[1];
-			argv[0] = convertMessageToJS( isolate, elements );
+			struct reviver_data r;
+			r.revive = FALSE;
+			argv[0] = convertMessageToJS( isolate, elements, &r );
 			Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 			{
 				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
@@ -239,50 +243,73 @@ void parseObject::New6( const v8::FunctionCallbackInfo<Value>& args ) {
 
 }
 
-static Local<Value> makeValue( Isolate *isolate, struct json_value_container *val ) {
+static Local<Value> makeValue( Isolate *isolate, struct json_value_container *val, struct reviver_data *revive ) {
 
+	Local<Value> result;
 	switch( val->value_type ) {
 	case VALUE_UNDEFINED:
-		return Undefined( isolate );
+		result = Undefined( isolate );
+		break;
 	default:
 		lprintf( "Parser faulted; should never have a uninitilized value." );
-		return Undefined( isolate );
+		result = Undefined( isolate );
+		break;
 	case VALUE_NULL:
-		return Null( isolate );
+		result = Null( isolate );
+		break;
 	case VALUE_TRUE:
-		return True( isolate );
+		result = True( isolate );
+		break;
 	case VALUE_FALSE:
-		return False( isolate );
+		result = False( isolate );
+		break;
 	case VALUE_EMPTY:
-		return Undefined(isolate);
+		result = Undefined(isolate);
+		break;
 	case VALUE_STRING:
-		return String::NewFromUtf8( isolate, val->string );
+		result = String::NewFromUtf8( isolate, val->string );
+		break;
 	case VALUE_NUMBER:
 		if( val->float_result )
-			return Number::New( isolate, val->result_d );
+			result = Number::New( isolate, val->result_d );
 		else {
 			if( val->result_n < 0x7FFFFFFF && val->result_n > -0x7FFFFFFF )
-				return Integer::New( isolate, (int32_t)val->result_n );
+				result = Integer::New( isolate, (int32_t)val->result_n );
 			else
-				return Number::New( isolate, (double)val->result_n );
+				result = Number::New( isolate, (double)val->result_n );
 		}
+		break;
 	case VALUE_ARRAY:
-		return Array::New( isolate );
+		result = Array::New( isolate );
+		break;
 	case VALUE_OBJECT:
-		return Object::New( isolate );
+		result = Object::New( isolate );
+		break;
 	case VALUE_NEG_NAN:
-		return Number::New(isolate, -NAN);
+		result = Number::New(isolate, -NAN);
+		break;
 	case VALUE_NAN:
-		return Number::New(isolate, NAN);
+		result = Number::New(isolate, NAN);
+		break;
 	case VALUE_NEG_INFINITY:
-		return Number::New(isolate, -INFINITY);
+		result = Number::New(isolate, -INFINITY);
+		break;
 	case VALUE_INFINITY:
-		return Number::New(isolate, INFINITY);
+		result = Number::New(isolate, INFINITY);
+		break;
 	}
+	if( revive->revive ) {
+		Local<Value> args[2] = { revive->value, result };
+		Local<Value> r = revive->reviver->Call( revive->_this, 2, args );
+	}
+	return result;
 }
 
-static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate ) {
-
+static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate, struct reviver_data *revive ) {
+	Local<Value> saveVal;
+	Local<Value> thisKey;
+	LOGICAL saveRevive = revive->revive;
+	if( revive ) saveVal = (revive->value);
 	struct json_value_container *val;
 	Local<Object> sub_o;
 	INDEX idx;
@@ -292,23 +319,35 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate )
 		//lprintf( "value name is : %d %s", val->value_type, val->name ? val->name : "(NULL)" );
 		switch( val->value_type ) {
 		default:
-			if( val->name )
-				o->Set( String::NewFromUtf8( isolate, val->name )
-					, makeValue( isolate, val ) );
-			else {
-				o->Set( index++, makeValue( isolate, val ) );
+			if( val->name ) {
+				o->Set( revive->value = String::NewFromUtf8( isolate, val->name )
+					, makeValue( isolate, val, revive ) );
+			} else {
+				if( val->value_type == VALUE_EMPTY )
+					revive->revive = FALSE;
+				if( revive->revive )
+					revive->value = Integer::New( isolate, index );
+				o->Set( index++, makeValue( isolate, val, revive ) );
+				revive->revive = saveRevive;
 				if( val->value_type == VALUE_EMPTY )
 					o->Delete( isolate->GetCurrentContext(), index - 1 );
 			}
 			break;
 		case VALUE_ARRAY:
-			if( val->name )
-				o->Set( String::NewFromUtf8( isolate, val->name )
+			if( val->name ) {
+				o->Set( thisKey = String::NewFromUtf8( isolate, val->name )
 					, sub_o = Array::New( isolate ) );
+			} 
 			else {
+				if( revive->revive )
+					thisKey = Integer::New( isolate, index );
 				o->Set( index++, sub_o = Array::New( isolate ) );
 			}
-			buildObject( val->contains, sub_o, isolate );
+			buildObject( val->contains, sub_o, isolate, revive );
+			if( revive->revive ) {
+				Local<Value> args[2] = { thisKey, sub_o };
+				revive->reviver->Call( revive->_this, 2, args );
+			}
 			break;
 		case VALUE_OBJECT:
 			if( val->name ) {
@@ -322,20 +361,26 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate )
 					, PropertyAttribute::None );
 				*/
 				o->Set( //String::NewFromUtf8( isolate, val->name, NewStringType::kNormal, -1 ).ToLocalChecked()
-						String::NewFromUtf8( isolate,val->name )
+						thisKey = String::NewFromUtf8( isolate,val->name )
 							, sub_o = Object::New( isolate ) );
 			} 
 			else {
+				if( revive->revive )
+					thisKey = Integer::New( isolate, index );
 				o->Set( index++, sub_o = Object::New( isolate ) );
 			}
 
-			buildObject( val->contains, sub_o, isolate );
+			buildObject( val->contains, sub_o, isolate, revive );
+			if( revive->revive ) {
+				Local<Value> args[2] = { thisKey, sub_o };
+				revive->reviver->Call( revive->_this, 2, args );
+			}
 			break;
 		}
 	}
 }
 
-Local<Value> convertMessageToJS( Isolate *isolate, PDATALIST msg ) {
+Local<Value> convertMessageToJS( Isolate *isolate, PDATALIST msg, struct reviver_data *revive ) {
 	Local<Object> o;
 	Local<Value> v;// = Object::New( isolate );
 
@@ -347,14 +392,14 @@ Local<Value> convertMessageToJS( Isolate *isolate, PDATALIST msg ) {
 			o = Array::New( isolate );
 		else
 			lprintf( "Value has contents, but is not a container type?!" );
-		buildObject( val->contains, o, isolate );
+		buildObject( val->contains, o, isolate, revive );
 		return o;
 	} 
-	return makeValue( isolate, val );
+	return makeValue( isolate, val, revive );
 }
 
 
-Local<Value> ParseJSON(  Isolate *isolate, const char *utf8String, size_t len) {
+Local<Value> ParseJSON(  Isolate *isolate, const char *utf8String, size_t len, struct reviver_data *revive ) {
 	PDATALIST parsed = NULL;
 	Local<Object> o;// = Object::New( isolate );
 	Local<Value> v;// = Object::New( isolate );
@@ -372,7 +417,7 @@ Local<Value> ParseJSON(  Isolate *isolate, const char *utf8String, size_t len) {
 		// outside should always be a single value
 	}
 
-	Local<Value> value = convertMessageToJS( isolate, parsed );
+	Local<Value> value = convertMessageToJS( isolate, parsed, revive );
 	json_dispose_message( &parsed );
 	return value;
 }
@@ -383,7 +428,29 @@ void parseJSON( const v8::FunctionCallbackInfo<Value>& args )
 	const char *msg;
 	String::Utf8Value tmp( args[0] );
 	msg = *tmp;
-	args.GetReturnValue().Set( ParseJSON( isolate, msg, strlen( msg ) ) );
+	Handle<Function> reviver;
+	LOGICAL revive = FALSE;
+	msg = *tmp;
+	struct reviver_data r;
+
+	if( args.Length() > 1 ) {
+		if( args[1]->IsFunction() ) {
+			r._this = args.Holder();
+			r.value = String::NewFromUtf8( isolate, "" );
+			r.reviver = Handle<Function>::Cast( args[1] );
+			r.revive = TRUE;
+		}
+		else {
+			isolate->ThrowException( Exception::TypeError(
+				String::NewFromUtf8( isolate, TranslateText( "Reviver parameter is not a function." ) ) ) );
+
+			return;
+		}
+	}
+	else
+		r.revive = FALSE;
+
+	args.GetReturnValue().Set( ParseJSON( isolate, msg, strlen( msg ), &r ) );
 }
 
 
@@ -391,7 +458,7 @@ void makeJSON( const v8::FunctionCallbackInfo<Value>& args ) {
 	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), "undefined :) Stringify is not completed" ) );
 }
 
-Local<Value> ParseJSON6(  Isolate *isolate, const char *utf8String, size_t len) {
+Local<Value> ParseJSON6(  Isolate *isolate, const char *utf8String, size_t len, struct reviver_data *revive ) {
 	PDATALIST parsed = NULL;
 	if( !json6_parse_message( (char*)utf8String, len, &parsed ) ) {
 		//PTEXT error = json_parse_get_error( parser->state );
@@ -406,7 +473,7 @@ Local<Value> ParseJSON6(  Isolate *isolate, const char *utf8String, size_t len) 
 		return Undefined(isolate);
 		// outside should always be a single value
 	}
-	Local<Value> value = convertMessageToJS( isolate, parsed );
+	Local<Value> value = convertMessageToJS( isolate, parsed, revive );
 	json_dispose_message( &parsed );
 	return value;
 }
@@ -414,10 +481,34 @@ Local<Value> ParseJSON6(  Isolate *isolate, const char *utf8String, size_t len) 
 void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
 {
 	Isolate* isolate = Isolate::GetCurrent();
+	if( args.Length() == 0 ) {
+		isolate->ThrowException( Exception::TypeError(
+			String::NewFromUtf8( isolate, TranslateText( "Missing parameter, data to parse" ) ) ) );
+
+		return;
+	}
 	const char *msg;
 	String::Utf8Value tmp( args[0] );
+	Handle<Function> reviver;
 	msg = *tmp;
-	args.GetReturnValue().Set( ParseJSON6( isolate, msg, strlen( msg ) ) );
+	struct reviver_data r;
+	if( args.Length() > 1 ) {
+		if( args[1]->IsFunction() ) {
+			r._this = args.Holder();
+			r.value = String::NewFromUtf8( isolate, "" );
+			r.revive = TRUE;
+			r.reviver = Handle<Function>::Cast( args[1] );
+		}
+		else {
+			isolate->ThrowException( Exception::TypeError(
+				String::NewFromUtf8( isolate, TranslateText( "Reviver parameter is not a function." ) ) ) );
+			return;
+		}
+	}
+	else 
+		r.revive = FALSE;
+
+	args.GetReturnValue().Set( ParseJSON6( isolate, msg, strlen( msg ), &r ) );
 }
 
 
