@@ -10894,7 +10894,7 @@ struct file_system_interface {
 	size_t (CPROC *_write)(void*,const char *, size_t);
 	size_t (CPROC *seek)( void *, size_t, int whence);
 	void  (CPROC *truncate)( void *);
-	void (CPROC *_unlink)( uintptr_t psvInstance, const char *);
+	int (CPROC *_unlink)( uintptr_t psvInstance, const char *);
  // get file size
 	size_t (CPROC *size)( void *);
  // get file current position
@@ -11121,6 +11121,7 @@ FILESYS_PROC  struct file_system_interface * FILESYS_API sack_get_filesystem_int
 FILESYS_PROC  void FILESYS_API sack_set_default_filesystem_interface( struct file_system_interface *fsi );
 FILESYS_PROC  void FILESYS_API sack_register_filesystem_interface( CTEXTSTR name, struct file_system_interface *fsi );
 FILESYS_PROC  int FILESYS_API  sack_fclose ( FILE *file_file );
+FILESYS_PROC  size_t FILESYS_API  sack_fseekEx ( FILE *file_file, size_t pos, int whence, struct file_system_mounted_interface *mount );
 FILESYS_PROC  size_t FILESYS_API  sack_fseek ( FILE *file_file, size_t pos, int whence );
 FILESYS_PROC  size_t FILESYS_API  sack_ftell ( FILE *file_file );
 FILESYS_PROC  size_t FILESYS_API  sack_fsize ( FILE *file_file );
@@ -11243,7 +11244,7 @@ SACK_VFS_PROC const uint8_t * CPROC sack_vfs_get_signature2( POINTER disk, POINT
 // open a file, creates if does not exist.
 SACK_VFS_PROC struct sack_vfs_file * CPROC sack_vfs_openfile( struct volume *vol, CTEXTSTR filename );
 // check if a file exists (if it does not exist, and you don't want it created, can use this and not openfile)
-SACK_VFS_PROC int CPROC sack_vfs_exists( uintptr_t psvInstance, const char * file );
+SACK_VFS_PROC int CPROC sack_vfs_exists( struct volume *vol, const char * file );
 // close a file.
 SACK_VFS_PROC int CPROC sack_vfs_close( struct sack_vfs_file *file );
 // get the current File Position Index (FPI).
@@ -11260,7 +11261,7 @@ SACK_VFS_PROC size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * dat
 SACK_VFS_PROC size_t CPROC sack_vfs_truncate( struct sack_vfs_file *file );
 // psv should be struct volume *vol;
 // delete a filename.  Clear the space it was occupying.
-SACK_VFS_PROC void CPROC sack_vfs_unlink_file( uintptr_t psv, const char * filename );
+SACK_VFS_PROC int CPROC sack_vfs_unlink_file( struct volume *vol, const char * filename );
 // -----------  directory interface commands. ----------------------
 // returns find_info which is then used in subsequent commands.
 SACK_VFS_PROC struct find_info * CPROC sack_vfs_find_create_cursor(uintptr_t psvInst,const char *base,const char *mask );

@@ -6967,7 +6967,7 @@ struct file_system_interface {
 	size_t (CPROC *_write)(void*,const char *, size_t);
 	size_t (CPROC *seek)( void *, size_t, int whence);
 	void  (CPROC *truncate)( void *);
-	void (CPROC *_unlink)( uintptr_t psvInstance, const char *);
+	int (CPROC *_unlink)( uintptr_t psvInstance, const char *);
  // get file size
 	size_t (CPROC *size)( void *);
  // get file current position
@@ -7194,6 +7194,7 @@ FILESYS_PROC  struct file_system_interface * FILESYS_API sack_get_filesystem_int
 FILESYS_PROC  void FILESYS_API sack_set_default_filesystem_interface( struct file_system_interface *fsi );
 FILESYS_PROC  void FILESYS_API sack_register_filesystem_interface( CTEXTSTR name, struct file_system_interface *fsi );
 FILESYS_PROC  int FILESYS_API  sack_fclose ( FILE *file_file );
+FILESYS_PROC  size_t FILESYS_API  sack_fseekEx ( FILE *file_file, size_t pos, int whence, struct file_system_mounted_interface *mount );
 FILESYS_PROC  size_t FILESYS_API  sack_fseek ( FILE *file_file, size_t pos, int whence );
 FILESYS_PROC  size_t FILESYS_API  sack_ftell ( FILE *file_file );
 FILESYS_PROC  size_t FILESYS_API  sack_fsize ( FILE *file_file );
@@ -8521,7 +8522,7 @@ SACK_VFS_PROC const uint8_t * CPROC sack_vfs_get_signature2( POINTER disk, POINT
 // open a file, creates if does not exist.
 SACK_VFS_PROC struct sack_vfs_file * CPROC sack_vfs_openfile( struct volume *vol, CTEXTSTR filename );
 // check if a file exists (if it does not exist, and you don't want it created, can use this and not openfile)
-SACK_VFS_PROC int CPROC sack_vfs_exists( uintptr_t psvInstance, const char * file );
+SACK_VFS_PROC int CPROC sack_vfs_exists( struct volume *vol, const char * file );
 // close a file.
 SACK_VFS_PROC int CPROC sack_vfs_close( struct sack_vfs_file *file );
 // get the current File Position Index (FPI).
@@ -8538,7 +8539,7 @@ SACK_VFS_PROC size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * dat
 SACK_VFS_PROC size_t CPROC sack_vfs_truncate( struct sack_vfs_file *file );
 // psv should be struct volume *vol;
 // delete a filename.  Clear the space it was occupying.
-SACK_VFS_PROC void CPROC sack_vfs_unlink_file( uintptr_t psv, const char * filename );
+SACK_VFS_PROC int CPROC sack_vfs_unlink_file( struct volume *vol, const char * filename );
 // -----------  directory interface commands. ----------------------
 // returns find_info which is then used in subsequent commands.
 SACK_VFS_PROC struct find_info * CPROC sack_vfs_find_create_cursor(uintptr_t psvInst,const char *base,const char *mask );
@@ -11161,7 +11162,7 @@ struct sack_vfs_file * CPROC sack_vfs_openfile( struct volume *vol, const char *
 static struct sack_vfs_file * CPROC sack_vfs_open( uintptr_t psvInstance, const char * filename, const char *opts ) {
 	return sack_vfs_openfile( (struct volume*)psvInstance, filename );
 }
-int CPROC _sack_vfs_exists( struct volume *vol, const char * file ) {
+int CPROC sack_vfs_exists( struct volume *vol, const char * file ) {
 	struct directory_entry entkey;
 	struct directory_entry *ent;
 	while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
@@ -11172,7 +11173,6 @@ int CPROC _sack_vfs_exists( struct volume *vol, const char * file ) {
 	if( ent ) return TRUE;
 	return FALSE;
 }
-int CPROC sack_vfs_exists( uintptr_t psvInstance, const char * file ) { return _sack_vfs_exists( (struct volume*)psvInstance, file ); }
 size_t CPROC sack_vfs_tell( struct sack_vfs_file *file ) { return file->fpi; }
 size_t CPROC sack_vfs_size( struct sack_vfs_file *file ) {	return file->entry->filesize ^ file->dirent_key.filesize; }
 size_t CPROC sack_vfs_seek( struct sack_vfs_file *file, size_t pos, int whence )
@@ -11397,15 +11397,19 @@ int CPROC sack_vfs_close( struct sack_vfs_file *file ) {
 	Deallocate( struct sack_vfs_file *, file );
 	return 0;
 }
-void CPROC sack_vfs_unlink_file( uintptr_t psv, const char * filename ) {
-	struct volume *vol = (struct volume *)psv;
+int CPROC sack_vfs_unlink_file( struct volume *vol, const char * filename ) {
+   int result = 0;
 	struct directory_entry entkey;
 	struct directory_entry *entry;
+	if( !vol ) return 0;
 	while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
 	LoG( "unlink file:%s", filename );
-	if( ( entry  = ScanDirectory( vol, filename, &entkey ) ) )
+	if( ( entry  = ScanDirectory( vol, filename, &entkey ) ) ) {
 		sack_vfs_unlink_file_entry( vol, entry, &entkey );
+      result = 1;
+	}
 	vol->lock = 0;
+   return result;
 }
 	/* noop */
 int CPROC sack_vfs_flush( struct sack_vfs_file *file ) {	return 0; }
@@ -11520,11 +11524,11 @@ static struct file_system_interface sack_vfs_fsi = {
                                                    , (size_t(CPROC*)(void*,const char*,size_t))sack_vfs_write
                                                    , (size_t(CPROC*)(void*,size_t,int))sack_vfs_seek
                                                    , (void(CPROC*)(void*))sack_vfs_truncate
-                                                   , sack_vfs_unlink_file
+                                                   , (int(CPROC*)(uintptr_t,const char*))sack_vfs_unlink_file
                                                    , (size_t(CPROC*)(void*))sack_vfs_size
                                                    , (size_t(CPROC*)(void*))sack_vfs_tell
                                                    , (int(CPROC*)(void*))sack_vfs_flush
-                                                   , sack_vfs_exists
+                                                   , (int(CPROC*)(uintptr_t,const char*))sack_vfs_exists
                                                    , sack_vfs_need_copy_write
                                                    , (struct find_cursor*(CPROC*)(uintptr_t,const char *,const char *))             sack_vfs_find_create_cursor
                                                    , (int(CPROC*)(struct find_cursor*))             sack_vfs_find_first
@@ -14918,7 +14922,7 @@ PRIORITY_ATEXIT( CleanSyslog, ATEXIT_PRIORITY_SYSLOG )
 	case SYSLOG_FILE:
 		break;
 	case SYSLOG_FILENAME:
-		fclose( (*syslog_local).file );
+		sack_fclose( (*syslog_local).file );
 		break;
 #ifdef __LINUX__
 #  ifndef __DISABLE_SYSLOGD_SYSLOG__
@@ -15775,11 +15779,9 @@ LOGICAL IsBadReadPtr( CPOINTER pointer, uintptr_t len )
 			//		 , line, pointer, low, high );
 			if( ptr >= low && ptr <= high )
 			{
-				//fclose( maps );
 				return FALSE;
 			}
 		}
-		//fclose( maps );
 	}
 	//fprintf( stderr, WIDE("%p is not valid. %d"), pointer, errno );
 	return TRUE;
@@ -16080,7 +16082,7 @@ void  SetSystemLog ( enum syslog_types type, const void *data )
 {
 	if( (*syslog_local).file && ( logtype != SYSLOG_FILE ) )
 	{
-		fclose( (*syslog_local).file );
+		sack_fclose( (*syslog_local).file );
 		(*syslog_local).file = NULL;
 	}
 	if( type == SYSLOG_FILE )
@@ -35148,6 +35150,9 @@ SACK_MEMORY_NAMESPACE_END
 #define NO_UNICODE_C
 #define WINFILE_COMMON_SOURCE
 #define FIX_RELEASE_COM_COLLISION
+#ifndef _DEBUG
+#  define __FILESYS_NO_FILE_LOGGING__
+#endif
 #if defined( _WIN32 ) && !defined( __TURBOC__ )
 #  ifndef UNDER_CE
   // findfirst,findnext, fileinfo
@@ -35301,8 +35306,9 @@ static void LocalInit( void )
 		{
 			InitializeCriticalSec( &(*winfile_local).cs_files );
 			(*winfile_local).flags.bInitialized = 1;
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 			(*winfile_local).flags.bLogOpenClose = 0;
-			(*winfile_local).flags.bDeallocateClosedFiles = 1;
+#endif
 			{
 #ifdef _WIN32
 				sack_set_common_data_producer( WIDE( "Freedom Collective" ) );
@@ -35457,8 +35463,10 @@ TEXTSTR ExpandPathVariable( CTEXTSTR path )
 					else
 						tmp_path = tmp;
 				}
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 				if( (*winfile_local).flags.bLogOpenClose )
 					lprintf( WIDE( "transform subst [%s]" ), tmp_path );
+#endif
 			}
 		}
 	}
@@ -35467,8 +35475,10 @@ TEXTSTR ExpandPathVariable( CTEXTSTR path )
 TEXTSTR ExpandPathEx( CTEXTSTR path, struct file_system_interface *fsi )
 {
 	TEXTSTR tmp_path = NULL;
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 	if( (*winfile_local).flags.bLogOpenClose )
 		lprintf( WIDE( "input path is [%s]" ), path );
+#endif
 	if( path )
 	{
 		if( !fsi && !IsAbsolutePath( path ) )
@@ -35568,8 +35578,10 @@ TEXTSTR ExpandPathEx( CTEXTSTR path, struct file_system_interface *fsi )
 			tmp_path = StrDup( path );
 		}
 	}
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 	if( (*winfile_local).flags.bLogOpenClose )
 		lprintf( WIDE( "output path is [%s]" ), tmp_path );
+#endif
 	return tmp_path;
 }
 TEXTSTR ExpandPath( CTEXTSTR path )
@@ -35628,8 +35640,10 @@ static TEXTSTR PrependBasePathEx( INDEX groupid, struct Group *group, CTEXTSTR f
 {
 	TEXTSTR real_filename = filename?ExpandPath( filename ):NULL;
 	TEXTSTR fullname;
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 	if( (*winfile_local).flags.bLogOpenClose )
 		lprintf( WIDE("Prepend to {%s} %p %") _size_f, real_filename, group, groupid );
+#endif
 	if( (*winfile_local).groups )
 	{
 		//SetDefaultFilePath( GetProgramPath() );
@@ -35641,8 +35655,10 @@ static TEXTSTR PrependBasePathEx( INDEX groupid, struct Group *group, CTEXTSTR f
 	}
 	if( !group || ( filename && ( IsAbsolutePath( real_filename ) ) ) )
 	{
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 		if( (*winfile_local).flags.bLogOpenClose )
 			lprintf( WIDE("already an absolute path.  [%s]"), real_filename );
+#endif
 		return real_filename;
 	}
 	{
@@ -35653,8 +35669,10 @@ static TEXTSTR PrependBasePathEx( INDEX groupid, struct Group *group, CTEXTSTR f
 		else
 			tmp_path = group->base_path;
 		fullname = NewArray( TEXTCHAR, len = StrLen( filename ) + StrLen(tmp_path) + 2 );
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 		if( (*winfile_local).flags.bLogOpenClose )
 			lprintf(WIDE("prepend %s[%s] with %s"), group->base_path, tmp_path, filename );
+#endif
 		tnprintf( fullname, len, WIDE("%s/%s"), tmp_path, real_filename );
 #if __ANDROID__
 		{
@@ -35683,8 +35701,10 @@ static TEXTSTR PrependBasePathEx( INDEX groupid, struct Group *group, CTEXTSTR f
 		*/
 		}
 #endif
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 		if( (*winfile_local).flags.bLogOpenClose )
 			lprintf( WIDE("result %s"), fullname );
+#endif
 		if( expand_path )
 			Deallocate( TEXTCHAR*, tmp_path );
 		Deallocate( TEXTCHAR*, real_filename );
@@ -35856,21 +35876,25 @@ HANDLE sack_open( INDEX group, CTEXTSTR filename, int opts, ... )
 		AddLink( &(*winfile_local).files,file );
 		LeaveCriticalSec( &(*winfile_local).cs_files );
 	}
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 	if( (*winfile_local).flags.bLogOpenClose )
 		lprintf( WIDE( "Open File: [%s]" ), file->fullname );
+#endif
 #ifdef __LINUX__
 #  undef open
 	{
-#ifdef UNICODE
+#  ifdef UNICODE
 		char *tmpfile = CStrDup( file->fullname );
 		handle = open( tmpfile, opts );
 		Deallocate( char *, tmpfile );
-#else
+#  else
 		handle = open( file->fullname, opts );
-#endif
+#  endif
 	}
+#  if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 	if( (*winfile_local).flags.bLogOpenClose )
 		lprintf( WIDE( "open %s %d %d" ), file->fullname, handle, opts );
+#  endif
 #else
 	switch( opts & 3 )
 	{
@@ -35903,13 +35927,17 @@ HANDLE sack_open( INDEX group, CTEXTSTR filename, int opts, ... )
 							, NULL );
 	break;
 	}
+#  if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 	if( (*winfile_local).flags.bLogOpenClose )
 		lprintf( WIDE( "open %s %p %08x" ), file->fullname, (POINTER)handle, opts );
+#  endif
 #endif
 	if( handle == INVALID_HANDLE_VALUE )
 	{
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 		if( (*winfile_local).flags.bLogOpenClose )
 			lprintf( WIDE( "Failed to open file [%s]=[%s]" ), file->name, file->fullname );
+#endif
 		return INVALID_HANDLE_VALUE;
 	}
 	if( handle != INVALID_HANDLE_VALUE )
@@ -36035,7 +36063,7 @@ int sack_ftruncate( FILE *file_file )
 		else
 		{
 #ifdef _WIN32
-			;
+			_chsize( fileno( file_file ), ftell( file_file ) );
 #else
 			truncate( file->fullname, sack_ftell( (FILE*)file_file ) );
 #endif
@@ -36110,8 +36138,10 @@ int sack_close( HANDLE file_handle )
 	if( file )
 	{
 		SetLink( &file->handles, (INDEX)file_handle, NULL );
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 		if( (*winfile_local).flags.bLogOpenClose )
 			lprintf( WIDE("Close %s"), file->fullname );
+#endif
 		/*
 		Deallocate( TEXTCHAR*, file->name );
 		Deallocate( TEXTCHAR*, file->fullname );
@@ -36135,8 +36165,10 @@ INDEX sack_iopen( INDEX group, CTEXTSTR filename, int opts, ... )
 	h = sack_open( group, filename, opts );
 	if( h == INVALID_HANDLE_VALUE )
 	{
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 		if( (*winfile_local).flags.bLogOpenClose )
 			lprintf( WIDE( "Failed to open %s" ), filename );
+#endif
 		return INVALID_INDEX;
 	}
 	EnterCriticalSec( &(*winfile_local).cs_files );
@@ -36147,8 +36179,10 @@ INDEX sack_iopen( INDEX group, CTEXTSTR filename, int opts, ... )
 		result = FindLink( &(*winfile_local).handles, holder );
 	}
 	LeaveCriticalSec( &(*winfile_local).cs_files );
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 	if( (*winfile_local).flags.bLogOpenClose )
 		lprintf( WIDE( "return iopen of [%s]=%p(%")_size_f WIDE(")?" ), filename, (void*)(uintptr_t)h, (size_t)result );
+#endif
 	return result;
 }
 //----------------------------------------------------------------------------
@@ -36315,8 +36349,10 @@ FILE * sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_
 				break;
 			mount = mount->next;
 		}
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 	if( (*winfile_local).flags.bLogOpenClose )
 		lprintf( WIDE("open %s %p(%s) %s (%d)"), filename, mount, mount->name, opts, mount?mount->writeable:1 );
+#endif
 	LIST_FORALL( (*winfile_local).files, idx, struct file *, file )
 	{
 		if( ( file->group == group )
@@ -36359,14 +36395,18 @@ FILE * sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_
 			if( mount && group == 0 )
 			{
 				file->fullname = StrDup( file->name );
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 				if( (*winfile_local).flags.bLogOpenClose )
 					lprintf( WIDE("full is %s"), file->fullname );
+#endif
 			}
 			else
 			{
 				file->fullname = PrependBasePathEx( group, filegroup, file->name, !mount );
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 				if( (*winfile_local).flags.bLogOpenClose )
 					lprintf( WIDE("full is %s %d"), file->fullname, (int)group );
+#endif
 			}
 			//file->fullname = file->name;
 		}
@@ -36393,8 +36433,10 @@ FILE * sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_
 		AddLink( &(*winfile_local).files,file );
 		LeaveCriticalSec( &(*winfile_local).cs_files );
 	}
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 	if( (*winfile_local).flags.bLogOpenClose )
 		lprintf( WIDE( "Open File: [%s]" ), file->fullname );
+#endif
 	if( mount && mount->fsi )
 	{
 		if( StrChr( opts, 'r' ) && !StrChr( opts, '+' ) )
@@ -36410,8 +36452,10 @@ FILE * sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_
 #  define _fullname file->fullname
 #endif
 					file->mount = test_mount;
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 					if( (*winfile_local).flags.bLogOpenClose )
 						lprintf( WIDE("Call mount %s to check if file exists %s"), test_mount->name, file->fullname );
+#endif
 					if( test_mount->fsi->exists( test_mount->psvInstance, _fullname ) )
 					{
 						handle = (FILE*)test_mount->fsi->open( test_mount->psvInstance, _fullname, opts );
@@ -36448,8 +36492,10 @@ FILE * sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_
 #else
 #  define _fullname file->fullname
 #endif
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 					if( (*winfile_local).flags.bLogOpenClose )
 						lprintf( WIDE("Call mount %s to open file %s"), test_mount->name, file->fullname );
+#endif
 					handle = (FILE*)test_mount->fsi->open( test_mount->psvInstance, _fullname, opts );
 #ifdef UNICODE
 					Deallocate( char*, _fullname );
@@ -36499,20 +36545,32 @@ default_fopen:
 		handle = fopen( file->fullname, opts );
 #  endif
 #endif
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 		if( (*winfile_local).flags.bLogOpenClose )
 			lprintf( WIDE("native opened %s"), file->fullname );
+#endif
 	}
 	if( !handle )
 	{
+		DeleteLink( &(*winfile_local).files, file );
+		Deallocate( TEXTCHAR*, file->name );
+		Deallocate( TEXTCHAR*, file->fullname );
+		Deallocate( struct file*, file );
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 		if( (*winfile_local).flags.bLogOpenClose )
 			lprintf( WIDE( "Failed to open file [%s]=[%s]" ), file->name, file->fullname );
+#endif
 		return NULL;
 	}
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 	if( (*winfile_local).flags.bLogOpenClose )
 		lprintf( WIDE( "sack_open %s (%s)" ), file->fullname, opts );
+#endif
 	AddLink( &file->files, handle );
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 	if( (*winfile_local).flags.bLogOpenClose )
 		lprintf( WIDE( "Added FILE* %p and list is %p" ), handle, file->files );
+#endif
 	return handle;
 }
 //----------------------------------------------------------------------------
@@ -36585,8 +36643,10 @@ FILE*  sack_fsopenEx( INDEX group
 #  define _fullname file->fullname
 #endif
 				file->mount = test_mount;
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 				if( (*winfile_local).flags.bLogOpenClose )
 					lprintf( WIDE("Call mount %s to check if file exists %s"), test_mount->name, file->fullname );
+#endif
 				if( test_mount->fsi->exists( test_mount->psvInstance, _fullname ) )
 				{
 					handle = (FILE*)test_mount->fsi->open( test_mount->psvInstance, _fullname, opts );
@@ -36617,8 +36677,10 @@ FILE*  sack_fsopenEx( INDEX group
 #else
 #  define _fullname file->fullname
 #endif
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 					if( (*winfile_local).flags.bLogOpenClose )
 						lprintf( WIDE("Call mount %s to open file %s"), test_mount->name, file->fullname );
+#endif
 					handle = (FILE*)test_mount->fsi->open( test_mount->psvInstance, _fullname, opts );
 #ifdef UNICODE
 					Deallocate( char*, _fullname );
@@ -36658,17 +36720,23 @@ default_fopen:
 	}
 	if( !handle )
 	{
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 		if( (*winfile_local).flags.bLogOpenClose )
 			lprintf( WIDE( "Failed to open file [%s]=[%s]" ), file->name, file->fullname );
+#endif
 		return NULL;
 	}
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 	if( (*winfile_local).flags.bLogOpenClose )
 		lprintf( WIDE( "sack_open %s (%s)" ), file->fullname, opts );
+#endif
 	EnterCriticalSec( &(*winfile_local).cs_files );
 	AddLink( &file->files, handle );
 	LeaveCriticalSec( &(*winfile_local).cs_files );
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 	if( (*winfile_local).flags.bLogOpenClose )
 		lprintf( WIDE( "Added FILE* %p and list is %p" ), handle, file->files );
+#endif
 	return handle;
 }
 //----------------------------------------------------------------------------
@@ -36759,8 +36827,10 @@ int  sack_fclose ( FILE *file_file )
 	if( file )
 	{
 		int status;
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 		if( (*winfile_local).flags.bLogOpenClose )
 			lprintf( WIDE("Closing %s"), file->fullname );
+#endif
 		if( file->mount && file->mount->fsi )
 			status = file->mount->fsi->_close( file_file );
 		else
@@ -36773,8 +36843,10 @@ int  sack_fclose ( FILE *file_file )
 			Deallocate( TEXTCHAR*, file->fullname );
 			Deallocate( struct file*, file );
 		}
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 		if( (*winfile_local).flags.bLogOpenClose )
 			lprintf( WIDE( "deleted FILE* %p and list is %p" ), file_file, file->files );
+#endif
 		LeaveCriticalSec( &(*winfile_local).cs_files );
 		return status;
 	}
@@ -36804,7 +36876,7 @@ size_t  sack_fwrite ( CPOINTER buffer, size_t size, int count,FILE *file_file )
 	if( file && file->mount && file->mount->fsi )
 	{
 		size_t result;
-		if( !file->mount->fsi->copy_write_buffer || file->mount->fsi->copy_write_buffer() )
+		if( file->mount->fsi->copy_write_buffer && file->mount->fsi->copy_write_buffer() )
 		{
 			POINTER dupbuf = malloc( size*count + 3 );
 			memcpy( dupbuf, buffer, size*count );
@@ -37048,21 +37120,41 @@ static void * CPROC sack_filesys_open( uintptr_t psv, const char *filename, cons
 static int CPROC sack_filesys_close( void*file ) { return fclose(  (FILE*)file ); }
 static size_t CPROC sack_filesys_read( void*file, char*buf, size_t len ) { return fread( buf, 1, len, (FILE*)file ); }
 static size_t CPROC sack_filesys_write( void*file, const char*buf, size_t len ) { return fwrite( buf, 1, len, (FILE*)file ); }
-static size_t CPROC sack_filesys_seek( void*file, size_t pos, int whence) { return sack_fseekEx( (FILE*)file, (long)pos, whence, NULL ); }
-static void CPROC sack_filesys_truncate( void*file ) { sack_ftruncate( (FILE*)file ); }
-static void CPROC sack_filesys_unlink( uintptr_t psv, const char*filename ) {
+static size_t CPROC sack_filesys_seek( void*file, size_t pos, int whence ) { return fseek( (FILE*)file, (long)pos, whence ), ftell( (FILE*)file ); }
+static int CPROC sack_filesys_unlink( uintptr_t psv, const char*filename ) {
+	int okay = 0;
 #ifdef UNICODE
 	TEXTCHAR *_filename = DupCStr( filename );
 #  define filename _filename
 #endif
-	sack_unlinkEx( 0, filename, NULL);
+#ifdef WIN32
+	okay = DeleteFileA( filename );
+#else
+	okay = unlink( filename );
+#endif
 #ifdef UNICODE
+	Deallocate( char *, _filename );
 #  undef filename
 #endif
+	return okay;
 }
-static size_t CPROC sack_filesys_size( void*file ) { return sack_fsizeEx( (FILE*)file, NULL ); }
-static size_t CPROC sack_filesys_tell( void*file ) { return sack_ftellEx( (FILE*)file, NULL ); }
-static int CPROC sack_filesys_flush( void*file ) { return sack_fflushEx( (FILE*)file, NULL ); }
+static size_t CPROC sack_filesys_size( void*file ) {
+	size_t here = ftell( (FILE*)file );
+	size_t length;
+	fseek( (FILE*)file, 0, SEEK_END );
+	length = ftell( (FILE*)file );
+	fseek( (FILE*)file, (long)here, SEEK_SET );
+	return length;
+}
+static size_t CPROC sack_filesys_tell( void*file ) { return ftell( (FILE*)file ); }
+static void CPROC sack_filesys_truncate( void*file ) {
+#if _WIN32
+	_chsize
+#else
+		ftruncate
+#endif
+		( fileno( (FILE*)file), ftell((FILE*)file) ); }
+static int CPROC sack_filesys_flush( void*file ) { return fflush( (FILE*)file ); }
 static int CPROC sack_filesys_exists( uintptr_t psv, const char*file );
 static LOGICAL CPROC sack_filesys_rename( uintptr_t psvInstance, const char *original_name, const char *new_name );
 static LOGICAL CPROC sack_filesys_copy_write_buffer( void ) { return FALSE; }
@@ -37146,9 +37238,17 @@ static	char * CPROC sack_filesys_find_get_name( struct find_cursor *_cursor ){
    return cursor->de->d_name;
 #endif
 }
-static	size_t CPROC sack_filesys_find_get_size( struct find_cursor *_cursor ){
+static	size_t CPROC sack_filesys_find_get_size( struct find_cursor *_cursor ) {
 	struct find_cursor_data *cursor = (struct find_cursor_data *)_cursor;
-	lprintf( "This interface function is not complete." );
+#ifdef WIN32
+	if( cursor )
+		return cursor->fileinfo.size;
+	return 0;
+#else
+	if( cursor ) {
+		return sack_filesys_size( cursor->de->d_name );
+	}
+#endif
 	return 0;
 }
 static	LOGICAL CPROC sack_filesys_find_is_directory( struct find_cursor *_cursor ){
@@ -37201,11 +37301,12 @@ PRIORITY_PRELOAD( InitWinFileSysEarly, OSALOT_PRELOAD_PRIORITY - 1 )
 	if( !(*winfile_local).default_mount )
 		(*winfile_local).default_mount = sack_mount_filesystem( "native", &native_fsi, 1000, (uintptr_t)NULL, TRUE );
 }
-#ifndef __NO_OPTIONS__
+#if !defined( __NO_OPTIONS__ )
 PRELOAD( InitWinFileSys )
 {
+#  if !defined( __FILESYS_NO_FILE_LOGGING__ )
 	(*winfile_local).flags.bLogOpenClose = SACK_GetProfileIntEx( WIDE( "SACK/filesys" ), WIDE( "Log open and close" ), (*winfile_local).flags.bLogOpenClose, TRUE );
-	(*winfile_local).flags.bDeallocateClosedFiles = SACK_GetProfileIntEx( WIDE( "SACK/filesys" ), WIDE( "Deallocate closed files" ), (*winfile_local).flags.bLogOpenClose, TRUE );
+#  endif
 }
 #endif
 static void * CPROC sack_filesys_open( uintptr_t psv, const char *filename, const char *opts ) {
@@ -74349,8 +74450,6 @@ struct my_sqlite3_vfs
 #endif
 #define l local_sqlite_interface
 struct local_data {
-	int volume;
-	struct karaway_interface* kwe;
 	PLIST registered_vfs;
 } local_sqlite_interface;
 //typedef struct sqlite3_io_methods sqlite3_io_methods;
@@ -74650,49 +74749,43 @@ int xOpen(sqlite3_vfs* vfs, const char *zName, sqlite3_file*file,
 #ifdef LOG_OPERATIONS
 	lprintf( "Open file: %s (vfs:%s)", zName, vfs->zName );
 #endif
-	/* also open the file... */
-	{
-		//int hResult = KWloadVolume( "core.volume" );
-		//if( hResult < 0 )
-		//	hResult = KWcreateVolume( "core.volume", 10*1024*1024 );
-		//if( hResult == 0 )
-		{
-			//lprintf( WIDE("is it ok?") );
-			my_file->filename = DupCStr( zName );
+	my_file->filename = DupCStr( zName );
 #if defined( __GNUC__ )
-			//__ANDROID__
+	//__ANDROID__
 #define sack_fsopen(a,b,c,d) sack_fopen(a,b,c)
 #define sack_fsopenEx(a,b,c,d,fsi) sack_fopenEx(a,b,c, fsi)
 #endif
-			if( my_vfs->mount )
-			{
-				//lprintf( "try on mount..%s .%p", my_file->filename, my_vfs->mount );
-//KWfopen( zName );
-				my_file->file = sack_fsopenEx( 0, my_file->filename, WIDE("rb+"), _SH_DENYNO, my_vfs->mount );
-				if( my_file->file )
-				{
-					InitializeCriticalSec( &my_file->cs );
-					return SQLITE_OK;
-				}
-				//lprintf( "failed..." );
-			}
-			else
-			{
-//KWfopen( zName );
-				my_file->file = sack_fsopen( 0, my_file->filename, WIDE("rb+"), _SH_DENYNO );
-				if( !my_file->file )
-//KWfopen( zName );
-					my_file->file = sack_fsopen( 0, my_file->filename, WIDE("wb+"), _SH_DENYNO );
-				if( my_file->file )
-				{
-					InitializeCriticalSec( &my_file->cs );
-					return SQLITE_OK;
-				}
-			}
+	if( my_vfs->mount )
+	{
+		//lprintf( "try on mount..%s .%p", my_file->filename, my_vfs->mount );
+		if( (flags & (SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE)) == (SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE) ) {
+			if( !(my_file->file = sack_fsopenEx( 0, my_file->filename, WIDE("rb+"), _SH_DENYNO, my_vfs->mount ) ) )
+				my_file->file = sack_fsopenEx( 0, my_file->filename, WIDE("wb+"), _SH_DENYNO, my_vfs->mount );
+		} else if( flags & (SQLITE_OPEN_READWRITE) )
+			my_file->file = sack_fsopenEx( 0, my_file->filename, WIDE( "rb+" ), _SH_DENYNO, my_vfs->mount );
+		else if( flags & SQLITE_OPEN_CREATE )
+			my_file->file = sack_fsopenEx( 0, my_file->filename, WIDE( "wb" ), _SH_DENYNO, my_vfs->mount );
+		if( my_file->file )
+		{
+			InitializeCriticalSec( &my_file->cs );
+			return SQLITE_OK;
 		}
-		//else
-		//  lprintf( WIDE("hResult = %08x"), hResult );
+		//lprintf( "failed..." );
 	}
+	else
+	{
+		my_file->file = sack_fsopen( 0, my_file->filename, WIDE("rb+"), _SH_DENYNO );
+		if( !my_file->file )
+			my_file->file = sack_fsopen( 0, my_file->filename, WIDE("wb+"), _SH_DENYNO );
+		if( my_file->file )
+		{
+			InitializeCriticalSec( &my_file->cs );
+			return SQLITE_OK;
+		}
+	}
+#if defined( __GNUC__ )
+	//__ANDROID__
+#endif
 	return SQLITE_ERROR;
 }
 int xDelete(sqlite3_vfs*vfs, const char *zName, int syncDir)
@@ -74920,12 +75013,7 @@ PRIORITY_PRELOAD( RegisterSQLiteInterface, SQL_PRELOAD_PRIORITY-2 )
 {
 	RegisterInterface( WIDE("sqlite3"), GetSQLiteInterface, DropSQLiteInterface );
 }
-#ifdef __WATCOMC__
-// watcom requires at least one export
-PUBLIC( void, AtLeastOneExport )( void )
-{
-}
-#endif
+#undef l
 SQL_NAMESPACE_END
 #endif
 #ifndef SQL_STRUCT_DEFINED
