@@ -395,8 +395,7 @@ Local<Value> convertMessageToJS( Isolate *isolate, PDATALIST msg, struct reviver
 		buildObject( val->contains, o, isolate, revive );
 		return o;
 	} 
-	if( val )
-		return makeValue( isolate, val, revive );
+	return makeValue( isolate, val, revive );
 }
 
 
