@@ -12,6 +12,7 @@
            "jsonParse.cc",
            "tls_interface.cc",
            "srg_module.cc",
+           "websocket_module.cc",
           ],
 	'defines': [
           'TARGETNAME="sack_vfs.node"',

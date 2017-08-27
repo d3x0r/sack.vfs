@@ -175,6 +175,7 @@ add_library(${PROJECT_NAME} SHARED
         jsonParse.cc
         tls_interface.cc
 	srg_module.cc 
+	websocket_module.cc 
 	${MORE_MODULE_SOURCES}
         ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
         ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc
