@@ -11717,6 +11717,9 @@ HTTP_EXPORT
  /* Gets the specific result code at the header of the packet -
    http 2.0 OK sort of thing.                                  */
 PTEXT HTTPAPI GetHttpResponce( HTTPState pHttpState );
+/* Get the method of the request in ht e http state.
+*/
+HTTP_EXPORT PTEXT HTTPAPI GetHttpMethod( struct HttpState *pHttpState );
 HTTP_EXPORT
  /*Get the value of a HTTP header field, by name
    Parameters

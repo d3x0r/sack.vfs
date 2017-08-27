@@ -29065,6 +29065,14 @@ static int CPROC SavedNameCmpEx(CTEXTSTR dst, CTEXTSTR src, size_t srclen)
 static int CPROC SavedNameCmp(CTEXTSTR dst, CTEXTSTR src)
 {
 	//lprintf( WIDE("Compare names... (tree) %s,%s"), dst, src );
+	if( !src && !dst )
+		return 0;
+	if( !src ) {
+		DebugBreak();
+		return 1;
+	}
+	if( !dst && src )
+		return -1;
 	return SavedNameCmpEx( dst, src, src[-1]-2 );
 }
 //---------------------------------------------------------------------------
@@ -29963,7 +29971,7 @@ void DumpRegisteredNamesWork( PTREEDEF tree, int level );
 PROCREG_PROC( PROCEDURE, GetRegisteredProcedureExxx )( PCLASSROOT root, PCLASSROOT name_class, CTEXTSTR returntype, CTEXTSTR name, CTEXTSTR args )
 #define GetRegisteredProcedureExx GetRegisteredProcedureExxx
 {
-	PTREEDEF class_root = GetClassTree( root, name_class );
+	PTREEDEF class_root = GetClassTreeEx( root, name_class, NULL, FALSE );
 	if( class_root )
 	{
 		PNAME oldname;
@@ -46597,6 +46605,9 @@ HTTP_EXPORT
  /* Gets the specific result code at the header of the packet -
    http 2.0 OK sort of thing.                                  */
 PTEXT HTTPAPI GetHttpResponce( HTTPState pHttpState );
+/* Get the method of the request in ht e http state.
+*/
+HTTP_EXPORT PTEXT HTTPAPI GetHttpMethod( struct HttpState *pHttpState );
 HTTP_EXPORT
  /*Get the value of a HTTP header field, by name
    Parameters
@@ -46734,6 +46745,7 @@ struct HttpState {
 	PVARTEXT pvt_collector;
   // an accumulator that moves data from collector into whatever we've got leftover
 	PTEXT partial;
+	PTEXT method;
  // the first line of the http responce... (or request)
 	PTEXT response_status;
  // the path of the resource - mostly for when this is used to receive requests.
@@ -46764,6 +46776,13 @@ struct HttpState {
 	enum ReadChunkState read_chunk_state;
 	uint32_t last_read_tick;
 	PTHREAD waiter;
+	struct httpStateFlags {
+		BIT_FIELD keep_alive : 1;
+		BIT_FIELD close : 1;
+		BIT_FIELD upgrade : 1;
+		BIT_FIELD h2c_upgrade : 1;
+		BIT_FIELD ws_upgrade : 1;
+	}flags;
 };
 struct HttpServer {
 	PCLIENT server;
@@ -46784,6 +46803,11 @@ struct instance_data {
 	PTHREAD waiter;
 	PCLIENT *pc;
 };
+PRELOAD( loadOption ) {
+#ifndef __NO_OPTIONS__
+	l.flags.bLogReceived = SACK_GetProfileIntEx( GetProgramName(), WIDE( "SACK/HTTP/Enable Logging Received Data" ), 0, TRUE );
+#endif
+}
 void GatherHttpData( struct HttpState *pHttpState )
 {
 	if( pHttpState->content_length )
@@ -46920,6 +46944,15 @@ int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
 										struct HttpField *field = New( struct HttpField );
 										field->name = SegGrab( field_name );
 										field->value = SegGrab( value );
+										if( TextLike( field->name, "connection" ) )
+										{
+											if( TextLike( field->value, "keep-alive" ) ) {
+												pHttpState->flags.keep_alive = 1;
+											}
+											if( TextLike( field->value, "close" ) ) {
+												pHttpState->flags.close = 1;
+											}
+										}
 										LineRelease( trash );
 										AddLink( &pHttpState->fields, field );
 									}
@@ -46949,6 +46982,7 @@ int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
  // initialize to assume it's incomplete; NOT OK.  (requests should be OK)
 											pHttpState->numeric_code = HTTP_STATE_RESULT_CONTENT;
 											request = NEXTLINE( request );
+											pHttpState->method = SegBreak( request );
 										}
 										else if( TextSimilar( request, WIDE( "POST" ) ) )
 										{
@@ -46956,6 +46990,7 @@ int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
 											pHttpState->numeric_code = HTTP_STATE_RESULT_CONTENT;
 											lprintf( WIDE("probably shouldn't post final until content length is also received...") );
 											request = NEXTLINE( request );
+											pHttpState->method = SegBreak( request );
 										}
 										// this loop is used for both client and server http requests...
 										// this will be the first part of a HTTP response (this one will have a result code, the other is just version)
@@ -46984,6 +47019,11 @@ int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
 													lprintf( WIDE( "failed to find result code in %s" ), line );
 												}
 											}
+										}
+										else {
+											lprintf( "Unsupported Command:%s", GetText( request ) );
+											request = NEXTLINE( request );
+											pHttpState->method = SegBreak( request );
 										}
 										for( tmp = request; tmp; tmp = next )
 										{
@@ -47014,7 +47054,7 @@ int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
 												else
 												{
 													resource_path = SegAppend( resource_path, SegGrab( tmp ) );
-													if( request == tmp ) request = next;
+													request = next;
 												}
 											}
 										}
@@ -47084,7 +47124,22 @@ SegSplit( &pCurrent, start );
 					// down convert from int64_t
 					pHttpState->content_length = (int)IntCreateFromSeg( field->value );
 				}
-				if( TextLike( field->name, WIDE( "Transfer-Encoding" ) ) )
+				else if( TextLike( field->name, WIDE( "upgrade" ) ) )
+				{
+					if( TextLike( field->value, "websocket" ) ) {
+						pHttpState->flags.ws_upgrade = 1;
+					}
+					else if( TextLike( field->value, "h2c" ) ) {
+						pHttpState->flags.h2c_upgrade = 1;
+					}
+				}
+				else if( TextLike( field->name, WIDE( "connection" ) ) )
+				{
+					if( TextLike( field->value, "upgrade" ) ) {
+						pHttpState->flags.upgrade = 1;
+					}
+				}
+				else if( TextLike( field->name, WIDE( "Transfer-Encoding" ) ) )
 				{
 					if( TextLike( field->value, "chunked" ) )
 					{
@@ -47095,7 +47150,7 @@ SegSplit( &pCurrent, start );
 						pHttpState->read_chunk_total_length = 0;
 					}
 				}
-				if( TextLike( field->name, WIDE( "Expect" ) ) )
+				else if( TextLike( field->name, WIDE( "Expect" ) ) )
 				{
 					if( TextLike( field->value, WIDE( "100-continue" ) ) )
 					{
@@ -47248,9 +47303,6 @@ LOGICAL AddHttpData( struct HttpState *pHttpState, POINTER buffer, size_t size )
 struct HttpState *CreateHttpState( void )
 {
 	struct HttpState *pHttpState;
-#ifndef __NO_OPTIONS__
-	l.flags.bLogReceived = SACK_GetProfileIntEx( GetProgramName(), WIDE("SACK/HTTP/Enable Logging Received Data"), 0, TRUE );
-#endif
 	pHttpState = New( struct HttpState );
 	MemSet( pHttpState, 0, sizeof( struct HttpState ) );
 	pHttpState->pvt_collector = VarTextCreate();
@@ -47260,7 +47312,9 @@ void EndHttp( struct HttpState *pHttpState )
 {
 	pHttpState->final = 0;
 	pHttpState->content_length = 0;
+	LineRelease( pHttpState->method );
 	LineRelease( pHttpState->content );
+	LineRelease( pHttpState->resource );
 	if( pHttpState->partial != pHttpState->content )
 	{
 		LineRelease( pHttpState->partial );
@@ -47337,6 +47391,14 @@ PTEXT GetHttpRequest( struct HttpState *pHttpState )
 {
 	return pHttpState->resource;
 }
+PTEXT GetHttpResource( struct HttpState *pHttpState )
+{
+	return pHttpState->resource;
+}
+PTEXT GetHttpMethod( struct HttpState *pHttpState )
+{
+	return pHttpState->method;
+}
 void DestroyHttpState( struct HttpState *pHttpState )
 {
  // empties variables
@@ -47355,7 +47417,7 @@ void SendHttpResponse ( struct HttpState *pHttpState, PCLIENT pc, int numeric, C
 	PTEXT tmp_content;
 	//TEXTCHAR message[500];
 	vtprintf( pvt_message, WIDE( "HTTP/1.1 %d %s\r\n" ), numeric, text );
-	if( content_type )
+	if( content_type && body )
 	{
 		vtprintf( pvt_message, WIDE( "Content-Length: %d\r\n" ), GetTextSize(body));
 		vtprintf( pvt_message, WIDE( "Content-Type: %s\r\n" )
@@ -47363,11 +47425,12 @@ void SendHttpResponse ( struct HttpState *pHttpState, PCLIENT pc, int numeric, C
 					:(tmp_content=GetHttpField( pHttpState, WIDE("Accept") ))?GetText(tmp_content)
 					:WIDE("text/plain; charset=utf-8")  );
 	}
-	else
-		vtprintf( pvt_message, WIDE( "%s\r\n" ), GetText( body ) );
+	//else
+	//	vtprintf( pvt_message, WIDE( "%s\r\n" ), GetText( body ) );
 	vtprintf( pvt_message, WIDE( "Server: SACK Core Library 2.x\r\n" )  );
-	vtprintf( pvt_message, WIDE( "\r\n" )  );
-	header = VarTextGet( pvt_message );
+	if( body )
+		vtprintf( pvt_message, WIDE( "\r\n" )  );
+	header = VarTextPeek( pvt_message );
 	//offset += snprintf( message + offset, sizeof( message ) - offset, WIDE( "%s" ),  "Body");
 	if( l.flags.bLogReceived )
 	{
@@ -47381,6 +47444,7 @@ void SendHttpResponse ( struct HttpState *pHttpState, PCLIENT pc, int numeric, C
 	SendTCP( pc, GetText( header ), GetTextSize( header ) );
 	if( content_type )
 		SendTCP( pc, GetText( body ), GetTextSize( body ) );
+	VarTextDestroy( &pvt_message );
 }
 void SendHttpMessage ( struct HttpState *pHttpState, PCLIENT pc, PTEXT body )
 {
@@ -47636,40 +47700,31 @@ PTEXT GetHttps( PTEXT address, PTEXT url )
 //---------- SERVER --------------------------------------------
 static LOGICAL InvokeMethod( PCLIENT pc, struct HttpServer *server, struct HttpState *pHttpState )
 {
-	PTEXT request = TextParse( pHttpState->response_status, WIDE( "?#" ), WIDE( " " ), 1, 1 DBG_SRC );
-	if( TextLike( request, WIDE( "get" ) ) || TextLike( request, WIDE( "post" ) ) )
+	PTEXT method = GetHttpMethod( pHttpState );
+	//PTEXT request = TextParse( pHttpState->response_status, WIDE( "?#" ), WIDE( " " ), 1, 1 DBG_SRC );
+	if( TextLike( method, WIDE( "get" ) ) || TextLike( method, WIDE( "post" ) ) )
 	{
-		//lprintf( "is a get or post? ");
+		LOGICAL (CPROC *f)(uintptr_t, PCLIENT, struct HttpState *, PTEXT);
+		LOGICAL status = FALSE;
+		f = (LOGICAL (CPROC*)(uintptr_t, PCLIENT, struct HttpState *, PTEXT))GetRegisteredProcedureExxx( server->methods, (PCLASSROOT)(GetText( pHttpState->resource ) + 1), "LOGICAL", GetText(method), "(uintptr_t, PCLIENT, struct HttpState *, PTEXT)" );
+		//lprintf( "got for %s %s", (PCLASSROOT)(GetText( pHttpState->resource ) + 1),  GetText( request ) );
+		if( f )
+			status = f( server->psvRequest, pc, pHttpState, pHttpState->content );
+		if( !status )
 		{
-			LOGICAL (CPROC *f)(uintptr_t, PCLIENT, struct HttpState *, PTEXT);
-			LOGICAL status = FALSE;
-			//lprintf( "is %s==%s?", name, GetText( pHttpState->resource ) + 1 );
-			//if( CompareMask( name, GetText( pHttpState->resource ) + 1, FALSE ) )
-			{
-				f = (LOGICAL (CPROC*)(uintptr_t, PCLIENT, struct HttpState *, PTEXT))GetRegisteredProcedureExxx( server->methods, (PCLASSROOT)(GetText( pHttpState->resource ) + 1), "LOGICAL", GetText(request), "(uintptr_t, PCLIENT, struct HttpState *, PTEXT)" );
-				//lprintf( "got for %s %s", (PCLASSROOT)(GetText( pHttpState->resource ) + 1),  GetText( request ) );
-				//if( !f )
-				if( f )
-					status = f( server->psvRequest, pc, pHttpState, pHttpState->content );
-			}
-			if( !status )
-			{
-				if( server->handle_request )
-					status = server->handle_request( server->psvRequest, pHttpState );
-			}
-			if( !status )
-			{
-				PTEXT body = SegCreateFromText( WIDE( "<HTML><HEAD><TITLE>Bad Request</TITLE></HEAD><BODY>Resource handler not found" ) );
-				SendHttpResponse( pHttpState, NULL, 404, WIDE("NOT FOUND"), WIDE("text/html"), body );
-				LineRelease( body );
-			}
+			if( server->handle_request )
+				status = server->handle_request( server->psvRequest, pHttpState );
 		}
-		LineRelease( request );
+		if( !status )
+		{
+			DECLTEXT( body, WIDE( "<HTML><HEAD><TITLE>Bad Request</TITLE></HEAD><BODY>Resource handler not found" ) );
+			SendHttpResponse( pHttpState, NULL, 404, WIDE("NOT FOUND"), WIDE("text/html"), (PTEXT)&body );
+		}
 		return 1;
 	}
 	else
 		lprintf( WIDE("not a get or a post?") );
-	LineRelease( request );
+	//LineRelease( request );
 	return 0;
 }
 static void CPROC HandleRequest( PCLIENT pc, POINTER buffer, size_t length )
@@ -47693,13 +47748,22 @@ static void CPROC HandleRequest( PCLIENT pc, POINTER buffer, size_t length )
 		AddHttpData( pHttpState, buffer, length );
 		while( ( result = ProcessHttp( pc, pHttpState ) ) )
 		{
+			int status;
 			struct HttpServer *server = (struct HttpServer *)GetNetworkLong( pc, 0 );
 			//lprintf( "result = %d", result );
 			switch( result )
 			{
 			case HTTP_STATE_RESULT_CONTENT:
-				InvokeMethod( pc, server, pHttpState );
-				EndHttp( pHttpState );
+				status = InvokeMethod( pc, server, pHttpState );
+				if( status
+					&& ( ( pHttpState->response_version == 9 )
+					|| (pHttpState->response_version == 100 && !pHttpState->flags.keep_alive)
+					||( pHttpState->response_version == 101 && pHttpState->flags.close ) ) ) {
+					RemoveClientEx( pc, 0, 1 );
+					return;
+				}
+				else
+					EndHttp( pHttpState );
 				break;
 			case HTTP_STATE_RESULT_CONTINUE:
 				break;
@@ -47732,9 +47796,6 @@ struct HttpServer *CreateHttpsServerEx( CTEXTSTR interface_address, CTEXTSTR Tar
 	struct HttpServer *server = New( struct HttpServer );
 	SOCKADDR *tmp;
 	TEXTCHAR class_name[256];
-#ifndef __NO_OPTIONS__
-	l.flags.bLogReceived = SACK_GetProfileIntEx( GetProgramName(), WIDE( "SACK/HTTP/Enable Logging Received Data" ), 0, TRUE );
-#endif
 	server->clients = NULL;
 	server->handle_request = handle_request;
 	server->psvRequest = psv;
@@ -47764,9 +47825,6 @@ struct HttpServer *CreateHttpServerEx( CTEXTSTR interface_address, CTEXTSTR Targ
 	struct HttpServer *server = New( struct HttpServer );
 	SOCKADDR *tmp;
 	TEXTCHAR class_name[256];
-#ifndef __NO_OPTIONS__
-	l.flags.bLogReceived = SACK_GetProfileIntEx( GetProgramName(), WIDE("SACK/HTTP/Enable Logging Received Data"), 0, TRUE );
-#endif
 	server->clients = NULL;
 	server->handle_request = handle_request;
 	server->psvRequest = psv;
@@ -47799,10 +47857,6 @@ PTEXT GetHTTPField( struct HttpState *pHttpState, CTEXTSTR name )
 			return field->value;
 	}
 	return NULL;
-}
-PTEXT GetHttpResource( struct HttpState *pHttpState )
-{
-	return pHttpState->resource;
 }
 HTTP_NAMESPACE_END
 #undef l
@@ -50830,7 +50884,7 @@ HTML5_WEBSOCKET_NAMESPACE
 typedef struct html5_web_socket *HTML5WebSocket;
 struct html5_web_socket {
  // this value must be 0x20130912
-   uint32_t Magic;
+	uint32_t Magic;
 	HTTPState http_state;
 	PCLIENT pc;
 	struct web_socket_flags
@@ -50838,8 +50892,8 @@ struct html5_web_socket {
 		BIT_FIELD initial_handshake_done : 1;
 		BIT_FIELD rfc6455 : 1;
 	} flags;
-   struct web_socket_input_state input_state;
-   struct web_socket_output_state output_state;
+	struct web_socket_input_state input_state;
+	struct web_socket_output_state output_state;
 };
 const TEXTCHAR *base64 = WIDE("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=");
 static void encodeblock( unsigned char in[3], TEXTCHAR out[4], int len )
@@ -57885,7 +57939,7 @@ void ClearClient( PCLIENT pc )
 	ReleaseAddress( pc->saClient );
 	ReleaseAddress( pc->saSource );
 	// sets socket to 0 - so it's not quite == INVALID_SOCKET
-#if LOG_NETWORK_EVENT_THREAD
+#ifdef LOG_NETWORK_EVENT_THREAD
 	if( globalNetworkData.flags.bLogNotices )
 		lprintf( WIDE( "Clear Client %p" ), pc );
 #endif
@@ -57918,6 +57972,9 @@ void TerminateClosedClientEx( PCLIENT pc DBG_PASS )
 #ifdef VERBOSE_DEBUG
 			lprintf( WIDE( "close socket." ) );
 #endif
+#if defined( USE_WSA_EVENTS )
+			WSACloseEvent( pc->event );
+#endif
 			closesocket( pc->Socket );
 			while( pc->lpFirstPending )
 			{
@@ -57927,18 +57984,14 @@ void TerminateClosedClientEx( PCLIENT pc DBG_PASS )
 				if( pc->lpFirstPending != &pc->FirstWritePending )
 				{
 #ifdef LOG_PENDING
-					{
-						lprintf( WIDE(WIDE( "Data queued...Deleting in remove." )) );
-					}
+					lprintf( WIDE(WIDE( "Data queued...Deleting in remove." )) );
 #endif
 					Deallocate( PendingBuffer*, pc->lpFirstPending);
 				}
 				else
 				{
 #ifdef LOG_PENDING
-					{
-						lprintf( WIDE("Normal send queued...Deleting in remove.") );
-					}
+					lprintf( WIDE("Normal send queued...Deleting in remove.") );
 #endif
 				}
 				if (!lpNext)
@@ -58183,7 +58236,7 @@ void HandleEvent( PCLIENT pClient )
 		return;
 	}
 	pClient->dwFlags |= CF_PROCESSING;
-#if LOG_NETWORK_EVENT_THREAD
+#ifdef LOG_NETWORK_EVENT_THREAD
 	if( globalNetworkData.flags.bLogNotices )
 		lprintf( WIDE( "Client event on %p" ), pClient );
 #endif
@@ -58194,8 +58247,10 @@ void HandleEvent( PCLIENT pClient )
 			{
 				if( networkEvents.lNetworkEvents & FD_READ )
 				{
+#ifdef LOG_NOTICES
 					if( globalNetworkData.flags.bLogNotices )
 						lprintf( WIDE( "Got UDP FD_READ" ) );
+#endif
 					FinishUDPRead( pClient );
 				}
 			}
@@ -58224,7 +58279,7 @@ void HandleEvent( PCLIENT pClient )
 #endif
 				// if an unknown socket issued a
 				// notification - close it - unknown handling of unknown socket.
-#if LOG_NETWORK_EVENT_THREAD
+#ifdef LOG_NETWORK_EVENT_THREAD
 				if( globalNetworkData.flags.bLogNotices )
 					lprintf( WIDE( "events : %08x on %p" ), networkEvents.lNetworkEvents, pClient );
 #endif
@@ -58232,14 +58287,18 @@ void HandleEvent( PCLIENT pClient )
 				{
 					{
 						uint16_t wError = networkEvents.iErrorCode[FD_CONNECT_BIT];
+#ifdef LOG_NOTICES
 						if( globalNetworkData.flags.bLogNotices )
 							lprintf( WIDE("FD_CONNECT on %p"), pClient );
+#endif
 						if( !wError )
 							pClient->dwFlags |= CF_CONNECTED;
 						else
 						{
+#ifdef LOG_NOTICES
 							if( globalNetworkData.flags.bLogNotices )
 								lprintf( WIDE("Connect error: %d"), wError );
+#endif
 							pClient->dwFlags |= CF_CONNECTERROR;
 						}
 						if( !( pClient->dwFlags & CF_CONNECTERROR ) )
@@ -58254,8 +58313,10 @@ void HandleEvent( PCLIENT pClient )
 						pClient->dwFlags &= ~CF_CONNECTING;
 						if( pClient->connect.ThisConnected )
 						{
+#ifdef LOG_NOTICES
 							if( globalNetworkData.flags.bLogNotices )
 								lprintf( WIDE( "Post connect to application %p  error:%d" ), pClient, wError );
+#endif
 							if( pClient->dwFlags & CF_CPPCONNECT )
 								pClient->connect.CPPThisConnected( pClient->psvConnect, wError );
 							else
@@ -58275,15 +58336,19 @@ void HandleEvent( PCLIENT pClient )
 						}
 						if( pClient->pWaiting )
 							WakeThread( pClient->pWaiting );
+#ifdef LOG_NOTICES
 						if( globalNetworkData.flags.bLogNotices )
 							lprintf( WIDE( "FD_CONNECT Completed" ) );
+#endif
 						//lprintf( WIDE("Returned from application inital read complete.") );
 					}
 				}
 				if( networkEvents.lNetworkEvents & FD_READ )
 				{
+#ifdef LOG_NOTICES
 					if( globalNetworkData.flags.bLogNotices )
 						lprintf( WIDE( "FD_READ" ) );
+#endif
 					if( pClient->bDraining )
 					{
 						TCPDrainRead( pClient );
@@ -58305,8 +58370,10 @@ void HandleEvent( PCLIENT pClient )
 				}
 				if( networkEvents.lNetworkEvents & FD_WRITE )
 				{
+#ifdef LOG_NOTICES
 					if( globalNetworkData.flags.bLogNotices )
 						lprintf( WIDE("FD_Write") );
+#endif
 					TCPWrite(pClient);
 				}
 				if( networkEvents.lNetworkEvents & FD_CLOSE )
@@ -58326,8 +58393,10 @@ void HandleEvent( PCLIENT pClient )
 							//InternalRemoveClientEx( pc, TRUE, FALSE );
 						}
 					}
+#ifdef LOG_NOTICES
 					if( globalNetworkData.flags.bLogNotices )
 						lprintf(WIDE( "FD_CLOSE... %p" ), pClient );
+#endif
 					if( pClient->dwFlags & CF_ACTIVE )
 					{
 						// might already be cleared and gone..
@@ -58340,8 +58409,10 @@ void HandleEvent( PCLIENT pClient )
 				}
 				if( networkEvents.lNetworkEvents & FD_ACCEPT )
 				{
+#ifdef LOG_NOTICES
 					if( globalNetworkData.flags.bLogNotices )
 						lprintf( WIDE("FD_ACCEPT on %p"), pClient );
+#endif
 					AcceptClient(pClient);
 				}
 				//lprintf( WIDE("leaveing event handler...") );
@@ -58438,7 +58509,7 @@ static void ClearThreadEvents( struct peer_thread_info *info )
 {
 	struct peer_thread_info *first_peer = info;
 	struct peer_thread_info *peer;
-#if LOG_NETWORK_EVENT_THREAD
+#ifdef LOG_NETWORK_EVENT_THREAD
 	if( globalNetworkData.flags.bLogNotices )
 		lprintf( WIDE( "Clear Events." ) );
 #endif
@@ -58447,7 +58518,7 @@ static void ClearThreadEvents( struct peer_thread_info *info )
 		PCLIENT next;
 		for( pc = globalNetworkData.ClosedClients; pc; pc = next )
 		{
-#if LOG_NETWORK_EVENT_THREAD
+#ifdef LOG_NETWORK_EVENT_THREAD
 			if( globalNetworkData.flags.bLogNotices )
 				lprintf( WIDE( "reclaim closed client... %p" ), pc );
 #endif
@@ -58493,7 +58564,7 @@ static void AddThreadEvent( PCLIENT pc, struct peer_thread_info *info )
 	struct peer_thread_info *peer;
 	if( pc->dwFlags & CF_PROCESSING )
 	{
-#if LOG_NETWORK_EVENT_THREAD
+#ifdef LOG_NETWORK_EVENT_THREAD
 		if( globalNetworkData.flags.bLogNotices )
 			lprintf( WIDE("This is a socket that is processing, don't put in schedule.") );
 #endif
@@ -58508,7 +58579,7 @@ static void AddThreadEvent( PCLIENT pc, struct peer_thread_info *info )
 	for( peer = first_peer; peer && ( ( peer->nEvents >= 60 ) || peer->flags.bProcessing ); peer = peer->child_peer );
 	if( !peer )
 	{
-#if LOG_NETWORK_EVENT_THREAD
+#ifdef LOG_NETWORK_EVENT_THREAD
 		if( globalNetworkData.flags.bLogNotices )
 			lprintf( WIDE( "Now at event capacity, creating another thread" ) );
 #endif
@@ -58532,7 +58603,7 @@ static void WakeNewThreadEvents( struct peer_thread_info *info )
 {
 	struct peer_thread_info *first_peer = info;
 	struct peer_thread_info *peer;
-#if LOG_NETWORK_EVENT_THREAD
+#ifdef LOG_NETWORK_EVENT_THREAD
 	if( globalNetworkData.flags.bLogNotices )
 		lprintf( WIDE( "Wake New Events." ) );
 #endif
@@ -58543,7 +58614,7 @@ static void WakeNewThreadEvents( struct peer_thread_info *info )
 		// this will be the parent of all; so his parent will be null, and we're already awake.
 		if( peer->parent_peer && peer->nEvents != peer->nWaitEvents )
 		{
-#if LOG_NETWORK_EVENT_THREAD
+#ifdef LOG_NETWORK_EVENT_THREAD
 			if( globalNetworkData.flags.bLogNotices )
 				lprintf( WIDE( "wake parent thread %p" ), peer );
 #endif
@@ -58574,7 +58645,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t qui
 		//static PLIST clients = NULL; // clients are added parallel, so events are in order too.
 		PCLIENT pc;
 		// disallow changing of the lists.
-#if LOG_NETWORK_EVENT_THREAD
+#ifdef LOG_NETWORK_EVENT_THREAD
 		if( globalNetworkData.flags.bLogNotices )
 			lprintf( WIDE("End - thread processing") );
 #endif
@@ -58601,7 +58672,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t qui
 						lprintf(WIDE( " Found closed? %p" ), pc );
 						continue;
 					}
-#if LOG_NETWORK_EVENT_THREAD
+#ifdef LOG_NETWORK_EVENT_THREAD
 					if( globalNetworkData.flags.bLogNotices )
 						lprintf( WIDE( "Added to schedule : %p" ), pc );
 #endif
@@ -58659,7 +58730,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t qui
 		{
 			int32_t result;
 			// want to wait here anyhow...
-#if LOG_NETWORK_EVENT_THREAD
+#ifdef LOG_NETWORK_EVENT_THREAD
 			if( globalNetworkData.flags.bLogNotices )
 				lprintf( WIDE( "%p Waiting on %d events" ), thread, thread->nEvents );
 #endif
@@ -58674,14 +58745,14 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t qui
 			// where we probably do want to be woken on a 0 event.
 			if( result != WSA_WAIT_EVENT_0 )
 			{
-#if LOG_NETWORK_EVENT_THREAD
+#ifdef LOG_NETWORK_EVENT_THREAD
 				if( globalNetworkData.flags.bLogNotices )
 					lprintf( WIDE("Begin - thread processing %d"), result );
 #endif
 				thread->flags.bProcessing = 1;
 				thread->nWaitEvents = 0;
 			}
-#if LOG_NETWORK_EVENT_THREAD
+#ifdef LOG_NETWORK_EVENT_THREAD
 			if( globalNetworkData.flags.bLogNotices )
 				lprintf( WIDE("Event Wait Result was %d"), result );
 #endif
@@ -60257,9 +60328,13 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNofity, LOGICAL bLi
 			}
 			if( 1 )
 			{
+				// www.serverframework.com/asynchronousevents/2011/01/time-wait-and-its-design-implications-for-protocols-and-scalable-servers.html
+				//  the idea is to NEVER do this; but I had to do this for lots of parallel connections that were short lived...
+				// windows registry http://technet.microsoft.com/en-us/library/cc938217.aspx 240 seconds time_wait timeout
 				struct linger lingerSet;
  // on , with no time = off.
 				lingerSet.l_onoff = 1;
+ // 0 timeout sends reset.
 				lingerSet.l_linger = 0;
 				// set server to allow reuse of socket port
 				if (setsockopt(lpClient->Socket, SOL_SOCKET, SO_LINGER,
@@ -60268,6 +60343,20 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNofity, LOGICAL bLi
 					lprintf( WIDE( "error setting no linger in close." ) );
 					//cerr << "NFMSim:setHost:ERROR: could not set socket to linger." << endl;
 				}
+			}
+		}
+		else {
+			struct linger lingerSet;
+			// linger ON causes delay on close... otherwise close returns immediately
+ // on , with no time = off.
+			lingerSet.l_onoff = 0;
+			lingerSet.l_linger = 0;
+			// set server to allow reuse of socket port
+			if( setsockopt( lpClient->Socket, SOL_SOCKET, SO_LINGER,
+				(char*)&lingerSet, sizeof( lingerSet ) ) <0 )
+			{
+				lprintf( WIDE( "error setting no linger in close." ) );
+				//cerr << "NFMSim:setHost:ERROR: could not set socket to linger." << endl;
 			}
 		}
 	if( !(lpClient->dwFlags & CF_ACTIVE) )
@@ -88012,7 +88101,7 @@ size_t New4GetOptionStringValue( PODBC odbc, POPTION_TREE_NODE optval, TEXTCHAR 
 		(*len) = result_len-1;
 		StrCpyEx( (*buffer), GetText( pResult ), result_len );
 		(*buffer)[result_len-1] = 0;
-		optval->value = StrDup( GetText( pResult ) );
+		//optval->value = StrDup( GetText( pResult ) );
 		LineRelease( pResult );
 		VarTextDestroy( &pvtResult );
 	}
