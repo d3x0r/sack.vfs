@@ -10,13 +10,13 @@ static struct local {
 Persistent<Function> ComObject::constructor;
 
 ComObject::ComObject( char *name ) {
-   this->name = name;
+   	this->name = name;
 	handle = SackOpenComm( name, 0, 0 );
 }
 
 ComObject::~ComObject() {
 	if( handle >=0 )
-      SackCloseComm( handle );
+		SackCloseComm( handle );
   	Deallocate( char*, name );
 }
 
