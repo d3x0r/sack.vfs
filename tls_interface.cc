@@ -1,5 +1,5 @@
 // https://tools.ietf.org/html/rfc5280
-//   §4.2.1.1 and §4.2.1.2. 
+//   ï¿½4.2.1.1 and ï¿½4.2.1.2.
 //  https://tools.ietf.org/html/rfc5280#section-4.2.1.2
 //
 
@@ -8,8 +8,6 @@
 
 #include "global.h"
 
-const int serverKBits = 4096;
-const int kBits = 1024;// 4096;
 const int kExp = RSA_F4;
 
 /*
@@ -122,7 +120,7 @@ struct info_params {
 };
 
 
-struct optionStrings *getStrings( Isolate *isolate ) {
+static struct optionStrings *getStrings( Isolate *isolate ) {
 	INDEX idx;
 	struct optionStrings * check;
 	LIST_FORALL( strings, idx, struct optionStrings *, check ) {
@@ -344,7 +342,7 @@ int pem_password(char *buf, int size, int rwflag, void *u)
 }
 
 void MakeCert(  struct info_params *params )
-{ 
+{
 	X509 * x509=NULL;
 	EVP_PKEY *pkey = NULL;
 	EVP_PKEY *pubkey = NULL;
@@ -352,8 +350,8 @@ void MakeCert(  struct info_params *params )
 
 	BIO *keybuf = BIO_new( BIO_s_mem() );
 
-	// Create evp obj to hold our rsakey 
-	// 
+	// Create evp obj to hold our rsakey
+	//
 	BIO_write( keybuf, params->key, params->keylen );
 	PEM_read_bio_PrivateKey( keybuf, &pkey, params->password?pem_password:NULL, params->password?params:NULL );
 	if( !pkey ) {
@@ -414,17 +412,17 @@ void MakeCert(  struct info_params *params )
 				basicConstraints = [critical,] CA : true
 				keyUsage = [critical,] digitalSignature, cRLSign, keyCertSign
 
-				NID_netscape_cert_type, // 71 
-				NID_key_usage,		// 83 
-				NID_subject_alt_name,	// 85 
-				NID_basic_constraints,	// 87 
-				NID_certificate_policies, // 89 
-				NID_ext_key_usage,	// 126 
-				NID_policy_constraints,	// 401 
-				NID_proxyCertInfo,	// 663 
-				NID_name_constraints,	// 666 
-				NID_policy_mappings,	// 747 
-				NID_inhibit_any_policy	// 748 
+				NID_netscape_cert_type, // 71
+				NID_key_usage,		// 83
+				NID_subject_alt_name,	// 85
+				NID_basic_constraints,	// 87
+				NID_certificate_policies, // 89
+				NID_ext_key_usage,	// 126
+				NID_policy_constraints,	// 401
+				NID_proxyCertInfo,	// 663
+				NID_name_constraints,	// 666
+				NID_policy_mappings,	// 747
+				NID_inhibit_any_policy	// 748
 
 				# define KU_DIGITAL_SIGNATURE    0x0080
 				# define KU_NON_REPUDIATION      0x0040
@@ -486,7 +484,7 @@ free_all:
 	EVP_PKEY_free( pkey );
 	X509_free( x509 );
 	BIO_free_all(keybuf);
-} 
+}
 
 
 void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -661,7 +659,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 void MakeReq( struct info_params *params )
-{ 
+{
 	X509_REQ *req = NULL;
 	//X509 * x509;
 	EVP_PKEY *pkey = NULL;
@@ -677,15 +675,15 @@ void MakeReq( struct info_params *params )
 		goto free_all;
 	}
 
-	// seed openssl's prng 
-	// 
-	/* 
-	if (RAND_load_file("/dev/random", -1)) 
-		  fatal("Could not seed prng"); 
-	*/ 
-	// Generate the RSA key; we don't assign a callback to monitor progress 
-	// since generating keys is fast enough these days 
-	// 
+	// seed openssl's prng
+	//
+	/*
+	if (RAND_load_file("/dev/random", -1))
+		  fatal("Could not seed prng");
+	*/
+	// Generate the RSA key; we don't assign a callback to monitor progress
+	// since generating keys is fast enough these days
+	//
 
 	{
 		req = X509_REQ_new();
@@ -729,7 +727,7 @@ void MakeReq( struct info_params *params )
 						SOCKADDR *addr = CreateRemote( name, 0 );
 						AddLink( &addresses, addr );
 						ASN1_IA5STRING *val = ASN1_IA5STRING_new();
-						if( IsAddressV6( addr ) ) 
+						if( IsAddressV6( addr ) )
 							ASN1_STRING_set( val, addr->sa_data+6, (int)16 );
 						else
 							ASN1_STRING_set( val, addr->sa_data+2, (int)4 );
@@ -792,7 +790,7 @@ free_all:
 	EVP_PKEY_free( pkey );
 	X509_REQ_free( req );
 	BIO_free_all(keybuf);
-} 
+}
 
 
 void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -1020,7 +1018,7 @@ static void SignReq( struct info_params *params )
 	if (!X509_set_version(cert,2)) {
 		throwError( params, "signreq: failed set version" );
 		goto free_all;
- 
+
 	}
 
 	// set serial
@@ -1036,7 +1034,7 @@ static void SignReq( struct info_params *params )
 	X509_time_adj_ex(X509_get_notBefore(cert), 0, 0, NULL);
 	// (60 seconds * 60 minutes * 24 hours * 365 days) = 31536000.
 	X509_time_adj_ex(X509_get_notAfter(cert), params->expire?params->expire:365, 0, NULL);
- 
+
 	// set subject from req
 	X509_NAME *subject, *tmpname;
 	tmpname = X509_REQ_get_subject_name(req);
@@ -1045,7 +1043,7 @@ static void SignReq( struct info_params *params )
 		throwError( params, "signreq: failed to set subject" );
 		goto free_all;
 	}
- 
+
 	ret = X509_set_pubkey(cert, pubkey);
 	//EVP_PKEY_free(pktmp);
 	if (!ret)  {
@@ -1109,7 +1107,7 @@ static void SignReq( struct info_params *params )
 		throwError( params, "signreq: signing failed" );
 		goto free_all;
 	}
- 
+
 	PEM_write_bio_X509(keybuf, cert);
 	params->ca_len = BIO_pending( keybuf );
 	params->ca = NewArray( char, params->ca_len + 1 );
@@ -1120,7 +1118,7 @@ static void SignReq( struct info_params *params )
 free_all:
 	X509_free(cert);
 	BIO_free_all(keybuf);
- 
+
 	X509_REQ_free(req);
 	X509_free(x509);
 	if( pubkey != pkey )
@@ -1435,7 +1433,7 @@ static void DumpCert( X509 *x509 ) {
 				, v->length, v->length, v->data );
 			LogBinary( v->data, v->length );
 		}
-		//stack_st_X509_NAME_ENTRY 
+		//stack_st_X509_NAME_ENTRY
 		//name->entries
 	}
 
@@ -1458,7 +1456,7 @@ static void DumpCert( X509 *x509 ) {
 			//X509_NAME_add_entry_by_txt
 			//name->
 		}
-		//stack_st_X509_NAME_ENTRY 
+		//stack_st_X509_NAME_ENTRY
 		//name->entries
 	}
 
@@ -1527,7 +1525,7 @@ static LOGICAL Validate( struct info_params *params ) {
 	if( params->chain ) {
 		LOGICAL goodRead;
 		BIO_write( keybuf, params->chain, (int)strlen( params->chain ) );
-		while( ( BIO_pending( keybuf )?(goodRead=TRUE):(goodRead=FALSE) ) && 
+		while( ( BIO_pending( keybuf )?(goodRead=TRUE):(goodRead=FALSE) ) &&
 			PEM_read_bio_X509( keybuf, &x509, NULL, NULL ) ) {
 			if( X509_check_ca( x509 ) ) {
 				/* Function return 0, if it is not CA certificate, 1 if it is proper
@@ -1670,7 +1668,7 @@ void TLSObject::validate( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	if( Validate( &params ) )
 		args.GetReturnValue().Set( true );
-	else 
+	else
 		args.GetReturnValue().Set( false );
 
 	if( params.ca ) {
@@ -1960,7 +1958,7 @@ static Local<Value> CertToString( struct info_params *params ) {
 				, v->length, v->length, v->data );
 			vtLogBinary( pvt, v->data, v->length );
 		}
-		//stack_st_X509_NAME_ENTRY 
+		//stack_st_X509_NAME_ENTRY
 		//name->entries
 	}
 
@@ -1983,7 +1981,7 @@ static Local<Value> CertToString( struct info_params *params ) {
 			//X509_NAME_add_entry_by_txt
 			//name->
 		}
-		//stack_st_X509_NAME_ENTRY 
+		//stack_st_X509_NAME_ENTRY
 		//name->entries
 	}
 
@@ -1993,14 +1991,14 @@ static Local<Value> CertToString( struct info_params *params ) {
 		struct tm t;
 		ConvertTimeString( &t, before );
 		vtprintf( pvt, "Not Before: %s %4d/%02d/%02d %02d:%02d:%02d\n", before->data, t.tm_year, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec );
-	} 
+	}
 	else
 		vtprintf( pvt, "Not Before: undefined\n" );
 	if( after ) {
 		struct tm t;
 		ConvertTimeString( &t, after );
 		vtprintf( pvt, "Not After: %s %4d/%02d/%02d %02d:%02d:%02d\n", after->data, t.tm_year, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec );
-	} 
+	}
 	else
 		vtprintf( pvt, "Not After: undefined\n" );
 
@@ -2053,7 +2051,7 @@ static Local<Value> CertToString( struct info_params *params ) {
 				for( n = 0; n < names->stack.num; n++ ) {
 					GENERAL_NAME *namePart = sk_GENERAL_NAME_value( names, n );
 					switch( namePart->type ) {
-					case GEN_DIRNAME: 
+					case GEN_DIRNAME:
 						{
 						X509_NAME *dir = namePart->d.directoryName;
 						//int dn;
@@ -2079,7 +2077,7 @@ static Local<Value> CertToString( struct info_params *params ) {
 					case GEN_RID:
 						vtprintf( pvt, "unhandled RID\n" );
 						break;
-					case GEN_URI: 
+					case GEN_URI:
 					{
 						ASN1_IA5STRING *name = namePart->d.uniformResourceIdentifier;
 						vtLogBinary( pvt, name->data, name->length );
