@@ -46723,8 +46723,8 @@ struct url_data
    // list of struct url_cgi_data *
 	PLIST cgi_parameters;
 };
-HTTP_EXPORT struct url_data * HTTPAPI SACK_URLParse( CTEXTSTR url );
-HTTP_EXPORT CTEXTSTR HTTPAPI SACK_BuildURL( struct url_data *data );
+HTTP_EXPORT struct url_data * HTTPAPI SACK_URLParse( const char *url );
+HTTP_EXPORT char *HTTPAPI SACK_BuildURL( struct url_data *data );
 HTTP_EXPORT void HTTPAPI SACK_ReleaseURL( struct url_data *data );
 	_HTTP_NAMESPACE_END
 TEXT_NAMESPACE_END
@@ -47313,8 +47313,10 @@ void EndHttp( struct HttpState *pHttpState )
 	pHttpState->final = 0;
 	pHttpState->content_length = 0;
 	LineRelease( pHttpState->method );
+	pHttpState->method = NULL;
 	LineRelease( pHttpState->content );
 	LineRelease( pHttpState->resource );
+	pHttpState->resource = NULL;
 	if( pHttpState->partial != pHttpState->content )
 	{
 		LineRelease( pHttpState->partial );
@@ -47889,16 +47891,17 @@ enum URLParseState
 	, PARSE_STATE_COLLECT_PROTOCOL_1
   // eat '/', eat /
 	, PARSE_STATE_COLLECT_PROTOCOL_2
-		, PARSE_STATE_COLLECT_USER
-		, PARSE_STATE_COLLECT_PASSWORD
-		, PARSE_STATE_COLLECT_ADDRESS
-		, PARSE_STATE_COLLECT_PORT
-		, PARSE_STATE_COLLECT_RESOURCE_PATH
-		, PARSE_STATE_COLLECT_RESOURCE_NAME
-		, PARSE_STATE_COLLECT_RESOURCE_EXTENSION
-		, PARSE_STATE_COLLECT_RESOURCE_ANCHOR
-		, PARSE_STATE_COLLECT_CGI_NAME
-		, PARSE_STATE_COLLECT_CGI_VALUE
+	, PARSE_STATE_COLLECT_USER
+	, PARSE_STATE_COLLECT_PASSWORD
+	, PARSE_STATE_COLLECT_ADDRESS
+	, PARSE_STATE_COLLECT_PORT
+	, PARSE_STATE_COLLECT_RESOURCE_PATH
+	, PARSE_STATE_COLLECT_RESOURCE_NAME
+	, PARSE_STATE_COLLECT_RESOURCE_EXTENSION
+	, PARSE_STATE_COLLECT_RESOURCE_ANCHOR
+	, PARSE_STATE_COLLECT_CGI_NAME
+	, PARSE_STATE_COLLECT_CGI_VALUE
+	, PARSE_STATE_COLLECT_IPV6
 };
 static void AppendBuffer( CTEXTSTR *output, CTEXTSTR seperator, CTEXTSTR input )
 {
@@ -47921,23 +47924,75 @@ static void AppendBuffer( CTEXTSTR *output, CTEXTSTR seperator, CTEXTSTR input )
 		(*output) = tmpbuf;
 	}
 }
-struct url_data * SACK_URLParse( CTEXTSTR url )
+struct url_data * SACK_URLParse( const char *url )
 {
+	const char *_url = url;;
 	struct url_data *data = New( struct url_data );
 	struct url_cgi_data *cgi_data;
-	int inchar = 0;
+	TEXTRUNE ch;
 	int outchar = 0;
-	TEXTSTR outbuf = NewArray( TEXTCHAR, StrLen( url ) + 1 );
+	char * outbuf = NewArray( TEXTCHAR, StrLen( url ) + 1 );
+	char *_outbuf = outbuf;
 	int _state, state;
+	char *newUrl = outbuf;
+	int decode = 0;
+	while( _url[0] ) {
+		if( decode ) {
+			ch *= 16;
+			if( _url[0] >= '0' && _url[0] <= '9' )
+				ch += _url[0] - '0';
+			else if( _url[0] >= 'A' && _url[0] <= 'A' )
+				ch += (_url[0] - 'A') + 10;
+			else if( _url[0] >= '0' && _url[0] <= '9' )
+				ch += (_url[0] - 'a' ) + 10;
+			else {
+				Deallocate( char *, outbuf );
+				return NULL;
+			}
+			decode--;
+			if( !decode )
+				newUrl[0] = (char)decode;
+			newUrl++;
+		}
+		else if( _url[0] == '%' ) {
+			ch = 0;
+			decode = 2;
+		}
+		else {
+			newUrl[0] = _url[0];
+			newUrl++;
+		}
+		_url++;
+	}
+	newUrl[0] = _url[0];
+	_url = url = outbuf;
 	_state = -1;
 	state = PARSE_STATE_COLLECT_PROTOCOL;
 	MemSet( data, 0, sizeof( struct url_data ) );
-	while( url[inchar] )
+	while( ch = GetUtfChar(&url) )
 	{
 		int use_char;
 		use_char = 0;
-		switch( url[inchar] )
+		switch( ch )
 		{
+		case '[':
+			if( ( state == PARSE_STATE_COLLECT_ADDRESS )
+				||( state == PARSE_STATE_COLLECT_USER ) ) {
+				state = PARSE_STATE_COLLECT_IPV6;
+				use_char = 1;
+			}
+			break;
+		case ']':
+			if( state == PARSE_STATE_COLLECT_IPV6 ) {
+				// hit the colon between address and port
+				outbuf[outchar++] = ch;
+				outbuf[outchar] = 0;
+				outchar = 0;
+				AppendBuffer( &data->host, NULL, outbuf );
+				state = PARSE_STATE_COLLECT_ADDRESS;
+				continue;
+			}
+			break;
 		case '&':
 			if( state == PARSE_STATE_COLLECT_CGI_NAME )
 			{
@@ -47979,6 +48034,7 @@ struct url_data * SACK_URLParse( CTEXTSTR url )
 				outchar = 0;
 				AppendBuffer( &data->resource_extension, NULL, outbuf );
 				state = PARSE_STATE_COLLECT_CGI_NAME;
+				continue;
 			}
 			if( state == PARSE_STATE_COLLECT_RESOURCE_NAME )
 			{
@@ -48123,6 +48179,7 @@ struct url_data * SACK_URLParse( CTEXTSTR url )
 					}
 				}
 				state = PARSE_STATE_COLLECT_PROTOCOL_1;
+				continue;
 			}
   // hit the colon between user and password
 			else if( state == PARSE_STATE_COLLECT_USER )
@@ -48131,6 +48188,12 @@ struct url_data * SACK_URLParse( CTEXTSTR url )
 				outchar = 0;
 				AppendBuffer( &data->user, NULL, outbuf );
 				state = PARSE_STATE_COLLECT_PASSWORD;
+				continue;
+			}
+  // hit the colon between address and port
+			else if( state == PARSE_STATE_COLLECT_IPV6 )
+			{
+				use_char = 1;
 			}
   // hit the colon between address and port
 			else if( state == PARSE_STATE_COLLECT_ADDRESS )
@@ -48139,6 +48202,7 @@ struct url_data * SACK_URLParse( CTEXTSTR url )
 				outchar = 0;
 				AppendBuffer( &data->host, NULL, outbuf );
 				state = PARSE_STATE_COLLECT_PORT;
+				continue;
 			}
 			else
 			{
@@ -48160,7 +48224,7 @@ struct url_data * SACK_URLParse( CTEXTSTR url )
 			break;
 		}
 		if( use_char )
-			outbuf[outchar++] = url[inchar++];
+			outchar += ConvertToUTF8( outbuf + outchar, ch );
 		else
 		{
 			if( _state == state
@@ -48169,8 +48233,7 @@ struct url_data * SACK_URLParse( CTEXTSTR url )
  // blank cgi names go & to & and stay in the same state
 				&& ( state != PARSE_STATE_COLLECT_CGI_NAME )
 				)
-				lprintf( WIDE("Dropping character (%d) '%c' in %s"), inchar, url[inchar], url );
-			inchar++;
+				lprintf( WIDE("Dropping character (%d) '%c' in %s"), url - _outbuf, ch, _outbuf );
 		}
 		_state = state;
 	}
@@ -48232,7 +48295,7 @@ struct url_data * SACK_URLParse( CTEXTSTR url )
 	Release( outbuf );
 	return data;
 }
-CTEXTSTR SACK_BuildURL( struct url_data *data )
+char *SACK_BuildURL( struct url_data *data )
 {
 	PVARTEXT pvt = VarTextCreate();
 	CTEXTSTR tmp = NULL;
@@ -48323,7 +48386,7 @@ CTEXTSTR SACK_BuildURL( struct url_data *data )
 	}
 	{
 		PTEXT text_result = VarTextGet( pvt );
-		CTEXTSTR result = StrDup( GetText( text_result ) );
+		char *result = StrDup( GetText( text_result ) );
 		return result;
 	}
 }
@@ -49973,7 +50036,9 @@ length, and what is received will be exactly like the block that was sent.
 typedef uintptr_t (*web_socket_opened)( PCLIENT pc, uintptr_t psv );
 typedef void (*web_socket_closed)( PCLIENT pc, uintptr_t psv );
 typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
-typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, CPOINTER buffer, size_t msglen );
+typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOINTER buffer, size_t msglen );
+// protocolsAccepted value set can be released in opened callback, or it may be simply assigned as protocols passed...
+typedef LOGICAL ( *web_socket_accept )(PCLIENT pc, uintptr_t psv, const char *protocols, const char *resource, char **protocolsAccepted);
 //enum WebSockClientOptions {
 //   WebSockClientOption_Protocols
 //};
@@ -50006,6 +50071,7 @@ WEBSOCKET_EXPORT void WebSocketSendBinary( PCLIENT, CPOINTER, size_t );
 WEBSOCKET_EXPORT void WebSocketEnableAutoPing( PCLIENT websock, uint32_t delay );
 WEBSOCKET_EXPORT void WebSocketPing( PCLIENT websock, uint32_t timeout );
 #endif
+#include <zlib.h>
 #ifndef WEBSOCKET_COMMON_SOURCE
 #define EXTERN extern
 #else
@@ -50019,7 +50085,15 @@ struct web_socket_input_state
 		BIT_FIELD closed : 1;
 		BIT_FIELD received_pong : 1;
 		BIT_FIELD sent_ping : 1;
+		BIT_FIELD deflate : 1;
 	} flags;
+	z_stream deflater;
+	POINTER deflateBuf;
+	size_t deflateBufLen;
+	z_stream inflater;
+	POINTER inflateBuf;
+	size_t inflateBufLen;
+	size_t inflateBufUsed;
 	size_t fragment_collection_avail;
 	size_t fragment_collection_length;
   // used for selecting mask byte
@@ -50031,6 +50105,8 @@ struct web_socket_input_state
 	LOGICAL mask;
 	uint8_t mask_key[4];
 	int opcode;
+	int RSV1;
+	int _RSV1;
 	size_t frame_length;
 	int input_msg_state;
  // text or binary
@@ -50039,6 +50115,7 @@ struct web_socket_input_state
 	web_socket_closed on_close;
 	web_socket_opened on_open;
 	web_socket_error on_error;
+	web_socket_accept on_accept;
 	uintptr_t psv_on;
  // result of the open, to pass to read
 	uintptr_t psv_open;
@@ -50060,7 +50137,7 @@ EXTERN void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, con
 #ifdef __ANDROID_OLD_PLATFORM_SUPPORT__
 #define rand lrand48
 #endif
-void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, const uint8_t* payload, size_t length, int use_ssl )
+static void _SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, const uint8_t* payload, size_t length, int use_ssl )
 {
 	uint8_t* msgout;
 	uint8_t* use_mask;
@@ -50107,8 +50184,7 @@ void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, const
 		use_mask = (uint8_t*)&zero;
 	}
 	msgout = NewArray( uint8_t, length_out );
-	MemSet( msgout, 0x12345678, length_out );
-	msgout[0] = (final?0x80:0x00) | opcode;
+	msgout[0] = opcode;
 	if( length > 125 )
 	{
 		if( length > 32767 )
@@ -50153,9 +50229,26 @@ void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, const
 	{
 		size_t n;
 		uint8_t* data_out = msgout + (length_out-length);
-		for( n = 0; n < length; n++ )
+		size_t mlen = length / 4;
+		for( n = 0; n < mlen; n++ )
 		{
-			(*data_out++) = payload[n] ^ use_mask[n&3];
+			(*data_out++) = (*payload++) ^ use_mask[0];
+			(*data_out++) = (*payload++) ^ use_mask[1];
+			(*data_out++) = (*payload++) ^ use_mask[2];
+			(*data_out++) = (*payload++) ^ use_mask[3];
+		}
+		n <<= 2;
+		if( n < length ) {
+			(*data_out++) = (*payload++) ^ use_mask[0];
+			n++;
+		}
+		if( n < length ) {
+			(*data_out++) = (*payload++) ^ use_mask[1];
+			n++;
+		}
+		if( n < length ) {
+			(*data_out++) = (*payload++) ^ use_mask[2];
+			n++;
 		}
 	}
 	if( use_ssl )
@@ -50163,6 +50256,45 @@ void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, const
 	else
 		SendTCP( pc, msgout, length_out );
 	Deallocate( uint8_t*, msgout );
+}
+void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, const uint8_t* payload, size_t length, int use_ssl ) {
+	struct web_socket_input_state *input = (struct web_socket_input_state *)GetNetworkLong( pc, 2 );
+	if( input->flags.deflate && opcode < 3 ) {
+		int r;
+		if( opcode ) opcode |= 0x40;
+		input->deflater.next_in = (Bytef*)payload;
+		input->deflater.avail_in = (uInt)length;
+		input->deflater.next_out = (Bytef*)input->deflateBuf;
+		input->deflater.avail_out = (uInt)input->deflateBufLen;
+		do {
+			r = deflate( &input->deflater, Z_FINISH );
+			if( r == Z_STREAM_END )
+				break;
+			if( r == Z_BUF_ERROR ) {
+				lprintf( "Zlib error: buffer error" );
+				//Z_BUF_ERROR( )
+			}
+			else if( r ) {
+				lprintf( "Unhandled ZLIB error: %d", r );
+			}
+			if( input->deflater.avail_out == 0 ) {
+				input->deflateBuf = Reallocate( input->deflateBuf, input->deflateBufLen + 4096 );
+				input->deflater.next_out = (Bytef*)(((uintptr_t)input->deflateBuf) + input->deflateBufLen);
+				input->deflateBufLen += 4096;
+				input->deflater.avail_out += 4096;
+				continue;
+			}
+			else
+				break;
+		} while( 1 );
+		opcode = (final ? 0x80 : 0x00) | opcode;
+		_SendWebSocketMessage( pc, opcode, final, do_mask, (uint8_t*)input->deflateBuf, input->deflater.total_out, use_ssl );
+		deflateReset( &input->deflater );
+	}
+	else {
+		opcode = (final ? 0x80 : 0x00) | opcode;
+		_SendWebSocketMessage( pc, opcode, final, do_mask, payload, length, use_ssl );
+	}
 }
 static void ResetInputState( WebSocketInputState websock )
 {
@@ -50179,15 +50311,29 @@ static void ResetInputState( WebSocketInputState websock )
 	websock->mask_key[2] = 0;
 	websock->mask_key[3] = 0;
 }
+//typedef unsigned( *in_func ) OF( (void FAR *,
+//		z_const unsigned char FAR * FAR *) );
+//typedef int( *out_func ) OF( (void FAR *, unsigned char FAR *, unsigned) );
+static unsigned CPROC inflateBackInput( void* state, unsigned char **output ) {
+	WebSocketInputState websock = (WebSocketInputState)state;
+	(*output) = (unsigned char *)websock->fragment_collection;
+	return (unsigned)websock->fragment_collection_avail;
+}
+static int CPROC inflateBackOutput( void* state, unsigned char *output, unsigned outlen ) {
+	WebSocketInputState websock = (WebSocketInputState)state;
+	memcpy( websock->inflateBuf, output, outlen );
+	websock->inflateBufUsed += outlen;
+	return Z_OK;
+}
 /* opcodes
-      *  %x0 denotes a continuation frame
-      *  %x1 denotes a text frame
-      *  %x2 denotes a binary frame
-      *  %x3-7 are reserved for further non-control frames
-      *  %x8 denotes a connection close
-      *  %x9 denotes a ping
-      *  %xA denotes a pong
-      *  %xB-F are reserved for further control frames
+ *  %x0 denotes a continuation frame
+ *  %x1 denotes a text frame
+ *  %x2 denotes a binary frame
+ *  %x3-7 are reserved for further non-control frames
+ *  %x8 denotes a connection close
+ *  %x9 denotes a ping
+ *  %xA denotes a pong
+ *  %xB-F are reserved for further control frames
 */
 void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint8_t* msg, size_t length )
 {
@@ -50201,6 +50347,9 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 			if( msg[n] & 0x80 )
 				websock->final = 1;
 			websock->opcode = ( msg[n] & 0xF );
+			websock->_RSV1 = (msg[n] & 0x40);
+			if( websock->opcode == 1 ) websock->input_type = 0;
+			else if( websock->opcode == 2 ) websock->input_type = 1;
 			websock->input_msg_state++;
 			break;
  // mask bit, and 7 bits of frame_length(payload)
@@ -50322,15 +50471,47 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 				{
  //binary
 				case 0x02:
-					websock->input_type = 1;
  //text
 				case 0x01:
+					websock->RSV1 = websock->_RSV1;
  // continuation
 				case 0x00:
 					/// single packet, final...
 					//LogBinary( websock->fragment_collection, websock->fragment_collection_length );
-					if( websock->on_event )
-						websock->on_event( pc, websock->psv_open, websock->fragment_collection, websock->fragment_collection_length );
+					if( websock->on_event ) {
+						if( websock->flags.deflate && ( websock->RSV1 & 0x40 ) ) {
+							int r;
+							websock->inflateBufUsed = 0;
+							websock->inflater.next_in = websock->fragment_collection;
+							websock->inflater.avail_in = (uInt)websock->fragment_collection_length;
+							websock->inflater.next_out = (Bytef*)websock->inflateBuf;
+							websock->inflater.avail_out = (uInt)websock->inflateBufLen;
+							do {
+								//r = inflateBack( &websock->inflater, inflateBackInput, websock, inflateBackOutput, websock );
+								r = inflate( &websock->inflater, Z_FINISH );
+								if( r == Z_DATA_ERROR ) {
+									lprintf( "zlib Data Error..." );
+								}
+								else if( r != Z_OK && r != Z_BUF_ERROR )
+									lprintf( "unhandle zlib inflate error... %d", r );
+								if( websock->inflater.avail_out == 0 ) {
+									websock->inflateBuf = Reallocate( websock->inflateBuf, websock->inflateBufLen + 4096 );
+									websock->inflater.next_out = (Bytef*)(((uintptr_t)websock->inflateBuf) + websock->inflateBufLen);
+									websock->inflateBufLen += 4096;
+									websock->inflater.avail_out += 4096;
+									continue;
+								}
+								else
+									break;
+							} while( r != Z_STREAM_END || r != Z_BUF_ERROR );
+							websock->inflateBufUsed = websock->inflater.total_out;
+							websock->on_event( pc, websock->psv_open, websock->input_type
+								, websock->inflateBuf, websock->inflateBufUsed );
+							inflateReset( &websock->inflater );
+						}
+						else
+							websock->on_event( pc, websock->psv_open, websock->input_type, websock->fragment_collection, websock->fragment_collection_length );
+					}
 					websock->fragment_collection_length = 0;
 					break;
  // close
@@ -50356,13 +50537,14 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 					// 4000-4999 - reserved for private use; cannot be registerd;
 					if( !websock->flags.closed )
 					{
-						struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
+						struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong( pc, 1 );
 						SendWebSocketMessage( pc, 0x08, 1, output->flags.expect_masking, websock->fragment_collection, websock->frame_length, output->flags.use_ssl );
 						websock->flags.closed = 1;
 					}
 					if( websock->on_close )
 						websock->on_close( pc, websock->psv_open );
 					websock->fragment_collection_length = 0;
+					RemoveClientEx( pc, 0, 1 );
 					break;
  // ping
 				case 0x09:
@@ -50408,6 +50590,7 @@ void WebSocketPing( PCLIENT pc, uint32_t timeout )
  // UTF8 RFC3629
 void WebSocketSendText( PCLIENT pc, CPOINTER buffer, size_t length )
 {
+	struct web_socket_input_state *input = (struct web_socket_input_state *)GetNetworkLong( pc, 2 );
 	struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
 	if( output )
 	{
@@ -50427,29 +50610,58 @@ void WebSocketSendText( PCLIENT pc, CPOINTER buffer, size_t length )
  // UTF8 RFC3629
 void WebSocketBeginSendText( PCLIENT pc, CPOINTER buffer, size_t length )
 {
-   struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
+	struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
 #ifdef _UNICODE
-   int real_len = CStrLen( outbuf );
-   //lprintf( WIDE( "send %s"), buffer );
-   SendWebSocketMessage( pc, output->flags.sent_type?0:1, 1, output->flags.expect_masking, (uint8_t*)outbuf, length, output->flags.use_ssl );
-   Deallocate( char *, outbuf );
+	int real_len = CStrLen( outbuf );
+	//lprintf( WIDE( "send %s"), buffer );
+	SendWebSocketMessage( pc, output->flags.sent_type?0:1, 1, output->flags.expect_masking, (uint8_t*)outbuf, length, output->flags.use_ssl );
+	Deallocate( char *, outbuf );
 #else
-   SendWebSocketMessage( pc, output->flags.sent_type?0:1, 0, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
+	SendWebSocketMessage( pc, output->flags.sent_type?0:1, 0, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
 #endif
-   output->flags.sent_type = 1;
+	output->flags.sent_type = 1;
 }
 // literal binary sending; this may happen to be base64 encoded too
 void WebSocketSendBinary( PCLIENT pc, CPOINTER buffer, size_t length )
 {
-   struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
-   SendWebSocketMessage( pc, output->flags.sent_type?0:2, 1, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
+	struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
+	SendWebSocketMessage( pc, output->flags.sent_type?0:2, 1, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
+	output->flags.sent_type = 0;
 }
 // literal binary sending; this may happen to be base64 encoded too
 void WebSocketBeginSendBinary( PCLIENT pc, CPOINTER buffer, size_t length )
 {
-   struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
-   SendWebSocketMessage( pc, output->flags.sent_type?0:2, 0, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
-   output->flags.sent_type = 1;
+	struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
+	SendWebSocketMessage( pc, output->flags.sent_type?0:2, 0, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
+	output->flags.sent_type = 1;
+}
+void SetWebSocketAcceptCallback( PCLIENT pc, web_socket_accept callback )
+{
+	if( pc ) {
+		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 2 );
+		input_state->on_accept = callback;
+	}
+}
+void SetWebSocketReadCallback( PCLIENT pc, web_socket_event callback )
+{
+	if( pc ) {
+		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 2 );
+		input_state->on_event = callback;
+	}
+}
+void SetWebSocketCloseCallback( PCLIENT pc, web_socket_closed callback )
+{
+	if( pc ) {
+		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 2 );
+		input_state->on_close = callback;
+	}
+}
+void SetWebSocketErrorCallback( PCLIENT pc, web_socket_error callback )
+{
+	if( pc ) {
+		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 2 );
+		input_state->on_error = callback;
+	}
 }
 #define SACK_WEBSOCKET_CLIENT_SOURCE
 #ifndef SACK_HTML5_WEBSOCKET_COMMON_DEFINED
@@ -50467,7 +50679,15 @@ struct web_socket_input_state
 		BIT_FIELD closed : 1;
 		BIT_FIELD received_pong : 1;
 		BIT_FIELD sent_ping : 1;
+		BIT_FIELD deflate : 1;
 	} flags;
+	z_stream deflater;
+	POINTER deflateBuf;
+	size_t deflateBufLen;
+	z_stream inflater;
+	POINTER inflateBuf;
+	size_t inflateBufLen;
+	size_t inflateBufUsed;
 	size_t fragment_collection_avail;
 	size_t fragment_collection_length;
   // used for selecting mask byte
@@ -50479,6 +50699,8 @@ struct web_socket_input_state
 	LOGICAL mask;
 	uint8_t mask_key[4];
 	int opcode;
+	int RSV1;
+	int _RSV1;
 	size_t frame_length;
 	int input_msg_state;
  // text or binary
@@ -50487,6 +50709,7 @@ struct web_socket_input_state
 	web_socket_closed on_close;
 	web_socket_opened on_open;
 	web_socket_error on_error;
+	web_socket_accept on_accept;
 	uintptr_t psv_on;
  // result of the open, to pass to read
 	uintptr_t psv_open;
@@ -50675,17 +50898,17 @@ static void CPROC WebSocketClientReceive( PCLIENT pc, POINTER buffer, size_t len
 		}
 		// process buffer?
 	}
-   ReadTCP( pc, buffer, 4096 );
+	ReadTCP( pc, buffer, 4096 );
 }
 static void CPROC WebSocketClientClosed( PCLIENT pc )
 {
 	WebSocketClient websock = (WebSocketClient)GetNetworkLong( pc, 0 );
-   if( websock )
+	if( websock )
 	{
 		Release( websock->buffer );
 		DestroyHttpState( websock->pHttpState );
-      SACK_ReleaseURL( websock->url );
-      Release( websock );
+		SACK_ReleaseURL( websock->url );
+		Release( websock );
 	}
 }
 static void CPROC WebSocketClientConnected( PCLIENT pc, int error )
@@ -50768,7 +50991,7 @@ PCLIENT WebSocketOpen( CTEXTSTR url_address
 // end a websocket connection nicely.
 void WebSocketClose( PCLIENT pc )
 {
-   RemoveClient( pc );
+   RemoveClientEx( pc, 0, 1 );
 }
 void WebSocketEnableAutoPing( PCLIENT pc, uint32_t delay )
 {
@@ -50887,11 +51110,16 @@ struct html5_web_socket {
 	uint32_t Magic;
 	HTTPState http_state;
 	PCLIENT pc;
+	POINTER buffer;
 	struct web_socket_flags
 	{
 		BIT_FIELD initial_handshake_done : 1;
 		BIT_FIELD rfc6455 : 1;
+		BIT_FIELD accepted : 1;
 	} flags;
+	char *protocols;
+	int client_max_bits;
+	int server_max_bits;
 	struct web_socket_input_state input_state;
 	struct web_socket_output_state output_state;
 };
@@ -51084,102 +51312,194 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 					lprintf( WIDE("unexpected result is %d"), result );
 					break;
 				case HTTP_STATE_RESULT_CONTENT:
+				{
+					PVARTEXT pvt_output = VarTextCreate();
+					PTEXT value;
+					PTEXT key1, key2;
+					value = GetHTTPField( socket->http_state, WIDE( "Sec-WebSocket-Extensions" ) );
+					if( value )
 					{
-						PVARTEXT pvt_output = VarTextCreate();
-						PTEXT value;
-						PTEXT key1, key2;
-						char *output;
-						key1 = GetHTTPField( socket->http_state, WIDE( "Sec-WebSocket-Key1" ) );
-						key2 = GetHTTPField( socket->http_state, WIDE( "Sec-WebSocket-Key2" ) );
-						if( key1 && key2 )
-							socket->flags.rfc6455 = 0;
-						else
-							socket->flags.rfc6455 = 1;
-						if( key1 && key2 )
-							vtprintf( pvt_output, WIDE("HTTP/1.1 101 WebSocket Protocol Handshake\r\n") );
-						else
-							vtprintf( pvt_output, WIDE("HTTP/1.1 101 Switching Protocols\r\n") );
-						vtprintf( pvt_output, WIDE("Upgrade: WebSocket\r\n") );
-						vtprintf( pvt_output, WIDE("Connection: Upgrade\r\n") );
-						value = GetHTTPField( socket->http_state, WIDE( "Origin" ) );
-						if( value )
-						{
-							if( key1 && key2 )
-								vtprintf( pvt_output, WIDE("Sec-WebSocket-Origin: %s\r\n"), GetText( value ) );
-							else
-								vtprintf( pvt_output, WIDE("WebSocket-Origin: %s\r\n"), GetText( value ) );
+						PTEXT options = TextParse( value, "=", "; ", 0, 0 DBG_SRC );
+						PTEXT opt = options;
+						while( opt ) {
+							// "server_no_context_takeover"
+							// "client_no_context_takeover"
+							// "server_max_window_bits"
+							// "client_max_window_bits"
+							if( TextLike( opt, "permessage-deflate" ) ) {
+								socket->input_state.flags.deflate = 1;
+								socket->server_max_bits = 15;
+								socket->client_max_bits = 15;
+							}
+							else if( TextLike( opt, "client_max_window_bits" ) ) {
+								opt = NEXTLINE( opt );
+								if( opt ) {
+									if( GetText( opt )[0] == '=' ) {
+										opt = NEXTLINE( opt );
+										socket->client_max_bits = (int)IntCreateFromSeg( opt );
+									}
+									else
+										opt = PRIORLINE( opt );
+								}
+								//socket->flags.max_window_bits = 1;
+							}
+							else if( TextLike( opt, "server_max_window_bits" ) ) {
+								opt = NEXTLINE( opt );
+								if( opt ) {
+									if( GetText( opt )[0] == '=' ) {
+										opt = NEXTLINE( opt );
+										socket->server_max_bits = (int)IntCreateFromSeg( opt );
+									}
+								}
+								else {
+									lprintf( "required server_max_window_bits value is missing" );
+								}
+								//socket->flags.max_window_bits = 1;
+							}
+							else if( TextLike( opt, "client_no_context_takeover" ) ) {
+								//socket->flags.max_window_bits = 1;
+							}
+							else if( TextLike( opt, "server_no_context_takeover" ) ) {
+								//socket->flags.max_window_bits = 1;
+							}
+							opt = NEXTLINE( opt );
 						}
-						if( key1 && key2 )
-						{
-							vtprintf( pvt_output, WIDE("Sec-WebSocket-Location: ws://%s%s\r\n" )
-								, GetText( GetHTTPField( socket->http_state, WIDE("Host") ) )
-								, GetText( GetHttpRequest( socket->http_state ) )
-								);
+						LineRelease( options );
+						if( socket->input_state.flags.deflate ) {
+							if( deflateInit2( &socket->input_state.deflater
+								, Z_BEST_SPEED, Z_DEFLATED
+								, -socket->server_max_bits
+								, 8
+								, Z_DEFAULT_STRATEGY ) != Z_OK )
+								socket->input_state.flags.deflate = 0;
 						}
+						if( socket->input_state.flags.deflate ) {
+							//socket->inflateWindow = NewArray( uint8_t, (size_t)(1 << (socket->client_max_bits&0x1f)) );
+							if( inflateInit2( &socket->input_state.inflater, -socket->client_max_bits ) != Z_OK ) {
+							//if( inflateBackInit( &socket->input_state.inflater, socket->client_max_bits, socket->inflateWindow ) != Z_OK ) {
+								deflateEnd( &socket->input_state.deflater );
+								socket->input_state.flags.deflate = 0;
+							}
+							else {
+								socket->input_state.inflateBuf = NewArray( uint8_t, 4096 );
+								socket->input_state.inflateBufLen = 4096;
+								socket->input_state.deflateBuf = NewArray( uint8_t, 4096 );
+								socket->input_state.deflateBufLen = 4096;
+							}
+						}
+					}
+					value = GetHTTPField( socket->http_state, WIDE( "Sec-WebSocket-Protocol" ) );
+					if( value ) {
+						socket->protocols = GetText( value );
+					}
+					else socket->protocols = NULL;
+					{
+						PTEXT protocols = GetHTTPField( socket->http_state, WIDE( "Sec-WebSocket-Protocol" ) );
+						PTEXT resource = GetHttpResource( socket->http_state );
+						if( socket->input_state.on_accept ) {
+							socket->flags.accepted = socket->input_state.on_accept( pc, socket->input_state.psv_on, GetText( protocols ), GetText( resource ), &socket->protocols );
+						}
+						else
+							socket->flags.accepted = 1;
+					}
+					key1 = GetHTTPField( socket->http_state, WIDE( "Sec-WebSocket-Key1" ) );
+					key2 = GetHTTPField( socket->http_state, WIDE( "Sec-WebSocket-Key2" ) );
+					if( key1 && key2 )
+						socket->flags.rfc6455 = 0;
+					else
+						socket->flags.rfc6455 = 1;
+					if( !socket->flags.accepted ) {
+						vtprintf( pvt_output, WIDE( "HTTP/1.1 403 Connection refused\r\n" ) );
+					}
+					else
+					{
+						if( key1 && key2 )
+							vtprintf( pvt_output, WIDE( "HTTP/1.1 101 WebSocket Protocol Handshake\r\n" ) );
+						else
+							vtprintf( pvt_output, WIDE( "HTTP/1.1 101 Switching Protocols\r\n" ) );
+						vtprintf( pvt_output, WIDE( "Upgrade: WebSocket\r\n" ) );
+						vtprintf( pvt_output, WIDE( "Connection: Upgrade\r\n" ) );
+					}
+					value = GetHTTPField( socket->http_state, WIDE( "Origin" ) );
+					if( value )
+					{
+						if( key1 && key2 )
+							vtprintf( pvt_output, WIDE( "Sec-WebSocket-Origin: %s\r\n" ), GetText( value ) );
+						else
+							vtprintf( pvt_output, WIDE( "WebSocket-Origin: %s\r\n" ), GetText( value ) );
+					}
+					if( key1 && key2 )
+					{
+						vtprintf( pvt_output, WIDE( "Sec-WebSocket-Location: ws://%s%s\r\n" )
+							, GetText( GetHTTPField( socket->http_state, WIDE( "Host" ) ) )
+							, GetText( GetHttpRequest( socket->http_state ) )
+						);
+					}
+					if( socket->flags.accepted ) {
 						value = GetHTTPField( socket->http_state, WIDE( "Sec-webSocket-Key" ) );
 						if( value )
 						{
 							{
-								const TEXTCHAR guid[] = WIDE("258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+								const char guid[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 								size_t len;
-								TEXTCHAR *resultval = NewArray( TEXTCHAR, len = ( GetTextSize( value ) + sizeof(guid)/sizeof(TEXTCHAR)));
-								tnprintf( resultval, len, WIDE("%s%s")
-									, GetText(value)
+								char *resultval = NewArray( char, len = (GetTextSize( value ) + sizeof( guid ) ) );
+								snprintf( resultval, len, WIDE( "%s%s" )
+									, GetText( value )
 									, guid );
 								{
 									TEXTCHAR output[32];
-									char *tmpval = DupTextToChar( resultval );
 									SHA1Context context;
 									int n;
-									struct convert_64 {
-										BIT_FIELD filler : 6;
-										BIT_FIELD char1 : 6;
-										BIT_FIELD char2a : 2;
-										BIT_FIELD char2b : 4;
-										BIT_FIELD char3b : 4;
-										BIT_FIELD char3c : 2;
-										BIT_FIELD char4 : 6;
-										BIT_FIELD junk2 : 2;
-									};
 									uint8_t Message_Digest[SHA1HashSize + 2];
 									SHA1Reset( &context );
-									SHA1Input( &context, (uint8_t*)tmpval, len - 1 );
+									SHA1Input( &context, (uint8_t*)resultval, len - 1 );
 									SHA1Result( &context, Message_Digest );
 									Message_Digest[SHA1HashSize] = 0;
-									Message_Digest[SHA1HashSize+1] = 0;
-									for( n = 0; n < (SHA1HashSize+2)/3; n++ )
+									Message_Digest[SHA1HashSize + 1] = 0;
+									for( n = 0; n < (SHA1HashSize + 2) / 3; n++ )
 									{
 										int blocklen;
-										blocklen = SHA1HashSize - n*3;
+										blocklen = SHA1HashSize - n * 3;
 										if( blocklen > 3 )
 											blocklen = 3;
-										encodeblock( Message_Digest + n * 3, output + n*4, blocklen );
+										encodeblock( Message_Digest + n * 3, output + n * 4, blocklen );
 									}
-									output[n*4+0] = 0;
+									output[n * 4 + 0] = 0;
 									// s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
-									vtprintf( pvt_output, WIDE("Sec-WebSocket-Accept: %s\r\n"), output );
-									Deallocate( char*, tmpval );
+									vtprintf( pvt_output, WIDE( "Sec-WebSocket-Accept: %s\r\n" ), output );
 								}
 							}
 						}
-						value = GetHTTPField( socket->http_state, WIDE( "Sec-WebSocket-Protocol" ) );
-						if( value )
-							vtprintf( pvt_output, WIDE("Sec-WebSocket-Protocol: %s\r\n"), GetText( value ) );
-						vtprintf( pvt_output, WIDE("\r\n" ) );
+						if( socket->input_state.flags.deflate ) {
+							vtprintf( pvt_output, WIDE( "Sec-WebSocket-Extensions: permessage-deflate; client_no_context_takeover; server_max_window_bits=%d\r\n" ), socket->server_max_bits );
+						}
+						if( socket->protocols )
+							vtprintf( pvt_output, WIDE( "Sec-WebSocket-Protocol: %s\r\n" ), socket->protocols );
+						vtprintf( pvt_output, WIDE( "WebSocket-Server: sack\r\n" ) );
+						vtprintf( pvt_output, WIDE( "\r\n" ) );
 						if( key1 && key2 )
 						{
 							ComputeReplyKey2( pvt_output, socket, key1, key2 );
 						}
-						value = VarTextGet( pvt_output );
-						output = DupTextToChar( GetText( value ) );
-						//LogBinary( output, GetTextSize( value ) );
-						SendTCP( pc, output, GetTextSize( value ) );
+						value = VarTextPeek( pvt_output );
+#ifdef _UNICODE
+						{
+							char *output;
+							output = DupTextToChar( GetText( value ) );
+							//LogBinary( output, GetTextSize( value ) );
+							SendTCP( pc, output, GetTextSize( value ) );
+						}
+#else
+						SendTCP( pc, GetText( value ), GetTextSize( value ) );
+#endif
+						VarTextDestroy( &pvt_output );
 					}
 					if( socket->input_state.on_open )
 						socket->input_state.psv_open = socket->input_state.on_open( pc, socket->input_state.psv_on );
 					EndHttp( socket->http_state );
 					socket->flags.initial_handshake_done = 1;
 					break;
+				}
 				case HTTP_STATE_RESULT_CONTINUE:
 					break;
 				}
@@ -51198,9 +51518,22 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 	}
 	else
 	{
-		buffer = Allocate( 4096 );
+		HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc, 0 );
+		buffer = socket->buffer = Allocate( 4096 );
 	}
 	ReadTCP( pc, buffer, 4096 );
+}
+static void CPROC closed( PCLIENT pc_client ) {
+	HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc_client, 0 );
+	if( socket->input_state.flags.deflate ) {
+		deflateEnd( &socket->input_state.deflater );
+		inflateEnd( &socket->input_state.inflater );
+		Deallocate( POINTER, socket->input_state.inflateBuf );
+		Deallocate( POINTER, socket->input_state.deflateBuf );
+	}
+	DestroyHttpState( socket->http_state );
+	Deallocate( POINTER, socket->buffer );
+	Deallocate( HTML5WebSocket, socket );
 }
 static void CPROC connected( PCLIENT pc_server, PCLIENT pc_new )
 {
@@ -51215,6 +51548,7 @@ static void CPROC connected( PCLIENT pc_server, PCLIENT pc_new )
 	SetNetworkLong( pc_new, 1, (uintptr_t)&socket->output_state );
 	SetNetworkLong( pc_new, 2, (uintptr_t)&socket->input_state );
 	SetNetworkReadComplete( pc_new, read_complete );
+	SetNetworkCloseCallback( pc_new, closed );
 }
 static LOGICAL CPROC HandleWebsockRequest( uintptr_t psv, HTTPState pHttpState )
 {
@@ -51238,7 +51572,7 @@ PCLIENT WebSocketCreate( CTEXTSTR hosturl
 	socket->input_state.on_error = on_error;
 	socket->input_state.psv_on = psv;
 	url = SACK_URLParse( hosturl );
-	socket->pc = OpenTCPListenerAddrEx( CreateSockAddress( url->host, url->port ), connected );
+	socket->pc = OpenTCPListenerAddrEx( CreateSockAddress( url->host, url->port?url->port:url->default_port ), connected );
 	SACK_ReleaseURL( url );
 	socket->http_state = CreateHttpState();
 	SetNetworkLong( socket->pc, 0, (uintptr_t)socket );
@@ -60010,11 +60344,17 @@ NETWORK_PROC( SOCKADDR *,CreateSockAddress)(CTEXTSTR name, uint16_t nDefaultPort
 	SOCKADDR *sa = NULL;
 	char *port;
 	uint16_t wPort;
+	CTEXTSTR portName = name;
 #ifdef UNICODE
 	char *_name = CStrDup( name );
 #  define name _name
 #endif
-	if( name && ( port = (char*)strrchr( name, ':' ) ) )
+	if( name[0] == '[' ) {
+		while( portName[0] && portName[0] != ']' )
+			portName++;
+		if( portName[0] ) portName++;
+	}
+	if( name && portName[0] && ( port = (char*)strrchr( portName, ':' ) ) )
 	{
 		tmp = StrDup( name );
 		bTmpName = 1;
@@ -61591,6 +61931,9 @@ NETWORK_PROC( size_t, doReadExx2)(PCLIENT lpClient,POINTER lpBuffer,size_t nByte
 #endif
 	if( !lpClient || !lpBuffer )
  // nothing read.... ???
+		return 0;
+	// don't try to read closed/inactive sockets.
+	if( !(lpClient->dwFlags & CF_ACTIVE ) )
 		return 0;
   //draining....
 	if( TCPDrainRead( lpClient ) &&

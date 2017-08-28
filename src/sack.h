@@ -11541,7 +11541,9 @@ length, and what is received will be exactly like the block that was sent.
 typedef uintptr_t (*web_socket_opened)( PCLIENT pc, uintptr_t psv );
 typedef void (*web_socket_closed)( PCLIENT pc, uintptr_t psv );
 typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
-typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, CPOINTER buffer, size_t msglen );
+typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOINTER buffer, size_t msglen );
+// protocolsAccepted value set can be released in opened callback, or it may be simply assigned as protocols passed...
+typedef LOGICAL ( *web_socket_accept )(PCLIENT pc, uintptr_t psv, const char *protocols, const char *resource, char **protocolsAccepted);
 //enum WebSockClientOptions {
 //   WebSockClientOption_Protocols
 //};
@@ -11835,8 +11837,8 @@ struct url_data
    // list of struct url_cgi_data *
 	PLIST cgi_parameters;
 };
-HTTP_EXPORT struct url_data * HTTPAPI SACK_URLParse( CTEXTSTR url );
-HTTP_EXPORT CTEXTSTR HTTPAPI SACK_BuildURL( struct url_data *data );
+HTTP_EXPORT struct url_data * HTTPAPI SACK_URLParse( const char *url );
+HTTP_EXPORT char *HTTPAPI SACK_BuildURL( struct url_data *data );
 HTTP_EXPORT void HTTPAPI SACK_ReleaseURL( struct url_data *data );
 	_HTTP_NAMESPACE_END
 TEXT_NAMESPACE_END
