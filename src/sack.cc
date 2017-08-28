@@ -50070,6 +50070,11 @@ WEBSOCKET_EXPORT void WebSocketSendText( PCLIENT, CPOINTER, size_t );
 WEBSOCKET_EXPORT void WebSocketSendBinary( PCLIENT, CPOINTER, size_t );
 WEBSOCKET_EXPORT void WebSocketEnableAutoPing( PCLIENT websock, uint32_t delay );
 WEBSOCKET_EXPORT void WebSocketPing( PCLIENT websock, uint32_t timeout );
+WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT pc, CPOINTER buffer, size_t length );
+WEBSOCKET_EXPORT void SetWebSocketAcceptCallback( PCLIENT pc, web_socket_accept callback );
+WEBSOCKET_EXPORT void SetWebSocketReadCallback( PCLIENT pc, web_socket_event callback );
+WEBSOCKET_EXPORT void SetWebSocketCloseCallback( PCLIENT pc, web_socket_closed callback );
+WEBSOCKET_EXPORT void SetWebSocketErrorCallback( PCLIENT pc, web_socket_error callback );
 #endif
 #include <zlib.h>
 #ifndef WEBSOCKET_COMMON_SOURCE
