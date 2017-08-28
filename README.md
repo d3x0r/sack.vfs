@@ -516,9 +516,72 @@ Salty Random Generator
   var buffer = SRG.getBuffer( 1234 ); // get 155 bytes of random data (last byte only has 2 bits )
 ```
 
+## WebSocket Module
+
+```
+var sack = require( "sack.vfs" );
+var client = new sack.WebSocket.Client( <url>, <protocols> );
+client.on( <event>, <callback> );
+client.onOpen( callback );
+client.onMessage( callback );
+client.onError( callback );
+client.onClose( callback );
+
+var server = new sack.WebSocket.Server( { <options> } );
+server.on( <event>, <callback> );
+server.onConnect( callback );
+server.onAccept( callback );
+
+```
+
+Client events
+  | Event Name | Event Description |
+  |---|---|
+  |open | callback receives a single argument (websocket) |
+  |---|---|
+  |message | callback receives a message argument, its type is either a string or an ArrayBufer |
+  |---|---|
+  |close | callback is called when the server closes the connection |
+  |---|---|
+  
+Client Methods
+   | method | purpose |
+   | -- | -- |
+   | close() | call this to end a connection |
+   | -- | -- |
+   | send(message) | call this to send data to a connection, argument should either be a String or an ArrayBuffer.
+   | -- | -- |
+   | onOpen | sets the callback to be called when the connection opens. |
+   | -- | -- |
+   | onMessage | set the callback to be called when a message is received, it gets a single parameter, the message recieved. \ |
+   |  | The data is either a string or an ArrayBuffer type | 
+   | -- | -- |
+   | onClose | sets the callback to be called when the connection is closed from the other side first |
+   | -- | -- |
+   | onError | sets the callback to be called on an error (no supported errors at this time) |
+   | -- | -- |
+   | on  | sets event callbacks by name.  First parameter is the event name, the second is the callback |
+   | -- | -- |
+  
+Server events
+  | Event Name | Event Description |
+  |---|---|
+  | accept |  optional callback, if it is configured on a server, it is called before connect, and is passed (protocols, resource path).
+  |        |  should call server.accept( protocol ), or server.reject() during this callback.
+  |---|---|
+  | connect | callback receives new connection from a client. |
+  |---|---|
+
+Server Client Methods
+  this is a slightly different object than a client, although accepts the same events except for on( "open" ) and onOpen() method.
+  
+  - send - send data on the connection
+  - close - close the connection
+
 
 
 ## Changelog
+- 0.1.99307 Implement interface to websocket library.
 - 0.1.99306 Move json reviver parameter handling internal.  Implement volume JSON stream reader interface.  Fix options to create/reopen an existing file.
 - 0.1.99305 Fix handling exceptions triggered from callbacks. Fix missing truncate in more instances;  Sync sack filesystem updates; fix unlink return value; add pos() method to File.
 - 0.1.99304 fix truncate on simple writes into a volume.
