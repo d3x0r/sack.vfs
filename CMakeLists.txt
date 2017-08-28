@@ -102,7 +102,6 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/netlib/html5.websocket/html5.websocket.common.c
 	${SACK_BASE}/src/netlib/html5.websocket/client/html5.websocket.client.c
 	${SACK_BASE}/src/netlib/html5.websocket/server/html5.websocket.c
-	${SACK_BASE}/src/netlib/html5.websocket/json/json.h
 	${SACK_BASE}/src/netlib/html5.websocket/json/json_parser.c
 	${SACK_BASE}/src/netlib/html5.websocket/json/json6_parser.c
 	${SACK_BASE}/src/netlib/html5.websocket/json/json_emitter.c
