@@ -51586,6 +51586,12 @@ PCLIENT WebSocketCreate( CTEXTSTR hosturl
 	return socket->pc;
 }
 HTML5_WEBSOCKET_NAMESPACE_END
+#ifndef JSON_EMITTER_SOURCE
+#  define JSON_EMITTER_SOURCE
+#endif
+#ifndef JSON_PARSER_MAIN_SOURCE
+#  define JSON_PARSER_MAIN_SOURCE
+#endif
 #ifndef JSON_EMITTER_HEADER_INCLUDED
 #define JSON_EMITTER_HEADER_INCLUDED
 #ifdef JSON_EMITTER_SOURCE
@@ -52005,12 +52011,6 @@ extern
 struct json_parser_shared_data jpsd;
 #ifdef __cplusplus
 } } SACK_NAMESPACE_END
-#endif
-#ifndef JSON_EMITTER_SOURCE
-#  define JSON_EMITTER_SOURCE
-#endif
-#ifndef JSON_PARSER_MAIN_SOURCE
-#  define JSON_PARSER_MAIN_SOURCE
 #endif
 #ifdef __cplusplus
 SACK_NAMESPACE namespace network { namespace json {
