@@ -80,6 +80,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	ComObject::Init( exports );
 	InitJSON( isolate, exports );
 	InitSRG( isolate, exports );
+	InitWebSocket( isolate, exports );
 #ifdef WIN32
 	RegObject::Init( exports );
 #endif
