@@ -59705,6 +59705,7 @@ int NetworkQuit(void)
 		InternalRemoveClient( globalNetworkData.ActiveClients );
 	}
 	globalNetworkData.bQuit = TRUE;
+	WakeThread( globalNetworkData.pThread );
 #ifdef USE_WSA_EVENTS
 	if( globalNetworkData.flags.bLogNotices )
 		lprintf( WIDE( "SET GLOBAL EVENT (trigger quit)" ) );
