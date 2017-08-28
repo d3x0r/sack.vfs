@@ -534,6 +534,15 @@ server.onAccept( callback );
 
 ```
 
+Client constructor parameters
+  - URL - the URL to connect to
+  - protocol - the protocol for this connection
+  - options - an object defining options for the connection.
+    | Client Options |   |
+    |---|---|
+    | perMessageDeflate | true/false.  false is the default. (unimplemented yet) |
+    |---|---|
+
 Client events
   | Event Name | Event Description |
   |---|---|
@@ -571,6 +580,12 @@ Server events
   |---|---|
   | connect | callback receives new connection from a client. |
   |---|---|
+
+
+Server Options
+  When a server is created it accepts an option object with the following options specified.
+   - port - a port number.  8080 is the default.
+   - ... TBD
 
 Server Client Methods
   this is a slightly different object than a client, although accepts the same events except for on( "open" ) and onOpen() method.
