@@ -542,15 +542,10 @@ Client constructor parameters
     | Client Options |   |
     |---|---|
     | perMessageDeflate | true/false.  false is the default. (unimplemented yet) |
-    |---|---|
     | masking | true/false; required by RFC, default is TRUE |
-    |---|---|
     | perMessageDeflate | true/false; default false (performance).  Reqeusts permessage-deflate extension from server, and deflates messages sent. |
-    |---|---|
     | perMessageDeflateAllow | true/false; default false (performance).  Accepts permessage-deflate from server, but does not deflate messages. |    
-    |---|---|
     | ca | <string>; uses PEM certificate as part of certificate chain to verify server. |
-    |---|---|
     
   After opening, websocket object has 'connection' which gives some of the information about the connection established.
 
@@ -559,31 +554,21 @@ Client events
   | Event Name | Event Description |
   |---|---|
   |open | callback receives a single argument (websocket) |
-  |---|---|
   |message | callback receives a message argument, its type is either a string or an ArrayBufer |
-  |---|---|
   |close | callback is called when the server closes the connection |
-  |---|---|
   
 Client Methods
 
    | method | purpose |
    | -- | -- |
    | close() | call this to end a connection |
-   | -- | -- |
    | send(message) | call this to send data to a connection, argument should either be a String or an ArrayBuffer.
-   | -- | -- |
    | onOpen | sets the callback to be called when the connection opens. |
-   | -- | -- |
    | onMessage | set the callback to be called when a message is received, it gets a single parameter, the message recieved. \ |
-   |  | The data is either a string or an ArrayBuffer type | 
-   | -- | -- |
+   |        | The data is either a string or an ArrayBuffer type | 
    | onClose | sets the callback to be called when the connection is closed from the other side first |
-   | -- | -- |
    | onError | sets the callback to be called on an error (no supported errors at this time) |
-   | -- | -- |
    | on  | sets event callbacks by name.  First parameter is the event name, the second is the callback |
-   | -- | -- |
   
 Server events
 
@@ -591,9 +576,7 @@ Server events
   |---|---|
   | accept |  optional callback, if it is configured on a server, it is called before connect, and is passed (protocols, resource path). |
   |        |  should call server.accept( protocol ), or server.reject() during this callback.  |
-  |---|---|
   | connect | callback receives new connection from a client.  The new client object has a 'connection' object which provides information about the connection. |
-  |---|---|
 
 
 Server Options
@@ -602,20 +585,12 @@ Server Options
     | Server Options |   |
     |---|---|
     | port |  a port number.  8080 is the default. |
-    |---|---|
     | masking | true/false; browsers do not accept server masked data; RFC non-specific; default is false |
-    |---|---|
     | perMessageDeflate | true/false; default false (performance).  Accepts permessage-deflate extension from client, and deflates messages if requested by client. |
-    |---|---|
     | perMessageDeflateAllow | true/false; default false (performance).  Accepts permessage-deflate from client, but does not deflate messages on response |    
-    |---|---|
     | cert | <string>; uses PEM certificate as server certificate chain to send to client. |
-    |---|---|
     | key  | <string>; uses PEM private key specified for encryption; used by clients to authenticate cerficates  |
-    |---|---|
     | passphrase | <string>; uses passphrase for key provided |
-    |---|---|
-   - ... TBD
 
 Server Client Methods
   this is a slightly different object than a client, although accepts the same events except for on( "open" ) and onOpen() method.
@@ -623,9 +598,7 @@ Server Client Methods
   | Method |  Description |
   |----|----|
   | send | send data on the connection.  Message parameter can either be an ArrayBuffer or a String. (to be implemented; typedarraybuffer) |
-  |----|----|
   | close | closes the connection |
-  |----|----|
   
 
 WebSocket connection Object
