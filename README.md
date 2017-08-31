@@ -606,20 +606,13 @@ WebSocket connection Object
   | Connection Field | Usage |
   |----------|----------|
   | localFamily | <String> value is either 'IPv4' or 'IPv6' |
-  |---|---|
   | localAddress | <string> the IP address of the local side of the connection |
-  |---|---|
   | localPort | <Number> port number of the local connection |
-  |---|---|
   | remoteFamily | <String> value is either 'IPv4' or 'IPv6' |
-  |---|---|
   | remoteAddress | <string> the IP address of the remote side of the connection |
-  |---|---|
   | remotePort | <Number> port number of the remote connection |
-  |---|---|
-  | headers | <Object> field names are the names of the fields in the request header; values are the values of the fields |
+  | headers | <Object> field names are the names of the fields in the request header; values are the values of the fields \ |
   |        |  Client side connections may not have headers present.  |
-  |---|---|
 
 
 
