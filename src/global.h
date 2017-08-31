@@ -30,7 +30,7 @@ using namespace v8;
 void InitJSON( Isolate *isolate, Handle<Object> exports );
 void InitSRG( Isolate *isolate, Handle<Object> exports );
 void InitWebSocket( Isolate *isolate, Handle<Object> exports );
-
+void InitUDPSocket( Isolate *isolate, Handle<Object> exports );
 
 #define ReadOnlyProperty (PropertyAttribute)((int)PropertyAttribute::ReadOnly | PropertyAttribute::DontDelete)
 
