@@ -520,7 +520,7 @@ Salty Random Generator
 
 ```
 var sack = require( "sack.vfs" );
-var client = new sack.WebSocket.Client( <url>, <protocols> );
+var client = new sack.WebSocket.Client( <url> [, <protocol(s)>] [,option object] );
 client.on( <event>, <callback> );
 client.onOpen( callback );
 client.onMessage( callback );
@@ -536,12 +536,22 @@ server.onAccept( callback );
 
 Client constructor parameters
   - URL - the URL to connect to
-  - protocol - the protocol for this connection
+  - protocol - the protocol for this connection.  Accepts either a string or an array of strings to send as protocols.
   - options - an object defining options for the connection.
     | Client Options |   |
     |---|---|
     | perMessageDeflate | true/false.  false is the default. (unimplemented yet) |
     |---|---|
+    | masking | true/false; required by RFC, default is TRUE |
+    |---|---|
+    | perMessageDeflate | true/false; default false (performance).  Reqeusts permessage-deflate extension from server, and deflates messages sent. |
+    |---|---|
+    | perMessageDeflateAllow | true/false; default false (performance).  Accepts permessage-deflate from server, but does not deflate messages. |    
+    |---|---|
+    | ca | <string>; uses PEM certificate as part of certificate chain to verify server. |
+    |---|---|
+    
+  After opening, websocket object has 'connection' which gives some of the information about the connection established.
 
 Client events
   | Event Name | Event Description |
@@ -575,23 +585,61 @@ Client Methods
 Server events
   | Event Name | Event Description |
   |---|---|
-  | accept |  optional callback, if it is configured on a server, it is called before connect, and is passed (protocols, resource path).
-  |        |  should call server.accept( protocol ), or server.reject() during this callback.
+  | accept |  optional callback, if it is configured on a server, it is called before connect, and is passed (protocols, resource path). |
+  |        |  should call server.accept( protocol ), or server.reject() during this callback.  |
   |---|---|
-  | connect | callback receives new connection from a client. |
+  | connect | callback receives new connection from a client.  The new client object has a 'connection' object which provides information about the connection. |
   |---|---|
 
 
 Server Options
   When a server is created it accepts an option object with the following options specified.
-   - port - a port number.  8080 is the default.
+    | Server Options |   |
+    |---|---|
+    | port |  a port number.  8080 is the default. |
+    |---|---|
+    | masking | true/false; browsers do not accept server masked data; RFC non-specific; default is false |
+    |---|---|
+    | perMessageDeflate | true/false; default false (performance).  Accepts permessage-deflate extension from client, and deflates messages if requested by client. |
+    |---|---|
+    | perMessageDeflateAllow | true/false; default false (performance).  Accepts permessage-deflate from client, but does not deflate messages on response |    
+    |---|---|
+    | cert | <string>; uses PEM certificate as server certificate chain to send to client. |
+    |---|---|
+    | key  | <string>; uses PEM private key specified for encryption; used by clients to authenticate cerficates  |
+    |---|---|
+    | passphrase | <string>; uses passphrase for key provided |
+    |---|---|
    - ... TBD
 
 Server Client Methods
   this is a slightly different object than a client, although accepts the same events except for on( "open" ) and onOpen() method.
+  | Method |  Description |
+  |----|----|
+  | send | send data on the connection.  Message parameter can either be an ArrayBuffer or a String. (to be implemented; typedarraybuffer) |
+  |----|----|
+  | close | closes the connection |
+  |----|----|
   
-  - send - send data on the connection
-  - close - close the connection
+
+WebSocket connection Object
+  | Connection Field | Usage |
+  |----------|----------|
+  | localFamily | <String> value is either 'IPv4' or 'IPv6' |
+  |---|---|
+  | localAddress | <string> the IP address of the local side of the connection |
+  |---|---|
+  | localPort | <Number> port number of the local connection |
+  |---|---|
+  | remoteFamily | <String> value is either 'IPv4' or 'IPv6' |
+  |---|---|
+  | remoteAddress | <string> the IP address of the remote side of the connection |
+  |---|---|
+  | remotePort | <Number> port number of the remote connection |
+  |---|---|
+  | headers | <Object> field names are the names of the fields in the request header; values are the values of the fields |
+  |        |  Client side connections may not have headers present.  |
+  |---|---|
 
 
 
