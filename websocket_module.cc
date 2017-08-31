@@ -134,6 +134,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 	}
 	if( !check ) {
 		check = NewArray( struct optionStrings, 1 );
+		AddLink( &strings, check );
 		check->isolate = isolate;
 		check->portString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "port" ) );
 		check->localPortString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "localPort" ) );
@@ -323,7 +324,10 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				msg->result = wssiInternal;
 			}
 			else if( msg->eventType == WS_EVENT_ACCEPT ) {
-				argv[0] = Local<String>::New( isolate, String::NewFromUtf8( isolate, msg->protocol ) );
+				if( msg->protocol )
+					argv[0] = Local<String>::New( isolate, String::NewFromUtf8( isolate, msg->protocol ) );
+				else
+					argv[0] = Null( isolate );
 				argv[1] = Local<String>::New( isolate, String::NewFromUtf8( isolate, msg->resource ) );
 
 				Local<Function> cb = myself->acceptCallback.Get( isolate );
@@ -372,6 +376,7 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 			case WS_EVENT_CLOSE:
 				myself->closeCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 0, argv );
 				uv_close( (uv_handle_t*)&myself->async, NULL );
+				DeleteLinkQueue( &myself->eventQueue );
 				break;
 			case WS_EVENT_ERROR:
 				myself->errorCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 0, argv );
@@ -429,6 +434,7 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 				if( !cb.IsEmpty() )
 					cb->Call( wsc->eventMessage->_this->_this.Get( isolate ), 0, argv );
 				uv_close( (uv_handle_t*)&wsc->async, NULL );
+				DeleteLinkQueue( &wsc->eventQueue );
 				break;
 			}
 			wsc->eventMessage->done = 1;
@@ -437,14 +443,14 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 	}
 }
 
-
+int accepted = 0;
 
 void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 
 	if( !l.loop )
 		l.loop = uv_default_loop();
 	//NetworkWait( NULL, 2000000, 16 );  // 1GB memory
-	NetworkWait( NULL, 2000, 16 );  // 1GB memory
+	NetworkWait( NULL, 4000, 2 );  // 1GB memory
 	Local<Object> o = Object::New( isolate );
 	SET_READONLY( exports, "WebSocket", o );
 
@@ -500,6 +506,17 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 	}
 }
 
+static void Wait( void ) {
+	uint32_t tick = GetTickCount();
+	WakeableSleep( 250 );
+	if( (GetTickCount() - tick) > 200 ) {
+		tick = GetTickCount() - tick;
+		lprintf( "slept %d", tick );
+	}
+}
+#define Wait() WakeableSleep( 100 )
+
+
 static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 	wssObject *wss = (wssObject*)psv;
 	if( wss->protocolResponse ) {
@@ -517,18 +534,21 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 	uv_async_send( &wss->async );
 
 	while( !evt.done )
-		WakeableSleep( 250 );
+		Wait();
 
 	{
 		INDEX idx;
 		struct pendingSend *send;
-		LIST_FORALL( evt.send, idx, struct pendingSend *, send ) {
-			if( send->binary )
-				WebSocketSendBinary( pc, send->buffer, send->buflen );
-			else
-				WebSocketSendText( pc, send->buffer, send->buflen );
-			Deallocate( POINTER, send->buffer );
-			Deallocate( struct pendingSend*, send );
+		if( evt.send ) {
+			LIST_FORALL( evt.send, idx, struct pendingSend *, send ) {
+				if( send->binary )
+					WebSocketSendBinary( pc, send->buffer, send->buflen );
+				else
+					WebSocketSendText( pc, send->buffer, send->buflen );
+				Deallocate( POINTER, send->buffer );
+				Deallocate( struct pendingSend*, send );
+			}
+			DeleteList( &evt.send );
 		}
 	}
 
@@ -545,9 +565,8 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv )
 	evt._this = wssi;
 	EnqueLink( &wssi->eventQueue, &evt );
 	uv_async_send( &wssi->async );
-
 	while( !evt.done )
-		WakeableSleep( 250 );
+		Wait();
 
 }
 
@@ -562,7 +581,7 @@ static void webSockServerError( PCLIENT pc, uintptr_t psv, int error ){
 	uv_async_send( &wssi->async );
 
 	while( !evt.done )
-		WakeableSleep( 250 );
+		Wait();
 
 }
 
@@ -584,17 +603,20 @@ static void webSockServerEvent( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOIN
 	uv_async_send( &wssi->async );
 
 	while( !evt.done )
-		WakeableSleep( 250 );
+		Wait();
 	{
 		INDEX idx;
-		struct pendingSend *send;
-		LIST_FORALL( evt.send, idx, struct pendingSend *, send ) {
-			if( send->binary )
-				WebSocketSendBinary( wssi->pc, send->buffer, send->buflen );
-			else
-				WebSocketSendText( wssi->pc, send->buffer, send->buflen );
-			Deallocate( POINTER, send->buffer );
-			Deallocate( struct pendingSend*, send );
+		struct pendingSend *send; 
+		if( evt.send ) {
+			LIST_FORALL( evt.send, idx, struct pendingSend *, send ) {
+				if( send->binary )
+					WebSocketSendBinary( wssi->pc, send->buffer, send->buflen );
+				else
+					WebSocketSendText( wssi->pc, send->buffer, send->buflen );
+				Deallocate( POINTER, send->buffer );
+				Deallocate( struct pendingSend*, send );
+			}
+			DeleteList( &evt.send );
 		}
 		if( evt.send_close ) {
 			WebSocketClose( pc );
@@ -604,24 +626,31 @@ static void webSockServerEvent( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOIN
 
 static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char *protocols, const char *resource, char **protocolReply ) {
 	wssObject *wss = (wssObject*)psv;
-	struct wssEvent evt;
-	evt.protocol = protocols;
-	evt.resource = resource;
-	evt.accepted = 0;
-	evt.eventType = WS_EVENT_ACCEPT;
-	evt.done = FALSE;
-	evt.waiter = MakeThread();
-	evt._this = wss;
+	if( accepted++ > 1000 ) {
+		DebugDumpMem();
+		accepted = 0;
+	}
+	if( !wss->acceptCallback.IsEmpty() ) {
+		struct wssEvent evt;
+		evt.protocol = protocols;
+		evt.resource = resource;
+		evt.accepted = 0;
+		evt.eventType = WS_EVENT_ACCEPT;
+		evt.done = FALSE;
+		evt.waiter = MakeThread();
+		evt._this = wss;
 
-	EnqueLink( &wss->eventQueue, &evt );
-	uv_async_send( &wss->async );
+		EnqueLink( &wss->eventQueue, &evt );
+		uv_async_send( &wss->async );
 
-	while( !evt.done )
-		WakeableSleep( 250 );
-	if( evt.protocol != protocols )
-		wss->protocolResponse = evt.protocol;
-	(*protocolReply) = (char*)evt.protocol;
-	return (uintptr_t)evt.accepted;
+		while( !evt.done )
+			Wait();
+		if( evt.protocol != protocols )
+			wss->protocolResponse = evt.protocol;
+		(*protocolReply) = (char*)evt.protocol;
+		return (uintptr_t)evt.accepted;
+	}
+	return 1;
 }
 
 wssObject::wssObject( struct wssOptions *opts ) {
@@ -634,10 +663,14 @@ wssObject::wssObject( struct wssOptions *opts ) {
 	protocolResponse = NULL;
 	closed = 0;
 	pc = WebSocketCreate( opts->url, webSockServerOpen, webSockServerEvent, webSockServerClosed, webSockServerError, (uintptr_t)this );
-	if( opts->deflate )
+	if( opts->deflate ) {
 		SetWebSocketDeflate( pc, WEBSOCK_DEFLATE_ENABLE );
-	if( opts->deflate_allow )
+		//lprintf( "deflate yes" );
+	}
+	if( opts->deflate_allow ) {
 		SetWebSocketDeflate( pc, WEBSOCK_DEFLATE_ALLOW );
+		//lprintf( "deflate allow, do not deflate" );
+	}
 	if( opts->apply_masking )
 		SetWebSocketMasking( pc, 1 );
 	if( opts->ssl ) {
@@ -656,6 +689,7 @@ wssObject::wssObject( struct wssOptions *opts ) {
 wssObject::~wssObject() {
 	//lprintf( "Destruct wssObject" );
 	RemoveClient( pc );
+	DeleteLinkQueue( &eventQueue );
 }
 
 void wssObject::New(const FunctionCallbackInfo<Value>& args){
@@ -715,8 +749,10 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 			if( !opts->Has( optName = strings->deflateAllowString->Get( isolate ) ) ) {
 				wssOpts.deflate_allow = false;
 			}
-			else
+			else {
 				wssOpts.deflate_allow = (opts->Get( optName )->ToBoolean()->Value());
+				//lprintf( "deflate allow:%d", wssOpts.deflate_allow );
+			}
 
 			if( opts->Has( optName = strings->maskingString->Get( isolate ) ) ) {
 				wssOpts.apply_masking = opts->Get( optName )->ToBoolean()->Value();
@@ -830,8 +866,8 @@ wssiObject::wssiObject( PCLIENT pc, Local<Object> obj ) {
 }
 
 wssiObject::~wssiObject() {
+	lprintf( "Destruct wssiObject" );
 	if( !closed ) {
-		//lprintf( "Destruct wssiObject" );
 		RemoveClient( pc );
 	}
 }
@@ -956,8 +992,8 @@ static uintptr_t webSockClientOpen( PCLIENT pc, uintptr_t psv ) {
 	EnqueLink( &wsc->eventQueue, &evt );
 	uv_async_send( &wsc->async );
 	while( !evt.done )
-		WakeableSleep( 250 );
-
+		Wait();
+	if( evt.send )
 	{
 		INDEX idx;
 		struct pendingSend *send;
@@ -969,6 +1005,7 @@ static uintptr_t webSockClientOpen( PCLIENT pc, uintptr_t psv ) {
 			Deallocate( POINTER, send->buffer );
 			Deallocate( struct pendingSend*, send );
 		}
+		DeleteList( &evt.send );
 	}
 	return (uintptr_t)psv;
 }
@@ -985,7 +1022,7 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv )
 	EnqueLink( &wsc->eventQueue, &evt );
 	uv_async_send( &wsc->async );
 	while( !evt.done )
-		WakeableSleep( 250 );
+		Wait();
 
 }
 
@@ -1000,7 +1037,7 @@ static void webSockClientError( PCLIENT pc, uintptr_t psv, int error ) {
 	EnqueLink( &wsc->eventQueue, &evt );
 	uv_async_send( &wsc->async );
 	while( !evt.done )
-		WakeableSleep( 250 );
+		Wait();
 }
 
 static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTER buffer, size_t msglen ) {
@@ -1019,18 +1056,21 @@ static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTE
 	EnqueLink( &wsc->eventQueue, &evt );
 	uv_async_send( &wsc->async );
 	while( !evt.done )
-		WakeableSleep( 250 );
+		Wait();
 
 	{
 		INDEX idx;
 		struct pendingSend *send;
-		LIST_FORALL( evt.send, idx, struct pendingSend *, send ) {
-			if( send->binary )
-				WebSocketSendBinary( pc, send->buffer, send->buflen );
-			else
-				WebSocketSendText( pc, send->buffer, send->buflen );
-			Deallocate( POINTER, send->buffer );
-			Deallocate( struct pendingSend*, send );
+		if( evt.send ) {
+			LIST_FORALL( evt.send, idx, struct pendingSend *, send ) {
+				if( send->binary )
+					WebSocketSendBinary( pc, send->buffer, send->buflen );
+				else
+					WebSocketSendText( pc, send->buffer, send->buflen );
+				Deallocate( POINTER, send->buffer );
+				Deallocate( struct pendingSend*, send );
+			}
+			DeleteList( &evt.send );
 		}
 		if( evt.send_close ) {
 			WebSocketClose( pc );
@@ -1065,6 +1105,7 @@ wscObject::~wscObject() {
 		//lprintf( "Destruct wscObject" );
 		RemoveClient( pc );
 	}
+	DeleteLinkQueue( &eventQueue );
 }
 
 
