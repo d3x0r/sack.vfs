@@ -564,7 +564,7 @@ Client Methods
    | close() | call this to end a connection |
    | send(message) | call this to send data to a connection, argument should either be a String or an ArrayBuffer.
    | onOpen | sets the callback to be called when the connection opens. |
-   | onMessage | set the callback to be called when a message is received, it gets a single parameter, the message recieved. \ |
+   | onMessage | set the callback to be called when a message is received, it gets a single parameter, the message recieved. \
    |        | The data is either a string or an ArrayBuffer type | 
    | onClose | sets the callback to be called when the connection is closed from the other side first |
    | onError | sets the callback to be called on an error (no supported errors at this time) |
@@ -611,7 +611,7 @@ WebSocket connection Object
   | remoteFamily | <String> value is either 'IPv4' or 'IPv6' |
   | remoteAddress | <string> the IP address of the remote side of the connection |
   | remotePort | <Number> port number of the remote connection |
-  | headers | <Object> field names are the names of the fields in the request header; values are the values of the fields \ |
+  | headers | <Object> field names are the names of the fields in the request header; values are the values of the fields \
   |        |  Client side connections may not have headers present.  |
 
 
