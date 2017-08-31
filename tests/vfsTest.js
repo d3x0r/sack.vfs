@@ -1,6 +1,6 @@
 
 function test () {
-var vfs = require( "./vfs_module.js" )
+var vfs = require( ".." )
 //console.log( "keys: ", Object.keys( vfs ) );
 var more = require( "./testaux.js" );
 
