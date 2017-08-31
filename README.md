@@ -581,16 +581,16 @@ Server events
 
 Server Options
   When a server is created it accepts an option object with the following options specified.
-  
-    | Server Options |   |
-    |---|---|
-    | port |  a port number.  8080 is the default. |
-    | masking | true/false; browsers do not accept server masked data; RFC non-specific; default is false |
-    | perMessageDeflate | true/false; default false (performance).  Accepts permessage-deflate extension from client, and deflates messages if requested by client. |
-    | perMessageDeflateAllow | true/false; default false (performance).  Accepts permessage-deflate from client, but does not deflate messages on response |    
-    | cert | <string>; uses PEM certificate as server certificate chain to send to client. |
-    | key  | <string>; uses PEM private key specified for encryption; used by clients to authenticate cerficates  |
-    | passphrase | <string>; uses passphrase for key provided |
+
+  | Server Options |   |
+  |---|---|
+  | port |  a port number.  8080 is the default. |
+  | masking | true/false; browsers do not accept server masked data; RFC non-specific; default is false |
+  | perMessageDeflate | true/false; default false (performance).  Accepts permessage-deflate extension from client, and deflates messages if requested by client. |
+  | perMessageDeflateAllow | true/false; default false (performance).  Accepts permessage-deflate from client, but does not deflate messages on response |    
+  | cert | <string>; uses PEM certificate as server certificate chain to send to client. |
+  | key  | <string>; uses PEM private key specified for encryption; used by clients to authenticate cerficates  |
+  | passphrase | <string>; uses passphrase for key provided |
 
 Server Client Methods
   this is a slightly different object than a client, although accepts the same events except for on( "open" ) and onOpen() method.
