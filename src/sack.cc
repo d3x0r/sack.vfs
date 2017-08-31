@@ -40626,7 +40626,7 @@ PTEXT SegConcatEx(PTEXT output,PTEXT input,int32_t offset,size_t length DBG_PASS
 	size_t idx=0;
 	size_t len=0;
 	PTEXT newseg;
-	SegAppend( output, newseg = SegCreate( length ) );
+	SegAppend( output, newseg = SegCreateEx( length DBG_RELAY ) );
 	output = newseg;
 	//output=SegExpandEx(output, length DBG_RELAY); /* add 1 for a null */
 	GetText(output)[0]=0;
@@ -50365,7 +50365,7 @@ static void _SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mas
 }
 void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, const uint8_t* payload, size_t length, int use_ssl ) {
 	struct web_socket_input_state *input = (struct web_socket_input_state *)GetNetworkLong( pc, 1 );
-	if( input->flags.deflate && opcode < 3 ) {
+	if( (!input->flags.do_not_deflate) && input->flags.deflate && opcode < 3 ) {
 		int r;
 		if( opcode ) opcode |= 0x40;
 		input->deflater.next_in = (Bytef*)payload;
@@ -51086,6 +51086,7 @@ static void CPROC WebSocketClientClosed( PCLIENT pc )
 			websock->input_state.on_close( pc, websock->input_state.psv_on );
 			websock->input_state.on_close = NULL;
 		}
+		Deallocate( uint8_t*, websock->input_state.fragment_collection );
 		Release( websock->buffer );
 		DestroyHttpState( websock->pHttpState );
 		SACK_ReleaseURL( websock->url );
@@ -51554,9 +51555,11 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 							// "server_max_window_bits"
 							// "client_max_window_bits"
 							if( TextLike( opt, "permessage-deflate" ) ) {
-								socket->input_state.flags.deflate = 1;
-								socket->input_state.server_max_bits = 15;
-								socket->input_state.client_max_bits = 15;
+								socket->input_state.flags.deflate = socket->input_state.flags.deflate & 1;
+								if( socket->input_state.flags.deflate ) {
+									socket->input_state.server_max_bits = 15;
+									socket->input_state.client_max_bits = 15;
+								}
 							}
 							else if( TextLike( opt, "client_max_window_bits" ) ) {
 								opt = NEXTLINE( opt );
@@ -51592,7 +51595,7 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 							opt = NEXTLINE( opt );
 						}
 						LineRelease( options );
-						if( socket->input_state.flags.deflate ) {
+						if( socket->input_state.flags.deflate && !socket->input_state.flags.do_not_deflate ) {
 							if( deflateInit2( &socket->input_state.deflater
 								, Z_BEST_SPEED, Z_DEFLATED
 								, -socket->input_state.server_max_bits
@@ -51695,6 +51698,7 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 									// s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
 									vtprintf( pvt_output, WIDE( "Sec-WebSocket-Accept: %s\r\n" ), output );
 								}
+								Deallocate( char *, resultval );
 							}
 						}
 						if( socket->input_state.flags.deflate ) {
@@ -51719,7 +51723,7 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 #else
 						SendTCP( pc, GetText( value ), GetTextSize( value ) );
 #endif
-						lprintf( "Sent http reply." );
+						//lprintf( "Sent http reply." );
 						VarTextDestroy( &pvt_output );
 						if( socket->input_state.on_open )
 							socket->input_state.psv_open = socket->input_state.on_open( pc, socket->input_state.psv_on );
@@ -51764,6 +51768,7 @@ static void CPROC closed( PCLIENT pc_client ) {
 		Deallocate( POINTER, socket->input_state.inflateBuf );
 		Deallocate( POINTER, socket->input_state.deflateBuf );
 	}
+	Deallocate( uint8_t*, socket->input_state.fragment_collection );
 	DestroyHttpState( socket->http_state );
 	Deallocate( POINTER, socket->buffer );
 	Deallocate( HTML5WebSocket, socket );
@@ -51801,6 +51806,7 @@ PCLIENT WebSocketCreate( CTEXTSTR hosturl
 	NetworkStart();
 	MemSet( socket, 0, sizeof( struct html5_web_socket ) );
 	socket->Magic = 0x20130912;
+	socket->input_state.flags.deflate = 1;
 	socket->input_state.on_open = on_open;
 	socket->input_state.on_event = on_event;
 	socket->input_state.on_close = on_closed;
@@ -58106,7 +58112,9 @@ PRELOAD( InitNetworkGlobalOptions )
 	globalNetworkData.flags.bShortLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data(64 byte max)" ), 0, TRUE );
 	globalNetworkData.flags.bLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data" ), 0, TRUE );
 	globalNetworkData.flags.bLogSentData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Sent Data" ), globalNetworkData.flags.bLogReceivedData, TRUE );
+#  ifdef LOG_NOTICES
 	globalNetworkData.flags.bLogNotices = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Notifications" ), 0, TRUE );
+#  endif
 	globalNetworkData.dwReadTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Read wait timeout" ), 5000, TRUE );
 	globalNetworkData.dwConnectTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Connect timeout" ), 10000, TRUE );
 #else
@@ -59424,8 +59432,10 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t qui
 				}
 				else
 				{
+#ifdef LOG_NOTICES
 					if( globalNetworkData.flags.bLogNotices )
 						lprintf( WIDE( "RESET GLOBAL EVENT" ) );
+#endif
 					WSAResetEvent( thread->hThread );
 				}
 				return 1;
@@ -59988,15 +59998,19 @@ int NetworkQuit(void)
 	}
 	while( globalNetworkData.ActiveClients )
 	{
-		//if( globalNetworkData.flags.bLogNotices )
+#ifdef LOG_NOTICES
+		if( globalNetworkData.flags.bLogNotices )
 			lprintf( WIDE("NetworkQuit - Remove active client %p"), globalNetworkData.ActiveClients );
+#endif
 		InternalRemoveClientEx( globalNetworkData.ActiveClients, TRUE, FALSE );
 	}
 	globalNetworkData.bQuit = TRUE;
 	WakeThread( globalNetworkData.pThread );
 #ifdef USE_WSA_EVENTS
+#  ifdef LOG_NOTICES
 	if( globalNetworkData.flags.bLogNotices )
 		lprintf( WIDE( "SET GLOBAL EVENT (trigger quit)" ) );
+#  endif
 	WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
 #else
 #  ifndef __LINUX__
@@ -60966,7 +60980,6 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNofity, LOGICAL bLi
 				//  the idea is to NEVER do this; but I had to do this for lots of parallel connections that were short lived...
 				// windows registry http://technet.microsoft.com/en-us/library/cc938217.aspx 240 seconds time_wait timeout
 				struct linger lingerSet;
-				lprintf( "Close with no linger." );
  // on , with no time = off.
 				lingerSet.l_onoff = 1;
  // 0 timeout sends reset.
@@ -60984,7 +60997,6 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNofity, LOGICAL bLi
 #if 0
 			struct linger lingerSet;
 			// linger ON causes delay on close... otherwise close returns immediately
-			lprintf( "Close with linger (disabled)." );
  // on , with no time = off.
 			lingerSet.l_onoff = 0;
 			lingerSet.l_linger = 0;
@@ -61097,11 +61109,13 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNofity, LOGICAL bLi
 			{
 				EnqueLink( &globalNetworkData.event_schedule, tmp_scheduled );
 			}
+#ifdef LOG_NOTICES
 			else
 			{
 				if( globalNetworkData.flags.bLogNotices )
 					lprintf( WIDE( "Removed from schedule : %p" ), tmp_scheduled );
 			}
+#endif
 			// no longer in events.
 			lpClient->flags.bAddedToEvents = 0;
 		}
@@ -61500,7 +61514,7 @@ NETWORK_PROC( PCLIENT, CPPOpenTCPListenerAddrExx )( SOCKADDR *pAddr
 		return NULL;
 	}
 	pListen->saSource = DuplicateAddress( pAddr );
-	if(listen(pListen->Socket,5) == SOCKET_ERROR )
+	if(listen(pListen->Socket, SOMAXCONN ) == SOCKET_ERROR )
 	{
 		lprintf( WIDE("listen(5) failed: %d"), WSAGetLastError() );
 		InternalRemoveClientEx( pListen, TRUE, FALSE );
