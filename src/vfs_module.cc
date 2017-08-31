@@ -64,9 +64,9 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	node::AtExit( moduleExit );
 
 	//SetAllocateLogging( TRUE );
-	//SetManualAllocateCheck( TRUE );
-	//SetAllocateDebug( TRUE );
-	//SetSystemLog( SYSLOG_FILE, stdout );
+	SetManualAllocateCheck( TRUE );
+	SetAllocateDebug( TRUE );
+	SetSystemLog( SYSLOG_FILE, stdout );
 
 	//LoadTranslationDataEx( "^/strings.dat" );
 	LoadTranslationDataEx( "@/../../strings.json" );
@@ -81,6 +81,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	InitJSON( isolate, exports );
 	InitSRG( isolate, exports );
 	InitWebSocket( isolate, exports );
+	InitUDPSocket( isolate, exports );
 #ifdef WIN32
 	RegObject::Init( exports );
 #endif
