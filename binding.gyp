@@ -13,6 +13,7 @@
            "src/tls_interface.cc",
            "src/srg_module.cc",
            "src/websocket_module.cc",
+           "src/network_module.cc",
           ],
 	'defines': [
           'TARGETNAME="sack_vfs.node"',

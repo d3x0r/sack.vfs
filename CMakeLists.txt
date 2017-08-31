@@ -180,14 +180,15 @@ add_library(${PROJECT_NAME} SHARED
 	src/vfs_module.cc
 	src/thread_module.cc
 	src/sql_module.cc
-        src/com_interface.cc
-        src/jsonParse.cc
-        src/tls_interface.cc
+	src/com_interface.cc
+	src/jsonParse.cc
+	src/tls_interface.cc
 	src/srg_module.cc 
 	src/websocket_module.cc 
+	src/network_module.cc 
 	${MORE_MODULE_SOURCES}
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
+	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
+	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
         )
 
 
