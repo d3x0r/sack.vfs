@@ -1,4 +1,4 @@
-var vfs = require( "." );
+var vfs = require( ".." );
 //var db = vfs.Sqlite( "file://localhost/gun.db?nolock=1" );   
 //open:file://localhost/gun.db?nolock=1
 //Sqlite3 Err: (14) os_win.c:42795: (2) winOpen(M:\gun.db) - The system cannot find the file specified.

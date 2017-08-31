@@ -1,5 +1,5 @@
 
-var vfs = require( "./vfs_module.js" );
+var vfs = require( ".." );
 
 var ids = [];
 for( var n = 0; n < 10; n++ )

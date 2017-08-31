@@ -5,7 +5,7 @@ if( process.argv.length < 3 ) {
 }
 	
 
-var vfs = require( "." );
+var vfs = require( ".." );
 var vol = vfs.Volume();
 var file = vol.File( process.argv[2] );
 if( !file ) {

@@ -1,6 +1,6 @@
 
 
-var vfs = require( "." )
+var vfs = require( ".." )
 var parse = vfs.JSON6.parse;
 
 //console.log( "Stringify Test:", vfs.JSON.stringify( { a:123 } ) );

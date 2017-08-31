@@ -1,5 +1,5 @@
 
-var vfs = require( './' )
+var vfs = require( '..' )
 
 var db = vfs.Sqlite( 'option.db' );
 var root = db.go( "test" );

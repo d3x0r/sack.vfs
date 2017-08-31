@@ -1,5 +1,5 @@
 
-var vfs = require( "." );
+var vfs = require( ".." );
 
 var parser = vfs.JSON.begin( (obj)=>{
 	console.log( "Got value:",typeof obj, ":", obj );

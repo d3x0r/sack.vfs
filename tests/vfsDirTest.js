@@ -1,5 +1,5 @@
 
-var vfs = require( "./vfs_module.js" );
+var vfs = require( ".." );
 var vol = vfs.Volume();
 
 console.log( "Directory:", vol.dir() );

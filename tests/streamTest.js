@@ -1,5 +1,5 @@
 
-var vfs = require( '.' );
+var vfs = require( '..' );
 var vol = vfs.Volume();
 var vol2 = vfs.Volume( 'data.vfs' );
 

@@ -1,6 +1,6 @@
 
 
-var vfs = require( "./vfs_module.js" )
+var vfs = require( ".." )
 var vol = vfs.Volume();
 var data = vol.read( "comTest.js" );
 console.log( Object.keys( data ) )

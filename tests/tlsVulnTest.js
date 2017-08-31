@@ -1,7 +1,7 @@
 
 //const tls = require('tls');
 //console.log(tls.getCiphers());
-const vfs = require( "." );
+const vfs = require( ".." );
 const vol = vfs.Volume();
 //vfs.TLS.seed( )
 

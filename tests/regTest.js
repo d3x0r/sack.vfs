@@ -1,5 +1,5 @@
 
-var vfs = require( "./vfs_module.js" )
+var vfs = require( ".." )
 console.log( "Got:", vfs );
 
 function update( newVal ) {

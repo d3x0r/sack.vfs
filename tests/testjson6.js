@@ -1,6 +1,6 @@
 
 //var JSON6 = require( "./json6.js" );
-var vfs = require( '.' );
+var vfs = require( '..' );
 var JSON6 = vfs.JSON6;
 
 var lastval;

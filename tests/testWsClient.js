@@ -1,6 +1,6 @@
 
 
-var sack = require( "." );
+var sack = require( ".." );
 
 var server = `ws://${process.argv[2]?process.argv[2]:"192.168.173.13"}:3000/`;
 console.log( "connect to ", server );

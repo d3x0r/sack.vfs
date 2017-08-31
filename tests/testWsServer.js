@@ -1,5 +1,5 @@
 
-var sack = require( "." );
+var sack = require( ".." );
 var server = sack.WebSocket.Server( { port: 8080 } )
 
 console.log( "serving on 8080" );

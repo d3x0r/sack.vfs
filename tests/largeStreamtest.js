@@ -1,6 +1,6 @@
 
 
-var vfs = require( '.' );
+var vfs = require( '..' );
 var vol = vfs.Volume( "largeStream.vfs" );
 var file = vol.File( "data" );
 

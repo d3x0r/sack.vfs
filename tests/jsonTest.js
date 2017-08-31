@@ -1,6 +1,6 @@
 
 
-var vfs = require( "." )
+var vfs = require( ".." )
 
 var parse = vfs.JSON.parse;
 

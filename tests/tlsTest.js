@@ -1,5 +1,5 @@
 
-const vfs = require( "." );
+const vfs = require( ".." );
 //vfs.TLS.seed( )
 
 var key = vfs.TLS.genkey( 1024, "password" );

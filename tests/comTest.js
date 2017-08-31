@@ -1,5 +1,5 @@
 
-var sack = require( "./" );
+var sack = require( ".." );
 console.log( "sack is:", sack );
 var com1 = sack.ComPort( "COM3" );
 com1.onRead( (data)=>{ console.log( "got", data ) } );

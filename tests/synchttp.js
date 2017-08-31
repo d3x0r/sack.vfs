@@ -1,7 +1,7 @@
 "use strict";
 
 
-var sack = require( './vfs_module.js' );
+var sack = require( '..' );
 
 
 var https = require( 'https' );

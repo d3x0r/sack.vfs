@@ -1,5 +1,5 @@
 
-var vfs = require( '.' );
+var vfs = require( '..' );
 var SRG = vfs.SaltyRNG();
 
 for( var n = 0; n < 10; n++ ) {
