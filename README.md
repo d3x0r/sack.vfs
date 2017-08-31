@@ -538,6 +538,7 @@ Client constructor parameters
   - URL - the URL to connect to
   - protocol - the protocol for this connection.  Accepts either a string or an array of strings to send as protocols.
   - options - an object defining options for the connection.
+  
     | Client Options |   |
     |---|---|
     | perMessageDeflate | true/false.  false is the default. (unimplemented yet) |
@@ -554,6 +555,7 @@ Client constructor parameters
   After opening, websocket object has 'connection' which gives some of the information about the connection established.
 
 Client events
+
   | Event Name | Event Description |
   |---|---|
   |open | callback receives a single argument (websocket) |
@@ -564,6 +566,7 @@ Client events
   |---|---|
   
 Client Methods
+
    | method | purpose |
    | -- | -- |
    | close() | call this to end a connection |
@@ -583,6 +586,7 @@ Client Methods
    | -- | -- |
   
 Server events
+
   | Event Name | Event Description |
   |---|---|
   | accept |  optional callback, if it is configured on a server, it is called before connect, and is passed (protocols, resource path). |
@@ -594,6 +598,7 @@ Server events
 
 Server Options
   When a server is created it accepts an option object with the following options specified.
+  
     | Server Options |   |
     |---|---|
     | port |  a port number.  8080 is the default. |
@@ -614,6 +619,7 @@ Server Options
 
 Server Client Methods
   this is a slightly different object than a client, although accepts the same events except for on( "open" ) and onOpen() method.
+  
   | Method |  Description |
   |----|----|
   | send | send data on the connection.  Message parameter can either be an ArrayBuffer or a String. (to be implemented; typedarraybuffer) |
@@ -623,6 +629,7 @@ Server Client Methods
   
 
 WebSocket connection Object
+
   | Connection Field | Usage |
   |----------|----------|
   | localFamily | <String> value is either 'IPv4' or 'IPv6' |

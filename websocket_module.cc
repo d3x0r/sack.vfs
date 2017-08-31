@@ -117,13 +117,9 @@ DeclareSet( WSSI_EVENT );
 struct wscEvent {
 	enum wsEvents eventType;
 	class wscObject *_this;
-	PLIST send;
-	LOGICAL send_close;
 	CPOINTER buf;
 	size_t buflen;
 	LOGICAL binary;
-	PTHREAD waiter;
-	LOGICAL done;
 };
 typedef struct wscEvent WSC_EVENT;
 #define MAXWSC_EVENTSPERSET 128
@@ -426,7 +422,6 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 				strings = getStrings( isolate );
 				wsc->_this.Get(isolate)->Set( strings->socketString->Get( isolate ), makeSocket( isolate, wsc->pc ) );
 				cb->Call( eventMessage->_this->_this.Get(isolate), 0, argv );
-				DeleteFromSet( WSC_EVENT, l.wscEvents, eventMessage );
 				break;
 			case WS_EVENT_READ:
 				size_t length;
@@ -444,7 +439,6 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 					wsc->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
 				}
 				Deallocate( CPOINTER, eventMessage->buf );
-				DeleteFromSet( WSC_EVENT, l.wscEvents, eventMessage );
 				break;
 			case WS_EVENT_CLOSE:
 				cb = Local<Function>::New( isolate, wsc->closeCallback );
@@ -452,13 +446,9 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 					cb->Call( eventMessage->_this->_this.Get( isolate ), 0, argv );
 				uv_close( (uv_handle_t*)&wsc->async, NULL );
 				DeleteLinkQueue( &wsc->eventQueue );
-				DeleteFromSet( WSC_EVENT, l.wscEvents, eventMessage );
 				break;
 			}
-			if( eventMessage->waiter ) {
-				eventMessage->done = 1;
-				WakeThread( eventMessage->waiter );
-			}
+			DeleteFromSet( WSC_EVENT, l.wscEvents, eventMessage );
 		}
 	}
 }
@@ -1005,31 +995,10 @@ static uintptr_t webSockClientOpen( PCLIENT pc, uintptr_t psv ) {
 
 	struct wscEvent *pevt = GetFromSet( WSC_EVENT, &l.wscEvents );
 	(*pevt).eventType = WS_EVENT_OPEN;
-	(*pevt).send = NULL;
-	(*pevt).done = FALSE;
-	(*pevt).waiter = NULL;// MakeThread();
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
 	uv_async_send( &wsc->async );
 	return psv;
-
-	while( !(*pevt).done )
-		Wait();
-	if( (*pevt).send )
-	{
-		INDEX idx;
-		struct pendingSend *send;
-		LIST_FORALL( (*pevt).send, idx, struct pendingSend *, send ) {
-			if( send->binary )
-				WebSocketSendBinary( pc, send->buffer, send->buflen );
-			else
-				WebSocketSendText( pc, send->buffer, send->buflen );
-			Deallocate( POINTER, send->buffer );
-			Deallocate( struct pendingSend*, send );
-		}
-		DeleteList( &(*pevt).send );
-	}
-	return (uintptr_t)psv;
 }
 
 static void webSockClientClosed( PCLIENT pc, uintptr_t psv )
@@ -1038,29 +1007,20 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv )
 
 	struct wscEvent *pevt = GetFromSet( WSC_EVENT, &l.wscEvents );
 	(*pevt).eventType = WS_EVENT_CLOSE;
-	(*pevt).done = FALSE;
-	(*pevt).waiter = NULL;// MakeThread();
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
 	uv_async_send( &wsc->async );
 	return;
-	while( !(*pevt).done )
-		Wait();
-
 }
 
 static void webSockClientError( PCLIENT pc, uintptr_t psv, int error ) {
 	wscObject *wsc = (wscObject*)psv;
 
-	struct wscEvent evt;
-	evt.eventType = WS_EVENT_ERROR;
-	evt.done = FALSE;
-	evt.waiter = MakeThread();
-	evt._this = wsc;
-	EnqueLink( &wsc->eventQueue, &evt );
+	struct wscEvent *pevt = GetFromSet( WSC_EVENT, &l.wscEvents );
+	(*pevt).eventType = WS_EVENT_ERROR;
+	(*pevt)._this = wsc;
+	EnqueLink( &wsc->eventQueue, pevt );
 	uv_async_send( &wsc->async );
-	while( !evt.done )
-		Wait();
 }
 
 static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTER buffer, size_t msglen ) {
@@ -1072,37 +1032,9 @@ static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTE
 	memcpy( (POINTER)(*pevt).buf, buffer, msglen );
 	(*pevt).buflen = msglen;
 	(*pevt).binary = type;
-	(*pevt).send = NULL;
-	(*pevt).send_close = FALSE;
-	(*pevt).done = FALSE;
-	(*pevt).waiter = NULL;// MakeThread();
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
 	uv_async_send( &wsc->async );
-
-	return;
-	while( !(*pevt).done )
-		Wait();
-	/*
-	{
-		INDEX idx;
-		struct pendingSend *send;
-		if( evt.send ) {
-			LIST_FORALL( evt.send, idx, struct pendingSend *, send ) {
-				if( send->binary )
-					WebSocketSendBinary( pc, send->buffer, send->buflen );
-				else
-					WebSocketSendText( pc, send->buffer, send->buflen );
-				Deallocate( POINTER, send->buffer );
-				Deallocate( struct pendingSend*, send );
-			}
-			DeleteList( &evt.send );
-		}
-		if( evt.send_close ) {
-			WebSocketClose( pc );
-		}
-	}
-	*/
 }
 
 wscObject::wscObject( wscOptions *opts ) {
@@ -1248,13 +1180,8 @@ void wscObject::on( const FunctionCallbackInfo<Value>& args){
 }
 
 void wscObject::close( const FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-	//lprintf( "never did do anything with wscObject close. (until now)" );
-	if( obj->eventMessage )
-		obj->eventMessage->send_close = TRUE;
-	else
-		WebSocketClose( obj->pc );
+	WebSocketClose( obj->pc );
 }
 
 void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
@@ -1264,30 +1191,11 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 		lprintf( "Typed array (unhandled)" );
 	} else if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-		if( obj->eventMessage ) {
-			struct pendingSend *pend = NewArray( struct pendingSend, 1 );
-			pend->binary = true;
-			pend->buflen = ab->ByteLength();
-			pend->buffer = NewArray( uint8_t, pend->buflen );
-			MemCpy( pend->buffer, ab->GetContents().Data(), pend->buflen );
-			AddLink( &obj->eventMessage->send, pend );
-		}
-		else {
-			WebSocketSendBinary( obj->pc, ab->GetContents().Data(), ab->ByteLength() );
-		}
+		WebSocketSendBinary( obj->pc, ab->GetContents().Data(), ab->ByteLength() );
 	}
 	else if( args[0]->IsString() ) {
 		String::Utf8Value buf( args[0]->ToString() );
-		if( obj->eventMessage ) {
-			struct pendingSend *pend = NewArray( struct pendingSend, 1 );
-			pend->binary = false;
-			pend->buflen = buf.length();
-			pend->buffer = NewArray( uint8_t, pend->buflen );
-			MemCpy( pend->buffer, *buf, pend->buflen );
-			AddLink( &obj->eventMessage->send, pend );
-		}
-		else
-			WebSocketSendText( obj->pc, *buf, buf.length() );
+		WebSocketSendText( obj->pc, *buf, buf.length() );
 	}
 	else {
 		lprintf( "Unhandled message format" );
