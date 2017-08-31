@@ -16082,8 +16082,10 @@ void  SetSystemLog ( enum syslog_types type, const void *data )
 {
 	if( (*syslog_local).file && ( logtype != SYSLOG_FILE ) )
 	{
-		sack_fclose( (*syslog_local).file );
+		FILE *close_file = (*syslog_local).file;
+  // reset this first, in case logging closing.
 		(*syslog_local).file = NULL;
+		sack_fclose( close_file );
 	}
 	if( type == SYSLOG_FILE )
 	{
@@ -23575,7 +23577,7 @@ typedef struct image_interface_tag
 		IMAGE_PROC_PTR( void   , BlotSprite )( Image pdest, PSPRITE ps );
     /* <combine sack::image::DecodeMemoryToImage@uint8_t*@uint32_t>
        \ \                                                */
-    IMAGE_PROC_PTR( Image, DecodeMemoryToImage )( uint8_t* buf, uint32_t size );
+    IMAGE_PROC_PTR( Image, DecodeMemoryToImage )( uint8_t* buf, size_t size );
    /* <combine sack::image::InternalRenderFontFile@CTEXTSTR@int32_t@int32_t@uint32_t>
       \returns a SFTFont                                                      */
 	IMAGE_PROC_PTR( SFTFont, InternalRenderFontFile )( CTEXTSTR file
@@ -36843,6 +36845,10 @@ int  sack_fclose ( FILE *file_file )
 			status = file->mount->fsi->_close( file_file );
 		else
 			status = fclose( file_file );
+#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
+		if( (*winfile_local).flags.bLogOpenClose )
+			lprintf( WIDE( "deleted FILE* %p and list is %p" ), file_file, file->files );
+#endif
 		DeleteLink( &file->files, file_file );
 		if( !GetLinkCount( file->files ) ) {
 			DeleteListEx( &file->files DBG_SRC );
@@ -36851,10 +36857,6 @@ int  sack_fclose ( FILE *file_file )
 			Deallocate( TEXTCHAR*, file->fullname );
 			Deallocate( struct file*, file );
 		}
-#if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
-		if( (*winfile_local).flags.bLogOpenClose )
-			lprintf( WIDE( "deleted FILE* %p and list is %p" ), file_file, file->files );
-#endif
 		LeaveCriticalSec( &(*winfile_local).cs_files );
 		return status;
 	}
@@ -45449,7 +45451,7 @@ SACK_NAMESPACE
 	       NetworkStart();
 	       SystemLog( "Started the network" );
 	       sa = CreateSockAddress( argv[1], 23 );
-	       pc_user = OpenTCPClientAddrEx( sa, ReadComplete, Closed, NULL );
+	       pc_user = OpenTCPClientAddrEx( sa, ReadComplete, Closed, NULL, 0 );
 	       if( !pc_user )
 	       {
 	           SystemLog( "Failed to open some port as telnet" );
@@ -45714,6 +45716,7 @@ NETWORK_PROC( PCLIENT, OpenTCPListenerExx )( uint16_t wPort, cNotifyCallback Not
 /* <combine sack::network::tcp::OpenTCPListenerEx@uint16_t@cNotifyCallback>
    \ \                                                                 */
 #define OpenTCPServerAddrEx OpenTCPListenerAddrEx
+#define OPEN_TCP_FLAG_DELAY_CONNECT 1
 #ifdef __cplusplus
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
@@ -45721,24 +45724,27 @@ NETWORK_PROC( PCLIENT, CPPOpenTCPClientAddrExxx )(SOCKADDR *lpAddr,
 																  cppReadComplete  pReadComplete, uintptr_t,
 																  cppCloseCallback CloseCallback, uintptr_t,
 																  cppWriteComplete WriteComplete, uintptr_t,
-																  cppConnectCallback pConnectComplete,  uintptr_t DBG_PASS );
-#define CPPOpenTCPClientAddrExx(a,b,c,d,e,f,g,h,i) CPPOpenTCPClientAddrExxx(a,b,c,d,e,f,g,h,i DBG_SRC )
+																  cppConnectCallback pConnectComplete,  uintptr_t, int DBG_PASS );
+#define CPPOpenTCPClientAddrExx(a,b,c,d,e,f,g,h,i,j) CPPOpenTCPClientAddrExxx(a,b,c,d,e,f,g,h,i,j DBG_SRC )
 #endif
-NETWORK_PROC( PCLIENT, OpenTCPClientAddrFromAddrEx )(SOCKADDR *lpAddr, SOCKADDR *pFromAddr
-															  , cReadComplete     pReadComplete
-															  , cCloseCallback    CloseCallback
-															  , cWriteComplete    WriteComplete
-															  , cConnectCallback  pConnectComplete
-                                               DBG_PASS
-															 );
-#define OpenTCPClientAddrFromAddr( a,f,r,cl,wr,cc ) OpenTCPClientAddrFromAddrEx( a,f,r,cl,wr,cc DBG_SRC )
-NETWORK_PROC( PCLIENT, OpenTCPClientAddrFromEx )(SOCKADDR *lpAddr, int port
-															  , cReadComplete     pReadComplete															  , cCloseCallback    CloseCallback
-															  , cWriteComplete    WriteComplete
-															  , cConnectCallback  pConnectComplete
-                                               DBG_PASS
-															 );
-#define OpenTCPClientAddrFrom( a,f,r,cl,wr,cc ) OpenTCPClientAddrFromEx( a,f,r,cl,wr,cc DBG_SRC )
+NETWORK_PROC( PCLIENT, OpenTCPClientAddrFromAddrEx )( SOCKADDR *lpAddr, SOCKADDR *pFromAddr
+                                                     , cReadComplete     pReadComplete
+                                                     , cCloseCallback    CloseCallback
+                                                     , cWriteComplete    WriteComplete
+                                                     , cConnectCallback  pConnectComplete
+                                                     , int flags
+                                                     DBG_PASS
+                                                     );
+#define OpenTCPClientAddrFromAddr( a,f,r,cl,wr,cc ) OpenTCPClientAddrFromAddrEx( a,f,r,cl,wr,cc, 0 DBG_SRC )
+NETWORK_PROC( PCLIENT, OpenTCPClientAddrFromEx )( SOCKADDR *lpAddr, int port
+                                                , cReadComplete     pReadComplete
+                                                , cCloseCallback    CloseCallback
+                                                , cWriteComplete    WriteComplete
+                                                , cConnectCallback  pConnectComplete
+                                                , int flags
+                                                DBG_PASS
+                                                );
+#define OpenTCPClientAddrFrom( a,f,r,cl,wr,cc ) OpenTCPClientAddrFromEx( a,f,r,cl,wr,cc,0 DBG_SRC )
 /* Opens a socket which connects to an already existing,
    listening, socket.
    Parameters
@@ -45768,20 +45774,24 @@ NETWORK_PROC( PCLIENT, OpenTCPClientAddrFromEx )(SOCKADDR *lpAddr, int port
    The read_complete callback, if specified, will be called,
    with a NULL pointer and 0 size, before the connect complete.   */
 NETWORK_PROC( PCLIENT, OpenTCPClientAddrExxx )(SOCKADDR *lpAddr,
-                         cReadComplete  pReadComplete,
-                         cCloseCallback CloseCallback,
-                         cWriteComplete WriteComplete,
-															 cConnectCallback pConnectComplete DBG_PASS );
+                                               cReadComplete  pReadComplete,
+                                               cCloseCallback CloseCallback,
+                                               cWriteComplete WriteComplete,
+                                               cConnectCallback pConnectComplete,
+                                               int flags
+                                               DBG_PASS );
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
-#define OpenTCPClientAddrExx(a,r,clo,w,con) OpenTCPClientAddrExxx( a,r,clo,w,con DBG_SRC )
+#define OpenTCPClientAddrExx(a,r,clo,w,con) OpenTCPClientAddrExxx( a,r,clo,w,con,0 DBG_SRC )
 #ifdef __cplusplus
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
 NETWORK_PROC( PCLIENT, CPPOpenTCPClientAddrEx )(SOCKADDR *
-								, cppReadComplete, uintptr_t
-                        , cppCloseCallback, uintptr_t
-															  , cppWriteComplete, uintptr_t  );
+                                               , cppReadComplete, uintptr_t
+                                               , cppCloseCallback, uintptr_t
+                                               , cppWriteComplete, uintptr_t
+                                               , int flags
+                                               );
 #endif
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
@@ -45797,16 +45807,17 @@ NETWORK_PROC( PCLIENT, CPPOpenTCPClientExEx )(CTEXTSTR lpName,uint16_t wPort
                          , cppReadComplete  pReadComplete, uintptr_t
                          , cppCloseCallback CloseCallback, uintptr_t
                          , cppWriteComplete WriteComplete, uintptr_t
-															, cppConnectCallback pConnectComplete, uintptr_t DBG_PASS );
-#define CPPOpenTCPClientExx(name,port,read,rd,close,cd,write,wd,connect,cod) CPPOpenTCPClientExEx(name,port,read,rd,close,cd,write,wd,connect,cod DBG_SRC)
+															, cppConnectCallback pConnectComplete, uintptr_t, int DBG_PASS );
+#define CPPOpenTCPClientExx(name,port,read,rd,close,cd,write,wd,connect,cod,flg) CPPOpenTCPClientExEx(name,port,read,rd,close,cd,write,wd,connect,cod,flg DBG_SRC)
 #endif
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
-NETWORK_PROC( PCLIENT, OpenTCPClientExxx )(CTEXTSTR lpName,uint16_t wPort,
-														 cReadComplete  pReadComplete,
-														 cCloseCallback CloseCallback,
-														 cWriteComplete WriteComplete,
-														 cConnectCallback pConnectComplete DBG_PASS );
+NETWORK_PROC( PCLIENT, OpenTCPClientExxx )(CTEXTSTR lpName,uint16_t wPort
+                                           , cReadComplete  pReadComplete
+                                           , cCloseCallback CloseCallback
+                                           , cWriteComplete WriteComplete
+                                           , cConnectCallback pConnectComplete
+                                           DBG_PASS );
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
 #define OpenTCPClientExx( lpName, wPort, pReadComplete, CloseCallback, WriteComplete, pConnectComplete ) OpenTCPClientExxx( lpName, wPort, pReadComplete, CloseCallback, WriteComplete, pConnectComplete DBG_SRC )
@@ -45820,6 +45831,10 @@ NETWORK_PROC( PCLIENT, OpenTCPClientExEx )( CTEXTSTR, uint16_t, cReadComplete,
 /* <combine sack::network::tcp::OpenTCPClientExx@CTEXTSTR@uint16_t@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                      */
 #define OpenTCPClientEx( addr,port,read,close,write ) OpenTCPClientExEx( addr,port,read,close,write DBG_SRC )
+/* Do the connect to
+*/
+int NetworkConnectTCPEx( PCLIENT pc DBG_PASS );
+#define NetworkConnectTCP( pc ) NetworkConnectTCPEx( pc DBG_SRC )
 /* Drain is an operation on a TCP socket to just drop the next X
    bytes. They are ignored and not stored into any user buffer.
    Drain reads take precedence over any other queued reads.
@@ -46028,7 +46043,7 @@ NETWORK_PROC( void, RemoveClientExx )(PCLIENT lpClient, LOGICAL bBlockNofity, LO
    \ \                                                                      */
 #define RemoveClient(c) RemoveClientEx(c, FALSE, FALSE )
 /* Begin an SSL Connection.  This ends up replacing ReadComplete callback with an inbetween layer*/
-NETWORK_PROC( LOGICAL, ssl_BeginClientSession )( PCLIENT pc, POINTER keypair, size_t keylen );
+NETWORK_PROC( LOGICAL, ssl_BeginClientSession )( PCLIENT pc, POINTER keypair, size_t keylen, POINTER rootCert, size_t rootCertLen );
 NETWORK_PROC( LOGICAL, ssl_BeginServer )( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen );
 NETWORK_PROC( LOGICAL, ssl_GetPrivateKey )(PCLIENT pc, POINTER *keydata, size_t *keysize);
 /* use this to send on SSL Connection instead of SendTCP. */
@@ -46264,6 +46279,7 @@ public:
 									, (uintptr_t)this
 									, WrapClientConnectComplete
 									, (uintptr_t)this
+									, 0
 									);
 		return (int)(pc!=NULL);
 	};
@@ -46279,6 +46295,7 @@ public:
 									, (uintptr_t)this
 									, WrapClientConnectComplete
 									, (uintptr_t)this
+									, 0
 									);
 		return (int)(pc!=NULL);
 	};
@@ -46559,6 +46576,10 @@ _TEXT_NAMESPACE
 	   fields might be content-length; so it can seperate individual
 	   fields name-value pairs and the packet content.               */
 	_HTTP_NAMESPACE
+struct HttpField {
+	PTEXT name;
+	PTEXT value;
+};
 typedef struct HttpState *HTTPState;
 enum ProcessHttpResult{
 	HTTP_STATE_RESULT_NOTHING = 0,
@@ -46608,27 +46629,28 @@ PTEXT HTTPAPI GetHttpResponce( HTTPState pHttpState );
 /* Get the method of the request in ht e http state.
 */
 HTTP_EXPORT PTEXT HTTPAPI GetHttpMethod( struct HttpState *pHttpState );
-HTTP_EXPORT
- /*Get the value of a HTTP header field, by name
+/*Get the value of a HTTP header field, by name
    Parameters
 	pHttpState: the state to get the header field from.
 	name: name of the field to get (checked case insensitive)
 */
-PTEXT HTTPAPI GetHTTPField( HTTPState pHttpState, CTEXTSTR name );
-HTTP_EXPORT
- /* Gets the specific request code at the header of the packet -
+HTTP_EXPORT PTEXT HTTPAPI GetHTTPField( HTTPState pHttpState, CTEXTSTR name );
+/* Gets the specific request code at the header of the packet -
    http 2.0 OK sort of thing.                                  */
-PTEXT HTTPAPI GetHttpRequest( HTTPState pHttpState );
-HTTP_EXPORT
- /* \Returns the body of the HTTP packet (the part of data
+HTTP_EXPORT PTEXT HTTPAPI GetHttpRequest( HTTPState pHttpState );
+/* \Returns the body of the HTTP packet (the part of data
    specified by content-length or by termination of the
    connection(? think I didn't implement that right)      */
-PTEXT HTTPAPI GetHttpContent( HTTPState pHttpState );
-HTTP_EXPORT
- /* \Returns the resource path/name of the HTTP packet (the part of data
+HTTP_EXPORT PTEXT HTTPAPI GetHttpContent( HTTPState pHttpState );
+/* \Returns the resource path/name of the HTTP packet (the part of data
    specified by content-length or by termination of the
    connection(? think I didn't implement that right)      */
-PTEXT HTTPAPI GetHttpResource( HTTPState pHttpState );
+HTTP_EXPORT PTEXT HTTPAPI GetHttpResource( HTTPState pHttpState );
+/* Returns a list of fields that were included in a request header.
+   members of the list are of type struct HttpField.
+   see also: ProcessHttpFields and ProcessCGIFields
+*/
+HTTP_EXPORT PLIST HTTPAPI GetHttpHeaderFields( HTTPState pHttpState );
 HTTP_EXPORT
  /* Enumerates the various http header fields by passing them
    each sequentially to the specified callback.
@@ -46733,10 +46755,6 @@ using namespace sack::containers::text::http;
 #endif
 #endif
 HTTP_NAMESPACE
-struct HttpField {
-	PTEXT name;
-	PTEXT value;
-};
 enum ReadChunkState {
 	READ_VALUE, READ_VALUE_CR, READ_VALUE_LF, READ_CR, READ_LF, READ_BYTES
 };
@@ -46757,6 +46775,7 @@ struct HttpState {
 	size_t content_length;
  // content of the message, POST,PUT,PATCH and replies have this.
 	PTEXT content;
+	LOGICAL returned_status;
  // boolean flag - indicates that the header portion of the http request is finished.
 	int final;
  //for handling requests, have to read somewhere
@@ -46865,8 +46884,11 @@ int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
 	if( pHttpState->final )
 	{
 		GatherHttpData( pHttpState );
-		if( pHttpState->content )
-			return HTTP_STATE_RESULT_CONTENT;
+		if( !pHttpState->returned_status ) {
+			pHttpState->returned_status = 1;
+			return pHttpState->numeric_code;
+		}
+		return HTTP_STATE_RESULT_NOTHING;
 	}
 	else
 	{
@@ -47171,10 +47193,12 @@ SegSplit( &pCurrent, start );
 			|| ( !pHttpState->content_length )
 			) )
 	{
+		pHttpState->returned_status = 1;
 		if( pHttpState->numeric_code == 500 )
 			return HTTP_STATE_INTERNAL_SERVER_ERROR;
-		if( pHttpState->content && ( pHttpState->numeric_code == 200 ) )
+		if( pHttpState->content && (pHttpState->numeric_code == 200) ) {
 			return HTTP_STATE_RESULT_CONTENT;
+		}
 		if( pHttpState->numeric_code == 100 )
 			return HTTP_STATE_RESULT_CONTINUE;
 		if( pHttpState->numeric_code == 404 )
@@ -47646,7 +47670,7 @@ HTTPState GetHttpsQuery( PTEXT address, PTEXT url )
 			vtprintf( state->pvtOut, WIDE( "host: %s\r\n" ), GetText( address ) );
 			vtprintf( state->pvtOut, WIDE( "\r\n\r\n" ) );
 #ifndef NO_SSL
-			if( ssl_BeginClientSession( pc, NULL, 0 ) )
+			if( ssl_BeginClientSession( pc, NULL, 0, NULL, 0 ) )
 			{
 				state->waiter = MakeThread();
 				while( pc && ( state->last_read_tick > ( GetTickCount() - 20000 ) ) )
@@ -47859,6 +47883,10 @@ PTEXT GetHTTPField( struct HttpState *pHttpState, CTEXTSTR name )
 			return field->value;
 	}
 	return NULL;
+}
+PLIST GetHttpHeaderFields( HTTPState pHttpState )
+{
+	return pHttpState->fields;
 }
 HTTP_NAMESPACE_END
 #undef l
@@ -50039,6 +50067,13 @@ typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
 typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOINTER buffer, size_t msglen );
 // protocolsAccepted value set can be released in opened callback, or it may be simply assigned as protocols passed...
 typedef LOGICAL ( *web_socket_accept )(PCLIENT pc, uintptr_t psv, const char *protocols, const char *resource, char **protocolsAccepted);
+ // passed psv used in server create; since it is sort of an open, return a psv for next states(if any)
+typedef uintptr_t ( *web_socket_http_request )(PCLIENT pc, uintptr_t psv);
+// these should be a combination of bit flags
+// options used for WebSocketOpen
+enum WebSocketOptions {
+	WS_DELAY_OPEN = 1,
+};
 //enum WebSockClientOptions {
 //   WebSockClientOption_Protocols
 //};
@@ -50049,13 +50084,16 @@ typedef LOGICAL ( *web_socket_accept )(PCLIENT pc, uintptr_t psv, const char *pr
 //  if protocols is NULL none are specified, otherwise the list of
 //  available protocols is sent to the server.
 WEBSOCKET_EXPORT PCLIENT WebSocketOpen( CTEXTSTR address
-                                      , int options
+                                      , enum WebSocketOptions options
                                       , web_socket_opened
                                       , web_socket_event
                                       , web_socket_closed
                                       , web_socket_error
                                       , uintptr_t psv
                                       , const char *protocols );
+// if WS_DELAY_OPEN is used, WebSocketOpen does not do immediate connect.
+// calling this begins the connection sequence.
+WEBSOCKET_EXPORT void WebSocketConnect( PCLIENT );
 // end a websocket connection nicely.
 WEBSOCKET_EXPORT void WebSocketClose( PCLIENT );
 // there is a control bit for whether the content is text or binary or a continuation
@@ -50075,6 +50113,23 @@ WEBSOCKET_EXPORT void SetWebSocketAcceptCallback( PCLIENT pc, web_socket_accept 
 WEBSOCKET_EXPORT void SetWebSocketReadCallback( PCLIENT pc, web_socket_event callback );
 WEBSOCKET_EXPORT void SetWebSocketCloseCallback( PCLIENT pc, web_socket_closed callback );
 WEBSOCKET_EXPORT void SetWebSocketErrorCallback( PCLIENT pc, web_socket_error callback );
+WEBSOCKET_EXPORT void SetWebSocketHttpCallback( PCLIENT pc, web_socket_http_request callback );
+// if set in server accept callback, this will return without extension set
+// on client socket (default), does not request permessage-deflate
+#define WEBSOCK_DEFLATE_DISABLE 0
+// if set in server accept callback (or if not set, default); accept client request to deflate per message
+// if set on client socket, sends request for permessage-deflate to server.
+#define WEBSOCK_DEFLATE_ENABLE 1
+// if set in server accept callback; accept client request to deflate per message, but do not deflate outbound messages
+// if set on client socket, sends request for permessage-deflate to server, but does not deflate outbound messages(?)
+#define WEBSOCK_DEFLATE_ALLOW 2
+// set permessage-deflate option for client requests.
+// allow server side to disable this when responding to a client.
+WEBSOCKET_EXPORT void SetWebSocketDeflate( PCLIENT pc, int enable_flags );
+// default is client masks, server does not
+// this can be used to disable masking on client or enable on server
+// (masked output from server to client is not supported by browsers)
+WEBSOCKET_EXPORT void SetWebSocketMasking( PCLIENT pc, int enable );
 #endif
 #include <zlib.h>
 #ifndef WEBSOCKET_COMMON_SOURCE
@@ -50090,8 +50145,20 @@ struct web_socket_input_state
 		BIT_FIELD closed : 1;
 		BIT_FIELD received_pong : 1;
 		BIT_FIELD sent_ping : 1;
+ // set on server if client requested permessage-deflate; can be overridden by SetWebSocketDeflate() during accept
 		BIT_FIELD deflate : 1;
+  // do not deflate outbound messages; inbound message might still be inflated
+		BIT_FIELD do_not_deflate : 1;
+		BIT_FIELD sent_type : 1;
+		// apparently clients did not implement back masking??
+		// I get a close; probably because of the length exception
+		BIT_FIELD expect_masking : 1;
+		BIT_FIELD use_ssl : 1;
 	} flags;
+  // max bits used on (deflater if server, inflater if client)
+	int client_max_bits;
+  // max bits used on (inflater if server, deflater if client)
+	int server_max_bits;
 	z_stream deflater;
 	POINTER deflateBuf;
 	size_t deflateBufLen;
@@ -50099,18 +50166,21 @@ struct web_socket_input_state
 	POINTER inflateBuf;
 	size_t inflateBufLen;
 	size_t inflateBufUsed;
+	// expandable buffer for collecting input messages from client.
 	size_t fragment_collection_avail;
 	size_t fragment_collection_length;
   // used for selecting mask byte
 	size_t fragment_collection_index;
 	uint8_t* fragment_collection;
- // for automatic ping/keep alive/idle death
+ // (last message tick) for automatic ping/keep alive/idle death
 	uint32_t last_reception;
 	LOGICAL final;
 	LOGICAL mask;
 	uint8_t mask_key[4];
 	int opcode;
+  // input bit of RSV1 bit on each message
 	int RSV1;
+ // input bit of the first RSV1 bit on a fragmented packet; used for permessage-deflate
 	int _RSV1;
 	size_t frame_length;
 	int input_msg_state;
@@ -50120,24 +50190,55 @@ struct web_socket_input_state
 	web_socket_closed on_close;
 	web_socket_opened on_open;
 	web_socket_error on_error;
+  // server socket event
 	web_socket_accept on_accept;
 	uintptr_t psv_on;
  // result of the open, to pass to read
 	uintptr_t psv_open;
 };
-struct web_socket_output_state
-{
-	struct web_socket_output_flags
-	{
-		BIT_FIELD sent_type : 1;
-		// apparently clients did not implement back masking??
-      // I get a close; probably because of the length exception
-		BIT_FIELD expect_masking : 1;
-		BIT_FIELD use_ssl : 1;
-	} flags;
-};
 EXTERN void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, const uint8_t* payload, size_t length, int use_ssl );
 EXTERN void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint8_t* msg, size_t length );
+struct html5_web_socket {
+ // this value must be 0x20130912
+	uint32_t Magic;
+	HTTPState http_state;
+	PCLIENT pc;
+	POINTER buffer;
+	struct web_socket_flags
+	{
+		BIT_FIELD initial_handshake_done : 1;
+		BIT_FIELD rfc6455 : 1;
+		BIT_FIELD accepted : 1;
+		BIT_FIELD http_request_only : 1;
+	} flags;
+	char *protocols;
+  // callback to send unhandled requests to a handler
+	web_socket_http_request on_request;
+	struct web_socket_input_state input_state;
+};
+struct web_socket_client
+{
+ // this value must be 0x20130911
+	uint32_t Magic;
+	struct web_socket_client_flags
+	{
+ // if not connected, then parse data as http, otherwise process as websock protocol.
+		BIT_FIELD connected : 1;
+ // schedule to close
+		BIT_FIELD want_close : 1;
+		BIT_FIELD use_ssl : 1;
+	} flags;
+	PCLIENT pc;
+	CTEXTSTR host;
+	CTEXTSTR address_url;
+	struct url_data *url;
+	CTEXTSTR protocols;
+	POINTER buffer;
+	HTTPState pHttpState;
+ // when set by enable auto_ping is the delay between packets to generate a ping
+	uint32_t ping_delay;
+	struct web_socket_input_state input_state;
+};
 #endif
 #ifdef __ANDROID_OLD_PLATFORM_SUPPORT__
 #define rand lrand48
@@ -50221,7 +50322,7 @@ static void _SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mas
 	}
 	else
 		msgout[1] = (uint8_t)length;
-	if( do_mask )
+	if( do_mask && length )
 	{
 		int mask_offset = (int)(length_out-length) - 4;
 		msgout[1] |= 0x80;
@@ -50263,7 +50364,7 @@ static void _SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mas
 	Deallocate( uint8_t*, msgout );
 }
 void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, const uint8_t* payload, size_t length, int use_ssl ) {
-	struct web_socket_input_state *input = (struct web_socket_input_state *)GetNetworkLong( pc, 2 );
+	struct web_socket_input_state *input = (struct web_socket_input_state *)GetNetworkLong( pc, 1 );
 	if( input->flags.deflate && opcode < 3 ) {
 		int r;
 		if( opcode ) opcode |= 0x40;
@@ -50373,6 +50474,11 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 					return;
 				}
 			}
+			if( !websock->frame_length ) {
+				websock->input_msg_state = 17;
+				// re-process this byte but in the new state.
+				n--;
+			}
 			if( websock->frame_length == 126 )
 			{
 				websock->frame_length = 0;
@@ -50460,7 +50566,7 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 			// fall through, no break statement; add the byte to the buffer
 		case 17:
 			// if there was no data, then there's nothing to demask
-			if( websock->fragment_collection )
+			if( websock->fragment_collection && (websock->fragment_collection_length < websock->frame_length) )
 			{
 				websock->fragment_collection[websock->fragment_collection_length++]
 					= msg[n] ^ websock->mask_key[(websock->fragment_collection_index++) % 4];
@@ -50540,21 +50646,25 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 					// 1000-2999 - reserved for this protocol, reserved for specification
 					// 3000-3999 - libarry/framework/application.  Registered with IANA.  Defined by protocol.
 					// 4000-4999 - reserved for private use; cannot be registerd;
+					//lprintf( "Got close...%d", websock->flags.closed );
 					if( !websock->flags.closed )
 					{
-						struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong( pc, 1 );
+						struct web_socket_input_state *output = (struct web_socket_input_state *)GetNetworkLong( pc, 1 );
+						//lprintf( "reply close with same payload." );
 						SendWebSocketMessage( pc, 0x08, 1, output->flags.expect_masking, websock->fragment_collection, websock->frame_length, output->flags.use_ssl );
 						websock->flags.closed = 1;
 					}
-					if( websock->on_close )
+					if( websock->on_close ) {
 						websock->on_close( pc, websock->psv_open );
+						websock->on_close = NULL;
+					}
 					websock->fragment_collection_length = 0;
 					RemoveClientEx( pc, 0, 1 );
 					break;
  // ping
 				case 0x09:
 					{
-						struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
+						struct web_socket_input_state *output = (struct web_socket_input_state *)GetNetworkLong(pc, 1);
 						SendWebSocketMessage( pc, 0x0a, 1, output->flags.expect_masking, websock->fragment_collection, websock->frame_length, output->flags.use_ssl );
 						websock->fragment_collection_length = 0;
 					}
@@ -50583,9 +50693,8 @@ void WebSocketPing( PCLIENT pc, uint32_t timeout )
 	uint32_t start_at = timeGetTime();
 	uint32_t target = start_at + timeout;
 	uint32_t now;
-	struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 2 );
-	struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
-	SendWebSocketMessage( pc, 9, 1, output->flags.expect_masking, NULL, 0, output->flags.use_ssl );
+	struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 1 );
+	SendWebSocketMessage( pc, 9, 1, input_state->flags.expect_masking, NULL, 0, input_state->flags.use_ssl );
 	while( !input_state->flags.received_pong
 			&& ( ( ( now=timeGetTime() ) - start_at ) < timeout ) )
 		IdleFor( target-now );
@@ -50595,27 +50704,26 @@ void WebSocketPing( PCLIENT pc, uint32_t timeout )
  // UTF8 RFC3629
 void WebSocketSendText( PCLIENT pc, CPOINTER buffer, size_t length )
 {
-	struct web_socket_input_state *input = (struct web_socket_input_state *)GetNetworkLong( pc, 2 );
-	struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
-	if( output )
+	struct web_socket_input_state *input = (struct web_socket_input_state *)GetNetworkLong( pc, 1 );
+	if( input )
 	{
 #ifdef _UNICODE
 		char *outbuf = WcharConvertExx( (CTEXTSTR)buffer, length DBG_SRC );
 		int real_len = CStrLen( outbuf );
 		//lprintf( WIDE( "send %s"), buffer );
-		SendWebSocketMessage( pc, output->flags.sent_type?0:1, 1, output->flags.expect_masking, (uint8_t*)outbuf, length, output->flags.use_ssl );
+		SendWebSocketMessage( pc, input->flags.sent_type?0:1, 1, input->flags.expect_masking, (uint8_t*)outbuf, length, input->flags.use_ssl );
 		Deallocate( char *, outbuf );
 #else
-		SendWebSocketMessage( pc, output->flags.sent_type?0:1, 1, output->flags.expect_masking, (uint8_t*)buffer, length, output->flags.use_ssl );
+		SendWebSocketMessage( pc, input->flags.sent_type?0:1, 1, input->flags.expect_masking, (uint8_t*)buffer, length, input->flags.use_ssl );
 #endif
-		output->flags.sent_type = 0;
+		input->flags.sent_type = 0;
 	}
 }
 // there is a control bit for whether the content is text or binary or a continuation
  // UTF8 RFC3629
 void WebSocketBeginSendText( PCLIENT pc, CPOINTER buffer, size_t length )
 {
-	struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
+	struct web_socket_input_state *output = (struct web_socket_input_state *)GetNetworkLong(pc, 1);
 #ifdef _UNICODE
 	int real_len = CStrLen( outbuf );
 	//lprintf( WIDE( "send %s"), buffer );
@@ -50629,43 +50737,56 @@ void WebSocketBeginSendText( PCLIENT pc, CPOINTER buffer, size_t length )
 // literal binary sending; this may happen to be base64 encoded too
 void WebSocketSendBinary( PCLIENT pc, CPOINTER buffer, size_t length )
 {
-	struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
+	struct web_socket_input_state *output = (struct web_socket_input_state *)GetNetworkLong(pc, 1);
 	SendWebSocketMessage( pc, output->flags.sent_type?0:2, 1, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
 	output->flags.sent_type = 0;
 }
 // literal binary sending; this may happen to be base64 encoded too
 void WebSocketBeginSendBinary( PCLIENT pc, CPOINTER buffer, size_t length )
 {
-	struct web_socket_output_state *output = (struct web_socket_output_state *)GetNetworkLong(pc, 1);
+	struct web_socket_input_state *output = (struct web_socket_input_state *)GetNetworkLong(pc, 1);
 	SendWebSocketMessage( pc, output->flags.sent_type?0:2, 0, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
 	output->flags.sent_type = 1;
 }
 void SetWebSocketAcceptCallback( PCLIENT pc, web_socket_accept callback )
 {
 	if( pc ) {
-		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 2 );
+		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 1 );
 		input_state->on_accept = callback;
 	}
 }
 void SetWebSocketReadCallback( PCLIENT pc, web_socket_event callback )
 {
 	if( pc ) {
-		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 2 );
+		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 1 );
 		input_state->on_event = callback;
 	}
 }
 void SetWebSocketCloseCallback( PCLIENT pc, web_socket_closed callback )
 {
 	if( pc ) {
-		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 2 );
+		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 1 );
 		input_state->on_close = callback;
 	}
 }
 void SetWebSocketErrorCallback( PCLIENT pc, web_socket_error callback )
 {
 	if( pc ) {
-		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 2 );
+		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 1 );
 		input_state->on_error = callback;
+	}
+}
+void SetWebSocketDeflate( PCLIENT pc, int enable ) {
+	if( pc ) {
+		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 1 );
+		input_state->flags.deflate = enable?1:0;
+		input_state->flags.do_not_deflate = enable==2?1:0;
+	}
+}
+void SetWebSocketMasking( PCLIENT pc, int enable ) {
+	if( pc ) {
+		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 1 );
+		input_state->flags.expect_masking = enable;
 	}
 }
 #define SACK_WEBSOCKET_CLIENT_SOURCE
@@ -50684,8 +50805,20 @@ struct web_socket_input_state
 		BIT_FIELD closed : 1;
 		BIT_FIELD received_pong : 1;
 		BIT_FIELD sent_ping : 1;
+ // set on server if client requested permessage-deflate; can be overridden by SetWebSocketDeflate() during accept
 		BIT_FIELD deflate : 1;
+  // do not deflate outbound messages; inbound message might still be inflated
+		BIT_FIELD do_not_deflate : 1;
+		BIT_FIELD sent_type : 1;
+		// apparently clients did not implement back masking??
+		// I get a close; probably because of the length exception
+		BIT_FIELD expect_masking : 1;
+		BIT_FIELD use_ssl : 1;
 	} flags;
+  // max bits used on (deflater if server, inflater if client)
+	int client_max_bits;
+  // max bits used on (inflater if server, deflater if client)
+	int server_max_bits;
 	z_stream deflater;
 	POINTER deflateBuf;
 	size_t deflateBufLen;
@@ -50693,18 +50826,21 @@ struct web_socket_input_state
 	POINTER inflateBuf;
 	size_t inflateBufLen;
 	size_t inflateBufUsed;
+	// expandable buffer for collecting input messages from client.
 	size_t fragment_collection_avail;
 	size_t fragment_collection_length;
   // used for selecting mask byte
 	size_t fragment_collection_index;
 	uint8_t* fragment_collection;
- // for automatic ping/keep alive/idle death
+ // (last message tick) for automatic ping/keep alive/idle death
 	uint32_t last_reception;
 	LOGICAL final;
 	LOGICAL mask;
 	uint8_t mask_key[4];
 	int opcode;
+  // input bit of RSV1 bit on each message
 	int RSV1;
+ // input bit of the first RSV1 bit on a fragmented packet; used for permessage-deflate
 	int _RSV1;
 	size_t frame_length;
 	int input_msg_state;
@@ -50714,30 +50850,36 @@ struct web_socket_input_state
 	web_socket_closed on_close;
 	web_socket_opened on_open;
 	web_socket_error on_error;
+  // server socket event
 	web_socket_accept on_accept;
 	uintptr_t psv_on;
  // result of the open, to pass to read
 	uintptr_t psv_open;
 };
-struct web_socket_output_state
-{
-	struct web_socket_output_flags
-	{
-		BIT_FIELD sent_type : 1;
-		// apparently clients did not implement back masking??
-      // I get a close; probably because of the length exception
-		BIT_FIELD expect_masking : 1;
-		BIT_FIELD use_ssl : 1;
-	} flags;
-};
 EXTERN void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, const uint8_t* payload, size_t length, int use_ssl );
 EXTERN void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint8_t* msg, size_t length );
-#endif
-typedef struct web_socket_client *WebSocketClient;
+struct html5_web_socket {
+ // this value must be 0x20130912
+	uint32_t Magic;
+	HTTPState http_state;
+	PCLIENT pc;
+	POINTER buffer;
+	struct web_socket_flags
+	{
+		BIT_FIELD initial_handshake_done : 1;
+		BIT_FIELD rfc6455 : 1;
+		BIT_FIELD accepted : 1;
+		BIT_FIELD http_request_only : 1;
+	} flags;
+	char *protocols;
+  // callback to send unhandled requests to a handler
+	web_socket_http_request on_request;
+	struct web_socket_input_state input_state;
+};
 struct web_socket_client
 {
  // this value must be 0x20130911
-   uint32_t Magic;
+	uint32_t Magic;
 	struct web_socket_client_flags
 	{
  // if not connected, then parse data as http, otherwise process as websock protocol.
@@ -50756,15 +50898,25 @@ struct web_socket_client
  // when set by enable auto_ping is the delay between packets to generate a ping
 	uint32_t ping_delay;
 	struct web_socket_input_state input_state;
-   struct web_socket_output_state output_state;
 };
+#endif
+typedef struct web_socket_client *WebSocketClient;
 struct web_socket_client_local
 {
-   uint32_t timer;
+	uint32_t timer;
 	PLIST clients;
-   CRITICALSECTION cs_opening;
+	CRITICALSECTION cs_opening;
 	struct web_socket_client *opening_client;
+	struct random_context *rng;
 } wsc_local;
+static const TEXTCHAR *base64 = WIDE( "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=" );
+static void encodeblock( unsigned char in[3], TEXTCHAR out[4], int len )
+{
+	out[0] = base64[in[0] >> 2];
+	out[1] = base64[((in[0] & 0x03) << 4) | ((in[1] & 0xf0) >> 4)];
+	out[2] = (unsigned char)(len > 1 ? base64[((in[1] & 0x0f) << 2) | ((in[2] & 0xc0) >> 6)] : '=');
+	out[3] = (unsigned char)(len > 2 ? base64[in[2] & 0x3f] : '=');
+}
 static void SendRequestHeader( WebSocketClient websock )
 {
 	PVARTEXT pvtHeader = VarTextCreate();
@@ -50782,13 +50934,33 @@ static void SendRequestHeader( WebSocketClient websock )
 	vtprintf( pvtHeader, WIDE("Connection: Upgrade\r\n"));
 	if( websock->protocols )
 		vtprintf( pvtHeader, WIDE("Sec-WebSocket-Protocol: %s\r\n"), websock->protocols );
-	vtprintf( pvtHeader, WIDE("Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\n") );
+	vtprintf( pvtHeader, WIDE( "Sec-WebSocket-Key:" ) );
+	{
+		uint8_t buf[16];
+		TEXTCHAR output[32];
+		int n;
+		SRG_GetEntropyBuffer( wsc_local.rng, (uint32_t*)buf, 16 * 8 );
+		for( n = 0; n < (16 + 2) / 3; n++ )
+		{
+			int blocklen;
+			blocklen = 16 - n * 3;
+			if( blocklen > 3 )
+				blocklen = 3;
+			encodeblock( buf + n * 3, output + n * 4, blocklen );
+		}
+		output[n * 4 + 0] = 0;
+		vtprintf( pvtHeader, "%s\r\n", output );
+	}
+	//x3JJHMbDL1EzLkh9GBhXDw == \r\n") );
 	vtprintf( pvtHeader, WIDE("Sec-WebSocket-Version: 13\r\n") );
+	if( websock->input_state.flags.deflate ) {
+		vtprintf( pvtHeader, WIDE( "Sec-WebSocket-Extensions: 13\r\n" ) );
+	}
 	vtprintf( pvtHeader, WIDE("\r\n") );
 	{
  // just leave the buffer in-place
 		PTEXT text = VarTextPeek( pvtHeader );
-		if( websock->output_state.flags.use_ssl )
+		if( websock->input_state.flags.use_ssl )
 			ssl_Send( websock->pc, GetText( text ), GetTextSize( text ) );
 		else
 			SendTCP( websock->pc, GetText( text ), GetTextSize( text ) );
@@ -50812,7 +50984,7 @@ static void CPROC WebSocketTimer( uintptr_t psv )
  // normal
 			msg.reason = 1000;
 			websock->input_state.flags.closed = 1;
-			SendWebSocketMessage( websock->pc, 8, 1, 0, (uint8_t*)&msg, 2, websock->output_state.flags.use_ssl );
+			SendWebSocketMessage( websock->pc, 8, 1, 0, (uint8_t*)&msg, 2, websock->input_state.flags.use_ssl );
 		}
 		// do auto ping...
 		if( !websock->input_state.flags.closed )
@@ -50822,7 +50994,7 @@ static void CPROC WebSocketTimer( uintptr_t psv )
 				{
 					if( ( now - websock->input_state.last_reception ) > websock->ping_delay )
 					{
-						SendWebSocketMessage( websock->pc, 0x09, 1, 0, NULL, 0, websock->output_state.flags.use_ssl );
+						SendWebSocketMessage( websock->pc, 0x09, 1, 0, NULL, 0, websock->input_state.flags.use_ssl );
 					}
 				}
 				else
@@ -50845,11 +51017,11 @@ static void CPROC WebSocketClientReceive( PCLIENT pc, POINTER buffer, size_t len
 	{
 		if( !websock )
 		{
-			if( wsc_local.opening_client )
+			if( websock = wsc_local.opening_client )
 			{
 				//SetTCPNoDelay( pc, TRUE );
-				//SetNetworkLong( pc, 0, (uintptr_t)wsc_local.opening_client );
-				//SetNetworkLong( pc, 1, (uintptr_t)&wsc_local.opening_client->output_state );
+				SetNetworkLong( pc, 0, (uintptr_t)wsc_local.opening_client );
+				SetNetworkLong( pc, 1, (uintptr_t)&wsc_local.opening_client->input_state );
  // clear this to allow open to return.
 				wsc_local.opening_client = NULL;
 			}
@@ -50878,7 +51050,7 @@ static void CPROC WebSocketClientReceive( PCLIENT pc, POINTER buffer, size_t len
 				{
 					PTEXT content = GetHttpContent( websock->pHttpState );
 					if( websock->input_state.on_open )
-						websock->input_state.on_open( pc, websock->input_state.psv_on );
+						websock->input_state.psv_open = websock->input_state.on_open( pc, websock->input_state.psv_on );
 					if( content )
 						ProcessWebSockProtocol( &websock->input_state, websock->pc, (uint8_t*)GetText( content ), GetTextSize( content ) );
 				}
@@ -50910,6 +51082,10 @@ static void CPROC WebSocketClientClosed( PCLIENT pc )
 	WebSocketClient websock = (WebSocketClient)GetNetworkLong( pc, 0 );
 	if( websock )
 	{
+		if( websock->input_state.on_close ) {
+			websock->input_state.on_close( pc, websock->input_state.psv_on );
+			websock->input_state.on_close = NULL;
+		}
 		Release( websock->buffer );
 		DestroyHttpState( websock->pHttpState );
 		SACK_ReleaseURL( websock->url );
@@ -50923,22 +51099,27 @@ static void CPROC WebSocketClientConnected( PCLIENT pc, int error )
 		Relinquish();
 	if( !error )
 	{
-		if( websock->output_state.flags.use_ssl )
-			ssl_BeginClientSession( websock->pc, NULL, 0 );
+		if( websock->input_state.flags.use_ssl )
+			ssl_BeginClientSession( websock->pc, NULL, 0, NULL, 0 );
 	}
 	else
 	{
 		wsc_local.opening_client = NULL;
-		if( websock->input_state.on_close )
-			websock->input_state.on_close( NULL, websock->input_state.psv_on );
+		RemoveClient( pc );
 	}
+}
+static void getRandomSalt( uintptr_t inst, POINTER *salt, size_t *salt_size ) {
+	static uint32_t tick;
+	tick = GetTickCount();
+	(*salt) = &tick;
+	(*salt_size) = 4;
 }
 // create a websocket connection.
 //  If web_socket_opened is passed as NULL, this function will wait until the negotiation has passed.
 //  since these packets are collected at a lower layer, buffers passed to receive event are allocated for
 //  the application, and the application does not need to setup an  initial read.
 PCLIENT WebSocketOpen( CTEXTSTR url_address
-							, int options
+							, enum WebSocketOptions options
 							, web_socket_opened on_open
 							, web_socket_event on_event
 							, web_socket_closed on_closed
@@ -50947,6 +51128,11 @@ PCLIENT WebSocketOpen( CTEXTSTR url_address
 	, const char *protocols )
 {
 	WebSocketClient websock = New( struct web_socket_client );
+	if( !wsc_local.rng ) {
+		wsc_local.rng = SRG_CreateEntropy2( getRandomSalt, 0 );
+	}
+	MemSet( websock, 0, sizeof( struct web_socket_client ) );
+	websock->Magic = 0x20130911;
 	//va_arg args;
 	//va_start( args, psv );
 	if( !wsc_local.timer )
@@ -50960,26 +51146,28 @@ PCLIENT WebSocketOpen( CTEXTSTR url_address
 	websock->input_state.psv_on = psv;
 	websock->protocols = protocols;
  // client to server is MUST mask because of proxy handling in that direction
-	websock->output_state.flags.expect_masking = 1;
+	websock->input_state.flags.expect_masking = 1;
 	websock->url = SACK_URLParse( url_address );
 	EnterCriticalSec( &wsc_local.cs_opening );
 	wsc_local.opening_client = websock;
 	{
-		websock->pc = OpenTCPClientExx( websock->url->host
-												, websock->url->port?websock->url->port:websock->url->default_port
+		SOCKADDR *lpsaDest = CreateSockAddress( websock->url->host, websock->url->port ? websock->url->port : websock->url->default_port );
+		websock->pc = OpenTCPClientAddrExxx( lpsaDest
 												, WebSocketClientReceive
 												, WebSocketClientClosed
 												, NULL
  // if there is an on-open event, then register for async open
-												, on_open?WebSocketClientConnected:NULL
+												, WebSocketClientConnected
+												, 0
+												DBG_SRC
 												);
 		if( websock->pc )
 		{
 			SetNetworkLong( websock->pc, 0, (uintptr_t)websock );
-			SetNetworkLong( websock->pc, 1, (uintptr_t)&websock->output_state );
+			SetNetworkLong( websock->pc, 1, (uintptr_t)&websock->input_state );
 #ifndef NO_SSL
 			if( StrCaseCmp( websock->url->protocol, "wss" ) == 0 )
-				websock->output_state.flags.use_ssl = 1;
+				websock->input_state.flags.use_ssl = 1;
 #endif
 			if( !on_open )
 			{
@@ -50993,10 +51181,38 @@ PCLIENT WebSocketOpen( CTEXTSTR url_address
 	LeaveCriticalSec( &wsc_local.cs_opening );
 	return  websock->pc;
 }
+void WebSocketConnect( PCLIENT pc ) {
+	NetworkConnectTCP( pc );
+}
 // end a websocket connection nicely.
 void WebSocketClose( PCLIENT pc )
 {
-   RemoveClientEx( pc, 0, 1 );
+	WebSocketClient websock = (WebSocketClient)GetNetworkLong( pc, 0 );
+	if( websock->Magic == 0x20130912 ) {
+		struct html5_web_socket *serverSock = (struct html5_web_socket*)websock;
+		if( serverSock->flags.initial_handshake_done ) {
+			//lprintf( "Send server side close with no payload." );
+			SendWebSocketMessage( pc, 8, 1, serverSock->input_state.flags.expect_masking, NULL, 0, serverSock->input_state.flags.use_ssl );
+			serverSock->input_state.flags.closed = 1;
+		}
+		else {
+			//lprintf( "Negotiation incomplete, don't send close; just close." );
+			RemoveClientEx( pc, 0, 1 );
+		}
+	}
+	else {
+		if( websock->Magic == 0x20130911 ) {
+			//lprintf( "send client side close?" );
+			if( websock->flags.connected ) {
+				SendWebSocketMessage( pc, 8, 1, websock->input_state.flags.expect_masking, NULL, 0, websock->input_state.flags.use_ssl );
+				websock->input_state.flags.closed = 1;
+			}
+			else {
+				//lprintf( "Negotiation incomplete, don't send close; just close." );
+				RemoveClientEx( pc, 0, 1 );
+			}
+		}
+	}
 }
 void WebSocketEnableAutoPing( PCLIENT pc, uint32_t delay )
 {
@@ -51105,29 +51321,18 @@ HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketSetProtocols )( PCLIENT pc, const char *
  *       static int OnDrawToHTML("Control Name")(CONTROL, HTML5WebSocket ){ }
  */
 //#define OnDrawToHTML(name)  //	__DefineRegistryMethodP(PRELOAD_PRIORITY,ROOT_REGISTRY,_OnDrawCommon,WIDE("control"),name WIDE("/rtti"),WIDE("draw_to_canvas"),int,(CONTROL, HTML5WebSocket ), __LINE__)
+/* a server side utility to get the request headers that came in.
+this is for going through proxy agents mostly where the header might have x-forwarded-for
+*/
+HTML5_WEBSOCKET_PROC( PLIST, GetWebSocketHeaders )( PCLIENT pc );
+/* for server side sockets, get the requested resource path from the client request.
+*/
+HTML5_WEBSOCKET_PROC( PTEXT, GetWebSocketResource )( PCLIENT pc );
 HTML5_WEBSOCKET_NAMESPACE_END
 USE_HTML5_WEBSOCKET_NAMESPACE
 #endif
 HTML5_WEBSOCKET_NAMESPACE
 typedef struct html5_web_socket *HTML5WebSocket;
-struct html5_web_socket {
- // this value must be 0x20130912
-	uint32_t Magic;
-	HTTPState http_state;
-	PCLIENT pc;
-	POINTER buffer;
-	struct web_socket_flags
-	{
-		BIT_FIELD initial_handshake_done : 1;
-		BIT_FIELD rfc6455 : 1;
-		BIT_FIELD accepted : 1;
-	} flags;
-	char *protocols;
-	int client_max_bits;
-	int server_max_bits;
-	struct web_socket_input_state input_state;
-	struct web_socket_output_state output_state;
-};
 const TEXTCHAR *base64 = WIDE("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=");
 static void encodeblock( unsigned char in[3], TEXTCHAR out[4], int len )
 {
@@ -51319,8 +51524,25 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 				case HTTP_STATE_RESULT_CONTENT:
 				{
 					PVARTEXT pvt_output = VarTextCreate();
-					PTEXT value;
+					PTEXT value, value2;
 					PTEXT key1, key2;
+					value = GetHTTPField( socket->http_state, WIDE( "Connection" ) );
+					value2 = GetHTTPField( socket->http_state, WIDE( "Upgrade" ) );
+					if( !value || !value2
+						|| !TextLike( value, "upgrade" )
+						|| !TextLike( value2, "websocket" ) ) {
+						lprintf( "request is not an upgrade for websocket." );
+						VarTextDestroy( &pvt_output );
+						socket->flags.initial_handshake_done = 1;
+						socket->flags.http_request_only = 1;
+						if( socket->on_request )
+							socket->on_request( pc, socket->input_state.psv_on );
+						else {
+							RemoveClient( pc );
+							return;
+						}
+						break;
+					}
 					value = GetHTTPField( socket->http_state, WIDE( "Sec-WebSocket-Extensions" ) );
 					if( value )
 					{
@@ -51333,15 +51555,15 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 							// "client_max_window_bits"
 							if( TextLike( opt, "permessage-deflate" ) ) {
 								socket->input_state.flags.deflate = 1;
-								socket->server_max_bits = 15;
-								socket->client_max_bits = 15;
+								socket->input_state.server_max_bits = 15;
+								socket->input_state.client_max_bits = 15;
 							}
 							else if( TextLike( opt, "client_max_window_bits" ) ) {
 								opt = NEXTLINE( opt );
 								if( opt ) {
 									if( GetText( opt )[0] == '=' ) {
 										opt = NEXTLINE( opt );
-										socket->client_max_bits = (int)IntCreateFromSeg( opt );
+										socket->input_state.client_max_bits = (int)IntCreateFromSeg( opt );
 									}
 									else
 										opt = PRIORLINE( opt );
@@ -51353,7 +51575,7 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 								if( opt ) {
 									if( GetText( opt )[0] == '=' ) {
 										opt = NEXTLINE( opt );
-										socket->server_max_bits = (int)IntCreateFromSeg( opt );
+										socket->input_state.server_max_bits = (int)IntCreateFromSeg( opt );
 									}
 								}
 								else {
@@ -51373,14 +51595,14 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 						if( socket->input_state.flags.deflate ) {
 							if( deflateInit2( &socket->input_state.deflater
 								, Z_BEST_SPEED, Z_DEFLATED
-								, -socket->server_max_bits
+								, -socket->input_state.server_max_bits
 								, 8
 								, Z_DEFAULT_STRATEGY ) != Z_OK )
 								socket->input_state.flags.deflate = 0;
 						}
 						if( socket->input_state.flags.deflate ) {
 							//socket->inflateWindow = NewArray( uint8_t, (size_t)(1 << (socket->client_max_bits&0x1f)) );
-							if( inflateInit2( &socket->input_state.inflater, -socket->client_max_bits ) != Z_OK ) {
+							if( inflateInit2( &socket->input_state.inflater, -socket->input_state.client_max_bits ) != Z_OK ) {
 							//if( inflateBackInit( &socket->input_state.inflater, socket->client_max_bits, socket->inflateWindow ) != Z_OK ) {
 								deflateEnd( &socket->input_state.deflater );
 								socket->input_state.flags.deflate = 0;
@@ -51476,7 +51698,7 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 							}
 						}
 						if( socket->input_state.flags.deflate ) {
-							vtprintf( pvt_output, WIDE( "Sec-WebSocket-Extensions: permessage-deflate; client_no_context_takeover; server_max_window_bits=%d\r\n" ), socket->server_max_bits );
+							vtprintf( pvt_output, WIDE( "Sec-WebSocket-Extensions: permessage-deflate; client_no_context_takeover; server_max_window_bits=%d\r\n" ), socket->input_state.server_max_bits );
 						}
 						if( socket->protocols )
 							vtprintf( pvt_output, WIDE( "Sec-WebSocket-Protocol: %s\r\n" ), socket->protocols );
@@ -51497,11 +51719,17 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 #else
 						SendTCP( pc, GetText( value ), GetTextSize( value ) );
 #endif
+						lprintf( "Sent http reply." );
 						VarTextDestroy( &pvt_output );
+						if( socket->input_state.on_open )
+							socket->input_state.psv_open = socket->input_state.on_open( pc, socket->input_state.psv_on );
 					}
-					if( socket->input_state.on_open )
-						socket->input_state.psv_open = socket->input_state.on_open( pc, socket->input_state.psv_on );
-					EndHttp( socket->http_state );
+					else {
+						WebSocketClose( pc );
+						return;
+					}
+					// keep this until close, application might want resource and/or headers from this.
+					//EndHttp( socket->http_state );
 					socket->flags.initial_handshake_done = 1;
 					break;
 				}
@@ -51547,11 +51775,13 @@ static void CPROC connected( PCLIENT pc_server, PCLIENT pc_new )
 	MemSet( socket, 0, sizeof( struct html5_web_socket ) );
 	socket->Magic = 0x20130912;
 	socket->pc = pc_new;
+ // clone callback methods and config flags
 	socket->input_state = server_socket->input_state;
+	socket->on_request = server_socket->on_request;
+ // start a new http state collector
 	socket->http_state = CreateHttpState();
 	SetNetworkLong( pc_new, 0, (uintptr_t)socket );
-	SetNetworkLong( pc_new, 1, (uintptr_t)&socket->output_state );
-	SetNetworkLong( pc_new, 2, (uintptr_t)&socket->input_state );
+	SetNetworkLong( pc_new, 1, (uintptr_t)&socket->input_state );
 	SetNetworkReadComplete( pc_new, read_complete );
 	SetNetworkCloseCallback( pc_new, closed );
 }
@@ -51581,9 +51811,22 @@ PCLIENT WebSocketCreate( CTEXTSTR hosturl
 	SACK_ReleaseURL( url );
 	socket->http_state = CreateHttpState();
 	SetNetworkLong( socket->pc, 0, (uintptr_t)socket );
-	SetNetworkLong( socket->pc, 1, (uintptr_t)&socket->output_state );
-	SetNetworkLong( socket->pc, 2, (uintptr_t)&socket->input_state );
+	SetNetworkLong( socket->pc, 1, (uintptr_t)&socket->input_state );
 	return socket->pc;
+}
+PLIST GetWebSocketHeaders( PCLIENT pc ) {
+	HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc, 0 );
+	if( socket && socket->Magic == 0x20130912 ) {
+		return GetHttpHeaderFields( socket->http_state );
+	}
+	return NULL;
+}
+PTEXT GetWebSocketResource( PCLIENT pc ) {
+	HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc, 0 );
+	if( socket && socket->Magic == 0x20130912 ) {
+		return GetHttpResource( socket->http_state );
+	}
+	return NULL;
 }
 HTML5_WEBSOCKET_NAMESPACE_END
 #ifndef JSON_EMITTER_SOURCE
@@ -58131,33 +58374,61 @@ LOGICAL IsAddressV6( SOCKADDR *addr )
 const char * GetAddrName( SOCKADDR *addr )
 {
 	char * tmp = ((char**)addr)[-1];
-	if( !( (uintptr_t)tmp & 0xFFFF0000 ) )
-	{
-		lprintf( WIDE("corrupted sockaddr.") );
-		DebugBreak();
-	}
 	if( !tmp )
 	{
 		{
 			char buf[256];
 			if( addr->sa_family == AF_INET )
-				snprintf( buf, 256, "%03d.%03d.%03d.%03d"
+				snprintf( buf, 256, "%d.%d.%d.%d"
 						  ,*(((unsigned char *)addr)+4),
 						  *(((unsigned char *)addr)+5),
 						  *(((unsigned char *)addr)+6),
 						  *(((unsigned char *)addr)+7) );
 			else if( addr->sa_family == AF_INET6 )
 			{
-				snprintf( buf, 256, "%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x "
-						 , ntohs(*(((unsigned short *)((unsigned char*)addr+8))))
-						 , ntohs(*(((unsigned short *)((unsigned char*)addr+10))))
-						 , ntohs(*(((unsigned short *)((unsigned char*)addr+12))))
-						 , ntohs(*(((unsigned short *)((unsigned char*)addr+14))))
-						 , ntohs(*(((unsigned short *)((unsigned char*)addr+16))))
-						 , ntohs(*(((unsigned short *)((unsigned char*)addr+18))))
-						 , ntohs(*(((unsigned short *)((unsigned char*)addr+20))))
-						 , ntohs(*(((unsigned short *)((unsigned char*)addr+22))))
-						 );
+				int first0 = 8;
+				int last0 = 0;
+				int after0 = 0;
+				int n;
+				int ofs = 0;
+				uint32_t peice;
+				for( n = 0; n < 8; n++ ) {
+					peice = (*(((unsigned short *)((unsigned char*)addr + 8 + (n * 2)))));
+					if( peice ) {
+						if( first0 < 8 )
+							after0 = 1;
+						if( !ofs ) {
+							ofs += snprintf( buf + ofs, 256 - ofs, "%x", ntohs( peice ) );
+						}
+						else {
+							//console.log( last0, n );
+							if( last0 == 4 && first0 == 0 )
+								if( peice == 0xFFFF ) {
+									snprintf( buf, 256, "::%d.%d.%d.%d",
+										(*((unsigned char*)addr + 20)),
+										(*((unsigned char*)addr + 21)),
+										(*((unsigned char*)addr + 22)),
+										(*((unsigned char*)addr + 23)) );
+									break;
+								}
+							ofs += snprintf( buf + ofs, 256 - ofs, ":%x", ntohs(peice) );
+						}
+					}
+					else {
+						if( !after0 ) {
+							if( first0 > n ) {
+								first0 = n;
+								ofs += snprintf( buf + ofs, 256 - ofs, ":" );
+							}
+							if( last0 < n )
+								last0 = n;
+						}
+						if( last0 < n )
+							ofs += snprintf( buf + ofs, 256 - ofs, ":%x", ntohs( peice ) );
+					}
+				}
+				if( !after0 )
+					ofs += snprintf( buf + ofs, 256 - ofs, ":" );
 			}
 			else
 				snprintf( buf, 256, "unknown protocol" );
@@ -58277,6 +58548,13 @@ void ClearClient( PCLIENT pc )
 	cs = pc->csLock;
 	ReleaseAddress( pc->saClient );
 	ReleaseAddress( pc->saSource );
+#if _WIN32
+#if defined( USE_WSA_EVENTS )
+	if( pc->event ) {
+		WSACloseEvent( pc->event );
+	}
+#endif
+#endif
 	// sets socket to 0 - so it's not quite == INVALID_SOCKET
 #ifdef LOG_NETWORK_EVENT_THREAD
 	if( globalNetworkData.flags.bLogNotices )
@@ -58303,16 +58581,12 @@ void TerminateClosedClientEx( PCLIENT pc DBG_PASS )
 	if( pc->dwFlags & CF_CLOSED )
 	{
 		PendingBuffer * lpNext;
-		//lprintf( "Terminate Closed Client" );
 		EnterCriticalSec( &globalNetworkData.csNetwork );
 		//lprintf( WIDE( "Terminating closed client..." ) );
 		if( IsValid( pc->Socket ) )
 		{
 #ifdef VERBOSE_DEBUG
 			lprintf( WIDE( "close socket." ) );
-#endif
-#if defined( USE_WSA_EVENTS )
-			WSACloseEvent( pc->event );
 #endif
 			closesocket( pc->Socket );
 			while( pc->lpFirstPending )
@@ -58652,6 +58926,20 @@ void HandleEvent( PCLIENT pClient )
 						pClient->dwFlags &= ~CF_CONNECTING;
 						if( pClient->connect.ThisConnected )
 						{
+							if( !wError && !pClient->saSource ) {
+#ifdef __LINUX__
+								socklen_t
+#else
+								int
+#endif
+									nLen = MAGIC_SOCKADDR_LENGTH;
+								if( !pClient->saSource )
+									pClient->saSource = AllocAddr();
+								if( getsockname( pClient->Socket, pClient->saSource, &nLen ) )
+								{
+									lprintf( WIDE( "getsockname errno = %d" ), errno );
+								}
+							}
 #ifdef LOG_NOTICES
 							if( globalNetworkData.flags.bLogNotices )
 								lprintf( WIDE( "Post connect to application %p  error:%d" ), pClient, wError );
@@ -58739,7 +59027,7 @@ void HandleEvent( PCLIENT pClient )
 					if( pClient->dwFlags & CF_ACTIVE )
 					{
 						// might already be cleared and gone..
-						InternalRemoveClient( pClient );
+						InternalRemoveClientEx( pClient, FALSE, TRUE );
 						TerminateClosedClient( pClient );
 					}
 					// section will be blank after termination...(correction, we keep the section state now)
@@ -59700,9 +59988,9 @@ int NetworkQuit(void)
 	}
 	while( globalNetworkData.ActiveClients )
 	{
-		if( globalNetworkData.flags.bLogNotices )
-			lprintf( WIDE("Remove active client %p"), globalNetworkData.ActiveClients );
-		InternalRemoveClient( globalNetworkData.ActiveClients );
+		//if( globalNetworkData.flags.bLogNotices )
+			lprintf( WIDE("NetworkQuit - Remove active client %p"), globalNetworkData.ActiveClients );
+		InternalRemoveClientEx( globalNetworkData.ActiveClients, TRUE, FALSE );
 	}
 	globalNetworkData.bQuit = TRUE;
 	WakeThread( globalNetworkData.pThread );
@@ -60678,6 +60966,7 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNofity, LOGICAL bLi
 				//  the idea is to NEVER do this; but I had to do this for lots of parallel connections that were short lived...
 				// windows registry http://technet.microsoft.com/en-us/library/cc938217.aspx 240 seconds time_wait timeout
 				struct linger lingerSet;
+				lprintf( "Close with no linger." );
  // on , with no time = off.
 				lingerSet.l_onoff = 1;
  // 0 timeout sends reset.
@@ -60692,8 +60981,10 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNofity, LOGICAL bLi
 			}
 		}
 		else {
+#if 0
 			struct linger lingerSet;
 			// linger ON causes delay on close... otherwise close returns immediately
+			lprintf( "Close with linger (disabled)." );
  // on , with no time = off.
 			lingerSet.l_onoff = 0;
 			lingerSet.l_linger = 0;
@@ -60704,6 +60995,7 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNofity, LOGICAL bLi
 				lprintf( WIDE( "error setting no linger in close." ) );
 				//cerr << "NFMSim:setHost:ERROR: could not set socket to linger." << endl;
 			}
+#endif
 		}
 	if( !(lpClient->dwFlags & CF_ACTIVE) )
 	{
@@ -61086,9 +61378,9 @@ void AcceptClient(PCLIENT pListen)
 			//lprintf( WIDE("Accepted and notifying...") );
 			if( pListen->connect.ClientConnected )
 			{
-		          if( pListen->dwFlags & CF_CPPCONNECT )
+				if( pListen->dwFlags & CF_CPPCONNECT )
 					pListen->connect.CPPClientConnected( pListen->psvConnect, pNewClient );
-		          else
+				else
 					pListen->connect.ClientConnected( pListen, pNewClient );
 			}
 			// signal initial read.
@@ -61097,10 +61389,10 @@ void AcceptClient(PCLIENT pListen)
 			pNewClient->dwFlags |= CF_READREADY;
 			if( pNewClient->read.ReadComplete )
 			{
-		          if( pListen->dwFlags & CF_CPPREAD )
+				if( pListen->dwFlags & CF_CPPREAD )
   // process read to get data already pending...
-					   pNewClient->read.CPPReadComplete( pNewClient->psvRead, NULL, 0 );
-		          else
+					pNewClient->read.CPPReadComplete( pNewClient->psvRead, NULL, 0 );
+				else
   // process read to get data already pending...
 					pNewClient->read.ReadComplete( pNewClient, NULL, 0 );
 			}
@@ -61183,6 +61475,10 @@ NETWORK_PROC( PCLIENT, CPPOpenTCPListenerAddrExx )( SOCKADDR *pAddr
 		return NULL;
 	}
 #  endif
+	{
+		int t = FALSE;
+		setsockopt( pListen->Socket, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&t, 4 );
+	}
 #else
 	{
 		int t = TRUE;
@@ -61195,7 +61491,7 @@ NETWORK_PROC( PCLIENT, CPPOpenTCPListenerAddrExx )( SOCKADDR *pAddr
 	if( pAddr->sa_family==AF_UNIX )
 		unlink( (char*)(((uint16_t*)pAddr)+1));
 #endif
-   if (!pAddr ||
+	if (!pAddr ||
 		 bind(pListen->Socket ,pAddr, SOCKADDR_LENGTH( pAddr ) ) )
 	{
 		_lprintf(DBG_RELAY)( WIDE("Cannot bind to address..:%d"), WSAGetLastError() );
@@ -61287,21 +61583,69 @@ NETWORK_PROC( PCLIENT, OpenTCPListenerExx )(uint16_t wPort, cNotifyCallback Noti
 #undef OpenTCPListenerEx
 NETWORK_PROC( PCLIENT, OpenTCPListenerEx )(uint16_t wPort, cNotifyCallback NotifyCallback )
 {
-   return OpenTCPListenerExx( wPort, NotifyCallback DBG_SRC );
+	return OpenTCPListenerExx( wPort, NotifyCallback DBG_SRC );
 }
 //----------------------------------------------------------------------------
-static PCLIENT InternalTCPClientAddrFromAddrExxx(SOCKADDR *lpAddr, SOCKADDR *pFromAddr,
-													  int bCPP,
-													  cppReadComplete  pReadComplete,
-													  uintptr_t psvRead,
-													  cppCloseCallback CloseCallback,
-													  uintptr_t psvClose,
-													  cppWriteComplete WriteComplete,
-													  uintptr_t psvWrite,
-													  cppConnectCallback pConnectComplete,
-													  uintptr_t psvConnect
-                                         DBG_PASS
-													 )
+int NetworkConnectTCPEx( PCLIENT pc DBG_PASS ) {
+	int err;
+	while( !NetworkLock( pc ) )
+	{
+		if( !(pc->dwFlags & CF_ACTIVE) )
+		{
+			return -1;
+		}
+		Relinquish();
+	}
+	pc->dwFlags |= CF_CONNECTING;
+	//DumpAddr( WIDE("Connect to"), &pResult->saClient );
+	if( (err = connect( pc->Socket, pc->saClient
+		, SOCKADDR_LENGTH( pc->saClient ) )) )
+	{
+		uint32_t dwError;
+		dwError = WSAGetLastError();
+		if( dwError != WSAEWOULDBLOCK
+#ifdef __LINUX__
+			&& dwError != EINPROGRESS
+#else
+			&& dwError != WSAEINPROGRESS
+#endif
+			)
+		{
+			_lprintf( DBG_RELAY )(WIDE( "Connect FAIL: %d %d %" ) _32f, pc->Socket, err, dwError);
+			InternalRemoveClientEx( pc, TRUE, FALSE );
+			NetworkUnlock( pc );
+			pc = NULL;
+			return -1;
+		}
+		else
+		{
+			//lprintf( WIDE("Pending connect has begun...") );
+		}
+	}
+	else
+	{
+#ifdef VERBOSE_DEBUG
+		lprintf( WIDE( "Connected before we even get a chance to wait" ) );
+#endif
+	}
+	NetworkUnlock( pc );
+	return 0;
+}
+//----------------------------------------------------------------------------
+#define TCP_CLIENT_FLAG_DELAY_TCP_CONNECT 1
+static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pFromAddr,
+                                                  int bCPP,
+                                                  cppReadComplete  pReadComplete,
+                                                  uintptr_t psvRead,
+                                                  cppCloseCallback CloseCallback,
+                                                  uintptr_t psvClose,
+                                                  cppWriteComplete WriteComplete,
+                                                  uintptr_t psvWrite,
+                                                  cppConnectCallback pConnectComplete,
+                                                  uintptr_t psvConnect,
+                                                  int flags
+                                                  DBG_PASS
+                                                )
 {
    // Server's Port and Name.
 	PCLIENT pResult;
@@ -61378,48 +61722,16 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx(SOCKADDR *lpAddr, SOCKADDR *pFr
 			}
 			pResult->saClient = DuplicateAddress( lpAddr );
 			// set up callbacks before asynch select...
-			pResult->connect.CPPThisConnected= pConnectComplete;
-			pResult->psvConnect = psvConnect;
-			pResult->read.CPPReadComplete    = pReadComplete;
-			pResult->psvRead = psvRead;
-			pResult->close.CPPCloseCallback        = CloseCallback;
-			pResult->psvClose = psvClose;
-			pResult->write.CPPWriteComplete        = WriteComplete;
-			pResult->psvWrite = psvWrite;
+			pResult->connect.CPPThisConnected  = pConnectComplete;
+			pResult->psvConnect                = psvConnect;
+			pResult->read.CPPReadComplete      = pReadComplete;
+			pResult->psvRead                   = psvRead;
+			pResult->close.CPPCloseCallback    = CloseCallback;
+			pResult->psvClose                  = psvClose;
+			pResult->write.CPPWriteComplete    = WriteComplete;
+			pResult->psvWrite                  = psvWrite;
 			if( bCPP )
 				pResult->dwFlags |= ( CF_CALLBACKTYPES );
-			pResult->dwFlags |= CF_CONNECTING;
-			//DumpAddr( WIDE("Connect to"), &pResult->saClient );
-			if( ( err = connect( pResult->Socket, pResult->saClient
-									 , SOCKADDR_LENGTH( pResult->saClient ) ) ) )
-			{
-				uint32_t dwError;
-				dwError = WSAGetLastError();
-				if( dwError != WSAEWOULDBLOCK
-#ifdef __LINUX__
-					&& dwError != EINPROGRESS
-#else
-					&& dwError != WSAEINPROGRESS
-#endif
-				  )
-				{
-					_lprintf(DBG_RELAY)( WIDE("Connect FAIL: %d %d %") _32f, pResult->Socket, err, dwError );
-					InternalRemoveClientEx( pResult, TRUE, FALSE );
-					NetworkUnlock( pResult );
-					pResult = NULL;
-					goto LeaveNow;
-				}
-				else
-				{
-					//lprintf( WIDE("Pending connect has begun...") );
-				}
-			}
-			else
-			{
-#ifdef VERBOSE_DEBUG
-				lprintf( WIDE("Connected before we even get a chance to wait") );
-#endif
-			}
 			AddActive( pResult );
 			//lprintf( WIDE("Leaving Client's critical section") );
 			NetworkUnlock( pResult );
@@ -61537,22 +61849,23 @@ LeaveNow:
    return pResult;
 }
 //----------------------------------------------------------------------------
-NETWORK_PROC( PCLIENT, CPPOpenTCPClientAddrExxx )(SOCKADDR *lpAddr,
-																  cppReadComplete  pReadComplete,
-																  uintptr_t psvRead,
-																  cppCloseCallback CloseCallback,
-																  uintptr_t psvClose,
-																  cppWriteComplete WriteComplete,
-																  uintptr_t psvWrite,
-																  cppConnectCallback pConnectComplete,
-																  uintptr_t psvConnect
-																  DBG_PASS  )
+NETWORK_PROC( PCLIENT, CPPOpenTCPClientAddrExxx )(SOCKADDR *lpAddr
+                                                 , cppReadComplete  pReadComplete
+                                                 , uintptr_t psvRead
+                                                 , cppCloseCallback CloseCallback
+                                                 , uintptr_t psvClose
+                                                 , cppWriteComplete WriteComplete
+                                                 , uintptr_t psvWrite
+                                                 , cppConnectCallback pConnectComplete
+                                                 , uintptr_t psvConnect
+                                                 , int flags
+                                                 DBG_PASS  )
 {
 	return InternalTCPClientAddrFromAddrExxx( lpAddr, NULL, TRUE
 											 , pReadComplete, psvRead
 											 , CloseCallback, psvClose
 											 , WriteComplete, psvWrite
-											 , pConnectComplete, psvConnect DBG_RELAY );
+											 , pConnectComplete, psvConnect, flags DBG_RELAY );
 }
 #undef CPPOpenTCPClientAddrExx
 NETWORK_PROC( PCLIENT, CPPOpenTCPClientAddrExx )(SOCKADDR *lpAddr,
@@ -61570,28 +61883,30 @@ NETWORK_PROC( PCLIENT, CPPOpenTCPClientAddrExx )(SOCKADDR *lpAddr,
 											 , pReadComplete, psvRead
 											 , CloseCallback, psvClose
 											 , WriteComplete, psvWrite
-											 , pConnectComplete, psvConnect DBG_SRC );
+											 , pConnectComplete, psvConnect, 0 DBG_SRC );
 }
 //----------------------------------------------------------------------------
-NETWORK_PROC( PCLIENT, OpenTCPClientAddrExxx )(SOCKADDR *lpAddr
-															  , cReadComplete     pReadComplete
-															  , cCloseCallback    CloseCallback
-															  , cWriteComplete    WriteComplete
-															  , cConnectCallback  pConnectComplete
-                                               DBG_PASS
+NETWORK_PROC( PCLIENT, OpenTCPClientAddrExxx )( SOCKADDR *lpAddr
+                                              , cReadComplete     pReadComplete
+                                              , cCloseCallback    CloseCallback
+                                              , cWriteComplete    WriteComplete
+                                              , cConnectCallback  pConnectComplete
+                                              , int flags
+                                              DBG_PASS
 															 )
 {
 	return InternalTCPClientAddrFromAddrExxx( lpAddr, NULL, FALSE
 											 , (cppReadComplete)pReadComplete, 0
 											 , (cppCloseCallback)CloseCallback, 0
 											 , (cppWriteComplete)WriteComplete, 0
-											 , (cppConnectCallback)pConnectComplete, 0 DBG_RELAY );
+											 , (cppConnectCallback)pConnectComplete, 0, flags DBG_RELAY );
 }
 NETWORK_PROC( PCLIENT, OpenTCPClientAddrFromAddrEx )(SOCKADDR *lpAddr, SOCKADDR *pFromAddr
 															  , cReadComplete     pReadComplete
 															  , cCloseCallback    CloseCallback
 															  , cWriteComplete    WriteComplete
 															  , cConnectCallback  pConnectComplete
+	, int flags
                                                DBG_PASS
 															 )
 {
@@ -61599,12 +61914,13 @@ NETWORK_PROC( PCLIENT, OpenTCPClientAddrFromAddrEx )(SOCKADDR *lpAddr, SOCKADDR 
 											 , (cppReadComplete)pReadComplete, 0
 											 , (cppCloseCallback)CloseCallback, 0
 											 , (cppWriteComplete)WriteComplete, 0
-											 , (cppConnectCallback)pConnectComplete, 0 DBG_RELAY );
+											 , (cppConnectCallback)pConnectComplete, 0, flags DBG_RELAY );
 }
 NETWORK_PROC( PCLIENT, OpenTCPClientAddrFromEx )(SOCKADDR *lpAddr, int port
 															  , cReadComplete     pReadComplete															  , cCloseCallback    CloseCallback
 															  , cWriteComplete    WriteComplete
 															  , cConnectCallback  pConnectComplete
+	, int flags
                                                DBG_PASS
 															 )
 {
@@ -61614,7 +61930,7 @@ NETWORK_PROC( PCLIENT, OpenTCPClientAddrFromEx )(SOCKADDR *lpAddr, int port
 											 , (cppReadComplete)pReadComplete, 0
 											 , (cppCloseCallback)CloseCallback, 0
 											 , (cppWriteComplete)WriteComplete, 0
-											 , (cppConnectCallback)pConnectComplete, 0 DBG_RELAY );
+											 , (cppConnectCallback)pConnectComplete, 0, flags DBG_RELAY );
 	ReleaseAddress( pFromAddr );
 	return result;
 }
@@ -61623,41 +61939,42 @@ NETWORK_PROC( PCLIENT, OpenTCPClientAddrExx )(SOCKADDR *lpAddr,
              cReadComplete     pReadComplete,
              cCloseCallback    CloseCallback,
              cWriteComplete    WriteComplete,
-															 cConnectCallback  pConnectComplete )
+															 cConnectCallback  pConnectComplete
+	)
 {
-   return OpenTCPClientAddrExxx( lpAddr, pReadComplete, CloseCallback, WriteComplete, pConnectComplete DBG_SRC );
+   return OpenTCPClientAddrExxx( lpAddr, pReadComplete, CloseCallback, WriteComplete, pConnectComplete, 0 DBG_SRC );
 }
 //----------------------------------------------------------------------------
-NETWORK_PROC( PCLIENT, OpenTCPClientAddrExEx )(SOCKADDR *lpAddr,
-															 cReadComplete  pReadComplete,
-															 cCloseCallback CloseCallback,
-															 cWriteComplete WriteComplete
+NETWORK_PROC( PCLIENT, OpenTCPClientAddrExEx )(SOCKADDR *lpAddr
+															 , cReadComplete  pReadComplete
+															 , cCloseCallback CloseCallback
+															 , cWriteComplete WriteComplete
 															 DBG_PASS )
 {
-   return OpenTCPClientAddrExxx( lpAddr, pReadComplete, CloseCallback, WriteComplete, NULL DBG_RELAY );
+   return OpenTCPClientAddrExxx( lpAddr, pReadComplete, CloseCallback, WriteComplete, NULL, 0 DBG_RELAY );
 }
 #undef OpenTCPClientAddrEx
-NETWORK_PROC( PCLIENT, OpenTCPClientAddrEx )(SOCKADDR *lpAddr,
-															cReadComplete  pReadComplete,
-															cCloseCallback CloseCallback,
-															cWriteComplete WriteComplete )
+NETWORK_PROC( PCLIENT, OpenTCPClientAddrEx )(SOCKADDR *lpAddr
+															, cReadComplete  pReadComplete
+															, cCloseCallback CloseCallback
+															, cWriteComplete WriteComplete )
 {
 	return OpenTCPClientAddrExEx( lpAddr, pReadComplete, CloseCallback, WriteComplete DBG_SRC );
 }
 //----------------------------------------------------------------------------
 NETWORK_PROC( PCLIENT, CPPOpenTCPClientExEx )(CTEXTSTR lpName,uint16_t wPort,
              cppReadComplete	 pReadComplete, uintptr_t psvRead,
-				 cppCloseCallback CloseCallback, uintptr_t psvClose,
+             cppCloseCallback CloseCallback, uintptr_t psvClose,
              cppWriteComplete WriteComplete, uintptr_t psvWrite,
-             cppConnectCallback pConnectComplete, uintptr_t psvConnect DBG_PASS )
+             cppConnectCallback pConnectComplete, uintptr_t psvConnect, int flags DBG_PASS )
 {
-   PCLIENT pClient;
-   SOCKADDR *lpsaDest;
-   pClient = NULL;
-   if( lpName &&
-       (lpsaDest = CreateSockAddress(lpName,wPort) ) )
-   {
-      pClient = CPPOpenTCPClientAddrExxx( lpsaDest,
+	PCLIENT pClient;
+	SOCKADDR *lpsaDest;
+	pClient = NULL;
+	if( lpName &&
+	   (lpsaDest = CreateSockAddress(lpName,wPort) ) )
+	{
+		pClient = CPPOpenTCPClientAddrExxx( lpsaDest,
 													  pReadComplete,
 													  psvRead,
 													  CloseCallback,
@@ -61665,17 +61982,18 @@ NETWORK_PROC( PCLIENT, CPPOpenTCPClientExEx )(CTEXTSTR lpName,uint16_t wPort,
 													  WriteComplete,
 													  psvWrite,
 													  pConnectComplete,
-													  psvConnect
+													  psvConnect,
+			flags
                                          DBG_RELAY
 													 );
-      ReleaseAddress( lpsaDest );
-   }
-   return pClient;
+		ReleaseAddress( lpsaDest );
+	}
+	return pClient;
 }
 //----------------------------------------------------------------------------
 NETWORK_PROC( PCLIENT, OpenTCPClientExxx )(CTEXTSTR lpName,uint16_t wPort,
-             cReadComplete	 pReadComplete,
-				 cCloseCallback CloseCallback,
+             cReadComplete  pReadComplete,
+             cCloseCallback CloseCallback,
              cWriteComplete WriteComplete,
              cConnectCallback pConnectComplete DBG_PASS )
 {
@@ -61689,7 +62007,7 @@ NETWORK_PROC( PCLIENT, OpenTCPClientExxx )(CTEXTSTR lpName,uint16_t wPort,
 												  pReadComplete,
 												  CloseCallback,
 												  WriteComplete,
-												  pConnectComplete DBG_RELAY );
+												  pConnectComplete, 0 DBG_RELAY );
 		ReleaseAddress( lpsaDest );
 	}
 	return pClient;
@@ -63176,7 +63494,7 @@ SACK_NETWORK_NAMESPACE_END
 #if NO_SSL
 SACK_NETWORK_NAMESPACE
 LOGICAL ssl_Send( PCLIENT pc, POINTER buffer, size_t length ) {
-   return FALSE;
+	return FALSE;
 }
 LOGICAL ssl_BeginServer( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen ) {
 	return FALSE;
@@ -63192,6 +63510,7 @@ SACK_NETWORK_NAMESPACE_END
 #include <openssl/err.h>
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
+#include <openssl/pkcs12.h>
 SACK_NETWORK_NAMESPACE
 //#define RSA_KEY_SIZE (1024)
 const int serverKBits = 4096;
@@ -63229,6 +63548,7 @@ EVP_PKEY *genKey() {
 #define ALLOW_ANON_CONNECTIONS	1
 #ifndef UNICODE
 struct ssl_session {
+	SSL_CTX        *ctx;
 	BIO *rbio;
 	BIO *wbio;
 	EVP_PKEY *privkey;
@@ -63257,7 +63577,6 @@ static struct ssl_global
 	LOGICAL trace;
 	struct tls_config *tls_config;
 	SSL_CTX        *ssl_ctx_server;
-	SSL_CTX        *ssl_ctx_client;
 	uint8_t cipherlen;
 }ssl_global;
 static const char *default_certs[] = {
@@ -63324,7 +63643,7 @@ static int32_t loadRsaKeys( sslKeys_t *keys, LOGICAL client )
 #ifndef __NO_OPTIONS__
 			SACK_GetProfileString( "SSL/Private Key", "filename", "myprivkey.pem", privkey_buf, 256 );
 #else
-         strcpy( prikey_buf, "myprivkey.pem" );
+			strcpy( prikey_buf, "myprivkey.pem" );
 #endif
 			file = sack_fopen( fileGroup, privkey_buf, "rb" );
 			if( file )
@@ -63340,7 +63659,7 @@ static int32_t loadRsaKeys( sslKeys_t *keys, LOGICAL client )
 #ifndef __NO_OPTIONS__
 		SACK_GetProfileString( "SSL/Cert Authority Extra", "filename", "mycert.pem", cert_buf, 256 );
 #else
-         strcpy( cer_buf, "mycert.pem" );
+		strcpy( cer_buf, "mycert.pem" );
 #endif
 		file = sack_fopen( fileGroup, cert_buf, "rb" );
 		if( file )
@@ -63441,7 +63760,7 @@ static int logerr( const char *str, size_t len, void *userdata ) {
 	return 0;
 }
 static int handshake( PCLIENT pc ) {
-   struct ssl_session *ses = pc->ssl_session;
+	struct ssl_session *ses = pc->ssl_session;
 	if (!SSL_is_init_finished(ses->ssl)) {
 		int r;
 #ifdef DEBUG_SSL_IO
@@ -63523,7 +63842,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 			}
 			if( !( hs_rc = handshake( pc ) ) ) {
 #ifdef DEBUG_SSL_IO
-            // normal condition...
+				// normal condition...
 				lprintf( "Receive handshake not complete iBuffer" );
 #endif
 				ReadTCP( pc, pc->ssl_session->ibuffer, pc->ssl_session->ibuflen );
@@ -63679,6 +63998,7 @@ static void ssl_CloseCallback( PCLIENT pc ) {
 		Release( ses->cert );
 	}
 	SSL_free( ses->ssl );
+	SSL_CTX_free( ses->ctx );
 	// these are closed... with the ssl connection.
 	//BIO_free( ses->rbio );
 	//BIO_free( ses->wbio );
@@ -63735,8 +64055,17 @@ LOGICAL ssl_BeginServer( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypa
 	} else {
 		struct internalCert *cert = New( struct internalCert );
 		BIO *keybuf = BIO_new( BIO_s_mem() );
+		X509 *x509, *result;
+		STACK_OF( X509 ) *chain = NULL;
+		chain = sk_X509_new_null();
+		//PKCS12_parse( )
 		BIO_write( keybuf, cert, (int)certlen );
-		PEM_read_bio_X509( keybuf, &cert->x509, NULL, NULL );
+		do {
+			x509 = X509_new();
+			result = PEM_read_bio_X509( keybuf, &x509, NULL, NULL );
+			if( result )
+				sk_X509_push( chain, x509 );
+		} while( result );
 		BIO_free( keybuf );
 		ses->cert = cert;
 		ses->privkey = ses->cert->pkey;
@@ -63779,15 +64108,15 @@ LOGICAL ssl_GetPrivateKey( PCLIENT pc, POINTER *keyoutbuf, size_t *keylen ) {
 //                                 long argl, long ret);
 //
 // void BIO_set_callback(BIO *b, BIO_callack_fn cb);
-LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t client_keypairlen )
+LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t client_keypairlen, POINTER rootCert, size_t rootCertLen )
 {
 	struct ssl_session * ses;
 	ssl_InitLibrary();
 	ses = New( struct ssl_session );
 	MemSet( ses, 0, sizeof( struct ssl_session ) );
-	if( !ssl_global.ssl_ctx_client ) {
-		ssl_global.ssl_ctx_client = SSL_CTX_new( TLSv1_2_client_method() );
-		SSL_CTX_set_cipher_list( ssl_global.ssl_ctx_client, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH" );
+	{
+		ses->ctx = SSL_CTX_new( TLSv1_2_client_method() );
+		SSL_CTX_set_cipher_list( ses->ctx, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH" );
 		if( !client_keypair )
 			ses->privkey = genKey();
 		else {
@@ -63796,9 +64125,18 @@ LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t clien
 			PEM_read_bio_PrivateKey( keybuf, &ses->privkey, NULL, NULL );
 			BIO_free( keybuf );
 		}
-		SSL_CTX_use_PrivateKey( ssl_global.ssl_ctx_client, ses->privkey );
+		SSL_CTX_use_PrivateKey( ses->ctx, ses->privkey );
 	}
-	ses->ssl = SSL_new( ssl_global.ssl_ctx_client );
+	ses->ssl = SSL_new( ses->ctx );
+	if( rootCert ) {
+		BIO *keybuf = BIO_new( BIO_s_mem() );
+		X509 *cert;
+		cert = X509_new();
+		BIO_write( keybuf, rootCert, (int)rootCertLen );
+		PEM_read_bio_X509( keybuf, &cert, NULL, NULL );
+		BIO_free( keybuf );
+		SSL_CTX_add_extra_chain_cert( ses->ctx, cert );
+	}
 	ssl_InitSession( ses );
 	SSL_set_connect_state( ses->ssl );
 	ses->dwOriginalFlags = pc->dwFlags;
@@ -63806,6 +64144,7 @@ LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t clien
 	ses->cpp_user_read = pc->read.CPPReadComplete;
 	pc->read.ReadComplete = ssl_ReadComplete;
 	pc->dwFlags &= ~CF_CPPREAD;
+	//SSL_use_certificate( )
 	pc->ssl_session = ses;
 	//ssl_accept( pc->ssl_session->ssl );
 	lprintf( "Warning: This is meant to be called during connect; no longer internally auto handshakes here; but should upon returning from here instead." );
@@ -63849,15 +64188,15 @@ LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t clien
 //
 static int cb(const char *str, size_t len, void *u)  {
 	lprintf( "%s", str);
-   return 1;
+	return 1;
 }
 static void fatal_error(const char *file, int line, const char *msg)
 {
 	fprintf(stderr, "**FATAL** %s:%i %s\n", file, line, msg);
 	fprintf( stderr, "specific error available, but not dumped; ERR_print_errors_fp is gone" );
-   ERR_print_errors_cb( cb, 0 );
-    //ERR_print_errors_fp(stderr);
-    exit(-1);
+	ERR_print_errors_cb( cb, 0 );
+	//ERR_print_errors_fp(stderr);
+	exit(-1);
 }
 #define fatal(msg) fatal_error(__FILE__, __LINE__, msg)
 // Parameter settings for this cert
@@ -63925,7 +64264,7 @@ struct internalCert * MakeRequest( void )
 		 Deallocate( void *, key );
 		 PEM_read_bio_PrivateKey( keybuf, &cert->pkey, NULL, NULL );
 	} else {
-      RSA *rsa = RSA_new();
+		RSA *rsa = RSA_new();
 		BIGNUM *bne = BN_new();
 		int ret;
 		ret = BN_set_word( bne, kExp );
@@ -63991,7 +64330,7 @@ struct internalCert * MakeRequest( void )
 #else
 			strcpy( commonName, "d3x0r.org" );
 			strcpy( org, "Freedom Collective" );
-         strcpy( country, "US" );
+			strcpy( country, "US" );
 #endif
 			name = X509_get_subject_name( x509 );
 			X509_NAME_add_entry_by_txt( name, "C", MBSTRING_ASC,

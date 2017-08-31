@@ -6933,7 +6933,7 @@ SACK_NAMESPACE
 	       NetworkStart();
 	       SystemLog( "Started the network" );
 	       sa = CreateSockAddress( argv[1], 23 );
-	       pc_user = OpenTCPClientAddrEx( sa, ReadComplete, Closed, NULL );
+	       pc_user = OpenTCPClientAddrEx( sa, ReadComplete, Closed, NULL, 0 );
 	       if( !pc_user )
 	       {
 	           SystemLog( "Failed to open some port as telnet" );
@@ -7198,6 +7198,7 @@ NETWORK_PROC( PCLIENT, OpenTCPListenerExx )( uint16_t wPort, cNotifyCallback Not
 /* <combine sack::network::tcp::OpenTCPListenerEx@uint16_t@cNotifyCallback>
    \ \                                                                 */
 #define OpenTCPServerAddrEx OpenTCPListenerAddrEx
+#define OPEN_TCP_FLAG_DELAY_CONNECT 1
 #ifdef __cplusplus
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
@@ -7205,24 +7206,27 @@ NETWORK_PROC( PCLIENT, CPPOpenTCPClientAddrExxx )(SOCKADDR *lpAddr,
 																  cppReadComplete  pReadComplete, uintptr_t,
 																  cppCloseCallback CloseCallback, uintptr_t,
 																  cppWriteComplete WriteComplete, uintptr_t,
-																  cppConnectCallback pConnectComplete,  uintptr_t DBG_PASS );
-#define CPPOpenTCPClientAddrExx(a,b,c,d,e,f,g,h,i) CPPOpenTCPClientAddrExxx(a,b,c,d,e,f,g,h,i DBG_SRC )
+																  cppConnectCallback pConnectComplete,  uintptr_t, int DBG_PASS );
+#define CPPOpenTCPClientAddrExx(a,b,c,d,e,f,g,h,i,j) CPPOpenTCPClientAddrExxx(a,b,c,d,e,f,g,h,i,j DBG_SRC )
 #endif
-NETWORK_PROC( PCLIENT, OpenTCPClientAddrFromAddrEx )(SOCKADDR *lpAddr, SOCKADDR *pFromAddr
-															  , cReadComplete     pReadComplete
-															  , cCloseCallback    CloseCallback
-															  , cWriteComplete    WriteComplete
-															  , cConnectCallback  pConnectComplete
-                                               DBG_PASS
-															 );
-#define OpenTCPClientAddrFromAddr( a,f,r,cl,wr,cc ) OpenTCPClientAddrFromAddrEx( a,f,r,cl,wr,cc DBG_SRC )
-NETWORK_PROC( PCLIENT, OpenTCPClientAddrFromEx )(SOCKADDR *lpAddr, int port
-															  , cReadComplete     pReadComplete															  , cCloseCallback    CloseCallback
-															  , cWriteComplete    WriteComplete
-															  , cConnectCallback  pConnectComplete
-                                               DBG_PASS
-															 );
-#define OpenTCPClientAddrFrom( a,f,r,cl,wr,cc ) OpenTCPClientAddrFromEx( a,f,r,cl,wr,cc DBG_SRC )
+NETWORK_PROC( PCLIENT, OpenTCPClientAddrFromAddrEx )( SOCKADDR *lpAddr, SOCKADDR *pFromAddr
+                                                     , cReadComplete     pReadComplete
+                                                     , cCloseCallback    CloseCallback
+                                                     , cWriteComplete    WriteComplete
+                                                     , cConnectCallback  pConnectComplete
+                                                     , int flags
+                                                     DBG_PASS
+                                                     );
+#define OpenTCPClientAddrFromAddr( a,f,r,cl,wr,cc ) OpenTCPClientAddrFromAddrEx( a,f,r,cl,wr,cc, 0 DBG_SRC )
+NETWORK_PROC( PCLIENT, OpenTCPClientAddrFromEx )( SOCKADDR *lpAddr, int port
+                                                , cReadComplete     pReadComplete
+                                                , cCloseCallback    CloseCallback
+                                                , cWriteComplete    WriteComplete
+                                                , cConnectCallback  pConnectComplete
+                                                , int flags
+                                                DBG_PASS
+                                                );
+#define OpenTCPClientAddrFrom( a,f,r,cl,wr,cc ) OpenTCPClientAddrFromEx( a,f,r,cl,wr,cc,0 DBG_SRC )
 /* Opens a socket which connects to an already existing,
    listening, socket.
    Parameters
@@ -7252,20 +7256,24 @@ NETWORK_PROC( PCLIENT, OpenTCPClientAddrFromEx )(SOCKADDR *lpAddr, int port
    The read_complete callback, if specified, will be called,
    with a NULL pointer and 0 size, before the connect complete.   */
 NETWORK_PROC( PCLIENT, OpenTCPClientAddrExxx )(SOCKADDR *lpAddr,
-                         cReadComplete  pReadComplete,
-                         cCloseCallback CloseCallback,
-                         cWriteComplete WriteComplete,
-															 cConnectCallback pConnectComplete DBG_PASS );
+                                               cReadComplete  pReadComplete,
+                                               cCloseCallback CloseCallback,
+                                               cWriteComplete WriteComplete,
+                                               cConnectCallback pConnectComplete,
+                                               int flags
+                                               DBG_PASS );
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
-#define OpenTCPClientAddrExx(a,r,clo,w,con) OpenTCPClientAddrExxx( a,r,clo,w,con DBG_SRC )
+#define OpenTCPClientAddrExx(a,r,clo,w,con) OpenTCPClientAddrExxx( a,r,clo,w,con,0 DBG_SRC )
 #ifdef __cplusplus
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
 NETWORK_PROC( PCLIENT, CPPOpenTCPClientAddrEx )(SOCKADDR *
-								, cppReadComplete, uintptr_t
-                        , cppCloseCallback, uintptr_t
-															  , cppWriteComplete, uintptr_t  );
+                                               , cppReadComplete, uintptr_t
+                                               , cppCloseCallback, uintptr_t
+                                               , cppWriteComplete, uintptr_t
+                                               , int flags
+                                               );
 #endif
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
@@ -7281,16 +7289,17 @@ NETWORK_PROC( PCLIENT, CPPOpenTCPClientExEx )(CTEXTSTR lpName,uint16_t wPort
                          , cppReadComplete  pReadComplete, uintptr_t
                          , cppCloseCallback CloseCallback, uintptr_t
                          , cppWriteComplete WriteComplete, uintptr_t
-															, cppConnectCallback pConnectComplete, uintptr_t DBG_PASS );
-#define CPPOpenTCPClientExx(name,port,read,rd,close,cd,write,wd,connect,cod) CPPOpenTCPClientExEx(name,port,read,rd,close,cd,write,wd,connect,cod DBG_SRC)
+															, cppConnectCallback pConnectComplete, uintptr_t, int DBG_PASS );
+#define CPPOpenTCPClientExx(name,port,read,rd,close,cd,write,wd,connect,cod,flg) CPPOpenTCPClientExEx(name,port,read,rd,close,cd,write,wd,connect,cod,flg DBG_SRC)
 #endif
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
-NETWORK_PROC( PCLIENT, OpenTCPClientExxx )(CTEXTSTR lpName,uint16_t wPort,
-														 cReadComplete  pReadComplete,
-														 cCloseCallback CloseCallback,
-														 cWriteComplete WriteComplete,
-														 cConnectCallback pConnectComplete DBG_PASS );
+NETWORK_PROC( PCLIENT, OpenTCPClientExxx )(CTEXTSTR lpName,uint16_t wPort
+                                           , cReadComplete  pReadComplete
+                                           , cCloseCallback CloseCallback
+                                           , cWriteComplete WriteComplete
+                                           , cConnectCallback pConnectComplete
+                                           DBG_PASS );
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
 #define OpenTCPClientExx( lpName, wPort, pReadComplete, CloseCallback, WriteComplete, pConnectComplete ) OpenTCPClientExxx( lpName, wPort, pReadComplete, CloseCallback, WriteComplete, pConnectComplete DBG_SRC )
@@ -7304,6 +7313,10 @@ NETWORK_PROC( PCLIENT, OpenTCPClientExEx )( CTEXTSTR, uint16_t, cReadComplete,
 /* <combine sack::network::tcp::OpenTCPClientExx@CTEXTSTR@uint16_t@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                      */
 #define OpenTCPClientEx( addr,port,read,close,write ) OpenTCPClientExEx( addr,port,read,close,write DBG_SRC )
+/* Do the connect to
+*/
+int NetworkConnectTCPEx( PCLIENT pc DBG_PASS );
+#define NetworkConnectTCP( pc ) NetworkConnectTCPEx( pc DBG_SRC )
 /* Drain is an operation on a TCP socket to just drop the next X
    bytes. They are ignored and not stored into any user buffer.
    Drain reads take precedence over any other queued reads.
@@ -7512,7 +7525,7 @@ NETWORK_PROC( void, RemoveClientExx )(PCLIENT lpClient, LOGICAL bBlockNofity, LO
    \ \                                                                      */
 #define RemoveClient(c) RemoveClientEx(c, FALSE, FALSE )
 /* Begin an SSL Connection.  This ends up replacing ReadComplete callback with an inbetween layer*/
-NETWORK_PROC( LOGICAL, ssl_BeginClientSession )( PCLIENT pc, POINTER keypair, size_t keylen );
+NETWORK_PROC( LOGICAL, ssl_BeginClientSession )( PCLIENT pc, POINTER keypair, size_t keylen, POINTER rootCert, size_t rootCertLen );
 NETWORK_PROC( LOGICAL, ssl_BeginServer )( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen );
 NETWORK_PROC( LOGICAL, ssl_GetPrivateKey )(PCLIENT pc, POINTER *keydata, size_t *keysize);
 /* use this to send on SSL Connection instead of SendTCP. */
@@ -7748,6 +7761,7 @@ public:
 									, (uintptr_t)this
 									, WrapClientConnectComplete
 									, (uintptr_t)this
+									, 0
 									);
 		return (int)(pc!=NULL);
 	};
@@ -7763,6 +7777,7 @@ public:
 									, (uintptr_t)this
 									, WrapClientConnectComplete
 									, (uintptr_t)this
+									, 0
 									);
 		return (int)(pc!=NULL);
 	};
@@ -11544,6 +11559,13 @@ typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
 typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOINTER buffer, size_t msglen );
 // protocolsAccepted value set can be released in opened callback, or it may be simply assigned as protocols passed...
 typedef LOGICAL ( *web_socket_accept )(PCLIENT pc, uintptr_t psv, const char *protocols, const char *resource, char **protocolsAccepted);
+ // passed psv used in server create; since it is sort of an open, return a psv for next states(if any)
+typedef uintptr_t ( *web_socket_http_request )(PCLIENT pc, uintptr_t psv);
+// these should be a combination of bit flags
+// options used for WebSocketOpen
+enum WebSocketOptions {
+	WS_DELAY_OPEN = 1,
+};
 //enum WebSockClientOptions {
 //   WebSockClientOption_Protocols
 //};
@@ -11554,13 +11576,16 @@ typedef LOGICAL ( *web_socket_accept )(PCLIENT pc, uintptr_t psv, const char *pr
 //  if protocols is NULL none are specified, otherwise the list of
 //  available protocols is sent to the server.
 WEBSOCKET_EXPORT PCLIENT WebSocketOpen( CTEXTSTR address
-                                      , int options
+                                      , enum WebSocketOptions options
                                       , web_socket_opened
                                       , web_socket_event
                                       , web_socket_closed
                                       , web_socket_error
                                       , uintptr_t psv
                                       , const char *protocols );
+// if WS_DELAY_OPEN is used, WebSocketOpen does not do immediate connect.
+// calling this begins the connection sequence.
+WEBSOCKET_EXPORT void WebSocketConnect( PCLIENT );
 // end a websocket connection nicely.
 WEBSOCKET_EXPORT void WebSocketClose( PCLIENT );
 // there is a control bit for whether the content is text or binary or a continuation
@@ -11580,6 +11605,23 @@ WEBSOCKET_EXPORT void SetWebSocketAcceptCallback( PCLIENT pc, web_socket_accept 
 WEBSOCKET_EXPORT void SetWebSocketReadCallback( PCLIENT pc, web_socket_event callback );
 WEBSOCKET_EXPORT void SetWebSocketCloseCallback( PCLIENT pc, web_socket_closed callback );
 WEBSOCKET_EXPORT void SetWebSocketErrorCallback( PCLIENT pc, web_socket_error callback );
+WEBSOCKET_EXPORT void SetWebSocketHttpCallback( PCLIENT pc, web_socket_http_request callback );
+// if set in server accept callback, this will return without extension set
+// on client socket (default), does not request permessage-deflate
+#define WEBSOCK_DEFLATE_DISABLE 0
+// if set in server accept callback (or if not set, default); accept client request to deflate per message
+// if set on client socket, sends request for permessage-deflate to server.
+#define WEBSOCK_DEFLATE_ENABLE 1
+// if set in server accept callback; accept client request to deflate per message, but do not deflate outbound messages
+// if set on client socket, sends request for permessage-deflate to server, but does not deflate outbound messages(?)
+#define WEBSOCK_DEFLATE_ALLOW 2
+// set permessage-deflate option for client requests.
+// allow server side to disable this when responding to a client.
+WEBSOCKET_EXPORT void SetWebSocketDeflate( PCLIENT pc, int enable_flags );
+// default is client masks, server does not
+// this can be used to disable masking on client or enable on server
+// (masked output from server to client is not supported by browsers)
+WEBSOCKET_EXPORT void SetWebSocketMasking( PCLIENT pc, int enable );
 #endif
 /*
  * SACK extension to define methods to render to javascript/HTML5 WebSocket event interface
@@ -11634,6 +11676,13 @@ HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketSetProtocols )( PCLIENT pc, const char *
  *       static int OnDrawToHTML("Control Name")(CONTROL, HTML5WebSocket ){ }
  */
 //#define OnDrawToHTML(name)  //	__DefineRegistryMethodP(PRELOAD_PRIORITY,ROOT_REGISTRY,_OnDrawCommon,WIDE("control"),name WIDE("/rtti"),WIDE("draw_to_canvas"),int,(CONTROL, HTML5WebSocket ), __LINE__)
+/* a server side utility to get the request headers that came in.
+this is for going through proxy agents mostly where the header might have x-forwarded-for
+*/
+HTML5_WEBSOCKET_PROC( PLIST, GetWebSocketHeaders )( PCLIENT pc );
+/* for server side sockets, get the requested resource path from the client request.
+*/
+HTML5_WEBSOCKET_PROC( PTEXT, GetWebSocketResource )( PCLIENT pc );
 HTML5_WEBSOCKET_NAMESPACE_END
 USE_HTML5_WEBSOCKET_NAMESPACE
 #endif
@@ -11678,6 +11727,10 @@ _TEXT_NAMESPACE
 	   fields might be content-length; so it can seperate individual
 	   fields name-value pairs and the packet content.               */
 	_HTTP_NAMESPACE
+struct HttpField {
+	PTEXT name;
+	PTEXT value;
+};
 typedef struct HttpState *HTTPState;
 enum ProcessHttpResult{
 	HTTP_STATE_RESULT_NOTHING = 0,
@@ -11727,27 +11780,28 @@ PTEXT HTTPAPI GetHttpResponce( HTTPState pHttpState );
 /* Get the method of the request in ht e http state.
 */
 HTTP_EXPORT PTEXT HTTPAPI GetHttpMethod( struct HttpState *pHttpState );
-HTTP_EXPORT
- /*Get the value of a HTTP header field, by name
+/*Get the value of a HTTP header field, by name
    Parameters
 	pHttpState: the state to get the header field from.
 	name: name of the field to get (checked case insensitive)
 */
-PTEXT HTTPAPI GetHTTPField( HTTPState pHttpState, CTEXTSTR name );
-HTTP_EXPORT
- /* Gets the specific request code at the header of the packet -
+HTTP_EXPORT PTEXT HTTPAPI GetHTTPField( HTTPState pHttpState, CTEXTSTR name );
+/* Gets the specific request code at the header of the packet -
    http 2.0 OK sort of thing.                                  */
-PTEXT HTTPAPI GetHttpRequest( HTTPState pHttpState );
-HTTP_EXPORT
- /* \Returns the body of the HTTP packet (the part of data
+HTTP_EXPORT PTEXT HTTPAPI GetHttpRequest( HTTPState pHttpState );
+/* \Returns the body of the HTTP packet (the part of data
    specified by content-length or by termination of the
    connection(? think I didn't implement that right)      */
-PTEXT HTTPAPI GetHttpContent( HTTPState pHttpState );
-HTTP_EXPORT
- /* \Returns the resource path/name of the HTTP packet (the part of data
+HTTP_EXPORT PTEXT HTTPAPI GetHttpContent( HTTPState pHttpState );
+/* \Returns the resource path/name of the HTTP packet (the part of data
    specified by content-length or by termination of the
    connection(? think I didn't implement that right)      */
-PTEXT HTTPAPI GetHttpResource( HTTPState pHttpState );
+HTTP_EXPORT PTEXT HTTPAPI GetHttpResource( HTTPState pHttpState );
+/* Returns a list of fields that were included in a request header.
+   members of the list are of type struct HttpField.
+   see also: ProcessHttpFields and ProcessCGIFields
+*/
+HTTP_EXPORT PLIST HTTPAPI GetHttpHeaderFields( HTTPState pHttpState );
 HTTP_EXPORT
  /* Enumerates the various http header fields by passing them
    each sequentially to the specified callback.
