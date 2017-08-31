@@ -3,16 +3,16 @@
     {
       "target_name": "sack_vfs",
       
-      "sources": [ "vfs_module.cc",
-           "src/sack.cc",
-           "src/sqlite3.c",
-           "com_interface.cc",
-           "sql_module.cc",
-           "thread_module.cc",
-           "jsonParse.cc",
-           "tls_interface.cc",
-           "srg_module.cc",
-           "websocket_module.cc",
+      "sources": [ "src/vfs_module.cc",
+           "src/sack/sack.cc",
+           "src/sack/sqlite3.c",
+           "src/com_interface.cc",
+           "src/sql_module.cc",
+           "src/thread_module.cc",
+           "src/jsonParse.cc",
+           "src/tls_interface.cc",
+           "src/srg_module.cc",
+           "src/websocket_module.cc",
           ],
 	'defines': [
           'TARGETNAME="sack_vfs.node"',
@@ -79,7 +79,7 @@
             ],
             'sources': [
               # windows-only; exclude on other platforms.
-              'reg_access.cc',
+              'src/reg_access.cc',
             ],
   	        'libraries':[ 'winmm', 'ws2_32', 'iphlpapi', 'rpcrt4', 'odbc32' ]
           }, { # OS != "win",
@@ -96,7 +96,7 @@
   ],
 
   "target_defaults": {
-  	'include_dirs': ['src',    "<!(node -e \"require('nan')\")" ]
+  	'include_dirs': ['src/sack',    "<!(node -e \"require('nan')\")" ]
   }
   
 }

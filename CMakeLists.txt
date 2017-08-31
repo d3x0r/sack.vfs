@@ -137,16 +137,16 @@ set( C_SOURCES
         ${SACK_BASE}/src/contrib/sqlite/3.19.3/sqlite3.c
 )
 add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
-			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${C_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/src
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${C_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
 set( PPCTOOL c:/tools/ppc.exe )
 if( EXISTS ${PPCTOOL} )
-  set( AMALG_COMMAND ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc ${EXTRA_SOURCES} )
-  set( AMALG_COMMAND2 ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack.h ${EXTRA_HEADERS} )
+  set( AMALG_COMMAND ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc ${EXTRA_SOURCES} )
+  set( AMALG_COMMAND2 ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.h ${EXTRA_HEADERS} )
 
-  add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc
+  add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
   			#COMMAND cmake -E echo ${AMALG_COMMAND}
    			 COMMAND ${AMALG_COMMAND}
                         #COMMAND cmake -E echo ${AMALG_COMMAND2}
@@ -154,7 +154,7 @@ if( EXISTS ${PPCTOOL} )
                    DEPENDS ${EXTRA_SOURCES} ${HEADER_SOURCES}
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   )                                   
-  add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc )
+  add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc )
 endif( EXISTS ${PPCTOOL} )
 
 else( EXISTS ${SACK_BASE} ) 
@@ -168,26 +168,26 @@ endif( EXISTS ${SACK_BASE} )
 
 
 message( ${CMAKE_JS_INC} )
-include_directories(${CMAKE_JS_INC} ${INCLUDES} src )
+include_directories(${CMAKE_JS_INC} ${INCLUDES} src/sack )
 
 if( WIN32 )
-	set( MORE_MODULE_SOURCES reg_access.cc 
-#		fixup_windows_executable.cc 
+	set( MORE_MODULE_SOURCES src/reg_access.cc 
+#		src/fixup_windows_executable.cc 
 		)
 endif( WIN32 )
 
 add_library(${PROJECT_NAME} SHARED 
-	vfs_module.cc
-	thread_module.cc
-	sql_module.cc
-        com_interface.cc
-        jsonParse.cc
-        tls_interface.cc
-	srg_module.cc 
-	websocket_module.cc 
+	src/vfs_module.cc
+	src/thread_module.cc
+	src/sql_module.cc
+        src/com_interface.cc
+        src/jsonParse.cc
+        src/tls_interface.cc
+	src/srg_module.cc 
+	src/websocket_module.cc 
 	${MORE_MODULE_SOURCES}
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/sack.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
         )
 
 
