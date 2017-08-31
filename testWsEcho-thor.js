@@ -1,7 +1,10 @@
 
 var vfs = require( '.' );
-console.log( "vfs:", vfs );
-var server = vfs.WebSocket.Server( { port:8080 } );
+var server = vfs.WebSocket.Server( { port:8080
+	//, perMessageDeflate:false
+	, perMessageDeflateAllow:true
+	}
+);
 server.on( "connect", function(ws){
 	//console.log( "connected." );
         ws.on( "message", function(msg) {

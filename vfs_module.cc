@@ -64,9 +64,9 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	node::AtExit( moduleExit );
 
 	//SetAllocateLogging( TRUE );
-	SetManualAllocateCheck( TRUE );
-	SetAllocateDebug( TRUE );
-	SetSystemLog( SYSLOG_FILE, stdout );
+	//SetManualAllocateCheck( TRUE );
+	//SetAllocateDebug( TRUE );
+	//SetSystemLog( SYSLOG_FILE, stdout );
 
 	//LoadTranslationDataEx( "^/strings.dat" );
 	LoadTranslationDataEx( "@/../../strings.json" );
