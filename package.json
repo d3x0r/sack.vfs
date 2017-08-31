@@ -29,7 +29,7 @@
     "sack"
   ],
   "scripts": {
-    "test": "node vfsTest.js",
+    "test": "node tests/vfsTest.js",
     "install": "node-gyp configure build",
     "build": "node-gyp configure build"
   },
