@@ -148,7 +148,6 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->subjectString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "subject" ) );
 		check->DNSString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "DNS" ) );
 		check->IPString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "IP" ) );
-		//check->IPString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "IP" ) );
 		//check->String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "" ) );
 		AddLink( &strings, check );
 	}
@@ -840,37 +839,45 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 			Local<String> ipString = strings->IPString->Get( isolate );
 			if( subject->Has( dnsString ) ) {
 				Local<Object> name = subject->Get( dnsString )->ToObject();
-				if( name->IsArray() ) {
-					//String::Utf8Value *entry;
-					Local<Array> values = name.As<Array>();
-					int count = values->Length();
-					int n;
-					for( n = 0; n < count; n++ ) {
-						String::Utf8Value val( values->Get( n ) );
+				do {
+					if( name->IsUndefined() || name->IsNull() )
+						break;
+					if( name->IsArray() ) {
+						//String::Utf8Value *entry;
+						Local<Array> values = name.As<Array>();
+						int count = values->Length();
+						int n;
+						for( n = 0; n < count; n++ ) {
+							String::Utf8Value val( values->Get( n ) );
+							AddLink( &params.altSubject.DNS, StrDup( *val ) );
+						}
+					}
+					else {
+						String::Utf8Value val( name->ToString() );
 						AddLink( &params.altSubject.DNS, StrDup( *val ) );
 					}
-				}
-				else {
-					String::Utf8Value val( name->ToString() );
-					AddLink( &params.altSubject.DNS, StrDup( *val ) );
-				}
+				} while( 0 );
 			}
 			if( subject->Has( ipString ) ) {
 				Local<Object> name = subject->Get( ipString )->ToObject();
-				if( name->IsArray() ) {
-					//String::Utf8Value *entry;
-					Local<Array> values = name.As<Array>();
-					int count = values->Length();
-					int n;
-					for( n = 0; n < count; n++ ) {
-						String::Utf8Value val( values->Get( n ) );
+				do {
+					if( name->IsUndefined() || name->IsNull() )
+						break;
+					if( name->IsArray() ) {
+						//String::Utf8Value *entry;
+						Local<Array> values = name.As<Array>();
+						int count = values->Length();
+						int n;
+						for( n = 0; n < count; n++ ) {
+							String::Utf8Value val( values->Get( n ) );
+							AddLink( &params.altSubject.IP, StrDup( *val ) );
+						}
+					}
+					else {
+						String::Utf8Value val( name->ToString() );
 						AddLink( &params.altSubject.IP, StrDup( *val ) );
 					}
-				}
-				else {
-					String::Utf8Value val( name->ToString() );
-					AddLink( &params.altSubject.IP, StrDup( *val ) );
-				}
+				} while( 0 );
 			}
 		}
 	}
