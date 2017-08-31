@@ -47,6 +47,8 @@ struct optionStrings {
 	Eternal<String> *vUString;
 	Eternal<String> *socketString;
 	Eternal<String> *maskingString;
+	Eternal<String> *bytesReadString;
+	Eternal<String> *bytesWrittenString;
 };
 
 static PLIST strings;
@@ -93,6 +95,9 @@ struct wssEvent {
 	LOGICAL done;
 	class wssiObject *result;
 };
+typedef struct wssEvent WSS_EVENT;
+#define MAXWSS_EVENTSPERSET 64
+DeclareSet( WSS_EVENT );
 
 struct wssiEvent {
 	enum wsEvents eventType;
@@ -105,6 +110,9 @@ struct wssiEvent {
 	PTHREAD waiter;
 	LOGICAL done;
 };
+typedef struct wssiEvent WSSI_EVENT;
+#define MAXWSSI_EVENTSPERSET 128
+DeclareSet( WSSI_EVENT );
 
 struct wscEvent {
 	enum wsEvents eventType;
@@ -117,11 +125,17 @@ struct wscEvent {
 	PTHREAD waiter;
 	LOGICAL done;
 };
-
+typedef struct wscEvent WSC_EVENT;
+#define MAXWSC_EVENTSPERSET 128
+DeclareSet( WSC_EVENT );
 
 static struct local {
 	int data;
 	uv_loop_t* loop;
+	int waiting;
+	PWSS_EVENTSET wssEvents;
+	PWSSI_EVENTSET wssiEvents;
+	PWSC_EVENTSET wscEvents;
 } l;
 
 
@@ -156,6 +170,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->vUString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "unknown" ) );
 		check->socketString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "connection" ) );
 		check->maskingString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "masking" ) );
+		check->bytesReadString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "bytesRead" ) );
+		check->bytesWrittenString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "bytesWritten" ) );
 	}
 	return check;
 }
@@ -395,50 +411,54 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	wscObject* wsc = (wscObject*)handle->data;
-
+	wscEvent *eventMessage;
 	HandleScope scope(isolate);
 
 	{
 		Local<Value> argv[2];
-		while( wsc->eventMessage = (struct wscEvent*)DequeLink( &wsc->eventQueue ) ) {
+		while( eventMessage = (struct wscEvent*)DequeLink( &wsc->eventQueue ) ) {
 			Local<Function> cb;
 			Local<ArrayBuffer> ab;
-			switch( wsc->eventMessage->eventType ) {
+			switch( eventMessage->eventType ) {
 			case WS_EVENT_OPEN:
 				cb = Local<Function>::New( isolate, wsc->openCallback );
 				struct optionStrings *strings;
 				strings = getStrings( isolate );
 				wsc->_this.Get(isolate)->Set( strings->socketString->Get( isolate ), makeSocket( isolate, wsc->pc ) );
-
-				cb->Call( wsc->eventMessage->_this->_this.Get(isolate), 0, argv );
+				cb->Call( eventMessage->_this->_this.Get(isolate), 0, argv );
+				DeleteFromSet( WSC_EVENT, l.wscEvents, eventMessage );
 				break;
 			case WS_EVENT_READ:
 				size_t length;
-				if( wsc->eventMessage->binary ) {
+				if( eventMessage->binary ) {
 					ab =
 						ArrayBuffer::New( isolate,
-						(void*)wsc->eventMessage->buf,
-							length = wsc->eventMessage->buflen );
+						(void*)eventMessage->buf,
+							length = eventMessage->buflen );
 					argv[0] = ab;
-					wsc->messageCallback.Get( isolate )->Call( wsc->eventMessage->_this->_this.Get( isolate ), 1, argv );
+					wsc->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
 				}
 				else {
-					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)wsc->eventMessage->buf, NewStringType::kNormal, (int)wsc->eventMessage->buflen );
+					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 					argv[0] = buf.ToLocalChecked();
-					wsc->messageCallback.Get( isolate )->Call( wsc->eventMessage->_this->_this.Get( isolate ), 1, argv );
+					wsc->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
 				}
-
+				Deallocate( CPOINTER, eventMessage->buf );
+				DeleteFromSet( WSC_EVENT, l.wscEvents, eventMessage );
 				break;
 			case WS_EVENT_CLOSE:
 				cb = Local<Function>::New( isolate, wsc->closeCallback );
 				if( !cb.IsEmpty() )
-					cb->Call( wsc->eventMessage->_this->_this.Get( isolate ), 0, argv );
+					cb->Call( eventMessage->_this->_this.Get( isolate ), 0, argv );
 				uv_close( (uv_handle_t*)&wsc->async, NULL );
 				DeleteLinkQueue( &wsc->eventQueue );
+				DeleteFromSet( WSC_EVENT, l.wscEvents, eventMessage );
 				break;
 			}
-			wsc->eventMessage->done = 1;
-			WakeThread( wsc->eventMessage->waiter );
+			if( eventMessage->waiter ) {
+				eventMessage->done = 1;
+				WakeThread( eventMessage->waiter );
+			}
 		}
 	}
 }
@@ -983,21 +1003,23 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 static uintptr_t webSockClientOpen( PCLIENT pc, uintptr_t psv ) {
 	wscObject *wsc = (wscObject*)psv;
 
-	struct wscEvent evt;
-	evt.eventType = WS_EVENT_OPEN;
-	evt.send = NULL;
-	evt.done = FALSE;
-	evt.waiter = MakeThread();
-	evt._this = wsc;
-	EnqueLink( &wsc->eventQueue, &evt );
+	struct wscEvent *pevt = GetFromSet( WSC_EVENT, &l.wscEvents );
+	(*pevt).eventType = WS_EVENT_OPEN;
+	(*pevt).send = NULL;
+	(*pevt).done = FALSE;
+	(*pevt).waiter = NULL;// MakeThread();
+	(*pevt)._this = wsc;
+	EnqueLink( &wsc->eventQueue, pevt );
 	uv_async_send( &wsc->async );
-	while( !evt.done )
+	return psv;
+
+	while( !(*pevt).done )
 		Wait();
-	if( evt.send )
+	if( (*pevt).send )
 	{
 		INDEX idx;
 		struct pendingSend *send;
-		LIST_FORALL( evt.send, idx, struct pendingSend *, send ) {
+		LIST_FORALL( (*pevt).send, idx, struct pendingSend *, send ) {
 			if( send->binary )
 				WebSocketSendBinary( pc, send->buffer, send->buflen );
 			else
@@ -1005,7 +1027,7 @@ static uintptr_t webSockClientOpen( PCLIENT pc, uintptr_t psv ) {
 			Deallocate( POINTER, send->buffer );
 			Deallocate( struct pendingSend*, send );
 		}
-		DeleteList( &evt.send );
+		DeleteList( &(*pevt).send );
 	}
 	return (uintptr_t)psv;
 }
@@ -1014,14 +1036,15 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv )
 {
 	wscObject *wsc = (wscObject*)psv;
 
-	struct wscEvent evt;
-	evt.eventType = WS_EVENT_CLOSE;
-	evt.done = FALSE;
-	evt.waiter = MakeThread();
-	evt._this = wsc;
-	EnqueLink( &wsc->eventQueue, &evt );
+	struct wscEvent *pevt = GetFromSet( WSC_EVENT, &l.wscEvents );
+	(*pevt).eventType = WS_EVENT_CLOSE;
+	(*pevt).done = FALSE;
+	(*pevt).waiter = NULL;// MakeThread();
+	(*pevt)._this = wsc;
+	EnqueLink( &wsc->eventQueue, pevt );
 	uv_async_send( &wsc->async );
-	while( !evt.done )
+	return;
+	while( !(*pevt).done )
 		Wait();
 
 }
@@ -1043,21 +1066,24 @@ static void webSockClientError( PCLIENT pc, uintptr_t psv, int error ) {
 static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTER buffer, size_t msglen ) {
 	wscObject *wsc = (wscObject*)psv;
 
-	struct wscEvent evt;
-	evt.eventType = WS_EVENT_READ;
-	evt.buf = buffer;
-	evt.buflen = msglen;
-	evt.binary = type;
-	evt.send = NULL;
-	evt.send_close = FALSE;
-	evt.done = FALSE;
-	evt.waiter = MakeThread();
-	evt._this = wsc;
-	EnqueLink( &wsc->eventQueue, &evt );
+	struct wscEvent *pevt = GetFromSet( WSC_EVENT, &l.wscEvents );
+	(*pevt).eventType = WS_EVENT_READ;
+	(*pevt).buf = NewArray( uint8_t*, msglen );
+	memcpy( (POINTER)(*pevt).buf, buffer, msglen );
+	(*pevt).buflen = msglen;
+	(*pevt).binary = type;
+	(*pevt).send = NULL;
+	(*pevt).send_close = FALSE;
+	(*pevt).done = FALSE;
+	(*pevt).waiter = NULL;// MakeThread();
+	(*pevt)._this = wsc;
+	EnqueLink( &wsc->eventQueue, pevt );
 	uv_async_send( &wsc->async );
-	while( !evt.done )
-		Wait();
 
+	return;
+	while( !(*pevt).done )
+		Wait();
+	/*
 	{
 		INDEX idx;
 		struct pendingSend *send;
@@ -1076,7 +1102,7 @@ static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTE
 			WebSocketClose( pc );
 		}
 	}
-
+	*/
 }
 
 wscObject::wscObject( wscOptions *opts ) {
@@ -1122,7 +1148,7 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 		// Invoked as constructor: `new MyObject(...)`
 		struct wscOptions wscOpts;
 		String::Utf8Value url( args[0]->ToString() );
-		String::Utf8Value *protocol;
+		String::Utf8Value *protocol = NULL;
 		Local<Object> opts;
 		opts.Clear();
 		wscOpts.ssl = FALSE;
@@ -1139,6 +1165,8 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 			protocol = new String::Utf8Value( args[1]->ToString() );
 		}
 		else if( args[1]->IsObject() ) {
+			lprintf( "args1 is object..." );
+			checkArg2 = false;
 			opts = args[1]->ToObject();
 			Local<String> optName;
 			struct optionStrings *strings = getStrings( isolate );
@@ -1165,6 +1193,9 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 			else
 				wscOpts.apply_masking = true;
 		}
+		else
+			checkArg2 = false;
+
 		if( checkArg2 ) {
 			if( args[2]->IsObject() ) {
 				opts = args[1]->ToObject();
@@ -1172,7 +1203,8 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 		}
 
 		wscOpts.url = *url;
-		wscOpts.protocol = *(protocol[0]);
+		if( protocol )
+			wscOpts.protocol = *(protocol[0]);
 		wscOpts.deflate = false;
 
 		Local<Object> _this = args.This();
