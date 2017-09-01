@@ -50,8 +50,8 @@ public:
 	//static void getPort( Local<String> property, const PropertyCallbackInfo<Value>& info );
 	//static void getFamily( Local<String> property, const PropertyCallbackInfo<Value>& info );
 	//static void toString( const v8::FunctionCallbackInfo<Value>& args );
-	static addrObject *addrObject::internalNew( Isolate *isolate, SOCKADDR *sa );
-	static addrObject *addrObject::internalNew( Isolate *isolate, Local<Object> *_this );
+	static addrObject *internalNew( Isolate *isolate, SOCKADDR *sa );
+	static addrObject *internalNew( Isolate *isolate, Local<Object> *_this );
 
 	~addrObject();
 };
