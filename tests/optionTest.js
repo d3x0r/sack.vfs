@@ -20,16 +20,21 @@ console.log( "after setting value..", ( tmp2 = root.go( "a" ).go( "b3" ).go( "c2
 //setTimeout( ()=>{console.log( "Wait a second to flush?") }, 1000 );
 
 var level =0;
-db.eo( dumptree )
 function dumptree(opt, name){
 	if( name === "." ) return;
 	var leader = "";
 	for( var n = 0; n < level;n++ ) leader += "   ";
-	console.log( leader + "option:", name );
+	console.log( leader + "option:", name, "=", opt.value );
         level++;
         opt.eo( dumptree );
         level--;
 }
+db.eo( dumptree )
+
+console.log( "global option database ---------------" );
+level =0;
+vfs.Sqlite.eo( dumptree )
+
 
 function tick() {
 	console.log( "dump tables: \n"
