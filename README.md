@@ -33,16 +33,10 @@ vfs = {
     ComPort(comport) - access to com ports.
     JSON6 - A json parser. (JSON5 Compatible)
         parse(string) - result with a V8 object created from the json string.  
-        1/2 the speed of Node's parser; no real reason to use this. 
-        (3x faster than javascript JSON5 implementation)
-        // var o = vfs.JSON6.parse(s)
-        // var parser = vfs.JSON6.begin( callback ); ... parser.write( /*Some json data */ ); 
+        begin( cb ) - begin parsing JSON6 stream; callback is called as each value is completed.
     JSON - A json parser.
         parse(string) - result with a V8 object created from the json string.  
-        1/2 the speed of Node's parser; no real reason to use this. 
-        (3x faster than javascript JSON5 implementation)
-        // var o = vfs.JSON.parse(s)
-        // var parser = vfs.JSON.begin( callback ); ... parser.write( /*Some json data */ ); 
+        begin( cb ) - begin parsing JSON stream; callback is called as each value is completed.
     mkdir(pathname) - utility function to make directories which might not exist before volume does; 
             (Volume() auto creates directories now if specified path to filename does not exist)
             parameters - (pathname)
@@ -382,10 +376,10 @@ The above script reads the value, reports what it was, if the old value is not t
 example was testing a constant like 526.  if typeof value is a number, value is set as a REG_DWORD.  Otherwise it's set as REG_SZ.
 
 
-### JSON( [JSON6](https://www.github.com/d3x0r/json6) ) - JSON and JSON6 compatible processor 
+## JSON( [JSON6](https://www.github.com/d3x0r/json6) ) - JSON and JSON6 compatible processor 
 
 Slightly extended json parser to allows simple types to be returned as values, not requiring { or [ to start
-the JSON input.
+the JSON input.  JSON6 parsing is 100% compatible with JSON parsing; that is JSON6 can read JSON content with no issues.
 
 Simple values, objects and arrays can result from parsing.  Simple values are true,false,null, Numbers and Strings.
 
@@ -394,11 +388,14 @@ Added support 'reviver' parameter.
 
   - JSON
      - parse( string [,reviver] )
+     - begin( callback )
+         - write( data )
   - JSON6
-     - parse( string [,revivier] )
+     - parse( string [,reviver] )
      - begin( callback )
          - write( data )
 
+Reviver callback parameter is not provided for streaming callback.
 
 ``` javascript
 var vfs = require( "sack.vfs" );
@@ -406,6 +403,7 @@ var vfs = require( "sack.vfs" );
 var object = vfs.JSON.parse(string [, reviver]);
 
 var object2 = vfs.JSON6.parse(string [, reviver]);
+
 ```
 
 ### Streaming JSON Parsing
@@ -426,6 +424,13 @@ parser.write( "123 " );
 function objectCallback( o ) {
     console.write( "Received parsed object:", typeof o, o );
 }
+
+// another example.
+var streamExample = vfs.JSON6.begin( (o)=> { console.log( "received value:", o ) };
+streamExample.write( "123\n" );   // generate a single event with number '123'
+streamExample.write( '"A string"' );    // generate another event with the string
+streamExample.write( '{a : 1} { b : 2}{c:3}' );   // generates 3 callback events, 1 for each object
+
 ```
 
 
@@ -677,10 +682,20 @@ udp2.send( "Hello World" );
 
 ```
 
-sack.dgram.Socket() Invokation
+#### sack.Network.UDP() Invokation
+
+| Construction examples |  |
+|-----|----|
+| ()  | not valid, requires either a string, or option object. |
+| ( "localhost:1234" ) | creates a UDP socket bound to localhost port 1234 |
+| ( { address: "localhost",<BR>port:1234} ) | creates a UDP socket bound to localhost port 1234 |
+| ( { address: "localhost",<BR>port:1234}, (msg,rinfo)=>{} ) | creates a UDP socket bound to localhost port 1234, and specifies a message handler callback |
+
   can pass a string address to listen on.  "IP[:port]" format.  IPv6 IP should be enclosed in brackets;  `[::1]:80`.
   if address is not passed, an object with socket options must be specified.
   final parameter can optionally be a callback which is used as the on('message') event callback.
+
+#### Udp socket creation options
 
 | UDP Socket options |   |
 |----|----|
@@ -692,6 +707,8 @@ sack.dgram.Socket() Invokation
 | broadcast | &lt;bool&gt; if `true` enable receiving/sending broadcast UDP messages |
 | readStrings | &lt;bool&gt; if `true` messages passed to message callback will be given as text format, otherwise will be a TypedArray |
 
+#### Udp socket methods
+
 | UDP Socket Methods | Arguments | Description  |
 |-----|-----|-----|
 | send | (message [,address]) | Send a message, message can be an ArrayBuffer or string,   if second parameter is passed it should be an sack.Network.Address object. |
@@ -699,6 +716,7 @@ sack.dgram.Socket() Invokation
 | on | (eventName, callback) | Set message or close callbacks on the socket. |
 | setBroadcast | (bool) | enable broadcast messages |
 
+#### Udp Events
 
 | UDP Events |  |  |
 |----|----|----|
