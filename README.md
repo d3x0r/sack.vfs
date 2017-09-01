@@ -141,6 +141,7 @@ Sqlite() will create a in memory database<br>
 Sqlite( &lt;String&gt; ) will user the string to specify a filename.  Sqlite URI decoding is enabled.  `":memory:"` will also result in a memory only database.
 
 There are methods on the Sqlite() function call...
+
 | Sqlite function methods  |  |  |
 |---|---|----|
 | eo | (callback) | Enumerate Options.  Each option node in global database is passed to callback (see Option Nodes below) |
@@ -168,10 +169,10 @@ There are methods on the Sqlite() function call...
 | op  | (section [, opName],defaultValue) |  get an option from sqlite option database; return defaultValue  if not set, and set the option int he database to the default value.
 | getOption | (section [,opName],defaultValue) | longer name of 'op' |
 | so | (section [,opName] ,value) | set an option in sqlite option database |
-| setOption | (section [,opName] ,value) - longer name of 'so' |
-| fo  | (opName) | find an option node under this one (returns null if node doesn't exist)   fo( "name" ) |
-| go  | (opName) | get an option node      go( "name" ) |
-| eo  | (callback) |  enum option nodes from root of options, takes a callback as a paraemter.<br> callback parameters ( optionNode, optionName ) ... the callback parameters get a node and a name.   The node is another option node that migth be enumerated with eo...<BR> function callback(node,name)  {console.log( "got", name, node.value ); |
+| setOption | (section [,opName] ,value) | longer name of 'so' |
+| fo  | (opName) | find an option node under this one (returns null if node doesn't exist)<BR> fo( "name" ) |
+| go  | (opName) | get an option node      <BR>go( "name" ) |
+| eo  | (callback) |  enum option nodes from root of options, takes a callback as a paraemter.<br> callback parameters ( optionNode, optionName ) ... the callback parameters get a node and a name.   The node is another option node that migth be enumerated with eo...<BR> `function callback(node,name)  {console.log( "got", name, node.value );` |
      
 
 example sql command?
@@ -182,8 +183,6 @@ example sql command?
 ### Option Database
   (result from vfs.[Volume().Sqlite()/Sqlite()].[fo/go/eo]() or any of these own methods )
 
-```
-
 | Option Node Instance methods |  |   |
 |---|---|----|
 |fo | (option name) | find an option node under this one (returns null if node doesn't exist)   fo( "name" )  |
@@ -192,49 +191,7 @@ example sql command?
 | value | getter/setter -none | set/get current value |
 
 
-
-### Registry
-
-registry = {
-     set( regPath, value );
-     get( regPath );
-}
-
-```
-var reg = vfs.registry.set( "HKCU/something", value );
-var val = vfs.registry.get( "HKCU/something" );
-```
-
-### COM Ports
-   (result from vfs.ComPort() )
- 
-```
-ComObject = { 
-     onRead( callback ) - sets a callback to be called with a uint8Array parameter when data arrives on the port.
-     write( uint8Array ) - write buffer specfied to com port; only accepts uint8array.
-     close() - close the com port.
-}
-
-COM port settings are kept in the default option database under 
-  /comports.ini/COM PORTS/&lt;comName&gt; = 57600,N,8,1,carrier,RTS,rTSflow
-  /comports.ini/&lt;comName&gt;/port timeout = 100 
-
-     the com port settings string is semi-standard DOS string... the first paramaeters, 
-         baud, N/E/O/M/S (parity), 8/7 (data bits), 1/2 (stop bits); 
-         then the next settings are toggles based on case...
-            [C/c]arrier - enable/disable respect carrier detect to send (lower case is disable)
-            [R/r]TS - enable/disable respect request to send (lower case is disable)
-            [R/r]TSflow - enable/disable using RTS for flow control. (lower case is disable)
-
-    port timeout is how long to wait for idle between sending com data.  
-        (no data received for 100ms, post packet; this gives a slight delay between when the 
-         data is received and actually dispatched)
-```
-
-
-
-## Sqlite Usage
-
+### Sqlite Usage
 
 ```
 var dbName = "filename.db";
@@ -740,6 +697,47 @@ udp2.send( "Hello World" );
 | close | () | Socket has been closed. | 
 
 See Also [testudp.js](https://github.com/d3x0r/sack.vfs/blob/master/tests/testudp.js) for example usage.
+
+
+### Registry
+
+registry = {
+     set( regPath, value );
+     get( regPath );
+}
+
+```
+var reg = vfs.registry.set( "HKCU/something", value );
+var val = vfs.registry.get( "HKCU/something" );
+```
+
+### COM Ports
+   (result from vfs.ComPort() )
+ 
+```
+ComObject = { 
+     onRead( callback ) - sets a callback to be called with a uint8Array parameter when data arrives on the port.
+     write( uint8Array ) - write buffer specfied to com port; only accepts uint8array.
+     close() - close the com port.
+}
+
+COM port settings are kept in the default option database under 
+  /comports.ini/COM PORTS/&lt;comName&gt; = 57600,N,8,1,carrier,RTS,rTSflow
+  /comports.ini/&lt;comName&gt;/port timeout = 100 
+
+     the com port settings string is semi-standard DOS string... the first paramaeters, 
+         baud, N/E/O/M/S (parity), 8/7 (data bits), 1/2 (stop bits); 
+         then the next settings are toggles based on case...
+            [C/c]arrier - enable/disable respect carrier detect to send (lower case is disable)
+            [R/r]TS - enable/disable respect request to send (lower case is disable)
+            [R/r]TSflow - enable/disable using RTS for flow control. (lower case is disable)
+
+    port timeout is how long to wait for idle between sending com data.  
+        (no data received for 100ms, post packet; this gives a slight delay between when the 
+         data is received and actually dispatched)
+```
+
+
 
 ## Changelog
 - 0.1.99307 Implement interface to websocket library. Implement interface to UDP sockets.
