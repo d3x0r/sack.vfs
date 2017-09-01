@@ -431,28 +431,29 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
      expiration( certificate ) - gets the expiration of a certificate as a Date().     
   }
 ```
+
  | pubkey options | |
 |---|---|
-    | cert | a certificate to get a key from, will not be used if 'key' option is specified.  either this or key MUST be specified, but not both.|
-    | key | a keypair to get the public key from.  Either this or cert MUST be specified, but not both.|
-    | password | password for keypair if required.|
+| cert | a certificate to get a key from, will not be used if 'key' option is specified.  either this or key MUST be specified, but not both.|
+| key | a keypair to get the public key from.  Either this or cert MUST be specified, but not both.|
+| password | password for keypair if required.|
 
  | gencert options | |
 |---|---|
-    | country | specified country of origin; must be a 2 character country specifier. |
-    | state | specifies state or province of origin; |
-    | locality | specifies city in state specified.    |
-    | org | specified organization for certificate       |
-    | orgUnit | specifies organizational unit.             |
-    | name | specifies common name, this is typically a domain name with possible wildcard at start. |
-    | key | private/public key to use                                                                  |
-    | password | if required for key                                                                     |
-    | serial | serial number for this certificate (is a number type).                                      |
-    | expire | number of days before this certificate expires (is a number type).                            |
-    | pubkey | override storing the public key of this certificate. (used to test certificate chain validity check; do not use) |
-    | issuer | override the issuer/subject identifier of this certificate. (used to test certificate chain validity check; do not use) |
+| country | specified country of origin; must be a 2 character country specifier. |
+| state | specifies state or province of origin; |
+| locality | specifies city in state specified.    |
+| org | specified organization for certificate       |
+| orgUnit | specifies organizational unit.             |
+| name | specifies common name, this is typically a domain name with possible wildcard at start. |
+| key | private/public key to use                                                                  |
+| password | if required for key                                                                     |
+| serial | serial number for this certificate (is a number type).                                      |
+| expire | number of days before this certificate expires (is a number type).                            |
+| pubkey | override storing the public key of this certificate. (used to test certificate chain validity check; do not use) |
+| issuer | override the issuer/subject identifier of this certificate. (used to test certificate chain validity check; do not use) |
 
-  | genreq options |  |
+| genreq options |  |
 |---|---|
 | country | specified country of origin; must be a 2 character country specifier. |
 | state | specifies state or province of origin;   |
@@ -461,12 +462,11 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
 | orgUnit | specifies organizational unit. |
 | name | specifies common name, this is typically a domain name with possible wildcard at start. |
 | subject | add fields to Subject Alternative Name...  This is an object containing arrays |
-| <TABLE><TR><TD> DNS </TD><TD> a single domain name or an array of domain name strings to add </TD></TR>
-   <TR><TD> IP </TD><TD> a single IP address string or an array of IO addresses to add; does support IPv6 addresses.</TD></TR></TABLE> | 
+| | <TABLE><TR><TD> DNS </TD><TD> a single domain name or an array of domain name strings to add </TD></TR> <TR><TD> IP </TD><TD> a single IP address string or an array of IO addresses to add; does support IPv6 addresses.</TD></TR></TABLE>  |
 | key | private/public key to use  |
 | password | if required for key |
 
- | signcert options |  |
+| signcert options |  |
 |---|---|
 | signer | certificate to sign with |
 | request | certificate request to sign |
@@ -478,7 +478,7 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
 | subject | used to override subject identifier. (used to test certificate chain validity check; do not use) |
 | pubkey | used to override the public key stored in the output certificate. (used to test certificate chain validity check; do not use) |
 
- | validate options
+| validate options |  |
 |---|---|
 | cert | certificate to validate | 
 | chain | concatenated certificate chain to use for validation.  Order does not matter.  Not required if cert is self signed. |
