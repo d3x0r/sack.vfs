@@ -145,8 +145,8 @@ There are methods on the Sqlite() function call...
 | Sqlite function methods  |  |  |
 |---|---|----|
 | eo | (callback) | Enumerate Options.  Each option node in global database is passed to callback (see Option Nodes below) |
-| go | ( &ltString&gt [,&ltString&gt [,&ltString&gt]] ) | Get Option.  First string is section, second optional string is option name, final string is default value of option.  Option name may be concated to section ( "section/option", "default" ) === ("section", "option", "default" ) |
-| so | ( &ltString&gt [,&ltString&gt [,&ltString&gt]] ) | Set Option.  First string is section, second optional string is option name, final string is default value of option.  Option name may be concated to section ( "section/option", "new Value" ) === ("section", "option", "new Value" ) 
+| go | ( &lt;String&gt; [,&lt;String&gt; [,&lt;String&gt;]] ) | Get Option.  First string is section, second optional string is option name, final string is default value of option.  Option name may be concated to section ( "section/option", "default" ) === ("section", "option", "default" ) |
+| so | ( &lt;String&gt; [,&lt;String&gt; [,&lt;String&gt;]] ) | Set Option.  First string is section, second optional string is option name, final string is default value of option.  Option name may be concated to section ( "section/option", "new Value" ) === ("section", "option", "new Value" ) 
 
 
 #### Sqlite Instance Methods 
@@ -188,7 +188,7 @@ example sql command?
 |fo | (option name) | find an option node under this one (returns null if node doesn't exist)   fo( "name" )  |
 | go | (option name) |  get an option node      go( "name" )
 | eo | (callback)   | enum option nodes from root of options  <br> eo( cb )<br> function cb( node, name ) { console.log( "got", name, node.value ); }  |
-| value | getter/setter -none | set/get current value |
+| value | getter/setter<BR>-none- | set/get current value |
 
 
 ### Sqlite Usage
@@ -323,28 +323,6 @@ function tick() {
 }
 tick();
 ```
-
-## RegAccess - windows registry system access....
-
-Parses a simple path and assumes last name of path is key to read/write a value to.
-HKCU
-HKLM
-and capital longhand forms of above are supported.
-
-``` javascript
-var vfs = require( "./vfs_module.js" )
-
-function update( newVal ) {
-        var oldval = vfs.registry.get( "HKCU/Software/Freedom Collective/ChangeMe" );
-        console.log( "Old Value is:", oldval );
-        if( oldval != newVal )
-                 vfs.registry.set( "HKCU/Software/Freedom Collective/ChangeMe", newVal );
-}
-update( Date.now() );
-```
-
-The above script reads the value, reports what it was, if the old value is not the new value, then write the new value.
-example was testing a constant like 526.  if typeof value is a number, value is set as a REG_DWORD.  Otherwise it's set as REG_SZ.
 
 
 ## JSON( [JSON6](https://www.github.com/d3x0r/json6) ) - JSON and JSON6 compatible processor 
@@ -699,7 +677,28 @@ udp2.send( "Hello World" );
 See Also [testudp.js](https://github.com/d3x0r/sack.vfs/blob/master/tests/testudp.js) for example usage.
 
 
-### Registry
+## RegAccess - windows registry system access....
+
+Parses a simple path and assumes last name of path is key to read/write a value to.
+HKCU
+HKLM
+and capital longhand forms of above are supported.
+
+``` javascript
+var vfs = require( "./vfs_module.js" )
+
+function update( newVal ) {
+        var oldval = vfs.registry.get( "HKCU/Software/Freedom Collective/ChangeMe" );
+        console.log( "Old Value is:", oldval );
+        if( oldval != newVal )
+                 vfs.registry.set( "HKCU/Software/Freedom Collective/ChangeMe", newVal );
+}
+update( Date.now() );
+```
+
+The above script reads the value, reports what it was, if the old value is not the new value, then write the new value.
+example was testing a constant like 526.  if typeof value is a number, value is set as a REG_DWORD.  Otherwise it's set as REG_SZ.
+
 
 registry = {
      set( regPath, value );
