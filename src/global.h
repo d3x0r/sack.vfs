@@ -142,6 +142,7 @@ public:
 	static void autoTransact( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args );
+	static void enumOptionNodesInternal( const v8::FunctionCallbackInfo<Value>& args );
 	static void findOptionNode( const v8::FunctionCallbackInfo<Value>& args );
 	static void getOptionNode( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -154,7 +155,7 @@ public:
 class OptionTreeObject : public node::ObjectWrap {
 public:
 	POPTION_TREE_NODE node;
-	SqlObject *db;
+	PODBC odbc;
 	static v8::Persistent<v8::Function> constructor;
 	
 public:

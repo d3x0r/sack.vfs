@@ -80264,7 +80264,7 @@ int OpenSQLConnectionEx( PODBC odbc DBG_PASS )
 	SqlStubInitLibrary();
 #endif
 	bOpening = TRUE;
-	if( StrStr( odbc->info.pDSN, WIDE(".db") ) )
+	if( StrStr( odbc->info.pDSN, WIDE(".db") ) || ( StrCmp( odbc->info.pDSN, ":memory:" ) == 0 ) )
 		odbc->flags.bSkipODBC = 1;
 	else
  // make sure it's set to something...
@@ -89110,6 +89110,8 @@ void New4EnumOptions( PODBC odbc
 	CTEXTSTR *results = NULL;
 	if( !odbc )
 		odbc = pending;
+	if( !odbc )
+		odbc = node->odbc;
 	if( !odbc )
 		return;
 	if( !parent )
