@@ -1,6 +1,10 @@
 
 const sack = require( ".." );
-console.log( "Sack:", sack )
+
+console.log( "test addr:", sack.Network.Address( "google.com", 80 ) );
+console.log( "test addr:", sack.Network.Address( "google.com:443", 80 ) );
+
+
 const dgram = sack.dgram;
 
 	var os = require("os");
@@ -24,13 +28,19 @@ addresses.forEach( (addr)=>{
 	if( addr.family == 'IPv6' ) return;
         
 	console.log( new Date(), "Bind to:", addr.address );
-	var listener = dgram.createSocket({ address: addr.address,
-					port : port,
-					}, (msg,rinfo)=>{
-			//if( rinfo )
-				console.log( "received message:", msg, "from" );
-		});
+	var listener = dgram.createSocket({ address: addr.address
+	        , port : port
+	        , broadcast:true
+		, readStrings : true
+	      }
+	      ,  (msg,rinfo)=>{
+	         console.log( "received message:", msg, "from", rinfo );
+	});
 	listener.address = sack.Network.Address( addr.broadcast, port );
+
+	console.log( "addr:", listener.address );
+
+	listener.Address = addr;
 	connecting++;
 
 	Servers.push( listener );
@@ -44,7 +54,7 @@ function ping() {
 	if( pings == 4 )
 		process.exit(0)
 			Servers.forEach((server) => {
-				console.log("Send to ", server.address.broadcast)
+				console.log("Send to ", server.Address.broadcast)
 				var msg = "Message Data";
 				server.send( msg, server.address );
 			});
