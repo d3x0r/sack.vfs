@@ -45645,6 +45645,10 @@ NETWORK_PROC( PLIST, GetLocalAddresses )( void );
  */
 NETWORK_PROC( const char *, GetAddrName )( SOCKADDR *addr );
 /*
+ * Return the numeric form of the address (might have been created by name).
+ */
+NETWORK_PROC( const char *, GetAddrString )(SOCKADDR *addr);
+/*
  * test an address to see if it is v6 (switch connect From behavior at application level)
  */
 NETWORK_PROC( LOGICAL, IsAddressV6 )( SOCKADDR *addr );
@@ -58445,6 +58449,65 @@ const char * GetAddrName( SOCKADDR *addr )
 	}
 	return ((char**)addr)[-1];
 }
+const char * GetAddrString( SOCKADDR *addr )
+{
+	static char buf[256];
+	if( addr->sa_family == AF_INET )
+		snprintf( buf, 256, "%d.%d.%d.%d"
+			, *(((unsigned char *)addr) + 4),
+			*(((unsigned char *)addr) + 5),
+			*(((unsigned char *)addr) + 6),
+			*(((unsigned char *)addr) + 7) );
+	else if( addr->sa_family == AF_INET6 )
+	{
+		int first0 = 8;
+		int last0 = 0;
+		int after0 = 0;
+		int n;
+		int ofs = 0;
+		uint32_t peice;
+		for( n = 0; n < 8; n++ ) {
+			peice = (*(((unsigned short *)((unsigned char*)addr + 8 + (n * 2)))));
+			if( peice ) {
+				if( first0 < 8 )
+					after0 = 1;
+				if( !ofs ) {
+					ofs += snprintf( buf + ofs, 256 - ofs, "%x", ntohs( peice ) );
+				}
+				else {
+					//console.log( last0, n );
+					if( last0 == 4 && first0 == 0 )
+						if( peice == 0xFFFF ) {
+							snprintf( buf, 256, "::%d.%d.%d.%d",
+								(*((unsigned char*)addr + 20)),
+								(*((unsigned char*)addr + 21)),
+								(*((unsigned char*)addr + 22)),
+								(*((unsigned char*)addr + 23)) );
+							break;
+						}
+					ofs += snprintf( buf + ofs, 256 - ofs, ":%x", ntohs( peice ) );
+				}
+			}
+			else {
+				if( !after0 ) {
+					if( first0 > n ) {
+						first0 = n;
+						ofs += snprintf( buf + ofs, 256 - ofs, ":" );
+					}
+					if( last0 < n )
+						last0 = n;
+				}
+				if( last0 < n )
+					ofs += snprintf( buf + ofs, 256 - ofs, ":%x", ntohs( peice ) );
+			}
+		}
+		if( !after0 )
+			ofs += snprintf( buf + ofs, 256 - ofs, ":" );
+	}
+	else
+		snprintf( buf, 256, "unknown protocol" );
+	return buf;
+}
 void SetAddrName( SOCKADDR *addr, const char *name )
 {
 	((uintptr_t*)addr)[-1] = (uintptr_t)strdup( name );
@@ -60262,18 +60325,27 @@ NETWORK_PROC( void, SetNetworkLong )(PCLIENT lpClient, int nLong, uintptr_t dwVa
 //----------------------------------------------------------------------------
 int GetAddressParts( SOCKADDR *sa, uint32_t *pdwIP, uint16_t *pdwPort )
 {
+	int result = TRUE;
 	if( sa )
 	{
-		if( sa->sa_family == AF_INET )
-		{
+		if( sa->sa_family == AF_INET ) {
 			if( pdwIP )
 				(*pdwIP) = (uint32_t)(((SOCKADDR_IN*)sa)->sin_addr.S_un.S_addr);
+		}
+		else if( sa->sa_family == AF_INET6 ) {
+			if( pdwIP )
+				memcpy( pdwIP, &(((SOCKADDR_IN*)sa)->sin_addr.S_un.S_addr), 16 );
+		}
+		else
+			result = FALSE;
+		if( (sa->sa_family == AF_INET) || (sa->sa_family = AF_INET6) ) {
 			if( pdwPort )
 				(*pdwPort) = ntohs((uint16_t)( (SOCKADDR_IN*)sa)->sin_port);
-			return TRUE;
 		}
+		else
+			result = FALSE;
 	}
-	return FALSE;
+	return result;
 }
 NETWORK_PROC( uintptr_t, GetNetworkLong )(PCLIENT lpClient,int nLong)
 {

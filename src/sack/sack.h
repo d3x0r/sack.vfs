@@ -7127,6 +7127,10 @@ NETWORK_PROC( PLIST, GetLocalAddresses )( void );
  */
 NETWORK_PROC( const char *, GetAddrName )( SOCKADDR *addr );
 /*
+ * Return the numeric form of the address (might have been created by name).
+ */
+NETWORK_PROC( const char *, GetAddrString )(SOCKADDR *addr);
+/*
  * test an address to see if it is v6 (switch connect From behavior at application level)
  */
 NETWORK_PROC( LOGICAL, IsAddressV6 )( SOCKADDR *addr );
