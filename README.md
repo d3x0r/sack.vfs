@@ -626,6 +626,7 @@ var address = sack.Network.Address( address string [, port] );
 Address string can contain an optional port notation after a colon(':')
 
 | Address Members | Description |
+|----|----|
 | family | const String; value is either 'IPv6' or 'IPv4' |
 | address | String; address the address object was created with. |
 | IP | String; numeric IP address converted to a string |
