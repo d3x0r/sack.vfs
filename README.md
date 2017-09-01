@@ -431,52 +431,57 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
      expiration( certificate ) - gets the expiration of a certificate as a Date().     
   }
 ```
- - pubkey options
-    - cert : a certificate to get a key from, will not be used if 'key' option is specified.  either this or key MUST be specified, but not both.
-    - key : a keypair to get the public key from.  Either this or cert MUST be specified, but not both.
-    - password : password for keypair if required.
+ | pubkey options | |
+|---|---|
+    | cert | a certificate to get a key from, will not be used if 'key' option is specified.  either this or key MUST be specified, but not both.|
+    | key | a keypair to get the public key from.  Either this or cert MUST be specified, but not both.|
+    | password | password for keypair if required.|
 
- - gencert options
-    - country : specified country of origin; must be a 2 character country specifier.
-    - state : specifies state or province of origin;
-    - locality : specifies city in state specified.
-    - org : specified organization for certificate
-    - orgUnit : specifies organizational unit.
-    - name : specifies common name, this is typically a domain name with possible wildcard at start.
-    - key : private/public key to use
-    - password : if required for key
-    - serial : serial number for this certificate (is a number type).
-    - expire : number of days before this certificate expires (is a number type).
-    - pubkey : override storing the public key of this certificate. (used to test certificate chain validity check; do not use)
-    - issuer : override the issuer/subject identifier of this certificate. (used to test certificate chain validity check; do not use)
+ | gencert options | |
+|---|---|
+    | country | specified country of origin; must be a 2 character country specifier. |
+    | state | specifies state or province of origin; |
+    | locality | specifies city in state specified.    |
+    | org | specified organization for certificate       |
+    | orgUnit | specifies organizational unit.             |
+    | name | specifies common name, this is typically a domain name with possible wildcard at start. |
+    | key | private/public key to use                                                                  |
+    | password | if required for key                                                                     |
+    | serial | serial number for this certificate (is a number type).                                      |
+    | expire | number of days before this certificate expires (is a number type).                            |
+    | pubkey | override storing the public key of this certificate. (used to test certificate chain validity check; do not use) |
+    | issuer | override the issuer/subject identifier of this certificate. (used to test certificate chain validity check; do not use) |
 
-  - genreq options
-    - country : specified country of origin; must be a 2 character country specifier.
-    - state : specifies state or province of origin;
-    - locality : specifies city in state specified.
-    - org : specified organization for certificate
-    - orgUnit : specifies organizational unit.
-    - name : specifies common name, this is typically a domain name with possible wildcard at start.
-    - subject : add fields to Subject Alternative Name...  This is an object containing arrays
-       - DNS : a single domain name or an array of domain name strings to add
-       - IP : a single IP address string or an array of IO addresses to add; does support IPv6 addresses.
-    - key : private/public key to use
-    - password : if required for key
+  | genreq options |  |
+|---|---|
+| country | specified country of origin; must be a 2 character country specifier. |
+| state | specifies state or province of origin;   |
+| locality | specifies city in state specified.  |
+| org | specified organization for certificate |
+| orgUnit | specifies organizational unit. |
+| name | specifies common name, this is typically a domain name with possible wildcard at start. |
+| subject | add fields to Subject Alternative Name...  This is an object containing arrays |
+| <TABLE><TR><TD> DNS </TD><TD> a single domain name or an array of domain name strings to add </TD></TR>
+   <TR><TD> IP </TD><TD> a single IP address string or an array of IO addresses to add; does support IPv6 addresses.</TD></TR></TABLE> | 
+| key | private/public key to use  |
+| password | if required for key |
 
- - signcert options
-    - signer : certificate to sign with
-    - request : certificate request to sign
-    - expire : number of days this certificate is valid for
-    - key : private key of the signer
-    - password : password of the signer's key.
-    - serial : serial number for this certificate (is a number type).
-    - issuer : used to override issuer identifier. (used to test certificate chain validity check; do not use)
-    - subject : used to override subject identifier. (used to test certificate chain validity check; do not use)
-    - pubkey : used to override the public key stored in the output certificate. (used to test certificate chain validity check; do not use)
+ | signcert options |  |
+|---|---|
+| signer | certificate to sign with |
+| request | certificate request to sign |
+| expire | number of days this certificate is valid for |
+| key | private key of the signer |
+| password | password of the signer's key. |
+| serial | serial number for this certificate (is a number type). |
+| issuer | used to override issuer identifier. (used to test certificate chain validity check; do not use) |
+| subject | used to override subject identifier. (used to test certificate chain validity check; do not use) |
+| pubkey | used to override the public key stored in the output certificate. (used to test certificate chain validity check; do not use) |
 
- - validate options
-    - cert : certificate to validate
-    - chain : concatenated certificate chain to use for validation.  Order does not matter.  Not required if cert is self signed.
+ | validate options
+|---|---|
+| cert | certificate to validate | 
+| chain | concatenated certificate chain to use for validation.  Order does not matter.  Not required if cert is self signed. |
 
 See [tlsTest.js](https://github.com/d3x0r/sack.vfs/blob/master/tlsTest.js) for example usage.
 
@@ -643,10 +648,10 @@ sack.dgram.Socket() Invokation
 | UDP Socket options |   |
 |----|----|
 | port  | &lt;number&gt; specify the port to listen on |
-| address | &lt;string&gt;; specify the address to listen on (defaults to [::]) |
+| address | &lt;string&gt;; specify the address to listen on (defaults to [::]). Optional port notation can be used (specified with a colon followed by a number (or name if under linux?))|
 | family | &lt;string&gt; either 'IPv4' or 'IPv6' which controls the default address; otherwise address string will determine the family |
 | toPort | &lt;number&gt; specify the port to send to if not specified in send call |
-| toAddress | &lt;string&gt; specify the address to send to if not specified in send call |
+| toAddress | &lt;string&gt; specify the address to send to if not specified in send call.  Optional port notation can be used (specified with a colon followed by a number (or name if under linux?)) |
 | broadcast | &lt;bool&gt; if `true` enable receiving/sending broadcast UDP messages |
 | readStrings | &lt;bool&gt; if `true` messages passed to message callback will be given as text format, otherwise will be a TypedArray |
 
