@@ -628,9 +628,9 @@ Address string can contain an optional port notation after a colon(':')
 | Address Members | Description |
 |----|----|
 | family | const String; value is either 'IPv6' or 'IPv4' |
-| address | String; address the address object was created with. |
-| IP | String; numeric IP address converted to a string |
-| port | Number; port number this address refers to (0 if not applicable, as in a unix socket) |
+| address | const String; address the address object was created with. |
+| IP | const String; numeric IP address converted to a string |
+| port | const Number; port number this address refers to (0 if not applicable, as in a unix socket) |
 
 
 
