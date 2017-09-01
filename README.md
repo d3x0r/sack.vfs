@@ -2,16 +2,22 @@
 
 [![Join the chat at https://gitter.im/sack-vfs/Lobby](https://badges.gitter.im/sack-vfs/Lobby.svg)](https://gitter.im/sack-vfs/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)[![Build Status](https://travis-ci.org/d3x0r/sack.vfs.svg?branch=master)](https://travis-ci.org/d3x0r/sack.vfs)
 
-Node addon for a custom virtual file system interface.  Also exposes a JSON6 parser, COM/serial port access, Sqlite interface, an option/configuration database built on Sqlite.
-Windows specific registry access for application settings. Vulkan API to be added eventually... 
+Node addon for a custom virtual file system interface.  
+JSON/JSON6 (stream)parser, 
+COM/serial port access, Sqlite interface, an option/configuration database built on Sqlite.
+Windows specific registry access for application settings. 
+WebSocket network library.  UDP sockets.
+Vulkan API to be added eventually... 
 
 ## Requirements
-### npm
+#### npm
         none
 
-### Centos  
+#### Centos/linux
         yum install gcc-c++ libuuid-devel
-
+        
+#### Windows
+	none
 
 # Usage
 
@@ -127,58 +133,66 @@ File Constants
     SeekEnd - used in seek methods; value SEEK_END(2)
 
 ```
-### Sqlite Interface
+
+## Sqlite Interface
   (result from vfs.Sqlite() or vfs.Volume().Sqlite())
+
+Sqlite() will create a in memory database<br>
+Sqlite( &lt;String&gt; ) will user the string to specify a filename.  Sqlite URI decoding is enabled.  `":memory:"` will also result in a memory only database.
+
+There are methods on the Sqlite() function call...
+| Sqlite function methods  |  |  |
+|---|---|----|
+| eo | (callback) | Enumerate Options.  Each option node in global database is passed to callback (see Option Nodes below) |
+| go | ( &ltString&gt [,&ltString&gt [,&ltString&gt]] ) | Get Option.  First string is section, second optional string is option name, final string is default value of option.  Option name may be concated to section ( "section/option", "default" ) === ("section", "option", "default" ) |
+| so | ( &ltString&gt [,&ltString&gt [,&ltString&gt]] ) | Set Option.  First string is section, second optional string is option name, final string is default value of option.  Option name may be concated to section ( "section/option", "new Value" ) === ("section", "option", "new Value" ) 
+
+
+#### Sqlite Instance Methods 
+
 ```
-Sqlite = {
-    escape(s) - returns an encoded string for (s) appropriate for the current database.  
-        (may vary encoding based on ODBC drive used; otherwise escapes single quotes for Sqlite)
-    end() - close this database.  Another command on this database will re-open it.
-    transaction() - begin a sql transaction, ```do()``` commands issued after this will be in a transaction.
-    commit() - end a transaction successfully.
-    autoTransact(true/false) - enabled/disable auto transaction features.  
-         A command will begin a transaction, a timer will be set such that 
-         if no other command between happens, then a commit will be generated.  
-         So merely doing ```do()``` commands are optimized into transactions.
-    do(command) - execute a sql command
-    op(opName,defaultValue) - get an option from sqlite option database; return defaultValue 
-         if not set, and set the option int he database to the default value.
-    getOption(opName,defaultValue) - longer name of 'op'
-    so(opName,value) - set an option in sqlite option database
-    setOption(opName, value) - longer name of 'so'
-    makeTable(tableString) - evalute a sql create table clause, and create or update a table based on its definitions.
-             Additional columns will be added, old columns are untouched, even if the type specified changes.
-             Addtional indexes and constraints can be added...
-             
-    fo(opName) - find an option node under this one (returns null if node doesn't exist)   fo( "name" )
-    go(opName) - get an option node      go( "name" )
-    eo(callback) - enum option nodes from root of options, takes a callback as a paraemter.
-              eo( callback ) ... the callback parameters get a node and a name.  
-                    The node is another option node that migth be enumerated with eo...
-                    function callback(node,name)  {console.log( "got", name, node.value );
+  var sack = require( 'sack.vfs' );
+  var sqlite = sack.Sqlite( "test.db" );
+  // the following describes methods on the sqlite instance
+```
+
+| Sqlite instance methods | Parameters | Description |
+|-----|-----|----|
+| escape | (&lt;String&gt;) | returns an encoded string for (string) appropriate for the current database. (may vary encoding based on ODBC driver used; otherwise escapes single quotes for Sqlite) |
+| end | () | close this database.  Another command on this database will re-open it.  |
+| transaction | ()  |  begin a sql transaction, ```do()``` commands issued after this will be in a transaction. |
+| commit | ()  |  end a transaction successfully. |
+| autoTransact | (&lt;bool&gt;) | enabled/disable auto transaction features.    A command will begin a transaction, a timer will be set such that if no other command between happens, then a commit will be generated. So merely doing ```do()``` commands are optimized into transactions.
+| makeTable | (tableString) | evalute a sql create table clause, and create or update a table based on its definitions.          Additional columns will be added, old columns are untouched, even if the type specified changes.    Additional indexes and constraints can be added to existing tables.
+| do | ( &lt;String&gt;) | execute a sql command or query.  Results with null on error, or an array on success.  If command generates no output, array length will be 0.  |
+| op  | (section [, opName],defaultValue) |  get an option from sqlite option database; return defaultValue  if not set, and set the option int he database to the default value.
+| getOption | (section [,opName],defaultValue) | longer name of 'op' |
+| so | (section [,opName] ,value) | set an option in sqlite option database |
+| setOption | (section [,opName] ,value) - longer name of 'so' |
+| fo  | (opName) | find an option node under this one (returns null if node doesn't exist)   fo( "name" ) |
+| go  | (opName) | get an option node      go( "name" ) |
+| eo  | (callback) |  enum option nodes from root of options, takes a callback as a paraemter.<br> callback parameters ( optionNode, optionName ) ... the callback parameters get a node and a name.   The node is another option node that migth be enumerated with eo...<BR> function callback(node,name)  {console.log( "got", name, node.value ); |
      
-    
-}
-```
 
 example sql command?
 ```
-    var results = sqlite.do(sql);  // do a sql command, if command doesn't generate data result will be true instead of an array
-
+    var results = sqlite.do("select * from table");  // do a sql command, if command doesn't generate data result will be true instead of an array
 ```
+
 ### Option Database
   (result from vfs.[Volume().Sqlite()/Sqlite()].[fo/go/eo]() or any of these own methods )
+
 ```
-OptionNode = {
-    fo - find an option node under this one (returns null if node doesn't exist)   fo( "name" )
-    go - get an option node      go( "name" )
-    eo - enum option nodes from root of options  
-                    eo( cb )
-                    function cb( node, name ) { console.log( "got", name, node.value ); } 
-                    
-    value - set/get current value
-}
-```
+
+| Option Node Instance methods |  |   |
+|---|---|----|
+|fo | (option name) | find an option node under this one (returns null if node doesn't exist)   fo( "name" )  |
+| go | (option name) |  get an option node      go( "name" )
+| eo | (callback)   | enum option nodes from root of options  <br> eo( cb )<br> function cb( node, name ) { console.log( "got", name, node.value ); }  |
+| value | getter/setter -none | set/get current value |
+
+
+
 ### Registry
 
 registry = {
@@ -539,8 +553,10 @@ Salty Random Generator
        is passed, it must be less than 32 bits.  If signed is not passed or is false, the resulting value is the specified
        number of bits as an unsigned integer, otherwise the top bit is sign extended, and a signed integer results.
     - getBuffer( bits ) : returns an ArrayBuffer that is the specified number of bits long, rounded up to the next complete
-       byte count.  
-       
+       byte count.
+    
+
+
 
 ```
   // some examples
