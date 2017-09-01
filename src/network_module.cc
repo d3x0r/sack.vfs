@@ -15,7 +15,7 @@ struct optionStrings {
 
 	Eternal<String> *toPortString;
 	Eternal<String> *toAddressString;
-
+	Eternal<String> *readStringsString;
 };
 
 struct udpOptions {
@@ -27,17 +27,32 @@ struct udpOptions {
 	char *toAddress;
 	bool addressDefault;
 	bool v6;
+	bool readStrings;
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
+};
+
+struct addrFinder {
+	char *addr;
+	int port;
 };
 
 class addrObject : public node::ObjectWrap {
 public:
 	static Persistent<Function> constructor;
-	char *address;  // to later lookup cached address....
-	int port;
+	struct addrFinder key;
 	SOCKADDR *addr;
+	Persistent<Object> _this;
 	addrObject( char *address, int port );
+	addrObject();
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	//static void getAddress( const v8::FunctionCallbackInfo<Value>& args );
+	//static void getAddress(	Local<String> property, const PropertyCallbackInfo<Value>& info );
+	//static void getPort( Local<String> property, const PropertyCallbackInfo<Value>& info );
+	//static void getFamily( Local<String> property, const PropertyCallbackInfo<Value>& info );
+	//static void toString( const v8::FunctionCallbackInfo<Value>& args );
+	static addrObject *addrObject::internalNew( Isolate *isolate, SOCKADDR *sa );
+	static addrObject *addrObject::internalNew( Isolate *isolate, Local<Object> *_this );
+
 	~addrObject();
 };
 
@@ -50,6 +65,7 @@ public:
 	Persistent<Object> _this;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE eventQueue;
+	bool readStrings;  // return a string instead of a buffer
 	static Persistent<Function> constructor;
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; 
 	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; 
@@ -78,7 +94,7 @@ struct udpEvent {
 	class udpObject *_this;
 	CPOINTER buf;
 	size_t buflen;
-	LOGICAL binary;
+	SOCKADDR *from;
 };
 typedef struct udpEvent UDP_EVENT;
 #define MAXUDP_EVENTSPERSET 128
@@ -92,7 +108,80 @@ static struct local {
 	uv_loop_t* loop;
 	PLIST strings;
 	PUDP_EVENTSET *udpEvents;
+	BinaryTree::PTREEROOT addresses;
+	BinaryTree::PTREEROOT addressesBySA;
 } l;
+
+static int addrSACompare( uintptr_t oldnode, uintptr_t newnode ) {
+	SOCKADDR *oldAddr = (SOCKADDR*)oldnode;
+	SOCKADDR *newAddr = (SOCKADDR*)newnode;
+	if( oldAddr->sa_data > newAddr->sa_data )
+		return 1;
+	if( oldAddr->sa_data < newAddr->sa_data )
+		return -1;
+#define SOCKADDR_LENGTH(sa) ( (int)*(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) )
+
+	size_t len = SOCKADDR_LENGTH( oldAddr );
+	return memcmp( oldAddr->sa_data, newAddr->sa_data, len );
+}
+
+static int addrCompare( uintptr_t oldnode, uintptr_t newnode ) {
+	addrFinder *oldAddr = (addrFinder*)oldnode;
+	addrFinder *newAddr = (addrFinder*)newnode;
+	if( oldAddr->port < newAddr->port )
+		return -1;
+	if( oldAddr->port > newAddr->port )
+		return -1;
+	return StrCaseCmp( oldAddr->addr, newAddr->addr );
+}
+
+static void addrDestroy( CPOINTER user, uintptr_t key ) {
+	addrObject *oldAddr = (addrObject*)key;
+	Deallocate( char*, oldAddr->key.addr );
+}
+
+static addrObject *getAddress( Isolate *isolate, char *addr, int port ) {
+	if( !l.addresses ) {
+		l.addresses = CreateBinaryTreeEx( addrCompare, addrDestroy );
+		l.addressesBySA = CreateBinaryTreeEx( addrSACompare, NULL );
+	}
+	addrFinder finder;
+	finder.addr = addr;
+	finder.port = port;
+	addrObject * obj = (addrObject *)FindInBinaryTree( l.addresses, (uintptr_t)&finder );
+	if( !obj ) {
+		Local<Object> o;
+		obj = addrObject::internalNew( isolate, &o );
+		obj->key.addr = addr;
+		obj->key.port = port;
+		obj->addr = CreateSockAddress( addr, port );
+		uint16_t realPort;
+		GetAddressParts( obj->addr, NULL, &realPort );
+		AddBinaryNode( l.addressesBySA, obj, (uintptr_t)obj->addr );
+		AddBinaryNode( l.addresses, obj, (uintptr_t)&obj->key );
+
+		SET_READONLY( o, "family", String::NewFromUtf8( isolate, obj->addr->sa_family == AF_INET ? "IPv4" : obj->addr->sa_family == AF_INET6 ? "IPv6" : "unknown" ) );
+		SET_READONLY( o, "address", String::NewFromUtf8( isolate, addr ) );
+		SET_READONLY( o, "IP", String::NewFromUtf8( isolate, GetAddrString( obj->addr ) ) );
+		SET_READONLY( o, "port", Number::New( isolate, realPort ) );
+
+	}
+	return obj;
+}
+
+static Local<Object> getAddressBySA( Isolate *isolate, SOCKADDR *sa ) {
+	if( !l.addresses ) {
+		l.addresses = CreateBinaryTreeEx( addrCompare, addrDestroy );
+		l.addressesBySA = CreateBinaryTreeEx( addrSACompare, NULL );
+	}
+	addrObject * obj = (addrObject *)FindInBinaryTree( l.addressesBySA, (uintptr_t)sa );
+	if( !obj ) {
+		obj = addrObject::internalNew( isolate, sa );
+		AddBinaryNode( l.addressesBySA, obj, (uintptr_t)obj->addr );
+		AddBinaryNode( l.addresses, obj, (uintptr_t)&obj->key );
+	}
+	return obj->_this.Get( isolate );
+}
 
 
 static struct optionStrings *getStrings( Isolate *isolate ) {
@@ -116,6 +205,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->v6String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "IPv6" ) );
 		check->toPortString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "toPort" ) );
 		check->toAddressString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "toAddress" ) );
+		check->readStringsString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "readStrings" ) );
 	}
 	return check;
 }
@@ -149,6 +239,7 @@ void InitUDPSocket( Isolate *isolate, Handle<Object> exports ) {
 		addrTemplate = FunctionTemplate::New( isolate, addrObject::New );
 		addrTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.network.address" ) );
 		addrTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
+		//NODE_SET_PROTOTYPE_METHOD( addrTemplate, "toString", addrObject::toString );
 		addrTemplate->ReadOnlyPrototype();
 
 		addrObject::constructor.Reset( isolate, addrTemplate->GetFunction() );
@@ -169,22 +260,23 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 		Local<Value> argv[2];
 		while( eventMessage = (struct udpEvent*)DequeLink( &obj->eventQueue ) ) {
 			Local<Function> cb;
-			Local<ArrayBuffer> ab;
+			Local<Object> ab;
 			switch( eventMessage->eventType ) {
 			case UDP_EVENT_READ:
 				size_t length;
-				if( eventMessage->binary ) {
+				argv[1] = ::getAddressBySA( isolate, eventMessage->from );
+				if( !obj->readStrings ) {
 					ab =
-						ArrayBuffer::New( isolate,
-						(void*)eventMessage->buf,
-							length = eventMessage->buflen );
+						node::Buffer::New( isolate,
+							(char*)eventMessage->buf,
+							length = eventMessage->buflen ).ToLocalChecked();
 					argv[0] = ab;
-					obj->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
+					obj->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
 				else {
 					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 					argv[0] = buf.ToLocalChecked();
-					obj->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
+					obj->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
 				Deallocate( CPOINTER, eventMessage->buf );
 				break;
@@ -207,14 +299,13 @@ static void CPROC ReadComplete( uintptr_t psv, CPOINTER buffer, size_t buflen, S
 	if( !buffer ) {
 	}
 	else {
-
 		struct udpEvent *pevt = GetFromSet( UDP_EVENT, &l.udpEvents );
 		(*pevt).eventType = UDP_EVENT_READ;
 		(*pevt).buf = NewArray( uint8_t*, buflen );
 		memcpy( (POINTER)(*pevt).buf, buffer, buflen );
 		(*pevt).buflen = buflen;
-		(*pevt).binary = true;
 		(*pevt)._this = _this;
+		(*pevt).from = from;
 		EnqueLink( &_this->eventQueue, pevt );
 		uv_async_send( &_this->async );
 		doUDPRead( _this->pc, (POINTER)buffer, 4096 );
@@ -271,6 +362,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		// Invoked as constructor: `new MyObject(...)`
 		struct udpOptions udpOpts;
 		int argBase = 0;
+		udpOpts.readStrings = false;
 		udpOpts.address = NULL;
 		udpOpts.port = 0;
 		udpOpts.broadcast = false;
@@ -335,6 +427,10 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 			// ---- get message callback
 			if( opts->Has( optName = strings->messageString->Get( isolate ) ) ) {
 				udpOpts.messageCallback.Reset( isolate, Handle<Function>::Cast( opts->Get( optName ) ) );
+			}
+			// ---- get message callback
+			if( opts->Has( optName = strings->readStringsString->Get( isolate ) ) ) {
+				udpOpts.readStrings = opts->Get( optName )->ToBoolean()->Value();
 			}
 			argBase++;
 		}
@@ -425,30 +521,62 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 
 
 addrObject::addrObject( char *address, int port ) {
-	this->address = address;
-	this->port = port;
+	this->key.addr = address;
+	this->key.port = port;
 	addr = CreateSockAddress( address, port );
+}
+
+addrObject::addrObject(  ) {
+
 }
 
 addrObject::~addrObject() {
 	ReleaseAddress( addr );
 }
 
+addrObject *addrObject::internalNew( Isolate *isolate, SOCKADDR *sa ) {
+	Local<Function> cons = Local<Function>::New( isolate, addrObject::constructor );
+	Local<Value> args[1];
+	MaybeLocal<Object> __addr = cons->NewInstance( isolate->GetCurrentContext(), 0, args );
+	Local<Object> _addr = __addr.ToLocalChecked();
+	addrObject *addr = ObjectWrap::Unwrap<addrObject>(_addr);
+	uint16_t port;
+	GetAddressParts( sa, NULL, &port );
+	addr->key.port = port;
+	addr->key.addr = (char*)GetAddrName( sa );
+	addr->addr = sa;
+	SET_READONLY( _addr, "family", String::NewFromUtf8( isolate, sa->sa_family == AF_INET ? "IPv4" :sa->sa_family == AF_INET6 ? "IPv6" : "unknown" ) );
+	SET_READONLY( _addr, "address", String::NewFromUtf8( isolate, addr->key.addr ) );
+	SET_READONLY( _addr, "IP", String::NewFromUtf8( isolate, GetAddrString( addr->addr ) ) );
+	SET_READONLY( _addr, "port", Number::New( isolate, port ) );
+	return addr;
+}
+
+addrObject *addrObject::internalNew( Isolate *isolate, Local<Object> *_this ) {
+	Local<Function> cons = Local<Function>::New( isolate, addrObject::constructor );
+	Local<Value> args[1];
+	MaybeLocal<Object> _addr = cons->NewInstance( isolate->GetCurrentContext(), 0, args );
+	_this[0] = _addr.ToLocalChecked();
+	return ObjectWrap::Unwrap<addrObject>( _addr.ToLocalChecked() );
+}
+
 void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
-	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Must specify address string to create an address." ) ) ) );
-		return;
-	}
-
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
-		struct udpOptions udpOpts;
 		int argBase = 0;
 		char *address = NULL;
 		int port = 0;
-
+		if( !args.Length() )
+		{
+			Local<Object> _this = args.This();
+			addrObject* obj = new addrObject();
+			obj->_this.Reset( isolate, _this );
+			obj->Wrap( _this );
+			args.GetReturnValue().Set( _this );
+			return;
+		}
 		address = StrDup( *String::Utf8Value( args[argBase]->ToString() ) );
 		argBase++;
 
@@ -458,21 +586,47 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 		Local<Object> _this = args.This();
 		addrObject* obj = new addrObject( address, port );
+		AddBinaryNode( l.addresses, obj, (uintptr_t)&obj->key );
+		AddBinaryNode( l.addressesBySA, obj, (uintptr_t)obj->addr );
+		struct optionStrings *strings = getStrings( isolate );
+		uint16_t realPort;
+		GetAddressParts( obj->addr, NULL, &realPort );
+		SET_READONLY( _this, "family", String::NewFromUtf8( isolate, obj->addr->sa_family==AF_INET?"IPv4":obj->addr->sa_family==AF_INET6?"IPv6":"unknown" ) );
+		SET_READONLY( _this, "address", String::NewFromUtf8( isolate, address ) );
+		SET_READONLY( _this, "IP", String::NewFromUtf8( isolate, GetAddrString( obj->addr ) ) );
+		SET_READONLY( _this, "port", Number::New( isolate, realPort ) );
 
+		obj->_this.Reset( isolate, _this );
 		obj->Wrap( _this );
 
 		args.GetReturnValue().Set( _this );
 	}
 	else {
-		// Invoked as plain function `MyObject(...)`, turn into construct call.
-		int argc = args.Length();
-		Local<Value> *argv = new Local<Value>[argc];
-		for( int n = 0; n < argc; n++ )
-			argv[n] = args[n];
+		if( argc == 0 ) {
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Must specify address string to create an address." ) ) ) );
+			return;
+		}
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( Nan::NewInstance( cons, argc, argv ).ToLocalChecked() );
-		delete argv;
+		int argBase = 0;
+		char *address = NULL;
+		int port = 0;
+		if( !args.Length() )
+		{
+			Local<Object> _this = args.This();
+			addrObject* obj = new addrObject();
+			obj->_this.Reset( isolate, _this );
+			obj->Wrap( _this );
+			return;
+		}
+		address = StrDup( *String::Utf8Value( args[argBase]->ToString() ) );
+		argBase++;
+
+		if( (args.Length() >= argBase) && args[argBase]->IsNumber() ) {
+			port = args[argBase]->ToInt32()->Value();
+		}
+		addrObject *addr = ::getAddress( isolate, address, port );
+
+		args.GetReturnValue().Set( addr->_this.Get( isolate ) );
 	}
 }
 
