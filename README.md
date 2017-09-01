@@ -193,8 +193,8 @@ ComObject = {
 }
 
 COM port settings are kept in the default option database under 
-  /comports.ini/COM PORTS/<comName> = 57600,N,8,1,carrier,RTS,rTSflow
-  /comports.ini/<comName>/port timeout = 100 
+  /comports.ini/COM PORTS/&lt;comName&gt; = 57600,N,8,1,carrier,RTS,rTSflow
+  /comports.ini/&lt;comName&gt;/port timeout = 100 
 
      the com port settings string is semi-standard DOS string... the first paramaeters, 
          baud, N/E/O/M/S (parity), 8/7 (data bits), 1/2 (stop bits); 
@@ -217,7 +217,7 @@ COM port settings are kept in the default option database under
 var dbName = "filename.db";
 var db = vfs.Sqlite( dbName );
 rows = db.do( "select * from sqlite_master" );
-rows.forEach( row=>{
+rows.forEach( row=&gt;{
     console.log( "row : ", row );
 }
 ```
@@ -312,7 +312,7 @@ console.log( "option value is : ", tmp.value, tmp, Object.keys(tmp) );
 tmp2.value = "Set Value";
 console.log( "after setting value..",  tmp2.value );
 console.log( "after setting value..", ( tmp2 = root.go( "a" ).go( "b3" ).go( "c2" ) ).value );
-//setTimeout( ()=>{console.log( "Wait a second to flush?") }, 1000 );
+//setTimeout( ()=&gt;{console.log( "Wait a second to flush?") }, 1000 );
 ```
 
 ### enumerating options  ```eo()```
@@ -485,7 +485,7 @@ See [tlsTest.js](https://github.com/d3x0r/sack.vfs/blob/master/tlsTest.js) for e
 Salty Random Generator 
 
 ```
-  var SRG = SaltyRG( salt=>salt.push( new Date() ) )// callback is passed an array to add salt to.
+  var SRG = SaltyRG( salt=&gt;salt.push( new Date() ) )// callback is passed an array to add salt to.
   var number = SRG.getBits(); // get a signed 32 bit number -  -2,147,483,648  to 2,147,483,647
 ```
 
@@ -508,7 +508,7 @@ Salty Random Generator
 ```
   // some examples
   var vfs = require( "sack.vfs" );
-  var SRG = vfs.SaltyRG( salt=>salt.push( new Date() ) )// callback is passed an array to add salt to.
+  var SRG = vfs.SaltyRG( salt=&gt;salt.push( new Date() ) )// callback is passed an array to add salt to.
   
   var signed_byte = SRG.getBits( 8, true );
   var unsigned_byte = SRG.getBits( 8 );
@@ -520,15 +520,15 @@ Salty Random Generator
 
 ```
 var sack = require( "sack.vfs" );
-var client = new sack.WebSocket.Client( <url> [, <protocol(s)>] [,option object] );
-client.on( <event>, <callback> );
+var client = new sack.WebSocket.Client( &lt;url&gt; [, &lt;protocol(s)&gt;] [,option object] );
+client.on( &lt;event&gt;, &lt;callback&gt; );
 client.onOpen( callback );
 client.onMessage( callback );
 client.onError( callback );
 client.onClose( callback );
 
-var server = new sack.WebSocket.Server( { <options> } );
-server.on( <event>, <callback> );
+var server = new sack.WebSocket.Server( { &lt;options&gt; } );
+server.on( &lt;event&gt;, &lt;callback&gt; );
 server.onConnect( callback );
 server.onAccept( callback );
 
@@ -545,7 +545,7 @@ Client constructor parameters
     | masking | true/false; required by RFC, default is TRUE |
     | perMessageDeflate | true/false; default false (performance).  Reqeusts permessage-deflate extension from server, and deflates messages sent. |
     | perMessageDeflateAllow | true/false; default false (performance).  Accepts permessage-deflate from server, but does not deflate messages. |    
-    | ca | <string>; uses PEM certificate as part of certificate chain to verify server. |
+    | ca | &lt;string&gt;; uses PEM certificate as part of certificate chain to verify server. |
     
   After opening, websocket object has 'connection' which gives some of the information about the connection established.
 
@@ -587,9 +587,9 @@ Server Options
   | masking | true/false; browsers do not accept server masked data; RFC non-specific; default is false |
   | perMessageDeflate | true/false; default false (performance).  Accepts permessage-deflate extension from client, and deflates messages if requested by client. |
   | perMessageDeflateAllow | true/false; default false (performance).  Accepts permessage-deflate from client, but does not deflate messages on response |    
-  | cert | <string>; uses PEM certificate as server certificate chain to send to client. |
-  | key  | <string>; uses PEM private key specified for encryption; used by clients to authenticate cerficates  |
-  | passphrase | <string>; uses passphrase for key provided |
+  | cert | &lt;string&gt;; uses PEM certificate as server certificate chain to send to client. |
+  | key  | &lt;string&gt;; uses PEM private key specified for encryption; used by clients to authenticate cerficates  |
+  | passphrase | &lt;string&gt;; uses passphrase for key provided |
 
 Server Client Methods
   this is a slightly different object than a client, although accepts the same events except for on( "open" ) and onOpen() method.
@@ -604,18 +604,67 @@ WebSocket connection Object
 
   | Connection Field | Usage |
   |----------|----------|
-  | localFamily | <String> value is either 'IPv4' or 'IPv6' |
-  | localAddress | <string> the IP address of the local side of the connection |
-  | localPort | <Number> port number of the local connection |
-  | remoteFamily | <String> value is either 'IPv4' or 'IPv6' |
-  | remoteAddress | <string> the IP address of the remote side of the connection |
-  | remotePort | <Number> port number of the remote connection |
-  | headers | <Object> field names are the names of the fields in the request header; values are the values of the fields.<BR> Client side connections may not have headers present.  |
+  | localFamily | &lt;String&gt; value is either 'IPv4' or 'IPv6' |
+  | localAddress | &lt;string&gt; the IP address of the local side of the connection |
+  | localPort | &lt;Number&gt; port number of the local connection |
+  | remoteFamily | &lt;String&gt; value is either 'IPv4' or 'IPv6' |
+  | remoteAddress | &lt;string&gt; the IP address of the remote side of the connection |
+  | remotePort | &lt;Number&gt; port number of the remote connection |
+  | headers | &lt;Object&gt; field names are the names of the fields in the request header; values are the values of the fields.<BR> Client side connections may not have headers present.  |
+
+## Network Address Object
+```
+var sack = require( 'sack.vfs' );
+var address = sack.Network.Address( address string [, port] );
+```
+
+Address string can contain an optional port notation after a colon(':')
+
+| Address Members | Description |
+| family | const String; value is either 'IPv6' or 'IPv4' |
+| address | String; address the address object was created with. |
+| IP | String; numeric IP address converted to a string |
+| port | Number; port number this address refers to (0 if not applicable, as in a unix socket) |
+
+
+
+## UDP Socket Object
+
+```
+var sack = require( 'sack.vfs' );
+var udp = sack.dgram.createSocket( [listen address string] [, option object] [, message callback] ) )
+```
+
+sack.dgram.Socket() Invokation
+  can pass a string address to listen on.  "IP[:port]" format.  IPv6 IP should be enclosed in brackets;  `[::1]:80`.
+  if address is not passed, an object with socket options must be specified.
+  final parameter can optionally be a callback which is used as the on('message') event callback.
+
+| UDP Socket options |   |
+|----|----|
+| port  | &lt;number&gt; specify the port to listen on |
+| address | &lt;string&gt;; specify the address to listen on (defaults to [::]) |
+| family | &lt;string&gt; either 'IPv4' or 'IPv6' which controls the default address; otherwise address string will determine the family |
+| toPort | &lt;number&gt; specify the port to send to if not specified in send call |
+| toAddress | &lt;string&gt; specify the address to send to if not specified in send call |
+| broadcast | &lt;bool&gt; if `true` enable receiving/sending broadcast UDP messages |
+| readStrings | &lt;bool&gt; if `true` messages passed to message callback will be given as text format, otherwise will be a TypedArray |
+
+| UDP Socket Methods | Arguments | Description  |
+|-----|-----|-----|
+| send | (message [,address]) | Send a message, message can be an ArrayBuffer or string,   if second parameter is passed it should be an sack.Network.Address object. |
+| close | () | Close the socket.
+| on | (eventName, callback) | Set message or close callbacks on the socket.
+
+| UDP Events |  |  |
+|----|----|----|
+| message | (msg, remoteAddress) | called when a message is received.  msg parameter is either a string if socket was opened with `readStrings` or a TypedArray.  Second parameter is a Network.Socket object representing the source address of the message |
+| close | () | Socket has been closed. | 
 
 
 
 ## Changelog
-- 0.1.99307 Implement interface to websocket library.
+- 0.1.99307 Implement interface to websocket library. Implement interface to UDP sockets.
 - 0.1.99306 Move json reviver parameter handling internal.  Implement volume JSON stream reader interface.  Fix options to create/reopen an existing file.
 - 0.1.99305 Fix handling exceptions triggered from callbacks. Fix missing truncate in more instances;  Sync sack filesystem updates; fix unlink return value; add pos() method to File.
 - 0.1.99304 fix truncate on simple writes into a volume.
