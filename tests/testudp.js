@@ -4,9 +4,6 @@ const sack = require( ".." );
 console.log( "test addr:", sack.Network.Address( "google.com", 80 ) );
 console.log( "test addr:", sack.Network.Address( "google.com:443", 80 ) );
 
-
-const dgram = sack.dgram;
-
 	var os = require("os");
 	var interfaces = os.networkInterfaces();
 	var addresses = [];
@@ -28,7 +25,7 @@ addresses.forEach( (addr)=>{
 	if( addr.family == 'IPv6' ) return;
         
 	console.log( new Date(), "Bind to:", addr.address );
-	var listener = dgram.createSocket({ address: addr.address
+	var listener = sack.Network.UDP({ address: addr.address
 	        , port : port
 	        , broadcast:true
 		, readStrings : true
