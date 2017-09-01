@@ -213,8 +213,6 @@ void InitUDPSocket( Isolate *isolate, Handle<Object> exports ) {
 	if( !l.loop )
 		l.loop = uv_default_loop();
 
-	Local<Object> o = Object::New( isolate );
-	SET_READONLY( exports, "dgram", o );
 	Local<Object> oNet = Object::New( isolate );
 	SET_READONLY( exports, "Network", oNet );
 
@@ -231,8 +229,7 @@ void InitUDPSocket( Isolate *isolate, Handle<Object> exports ) {
 
 		udpObject::constructor.Reset( isolate, udpTemplate->GetFunction() );
 
-		SET_READONLY( o, "Socket", udpTemplate->GetFunction() );
-		SET_READONLY( o, "createSocket", udpTemplate->GetFunction() );
+		SET_READONLY( oNet, "UDP", udpTemplate->GetFunction() );
 	}
 	{
 		Local<FunctionTemplate> addrTemplate;

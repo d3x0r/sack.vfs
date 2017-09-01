@@ -155,7 +155,7 @@ void SRGObject::Init( Isolate *isolate, Handle<Object> exports )
 
 	SRGObject::constructor.Reset( isolate, srgTemplate->GetFunction() );
 
-	exports->Set( String::NewFromUtf8( isolate, "SaltyRNG" ), srgTemplate->GetFunction() );
+	SET_READONLY( exports, "SaltyRNG", srgTemplate->GetFunction() );
 
 }
 

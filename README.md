@@ -63,6 +63,21 @@ vfs = {
                 later in the string passed to Sqlite.  It may be `null` if it is anonymous mount.
           if no parameters are passed, a Volume object representing the native filesystem is returned.
     File - some native filsystem utility methods
+    SaltyRNG - creates a random number generator
+    TLS - namespace for utilities to generate certificates/keys
+        genkey( length [,password]) - Generates a keypair
+        pubkey( {options} ) - gets public key of a keypair or certificate
+        gencert( { options } ) - Generates a self signed certificate.
+        genreq( {options} ) - Generates a certification request
+        signcert( {options} ) - uses a certificate to sign a certificate request
+        validate( {options} ) - validate a certificate against a certificate chain.
+        expiration( certificate ) - gets the expiration of a certificate as a Date().     
+    WebSocket - Websocket interface
+        Client( ... ) - create a websocket client
+        Server( ... ) - create a websocket server        
+    Network - Raw network utilities
+        Address( address [,port] ) - holder for network addresses.
+        UDP( ... ) - UDP Socket to send/received datagrams.
     // windows only
     registry - an interface to windows registry options
     	set( path, value ) - set a new value in the registry
@@ -466,6 +481,17 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
 | key | private/public key to use  |
 | password | if required for key |
 
+
+```
+// some examples of subject options
+TLS.genreq( { subject : { IP: "127.0.0.1" } } );
+TLS.genreq( { subject : { IP: ["127.0.0.1","192.168.1.1"] } } );
+TLS.genreq( { subject : { DNS: "www.example.com" } } );
+TLS.genreq( { subject : { DNS: ["www.example.com", "smtp.example.com"], IP:[ "10.0.0.1" ] } } );
+```
+
+
+
 | signcert options |  |
 |---|---|
 | signer | certificate to sign with |
@@ -483,21 +509,22 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
 | cert | certificate to validate | 
 | chain | concatenated certificate chain to use for validation.  Order does not matter.  Not required if cert is self signed. |
 
-See [tlsTest.js](https://github.com/d3x0r/sack.vfs/blob/master/tlsTest.js) for example usage.
+See Also [tlsTest.js](https://github.com/d3x0r/sack.vfs/blob/master/tests/tlsTest.js) for example usage.
 
 ## SRG Module
 
 Salty Random Generator 
 
 ```
-  var SRG = SaltyRG( salt=&gt;salt.push( new Date() ) )// callback is passed an array to add salt to.
+  var sack = require( 'sack.vfs' );
+  var SRG = sack.SaltyRG( salt=&gt;salt.push( new Date() ) )// callback is passed an array to add salt to.
   var number = SRG.getBits(); // get a signed 32 bit number -  -2,147,483,648  to 2,147,483,647
 ```
 
-  - SaltyRG( callback ), SaltyRG( initial_seed ), SaltyRG()
-     callback is called to request more salt.  An array is passed which can have values pushed into it.
-     initial_seed is a seed to use initially, then no callback is called.
-     no parameters results with a generator with no initial seed, and no callback
+  - SaltyRG( callback ), SaltyRG( initial_seed ), SaltyRG()<BR>
+     callback is called to request more salt.  An array is passed which can have values pushed into it.<BR>
+     initial_seed is a seed to use initially, then no callback is called.<BR>
+     no parameters results with a generator with no initial seed, and no callback<BR>
      Results with a random_generator object.
      
      
@@ -617,10 +644,14 @@ WebSocket connection Object
   | remotePort | &lt;Number&gt; port number of the remote connection |
   | headers | &lt;Object&gt; field names are the names of the fields in the request header; values are the values of the fields.<BR> Client side connections may not have headers present.  |
 
-## Network Address Object
+## Network Address Object (Network.Address)
 ```
 var sack = require( 'sack.vfs' );
 var address = sack.Network.Address( address string [, port] );
+
+console.log( "test addr:", sack.Network.Address( "google.com", 80 ) );
+console.log( "test addr:", sack.Network.Address( "google.com:443", 80 ) );
+
 ```
 
 Address string can contain an optional port notation after a colon(':')
@@ -634,11 +665,16 @@ Address string can contain an optional port notation after a colon(':')
 
 
 
-## UDP Socket Object
+## UDP Socket Object (Network.UDP)
 
 ```
 var sack = require( 'sack.vfs' );
-var udp = sack.dgram.createSocket( [listen address string] [, option object] [, message callback] ) )
+var udp  = sack.Network.UDP( "localhost:5555", (msg,rinfo)=>{ console.log( "got message:", msg ) } );
+var udp2 = sack.Network.UDP( {port:5556, address:"localhost", toAddress:"localhost:5555" }, (msg,rinfo)=>{ console.log( "got message:", msg ) } );
+var udp3 = sack.Network.UDP( {port:5557, address:"localhost", toAddress:"localhost", toPort:5555, message:(msg,rinfo)=>{ console.log( "got message:", msg ) } );
+
+udp2.send( "Hello World" );
+
 ```
 
 sack.dgram.Socket() Invokation
@@ -649,25 +685,27 @@ sack.dgram.Socket() Invokation
 | UDP Socket options |   |
 |----|----|
 | port  | &lt;number&gt; specify the port to listen on |
-| address | &lt;string&gt;; specify the address to listen on (defaults to [::]). Optional port notation can be used (specified with a colon followed by a number (or name if under linux?))|
+| address | &lt;string&gt;; specify the address to listen on (defaults to [::]). Optional port notation can be used (specified with a colon followed by a number (or name if under linux?))<BR>If the port is specified here, it overrides the `port` option.|
 | family | &lt;string&gt; either 'IPv4' or 'IPv6' which controls the default address; otherwise address string will determine the family |
 | toPort | &lt;number&gt; specify the port to send to if not specified in send call |
-| toAddress | &lt;string&gt; specify the address to send to if not specified in send call.  Optional port notation can be used (specified with a colon followed by a number (or name if under linux?)) |
+| toAddress | &lt;string&gt; specify the address to send to if not specified in send call.  Optional port notation can be used (specified with a colon followed by a number (or name if under linux?)) <BR>If the port is specified here, it overrides the `toPort` option.|
 | broadcast | &lt;bool&gt; if `true` enable receiving/sending broadcast UDP messages |
 | readStrings | &lt;bool&gt; if `true` messages passed to message callback will be given as text format, otherwise will be a TypedArray |
 
 | UDP Socket Methods | Arguments | Description  |
 |-----|-----|-----|
 | send | (message [,address]) | Send a message, message can be an ArrayBuffer or string,   if second parameter is passed it should be an sack.Network.Address object. |
-| close | () | Close the socket.
-| on | (eventName, callback) | Set message or close callbacks on the socket.
+| close | () | Close the socket. |
+| on | (eventName, callback) | Set message or close callbacks on the socket. |
+| setBroadcast | (bool) | enable broadcast messages |
+
 
 | UDP Events |  |  |
 |----|----|----|
 | message | (msg, remoteAddress) | called when a message is received.  msg parameter is either a string if socket was opened with `readStrings` or a TypedArray.  Second parameter is a Network.Socket object representing the source address of the message |
 | close | () | Socket has been closed. | 
 
-
+See Also [testudp.js](https://github.com/d3x0r/sack.vfs/blob/master/tests/testudp.js) for example usage.
 
 ## Changelog
 - 0.1.99307 Implement interface to websocket library. Implement interface to UDP sockets.
