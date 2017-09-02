@@ -7699,8 +7699,18 @@ NETWORK_PROC( void, DumpAddrEx )( CTEXTSTR name, SOCKADDR *sa DBG_PASS );
 /* <combine sack::network::udp::DumpAddrEx@CTEXTSTR@SOCKADDR *sa>
    \ \                                                            */
 #define DumpAddr(n,sa) DumpAddrEx(n,sa DBG_SRC )
+NETWORK_PROC( int, SetSocketReuseAddress )( PCLIENT pClient, int32_t enable );
+NETWORK_PROC( int, SetSocketReusePort )( PCLIENT pClient, int32_t enable );
 _UDP_NAMESPACE_END
 USE_UDP_NAMESPACE
+struct interfaceAddress {
+	SOCKADDR *sa;
+	SOCKADDR *saBroadcast;
+	SOCKADDR *saMask;
+};
+NETWORK_PROC( SOCKADDR*, GetBroadcastAddressForInterface )(SOCKADDR *addr);
+NETWORK_PROC( SOCKADDR*, GetInterfaceAddressForBroadcast )(SOCKADDR *addr);
+NETWORK_PROC( void, LoadNetworkAddresses )(void);
 //----- PING.C ------
 NETWORK_PROC( LOGICAL, DoPing )( CTEXTSTR pstrHost,
              int maxTTL,
