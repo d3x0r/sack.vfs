@@ -16,12 +16,15 @@ struct optionStrings {
 	Eternal<String> *toPortString;
 	Eternal<String> *toAddressString;
 	Eternal<String> *readStringsString;
+	Eternal<String> *reuseAddrString;
+	Eternal<String> *reusePortString;
 };
 
 struct udpOptions {
 	int port;
 	char *address;
 	bool reuseAddr;
+	bool reusePort;
 	bool broadcast;
 	int toPort;
 	char *toAddress;
@@ -206,6 +209,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->toPortString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "toPort" ) );
 		check->toAddressString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "toAddress" ) );
 		check->readStringsString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "readStrings" ) );
+		check->reusePortString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "reusePort" ) );
+		check->reuseAddrString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "reuseAddress" ) );
 	}
 	return check;
 }
@@ -330,6 +335,10 @@ udpObject::udpObject( struct udpOptions *opts ) {
 			GuaranteeAddr( pc, CreateSockAddress( opts->toAddress, opts->toPort ) );
 		if( opts->broadcast )
 			UDPEnableBroadcast( pc, TRUE );
+		if( opts->reuseAddr )
+			SetSocketReuseAddress( pc, TRUE );
+		if( opts->reusePort )
+			SetSocketReusePort( pc, TRUE );
 
 		eventQueue = CreateLinkQueue();
 		//lprintf( "Init async handle. (wss)" );
@@ -425,10 +434,20 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( optName = strings->messageString->Get( isolate ) ) ) {
 				udpOpts.messageCallback.Reset( isolate, Handle<Function>::Cast( opts->Get( optName ) ) );
 			}
-			// ---- get message callback
+			// ---- get read strings setting
 			if( opts->Has( optName = strings->readStringsString->Get( isolate ) ) ) {
 				udpOpts.readStrings = opts->Get( optName )->ToBoolean()->Value();
 			}
+			// ---- get reuse address
+			if( opts->Has( optName = strings->reuseAddrString->Get( isolate ) ) ) {
+				udpOpts.reuseAddr = opts->Get( optName )->ToBoolean()->Value();
+			}
+			else udpOpts.reuseAddr = false;
+			// ---- get reuse port
+			if( opts->Has( optName = strings->reusePortString->Get( isolate ) ) ) {
+				udpOpts.reusePort = opts->Get( optName )->ToBoolean()->Value();
+			}
+			else udpOpts.reusePort = false;
 			argBase++;
 		}
 
@@ -476,11 +495,14 @@ void udpObject::on( const FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		String::Utf8Value event( args[0]->ToString() );
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
-		if( StrCmp( *event, "message" ) == 0 ) {
+		if( StrCmp( *event, "error" ) == 0 ) {
+			// not sure how to get this... so many errors so few callbacks
+		}
+		else if( StrCmp( *event, "message" ) == 0 ) {
 			if( cb->IsFunction() )
 				obj->messageCallback.Reset( isolate, cb );
 		}
-		if( StrCmp( *event, "close" ) == 0 ) {
+		else if( StrCmp( *event, "close" ) == 0 ) {
 			if( cb->IsFunction() )
 				obj->closeCallback.Reset( isolate, cb );
 		}
