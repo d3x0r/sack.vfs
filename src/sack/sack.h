@@ -7352,8 +7352,7 @@ NETWORK_PROC( void, SetTCPNoDelay )( PCLIENT pClient, int bEnable );
               on.
    bEnable :  TRUE to enable keep\-alive else disable keep\-alive. */
 NETWORK_PROC( void, SetClientKeepAlive)( PCLIENT pClient, int bEnable );
-/* \ \
-   Parameters
+/* \    Parameters
    lpClient :   network client to read from
    lpBuffer :   buffer to read into
    nBytes :     size of the buffer to read or maximum amount of
@@ -7389,8 +7388,7 @@ NETWORK_PROC( void, SetClientKeepAlive)( PCLIENT pClient, int bEnable );
    }
    </code>                                                         */
 NETWORK_PROC( size_t, doReadExx2)(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsStream, LOGICAL bWait, int user_timeout );
-/* \ \
-   Parameters
+/* \    Parameters
    lpClient :   network client to read from
    lpBuffer :   buffer to read into
    nBytes :     size of the buffer to read or maximum amount of
@@ -7426,8 +7424,7 @@ NETWORK_PROC( size_t, doReadExx2)(PCLIENT lpClient,POINTER lpBuffer,size_t nByte
 NETWORK_PROC( size_t, doReadExx )(PCLIENT lpClient, POINTER lpBuffer, size_t nBytes
 										, LOGICAL bIsStream, LOGICAL bWait );
 /* <combine sack::network::tcp::doReadExx@PCLIENT@POINTER@int@LOGICAL@LOGICAL>
-   \ \
-   Remarks
+   \    Remarks
    if bWait is not specifed, it is passed as FALSE.                            */
 NETWORK_PROC( size_t, doReadEx )(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsStream);
 /* <combine sack::network::tcp::doReadExx@PCLIENT@POINTER@int@LOGICAL@LOGICAL>
@@ -7591,8 +7588,7 @@ NETWORK_PROC( PCLIENT, ServeUDPAddrEx )( SOCKADDR *pAddr,
                      cReadCompleteEx pReadComplete,
 													 cCloseCallback Close DBG_PASS );
 #define ServeUDPAddr(addr,read,close) ServeUDPAddrEx( addr,read,close DBG_SRC )
-/* \ \
-   Parameters
+/* \    Parameters
    address :         Address to listen at (interface
                      specification). Can be NULL to specify ANY
                      address, See notes on CreateSockAddress.
@@ -7618,8 +7614,7 @@ NETWORK_PROC( PCLIENT, ConnectUDPEx )( CTEXTSTR , uint16_t ,
                     cReadCompleteEx,
 												  cCloseCallback DBG_PASS );
 #define ConnectUDP(a,b,c,d,e,f) ConnectUDPEx(a,b,c,d,e,f DBG_SRC )
-/* \ \
-   Parameters
+/* \    Parameters
    sa :             address to listen for UDP messages at.
    saTo :           address to send UDP messages to, if the sa
                     parameter of send is NULL.

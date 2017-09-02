@@ -45870,8 +45870,7 @@ NETWORK_PROC( void, SetTCPNoDelay )( PCLIENT pClient, int bEnable );
               on.
    bEnable :  TRUE to enable keep\-alive else disable keep\-alive. */
 NETWORK_PROC( void, SetClientKeepAlive)( PCLIENT pClient, int bEnable );
-/* \ \
-   Parameters
+/* \    Parameters
    lpClient :   network client to read from
    lpBuffer :   buffer to read into
    nBytes :     size of the buffer to read or maximum amount of
@@ -45907,8 +45906,7 @@ NETWORK_PROC( void, SetClientKeepAlive)( PCLIENT pClient, int bEnable );
    }
    </code>                                                         */
 NETWORK_PROC( size_t, doReadExx2)(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsStream, LOGICAL bWait, int user_timeout );
-/* \ \
-   Parameters
+/* \    Parameters
    lpClient :   network client to read from
    lpBuffer :   buffer to read into
    nBytes :     size of the buffer to read or maximum amount of
@@ -45944,8 +45942,7 @@ NETWORK_PROC( size_t, doReadExx2)(PCLIENT lpClient,POINTER lpBuffer,size_t nByte
 NETWORK_PROC( size_t, doReadExx )(PCLIENT lpClient, POINTER lpBuffer, size_t nBytes
 										, LOGICAL bIsStream, LOGICAL bWait );
 /* <combine sack::network::tcp::doReadExx@PCLIENT@POINTER@int@LOGICAL@LOGICAL>
-   \ \
-   Remarks
+   \    Remarks
    if bWait is not specifed, it is passed as FALSE.                            */
 NETWORK_PROC( size_t, doReadEx )(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsStream);
 /* <combine sack::network::tcp::doReadExx@PCLIENT@POINTER@int@LOGICAL@LOGICAL>
@@ -46109,8 +46106,7 @@ NETWORK_PROC( PCLIENT, ServeUDPAddrEx )( SOCKADDR *pAddr,
                      cReadCompleteEx pReadComplete,
 													 cCloseCallback Close DBG_PASS );
 #define ServeUDPAddr(addr,read,close) ServeUDPAddrEx( addr,read,close DBG_SRC )
-/* \ \
-   Parameters
+/* \    Parameters
    address :         Address to listen at (interface
                      specification). Can be NULL to specify ANY
                      address, See notes on CreateSockAddress.
@@ -46136,8 +46132,7 @@ NETWORK_PROC( PCLIENT, ConnectUDPEx )( CTEXTSTR , uint16_t ,
                     cReadCompleteEx,
 												  cCloseCallback DBG_PASS );
 #define ConnectUDP(a,b,c,d,e,f) ConnectUDPEx(a,b,c,d,e,f DBG_SRC )
-/* \ \
-   Parameters
+/* \    Parameters
    sa :             address to listen for UDP messages at.
    saTo :           address to send UDP messages to, if the sa
                     parameter of send is NULL.
@@ -57800,6 +57795,8 @@ TEXTSTR json_build_message( struct json_context_object *object
 #define CLIENT_DEFINED
 SACK_NETWORK_NAMESPACE
 #define MAGIC_SOCKADDR_LENGTH ( sizeof(SOCKADDR_IN)< 256?256:sizeof( SOCKADDR_IN) )
+#define IN_SOCKADDR_LENGTH sizeof(struct sockaddr_in)
+#define IN6_SOCKADDR_LENGTH sizeof(struct sockaddr_in6)
 // this might have to be like sock_addr_len_t
 #define SOCKADDR_LENGTH(sa) ( (int)*(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) )
 #ifdef __MAC__
@@ -58093,6 +58090,7 @@ SACK_NETWORK_NAMESPACE_END
 //#include <sys/timeb.h>
 //*******************8
 #include <net/if_arp.h>
+#include <ifaddrs.h>
 //*******************8
 #endif
 #ifdef WIN32
@@ -60451,7 +60449,7 @@ NETWORK_PROC( SOCKADDR *,CreateAddress_hton)( uint32_t dwIP,uint16_t nHisPort)
 	SOCKADDR_IN *lpsaAddr=(SOCKADDR_IN*)AllocAddr();
 	if (!lpsaAddr)
 		return(NULL);
-	SET_SOCKADDR_LENGTH( lpsaAddr, 16 );
+	SET_SOCKADDR_LENGTH( lpsaAddr, IN_SOCKADDR_LENGTH );
          // InetAddress Type.
 	lpsaAddr->sin_family       = AF_INET;
 	lpsaAddr->sin_addr.S_un.S_addr  = htonl(dwIP);
@@ -60503,7 +60501,7 @@ SOCKADDR *CreateAddress( uint32_t dwIP,uint16_t nHisPort)
 	SOCKADDR_IN *lpsaAddr=(SOCKADDR_IN*)AllocAddr();
 	if (!lpsaAddr)
 		return(NULL);
-	SET_SOCKADDR_LENGTH( lpsaAddr, 16 );
+	SET_SOCKADDR_LENGTH( lpsaAddr, IN_SOCKADDR_LENGTH );
          // InetAddress Type.
 	lpsaAddr->sin_family	    = AF_INET;
 	lpsaAddr->sin_addr.S_un.S_addr  = dwIP;
@@ -60545,7 +60543,7 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 		char *tmp = CStrDup( lpName );
 		if( inet_pton( AF_INET, tmp, (struct in_addr*)&lpsaAddr->sin_addr ) > 0 )
 		{
-			SET_SOCKADDR_LENGTH( lpsaAddr, 16 );
+			SET_SOCKADDR_LENGTH( lpsaAddr, IN_SOCKADDR_LENGTH );
          // InetAddress Type.
 			lpsaAddr->sin_family       = AF_INET;
 			conversion_success = TRUE;
@@ -60554,7 +60552,7 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 #else
 		if( inet_pton( AF_INET, lpName, (struct in6_addr*)&lpsaAddr->sin_addr ) > 0 )
 		{
-			SET_SOCKADDR_LENGTH( lpsaAddr, 16 );
+			SET_SOCKADDR_LENGTH( lpsaAddr, IN_SOCKADDR_LENGTH );
          // InetAddress Type.
 			lpsaAddr->sin_family       = AF_INET;
 			conversion_success = TRUE;
@@ -60572,7 +60570,7 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 		char *tmp = CStrDup( lpName );
 		if( inet_pton( AF_INET6, tmp, (struct in_addr*)&lpsaAddr->sin_addr ) > 0 )
 		{
-			SET_SOCKADDR_LENGTH( lpsaAddr, 24 );
+			SET_SOCKADDR_LENGTH( lpsaAddr, IN6_SOCKADDR_LENGTH );
          // InetAddress Type.
 			lpsaAddr->sin_family       = AF_INET6;
 			conversion_success = TRUE;
@@ -60581,7 +60579,7 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 #else
 		if( inet_pton( AF_INET6, lpName, (struct in6_addr*)&lpsaAddr->sin_addr ) > 0 )
 		{
-			SET_SOCKADDR_LENGTH( lpsaAddr, 24 );
+			SET_SOCKADDR_LENGTH( lpsaAddr, IN6_SOCKADDR_LENGTH );
          // InetAddress Type.
 			lpsaAddr->sin_family       = AF_INET6;
 			conversion_success = TRUE;
@@ -60632,7 +60630,7 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 					else
 					{
 						lprintf( WIDE( "Strange, gethostbyname failed, but AF_INET worked..." ) );
-						SET_SOCKADDR_LENGTH( lpsaAddr, 16 );
+						SET_SOCKADDR_LENGTH( lpsaAddr, IN_SOCKADDR_LENGTH );
 						lpsaAddr->sin_family = AF_INET;
            // save IP address from host entry.
 						memcpy( &lpsaAddr->sin_addr.S_un.S_addr,
@@ -60642,7 +60640,7 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 				}
 				else
 				{
-					SET_SOCKADDR_LENGTH( lpsaAddr, 26 );
+					SET_SOCKADDR_LENGTH( lpsaAddr, IN6_SOCKADDR_LENGTH );
          // InetAddress Type.
 					lpsaAddr->sin_family = AF_INET6;
 #if note
@@ -60663,7 +60661,7 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 			else
 			{
 				Deallocate( char *, tmp );
-				SET_SOCKADDR_LENGTH( lpsaAddr, 16 );
+				SET_SOCKADDR_LENGTH( lpsaAddr, IN_SOCKADDR_LENGTH );
          // InetAddress Type.
 				lpsaAddr->sin_family = AF_INET;
            // save IP address from host entry.
@@ -60678,7 +60676,7 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
          // InetAddress Type.
 			lpsaAddr->sin_family      = AF_INET;
 			lpsaAddr->sin_addr.S_un.S_addr = 0;
-			SET_SOCKADDR_LENGTH( lpsaAddr, 16 );
+			SET_SOCKADDR_LENGTH( lpsaAddr, IN_SOCKADDR_LENGTH );
 		}
 	}
 #ifdef UNICODE
@@ -61008,7 +61006,7 @@ SOCKADDR *CreateBroadcast(uint16_t nPort)
 	if (!bcast)
 		return(NULL);
 	lpMyAddr = CreateLocal(0);
-	SET_SOCKADDR_LENGTH( bcast, 16 );
+	SET_SOCKADDR_LENGTH( bcast, IN_SOCKADDR_LENGTH );
 	bcast->sin_family	    = AF_INET;
 	bcast->sin_addr.S_un.S_addr  = ((SOCKADDR_IN*)lpMyAddr)->sin_addr.S_un.S_addr;
  // Fake a subnet broadcast address
@@ -61406,14 +61404,14 @@ NETWORK_PROC( void, GetNetworkAddressBinary )( SOCKADDR *addr, uint8_t **data, s
 		MemCpy( (*data) + namelen + 1, addr, addrlen );
 	}
 }
-NETWORK_PROC( SOCKADDR *, MakeNetworkAddressFromBinary )( uint8_t *data, size_t datalen ) {
+NETWORK_PROC( SOCKADDR *, MakeNetworkAddressFromBinary )( uintptr_t *data, size_t datalen ) {
 	SOCKADDR *addr = AllocAddr();
 	size_t namelen = strlen( (const char*)data );
  // if empty name, don't include it.
 	if( namelen )
 		SetAddrName( addr, (const char*)data );
-	SET_SOCKADDR_LENGTH( addr, data[namelen+1] );
-	MemCpy( addr, data + namelen + 2, data[namelen+1] );
+	SET_SOCKADDR_LENGTH( addr, data[1] );
+	MemCpy( addr, data + 2, data[1] );
 	return addr;
 }
 #ifdef __LINUX__
@@ -61432,24 +61430,24 @@ void LoadNetworkAddresses( void ) {
 		ia = New( struct interfaceAddress );
 		dup = AllocAddr();
 		if( tmp->ifa_addr->sa_family == AF_INET6 ) {
-			memcpy( dup, tmp->ifa_addr, 26 );
-			SET_SOCKADDR_LENGTH( lpsaAddr, 26 );
+			memcpy( dup, tmp->ifa_addr, IN6_SOCKADDR_LENGTH );
+			SET_SOCKADDR_LENGTH( dup, IN6_SOCKADDR_LENGTH );
 		}
 		else {
-			memcpy( dup, tmp->ifa_addr, 16 );
-			SET_SOCKADDR_LENGTH( lpsaAddr, 16 );
+			memcpy( dup, tmp->ifa_addr, IN_SOCKADDR_LENGTH );
+			SET_SOCKADDR_LENGTH( dup, IN_SOCKADDR_LENGTH );
 		}
 		ia->sa = dup;
 		dup = AllocAddr();
 		if( tmp->ifa_addr->sa_family == AF_INET6 ) {
-			memcpy( dup, tmp->ifa_netmask, 26 );
-			SET_SOCKADDR_LENGTH( lpsaAddr, 26 );
+			memcpy( dup, tmp->ifa_netmask, IN6_SOCKADDR_LENGTH );
+			SET_SOCKADDR_LENGTH( dup, IN6_SOCKADDR_LENGTH );
 		}
 		else {
-			memcpy( dup, tmp->ifa_netmask, 16 );
-			SET_SOCKADDR_LENGTH( lpsaAddr, 16 );
+			memcpy( dup, tmp->ifa_netmask, IN_SOCKADDR_LENGTH );
+			SET_SOCKADDR_LENGTH( dup, IN_SOCKADDR_LENGTH );
 		}
-		ia->sa = dup;
+		ia->saMask = dup;
 		ia->saBroadcast = AllocAddr();
 		ia->saBroadcast->sa_family = ia->sa->sa_family;
 		ia->saBroadcast->sa_data[0] = 0;
@@ -63193,12 +63191,12 @@ void DumpSocket( PCLIENT pc );
 _UDP_NAMESPACE
 //----------------------------------------------------------------------------
 //----------------------------------------------------------------------------
-NETWORK_PROC( PCLIENT, CPPServeUDPAddrEx )( SOCKADDR *pAddr
-                  , cReadCompleteEx pReadComplete
-                  , uintptr_t psvRead
-                  , cCloseCallback Close
-													 , uintptr_t psvClose
-													 , int bCPP DBG_PASS )
+PCLIENT CPPServeUDPAddrEx( SOCKADDR *pAddr
+                         , cReadCompleteEx pReadComplete
+                         , uintptr_t psvRead
+                         , cCloseCallback Close
+                         , uintptr_t psvClose
+                         , int bCPP DBG_PASS )
 {
 	PCLIENT pc;
 	// open a UDP Port to listen for Pings for server...
@@ -63206,7 +63204,7 @@ NETWORK_PROC( PCLIENT, CPPServeUDPAddrEx )( SOCKADDR *pAddr
 	if( !pc )
 	{
 		Log( WIDE("Network Resource Fail"));
-		  return NULL;
+		return NULL;
 	}
 #ifdef WIN32
 	pc->Socket = OpenSocket(((*(uint16_t*)pAddr) == AF_INET)?TRUE:FALSE,FALSE, FALSE, 0);
@@ -63258,9 +63256,9 @@ NETWORK_PROC( PCLIENT, CPPServeUDPAddrEx )( SOCKADDR *pAddr
 	WSAEventSelect( pc->Socket, pc->event, FD_READ|FD_WRITE );
 #  else
 	if (WSAAsyncSelect( pc->Socket,
-                       globalNetworkData.ghWndNetwork,
-                       SOCKMSG_UDP,
-                       FD_READ|FD_WRITE ) )
+	                   globalNetworkData.ghWndNetwork,
+	                   SOCKMSG_UDP,
+	                   FD_READ|FD_WRITE ) )
 	{
 		Log( WIDE("Select Fail"));
 		InternalRemoveClientEx( pc, TRUE, FALSE );
@@ -63311,25 +63309,25 @@ PCLIENT CPPServeUDPAddr( SOCKADDR *pAddr
 }
 //----------------------------------------------------------------------------
 #undef ServeUDPAddr
-NETWORK_PROC( PCLIENT, ServeUDPAddrEx )( SOCKADDR *pAddr,
-                  cReadCompleteEx pReadComplete,
-                  cCloseCallback Close DBG_PASS )
+PCLIENT ServeUDPAddrEx( SOCKADDR *pAddr
+                      , cReadCompleteEx pReadComplete
+                      , cCloseCallback Close DBG_PASS )
 {
 	PCLIENT result = CPPServeUDPAddrEx( pAddr, pReadComplete, 0, Close, 0, FALSE DBG_RELAY );
 	if( result )
 		result->dwFlags &= ~(CF_CPPREAD|CF_CPPCLOSE);
 	return result;
 }
-NETWORK_PROC( PCLIENT, ServeUDPAddr )( SOCKADDR *pAddr,
-                  cReadCompleteEx pReadComplete,
-                  cCloseCallback Close)
+PCLIENT ServeUDPAddr( SOCKADDR *pAddr
+                    , cReadCompleteEx pReadComplete
+                    , cCloseCallback Close)
 {
 	return ServeUDPAddrEx( pAddr, pReadComplete, Close DBG_SRC );
 }
 //----------------------------------------------------------------------------
-NETWORK_PROC( PCLIENT, ServeUDPEx )( CTEXTSTR pAddr, uint16_t wPort,
-                  cReadCompleteEx pReadComplete,
-                  cCloseCallback Close DBG_PASS )
+PCLIENT ServeUDPEx( CTEXTSTR pAddr, uint16_t wPort
+                  , cReadCompleteEx pReadComplete
+                  , cCloseCallback Close DBG_PASS )
 {
 	SOCKADDR *lpMyAddr;
 	if( pAddr )
@@ -63345,14 +63343,14 @@ NETWORK_PROC( PCLIENT, ServeUDPEx )( CTEXTSTR pAddr, uint16_t wPort,
 	return ServeUDPAddrEx( lpMyAddr, pReadComplete, Close DBG_RELAY );
 }
 #undef ServeUDP
-NETWORK_PROC( PCLIENT, ServeUDP )( CTEXTSTR pAddr, uint16_t wPort,
-                  cReadCompleteEx pReadComplete,
-                  cCloseCallback Close)
+PCLIENT ServeUDP( CTEXTSTR pAddr, uint16_t wPort
+                , cReadCompleteEx pReadComplete
+                , cCloseCallback Close)
 {
 	return ServeUDPEx( pAddr, wPort, pReadComplete, Close DBG_SRC );
 }
 //----------------------------------------------------------------------------
-NETWORK_PROC( void, UDPEnableBroadcast)( PCLIENT pc, int bEnable )
+void UDPEnableBroadcast( PCLIENT pc, int bEnable )
 {
 	if( pc )
 		if( setsockopt( pc->Socket, SOL_SOCKET
@@ -63385,12 +63383,12 @@ LOGICAL Guarantee( PCLIENT pc, CTEXTSTR pAddr, uint16_t wPort )
 	return res;
 }
 //----------------------------------------------------------------------------
-PCLIENT CPPConnectUDPAddrEx( SOCKADDR *sa,
-                             SOCKADDR *saTo,
-                             cReadCompleteEx pReadComplete,
-                             uintptr_t psvRead,
-                             cCloseCallback Close,
-                             uintptr_t psvClose DBG_PASS )
+PCLIENT CPPConnectUDPAddrEx( SOCKADDR *sa
+                           , SOCKADDR *saTo
+                           , cReadCompleteEx pReadComplete
+                           , uintptr_t psvRead
+                           , cCloseCallback Close
+                           , uintptr_t psvClose DBG_PASS )
 {
 	PCLIENT pc;
 	int bFixed = FALSE;
@@ -63424,20 +63422,20 @@ PCLIENT CPPConnectUDPAddrEx( SOCKADDR *sa,
 		pReadComplete( pc, NULL, 0, NULL );
 	return pc;
 }
-PCLIENT CPPConnectUDPAddr( SOCKADDR *sa,
-                           SOCKADDR *saTo,
-                           cReadCompleteEx pReadComplete,
-                           uintptr_t psvRead,
-                           cCloseCallback Close,
-                           uintptr_t psvClose )
+PCLIENT CPPConnectUDPAddr( SOCKADDR *sa
+                         , SOCKADDR *saTo
+                         , cReadCompleteEx pReadComplete
+                         , uintptr_t psvRead
+                         , cCloseCallback Close
+                         , uintptr_t psvClose )
 {
 	return CPPConnectUDPAddrEx( sa, saTo, pReadComplete, psvRead, Close, psvClose DBG_SRC );
 }
 //----------------------------------------------------------------------------
-PCLIENT ConnectUDPAddrEx( SOCKADDR *sa,
-                          SOCKADDR *saTo,
-                          cReadCompleteEx pReadComplete,
-                          cCloseCallback Close DBG_PASS )
+PCLIENT ConnectUDPAddrEx( SOCKADDR *sa
+                        , SOCKADDR *saTo
+                        , cReadCompleteEx pReadComplete
+                        , cCloseCallback Close DBG_PASS )
 {
 	PCLIENT result = CPPConnectUDPAddrEx( sa, saTo, pReadComplete, 0, Close, 0 DBG_RELAY );
 	if( result )
@@ -63445,22 +63443,22 @@ PCLIENT ConnectUDPAddrEx( SOCKADDR *sa,
 	return result;
 }
 #undef ConnectUDPAddr
-NETWORK_PROC( PCLIENT, ConnectUDPAddr)( SOCKADDR *sa,
-													SOCKADDR *saTo,
-													cReadCompleteEx pReadComplete,
-													cCloseCallback Close )
+PCLIENT ConnectUDPAddr( SOCKADDR *sa
+                      , SOCKADDR *saTo
+                      , cReadCompleteEx pReadComplete
+                      , cCloseCallback Close )
 {
 	return ConnectUDPAddrEx( sa, saTo, pReadComplete, Close DBG_SRC );
 }
 //----------------------------------------------------------------------------
-static PCLIENT CPPConnectUDPExx ( CTEXTSTR pFromAddr, uint16_t wFromPort,
-                    CTEXTSTR pToAddr, uint16_t wToPort,
-                    cReadCompleteEx pReadComplete,
-                    uintptr_t psvRead,
-                    cCloseCallback Close,
-											uintptr_t psvClose
-										  , LOGICAL bCPP
-										  DBG_PASS )
+static PCLIENT CPPConnectUDPExx ( CTEXTSTR pFromAddr, uint16_t wFromPort
+                                , CTEXTSTR pToAddr, uint16_t wToPort
+                                , cReadCompleteEx pReadComplete
+                                , uintptr_t psvRead
+                                , cCloseCallback Close
+                                , uintptr_t psvClose
+                                , LOGICAL bCPP
+                                DBG_PASS )
 {
 	PCLIENT pc;
 	pc = ServeUDPEx( pFromAddr, wFromPort, NULL, NULL DBG_RELAY );
@@ -63514,15 +63512,15 @@ PCLIENT CPPConnectUDP( CTEXTSTR pFromAddr, uint16_t wFromPort,
 {
 	return CPPConnectUDPExx( pFromAddr, wFromPort, pToAddr, wToPort, pReadComplete, psvRead, Close, psvClose, TRUE DBG_SRC );
 }
-NETWORK_PROC( PCLIENT, ConnectUDPEx )( CTEXTSTR pFromAddr, uint16_t wFromPort,
-                    CTEXTSTR pToAddr, uint16_t wToPort,
-                    cReadCompleteEx pReadComplete,
-                    cCloseCallback Close DBG_PASS )
+PCLIENT ConnectUDPEx( CTEXTSTR pFromAddr, uint16_t wFromPort,
+                      CTEXTSTR pToAddr, uint16_t wToPort,
+                      cReadCompleteEx pReadComplete,
+                      cCloseCallback Close DBG_PASS )
 {
 	return CPPConnectUDPExx( pFromAddr, wFromPort, pToAddr, wToPort, pReadComplete, 0, Close, 0, FALSE DBG_RELAY );
 }
 #undef ConnectUDP
-NETWORK_PROC( PCLIENT, ConnectUDP )( CTEXTSTR pFromAddr, uint16_t wFromPort,
+PCLIENT ConnectUDP( CTEXTSTR pFromAddr, uint16_t wFromPort,
                     CTEXTSTR pToAddr, uint16_t wToPort,
                     cReadCompleteEx pReadComplete,
                     cCloseCallback Close )
@@ -63566,8 +63564,7 @@ NETWORK_PROC( LOGICAL, ReconnectUDP )( PCLIENT pc, CTEXTSTR pToAddr, uint16_t wP
 	return Guarantee( pc, pToAddr, wPort );
 }
 //----------------------------------------------------------------------------
-extern uint32_t uNetworkPauseTimer,
-           uTCPPendingTimer;
+extern uint32_t uNetworkPauseTimer, uTCPPendingTimer;
 //----------------------------------------------------------------------------
 NETWORK_PROC( int, doUDPRead )( PCLIENT pc, POINTER lpBuffer, int nBytes )
 {
@@ -63623,7 +63620,10 @@ int FinishUDPRead( PCLIENT pc )
 	                    (int)pc->RecvPending.dwAvail,0,
 	                    pc->saLastClient,
 // get address...
-							 &Size);
+	                    &Size);
+	uintptr_t name = (((uintptr_t*)pc->saLastClient) - 1)[0];
+	if( name ) free( (void*)name );
+	(((uintptr_t*)pc->saLastClient) - 1)[0] = 0;
 	SET_SOCKADDR_LENGTH( pc->saLastClient, Size );
 	//lprintf( WIDE("Recvfrom result:%d"), nReturn );
 	if (nReturn == SOCKET_ERROR)
@@ -63696,10 +63696,10 @@ int SetSocketReuseAddress( PCLIENT lpClient, int32_t enable )
 	if (setsockopt(lpClient->Socket, SOL_SOCKET, SO_REUSEADDR,
 						(char*)&enable, sizeof(enable)) <0 )
 	{
-      return 0;
+		return 0;
 		//cerr << "NFMSim:setHost:ERROR: could not set socket to reuse addr." << endl;
 	}
-   return 1;
+	return 1;
 }
 int SetSocketReusePort( PCLIENT lpClient, int32_t enable )
 {
@@ -63707,13 +63707,13 @@ int SetSocketReusePort( PCLIENT lpClient, int32_t enable )
 	if (setsockopt(lpClient->Socket, SOL_SOCKET, SO_REUSEPORT,
 						(char*)&enable, sizeof(enable)) < 0 )
 	{
-      return 0;
+		return 0;
 		//cerr << "NFMSim:setHost:ERROR: could not set socket to reuse addr." << endl;
 	}
 #else
-   SetSocketReuseAddress( lpClient, enable );
+	SetSocketReuseAddress( lpClient, enable );
 #endif
-   return 1;
+	return 1;
 }
 _UDP_NAMESPACE_END
 SACK_NETWORK_NAMESPACE_END
