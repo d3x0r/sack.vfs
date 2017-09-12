@@ -1,9 +1,28 @@
 cmake_minimum_required(VERSION 3.0)
 
+
 project (sack_vfs)
+
+if( MSVC )
+  #add_definitions( -D_CRT_SECURE_NO_WARNINGS -wd4995 -wd4996 )
+  #add_definitions( -wd4996 )
+
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP8")
+  SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MP8")
+
+  SET( CMAKE_CXX_FLAGS_RELEASE  "${CMAKE_CXX_FLAGS_RELEASE}  /GS-" )
+  SET( CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}  /GS-" )
+  SET( CMAKE_C_FLAGS_RELEASE  "${CMAKE_C_FLAGS_RELEASE}  /GS-" )
+  SET( CMAKE_C_FLAGS_RELWITHDEBINFO  "${CMAKE_C_FLAGS_RELWITHDEBINFO} /GS-" )
+
+  string( REPLACE "/Ob1" "/Ob2" CMAKE_CXX_FLAGS_RELWITHDEBINFO ${CMAKE_CXX_FLAGS_RELWITHDEBINFO} )
+  string( REPLACE "/Ob1" "/Ob2" CMAKE_C_FLAGS_RELWITHDEBINFO ${CMAKE_C_FLAGS_RELWITHDEBINFO} )
+
+endif( MSVC )
 
 
 include_directories( "../node_modules/nan" )
+
 
 if( NOT WIN32 )
     ADD_DEFINITIONS( -D__LINUX__ )
@@ -22,7 +41,7 @@ ADD_DEFINITIONS( -DNO_OPEN_MACRO )
 set( SACK_BASE M:/sack )
 
 # __NO_OPTIONS__ __NO_INTERFACE_SUPPORT__ __NO_ODBC__
-set( DEFINITIONS   __STATIC__ 
+set( DEFINITIONS   __STATIC__
 		USE_SQLITE USE_SQLITE_INTERFACE FORCE_COLOR_MACROS NO_FILEOP_ALIAS
                 _CRT_SECURE_NO_WARNINGS  NEED_SHLAPI NEED_SHLOBJ JSON_PARSER_MAIN_SOURCE "SQLITE_ENABLE_LOCKING_STYLE=0"
                  )
@@ -31,9 +50,9 @@ set( DEFINITIONS   __STATIC__
 if( EXISTS ${SACK_BASE} )
 
 set( INCLUDES
-	-I${SACK_BASE}/include 
-	-I${SACK_BASE}/src/contrib/sha1lib 
-	-I${SACK_BASE}/src/contrib/sqlite/3.18.0 
+	-I${SACK_BASE}/include
+	-I${SACK_BASE}/src/contrib/sha1lib
+	-I${SACK_BASE}/src/contrib/sqlite/3.18.0
  )
 
 FILE( WRITE ${CMAKE_BINARY_DIR}/config.ppc "/*CMake Option defined*/\n" )
@@ -65,8 +84,8 @@ SET( EXTRA_HEADERS
 	${SACK_BASE}/include/translation.h
 )
 
-SET( EXTRA_SOURCES 
-	${SACK_BASE}/src/utils/virtual_file_system/vfs.c 
+SET( EXTRA_SOURCES
+	${SACK_BASE}/src/utils/virtual_file_system/vfs.c
 	${SACK_BASE}/src/utils/virtual_file_system/vfs_internal.h
         ${SACK_BASE}/src/salty_random_generator/salty_generator.c
         ${SACK_BASE}/src/salty_random_generator/crypt_util.c
@@ -112,7 +131,7 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/netlib/udpnetwork.c
         ${SACK_BASE}/src/netlib/net_winsock2.c
 	${SACK_BASE}/src/netlib/ssl_layer.c
-        
+
 	${SACK_BASE}/src/contrib/sqlite/sqlite_interface.c
         ${SACK_BASE}/src/sqllib/sqlstruc.h
         ${SACK_BASE}/src/configlib/configscript.c
@@ -136,7 +155,7 @@ SET( BUILD_AMALGAM on )
 set( C_SOURCES
         ${SACK_BASE}/src/contrib/sqlite/3.19.3/sqlite3.c
 )
-add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sqlite3.c
+add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
 			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${C_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
@@ -151,13 +170,13 @@ if( EXISTS ${PPCTOOL} )
    			 COMMAND ${AMALG_COMMAND}
                         #COMMAND cmake -E echo ${AMALG_COMMAND2}
    			COMMAND ${AMALG_COMMAND2}
-                   DEPENDS ${EXTRA_SOURCES} ${HEADER_SOURCES}
+                   DEPENDS ${EXTRA_SOURCES} ${EXTRA_HEADERS}
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-  )                                   
+  )
   add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc )
 endif( EXISTS ${PPCTOOL} )
 
-else( EXISTS ${SACK_BASE} ) 
+else( EXISTS ${SACK_BASE} )
 
 foreach( DEF ${DEFINITIONS} )
    ADD_DEFINITIONS( -D${DEF} )
@@ -167,25 +186,25 @@ endif( EXISTS ${SACK_BASE} )
 
 
 
-message( ${CMAKE_JS_INC} )
+message( "CMAKE_JS_INC:" ${CMAKE_JS_INC} )
 include_directories(${CMAKE_JS_INC} ${INCLUDES} src/sack )
 
 if( WIN32 )
-	set( MORE_MODULE_SOURCES src/reg_access.cc 
-#		src/fixup_windows_executable.cc 
+	set( MORE_MODULE_SOURCES src/reg_access.cc
+#		src/fixup_windows_executable.cc
 		)
 endif( WIN32 )
 
-add_library(${PROJECT_NAME} SHARED 
+add_library(${PROJECT_NAME} SHARED
 	src/vfs_module.cc
 	src/thread_module.cc
 	src/sql_module.cc
 	src/com_interface.cc
 	src/jsonParse.cc
 	src/tls_interface.cc
-	src/srg_module.cc 
-	src/websocket_module.cc 
-	src/network_module.cc 
+	src/srg_module.cc
+	src/websocket_module.cc
+	src/network_module.cc
 	${MORE_MODULE_SOURCES}
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc

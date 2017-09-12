@@ -78,6 +78,30 @@
             'defines': [
               "NEED_SHLAPI","NEED_SHLOBJ","_CRT_SECURE_NO_WARNINGS"
             ],
+            'configurations': {
+              'Debug': {
+                'msvs_settings': {
+                  'VCCLCompilerTool': {
+                    'BufferSecurityCheck': 'false',
+                    'RuntimeTypeInfo': 'true',
+                    'MultiProcessorCompilation' : 'true',
+                    'InlineFunctionExpansion': 2,
+                    'OmitFramePointers': 'true'
+                  }
+                }
+              },
+              'Release': {                            
+                'msvs_settings': {
+                  'VCCLCompilerTool': {
+                    'BufferSecurityCheck': 'false',
+                    'RuntimeTypeInfo': 'true',
+                    'MultiProcessorCompilation' : 'true',
+                    'InlineFunctionExpansion': 2,
+                    'OmitFramePointers': 'true'
+                  }
+                }
+              }
+            },
             'sources': [
               # windows-only; exclude on other platforms.
               'src/reg_access.cc',
