@@ -102,13 +102,13 @@ DeclareSet( WSS_EVENT );
 struct wssiEvent {
 	enum wsEvents eventType;
 	class wssiObject *_this;
-	PLIST send;
-	LOGICAL send_close; // need reason.
-	CPOINTER buf;
+	//PLIST send;
+	//LOGICAL send_close; // need reason.
+	POINTER buf;
 	size_t buflen;
 	LOGICAL binary;
-	PTHREAD waiter;
-	LOGICAL done;
+	//PTHREAD waiter;
+	//LOGICAL done;
 };
 typedef struct wssiEvent WSSI_EVENT;
 #define MAXWSSI_EVENTSPERSET 128
@@ -117,7 +117,7 @@ DeclareSet( WSSI_EVENT );
 struct wscEvent {
 	enum wsEvents eventType;
 	class wscObject *_this;
-	CPOINTER buf;
+	POINTER buf;
 	size_t buflen;
 	LOGICAL binary;
 };
@@ -129,8 +129,11 @@ static struct local {
 	int data;
 	uv_loop_t* loop;
 	int waiting;
+	CRITICALSECTION csWssEvents;
 	PWSS_EVENTSET wssEvents;
+	CRITICALSECTION csWssiEvents;
 	PWSSI_EVENTSET wssiEvents;
+	CRITICALSECTION csWscEvents;
 	PWSC_EVENTSET wscEvents;
 } l;
 
@@ -210,7 +213,7 @@ public:
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Object> _this;
 	PLINKQUEUE eventQueue;
-	wscEvent *eventMessage;
+	//wscEvent *eventMessage;
 	LOGICAL closed;
 public:
 	static Persistent<Function> constructor;
@@ -242,7 +245,7 @@ public:
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Object> _this;
 	PLINKQUEUE eventQueue;
-	struct wssiEvent *eventMessage;
+	//struct wssiEvent *eventMessage;
 	PCLIENT pc;
 	LOGICAL closed;
 public:
@@ -269,6 +272,45 @@ public:
 Persistent<Function> wssObject::constructor;
 Persistent<Function> wssiObject::constructor;
 Persistent<Function> wscObject::constructor;
+
+static WSS_EVENT *GetWssEvent() {
+	EnterCriticalSec( &l.csWssEvents );
+	WSS_EVENT *evt = GetFromSet( WSS_EVENT, &l.wssEvents );
+	LeaveCriticalSec( &l.csWssEvents );
+	return evt;
+}
+
+static WSSI_EVENT *GetWssiEvent() {
+	EnterCriticalSec( &l.csWssiEvents );
+	WSSI_EVENT *evt = GetFromSet( WSSI_EVENT, &l.wssiEvents );
+	LeaveCriticalSec( &l.csWssiEvents );
+	return evt;
+}
+
+static WSC_EVENT *GetWscEvent() {
+	EnterCriticalSec( &l.csWscEvents );
+	WSC_EVENT *evt = GetFromSet( WSC_EVENT, &l.wscEvents );
+	LeaveCriticalSec( &l.csWscEvents );
+	return evt;
+}
+
+static void DropWssEvent( WSS_EVENT *evt ) {
+	EnterCriticalSec( &l.csWssEvents );
+	DeleteFromSet( WSS_EVENT, &l.wssEvents, evt );
+	LeaveCriticalSec( &l.csWssEvents );
+}
+
+static void DropWssiEvent( WSSI_EVENT *evt ) {
+	EnterCriticalSec( &l.csWssiEvents );
+	DeleteFromSet( WSSI_EVENT, &l.wssiEvents, evt );
+	LeaveCriticalSec( &l.csWssiEvents );
+}
+
+static void DropWscEvent( WSC_EVENT *evt ) {
+	EnterCriticalSec( &l.csWscEvents );
+	DeleteFromSet( WSC_EVENT, &l.wscEvents, evt );
+	LeaveCriticalSec( &l.csWscEvents );
+}
 
 static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 	PLIST headers = GetWebSocketHeaders( pc );
@@ -367,7 +409,6 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 		while( eventMessage = (struct wssiEvent *)DequeLink( &myself->eventQueue ) ) {
 			Local<Value> argv[1];
 			Local<ArrayBuffer> ab;
-			myself->eventMessage = eventMessage;
 			switch( eventMessage->eventType ) {
 			case WS_EVENT_READ:
 				size_t length;
@@ -384,19 +425,20 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 					argv[0] = buf.ToLocalChecked();
 					myself->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
 				}
+				Deallocate( POINTER, eventMessage->buf );
 				break;
 			case WS_EVENT_CLOSE:
 				myself->closeCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 0, argv );
 				uv_close( (uv_handle_t*)&myself->async, NULL );
+				DropWssiEvent( eventMessage );
 				DeleteLinkQueue( &myself->eventQueue );
+				continue;
 				break;
 			case WS_EVENT_ERROR:
 				myself->errorCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 0, argv );
 				break;
 			}
-			myself->eventMessage = NULL;
-			eventMessage->done = 1;
-			WakeThread( eventMessage->waiter );
+			DropWssiEvent( eventMessage );
 		}
 	}
 	//lprintf( "done calling message notice." );
@@ -438,7 +480,7 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 					argv[0] = buf.ToLocalChecked();
 					wsc->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
 				}
-				Deallocate( CPOINTER, eventMessage->buf );
+				Deallocate( POINTER, eventMessage->buf );
 				break;
 			case WS_EVENT_CLOSE:
 				cb = Local<Function>::New( isolate, wsc->closeCallback );
@@ -448,7 +490,7 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 				DeleteLinkQueue( &wsc->eventQueue );
 				break;
 			}
-			DeleteFromSet( WSC_EVENT, l.wscEvents, eventMessage );
+			DropWscEvent( eventMessage );
 		}
 	}
 }
@@ -461,6 +503,9 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		l.loop = uv_default_loop();
 	//NetworkWait( NULL, 2000000, 16 );  // 1GB memory
 	NetworkWait( NULL, 4000, 2 );  // 1GB memory
+	InitializeCriticalSec( &l.csWssEvents );
+	InitializeCriticalSec( &l.csWssiEvents );
+	InitializeCriticalSec( &l.csWscEvents );
 	Local<Object> o = Object::New( isolate );
 	SET_READONLY( exports, "WebSocket", o );
 
@@ -568,78 +613,47 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 static void webSockServerClosed( PCLIENT pc, uintptr_t psv )
 {
 	wssiObject *wssi = (wssiObject*)psv;
-	struct wssiEvent evt;
-	evt.eventType = WS_EVENT_CLOSE;
-	evt.done = FALSE;
-	evt.waiter = MakeThread();
-	evt._this = wssi;
-	EnqueLink( &wssi->eventQueue, &evt );
+	struct wssiEvent *pevt = GetWssiEvent();
+	(*pevt).eventType = WS_EVENT_CLOSE;
+	(*pevt)._this = wssi;
+	EnqueLink( &wssi->eventQueue, pevt );
 	uv_async_send( &wssi->async );
-	while( !evt.done )
-		Wait();
-
+	wssi->pc = NULL;
 }
 
 static void webSockServerError( PCLIENT pc, uintptr_t psv, int error ){
 	wssiObject *wssi = (wssiObject*)psv;
-	struct wssiEvent evt;
-	evt.eventType = WS_EVENT_ERROR;
-	evt.done = FALSE;
-	evt.waiter = MakeThread();
-	evt._this = wssi;
-	EnqueLink( &wssi->eventQueue, &evt );
+	struct wssiEvent *pevt = GetWssiEvent();
+	(*pevt).eventType = WS_EVENT_ERROR;
+	(*pevt)._this = wssi;
+	EnqueLink( &wssi->eventQueue, pevt );
 	uv_async_send( &wssi->async );
-
-	while( !evt.done )
-		Wait();
 
 }
 
 static void webSockServerEvent( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOINTER buffer, size_t msglen ){
 	//lprintf( "Received:%p %d", buffer, binary );
 	wssiObject *wssi = (wssiObject*)psv;
-	struct wssiEvent evt;
-	evt.send = NULL;
-	evt.send_close = FALSE;
-	evt.eventType = WS_EVENT_READ;
-	evt.done = FALSE;
-	evt.waiter = MakeThread();
-	evt._this = wssi;
-	//WebSocket
-	evt.binary = binary;
-	evt.buf = buffer;
-	evt.buflen = msglen;
-	EnqueLink( &wssi->eventQueue, &evt );
+	struct wssiEvent *pevt = GetWssiEvent();
+	(*pevt).eventType = WS_EVENT_READ;
+	(*pevt)._this = wssi;
+	(*pevt).binary = binary;
+	(*pevt).buf = NewArray( uint8_t, msglen );
+	memcpy( (*pevt).buf, buffer, msglen );
+	(*pevt).buflen = msglen;
+	EnqueLink( &wssi->eventQueue, pevt );
 	uv_async_send( &wssi->async );
 
-	while( !evt.done )
-		Wait();
-	{
-		INDEX idx;
-		struct pendingSend *send; 
-		if( evt.send ) {
-			LIST_FORALL( evt.send, idx, struct pendingSend *, send ) {
-				if( send->binary )
-					WebSocketSendBinary( wssi->pc, send->buffer, send->buflen );
-				else
-					WebSocketSendText( wssi->pc, send->buffer, send->buflen );
-				Deallocate( POINTER, send->buffer );
-				Deallocate( struct pendingSend*, send );
-			}
-			DeleteList( &evt.send );
-		}
-		if( evt.send_close ) {
-			WebSocketClose( pc );
-		}
-	}
 }
 
 static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char *protocols, const char *resource, char **protocolReply ) {
 	wssObject *wss = (wssObject*)psv;
+#ifdef _DEBUG
 	if( accepted++ > 1000 ) {
-		DebugDumpMem();
+		//DebugDumpMem();
 		accepted = 0;
 	}
+#endif
 	if( !wss->acceptCallback.IsEmpty() ) {
 		struct wssEvent evt;
 		evt.protocol = protocols;
@@ -649,7 +663,6 @@ static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char *proto
 		evt.done = FALSE;
 		evt.waiter = MakeThread();
 		evt._this = wss;
-
 		EnqueLink( &wss->eventQueue, &evt );
 		uv_async_send( &wss->async );
 
@@ -672,6 +685,10 @@ wssObject::wssObject( struct wssOptions *opts ) {
 	}
 	protocolResponse = NULL;
 	closed = 0;
+	eventQueue = CreateLinkQueue();
+	uv_async_init( l.loop, &async, wssAsyncMsg );
+	async.data = this;
+
 	pc = WebSocketCreate( opts->url, webSockServerOpen, webSockServerEvent, webSockServerClosed, webSockServerError, (uintptr_t)this );
 	if( opts->deflate ) {
 		SetWebSocketDeflate( pc, WEBSOCK_DEFLATE_ENABLE );
@@ -689,11 +706,8 @@ wssObject::wssObject( struct wssOptions *opts ) {
 			, opts->key, opts->key ? strlen( opts->key ) : 0 );
 	}
 	SetWebSocketAcceptCallback( pc, webSockServerAccept );
-	eventQueue = CreateLinkQueue();
 
 	//lprintf( "Init async handle. (wss)" );
-	uv_async_init( l.loop, &async, wssAsyncMsg );
-	async.data = this;
 }
 
 wssObject::~wssObject() {
@@ -938,50 +952,23 @@ void wssiObject::onclose( const FunctionCallbackInfo<Value>& args ) {
 void wssiObject::close( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
-	if( obj->eventMessage )
-		obj->eventMessage->send_close = TRUE;
-	else
-		WebSocketClose( obj->pc );
+	WebSocketClose( obj->pc );
 }
 
 void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
-	PLIST *sendQueue;
-	if( obj->eventMessage )
-		sendQueue = &obj->eventMessage->send;
-	else if( obj->listener->eventMessage )
-		sendQueue = &obj->listener->eventMessage->send;
-	else
-		sendQueue = NULL;
-
+	if( !obj->pc ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Connection has already been closed." ) ) );
+		return;
+	}
 	if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-		if( sendQueue )
-		{
-			struct pendingSend *pend = NewArray( struct pendingSend, 1 );
-			pend->binary = true;
-			pend->buflen = ab->ByteLength();
-			pend->buffer = NewArray( uint8_t, pend->buflen );
-			MemCpy( pend->buffer, ab->GetContents().Data(), pend->buflen );
-			AddLink( sendQueue, pend );
-		}
-		else {
-			WebSocketSendBinary( obj->pc, ab->GetContents().Data(), ab->ByteLength() );
-		}
+		WebSocketSendBinary( obj->pc, ab->GetContents().Data(), ab->ByteLength() );
 	}
 	else if( args[0]->IsString() ) {
 		String::Utf8Value buf( args[0]->ToString() );
-		if( sendQueue ) {
-			struct pendingSend *pend = NewArray( struct pendingSend, 1 );
-			pend->binary = false;
-			pend->buflen = buf.length();
-			pend->buffer = NewArray( uint8_t, pend->buflen );
-			MemCpy( pend->buffer, *buf, pend->buflen );
-			AddLink( sendQueue, pend );
-		}
-		else
-			WebSocketSendText( obj->pc, *buf, buf.length() );
+		WebSocketSendText( obj->pc, *buf, buf.length() );
 	}
 	else {
 		lprintf( "Unhandled message format" );
@@ -993,7 +980,7 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 static uintptr_t webSockClientOpen( PCLIENT pc, uintptr_t psv ) {
 	wscObject *wsc = (wscObject*)psv;
 
-	struct wscEvent *pevt = GetFromSet( WSC_EVENT, &l.wscEvents );
+	struct wscEvent *pevt = GetWscEvent();
 	(*pevt).eventType = WS_EVENT_OPEN;
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
@@ -1005,18 +992,18 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv )
 {
 	wscObject *wsc = (wscObject*)psv;
 
-	struct wscEvent *pevt = GetFromSet( WSC_EVENT, &l.wscEvents );
+	struct wscEvent *pevt = GetWscEvent();
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
 	uv_async_send( &wsc->async );
-	return;
+	wsc->pc = NULL;
 }
 
 static void webSockClientError( PCLIENT pc, uintptr_t psv, int error ) {
 	wscObject *wsc = (wscObject*)psv;
 
-	struct wscEvent *pevt = GetFromSet( WSC_EVENT, &l.wscEvents );
+	struct wscEvent *pevt = GetWscEvent();
 	(*pevt).eventType = WS_EVENT_ERROR;
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
@@ -1026,10 +1013,10 @@ static void webSockClientError( PCLIENT pc, uintptr_t psv, int error ) {
 static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTER buffer, size_t msglen ) {
 	wscObject *wsc = (wscObject*)psv;
 
-	struct wscEvent *pevt = GetFromSet( WSC_EVENT, &l.wscEvents );
+	struct wscEvent *pevt = GetWscEvent();
 	(*pevt).eventType = WS_EVENT_READ;
-	(*pevt).buf = NewArray( uint8_t*, msglen );
-	memcpy( (POINTER)(*pevt).buf, buffer, msglen );
+	(*pevt).buf = NewArray( uint8_t, msglen );
+	memcpy( (*pevt).buf, buffer, msglen );
 	(*pevt).buflen = msglen;
 	(*pevt).binary = type;
 	(*pevt)._this = wsc;
@@ -1038,6 +1025,12 @@ static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTE
 }
 
 wscObject::wscObject( wscOptions *opts ) {
+	eventQueue = CreateLinkQueue();
+	closed = 0;
+	//lprintf( "Init async handle. (wsc) %p", &async );
+	uv_async_init( l.loop, &async, wscAsyncMsg );
+	async.data = this;
+
 	pc = WebSocketOpen( opts->url, WS_DELAY_OPEN
 		, webSockClientOpen
 		, webSockClientEvent, webSockClientClosed, webSockClientError, (uintptr_t)this, opts->protocol );
@@ -1050,12 +1043,6 @@ wscObject::wscObject( wscOptions *opts ) {
 			, opts->root_cert, opts->root_cert ?strlen( opts->root_cert ):0 );
 	}
 	WebSocketConnect( pc );
-	eventQueue = CreateLinkQueue();
-	eventMessage = NULL;
-	closed = 0;
-	//lprintf( "Init async handle. (wsc) %p", &async );
-	uv_async_init( l.loop, &async, wscAsyncMsg );
-	async.data = this;
 }
 
 wscObject::~wscObject() {
@@ -1097,7 +1084,6 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 			protocol = new String::Utf8Value( args[1]->ToString() );
 		}
 		else if( args[1]->IsObject() ) {
-			lprintf( "args1 is object..." );
 			checkArg2 = false;
 			opts = args[1]->ToObject();
 			Local<String> optName;
@@ -1181,12 +1167,18 @@ void wscObject::on( const FunctionCallbackInfo<Value>& args){
 
 void wscObject::close( const FunctionCallbackInfo<Value>& args ) {
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-	WebSocketClose( obj->pc );
+	if( obj->pc )
+		WebSocketClose( obj->pc );
 }
 
 void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+	if( !obj->pc ) {
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "Connection is already closed." ) ) ) );
+		return;
+	}
 	if( args[0]->IsTypedArray() ) {
 		lprintf( "Typed array (unhandled)" );
 	} else if( args[0]->IsArrayBuffer() ) {
