@@ -14,7 +14,7 @@ server.onaccept( function ( protocols, resource ) {
 } );
 
 server.onconnect( function (ws) {
-	console.log( "Connect:", ws );
+	//console.log( "Connect:", ws );
 
 	ws.onmessage( function( msg ) {
         	console.log( "Received data:", msg );
