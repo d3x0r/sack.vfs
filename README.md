@@ -657,6 +657,8 @@ udp2.send( "Hello World" );
 | toAddress | &lt;string&gt; specify the address to send to if not specified in send call.  Optional port notation can be used (specified with a colon followed by a number (or name if under linux?)) <BR>If the port is specified here, it overrides the `toPort` option.|
 | broadcast | &lt;bool&gt; if `true` enable receiving/sending broadcast UDP messages |
 | readStrings | &lt;bool&gt; if `true` messages passed to message callback will be given as text format, otherwise will be a TypedArray |
+| reuseAddress | &lt;bool&gt; if `true` set reuse address socket option |
+| reusePort | &lt;bool&gt; if `true` set reuse port socket option (linux option, not applicable for windows) |
 
 #### Udp socket methods
 
