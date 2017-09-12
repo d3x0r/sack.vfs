@@ -96,7 +96,7 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	//lprintf( "add data..." );
 	for( result = json6_parse_add_data( parser->state, *data, data.length() );
 		result > 0;
-		//lprintf( "flush more..." ), 
+		//lprintf( "flush more..." ),
 		result = json6_parse_add_data( parser->state, NULL, 0 )
 		) {
 		struct json_value_container * val;
@@ -179,7 +179,7 @@ void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 	//lprintf( "add data..." );
 	for( result = json6_parse_add_data( parser->state, *data, data.length() );
 		result > 0;
-		//lprintf( "flush more..." ), 
+		//lprintf( "flush more..." ),
 		result = json6_parse_add_data( parser->state, NULL, 0 )
 		) {
 		struct json_value_container * val;
@@ -337,7 +337,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate, 
 			if( val->name ) {
 				o->Set( thisKey = String::NewFromUtf8( isolate, val->name )
 					, sub_o = Array::New( isolate ) );
-			} 
+			}
 			else {
 				if( revive->revive )
 					thisKey = Integer::New( isolate, index );
@@ -363,7 +363,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate, 
 				o->Set( //String::NewFromUtf8( isolate, val->name, NewStringType::kNormal, -1 ).ToLocalChecked()
 						thisKey = String::NewFromUtf8( isolate,val->name )
 							, sub_o = Object::New( isolate ) );
-			} 
+			}
 			else {
 				if( revive->revive )
 					thisKey = Integer::New( isolate, index );
@@ -394,7 +394,7 @@ Local<Value> convertMessageToJS( Isolate *isolate, PDATALIST msg, struct reviver
 			lprintf( "Value has contents, but is not a container type?!" );
 		buildObject( val->contains, o, isolate, revive );
 		return o;
-	} 
+	}
 	return makeValue( isolate, val, revive );
 }
 
@@ -407,7 +407,10 @@ Local<Value> ParseJSON(  Isolate *isolate, const char *utf8String, size_t len, s
 	{
 		//lprintf( "Failed to parse data..." );
 		PTEXT error = json_parse_get_error( NULL );
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ) ) ) );
+		if( error )
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ) ) ) );
+		else
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "JSON Error not posted." ) ) );
 		LineRelease( error );
 		return Undefined( isolate );
 	}
@@ -505,7 +508,7 @@ void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
 			return;
 		}
 	}
-	else 
+	else
 		r.revive = FALSE;
 
 	args.GetReturnValue().Set( ParseJSON6( isolate, msg, strlen( msg ), &r ) );
