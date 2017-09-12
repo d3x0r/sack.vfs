@@ -5276,7 +5276,7 @@ typedef struct win_sockaddr_in SOCKADDR_IN;
 /* Multiple inclusion protection symbol. */
 #define SHARED_MEM_DEFINED
 #if defined (_WIN32)
-#define USE_NATIVE_CRITICAL_SECTION
+//#define USE_NATIVE_CRITICAL_SECTION
 #endif
 #if defined( _SHLWAPI_H ) || defined( _INC_SHLWAPI )
 #undef StrChr
@@ -5356,9 +5356,16 @@ struct critical_section_tag {
  // ID of thread waiting for this..
 	THREAD_ID dwThreadWaiting;
 #ifdef DEBUG_CRITICAL_SECTIONS
+#define MAX_SECTION_LOG_QUEUE 16
 	uint32_t bCollisions ;
-	CTEXTSTR pFile;
-	uint32_t  nLine;
+	CTEXTSTR pFile[16];
+	uint32_t  nLine[16];
+	uint32_t  nLineCS[16];
+ // windows upper 16 is process ID, lower is thread ID
+	THREAD_ID dwThreadPrior[16];
+ // windows upper 16 is process ID, lower is thread ID
+	uint8_t isLock[16];
+	int nPrior;
 #endif
 };
 #if !defined( _WIN32 )
@@ -7103,7 +7110,7 @@ NETWORK_PROC( void, GetNetworkAddressBinary )( SOCKADDR *addr, uint8_t **data, s
 /*
  * create a socket address form data and datalen binary buffer representation of the sockete address.
  */
-NETWORK_PROC( SOCKADDR *, MakeNetworkAddressFromBinary )( uint8_t *data, size_t datalen );
+NETWORK_PROC( SOCKADDR *, MakeNetworkAddressFromBinary )( uintptr_t *data, size_t datalen );
 NETWORK_PROC( SOCKADDR *, CreateRemote )( CTEXTSTR lpName,uint16_t nHisPort);
 NETWORK_PROC( SOCKADDR *, CreateLocal )(uint16_t nMyPort);
 NETWORK_PROC( int, GetAddressParts )( SOCKADDR *pAddr, uint32_t *pdwIP, uint16_t *pwPort );
@@ -7387,7 +7394,8 @@ NETWORK_PROC( void, SetClientKeepAlive)( PCLIENT pClient, int bEnable );
        ReadTCP( pc, buffer, 4096 );
    }
    </code>                                                         */
-NETWORK_PROC( size_t, doReadExx2)(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsStream, LOGICAL bWait, int user_timeout );
+NETWORK_PROC( size_t, doReadExx2)(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsStream, LOGICAL bWait, int user_timeout DBG_PASS );
+#define doReadExx(p,b,n,s,w) DoReadExx2( p,b,n,s,w,0 )
 /* \    Parameters
    lpClient :   network client to read from
    lpBuffer :   buffer to read into
@@ -7421,18 +7429,19 @@ NETWORK_PROC( size_t, doReadExx2)(PCLIENT lpClient,POINTER lpBuffer,size_t nByte
        ReadTCP( pc, buffer, 4096 );
    }
    </code>                                                         */
-NETWORK_PROC( size_t, doReadExx )(PCLIENT lpClient, POINTER lpBuffer, size_t nBytes
-										, LOGICAL bIsStream, LOGICAL bWait );
+//NETWORK_PROC( size_t, doReadExx )(PCLIENT lpClient, POINTER lpBuffer, size_t nBytes
+//										, LOGICAL bIsStream, LOGICAL bWait );
 /* <combine sack::network::tcp::doReadExx@PCLIENT@POINTER@int@LOGICAL@LOGICAL>
    \    Remarks
    if bWait is not specifed, it is passed as FALSE.                            */
-NETWORK_PROC( size_t, doReadEx )(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsStream);
+//NETWORK_PROC( size_t, doReadEx )(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsStream DBG_PASS );
+#define doReadEx( p,b,n,s )  doReadExx2( p,b,n,s,FALSE, 0 DBG_SRC)
 /* <combine sack::network::tcp::doReadExx@PCLIENT@POINTER@int@LOGICAL@LOGICAL>
    \ \                                                                         */
-#define ReadStream(pc,pBuf,nSize) doReadExx( pc, pBuf, nSize, TRUE, FALSE )
+#define ReadStream(pc,pBuf,nSize) doReadExx2( pc, pBuf, nSize, TRUE, FALSE, 0 DBG_SRC )
 /* <combine sack::network::tcp::doReadExx@PCLIENT@POINTER@int@LOGICAL@LOGICAL>
    \ \                                                                         */
-#define doRead(pc,pBuf,nSize)     doReadExx(pc, pBuf, nSize, FALSE, FALSE )
+#define doRead(pc,pBuf,nSize)     doReadExx2(pc, pBuf, nSize, FALSE, FALSE, 0 DBG_SRC )
 /* <combine sack::network::tcp::doReadExx@PCLIENT@POINTER@int@LOGICAL@LOGICAL>
    \ \                                                                         */
 #define ReadTCP ReadStream
@@ -7441,10 +7450,10 @@ NETWORK_PROC( size_t, doReadEx )(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes
 #define ReadTCPMsg doRead
 /* <combine sack::network::tcp::doReadExx@PCLIENT@POINTER@int@LOGICAL@LOGICAL>
    \ \                                                                         */
-#define WaitReadTCP(pc,buf,nSize)    doReadExx(pc,buf, nSize, TRUE, TRUE )
+#define WaitReadTCP(pc,buf,nSize)    doReadExx2(pc,buf, nSize, TRUE, TRUE, 0 DBG_SRC )
 /* <combine sack::network::tcp::doReadExx@PCLIENT@POINTER@int@LOGICAL@LOGICAL>
    \ \                                                                         */
-#define WaitReadTCPMsg(pc,buf,nSize) doReadExx(pc,buf, nSize, FALSE, TRUE )
+#define WaitReadTCPMsg(pc,buf,nSize) doReadExx2(pc,buf, nSize, FALSE, TRUE, 0  DBG_SRC)
 /* \#The buffer will be sent in the order of the writes to the
    socket, and released when empty. If the socket is immediatly
    able to write, the buffer will be sent, and any remai
