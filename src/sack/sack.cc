@@ -59658,7 +59658,8 @@ void RemoveThreadEvent( PCLIENT pc ) {
 	// could be closed (accept, initial read, protocol causes close before ever completing getting scheduled)
 	if( !thread ) return;
 	{
-		epoll_ctl( thread->epoll_fd, EPOLL_CTL_DEL, pc->Socket, NULL );
+		r = epoll_ctl( thread->epoll_fd, EPOLL_CTL_DEL, pc->Socket, NULL );
+		if( r < 0 ) lprintf( "Error removing:%d", errno );
 		pc->flags.bAddedToEvents = 0;
 		pc->this_thread = NULL;
 	}
@@ -59759,7 +59760,7 @@ static void AddThreadEvent( PCLIENT pc )
 			ev.events = EPOLLIN;
 		else
 			ev.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET;
-		epoll_ctl( peer->epoll_fd, EPOLL_CTL_ADD, pc->Socket, &ev );
+		r = epoll_ctl( peer->epoll_fd, EPOLL_CTL_ADD, pc->Socket, &ev );
 		if( r < 0 ) lprintf( "Error adding:%d", errno );
 	}
 	LockedIncrement( &peer->nEvents );
