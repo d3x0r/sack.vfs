@@ -59782,7 +59782,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 		sigset_t sigmask;
 		sigemptyset( &sigmask );
 		sigaddset( &sigmask, SIGUSR1 );
-		cnt = epoll_pwait( thread->epoll_fd, events, 10, -1, sigmask );
+		cnt = epoll_pwait( thread->epoll_fd, events, 10, -1, &sigmask );
 		if( cnt < 0 )
 		{
 			int err = errno;
@@ -59798,10 +59798,10 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 			PCLIENT next;
 			for( n = 0; n < cnt; n++ ) {
 				pc = (PCLIENT)events[n].data.ptr;
-				while( !LockNetwork( pc ) )
+				while( !NetworkLock( pc ) )
 					Relinquish();
 				if( !IsValid( pc->Socket ) ) {
-					UnlockNetwork( pc );
+					NetworkUnlock( pc );
 					continue;
 				}
 				if( events[n].events & EPOLLIN )
