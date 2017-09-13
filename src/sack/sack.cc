@@ -59658,6 +59658,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 	// could be closed (accept, initial read, protocol causes close before ever completing getting scheduled)
 	if( !thread ) return;
 	{
+		int r;
 		r = epoll_ctl( thread->epoll_fd, EPOLL_CTL_DEL, pc->Socket, NULL );
 		if( r < 0 ) lprintf( "Error removing:%d", errno );
 		pc->flags.bAddedToEvents = 0;
