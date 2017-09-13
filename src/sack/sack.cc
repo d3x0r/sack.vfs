@@ -5185,6 +5185,7 @@ typedef int socklen_t;
  // INADDR_ANY/NONE
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/epoll.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 #if !defined( _PNACL )
@@ -6578,6 +6579,9 @@ TIMER_PROC( void, DeleteCriticalSec )( PCRITICALSECTION pcs );
 #ifdef _WIN32
 	TIMER_PROC( HANDLE, GetWakeEvent )( void );
 	TIMER_PROC( HANDLE, GetThreadHandle )( PTHREAD thread );
+#endif
+#ifdef __LINUX__
+	TIMER_PROC( pthread_t, GetThreadHandle )( PTHREAD thread );
 #endif
 #ifdef USE_NATIVE_CRITICAL_SECTION
 #define EnterCriticalSec(pcs) EnterCriticalSection( pcs )
@@ -15295,10 +15299,10 @@ void InitSyslog( int ignore_options )
 			/* using SYSLOG_AUTO_FILE option does not require this to be open.
 			* it is opened on demand.
 			*/
-			logtype = SYSLOG_AUTO_FILE;
+			//logtype = SYSLOG_AUTO_FILE;
 			//(*syslog_local).file = stderr;
-			//logtype = SYSLOG_FILE;
-			//(*syslog_local).file = stderr;
+			logtype = SYSLOG_FILE;
+			(*syslog_local).file = stderr;
 			(*syslog_local).flags.bLogOpenBackup = 1;
 			(*syslog_local).flags.bUseDeltaTime = 1;
 			(*syslog_local).flags.bLogCPUTime = 1;
@@ -15524,9 +15528,9 @@ static TEXTCHAR *GetTimeHigh( void )
 					  , &tm );
 #undef snprintf
 	snprintf( c_timebuffer + len, 5, ".%03ld", tv.tv_usec / 1000 );
-	if( timebuffer )
-		Release( timebuffer );
-	timebuffer = DupCStr( c_timebuffer );
+	//if( timebuffer )
+	//	Release( timebuffer );
+	//timebuffer = DupCStr( c_timebuffer );
 	/*
     // this code is kept in case borland's compiler don't like it.
     {
@@ -15540,7 +15544,7 @@ static TEXTCHAR *GetTimeHigh( void )
     }
 	 */
 #endif
-	return timebuffer;
+	return c_timebuffer;
 }
 #else
 #define GetTimeHigh GetTime
@@ -15803,10 +15807,10 @@ static void FileSystemLog( CTEXTSTR message )
 		fputws( message, (*syslog_local).file );
 		fputws( WIDE("\n"), (*syslog_local).file );
 #else
-		sack_fputs( message, (*syslog_local).file );
-		sack_fputs( "\n", (*syslog_local).file );
+		fputs( message, (*syslog_local).file );
+		fputs( "\n", (*syslog_local).file );
 #endif
-		sack_fflush( (*syslog_local).file );
+		fflush( (*syslog_local).file );
 	}
 }
 static void BackupFile( const TEXTCHAR *source, int source_name_len, int n )
@@ -26859,7 +26863,7 @@ void  WakeThreadEx( PTHREAD thread DBG_PASS )
  // thread creation might not be complete yet...
 	if( thread->thread )
 	{
-		pthread_kill( thread->thread, SIGUSR1 );
+		pthread_kill( GetThreadHandle(thread), SIGUSR1 );
 	}
 #  endif
 #endif
@@ -27654,6 +27658,13 @@ HANDLE GetThreadHandle( PTHREAD thread )
 	if( thread )
 		return thread->hThread;
 	return INVALID_HANDLE_VALUE;
+}
+#endif
+
+#if __LINUX__
+pthread_t GetThreadHandle( PTHREAD thread )
+{
+   return thread->hThread;
 }
 #endif
 //--------------------------------------------------------------------------
@@ -58024,6 +58035,34 @@ enum NetworkConnectionFlags {
 };
 #ifdef __cplusplus
 #  ifndef DEFINE_ENUM_FLAG_OPERATORS
+    // used as an approximation of std::underlying_type<T>
+    template <size_t S>
+    struct _ENUM_FLAG_INTEGER_FOR_SIZE;
+
+    template <>
+    struct _ENUM_FLAG_INTEGER_FOR_SIZE<1>
+    {
+        typedef int8_t type;
+    };
+
+    template <>
+    struct _ENUM_FLAG_INTEGER_FOR_SIZE<2>
+    {
+        typedef int16_t type;
+    };
+
+    template <>
+    struct _ENUM_FLAG_INTEGER_FOR_SIZE<4>
+    {
+        typedef int32_t type;
+    };
+
+    template <class T>
+    struct _ENUM_FLAG_SIZED_INTEGER
+    {
+        typedef typename _ENUM_FLAG_INTEGER_FOR_SIZE<sizeof(T)>::type type;
+    };
+
 #    define DEFINE_ENUM_FLAG_OPERATORS(ENUMTYPE)         extern "C++" {         inline ENUMTYPE operator | ( ENUMTYPE a, ENUMTYPE b ) { return ENUMTYPE( ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) | ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b) ); }         inline ENUMTYPE &operator |= ( ENUMTYPE &a, ENUMTYPE b ) { return (ENUMTYPE &)(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type &)a) |= ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); }         inline ENUMTYPE operator & ( ENUMTYPE a, ENUMTYPE b ) { return ENUMTYPE( ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) & ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b) ); }         inline ENUMTYPE &operator &= ( ENUMTYPE &a, ENUMTYPE b ) { return (ENUMTYPE &)(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type &)a) &= ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); }         inline ENUMTYPE operator ~ ( ENUMTYPE a ) { return ENUMTYPE( ~((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) ); }         inline ENUMTYPE operator ^ ( ENUMTYPE a, ENUMTYPE b ) { return ENUMTYPE( ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)a) ^ ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b) ); }         inline ENUMTYPE &operator ^= ( ENUMTYPE &a, ENUMTYPE b ) { return (ENUMTYPE &)(((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type &)a) ^= ((_ENUM_FLAG_SIZED_INTEGER<ENUMTYPE>::type)b)); }         }
 #  endif
 DEFINE_ENUM_FLAG_OPERATORS( NetworkConnectionFlags )
@@ -58039,11 +58078,13 @@ struct peer_thread_info
 	PTHREAD thread;
 #ifdef _WIN32
 	WSAEVENT hThread;
+	int nEvents;
 #endif
 #ifdef __LINUX__
-	//struct pollfd *events;
+//struct pollfd *events;
+   int epoll_fd;
+	uint32_t nEvents;
 #endif
-	int nEvents;
  // updated with count thread is waiting on
 	int nWaitEvents;
 	struct {
@@ -58161,7 +58202,6 @@ LOCATION struct network_global_data{
 	PCLIENT ActiveClients;
 	//PLINKQUEUE event_schedule;
   // shorter list of new sockets to monitor than the full list
-	PLINKQUEUE client_schedule;
 	PCLIENT ClosedClients;
 	CRITICALSECTION csNetwork;
 	uint32_t uNetworkPauseTimer;
@@ -58180,6 +58220,7 @@ LOCATION struct network_global_data{
 #endif
 #if defined( USE_WSA_EVENTS )
    HANDLE hMonitorThreadControlEvent;
+	PLINKQUEUE client_schedule;
 #endif
 	uint32_t dwReadTimeout;
 	uint32_t dwConnectTimeout;
@@ -58262,9 +58303,8 @@ SACK_NETWORK_NAMESPACE_END
 #include <iphlpapi.h>
 #endif
 SACK_NETWORK_NAMESPACE
-#if defined( _WIN32 )
 static void RemoveThreadEvent( PCLIENT pc );
-#endif
+
 PRELOAD( InitNetworkGlobalOptions )
 {
 #ifndef __NO_OPTIONS__
@@ -58770,9 +58810,9 @@ void TerminateClosedClientEx( PCLIENT pc DBG_PASS )
 	{
 		PendingBuffer * lpNext;
 		EnterCriticalSec( &globalNetworkData.csNetwork );
-#ifdef _WIN32
+//#ifdef _WIN32
 		RemoveThreadEvent( pc );
-#endif
+//#endif
 		//lprintf( WIDE( "Terminating closed client..." ) );
 		if( IsValid( pc->Socket ) )
 		{
@@ -59634,49 +59674,13 @@ void RemoveThreadEvent( PCLIENT pc ) {
 	struct peer_thread_info *thread = pc->this_thread;
  // could be closed (accept, initial read, protocol causes close before ever completing getting scheduled)
 	if( !thread ) return;
-						  // reduce peer wait count to 1.
-#ifdef LOG_NETWORK_EVENT_THREAD
-	lprintf( "Remove client %p from %p thread events...  proc:%d  ev:%d  wait:%d", pc, thread, thread->flags.bProcessing, thread->nEvents, thread->nWaitEvents );
-#endif
-	thread->nEvents = 1;
-	if( !thread->flags.bProcessing )
-		while( thread->nEvents != thread->nWaitEvents ) {
-			if( !thread->flags.bProcessing )
-			{
-				// have to make sure threads reset to the new list.
-				lprintf( "have to wait for thread to be in wait state..." );
-				LeaveCriticalSec( &globalNetworkData.csNetwork );
-				while( (thread->nWaitEvents > 1) || thread->flags.bProcessing )
-					Relinquish();
-				EnterCriticalSec( &globalNetworkData.csNetwork );
-			}
-			else
-				break;
-			Relinquish();
-		}
 	{
-		INDEX idx;
-		INDEX c = 0;
-		PCLIENT previous;
-		PLIST newList = CreateList();
-		SetLink( &newList, 65, 0 );
-		//EmptyDataList( &thread->event_list );
-		LIST_FORALL( thread->monitor_list, idx, PCLIENT, previous ) {
-			if( previous != pc )
-			{
-				AddLink( &newList, previous );
-				SetDataItem( &thread->event_list, c++, GetDataItem( &thread->event_list, idx ) );
-			}
-		}
-		thread->event_list->Cnt = c;
-		DeleteListEx( &thread->monitor_list DBG_SRC );
-		thread->monitor_list = newList;
+		lprintf( "Remove event: %p %p %d", pc, pc->this_thread, pc->Socket );
+		epoll_ctl( thread->epoll_fd, EPOLL_CTL_DEL, pc->Socket, NULL );
+		pc->flags.bAddedToEvents = 0;
 		pc->this_thread = NULL;
-		thread->nEvents = (int)c;
-#ifdef LOG_NETWORK_EVENT_THREAD
-		lprintf( "peer %p now has %d events", thread, thread->nEvents );
-#endif
 	}
+   LockedDecrement( &thread->nEvents );
   // don't bubble sort root thread
 	if( thread->parent_peer )
 		while( (thread->nEvents < thread->parent_peer->nEvents) && thread->parent_peer->parent_peer ) {
@@ -59699,7 +59703,7 @@ static void AddThreadEvent( PCLIENT pc )
 	LOGICAL addPeer = FALSE;
 #ifdef LOG_NOTICES
 	if( globalNetworkData.flags.bLogNotices )
-		lprintf( "Add thread event %p %p %08x", pc, pc->event, pc->dwFlags );
+		lprintf( "Add thread event %p %d %08x", pc, pc->Socket, pc->dwFlags );
 #endif
 	for( ; peer; peer = peer->child_peer ) {
 		if( !peer->child_peer ) {
@@ -59715,16 +59719,16 @@ static void AddThreadEvent( PCLIENT pc )
 				addPeer = TRUE;
 				break;
 			}
-			if( peer->nEvents >= 60 ) {
+			if( peer->nEvents >= 2560 ) {
 #ifdef LOG_NOTICES
 				if( globalNetworkData.flags.bLogNotices )
-					lprintf( "this has max events already....", globalNetworkData.nPeers, peer->nEvents );
+					lprintf( "this has max events already.... %d %d", globalNetworkData.nPeers, peer->nEvents );
 #endif
 				addPeer = TRUE;
 				break;
 			}
 		}
-		if( peer->nEvents < 60 ) {
+		if( peer->nEvents < 2560 ) {
 // last thread.
 			if( !peer->child_peer )
 				break;
@@ -59763,19 +59767,32 @@ static void AddThreadEvent( PCLIENT pc )
 			peer = peer->child_peer;
 	}
 	// make sure to only add this handle when the first peer will also be added.
-	// this means the list can be 61 and at this time no more.
-	AddLink( &peer->monitor_list, pc );
-	AddDataItem( &peer->event_list, &pc->event );
+				  // this means the list can be 61 and at this time no more.
+		{
+         int r;
+			struct epoll_event ev;
+			ev.data.ptr = pc;
+			lprintf( "Add EPOLLIN and EPOOLRDHUP for %p  %p %d", peer, pc, pc->Socket );
+         if( pc->dwFlags & CF_LISTEN )
+				ev.events = EPOLLIN;
+         else
+				ev.events = EPOLLIN|EPOLLOUT|EPOLLRDHUP|EPOLLET;
+			r = epoll_ctl( peer->epoll_fd, EPOLL_CTL_ADD, pc->Socket, &ev );
+			if( r < 0 ) lprintf( "Error adding:%d", errno );
+			//ev.events = EPOLLOUT|EPOLLET;
+         //r = epoll_ctl( peer->epoll_fd, EPOLL_CTL_ADD, pc->Socket, &ev );
+			//if( r < 0 ) lprintf( "Error adding:%d", errno );
+		}
+   LockedIncrement( &peer->nEvents );
 	pc->this_thread = peer;
 	pc->flags.bAddedToEvents = 1;
-	peer->nEvents++;
 #ifdef LOG_NETWORK_EVENT_THREAD
+     lprintf( "adding nEvents...%d  %d", peer->nEvents, globalNetworkData.nPeers );
 	//lprintf( "peer %p now has %d events", peer, peer->nEvents );
 #endif
  // scheduler thread already awake do not wake him.
-	if( !peer->flags.bProcessing && peer->parent_peer )
-		WSASetEvent( peer->hThread );
 }
+
 int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unused )
 {
 	int cnt;
@@ -59783,132 +59800,48 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 	struct timeval time;
 	if( globalNetworkData.bQuit )
 		return -1;
-	if( IsThisThread( globalNetworkData.pThread ) )
+
 	{
-		FD_ZERO( &thread->read );
-		FD_ZERO( &thread->write );
-		FD_ZERO( &thread->except );
-		maxcnt = 0;
-		EnterCriticalSec( &globalNetworkData.csNetwork );
-		for( pc = globalNetworkData.ActiveClients; pc; pc = pc->next )
-		{
-			// socket might not be quite opened yet...
-			if( !IsValid( pc->Socket ) )
-				continue;
-			if( pc->dwFlags & (CF_LISTEN|CF_READPENDING) )
-			{
-				if( pc->Socket >= maxcnt )
-					maxcnt = pc->Socket+1;
-				FD_SET( pc->Socket, &read );
-#ifdef LOG_NOTICES
-				if( globalNetworkData.flags.bLogNotices )
-					lprintf( WIDE( "Added for read select %p(%d)" ), pc, pc->Socket );
-#endif
-			}
- // only check read...
-			if( pc->dwFlags & CF_LISTEN )
-				continue;
-			if( pc->dwFlags & ( CF_WRITEPENDING | CF_CONNECTING ) )
-			{
-				if( pc->Socket >= maxcnt )
-					maxcnt = pc->Socket+1;
-				pc->dwFlags |= CF_WRITEISPENDED;
-#ifdef LOG_NOTICES
-				if( globalNetworkData.flags.bLogNotices )
-					lprintf( WIDE("Pending write... Setting socket into write list...") );
-#endif
-				FD_SET( pc->Socket, &write );
-			}
-			if( pc->Socket >= maxcnt )
-				maxcnt = pc->Socket+1;
-			FD_SET( pc->Socket, &except );
-#ifdef LOG_NOTICES
-			if( globalNetworkData.flags.bLogNotices )
-				lprintf( WIDE( "Added for except event %p(%d)" ), pc, pc->Socket );
-#endif
-		}
-		LeaveCriticalSec( &globalNetworkData.csNetwork );
-		if( !maxcnt )
-			return 0;
-		time.tv_sec = 5;
- // need timer to be quick to watch new sockets
-		time.tv_usec = 0;
-		// should be able to make a signal handle
-#ifdef LOG_NOTICES
-		if( globalNetworkData.flags.bLogNotices )
-			lprintf( WIDE("Entering select....") );
-#endif
-		cnt = select( maxcnt, &read, &write, &except, &time );
+		struct epoll_event events[10];
+		sigset_t sigmask;
+		sigemptyset( &sigmask );
+      sigaddset( &sigmask, SIGUSR1 );
+		cnt = epoll_pwait( thread->epoll_fd, events, 10, -1, &sigmask );
+      //lprintf( "woke up with %d", cnt );
 		if( cnt < 0 )
 		{
-			if( errno == EINTR )
+         int err = errno;
+			if( err == EINTR )
 				return 1;
-			if( errno == EBADF )
-			{
-				PCLIENT next;
-				EnterCriticalSec( &globalNetworkData.csNetwork );
-				for( pc = globalNetworkData.ActiveClients; pc; pc = next )
-				{
-					next = pc->next;
-					if( IsValid( pc->Socket ) )
-					{
-						if( pc->Socket >= maxcnt )
-							maxcnt = pc->Socket+1;
-						FD_ZERO( &except );
-						FD_SET( pc->Socket, &except );
-						time.tv_sec = 0;
-						time.tv_usec = 0;
-						cnt = select( maxcnt, NULL, NULL, &except, &time );
-						if( cnt < 0 )
-						{
-							if( errno == EBADF )
-							{
-								Log1( WIDE("Bad descriptor is : %d"), pc->Socket );
-								InternalRemoveClient( pc );
-								LeaveCriticalSec( &globalNetworkData.csNetwork );
-								return 1;
-							}
-						}
-					}
-				}
-				LeaveCriticalSec( &globalNetworkData.csNetwork );
-			}
-			Log1( WIDE("Sorry Select call failed... %d"), errno );
+			Log1( WIDE("Sorry epoll_pwait call failed... %d"), err );
+         return 1;
 		}
-		restart_scan:
 		if( cnt > 0 )
 		{
+         int n;
 			THREAD_ID prior = 0;
 			PCLIENT next;
-		start_lock:
-			EnterCriticalSec( &globalNetworkData.csNetwork );
-			for( pc = globalNetworkData.ActiveClients; pc; pc = next )
-			{
-				next = pc->next;
-				if( !IsValid( pc->Socket ) )
+			for( n = 0; n < cnt; n++ ) {
+				//lprintf( "event on %p was %d", events[n].data.ptr, events[n].events );
+				pc = (PCLIENT)events[n].data.ptr;
+
+				while( !NetworkLock( pc ) )
+               Relinquish();
+
+				if( !IsValid( pc->Socket ) ) {
+               NetworkUnlock( pc );
 					continue;
-				//if( pc->dwFlags & CF_WANTS_GLOBAL_LOCK)
-				//{
-				//	LeaveCriticalSec( &globalNetworkData.csNetwork );
-				//	goto start_lock;
-				//}
-				if( FD_ISSET( pc->Socket, &read ) )
+				}
+
+            if( events[n].events & EPOLLIN )
 				{
-					if( EnterCriticalSecNoWait( &pc->csLock, &prior ) < 1 )
-					{
-						// unlock the global section for a moment..
-						// client may be requiring both local and global locks (already has local lock)
-						LeaveCriticalSec( &globalNetworkData.csNetwork );
-						goto start_lock;
-					}
-					//EnterCriticalSec( &pc->csLock );
-					LeaveCriticalSec( &globalNetworkData.csNetwork );
 					if( !(pc->dwFlags & CF_ACTIVE ) )
 					{
 						// change to inactive status by the time we got here...
 						LeaveCriticalSec( &pc->csLock );
-						goto start_lock;
+						continue;
 					}
+
 					if( pc->dwFlags & CF_LISTEN )
 					{
 #ifdef LOG_NOTICES
@@ -59962,29 +59895,15 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #endif
 						pc->dwFlags |= CF_READREADY;
 					}
-					cnt--;
-					FD_CLR( pc->Socket, &read );
-					LeaveCriticalSec( &pc->csLock );
-					goto restart_scan;
 				}
-				if( FD_ISSET( pc->Socket, &write ) )
+
+				if( events[n].events & EPOLLOUT )
 				{
-					if( EnterCriticalSecNoWait( &pc->csLock, &prior ) < 1 )
-					{
-						// unlock the global section for a moment..
-						// client may be requiring both local and global locks (already has local lock)
-						LeaveCriticalSec( &globalNetworkData.csNetwork );
-						goto start_lock;
-					}
-					//EnterCriticalSec( &pc->csLock );
-					LeaveCriticalSec( &globalNetworkData.csNetwork );
 					if( !(pc->dwFlags & CF_ACTIVE ) )
 					{
 						// change to inactive status by the time we got here...
-						LeaveCriticalSec( &pc->csLock );
-						goto start_lock;
-					}
-					if( pc->dwFlags & CF_CONNECTING )
+ 					}
+					else if( pc->dwFlags & CF_CONNECTING )
 					{
 #ifdef LOG_NOTICES
 						if( globalNetworkData.flags.bLogNotices )
@@ -60025,9 +59944,6 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 							else
 							{
 								pc->dwFlags |= CF_CONNECTERROR;
-								FD_CLR( pc->Socket, &read );
-								LeaveCriticalSec( &pc->csLock );
-								goto restart_scan;
 							}
 						}
 					}
@@ -60045,53 +59961,10 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 						pc->dwFlags &= ~CF_WRITEISPENDED;
 						TCPWrite( pc );
 					}
-					cnt--;
-					FD_CLR( pc->Socket, &write );
-					LeaveCriticalSec( &pc->csLock );
-					goto restart_scan;
 				}
-				if( FD_ISSET( pc->Socket, &except ) )
-				{
-					if( EnterCriticalSecNoWait( &pc->csLock, &prior ) < 1 )
-					{
-						// unlock the global section for a moment..
-						// client may be requiring both local and global locks (already has local lock)
-						LeaveCriticalSec( &globalNetworkData.csNetwork );
-						goto start_lock;
-					}
-					//EnterCriticalSec( &pc->csLock );
-					LeaveCriticalSec( &globalNetworkData.csNetwork );
-#ifdef LOG_NOTICES
-					if( globalNetworkData.flags.bLogNotices )
-						lprintf( WIDE("Except Event...") );
-#endif
-					if( !(pc->dwFlags & CF_ACTIVE ) )
-					{
-						// change to inactive status by the time we got here...
-						LeaveCriticalSec( &pc->csLock );
-						goto restart_scan;
-					}
-					if( !pc->bDraining )
-					{
-						size_t bytes_read;
-						while( ( bytes_read = FinishPendingRead( pc DBG_SRC ) ) > 0
- // try and read...
-								&& bytes_read != (size_t)-1 );
-					}
-#ifdef LOG_NOTICES
-					if( globalNetworkData.flags.bLogNotices )
-						lprintf(" FD_CLOSE...\n");
-#endif
-					InternalRemoveClient( pc );
-					TerminateClosedClient( pc );
-					cnt--;
-					FD_CLR( pc->Socket, &except );
-					LeaveCriticalSec( &pc->csLock );
-					goto restart_scan;
-				}
+ 				LeaveCriticalSec( &pc->csLock );
 			}
 			// had some event  - return 1 to continue working...
-			LeaveCriticalSec( &globalNetworkData.csNetwork );
 		}
 		return 1;
 	}
@@ -60109,6 +59982,7 @@ static int CPROC IdleProcessNetworkMessages( uintptr_t quick_check )
 	return -1;
 }
 #endif
+
 uintptr_t CPROC NetworkThreadProc( PTHREAD thread )
 {
 	struct peer_thread_info *peer_thread = (struct peer_thread_info*)GetThreadParam( thread );
@@ -60119,9 +59993,13 @@ uintptr_t CPROC NetworkThreadProc( PTHREAD thread )
 		//globalNetworkData.uPendingTimer = AddTimer( 5000, PendingTimer, 0 );
 #ifdef _WIN32
 		globalNetworkData.uNetworkPauseTimer = AddTimerEx( 1, 1000, NetworkPauseTimer, 0 );
-#endif
 		if( !globalNetworkData.client_schedule )
 			globalNetworkData.client_schedule = CreateLinkQueue();
+#endif
+#ifdef __LINUX__
+		globalNetworkData.flags.bNetworkReady = TRUE;
+		globalNetworkData.flags.bThreadInitOkay = TRUE;
+#endif
 		//globalNetworkData.hMonitorThreadControlEvent = CreateEvent( NULL, 0, FALSE, NULL );
 	}
 	this_thread.monitor_list = NULL;
@@ -60134,7 +60012,12 @@ uintptr_t CPROC NetworkThreadProc( PTHREAD thread )
 	SetLink( &this_thread.monitor_list, 0, (POINTER)1 );
 	SetDataItem( &this_thread.event_list, 0, &this_thread.hThread );
 #else
-	this_thread.event_list = CreateDataList( sizeof( struct pollfd ) );
+   // have to fall back to poll() for __MAC__ builds. (probably client only)
+	//this_thread.event_list = CreateDataList( sizeof( struct pollfd ) );
+#ifdef __LINUX__
+	this_thread.epoll_fd = epoll_create1( EPOLL_CLOEXEC ); // close on exec (no inherit)
+#endif
+
 #endif
 	this_thread.parent_peer = peer_thread;
 	this_thread.child_peer = NULL;
@@ -60639,10 +60522,20 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 {
 	SOCKADDR_IN *lpsaAddr;
 	int conversion_success = FALSE;
+   char *tmpName = NULL;
 #ifdef UNICODE
 	char *_lpName = CStrDup( lpName );
 #  define lpName _lpName
 #endif
+
+	if( lpName[0] == '[' && lpName[StrLen( lpName)-1] == ']' ) {
+      int len;
+		tmpName = NewArray( char, len = StrLen( lpName ) );
+		memcpy( tmpName, lpName+1, len - 2 );
+		tmpName[len-2] = 0;
+      lpName = tmpName;
+	}
+
 #ifndef WIN32
 	PHOSTENT phe;
 	// a IP type name will never have a / in it, therefore
@@ -60689,7 +60582,7 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 				( ( lpName[0] >= '0' && lpName[0] <= '9' )
 				 || ( lpName[0] >= 'a' && lpName[0] <= 'f' )
 				 || ( lpName[0] >= 'A' && lpName[0] <= 'F' )
-				 || lpName[0] == ':' )
+				|| lpName[0] == ':' )
 				&& StrChr( lpName, ':' )!=StrRChr( lpName, ':' ) )
 	{
 #ifdef UNICODE
@@ -60751,6 +60644,7 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 						Log1( WIDE("Could not Resolve to %s"), lpName );
 						Deallocate(SOCKADDR_IN*, lpsaAddr);
 						Deallocate( char*, tmp );
+						if( tmpName ) Deallocate( char*, tmpName );
 						return(NULL);
 					}
 					else
@@ -60810,6 +60704,7 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 #  undef lpName
 #endif
 	// put in his(destination) port number...
+ 	if( tmpName ) Deallocate( char*, tmpName );
 	lpsaAddr->sin_port         = htons(nHisPort);
 	return((SOCKADDR*)lpsaAddr);
 }
@@ -61860,6 +61755,9 @@ void AcceptClient(PCLIENT pListen)
 			EnqueLink( &globalNetworkData.client_schedule, pNewClient );
 			WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
 #endif
+#ifdef __LINUX__
+			AddThreadEvent( pNewClient );
+#endif
 		}
 	}
  // accept failed...
@@ -61973,7 +61871,7 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
 	WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
 #endif
 #ifdef __LINUX__
-	WakeThread( globalNetworkData.pThread );
+	AddThreadEvent( pListen );
 #endif
 	return pListen;
 }
@@ -62183,10 +62081,7 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 			}
 #endif
 #ifdef __LINUX__
-			{
-				//kill( (uint32_t)(globalNetworkData.pThread->ThreadID), SIGHUP );
-				WakeThread( globalNetworkData.pThread );
-			}
+			AddThreadEvent( pResult );
 #endif
 			if( !pConnectComplete )
 			{
@@ -62977,8 +62872,7 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
 						WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
 #endif
 #ifdef __LINUX__
-						//kill( (uint32_t)(globalNetworkData.pThread->ThreadID), SIGHUP );
-						WakeThread( globalNetworkData.pThread );
+						AddThreadEvent( pc );
 #endif
 					}
 					return TRUE;
@@ -63319,6 +63213,9 @@ PCLIENT CPPServeUDPAddrEx( SOCKADDR *pAddr
 		lprintf( WIDE( "SET GLOBAL EVENT (new udp socket %p)" ), pc );
 	EnqueLink( &globalNetworkData.client_schedule, pc );
 	WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
+#endif
+#ifdef __LINUX__
+	AddThreadEvent( pc );
 #endif
 	return pc;
 }
