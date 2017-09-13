@@ -6232,6 +6232,16 @@ inline void operator delete (void * p)
 #define TIMER_NAMESPACE_END
 #endif
 #endif
+// this is a method replacement to use PIPEs instead of SEMAPHORES
+// replacement code only affects linux.
+#if defined( __QNX__ ) || defined( __MAC__) || defined( __LINUX__ ) || defined( __ANDROID__ )
+#  define USE_PIPE_SEMS
+// no semtimedop; no semctl, etc
+//#include <sys/sem.h>
+#endif
+#ifdef USE_PIPE_SEMS
+#  define _NO_SEMTIMEDOP_
+#endif
 SACK_NAMESPACE
 /* This namespace contains methods for working with timers and
    threads. Since timers are implemented in an asynchronous
@@ -19467,20 +19477,7 @@ void InitCo( void )
  *
  */
 //#define ENABLE_CRITICALSEC_LOGGING
-// this is a method replacement to use PIPEs instead of SEMAPHORES
-// replacement code only affects linux.
-#if __ANDROID__
-#define USE_PIPE_SEMS
-#endif
-#if defined( __QNX__ ) || defined( __MAC__)
-#define USE_PIPE_SEMS
-// no semtimedop; no semctl, etc
-//#include <sys/sem.h>
-#endif
 #define NO_UNICODE_C
-#ifdef USE_PIPE_SEMS
-#define _NO_SEMTIMEDOP_
-#endif
 // this is a cheat to get the critical section
 // object... otherwise we'd have had circular
 // linking reference between this and sharemem
