@@ -6465,6 +6465,9 @@ TIMER_PROC( void, WakeableNamedThreadSleepEx )( CTEXTSTR name, uint32_t n DBG_PA
 #define WakeableNamedThreadSleep( name, n )   WakeableNamedThreadSleepEx( name, n DBG_SRC )
 TIMER_PROC( void, WakeNamedThreadSleeperEx )( CTEXTSTR name, THREAD_ID therad DBG_PASS );
 #define WakeNamedThreadSleeper( name, thread )   WakeNamedThreadSleeperEx( name, thread DBG_SRC )
+#ifdef USE_PIPE_SEMS
+TIMER_PROC( int, GetThreadSleeper )( PTHREAD thread );
+#endif
 /* <combine sack::timers::WakeableSleepEx@uint32_t milliseconds>
    \ \                                                      */
 #define WakeableSleep(n) WakeableSleepEx(n DBG_SRC )

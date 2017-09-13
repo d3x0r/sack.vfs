@@ -6473,6 +6473,9 @@ TIMER_PROC( void, WakeableNamedThreadSleepEx )( CTEXTSTR name, uint32_t n DBG_PA
 #define WakeableNamedThreadSleep( name, n )   WakeableNamedThreadSleepEx( name, n DBG_SRC )
 TIMER_PROC( void, WakeNamedThreadSleeperEx )( CTEXTSTR name, THREAD_ID therad DBG_PASS );
 #define WakeNamedThreadSleeper( name, thread )   WakeNamedThreadSleeperEx( name, thread DBG_SRC )
+#ifdef USE_PIPE_SEMS
+TIMER_PROC( int, GetThreadSleeper )( PTHREAD thread );
+#endif
 /* <combine sack::timers::WakeableSleepEx@uint32_t milliseconds>
    \ \                                                      */
 #define WakeableSleep(n) WakeableSleepEx(n DBG_SRC )
@@ -26990,7 +26993,7 @@ static void  InternalWakeableNamedSleepEx( CTEXTSTR name, uint32_t n, LOGICAL th
 							timeout.tv_usec = ( n % 1000 ) * 1000;
 #  ifdef DEBUG_PIPE_USAGE
 							lprintf(" Begin select-read on thread %p %d ", pThread, n );
-                     //_lprintf(DBG_RELAY)( "Select  %p %d  %d  %d", pThread, pThread->pipe_ends[0], pThread->pipe_ends[1],n );
+							//_lprintf(DBG_RELAY)( "Select  %p %d  %d  %d", pThread, pThread->pipe_ends[0], pThread->pipe_ends[1],n );
 #  endif
 							stat = select(pThread->pipe_ends[0] + 1, &set, NULL, NULL, &timeout);
 							if(stat == -1)
@@ -27034,7 +27037,7 @@ static void  InternalWakeableNamedSleepEx( CTEXTSTR name, uint32_t n, LOGICAL th
 					else
 					{
 #ifdef USE_PIPE_SEMS
-                  char buf;
+						char buf;
 #  ifdef DEBUG_PIPE_USAGE
 						_lprintf(DBG_RELAY)(" Begin read on thread %p", pThread );
 #  endif
@@ -27058,9 +27061,9 @@ static void  InternalWakeableNamedSleepEx( CTEXTSTR name, uint32_t n, LOGICAL th
 						}
 						if( errno == EAGAIN )
 						{
-						//lprintf( WIDE("EAGAIN?") );
-						// timeout elapsed on semtimedop - or IPC_NOWAIT was specified
-						// but since it's not, it must be the timeout condition.
+							//lprintf( WIDE("EAGAIN?") );
+							// timeout elapsed on semtimedop - or IPC_NOWAIT was specified
+							// but since it's not, it must be the timeout condition.
 							break;
 						}
 						if( errno == EIDRM )
@@ -27113,6 +27116,12 @@ static void  InternalWakeableNamedSleepEx( CTEXTSTR name, uint32_t n, LOGICAL th
 		lprintf( WIDE("You, as a thread, do not exist, sorry.") );
 	}
 }
+#ifdef USE_PIPE_SEMS
+int GetThreadSleeper( PTHREAD thread )
+{
+	return thread->pipe_ends[0];
+}
+#endif
 void  WakeableNamedThreadSleepEx( CTEXTSTR name, uint32_t n DBG_PASS )
 {
 	InternalWakeableNamedSleepEx( name, n, TRUE DBG_RELAY );
@@ -59800,6 +59809,13 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 			PCLIENT next;
 			for( n = 0; n < cnt; n++ ) {
 				pc = (PCLIENT)events[n].data.ptr;
+				if( pc == (PCLIENT)1 ) {
+					//char buf;
+					//stat = read( GetThreadSleeper( thread->pThread ), &buf, 1 );
+					//call wakeable sleep to just clear the sleep; because this is an event on the sleep pipe.
+					WakeableSleep( SLEEP_FOREVER );
+					return 1;
+				}
 				while( !NetworkLock( pc ) )
 					Relinquish();
 				if( !IsValid( pc->Socket ) ) {
@@ -59985,6 +60001,12 @@ uintptr_t CPROC NetworkThreadProc( PTHREAD thread )
 #ifdef __LINUX__
  // close on exec (no inherit)
 	this_thread.epoll_fd = epoll_create1( EPOLL_CLOEXEC );
+	{
+		struct epoll_event ev;
+		ev.data.ptr = (void*)1;
+		ev.events = EPOLLIN;
+		epoll_ctl( this_thread.epoll_fd, EPOLL_CTL_ADD, GetThreadSleeper( thread ), &ev );
+	}
 #endif
 #endif
 	this_thread.parent_peer = peer_thread;
@@ -60503,7 +60525,7 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 		return CreateUnixAddress( lpName );
 #endif
 	if( lpName[0] == '[' && lpName[StrLen( lpName ) - 1] == ']' ) {
-		int len;
+		size_t len;
 		tmpName = NewArray( char, len = StrLen( lpName ) );
 		memcpy( tmpName, lpName + 1, len - 2 );
 		tmpName[len - 2] = 0;
