@@ -741,6 +741,7 @@ COM port settings are kept in the default option database under
 
 
 ## Changelog
+- 0.1.99308 Improve network event handling; Allow more connections dynamically; fix some locking issues with critical sections.
 - 0.1.99307 Implement interface to websocket library. Implement interface to UDP sockets.
 - 0.1.99306 Move json reviver parameter handling internal.  Implement volume JSON stream reader interface.  Fix options to create/reopen an existing file.
 - 0.1.99305 Fix handling exceptions triggered from callbacks. Fix missing truncate in more instances;  Sync sack filesystem updates; fix unlink return value; add pos() method to File.

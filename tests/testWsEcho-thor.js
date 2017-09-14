@@ -1,6 +1,6 @@
 
 var vfs = require( '..' );
-var server = vfs.WebSocket.Server( { port:8080
+var server = vfs.WebSocket.Server( { port:8000
 	//, perMessageDeflate:false
 	, perMessageDeflateAllow:true
 	}

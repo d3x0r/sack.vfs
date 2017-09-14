@@ -1,6 +1,6 @@
 {
   "name": "sack.vfs",
-  "version": "0.1.99307",
+  "version": "0.1.99308",
   "description": "Node.js VFS Addon",
   "main": "vfs_module.js",
   "private": false,
