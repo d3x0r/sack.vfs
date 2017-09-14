@@ -502,7 +502,7 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 	if( !l.loop )
 		l.loop = uv_default_loop();
 	//NetworkWait( NULL, 2000000, 16 );  // 1GB memory
-	NetworkWait( NULL, 4000, 2 );  // 1GB memory
+	NetworkWait( NULL, 256, 2 );  // 1GB memory
 	InitializeCriticalSec( &l.csWssEvents );
 	InitializeCriticalSec( &l.csWssiEvents );
 	InitializeCriticalSec( &l.csWscEvents );
