@@ -62437,9 +62437,6 @@ size_t FinishPendingRead(PCLIENT lpClient DBG_PASS )
 					// otherwise the on-close notificatino can cause this to dispatch again.
 					size_t length = lpClient->RecvPending.dwUsed;
 					lpClient->RecvPending.dwUsed = 0;
-#ifdef __LINUX__
-					lpClient->dwFlags |= CF_PROCESSING;
-#endif
 #ifdef LOG_PENDING
 					lprintf( WIDE( "Send to application...." ) );
 #endif
@@ -62460,9 +62457,6 @@ size_t FinishPendingRead(PCLIENT lpClient DBG_PASS )
 #ifdef LOG_PENDING
  // new read probably pending ehre...
 					lprintf( WIDE( "back from applciation... (loop to next)" ) );
-#endif
-#ifdef __LINUX__
-					lpClient->dwFlags &= ~CF_PROCESSING;
 #endif
 					continue;
 				}
@@ -62575,36 +62569,6 @@ size_t doReadExx2(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsSt
 #endif
 			FinishPendingRead( lpClient DBG_SRC );
 		}
-#ifdef __LINUX__
-		// if not unix, then the socket is already generating
-		// WindowsMessage_ReadReady when there is something to
-		// read...
-		if( lpClient->dwFlags & CF_READREADY )
-		{
-			lprintf( WIDE("Data already present for read...") );
-			int status = FinishPendingRead( lpClient DBG_SRC );
-			if( lpClient->dwFlags & CF_ACTIVE )
-			{
-				NetworkUnlockEx( lpClient DBG_SRC );
- // returns bytes pending...
-				return status;
-			}
-			// else we shouldn't leave a critical section
-			// of a client object which is not active...
-			lprintf( WIDE("Leaving read from a bad state... adn we do not unlock.") );
-			NetworkUnlockEx( lpClient DBG_SRC );
-			return 0;
-		}
-		else
-		{
-			//  no data to read...
-			//lprintf( WIDE( "Not sure if READREADY" ) );
-			if( !( lpClient->dwFlags & CF_PROCESSING ) )
-				WakeThread( globalNetworkData.pThread );
-		}
-#else
-		//FinishPendingRead( lpClient DBG_SRC );
-#endif
 	}
 	else
 	{
@@ -63427,11 +63391,6 @@ NETWORK_PROC( int, doUDPRead )( PCLIENT pc, POINTER lpBuffer, int nBytes )
 	{
 		pc->dwFlags |= CF_READPENDING;
 		// we are now able to read, so schedule the socket.
-#ifdef __LINUX__
-		{
-			WakeThread( globalNetworkData.pThread );
-		}
-#endif
 	}
 	//FinishUDPRead( pc );  // do actual read.... (results in read callback)
 	return TRUE;
@@ -63477,11 +63436,6 @@ int FinishUDPRead( PCLIENT pc )
  // NO data returned....
 		case WSAEWOULDBLOCK:
 			pc->dwFlags |= CF_READPENDING;
-#ifdef __LINUX__
-			{
-				WakeThread( globalNetworkData.pThread );
-			}
-#endif
 			return TRUE;
 #ifdef _WIN32
 		// this happens on WIN2K/XP - ICMP Port Unreachable (nothing listening there)
