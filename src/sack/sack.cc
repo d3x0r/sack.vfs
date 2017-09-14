@@ -234,7 +234,7 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #  define USE_CUSTOM_ALLOCER 0
 #endif
 #ifndef __64__
-#  if defined( _WIN64 ) || defined( ENVIRONMENT64) || defined( __x86_64__ ) || defined( __ia64 )
+#  if defined( _WIN64 ) || defined( ENVIRONMENT64 ) || defined( __x86_64__ ) || defined( __ia64 ) || defined( __ppc64__ ) || defined( __LP64__ )
 #    define __64__ 1
 #  endif
 #endif
@@ -5876,7 +5876,7 @@ MEM_PROC  uint32_t MEM_API  LockedDecrement ( uint32_t* p );
    Example
    <code>
    uint32_t variable = 0;
-   uint32_t oldvalue = InterlockedExchange( &amp;variable, 1 );
+   uint32_t oldvalue = LockedExchange( &amp;variable, 1 );
    </code>                                                       */
 MEM_PROC  uint32_t MEM_API  LockedExchange ( volatile uint32_t* p, uint32_t val );
 /* Sets a 32 bit value into memory. If the length to set is not
@@ -58075,8 +58075,11 @@ struct peer_thread_info
 	int nWaitEvents;
 #endif
 #ifdef __LINUX__
+#  ifdef __MAC__
+	int kqueue;
+#  else
 	int epoll_fd;
-	//struct pollfd *events;
+#  endif
 	uint32_t nEvents;
 #endif
 	struct {
@@ -58281,9 +58284,13 @@ SACK_NETWORK_NAMESPACE_END
 #ifdef __LINUX__
 //#include <sys/timeb.h>
 //*******************8
-#include <sys/epoll.h>
 #include <net/if_arp.h>
 #include <ifaddrs.h>
+#ifdef __MAC__
+#include <sys/event.h>
+#else
+#include <sys/epoll.h>
+#endif
 //*******************8
 #endif
 #ifdef WIN32
@@ -59666,11 +59673,23 @@ void RemoveThreadEvent( PCLIENT pc ) {
 	// could be closed (accept, initial read, protocol causes close before ever completing getting scheduled)
 	if( !thread ) return;
 	{
+#  ifdef __MAC__
+#    ifdef __64__
+		kevent64_s *ev;
+		EV_SET64( &ev, pc->Socket, EVFILT_READ, EV_DEL, 0, 0, (uint64_t)pc, NULL, NULL );
+		kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
+#    else
+		kevent *ev;
+		EV_SET( &ev, pc->Socket, EVFILT_READ, EV_DEL, 0, 0, (uint64_t)pc, NULL, NULL );
+		kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
+#    endif
+#  else
 		int r;
 		r = epoll_ctl( thread->epoll_fd, EPOLL_CTL_DEL, pc->Socket, NULL );
 		if( r < 0 ) lprintf( "Error removing:%d", errno );
 		pc->flags.bAddedToEvents = 0;
 		pc->this_thread = NULL;
+#  endif
 	}
 	LockedDecrement( &thread->nEvents );
 	// don't bubble sort root thread
@@ -59761,6 +59780,33 @@ static void AddThreadEvent( PCLIENT pc )
 	// make sure to only add this handle when the first peer will also be added.
 	// this means the list can be 61 and at this time no more.
 	{
+#  ifdef __MAC__
+#    ifdef __64__
+		kevent64_s ev;
+		if( pc->dwFlags & CF_LISTEN ) {
+			EV_SET64( &ev, pc->Socket, EVFILT_READ, EV_ADD, 0, 0, (uint64_t)pc, NULL, NULL );
+			kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
+		}
+		else {
+			EV_SET64( &ev, pc->Socket, EVFILT_READ, EV_ADD, 0, 0, (uint64_t)pc, NULL, NULL );
+			kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
+			EV_SET64( &ev, pc->Socket, EVFILT_WRITE, EV_ADD | EV_CLEAR, 0, 0, (uint64_t)pc, NULL, NULL );
+			kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
+		}
+#    else
+		kevent ev;
+		if( pc->dwFlags & CF_LISTEN ) {
+			EV_SET( &ev, pc->Socket, EVFILT_READ, EV_ADD, 0, 0, (uintptr_t)pc );
+			kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
+		}
+		else {
+			EV_SET( &ev, pc->Socket, EVFILT_READ, EV_ADD|EV_ENABLE, 0, 0, (uintptr_t)pc );
+			kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
+			EV_SET( &ev, pc->Socket, EVFILT_WRITE, EV_ADD|EV_ENABLE|EV_CLEAR, 0, 0, (uintptr_t)pc );
+			kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
+		}
+#    endif
+#  else
 		int r;
 		struct epoll_event ev;
 		ev.data.ptr = pc;
@@ -59771,6 +59817,7 @@ static void AddThreadEvent( PCLIENT pc )
 			ev.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET;
 		r = epoll_ctl( peer->epoll_fd, EPOLL_CTL_ADD, pc->Socket, &ev );
 		if( r < 0 ) lprintf( "Error adding:%d", errno );
+#  endif
 	}
 	LockedIncrement( &peer->nEvents );
 	pc->this_thread = peer;
@@ -59788,17 +59835,23 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 	if( globalNetworkData.bQuit )
 		return -1;
 	{
+#  ifdef __MAC__
+#    ifdef __64__
+		kevent64_s events[10];
+#    else
+		kevent events[10];
+#    endif
+		cnt = kevent( peer->kqueue, NULL, 0, &events, 10, NULL );
+#  else
 		struct epoll_event events[10];
-		sigset_t sigmask;
-		sigemptyset( &sigmask );
-		sigaddset( &sigmask, SIGUSR1 );
-		cnt = epoll_pwait( thread->epoll_fd, events, 10, -1, &sigmask );
+		cnt = epoll_wait( thread->epoll_fd, events, 10, -1 );
+#  endif
 		if( cnt < 0 )
 		{
 			int err = errno;
 			if( err == EINTR )
 				return 1;
-			Log1( WIDE( "Sorry epoll_pwait call failed... %d" ), err );
+			Log1( WIDE( "Sorry epoll_pwait/kevent call failed... %d" ), err );
 			return 1;
 		}
 		if( cnt > 0 )
@@ -59807,7 +59860,11 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 			THREAD_ID prior = 0;
 			PCLIENT next;
 			for( n = 0; n < cnt; n++ ) {
+#  ifdef __MAC__
+				pc = (PCLIENT)events[n].udata;
+#  else
 				pc = (PCLIENT)events[n].data.ptr;
+#  endif
 				if( pc == (PCLIENT)1 ) {
 					//char buf;
 					//stat = read( GetThreadSleeper( thread->pThread ), &buf, 1 );
@@ -59821,7 +59878,11 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 					NetworkUnlock( pc );
 					continue;
 				}
+#  ifdef __MAC__
+				if( events[n].filter == EVFILT_READ )
+#  else
 				if( events[n].events & EPOLLIN )
+#  endif
 				{
 					if( !(pc->dwFlags & CF_ACTIVE) )
 					{
@@ -59881,7 +59942,11 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 						pc->dwFlags |= CF_READREADY;
 					}
 				}
+#  ifdef __MAC__
+				if( events[n].filter == EVFILT_WRITE )
+#  else
 				if( events[n].events & EPOLLOUT )
+#  endif
 				{
 					if( !(pc->dwFlags & CF_ACTIVE) )
 					{
@@ -59998,13 +60063,31 @@ uintptr_t CPROC NetworkThreadProc( PTHREAD thread )
 	// have to fall back to poll() for __MAC__ builds. (probably client only)
 	//this_thread.event_list = CreateDataList( sizeof( struct pollfd ) );
 #ifdef __LINUX__
+#ifdef __MAC__
+	this_thread.kqueue = kqueue();
+#else
  // close on exec (no inherit)
 	this_thread.epoll_fd = epoll_create1( EPOLL_CLOEXEC );
+#endif
 	{
+#  ifdef __MAC__
+#    ifdef __64__
+		kevent64_s ev;
+		this_thread.kevents = CreateDataList( sizeof( ev ) );
+		EV_SET64( &ev, GetThreadSleeper(), EVFILT_READ, EV_ADD, 0, 0, (uint64_t)1, NULL, NULL );
+		AddDataItem( &this_thread.kevents, &ev );
+#    else
+		kevent ev;
+		this_thread.kevents = CreateDataList( sizeof( ev ) );
+		EV_SET( &ev, GetThreadSleeper(), EVFILT_READ, EV_ADD, 0, 0, (uintptr_t)1 );
+		AddDataItem( &this_thread.kevents, &ev );
+#    endif
+#  else
 		struct epoll_event ev;
 		ev.data.ptr = (void*)1;
 		ev.events = EPOLLIN;
 		epoll_ctl( this_thread.epoll_fd, EPOLL_CTL_ADD, GetThreadSleeper( thread ), &ev );
+#  endif
 	}
 #endif
 #endif

@@ -226,7 +226,7 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #  define USE_CUSTOM_ALLOCER 0
 #endif
 #ifndef __64__
-#  if defined( _WIN64 ) || defined( ENVIRONMENT64) || defined( __x86_64__ ) || defined( __ia64 )
+#  if defined( _WIN64 ) || defined( ENVIRONMENT64 ) || defined( __x86_64__ ) || defined( __ia64 ) || defined( __ppc64__ ) || defined( __LP64__ )
 #    define __64__ 1
 #  endif
 #endif
@@ -5868,7 +5868,7 @@ MEM_PROC  uint32_t MEM_API  LockedDecrement ( uint32_t* p );
    Example
    <code>
    uint32_t variable = 0;
-   uint32_t oldvalue = InterlockedExchange( &amp;variable, 1 );
+   uint32_t oldvalue = LockedExchange( &amp;variable, 1 );
    </code>                                                       */
 MEM_PROC  uint32_t MEM_API  LockedExchange ( volatile uint32_t* p, uint32_t val );
 /* Sets a 32 bit value into memory. If the length to set is not
