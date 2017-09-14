@@ -60159,10 +60159,10 @@ static void AddClients( void ) {
 	{
 		size_t n;
 		//Log1( WIDE("Creating %d Client Resources"), MAX_NETCLIENTS );
-		pClientSlab = NewArray( CLIENT_SLAB, MAX_NETCLIENTS );
+		pClientSlab = NewPlus( CLIENT_SLAB, (MAX_NETCLIENTS - 1 )* sizeof( CLIENT ) );
 		pClientSlab->pUserData = NewArray( uintptr_t, MAX_NETCLIENTS * globalNetworkData.nUserData );
  // can't clear the lpUserData Address!!!
-		MemSet( pClientSlab, 0, (MAX_NETCLIENTS) * sizeof( CLIENT_SLAB ) );
+		MemSet( pClientSlab->client, 0, (MAX_NETCLIENTS) * sizeof( CLIENT ) );
 		MemSet( pClientSlab->pUserData, 0, (MAX_NETCLIENTS) * globalNetworkData.nUserData * sizeof( uintptr_t ) );
 		pClientSlab->count = MAX_NETCLIENTS;
 		for( n = 0; n < pClientSlab->count; n++ )
@@ -60337,7 +60337,7 @@ NETWORK_PROC( void, SetNetworkLong )(PCLIENT lpClient, int nLong, uintptr_t dwVa
 {
 	if( lpClient && ( nLong < globalNetworkData.nUserData ) )
 	{
-		*(uintptr_t*)(lpClient->lpUserData+(nLong * sizeof(uintptr_t))) = dwValue;
+		lpClient->lpUserData[nLong] = dwValue;
 	}
 	return;
 }
@@ -60409,7 +60409,7 @@ NETWORK_PROC( uintptr_t, GetNetworkLong )(PCLIENT lpClient,int nLong)
 	}
 	else if( nLong < globalNetworkData.nUserData )
 	{
-		return(*(uintptr_t*)(lpClient->lpUserData + (nLong * sizeof(uintptr_t))));
+		return lpClient->lpUserData[nLong];
 	}
    //spv:980303
 	return (uintptr_t)-1;
