@@ -59694,7 +59694,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 #    ifdef __64__
 		kevent64_s ev;
 		EV_SET64( &ev, pc->Socket, EVFILT_READ, EV_DELETE, 0, 0, (uint64_t)pc, NULL, NULL );
-		kevent64( thread->kqueue, &ev, 1, 0, 0, 0 );
+		kevent64( thread->kqueue, &ev, 1, 0, 0, 0, 0 );
 #    else
 		kevent ev;
 		EV_SET( &ev, pc->Socket, EVFILT_READ, EV_DELETE, 0, 0, (uint64_t)pc, NULL, NULL );
@@ -59802,13 +59802,13 @@ static void AddThreadEvent( PCLIENT pc )
 		kevent64_s ev;
 		if( pc->dwFlags & CF_LISTEN ) {
 			EV_SET64( &ev, pc->Socket, EVFILT_READ, EV_ADD, 0, 0, (uint64_t)pc, NULL, NULL );
-			kevent64( peer->kqueue, &ev, 1, 0, 0, 0 );
+			kevent64( peer->kqueue, &ev, 1, 0, 0, 0, 0 );
 		}
 		else {
 			EV_SET64( &ev, pc->Socket, EVFILT_READ, EV_ADD, 0, 0, (uint64_t)pc, NULL, NULL );
-			kevent64( peer->kqueue, &ev, 1, 0, 0, 0 );
+			kevent64( peer->kqueue, &ev, 1, 0, 0, 0, 0 );
 			EV_SET64( &ev, pc->Socket, EVFILT_WRITE, EV_ADD | EV_CLEAR, 0, 0, (uint64_t)pc, NULL, NULL );
-			kevent64( peer->kqueue, &ev, 1, 0, 0, 0 );
+			kevent64( peer->kqueue, &ev, 1, 0, 0, 0, 0 );
 		}
 #    else
 		kevent ev;
@@ -59855,7 +59855,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #  ifdef __MAC__
 #    ifdef __64__
 		kevent64_s events[10];
-		cnt = kevent64( peer->kqueue, NULL, 0, &events, 10, NULL );
+		cnt = kevent64( peer->kqueue, NULL, 0, &events, 10, 0, NULL );
 #    else
 		kevent events[10];
 		cnt = kevent( peer->kqueue, NULL, 0, &events, 10, NULL );
@@ -60093,7 +60093,7 @@ uintptr_t CPROC NetworkThreadProc( PTHREAD thread )
 		kevent64_s ev;
 		this_thread.kevents = CreateDataList( sizeof( ev ) );
 		EV_SET64( &ev, GetThreadSleeper( thread ), EVFILT_READ, EV_ADD, 0, 0, (uint64_t)1, NULL, NULL );
-		kevent64( this_thread.kqueue, &ev, 1, 0, 0, 0 );
+		kevent64( this_thread.kqueue, &ev, 1, 0, 0, 0, 0 );
 #    else
 		kevent ev;
 		this_thread.kevents = CreateDataList( sizeof( ev ) );
