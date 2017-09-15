@@ -49,6 +49,7 @@ struct optionStrings {
 	Eternal<String> *maskingString;
 	Eternal<String> *bytesReadString;
 	Eternal<String> *bytesWrittenString;
+	Eternal<String> *requestString;
 };
 
 static PLIST strings;
@@ -171,6 +172,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->maskingString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "masking" ) );
 		check->bytesReadString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "bytesRead" ) );
 		check->bytesWrittenString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "bytesWritten" ) );
+		check->requestString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "request" ) );
 	}
 	return check;
 }
@@ -187,6 +189,7 @@ public:
 	static Persistent<Function> constructor;
 	Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> acceptCallback; //
+	Persistent<Function, CopyablePersistentTraits<Function>> requestCallback; //
 	struct wssEvent *eventMessage;
 
 public:
@@ -199,6 +202,7 @@ public:
 	//static void onMessage( const v8::FunctionCallbackInfo<Value>& args );
 	static void onConnect( const v8::FunctionCallbackInfo<Value>& args );
 	static void onAccept( const v8::FunctionCallbackInfo<Value>& args );
+	static void onRequest( const v8::FunctionCallbackInfo<Value>& args );
 	static void accept( const v8::FunctionCallbackInfo<Value>& args );
 	static void reject( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -310,6 +314,28 @@ static void DropWscEvent( WSC_EVENT *evt ) {
 	EnterCriticalSec( &l.csWscEvents );
 	DeleteFromSet( WSC_EVENT, &l.wscEvents, evt );
 	LeaveCriticalSec( &l.csWscEvents );
+}
+
+static void uv_closed_wssi( uv_handle_t* handle ) {
+	wssiObject* myself = (wssiObject*)handle->data;
+	myself->closeCallback.Reset();
+	myself->openCallback.Reset();
+	myself->messageCallback.Reset();
+	myself->errorCallback.Reset();
+	myself->_this.Reset();
+}
+static void uv_closed_wss( uv_handle_t* handle ) {
+	wssObject* myself = (wssObject*)handle->data;
+	myself->openCallback.Reset();
+	myself->_this.Reset();
+}
+static void uv_closed_wsc( uv_handle_t* handle ) {
+	wscObject* myself = (wscObject*)handle->data;
+	myself->closeCallback.Reset();
+	myself->openCallback.Reset();
+	myself->messageCallback.Reset();
+	myself->errorCallback.Reset();
+	myself->_this.Reset();
 }
 
 static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
@@ -428,10 +454,13 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 				Deallocate( POINTER, eventMessage->buf );
 				break;
 			case WS_EVENT_CLOSE:
-				myself->closeCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 0, argv );
-				uv_close( (uv_handle_t*)&myself->async, NULL );
+				if( !myself->closeCallback.IsEmpty() ) {
+					myself->closeCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 0, argv );
+				}
+				uv_close( (uv_handle_t*)&myself->async, uv_closed_wssi );
 				DropWssiEvent( eventMessage );
 				DeleteLinkQueue( &myself->eventQueue );
+				myself->closed = 1;
 				continue;
 				break;
 			case WS_EVENT_ERROR:
@@ -486,7 +515,7 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 				cb = Local<Function>::New( isolate, wsc->closeCallback );
 				if( !cb.IsEmpty() )
 					cb->Call( eventMessage->_this->_this.Get( isolate ), 0, argv );
-				uv_close( (uv_handle_t*)&wsc->async, NULL );
+				uv_close( (uv_handle_t*)&wsc->async, uv_closed_wsc );
 				DeleteLinkQueue( &wsc->eventQueue );
 				break;
 			}
@@ -518,6 +547,7 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "on", wssObject::on );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onconnect", wssObject::onConnect );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onaccept", wssObject::onAccept );
+		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onrequest", wssObject::onRequest );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "accept", wssObject::accept );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "reject", wssObject::reject );
 		wssTemplate->ReadOnlyPrototype();
@@ -687,6 +717,7 @@ wssObject::wssObject( struct wssOptions *opts ) {
 	closed = 0;
 	eventQueue = CreateLinkQueue();
 	uv_async_init( l.loop, &async, wssAsyncMsg );
+	lprintf( "init:%p", &async );
 	async.data = this;
 
 	pc = WebSocketCreate( opts->url, webSockServerOpen, webSockServerEvent, webSockServerClosed, webSockServerError, (uintptr_t)this );
@@ -792,6 +823,7 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 		if( args.Length() > 1 && args[1]->IsFunction() ) {
 			Handle<Function> arg0 = Handle<Function>::Cast( args[1] );
 			obj->openCallback.Reset( isolate, arg0 );
+			obj->openCallback.SetWeak();
 		}
 		obj->_this.Reset( isolate, _this );
 		obj->Wrap( _this );
@@ -822,13 +854,19 @@ void wssObject::on( const FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		String::Utf8Value event( args[0]->ToString() );
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
+		if( StrCmp( *event, "request" ) == 0 ) {
+			if( cb->IsFunction() )
+				obj->requestCallback.Reset( isolate, cb );
+		}
 		if( StrCmp( *event, "connect" ) == 0 ) {
 			if( cb->IsFunction() )
 				obj->openCallback.Reset( isolate, cb );
+				obj->openCallback.SetWeak();
 		}
 		if( StrCmp( *event, "accept" ) == 0 ) {
 			if( cb->IsFunction() )
 				obj->acceptCallback.Reset( isolate, cb );
+				obj->acceptCallback.SetWeak();
 		}
 	}
 }
@@ -850,6 +888,17 @@ void wssObject::onAccept( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
 			obj->acceptCallback.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+		else
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
+	}
+}
+
+void wssObject::onRequest( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
+	if( args.Length() > 0 ) {
+		if( args[0]->IsFunction() )
+			obj->requestCallback.Reset( isolate, Handle<Function>::Cast( args[0] ) );
 		else
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
 	}
@@ -890,8 +939,8 @@ wssiObject::wssiObject( PCLIENT pc, Local<Object> obj ) {
 }
 
 wssiObject::~wssiObject() {
-	lprintf( "Destruct wssiObject" );
 	if( !closed ) {
+		lprintf( "destruct, try to generate WebSockClose" );
 		RemoveClient( pc );
 	}
 }
@@ -921,10 +970,13 @@ void wssiObject::on( const FunctionCallbackInfo<Value>& args){
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		if(  StrCmp( *event, "message" ) == 0 ) {
 			obj->messageCallback.Reset( isolate, cb);			
+			obj->messageCallback.SetWeak();
 		} else if(  StrCmp( *event, "error" ) == 0 ) {
 			obj->errorCallback.Reset(isolate,cb);			
+			obj->errorCallback.SetWeak();
 		} else if(  StrCmp( *event, "close" ) == 0 ){
 			obj->closeCallback.Reset(isolate,cb);
+			obj->closeCallback.SetWeak();
 		}
 	}
 }
@@ -936,6 +988,7 @@ void wssiObject::onmessage( const FunctionCallbackInfo<Value>& args ) {
 		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 		Local<Function> cb = Handle<Function>::Cast( args[0] );
 		obj->messageCallback.Reset( isolate, cb );
+		obj->messageCallback.SetWeak();
 	}
 }
 
@@ -946,6 +999,7 @@ void wssiObject::onclose( const FunctionCallbackInfo<Value>& args ) {
 		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 		Local<Function> cb = Handle<Function>::Cast( args[0] );
 		obj->closeCallback.Reset( isolate, cb );
+		obj->closeCallback.SetWeak();
 	}
 }
 
@@ -1046,8 +1100,9 @@ wscObject::wscObject( wscOptions *opts ) {
 }
 
 wscObject::~wscObject() {
+	lprintf( "Destruct wscObject" );
 	if( !closed ) {
-		//lprintf( "Destruct wscObject" );
+		lprintf( "destruct, try to generate WebSockClose" );
 		RemoveClient( pc );
 	}
 	DeleteLinkQueue( &eventQueue );
@@ -1153,12 +1208,16 @@ void wscObject::on( const FunctionCallbackInfo<Value>& args){
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		if( StrCmp( *event, "open" ) == 0 ){
 			obj->openCallback.Reset(isolate,cb);			
+			obj->openCallback.SetWeak();
 		} else if(  StrCmp( *event, "message" ) == 0 ) {
 			obj->messageCallback.Reset(isolate,cb);
+			obj->messageCallback.SetWeak();
 		} else if(  StrCmp( *event, "error" ) == 0 ) {
 			obj->errorCallback.Reset(isolate,cb);
+			obj->errorCallback.SetWeak();
 		} else if(  StrCmp( *event, "close" ) == 0 ) {
 			obj->closeCallback.Reset(isolate,cb);
+			obj->closeCallback.SetWeak();
 		} else
 			isolate->ThrowException( Exception::Error(
 				String::NewFromUtf8( isolate, TranslateText( "Event name specified is not supported or known." ) ) ) );
