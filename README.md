@@ -561,9 +561,9 @@ Server events
 
   | Event Name | Event Description |
   |---|---|
-  | accept |  optional callback, if it is configured on a server, it is called before connect, and is passed (protocols, resource path). |
-  |        |  should call server.accept( protocol ), or server.reject() during this callback.  |
+  | accept |  optional callback, if it is configured on a server, it is called before connect, and is passed (protocols, resource path).  Should call server.accept( protocol ), or server.reject() during this callback.  |
   | connect | callback receives new connection from a client.  The new client object has a 'connection' object which provides information about the connection. |
+  | request | callback is in a new object that is an httpObject; triggered when a non-upgrade request is received. |
 
 
 Server Options
@@ -586,7 +586,15 @@ Server Client Methods
   |----|----|
   | send | send data on the connection.  Message parameter can either be an ArrayBuffer or a String. (to be implemented; typedarraybuffer) |
   | close | closes the connection |
-  
+
+Http Request methods
+   These methods are available on the 'res' object received in the Server "request" event.
+
+  | Method | Parameters | Description |
+  |----|----|-----|
+  | writeHead | (resultCode [,extraHeadersObject]) | setup the return code of the socket.  Second parameter is an object which is used to specify additional headers. |
+  | end | ( content [,unused]) | sends specified content.  String, Buffer, uint8Array, ArrayBuffer area all accpeted.  (sack.vfs.File?) |
+
 
 WebSocket connection Object
 
