@@ -1010,7 +1010,6 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 		if( args.Length() > 1 && args[1]->IsFunction() ) {
 			Handle<Function> arg0 = Handle<Function>::Cast( args[1] );
 			obj->openCallback.Reset( isolate, arg0 );
-			obj->openCallback.SetWeak();
 		}
 		obj->_this.Reset( isolate, _this );
 		obj->Wrap( _this );
@@ -1048,12 +1047,10 @@ void wssObject::on( const FunctionCallbackInfo<Value>& args ) {
 		if( StrCmp( *event, "connect" ) == 0 ) {
 			if( cb->IsFunction() )
 				obj->openCallback.Reset( isolate, cb );
-				obj->openCallback.SetWeak();
 		}
 		if( StrCmp( *event, "accept" ) == 0 ) {
 			if( cb->IsFunction() )
 				obj->acceptCallback.Reset( isolate, cb );
-				obj->acceptCallback.SetWeak();
 		}
 	}
 }
@@ -1157,13 +1154,10 @@ void wssiObject::on( const FunctionCallbackInfo<Value>& args){
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		if(  StrCmp( *event, "message" ) == 0 ) {
 			obj->messageCallback.Reset( isolate, cb);			
-			obj->messageCallback.SetWeak();
 		} else if(  StrCmp( *event, "error" ) == 0 ) {
 			obj->errorCallback.Reset(isolate,cb);			
-			obj->errorCallback.SetWeak();
 		} else if(  StrCmp( *event, "close" ) == 0 ){
 			obj->closeCallback.Reset(isolate,cb);
-			obj->closeCallback.SetWeak();
 		}
 	}
 }
@@ -1175,7 +1169,6 @@ void wssiObject::onmessage( const FunctionCallbackInfo<Value>& args ) {
 		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 		Local<Function> cb = Handle<Function>::Cast( args[0] );
 		obj->messageCallback.Reset( isolate, cb );
-		obj->messageCallback.SetWeak();
 	}
 }
 
@@ -1186,7 +1179,6 @@ void wssiObject::onclose( const FunctionCallbackInfo<Value>& args ) {
 		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 		Local<Function> cb = Handle<Function>::Cast( args[0] );
 		obj->closeCallback.Reset( isolate, cb );
-		obj->closeCallback.SetWeak();
 	}
 }
 
@@ -1397,16 +1389,12 @@ void wscObject::on( const FunctionCallbackInfo<Value>& args){
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		if( StrCmp( *event, "open" ) == 0 ){
 			obj->openCallback.Reset(isolate,cb);			
-			obj->openCallback.SetWeak();
 		} else if(  StrCmp( *event, "message" ) == 0 ) {
 			obj->messageCallback.Reset(isolate,cb);
-			obj->messageCallback.SetWeak();
 		} else if(  StrCmp( *event, "error" ) == 0 ) {
 			obj->errorCallback.Reset(isolate,cb);
-			obj->errorCallback.SetWeak();
 		} else if(  StrCmp( *event, "close" ) == 0 ) {
 			obj->closeCallback.Reset(isolate,cb);
-			obj->closeCallback.SetWeak();
 		} else
 			isolate->ThrowException( Exception::Error(
 				String::NewFromUtf8( isolate, TranslateText( "Event name specified is not supported or known." ) ) ) );
