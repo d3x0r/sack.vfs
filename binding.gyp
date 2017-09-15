@@ -68,6 +68,7 @@
 			, '-Wno-unused-variable', '-Wno-unused-function'
 			, '-Wno-sign-compare', '-Wno-null-dereference'
 			, '-Wno-address-of-packed-member', '-Wno-unknown-warning-option'
+			, '-Wno-unused-result'
                 ],
              },
             'include_dirs': [
