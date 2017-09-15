@@ -27659,7 +27659,7 @@ pthread_t GetThreadHandle( PTHREAD thread )
 {
 	if( thread )
 		return thread->hThread;
-	return INVALID_HANDLE_VALUE;
+	return NULL;
 }
 #endif
 //--------------------------------------------------------------------------
@@ -46748,6 +46748,7 @@ HTTP_EXPORT PTEXT HTTPAPI GetHttpResource( HTTPState pHttpState );
    see also: ProcessHttpFields and ProcessCGIFields
 */
 HTTP_EXPORT PLIST HTTPAPI GetHttpHeaderFields( HTTPState pHttpState );
+HTTP_EXPORT int HTTPAPI GetHttpVersion( HTTPState pHttpState );
 HTTP_EXPORT
  /* Enumerates the various http header fields by passing them
    each sequentially to the specified callback.
@@ -47984,6 +47985,9 @@ PTEXT GetHTTPField( struct HttpState *pHttpState, CTEXTSTR name )
 PLIST GetHttpHeaderFields( HTTPState pHttpState )
 {
 	return pHttpState->fields;
+}
+int GetHttpVersion( HTTPState pHttpState ) {
+	return pHttpState->response_version;
 }
 HTTP_NAMESPACE_END
 #undef l
@@ -50289,6 +50293,7 @@ struct web_socket_input_state
 	web_socket_error on_error;
   // server socket event
 	web_socket_accept on_accept;
+	web_socket_http_request on_request;
 	uintptr_t psv_on;
  // result of the open, to pass to read
 	uintptr_t psv_open;
@@ -50309,8 +50314,6 @@ struct html5_web_socket {
 	PCLIENT pc;
 	POINTER buffer;
 	char *protocols;
-  // callback to send unhandled requests to a handler
-	web_socket_http_request on_request;
 	struct web_socket_input_state input_state;
 };
 struct web_socket_client
@@ -50868,6 +50871,13 @@ void SetWebSocketCloseCallback( PCLIENT pc, web_socket_closed callback )
 		input_state->on_close = callback;
 	}
 }
+void SetWebSocketHttpCallback( PCLIENT pc, web_socket_http_request callback )
+{
+	if( pc ) {
+		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 1 );
+		input_state->on_request = callback;
+	}
+}
 void SetWebSocketErrorCallback( PCLIENT pc, web_socket_error callback )
 {
 	if( pc ) {
@@ -50951,6 +50961,7 @@ struct web_socket_input_state
 	web_socket_error on_error;
   // server socket event
 	web_socket_accept on_accept;
+	web_socket_http_request on_request;
 	uintptr_t psv_on;
  // result of the open, to pass to read
 	uintptr_t psv_open;
@@ -50971,8 +50982,6 @@ struct html5_web_socket {
 	PCLIENT pc;
 	POINTER buffer;
 	char *protocols;
-  // callback to send unhandled requests to a handler
-	web_socket_http_request on_request;
 	struct web_socket_input_state input_state;
 };
 struct web_socket_client
@@ -51433,6 +51442,7 @@ HTML5_WEBSOCKET_PROC( PLIST, GetWebSocketHeaders )( PCLIENT pc );
 /* for server side sockets, get the requested resource path from the client request.
 */
 HTML5_WEBSOCKET_PROC( PTEXT, GetWebSocketResource )( PCLIENT pc );
+HTML5_WEBSOCKET_PROC( HTTPState, GetWebSocketHttpState )( PCLIENT pc );
 HTML5_WEBSOCKET_NAMESPACE_END
 USE_HTML5_WEBSOCKET_NAMESPACE
 #endif
@@ -51637,11 +51647,10 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 						|| !TextLike( value, "upgrade" )
 						|| !TextLike( value2, "websocket" ) ) {
 						lprintf( "request is not an upgrade for websocket." );
-						VarTextDestroy( &pvt_output );
 						socket->flags.initial_handshake_done = 1;
 						socket->flags.http_request_only = 1;
-						if( socket->on_request )
-							socket->on_request( pc, socket->input_state.psv_on );
+						if( socket->input_state.on_request )
+							socket->input_state.on_request( pc, socket->input_state.psv_on );
 						else {
 							RemoveClient( pc );
 							return;
@@ -51890,7 +51899,6 @@ static void CPROC connected( PCLIENT pc_server, PCLIENT pc_new )
 	socket->pc = pc_new;
  // clone callback methods and config flags
 	socket->input_state = server_socket->input_state;
-	socket->on_request = server_socket->on_request;
  // start a new http state collector
 	socket->http_state = CreateHttpState();
 	SetNetworkLong( pc_new, 0, (uintptr_t)socket );
@@ -51939,6 +51947,15 @@ PTEXT GetWebSocketResource( PCLIENT pc ) {
 	HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc, 0 );
 	if( socket && socket->Magic == 0x20130912 ) {
 		return GetHttpResource( socket->http_state );
+	}
+	return NULL;
+}
+HTTPState GetWebSocketHttpState( PCLIENT pc ) {
+	if( pc ) {
+		HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc, 0 );
+		if( socket && socket->Magic == 0x20130912 ) {
+			return socket->http_state;
+		}
 	}
 	return NULL;
 }
@@ -59675,11 +59692,11 @@ void RemoveThreadEvent( PCLIENT pc ) {
 	{
 #  ifdef __MAC__
 #    ifdef __64__
-		kevent64_s *ev;
+		kevent64_s ev;
 		EV_SET64( &ev, pc->Socket, EVFILT_READ, EV_DEL, 0, 0, (uint64_t)pc, NULL, NULL );
 		kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
 #    else
-		kevent *ev;
+		kevent ev;
 		EV_SET( &ev, pc->Socket, EVFILT_READ, EV_DEL, 0, 0, (uint64_t)pc, NULL, NULL );
 		kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
 #    endif
@@ -60075,12 +60092,12 @@ uintptr_t CPROC NetworkThreadProc( PTHREAD thread )
 		kevent64_s ev;
 		this_thread.kevents = CreateDataList( sizeof( ev ) );
 		EV_SET64( &ev, GetThreadSleeper(), EVFILT_READ, EV_ADD, 0, 0, (uint64_t)1, NULL, NULL );
-		AddDataItem( &this_thread.kevents, &ev );
+		kevent( this_thread.kqueue, &ev, 1, 0, 0, 0 );
 #    else
 		kevent ev;
 		this_thread.kevents = CreateDataList( sizeof( ev ) );
 		EV_SET( &ev, GetThreadSleeper(), EVFILT_READ, EV_ADD, 0, 0, (uintptr_t)1 );
-		AddDataItem( &this_thread.kevents, &ev );
+		kevent( this_thread.kqueue, &ev, 1, 0, 0, 0 );
 #    endif
 #  else
 		struct epoll_event ev;
@@ -61471,8 +61488,10 @@ void LoadNetworkAddresses( void ) {
 		SOCKADDR *dup;
 		if( !tmp->ifa_addr )
 			continue;
+#  ifndef __MAC__
 		if( tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_PACKET )
 			continue;
+#  endif
 		ia = New( struct interfaceAddress );
 		dup = AllocAddr();
 		if( tmp->ifa_addr->sa_family == AF_INET6 ) {
