@@ -13,7 +13,6 @@ server.on( "connect", function(ws){
                 ws.send( msg );
         } );
         ws.on( "close", function() {
-        	//console.log( "client disconnected" );
         } );
         ws.on( "error", function(err,code) {
         	console.log( "error event (probably not)" );
