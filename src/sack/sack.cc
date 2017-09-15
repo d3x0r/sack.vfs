@@ -60174,11 +60174,12 @@ int NetworkQuit(void)
 		PTHREAD thread;
 		INDEX idx;
 		LIST_FORALL( globalNetworkData.pThreads, idx, PTHREAD, thread ) {
-			WakeThread( thread );
 #ifdef USE_WSA_EVENTS
 			struct peer_thread_info *peer_thread = (struct peer_thread_info*)GetThreadParam( thread );
-			WSASetEvent( peer_thread->hThread );
+			if( peer_thread )
+				WSASetEvent( peer_thread->hThread );
 #endif
+			WakeThread( thread );
 		}
 	}
 #ifdef _WIN32
