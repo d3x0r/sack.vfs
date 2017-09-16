@@ -534,6 +534,8 @@ Client constructor parameters
     | perMessageDeflate | true/false; default false (performance).  Reqeusts permessage-deflate extension from server, and deflates messages sent. |
     | perMessageDeflateAllow | true/false; default false (performance).  Accepts permessage-deflate from server, but does not deflate messages. |    
     | ca | &lt;string&gt;; uses PEM certificate as part of certificate chain to verify server. |
+    | key | &lt;string&gt;; keypair to use for the connection (otherwise an internal key will be generated) |
+    | passPhrase | &lt;string&gt;; password to use with the key specified |
     
   After opening, websocket object has 'connection' which gives some of the information about the connection established.
 
@@ -587,7 +589,15 @@ Server Client Methods
   | send | send data on the connection.  Message parameter can either be an ArrayBuffer or a String. (to be implemented; typedarraybuffer) |
   | close | closes the connection |
 
-Http Request methods
+Http Request fields
+
+  | Name  | Description |
+  |----|----|
+  | url | the URL requested |
+  | connection | same as a Websocket Connection object |
+  | headers | headers from the http request |
+
+Http Response methods
    These methods are available on the 'res' object received in the Server "request" event.
 
   | Method | Parameters | Description |
@@ -749,6 +759,8 @@ COM port settings are kept in the default option database under
 
 
 ## Changelog
+- 0.1.99309 Fix clearing some persistant handles so objects can be garbage collected. 
+Fix SSL server issues.  Implement onrequest handling for websocket connections.
 - 0.1.99308 Improve network event handling; Allow more connections dynamically; fix some locking issues with critical sections.
 - 0.1.99307 Implement interface to websocket library. Implement interface to UDP sockets.
 - 0.1.99306 Move json reviver parameter handling internal.  Implement volume JSON stream reader interface.  Fix options to create/reopen an existing file.
