@@ -30,7 +30,7 @@
 			,'-Wno-empty-body','-Wno-format', '-Wno-address'
 			, '-Wno-strict-aliasing', '-Wno-switch', '-Wno-missing-field-initializers' 
 			, '-Wno-unused-variable', '-Wno-unused-function', '-Wno-unused-but-set-variable', '-Wno-maybe-uninitialized'
-			, '-Wno-sign-compare', '-Wno-unknown-warning'
+			, '-Wno-sign-compare', '-Wno-unknown-warning', '-fexceptions'
 			],
             'cflags': ['-Wno-implicit-fallthrough'
 			],
