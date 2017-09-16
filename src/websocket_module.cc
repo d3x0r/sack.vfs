@@ -46,7 +46,7 @@ struct optionStrings {
 	Eternal<String> *deflateAllowString;
 	Eternal<String> *caString;
 	Eternal<String> *vUString;
-	Eternal<String> *socketString;
+	Eternal<String> *connectionString;
 	Eternal<String> *maskingString;
 	Eternal<String> *bytesReadString;
 	Eternal<String> *bytesWrittenString;
@@ -63,6 +63,8 @@ struct wssOptions {
 	int cert_chain_len;
 	char *key;
 	int key_len;
+	char *pass;
+	int pass_len;
 	bool deflate;
 	bool deflate_allow;
 	bool apply_masking;
@@ -73,6 +75,9 @@ struct wscOptions {
 	char *protocol;
 	bool ssl;
 	char *key;
+	int key_len;
+	char *pass;
+	int pass_len;
 	char *root_cert;
 	bool deflate;
 	bool deflate_allow;
@@ -170,7 +175,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->v4String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "IPv4" ) );
 		check->v6String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "IPv6" ) );
 		check->vUString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "unknown" ) );
-		check->socketString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "connection" ) );
+		check->connectionString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "connection" ) );
 		check->maskingString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "masking" ) );
 		check->bytesReadString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "bytesRead" ) );
 		check->bytesWrittenString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "bytesWritten" ) );
@@ -193,6 +198,7 @@ public:
 	Persistent<Function, CopyablePersistentTraits<Function>> acceptCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> requestCallback; //
 	struct wssEvent *eventMessage;
+	bool ssl;
 
 public:
 
@@ -217,6 +223,7 @@ public:
 	PCLIENT pc;
 	static Persistent<Function> constructor;
 	PVARTEXT pvtResult;
+	bool ssl;
 
 public:
 
@@ -398,7 +405,7 @@ static Local<Object> makeRequest( Isolate *isolate, struct optionStrings *string
 	// .socket
 	Local<Object> req = Object::New( isolate );
 	Local<Object> socket;
-	req->Set( strings->socketString->Get( isolate ), socket = makeSocket( isolate, pc ) );
+	req->Set( strings->connectionString->Get( isolate ), socket = makeSocket( isolate, pc ) );
 	req->Set( strings->headerString->Get( isolate ), socket->Get( strings->headerString->Get( isolate ) ) );
 	req->Set( strings->urlString->Get( isolate )
 		, String::NewFromUtf8( isolate
@@ -429,7 +436,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				}
 				Local<Object> wssi = _wssi.ToLocalChecked();
 				struct optionStrings *strings = getStrings( isolate );
-				wssi->Set( strings->socketString->Get(isolate), makeSocket( isolate, eventMessage->pc ) );
+				wssi->Set( strings->connectionString->Get(isolate), makeSocket( isolate, eventMessage->pc ) );
 				wssiObject *wssiInternal = wssiObject::Unwrap<wssiObject>( wssi );
 				wssiInternal->_this.Reset( isolate, wssi );
 
@@ -449,9 +456,10 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					}
 					Local<Object> http = _http.ToLocalChecked();
 					struct optionStrings *strings = getStrings( isolate );
-					http->Set( strings->socketString->Get( isolate ), makeSocket( isolate, eventMessage->pc ) );
+					http->Set( strings->connectionString->Get( isolate ), makeSocket( isolate, eventMessage->pc ) );
 
 					httpObject *httpInternal = httpObject::Unwrap<httpObject>( http );
+					httpInternal->ssl = myself->ssl;
 					httpInternal->pc = eventMessage->pc;
 
 					argv[0] = makeRequest( isolate, strings, eventMessage->pc );
@@ -555,7 +563,7 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 				cb = Local<Function>::New( isolate, wsc->openCallback );
 				struct optionStrings *strings;
 				strings = getStrings( isolate );
-				wsc->_this.Get(isolate)->Set( strings->socketString->Get( isolate ), makeSocket( isolate, wsc->pc ) );
+				wsc->_this.Get(isolate)->Set( strings->connectionString->Get( isolate ), makeSocket( isolate, wsc->pc ) );
 				cb->Call( eventMessage->_this->_this.Get(isolate), 0, argv );
 				break;
 			case WS_EVENT_READ:
@@ -868,7 +876,10 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	if( doSend ) {
 		PTEXT buffer = VarTextPeek( obj->pvtResult );
-		SendTCP( obj->pc, GetText( buffer ), GetTextSize( buffer ) );
+		if( obj->ssl )
+			ssl_Send( obj->pc, GetText( buffer ), GetTextSize( buffer ) );
+		else
+			SendTCP( obj->pc, GetText( buffer ), GetTextSize( buffer ) );
 	}
 	RemoveClientEx( obj->pc, 0, 1 );
 	VarTextEmpty( obj->pvtResult );
@@ -917,7 +928,8 @@ wssObject::wssObject( struct wssOptions *opts ) {
 		if( opts->ssl ) {
 			ssl_BeginServer( pc
 				, opts->cert_chain, opts->cert_chain ? strlen( opts->cert_chain ) : 0
-				, opts->key, opts->key ? strlen( opts->key ) : 0 );
+				, opts->key, opts->key_len
+				, opts->pass, opts->pass_len );
 		}
 		SetWebSocketAcceptCallback( pc, webSockServerAccept );
 	}
@@ -973,6 +985,16 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 				wssOpts.key = StrDup( *cert );
 				wssOpts.key_len = cert.length();
 			}
+			if( !opts->Has( optName = strings->passString->Get( isolate ) ) ) {
+				wssOpts.pass = NULL;
+				wssOpts.pass_len = 0;
+			}
+			else {
+				String::Utf8Value cert( opts->Get( optName )->ToString() );
+				wssOpts.pass = StrDup( *cert );
+				wssOpts.pass_len = cert.length();
+			}
+
 			if( wssOpts.key || wssOpts.cert_chain ) {
 				wssOpts.ssl = 1;
 			}
@@ -1003,10 +1025,13 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 		}
 		Local<Object> _this = args.This();
 		wssObject* obj = new wssObject( &wssOpts );
+		obj->ssl = wssOpts.ssl;
 		if( wssOpts.cert_chain )
 			Deallocate( char *, wssOpts.cert_chain );
 		if( wssOpts.key )
 			Deallocate( char *, wssOpts.key );
+		if( wssOpts.pass )
+			Deallocate( char *, wssOpts.pass );
 		if( args.Length() > 1 && args[1]->IsFunction() ) {
 			Handle<Function> arg0 = Handle<Function>::Cast( args[1] );
 			obj->openCallback.Reset( isolate, arg0 );
@@ -1273,7 +1298,7 @@ wscObject::wscObject( wscOptions *opts ) {
 		if( !opts->apply_masking )
 			SetWebSocketMasking( pc, 0 );
 		if( opts->ssl ) {
-			ssl_BeginClientSession( pc, opts->key, opts->key ? strlen( opts->key ) : 0
+			ssl_BeginClientSession( pc, opts->key, opts->key_len, opts->pass, opts->pass_len
 				, opts->root_cert, opts->root_cert ? strlen( opts->root_cert ) : 0 );
 		}
 		WebSocketConnect( pc );
@@ -1308,6 +1333,9 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 		opts.Clear();
 		wscOpts.ssl = FALSE;
 		wscOpts.key = NULL;
+		wscOpts.key_len = 0;
+		wscOpts.pass = NULL;
+		wscOpts.pass_len = 0;
 		wscOpts.root_cert = NULL;
 		wscOpts.protocol = NULL;
 
@@ -1327,10 +1355,21 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 
 			if( opts->Has( optName = strings->caString->Get( isolate ) ) ) {
 				String::Utf8Value rootCa( opts->Get( optName )->ToString() );
-				wscOpts.root_cert = *rootCa;
+				wscOpts.root_cert = StrDup( *rootCa );
 			}
-			else 
-				wscOpts.root_cert = NULL;
+
+			if( opts->Has( optName = strings->keyString->Get( isolate ) ) ) {
+				String::Utf8Value rootCa( opts->Get( optName )->ToString() );
+				wscOpts.key = StrDup( *rootCa );
+				wscOpts.key_len = rootCa.length();
+			}
+
+			if( opts->Has( optName = strings->passString->Get( isolate ) ) ) {
+				String::Utf8Value rootCa( opts->Get( optName )->ToString() );
+				wscOpts.pass = StrDup( *rootCa );
+				wscOpts.pass_len = rootCa.length();
+			}
+
 			if( opts->Has( optName = strings->deflateString->Get( isolate ) ) ) {
 				wscOpts.deflate = opts->Get( optName )->ToBoolean()->Value();
 			}
@@ -1364,6 +1403,13 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 		Local<Object> _this = args.This();
 		wscObject* obj = new wscObject( &wscOpts );
 		obj->_this.Reset( isolate, _this );
+
+		if( wscOpts.root_cert )
+			Deallocate( char *, wscOpts.root_cert );
+		if( wscOpts.key )
+			Deallocate( char *, wscOpts.key );
+		if( wscOpts.pass )
+			Deallocate( char *, wscOpts.pass );
 
 		obj->Wrap( _this );
 		args.GetReturnValue().Set( _this );

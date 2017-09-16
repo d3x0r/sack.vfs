@@ -46132,8 +46132,8 @@ NETWORK_PROC( void, RemoveClientExx )(PCLIENT lpClient, LOGICAL bBlockNofity, LO
    \ \                                                                      */
 #define RemoveClient(c) RemoveClientEx(c, FALSE, FALSE )
 /* Begin an SSL Connection.  This ends up replacing ReadComplete callback with an inbetween layer*/
-NETWORK_PROC( LOGICAL, ssl_BeginClientSession )( PCLIENT pc, POINTER keypair, size_t keylen, POINTER rootCert, size_t rootCertLen );
-NETWORK_PROC( LOGICAL, ssl_BeginServer )( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen );
+NETWORK_PROC( LOGICAL, ssl_BeginClientSession )( PCLIENT pc, POINTER keypair, size_t keylen, POINTER keypass, size_t keypasslen, POINTER rootCert, size_t rootCertLen );
+NETWORK_PROC( LOGICAL, ssl_BeginServer )( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen, POINTER keypass, size_t keypasslen);
 NETWORK_PROC( LOGICAL, ssl_GetPrivateKey )(PCLIENT pc, POINTER *keydata, size_t *keysize);
 /* use this to send on SSL Connection instead of SendTCP. */
 NETWORK_PROC( LOGICAL, ssl_Send )( PCLIENT pc, POINTER buffer, size_t length );
@@ -47768,7 +47768,7 @@ HTTPState GetHttpsQuery( PTEXT address, PTEXT url )
 			vtprintf( state->pvtOut, WIDE( "host: %s\r\n" ), GetText( address ) );
 			vtprintf( state->pvtOut, WIDE( "\r\n\r\n" ) );
 #ifndef NO_SSL
-			if( ssl_BeginClientSession( pc, NULL, 0, NULL, 0 ) )
+			if( ssl_BeginClientSession( pc, NULL, 0, NULL, 0, NULL, 0 ) )
 			{
 				state->waiter = MakeThread();
 				while( pc && ( state->last_read_tick > ( GetTickCount() - 20000 ) ) )
@@ -47934,7 +47934,7 @@ struct HttpServer *CreateHttpsServerEx( CTEXTSTR interface_address, CTEXTSTR Tar
 	server->server = OpenTCPListenerAddrEx( tmp = CreateSockAddress( interface_address ? interface_address : WIDE( "0.0.0.0" ), 80 )
 		, AcceptHttpClient );
 	SetNetworkLong( server->server, 0, (uintptr_t)server );
-	ssl_BeginServer( server->server, NULL, 0, NULL, 0 );
+	ssl_BeginServer( server->server, NULL, 0, NULL, 0, NULL, 0 );
 	ReleaseAddress( tmp );
 	if( !server->server )
 	{
@@ -51209,7 +51209,7 @@ static void CPROC WebSocketClientConnected( PCLIENT pc, int error )
 	if( !error )
 	{
 		if( websock->input_state.flags.use_ssl )
-			ssl_BeginClientSession( websock->pc, NULL, 0, NULL, 0 );
+			ssl_BeginClientSession( websock->pc, NULL, 0, NULL, 0, NULL, 0 );
 	}
 	else
 	{
@@ -63732,10 +63732,10 @@ SACK_NETWORK_NAMESPACE
 LOGICAL ssl_Send( PCLIENT pc, POINTER buffer, size_t length ) {
 	return FALSE;
 }
-LOGICAL ssl_BeginServer( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen ) {
+LOGICAL ssl_BeginServer( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen, POINTER keypass, size_t keypasslen ) {
 	return FALSE;
 }
-LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t client_keypairlen ) {
+LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t client_keypairlen, POINTER keypass, size_t keypasslen, POINTER rootCert, size_t rootCertLen ) {
 	return FALSE;
 }
 SACK_NETWORK_NAMESPACE_END
@@ -63757,6 +63757,7 @@ struct internalCert {
 	X509_REQ *req;
 	X509 * x509;
 	EVP_PKEY *pkey;
+	STACK_OF( X509 ) *chain;
 };
 //static void gencp
 struct internalCert * MakeRequest( void );
@@ -63787,7 +63788,7 @@ struct ssl_session {
 	SSL_CTX        *ctx;
 	BIO *rbio;
 	BIO *wbio;
-	EVP_PKEY *privkey;
+	//EVP_PKEY *privkey;
 	struct internalCert *cert;
 	SSL            *ssl;
  // CF_CPPREAD
@@ -64227,7 +64228,6 @@ static void ssl_CloseCallback( PCLIENT pc ) {
 	Release( ses->dbuffer );
 	Release( ses->ibuffer );
 	Release( ses->obuffer );
-	EVP_PKEY_free( ses->privkey );
 	if( ses->cert ) {
 		EVP_PKEY_free( ses->cert->pkey );
 		X509_free( ses->cert->x509 );
@@ -64242,26 +64242,9 @@ static void ssl_CloseCallback( PCLIENT pc ) {
 }
 static void ssl_ClientConnected( PCLIENT pcServer, PCLIENT pcNew ) {
 	struct ssl_session *ses;
-	int r;
 	ses = New( struct ssl_session );
 	MemSet( ses, 0, sizeof( struct ssl_session ) );
-	if( !ssl_global.ssl_ctx_server ) {
-		ssl_global.ssl_ctx_server = SSL_CTX_new( TLSv1_2_server_method() );
-		SSL_CTX_set_cipher_list( ssl_global.ssl_ctx_server, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH" );
-		r = SSL_CTX_use_PrivateKey( ssl_global.ssl_ctx_server, pcServer->ssl_session->privkey );
-		if( r <= 0 ) {
-			ERR_print_errors_cb( logerr, (void*)__LINE__ );
-		}
-		r = SSL_CTX_use_certificate( ssl_global.ssl_ctx_server, pcServer->ssl_session->cert->x509 );
-		if( r <= 0 ) {
-			ERR_print_errors_cb( logerr, (void*)__LINE__ );
-		}
-		r = SSL_CTX_check_private_key( ssl_global.ssl_ctx_server );
-		if( r <= 0 ) {
-			ERR_print_errors_cb( logerr, (void*)__LINE__ );
-		}
-	}
-	ses->ssl = SSL_new( ssl_global.ssl_ctx_server );
+	ses->ssl = SSL_new( pcServer->ssl_session->ctx );
 	ssl_InitSession( ses );
 	SSL_set_accept_state( ses->ssl );
 	pcNew->ssl_session = ses;
@@ -64279,7 +64262,20 @@ static void ssl_ClientConnected( PCLIENT pcServer, PCLIENT pcNew ) {
 	pcNew->dwFlags &= ~CF_CPPCLOSE;
 	ses->dwOriginalFlags = pcServer->ssl_session->dwOriginalFlags;
 }
-LOGICAL ssl_BeginServer( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen ) {
+struct info_params {
+	char *password;
+	int passlen;
+};
+static int pem_password( char *buf, int size, int rwflag, void *u )
+{
+	// rwflag = 0  = used for decryption
+	// rwflag = 1  = used for encryption
+	struct info_params *params = (struct info_params*)u;
+	int len;
+	memcpy( buf, params->password, len = (size<params->passlen ? size : params->passlen) );
+	return len;
+}
+LOGICAL ssl_BeginServer( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen, POINTER keypass, size_t keypasslen ) {
 	struct ssl_session * ses;
 	ses = New( struct ssl_session );
 	MemSet( ses, 0, sizeof( struct ssl_session ) );
@@ -64287,33 +64283,68 @@ LOGICAL ssl_BeginServer( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypa
 	pc->flags.bSecure = 1;
 	if( !cert ) {
 		ses->cert = MakeRequest();
-		ses->privkey = ses->cert->pkey;
 	} else {
-		struct internalCert *cert = New( struct internalCert );
+		struct internalCert *certStruc = New( struct internalCert );
 		BIO *keybuf = BIO_new( BIO_s_mem() );
 		X509 *x509, *result;
-		STACK_OF( X509 ) *chain = NULL;
-		chain = sk_X509_new_null();
+		certStruc->chain = NULL;
+		certStruc->chain = sk_X509_new_null();
 		//PKCS12_parse( )
 		BIO_write( keybuf, cert, (int)certlen );
 		do {
 			x509 = X509_new();
 			result = PEM_read_bio_X509( keybuf, &x509, NULL, NULL );
 			if( result )
-				sk_X509_push( chain, x509 );
+				sk_X509_push( certStruc->chain, x509 );
+			else
+				X509_free( x509 );
 		} while( result );
 		BIO_free( keybuf );
-		ses->cert = cert;
-		ses->privkey = ses->cert->pkey;
+		ses->cert = certStruc;
 	}
 	if( !keypair ) {
-		if( !ses->privkey )
-			ses->privkey = genKey();
+		if( !ses->cert->pkey )
+			ses->cert->pkey = genKey();
 	} else {
 		BIO *keybuf = BIO_new( BIO_s_mem() );
+		struct info_params params;
+		ses->cert->pkey = EVP_PKEY_new();
 		BIO_write( keybuf, keypair, (int)keylen );
-		PEM_read_bio_PrivateKey( keybuf, &ses->privkey, NULL, NULL );
+		params.password = (char*)keypass;
+		params.passlen = (int)keypasslen;
+		PEM_read_bio_PrivateKey( keybuf, &ses->cert->pkey, pem_password, &params );
 		BIO_free( keybuf );
+	}
+	ses->ctx = SSL_CTX_new( TLSv1_2_server_method() );
+	{
+		int r;
+		SSL_CTX_set_cipher_list( ses->ctx, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH" );
+
+		r = SSL_CTX_set0_chain( ses->ctx, ses->cert->chain );
+		if( r <= 0 ) {
+			ERR_print_errors_cb( logerr, (void*)__LINE__ );
+		}
+		r = SSL_CTX_use_certificate( ses->ctx, sk_X509_value( ses->cert->chain, 0) );
+		if( r <= 0 ) {
+			ERR_print_errors_cb( logerr, (void*)__LINE__ );
+		}
+		r = SSL_CTX_use_PrivateKey( ses->ctx, ses->cert->pkey );
+		if( r <= 0 ) {
+			ERR_print_errors_cb( logerr, (void*)__LINE__ );
+		}
+		{
+			int n;
+			for( n = 1; n < sk_X509_num( ses->cert->chain ); n++ ) {
+				r = SSL_CTX_add_extra_chain_cert( ses->ctx, sk_X509_value( ses->cert->chain, n ) );
+				if( r <= 0 ) {
+					ERR_print_errors_cb( logerr, (void*)__LINE__ );
+				}
+			}
+		}
+		r = SSL_CTX_check_private_key( ses->ctx );
+		if( r <= 0 ) {
+			ERR_print_errors_cb( logerr, (void*)__LINE__ );
+		}
 	}
 	ses->dwOriginalFlags = pc->dwFlags;
 	ses->user_connected = pc->connect.ClientConnected;
@@ -64329,9 +64360,9 @@ LOGICAL ssl_GetPrivateKey( PCLIENT pc, POINTER *keyoutbuf, size_t *keylen ) {
 	if( pc && keyoutbuf && keylen ) {
 		struct ssl_session * ses = pc->ssl_session;
 		BIO *keybuf = BIO_new( BIO_s_mem() );
-		if( !ses->privkey )
-			ses->privkey = genKey();
-		PEM_write_bio_PrivateKey( keybuf, ses->privkey, NULL, NULL, 0, NULL, NULL );
+		if( !ses->cert->pkey )
+			ses->cert->pkey = genKey();
+		PEM_write_bio_PrivateKey( keybuf, ses->cert->pkey, NULL, NULL, 0, NULL, NULL );
 		(*keylen) = BIO_pending( keybuf );
 		(*keyoutbuf) = NewArray( uint8_t, (*keylen) + 1 );
 		BIO_read( keybuf, (*keyoutbuf), (int)(*keylen) );
@@ -64344,7 +64375,7 @@ LOGICAL ssl_GetPrivateKey( PCLIENT pc, POINTER *keyoutbuf, size_t *keylen ) {
 //                                 long argl, long ret);
 //
 // void BIO_set_callback(BIO *b, BIO_callack_fn cb);
-LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t client_keypairlen, POINTER rootCert, size_t rootCertLen )
+LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t client_keypairlen, POINTER keypass, size_t keypasslen, POINTER rootCert, size_t rootCertLen )
 {
 	struct ssl_session * ses;
 	ssl_InitLibrary();
@@ -64353,15 +64384,19 @@ LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t clien
 	{
 		ses->ctx = SSL_CTX_new( TLSv1_2_client_method() );
 		SSL_CTX_set_cipher_list( ses->ctx, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH" );
+		ses->cert = New( struct internalCert );
 		if( !client_keypair )
-			ses->privkey = genKey();
+			ses->cert->pkey = genKey();
 		else {
 			BIO *keybuf = BIO_new( BIO_s_mem() );
+			struct info_params params;
 			BIO_write( keybuf, client_keypair, (int)client_keypairlen );
-			PEM_read_bio_PrivateKey( keybuf, &ses->privkey, NULL, NULL );
+			params.password = (char*)keypass;
+			params.passlen = (int)keypasslen;
+			PEM_read_bio_PrivateKey( keybuf, &ses->cert->pkey, pem_password, &params );
 			BIO_free( keybuf );
 		}
-		SSL_CTX_use_PrivateKey( ses->ctx, ses->privkey );
+		SSL_CTX_use_PrivateKey( ses->ctx, ses->cert->pkey );
 	}
 	ses->ssl = SSL_new( ses->ctx );
 	if( rootCert ) {
