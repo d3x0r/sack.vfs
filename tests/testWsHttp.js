@@ -12,7 +12,7 @@ server.onrequest( function( req, res ) {
 		 req.connection.remoteAddress ||
 		 req.socket.remoteAddress ||
 		 req.connection.socket.remoteAddress;
-	ws.clientAddress = ip;
+	//ws.clientAddress = ip;
 
 	console.log( "Received request:", req );
 	if( req.url.endsWith( ".html" ) || req.url == "/" ) {
