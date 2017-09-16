@@ -58357,7 +58357,6 @@ SACK_NETWORK_NAMESPACE_END
 #include <iphlpapi.h>
 #endif
 SACK_NETWORK_NAMESPACE
-static void RemoveThreadEvent( PCLIENT pc );
 PRELOAD( InitNetworkGlobalOptions )
 {
 #ifndef __NO_OPTIONS__
@@ -59454,7 +59453,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 			thread->child_peer = tmp;
 		}
 }
-static void AddThreadEvent( PCLIENT pc )
+void AddThreadEvent( PCLIENT pc )
 {
 	struct peer_thread_info *peer = globalNetworkData.root_thread;
 	LOGICAL addPeer = FALSE;
@@ -59763,7 +59762,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 			thread->child_peer = tmp;
 		}
 }
-static void AddThreadEvent( PCLIENT pc )
+void AddThreadEvent( PCLIENT pc )
 {
 	struct peer_thread_info *peer = globalNetworkData.root_thread;
 	LOGICAL addPeer = FALSE;
@@ -63338,19 +63337,19 @@ void UDPEnableBroadcast( PCLIENT pc, int bEnable )
 	if( pc ) {
 #ifdef __LINUX__
 		if( bEnable ) {
-			int port;
+			uint16_t port;
 			SOCKADDR *broadcastAddr;
 			RemoveThreadEvent( pc );
 			pc->Socket = close( pc->Socket );
-			pc->Socket = socket( PF_INET, SOCK_DGRAM, (((*(uint16_t*)pAddr) == AF_INET) || ((*(uint16_t*)pAddr) == AF_INET6)) ? IPPROTO_UDP : 0 );
+			pc->Socket = socket( PF_INET, SOCK_DGRAM, IPPROTO_UDP );
 			broadcastAddr = DuplicateAddress( GetBroadcastAddressForInterface( pc->saSource ) );
 			GetAddressParts( pc->saSource, NULL, &port );
-			SetAddressPort( broadcastAddress, port );
+			SetAddressPort( broadcastAddr, port );
 			if( bind( pc->Socket, broadcastAddr, SOCKADDR_LENGTH( broadcastAddr ) ) ) {
 				lprintf( "Failed to rebind to broadcast address when enabling..." );
 			}
 			AddThreadEvent( pc );
-			ReleaseAddress( broadcastAddress );
+			ReleaseAddress( broadcastAddr );
 		}
 #endif
 		if( setsockopt( pc->Socket, SOL_SOCKET
