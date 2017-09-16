@@ -11,7 +11,7 @@ Vulkan API to be added eventually...
 
 ## Requirements
 #### npm
-        none
+        nan (Native Abstractions for Node.js)
 
 #### Centos/linux
         yum install gcc-c++ libuuid-devel
@@ -760,7 +760,8 @@ COM port settings are kept in the default option database under
 
 ## Changelog
 - 0.1.99309 Fix clearing some persistant handles so objects can be garbage collected. 
-Fix SSL server issues.  Implement onrequest handling for websocket connections.
+Fix SSL server issues.  Implement onrequest handling for websocket connections.  Improve websocket close reason handling.
+Fix TLS certification validation.  Fix passing additional root certificate for validation.
 - 0.1.99308 Improve network event handling; Allow more connections dynamically; fix some locking issues with critical sections.
 - 0.1.99307 Implement interface to websocket library. Implement interface to UDP sockets.
 - 0.1.99306 Move json reviver parameter handling internal.  Implement volume JSON stream reader interface.  Fix options to create/reopen an existing file.
