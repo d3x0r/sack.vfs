@@ -63348,7 +63348,6 @@ void UDPEnableBroadcast( PCLIENT pc, int bEnable )
 			broadcastAddr = DuplicateAddress( GetBroadcastAddressForInterface( pc->saSource ) );
 			GetAddressParts( pc->saSource, NULL, &port );
 			SetAddressPort( broadcastAddr, port );
-			DumpAddr( broadcastAddr );
 			if( bind( pc->Socket, broadcastAddr, SOCKADDR_LENGTH( broadcastAddr ) ) ) {
 				lprintf( "Failed to rebind to broadcast address when enabling... %d", errno );
 			}
