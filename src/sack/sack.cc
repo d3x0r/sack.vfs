@@ -46135,6 +46135,7 @@ NETWORK_PROC( void, RemoveClientExx )(PCLIENT lpClient, LOGICAL bBlockNofity, LO
 NETWORK_PROC( LOGICAL, ssl_BeginClientSession )( PCLIENT pc, POINTER keypair, size_t keylen, POINTER keypass, size_t keypasslen, POINTER rootCert, size_t rootCertLen );
 NETWORK_PROC( LOGICAL, ssl_BeginServer )( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen, POINTER keypass, size_t keypasslen);
 NETWORK_PROC( LOGICAL, ssl_GetPrivateKey )(PCLIENT pc, POINTER *keydata, size_t *keysize);
+NETWORK_PROC( LOGICAL, ssl_IsClientSecure )(PCLIENT pc);
 /* use this to send on SSL Connection instead of SendTCP. */
 NETWORK_PROC( LOGICAL, ssl_Send )( PCLIENT pc, POINTER buffer, size_t length );
 /* User Datagram Packet connection methods. This controls
@@ -50163,7 +50164,7 @@ length, and what is received will be exactly like the block that was sent.
 // the result returned from the web_socket_opened event will
 // become the new value used for future uintptr_t parameters to other events.
 typedef uintptr_t (*web_socket_opened)( PCLIENT pc, uintptr_t psv );
-typedef void (*web_socket_closed)( PCLIENT pc, uintptr_t psv );
+typedef void (*web_socket_closed)( PCLIENT pc, uintptr_t psv, int code, const char *reason );
 typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
 typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOINTER buffer, size_t msglen );
 // protocolsAccepted value set can be released in opened callback, or it may be simply assigned as protocols passed...
@@ -50196,7 +50197,8 @@ WEBSOCKET_EXPORT PCLIENT WebSocketOpen( CTEXTSTR address
 // calling this begins the connection sequence.
 WEBSOCKET_EXPORT void WebSocketConnect( PCLIENT );
 // end a websocket connection nicely.
-WEBSOCKET_EXPORT void WebSocketClose( PCLIENT );
+// code must be 1000, or 3000-4999, and reason must be less than 123 characters (125 bytes with code)
+WEBSOCKET_EXPORT void WebSocketClose( PCLIENT, int code, const char *reason );
 // there is a control bit for whether the content is text or binary or a continuation
  // UTF8 RFC3629
 WEBSOCKET_EXPORT void WebSocketBeginSendText( PCLIENT, CPOINTER, size_t );
@@ -50755,7 +50757,22 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 						websock->flags.closed = 1;
 					}
 					if( websock->on_close ) {
-						websock->on_close( pc, websock->psv_open );
+						int code;
+						char buf[128];
+						if( websock->frame_length > 2 ) {
+							StrCpyEx( buf, (char*)(websock->fragment_collection + 2), websock->frame_length - 2 );
+							buf[websock->frame_length - 2] = 0;
+							code = ((int)buf[0] << 8) + buf[1];
+						}
+						else if( websock->frame_length ) {
+							code = ((int)buf[0] << 8) + buf[1];
+							buf[0] = 0;
+						}
+						else {
+							code = 1000;
+							buf[0] = 0;
+						}
+						websock->on_close( pc, websock->psv_open, code, buf );
 						websock->on_close = NULL;
 					}
 					websock->fragment_collection_length = 0;
@@ -51031,7 +51048,7 @@ static void SendRequestHeader( WebSocketClient websock )
 	vtprintf( pvtHeader, WIDE("GET /%s%s%s%s%s HTTP/1.1\r\n")
 			  , websock->url->resource_path?websock->url->resource_path:WIDE("")
 			  , websock->url->resource_path?WIDE("/"):WIDE("")
-			  , websock->url->resource_file
+			  , websock->url->resource_file?websock->url->resource_file:WIDE("")
 			  , websock->url->resource_extension?WIDE("."):WIDE("")
 			  , websock->url->resource_extension?websock->url->resource_extension:WIDE("")
 			  );
@@ -51062,7 +51079,7 @@ static void SendRequestHeader( WebSocketClient websock )
 	//x3JJHMbDL1EzLkh9GBhXDw == \r\n") );
 	vtprintf( pvtHeader, WIDE("Sec-WebSocket-Version: 13\r\n") );
 	if( websock->input_state.flags.deflate ) {
-		vtprintf( pvtHeader, WIDE( "Sec-WebSocket-Extensions: 13\r\n" ) );
+		vtprintf( pvtHeader, WIDE( "Sec-WebSocket-Extensions: permessage-deflate\r\n" ) );
 	}
 	vtprintf( pvtHeader, WIDE("\r\n") );
 	{
@@ -51191,7 +51208,7 @@ static void CPROC WebSocketClientClosed( PCLIENT pc )
 	if( websock )
 	{
 		if( websock->input_state.on_close ) {
-			websock->input_state.on_close( pc, websock->input_state.psv_on );
+			websock->input_state.on_close( pc, websock->input_state.psv_on, 1006, NULL );
 			websock->input_state.on_close = NULL;
 		}
 		Deallocate( uint8_t*, websock->input_state.fragment_collection );
@@ -51208,7 +51225,7 @@ static void CPROC WebSocketClientConnected( PCLIENT pc, int error )
 		Relinquish();
 	if( !error )
 	{
-		if( websock->input_state.flags.use_ssl )
+		if( websock->input_state.flags.use_ssl && !ssl_IsClientSecure( websock->pc ) )
 			ssl_BeginClientSession( websock->pc, NULL, 0, NULL, 0, NULL, 0 );
 	}
 	else
@@ -51294,14 +51311,25 @@ void WebSocketConnect( PCLIENT pc ) {
 	NetworkConnectTCP( pc );
 }
 // end a websocket connection nicely.
-void WebSocketClose( PCLIENT pc )
+void WebSocketClose( PCLIENT pc, int code, const char *reason )
 {
 	WebSocketClient websock = (WebSocketClient)GetNetworkLong( pc, 0 );
+	char buf[130];
+	size_t buflen;
+	if( code ) {
+		buf[0] = code / 256;
+		buf[1] = code % 256;
+		StrCpyEx( buf + 2, reason, 124 );
+		buflen = 2 + strlen( buf + 2 );
+	}
+	else {
+		buflen = 0;
+	}
 	if( websock->Magic == 0x20130912 ) {
 		struct html5_web_socket *serverSock = (struct html5_web_socket*)websock;
 		if( serverSock->flags.initial_handshake_done ) {
 			//lprintf( "Send server side close with no payload." );
-			SendWebSocketMessage( pc, 8, 1, serverSock->input_state.flags.expect_masking, NULL, 0, serverSock->input_state.flags.use_ssl );
+			SendWebSocketMessage( pc, 8, 1, serverSock->input_state.flags.expect_masking, (const uint8_t*)buf, buflen, serverSock->input_state.flags.use_ssl );
 			serverSock->input_state.flags.closed = 1;
 		}
 		else {
@@ -51315,7 +51343,7 @@ void WebSocketClose( PCLIENT pc )
 			if( websock->flags.connected ) {
 				while( !NetworkLockEx( pc DBG_SRC ) )
 					Relinquish();
-				SendWebSocketMessage( pc, 8, 1, websock->input_state.flags.expect_masking, NULL, 0, websock->input_state.flags.use_ssl );
+				SendWebSocketMessage( pc, 8, 1, websock->input_state.flags.expect_masking, (const uint8_t*)buf, buflen, websock->input_state.flags.use_ssl );
 				websock->input_state.flags.closed = 1;
 				NetworkUnlock( pc );
 			}
@@ -51834,10 +51862,16 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 							char *output;
 							output = DupTextToChar( GetText( value ) );
 							//LogBinary( output, GetTextSize( value ) );
-							SendTCP( pc, output, GetTextSize( value ) );
+							if( socket->input_state.flags.use_ssl )
+								ssl_Send( pc, output, GetTextSize( value ) );
+							else
+								SendTCP( pc, output, GetTextSize( value ) );
 						}
 #else
-						SendTCP( pc, GetText( value ), GetTextSize( value ) );
+						if( socket->input_state.flags.use_ssl )
+							ssl_Send( pc, GetText( value ), GetTextSize( value ) );
+						else
+							SendTCP( pc, GetText( value ), GetTextSize( value ) );
 #endif
 						//lprintf( "Sent http reply." );
 						VarTextDestroy( &pvt_output );
@@ -51845,7 +51879,7 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 							socket->input_state.psv_open = socket->input_state.on_open( pc, socket->input_state.psv_on );
 					}
 					else {
-						WebSocketClose( pc );
+						WebSocketClose( pc, 0, NULL );
 						return;
 					}
 					// keep this until close, application might want resource and/or headers from this.
@@ -51899,6 +51933,8 @@ static void CPROC connected( PCLIENT pc_server, PCLIENT pc_new )
 	socket->pc = pc_new;
  // clone callback methods and config flags
 	socket->input_state = server_socket->input_state;
+	if( ssl_IsClientSecure( pc_new ) )
+		socket->input_state.flags.use_ssl = 1;
  // start a new http state collector
 	socket->http_state = CreateHttpState();
 	SetNetworkLong( pc_new, 0, (uintptr_t)socket );
@@ -63738,6 +63774,9 @@ LOGICAL ssl_BeginServer( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypa
 LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t client_keypairlen, POINTER keypass, size_t keypasslen, POINTER rootCert, size_t rootCertLen ) {
 	return FALSE;
 }
+LOGICAL ssl_IsClientSecure( PCLIENT pc ) {
+	return FALSE;
+}
 SACK_NETWORK_NAMESPACE_END
 #else
 #define _LIB
@@ -63813,7 +63852,6 @@ static struct ssl_global
 	} flags;
 	LOGICAL trace;
 	struct tls_config *tls_config;
-	SSL_CTX        *ssl_ctx_server;
 	uint8_t cipherlen;
 }ssl_global;
 static const char *default_certs[] = {
@@ -64088,10 +64126,21 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 			// == 1 if is already done, and not newly done
 			if( hs_rc == 2 ) {
 				// newly completed handshake.
-				if( pc->ssl_session->dwOriginalFlags & CF_CPPREAD )
-					pc->ssl_session->cpp_user_read( pc->psvRead, NULL, 0 );
-				else
-					pc->ssl_session->user_read( pc, NULL, 0 );
+				if( !(pc->dwFlags & CF_READPENDING) ) {
+					if( SSL_get_peer_certificate( pc->ssl_session->ssl ) ) {
+						int r;
+						if( ( r = SSL_get_verify_result( pc->ssl_session->ssl ) ) != X509_V_OK ) {
+							lprintf( "Certificate verification failed." );
+							RemoveClientEx( pc, 0, 1 );
+							return;
+							//ERR_print_errors_cb( logerr, (void*)__LINE__ );
+						}
+					}
+					if( pc->ssl_session->dwOriginalFlags & CF_CPPREAD )
+						pc->ssl_session->cpp_user_read( pc->psvRead, NULL, 0 );
+					else
+						pc->ssl_session->user_read( pc, NULL, 0 );
+				}
 				len = 0;
 			}
 			else if( hs_rc == 1 )
@@ -64319,12 +64368,13 @@ LOGICAL ssl_BeginServer( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypa
 	{
 		int r;
 		SSL_CTX_set_cipher_list( ses->ctx, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH" );
-
+		/*
 		r = SSL_CTX_set0_chain( ses->ctx, ses->cert->chain );
 		if( r <= 0 ) {
 			ERR_print_errors_cb( logerr, (void*)__LINE__ );
 		}
-		r = SSL_CTX_use_certificate( ses->ctx, sk_X509_value( ses->cert->chain, 0) );
+		*/
+		r = SSL_CTX_use_certificate( ses->ctx, sk_X509_value( ses->cert->chain, 0 ) );
 		if( r <= 0 ) {
 			ERR_print_errors_cb( logerr, (void*)__LINE__ );
 		}
@@ -64393,7 +64443,12 @@ LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t clien
 			BIO_write( keybuf, client_keypair, (int)client_keypairlen );
 			params.password = (char*)keypass;
 			params.passlen = (int)keypasslen;
-			PEM_read_bio_PrivateKey( keybuf, &ses->cert->pkey, pem_password, &params );
+			ses->cert->pkey = EVP_PKEY_new();
+			if( !PEM_read_bio_PrivateKey( keybuf, &ses->cert->pkey, pem_password, &params ) ) {
+				lprintf( "failed decode key..." );
+				BIO_free( keybuf );
+				return FALSE;
+			}
 			BIO_free( keybuf );
 		}
 		SSL_CTX_use_PrivateKey( ses->ctx, ses->cert->pkey );
@@ -64406,7 +64461,8 @@ LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t clien
 		BIO_write( keybuf, rootCert, (int)rootCertLen );
 		PEM_read_bio_X509( keybuf, &cert, NULL, NULL );
 		BIO_free( keybuf );
-		SSL_CTX_add_extra_chain_cert( ses->ctx, cert );
+		X509_STORE *store = SSL_CTX_get_cert_store( ses->ctx );
+		X509_STORE_add_cert( store, cert );
 	}
 	ssl_InitSession( ses );
 	SSL_set_connect_state( ses->ssl );
@@ -64415,37 +64471,11 @@ LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t clien
 	ses->cpp_user_read = pc->read.CPPReadComplete;
 	pc->read.ReadComplete = ssl_ReadComplete;
 	pc->dwFlags &= ~CF_CPPREAD;
-	//SSL_use_certificate( )
 	pc->ssl_session = ses;
-	//ssl_accept( pc->ssl_session->ssl );
-	lprintf( "Warning: This is meant to be called during connect; no longer internally auto handshakes here; but should upon returning from here instead." );
-/*
-	ssl_ReadComplete( pc, NULL, 0 );
-	{
-		int r;
-		if( ( r = SSL_do_handshake( ses->ssl ) ) < 0 ) {
-			//char buf[256];
-			//r = SSL_get_error( ses->ssl, r );
-			ERR_print_errors_cb( logerr, (void*)__LINE__ );
-			//lprintf( "err: %s", ERR_error_string( r, buf ) );
-		}
-		{
-			// the read generated write data, output that data
-			size_t pending = BIO_ctrl_pending( pc->ssl_session->wbio );
-			if( pending > 0 ) {
-				int read;
-				if( pending > ses->obuflen ) {
-					if( ses->obuffer )
-						Deallocate( uint8_t *, ses->obuffer );
-					ses->obuffer = NewArray( uint8_t, ses->obuflen = pending * 2 );
-				}
-				read = BIO_read( pc->ssl_session->wbio, pc->ssl_session->obuffer, (int)pc->ssl_session->obuflen );
-				SendTCP( pc, pc->ssl_session->obuffer, read );
-			}
-		}
-	}
-*/
 	return TRUE;
+}
+LOGICAL ssl_IsClientSecure(PCLIENT pc) {
+	return pc->ssl_session != NULL;
 }
 //--------------------- Make Cert Request
 //#include <stdio.h>

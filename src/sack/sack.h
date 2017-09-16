@@ -7554,6 +7554,7 @@ NETWORK_PROC( void, RemoveClientExx )(PCLIENT lpClient, LOGICAL bBlockNofity, LO
 NETWORK_PROC( LOGICAL, ssl_BeginClientSession )( PCLIENT pc, POINTER keypair, size_t keylen, POINTER keypass, size_t keypasslen, POINTER rootCert, size_t rootCertLen );
 NETWORK_PROC( LOGICAL, ssl_BeginServer )( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen, POINTER keypass, size_t keypasslen);
 NETWORK_PROC( LOGICAL, ssl_GetPrivateKey )(PCLIENT pc, POINTER *keydata, size_t *keysize);
+NETWORK_PROC( LOGICAL, ssl_IsClientSecure )(PCLIENT pc);
 /* use this to send on SSL Connection instead of SendTCP. */
 NETWORK_PROC( LOGICAL, ssl_Send )( PCLIENT pc, POINTER buffer, size_t length );
 /* User Datagram Packet connection methods. This controls
@@ -11808,7 +11809,7 @@ using namespace sack::containers::text::http;
 // the result returned from the web_socket_opened event will
 // become the new value used for future uintptr_t parameters to other events.
 typedef uintptr_t (*web_socket_opened)( PCLIENT pc, uintptr_t psv );
-typedef void (*web_socket_closed)( PCLIENT pc, uintptr_t psv );
+typedef void (*web_socket_closed)( PCLIENT pc, uintptr_t psv, int code, const char *reason );
 typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
 typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOINTER buffer, size_t msglen );
 // protocolsAccepted value set can be released in opened callback, or it may be simply assigned as protocols passed...
@@ -11841,7 +11842,8 @@ WEBSOCKET_EXPORT PCLIENT WebSocketOpen( CTEXTSTR address
 // calling this begins the connection sequence.
 WEBSOCKET_EXPORT void WebSocketConnect( PCLIENT );
 // end a websocket connection nicely.
-WEBSOCKET_EXPORT void WebSocketClose( PCLIENT );
+// code must be 1000, or 3000-4999, and reason must be less than 123 characters (125 bytes with code)
+WEBSOCKET_EXPORT void WebSocketClose( PCLIENT, int code, const char *reason );
 // there is a control bit for whether the content is text or binary or a continuation
  // UTF8 RFC3629
 WEBSOCKET_EXPORT void WebSocketBeginSendText( PCLIENT, CPOINTER, size_t );
