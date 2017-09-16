@@ -7,6 +7,13 @@ console.log( "serving on 8080" );
 
 
 server.onrequest( function( req, res ) {
+
+	var ip = ( req.headers && req.headers['x-forwarded-for'] ) ||
+		 req.connection.remoteAddress ||
+		 req.socket.remoteAddress ||
+		 req.connection.socket.remoteAddress;
+	ws.clientAddress = ip;
+
 	console.log( "Received request:", req );
 	if( req.url.endsWith( ".html" ) || req.url == "/" ) {
 		res.writeHead( 200 );
