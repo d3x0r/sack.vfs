@@ -27659,7 +27659,7 @@ pthread_t GetThreadHandle( PTHREAD thread )
 {
 	if( thread )
 		return thread->hThread;
-	return NULL;
+	return (pthread_t)NULL;
 }
 #endif
 //--------------------------------------------------------------------------
@@ -60561,9 +60561,9 @@ SOCKADDR* DuplicateAddress( SOCKADDR *pAddr )
 	SOCKADDR *dup = AllocAddr();
 	POINTER tmp2 = (POINTER)( ( (uintptr_t)dup ) - 2*sizeof(uintptr_t) );
 	MemCpy( tmp2, tmp, SOCKADDR_LENGTH( pAddr ) + 2*sizeof(uintptr_t) );
-	if( (POINTER)( ( (uintptr_t)pAddr ) - sizeof(uintptr_t) ) )
-		( (char**)( ( (uintptr_t)dup ) - sizeof(uintptr_t) ) )[0]
-				= strdup( ((char**)( ( (uintptr_t)pAddr ) - sizeof(uintptr_t) ))[0] );
+	if( ((char**)( ( (uintptr_t)pAddr ) - sizeof(char*) ))[0] )
+		( (char**)( ( (uintptr_t)dup ) - sizeof( char* ) ) )[0]
+				= strdup( ((char**)( ( (uintptr_t)pAddr ) - sizeof( char* ) ))[0] );
 	return dup;
 }
 //---------------------------------------------------------------------------
