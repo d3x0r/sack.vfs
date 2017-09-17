@@ -88,7 +88,7 @@
                     'MultiProcessorCompilation' : 'true',
                     'InlineFunctionExpansion': 2,
                     'OmitFramePointers': 'true',
-                    'ExceptionHandling>Sync':'sync'
+                    'ExceptionHandling':2
 
                   }
                 }
@@ -101,7 +101,7 @@
                     'MultiProcessorCompilation' : 'true',
                     'InlineFunctionExpansion': 2,
                     'OmitFramePointers': 'true',
-                    'ExceptionHandling>Sync':'sync'
+                    'ExceptionHandling':2
                   }
                 }
               }
