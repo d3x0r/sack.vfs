@@ -162,8 +162,10 @@ static addrObject *getAddress( Isolate *isolate, char *addr, int port ) {
 		GetAddressParts( obj->addr, NULL, &realPort );
 		AddBinaryNode( l.addressesBySA, obj, (uintptr_t)obj->addr );
 		AddBinaryNode( l.addresses, obj, (uintptr_t)&obj->key );
-
-		SET_READONLY( o, "family", String::NewFromUtf8( isolate, obj->addr->sa_family == AF_INET ? "IPv4" : obj->addr->sa_family == AF_INET6 ? "IPv6" : "unknown" ) );
+		if( obj->addr )
+			SET_READONLY( o, "family", String::NewFromUtf8( isolate, obj->addr->sa_family == AF_INET ? "IPv4" : obj->addr->sa_family == AF_INET6 ? "IPv6" : "unknown" ) );
+		else
+			SET_READONLY( o, "family", Undefined(isolate) );
 		SET_READONLY( o, "address", String::NewFromUtf8( isolate, addr ) );
 		SET_READONLY( o, "IP", String::NewFromUtf8( isolate, GetAddrString( obj->addr ) ) );
 		SET_READONLY( o, "port", Number::New( isolate, realPort ) );
