@@ -250,6 +250,7 @@ public:
 	const char *protocolResponse;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	static Persistent<Function> constructor;
+	static Persistent<FunctionTemplate> tpl;
 	Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> acceptCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> requestCallback; //
@@ -307,6 +308,7 @@ public:
 	enum wsReadyStates readyState;
 public:
 	static Persistent<Function> constructor;
+	static Persistent<FunctionTemplate> tpl;
 	Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
@@ -343,6 +345,7 @@ public:
 	enum wsReadyStates readyState;
 public:
 	static Persistent<Function> constructor;
+	static Persistent<FunctionTemplate> tpl;
 	//Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
@@ -368,6 +371,9 @@ Persistent<Function> httpObject::constructor;
 Persistent<Function> wssObject::constructor;
 Persistent<Function> wssiObject::constructor;
 Persistent<Function> wscObject::constructor;
+Persistent<FunctionTemplate> wssObject::tpl;
+Persistent<FunctionTemplate> wssiObject::tpl;
+Persistent<FunctionTemplate> wscObject::tpl;
 
 static WSS_EVENT *GetWssEvent() {
 	EnterCriticalSec( &l.csWssEvents );
@@ -726,14 +732,19 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onrequest", wssObject::onRequest );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "accept", wssObject::accept );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "reject", wssObject::reject );
-		wssTemplate->SetNativeDataProperty( String::NewFromUtf8( isolate, "readyState" )
+
+		wssTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8( isolate, "readyState" )
 			, wssObject::getReadyState
 			, NULL );
+		//wssTemplate->SetNativeDataProperty( String::NewFromUtf8( isolate, "readyState" )
+		//	, wssObject::getReadyState
+	//		, NULL );
 		wssTemplate->ReadOnlyPrototype();
 		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onmessage", wsObject::on );
 		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "on", wsObject::on );
 		
 		wssObject::constructor.Reset( isolate, wssTemplate->GetFunction() );
+		wssObject::tpl.Reset( isolate, wssTemplate );
 
 		SET_READONLY( o, "Server", wssTemplate->GetFunction() );
 	}
@@ -746,12 +757,13 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "close", wscObject::close );
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "send", wscObject::write );
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "on", wscObject::on );
-		wscTemplate->SetNativeDataProperty( String::NewFromUtf8( isolate, "readyState" )
+		wscTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8( isolate, "readyState" )
 			, wscObject::getReadyState
 			, NULL );
 		wscTemplate->ReadOnlyPrototype();
 
 		wscObject::constructor.Reset( isolate, wscTemplate->GetFunction() );
+		wscObject::tpl.Reset( isolate, wscTemplate );
 
 		SET_READONLY( o, "Client", wscTemplate->GetFunction() );
 	}
@@ -766,12 +778,13 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "on", wssiObject::on );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "onmessage", wssiObject::onmessage );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "onclose", wssiObject::onclose );
-		wssiTemplate->SetNativeDataProperty( String::NewFromUtf8( isolate, "readyState" )
+		wssiTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8( isolate, "readyState" )
 			, wssiObject::getReadyState
 			, NULL );
 		wssiTemplate->ReadOnlyPrototype();
 		
 		wssiObject::constructor.Reset( isolate, wssiTemplate->GetFunction() );
+		wssiObject::tpl.Reset( isolate, wssiTemplate );
 		//SET_READONLY( o, "Client", wscTemplate->GetFunction() );
 	}
 }
@@ -1245,8 +1258,25 @@ void wssObject::reject( const FunctionCallbackInfo<Value>& args ) {
 void wssObject::getReadyState( v8::Local<v8::String> field,
                               const PropertyCallbackInfo<v8::Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
 	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->readyState ) );
+#if 0
+	Local<Object> h = args.Holder();
+	Local<Object> t = args.This();
+	//if( wssObject::tpl. )
+	Local<FunctionTemplate> wrapper_tpl = wssObject::tpl.Get( isolate );
+	int ht = wrapper_tpl->HasInstance( h );
+	int tt = wrapper_tpl->HasInstance( t );
+	wssObject *obj;
+	if( ht )
+		obj = ObjectWrap::Unwrap<wssObject>( h );
+	else if( tt )
+		obj = ObjectWrap::Unwrap<wssObject>( t );
+	else
+		obj = NULL;
+	if( obj )
+		args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->readyState ) );
+#endif
 }
 
 
@@ -1353,8 +1383,25 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 void wssiObject::getReadyState( v8::Local<v8::String> field,
                               const PropertyCallbackInfo<v8::Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
+	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.Holder() );
 	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->readyState ) );
+#if 0
+	Local<Object> h = args.Holder();
+	Local<Object> t = args.This();
+	//if( wssObject::tpl. )
+	Local<FunctionTemplate> wrapper_tpl = wssiObject::tpl.Get( isolate );
+	int ht = wrapper_tpl->HasInstance( h );
+	int tt = wrapper_tpl->HasInstance( t );
+	wssiObject *obj;
+	if( ht )
+		obj = ObjectWrap::Unwrap<wssiObject>( h );
+	else if( tt )
+		obj = ObjectWrap::Unwrap<wssiObject>( t );
+	else
+		obj = NULL;
+	if( obj )
+		args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->readyState ) );
+#endif
 }
 
 
@@ -1648,6 +1695,23 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 void wscObject::getReadyState( v8::Local<v8::String> field,
                               const PropertyCallbackInfo<v8::Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.Holder() );
 	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->readyState ) );
+#if 0
+	Local<Object> h = args.Holder();
+	Local<Object> t = args.This();
+	//if( wssObject::tpl. )
+	Local<FunctionTemplate> wrapper_tpl = wscObject::tpl.Get( isolate );
+	int ht = wrapper_tpl->HasInstance( h );
+	int tt = wrapper_tpl->HasInstance( t );
+	wscObject *obj;
+	if( ht )
+		obj = ObjectWrap::Unwrap<wscObject>( h );
+	else if( tt )
+		obj = ObjectWrap::Unwrap<wscObject>( t );
+	else
+		obj = NULL;
+	if( obj )
+		args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->readyState ) );
+#endif
 }
