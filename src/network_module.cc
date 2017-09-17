@@ -167,7 +167,10 @@ static addrObject *getAddress( Isolate *isolate, char *addr, int port ) {
 		else
 			SET_READONLY( o, "family", Undefined(isolate) );
 		SET_READONLY( o, "address", String::NewFromUtf8( isolate, addr ) );
-		SET_READONLY( o, "IP", String::NewFromUtf8( isolate, GetAddrString( obj->addr ) ) );
+		if( obj->addr )
+			SET_READONLY( o, "IP", String::NewFromUtf8( isolate, GetAddrString( obj->addr ) ) );
+		else
+			SET_READONLY( o, "IP", Undefined( isolate ) );
 		SET_READONLY( o, "port", Number::New( isolate, realPort ) );
 
 	}
@@ -618,7 +621,10 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 		else
 			SET_READONLY( _this, "family", Undefined( isolate ) );
 		SET_READONLY( _this, "address", String::NewFromUtf8( isolate, address ) );
-		SET_READONLY( _this, "IP", String::NewFromUtf8( isolate, GetAddrString( obj->addr ) ) );
+		if( obj->addr )
+			SET_READONLY( _this, "IP", String::NewFromUtf8( isolate, GetAddrString( obj->addr ) ) );
+		else
+			SET_READONLY( _this, "IP", Undefined(isolate) );
 		SET_READONLY( _this, "port", Number::New( isolate, realPort ) );
 
 		obj->_this.Reset( isolate, _this );
