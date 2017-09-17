@@ -600,7 +600,7 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 		argBase++;
 
 		if( (args.Length() >= argBase) && args[argBase]->IsNumber() ) {
-			port = args[argBase]->ToInt32()->Value();
+			port = args[argBase]->Int32Value();
 		}
 
 		Local<Object> _this = args.This();
@@ -641,7 +641,7 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 		argBase++;
 
 		if( (args.Length() >= argBase) && args[argBase]->IsNumber() ) {
-			port = args[argBase]->ToInt32()->Value();
+			port = args[argBase]->Int32Value();
 		}
 		addrObject *addr = ::getAddress( isolate, address, port );
 
