@@ -255,6 +255,10 @@ void InitUDPSocket( Isolate *isolate, Handle<Object> exports ) {
 	}
 }
 
+void FreeCallback( char* data, void* hint ) {
+	Deallocate( char*, data );
+}
+
 static void udpAsyncMsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
@@ -274,9 +278,10 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 				argv[1] = ::getAddressBySA( isolate, eventMessage->from );
 				if( !obj->readStrings ) {
 					ab =
-						node::Buffer::New( isolate,
-							(char*)eventMessage->buf,
-							length = eventMessage->buflen ).ToLocalChecked();
+						node::Buffer::New( isolate
+							, (char*)eventMessage->buf
+							, length = eventMessage->buflen
+							, FreeCallback, NULL ).ToLocalChecked();
 					argv[0] = ab;
 					lprintf( "built buffer from %p", eventMessage->buf );
 					obj->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
