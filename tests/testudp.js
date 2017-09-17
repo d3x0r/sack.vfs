@@ -7,6 +7,7 @@ console.log( "test addr:", sack.Network.Address( "google.com:443", 80 ) );
 	var os = require("os");
 	var interfaces = os.networkInterfaces();
 	var addresses = [];
+addresses.push( { family:"ipv4", address:"0.0.0.0", netmask:"0.0.0.0", broadcast:"255.255.255.255" } );
 	for (var k in interfaces) {
 		for (var k2 in interfaces[k]) {
 			var address = interfaces[k][k2];
