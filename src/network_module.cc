@@ -42,6 +42,7 @@ struct addrFinder {
 class addrObject : public node::ObjectWrap {
 public:
 	static Persistent<Function> constructor;
+	static Persistent<FunctionTemplate> tpl;
 	struct addrFinder key;
 	SOCKADDR *addr;
 	Persistent<Object> _this;
@@ -105,6 +106,7 @@ DeclareSet( UDP_EVENT );
 
 Persistent<Function> udpObject::constructor;
 Persistent<Function> addrObject::constructor;
+Persistent<FunctionTemplate> addrObject::tpl;
 
 static struct local {
 	int data;
@@ -244,6 +246,7 @@ void InitUDPSocket( Isolate *isolate, Handle<Object> exports ) {
 	{
 		Local<FunctionTemplate> addrTemplate;
 		addrTemplate = FunctionTemplate::New( isolate, addrObject::New );
+		addrObject::tpl.Reset( isolate, addrTemplate );
 		addrTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.network.address" ) );
 		addrTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		//NODE_SET_PROTOTYPE_METHOD( addrTemplate, "toString", addrObject::toString );
@@ -534,9 +537,17 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 	udpObject *obj = ObjectWrap::Unwrap<udpObject>( args.This() );
 	SOCKADDR *dest = NULL;
 	if( args.Length() > 1 ) {
-		addrObject *obj = ObjectWrap::Unwrap<addrObject>( args[1]->ToObject() );
-		if( obj )
-			dest = obj->addr;
+		Local<FunctionTemplate> tpl = addrObject::tpl.Get( isolate );
+		Local<Object> argObj = args[1]->ToObject();
+		if( tpl->HasInstance( argObj ) ) {
+			addrObject *obj = ObjectWrap::Unwrap<addrObject>( args[1]->ToObject() );
+			if( obj )
+				dest = obj->addr;
+		}
+		else {
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Address argument is not a sack.core.Network.Address" ) ) ) );
+			return;
+		}
 	}
 	if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
