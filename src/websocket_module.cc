@@ -269,6 +269,8 @@ public:
 	static void onRequest( const v8::FunctionCallbackInfo<Value>& args );
 	static void accept( const v8::FunctionCallbackInfo<Value>& args );
 	static void reject( const v8::FunctionCallbackInfo<Value>& args );
+	static void getReadyState( v8::Local<v8::String> field,
+                              const PropertyCallbackInfo<v8::Value>& info );
 
 	~wssObject();
 };
@@ -322,6 +324,8 @@ public:
 	static void onClose( const v8::FunctionCallbackInfo<Value>& args );
 	static void onOpen( const v8::FunctionCallbackInfo<Value>& args );
 	static void write( const v8::FunctionCallbackInfo<Value>& args );
+	static void getReadyState( v8::Local<v8::String> field,
+                              const PropertyCallbackInfo<v8::Value>& info );
 
 	~wscObject();
 };
@@ -354,6 +358,8 @@ public:
 	static void on( const v8::FunctionCallbackInfo<Value>& args );
 	static void onmessage( const v8::FunctionCallbackInfo<Value>& args );
 	static void onclose( const v8::FunctionCallbackInfo<Value>& args );
+	static void getReadyState( v8::Local<v8::String> field,
+                              const PropertyCallbackInfo<v8::Value>& info );
 
 	~wssiObject();
 };
@@ -683,6 +689,16 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 	InitializeCriticalSec( &l.csWssiEvents );
 	InitializeCriticalSec( &l.csWscEvents );
 	Local<Object> o = Object::New( isolate );
+
+	Local<Object> wsWebStatesObject = Object::New( isolate );
+	SET_READONLY( wsWebStatesObject, "OPEN", Integer::New( isolate, wsReadyStates::OPEN ) );
+	SET_READONLY( wsWebStatesObject, "CLOSED", Integer::New( isolate, wsReadyStates::CLOSED ) );
+	SET_READONLY( wsWebStatesObject, "CLOSING", Integer::New( isolate, wsReadyStates::CLOSING ) );
+	SET_READONLY( wsWebStatesObject, "CONNECTING", Integer::New( isolate, wsReadyStates::CONNECTING ) );
+	SET_READONLY( wsWebStatesObject, "INITIALIZING", Integer::New( isolate, wsReadyStates::INITIALIZING ) );
+	SET_READONLY( wsWebStatesObject, "LISTENING", Integer::New( isolate, wsReadyStates::LISTENING ) );
+	SET_READONLY( o, "readyStates", wsWebStatesObject );
+
 	SET_READONLY( exports, "WebSocket", o );
 	{
 		Local<FunctionTemplate> httpTemplate;
@@ -710,6 +726,9 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onrequest", wssObject::onRequest );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "accept", wssObject::accept );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "reject", wssObject::reject );
+		wssTemplate->SetNativeDataProperty( String::NewFromUtf8( isolate, "readyState" )
+			, wssObject::getReadyState
+			, NULL );
 		wssTemplate->ReadOnlyPrototype();
 		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onmessage", wsObject::on );
 		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "on", wsObject::on );
@@ -727,6 +746,9 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "close", wscObject::close );
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "send", wscObject::write );
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "on", wscObject::on );
+		wscTemplate->SetNativeDataProperty( String::NewFromUtf8( isolate, "readyState" )
+			, wscObject::getReadyState
+			, NULL );
 		wscTemplate->ReadOnlyPrototype();
 
 		wscObject::constructor.Reset( isolate, wscTemplate->GetFunction() );
@@ -744,6 +766,9 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "on", wssiObject::on );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "onmessage", wssiObject::onmessage );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "onclose", wssiObject::onclose );
+		wssiTemplate->SetNativeDataProperty( String::NewFromUtf8( isolate, "readyState" )
+			, wssiObject::getReadyState
+			, NULL );
 		wssiTemplate->ReadOnlyPrototype();
 		
 		wssiObject::constructor.Reset( isolate, wssiTemplate->GetFunction() );
@@ -1217,6 +1242,14 @@ void wssObject::reject( const FunctionCallbackInfo<Value>& args ) {
 	obj->eventMessage->accepted = 0;
 }
 
+void wssObject::getReadyState( v8::Local<v8::String> field,
+                              const PropertyCallbackInfo<v8::Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
+	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->readyState ) );
+}
+
+
 wssiObject::wssiObject( ) {
 	eventQueue = CreateLinkQueue();
 	readyState = wsReadyStates::OPEN;
@@ -1317,6 +1350,12 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+void wssiObject::getReadyState( v8::Local<v8::String> field,
+                              const PropertyCallbackInfo<v8::Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
+	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->readyState ) );
+}
 
 
 static uintptr_t webSockClientOpen( PCLIENT pc, uintptr_t psv ) {
@@ -1606,4 +1645,9 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 }
 
 
-
+void wscObject::getReadyState( v8::Local<v8::String> field,
+                              const PropertyCallbackInfo<v8::Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->readyState ) );
+}
