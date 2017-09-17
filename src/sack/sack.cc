@@ -51274,6 +51274,13 @@ PCLIENT WebSocketOpen( CTEXTSTR url_address
  // client to server is MUST mask because of proxy handling in that direction
 	websock->input_state.flags.expect_masking = 1;
 	websock->url = SACK_URLParse( url_address );
+	if( !websock->url->host ) {
+		SACK_ReleaseURL( websock->url );
+		DestroyHttpState( websock->pHttpState );
+		Deallocate( POINTER, websock->buffer );
+		Deallocate( WebSocketClient, websock );
+		return NULL;
+	}
 	EnterCriticalSec( &wsc_local.cs_opening );
 	wsc_local.opening_client = websock;
 	{
