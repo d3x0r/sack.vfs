@@ -539,7 +539,7 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 1 ) {
 		Local<FunctionTemplate> tpl = addrObject::tpl.Get( isolate );
 		Local<Object> argObj = args[1]->ToObject();
-		if( tpl->HasInstance( argObj ) ) {
+		if( !argObj.IsEmpty() && tpl->HasInstance( argObj ) ) {
 			addrObject *obj = ObjectWrap::Unwrap<addrObject>( args[1]->ToObject() );
 			if( obj )
 				dest = obj->addr;
