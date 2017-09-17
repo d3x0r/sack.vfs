@@ -610,7 +610,11 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 		struct optionStrings *strings = getStrings( isolate );
 		uint16_t realPort;
 		GetAddressParts( obj->addr, NULL, &realPort );
-		SET_READONLY( _this, "family", String::NewFromUtf8( isolate, obj->addr->sa_family==AF_INET?"IPv4":obj->addr->sa_family==AF_INET6?"IPv6":"unknown" ) );
+		if( obj->addr ) {
+			SET_READONLY( _this, "family", String::NewFromUtf8( isolate, obj->addr->sa_family == AF_INET ? "IPv4" : obj->addr->sa_family == AF_INET6 ? "IPv6" : "unknown" ) );
+		}
+		else
+			SET_READONLY( _this, "family", Undefined( isolate ) );
 		SET_READONLY( _this, "address", String::NewFromUtf8( isolate, address ) );
 		SET_READONLY( _this, "IP", String::NewFromUtf8( isolate, GetAddrString( obj->addr ) ) );
 		SET_READONLY( _this, "port", Number::New( isolate, realPort ) );
