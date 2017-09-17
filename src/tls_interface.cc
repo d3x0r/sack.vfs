@@ -329,7 +329,7 @@ void TLSObject::genKey( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
-int pem_password(char *buf, int size, int rwflag, void *u)
+static int pem_password(char *buf, int size, int rwflag, void *u)
 {
 // rwflag = 0  = used for decryption
 // rwflag = 1  = used for encryption

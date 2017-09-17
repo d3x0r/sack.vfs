@@ -11,7 +11,7 @@ Vulkan API to be added eventually...
 
 ## Requirements
 #### npm
-        none
+        nan (Native Abstractions for Node.js)
 
 #### Centos/linux
         yum install gcc-c++ libuuid-devel
@@ -534,6 +534,8 @@ Client constructor parameters
     | perMessageDeflate | true/false; default false (performance).  Reqeusts permessage-deflate extension from server, and deflates messages sent. |
     | perMessageDeflateAllow | true/false; default false (performance).  Accepts permessage-deflate from server, but does not deflate messages. |    
     | ca | &lt;string&gt;; uses PEM certificate as part of certificate chain to verify server. |
+    | key | &lt;string&gt;; keypair to use for the connection (otherwise an internal key will be generated) |
+    | passPhrase | &lt;string&gt;; password to use with the key specified |
     
   After opening, websocket object has 'connection' which gives some of the information about the connection established.
 
@@ -561,9 +563,9 @@ Server events
 
   | Event Name | Event Description |
   |---|---|
-  | accept |  optional callback, if it is configured on a server, it is called before connect, and is passed (protocols, resource path). |
-  |        |  should call server.accept( protocol ), or server.reject() during this callback.  |
+  | accept |  optional callback, if it is configured on a server, it is called before connect, and is passed (protocols, resource path).  Should call server.accept( protocol ), or server.reject() during this callback.  |
   | connect | callback receives new connection from a client.  The new client object has a 'connection' object which provides information about the connection. |
+  | request | callback is in a new object that is an httpObject; triggered when a non-upgrade request is received. |
 
 
 Server Options
@@ -586,7 +588,23 @@ Server Client Methods
   |----|----|
   | send | send data on the connection.  Message parameter can either be an ArrayBuffer or a String. (to be implemented; typedarraybuffer) |
   | close | closes the connection |
-  
+
+Http Request fields
+
+  | Name  | Description |
+  |----|----|
+  | url | the URL requested |
+  | connection | same as a Websocket Connection object |
+  | headers | headers from the http request |
+
+Http Response methods
+   These methods are available on the 'res' object received in the Server "request" event.
+
+  | Method | Parameters | Description |
+  |----|----|-----|
+  | writeHead | (resultCode [,extraHeadersObject]) | setup the return code of the socket.  Second parameter is an object which is used to specify additional headers. |
+  | end | ( content [,unused]) | sends specified content.  String, Buffer, uint8Array, ArrayBuffer area all accpeted.  (sack.vfs.File?) |
+
 
 WebSocket connection Object
 
@@ -657,6 +675,8 @@ udp2.send( "Hello World" );
 | toAddress | &lt;string&gt; specify the address to send to if not specified in send call.  Optional port notation can be used (specified with a colon followed by a number (or name if under linux?)) <BR>If the port is specified here, it overrides the `toPort` option.|
 | broadcast | &lt;bool&gt; if `true` enable receiving/sending broadcast UDP messages |
 | readStrings | &lt;bool&gt; if `true` messages passed to message callback will be given as text format, otherwise will be a TypedArray |
+| reuseAddress | &lt;bool&gt; if `true` set reuse address socket option |
+| reusePort | &lt;bool&gt; if `true` set reuse port socket option (linux option, not applicable for windows) |
 
 #### Udp socket methods
 
@@ -739,6 +759,10 @@ COM port settings are kept in the default option database under
 
 
 ## Changelog
+- 0.1.99309 Fix clearing some persistant handles so objects can be garbage collected. 
+Fix SSL server issues.  Implement onrequest handling for websocket connections.  Improve websocket close reason handling.
+Fix TLS certification validation.  Fix passing additional root certificate for validation.
+- 0.1.99308 Improve network event handling; Allow more connections dynamically; fix some locking issues with critical sections.
 - 0.1.99307 Implement interface to websocket library. Implement interface to UDP sockets.
 - 0.1.99306 Move json reviver parameter handling internal.  Implement volume JSON stream reader interface.  Fix options to create/reopen an existing file.
 - 0.1.99305 Fix handling exceptions triggered from callbacks. Fix missing truncate in more instances;  Sync sack filesystem updates; fix unlink return value; add pos() method to File.

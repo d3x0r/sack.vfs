@@ -226,7 +226,7 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #  define USE_CUSTOM_ALLOCER 0
 #endif
 #ifndef __64__
-#  if defined( _WIN64 ) || defined( ENVIRONMENT64) || defined( __x86_64__ ) || defined( __ia64 )
+#  if defined( _WIN64 ) || defined( ENVIRONMENT64 ) || defined( __x86_64__ ) || defined( __ia64 ) || defined( __ppc64__ ) || defined( __LP64__ )
 #    define __64__ 1
 #  endif
 #endif
@@ -5276,7 +5276,7 @@ typedef struct win_sockaddr_in SOCKADDR_IN;
 /* Multiple inclusion protection symbol. */
 #define SHARED_MEM_DEFINED
 #if defined (_WIN32)
-#define USE_NATIVE_CRITICAL_SECTION
+//#define USE_NATIVE_CRITICAL_SECTION
 #endif
 #if defined( _SHLWAPI_H ) || defined( _INC_SHLWAPI )
 #undef StrChr
@@ -5356,9 +5356,16 @@ struct critical_section_tag {
  // ID of thread waiting for this..
 	THREAD_ID dwThreadWaiting;
 #ifdef DEBUG_CRITICAL_SECTIONS
+#define MAX_SECTION_LOG_QUEUE 16
 	uint32_t bCollisions ;
-	CTEXTSTR pFile;
-	uint32_t  nLine;
+	CTEXTSTR pFile[16];
+	uint32_t  nLine[16];
+	uint32_t  nLineCS[16];
+ // windows upper 16 is process ID, lower is thread ID
+	THREAD_ID dwThreadPrior[16];
+ // windows upper 16 is process ID, lower is thread ID
+	uint8_t isLock[16];
+	int nPrior;
 #endif
 };
 #if !defined( _WIN32 )
@@ -5861,7 +5868,7 @@ MEM_PROC  uint32_t MEM_API  LockedDecrement ( uint32_t* p );
    Example
    <code>
    uint32_t variable = 0;
-   uint32_t oldvalue = InterlockedExchange( &amp;variable, 1 );
+   uint32_t oldvalue = LockedExchange( &amp;variable, 1 );
    </code>                                                       */
 MEM_PROC  uint32_t MEM_API  LockedExchange ( volatile uint32_t* p, uint32_t val );
 /* Sets a 32 bit value into memory. If the length to set is not
@@ -6217,6 +6224,16 @@ inline void operator delete (void * p)
 #define TIMER_NAMESPACE_END
 #endif
 #endif
+// this is a method replacement to use PIPEs instead of SEMAPHORES
+// replacement code only affects linux.
+#if defined( __QNX__ ) || defined( __MAC__) || defined( __LINUX__ ) || defined( __ANDROID__ )
+#  define USE_PIPE_SEMS
+// no semtimedop; no semctl, etc
+//#include <sys/sem.h>
+#endif
+#ifdef USE_PIPE_SEMS
+#  define _NO_SEMTIMEDOP_
+#endif
 SACK_NAMESPACE
 /* This namespace contains methods for working with timers and
    threads. Since timers are implemented in an asynchronous
@@ -6458,6 +6475,9 @@ TIMER_PROC( void, WakeableNamedThreadSleepEx )( CTEXTSTR name, uint32_t n DBG_PA
 #define WakeableNamedThreadSleep( name, n )   WakeableNamedThreadSleepEx( name, n DBG_SRC )
 TIMER_PROC( void, WakeNamedThreadSleeperEx )( CTEXTSTR name, THREAD_ID therad DBG_PASS );
 #define WakeNamedThreadSleeper( name, thread )   WakeNamedThreadSleeperEx( name, thread DBG_SRC )
+#ifdef USE_PIPE_SEMS
+TIMER_PROC( int, GetThreadSleeper )( PTHREAD thread );
+#endif
 /* <combine sack::timers::WakeableSleepEx@uint32_t milliseconds>
    \ \                                                      */
 #define WakeableSleep(n) WakeableSleepEx(n DBG_SRC )
@@ -6563,6 +6583,9 @@ TIMER_PROC( void, DeleteCriticalSec )( PCRITICALSECTION pcs );
 #ifdef _WIN32
 	TIMER_PROC( HANDLE, GetWakeEvent )( void );
 	TIMER_PROC( HANDLE, GetThreadHandle )( PTHREAD thread );
+#endif
+#ifdef __LINUX__
+	TIMER_PROC( pthread_t, GetThreadHandle )(PTHREAD thread);
 #endif
 #ifdef USE_NATIVE_CRITICAL_SECTION
 #define EnterCriticalSec(pcs) EnterCriticalSection( pcs )
@@ -7103,7 +7126,7 @@ NETWORK_PROC( void, GetNetworkAddressBinary )( SOCKADDR *addr, uint8_t **data, s
 /*
  * create a socket address form data and datalen binary buffer representation of the sockete address.
  */
-NETWORK_PROC( SOCKADDR *, MakeNetworkAddressFromBinary )( uint8_t *data, size_t datalen );
+NETWORK_PROC( SOCKADDR *, MakeNetworkAddressFromBinary )( uintptr_t *data, size_t datalen );
 NETWORK_PROC( SOCKADDR *, CreateRemote )( CTEXTSTR lpName,uint16_t nHisPort);
 NETWORK_PROC( SOCKADDR *, CreateLocal )(uint16_t nMyPort);
 NETWORK_PROC( int, GetAddressParts )( SOCKADDR *pAddr, uint32_t *pdwIP, uint16_t *pwPort );
@@ -7352,8 +7375,7 @@ NETWORK_PROC( void, SetTCPNoDelay )( PCLIENT pClient, int bEnable );
               on.
    bEnable :  TRUE to enable keep\-alive else disable keep\-alive. */
 NETWORK_PROC( void, SetClientKeepAlive)( PCLIENT pClient, int bEnable );
-/* \ \
-   Parameters
+/* \    Parameters
    lpClient :   network client to read from
    lpBuffer :   buffer to read into
    nBytes :     size of the buffer to read or maximum amount of
@@ -7388,9 +7410,9 @@ NETWORK_PROC( void, SetClientKeepAlive)( PCLIENT pClient, int bEnable );
        ReadTCP( pc, buffer, 4096 );
    }
    </code>                                                         */
-NETWORK_PROC( size_t, doReadExx2)(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsStream, LOGICAL bWait, int user_timeout );
-/* \ \
-   Parameters
+NETWORK_PROC( size_t, doReadExx2)(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsStream, LOGICAL bWait, int user_timeout DBG_PASS );
+#define doReadExx(p,b,n,s,w) DoReadExx2( p,b,n,s,w,0 )
+/* \    Parameters
    lpClient :   network client to read from
    lpBuffer :   buffer to read into
    nBytes :     size of the buffer to read or maximum amount of
@@ -7423,19 +7445,19 @@ NETWORK_PROC( size_t, doReadExx2)(PCLIENT lpClient,POINTER lpBuffer,size_t nByte
        ReadTCP( pc, buffer, 4096 );
    }
    </code>                                                         */
-NETWORK_PROC( size_t, doReadExx )(PCLIENT lpClient, POINTER lpBuffer, size_t nBytes
-										, LOGICAL bIsStream, LOGICAL bWait );
+//NETWORK_PROC( size_t, doReadExx )(PCLIENT lpClient, POINTER lpBuffer, size_t nBytes
+//										, LOGICAL bIsStream, LOGICAL bWait );
 /* <combine sack::network::tcp::doReadExx@PCLIENT@POINTER@int@LOGICAL@LOGICAL>
-   \ \
-   Remarks
+   \    Remarks
    if bWait is not specifed, it is passed as FALSE.                            */
-NETWORK_PROC( size_t, doReadEx )(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsStream);
+//NETWORK_PROC( size_t, doReadEx )(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsStream DBG_PASS );
+#define doReadEx( p,b,n,s )  doReadExx2( p,b,n,s,FALSE, 0 DBG_SRC)
 /* <combine sack::network::tcp::doReadExx@PCLIENT@POINTER@int@LOGICAL@LOGICAL>
    \ \                                                                         */
-#define ReadStream(pc,pBuf,nSize) doReadExx( pc, pBuf, nSize, TRUE, FALSE )
+#define ReadStream(pc,pBuf,nSize) doReadExx2( pc, pBuf, nSize, TRUE, FALSE, 0 DBG_SRC )
 /* <combine sack::network::tcp::doReadExx@PCLIENT@POINTER@int@LOGICAL@LOGICAL>
    \ \                                                                         */
-#define doRead(pc,pBuf,nSize)     doReadExx(pc, pBuf, nSize, FALSE, FALSE )
+#define doRead(pc,pBuf,nSize)     doReadExx2(pc, pBuf, nSize, FALSE, FALSE, 0 DBG_SRC )
 /* <combine sack::network::tcp::doReadExx@PCLIENT@POINTER@int@LOGICAL@LOGICAL>
    \ \                                                                         */
 #define ReadTCP ReadStream
@@ -7444,10 +7466,10 @@ NETWORK_PROC( size_t, doReadEx )(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes
 #define ReadTCPMsg doRead
 /* <combine sack::network::tcp::doReadExx@PCLIENT@POINTER@int@LOGICAL@LOGICAL>
    \ \                                                                         */
-#define WaitReadTCP(pc,buf,nSize)    doReadExx(pc,buf, nSize, TRUE, TRUE )
+#define WaitReadTCP(pc,buf,nSize)    doReadExx2(pc,buf, nSize, TRUE, TRUE, 0 DBG_SRC )
 /* <combine sack::network::tcp::doReadExx@PCLIENT@POINTER@int@LOGICAL@LOGICAL>
    \ \                                                                         */
-#define WaitReadTCPMsg(pc,buf,nSize) doReadExx(pc,buf, nSize, FALSE, TRUE )
+#define WaitReadTCPMsg(pc,buf,nSize) doReadExx2(pc,buf, nSize, FALSE, TRUE, 0  DBG_SRC)
 /* \#The buffer will be sent in the order of the writes to the
    socket, and released when empty. If the socket is immediatly
    able to write, the buffer will be sent, and any remai
@@ -7529,9 +7551,10 @@ NETWORK_PROC( void, RemoveClientExx )(PCLIENT lpClient, LOGICAL bBlockNofity, LO
    \ \                                                                      */
 #define RemoveClient(c) RemoveClientEx(c, FALSE, FALSE )
 /* Begin an SSL Connection.  This ends up replacing ReadComplete callback with an inbetween layer*/
-NETWORK_PROC( LOGICAL, ssl_BeginClientSession )( PCLIENT pc, POINTER keypair, size_t keylen, POINTER rootCert, size_t rootCertLen );
-NETWORK_PROC( LOGICAL, ssl_BeginServer )( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen );
+NETWORK_PROC( LOGICAL, ssl_BeginClientSession )( PCLIENT pc, POINTER keypair, size_t keylen, POINTER keypass, size_t keypasslen, POINTER rootCert, size_t rootCertLen );
+NETWORK_PROC( LOGICAL, ssl_BeginServer )( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen, POINTER keypass, size_t keypasslen);
 NETWORK_PROC( LOGICAL, ssl_GetPrivateKey )(PCLIENT pc, POINTER *keydata, size_t *keysize);
+NETWORK_PROC( LOGICAL, ssl_IsClientSecure )(PCLIENT pc);
 /* use this to send on SSL Connection instead of SendTCP. */
 NETWORK_PROC( LOGICAL, ssl_Send )( PCLIENT pc, POINTER buffer, size_t length );
 /* User Datagram Packet connection methods. This controls
@@ -7591,8 +7614,7 @@ NETWORK_PROC( PCLIENT, ServeUDPAddrEx )( SOCKADDR *pAddr,
                      cReadCompleteEx pReadComplete,
 													 cCloseCallback Close DBG_PASS );
 #define ServeUDPAddr(addr,read,close) ServeUDPAddrEx( addr,read,close DBG_SRC )
-/* \ \
-   Parameters
+/* \    Parameters
    address :         Address to listen at (interface
                      specification). Can be NULL to specify ANY
                      address, See notes on CreateSockAddress.
@@ -7618,8 +7640,7 @@ NETWORK_PROC( PCLIENT, ConnectUDPEx )( CTEXTSTR , uint16_t ,
                     cReadCompleteEx,
 												  cCloseCallback DBG_PASS );
 #define ConnectUDP(a,b,c,d,e,f) ConnectUDPEx(a,b,c,d,e,f DBG_SRC )
-/* \ \
-   Parameters
+/* \    Parameters
    sa :             address to listen for UDP messages at.
    saTo :           address to send UDP messages to, if the sa
                     parameter of send is NULL.
@@ -7699,8 +7720,18 @@ NETWORK_PROC( void, DumpAddrEx )( CTEXTSTR name, SOCKADDR *sa DBG_PASS );
 /* <combine sack::network::udp::DumpAddrEx@CTEXTSTR@SOCKADDR *sa>
    \ \                                                            */
 #define DumpAddr(n,sa) DumpAddrEx(n,sa DBG_SRC )
+NETWORK_PROC( int, SetSocketReuseAddress )( PCLIENT pClient, int32_t enable );
+NETWORK_PROC( int, SetSocketReusePort )( PCLIENT pClient, int32_t enable );
 _UDP_NAMESPACE_END
 USE_UDP_NAMESPACE
+struct interfaceAddress {
+	SOCKADDR *sa;
+	SOCKADDR *saBroadcast;
+	SOCKADDR *saMask;
+};
+NETWORK_PROC( SOCKADDR*, GetBroadcastAddressForInterface )(SOCKADDR *addr);
+NETWORK_PROC( SOCKADDR*, GetInterfaceAddressForBroadcast )(SOCKADDR *addr);
+NETWORK_PROC( void, LoadNetworkAddresses )(void);
 //----- PING.C ------
 NETWORK_PROC( LOGICAL, DoPing )( CTEXTSTR pstrHost,
              int maxTTL,
@@ -11547,149 +11578,6 @@ so... what does the client provide?
 websocket protocol is itself wrapped in a frame, so messages are described with exact
 length, and what is received will be exactly like the block that was sent.
 *****************************************************/
-#ifdef __cplusplus
-#else
-#endif
-#ifdef SACK_WEBSOCKET_CLIENT_SOURCE
-#define WEBSOCKET_EXPORT EXPORT_METHOD
-#else
-#define WEBSOCKET_EXPORT IMPORT_METHOD
-#endif
-// the result returned from the web_socket_opened event will
-// become the new value used for future uintptr_t parameters to other events.
-typedef uintptr_t (*web_socket_opened)( PCLIENT pc, uintptr_t psv );
-typedef void (*web_socket_closed)( PCLIENT pc, uintptr_t psv );
-typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
-typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOINTER buffer, size_t msglen );
-// protocolsAccepted value set can be released in opened callback, or it may be simply assigned as protocols passed...
-typedef LOGICAL ( *web_socket_accept )(PCLIENT pc, uintptr_t psv, const char *protocols, const char *resource, char **protocolsAccepted);
- // passed psv used in server create; since it is sort of an open, return a psv for next states(if any)
-typedef uintptr_t ( *web_socket_http_request )(PCLIENT pc, uintptr_t psv);
-// these should be a combination of bit flags
-// options used for WebSocketOpen
-enum WebSocketOptions {
-	WS_DELAY_OPEN = 1,
-};
-//enum WebSockClientOptions {
-//   WebSockClientOption_Protocols
-//};
-// create a websocket connection.
-//  If web_socket_opened is passed as NULL, this function will wait until the negotiation has passed.
-//  since these packets are collected at a lower layer, buffers passed to receive event are allocated for
-//  the application, and the application does not need to setup an  initial read.
-//  if protocols is NULL none are specified, otherwise the list of
-//  available protocols is sent to the server.
-WEBSOCKET_EXPORT PCLIENT WebSocketOpen( CTEXTSTR address
-                                      , enum WebSocketOptions options
-                                      , web_socket_opened
-                                      , web_socket_event
-                                      , web_socket_closed
-                                      , web_socket_error
-                                      , uintptr_t psv
-                                      , const char *protocols );
-// if WS_DELAY_OPEN is used, WebSocketOpen does not do immediate connect.
-// calling this begins the connection sequence.
-WEBSOCKET_EXPORT void WebSocketConnect( PCLIENT );
-// end a websocket connection nicely.
-WEBSOCKET_EXPORT void WebSocketClose( PCLIENT );
-// there is a control bit for whether the content is text or binary or a continuation
- // UTF8 RFC3629
-WEBSOCKET_EXPORT void WebSocketBeginSendText( PCLIENT, CPOINTER, size_t );
-// literal binary sending; this may happen to be base64 encoded too
-WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT, CPOINTER, size_t );
-// there is a control bit for whether the content is text or binary or a continuation
- // UTF8 RFC3629
-WEBSOCKET_EXPORT void WebSocketSendText( PCLIENT, CPOINTER, size_t );
-// literal binary sending; this may happen to be base64 encoded too
-WEBSOCKET_EXPORT void WebSocketSendBinary( PCLIENT, CPOINTER, size_t );
-WEBSOCKET_EXPORT void WebSocketEnableAutoPing( PCLIENT websock, uint32_t delay );
-WEBSOCKET_EXPORT void WebSocketPing( PCLIENT websock, uint32_t timeout );
-WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT pc, CPOINTER buffer, size_t length );
-WEBSOCKET_EXPORT void SetWebSocketAcceptCallback( PCLIENT pc, web_socket_accept callback );
-WEBSOCKET_EXPORT void SetWebSocketReadCallback( PCLIENT pc, web_socket_event callback );
-WEBSOCKET_EXPORT void SetWebSocketCloseCallback( PCLIENT pc, web_socket_closed callback );
-WEBSOCKET_EXPORT void SetWebSocketErrorCallback( PCLIENT pc, web_socket_error callback );
-WEBSOCKET_EXPORT void SetWebSocketHttpCallback( PCLIENT pc, web_socket_http_request callback );
-// if set in server accept callback, this will return without extension set
-// on client socket (default), does not request permessage-deflate
-#define WEBSOCK_DEFLATE_DISABLE 0
-// if set in server accept callback (or if not set, default); accept client request to deflate per message
-// if set on client socket, sends request for permessage-deflate to server.
-#define WEBSOCK_DEFLATE_ENABLE 1
-// if set in server accept callback; accept client request to deflate per message, but do not deflate outbound messages
-// if set on client socket, sends request for permessage-deflate to server, but does not deflate outbound messages(?)
-#define WEBSOCK_DEFLATE_ALLOW 2
-// set permessage-deflate option for client requests.
-// allow server side to disable this when responding to a client.
-WEBSOCKET_EXPORT void SetWebSocketDeflate( PCLIENT pc, int enable_flags );
-// default is client masks, server does not
-// this can be used to disable masking on client or enable on server
-// (masked output from server to client is not supported by browsers)
-WEBSOCKET_EXPORT void SetWebSocketMasking( PCLIENT pc, int enable );
-#endif
-/*
- * SACK extension to define methods to render to javascript/HTML5 WebSocket event interface
- *
- * Crafted by: Jim Buckeyne
- *
- * Purpose: Provide a well defined, concise structure to
- *   provide websocket server support to C applications.
- *
- *
- *
- * (c)Freedom Collective, Jim Buckeyne 2012+; SACK Collection.
- *
- */
-#ifndef HTML5_WEBSOCKET_STUFF_DEFINED
-#define HTML5_WEBSOCKET_STUFF_DEFINED
-//#include <controls.h>
-// should consider merging these headers(?)
-#ifdef __cplusplus
-#define _HTML5_WEBSOCKET_NAMESPACE namespace Html5WebSocket {
-#define HTML5_WEBSOCKET_NAMESPACE SACK_NAMESPACE _NETWORK_NAMESPACE _HTML5_WEBSOCKET_NAMESPACE
-#define HTML5_WEBSOCKET_NAMESPACE_END } _NETWORK_NAMESPACE_END SACK_NAMESPACE_END
-#define USE_HTML5_WEBSOCKET_NAMESPACE using namespace sack::network::Html5WebSocket;
-#else
-#define _HTML5_WEBSOCKET_NAMESPACE
-#define HTML5_WEBSOCKET_NAMESPACE
-#define HTML5_WEBSOCKET_NAMESPACE_END
-#define USE_HTML5_WEBSOCKET_NAMESPACE
-#endif
-HTML5_WEBSOCKET_NAMESPACE
-#ifdef HTML5_WEBSOCKET_SOURCE
-#define HTML5_WEBSOCKET_PROC(type,name) EXPORT_METHOD type CPROC name
-#else
-#define HTML5_WEBSOCKET_PROC(type,name) IMPORT_METHOD type CPROC name
-#endif
-// need some sort of other methods to work with an HTML5WebSocket...
-// server side.
-	HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketCreate )( CTEXTSTR server_url
-																	, web_socket_opened on_open
-																	, web_socket_event on_event
-																	, web_socket_closed on_closed
-																	, web_socket_error on_error
-																	, uintptr_t psv
-																	);
-// during open, server may need to switch behavior based on protocols
-// this can be used to return the protocols requested by the client.
-HTML5_WEBSOCKET_PROC( const char *, WebSocketGetProtocols )( PCLIENT pc );
-// after examining protocols, this is a reply to the client which protocol has been accepted.
-HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketSetProtocols )( PCLIENT pc, const char *protocols );
-/* define a callback which uses a HTML5WebSocket collector to build javascipt to render the control.
- * example:
- *       static int OnDrawToHTML("Control Name")(CONTROL, HTML5WebSocket ){ }
- */
-//#define OnDrawToHTML(name)  //	__DefineRegistryMethodP(PRELOAD_PRIORITY,ROOT_REGISTRY,_OnDrawCommon,WIDE("control"),name WIDE("/rtti"),WIDE("draw_to_canvas"),int,(CONTROL, HTML5WebSocket ), __LINE__)
-/* a server side utility to get the request headers that came in.
-this is for going through proxy agents mostly where the header might have x-forwarded-for
-*/
-HTML5_WEBSOCKET_PROC( PLIST, GetWebSocketHeaders )( PCLIENT pc );
-/* for server side sockets, get the requested resource path from the client request.
-*/
-HTML5_WEBSOCKET_PROC( PTEXT, GetWebSocketResource )( PCLIENT pc );
-HTML5_WEBSOCKET_NAMESPACE_END
-USE_HTML5_WEBSOCKET_NAMESPACE
-#endif
 /* Generalized HTTP Processing. All POST, GET, RESPONSE packets
    all fit within this structure.
                                                                 */
@@ -11806,6 +11694,7 @@ HTTP_EXPORT PTEXT HTTPAPI GetHttpResource( HTTPState pHttpState );
    see also: ProcessHttpFields and ProcessCGIFields
 */
 HTTP_EXPORT PLIST HTTPAPI GetHttpHeaderFields( HTTPState pHttpState );
+HTTP_EXPORT int HTTPAPI GetHttpVersion( HTTPState pHttpState );
 HTTP_EXPORT
  /* Enumerates the various http header fields by passing them
    each sequentially to the specified callback.
@@ -11908,6 +11797,151 @@ TEXT_NAMESPACE_END
 #ifdef __cplusplus
 using namespace sack::containers::text::http;
 #endif
+#endif
+#ifdef __cplusplus
+#else
+#endif
+#ifdef SACK_WEBSOCKET_CLIENT_SOURCE
+#define WEBSOCKET_EXPORT EXPORT_METHOD
+#else
+#define WEBSOCKET_EXPORT IMPORT_METHOD
+#endif
+// the result returned from the web_socket_opened event will
+// become the new value used for future uintptr_t parameters to other events.
+typedef uintptr_t (*web_socket_opened)( PCLIENT pc, uintptr_t psv );
+typedef void (*web_socket_closed)( PCLIENT pc, uintptr_t psv, int code, const char *reason );
+typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
+typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOINTER buffer, size_t msglen );
+// protocolsAccepted value set can be released in opened callback, or it may be simply assigned as protocols passed...
+typedef LOGICAL ( *web_socket_accept )(PCLIENT pc, uintptr_t psv, const char *protocols, const char *resource, char **protocolsAccepted);
+ // passed psv used in server create; since it is sort of an open, return a psv for next states(if any)
+typedef uintptr_t ( *web_socket_http_request )(PCLIENT pc, uintptr_t psv);
+// these should be a combination of bit flags
+// options used for WebSocketOpen
+enum WebSocketOptions {
+	WS_DELAY_OPEN = 1,
+};
+//enum WebSockClientOptions {
+//   WebSockClientOption_Protocols
+//};
+// create a websocket connection.
+//  If web_socket_opened is passed as NULL, this function will wait until the negotiation has passed.
+//  since these packets are collected at a lower layer, buffers passed to receive event are allocated for
+//  the application, and the application does not need to setup an  initial read.
+//  if protocols is NULL none are specified, otherwise the list of
+//  available protocols is sent to the server.
+WEBSOCKET_EXPORT PCLIENT WebSocketOpen( CTEXTSTR address
+                                      , enum WebSocketOptions options
+                                      , web_socket_opened
+                                      , web_socket_event
+                                      , web_socket_closed
+                                      , web_socket_error
+                                      , uintptr_t psv
+                                      , const char *protocols );
+// if WS_DELAY_OPEN is used, WebSocketOpen does not do immediate connect.
+// calling this begins the connection sequence.
+WEBSOCKET_EXPORT void WebSocketConnect( PCLIENT );
+// end a websocket connection nicely.
+// code must be 1000, or 3000-4999, and reason must be less than 123 characters (125 bytes with code)
+WEBSOCKET_EXPORT void WebSocketClose( PCLIENT, int code, const char *reason );
+// there is a control bit for whether the content is text or binary or a continuation
+ // UTF8 RFC3629
+WEBSOCKET_EXPORT void WebSocketBeginSendText( PCLIENT, CPOINTER, size_t );
+// literal binary sending; this may happen to be base64 encoded too
+WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT, CPOINTER, size_t );
+// there is a control bit for whether the content is text or binary or a continuation
+ // UTF8 RFC3629
+WEBSOCKET_EXPORT void WebSocketSendText( PCLIENT, CPOINTER, size_t );
+// literal binary sending; this may happen to be base64 encoded too
+WEBSOCKET_EXPORT void WebSocketSendBinary( PCLIENT, CPOINTER, size_t );
+WEBSOCKET_EXPORT void WebSocketEnableAutoPing( PCLIENT websock, uint32_t delay );
+WEBSOCKET_EXPORT void WebSocketPing( PCLIENT websock, uint32_t timeout );
+WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT pc, CPOINTER buffer, size_t length );
+WEBSOCKET_EXPORT void SetWebSocketAcceptCallback( PCLIENT pc, web_socket_accept callback );
+WEBSOCKET_EXPORT void SetWebSocketReadCallback( PCLIENT pc, web_socket_event callback );
+WEBSOCKET_EXPORT void SetWebSocketCloseCallback( PCLIENT pc, web_socket_closed callback );
+WEBSOCKET_EXPORT void SetWebSocketErrorCallback( PCLIENT pc, web_socket_error callback );
+WEBSOCKET_EXPORT void SetWebSocketHttpCallback( PCLIENT pc, web_socket_http_request callback );
+// if set in server accept callback, this will return without extension set
+// on client socket (default), does not request permessage-deflate
+#define WEBSOCK_DEFLATE_DISABLE 0
+// if set in server accept callback (or if not set, default); accept client request to deflate per message
+// if set on client socket, sends request for permessage-deflate to server.
+#define WEBSOCK_DEFLATE_ENABLE 1
+// if set in server accept callback; accept client request to deflate per message, but do not deflate outbound messages
+// if set on client socket, sends request for permessage-deflate to server, but does not deflate outbound messages(?)
+#define WEBSOCK_DEFLATE_ALLOW 2
+// set permessage-deflate option for client requests.
+// allow server side to disable this when responding to a client.
+WEBSOCKET_EXPORT void SetWebSocketDeflate( PCLIENT pc, int enable_flags );
+// default is client masks, server does not
+// this can be used to disable masking on client or enable on server
+// (masked output from server to client is not supported by browsers)
+WEBSOCKET_EXPORT void SetWebSocketMasking( PCLIENT pc, int enable );
+#endif
+/*
+ * SACK extension to define methods to render to javascript/HTML5 WebSocket event interface
+ *
+ * Crafted by: Jim Buckeyne
+ *
+ * Purpose: Provide a well defined, concise structure to
+ *   provide websocket server support to C applications.
+ *
+ *
+ *
+ * (c)Freedom Collective, Jim Buckeyne 2012+; SACK Collection.
+ *
+ */
+#ifndef HTML5_WEBSOCKET_STUFF_DEFINED
+#define HTML5_WEBSOCKET_STUFF_DEFINED
+//#include <controls.h>
+// should consider merging these headers(?)
+#ifdef __cplusplus
+#define _HTML5_WEBSOCKET_NAMESPACE namespace Html5WebSocket {
+#define HTML5_WEBSOCKET_NAMESPACE SACK_NAMESPACE _NETWORK_NAMESPACE _HTML5_WEBSOCKET_NAMESPACE
+#define HTML5_WEBSOCKET_NAMESPACE_END } _NETWORK_NAMESPACE_END SACK_NAMESPACE_END
+#define USE_HTML5_WEBSOCKET_NAMESPACE using namespace sack::network::Html5WebSocket;
+#else
+#define _HTML5_WEBSOCKET_NAMESPACE
+#define HTML5_WEBSOCKET_NAMESPACE
+#define HTML5_WEBSOCKET_NAMESPACE_END
+#define USE_HTML5_WEBSOCKET_NAMESPACE
+#endif
+HTML5_WEBSOCKET_NAMESPACE
+#ifdef HTML5_WEBSOCKET_SOURCE
+#define HTML5_WEBSOCKET_PROC(type,name) EXPORT_METHOD type CPROC name
+#else
+#define HTML5_WEBSOCKET_PROC(type,name) IMPORT_METHOD type CPROC name
+#endif
+// need some sort of other methods to work with an HTML5WebSocket...
+// server side.
+	HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketCreate )( CTEXTSTR server_url
+																	, web_socket_opened on_open
+																	, web_socket_event on_event
+																	, web_socket_closed on_closed
+																	, web_socket_error on_error
+																	, uintptr_t psv
+																	);
+// during open, server may need to switch behavior based on protocols
+// this can be used to return the protocols requested by the client.
+HTML5_WEBSOCKET_PROC( const char *, WebSocketGetProtocols )( PCLIENT pc );
+// after examining protocols, this is a reply to the client which protocol has been accepted.
+HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketSetProtocols )( PCLIENT pc, const char *protocols );
+/* define a callback which uses a HTML5WebSocket collector to build javascipt to render the control.
+ * example:
+ *       static int OnDrawToHTML("Control Name")(CONTROL, HTML5WebSocket ){ }
+ */
+//#define OnDrawToHTML(name)  //	__DefineRegistryMethodP(PRELOAD_PRIORITY,ROOT_REGISTRY,_OnDrawCommon,WIDE("control"),name WIDE("/rtti"),WIDE("draw_to_canvas"),int,(CONTROL, HTML5WebSocket ), __LINE__)
+/* a server side utility to get the request headers that came in.
+this is for going through proxy agents mostly where the header might have x-forwarded-for
+*/
+HTML5_WEBSOCKET_PROC( PLIST, GetWebSocketHeaders )( PCLIENT pc );
+/* for server side sockets, get the requested resource path from the client request.
+*/
+HTML5_WEBSOCKET_PROC( PTEXT, GetWebSocketResource )( PCLIENT pc );
+HTML5_WEBSOCKET_PROC( HTTPState, GetWebSocketHttpState )( PCLIENT pc );
+HTML5_WEBSOCKET_NAMESPACE_END
+USE_HTML5_WEBSOCKET_NAMESPACE
 #endif
 /*
  *  Creator: Jim Buckeyne

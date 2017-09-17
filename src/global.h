@@ -93,6 +93,7 @@ class FileObject : public node::ObjectWrap {
 	Persistent<Object> volume;
 public:
 	static v8::Persistent<v8::Function> constructor;
+	static Persistent<FunctionTemplate> tpl;
 	static void Init(  );
 
 	static void openFile( const v8::FunctionCallbackInfo<Value>& args );

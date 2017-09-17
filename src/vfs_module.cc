@@ -5,6 +5,10 @@
 static void fileDelete( const v8::FunctionCallbackInfo<Value>& args );
 
 
+Persistent<Function> VolumeObject::constructor;
+Persistent<Function> FileObject::constructor;
+Persistent<FunctionTemplate> FileObject::tpl;
+
 static void moduleExit( void *arg ) {
 	//SaveTranslationDataEx( "^/strings.dat" );
 	SaveTranslationDataEx( "@/../../strings.json" );
@@ -896,6 +900,8 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		Local<FunctionTemplate> fileTemplate;
 		// Prepare constructor template
 		fileTemplate = FunctionTemplate::New( isolate, openFile );
+		FileObject::tpl.Reset( isolate, fileTemplate );
+
 		fileTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.File" ) );
 		fileTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
@@ -977,9 +983,6 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 	}
 
-
-Persistent<Function> VolumeObject::constructor;
-Persistent<Function> FileObject::constructor;
 
 VolumeObject::~VolumeObject() {
 	if( volNative ) {
