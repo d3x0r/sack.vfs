@@ -278,10 +278,12 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 							(char*)eventMessage->buf,
 							length = eventMessage->buflen ).ToLocalChecked();
 					argv[0] = ab;
+					lprintf( "built buffer from %p", eventMessage->buf );
 					obj->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
 				else {
 					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
+					lprintf( "built string from %p", eventMessage->buf );
 					argv[0] = buf.ToLocalChecked();
 					obj->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
@@ -309,6 +311,7 @@ static void CPROC ReadComplete( uintptr_t psv, CPOINTER buffer, size_t buflen, S
 		struct udpEvent *pevt = GetFromSet( UDP_EVENT, &l.udpEvents );
 		(*pevt).eventType = UDP_EVENT_READ;
 		(*pevt).buf = NewArray( uint8_t*, buflen );
+		lprintf( "Send buffer %p", (*pevt).buf );
 		memcpy( (POINTER)(*pevt).buf, buffer, buflen );
 		(*pevt).buflen = buflen;
 		(*pevt)._this = _this;
