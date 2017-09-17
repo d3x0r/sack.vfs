@@ -68,7 +68,7 @@
 			, '-Wno-unused-variable', '-Wno-unused-function'
 			, '-Wno-sign-compare', '-Wno-null-dereference'
 			, '-Wno-address-of-packed-member', '-Wno-unknown-warning-option'
-			, '-Wno-unused-result'
+			, '-Wno-unused-result', '-fexceptions'
                 ],
              },
             'include_dirs': [
@@ -87,7 +87,9 @@
                     'RuntimeTypeInfo': 'true',
                     'MultiProcessorCompilation' : 'true',
                     'InlineFunctionExpansion': 2,
-                    'OmitFramePointers': 'true'
+                    'OmitFramePointers': 'true',
+                    'ExceptionHandling>Sync':'sync'
+
                   }
                 }
               },
@@ -98,7 +100,8 @@
                     'RuntimeTypeInfo': 'true',
                     'MultiProcessorCompilation' : 'true',
                     'InlineFunctionExpansion': 2,
-                    'OmitFramePointers': 'true'
+                    'OmitFramePointers': 'true',
+                    'ExceptionHandling>Sync':'sync'
                   }
                 }
               }
