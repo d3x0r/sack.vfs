@@ -42,6 +42,7 @@ struct addrFinder {
 class addrObject : public node::ObjectWrap {
 public:
 	static Persistent<Function> constructor;
+	static Persistent<FunctionTemplate> tpl;
 	struct addrFinder key;
 	SOCKADDR *addr;
 	Persistent<Object> _this;
@@ -105,6 +106,7 @@ DeclareSet( UDP_EVENT );
 
 Persistent<Function> udpObject::constructor;
 Persistent<Function> addrObject::constructor;
+Persistent<FunctionTemplate> addrObject::tpl;
 
 static struct local {
 	int data;
@@ -162,10 +164,15 @@ static addrObject *getAddress( Isolate *isolate, char *addr, int port ) {
 		GetAddressParts( obj->addr, NULL, &realPort );
 		AddBinaryNode( l.addressesBySA, obj, (uintptr_t)obj->addr );
 		AddBinaryNode( l.addresses, obj, (uintptr_t)&obj->key );
-
-		SET_READONLY( o, "family", String::NewFromUtf8( isolate, obj->addr->sa_family == AF_INET ? "IPv4" : obj->addr->sa_family == AF_INET6 ? "IPv6" : "unknown" ) );
+		if( obj->addr )
+			SET_READONLY( o, "family", String::NewFromUtf8( isolate, obj->addr->sa_family == AF_INET ? "IPv4" : obj->addr->sa_family == AF_INET6 ? "IPv6" : "unknown" ) );
+		else
+			SET_READONLY( o, "family", Undefined(isolate) );
 		SET_READONLY( o, "address", String::NewFromUtf8( isolate, addr ) );
-		SET_READONLY( o, "IP", String::NewFromUtf8( isolate, GetAddrString( obj->addr ) ) );
+		if( obj->addr )
+			SET_READONLY( o, "IP", String::NewFromUtf8( isolate, GetAddrString( obj->addr ) ) );
+		else
+			SET_READONLY( o, "IP", Undefined( isolate ) );
 		SET_READONLY( o, "port", Number::New( isolate, realPort ) );
 
 	}
@@ -239,6 +246,7 @@ void InitUDPSocket( Isolate *isolate, Handle<Object> exports ) {
 	{
 		Local<FunctionTemplate> addrTemplate;
 		addrTemplate = FunctionTemplate::New( isolate, addrObject::New );
+		addrObject::tpl.Reset( isolate, addrTemplate );
 		addrTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.network.address" ) );
 		addrTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		//NODE_SET_PROTOTYPE_METHOD( addrTemplate, "toString", addrObject::toString );
@@ -248,6 +256,10 @@ void InitUDPSocket( Isolate *isolate, Handle<Object> exports ) {
 
 		SET_READONLY( oNet, "Address", addrTemplate->GetFunction() );
 	}
+}
+
+void FreeCallback( char* data, void* hint ) {
+	Deallocate( char*, data );
 }
 
 static void udpAsyncMsg( uv_async_t* handle ) {
@@ -269,14 +281,17 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 				argv[1] = ::getAddressBySA( isolate, eventMessage->from );
 				if( !obj->readStrings ) {
 					ab =
-						node::Buffer::New( isolate,
-							(char*)eventMessage->buf,
-							length = eventMessage->buflen ).ToLocalChecked();
+						node::Buffer::New( isolate
+							, (char*)eventMessage->buf
+							, length = eventMessage->buflen
+							, FreeCallback, NULL ).ToLocalChecked();
 					argv[0] = ab;
+					lprintf( "built buffer from %p", eventMessage->buf );
 					obj->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
 				else {
 					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
+					lprintf( "built string from %p", eventMessage->buf );
 					argv[0] = buf.ToLocalChecked();
 					obj->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
@@ -304,6 +319,7 @@ static void CPROC ReadComplete( uintptr_t psv, CPOINTER buffer, size_t buflen, S
 		struct udpEvent *pevt = GetFromSet( UDP_EVENT, &l.udpEvents );
 		(*pevt).eventType = UDP_EVENT_READ;
 		(*pevt).buf = NewArray( uint8_t*, buflen );
+		lprintf( "Send buffer %p", (*pevt).buf );
 		memcpy( (POINTER)(*pevt).buf, buffer, buflen );
 		(*pevt).buflen = buflen;
 		(*pevt)._this = _this;
@@ -521,9 +537,17 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 	udpObject *obj = ObjectWrap::Unwrap<udpObject>( args.This() );
 	SOCKADDR *dest = NULL;
 	if( args.Length() > 1 ) {
-		addrObject *obj = ObjectWrap::Unwrap<addrObject>( args[1]->ToObject() );
-		if( obj )
-			dest = obj->addr;
+		Local<FunctionTemplate> tpl = addrObject::tpl.Get( isolate );
+		Local<Object> argObj = args[1]->ToObject();
+		if( !argObj.IsEmpty() && tpl->HasInstance( argObj ) ) {
+			addrObject *obj = ObjectWrap::Unwrap<addrObject>( args[1]->ToObject() );
+			if( obj )
+				dest = obj->addr;
+		}
+		else {
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Address argument is not a sack.core.Network.Address" ) ) ) );
+			return;
+		}
 	}
 	if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
@@ -610,9 +634,16 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 		struct optionStrings *strings = getStrings( isolate );
 		uint16_t realPort;
 		GetAddressParts( obj->addr, NULL, &realPort );
-		SET_READONLY( _this, "family", String::NewFromUtf8( isolate, obj->addr->sa_family==AF_INET?"IPv4":obj->addr->sa_family==AF_INET6?"IPv6":"unknown" ) );
+		if( obj->addr ) {
+			SET_READONLY( _this, "family", String::NewFromUtf8( isolate, obj->addr->sa_family == AF_INET ? "IPv4" : obj->addr->sa_family == AF_INET6 ? "IPv6" : "unknown" ) );
+		}
+		else
+			SET_READONLY( _this, "family", Undefined( isolate ) );
 		SET_READONLY( _this, "address", String::NewFromUtf8( isolate, address ) );
-		SET_READONLY( _this, "IP", String::NewFromUtf8( isolate, GetAddrString( obj->addr ) ) );
+		if( obj->addr )
+			SET_READONLY( _this, "IP", String::NewFromUtf8( isolate, GetAddrString( obj->addr ) ) );
+		else
+			SET_READONLY( _this, "IP", Undefined(isolate) );
 		SET_READONLY( _this, "port", Number::New( isolate, realPort ) );
 
 		obj->_this.Reset( isolate, _this );

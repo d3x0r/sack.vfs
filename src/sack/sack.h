@@ -6245,7 +6245,8 @@ SACK_NAMESPACE
    AddTimer
    RemoveTimer
    RescheduleTimer
-   EnterCriticalSec see Also EnterCriticalSecNoWait
+   EnterCriticalSec see Also
+ EnterCriticalSecNoWait
    LeaveCriticalSec                                            */
 _TIMER_NAMESPACE
 #ifdef TIMER_SOURCE
