@@ -59,7 +59,7 @@ if( EXISTS ${SACK_BASE} )
 set( INCLUDES
 	-I${SACK_BASE}/include
 	-I${SACK_BASE}/src/contrib/sha1lib
-	-I${SACK_BASE}/src/contrib/sqlite/3.18.0
+	-I${SACK_BASE}/src/contrib/sqlite/3.19.3
  )
 
 FILE( WRITE ${CMAKE_BINARY_DIR}/config.ppc "/*CMake Option defined*/\n" )
