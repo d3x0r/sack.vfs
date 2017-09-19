@@ -759,6 +759,7 @@ COM port settings are kept in the default option database under
 
 
 ## Changelog
+- 0.1.99312 fixes building on mac a little.
 - 0.1.99311 Fixes building on msvs (exception flag)
 - 0.1.99310 Fix rebinding on linux to subnet broadcast address.
 - 0.1.99309 Fix clearing some persistant handles so objects can be garbage collected. 
