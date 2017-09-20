@@ -44,8 +44,13 @@ endif( NOT WIN32 )
 
 ADD_DEFINITIONS( -DNO_OPEN_MACRO )
 
+if( WIN32 )
+	set( SACK_BASE M:/sack )
+else( WIN32 )
+	set( SACK_BASE ${CMAKE_SOURCE_DIR}/../../sack )
+endif( WIN32 )
 
-set( SACK_BASE M:/sack )
+message( "SACK=${SACK_BASE}" )
 
 # __NO_OPTIONS__ __NO_INTERFACE_SUPPORT__ __NO_ODBC__
 set( DEFINITIONS   __STATIC__
@@ -140,17 +145,17 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/netlib/ssl_layer.c
 
 	${SACK_BASE}/src/contrib/sqlite/sqlite_interface.c
-        ${SACK_BASE}/src/sqllib/sqlstruc.h
+        ${SACK_BASE}/src/SQLlib/sqlstruc.h
         ${SACK_BASE}/src/configlib/configscript.c
-        ${SACK_BASE}/src/sqllib/sqlstub.c
-        ${SACK_BASE}/src/sqllib/sqlwrap.c
-        ${SACK_BASE}/src/sqllib/sqlutil.c
-        ${SACK_BASE}/src/sqllib/guid.c
-        ${SACK_BASE}/src/sqllib/sqlparse3.c
-        ${SACK_BASE}/src/sqllib/optlib/getoption.c
-        ${SACK_BASE}/src/sqllib/optlib/getoption_v4.c
-        ${SACK_BASE}/src/sqllib/optlib/optionutil.c
-        ${SACK_BASE}/src/sqllib/optlib/optionutil_v4.c
+        ${SACK_BASE}/src/SQLlib/sqlstub.c
+        ${SACK_BASE}/src/SQLlib/sqlwrap.c
+        ${SACK_BASE}/src/SQLlib/sqlutil.c
+        ${SACK_BASE}/src/SQLlib/guid.c
+        ${SACK_BASE}/src/SQLlib/sqlparse3.c
+        ${SACK_BASE}/src/SQLlib/optlib/getoption.c
+        ${SACK_BASE}/src/SQLlib/optlib/getoption_v4.c
+        ${SACK_BASE}/src/SQLlib/optlib/optionutil.c
+        ${SACK_BASE}/src/SQLlib/optlib/optionutil_v4.c
 
 	${SACK_BASE}/src/translationlib/translate.c
 
@@ -167,7 +172,14 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
-set( PPCTOOL c:/tools/ppc.exe )
+if( WIN32 )
+	set( PPCTOOL c:/tools/ppc.exe )
+        message( "PPCTOOL WINDOWS?" )
+else( WIN32 )
+	set( PPCTOOL /usr/bin/ppc )
+        message( "PPCTOOL: ${PPCTOOL}" )
+endif( WIN32 )
+
 if( EXISTS ${PPCTOOL} )
   set( AMALG_COMMAND ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc ${EXTRA_SOURCES} )
   set( AMALG_COMMAND2 ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.h ${EXTRA_HEADERS} )
