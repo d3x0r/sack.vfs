@@ -16968,7 +16968,7 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 			oldpath = getenv( "LD_LIBRARY_PATH" );
 			if( oldpath )
 			{
-				newpath = NewArray( char, (uint32_t)((oldpath?StrLen( oldpath ):0) + 2 + StrLen((*init_l).load_path)) );
+				newpath = NewArray( char, (uint32_t)((oldpath?StrLen( oldpath ):0) + 2 + StrLen((*init_l).library_path)) );
 				sprintf( newpath, WIDE("%s:%s"), (*init_l).library_path
 						 , oldpath );
 				setenv( WIDE("LD_LIBRARY_PATH"), newpath, 1 );

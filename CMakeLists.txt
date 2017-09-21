@@ -167,9 +167,13 @@ SET( BUILD_AMALGAM on )
 set( C_SOURCES
         ${SACK_BASE}/src/contrib/sqlite/3.19.3/sqlite3.c
 )
+add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
+			COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
+		)			
 add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
-			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${C_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${C_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                                   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
 )
 
 if( WIN32 )
