@@ -1024,7 +1024,6 @@ wssObject::wssObject( struct wssOptions *opts ) {
 	closed = 0;
 	eventQueue = CreateLinkQueue();
 	uv_async_init( l.loop, &async, wssAsyncMsg );
-	lprintf( "init:%p", &async );
 	async.data = this;
 
 	pc = WebSocketCreate( opts->url, webSockServerOpen, webSockServerEvent, webSockServerClosed, webSockServerError, (uintptr_t)this );

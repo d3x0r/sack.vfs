@@ -44,13 +44,17 @@ endif( NOT WIN32 )
 
 ADD_DEFINITIONS( -DNO_OPEN_MACRO )
 
+if( ${CMAKE_BUILD_TYPE} MATCHES "[dD][eE][bB][uU][gG]"
+   OR ${CMAKE_BUILD_TYPE} MATCHES "[rR][eE][lL][wW][iI]*" )
+   ADD_DEFINITIONS( -D_DEBUG )
+endif( ${CMAKE_BUILD_TYPE} MATCHES "[dD][eE][bB][uU][gG]"
+   OR ${CMAKE_BUILD_TYPE} MATCHES "[rR][eE][lL][wW][iI]*" )
+
 if( WIN32 )
 	set( SACK_BASE M:/sack )
 else( WIN32 )
 	set( SACK_BASE ${CMAKE_SOURCE_DIR}/../../sack )
 endif( WIN32 )
-
-message( "SACK=${SACK_BASE}" )
 
 # __NO_OPTIONS__ __NO_INTERFACE_SUPPORT__ __NO_ODBC__
 set( DEFINITIONS   __STATIC__
@@ -68,6 +72,7 @@ set( INCLUDES
  )
 
 FILE( WRITE ${CMAKE_BINARY_DIR}/config.ppc "/*CMake Option defined*/\n" )
+
 
 foreach( DEF ${DEFINITIONS} )
    ADD_DEFINITIONS( -D${DEF} )
@@ -178,10 +183,8 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
 
 if( WIN32 )
 	set( PPCTOOL c:/tools/ppc.exe )
-        message( "PPCTOOL WINDOWS?" )
 else( WIN32 )
 	set( PPCTOOL /usr/bin/ppc )
-        message( "PPCTOOL: ${PPCTOOL}" )
 endif( WIN32 )
 
 if( EXISTS ${PPCTOOL} )
@@ -207,9 +210,6 @@ ENDFOREACH()
 
 endif( EXISTS ${SACK_BASE} )
 
-
-
-message( "CMAKE_JS_INC:" ${CMAKE_JS_INC} )
 include_directories(${CMAKE_JS_INC} ${INCLUDES} src/sack )
 
 if( WIN32 )

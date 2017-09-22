@@ -295,6 +295,7 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 					argv[0] = buf.ToLocalChecked();
 					obj->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
+				ReleaseAddress( eventMessage->from );
 				Deallocate( CPOINTER, eventMessage->buf );
 				break;
 			case UDP_EVENT_CLOSE:
@@ -314,6 +315,7 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 static void CPROC ReadComplete( uintptr_t psv, CPOINTER buffer, size_t buflen, SOCKADDR *from ) {
 	udpObject *_this = (udpObject*)psv;
 	if( !buffer ) {
+		// skip init read; buffer is allocated later and then this callback is triggered
 	}
 	else {
 		struct udpEvent *pevt = GetFromSet( UDP_EVENT, &l.udpEvents );
@@ -323,7 +325,7 @@ static void CPROC ReadComplete( uintptr_t psv, CPOINTER buffer, size_t buflen, S
 		memcpy( (POINTER)(*pevt).buf, buffer, buflen );
 		(*pevt).buflen = buflen;
 		(*pevt)._this = _this;
-		(*pevt).from = from;
+		(*pevt).from = DuplicateAddress( from );
 		EnqueLink( &_this->eventQueue, pevt );
 		uv_async_send( &_this->async );
 		doUDPRead( _this->pc, (POINTER)buffer, 4096 );
@@ -587,7 +589,7 @@ addrObject *addrObject::internalNew( Isolate *isolate, SOCKADDR *sa ) {
 	GetAddressParts( sa, NULL, &port );
 	addr->key.port = port;
 	addr->key.addr = (char*)GetAddrName( sa );
-	addr->addr = sa;
+	addr->addr = DuplicateAddress( sa );
 	SET_READONLY( _addr, "family", String::NewFromUtf8( isolate, sa->sa_family == AF_INET ? "IPv4" :sa->sa_family == AF_INET6 ? "IPv6" : "unknown" ) );
 	SET_READONLY( _addr, "address", String::NewFromUtf8( isolate, addr->key.addr ) );
 	SET_READONLY( _addr, "IP", String::NewFromUtf8( isolate, GetAddrString( addr->addr ) ) );
