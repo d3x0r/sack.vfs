@@ -1041,7 +1041,7 @@ wssObject::wssObject( struct wssOptions *opts ) {
 			SetWebSocketMasking( pc, 1 );
 		if( opts->ssl ) {
 			ssl_BeginServer( pc
-				, opts->cert_chain, opts->cert_chain ? strlen( opts->cert_chain ) : 0
+				, opts->cert_chain, opts->cert_chain_len
 				, opts->key, opts->key_len
 				, opts->pass, opts->pass_len );
 		}
@@ -1088,6 +1088,21 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 				String::Utf8Value cert( opts->Get( optName )->ToString() );
 				wssOpts.cert_chain = StrDup( *cert );
 				wssOpts.cert_chain_len = cert.length();
+			}
+			if( !opts->Has( optName = strings->caString->Get( isolate ) ) ) {
+				wssOpts.cert_chain = NULL;
+				wssOpts.cert_chain_len =0;
+			}
+			else {
+				String::Utf8Value ca( opts->Get( optName )->ToString() );
+				if( wssOpts.cert_chain ) {
+					wssOpts.cert_chain = (char*)Reallocate( wssOpts.cert_chain, wssOpts.cert_chain_len + ca.length() );
+					strcpy( wssOpts.cert_chain + wssOpts.cert_chain_len, *ca );
+               wssOpts.cert_chain_len += ca.length();
+				} else {
+					wssOpts.cert_chain = StrDup( *ca );
+					wssOpts.cert_chain_len = ca.length();
+				}
 			}
 
 			if( !opts->Has( optName = strings->keyString->Get( isolate ) ) ) {
@@ -1488,6 +1503,47 @@ wscObject::~wscObject() {
 }
 
 
+void parseWscOptions( struct wscOptions *wscOpts, Isolate *isolate, Local<Object> opts ) {
+	struct optionStrings *strings = getStrings( isolate );
+	Local<String> optName;
+
+	if( opts->Has( optName = strings->caString->Get( isolate ) ) ) {
+		wscOpts->ssl = 1;
+		String::Utf8Value rootCa( opts->Get( optName )->ToString() );
+		wscOpts->root_cert = StrDup( *rootCa );
+	}
+
+	if( opts->Has( optName = strings->keyString->Get( isolate ) ) ) {
+		wscOpts->ssl = 1;
+		String::Utf8Value rootCa( opts->Get( optName )->ToString() );
+		wscOpts->key = StrDup( *rootCa );
+		wscOpts->key_len = rootCa.length();
+	}
+
+	if( opts->Has( optName = strings->passString->Get( isolate ) ) ) {
+		wscOpts->ssl = 1;
+		String::Utf8Value rootCa( opts->Get( optName )->ToString() );
+		wscOpts->pass = StrDup( *rootCa );
+				wscOpts->pass_len = rootCa.length();
+	}
+
+	if( opts->Has( optName = strings->deflateString->Get( isolate ) ) ) {
+		wscOpts->deflate = opts->Get( optName )->ToBoolean()->Value();
+	}
+	else
+		wscOpts->deflate = false;
+	if( opts->Has( optName = strings->deflateAllowString->Get( isolate ) ) ) {
+		wscOpts->deflate_allow = opts->Get( optName )->ToBoolean()->Value();
+	}
+	else
+		wscOpts->deflate_allow = false;
+	if( opts->Has( optName = strings->maskingString->Get( isolate ) ) ) {
+		wscOpts->apply_masking = opts->Get( optName )->ToBoolean()->Value();
+	}
+	else
+		wscOpts->apply_masking = true;
+}
+
 void wscObject::New(const FunctionCallbackInfo<Value>& args){
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
@@ -1498,7 +1554,6 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 
 	if( args.IsConstructCall() ) {
 		bool checkArg2;
-		struct optionStrings *strings = getStrings( isolate );
 		// Invoked as constructor: `new MyObject(...)`
 		struct wscOptions wscOpts;
 		String::Utf8Value url( args[0]->ToString() );
@@ -1523,51 +1578,15 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 		}
 		else if( args[1]->IsObject() ) {
 			checkArg2 = false;
-			opts = args[1]->ToObject();
-			Local<String> optName;
-
-			if( opts->Has( optName = strings->caString->Get( isolate ) ) ) {
-				wscOpts.ssl = 1;
-				String::Utf8Value rootCa( opts->Get( optName )->ToString() );
-				wscOpts.root_cert = StrDup( *rootCa );
-			}
-
-			if( opts->Has( optName = strings->keyString->Get( isolate ) ) ) {
-				wscOpts.ssl = 1;
-				String::Utf8Value rootCa( opts->Get( optName )->ToString() );
-				wscOpts.key = StrDup( *rootCa );
-				wscOpts.key_len = rootCa.length();
-			}
-
-			if( opts->Has( optName = strings->passString->Get( isolate ) ) ) {
-				wscOpts.ssl = 1;
-				String::Utf8Value rootCa( opts->Get( optName )->ToString() );
-				wscOpts.pass = StrDup( *rootCa );
-				wscOpts.pass_len = rootCa.length();
-			}
-
-			if( opts->Has( optName = strings->deflateString->Get( isolate ) ) ) {
-				wscOpts.deflate = opts->Get( optName )->ToBoolean()->Value();
-			}
-			else
-				wscOpts.deflate = false;
-			if( opts->Has( optName = strings->deflateAllowString->Get( isolate ) ) ) {
-				wscOpts.deflate_allow = opts->Get( optName )->ToBoolean()->Value();
-			}
-			else
-				wscOpts.deflate_allow = false;
-			if( opts->Has( optName = strings->maskingString->Get( isolate ) ) ) {
-				wscOpts.apply_masking = opts->Get( optName )->ToBoolean()->Value();
-			}
-			else
-				wscOpts.apply_masking = true;
+         parseWscOptions( &wscOpts, isolate, args[1]->ToObject() );
 		}
 		else
 			checkArg2 = false;
 
 		if( checkArg2 ) {
 			if( args[2]->IsObject() ) {
-				opts = args[1]->ToObject();
+				opts = args[2]->ToObject();
+				parseWscOptions( &wscOpts, isolate, opts );
 			}
 		}
 
@@ -1593,6 +1612,7 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 			Deallocate( char *, wscOpts.key );
 		if( wscOpts.pass )
 			Deallocate( char *, wscOpts.pass );
+		struct optionStrings *strings = getStrings( isolate );
 		_this->Set( strings->bufferedAmountString->Get(isolate), Number::New( isolate, 0 ) );
 		args.GetReturnValue().Set( _this );
 	}
