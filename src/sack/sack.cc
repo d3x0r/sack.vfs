@@ -59147,7 +59147,7 @@ static void HandleEvent( PCLIENT pClient )
 					if( globalNetworkData.flags.bLogNotices )
 						lprintf( WIDE( "Got UDP FD_READ" ) );
 #endif
-					FinishUDPRead( pClient );
+					FinishUDPRead( pClient, 0 );
 				}
 			}
 			else
@@ -63634,7 +63634,7 @@ PCLIENT ConnectUDPEx( CTEXTSTR pFromAddr, uint16_t wFromPort,
 NETWORK_PROC( LOGICAL, SendUDPEx )( PCLIENT pc, CPOINTER pBuf, size_t nSize, SOCKADDR *sa )
 {
 	int nSent;
-	int sendSocket = pc->Socket;
+	SOCKET sendSocket = pc->Socket;
 	if( !sa)
 		sa = pc->saClient;
 	if( !sa )
