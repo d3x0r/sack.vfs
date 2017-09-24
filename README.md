@@ -563,8 +563,8 @@ Server events
 
   | Event Name | Event Description |
   |---|---|
-  | accept |  optional callback, if it is configured on a server, it is called before connect, and is passed (protocols, resource path).  Should call server.accept( protocol ), or server.reject() during this callback.  |
-  | connect | callback receives new connection from a client.  The new client object has a 'connection' object which provides information about the connection. |
+  | accept |  optional callback, if it is configured on a server, it is called before connect, and is passed (new_websocket_connection).  Should call server.accept( protocol ), or server.reject() during this callback.  |
+  | connect(depr.) | callback receives new connection from a client.  The new client object has a 'connection' object which provides information about the connection. |
   | request | callback is in a new object that is an httpObject; triggered when a non-upgrade request is received. |
 
 

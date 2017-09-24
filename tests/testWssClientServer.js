@@ -40,8 +40,8 @@ server.onrequest( function( req, res ) {
 	}
 } );
 
-server.onaccept( function ( protocols, resource ) {
-	console.log( "Connection received with : ", protocols, " path:", resource );
+server.onaccept( function ( ws ) {
+	console.log( "Connection received with : ", ws.headers['Sec-WebSocket-Protocol'], " path:", ws.url );
         if( process.argv[2] == "1" )
 		this.reject();
         else

@@ -493,29 +493,8 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 	{
 		struct wssEvent *eventMessage;
 		while( eventMessage = (struct wssEvent *)DequeLink( &myself->eventQueue ) ) {
-			Local<Value> argv[2];
+			Local<Value> argv[3];
 			myself->eventMessage = eventMessage;
-			if( eventMessage->eventType == WS_EVENT_OPEN ) {
-				Local<Function> cons = Local<Function>::New( isolate, wssiObject::constructor );
-				MaybeLocal<Object> _wssi = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
-				if( _wssi.IsEmpty() ) {
-					isolate->ThrowException( Exception::Error(
-						String::NewFromUtf8( isolate, TranslateText( "Internal Error creating client connection instance." ) ) ) );
-					lprintf( "Internal error. I wonder what exception looks like" );
-					break;
-				}
-				Local<Object> wssi = _wssi.ToLocalChecked();
-				struct optionStrings *strings = getStrings( isolate );
-				wssi->Set( strings->connectionString->Get(isolate), makeSocket( isolate, eventMessage->pc ) );
-				wssiObject *wssiInternal = wssiObject::Unwrap<wssiObject>( wssi );
-				wssiInternal->pc = eventMessage->pc;
-				//wssiInternal->_this.Reset( isolate, wssi );
-
-				argv[0] = wssi;
-				Local<Function> cb = Local<Function>::New( isolate, myself->openCallback );
-				cb->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
-				eventMessage->result = wssiInternal;
-			}
 			if( eventMessage->eventType == WS_EVENT_REQUEST ) {
 				if( !myself->requestCallback.IsEmpty() ) {
 					Local<Function> cons = Local<Function>::New( isolate, httpObject::constructor );
@@ -540,15 +519,28 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				}
 			}
 			else if( eventMessage->eventType == WS_EVENT_ACCEPT ) {
-				if( eventMessage->protocol )
-					argv[0] = Local<String>::New( isolate, String::NewFromUtf8( isolate, eventMessage->protocol ) );
-				else
-					argv[0] = Null( isolate );
-				argv[1] = Local<String>::New( isolate, String::NewFromUtf8( isolate, eventMessage->resource ) );
+
+				Local<Function> cons = Local<Function>::New( isolate, wssiObject::constructor );
+				MaybeLocal<Object> _wssi = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
+				if( _wssi.IsEmpty() ) {
+					isolate->ThrowException( Exception::Error(
+																			String::NewFromUtf8( isolate, TranslateText( "Internal Error creating client connection instance." ) ) ) );
+					lprintf( "Internal error. I wonder what exception looks like" );
+					break;
+				}
+				Local<Object> wssi = _wssi.ToLocalChecked();
+				struct optionStrings *strings = getStrings( isolate );
+				wssi->Set( strings->connectionString->Get(isolate), makeSocket( isolate, eventMessage->pc ) );
+				wssiObject *wssiInternal = wssiObject::Unwrap<wssiObject>( wssi );
+				wssiInternal->pc = eventMessage->pc;
+				//wssiInternal->_this.Reset( isolate, wssi );
+				argv[0] = wssi;
+
 				if( !myself->acceptCallback.IsEmpty() ) {
 					Local<Function> cb = myself->acceptCallback.Get( isolate );
-					Local<Value> result = cb->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
+					Local<Value> result = cb->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
 				}
+				eventMessage->result = wssiInternal;
 				//eventMessage->accepted = (int)result->ToBoolean()->Value();
 
 			}
@@ -580,6 +572,12 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 			Local<Value> argv[1];
 			Local<ArrayBuffer> ab;
 			switch( eventMessage->eventType ) {
+			case WS_EVENT_OPEN:
+				if( !myself->openCallback.IsEmpty() ) {
+					Local<Function> cb = Local<Function>::New( isolate, myself->openCallback );
+					cb->Call( wssieventMessage->_this->_this.Get( isolate ), 0, argv );
+				}
+            break;
 			case WS_EVENT_READ:
 				size_t length;
 				if( eventMessage->binary ) {
@@ -886,6 +884,7 @@ static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char *proto
 		struct wssEvent evt;
 		evt.protocol = protocols;
 		evt.resource = resource;
+      evt.pc = pc;
 		evt.accepted = 0;
 		evt.eventType = WS_EVENT_ACCEPT;
 		evt.done = FALSE;
