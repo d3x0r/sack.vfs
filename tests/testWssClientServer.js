@@ -24,7 +24,7 @@ var cert = sack.TLS.signreq( {
 	, signer: signer, serial: 1005, key:keys[1] } );
 
 
-var server = sack.WebSocket.Server( { port: 8080, cert : cert+signer, key: keys[2], passphrase:"password" } )
+var server = sack.WebSocket.Server( { port: 8080, cert : cert, ca : signer, key: keys[2], passphrase:"password" } )
 
 console.log( "serving on 8080" );
 
@@ -41,6 +41,7 @@ server.onrequest( function( req, res ) {
 } );
 
 server.onaccept( function ( ws ) {
+	console.log( "connected:", ws);
 	console.log( "Connection received with : ", ws.headers['Sec-WebSocket-Protocol'], " path:", ws.url );
         if( process.argv[2] == "1" )
 		this.reject();
@@ -50,8 +51,9 @@ server.onaccept( function ( ws ) {
 } );
 
 server.onconnect( function (ws) {
-	//console.log( "Connect:", ws );
-
+	console.log( "Connect:", ws );
+	console.log( "Connect:", this );
+	
 	ws.onmessage( function( msg ) {
         	console.log( "Received data:", msg );
                 ws.send( msg );
@@ -68,9 +70,13 @@ var clientOpts = {
 	key : sack.TLS.genkey( 1024, "password" ),
 	passphrase : "password"
 } 
+
 var client = sack.WebSocket.Client( "wss://localhost:8080", clientOpts );
-
-
 client.on( "message", (msg)=>{ console.log( "Got back:", msg ) } );
 client.on( "open", ()=>{ client.send( "Echo This." ) } );
 client.on( "error", (error)=>{ console.log( "Error:", err ) } );
+
+var client2 = sack.WebSocket.Client( "wss://localhost:8080/", ["chat", "present"], clientOpts );
+client2.on( "message", (msg)=>{ console.log( "Got back:", msg ) } );
+client2.on( "open", function(){ console.log( "This?", this ); this.send( "Echo This." ) } );
+client2.on( "error", (error)=>{ console.log( "Error:", err ) } );

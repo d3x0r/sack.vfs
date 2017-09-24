@@ -247,7 +247,7 @@ public:
 	PCLIENT pc;
 	Persistent<Object> _this;
 	PLINKQUEUE eventQueue;
-	const char *protocolResponse;
+	PLIST opening;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	static Persistent<Function> constructor;
 	static Persistent<FunctionTemplate> tpl;
@@ -335,14 +335,15 @@ public:
 // web sock server instance Object  (a connection from a remote)
 class wssiObject : public node::ObjectWrap {
 public:
-	wssObject *listener;  // have to check this for pending event messages too to prevent blocks.
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Object> _this;
 	PLINKQUEUE eventQueue;
 	//struct wssiEvent *eventMessage;
 	PCLIENT pc;
 	LOGICAL closed;
+	const char *protocolResponse;
 	enum wsReadyStates readyState;
+	wssObject *server;
 public:
 	static Persistent<Function> constructor;
 	static Persistent<FunctionTemplate> tpl;
@@ -524,33 +525,41 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				MaybeLocal<Object> _wssi = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
 				if( _wssi.IsEmpty() ) {
 					isolate->ThrowException( Exception::Error(
-																			String::NewFromUtf8( isolate, TranslateText( "Internal Error creating client connection instance." ) ) ) );
+								String::NewFromUtf8( isolate, TranslateText( "Internal Error creating client connection instance." ) ) ) );
 					lprintf( "Internal error. I wonder what exception looks like" );
 					break;
 				}
 				Local<Object> wssi = _wssi.ToLocalChecked();
 				struct optionStrings *strings = getStrings( isolate );
-				wssi->Set( strings->connectionString->Get(isolate), makeSocket( isolate, eventMessage->pc ) );
+				Local<Object> socket;
 				wssiObject *wssiInternal = wssiObject::Unwrap<wssiObject>( wssi );
 				wssiInternal->pc = eventMessage->pc;
-				//wssiInternal->_this.Reset( isolate, wssi );
+				wssiInternal->server = myself;
+				AddLink( &myself->opening, wssiInternal );
+
+				wssi->Set( strings->connectionString->Get(isolate), socket = makeSocket( isolate, eventMessage->pc ) );
+				wssi->Set( strings->headerString->Get( isolate ), socket->Get( strings->headerString->Get( isolate ) ) );
+				wssi->Set( strings->urlString->Get( isolate )
+					, String::NewFromUtf8( isolate
+						, GetText( GetHttpRequest( GetWebSocketHttpState( wssiInternal->pc ) ) ) ) );
+
 				argv[0] = wssi;
 
 				if( !myself->acceptCallback.IsEmpty() ) {
 					Local<Function> cb = myself->acceptCallback.Get( isolate );
 					Local<Value> result = cb->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
 				}
+				else
+					eventMessage->accepted = 1;
 				eventMessage->result = wssiInternal;
-				//eventMessage->accepted = (int)result->ToBoolean()->Value();
-
 			}
 			else if( eventMessage->eventType == WS_EVENT_CLOSE ) {
 				myself->readyState = CLOSED;
 				uv_close( (uv_handle_t*)&myself->async, uv_closed_wss );
 				DropWssEvent( eventMessage );
 				DeleteLinkQueue( &myself->eventQueue );
-				//myself->closed = 1;
 			}
+
 			myself->eventMessage = NULL;
 			eventMessage->done = TRUE;
 			WakeThread( eventMessage->waiter );
@@ -573,11 +582,12 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 			Local<ArrayBuffer> ab;
 			switch( eventMessage->eventType ) {
 			case WS_EVENT_OPEN:
-				if( !myself->openCallback.IsEmpty() ) {
-					Local<Function> cb = Local<Function>::New( isolate, myself->openCallback );
-					cb->Call( wssieventMessage->_this->_this.Get( isolate ), 0, argv );
+				if( !myself->server->openCallback.IsEmpty() ) {
+					Local<Function> cb = Local<Function>::New( isolate, myself->server->openCallback );
+					argv[0] = myself->_this.Get( isolate );
+					cb->Call( myself->_this.Get( isolate ), 1, argv );
 				}
-            break;
+				break;
 			case WS_EVENT_READ:
 				size_t length;
 				if( eventMessage->binary ) {
@@ -736,7 +746,7 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 			, NULL );
 		//wssTemplate->SetNativeDataProperty( String::NewFromUtf8( isolate, "readyState" )
 		//	, wssObject::getReadyState
-	//		, NULL );
+		//	, NULL );
 		wssTemplate->ReadOnlyPrototype();
 		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onmessage", wsObject::on );
 		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "on", wsObject::on );
@@ -800,40 +810,28 @@ static void Wait( void ) {
 
 static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 	wssObject *wss = (wssObject*)psv;
-	if( wss->protocolResponse ) {
-		Deallocate( const char *, wss->protocolResponse );
-		wss->protocolResponse = NULL;
+
+	INDEX idx;
+	wssiObject *wssi;
+	LIST_FORALL( wss->opening, idx, wssiObject*, wssi ) {
+		if( wssi->pc == pc ) {
+			SetLink( &wss->opening, idx, NULL );
+			break;
+		}					
 	}
-	struct wssEvent evt;
-	evt.eventType = WS_EVENT_OPEN;
-	evt.send = NULL;
-	evt.done = FALSE;
-	evt.waiter = MakeThread();
-	evt._this = wss;
-	evt.pc = pc;
-	EnqueLink( &wss->eventQueue, &evt );
-	uv_async_send( &wss->async );
-
-	while( !evt.done )
-		Wait();
-
-	{
-		INDEX idx;
-		struct pendingSend *send;
-		if( evt.send ) {
-			LIST_FORALL( evt.send, idx, struct pendingSend *, send ) {
-				if( send->binary )
-					WebSocketSendBinary( pc, send->buffer, send->buflen );
-				else
-					WebSocketSendText( pc, send->buffer, send->buflen );
-				Deallocate( POINTER, send->buffer );
-				Deallocate( struct pendingSend*, send );
-			}
-			DeleteList( &evt.send );
+	if( wssi ) {
+		struct wssiEvent *pevt = GetWssiEvent();
+		if( wssi->protocolResponse ) {
+			Deallocate( const char *, wssi->protocolResponse );
+			wssi->protocolResponse = NULL;
 		}
+		(*pevt).eventType = WS_EVENT_OPEN;
+		(*pevt)._this = wssi;
+		EnqueLink( &wssi->eventQueue, pevt );
+		uv_async_send( &wssi->async );
+		return (uintptr_t)wssi;
 	}
-
-	return (uintptr_t)evt.result;
+	return 0;
 }
 
 static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char *reason )
@@ -874,33 +872,24 @@ static void webSockServerEvent( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOIN
 
 static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char *protocols, const char *resource, char **protocolReply ) {
 	wssObject *wss = (wssObject*)psv;
-#ifdef _DEBUG
-	if( accepted++ > 1000 ) {
-		//DebugDumpMem();
-		accepted = 0;
-	}
-#endif
-	if( !wss->acceptCallback.IsEmpty() ) {
-		struct wssEvent evt;
-		evt.protocol = protocols;
-		evt.resource = resource;
-      evt.pc = pc;
-		evt.accepted = 0;
-		evt.eventType = WS_EVENT_ACCEPT;
-		evt.done = FALSE;
-		evt.waiter = MakeThread();
-		evt._this = wss;
-		EnqueLink( &wss->eventQueue, &evt );
-		uv_async_send( &wss->async );
+	struct wssEvent evt;
+	evt.protocol = protocols;
+	evt.resource = resource;
+	evt.pc = pc;
+	evt.accepted = 0;
+	evt.eventType = WS_EVENT_ACCEPT;
+	evt.done = FALSE;
+	evt.waiter = MakeThread();
+	evt._this = wss;
+	EnqueLink( &wss->eventQueue, &evt );
+	uv_async_send( &wss->async );
 
-		while( !evt.done )
-			Wait();
-		if( evt.protocol != protocols )
-			wss->protocolResponse = evt.protocol;
-		(*protocolReply) = (char*)evt.protocol;
-		return (uintptr_t)evt.accepted;
-	}
-	return 1;
+	while( !evt.done )
+		Wait();
+	if( evt.protocol != protocols )
+		evt.result->protocolResponse = evt.protocol;
+	(*protocolReply) = (char*)evt.protocol;
+	return (uintptr_t)evt.accepted;
 }
 
 httpObject::httpObject() {
@@ -1013,13 +1002,12 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 wssObject::wssObject( struct wssOptions *opts ) {
 	char tmp[256];
 	readyState = INITIALIZING;
-
+	opening = FALSE;
 	if( !opts->url ) {
 		snprintf( tmp, 256, "ws://[::]:%d/", opts->port ? opts->port : 8080 );
 		//snprintf( tmp, 256, "ws://0.0.0.0:%d/", opts->port ? opts->port : 8080 );
 		opts->url = tmp;
 	}
-	protocolResponse = NULL;
 	closed = 0;
 	eventQueue = CreateLinkQueue();
 	uv_async_init( l.loop, &async, wssAsyncMsg );
@@ -1045,6 +1033,7 @@ wssObject::wssObject( struct wssOptions *opts ) {
 				, opts->pass, opts->pass_len );
 		}
 		SetWebSocketAcceptCallback( pc, webSockServerAccept );
+		readyState = LISTENING;
 	}
 	//lprintf( "Init async handle. (wss)" );
 }
@@ -1296,12 +1285,11 @@ void wssObject::getReadyState( v8::Local<v8::String> field,
 wssiObject::wssiObject( ) {
 	eventQueue = CreateLinkQueue();
 	readyState = wsReadyStates::OPEN;
-	//this->pc = pc;
+	protocolResponse = NULL;
 	this->closed = 0;
-	//lprintf( "Init async handle. (wsi)" );
+
 	uv_async_init( l.loop, &async, wssiAsyncMsg );
 	async.data = this;
-	//this->Wrap( obj );
 }
 
 wssiObject::~wssiObject() {
