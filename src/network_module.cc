@@ -120,13 +120,14 @@ static struct local {
 static int addrSACompare( uintptr_t oldnode, uintptr_t newnode ) {
 	SOCKADDR *oldAddr = (SOCKADDR*)oldnode;
 	SOCKADDR *newAddr = (SOCKADDR*)newnode;
-	if( oldAddr->sa_data > newAddr->sa_data )
+	if( oldAddr->sa_family > newAddr->sa_family )
 		return 1;
-	if( oldAddr->sa_data < newAddr->sa_data )
+	if( oldAddr->sa_family < newAddr->sa_family )
 		return -1;
 #define SOCKADDR_LENGTH(sa) ( (int)*(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) )
 
 	size_t len = SOCKADDR_LENGTH( oldAddr );
+	//lprintf( "compare %d", len );
 	return memcmp( oldAddr->sa_data, newAddr->sa_data, len );
 }
 
