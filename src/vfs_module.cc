@@ -410,10 +410,10 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 			FILE *file = sack_fopenEx( 0, (*fName), "rb", vol->fsMount );
 			if( file ) {
 				size_t len = sack_fsize( file );
-				// CAN open directories; and they have 7ffffffff sizes.
+				//CAN open directories; and they have 7ffffffff sizes.
 				if( len < 0x10000000 ) {
 					uint8_t *buf = NewArray( uint8_t, len );
-					sack_fread( buf, len, 1, file );
+					len = sack_fread( buf, len, 1, file );
 
 					Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
 					NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
