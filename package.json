@@ -34,6 +34,6 @@
     "build": "node-gyp configure build"
   },
   "dependencies": {
-    "nan": "^2.5.1"
+    "nan": "^2.7.0"
   }
 }
