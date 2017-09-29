@@ -123,8 +123,11 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	if( result < 0 ) {
 		PTEXT error = json_parse_get_error( parser->state );
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ) ) ) );
-		LineRelease( error );
+		if( error ) {
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ) ) ) );
+			LineRelease( error );
+		} else
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "No Error Text" TOSTR(__LINE__)) ) );
 		json_parse_clear_state( parser->state );
 		return;
 	}
@@ -203,8 +206,11 @@ void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 	}
 	if( result < 0 ) {
 		PTEXT error = json_parse_get_error( parser->state );
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ) ) ) );
-		LineRelease( error );
+		if( error ) {
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ) ) ) );
+			LineRelease( error );
+		} else
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "No Error Text" TOSTR(__LINE__) ) ) );
 		json_parse_clear_state( parser->state );
 		return;
 	}
@@ -467,7 +473,10 @@ Local<Value> ParseJSON6(  Isolate *isolate, const char *utf8String, size_t len, 
 		//PTEXT error = json_parse_get_error( parser->state );
 		//lprintf( "Failed to parse data..." );
 		PTEXT error = json_parse_get_error( NULL );
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ) ) ) );
+      if( error )
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ) ) ) );
+      else
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "No Error Text" TOSTR(__LINE__) ) ) );
 		LineRelease( error );
 		return Undefined(isolate);
 	}
