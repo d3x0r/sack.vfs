@@ -236,6 +236,9 @@ add_library(${PROJECT_NAME} SHARED
 
 
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
+if( CMAKE_COMPILER_IS_GNUCC )
+   set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_FLAGS "-Wno-unused-result")
+endif( CMAKE_COMPILER_IS_GNUCC )
 set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_DEFINITIONS "TARGETNAME=\"${PROJECT_NAME}.node\";${MOREDEFS}" )
 target_link_libraries(${PROJECT_NAME} ${CMAKE_JS_LIB})
 if( WIN32 )
