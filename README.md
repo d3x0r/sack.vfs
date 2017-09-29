@@ -759,6 +759,13 @@ COM port settings are kept in the default option database under
 
 
 ## Changelog
+- 0.1.99314 Fixed duplicating address sent with UDP messages.  
+Fix reading files from /sys/class/*.  Fix reading directory.  
+Fix websocket protocol option before options object.  
+Fix websocket connection sequence.  
+Allocate new connection object during accept so protocol lookup can attach data to that object. 
+Fix handling SSL certificates on websocket connections.  
+Simplify sending/receiving UDP subnet broadcasts by simply enabling broadcast. Other small fixes.
 - 0.1.99313 remove some debug logging.
 - 0.1.99312 fixes building on mac a little.
 - 0.1.99311 Fixes building on msvs (exception flag)
