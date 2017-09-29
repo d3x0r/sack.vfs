@@ -7164,7 +7164,8 @@ NETWORK_PROC( LOGICAL, IsAddressV6 )( SOCKADDR *addr );
  * can safely duplicate the the right amount of memory.
  */
  // return a copy of this address...
-NETWORK_PROC( SOCKADDR *, DuplicateAddress )( SOCKADDR *pAddr );
+NETWORK_PROC( SOCKADDR *, DuplicateAddressEx )( SOCKADDR *pAddr DBG_PASS );
+#define DuplicateAddress(a) DuplicateAddressEx( a DBG_SRC )
 NETWORK_PROC( void, SackNetwork_SetSocketSecure )( PCLIENT lpClient );
 NETWORK_PROC( void, SackNetwork_AllowSecurityDowngrade )( PCLIENT lpClient );
 /* Transmission Control Protocol connection methods. This
@@ -7557,7 +7558,7 @@ NETWORK_PROC( LOGICAL, ssl_BeginServer )( PCLIENT pc, POINTER cert, size_t certl
 NETWORK_PROC( LOGICAL, ssl_GetPrivateKey )(PCLIENT pc, POINTER *keydata, size_t *keysize);
 NETWORK_PROC( LOGICAL, ssl_IsClientSecure )(PCLIENT pc);
 /* use this to send on SSL Connection instead of SendTCP. */
-NETWORK_PROC( LOGICAL, ssl_Send )( PCLIENT pc, POINTER buffer, size_t length );
+NETWORK_PROC( LOGICAL, ssl_Send )( PCLIENT pc, CPOINTER buffer, size_t length );
 /* User Datagram Packet connection methods. This controls
    opening sockets that are based on UDP.                 */
 _UDP_NAMESPACE

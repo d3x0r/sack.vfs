@@ -413,10 +413,10 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 			FILE *file = sack_fopenEx( 0, (*fName), "rb", vol->fsMount );
 			if( file ) {
 				size_t len = sack_fsize( file );
-				// CAN open directories; and they have 7ffffffff sizes.
+				//CAN open directories; and they have 7ffffffff sizes.
 				if( len < 0x10000000 ) {
 					uint8_t *buf = NewArray( uint8_t, len );
-					sack_fread( buf, len, 1, file );
+					len = sack_fread( buf, len, 1, file );
 
 					Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
 					NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
@@ -578,7 +578,18 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 	void VolumeObject::getDirectory( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
-		struct find_cursor *fi = vol->fsInt->find_create_cursor( (uintptr_t)vol->vol, ".", "*" );
+		struct find_cursor *fi;
+		if( args.Length() > 0 ) {
+			String::Utf8Value path( args[0]->ToString() );
+			if( args.Length() > 1 ) {
+				String::Utf8Value mask( args[1]->ToString() );
+				fi = vol->fsInt->find_create_cursor( (uintptr_t)vol->vol, *path, *mask );
+			}
+         else
+				fi = vol->fsInt->find_create_cursor( (uintptr_t)vol->vol, *path, "*" );
+		}
+      else
+			fi = vol->fsInt->find_create_cursor( (uintptr_t)vol->vol, ".", "*" );
 		Local<Array> result = Array::New( isolate );
 		int found;
 		int n = 0;
@@ -587,7 +598,12 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 			size_t length = vol->fsInt->find_get_size( fi );
 			Local<Object> entry = Object::New( isolate );
 			entry->Set( String::NewFromUtf8( isolate, "name" ), String::NewFromUtf8( isolate, name ) );
-			entry->Set( String::NewFromUtf8( isolate, "length" ), Number::New( isolate, (double)length ) );
+         if( length == ((size_t)-1) )
+				entry->Set( String::NewFromUtf8( isolate, "folder" ), True(isolate) );
+			else {
+				entry->Set( String::NewFromUtf8( isolate, "folder" ), False(isolate) );
+				entry->Set( String::NewFromUtf8( isolate, "length" ), Number::New( isolate, (double)length ) );
+			}
 			result->Set( n++, entry );
 		} 
 		vol->fsInt->find_close( fi );
