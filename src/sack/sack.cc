@@ -22049,6 +22049,7 @@ struct ImageFile_tag
 	IDirect3DBaseTexture9 *pActiveSurface;
 #endif
 #ifdef _VULKAN_DRIVER
+	LOGICAL depthTest;
 	PLIST vkSurface;
  // most things will still use this, since reload image is called first, reload will set active
 	int vkActiveSurface;
@@ -32787,30 +32788,21 @@ uintptr_t GetFileSize( int fd )
  // name doesn't matter, same file cannot be called another name
 		else if( pWhere )
 		{
-			filename = CStrDup( pWhere );
+			filename = (char*)pWhere;
 		 }
 		else if( pWhat )
 		{
 			int len;
+         char tmpbuf[256];
 #ifdef __ANDROID__
 			//if( !IsPath( "./tmp" ) )
 			//	if( !MakePath( "./tmp" ) )
 			//		ll_lprintf( "Failed to create a temporary space" );
-#ifdef UNICODE
-			{
-				char *tmp_pWhat = CStrDup( pWhat );
-				len = snprintf( NULL, 0, "/dev/ashmem/tmp.shared.%s", tmp_pWhat );
-				Release( tmp_pWhat );
-			}
+			filename = tmpbuf;
+			snprintf( tmpbuf, 256, "./tmp.shared.%s", pWhat );
 #else
-			len = snprintf( NULL, 0, "/dev/ashmem/tmp.shared.%s", pWhat );
-#endif
-			filename = (char*)Allocate( len + 1 );
-			snprintf( filename, len+1, "./tmp.shared.%s", pWhat );
-#else
-			len = snprintf( NULL, 0, WIDE("/tmp/.shared.%s"), pWhat );
-			filename = (char*)Allocate( len + 1 );
-			snprintf( filename, len+1, WIDE("/tmp/.shared.%s"), pWhat );
+			filename = tmpbuf;
+			snprintf( tmpbuf, 256, WIDE("/tmp/.shared.%s"), pWhat );
 #endif
 			bTemp = TRUE;
 		}
@@ -32913,7 +32905,7 @@ uintptr_t GetFileSize( int fd )
 #else
 					bOpening = FALSE;
 #endif
-					if(filename)Release( filename );
+					//if(filename)Release( filename );
 					return NULL;
 				}
 			}
@@ -32948,7 +32940,7 @@ uintptr_t GetFileSize( int fd )
 #else
 					bOpening = FALSE;
 #endif
-					if(filename)Release( filename );
+					//if(filename)Release( filename );
 					return NULL;
 				}
 				//*dwSize = ( ( *dwSize + ( FILE_GRAN - 1 ) ) / FILE_GRAN ) * FILE_GRAN;
@@ -32977,7 +32969,7 @@ uintptr_t GetFileSize( int fd )
 #else
 		bOpening = FALSE;
 #endif
-		if(filename)Release( filename );
+		//if(filename)Release( filename );
 		return pMem;
 #elif defined( _WIN32 )
 #ifndef UNDER_CE
@@ -34798,6 +34790,37 @@ void  MemSet ( POINTER p, uintptr_t n, size_t sz )
 		(*(uint8_t*)( ((uintptr_t)p) + sz - (sz&1) ) ) = (uint8_t)n;
 #    endif
 #  endif
+#elif defined( __GNUC__ )
+	{
+      uintptr_t tmp = (uintptr_t)p;
+#  ifdef __64__
+		{
+			int m; int len = sz/8;
+			for( m = 0; m < len; m++ ) {
+				((uint64_t*)tmp)[0] = n;
+				tmp += 8;
+			}
+		}
+		if( sz & 4 )
+			(*(uint32_t*)( ((uintptr_t)p) + sz - (sz&7) ) ) = (uint32_t)n;
+		if( sz & 2 )
+			(*(uint16_t*)( ((uintptr_t)p) + sz - (sz&3) ) ) = (uint16_t)n;
+		if( sz & 1 )
+			(*(uint8_t*)( ((uintptr_t)p) + sz - (sz&1) ) ) = (uint8_t)n;
+#  else
+		{
+			int m; int len = sz/4;
+			for( m = 0; m < len; m++ ) {
+				((uint64_t*)tmp)[0] = n;
+				tmp += 4;
+			}
+		}
+		if( sz & 2 )
+			(*(uint16_t*)( ((uintptr_t)p) + sz - (sz&3) ) ) = (uint16_t)n;
+		if( sz & 1 )
+			(*(uint8_t*)( ((uintptr_t)p) + sz - (sz&1) ) ) = (uint8_t)n;
+#  endif
+	}
 #else
    memset( p, n, sz );
 #endif
@@ -37261,6 +37284,7 @@ static LOGICAL CPROC sack_filesys_copy_write_buffer( void ) { return FALSE; }
 struct find_cursor_data {
 	char *root;
 	char *filemask;
+	char *mask;
 #ifdef WIN32
 	intptr_t findHandle;
 	struct _finddata_t fileinfo;
@@ -37273,7 +37297,8 @@ static	struct find_cursor * CPROC sack_filesys_find_create_cursor ( uintptr_t ps
 	struct find_cursor_data *cursor = New( struct find_cursor_data );
 	char maskbuf[512];
 	MemSet( cursor, 0, sizeof( *cursor ) );
-	snprintf( maskbuf, 512, "%s/*", root ? root : "." );
+	snprintf( maskbuf, 512, "%s/%s", root ? root : ".", filemask?filemask:"*" );
+	cursor->mask = StrDup( filemask );
 	cursor->root = StrDup( root?root:"." );
 // StrDup( filemask ? filemask : "*" );
 	cursor->filemask = ExpandPath( maskbuf );
@@ -37296,10 +37321,12 @@ static	int CPROC sack_filesys_find_first( struct find_cursor *_cursor ){
 	return ( cursor->findHandle != -1 );
 #else
 	if( cursor->handle ) {
-		cursor->de = readdir( cursor->handle );
-		return ( cursor->de == NULL );
+		do {
+			cursor->de = readdir( cursor->handle );
+		} while( cursor->de && !CompareMask( cursor->mask, cursor->de->d_name, 0 ) );
+		return ( cursor->de != NULL );
 	}
-	return 1;
+	return 0;
 #endif
 }
 static	int CPROC sack_filesys_find_close( struct find_cursor *_cursor ){
@@ -37311,6 +37338,7 @@ static	int CPROC sack_filesys_find_close( struct find_cursor *_cursor ){
 		closedir( cursor->handle );
 #endif
 	Deallocate( char *, cursor->root );
+	Deallocate( char *, cursor->mask );
 	Deallocate( char *, cursor->filemask );
 	Deallocate( struct find_cursor_data *, cursor );
 	return 0;
@@ -37321,7 +37349,9 @@ static	int CPROC sack_filesys_find_next( struct find_cursor *_cursor ){
 #ifdef WIN32
    r = !findnext( cursor->findHandle, &cursor->fileinfo );
 #else
-	cursor->de = readdir( cursor->handle );
+	do {
+		cursor->de = readdir( cursor->handle );
+	} while( cursor->de && !CompareMask( cursor->mask, cursor->de->d_name, 0 ) );
    r = (cursor->de != NULL );
 #endif
    return r;
@@ -37346,7 +37376,16 @@ static	size_t CPROC sack_filesys_find_get_size( struct find_cursor *_cursor ) {
 	return 0;
 #else
 	if( cursor ) {
-		return sack_filesys_size( cursor->de->d_name );
+		struct stat s;
+		char filename[280];
+		snprintf( filename, 280, "%s/%s", cursor->root, cursor->de->d_name );
+		if( stat( filename, &s ) ) {
+			lprintf( "getsize stat error:%d", errno );
+			return -2;
+		}
+		if( s.st_mode & S_IFREG )
+			return s.st_size;
+		return -1;
 	}
 #endif
 	return 0;
@@ -45745,7 +45784,8 @@ NETWORK_PROC( LOGICAL, IsAddressV6 )( SOCKADDR *addr );
  * can safely duplicate the the right amount of memory.
  */
  // return a copy of this address...
-NETWORK_PROC( SOCKADDR *, DuplicateAddress )( SOCKADDR *pAddr );
+NETWORK_PROC( SOCKADDR *, DuplicateAddressEx )( SOCKADDR *pAddr DBG_PASS );
+#define DuplicateAddress(a) DuplicateAddressEx( a DBG_SRC )
 NETWORK_PROC( void, SackNetwork_SetSocketSecure )( PCLIENT lpClient );
 NETWORK_PROC( void, SackNetwork_AllowSecurityDowngrade )( PCLIENT lpClient );
 /* Transmission Control Protocol connection methods. This
@@ -46138,7 +46178,7 @@ NETWORK_PROC( LOGICAL, ssl_BeginServer )( PCLIENT pc, POINTER cert, size_t certl
 NETWORK_PROC( LOGICAL, ssl_GetPrivateKey )(PCLIENT pc, POINTER *keydata, size_t *keysize);
 NETWORK_PROC( LOGICAL, ssl_IsClientSecure )(PCLIENT pc);
 /* use this to send on SSL Connection instead of SendTCP. */
-NETWORK_PROC( LOGICAL, ssl_Send )( PCLIENT pc, POINTER buffer, size_t length );
+NETWORK_PROC( LOGICAL, ssl_Send )( PCLIENT pc, CPOINTER buffer, size_t length );
 /* User Datagram Packet connection methods. This controls
    opening sockets that are based on UDP.                 */
 _UDP_NAMESPACE
@@ -51684,7 +51724,7 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 					if( !value || !value2
 						|| !TextLike( value, "upgrade" )
 						|| !TextLike( value2, "websocket" ) ) {
-						lprintf( "request is not an upgrade for websocket." );
+						//lprintf( "request is not an upgrade for websocket." );
 						socket->flags.initial_handshake_done = 1;
 						socket->flags.http_request_only = 1;
 						if( socket->input_state.on_request )
@@ -58634,6 +58674,7 @@ LOGICAL IsAddressV6( SOCKADDR *addr )
 const char * GetAddrString( SOCKADDR *addr )
 {
 	static char buf[256];
+	lprintf( "addr family is: %d", addr->sa_family );
 	if( addr->sa_family == AF_INET )
 		snprintf( buf, 256, "%d.%d.%d.%d"
 			, *(((unsigned char *)addr) + 4),
@@ -58660,7 +58701,7 @@ const char * GetAddrString( SOCKADDR *addr )
 					//console.log( last0, n );
 					if( last0 == 4 && first0 == 0 )
 						if( peice == 0xFFFF ) {
-							snprintf( buf, 256, "::%d.%d.%d.%d",
+							snprintf( buf, 256, "::ffff:%d.%d.%d.%d",
 								(*((unsigned char*)addr + 20)),
 								(*((unsigned char*)addr + 21)),
 								(*((unsigned char*)addr + 22)),
@@ -59972,6 +60013,8 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #  else
 				event_data = (struct event_data*)events[n].data.ptr;
 #  endif
+				//lprintf( "Process %d %x", event_data->broadcast?event_data->pc->SocketBroadcast:event_data->pc->Socket
+				//		 , events[n].events );
 				if( event_data == (struct event_data*)1 ) {
 					//char buf;
 					//stat = read( GetThreadSleeper( thread->pThread ), &buf, 1 );
@@ -59979,8 +60022,13 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 					WakeableSleep( SLEEP_FOREVER );
 					return 1;
 				}
-				while( !NetworkLock( event_data->pc ) )
+				while( !NetworkLock( event_data->pc ) ) {
+					if( event_data->pc->dwFlags & CF_AVAILABLE )
+                  break;
 					Relinquish();
+				}
+				if( event_data->pc->dwFlags & CF_AVAILABLE )
+					continue;
 				if( !IsValid( event_data->pc->Socket ) ) {
 					NetworkUnlock( event_data->pc );
 					continue;
@@ -60070,6 +60118,28 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #endif
 						event_data->pc->dwFlags |= CF_CONNECTED;
 						event_data->pc->dwFlags &= ~CF_CONNECTING;
+						{
+                     PCLIENT pc = event_data->pc;
+#ifdef __LINUX__
+							socklen_t
+#else
+								int
+#endif
+								nLen = MAGIC_SOCKADDR_LENGTH;
+							if( !pc->saSource )
+								pc->saSource = AllocAddr();
+							if( getsockname( pc->Socket, pc->saSource, &nLen ) )
+							{
+								lprintf( WIDE("getsockname errno = %d"), errno );
+							}
+							lprintf( "Connect: %d", nLen );
+                     if( pc->saSource->sa_family == AF_INET )
+								SET_SOCKADDR_LENGTH( pc->saSource, IN_SOCKADDR_LENGTH );
+                     else if( pc->saSource->sa_family == AF_INET6 )
+								SET_SOCKADDR_LENGTH( pc->saSource, IN6_SOCKADDR_LENGTH );
+							else
+								SET_SOCKADDR_LENGTH( pc->saSource, nLen );
+						}
 						{
 							int error;
 							socklen_t errlen = sizeof( error );
@@ -60611,10 +60681,10 @@ NETWORK_PROC( uintptr_t, GetNetworkLong )(PCLIENT lpClient,int nLong)
 }
 //----------------------------------------------------------------------------
  // return a copy of this address...
-SOCKADDR* DuplicateAddress( SOCKADDR *pAddr )
+SOCKADDR* DuplicateAddressEx( SOCKADDR *pAddr DBG_PASS )
 {
 	POINTER tmp = (POINTER)( ( (uintptr_t)pAddr ) - 2*sizeof(uintptr_t) );
-	SOCKADDR *dup = AllocAddr();
+	SOCKADDR *dup = AllocAddrEx( DBG_VOIDRELAY );
 	POINTER tmp2 = (POINTER)( ( (uintptr_t)dup ) - 2*sizeof(uintptr_t) );
 	MemCpy( tmp2, tmp, SOCKADDR_LENGTH( pAddr ) + 2*sizeof(uintptr_t) );
 	if( ((char**)( ( (uintptr_t)pAddr ) - sizeof(char*) ))[0] )
@@ -61307,7 +61377,7 @@ NETWORK_PROC( PCLIENT, NetworkLockEx)( PCLIENT lpClient DBG_PASS )
 			LeaveCriticalSecEx( &globalNetworkData.csNetwork  DBG_RELAY);
 #endif
 			//lprintf( "Idle... socket lock failed, had global though..." );
-			Idle();
+			Relinquish();
 			goto start_lock;
 		}
 		//EnterCriticalSec( &lpClient->csLock );
@@ -61881,6 +61951,7 @@ void AcceptClient(PCLIENT pListen)
 										, pNewClient->saClient
 										,&nTemp
 										);
+   //lprintf( "Accept new client....%d", pNewClient->Socket );
 #if WIN32
 	SetHandleInformation( (HANDLE)pNewClient->Socket, HANDLE_FLAG_INHERIT, 0 );
 #endif
@@ -61901,6 +61972,13 @@ void AcceptClient(PCLIENT pListen)
 		{
 			lprintf( WIDE("getsockname errno = %d"), errno );
 		}
+		//lprintf( "sockaddrlen: %d", nLen );
+		if( pNewClient->saSource->sa_family == AF_INET )
+			SET_SOCKADDR_LENGTH( pNewClient->saSource, IN_SOCKADDR_LENGTH );
+		else if( pNewClient->saSource->sa_family == AF_INET6 )
+			SET_SOCKADDR_LENGTH( pNewClient->saSource, IN6_SOCKADDR_LENGTH );
+		else
+			SET_SOCKADDR_LENGTH( pNewClient->saSource, nLen );
 	}
 	pNewClient->read.ReadComplete = pListen->read.ReadComplete;
 	pNewClient->psvRead = pListen->psvRead;
@@ -64080,20 +64158,22 @@ static int handshake( PCLIENT pc ) {
 			}
 			if (SSL_ERROR_WANT_READ == r)
 			{
-				size_t pending = BIO_ctrl_pending( ses->wbio);
-				if (pending > 0) {
-					int read;
-					if( pending > ses->obuflen ) {
-						if( ses->obuffer )
-							Deallocate( uint8_t *, ses->obuffer );
-						ses->obuffer = NewArray( uint8_t, ses->obuflen = pending*2 );
-					}
-					read = BIO_read(ses->wbio, ses->obuffer, (int)pending);
+				size_t pending;
+				while( ( pending = BIO_ctrl_pending( ses->wbio) ) > 0 ) {
+					if (pending > 0) {
+						int read;
+						if( pending > ses->obuflen ) {
+							if( ses->obuffer )
+								Deallocate( uint8_t *, ses->obuffer );
+							ses->obuffer = NewArray( uint8_t, ses->obuflen = pending*2 );
+						}
+						read = BIO_read(ses->wbio, ses->obuffer, (int)pending);
 #ifdef DEBUG_SSL_IO
-					lprintf( "send %d for handshake", read );
+						lprintf( "send %d %d for handshake", pending, read );
 #endif
-					if (read > 0)
-						SendTCP( pc, ses->obuffer, read );
+						if (read > 0)
+							SendTCP( pc, ses->obuffer, read );
+					}
 				}
 			}
 			else {
@@ -64159,12 +64239,11 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 			}
 			else if( hs_rc == 1 )
 			{
-				int result;
-				result = SSL_read( pc->ssl_session->ssl, pc->ssl_session->dbuffer, (int)pc->ssl_session->dbuflen );
+				len = SSL_read( pc->ssl_session->ssl, pc->ssl_session->dbuffer, (int)pc->ssl_session->dbuflen );
 #ifdef DEBUG_SSL_IO
-				lprintf( "normal read - just get the data from the other buffer : %d", result );
+				lprintf( "normal read - just get the data from the other buffer : %d", len );
 #endif
-				if( result == -1 ) {
+				if( len == -1 ) {
 					lprintf( "SSL_Read failed." );
 					ERR_print_errors_cb( logerr, (void*)__LINE__ );
 					RemoveClient( pc );
@@ -64189,6 +64268,10 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 			}
 			// do was have any decrypted data to give to the application?
 			if( len > 0 ) {
+#ifdef DEBUG_SSL_IO
+				lprintf( "READ BUFFER:" );
+				LogBinary( pc->ssl_session->dbuffer, len );
+#endif
 				if( pc->ssl_session->dwOriginalFlags & CF_CPPREAD )
 					pc->ssl_session->cpp_user_read( pc->psvRead, pc->ssl_session->dbuffer, len );
 				else
@@ -64216,6 +64299,9 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 				{
 					// the read generated write data, output that data
 					size_t pending = BIO_ctrl_pending( pc->ssl_session->wbio );
+#ifdef DEBUG_SSL_IO
+					lprintf( "Pending Control To Send: %d", pending );
+#endif
 					if( pending > 0 ) {
 						int read;
 						if( pending > pc->ssl_session->obuflen ) {
@@ -64233,12 +64319,16 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 			ReadTCP( pc, pc->ssl_session->ibuffer, pc->ssl_session->ibuflen );
 	}
 }
-LOGICAL ssl_Send( PCLIENT pc, POINTER buffer, size_t length )
+LOGICAL ssl_Send( PCLIENT pc, CPOINTER buffer, size_t length )
 {
 	int len;
 	int32_t len_out;
 	struct ssl_session *ses = pc->ssl_session;
 	while( length ) {
+#ifdef DEBUG_SSL_IO
+		lprintf( "SSL SEND...." );
+		LogBinary( (uint8_t*)buffer, length );
+#endif
 		len = SSL_write( pc->ssl_session->ssl, buffer, (int)length );
 		if (len < 0) {
 			ERR_print_errors_cb(logerr, (void*)__LINE__);
@@ -64308,6 +64398,12 @@ static void ssl_ClientConnected( PCLIENT pcServer, PCLIENT pcNew ) {
 	ses = New( struct ssl_session );
 	MemSet( ses, 0, sizeof( struct ssl_session ) );
 	ses->ssl = SSL_new( pcServer->ssl_session->ctx );
+	{
+		static uint32_t tick;
+      tick++;
+//sizeof( ses->ctx ) );
+		SSL_set_session_id_context( ses->ssl, (const unsigned char*)&tick, 4 );
+	}
 	ssl_InitSession( ses );
 	SSL_set_accept_state( ses->ssl );
 	pcNew->ssl_session = ses;
@@ -64409,6 +64505,16 @@ LOGICAL ssl_BeginServer( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypa
 		if( r <= 0 ) {
 			ERR_print_errors_cb( logerr, (void*)__LINE__ );
 		}
+//sizeof( ses->ctx ) );
+		r = SSL_CTX_set_session_id_context( ses->ctx, (const unsigned char*)"12345678", 8 );
+		if( r <= 0 ) {
+			ERR_print_errors_cb( logerr, (void*)__LINE__ );
+		}
+		//r = SSL_CTX_get_session_cache_mode( ses->ctx );
+		//r = SSL_CTX_set_session_cache_mode( ses->ctx, SSL_SESS_CACHE_SERVER );
+		r = SSL_CTX_set_session_cache_mode( ses->ctx, SSL_SESS_CACHE_OFF );
+      if( r <= 0 )
+			ERR_print_errors_cb( logerr, (void*)__LINE__ );
 	}
 	ses->dwOriginalFlags = pc->dwFlags;
 	ses->user_connected = pc->connect.ClientConnected;
@@ -80697,7 +80803,7 @@ int OpenSQLConnectionEx( PODBC odbc DBG_PASS )
 							tmpvfs = NewArray( TEXTCHAR, ( vfs_end - odbc->info.pDSN ) + 1 );
 							tmpvfsvfs = NewArray( TEXTCHAR, ( vfs_vfs_end - vfs_end ) + 1 );
 							StrCpyEx( tmpvfs, odbc->info.pDSN + 1, vfs_end - odbc->info.pDSN );
-							StrCpyEx( tmpvfsvfs, odbc->info.pDSN + 1, vfs_vfs_end - odbc->info.pDSN );
+							StrCpyEx( tmpvfsvfs, odbc->info.pDSN + 1, vfs_vfs_end - vfs_end );
 							vfs_name = CStrDup( tmpvfsvfs );
 							StrCpyEx( tmpvfsvfs, vfs_end + 1, vfs_vfs_end - vfs_end );
 						}
