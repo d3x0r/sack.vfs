@@ -590,20 +590,22 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 				break;
 			case WS_EVENT_READ:
 				size_t length;
-				if( eventMessage->binary ) {
-					ab =
-						ArrayBuffer::New( isolate,
-						(void*)eventMessage->buf,
-							length = eventMessage->buflen );
-					argv[0] = ab;
-					myself->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
+				if( !myself->messageCallback.IsEmpty() ) {
+					if( eventMessage->binary ) {
+						ab =
+							ArrayBuffer::New( isolate,
+												  (void*)eventMessage->buf,
+												  length = eventMessage->buflen );
+						argv[0] = ab;
+						myself->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
+					}
+					else {
+						MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
+						argv[0] = buf.ToLocalChecked();
+						myself->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
+					}
+					Deallocate( POINTER, eventMessage->buf );
 				}
-				else {
-					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
-					argv[0] = buf.ToLocalChecked();
-					myself->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
-				}
-				Deallocate( POINTER, eventMessage->buf );
 				break;
 			case WS_EVENT_CLOSE:
 				if( !myself->closeCallback.IsEmpty() ) {
@@ -1260,7 +1262,7 @@ void wssObject::reject( const FunctionCallbackInfo<Value>& args ) {
 void wssObject::getReadyState( v8::Local<v8::String> field,
                               const PropertyCallbackInfo<v8::Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
 	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->readyState ) );
 #if 0
 	Local<Object> h = args.Holder();
@@ -1384,7 +1386,7 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 void wssiObject::getReadyState( v8::Local<v8::String> field,
                               const PropertyCallbackInfo<v8::Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.Holder() );
+	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->readyState ) );
 #if 0
 	Local<Object> h = args.Holder();
@@ -1701,7 +1703,7 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 void wscObject::getReadyState( v8::Local<v8::String> field,
                               const PropertyCallbackInfo<v8::Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.Holder() );
+	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->readyState ) );
 #if 0
 	Local<Object> h = args.Holder();

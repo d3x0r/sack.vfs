@@ -68,8 +68,8 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	node::AtExit( moduleExit );
 
 	//SetAllocateLogging( TRUE );
-	SetManualAllocateCheck( TRUE );
-	SetAllocateDebug( TRUE );
+	//SetManualAllocateCheck( TRUE );
+	//SetAllocateDebug( TRUE );
 	SetSystemLog( SYSLOG_FILE, stdout );
 
 	//LoadTranslationDataEx( "^/strings.dat" );
@@ -220,7 +220,10 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 			String::Utf8Value fName( args[0] );
 			SqlObject* obj;
 			char dbName[256];
-			snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
+         if( vol->mountName )
+				snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
+         else
+				snprintf( dbName, 256, "%s", (*fName) );
 			obj = new SqlObject( dbName );
 			SqlObject::doWrap( obj, args.This() );
 
