@@ -295,9 +295,9 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 					//lprintf( "built string from %p", eventMessage->buf );
 					argv[0] = buf.ToLocalChecked();
 					obj->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
+					Deallocate( CPOINTER, eventMessage->buf );
 				}
 				ReleaseAddress( eventMessage->from );
-				Deallocate( CPOINTER, eventMessage->buf );
 				break;
 			case UDP_EVENT_CLOSE:
 				cb = Local<Function>::New( isolate, obj->closeCallback );

@@ -67,7 +67,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	InvokeDeadstart();
 	node::AtExit( moduleExit );
 
-	//SetAllocateLogging( TRUE );
+	SetAllocateLogging( TRUE );
 	//SetManualAllocateCheck( TRUE );
 	//SetAllocateDebug( TRUE );
 	SetSystemLog( SYSLOG_FILE, stdout );
