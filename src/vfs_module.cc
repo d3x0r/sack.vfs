@@ -380,6 +380,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 	PARRAY_BUFFER_HOLDER holder = info.GetParameter();
+	holder->o.ClearWeak();
 	holder->o.Reset();
 	Deallocate( void*, holder->buffer );
 	DropHolder( holder );
