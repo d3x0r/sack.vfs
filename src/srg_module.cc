@@ -126,6 +126,11 @@ private:
 			SRG_GetEntropyBuffer( obj->entropy, buffer, bits );
 			
 			Local<Object> arrayBuffer = ArrayBuffer::New( obj->isolate, buffer, (bits+7)/8 );
+			PARRAY_BUFFER_HOLDER holder = GetHolder();
+			holder->o.Reset( obj->isolate, arrayBuffer );
+			holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+			holder->buffer = buffer;
+
 			args.GetReturnValue().Set( arrayBuffer );
 		}
 	}

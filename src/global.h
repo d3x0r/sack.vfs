@@ -278,4 +278,25 @@ struct reviver_data {
 
 Local<Value> convertMessageToJS( Isolate *isolate, PDATALIST msg_data, struct reviver_data *reviver );
 
+struct arrayBufferHolder : public node::ObjectWrap {
+	void *buffer;
+	Persistent<Object> o;
+};
+typedef struct arrayBufferHolder ARRAY_BUFFER_HOLDER, *PARRAY_BUFFER_HOLDER;
+#define MAXARRAY_BUFFER_HOLDERSPERSET 128
+DeclareSet( ARRAY_BUFFER_HOLDER );
+
+void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info );
+	
 void InitFS( const v8::FunctionCallbackInfo<Value>& args );
+
+#ifndef VFS_MAIN_SOURCE
+extern
+#endif
+struct vfs_global_data {
+	ARRAY_BUFFER_HOLDERSET *holders;
+} vfs_global_data;
+
+#define GetHolder() GetFromSet( ARRAY_BUFFER_HOLDER, &vfs_global_data.holders )
+#define DropHolder(h) DeleteFromSet( ARRAY_BUFFER_HOLDER, &vfs_global_data.holders, h )
+

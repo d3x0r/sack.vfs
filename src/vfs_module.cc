@@ -1,4 +1,4 @@
-
+#define VFS_MAIN_SOURCE 
 #include "global.h"
 
 
@@ -378,6 +378,13 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 	}
 
+void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
+	PARRAY_BUFFER_HOLDER holder = info.GetParameter();
+	holder->o.Reset();
+	Deallocate( void*, holder->buffer );
+	DropHolder( holder );
+}
+
 	void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
@@ -402,6 +409,11 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 				sack_vfs_read( file, (char*)buf, len );
 
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
+				PARRAY_BUFFER_HOLDER holder = GetHolder();
+				holder->o.Reset( isolate, arrayBuffer );
+				holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+				holder->buffer = buf;
+
 				NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
 				args.GetReturnValue().Set( arrayBuffer );
 
@@ -419,6 +431,11 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 					len = sack_fread( buf, len, 1, file );
 
 					Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
+					PARRAY_BUFFER_HOLDER holder = GetHolder();
+					holder->o.Reset( isolate, arrayBuffer );
+					holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+					holder->buffer = buf;
+					
 					NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
 					args.GetReturnValue().Set( arrayBuffer );
 				}
@@ -713,11 +730,16 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 			else {
 				file->size = sack_fsize( file->cfile );
 				file->buf = NewArray( char, file->size );
-				sack_fread( file->buf, file->size, 1, file->cfile );
+				file->size = sack_fread( file->buf, file->size, 1, file->cfile );
 			}
 		}
 		{
 			Local<Object> arrayBuffer = ArrayBuffer::New( isolate, file->buf, file->size );
+			PARRAY_BUFFER_HOLDER holder = GetHolder();
+			holder->o.Reset( isolate, arrayBuffer );
+			holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+			holder->buffer = file->buf;
+
 			NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
 			args.GetReturnValue().Set( arrayBuffer );
 		}

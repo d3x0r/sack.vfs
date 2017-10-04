@@ -597,6 +597,12 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 												  (void*)eventMessage->buf,
 												  length = eventMessage->buflen );
 						argv[0] = ab;
+
+						PARRAY_BUFFER_HOLDER holder = GetHolder();
+						holder->o.Reset( isolate, ab );
+						holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+						holder->buffer = eventMessage->buf;
+
 						myself->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
 					}
 					else {
@@ -657,6 +663,12 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 						(void*)eventMessage->buf,
 							length = eventMessage->buflen );
 					argv[0] = ab;
+
+					PARRAY_BUFFER_HOLDER holder = GetHolder();
+					holder->o.Reset( isolate, ab );
+					holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+					holder->buffer = eventMessage->buf;
+
 					wsc->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
 				}
 				else {

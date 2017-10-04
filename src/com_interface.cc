@@ -63,6 +63,12 @@ static void asyncmsg( uv_async_t* handle ) {
 				ArrayBuffer::New( isolate,
 											  msg->buf,
 											  length = msg->buflen );
+
+			PARRAY_BUFFER_HOLDER holder = GetHolder();
+			holder->o.Reset( isolate, ab );
+			holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+			holder->buffer = msg->buf;
+
 			Local<Uint8Array> ui = Uint8Array::New( ab, 0, length );
 
 			Local<Value> argv[] = { ui };
