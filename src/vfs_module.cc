@@ -108,12 +108,14 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "delete", fileVolDelete );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "unlink", fileVolDelete );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "rm", fileVolDelete );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "rekey", volRekey );
 
 	Local<Function> VolFunc = volumeTemplate->GetFunction();
 
 
 	SET_READONLY_METHOD( exports, "memDump", dumpMem );
 	SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
+	//SET_READONLY_METHOD( VolFunc, "rekey", volRekey );
 	SET_READONLY_METHOD( exports, "u8xor", vfs_u8xor );
 	SET_READONLY_METHOD( exports, "b64xor", vfs_b64xor );
 	SET_READONLY_METHOD( exports, "id", idGenerator );
@@ -127,7 +129,6 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	SET_READONLY_METHOD( fileObject, "delete", fileDelete );
 	SET_READONLY_METHOD( fileObject, "unlink", fileDelete );
 	SET_READONLY_METHOD( fileObject, "rm", fileDelete );
-
 	constructor.Reset( isolate, volumeTemplate->GetFunction() );
 	exports->Set( String::NewFromUtf8( isolate, "Volume" ),
 		volumeTemplate->GetFunction() );
@@ -169,6 +170,25 @@ void logBinary( char *x, int n )
 		for( o = 0; o < 16 && m < n; o++, m++ ) {
 			printf( "%c", (x[m]>32 && x[m]<127)?x[m]:'.' );
 		}
+	}
+}
+
+void VolumeObject::volRekey( const v8::FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	String::Utf8Value *key1;
+	String::Utf8Value *key2;
+	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
+	sack_vfs_decrypt_volume( vol->vol );
+	if( argc > 0 ) {
+		key1 = new String::Utf8Value( args[0]->ToString() );
+		if( argc > 1 )
+			key2 = new String::Utf8Value( args[1]->ToString() );
+		else
+			key2 = NULL;
+		sack_vfs_encrypt_volume( vol->vol, *key1[0], *key2[0] );
+		delete key1;
+		if( key2 ) delete key2;
 	}
 }
 

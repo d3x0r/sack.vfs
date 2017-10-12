@@ -15,6 +15,7 @@
 		,"13":"Missing required option 'state' or province."
 		,"14":"Reviver parameter is not a function."
 		,"15":"Something"
+		,"22":"Volume failed to open."
 		,"16":"gencert : bad pubkey specified."
 		,"17":"pubkey: bad key or password"
 		,"18":"validate: bad certificate"

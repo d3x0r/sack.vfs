@@ -59,6 +59,7 @@ public:
 	static void fileVolDelete( const v8::FunctionCallbackInfo<Value>& args );
 	static void makeDirectory( const v8::FunctionCallbackInfo<Value>& args );
 	static void mkdir( const v8::FunctionCallbackInfo<Value>& args );
+	static void volRekey( const v8::FunctionCallbackInfo<Value>& args );
 
 	~VolumeObject();
 };
