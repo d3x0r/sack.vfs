@@ -4623,9 +4623,9 @@ SYSLOG_PROC  void SYSLOG_API  ProtectLoggedFilenames ( LOGICAL bEnable );
 SYSLOG_PROC  void SYSLOG_API  SystemLogFL ( CTEXTSTR FILELINE_PASS );
 SYSLOG_PROC  void SYSLOG_API  SystemLogEx ( CTEXTSTR DBG_PASS );
 SYSLOG_PROC  void SYSLOG_API  SystemLog ( CTEXTSTR );
-SYSLOG_PROC  void SYSLOG_API  LogBinaryFL ( uint8_t* buffer, size_t size FILELINE_PASS );
-SYSLOG_PROC  void SYSLOG_API  LogBinaryEx ( uint8_t* buffer, size_t size DBG_PASS );
-SYSLOG_PROC  void SYSLOG_API  LogBinary ( uint8_t* buffer, size_t size );
+SYSLOG_PROC  void SYSLOG_API  LogBinaryFL ( const uint8_t* buffer, size_t size FILELINE_PASS );
+SYSLOG_PROC  void SYSLOG_API  LogBinaryEx ( const uint8_t* buffer, size_t size DBG_PASS );
+SYSLOG_PROC  void SYSLOG_API  LogBinary ( const uint8_t* buffer, size_t size );
 // logging level defaults to 1000 which is log everything
 SYSLOG_PROC  void SYSLOG_API  SetSystemLoggingLevel ( uint32_t nLevel );
 #if defined( _DEBUG ) || defined( _DEBUG_INFO )
@@ -4895,43 +4895,27 @@ using namespace sack::logging;
 #endif
 #endif
 #if defined( _MSC_VER ) || (1)
-// huh, apparently all compiles are mess the hell up.
-#define COMPILER_THROWS_SIGNED_UNSIGNED_MISMATCH
+// huh, apparently all compiles are messed the hell up.
+#  define COMPILER_THROWS_SIGNED_UNSIGNED_MISMATCH
 #endif
 #ifdef COMPILER_THROWS_SIGNED_UNSIGNED_MISMATCH
-// if cplusplus, some compilers I can definatly strongly typecast check what was passed as the types
-// and the values passed.  C I'm not so fortunate.
-#if defined( __cplusplus ) && 0
-#define _sus_paste3(a,b,c) a##b##c
-#define sus_paste3(a,b,c) _sus_paste3(a,b,c)
-static void anyfunction() { }
-#define SUS_GT(a,at,b,bt)   (void(*f)(at,bt) sus_paste3(tmp,at,__LINE__) = a, bt sus_paste3(tmp,bt,__LINE__) = b }),(((a)<0)?0:(((bt)a)>(b))))
-#define USS_GT(a,at,b,bt)   (at sus_paste3(tmp,at,__LINE__) = a, bt sus_paste3(tmp,bt,__LINE__) = b ),(((b)<0)?1:((a)>((at)b))))
-#define SUS_LT(a,at,b,bt)   (at sus_paste3(tmp,at,__LINE__) = a, bt sus_paste3(tmp,bt,__LINE__) = b ),(((a)<0)?1:(((bt)a)<(b))))
-#define USS_LT(a,at,b,bt)   (at sus_paste3(tmp,at,__LINE__) = a, bt sus_paste3(tmp,bt,__LINE__) = b ),(((b)<0)?0:((a)<((at)b))))
-#define SUS_GTE(a,at,b,bt)  (at sus_paste3(tmp,at,__LINE__) = a, bt sus_paste3(tmp,bt,__LINE__) = b ),(((a)<0)?0:(((bt)a)>=(b))))
-#define USS_GTE(a,at,b,bt)  (at sus_paste3(tmp,at,__LINE__) = a, bt sus_paste3(tmp,bt,__LINE__) = b ),(((b)<0)?1:((a)>=((at)b))))
-#define SUS_LTE(a,at,b,bt)  (at sus_paste3(tmp,at,__LINE__) = a, bt sus_paste3(tmp,bt,__LINE__) = b ),(((a)<0)?1:(((bt)a)<=(b))))
-#define USS_LTE(a,at,b,bt)  (at sus_paste3(tmp,at,__LINE__) = a, bt sus_paste3(tmp,bt,__LINE__) = b ),(((b)<0)?0:((a)<=((at)b))))
+#  define SUS_GT(a,at,b,bt)   (((a)<0)?0:(((bt)a)>(b)))
+#  define USS_GT(a,at,b,bt)   (((b)<0)?1:((a)>((at)b)))
+#  define SUS_LT(a,at,b,bt)   (((a)<0)?1:(((bt)a)<(b)))
+#  define USS_LT(a,at,b,bt)   (((b)<0)?0:((a)<((at)b)))
+#  define SUS_GTE(a,at,b,bt)  (((a)<0)?0:(((bt)a)>=(b)))
+#  define USS_GTE(a,at,b,bt)  (((b)<0)?1:((a)>=((at)b)))
+#  define SUS_LTE(a,at,b,bt)  (((a)<0)?1:(((bt)a)<=(b)))
+#  define USS_LTE(a,at,b,bt)  (((b)<0)?0:((a)<=((at)b)))
 #else
-#define SUS_GT(a,at,b,bt)   (((a)<0)?0:(((bt)a)>(b)))
-#define USS_GT(a,at,b,bt)   (((b)<0)?1:((a)>((at)b)))
-#define SUS_LT(a,at,b,bt)   (((a)<0)?1:(((bt)a)<(b)))
-#define USS_LT(a,at,b,bt)   (((b)<0)?0:((a)<((at)b)))
-#define SUS_GTE(a,at,b,bt)  (((a)<0)?0:(((bt)a)>=(b)))
-#define USS_GTE(a,at,b,bt)  (((b)<0)?1:((a)>=((at)b)))
-#define SUS_LTE(a,at,b,bt)  (((a)<0)?1:(((bt)a)<=(b)))
-#define USS_LTE(a,at,b,bt)  (((b)<0)?0:((a)<=((at)b)))
-#endif
-#else
-#define SUS_GT(a,at,b,bt)   ((a)>(b))
-#define USS_GT(a,at,b,bt)   ((a)>(b))
-#define SUS_LT(a,at,b,bt)   ((a)<(b))
-#define USS_LT(a,at,b,bt)   ((a)<(b))
-#define SUS_GTE(a,at,b,bt)  ((a)>=(b))
-#define USS_GTE(a,at,b,bt)  ((a)>=(b))
-#define SUS_LTE(a,at,b,bt)  ((a)<=(b))
-#define USS_LTE(a,at,b,bt)  ((a)<=(b))
+#  define SUS_GT(a,at,b,bt)   ((a)>(b))
+#  define USS_GT(a,at,b,bt)   ((a)>(b))
+#  define SUS_LT(a,at,b,bt)   ((a)<(b))
+#  define USS_LT(a,at,b,bt)   ((a)<(b))
+#  define SUS_GTE(a,at,b,bt)  ((a)>=(b))
+#  define USS_GTE(a,at,b,bt)  ((a)>=(b))
+#  define SUS_LTE(a,at,b,bt)  ((a)<=(b))
+#  define USS_LTE(a,at,b,bt)  ((a)<=(b))
 #endif
 #ifdef __cplusplus
 using namespace sack;
@@ -8283,15 +8267,16 @@ struct required_constraint_def
 		BIT_FIELD setnull_on_update : 1;
 		BIT_FIELD setdefault_on_delete : 1;
 		BIT_FIELD setdefault_on_update : 1;
+		BIT_FIELD foreign_key : 1;
 	} flags;
 	CTEXTSTR name;
  // uhm up to 5 colnames...
-    CTEXTSTR colnames[MAX_KEY_COLUMNS];
+	CTEXTSTR colnames[MAX_KEY_COLUMNS];
 	CTEXTSTR references;
  // uhm up to 5 colnames...
-    CTEXTSTR foriegn_colnames[MAX_KEY_COLUMNS];
+	CTEXTSTR foriegn_colnames[MAX_KEY_COLUMNS];
  // if not null, broken structure...
-    CTEXTSTR null;
+	CTEXTSTR null;
  // Describes a constraint clause
 };
 /* Example
@@ -10063,7 +10048,7 @@ _PROCREG_NAMESPACE
 	// because of name mangling and stronger type casting
 	// it becomes difficult to pass a tree_def_tag * as a CTEXTSTR classname
 	// as valid as this is.
-	typedef struct tree_def_tag *PCLASSROOT;
+	typedef struct tree_def_tag const * PCLASSROOT;
 #else
 	typedef CTEXTSTR PCLASSROOT;
 #endif
@@ -10072,7 +10057,7 @@ _PROCREG_NAMESPACE
 	typedef void (__stdcall *STDPROCEDURE)(array<System::Object^>^);
 #endif
 #else
-   typedef struct tree_def_tag *PCLASSROOT;
+	typedef struct tree_def_tag const * PCLASSROOT;
 	typedef void (CPROC *PROCEDURE)(void);
 #ifdef __cplusplus_cli
 	typedef void (__stdcall *STDPROCEDURE)(array<System::Object^>^);
@@ -12702,7 +12687,8 @@ TRANSLATION_PROC void TRANSLATION_API SaveTranslationData( void );
 TRANSLATION_PROC void TRANSLATION_API SaveTranslationDataToFile( FILE *output );
 TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataEx( const char *filename );
 TRANSLATION_PROC void TRANSLATION_API LoadTranslationData( void );
-TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataFromFile( POINTER data, size_t length );
+TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataFromMemory( POINTER data, size_t length );
+TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataFromFile( FILE *file );
 /*
    return: PLIST is a list of PTranslation
 */

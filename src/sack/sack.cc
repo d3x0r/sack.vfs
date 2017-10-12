@@ -4631,9 +4631,9 @@ SYSLOG_PROC  void SYSLOG_API  ProtectLoggedFilenames ( LOGICAL bEnable );
 SYSLOG_PROC  void SYSLOG_API  SystemLogFL ( CTEXTSTR FILELINE_PASS );
 SYSLOG_PROC  void SYSLOG_API  SystemLogEx ( CTEXTSTR DBG_PASS );
 SYSLOG_PROC  void SYSLOG_API  SystemLog ( CTEXTSTR );
-SYSLOG_PROC  void SYSLOG_API  LogBinaryFL ( uint8_t* buffer, size_t size FILELINE_PASS );
-SYSLOG_PROC  void SYSLOG_API  LogBinaryEx ( uint8_t* buffer, size_t size DBG_PASS );
-SYSLOG_PROC  void SYSLOG_API  LogBinary ( uint8_t* buffer, size_t size );
+SYSLOG_PROC  void SYSLOG_API  LogBinaryFL ( const uint8_t* buffer, size_t size FILELINE_PASS );
+SYSLOG_PROC  void SYSLOG_API  LogBinaryEx ( const uint8_t* buffer, size_t size DBG_PASS );
+SYSLOG_PROC  void SYSLOG_API  LogBinary ( const uint8_t* buffer, size_t size );
 // logging level defaults to 1000 which is log everything
 SYSLOG_PROC  void SYSLOG_API  SetSystemLoggingLevel ( uint32_t nLevel );
 #if defined( _DEBUG ) || defined( _DEBUG_INFO )
@@ -4903,43 +4903,27 @@ using namespace sack::logging;
 #endif
 #endif
 #if defined( _MSC_VER ) || (1)
-// huh, apparently all compiles are mess the hell up.
-#define COMPILER_THROWS_SIGNED_UNSIGNED_MISMATCH
+// huh, apparently all compiles are messed the hell up.
+#  define COMPILER_THROWS_SIGNED_UNSIGNED_MISMATCH
 #endif
 #ifdef COMPILER_THROWS_SIGNED_UNSIGNED_MISMATCH
-// if cplusplus, some compilers I can definatly strongly typecast check what was passed as the types
-// and the values passed.  C I'm not so fortunate.
-#if defined( __cplusplus ) && 0
-#define _sus_paste3(a,b,c) a##b##c
-#define sus_paste3(a,b,c) _sus_paste3(a,b,c)
-static void anyfunction() { }
-#define SUS_GT(a,at,b,bt)   (void(*f)(at,bt) sus_paste3(tmp,at,__LINE__) = a, bt sus_paste3(tmp,bt,__LINE__) = b }),(((a)<0)?0:(((bt)a)>(b))))
-#define USS_GT(a,at,b,bt)   (at sus_paste3(tmp,at,__LINE__) = a, bt sus_paste3(tmp,bt,__LINE__) = b ),(((b)<0)?1:((a)>((at)b))))
-#define SUS_LT(a,at,b,bt)   (at sus_paste3(tmp,at,__LINE__) = a, bt sus_paste3(tmp,bt,__LINE__) = b ),(((a)<0)?1:(((bt)a)<(b))))
-#define USS_LT(a,at,b,bt)   (at sus_paste3(tmp,at,__LINE__) = a, bt sus_paste3(tmp,bt,__LINE__) = b ),(((b)<0)?0:((a)<((at)b))))
-#define SUS_GTE(a,at,b,bt)  (at sus_paste3(tmp,at,__LINE__) = a, bt sus_paste3(tmp,bt,__LINE__) = b ),(((a)<0)?0:(((bt)a)>=(b))))
-#define USS_GTE(a,at,b,bt)  (at sus_paste3(tmp,at,__LINE__) = a, bt sus_paste3(tmp,bt,__LINE__) = b ),(((b)<0)?1:((a)>=((at)b))))
-#define SUS_LTE(a,at,b,bt)  (at sus_paste3(tmp,at,__LINE__) = a, bt sus_paste3(tmp,bt,__LINE__) = b ),(((a)<0)?1:(((bt)a)<=(b))))
-#define USS_LTE(a,at,b,bt)  (at sus_paste3(tmp,at,__LINE__) = a, bt sus_paste3(tmp,bt,__LINE__) = b ),(((b)<0)?0:((a)<=((at)b))))
+#  define SUS_GT(a,at,b,bt)   (((a)<0)?0:(((bt)a)>(b)))
+#  define USS_GT(a,at,b,bt)   (((b)<0)?1:((a)>((at)b)))
+#  define SUS_LT(a,at,b,bt)   (((a)<0)?1:(((bt)a)<(b)))
+#  define USS_LT(a,at,b,bt)   (((b)<0)?0:((a)<((at)b)))
+#  define SUS_GTE(a,at,b,bt)  (((a)<0)?0:(((bt)a)>=(b)))
+#  define USS_GTE(a,at,b,bt)  (((b)<0)?1:((a)>=((at)b)))
+#  define SUS_LTE(a,at,b,bt)  (((a)<0)?1:(((bt)a)<=(b)))
+#  define USS_LTE(a,at,b,bt)  (((b)<0)?0:((a)<=((at)b)))
 #else
-#define SUS_GT(a,at,b,bt)   (((a)<0)?0:(((bt)a)>(b)))
-#define USS_GT(a,at,b,bt)   (((b)<0)?1:((a)>((at)b)))
-#define SUS_LT(a,at,b,bt)   (((a)<0)?1:(((bt)a)<(b)))
-#define USS_LT(a,at,b,bt)   (((b)<0)?0:((a)<((at)b)))
-#define SUS_GTE(a,at,b,bt)  (((a)<0)?0:(((bt)a)>=(b)))
-#define USS_GTE(a,at,b,bt)  (((b)<0)?1:((a)>=((at)b)))
-#define SUS_LTE(a,at,b,bt)  (((a)<0)?1:(((bt)a)<=(b)))
-#define USS_LTE(a,at,b,bt)  (((b)<0)?0:((a)<=((at)b)))
-#endif
-#else
-#define SUS_GT(a,at,b,bt)   ((a)>(b))
-#define USS_GT(a,at,b,bt)   ((a)>(b))
-#define SUS_LT(a,at,b,bt)   ((a)<(b))
-#define USS_LT(a,at,b,bt)   ((a)<(b))
-#define SUS_GTE(a,at,b,bt)  ((a)>=(b))
-#define USS_GTE(a,at,b,bt)  ((a)>=(b))
-#define SUS_LTE(a,at,b,bt)  ((a)<=(b))
-#define USS_LTE(a,at,b,bt)  ((a)<=(b))
+#  define SUS_GT(a,at,b,bt)   ((a)>(b))
+#  define USS_GT(a,at,b,bt)   ((a)>(b))
+#  define SUS_LT(a,at,b,bt)   ((a)<(b))
+#  define USS_LT(a,at,b,bt)   ((a)<(b))
+#  define SUS_GTE(a,at,b,bt)  ((a)>=(b))
+#  define USS_GTE(a,at,b,bt)  ((a)>=(b))
+#  define SUS_LTE(a,at,b,bt)  ((a)<=(b))
+#  define USS_LTE(a,at,b,bt)  ((a)<=(b))
 #endif
 #ifdef __cplusplus
 using namespace sack;
@@ -7922,7 +7906,7 @@ _PROCREG_NAMESPACE
 	// because of name mangling and stronger type casting
 	// it becomes difficult to pass a tree_def_tag * as a CTEXTSTR classname
 	// as valid as this is.
-	typedef struct tree_def_tag *PCLASSROOT;
+	typedef struct tree_def_tag const * PCLASSROOT;
 #else
 	typedef CTEXTSTR PCLASSROOT;
 #endif
@@ -7931,7 +7915,7 @@ _PROCREG_NAMESPACE
 	typedef void (__stdcall *STDPROCEDURE)(array<System::Object^>^);
 #endif
 #else
-   typedef struct tree_def_tag *PCLASSROOT;
+	typedef struct tree_def_tag const * PCLASSROOT;
 	typedef void (CPROC *PROCEDURE)(void);
 #ifdef __cplusplus_cli
 	typedef void (__stdcall *STDPROCEDURE)(array<System::Object^>^);
@@ -8811,15 +8795,16 @@ struct required_constraint_def
 		BIT_FIELD setnull_on_update : 1;
 		BIT_FIELD setdefault_on_delete : 1;
 		BIT_FIELD setdefault_on_update : 1;
+		BIT_FIELD foreign_key : 1;
 	} flags;
 	CTEXTSTR name;
  // uhm up to 5 colnames...
-    CTEXTSTR colnames[MAX_KEY_COLUMNS];
+	CTEXTSTR colnames[MAX_KEY_COLUMNS];
 	CTEXTSTR references;
  // uhm up to 5 colnames...
-    CTEXTSTR foriegn_colnames[MAX_KEY_COLUMNS];
+	CTEXTSTR foriegn_colnames[MAX_KEY_COLUMNS];
  // if not null, broken structure...
-    CTEXTSTR null;
+	CTEXTSTR null;
  // Describes a constraint clause
 };
 /* Example
@@ -10417,19 +10402,23 @@ static enum block_cache_entries UpdateSegmentKey( struct volume *vol, enum block
 		uint64_t* usekey = (uint64_t*)vol->usekey[cache_idx];
 		uint64_t* volkey = (uint64_t*)vol->key;
 		uint64_t* segkey = (uint64_t*)vol->segkey;
-		for( n = 0; n < (BLOCK_SIZE / SHORTKEY_LENGTH) / 8; n++ ) {
-			(*usekey++) = (*volkey++) ^ (segkey[0]);
-			(*usekey++) = (*volkey++) ^ (segkey[1]);
+		for( n = 0; n < (BLOCK_SIZE / SHORTKEY_LENGTH); n++ ) {
+			usekey[0] = volkey[0] ^ (segkey[0]);
+			usekey[1] = volkey[1] ^ (segkey[1]);
+			usekey += 2;
+			volkey += 2;
 		}
 #else
 		uint32_t* usekey = (uint32_t*)vol->usekey[cache_idx];
 		uint32_t* volkey = (uint32_t*)vol->key;
 		uint32_t* segkey = (uint32_t*)vol->segkey;
-		for( n = 0; n < (BLOCK_SIZE / SHORTKEY_LENGTH) / 4; n++ ) {
-			(*usekey++) = (*volkey++) ^ (segkey[0]);
-			(*usekey++) = (*volkey++) ^ (segkey[1]);
-			(*usekey++) = (*volkey++) ^ (segkey[2]);
-			(*usekey++) = (*volkey++) ^ (segkey[3]);
+		for( n = 0; n < (BLOCK_SIZE / SHORTKEY_LENGTH); n++ ) {
+			usekey[0] = volkey[0] ^ (segkey[0]);
+			usekey[1] = volkey[1] ^ (segkey[1]);
+			usekey[2] = volkey[2] ^ (segkey[2]);
+			usekey[3] = volkey[3] ^ (segkey[3]);
+			usekey += 4;
+			volkey += 4;
 		}
 #endif
 	}
@@ -10447,25 +10436,27 @@ static LOGICAL ValidateBAT( struct volume *vol ) {
 			//vol->segment[BLOCK_CACHE_BAT] = n + 1;
 			//while( LockedExchange( &vol->key_lock[BLOCK_CACHE_BAT], 1 ) ) Relinquish();
 			UpdateSegmentKey( vol, BLOCK_CACHE_BAT, n + 1 );
-			for( m = 0; ((BAT[m] & ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[m]) != EOBBLOCK ) && m < BLOCKS_PER_BAT; m++ )
+			for( m = 0; m < BLOCKS_PER_BAT; m++ )
 			{
 				BLOCKINDEX block = BAT[m] ^ ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[m];
 				if( block == EOFBLOCK ) continue;
 				if( block == EOBBLOCK ) break;
 				if( block >= last_block ) return FALSE;
 			}
+			if( m < BLOCKS_PER_BAT ) break;
 			//vol->key_lock[BLOCK_CACHE_BAT] = 0;
 		}
 	} else {
 		for( n = first_slab; n < slab; n += BLOCKS_PER_SECTOR  ) {
 			size_t m;
 			BLOCKINDEX *BAT = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE);
-			for( m = 0; ((BAT[m] & ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[m]) != EOBBLOCK ) && m < BLOCKS_PER_BAT; m++ ) {
+			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
 				BLOCKINDEX block = BAT[m];
 				if( block == EOFBLOCK ) continue;
 				if( block == EOBBLOCK ) break;
 				if( block >= last_block ) return FALSE;
 			}
+			if( m < BLOCKS_PER_BAT ) break;
 		}
 	}
 	return TRUE;
@@ -10950,11 +10941,37 @@ void sack_vfs_shrink_volume( struct volume * vol ) {
 	// setting 0 size will cause expand to do an initial open instead of expanding
 	vol->dwSize = 0;
 }
+static void mask_block( struct volume *vol, int n ) {
+	UpdateSegmentKey( vol, BLOCK_CACHE_FILE, n + 1 );
+	{
+#ifdef __64__
+		uint64_t* usekey = (uint64_t*)vol->usekey[BLOCK_CACHE_FILE];
+		BLOCKINDEX b = BLOCK_SIZE + (n >> BLOCK_SHIFT) * (BLOCKS_PER_SECTOR*BLOCK_SIZE) + (n & (BLOCKS_PER_BAT - 1)) * BLOCK_SIZE;
+		uint64_t* block = (uint64_t*)(((uintptr_t)vol->disk) + b);
+		for( n = 0; n < (BLOCK_SIZE / 16); n++ ) {
+			block[0] = block[0] ^ usekey[0];
+			block[1] = block[1] ^ usekey[1];
+			block += 2; usekey += 2;
+		}
+#else
+		uint32_t* usekey = (uint32_t*)vol->usekey[BLOCK_CACHE_FILE];
+		BLOCKINDEX b = BLOCK_SIZE + (n >> BLOCK_SHIFT) * (BLOCKS_PER_SECTOR*BLOCK_SIZE) + (n & (BLOCKS_PER_BAT - 1)) * BLOCK_SIZE;
+		uint32_t* block = (uint32_t*)(((uintptr_t)vol->disk) + b);
+		for( n = 0; n < (BLOCK_SIZE / 16); n++ ) {
+			block[0] = block[0] ^ usekey[0];
+			block[1] = block[1] ^ usekey[1];
+			block[2] = block[2] ^ usekey[2];
+			block[3] = block[3] ^ usekey[3];
+			block += 4; usekey += 4;
+		}
+#endif
+	}
+}
 LOGICAL sack_vfs_decrypt_volume( struct volume *vol )
 {
 	while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
  // volume is already decrypted, cannot remove key
-	if( !vol->key ) return FALSE;
+	if( !vol->key ) { vol->lock = 0; return FALSE; }
 	{
 		size_t n;
 		BLOCKINDEX slab = vol->dwSize / ( BLOCK_SIZE );
@@ -10963,8 +10980,12 @@ LOGICAL sack_vfs_decrypt_volume( struct volume *vol )
 			BLOCKINDEX *block = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE);
 			//vol->segment[BLOCK_CACHE_BAT] = n + 1;
 			UpdateSegmentKey( vol, BLOCK_CACHE_BAT, n + 1 );
-			for( m = 0; m < BLOCKS_PER_BAT; m++ )
+			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
 				block[m] ^= ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[m];
+				if( block[m] == EOBBLOCK ) break;
+				else if( block[m] ) mask_block( vol, (n*BLOCKS_PER_BAT) + m );
+			}
+			if( m < BLOCKS_PER_BAT ) break;
 		}
 	}
 	AssignKey( vol, NULL, NULL );
@@ -10974,18 +10995,25 @@ LOGICAL sack_vfs_decrypt_volume( struct volume *vol )
 LOGICAL sack_vfs_encrypt_volume( struct volume *vol, CTEXTSTR key1, CTEXTSTR key2 ) {
 	while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
  // volume already has a key, cannot apply new key
-	if( vol->key ) return FALSE;
+	if( vol->key ) { vol->lock = 0; return FALSE; }
 	AssignKey( vol, key1, key2 );
 	{
 		size_t n;
 		BLOCKINDEX slab = vol->dwSize / ( BLOCK_SIZE );
 		for( n = 0; n < slab; n++  ) {
 			size_t m;
+			int done;
 			BLOCKINDEX *block = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE);
 			//vol->segment[BLOCK_CACHE_BAT] = n + 1;
+			done = 0;
 			UpdateSegmentKey( vol, BLOCK_CACHE_BAT, n + 1 );
-			for( m = 0; m < BLOCKS_PER_BAT; m++ )
+			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
+				if( block[m] == EOBBLOCK ) done = TRUE;
+				else if( block[m] ) mask_block( vol, (n*BLOCKS_PER_BAT) + m );
 				block[m] ^= ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[m];
+				if( done ) break;
+			}
+			if( m < BLOCKS_PER_BAT ) break;
 		}
 	}
 	vol->lock = 0;
@@ -11540,7 +11568,6 @@ static LOGICAL CPROC sack_vfs_rename( uintptr_t psvInstance, const char *origina
 	}
 	return FALSE;
 }
-//#ifndef NO_SACK_INTERFACE
 static struct file_system_interface sack_vfs_fsi = {
                                                      (void*(CPROC*)(uintptr_t,const char *, const char*))sack_vfs_open
                                                    , (int(CPROC*)(void*))sack_vfs_close
@@ -11586,7 +11613,6 @@ PRIORITY_PRELOAD( Sack_VFS_RegisterDefaultFilesystem, SQL_PRELOAD_PRIORITY + 1 )
 		                     , 900, (uintptr_t)vol, TRUE );
 	}
 }
-//#endif
 SACK_VFS_NAMESPACE_END
 /*
  *  sha1.h
@@ -11896,7 +11922,7 @@ void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_
 			}
 			(*buffer) = tmp << resultBits;
 			resultBits += get_bits;
-			while( resultBits > 8 ) {
+			while( resultBits >= 8 ) {
 #if defined( __cplusplus ) || defined( __GNUC__ )
 				buffer = (uint32_t*)(((uintptr_t)buffer) + 1);
 #else
@@ -16038,10 +16064,10 @@ void SystemLogEx ( const TEXTCHAR *message DBG_PASS )
 {
 	SystemLogFL( message, NULL, 0 );
 }
- void  LogBinaryFL ( uint8_t* buffer, size_t size FILELINE_PASS )
+ void  LogBinaryFL ( const uint8_t* buffer, size_t size FILELINE_PASS )
 {
 	size_t nOut = size;
-	uint8_t* data = buffer;
+	const uint8_t* data = buffer;
 #ifndef _LOG_FULL_FILE_NAMES
 	if( pFile )
 	{
@@ -16078,7 +16104,7 @@ void SystemLogEx ( const TEXTCHAR *message DBG_PASS )
 	}
 }
 #undef LogBinaryEx
- void  LogBinaryEx ( uint8_t* buffer, size_t size DBG_PASS )
+ void  LogBinaryEx ( const uint8_t* buffer, size_t size DBG_PASS )
 {
 #ifdef _DEBUG
 	LogBinaryFL( buffer,size DBG_RELAY );
@@ -16087,7 +16113,7 @@ void SystemLogEx ( const TEXTCHAR *message DBG_PASS )
 #endif
 }
 #undef LogBinary
- void  LogBinary ( uint8_t* buffer, size_t size )
+ void  LogBinary ( const uint8_t* buffer, size_t size )
 {
 	LogBinaryFL( buffer,size, NULL, 0 );
 }
@@ -28902,6 +28928,7 @@ typedef struct tree_def_tag
    POINTER cursor;
    struct proc_name_tag *self;
 } TREEDEF, *PTREEDEF;
+typedef struct tree_def_tag const * PCTREEDEF;
 #define MAXTREEDEFSPERSET 256
 DeclareSet( TREEDEF );
 typedef struct data_class_def_tag
@@ -29029,8 +29056,8 @@ struct procreg_local_tag {
 #define l (*procreg_local_data)
 static struct procreg_local_tag *procreg_local_data;
 static CTEXTSTR SaveName( CTEXTSTR name );
-PTREEDEF GetClassTreeEx( PTREEDEF root
-										, PTREEDEF name_class
+PTREEDEF GetClassTreeEx( PCTREEDEF root
+										, PCTREEDEF name_class
 										, PTREEDEF alias, LOGICAL bCreate );
 #define GetClassTree( root, name_class ) GetClassTreeEx( root, name_class, NULL, TRUE )
 //---------------------------------------------------------------------------
@@ -29470,7 +29497,7 @@ int GetClassPath( TEXTSTR out, size_t len, PCLASSROOT root )
 	return ofs;
 }
 //---------------------------------------------------------------------------
-static PTREEDEF AddClassTree( PTREEDEF class_root, TEXTCHAR *name, PTREEROOT root, int bAlias )
+static PTREEDEF AddClassTree( PCTREEDEF class_root, TEXTCHAR *name, PTREEROOT root, int bAlias )
 {
 	if( root && class_root )
 	{
@@ -29483,7 +29510,7 @@ static PTREEDEF AddClassTree( PTREEDEF class_root, TEXTCHAR *name, PTREEROOT roo
 		classname->tree.Tree = root;
 		classname->tree.self = classname;
 		classname->flags.bTree = TRUE;
-		classname->parent = class_root;
+		classname->parent = (PTREEDEF)class_root;
 		//lprintf( WIDE("Adding class tree thing %p  %s"), class_root->Tree, classname->name );
 		if( !AddBinaryNode( class_root->Tree, classname, (uintptr_t)classname->name ) )
 		{
@@ -29522,13 +29549,13 @@ static CTEXTSTR  my_pathchr ( CTEXTSTR path )
 // if name_class does not previously exist, then it is created.
 // There is no protection for someone to constantly create large trees just
 // by asking for them.
-PTREEDEF GetClassTreeEx( PTREEDEF root, PTREEDEF _name_class, PTREEDEF alias, LOGICAL bCreate )
+PTREEDEF GetClassTreeEx( PCTREEDEF root, PCTREEDEF _name_class, PTREEDEF alias, LOGICAL bCreate )
 {
-	PTREEDEF class_root;
+	PCTREEDEF class_root;
 	if( !root )
 	{
 		Init();
-		root = l.Names;
+		root = (PCTREEDEF)l.Names;
 // fix root...
 	}
 	class_root = root;
@@ -29554,7 +29581,7 @@ PTREEDEF GetClassTreeEx( PTREEDEF root, PTREEDEF _name_class, PTREEDEF alias, LO
 #endif
 			(_name_class->Magic == MAGIC_TREE_NUMBER) )
 		{
-			return _name_class;
+			return (PTREEDEF)_name_class;
 		}
 		else
 		{
@@ -29607,7 +29634,7 @@ PTREEDEF GetClassTreeEx( PTREEDEF root, PTREEDEF _name_class, PTREEDEF alias, LO
 															 , start
 															 , alias->Tree
 															 , TRUE );
-							class_root->self = alias->self;
+							((PTREEDEF)class_root)->self = alias->self;
 						}
 						else
 						{
@@ -29673,7 +29700,7 @@ PTREEDEF GetClassTreeEx( PTREEDEF root, PTREEDEF _name_class, PTREEDEF alias, LO
 			while( class_root && start[0] );
 		}
 	}
-	return class_root;
+	return (PTREEDEF)class_root;
 }
 //---------------------------------------------------------------------------
 PROCREG_PROC( PCLASSROOT, CheckClassRoot )( CTEXTSTR name_class )
@@ -29690,11 +29717,11 @@ PROCREG_PROC( PCLASSROOT, GetClassRoot )( CTEXTSTR name_class )
 	return (PCLASSROOT)GetClassTreeEx( l.Names, (PTREEDEF)name_class, NULL, TRUE );
 }
 #ifdef __cplusplus
-PROCREG_PROC( PTREEDEF, GetClassRootEx )( PCLASSROOT root, PCLASSROOT name_class )
+PROCREG_PROC( PCLASSROOT, GetClassRootEx )( PCLASSROOT root, PCLASSROOT name_class )
 {
 	return GetClassTreeEx( root, (PTREEDEF)name_class, NULL, TRUE );
 }
-PROCREG_PROC( PTREEDEF, GetClassRoot )( PCLASSROOT name_class )
+PROCREG_PROC( PCLASSROOT, GetClassRoot )( PCLASSROOT name_class )
 {
 	return GetClassTreeEx( l.Names, (PTREEDEF)name_class, NULL, TRUE );
 }
@@ -29751,7 +29778,7 @@ PROCREG_PROC( LOGICAL, RegisterFunctionExx )( PCLASSROOT root
 		TEXTCHAR strippedargs[256];
 		CTEXTSTR func_name = real_name?real_name:public_name;
 		CTEXTSTR root_func_name = func_name;
-		PTREEDEF class_root = (PTREEDEF)GetClassTree( root, name_class );
+		PTREEDEF class_root = (PTREEDEF)GetClassTree( (PCTREEDEF)root, (PCTREEDEF)name_class );
 		int tmp;
 		MemSet( newname, 0, sizeof( NAME ) );
 		newname->flags.bProc = 1;
@@ -29774,7 +29801,7 @@ PROCREG_PROC( LOGICAL, RegisterFunctionExx )( PCLASSROOT root
 			StrCpyEx( new_root_func_name, root_func_name, len );
 			new_root_func_name[len-1] = 0;
 			//lprintf( "trimmed name would be %s  /   %s", new_root_func_name, func_name );
-			class_root = GetClassTree( class_root, (PCLASSROOT)new_root_func_name );
+			class_root = GetClassTree( (PCTREEDEF)class_root, (PCTREEDEF)new_root_func_name );
 			Release( new_root_func_name );
 		}
 		//newname->data.proc.args = SaveName( StripName( strippedargs, args ) );
@@ -29955,7 +29982,7 @@ PROCREG_PROC( PROCEDURE, ReadRegisteredProcedureEx )( PCLASSROOT root
                                                     , CTEXTSTR parms
                                                     )
 {
-	PTREEDEF class_root = GetClassTree( root, NULL );
+	PTREEDEF class_root = GetClassTree( (PCTREEDEF)root, NULL );
 	PNAME oldname = (PNAME)GetCurrentNodeEx( class_root->Tree, &class_root->cursor );
 	if( oldname )
 	{
@@ -29992,7 +30019,7 @@ void DumpRegisteredNamesWork( PTREEDEF tree, int level );
 PROCREG_PROC( PROCEDURE, GetRegisteredProcedureExxx )( PCLASSROOT root, PCLASSROOT name_class, CTEXTSTR returntype, CTEXTSTR name, CTEXTSTR args )
 #define GetRegisteredProcedureExx GetRegisteredProcedureExxx
 {
-	PTREEDEF class_root = GetClassTreeEx( root, name_class, NULL, FALSE );
+	PTREEDEF class_root = GetClassTreeEx( (PCTREEDEF)root, (PCTREEDEF)name_class, NULL, FALSE );
 	if( class_root )
 	{
 		PNAME oldname;
@@ -30174,7 +30201,7 @@ PROCREG_PROC( CTEXTSTR, GetFirstRegisteredNameEx )( PCLASSROOT root, CTEXTSTR cl
 	PTREEDEF class_root;
 	PNAME name;
 	*data =
-		class_root = (PTREEDEF)GetClassTree( (PTREEDEF)root, (PCLASSROOT)classname );
+		(PCLASSROOT)(class_root = (PTREEDEF)GetClassTree( (PCTREEDEF)root, (PCTREEDEF)classname ));
 	if( class_root )
 	{
 		name = (PNAME)GetLeastNodeEx( class_root->Tree, &class_root->cursor );
@@ -30222,7 +30249,7 @@ PROCREG_PROC( void, DumpRegisteredNames )( void )
 //---------------------------------------------------------------------------
 PROCREG_PROC( void, DumpRegisteredNamesFrom )( PCLASSROOT root )
 {
-	DumpRegisteredNamesWork( GetClassRoot((CTEXTSTR)root), 0 );
+	DumpRegisteredNamesWork( GetClassTreeEx( l.Names, (PCTREEDEF)root, NULL, TRUE ), 0 );
 }
 //---------------------------------------------------------------------------
 PROCREG_PROC( void, InvokeProcedure )( void )
@@ -30231,7 +30258,7 @@ PROCREG_PROC( void, InvokeProcedure )( void )
 //---------------------------------------------------------------------------
 PROCREG_PROC( int, RegisterValueExx )( PCLASSROOT root, CTEXTSTR name_class, CTEXTSTR name, int bIntVal, CTEXTSTR value )
 {
-	PTREEDEF class_root = GetClassTree( root, (PCLASSROOT)name_class );
+	PTREEDEF class_root = GetClassTree( (PCTREEDEF)root, (PCTREEDEF)name_class );
 	if( class_root )
 	{
 		TEXTCHAR buf[256];
@@ -30307,7 +30334,7 @@ int GetRegisteredStaticValue( PCLASSROOT root, CTEXTSTR name_class
 									 , CTEXTSTR *result
 									 , int bIntVal )
 {
-	PTREEDEF class_root = GetClassTree( root, (PCLASSROOT)name_class );
+	PTREEDEF class_root = GetClassTree( (PCTREEDEF)root, (PCTREEDEF)name_class );
 	TEXTCHAR buf[256];
 	PNAME oldname = (PNAME)FindInBinaryTree( class_root->Tree, (uintptr_t)DressName( buf, name ));
 	if( oldname )
@@ -30331,7 +30358,7 @@ PROCREG_PROC( CTEXTSTR, GetRegisteredValueExx )( PCLASSROOT root, CTEXTSTR name_
 	PTREEDEF class_root;
 	TEXTCHAR buf[256];
 	PNAME oldname;
-	class_root = GetClassTree( root, (PCLASSROOT)name_class );
+	class_root = GetClassTree( (PCTREEDEF)root, (PCTREEDEF)name_class );
 	oldname = (PNAME)FindInBinaryTree( class_root->Tree, (uintptr_t)DressName( buf, name ));
 	if( oldname )
 	{
@@ -30391,8 +30418,8 @@ PROCREG_PROC( int, GetRegisteredIntValue )( PCLASSROOT name_class, CTEXTSTR name
 //---------------------------------------------------------------------------
 PROCREG_PROC( PCLASSROOT, RegisterClassAliasEx )( PCLASSROOT root, CTEXTSTR original, CTEXTSTR alias )
 {
-	PTREEDEF class_root = GetClassTreeEx( root, (PCLASSROOT)original, NULL, TRUE );
-	return (PCLASSROOT)GetClassTreeEx( root, (PCLASSROOT)alias, class_root, TRUE );
+	PTREEDEF class_root = GetClassTreeEx( (PCTREEDEF)root, (PCTREEDEF)original, NULL, TRUE );
+	return (PCLASSROOT)GetClassTreeEx( (PCTREEDEF)root, (PCTREEDEF)alias, class_root, TRUE );
 }
 //---------------------------------------------------------------------------
 PROCREG_PROC( PCLASSROOT, RegisterClassAlias )( CTEXTSTR original, CTEXTSTR alias )
@@ -30408,7 +30435,7 @@ PROCREG_PROC( uintptr_t, RegisterDataTypeEx )( PCLASSROOT root
 												 , void (CPROC *Open)(POINTER,uintptr_t)
 												 , void (CPROC *Close)(POINTER,uintptr_t) )
 {
-	PTREEDEF class_root = GetClassTreeEx( root, (PCLASSROOT)classname, NULL, TRUE );
+	PTREEDEF class_root = GetClassTreeEx( (PCTREEDEF)root, (PCTREEDEF)classname, NULL, TRUE );
 	if( class_root )
 	{
  //(PNAME)Allocate( sizeof( NAME ) );
@@ -30454,7 +30481,7 @@ PROCREG_PROC( uintptr_t, MakeRegisteredDataTypeEx)( PCLASSROOT root
 																 , uintptr_t datasize
 																 )
 {
-	PTREEDEF class_root = GetClassTree( root, (PCLASSROOT)classname );
+	PTREEDEF class_root = GetClassTree( (PCTREEDEF)root, (PCTREEDEF)classname );
 	if( class_root )
 	{
 		TEXTCHAR buf[256];
@@ -30508,7 +30535,7 @@ PROCREG_PROC( uintptr_t, CreateRegisteredDataTypeEx)( PCLASSROOT root
 																	, CTEXTSTR name
 																	, CTEXTSTR instancename )
 {
-	PTREEDEF class_root = GetClassTree( root, (PCLASSROOT)classname );
+	PTREEDEF class_root = GetClassTree( (PCTREEDEF)root, (PCTREEDEF)classname );
 	if( class_root )
 	{
 		TEXTCHAR buf[256];
@@ -51366,6 +51393,9 @@ void WebSocketClose( PCLIENT pc, int code, const char *reason )
 	WebSocketClient websock = (WebSocketClient)GetNetworkLong( pc, 0 );
 	char buf[130];
 	size_t buflen;
+  // maybe already closed?
+	if( !websock )
+		return;
 	if( code ) {
 		buf[0] = code / 256;
 		buf[1] = code % 256;
@@ -53319,447 +53349,6 @@ LOGICAL json_parse_message( const char * msg
 	json_parse_dispose_state( &state );
 	return FALSE;
 }
-#if 0
-LOGICAL _json_parse_message( char * msg
-                                 , size_t msglen
-                                 , PDATALIST *_msg_output )
-{
-	static char *_output;
-	/* I guess this is a good parser */
-	PDATALIST elements = NULL;
-	//size_t m = 0; // m is the output path; leave text inline; but escaped chars can offset/change the content
-	TEXTSTR mOut = NewArray( char, msglen );
- // character index;
-	size_t n = 0;
- // character index; (restore1)
-	size_t _n = 0;
-	int word = WORD_POS_RESET;
-	TEXTRUNE c;
-	LOGICAL status = TRUE;
-	LOGICAL negative = FALSE;
-	PLINKSTACK context_stack = NULL;
-	//enum json_parse_state state;
-	PPARSE_CONTEXT context = GetFromSet( PARSE_CONTEXT, &jpsd.parseContexts );
-	enum parse_context_modes parse_context = CONTEXT_UNKNOWN;
-	struct json_value_container val;
-	char const * msg_input = (char const *)msg;
-	char const * _msg_input;
-	//char *token_begin;
-	if( !_msg_output )
-		return FALSE;
-	if( _output ) Deallocate( char*, _output );
-	_output = mOut;
-	elements = CreateDataList( sizeof( val ) );
-	val.value_type = VALUE_UNSET;
-	val.contains = NULL;
-	val.name = NULL;
-	val.string = NULL;
-	while( status && ( n < msglen ) && ( c = GetUtfChar( &msg_input ) ) )
-	{
-		n = msg_input - msg;
-		switch( c )
-		{
-		case '{':
-			{
-				struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &jpsd.parseContexts );
-				val.value_type = VALUE_OBJECT;
-				val.contains = CreateDataList( sizeof( val ) );
-				AddDataItem( &elements, &val );
-				old_context->context = parse_context;
-				old_context->elements = elements;
-				elements = val.contains;
-				PushLink( &context_stack, old_context );
-				RESET_VAL();
-				parse_context = CONTEXT_IN_OBJECT;
-			}
-			break;
-		case '[':
-			{
-				struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &jpsd.parseContexts );
-				val.value_type = VALUE_ARRAY;
-				val.contains = CreateDataList( sizeof( val ) );
-				AddDataItem( &elements, &val );
-				old_context->context = parse_context;
-				old_context->elements = elements;
-				elements = val.contains;
-				PushLink( &context_stack, old_context );
-				RESET_VAL();
-				parse_context = CONTEXT_IN_ARRAY;
-			}
-			break;
-		case ':':
-			if( parse_context == CONTEXT_IN_OBJECT )
-			{
-				if( val.name ) {
-					lprintf( "two names single value?" );
-				}
-				val.name = val.string;
-				val.string = NULL;
-				val.value_type = VALUE_UNSET;
-			}
-			else
-			{
-				if( parse_context == CONTEXT_IN_ARRAY )
-					lprintf( WIDE("(in array, got colon out of string):parsing fault; unexpected %c at %") _size_f, c, n );
-				else
-					lprintf( WIDE("(outside any object, got colon out of string):parsing fault; unexpected %c at %") _size_f, c, n );
-				status = FALSE;
-			}
-			break;
-		case '}':
-			if( parse_context == CONTEXT_IN_OBJECT )
-			{
-				// first, add the last value
-				if( val.value_type != VALUE_UNSET ) {
-					AddDataItem( &elements, &val );
-				}
-				RESET_VAL();
-				{
-					struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &context_stack );
-					struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt-1 );
-  // save updated elements list in the old value in the last pushed list.
-					oldVal->contains = elements;
-					parse_context = old_context->context;
-					elements = old_context->elements;
-					DeleteFromSet( PARSE_CONTEXT, jpsd.parseContexts, old_context );
-				}
-				//n++;
-			}
-			else
-			{
-				lprintf( WIDE("Fault while parsing; unexpected %c at %") _size_f, c, n );
-			}
-			break;
-		case ']':
-			if( parse_context == CONTEXT_IN_ARRAY )
-			{
-				if( val.value_type != VALUE_UNSET ) {
-					AddDataItem( &elements, &val );
-				}
-				RESET_VAL();
-				{
-					struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &context_stack );
-					struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt-1 );
-  // save updated elements list in the old value in the last pushed list.
-					oldVal->contains = elements;
-					parse_context = old_context->context;
-					elements = old_context->elements;
-					DeleteFromSet( PARSE_CONTEXT, jpsd.parseContexts, old_context );
-				}
-			}
-			else
-			{
-// fault
-				lprintf( WIDE("bad context %d; fault while parsing; '%c' unexpected at %") _size_f, parse_context, c, n );
-			}
-			break;
-		case ',':
-			if( ( parse_context == CONTEXT_IN_ARRAY )
-			   || ( parse_context == CONTEXT_IN_OBJECT ) )
-			{
-				if( val.value_type != VALUE_UNSET ) {
-					AddDataItem( &elements, &val );
-				}
-				RESET_VAL();
-			}
-			else
-			{
-// fault
-				lprintf( WIDE("bad context; fault while parsing; '%c' unexpected at %") _size_f, c, n );
-			}
-			break;
-		default:
-			switch( c )
-			{
-			case '"':
-			case '\'':
-				{
-					// collect a string
-					int escape = 0;
-					TEXTRUNE start_c = c;
-					val.string = mOut;
-					while( (_n=n), (( n < msglen ) && (c = GetUtfChar( &msg_input ) )) )
-					{
-						if( c == '\\' )
-						{
-							if( escape ) (*mOut++) = '\\';
-							else escape = 1;
-						}
-						else if( ( c == '"' ) || ( c == '\'' ) )
-						{
-							if( escape ) { (*mOut++) = c; escape = FALSE; }
-							else if( c == start_c ) {
-								//AddDataItem( &elements, &val );
-								//RESET_VAL();
-								break;
- // other else is not valid close quote; just store as content.
-							} else (*mOut++) = c;
-						}
-						else
-						{
-							if( escape )
-							{
-								switch( c )
-								{
-								case '\r':
-									continue;
-								case '\n':
-									escape = FALSE;
-									continue;
-								case '/':
-								case '\\':
-								case '"':
-									(*mOut++) = c;
-									break;
-								case 't':
-									(*mOut++) = '\t';
-									break;
-								case 'b':
-									(*mOut++) = '\b';
-									break;
-								case 'n':
-									(*mOut++) = '\n';
-									break;
-								case 'r':
-									(*mOut++) = '\r';
-									break;
-								case 'f':
-									(*mOut++) = '\f';
-									break;
-								case 'u':
-									{
-										TEXTRUNE hex_char = 0;
-										int ofs;
-										for( ofs = 0; ofs < 4; ofs++ )
-										{
-											c = GetUtfChar( &msg_input );
-											hex_char *= 16;
-											if( c >= '0' && c <= '9' )      hex_char += c - '0';
-											else if( c >= 'A' && c <= 'F' ) hex_char += ( c - 'A' ) + 10;
-											else if( c >= 'a' && c <= 'f' ) hex_char += ( c - 'F' ) + 10;
-											else
-												lprintf( WIDE("(escaped character, parsing hex of \\u) fault while parsing; '%c' unexpected at %")_size_f WIDE(" (near %*.*s[%c]%s)"), c, n
-														 , (int)( (n>3)?3:n ), (int)( (n>3)?3:n )
-														 , msg + n - ( (n>3)?3:n )
-														 , c
-														 , msg + n + 1
-// fault
-														 );
-										}
-										mOut += ConvertToUTF8( mOut, hex_char );
-									}
-									break;
-								default:
-									lprintf( WIDE("(escaped character) fault while parsing; '%c' unexpected %")_size_f WIDE(" (near %*.*s[%c]%s)"), c, n
-											 , (int)( (n>3)?3:n ), (int)( (n>3)?3:n )
-											 , msg + n - ( (n>3)?3:n )
-											 , c
-											 , msg + n + 1
-// fault
-											 );
-									break;
-								}
-								escape = 0;
-							}
-							else {
-								mOut += ConvertToUTF8( mOut, c );
-							}
-						}
-					}
-  // terminate the string.
-					(*mOut++) = 0;
-					val.value_type = VALUE_STRING;
-					break;
-				}
-			case ' ':
-			case '\t':
-			case '\r':
-			case '\n':
-				// skip whitespace
-				//n++;
-				//lprintf( "whitespace skip..." );
-				break;
-		//----------------------------------------------------------
-		//  catch characters for true/false/null/undefined which are values outside of quotes
-			case 't':
-				if( word == WORD_POS_RESET ) word = WORD_POS_TRUE_1;
-// fault
-				else {status=FALSE;lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );}
-				break;
-			case 'r':
-				if( word == WORD_POS_TRUE_1 ) word = WORD_POS_TRUE_2;
-// fault
-				else {status=FALSE;lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );}
-				break;
-			case 'u':
-				if( word == WORD_POS_TRUE_2 ) word = WORD_POS_TRUE_3;
-				else if( word == WORD_POS_NULL_1 ) word = WORD_POS_NULL_2;
-				else if( word == WORD_POS_RESET ) word = WORD_POS_UNDEFINED_1;
-// fault
-				else {status=FALSE;lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );}
-				break;
-			case 'e':
-				if( word == WORD_POS_TRUE_3 ) {
-					val.value_type = VALUE_TRUE;
-					word = WORD_POS_RESET;
-				} else if( word == WORD_POS_FALSE_4 ) {
-					val.value_type = VALUE_FALSE;
-					word = WORD_POS_RESET;
-				} else if( word == WORD_POS_UNDEFINED_3 ) word = WORD_POS_UNDEFINED_4;
-				else if( word == WORD_POS_UNDEFINED_7 ) word = WORD_POS_UNDEFINED_8;
-// fault
-				else {status=FALSE;lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );}
-				break;
-			case 'n':
-				if( word == WORD_POS_RESET ) word = WORD_POS_NULL_1;
-				else if( word == WORD_POS_UNDEFINED_1 ) word = WORD_POS_UNDEFINED_2;
-				else if( word == WORD_POS_UNDEFINED_6 ) word = WORD_POS_UNDEFINED_7;
-// fault
-				else {status=FALSE;lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );}
-				break;
-			case 'd':
-				if( word == WORD_POS_UNDEFINED_2 ) word = WORD_POS_UNDEFINED_3;
-				else if( word == WORD_POS_UNDEFINED_8 ) { val.value_type=VALUE_UNDEFINED; word = WORD_POS_RESET; }
-// fault
-				else {status=FALSE;lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );}
-				break;
-			case 'i':
-				if( word == WORD_POS_UNDEFINED_5 ) word = WORD_POS_UNDEFINED_6;
-// fault
-				else {status=FALSE;lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );}
-				break;
-			case 'l':
-				if( word == WORD_POS_NULL_2 ) word = WORD_POS_NULL_3;
-				else if( word == WORD_POS_NULL_3 ) {
-					val.value_type = VALUE_NULL;
-					word = WORD_POS_RESET;
-				} else if( word == WORD_POS_FALSE_2 ) word = WORD_POS_FALSE_3;
-// fault
-				else {status=FALSE;lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );}
-				break;
-			case 'f':
-				if( word == WORD_POS_RESET ) word = WORD_POS_FALSE_1;
-				else if( word == WORD_POS_UNDEFINED_4 ) word = WORD_POS_UNDEFINED_5;
-// fault
-				else {status=FALSE;lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );}
-				break;
-			case 'a':
-				if( word == WORD_POS_FALSE_1 ) word = WORD_POS_FALSE_2;
-// fault
-				else {status=FALSE;lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );}
-				break;
-			case 's':
-				if( word == WORD_POS_FALSE_3 ) word = WORD_POS_FALSE_4;
-// fault
-				else {status=FALSE;lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f, c, n );}
-				break;
-		//
-		  //----------------------------------------------------------
-			case '-':
-				negative = !negative;
-				break;
-			default:
-				if( ( c >= '0' && c <= '9' ) || ( c == '+' ) )
-				{
-					LOGICAL fromHex;
-					fromHex = FALSE;
-					// always reset this here....
-					// keep it set to determine what sort of value is ready.
-					val.float_result = 0;
-					val.string = mOut;
-  // terminate the string.
-					(*mOut++) = c;
-					while( (_msg_input=msg_input),(( n < msglen ) && (c = GetUtfChar( &msg_input )) ) )
-					{
-						if( c == '_' )
-							continue;
-						n = (msg_input - msg );
-						// leading zeros should be forbidden.
-						if( ( c >= '0' && c <= '9' )
-							|| ( c == '-' )
-							|| ( c == '+' )
-						  )
-						{
-							(*mOut++) = c;
-						}
-						else if( c == 'x' ) {
-							// hex conversion.
-							if( !fromHex ) {
-								fromHex = TRUE;
-								(*mOut++) = c;
-							}
-							else {
-								lprintf( WIDE("fault wile parsing; '%c' unexpected at %") _size_f, c, n );
-								break;
-							}
-						}
-						else if( ( c =='e' ) || ( c == 'E' ) || ( c == '.' ) )
-						{
-							val.float_result = 1;
-							(*mOut++) = c;
-						}
-						else
-						{
-							break;
-						}
-					}
-					{
-						(*mOut++) = 0;
-						if( val.float_result )
-						{
-							CTEXTSTR endpos;
-							val.result_d = FloatCreateFromText( val.string, &endpos );
-							if( negative ) { val.result_d = -val.result_d; negative = FALSE; }
-						}
-						else
-						{
-							val.result_n = IntCreateFromText( val.string );
-							if( negative ) { val.result_n = -val.result_n; negative = FALSE; }
-						}
-					}
-					msg_input = _msg_input;
-					n = msg_input - msg;
-					val.value_type = VALUE_NUMBER;
-				}
-				else
-				{
-					// fault, illegal characer (whitespace?)
-					lprintf( WIDE("fault parsing '%c' unexpected %")_size_f WIDE(" (near %*.*s[%c]%s)"), c, n
-							 , (int)( (n>4)?3:(n-1) ), (int)( (n>4)?3: (n - 1))
-							 , msg + n - ( (n>4)?4:n )
-							 , c
-							 , msg + n
-// fault
-							 );
-				}
- // default
-				break;
-			}
- // default of high level switch
-			break;
-		}
-	}
-	{
-		struct json_parse_context *old_context;
-		while( ( old_context = (struct json_parse_context *)PopLink( &context_stack ) ) ) {
-			lprintf( "warning unclosed contexts...." );
-			DeleteFromSet( PARSE_CONTEXT, jpsd.parseContexts, old_context );
-		}
-		if( context_stack )
-			DeleteLinkStack( &context_stack );
-	}
-	if( val.value_type != VALUE_UNSET )
-		AddDataItem( &elements, &val );
-	(*_msg_output) = elements;
-	// clean all contexts
-	if( !status )
-	{
-		//Release( (*_msg_output) );
-		//(*_msg_output) = NULL;
-	}
-	return status;
-}
-#endif
 void json_dispose_decoded_message( struct json_context_object *format
                                  , POINTER msg_data )
 {
@@ -55995,574 +55584,6 @@ LOGICAL json6_parse_message( const char * msg
 	_state = state;
 	return FALSE;
 }
-#if 0
-LOGICAL _json6_parse_message( char * msg
-                                 , size_t msglen
-                                 , PDATALIST *_msg_output )
-{
-	/* I guess this is a good parser */
-	PDATALIST elements = NULL;
-	//size_t m = 0; // m is the output path; leave text inline; but escaped chars can offset/change the content
-// = NewArray( char, msglen );
-	TEXTSTR mOut = msg;
-	size_t line = 1;
-	size_t col = 1;
- // character index;
-	size_t n = 0;
-	//size_t _n = 0; // character index; (restore1)
-	int word = WORD_POS_RESET;
-	TEXTRUNE c;
-	LOGICAL status = TRUE;
-	LOGICAL negative = FALSE;
-	//LOGICAL literalString = FALSE;
-	PLINKSTACK context_stack = NULL;
-	PPARSE_CONTEXT context = GetFromSet( PARSE_CONTEXT, &jpsd.parseContexts );
-	enum parse_context_modes parse_context = CONTEXT_UNKNOWN;
-	struct json_value_container val;
-	int comment = 0;
-	char const * msg_input = (char const *)msg;
-	char const * _msg_input;
-	//char *token_begin;
-	if( !_msg_output )
-		return FALSE;
-	elements = CreateDataList( sizeof( val ) );
-	val.value_type = VALUE_UNSET;
-	val.contains = NULL;
-	val.name = NULL;
-	val.string = NULL;
-	while( status && ( n < msglen ) && ( c = GetUtfChar( &msg_input ) ) )
-	{
-		col++;
-		n = msg_input - msg;
-		if( comment ) {
-			if( comment == 1 ) {
-				if( c == '*' ) { comment = 3; continue; }
-				if( c != '/' ) { lprintf( WIDE("Fault while parsing; unexpected %c at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col ); status = FALSE; }
-				else comment = 2;
-				continue;
-			}
-			if( comment == 2 ) {
-				if( c == '\n' ) { comment = 0; continue; }
-				else continue;
-			}
-			if( comment == 3 ){
-				if( c == '*' ) { comment = 4; continue; }
-				else continue;
-			}
-			if( comment == 4 ) {
-				if( c == '/' ) { comment = 0; continue; }
-				else { if( c != '*' ) comment = 3; continue; }
-			}
-		}
-		switch( c )
-		{
-		case '/':
-			if( !comment ) comment = 1;
-			break;
-		case '{':
-			{
-				struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &jpsd.parseContexts );
-#ifdef _DEBUG_PARSING
-				lprintf( "Begin a new object; previously pushed into elements; but wait until trailing comma or close previously:%d", val.value_type );
-#endif
-				val.value_type = VALUE_OBJECT;
-				val.contains = CreateDataList( sizeof( val ) );
-				AddDataItem( &elements, &val );
-				old_context->context = parse_context;
-				old_context->elements = elements;
-				elements = val.contains;
-				PushLink( &context_stack, old_context );
-				RESET_VAL();
-				parse_context = CONTEXT_OBJECT_FIELD;
-			}
-			break;
-		case '[':
-			if( parse_context == CONTEXT_OBJECT_FIELD ) {
-				lprintf( WIDE("Fault while parsing; while getting field name unexpected %c at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col );
-				status = FALSE;
-				break;
-			}
-			{
-				struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &jpsd.parseContexts );
-#ifdef _DEBUG_PARSING
-				lprintf( "Begin a new array; previously pushed into elements; but wait until trailing comma or close previously:%d", val.value_type );
-#endif
-				val.value_type = VALUE_ARRAY;
-				val.contains = CreateDataList( sizeof( val ) );
-				AddDataItem( &elements, &val );
-				old_context->context = parse_context;
-				old_context->elements = elements;
-				elements = val.contains;
-				PushLink( &context_stack, old_context );
-				RESET_VAL();
-				parse_context = CONTEXT_IN_ARRAY;
-			}
-			break;
-		case ':':
-			if( parse_context == CONTEXT_OBJECT_FIELD )
-			{
-				(*mOut++) = 0;
-				word = WORD_POS_RESET;
-				if( val.name ) {
-					lprintf( "two names single value?" );
-				}
-				val.name = val.string;
-				val.nameLen = val.stringLen;
-				val.string = NULL;
-				//val.stringLen = 0;
-				parse_context = CONTEXT_OBJECT_FIELD_VALUE;
-				val.value_type = VALUE_UNSET;
-			}
-			else
-			{
-				if( parse_context == CONTEXT_IN_ARRAY )
-					lprintf( WIDE("(in array, got colon out of string):parsing fault; unexpected %c at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col );
-				else
-					lprintf( WIDE("(outside any object, got colon out of string):parsing fault; unexpected %c at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col );
-				status = FALSE;
-			}
-			break;
-		case '}':
-			// coming back after pushing an array or sub-object will reset the contxt to FIELD, so an end with a field should still push value.
-			if( ( parse_context == CONTEXT_OBJECT_FIELD ) ) {
-#ifdef _DEBUG_PARSING
-				lprintf( "close object; empty object %d", val.value_type );
-#endif
-				RESET_VAL();
-				{
-					struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &context_stack );
-					struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt-1 );
-  // save updated elements list in the old value in the last pushed list.
-					oldVal->contains = elements;
- // this will restore as IN_ARRAY or OBJECT_FIELD
-					parse_context = old_context->context;
-					elements = old_context->elements;
-					DeleteFromSet( PARSE_CONTEXT, jpsd.parseContexts, old_context );
-				}
-			}
-			else if( ( parse_context == CONTEXT_OBJECT_FIELD_VALUE ) )
-			{
-				// first, add the last value
-#ifdef _DEBUG_PARSING
-				lprintf( "close object; push item %s %d", val.name, val.value_type );
-#endif
-				if( val.value_type != VALUE_UNSET ) {
-					AddDataItem( &elements, &val );
-				}
-				RESET_VAL();
-				{
-					struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &context_stack );
-					struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt-1 );
-  // save updated elements list in the old value in the last pushed list.
-					oldVal->contains = elements;
- // this will restore as IN_ARRAY or OBJECT_FIELD
-					parse_context = old_context->context;
-					elements = old_context->elements;
-					DeleteFromSet( PARSE_CONTEXT, jpsd.parseContexts, old_context );
-				}
-				//n++;
-			}
-			else
-			{
-				lprintf( WIDE("Fault while parsing; unexpected %c at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col );
-				status = FALSE;
-			}
-			break;
-		case ']':
-			if( parse_context == CONTEXT_IN_ARRAY )
-			{
-#ifdef _DEBUG_PARSING
-				lprintf( "close array, push last element: %d", val.value_type );
-#endif
-				if( val.value_type != VALUE_UNSET ) {
-					AddDataItem( &elements, &val );
-				}
-				RESET_VAL();
-				{
-					struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &context_stack );
-					struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt-1 );
-  // save updated elements list in the old value in the last pushed list.
-					oldVal->contains = elements;
-					parse_context = old_context->context;
-					elements = old_context->elements;
-					DeleteFromSet( PARSE_CONTEXT, jpsd.parseContexts, old_context );
-				}
-			}
-			else
-			{
-// fault
-				lprintf( WIDE("bad context %d; fault while parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, parse_context, c, n, line, col );
-				status = FALSE;
-			}
-			break;
-		case ',':
-			if( parse_context == CONTEXT_IN_ARRAY )
-			{
-				if( val.value_type != VALUE_UNSET ) {
-#ifdef _DEBUG_PARSING
-					lprintf( "back in array; push item %d", val.value_type );
-#endif
-					AddDataItem( &elements, &val );
-					RESET_VAL();
-				}
- // in an array, elements after a comma should init as undefined...
-				val.value_type = VALUE_UNDEFINED;
-				// undefined allows [,,,] to be 4 values and [1,2,3,] to be 4 values with an undefined at end.
-			}
-			else if( parse_context == CONTEXT_OBJECT_FIELD_VALUE )
-			{
-				// after an array value, it will have returned to OBJECT_FIELD anyway
-#ifdef _DEBUG_PARSING
-				lprintf( "comma after field value, push field to object: %s", val.name );
-#endif
-				parse_context = CONTEXT_OBJECT_FIELD;
-				if( val.value_type != VALUE_UNSET )
-					AddDataItem( &elements, &val );
-				RESET_VAL();
-			}
-			else
-			{
-				status = FALSE;
-// fault
-				lprintf( WIDE("bad context; fault while parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col );
-			}
-			break;
-		default:
-			if( parse_context == CONTEXT_OBJECT_FIELD ) {
-				if( c < 0xFF ) {
-					if( nonIdentifiers8[c] ) {
-						// invalid start/continue
-						status = FALSE;
-	// fault
-						lprintf( WIDE("fault while parsing object field name; \\u00%02X unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col );
-						break;
-					}
-				} else {
-					int n;
-					for( n = 0; n < ( sizeof( nonIdentifiers ) / sizeof( nonIdentifiers[0] ) ); n++ ) {
-						if( c == nonIdentifiers[n] ) {
-							status = FALSE;
-	// fault
-							lprintf( WIDE("fault while parsing object field name; \\u00%02X unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col );
-							break;
-						}
-					}
-					if( c < ( sizeof( nonIdentifiers ) / sizeof( nonIdentifiers[0] ) ) )
-						break;
-				}
-				switch( c )
-				{
-				case '`':
-				case '"':
-				case '\'':
-					val.string = mOut;
-					status = gatherString6( msg, &msg_input, msglen, &mOut, &line, &col, c ) >= 0;
-					if( status ) {
-						val.value_type = VALUE_STRING;
-						//val.stringLen = (mOut - val.string - 1);
-					}
-					break;
-				case '\n':
-					line++;
-					col = 1;
-					// fall through to normal space handling - just updated line/col position
-				case ' ':
-				case '\t':
-				case '\r':
- // ZWNBS is WS though
-				case 0xFEFF:
-					if( word == WORD_POS_RESET )
-						break;
-					else if( word == WORD_POS_FIELD ) {
-						word = WORD_POS_AFTER_FIELD;
-					}
-					status = FALSE;
-	// fault
-					lprintf( WIDE("fault while parsing; whitespace unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, n, line, col );
-					// skip whitespace
-					//n++;
-					//lprintf( "whitespace skip..." );
-					break;
-				default:
-					if( word == WORD_POS_RESET ) {
-						word = WORD_POS_FIELD;
-						val.string = mOut;
-					}
-					if( c < 128 ) (*mOut++) = c;
-					else mOut += ConvertToUTF8( mOut, c );
- // default
-					break;
-				}
-			}
-			else switch( c )
-			{
-			case '`':
-			case '"':
-			case '\'':
-				val.string = mOut;
-				status = gatherString6( msg, &msg_input, msglen, &mOut, &line, &col, c ) >= 0;
-				if( status ) {
-					val.value_type = VALUE_STRING;
-					//val.stringLen = (mOut - val.string - 1);
-				}
-				break;
-			case ' ':
-			case '\t':
-			case '\r':
-				if( 0 ) {
-			case '\n':
-					line++;
-					col = 1;
-				}
-			case 0xFEFF:
-				if( word == WORD_POS_RESET )
-					break;
-				status = FALSE;
-	// fault
-				lprintf( WIDE("fault while parsing; whitespace unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, n );
-				// skip whitespace
-				//n++;
-				//lprintf( "whitespace skip..." );
-				break;
-		//----------------------------------------------------------
-		//  catch characters for true/false/null/undefined which are values outside of quotes
-			case 't':
-				if( word == WORD_POS_RESET ) word = WORD_POS_TRUE_1;
-				else if( word == WORD_POS_INFINITY_6 ) word = WORD_POS_INFINITY_7;
-// fault
-				else { status = FALSE; lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col ); }
-				break;
-			case 'r':
-				if( word == WORD_POS_TRUE_1 ) word = WORD_POS_TRUE_2;
-// fault
-				else { status = FALSE; lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col ); }
-				break;
-			case 'u':
-				if( word == WORD_POS_TRUE_2 ) word = WORD_POS_TRUE_3;
-				else if( word == WORD_POS_NULL_1 ) word = WORD_POS_NULL_2;
-				else if( word == WORD_POS_RESET ) word = WORD_POS_UNDEFINED_1;
-// fault
-				else { status = FALSE; lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col ); }
-				break;
-			case 'e':
-				if( word == WORD_POS_TRUE_3 ) {
-					val.value_type = VALUE_TRUE;
-					word = WORD_POS_RESET;
-				} else if( word == WORD_POS_FALSE_4 ) {
-					val.value_type = VALUE_FALSE;
-					word = WORD_POS_RESET;
-				} else if( word == WORD_POS_UNDEFINED_3 ) word = WORD_POS_UNDEFINED_4;
-				else if( word == WORD_POS_UNDEFINED_7 ) word = WORD_POS_UNDEFINED_8;
-// fault
-				else { status = FALSE; lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col ); }
-				break;
-			case 'n':
-				if( word == WORD_POS_RESET ) word = WORD_POS_NULL_1;
-				else if( word == WORD_POS_UNDEFINED_1 ) word = WORD_POS_UNDEFINED_2;
-				else if( word == WORD_POS_UNDEFINED_6 ) word = WORD_POS_UNDEFINED_7;
-				else if( word == WORD_POS_INFINITY_1 ) word = WORD_POS_INFINITY_2;
-				else if( word == WORD_POS_INFINITY_4 ) word = WORD_POS_INFINITY_5;
-// fault
-				else { status = FALSE; lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col ); }
-				break;
-			case 'd':
-				if( word == WORD_POS_UNDEFINED_2 ) word = WORD_POS_UNDEFINED_3;
-				else if( word == WORD_POS_UNDEFINED_8 ) { val.value_type=VALUE_UNDEFINED; word = WORD_POS_RESET; }
-// fault
-				else { status = FALSE; lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col ); }
-				break;
-			case 'i':
-				if( word == WORD_POS_UNDEFINED_5 ) word = WORD_POS_UNDEFINED_6;
-				else if( word == WORD_POS_INFINITY_3 ) word = WORD_POS_INFINITY_4;
-				else if( word == WORD_POS_INFINITY_5 ) word = WORD_POS_INFINITY_6;
-// fault
-				else { status = FALSE; lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col ); }
-				break;
-			case 'l':
-				if( word == WORD_POS_NULL_2 ) word = WORD_POS_NULL_3;
-				else if( word == WORD_POS_NULL_3 ) {
-					val.value_type = VALUE_NULL;
-					word = WORD_POS_RESET;
-				} else if( word == WORD_POS_FALSE_2 ) word = WORD_POS_FALSE_3;
-// fault
-				else { status = FALSE; lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col ); }
-				break;
-			case 'f':
-				if( word == WORD_POS_RESET ) word = WORD_POS_FALSE_1;
-				else if( word == WORD_POS_UNDEFINED_4 ) word = WORD_POS_UNDEFINED_5;
-				else if( word == WORD_POS_INFINITY_2 ) word = WORD_POS_INFINITY_3;
-// fault
-				else { status = FALSE; lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col ); }
-				break;
-			case 'a':
-				if( word == WORD_POS_FALSE_1 ) word = WORD_POS_FALSE_2;
-				else if( word == WORD_POS_NAN_1 ) word = WORD_POS_NAN_2;
-// fault
-				else { status = FALSE; lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col ); }
-				break;
-			case 's':
-				if( word == WORD_POS_FALSE_3 ) word = WORD_POS_FALSE_4;
-// fault
-				else { status = FALSE; lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col ); }
-				break;
-			case 'I':
-				if( word == WORD_POS_RESET ) word = WORD_POS_INFINITY_1;
-// fault
-				else { status = FALSE; lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col ); }
-				break;
-			case 'N':
-				if( word == WORD_POS_RESET ) word = WORD_POS_NAN_1;
-				else if( word == WORD_POS_NAN_2 ) { val.value_type = negative ? VALUE_NEG_NAN : VALUE_NAN; word = WORD_POS_RESET; }
-// fault
-				else { status = FALSE; lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col ); }
-				break;
-			case 'y':
-				if( word == WORD_POS_INFINITY_7 ) { val.value_type = negative ? VALUE_NEG_INFINITY : VALUE_INFINITY; word = WORD_POS_RESET; }
-// fault
-				else { status = FALSE; lprintf( WIDE("fault while parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col ); }
-				break;
-		//
-		  //----------------------------------------------------------
-			case '-':
-				negative = !negative;
-				break;
-			default:
-				if( ( c >= '0' && c <= '9' ) || ( c == '+' ) || ( c == '.' ) )
-				{
-					LOGICAL fromHex;
-					LOGICAL fromDate;
-					LOGICAL exponent;
-					exponent = FALSE;
-					fromHex = FALSE;
-					fromDate = FALSE;
-					// always reset this here....
-					// keep it set to determine what sort of value is ready.
-					val.float_result = 0;
-					val.string = mOut;
-  // terminate the string.
-					(*mOut++) = c;
-					while( (_msg_input=msg_input),(( n < msglen ) && (c = GetUtfChar( &msg_input )) ) )
-					{
-						col++;
-						n = (msg_input - msg );
-						// leading zeros should be forbidden.
-						if( c == '_' )
-							continue;
-						if( ( c >= '0' && c <= '9' )
-							|| ( c == '+' )
-						  )
-						{
-							(*mOut++) = c;
-						}
-#if 0
-// to be implemented
-						 else if( c == ':' || c == '-' || c == 'Z' || c == '+' ) {
-/* toISOString()
-var today = new Date('05 October 2011 14:48 UTC');
-console.log(today.toISOString());
-// Returns 2011-10-05T14:48:00.000Z
-*/
-							(*mOut++) = c;
-						}
-#endif
-						else if( c == 'x' || c == 'b' ) {
-							// hex conversion.
-							if( !fromHex ) {
-								fromHex = TRUE;
-								(*mOut++) = c;
-							}
-							else {
-								status = FALSE;
-								lprintf( WIDE("fault wile parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col );
-								break;
-							}
-						}
-						else if( ( c =='e' ) || ( c == 'E' ) )
-						{
-							if( !exponent ) {
-								val.float_result = 1;
-								(*mOut++) = c;
-								exponent = TRUE;
-							} else {
-								status = FALSE;
-								lprintf( WIDE("fault wile parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col );
-								break;
-							}
-						}
-						else if( c == '.' )
-						{
-							if( !val.float_result ) {
-								val.float_result = 1;
-								(*mOut++) = c;
-							} else {
-								status = FALSE;
-								lprintf( WIDE("fault wile parsing; '%c' unexpected at %") _size_f WIDE("  %") _size_f WIDE(":%") _size_f, c, n, line, col );
-								break;
-							}
-						}
-						else
-						{
-							break;
-						}
-					}
-					{
-						(*mOut++) = 0;
-						if( val.float_result )
-						{
-							CTEXTSTR endpos;
-							val.result_d = FloatCreateFromText( val.string, &endpos );
-							if( negative ) { val.result_d = -val.result_d; negative = FALSE; }
-						}
-						else
-						{
-							val.result_n = IntCreateFromText( val.string );
-							if( negative ) { val.result_n = -val.result_n; negative = FALSE; }
-						}
-					}
-					msg_input = _msg_input;
-					n = msg_input - msg;
-					val.value_type = VALUE_NUMBER;
-				}
-				else
-				{
-					// fault, illegal characer (whitespace?)
-					status = FALSE;
-					lprintf( WIDE("fault parsing '%c' unexpected %")_size_f WIDE(" (near %*.*s[%c]%s)"), c, n
-							 , (int)( (n>4)?3:(n-1) ), (int)( (n>4)?3:(n-1) )
-							 , msg + n - ( (n>4)?4:n )
-							 , c
-							 , msg + n
-// fault
-							 );
-				}
- // default
-				break;
-			}
- // default of high level switch
-			break;
-		}
-	}
-	{
-		struct json_parse_context *old_context;
-		while( ( old_context = (struct json_parse_context *)PopLink( &context_stack ) ) ) {
-			lprintf( "warning unclosed contexts...." );
-			DeleteFromSet( PARSE_CONTEXT, jpsd.parseContexts, old_context );
-		}
-		if( context_stack )
-			DeleteLinkStack( &context_stack );
-	}
-	if( val.value_type != VALUE_UNSET )
-		AddDataItem( &elements, &val );
-	(*_msg_output) = elements;
-	// clean all contexts
-	if( !status )
-	{
-		//Release( (*_msg_output) );
-		//(*_msg_output) = NULL;
-	}
-	return status;
-}
-#endif
 void json6_dispose_decoded_message( struct json6_context_object *format
                                  , POINTER msg_data )
 {
@@ -58674,7 +57695,7 @@ LOGICAL IsAddressV6( SOCKADDR *addr )
 const char * GetAddrString( SOCKADDR *addr )
 {
 	static char buf[256];
-	lprintf( "addr family is: %d", addr->sa_family );
+	//lprintf( "addr family is: %d", addr->sa_family );
 	if( addr->sa_family == AF_INET )
 		snprintf( buf, 256, "%d.%d.%d.%d"
 			, *(((unsigned char *)addr) + 4),
@@ -59456,7 +58477,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 			if( !thread->flags.bProcessing )
 			{
 				// have to make sure threads reset to the new list.
-				lprintf( "have to wait for thread to be in wait state..." );
+				//lprintf( "have to wait for thread to be in wait state..." );
 				WSASetEvent( thread->hThread );
 				LeaveCriticalSec( &globalNetworkData.csNetwork );
 				while( (thread->nWaitEvents > 1) || thread->flags.bProcessing )
@@ -62363,6 +61384,9 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 			if( bCPP )
 				pResult->dwFlags |= ( CF_CALLBACKTYPES );
 			AddActive( pResult );
+			if( !flags & OPEN_TCP_FLAG_DELAY_CONNECT ) {
+				NetworkConnectTCPEx( pResult DBG_RELAY );
+			}
 			//lprintf( WIDE("Leaving Client's critical section") );
 			NetworkUnlockEx( pResult DBG_SRC );
 			// socket should now get scheduled for events, after unlocking it?
@@ -75710,6 +74734,8 @@ int xTruncate(sqlite3_file*file, sqlite3_int64 size)
 int xSync(sqlite3_file*file, int flags)
 {
 	struct my_file_data *my_file = (struct my_file_data*)file;
+	if( !my_file->file )
+		return SQLITE_OK;
 #ifdef LOG_OPERATIONS
 	lprintf( "Sync on %s", my_file->filename );
 #endif
@@ -75720,7 +74746,13 @@ int xSync(sqlite3_file*file, int flags)
 int xFileSize(sqlite3_file*file, sqlite3_int64 *pSize)
 {
 	struct my_file_data *my_file = (struct my_file_data*)file;
-	(*pSize) = sack_fsize( my_file->file );
+	if( my_file->file )
+		(*pSize) = sack_fsize( my_file->file );
+	else {
+		(*pSize) = 0;
+		return SQLITE_OK;
+		//return SQLITE_IOERR_FSTAT;
+	}
 #ifdef LOG_OPERATIONS
 	lprintf( "Get File size result of %s %d", my_file->filename, (*pSize) );
 #endif
@@ -75822,7 +74854,9 @@ int xFileControl(sqlite3_file*file, int op, void *pArg)
 		{
 			char **files = (char**)pArg;
 			//char *name = files[3];
-			files[0] = sqlite3_mprintf( "%s", files[2] );
+			//lprintf( "pragma... (%s)", files[1] );
+			//files[0] = sqlite3_mprintf( "%s", files[2] );
+			return SQLITE_NOTFOUND;
 			//xOpen( my_file->
 		}
 		break;
@@ -75949,7 +74983,7 @@ int xOpen(sqlite3_vfs* vfs, const char *zName, sqlite3_file*file,
 #undef sack_fsopen
 #undef sack_fsopenEx
 #endif
-	return SQLITE_ERROR;
+	return SQLITE_CANTOPEN;
 }
 int xDelete(sqlite3_vfs*vfs, const char *zName, int syncDir)
 {
@@ -82060,7 +81094,7 @@ retry:
 			case SQLITE_OK:
 			case SQLITE_DONE:
 			case SQLITE_ROW:
-				if( !sqlite3_get_autocommit(odbc->db) )
+				//if( !sqlite3_get_autocommit(odbc->db) )
 				{
 					// this is a noisy message when we start using start trans and endtrans
 					//lprintf( "Database has fallen out of auto commit mode!" );
@@ -85792,9 +84826,13 @@ retry:
 					int colfirst = 1;
 					{
 						{
-							vtprintf( pvtCreate, WIDE("%sCONSTRAINT `%s` FOREIGN KEY (" )
-									  , first?WIDE(""):WIDE(",")
-									  , table->constraints.constraint[n].name );
+							if( odbc->flags.bSQLite_native )
+								vtprintf( pvtCreate, WIDE("%s FOREIGN KEY  (" )
+										  , first?WIDE(""):WIDE(",") );
+							else
+								vtprintf( pvtCreate, WIDE("%sCONSTRAINT `%s` FOREIGN KEY (" )
+										  , first?WIDE(""):WIDE(",")
+										  , table->constraints.constraint[n].name );
 							colfirst = 1;
 							for( col = 0; table->constraints.constraint[n].colnames[col]; col++ )
 							{
@@ -86641,6 +85679,7 @@ void AddConstraint( PTABLE table, PTEXT *word )
 		{
 			// next word is the type, skip that word too....
 			(*word) = NEXTLINE( *word );
+         table->constraints.constraint[table->constraints.count-1].flags.foreign_key = 1;
 		}
 	}
 	GrabKeyColumns( word, table->constraints.constraint[table->constraints.count-1].colnames );
@@ -86823,7 +85862,7 @@ int GetTableColumns( PTABLE table, PTEXT *word DBG_PASS )
 					AddIndexKey( table, word, 1, 0, 1 );
 					Release( name );
 				}
-				else if( StrCaseCmp( name, WIDE( "CONSTRAINT" ) ) == 0 )
+				else if( StrCaseCmp( name, WIDE( "CONSTRAINT" ) ) == 0 || StrCaseCmp( name, WIDE( "FOREIGN" ) ) == 0 )
 				{
 					//lprintf( "Skipping constraint parsing" );
 					AddConstraint( table, word );
@@ -89575,7 +88614,8 @@ TRANSLATION_PROC void TRANSLATION_API SaveTranslationData( void );
 TRANSLATION_PROC void TRANSLATION_API SaveTranslationDataToFile( FILE *output );
 TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataEx( const char *filename );
 TRANSLATION_PROC void TRANSLATION_API LoadTranslationData( void );
-TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataFromFile( POINTER data, size_t length );
+TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataFromMemory( POINTER data, size_t length );
+TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataFromFile( FILE *file );
 /*
    return: PLIST is a list of PTranslation
 */
@@ -89774,7 +88814,7 @@ void SaveTranslationData( void )
 	SaveTranslationDataEx( "strings.json" );
 }
 //---------------------------------------------------------------------------
-void LoadTranslationDataFromFile( POINTER input, size_t length )
+void LoadTranslationDataFromMemory( POINTER input, size_t length )
 {
 	PDATALIST data = NULL;
 	char *_input = NewArray( char, length );
@@ -89824,9 +88864,17 @@ void LoadTranslationDataEx( const char *filename )
 	//lprintf( "load file:%p", file );
 	if( file )
 	{
-		LoadTranslationDataFromFile( file, size );
+		LoadTranslationDataFromMemory( file, size );
 		CloseSpace( file );
 	}
+}
+void LoadTranslationDataFromFile( FILE *file ) {
+	size_t size;
+	char *data;
+	size = sack_fsize( file );
+	data = NewArray( char, size );
+	size = sack_fread( data, size, 1, file );
+	LoadTranslationDataFromMemory( data, size );
 }
 //---------------------------------------------------------------------------
 void LoadTranslationData( void )

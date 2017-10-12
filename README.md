@@ -759,6 +759,7 @@ COM port settings are kept in the default option database under
 
 
 ## Changelog
+- 0.1.99315 Add rekey method to volumes.
 - 0.1.99314 Fixed duplicating address sent with UDP messages.  
 Fix reading files from /sys/class/*.  Fix reading directory.  
 Fix websocket protocol option before options object.  
