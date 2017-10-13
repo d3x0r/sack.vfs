@@ -724,6 +724,14 @@ void MakeReq( struct info_params *params )
 					LIST_FORALL( params->altSubject.IP, idx, char *, name ) {
 						GENERAL_NAME *gname = GENERAL_NAME_new();
 						SOCKADDR *addr = CreateRemote( name, 0 );
+						if( !addr ) {
+							char buf[256];
+							snprintf( buf, 256, "%s:%s", TranslateText("Bad address passed"), name );
+                     params->isolate->ThrowException( Exception::Error(
+																							  String::NewFromUtf8( params->isolate, buf ) ) );
+                     params->ca = NULL;
+                     return;
+						}
 						AddLink( &addresses, addr );
 						ASN1_IA5STRING *val = ASN1_IA5STRING_new();
 						if( IsAddressV6( addr ) )
