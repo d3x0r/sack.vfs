@@ -234,6 +234,7 @@ add_library(${PROJECT_NAME} SHARED
         )
 
 
+set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c PROPERTIES COMPILE_DEFINITIONS "SQLITE_ENABLE_LOCKING_STYLE=0;SQLITE_THREADSAFE=0" )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
 if( CMAKE_COMPILER_IS_GNUCC )
