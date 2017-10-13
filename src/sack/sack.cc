@@ -52037,7 +52037,7 @@ PCLIENT WebSocketCreate( CTEXTSTR hosturl
 	HTML5WebSocket socket = New( struct html5_web_socket );
 	MemSet( socket, 0, sizeof( struct html5_web_socket ) );
 	socket->Magic = 0x20130912;
-	socket->input_state.flags.deflate = 1;
+	socket->input_state.flags.deflate = 0;
 	socket->input_state.on_open = on_open;
 	socket->input_state.on_event = on_event;
 	socket->input_state.on_close = on_closed;
