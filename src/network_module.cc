@@ -538,6 +538,10 @@ void udpObject::close( const FunctionCallbackInfo<Value>& args ) {
 void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	udpObject *obj = ObjectWrap::Unwrap<udpObject>( args.This() );
+	if( !obj->pc ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Socket is not open." ) ) ) );
+		return;
+	}
 	SOCKADDR *dest = NULL;
 	if( args.Length() > 1 ) {
 		Local<FunctionTemplate> tpl = addrObject::tpl.Get( isolate );
