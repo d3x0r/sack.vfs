@@ -573,6 +573,7 @@ Server Options
 
   | Server Options |   |
   |---|---|
+  | address | specific address to bind to; default binds to ::0 |
   | port |  a port number.  8080 is the default. |
   | masking | true/false; browsers do not accept server masked data; RFC non-specific; default is false |
   | perMessageDeflate | true/false; default false (performance).  Accepts permessage-deflate extension from client, and deflates messages if requested by client. |
