@@ -86,6 +86,12 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	InitSRG( isolate, exports );
 	InitWebSocket( isolate, exports );
 	InitUDPSocket( isolate, exports );
+#ifdef INCLUDE_GUI
+	ImageObject::Init( exports );
+	InterShellObject::Init( exports );
+	ControlObject::Init( exports );
+	RenderObject::Init( exports );
+#endif
 #ifdef WIN32
 	RegObject::Init( exports );
 #endif

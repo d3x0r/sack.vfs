@@ -1,0 +1,255 @@
+cmake_minimum_required(VERSION 3.0)
+
+
+project (sack_vfs)
+
+if( MSVC )
+  #add_definitions( -D_CRT_SECURE_NO_WARNINGS -wd4995 -wd4996 )
+  #add_definitions( -wd4996 )
+
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP8")
+  SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MP8")
+
+  SET( CMAKE_CXX_FLAGS_RELEASE  "${CMAKE_CXX_FLAGS_RELEASE}  /GS-" )
+  SET( CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}  /GS-" )
+  SET( CMAKE_C_FLAGS_RELEASE  "${CMAKE_C_FLAGS_RELEASE}  /GS-" )
+  SET( CMAKE_C_FLAGS_RELWITHDEBINFO  "${CMAKE_C_FLAGS_RELWITHDEBINFO} /GS-" )
+
+  string( REPLACE "/Ob1" "/Ob2" CMAKE_CXX_FLAGS_RELWITHDEBINFO ${CMAKE_CXX_FLAGS_RELWITHDEBINFO} )
+  string( REPLACE "/Ob1" "/Ob2" CMAKE_C_FLAGS_RELWITHDEBINFO ${CMAKE_C_FLAGS_RELWITHDEBINFO} )
+
+endif( MSVC )
+
+
+#if( GNUC )
+#  SET( CMAKE_CXX_FLAGS_DEBUG  "${CMAKE_CXX_FLAGS_DEBUG} -D_DEBUG" )
+#  SET( CMAKE_C_FLAGS_DEBUG  "${CMAKE_C_FLAGS_DEBUG}  -D_DEBUG" )
+#  SET( CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -D_DEBUG" )
+#  SET( CMAKE_C_FLAGS_RELWITHDEBINFO  "${CMAKE_C_FLAGS_RELWITHDEBINFO}  -D_DEBUG" )
+#endif( GNUC )
+
+include_directories( "../node_modules/nan" )
+
+
+if( NOT WIN32 )
+    ADD_DEFINITIONS( -D__LINUX__ )
+else( NOT WIN32 )
+    ADD_DEFINITIONS( -D_CRT_NONSTDC_NO_DEPRECATE )
+endif( NOT WIN32 )
+
+#if( CMAKE_SIZEOF_VOID_P EQUAL 8 )
+#    ADD_DEFINITIONS( -D__64__ )
+#endif( CMAKE_SIZEOF_VOID_P EQUAL 8 )
+
+
+ADD_DEFINITIONS( -DNO_OPEN_MACRO )
+
+if( ${CMAKE_BUILD_TYPE} MATCHES "[dD][eE][bB][uU][gG]"
+   OR ${CMAKE_BUILD_TYPE} MATCHES "[rR][eE][lL][wW][iI].*" )
+   ADD_DEFINITIONS( -D_DEBUG )
+endif( ${CMAKE_BUILD_TYPE} MATCHES "[dD][eE][bB][uU][gG]"
+   OR ${CMAKE_BUILD_TYPE} MATCHES "[rR][eE][lL][wW][iI].*" )
+
+if( WIN32 )
+	set( SACK_BASE M:/sack )
+else( WIN32 )
+	set( SACK_BASE ${CMAKE_SOURCE_DIR}/../../sack )
+endif( WIN32 )
+
+# __NO_OPTIONS__ __NO_INTERFACE_SUPPORT__ __NO_ODBC__
+set( DEFINITIONS   __STATIC__
+		USE_SQLITE USE_SQLITE_INTERFACE FORCE_COLOR_MACROS NO_FILEOP_ALIAS
+                _CRT_SECURE_NO_WARNINGS  NEED_SHLAPI NEED_SHLOBJ JSON_PARSER_MAIN_SOURCE "SQLITE_ENABLE_LOCKING_STYLE=0"
+                 )
+
+
+if( EXISTS ${SACK_BASE} )
+
+set( INCLUDES
+	-I${SACK_BASE}/include
+	-I${SACK_BASE}/src/contrib/sha1lib
+	-I${SACK_BASE}/src/contrib/sqlite/3.19.3
+ )
+
+FILE( WRITE ${CMAKE_BINARY_DIR}/config.ppc "/*CMake Option defined*/\n" )
+
+
+foreach( DEF ${DEFINITIONS} )
+   ADD_DEFINITIONS( -D${DEF} )
+   #FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define ${DEF}\n" )
+ENDFOREACH()
+
+FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define NO_AUTO_VECTLIB_NAMES\n" )
+
+
+SET( EXTRA_HEADERS
+	${SACK_BASE}/include/stdhdrs.h
+        ${SACK_BASE}/include/network.h
+        ${SACK_BASE}/include/pssql.h
+        ${SACK_BASE}/include/sqlgetoption.h
+        ${SACK_BASE}/include/idle.h
+        ${SACK_BASE}/include/filesys.h
+        ${SACK_BASE}/include/sack_vfs.h
+        ${SACK_BASE}/include/json_emitter.h
+        ${SACK_BASE}/include/html5.websocket.client.h
+        ${SACK_BASE}/include/html5.websocket.h
+        ${SACK_BASE}/include/http.h
+        ${SACK_BASE}/include/procreg.h
+        ${SACK_BASE}/include/configscript.h
+	${SACK_BASE}/include/salty_generator.h
+        ${SACK_BASE}/include/sackcomm.h
+	${SACK_BASE}/include/translation.h
+)
+
+SET( EXTRA_SOURCES
+	${SACK_BASE}/src/utils/virtual_file_system/vfs.c
+	${SACK_BASE}/src/utils/virtual_file_system/vfs_internal.h
+        ${SACK_BASE}/src/salty_random_generator/salty_generator.c
+        ${SACK_BASE}/src/salty_random_generator/crypt_util.c
+        ${SACK_BASE}/src/contrib/md5lib/md5c.c
+        ${SACK_BASE}/src/contrib/sha1lib/sha1.c
+        ${SACK_BASE}/src/contrib/sha2lib/sha2.c
+	${SACK_BASE}/src/deadstart/deadstart_core.c
+	${SACK_BASE}/src/sysloglib/syslog.c
+	${SACK_BASE}/src/systemlib/system.c
+	${SACK_BASE}/src/systemlib/spawntask.c
+	${SACK_BASE}/src/systemlib/args.c
+	${SACK_BASE}/src/systemlib/oswin.c
+	${SACK_BASE}/src/systemlib/taskinfo.h
+	${SACK_BASE}/src/timerlib/timers.c
+	${SACK_BASE}/src/idlelib/idle.c
+	${SACK_BASE}/src/procreglib/names.c
+	${SACK_BASE}/src/procreglib/registry.h
+	${SACK_BASE}/src/memlib/sharemem.c
+	${SACK_BASE}/src/memlib/memory_operations.c
+	${SACK_BASE}/src/memlib/sharestruc.h
+	${SACK_BASE}/src/filesyslib/winfiles.c
+	${SACK_BASE}/src/filesyslib/filescan.c
+	${SACK_BASE}/src/filesyslib/pathops.c
+	${SACK_BASE}/src/filesyslib/filesys_local.h
+	${SACK_BASE}/src/typelib/typecode.c
+	${SACK_BASE}/src/typelib/text.c
+	${SACK_BASE}/src/typelib/binarylist.c
+	${SACK_BASE}/src/typelib/familytree.c
+	${SACK_BASE}/src/typelib/sets.c
+	${SACK_BASE}/src/typelib/http.c
+	${SACK_BASE}/src/typelib/url.c
+	
+        ${SACK_BASE}/src/commlib/sackcomm.c
+
+	${SACK_BASE}/src/netlib/html5.websocket/html5.websocket.common.c
+	${SACK_BASE}/src/netlib/html5.websocket/client/html5.websocket.client.c
+	${SACK_BASE}/src/netlib/html5.websocket/server/html5.websocket.c
+	${SACK_BASE}/src/netlib/html5.websocket/json/json_parser.c
+	${SACK_BASE}/src/netlib/html5.websocket/json/json6_parser.c
+	${SACK_BASE}/src/netlib/html5.websocket/json/json_emitter.c
+	${SACK_BASE}/src/netlib/network.c
+	${SACK_BASE}/src/netlib/tcpnetwork.c
+	${SACK_BASE}/src/netlib/udpnetwork.c
+        ${SACK_BASE}/src/netlib/net_winsock2.c
+	${SACK_BASE}/src/netlib/ssl_layer.c
+
+	${SACK_BASE}/src/contrib/sqlite/sqlite_interface.c
+        ${SACK_BASE}/src/SQLlib/sqlstruc.h
+        ${SACK_BASE}/src/configlib/configscript.c
+        ${SACK_BASE}/src/SQLlib/sqlstub.c
+        ${SACK_BASE}/src/SQLlib/sqlwrap.c
+        ${SACK_BASE}/src/SQLlib/sqlutil.c
+        ${SACK_BASE}/src/SQLlib/guid.c
+        ${SACK_BASE}/src/SQLlib/sqlparse3.c
+        ${SACK_BASE}/src/SQLlib/optlib/getoption.c
+        ${SACK_BASE}/src/SQLlib/optlib/getoption_v4.c
+        ${SACK_BASE}/src/SQLlib/optlib/optionutil.c
+        ${SACK_BASE}/src/SQLlib/optlib/optionutil_v4.c
+
+	${SACK_BASE}/src/translationlib/translate.c
+
+	${SACK_BASE}/src/deadstart/deadstart_lib.c
+)
+
+SET( BUILD_AMALGAM on )
+
+set( C_SOURCES
+        ${SACK_BASE}/src/contrib/sqlite/3.19.3/sqlite3.c
+)
+add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
+			COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
+		)			
+add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${C_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/
+				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+                                   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
+)
+
+if( WIN32 )
+	set( PPCTOOL c:/tools/ppc.exe )
+else( WIN32 )
+	set( PPCTOOL /usr/bin/ppc )
+endif( WIN32 )
+
+if( EXISTS ${PPCTOOL} )
+  set( AMALG_COMMAND ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc ${EXTRA_SOURCES} )
+  set( AMALG_COMMAND2 ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.h ${EXTRA_HEADERS} )
+
+  add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
+  			#COMMAND cmake -E echo ${AMALG_COMMAND}
+   			 COMMAND ${AMALG_COMMAND}
+                        #COMMAND cmake -E echo ${AMALG_COMMAND2}
+   			COMMAND ${AMALG_COMMAND2}
+                   DEPENDS ${EXTRA_SOURCES} ${EXTRA_HEADERS}
+				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+  )
+  add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc )
+endif( EXISTS ${PPCTOOL} )
+
+else( EXISTS ${SACK_BASE} )
+
+foreach( DEF ${DEFINITIONS} )
+   ADD_DEFINITIONS( -D${DEF} )
+ENDFOREACH()
+
+endif( EXISTS ${SACK_BASE} )
+
+include_directories(${CMAKE_JS_INC} ${INCLUDES} src/sack )
+
+if( WIN32 )
+	set( MORE_MODULE_SOURCES src/reg_access.cc
+#		src/fixup_windows_executable.cc
+		)
+endif( WIN32 )
+
+add_library(${PROJECT_NAME} SHARED
+	src/vfs_module.cc
+	src/thread_module.cc
+	src/sql_module.cc
+	src/com_interface.cc
+	src/jsonParse.cc
+	src/tls_interface.cc
+	src/srg_module.cc
+	src/websocket_module.cc
+	src/network_module.cc
+	${MORE_MODULE_SOURCES}
+	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
+	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
+        )
+
+
+set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c PROPERTIES COMPILE_DEFINITIONS "SQLITE_ENABLE_LOCKING_STYLE=0;SQLITE_THREADSAFE=0" )
+
+set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
+if( CMAKE_COMPILER_IS_GNUCC )
+   set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_FLAGS "-Wno-unused-result")
+endif( CMAKE_COMPILER_IS_GNUCC )
+set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_DEFINITIONS "TARGETNAME=\"${PROJECT_NAME}.node\";${MOREDEFS}" )
+target_link_libraries(${PROJECT_NAME} ${CMAKE_JS_LIB})
+if( WIN32 )
+   target_link_libraries(${PROJECT_NAME} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll )
+endif( WIN32 )
+if( UNIX )
+   target_link_libraries( ${PROJECT_NAME} uuid )
+endif( UNIX )
+
+
+
+#add_library( ntdll SHARED ntdll.c )
+#add_library( kernel32 SHARED kernel32.c )
