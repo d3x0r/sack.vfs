@@ -17,18 +17,22 @@ console.log( "created frame?", f );
 var background = sack.Image( "the rror.jpg" );
 
 f.Control( "Button", "Test", 10, 10, 100, 20 );
+
 var customControl = sack.Registration( "image control" );
 console.log( "created custom control registration?", Object.keys(Object.getPrototypeOf(customControl)) );
 
-customControl.setDraw( ( image )=>{	
+customControl.setDraw( function( image ){	
 	console.log( "It wanted a draw...", 100+y_del, image, Object.keys(Object.getPrototypeOf(image)) ) 
-        image.putImage( background, 0+x_del, 100+y_del, 100 * scale, 100 * scale );
+        image.drawImage( background, 0+x_del, 100+y_del, 100 * scale, 100 * scale );
+	return true;
 } );
 
-customControl.setCreate( ()=>{
-	console.log( "Control created?" );
+customControl.setCreate( function() {
+	console.log( "Control created?", this );
+	return true;  // can return false/0 to disallow control creation.
 } );
-customControl.setMouse( ( event )=>{	
+
+customControl.setMouse( function( event ){	
 	console.log( "Mouse Event:", x_del, y_del, event.x, event.y, event.b );
 	if( event.b & sack.button.scroll_up ) { 
 		scale *= 0.1;
@@ -42,13 +46,16 @@ customControl.setMouse( ( event )=>{
 		} else { 
 			x_del += ( event.x - _x );
 			y_del += ( event.y - _y );
-			r.redraw();
+			this.redraw();
 		}
 		_x = event.x;
 		_y = event.y;
 		_b = event.b;
 	}
+	return true;
 } );
+
+console.log( "make image control" );
 
 f.Control( "image control", 0, 0, 500, 500 );
 
