@@ -86,6 +86,7 @@ struct optionStrings {
 	Eternal<String> *remoteFamilyString;
 	Eternal<String> *localPortString;
 	Eternal<String> *remotePortString;
+	Eternal<String> *addressString;
 	Eternal<String> *localAddrString;
 	Eternal<String> *remoteAddrString;
 	Eternal<String> *headerString;
@@ -110,6 +111,7 @@ static PLIST strings;
 
 struct wssOptions {
 	char *url;
+   char *address;
 	int port;
 	bool ssl;
 	char *cert_chain;
@@ -215,6 +217,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->urlString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "url" ) );
 		check->localPortString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "localPort" ) );
 		check->remotePortString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "remotePort" ) );
+		check->addressString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "address" ) );
 		check->localAddrString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "localAddress" ) );
 		check->remoteAddrString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "remoteAddress" ) );
 		check->localFamilyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "localFamily" ) );
@@ -1015,12 +1018,21 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 
 wssObject::wssObject( struct wssOptions *opts ) {
 	char tmp[256];
+   int clearUrl = 0;
 	readyState = INITIALIZING;
 	opening = FALSE;
 	if( !opts->url ) {
-		snprintf( tmp, 256, "ws://[::]:%d/", opts->port ? opts->port : 8080 );
-		//snprintf( tmp, 256, "ws://0.0.0.0:%d/", opts->port ? opts->port : 8080 );
-		opts->url = tmp;
+		if( opts->address ) {
+			if( strchr( opts->address, ':' ) )
+				snprintf( tmp, 256, "ws%s://[%s]:%d/", opts->ssl?"s":"", opts->address, opts->port ? opts->port : 8080 );
+         else
+				snprintf( tmp, 256, "ws%s://%s:%d/", opts->ssl?"s":"", opts->address, opts->port ? opts->port : 8080 );
+		}
+      else
+			snprintf( tmp, 256, "ws%s://[::]:%d/", opts->ssl?"s":"", opts->port ? opts->port : 8080 );
+  		//snprintf( tmp, 256, "ws://0.0.0.0:%d/", opts->port ? opts->port : 8080 );
+  		opts->url = tmp;
+  		clearUrl = 1;
 	}
 	closed = 0;
 	eventQueue = CreateLinkQueue();
@@ -1049,6 +1061,8 @@ wssObject::wssObject( struct wssOptions *opts ) {
 		SetWebSocketAcceptCallback( pc, webSockServerAccept );
 		readyState = LISTENING;
 	}
+	if( clearUrl )
+      opts->url = NULL;
 	//lprintf( "Init async handle. (wss)" );
 }
 
@@ -1056,6 +1070,93 @@ wssObject::~wssObject() {
 	//lprintf( "Destruct wssObject" );
 	RemoveClient( pc );
 	DeleteLinkQueue( &eventQueue );
+}
+
+static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local<Object> opts ) {
+
+	Local<String> optName;
+	struct optionStrings *strings = getStrings( isolate );
+
+	if( opts->Has( optName = strings->addressString->Get( isolate ) ) ) {
+		String::Utf8Value address( opts->Get( optName )->ToString() );
+		wssOpts->address = StrDup( *address );
+	}
+
+	if( !opts->Has( optName = strings->portString->Get( isolate ) ) ) {
+		wssOpts->port = 8080;
+	}
+	else {
+		wssOpts->port = (int)opts->Get( optName )->ToInteger()->Value();
+	}
+	if( !opts->Has( optName = strings->certString->Get( isolate ) ) ) {
+		wssOpts->cert_chain = NULL;
+		wssOpts->cert_chain_len =0;
+	}
+	else {
+		String::Utf8Value cert( opts->Get( optName )->ToString() );
+		wssOpts->cert_chain = StrDup( *cert );
+		wssOpts->cert_chain_len = cert.length();
+	}
+	if( !opts->Has( optName = strings->caString->Get( isolate ) ) ) {
+		wssOpts->cert_chain = NULL;
+		wssOpts->cert_chain_len =0;
+	}
+	else {
+		String::Utf8Value ca( opts->Get( optName )->ToString() );
+		if( wssOpts->cert_chain ) {
+			wssOpts->cert_chain = (char*)Reallocate( wssOpts->cert_chain, wssOpts->cert_chain_len + ca.length() );
+			strcpy( wssOpts->cert_chain + wssOpts->cert_chain_len, *ca );
+			wssOpts->cert_chain_len += ca.length();
+		} else {
+			wssOpts->cert_chain = StrDup( *ca );
+			wssOpts->cert_chain_len = ca.length();
+		}
+	}
+
+	if( !opts->Has( optName = strings->keyString->Get( isolate ) ) ) {
+		wssOpts->key = NULL;
+		wssOpts->key_len = 0;
+	}
+	else {
+		String::Utf8Value cert( opts->Get( optName )->ToString() );
+		wssOpts->key = StrDup( *cert );
+		wssOpts->key_len = cert.length();
+	}
+	if( !opts->Has( optName = strings->passString->Get( isolate ) ) ) {
+		wssOpts->pass = NULL;
+		wssOpts->pass_len = 0;
+	}
+	else {
+		String::Utf8Value cert( opts->Get( optName )->ToString() );
+		wssOpts->pass = StrDup( *cert );
+		wssOpts->pass_len = cert.length();
+	}
+
+	if( wssOpts->key || wssOpts->cert_chain ) {
+		wssOpts->ssl = 1;
+	}
+	else
+		wssOpts->ssl = 0;
+
+	if( !opts->Has( optName = strings->deflateString->Get( isolate ) ) ) {
+		wssOpts->deflate = false;
+	}
+	else
+		wssOpts->deflate = (opts->Get( optName )->ToBoolean()->Value());
+	if( !opts->Has( optName = strings->deflateAllowString->Get( isolate ) ) ) {
+		wssOpts->deflate_allow = false;
+	}
+	else {
+		wssOpts->deflate_allow = (opts->Get( optName )->ToBoolean()->Value());
+		//lprintf( "deflate allow:%d", wssOpts->deflate_allow );
+	}
+
+	if( opts->Has( optName = strings->maskingString->Get( isolate ) ) ) {
+		wssOpts->apply_masking = opts->Get( optName )->ToBoolean()->Value();
+	}
+	else
+		wssOpts->apply_masking = false;
+
 }
 
 void wssObject::New(const FunctionCallbackInfo<Value>& args){
@@ -1069,91 +1170,24 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
 		struct wssOptions wssOpts;
+      int argOfs = 0;
 		wssOpts.url = NULL;
 		wssOpts.port = 0;
-		if( args[0]->IsObject() ) {
-			Local<Object> opts = args[0]->ToObject();
-
-			Local<String> optName;
-			struct optionStrings *strings = getStrings( isolate );
-			if( !opts->Has( optName = strings->portString->Get( isolate ) ) ) {
-				wssOpts.port = 8080;
-			}
-			else {
-				wssOpts.port = (int)opts->Get( optName )->ToInteger()->Value();
-			}
-			if( !opts->Has( optName = strings->certString->Get( isolate ) ) ) {
-				wssOpts.cert_chain = NULL;
-				wssOpts.cert_chain_len =0;
-			}
-			else {
-				String::Utf8Value cert( opts->Get( optName )->ToString() );
-				wssOpts.cert_chain = StrDup( *cert );
-				wssOpts.cert_chain_len = cert.length();
-			}
-			if( !opts->Has( optName = strings->caString->Get( isolate ) ) ) {
-				wssOpts.cert_chain = NULL;
-				wssOpts.cert_chain_len =0;
-			}
-			else {
-				String::Utf8Value ca( opts->Get( optName )->ToString() );
-				if( wssOpts.cert_chain ) {
-					wssOpts.cert_chain = (char*)Reallocate( wssOpts.cert_chain, wssOpts.cert_chain_len + ca.length() );
-					strcpy( wssOpts.cert_chain + wssOpts.cert_chain_len, *ca );
-               wssOpts.cert_chain_len += ca.length();
-				} else {
-					wssOpts.cert_chain = StrDup( *ca );
-					wssOpts.cert_chain_len = ca.length();
-				}
-			}
-
-			if( !opts->Has( optName = strings->keyString->Get( isolate ) ) ) {
-				wssOpts.key = NULL;
-				wssOpts.key_len = 0;
-			}
-			else {
-				String::Utf8Value cert( opts->Get( optName )->ToString() );
-				wssOpts.key = StrDup( *cert );
-				wssOpts.key_len = cert.length();
-			}
-			if( !opts->Has( optName = strings->passString->Get( isolate ) ) ) {
-				wssOpts.pass = NULL;
-				wssOpts.pass_len = 0;
-			}
-			else {
-				String::Utf8Value cert( opts->Get( optName )->ToString() );
-				wssOpts.pass = StrDup( *cert );
-				wssOpts.pass_len = cert.length();
-			}
-
-			if( wssOpts.key || wssOpts.cert_chain ) {
-				wssOpts.ssl = 1;
-			}
-			else
-				wssOpts.ssl = 0;
-
-			if( !opts->Has( optName = strings->deflateString->Get( isolate ) ) ) {
-				wssOpts.deflate = false;
-			}
-			else
-				wssOpts.deflate = (opts->Get( optName )->ToBoolean()->Value());
-			if( !opts->Has( optName = strings->deflateAllowString->Get( isolate ) ) ) {
-				wssOpts.deflate_allow = false;
-			}
-			else {
-				wssOpts.deflate_allow = (opts->Get( optName )->ToBoolean()->Value());
-				//lprintf( "deflate allow:%d", wssOpts.deflate_allow );
-			}
-
-			if( opts->Has( optName = strings->maskingString->Get( isolate ) ) ) {
-				wssOpts.apply_masking = opts->Get( optName )->ToBoolean()->Value();
-			}
-			else
-				wssOpts.apply_masking = false;
+      wssOpts.address = NULL;
+		if( args[argOfs]->IsString() ) {
+			String::Utf8Value url( args[argOfs]->ToString() );
+         wssOpts.url = StrDup( *url );
+         argOfs++;
 		}
-		else if( args[0]->IsNumber() ) {
+		if( args[argOfs]->IsNumber() ) {
 			wssOpts.port = (int)args[0]->IntegerValue();
+         argOfs++;
 		}
+		if( args[argOfs]->IsObject() ) {
+			Local<Object> opts = args[0]->ToObject();
+         ParseWssOptions( &wssOpts, isolate, opts );
+		}
+
 		Local<Object> _this = args.This();
 		wssObject* obj = new wssObject( &wssOpts );
 		obj->ssl = wssOpts.ssl;
@@ -1163,6 +1197,10 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 			Deallocate( char *, wssOpts.key );
 		if( wssOpts.pass )
 			Deallocate( char *, wssOpts.pass );
+		if( wssOpts.address )
+			Deallocate( char *, wssOpts.address );
+		if( wssOpts.url )
+			Deallocate( char *, wssOpts.url );
 		if( args.Length() > 1 && args[1]->IsFunction() ) {
 			Handle<Function> arg0 = Handle<Function>::Cast( args[1] );
 			obj->openCallback.Reset( isolate, arg0 );

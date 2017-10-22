@@ -8,6 +8,11 @@
 
 #include "global.h"
 
+#if WIN32
+#define timegm _mkgmtime
+#endif
+
+
 const int kExp = RSA_F4;
 
 /*
@@ -1695,6 +1700,54 @@ void TLSObject::validate( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( _key ) delete _key;
 }
 
+
+static void ConvertTimeString( struct tm *t, ASN1_TIME *time ) {
+	char * timestring = (char*)time->data;
+	int val;
+	if( time->type == V_ASN1_UTCTIME )
+		if( (time->type == V_ASN1_UTCTIME) /*before->length == 13*/ ) {
+			val = 0;
+			val = val * 10 + ((timestring++)[0] - '0');
+			val = val * 10 + ((timestring++)[0] - '0');
+			//if( year < 70 ) year += 100;
+			t->tm_year = (val + 2000);
+		}
+	if( (time->type == V_ASN1_GENERALIZEDTIME) /*before->length == 15*/ ) {
+		val = 0;
+		val = val * 10 + ((timestring++)[0] - '0');
+		val = val * 10 + ((timestring++)[0] - '0');
+		val = val * 10 + ((timestring++)[0] - '0');
+		val = val * 10 + ((timestring++)[0] - '0');
+		t->tm_year = val;
+	}
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	t->tm_mon = val - 1;
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	t->tm_mday = val;
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	t->tm_hour = val;
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	t->tm_min = val;
+	val = 0;
+	val = val * 10 + ((timestring++)[0] - '0');
+	val = val * 10 + ((timestring++)[0] - '0');
+	t->tm_sec = val;
+#if __GNUC__
+	t->tm_gmtoff = 0;
+	t->tm_zone = NULL;
+#endif
+
+}
+
+
 static Local<Value> Expiration( struct info_params *params ) {
 	X509 * x509 = NULL;
 	params->ca = NULL;
@@ -1774,6 +1827,10 @@ static Local<Value> Expiration( struct info_params *params ) {
 	struct tm t;
 	char * timestring = (char*)before->data;
 	int val;
+
+	ConvertTimeString( &t, before );
+#if 0
+	//lprintf( "Timestring: %s", timestring );
 	if( before->type == V_ASN1_UTCTIME )
 		if( (before->type == V_ASN1_UTCTIME) /*before->length == 13*/ ) {
 			val = 0;
@@ -1809,9 +1866,12 @@ static Local<Value> Expiration( struct info_params *params ) {
 	val = 0;
 	val = val * 10 + ((timestring++)[0] - '0');
 	val = val * 10 + ((timestring++)[0] - '0');
-	t.tm_sec = val;
 
-	Local<Value> date = Date::New( params->isolate, (double)mktime( &t ) * 1000.0 );
+	t.tm_sec = val;
+	t.tm_isdst = 0;
+#endif
+	Local<Value> date = Date::New( params->isolate, (double)timegm( &t ) * 1000.0 );
+	//lprintf( "Converted: %d %d %d %d %d %d", t.tm_year, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec );
 	
 	return date;
 }
@@ -1868,48 +1928,6 @@ void  vtLogBinary( PVARTEXT pvt, uint8_t* buffer, size_t size  )
 	}
 }
 
-
-static void ConvertTimeString( struct tm *t, ASN1_TIME *time ) {
-	char * timestring = (char*)time->data;
-	int val;
-	if( time->type == V_ASN1_UTCTIME )
-		if( (time->type == V_ASN1_UTCTIME) /*before->length == 13*/ ) {
-			val = 0;
-			val = val * 10 + ((timestring++)[0] - '0');
-			val = val * 10 + ((timestring++)[0] - '0');
-			//if( year < 70 ) year += 100;
-			t->tm_year = (val + 2000);
-		}
-	if( (time->type == V_ASN1_GENERALIZEDTIME) /*before->length == 15*/ ) {
-		val = 0;
-		val = val * 10 + ((timestring++)[0] - '0');
-		val = val * 10 + ((timestring++)[0] - '0');
-		val = val * 10 + ((timestring++)[0] - '0');
-		val = val * 10 + ((timestring++)[0] - '0');
-		t->tm_year = val;
-	}
-	val = 0;
-	val = val * 10 + ((timestring++)[0] - '0');
-	val = val * 10 + ((timestring++)[0] - '0');
-	t->tm_mon = val - 1;
-	val = 0;
-	val = val * 10 + ((timestring++)[0] - '0');
-	val = val * 10 + ((timestring++)[0] - '0');
-	t->tm_mday = val;
-	val = 0;
-	val = val * 10 + ((timestring++)[0] - '0');
-	val = val * 10 + ((timestring++)[0] - '0');
-	t->tm_hour = val;
-	val = 0;
-	val = val * 10 + ((timestring++)[0] - '0');
-	val = val * 10 + ((timestring++)[0] - '0');
-	t->tm_min = val;
-	val = 0;
-	val = val * 10 + ((timestring++)[0] - '0');
-	val = val * 10 + ((timestring++)[0] - '0');
-	t->tm_sec = val;
-
-}
 
 static Local<Value> CertToString( struct info_params *params ) {
 

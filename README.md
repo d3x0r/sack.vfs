@@ -558,6 +558,12 @@ Client Methods
    | onClose | sets the callback to be called when the connection is closed from the other side first |
    | onError | sets the callback to be called on an error (no supported errors at this time) |
    | on  | sets event callbacks by name.  First parameter is the event name, the second is the callback |
+
+
+Server Constructor Parameters
+  - (optional) URL - a URL formatted string specifying server address and optional port.
+  - (optional) Port - a number indicating which port number to listen on; if No URL, and no address option specified, listens on all addresses on this port.
+  - Options - see Server Options below.
   
 Server events
 
@@ -569,6 +575,7 @@ Server events
 
 
 Server Options
+
   When a server is created it accepts an option object with the following options specified.
 
   | Server Options |   |
