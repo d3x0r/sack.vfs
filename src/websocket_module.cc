@@ -1603,9 +1603,9 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 			obj->_this.Reset( isolate, _this );
 			obj->Wrap( _this );
 		}
-		catch( const char *e1 ) {
+		catch( const char *ex1 ) {
 			isolate->ThrowException( Exception::Error(
-				String::NewFromUtf8( isolate, TranslateText( e1 ) ) ) );			
+				String::NewFromUtf8( isolate, TranslateText( ex1 ) ) ) );
 		}
 		if( wscOpts.root_cert )
 			Deallocate( char *, wscOpts.root_cert );
