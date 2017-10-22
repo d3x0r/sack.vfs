@@ -170,7 +170,7 @@ ImageObject::~ImageObject(void) {
 				obj = new ImageObject( filename );
 			else
 				obj = new ImageObject( x, y, w, h, parent );
-
+			obj->_this.Reset( isolate, args.This() );
 			obj->Wrap( args.This() );
 			args.GetReturnValue().Set( args.This() );
 
@@ -250,6 +250,20 @@ Local<Object> ImageObject::NewImage( Isolate*isolate, Image image, LOGICAL exter
 	obj->image = image;
 	obj->external = external;
 	return lo;
+}
+
+ImageObject * ImageObject::MakeNewImage( Isolate*isolate, Image image, LOGICAL external ) {
+	// Invoked as constructor: `new MyObject(...)`
+	ImageObject* obj;
+
+	int argc = 0;
+	Local<Value> *argv = new Local<Value>[argc];
+	Local<Function> cons = Local<Function>::New( isolate, constructor );
+	Local<Object> lo = cons->NewInstance( argc, argv );
+	obj = ObjectWrap::Unwrap<ImageObject>( lo );
+	obj->image = image;
+	obj->external = external;
+	return obj;
 }
 
 

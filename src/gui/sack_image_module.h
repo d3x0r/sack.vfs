@@ -9,6 +9,8 @@ public:
 	LOGICAL external;
 	static v8::Persistent<v8::Function> constructor;
 
+	Persistent<Object> _this;
+
 public:
 
 	static void Init( Handle<Object> exports );
@@ -20,7 +22,7 @@ public:
 	static void NewSubImage( const FunctionCallbackInfo<Value>& args );
 	//static Persistent<Object>  NewImage( Isolate *isolate, Image image );
 	static Local<Object> NewImage( Isolate *isolate, Image image, LOGICAL external );
-
+	static ImageObject * ImageObject::MakeNewImage( Isolate*isolate, Image image, LOGICAL external );
 	
 	static void reset( const FunctionCallbackInfo<Value>& args );
 	static void fill( const FunctionCallbackInfo<Value>& args );

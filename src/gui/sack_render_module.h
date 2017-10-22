@@ -29,6 +29,7 @@ public:
 	static void setMouse( const FunctionCallbackInfo<Value>& args );
 	static void setKey( const FunctionCallbackInfo<Value>& args );
 	static void close( const FunctionCallbackInfo<Value>& args );
+	static void on( const FunctionCallbackInfo<Value>& args );
 	static void getImage( const FunctionCallbackInfo<Value>& args );
 
    ~RenderObject();

@@ -8,6 +8,9 @@ static struct psiLocal {
 	PLIST registrations;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE events;
+	PTHREAD nodeThread;
+	ControlObject *pendingCreate;
+	Local<Object> newControl;
 } psiLocal;
 
 Persistent<Function> ControlObject::constructorDisplay;
@@ -32,17 +35,40 @@ static void asyncmsg( uv_async_t* handle ) {
 		while( evt = (struct event *)DequeLink( &psiLocal.events ) ) {
 
 			//Local<Value> object = ProcessEvent( isolate, evt, myself );
-			Local<Value> argv[] = { Local<Object>::New( isolate, evt->data.control.control->state ) };
+			//Local<Value> argv[] = { Local<Object>::New( isolate, evt->data.control.control->state ) };
 			Local<Function> cb;
+			Local<Value> r;
 			switch( evt->type ){
-			case Event_Control_Mouse:
-				//evt->data.controlMouse.target
-				cb = Local<Function>::New( isolate, evt->data.control.type->cbMouseEvent );
-
+			case Event_Control_Draw: {
+				if( !evt->control->image ) {
+					evt->control->image = ImageObject::MakeNewImage( isolate, GetControlSurface( evt->control->control ), TRUE );
+				}
+				Local<Value> argv[1] = { evt->control->image->_this.Get( isolate ) };
+				cb = Local<Function>::New( isolate, evt->control->registration->cbDrawEvent );
+				r = cb->Call( evt->control->state.Get( isolate ), 1, argv );
+				if( !r.IsEmpty() )
+					evt->success = (int)r->IntegerValue();
+				else
+					evt->success = 1;
+				break;
 			}
-			Local<Value> r = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+			case Event_Control_Mouse: {
+				//evt->data.controlMouse.target
+				Local<Object> jsEvent = Object::New( isolate );
+				jsEvent->Set( String::NewFromUtf8( isolate, "x" ), Integer::New( isolate, evt->data.mouse.x ) );
+				jsEvent->Set( String::NewFromUtf8( isolate, "y" ), Integer::New( isolate, evt->data.mouse.y ) );
+				jsEvent->Set( String::NewFromUtf8( isolate, "b" ), Integer::New( isolate, evt->data.mouse.b ) );
+				Local<Value> argv[1] = {jsEvent };
+				cb = Local<Function>::New( isolate, evt->control->registration->cbMouseEvent );
+				r = cb->Call( evt->control->state.Get( isolate ), 1, argv );
+				if( !r.IsEmpty() )
+					evt->success = (int)r->IntegerValue();
+				else
+					evt->success = 1;
+				break;
+			}
+			}
 			if( evt->waiter ) {
-				evt->success = (int)r->NumberValue();
 				evt->flags.complete = TRUE;
 				WakeThread( evt->waiter );
 			}
@@ -52,20 +78,23 @@ static void asyncmsg( uv_async_t* handle ) {
 }
 
 
-int MakePSIEvent( enum eventType type, ... ) {
+int MakePSIEvent( ControlObject *control, enum eventType type, ... ) {
 	event e;
 	va_list args;
 	va_start( args, type );
 	e.type = type;
+	e.control = control;
+	//e.registration = control->reg
 	switch( type ) {
-	case Event_Render_Mouse:
+	case Event_Control_Mouse:
 		e.data.mouse.x = va_arg( args, int32_t );
 		e.data.mouse.y = va_arg( args, int32_t );
 		e.data.mouse.b = va_arg( args, uint32_t );
 		break;
-	case Event_Render_Draw:
+	case Event_Control_Draw:
+
 		break;
-	case Event_Render_Key:
+	case Event_Control_Key:
 		e.data.key.code = va_arg( args, uint32_t );
 		break;
 	}
@@ -162,6 +191,7 @@ void ControlObject::Init( Handle<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "show", ControlObject::show );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "hide", ControlObject::show );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "reveal", ControlObject::show );
+		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "redraw", ControlObject::redraw );
 
       //registerControl
 		//constructorDisplay.Reset( isolate, psiTemplateDisplay->GetFunction() );
@@ -182,19 +212,24 @@ void ControlObject::Init( Handle<Object> exports ) {
 	}
 
 ControlObject::ControlObject( ControlObject *over, const char *type, const char *title, int x, int y, int w, int h )  {
-   frame = over;
-   if( title )
-	control = MakeNamedControl( over->control, type, x, y, w, h, 0 );
-    else
-	control = MakeNamedCaptionedControl( over->control, type, x, y, w, h, 0, title );
+	image = NULL;
+	frame = over;
+	psiLocal.pendingCreate = this;
+	if( !title )
+		control = MakeNamedControl( over->control, type, x, y, w, h, 0 );
+	else
+		control = MakeNamedCaptionedControl( over->control, type, x, y, w, h, 0, title );
 }
 
 ControlObject::ControlObject( const char *title, int x, int y, int w, int h, int border, ControlObject *over )  {
+	image = NULL;
 	frame = over;
 	control = ::CreateFrame( title, x, y, w, h, border, over?over->control:(PSI_CONTROL)NULL );
 }
 
 ControlObject::ControlObject( const char *type, ControlObject *parent, int32_t x, int32_t y, uint32_t w, uint32_t h ) {
+	image = NULL;
+	psiLocal.pendingCreate = this;
 	control = ::MakeNamedControl( parent->control, type, x, y, w, h, -1 );
 }
 
@@ -202,6 +237,7 @@ ControlObject::~ControlObject() {
 
 }
 ControlObject::ControlObject() {
+	image = NULL;
 	frame = NULL;
 	control = NULL;
 }
@@ -210,8 +246,12 @@ ControlObject::ControlObject() {
 	void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		if( args.IsConstructCall() ) {
-			char *type;
+			if( args.Length() == 0 ) {
+				args.GetReturnValue().Set( args.This() );
+				return;
+			}
 
+			char *type;
 			char *title = "Node Application";
 			char *tmpTitle = NULL;
 			int x = 0, y = 0, w = 1024, h = 768, border = 0;
@@ -226,7 +266,7 @@ ControlObject::ControlObject() {
 			}
 			else {
 				ControlObject* obj = new ControlObject( );
-				obj->Wrap( args.This() );
+				ControlObject::wrapSelf( isolate, obj, args.This() );
 				args.GetReturnValue().Set( args.This() );
 				return;
 			}
@@ -263,7 +303,7 @@ ControlObject::ControlObject() {
 			// Invoked as constructor: `new MyObject(...)`
 			
 			ControlObject* obj = new ControlObject( title, x, y, w, h, border, NULL );
-			obj->Wrap( args.This() );
+			ControlObject::wrapSelf( isolate, obj, args.This() );
 			args.GetReturnValue().Set( args.This() );
 			if( tmpTitle )
 				Deallocate( char*, title );
@@ -271,13 +311,13 @@ ControlObject::ControlObject() {
 		else {
 			// Invoked as plain function `MyObject(...)`, turn into construct call.
 			int argc = args.Length();
-		   Local<Value> *argv = new Local<Value>[argc];
+			Local<Value> *argv = new Local<Value>[argc];
 			for( int n = 0; n < argc; n++ )
-            argv[n] = args[n];
+				argv[n] = args[n];
 
 			Local<Function> cons = Local<Function>::New( isolate, constructor );
 			args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
-         delete argv;
+			delete argv;
 		}
 	}
 
@@ -292,7 +332,7 @@ ControlObject::ControlObject() {
 			uint32_t w = 1024, h = 768, border = BORDER_NONE;
 			int arg_ofs = 0;
 			ControlObject *parent = NULL;
-         GetDisplaySizeEx( 0, &x, &y, &w, &h );
+			GetDisplaySizeEx( 0, &x, &y, &w, &h );
 
 			int argc = args.Length();
 			if( argc > 0 ) {
@@ -302,7 +342,7 @@ ControlObject::ControlObject() {
 			}
 			else {
 				ControlObject* obj = new ControlObject( );
-				obj->Wrap( args.This() );
+				ControlObject::wrapSelf( isolate, obj, args.This() );
 				args.GetReturnValue().Set( args.This() );
 				return;
 			}
@@ -337,7 +377,7 @@ ControlObject::ControlObject() {
 			// Invoked as constructor: `new MyObject(...)`
 			
 			ControlObject* obj = new ControlObject( title, x, y, w, h, border, NULL );
-			obj->Wrap( args.This() );
+			ControlObject::wrapSelf( isolate, obj, args.This() );
 			args.GetReturnValue().Set( args.This() );
 
 			Deallocate( char*, title );
@@ -345,13 +385,13 @@ ControlObject::ControlObject() {
 		else {
 			// Invoked as plain function `MyObject(...)`, turn into construct call.
 			int argc = args.Length();
-		   Local<Value> *argv = new Local<Value>[argc];
+			Local<Value> *argv = new Local<Value>[argc];
 			for( int n = 0; n < argc; n++ )
             argv[n] = args[n];
 
 			Local<Function> cons = Local<Function>::New( isolate, constructor );
 			args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
-         delete argv;
+			delete argv;
 		}
 	}
 
@@ -411,24 +451,32 @@ ControlObject::ControlObject() {
 	}
 
 	void ControlObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
+		int argc = args.Length();
 		Isolate* isolate = args.GetIsolate();
-		ControlObject *container = ObjectWrap::Unwrap<ControlObject>( args.This() );
-
-			char *type = NULL;
-			char *title = NULL;
-			int x = 0, y = 0, w = 1024, h = 768, border = 0;
-			int argOffset = 0;
-			ControlObject *parent = NULL;
-
-			int argc = args.Length();
-			if( argc == 0 ) {
+		if( argc == 0 ) {
+			if( args.IsConstructCall() )
+				args.GetReturnValue().Set( args.This() );
+			else
 				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameter 'controlType' missing." ) ) );
-				return;
-			}
+			return;
+		}
+
+		char *type = NULL;
+		char *title = NULL;
+		int x = 0, y = 0, w = 1024, h = 768, border = 0;
+		int argOffset = 0;
+		ControlObject *parent = NULL;
+
+
+			Local<Function> cons = Local<Function>::New( isolate, constructor2 );
+			Local<Object> newControl = cons->NewInstance( 0, NULL );
+			ControlObject *container = ObjectWrap::Unwrap<ControlObject>( args.Holder() );
+
 			if( argc > 0 ) {
 				String::Utf8Value fName( args[0]->ToString() );
 				type = StrDup( *fName );
 			}
+
 			{
 				if( argc > 1 && args[1]->IsString() ) {
 					String::Utf8Value fName( args[1]->ToString() );
@@ -436,12 +484,12 @@ ControlObject::ControlObject() {
 					argOffset = 1;
 				}
 				else {
-					ControlObject *parent = ObjectWrap::Unwrap<ControlObject>( args[1]->ToObject() );
-					if( argc > 5 ) {
-						x = (int)args[2]->NumberValue();
-						y = (int)args[3]->NumberValue();
-						w = (int)args[4]->NumberValue();
-						h = (int)args[5]->NumberValue();
+					//ControlObject *parent = ObjectWrap::Unwrap<ControlObject>( args[1]->ToObject() );
+					if( argc > 4 ) {
+						x = (int)args[1]->NumberValue();
+						y = (int)args[2]->NumberValue();
+						w = (int)args[3]->NumberValue();
+						h = (int)args[4]->NumberValue();
 					}
 					else {
 						x = g.nextControlCreatePosition.x;
@@ -449,12 +497,16 @@ ControlObject::ControlObject() {
 						w = g.nextControlCreatePosition.w;
 						h = g.nextControlCreatePosition.h;
 					}
-					ControlObject* obj = new ControlObject( type, parent, x, y, w, h );
+					psiLocal.newControl = newControl;
+					ControlObject* obj = new ControlObject( type, container, x, y, w, h );
+
 					ProvideKnownCallbacks( isolate, args.This(), obj );
-					g.nextControlCreatePosition.control->pc = obj->control;
-					g.nextControlCreatePosition.resultControl = obj->control;
-					obj->Wrap( args.This() );
-					args.GetReturnValue().Set( args.This() );
+
+					//g.nextControlCreatePosition.control->pc = obj->control;
+					//g.nextControlCreatePosition.resultControl = obj->control;
+
+					//obj->Wrap( newControl );
+					args.GetReturnValue().Set( newControl );
 					return;
 				}
 			}
@@ -472,9 +524,10 @@ ControlObject::ControlObject() {
 			}
 
 			// Invoked as constructor: `new MyObject(...)`
+			psiLocal.newControl = newControl;
 			ControlObject* obj = new ControlObject( container, type, title, x, y, w, h );
-			obj->Wrap( args.This() );
-			args.GetReturnValue().Set( args.This() );
+			ControlObject::wrapSelf( isolate, obj, newControl );
+			args.GetReturnValue().Set( newControl );
 
 			Deallocate( char*, type );
 			if( title )
@@ -516,7 +569,7 @@ ControlObject::ControlObject() {
            */
 			// Invoked as constructor: `new MyObject(...)`
 			ControlObject* obj = new ControlObject( title, x, y, w, h, border, NULL );
-			obj->Wrap( args.This() );
+			ControlObject::wrapSelf( isolate, obj, args.This() );
 			args.GetReturnValue().Set( args.This() );
 
 			Deallocate( char*, title );
@@ -534,7 +587,12 @@ ControlObject::ControlObject() {
 		}
 	}
 
+	void ControlObject::redraw( const FunctionCallbackInfo<Value>& args ) {
+		ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
 
+		SmudgeCommon( me->control );
+
+	}
 	void ControlObject::show( const FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
@@ -567,7 +625,7 @@ RegistrationObject::RegistrationObject( const char *name ) {
 
 				// Invoked as constructor: `new MyObject(...)`
 				RegistrationObject* obj = new RegistrationObject( title );
-
+				obj->_this.Reset( isolate, args.This() );
 				obj->Wrap( args.This() );
 				args.GetReturnValue().Set( args.This() );
 			}
@@ -594,18 +652,40 @@ static RegistrationObject *findRegistration( CTEXTSTR name ) {
 	INDEX idx;
 	LIST_FORALL( psiLocal.registrations, idx, RegistrationObject *, obj ) {
 		if( StrCmp( obj->r.name, name ) == 0 )
-         break;
+			break;
 	}
-   return obj;
+	return obj;
+}
+
+//-------------------------------------------------------
+
+void ControlObject::wrapSelf( Isolate* isolate, ControlObject *_this, Local<Object> into ) {
+	_this->Wrap( into );
+	_this->state.Reset( isolate, into );
+}
+
+//-------------------------------------------------------
+
+void ControlObject::releaseSelf( ControlObject *_this ) {
+	_this->state.Reset();
 }
 
 //-------------------------------------------------------
 
 static int CPROC onCreate( PSI_CONTROL pc ) {
+	Isolate* isolate = Isolate::GetCurrent();
 	CTEXTSTR name = GetControlTypeName( pc );
-	RegistrationObject *obj = findRegistration( name );
-	ControlObject *me = ControlData( ControlObject *, pc );
-	return MakePSIEvent( Event_Control_Create, obj, me );
+	RegistrationObject *registration = findRegistration( name );
+	psiLocal.pendingCreate->registration = registration;
+	ControlObject **me = ControlData( ControlObject **, pc );
+	me[0] = psiLocal.pendingCreate;
+
+	Local<Function> cb = Local<Function>::New( isolate, registration->cbInitEvent );
+	ControlObject::wrapSelf( isolate, me[0], psiLocal.newControl );
+
+	Local<Value> retval = cb->Call( psiLocal.newControl, 0, NULL );
+
+	return retval->ToInt32()->Value();
 }
 
 void RegistrationObject::setCreate( const FunctionCallbackInfo<Value>& args ) {
@@ -624,8 +704,9 @@ void RegistrationObject::setCreate( const FunctionCallbackInfo<Value>& args ) {
 static int CPROC onDraw( PSI_CONTROL pc ) {
 	CTEXTSTR name = GetControlTypeName( pc );
 	RegistrationObject *obj = findRegistration( name );
-	ControlObject *me = ControlData( ControlObject *, pc );
-   return MakePSIEvent( Event_Control_Draw, obj, me );
+	ControlObject **me = ControlData( ControlObject **, pc );
+
+	return MakePSIEvent( me[0], Event_Control_Draw, obj, me );
 }
 
 void RegistrationObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
@@ -645,11 +726,12 @@ void RegistrationObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
 //-------------------------------------------------------
 
 
-static int CPROC cbMouse( PSI_CONTROL pc, int32_t x, int32_t, uint32_t b ) {
+static int CPROC cbMouse( PSI_CONTROL pc, int32_t x, int32_t y, uint32_t b ) {
 	CTEXTSTR name = GetControlTypeName( pc );
 	RegistrationObject *obj = findRegistration( name );
+	ControlObject **me = ControlData( ControlObject **, pc );
 
-	return MakePSIEvent( Event_Control_Mouse, obj, pc );
+	return MakePSIEvent( me[0], Event_Control_Mouse, x, y, b );
 }
 
 void RegistrationObject::setMouse( const FunctionCallbackInfo<Value>& args ) {

@@ -16,6 +16,7 @@
 #include <sack_vfs.h>
 #include <pssql.h>
 #include <deadstart.h>
+#include <translation.h>
 
 #define USE_RENDER_INTERFACE g.pdi
 #define USE_IMAGE_INTERFACE g.pii
@@ -67,12 +68,11 @@ struct event {
 		}mouse;
 		struct {
 			RegistrationObject* type;
-			ControlObject* control;
 			struct {
 				int32_t x, y;
 				uint32_t b;
 			}mouse;
-		} control;
+		} xcontrol;
 		struct {
 			uint32_t code;
 		}key;
@@ -85,6 +85,8 @@ struct event {
 			uint32_t w, h;
 		}createCustomControl;
 	}data;
+	//RegistrationObject* registration;
+	ControlObject* control;
 	PTHREAD waiter;
 	struct {
 		BIT_FIELD complete : 1;

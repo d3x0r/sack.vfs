@@ -104,6 +104,7 @@ void RenderObject::Init( Handle<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "redraw", RenderObject::redraw );
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "update", RenderObject::update );
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "close", RenderObject::close );
+		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "on", RenderObject::on );
 
 
 		constructor.Reset( isolate, renderTemplate->GetFunction() );
@@ -276,6 +277,7 @@ void RenderObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
 	
 }
 
+
 static int CPROC doKey( uintptr_t psv, uint32_t key ) {
 	RenderObject *r = (RenderObject *)psv;
 	if( !r->closed )
@@ -291,6 +293,39 @@ void RenderObject::setKey( const FunctionCallbackInfo<Value>& args ) {
 	Persistent<Function> cb( isolate, arg0 );
 	SetKeyboardHandler( r->r, doKey, (uintptr_t)r );
 	r->cbKey = cb;
+}
+
+void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
+	if( !args[0]->IsString() ) {
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "First argument must be event name as a string." ) ) ) );
+		return;
+	}
+	if( !args[1]->IsFunction() ) {
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "Second argument must be callback function." ) ) ) );
+		return;
+	}
+	Handle<Function> arg1 = Handle<Function>::Cast( args[1] );
+
+	String::Utf8Value fName( args[0]->ToString() );
+	if( StrCmp( *fName, "draw" ) == 0 ) {
+		Persistent<Function> cb( isolate, arg1 );
+		SetRedrawHandler( r->r, doRedraw, (uintptr_t)r );
+		r->cbDraw = cb;
+	}
+	else if( StrCmp( *fName, "mouse" ) == 0 ) {
+		Persistent<Function> cb( isolate, arg1 );
+		SetMouseHandler( r->r, doMouse, (uintptr_t)r );
+		r->cbMouse = cb;
+	}
+	else if( StrCmp( *fName, "key" ) == 0 ) {
+		Persistent<Function> cb( isolate, arg1 );
+		SetKeyboardHandler( r->r, doKey, (uintptr_t)r );
+		r->cbMouse = cb;
+	}
 }
 
 int MakeEvent( uv_async_t *async, PLINKQUEUE *queue, enum eventType type, ... ) {
