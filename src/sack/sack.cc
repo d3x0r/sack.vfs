@@ -10354,7 +10354,10 @@ static void MaskStrCpy( char *output, size_t outlen, struct volume *vol, FPI nam
 #endif
 static enum block_cache_entries UpdateSegmentKey( struct volume *vol, enum block_cache_entries cache_idx, BLOCKINDEX segment )
 {
-	if( !vol->key ) return cache_idx;
+	if( !vol->key ) {
+		vol->segment[cache_idx] = segment;
+		return cache_idx;
+	}
 	if( cache_idx == BLOCK_CACHE_FILE ) {
 		int n, m;
 		int nLeast;
@@ -10827,8 +10830,10 @@ static void AssignKey( struct volume *vol, const char *key1, const char *key2 )
 		else
 			SRG_ResetEntropy( vol->entropy );
 		vol->key = (uint8_t*)OpenSpace( NULL, NULL, &size );
-		for( n = 0; n < BLOCK_CACHE_COUNT; n++ )
+		for( n = 0; n < BLOCK_CACHE_COUNT; n++ ) {
 			vol->usekey[n] = vol->key + (n + 1) * BLOCK_SIZE;
+			vol->segment[n] = 0;
+		}
 		vol->segkey = vol->key + BLOCK_SIZE * (BLOCK_CACHE_COUNT + 1);
 		vol->sigkey = vol->key + BLOCK_SIZE * (BLOCK_CACHE_COUNT + 1) + SHORTKEY_LENGTH;
 		vol->curseg = BLOCK_CACHE_DIRECTORY;
@@ -11019,7 +11024,7 @@ LOGICAL sack_vfs_encrypt_volume( struct volume *vol, CTEXTSTR key1, CTEXTSTR key
 		int done;
 		size_t n;
 		enum block_cache_entries cache = BLOCK_CACHE_BAT;
-		BLOCKINDEX slab = vol->dwSize / ( BLOCKS_PER_SECTOR * BLOCK_SIZE );
+		BLOCKINDEX slab = (vol->dwSize + (BLOCKS_PER_SECTOR*BLOCK_SIZE-1)) / ( BLOCKS_PER_SECTOR * BLOCK_SIZE );
 		done = 0;
 		for( n = 0; n < slab; n++  ) {
 			size_t m;
@@ -15947,7 +15952,7 @@ void DoSystemLog( const TEXTCHAR *buffer )
 				}
 				else
 				{
-				if( 0 && (*syslog_local).flags.bLogOpenBackup )
+				if( (*syslog_local).flags.bLogOpenBackup )
 				{
 					BackupFile( gFilename, (int)StrLen( gFilename ), 1 );
 				}
@@ -30724,6 +30729,11 @@ static uintptr_t CPROC HandleAlias( uintptr_t psv, arg_list args )
 static uintptr_t CPROC HandleModule( uintptr_t psv, arg_list args )
 {
 	PARAM( args, TEXTCHAR*, module );
+	LOGICAL tempPath = FALSE;
+	if( module[0] == '~' || module[0] == '@' || module[0] == '^' || module[0] == '*' ) {
+		module = ExpandPath( module );
+		tempPath = TRUE;
+	}
 	if( l.flags.bFindEndif || l.flags.bFindElse )
 		return psv;
 	if( l.flags.bTraceInterfaceLoading )
@@ -30734,6 +30744,8 @@ static uintptr_t CPROC HandleModule( uintptr_t psv, arg_list args )
 		SuspendDeadstart();
 	}
 	LoadFunction( module, NULL );
+	if( tempPath )
+		Deallocate( TEXTCHAR*, module );
 	return psv;
 }
 //-----------------------------------------------------------------------
@@ -37022,13 +37034,15 @@ int  sack_fclose ( FILE *file_file )
 #endif
 		DeleteLink( &file->files, file_file );
 		if( !GetLinkCount( file->files ) ) {
-			DeleteListEx( &file->files DBG_SRC );
 			DeleteLink( &(*winfile_local).files, file );
+			LeaveCriticalSec( &(*winfile_local).cs_files );
+			DeleteListEx( &file->files DBG_SRC );
 			Deallocate( TEXTCHAR*, file->name );
 			Deallocate( TEXTCHAR*, file->fullname );
 			Deallocate( struct file*, file );
 		}
-		LeaveCriticalSec( &(*winfile_local).cs_files );
+		else
+			LeaveCriticalSec( &(*winfile_local).cs_files );
 		return status;
 	}
 	LeaveCriticalSec( &(*winfile_local).cs_files );
@@ -43696,12 +43710,24 @@ char * u8xor( const char *a, size_t alen, const char *b, size_t blen, int *ofs )
 	int o = ofs[0];
 	size_t outlen;
 	char *out = NewArray( char, (outlen=alen) + 1);
+	int l = 0;
+	int _mask = 0x3f;
 	for( n = 0; n < alen; n++ ) {
 		char v = a[n];
-		int mask = 0x3f;
-		if( (v & 0xE0) == 0xC0 )      {mask=0x1F;}
-		else if( (v & 0xF0) == 0xE0 ) {mask=0xF;}
-		else if( (v & 0xF8) == 0xF0 ) {mask=0x7;}
+		int mask;
+		mask = _mask;
+		if( (v & 0x80) == 0x00 ) { if( l ) lprintf( "short utf8 sequence found" ); mask = 0x3f; _mask = 0x3f; }
+		else if( (v & 0xC0) == 0x80 ) { if( !l ) lprintf( "invalid utf8 sequence" ); l--; _mask = 0x3f; }
+  // 6 + 1 == 7
+		else if( (v & 0xE0) == 0xC0 ) { if( l ) lprintf( "short utf8 sequence found" ); l = 1; mask = 0x1; _mask = 0x3f; }
+  // 6 + 5 + 0 == 11
+		else if( (v & 0xF0) == 0xE0 ) { if( l ) lprintf( "short utf8 sequence found" ); l = 2; mask = 0;  _mask = 0x1f; }
+  // 6(2) + 4 + 0 == 16
+		else if( (v & 0xF8) == 0xF0 ) { if( l ) lprintf( "short utf8 sequence found" ); l = 3; mask = 0;  _mask = 0x0f; }
+  // 6(3) + 3 + 0 == 21
+		else if( (v & 0xFC) == 0xF8 ) { if( l ) lprintf( "short utf8 sequence found" ); l = 4; mask = 0;  _mask = 0x07; }
+  // 6(4) + 2 + 0 == 26
+		else if( (v & 0xFE) == 0xFC ) { if( l ) lprintf( "short utf8 sequence found" ); l = 5; mask = 0;  _mask = 0x03; }
 		char bchar = b[(n+o)%(keylen)];
 		out[n] = (v & ~mask ) | ( u8xor_table[v & mask ][bchar] & mask );
 		//lprintf( "xor %d %d = %d", v, bchar, out[n] );
@@ -46231,8 +46257,8 @@ NETWORK_PROC( void, RemoveClientExx )(PCLIENT lpClient, LOGICAL bBlockNofity, LO
    \ \                                                                      */
 #define RemoveClient(c) RemoveClientEx(c, FALSE, FALSE )
 /* Begin an SSL Connection.  This ends up replacing ReadComplete callback with an inbetween layer*/
-NETWORK_PROC( LOGICAL, ssl_BeginClientSession )( PCLIENT pc, POINTER keypair, size_t keylen, POINTER keypass, size_t keypasslen, POINTER rootCert, size_t rootCertLen );
-NETWORK_PROC( LOGICAL, ssl_BeginServer )( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen, POINTER keypass, size_t keypasslen);
+NETWORK_PROC( LOGICAL, ssl_BeginClientSession )( PCLIENT pc, CPOINTER keypair, size_t keylen, CPOINTER keypass, size_t keypasslen, CPOINTER rootCert, size_t rootCertLen );
+NETWORK_PROC( LOGICAL, ssl_BeginServer )( PCLIENT pc, CPOINTER cert, size_t certlen, CPOINTER keypair, size_t keylen, CPOINTER keypass, size_t keypasslen);
 NETWORK_PROC( LOGICAL, ssl_GetPrivateKey )(PCLIENT pc, POINTER *keydata, size_t *keysize);
 NETWORK_PROC( LOGICAL, ssl_IsClientSecure )(PCLIENT pc);
 /* use this to send on SSL Connection instead of SendTCP. */
@@ -51392,7 +51418,7 @@ PCLIENT WebSocketOpen( CTEXTSTR url_address
 												, NULL
  // if there is an on-open event, then register for async open
 												, WebSocketClientConnected
-												, 0
+												, (options&WS_DELAY_OPEN)?OPEN_TCP_FLAG_DELAY_CONNECT:0
 												DBG_SRC
 												);
 		if( websock->pc )
@@ -57474,6 +57500,7 @@ PRELOAD( InitNetworkGlobalOptions )
 	globalNetworkData.dwReadTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Read wait timeout" ), 5000, TRUE );
 	globalNetworkData.dwConnectTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Connect timeout" ), 10000, TRUE );
 #else
+	globalNetworkData.flags.bLogNotices = 1;
 	globalNetworkData.dwReadTimeout = 5000;
 	globalNetworkData.dwConnectTimeout = 10000;
 #endif
@@ -58503,7 +58530,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 	lprintf( "Remove client %p from %p thread events...  proc:%d  ev:%d  wait:%d", pc, thread, thread->flags.bProcessing, thread->nEvents, thread->nWaitEvents );
 #endif
 	thread->nEvents = 1;
-	if( !thread->flags.bProcessing )
+	if( thread->thread != MakeThread() && !thread->flags.bProcessing )
 		while( thread->nEvents != thread->nWaitEvents ) {
 			if( !thread->flags.bProcessing )
 			{
@@ -59184,7 +59211,6 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 							{
 								lprintf( WIDE("getsockname errno = %d"), errno );
 							}
-							lprintf( "Connect: %d", nLen );
                      if( pc->saSource->sa_family == AF_INET )
 								SET_SOCKADDR_LENGTH( pc->saSource, IN_SOCKADDR_LENGTH );
                      else if( pc->saSource->sa_family == AF_INET6 )
@@ -59198,7 +59224,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 							getsockopt( event_data->pc->Socket, SOL_SOCKET
 								, SO_ERROR
 								, &error, &errlen );
-							lprintf( WIDE( "Error checking for connect is: %s" ), strerror( error ) );
+							//lprintf( WIDE( "Error checking for connect is: %s on %d" ), strerror( error ), event_data->pc->Socket );
 							if( event_data->pc->pWaiting )
 							{
 #ifdef LOG_NOTICES
@@ -61423,12 +61449,14 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 			// socket should now get scheduled for events, after unlocking it?
 #ifdef USE_WSA_EVENTS
 			if( globalNetworkData.flags.bLogNotices )
-				lprintf( WIDE( "SET GLOBAL EVENT (wait for connect) new %p %p  %08x" ), pResult, pResult->event, pResult->dwFlags );
+				lprintf( WIDE( "SET GLOBAL EVENT (wait for connect) new %p %p  %08x %p" ), pResult, pResult->event, pResult->dwFlags, globalNetworkData.hMonitorThreadControlEvent );
 			EnqueLink( &globalNetworkData.client_schedule, pResult );
 			if( this_thread == globalNetworkData.root_thread ) {
 				ProcessNetworkMessages( this_thread, 1 );
-				if( !pResult->this_thread )
+				if( !pResult->this_thread ) {
+					WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
 					lprintf( "Failed to schedule myself in a single run of root thread that I am running on." );
+				}
 			}
 			else {
 				WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
@@ -63076,10 +63104,10 @@ SACK_NETWORK_NAMESPACE
 LOGICAL ssl_Send( PCLIENT pc, POINTER buffer, size_t length ) {
 	return FALSE;
 }
-LOGICAL ssl_BeginServer( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen, POINTER keypass, size_t keypasslen ) {
+LOGICAL ssl_BeginServer( PCLIENT pc, CPOINTER cert, size_t certlen, CPOINTER keypair, size_t keylen, CPOINTER keypass, size_t keypasslen ) {
 	return FALSE;
 }
-LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t client_keypairlen, POINTER keypass, size_t keypasslen, POINTER rootCert, size_t rootCertLen ) {
+LOGICAL ssl_BeginClientSession( PCLIENT pc, CPOINTER client_keypair, size_t client_keypairlen, CPOINTER keypass, size_t keypasslen, CPOINTER rootCert, size_t rootCertLen ) {
 	return FALSE;
 }
 LOGICAL ssl_IsClientSecure( PCLIENT pc ) {
@@ -63279,7 +63307,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 					if( SSL_get_peer_certificate( pc->ssl_session->ssl ) ) {
 						int r;
 						if( ( r = SSL_get_verify_result( pc->ssl_session->ssl ) ) != X509_V_OK ) {
-							lprintf( "Certificate verification failed." );
+							lprintf( "Certificate verification failed. %d", r );
 							RemoveClientEx( pc, 0, 1 );
 							return;
 							//ERR_print_errors_cb( logerr, (void*)__LINE__ );
@@ -63304,6 +63332,10 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 					RemoveClient( pc );
 					return;
 				}
+			}
+			else if( hs_rc == -1 ) {
+				  RemoveClient( pc );
+				  return;
 			}
 			else
 				len = 0;
@@ -63489,7 +63521,7 @@ static int pem_password( char *buf, int size, int rwflag, void *u )
 	memcpy( buf, params->password, len = (size<params->passlen ? size : params->passlen) );
 	return len;
 }
-LOGICAL ssl_BeginServer( PCLIENT pc, POINTER cert, size_t certlen, POINTER keypair, size_t keylen, POINTER keypass, size_t keypasslen ) {
+LOGICAL ssl_BeginServer( PCLIENT pc, CPOINTER cert, size_t certlen, CPOINTER keypair, size_t keylen, CPOINTER keypass, size_t keypasslen ) {
 	struct ssl_session * ses;
 	ses = New( struct ssl_session );
 	MemSet( ses, 0, sizeof( struct ssl_session ) );
@@ -63596,7 +63628,7 @@ LOGICAL ssl_GetPrivateKey( PCLIENT pc, POINTER *keyoutbuf, size_t *keylen ) {
 	}
 	return FALSE;
 }
-LOGICAL ssl_BeginClientSession( PCLIENT pc, POINTER client_keypair, size_t client_keypairlen, POINTER keypass, size_t keypasslen, POINTER rootCert, size_t rootCertLen )
+LOGICAL ssl_BeginClientSession( PCLIENT pc, CPOINTER client_keypair, size_t client_keypairlen, CPOINTER keypass, size_t keypasslen, CPOINTER rootCert, size_t rootCertLen )
 {
 	struct ssl_session * ses;
 	ssl_InitLibrary();
@@ -74610,6 +74642,7 @@ PRIORITY_PRELOAD( LoadSQLiteInterface, SQL_PRELOAD_PRIORITY-1 )
 #endif
 SQL_NAMESPACE_END
 #endif
+//#define LOG_OPERATIONS
 #ifdef USE_SQLITE_INTERFACE
 SQL_NAMESPACE
 static void InitVFS( CTEXTSTR name, struct file_system_mounted_interface *fsi );
@@ -74676,8 +74709,9 @@ int xClose(sqlite3_file*file)
 	{
 		sack_fclose( my_file->file );
 #ifdef LOG_OPERATIONS
-		lprintf( "Close %s", my_file->filename );
+		lprintf( "Close %p %s", my_file->file, my_file->filename );
 #endif
+		my_file->file = NULL;
 	}
 	if( my_file->temp )
 	{
@@ -74693,7 +74727,7 @@ int xRead(sqlite3_file*file, void*buffer, int iAmt, sqlite3_int64 iOfst)
 	struct my_file_data *my_file = (struct my_file_data*)file;
 	size_t actual;
 #ifdef LOG_OPERATIONS
-	lprintf( "read %s %d  %d", my_file->filename, iAmt, iOfst );
+	lprintf( "read %p %s %d  %d", my_file->file, my_file->filename, iAmt, iOfst );
 #endif
 	sack_fseek( my_file->file, (size_t)iOfst, SEEK_SET );
 	if( ( actual = sack_fread( buffer, 1, iAmt, my_file->file ) ) == (size_t)iAmt )
@@ -74714,7 +74748,7 @@ int xWrite(sqlite3_file*file, const void*buffer, int iAmt, sqlite3_int64 iOfst)
 	struct my_file_data *my_file = (struct my_file_data*)file;
 	size_t actual;
 #ifdef LOG_OPERATIONS
-	lprintf( "Write %s %d at %d", my_file->filename, iAmt, iOfst );
+	lprintf( "Write %p %s %d at %d", my_file->file, my_file->filename, iAmt, iOfst );
 	//LogBinary( buffer, iAmt );
 #endif
 	{
@@ -74973,7 +75007,7 @@ int xOpen(sqlite3_vfs* vfs, const char *zName, sqlite3_file*file,
 	else
 		my_file->temp = FALSE;
 #ifdef LOG_OPERATIONS
-	lprintf( "Open file: %s (vfs:%s)", zName, vfs->zName );
+	lprintf( "Open file: %s (vfs:%s) (already)%p", zName, vfs->zName, my_file->file );
 #endif
 	my_file->filename = DupCStr( zName );
 #if defined( __GNUC__ )
@@ -74993,6 +75027,9 @@ int xOpen(sqlite3_vfs* vfs, const char *zName, sqlite3_file*file,
 			my_file->file = sack_fsopenEx( 0, my_file->filename, WIDE( "wb" ), _SH_DENYNO, my_vfs->mount );
 		if( my_file->file )
 		{
+#ifdef LOG_OPERATIONS
+			lprintf( "Opened file: %s (vfs:%s) %p", zName, vfs->zName, my_file->file );
+#endif
 			InitializeCriticalSec( &my_file->cs );
 			return SQLITE_OK;
 		}
@@ -75005,6 +75042,9 @@ int xOpen(sqlite3_vfs* vfs, const char *zName, sqlite3_file*file,
 			my_file->file = sack_fsopen( 0, my_file->filename, WIDE("wb+"), _SH_DENYNO );
 		if( my_file->file )
 		{
+#ifdef LOG_OPERATIONS
+			lprintf( "Opened file: %s (vfs:%s) %p", zName, vfs->zName, my_file->file );
+#endif
 			InitializeCriticalSec( &my_file->cs );
 			return SQLITE_OK;
 		}
@@ -79869,7 +79909,8 @@ int OpenSQLConnectionEx( PODBC odbc DBG_PASS )
 							tmpvfsvfs = NewArray( TEXTCHAR, ( vfs_vfs_end - vfs_end ) + 1 );
 							StrCpyEx( tmpvfs, odbc->info.pDSN + 1, vfs_end - odbc->info.pDSN );
 							StrCpyEx( tmpvfsvfs, odbc->info.pDSN + 1, vfs_vfs_end - vfs_end );
-							vfs_name = CStrDup( tmpvfsvfs );
+							vfs_name = NewArray( TEXTCHAR, vfs_vfs_end - odbc->info.pDSN );
+							StrCpyEx( vfs_name, odbc->info.pDSN + 1, vfs_vfs_end - odbc->info.pDSN );
 							StrCpyEx( tmpvfsvfs, vfs_end + 1, vfs_vfs_end - vfs_end );
 						}
 						else
@@ -81499,13 +81540,24 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 				break;
 			case SQLITE_CORRUPT:
 				lprintf( WIDE("Database is corrupt: %s"), sqlite3_errmsg(odbc->db ) );
+				result_cmd = WM_SQL_RESULT_ERROR;
 				break;
 			default:
 				lprintf( WIDE("Step status %d:%s %08x"), rc3, sqlite3_errmsg(odbc->db ), sqlite3_extended_errcode(odbc->db) );
+				result_cmd = WM_SQL_RESULT_ERROR;
 				break;
 			}
 		}
 #endif
+		if( ( result_cmd != WM_SQL_RESULT_DATA ) && ( result_cmd != WM_SQL_RESULT_MORE ) ) {
+			GenerateResponce( collection, result_cmd );
+			if( odbc->flags.bThreadProtect )
+			{
+				odbc->nProtect--;
+				LeaveCriticalSec( &odbc->cs );
+			}
+			return 0;
+		}
 		ReleaseCollectionResults( collection, FALSE );
 		if( collection->flags.bBuildResultArray )
 		{
