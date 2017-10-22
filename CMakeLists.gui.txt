@@ -38,8 +38,11 @@ ExternalProject_Add( sack
 		 -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}
 
 )
+if( EXISTS ${CMAKE_BINARY_DIR}/sack-src/src/sack/src/Intershell.stable )
+
 ExternalProject_Add( intershell
         PREFIX sack-src
+	DEPENDS sack
 	SOURCE_DIR ${CMAKE_BINARY_DIR}/sack-src/src/sack/src/InterShell.stable
 	INSTALL_DIR ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}
 	CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE} -DSACK_SDK_ROOT_PATH=${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE} -DBUILD_INTO_SACK_INSTALL=1
@@ -112,3 +115,4 @@ if( UNIX )
    target_link_libraries( ${PROJECT_NAME} uuid )
 endif( UNIX )
 
+endif( EXISTS ${CMAKE_BINARY_DIR}/sack-src/src/sack/src/Intershell.stable )
