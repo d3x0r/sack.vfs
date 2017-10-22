@@ -4,7 +4,7 @@
   "description": "Node.js VFS Addon",
   "main": "vfs_module.js",
   "private": false,
-  "preferGlobal": true,
+  "preferGlobal": false,
   "keywords": [
     "sqlite",
     "vfs",
@@ -31,6 +31,14 @@
   "scripts": {
     "test": "node tests/vfsTest.js",
     "install": "node-gyp configure build",
+    "build-gui": "npm run build-gui-debug-config && npm run build-gui-debug-run1 && npm run build-gui-debug-run2",
+    "build-gui-config": "cmake-js --CDMAKE_GUI=1 configure",
+    "build-gui-run1": "cmake-js build",
+    "build-gui-run2": "cmake-js build",
+    "build-gui-debug": "npm run build-gui-debug-config && npm run build-gui-debug-run1 && npm run build-gui-debug-run2",
+    "build-gui-debug-config": "cmake-js --CDMAKE_GUI=1 -D configure",
+    "build-gui-debug-run1": "cmake-js build -D",
+    "build-gui-debug-run2": "cmake-js build -D",
     "build": "node-gyp configure build"
   },
   "dependencies": {
