@@ -7,7 +7,27 @@
 #define V8_AT_LEAST(major, minor) (V8_MAJOR_VERSION > major || (V8_MAJOR_VERSION == major && V8_MINOR_VERSION >= minor))
 //#include <nan.h>
 
+#ifdef SACK_CORE
+#include <stdhdrs.h>
+#include <network.h>
+//#include <idle.h>
+#include <pssql.h>
+#include <sack_vfs.h>
+#include <salty_generator.h>
+#include <filesys.h>
+#include <deadstart.h>
+#include <procreg.h>
+#include <translation.h>
+#include <json_emitter.h>
+#include <sqlgetoption.h>
+#include <sackcomm.h>
+#include <html5.websocket.h>
+#include <html5.websocket.client.h>
+#include <http.h>
+#else
 #include "sack/sack.h"
+#endif
+
 #undef New
 
 //#include <openssl/ssl.h>
@@ -19,6 +39,11 @@
 #include <openssl/pem.h>
 #include <openssl/x509v3.h>
 //#include <openssl/>
+
+#ifdef INCLUDE_GUI
+#include "gui/gui_global.h"
+
+#endif
 
 using namespace v8;
 
