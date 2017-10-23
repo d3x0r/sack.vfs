@@ -49,6 +49,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->widthString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "width" ) );
 		check->heightString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "height" ) );
 		check->borderString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "border" ) );
+		check->createString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "create" ) );
 		check->mouseString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "mouse" ) );
 		check->drawString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "draw" ) );
 		check->keyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "key" ) );
@@ -310,8 +311,8 @@ void ControlObject::Init( Handle<Object> exports ) {
 
 		SET_READONLY( controlObject, "color", controlColors );
 
-		psiTemplate2->Set( isolate, "color", controlColors );
-		psiTemplate->Set( isolate, "color", controlColors );
+		//psiTemplate2->Set( isolate, "color", controlColors );
+		//psiTemplate->Set( isolate, "color", controlColors );
 
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate3, "setCreate", RegistrationObject::setCreate );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate3, "setDraw", RegistrationObject::setDraw );
@@ -833,6 +834,9 @@ RegistrationObject::RegistrationObject( Isolate *isolate, struct registrationOpt
 					if( opts->Has( optName = strings->borderString->Get( isolate ) ) ) {
 						regOpts.default_border = (int)opts->Get( optName )->IntegerValue();
 					}
+					if( opts->Has( optName = strings->createString->Get( isolate ) ) ) {
+						regOpts.cbInitEvent = Handle<Function>::Cast( opts->Get( optName ) );
+					}
 					if( opts->Has( optName = strings->drawString->Get( isolate ) ) ) {
 						regOpts.cbDrawEvent = Handle<Function>::Cast( opts->Get( optName ) );
 					}
@@ -1017,6 +1021,7 @@ void RegistrationObject::InitRegistration( Isolate *isolate, struct registration
 	setMethod( cbLoadEvent, load, onLoad );
 	setMethod( cbMouseEvent, mouse, cbMouse );
 	setMethod( cbKeyEvent, key, cbKey );
+	setMethod( cbDrawEvent, draw, onDraw );
 
 	r.stuff.stuff.width = opts->width;
 	r.stuff.stuff.height = opts->height;
