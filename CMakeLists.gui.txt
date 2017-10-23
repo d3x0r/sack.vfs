@@ -69,6 +69,13 @@ if( WIN32 )
 	set( MORE_MODULE_SOURCES src/reg_access.cc )
 endif( WIN32 )
 
+set( GUI_SOURCES src/gui/sack_psi_module.cc
+	src/gui/sack_image_module.cc
+	src/gui/sack_render_module.cc
+	src/gui/sack_intershell_module.cc )
+
+source_group( "Source Files\\GUI" FILES ${GUI_SOURCES} ) #REGULAR_EXPRESSION  src/gui/.*)
+
 add_library(${PROJECT_NAME} SHARED
 	src/vfs_module.cc
 	src/thread_module.cc
@@ -80,19 +87,8 @@ add_library(${PROJECT_NAME} SHARED
 	src/websocket_module.cc
 	src/network_module.cc
 	${MORE_MODULE_SOURCES}
-	
-	src/gui/sack_psi_module.cc
-	src/gui/sack_image_module.cc
-	src/gui/sack_render_module.cc
-	src/gui/sack_intershell_module.cc
-	
+	${GUI_SOURCES}	
         )
-
-SET_SOURCE_FILES_PROPERTIES( src/gui/sack_psi_module.cc
-	src/gui/sack_image_module.cc
-	src/gui/sack_render_module.cc
-	src/gui/sack_intershell_module.cc
-	PROPERTIES  FOLDER "GUI" )
 
 
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
@@ -102,9 +98,9 @@ if( CMAKE_COMPILER_IS_GNUCC )
 endif( CMAKE_COMPILER_IS_GNUCC )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_DEFINITIONS "TARGETNAME=\"${PROJECT_NAME}.node\";${MOREDEFS}" )
+add_dependencies( ${PROJECT_NAME} sack intershell )
 
-
-target_link_libraries(${PROJECT_NAME} ${CMAKE_JS_LIB}  bag++ bag.externals bag.psi++ sack_vfs.pp.module )
+target_link_libraries(${PROJECT_NAME} bag++ bag.externals bag.psi++ sack_vfs.pp.module ${CMAKE_JS_LIB} )
 
   add_custom_command( TARGET ${PROJECT_NAME} POST_BUILD
 			#COMMAND cmake -E echo ${AMALG_COMMAND}
