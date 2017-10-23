@@ -133,23 +133,23 @@ RenderObject::~RenderObject() {
 			RenderObject *parent = NULL;
 
 			int argc = args.Length();
-			if( argc > 1 ) {
+			if( argc > 0 ) {
 				String::Utf8Value fName( args[0]->ToString() );
 				title = StrDup( *fName );
 			}
-			if( argc > 2 ) {
+			if( argc > 1 ) {
 				x = (int)args[1]->NumberValue();
 			}
-			if( argc > 3 ) {
+			if( argc > 2 ) {
 				y = (int)args[2]->NumberValue();
 			}
-			if( argc > 4 ) {
+			if( argc > 3 ) {
 				w = (int)args[3]->NumberValue();
 			}
-			if( argc > 5 ) {
+			if( argc > 4 ) {
 				h = (int)args[4]->NumberValue();
 			}
-			if( argc > 6 ) {
+			if( argc > 5 ) {
 				if( args[5]->IsNull() ) {
 					parent = NULL;
 				}

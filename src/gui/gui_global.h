@@ -57,6 +57,7 @@ enum eventType {
 	Event_Control_Mouse,
 	Event_Control_Key,
 	Event_Control_Draw,
+	Event_Control_Load,
 };
 
 struct event {

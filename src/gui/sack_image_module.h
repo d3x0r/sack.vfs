@@ -36,8 +36,11 @@ public:
 	static void imageData( const FunctionCallbackInfo<Value>& args );
 	
 
-
-   ~ImageObject();
+	static void getWidth( v8::Local<v8::String> field,
+		const PropertyCallbackInfo<v8::Value>& args );
+	static void getHeight( v8::Local<v8::String> field,
+		const PropertyCallbackInfo<v8::Value>& args );
+	   ~ImageObject();
 
 
 };
@@ -76,15 +79,18 @@ public:
 	CDATA color;
 
 	static v8::Persistent<v8::Function> constructor;
+	static v8::Persistent<v8::FunctionTemplate> tpl;
 
 public:
 
 	static void Init( Handle<Object> exports );
 	ColorObject( int r, int g, int b, int a );
 	ColorObject( CDATA rgba );
-
+	ColorObject();
+	static CDATA getColor( Local<Object> object );
+	static Local<Object> makeColor( Isolate *isolate, CDATA rgba );
 	static void New( const FunctionCallbackInfo<Value>& args );
-
+	static bool isColor( Isolate *isolate, Local<Object> object );
 
 	~ColorObject();
 

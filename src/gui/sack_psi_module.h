@@ -1,6 +1,46 @@
 
 
 
+struct registrationOpts {
+	const char *name;
+	int width, height;
+	int default_border;
+	//1) Expose a function in the addon to allow Node to set the Javascript cb that will be periodically called back to :
+	Local<Function> cbInitEvent; // event callback        ()  // return true/false to allow creation
+	Local<Function> cbLoadEvent; // event callback       ( PTEXT parameters )
+	Local<Function> cbDrawEvent; // event callback       ()  // return true/false if handled
+	Local<Function> cbMouseEvent; // event callback      (int32,int32,uint32) // return true/false if handled
+	Local<Function> cbKeyEvent; // event callback        (uint32)  // return true/false if handled
+	Local<Function> cbDestroyEvent; // event callback    ()
+	Local<Function> cbPropPageEvent; // event callback   () return PSI_CONTROL frame
+	Local<Function> cbApplyPropEvent; // event callback  (frame)
+	Local<Function> cbSaveEvent; // event callback       ( pvt )
+	Local<Function> cbAddedEvent; // event callback     ( added Control )
+	Local<Function> cbCaptionEvent; // event callback  ()
+	Local<Function> cbFocusEvent; // event callback    (focused/notFocused)
+	Local<Function> cbPositionEvent; // event callback  (start/end)
+
+	Local<Function> cbHideEvent; // event callback         ()
+	Local<Function> cbRevealEvent; // event callback       ()
+	Local<Function> cbDrawCaptionEvent; // event callback  (image) // given the image to draw into
+	Local<Function> cbDrawDecorationEvent; // event callback ()
+	Local<Function> cbMoveEvent; // event callback   (start/end of move)
+	Local<Function> cbSizeEvent; // event callback  (start/end of sizing)
+	Local<Function> cbScaleEvent; // event callback   ()
+	Local<Function> cbParentMoveEvent; // event callback        ( start/end of parent move)
+	Local<Function> cbBeginEditEvent; // event callback   ()
+	Local<Function> cbEndEditEvent; // event callback     ()
+	Local<Function> cbReadPropEvent; // event callback     (prop Sheet)
+	Local<Function> cbAbortPropEvent; // event callback   (prop sheet)
+	Local<Function> cbDonePropEvent; // event callback    ()
+	Local<Function> cbTouchEvent; // event callback ( [touches] )
+	Local<Function> cbBorderDrawEvent; // event callback   (image)
+	Local<Function> cbBorderMeasureEvent; // event callback  (int*,int*,int*,int*)
+	Local<Function> cbDropAcceptEvent; // event callback  (filePath,x,y)
+	Local<Function> cbRolloverEvent; // event callback  (true/false - enter/leave)
+
+};
+
 
 
 class RegistrationObject : public node::ObjectWrap{
@@ -10,8 +50,9 @@ public:
    Persistent<Object> _this;
 
 public:
-	
-	RegistrationObject( const char *caption );
+	void InitRegistration( Isolate *isolate, struct registrationOpts *opts );
+	RegistrationObject( Isolate *isolate, const char *caption );
+	RegistrationObject( Isolate *isolate, struct registrationOpts *opts );
 
 	static void NewRegistration( const FunctionCallbackInfo<Value>& args );
 	static void New( const FunctionCallbackInfo<Value>& args );
@@ -73,6 +114,7 @@ public:
 	static v8::Persistent<v8::Function> constructor;   // Frame
 	static v8::Persistent<v8::Function> constructor2;  // Control
 	static v8::Persistent<v8::Function> constructor3;  // Control
+	static v8::Persistent<v8::FunctionTemplate> controlTemplate;
 
 	Persistent<Object> state;
 	ImageObject *image;
@@ -105,6 +147,12 @@ public:
 
 	static void writeConsole( const FunctionCallbackInfo<Value>& args );
 	static void setConsoleRead( const FunctionCallbackInfo<Value>& args );
+
+	static void getControlColor( v8::Local<v8::Name> field,
+		const PropertyCallbackInfo<v8::Value>& args );
+	static void setControlColor( v8::Local<v8::Name> field,
+		Local<Value> value,
+		const PropertyCallbackInfo<void>& args );
 
 
 	Persistent<Function, CopyablePersistentTraits<Function>> cbConsoleRead;  // event for console control callback (psi/console.h)

@@ -1,9 +1,10 @@
 #define DEFINE_GLOBAL
-#include "gui_global.h"
+#include "../global.h"
 
 Persistent<Function> ImageObject::constructor;
 Persistent<Function> FontObject::constructor;
 Persistent<Function> ColorObject::constructor;
+Persistent<FunctionTemplate> ColorObject::tpl;
 
 static Local<Object> makeColor( Isolate *isolate, CDATA c ) {
 	int argc = 1;
@@ -43,6 +44,13 @@ void ImageObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImage", ImageObject::putImage );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImageOver", ImageObject::putImageOver );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "imageSurface", ImageObject::imageData );
+	imageTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8( isolate, "width" )
+		, ImageObject::getWidth
+		, NULL );
+	imageTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8( isolate, "height" )
+		, ImageObject::getHeight
+		, NULL );
+
 	//NODE_SET_PROTOTYPE_METHOD( imageTemplate, "plot", ImageObject:: );
 
 
@@ -69,7 +77,7 @@ void ImageObject::Init( Handle<Object> exports ) {
 	colorTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	ColorObject::constructor.Reset( isolate, colorTemplate->GetFunction() );
-
+	ColorObject::tpl.Reset( isolate, colorTemplate );
 
 	FontObject::constructor.Reset( isolate, fontTemplate->GetFunction() );
 	exports->Set( String::NewFromUtf8( isolate, "Font" ),
@@ -77,33 +85,46 @@ void ImageObject::Init( Handle<Object> exports ) {
 
 
 	Local<Object> colors = Object::New( isolate );
-	colors->Set( String::NewFromUtf8( isolate, "white" ), makeColor( isolate, BASE_COLOR_WHITE ) );
-	colors->Set( String::NewFromUtf8( isolate, "black" ), makeColor( isolate, BASE_COLOR_BLACK ) );
-	colors->Set( String::NewFromUtf8( isolate, "green" ), makeColor( isolate, BASE_COLOR_GREEN ) );
-	colors->Set( String::NewFromUtf8( isolate, "blue" ), makeColor( isolate, BASE_COLOR_BLUE ) );
-	colors->Set( String::NewFromUtf8( isolate, "red" ), makeColor( isolate, BASE_COLOR_RED ) );
-	colors->Set( String::NewFromUtf8( isolate, "darkBlue" ), makeColor( isolate, BASE_COLOR_DARKBLUE ) );
-	colors->Set( String::NewFromUtf8( isolate, "cyan" ), makeColor( isolate, BASE_COLOR_CYAN ) );
-	colors->Set( String::NewFromUtf8( isolate, "brown" ), makeColor( isolate, BASE_COLOR_BROWN ) );
-	colors->Set( String::NewFromUtf8( isolate, "lightBrown" ), makeColor( isolate, BASE_COLOR_LIGHTBROWN ) );
-	colors->Set( String::NewFromUtf8( isolate, "magenta" ), makeColor( isolate, BASE_COLOR_MAGENTA ) );
-	colors->Set( String::NewFromUtf8( isolate, "lightGrey" ), makeColor( isolate, BASE_COLOR_LIGHTGREY ) );
-	colors->Set( String::NewFromUtf8( isolate, "darkGrey" ), makeColor( isolate, BASE_COLOR_DARKGREY ) );
-	colors->Set( String::NewFromUtf8( isolate, "lightBlue" ), makeColor( isolate, BASE_COLOR_LIGHTBLUE ) );
-	colors->Set( String::NewFromUtf8( isolate, "lightGreen" ), makeColor( isolate, BASE_COLOR_LIGHTGREEN ) );
-	colors->Set( String::NewFromUtf8( isolate, "lightCyan" ), makeColor( isolate, BASE_COLOR_LIGHTCYAN ) );
-	colors->Set( String::NewFromUtf8( isolate, "lightRed" ), makeColor( isolate, BASE_COLOR_LIGHTRED ) );
-	colors->Set( String::NewFromUtf8( isolate, "lightMagenta" ), makeColor( isolate, BASE_COLOR_LIGHTMAGENTA ) );
-	colors->Set( String::NewFromUtf8( isolate, "yellow" ), makeColor( isolate, BASE_COLOR_YELLOW ) );
-	colors->Set( String::NewFromUtf8( isolate, "orange" ), makeColor( isolate, BASE_COLOR_ORANGE ) );
-	colors->Set( String::NewFromUtf8( isolate, "niceOrange" ), makeColor( isolate, BASE_COLOR_NICE_ORANGE ) );
-	colors->Set( String::NewFromUtf8( isolate, "purple" ), makeColor( isolate, BASE_COLOR_PURPLE ) );
+	SET_READONLY( colors, "white", makeColor( isolate, BASE_COLOR_WHITE ) );
+	SET_READONLY( colors, "black", makeColor( isolate, BASE_COLOR_BLACK ) );
+	SET_READONLY( colors, "green", makeColor( isolate, BASE_COLOR_GREEN ) );
+	SET_READONLY( colors, "blue", makeColor( isolate, BASE_COLOR_BLUE ) );
+	SET_READONLY( colors, "red", makeColor( isolate, BASE_COLOR_RED ) );
+	SET_READONLY( colors, "darkBlue", makeColor( isolate, BASE_COLOR_DARKBLUE ) );
+	SET_READONLY( colors, "cyan", makeColor( isolate, BASE_COLOR_CYAN ) );
+	SET_READONLY( colors, "brown", makeColor( isolate, BASE_COLOR_BROWN ) );
+	SET_READONLY( colors, "lightBrown", makeColor( isolate, BASE_COLOR_LIGHTBROWN ) );
+	SET_READONLY( colors, "magenta", makeColor( isolate, BASE_COLOR_MAGENTA ) );
+	SET_READONLY( colors, "lightGrey", makeColor( isolate, BASE_COLOR_LIGHTGREY ) );
+	SET_READONLY( colors, "darkGrey", makeColor( isolate, BASE_COLOR_DARKGREY ) );
+	SET_READONLY( colors, "lightBlue", makeColor( isolate, BASE_COLOR_LIGHTBLUE ) );
+	SET_READONLY( colors, "lightGreen", makeColor( isolate, BASE_COLOR_LIGHTGREEN ) );
+	SET_READONLY( colors, "lightCyan", makeColor( isolate, BASE_COLOR_LIGHTCYAN ) );
+	SET_READONLY( colors, "lightRed", makeColor( isolate, BASE_COLOR_LIGHTRED ) );
+	SET_READONLY( colors, "lightMagenta", makeColor( isolate, BASE_COLOR_LIGHTMAGENTA ) );
+	SET_READONLY( colors, "yellow", makeColor( isolate, BASE_COLOR_YELLOW ) );
+	SET_READONLY( colors, "orange", makeColor( isolate, BASE_COLOR_ORANGE ) );
+	SET_READONLY( colors, "niceOrange", makeColor( isolate, BASE_COLOR_NICE_ORANGE ) );
+	SET_READONLY( colors, "purple", makeColor( isolate, BASE_COLOR_PURPLE ) );
 
 	Local<Function> i = imageTemplate->GetFunction();
-	i->Set( String::NewFromUtf8( isolate, "colors" ), colors );
-
+	SET_READONLY( i, "colors", colors );
 
 }
+
+void ImageObject::getWidth( v8::Local<v8::String> field,
+	const PropertyCallbackInfo<v8::Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->image->width ) );
+}
+void ImageObject::getHeight( v8::Local<v8::String> field,
+	const PropertyCallbackInfo<v8::Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->image->height ) );
+}
+
 
 ImageObject::ImageObject( const char *filename )  {
    image = LoadImageFile( filename );
@@ -131,111 +152,111 @@ ImageObject::~ImageObject(void) {
 	}
 }
 
-	void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
-		if( args.IsConstructCall() ) {
+void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.IsConstructCall() ) {
 
-			int x = 0, y = 0, w = 1024, h = 768;
-			Local<Object> parentImage;
-			ImageObject *parent = NULL;
-			char *filename = NULL;
+		int x = 0, y = 0, w = 1024, h = 768;
+		Local<Object> parentImage;
+		ImageObject *parent = NULL;
+		char *filename = NULL;
 
-			int argc = args.Length();
-			if( argc > 0 ) {
-				if( args[0]->IsNumber() )
-					w = (int)args[0]->NumberValue();
-				else {
-					String::Utf8Value fName( args[0]->ToString() );
-					filename = StrDup( *fName );
-				}
+		int argc = args.Length();
+		if( argc > 0 ) {
+			if( args[0]->IsNumber() )
+				w = (int)args[0]->NumberValue();
+			else {
+				String::Utf8Value fName( args[0]->ToString() );
+				filename = StrDup( *fName );
 			}
-			if( !filename ) {
-				if( argc > 1 ) {
-					h = (int)args[1]->NumberValue();
-				}
-				if( argc > 2 ) {
-					parentImage = args[2]->ToObject();
-					parent = ObjectWrap::Unwrap<ImageObject>( parentImage );
-				}
-				if( argc > 3 ) {
-					x = (int)args[3]->NumberValue();
-				}
-				if( argc > 4 ) {
-					y = (int)args[4]->NumberValue();
-				}
+		}
+		if( !filename ) {
+			if( argc > 1 ) {
+				h = (int)args[1]->NumberValue();
 			}
-			// Invoked as constructor: `new MyObject(...)`
-			ImageObject* obj;
-			if( filename )
-				obj = new ImageObject( filename );
-			else
-				obj = new ImageObject( x, y, w, h, parent );
-			obj->_this.Reset( isolate, args.This() );
-			obj->Wrap( args.This() );
-			args.GetReturnValue().Set( args.This() );
-
+			if( argc > 2 ) {
+				parentImage = args[2]->ToObject();
+				parent = ObjectWrap::Unwrap<ImageObject>( parentImage );
+			}
+			if( argc > 3 ) {
+				x = (int)args[3]->NumberValue();
+			}
+			if( argc > 4 ) {
+				y = (int)args[4]->NumberValue();
+			}
 		}
-		else {
-			// Invoked as plain function `MyObject(...)`, turn into construct call.
-			int argc = args.Length();
-			Local<Value> *argv = new Local<Value>[argc];
-			for( int n = 0; n < argc; n++ )
-				argv[n] = args[n];
+		// Invoked as constructor: `new MyObject(...)`
+		ImageObject* obj;
+		if( filename )
+			obj = new ImageObject( filename );
+		else
+			obj = new ImageObject( x, y, w, h, parent );
+		obj->_this.Reset( isolate, args.This() );
+		obj->Wrap( args.This() );
+		args.GetReturnValue().Set( args.This() );
 
-			Local<Function> cons = Local<Function>::New( isolate, constructor );
-			args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
-			delete argv;
-		}
 	}
+	else {
+		// Invoked as plain function `MyObject(...)`, turn into construct call.
+		int argc = args.Length();
+		Local<Value> *argv = new Local<Value>[argc];
+		for( int n = 0; n < argc; n++ )
+			argv[n] = args[n];
+
+		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		delete argv;
+	}
+}
 
 void ImageObject::NewSubImage( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
-		if( args.IsConstructCall() ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.IsConstructCall() ) {
 
-			int x = 0, y = 0, w = 1024, h = 768;
-			Local<Object> parentImage;
-			ImageObject *parent = ObjectWrap::Unwrap<ImageObject>( args.This() );
-			int argc = args.Length();
-			int arg_ofs = 0;
-			if( argc > 0 ) {
-				if( args[0]->IsObject() ) {
-					ImageObject *parent = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject() );
-					arg_ofs = 1;
-				}
-			if( (argc+arg_ofs) > 0 )
-				x = (int)args[0+arg_ofs]->NumberValue();
+		int x = 0, y = 0, w = 1024, h = 768;
+		Local<Object> parentImage;
+		ImageObject *parent = ObjectWrap::Unwrap<ImageObject>( args.This() );
+		int argc = args.Length();
+		int arg_ofs = 0;
+		if( argc > 0 ) {
+			if( args[0]->IsObject() ) {
+				ImageObject *parent = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject() );
+				arg_ofs = 1;
 			}
-			if( (argc + arg_ofs) > 1 ) {
-				y = (int)args[1 + arg_ofs]->NumberValue();
-			}
-			if( (argc + arg_ofs) > 2 ) {
-				w = (int)args[2 + arg_ofs]->NumberValue();
-			}
-			if( (argc + arg_ofs) > 3 ) {
-				h = (int)args[3 + arg_ofs]->NumberValue();
-			}
-
-			// Invoked as constructor: `new MyObject(...)`
-			ImageObject* obj;
-			obj = new ImageObject( x, y, w, h, parent );
-
-			obj->Wrap( args.This() );
-			args.GetReturnValue().Set( args.This() );
+		if( (argc+arg_ofs) > 0 )
+			x = (int)args[0+arg_ofs]->NumberValue();
 		}
-		else {
-			// Invoked as plain function `MyObject(...)`, turn into construct call.
-			int argc = args.Length();
-			Local<Value> *argv = new Local<Value>[argc+1];
-			int n;
-			for( n = 0; n < argc; n++ )
-				argv[n+1] = args[n];
-			argv[0] = args.Holder();
-
-			Local<Function> cons = Local<Function>::New( isolate, constructor );
-			args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
-			delete argv;
+		if( (argc + arg_ofs) > 1 ) {
+			y = (int)args[1 + arg_ofs]->NumberValue();
 		}
+		if( (argc + arg_ofs) > 2 ) {
+			w = (int)args[2 + arg_ofs]->NumberValue();
+		}
+		if( (argc + arg_ofs) > 3 ) {
+			h = (int)args[3 + arg_ofs]->NumberValue();
+		}
+
+		// Invoked as constructor: `new MyObject(...)`
+		ImageObject* obj;
+		obj = new ImageObject( x, y, w, h, parent );
+
+		obj->Wrap( args.This() );
+		args.GetReturnValue().Set( args.This() );
 	}
+	else {
+		// Invoked as plain function `MyObject(...)`, turn into construct call.
+		int argc = args.Length();
+		Local<Value> *argv = new Local<Value>[argc+1];
+		int n;
+		for( n = 0; n < argc; n++ )
+			argv[n+1] = args[n];
+		argv[0] = args.Holder();
+
+		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		delete argv;
+	}
+}
 
 
 Local<Object> ImageObject::NewImage( Isolate*isolate, Image image, LOGICAL external ) {
@@ -267,44 +288,44 @@ ImageObject * ImageObject::MakeNewImage( Isolate*isolate, Image image, LOGICAL e
 }
 
 
-	void ImageObject::reset( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
-		args[3]->ToObject();
-		ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-		ClearImage( io->image );
-	}
+void ImageObject::reset( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	args[3]->ToObject();
+	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	ClearImage( io->image );
+}
 
-	void ImageObject::fill( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
-		ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-		int argc = args.Length();
-		int x, y, w, h, c;
-		if( argc > 0 ) {
-			x = (int)args[0]->NumberValue();
-		}
-		if( argc > 1 ) {
-			y = (int)args[1]->NumberValue();
-		}
-		if( argc > 2 ) {
-			w = (int)args[2]->NumberValue();
-		}
-		if( argc > 3 ) {
-			h = (int)args[3]->NumberValue();
-		}
-		if( argc > 4 ) {
-			if( args[4]->IsObject() ) {
-				ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject() );
-				c = co->color;
-			}
-			else if( args[4]->IsUint32() )
-				c = (int)args[4]->Uint32Value();
-			else if( args[4]->IsNumber() )
-				c = (int)args[4]->NumberValue();
-			else
-				c = 0;
-		}
-		BlatColor( io->image, x, y, w, h, c );
+void ImageObject::fill( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	int argc = args.Length();
+	int x, y, w, h, c;
+	if( argc > 0 ) {
+		x = (int)args[0]->NumberValue();
 	}
+	if( argc > 1 ) {
+		y = (int)args[1]->NumberValue();
+	}
+	if( argc > 2 ) {
+		w = (int)args[2]->NumberValue();
+	}
+	if( argc > 3 ) {
+		h = (int)args[3]->NumberValue();
+	}
+	if( argc > 4 ) {
+		if( args[4]->IsObject() ) {
+			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject() );
+			c = co->color;
+		}
+		else if( args[4]->IsUint32() )
+			c = (int)args[4]->Uint32Value();
+		else if( args[4]->IsNumber() )
+			c = (int)args[4]->NumberValue();
+		else
+			c = 0;
+	}
+	BlatColor( io->image, x, y, w, h, c );
+}
 
 	void ImageObject::fillOver( const FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
@@ -509,9 +530,11 @@ ImageObject * ImageObject::MakeNewImage( Isolate*isolate, Image image, LOGICAL e
 					yAt = h;
 					if( argc > 7 ) {
 						w = (int)args[7]->NumberValue();
+						if( w < 0 ) w = ii->image->width;
 					}
 					if( argc > 8 ) {
 						h = (int)args[8]->NumberValue();
+						if( h < 0 ) h = ii->image->height;
 					}
 					BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, 1, BLOT_COPY );
 				}
@@ -647,11 +670,32 @@ void FontObject::measure( const FunctionCallbackInfo<Value>& args ) {
 
 ColorObject::~ColorObject() {
 }
+ColorObject::ColorObject() {
+	color = 0xFFCCFFFF;
+}
 ColorObject::ColorObject( int r,int grn, int b, int a ) {
 	color = MakeAlphaColor( r, grn, b, a );
 }
 ColorObject::ColorObject( CDATA r ) {
 	color = r;
+}
+
+bool ColorObject::isColor( Isolate *isolate, Local<Object> object ) {
+	Local<FunctionTemplate> colorTpl = tpl.Get( isolate );
+	return colorTpl->HasInstance( object );
+}
+
+CDATA ColorObject::getColor( Local<Object> object ) {
+	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( object );
+	return co->color;
+}
+
+Local<Object> ColorObject::makeColor( Isolate *isolate, CDATA rgba ) {
+	Local<Function> cons = Local<Function>::New( isolate, constructor );
+	Local<Object> _color = cons->NewInstance( 0, NULL );
+	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( _color );
+	co->color = rgba;
+	return _color;
 }
 
 void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
@@ -685,14 +729,16 @@ void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
 			}
 
 		}
-		if( argc == 4 ) {
+		else if( argc == 4 ) {
 			r = (int)args[0]->NumberValue();
 			grn = (int)args[1]->NumberValue();
 			b = (int)args[2]->NumberValue();
 			a = (int)args[3]->NumberValue();
 			obj = new ColorObject( r, grn, b, a );
 		}
-
+		else {
+			obj = new ColorObject();
+		}
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
 
