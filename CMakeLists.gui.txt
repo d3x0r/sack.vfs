@@ -115,12 +115,22 @@ endif( CMAKE_COMPILER_IS_GNUCC )
 set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_DEFINITIONS "TARGETNAME=\"${PROJECT_NAME}.node\";${MOREDEFS}" )
 add_dependencies( ${PROJECT_NAME} sack intershell )
 
-target_link_libraries(${PROJECT_NAME} bag++ bag.externals bag.psi++ sack_vfs.pp.module ${CMAKE_JS_LIB} )
+if( UNIX )
+	set( VFSLIB :sack_vfs.pp.module )
+	set( EXTRACOPY 
+   			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/lib${LIB_SUFFIX} ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
+	)
+else( UNIX )
+	set( VFSLIB sack_vfs.pp.module )
+endif( UNIX )
+target_link_libraries(${PROJECT_NAME} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE_JS_LIB} )
+
 
   add_custom_command( TARGET ${PROJECT_NAME} POST_BUILD
 			#COMMAND cmake -E echo ${AMALG_COMMAND}
    			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/bin ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
    			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/resources ${CMAKE_BINARY_DIR}/resources
+			${EXTRACOPY}
                    DEPENDS ${PROJECT_NAME}
   )
 #  add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc )
