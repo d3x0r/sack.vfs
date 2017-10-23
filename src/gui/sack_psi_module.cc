@@ -11,9 +11,9 @@ static struct psiLocal {
 	PTHREAD nodeThread;
 	ControlObject *pendingCreate;
 	Local<Object> newControl;
+	LOGICAL eventLoopRegistered;
 } psiLocal;
 
-Persistent<Function> ControlObject::constructorDisplay;
 Persistent<FunctionTemplate> ControlObject::controlTemplate;
 Persistent<Function> ControlObject::constructor;
 Persistent<Function> ControlObject::constructor2;
@@ -152,21 +152,20 @@ int MakePSIEvent( ControlObject *control, enum eventType type, ... ) {
 }
 
 
-void ControlObject::Init( Handle<Object> exports ) {
+static void enableEventLoop( void ) {
+	if( !psiLocal.eventLoopRegistered ) {
+		psiLocal.eventLoopRegistered = TRUE;
+		MemSet( &psiLocal.async, 0, sizeof( &psiLocal.async ) );
+		uv_async_init( uv_default_loop(), &psiLocal.async, asyncmsg );
+	}
+}
 
-	MemSet( &psiLocal.async, 0, sizeof( &psiLocal.async ) );
-	uv_async_init( uv_default_loop(), &psiLocal.async, asyncmsg );
+void ControlObject::Init( Handle<Object> exports ) {
 
 		Isolate* isolate = Isolate::GetCurrent();
 		Local<FunctionTemplate> psiTemplate;
-		Local<FunctionTemplate> psiTemplateDisplay;
 		Local<FunctionTemplate> psiTemplate2;
 		Local<FunctionTemplate> psiTemplate3;
-
-		// Prepare constructor template
-		//psiTemplateDisplay = FunctionTemplate::New( isolate, NewDisplay );
-		//psiTemplateDisplay->SetClassName( String::NewFromUtf8( isolate, "sack.PSI.Display" ) );
-		//psiTemplateDisplay->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 internal field for wrap
 
 		// Prepare constructor template
 		psiTemplate = FunctionTemplate::New( isolate, New );
@@ -337,11 +336,6 @@ void ControlObject::Init( Handle<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "reveal", ControlObject::show );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "redraw", ControlObject::redraw );
 
-		//registerControl
-		//constructorDisplay.Reset( isolate, psiTemplateDisplay->GetFunction() );
-		//exports->Set( String::NewFromUtf8( isolate, "Display" ),
-		//	psiTemplateDisplay->GetFunction() );
-
 		constructor.Reset( isolate, psiTemplate->GetFunction() );
 		exports->Set( String::NewFromUtf8( isolate, "Frame" ),
 			psiTemplate->GetFunction() );
@@ -431,178 +425,106 @@ ControlObject::ControlObject() {
 }
 
 
-	void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
-		if( args.IsConstructCall() ) {
-			if( args.Length() == 0 ) {
-				args.GetReturnValue().Set( args.This() );
-				return;
-			}
-
-			char *type;
-			char *title = "Node Application";
-			char *tmpTitle = NULL;
-			int x = 0, y = 0, w = 1024, h = 768, border = 0;
-			int arg_ofs = 0;
-			ControlObject *parent = NULL;
-
-			int argc = args.Length();
-			if( argc > 0 ) {
-				String::Utf8Value fName( args[0]->ToString() );
-				type = StrDup( *fName );
-				arg_ofs++;
-			}
-			else {
-				ControlObject* obj = new ControlObject( );
-				ControlObject::wrapSelf( isolate, obj, args.This() );
-				args.GetReturnValue().Set( args.This() );
-				return;
-			}
-			if( argc > (arg_ofs+0) ) {
-				if( args[arg_ofs + 0]->IsString() ) {
-					String::Utf8Value fName( args[arg_ofs + 0]->ToString() );
-					if( tmpTitle )
-						Deallocate( char*, title );
-					tmpTitle = title = StrDup( *fName );
-					arg_ofs++;
-				}
-			}
-			if( argc > (arg_ofs + 0) ) {
-				x = (int)args[arg_ofs + 0]->NumberValue();
-			}
-			if( argc > (arg_ofs + 1) ) {
-				y = (int)args[arg_ofs + 1]->NumberValue();
-			}
-			if( argc > (arg_ofs + 2) ) {
-				w = (int)args[arg_ofs + 2]->NumberValue();
-			}
-			if( argc > (arg_ofs + 3) ) {
-				h = (int)args[arg_ofs + 3]->NumberValue();
-			}
-
-			if( argc > (arg_ofs + 4) ) {
-				border = (int)args[arg_ofs+4]->NumberValue();
-			}
-			/*
-			if( argc > 6 ) {
-				parent = (int)args[5]->NumberValue();
-				}
-			*/
-			// Invoked as constructor: `new MyObject(...)`
-			
-			ControlObject* obj = new ControlObject( title, x, y, w, h, border, NULL );
-			ControlObject::wrapSelf( isolate, obj, args.This() );
+void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	enableEventLoop();
+	if( args.IsConstructCall() ) {
+		if( args.Length() == 0 ) {
 			args.GetReturnValue().Set( args.This() );
-			if( tmpTitle )
-				Deallocate( char*, title );
+			return;
+		}
+
+		char *type;
+		char *title = "Node Application";
+		char *tmpTitle = NULL;
+		int x = 0, y = 0, w = 1024, h = 768, border = 0;
+		int arg_ofs = 0;
+		ControlObject *parent = NULL;
+
+		int argc = args.Length();
+		if( argc > 0 ) {
+			String::Utf8Value fName( args[0]->ToString() );
+			type = StrDup( *fName );
+			arg_ofs++;
 		}
 		else {
-			// Invoked as plain function `MyObject(...)`, turn into construct call.
-			int argc = args.Length();
-			Local<Value> *argv = new Local<Value>[argc];
-			for( int n = 0; n < argc; n++ )
-				argv[n] = args[n];
-
-			Local<Function> cons = Local<Function>::New( isolate, constructor );
-			args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
-			delete argv;
-		}
-	}
-
-
-	void ControlObject::NewDisplay( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
-		if( args.IsConstructCall() ) {
-			char *type;
-
-			char *title = "SACK-PSI-Node Application";
-			int x = 0, y = 0;
-			uint32_t w = 1024, h = 768, border = BORDER_NONE;
-			int arg_ofs = 0;
-			ControlObject *parent = NULL;
-			GetDisplaySizeEx( 0, &x, &y, &w, &h );
-
-			int argc = args.Length();
-			if( argc > 0 ) {
-				String::Utf8Value fName( args[0]->ToString() );
-				type = StrDup( *fName );
-				arg_ofs++;
-			}
-			else {
-				ControlObject* obj = new ControlObject( );
-				ControlObject::wrapSelf( isolate, obj, args.This() );
-				args.GetReturnValue().Set( args.This() );
-				return;
-			}
-			if( argc > (arg_ofs+0) ) {
-				if( args[arg_ofs + 0]->IsString() ) {
-					String::Utf8Value fName( args[arg_ofs + 0]->ToString() );
-					title = StrDup( *fName );
-					arg_ofs++;
-				}
-			}
-			if( argc > (arg_ofs + 0) ) {
-				x = (int)args[arg_ofs + 0]->NumberValue();
-			}
-			if( argc > (arg_ofs + 1) ) {
-				y = (int)args[arg_ofs + 1]->NumberValue();
-			}
-			if( argc > (arg_ofs + 2) ) {
-				w = (int)args[arg_ofs + 2]->NumberValue();
-			}
-			if( argc > (arg_ofs + 3) ) {
-				h = (int)args[arg_ofs + 3]->NumberValue();
-			}
-
-			if( argc > (arg_ofs + 4) ) {
-				border = (int)args[arg_ofs+4]->NumberValue();
-			}
-			/*
-			if( argc > 6 ) {
-				parent = (int)args[5]->NumberValue();
-				}
-			*/
-			// Invoked as constructor: `new MyObject(...)`
-			
-			ControlObject* obj = new ControlObject( title, x, y, w, h, border, NULL );
+			ControlObject* obj = new ControlObject( );
 			ControlObject::wrapSelf( isolate, obj, args.This() );
 			args.GetReturnValue().Set( args.This() );
+			return;
+		}
+		if( argc > (arg_ofs+0) ) {
+			if( args[arg_ofs + 0]->IsString() ) {
+				String::Utf8Value fName( args[arg_ofs + 0]->ToString() );
+				if( tmpTitle )
+					Deallocate( char*, title );
+				tmpTitle = title = StrDup( *fName );
+				arg_ofs++;
+			}
+		}
+		if( argc > (arg_ofs + 0) ) {
+			x = (int)args[arg_ofs + 0]->NumberValue();
+		}
+		if( argc > (arg_ofs + 1) ) {
+			y = (int)args[arg_ofs + 1]->NumberValue();
+		}
+		if( argc > (arg_ofs + 2) ) {
+			w = (int)args[arg_ofs + 2]->NumberValue();
+		}
+		if( argc > (arg_ofs + 3) ) {
+			h = (int)args[arg_ofs + 3]->NumberValue();
+		}
 
+		if( argc > (arg_ofs + 4) ) {
+			border = (int)args[arg_ofs+4]->NumberValue();
+		}
+		/*
+		if( argc > 6 ) {
+			parent = (int)args[5]->NumberValue();
+			}
+		*/
+		// Invoked as constructor: `new MyObject(...)`
+		
+		ControlObject* obj = new ControlObject( title, x, y, w, h, border, NULL );
+		ControlObject::wrapSelf( isolate, obj, args.This() );
+		args.GetReturnValue().Set( args.This() );
+		if( tmpTitle )
 			Deallocate( char*, title );
-		}
-		else {
-			// Invoked as plain function `MyObject(...)`, turn into construct call.
-			int argc = args.Length();
-			Local<Value> *argv = new Local<Value>[argc];
-			for( int n = 0; n < argc; n++ )
-            argv[n] = args[n];
-
-			Local<Function> cons = Local<Function>::New( isolate, constructor );
-			args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
-			delete argv;
-		}
 	}
-
-  Local<Object> ControlObject::NewWrappedControl( Isolate* isolate, PSI_CONTROL pc ) {
+	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-	
-		Local<Function> cons = Local<Function>::New( isolate, constructor2 );
+		int argc = args.Length();
+		Local<Value> *argv = new Local<Value>[argc];
+		for( int n = 0; n < argc; n++ )
+			argv[n] = args[n];
 
-		Local<Object> c = cons->NewInstance( 0, 0 );
-		ControlObject *me = ObjectWrap::Unwrap<ControlObject>( c );
-		me->control = pc;
-		return c;
+		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		delete argv;
 	}
+}
 
 
-	void ControlObject::writeConsole( const FunctionCallbackInfo<Value>& args) {
-		ControlObject *c = ObjectWrap::Unwrap<ControlObject>( args.This() );
-		if( args.Length() > 0 )
-		{
-				String::Utf8Value fName( args[0]->ToString() );
-				pcprintf( c->control, "%s", (const char*)*fName );
-		}
+Local<Object> ControlObject::NewWrappedControl( Isolate* isolate, PSI_CONTROL pc ) {
+	// Invoked as plain function `MyObject(...)`, turn into construct call.
+
+	Local<Function> cons = Local<Function>::New( isolate, constructor2 );
+
+	Local<Object> c = cons->NewInstance( 0, 0 );
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( c );
+	me->control = pc;
+	return c;
+}
+
+
+void ControlObject::writeConsole( const FunctionCallbackInfo<Value>& args) {
+	ControlObject *c = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	if( args.Length() > 0 )
+	{
+			String::Utf8Value fName( args[0]->ToString() );
+			pcprintf( c->control, "%s", (const char*)*fName );
 	}
+}
 
 void ControlObject::setConsoleRead( const FunctionCallbackInfo<Value>& args ) {
 	ControlObject *c = ObjectWrap::Unwrap<ControlObject>( args.This() );

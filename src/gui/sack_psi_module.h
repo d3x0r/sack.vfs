@@ -110,10 +110,9 @@ class ControlObject : public node::ObjectWrap {
 public:
 	ControlObject *frame;
 	PSI_CONTROL control; // this control
-	static v8::Persistent<v8::Function> constructorDisplay;   // Borderless, 'fullscreen' display
 	static v8::Persistent<v8::Function> constructor;   // Frame
 	static v8::Persistent<v8::Function> constructor2;  // Control
-	static v8::Persistent<v8::Function> constructor3;  // Control
+	static v8::Persistent<v8::Function> constructor3;  // Registration
 	static v8::Persistent<v8::FunctionTemplate> controlTemplate;
 
 	Persistent<Object> state;
@@ -131,7 +130,6 @@ public:
 	static void releaseSelf( ControlObject *_this );
 
 	static void New( const FunctionCallbackInfo<Value>& args );
-	static void NewDisplay( const FunctionCallbackInfo<Value>& args );
 	static void NewControl( const FunctionCallbackInfo<Value>& args );
 	static Local<Object> NewWrappedControl( Isolate* isolate, PSI_CONTROL pc );
 	static void createFrame( const FunctionCallbackInfo<Value>& args );
