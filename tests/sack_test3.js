@@ -15,7 +15,7 @@ var y_del = 0;
 var _scale = 1.0;
 var scale = 1.0;
 
-var r = sack.Renderer( "test", 0, 0, 1600, 900 );
+var r = sack.Renderer( "test", 0, 0, 3840, 2160 );
 console.log( "created renderer?", r, Object.keys( Object.getPrototypeOf(r)) );
 var background = sack.Image( "the rror.jpg" );
 r.on( "draw", ( image )=>{	
@@ -29,9 +29,9 @@ r.on( "draw", ( image )=>{
 	{
 	var n = 0;
 	var now = Date.now();
-	for( x = 0; x < 80; x++ )
-		for( y = 0; y < 90; y++ ) {
-		        image.drawImage( background, x*16+0+x_del, y*16+100+y_del, 16 * scale, 16 * scale, 0, 0, 50, 50 );
+	for( x = 0; x < 160; x++ )
+		for( y = 0; y < 180; y++ ) {
+		        image.drawImage( background, scale*x*16+0+x_del, scale*y*16+100+y_del, 16 * scale, 16 * scale, 0, 0, 50, 50 );
 			n++
 		}
 	}
@@ -45,10 +45,10 @@ console.log( n, "in", del, " ", 16*n/del, " in 16ms(60fps)" );
 
 r.on( "mouse", ( event )=>{	
 	if( event.b & sack.button.scroll_up ) { 
-		scale *= 0.1;
+		scale *= 1.1;
 		r.redraw();
 	} else if( event.b & sack.button.scroll_down ) { 
-		scale /= 0.1;
+		scale *= 0.9;
 		r.redraw();
 	} else if( event.b & sack.button.left ) {
 		if( !( _b & sack.button.left ) ) {

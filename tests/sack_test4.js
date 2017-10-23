@@ -12,52 +12,61 @@ var x_del = 0;
 var y_del = 0;
 var scale = 1.0;
 
-var f = sack.Frame( "test", -1, -1, 500, 500 );
-console.log( "created frame?", f );
+var f = sack.Frame( "test", -1, -1, 600, 600 );
+console.log( "created frame?", f, Object.keys( Object.getPrototypeOf( f ) ) );
 var background = sack.Image( "the rror.jpg" );
 
-f.Control( "Button", "Test", 10, 10, 100, 20 );
+//console.log( "created frame?", background, JSON.stringify( background ), background.width, background.height );
 
-var customControl = sack.Registration( "image control" );
-console.log( "created custom control registration?", Object.keys(Object.getPrototypeOf(customControl)) );
-
-customControl.setDraw( function( image ){	
-	console.log( "It wanted a draw...", 100+y_del, image, Object.keys(Object.getPrototypeOf(image)) ) 
-        image.drawImage( background, 0+x_del, 100+y_del, 100 * scale, 100 * scale );
-	return true;
+var b = f.Control( "Button", "Test", 10, 10, 100, 20 );
+/*
+b.on( "click", function() {
+	process.exit();
 } );
+*/
 
-customControl.setCreate( function() {
-	console.log( "Control created?", this );
-	return true;  // can return false/0 to disallow control creation.
-} );
-
-customControl.setMouse( function( event ){	
-	console.log( "Mouse Event:", x_del, y_del, event.x, event.y, event.b );
-	if( event.b & sack.button.scroll_up ) { 
-		scale *= 0.1;
-	} else if( event.b & sack.button.scroll_down ) { 
-		scale /= 0.1;
-	} else if( event.b & sack.button.left ) {
+var customControl = sack.Registration( { 
+	name: "image control",
+	width: 256,
+	height : 256,
+	border : sack.control.border.bump,
+	create() {
+		return true;  // can return false/0 to disallow control creation.
+	},
+	draw( image ) {
+	        image.drawImage( background, 0+x_del, 100+y_del, 100 * scale, 100 * scale, 0, 0, -1, -1 );
+		return true;
+	},
+	mouse( event ) {
+		//console.log( "Mouse Event:", x_del, y_del, event.x, event.y, event.b );
+		if( event.b & sack.button.scroll_up ) { 
+			scale *= 1.1;
+			this.redraw();
+		} else if( event.b & sack.button.scroll_down ) { 
+			scale *= 0.9;
+			this.redraw();
+		} else if( event.b & sack.button.left ) {
 		if( !( _b & sack.button.left ) ) {
 			// first down;
 			x_click = event.x;
 			y_click = event.y;
 		} else { 
 			x_del += ( event.x - _x );
-			y_del += ( event.y - _y );
-			this.redraw();
+				y_del += ( event.y - _y );
+				this.redraw();
+			}
+			_x = event.x;
+			_y = event.y;
+			_b = event.b;
+		} else {
+			_b = event.b;
 		}
-		_x = event.x;
-		_y = event.y;
-		_b = event.b;
+		return true;
 	}
-	return true;
 } );
+console.log( "created custom control registration?", Object.keys(Object.getPrototypeOf(customControl)) );
 
-console.log( "make image control" );
-
-f.Control( "image control", 0, 0, 500, 500 );
+f.Control( "image control", 0, 40, 500, 500 );
 
 f.show();
 
