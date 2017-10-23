@@ -59,6 +59,8 @@ void InitUDPSocket( Isolate *isolate, Handle<Object> exports );
 
 #define ReadOnlyProperty (PropertyAttribute)((int)PropertyAttribute::ReadOnly | PropertyAttribute::DontDelete)
 
+
+
 class VolumeObject : public node::ObjectWrap {
 public:
 	struct volume *vol;

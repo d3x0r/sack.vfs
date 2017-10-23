@@ -79,8 +79,6 @@ struct optionStrings {
 	Eternal<String> *IPString;
 };
 
-PLIST strings;
-
 struct info_params {
 	Isolate *isolate;
 	char *country;
@@ -126,6 +124,7 @@ struct info_params {
 
 
 static struct optionStrings *getStrings( Isolate *isolate ) {
+	static PLIST strings;
 	INDEX idx;
 	struct optionStrings * check;
 	LIST_FORALL( strings, idx, struct optionStrings *, check ) {
