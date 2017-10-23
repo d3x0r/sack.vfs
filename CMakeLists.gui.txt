@@ -28,10 +28,17 @@ endif( ${CMAKE_BUILD_TYPE} MATCHES "[dD][eE][bB][uU][gG]"
 
 include( ExternalProject )
 
+if( WIN32 )
+       set( GIT_REPO file://m:/sack )
+else( WIN32 )
+       set( GIT_REPO file:///home/git/sack )
+endif( WIN32 )
+
+
 ExternalProject_Add( sack
         PREFIX sack-src
 #	GIT_REPOSITORY https://github.com/d3x0r/sack
-	GIT_REPOSITORY file://M:/sack
+	GIT_REPOSITORY ${GIT_REPO}
 	GIT_SHALLOW 1
 	INSTALL_DIR ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}
 	CMAKE_ARGS -DNEED_JPEG=1 -DNEED_FREETYPE=1 -DNEED_PNG=1 -DNEED_ZLIB=1
