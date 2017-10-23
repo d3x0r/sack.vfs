@@ -44,6 +44,15 @@ void ImageObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImage", ImageObject::putImage );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImageOver", ImageObject::putImageOver );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "imageSurface", ImageObject::imageData );
+	imageTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8( isolate, "png" )
+		, ImageObject::getPng
+		, NULL );
+	imageTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8( isolate, "jpg" )
+		, ImageObject::getJpeg
+		, NULL );
+	imageTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8( isolate, "jpgQuality" )
+		, ImageObject::getJpegQuality
+		, ImageObject::setJpegQuality );
 	imageTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8( isolate, "width" )
 		, ImageObject::getWidth
 		, NULL );
@@ -111,6 +120,55 @@ void ImageObject::Init( Handle<Object> exports ) {
 	SET_READONLY( i, "colors", colors );
 
 }
+void ImageObject::getPng( v8::Local<v8::String> field,
+	const PropertyCallbackInfo<v8::Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	uint8_t *buf;
+	size_t size;
+	if( PngImageFile( obj->image, &buf, &size ) )
+	{
+		Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, buf, size );
+		
+		PARRAY_BUFFER_HOLDER holder = GetHolder();
+		holder->o.Reset( isolate, arrayBuffer );
+		holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+		holder->buffer = buf;
+		args.GetReturnValue().Set( arrayBuffer );
+	}
+}
+void ImageObject::getJpeg( v8::Local<v8::String> field,
+	const PropertyCallbackInfo<v8::Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	uint8_t *buf;
+	size_t size;
+	if( JpgImageFile( obj->image, &buf, &size, obj->jpegQuality ) )
+	{
+		Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, buf, size );
+
+		PARRAY_BUFFER_HOLDER holder = GetHolder();
+		holder->o.Reset( isolate, arrayBuffer );
+		holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+		holder->buffer = buf;
+		args.GetReturnValue().Set( arrayBuffer );
+	}
+}
+
+void ImageObject::getJpegQuality( v8::Local<v8::String> field,
+	const PropertyCallbackInfo<v8::Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	args.GetReturnValue().Set( Integer::New( isolate, obj->jpegQuality ) );
+}
+
+void ImageObject::setJpegQuality( v8::Local<v8::String> field,
+	Local<Value> value,
+	const PropertyCallbackInfo<void>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	obj->jpegQuality = (int)value->IntegerValue();
+}
 
 void ImageObject::getWidth( v8::Local<v8::String> field,
 	const PropertyCallbackInfo<v8::Value>& args ) {
@@ -125,15 +183,22 @@ void ImageObject::getHeight( v8::Local<v8::String> field,
 	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->image->height ) );
 }
 
+ImageObject::ImageObject( uint8_t *buf, size_t len ) {
+	image = DecodeMemoryToImage( buf, len );
+	jpegQuality = 78;
+}
 
 ImageObject::ImageObject( const char *filename )  {
    image = LoadImageFile( filename );
+   jpegQuality = 78;
 }
 ImageObject::ImageObject( Image image ) {
 	this->image = image;
+	jpegQuality = 78;
 }
 
 ImageObject::ImageObject( int x, int y, int w, int h, ImageObject * within )  {
+	jpegQuality = 78;
 	if( within )
 	{
 		container = within;
@@ -160,17 +225,29 @@ void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 		Local<Object> parentImage;
 		ImageObject *parent = NULL;
 		char *filename = NULL;
-
+		ImageObject* obj = NULL;
+		Local<ArrayBuffer> buffer;
 		int argc = args.Length();
 		if( argc > 0 ) {
-			if( args[0]->IsNumber() )
+			if( args[0]->IsUint8Array() ) {
+				Local<Uint8Array> u8arr = args[0].As<Uint8Array>();
+				Local<ArrayBuffer> myarr = u8arr->Buffer();
+				obj = new ImageObject( (uint8_t*)myarr->GetContents().Data(), myarr->ByteLength() );
+			} else if( args[0]->IsTypedArray() ) {
+				Local<TypedArray> u8arr = args[0].As<TypedArray>();
+				Local<ArrayBuffer> myarr = u8arr->Buffer();
+				obj = new ImageObject( (uint8_t*)myarr->GetContents().Data(), myarr->ByteLength() );
+			} else if( args[0]->IsArrayBuffer() ) {
+				Local<ArrayBuffer> myarr = args[0].As<ArrayBuffer>();
+				obj = new ImageObject( (uint8_t*)myarr->GetContents().Data(), myarr->ByteLength() );
+			} else if( args[0]->IsNumber() )
 				w = (int)args[0]->NumberValue();
 			else {
 				String::Utf8Value fName( args[0]->ToString() );
 				filename = StrDup( *fName );
 			}
 		}
-		if( !filename ) {
+		if( !filename && !obj ) {
 			if( argc > 1 ) {
 				h = (int)args[1]->NumberValue();
 			}
@@ -186,11 +263,12 @@ void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 			}
 		}
 		// Invoked as constructor: `new MyObject(...)`
-		ImageObject* obj;
-		if( filename )
-			obj = new ImageObject( filename );
-		else
-			obj = new ImageObject( x, y, w, h, parent );
+		if( !obj ) {
+			if( filename )
+				obj = new ImageObject( filename );
+			else
+				obj = new ImageObject( x, y, w, h, parent );
+		}
 		obj->_this.Reset( isolate, args.This() );
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );

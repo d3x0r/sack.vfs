@@ -128,12 +128,12 @@ public:
 	~ControlObject();
 
 	static void wrapSelf( Isolate* isolate, ControlObject *_this, Local<Object> into );
-	static void ControlObject::releaseSelf( ControlObject *_this );
+	static void releaseSelf( ControlObject *_this );
 
 	static void New( const FunctionCallbackInfo<Value>& args );
 	static void NewDisplay( const FunctionCallbackInfo<Value>& args );
 	static void NewControl( const FunctionCallbackInfo<Value>& args );
-	static Local<Object> ControlObject::NewWrappedControl( Isolate* isolate, PSI_CONTROL pc );
+	static Local<Object> NewWrappedControl( Isolate* isolate, PSI_CONTROL pc );
 	static void createFrame( const FunctionCallbackInfo<Value>& args );
 	static void createControl( const FunctionCallbackInfo<Value>& args );
 
