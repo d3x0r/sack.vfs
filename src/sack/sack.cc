@@ -30730,12 +30730,12 @@ static uintptr_t CPROC HandleModule( uintptr_t psv, arg_list args )
 {
 	PARAM( args, TEXTCHAR*, module );
 	LOGICAL tempPath = FALSE;
+	if( l.flags.bFindEndif || l.flags.bFindElse )
+		return psv;
 	if( module[0] == '~' || module[0] == '@' || module[0] == '^' || module[0] == '*' ) {
 		module = ExpandPath( module );
 		tempPath = TRUE;
 	}
-	if( l.flags.bFindEndif || l.flags.bFindElse )
-		return psv;
 	if( l.flags.bTraceInterfaceLoading )
 		lprintf( WIDE( "load module %s" ), module );
 	if( !l.flags.bHeldDeadstart )
