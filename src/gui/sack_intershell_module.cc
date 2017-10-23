@@ -2,8 +2,8 @@
 #define DEFINES_INTERSHELL_INTERFACE
 
 #include "gui_global.h"
-#include <intershell/intershell_registry.h>
-#include <intershell/intershell_export.h>
+#include <InterShell/intershell_registry.h>
+#include <InterShell/intershell_export.h>
 
 //#include 
 
