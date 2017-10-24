@@ -765,7 +765,7 @@ COM port settings are kept in the default option database under
 ```
 ---
 
-#GUI Interface objects
+# GUI Interface objects
 
 Building GUI extensions use 'npm run build-gui' or 'npm run build-gui-debug'  Which will download SACK from Github and build against the full library instead of a partial amalgamation.
 
@@ -782,7 +782,7 @@ var sack = require( 'sack.vfs' );
 | Frame | Entry point for GUI controls |
 | Registration | Namespace for defining new control types which can be created on Frames. |
 
-##Image Methods
+## Image Methods
 
 ```
 var imageFromFile = sack.Image( "image file.jpg" ); // handles bmp, gif, png, jpeg formats.
@@ -817,7 +817,7 @@ by using the Image method on an existing image also.
 | width | readonly accessor | Gets image width |
 | height | readonly accessor | Gets image height |
 
-##Color methods
+## Color methods
 
 ```
 var colorFromInteger = sack.Image.Color( 0xFF995522 ); //creates a color from specifed integer 0xAARRGGBB
@@ -863,7 +863,7 @@ This should guarantee stacking order, and is semi-modal, that events will not be
 | close | () | Close the renderer.  Releases all resources for the renderer.  Ends event loop for display, so application can exit. |
 | on | ( event Name, callback ) | Set events by name, "draw", "mouse", "key" setting the specified event to the function specified. |
 
-##Frame Methods
+## Frame Methods
 
 These are higher level interface that creates a frame with a caption using Renderer and Image methods underneath.  First, create a frame...
 
@@ -923,7 +923,7 @@ object passed to the control Registration constructor.
 | | |
 | Others | as required these will be implemented... focus, touch, property page handlers, moved, sized, load, save....  |
 
-##Intershell Interface
+## Intershell Interface
 
 Mostly unimplemented, more of a place holder than functional.
 
