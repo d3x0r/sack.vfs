@@ -35,10 +35,12 @@ else( WIN32 )
        set( GIT_REPO file:///home/git/sack )
 endif( WIN32 )
 
+if( NOT EXISTS GIT_REPO )
+	set( GIT_REPO git://github.com/d3x0r/sack )
+endif( NOT EXISTS GIT_REPO )
 
 ExternalProject_Add( sack
         PREFIX sack-src
-#	GIT_REPOSITORY https://github.com/d3x0r/sack
 	GIT_REPOSITORY ${GIT_REPO}
 	GIT_SHALLOW 1
 	INSTALL_DIR ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}
