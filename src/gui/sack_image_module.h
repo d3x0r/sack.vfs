@@ -101,7 +101,28 @@ public:
 	static Local<Object> makeColor( Isolate *isolate, CDATA rgba );
 	static void New( const FunctionCallbackInfo<Value>& args );
 	static bool isColor( Isolate *isolate, Local<Object> object );
+	static void getRed( v8::Local<v8::String> field,
+		const PropertyCallbackInfo<v8::Value>& args );
+	static void getGreen( v8::Local<v8::String> field,
+		const PropertyCallbackInfo<v8::Value>& args );
+	static void getBlue( v8::Local<v8::String> field,
+		const PropertyCallbackInfo<v8::Value>& args );
+	static void getAlpha( v8::Local<v8::String> field,
+		const PropertyCallbackInfo<v8::Value>& args );
+	static void setRed( v8::Local<v8::String> field,
+		Local<Value> value,
+		const PropertyCallbackInfo<void>& args );
+	static void setGreen( v8::Local<v8::String> field,
+		Local<Value> value,
+		const PropertyCallbackInfo<void>& args );
+	static void setBlue( v8::Local<v8::String> field,
+		Local<Value> value,
+		const PropertyCallbackInfo<void>& args );
+	static void setAlpha( v8::Local<v8::String> field,
+		Local<Value> value,
+		const PropertyCallbackInfo<void>& args );
 
+	static void toString( const FunctionCallbackInfo<Value>& args );
 	~ColorObject();
 
 

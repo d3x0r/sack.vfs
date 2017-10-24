@@ -112,7 +112,7 @@ public:
 	PSI_CONTROL control; // this control
 	static v8::Persistent<v8::Function> constructor;   // Frame
 	static v8::Persistent<v8::Function> constructor2;  // Control
-	static v8::Persistent<v8::Function> constructor3;  // Registration
+	static v8::Persistent<v8::Function> registrationConstructor;  // Registration
 	static v8::Persistent<v8::FunctionTemplate> controlTemplate;
 
 	Persistent<Object> state;
@@ -146,14 +146,28 @@ public:
 	static void writeConsole( const FunctionCallbackInfo<Value>& args );
 	static void setConsoleRead( const FunctionCallbackInfo<Value>& args );
 
+	static void setButtonClick( const FunctionCallbackInfo<Value>& args );
+	static void setButtonEvent( const FunctionCallbackInfo<Value>& args );
+
 	static void getControlColor( v8::Local<v8::Name> field,
 		const PropertyCallbackInfo<v8::Value>& args );
 	static void setControlColor( v8::Local<v8::Name> field,
 		Local<Value> value,
 		const PropertyCallbackInfo<void>& args );
-
+	
+	static void getControlText( v8::Local<v8::String> field,
+		const PropertyCallbackInfo<v8::Value>& args );
+	static void setControlText( v8::Local<v8::String> field,
+		Local<Value> value,
+		const PropertyCallbackInfo<void>& args );
+	static void getCoordinate( v8::Local<v8::String> field,
+		const PropertyCallbackInfo<v8::Value>& args );
+	static void setCoordinate( v8::Local<v8::String> field,
+		Local<Value> value,
+		const PropertyCallbackInfo<void>& args );
 
 	Persistent<Function, CopyablePersistentTraits<Function>> cbConsoleRead;  // event for console control callback (psi/console.h)
+	Persistent<Function, CopyablePersistentTraits<Function>> cbButtonClick;  // event for button control callback (psi/console.h)
 
 
 

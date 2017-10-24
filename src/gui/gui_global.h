@@ -58,6 +58,8 @@ enum eventType {
 	Event_Control_Key,
 	Event_Control_Draw,
 	Event_Control_Load,
+
+	Event_Control_ButtonClick,
 };
 
 struct event {

@@ -17,7 +17,7 @@ static struct psiLocal {
 Persistent<FunctionTemplate> ControlObject::controlTemplate;
 Persistent<Function> ControlObject::constructor;
 Persistent<Function> ControlObject::constructor2;
-Persistent<Function> ControlObject::constructor3;
+Persistent<Function> ControlObject::registrationConstructor;
 
 struct optionStrings {
 	Isolate *isolate;
@@ -31,6 +31,15 @@ struct optionStrings {
 	Eternal<String> *mouseString;
 	Eternal<String> *keyString;
 	Eternal<String> *destroyString;
+	Eternal<String> *xString;
+	Eternal<String> *yString;
+	Eternal<String> *wString;
+	Eternal<String> *hString;
+	Eternal<String> *sizeString;
+	Eternal<String> *posString;
+	Eternal<String> *layoutString;
+	Eternal<String> *indexString;
+	Eternal<String> *objectString;
 };
 
 
@@ -45,6 +54,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 	if( !check ) {
 		check = NewArray( struct optionStrings, 1 );
 		check->isolate = isolate;
+#define makeString(a,b) check->a##String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, b ) );
 		check->nameString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "name" ) );
 		check->widthString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "width" ) );
 		check->heightString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "height" ) );
@@ -54,6 +64,16 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->drawString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "draw" ) );
 		check->keyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "key" ) );
 		check->destroyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "destroy" ) );
+		makeString( x, "x" );
+		makeString( y, "y" );
+		makeString( w, "width" );
+		makeString( h, "height" );
+		makeString( pos, "position" );
+		makeString( size, "size" );
+		makeString( layout, "layout" );
+		makeString( index, "index" );
+		makeString( object, "object" );
+
 		//check->String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "" ) );
 		AddLink( &strings, check );
 	}
@@ -108,6 +128,11 @@ static void asyncmsg( uv_async_t* handle ) {
 					evt->success = 1;
 				break;
 			}
+			case Event_Control_ButtonClick:
+				cb = Local<Function>::New( isolate, evt->control->cbButtonClick );
+				r = cb->Call( evt->control->state.Get( isolate ), 0, NULL );
+
+				break;
 			}
 			if( evt->waiter ) {
 				evt->flags.complete = TRUE;
@@ -160,12 +185,45 @@ static void enableEventLoop( void ) {
 	}
 }
 
+void SetupControlColors( Isolate *isolate, Local<Object> object ) {
+	Local<Object> controlColors = Object::New( isolate );
+	struct optionStrings *strings = getStrings( isolate );
+
+#define setupAccessor( name, define ) {   \
+	Local<Object> arg = Object::New( isolate );\
+	arg->Set( strings->indexString->Get( isolate ), Integer::New( isolate, define ) );\
+	arg->Set( strings->objectString->Get( isolate ), object );\
+	controlColors->SetAccessor( isolate->GetCallingContext()\
+		, String::NewFromUtf8( isolate, name )\
+		, ControlObject::getControlColor, ControlObject::setControlColor, arg );\
+	}
+
+	//controlColors->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, name ), data, ReadOnlyProperty )
+	setupAccessor( "highlight", HIGHLIGHT );
+	setupAccessor( "normal" , NORMAL);
+	setupAccessor( "shade" , SHADE);
+	setupAccessor( "shadow" , SHADOW);
+	setupAccessor( "textColor" , TEXTCOLOR);
+	setupAccessor( "caption", CAPTION);
+	setupAccessor( "captionText", CAPTIONTEXTCOLOR);
+	setupAccessor( "inactiveCaption", INACTIVECAPTION);
+	setupAccessor( "InactiveCaptionText", INACTIVECAPTIONTEXTCOLOR);
+	setupAccessor( "selectBack", SELECT_BACK);
+	setupAccessor( "selectText", SELECT_TEXT);
+	setupAccessor( "editBackground", EDIT_BACKGROUND);
+	setupAccessor( "editText", EDIT_TEXT);
+	setupAccessor( "scrollBarBackground", SCROLLBAR_BACK);
+
+	SET_READONLY( object, "color", controlColors );
+
+}
+
 void ControlObject::Init( Handle<Object> exports ) {
 
 		Isolate* isolate = Isolate::GetCurrent();
 		Local<FunctionTemplate> psiTemplate;
 		Local<FunctionTemplate> psiTemplate2;
-		Local<FunctionTemplate> psiTemplate3;
+		Local<FunctionTemplate> regTemplate;
 
 		// Prepare constructor template
 		psiTemplate = FunctionTemplate::New( isolate, New );
@@ -179,9 +237,9 @@ void ControlObject::Init( Handle<Object> exports ) {
 		psiTemplate2->InstanceTemplate()->SetInternalFieldCount( 1 );// 1 internal field for wrap
 
 		// Prepare constructor template
-		psiTemplate3 = FunctionTemplate::New( isolate, RegistrationObject::NewRegistration );
-		psiTemplate3->SetClassName( String::NewFromUtf8( isolate, "sack.PSI.Registration" ) );
-		psiTemplate3->InstanceTemplate()->SetInternalFieldCount( 1 );// 1 internal field for wrap
+		regTemplate = FunctionTemplate::New( isolate, RegistrationObject::NewRegistration );
+		regTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.PSI.Registration" ) );
+		regTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );// 1 internal field for wrap
 
 		Local<Object> buttonEnum = Object::New( isolate );
 		SET_READONLY( buttonEnum, "left", Integer::New( isolate, 1 ) );
@@ -265,46 +323,46 @@ void ControlObject::Init( Handle<Object> exports ) {
 		Local<Object> controlColors = Object::New( isolate );
 
 		//controlColors->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, name ), data, ReadOnlyProperty )
-		controlColors->SetNativeDataProperty( isolate->GetCallingContext()
+		controlColors->SetAccessor( isolate->GetCallingContext()
 			, String::NewFromUtf8( isolate, "highlight" )
 			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, HIGHLIGHT ) );
-		controlColors->SetNativeDataProperty( isolate->GetCallingContext()
+		controlColors->SetAccessor( isolate->GetCallingContext()
 			, String::NewFromUtf8( isolate, "normal" )
 			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, NORMAL ) );
-		controlColors->SetNativeDataProperty( isolate->GetCallingContext()
+		controlColors->SetAccessor( isolate->GetCallingContext()
 			, String::NewFromUtf8( isolate, "shade" )
 			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, SHADE ) );
-		controlColors->SetNativeDataProperty( isolate->GetCallingContext()
+		controlColors->SetAccessor( isolate->GetCallingContext()
 			, String::NewFromUtf8( isolate, "shadow" )
 			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, SHADOW ) );
-		controlColors->SetNativeDataProperty( isolate->GetCallingContext()
+		controlColors->SetAccessor( isolate->GetCallingContext()
 			, String::NewFromUtf8( isolate, "textColor" )
 			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, TEXTCOLOR ) );
-		controlColors->SetNativeDataProperty( isolate->GetCallingContext()
+		controlColors->SetAccessor( isolate->GetCallingContext()
 			, String::NewFromUtf8( isolate, "caption" )
 			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, CAPTION ) );
-		controlColors->SetNativeDataProperty( isolate->GetCallingContext()
+		controlColors->SetAccessor( isolate->GetCallingContext()
 			, String::NewFromUtf8( isolate, "captionText" )
 			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, CAPTIONTEXTCOLOR ) );
-		controlColors->SetNativeDataProperty( isolate->GetCallingContext()
+		controlColors->SetAccessor( isolate->GetCallingContext()
 			, String::NewFromUtf8( isolate, "inactiveCaption" )
 			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, INACTIVECAPTION ) );
-		controlColors->SetNativeDataProperty( isolate->GetCallingContext()
+		controlColors->SetAccessor( isolate->GetCallingContext()
 			, String::NewFromUtf8( isolate, "InactiveCaptionText" )
 			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, INACTIVECAPTIONTEXTCOLOR ) );
-		controlColors->SetNativeDataProperty( isolate->GetCallingContext()
+		controlColors->SetAccessor( isolate->GetCallingContext()
 			, String::NewFromUtf8( isolate, "selectBack" )
 			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, SELECT_BACK ) );
-		controlColors->SetNativeDataProperty( isolate->GetCallingContext()
+		controlColors->SetAccessor( isolate->GetCallingContext()
 			, String::NewFromUtf8( isolate, "selectText" )
 			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, SELECT_TEXT ) );
-		controlColors->SetNativeDataProperty( isolate->GetCallingContext()
+		controlColors->SetAccessor( isolate->GetCallingContext()
 			, String::NewFromUtf8( isolate, "editBackground" )
 			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, EDIT_BACKGROUND ) );
-		controlColors->SetNativeDataProperty( isolate->GetCallingContext()
+		controlColors->SetAccessor( isolate->GetCallingContext()
 			, String::NewFromUtf8( isolate, "editText" )
 			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, EDIT_TEXT ) );
-		controlColors->SetNativeDataProperty( isolate->GetCallingContext()
+		controlColors->SetAccessor( isolate->GetCallingContext()
 			, String::NewFromUtf8( isolate, "scrollBarBackground" )
 			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, SCROLLBAR_BACK ) );
 
@@ -313,11 +371,11 @@ void ControlObject::Init( Handle<Object> exports ) {
 		//psiTemplate2->Set( isolate, "color", controlColors );
 		//psiTemplate->Set( isolate, "color", controlColors );
 
-		NODE_SET_PROTOTYPE_METHOD( psiTemplate3, "setCreate", RegistrationObject::setCreate );
-		NODE_SET_PROTOTYPE_METHOD( psiTemplate3, "setDraw", RegistrationObject::setDraw );
-		NODE_SET_PROTOTYPE_METHOD( psiTemplate3, "setMouse", RegistrationObject::setMouse );
-		NODE_SET_PROTOTYPE_METHOD( psiTemplate3, "setKey", RegistrationObject::setKey );
-		NODE_SET_PROTOTYPE_METHOD( psiTemplate3, "setTouch", RegistrationObject::setTouch );
+		NODE_SET_PROTOTYPE_METHOD( regTemplate, "setCreate", RegistrationObject::setCreate );
+		NODE_SET_PROTOTYPE_METHOD( regTemplate, "setDraw", RegistrationObject::setDraw );
+		NODE_SET_PROTOTYPE_METHOD( regTemplate, "setMouse", RegistrationObject::setMouse );
+		NODE_SET_PROTOTYPE_METHOD( regTemplate, "setKey", RegistrationObject::setKey );
+		NODE_SET_PROTOTYPE_METHOD( regTemplate, "setTouch", RegistrationObject::setTouch );
 
 		// Prototype
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "Control", ControlObject::NewControl );
@@ -335,6 +393,28 @@ void ControlObject::Init( Handle<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "hide", ControlObject::show );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "reveal", ControlObject::show );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "redraw", ControlObject::redraw );
+		/*
+		psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "width" )
+			, ControlObject::getCoordinate, ControlObject::setCoordinate, Integer::New( isolate, 0 ) );
+		psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "height" )
+			, ControlObject::getCoordinate, ControlObject::setCoordinate, Integer::New( isolate, 1 ) );
+		psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "x" )
+			, ControlObject::getCoordinate, ControlObject::setCoordinate, Integer::New( isolate, 2 ) );
+		psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "y" )
+			, ControlObject::getCoordinate, ControlObject::setCoordinate, Integer::New( isolate, 3 ) );
+		*/
+		psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "size" )
+			, ControlObject::getCoordinate, ControlObject::setCoordinate, Integer::New( isolate, 10 ) );
+		psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "position" )
+			, ControlObject::getCoordinate, ControlObject::setCoordinate, Integer::New( isolate, 11 ) );
+		psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "layout" )
+			, ControlObject::getCoordinate, ControlObject::setCoordinate, Integer::New( isolate, 12 ) );
+
+		//psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "text" )
+		//	, ControlObject::getControlText, ControlObject::setControlText );
+		psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "text" )
+			, ControlObject::getControlText, ControlObject::setControlText );
+
 
 		constructor.Reset( isolate, psiTemplate->GetFunction() );
 		exports->Set( String::NewFromUtf8( isolate, "Frame" ),
@@ -344,32 +424,60 @@ void ControlObject::Init( Handle<Object> exports ) {
 		//exports->Set( String::NewFromUtf8( isolate, "Control" ),
 		//				 psiTemplate2->GetFunction() );
 
-		constructor3.Reset( isolate, psiTemplate3->GetFunction() );
+		registrationConstructor.Reset( isolate, regTemplate->GetFunction() );
 		exports->Set( String::NewFromUtf8( isolate, "Registration" ),
-			psiTemplate3->GetFunction() );
+			regTemplate->GetFunction() );
 }
-
 
 void ControlObject::getControlColor( v8::Local<v8::Name> field,
 		const PropertyCallbackInfo<v8::Value>& args ) {
-	int colorIndex = (int)args.Data()->IntegerValue();
+
 	Isolate* isolate = args.GetIsolate();
+	int colorIndex;
+	Local<Value> data = args.Data();
+	struct optionStrings *strings = getStrings( isolate );
+	Local<Object> object;
+	if( data->IsObject() ) {
+		Local<Object> params = data->ToObject();
+		colorIndex = (int)params->Get( strings->indexString->Get( isolate ) )->IntegerValue();
+		object = params->Get( strings->objectString->Get( isolate ) )->ToObject();
+	}
+	else {
+		colorIndex = (int)data->IntegerValue();
+		object = args.This();
+	}
+	args.Data()->IntegerValue();
 	Local<FunctionTemplate> controlTpl = controlTemplate.Get( isolate );
-	Local<Object> object = args.This();
 	if( controlTpl->HasInstance( object ) ) {
+
 		ControlObject *c = ObjectWrap::Unwrap<ControlObject>( object );
 		args.GetReturnValue().Set( ColorObject::makeColor( isolate, GetControlColor( c->control, colorIndex ) ) );
 	}
 	else
 		args.GetReturnValue().Set( ColorObject::makeColor( isolate, GetControlColor( NULL, colorIndex ) ) );
 }
+
 void ControlObject::setControlColor( v8::Local<v8::Name> field,
 	Local<Value> value,
 	const PropertyCallbackInfo<void>& args ) {
 	int colorIndex = (int)args.Data()->IntegerValue();
 	Isolate* isolate = args.GetIsolate();
+	Local<Value> data = args.Data();
+	struct optionStrings *strings = getStrings( isolate );
+	Local<Object> object;
+
+	if( data->IsObject() ) {
+		Local<Object> params = data->ToObject();
+		colorIndex = (int)params->Get( strings->indexString->Get( isolate ) )->IntegerValue();
+		object = params->Get( strings->objectString->Get( isolate ) )->ToObject();
+	}
+	else {
+		colorIndex = (int)data->IntegerValue();
+		object = args.This();
+	}
+
+
 	Local<FunctionTemplate> controlTpl = controlTemplate.Get( isolate );
-	Local<Object> object = args.This();
 	CDATA newColor;
 
 	Local<Object> color = value->ToObject();
@@ -386,9 +494,6 @@ void ControlObject::setControlColor( v8::Local<v8::Name> field,
 	}
 	else
 		SetControlColor( NULL, colorIndex, newColor );
-
-	//Isolate* isolate = args.GetIsolate();
-
 }
 
 
@@ -537,6 +642,31 @@ void ControlObject::setConsoleRead( const FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+static void buttonClicked( uintptr_t object, PSI_CONTROL ) {
+	MakePSIEvent( (ControlObject*)object, Event_Control_ButtonClick );
+}
+
+void ControlObject::setButtonClick( const FunctionCallbackInfo<Value>& args ) {
+	ControlObject *c = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	if( args.Length() > 0 )
+	{
+		Isolate* isolate = args.GetIsolate();
+		::SetButtonPushMethod( c->control, buttonClicked, (uintptr_t)c );
+		c->cbButtonClick.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+	}
+}
+
+void ControlObject::setButtonEvent( const FunctionCallbackInfo<Value>& args ) {
+	ControlObject *c = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	if( args.Length() > 0 )
+	{
+		Isolate* isolate = args.GetIsolate();
+		String::Utf8Value event( args[0] );
+		c->cbButtonClick.Reset( isolate, Handle<Function>::Cast( args[1] ) );
+		::SetButtonPushMethod( c->control, buttonClicked, (uintptr_t)c );
+	}
+}
+
 static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObject *obj ) {
 	CTEXTSTR type = GetControlTypeName( obj->control );
 	if( StrCmp( type, "PSI Console" ) == 0 ) {
@@ -544,13 +674,16 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 		c->Set( String::NewFromUtf8( isolate, "setRead" ), Function::New( isolate, ControlObject::setConsoleRead ) );
 	}
 	else if( StrCmp( type, NORMAL_BUTTON_NAME ) == 0 ) {
-
+		c->Set( String::NewFromUtf8( isolate, "on" ), Function::New( isolate, ControlObject::setButtonEvent ) );
+		c->Set( String::NewFromUtf8( isolate, "click" ), Function::New( isolate, ControlObject::setButtonClick ) );
 	}
 	else if( StrCmp( type, IMAGE_BUTTON_NAME ) == 0 ) {
-
+		c->Set( String::NewFromUtf8( isolate, "on" ), Function::New( isolate, ControlObject::setButtonEvent ) );
+		c->Set( String::NewFromUtf8( isolate, "click" ), Function::New( isolate, ControlObject::setButtonClick ) );
 	}
 	else if( StrCmp( type, CUSTOM_BUTTON_NAME ) == 0 ) {
-
+		c->Set( String::NewFromUtf8( isolate, "on" ), Function::New( isolate, ControlObject::setButtonEvent ) );
+		c->Set( String::NewFromUtf8( isolate, "click" ), Function::New( isolate, ControlObject::setButtonClick ) );
 	}
 	else if( StrCmp( type, RADIO_BUTTON_NAME ) == 0 ) {
 
@@ -610,7 +743,7 @@ void ControlObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 				psiLocal.newControl = newControl;
 				ControlObject* obj = new ControlObject( type, container, x, y, w, h );
 
-				ProvideKnownCallbacks( isolate, args.This(), obj );
+				ProvideKnownCallbacks( isolate, newControl, obj );
 
 				//g.nextControlCreatePosition.control->pc = obj->control;
 				//g.nextControlCreatePosition.resultControl = obj->control;
@@ -637,6 +770,8 @@ void ControlObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 		psiLocal.newControl = newControl;
 		ControlObject* obj = new ControlObject( container, type, title, x, y, w, h );
 		ControlObject::wrapSelf( isolate, obj, newControl );
+		ProvideKnownCallbacks( isolate, newControl, obj );
+
 		args.GetReturnValue().Set( newControl );
 
 		Deallocate( char*, type );
@@ -787,7 +922,7 @@ RegistrationObject::RegistrationObject( Isolate *isolate, struct registrationOpt
 			for( int n = 0; n < argc; n++ )
 				argv[n] = args[n];
 
-			Local<Function> cons = Local<Function>::New( isolate, ControlObject::constructor3 );
+			Local<Function> cons = Local<Function>::New( isolate, ControlObject::registrationConstructor );
 			args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
 			delete argv;
 		}
@@ -812,12 +947,96 @@ static RegistrationObject *findRegistration( CTEXTSTR name ) {
 void ControlObject::wrapSelf( Isolate* isolate, ControlObject *_this, Local<Object> into ) {
 	_this->Wrap( into );
 	_this->state.Reset( isolate, into );
+	SetupControlColors( isolate, into );
 }
 
 //-------------------------------------------------------
 
 void ControlObject::releaseSelf( ControlObject *_this ) {
 	_this->state.Reset();
+}
+
+
+void ControlObject::getControlText( v8::Local<v8::String> field,
+	const PropertyCallbackInfo<v8::Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	static char buf[1024];
+	GetControlText( me->control, buf, 1024 );
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, buf ) );
+}
+void ControlObject::setControlText( v8::Local<v8::String> field,
+	Local<Value> value,
+	const PropertyCallbackInfo<void>& args ) {
+	String::Utf8Value text( value );
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	SetControlText( me->control, *text );
+}
+
+
+void ControlObject::getCoordinate( v8::Local<v8::String> field,
+	const PropertyCallbackInfo<v8::Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	int coord = (int)args.Data()->IntegerValue();
+	Local<Object> o = Object::New( isolate );
+	struct optionStrings *strings = getStrings( isolate );
+	int32_t x, y;
+	uint32_t w, h;
+	GetFramePosition( me->control, &x, &y );
+	GetFrameSize( me->control, &w, &h );
+	switch( coord ) {
+	case 10:
+		o->Set( strings->xString->Get( isolate ), Integer::New( isolate, x ) );
+		o->Set( strings->yString->Get( isolate ), Integer::New( isolate, y ) );
+		break;
+	case 11:
+		o->Set( strings->wString->Get( isolate ), Integer::New( isolate, w ) );
+		o->Set( strings->hString->Get( isolate ), Integer::New( isolate, h ) );
+		break;
+	case 12:
+		o->Set( strings->xString->Get( isolate ), Integer::New( isolate, x ) );
+		o->Set( strings->yString->Get( isolate ), Integer::New( isolate, y ) );
+		o->Set( strings->wString->Get( isolate ), Integer::New( isolate, w ) );
+		o->Set( strings->hString->Get( isolate ), Integer::New( isolate, h ) );
+		break;
+	}
+	args.GetReturnValue().Set( o );
+}
+
+void ControlObject::setCoordinate( v8::Local<v8::String> field,
+	Local<Value> value,
+	const PropertyCallbackInfo<void>& args ) {
+
+	Isolate* isolate = args.GetIsolate();
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	int coord = (int)args.Data()->IntegerValue();
+	Local<Object> o = value->ToObject();
+	if( !o.IsEmpty() ) {
+		struct optionStrings *strings = getStrings( isolate );
+		int32_t x, y;
+		uint32_t w, h;
+		switch( coord ) {
+		case 10:
+			x = (int32_t)o->Get( strings->xString->Get( isolate ) )->IntegerValue();
+			y = (int32_t)o->Get( strings->yString->Get( isolate ) )->IntegerValue();
+			MoveCommon( me->control, x, y );
+			break;
+		case 11:
+			w = (uint32_t)o->Get( strings->wString->Get( isolate ) )->IntegerValue();
+			h = (uint32_t)o->Get( strings->hString->Get( isolate ) )->IntegerValue();
+			SizeCommon( me->control,w, h );
+			break;
+		case 12:
+			x = (int32_t)o->Get( strings->xString->Get( isolate ) )->IntegerValue();
+			y = (int32_t)o->Get( strings->yString->Get( isolate ) )->IntegerValue();
+			w = (uint32_t)o->Get( strings->wString->Get( isolate ) )->IntegerValue();
+			h = (uint32_t)o->Get( strings->hString->Get( isolate ) )->IntegerValue();
+			MoveSizeCommon( me->control, x, y, w, h );
+			break;
+		}
+	}
+
 }
 
 //-------------------------------------------------------

@@ -383,7 +383,7 @@ void InterShellObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 		obj = new InterShellObject( name, FALSE );
 
 		Local<Object> _this = args.This();
-		Local<Function> cons = Local<Function>::New( isolate, ControlObject::constructor3 );
+		Local<Function> cons = Local<Function>::New( isolate, ControlObject::registrationConstructor );
 		Local<Object> temp;
 		obj->registrationObject.Reset( isolate, temp = cons->NewInstance( ) );
 		obj->registration = ObjectWrap::Unwrap<RegistrationObject>( temp );

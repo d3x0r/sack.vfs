@@ -7,14 +7,10 @@ Persistent<Function> ColorObject::constructor;
 Persistent<FunctionTemplate> ColorObject::tpl;
 
 static Local<Object> makeColor( Isolate *isolate, CDATA c ) {
-	int argc = 1;
-	Local<Value> *argv = new Local<Value>[1];
-	argv[0] = Uint32::New( isolate, c );
+	Local<Value> argv[1] = { Uint32::New( isolate, c ) };
 	Local<Function> cons = Local<Function>::New( isolate, ColorObject::constructor );
-	Local<Object> cObject = cons->NewInstance( argc, argv );
-	delete argv;
+	Local<Object> cObject = cons->NewInstance( 1, argv );
 	return cObject;
-
 }
 
 void ImageObject::Init( Handle<Object> exports ) {
@@ -44,19 +40,19 @@ void ImageObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImage", ImageObject::putImage );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImageOver", ImageObject::putImageOver );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "imageSurface", ImageObject::imageData );
-	imageTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8( isolate, "png" )
+	imageTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "png" )
 		, ImageObject::getPng
 		, NULL );
-	imageTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8( isolate, "jpg" )
+	imageTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "jpg" )
 		, ImageObject::getJpeg
 		, NULL );
-	imageTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8( isolate, "jpgQuality" )
+	imageTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "jpgQuality" )
 		, ImageObject::getJpegQuality
 		, ImageObject::setJpegQuality );
-	imageTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8( isolate, "width" )
+	imageTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "width" )
 		, ImageObject::getWidth
 		, NULL );
-	imageTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8( isolate, "height" )
+	imageTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "height" )
 		, ImageObject::getHeight
 		, NULL );
 
@@ -85,8 +81,18 @@ void ImageObject::Init( Handle<Object> exports ) {
 	colorTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Image.color" ) );
 	colorTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
-	ColorObject::constructor.Reset( isolate, colorTemplate->GetFunction() );
+	NODE_SET_PROTOTYPE_METHOD( colorTemplate, "toString", ColorObject::toString );
+	colorTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "r" )
+		, ColorObject::getRed, ColorObject::setRed );
+	colorTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "g" )
+		, ColorObject::getGreen, ColorObject::setGreen );
+	colorTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "b" )
+		, ColorObject::getBlue, ColorObject::setBlue );
+	colorTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "a" )
+		, ColorObject::getAlpha, ColorObject::setAlpha );
 	ColorObject::tpl.Reset( isolate, colorTemplate );
+	ColorObject::constructor.Reset( isolate, colorTemplate->GetFunction() );
+
 
 	FontObject::constructor.Reset( isolate, fontTemplate->GetFunction() );
 	exports->Set( String::NewFromUtf8( isolate, "Font" ),
@@ -118,6 +124,7 @@ void ImageObject::Init( Handle<Object> exports ) {
 
 	Local<Function> i = imageTemplate->GetFunction();
 	SET_READONLY( i, "colors", colors );
+	SET_READONLY( i, "Color", colorTemplate->GetFunction() );
 
 }
 void ImageObject::getPng( v8::Local<v8::String> field,
@@ -405,260 +412,260 @@ void ImageObject::fill( const FunctionCallbackInfo<Value>& args ) {
 	BlatColor( io->image, x, y, w, h, c );
 }
 
-	void ImageObject::fillOver( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
-		int argc = args.Length();
-		ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-		int x, y, w, h, c;
-		if( argc > 0 ) {
-			x = (int)args[0]->NumberValue();
+void ImageObject::fillOver( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	int x, y, w, h, c;
+	if( argc > 0 ) {
+		x = (int)args[0]->NumberValue();
+	}
+	if( argc > 1 ) {
+		y = (int)args[1]->NumberValue();
+	}
+	if( argc > 2 ) {
+		w = (int)args[2]->NumberValue();
+	}
+	if( argc > 3 ) {
+		h = (int)args[3]->NumberValue();
+	}
+	if( argc > 4 ) {
+		if( args[4]->IsObject() ) {
+			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject() );
+			c = co->color;
 		}
-		if( argc > 1 ) {
-			y = (int)args[1]->NumberValue();
+		else if( args[4]->IsUint32() )
+			c = (int)args[4]->Uint32Value();
+		c = (int)args[4]->NumberValue();
+	}
+	BlatColorAlpha( io->image, x, y, w, h, c );
+}
+
+void ImageObject::plot( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	int x, y, c;
+	if( argc > 0 ) {
+		x = (int)args[0]->NumberValue();
+	}
+	if( argc > 1 ) {
+		y = (int)args[1]->NumberValue();
+	}
+	if( argc > 2 ) {
+		if( args[2]->IsObject() ) {
+			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[2]->ToObject() );
+			c = co->color;
 		}
-		if( argc > 2 ) {
-			w = (int)args[2]->NumberValue();
+		else if( args[2]->IsUint32() )
+			c = (int)args[2]->Uint32Value();
+		else
+			c = (int)args[2]->NumberValue();
+	}
+	g.pii->_plot( io->image, x, y, c );
+}
+
+void ImageObject::plotOver( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	int x, y, c;
+	if( argc > 0 ) {
+		x = (int)args[0]->NumberValue();
+	}
+	if( argc > 1 ) {
+		y = (int)args[1]->NumberValue();
+	}
+	if( argc > 2 ) {
+		if( args[2]->IsObject() ) {
+			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[2]->ToObject() );
+			c = co->color;
 		}
-		if( argc > 3 ) {
-			h = (int)args[3]->NumberValue();
+		else if( args[2]->IsUint32() )
+			c = (int)args[2]->Uint32Value();
+		else
+			c = (int)args[2]->NumberValue();
+	}
+	plotalpha( io->image, x, y, c );
+}
+
+void ImageObject::line( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	int x, y, xTo, yTo, c;
+	if( argc > 0 ) {
+		x = (int)args[0]->NumberValue();
+	}
+	if( argc > 1 ) {
+		y = (int)args[1]->NumberValue();
+	}
+	if( argc > 2 ) {
+		xTo = (int)args[2]->NumberValue();
+	}
+	if( argc > 3 ) {
+		yTo = (int)args[3]->NumberValue();
+	}
+	if( argc > 4 ) {
+		if( args[2]->IsObject() ) {
+			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject() );
+			c = co->color;
 		}
-		if( argc > 4 ) {
-			if( args[4]->IsObject() ) {
-				ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject() );
-				c = co->color;
-			}
-			else if( args[4]->IsUint32() )
-				c = (int)args[4]->Uint32Value();
+		else if( args[2]->IsUint32() )
+			c = (int)args[4]->Uint32Value();
+		else
 			c = (int)args[4]->NumberValue();
-		}
-		BlatColorAlpha( io->image, x, y, w, h, c );
 	}
+	if( x == xTo )
+		do_vline( io->image, x, y, yTo, c );
+	else if( y == yTo )
+		do_hline( io->image, y, x, xTo, c );
+	else
+		do_line( io->image, x, y, xTo, yTo, c );
+}
 
-	void ImageObject::plot( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
-		int argc = args.Length();
-		ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-		int x, y, c;
-		if( argc > 0 ) {
-			x = (int)args[0]->NumberValue();
-		}
-		if( argc > 1 ) {
-			y = (int)args[1]->NumberValue();
-		}
-		if( argc > 2 ) {
-			if( args[2]->IsObject() ) {
-				ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[2]->ToObject() );
-				c = co->color;
-			}
-			else if( args[2]->IsUint32() )
-				c = (int)args[2]->Uint32Value();
-			else
-				c = (int)args[2]->NumberValue();
-		}
-		g.pii->_plot( io->image, x, y, c );
+void ImageObject::lineOver( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	int argc = args.Length();
+	int x, y, xTo, yTo, c;
+	if( argc > 0 ) {
+		x = (int)args[0]->NumberValue();
 	}
-
-	void ImageObject::plotOver( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
-		int argc = args.Length();
-		ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-		int x, y, c;
-		if( argc > 0 ) {
-			x = (int)args[0]->NumberValue();
-		}
-		if( argc > 1 ) {
-			y = (int)args[1]->NumberValue();
-		}
-		if( argc > 2 ) {
-			if( args[2]->IsObject() ) {
-				ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[2]->ToObject() );
-				c = co->color;
-			}
-			else if( args[2]->IsUint32() )
-				c = (int)args[2]->Uint32Value();
-			else
-				c = (int)args[2]->NumberValue();
-		}
-		plotalpha( io->image, x, y, c );
+	if( argc > 1 ) {
+		y = (int)args[1]->NumberValue();
 	}
-
-	void ImageObject::line( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
-		int argc = args.Length();
-		ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-		int x, y, xTo, yTo, c;
-		if( argc > 0 ) {
-			x = (int)args[0]->NumberValue();
+	if( argc > 2 ) {
+		xTo = (int)args[2]->NumberValue();
+	}
+	if( argc > 3 ) {
+		yTo = (int)args[3]->NumberValue();
+	}
+	if( argc > 4 ) {
+		if( args[4]->IsObject() ) {
+			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject() );
+			c = co->color;
 		}
-		if( argc > 1 ) {
-			y = (int)args[1]->NumberValue();
-		}
-		if( argc > 2 ) {
-			xTo = (int)args[2]->NumberValue();
-		}
-		if( argc > 3 ) {
-			yTo = (int)args[3]->NumberValue();
-		}
-		if( argc > 4 ) {
-			if( args[2]->IsObject() ) {
-				ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject() );
-				c = co->color;
-			}
-			else if( args[2]->IsUint32() )
-				c = (int)args[4]->Uint32Value();
-			else
-				c = (int)args[4]->NumberValue();
-		}
-		if( x == xTo )
-			do_vline( io->image, x, y, yTo, c );
-		else if( y == yTo )
-			do_hline( io->image, y, x, xTo, c );
+		else if( args[2]->IsUint32() )
+			c = (int)args[4]->Uint32Value();
 		else
-			do_line( io->image, x, y, xTo, yTo, c );
+			c = (int)args[4]->NumberValue();
 	}
+	if( x == xTo )
+		do_vlineAlpha( io->image, x, y, yTo, c );
+	else if( y == yTo )
+		do_hlineAlpha( io->image, y, x, xTo, c );
+	else
+		do_lineAlpha( io->image, x, y, xTo, yTo, c );
+}
 
-	void ImageObject::lineOver( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
-		ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-		int argc = args.Length();
-		int x, y, xTo, yTo, c;
-		if( argc > 0 ) {
-			x = (int)args[0]->NumberValue();
-		}
-		if( argc > 1 ) {
-			y = (int)args[1]->NumberValue();
-		}
-		if( argc > 2 ) {
-			xTo = (int)args[2]->NumberValue();
-		}
-		if( argc > 3 ) {
-			yTo = (int)args[3]->NumberValue();
-		}
+// {x, y output
+// w, h} output
+// {x, y input
+// w, h} input
+void ImageObject::putImage( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	int argc = args.Length();
+	ImageObject *ii;// = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	int x = 0, y= 0, xAt, yAt;
+	int w, h;
+	if( argc > 0 ) {
+		ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject() );
+		if( !ii )
+			lprintf( "Bad First paraemter, must be an image to put?" );
+		w = ii->image->width;
+		h = ii->image->height;
+	}
+	else {
+		// throw error ?
+		return;
+	}
+	if( argc > 2 ) {
+		x = (int)args[1]->NumberValue();
+		y = (int)args[2]->NumberValue();
+	}
+	else {
+		x = 0;
+		y = 0;
+		//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameters for position missing." ) ) );
+		//return;
+	}
+	if( argc > 3 ) {
+		xAt = (int)args[3]->NumberValue();
+
 		if( argc > 4 ) {
-			if( args[4]->IsObject() ) {
-				ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject() );
-				c = co->color;
-			}
-			else if( args[2]->IsUint32() )
-				c = (int)args[4]->Uint32Value();
-			else
-				c = (int)args[4]->NumberValue();
-		}
-		if( x == xTo )
-			do_vlineAlpha( io->image, x, y, yTo, c );
-		else if( y == yTo )
-			do_hlineAlpha( io->image, y, x, xTo, c );
-		else
-			do_lineAlpha( io->image, x, y, xTo, yTo, c );
-	}
-
-	// {x, y output
-	// w, h} output
-	// {x, y input
-	// w, h} input
-	void ImageObject::putImage( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
-		ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-		int argc = args.Length();
-		ImageObject *ii;// = ObjectWrap::Unwrap<ImageObject>( args.This() );
-		int x = 0, y= 0, xAt, yAt;
-		int w, h;
-		if( argc > 0 ) {
-			ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject() );
-			if( !ii )
-				lprintf( "Bad First paraemter, must be an image to put?" );
-			w = ii->image->width;
-			h = ii->image->height;
+			yAt = (int)args[4]->NumberValue();
 		}
 		else {
-			// throw error ?
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameters for position missing." ) ) );
 			return;
 		}
-		if( argc > 2 ) {
-			x = (int)args[1]->NumberValue();
-			y = (int)args[2]->NumberValue();
+		if( argc > 5 ) {
+			w = (int)args[5]->NumberValue();
+			if( argc > 6 ) {
+				h = (int)args[6]->NumberValue();
+			}
+			if( argc > 7 ) {
+				int ow, oh;
+		
+				ow = xAt;
+				oh = yAt;
+				xAt = w;
+				yAt = h;
+				if( argc > 7 ) {
+					w = (int)args[7]->NumberValue();
+					if( w < 0 ) w = ii->image->width;
+				}
+				if( argc > 8 ) {
+					h = (int)args[8]->NumberValue();
+					if( h < 0 ) h = ii->image->height;
+				}
+				BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, 1, BLOT_COPY );
+			}
+			else
+				BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, 0, BLOT_COPY );
+		}
+		else  {
+			w = xAt; 
+			h = yAt;
+			BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, 0, BLOT_COPY );
+		}
+	}
+	else
+		BlotImageEx( io->image, ii->image, x, y, 0, BLOT_COPY );
+}
+
+void ImageObject::putImageOver( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	ImageObject *ii;// = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	int argc = args.Length();
+	int x, y, xTo, yTo, c;
+	if( argc > 0 ) {
+		ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject() );
+	}
+	if( argc > 1 ) {
+		x = (int)args[1]->NumberValue();
+	}
+	if( argc > 2 ) {
+		y = (int)args[2]->NumberValue();
+	}
+	if( argc > 2 ) {
+		xTo = (int)args[2]->NumberValue();
+
+		if( argc > 3 ) {
+			yTo = (int)args[3]->NumberValue();
+		}
+		if( argc > 4 ) {
+			c = (int)args[4]->NumberValue();
 		}
 		else {
-			x = 0;
-			y = 0;
-			//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameters for position missing." ) ) );
-			//return;
 		}
-		if( argc > 3 ) {
-			xAt = (int)args[3]->NumberValue();
-
-			if( argc > 4 ) {
-				yAt = (int)args[4]->NumberValue();
-			}
-			else {
-				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameters for position missing." ) ) );
-				return;
-			}
-			if( argc > 5 ) {
-				w = (int)args[5]->NumberValue();
-				if( argc > 6 ) {
-					h = (int)args[6]->NumberValue();
-				}
-				if( argc > 7 ) {
-					int ow, oh;
-			
-					ow = xAt;
-					oh = yAt;
-					xAt = w;
-					yAt = h;
-					if( argc > 7 ) {
-						w = (int)args[7]->NumberValue();
-						if( w < 0 ) w = ii->image->width;
-					}
-					if( argc > 8 ) {
-						h = (int)args[8]->NumberValue();
-						if( h < 0 ) h = ii->image->height;
-					}
-					BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, 1, BLOT_COPY );
-				}
-				else
-					BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, 0, BLOT_COPY );
-			}
-			else  {
-				w = xAt; 
-				h = yAt;
-				BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, 0, BLOT_COPY );
-			}
-		}
-		else
-			BlotImageEx( io->image, ii->image, x, y, 0, BLOT_COPY );
 	}
-
-	void ImageObject::putImageOver( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
-		ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-		ImageObject *ii;// = ObjectWrap::Unwrap<ImageObject>( args.This() );
-		int argc = args.Length();
-		int x, y, xTo, yTo, c;
-		if( argc > 0 ) {
-  			ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject() );
-		}
-		if( argc > 1 ) {
-			x = (int)args[1]->NumberValue();
-		}
-		if( argc > 2 ) {
-			y = (int)args[2]->NumberValue();
-		}
-		if( argc > 2 ) {
-			xTo = (int)args[2]->NumberValue();
-
-			if( argc > 3 ) {
-				yTo = (int)args[3]->NumberValue();
-			}
-			if( argc > 4 ) {
-				c = (int)args[4]->NumberValue();
-			}
-			else {
-			}
-		}
-		else
-			BlotImageEx( io->image, ii->image, x, y, ALPHA_TRANSPARENT, BLOT_COPY );
-	}
+	else
+		BlotImageEx( io->image, ii->image, x, y, ALPHA_TRANSPARENT, BLOT_COPY );
+}
 
 void ImageObject::imageData( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -684,63 +691,62 @@ FontObject::FontObject( const char *filename, int w, int h, int flags ) {
    font = InternalRenderFontFile( filename, w, h, NULL, NULL, flags );
 }
 
-	void FontObject::New( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
-		if( args.IsConstructCall() ) {
+void FontObject::New( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.IsConstructCall() ) {
 
-			int w = 24, h = 24;
-			int flags;
-			Local<Object> parentFont;
-			FontObject *parent = NULL;
-			char *filename = NULL;
+		int w = 24, h = 24;
+		int flags;
+		Local<Object> parentFont;
+		FontObject *parent = NULL;
+		char *filename = NULL;
 
-			int argc = args.Length();
+		int argc = args.Length();
 
-			if( argc > 0 ) {
-  				String::Utf8Value fName( args[0]->ToString() );
-				filename = StrDup( *fName );
-			}
-
-			if( argc > 1 ) {
-				w = (int)args[1]->NumberValue();
-			}
-			if( argc > 2 ) {
-				h = (int)args[2]->NumberValue();
-			}
-			if( argc >3 ) {
-				flags = (int)args[3]->NumberValue();
-			}
-			else
-				flags = 3;
-
-			// Invoked as constructor: `new MyObject(...)`
-			FontObject* obj;
-			if( filename )
-				obj = new FontObject( filename, w, h, flags );
-
-			obj->Wrap( args.This() );
-			args.GetReturnValue().Set( args.This() );
-
+		if( argc > 0 ) {
+			String::Utf8Value fName( args[0]->ToString() );
+			filename = StrDup( *fName );
 		}
-		else {
-			// Invoked as plain function `MyObject(...)`, turn into construct call.
-			int argc = args.Length();
-		   Local<Value> *argv = new Local<Value>[argc];
-			for( int n = 0; n < argc; n++ )
-            argv[n] = args[n];
 
-			Local<Function> cons = Local<Function>::New( isolate, constructor );
-			args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
-         delete argv;
+		if( argc > 1 ) {
+			w = (int)args[1]->NumberValue();
 		}
+		if( argc > 2 ) {
+			h = (int)args[2]->NumberValue();
+		}
+		if( argc >3 ) {
+			flags = (int)args[3]->NumberValue();
+		}
+		else
+			flags = 3;
+
+		// Invoked as constructor: `new MyObject(...)`
+		FontObject* obj;
+		if( filename )
+			obj = new FontObject( filename, w, h, flags );
+
+		obj->Wrap( args.This() );
+		args.GetReturnValue().Set( args.This() );
+
 	}
+	else {
+		// Invoked as plain function `MyObject(...)`, turn into construct call.
+		int argc = args.Length();
+	   Local<Value> *argv = new Local<Value>[argc];
+		for( int n = 0; n < argc; n++ )
+        argv[n] = args[n];
+
+		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+     delete argv;
+	}
+}
 
 
 void FontObject::measure( const FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		FontObject *fo = ObjectWrap::Unwrap<FontObject>( args.This() );
 		int argc = args.Length();
-
 }
 
 
@@ -774,6 +780,15 @@ Local<Object> ColorObject::makeColor( Isolate *isolate, CDATA rgba ) {
 	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( _color );
 	co->color = rgba;
 	return _color;
+}
+
+void ColorObject::toString( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
+	char buf[128];
+	snprintf( buf, 128, "{r:%d,g:%d,b:%d,a:%d}", RedVal( co->color ), GreenVal( co->color ), BlueVal( co->color ), AlphaVal( co->color ) );
+	
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, buf ) );
 }
 
 void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
@@ -835,3 +850,79 @@ void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
 }
 
 
+void ColorObject::getRed( v8::Local<v8::String> field,
+	const PropertyCallbackInfo<v8::Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( ColorObject::tpl.Get( isolate )->HasInstance( args.This() ) ) {
+		ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
+		args.GetReturnValue().Set( Integer::New( isolate, RedVal( co->color ) ) );
+	}
+}
+void ColorObject::getGreen( v8::Local<v8::String> field,
+	const PropertyCallbackInfo<v8::Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( ColorObject::tpl.Get( isolate )->HasInstance( args.This() ) ) {
+		ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
+		args.GetReturnValue().Set( Integer::New( isolate, GreenVal( co->color ) ) );
+	}
+}
+void ColorObject::getBlue( v8::Local<v8::String> field,
+	const PropertyCallbackInfo<v8::Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( ColorObject::tpl.Get( isolate )->HasInstance( args.This() ) ) {
+		ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
+		args.GetReturnValue().Set( Integer::New( isolate, BlueVal( co->color ) ) );
+	}
+}
+void ColorObject::getAlpha( v8::Local<v8::String> field,
+	const PropertyCallbackInfo<v8::Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( ColorObject::tpl.Get( isolate )->HasInstance( args.This() ) ) {
+		ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
+		args.GetReturnValue().Set( Integer::New( isolate, AlphaVal( co->color ) ) );
+	}
+}
+void ColorObject::setRed( v8::Local<v8::String> field,
+	Local<Value> value,
+	const PropertyCallbackInfo<void>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
+	double val = value->NumberValue();
+	if( val < 0 ) val = 0;
+	else if( val > 255 ) val = 255;
+	if( val > 0 && val < 1.0 ) val = 255 * val;
+	SetRedValue( co->color, (COLOR_CHANNEL)val );
+}
+void ColorObject::setGreen( v8::Local<v8::String> field,
+	Local<Value> value,
+	const PropertyCallbackInfo<void>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
+	double val = value->NumberValue();
+	if( val < 0 ) val = 0;
+	else if( val > 255 ) val = 255;
+	if( val > 0 && val < 1.0 ) val = 255 * val;
+	SetGreenValue( co->color, (COLOR_CHANNEL)val );
+}
+void ColorObject::setBlue( v8::Local<v8::String> field,
+	Local<Value> value,
+	const PropertyCallbackInfo<void>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
+	double val = value->NumberValue();
+	if( val < 0 ) val = 0;
+	else if( val > 255 ) val = 255;
+	if( val > 0 && val < 1.0 ) val = 255 * val;
+	SetBlueValue( co->color, (COLOR_CHANNEL)val );
+}
+void ColorObject::setAlpha( v8::Local<v8::String> field,
+	Local<Value> value,
+	const PropertyCallbackInfo<void>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
+	double val = value->NumberValue();
+	if( val < 0 ) val = 0;
+	else if( val > 255 ) val = 255;
+	if( val > 0 && val < 1.0 ) val = 255 * val;
+	SetAlphaValue( co->color, (COLOR_CHANNEL)val );
+}
