@@ -49,7 +49,4 @@
     "build-vfs-debug-run2": "cmake-js build -D",
     "build": "node-gyp configure build"
   },
-  "dependencies": {
-    "nan": "^2.7.0"
-  }
 }

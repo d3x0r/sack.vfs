@@ -125,7 +125,7 @@
   ],
 
   "target_defaults": {
-  	'include_dirs': ['src/sack',    "<!(node -e \"require('nan')\")" ]
+  	'include_dirs': ['src/sack']
   }
   
 }

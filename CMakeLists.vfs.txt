@@ -28,7 +28,7 @@ endif( MSVC )
 #  SET( CMAKE_C_FLAGS_RELWITHDEBINFO  "${CMAKE_C_FLAGS_RELWITHDEBINFO}  -D_DEBUG" )
 #endif( GNUC )
 
-include_directories( "../node_modules/nan" )
+#include_directories( "../node_modules/nan" )
 
 
 if( NOT WIN32 )

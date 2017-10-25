@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.0)
 project (sack_vfs)
 
 
-include_directories( "../node_modules/nan" )
+#include_directories( "../node_modules/nan" )
 
 if( NOT WIN32 )
     ADD_DEFINITIONS( -D__LINUX__ )
