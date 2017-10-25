@@ -8,7 +8,7 @@ public:
 	Image image; // this control
 	LOGICAL external;
 	static v8::Persistent<v8::Function> constructor;
-	static Persistent<FunctionTemplate> ImageObject::tpl;
+	static Persistent<FunctionTemplate> tpl;
 
 	Persistent<Object> _this;
 	int jpegQuality;

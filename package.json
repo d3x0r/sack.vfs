@@ -48,5 +48,5 @@
     "build-vfs-debug-run1": "cmake-js build -D",
     "build-vfs-debug-run2": "cmake-js build -D",
     "build": "node-gyp configure build"
-  },
+  }
 }
