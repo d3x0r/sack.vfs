@@ -12444,14 +12444,24 @@ typedef __arg_list arg_list;
 // declare 'va_list args = NULL;' to use successfully...
 // the resulting thing is of type va_list.
 typedef struct va_args_tag va_args;
+enum configArgType {
+	CONFIG_ARG_STRING,
+	CONFIG_ARG_INT64,
+	CONFIG_ARG_FLOAT,
+	CONFIG_ARG_DATA,
+	CONFIG_ARG_DATA_SIZE,
+	CONFIG_ARG_LOGICAL,
+	CONFIG_ARG_FRACTION,
+	CONFIG_ARG_COLOR,
+};
 struct va_args_tag {
-   int argsize; arg_list *args; arg_list *tmp_args;
+	int argsize; arg_list *args; arg_list *tmp_args; int argCount;
 };
 //#define va_args struct { int argsize; arg_list *args; arg_list *tmp_args; }
-#define init_args(name) name.argsize = 0; name.args = NULL;
+#define init_args(name) name.argCount = 0; name.argsize = 0; name.args = NULL;
   // 32 bits.
 #define ARG_STACK_SIZE 4
-#define PushArgument( argset, type, arg ) ( (argset.args = (arg_list*)Preallocate( argset.args, argset.argsize += (sizeof( type ) + (ARG_STACK_SIZE-1) )&-ARG_STACK_SIZE) )?(*(type*)(argset.args) = (arg)),0:0)
+#define PushArgument( argset, argType, type, arg )	 ((argset.args = (arg_list*)Preallocate( argset.args		  , argset.argsize += ((sizeof( enum configArgType )				 + sizeof( type )				  + (ARG_STACK_SIZE-1) )&-ARG_STACK_SIZE) ) )	 ?(argset.argCount++),((*(enum configArgType*)(argset.args))=(argType)),(*(type*)(((uintptr_t)argset.args)+sizeof(enum ConfigArgType)) = (arg)),0	   :0)
 #define PopArguments( argset ) { Release( argset.args ); argset.args=NULL; }
 #define pass_args(argset) (( (argset).tmp_args = (argset).args ),(*(arg_list*)(&argset.tmp_args)))
 /*
@@ -12464,8 +12474,12 @@ struct va_args_tag {
  *    // results in a variable called name
  *    // initialized from the first argument in arg_list args;
  */
-#define my_va_arg(ap,type)     ((ap)[0]+=        ((sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)),        (*(type *)((ap)[0]-((sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)))))
+#define my_va_arg(ap,type)     ((ap)[0]+=        ((sizeof(enum configArgType)+sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)),        (*(type *)((ap)[0]-((sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)))))
+#define my_va_arg_type(ap,type)     (         (*(type *)((ap)[0]-(sizeof(enum configArgType)+(sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)))))
+#define my_va_next_arg_type(ap)     ( ( *(enum configArgType *)((ap)[0]) ) )
+#define PARAM_COUNT( args ) (((int*)(args+1))[0])
 #define PARAM( args, type, name ) type name = my_va_arg( args, type )
+#define PARAMEX( args, type, name, argTypeName ) type name = my_va_arg( args, type ); enum configArgType argTypeName = my_va_arg_type(args)
 #define FP_PARAM( args, type, name, fa ) type (CPROC*name)fa = (type (CPROC*)fa)(my_va_arg( args, void *))
 typedef struct config_file_tag* PCONFIG_HANDLER;
 CONFIGSCR_PROC( PCONFIG_HANDLER, CreateConfigurationEvaluator )( void );
@@ -12482,9 +12496,13 @@ CONFIGSCR_PROC( LOGICAL, BeginNamedConfiguration )( PCONFIG_HANDLER pch, CTEXTST
 // use this to restore the prior configuration state.
 CONFIGSCR_PROC( void, EndConfiguration )( PCONFIG_HANDLER pch );
 typedef uintptr_t (CPROC*USER_CONFIG_HANDLER)( uintptr_t, arg_list args );
+typedef uintptr_t( CPROC*USER_CONFIG_HANDLER_EX )(uintptr_t, uintptr_t, arg_list args);
 CONFIGSCR_PROC( void, AddConfigurationEx )( PCONFIG_HANDLER pch
 														, CTEXTSTR format
 														, USER_CONFIG_HANDLER Process DBG_PASS );
+CONFIGSCR_PROC( void, AddConfigurationExx )(PCONFIG_HANDLER pch
+	, CTEXTSTR format
+	, USER_CONFIG_HANDLER_EX Process, uintptr_t processHandler DBG_PASS);
 //CONFIGSCR_PROC( void, AddConfiguration )( PCONFIG_HANDLER pch
 //					, char *format
 //													 , USER_CONFIG_HANDLER Process );
@@ -75695,6 +75713,7 @@ enum config_types {
 	, CONFIG_ADDRESS
 	// end of configuration line (match assumed)
 	, CONFIG_PROCEDURE
+	, CONFIG_PROCEDURE_EX
 	, CONFIG_COLOR
  // to save as an option after variables
 	, CONFIG_NOTHING
@@ -75752,6 +75771,10 @@ struct config_element_tag
 		} multiword;
 		FRACTION fraction;
 		USER_CONFIG_HANDLER Process;
+		struct {
+			USER_CONFIG_HANDLER_EX Process;
+			uintptr_t arg;
+		} ProcessEx;
 		CDATA Color;
 		struct {
 			size_t length;
@@ -75914,8 +75937,11 @@ void LogElementEx( CTEXTSTR leader, PCONFIG_ELEMENT pce DBG_PASS)
 		_lprintf(DBG_RELAY)( WIDE("%s a multi word"), leader );
 		break;
 	case CONFIG_PROCEDURE:
-	_lprintf(DBG_RELAY)( WIDE("%s a procedure to call."), leader );
-	break;
+		_lprintf(DBG_RELAY)( WIDE("%s a procedure to call."), leader );
+		break;
+	case CONFIG_PROCEDURE_EX:
+		_lprintf( DBG_RELAY )(WIDE( "%s a procedure to call." ), leader);
+		break;
 	case CONFIG_URL:
 	_lprintf(DBG_RELAY)( WIDE("%s a url?"), leader );
 	break;
@@ -77475,7 +77501,7 @@ void DoProcedure( uintptr_t *ppsvUser, PCONFIG_TEST Check )
 	init_args( parampack );
 	LIST_FORALL( Check->pVarElementList, idx, PCONFIG_ELEMENT, pce )
 	{
-		if( pce->type == CONFIG_PROCEDURE )
+		if( pce->type == CONFIG_PROCEDURE || pce->type == CONFIG_PROCEDURE_EX )
 		{
 			if( pce->data[0].Process)
 			{
@@ -77494,48 +77520,44 @@ void DoProcedure( uintptr_t *ppsvUser, PCONFIG_TEST Check )
 					case CONFIG_TEXT:
 						break;
 					case CONFIG_BINARY:
-						PushArgument( parampack, POINTER, pcePush->data[0].binary.data );
-						PushArgument( parampack, size_t, pcePush->data[0].binary.length );
+						PushArgument( parampack, CONFIG_ARG_DATA, POINTER, pcePush->data[0].binary.data );
+						PushArgument( parampack, CONFIG_ARG_DATA_SIZE, size_t, pcePush->data[0].binary.length );
 						break;
 					case CONFIG_BOOLEAN:
 						{
 							LOGICAL val = pcePush->data[0].truefalse.bTrue;
-							PushArgument( parampack, LOGICAL, val );
+							PushArgument( parampack, CONFIG_ARG_LOGICAL, LOGICAL, val );
 						}
 						break;
 					case CONFIG_INTEGER:
-						PushArgument( parampack, int64_t, pcePush->data[0].integer_number );
+						PushArgument( parampack, CONFIG_ARG_INT64, int64_t, pcePush->data[0].integer_number );
 						break;
 					case CONFIG_FLOAT:
-						PushArgument( parampack, float, (float)pcePush->data[0].float_number );
+						PushArgument( parampack, CONFIG_ARG_FLOAT, float, (float)pcePush->data[0].float_number );
 						break;
 					case CONFIG_FRACTION:
-						PushArgument( parampack, FRACTION, pcePush->data[0].fraction );
+						PushArgument( parampack, CONFIG_ARG_FRACTION, FRACTION, pcePush->data[0].fraction );
 						break;
 					case CONFIG_SINGLE_WORD:
-						PushArgument( parampack, CTEXTSTR, pcePush->data[0].pWord );
+						PushArgument( parampack, CONFIG_ARG_STRING, CTEXTSTR, pcePush->data[0].pWord );
 						break;
 					case CONFIG_COLOR:
-						PushArgument( parampack, CDATA, pcePush->data[0].Color );
+						PushArgument( parampack, CONFIG_ARG_COLOR, CDATA, pcePush->data[0].Color );
 						break;
 					case CONFIG_MULTI_WORD:
 					case CONFIG_FILEPATH:
-						PushArgument( parampack, CTEXTSTR, pcePush->data[0].multiword.pWords );
+						PushArgument( parampack, CONFIG_ARG_STRING, CTEXTSTR, pcePush->data[0].multiword.pWords );
 						break;
 					default:
 						break;
-						}
+					}
 					//lprintf( WIDE("Total args are now: %d"), argsize );
 					pcePush = pcePush->prior;
 				}
-				// should really be #ifdef __IDIOTS_WROTE_THIS_COMPILER__
-#ifdef __WATCOMC__
-				save_parampack = parampack;
-				(*ppsvUser) = pce->data[0].Process( *ppsvUser, pass_args(parampack) );
-				parampack = save_parampack;
-#else
-				(*ppsvUser) = pce->data[0].Process( *ppsvUser, pass_args(parampack) );
-#endif
+				if( pce->type == CONFIG_PROCEDURE_EX )
+					(*ppsvUser) = pce->data[0].ProcessEx.Process( *ppsvUser, pce->data[0].ProcessEx.arg, pass_args( parampack ) );
+				else
+					(*ppsvUser) = pce->data[0].Process( *ppsvUser, pass_args(parampack) );
 				PopArguments( parampack );
 #endif
  // done, end of list, please leave and do not iterate further!
@@ -77962,7 +77984,7 @@ void EndConfiguration( PCONFIG_HANDLER pch )
 		pch->save_config_as = prior_state->name;
 	}
 }
-void AddConfigurationEx( PCONFIG_HANDLER pch, CTEXTSTR format, USER_CONFIG_HANDLER Process DBG_PASS )
+PCONFIG_ELEMENT _AddConfigurationEx( PCONFIG_HANDLER pch, CTEXTSTR format, USER_CONFIG_HANDLER Process DBG_PASS )
 {
 	PTEXT pTemp = SegCreateFromText( format );
 	PTEXT pLine;
@@ -78009,7 +78031,7 @@ void AddConfigurationEx( PCONFIG_HANDLER pch, CTEXTSTR format, USER_CONFIG_HANDL
 				LineRelease( pLine );
 				lprintf( WIDE( "Destroy config element %p" ), pceNew );
 				DestroyConfigElement( pch, pceNew );
-				return;
+				return NULL;
 			}
 			switch( pWordText[0] )
 			{
@@ -78310,6 +78332,18 @@ void AddConfigurationEx( PCONFIG_HANDLER pch, CTEXTSTR format, USER_CONFIG_HANDL
 	pceNew->type = CONFIG_PROCEDURE;
 	pceNew->data[0].Process = Process;
 	AddLink( &pct->pVarElementList, pceNew );
+	return pceNew;
+}
+void AddConfigurationExx( PCONFIG_HANDLER pch, CTEXTSTR format, USER_CONFIG_HANDLER_EX Process, uintptr_t arg DBG_PASS ) {
+	PCONFIG_ELEMENT element = _AddConfigurationEx( pch, format, (USER_CONFIG_HANDLER)Process DBG_RELAY );
+	if( !element )
+		return;
+	element->type = CONFIG_PROCEDURE_EX;
+	element->data[0].ProcessEx.Process = Process;
+	element->data[0].ProcessEx.arg = arg;
+}
+void AddConfigurationEx( PCONFIG_HANDLER pch, CTEXTSTR format, USER_CONFIG_HANDLER Process DBG_PASS ) {
+	_AddConfigurationEx( pch, format, Process DBG_RELAY );
 }
 //---------------------------------------------------------------------
 #undef AddConfiguration
@@ -78414,6 +78448,7 @@ void DestroyConfigElement( PCONFIG_HANDLER pch, PCONFIG_ELEMENT pce )
 		break;
 	case CONFIG_COLOR:
 	case CONFIG_PROCEDURE:
+	case CONFIG_PROCEDURE_EX:
 	case CONFIG_UNKNOWN:
 	case CONFIG_BOOLEAN:
 	case CONFIG_INTEGER:

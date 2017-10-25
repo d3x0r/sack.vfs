@@ -12341,14 +12341,24 @@ typedef __arg_list arg_list;
 // declare 'va_list args = NULL;' to use successfully...
 // the resulting thing is of type va_list.
 typedef struct va_args_tag va_args;
+enum configArgType {
+	CONFIG_ARG_STRING,
+	CONFIG_ARG_INT64,
+	CONFIG_ARG_FLOAT,
+	CONFIG_ARG_DATA,
+	CONFIG_ARG_DATA_SIZE,
+	CONFIG_ARG_LOGICAL,
+	CONFIG_ARG_FRACTION,
+	CONFIG_ARG_COLOR,
+};
 struct va_args_tag {
-   int argsize; arg_list *args; arg_list *tmp_args;
+	int argsize; arg_list *args; arg_list *tmp_args; int argCount;
 };
 //#define va_args struct { int argsize; arg_list *args; arg_list *tmp_args; }
-#define init_args(name) name.argsize = 0; name.args = NULL;
+#define init_args(name) name.argCount = 0; name.argsize = 0; name.args = NULL;
   // 32 bits.
 #define ARG_STACK_SIZE 4
-#define PushArgument( argset, type, arg ) ( (argset.args = (arg_list*)Preallocate( argset.args, argset.argsize += (sizeof( type ) + (ARG_STACK_SIZE-1) )&-ARG_STACK_SIZE) )?(*(type*)(argset.args) = (arg)),0:0)
+#define PushArgument( argset, argType, type, arg )	 ((argset.args = (arg_list*)Preallocate( argset.args		  , argset.argsize += ((sizeof( enum configArgType )				 + sizeof( type )				  + (ARG_STACK_SIZE-1) )&-ARG_STACK_SIZE) ) )	 ?(argset.argCount++),((*(enum configArgType*)(argset.args))=(argType)),(*(type*)(((uintptr_t)argset.args)+sizeof(enum ConfigArgType)) = (arg)),0	   :0)
 #define PopArguments( argset ) { Release( argset.args ); argset.args=NULL; }
 #define pass_args(argset) (( (argset).tmp_args = (argset).args ),(*(arg_list*)(&argset.tmp_args)))
 /*
@@ -12361,8 +12371,12 @@ struct va_args_tag {
  *    // results in a variable called name
  *    // initialized from the first argument in arg_list args;
  */
-#define my_va_arg(ap,type)     ((ap)[0]+=        ((sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)),        (*(type *)((ap)[0]-((sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)))))
+#define my_va_arg(ap,type)     ((ap)[0]+=        ((sizeof(enum configArgType)+sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)),        (*(type *)((ap)[0]-((sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)))))
+#define my_va_arg_type(ap,type)     (         (*(type *)((ap)[0]-(sizeof(enum configArgType)+(sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)))))
+#define my_va_next_arg_type(ap)     ( ( *(enum configArgType *)((ap)[0]) ) )
+#define PARAM_COUNT( args ) (((int*)(args+1))[0])
 #define PARAM( args, type, name ) type name = my_va_arg( args, type )
+#define PARAMEX( args, type, name, argTypeName ) type name = my_va_arg( args, type ); enum configArgType argTypeName = my_va_arg_type(args)
 #define FP_PARAM( args, type, name, fa ) type (CPROC*name)fa = (type (CPROC*)fa)(my_va_arg( args, void *))
 typedef struct config_file_tag* PCONFIG_HANDLER;
 CONFIGSCR_PROC( PCONFIG_HANDLER, CreateConfigurationEvaluator )( void );
@@ -12379,9 +12393,13 @@ CONFIGSCR_PROC( LOGICAL, BeginNamedConfiguration )( PCONFIG_HANDLER pch, CTEXTST
 // use this to restore the prior configuration state.
 CONFIGSCR_PROC( void, EndConfiguration )( PCONFIG_HANDLER pch );
 typedef uintptr_t (CPROC*USER_CONFIG_HANDLER)( uintptr_t, arg_list args );
+typedef uintptr_t( CPROC*USER_CONFIG_HANDLER_EX )(uintptr_t, uintptr_t, arg_list args);
 CONFIGSCR_PROC( void, AddConfigurationEx )( PCONFIG_HANDLER pch
 														, CTEXTSTR format
 														, USER_CONFIG_HANDLER Process DBG_PASS );
+CONFIGSCR_PROC( void, AddConfigurationExx )(PCONFIG_HANDLER pch
+	, CTEXTSTR format
+	, USER_CONFIG_HANDLER_EX Process, uintptr_t processHandler DBG_PASS);
 //CONFIGSCR_PROC( void, AddConfiguration )( PCONFIG_HANDLER pch
 //					, char *format
 //													 , USER_CONFIG_HANDLER Process );
