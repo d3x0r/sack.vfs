@@ -7641,21 +7641,23 @@ struct rt_init
 // specially with the packed attributes
       // - routine (rtn)
 	 __type_rtn  routine;
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 	 CTEXTSTR file;
 #endif
 	 CTEXTSTR funcname;
 	 struct rt_init *junk;
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 #if defined( __GNUC__ ) && defined( __64__)
     // this provides padding - inter-object segments are packed
     // to 32 bytes...
 	 struct rt_init *junk2[3];
 #endif
+#endif
 } __attribute__((packed));
 #define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
 #define RTINIT_STATIC static
 #define ATEXIT_PRIORITY PRIORITY_ATEXIT
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 #  define PASS_FILENAME ,WIDE__FILE__
 #else
 #  define PASS_FILENAME
@@ -12461,7 +12463,7 @@ struct va_args_tag {
 #define init_args(name) name.argCount = 0; name.argsize = 0; name.args = NULL;
   // 32 bits.
 #define ARG_STACK_SIZE 4
-#define PushArgument( argset, argType, type, arg )	 ((argset.args = (arg_list*)Preallocate( argset.args		  , argset.argsize += ((sizeof( enum configArgType )				 + sizeof( type )				  + (ARG_STACK_SIZE-1) )&-ARG_STACK_SIZE) ) )	 ?(argset.argCount++),((*(enum configArgType*)(argset.args))=(argType)),(*(type*)(((uintptr_t)argset.args)+sizeof(enum ConfigArgType)) = (arg)),0	   :0)
+#define PushArgument( argset, argType, type, arg )	 ((argset.args = (arg_list*)Preallocate( argset.args		  , argset.argsize += ((sizeof( enum configArgType )				 + sizeof( type )				  + (ARG_STACK_SIZE-1) )&-ARG_STACK_SIZE) ) )	 ?(argset.argCount++),((*(enum configArgType*)(argset.args))=(argType)),(*(type*)(((uintptr_t)argset.args)+sizeof(enum configArgType)) = (arg)),0	   :0)
 #define PopArguments( argset ) { Release( argset.args ); argset.args=NULL; }
 #define pass_args(argset) (( (argset).tmp_args = (argset).args ),(*(arg_list*)(&argset.tmp_args)))
 /*
@@ -34325,7 +34327,7 @@ void  DebugDumpHeapMemEx ( PMEM pHeap, LOGICAL bVerbose )
 #ifndef NO_LOGGING
 					if( bVerbose )
 					{
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 						CTEXTSTR pFile =  !IsBadReadPtr( BLOCK_FILE(pc), 1 )
 							?BLOCK_FILE(pc)
 							:WIDE("Unknown");
@@ -34344,7 +34346,7 @@ void  DebugDumpHeapMemEx ( PMEM pHeap, LOGICAL bVerbose )
 #ifndef NO_LOGGING
 					if( bVerbose )
 					{
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 						CTEXTSTR pFile =  !IsBadReadPtr( BLOCK_FILE(pc), 1 )
 							?BLOCK_FILE(pc)
 							:WIDE("Unknown");
@@ -89139,7 +89141,7 @@ void paste2( TARGET_LABEL,_RegisterStartups)( void )
 		{
 			if( !current[0].scheduled )
 			{
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 				RegisterPriorityStartupProc( current->routine, current->funcname, current->priority, NULL, current->file, current->line );
 #else
 				RegisterPriorityStartupProc( current->routine, current->funcname, current->priority, NULL );
