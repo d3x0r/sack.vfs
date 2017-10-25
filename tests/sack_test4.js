@@ -1,8 +1,6 @@
 
 var sack = require( ".." );
 
-console.log( "got", sack );
-
 var _b = 0;
 var x_click = 0;
 var y_click = 0;
@@ -13,13 +11,10 @@ var y_del = 0;
 var scale = 1.0;
 
 var f = sack.Frame( "test", -1, -1, 600, 600 );
-console.log( "created frame?", f, Object.keys( Object.getPrototypeOf( f ) ) );
+
 var background = sack.Image( "the rror.jpg" );
 
-console.log( "created frame?", background, JSON.stringify( background ), background.width, background.height );
-
 var b = f.Control( "Button", "Test", 10, 10, 100, 20 );
-
 
 b.on( "click", function() {
 	process.exit();
@@ -28,11 +23,6 @@ b.on( "click", function() {
 b.text = "Quit...";
 
 var x = sack.Image.Color( {r:50,g:50,b:255,a:255} );
-console.log( "color:",   Object.getPrototypeOf( sack.Image.colors.white ), sack.Image.colors.white);//, sack.Image.colors.white.r );
-console.log( "color:",  Object.keys(Object.getPrototypeOf( x )), x.r, x.toString() );
-
-console.log( "b has:", Object.keys( Object.getPrototypeOf( b ) ), sack.Image.colors.white.toString(), b.text, b.layout, b );
-
 
 
 var customControl = sack.Registration( { 
@@ -74,7 +64,6 @@ var customControl = sack.Registration( {
 		return true;
 	}
 } );
-console.log( "created custom control registration?", Object.keys(Object.getPrototypeOf(customControl)) );
 
 f.Control( "image control", 0, 40, 500, 500 );
 
