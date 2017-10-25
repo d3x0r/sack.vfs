@@ -1709,7 +1709,7 @@ static void ConvertTimeString( struct tm *t, ASN1_TIME *time ) {
 			val = val * 10 + ((timestring++)[0] - '0');
 			val = val * 10 + ((timestring++)[0] - '0');
 			//if( year < 70 ) year += 100;
-			t->tm_year = (val + 2000);
+			t->tm_year = (val + 2000)-1900;
 		}
 	if( (time->type == V_ASN1_GENERALIZEDTIME) /*before->length == 15*/ ) {
 		val = 0;
@@ -1717,7 +1717,7 @@ static void ConvertTimeString( struct tm *t, ASN1_TIME *time ) {
 		val = val * 10 + ((timestring++)[0] - '0');
 		val = val * 10 + ((timestring++)[0] - '0');
 		val = val * 10 + ((timestring++)[0] - '0');
-		t->tm_year = val;
+		t->tm_year = val-1900;
 	}
 	val = 0;
 	val = val * 10 + ((timestring++)[0] - '0');
@@ -1739,6 +1739,7 @@ static void ConvertTimeString( struct tm *t, ASN1_TIME *time ) {
 	val = val * 10 + ((timestring++)[0] - '0');
 	val = val * 10 + ((timestring++)[0] - '0');
 	t->tm_sec = val;
+	//lprintf( "Converted: %s to  %d %d %d %d %d %d", time->data, t->tm_year, t->tm_mon, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec );
 #if __GNUC__
 	t->tm_gmtoff = 0;
 	t->tm_zone = NULL;
@@ -1777,7 +1778,7 @@ static Local<Value> Expiration( struct info_params *params ) {
 		val = val * 10 + ((timestring++)[0] - '0');
 		val = val * 10 + ((timestring++)[0] - '0');
 		//if( year < 70 ) year += 100;
-		systemTime.wYear = val + 2000;
+		systemTime.wYear = val + 2000-1900;
 	}
 	if( (before->type == V_ASN1_GENERALIZEDTIME) /*before->length == 15*/ ) {
 		val = 0;
@@ -1785,7 +1786,7 @@ static Local<Value> Expiration( struct info_params *params ) {
 		val = val * 10 + ((timestring++)[0] - '0');
 		val = val * 10 + ((timestring++)[0] - '0');
 		val = val * 10 + ((timestring++)[0] - '0');
-		systemTime.wYear = val;
+		systemTime.wYear = val-1900;
 	}
 	val = 0;
 	val = val * 10 + ((timestring++)[0] - '0');
