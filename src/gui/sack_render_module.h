@@ -31,6 +31,7 @@ public:
 	static void close( const FunctionCallbackInfo<Value>& args );
 	static void on( const FunctionCallbackInfo<Value>& args );
 	static void getImage( const FunctionCallbackInfo<Value>& args );
+	static void getDisplay( const FunctionCallbackInfo<Value>& args );
 
    ~RenderObject();
 

@@ -975,10 +975,10 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 		else if( args[0]->IsUint8Array() ) {
 			Local<Uint8Array> body = args[0].As<Uint8Array>();
-			Nan::TypedArrayContents<uint8_t> bodybuf( body );
+			Local<ArrayBuffer> bodybuf = body->Buffer();
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", body->ByteLength() );
 			vtprintf( obj->pvtResult, WIDE( "\r\n" ) );
-			VarTextAddData( obj->pvtResult, (CTEXTSTR)*bodybuf, bodybuf.length() );
+			VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
 		}
 		else if( args[0]->IsObject() ) {
 			Local<FunctionTemplate> wrapper_tpl = FileObject::tpl.Get( isolate );
@@ -1217,7 +1217,7 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 			argv[n] = args[n];
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( Nan::NewInstance( cons, argc, argv ).ToLocalChecked() );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
 }
@@ -1365,7 +1365,7 @@ void wssiObject::New( const FunctionCallbackInfo<Value>& args ) {
 		Local<Value> *argv = new Local<Value>[args.Length()];
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( Nan::NewInstance( cons, 0, argv ).ToLocalChecked() );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), 0, argv ).ToLocalChecked() );
 		delete[] argv;
 	}
 }
@@ -1663,7 +1663,7 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 			argv[n] = args[n];
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( Nan::NewInstance( cons, argc, argv ).ToLocalChecked() );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
 }

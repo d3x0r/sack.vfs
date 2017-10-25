@@ -79,7 +79,7 @@ void SqlObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( args.Length() > 0 )
 			argv[0] = args[0];
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( Nan::NewInstance( cons, args.Length(), argv ).ToLocalChecked() );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), args.Length(), argv ).ToLocalChecked() );
 	}
 }
 
@@ -299,7 +299,7 @@ void OptionTreeObject::New(const v8::FunctionCallbackInfo<Value>& args) {
 	} else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
 		Local<Function> cons = Local<Function>::New(isolate, constructor);
-		args.GetReturnValue().Set(Nan::NewInstance( cons, 0, NULL ).ToLocalChecked());
+		args.GetReturnValue().Set(cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked());
 	}
 }
 
@@ -349,7 +349,7 @@ void SqlObject::getOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 	char *optionPath = StrDup( *tmp );
 
 	Local<Function> cons = Local<Function>::New( isolate, OptionTreeObject::constructor );
-	MaybeLocal<Object> o = Nan::NewInstance( cons, 0, NULL );
+	MaybeLocal<Object> o = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL );
 	args.GetReturnValue().Set( o.ToLocalChecked() );
 
 	OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o.ToLocalChecked() );
@@ -376,7 +376,7 @@ void OptionTreeObject::getOptionNode( const v8::FunctionCallbackInfo<Value>& arg
 	Local<Function> cons = Local<Function>::New( isolate, constructor );
 	Local<Object> o;
 	//lprintf( "objecttreeobject constructor..." );
-	args.GetReturnValue().Set( o = Nan::NewInstance( cons, 0, NULL ).ToLocalChecked() );
+	args.GetReturnValue().Set( o = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 
 	OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o );
 	oto->odbc = parent->odbc;
@@ -406,7 +406,7 @@ void SqlObject::findOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( newNode ) {
 		Local<Function> cons = Local<Function>::New( isolate, OptionTreeObject::constructor );
 		Local<Object> o;
-		args.GetReturnValue().Set( o = Nan::NewInstance( cons, 0, NULL ).ToLocalChecked() );
+		args.GetReturnValue().Set( o = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 
 		OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o );
 		oto->odbc = sqlParent->odbc;
@@ -435,7 +435,7 @@ void OptionTreeObject::findOptionNode( const v8::FunctionCallbackInfo<Value>& ar
 	if( newOption ) {
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
 		Local<Object> o;
-		args.GetReturnValue().Set( o = Nan::NewInstance( cons, 0, NULL ).ToLocalChecked() );
+		args.GetReturnValue().Set( o = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 
 		OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o );
 		oto->odbc = parent->odbc;
@@ -457,7 +457,7 @@ int CPROC invokeCallback( uintptr_t psv, CTEXTSTR name, POPTION_TREE_NODE ID, in
 
 	Local<Function> cons = OptionTreeObject::constructor.Get( args->isolate );
 	Local<Object> o;
-	o = Nan::NewInstance( cons, 0, NULL ).ToLocalChecked();
+	o = cons->NewInstance( args->isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 
 	OptionTreeObject *oto = OptionTreeObject::Unwrap<OptionTreeObject>( o );
 	oto->odbc = args->odbc;

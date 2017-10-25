@@ -282,7 +282,7 @@ void TLSObject::New( const v8::FunctionCallbackInfo<Value>& args  ) {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
 		Local<Value> *argv = new Local<Value>[0];
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		MaybeLocal<Object> mo = Nan::NewInstance( cons, 0, argv );
+		MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
 		if( !mo.IsEmpty() )
 			args.GetReturnValue().Set( mo.ToLocalChecked() );
 		delete[] argv;
@@ -1825,7 +1825,6 @@ static Local<Value> Expiration( struct info_params *params ) {
 #endif
 	struct tm t;
 	char * timestring = (char*)before->data;
-	int val;
 
 	ConvertTimeString( &t, before );
 #if 0

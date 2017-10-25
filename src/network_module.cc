@@ -278,16 +278,16 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 			Local<Object> ab;
 			switch( eventMessage->eventType ) {
 			case UDP_EVENT_READ:
-				size_t length;
 				argv[1] = ::getAddressBySA( isolate, eventMessage->from );
 				if( !obj->readStrings ) {
-					ab =
-						node::Buffer::New( isolate
-							, (char*)eventMessage->buf
-							, length = eventMessage->buflen
-							, FreeCallback, NULL ).ToLocalChecked();
+					ab = ArrayBuffer::New( isolate, (POINTER)eventMessage->buf, eventMessage->buflen );
+
+					PARRAY_BUFFER_HOLDER holder = GetHolder();
+					holder->o.Reset( isolate, ab );
+					holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+					holder->buffer = (void*)eventMessage->buf;
+
 					argv[0] = ab;
-					//lprintf( "built buffer from %p", eventMessage->buf );
 					obj->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
 				else {
@@ -492,7 +492,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 			argv[n] = args[n];
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( Nan::NewInstance( cons, argc, argv ).ToLocalChecked() );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
 }

@@ -1,5 +1,5 @@
 #include <node.h>
-#include <nan.h>
+//#include <nan.h>
 #include <node_object_wrap.h>
 #include <v8.h>
 #include <uv.h>

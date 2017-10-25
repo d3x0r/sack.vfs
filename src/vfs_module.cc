@@ -275,7 +275,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 		argv[1] = args.Holder();
 
 		Local<Function> cons = Local<Function>::New( isolate, SqlObject::constructor );
-		MaybeLocal<Object> mo = Nan::NewInstance( cons, argc, argv );
+		MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
 		if( !mo.IsEmpty() )
 			args.GetReturnValue().Set( mo.ToLocalChecked() );
 		delete[] argv;
@@ -498,9 +498,9 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				length = myarr->ByteLength();
 			} else if( type == 2 ) {
 				Local<Uint8Array> _myarr = args[1].As<Uint8Array>();
-				Nan::TypedArrayContents<uint8_t> dest( _myarr );
-				buf = *dest;
-				length = _myarr->Length();
+				Local<ArrayBuffer> buffer = _myarr->Buffer();
+				buf = (uint8_t*)buffer->GetContents().Data();
+				length = buffer->ByteLength();
 			}
 
 			if( vol->volNative ) {
@@ -723,7 +723,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				argv[n] = args[n];
 
 			Local<Function> cons = Local<Function>::New( isolate, constructor );
-			MaybeLocal<Object> mo = Nan::NewInstance( cons, argc, argv );
+			MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
 			if( !mo.IsEmpty() )
 				args.GetReturnValue().Set( mo.ToLocalChecked() );
 			delete[] argv;
@@ -1029,7 +1029,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 			const int argc = 2;
 			Local<Value> argv[argc] = { args[0], args.Holder() };
 			Local<Function> cons = Local<Function>::New( isolate, constructor );
-			args.GetReturnValue().Set( Nan::NewInstance( cons, argc, argv ).ToLocalChecked() );
+			args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		}
 	}
 

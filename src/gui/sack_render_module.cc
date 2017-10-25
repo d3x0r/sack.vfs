@@ -1,5 +1,5 @@
 
-#include "gui_global.h"
+#include "../global.h"
 
 
 Persistent<Function> RenderObject::constructor;
@@ -108,9 +108,8 @@ void RenderObject::Init( Handle<Object> exports ) {
 
 
 		constructor.Reset( isolate, renderTemplate->GetFunction() );
-		exports->Set( String::NewFromUtf8( isolate, "Renderer" ),
-			renderTemplate->GetFunction() );
-
+		SET_READONLY( exports, "Renderer", renderTemplate->GetFunction() );
+		SET_READONLY( renderTemplate->GetFunction(), "getDisplay", Function::New( isolate, RenderObject::getDisplay ) );
 	}
 
 RenderObject::RenderObject( const char *title, int x, int y, int w, int h, RenderObject *over )  {
@@ -223,6 +222,30 @@ void RenderObject::update( const FunctionCallbackInfo<Value>& args ) {
 	else  {
 		UpdateDisplayPortion( r->r, 0, 0, 0, 0 );
 	}
+}
+
+void RenderObject::getDisplay( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Object> result = Object::New( isolate );
+	int32_t x = 0, y = 0;
+	uint32_t w, h;
+	if( args.Length() < 1 ) {
+		GetDisplaySizeEx( 0, &x, &y, &w, &h );
+		result->Set( String::NewFromUtf8( isolate, "x" ), Integer::New( isolate, x ) );
+		result->Set( String::NewFromUtf8( isolate, "y" ), Integer::New( isolate, y ) );
+		result->Set( String::NewFromUtf8( isolate, "width" ), Integer::New( isolate, w ) );
+		result->Set( String::NewFromUtf8( isolate, "height" ), Integer::New( isolate, h ) );
+	}
+	else {
+		GetDisplaySizeEx( (int)args[0]->IntegerValue(), &x, &y, &w, &h );
+		{
+			result->Set( String::NewFromUtf8( isolate, "x" ), Integer::New( isolate, x ) );
+			result->Set( String::NewFromUtf8( isolate, "y" ), Integer::New( isolate, y ) );
+			result->Set( String::NewFromUtf8( isolate, "width" ), Integer::New( isolate, w ) );
+			result->Set( String::NewFromUtf8( isolate, "height" ), Integer::New( isolate, h ) );
+		}
+	}
+	args.GetReturnValue().Set( result );
 }
 
 void RenderObject::show( const FunctionCallbackInfo<Value>& args ) {
