@@ -15,7 +15,12 @@ var y_del = 0;
 var _scale = 1.0;
 var scale = 1.0;
 
-var r = sack.Renderer( "test", 0, 0, 3840, 2160 );
+var display = sack.Renderer.getDisplay( 0 );
+console.log( "display 0:", display );
+for( var n = 1; n < 8; n++ ) {
+	console.log( "display %d:", n, sack.Renderer.getDisplay( n ) );
+}
+var r = sack.Renderer( "test", 0, 0, display.width, display.height );
 console.log( "created renderer?", r, Object.keys( Object.getPrototypeOf(r)) );
 var background = sack.Image( "the rror.jpg" );
 r.on( "draw", ( image )=>{	
