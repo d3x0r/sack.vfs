@@ -402,16 +402,14 @@ void ControlObject::Init( Handle<Object> exports ) {
 
 
 		constructor.Reset( isolate, psiTemplate->GetFunction() );
-		exports->Set( String::NewFromUtf8( isolate, "Frame" ),
-			psiTemplate->GetFunction() );
+		SET_READONLY( exports, "Frame",	psiTemplate->GetFunction() );
 
 		constructor2.Reset( isolate, psiTemplate2->GetFunction() );
 		//exports->Set( String::NewFromUtf8( isolate, "Control" ),
 		//				 psiTemplate2->GetFunction() );
 
 		registrationConstructor.Reset( isolate, regTemplate->GetFunction() );
-		exports->Set( String::NewFromUtf8( isolate, "Registration" ),
-			regTemplate->GetFunction() );
+		SET_READONLY( exports, "Registration", regTemplate->GetFunction() );
 }
 
 void ControlObject::getControlColor( const FunctionCallbackInfo<Value>& args ) {

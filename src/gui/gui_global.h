@@ -52,6 +52,7 @@ enum eventType {
 	Event_Intershell_ButtonLoad,
 	Event_Intershell_ControlSave,
 	Event_Intershell_ControlLoad,
+	Event_Intershell_Quit,
 
 	Event_Control_Create,
 	Event_Control_Mouse,
@@ -96,6 +97,9 @@ struct event {
 	}flags;
 	int success;
 };
+typedef struct event IS_EVENT;
+#define MAXIS_EVENTSPERSET 64
+DeclareSet( IS_EVENT );
 
 #ifndef DEFINE_GLOBAL
 extern

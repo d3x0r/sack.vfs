@@ -1,7 +1,7 @@
 #define USES_INTERSHELL_INTERFACE
 #define DEFINES_INTERSHELL_INTERFACE
 
-#include "gui_global.h"
+#include "../global.h"
 #include <InterShell/intershell_registry.h>
 #include <InterShell/intershell_export.h>
 
@@ -61,6 +61,7 @@ static struct isLocal {
 	PSI_CONTROL canvas;
 	Persistent<Object> canvasObject;
 	PSI_CONTROL creating_parent;
+	PIS_EVENTSET events;
 }isLocal;
 
 Persistent<Function> InterShellObject::configConstructor;
@@ -118,12 +119,16 @@ static void asyncmsg( uv_async_t* handle ) {
 
 		while( evt = (struct event *)DequeLink( &isLocal.core->events ) ) {
 			is_control *is = evt->data.InterShell.control;
-			InterShellObject* myself = is->type;
+			InterShellObject* myself = is?is->type:NULL;
 			Local<Value> object;// = ProcessEvent( isolate, evt, myself );
 			Local<Value> *argv = NULL;
 			int argc = 0;
 			Local<Function> cb;
 			switch( evt->type ) {
+			case Event_Intershell_Quit:
+				uv_close( (uv_handle_t*)&isLocal.core->async, NULL );
+				DeleteFromSet( IS_EVENT, isLocal.events, evt );
+				return;
 			case Event_Intershell_CreateControl:
 			case Event_Intershell_CreateButton:
 				{
@@ -318,7 +323,7 @@ void InterShellObject::Init( Handle<Object> exports ) {
 		return;
 	}
 	Isolate* isolate = Isolate::GetCurrent();
-	Local<Object> intershellObject;
+	//Local<Object> intershellObject;
 
 	//--------------------------------------------
 	Local<FunctionTemplate> intershellTemplate;
@@ -334,13 +339,15 @@ void InterShellObject::Init( Handle<Object> exports ) {
 
 	intershellConstructor.Reset( isolate, intershellTemplate->GetFunction() );
 
-	Local<Function> cons = Local<Function>::New( isolate, intershellConstructor );
-	intershellObject = cons->NewInstance( 0, NULL );
-	isLocal.core = ObjectWrap::Unwrap<InterShellObject>( intershellObject );
-	exports->Set( String::NewFromUtf8( isolate, "InterShell" ),
-		intershellObject );
+	//Local<Function> cons = Local<Function>::New( isolate, intershellConstructor );
+	//intershellObject = cons->NewInstance( 0, NULL );
+	//isLocal.core = ObjectWrap::Unwrap<InterShellObject>( intershellObject );
+	SET_READONLY( exports, "InterShell", intershellTemplate->GetFunction() );
 
-	isLocal.canvasObject.Reset( isolate, intershellObject );
+	//intershellTemplate->GetFunction()->Set( String::NewFromUtf8( isolate, "core" ),
+	//	intershellObject );
+
+	//isLocal.canvasObject.Reset( isolate, intershellObject );
 
 	//--------------------------------------------
 
@@ -355,9 +362,7 @@ void InterShellObject::Init( Handle<Object> exports ) {
 	//NODE_SET_PROTOTYPE_METHOD( configTemplate, "process", processConfigFile );
 
 	configConstructor.Reset( isolate, configTemplate->GetFunction() );
-
-	exports->Set( String::NewFromUtf8( isolate, "Configuration" ),
-		configTemplate->GetFunction() );
+	SET_READONLY( exports, "Configuration", configTemplate->GetFunction() );
 
 	//isLocal.canvasObject.Reset( isolate, configObject );
 
@@ -377,7 +382,7 @@ void InterShellObject::Init( Handle<Object> exports ) {
 
 
 	buttonConstructor.Reset( isolate, buttonTemplate->GetFunction() );
-	intershellObject->Set( String::NewFromUtf8( isolate, "Button" ), buttonTemplate->GetFunction() );
+	SET_READONLY( intershellTemplate->GetFunction(), "Button", buttonTemplate->GetFunction() );
 
 	//--------------------------------------------
 	Local<FunctionTemplate> buttonInstanceTemplate;
@@ -403,10 +408,9 @@ void InterShellObject::Init( Handle<Object> exports ) {
 	controlTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // needs to be 1 for wrap
 
 	 // Prototype
-
 	controlConstructor.Reset( isolate, controlTemplate->GetFunction() );
 
-	intershellObject->Set( String::NewFromUtf8( isolate, "Control" ), controlTemplate->GetFunction() );
+	SET_READONLY( intershellTemplate->GetFunction(), "Control", controlTemplate->GetFunction() );
 
 	//--------------------------------------------
 
@@ -436,7 +440,7 @@ void InterShellObject::Init( Handle<Object> exports ) {
 
 	customControlConstructor.Reset( isolate, customControlTemplate->GetFunction() );
 
-	intershellObject->Set( String::NewFromUtf8( isolate, "Custom" ), customControlTemplate->GetFunction() );
+	SET_READONLY( intershellTemplate->GetFunction(), "Custom", customControlTemplate->GetFunction() );
 
 	//--------------------------------------------
 	Local<FunctionTemplate> customControlInstanceTemplate;
@@ -511,11 +515,7 @@ void InterShellObject::NewConfiguration( const FunctionCallbackInfo<Value>& args
 		InterShellObject* obj;
 
 		obj = new InterShellObject();
-
 		obj->events = NULL;
-		MemSet( &obj->async, 0, sizeof( obj->async ) );
-		uv_async_init( uv_default_loop(), &obj->async, asyncmsg );
-		obj->async.data = obj;
 
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
@@ -532,26 +532,36 @@ void InterShellObject::NewConfiguration( const FunctionCallbackInfo<Value>& args
 void InterShellObject::NewApplication( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.IsConstructCall() ) {
-		char *name;
-		String::Utf8Value arg( args[0] );
-		name = *arg;
-		InterShellObject* obj;
+		if( !isLocal.core ) {
+			char *name;
+			String::Utf8Value arg( args[0] );
+			name = *arg;
+			InterShellObject* obj;
 
-		obj = new InterShellObject();
+			obj = new InterShellObject();
+			obj->events = NULL;
+			MemSet( &obj->async, 0, sizeof( obj->async ) );
+			uv_async_init( uv_default_loop(), &obj->async, asyncmsg );
+			obj->async.data = obj;
 
-		obj->events = NULL;
-		MemSet( &obj->async, 0, sizeof( obj->async ) );
-		uv_async_init( uv_default_loop(), &obj->async, asyncmsg );
-		obj->async.data = obj;
+			isLocal.core = obj;
+			isLocal.canvasObject.Reset( isolate, args.This() );
 
-		obj->Wrap( args.This() );
-		args.GetReturnValue().Set( args.This() );
+			obj->Wrap( args.This() );
+			args.GetReturnValue().Set( args.This() );
+		}
+		else {
+			args.GetReturnValue().Set( isLocal.canvasObject.Get( isolate ) );
+
+		}
 	}
 	else {
-		const int argc = 2;
-		Local<Value> argv[argc] = { args[0], args.Holder() };
-		Local<Function> cons = Local<Function>::New( isolate, controlConstructor );
+		const int argc = args.Length();
+		Local<Value> *argv = new Local<Value>[argc];// = { args[0], args.Holder() };
+		for( int n = 0; n < argc; n++ ) argv[n] = args[n];
+		Local<Function> cons = Local<Function>::New( isolate, intershellConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		delete[] argv;
 	}
 }
 
@@ -880,47 +890,58 @@ static void defineButtonPress( char *name ) {
 
 
 int MakeISEvent( uv_async_t *async, PLINKQUEUE *queue, enum eventType type, ... ) {
-	event e;
+	event *e = GetFromSet( IS_EVENT, &isLocal.events );
 	va_list args;
 	va_start( args, type );
-	e.type = type;
+	e->type = type;
+	e->flags.complete = 0;
+	e->waiter = MakeThread();
 	switch( type ) {
+	case Event_Intershell_Quit:
+		e->data.InterShell.control = NULL;
+		break;
 	case Event_Intershell_ButtonClick: {
 		is_control *c = va_arg( args, is_control * );
-		e.data.InterShell.control = c;
+		e->data.InterShell.control = c;
 		break;
 	}
 	case Event_Intershell_CreateButton: {
 		is_control *c = va_arg( args, is_control * );
-		e.data.InterShell.control = c;
+		e->data.InterShell.control = c;
 		break;
 	}
 	case Event_Intershell_CreateControl: {
 		is_control *c = va_arg( args, is_control * );
-		e.data.InterShell.control = c;
+		e->data.InterShell.control = c;
 		break;
 	}
 	case Event_Intershell_CreateCustomControl: {
 		is_control *c = va_arg( args, is_control * );
-		e.data.createCustomControl.control = c;
-		e.data.createCustomControl.x = va_arg( args, int32_t );
-		e.data.createCustomControl.y = va_arg( args, int32_t );
-		e.data.createCustomControl.w = va_arg( args, uint32_t );
-		e.data.createCustomControl.h = va_arg( args, uint32_t );
+		e->data.createCustomControl.control = c;
+		e->data.createCustomControl.x = va_arg( args, int32_t );
+		e->data.createCustomControl.y = va_arg( args, int32_t );
+		e->data.createCustomControl.w = va_arg( args, uint32_t );
+		e->data.createCustomControl.h = va_arg( args, uint32_t );
 		break;
 	}
 	case Event_Render_Key:
-		e.data.key.code = va_arg( args, uint32_t );
+		e->data.key.code = va_arg( args, uint32_t );
 		break;
 	}
 
-	e.waiter = MakeThread();
-	e.flags.complete = 0;
-	//e.value = 0;
-	EnqueLink( queue, &e );
+	//e->value = 0;
+	EnqueLink( queue, e );
 	uv_async_send( async );
 
-	while( !e.flags.complete ) WakeableSleep( 1000 );
+	while( !e->flags.complete ) WakeableSleep( 1000 );
+	{
+		int success = e->success;
+		DeleteFromSet( IS_EVENT, isLocal.events, e );
+		return success;
+	}
+}
 
-	return e.success;
+static void OnApplicationQuit( "Intershell Core" )(void) {
+	if( isLocal.core )
+		MakeISEvent( &isLocal.core->async, &isLocal.core->events, Event_Intershell_Quit );
 }

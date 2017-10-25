@@ -29,7 +29,6 @@ void ImageObject::Init( Handle<Object> exports ) {
 	imageTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	// Prototype
-	
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "Image", ImageObject::NewSubImage );
 
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "reset", ImageObject::reset );
@@ -58,31 +57,24 @@ void ImageObject::Init( Handle<Object> exports ) {
 	imageTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "height" )
 		, FunctionTemplate::New( isolate, ImageObject::getHeight )
 		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly | DontDelete) );
+
 	ImageObject::tpl.Reset( isolate, imageTemplate );
-
-	//NODE_SET_PROTOTYPE_METHOD( imageTemplate, "plot", ImageObject:: );
-
-
-
 	ImageObject::constructor.Reset( isolate, imageTemplate->GetFunction() );
-	exports->Set( String::NewFromUtf8( isolate, "Image" ),
-					 imageTemplate->GetFunction() );
+	SET_READONLY( exports, "Image", imageTemplate->GetFunction() );
 
 	Local<FunctionTemplate> fontTemplate;
 	fontTemplate = FunctionTemplate::New( isolate, FontObject::New );
-	fontTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Font" ) );
+	fontTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Image.Font" ) );
 	fontTemplate->InstanceTemplate()->SetInternalFieldCount( 4+1 );
-
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( fontTemplate, "measure", FontObject::measure );
-
 
 	Local<FunctionTemplate> colorTemplate;
 
 	// Prepare constructor template
 	colorTemplate = FunctionTemplate::New( isolate, ColorObject::New );
-	colorTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Image.color" ) );
+	colorTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Image.Color" ) );
 	colorTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	NODE_SET_PROTOTYPE_METHOD( colorTemplate, "toString", ColorObject::toString );
@@ -100,8 +92,7 @@ void ImageObject::Init( Handle<Object> exports ) {
 
 
 	FontObject::constructor.Reset( isolate, fontTemplate->GetFunction() );
-	exports->Set( String::NewFromUtf8( isolate, "Font" ),
-					 fontTemplate->GetFunction() );
+	SET_READONLY( imageTemplate->GetFunction(), "Font", fontTemplate->GetFunction() );
 
 
 	Local<Object> colors = Object::New( isolate );
@@ -192,7 +183,8 @@ void ImageObject::getWidth( const FunctionCallbackInfo<Value>&  args ) {
 	Local<FunctionTemplate> tpl = ImageObject::tpl.Get( isolate );
 	if( tpl->HasInstance( args.This() ) ) {
 		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
-		args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->image->width ) );
+		if( obj->image )
+			args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->image->width ) );
 	}
 }
 void ImageObject::getHeight( const FunctionCallbackInfo<Value>&  args ) {
@@ -200,7 +192,8 @@ void ImageObject::getHeight( const FunctionCallbackInfo<Value>&  args ) {
 	Local<FunctionTemplate> tpl = ImageObject::tpl.Get( isolate );
 	if( tpl->HasInstance( args.This() ) ) {
 		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
-		args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->image->height ) );
+		if( obj->image )
+			args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->image->height ) );
 	}
 }
 
@@ -586,10 +579,14 @@ void ImageObject::putImage( const FunctionCallbackInfo<Value>& args ) {
 	int w, h;
 	if( argc > 0 ) {
 		ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject() );
-		if( !ii )
+		if( !ii || !ii->image ) {
 			lprintf( "Bad First paraemter, must be an image to put?" );
-		w = ii->image->width;
-		h = ii->image->height;
+			return;
+		}
+		else {
+			w = ii->image->width;
+			h = ii->image->height;
+		}
 	}
 	else {
 		// throw error ?
