@@ -193,9 +193,8 @@ void SetupControlColors( Isolate *isolate, Local<Object> object ) {
 	Local<Object> arg = Object::New( isolate );\
 	arg->Set( strings->indexString->Get( isolate ), Integer::New( isolate, define ) );\
 	arg->Set( strings->objectString->Get( isolate ), object );\
-	controlColors->SetAccessor( isolate->GetCallingContext()\
-		, String::NewFromUtf8( isolate, name )\
-		, ControlObject::getControlColor, ControlObject::setControlColor, arg );\
+	controlColors->SetAccessorProperty( String::NewFromUtf8( isolate, name )\
+		, Function::New( isolate, ControlObject::getControlColor, arg ), Function::New( isolate, ControlObject::setControlColor, arg ), DontDelete );\
 	}
 
 	//controlColors->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, name ), data, ReadOnlyProperty )
@@ -322,49 +321,27 @@ void ControlObject::Init( Handle<Object> exports ) {
 
 		Local<Object> controlColors = Object::New( isolate );
 
-		//controlColors->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, name ), data, ReadOnlyProperty )
-		controlColors->SetAccessor( isolate->GetCallingContext()
-			, String::NewFromUtf8( isolate, "highlight" )
-			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, HIGHLIGHT ) );
-		controlColors->SetAccessor( isolate->GetCallingContext()
-			, String::NewFromUtf8( isolate, "normal" )
-			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, NORMAL ) );
-		controlColors->SetAccessor( isolate->GetCallingContext()
-			, String::NewFromUtf8( isolate, "shade" )
-			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, SHADE ) );
-		controlColors->SetAccessor( isolate->GetCallingContext()
-			, String::NewFromUtf8( isolate, "shadow" )
-			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, SHADOW ) );
-		controlColors->SetAccessor( isolate->GetCallingContext()
-			, String::NewFromUtf8( isolate, "textColor" )
-			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, TEXTCOLOR ) );
-		controlColors->SetAccessor( isolate->GetCallingContext()
-			, String::NewFromUtf8( isolate, "caption" )
-			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, CAPTION ) );
-		controlColors->SetAccessor( isolate->GetCallingContext()
-			, String::NewFromUtf8( isolate, "captionText" )
-			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, CAPTIONTEXTCOLOR ) );
-		controlColors->SetAccessor( isolate->GetCallingContext()
-			, String::NewFromUtf8( isolate, "inactiveCaption" )
-			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, INACTIVECAPTION ) );
-		controlColors->SetAccessor( isolate->GetCallingContext()
-			, String::NewFromUtf8( isolate, "InactiveCaptionText" )
-			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, INACTIVECAPTIONTEXTCOLOR ) );
-		controlColors->SetAccessor( isolate->GetCallingContext()
-			, String::NewFromUtf8( isolate, "selectBack" )
-			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, SELECT_BACK ) );
-		controlColors->SetAccessor( isolate->GetCallingContext()
-			, String::NewFromUtf8( isolate, "selectText" )
-			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, SELECT_TEXT ) );
-		controlColors->SetAccessor( isolate->GetCallingContext()
-			, String::NewFromUtf8( isolate, "editBackground" )
-			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, EDIT_BACKGROUND ) );
-		controlColors->SetAccessor( isolate->GetCallingContext()
-			, String::NewFromUtf8( isolate, "editText" )
-			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, EDIT_TEXT ) );
-		controlColors->SetAccessor( isolate->GetCallingContext()
-			, String::NewFromUtf8( isolate, "scrollBarBackground" )
-			, ControlObject::getControlColor, ControlObject::setControlColor, Integer::New( isolate, SCROLLBAR_BACK ) );
+#define makeAccessor(a,b,c,d,e) a->SetAccessorProperty( String::NewFromUtf8( isolate, b ) \
+		, Function::New( isolate, c, Integer::New( isolate, e ) ) \
+			, Function::New( isolate, d, Integer::New( isolate, e ) ) \
+			, DontDelete )
+#define makeColorAccessor(a,b,c) makeAccessor( a, b, ControlObject::getControlColor, ControlObject::setControlColor, c )
+
+		makeColorAccessor( controlColors, "highlight", HIGHLIGHT );
+		makeColorAccessor( controlColors, "normal", NORMAL );
+
+		makeColorAccessor( controlColors, "shade", SHADE );
+		makeColorAccessor( controlColors, "shadow", SHADOW );
+		makeColorAccessor( controlColors, "textColor", TEXTCOLOR );
+		makeColorAccessor( controlColors, "caption", CAPTION );
+		makeColorAccessor( controlColors, "captionText", CAPTIONTEXTCOLOR );
+		makeColorAccessor( controlColors, "inactiveCaption", INACTIVECAPTION );
+		makeColorAccessor( controlColors, "InactiveCaptionText" , INACTIVECAPTIONTEXTCOLOR );
+		makeColorAccessor( controlColors, "selectBack", SELECT_BACK );
+		makeColorAccessor( controlColors, "selectText", SELECT_TEXT );
+		makeColorAccessor( controlColors, "editBackground", EDIT_BACKGROUND );
+		makeColorAccessor( controlColors, "editText" , EDIT_TEXT );
+		makeColorAccessor( controlColors, "scrollBarBackground", SCROLLBAR_BACK );
 
 		SET_READONLY( controlObject, "color", controlColors );
 
@@ -403,17 +380,25 @@ void ControlObject::Init( Handle<Object> exports ) {
 		psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "y" )
 			, ControlObject::getCoordinate, ControlObject::setCoordinate, Integer::New( isolate, 3 ) );
 		*/
-		psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "size" )
-			, ControlObject::getCoordinate, ControlObject::setCoordinate, Integer::New( isolate, 10 ) );
-		psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "position" )
-			, ControlObject::getCoordinate, ControlObject::setCoordinate, Integer::New( isolate, 11 ) );
-		psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "layout" )
-			, ControlObject::getCoordinate, ControlObject::setCoordinate, Integer::New( isolate, 12 ) );
+		psiTemplate2->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "size" )
+			, FunctionTemplate::New( isolate, ControlObject::getCoordinate, Integer::New( isolate, 12 ) )
+			, FunctionTemplate::New( isolate, ControlObject::setCoordinate, Integer::New( isolate, 10 ) )
+			, DontDelete );
+		psiTemplate2->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "position" )
+			, FunctionTemplate::New( isolate, ControlObject::getCoordinate, Integer::New( isolate, 12 ) )
+			, FunctionTemplate::New( isolate, ControlObject::setCoordinate, Integer::New( isolate, 11 ) )
+			, DontDelete );
+		psiTemplate2->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "layout" )
+			, FunctionTemplate::New( isolate, ControlObject::getCoordinate, Integer::New( isolate, 12 ) )
+			, FunctionTemplate::New( isolate, ControlObject::setCoordinate, Integer::New( isolate, 12 ) )
+			, DontDelete );
 
 		//psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "text" )
 		//	, ControlObject::getControlText, ControlObject::setControlText );
-		psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "text" )
-			, ControlObject::getControlText, ControlObject::setControlText );
+		psiTemplate2->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "text" )
+			, FunctionTemplate::New( isolate, ControlObject::getControlText )
+			, FunctionTemplate::New( isolate, ControlObject::setControlText )
+			, DontDelete );
 
 
 		constructor.Reset( isolate, psiTemplate->GetFunction() );
@@ -429,8 +414,7 @@ void ControlObject::Init( Handle<Object> exports ) {
 			regTemplate->GetFunction() );
 }
 
-void ControlObject::getControlColor( v8::Local<v8::Name> field,
-		const PropertyCallbackInfo<v8::Value>& args ) {
+void ControlObject::getControlColor( const FunctionCallbackInfo<Value>& args ) {
 
 	Isolate* isolate = args.GetIsolate();
 	int colorIndex;
@@ -457,9 +441,7 @@ void ControlObject::getControlColor( v8::Local<v8::Name> field,
 		args.GetReturnValue().Set( ColorObject::makeColor( isolate, GetControlColor( NULL, colorIndex ) ) );
 }
 
-void ControlObject::setControlColor( v8::Local<v8::Name> field,
-	Local<Value> value,
-	const PropertyCallbackInfo<void>& args ) {
+void ControlObject::setControlColor( const FunctionCallbackInfo<Value>& args ) {
 	int colorIndex = (int)args.Data()->IntegerValue();
 	Isolate* isolate = args.GetIsolate();
 	Local<Value> data = args.Data();
@@ -479,13 +461,12 @@ void ControlObject::setControlColor( v8::Local<v8::Name> field,
 
 	Local<FunctionTemplate> controlTpl = controlTemplate.Get( isolate );
 	CDATA newColor;
-
-	Local<Object> color = value->ToObject();
+	Local<Object> color = args[0]->ToObject();
 	if( ColorObject::isColor( isolate, color ) ) {
 		newColor = ColorObject::getColor( color );
 	}
 	else {
-		newColor = (uint32_t)value->NumberValue();
+		newColor = (uint32_t)args[0]->NumberValue();
 	}
 
 	if( controlTpl->HasInstance( object ) ) {
@@ -957,25 +938,21 @@ void ControlObject::releaseSelf( ControlObject *_this ) {
 }
 
 
-void ControlObject::getControlText( v8::Local<v8::String> field,
-	const PropertyCallbackInfo<v8::Value>& args ) {
+void ControlObject::getControlText( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
 	static char buf[1024];
 	GetControlText( me->control, buf, 1024 );
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, buf ) );
 }
-void ControlObject::setControlText( v8::Local<v8::String> field,
-	Local<Value> value,
-	const PropertyCallbackInfo<void>& args ) {
-	String::Utf8Value text( value );
+void ControlObject::setControlText( const FunctionCallbackInfo<Value>& args ) {
+	String::Utf8Value text( args[0] );
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
 	SetControlText( me->control, *text );
 }
 
 
-void ControlObject::getCoordinate( v8::Local<v8::String> field,
-	const PropertyCallbackInfo<v8::Value>& args ) {
+void ControlObject::getCoordinate( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
 	int coord = (int)args.Data()->IntegerValue();
@@ -1004,14 +981,12 @@ void ControlObject::getCoordinate( v8::Local<v8::String> field,
 	args.GetReturnValue().Set( o );
 }
 
-void ControlObject::setCoordinate( v8::Local<v8::String> field,
-	Local<Value> value,
-	const PropertyCallbackInfo<void>& args ) {
+void ControlObject::setCoordinate( const FunctionCallbackInfo<Value>&  args ) {
 
 	Isolate* isolate = args.GetIsolate();
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
 	int coord = (int)args.Data()->IntegerValue();
-	Local<Object> o = value->ToObject();
+	Local<Object> o = args[0]->ToObject();
 	if( !o.IsEmpty() ) {
 		struct optionStrings *strings = getStrings( isolate );
 		int32_t x, y;

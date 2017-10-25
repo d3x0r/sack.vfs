@@ -7,6 +7,53 @@
 
 //#include 
 
+struct optionStrings {
+	Isolate *isolate;
+
+	Eternal<String> *nameString;
+	Eternal<String> *loadString;
+	Eternal<String> *saveString;
+	Eternal<String> *drawString;
+	Eternal<String> *createString;
+	Eternal<String> *mouseString;
+	Eternal<String> *keyString;
+	Eternal<String> *destroyString;
+	Eternal<String> *sizeString;
+	Eternal<String> *posString;
+	Eternal<String> *layoutString;
+};
+
+
+static struct optionStrings *getStrings( Isolate *isolate ) {
+	static PLIST strings;
+	INDEX idx;
+	struct optionStrings * check;
+	LIST_FORALL( strings, idx, struct optionStrings *, check ) {
+		if( check->isolate == isolate )
+			break;
+	}
+	if( !check ) {
+		check = NewArray( struct optionStrings, 1 );
+		check->isolate = isolate;
+#define makeString(a,b) check->a##String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, b ) );
+		makeString( name, "name" );
+		makeString( save, "save" );
+		makeString( load, "load" );
+		makeString( create, "create" );
+		makeString( destroy, "destroy" );
+		makeString( mouse, "mouse" );
+		makeString( draw, "draw" );
+		makeString( size, "size" );
+		makeString( layout, "layout" );
+
+		//check->String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "" ) );
+		AddLink( &strings, check );
+	}
+	return check;
+}
+
+
+
 static struct isLocal {
 	PLIST controlTypes;
 	InterShellObject *core;
@@ -16,6 +63,7 @@ static struct isLocal {
 	PSI_CONTROL creating_parent;
 }isLocal;
 
+Persistent<Function> InterShellObject::configConstructor;
 Persistent<Function> InterShellObject::intershellConstructor;
 Persistent<Function> InterShellObject::buttonConstructor;
 Persistent<Function> InterShellObject::buttonInstanceConstructor;
@@ -173,6 +221,97 @@ static void start( const FunctionCallbackInfo<Value>& args ) {
 	ThreadTo( startMain, (uintptr_t) LoadFunction( "intershell.core", "Main" ) );
 }
 
+typedef Local<Value> _argv[];
+
+static void configConvertArgs( arg_list args, Local<Value> **ppargv, int *argc ) {
+	int count = PARAM_COUNT( args );
+	int n;
+	int nBias = 0;
+	POINTER buffer;
+	Local<Value> *argResult = new Local<Value>[count];
+	Isolate* isolate = Isolate::GetCurrent();
+	Local<Array> result = Array::New( isolate );
+	for( n = 0; n < count; n++ ) {
+		switch( my_va_next_arg_type( args ) ) {
+		case CONFIG_ARG_STRING:
+			{
+				PARAM( args, CTEXTSTR, string );
+				argResult[n - nBias] = String::NewFromUtf8( isolate, string );
+				//result->Set( n-nBias, String::NewFromUtf8( isolate, string ) );
+			}
+			break;
+		case CONFIG_ARG_INT64:
+			{
+				PARAM( args, int64_t, value );
+				argResult[n - nBias] = Integer::New( isolate, (int32_t)value );
+				//result->Set( n-nBias, Integer::New( isolate, (int32_t)value ) );
+			}
+			break;
+		case CONFIG_ARG_FLOAT:
+			{
+				PARAM( args, float, value );
+				argResult[n - nBias] = Number::New( isolate, value );
+				//result->Set( n-nBias, Number::New( isolate, value ) );
+			}
+			break;
+		case CONFIG_ARG_DATA:
+			{
+				PARAM( args, POINTER, value );
+				buffer = value;
+				nBias++;
+			}
+			break;
+		case CONFIG_ARG_DATA_SIZE:
+			{
+				PARAM( args, size_t, value );
+				argResult[n - nBias] = ArrayBuffer::New( isolate, buffer, value );
+				//result->Set( n-nBias, ArrayBuffer::New( isolate, buffer, value ) );
+
+			}
+			break;
+		case CONFIG_ARG_LOGICAL:
+			{
+				PARAM( args, LOGICAL, value );
+				if( value )
+					argResult[n - nBias] = True( isolate );
+				//result->Set( n-nBias, True(isolate) );
+				else
+					argResult[n - nBias] = False( isolate );
+					//result->Set( n-nBias, False( isolate ) );
+			}
+			break;
+		case CONFIG_ARG_FRACTION:
+			{
+				PARAM( args, FRACTION, value );
+				//argResult[n - nBias] =
+			}
+			break;
+		case CONFIG_ARG_COLOR:
+			{
+				PARAM( args, CDATA, value );
+				argResult[n - nBias] = ColorObject::makeColor( isolate, value );
+				//result->Set( n-nBias, ColorObject::makeColor(isolate, value) );
+			}
+			break;
+		}
+	}
+	(*ppargv) = argResult;
+	(*argc) = n - nBias;
+}
+
+static uintptr_t configMethod( uintptr_t psv, uintptr_t callback, arg_list args ) {
+	Local<Value> *argv;
+	int argc;
+	Isolate* isolate = Isolate::GetCurrent();
+	Persistent<Function> *pf = (Persistent<Function> *)callback;
+	configConvertArgs( args, &argv, &argc );
+	Local<Function> cb = pf->Get( isolate );;
+	//cb->Call( NULL, argc, argv );
+	delete[] argv;
+
+	return psv;
+}
+
 void InterShellObject::Init( Handle<Object> exports ) {
 	if( !InterShell ) {
 		lprintf( "intershell interface not available." );
@@ -188,7 +327,7 @@ void InterShellObject::Init( Handle<Object> exports ) {
 	intershellTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.InterShell" ) );
 	intershellTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // have to be 1 internal for wrap
 
-																	 // Prototype
+	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( intershellTemplate, "setSave", onSave );
 	NODE_SET_PROTOTYPE_METHOD( intershellTemplate, "setLoad", onLoad );
 	NODE_SET_PROTOTYPE_METHOD( intershellTemplate, "start", start );
@@ -202,6 +341,26 @@ void InterShellObject::Init( Handle<Object> exports ) {
 		intershellObject );
 
 	isLocal.canvasObject.Reset( isolate, intershellObject );
+
+	//--------------------------------------------
+
+	Local<FunctionTemplate> configTemplate;
+	// Prepare constructor template
+	configTemplate = FunctionTemplate::New( isolate, NewConfiguration );
+	configTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Configuration" ) );
+	configTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // have to be 1 internal for wrap
+
+	// Prototype
+	NODE_SET_PROTOTYPE_METHOD( configTemplate, "addMethod", addConfigMethod );
+	//NODE_SET_PROTOTYPE_METHOD( configTemplate, "process", processConfigFile );
+
+	configConstructor.Reset( isolate, configTemplate->GetFunction() );
+
+	exports->Set( String::NewFromUtf8( isolate, "Configuration" ),
+		configTemplate->GetFunction() );
+
+	//isLocal.canvasObject.Reset( isolate, configObject );
+
 
 	//--------------------------------------------
 	Local<FunctionTemplate> buttonTemplate;
@@ -227,7 +386,7 @@ void InterShellObject::Init( Handle<Object> exports ) {
 	buttonInstanceTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.InterShell.Button.instance" ) );
 	buttonInstanceTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // needs to be 1 for wrap
 
-																	 // Prototype
+	 // Prototype
 	NODE_SET_PROTOTYPE_METHOD( buttonInstanceTemplate, "setTitle", setTitle );
 	NODE_SET_PROTOTYPE_METHOD( buttonInstanceTemplate, "setStyle", setStyle );
 	NODE_SET_PROTOTYPE_METHOD( buttonInstanceTemplate, "setTextColor", setTextColor );
@@ -243,11 +402,7 @@ void InterShellObject::Init( Handle<Object> exports ) {
 	controlTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.InterShell.Control" ) );
 	controlTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // needs to be 1 for wrap
 
-																	 // Prototype
-	NODE_SET_PROTOTYPE_METHOD( controlTemplate, "setCreate", onCreateControl );
-	//NODE_SET_PROTOTYPE_METHOD( buttonTemplate, "onMouse", query );
-	NODE_SET_PROTOTYPE_METHOD( controlTemplate, "setSave", onSaveControl );
-	NODE_SET_PROTOTYPE_METHOD( controlTemplate, "setLoad", onLoadControl );
+	 // Prototype
 
 	controlConstructor.Reset( isolate, controlTemplate->GetFunction() );
 
@@ -344,6 +499,35 @@ void InterShellObject::NewButton( const FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+void InterShellObject::addConfigMethod( const FunctionCallbackInfo<Value>& args ) {
+}
+
+void InterShellObject::NewConfiguration( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.IsConstructCall() ) {
+		char *name;
+		String::Utf8Value arg( args[0] );
+		name = *arg;
+		InterShellObject* obj;
+
+		obj = new InterShellObject();
+
+		obj->events = NULL;
+		MemSet( &obj->async, 0, sizeof( obj->async ) );
+		uv_async_init( uv_default_loop(), &obj->async, asyncmsg );
+		obj->async.data = obj;
+
+		obj->Wrap( args.This() );
+		args.GetReturnValue().Set( args.This() );
+	}
+	else {
+		const int argc = args.Length();
+		Local<Value> *argv = new Local<Value>[argc];// = { args[0], args.Holder() };
+		for( int n = 0; n < argc; n++ ) argv[n] = args[n];
+		Local<Function> cons = Local<Function>::New( isolate, controlConstructor );
+		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+	}
+}
 
 void InterShellObject::NewApplication( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();

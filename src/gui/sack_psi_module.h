@@ -149,22 +149,13 @@ public:
 	static void setButtonClick( const FunctionCallbackInfo<Value>& args );
 	static void setButtonEvent( const FunctionCallbackInfo<Value>& args );
 
-	static void getControlColor( v8::Local<v8::Name> field,
-		const PropertyCallbackInfo<v8::Value>& args );
-	static void setControlColor( v8::Local<v8::Name> field,
-		Local<Value> value,
-		const PropertyCallbackInfo<void>& args );
+	static void getControlColor( const FunctionCallbackInfo<Value>& args );
+	static void setControlColor( const FunctionCallbackInfo<Value>&  args );
 	
-	static void getControlText( v8::Local<v8::String> field,
-		const PropertyCallbackInfo<v8::Value>& args );
-	static void setControlText( v8::Local<v8::String> field,
-		Local<Value> value,
-		const PropertyCallbackInfo<void>& args );
-	static void getCoordinate( v8::Local<v8::String> field,
-		const PropertyCallbackInfo<v8::Value>& args );
-	static void setCoordinate( v8::Local<v8::String> field,
-		Local<Value> value,
-		const PropertyCallbackInfo<void>& args );
+	static void getControlText( const FunctionCallbackInfo<Value>&  args );
+	static void setControlText( const FunctionCallbackInfo<Value>&  args );
+	static void getCoordinate( const FunctionCallbackInfo<Value>&  args );
+	static void setCoordinate( const FunctionCallbackInfo<Value>&  args );
 
 	Persistent<Function, CopyablePersistentTraits<Function>> cbConsoleRead;  // event for console control callback (psi/console.h)
 	Persistent<Function, CopyablePersistentTraits<Function>> cbButtonClick;  // event for button control callback (psi/console.h)

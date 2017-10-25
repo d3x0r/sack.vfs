@@ -25,6 +25,7 @@ public:
 	static v8::Persistent<v8::Function> customControlConstructor;
 	static v8::Persistent<v8::Function> customControlInstanceConstructor;
 	static v8::Persistent<v8::Function> intershellConstructor;
+	static v8::Persistent<v8::Function> configConstructor;
 
 	char *name;
 	PLINKQUEUE events;
@@ -50,6 +51,7 @@ public:
 	static void NewButton( const FunctionCallbackInfo<Value>& args );
 	static void NewControl( const FunctionCallbackInfo<Value>& args );
 	static void NewCustomControl( const FunctionCallbackInfo<Value>& args );
+	static void NewConfiguration( const FunctionCallbackInfo<Value>& args );
 
 #define M(n)	static void n( const FunctionCallbackInfo<Value>& args ); // unload a DLL
  
@@ -70,6 +72,7 @@ public:
 	static void setBackground( const FunctionCallbackInfo<Value>& args );
 	static void setSecondary( const FunctionCallbackInfo<Value>& args );
 
+	static void addConfigMethod( const FunctionCallbackInfo<Value>& args );
 
 
 };

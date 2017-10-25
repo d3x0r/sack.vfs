@@ -1,7 +1,9 @@
 #define DEFINE_GLOBAL
 #include "../global.h"
 
+
 Persistent<Function> ImageObject::constructor;
+Persistent<FunctionTemplate> ImageObject::tpl;
 Persistent<Function> FontObject::constructor;
 Persistent<Function> ColorObject::constructor;
 Persistent<FunctionTemplate> ColorObject::tpl;
@@ -40,21 +42,23 @@ void ImageObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImage", ImageObject::putImage );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImageOver", ImageObject::putImageOver );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "imageSurface", ImageObject::imageData );
-	imageTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "png" )
-		, ImageObject::getPng
-		, NULL );
-	imageTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "jpg" )
-		, ImageObject::getJpeg
-		, NULL );
-	imageTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "jpgQuality" )
-		, ImageObject::getJpegQuality
-		, ImageObject::setJpegQuality );
-	imageTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "width" )
-		, ImageObject::getWidth
-		, NULL );
-	imageTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "height" )
-		, ImageObject::getHeight
-		, NULL );
+
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "png" )
+		, FunctionTemplate::New( isolate, ImageObject::getPng )
+		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly|DontDelete) );
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "jpg" )
+		, FunctionTemplate::New( isolate, ImageObject::getJpeg )
+		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly | DontDelete) );
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "jpgQuality" )
+		, FunctionTemplate::New( isolate, ImageObject::getJpegQuality )
+		, FunctionTemplate::New( isolate, ImageObject::setJpegQuality ), DontDelete );
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "width" )
+		, FunctionTemplate::New( isolate, ImageObject::getWidth )
+		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly | DontDelete) );
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "height" )
+		, FunctionTemplate::New( isolate, ImageObject::getHeight )
+		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly | DontDelete) );
+	ImageObject::tpl.Reset( isolate, imageTemplate );
 
 	//NODE_SET_PROTOTYPE_METHOD( imageTemplate, "plot", ImageObject:: );
 
@@ -82,6 +86,7 @@ void ImageObject::Init( Handle<Object> exports ) {
 	colorTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	NODE_SET_PROTOTYPE_METHOD( colorTemplate, "toString", ColorObject::toString );
+#define SetAccessor(b,c,d) SetAccessorProperty( b, FunctionTemplate::New( isolate, c ), FunctionTemplate::New( isolate, d ), DontDelete )
 	colorTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "r" )
 		, ColorObject::getRed, ColorObject::setRed );
 	colorTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "g" )
@@ -127,67 +132,76 @@ void ImageObject::Init( Handle<Object> exports ) {
 	SET_READONLY( i, "Color", colorTemplate->GetFunction() );
 
 }
-void ImageObject::getPng( v8::Local<v8::String> field,
-	const PropertyCallbackInfo<v8::Value>& args ) {
+void ImageObject::getPng( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
-	uint8_t *buf;
-	size_t size;
-	if( PngImageFile( obj->image, &buf, &size ) )
-	{
-		Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, buf, size );
-		
-		PARRAY_BUFFER_HOLDER holder = GetHolder();
-		holder->o.Reset( isolate, arrayBuffer );
-		holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-		holder->buffer = buf;
-		args.GetReturnValue().Set( arrayBuffer );
+	Local<FunctionTemplate> tpl = ImageObject::tpl.Get( isolate );
+	if( tpl->HasInstance( args.This() ) ) {
+		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
+		uint8_t *buf;
+		size_t size;
+		if( PngImageFile( obj->image, &buf, &size ) )
+		{
+			Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, buf, size );
+
+			PARRAY_BUFFER_HOLDER holder = GetHolder();
+			holder->o.Reset( isolate, arrayBuffer );
+			holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+			holder->buffer = buf;
+			args.GetReturnValue().Set( arrayBuffer );
+		}
 	}
 }
-void ImageObject::getJpeg( v8::Local<v8::String> field,
-	const PropertyCallbackInfo<v8::Value>& args ) {
+void ImageObject::getJpeg( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-	ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
-	uint8_t *buf;
-	size_t size;
-	if( JpgImageFile( obj->image, &buf, &size, obj->jpegQuality ) )
-	{
-		Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, buf, size );
+	Local<FunctionTemplate> tpl = ImageObject::tpl.Get( isolate );
+	if( tpl->HasInstance( args.This() ) ) {
 
-		PARRAY_BUFFER_HOLDER holder = GetHolder();
-		holder->o.Reset( isolate, arrayBuffer );
-		holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-		holder->buffer = buf;
-		args.GetReturnValue().Set( arrayBuffer );
+		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
+		uint8_t *buf;
+		size_t size;
+		if( JpgImageFile( obj->image, &buf, &size, obj->jpegQuality ) )
+		{
+			Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, buf, size );
+
+			PARRAY_BUFFER_HOLDER holder = GetHolder();
+			holder->o.Reset( isolate, arrayBuffer );
+			holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+			holder->buffer = buf;
+			args.GetReturnValue().Set( arrayBuffer );
+		}
 	}
 }
 
-void ImageObject::getJpegQuality( v8::Local<v8::String> field,
-	const PropertyCallbackInfo<v8::Value>& args ) {
+void ImageObject::getJpegQuality( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-	ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
-	args.GetReturnValue().Set( Integer::New( isolate, obj->jpegQuality ) );
+	Local<FunctionTemplate> tpl = ImageObject::tpl.Get( isolate );
+	if( tpl->HasInstance( args.This() ) ) {
+		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
+		args.GetReturnValue().Set( Integer::New( isolate, obj->jpegQuality ) );
+	}
 }
 
-void ImageObject::setJpegQuality( v8::Local<v8::String> field,
-	Local<Value> value,
-	const PropertyCallbackInfo<void>& args ) {
+void ImageObject::setJpegQuality( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
-	obj->jpegQuality = (int)value->IntegerValue();
+	obj->jpegQuality = (int)args[0]->IntegerValue();
 }
 
-void ImageObject::getWidth( v8::Local<v8::String> field,
-	const PropertyCallbackInfo<v8::Value>& args ) {
+void ImageObject::getWidth( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-	ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
-	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->image->width ) );
+	Local<FunctionTemplate> tpl = ImageObject::tpl.Get( isolate );
+	if( tpl->HasInstance( args.This() ) ) {
+		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
+		args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->image->width ) );
+	}
 }
-void ImageObject::getHeight( v8::Local<v8::String> field,
-	const PropertyCallbackInfo<v8::Value>& args ) {
+void ImageObject::getHeight( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-	ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
-	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->image->height ) );
+	Local<FunctionTemplate> tpl = ImageObject::tpl.Get( isolate );
+	if( tpl->HasInstance( args.This() ) ) {
+		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
+		args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->image->height ) );
+	}
 }
 
 ImageObject::ImageObject( uint8_t *buf, size_t len ) {
@@ -850,77 +864,65 @@ void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
 }
 
 
-void ColorObject::getRed( v8::Local<v8::String> field,
-	const PropertyCallbackInfo<v8::Value>& args ) {
+void ColorObject::getRed( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( ColorObject::tpl.Get( isolate )->HasInstance( args.This() ) ) {
 		ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
 		args.GetReturnValue().Set( Integer::New( isolate, RedVal( co->color ) ) );
 	}
 }
-void ColorObject::getGreen( v8::Local<v8::String> field,
-	const PropertyCallbackInfo<v8::Value>& args ) {
+void ColorObject::getGreen( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( ColorObject::tpl.Get( isolate )->HasInstance( args.This() ) ) {
 		ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
 		args.GetReturnValue().Set( Integer::New( isolate, GreenVal( co->color ) ) );
 	}
 }
-void ColorObject::getBlue( v8::Local<v8::String> field,
-	const PropertyCallbackInfo<v8::Value>& args ) {
+void ColorObject::getBlue( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( ColorObject::tpl.Get( isolate )->HasInstance( args.This() ) ) {
 		ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
 		args.GetReturnValue().Set( Integer::New( isolate, BlueVal( co->color ) ) );
 	}
 }
-void ColorObject::getAlpha( v8::Local<v8::String> field,
-	const PropertyCallbackInfo<v8::Value>& args ) {
+void ColorObject::getAlpha( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( ColorObject::tpl.Get( isolate )->HasInstance( args.This() ) ) {
 		ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
 		args.GetReturnValue().Set( Integer::New( isolate, AlphaVal( co->color ) ) );
 	}
 }
-void ColorObject::setRed( v8::Local<v8::String> field,
-	Local<Value> value,
-	const PropertyCallbackInfo<void>& args ) {
+void ColorObject::setRed( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
-	double val = value->NumberValue();
+	double val = args[0]->NumberValue();
 	if( val < 0 ) val = 0;
 	else if( val > 255 ) val = 255;
 	if( val > 0 && val < 1.0 ) val = 255 * val;
 	SetRedValue( co->color, (COLOR_CHANNEL)val );
 }
-void ColorObject::setGreen( v8::Local<v8::String> field,
-	Local<Value> value,
-	const PropertyCallbackInfo<void>& args ) {
+void ColorObject::setGreen( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
-	double val = value->NumberValue();
+	double val = args[0]->NumberValue();
 	if( val < 0 ) val = 0;
 	else if( val > 255 ) val = 255;
 	if( val > 0 && val < 1.0 ) val = 255 * val;
 	SetGreenValue( co->color, (COLOR_CHANNEL)val );
 }
-void ColorObject::setBlue( v8::Local<v8::String> field,
-	Local<Value> value,
-	const PropertyCallbackInfo<void>& args ) {
+void ColorObject::setBlue( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
-	double val = value->NumberValue();
+	double val = args[0]->NumberValue();
 	if( val < 0 ) val = 0;
 	else if( val > 255 ) val = 255;
 	if( val > 0 && val < 1.0 ) val = 255 * val;
 	SetBlueValue( co->color, (COLOR_CHANNEL)val );
 }
-void ColorObject::setAlpha( v8::Local<v8::String> field,
-	Local<Value> value,
-	const PropertyCallbackInfo<void>& args ) {
+void ColorObject::setAlpha( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
-	double val = value->NumberValue();
+	double val = args[0]->NumberValue();
 	if( val < 0 ) val = 0;
 	else if( val > 255 ) val = 255;
 	if( val > 0 && val < 1.0 ) val = 255 * val;

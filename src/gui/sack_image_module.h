@@ -8,6 +8,7 @@ public:
 	Image image; // this control
 	LOGICAL external;
 	static v8::Persistent<v8::Function> constructor;
+	static Persistent<FunctionTemplate> ImageObject::tpl;
 
 	Persistent<Object> _this;
 	int jpegQuality;
@@ -36,20 +37,13 @@ public:
 	static void putImageOver( const FunctionCallbackInfo<Value>& args );
 	static void imageData( const FunctionCallbackInfo<Value>& args );
 	
-	static void getPng( v8::Local<v8::String> field,
-		const PropertyCallbackInfo<v8::Value>& args );
-	static void getJpeg( v8::Local<v8::String> field,
-		const PropertyCallbackInfo<v8::Value>& args );
-	static void getJpegQuality( v8::Local<v8::String> field,
-		const PropertyCallbackInfo<v8::Value>& args );
-	static void setJpegQuality( v8::Local<v8::String> field,
-		Local<Value> val,
-		const PropertyCallbackInfo<void>& args );
+	static void getPng( const FunctionCallbackInfo<Value>&  args );
+	static void getJpeg( const FunctionCallbackInfo<Value>& args );
+	static void getJpegQuality( const FunctionCallbackInfo<Value>&  args );
+	static void setJpegQuality( const FunctionCallbackInfo<Value>& args );
 
-	static void getWidth( v8::Local<v8::String> field,
-		const PropertyCallbackInfo<v8::Value>& args );
-	static void getHeight( v8::Local<v8::String> field,
-		const PropertyCallbackInfo<v8::Value>& args );
+	static void getWidth( const FunctionCallbackInfo<Value>&  args );
+	static void getHeight( const FunctionCallbackInfo<Value>&  args );
 	   ~ImageObject();
 
 
@@ -101,26 +95,14 @@ public:
 	static Local<Object> makeColor( Isolate *isolate, CDATA rgba );
 	static void New( const FunctionCallbackInfo<Value>& args );
 	static bool isColor( Isolate *isolate, Local<Object> object );
-	static void getRed( v8::Local<v8::String> field,
-		const PropertyCallbackInfo<v8::Value>& args );
-	static void getGreen( v8::Local<v8::String> field,
-		const PropertyCallbackInfo<v8::Value>& args );
-	static void getBlue( v8::Local<v8::String> field,
-		const PropertyCallbackInfo<v8::Value>& args );
-	static void getAlpha( v8::Local<v8::String> field,
-		const PropertyCallbackInfo<v8::Value>& args );
-	static void setRed( v8::Local<v8::String> field,
-		Local<Value> value,
-		const PropertyCallbackInfo<void>& args );
-	static void setGreen( v8::Local<v8::String> field,
-		Local<Value> value,
-		const PropertyCallbackInfo<void>& args );
-	static void setBlue( v8::Local<v8::String> field,
-		Local<Value> value,
-		const PropertyCallbackInfo<void>& args );
-	static void setAlpha( v8::Local<v8::String> field,
-		Local<Value> value,
-		const PropertyCallbackInfo<void>& args );
+	static void getRed( const FunctionCallbackInfo<Value>& args );
+	static void getGreen( const FunctionCallbackInfo<Value>& args );
+	static void getBlue( const FunctionCallbackInfo<Value>&args );
+	static void getAlpha( const FunctionCallbackInfo<Value>& args );
+	static void setRed( const FunctionCallbackInfo<Value>& args );
+	static void setGreen( const FunctionCallbackInfo<Value>& args );
+	static void setBlue( const FunctionCallbackInfo<Value>& args );
+	static void setAlpha( const FunctionCallbackInfo<Value>& args );
 
 	static void toString( const FunctionCallbackInfo<Value>& args );
 	~ColorObject();
