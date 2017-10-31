@@ -1760,115 +1760,14 @@ static Local<Value> Expiration( struct info_params *params ) {
 		BIO_free( keybuf );
 		return Undefined(params->isolate);// goto free_all;
 	}
-
+	BIO_free( keybuf );
 
 	ASN1_TIME *before = x509->cert_info->validity->notAfter;
-
-#if 0
-//#ifdef _WIN32
-	// the system time
-	char *timestring = (char*)before->data;
-	//ASN1_TIME_adj
-	int val;
-	SYSTEMTIME systemTime;
-	systemTime.wMilliseconds = 0;
-	if( before->type == V_ASN1_UTCTIME )
-	if( (before->type == V_ASN1_UTCTIME) /*before->length == 13*/ ) {
-		val = 0;
-		val = val * 10 + ((timestring++)[0] - '0');
-		val = val * 10 + ((timestring++)[0] - '0');
-		//if( year < 70 ) year += 100;
-		systemTime.wYear = val + 2000-1900;
-	}
-	if( (before->type == V_ASN1_GENERALIZEDTIME) /*before->length == 15*/ ) {
-		val = 0;
-		val = val * 10 + ((timestring++)[0] - '0');
-		val = val * 10 + ((timestring++)[0] - '0');
-		val = val * 10 + ((timestring++)[0] - '0');
-		val = val * 10 + ((timestring++)[0] - '0');
-		systemTime.wYear = val-1900;
-	}
-	val = 0;
-	val = val * 10 + ((timestring++)[0] - '0');
-	val = val * 10 + ((timestring++)[0] - '0');
-	systemTime.wMonth = val;
-	val = 0;
-	val = val * 10 + ((timestring++)[0] - '0');
-	val = val * 10 + ((timestring++)[0] - '0');
-	systemTime.wDay = val;
-	val = 0;
-	val = val * 10 + ((timestring++)[0] - '0');
-	val = val * 10 + ((timestring++)[0] - '0');
-	systemTime.wHour = val;
-	val = 0;
-	val = val * 10 + ((timestring++)[0] - '0');
-	val = val * 10 + ((timestring++)[0] - '0');
-	systemTime.wMinute = val;
-	val = 0;
-	val = val * 10 + ((timestring++)[0] - '0');
-	val = val * 10 + ((timestring++)[0] - '0');
-	systemTime.wSecond = val;
-	//GetSystemTime( &systemTime );
-
-	// the current file time
-	FILETIME fileTime;
-	SystemTimeToFileTime( &systemTime, &fileTime );
-
-	// filetime in 100 nanosecond resolution
-	ULONGLONG fileTimeNano100;
-	fileTimeNano100 = (((ULONGLONG)fileTime.dwHighDateTime) << 32) + fileTime.dwLowDateTime;
-
-	//to milliseconds and unix windows epoche offset removed
-	ULONGLONG posixTime = fileTimeNano100 / 10000 - 11644473600000;
-
-	double dTime = posixTime;// IntCreateFromText( (char*)before->data ) * 1000;
-
-#endif
 	struct tm t;
 	char * timestring = (char*)before->data;
 
 	ConvertTimeString( &t, before );
-#if 0
-	//lprintf( "Timestring: %s", timestring );
-	if( before->type == V_ASN1_UTCTIME )
-		if( (before->type == V_ASN1_UTCTIME) /*before->length == 13*/ ) {
-			val = 0;
-			val = val * 10 + ((timestring++)[0] - '0');
-			val = val * 10 + ((timestring++)[0] - '0');
-			//if( year < 70 ) year += 100;
-			t.tm_year = (val + 2000)-1900;
-		}
-	if( (before->type == V_ASN1_GENERALIZEDTIME) /*before->length == 15*/ ) {
-		val = 0;
-		val = val * 10 + ((timestring++)[0] - '0');
-		val = val * 10 + ((timestring++)[0] - '0');
-		val = val * 10 + ((timestring++)[0] - '0');
-		val = val * 10 + ((timestring++)[0] - '0');
-		t.tm_year = (val + 2000) - 1900;
-	}
-	val = 0;
-	val = val * 10 + ((timestring++)[0] - '0');
-	val = val * 10 + ((timestring++)[0] - '0');
-	t.tm_mon = val-1;
-	val = 0;
-	val = val * 10 + ((timestring++)[0] - '0');
-	val = val * 10 + ((timestring++)[0] - '0');
-	t.tm_mday = val;
-	val = 0;
-	val = val * 10 + ((timestring++)[0] - '0');
-	val = val * 10 + ((timestring++)[0] - '0');
-	t.tm_hour = val;
-	val = 0;
-	val = val * 10 + ((timestring++)[0] - '0');
-	val = val * 10 + ((timestring++)[0] - '0');
-	t.tm_min = val;
-	val = 0;
-	val = val * 10 + ((timestring++)[0] - '0');
-	val = val * 10 + ((timestring++)[0] - '0');
-
-	t.tm_sec = val;
-	t.tm_isdst = 0;
-#endif
+	X509_free( x509 );
 	Local<Value> date = Date::New( params->isolate, (double)timegm( &t ) * 1000.0 );
 	//lprintf( "Converted: %d %d %d %d %d %d", t.tm_year, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec );
 	
