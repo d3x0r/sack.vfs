@@ -5612,7 +5612,7 @@ MEM_PROC  POINTER MEM_API  AllocateEx ( uintptr_t nSize DBG_PASS );
 #define HeapAllocate(heap, n) HeapAllocateEx( (heap), (n) DBG_SRC )
    /* <combine sack::memory::HeapAllocateAlignedEx@PMEM@uintptr_t@uint32_t>
    \ \                                                        */
-#define HeapAllocateAligned(heap, n, m) HeapAllocateEx( (heap), (n), m DBG_SRC )
+#define HeapAllocateAligned(heap, n, m) HeapAllocateAlignedEx( (heap), (n), m DBG_SRC )
    /* <combine sack::memory::AllocateEx@uintptr_t nSize>
    \ \                                               */
 #ifdef FIX_RELEASE_COM_COLLISION
@@ -14863,7 +14863,7 @@ SACK_DEADSTART_NAMESPACE_END
 /*
  *  Crafted by James Buckeyne
  *
- *   (c) Freedom Collective 2000-2006++
+ *   (c) Freedom Collective 2000-2017++
  *
  *   created to provide standard logging features
  *   lprintf( format, ... ); simple, basic
@@ -14875,6 +14875,8 @@ SACK_DEADSTART_NAMESPACE_END
  * see also - include/logging.h
  *
  */
+//#define SUPPORT_LOG_ALLOCATE
+//#define DEFAULT_OUTPUT_STDERR
 #define COMPUTE_CPU_FREQUENCY
 #define NO_UNICODE_C
 //#undef UNICODE
@@ -15051,13 +15053,13 @@ PRIORITY_ATEXIT( CleanSyslog, ATEXIT_PRIORITY_SYSLOG )
 	}
 }
 #if 0
-				/*
-				 * this code would ideally check to see if
-				 * the cpu rdtsc instruction worked....
-				 * someday we should consider using the rdtscp instruction
-				 * but that will require fetching CPU characteristics
-             * - SEE mmx.asm in src/imglib/
-             */
+        /*
+         * this code would ideally check to see if
+         * the cpu rdtsc instruction worked....
+         * someday we should consider using the rdtscp instruction
+         * but that will require fetching CPU characteristics
+         * - SEE mmx.asm in src/imglib/
+         */
 void TestCPUTick( void )
 {
 	uint64_t tick, _tick;
@@ -15132,13 +15134,13 @@ uint64_t GetCPUTick(void )
 		uint64_t tick = __rdtsc();
 #   else
 		static uint64_t tick;
-#if _ARM_
+#     if _ARM_
 		tick = tick+1;
-#else
+#     else
 		_asm rdtsc;
 		_asm mov dword ptr [tick], eax;
 		_asm mov dword ptr [tick + 4], edx;
-#endif
+#     endif
 #   endif
 		if( !(*syslog_local).lasttick )
 			(*syslog_local).lasttick = tick;
@@ -15394,10 +15396,12 @@ void InitSyslog( int ignore_options )
 			/* using SYSLOG_AUTO_FILE option does not require this to be open.
 			* it is opened on demand.
 			*/
+#      if !defined( DEFAULT_OUTPUT_STDERR )
 			logtype = SYSLOG_AUTO_FILE;
-			//(*syslog_local).file = stderr;
-			//logtype = SYSLOG_FILE;
-			//(*syslog_local).file = stderr;
+#      else
+			logtype = SYSLOG_FILE;
+			(*syslog_local).file = stderr;
+#      endif
 			(*syslog_local).flags.bLogOpenBackup = 1;
 			(*syslog_local).flags.bUseDeltaTime = 1;
 			(*syslog_local).flags.bLogCPUTime = 1;
@@ -15453,9 +15457,9 @@ CTEXTSTR GetTimeEx( int bUseDay )
 {
 	/* used by sqlite extension to support now() */
 #ifdef _WIN32
-#ifndef WIN32
-#define WIN32 _WIN32
-#endif
+#  ifndef WIN32
+#    define WIN32 _WIN32
+#  endif
 #endif
 #if defined( WIN32 ) && !defined( __ANDROID__ )
 	static TEXTCHAR timebuffer[256];
@@ -15490,9 +15494,9 @@ CTEXTSTR GetPackedTime( void )
 {
 	/* used by sqlite extension to support now() */
 #ifdef _WIN32
-#ifndef WIN32
-#define WIN32 _WIN32
-#endif
+#  ifndef WIN32
+#    define WIN32 _WIN32
+#  endif
 #endif
 #if defined( WIN32 ) && !defined( __ANDROID__ )
 	static TEXTCHAR timebuffer[256];
@@ -15520,7 +15524,7 @@ CTEXTSTR GetPackedTime( void )
 #ifndef BCC16
 static TEXTCHAR *GetTimeHigh( void )
 {
-#if defined WIN32 && !defined( __ANDROID__ )
+#  if defined WIN32 && !defined( __ANDROID__ )
 	 static TEXTCHAR timebuffer[256];
 	static SYSTEMTIME _st;
 	SYSTEMTIME st, st_save;
@@ -15562,7 +15566,7 @@ static TEXTCHAR *GetTimeHigh( void )
 	else
 		tnprintf( timebuffer, sizeof(timebuffer), WIDE("%02d:%02d:%02d.%03d")
 		        , st.wHour, st.wMinute, st.wSecond, st.wMilliseconds );
-#else
+#  else
 	static char timebuffer[256];
 	static struct timeval _tv;
 	static struct tm _tm;
@@ -15613,25 +15617,25 @@ static TEXTCHAR *GetTimeHigh( void )
 	               , sizeof( timebuffer )
 	               , ((*syslog_local).flags.bUseDay)?"%m/%d/%Y %H:%M:%S":"%H:%M:%S"
 					  , &tm );
-#undef snprintf
+#  undef snprintf
 	snprintf( timebuffer + len, 5, ".%03ld", tv.tv_usec / 1000 );
 	/*
-    // this code is kept in case borland's compiler don't like it.
-    {
-    time_t timevalnow;
-    time(&timevalnow);
-    timething = localtime( &timevalnow );
-    strftime( timebuffer
-    , sizeof( timebuffer )
-    , WIDE("%m/%d/%Y %H:%M:%S.000")
-    , timething );
-    }
-	 */
-#endif
+	// this code is kept in case borland's compiler don't like it.
+	{
+		time_t timevalnow;
+		time(&timevalnow);
+		timething = localtime( &timevalnow );
+		strftime( timebuffer
+		        , sizeof( timebuffer )
+		        , WIDE("%m/%d/%Y %H:%M:%S.000")
+		        , timething );
+	}
+	*/
+#  endif
 	return timebuffer;
 }
 #else
-#define GetTimeHigh GetTime
+#  define GetTimeHigh GetTime
 #endif
 uint32_t ConvertTickToMicrosecond( uint64_t tick )
 {
@@ -15762,7 +15766,7 @@ static void UDPSystemLog( const TEXTCHAR *message )
 		}
 #ifndef BCC16
 		if( setsockopt( hSock, SOL_SOCKET
-						  , SO_BROADCAST, (char*)&bEnable, sizeof( bEnable ) ) )
+		              , SO_BROADCAST, (char*)&bEnable, sizeof( bEnable ) ) )
 		{
 			Log( WIDE("Failed to set sock opt - BROADCAST") );
 		}
@@ -15775,17 +15779,19 @@ static void UDPSystemLog( const TEXTCHAR *message )
  /*"[%s]"*/
 		nSend = tnprintf( realmsg, sizeof( realmsg ), WIDE("%s")
 				  //, pProgramName
-				  , message );
+		                , message );
 		message = realmsg;
 #ifdef __cplusplus_cli
 		char *tmp = CStrDup( realmsg );
-#define SENDBUF tmp
+#  define SENDBUF tmp
 #else
-#define SENDBUF message
+#  define SENDBUF message
 #endif
-		/*nSent = */
-sendto( hSock, (const char *)SENDBUF, nSend, 0
-						  ,(logtype == SYSLOG_UDPBROADCAST)?&saLogBroadcast:&saLog, sizeof( SOCKADDR ) );
+		sendto( hSock, (const char *)SENDBUF, nSend, 0
+		      , (logtype == SYSLOG_UDPBROADCAST)
+		        ? &saLogBroadcast
+		        : &saLog
+		      , sizeof( SOCKADDR ) );
 #ifdef __cplusplus_cli
 		Release( tmp );
 #endif
@@ -15887,14 +15893,20 @@ static void FileSystemLog( CTEXTSTR message )
 {
 	if( (*syslog_local).file )
 	{
-#ifdef UNICODE
+#ifdef SUPPORT_LOG_ALLOCATE
+		fputs( message, (*syslog_local).file );
+		fputs( "\n", (*syslog_local).file );
+		fflush( (*syslog_local).file );
+#else
+#  ifdef UNICODE
 		fputws( message, (*syslog_local).file );
 		fputws( WIDE("\n"), (*syslog_local).file );
-#else
+#  else
 		sack_fputs( message, (*syslog_local).file );
 		sack_fputs( "\n", (*syslog_local).file );
-#endif
+#  endif
 		sack_fflush( (*syslog_local).file );
+#endif
 	}
 }
 static void BackupFile( const TEXTCHAR *source, int source_name_len, int n )
@@ -15962,34 +15974,54 @@ void DoSystemLog( const TEXTCHAR *buffer )
 			retry_again:
  // disable logging - internal functions might inadvertantly log something...
 				logtype = SYSLOG_NONE;
-				if( !(*syslog_local).flags.bOptionsLoaded )
+				if(
+#ifdef SUPPORT_LOG_ALLOCATE
+					0 &&
+#endif
+					!(*syslog_local).flags.bOptionsLoaded )
 				{
+#ifdef SUPPORT_LOG_ALLOCATE
+					(*syslog_local).file = fopen( gFilename, WIDE( "wt" ) );
+#else
 					(*syslog_local).file = sack_fsopen( 0, gFilename, WIDE("wt")
-#ifdef _UNICODE
-							WIDE(", ccs=UNICODE")
-#endif
+#  ifdef _UNICODE
+						WIDE(", ccs=UNICODE")
+#  endif
 						, _SH_DENYWR );
+#endif
 				}
 				else
 				{
-				if( (*syslog_local).flags.bLogOpenBackup )
-				{
-					BackupFile( gFilename, (int)StrLen( gFilename ), 1 );
-				}
-				else if( (*syslog_local).flags.bLogOpenAppend )
+					if(
+#ifdef SUPPORT_LOG_ALLOCATE
+						0 &&
+#endif
+						(*syslog_local).flags.bLogOpenBackup )
+					{
+						BackupFile( gFilename, (int)StrLen( gFilename ), 1 );
+					}
+					else if( (*syslog_local).flags.bLogOpenAppend )
+#ifdef SUPPORT_LOG_ALLOCATE
+					(*syslog_local).file = fopen( gFilename, WIDE( "at+" ) );
+#else
 					(*syslog_local).file = sack_fsopen( (*syslog_local).flags.group_ok?GetFileGroup( WIDE( "system.logs" ), GetProgramPath() ):(INDEX)0, gFilename, WIDE("at+")
-#ifdef _UNICODE
-							WIDE(", ccs=UNICODE")
-#endif
+#  ifdef _UNICODE
+						WIDE(", ccs=UNICODE")
+#  endif
 						, _SH_DENYWR );
-				if( (*syslog_local).file )
-					fseek( (*syslog_local).file, 0, SEEK_END );
-				else
-					(*syslog_local).file = sack_fsopenEx( (*syslog_local).flags.group_ok?GetFileGroup( WIDE( "system.logs" ), GetProgramPath() ):(INDEX)0, gFilename, WIDE("wt")
-#ifdef _UNICODE
-							WIDE(", ccs=UNICODE")
 #endif
+					if( (*syslog_local).file )
+						fseek( (*syslog_local).file, 0, SEEK_END );
+					else
+#ifdef SUPPORT_LOG_ALLOCATE
+					(*syslog_local).file = fopen( gFilename, WIDE( "wt" ) );
+#else
+					(*syslog_local).file = sack_fsopenEx( (*syslog_local).flags.group_ok?GetFileGroup( WIDE( "system.logs" ), GetProgramPath() ):(INDEX)0, gFilename, WIDE("wt")
+#  ifdef _UNICODE
+							WIDE(", ccs=UNICODE")
+#  endif
 							, _SH_DENYWR, NULL );
+#endif
 				}
 				//logtype = SYSLOG_AUTO_FILE;
 				if( !(*syslog_local).file )
@@ -18040,6 +18072,7 @@ SYSTEM_PROC( generic_function, LoadFunctionExx )( CTEXTSTR libname, CTEXTSTR fun
 			}
 		}
 #else
+		SuspendDeadstart();
 #  ifndef __ANDROID__
 		// ANDROID This will always fail from the application manager.
 #    ifdef UNICODE
@@ -22111,6 +22144,7 @@ struct ImageFile_tag
 #endif
 #ifdef _OPENGL_DRIVER
 	/* gl context? */
+	LOGICAL depthTest;
 	PLIST glSurface;
  // most things will still use this, since reload image is called first, reload will set active
 	int glActiveSurface;
@@ -24466,16 +24500,21 @@ typedef PREFIX_PACKED struct buffer_len_tag {
 // skip a couple messages so we don't have to recompile everything
 // very soon...
 #define MSG_EventUser       MSG_UserServiceMessages
-#define MSG_UserServiceMessages 4
+#define MSG_UserServiceMessages 16
+// skip a couple messages so we don't have to recompile everything
+// very soon...
+#define MSG_EventInternal       MSG_InternalServiceMessages
+#define MSG_InternalServiceMessages 4
 enum server_event_messages {
 	// these messages are sent to client's event channel
 	// within the space of core service requests (0-256?)
 	// it's on top of client event user - cause the library
 	// may also receive client_disconnect/connect messages
    //
-	MSG_SERVICE_DATA = MSG_EventUser
+	MSG_SERVICE_DATA = MSG_EventInternal
  // end of list - zero or more MSG_SERVICE_DATA mesasges will preceed this.
       , MSG_SERVICE_NOMORE
+	, MSG_SERVICE_MAX_ID
 };
 enum server_failure_messages {
 	CLIENT_UNKNOWN
@@ -26148,7 +26187,7 @@ RENDER_NAMESPACE_END
 //
 #ifndef _SHARED_MEMORY_LIBRARY
 #if !defined( MEMORY_STRUCT_DEFINED ) || defined( DEFINE_MEMORY_STRUCT )
-//#define ENABLE_NATIVE_MALLOC_PROTECTOR
+#define ENABLE_NATIVE_MALLOC_PROTECTOR
 #ifdef _DEBUG
 #  define USE_DEBUG_LOGGING 1
 #else
@@ -31609,7 +31648,7 @@ int Rename( CTEXTSTR from, CTEXTSTR to );
 // end with a newline please.
 #ifndef _SHARED_MEMORY_LIBRARY
 #if !defined( MEMORY_STRUCT_DEFINED ) || defined( DEFINE_MEMORY_STRUCT )
-//#define ENABLE_NATIVE_MALLOC_PROTECTOR
+#define ENABLE_NATIVE_MALLOC_PROTECTOR
 #ifdef _DEBUG
 #  define USE_DEBUG_LOGGING 1
 #else
@@ -42056,6 +42095,7 @@ int64_t IntCreateFromSeg( PTEXT pText )
 //--------------------------------------------------------------------------
 double FloatCreateFromText( CTEXTSTR p, CTEXTSTR *vp )
 {
+	return strtod( p, (char **)vp );
 	int s, begin, bDec = FALSE;
 	double num;
 	double base = 1;
@@ -52564,6 +52604,8 @@ struct json_parse_state {
 	PVARTEXT pvtError;
 	LOGICAL fromHex;
 	LOGICAL exponent;
+	LOGICAL exponent_sign;
+	LOGICAL exponent_digit;
 	//char *token_begin;
 };
 struct json_parser_shared_data {
@@ -54694,7 +54736,7 @@ int json6_parse_add_data( struct json_parse_state *state
 			offset = (output->pos - output->buf);
 			offset2 = state->val.string ? (state->val.string - output->buf) : 0;
 			AddLink( &state->outValBuffers, output->buf );
-			output->buf = NewArray( char, output->size + msglen );
+			output->buf = NewArray( char, output->size + msglen + 1 );
 			if( state->val.string ) {
 				MemCpy( output->buf + offset2, state->val.string, offset - offset2 );
 				state->val.string = output->buf + offset2;
@@ -54706,7 +54748,7 @@ int json6_parse_add_data( struct json_parse_state *state
 		}
 		else {
 			output = (struct json_output_buffer*)GetFromSet( PARSE_BUFFER, &jpsd.parseBuffers );
-			output->pos = output->buf = NewArray( char, msglen );
+			output->pos = output->buf = NewArray( char, msglen + 1 );
 			output->size = msglen;
 			EnqueLink( &state->outQueue, output );
 		}
@@ -54795,6 +54837,12 @@ int json6_parse_add_data( struct json_parse_state *state
 				if( !state->comment ) state->comment = 1;
 				break;
 			case '{':
+				if( state->word == WORD_POS_FIELD || state->word == WORD_POS_AFTER_FIELD || (state->parse_context == CONTEXT_OBJECT_FIELD && state->word == WORD_POS_RESET) ) {
+					if( !state->pvtError ) state->pvtError = VarTextCreate();
+					vtprintf( state->pvtError, "Fault while parsing; getting field name unexpected '%c' at %" _size_f " %" _size_f ":%" _size_f, c, state->n, state->line, state->col );
+					state->status = FALSE;
+					break;
+				}
 				{
 					struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &jpsd.parseContexts );
 #ifdef _DEBUG_PARSING
@@ -55062,7 +55110,7 @@ int json6_parse_add_data( struct json_parse_state *state
 					case '\r':
  // ZWNBS is WS though
 					case 0xFEFF:
-						if( state->word == WORD_POS_RESET )
+						if( state->word == WORD_POS_RESET || state->word == WORD_POS_AFTER_FIELD )
 							break;
 						else if( state->word == WORD_POS_FIELD ) {
 							state->word = WORD_POS_AFTER_FIELD;
@@ -55343,9 +55391,11 @@ int json6_parse_add_data( struct json_parse_state *state
 						// keep it set to determine what sort of value is ready.
 						if( !state->gatheringNumber ) {
 							state->exponent = FALSE;
+							state->exponent_sign = FALSE;
+							state->exponent_digit = FALSE;
 							fromDate = FALSE;
 							state->fromHex = FALSE;
-							state->val.float_result = 0;
+							state->val.float_result = (c == '.');
 							state->val.string = output->pos;
   // terminate the string.
 							(*output->pos++) = c;
@@ -55363,11 +55413,11 @@ int json6_parse_add_data( struct json_parse_state *state
 							// leading zeros should be forbidden.
 							if( c == '_' )
 								continue;
-							if( (c >= '0' && c <= '9')
-								|| (c == '+')
-								)
+							if( c >= '0' && c <= '9' )
 							{
 								(*output->pos++) = c;
+								if( state->exponent )
+									state->exponent_digit = TRUE;
 							}
 #if 0
 							// to be implemented
@@ -55380,7 +55430,7 @@ int json6_parse_add_data( struct json_parse_state *state
 								(*output->pos++) = c;
 							}
 #endif
-							else if( c == 'x' || c == 'b' ) {
+							else if( ( c == 'x' || c == 'b' ) && ( output->pos - output->buf ) == 1 ) {
 								// hex conversion.
 								if( !state->fromHex ) {
 									state->fromHex = TRUE;
@@ -55389,7 +55439,7 @@ int json6_parse_add_data( struct json_parse_state *state
 								else {
 									state->status = FALSE;
 									if( !state->pvtError ) state->pvtError = VarTextCreate();
-									vtprintf( state->pvtError, WIDE( "fault wile parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
 									break;
 								}
 							}
@@ -55403,45 +55453,58 @@ int json6_parse_add_data( struct json_parse_state *state
 								else {
 									state->status = FALSE;
 									if( !state->pvtError ) state->pvtError = VarTextCreate();
-									vtprintf( state->pvtError, WIDE( "fault wile parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
 									break;
 								}
 							}
-							else if( c == '-' ) {
+							else if( c == '-' || c == '+' ) {
 								if( !state->exponent ) {
 									state->status = FALSE;
 									if( !state->pvtError ) state->pvtError = VarTextCreate();
-									vtprintf( state->pvtError, WIDE( "fault wile parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
 									break;
 								}
 								else {
-									(*output->pos++) = c;
+									if( !state->exponent_sign && !state->exponent_digit ) {
+										(*output->pos++) = c;
+										state->exponent_sign = 1;
+									}
+									else {
+										state->status = FALSE;
+										if( !state->pvtError ) state->pvtError = VarTextCreate();
+										vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+										break;
+									}
 								}
 							}
 							else if( c == '.' )
 							{
-								if( !state->val.float_result ) {
+								if( !state->val.float_result && !state->fromHex ) {
 									state->val.float_result = 1;
 									(*output->pos++) = c;
 								}
 								else {
 									state->status = FALSE;
 									if( !state->pvtError ) state->pvtError = VarTextCreate();
-									vtprintf( state->pvtError, WIDE( "fault wile parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
 									break;
 								}
 							}
 							else
 							{
 								// in non streaming mode; these would be required to follow
-								/*
 								if( c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == 0xFEFF
-									|| c == ',' || c == '\'' || c == '\"' || c == '`' ) {
+									|| c == ',' || c == ']' || c == '}'  || c == ':' ) {
+									//lprintf( "Non numeric character received; push the value we have" );
+									(*output->pos) = 0;
+									break;
 								}
-								*/
-								//lprintf( "Non numeric character received; push the value we have" );
-								(*output->pos) = 0;
-								break;
+								else {
+									state->status = FALSE;
+									if( !state->pvtError ) state->pvtError = VarTextCreate();
+									vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									break;
+								}
 							}
 						}
 						if( input ) {
