@@ -52650,6 +52650,7 @@ char *json_escape_string( const char *string ) {
 		}
 		output[m++] = string[n];
 	}
+	output[m] = string[n];
 	return output;
 }
 #define _2char(result,from) (((*from) += 2),( ( result & 0x1F ) << 6 ) | ( ( result & 0x3f00 )>>8))
