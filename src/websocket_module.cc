@@ -1062,8 +1062,7 @@ wssObject::wssObject( struct wssOptions *opts ) {
 		readyState = LISTENING;
 	}
 	if( clearUrl )
-      opts->url = NULL;
-	//lprintf( "Init async handle. (wss)" );
+		opts->url = NULL;
 }
 
 wssObject::~wssObject() {
