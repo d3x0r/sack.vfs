@@ -111,7 +111,7 @@ static PLIST strings;
 
 struct wssOptions {
 	char *url;
-   char *address;
+	char *address;
 	int port;
 	bool ssl;
 	char *cert_chain;
@@ -550,7 +550,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 
 				if( !myself->acceptCallback.IsEmpty() ) {
 					Local<Function> cb = myself->acceptCallback.Get( isolate );
-					Local<Value> result = cb->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
+					cb->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
 				}
 				else
 					eventMessage->accepted = 1;
@@ -1018,17 +1018,17 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 
 wssObject::wssObject( struct wssOptions *opts ) {
 	char tmp[256];
-   int clearUrl = 0;
+	int clearUrl = 0;
 	readyState = INITIALIZING;
 	opening = FALSE;
 	if( !opts->url ) {
 		if( opts->address ) {
 			if( strchr( opts->address, ':' ) )
 				snprintf( tmp, 256, "ws%s://[%s]:%d/", opts->ssl?"s":"", opts->address, opts->port ? opts->port : 8080 );
-         else
+			else
 				snprintf( tmp, 256, "ws%s://%s:%d/", opts->ssl?"s":"", opts->address, opts->port ? opts->port : 8080 );
 		}
-      else
+		else
 			snprintf( tmp, 256, "ws%s://[::]:%d/", opts->ssl?"s":"", opts->port ? opts->port : 8080 );
   		//snprintf( tmp, 256, "ws://0.0.0.0:%d/", opts->port ? opts->port : 8080 );
   		opts->url = tmp;
@@ -1170,22 +1170,22 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
 		struct wssOptions wssOpts;
-      int argOfs = 0;
+		int argOfs = 0;
 		wssOpts.url = NULL;
 		wssOpts.port = 0;
-      wssOpts.address = NULL;
+		wssOpts.address = NULL;
 		if( args[argOfs]->IsString() ) {
 			String::Utf8Value url( args[argOfs]->ToString() );
-         wssOpts.url = StrDup( *url );
-         argOfs++;
+			wssOpts.url = StrDup( *url );
+			argOfs++;
 		}
 		if( args[argOfs]->IsNumber() ) {
 			wssOpts.port = (int)args[0]->IntegerValue();
-         argOfs++;
+			argOfs++;
 		}
 		if( args[argOfs]->IsObject() ) {
 			Local<Object> opts = args[0]->ToObject();
-         ParseWssOptions( &wssOpts, isolate, opts );
+			ParseWssOptions( &wssOpts, isolate, opts );
 		}
 
 		Local<Object> _this = args.This();

@@ -580,6 +580,7 @@ Server Options
 
   | Server Options |   |
   |---|---|
+  | url | URL to listen at. |
   | address | specific address to bind to; default binds to ::0 |
   | port |  a port number.  8080 is the default. |
   | masking | true/false; browsers do not accept server masked data; RFC non-specific; default is false |
@@ -597,7 +598,7 @@ Server Client Methods
   | send | send data on the connection.  Message parameter can either be an ArrayBuffer or a String. (to be implemented; typedarraybuffer) |
   | close | closes the connection |
 
-Http Request fields
+Http Request/Server Client fields
 
   | Name  | Description |
   |----|----|
