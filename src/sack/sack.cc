@@ -52641,32 +52641,33 @@ SACK_NAMESPACE namespace network { namespace json {
 char *json_escape_string( const char *string ) {
 	size_t n;
 	size_t m = 0;
-	TEXTSTR output;
-	if( !string ) return NULL;
-	for( n = 0; string[n]; n++ ) {
-		if( string[n] == '"' )
+	const char *input;
+	TEXTSTR output, _output;
+	if( !(input = string) ) return NULL;
+	for( ; input[0]; input++ ) {
+		if( input[0] == '"' || input[0] == '\\' )
 			m++;
-		if( string[n] == '\n' )
+		else if( input[0] == '\n' )
 			m++;
-		if( string[n] == '\t' )
+		else if( input[0] == '\t' )
 			m++;
 	}
-	output = NewArray( char, n+m+1 );
-	m = 0;
-	for( n = 0; string[n]; n++ ) {
-		if( string[n] == '"' ) {
-			output[m++] = '\\';
+	_output = output = NewArray( char, (input-string)+m+1 );
+	for( input = string; input[0]; input++ ) {
+		if( input[0] == '"' || input[0] == '\\' ) {
+			(*output++) = '\\';
 		}
-		if( string[n] == '\n' ) {
-			output[m++] = '\\'; output[m++] = 'n'; continue;
+		else if( input[0] == '\n' ) {
+			(*output++) = '\\'; (*output++) = 'n'; continue;
 		}
-		if( string[n] == '\t' ) {
-			output[m++] = '\\'; output[m++] = 't'; continue;
+		else if( input[0] == '\t' ) {
+			(*output++) = '\\'; (*output++) = 't'; continue;
 		}
-		output[m++] = string[n];
+		(*output++) = input[0];
 	}
-	output[m] = string[n];
-	return output;
+ // include nul character terminator.
+	(*output++) = input[0];
+	return _output;
 }
 #define _2char(result,from) (((*from) += 2),( ( result & 0x1F ) << 6 ) | ( ( result & 0x3f00 )>>8))
 #define _zero(result,from)  ((*from)++,0)
@@ -54495,20 +54496,34 @@ SACK_NAMESPACE namespace network { namespace json {
 char *json6_escape_string( const char *string ) {
 	size_t n;
 	size_t m = 0;
+	const char *input;
 	TEXTSTR output;
 	TEXTSTR _output;
-	if( !string ) return NULL;
-	for( n = 0; string[n]; n++ ) {
-		if( ( string[n] == '"' ) || ( string[n] == '\\' ) || (string[n] == '`') || (string[n] == '\''))
+	if( !( input = string ) ) return NULL;
+	for( n = 0; input[0]; input++ ) {
+ /*|| (input[0] == '\n') || (input[0] == '\t')*/
+		if( (input[0] == '"' ) || (input[0] == '\\' ) || (input[0] == '`') || (input[0] == '\'') )
 			m++;
 	}
-	_output = output = NewArray( TEXTCHAR, n+m+1 );
-	for( n = 0; string[n]; n++ ) {
-		if( ( string[n] == '"' ) || ( string[n] == '\\' ) || ( string[n] == '`' )|| ( string[n] == '\'' )) {
+	_output = output = NewArray( TEXTCHAR, (input-string)+m+1 );
+	for( input - string; input[0]; input++ ) {
+		if( (input[0] == '"' ) || (input[0] == '\\' ) || (input[0] == '`' )|| (input[0] == '\'' )) {
 			(*output++) = '\\';
 		}
-		(*output++) = string[n];
+		/*
+		 * newline is not required to be subsituted.... so can keep it more 'native'
+		else if( input[0] == '\n' ) {
+			(*output++) = '\\'; (*output++) = 'n';
+			continue;
+		}
+		else if( input[0] == '\t' ) {
+			(*output++) = '\\'; (*output++) = 't';
+			continue;
+		}
+		*/
+		(*output++) = input[0];
 	}
+	(*output++) = input[0];
 	return _output;
 }
 #define _2char(result,from) (((*from) += 2),( ( result & 0x1F ) << 6 ) | ( ( result & 0x3f00 )>>8))
