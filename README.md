@@ -932,6 +932,7 @@ Mostly unimplemented, more of a place holder than functional.
 ---
 
 ## Changelog
+- 0.1.99319 Fix older gcc crash from bad optimization.
 - 0.1.99318 Fix udp readStrings option.
 - 0.1.99317 Added optional GUI interfaces.
 - 0.1.99316 Fix rekey.

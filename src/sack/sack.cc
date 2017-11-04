@@ -8472,10 +8472,18 @@ SRG_EXPORT char * SRG_ID_Generator( void );
 #ifndef SACK_VFS_DEFINED
 /* Header multiple inclusion protection symbol. */
 #define SACK_VFS_DEFINED
-#ifdef SACK_VFS_SOURCE
-#  define SACK_VFS_PROC EXPORT_METHOD
+#ifdef SACK_VFS_STATIC
+#  ifdef SACK_VFS_SOURCE
+#    define SACK_VFS_PROC
+#  else
+#    define SACK_VFS_PROC extern
+#  endif
 #else
-#  define SACK_VFS_PROC IMPORT_METHOD
+#  ifdef SACK_VFS_SOURCE
+#    define SACK_VFS_PROC EXPORT_METHOD
+#  else
+#    define SACK_VFS_PROC IMPORT_METHOD
+#  endif
 #endif
 #ifdef __cplusplus
 /* defined the file system partial namespace (under
@@ -34890,6 +34898,10 @@ PRELOAD( ShareMemToVSAllocHook )
  */
 SACK_MEMORY_NAMESPACE
 //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#if defined( __GNUC__ )
+#  pragma GCC push_options
+#  pragma GCC optimize ("O0")
+#endif
 void  MemSet ( POINTER p, uintptr_t n, size_t sz )
 {
 #if defined( _MSC_VER ) && !defined( __NO_WIN32API__ ) && !defined( UNDER_CE )
@@ -34954,6 +34966,9 @@ void  MemSet ( POINTER p, uintptr_t n, size_t sz )
    memset( p, n, sz );
 #endif
 }
+#if defined( __GNUC__ )
+#  pragma GCC pop_options
+#endif
 int  MemChk ( POINTER p, uintptr_t val, size_t sz )
 {
 #if defined( _MSC_VER ) && !defined( __NO_WIN32API__ ) && !defined( UNDER_CE )

@@ -11225,10 +11225,18 @@ using namespace sack::filesys;
 #ifndef SACK_VFS_DEFINED
 /* Header multiple inclusion protection symbol. */
 #define SACK_VFS_DEFINED
-#ifdef SACK_VFS_SOURCE
-#  define SACK_VFS_PROC EXPORT_METHOD
+#ifdef SACK_VFS_STATIC
+#  ifdef SACK_VFS_SOURCE
+#    define SACK_VFS_PROC
+#  else
+#    define SACK_VFS_PROC extern
+#  endif
 #else
-#  define SACK_VFS_PROC IMPORT_METHOD
+#  ifdef SACK_VFS_SOURCE
+#    define SACK_VFS_PROC EXPORT_METHOD
+#  else
+#    define SACK_VFS_PROC IMPORT_METHOD
+#  endif
 #endif
 #ifdef __cplusplus
 /* defined the file system partial namespace (under
