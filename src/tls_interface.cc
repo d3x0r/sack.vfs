@@ -1558,7 +1558,7 @@ static LOGICAL Validate( struct info_params *params ) {
 				x509 = NULL;
 			}
 			else {
-				throwError( params, "validate : failed to read cert chain" );
+				throwError( params, "validate : cert chain contains non-authoritative cert" );
 				goto free_all;
 			}
 		}

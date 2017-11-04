@@ -358,7 +358,7 @@ udpObject::udpObject( struct udpOptions *opts ) {
 			SetSocketReuseAddress( pc, TRUE );
 		if( opts->reusePort )
 			SetSocketReusePort( pc, TRUE );
-
+		this->readStrings = opts->readStrings;
 		eventQueue = CreateLinkQueue();
 		//lprintf( "Init async handle. (wss)" );
 		async.data = this;
