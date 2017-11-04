@@ -932,6 +932,8 @@ Mostly unimplemented, more of a place holder than functional.
 ---
 
 ## Changelog
+- 0.1.99318 Fix udp readStrings option.
+- 0.1.99317 Added optional GUI interfaces.
 - 0.1.99316 Fix rekey.
 - 0.1.99315 Add rekey method to volumes.
 - 0.1.99314 Fixed duplicating address sent with UDP messages.  
