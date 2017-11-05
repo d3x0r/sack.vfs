@@ -7,6 +7,14 @@ Persistent<FunctionTemplate> ImageObject::tpl;
 Persistent<Function> FontObject::constructor;
 Persistent<Function> ColorObject::constructor;
 Persistent<FunctionTemplate> ColorObject::tpl;
+Persistent<Function> fontResult;
+Persistent<Function> imageResult;
+Persistent<Object> priorThis;
+
+static struct imageLocal {
+	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+
+}imageLocal;
 
 static Local<Object> makeColor( Isolate *isolate, CDATA c ) {
 	Local<Value> argv[1] = { Uint32::New( isolate, c ) };
@@ -14,6 +22,77 @@ static Local<Object> makeColor( Isolate *isolate, CDATA c ) {
 	Local<Object> cObject = cons->NewInstance( 1, argv );
 	return cObject;
 }
+
+static void fontAsyncmsg( uv_async_t* handle ) {
+	// Called by UV in main thread after our worker thread calls uv_async_send()
+	//    I.e. it's safe to callback to the CB we defined in node!
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	//lprintf( "async message notice. %p", myself );
+	{
+		Local<Function> cb = Local<Function>::New( isolate, fontResult );
+		Local<Object> _this = priorThis.Get( isolate );
+		Local<Value> argv[1] = { Number::New( isolate, 0 ) };
+		cb->Call( _this, 1, argv );
+
+		uv_close( (uv_handle_t*)&imageLocal.async, NULL );
+
+	}
+	//lprintf( "done calling message notice." );
+}
+
+static void imageAsyncmsg( uv_async_t* handle ) {
+	// Called by UV in main thread after our worker thread calls uv_async_send()
+	//    I.e. it's safe to callback to the CB we defined in node!
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	//lprintf( "async message notice. %p", myself );
+	{
+		Local<Function> cb = Local<Function>::New( isolate, imageResult );
+		Local<Object> _this = priorThis.Get( isolate );
+		Local<Value> argv[1] = { Number::New( isolate, 0 ) };
+		cb->Call( _this, 1, argv );
+
+		uv_close( (uv_handle_t*)&imageLocal.async, NULL );
+
+	}
+	//lprintf( "done calling message notice." );
+}
+
+
+static uintptr_t fontPickThread( PTHREAD thread ) {
+	MemSet( &imageLocal.async, 0, sizeof( &imageLocal.async ) );
+	uv_async_init( uv_default_loop(), &imageLocal.async, imageAsyncmsg );
+	SFTFont font = PickFont( 0, 0, NULL, NULL, NULL );
+	uv_async_send( &imageLocal.async );
+
+	return 0;
+}
+
+static void pickFont( const FunctionCallbackInfo<Value>&  args ) {
+	Isolate* isolate = args.GetIsolate();
+	priorThis.Reset( isolate, args.This() );
+	fontResult.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+	ThreadTo( fontPickThread, 0 );
+}
+
+static uintptr_t colorPickThread( PTHREAD thread ) {
+	MemSet( &imageLocal.async, 0, sizeof( &imageLocal.async ) );
+	uv_async_init( uv_default_loop(), &imageLocal.async, imageAsyncmsg );
+	CDATA color;
+	PickColor( &color, 0, NULL );
+	uv_async_send( &imageLocal.async );
+
+	return 0;
+}
+
+static void pickColor( const FunctionCallbackInfo<Value>&  args ) {
+	Isolate* isolate = args.GetIsolate();
+	priorThis.Reset( isolate, args.This() );
+	imageResult.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+	ThreadTo( colorPickThread, 0 );
+}
+
 
 void ImageObject::Init( Handle<Object> exports ) {
 	g.pii = GetImageInterface();
@@ -93,7 +172,7 @@ void ImageObject::Init( Handle<Object> exports ) {
 
 	FontObject::constructor.Reset( isolate, fontTemplate->GetFunction() );
 	SET_READONLY( imageTemplate->GetFunction(), "Font", fontTemplate->GetFunction() );
-
+	SET_READONLY_METHOD( fontTemplate->GetFunction(), "dialog", pickFont );
 
 	Local<Object> colors = Object::New( isolate );
 	SET_READONLY( colors, "white", makeColor( isolate, BASE_COLOR_WHITE ) );
@@ -121,6 +200,7 @@ void ImageObject::Init( Handle<Object> exports ) {
 	Local<Function> i = imageTemplate->GetFunction();
 	SET_READONLY( i, "colors", colors );
 	SET_READONLY( i, "Color", colorTemplate->GetFunction() );
+	SET_READONLY_METHOD( colorTemplate->GetFunction(), "dialog", pickColor );
 
 }
 void ImageObject::getPng( const FunctionCallbackInfo<Value>& args ) {

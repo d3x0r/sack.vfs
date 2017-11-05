@@ -4,6 +4,9 @@
 #include <psi.h>
 #include <psi/console.h>
 
+static RegistrationObject *findRegistration( CTEXTSTR name );
+
+
 static struct psiLocal {
 	PLIST registrations;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
@@ -18,6 +21,7 @@ Persistent<FunctionTemplate> ControlObject::controlTemplate;
 Persistent<Function> ControlObject::constructor;
 Persistent<Function> ControlObject::constructor2;
 Persistent<Function> ControlObject::registrationConstructor;
+Persistent<Function> PopupObject::constructor;
 
 struct optionStrings {
 	Isolate *isolate;
@@ -129,10 +133,16 @@ static void asyncmsg( uv_async_t* handle ) {
 				break;
 			}
 			case Event_Control_ButtonClick:
-				cb = Local<Function>::New( isolate, evt->control->cbButtonClick );
+				cb = Local<Function>::New( isolate, evt->control->customEvents[0] );
 				r = cb->Call( evt->control->state.Get( isolate ), 0, NULL );
 
 				break;
+			case Event_Control_ConsoleInput: {
+				cb = Local<Function>::New( isolate, evt->control->customEvents[0] );
+				Local<Value> argv[1] = { String::NewFromUtf8( isolate, GetText( evt->data.console.text ) ) };
+				r = cb->Call( evt->control->state.Get( isolate ), 1, argv );
+				break;
+			}
 			}
 			if( evt->waiter ) {
 				evt->flags.complete = TRUE;
@@ -162,6 +172,9 @@ int MakePSIEvent( ControlObject *control, enum eventType type, ... ) {
 		break;
 	case Event_Control_Key:
 		e.data.key.code = va_arg( args, uint32_t );
+		break;
+	case Event_Control_ConsoleInput:
+		e.data.console.text = va_arg( args, PTEXT );
 		break;
 	}
 
@@ -222,6 +235,7 @@ void ControlObject::Init( Handle<Object> exports ) {
 		Isolate* isolate = Isolate::GetCurrent();
 		Local<FunctionTemplate> psiTemplate;
 		Local<FunctionTemplate> psiTemplate2;
+		Local<FunctionTemplate> psiTemplatePopups;
 		Local<FunctionTemplate> regTemplate;
 
 		// Prepare constructor template
@@ -234,6 +248,12 @@ void ControlObject::Init( Handle<Object> exports ) {
 		controlTemplate.Reset( isolate, psiTemplate2 );
 		psiTemplate2->SetClassName( String::NewFromUtf8( isolate, "sack.PSI.Control" ) );
 		psiTemplate2->InstanceTemplate()->SetInternalFieldCount( 1 );// 1 internal field for wrap
+
+		// Prepare constructor template
+		psiTemplatePopups = FunctionTemplate::New( isolate, PopupObject::NewPopup );
+		controlTemplate.Reset( isolate, psiTemplatePopups );
+		psiTemplatePopups->SetClassName( String::NewFromUtf8( isolate, "sack.PSI.Popup" ) );
+		psiTemplatePopups->InstanceTemplate()->SetInternalFieldCount( 1 );// 1 internal field for wrap
 
 		// Prepare constructor template
 		regTemplate = FunctionTemplate::New( isolate, RegistrationObject::NewRegistration );
@@ -317,6 +337,9 @@ void ControlObject::Init( Handle<Object> exports ) {
 		controlTypes->Set( 13, String::NewFromUtf8( isolate, "Console" ) );
 		controlTypes->Set( 14, String::NewFromUtf8( isolate, "SheetControl" ) );
 		controlTypes->Set( 15, String::NewFromUtf8( isolate, "Combo Box" ) );
+		controlTypes->Set( 16, String::NewFromUtf8( isolate, "Basic Clock Widget" ) );
+		controlTypes->Set( 17, String::NewFromUtf8( isolate, "PSI Console" ) );
+
 		SET_READONLY( controlObject, "types", controlTypes );
 
 		Local<Object> controlColors = Object::New( isolate );
@@ -361,6 +384,8 @@ void ControlObject::Init( Handle<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "hide", ControlObject::show );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "reveal", ControlObject::show );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "close", ControlObject::show );
+		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "edit", ControlObject::edit );
+		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "save", ControlObject::save );
 
 
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "Control", ControlObject::NewControl );
@@ -370,6 +395,11 @@ void ControlObject::Init( Handle<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "hide", ControlObject::show );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "reveal", ControlObject::show );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "redraw", ControlObject::redraw );
+
+
+		NODE_SET_PROTOTYPE_METHOD( psiTemplatePopups, "add", PopupObject::addPopupItem );
+		NODE_SET_PROTOTYPE_METHOD( psiTemplatePopups, "track", PopupObject::trackPopup );
+
 		/*
 		psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "width" )
 			, ControlObject::getCoordinate, ControlObject::setCoordinate, Integer::New( isolate, 0 ) );
@@ -400,6 +430,17 @@ void ControlObject::Init( Handle<Object> exports ) {
 			, FunctionTemplate::New( isolate, ControlObject::setControlText )
 			, DontDelete );
 
+		Local<Function> popupObject = psiTemplatePopups->GetFunction();
+		PopupObject::constructor.Reset( isolate, popupObject );
+		SET_READONLY( exports, "Popup", popupObject );
+		Local<Object> itemTypes = Object::New( isolate );
+		SET_READONLY( itemTypes, "string", Integer::New( isolate, MF_STRING ) );
+		SET_READONLY( itemTypes, "separator", Integer::New( isolate, MF_SEPARATOR ) );
+		SET_READONLY( itemTypes, "checked", Integer::New( isolate, MF_CHECKED ) );
+		SET_READONLY( itemTypes, "disabled", Integer::New( isolate, MF_DISABLED ) );
+		SET_READONLY( itemTypes, "grayed", Integer::New( isolate, MF_GRAYED ) );
+		SET_READONLY( itemTypes, "customDraw", Integer::New( isolate, MF_OWNERDRAW ) );
+		SET_READONLY( popupObject, "itemType", itemTypes );
 
 		constructor.Reset( isolate, psiTemplate->GetFunction() );
 		SET_READONLY( exports, "Frame",	psiTemplate->GetFunction() );
@@ -477,6 +518,7 @@ void ControlObject::setControlColor( const FunctionCallbackInfo<Value>& args ) {
 
 
 ControlObject::ControlObject( ControlObject *over, const char *type, const char *title, int x, int y, int w, int h ) {
+	memset( this, 0, sizeof( *this ) );
 	image = NULL;
 	frame = over;
 	psiLocal.pendingCreate = this;
@@ -487,12 +529,14 @@ ControlObject::ControlObject( ControlObject *over, const char *type, const char 
 }
 
 ControlObject::ControlObject( const char *title, int x, int y, int w, int h, int border, ControlObject *over ) {
+	memset( this, 0, sizeof( *this ) );
 	image = NULL;
 	frame = over;
 	control = ::CreateFrame( title, x, y, w, h, border, over ? over->control : (PSI_CONTROL)NULL );
 }
 
 ControlObject::ControlObject( const char *type, ControlObject *parent, int32_t x, int32_t y, uint32_t w, uint32_t h ) {
+	memset( this, 0, sizeof( *this ) );
 	image = NULL;
 	psiLocal.pendingCreate = this;
 	control = ::MakeNamedControl( parent->control, type, x, y, w, h, -1 );
@@ -508,7 +552,7 @@ ControlObject::ControlObject() {
 	control = NULL;
 }
 
-
+/* this is constructor of sack.PSI.Frame */
 void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	enableEventLoop();
@@ -518,7 +562,6 @@ void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
 			return;
 		}
 
-		char *type;
 		char *title = "Node Application";
 		char *tmpTitle = NULL;
 		int x = 0, y = 0, w = 1024, h = 768, border = 0;
@@ -528,7 +571,7 @@ void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
 		int argc = args.Length();
 		if( argc > 0 ) {
 			String::Utf8Value fName( args[0]->ToString() );
-			type = StrDup( *fName );
+			tmpTitle = title = StrDup( *fName );
 			arg_ofs++;
 		}
 		else {
@@ -536,15 +579,6 @@ void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
 			ControlObject::wrapSelf( isolate, obj, args.This() );
 			args.GetReturnValue().Set( args.This() );
 			return;
-		}
-		if( argc > (arg_ofs+0) ) {
-			if( args[arg_ofs + 0]->IsString() ) {
-				String::Utf8Value fName( args[arg_ofs + 0]->ToString() );
-				if( tmpTitle )
-					Deallocate( char*, title );
-				tmpTitle = title = StrDup( *fName );
-				arg_ofs++;
-			}
 		}
 		if( argc > (arg_ofs + 0) ) {
 			x = (int)args[arg_ofs + 0]->NumberValue();
@@ -610,15 +644,32 @@ void ControlObject::writeConsole( const FunctionCallbackInfo<Value>& args) {
 	}
 }
 
+static void consoleInputEvent( uintptr_t arg, PTEXT text ) {
+	MakePSIEvent( (ControlObject*)arg, Event_Control_ConsoleInput, text );
+}
+
 void ControlObject::setConsoleRead( const FunctionCallbackInfo<Value>& args ) {
-	ControlObject *c = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	Isolate* isolate = args.GetIsolate();
+	//Local<FunctionTemplate> tpl = ControlObject::controlTemplate.Get( isolate );
+	ControlObject *c = NULL;
+	//if( tpl->HasInstance( args.This() ) )
+	c = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	//else if( tpl->HasInstance( args.Holder() ) )
+	// c = ObjectWrap::Unwrap<ControlObject>( args.Holder() );
+
 	if( args.Length() > 0 )
 	{
-		Isolate* isolate = args.GetIsolate();
-		c->cbConsoleRead.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+		c->customEvents[0].Reset( isolate, Handle<Function>::Cast( args[0] ) );
 		//args[0]->ToFunction
-		//PSIConsoleInputEvent( c->control,
+		PSIConsoleInputEvent( c->control, consoleInputEvent, (uintptr_t)c );
 	}
+}
+
+void  ControlObject::addSheetsPage( const FunctionCallbackInfo<Value>& args ) {
+	//String::Utf8Value title( args[0]->ToString() );
+	ControlObject *c = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	ControlObject *page = ObjectWrap::Unwrap<ControlObject>( args[0]->ToObject() );
+	AddSheet( c->control, page->control );
 }
 
 static void buttonClicked( uintptr_t object, PSI_CONTROL ) {
@@ -631,7 +682,7 @@ void ControlObject::setButtonClick( const FunctionCallbackInfo<Value>& args ) {
 	{
 		Isolate* isolate = args.GetIsolate();
 		::SetButtonPushMethod( c->control, buttonClicked, (uintptr_t)c );
-		c->cbButtonClick.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+		c->customEvents[0].Reset( isolate, Handle<Function>::Cast( args[0] ) );
 	}
 }
 
@@ -641,7 +692,7 @@ void ControlObject::setButtonEvent( const FunctionCallbackInfo<Value>& args ) {
 	{
 		Isolate* isolate = args.GetIsolate();
 		String::Utf8Value event( args[0] );
-		c->cbButtonClick.Reset( isolate, Handle<Function>::Cast( args[1] ) );
+		c->customEvents[0].Reset( isolate, Handle<Function>::Cast( args[1] ) );
 		::SetButtonPushMethod( c->control, buttonClicked, (uintptr_t)c );
 	}
 }
@@ -650,28 +701,51 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 	CTEXTSTR type = GetControlTypeName( obj->control );
 	if( StrCmp( type, "PSI Console" ) == 0 ) {
 		c->Set( String::NewFromUtf8( isolate, "write" ), Function::New( isolate, ControlObject::writeConsole ) );
-		c->Set( String::NewFromUtf8( isolate, "setRead" ), Function::New( isolate, ControlObject::setConsoleRead ) );
-	}
-	else if( StrCmp( type, NORMAL_BUTTON_NAME ) == 0 ) {
+		c->Set( String::NewFromUtf8( isolate, "oninput" ), Function::New( isolate, ControlObject::setConsoleRead ) );
+	} else if( StrCmp( type, NORMAL_BUTTON_NAME ) == 0 ) {
 		c->Set( String::NewFromUtf8( isolate, "on" ), Function::New( isolate, ControlObject::setButtonEvent ) );
 		c->Set( String::NewFromUtf8( isolate, "click" ), Function::New( isolate, ControlObject::setButtonClick ) );
-	}
-	else if( StrCmp( type, IMAGE_BUTTON_NAME ) == 0 ) {
+	} else if( StrCmp( type, IMAGE_BUTTON_NAME ) == 0 ) {
 		c->Set( String::NewFromUtf8( isolate, "on" ), Function::New( isolate, ControlObject::setButtonEvent ) );
 		c->Set( String::NewFromUtf8( isolate, "click" ), Function::New( isolate, ControlObject::setButtonClick ) );
-	}
-	else if( StrCmp( type, CUSTOM_BUTTON_NAME ) == 0 ) {
+	} else if( StrCmp( type, CUSTOM_BUTTON_NAME ) == 0 ) {
 		c->Set( String::NewFromUtf8( isolate, "on" ), Function::New( isolate, ControlObject::setButtonEvent ) );
 		c->Set( String::NewFromUtf8( isolate, "click" ), Function::New( isolate, ControlObject::setButtonClick ) );
-	}
-	else if( StrCmp( type, RADIO_BUTTON_NAME ) == 0 ) {
+	} else if( StrCmp( type, RADIO_BUTTON_NAME ) == 0 ) {
 
-	}
-	else if( StrCmp( type, SCROLLBAR_CONTROL_NAME ) == 0 ) {
+	} else if( StrCmp( type, SCROLLBAR_CONTROL_NAME ) == 0 ) {
+
+	} else if( StrCmp( type, LISTBOX_CONTROL_NAME ) == 0 ) {
+		//c->Set( String::NewFromUtf8( isolate, "addItem" ), Function::New( isolate, addListboxItem ) );
+		//c->Set( String::NewFromUtf8( isolate, "removeItem" ), Function::New( isolate, addListboxItem ) );
+		//c->Set( String::NewFromUtf8( isolate, "onselect" ), Function::New( isolate, addListboxItem ) );
+		//c->Set( String::NewFromUtf8( isolate, "ondoubleclick" ), Function::New( isolate, addListboxItem ) );
+	} else if( StrCmp( type, SHEET_CONTROL_NAME ) == 0 ) {
+		c->Set( String::NewFromUtf8( isolate, "addPage" ), Function::New( isolate, ControlObject::addSheetsPage ) );
+
+	} else if( StrCmp( type, PROGRESS_BAR_CONTROL_NAME ) == 0 ) {
+		c->SetAccessorProperty( String::NewFromUtf8( isolate, "range" )
+			, Local<Function>()
+			, Function::New( isolate, ControlObject::setProgressBarRange )
+			, DontDelete );
+		c->SetAccessorProperty( String::NewFromUtf8( isolate, "progress" )
+			, Local<Function>()
+			, Function::New( isolate, ControlObject::setProgressBarProgress )
+			, DontDelete );
+		c->SetAccessorProperty( String::NewFromUtf8( isolate, "colors" )
+			, Local<Function>()
+			, Function::New( isolate, ControlObject::setProgressBarColors )
+			, DontDelete );
+		c->SetAccessorProperty( String::NewFromUtf8( isolate, "text" )
+			, Local<Function>()
+			, Function::New( isolate, ControlObject::setProgressBarTextEnable )
+			, DontDelete );
+
 
 	}
 }
 
+/* this is constructor of sack.PSI.Control (also invoked as frame.Control */
 void ControlObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 	int argc = args.Length();
 	Isolate* isolate = args.GetIsolate();
@@ -721,6 +795,7 @@ void ControlObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 				}
 				psiLocal.newControl = newControl;
 				ControlObject* obj = new ControlObject( type, container, x, y, w, h );
+				ControlObject::wrapSelf( isolate, obj, newControl );
 
 				ProvideKnownCallbacks( isolate, newControl, obj );
 
@@ -817,6 +892,7 @@ void ControlObject::redraw( const FunctionCallbackInfo<Value>& args ) {
 	SmudgeCommon( me->control );
 
 }
+
 void ControlObject::show( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
@@ -824,101 +900,15 @@ void ControlObject::show( const FunctionCallbackInfo<Value>& args ) {
 	DisplayFrame( me->control );
 }
 
-RegistrationObject::RegistrationObject( Isolate *isolate, const char *name ) {
-	struct registrationOpts opts;
-	memset( &opts, 0, sizeof( struct registrationOpts ) );
-	opts.name = name;
-	InitRegistration( isolate, &opts );
-}
-RegistrationObject::RegistrationObject( Isolate *isolate, struct registrationOpts *opts ) {
-	InitRegistration( isolate, opts );
+void ControlObject::edit( const FunctionCallbackInfo<Value>& args ) {
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	EditFrame( me->control, 1 );
 }
 
-
-	void RegistrationObject::NewRegistration( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
-		if( args.IsConstructCall() ) {
-			int argc = args.Length();
-			char *title = NULL;
-			if( argc > 0 ) {
-				int arg = 0;
-				struct registrationOpts regOpts;
-				memset( &regOpts, 0, sizeof( struct registrationOpts ) );
-				regOpts.width = 32;
-				regOpts.height = 32;
-				regOpts.default_border = BORDER_NORMAL;
-
-				if( args[arg]->IsString() ) {
-					arg++;
-					String::Utf8Value name( args[0]->ToString() );
-					regOpts.name = StrDup( *name );
-				}
-				if( args[arg]->IsObject() ) {
-					Local<Object> opts = args[arg]->ToObject();
-					Local<String> optName;
-					struct optionStrings *strings = getStrings( isolate );
-					if( opts->Has( optName = strings->nameString->Get( isolate ) ) ) {
-						String::Utf8Value name( opts->Get( optName )->ToString() );
-						regOpts.name = StrDup( *name );
-					}
-					if( opts->Has( optName = strings->widthString->Get( isolate ) ) ) {
-						regOpts.width = (int)opts->Get( optName )->IntegerValue();
-					}
-					if( opts->Has( optName = strings->heightString->Get( isolate ) ) ) {
-						regOpts.height = (int)opts->Get( optName )->IntegerValue();
-					}
-					if( opts->Has( optName = strings->borderString->Get( isolate ) ) ) {
-						regOpts.default_border = (int)opts->Get( optName )->IntegerValue();
-					}
-					if( opts->Has( optName = strings->createString->Get( isolate ) ) ) {
-						regOpts.cbInitEvent = Handle<Function>::Cast( opts->Get( optName ) );
-					}
-					if( opts->Has( optName = strings->drawString->Get( isolate ) ) ) {
-						regOpts.cbDrawEvent = Handle<Function>::Cast( opts->Get( optName ) );
-					}
-					if( opts->Has( optName = strings->mouseString->Get( isolate ) ) ) {
-						regOpts.cbMouseEvent = Handle<Function>::Cast( opts->Get( optName ) );
-					}
-					if( opts->Has( optName = strings->keyString->Get( isolate ) ) ) {
-						regOpts.cbKeyEvent = Handle<Function>::Cast( opts->Get( optName ) );
-					}
-					if( opts->Has( optName = strings->destroyString->Get( isolate ) ) ) {
-						regOpts.cbDestroyEvent = Handle<Function>::Cast( opts->Get( optName ) );
-					}
-				}
-
-				// Invoked as constructor: `new MyObject(...)`
-				RegistrationObject* obj = new RegistrationObject( isolate, &regOpts );
-				obj->_this.Reset( isolate, args.This() );
-				obj->Wrap( args.This() );
-				args.GetReturnValue().Set( args.This() );
-			}
-		}
-		else {
-			// Invoked as plain function `MyObject(...)`, turn into construct call.
-			int argc = args.Length();
-			Local<Value> *argv = new Local<Value>[argc];
-			for( int n = 0; n < argc; n++ )
-				argv[n] = args[n];
-
-			Local<Function> cons = Local<Function>::New( isolate, ControlObject::registrationConstructor );
-			args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
-			delete argv;
-		}
-	}
-
-RegistrationObject::~RegistrationObject() {
-}
-
-
-static RegistrationObject *findRegistration( CTEXTSTR name ) {
-	RegistrationObject *obj;
-	INDEX idx;
-	LIST_FORALL( psiLocal.registrations, idx, RegistrationObject *, obj ) {
-		if( StrCmp( obj->r.name, name ) == 0 )
-			break;
-	}
-	return obj;
+void ControlObject::save( const FunctionCallbackInfo<Value>& args ) {
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	String::Utf8Value name( args[0]->ToString() );
+	SaveXMLFrame( me->control, *name );
 }
 
 //-------------------------------------------------------
@@ -1014,6 +1004,69 @@ void ControlObject::setCoordinate( const FunctionCallbackInfo<Value>&  args ) {
 
 //-------------------------------------------------------
 
+void ControlObject::setProgressBarRange( const FunctionCallbackInfo<Value>&  args ) {
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	ProgressBar_SetRange( me->control, args[0]->Int32Value() );
+}
+void ControlObject::setProgressBarProgress( const FunctionCallbackInfo<Value>&  args ) {
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	ProgressBar_SetProgress( me->control, args[0]->Int32Value() );
+}
+void ControlObject::setProgressBarColors( const FunctionCallbackInfo<Value>&  args ) {
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	CDATA c1 = ColorObject::getColor( args[0]->ToObject() );
+	CDATA c2 = ColorObject::getColor( args[0]->ToObject() );
+	ProgressBar_SetColors( me->control, c1, c2 );
+}
+void ControlObject::setProgressBarTextEnable( const FunctionCallbackInfo<Value>&  args ) {
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	ProgressBar_EnableText( me->control, args[0]->Int32Value() );
+}
+
+//-------------------------------------------------------
+
+PopupObject::PopupObject() {
+	memset( this, 0, sizeof( *this ) );
+}
+PopupObject::~PopupObject() {
+
+}
+
+void PopupObject::wrapSelf( Isolate* isolate, PopupObject *_this, Local<Object> into ) {
+	_this->Wrap( into );
+	_this->_this.Reset( isolate, into );	
+}
+
+void PopupObject::NewPopup( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	enableEventLoop();
+	if( args.IsConstructCall() ) {
+
+		PopupObject* obj = new PopupObject( );
+		PopupObject::wrapSelf( isolate, obj, args.This() );
+		args.GetReturnValue().Set( args.This() );
+	}
+	else {
+		// Invoked as plain function `MyObject(...)`, turn into construct call.
+		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		args.GetReturnValue().Set( cons->NewInstance( 0, NULL ) );
+	}
+}
+
+void PopupObject::addPopupItem( const FunctionCallbackInfo<Value>& args ) {
+	PopupObject *popup = ObjectWrap::Unwrap<PopupObject>( args.This() );
+	String::Utf8Value text( args[0]->ToString() );
+	AppendPopupItem( popup->popup, MF_STRING, args[1]->Int32Value(), *text );
+}
+
+void PopupObject::trackPopup( const FunctionCallbackInfo<Value>& args ) {
+	PopupObject *popup = ObjectWrap::Unwrap<PopupObject>( args.This() );
+	TrackPopup( popup->popup, NULL );
+}
+
+
+//-------------------------------------------------------
+
 static int CPROC onLoad( PSI_CONTROL pc, PTEXT params ) {
 	Isolate* isolate = Isolate::GetCurrent();
 	CTEXTSTR name = GetControlTypeName( pc );
@@ -1041,6 +1094,105 @@ static int CPROC onCreate( PSI_CONTROL pc ) {
 
 	return retval->ToInt32()->Value();
 }
+
+
+RegistrationObject::RegistrationObject( Isolate *isolate, const char *name ) {
+	struct registrationOpts opts;
+	memset( &opts, 0, sizeof( struct registrationOpts ) );
+	opts.name = name;
+	InitRegistration( isolate, &opts );
+}
+RegistrationObject::RegistrationObject( Isolate *isolate, struct registrationOpts *opts ) {
+	InitRegistration( isolate, opts );
+}
+
+
+void RegistrationObject::NewRegistration( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.IsConstructCall() ) {
+		int argc = args.Length();
+		char *title = NULL;
+		if( argc > 0 ) {
+			int arg = 0;
+			struct registrationOpts regOpts;
+			memset( &regOpts, 0, sizeof( struct registrationOpts ) );
+			regOpts.width = 32;
+			regOpts.height = 32;
+			regOpts.default_border = BORDER_NORMAL;
+
+			if( args[arg]->IsString() ) {
+				arg++;
+				String::Utf8Value name( args[0]->ToString() );
+				regOpts.name = StrDup( *name );
+			}
+			if( args[arg]->IsObject() ) {
+				Local<Object> opts = args[arg]->ToObject();
+				Local<String> optName;
+				struct optionStrings *strings = getStrings( isolate );
+				if( opts->Has( optName = strings->nameString->Get( isolate ) ) ) {
+					String::Utf8Value name( opts->Get( optName )->ToString() );
+					regOpts.name = StrDup( *name );
+				}
+				if( opts->Has( optName = strings->widthString->Get( isolate ) ) ) {
+					regOpts.width = (int)opts->Get( optName )->IntegerValue();
+				}
+				if( opts->Has( optName = strings->heightString->Get( isolate ) ) ) {
+					regOpts.height = (int)opts->Get( optName )->IntegerValue();
+				}
+				if( opts->Has( optName = strings->borderString->Get( isolate ) ) ) {
+					regOpts.default_border = (int)opts->Get( optName )->IntegerValue();
+				}
+				if( opts->Has( optName = strings->createString->Get( isolate ) ) ) {
+					regOpts.cbInitEvent = Handle<Function>::Cast( opts->Get( optName ) );
+				}
+				if( opts->Has( optName = strings->drawString->Get( isolate ) ) ) {
+					regOpts.cbDrawEvent = Handle<Function>::Cast( opts->Get( optName ) );
+				}
+				if( opts->Has( optName = strings->mouseString->Get( isolate ) ) ) {
+					regOpts.cbMouseEvent = Handle<Function>::Cast( opts->Get( optName ) );
+				}
+				if( opts->Has( optName = strings->keyString->Get( isolate ) ) ) {
+					regOpts.cbKeyEvent = Handle<Function>::Cast( opts->Get( optName ) );
+				}
+				if( opts->Has( optName = strings->destroyString->Get( isolate ) ) ) {
+					regOpts.cbDestroyEvent = Handle<Function>::Cast( opts->Get( optName ) );
+				}
+			}
+
+			// Invoked as constructor: `new MyObject(...)`
+			RegistrationObject* obj = new RegistrationObject( isolate, &regOpts );
+			obj->_this.Reset( isolate, args.This() );
+			obj->Wrap( args.This() );
+			args.GetReturnValue().Set( args.This() );
+		}
+	}
+	else {
+		// Invoked as plain function `MyObject(...)`, turn into construct call.
+		int argc = args.Length();
+		Local<Value> *argv = new Local<Value>[argc];
+		for( int n = 0; n < argc; n++ )
+			argv[n] = args[n];
+
+		Local<Function> cons = Local<Function>::New( isolate, ControlObject::registrationConstructor );
+		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		delete argv;
+	}
+}
+
+RegistrationObject::~RegistrationObject() {
+}
+
+
+RegistrationObject *findRegistration( CTEXTSTR name ) {
+	RegistrationObject *obj;
+	INDEX idx;
+	LIST_FORALL( psiLocal.registrations, idx, RegistrationObject *, obj ) {
+		if( StrCmp( obj->r.name, name ) == 0 )
+			break;
+	}
+	return obj;
+}
+
 
 void RegistrationObject::setCreate( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -1153,5 +1305,4 @@ void RegistrationObject::InitRegistration( Isolate *isolate, struct registration
 
 
 }
-
 

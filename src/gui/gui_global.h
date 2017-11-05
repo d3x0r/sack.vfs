@@ -59,8 +59,10 @@ enum eventType {
 	Event_Control_Key,
 	Event_Control_Draw,
 	Event_Control_Load,
-
+	/* button event*/
 	Event_Control_ButtonClick,
+	/* console events*/
+	Event_Control_ConsoleInput,
 };
 
 struct event {
@@ -80,6 +82,9 @@ struct event {
 		struct {
 			uint32_t code;
 		}key;
+		struct {
+			PTEXT text;
+		}console;
 		struct {
 			is_control *control;
 		}InterShell;

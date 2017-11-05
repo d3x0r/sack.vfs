@@ -104,6 +104,25 @@ public:
 };
 
 
+class PopupObject : public node::ObjectWrap {
+public:
+	PMENU popup;
+	Persistent<Object> _this;
+
+	static v8::Persistent<v8::Function> constructor;   // Popup
+
+public:
+
+	PopupObject();
+	~PopupObject();
+
+	static void wrapSelf( Isolate* isolate, PopupObject *_this, Local<Object> into );
+
+	static void NewPopup( const FunctionCallbackInfo<Value>& args );
+	static void addPopupItem( const FunctionCallbackInfo<Value>& args );
+	static void trackPopup( const FunctionCallbackInfo<Value>& args );
+
+};
 
 class ControlObject : public node::ObjectWrap {
 
@@ -138,10 +157,20 @@ public:
 	static void registerControl( const FunctionCallbackInfo<Value>& args );
 
 	static void show( const FunctionCallbackInfo<Value>& args );
+	static void edit( const FunctionCallbackInfo<Value>& args );
+	static void save( const FunctionCallbackInfo<Value>& args );
 
 	static void hide( const FunctionCallbackInfo<Value>& args );
 	static void reveal( const FunctionCallbackInfo<Value>& args );
 	static void redraw( const FunctionCallbackInfo<Value>& args );
+
+	static void addSheetsPage( const FunctionCallbackInfo<Value>& args );
+
+
+	static void setProgressBarRange( const FunctionCallbackInfo<Value>& args );
+	static void setProgressBarProgress( const FunctionCallbackInfo<Value>& args );
+	static void setProgressBarColors( const FunctionCallbackInfo<Value>& args );
+	static void setProgressBarTextEnable( const FunctionCallbackInfo<Value>& args );
 
 	static void writeConsole( const FunctionCallbackInfo<Value>& args );
 	static void setConsoleRead( const FunctionCallbackInfo<Value>& args );
@@ -157,8 +186,11 @@ public:
 	static void getCoordinate( const FunctionCallbackInfo<Value>&  args );
 	static void setCoordinate( const FunctionCallbackInfo<Value>&  args );
 
-	Persistent<Function, CopyablePersistentTraits<Function>> cbConsoleRead;  // event for console control callback (psi/console.h)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbButtonClick;  // event for button control callback (psi/console.h)
+	//Persistent<Function, CopyablePersistentTraits<Function>> cbConsoleRead;  // event for console control callback (psi/console.h)
+	//Persistent<Function, CopyablePersistentTraits<Function>> cbButtonClick;  // event for button control callback (psi/console.h)
+
+	// a chunk of events that are general place holders for events from controls
+	Persistent<Function, CopyablePersistentTraits<Function>> customEvents[5];  // event for button control callback (psi/console.h)
 
 
 
@@ -198,5 +230,6 @@ public:
 
 	RegistrationObject *registration;
 };
+
 
 
