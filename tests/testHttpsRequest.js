@@ -2,7 +2,8 @@
 var sack = require( '..' );
 var https = sack.HTTPS;
 
-		var opts = {  hostname: 'google.com',
+		var opts = {  hostname:  //'216.58.192.142',
+                			 'google.com',
 					  //port : 443,
 					  method : "GET",
 					  ca : null,
@@ -13,6 +14,10 @@ var https = sack.HTTPS;
 
 		var res = https.get( opts );
 		console.log( "Result:", res );
+                if( res.error ) {
+                	// error
+                }
+                else
 		{
 			const statusCode = res.statusCode;
 			const contentType = res.headers['content-type'] || res.headers['Content-Type'];
