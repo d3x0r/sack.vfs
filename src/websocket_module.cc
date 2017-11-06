@@ -105,6 +105,10 @@ struct optionStrings {
 	Eternal<String> *requestString;
 	Eternal<String> *readyStateString;
 	Eternal<String> *bufferedAmountString;
+	Eternal<String> *hostnameString;
+	Eternal<String> *rejectUnauthorizedString;
+	Eternal<String> *pathString;
+	Eternal<String> *methodString;
 };
 
 static PLIST strings;
@@ -239,6 +243,11 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->bytesWrittenString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "bytesWritten" ) );
 		check->requestString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "request" ) );
 		check->bufferedAmountString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "bufferedAmount" ) );
+
+		check->hostnameString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "hostname" ) );
+		check->pathString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "path" ) );
+		check->methodString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "method" ) );
+		check->rejectUnauthorizedString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "rejectUnauthorized" ) );
 	}
 	return check;
 }
@@ -277,6 +286,48 @@ public:
 
 	~wssObject();
 };
+
+class httpRequestObject : public node::ObjectWrap {
+public:
+	PCLIENT pc;
+	static Persistent<Function> constructor;
+	Persistent<Object> _this;
+	//PVARTEXT pvtResult;
+	bool ssl;
+	int port;
+	char *hostname;
+	char *method;
+	char *ca;
+	char *path;
+	bool rejestUnauthorized;
+
+	bool firstDispatchDone;
+	bool dataDispatch;
+	bool endDispatch;
+
+	bool finished;
+	PTHREAD waiter;
+
+	PTEXT result;
+public:
+
+	httpRequestObject();
+
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	static void on( const v8::FunctionCallbackInfo<Value>& args );
+	static void wait( const v8::FunctionCallbackInfo<Value>& args );
+	static void get( const v8::FunctionCallbackInfo<Value>& args );
+	static void gets( const v8::FunctionCallbackInfo<Value>& args );
+	static void getRequest( const v8::FunctionCallbackInfo<Value>& args, bool secure );
+
+	Persistent<Function, CopyablePersistentTraits<Function>> resultCallback;
+	Persistent<Function, CopyablePersistentTraits<Function>> cbError;
+
+	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+
+	~httpRequestObject();
+};
+
 
 // web sock server Object
 class httpObject : public node::ObjectWrap {
@@ -369,6 +420,7 @@ public:
 };
 
 Persistent<Function> httpObject::constructor;
+Persistent<Function> httpRequestObject::constructor;
 Persistent<Function> wssObject::constructor;
 Persistent<Function> wssiObject::constructor;
 Persistent<Function> wscObject::constructor;
@@ -731,13 +783,34 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 	{
 		Local<FunctionTemplate> httpTemplate;
 		httpTemplate = FunctionTemplate::New( isolate, httpObject::New );
-		httpTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.http.request" ) );
+		httpTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.http.requestHandler" ) );
 		httpTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( httpTemplate, "writeHead", httpObject::writeHead );
 		NODE_SET_PROTOTYPE_METHOD( httpTemplate, "end", httpObject::end );
 		httpTemplate->ReadOnlyPrototype();
 
 		httpObject::constructor.Reset( isolate, httpTemplate->GetFunction() );
+
+		// this is not exposed as a class that javascript can create.
+		//SET_READONLY( o, "R", wscTemplate->GetFunction() );
+	}
+	{
+		Local<FunctionTemplate> httpRequestTemplate;
+		httpRequestTemplate = FunctionTemplate::New( isolate, httpRequestObject::New );
+		httpRequestTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.HTTP[S]" ) );
+		httpRequestTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
+		NODE_SET_PROTOTYPE_METHOD( httpRequestTemplate, "on", httpRequestObject::on );
+		NODE_SET_PROTOTYPE_METHOD( httpRequestTemplate, "wait", httpRequestObject::wait );
+		httpRequestTemplate->ReadOnlyPrototype();
+		httpRequestObject::constructor.Reset( isolate, httpRequestTemplate->GetFunction() );
+
+		Local<Object> oHttps = Object::New( isolate );
+		SET_READONLY( exports, "HTTPS", oHttps );
+		SET_READONLY_METHOD( oHttps, "get", httpRequestObject::gets );
+
+		Local<Object> oHttp = Object::New( isolate );
+		SET_READONLY( exports, "HTTP", oHttp );
+		SET_READONLY_METHOD( oHttp, "get", httpRequestObject::get );
 
 		// this is not exposed as a class that javascript can create.
 		//SET_READONLY( o, "R", wscTemplate->GetFunction() );
@@ -1765,4 +1838,149 @@ void wscObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 	if( obj )
 		args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->readyState ) );
 #endif
+}
+
+
+httpRequestObject::httpRequestObject() {
+	memset( this, 0, sizeof( *this ) );
+}
+
+httpRequestObject::~httpRequestObject() {
+
+}
+
+void httpRequestObject::New( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.IsConstructCall() ) {
+		httpRequestObject *request = new httpRequestObject();
+		Local<Object> _this = args.This();
+		request->_this.Reset( isolate, _this );
+		request->Wrap( _this );
+		args.GetReturnValue().Set( _this );
+	}
+	else {
+		// Invoked as plain function `MyObject(...)`, turn into construct call.
+		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
+	}
+
+}
+
+void httpRequestObject::wait( const FunctionCallbackInfo<Value>& args ) {
+	httpRequestObject *http = ObjectWrap::Unwrap<httpRequestObject>( args.This() );
+
+	args.GetReturnValue().Set( args.This() );
+
+}
+
+void httpRequestObject::on( const FunctionCallbackInfo<Value>& args ) {
+	String::Utf8Value eventName( args[0]->ToString() );
+	httpRequestObject *http = ObjectWrap::Unwrap<httpRequestObject>( args.This() );
+
+	Local<Function> cb = Local<Function>::Cast( args[1] );
+	/* abort, connect, continue, response, socket, timeout, upgrade, */
+	if( StrCmp( *eventName, "error" ) == 0 ) {
+
+	} 
+	args.GetReturnValue().Set( args.This() );
+}
+
+
+void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, bool secure ) {
+	Isolate* isolate = args.GetIsolate();
+
+	httpRequestObject *httpRequest = new httpRequestObject();
+
+	if( secure )
+		httpRequest->port = 443;
+	else
+		httpRequest->port = 80;
+	httpRequest->ssl = secure;
+
+	// incoming message events; aborted, close, readableStream (close, data, end, error, readable)
+	Local<Object> options = args[0]->ToObject();
+	Local<String> optName;
+	optionStrings *strings = getStrings( isolate );
+
+	if( options->Has( optName = strings->hostnameString->Get( isolate ) ) ) {
+		String::Utf8Value value( options->Get( optName ) );
+		httpRequest->hostname = StrDup( *value );
+	}
+
+	if( options->Has( optName = strings->portString->Get( isolate ) ) ) {
+		int32_t x = options->Get( optName )->Int32Value();
+		httpRequest->port = x;
+	}
+
+	if( options->Has( optName = strings->methodString->Get( isolate ) ) ) {
+		String::Utf8Value value( options->Get( optName ) );
+		httpRequest->method = StrDup( *value );
+	}
+
+	if( secure && options->Has( optName = strings->caString->Get( isolate ) ) ) {
+		if( options->Get( optName )->IsString() ) {
+			String::Utf8Value value( options->Get( optName ) );
+			httpRequest->ca = StrDup( *value );
+		}
+	}
+
+	if( options->Has( optName = strings->rejectUnauthorizedString->Get( isolate ) ) ) {
+		httpRequest->rejestUnauthorized = options->Get( optName )->ToBoolean()->Value();
+	}
+
+	if( options->Has( optName = strings->pathString->Get( isolate ) ) ) {
+		String::Utf8Value value( options->Get( optName ) );
+		httpRequest->path = StrDup( *value );
+	}
+
+	Local<Object> result = Object::New( isolate );
+
+	{
+		PVARTEXT pvtUrl = VarTextCreate();
+		vtprintf( pvtUrl, "https://%s:%d%s", httpRequest->hostname, httpRequest->port, httpRequest->path );
+		PTEXT address = SegCreateFromText( httpRequest->hostname );
+		PTEXT url = VarTextPeek( pvtUrl );
+
+		HTTPState state;
+		if( httpRequest->ssl )
+			state = GetHttpsQuery( address, url, httpRequest->ca );
+		else
+			state = GetHttpQuery( address, url );
+
+		if( state )
+		{
+			result->Set( String::NewFromUtf8( isolate, "content" ), String::NewFromUtf8( isolate, GetText( GetHttpContent( state ) ) ) );
+			result->Set( String::NewFromUtf8( isolate, "statusCode" ), Integer::New( isolate, GetHttpResponseCode( state ) ) );
+			result->Set( String::NewFromUtf8( isolate, "status" ), String::NewFromUtf8( isolate, GetText( GetHttpResponce( state ) ) ) );
+			Local<Array> arr = Array::New( isolate );
+			PLIST headers = GetHttpHeaderFields( state );
+			INDEX idx;
+			struct HttpField *header;
+			//headers
+			LIST_FORALL( headers, idx, struct HttpField *, header ) {
+				arr->Set( String::NewFromUtf8( isolate, (const char*)GetText( header->name ), NewStringType::kNormal, (int)GetTextSize( header->name ) ).ToLocalChecked()
+					, String::NewFromUtf8( isolate, (const char*)GetText( header->value ), NewStringType::kNormal, (int)GetTextSize( header->value ) ).ToLocalChecked() );
+			}
+			result->Set( String::NewFromUtf8( isolate, "headers" ), arr );
+
+			DestroyHttpState( state );
+		}
+		else
+		{
+			result->Set( String::NewFromUtf8( isolate, "error" ), String::NewFromUtf8( isolate, "Some Error" ) );
+
+		}
+
+		VarTextDestroy( &pvtUrl );
+	}
+
+
+	args.GetReturnValue().Set( result );
+}
+
+void httpRequestObject::get( const FunctionCallbackInfo<Value>& args ) {
+	getRequest( args, false );
+}
+void httpRequestObject::gets( const FunctionCallbackInfo<Value>& args ) {
+	getRequest( args, true );
 }
