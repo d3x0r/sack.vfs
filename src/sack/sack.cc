@@ -46336,6 +46336,7 @@ NETWORK_PROC( LOGICAL, ssl_BeginClientSession )( PCLIENT pc, CPOINTER keypair, s
 NETWORK_PROC( LOGICAL, ssl_BeginServer )( PCLIENT pc, CPOINTER cert, size_t certlen, CPOINTER keypair, size_t keylen, CPOINTER keypass, size_t keypasslen);
 NETWORK_PROC( LOGICAL, ssl_GetPrivateKey )(PCLIENT pc, POINTER *keydata, size_t *keysize);
 NETWORK_PROC( LOGICAL, ssl_IsClientSecure )(PCLIENT pc);
+NETWORK_PROC( void, ssl_SetIgnoreVerification )(PCLIENT pc);
 /* use this to send on SSL Connection instead of SendTCP. */
 NETWORK_PROC( LOGICAL, ssl_Send )( PCLIENT pc, CPOINTER buffer, size_t length );
 /* User Datagram Packet connection methods. This controls
@@ -47005,13 +47006,15 @@ HTTP_EXPORT PTEXT HTTPAPI PostHttp( PTEXT site, PTEXT resource, PTEXT content );
 /* results with just the content of the message; no access to other information avaialble */
 HTTP_EXPORT PTEXT HTTPAPI GetHttp( PTEXT site, PTEXT resource, LOGICAL secure );
 /* results with just the content of the message; no access to other information avaialble */
-HTTP_EXPORT PTEXT HTTPAPI GetHttps( PTEXT address, PTEXT url );
+HTTP_EXPORT PTEXT HTTPAPI GetHttps( PTEXT address, PTEXT url, const char *certChain );
 /* results with the http state of the message response; Allows getting other detailed information about the result */
 HTTP_EXPORT HTTPState  HTTPAPI PostHttpQuery( PTEXT site, PTEXT resource, PTEXT content );
 /* results with the http state of the message response; Allows getting other detailed information about the result */
 HTTP_EXPORT HTTPState  HTTPAPI GetHttpQuery( PTEXT site, PTEXT resource );
 /* results with the http state of the message response; Allows getting other detailed information about the result */
-HTTP_EXPORT HTTPState HTTPAPI GetHttpsQuery( PTEXT site, PTEXT resource );
+HTTP_EXPORT HTTPState HTTPAPI GetHttpsQuery( PTEXT site, PTEXT resource, const char *certChain );
+/* return the numeric response code of a http reply. */
+HTTP_EXPORT int HTTPAPI GetHttpResponseCode( HTTPState pHttpState );
 #define CreateHttpServer(interface_address,site,psv) CreateHttpServerEx( interface_address,NULL,site,NULL,psv )
 #define CreateHttpServer2(interface_address,site,default_handler,psv) CreateHttpServerEx( interface_address,NULL,site,default_handler,psv )
 // receives events for either GET if aspecific OnHttpRequest has not been defined for the specific resource
@@ -47096,6 +47099,7 @@ struct HttpState {
 	enum ReadChunkState read_chunk_state;
 	uint32_t last_read_tick;
 	PTHREAD waiter;
+	PCLIENT *pc;
 	struct httpStateFlags {
 		BIT_FIELD keep_alive : 1;
 		BIT_FIELD close : 1;
@@ -47119,10 +47123,6 @@ static struct local_http_data
 	} flags;
 }local_http_data;
 #define l local_http_data
-struct instance_data {
-	PTHREAD waiter;
-	PCLIENT *pc;
-};
 PRELOAD( loadOption ) {
 #ifndef __NO_OPTIONS__
 	l.flags.bLogReceived = SACK_GetProfileIntEx( GetProgramName(), WIDE( "SACK/HTTP/Enable Logging Received Data" ), 0, TRUE );
@@ -47795,10 +47795,9 @@ void SendHttpMessage ( struct HttpState *pHttpState, PCLIENT pc, PTEXT body )
 //---------- CLIENT --------------------------------------------
 static void CPROC HttpReader( PCLIENT pc, POINTER buffer, size_t size )
 {
-	struct HttpState *state = (struct HttpState *)GetNetworkLong( pc, 2 );
+	struct HttpState *state = (struct HttpState *)GetNetworkLong( pc, 0 );
 	if( !buffer )
 	{
-		struct HttpState *state = (struct HttpState *)GetNetworkLong( pc, 2 );
 		if( state && state->ssl )
 		{
 			Deallocate( POINTER, (POINTER)GetNetworkLong( pc, 1 ) );
@@ -47819,7 +47818,6 @@ static void CPROC HttpReader( PCLIENT pc, POINTER buffer, size_t size )
 				LineRelease( send );
 			}
 		}
-		else
 		{
 			buffer = Allocate( 4096 );
 			SetNetworkLong( pc, 1, (uintptr_t)buffer );
@@ -47827,7 +47825,6 @@ static void CPROC HttpReader( PCLIENT pc, POINTER buffer, size_t size )
 	}
 	else
 	{
-		struct HttpState *state = (struct HttpState *)GetNetworkLong( pc, 2 );
 		if( l.flags.bLogReceived )
 		{
 			lprintf( WIDE("Received web request... %zu"), size );
@@ -47852,7 +47849,7 @@ static void CPROC HttpReaderClose( PCLIENT pc )
 	if( buf )
 		Release( buf );
 	{
-		struct instance_data *data = (struct instance_data*)GetNetworkLong( pc, 0 );
+		struct HttpState *data = (struct HttpState *)GetNetworkLong( pc, 0 );
 // (PCLIENT*)GetNetworkLong( pc, 0 );
 		PCLIENT *ppc = data->pc;
 		if( ppc )
@@ -47872,11 +47869,9 @@ HTTPState PostHttpQuery( PTEXT address, PTEXT url, PTEXT content )
 	if( pc )
 	{
 		PTEXT send = VarTextGet( pvtOut );
-		struct instance_data inst;
-		inst.pc = &pc;
-		inst.waiter = MakeThread();
-		SetNetworkLong( pc, 0, (uintptr_t)&inst );
-		SetNetworkLong( pc, 2, (uintptr_t)state );
+		state->pc = &pc;
+		state->waiter = MakeThread();
+		SetNetworkLong( pc, 0, (uintptr_t)state );
 		SetNetworkCloseCallback( pc, HttpReaderClose );
 		if( l.flags.bLogReceived )
 		{
@@ -47917,17 +47912,14 @@ HTTPState GetHttpQuery( PTEXT address, PTEXT url )
 			PVARTEXT pvtOut = VarTextCreate();
 			SetTCPNoDelay( pc, TRUE );
 			vtprintf( pvtOut, WIDE( "GET %s HTTP/1.1\r\n" ), GetText( url ) );
-			vtprintf( pvtOut, WIDE( "host: %s\r\n" ), GetText( address ) );
-			vtprintf( pvtOut, WIDE( "\r\n\r\n" ) );
+			vtprintf( pvtOut, WIDE( "Host: %s\r\n" ), GetText( address ) );
+			vtprintf( pvtOut, WIDE( "\r\n" ) );
 			if( pc )
 			{
 				PTEXT send = VarTextGet( pvtOut );
-				struct instance_data inst;
-				inst.pc = &pc;
-				inst.waiter = MakeThread();
-// pc );
-				SetNetworkLong( pc, 0, (uintptr_t)&inst );
-				SetNetworkLong( pc, 2, (uintptr_t)state );
+				state->waiter = MakeThread();
+				state->pc = &pc;
+				SetNetworkLong( pc, 0, (uintptr_t)state );
 				SetNetworkCloseCallback( pc, HttpReaderClose );
 				if( l.flags.bLogReceived )
 				{
@@ -47947,37 +47939,42 @@ HTTPState GetHttpQuery( PTEXT address, PTEXT url )
 	}
 	return NULL;
 }
-HTTPState GetHttpsQuery( PTEXT address, PTEXT url )
+HTTPState GetHttpsQuery( PTEXT address, PTEXT url, const char *certChain )
 {
 	if( !address )
 		return NULL;
 	{
 		struct HttpState *state = CreateHttpState();
 		static PCLIENT pc;
-		pc = OpenTCPClient( GetText( address ), 443, NULL );
+		SOCKADDR *addr = CreateSockAddress( GetText( address ), 443 );
+		pc = OpenTCPClientAddrExxx( addr, HttpReader, HttpReaderClose, NULL, NULL, OPEN_TCP_FLAG_DELAY_CONNECT DBG_SRC );
+		ReleaseAddress( addr );
 		if( pc )
 		{
-			struct instance_data inst;
-			inst.pc = &pc;
-			inst.waiter = MakeThread();
 			state->last_read_tick = GetTickCount();
-			SetNetworkLong( pc, 0, (uintptr_t)&inst );
-			SetNetworkLong( pc, 2, (uintptr_t)state );
-			SetNetworkCloseCallback( pc, HttpReaderClose );
-			SetNetworkReadComplete( pc, HttpReader );
+			state->waiter = MakeThread();
+			state->pc = &pc;
+			SetNetworkLong( pc, 0, (uintptr_t)state );
+			//SetNetworkConn
 			state->ssl = TRUE;
 			state->pvtOut = VarTextCreate();
 			vtprintf( state->pvtOut, WIDE( "GET %s HTTP/1.1\r\n" ), GetText( url ) );
-			vtprintf( state->pvtOut, WIDE( "host: %s\r\n" ), GetText( address ) );
-			vtprintf( state->pvtOut, WIDE( "\r\n\r\n" ) );
+			vtprintf( state->pvtOut, WIDE( "Host: %s\r\n" ), GetText( address ) );
+			vtprintf( state->pvtOut, "User-Agent: SACK(%s)\r\n", "System" );
+			vtprintf( state->pvtOut, WIDE( "\r\n" ) );
 #ifndef NO_SSL
-			if( ssl_BeginClientSession( pc, NULL, 0, NULL, 0, NULL, 0 ) )
+			if( ssl_BeginClientSession( pc, NULL, 0, NULL, 0, certChain, certChain ? strlen( certChain ) : 0 ) )
 			{
+				if( !certChain )
+					ssl_SetIgnoreVerification( pc );
+				NetworkConnectTCP( pc );
 				state->waiter = MakeThread();
 				while( pc && ( state->last_read_tick > ( GetTickCount() - 20000 ) ) )
 				{
 					WakeableSleep( 1000 );
 				}
+				if( pc )
+					RemoveClient( pc );
 			}
 			else
 				RemoveClient( pc );
@@ -47997,7 +47994,7 @@ HTTPState GetHttpsQuery( PTEXT address, PTEXT url )
 PTEXT GetHttp( PTEXT address, PTEXT url, LOGICAL secure )
 {
 	if( secure )
-		return GetHttps( address, url );
+		return GetHttps( address, url, NULL );
 	else
 	{
 	HTTPState state = GetHttpQuery( address, url );
@@ -48011,9 +48008,9 @@ PTEXT GetHttp( PTEXT address, PTEXT url, LOGICAL secure )
 	}}
 	return NULL;
 }
-PTEXT GetHttps( PTEXT address, PTEXT url )
+PTEXT GetHttps( PTEXT address, PTEXT url, const char *ca )
 {
-	HTTPState state = GetHttpsQuery( address, url );
+	HTTPState state = GetHttpsQuery( address, url, ca );
 	if( state )
 	{
 		PTEXT result = GetHttpContent( state );
@@ -48191,6 +48188,9 @@ PLIST GetHttpHeaderFields( HTTPState pHttpState )
 }
 int GetHttpVersion( HTTPState pHttpState ) {
 	return pHttpState->response_version;
+}
+int GetHttpResponseCode( HTTPState pHttpState ) {
+	return pHttpState->numeric_code;
 }
 HTTP_NAMESPACE_END
 #undef l
@@ -52639,7 +52639,6 @@ struct json_parser_shared_data jpsd;
 SACK_NAMESPACE namespace network { namespace json {
 #endif
 char *json_escape_string( const char *string ) {
-	size_t n;
 	size_t m = 0;
 	const char *input;
 	TEXTSTR output, _output;
@@ -54494,19 +54493,18 @@ ID_Continue    XID_Continue     All of the above, plus nonspacing marks, spacing
 SACK_NAMESPACE namespace network { namespace json {
 #endif
 char *json6_escape_string( const char *string ) {
-	size_t n;
 	size_t m = 0;
 	const char *input;
 	TEXTSTR output;
 	TEXTSTR _output;
 	if( !( input = string ) ) return NULL;
-	for( n = 0; input[0]; input++ ) {
+	for( ; input[0]; input++ ) {
  /*|| (input[0] == '\n') || (input[0] == '\t')*/
 		if( (input[0] == '"' ) || (input[0] == '\\' ) || (input[0] == '`') || (input[0] == '\'') )
 			m++;
 	}
 	_output = output = NewArray( TEXTCHAR, (input-string)+m+1 );
-	for( input - string; input[0]; input++ ) {
+	for( input = string; input[0]; input++ ) {
 		if( (input[0] == '"' ) || (input[0] == '\\' ) || (input[0] == '`' )|| (input[0] == '\'' )) {
 			(*output++) = '\\';
 		}
@@ -60609,7 +60607,7 @@ NETWORK_PROC( void, NetworkUnlockEx)( PCLIENT lpClient DBG_PASS )
 	}
 }
 //----------------------------------------------------------------------------
-void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNofity, LOGICAL bLinger DBG_PASS )
+void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG_PASS )
 {
 #ifdef LOG_SOCKET_CREATION
 	_lprintf( DBG_RELAY )( WIDE("InternalRemoveClient Removing this client %p (%d)"), lpClient, lpClient->Socket );
@@ -60705,7 +60703,7 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNofity, LOGICAL bLi
 	}
 		// allow application a chance to clean it's references
 		// to this structure before closing and cleaning it.
-		if( !bBlockNofity )
+		if( !bBlockNotify )
 		{
 			lpClient->dwFlags |= CF_CONNECT_CLOSED;
 			if( lpClient->pWaiting )
@@ -61555,7 +61553,7 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 			if( bCPP )
 				pResult->dwFlags |= ( CF_CALLBACKTYPES );
 			AddActive( pResult );
-			if( !flags & OPEN_TCP_FLAG_DELAY_CONNECT ) {
+			if( !(flags & OPEN_TCP_FLAG_DELAY_CONNECT) ) {
 				NetworkConnectTCPEx( pResult DBG_RELAY );
 			}
 			//lprintf( WIDE("Leaving Client's critical section") );
@@ -61582,7 +61580,7 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 #ifdef __LINUX__
 			AddThreadEvent( pResult, 0 );
 #endif
-			if( !pConnectComplete )
+			if( !pConnectComplete && !(flags & OPEN_TCP_FLAG_DELAY_CONNECT) )
 			{
 				int Start, bProcessing = 0;
 				// should trigger a rebuild (if it's the root thread)
@@ -63275,6 +63273,7 @@ EVP_PKEY *genKey() {
 #ifndef UNICODE
 struct ssl_session {
 	SSL_CTX        *ctx;
+	LOGICAL ignoreVerification;
 	BIO *rbio;
 	BIO *wbio;
 	//EVP_PKEY *privkey;
@@ -63418,7 +63417,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 			if( hs_rc == 2 ) {
 				// newly completed handshake.
 				if( !(pc->dwFlags & CF_READPENDING) ) {
-					if( SSL_get_peer_certificate( pc->ssl_session->ssl ) ) {
+					if( !pc->ssl_session->ignoreVerification && SSL_get_peer_certificate( pc->ssl_session->ssl ) ) {
 						int r;
 						if( ( r = SSL_get_verify_result( pc->ssl_session->ssl ) ) != X509_V_OK ) {
 							lprintf( "Certificate verification failed. %d", r );
@@ -63793,6 +63792,10 @@ LOGICAL ssl_BeginClientSession( PCLIENT pc, CPOINTER client_keypair, size_t clie
 }
 LOGICAL ssl_IsClientSecure(PCLIENT pc) {
 	return pc->ssl_session != NULL;
+}
+void ssl_SetIgnoreVerification( PCLIENT pc ) {
+	if( pc->ssl_session )
+		pc->ssl_session->ignoreVerification = TRUE;
 }
 //--------------------- Make Cert Request
 //#include <stdio.h>
