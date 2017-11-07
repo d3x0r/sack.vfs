@@ -1938,14 +1938,12 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	{
 		PVARTEXT pvtAddress = VarTextCreate();
 		vtprintf( pvtAddress, "%s:%d", httpRequest->hostname, httpRequest->port );
-		PVARTEXT pvtUrl = VarTextCreate();
-		vtprintf( pvtUrl, "%s", httpRequest->path );
 
 		PTEXT address = VarTextPeek( pvtAddress );
-		PTEXT url = VarTextPeek( pvtUrl );
+		PTEXT url = SegCreateFromText( httpRequest->path );
 
 		HTTPState state;
-		lprintf( "request: %s  %s", GetText( address ), GetText( url ) );
+		//lprintf( "request: %s  %s", GetText( address ), GetText( url ) );
 		if( httpRequest->ssl )
 			state = GetHttpsQuery( address, url, httpRequest->ca );
 		else
@@ -1978,7 +1976,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		}
 
 		VarTextDestroy( &pvtAddress );
-		VarTextDestroy( &pvtUrl );
+		LineRelease( url );
 	}
 
 
