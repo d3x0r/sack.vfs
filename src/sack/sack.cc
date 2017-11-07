@@ -47208,6 +47208,7 @@ int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
 		pHttpState->partial = pMergedLine;
 		pCurrent = pHttpState->partial;
 		//pStart = pCurrent; // at lest is this block....
+		//LogBinary( (const uint8_t*)GetText( pInput ), GetTextSize( pInput ) );
 		len = 0;
 		// we always start without having a line yet, because all input is already merged
 		bLine = 0;
@@ -47798,6 +47799,7 @@ static void CPROC HttpReader( PCLIENT pc, POINTER buffer, size_t size )
 	struct HttpState *state = (struct HttpState *)GetNetworkLong( pc, 0 );
 	if( !buffer )
 	{
+		//lprintf( "Initial read on HTTP requestor" );
 		if( state && state->ssl )
 		{
 			Deallocate( POINTER, (POINTER)GetNetworkLong( pc, 1 ) );
@@ -47901,12 +47903,20 @@ PTEXT PostHttp( PTEXT address, PTEXT url, PTEXT content )
 	}
 	return NULL;
 }
+static void httpConnected( PCLIENT pc, int error ) {
+	if( error ) {
+		struct HttpState *state = (struct HttpState *)GetNetworkLong( pc, 0 );
+		RemoveClient( pc );
+	}
+}
 HTTPState GetHttpQuery( PTEXT address, PTEXT url )
 {
 	if( !address )
 		return NULL;
 	{
-		PCLIENT pc = OpenTCPClient( GetText( address ), 80, HttpReader );
+		PCLIENT pc;
+		SOCKADDR *addr = CreateSockAddress( GetText( address ), 443 );
+		pc = OpenTCPClientAddrExxx( addr, HttpReader, HttpReaderClose, NULL, httpConnected, 0 DBG_SRC );
 		if( pc ) {
 			struct HttpState *state = CreateHttpState();
 			PVARTEXT pvtOut = VarTextCreate();
@@ -47947,7 +47957,8 @@ HTTPState GetHttpsQuery( PTEXT address, PTEXT url, const char *certChain )
 		struct HttpState *state = CreateHttpState();
 		static PCLIENT pc;
 		SOCKADDR *addr = CreateSockAddress( GetText( address ), 443 );
-		pc = OpenTCPClientAddrExxx( addr, HttpReader, HttpReaderClose, NULL, NULL, OPEN_TCP_FLAG_DELAY_CONNECT DBG_SRC );
+		DumpAddr( "Http Address:", addr );
+		pc = OpenTCPClientAddrExxx( addr, HttpReader, HttpReaderClose, NULL, httpConnected, OPEN_TCP_FLAG_DELAY_CONNECT DBG_SRC );
 		ReleaseAddress( addr );
 		if( pc )
 		{
@@ -47967,7 +47978,10 @@ HTTPState GetHttpsQuery( PTEXT address, PTEXT url, const char *certChain )
 			{
 				if( !certChain )
 					ssl_SetIgnoreVerification( pc );
-				NetworkConnectTCP( pc );
+				if( NetworkConnectTCP( pc ) < 0 ) {
+					DestroyHttpState( state );
+					return NULL;
+				}
 				state->waiter = MakeThread();
 				while( pc && ( state->last_read_tick > ( GetTickCount() - 20000 ) ) )
 				{
@@ -57641,7 +57655,6 @@ int TCPWriteEx(PCLIENT pc DBG_PASS);
 #define TCPWrite(pc) TCPWriteEx(pc DBG_SRC)
 size_t FinishPendingRead(PCLIENT lpClient DBG_PASS );
 LOGICAL TCPDrainRead( PCLIENT pClient );
-void DumpSocket( PCLIENT pc );
 _TCP_NAMESPACE_END
 //----------------------------------------------------------------------------
 #ifndef __MAC__
@@ -63394,8 +63407,10 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 	{
 		if( buffer )
 		{
-			size_t len;
+			int len;
 			int hs_rc;
+			//lprintf( "Read from network: %d", length );
+			//LogBinary( (const uint8_t*)buffer, length );
 			len = BIO_write( pc->ssl_session->rbio, buffer, (int)length );
 #ifdef DEBUG_SSL_IO
 			lprintf( "Wrote %zd", len );
@@ -63427,6 +63442,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 							//ERR_print_errors_cb( logerr, (void*)__LINE__ );
 						}
 					}
+					//lprintf( "Initial read dispatch.." );
 					if( pc->ssl_session->dwOriginalFlags & CF_CPPREAD )
 						pc->ssl_session->cpp_user_read( pc->psvRead, NULL, 0 );
 					else
@@ -63436,15 +63452,33 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 			}
 			else if( hs_rc == 1 )
 			{
-				len = SSL_read( pc->ssl_session->ssl, pc->ssl_session->dbuffer, (int)pc->ssl_session->dbuflen );
+				len = SSL_read( pc->ssl_session->ssl, NULL, 0 );
+				//lprintf( "return of 0 read: %d", len );
+				if( len < 0 )
+					lprintf( "error of 0 read is %d", SSL_get_error( pc->ssl_session->ssl, len ) );
+				len = SSL_pending( pc->ssl_session->ssl );
+				//lprintf( "do read.. pending %d", len );
+				if( len ) {
+					if( len > pc->ssl_session->dbuflen ) {
+						lprintf( "Needed to expand buffer..." );
+						Release( pc->ssl_session->dbuffer );
+						pc->ssl_session->dbuflen = ( len + 4095 ) & 0xFFFF000;
+						pc->ssl_session->dbuffer = NewArray( uint8_t, pc->ssl_session->dbuflen );
+					}
+					len = SSL_read( pc->ssl_session->ssl, pc->ssl_session->dbuffer, (int)pc->ssl_session->dbuflen );
 #ifdef DEBUG_SSL_IO
-				lprintf( "normal read - just get the data from the other buffer : %d", len );
+					lprintf( "normal read - just get the data from the other buffer : %d", len );
 #endif
-				if( len == -1 ) {
-					lprintf( "SSL_Read failed." );
-					ERR_print_errors_cb( logerr, (void*)__LINE__ );
-					RemoveClient( pc );
-					return;
+					if( len < 0 ) {
+						int error = SSL_get_error( pc->ssl_session->ssl, len );
+						if( error == SSL_ERROR_WANT_READ ) {
+							lprintf( "want more data?" );
+						} else
+							lprintf( "SSL_Read failed. %d", error );
+						//ERR_print_errors_cb( logerr, (void*)__LINE__ );
+						//RemoveClient( pc );
+						//return;
+					}
 				}
 			}
 			else if( hs_rc == -1 ) {
@@ -63480,14 +63514,14 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 			}
 			else if( len == 0 ) {
 			}
-			else {
-				lprintf( "SSL_Read failed." );
-				ERR_print_errors_cb( logerr, (void*)__LINE__ );
-				RemoveClient( pc );
-			}
+			//else {
+			//	lprintf( "SSL_Read failed." );
+			//	ERR_print_errors_cb( logerr, (void*)__LINE__ );
+			//	RemoveClient( pc );
+			//}
 		}
 		else {
-			pc->ssl_session->ibuffer = NewArray( uint8_t, pc->ssl_session->ibuflen = 4096 );
+			pc->ssl_session->ibuffer = NewArray( uint8_t, pc->ssl_session->ibuflen = 1024 );
 			pc->ssl_session->dbuffer = NewArray( uint8_t, pc->ssl_session->dbuflen = 4096 );
 			{
 				int r;
@@ -63516,6 +63550,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 				}
 			}
 		}
+		//lprintf( "Read more data..." );
 		if( pc->ssl_session )
 			ReadTCP( pc, pc->ssl_session->ibuffer, pc->ssl_session->ibuflen );
 	}
@@ -63524,21 +63559,30 @@ LOGICAL ssl_Send( PCLIENT pc, CPOINTER buffer, size_t length )
 {
 	int len;
 	int32_t len_out;
+	size_t offset = 0;
+	size_t pending_out = length;
 	struct ssl_session *ses = pc->ssl_session;
 	while( length ) {
+	//lprintf( "ssl_Send  %d", length );
 #ifdef DEBUG_SSL_IO
 		lprintf( "SSL SEND...." );
 		LogBinary( (uint8_t*)buffer, length );
 #endif
-		len = SSL_write( pc->ssl_session->ssl, buffer, (int)length );
+		if( pending_out > 4327 )
+			pending_out = 4327;
+		len = SSL_write( pc->ssl_session->ssl, (((uint8_t*)buffer) + offset), (int)pending_out );
 		if (len < 0) {
 			ERR_print_errors_cb(logerr, (void*)__LINE__);
 			return FALSE;
 		}
+		offset += len;
 		length -= (size_t)len;
+		pending_out = length;
 		// signed/unsigned comparison here.
 		// the signed value is known to be greater than 0 and less than max unsigned int
 		// so it is in a valid range to check, and is NOT a warning or error condition EVER.
+		len = BIO_pending( pc->ssl_session->wbio );
+		//lprintf( "resulting send is %d", len );
 		if( SUS_GT( len, int, ses->obuflen, size_t ) )
 		{
 			Release( ses->obuffer );
@@ -63601,7 +63645,7 @@ static void ssl_ClientConnected( PCLIENT pcServer, PCLIENT pcNew ) {
 	ses->ssl = SSL_new( pcServer->ssl_session->ctx );
 	{
 		static uint32_t tick;
-      tick++;
+		tick++;
 //sizeof( ses->ctx ) );
 		SSL_set_session_id_context( ses->ssl, (const unsigned char*)&tick, 4 );
 	}
@@ -63714,7 +63758,7 @@ LOGICAL ssl_BeginServer( PCLIENT pc, CPOINTER cert, size_t certlen, CPOINTER key
 		//r = SSL_CTX_get_session_cache_mode( ses->ctx );
 		//r = SSL_CTX_set_session_cache_mode( ses->ctx, SSL_SESS_CACHE_SERVER );
 		r = SSL_CTX_set_session_cache_mode( ses->ctx, SSL_SESS_CACHE_OFF );
-      if( r <= 0 )
+		if( r <= 0 )
 			ERR_print_errors_cb( logerr, (void*)__LINE__ );
 	}
 	ses->dwOriginalFlags = pc->dwFlags;
@@ -63769,6 +63813,7 @@ LOGICAL ssl_BeginClientSession( PCLIENT pc, CPOINTER client_keypair, size_t clie
 			BIO_free( keybuf );
 		}
 		SSL_CTX_use_PrivateKey( ses->ctx, ses->cert->pkey );
+		//SSL_CTX_set_default_read_buffer_len( ses->ctx, 16384 );
 	}
 	ses->ssl = SSL_new( ses->ctx );
 	if( rootCert ) {
@@ -63782,6 +63827,7 @@ LOGICAL ssl_BeginClientSession( PCLIENT pc, CPOINTER client_keypair, size_t clie
 		X509_STORE_add_cert( store, cert );
 	}
 	ssl_InitSession( ses );
+	//SSL_set_default_read_buffer_len( ses->ssl, 16384 );
 	SSL_set_connect_state( ses->ssl );
 	ses->dwOriginalFlags = pc->dwFlags;
 	ses->user_read = pc->read.ReadComplete;
