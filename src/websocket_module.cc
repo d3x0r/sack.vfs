@@ -1936,20 +1936,25 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	Local<Object> result = Object::New( isolate );
 
 	{
+		PVARTEXT pvtAddress = VarTextCreate();
+		vtprintf( pvtAddress, "%s:%d", httpRequest->hostname, httpRequest->port );
 		PVARTEXT pvtUrl = VarTextCreate();
-		vtprintf( pvtUrl, "https://%s:%d%s", httpRequest->hostname, httpRequest->port, httpRequest->path );
-		PTEXT address = SegCreateFromText( httpRequest->hostname );
+		vtprintf( pvtUrl, "%s", httpRequest->path );
+
+		PTEXT address = VarTextPeek( pvtAddress );
 		PTEXT url = VarTextPeek( pvtUrl );
 
 		HTTPState state;
+		lprintf( "request: %s  %s", GetText( address ), GetText( url ) );
 		if( httpRequest->ssl )
 			state = GetHttpsQuery( address, url, httpRequest->ca );
 		else
 			state = GetHttpQuery( address, url );
 
-		if( state )
+		PTEXT content = GetHttpContent(state);
+		if( state && content )
 		{
-			result->Set( String::NewFromUtf8( isolate, "content" ), String::NewFromUtf8( isolate, GetText( GetHttpContent( state ) ) ) );
+			result->Set( String::NewFromUtf8( isolate, "content" ), String::NewFromUtf8( isolate, GetText( content ) ) );
 			result->Set( String::NewFromUtf8( isolate, "statusCode" ), Integer::New( isolate, GetHttpResponseCode( state ) ) );
 			result->Set( String::NewFromUtf8( isolate, "status" ), String::NewFromUtf8( isolate, GetText( GetHttpResponce( state ) ) ) );
 			Local<Array> arr = Array::New( isolate );
@@ -1967,10 +1972,12 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		}
 		else
 		{
-			result->Set( String::NewFromUtf8( isolate, "error" ), String::NewFromUtf8( isolate, "Some Error" ) );
+			result->Set( String::NewFromUtf8( isolate, "error" ),
+							state?String::NewFromUtf8( isolate, "No Content" ):String::NewFromUtf8( isolate, "Connect Error" ) );
 
 		}
 
+		VarTextDestroy( &pvtAddress );
 		VarTextDestroy( &pvtUrl );
 	}
 
