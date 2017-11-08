@@ -46107,13 +46107,14 @@ NETWORK_PROC( PCLIENT, OpenTCPClientExxx )(CTEXTSTR lpName,uint16_t wPort
                                            , cCloseCallback CloseCallback
                                            , cWriteComplete WriteComplete
                                            , cConnectCallback pConnectComplete
+                                           , int flags
                                            DBG_PASS );
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
-#define OpenTCPClientExx( lpName, wPort, pReadComplete, CloseCallback, WriteComplete, pConnectComplete ) OpenTCPClientExxx( lpName, wPort, pReadComplete, CloseCallback, WriteComplete, pConnectComplete DBG_SRC )
+#define OpenTCPClientExx( lpName, wPort, pReadComplete, CloseCallback, WriteComplete, pConnectComplete ) OpenTCPClientExxx( lpName, wPort, pReadComplete, CloseCallback, WriteComplete, pConnectComplete, 0 DBG_SRC )
 /* <combine sack::network::tcp::OpenTCPClientExx@CTEXTSTR@uint16_t@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                      */
-#define OpenTCPClient( name, port, read ) OpenTCPClientExx(name,port,read,NULL,NULL,NULL)
+#define OpenTCPClient( name, port, read ) OpenTCPClientExxx(name,port,read,NULL,NULL,NULL,0 DBG_SRC )
 /* <combine sack::network::tcp::OpenTCPClientExx@CTEXTSTR@uint16_t@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                      */
 NETWORK_PROC( PCLIENT, OpenTCPClientExEx )( CTEXTSTR, uint16_t, cReadComplete,
@@ -47106,6 +47107,8 @@ struct HttpState {
 		BIT_FIELD upgrade : 1;
 		BIT_FIELD h2c_upgrade : 1;
 		BIT_FIELD ws_upgrade : 1;
+ // prevent issuing network reads... ssl pushes data from internal buffers
+		BIT_FIELD ssl : 1;
 	}flags;
 };
 struct HttpServer {
@@ -47121,8 +47124,13 @@ static struct local_http_data
 	struct http_data_flags {
 		BIT_FIELD bLogReceived : 1;
 	} flags;
+	PLIST pendingConnects;
 }local_http_data;
 #define l local_http_data
+struct pendingConnect {
+	PCLIENT pc;
+	struct HttpState *state;
+};
 PRELOAD( loadOption ) {
 #ifndef __NO_OPTIONS__
 	l.flags.bLogReceived = SACK_GetProfileIntEx( GetProgramName(), WIDE( "SACK/HTTP/Enable Logging Received Data" ), 0, TRUE );
@@ -47523,22 +47531,17 @@ LOGICAL AddHttpData( struct HttpState *pHttpState, POINTER buffer, size_t size )
 			switch( pHttpState->read_chunk_state )
 			{
 			case READ_VALUE:
-				if( buf[ofs] >= '0' && buf[ofs] <= '9' )
+				if( buf[0] >= '0' && buf[0] <= '9' )
 				{
 					pHttpState->read_chunk_length *= 16;
-					pHttpState->read_chunk_length += buf[ofs] - '0';
+					pHttpState->read_chunk_length += buf[0] - '0';
 				}
-				else if( buf[ofs] >= 'a' && buf[ofs] <= 'f' )
+				else if( ( buf[0] | 0x20 ) >= 'a' && (buf[0] | 0x20) <= 'f' )
 				{
 					pHttpState->read_chunk_length *= 16;
-					pHttpState->read_chunk_length += buf[ofs] - 'a' + 10;
+					pHttpState->read_chunk_length += (buf[0] | 0x20) - 'a' + 10;
 				}
-				else if( buf[ofs] >= 'A' && buf[ofs] <= 'F' )
-				{
-					pHttpState->read_chunk_length *= 16;
-					pHttpState->read_chunk_length += buf[ofs] - 'A' + 10;
-				}
-				else if( buf[ofs] == '\r' )
+				else if( buf[0] == '\r' )
 				{
 					pHttpState->read_chunk_total_length += pHttpState->read_chunk_length;
 					if( l.flags.bLogReceived ) {
@@ -47548,7 +47551,7 @@ LOGICAL AddHttpData( struct HttpState *pHttpState, POINTER buffer, size_t size )
 				}
 				else
 				{
-					lprintf( "Chunk Processing Error expected \\n, found %d(%c)", buf[ofs], buf[ofs] );
+					lprintf( "Chunk Processing Error expected \\n, found %d(%c)", buf[0], buf[0] );
 					RemoveClient( pHttpState->request_socket );
 					return FALSE;
 				}
@@ -47557,7 +47560,7 @@ LOGICAL AddHttpData( struct HttpState *pHttpState, POINTER buffer, size_t size )
             // didn't actually implement to get into this state... just looks for newlines really.
             break;
 			case READ_VALUE_LF:
-				if( buf[ofs] == '\n' )
+				if( buf[0] == '\n' )
 				{
 					if( pHttpState->read_chunk_length == 0 )
 						pHttpState->read_chunk_state = READ_CR;
@@ -47566,25 +47569,25 @@ LOGICAL AddHttpData( struct HttpState *pHttpState, POINTER buffer, size_t size )
 				}
 				else
 				{
-					lprintf( "Chunk Processing Error expected \\n, found %d(%c)", buf[ofs], buf[ofs] );
+					lprintf( "Chunk Processing Error expected \\n, found %d(%c)", buf[0], buf[0] );
 					RemoveClient( pHttpState->request_socket );
 					return FALSE;
 				}
 				break;
 			case READ_CR:
-				if( buf[ofs] == '\r' )
+				if( buf[0] == '\r' )
 				{
 					pHttpState->read_chunk_state = READ_LF;
 				}
 				else
 				{
-					lprintf( "Chunk Processing Error expected \\r, found %d(%c)", buf[ofs], buf[ofs] );
+					lprintf( "Chunk Processing Error expected \\r, found %d(%c)", buf[0], buf[0] );
 					RemoveClient( pHttpState->request_socket );
 					return FALSE;
 				}
 				break;
 			case READ_LF:
-				if( buf[ofs] == '\n' )
+				if( buf[0] == '\n' )
 				{
 					if( pHttpState->read_chunk_length )
 					{
@@ -47601,19 +47604,20 @@ LOGICAL AddHttpData( struct HttpState *pHttpState, POINTER buffer, size_t size )
 				}
 				else
 				{
-					lprintf( "Chunk Processing Error expected \\n, found %d(%c)", buf[ofs], buf[ofs] );
+					lprintf( "Chunk Processing Error expected \\n, found %d(%c)", buf[0], buf[0] );
 					RemoveClient( pHttpState->request_socket );
 					return FALSE;
 				}
 				break;
 			case READ_BYTES:
-				VarTextAddData( pHttpState->pvt_collector, (CTEXTSTR)(buf + ofs), 1 );
+				VarTextAddData( pHttpState->pvt_collector, (CTEXTSTR)(buf), 1 );
 				pHttpState->read_chunk_byte++;
 				if( pHttpState->read_chunk_byte == pHttpState->read_chunk_length )
 					pHttpState->read_chunk_state = READ_CR;
 				break;
 			}
 			ofs++;
+			buf++;
 		}
 		if( l.flags.bLogReceived ) {
 			lprintf( "chunk read is %zd of %zd", pHttpState->read_chunk_byte, pHttpState->read_chunk_total_length );
@@ -47802,27 +47806,24 @@ static void CPROC HttpReader( PCLIENT pc, POINTER buffer, size_t size )
 		//lprintf( "Initial read on HTTP requestor" );
 		if( state && state->ssl )
 		{
-			Deallocate( POINTER, (POINTER)GetNetworkLong( pc, 1 ) );
-			SetNetworkLong( pc, 1, 0 );
+			PTEXT send = VarTextGet( state->pvtOut );
+			if( l.flags.bLogReceived )
 			{
-				PTEXT send = VarTextGet( state->pvtOut );
-				if( l.flags.bLogReceived )
-				{
-					lprintf( WIDE("Sending Request...") );
-					LogBinary( (uint8_t*)GetText( send ), GetTextSize( send ) );
-				}
-#ifndef NO_SSL
-				// had to wait for handshake, so NULL event
-				// on secure has already had time to build the send
-				// but had to wait until now to do that.
-				ssl_Send( pc, GetText( send ), GetTextSize( send ) );
-#endif
-				LineRelease( send );
+				lprintf( WIDE("Sending Request...") );
+				LogBinary( (uint8_t*)GetText( send ), GetTextSize( send ) );
 			}
+#ifndef NO_SSL
+			// had to wait for handshake, so NULL event
+			// on secure has already had time to build the send
+			// but had to wait until now to do that.
+			ssl_Send( pc, GetText( send ), GetTextSize( send ) );
+#endif
+			LineRelease( send );
 		}
+		else
 		{
-			buffer = Allocate( 4096 );
-			SetNetworkLong( pc, 1, (uintptr_t)buffer );
+			state->buffer = Allocate( 4096 );
+			ReadTCP( pc, state->buffer, 4096 );
 		}
 	}
 	else
@@ -47842,27 +47843,45 @@ static void CPROC HttpReader( PCLIENT pc, POINTER buffer, size_t size )
 	// read is handled by the SSL layer instead of here.  Just trust that someone will give us data later
 	if( buffer && ( !state || !state->ssl ) )
 	{
-		ReadTCP( pc, buffer, 4096 );
+		ReadTCP( pc, state->buffer, 4096 );
 	}
 }
 static void CPROC HttpReaderClose( PCLIENT pc )
 {
-	POINTER buf = (POINTER)GetNetworkLong( pc, 1 );
-	if( buf )
-		Release( buf );
-	{
-		struct HttpState *data = (struct HttpState *)GetNetworkLong( pc, 0 );
+	struct HttpState *data = (struct HttpState *)GetNetworkLong( pc, 0 );
 // (PCLIENT*)GetNetworkLong( pc, 0 );
-		PCLIENT *ppc = data->pc;
-		if( ppc )
-			ppc[0] = NULL;
-		if( data->waiter ) WakeThread( data->waiter );
+	PCLIENT *ppc = data->pc;
+	if( ppc )
+		ppc[0] = NULL;
+	if( data->waiter ) WakeThread( data->waiter );
+	DestroyHttpState( data );
+}
+static void CPROC HttpConnected( PCLIENT pc, int error ) {
+	INDEX idx;
+	struct pendingConnect *connect;
+	while( 1 ) {
+		LIST_FORALL( l.pendingConnects, idx, struct pendingConnect *, connect ) {
+			if( connect->pc == pc ) {
+				SetLink( &l.pendingConnects, idx, NULL );
+				break;
+			}
+		}
+		if( connect )
+			break;
+		Relinquish();
 	}
+	SetNetworkLong( pc, 0, (uintptr_t)connect->state );
+	Release( connect );
 }
 HTTPState PostHttpQuery( PTEXT address, PTEXT url, PTEXT content )
 {
-	PCLIENT pc = OpenTCPClient( GetText( address ), 80, HttpReader );
 	struct HttpState *state = CreateHttpState();
+	PCLIENT pc;
+	struct pendingConnect *connect = New( struct pendingConnect );
+	connect->state = state;
+	AddLink( &l.pendingConnects, connect );
+	pc = OpenTCPClientExx( GetText( address ), 80, HttpReader, NULL, NULL, HttpConnected );
+	connect->pc = pc;
 	PVARTEXT pvtOut = VarTextCreate();
 	vtprintf( pvtOut, WIDE( "POST %s HTTP/1.1\r\n" ), url );
 	vtprintf( pvtOut, WIDE( "content-length:%d\r\n" ), GetTextSize( content ) );
@@ -47907,6 +47926,24 @@ static void httpConnected( PCLIENT pc, int error ) {
 	if( error ) {
 		struct HttpState *state = (struct HttpState *)GetNetworkLong( pc, 0 );
 		RemoveClient( pc );
+		return;
+	}
+	{
+		INDEX idx;
+		struct pendingConnect *connect;
+		while( 1 ) {
+			LIST_FORALL( l.pendingConnects, idx, struct pendingConnect *, connect ) {
+				if( connect->pc == pc ) {
+					SetLink( &l.pendingConnects, idx, NULL );
+					break;
+				}
+			}
+			if( connect )
+				break;
+			Relinquish();
+		}
+		SetNetworkLong( pc, 0, (uintptr_t)connect->state );
+		Release( connect );
 	}
 }
 HTTPState GetHttpQuery( PTEXT address, PTEXT url )
@@ -47916,9 +47953,13 @@ HTTPState GetHttpQuery( PTEXT address, PTEXT url )
 	{
 		PCLIENT pc;
 		SOCKADDR *addr = CreateSockAddress( GetText( address ), 443 );
+		struct HttpState *state = CreateHttpState();
+		struct pendingConnect *connect = New( struct pendingConnect );
+		connect->state = state;
+		AddLink( &l.pendingConnects, connect );
 		pc = OpenTCPClientAddrExxx( addr, HttpReader, HttpReaderClose, NULL, httpConnected, 0 DBG_SRC );
+		connect->pc = pc;
 		if( pc ) {
-			struct HttpState *state = CreateHttpState();
 			PVARTEXT pvtOut = VarTextCreate();
 			SetTCPNoDelay( pc, TRUE );
 			vtprintf( pvtOut, WIDE( "GET %s HTTP/1.1\r\n" ), GetText( url ) );
@@ -48069,7 +48110,9 @@ static void CPROC HandleRequest( PCLIENT pc, POINTER buffer, size_t length )
 {
 	if( !buffer )
 	{
+		struct HttpState *pHttpStateServer = (struct HttpState *)GetNetworkLong( pc, 0 );
 		struct HttpState *pHttpState = CreateHttpState();
+		pHttpState->ssl = pHttpStateServer->ssl;
 		buffer = pHttpState->buffer = Allocate( 4096 );
 		pHttpState->request_socket = pc;
 		SetNetworkLong( pc, 1, (uintptr_t)pHttpState );
@@ -48107,8 +48150,9 @@ static void CPROC HandleRequest( PCLIENT pc, POINTER buffer, size_t length )
 				break;
 			}
 		}
+		if( !pHttpState->ssl )
+			ReadTCP( pc, buffer, 4096 );
 	}
-	ReadTCP( pc, buffer, 4096 );
 }
 static void CPROC RequestorClosed( PCLIENT pc )
 {
@@ -61789,7 +61833,7 @@ PCLIENT CPPOpenTCPClientExEx(CTEXTSTR lpName,uint16_t wPort,
 		                                  , psvConnect
 		                                  , flags
 		                                    DBG_RELAY
-													 );
+		                                  );
 		ReleaseAddress( lpsaDest );
 	}
 	return pClient;
@@ -61799,7 +61843,9 @@ PCLIENT OpenTCPClientExxx(CTEXTSTR lpName,uint16_t wPort,
              cReadComplete  pReadComplete,
              cCloseCallback CloseCallback,
              cWriteComplete WriteComplete,
-             cConnectCallback pConnectComplete DBG_PASS )
+             cConnectCallback pConnectComplete,
+             int flags
+             DBG_PASS )
 {
 	PCLIENT pClient;
 	SOCKADDR *lpsaDest;
@@ -61811,7 +61857,8 @@ PCLIENT OpenTCPClientExxx(CTEXTSTR lpName,uint16_t wPort,
 		                               , pReadComplete
 		                               , CloseCallback
 		                               , WriteComplete
-		                               , pConnectComplete, 0 DBG_RELAY );
+		                               , pConnectComplete
+		                               , flags DBG_RELAY );
 		ReleaseAddress( lpsaDest );
 	}
 	return pClient;
@@ -61823,7 +61870,7 @@ PCLIENT OpenTCPClientExEx(CTEXTSTR lpName,uint16_t wPort,
                           cWriteComplete WriteComplete
                           DBG_PASS )
 {
-	return OpenTCPClientExxx( lpName, wPort, pReadComplete, CloseCallback, WriteComplete, NULL DBG_RELAY );
+	return OpenTCPClientExxx( lpName, wPort, pReadComplete, CloseCallback, WriteComplete, NULL, 0 DBG_RELAY );
 }
 //----------------------------------------------------------------------------
   // only time this should be called is when there IS, cause
@@ -63454,8 +63501,8 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 			{
 				len = SSL_read( pc->ssl_session->ssl, NULL, 0 );
 				//lprintf( "return of 0 read: %d", len );
-				if( len < 0 )
-					lprintf( "error of 0 read is %d", SSL_get_error( pc->ssl_session->ssl, len ) );
+				//if( len < 0 )
+				//	lprintf( "error of 0 read is %d", SSL_get_error( pc->ssl_session->ssl, len ) );
 				len = SSL_pending( pc->ssl_session->ssl );
 				//lprintf( "do read.. pending %d", len );
 				if( len ) {
@@ -64009,6 +64056,8 @@ struct internalCert * MakeRequest( void )
 				(unsigned char *)commonName, -1, -1, 0 );
 			X509_set_issuer_name( x509, name );
 			X509_sign( x509, cert->pkey, EVP_sha512() );
+			cert->chain = sk_X509_new_null();
+			sk_X509_push( cert->chain, x509 );
 			{
 				PEM_write_bio_X509( keybuf, x509 );
 				ca_len = BIO_pending( keybuf );

@@ -7312,13 +7312,14 @@ NETWORK_PROC( PCLIENT, OpenTCPClientExxx )(CTEXTSTR lpName,uint16_t wPort
                                            , cCloseCallback CloseCallback
                                            , cWriteComplete WriteComplete
                                            , cConnectCallback pConnectComplete
+                                           , int flags
                                            DBG_PASS );
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
-#define OpenTCPClientExx( lpName, wPort, pReadComplete, CloseCallback, WriteComplete, pConnectComplete ) OpenTCPClientExxx( lpName, wPort, pReadComplete, CloseCallback, WriteComplete, pConnectComplete DBG_SRC )
+#define OpenTCPClientExx( lpName, wPort, pReadComplete, CloseCallback, WriteComplete, pConnectComplete ) OpenTCPClientExxx( lpName, wPort, pReadComplete, CloseCallback, WriteComplete, pConnectComplete, 0 DBG_SRC )
 /* <combine sack::network::tcp::OpenTCPClientExx@CTEXTSTR@uint16_t@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                      */
-#define OpenTCPClient( name, port, read ) OpenTCPClientExx(name,port,read,NULL,NULL,NULL)
+#define OpenTCPClient( name, port, read ) OpenTCPClientExxx(name,port,read,NULL,NULL,NULL,0 DBG_SRC )
 /* <combine sack::network::tcp::OpenTCPClientExx@CTEXTSTR@uint16_t@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                      */
 NETWORK_PROC( PCLIENT, OpenTCPClientExEx )( CTEXTSTR, uint16_t, cReadComplete,
