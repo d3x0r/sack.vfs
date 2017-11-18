@@ -918,18 +918,24 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 		uv_async_send( &wssi->async );
 		return (uintptr_t)wssi;
 	}
+	lprintf( "FAILED TO HAVE WSSI to open." );
 	return 0;
 }
 
 static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char *reason )
 {
 	wssiObject *wssi = (wssiObject*)psv;
-	struct wssiEvent *pevt = GetWssiEvent();
-	(*pevt).eventType = WS_EVENT_CLOSE;
-	(*pevt)._this = wssi;
-	EnqueLink( &wssi->eventQueue, pevt );
-	uv_async_send( &wssi->async );
-	wssi->pc = NULL;
+	if( wssi ) {
+		struct wssiEvent *pevt = GetWssiEvent();
+		lprintf( "Server Websocket closed; post to javascript %p  %p", pc, wssi );
+		(*pevt).eventType = WS_EVENT_CLOSE;
+		(*pevt)._this = wssi;
+		EnqueLink( &wssi->eventQueue, pevt );
+		uv_async_send( &wssi->async );
+		wssi->pc = NULL;
+	}
+	else
+		lprintf( "Duplicate close?" );
 }
 
 static void webSockServerError( PCLIENT pc, uintptr_t psv, int error ){
@@ -1759,8 +1765,9 @@ void wscObject::close( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 	if( args.Length() == 0 ) {
-		if( obj->pc )
+		if( obj->pc ) {
 			WebSocketClose( obj->pc, 1000, NULL );
+		}
 		return;
 	}
 	else {
