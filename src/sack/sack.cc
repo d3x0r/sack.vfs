@@ -18603,24 +18603,6 @@ static int DumpErrorEx( DBG_VOIDPASS )
 }
 #endif
 //--------------------------------------------------------------------------
-#ifdef __LINUX__
-int CanRead( int handle )
-{
-	fd_set n;
-	int rval;
-	struct timeval tv;
-	FD_ZERO( &n );
-	FD_SET( handle, &n );
-	tv.tv_sec = 0;
-	tv.tv_usec = 0;
-	rval = select( handle+1, &n, NULL, NULL, &tv );
-	//lprintf( "select : %d %d\n", rval, handle );
-	if( rval > 0 )
-		return TRUE;
-	return  FALSE;
-}
-#endif
-//--------------------------------------------------------------------------
 extern uintptr_t CPROC WaitForTaskEnd( PTHREAD pThread );
 static uintptr_t CPROC HandleTaskOutput(PTHREAD thread )
 {
@@ -18639,13 +18621,7 @@ static uintptr_t CPROC HandleTaskOutput(PTHREAD thread )
 				uint32_t dwRead;
 				if( done )
 					lastloop = TRUE;
-#ifdef _WIN32
-				//while(  )
 				{
-#else
-					while( CanRead( phi->handle ) )
-#endif
-					{
 						if( task->flags.log_input )
 							lprintf( WIDE( "Go to read task's stdout." ) );
 #ifdef _WIN32
@@ -18661,15 +18637,15 @@ static uintptr_t CPROC HandleTaskOutput(PTHREAD thread )
 											 , GetTextSize( pInput ) - 1 );
 							if( !dwRead )
 							{
-#ifdef _DEBUG
+#  ifdef _DEBUG
 												//lprintf( WIDE( "Ending system thread because of broke pipe! %d" ), errno );
-#endif
-#ifdef WIN32
+#  endif
+#  ifdef WIN32
 								continue;
-#else
+#  else
 												//lprintf( WIDE( "0 read = pipe failure." ) );
 								break;
-#endif
+#  endif
 							}
 #endif
 							if( task->flags.log_input )
@@ -18718,35 +18694,18 @@ static uintptr_t CPROC HandleTaskOutput(PTHREAD thread )
 							}
 						}
 #endif
-					}
-#ifdef _WIN32
 				}
-#endif
 				//allow a minor time for output to be gathered before sending
 				// partial gathers...
 				if( task->flags.process_ended )
 				{
-#ifdef _WIN32
 					// Ending system thread because of process exit!
-					done = TRUE;
-#else
-					//if( !dwRead )
-					//	break;
-					if( task->pid == waitpid( task->pid, NULL, WNOHANG ) )
-					{
-						Log( WIDE( "Setting done event on system reader." ) );
  // do one pass to make sure we completed read
-						done = TRUE;
-					}
-					else
-					{
-						//lprintf( WIDE( "process active..." ) );
-						Relinquish();
-					}
-#endif
+					  done = TRUE;
 				}
 			}
 			while( !lastloop );
+			//lprintf( "Exited read loop" );
 #ifdef _DEBUG
 			if( lastloop )
 			{
@@ -18914,6 +18873,8 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramExx )( CTEXTSTR program, CTEXTSTR path
 															  )
 {
 	PTASK_INFO task;
+	TEXTSTR expanded_path = ExpandPath( program );
+	TEXTSTR expanded_working_path = path?ExpandPath( path ):ExpandPath( WIDE(".") );
 	if( program && program[0] )
 	{
 #ifdef WIN32
@@ -18923,11 +18884,9 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramExx )( CTEXTSTR program, CTEXTSTR path
 			;
 		PVARTEXT pvt = VarTextCreateEx( DBG_VOIDRELAY );
 		PTEXT cmdline;
+		TEXTSTR new_path;
 		PTEXT final_cmdline;
 		LOGICAL needs_quotes;
-		TEXTSTR expanded_path = ExpandPath( program );
-		char *new_path;
-		TEXTSTR expanded_working_path = path?ExpandPath( path ):ExpandPath( WIDE(".") );
 		int first = TRUE;
 		//TEXTCHAR saved_path[256];
 		task = (PTASK_INFO)AllocateEx( sizeof( TASK_INFO ) DBG_RELAY );
@@ -19178,7 +19137,6 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramExx )( CTEXTSTR program, CTEXTSTR path
 		{
 			pid_t newpid;
 			TEXTCHAR saved_path[256];
-			xlprintf(LOG_ALWAYS)( WIDE("Expand Path was not implemented in linux code!") );
 			task = (PTASK_INFO)Allocate( sizeof( TASK_INFO ) );
 			MemSet( task, 0, sizeof( TASK_INFO ) );
 			task->psvEnd = psv;
@@ -19186,9 +19144,17 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramExx )( CTEXTSTR program, CTEXTSTR path
 			task->OutputEvent = OutputHandler;
 			if( OutputHandler )
 			{
-				if( pipe(task->hStdIn.pair) < 0 ) return NULL;
+				if( pipe(task->hStdIn.pair) < 0 ) {
+					Release( expanded_working_path );
+					Release( expanded_path );
+					return NULL;
+				}
 				task->hStdIn.handle = task->hStdIn.pair[1];
-				if( pipe(task->hStdOut.pair) < 0 ) return NULL;
+				if( pipe(task->hStdOut.pair) < 0 ) {
+					Release( expanded_working_path );
+					Release( expanded_path );
+					return NULL;
+				}
 				task->hStdOut.handle = task->hStdOut.pair[0];
 			}
 			// always have to thread to taskend so waitpid can clean zombies.
@@ -19255,7 +19221,6 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramExx )( CTEXTSTR program, CTEXTSTR path
 			if( OutputHandler )
 				ThreadTo( HandleTaskOutput, (uintptr_t)task );
 			task->pid = newpid;
-			lprintf( WIDE("Forked, and set the pid..") );
 			// how can I know if the command failed?
 			// well I can't - but the user's callback will be invoked
 			// when the above exits.
@@ -19264,10 +19229,14 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramExx )( CTEXTSTR program, CTEXTSTR path
 				// if path is NULL we didn't change the path...
 				SetCurrentPath( saved_path );
 			}
+			Release( expanded_working_path );
+			Release( expanded_path );
 			return task;
 		}
 #endif
 	}
+	Release( expanded_working_path );
+	Release( expanded_path );
 	return FALSE;
 }
 SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramEx )( CTEXTSTR program, CTEXTSTR path, PCTEXTSTR args
@@ -47109,6 +47078,7 @@ struct HttpState {
 		BIT_FIELD ws_upgrade : 1;
  // prevent issuing network reads... ssl pushes data from internal buffers
 		BIT_FIELD ssl : 1;
+		BIT_FIELD success : 1;
 	}flags;
 };
 struct HttpServer {
@@ -47143,15 +47113,20 @@ void GatherHttpData( struct HttpState *pHttpState )
 		PTEXT pMergedLine;
 		PTEXT pInput = VarTextGet( pHttpState->pvt_collector );
 		PTEXT pNewLine = SegAppend( pHttpState->partial, pInput );
+		//lprintf( "Gathering http data with content length..." );
 		pMergedLine = SegConcat( NULL, pNewLine, 0, GetTextSize( pHttpState->partial ) + GetTextSize( pInput ) );
 		LineRelease( pNewLine );
 		pHttpState->partial = pMergedLine;
 		if( GetTextSize( pHttpState->partial ) >= pHttpState->content_length )
 		{
+			//lprintf( "Partial is complete with %d", GetTextSize( pHttpState->partial ) );
 			pHttpState->content = SegSplit( &pHttpState->partial, pHttpState->content_length );
 			pHttpState->partial = NEXTLINE( pHttpState->partial );
 			SegGrab( pHttpState->partial );
+			pHttpState->flags.success = 1;
 		}
+		//else
+		//	lprintf( "Partial is only %d", GetTextSize( pHttpState->partial ) );
 	}
 	else
 	{
@@ -47161,6 +47136,7 @@ void GatherHttpData( struct HttpState *pHttpState )
 		pMergedLine = SegConcat( NULL, pNewLine, 0, GetTextSize( pHttpState->partial ) + GetTextSize( pInput ) );
 		LineRelease( pNewLine );
 		pHttpState->partial = pMergedLine;
+		//lprintf( "Setting content to partial... " );
 		pHttpState->content = pHttpState->partial;
 	}
 }
@@ -47193,7 +47169,7 @@ int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
 	if( pHttpState->final )
 	{
 		GatherHttpData( pHttpState );
-		if( !pHttpState->returned_status ) {
+		if( pHttpState->flags.success && !pHttpState->returned_status ) {
 			pHttpState->returned_status = 1;
 			return pHttpState->numeric_code;
 		}
@@ -47455,6 +47431,7 @@ SegSplit( &pCurrent, start );
 				{
 					// down convert from int64_t
 					pHttpState->content_length = (int)IntCreateFromSeg( field->value );
+					//lprintf( "content lenght: %d", pHttpState->content_length );
 				}
 				else if( TextLike( field->name, WIDE( "upgrade" ) ) )
 				{
@@ -47597,8 +47574,10 @@ LOGICAL AddHttpData( struct HttpState *pHttpState, POINTER buffer, size_t size )
 					else
 					{
 						pHttpState->content_length = GetTextSize( VarTextPeek( pHttpState->pvt_collector ) );
-						if( pHttpState->waiter )
+						if( pHttpState->waiter ) {
+							//lprintf( "Waking waiting to return with result." );
 							WakeThread( pHttpState->waiter );
+						}
 						return TRUE;
 					}
 				}
@@ -47731,16 +47710,22 @@ PTEXT GetHttpMethod( struct HttpState *pHttpState )
 {
 	return pHttpState->method;
 }
-void DestroyHttpState( struct HttpState *pHttpState )
+void DestroyHttpStateEx( struct HttpState *pHttpState DBG_PASS )
 {
+   //_lprintf(DBG_RELAY)( "Destroy http state... (should clear content too?" );
  // empties variables
 	EndHttp( pHttpState );
 	DeleteList( &pHttpState->fields );
+	VarTextDestroy( &pHttpState->pvtOut );
 	VarTextDestroy( &pHttpState->pvt_collector );
 	if( pHttpState->buffer )
 		Release( pHttpState->buffer );
 	Release( pHttpState );
 }
+void DestroyHttpState( struct HttpState *pHttpState ) {
+   DestroyHttpStateEx( pHttpState DBG_SRC );
+}
+#define DestroyHttpState(state) DestroyHttpStateEx(state DBG_SRC )
 void SendHttpResponse ( struct HttpState *pHttpState, PCLIENT pc, int numeric, CTEXTSTR text, CTEXTSTR content_type, PTEXT body )
 {
 	//int offset = 0;
@@ -47853,8 +47838,12 @@ static void CPROC HttpReaderClose( PCLIENT pc )
 	PCLIENT *ppc = data->pc;
 	if( ppc )
 		ppc[0] = NULL;
-	if( data->waiter ) WakeThread( data->waiter );
-	DestroyHttpState( data );
+	if( data->waiter ) {
+		//lprintf( "(on close) Waking waiting to return with result." );
+		WakeThread( data->waiter );
+	}
+	//if( !data->flags.success )
+	//	DestroyHttpState( data );
 }
 static void CPROC HttpConnected( PCLIENT pc, int error ) {
 	INDEX idx;
@@ -47959,6 +47948,7 @@ HTTPState GetHttpQuery( PTEXT address, PTEXT url )
 		AddLink( &l.pendingConnects, connect );
 		pc = OpenTCPClientAddrExxx( addr, HttpReader, HttpReaderClose, NULL, httpConnected, 0 DBG_SRC );
 		connect->pc = pc;
+		ReleaseAddress( addr );
 		if( pc ) {
 			PVARTEXT pvtOut = VarTextCreate();
 			SetTCPNoDelay( pc, TRUE );
@@ -47998,8 +47988,12 @@ HTTPState GetHttpsQuery( PTEXT address, PTEXT url, const char *certChain )
 		struct HttpState *state = CreateHttpState();
 		static PCLIENT pc;
 		SOCKADDR *addr = CreateSockAddress( GetText( address ), 443 );
-		DumpAddr( "Http Address:", addr );
+		struct pendingConnect *connect = New( struct pendingConnect );
+		connect->state = state;
+		AddLink( &l.pendingConnects, connect );
+		//DumpAddr( "Http Address:", addr );
 		pc = OpenTCPClientAddrExxx( addr, HttpReader, HttpReaderClose, NULL, httpConnected, OPEN_TCP_FLAG_DELAY_CONNECT DBG_SRC );
+		connect->pc = pc;
 		ReleaseAddress( addr );
 		if( pc )
 		{
@@ -48028,6 +48022,7 @@ HTTPState GetHttpsQuery( PTEXT address, PTEXT url, const char *certChain )
 				{
 					WakeableSleep( 1000 );
 				}
+				//lprintf( "Request has completed.... %p %p", pc, state->content );
 				if( pc )
 					RemoveClient( pc );
 			}
@@ -50559,6 +50554,8 @@ struct web_socket_input_state
 	uintptr_t psv_on;
  // result of the open, to pass to read
 	uintptr_t psv_open;
+	int close_code;
+   char *close_reason;
 };
 EXTERN void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, const uint8_t* payload, size_t length, int use_ssl );
 EXTERN void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint8_t* msg, size_t length );
@@ -51032,6 +51029,8 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 							code = 1000;
 							buf[0] = 0;
 						}
+						websock->close_code = code;
+						websock->close_reason = StrDup( buf );
 						websock->on_close( pc, websock->psv_open, code, buf );
 						websock->on_close = NULL;
 					}
@@ -51242,6 +51241,8 @@ struct web_socket_input_state
 	uintptr_t psv_on;
  // result of the open, to pass to read
 	uintptr_t psv_open;
+	int close_code;
+   char *close_reason;
 };
 EXTERN void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, const uint8_t* payload, size_t length, int use_ssl );
 EXTERN void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint8_t* msg, size_t length );
@@ -51465,18 +51466,24 @@ static void CPROC WebSocketClientReceive( PCLIENT pc, POINTER buffer, size_t len
 static void CPROC WebSocketClientClosed( PCLIENT pc )
 {
 	WebSocketClient websock = (WebSocketClient)GetNetworkLong( pc, 0 );
+   //lprintf( "WebSocketClientClosed event." );
 	if( websock )
 	{
+		//lprintf( "Send to application." );
 		if( websock->input_state.on_close ) {
-			websock->input_state.on_close( pc, websock->input_state.psv_on, 1006, NULL );
+			websock->input_state.on_close( pc, websock->input_state.psv_on, websock->input_state.close_code, websock->input_state.close_reason );
 			websock->input_state.on_close = NULL;
 		}
+		if( websock->input_state.close_reason )
+			Deallocate( char*, websock->input_state.close_reason );
 		Deallocate( uint8_t*, websock->input_state.fragment_collection );
 		Release( websock->buffer );
 		DestroyHttpState( websock->pHttpState );
 		SACK_ReleaseURL( websock->url );
 		Release( websock );
 	}
+	else
+		lprintf( "websocket handle is gone from socket|" );
 }
 static void CPROC WebSocketClientConnected( PCLIENT pc, int error )
 {
@@ -51533,6 +51540,7 @@ PCLIENT WebSocketOpen( CTEXTSTR url_address
 	websock->protocols = protocols;
  // client to server is MUST mask because of proxy handling in that direction
 	websock->input_state.flags.expect_masking = 1;
+	websock->input_state.close_code = 1006;
 	websock->url = SACK_URLParse( url_address );
 	if( !websock->url->host ) {
 		SACK_ReleaseURL( websock->url );
@@ -52182,6 +52190,12 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 }
 static void CPROC closed( PCLIENT pc_client ) {
 	HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc_client, 0 );
+	//lprintf( "ServerWebSocket Connection closed event..." );
+	if( socket->input_state.on_close ) {
+      socket->input_state.on_close( pc_client, socket->input_state.psv_open, socket->input_state.close_code, socket->input_state.close_reason );
+	}
+	if( socket->input_state.close_reason )
+      Deallocate( char*, socket->input_state.close_reason );
 	if( socket->input_state.flags.deflate ) {
 		deflateEnd( &socket->input_state.deflater );
 		inflateEnd( &socket->input_state.inflater );
@@ -52203,6 +52217,7 @@ static void CPROC connected( PCLIENT pc_server, PCLIENT pc_new )
 	socket->pc = pc_new;
  // clone callback methods and config flags
 	socket->input_state = server_socket->input_state;
+	socket->input_state.close_code = 1006;
 	if( ssl_IsClientSecure( pc_new ) )
 		socket->input_state.flags.use_ssl = 1;
  // start a new http state collector
@@ -52214,7 +52229,7 @@ static void CPROC connected( PCLIENT pc_server, PCLIENT pc_new )
 }
 static LOGICAL CPROC HandleWebsockRequest( uintptr_t psv, HTTPState pHttpState )
 {
-   return 0;
+	return 0;
 }
 PCLIENT WebSocketCreate( CTEXTSTR hosturl
 							, web_socket_opened on_open
@@ -52233,6 +52248,7 @@ PCLIENT WebSocketCreate( CTEXTSTR hosturl
 	socket->input_state.on_close = on_closed;
 	socket->input_state.on_error = on_error;
 	socket->input_state.psv_on = psv;
+	socket->input_state.close_code = 1006;
 	url = SACK_URLParse( hosturl );
 	socket->pc = OpenTCPListenerAddrEx( CreateSockAddress( url->host, url->port?url->port:url->default_port ), connected );
 	SACK_ReleaseURL( url );
@@ -57337,47 +57353,49 @@ typedef struct PendingBuffer
    struct PendingBuffer *lpNext;
 }PendingBuffer;
 enum NetworkConnectionFlags {
-	CF_UDP = 0x0001
+	CF_UDP               = 0x00000001
 	// no flag... is NOT UDP....
-	, CF_TCP = 0x0000
-	, CF_LISTEN = 0x0002
-	, CF_CONNECT = 0x0000
+	, CF_TCP             = 0x00000000
+	, CF_LISTEN          = 0x00000002
 	// some write is left hanging to output
-	, CF_WRITEPENDING = 0x0004
+	, CF_WRITEPENDING    = 0x00000004
 	// set if buffers have been set by a read
-	, CF_READPENDING = 0x0008
+	, CF_READPENDING     = 0x00000008
 	// set if next read to pend should recv also
-	, CF_READREADY = 0x0010
+	, CF_READREADY       = 0x00000010
 	// set if reading application is waiting in-line for result.
-	, CF_READWAITING = 0x8000
+	, CF_READWAITING     = 0x00008000
 	// set when FD_CONNECT is issued...
-	, CF_CONNECTED = 0x0020
-	, CF_CONNECTERROR = 0x0040
-	, CF_CONNECTING = 0x0080
-	, CF_CONNECT_WAITING = 0x8000
-	, CF_CONNECT_CLOSED = 0x100000
-	, CF_TOCLOSE = 0x0100
-	, CF_WRITEISPENDED = 0x0200
-	, CF_CLOSING = 0x0400
-	, CF_DRAINING = 0x0800
+	, CF_CONNECTED       = 0x00000020
+	, CF_CONNECTERROR    = 0x00000040
+	, CF_CONNECTING      = 0x00000080
+	, CF_CONNECT_WAITING = 0x00008000
+	, CF_CONNECT_CLOSED  = 0x00100000
+	, CF_TOCLOSE         = 0x00000100
+	, CF_WRITEISPENDED   = 0x00000200
+	, CF_CLOSING         = 0x00000400
+	, CF_DRAINING        = 0x00000800
 	// closed, handled everything except releasing the socket.
-	, CF_CLOSED = 0x1000
-	, CF_ACTIVE = 0x2000
-	, CF_AVAILABLE = 0x4000
-	, CF_CPPCONNECT = 0x010000
+	, CF_CLOSED          = 0x00001000
+	, CF_ACTIVE          = 0x00002000
+	, CF_AVAILABLE       = 0x00004000
+	, CF_CPPCONNECT      = 0x00010000
 	// server/client is implied in usage....
 	// much like Read, ReadEX are implied in TCP/UDP usage...
 	//#define CF_CPPSERVERCONNECT 0x010000
 	//#define CF_CPPCLIENTCONNECT 0x020000
-	, CF_CPPREAD = 0x020000
-	, CF_CPPCLOSE = 0x040000
-	, CF_CPPWRITE = 0x080000
+	, CF_CPPREAD         = 0x00020000
+	, CF_CPPCLOSE        = 0x00040000
+	, CF_CPPWRITE        = 0x00080000
+	, CF_CALLBACKTYPES   = 0x00010000
+                        | 0x00020000
+                        | 0x00040000
 //(CF_CPPCONNECT | CF_CPPREAD | CF_CPPCLOSE | CF_CPPWRITE)
-	, CF_CALLBACKTYPES = 0x010000 | 0x020000 | 0x040000 | 0x080000
+                        | 0x00080000
   //( CF_ACTIVE | CF_AVAILABLE | CF_CLOSED)
-	, CF_STATEFLAGS = 0x1000 | 0x2000 | 0x4000
+	, CF_STATEFLAGS      = 0x1000 | 0x2000 | 0x4000
 	//, CF_WANTS_GLOBAL_LOCK = 0x10000000
-	, CF_PROCESSING = 0x20000000
+	, CF_PROCESSING      = 0x20000000
 };
 #ifdef __cplusplus
 #  ifndef DEFINE_ENUM_FLAG_OPERATORS
@@ -58162,6 +58180,10 @@ void TerminateClosedClientEx( PCLIENT pc DBG_PASS )
 #endif
 	if( !pc )
 		return;
+	if( pc->dwFlags & CF_TOCLOSE ) {
+		lprintf( "WAIT FOR CLOSE LATER..." );
+		return;
+	}
 	if( pc->dwFlags & CF_CLOSED )
 	{
 		PendingBuffer * lpNext;
@@ -59209,6 +59231,9 @@ void AddThreadEvent( PCLIENT pc, int broadcast )
 		else {
 			ev.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET;
 		}
+#ifdef LOG_NETWORK_EVENT_THREAD
+		lprintf( "peer add socket to %d now has 0x%x events", peer->epoll_fd, ev.events );
+#endif
 		r = epoll_ctl( peer->epoll_fd, EPOLL_CTL_ADD, broadcast?pc->SocketBroadcast:pc->Socket, &ev );
 		if( r < 0 ) lprintf( "Error adding:%d", errno );
 #  endif
@@ -59219,7 +59244,7 @@ void AddThreadEvent( PCLIENT pc, int broadcast )
 		pc->flags.bAddedToEvents = 1;
 	}
 #ifdef LOG_NETWORK_EVENT_THREAD
-	//lprintf( "peer %p now has %d events", peer, peer->nEvents );
+	lprintf( "peer %p now has %d events", peer, peer->nEvents );
 #endif
 	// scheduler thread already awake do not wake him.
 }
@@ -59240,6 +59265,9 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #    endif
 #  else
 		struct epoll_event events[10];
+#    ifdef LOG_NETWORK_EVENT_THREAD
+		lprintf( "Wait on %d", thread->epoll_fd );
+#    endif
 		cnt = epoll_wait( thread->epoll_fd, events, 10, -1 );
 #  endif
 		if( cnt < 0 )
@@ -59262,8 +59290,10 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #  else
 				event_data = (struct event_data*)events[n].data.ptr;
 #  endif
-				//lprintf( "Process %d %x", event_data->broadcast?event_data->pc->SocketBroadcast:event_data->pc->Socket
-				//		 , events[n].events );
+#  ifdef LOG_NOTICES
+				lprintf( "Process %d %x", event_data->broadcast?event_data->pc->SocketBroadcast:event_data->pc->Socket
+						 , events[n].events );
+#  endif
 				if( event_data == (struct event_data*)1 ) {
 					//char buf;
 					//stat = read( GetThreadSleeper( thread->pThread ), &buf, 1 );
@@ -59329,10 +59359,10 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 						FinishPendingRead( event_data->pc DBG_SRC );
 						if( event_data->pc->dwFlags & CF_TOCLOSE )
 						{
-#ifdef LOG_NOTICES
-							if( globalNetworkData.flags.bLogNotices )
+//#ifdef LOG_NOTICES
+//							if( globalNetworkData.flags.bLogNotices )
 								lprintf( WIDE( "Pending read failed - reset connection." ) );
-#endif
+//#endif
 							InternalRemoveClientEx( event_data->pc, FALSE, FALSE );
 							TerminateClosedClient( event_data->pc );
 						}
@@ -59393,7 +59423,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 							socklen_t errlen = sizeof( error );
 							getsockopt( event_data->pc->Socket, SOL_SOCKET
 								, SO_ERROR
-								, &error, &errlen );
+										 , &error, &errlen );
 							//lprintf( WIDE( "Error checking for connect is: %s on %d" ), strerror( error ), event_data->pc->Socket );
 							if( event_data->pc->pWaiting )
 							{
@@ -59405,11 +59435,21 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 							}
 							if( event_data->pc->connect.ThisConnected )
 								event_data->pc->connect.ThisConnected( event_data->pc, error );
+#ifdef LOG_NOTICES
+							if( globalNetworkData.flags.bLogNotices )
+								lprintf( "Connect error was: %d", error );
+#endif
 							// if connected okay - issue first read...
 							if( !error )
 							{
+#ifdef LOG_NOTICES
+								lprintf( "Read Complete" );
+#endif
 								if( event_data->pc->read.ReadComplete )
 								{
+#ifdef LOG_NOTICES
+									lprintf( "Initial Read Complete" );
+#endif
 									event_data->pc->read.ReadComplete( event_data->pc, NULL, 0 );
 								}
 								if( event_data->pc->lpFirstPending )
@@ -60201,9 +60241,10 @@ namespace udp {
 #endif
 NETWORK_PROC( void, DumpAddrEx)( CTEXTSTR name, SOCKADDR *sa DBG_PASS )
 	{
+		if( !sa ) { _lprintf(DBG_RELAY)( "%s: NULL", name ); return; }
 		LogBinary( (uint8_t *)sa, SOCKADDR_LENGTH( sa ) );
 		if( sa->sa_family == AF_INET ) {
-			lprintf( WIDE("%s: (%s) %d.%d.%d.%d:%d "), name
+			_lprintf(DBG_RELAY)( WIDE("%s: (%s) %d.%d.%d.%d:%d "), name
 			       , ( ((uintptr_t*)sa)[-1] & 0xFFFF0000 )?( ((char**)sa)[-1] ) : "no name"
 			       //*(((unsigned char *)sa)+0),
 			       //*(((unsigned char *)sa)+1),
@@ -60216,7 +60257,7 @@ NETWORK_PROC( void, DumpAddrEx)( CTEXTSTR name, SOCKADDR *sa DBG_PASS )
 		} else if( sa->sa_family == AF_INET6 )
 		{
 			lprintf( WIDE( "Socket address binary: %s" ), name );
-			lprintf( WIDE("%s: (%s) %03d %04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x ")
+			_lprintf(DBG_RELAY)( WIDE("%s: (%s) %03d %04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x ")
 					 , name
 					, ( ((uintptr_t*)sa)[-1] & 0xFFFF0000 )?( ((char**)sa)[-1] ) : "no name"
 					 , ntohs(*(((unsigned short *)((unsigned char*)sa+2))))
@@ -60714,12 +60755,12 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 			}
 		}
 		else {
-#if 0
+//#if 0
 			struct linger lingerSet;
 			// linger ON causes delay on close... otherwise close returns immediately
  // on , with no time = off.
 			lingerSet.l_onoff = 0;
-			lingerSet.l_linger = 0;
+			lingerSet.l_linger = 2;
 			// set server to allow reuse of socket port
 			if( setsockopt( lpClient->Socket, SOL_SOCKET, SO_LINGER,
 				(char*)&lingerSet, sizeof( lingerSet ) ) <0 )
@@ -60727,38 +60768,43 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 				lprintf( WIDE( "error setting no linger in close." ) );
 				//cerr << "NFMSim:setHost:ERROR: could not set socket to linger." << endl;
 			}
-#endif
+//#endif
 		}
-	if( !(lpClient->dwFlags & CF_ACTIVE) )
-	{
-		if( lpClient->dwFlags & CF_AVAILABLE )
+		if( !(lpClient->dwFlags & CF_ACTIVE) )
 		{
-			lprintf( WIDE("Client was inactive?!?!?! removing from list and putting in available") );
-			AddAvailable( GrabClient( lpClient ) );
-		}
-		// this is probably true, we've definatly already moved it from
-		// active list to clsoed list.
-		else if( !(lpClient->dwFlags & CF_CLOSED) )
-		{
+			if( lpClient->dwFlags & CF_AVAILABLE )
+			{
+				lprintf( WIDE("Client was inactive?!?!?! removing from list and putting in available") );
+				AddAvailable( GrabClient( lpClient ) );
+			}
+			// this is probably true, we've definatly already moved it from
+			// active list to clsoed list.
+			else if( !(lpClient->dwFlags & CF_CLOSED) )
+			{
 #ifdef LOG_DEBUG_CLOSING
-			lprintf( WIDE("Client was NOT already closed?!?!") );
+				lprintf( WIDE("Client was NOT already closed?!?!") );
 #endif
-			AddClosed( GrabClient( lpClient ) );
-		}
+				AddClosed( GrabClient( lpClient ) );
+			}
 #ifdef LOG_DEBUG_CLOSING
-		else
-			lprintf( WIDE("Client's state is CLOSED") );
+			else
+				lprintf( WIDE("Client's state is CLOSED") );
 #endif
-		return;
-	}
-	while( !NetworkLockEx( lpClient DBG_SRC ) )
-	{
-		if( !(lpClient->dwFlags & CF_ACTIVE ) )
-		{
 			return;
 		}
-		Relinquish();
-	}
+		if( lpClient->dwFlags & CF_WRITEPENDING ) {
+			lprintf( "CLOSE WHILE WAITING FOR WRITE TO FINISH..." );
+			lpClient->dwFlags |= CF_TOCLOSE;
+			return;
+		}
+		while( !NetworkLockEx( lpClient DBG_SRC ) )
+		{
+			if( !(lpClient->dwFlags & CF_ACTIVE ) )
+			{
+				return;
+			}
+			Relinquish();
+		}
 		// allow application a chance to clean it's references
 		// to this structure before closing and cleaning it.
 		if( !bBlockNotify )
@@ -61012,8 +61058,8 @@ void LoadNetworkAddresses( void ) {
 				AddLink( &globalNetworkData.addresses, tmp = AllocAddr() );
 				((uintptr_t*)tmp)[-1] = test->ai_addrlen;
 				MemCpy( tmp, test->ai_addr, test->ai_addrlen );
-				lprintf( "initialize addres..." );
-				DumpAddr( "blah", tmp );
+				//lprintf( "initialize addres..." );
+				//DumpAddr( "blah", tmp );
 			}
 		}
 	}
@@ -62279,6 +62325,12 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
 							 pc->lpFirstPending->dwUsed,
 							 (int)pc->lpFirstPending->dwAvail,
 							 0);
+			if( nSent < pc->lpFirstPending->dwAvail ) {
+				pc->lpFirstPending->dwUsed += nSent;
+				pc->lpFirstPending->dwAvail -= nSent;
+				pc->dwFlags |= CF_WRITEPENDING;
+				lprintf( "THIS IS ANOTHER PENDING CONDITION THAT WASN'T ACCOUNTED" );
+			}
 			if (nSent == SOCKET_ERROR)
 			{
   // this is alright.
@@ -63507,7 +63559,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 				//lprintf( "do read.. pending %d", len );
 				if( len ) {
 					if( len > pc->ssl_session->dbuflen ) {
-						lprintf( "Needed to expand buffer..." );
+						//lprintf( "Needed to expand buffer..." );
 						Release( pc->ssl_session->dbuffer );
 						pc->ssl_session->dbuflen = ( len + 4095 ) & 0xFFFF000;
 						pc->ssl_session->dbuffer = NewArray( uint8_t, pc->ssl_session->dbuflen );
@@ -63609,6 +63661,8 @@ LOGICAL ssl_Send( PCLIENT pc, CPOINTER buffer, size_t length )
 	size_t offset = 0;
 	size_t pending_out = length;
 	struct ssl_session *ses = pc->ssl_session;
+	if( !ses )
+		return FALSE;
 	while( length ) {
 	//lprintf( "ssl_Send  %d", length );
 #ifdef DEBUG_SSL_IO
@@ -63617,6 +63671,9 @@ LOGICAL ssl_Send( PCLIENT pc, CPOINTER buffer, size_t length )
 #endif
 		if( pending_out > 4327 )
 			pending_out = 4327;
+#ifdef DEBUG_SSL_IO
+		lprintf( "Sending %d of %d at %d", pending_out, length, offset );
+#endif
 		len = SSL_write( pc->ssl_session->ssl, (((uint8_t*)buffer) + offset), (int)pending_out );
 		if (len < 0) {
 			ERR_print_errors_cb(logerr, (void*)__LINE__);
@@ -63666,6 +63723,7 @@ static void ssl_CloseCallback( PCLIENT pc ) {
 		return;
 	}
 	pc->ssl_session = NULL;
+   //lprintf( "Socket got close event... notify application..." );
 	if( ses->dwOriginalFlags & CF_CPPCLOSE )
 		ses->cpp_user_close( pc->psvClose );
 	else
@@ -74646,6 +74704,7 @@ struct odbc_handle_tag{
  // sqlite; alternative to closing; generate wal_checkpoints automatically on idle.
 		BIT_FIELD bAutoCheckpoint : 1;
 		BIT_FIELD bVFS : 1;
+		BIT_FIELD bClosed : 1;
 	} flags;
  // this one tracks auto commit state; it is cleared when a commit happens
 	uint32_t last_command_tick;
@@ -75633,6 +75692,7 @@ struct odbc_handle_tag{
  // sqlite; alternative to closing; generate wal_checkpoints automatically on idle.
 		BIT_FIELD bAutoCheckpoint : 1;
 		BIT_FIELD bVFS : 1;
+		BIT_FIELD bClosed : 1;
 	} flags;
  // this one tracks auto commit state; it is cleared when a commit happens
 	uint32_t last_command_tick;
@@ -81230,6 +81290,7 @@ void CloseDatabaseEx( PODBC odbc, LOGICAL ReleaseConnection )
 {
 	uint32_t tick = GetTickCount();
 	ReleaseODBC( odbc );
+	odbc->flags.bClosed = 1;
 	odbc->flags.bAutoCheckpoint = 0;
 	odbc->last_command_tick = 0;
 	while( ( (GetTickCount()-tick) < 100 ) && odbc->auto_checkpoint_thread ) {
@@ -81506,6 +81567,8 @@ retry:
 SQLPROXY_PROC( int, SQLCommandEx )( PODBC odbc, CTEXTSTR command DBG_PASS )
 {
 	PODBC use_odbc;
+	if( odbc->flags.bClosed )
+		return 0;
 	if( !IsSQLOpenEx( odbc DBG_RELAY ) )
 		return 0;
 	if( !( use_odbc = odbc ) )
@@ -81524,7 +81587,9 @@ SQLPROXY_PROC( int, SQLCommandEx )( PODBC odbc, CTEXTSTR command DBG_PASS )
 			Collect( pCollector = CreateCollector( 0, use_odbc, TRUE ), (uint32_t*)command, (uint32_t)strlen( command ) );
 			//SimpleMessageBox( NULL, "Please shut down the database...", "Waiting.." );
 		} while( __DoSQLCommandEx( use_odbc, pCollector DBG_RELAY ) );
-		return use_odbc->collection->responce == WM_SQL_RESULT_SUCCESS?TRUE:0;
+		if( use_odbc->collection )
+			return use_odbc->collection->responce == WM_SQL_RESULT_SUCCESS?TRUE:0;
+		return WM_SQL_RESULT_ERROR;
 	}
 	else
 		_xlprintf(1 DBG_RELAY )( WIDE("ODBC connection has not been opened") );
@@ -83545,24 +83610,27 @@ int DoSQLRecordQueryf( int *nResults, CTEXTSTR **result, CTEXTSTR **fields, CTEX
 }
 int SQLCommandf( PODBC odbc, CTEXTSTR fmt, ... )
 {
-	int result;
-	PTEXT cmd;
-	PVARTEXT pvt = VarTextCreateExx( 4096, 16384 * 16 );
-	va_list args;
-	va_start( args, fmt );
-	vvtprintf( pvt, fmt, args );
-	cmd = VarTextGet( pvt );
-	if( cmd )
-	{
-		VarTextDestroy( &pvt );
-		result = SQLCommandEx( odbc, GetText( cmd ) DBG_ARGS(SQLCommandf) );
-		LineRelease( cmd );
+	if( !odbc->flags.bClosed ) {
+		int result;
+		PTEXT cmd;
+		PVARTEXT pvt = VarTextCreateExx( 4096, 16384 * 16 );
+		va_list args;
+		va_start( args, fmt );
+		vvtprintf( pvt, fmt, args );
+		cmd = VarTextGet( pvt );
+		if( cmd )
+		{
+			VarTextDestroy( &pvt );
+			result = SQLCommandEx( odbc, GetText( cmd ) DBG_ARGS( SQLCommandf ) );
+			LineRelease( cmd );
+		}
+		else {
+			result = 0;
+			lprintf( WIDE( "ERROR: Sql format failed: %s" ), fmt );
+		}
+		return result;
 	}
-	else {
-      result = 0;
-		lprintf( WIDE("ERROR: Sql format failed: %s"), fmt );
-	}
-	return result;
+	return FALSE;
 }
 int SQLQueryf( PODBC odbc, CTEXTSTR *result, CTEXTSTR fmt, ... )
 {
@@ -86521,6 +86589,7 @@ struct odbc_handle_tag{
  // sqlite; alternative to closing; generate wal_checkpoints automatically on idle.
 		BIT_FIELD bAutoCheckpoint : 1;
 		BIT_FIELD bVFS : 1;
+		BIT_FIELD bClosed : 1;
 	} flags;
  // this one tracks auto commit state; it is cleared when a commit happens
 	uint32_t last_command_tick;
