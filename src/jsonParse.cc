@@ -127,7 +127,7 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ) ) ) );
 			LineRelease( error );
 		} else
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "No Error Text" TOSTR(__LINE__)) ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "No Error Text" STRSYM(__LINE__)) ) );
 		json_parse_clear_state( parser->state );
 		return;
 	}
@@ -210,7 +210,7 @@ void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ) ) ) );
 			LineRelease( error );
 		} else
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "No Error Text" TOSTR(__LINE__) ) ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "No Error Text" STRSYM(__LINE__) ) ) );
 		json_parse_clear_state( parser->state );
 		return;
 	}
@@ -476,7 +476,7 @@ Local<Value> ParseJSON6(  Isolate *isolate, const char *utf8String, size_t len, 
       if( error )
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ) ) ) );
       else
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "No Error Text" TOSTR(__LINE__) ) ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "No Error Text" STRSYM(__LINE__) ) ) );
 		LineRelease( error );
 		return Undefined(isolate);
 	}
