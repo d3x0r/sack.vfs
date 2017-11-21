@@ -7,8 +7,10 @@ static Local<Value> makeValue( Isolate *isolate, struct json_value_container *va
 
 
 static void makeJSON( const v8::FunctionCallbackInfo<Value>& args );
+static void escapeJSON( const v8::FunctionCallbackInfo<Value>& args );
 static void parseJSON( const v8::FunctionCallbackInfo<Value>& args );
 static void makeJSON6( const v8::FunctionCallbackInfo<Value>& args );
+static void escapeJSON6( const v8::FunctionCallbackInfo<Value>& args );
 static void parseJSON6( const v8::FunctionCallbackInfo<Value>& args );
 static void beginJSON6( const v8::FunctionCallbackInfo<Value>& args );
 static void writeJSON6( const v8::FunctionCallbackInfo<Value>& args );
@@ -42,6 +44,7 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 	Local<Object> o = Object::New( isolate );
 	SET_READONLY_METHOD( o, "parse", parseJSON );
 	NODE_SET_METHOD( o, "stringify", makeJSON );
+	NODE_SET_METHOD( o, "escape", escapeJSON );
 	SET_READONLY( exports, "JSON", o );
 
 	{
@@ -59,6 +62,7 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 	Local<Object> o2 = Object::New( isolate );
 	SET_READONLY_METHOD( o2, "parse", parseJSON6 );
 	NODE_SET_METHOD( o2, "stringify", makeJSON6 );
+	NODE_SET_METHOD( o, "escape", escapeJSON6 );
 	SET_READONLY( exports, "JSON6", o2 );
 
 	{
@@ -138,7 +142,7 @@ void parseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must specify port name to open." ) ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must callback to read into." ) ) );
 		return;
 	}
 
@@ -221,7 +225,7 @@ void parseObject::New6( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must specify port name to open." ) ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must callback function to get values." ) ) );
 		return;
 	}
 
@@ -467,6 +471,21 @@ void makeJSON( const v8::FunctionCallbackInfo<Value>& args ) {
 	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), "undefined :) Stringify is not completed" ) );
 }
 
+void escapeJSON( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = Isolate::GetCurrent();
+	if( args.Length() == 0 ) {
+		isolate->ThrowException( Exception::TypeError(
+			String::NewFromUtf8( isolate, TranslateText( "Missing parameter, string to escape" ) ) ) );
+		return;
+	}
+	char *msg;
+	String::Utf8Value tmp( args[0] );
+	msg = json_escape_string( *tmp );
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, msg ) );
+	Release( msg );
+}
+
+
 Local<Value> ParseJSON6(  Isolate *isolate, const char *utf8String, size_t len, struct reviver_data *revive ) {
 	PDATALIST parsed = NULL;
 	if( !json6_parse_message( (char*)utf8String, len, &parsed ) ) {
@@ -526,4 +545,19 @@ void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
 
 void makeJSON6( const v8::FunctionCallbackInfo<Value>& args ) {
 	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), "undefined :) Stringify is not completed" ) );
+}
+
+
+void escapeJSON6( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = Isolate::GetCurrent();
+	if( args.Length() == 0 ) {
+		isolate->ThrowException( Exception::TypeError(
+			String::NewFromUtf8( isolate, TranslateText( "Missing parameter, string to escape" ) ) ) );
+		return;
+	}
+	char *msg;
+	String::Utf8Value tmp( args[0] );
+	msg = json6_escape_string( *tmp );
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, msg ) );
+	Release( msg );
 }
