@@ -62,7 +62,7 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 	Local<Object> o2 = Object::New( isolate );
 	SET_READONLY_METHOD( o2, "parse", parseJSON6 );
 	NODE_SET_METHOD( o2, "stringify", makeJSON6 );
-	NODE_SET_METHOD( o, "escape", escapeJSON6 );
+	NODE_SET_METHOD( o2, "escape", escapeJSON6 );
 	SET_READONLY( exports, "JSON6", o2 );
 
 	{
