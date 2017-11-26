@@ -59642,12 +59642,17 @@ int NetworkQuit(void)
 	{
 		PTHREAD thread;
 		INDEX idx;
-		LIST_FORALL( globalNetworkData.pThreads, idx, PTHREAD, thread ) {
 #ifdef USE_WSA_EVENTS
-			struct peer_thread_info *peer_thread = (struct peer_thread_info*)GetThreadParam( thread );
-			if( peer_thread )
-				WSASetEvent( peer_thread->hThread );
+		PLIST wakeEvents = NULL;
+		struct peer_thread_info *peer_thread;
+		WSAEVENT hThread;
+		for( peer_thread = globalNetworkData.root_thread; peer_thread; peer_thread = peer_thread->child_peer ) {
+			AddLink( &wakeEvents, peer_thread->hThread );
+		}
+		LIST_FORALL( wakeEvents, idx, WSAEVENT, hThread )
+			WSASetEvent( hThread );
 #endif
+		LIST_FORALL( globalNetworkData.pThreads, idx, PTHREAD, thread ) {
 			WakeThread( thread );
 		}
 	}
