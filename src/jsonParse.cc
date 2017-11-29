@@ -480,8 +480,9 @@ void escapeJSON( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	char *msg;
 	String::Utf8Value tmp( args[0] );
-	msg = json_escape_string( *tmp );
-	args.GetReturnValue().Set( String::NewFromUtf8( isolate, msg ) );
+	size_t outlen;
+	msg = json_escape_string_length( *tmp, tmp.length(), &outlen );
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, msg, NewStringType::kNormal, (int)outlen ).ToLocalChecked() );
 	Release( msg );
 }
 
@@ -557,7 +558,8 @@ void escapeJSON6( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	char *msg;
 	String::Utf8Value tmp( args[0] );
-	msg = json6_escape_string( *tmp );
-	args.GetReturnValue().Set( String::NewFromUtf8( isolate, msg ) );
+	size_t outlen;
+	msg = json6_escape_string_length( *tmp, tmp.length(), &outlen );
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, msg, NewStringType::kNormal, (int)outlen ).ToLocalChecked() );
 	Release( msg );
 }

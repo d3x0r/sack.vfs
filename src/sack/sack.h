@@ -11565,8 +11565,16 @@ JSON_EMITTER_PROC( void, json_dispose_decoded_message )(struct json_context_obje
 // require Release the result.
 JSON_EMITTER_PROC( char*, json_escape_string )( const char * string );
 // sanitize strings to send in JSON so quotes don't prematurely end strings and output is still valid.
+// require Release the result.  pass by length so \0 characters can be kept and don't early terminate.  Result with new length also.
+JSON_EMITTER_PROC( char*, json_escape_string_length )( const char *string, size_t length, size_t *outlen );
+// sanitize strings to send in JSON6 so quotes don't prematurely end strings and output is still valid.
 // require Release the result.  Also escapes not just double-quotes ("), but also single and ES6 Format quotes (', `)
+// this does not translate control chararacters like \n, \t, since strings are allowed to be muliline.
 JSON_EMITTER_PROC( char*, json6_escape_string )( const char * string );
+// sanitize strings to send in JSON6 so quotes don't prematurely end strings and output is still valid.
+// require Release the result.  pass by length so \0 characters can be kept and don't early terminate.  Result with new length also.
+// this does not translate control chararacters like \n, \t, since strings are allowed to be muliline.
+JSON_EMITTER_PROC( char*, json6_escape_string_length )( const char *string, size_t len, size_t *outlen );
 #ifdef __cplusplus
 } } SACK_NAMESPACE_END
 using namespace sack::network::json;

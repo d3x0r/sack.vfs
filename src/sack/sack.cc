@@ -43754,10 +43754,11 @@ char * u8xor( const char *a, size_t alen, const char *b, size_t blen, int *ofs )
 	int o = ofs[0];
 	size_t outlen;
 	char *out = NewArray( char, (outlen=alen) + 1);
+	char *_out = out;
 	int l = 0;
 	int _mask = 0x3f;
 	for( n = 0; n < alen; n++ ) {
-		char v = a[n];
+		char v = (*a++);
 		int mask;
 		mask = _mask;
 		if( (v & 0x80) == 0x00 ) { if( l ) lprintf( "short utf8 sequence found" ); mask = 0x3f; _mask = 0x3f; }
@@ -43773,12 +43774,12 @@ char * u8xor( const char *a, size_t alen, const char *b, size_t blen, int *ofs )
   // 6(4) + 2 + 0 == 26
 		else if( (v & 0xFE) == 0xFC ) { if( l ) lprintf( "short utf8 sequence found" ); l = 5; mask = 0;  _mask = 0x03; }
 		char bchar = b[(n+o)%(keylen)];
-		out[n] = (v & ~mask ) | ( u8xor_table[v & mask ][bchar] & mask );
-		//lprintf( "xor %d %d = %d", v, bchar, out[n] );
+		(*out) = (v & ~mask ) | ( u8xor_table[v & mask ][bchar] & mask );
+		out++;
 	}
-	out[n] = 0;
+	(*out) = 0;
 	ofs[0] = (int)((ofs[0]+outlen)%keylen);
-	return out;
+	return _out;
 }
 static const char * const _base642 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$_=";
 static const char * const _base64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
@@ -52521,8 +52522,16 @@ JSON_EMITTER_PROC( void, json_dispose_decoded_message )(struct json_context_obje
 // require Release the result.
 JSON_EMITTER_PROC( char*, json_escape_string )( const char * string );
 // sanitize strings to send in JSON so quotes don't prematurely end strings and output is still valid.
+// require Release the result.  pass by length so \0 characters can be kept and don't early terminate.  Result with new length also.
+JSON_EMITTER_PROC( char*, json_escape_string_length )( const char *string, size_t length, size_t *outlen );
+// sanitize strings to send in JSON6 so quotes don't prematurely end strings and output is still valid.
 // require Release the result.  Also escapes not just double-quotes ("), but also single and ES6 Format quotes (', `)
+// this does not translate control chararacters like \n, \t, since strings are allowed to be muliline.
 JSON_EMITTER_PROC( char*, json6_escape_string )( const char * string );
+// sanitize strings to send in JSON6 so quotes don't prematurely end strings and output is still valid.
+// require Release the result.  pass by length so \0 characters can be kept and don't early terminate.  Result with new length also.
+// this does not translate control chararacters like \n, \t, since strings are allowed to be muliline.
+JSON_EMITTER_PROC( char*, json6_escape_string_length )( const char *string, size_t len, size_t *outlen );
 #ifdef __cplusplus
 } } SACK_NAMESPACE_END
 using namespace sack::network::json;
@@ -52712,12 +52721,13 @@ struct json_parser_shared_data jpsd;
 #ifdef __cplusplus
 SACK_NAMESPACE namespace network { namespace json {
 #endif
-char *json_escape_string( const char *string ) {
+char *json_escape_string_length( const char *string, size_t length, size_t *outlen ) {
 	size_t m = 0;
+	size_t ch;
 	const char *input;
 	TEXTSTR output, _output;
 	if( !(input = string) ) return NULL;
-	for( ; input[0]; input++ ) {
+	for( ch = 0; ch < length; ch++, input++ ) {
 		if( input[0] == '"' || input[0] == '\\' )
 			m++;
 		else if( input[0] == '\n' )
@@ -52725,8 +52735,8 @@ char *json_escape_string( const char *string ) {
 		else if( input[0] == '\t' )
 			m++;
 	}
-	_output = output = NewArray( char, (input-string)+m+1 );
-	for( input = string; input[0]; input++ ) {
+	_output = output = NewArray( char, length+m+1 );
+	for( (ch = 0), (input = string); ch < length; ch++, input++ ) {
 		if( input[0] == '"' || input[0] == '\\' ) {
 			(*output++) = '\\';
 		}
@@ -52739,8 +52749,12 @@ char *json_escape_string( const char *string ) {
 		(*output++) = input[0];
 	}
  // include nul character terminator.
-	(*output++) = input[0];
+	(*output) = 0;
+	if( outlen ) (*outlen) = output - _output;
 	return _output;
+}
+char *json_escape_string( const char *string ) {
+	return json_escape_string_length( string, strlen( string ), NULL );
 }
 #define _2char(result,from) (((*from) += 2),( ( result & 0x1F ) << 6 ) | ( ( result & 0x3f00 )>>8))
 #define _zero(result,from)  ((*from)++,0)
@@ -54566,37 +54580,31 @@ ID_Continue    XID_Continue     All of the above, plus nonspacing marks, spacing
 #ifdef __cplusplus
 SACK_NAMESPACE namespace network { namespace json {
 #endif
-char *json6_escape_string( const char *string ) {
+char *json6_escape_string_length( const char *string, size_t len, size_t *outlen ) {
 	size_t m = 0;
+	size_t ch;
 	const char *input;
 	TEXTSTR output;
 	TEXTSTR _output;
 	if( !( input = string ) ) return NULL;
-	for( ; input[0]; input++ ) {
+	for( ch = 0; ch < len; ch++, input++ ) {
  /*|| (input[0] == '\n') || (input[0] == '\t')*/
 		if( (input[0] == '"' ) || (input[0] == '\\' ) || (input[0] == '`') || (input[0] == '\'') )
 			m++;
 	}
-	_output = output = NewArray( TEXTCHAR, (input-string)+m+1 );
-	for( input = string; input[0]; input++ ) {
+	_output = output = NewArray( TEXTCHAR, len+m+1 );
+	for( (ch = 0), (input = string); ch < len; ch++, input++ ) {
 		if( (input[0] == '"' ) || (input[0] == '\\' ) || (input[0] == '`' )|| (input[0] == '\'' )) {
 			(*output++) = '\\';
 		}
-		/*
-		 * newline is not required to be subsituted.... so can keep it more 'native'
-		else if( input[0] == '\n' ) {
-			(*output++) = '\\'; (*output++) = 'n';
-			continue;
-		}
-		else if( input[0] == '\t' ) {
-			(*output++) = '\\'; (*output++) = 't';
-			continue;
-		}
-		*/
 		(*output++) = input[0];
 	}
-	(*output++) = input[0];
+	(*output) = 0;
+	if( outlen ) (*outlen) = output - _output;
 	return _output;
+}
+char *json6_escape_string( const char *string ) {
+	return json6_escape_string_length( string, strlen( string ), NULL );
 }
 #define _2char(result,from) (((*from) += 2),( ( result & 0x1F ) << 6 ) | ( ( result & 0x3f00 )>>8))
 #define _zero(result,from)  ((*from)++,0)
@@ -89229,7 +89237,7 @@ void LoadTranslationDataFromMemory( POINTER input, size_t length )
 					} else {
 						struct translation *translation = CreateTranslation( val->name );
 						DATA_FORALL( val->contains, idx2, struct json_value_container *, val2 ) {
-							uint64_t index = IntCreateFromText( val2->name );
+							int64_t index = IntCreateFromText( val2->name );
 							SetTranslatedString( translation, index, val2->string );
 						}
 					}

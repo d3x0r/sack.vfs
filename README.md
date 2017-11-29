@@ -75,6 +75,10 @@ vfs = {
     WebSocket - Websocket interface
         Client( ... ) - create a websocket client
         Server( ... ) - create a websocket server        
+    HTTP - HTTP Request Method
+        get( {options} ) - synchronous http request
+    HTTPS - HTTPS Request Method
+        get( {options} ) - synchronous https request
     Network - Raw network utilities
         Address( address [,port] ) - holder for network addresses.
         UDP( ... ) - UDP Socket to send/received datagrams.
@@ -646,6 +650,31 @@ Address string can contain an optional port notation after a colon(':')
 | IP | const String; numeric IP address converted to a string |
 | port | const Number; port number this address refers to (0 if not applicable, as in a unix socket) |
 
+## HTTP Request Interface ( HTTP/HTTPS )
+
+```
+var sack = require( "sack.vfs" );
+var response = sack.HTTP.get( { hostname: "example.com", port: 80, method : "get", 
+var response2 = sack.HTTPS.get( { ca:<extra root cert(s)>, rejectUnauthorized:true/false, path:"/index.html" } );
+```
+
+| HTTP(S) get option | Description |
+|----|-----|
+| host | address to request from |
+| path | resource path to request; "/app/index.html"  |
+| port | optional to override the port requested from |
+| method | "GET" should specify how to send the request (get/post/...) but for now I think GET is only option |
+| rejectUnauthorized | (HTTPS only) whether to accept unvalidated HTTPS certificates; true/false |
+| ca | (HTTPS) Additional certificate authorities to validate connection with |
+
+Results with an object with the following fields....
+
+| HTTP Response field | Description |
+|----|----|
+| content | string content from request |
+| statusCode | number indiciating the response code form the server |
+| status | text status from server |
+| headers | array of header from response (should really be an object, indexes are field names with field values specified) |
 
 
 ## UDP Socket Object (Network.UDP)
@@ -818,13 +847,14 @@ by using the Image method on an existing image also.
 | width | readonly accessor | Gets image width |
 | height | readonly accessor | Gets image height |
 
-## Color methods
+### Color methods
 
 ```
 var colorFromInteger = sack.Image.Color( 0xFF995522 ); //creates a color from specifed integer 0xAARRGGBB
 var colorFromObject = sack.Image.Color( { a: 255, r:128, g: 64, b: 100 } ); // creates color from specified parts.  Clamped to 0-255.
 var colorFromObjectFloat = sack.Image.Color( { a: 0.9, r:0.5, g: 0.25, b: 0.37 } ); // creates color from specified parts.  Clamped to 0-255.  The value 1, unfortunatly is treated as integer 1 for the above 0-255 value.
 var colorFromString = sack.Image.Color( "Some string" ); // Unimplemented.
+var colorFromDialog = sack.Image.Color.dialog( callback );  // callback is passed a color object representing the picked color
 ```
 
 There are some constant colors already builtin in Image.colors.[color name]
@@ -839,6 +869,22 @@ There are some constant colors already builtin in Image.colors.[color name]
 | Color Methods | arguments | description |
 |---|---|---|
 |  toString| () | gets color in a string format |
+
+
+### Font methods
+
+```
+var font = sack.Image.Font.dialog( callback );  // callback is passed a font object represenging the font selected 
+var font = sack.Image.Font( <font name>, width, height, render flags (0-3 for mono, 4bit, 8bit render) ); 
+```
+
+When creating a font by name, it can either be the name of a font, or a filename that contains a font.
+
+
+| Font Method | Parameters | Description | 
+|----|-----|----|
+| measure  | (string)  | /* unfinished; should result with some { width : xx, height: yy } type object */
+
 
 ##Render Methods
 
@@ -932,9 +978,12 @@ Mostly unimplemented, more of a place holder than functional.
 ---
 
 ## Changelog
+- 0.1.99320 Fix json escape of strings containing NUL characters.  Add HTTP(s) request methods.
+Improve/modify PSI control registration/creation a little.  Expose font select dialog, color picker dialog, 
+Fix property accessors in websocket module.
 - 0.1.99319 Fix older gcc crash from bad optimization.
 - 0.1.99318 Fix udp readStrings option.
-- 0.1.99317 Added optional GUI interfaces.
+- 0.1.99317 Added optional GUI interfaces. (build with `npm run build-gui` or `npm run build-gui-debug`)
 - 0.1.99316 Fix rekey.
 - 0.1.99315 Add rekey method to volumes.
 - 0.1.99314 Fixed duplicating address sent with UDP messages.  
