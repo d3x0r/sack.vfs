@@ -63358,7 +63358,9 @@ int SystemCheck( void )
 }
 SACK_NETWORK_NAMESPACE_END
 #endif
-#include <cryptuiapi.h>
+#ifdef _WIN32
+#  include <cryptuiapi.h>
+#endif
 //#define DEBUG_SSL_IO
 #if NO_SSL
 SACK_NETWORK_NAMESPACE
