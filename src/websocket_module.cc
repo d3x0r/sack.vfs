@@ -1496,7 +1496,7 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 	}
 	if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-		WebSocketSendBinary( obj->pc, ab->GetContents().Data(), ab->ByteLength() );
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
 	}
 	else if( args[0]->IsString() ) {
 		String::Utf8Value buf( args[0]->ToString() );
@@ -1812,7 +1812,7 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 		lprintf( "Typed array (unhandled)" );
 	} else if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-		WebSocketSendBinary( obj->pc, ab->GetContents().Data(), ab->ByteLength() );
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
 	}
 	else if( args[0]->IsString() ) {
 		String::Utf8Value buf( args[0]->ToString() );

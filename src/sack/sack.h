@@ -11547,6 +11547,7 @@ struct json_value_container {
 	enum json_value_types value_type;
    // the string value of this value (strings and number types only)
 	char *string;
+	size_t stringLen;
 	//size_t stringLen;
   // boolean whether to use result_n or result_d
 	int float_result;
@@ -11857,17 +11858,16 @@ WEBSOCKET_EXPORT void WebSocketConnect( PCLIENT );
 WEBSOCKET_EXPORT void WebSocketClose( PCLIENT, int code, const char *reason );
 // there is a control bit for whether the content is text or binary or a continuation
  // UTF8 RFC3629
-WEBSOCKET_EXPORT void WebSocketBeginSendText( PCLIENT, CPOINTER, size_t );
+WEBSOCKET_EXPORT void WebSocketBeginSendText( PCLIENT, const char *, size_t );
 // literal binary sending; this may happen to be base64 encoded too
-WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT, CPOINTER, size_t );
+WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT, const uint8_t *, size_t );
 // there is a control bit for whether the content is text or binary or a continuation
  // UTF8 RFC3629
-WEBSOCKET_EXPORT void WebSocketSendText( PCLIENT, CPOINTER, size_t );
+WEBSOCKET_EXPORT void WebSocketSendText( PCLIENT, const char *, size_t );
 // literal binary sending; this may happen to be base64 encoded too
-WEBSOCKET_EXPORT void WebSocketSendBinary( PCLIENT, CPOINTER, size_t );
+WEBSOCKET_EXPORT void WebSocketSendBinary( PCLIENT, const uint8_t *, size_t );
 WEBSOCKET_EXPORT void WebSocketEnableAutoPing( PCLIENT websock, uint32_t delay );
 WEBSOCKET_EXPORT void WebSocketPing( PCLIENT websock, uint32_t timeout );
-WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT pc, CPOINTER buffer, size_t length );
 WEBSOCKET_EXPORT void SetWebSocketAcceptCallback( PCLIENT pc, web_socket_accept callback );
 WEBSOCKET_EXPORT void SetWebSocketReadCallback( PCLIENT pc, web_socket_event callback );
 WEBSOCKET_EXPORT void SetWebSocketCloseCallback( PCLIENT pc, web_socket_closed callback );

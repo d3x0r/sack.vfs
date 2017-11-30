@@ -43523,8 +43523,8 @@ TEXTRUNE GetPriorUtfCharIndexed( const char *pc, size_t *n )
 		CTEXTSTR orig = pc + n[0];
 		CTEXTSTR tmp = orig;
 		TEXTRUNE result = GetPriorUtfChar( pc, &tmp );
-		if( orig <= tmp ) {
-			n[0] += tmp - orig;
+		if( tmp <= orig ) {
+			n[0] -= orig - tmp;
 			return result;
 		}
 	}
@@ -50457,17 +50457,16 @@ WEBSOCKET_EXPORT void WebSocketConnect( PCLIENT );
 WEBSOCKET_EXPORT void WebSocketClose( PCLIENT, int code, const char *reason );
 // there is a control bit for whether the content is text or binary or a continuation
  // UTF8 RFC3629
-WEBSOCKET_EXPORT void WebSocketBeginSendText( PCLIENT, CPOINTER, size_t );
+WEBSOCKET_EXPORT void WebSocketBeginSendText( PCLIENT, const char *, size_t );
 // literal binary sending; this may happen to be base64 encoded too
-WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT, CPOINTER, size_t );
+WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT, const uint8_t *, size_t );
 // there is a control bit for whether the content is text or binary or a continuation
  // UTF8 RFC3629
-WEBSOCKET_EXPORT void WebSocketSendText( PCLIENT, CPOINTER, size_t );
+WEBSOCKET_EXPORT void WebSocketSendText( PCLIENT, const char *, size_t );
 // literal binary sending; this may happen to be base64 encoded too
-WEBSOCKET_EXPORT void WebSocketSendBinary( PCLIENT, CPOINTER, size_t );
+WEBSOCKET_EXPORT void WebSocketSendBinary( PCLIENT, const uint8_t *, size_t );
 WEBSOCKET_EXPORT void WebSocketEnableAutoPing( PCLIENT websock, uint32_t delay );
 WEBSOCKET_EXPORT void WebSocketPing( PCLIENT websock, uint32_t timeout );
-WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT pc, CPOINTER buffer, size_t length );
 WEBSOCKET_EXPORT void SetWebSocketAcceptCallback( PCLIENT pc, web_socket_accept callback );
 WEBSOCKET_EXPORT void SetWebSocketReadCallback( PCLIENT pc, web_socket_event callback );
 WEBSOCKET_EXPORT void SetWebSocketCloseCallback( PCLIENT pc, web_socket_closed callback );
@@ -51081,56 +51080,70 @@ void WebSocketPing( PCLIENT pc, uint32_t timeout )
 }
 // there is a control bit for whether the content is text or binary or a continuation
  // UTF8 RFC3629
-void WebSocketSendText( PCLIENT pc, CPOINTER buffer, size_t length )
+void WebSocketSendText( PCLIENT pc, const char *buffer, size_t length )
 {
 	struct web_socket_input_state *input = (struct web_socket_input_state *)GetNetworkLong( pc, 1 );
-	if( input )
-	{
-#ifdef _UNICODE
-		char *outbuf = WcharConvertExx( (CTEXTSTR)buffer, length DBG_SRC );
-		int real_len = CStrLen( outbuf );
-		//lprintf( WIDE( "send %s"), buffer );
-		SendWebSocketMessage( pc, input->flags.sent_type?0:1, 1, input->flags.expect_masking, (uint8_t*)outbuf, length, input->flags.use_ssl );
-		Deallocate( char *, outbuf );
-#else
-		SendWebSocketMessage( pc, input->flags.sent_type?0:1, 1, input->flags.expect_masking, (uint8_t*)buffer, length, input->flags.use_ssl );
-#endif
-		input->flags.sent_type = 0;
+	if( length > 8100 ) {
+		size_t sentLen;
+		size_t maxLen = length - 8100;
+		for( sentLen = 0; sentLen < maxLen; sentLen += 8100 )
+			WebSocketBeginSendText( pc, buffer + sentLen, 8100 );
+		length = length - ( sentLen - 8100 );
+		buffer = buffer + ( sentLen - 8100 );
 	}
+	SendWebSocketMessage( pc, input->flags.sent_type?0:1, 1, input->flags.expect_masking, (uint8_t*)buffer, length, input->flags.use_ssl );
+	input->flags.sent_type = 0;
 }
 // there is a control bit for whether the content is text or binary or a continuation
  // UTF8 RFC3629
-void WebSocketBeginSendText( PCLIENT pc, CPOINTER buffer, size_t length )
+void WebSocketBeginSendText( PCLIENT pc, const char *buffer, size_t length )
 {
 	struct web_socket_input_state *output = (struct web_socket_input_state *)GetNetworkLong(pc, 1);
-#ifdef _UNICODE
-	int real_len = CStrLen( outbuf );
-	//lprintf( WIDE( "send %s"), buffer );
-	SendWebSocketMessage( pc, output->flags.sent_type?0:1, 1, output->flags.expect_masking, (uint8_t*)outbuf, length, output->flags.use_ssl );
-	Deallocate( char *, outbuf );
-#else
+	if( length > 8100 ) {
+		size_t sentLen;
+		size_t maxLen = length - 8100;
+		for( sentLen = 0; sentLen < maxLen; sentLen += 8100 )
+			WebSocketBeginSendText( pc, buffer + sentLen, 8100 );
+		length = length - ( sentLen - 8100 );
+		buffer = buffer + ( sentLen - 8100 );
+	}
 	SendWebSocketMessage( pc, output->flags.sent_type?0:1, 0, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
-#endif
 	output->flags.sent_type = 1;
 }
 // literal binary sending; this may happen to be base64 encoded too
-void WebSocketSendBinary( PCLIENT pc, CPOINTER buffer, size_t length )
+void WebSocketSendBinary( PCLIENT pc, const uint8_t *buffer, size_t length )
 {
 	struct web_socket_input_state *output = (struct web_socket_input_state *)GetNetworkLong(pc, 1);
+	if( length > 8100 ) {
+		size_t sentLen;
+		size_t maxLen = length - 8100;
+		for( sentLen = 0; sentLen < maxLen; sentLen += 8100 )
+			WebSocketBeginSendBinary( pc, buffer + sentLen, 8100 );
+		length = length - ( sentLen - 8100 );
+		buffer = buffer + ( sentLen - 8100 );
+	}
 	SendWebSocketMessage( pc, output->flags.sent_type?0:2, 1, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
 	output->flags.sent_type = 0;
 }
 // literal binary sending; this may happen to be base64 encoded too
-void WebSocketBeginSendBinary( PCLIENT pc, CPOINTER buffer, size_t length )
+void WebSocketBeginSendBinary( PCLIENT pc, const uint8_t *buffer, size_t length )
 {
 	struct web_socket_input_state *output = (struct web_socket_input_state *)GetNetworkLong(pc, 1);
+	if( length > 8100 ) {
+		size_t sentLen;
+		size_t maxLen = length - 8100;
+		for( sentLen = 0; sentLen < maxLen; sentLen += 8100 )
+			WebSocketBeginSendBinary( pc, buffer + sentLen, 8100 );
+		length = length - ( sentLen - 8100 );
+		buffer = buffer + ( sentLen - 8100 );
+	}
 	SendWebSocketMessage( pc, output->flags.sent_type?0:2, 0, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
 	output->flags.sent_type = 1;
 }
 void SetWebSocketAcceptCallback( PCLIENT pc, web_socket_accept callback )
 {
 	if( pc ) {
-		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 1 );
+		 struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 1 );
 		input_state->on_accept = callback;
 	}
 }
@@ -52504,6 +52517,7 @@ struct json_value_container {
 	enum json_value_types value_type;
    // the string value of this value (strings and number types only)
 	char *string;
+	size_t stringLen;
 	//size_t stringLen;
   // boolean whether to use result_n or result_d
 	int float_result;
@@ -53224,9 +53238,10 @@ int json_parse_add_data( struct json_parse_state *state
 					//lprintf( "string gather status:%d", string_status );
 					if( string_status < 0 )
 						state->status = FALSE;
-					else if( string_status > 0 )
+					else if( string_status > 0 ) {
 						state->gatheringString = FALSE;
-					else if( state->complete_at_end ) {
+						state->val.stringLen = output->pos - state->val.string;
+					} else if( state->complete_at_end ) {
 						if( !state->pvtError ) state->pvtError = VarTextCreate();
 						vtprintf( state->pvtError, "End of string fail." );
 						state->status = FALSE;
@@ -53450,6 +53465,7 @@ int json_parse_add_data( struct json_parse_state *state
 								*/
 								//lprintf( "Non numeric character received; push the value we have" );
 								(*output->pos) = 0;
+								state->val.stringLen = output->pos - state->val.string;
 								break;
 							}
 						}
@@ -53467,6 +53483,7 @@ int json_parse_add_data( struct json_parse_state *state
 						{
 							state->gatheringNumber = FALSE;
 							(*output->pos++) = 0;
+							state->val.stringLen = output->pos - state->val.string;
 							if( state->val.float_result )
 							{
 								CTEXTSTR endpos;
@@ -54903,6 +54920,7 @@ int json6_parse_add_data( struct json_parse_state *state
 			{
 				state->gatheringString = FALSE;
 				state->n = input->pos - input->buf;
+				state->val.stringLen = (output->pos - state->val.string)-1;
 				if( state->status ) state->val.value_type = VALUE_STRING;
 			}
 			else {
@@ -55203,8 +55221,10 @@ int json6_parse_add_data( struct json_parse_state *state
 						//lprintf( "string gather status:%d", string_status );
 						if( string_status < 0 )
 							state->status = FALSE;
-						else if( string_status > 0 )
+						else if( string_status > 0 ) {
 							state->gatheringString = FALSE;
+							state->val.stringLen = (output->pos - state->val.string) - 1;
+						}
 						state->n = input->pos - input->buf;
 						if( state->status ) {
 							state->val.value_type = VALUE_STRING;
@@ -55268,9 +55288,10 @@ int json6_parse_add_data( struct json_parse_state *state
 					//lprintf( "string gather status:%d", string_status );
 					if( string_status < 0 )
 						state->status = FALSE;
-					else if( string_status > 0 )
+					else if( string_status > 0 ) {
 						state->gatheringString = FALSE;
-					else if( state->complete_at_end ) {
+						state->val.stringLen = (output->pos - state->val.string) - 1;
+					} else if( state->complete_at_end ) {
 						if( !state->pvtError ) state->pvtError = VarTextCreate();
 						vtprintf( state->pvtError, "End of string fail." );
 						state->status = FALSE;
@@ -55633,6 +55654,7 @@ int json6_parse_add_data( struct json_parse_state *state
 						else
 						{
 							(*output->pos++) = 0;
+							state->val.stringLen = (output->pos - state->val.string) - 1;
 							state->gatheringNumber = FALSE;
 							//lprintf( "result with number:%s", state->val.string );
 							if( state->val.float_result )
@@ -63336,6 +63358,7 @@ int SystemCheck( void )
 }
 SACK_NETWORK_NAMESPACE_END
 #endif
+#include <cryptuiapi.h>
 //#define DEBUG_SSL_IO
 #if NO_SSL
 SACK_NETWORK_NAMESPACE
@@ -63372,6 +63395,7 @@ struct internalCert {
 	EVP_PKEY *pkey;
 	STACK_OF( X509 ) *chain;
 };
+void loadSystemCerts(X509_STORE *store );
 //static void gencp
 struct internalCert * MakeRequest( void );
 EVP_PKEY *genKey() {
@@ -63527,7 +63551,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 #ifdef DEBUG_SSL_IO
 			lprintf( "Wrote %zd", len );
 #endif
-			if( len < length ) {
+			if( len < (int)length ) {
 				lprintf( "Protocol failure?" );
 				Release( pc->ssl_session );
 				RemoveClient( pc );
@@ -63571,7 +63595,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 				len = SSL_pending( pc->ssl_session->ssl );
 				//lprintf( "do read.. pending %d", len );
 				if( len ) {
-					if( len > pc->ssl_session->dbuflen ) {
+					if( len > (int)pc->ssl_session->dbuflen ) {
 						//lprintf( "Needed to expand buffer..." );
 						Release( pc->ssl_session->dbuffer );
 						pc->ssl_session->dbuflen = ( len + 4095 ) & 0xFFFF000;
@@ -63943,6 +63967,9 @@ LOGICAL ssl_BeginClientSession( PCLIENT pc, CPOINTER client_keypair, size_t clie
 		BIO_free( keybuf );
 		X509_STORE *store = SSL_CTX_get_cert_store( ses->ctx );
 		X509_STORE_add_cert( store, cert );
+	} else {
+		X509_STORE *store = SSL_CTX_get_cert_store( ses->ctx );
+		loadSystemCerts( store );
 	}
 	ssl_InitSession( ses );
 	//SSL_set_default_read_buffer_len( ses->ssl, 16384 );
@@ -64143,6 +64170,38 @@ struct internalCert * MakeRequest( void )
 	}
 	return cert;
 }
+#ifdef _WIN32
+#define MY_ENCODING_TYPE  (PKCS_7_ASN_ENCODING | X509_ASN_ENCODING)
+void loadSystemCerts( X509_STORE *store )
+{
+	HCERTSTORE hStore;
+	PCCERT_CONTEXT pContext = NULL;
+	X509 *x509;
+	hStore = CertOpenSystemStore((HCRYPTPROV_LEGACY)NULL, "ROOT");
+	if( !hStore ) {
+		lprintf( "FATAL, CANNOT OPEN ROOT STORE" );
+		return;
+	}
+	while (pContext = CertEnumCertificatesInStore(hStore, pContext))
+	{
+		//uncomment the line below if you want to see the certificates as pop ups
+		//CryptUIDlgViewContext(CERT_STORE_CERTIFICATE_CONTEXT, pContext,   NULL, NULL, 0, NULL);
+		const unsigned char *encoded_cert = (const unsigned char *)pContext->pbCertEncoded;
+		x509 = NULL;
+		x509 = d2i_X509(NULL, &encoded_cert, pContext->cbCertEncoded);
+		if (x509)
+		{
+			int i = X509_STORE_add_cert(store, x509);
+			//if (i == 1)
+			//	std::cout << "certificate added" << std::endl;
+			//printf( "adde cert to store?", i );
+			X509_free(x509);
+		}
+	}
+	 CertFreeCertificateContext(pContext);
+	 CertCloseStore(hStore, 0);
+}
+#endif
 SACK_NETWORK_NAMESPACE_END
 #endif
 #endif
