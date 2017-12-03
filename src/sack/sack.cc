@@ -31845,9 +31845,9 @@ namespace sack {
 #  undef g
 #endif
 #ifdef __64__
-#  define makeULong(n) ~##n##ULL
+#  define makeULong(n) ~(n##ULL)
 #else
-#  define makeULong(n) ~##n##UL
+#  define makeULong(n) ~(n##UL)
 #endif
 static uintptr_t masks[33] = { makeULong(0), makeULong(0), makeULong(1), 0, makeULong(3), 0, 0, 0, makeULong(7), 0, 0, 0, 0, 0, 0, 0, makeULong(15), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, makeULong(31) };
 #define BASE_MEMORY (POINTER)0x80000000
