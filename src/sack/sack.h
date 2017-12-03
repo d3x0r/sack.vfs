@@ -1199,9 +1199,9 @@ SACK_NAMESPACE
 #  define c_64fs   "lld"
 #endif
 #if defined( UNICODE )
-#  define _cstring_f WIDE("S")
-#  define _string_f WIDE("s")
-#  define _ustring_f WIDE("s")
+#  define _cstring_f WIDE("s")
+#  define _string_f WIDE("S")
+#  define _ustring_f WIDE("S")
 #else
 #  define _cstring_f WIDE("s")
 #  define _string_f WIDE("s")
@@ -5518,7 +5518,7 @@ MEM_PROC  void MEM_API  DebugDumpHeapMemFile ( PMEM pHeap, CTEXTSTR pFilename );
    \ \                                                        */
 MEM_PROC  void MEM_API  DebugDumpMemFile ( CTEXTSTR pFilename );
 #ifdef __GNUC__
-MEM_PROC  POINTER MEM_API  HeapAllocateAlignedEx ( PMEM pHeap, uintptr_t dwSize, uint32_t alignment DBG_PASS ) __attribute__( (malloc) );
+MEM_PROC  POINTER MEM_API  HeapAllocateAlignedEx ( PMEM pHeap, uintptr_t dwSize, uint16_t alignment DBG_PASS ) __attribute__( (malloc) );
 MEM_PROC  POINTER MEM_API  HeapAllocateEx ( PMEM pHeap, uintptr_t nSize DBG_PASS ) __attribute__((malloc));
 MEM_PROC  POINTER MEM_API  AllocateEx ( uintptr_t nSize DBG_PASS ) __attribute__((malloc));
 #else
@@ -5533,7 +5533,7 @@ pHeap :  pointer to a heap which was initialized with
 InitHeap()
 Size :   Size of block to allocate
 Alignment : count of bytes to return block on (1,2,4,8,16,32)  */
-MEM_PROC  POINTER MEM_API  HeapAllocateAlignedEx( PMEM pHeap, uintptr_t nSize, uint32_t alignment DBG_PASS );
+MEM_PROC  POINTER MEM_API  HeapAllocateAlignedEx( PMEM pHeap, uintptr_t nSize, uint16_t alignment DBG_PASS );
 /* Allocates a block of memory of specific size. Debugging
    information if passed is recorded on the block.
    Parameters
@@ -5677,9 +5677,11 @@ MEM_PROC  POINTER MEM_API  HoldEx ( POINTER pData DBG_PASS  );
    the new block.
    If NULL is passed as the source block, then a new block
    filled with 0 is created.                                        */
+MEM_PROC  POINTER MEM_API  HeapReallocateAlignedEx ( PMEM pHeap, POINTER source, uintptr_t size, uint16_t alignment DBG_PASS );
 MEM_PROC  POINTER MEM_API  HeapReallocateEx ( PMEM pHeap, POINTER source, uintptr_t size DBG_PASS );
 /* <combine sack::memory::HeapReallocateEx@PMEM@POINTER@uintptr_t size>
    \ \                                                                 */
+#define HeapReallocateAligned(heap,p,sz,al) HeapReallocateEx( (heap),(p),(sz),(al) DBG_SRC )
 #define HeapReallocate(heap,p,sz) HeapReallocateEx( (heap),(p),(sz) DBG_SRC )
 /* <combine sack::memory::HeapReallocateEx@PMEM@POINTER@uintptr_t size>
    \ \                                                                 */
@@ -5715,9 +5717,11 @@ MEM_PROC  POINTER MEM_API  HeapPreallocateEx ( PMEM pHeap, POINTER source, uintp
 #define HeapPreallocate(heap,p,sz) HeapPreallocateEx( (heap),(p),(sz) DBG_SRC )
 /* <combine sack::memory::HeapPreallocateEx@PMEM@POINTER@uintptr_t size>
    \ \                                                                  */
+MEM_PROC  POINTER MEM_API  PreallocateAlignedEx ( POINTER source, uintptr_t size, uint16_t alignment DBG_PASS );
 MEM_PROC  POINTER MEM_API  PreallocateEx ( POINTER source, uintptr_t size DBG_PASS );
 /* <combine sack::memory::PreallocateEx@POINTER@uintptr_t size>
    \ \                                                         */
+#define PreallocateAligned(p,sz,al) PreallocateAlignedEx( (p),(sz),(al) DBG_SRC )
 #define Preallocate(p,sz) PreallocateEx( (p),(sz) DBG_SRC )
 /* Moves a block of memory from one heap to another.
    Parameters
@@ -5737,7 +5741,13 @@ MEM_PROC  POINTER MEM_API  HeapMoveEx ( PMEM pNewHeap, POINTER source DBG_PASS )
    pData :  pointer to a allocated memory block.
    Returns
    The size of the block that was specified by the Allocate(). */
-MEM_PROC  uintptr_t MEM_API  SizeOfMemBlock ( CPOINTER pData );
+MEM_PROC uintptr_t MEM_API  SizeOfMemBlock ( CPOINTER pData );
+/* \returns the allocation alignment of a memory block which was Allocate()'d.
+Parameters
+pData :  pointer to a allocated memory block.
+Returns
+The alignment of the block that was specified from Allocate(). */
+MEM_PROC uint16_t  AlignOfMemBlock( CPOINTER pData );
 /* not so much of a fragment as a consolidation. Finds a free
    spot earlier in the heap and attempts to move the block
    there. This can help alleviate heap fragmentation.
@@ -6131,6 +6141,13 @@ MEM_PROC TEXTSTR     MEM_API  DupCharToTextEx( const char *original DBG_PASS );
    Returns
    a pointer to a wide character string.                     */
 MEM_PROC  TEXTSTR MEM_API  DupCStrEx ( const char * original DBG_PASS );
+/* Converts from 8 bit char to 16 bit wchar (or no-op if not
+UNICODE compiled)
+Parameters
+original :  original string of C char.
+Returns
+a pointer to a wide character string.                     */
+MEM_PROC  TEXTSTR MEM_API  DupCStrLenEx( const char * original, size_t chars DBG_PASS );
 /* <combine sack::memory::StrDupEx@CTEXTSTR original>
    \ \                                                */
 #define StrDup(o) StrDupEx( (o) DBG_SRC )
@@ -6140,6 +6157,9 @@ MEM_PROC  TEXTSTR MEM_API  DupCStrEx ( const char * original DBG_PASS );
 /* <combine sack::memory::DupCStrEx@char * original>
    \ \                                               */
 #define DupCStr(o) DupCStrEx( (o) DBG_SRC )
+/* <combine sack::memory::DupCStrLenEx@char * original@size_t chars>
+   \ \                                               */
+#define DupCStrLen(o,l) DupCStrLenEx( (o),(l) DBG_SRC )
 //------------------------------------------------------------------------
 #if 0
 // this code was going to provide network oriented shared memory.
@@ -8857,14 +8877,14 @@ PSSQL_PROC( TEXTSTR ,RevertEscapeString )( CTEXTSTR name );
    a pointer to the string without escapes. (Even though it says
    binary, it's still to and from text?) This result should be
    freed with Release when user is done with it.                 */
-PSSQL_PROC( TEXTSTR ,RevertEscapeBinary )( CTEXTSTR blob, uintptr_t *bloblen );
+PSSQL_PROC( TEXTSTR ,RevertEscapeBinary )( CTEXTSTR blob, size_t *bloblen );
 /* Parse a Blob string stored as hex... that is text character
    0-9 and A-F.
    Parameters
    blob :    pointer to the string containing the blob string
    buffer :  target buffer for data
    buflen :  length of target buffer                           */
-PSSQL_PROC( TEXTSTR , DeblobifyString )( CTEXTSTR blob, TEXTSTR buffer, int buflen );
+PSSQL_PROC( TEXTSTR , DeblobifyString )( CTEXTSTR blob, TEXTSTR buffer, size_t buflen );
 /* parse the string passed as a date/time as returned from a
    MySQL database.
    Parameters
@@ -8888,9 +8908,9 @@ PSSQL_PROC( TEXTSTR , DeblobifyString )( CTEXTSTR blob, TEXTSTR buffer, int bufl
    A true/false status whether the string passed was a valid
    time string (?).                                               */
 PSSQL_PROC( int, ConvertDBTimeString )( CTEXTSTR timestring
-                                        , CTEXTSTR *endtimestring
-													 , int *pyr, int *pmo, int *pdy
-													 , int *phr, int *pmn, int *psc );
+                                      , CTEXTSTR *endtimestring
+                                      , int *pyr, int *pmo, int *pdy
+                                      , int *phr, int *pmn, int *psc );
 #ifndef SQLPROXY_INCLUDE
 /* Issue a command to a SQL database. Things like Update and
    Insert are commands.
@@ -8903,10 +8923,12 @@ PSSQL_PROC( int, ConvertDBTimeString )( CTEXTSTR timestring
    FALSE if the statement fails. See FetchSQLError.             */
 PSSQL_PROC( int, SQLCommandEx )( PODBC odbc, CTEXTSTR command DBG_PASS);
 #endif
+PSSQL_PROC( int, SQLCommandExx )(PODBC odbc, CTEXTSTR command, size_t commandLen DBG_PASS);
 /* <combine sack::sql::SQLCommandEx@PODBC@CTEXTSTR command>
    \ \                                                      */
 #define SQLCommand(o,c) SQLCommandEx(o,c DBG_SRC )
-/* Begin collecting insert statements for batch output.
+#define SQLCommandLen(o,c,len) SQLCommandExx(o,c,len DBG_SRC )
+   /* Begin collecting insert statements for batch output.
    Parameters
    odbc :  database connection to start collecting inserts for */
 PSSQL_PROC( int, SQLInsertBegin )( PODBC odbc );
@@ -8969,14 +8991,45 @@ PSSQL_PROC( int, SQLQueryEx )( PODBC odbc, CTEXTSTR query, CTEXTSTR *result DBG_
 /* <combine sack::sql::DoSQLRecordQueryf@int *@CTEXTSTR **@CTEXTSTR **@CTEXTSTR@...>
    \ \                                                                               */
 PSSQL_PROC( int, SQLRecordQueryEx )( PODBC odbc
-												 , CTEXTSTR query
-												 , int *pnResult
-												 , CTEXTSTR **result
-												 , CTEXTSTR **fields DBG_PASS);
+                                   , CTEXTSTR query
+                                   , int *pnResult
+                                   , CTEXTSTR **result
+                                   , CTEXTSTR **fields DBG_PASS);
+/* Do a SQL query on the default odbc connection. The first
+   record results immediately if there are any records. Returns
+   the results as an array of strings. If you know the select
+   you are using .... "select a,b,c from xyz" then you know that
+   this will have 3 columns resulting.
+   Parameters
+   odbc :     connection to do the query on.
+   query :    query to execute.
+   queryLength : actual length of the query (allows embedded NUL characters)
+   columns :  pointer to an int to receive the number of columns
+              in the result. (the user will know this based on
+              the query issued usually, so it can be NULL to
+              ignore parameter)
+   result\ :  pointer to a pointer to strings... see example
+   resultLengths : pointer to a size_t* that will contain an array of
+              lengths of the result values.
+   fields :   address of a pointer to strings which will get the
+              field names
+   Example
+   See SQLRecordQueryf, but omit the database parameter.         */
+PSSQL_PROC( int, SQLRecordQueryExx )( PODBC odbc
+                                   , CTEXTSTR query
+                                   , size_t queryLength
+                                   , int *pnResult
+                                   , CTEXTSTR **result
+                                   , size_t **resultLengths
+                                   , CTEXTSTR **fields
+                                   DBG_PASS);
 /* <combine sack::sql::SQLRecordQueryEx@PODBC@CTEXTSTR@int *@CTEXTSTR **@CTEXTSTR **fields>
    \ \                                                                                      */
 #define SQLRecordQuery(o,q,prn,r,f) SQLRecordQueryEx( o,q,prn,r,f DBG_SRC )
-/* Gets the next result from a query.
+/* <combine sack::sql::SQLRecordQueryExx@PODBC@CTEXTSTR@size_t@int *@CTEXTSTR **@size_t *@CTEXTSTR **fields>
+   \ \                                                                                      */
+#define SQLRecordQueryLen(o,q,ql,prn,r,rl,f) SQLRecordQueryExx( o,q,ql,prn,r,rl,f DBG_SRC )
+   /* Gets the next result from a query.
    Parameters
    odbc :     database connection that the query was executed on
    result\ :  address of the result variable.

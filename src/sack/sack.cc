@@ -1207,9 +1207,9 @@ SACK_NAMESPACE
 #  define c_64fs   "lld"
 #endif
 #if defined( UNICODE )
-#  define _cstring_f WIDE("S")
-#  define _string_f WIDE("s")
-#  define _ustring_f WIDE("s")
+#  define _cstring_f WIDE("s")
+#  define _string_f WIDE("S")
+#  define _ustring_f WIDE("S")
 #else
 #  define _cstring_f WIDE("s")
 #  define _string_f WIDE("s")
@@ -5526,7 +5526,7 @@ MEM_PROC  void MEM_API  DebugDumpHeapMemFile ( PMEM pHeap, CTEXTSTR pFilename );
    \ \                                                        */
 MEM_PROC  void MEM_API  DebugDumpMemFile ( CTEXTSTR pFilename );
 #ifdef __GNUC__
-MEM_PROC  POINTER MEM_API  HeapAllocateAlignedEx ( PMEM pHeap, uintptr_t dwSize, uint32_t alignment DBG_PASS ) __attribute__( (malloc) );
+MEM_PROC  POINTER MEM_API  HeapAllocateAlignedEx ( PMEM pHeap, uintptr_t dwSize, uint16_t alignment DBG_PASS ) __attribute__( (malloc) );
 MEM_PROC  POINTER MEM_API  HeapAllocateEx ( PMEM pHeap, uintptr_t nSize DBG_PASS ) __attribute__((malloc));
 MEM_PROC  POINTER MEM_API  AllocateEx ( uintptr_t nSize DBG_PASS ) __attribute__((malloc));
 #else
@@ -5541,7 +5541,7 @@ pHeap :  pointer to a heap which was initialized with
 InitHeap()
 Size :   Size of block to allocate
 Alignment : count of bytes to return block on (1,2,4,8,16,32)  */
-MEM_PROC  POINTER MEM_API  HeapAllocateAlignedEx( PMEM pHeap, uintptr_t nSize, uint32_t alignment DBG_PASS );
+MEM_PROC  POINTER MEM_API  HeapAllocateAlignedEx( PMEM pHeap, uintptr_t nSize, uint16_t alignment DBG_PASS );
 /* Allocates a block of memory of specific size. Debugging
    information if passed is recorded on the block.
    Parameters
@@ -5685,9 +5685,11 @@ MEM_PROC  POINTER MEM_API  HoldEx ( POINTER pData DBG_PASS  );
    the new block.
    If NULL is passed as the source block, then a new block
    filled with 0 is created.                                        */
+MEM_PROC  POINTER MEM_API  HeapReallocateAlignedEx ( PMEM pHeap, POINTER source, uintptr_t size, uint16_t alignment DBG_PASS );
 MEM_PROC  POINTER MEM_API  HeapReallocateEx ( PMEM pHeap, POINTER source, uintptr_t size DBG_PASS );
 /* <combine sack::memory::HeapReallocateEx@PMEM@POINTER@uintptr_t size>
    \ \                                                                 */
+#define HeapReallocateAligned(heap,p,sz,al) HeapReallocateEx( (heap),(p),(sz),(al) DBG_SRC )
 #define HeapReallocate(heap,p,sz) HeapReallocateEx( (heap),(p),(sz) DBG_SRC )
 /* <combine sack::memory::HeapReallocateEx@PMEM@POINTER@uintptr_t size>
    \ \                                                                 */
@@ -5723,9 +5725,11 @@ MEM_PROC  POINTER MEM_API  HeapPreallocateEx ( PMEM pHeap, POINTER source, uintp
 #define HeapPreallocate(heap,p,sz) HeapPreallocateEx( (heap),(p),(sz) DBG_SRC )
 /* <combine sack::memory::HeapPreallocateEx@PMEM@POINTER@uintptr_t size>
    \ \                                                                  */
+MEM_PROC  POINTER MEM_API  PreallocateAlignedEx ( POINTER source, uintptr_t size, uint16_t alignment DBG_PASS );
 MEM_PROC  POINTER MEM_API  PreallocateEx ( POINTER source, uintptr_t size DBG_PASS );
 /* <combine sack::memory::PreallocateEx@POINTER@uintptr_t size>
    \ \                                                         */
+#define PreallocateAligned(p,sz,al) PreallocateAlignedEx( (p),(sz),(al) DBG_SRC )
 #define Preallocate(p,sz) PreallocateEx( (p),(sz) DBG_SRC )
 /* Moves a block of memory from one heap to another.
    Parameters
@@ -5745,7 +5749,13 @@ MEM_PROC  POINTER MEM_API  HeapMoveEx ( PMEM pNewHeap, POINTER source DBG_PASS )
    pData :  pointer to a allocated memory block.
    Returns
    The size of the block that was specified by the Allocate(). */
-MEM_PROC  uintptr_t MEM_API  SizeOfMemBlock ( CPOINTER pData );
+MEM_PROC uintptr_t MEM_API  SizeOfMemBlock ( CPOINTER pData );
+/* \returns the allocation alignment of a memory block which was Allocate()'d.
+Parameters
+pData :  pointer to a allocated memory block.
+Returns
+The alignment of the block that was specified from Allocate(). */
+MEM_PROC uint16_t  AlignOfMemBlock( CPOINTER pData );
 /* not so much of a fragment as a consolidation. Finds a free
    spot earlier in the heap and attempts to move the block
    there. This can help alleviate heap fragmentation.
@@ -6139,6 +6149,13 @@ MEM_PROC TEXTSTR     MEM_API  DupCharToTextEx( const char *original DBG_PASS );
    Returns
    a pointer to a wide character string.                     */
 MEM_PROC  TEXTSTR MEM_API  DupCStrEx ( const char * original DBG_PASS );
+/* Converts from 8 bit char to 16 bit wchar (or no-op if not
+UNICODE compiled)
+Parameters
+original :  original string of C char.
+Returns
+a pointer to a wide character string.                     */
+MEM_PROC  TEXTSTR MEM_API  DupCStrLenEx( const char * original, size_t chars DBG_PASS );
 /* <combine sack::memory::StrDupEx@CTEXTSTR original>
    \ \                                                */
 #define StrDup(o) StrDupEx( (o) DBG_SRC )
@@ -6148,6 +6165,9 @@ MEM_PROC  TEXTSTR MEM_API  DupCStrEx ( const char * original DBG_PASS );
 /* <combine sack::memory::DupCStrEx@char * original>
    \ \                                               */
 #define DupCStr(o) DupCStrEx( (o) DBG_SRC )
+/* <combine sack::memory::DupCStrLenEx@char * original@size_t chars>
+   \ \                                               */
+#define DupCStrLen(o,l) DupCStrLenEx( (o),(l) DBG_SRC )
 //------------------------------------------------------------------------
 #if 0
 // this code was going to provide network oriented shared memory.
@@ -9393,14 +9413,14 @@ PSSQL_PROC( TEXTSTR ,RevertEscapeString )( CTEXTSTR name );
    a pointer to the string without escapes. (Even though it says
    binary, it's still to and from text?) This result should be
    freed with Release when user is done with it.                 */
-PSSQL_PROC( TEXTSTR ,RevertEscapeBinary )( CTEXTSTR blob, uintptr_t *bloblen );
+PSSQL_PROC( TEXTSTR ,RevertEscapeBinary )( CTEXTSTR blob, size_t *bloblen );
 /* Parse a Blob string stored as hex... that is text character
    0-9 and A-F.
    Parameters
    blob :    pointer to the string containing the blob string
    buffer :  target buffer for data
    buflen :  length of target buffer                           */
-PSSQL_PROC( TEXTSTR , DeblobifyString )( CTEXTSTR blob, TEXTSTR buffer, int buflen );
+PSSQL_PROC( TEXTSTR , DeblobifyString )( CTEXTSTR blob, TEXTSTR buffer, size_t buflen );
 /* parse the string passed as a date/time as returned from a
    MySQL database.
    Parameters
@@ -9424,9 +9444,9 @@ PSSQL_PROC( TEXTSTR , DeblobifyString )( CTEXTSTR blob, TEXTSTR buffer, int bufl
    A true/false status whether the string passed was a valid
    time string (?).                                               */
 PSSQL_PROC( int, ConvertDBTimeString )( CTEXTSTR timestring
-                                        , CTEXTSTR *endtimestring
-													 , int *pyr, int *pmo, int *pdy
-													 , int *phr, int *pmn, int *psc );
+                                      , CTEXTSTR *endtimestring
+                                      , int *pyr, int *pmo, int *pdy
+                                      , int *phr, int *pmn, int *psc );
 #ifndef SQLPROXY_INCLUDE
 /* Issue a command to a SQL database. Things like Update and
    Insert are commands.
@@ -9439,10 +9459,12 @@ PSSQL_PROC( int, ConvertDBTimeString )( CTEXTSTR timestring
    FALSE if the statement fails. See FetchSQLError.             */
 PSSQL_PROC( int, SQLCommandEx )( PODBC odbc, CTEXTSTR command DBG_PASS);
 #endif
+PSSQL_PROC( int, SQLCommandExx )(PODBC odbc, CTEXTSTR command, size_t commandLen DBG_PASS);
 /* <combine sack::sql::SQLCommandEx@PODBC@CTEXTSTR command>
    \ \                                                      */
 #define SQLCommand(o,c) SQLCommandEx(o,c DBG_SRC )
-/* Begin collecting insert statements for batch output.
+#define SQLCommandLen(o,c,len) SQLCommandExx(o,c,len DBG_SRC )
+   /* Begin collecting insert statements for batch output.
    Parameters
    odbc :  database connection to start collecting inserts for */
 PSSQL_PROC( int, SQLInsertBegin )( PODBC odbc );
@@ -9505,14 +9527,45 @@ PSSQL_PROC( int, SQLQueryEx )( PODBC odbc, CTEXTSTR query, CTEXTSTR *result DBG_
 /* <combine sack::sql::DoSQLRecordQueryf@int *@CTEXTSTR **@CTEXTSTR **@CTEXTSTR@...>
    \ \                                                                               */
 PSSQL_PROC( int, SQLRecordQueryEx )( PODBC odbc
-												 , CTEXTSTR query
-												 , int *pnResult
-												 , CTEXTSTR **result
-												 , CTEXTSTR **fields DBG_PASS);
+                                   , CTEXTSTR query
+                                   , int *pnResult
+                                   , CTEXTSTR **result
+                                   , CTEXTSTR **fields DBG_PASS);
+/* Do a SQL query on the default odbc connection. The first
+   record results immediately if there are any records. Returns
+   the results as an array of strings. If you know the select
+   you are using .... "select a,b,c from xyz" then you know that
+   this will have 3 columns resulting.
+   Parameters
+   odbc :     connection to do the query on.
+   query :    query to execute.
+   queryLength : actual length of the query (allows embedded NUL characters)
+   columns :  pointer to an int to receive the number of columns
+              in the result. (the user will know this based on
+              the query issued usually, so it can be NULL to
+              ignore parameter)
+   result\ :  pointer to a pointer to strings... see example
+   resultLengths : pointer to a size_t* that will contain an array of
+              lengths of the result values.
+   fields :   address of a pointer to strings which will get the
+              field names
+   Example
+   See SQLRecordQueryf, but omit the database parameter.         */
+PSSQL_PROC( int, SQLRecordQueryExx )( PODBC odbc
+                                   , CTEXTSTR query
+                                   , size_t queryLength
+                                   , int *pnResult
+                                   , CTEXTSTR **result
+                                   , size_t **resultLengths
+                                   , CTEXTSTR **fields
+                                   DBG_PASS);
 /* <combine sack::sql::SQLRecordQueryEx@PODBC@CTEXTSTR@int *@CTEXTSTR **@CTEXTSTR **fields>
    \ \                                                                                      */
 #define SQLRecordQuery(o,q,prn,r,f) SQLRecordQueryEx( o,q,prn,r,f DBG_SRC )
-/* Gets the next result from a query.
+/* <combine sack::sql::SQLRecordQueryExx@PODBC@CTEXTSTR@size_t@int *@CTEXTSTR **@size_t *@CTEXTSTR **fields>
+   \ \                                                                                      */
+#define SQLRecordQueryLen(o,q,ql,prn,r,rl,f) SQLRecordQueryExx( o,q,ql,prn,r,rl,f DBG_SRC )
+   /* Gets the next result from a query.
    Parameters
    odbc :     database connection that the query was executed on
    result\ :  address of the result variable.
@@ -26239,7 +26292,9 @@ PREFIX_PACKED struct malloc_chunk_tag
 	uint32_t LeadProtect[2];
 #endif
  // this is additional to subtract to get back to start (aligned allocate)
-	uint32_t to_chunk_start;
+	uint16_t alignment;
+ // this is additional to subtract to get back to start (aligned allocate)
+	uint16_t to_chunk_start;
  // uint8_t is the smallest valid datatype could be _0
 	uint8_t byData[1];
 } PACKED;
@@ -26260,7 +26315,9 @@ PREFIX_PACKED struct heap_chunk_tag
 	struct memory_block_tag * pRoot;
 	DeclareLink( struct heap_chunk_tag );
  // this is additional to subtract to get back to start (aligned allocate)
-	uint32_t to_chunk_start;
+	uint16_t alignment;
+ // this is additional to subtract to get back to start (aligned allocate)
+	uint16_t to_chunk_start;
  // uint8_t is the smallest valid datatype could be _0
 	uint8_t byData[1];
 } PACKED;
@@ -31700,7 +31757,9 @@ PREFIX_PACKED struct malloc_chunk_tag
 	uint32_t LeadProtect[2];
 #endif
  // this is additional to subtract to get back to start (aligned allocate)
-	uint32_t to_chunk_start;
+	uint16_t alignment;
+ // this is additional to subtract to get back to start (aligned allocate)
+	uint16_t to_chunk_start;
  // uint8_t is the smallest valid datatype could be _0
 	uint8_t byData[1];
 } PACKED;
@@ -31721,7 +31780,9 @@ PREFIX_PACKED struct heap_chunk_tag
 	struct memory_block_tag * pRoot;
 	DeclareLink( struct heap_chunk_tag );
  // this is additional to subtract to get back to start (aligned allocate)
-	uint32_t to_chunk_start;
+	uint16_t alignment;
+ // this is additional to subtract to get back to start (aligned allocate)
+	uint16_t to_chunk_start;
  // uint8_t is the smallest valid datatype could be _0
 	uint8_t byData[1];
 } PACKED;
@@ -31787,8 +31848,8 @@ static uintptr_t masks[33] = { ~0U, ~0U, ~1U, 0, ~3U, 0, 0, 0, ~7U, 0, 0, 0, 0, 
 #define BASE_MEMORY (POINTER)0x80000000
 // golly allocating a WHOLE DOS computer to ourselves? how RUDE
 #define SYSTEM_CAPACITY  g.dwSystemCapacity
-#define MALLOC_CHUNK_SIZE(pData) ( ( (pData)?( (uint32_t*)(pData))[-1]:0 ) + offsetof( MALLOC_CHUNK, byData ) )
-//#define CHUNK_SIZE(pData) ( ( (pData)?( (uint32_t*)(pData))[-1]:0 ) +offsetof( CHUNK, byData ) ) )
+#define MALLOC_CHUNK_SIZE(pData) ( ( (pData)?( (uint16_t*)(pData))[-1]:0 ) + offsetof( MALLOC_CHUNK, byData ) )
+//#define CHUNK_SIZE(pData) ( ( (pData)?( (uint16_t*)(pData))[-1]:0 ) +offsetof( CHUNK, byData ) ) )
 #define CHUNK_SIZE ( offsetof( CHUNK, byData ) )
 #define MEM_SIZE  ( offsetof( MEM, pRoot ) )
 // using lower level syslog bypasses some allocation requirements...
@@ -33580,7 +33641,7 @@ static void DropMemEx( PMEM pMem DBG_PASS )
 	}
 }
 //------------------------------------------------------------------------------------------------------
-POINTER HeapAllocateAlignedEx( PMEM pHeap, uintptr_t dwSize, uint32_t alignment DBG_PASS )
+POINTER HeapAllocateAlignedEx( PMEM pHeap, uintptr_t dwSize, uint16_t alignment DBG_PASS )
 {
    // if a heap is passed, it's a private heap, and allocation is as normal...
 	uint32_t dwAlignPad = 0;
@@ -33613,14 +33674,16 @@ POINTER HeapAllocateAlignedEx( PMEM pHeap, uintptr_t dwSize, uint32_t alignment 
 #endif
 		if( alignment && ( (uintptr_t)pc->byData & ~masks[alignment] ) ) {
 			uintptr_t retval = ((((uintptr_t)pc->byData) + (alignment - 1)) & masks[alignment]);
-			if( dwAlignPad < sizeof(uintptr_t) ) {
-				DebugBreak();
-			}
-			pc->dwPad = (uint16_t)( dwAlignPad - sizeof(uintptr_t) );
-			((uintptr_t*)(retval - sizeof(uintptr_t)))[0] = pc->to_chunk_start = (uint32_t)(((((uintptr_t)pc->byData) + (alignment - 1)) & masks[alignment]) - (uintptr_t)pc->byData);
+			//pc->dwPad = (uint16_t)( dwAlignPad - sizeof(uintptr_t) );
+			// to_chunk_start is the last thing in chunk, so it's pre-allocated space
+ /*pc->alignemnt = */
+			((uint16_t*)(retval - sizeof(uint32_t)))[0] =alignment;
+ /*pc->to_chunk_start = */
+			((uint16_t*)(retval - sizeof(uint32_t)))[1] =(uint16_t)(((((uintptr_t)pc->byData) + (alignment - 1)) & masks[alignment]) - (uintptr_t)pc->byData);
 			return (POINTER)retval;
 		}
 		else {
+			pc->alignment = 0;
 			pc->to_chunk_start = 0;
 			return pc->byData;
 		}
@@ -33810,10 +33873,14 @@ POINTER HeapAllocateAlignedEx( PMEM pHeap, uintptr_t dwSize, uint32_t alignment 
 		//#endif
 		if( alignment && ((uintptr_t)pc->byData & ~masks[alignment]) ) {
 			uintptr_t retval = ((((uintptr_t)pc->byData) + (alignment - 1)) & masks[alignment]);
-			((uint32_t*)(retval - 4))[0] = pc->to_chunk_start = (uint32_t)(((((uintptr_t)pc->byData) + (alignment - 1)) & masks[alignment]) - (uintptr_t)pc->byData);
+ /*pc->alignemnt =*/
+			((uint16_t*)(retval - sizeof( uint32_t )))[0] = alignment;
+ /*pc->to_chunk_start =*/
+			((uint16_t*)(retval - sizeof( uint32_t )))[1] = (uint16_t)(((((uintptr_t)pc->byData) + (alignment - 1)) & masks[alignment]) - (uintptr_t)pc->byData);
 			return (POINTER)retval;
 		}
 		else {
+			pc->alignment = 0;
 			pc->to_chunk_start = 0;
 			return pc->byData;
 		}
@@ -33826,16 +33893,16 @@ POINTER HeapAllocateEx( PMEM pHeap, uintptr_t dwSize DBG_PASS ) {
 }
 //------------------------------------------------------------------------------------------------------
 #undef AllocateEx
- POINTER  AllocateEx ( uintptr_t dwSize DBG_PASS )
+POINTER  AllocateEx ( uintptr_t dwSize DBG_PASS )
 {
 	return HeapAllocateAlignedEx( g.pMemInstance, dwSize, 0 DBG_RELAY );
 }
 //------------------------------------------------------------------------------------------------------
- POINTER  HeapReallocateEx ( PMEM pHeap, POINTER source, uintptr_t size DBG_PASS )
+POINTER  HeapReallocateAlignedEx ( PMEM pHeap, POINTER source, uintptr_t size, uint16_t alignment DBG_PASS )
 {
 	POINTER dest;
 	uintptr_t minSize;
-	dest = HeapAllocateAlignedEx( pHeap, size, 0 DBG_RELAY );
+	dest = HeapAllocateAlignedEx( pHeap, size, alignment DBG_RELAY );
 	if( source )
 	{
 		minSize = SizeOfMemBlock( source );
@@ -33851,11 +33918,16 @@ POINTER HeapAllocateEx( PMEM pHeap, uintptr_t dwSize DBG_PASS ) {
 	return dest;
 }
 //------------------------------------------------------------------------------------------------------
- POINTER  HeapPreallocateEx ( PMEM pHeap, POINTER source, uintptr_t size DBG_PASS )
+POINTER  HeapReallocateEx ( PMEM pHeap, POINTER source, uintptr_t size DBG_PASS )
+{
+	return HeapReallocateAlignedEx( pHeap, source, size, 0 DBG_RELAY );
+}
+//------------------------------------------------------------------------------------------------------
+POINTER  HeapPreallocateAlignedEx ( PMEM pHeap, POINTER source, uintptr_t size, uint16_t alignment DBG_PASS )
 {
 	POINTER dest;
 	uintptr_t minSize;
-	dest = HeapAllocateAlignedEx( pHeap, size, 0 DBG_RELAY );
+	dest = HeapAllocateAlignedEx( pHeap, size, alignment DBG_RELAY );
 	if( source )
 	{
 		minSize = SizeOfMemBlock( source );
@@ -33870,20 +33942,23 @@ POINTER HeapAllocateEx( PMEM pHeap, uintptr_t dwSize DBG_PASS ) {
 		MemSet( dest, 0, size );
 	return dest;
 }
-//------------------------------------------------------------------------------------------------------
- POINTER  HeapMoveEx ( PMEM pNewHeap, POINTER source DBG_PASS )
-{
-	return HeapReallocateEx( pNewHeap, source, SizeOfMemBlock( source ) DBG_RELAY );
+POINTER  HeapPreallocateEx ( PMEM pHeap, POINTER source, uintptr_t size DBG_PASS ){
+	return HeapPreallocateAlignedEx( pHeap, source, size, AlignOfMemBlock(source) DBG_RELAY );
 }
 //------------------------------------------------------------------------------------------------------
- POINTER  ReallocateEx ( POINTER source, uintptr_t size DBG_PASS )
+ POINTER  HeapMoveEx( PMEM pNewHeap, POINTER source DBG_PASS )
 {
-	return HeapReallocateEx( g.pMemInstance, source, size DBG_RELAY );
+	return HeapReallocateAlignedEx( pNewHeap, source, SizeOfMemBlock( source ), AlignOfMemBlock( source ) DBG_RELAY );
 }
 //------------------------------------------------------------------------------------------------------
- POINTER  PreallocateEx ( POINTER source, uintptr_t size DBG_PASS )
+ POINTER  ReallocateEx( POINTER source, uintptr_t size DBG_PASS )
 {
-	return HeapPreallocateEx( g.pMemInstance, source, size DBG_RELAY );
+	return HeapReallocateAlignedEx( g.pMemInstance, source, size, AlignOfMemBlock( source ) DBG_RELAY );
+}
+//------------------------------------------------------------------------------------------------------
+ POINTER  PreallocateEx( POINTER source, uintptr_t size DBG_PASS )
+{
+	return HeapPreallocateAlignedEx( g.pMemInstance, source, size, AlignOfMemBlock( source ) DBG_RELAY );
 }
 //------------------------------------------------------------------------------------------------------
 static void Bubble( PMEM pMem )
@@ -33930,23 +34005,32 @@ static void Bubble( PMEM pMem )
 	{
 		if( USE_CUSTOM_ALLOCER )
 		{
-			PCHUNK pc = (PCHUNK)(((uintptr_t)pData) - (((uint32_t*)pData)[-1] + offsetof( CHUNK, byData )));
+			PCHUNK pc = (PCHUNK)(((uintptr_t)pData) - (((uint16_t*)pData)[-1] + offsetof( CHUNK, byData )));
 			return pc->dwSize - pc->dwPad;
 		}
 		else
 		{
-			PMALLOC_CHUNK pc = (PMALLOC_CHUNK)(((uintptr_t)pData) - (((uint32_t*)pData)[-1] + offsetof( MALLOC_CHUNK, byData )));
-			return pc->dwSize - ( pc->to_chunk_start + pc->dwPad );
+			PMALLOC_CHUNK pc = (PMALLOC_CHUNK)(((uintptr_t)pData) - (((uint16_t*)pData)[-1] + offsetof( MALLOC_CHUNK, byData )));
+			return pc->dwSize - pc->dwPad;
 		}
 	}
 	return 0;
 }
 //------------------------------------------------------------------------------------------------------
+uint16_t  AlignOfMemBlock( CPOINTER pData )
+{
+	if( pData )
+	{
+		return (((uint16_t*)pData)[-2]);
+	}
+	return 0;
+ }
+//------------------------------------------------------------------------------------------------------
  POINTER  MemDupEx ( CPOINTER thing DBG_PASS )
 {
 	uintptr_t size = SizeOfMemBlock( thing );
 	POINTER result;
-	result = AllocateEx( size DBG_RELAY );
+	result = HeapAllocateAlignedEx( g.pMemInstance, size, AlignOfMemBlock( thing ) DBG_RELAY );
 	MemCpy( result, thing, size );
 	return result;
 }
@@ -33975,7 +34059,7 @@ POINTER ReleaseEx ( POINTER pData DBG_PASS )
 		if( !USE_CUSTOM_ALLOCER )
 		{
 			//PMEM pMem = (PMEM)(pData - offsetof( MEM, pRoot ));
-			PMALLOC_CHUNK pc = (PMALLOC_CHUNK)(((uintptr_t)pData) - ( ((uint32_t*)pData)[-1] +
+			PMALLOC_CHUNK pc = (PMALLOC_CHUNK)(((uintptr_t)pData) - ( ((uint16_t*)pData)[-1] +
 													offsetof( MALLOC_CHUNK, byData ) ) );
 			pc->dwOwners--;
 			if( !pc->dwOwners )
@@ -34013,7 +34097,7 @@ POINTER ReleaseEx ( POINTER pData DBG_PASS )
 		}
 		else
 		{
-			PCHUNK pc = (PCHUNK)(((uintptr_t)pData) - ( ( (uint32_t*)pData)[-1] +
+			PCHUNK pc = (PCHUNK)(((uintptr_t)pData) - ( ( (uint16_t*)pData)[-1] +
 													offsetof( CHUNK, byData ) ) );
 			PMEM pMem, pCurMem;
 			PSPACE pMemSpace;
@@ -34529,7 +34613,7 @@ void  DebugDumpHeapMemEx ( PMEM pHeap, LOGICAL bVerbose )
 	PMEM pMem;
 	if( !ppMemory || !*ppMemory)
 		return FALSE;
-	pc = (PCHUNK)(((uintptr_t)(*ppMemory)) - (((uint32_t*)pData)[-1] + offsetof( CHUNK, byData )));
+	pc = (PCHUNK)(((uintptr_t)(*ppMemory)) - (((uint16_t*)pData)[-1] + offsetof( CHUNK, byData )));
 	pMem = GrabMem( pc->pRoot );
 		// check if prior block is free... if so - then...
 		// move this data down, and reallocate the freeness at the end
@@ -35247,6 +35331,12 @@ TEXTSTR  DupCStrEx ( const char * original DBG_PASS )
 		return CharWConvertEx( original DBG_RELAY );
 	return NULL;
 }
+TEXTSTR  DupCStrLenEx( const char * original, size_t chars DBG_PASS )
+{
+	if( original )
+		return CharWConvertExx( original, chars DBG_RELAY );
+	return NULL;
+}
 #else
 char *  CStrDupEx ( CTEXTSTR original DBG_PASS )
 {
@@ -35260,17 +35350,28 @@ char *  CStrDupEx ( CTEXTSTR original DBG_PASS )
 	while( ( result[len] = original[len] ) != 0 ) len++;
 	return result;
 }
-TEXTSTR  DupCStrEx ( const char * original DBG_PASS )
+TEXTSTR  DupCStrLenEx( const char * original, size_t chars DBG_PASS )
 {
-	INDEX len = 0;
-	TEXTSTR result;
+	size_t len = 0;
+	TEXTSTR result, _result;
 	if( !original )
 		return NULL;
-	while( original[len] ) len++;
-	result = (TEXTSTR)AllocateEx( (len+1) * sizeof( result[0] )  DBG_RELAY );
+// (TEXTSTR)AllocateEx( (len + 1) * sizeof( result[0] )  DBG_RELAY );
+	_result = result = NewArray( TEXTCHAR, chars + 1 );
 	len = 0;
-	while( ( result[len] = original[len] ) != 0 ) len++;
-	return result;
+	while( len < chars ) ((*result++) = (*original++)), len++;
+	result[0] = 0;
+	return _result;
+}
+TEXTSTR  DupCStrEx( const char * original DBG_PASS )
+{
+	size_t len = 0;
+	const char *_original;
+	if( !original )
+		return NULL;
+	_original = original;
+	while( (*original++) ) len++;
+	return DupCStrLenEx( _original, len DBG_RELAY );
 }
 #endif
 wchar_t *   DupTextToWideEx( CTEXTSTR original DBG_PASS )
@@ -42970,110 +43071,107 @@ int ConvertToUTF16( wchar_t *output, TEXTRUNE rune )
 }
 int ConvertToUTF8( char *output, TEXTRUNE rune )
 {
+	int ch = 1;
 	if( !( rune & 0xFFFFFF80 ) )
 	{
 		// 7 bits
 		(*output++) = (char)rune;
-		return 1;
+		goto plus0;
 	}
 	else if( !( rune & 0xFFFFF800 ) )
 	{
 		// 11 bits
 		(*output++) = 0xC0 | ( ( ( rune & 0x07C0 ) >> 6 ) & 0xFF );
-		(*output++) = 0x80 |     ( rune & 0x003F );
-		return 2;
+		goto plus1;
 	}
 	else if( !( rune & 0xFFFF0000 ) )
 	{
 		// 16 bits
 		(*output++) = 0xE0 | ( ( ( rune & 0xF000 ) >> 12 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x0FC0 ) >> 6 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x003F ) ) );
-		return 3;
+		goto plus2;
 	}
 	else if( !( rune & 0xFFE00000 ) )
 	{
 		// 21 bits
 		(*output++) = 0xF0 | ( ( ( rune & 0x1C0000 ) >> 15 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x03F000 ) >> 12 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x000FC0 ) >> 6 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x00003F ) ) );
-		return 4;
+		goto plus3;
 	}
 	else if( !( rune & 0xFC000000 ) )
 	{
 		// 26 bits
 		(*output++) = 0xF8 | ( ( ( rune & 0x3000000 ) >> 24 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x0FC0000 ) >> 18 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x003F000 ) >> 12 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x0000FC0 ) >> 6 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x000003F ) ) );
-		return 5;
+		goto plus4;
 	}
 	else if( !( rune & 0x80000000 ) )
 	{
-		// 32 bits
+		// 31 bits
 		(*output++) = 0xFC | ( ( ( rune & 0x40000000 ) >> 30 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x3F000000 ) >> 24 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x00FC0000 ) >> 18 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x0003F000 ) >> 12 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x00000FC0 ) >> 6 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x0000003F ) ) );
-		return 6;
+		//goto plus5;
 	}
 	// invalid rune (out of range)
-	return 0;
+//plus5:
+	ch++; (*output++) = 0x80 | (((rune & 0x3F000000) >> 24) & 0xFF);
+plus4:
+	ch++; (*output++) = 0x80 | (((rune & 0x0FC0000) >> 18) & 0xFF);
+plus3:
+	ch++; (*output++) = 0x80 | (((rune & 0x03F000) >> 12) & 0xFF);
+plus2:
+	ch++; (*output++) = 0x80 | (((rune & 0x0FC0) >> 6) & 0xFF);
+plus1:
+	ch++; (*output++) = 0x80 | (rune & 0x3F);
+plus0:
+	return ch;
 }
 int ConvertToUTF8Ex( char *output, TEXTRUNE rune, LOGICAL overlong )
 {
+	int ch = 1;
 	if( !overlong ) return ConvertToUTF8( output, rune );
-	if( !( rune & 0xFFFFF80 ) )
+	if( !(rune & 0xFFFFFF80) )
 	{
 		// 11 bits
-		(*output++) = 0xC0 | ( ( ( rune & 0x7C ) >> 6 ) & 0xFF );
-		(*output++) = 0x80 | ( rune & 0x3F );
-		return 2;
+		(*output++) = 0xC0 | (((rune & 0x07C0) >> 6) & 0xFF);
+		goto plus1;
 	}
-	else if( !( rune & 0xFFFFF800 ) )
+	else if( !(rune & 0xFFFFF800) )
 	{
 		// 16 bits
-		(*output++) = 0xE0 | ( ( ( rune & 0xF000 ) >> 12 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x0FC0 ) >> 6 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x003F ) ) );
-		return 3;
+		(*output++) = 0xE0 | (((rune & 0xF000) >> 12) & 0xFF);
+		goto plus2;
 	}
-	else if( !( rune & 0xFFFF0000 ) )
+	else if( !(rune & 0xFFFF0000) )
 	{
 		// 21 bits
-		(*output++) = 0xF0 | ( ( ( rune & 0x1C0000 ) >> 15 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x03F000 ) >> 12 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x000FC0 ) >> 6 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x00003F ) ) );
-		return 4;
+		(*output++) = 0xF0 | (((rune & 0x1C0000) >> 15) & 0xFF);
+		goto plus3;
 	}
-	else if( !( rune & 0xFFE00000 ) )
+	else if( !(rune & 0xFFE00000) )
 	{
 		// 26 bits
-		(*output++) = 0xF8 | ( ( ( rune & 0x3000000 ) >> 24 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x0FC0000 ) >> 18 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x003F000 ) >> 12 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x0000FC0 ) >> 6 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x000003F ) ) );
-		return 5;
+		(*output++) = 0xF8 | (((rune & 0x3000000) >> 24) & 0xFF);
+		goto plus4;
 	}
-	else if( !( rune & 0xFC000000 ) )
+	else if( !(rune & 0xFC000000) )
 	{
-		// 32 bits
-		(*output++) = 0xFC | ( ( ( rune & 0x40000000 ) >> 30 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x3F000000 ) >> 24 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x00FC0000 ) >> 18 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x0003F000 ) >> 12 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x00000FC0 ) >> 6 ) & 0xFF );
-		(*output++) = 0x80 | ( ( ( rune & 0x0000003F ) ) );
-		return 6;
+		// 31 bits
+		(*output++) = 0xFC | (((rune & 0x40000000) >> 30) & 0xFF);
+		goto plus5;
 	}
-	// invalid rune (out of range)
-	return 0;
+	else if( !(rune & 0x80000000) ) {
+		(*output++) = 0xFEU;
+	}
+	ch++; (*output++) = 0x80 | (((rune & 0xC0000000) >> 30) & 0xFF);
+plus5:
+	ch++; (*output++) = 0x80 | (((rune & 0x3F000000) >> 24) & 0xFF);
+plus4:
+	ch++; (*output++) = 0x80 | (((rune & 0x0FC0000) >> 18) & 0xFF);
+plus3:
+	ch++; (*output++) = 0x80 | (((rune & 0x03F000) >> 12) & 0xFF);
+plus2:
+	ch++; (*output++) = 0x80 | (((rune & 0x0FC0) >> 6) & 0xFF);
+plus1:
+	ch++; (*output++) = 0x80 | (rune & 0x3F);
+//plus0:
+	return ch;
 }
 char * WcharConvertExx ( const wchar_t *wch, size_t len DBG_PASS )
 {
@@ -43239,11 +43337,31 @@ wchar_t * CharWConvertExx ( const char *wch, size_t len DBG_PASS )
 	// WideCharToMultiByte()
 	// wcstombs_s()
 	// ... etc
-	size_t  sizeInBytes;
+	size_t  sizeInChars = 0;
+	const char *_wch = wch;
 	wchar_t	*ch;
 	wchar_t   *_ch;
-	sizeInBytes = ((len + 1) * sizeof( wchar_t ) );
-	_ch = ch = NewArray( wchar_t, sizeInBytes);
+	{
+		size_t n;
+		for( n = 0; n < len; n++ )
+		{
+			//lprintf( "first char is %d (%08x)", wch[0] );
+			if( (wch[0] & 0xE0) == 0xC0 )
+				wch += 2;
+			else if( (wch[0] & 0xF0) == 0xE0 )
+				wch += 3;
+			else if( (wch[0] & 0xF0) == 0xF0 )
+			{
+				sizeInChars++;
+				wch += 4;
+			}
+			else
+				wch++;
+			sizeInChars++;
+		}
+	}
+	wch = _wch;
+	_ch = ch = NewArray( wchar_t, sizeInChars + 1 );
 	{
 		size_t n;
 		for( n = 0; n < len; n++ )
@@ -43283,15 +43401,14 @@ wchar_t * CharWConvertExx ( const char *wch, size_t len DBG_PASS )
 			ch++;
 		}
 		ch[0] = 0;
-		ch = _ch;
 	}
-	return ch;
+	return _ch;
 }
-wchar_t * CharWConvertEx ( const char *wch DBG_PASS )
+wchar_t * CharWConvertEx ( const char *ch DBG_PASS )
 {
 	int len;
-	for( len = 0; wch[len]; len++ );
-	return CharWConvertExx( wch, len DBG_RELAY );
+	for( len = 0; ch[len]; len++ );
+	return CharWConvertExx( ch, len DBG_RELAY );
 }
 LOGICAL ParseStringVector( CTEXTSTR data, CTEXTSTR **pData, int *nData )
 {
@@ -62360,7 +62477,7 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
 							 pc->lpFirstPending->dwUsed,
 							 (int)pc->lpFirstPending->dwAvail,
 							 0);
-			if( nSent < pc->lpFirstPending->dwAvail ) {
+			if( nSent < (int)pc->lpFirstPending->dwAvail ) {
 				pc->lpFirstPending->dwUsed += nSent;
 				pc->lpFirstPending->dwAvail -= nSent;
 				pc->dwFlags |= CF_WRITEPENDING;
@@ -64218,7 +64335,7 @@ SACK_NETWORK_NAMESPACE_END
 #define SQL_STRUCT_DEFINED
 # if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 /*
-** 2001 September 15
+** 2001-09-15
 **
 ** The author disclaims copyright to this source code.  In place of
 ** a legal notice, here is a blessing:
@@ -64327,15 +64444,17 @@ extern "C" {
 ** a string which identifies a particular check-in of SQLite
 ** within its configuration management system.  ^The SQLITE_SOURCE_ID
 ** string contains the date and time of the check-in (UTC) and a SHA1
-** or SHA3-256 hash of the entire source tree.
+** or SHA3-256 hash of the entire source tree.  If the source code has
+** been edited in any way since it was last checked in, then the last
+** four hexadecimal digits of the hash may be modified.
 **
 ** See also: [sqlite3_libversion()],
 ** [sqlite3_libversion_number()], [sqlite3_sourceid()],
 ** [sqlite_version()] and [sqlite_source_id()].
 */
-#define SQLITE_VERSION        "3.19.3"
-#define SQLITE_VERSION_NUMBER 3019003
-#define SQLITE_SOURCE_ID      "2017-06-08 14:26:16 0ee482a1e0eae22e08edc8978c9733a96603d4509645f348ebf55b579e89636b"
+#define SQLITE_VERSION        "3.22.0"
+#define SQLITE_VERSION_NUMBER 3022000
+#define SQLITE_SOURCE_ID      "2017-11-30 11:21:59 4c551fdebc7feda3dcfeec719387d879cd5e2cbe213c0c1aac0a965b3f9e882d"
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
 ** KEYWORDS: sqlite3_version sqlite3_sourceid
@@ -64350,7 +64469,7 @@ extern "C" {
 **
 ** <blockquote><pre>
 ** assert( sqlite3_libversion_number()==SQLITE_VERSION_NUMBER );
-** assert( strcmp(sqlite3_sourceid(),SQLITE_SOURCE_ID)==0 );
+** assert( strncmp(sqlite3_sourceid(),SQLITE_SOURCE_ID,80)==0 );
 ** assert( strcmp(sqlite3_libversion(),SQLITE_VERSION)==0 );
 ** </pre></blockquote>)^
 **
@@ -64360,9 +64479,11 @@ extern "C" {
 ** function is provided for use in DLLs since DLL users usually do not have
 ** direct access to string constants within the DLL.  ^The
 ** sqlite3_libversion_number() function returns an integer equal to
-** [SQLITE_VERSION_NUMBER].  ^The sqlite3_sourceid() function returns
+** [SQLITE_VERSION_NUMBER].  ^(The sqlite3_sourceid() function returns
 ** a pointer to a string constant whose value is the same as the
-** [SQLITE_SOURCE_ID] C preprocessor macro.
+** [SQLITE_SOURCE_ID] C preprocessor macro.  Except if SQLite is built
+** using an edited copy of [the amalgamation], then the last four characters
+** of the hash might be different from [SQLITE_SOURCE_ID].)^
 **
 ** See also: [sqlite_version()] and [sqlite_source_id()].
 */
@@ -64695,6 +64816,9 @@ SQLITE_API int sqlite3_exec(
 #define SQLITE_IOERR_CONVPATH          (SQLITE_IOERR | (26<<8))
 #define SQLITE_IOERR_VNODE             (SQLITE_IOERR | (27<<8))
 #define SQLITE_IOERR_AUTH              (SQLITE_IOERR | (28<<8))
+#define SQLITE_IOERR_BEGIN_ATOMIC      (SQLITE_IOERR | (29<<8))
+#define SQLITE_IOERR_COMMIT_ATOMIC     (SQLITE_IOERR | (30<<8))
+#define SQLITE_IOERR_ROLLBACK_ATOMIC   (SQLITE_IOERR | (31<<8))
 #define SQLITE_LOCKED_SHAREDCACHE      (SQLITE_LOCKED |  (1<<8))
 #define SQLITE_BUSY_RECOVERY           (SQLITE_BUSY   |  (1<<8))
 #define SQLITE_BUSY_SNAPSHOT           (SQLITE_BUSY   |  (2<<8))
@@ -64702,11 +64826,13 @@ SQLITE_API int sqlite3_exec(
 #define SQLITE_CANTOPEN_ISDIR          (SQLITE_CANTOPEN | (2<<8))
 #define SQLITE_CANTOPEN_FULLPATH       (SQLITE_CANTOPEN | (3<<8))
 #define SQLITE_CANTOPEN_CONVPATH       (SQLITE_CANTOPEN | (4<<8))
+#define SQLITE_CANTOPEN_DIRTYWAL       (SQLITE_CANTOPEN | (5<<8))
 #define SQLITE_CORRUPT_VTAB            (SQLITE_CORRUPT | (1<<8))
 #define SQLITE_READONLY_RECOVERY       (SQLITE_READONLY | (1<<8))
 #define SQLITE_READONLY_CANTLOCK       (SQLITE_READONLY | (2<<8))
 #define SQLITE_READONLY_ROLLBACK       (SQLITE_READONLY | (3<<8))
 #define SQLITE_READONLY_DBMOVED        (SQLITE_READONLY | (4<<8))
+#define SQLITE_READONLY_CANTINIT       (SQLITE_READONLY | (5<<8))
 #define SQLITE_ABORT_ROLLBACK          (SQLITE_ABORT | (2<<8))
 #define SQLITE_CONSTRAINT_CHECK        (SQLITE_CONSTRAINT | (1<<8))
 #define SQLITE_CONSTRAINT_COMMITHOOK   (SQLITE_CONSTRAINT | (2<<8))
@@ -64778,6 +64904,11 @@ SQLITE_API int sqlite3_exec(
 ** SQLITE_IOCAP_IMMUTABLE flag indicates that the file is on
 ** read-only media and cannot be changed even by processes with
 ** elevated privileges.
+**
+** The SQLITE_IOCAP_BATCH_ATOMIC property means that the underlying
+** filesystem supports doing multiple write operations atomically when those
+** write operations are bracketed by [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE] and
+** [SQLITE_FCNTL_COMMIT_ATOMIC_WRITE].
 */
 #define SQLITE_IOCAP_ATOMIC                 0x00000001
 #define SQLITE_IOCAP_ATOMIC512              0x00000002
@@ -64793,6 +64924,7 @@ SQLITE_API int sqlite3_exec(
 #define SQLITE_IOCAP_UNDELETABLE_WHEN_OPEN  0x00000800
 #define SQLITE_IOCAP_POWERSAFE_OVERWRITE    0x00001000
 #define SQLITE_IOCAP_IMMUTABLE              0x00002000
+#define SQLITE_IOCAP_BATCH_ATOMIC           0x00004000
 /*
 ** CAPI3REF: File Locking Levels
 **
@@ -64923,6 +65055,7 @@ struct sqlite3_file {
 ** <li> [SQLITE_IOCAP_UNDELETABLE_WHEN_OPEN]
 ** <li> [SQLITE_IOCAP_POWERSAFE_OVERWRITE]
 ** <li> [SQLITE_IOCAP_IMMUTABLE]
+** <li> [SQLITE_IOCAP_BATCH_ATOMIC]
 ** </ul>
 **
 ** The SQLITE_IOCAP_ATOMIC property means that all writes of
@@ -65205,6 +65338,40 @@ struct sqlite3_io_methods {
 ** The [SQLITE_FCNTL_RBU] opcode is implemented by the special VFS used by
 ** the RBU extension only.  All other VFS should return SQLITE_NOTFOUND for
 ** this opcode.
+**
+** <li>[[SQLITE_FCNTL_BEGIN_ATOMIC_WRITE]]
+** If the [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE] opcode returns SQLITE_OK, then
+** the file descriptor is placed in "batch write mode", which
+** means all subsequent write operations will be deferred and done
+** atomically at the next [SQLITE_FCNTL_COMMIT_ATOMIC_WRITE].  Systems
+** that do not support batch atomic writes will return SQLITE_NOTFOUND.
+** ^Following a successful SQLITE_FCNTL_BEGIN_ATOMIC_WRITE and prior to
+** the closing [SQLITE_FCNTL_COMMIT_ATOMIC_WRITE] or
+** [SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE], SQLite will make
+** no VFS interface calls on the same [sqlite3_file] file descriptor
+** except for calls to the xWrite method and the xFileControl method
+** with [SQLITE_FCNTL_SIZE_HINT].
+**
+** <li>[[SQLITE_FCNTL_COMMIT_ATOMIC_WRITE]]
+** The [SQLITE_FCNTL_COMMIT_ATOMIC_WRITE] opcode causes all write
+** operations since the previous successful call to
+** [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE] to be performed atomically.
+** This file control returns [SQLITE_OK] if and only if the writes were
+** all performed successfully and have been committed to persistent storage.
+** ^Regardless of whether or not it is successful, this file control takes
+** the file descriptor out of batch write mode so that all subsequent
+** write operations are independent.
+** ^SQLite will never invoke SQLITE_FCNTL_COMMIT_ATOMIC_WRITE without
+** a prior successful call to [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE].
+**
+** <li>[[SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE]]
+** The [SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE] opcode causes all write
+** operations since the previous successful call to
+** [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE] to be rolled back.
+** ^This file control takes the file descriptor out of batch write mode
+** so that all subsequent write operations are independent.
+** ^SQLite will never invoke SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE without
+** a prior successful call to [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE].
 ** </ul>
 */
 #define SQLITE_FCNTL_LOCKSTATE               1
@@ -65236,6 +65403,9 @@ struct sqlite3_io_methods {
 #define SQLITE_FCNTL_JOURNAL_POINTER        28
 #define SQLITE_FCNTL_WIN32_GET_HANDLE       29
 #define SQLITE_FCNTL_PDB                    30
+#define SQLITE_FCNTL_BEGIN_ATOMIC_WRITE     31
+#define SQLITE_FCNTL_COMMIT_ATOMIC_WRITE    32
+#define SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE  33
 /* deprecated names */
 #define SQLITE_GET_LOCKPROXYFILE      SQLITE_FCNTL_GET_LOCKPROXYFILE
 #define SQLITE_SET_LOCKPROXYFILE      SQLITE_FCNTL_SET_LOCKPROXYFILE
@@ -65268,12 +65438,18 @@ typedef struct sqlite3_api_routines sqlite3_api_routines;
 ** in the name of the object stands for "virtual file system".  See
 ** the [VFS | VFS documentation] for further information.
 **
-** The value of the iVersion field is initially 1 but may be larger in
-** future versions of SQLite.  Additional fields may be appended to this
-** object when the iVersion value is increased.  Note that the structure
-** of the sqlite3_vfs object changes in the transaction between
-** SQLite version 3.5.9 and 3.6.0 and yet the iVersion field was not
-** modified.
+** The VFS interface is sometimes extended by adding new methods onto
+** the end.  Each time such an extension occurs, the iVersion field
+** is incremented.  The iVersion value started out as 1 in
+** SQLite [version 3.5.0] on [dateof:3.5.0], then increased to 2
+** with SQLite [version 3.7.0] on [dateof:3.7.0], and then increased
+** to 3 with SQLite [version 3.7.6] on [dateof:3.7.6].  Additional fields
+** may be appended to the sqlite3_vfs object and the iVersion value
+** may increase again in future versions of SQLite.
+** Note that the structure
+** of the sqlite3_vfs object changes in the transition from
+** SQLite [version 3.5.9] to [version 3.6.0] on [dateof:3.6.0]
+** and yet the iVersion field was not modified.
 **
 ** The szOsFile field is the size of the subclassed [sqlite3_file]
 ** structure used by this VFS.  mxPathname is the maximum length of
@@ -65792,6 +65968,16 @@ struct sqlite3_mem_methods {
 ** routines with a wrapper that simulations memory allocation failure or
 ** tracks memory usage, for example. </dd>
 **
+** [[SQLITE_CONFIG_SMALL_MALLOC]] <dt>SQLITE_CONFIG_SMALL_MALLOC</dt>
+** <dd> ^The SQLITE_CONFIG_SMALL_MALLOC option takes single argument of
+** type int, interpreted as a boolean, which if true provides a hint to
+** SQLite that it should avoid large memory allocations if possible.
+** SQLite will run faster if it is free to make large memory allocations,
+** but some application might prefer to run slower in exchange for
+** guarantees about memory fragmentation that are possible if large
+** allocations are avoided.  This hint is normally off.
+** </dd>
+**
 ** [[SQLITE_CONFIG_MEMSTATUS]] <dt>SQLITE_CONFIG_MEMSTATUS</dt>
 ** <dd> ^The SQLITE_CONFIG_MEMSTATUS option takes single argument of type int,
 ** interpreted as a boolean, which enables or disables the collection of
@@ -65809,25 +65995,7 @@ struct sqlite3_mem_methods {
 ** </dd>
 **
 ** [[SQLITE_CONFIG_SCRATCH]] <dt>SQLITE_CONFIG_SCRATCH</dt>
-** <dd> ^The SQLITE_CONFIG_SCRATCH option specifies a static memory buffer
-** that SQLite can use for scratch memory.  ^(There are three arguments
-** to SQLITE_CONFIG_SCRATCH:  A pointer an 8-byte
-** aligned memory buffer from which the scratch allocations will be
-** drawn, the size of each scratch allocation (sz),
-** and the maximum number of scratch allocations (N).)^
-** The first argument must be a pointer to an 8-byte aligned buffer
-** of at least sz*N bytes of memory.
-** ^SQLite will not use more than one scratch buffers per thread.
-** ^SQLite will never request a scratch buffer that is more than 6
-** times the database page size.
-** ^If SQLite needs needs additional
-** scratch memory beyond what is provided by this configuration option, then
-** [sqlite3_malloc()] will be used to obtain the memory needed.<p>
-** ^When the application provides any amount of scratch memory using
-** SQLITE_CONFIG_SCRATCH, SQLite avoids unnecessary large
-** [sqlite3_malloc|heap allocations].
-** This can help [Robson proof|prevent memory allocation failures] due to heap
-** fragmentation in low-memory embedded systems.
+** <dd> The SQLITE_CONFIG_SCRATCH option is no longer used.
 ** </dd>
 **
 ** [[SQLITE_CONFIG_PAGECACHE]] <dt>SQLITE_CONFIG_PAGECACHE</dt>
@@ -65863,8 +66031,7 @@ struct sqlite3_mem_methods {
 ** [[SQLITE_CONFIG_HEAP]] <dt>SQLITE_CONFIG_HEAP</dt>
 ** <dd> ^The SQLITE_CONFIG_HEAP option specifies a static memory buffer
 ** that SQLite will use for all of its dynamic memory allocation needs
-** beyond those provided for by [SQLITE_CONFIG_SCRATCH] and
-** [SQLITE_CONFIG_PAGECACHE].
+** beyond those provided for by [SQLITE_CONFIG_PAGECACHE].
 ** ^The SQLITE_CONFIG_HEAP option is only available if SQLite is compiled
 ** with either [SQLITE_ENABLE_MEMSYS3] or [SQLITE_ENABLE_MEMSYS5] and returns
 ** [SQLITE_ERROR] if invoked otherwise.
@@ -66078,6 +66245,7 @@ struct sqlite3_mem_methods {
 #define SQLITE_CONFIG_PCACHE_HDRSZ        24
 #define SQLITE_CONFIG_PMASZ               25
 #define SQLITE_CONFIG_STMTJRNL_SPILL      26
+#define SQLITE_CONFIG_SMALL_MALLOC        27
 /*
 ** CAPI3REF: Database Connection Configuration Options
 **
@@ -66185,6 +66353,17 @@ struct sqlite3_mem_methods {
 ** have been disabled - 0 if they are not disabled, 1 if they are.
 ** </dd>
 **
+** <dt>SQLITE_DBCONFIG_ENABLE_QPSG</dt>
+** <dd>^(The SQLITE_DBCONFIG_ENABLE_QPSG option activates or deactivates
+** the [query planner stability guarantee] (QPSG).  When the QPSG is active,
+** a single SQL query statement will always use the same algorithm regardless
+** of values of [bound parameters].)^ The QPSG disables some query optimizations
+** that look at the values of bound parameters, which can make some queries
+** slower.  But the QPSG has the advantage of more predictable behavior.  With
+** the QPSG active, SQLite will always use the same query plan in the field as
+** was used during testing in the lab.
+** </dd>
+**
 ** </dl>
 */
 #define SQLITE_DBCONFIG_MAINDBNAME            1000
@@ -66194,6 +66373,7 @@ struct sqlite3_mem_methods {
 #define SQLITE_DBCONFIG_ENABLE_FTS3_TOKENIZER 1004
 #define SQLITE_DBCONFIG_ENABLE_LOAD_EXTENSION 1005
 #define SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE      1006
+#define SQLITE_DBCONFIG_ENABLE_QPSG           1007
 /*
 ** CAPI3REF: Enable Or Disable Extended Result Codes
 ** METHOD: sqlite3
@@ -66841,7 +67021,8 @@ SQLITE_API void sqlite3_randomness(int N, void *P);
 ** [database connection], supplied in the first argument.
 ** ^The authorizer callback is invoked as SQL statements are being compiled
 ** by [sqlite3_prepare()] or its variants [sqlite3_prepare_v2()],
-** [sqlite3_prepare16()] and [sqlite3_prepare16_v2()].  ^At various
+** [sqlite3_prepare_v3()], [sqlite3_prepare16()], [sqlite3_prepare16_v2()],
+** and [sqlite3_prepare16_v3()].  ^At various
 ** points during the compilation process, as logic is being created
 ** to perform various actions, the authorizer callback is invoked to
 ** see if those actions are allowed.  ^The authorizer callback should
@@ -67241,10 +67422,10 @@ SQLITE_API void sqlite3_progress_handler(sqlite3*, int, int(*)(void*), void*);
 ** ^If [URI filename] interpretation is enabled, and the filename argument
 ** begins with "file:", then the filename is interpreted as a URI. ^URI
 ** filename interpretation is enabled if the [SQLITE_OPEN_URI] flag is
-** set in the fourth argument to sqlite3_open_v2(), or if it has
+** set in the third argument to sqlite3_open_v2(), or if it has
 ** been enabled globally using the [SQLITE_CONFIG_URI] option with the
 ** [sqlite3_config()] method or by the [SQLITE_USE_URI] compile-time option.
-** As of SQLite version 3.7.7, URI filename interpretation is turned off
+** URI filename interpretation is turned off
 ** by default, but future releases of SQLite might enable URI filename
 ** interpretation by default.  See "[URI filenames]" for additional
 ** information.
@@ -67617,22 +67798,57 @@ SQLITE_API int sqlite3_limit(sqlite3*, int id, int newVal);
 #define SQLITE_LIMIT_TRIGGER_DEPTH            10
 #define SQLITE_LIMIT_WORKER_THREADS           11
 /*
+** CAPI3REF: Prepare Flags
+**
+** These constants define various flags that can be passed into
+** "prepFlags" parameter of the [sqlite3_prepare_v3()] and
+** [sqlite3_prepare16_v3()] interfaces.
+**
+** New flags may be added in future releases of SQLite.
+**
+** <dl>
+** [[SQLITE_PREPARE_PERSISTENT]] ^(<dt>SQLITE_PREPARE_PERSISTENT</dt>
+** <dd>The SQLITE_PREPARE_PERSISTENT flag is a hint to the query planner
+** that the prepared statement will be retained for a long time and
+** probably reused many times.)^ ^Without this flag, [sqlite3_prepare_v3()]
+** and [sqlite3_prepare16_v3()] assume that the prepared statement will
+** be used just once or at most a few times and then destroyed using
+** [sqlite3_finalize()] relatively soon. The current implementation acts
+** on this hint by avoiding the use of [lookaside memory] so as not to
+** deplete the limited store of lookaside memory. Future versions of
+** SQLite may act on this hint differently.
+** </dl>
+*/
+#define SQLITE_PREPARE_PERSISTENT              0x01
+/*
 ** CAPI3REF: Compiling An SQL Statement
 ** KEYWORDS: {SQL statement compiler}
 ** METHOD: sqlite3
 ** CONSTRUCTOR: sqlite3_stmt
 **
-** To execute an SQL query, it must first be compiled into a byte-code
-** program using one of these routines.
+** To execute an SQL statement, it must first be compiled into a byte-code
+** program using one of these routines.  Or, in other words, these routines
+** are constructors for the [prepared statement] object.
+**
+** The preferred routine to use is [sqlite3_prepare_v2()].  The
+** [sqlite3_prepare()] interface is legacy and should be avoided.
+** [sqlite3_prepare_v3()] has an extra "prepFlags" option that is used
+** for special purposes.
+**
+** The use of the UTF-8 interfaces is preferred, as SQLite currently
+** does all parsing using UTF-8.  The UTF-16 interfaces are provided
+** as a convenience.  The UTF-16 interfaces work by converting the
+** input text into UTF-8, then invoking the corresponding UTF-8 interface.
 **
 ** The first argument, "db", is a [database connection] obtained from a
 ** prior successful call to [sqlite3_open()], [sqlite3_open_v2()] or
 ** [sqlite3_open16()].  The database connection must not have been closed.
 **
 ** The second argument, "zSql", is the statement to be compiled, encoded
-** as either UTF-8 or UTF-16.  The sqlite3_prepare() and sqlite3_prepare_v2()
-** interfaces use UTF-8, and sqlite3_prepare16() and sqlite3_prepare16_v2()
-** use UTF-16.
+** as either UTF-8 or UTF-16.  The sqlite3_prepare(), sqlite3_prepare_v2(),
+** and sqlite3_prepare_v3()
+** interfaces use UTF-8, and sqlite3_prepare16(), sqlite3_prepare16_v2(),
+** and sqlite3_prepare16_v3() use UTF-16.
 **
 ** ^If the nByte argument is negative, then zSql is read up to the
 ** first zero terminator. ^If nByte is positive, then it is the
@@ -67659,10 +67875,11 @@ SQLITE_API int sqlite3_limit(sqlite3*, int id, int newVal);
 ** ^On success, the sqlite3_prepare() family of routines return [SQLITE_OK];
 ** otherwise an [error code] is returned.
 **
-** The sqlite3_prepare_v2() and sqlite3_prepare16_v2() interfaces are
-** recommended for all new programs. The two older interfaces are retained
-** for backwards compatibility, but their use is discouraged.
-** ^In the "v2" interfaces, the prepared statement
+** The sqlite3_prepare_v2(), sqlite3_prepare_v3(), sqlite3_prepare16_v2(),
+** and sqlite3_prepare16_v3() interfaces are recommended for all new programs.
+** The older interfaces (sqlite3_prepare() and sqlite3_prepare16())
+** are retained for backwards compatibility, but their use is discouraged.
+** ^In the "vX" interfaces, the prepared statement
 ** that is returned (the [sqlite3_stmt] object) contains a copy of the
 ** original SQL text. This causes the [sqlite3_step()] interface to
 ** behave differently in three ways:
@@ -67695,6 +67912,12 @@ SQLITE_API int sqlite3_limit(sqlite3*, int id, int newVal);
 ** or [GLOB] operator or if the parameter is compared to an indexed column
 ** and the [SQLITE_ENABLE_STAT3] compile-time option is enabled.
 ** </li>
+**
+** <p>^sqlite3_prepare_v3() differs from sqlite3_prepare_v2() only in having
+** the extra prepFlags parameter, which is a bit array consisting of zero or
+** more of the [SQLITE_PREPARE_PERSISTENT|SQLITE_PREPARE_*] flags.  ^The
+** sqlite3_prepare_v2() interface works exactly the same as
+** sqlite3_prepare_v3() with a zero prepFlags parameter.
 ** </ol>
 */
 SQLITE_API int sqlite3_prepare(
@@ -67708,6 +67931,14 @@ SQLITE_API int sqlite3_prepare_v2(
   sqlite3 *db,
   const char *zSql,
   int nByte,
+  sqlite3_stmt **ppStmt,
+  const char **pzTail
+);
+SQLITE_API int sqlite3_prepare_v3(
+  sqlite3 *db,
+  const char *zSql,
+  int nByte,
+  unsigned int prepFlags,
   sqlite3_stmt **ppStmt,
   const char **pzTail
 );
@@ -67725,13 +67956,22 @@ SQLITE_API int sqlite3_prepare16_v2(
   sqlite3_stmt **ppStmt,
   const void **pzTail
 );
+SQLITE_API int sqlite3_prepare16_v3(
+  sqlite3 *db,
+  const void *zSql,
+  int nByte,
+  unsigned int prepFlags,
+  sqlite3_stmt **ppStmt,
+  const void **pzTail
+);
 /*
 ** CAPI3REF: Retrieving Statement SQL
 ** METHOD: sqlite3_stmt
 **
 ** ^The sqlite3_sql(P) interface returns a pointer to a copy of the UTF-8
 ** SQL text used to create [prepared statement] P if P was
-** created by either [sqlite3_prepare_v2()] or [sqlite3_prepare16_v2()].
+** created by [sqlite3_prepare_v2()], [sqlite3_prepare_v3()],
+** [sqlite3_prepare16_v2()], or [sqlite3_prepare16_v3()].
 ** ^The sqlite3_expanded_sql(P) interface returns a pointer to a UTF-8
 ** string containing the SQL text of prepared statement P with
 ** [bound parameters] expanded.
@@ -67847,8 +68087,9 @@ SQLITE_API int sqlite3_stmt_busy(sqlite3_stmt*);
 ** implementation of [application-defined SQL functions] are protected.
 ** ^The sqlite3_value object returned by
 ** [sqlite3_column_value()] is unprotected.
-** Unprotected sqlite3_value objects may only be used with
-** [sqlite3_result_value()] and [sqlite3_bind_value()].
+** Unprotected sqlite3_value objects may only be used as arguments
+** to [sqlite3_result_value()], [sqlite3_bind_value()], and
+** [sqlite3_value_dup()].
 ** The [sqlite3_value_blob | sqlite3_value_type()] family of
 ** interfaces require protected sqlite3_value objects.
 */
@@ -67952,6 +68193,15 @@ typedef struct sqlite3_context sqlite3_context;
 ** [sqlite3_blob_open | incremental BLOB I/O] routines.
 ** ^A negative value for the zeroblob results in a zero-length BLOB.
 **
+** ^The sqlite3_bind_pointer(S,I,P,T,D) routine causes the I-th parameter in
+** [prepared statement] S to have an SQL value of NULL, but to also be
+** associated with the pointer P of type T.  ^D is either a NULL pointer or
+** a pointer to a destructor function for P. ^SQLite will invoke the
+** destructor D with a single argument of P when it is finished using
+** P.  The T parameter should be a static string, preferably a string
+** literal. The sqlite3_bind_pointer() routine is part of the
+** [pointer passing interface] added for SQLite 3.20.0.
+**
 ** ^If any of the sqlite3_bind_*() routines are called with a NULL pointer
 ** for the [prepared statement] or with a prepared statement for which
 ** [sqlite3_step()] has been called more recently than [sqlite3_reset()],
@@ -67985,6 +68235,7 @@ SQLITE_API int sqlite3_bind_text16(sqlite3_stmt*, int, const void*, int, void(*)
 SQLITE_API int sqlite3_bind_text64(sqlite3_stmt*, int, const char*, sqlite3_uint64,
                          void(*)(void*), unsigned char encoding);
 SQLITE_API int sqlite3_bind_value(sqlite3_stmt*, int, const sqlite3_value*);
+SQLITE_API int sqlite3_bind_pointer(sqlite3_stmt*, int, void*, const char*,void(*)(void*));
 SQLITE_API int sqlite3_bind_zeroblob(sqlite3_stmt*, int, int n);
 SQLITE_API int sqlite3_bind_zeroblob64(sqlite3_stmt*, int, sqlite3_uint64);
 /*
@@ -68026,8 +68277,8 @@ SQLITE_API int sqlite3_bind_parameter_count(sqlite3_stmt*);
 ** ^If the value N is out of range or if the N-th parameter is
 ** nameless, then NULL is returned.  ^The returned string is
 ** always in UTF-8 encoding even if the named parameter was
-** originally specified as UTF-16 in [sqlite3_prepare16()] or
-** [sqlite3_prepare16_v2()].
+** originally specified as UTF-16 in [sqlite3_prepare16()],
+** [sqlite3_prepare16_v2()], or [sqlite3_prepare16_v3()].
 **
 ** See also: [sqlite3_bind_blob|sqlite3_bind()],
 ** [sqlite3_bind_parameter_count()], and
@@ -68043,7 +68294,8 @@ SQLITE_API const char *sqlite3_bind_parameter_name(sqlite3_stmt*, int);
 ** parameter to [sqlite3_bind_blob|sqlite3_bind()].  ^A zero
 ** is returned if no matching parameter is found.  ^The parameter
 ** name must be given in UTF-8 even if the original statement
-** was prepared from UTF-16 text using [sqlite3_prepare16_v2()].
+** was prepared from UTF-16 text using [sqlite3_prepare16_v2()] or
+** [sqlite3_prepare16_v3()].
 **
 ** See also: [sqlite3_bind_blob|sqlite3_bind()],
 ** [sqlite3_bind_parameter_count()], and
@@ -68191,16 +68443,18 @@ SQLITE_API const void *sqlite3_column_decltype16(sqlite3_stmt*,int);
 ** CAPI3REF: Evaluate An SQL Statement
 ** METHOD: sqlite3_stmt
 **
-** After a [prepared statement] has been prepared using either
-** [sqlite3_prepare_v2()] or [sqlite3_prepare16_v2()] or one of the legacy
+** After a [prepared statement] has been prepared using any of
+** [sqlite3_prepare_v2()], [sqlite3_prepare_v3()], [sqlite3_prepare16_v2()],
+** or [sqlite3_prepare16_v3()] or one of the legacy
 ** interfaces [sqlite3_prepare()] or [sqlite3_prepare16()], this function
 ** must be called one or more times to evaluate the statement.
 **
 ** The details of the behavior of the sqlite3_step() interface depend
-** on whether the statement was prepared using the newer "v2" interface
-** [sqlite3_prepare_v2()] and [sqlite3_prepare16_v2()] or the older legacy
-** interface [sqlite3_prepare()] and [sqlite3_prepare16()].  The use of the
-** new "v2" interface is recommended for new applications but the legacy
+** on whether the statement was prepared using the newer "vX" interfaces
+** [sqlite3_prepare_v3()], [sqlite3_prepare_v2()], [sqlite3_prepare16_v3()],
+** [sqlite3_prepare16_v2()] or the older legacy
+** interfaces [sqlite3_prepare()] and [sqlite3_prepare16()].  The use of the
+** new "vX" interface is recommended for new applications but the legacy
 ** interface will continue to be supported.
 **
 ** ^In the legacy interface, the return value will be either [SQLITE_BUSY],
@@ -68261,10 +68515,11 @@ SQLITE_API const void *sqlite3_column_decltype16(sqlite3_stmt*,int);
 ** specific [error codes] that better describes the error.
 ** We admit that this is a goofy design.  The problem has been fixed
 ** with the "v2" interface.  If you prepare all of your SQL statements
-** using either [sqlite3_prepare_v2()] or [sqlite3_prepare16_v2()] instead
+** using [sqlite3_prepare_v3()] or [sqlite3_prepare_v2()]
+** or [sqlite3_prepare16_v2()] or [sqlite3_prepare16_v3()] instead
 ** of the legacy [sqlite3_prepare()] and [sqlite3_prepare16()] interfaces,
 ** then the more specific [error codes] are returned directly
-** by sqlite3_step().  The use of the "v2" interface is recommended.
+** by sqlite3_step().  The use of the "vX" interfaces is recommended.
 */
 SQLITE_API int sqlite3_step(sqlite3_stmt*);
 /*
@@ -68323,6 +68578,28 @@ SQLITE_API int sqlite3_data_count(sqlite3_stmt *pStmt);
 ** KEYWORDS: {column access functions}
 ** METHOD: sqlite3_stmt
 **
+** <b>Summary:</b>
+** <blockquote><table border=0 cellpadding=0 cellspacing=0>
+** <tr><td><b>sqlite3_column_blob</b><td>&rarr;<td>BLOB result
+** <tr><td><b>sqlite3_column_double</b><td>&rarr;<td>REAL result
+** <tr><td><b>sqlite3_column_int</b><td>&rarr;<td>32-bit INTEGER result
+** <tr><td><b>sqlite3_column_int64</b><td>&rarr;<td>64-bit INTEGER result
+** <tr><td><b>sqlite3_column_text</b><td>&rarr;<td>UTF-8 TEXT result
+** <tr><td><b>sqlite3_column_text16</b><td>&rarr;<td>UTF-16 TEXT result
+** <tr><td><b>sqlite3_column_value</b><td>&rarr;<td>The result as an
+** [sqlite3_value|unprotected sqlite3_value] object.
+** <tr><td>&nbsp;<td>&nbsp;<td>&nbsp;
+** <tr><td><b>sqlite3_column_bytes</b><td>&rarr;<td>Size of a BLOB
+** or a UTF-8 TEXT result in bytes
+** <tr><td><b>sqlite3_column_bytes16&nbsp;&nbsp;</b>
+** <td>&rarr;&nbsp;&nbsp;<td>Size of UTF-16
+** TEXT in bytes
+** <tr><td><b>sqlite3_column_type</b><td>&rarr;<td>Default
+** datatype of the result
+** </table></blockquote>
+**
+** <b>Details:</b>
+**
 ** ^These routines return information about a single column of the current
 ** result row of a query.  ^In every case the first argument is a pointer
 ** to the [prepared statement] that is being evaluated (the [sqlite3_stmt*]
@@ -68344,15 +68621,28 @@ SQLITE_API int sqlite3_data_count(sqlite3_stmt *pStmt);
 ** are called from a different thread while any of these routines
 ** are pending, then the results are undefined.
 **
+** The first six interfaces (_blob, _double, _int, _int64, _text, and _text16)
+** each return the value of a result column in a specific data format.  If
+** the result column is not initially in the requested format (for example,
+** if the query returns an integer but the sqlite3_column_text() interface
+** is used to extract the value) then an automatic type conversion is performed.
+**
 ** ^The sqlite3_column_type() routine returns the
 ** [SQLITE_INTEGER | datatype code] for the initial data type
 ** of the result column.  ^The returned value is one of [SQLITE_INTEGER],
-** [SQLITE_FLOAT], [SQLITE_TEXT], [SQLITE_BLOB], or [SQLITE_NULL].  The value
-** returned by sqlite3_column_type() is only meaningful if no type
-** conversions have occurred as described below.  After a type conversion,
-** the value returned by sqlite3_column_type() is undefined.  Future
+** [SQLITE_FLOAT], [SQLITE_TEXT], [SQLITE_BLOB], or [SQLITE_NULL].
+** The return value of sqlite3_column_type() can be used to decide which
+** of the first six interface should be used to extract the column value.
+** The value returned by sqlite3_column_type() is only meaningful if no
+** automatic type conversions have occurred for the value in question.
+** After a type conversion, the result of calling sqlite3_column_type()
+** is undefined, though harmless.  Future
 ** versions of SQLite may change the behavior of sqlite3_column_type()
 ** following a type conversion.
+**
+** If the result is a BLOB or a TEXT string, then the sqlite3_column_bytes()
+** or sqlite3_column_bytes16() interfaces can be used to determine the size
+** of that BLOB or string.
 **
 ** ^If the result is a BLOB or UTF-8 string then the sqlite3_column_bytes()
 ** routine returns the number of bytes in that BLOB or string.
@@ -68390,9 +68680,13 @@ SQLITE_API int sqlite3_data_count(sqlite3_stmt *pStmt);
 ** [sqlite3_column_value()] is used in any other way, including calls
 ** to routines like [sqlite3_value_int()], [sqlite3_value_text()],
 ** or [sqlite3_value_bytes()], the behavior is not threadsafe.
+** Hence, the sqlite3_column_value() interface
+** is normally only useful within the implementation of
+** [application-defined SQL functions] or [virtual tables], not within
+** top-level application code.
 **
-** These routines attempt to convert the value where appropriate.  ^For
-** example, if the internal representation is FLOAT and a text result
+** The these routines may attempt to convert the datatype of the result.
+** ^For example, if the internal representation is FLOAT and a text result
 ** is requested, [sqlite3_snprintf()] is used internally to perform the
 ** conversion automatically.  ^(The following table details the conversions
 ** that are applied:
@@ -68464,7 +68758,7 @@ SQLITE_API int sqlite3_data_count(sqlite3_stmt *pStmt);
 ** ^The pointers returned are valid until a type conversion occurs as
 ** described above, or until [sqlite3_step()] or [sqlite3_reset()] or
 ** [sqlite3_finalize()] is called.  ^The memory space used to hold strings
-** and BLOBs is freed automatically.  Do <em>not</em> pass the pointers returned
+** and BLOBs is freed automatically.  Do not pass the pointers returned
 ** from [sqlite3_column_blob()], [sqlite3_column_text()], etc. into
 ** [sqlite3_free()].
 **
@@ -68475,15 +68769,15 @@ SQLITE_API int sqlite3_data_count(sqlite3_stmt *pStmt);
 ** [SQLITE_NOMEM].)^
 */
 SQLITE_API const void *sqlite3_column_blob(sqlite3_stmt*, int iCol);
-SQLITE_API int sqlite3_column_bytes(sqlite3_stmt*, int iCol);
-SQLITE_API int sqlite3_column_bytes16(sqlite3_stmt*, int iCol);
 SQLITE_API double sqlite3_column_double(sqlite3_stmt*, int iCol);
 SQLITE_API int sqlite3_column_int(sqlite3_stmt*, int iCol);
 SQLITE_API sqlite3_int64 sqlite3_column_int64(sqlite3_stmt*, int iCol);
 SQLITE_API const unsigned char *sqlite3_column_text(sqlite3_stmt*, int iCol);
 SQLITE_API const void *sqlite3_column_text16(sqlite3_stmt*, int iCol);
-SQLITE_API int sqlite3_column_type(sqlite3_stmt*, int iCol);
 SQLITE_API sqlite3_value *sqlite3_column_value(sqlite3_stmt*, int iCol);
+SQLITE_API int sqlite3_column_bytes(sqlite3_stmt*, int iCol);
+SQLITE_API int sqlite3_column_bytes16(sqlite3_stmt*, int iCol);
+SQLITE_API int sqlite3_column_type(sqlite3_stmt*, int iCol);
 /*
 ** CAPI3REF: Destroy A Prepared Statement Object
 ** DESTRUCTOR: sqlite3_stmt
@@ -68710,21 +69004,40 @@ SQLITE_API SQLITE_DEPRECATED int sqlite3_memory_alarm(void(*)(void*,sqlite3_int6
 ** CAPI3REF: Obtaining SQL Values
 ** METHOD: sqlite3_value
 **
-** The C-language implementation of SQL functions and aggregates uses
-** this set of interface routines to access the parameter values on
-** the function or aggregate.
+** <b>Summary:</b>
+** <blockquote><table border=0 cellpadding=0 cellspacing=0>
+** <tr><td><b>sqlite3_value_blob</b><td>&rarr;<td>BLOB value
+** <tr><td><b>sqlite3_value_double</b><td>&rarr;<td>REAL value
+** <tr><td><b>sqlite3_value_int</b><td>&rarr;<td>32-bit INTEGER value
+** <tr><td><b>sqlite3_value_int64</b><td>&rarr;<td>64-bit INTEGER value
+** <tr><td><b>sqlite3_value_pointer</b><td>&rarr;<td>Pointer value
+** <tr><td><b>sqlite3_value_text</b><td>&rarr;<td>UTF-8 TEXT value
+** <tr><td><b>sqlite3_value_text16</b><td>&rarr;<td>UTF-16 TEXT value in
+** the native byteorder
+** <tr><td><b>sqlite3_value_text16be</b><td>&rarr;<td>UTF-16be TEXT value
+** <tr><td><b>sqlite3_value_text16le</b><td>&rarr;<td>UTF-16le TEXT value
+** <tr><td>&nbsp;<td>&nbsp;<td>&nbsp;
+** <tr><td><b>sqlite3_value_bytes</b><td>&rarr;<td>Size of a BLOB
+** or a UTF-8 TEXT in bytes
+** <tr><td><b>sqlite3_value_bytes16&nbsp;&nbsp;</b>
+** <td>&rarr;&nbsp;&nbsp;<td>Size of UTF-16
+** TEXT in bytes
+** <tr><td><b>sqlite3_value_type</b><td>&rarr;<td>Default
+** datatype of the value
+** <tr><td><b>sqlite3_value_numeric_type&nbsp;&nbsp;</b>
+** <td>&rarr;&nbsp;&nbsp;<td>Best numeric datatype of the value
+** </table></blockquote>
 **
-** The xFunc (for scalar functions) or xStep (for aggregates) parameters
-** to [sqlite3_create_function()] and [sqlite3_create_function16()]
-** define callbacks that implement the SQL functions and aggregates.
-** The 3rd parameter to these callbacks is an array of pointers to
-** [protected sqlite3_value] objects.  There is one [sqlite3_value] object for
-** each parameter to the SQL function.  These routines are used to
-** extract values from the [sqlite3_value] objects.
+** <b>Details:</b>
+**
+** These routines extract type, size, and content information from
+** [protected sqlite3_value] objects.  Protected sqlite3_value objects
+** are used to pass parameter information into implementation of
+** [application-defined SQL functions] and [virtual tables].
 **
 ** These routines work only with [protected sqlite3_value] objects.
 ** Any attempt to use these routines on an [unprotected sqlite3_value]
-** object results in undefined behavior.
+** is not threadsafe.
 **
 ** ^These routines work just like the corresponding [column access functions]
 ** except that these routines take a single [protected sqlite3_value] object
@@ -68734,6 +69047,24 @@ SQLITE_API SQLITE_DEPRECATED int sqlite3_memory_alarm(void(*)(void*,sqlite3_int6
 ** in the native byte-order of the host machine.  ^The
 ** sqlite3_value_text16be() and sqlite3_value_text16le() interfaces
 ** extract UTF-16 strings as big-endian and little-endian respectively.
+**
+** ^If [sqlite3_value] object V was initialized
+** using [sqlite3_bind_pointer(S,I,P,X,D)] or [sqlite3_result_pointer(C,P,X,D)]
+** and if X and Y are strings that compare equal according to strcmp(X,Y),
+** then sqlite3_value_pointer(V,Y) will return the pointer P.  ^Otherwise,
+** sqlite3_value_pointer(V,Y) returns a NULL. The sqlite3_bind_pointer()
+** routine is part of the [pointer passing interface] added for SQLite 3.20.0.
+**
+** ^(The sqlite3_value_type(V) interface returns the
+** [SQLITE_INTEGER | datatype code] for the initial datatype of the
+** [sqlite3_value] object V. The returned value is one of [SQLITE_INTEGER],
+** [SQLITE_FLOAT], [SQLITE_TEXT], [SQLITE_BLOB], or [SQLITE_NULL].)^
+** Other interfaces might change the datatype for an sqlite3_value object.
+** For example, if the datatype is initially SQLITE_INTEGER and
+** sqlite3_value_text(V) is called to extract a text value for that
+** integer, then subsequent calls to sqlite3_value_type(V) might return
+** SQLITE_TEXT.  Whether or not a persistent internal datatype conversion
+** occurs is undefined and may change from one release of SQLite to the next.
 **
 ** ^(The sqlite3_value_numeric_type() interface attempts to apply
 ** numeric affinity to the value.  This means that an attempt is
@@ -68753,15 +69084,16 @@ SQLITE_API SQLITE_DEPRECATED int sqlite3_memory_alarm(void(*)(void*,sqlite3_int6
 ** the SQL function that supplied the [sqlite3_value*] parameters.
 */
 SQLITE_API const void *sqlite3_value_blob(sqlite3_value*);
-SQLITE_API int sqlite3_value_bytes(sqlite3_value*);
-SQLITE_API int sqlite3_value_bytes16(sqlite3_value*);
 SQLITE_API double sqlite3_value_double(sqlite3_value*);
 SQLITE_API int sqlite3_value_int(sqlite3_value*);
 SQLITE_API sqlite3_int64 sqlite3_value_int64(sqlite3_value*);
+SQLITE_API void *sqlite3_value_pointer(sqlite3_value*, const char*);
 SQLITE_API const unsigned char *sqlite3_value_text(sqlite3_value*);
 SQLITE_API const void *sqlite3_value_text16(sqlite3_value*);
 SQLITE_API const void *sqlite3_value_text16le(sqlite3_value*);
 SQLITE_API const void *sqlite3_value_text16be(sqlite3_value*);
+SQLITE_API int sqlite3_value_bytes(sqlite3_value*);
+SQLITE_API int sqlite3_value_bytes16(sqlite3_value*);
 SQLITE_API int sqlite3_value_type(sqlite3_value*);
 SQLITE_API int sqlite3_value_numeric_type(sqlite3_value*);
 /*
@@ -68773,10 +69105,6 @@ SQLITE_API int sqlite3_value_numeric_type(sqlite3_value*);
 ** information can be used to pass a limited amount of context from
 ** one SQL function to another.  Use the [sqlite3_result_subtype()]
 ** routine to set the subtype for the return value of an SQL function.
-**
-** SQLite makes no use of subtype itself.  It merely passes the subtype
-** from the result of one [application-defined SQL function] into the
-** input of another.
 */
 SQLITE_API unsigned int sqlite3_value_subtype(sqlite3_value*);
 /*
@@ -69038,7 +69366,7 @@ typedef void (*sqlite3_destructor_type)(void*);
 ** when it has finished using that result.
 ** ^If the 4th parameter to the sqlite3_result_text* interfaces
 ** or sqlite3_result_blob is the special constant SQLITE_TRANSIENT
-** then SQLite makes a copy of the result into space obtained from
+** then SQLite makes a copy of the result into space obtained
 ** from [sqlite3_malloc()] before it returns.
 **
 ** ^The sqlite3_result_value() interface sets the result of
@@ -69050,6 +69378,17 @@ typedef void (*sqlite3_destructor_type)(void*);
 ** ^A [protected sqlite3_value] object may always be used where an
 ** [unprotected sqlite3_value] object is required, so either
 ** kind of [sqlite3_value] object can be used with this interface.
+**
+** ^The sqlite3_result_pointer(C,P,T,D) interface sets the result to an
+** SQL NULL value, just like [sqlite3_result_null(C)], except that it
+** also associates the host-language pointer P or type T with that
+** NULL value such that the pointer can be retrieved within an
+** [application-defined SQL function] using [sqlite3_value_pointer()].
+** ^If the D parameter is not NULL, then it is a pointer to a destructor
+** for the P parameter.  ^SQLite invokes D with P as its only argument
+** when SQLite is finished with P.  The T parameter should be a static
+** string and preferably a string literal. The sqlite3_result_pointer()
+** routine is part of the [pointer passing interface] added for SQLite 3.20.0.
 **
 ** If these routines are called from within the different thread
 ** than the one containing the application-defined function that received
@@ -69074,6 +69413,7 @@ SQLITE_API void sqlite3_result_text16(sqlite3_context*, const void*, int, void(*
 SQLITE_API void sqlite3_result_text16le(sqlite3_context*, const void*, int,void(*)(void*));
 SQLITE_API void sqlite3_result_text16be(sqlite3_context*, const void*, int,void(*)(void*));
 SQLITE_API void sqlite3_result_value(sqlite3_context*, sqlite3_value*);
+SQLITE_API void sqlite3_result_pointer(sqlite3_context*, void*,const char*,void(*)(void*));
 SQLITE_API void sqlite3_result_zeroblob(sqlite3_context*, int n);
 SQLITE_API int sqlite3_result_zeroblob64(sqlite3_context*, sqlite3_uint64 n);
 /*
@@ -69708,7 +70048,9 @@ SQLITE_API SQLITE_DEPRECATED void sqlite3_soft_heap_limit(int N);
 ** ^If the column-name parameter to sqlite3_table_column_metadata() is a
 ** NULL pointer, then this routine simply checks for the existence of the
 ** table and returns SQLITE_OK if the table exists and SQLITE_ERROR if it
-** does not.
+** does not.  If the table name parameter T in a call to
+** sqlite3_table_column_metadata(X,D,T,C,...) is NULL then the result is
+** undefined behavior.
 **
 ** ^The column is identified by the second, third and fourth parameters to
 ** this function. ^(The second parameter is either the name of the database
@@ -70107,15 +70449,20 @@ struct sqlite3_index_info {
 ** an operator that is part of a constraint term in the wHERE clause of
 ** a query that uses a [virtual table].
 */
-#define SQLITE_INDEX_CONSTRAINT_EQ      2
-#define SQLITE_INDEX_CONSTRAINT_GT      4
-#define SQLITE_INDEX_CONSTRAINT_LE      8
-#define SQLITE_INDEX_CONSTRAINT_LT     16
-#define SQLITE_INDEX_CONSTRAINT_GE     32
-#define SQLITE_INDEX_CONSTRAINT_MATCH  64
-#define SQLITE_INDEX_CONSTRAINT_LIKE   65
-#define SQLITE_INDEX_CONSTRAINT_GLOB   66
-#define SQLITE_INDEX_CONSTRAINT_REGEXP 67
+#define SQLITE_INDEX_CONSTRAINT_EQ         2
+#define SQLITE_INDEX_CONSTRAINT_GT         4
+#define SQLITE_INDEX_CONSTRAINT_LE         8
+#define SQLITE_INDEX_CONSTRAINT_LT        16
+#define SQLITE_INDEX_CONSTRAINT_GE        32
+#define SQLITE_INDEX_CONSTRAINT_MATCH     64
+#define SQLITE_INDEX_CONSTRAINT_LIKE      65
+#define SQLITE_INDEX_CONSTRAINT_GLOB      66
+#define SQLITE_INDEX_CONSTRAINT_REGEXP    67
+#define SQLITE_INDEX_CONSTRAINT_NE        68
+#define SQLITE_INDEX_CONSTRAINT_ISNOT     69
+#define SQLITE_INDEX_CONSTRAINT_ISNOTNULL 70
+#define SQLITE_INDEX_CONSTRAINT_ISNULL    71
+#define SQLITE_INDEX_CONSTRAINT_IS        72
 /*
 ** CAPI3REF: Register A Virtual Table Implementation
 ** METHOD: sqlite3
@@ -70901,8 +71248,7 @@ SQLITE_API int sqlite3_status64(
 ** <dd>This parameter is the current amount of memory checked out
 ** using [sqlite3_malloc()], either directly or indirectly.  The
 ** figure includes calls made to [sqlite3_malloc()] by the application
-** and internal memory usage by the SQLite library.  Scratch memory
-** controlled by [SQLITE_CONFIG_SCRATCH] and auxiliary page-cache
+** and internal memory usage by the SQLite library.  Auxiliary page-cache
 ** memory controlled by [SQLITE_CONFIG_PAGECACHE] is not included in
 ** this parameter.  The amount returned is the sum of the allocation
 ** sizes as reported by the xSize method in [sqlite3_mem_methods].</dd>)^
@@ -70940,29 +71286,14 @@ SQLITE_API int sqlite3_status64(
 ** *pHighwater parameter to [sqlite3_status()] is of interest.
 ** The value written into the *pCurrent parameter is undefined.</dd>)^
 **
-** [[SQLITE_STATUS_SCRATCH_USED]] ^(<dt>SQLITE_STATUS_SCRATCH_USED</dt>
-** <dd>This parameter returns the number of allocations used out of the
-** [scratch memory allocator] configured using
-** [SQLITE_CONFIG_SCRATCH].  The value returned is in allocations, not
-** in bytes.  Since a single thread may only have one scratch allocation
-** outstanding at time, this parameter also reports the number of threads
-** using scratch memory at the same time.</dd>)^
+** [[SQLITE_STATUS_SCRATCH_USED]] <dt>SQLITE_STATUS_SCRATCH_USED</dt>
+** <dd>No longer used.</dd>
 **
 ** [[SQLITE_STATUS_SCRATCH_OVERFLOW]] ^(<dt>SQLITE_STATUS_SCRATCH_OVERFLOW</dt>
-** <dd>This parameter returns the number of bytes of scratch memory
-** allocation which could not be satisfied by the [SQLITE_CONFIG_SCRATCH]
-** buffer and where forced to overflow to [sqlite3_malloc()].  The values
-** returned include overflows because the requested allocation was too
-** larger (that is, because the requested allocation was larger than the
-** "sz" parameter to [SQLITE_CONFIG_SCRATCH]) and because no scratch buffer
-** slots were available.
-** </dd>)^
+** <dd>No longer used.</dd>
 **
-** [[SQLITE_STATUS_SCRATCH_SIZE]] ^(<dt>SQLITE_STATUS_SCRATCH_SIZE</dt>
-** <dd>This parameter records the largest memory allocation request
-** handed to [scratch memory allocator].  Only the value returned in the
-** *pHighwater parameter to [sqlite3_status()] is of interest.
-** The value written into the *pCurrent parameter is undefined.</dd>)^
+** [[SQLITE_STATUS_SCRATCH_SIZE]] <dt>SQLITE_STATUS_SCRATCH_SIZE</dt>
+** <dd>No longer used.</dd>
 **
 ** [[SQLITE_STATUS_PARSER_STACK]] ^(<dt>SQLITE_STATUS_PARSER_STACK</dt>
 ** <dd>The *pHighwater parameter records the deepest parser stack.
@@ -71180,6 +71511,24 @@ SQLITE_API int sqlite3_stmt_status(sqlite3_stmt*, int op,int resetFlg);
 ** used as a proxy for the total work done by the prepared statement.
 ** If the number of virtual machine operations exceeds 2147483647
 ** then the value returned by this statement status code is undefined.
+**
+** [[SQLITE_STMTSTATUS_REPREPARE]] <dt>SQLITE_STMTSTATUS_REPREPARE</dt>
+** <dd>^This is the number of times that the prepare statement has been
+** automatically regenerated due to schema changes or change to
+** [bound parameters] that might affect the query plan.
+**
+** [[SQLITE_STMTSTATUS_RUN]] <dt>SQLITE_STMTSTATUS_RUN</dt>
+** <dd>^This is the number of times that the prepared statement has
+** been run.  A single "run" for the purposes of this counter is one
+** or more calls to [sqlite3_step()] followed by a call to [sqlite3_reset()].
+** The counter is incremented on the first [sqlite3_step()] call of each
+** cycle.
+**
+** [[SQLITE_STMTSTATUS_MEMUSED]] <dt>SQLITE_STMTSTATUS_MEMUSED</dt>
+** <dd>^This is the approximate number of bytes of heap memory
+** used to store the prepared statement.  ^This value is not actually
+** a counter, and so the resetFlg parameter to sqlite3_stmt_status()
+** is ignored when the opcode is SQLITE_STMTSTATUS_MEMUSED.
 ** </dd>
 ** </dl>
 */
@@ -71187,6 +71536,9 @@ SQLITE_API int sqlite3_stmt_status(sqlite3_stmt*, int op,int resetFlg);
 #define SQLITE_STMTSTATUS_SORT              2
 #define SQLITE_STMTSTATUS_AUTOINDEX         3
 #define SQLITE_STMTSTATUS_VM_STEP           4
+#define SQLITE_STMTSTATUS_REPREPARE         5
+#define SQLITE_STMTSTATUS_RUN               6
+#define SQLITE_STMTSTATUS_MEMUSED           99
 /*
 ** CAPI3REF: Custom Page Cache Object
 **
@@ -73726,12 +74078,12 @@ SQLITE_API int sqlite3changeset_apply(
 **
 ** <table border=1 style="margin-left:8ex;margin-right:8ex">
 **   <tr><th>Streaming function<th>Non-streaming equivalent</th>
-**   <tr><td>sqlite3changeset_apply_str<td>[sqlite3changeset_apply]
-**   <tr><td>sqlite3changeset_concat_str<td>[sqlite3changeset_concat]
-**   <tr><td>sqlite3changeset_invert_str<td>[sqlite3changeset_invert]
-**   <tr><td>sqlite3changeset_start_str<td>[sqlite3changeset_start]
-**   <tr><td>sqlite3session_changeset_str<td>[sqlite3session_changeset]
-**   <tr><td>sqlite3session_patchset_str<td>[sqlite3session_patchset]
+**   <tr><td>sqlite3changeset_apply_strm<td>[sqlite3changeset_apply]
+**   <tr><td>sqlite3changeset_concat_strm<td>[sqlite3changeset_concat]
+**   <tr><td>sqlite3changeset_invert_strm<td>[sqlite3changeset_invert]
+**   <tr><td>sqlite3changeset_start_strm<td>[sqlite3changeset_start]
+**   <tr><td>sqlite3session_changeset_strm<td>[sqlite3session_changeset]
+**   <tr><td>sqlite3session_patchset_strm<td>[sqlite3session_patchset]
 ** </table>
 **
 ** Non-streaming functions that accept changesets (or patchsets) as input
@@ -74702,8 +75054,8 @@ typedef struct data_collection_tag
 	struct odbc_handle_tag *odbc;
 	uint32_t      responce;
 	uint32_t      lastop;
-	uint32_t *result;
-	uint32_t *result_len;
+   int    *column_types;
+	size_t *result_len;
 	TEXTSTR *results;
 	//uint32_t nResults; // this is columns
 	TEXTSTR *fields;
@@ -75556,12 +75908,15 @@ void errorLogCallback(void *pArg, int iErrCode, const char *zMsg){
 	else if( iErrCode == SQLITE_NOTICE_RECOVER_ROLLBACK ) {
 		lprintf( "Sqlite3 Notice: journal rollback:%s", zMsg );
 	}
+	else if( iErrCode == SQLITE_ERROR )
+ // these will generally be logged by other error handling.
+		;
 	else
 		lprintf( "Sqlite3 Err: (%d) %s", iErrCode, zMsg);
 }
 static POINTER SimpleAllocate( int size )
 {
-	return Allocate( size );
+	return HeapAllocateAligned( 0, size, 8 );
 }
 static POINTER SimpleReallocate( POINTER p, int size )
 {
@@ -75690,8 +76045,8 @@ typedef struct data_collection_tag
 	struct odbc_handle_tag *odbc;
 	uint32_t      responce;
 	uint32_t      lastop;
-	uint32_t *result;
-	uint32_t *result_len;
+   int    *column_types;
+	size_t *result_len;
 	TEXTSTR *results;
 	//uint32_t nResults; // this is columns
 	TEXTSTR *fields;
@@ -79613,6 +79968,7 @@ static PCOLLECT CreateCollectorEx( PSERVICE_ROUTE SourceID, PODBC odbc, LOGICAL 
 	MemSet( pCollect, 0, sizeof( COLLECT ) );
 	// there are a couple uninitialized values in thiws...
 	pCollect->fields = NULL;
+	pCollect->result_len = NULL;
 	pCollect->lastop = LAST_NONE;
 	pCollect->odbc = odbc;
 	pCollect->pvt_out = VarTextCreateEx( DBG_VOIDRELAY );
@@ -81014,6 +81370,8 @@ void ReleaseCollectionResults( PCOLLECT pCollect, int bEntire )
 			}
 			Release( (POINTER)pCollect->fields );
 			pCollect->fields = NULL;
+			Release( pCollect->result_len );
+			pCollect->result_len = NULL;
 		}
 		if( pCollect->results )
 		{
@@ -81162,8 +81520,8 @@ int DumpInfo2( PVARTEXT pvt, SQLSMALLINT type, PODBC odbc, LOGICAL bNoLog )
 	//lprintf( WIDE( "Result of prepare failed? %s at [%s]" ), tmp, tail );
 	if( !bNoLog && EnsureLogOpen( odbc ) )
 	{
-		fprintf( g.pSQLLog, WIDE("#SQLITE ERROR:%s\n"), tmp );
-		fflush( g.pSQLLog );
+		sack_fprintf( g.pSQLLog, WIDE("#SQLITE ERROR:%s\n"), tmp );
+		sack_fflush( g.pSQLLog );
 	}
 	//vtprintf( pvt, "%s", sqlite3_errmsg(odbc->db) );
 	return 0;
@@ -81211,7 +81569,7 @@ int DumpInfoEx( PODBC odbc, PVARTEXT pvt, SQLSMALLINT type, SQLHANDLE *handle, L
 		{
 			vtprintf( pvt, WIDE("Invalid handle") );
 			if( !bNoLog && EnsureLogOpen( odbc ) )
-				fprintf( g.pSQLLog, WIDE("#%s\n"), WIDE("Invalid Handle") );
+				sack_fprintf( g.pSQLLog, WIDE("#%s\n"), WIDE("Invalid Handle") );
 			break;
 		}
 		else if( rc != SQL_NO_DATA )
@@ -81243,7 +81601,7 @@ int DumpInfoEx( PODBC odbc, PVARTEXT pvt, SQLSMALLINT type, SQLHANDLE *handle, L
 				vtprintf( pvt, WIDE("(%5s)[%") _32f WIDE("]:%s"), statecode, native, message );
 				if( !bNoLog && EnsureLogOpen( odbc ) )
 				{
-					fprintf( g.pSQLLog, WIDE("#(%5s)[%") _32f WIDE("]:%s\n"), statecode, native, message );
+					sack_fprintf( g.pSQLLog, WIDE("#(%5s)[%") _32f WIDE("]:%s\n"), statecode, native, message );
 				}
 				if( !bOpening )
 				{
@@ -81291,7 +81649,7 @@ int DumpInfoEx( PODBC odbc, PVARTEXT pvt, SQLSMALLINT type, SQLHANDLE *handle, L
 				else
 					vtprintf( pvt, WIDE("(%5s)[%") _32f WIDE("]:%s"), statecode, native, message );
 				if( !bNoLog && EnsureLogOpen( odbc ) )
-					fprintf( g.pSQLLog, WIDE("#%s\n"), GetText( VarTextPeek( pvt ) ) );
+					sack_fprintf( g.pSQLLog, WIDE("#%s\n"), GetText( VarTextPeek( pvt ) ) );
 			}
 		}
 		else
@@ -81302,7 +81660,7 @@ int DumpInfoEx( PODBC odbc, PVARTEXT pvt, SQLSMALLINT type, SQLHANDLE *handle, L
 		}
 	} while( ( rc != SQL_NO_DATA ) && (*handle) );
 	if( !bNoLog && EnsureLogOpen( odbc ) )
-		fflush( g.pSQLLog );
+		sack_fflush( g.pSQLLog );
 #ifdef LOG_EVERYTHING
 	lprintf( WIDE("Drop handle %p"), (*handle) );
 #endif
@@ -81339,12 +81697,12 @@ PCOLLECT FindCollection( PODBC odbc, PSERVICE_ROUTE SourceID )
 }
 //-----------------------------------------------------------------------
 // also ifndef sql thing...
-PCOLLECT Collect( PCOLLECT collection, uint32_t *params, size_t paramlen )
+static PCOLLECT Collect( PCOLLECT collection, uint32_t *params, size_t paramlen )
 {
 	CTEXTSTR buffer = (CTEXTSTR)params;
 	// make sure we have enough room.
 	VarTextExpand( collection->pvt_out, paramlen );
-	vtprintf( collection->pvt_out, WIDE("%.*s"), paramlen, buffer );
+	VarTextAddData( collection->pvt_out, buffer, paramlen );
 	//lprintf( WIDE("Collected: %s"), buf );
 	return collection;
 }
@@ -81441,8 +81799,8 @@ int __DoSQLCommandEx( PODBC odbc, PCOLLECT collection DBG_PASS )
 	cmd = VarTextPeek( collection->pvt_out );
 	if( EnsureLogOpen(odbc ) )
 	{
-		fprintf( g.pSQLLog, WIDE("%s[%p]:%s\n"), odbc->info.pDSN?odbc->info.pDSN:WIDE( "NoDSN?" ), odbc, GetText( cmd ) );
-		fflush( g.pSQLLog );
+		sack_fprintf( g.pSQLLog, WIDE("%s[%p]:%s\n"), odbc->info.pDSN?odbc->info.pDSN:WIDE( "NoDSN?" ), odbc, GetText( cmd ) );
+		sack_fflush( g.pSQLLog );
 	}
 	VarTextEmpty( collection->pvt_result );
 	VarTextEmpty( collection->pvt_errorinfo );
@@ -81488,28 +81846,20 @@ retry:
 		odbc->last_command_tick_ = timeGetTime();
 		if( odbc->last_command_tick )
 			odbc->last_command_tick = odbc->last_command_tick_;
-		tmp_cmd = DupTextToChar( GetText( cmd ) );
 		// can get back what was not used when parsing...
 #ifdef UNICODE
 		rc3 = sqlite3_prepare16_v2( odbc->db, (void*)GetText( cmd ), (int)(GetTextSize( cmd )) * sizeof( TEXTCHAR ), &collection->stmt, (const void**)&tail );
 #else
-		rc3 = sqlite3_prepare_v2( odbc->db, tmp_cmd, (int)(GetTextSize( cmd )), &collection->stmt, &tail );
+		rc3 = sqlite3_prepare_v2( odbc->db, GetText( cmd ), (int)(GetTextSize( cmd )), &collection->stmt, &tail );
 #endif
 		if( rc3 )
 		{
-			TEXTSTR str_error = DupCharToText( sqlite3_errmsg(odbc->db) );
-#ifdef UNICODE
-			_lprintf(DBG_RELAY)( WIDE( "Result of prepare failed? %s at char %")_size_f WIDE("[%s] in [%s]" ), str_error, tail - GetText(cmd), tail, GetText(cmd) );
-#else
-			_lprintf(DBG_RELAY)( WIDE( "Result of prepare failed? %s at char %")_size_f WIDE("[%s] in [%s]" ), str_error, tail - tmp_cmd, tail, GetText(cmd) );
-#endif
-			vtprintf( collection->pvt_errorinfo, str_error );
-			Release( str_error );
-			Release( tmp_cmd );
+			vtprintf( collection->pvt_errorinfo, "Result of prepare failed? %s at char %" _size_f "[%" _string_f "] in [%" _string_f "]"
+			       , sqlite3_errmsg(odbc->db), tail - GetText(cmd), tail, GetText(cmd) );
 			if( EnsureLogOpen(odbc ) )
 			{
-				fprintf( g.pSQLLog, WIDE("#SQLITE ERROR:%s\n"), sqlite3_errmsg(odbc->db) );
-				fflush( g.pSQLLog );
+				sack_fprintf( g.pSQLLog, WIDE("#SQLITE ERROR:%") _string_f WIDE("\n"), GetText( VarTextPeek( collection->pvt_errorinfo ) ) );
+				sack_fflush( g.pSQLLog );
 			}
 			 GenerateResponce( collection, WM_SQL_RESULT_ERROR );
 			if( odbc->flags.bThreadProtect )
@@ -81524,7 +81874,6 @@ retry:
 		{
 			if( odbc->flags.bAutoCheckpoint && (!sqlite3_stmt_readonly( collection->stmt )) )
 				startAutoCheckpoint( odbc );
-			Release( tmp_cmd );
 			rc3 = sqlite3_step( collection->stmt );
 			switch( rc3 )
 			{
@@ -81607,8 +81956,8 @@ retry:
 				//lprintf( WIDE("ODBC Command excecution failed(1)....%s"), cmd?GetText( cmd ):WIDE("NO ERROR RESULT") );
 				if( EnsureLogOpen( odbc ) )
 				{
-					fprintf( g.pSQLLog, WIDE("#%s\n"), GetText( cmd ) );
-					fflush( g.pSQLLog );
+					sack_fprintf( g.pSQLLog, WIDE("#%s\n"), GetText( cmd ) );
+					sack_fflush( g.pSQLLog );
 				}
 				//lprintf( WIDE("result err...") );
 				GenerateResponce( collection, WM_SQL_RESULT_ERROR );
@@ -81667,6 +82016,38 @@ SQLPROXY_PROC( int, SQLCommandEx )( PODBC odbc, CTEXTSTR command DBG_PASS )
 	}
 	else
 		_xlprintf(1 DBG_RELAY )( WIDE("ODBC connection has not been opened") );
+	return FALSE;
+}
+//-----------------------------------------------------------------------
+SQLPROXY_PROC( int, SQLCommandExx )(PODBC odbc, CTEXTSTR command, size_t commandLen DBG_PASS)
+{
+	PODBC use_odbc;
+	if( odbc->flags.bClosed )
+		return 0;
+	if( !IsSQLOpenEx( odbc DBG_RELAY ) )
+		return 0;
+	if( !(use_odbc = odbc) )
+	{
+		use_odbc = g.odbc;
+	}
+	if( use_odbc )
+	{
+		PCOLLECT pCollector;
+		BeginTransactEx( use_odbc, 0 );
+		do
+		{
+#ifdef LOG_COLLECTOR_STATES
+			lprintf( "creating collector...cmd: %s", command );
+#endif
+			Collect( pCollector = CreateCollector( 0, use_odbc, TRUE ), (uint32_t*)command, commandLen?commandLen:strlen( command ) );
+			//SimpleMessageBox( NULL, "Please shut down the database...", "Waiting.." );
+		} while( __DoSQLCommandEx( use_odbc, pCollector DBG_RELAY ) );
+		if( use_odbc->collection )
+			return use_odbc->collection->responce == WM_SQL_RESULT_SUCCESS ? TRUE : 0;
+		return WM_SQL_RESULT_ERROR;
+	}
+	else
+		_xlprintf( 1 DBG_RELAY )(WIDE( "ODBC connection has not been opened" ));
 	return FALSE;
 }
 //-----------------------------------------------------------------------
@@ -81955,6 +82336,12 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 				len = ( sizeof( CTEXTSTR ) * (collection->columns + 1) );
 				collection->fields = NewArray( TEXTSTR, collection->columns + 1 );
 				MemSet( collection->fields, 0, len );
+				len = (sizeof( size_t ) * (collection->columns + 1));
+				collection->result_len = NewArray( size_t, collection->columns + 1 );
+				MemSet( collection->result_len, 0, len );
+				len = (sizeof( int ) * (collection->columns + 1));
+				collection->column_types = NewArray( int, collection->columns + 1 );
+				MemSet( collection->column_types, 0, len );
 				// okay and now - pull column info from magic place...
 				{
 #ifdef USE_ODBC
@@ -81973,6 +82360,7 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 							collection->fields[idx-1] =
 								DupCStr( sqlite3_column_name(collection->stmt
 																	 , idx - 1 ) );
+							collection->column_types[idx-1] = sqlite3_column_type( collection->stmt, idx - 1 );
 						}
 #endif
 #if ( defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE ) ) && defined( USE_ODBC )
@@ -82071,24 +82459,27 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 			//lprintf( WIDE("Yes, so lets' get the data to result with..") );
 			do
 			{
-				SQLULEN colsize;
+				//SQLULEN colsize;
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 				if( odbc->flags.bSQLite_native )
 				{
 					char *text = (char*)sqlite3_column_text( collection->stmt, idx - 1 );
-					TEXTSTR real_text = DupCStr( text );
+					TEXTSTR real_text;
+					int colsize;
 					colsize = sqlite3_column_bytes( collection->stmt, idx - 1 );
+					real_text = DupCStrLen( text, colsize );
 					if( collection->flags.bBuildResultArray )
 					{
+						collection->result_len[idx - 1] = colsize;
 						if( collection->results[idx-1] )
 							Release( (char*)collection->results[idx-1] );
-						switch( sqlite3_column_type( collection->stmt, idx - 1 ) )
+						switch( collection->column_types[idx-1] )
 						{
 						case SQLITE_BLOB:
 							//lprintf( "Got a blob..." );
 							if( pvtData )vtprintf( pvtData, WIDE( "%s<binary>" ), idx>1?WIDE( "," ):WIDE( "" ) );
-							collection->results[idx-1] = NewArray( TEXTCHAR, colsize );
-							MemCpy( collection->results[idx-1], text, colsize );
+							collection->results[idx-1] = NewArray( TEXTCHAR, collection->result_len[idx - 1] );
+							MemCpy( collection->results[idx-1], text, collection->result_len[idx - 1] );
 							break;
 						default:
 							if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), real_text );
@@ -82112,6 +82503,7 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 #ifdef USE_ODBC
 				{
 					short coltype;
+					SQLULEN colsize;
 					rc = SQLDescribeCol( collection->hstmt
 											 , (SQLUSMALLINT)idx
  // colname, bufsize
@@ -82127,156 +82519,157 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
  // nullable ptr ?
 											 , NULL
 											 );
+					collection->result_len[idx - 1] = colsize;
 					colsize = (colsize * 2) + 1 + 1024 ;
-				if( colsize >= sizeof( byResultStatic ) )
-				{
-					if( colsize > byTmpResultLen )
+					if( colsize >= sizeof( byResultStatic ) )
 					{
-						if( tmpResult )
-							Release( tmpResult );
-						tmpResult = NewArray( TEXTCHAR, colsize );
-						byTmpResultLen = colsize;
+						if( colsize > byTmpResultLen )
+						{
+							if( tmpResult )
+								Release( tmpResult );
+							tmpResult = NewArray( TEXTCHAR, colsize );
+							byTmpResultLen = colsize;
+						}
+						byResult = tmpResult;
 					}
-					byResult = tmpResult;
-				}
-				else
-				{
-					byResult = byResultStatic;
-				}
-				if( collection->coltypes && ( ( collection->coltypes[idx-1] == SQL_VARBINARY ) || ( collection->coltypes[idx-1] == SQL_LONGVARBINARY ) ) )
-				{
-					rc = SQLGetData( collection->hstmt
-										, (short)(idx)
-										, SQL_C_BINARY
-										, byResult
-										, colsize
-										, &ResultLen );
-					if( SUS_GT( ResultLen,SQLINTEGER,collection->colsizes[idx-1],SQLUINTEGER) )
+					else
 					{
-						lprintf( WIDE( "SQL Result returned more data than the column described! (returned %d expected %d)" ), (int)ResultLen, (int)(collection->colsizes[idx-1]) );
+						byResult = byResultStatic;
 					}
-				}
-				else
-				{
-					rc = SQLGetData( collection->hstmt
-										, (short)(idx)
+					if( collection->coltypes && ( ( collection->coltypes[idx-1] == SQL_VARBINARY ) || ( collection->coltypes[idx-1] == SQL_LONGVARBINARY ) ) )
+					{
+						rc = SQLGetData( collection->hstmt
+											, (short)(idx)
+											, SQL_C_BINARY
+											, byResult
+											, colsize
+											, &ResultLen );
+						if( SUS_GT( ResultLen,SQLINTEGER,collection->colsizes[idx-1],SQLUINTEGER) )
+						{
+							lprintf( WIDE( "SQL Result returned more data than the column described! (returned %d expected %d)" ), (int)ResultLen, (int)(collection->colsizes[idx-1]) );
+						}
+					}
+					else
+					{
+						rc = SQLGetData( collection->hstmt
+											, (short)(idx)
 #ifdef _UNICODE
-										, SQL_C_WCHAR
+											, SQL_C_WCHAR
 #else
-										, SQL_C_CHAR
+											, SQL_C_CHAR
 #endif
-										, byResult
-										, colsize
-										, &ResultLen );
-					// hvaing this cast as a UINTEGER for colsize comparison
-					// breaks -1 being less than colsize... so test negative special and
-					// do the same thing as < colsize
-					if( ( ResultLen & 0x8000000 )
-								|| ( (SQLUINTEGER)ResultLen < colsize ) )
-					{
-						if( (int)ResultLen < 0 )
-							byResult[0] = 0;
+											, byResult
+											, colsize
+											, &ResultLen );
+						// hvaing this cast as a UINTEGER for colsize comparison
+						// breaks -1 being less than colsize... so test negative special and
+						// do the same thing as < colsize
+						if( ( ResultLen & 0x8000000 )
+									|| ( (SQLUINTEGER)ResultLen < colsize ) )
+						{
+							if( (int)ResultLen < 0 )
+								byResult[0] = 0;
+							else
+								byResult[ResultLen] = 0;
+						}
 						else
-							byResult[ResultLen] = 0;
+						{
+							lprintf( WIDE( "SQL overflow (no room for nul character) %d of %d" ), (int)ResultLen, (int)colsize );
+						}
 					}
-					else
+					//lprintf( WIDE( "Column %s colsize %d coltype %d coltype %d idx %d" ), collection->fields[idx-1], colsize, coltype, collection->coltypes[idx-1], idx );
+					if( collection->coltypes && coltype != collection->coltypes[idx-1] )
 					{
-						lprintf( WIDE( "SQL overflow (no room for nul character) %d of %d" ), (int)ResultLen, (int)colsize );
+						lprintf( WIDE( "Col type mismatch?" ) );
+						DebugBreak();
 					}
-				}
-				//lprintf( WIDE( "Column %s colsize %d coltype %d coltype %d idx %d" ), collection->fields[idx-1], colsize, coltype, collection->coltypes[idx-1], idx );
-				if( collection->coltypes && coltype != collection->coltypes[idx-1] )
-				{
-					lprintf( WIDE( "Col type mismatch?" ) );
-					DebugBreak();
-				}
-				if( rc == SQL_SUCCESS ||
-					rc == SQL_SUCCESS_WITH_INFO )
-				{
+					if( rc == SQL_SUCCESS ||
+						rc == SQL_SUCCESS_WITH_INFO )
+					{
   // -4
-					if( ResultLen == SQL_NO_TOTAL ||
+						if( ResultLen == SQL_NO_TOTAL ||
   // -1
-						ResultLen == SQL_NULL_DATA )
-					{
-						//lprintf( WIDE("result data failed...") );
-					}
-					if( ResultLen > 0 )
-					{
-						if( collection->flags.bBuildResultArray )
+							ResultLen == SQL_NULL_DATA )
 						{
-							if( collection->coltypes[idx-1] == SQL_LONGVARBINARY )
+							//lprintf( WIDE("result data failed...") );
+						}
+						if( ResultLen > 0 )
+						{
+							if( collection->flags.bBuildResultArray )
 							{
-								// I won't modify this anyhow, and it results
-								// to users as a CTEXSTR, preventing them from changing it also...
-								//lprintf( "Got a blob..." );
-								//lprintf( WIDE( "size is %d" ), collection->colsizes[idx-1] );
-								if( pvtData )
+								if( collection->coltypes[idx-1] == SQL_LONGVARBINARY )
 								{
-									SQLUINTEGER n;
-									vtprintf( pvtData, WIDE( "%s<" ), idx>1?WIDE( "," ):WIDE( "" ) );
-									for( n = 0; n < collection->colsizes[idx-1]; n++ )
-										vtprintf( pvtData, WIDE( "%02x " ), byResult[n] );
-									vtprintf( pvtData, WIDE( ">" ) );
+									// I won't modify this anyhow, and it results
+									// to users as a CTEXSTR, preventing them from changing it also...
+									//lprintf( "Got a blob..." );
+									//lprintf( WIDE( "size is %d" ), collection->colsizes[idx-1] );
+									if( pvtData )
+									{
+										SQLUINTEGER n;
+										vtprintf( pvtData, WIDE( "%s<" ), idx>1?WIDE( "," ):WIDE( "" ) );
+										for( n = 0; n < collection->colsizes[idx-1]; n++ )
+											vtprintf( pvtData, WIDE( "%02x " ), byResult[n] );
+										vtprintf( pvtData, WIDE( ">" ) );
+									}
+									collection->results[idx-1] = NewArray( TEXTCHAR, collection->colsizes[idx-1] );
+									//lprintf( WIDE( "dest is %p and src is %p" ), collection->results[idx-1], byResult );
+									MemCpy( collection->results[idx-1], byResult, collection->colsizes[idx-1] );
+									//lprintf( WIDE( "Column %s colsize %d coltype %d coltype %d idx %d" ), collection->fields[idx-1], colsize, coltype, coltypes[idx-1], idx );
+									//collection->results[idx-1] = (TEXTSTR)Deblobify( byResult, colsizes[idx-1] );
 								}
-								collection->results[idx-1] = NewArray( TEXTCHAR, collection->colsizes[idx-1] );
-								//lprintf( WIDE( "dest is %p and src is %p" ), collection->results[idx-1], byResult );
-								MemCpy( collection->results[idx-1], byResult, collection->colsizes[idx-1] );
-								//lprintf( WIDE( "Column %s colsize %d coltype %d coltype %d idx %d" ), collection->fields[idx-1], colsize, coltype, coltypes[idx-1], idx );
-								//collection->results[idx-1] = (TEXTSTR)Deblobify( byResult, colsizes[idx-1] );
+								else
+								{
+									if( collection->results[idx-1] )
+										Release( (char*)collection->results[idx-1] );
+									if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), byResult );
+									collection->results[idx-1] = StrDup( byResult );
+								}
 							}
 							else
 							{
-								if( collection->results[idx-1] )
-									Release( (char*)collection->results[idx-1] );
+								//lprintf( WIDE("Got a result: \'%s\'"), byResult );
+								/*
+								* if this is auto processed for the application, there is no
+								* result indicator indicating how long it is, therefore the application
+								* must in turn call Deblobify or some other custom routine to handle
+								* this SQL database's binary format...
+								*/
+								/*
+								if( coltypes[idx-1] == SQL_LONGVARBINARY )
+								{
+								POINTER tmp;
+								vtprintf( collection->pvt_result, WIDE("%s%s"), first?WIDE( "" ):WIDE( "," ), tmp = Deblobify( byResult, collection->colsizes[idx-1] ) );
+								Release( tmp );
+								}
+								else
+								*/
+								vtprintf( collection->pvt_result, WIDE("%s%s"), first?WIDE( "" ):WIDE( "," ), byResult );
 								if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), byResult );
-								collection->results[idx-1] = StrDup( byResult );
+								first = 0;
 							}
 						}
 						else
 						{
-							//lprintf( WIDE("Got a result: \'%s\'"), byResult );
-							/*
-							* if this is auto processed for the application, there is no
-							* result indicator indicating how long it is, therefore the application
-							* must in turn call Deblobify or some other custom routine to handle
-							* this SQL database's binary format...
-							*/
-							/*
-							if( coltypes[idx-1] == SQL_LONGVARBINARY )
+							if( !collection->flags.bBuildResultArray )
 							{
-							POINTER tmp;
-							vtprintf( collection->pvt_result, WIDE("%s%s"), first?WIDE( "" ):WIDE( "," ), tmp = Deblobify( byResult, collection->colsizes[idx-1] ) );
-							Release( tmp );
+								//lprintf( WIDE("Didn't get a result... null field?") );
+								vtprintf( collection->pvt_result, WIDE("%s"), first?WIDE( "" ):WIDE( "," ) );
+								if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), byResult );
+								first=0;
 							}
 							else
-							*/
-							vtprintf( collection->pvt_result, WIDE("%s%s"), first?WIDE( "" ):WIDE( "," ), byResult );
-							if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), byResult );
-							first = 0;
+							{
+								if( pvtData )vtprintf( pvtData, WIDE( "%s<NULL>" ), idx>1?WIDE( "," ):WIDE( "" ) );
+							}
+							// otherwise the entry will be NULL
 						}
 					}
 					else
 					{
-						if( !collection->flags.bBuildResultArray )
-						{
-							//lprintf( WIDE("Didn't get a result... null field?") );
-							vtprintf( collection->pvt_result, WIDE("%s"), first?WIDE( "" ):WIDE( "," ) );
-							if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), byResult );
-							first=0;
-						}
-						else
-						{
-							if( pvtData )vtprintf( pvtData, WIDE( "%s<NULL>" ), idx>1?WIDE( "," ):WIDE( "" ) );
-						}
-						// otherwise the entry will be NULL
+						retry = DumpInfo( odbc, collection->pvt_errorinfo, SQL_HANDLE_STMT, &collection->hstmt, odbc->flags.bNoLogging );
+						lprintf( WIDE("GetData failed...") );
+						result_cmd = WM_SQL_RESULT_ERROR;
 					}
-				}
-				else
-				{
-					retry = DumpInfo( odbc, collection->pvt_errorinfo, SQL_HANDLE_STMT, &collection->hstmt, odbc->flags.bNoLogging );
-					lprintf( WIDE("GetData failed...") );
-					result_cmd = WM_SQL_RESULT_ERROR;
-				}
 				}
 #endif
 				idx++;
@@ -82337,7 +82730,8 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 	{
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 		if( odbc->flags.bSQLite_native )
-			retry = DumpInfo2( collection->pvt_errorinfo, SQL_HANDLE_STMT, odbc, odbc->flags.bNoLogging );
+//retry = DumpInfo2( collection->pvt_errorinfo, SQL_HANDLE_STMT, odbc, odbc->flags.bNoLogging );
+			;
 #endif
 #if ( defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE ) ) && defined( USE_ODBC )
 		else
@@ -82469,9 +82863,9 @@ int GetSQLResult( CTEXTSTR *result )
 	return FALSE;
 }
 //-----------------------------------------------------------------------
-int __DoSQLQueryEx( PODBC odbc, PCOLLECT collection, CTEXTSTR query DBG_PASS )
+static int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t queryLength DBG_PASS )
 {
-	size_t querylen;
+	size_t queryLen;
 	PTEXT tmp = NULL;
 	int retry = 0;
 #ifdef USE_ODBC
@@ -82551,17 +82945,18 @@ int __DoSQLQueryEx( PODBC odbc, PCOLLECT collection, CTEXTSTR query DBG_PASS )
 	if( query )
 	{
 		VarTextEmpty( collection->pvt_out );
-		vtprintf( collection->pvt_out, WIDE( "%s" ), query );
+		VarTextAddData( collection->pvt_out, query, queryLength );
+		//vtprintf( collection->pvt_out, WIDE( "%s" ), query );
 	}
 	{
 		tmp = VarTextPeek( collection->pvt_out );
 		query = GetText( tmp );
-		querylen = GetTextSize( tmp );
+		queryLen = GetTextSize( tmp );
 	}
 	if( EnsureLogOpen(odbc ) )
 	{
-		fprintf( g.pSQLLog, WIDE("%s[%p]:%s\n"), odbc->info.pDSN?odbc->info.pDSN:WIDE( "NoDSN?" ), odbc, query );
-		fflush( g.pSQLLog );
+		sack_fprintf( g.pSQLLog, WIDE("%s[%p]:%s\n"), odbc->info.pDSN?odbc->info.pDSN:WIDE( "NoDSN?" ), odbc, query );
+		sack_fflush( g.pSQLLog );
 	}
 	if( !g.flags.bNoLog )
 	{
@@ -82586,12 +82981,11 @@ int __DoSQLQueryEx( PODBC odbc, PCOLLECT collection, CTEXTSTR query DBG_PASS )
 #ifdef UNICODE
 		rc3 = sqlite3_prepare16_v2( odbc->db, (void*)query, (int)(querylen) * sizeof( TEXTCHAR ), &collection->stmt, (const void**)&tail );
 #else
-		rc3 = sqlite3_prepare_v2( odbc->db, query, (int)(querylen), &collection->stmt, &tail );
+		rc3 = sqlite3_prepare_v2( odbc->db, query, (int)(queryLen), &collection->stmt, &tail );
 #endif
 		if( rc3 )
 		{
 			const char *tmp;
-			TEXTSTR str_error;
 			if( rc3 == SQLITE_BUSY )
 			{
 				lprintf( WIDE("wait for lock...") );
@@ -82601,16 +82995,14 @@ int __DoSQLQueryEx( PODBC odbc, PCOLLECT collection, CTEXTSTR query DBG_PASS )
 			}
 			//DebugBreak();
 			tmp = sqlite3_errmsg(odbc->db);
-			str_error = DupCharToText( tmp );
-			if( StrCaseCmpEx( str_error, WIDE( "no such table" ), 13 ) == 0 )
+         // this will have to have a Char based version
+			if( strnicmp( tmp, "no such table", 13 ) == 0 )
 				vtprintf( collection->pvt_errorinfo, WIDE( "(S0002)" ) );
-			vtprintf( collection->pvt_errorinfo, WIDE( "%s" ), str_error );
-			_lprintf(DBG_RELAY)( WIDE( "Result of prepare failed? %s at-or near char %")_size_f WIDE("[%s] in [%s]" ), str_error, tail - query, tail, query );
-			Deallocate( TEXTSTR, str_error );
+			vtprintf( collection->pvt_errorinfo, WIDE( "Result of prepare failed? %s at-or near char %")_size_f WIDE("[%") _cstring_f WIDE("] in [%") _string_f WIDE("]" ), tmp, tail - query, tail, query );
 			if( EnsureLogOpen(odbc ) )
 			{
-				fprintf( g.pSQLLog, WIDE( "#SQLITE ERROR:%s\n" ), tmp );
-				fflush( g.pSQLLog );
+				sack_fprintf( g.pSQLLog, WIDE( "#SQLITE ERROR:%s\n" ), GetText( VarTextPeek( collection->pvt_errorinfo ) ) );
+				sack_fflush( g.pSQLLog );
 			}
 			in_error = 1;
 		} else {
@@ -82674,7 +83066,7 @@ int __DoSQLQueryEx( PODBC odbc, PCOLLECT collection, CTEXTSTR query DBG_PASS )
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 		if( odbc->flags.bSQLite_native )
 		{
-			retry = DumpInfo2( collection->pvt_errorinfo, SQL_HANDLE_STMT, odbc, odbc->flags.bNoLogging );
+			//retry = DumpInfo2( collection->pvt_errorinfo, SQL_HANDLE_STMT, odbc, odbc->flags.bNoLogging );
 			//tmp = VarTextPeek( collection->pvt_errorinfo );
 			//_lprintf(DBG_RELAY)( WIDE("SQLITE Command excecution failed(1)....%s"), tmp?GetText( tmp ):WIDE("NO ERROR RESULT") );
 		}
@@ -82732,6 +83124,10 @@ int __DoSQLQueryEx( PODBC odbc, PCOLLECT collection, CTEXTSTR query DBG_PASS )
 		LeaveCriticalSec( &odbc->cs );
 	}
 	return retry;
+}
+//------------------------------------------------------------------
+static int __DoSQLQueryEx( PODBC odbc, PCOLLECT collection, CTEXTSTR query DBG_PASS ) {
+	return __DoSQLQueryExx( odbc, collection, query, strlen( query ) DBG_RELAY );
 }
 //------------------------------------------------------------------
 void PopODBCExx( PODBC odbc, LOGICAL bAllowNonPush DBG_PASS )
@@ -82795,13 +83191,16 @@ void SQLEndQuery( PODBC odbc )
 //	PopODBCExx( odbc, TRUE );
 }
 //-----------------------------------------------------------------------
-int SQLRecordQueryEx( PODBC odbc
-						  , CTEXTSTR query
-						  , int *nResults
-						  , CTEXTSTR **result, CTEXTSTR **fields DBG_PASS )
+int SQLRecordQueryExx( PODBC odbc
+                     , CTEXTSTR query
+                     , size_t queryLen
+                     , int *nResults
+                     , CTEXTSTR **result
+                     , size_t **resultLengths
+                     , CTEXTSTR **fields DBG_PASS )
 {
 	PODBC use_odbc;
-   int once = 0;
+	int once = 0;
 	// clean up what we think of as our result set data (reset to nothing)
 	if( result )
 		(*result) = NULL;
@@ -82819,7 +83218,7 @@ int SQLRecordQueryEx( PODBC odbc
 		}
 		// if not a [sS]elect then begin a transaction.... some code uses query record for everything.
 		if( !once && query[0] != 's' && query[0] != 'S' ) {
-         once = 1;
+			once = 1;
 			BeginTransactEx( use_odbc, 0 );
 		}
 		// collection is very important to have - even if we will have to be opened,
@@ -82848,7 +83247,7 @@ int SQLRecordQueryEx( PODBC odbc
 		// this will do an open, and delay queue processing and all sorts
 		// of good fun stuff...
 	}
-	while( __DoSQLQueryEx( use_odbc, use_odbc->collection, query DBG_RELAY) );
+	while( __DoSQLQueryExx( use_odbc, use_odbc->collection, query, queryLen DBG_RELAY) );
 	if( use_odbc->collection->responce == WM_SQL_RESULT_DATA )
 	{
 		//lprintf( WIDE("Result with data...") );
@@ -82856,6 +83255,8 @@ int SQLRecordQueryEx( PODBC odbc
 			(*nResults) = use_odbc->collection->columns;
 		if( result )
 			(*result) = (CTEXTSTR*)use_odbc->collection->results;
+		if( resultLengths )
+			(*resultLengths) = use_odbc->collection->result_len;
 		// claim that we grabbed that...
 		if( fields )
 			(*fields) = (CTEXTSTR*)use_odbc->collection->fields;
@@ -82866,12 +83267,23 @@ int SQLRecordQueryEx( PODBC odbc
 	{
 		if( nResults )
 			(*nResults) = use_odbc->collection->columns;
+		if( resultLengths )
+			(*resultLengths) = NULL;
 		if( fields )
 			(*fields) = (CTEXTSTR*)use_odbc->collection->fields;
 		return TRUE;
 	}
 	return FALSE;
 }
+//--------------------------------------------------------------------
+int SQLRecordQueryEx( PODBC odbc
+	, CTEXTSTR query
+	, int *nResults
+	, CTEXTSTR **result, CTEXTSTR **fields DBG_PASS )
+{
+	return SQLRecordQueryExx( odbc, query, strlen( query ), nResults, result, NULL, fields DBG_RELAY );
+}
+//--------------------------------------------------------------------
 int SQLQueryEx( PODBC odbc, CTEXTSTR query, CTEXTSTR *result DBG_PASS )
 {
 	PODBC use_odbc;
@@ -84133,7 +84545,7 @@ uint8_t hexbyte( TEXTCHAR *string )
 	}
 	return value;
 }
-TEXTSTR DeblobifyString( CTEXTSTR blob, TEXTSTR outbuf, int outbuflen  )
+TEXTSTR DeblobifyString( CTEXTSTR blob, TEXTSTR outbuf, size_t outbuflen  )
 {
 	TEXTCHAR *result;
 	TEXTCHAR *x, *y;
@@ -84144,7 +84556,7 @@ TEXTSTR DeblobifyString( CTEXTSTR blob, TEXTSTR outbuf, int outbuflen  )
 			outbuf = NewArray( TEXTCHAR, ( ( strlen( blob ) / 2 ) + 1 ) );
 		result = outbuf;
 		for( x=(TEXTSTR)blob, y = result;
-			  x[0] && ((y-outbuf) < outbuflen);
+			  x[0] && ((size_t)(y-outbuf) < outbuflen);
 			  y++, x+=2 )
 		{
 			y[0] = hexbyte( x );
@@ -84159,7 +84571,7 @@ TEXTSTR DeblobifyString( CTEXTSTR blob, TEXTSTR outbuf, int outbuflen  )
 	return NULL;
 }
 //---------------------------------------------------------------------------
-TEXTSTR RevertEscapeBinary( CTEXTSTR blob, uintptr_t *bloblen )
+TEXTSTR RevertEscapeBinary( CTEXTSTR blob, size_t *bloblen )
 {
 	TEXTCHAR *tmpnamebuf, *result;
 	int n;
@@ -86587,8 +86999,8 @@ typedef struct data_collection_tag
 	struct odbc_handle_tag *odbc;
 	uint32_t      responce;
 	uint32_t      lastop;
-	uint32_t *result;
-	uint32_t *result_len;
+   int    *column_types;
+	size_t *result_len;
 	TEXTSTR *results;
 	//uint32_t nResults; // this is columns
 	TEXTSTR *fields;
