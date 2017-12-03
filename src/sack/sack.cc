@@ -31844,7 +31844,12 @@ namespace sack {
 #ifdef g
 #  undef g
 #endif
-static uintptr_t masks[33] = { ~0U, ~0U, ~1U, 0, ~3U, 0, 0, 0, ~7U, 0, 0, 0, 0, 0, 0, 0, ~15U, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ~31U };
+#ifdef __64__
+#  define makeULong(n) ~##n##ULL
+#else
+#  define makeULong(n) ~##n##UL
+#endif
+static uintptr_t masks[33] = { makeULong(0), makeULong(0), makeULong(1), 0, makeULong(3), 0, 0, 0, makeULong(7), 0, 0, 0, 0, 0, 0, 0, makeULong(15), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, makeULong(31) };
 #define BASE_MEMORY (POINTER)0x80000000
 // golly allocating a WHOLE DOS computer to ourselves? how RUDE
 #define SYSTEM_CAPACITY  g.dwSystemCapacity
