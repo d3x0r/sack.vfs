@@ -11423,8 +11423,10 @@ size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t leng
 	size_t ofs = file->fpi & BLOCK_MASK;
 	while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
 	if( ( file->entry->filesize  ^ file->dirent_key.filesize ) < ( file->fpi + length ) )
-		length = ( file->entry->filesize  ^ file->dirent_key.filesize ) - file->fpi;
-	if( !length ) {  file->vol->lock = 0; return 0; }
+		if( ( file->entry->filesize  ^ file->dirent_key.filesize ) > file->fpi )
+			length = ( file->entry->filesize  ^ file->dirent_key.filesize ) - file->fpi;
+		else length = 0;
+	if( !length ) { file->vol->lock = 0; return 0; }
 	if( ofs ) {
 		enum block_cache_entries cache = BLOCK_CACHE_FILE;
 		uint8_t* block = (uint8_t*)vfs_BSEEK( file->vol, file->block, &cache );
@@ -31845,9 +31847,9 @@ namespace sack {
 #  undef g
 #endif
 #ifdef __64__
-#  define makeULong(n) ~(n##ULL)
+#  define makeULong(n) (~(n##ULL))
 #else
-#  define makeULong(n) ~(n##UL)
+#  define makeULong(n) (~(n##UL))
 #endif
 static uintptr_t masks[33] = { makeULong(0), makeULong(0), makeULong(1), 0, makeULong(3), 0, 0, 0, makeULong(7), 0, 0, 0, 0, 0, 0, 0, makeULong(15), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, makeULong(31) };
 #define BASE_MEMORY (POINTER)0x80000000

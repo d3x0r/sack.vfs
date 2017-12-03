@@ -9,7 +9,7 @@ vol0.mkdir( "test/make/path" );
 
 var vol = null;
 try {
-    vol = vfs.Volume( "mount-name", "./data.vfs", "a", "b" );//, "some key text", "Some other Key" )
+    vol = vfs.Volume( "mount-name", "./data.vfs" );
 } catch( err ) { console.log( err ) } ;
 if( vol ) {
 	var volDb = vol.Sqlite( "option-internal.db" );
@@ -33,8 +33,8 @@ if( vol ) {
 // this shows the event emitter methods...
 //console.log( "file prototype", Object.keys(file) );
 
-//var db = vfs.Sqlite( "$sack@mount-name$chatment.db" );
-var db = vfs.Sqlite( "chatment.db" );
+var db = vfs.Sqlite( "$sack@mount-name$chatment.db" );
+//var db = vfs.Sqlite( "chatment.db" );
 db.makeTable( "create table if not exists tmp (id int);" );
 db.do( "insert into tmp (id) values (1),(2),(3),(4)" );
 
