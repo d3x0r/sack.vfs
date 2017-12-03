@@ -150,6 +150,7 @@ public:
 	static v8::Persistent<v8::Function> constructor;
 	int columns;
 	CTEXTSTR *result;
+	size_t *resultLens;
 	CTEXTSTR *fields;
 	//Persistent<Object> volume;
 public:
@@ -160,6 +161,7 @@ public:
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void query( const v8::FunctionCallbackInfo<Value>& args );
 	static void escape( const v8::FunctionCallbackInfo<Value>& args );
+	static void unescape( const v8::FunctionCallbackInfo<Value>& args );
 	static void option( const v8::FunctionCallbackInfo<Value>& args );
 	static void setOption( const v8::FunctionCallbackInfo<Value>& args );
 	static void optionInternal( const v8::FunctionCallbackInfo<Value>& args );

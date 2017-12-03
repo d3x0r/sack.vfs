@@ -20,6 +20,9 @@ void SqlObject::Init( Handle<Object> exports ) {
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "do", query );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "escape", escape );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "unescape", unescape );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "encode", escape );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "decode", unescape );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "end", closeDb );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "transaction", transact );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "commit", commit );
@@ -197,18 +200,29 @@ void SqlObject::escape( const v8::FunctionCallbackInfo<Value>& args ) {
 	Deallocate( char*, out );
 
 }
+void SqlObject::unescape( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	if( args[0]->IsUndefined() ) return; // undefined is still undefined
+	if( args[0]->IsNull() ) {
+		args.GetReturnValue().Set( args[0] ); // undefined is still undefined
+		return;
+	}
+	String::Utf8Value tmp( args[0] );
+	size_t outlen;
+	char *out = RevertEscapeBinary( (*tmp), &outlen );
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, out, NewStringType::kNormal, (int)outlen ).ToLocalChecked() );
+	Deallocate( char*, out );
+
+}
 //-----------------------------------------------------------
 void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-
-	char *query;
 	String::Utf8Value tmp( args[0] );
-	query = StrDup( *tmp );
-
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	sql->fields = 0;
-	if( !SQLRecordQuery( sql->odbc, query, &sql->columns, &sql->result, &sql->fields ) ) {
+	if( !SQLRecordQueryLen( sql->odbc, *tmp, tmp.length(), &sql->columns, &sql->result, &sql->resultLens, &sql->fields ) ) {
 		const char *error;
 		FetchSQLError( sql->odbc, &error );
 		isolate->ThrowException( Exception::Error(
@@ -238,7 +252,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 										  );
 						else
 							record->Set( String::NewFromUtf8( isolate, sql->fields[n] )
-										  , String::NewFromUtf8( isolate, sql->result[n] )
+										  , String::NewFromUtf8( isolate, sql->result[n], NewStringType::kNormal, (int)sql->resultLens[n] ).ToLocalChecked()
 										  );
 					}
 					else
@@ -257,7 +271,6 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 		SQLEndQuery( sql->odbc );
 		args.GetReturnValue().Set( True( isolate ) );
 	}
-	Deallocate( char*, query );
 }
 
 //-----------------------------------------------------------
