@@ -64454,7 +64454,7 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.22.0"
 #define SQLITE_VERSION_NUMBER 3022000
-#define SQLITE_SOURCE_ID      "2017-11-30 11:21:59 4c551fdebc7feda3dcfeec719387d879cd5e2cbe213c0c1aac0a965b3f9e882d"
+#define SQLITE_SOURCE_ID      "2017-11-30 11:21:59 4c551fdebc7feda3dcfeec719387d879cd5e2cbe213c0c1aac0a965b3f9ealt1"
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
 ** KEYWORDS: sqlite3_version sqlite3_sourceid
@@ -79416,18 +79416,18 @@ delete ss;
 static uintptr_t CPROC AutoCloseThread( PTHREAD thread );
 static uintptr_t CPROC AutoCheckpointThread( PTHREAD thread );
 void CloseDatabaseEx( PODBC odbc, LOGICAL ReleaseConnection );
-int __DoSQLQueryEx(  PODBC odbc, PCOLLECT collection, CTEXTSTR query DBG_PASS );
+static int __DoSQLQueryEx(  PODBC odbc, PCOLLECT collection, CTEXTSTR query DBG_PASS );
 #define __DoSQLQuery( o,c,q ) __DoSQLQueryEx(o,c,q DBG_SRC )
 /*, uint32_t MyID*/
-int __DoSQLCommandEx( PODBC odbc, PCOLLECT collection DBG_PASS );
+static int __DoSQLCommandEx( PODBC odbc, PCOLLECT collection DBG_PASS );
 #define __DoSQLCommand(o,c) __DoSQLCommandEx(o,c DBG_SRC )
 /*, uint32_t MyID*/
-int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore );
+static int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore );
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
-int DumpInfo2( PVARTEXT pvt, SQLSMALLINT type, struct odbc_handle_tag *odbc, LOGICAL bNoLog );
+static int DumpInfo2( PVARTEXT pvt, SQLSMALLINT type, struct odbc_handle_tag *odbc, LOGICAL bNoLog );
 #endif
 #ifdef USE_ODBC
-int DumpInfoEx( PODBC odbc, PVARTEXT pvt, SQLSMALLINT type, SQLHANDLE *handle, LOGICAL bNoLog DBG_PASS );
+static int DumpInfoEx( PODBC odbc, PVARTEXT pvt, SQLSMALLINT type, SQLHANDLE *handle, LOGICAL bNoLog DBG_PASS );
 #define DumpInfo(o,a,b,c,d) DumpInfoEx(o,a,b,c,d DBG_SRC )
 //int DumpInfo( PVARTEXT pvt, SQLSMALLINT type, SQLHANDLE *handle );
 #endif
@@ -81841,7 +81841,6 @@ int __DoSQLCommandEx( PODBC odbc, PCOLLECT collection DBG_PASS )
 		int result_code = WM_SQL_RESULT_SUCCESS;
 		int rc3;
 		const TEXTCHAR *tail;
-		char *tmp_cmd;
 retry:
 		odbc->last_command_tick_ = timeGetTime();
 		if( odbc->last_command_tick )
@@ -82729,9 +82728,8 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 	else
 	{
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
-		if( odbc->flags.bSQLite_native )
-//retry = DumpInfo2( collection->pvt_errorinfo, SQL_HANDLE_STMT, odbc, odbc->flags.bNoLogging );
-			;
+		if( odbc->flags.bSQLite_native ){
+		}
 #endif
 #if ( defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE ) ) && defined( USE_ODBC )
 		else
@@ -82863,7 +82861,7 @@ int GetSQLResult( CTEXTSTR *result )
 	return FALSE;
 }
 //-----------------------------------------------------------------------
-static int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t queryLength DBG_PASS )
+int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t queryLength DBG_PASS )
 {
 	size_t queryLen;
 	PTEXT tmp = NULL;
@@ -83066,9 +83064,6 @@ static int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, siz
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 		if( odbc->flags.bSQLite_native )
 		{
-			//retry = DumpInfo2( collection->pvt_errorinfo, SQL_HANDLE_STMT, odbc, odbc->flags.bNoLogging );
-			//tmp = VarTextPeek( collection->pvt_errorinfo );
-			//_lprintf(DBG_RELAY)( WIDE("SQLITE Command excecution failed(1)....%s"), tmp?GetText( tmp ):WIDE("NO ERROR RESULT") );
 		}
 #endif
 #if defined( USE_ODBC ) && defined( USE_SQLITE )
@@ -83126,7 +83121,7 @@ static int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, siz
 	return retry;
 }
 //------------------------------------------------------------------
-static int __DoSQLQueryEx( PODBC odbc, PCOLLECT collection, CTEXTSTR query DBG_PASS ) {
+int __DoSQLQueryEx( PODBC odbc, PCOLLECT collection, CTEXTSTR query DBG_PASS ) {
 	return __DoSQLQueryExx( odbc, collection, query, strlen( query ) DBG_RELAY );
 }
 //------------------------------------------------------------------
