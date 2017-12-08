@@ -5,6 +5,7 @@
 static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate, struct reviver_data *revive );
 static Local<Value> makeValue( Isolate *isolate, struct json_value_container *val, struct reviver_data *revive );
 
+//#define CACHE_OBJECT_KEYS
 
 static void makeJSON( const v8::FunctionCallbackInfo<Value>& args );
 static void escapeJSON( const v8::FunctionCallbackInfo<Value>& args );
@@ -61,6 +62,7 @@ public:
 
 Persistent<Function> parseObject::constructor;
 Persistent<Function> parseObject::constructor6;
+
 
 #ifdef CACHE_OBJECT_KEYS
 static int MyStringCompare( uintptr_t a, uintptr_t b ) {
@@ -315,8 +317,10 @@ void parseObject::New6( const v8::FunctionCallbackInfo<Value>& args ) {
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
-
 }
+
+#define MODE NewStringType::kNormal
+//#define MODE NewStringType::kInternalized
 
 static Local<Value> makeValue( Isolate *isolate, struct json_value_container *val, struct reviver_data *revive ) {
 
@@ -342,15 +346,16 @@ static Local<Value> makeValue( Isolate *isolate, struct json_value_container *va
 		result = Undefined(isolate);
 		break;
 	case VALUE_STRING:
-		result = String::NewFromUtf8( isolate, val->string );
+		//result = String::NewFromUtf8( isolate, val->string );
+		result = String::NewFromUtf8( isolate, val->string, MODE, val->stringLen ).ToLocalChecked();
 		break;
 	case VALUE_NUMBER:
 		if( val->float_result )
 			result = Number::New( isolate, val->result_d );
 		else {
-			if( val->result_n < 0x7FFFFFFF && val->result_n > -0x7FFFFFFF )
-				result = Integer::New( isolate, (int32_t)val->result_n );
-			else
+			//if( val->result_n < 0x7FFFFFFF && val->result_n > -0x7FFFFFFF )
+			//	result = Integer::New( isolate, (int32_t)val->result_n );
+			//else
 				result = Number::New( isolate, (double)val->result_n );
 		}
 		break;
@@ -395,8 +400,11 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate, 
 		switch( val->value_type ) {
 		default:
 			if( val->name ) {
-				o->Set( revive->value = String::NewFromUtf8( isolate, val->name, NewStringType::kNormal, (int)val->nameLen ).ToLocalChecked()
-				//o->Set( revive->value = lookupString( isolate, val->name, (int)val->nameLen )
+#ifdef CACHE_OBJECT_KEYS
+				o->Set( revive->value = lookupString( isolate, val->name, (int)val->nameLen )
+#else
+				o->Set( revive->value = String::NewFromUtf8( isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked()
+#endif
 						, makeValue( isolate, val, revive ) );
 			} else {
 				if( val->value_type == VALUE_EMPTY )
@@ -411,7 +419,11 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate, 
 			break;
 		case VALUE_ARRAY:
 			if( val->name ) {
-				o->Set( thisKey = String::NewFromUtf8( isolate, val->name, NewStringType::kNormal, (int)val->nameLen ).ToLocalChecked()
+#ifdef CACHE_OBJECT_KEYS
+				o->Set( thisKey = lookupString( isolate, val->name, (int)val->nameLen )
+#else
+				o->Set( thisKey = String::NewFromUtf8( isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked()
+#endif
 					, sub_o = Array::New( isolate ) );
 			}
 			else {
@@ -437,7 +449,11 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate, 
 					, PropertyAttribute::None );
 				*/
 				o->Set( //String::NewFromUtf8( isolate, val->name, NewStringType::kNormal, -1 ).ToLocalChecked()
-					thisKey = String::NewFromUtf8( isolate, val->name, NewStringType::kNormal, (int)val->nameLen ).ToLocalChecked()
+#ifdef CACHE_OBJECT_KEYS
+					thisKey = lookupString( isolate, val->name, (int)val->nameLen )
+#else
+					thisKey = String::NewFromUtf8( isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked()
+#endif
 							, sub_o = Object::New( isolate ) );
 			}
 			else {
