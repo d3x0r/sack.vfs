@@ -16,6 +16,28 @@ static void beginJSON6( const v8::FunctionCallbackInfo<Value>& args );
 static void writeJSON6( const v8::FunctionCallbackInfo<Value>& args );
 static void endJSON6( const v8::FunctionCallbackInfo<Value>& args );
 
+#ifdef CACHE_OBJECT_KEYS
+struct dictEntry {
+	Persistent<String> string;
+	struct dictEntryKey {
+		char *string;
+		int len;
+	} key;
+};
+typedef struct dictEntry DICT_ENTRY_, *PDICT_ENTRY_;
+#define MAXDICT_ENTRY_SPERSET 256
+DeclareSet( DICT_ENTRY_ );
+
+struct dictionary {
+	Isolate *isolate;
+	PDICT_ENTRY_SET dict;
+	PTREEROOT tree;
+};
+
+static struct localJSON {
+	PLIST dictionaries;
+}localJSON;
+#endif
 
 class parseObject : public node::ObjectWrap {
 	struct json_parse_state *state;
@@ -39,6 +61,49 @@ public:
 
 Persistent<Function> parseObject::constructor;
 Persistent<Function> parseObject::constructor6;
+
+#ifdef CACHE_OBJECT_KEYS
+static int MyStringCompare( uintptr_t a, uintptr_t b ) {
+	struct dictEntry::dictEntryKey *key1 = (struct dictEntry::dictEntryKey*)a;
+	struct dictEntry::dictEntryKey *key2 = (struct dictEntry::dictEntryKey*)b;
+	if( key1->len < key2->len )
+		return -1;
+	else if( key1->len > key2->len )
+		return 1;
+	else {
+		return memcmp( key1->string, key2->string, key1->len );
+	}
+}
+
+Local<String> lookupString( Isolate *isolate, const char *word, int len ) {
+	INDEX idx;
+	struct dictionary *dictionary;
+	struct dictEntry::dictEntryKey key = { (char*)word, len };
+	LIST_FORALL( localJSON.dictionaries, idx, struct dictionary *, dictionary ) {
+		if( dictionary->isolate == isolate ) {
+			struct dictEntry *entry = (struct dictEntry *)FindInBinaryTree( dictionary->tree, (uintptr_t)&key );
+			if( !entry ) {
+			add_dictionary_word:
+				entry = GetFromSet( DICT_ENTRY_, &dictionary->dict );
+				entry->key.string = DupCStrLen( word, len );
+				entry->key.len = len;
+				entry->string.Reset( isolate, String::NewFromUtf8( isolate, word ) );
+				AddBinaryNode( dictionary->tree, entry, (uintptr_t)&entry->key );
+			}
+			return entry->string.Get( isolate );
+		}
+	}
+	if( !dictionary ) {
+		dictionary = NewArray( struct dictionary, 1 );
+		dictionary->isolate = isolate;
+		dictionary->dict = NULL;
+		dictionary->tree = CreateBinaryTreeEx( MyStringCompare, NULL );
+		AddLink( &localJSON.dictionaries, dictionary );
+	}
+	goto add_dictionary_word;
+	//return String::NewFromUtf8( isolate, "" );
+}
+#endif
 
 void InitJSON( Isolate *isolate, Handle<Object> exports ){
 	Local<Object> o = Object::New( isolate );
@@ -330,8 +395,9 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate, 
 		switch( val->value_type ) {
 		default:
 			if( val->name ) {
-				o->Set( revive->value = String::NewFromUtf8( isolate, val->name )
-					, makeValue( isolate, val, revive ) );
+				o->Set( revive->value = String::NewFromUtf8( isolate, val->name, NewStringType::kNormal, (int)val->nameLen ).ToLocalChecked()
+				//o->Set( revive->value = lookupString( isolate, val->name, (int)val->nameLen )
+						, makeValue( isolate, val, revive ) );
 			} else {
 				if( val->value_type == VALUE_EMPTY )
 					revive->revive = FALSE;
@@ -345,7 +411,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate, 
 			break;
 		case VALUE_ARRAY:
 			if( val->name ) {
-				o->Set( thisKey = String::NewFromUtf8( isolate, val->name )
+				o->Set( thisKey = String::NewFromUtf8( isolate, val->name, NewStringType::kNormal, (int)val->nameLen ).ToLocalChecked()
 					, sub_o = Array::New( isolate ) );
 			}
 			else {
@@ -371,7 +437,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, Isolate *isolate, 
 					, PropertyAttribute::None );
 				*/
 				o->Set( //String::NewFromUtf8( isolate, val->name, NewStringType::kNormal, -1 ).ToLocalChecked()
-						thisKey = String::NewFromUtf8( isolate,val->name )
+					thisKey = String::NewFromUtf8( isolate, val->name, NewStringType::kNormal, (int)val->nameLen ).ToLocalChecked()
 							, sub_o = Object::New( isolate ) );
 			}
 			else {
