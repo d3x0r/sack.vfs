@@ -875,7 +875,7 @@ There are some constant colors already builtin in Image.colors.[color name]
 
 ```
 var font = sack.Image.Font.dialog( callback );  // callback is passed a font object represenging the font selected 
-var font = sack.Image.Font( <font name>, width, height, render flags (0-3 for mono, 4bit, 8bit render) ); 
+var font = sack.Image.Font( &lt;font name&gt;, width, height, render flags (0-3 for mono, 4bit, 8bit render) ); 
 ```
 
 When creating a font by name, it can either be the name of a font, or a filename that contains a font.
@@ -978,6 +978,7 @@ Mostly unimplemented, more of a place holder than functional.
 ---
 
 ## Changelog
+- 0.1.99321 Fix some edge json parsing cases.  Fixed some network issues.
 - 0.1.99320 Fix json escape of strings containing NUL characters.  Add HTTP(s) request methods.
 Improve/modify PSI control registration/creation a little.  Expose font select dialog, color picker dialog, 
 Fix property accessors in websocket module.
