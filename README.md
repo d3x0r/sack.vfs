@@ -978,7 +978,7 @@ Mostly unimplemented, more of a place holder than functional.
 ---
 
 ## Changelog
-- 0.1.99321 Fix some edge json parsing cases.  Fixed some network issues.
+- 0.1.99321 Fix some edge json parsing cases.  Fixed some network issues.  Allow NUL characters in json parsing.
 - 0.1.99320 Fix json escape of strings containing NUL characters.  Add HTTP(s) request methods.
 Improve/modify PSI control registration/creation a little.  Expose font select dialog, color picker dialog, 
 Fix property accessors in websocket module.
