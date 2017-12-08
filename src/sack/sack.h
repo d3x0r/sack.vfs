@@ -5995,7 +5995,7 @@ MEM_PROC  size_t MEM_API  StrLen ( CTEXTSTR s );
    s :  char * to count.
    Returns
    the length of s. If s is NULL, return 0. */
-MEM_PROC  size_t MEM_API  CStrLen ( char const*const s );
+MEM_PROC  size_t MEM_API  CStrLen ( char const*s );
 /* Finds the last instance of a character in a string.
    Parameters
    s1 :  String to search in
@@ -11595,13 +11595,12 @@ enum json_value_types {
 struct json_value_container {
   // name of this value (if it's contained in an object)
 	char * name;
-	//size_t nameLen;
+	size_t nameLen;
  // value from above indiciating the type of this value
 	enum json_value_types value_type;
    // the string value of this value (strings and number types only)
 	char *string;
 	size_t stringLen;
-	//size_t stringLen;
   // boolean whether to use result_n or result_d
 	int float_result;
 	double result_d;

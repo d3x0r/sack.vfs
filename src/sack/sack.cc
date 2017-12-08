@@ -6003,7 +6003,7 @@ MEM_PROC  size_t MEM_API  StrLen ( CTEXTSTR s );
    s :  char * to count.
    Returns
    the length of s. If s is NULL, return 0. */
-MEM_PROC  size_t MEM_API  CStrLen ( char const*const s );
+MEM_PROC  size_t MEM_API  CStrLen ( char const*s );
 /* Finds the last instance of a character in a string.
    Parameters
    s1 :  String to search in
@@ -11422,11 +11422,13 @@ size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t leng
 	size_t written = 0;
 	size_t ofs = file->fpi & BLOCK_MASK;
 	while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
-	if( ( file->entry->filesize  ^ file->dirent_key.filesize ) < ( file->fpi + length ) )
-		if( ( file->entry->filesize  ^ file->dirent_key.filesize ) > file->fpi )
+	if( ( file->entry->filesize  ^ file->dirent_key.filesize ) < ( file->fpi + length ) ) {
+		if( ( file->entry->filesize  ^ file->dirent_key.filesize ) < file->fpi )
+			length = 0;
+		else
 			length = ( file->entry->filesize  ^ file->dirent_key.filesize ) - file->fpi;
-		else length = 0;
-	if( !length ) { file->vol->lock = 0; return 0; }
+	}
+	if( !length ) {  file->vol->lock = 0; return 0; }
 	if( ofs ) {
 		enum block_cache_entries cache = BLOCK_CACHE_FILE;
 		uint8_t* block = (uint8_t*)vfs_BSEEK( file->vol, file->block, &cache );
@@ -11533,10 +11535,11 @@ int CPROC sack_vfs_close( struct sack_vfs_file *file ) {
 	while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
 #ifdef DEBUG_TRACE_LOG
 	{
+		enum block_cache_entries cache = BLOCK_CACHE_NAMES;
 		static char fname[256];
 		FPI name_ofs = file->entry->name_offset ^ file->dirent_key.name_offset;
  // have to do the seek to the name block otherwise it might not be loaded.
-		TSEEK( const char *, file->vol, name_ofs, BLOCK_CACHE_NAMES );
+		TSEEK( const char *, file->vol, name_ofs, cache );
 		MaskStrCpy( fname, sizeof( fname ), file->vol, name_ofs );
 		LoG( "close file:%s(%p)", fname, file );
 	}
@@ -31855,7 +31858,7 @@ static uintptr_t masks[33] = { makeULong(0), makeULong(0), makeULong(1), 0, make
 #define BASE_MEMORY (POINTER)0x80000000
 // golly allocating a WHOLE DOS computer to ourselves? how RUDE
 #define SYSTEM_CAPACITY  g.dwSystemCapacity
-#define MALLOC_CHUNK_SIZE(pData) ( ( (pData)?( (uint16_t*)(pData))[-1]:0 ) + offsetof( MALLOC_CHUNK, byData ) )
+#define MALLOC_CHUNK_SIZE(pData) ( (pData)?( ( ( (uint16_t*)(pData))[-1] ) + offsetof( MALLOC_CHUNK, byData ) ):0 )
 //#define CHUNK_SIZE(pData) ( ( (pData)?( (uint16_t*)(pData))[-1]:0 ) +offsetof( CHUNK, byData ) ) )
 #define CHUNK_SIZE ( offsetof( CHUNK, byData ) )
 #define MEM_SIZE  ( offsetof( MEM, pRoot ) )
@@ -33660,13 +33663,13 @@ POINTER HeapAllocateAlignedEx( PMEM pHeap, uintptr_t dwSize, uint16_t alignment 
 	{
 		PMALLOC_CHUNK pc;
 #ifdef ENABLE_NATIVE_MALLOC_PROTECTOR
-		pc = (PMALLOC_CHUNK)malloc( sizeof( MALLOC_CHUNK ) + alignment + dwSize + sizeof( pc->LeadProtect ) );
+		pc = (PMALLOC_CHUNK)malloc( sizeof( MALLOC_CHUNK ) - 1 + alignment + dwSize + sizeof( pc->LeadProtect ) );
 		if( !pc )
 			DebugBreak();
 		MemSet( pc->LeadProtect, LEAD_PROTECT_TAG, sizeof( pc->LeadProtect ) );
 		MemSet( pc->byData + dwSize, LEAD_PROTECT_BLOCK_TAIL, sizeof( pc->LeadProtect ) );
 #else
-		pc = (PMALLOC_CHUNK)malloc( sizeof( MALLOC_CHUNK ) + dwSize );
+		pc = (PMALLOC_CHUNK)malloc( sizeof( MALLOC_CHUNK ) - 1 + dwSize );
 #endif
 		pc->dwOwners = 1;
 		pc->dwSize = dwSize;
@@ -34017,7 +34020,7 @@ static void Bubble( PMEM pMem )
 		}
 		else
 		{
-			PMALLOC_CHUNK pc = (PMALLOC_CHUNK)(((uintptr_t)pData) - (((uint16_t*)pData)[-1] + offsetof( MALLOC_CHUNK, byData )));
+			PMALLOC_CHUNK pc = (PMALLOC_CHUNK)(((uintptr_t)pData) - MALLOC_CHUNK_SIZE(pData));
 			return pc->dwSize - pc->dwPad;
 		}
 	}
@@ -34066,8 +34069,7 @@ POINTER ReleaseEx ( POINTER pData DBG_PASS )
 		if( !USE_CUSTOM_ALLOCER )
 		{
 			//PMEM pMem = (PMEM)(pData - offsetof( MEM, pRoot ));
-			PMALLOC_CHUNK pc = (PMALLOC_CHUNK)(((uintptr_t)pData) - ( ((uint16_t*)pData)[-1] +
-													offsetof( MALLOC_CHUNK, byData ) ) );
+			PMALLOC_CHUNK pc = (PMALLOC_CHUNK)(((uintptr_t)pData) - MALLOC_CHUNK_SIZE(pData) );
 			pc->dwOwners--;
 			if( !pc->dwOwners )
 			{
@@ -34358,7 +34360,7 @@ POINTER ReleaseEx ( POINTER pData DBG_PASS )
 	{
 		if( !USE_CUSTOM_ALLOCER )
 		{
-			PMALLOC_CHUNK pc = (PMALLOC_CHUNK)((char*)pData - MALLOC_CHUNK_SIZE(pData));
+			PMALLOC_CHUNK pc = (PMALLOC_CHUNK)((uintptr_t)pData - MALLOC_CHUNK_SIZE(pData));
 			//ll__lprintf( DBG_RELAY )( "holding block %p", pc );
 #ifndef NO_LOGGING
 			if( g.bLogAllocate && g.bLogAllocateWithHold )
@@ -35007,19 +35009,19 @@ void  MemSet ( POINTER p, uintptr_t n, size_t sz )
 		if( sz & 2 )
 			(*(uint16_t*)( ((uintptr_t)p) + sz - (sz&3) ) ) = (uint16_t)n;
 		if( sz & 1 )
-			(*(uint8_t*)( ((uintptr_t)p) + sz - (sz&1) ) ) = (uint8_t)n;
+			(*(uint8_t*)( ((uintptr_t)p) + sz - 1 ) ) = (uint8_t)n;
 #  else
 		{
 			int m; int len = sz/4;
 			for( m = 0; m < len; m++ ) {
-				((uint64_t*)tmp)[0] = n;
+				((uint32_t*)tmp)[0] = n;
 				tmp += 4;
 			}
 		}
 		if( sz & 2 )
 			(*(uint16_t*)( ((uintptr_t)p) + sz - (sz&3) ) ) = (uint16_t)n;
 		if( sz & 1 )
-			(*(uint8_t*)( ((uintptr_t)p) + sz - (sz&1) ) ) = (uint8_t)n;
+			(*(uint8_t*)( ((uintptr_t)p) + sz - 1 ) ) = (uint8_t)n;
 #  endif
 	}
 #else
@@ -35034,8 +35036,8 @@ int  MemChk ( POINTER p, uintptr_t val, size_t sz )
 #if defined( _MSC_VER ) && !defined( __NO_WIN32API__ ) && !defined( UNDER_CE )
 	size_t n;
 	uintptr_t *data = (uintptr_t*)p;
-	for( n = 0; n < sz/sizeof(uintptr_t); n++ )
-		if( data[n] != val )
+	for( n = 0; n < sz/sizeof(uintptr_t); n++, data++ )
+		if( data[0] != val )
 			return 0;
    return 1;
 #else
@@ -35316,15 +35318,15 @@ size_t StrLen( CTEXTSTR s )
 	size_t l;
 	if( !s )
 		return 0;
-	for( l = 0; s[l];l++);
+	for( l = 0; s[0];l++, s++);
 	return l;
 }
-size_t CStrLen( char const*const s )
+size_t CStrLen( char const* s )
 {
 	size_t l;
 	if( !s )
 		return 0;
-	for( l = 0; s[l];l++);
+	for( l = 0; s[0];l++,s++);
 	return l;
 }
 #ifdef _UNICODE
@@ -50655,6 +50657,7 @@ struct web_socket_input_state
 	size_t fragment_collection_length;
   // used for selecting mask byte
 	size_t fragment_collection_index;
+	size_t fragment_collection_buffer_size;
 	uint8_t* fragment_collection;
 	LOGICAL final;
 	LOGICAL mask;
@@ -50709,7 +50712,7 @@ struct web_socket_client
 		BIT_FIELD connected : 1;
  // schedule to close
 		BIT_FIELD want_close : 1;
-		BIT_FIELD use_ssl : 1;
+		//BIT_FIELD use_ssl : 1;
 	} flags;
 	PCLIENT pc;
 	CTEXTSTR host;
@@ -50887,9 +50890,11 @@ void SendWebSocketMessage( PCLIENT pc, int opcode, int final, int do_mask, const
 }
 static void ResetInputState( WebSocketInputState websock )
 {
+	//lprintf( "Reset input state?" );
 	websock->input_msg_state = 0;
 	websock->final = 0;
 	websock->mask = 0;
+	websock->fragment_collection_avail = 0;
  // mask index counter
 	websock->fragment_collection_index = 0;
  // assume text input; binary will set flag opposite
@@ -50927,6 +50932,7 @@ static int CPROC inflateBackOutput( void* state, unsigned char *output, unsigned
 void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint8_t* msg, size_t length )
 {
 	size_t n;
+	//lprintf( "Process packet: %d", length );
 	for( n = 0; n < length; n++ )
 	{
 		switch( websock->input_msg_state )
@@ -51033,15 +51039,19 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 		case 16:
 			// might have already collected fragments (non final packets, so increase the full buffer )
 			// first byte of data, check we have enough room for the remaining bytes; the frame_length is valid now.
+			//lprintf( "Received... and need %d  %d  %d", websock->fragment_collection_avail, websock->fragment_collection_length, websock->frame_length, websock->fragment_collection_length + websock->frame_length );
 			if( websock->fragment_collection_avail < ( websock->fragment_collection_length + websock->frame_length ) )
 			{
 				uint8_t* new_fragbuf;
 				websock->fragment_collection_avail += websock->frame_length;
-				new_fragbuf = (uint8_t*)Allocate( websock->fragment_collection_avail );
-				if( websock->fragment_collection_length )
-					MemCpy( new_fragbuf, websock->fragment_collection, websock->fragment_collection_length );
-				Deallocate( uint8_t*, websock->fragment_collection );
-				websock->fragment_collection = new_fragbuf;
+				if( websock->fragment_collection_avail > websock->fragment_collection_buffer_size ) {
+					new_fragbuf = (uint8_t*)Allocate( websock->fragment_collection_avail * 2 );
+					if( websock->fragment_collection_length )
+						MemCpy( new_fragbuf, websock->fragment_collection, websock->fragment_collection_length );
+					Deallocate( uint8_t*, websock->fragment_collection );
+					websock->fragment_collection = new_fragbuf;
+					websock->fragment_collection_buffer_size = websock->fragment_collection_avail * 2;
+				}
  // start with mask byte 0 on this new packet
 				websock->fragment_collection_index = 0;
 			}
@@ -51049,17 +51059,16 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 			// fall through, no break statement; add the byte to the buffer
 		case 17:
 			// if there was no data, then there's nothing to demask
-			if( websock->fragment_collection && (websock->fragment_collection_length < websock->frame_length) )
+			if( websock->fragment_collection && (websock->fragment_collection_length < websock->fragment_collection_avail) )
 			{
 				websock->fragment_collection[websock->fragment_collection_length++]
 					= msg[n] ^ websock->mask_key[(websock->fragment_collection_index++) % 4];
 			}
 			// if final packet, and we have all the bytes for this packet
 			// dispatch the opcode.
-			if( websock->final && ( websock->fragment_collection_length == websock->frame_length ) )
+			if( websock->final && ( websock->fragment_collection_length == websock->fragment_collection_avail) )
 			{
-				//lprintf( WIDE("Final: %d  opcode %d  mask %d length %Ld ")
-				//		 , websock->final, websock->opcode, websock->mask, websock->frame_length );
+				//lprintf( "Final: %d  opcode %d  length %d ", websock->final, websock->opcode, websock->fragment_collection_length );
 				websock->last_reception = timeGetTime();
 				switch( websock->opcode )
 				{
@@ -51185,6 +51194,9 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 				}
 				// after processing any opcode (this is IN final, and length match) we're done, start next message
 				ResetInputState( websock );
+			} else if( websock->fragment_collection_length == websock->fragment_collection_avail ) {
+				//lprintf( "Completed packet; still not final fragment though.... %d", websock->fragment_collection_avail );
+				websock->input_msg_state = 0;
 			}
 			break;
 		}
@@ -51356,6 +51368,7 @@ struct web_socket_input_state
 	size_t fragment_collection_length;
   // used for selecting mask byte
 	size_t fragment_collection_index;
+	size_t fragment_collection_buffer_size;
 	uint8_t* fragment_collection;
 	LOGICAL final;
 	LOGICAL mask;
@@ -51410,7 +51423,7 @@ struct web_socket_client
 		BIT_FIELD connected : 1;
  // schedule to close
 		BIT_FIELD want_close : 1;
-		BIT_FIELD use_ssl : 1;
+		//BIT_FIELD use_ssl : 1;
 	} flags;
 	PCLIENT pc;
 	CTEXTSTR host;
@@ -51599,7 +51612,9 @@ static void CPROC WebSocketClientReceive( PCLIENT pc, POINTER buffer, size_t len
 		}
 		// process buffer?
 	}
-	ReadTCP( pc, buffer, 4096 );
+	if( !websock->input_state.flags.use_ssl ) {
+		ReadTCP( pc, buffer, 4096 );
+	}
 }
 static void CPROC WebSocketClientClosed( PCLIENT pc )
 {
@@ -52636,13 +52651,12 @@ enum json_value_types {
 struct json_value_container {
   // name of this value (if it's contained in an object)
 	char * name;
-	//size_t nameLen;
+	size_t nameLen;
  // value from above indiciating the type of this value
 	enum json_value_types value_type;
    // the string value of this value (strings and number types only)
 	char *string;
 	size_t stringLen;
-	//size_t stringLen;
   // boolean whether to use result_n or result_d
 	int float_result;
 	double result_d;
@@ -52775,6 +52789,8 @@ enum parse_context_modes {
 struct json_parse_context {
 	enum parse_context_modes context;
 	PDATALIST elements;
+	char *name;
+	size_t nameLen;
 	struct json_context_object *object;
 };
 #define RESET_VAL()  {	  val.value_type = VALUE_UNSET;	 val.contains = NULL;	              val.name = NULL;	                  val.string = NULL;	                negative = FALSE; }
@@ -53222,12 +53238,11 @@ int json_parse_add_data( struct json_parse_state *state
 			case '{':
 			{
 				struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &jpsd.parseContexts );
-				state->val.value_type = VALUE_OBJECT;
-				state->val.contains = CreateDataList( sizeof( state->val ) );
-				AddDataItem( &state->elements, &state->val );
 				old_context->context = state->parse_context;
 				old_context->elements = state->elements;
-				state->elements = state->val.contains;
+				old_context->name = state->val.name;
+				old_context->nameLen = state->val.nameLen;
+				state->elements = CreateDataList( sizeof( state->val ) );
 				PushLink( &state->context_stack, old_context );
 				RESET_STATE_VAL();
 				state->parse_context = CONTEXT_IN_OBJECT;
@@ -53236,12 +53251,11 @@ int json_parse_add_data( struct json_parse_state *state
 			case '[':
 			{
 				struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &jpsd.parseContexts );
-				state->val.value_type = VALUE_ARRAY;
-				state->val.contains = CreateDataList( sizeof( state->val ) );
-				AddDataItem( &state->elements, &state->val );
 				old_context->context = state->parse_context;
 				old_context->elements = state->elements;
-				state->elements = state->val.contains;
+				old_context->name = state->val.name;
+				old_context->nameLen = state->val.nameLen;
+				state->elements = CreateDataList( sizeof( state->val ) );
 				PushLink( &state->context_stack, old_context );
 				RESET_STATE_VAL();
 				state->parse_context = CONTEXT_IN_ARRAY;
@@ -53254,7 +53268,7 @@ int json_parse_add_data( struct json_parse_state *state
 						lprintf( "two names single value?" );
 					}
 					state->val.name = state->val.string;
-					//state->val.nameLen = state->val.stringLen;
+					state->val.nameLen = state->val.stringLen;
 					state->val.string = NULL;
 					state->val.value_type = VALUE_UNSET;
 				}
@@ -53276,20 +53290,24 @@ int json_parse_add_data( struct json_parse_state *state
 					// allow starting a new word
 					state->word = WORD_POS_RESET;
 				}
-				if( state->parse_context == CONTEXT_IN_OBJECT )
+				if( state->parse_context == CONTEXT_IN_OBJECT || state->parse_context == CONTEXT_OBJECT_FIELD_VALUE )
 				{
 					// first, add the last value
 					if( state->val.value_type != VALUE_UNSET ) {
 						AddDataItem( &state->elements, &state->val );
 					}
-					RESET_STATE_VAL();
+					//RESET_STATE_VAL();
+					state->val.value_type = VALUE_OBJECT;
+					state->val.contains = state->elements;
+					state->val.string = NULL;
 					{
 						struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &state->context_stack );
-						struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt - 1 );
-  // save updated elements list in the old value in the last pushed list.
-						oldVal->contains = state->elements;
+						//struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt - 1 );
+						//oldVal->contains = state->elements;  // save updated elements list in the old value in the last pushed list.
 						state->parse_context = old_context->context;
 						state->elements = old_context->elements;
+						state->val.name = old_context->name;
+						state->val.nameLen = old_context->nameLen;
 						DeleteFromSet( PARSE_CONTEXT, jpsd.parseContexts, old_context );
 					}
 					//n++;
@@ -53311,14 +53329,18 @@ int json_parse_add_data( struct json_parse_state *state
 					if( state->val.value_type != VALUE_UNSET ) {
 						AddDataItem( &state->elements, &state->val );
 					}
-					RESET_STATE_VAL();
+					//RESET_STATE_VAL();
+					state->val.value_type = VALUE_ARRAY;
+					state->val.contains = state->elements;
+					state->val.string = NULL;
 					{
 						struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &state->context_stack );
-						struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt - 1 );
-  // save updated elements list in the old value in the last pushed list.
-						oldVal->contains = state->elements;
+						//struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt - 1 );
+						//oldVal->contains = state->elements;  // save updated elements list in the old value in the last pushed list.
 						state->parse_context = old_context->context;
 						state->elements = old_context->elements;
+						state->val.name = old_context->name;
+						state->val.nameLen = old_context->nameLen;
 						DeleteFromSet( PARSE_CONTEXT, jpsd.parseContexts, old_context );
 					}
 				}
@@ -55099,14 +55121,13 @@ int json6_parse_add_data( struct json_parse_state *state
 				{
 					struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &jpsd.parseContexts );
 #ifdef _DEBUG_PARSING
-				lprintf( "Begin a new object; previously pushed into elements; but wait until trailing comma or close previously:%d", val.value_type );
+					lprintf( "Begin a new object; previously pushed into elements; but wait until trailing comma or close previously:%d", val.value_type );
 #endif
-					state->val.value_type = VALUE_OBJECT;
-					state->val.contains = CreateDataList( sizeof( state->val ) );
-					AddDataItem( &state->elements, &state->val );
 					old_context->context = state->parse_context;
 					old_context->elements = state->elements;
-					state->elements = state->val.contains;
+					old_context->name = state->val.name;
+					old_context->nameLen = state->val.nameLen;
+					state->elements = CreateDataList( sizeof( state->val ) );
 					PushLink( &state->context_stack, old_context );
 					RESET_STATE_VAL();
 					state->parse_context = CONTEXT_OBJECT_FIELD;
@@ -55124,12 +55145,11 @@ int json6_parse_add_data( struct json_parse_state *state
 #ifdef _DEBUG_PARSING
 					lprintf( "Begin a new array; previously pushed into elements; but wait until trailing comma or close previously:%d", val.value_type );
 #endif
-					state->val.value_type = VALUE_ARRAY;
-					state->val.contains = CreateDataList( sizeof( state->val ) );
-					AddDataItem( &state->elements, &state->val );
 					old_context->context = state->parse_context;
 					old_context->elements = state->elements;
-					state->elements = state->val.contains;
+					old_context->name = state->val.name;
+					old_context->nameLen = state->val.nameLen;
+					state->elements = CreateDataList( sizeof( state->val ) );
 					PushLink( &state->context_stack, old_context );
 					RESET_STATE_VAL();
 					state->parse_context = CONTEXT_IN_ARRAY;
@@ -55158,9 +55178,9 @@ int json6_parse_add_data( struct json_parse_state *state
 						vtprintf( state->pvtError, "two names single value?" );
 					}
 					state->val.name = state->val.string;
-					//lprintf( "Set name length:%d", state->val.stringLen );
-					//state->val.nameLen = state->val.stringLen;
+					state->val.nameLen = state->val.stringLen;
 					state->val.string = NULL;
+					state->val.stringLen = 0;
 					state->parse_context = CONTEXT_OBJECT_FIELD_VALUE;
 					state->val.value_type = VALUE_UNSET;
 				}
@@ -55180,49 +55200,32 @@ int json6_parse_add_data( struct json_parse_state *state
 					state->word = WORD_POS_RESET;
 				}
 				// coming back after pushing an array or sub-object will reset the contxt to FIELD, so an end with a field should still push value.
-				if( (state->parse_context == CONTEXT_OBJECT_FIELD) ) {
+				if( (state->parse_context == CONTEXT_OBJECT_FIELD) || (state->parse_context == CONTEXT_OBJECT_FIELD_VALUE) ) {
 #ifdef _DEBUG_PARSING
 					lprintf( "close object; empty object %d", state->val.value_type );
 #endif
-					RESET_STATE_VAL();
-					{
-						struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &state->context_stack );
-						struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt - 1 );
-  // save updated elements list in the old value in the last pushed list.
-						oldVal->contains = state->elements;
- // this will restore as IN_ARRAY or OBJECT_FIELD
-						state->parse_context = old_context->context;
-						state->elements = old_context->elements;
-						DeleteFromSet( PARSE_CONTEXT, jpsd.parseContexts, old_context );
-					}
-					if( state->parse_context == CONTEXT_UNKNOWN ) {
-						state->completed = TRUE;
-					}
-				}
-				else if( (state->parse_context == CONTEXT_OBJECT_FIELD_VALUE) )
-				{
-					// first, add the last value
-#ifdef _DEBUG_PARSING
-					lprintf( "close object; push item %s %d", state->val.name, state->val.value_type );
-#endif
+					//if( (state->parse_context == CONTEXT_OBJECT_FIELD_VALUE) )
 					if( state->val.value_type != VALUE_UNSET ) {
 						AddDataItem( &state->elements, &state->val );
 					}
-					RESET_STATE_VAL();
+					//RESET_STATE_VAL();
+					state->val.value_type = VALUE_OBJECT;
+					state->val.string = NULL;
+					state->val.contains = state->elements;
 					{
 						struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &state->context_stack );
-						struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt - 1 );
-  // save updated elements list in the old value in the last pushed list.
-						oldVal->contains = state->elements;
+						//struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt - 1 );
+						//oldVal->contains = state->elements;  // save updated elements list in the old value in the last pushed list.
  // this will restore as IN_ARRAY or OBJECT_FIELD
 						state->parse_context = old_context->context;
 						state->elements = old_context->elements;
+						state->val.name = old_context->name;
+						state->val.nameLen = old_context->nameLen;
 						DeleteFromSet( PARSE_CONTEXT, jpsd.parseContexts, old_context );
 					}
 					if( state->parse_context == CONTEXT_UNKNOWN ) {
 						state->completed = TRUE;
 					}
-					//n++;
 				}
 				else
 				{
@@ -55244,14 +55247,17 @@ int json6_parse_add_data( struct json_parse_state *state
 					if( state->val.value_type != VALUE_UNSET ) {
 						AddDataItem( &state->elements, &state->val );
 					}
-					RESET_STATE_VAL();
+					state->val.value_type = VALUE_ARRAY;
+					state->val.string = NULL;
+					state->val.contains = state->elements;
 					{
 						struct json_parse_context *old_context = (struct json_parse_context *)PopLink( &state->context_stack );
-						struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt - 1 );
-  // save updated elements list in the old value in the last pushed list.
-						oldVal->contains = state->elements;
+						//struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt - 1 );
+						//oldVal->contains = state->elements;  // save updated elements list in the old value in the last pushed list.
 						state->parse_context = old_context->context;
 						state->elements = old_context->elements;
+						state->val.name = old_context->name;
+						state->val.nameLen = old_context->nameLen;
 						DeleteFromSet( PARSE_CONTEXT, jpsd.parseContexts, old_context );
 					}
 					if( state->parse_context == CONTEXT_UNKNOWN ) {
@@ -57869,7 +57875,7 @@ _TCP_NAMESPACE
 void AcceptClient(PCLIENT pc);
 int TCPWriteEx(PCLIENT pc DBG_PASS);
 #define TCPWrite(pc) TCPWriteEx(pc DBG_SRC)
-size_t FinishPendingRead(PCLIENT lpClient DBG_PASS );
+int FinishPendingRead(PCLIENT lpClient DBG_PASS );
 LOGICAL TCPDrainRead( PCLIENT pClient );
 _TCP_NAMESPACE_END
 //----------------------------------------------------------------------------
@@ -58342,12 +58348,15 @@ void TerminateClosedClientEx( PCLIENT pc DBG_PASS )
 	{
 		PendingBuffer * lpNext;
 		EnterCriticalSec( &globalNetworkData.csNetwork );
+#ifdef VERBOSE_DEBUG
+		lprintf( "REMOVED EVENT...." );
+#endif
 		RemoveThreadEvent( pc );
 		//lprintf( WIDE( "Terminating closed client..." ) );
 		if( IsValid( pc->Socket ) )
 		{
 #ifdef VERBOSE_DEBUG
-			lprintf( WIDE( "close socket." ) );
+			lprintf( "close soekcet." );
 #endif
 			closesocket( pc->Socket );
 			while( pc->lpFirstPending )
@@ -58385,6 +58394,7 @@ void TerminateClosedClientEx( PCLIENT pc DBG_PASS )
 		lprintf( WIDE("Client's state was not CLOSED...") );
 }
 //----------------------------------------------------------------------------
+#if 0
 static void CPROC PendingTimer( uintptr_t unused )
 {
 	PCLIENT pc, next;
@@ -58469,6 +58479,7 @@ restart:
 	lprintf( WIDE("pending timer left global") );
 #endif
 }
+#endif
 #ifdef _WIN32
 //----------------------------------------------------------------------------
 static int NetworkStartup( void )
@@ -59438,6 +59449,9 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 			struct event_data *event_data;
 			THREAD_ID prior = 0;
 			PCLIENT next;
+#  ifdef LOG_NETWORK_EVENT_THREAD
+			lprintf( "process %d events", cnt );
+#  endif
 			for( n = 0; n < cnt; n++ ) {
 #  ifdef __MAC__
 				pc = (PCLIENT)events[n].udata;
@@ -59456,9 +59470,21 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 					return 1;
 				}
 				while( !NetworkLock( event_data->pc ) ) {
+					if( !(event_data->pc->dwFlags & CF_ACTIVE ) ) {
+#  ifdef LOG_NETWORK_EVENT_THREAD
+						lprintf( "failed lock dwFlags : %8x", event_data->pc->dwFlags );
+#  endif
+						break;
+					}
 					if( event_data->pc->dwFlags & CF_AVAILABLE )
                   break;
 					Relinquish();
+				}
+				if( !(event_data->pc->dwFlags & CF_ACTIVE ) ) {
+#  ifdef LOG_NETWORK_EVENT_THREAD
+					lprintf( "not active but locked? dwFlags : %8x", event_data->pc->dwFlags );
+#  endif
+					continue;
 				}
 				if( event_data->pc->dwFlags & CF_AVAILABLE )
 					continue;
@@ -59472,7 +59498,9 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 				if( events[n].events & EPOLLIN )
 #  endif
 				{
-					//lprintf( "EPOLLIN/EVFILT_READ" );
+#  ifdef LOG_NETWORK_EVENT_THREAD
+					lprintf( "EPOLLIN/EVFILT_READ" );
+#  endif
 					if( !(event_data->pc->dwFlags & CF_ACTIVE) )
 					{
 						// change to inactive status by the time we got here...
@@ -59504,14 +59532,16 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 					}
 					else if( event_data->pc->dwFlags & CF_READPENDING )
 					{
+						size_t read;
 #ifdef LOG_NOTICES
 						if( globalNetworkData.flags.bLogNotices )
 							lprintf( WIDE( "TCP Read Event..." ) );
 #endif
 						// packet oriented things may probably be reading only
 						// partial messages at a time...
-						FinishPendingRead( event_data->pc DBG_SRC );
-						if( event_data->pc->dwFlags & CF_TOCLOSE )
+						read = FinishPendingRead( event_data->pc DBG_SRC );
+                  //lprintf( "Read %d", read );
+						if( ( read == -1 ) && ( event_data->pc->dwFlags & CF_TOCLOSE ) )
 						{
 //#ifdef LOG_NOTICES
 //							if( globalNetworkData.flags.bLogNotices )
@@ -59538,9 +59568,13 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 				if( events[n].events & EPOLLOUT )
 #  endif
 				{
-					//lprintf( "EPOLLOUT" );
+#  ifdef LOG_NETWORK_EVENT_THREAD
+					lprintf( "EPOLLOUT %s", ( event_data->pc->dwFlags & CF_CONNECTING )?"connecting"
+							  :( !(event_data->pc->dwFlags & CF_ACTIVE) )?"closed":"writing" );
+#  endif
 					if( !(event_data->pc->dwFlags & CF_ACTIVE) )
 					{
+						//lprintf( "FLAGS IS NOT ACTIVE BUT: %x", event_data->pc->dwFlags );
 						// change to inactive status by the time we got here...
 					}
 					else if( event_data->pc->dwFlags & CF_CONNECTING )
@@ -59661,7 +59695,6 @@ uintptr_t CPROC NetworkThreadProc( PTHREAD thread )
 	// and when unloading should remove these timers.
 	if( !peer_thread )
 	{
-		//globalNetworkData.uPendingTimer = AddTimer( 5000, PendingTimer, 0 );
 #ifdef _WIN32
 		globalNetworkData.uNetworkPauseTimer = AddTimerEx( 1, 1000, NetworkPauseTimer, 0 );
 		if( !globalNetworkData.client_schedule )
@@ -59671,8 +59704,8 @@ uintptr_t CPROC NetworkThreadProc( PTHREAD thread )
 		globalNetworkData.flags.bNetworkReady = TRUE;
 		globalNetworkData.flags.bThreadInitOkay = TRUE;
 #endif
-		//globalNetworkData.hMonitorThreadControlEvent = CreateEvent( NULL, 0, FALSE, NULL );
 	}
+	memset( &this_thread, 0, sizeof( this_thread ) );
 	this_thread.monitor_list = NULL;
 #ifdef _WIN32
 	this_thread.event_list = CreateDataList( sizeof( WSAEVENT ) );
@@ -59779,11 +59812,13 @@ int NetworkQuit(void)
 {
 	if( !global_network_data )
 		return 0;
+#if 0
 	if( globalNetworkData.uPendingTimer )
 	{
 		RemoveTimer( globalNetworkData.uPendingTimer );
 		globalNetworkData.uPendingTimer = 0;
 	}
+#endif
 	while( globalNetworkData.ActiveClients )
 	{
 #ifdef LOG_NOTICES
@@ -60028,7 +60063,9 @@ get_client:
 #ifdef LOG_NETWORK_LOCKING
 		lprintf( WIDE("GetFreeNetworkClient left global") );
 #endif
+#if 0
 		RescheduleTimerEx( globalNetworkData.uPendingTimer, 1 );
+#endif
 		Relinquish();
 		if( globalNetworkData.AvailableClients )
 		{
@@ -60904,7 +60941,8 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 				lingerSet.l_onoff = 1;
  // 0 timeout sends reset.
 				lingerSet.l_linger = 0;
-				// set server to allow reuse of socket port
+										 // set server to allow reuse of socket port
+            //lprintf( "Set no linger" );
 				if (setsockopt(lpClient->Socket, SOL_SOCKET, SO_LINGER,
 									(char*)&lingerSet, sizeof(lingerSet)) <0 )
 				{
@@ -60918,9 +60956,10 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 			struct linger lingerSet;
 			// linger ON causes delay on close... otherwise close returns immediately
  // on , with no time = off.
-			lingerSet.l_onoff = 0;
+			lingerSet.l_onoff = 1;
 			lingerSet.l_linger = 2;
 			// set server to allow reuse of socket port
+            lprintf( "Set 2 second linger" );
 			if( setsockopt( lpClient->Socket, SOL_SOCKET, SO_LINGER,
 				(char*)&lingerSet, sizeof( lingerSet ) ) <0 )
 			{
@@ -61032,8 +61071,23 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 }
 void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG_PASS )
 {
-	InternalRemoveClientExx( lpClient, bBlockNotify, bLinger DBG_RELAY );
-	TerminateClosedClient( lpClient );
+#ifdef _WIN32
+#  define SHUT_WR SD_SEND
+#endif
+	if( !lpClient ) return;
+#if 0
+	if( !( lpClient->dwFlags & CF_UDP ) ) {
+		lprintf( "TRIGGER SHUTDOWN WRITES" );
+		shutdown( lpClient->Socket, SHUT_WR );
+	} else
+#endif
+	{
+		  // UDP still needs to be done this way...
+		//
+		//lprintf( "UDP DO NORMAL CLOSE" );
+		InternalRemoveClientExx( lpClient, bBlockNotify, bLinger DBG_RELAY );
+		TerminateClosedClient( lpClient );
+	}
 }
 CTEXTSTR GetSystemName( void )
 {
@@ -62079,7 +62133,7 @@ PCLIENT OpenTCPClientExEx(CTEXTSTR lpName,uint16_t wPort,
 }
 //----------------------------------------------------------------------------
   // only time this should be called is when there IS, cause
-size_t FinishPendingRead(PCLIENT lpClient DBG_PASS )
+int FinishPendingRead(PCLIENT lpClient DBG_PASS )
                                  // we definaly have already gotten SOME data to leave in
                                  // a pending state...
 {
@@ -62111,7 +62165,7 @@ size_t FinishPendingRead(PCLIENT lpClient DBG_PASS )
 			lprintf( WIDE( "Finsih pending - return, not connected." ) );
 #endif
  // amount of data available...
-			return lpClient->RecvPending.dwUsed;
+			return (int)lpClient->RecvPending.dwUsed;
 		}
 		//lprintf( WIDE(WIDE( "FinishPendingRead of %d" )), lpClient->RecvPending.dwAvail );
 		if( !( lpClient->dwFlags & CF_READPENDING ) )
@@ -62142,7 +62196,7 @@ size_t FinishPendingRead(PCLIENT lpClient DBG_PASS )
 				case WSAEWOULDBLOCK:
 					//lprintf( WIDE("Pending Receive would block...") );
 					lpClient->dwFlags &= ~CF_READREADY;
-					return lpClient->RecvPending.dwAvail;
+					return (int)lpClient->RecvPending.dwUsed;
 #ifdef __LINUX__
 				case ECONNRESET:
 #else
@@ -62282,7 +62336,7 @@ size_t FinishPendingRead(PCLIENT lpClient DBG_PASS )
 size_t doReadExx2(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsStream, LOGICAL bWait, int user_timeout DBG_PASS )
 {
 #ifdef LOG_PENDING
-	lprintf( WIDE( "Reading ... %p(%d) int %p %d (%s,%s)" ), lpClient, lpClient->Socket, lpBuffer, (uint32_t)nBytes, bIsStream?WIDE( "stream" ):WIDE( "block" ), bWait?WIDE( "Wait" ):WIDE( "NoWait" ) );
+	_lprintf(DBG_RELAY)( WIDE( "Reading ... %p(%d) int %p %d (%s,%s)" ), lpClient, lpClient->Socket, lpBuffer, (uint32_t)nBytes, bIsStream?WIDE( "stream" ):WIDE( "block" ), bWait?WIDE( "Wait" ):WIDE( "NoWait" ) );
 #endif
 	if( !lpClient || !lpBuffer )
  // nothing read.... ???
@@ -62479,18 +62533,20 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
 							 pc->lpFirstPending->dwUsed,
 							 (int)pc->lpFirstPending->dwAvail );
 			}
+			//lprintf( "Try to send... %d  %d", pc->lpFirstPending->dwUsed, pc->lpFirstPending->dwAvail );
 			nSent = send(pc->Socket,
 							 (char*)pc->lpFirstPending->buffer.c +
 							 pc->lpFirstPending->dwUsed,
 							 (int)pc->lpFirstPending->dwAvail,
 							 0);
+			//lprintf( "sent... %d", nSent );
 			if( nSent < (int)pc->lpFirstPending->dwAvail ) {
-				pc->lpFirstPending->dwUsed += nSent;
-				pc->lpFirstPending->dwAvail -= nSent;
+				//pc->lpFirstPending->dwUsed += nSent;
+				//pc->lpFirstPending->dwAvail -= nSent;
 				pc->dwFlags |= CF_WRITEPENDING;
-				lprintf( "THIS IS ANOTHER PENDING CONDITION THAT WASN'T ACCOUNTED" );
+				//lprintf( "THIS IS ANOTHER PENDING CONDITION THAT WASN'T ACCOUNTED %d of %d", nSent, pc->lpFirstPending->dwAvail  );
 			}
-			if (nSent == SOCKET_ERROR)
+			else if (nSent == SOCKET_ERROR)
 			{
   // this is alright.
 				if( WSAGetLastError() == WSAEWOULDBLOCK )
@@ -62656,7 +62712,7 @@ LOGICAL doTCPWriteExx( PCLIENT lpClient
 	if( lpClient->lpFirstPending )
 	{
 #ifdef VERBOSE_DEBUG
-		Log2(  "%s(%d)Data pending, pending buffer... ", pFile, nLine );
+		_lprintf( DBG_RELAY )(  "Data already pending, pending buffer...%p %d", pInBuffer, nInLen );
 #endif
 		if( !failpending )
 		{
@@ -62664,8 +62720,7 @@ LOGICAL doTCPWriteExx( PCLIENT lpClient
 			lprintf( WIDE("Queuing pending data anyhow...") );
 #endif
 			PendWrite( lpClient, pInBuffer, nInLen, bLongBuffer );
- // make sure we don't lose a write event during the queuing...
-			TCPWriteEx( lpClient DBG_SRC );
+			//TCPWriteEx( lpClient DBG_SRC ); // make sure we don't lose a write event during the queuing...
 			NetworkUnlockEx( lpClient DBG_SRC );
 			return TRUE;
 		}
@@ -63483,6 +63538,7 @@ int SystemCheck( void )
 SACK_NETWORK_NAMESPACE_END
 #endif
 #ifdef _WIN32
+#  include <prsht.h>
 #  include <cryptuiapi.h>
 #endif
 //#define DEBUG_SSL_IO
@@ -63714,6 +63770,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 			}
 			else if( hs_rc == 1 )
 			{
+			read_more:
 				len = SSL_read( pc->ssl_session->ssl, NULL, 0 );
 				//lprintf( "return of 0 read: %d", len );
 				//if( len < 0 )
@@ -63773,8 +63830,14 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 					pc->ssl_session->cpp_user_read( pc->psvRead, pc->ssl_session->dbuffer, len );
 				else
 					pc->ssl_session->user_read( pc, pc->ssl_session->dbuffer, len );
+ // might have closed during read.
+				if( pc->ssl_session )
+					goto read_more;
 			}
 			else if( len == 0 ) {
+#ifdef DEBUG_SSL_IO
+				lprintf( "incomplete read" );
+#endif
 			}
 			//else {
 			//	lprintf( "SSL_Read failed." );
@@ -63783,7 +63846,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 			//}
 		}
 		else {
-			pc->ssl_session->ibuffer = NewArray( uint8_t, pc->ssl_session->ibuflen = 1024 );
+			pc->ssl_session->ibuffer = NewArray( uint8_t, pc->ssl_session->ibuflen = (4327 + 39) );
 			pc->ssl_session->dbuffer = NewArray( uint8_t, pc->ssl_session->dbuflen = 4096 );
 			{
 				int r;
@@ -63827,7 +63890,6 @@ LOGICAL ssl_Send( PCLIENT pc, CPOINTER buffer, size_t length )
 	if( !ses )
 		return FALSE;
 	while( length ) {
-	//lprintf( "ssl_Send  %d", length );
 #ifdef DEBUG_SSL_IO
 		lprintf( "SSL SEND...." );
 		LogBinary( (uint8_t*)buffer, length );
@@ -63857,6 +63919,9 @@ LOGICAL ssl_Send( PCLIENT pc, CPOINTER buffer, size_t length )
 			ses->obuflen = len * 2;
 		}
 		len_out = BIO_read( pc->ssl_session->wbio, ses->obuffer, (int)ses->obuflen );
+#ifdef DEBUG_SSL_IO
+		lprintf( "ssl_Send  %d", len_out );
+#endif
 		SendTCP( pc, ses->obuffer, len_out );
 	}
 	return TRUE;
@@ -64296,6 +64361,12 @@ struct internalCert * MakeRequest( void )
 	}
 	return cert;
 }
+#ifdef __LINUX__
+void loadSystemCerts( X509_STORE *store )
+{
+   return;
+}
+#endif
 #ifdef _WIN32
 #define MY_ENCODING_TYPE  (PKCS_7_ASN_ENCODING | X509_ASN_ENCODING)
 void loadSystemCerts( X509_STORE *store )
@@ -89687,9 +89758,7 @@ void SaveTranslationData( void )
 void LoadTranslationDataFromMemory( POINTER input, size_t length )
 {
 	PDATALIST data = NULL;
-	char *_input = NewArray( char, length );
-	memcpy( _input, input, length );
-	if( json_parse_message( (char*)_input, length, &data ) ) {
+	if( json_parse_message( (char*)input, length, &data ) ) {
 		struct json_value_container *val;
 		INDEX idx;
 		struct json_value_container *val3;
@@ -89721,7 +89790,6 @@ void LoadTranslationDataFromMemory( POINTER input, size_t length )
 		}
 		json_dispose_message( &data );
 	}
-	Deallocate( char *, _input );
 	translate_local.updated = FALSE;
 }
 //---------------------------------------------------------------------------
