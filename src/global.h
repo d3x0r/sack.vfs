@@ -299,6 +299,8 @@ public:
 };
 
 struct reviver_data {
+	Isolate *isolate;
+	Local<Context> context;
 	LOGICAL revive;
 	int index;
 	Handle<Value> value;
@@ -306,7 +308,7 @@ struct reviver_data {
 	Handle<Function> reviver;
 };
 
-Local<Value> convertMessageToJS( Isolate *isolate, PDATALIST msg_data, struct reviver_data *reviver );
+Local<Value> convertMessageToJS( PDATALIST msg_data, struct reviver_data *reviver );
 
 struct arrayBufferHolder : public node::ObjectWrap {
 	void *buffer;

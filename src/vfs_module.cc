@@ -342,7 +342,9 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 						data = json_parse_get_data( parser );
 						struct reviver_data r;
 						r.revive = FALSE;
-						Local<Value> val = convertMessageToJS( isolate, data, &r );
+						r.isolate = isolate;
+						r.context = isolate->GetCurrentContext();
+						Local<Value> val = convertMessageToJS( data, &r );
 						{
 							MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
 							if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
@@ -382,7 +384,9 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 						if( data->Cnt ) {
 							struct reviver_data r;
 							r.revive = FALSE;
-							Local<Value> val = convertMessageToJS( isolate, data, &r );
+							r.isolate = isolate;
+							r.context = isolate->GetCurrentContext();
+							Local<Value> val = convertMessageToJS( data, &r );
 							{
 								MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
 								if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
