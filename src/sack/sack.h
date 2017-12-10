@@ -11607,6 +11607,8 @@ struct json_value_container {
 	int64_t result_n;
   // list of struct json_value_container that this contains.
 	PDATALIST contains;
+  // list of struct json_value_container that this contains.
+	PDATALIST *_contains;
 };
 // any allocate mesage parts are released.
 JSON_EMITTER_PROC( void, json_dispose_message )( PDATALIST *msg_data );
@@ -11878,6 +11880,7 @@ typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
 typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOINTER buffer, size_t msglen );
 // protocolsAccepted value set can be released in opened callback, or it may be simply assigned as protocols passed...
 typedef LOGICAL ( *web_socket_accept )(PCLIENT pc, uintptr_t psv, const char *protocols, const char *resource, char **protocolsAccepted);
+typedef void (*web_socket_completion)( PCLIENT pc, uintptr_t psv, int binary, int bytesRead );
  // passed psv used in server create; since it is sort of an open, return a psv for next states(if any)
 typedef uintptr_t ( *web_socket_http_request )(PCLIENT pc, uintptr_t psv);
 // these should be a combination of bit flags
@@ -11941,6 +11944,8 @@ WEBSOCKET_EXPORT void SetWebSocketDeflate( PCLIENT pc, int enable_flags );
 // this can be used to disable masking on client or enable on server
 // (masked output from server to client is not supported by browsers)
 WEBSOCKET_EXPORT void SetWebSocketMasking( PCLIENT pc, int enable );
+// Set callback to get completed fragment size (total packet size collected so far)
+WEBSOCKET_EXPORT void SetWebSocketDataCompletion( PCLIENT pc, web_socket_completion callback );
 #endif
 /*
  * SACK extension to define methods to render to javascript/HTML5 WebSocket event interface

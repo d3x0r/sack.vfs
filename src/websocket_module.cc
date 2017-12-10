@@ -764,7 +764,6 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 	if( !l.loop )
 		l.loop = uv_default_loop();
 	//NetworkWait( NULL, 2000000, 16 );  // 1GB memory
-	NetworkWait( NULL, 256, 2 );  // 1GB memory
 	InitializeCriticalSec( &l.csWssEvents );
 	InitializeCriticalSec( &l.csWssiEvents );
 	InitializeCriticalSec( &l.csWscEvents );
@@ -1112,6 +1111,7 @@ wssObject::wssObject( struct wssOptions *opts ) {
 	}
 	closed = 0;
 	eventQueue = CreateLinkQueue();
+	NetworkWait( NULL, 256, 2 );  // 1GB memory
 	uv_async_init( l.loop, &async, wssAsyncMsg );
 	async.data = this;
 
@@ -1583,6 +1583,7 @@ wscObject::wscObject( wscOptions *opts ) {
 	readyState = INITIALIZING;
 	closed = 0;
 	//lprintf( "Init async handle. (wsc) %p", &async );
+	NetworkWait( NULL, 256, 2 );  // 1GB memory
 	uv_async_init( l.loop, &async, wscAsyncMsg );
 	async.data = this;
 
@@ -1941,6 +1942,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	}
 
 	Local<Object> result = Object::New( isolate );
+	NetworkWait( NULL, 256, 2 );  // 1GB memory
 
 	{
 		PVARTEXT pvtAddress = VarTextCreate();

@@ -285,7 +285,7 @@ static inline Local<Value> makeValue( struct json_value_container *val, struct r
 		result = Undefined(revive->isolate);
 		break;
 	case VALUE_STRING:
-		result = String::NewFromUtf8( revive->isolate, val->string, MODE, val->stringLen ).ToLocalChecked();
+		result = String::NewFromUtf8( revive->isolate, val->string, MODE, (int)val->stringLen ).ToLocalChecked();
 		break;
 	case VALUE_NUMBER:
 		if( val->float_result )
@@ -320,7 +320,7 @@ static inline Local<Value> makeValue( struct json_value_container *val, struct r
 }
 
 static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive ) {
-	Local<Value> saveVal = revive->value;
+	Local<Value> thisVal;
 	Local<String> stringKey;
 	Local<Value> thisKey;
 	LOGICAL saveRevive = revive->revive;
@@ -334,19 +334,21 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 		switch( val->value_type ) {
 		default:
 			if( val->name ) {
-				o->CreateDataProperty( revive->context, 
-						String::NewFromUtf8( revive->isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked()
+				stringKey = String::NewFromUtf8( revive->isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked();
+				revive->value = stringKey;
+				o->CreateDataProperty( revive->context, stringKey
 						, makeValue( val, revive ) );
-			} else {
+			}
+			else {
 				if( val->value_type == VALUE_EMPTY )
 					revive->revive = FALSE;
 				if( revive->revive )
 					revive->value = Integer::New( revive->isolate, index );
-				o->Set( index++, makeValue( val, revive ) );
-				revive->revive = saveRevive;
+				o->Set( index++, thisVal = makeValue( val, revive ) );
 				if( val->value_type == VALUE_EMPTY )
 					o->Delete( revive->context, index - 1 );
 			}
+			revive->revive = saveRevive;
 			break;
 		case VALUE_ARRAY:
 			if( val->name ) {
