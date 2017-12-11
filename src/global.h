@@ -330,5 +330,5 @@ struct vfs_global_data {
 } vfs_global_data;
 
 #define GetHolder() GetFromSet( ARRAY_BUFFER_HOLDER, &vfs_global_data.holders )
-#define DropHolder(h) DeleteFromSet( ARRAY_BUFFER_HOLDER, &vfs_global_data.holders, h )
+#define DropHolder(h) DeleteFromSet( ARRAY_BUFFER_HOLDER, vfs_global_data.holders, h )
 
