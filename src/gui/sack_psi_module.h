@@ -186,6 +186,8 @@ public:
 	static void getCoordinate( const FunctionCallbackInfo<Value>&  args );
 	static void setCoordinate( const FunctionCallbackInfo<Value>&  args );
 
+	// clock control extension
+	static void makeAnalog( const FunctionCallbackInfo<Value>& args );
 	//Persistent<Function, CopyablePersistentTraits<Function>> cbConsoleRead;  // event for console control callback (psi/console.h)
 	//Persistent<Function, CopyablePersistentTraits<Function>> cbButtonClick;  // event for button control callback (psi/console.h)
 
