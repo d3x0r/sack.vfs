@@ -1641,7 +1641,7 @@ SACK_NAMESPACE_END
 #define LINKSTUFF
 	SACK_NAMESPACE
 	_CONTAINER_NAMESPACE
-#    define TYPELIB_CALLTYPE CPROC
+#    define TYPELIB_CALLTYPE
 #  if defined( _TYPELIBRARY_SOURCE_STEAL )
 #    define TYPELIB_PROC extern
 #  elif defined( NO_EXPORTS )
@@ -2134,6 +2134,7 @@ TYPELIB_PROC  PLINKQUEUE TYPELIB_CALLTYPE   CreateLinkQueueEx( DBG_VOIDPASS );
 TYPELIB_PROC  void TYPELIB_CALLTYPE         DeleteLinkQueueEx( PLINKQUEUE *pplq DBG_PASS );
 /* Enque a link to the queue.  */
 TYPELIB_PROC  PLINKQUEUE TYPELIB_CALLTYPE   EnqueLinkEx      ( PLINKQUEUE *pplq, POINTER link DBG_PASS );
+TYPELIB_PROC  void TYPELIB_CALLTYPE   EnqueLinkNLEx( PLINKQUEUE *pplq, POINTER link DBG_PASS );
 /* EnqueLink adds the new item at the end of the list. PrequeueLink
    puts the new item at the head of the queue (so it's the next
    one to be retrieved).                                            */
@@ -2142,6 +2143,7 @@ TYPELIB_PROC  PLINKQUEUE TYPELIB_CALLTYPE   PrequeLinkEx      ( PLINKQUEUE *pplq
    element in the queue and removes the element from the queue.
                                                                 */
 TYPELIB_PROC  POINTER TYPELIB_CALLTYPE      DequeLink        ( PLINKQUEUE *pplq );
+TYPELIB_PROC POINTER  TYPELIB_CALLTYPE      DequeLinkNL      ( PLINKQUEUE *pplq );
 /* Return TRUE/FALSE if the queue is empty or not. */
 TYPELIB_PROC  LOGICAL TYPELIB_CALLTYPE      IsQueueEmpty     ( PLINKQUEUE *pplq );
 /* Gets the number of elements current in the queue. */
@@ -2166,6 +2168,7 @@ TYPELIB_PROC  POINTER TYPELIB_CALLTYPE      PeekQueue    ( PLINKQUEUE plq );
 /* <combine sack::containers::queue::EnqueLinkEx@PLINKQUEUE *@POINTER link>
    \ \                                                                      */
 #define     EnqueLink(pplq, link) EnqueLinkEx( pplq, link DBG_SRC )
+#define     EnqueLinkNL(pplq, link) EnqueLinkNLEx( pplq, link DBG_SRC )
 #ifdef __cplusplus
 //		namespace queue {
 		}
@@ -2521,7 +2524,7 @@ typedef struct genericset_tag {
 TYPELIB_PROC  POINTER  TYPELIB_CALLTYPE GetFromSetEx( GENERICSET **pSet, int setsize, int unitsize, int maxcnt DBG_PASS );
 /* <combine sack::containers::sets::GetFromSetEx@GENERICSET **@int@int@int maxcnt>
    \ \                                                                             */
-#define GetFromSeta(ps, ss, us, max) GetFromSetEx( (ps), (ss), (us), (max) DBG_SRC )
+#define GetFromSeta(ps, ss, us, max) GetFromSetPoolEx( NULL, 0, 0, 0, (ps), (ss), (us), (max) DBG_SRC )
 /* <combine sack::containers::sets::GetFromSetEx@GENERICSET **@int@int@int maxcnt>
    \ \
    Parameters
@@ -2600,7 +2603,11 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  DeleteFromSetExx( GENERICSET *set, POINTER 
 #define DeleteFromSetEx( name, set, member, xx ) DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC )
 /* <combine sack::containers::sets::DeleteFromSetExx@GENERICSET *@POINTER@int@int max>
    \ \                                                                                 */
+#ifdef _DEBUG
+#define DeleteFromSet( name, set, member ) do { P##name##SET testset = set; DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC ); } while(0)
+#else
 #define DeleteFromSet( name, set, member ) DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC )
+#endif
 /* Marks a member in a set as usable.
    Parameters
    set :       pointer to a genericset pointer
@@ -5603,9 +5610,13 @@ MEM_PROC  POINTER MEM_API  AllocateEx ( uintptr_t nSize DBG_PASS );
    Parameters
    type :   type of the variable
    thing :  the thing to actually release.                    */
-#define Deallocate(type,thing) for(type _zzqz_tmp=thing;ReleaseEx((POINTER)(_zzqz_tmp)DBG_SRC),0;)
+#  ifdef _DEBUG
+#    define Deallocate(type,thing) for(type _zzqz_tmp=thing;ReleaseEx((POINTER)(_zzqz_tmp)DBG_SRC),0;)
+#  else
+#    define Deallocate(type,thing) ReleaseEx((POINTER)(thing)DBG_SRC)
+#  endif
 #else
-#define Deallocate(type,thing) (ReleaseEx((POINTER)(thing)DBG_SRC))
+#  define Deallocate(type,thing) (ReleaseEx((POINTER)(thing)DBG_SRC))
 #endif
 /* <combine sack::memory::HeapAllocateEx@PMEM@uintptr_t nSize>
    \ \                                                        */
@@ -27712,7 +27723,7 @@ PTHREAD  ThreadToEx( uintptr_t (CPROC*proc)(PTHREAD), uintptr_t param DBG_PASS )
 		while( LockedExchangePtrSzVal( &globalTimerData.lock_thread_create, 1 ) )
 			Relinquish();
  /*Release( pThread )*/
-		DeleteFromSet( THREAD, &globalTimerData.threadset, pThread );
+		DeleteFromSet( THREAD, globalTimerData.threadset, pThread );
 		globalTimerData.lock_thread_create = 0;
 		pThread = NULL;
 	}
@@ -27784,7 +27795,7 @@ PTHREAD  ThreadToSimpleEx( uintptr_t (CPROC*proc)(POINTER), POINTER param DBG_PA
 		while( LockedExchangePtrSzVal( &globalTimerData.lock_thread_create, 1 ) )
 			Relinquish();
  /*Release( pThread )*/
-		DeleteFromSet( THREAD, &globalTimerData.threadset, pThread );
+		DeleteFromSet( THREAD, globalTimerData.threadset, pThread );
 		globalTimerData.lock_thread_create = 0;
 		pThread = NULL;
 	}
@@ -27943,7 +27954,7 @@ static void  DoRemoveTimer( uint32_t timerID DBG_PASS )
 				tmp->delta += timer->delta;
 				tmp->me = timer->me;
 			}
-			DeleteFromSet( TIMER, &globalTimerData.timer_pool, timer );
+			DeleteFromSet( TIMER, globalTimerData.timer_pool, timer );
 		}
 		else
 			_lprintf(DBG_RELAY)( WIDE("Failed to find timer to grab") );
@@ -28242,7 +28253,7 @@ static int CPROC ProcessTimers( uintptr_t psvForce )
 				lprintf( WIDE("Removing one shot timer. %d"), timer->ID );
 #endif
 				// was a one shot timer.
-				DeleteFromSet( TIMER, &globalTimerData.timer_pool, timer );
+				DeleteFromSet( TIMER, globalTimerData.timer_pool, timer );
 				timer = NULL;
 			}
 		}
@@ -29558,7 +29569,7 @@ static void CPROC KillName( CPOINTER user, uintptr_t key )
 	else if( name->flags.bData )
 	{
 	}
-	//DeleteFromSet( NAME, &l.TreeNodes, user );
+	//DeleteFromSet( NAME, l.TreeNodes, user );
 }
 //---------------------------------------------------------------------------
 // p would be the global space, but it's also already set in it's correct spot
@@ -29649,7 +29660,7 @@ static PTREEDEF AddClassTree( PCTREEDEF class_root, TEXTCHAR *name, PTREEROOT ro
 		if( !AddBinaryNode( class_root->Tree, classname, (uintptr_t)classname->name ) )
 		{
 			//Log( WIDE("For some reason could not add new class tree to tree!") );
-			DeleteFromSet( NAME, &l.NameSet, classname );
+			DeleteFromSet( NAME, l.NameSet, classname );
 			return NULL;
 		}
 		return &classname->tree;
@@ -29992,7 +30003,7 @@ PROCREG_PROC( LOGICAL, RegisterFunctionExx )( PCLASSROOT root
 					Log( WIDE("All is not well - found same function name in tree with different address. (ignoring second) ") );
 #endif
 				}
-				DeleteFromSet( NAME, &l.NameSet, newname );
+				DeleteFromSet( NAME, l.NameSet, newname );
 				return TRUE;
 			}
 			else
@@ -30000,7 +30011,7 @@ PROCREG_PROC( LOGICAL, RegisterFunctionExx )( PCLASSROOT root
 				if( !AddBinaryNode( class_root->Tree, (PCLASSROOT)newname, (uintptr_t)newname->name ) )
 				{
 					Log( WIDE("For some reason could not add new name to tree!") );
-					DeleteFromSet( NAME, &l.NameSet, newname );
+					DeleteFromSet( NAME, l.NameSet, newname );
 					return FALSE;
 				}
 			}
@@ -30029,7 +30040,7 @@ PROCREG_PROC( LOGICAL, RegisterFunctionExx )( PCLASSROOT root
 		else
 		{
 			lprintf( WIDE("I'm relasing this name!?") );
-			DeleteFromSet( NAME, &l.NameSet, newname );
+			DeleteFromSet( NAME, l.NameSet, newname );
 		}
 		return 1;
 	}
@@ -30588,7 +30599,7 @@ PROCREG_PROC( uintptr_t, RegisterDataTypeEx )( PCLASSROOT root
 		pName->parent = class_root;
 		if( !AddNode( class_root, pName, (uintptr_t)pName->name ) )
 		{
-			DeleteFromSet( NAME, &l.NameSet, pName );
+			DeleteFromSet( NAME, l.NameSet, pName );
  // NULL
 			return 0;
 		}
@@ -31551,14 +31562,14 @@ public ref class ProcReg
 					if( !AddBinaryNode( class_root->Tree, newname, (uintptr_t)newname->name ) )
 					{
 						Log( WIDE("For some reason could not add new name to tree!") );
-						DeleteFromSet( NAME, &l.NameSet, newname );
+						DeleteFromSet( NAME, l.NameSet, newname );
 					}
 				}
 			}
 			else
 			{
 				lprintf( WIDE("I'm relasing this name!?") );
-				DeleteFromSet( NAME, &l.NameSet, newname );
+				DeleteFromSet( NAME, l.NameSet, newname );
 			}
 			return 1;
 		}
@@ -39458,19 +39469,11 @@ POINTER  PeekLink ( PLINKSTACK *pls )
 	return PeekLinkEx( pls, 0 );
 }
 //--------------------------------------------------------------------------
- POINTER  PopLink ( PLINKSTACK *pls )
+POINTER  PopLink ( PLINKSTACK *pls )
 {
-	POINTER p = NULL;
 	if( pls && *pls && (*pls)->Top )
-	{
-		(*pls)->Top--;
-		p = (*pls)->pNode[(*pls)->Top];
-#ifdef _DEBUG
- // trash the old one.
-		(*pls)->pNode[(*pls)->Top] = (POINTER)0x1BEDCAFE;
-#endif
-	}
-	return p;
+		return (*pls)->pNode[--(*pls)->Top];
+	return NULL;
 }
 //--------------------------------------------------------------------------
 static PLINKSTACK ExpandStackEx( PLINKSTACK *stack, INDEX entries DBG_PASS )
@@ -39645,14 +39648,14 @@ static struct link_queue_local_data
 #define link_queue_local_lock  ((_link_queue_local)?(&_link_queue_local->lock):(&s_link_queue_local.lock))
 PLINKQUEUE CreateLinkQueueEx( DBG_VOIDPASS )
 {
-	PLINKQUEUE plq;
-	plq = (PLINKQUEUE)AllocateEx( sizeof( LINKQUEUE ) DBG_RELAY );
+	PLINKQUEUE plq = 0;
+	plq = (PLINKQUEUE)AllocateEx( MY_OFFSETOF( &plq, pNode[8] ) DBG_RELAY );
 #if USE_CUSTOM_ALLOCER
 	plq->Lock     = 0;
 #endif
 	plq->Top      = 0;
 	plq->Bottom   = 0;
-	plq->Cnt      = 2;
+	plq->Cnt      = 8;
 	plq->pNode[0] = NULL;
  // shrug
 	plq->pNode[1] = NULL;
@@ -39828,6 +39831,33 @@ retry_lock:
 	return plq;
 }
 //--------------------------------------------------------------------------
+void EnqueLinkNLEx( PLINKQUEUE *pplq, POINTER link DBG_PASS )
+ {
+	INDEX tmp, t, c;
+	PLINKQUEUE plq;
+	if( !pplq )
+		return;
+	if( !( *pplq ) )
+		*pplq = CreateLinkQueueEx( DBG_VOIDRELAY );
+	plq = *pplq;
+	if( link )
+	{
+		tmp = (t=plq->Top) + 1;
+		if( tmp >= ( c = plq->Cnt ) )
+			tmp -= c;
+ // collided with self...
+		if( tmp == ( plq->Bottom ) )
+		{
+			plq = ExpandLinkQueueEx( pplq, 16 DBG_RELAY );
+ // should be room at the end of phsyical array....
+			tmp = (t=plq->Top) + 1;
+		}
+		plq->pNode[t] = link;
+		plq->Top = tmp;
+	}
+	*pplq = plq;
+ }
+ //--------------------------------------------------------------------------
  PLINKQUEUE  PrequeLinkEx ( PLINKQUEUE *pplq, POINTER link DBG_PASS )
 {
 	INDEX tmp;
@@ -39889,7 +39919,7 @@ retry_lock:
  LOGICAL  IsQueueEmpty ( PLINKQUEUE *pplq  )
 {
 	if( !pplq || !(*pplq) ||
-		 (*pplq)->Bottom == (*pplq)->Top )
+		(*pplq)->Bottom == (*pplq)->Top )
 		return TRUE;
 	return FALSE;
 }
@@ -40019,6 +40049,23 @@ retry_lock:
 	link_queue_local_lock[0] = 0;
 	return p;
 }
+POINTER  DequeLinkNL( PLINKQUEUE *pplq )
+{
+	INDEX b, t, c, tmp;
+	POINTER p;
+	if( !pplq || !*pplq )
+		return NULL;
+	p = NULL;
+	if( (b=( *pplq )->Bottom) != (t=( *pplq )->Top) )
+	{
+		tmp = b + 1;
+		if( tmp >= ( c = ( *pplq )->Cnt ) )
+			tmp -= c;
+		p = ( *pplq )->pNode[b];
+		( *pplq )->Bottom = tmp;
+	}
+	return p;
+}
 #ifdef __cplusplus
 //		namespace queue {
 }
@@ -40038,11 +40085,11 @@ PDATAQUEUE CreateDataQueueEx( INDEX size DBG_PASS )
 {
 	PDATAQUEUE pdq;
 	pdq = (PDATAQUEUE)AllocateEx( ( ( sizeof( DATAQUEUE ) + (2*size) ) - 1 ) DBG_RELAY );
-	pdq->Top		= 0;
-	pdq->Bottom	= 0;
+	pdq->Top      = 0;
+	pdq->Bottom	  = 0;
 	pdq->ExpandBy = 16;
-	pdq->Size	  = size;
-	pdq->Cnt		= 2;
+	pdq->Size     = size;
+	pdq->Cnt      = 2;
 	return pdq;
 }
 //--------------------------------------------------------------------------
@@ -44043,7 +44090,7 @@ typedef struct treeroot_tag {
 	PTREENODE tree;
 	PTREENODE prior, current, lastfound;
 } TREEROOT;
-static TREENODE TreeNodeSet;
+static PTREENODESET TreeNodeSet;
 CPOINTER GetLesserNodeExx( PTREEROOT root, PTREENODE *from );
 CPOINTER GetGreaterNodeExx( PTREEROOT root, PTREENODE *from );
 //---------------------------------------------------------------------------
@@ -44235,7 +44282,7 @@ int HangBinaryNode( PTREEROOT root, PTREENODE node )
 			}
 			if( check )
 				check->children -= (node->children + 1);
-			DeleteFromSet( TREENODE, &TreeNodeSet, node );
+			DeleteFromSet( TREENODE, TreeNodeSet, node );
 			//Release( node );
 		 return 0;
 		}
@@ -44349,7 +44396,7 @@ static void NativeRemoveBinaryNode( PTREEROOT root, PTREENODE node )
 		if( root->Destroy )
 			root->Destroy( node->userdata, node->key );
 		MemSet( node, 0, sizeof( node ) );
-		DeleteFromSet( TREENODE, &TreeNodeSet, node );
+		DeleteFromSet( TREENODE, TreeNodeSet, node );
 		//Release( node );
 		return;
 	}
@@ -44400,7 +44447,7 @@ void DestroyBinaryTree( PTREEROOT root )
 {
 	while( root->tree )
 		NativeRemoveBinaryNode( root, root->tree );
-	DeleteFromSet( TREEROOT, &treepool, root );
+	DeleteFromSet( TREEROOT, treepool, root );
 }
 //---------------------------------------------------------------------------
 PTREEROOT CreateBinaryTreeExtended( uint32_t flags
@@ -45227,6 +45274,7 @@ PGENERICSET GetFromSetPoolEx( GENERICSET **pSetSet, int setsetsizea, int setunit
 	PGENERICSET set;
 	uint32_t maxbias = 0;
 	void *unit = NULL;
+	uintptr_t ofs = ( ( ( maxcnt + 31 ) / 32 ) * 4 );
 	if( !pSet )
  // can never return something from nothing.
 		return NULL;
@@ -45296,6 +45344,7 @@ ExtendSet:
 		}
 		while( !unit && set )
 		{
+			uintptr_t base = ( (uintptr_t)set->bUsed ) + ofs;
 			// quick skip for 32 bit blocks of used members...
 			n = 0;
 			for( n = 0; n < maxcnt && ((maxcnt-n) >= 32) && AllUsed( set,n ); n+=32 );
@@ -45311,14 +45360,10 @@ ExtendSet:
 			{
 				if( !IsUsed( set, n ) )
 				{
-					unit = (void*)( ((uintptr_t)(set->bUsed))
- // skip over the bUsed bitbuffer
-										+ ( ( (maxcnt +31) / 32 ) * 4 )
  // go to the appropriate offset
-										+ n * unitsize );
+					unit = (void*)( base + n * unitsize );
 					SetUsed( set, n );
-					//set->nUsed++;
-					break;
+					return (PGENERICSET)unit;
 				}
 			}
 			if( n == maxcnt )
@@ -45332,7 +45377,9 @@ ExtendSet:
 				set = set->next;
 			}
 		}
+#ifdef Z_DEBUG
 		if( bLog ) _lprintf( DBG_RELAY )( WIDE( "Unit result: %p from %p %d %d %d %d" ), unit, set, unitsize, maxcnt, n, ( ( (maxcnt +31) / 32 ) * 4 )  );
+#endif
 	}
 	return (PGENERICSET)unit;
 }
@@ -45483,21 +45530,17 @@ int MemberValidInSet( GENERICSET *pSet, void *unit, int unitsize, int max )
 void DeleteFromSetExx( GENERICSET *pSet, void *unit, int unitsize, int max DBG_PASS )
 {
 	uintptr_t nUnit = (uintptr_t)unit;
-	int ofs = ( ( max + 31 ) / 32) * 4;
-	if( bLog ) _lprintf(DBG_RELAY)( WIDE("Deleting from  %p of %p "), pSet, unit );
+	uintptr_t ofs = ( ( max + 31 ) / 32) * 4;
+	uintptr_t base;
+	//if( bLog ) _lprintf(DBG_RELAY)( WIDE("Deleting from  %p of %p "), pSet, unit );
 	while( pSet )
 	{
-		if( bLog ) lprintf( WIDE( "range to check is %")_PTRSZVALfx WIDE("(%d) to %")_PTRSZVALfx WIDE("(%d)" )
-				 ,	  ((uintptr_t)(pSet->bUsed) + ofs )
-			     ,(nUnit >= ((uintptr_t)(pSet->bUsed) + ofs ))
-				  , ((uintptr_t)(pSet->bUsed) + ofs + unitsize*max )
-		        , (nUnit <= ((uintptr_t)(pSet->bUsed) + ofs + unitsize*max ))
-				 );
-		if( (nUnit >= ((uintptr_t)(pSet->bUsed) + ofs )) &&
-		    (nUnit <= ((uintptr_t)(pSet->bUsed) + ofs + unitsize*max )) )
+		base = ( (uintptr_t)( pSet->bUsed ) + ofs );
+		if( (nUnit >= base) &&
+		    (nUnit < ( base + unitsize*max )) )
 		{
-			uintptr_t n = nUnit - ( ((uintptr_t)(pSet->bUsed)) + ofs );
-			//Log1( WIDE("Found item in set at %d"), n / unitsize );
+			uintptr_t n = nUnit - base;
+#ifdef Z_DEBUG
 			if( n % unitsize )
 			{
 				lprintf( WIDE("Error in set member alignment! %p %p %p  %d %")_PTRSZVALfs WIDE(" %")_PTRSZVALfs WIDE(" of %d")
@@ -45509,15 +45552,17 @@ void DeleteFromSetExx( GENERICSET *pSet, void *unit, int unitsize, int max DBG_P
 				DebugBreak();
 				return;
 			}
+#endif
 			n /= unitsize;
 			ClearUsed( pSet, n );
-			//pSet->nUsed--; // one not used - quick reference counter
 			break;
 		}
 		pSet = pSet->next;
 	}
+#ifdef Z_DEBUG
 	if( !pSet )
 		Log( WIDE("Failed to find node in set!") );
+#endif
 }
 //----------------------------------------------------------------------------
 void DeleteSetMemberEx( GENERICSET *pSet, INDEX iMember, uintptr_t unitsize, INDEX max )
@@ -51191,7 +51236,7 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 				//lprintf( "Completed packet; still not final fragment though.... %d", websock->fragment_collection_avail );
 				websock->input_msg_state = 0;
 				if( websock->on_fragment_done )
-					websock->on_fragment_done( pc, websock->psv_open, websock->input_type, websock->fragment_collection_length );
+					websock->on_fragment_done( pc, websock->psv_open, websock->input_type, (int)websock->fragment_collection_length );
 			}
 			break;
 		}
@@ -52881,13 +52926,13 @@ typedef PDATALIST *PPDATALIST;
 DeclareSet( PDATALIST );
 struct json_parser_shared_data {
 	PPARSE_CONTEXTSET parseContexts;
-	PPARSE_CONTEXTSET parseBuffers;
+	PPARSE_BUFFERSET parseBuffers;
 	struct json_parse_state *last_parse_state;
 	PPARSE_STATESET parseStates;
 	PPLISTSET listSet;
 	PPLINKSTACKSET linkStacks;
 	PPLINKQUEUESET linkQueues;
-	PPDATALIST dataLists;
+	PPDATALISTSET dataLists;
 };
 #ifndef JSON_PARSER_MAIN_SOURCE
 extern
@@ -53231,12 +53276,12 @@ int json_parse_add_data( struct json_parse_state *state
 		input = GetFromSet( PARSE_BUFFER, &jpsd.parseBuffers );
 		input->pos = input->buf = msg;
 		input->size = msglen;
-		EnqueLink( state->inBuffers, input );
+		EnqueLinkNL( state->inBuffers, input );
 		if( state->gatheringString || state->gatheringNumber || state->parse_context == CONTEXT_OBJECT_FIELD ) {
 			// have to extend the previous output buffer to include this one instead of allocating a split string.
 			size_t offset;
 			size_t offset2;
-			output = (struct json_output_buffer*)DequeLink( state->outQueue );
+			output = (struct json_output_buffer*)DequeLinkNL( state->outQueue );
 			//lprintf( "output from before is %p", output );
 			offset = (output->pos - output->buf);
 			offset2 = state->val.string - output->buf;
@@ -53253,11 +53298,11 @@ int json_parse_add_data( struct json_parse_state *state
 			output = (struct json_output_buffer*)GetFromSet( PARSE_BUFFER, &jpsd.parseBuffers );
 			output->pos = output->buf = NewArray( char, msglen + 1 );
 			output->size = msglen;
-			EnqueLink( state->outQueue, output );
+			EnqueLinkNL( state->outQueue, output );
 		}
 	}
-	while( state->status && (input = (PPARSE_BUFFER)DequeLink( state->inBuffers )) ) {
-		output = (struct json_output_buffer*)DequeLink( state->outQueue );
+	while( state->status && (input = (PPARSE_BUFFER)DequeLinkNL( state->inBuffers )) ) {
+		output = (struct json_output_buffer*)DequeLinkNL( state->outQueue );
 		//lprintf( "output is %p", output );
 		state->n = input->pos - input->buf;
 		if( state->gatheringString ) {
@@ -55066,12 +55111,12 @@ int json6_parse_add_data( struct json_parse_state *state
 		input = GetFromSet( PARSE_BUFFER, &jpsd.parseBuffers );
 		input->pos = input->buf = msg;
 		input->size = msglen;
-		EnqueLink( state->inBuffers, input );
+		EnqueLinkNL( state->inBuffers, input );
 		if( state->gatheringString || state->gatheringNumber || state->parse_context == CONTEXT_OBJECT_FIELD ) {
 			// have to extend the previous output buffer to include this one instead of allocating a split string.
 			size_t offset;
 			size_t offset2;
-			output = (struct json_output_buffer*)DequeLink( state->outQueue );
+			output = (struct json_output_buffer*)DequeLinkNL( state->outQueue );
 			//lprintf( "output from before is %p", output );
 			offset = (output->pos - output->buf);
 			offset2 = state->val.string ? (state->val.string - output->buf) : 0;
@@ -55090,14 +55135,14 @@ int json6_parse_add_data( struct json_parse_state *state
 			output = (struct json_output_buffer*)GetFromSet( PARSE_BUFFER, &jpsd.parseBuffers );
 			output->pos = output->buf = NewArray( char, msglen + 1 );
 			output->size = msglen;
-			EnqueLink( state->outQueue, output );
+			EnqueLinkNL( state->outQueue, output );
 		}
 	}
 	else {
 		// zero length input buffer... terminate a number.
 		if( state->gatheringNumber ) {
 			//console.log( "Force completed.")
-			output = (struct json_output_buffer*)DequeLink( state->outQueue );
+			output = (struct json_output_buffer*)DequeLinkNL( state->outQueue );
 			output->pos[0] = 0;
 			PushLink( state->outBuffers, output );
 			state->gatheringNumber = FALSE;
@@ -55120,8 +55165,8 @@ int json6_parse_add_data( struct json_parse_state *state
 			retval = 1;
 		}
 	}
-	while( state->status && ( input = (PPARSE_BUFFER)DequeLink( state->inBuffers ) ) ) {
-		output = (struct json_output_buffer*)DequeLink( state->outQueue );
+	while( state->status && ( input = (PPARSE_BUFFER)DequeLinkNL( state->inBuffers ) ) ) {
+		output = (struct json_output_buffer*)DequeLinkNL( state->outQueue );
 		//lprintf( "output is %p", output );
 		state->n = input->pos - input->buf;
 		if( state->gatheringString ) {
@@ -55967,9 +56012,9 @@ void json_parse_clear_state( struct json_parse_state *state ) {
 			Deallocate( const char *, buffer->buf );
 			DeleteFromSet( PARSE_BUFFER, jpsd.parseBuffers, buffer );
 		}
-		while( buffer = (PPARSE_BUFFER)DequeLink( state->inBuffers ) )
+		while( buffer = (PPARSE_BUFFER)DequeLinkNL( state->inBuffers ) )
 			DeleteFromSet( PARSE_BUFFER, jpsd.parseBuffers, buffer );
-		while( buffer = (PPARSE_BUFFER)DequeLink( state->outQueue ) ) {
+		while( buffer = (PPARSE_BUFFER)DequeLinkNL( state->outQueue ) ) {
 			Deallocate( const char*, buffer->buf );
 			DeleteFromSet( PARSE_BUFFER, jpsd.parseBuffers, buffer );
 		}
@@ -56034,12 +56079,12 @@ void json_parse_dispose_state( struct json_parse_state **ppState ) {
 		LIST_FORALL( state->outValBuffers[0], idx, char*, buf ) {
 			Deallocate( char*, buf );
 		}
-		DeleteFromSet( PLIST, &jpsd.listSet, state->outValBuffers );
+		DeleteFromSet( PLIST, jpsd.listSet, state->outValBuffers );
 		//DeleteList( &state->outValBuffers );
 	}
-	while( buffer = (PPARSE_BUFFER)DequeLink( state->inBuffers ) )
+	while( buffer = (PPARSE_BUFFER)DequeLinkNL( state->inBuffers ) )
 		DeleteFromSet( PARSE_BUFFER, jpsd.parseBuffers, buffer );
-	while( buffer = (PPARSE_BUFFER)DequeLink( state->outQueue ) ) {
+	while( buffer = (PPARSE_BUFFER)DequeLinkNL( state->outQueue ) ) {
 		Deallocate( const char*, buffer->buf );
 		DeleteFromSet( PARSE_BUFFER, jpsd.parseBuffers, buffer );
 	}
