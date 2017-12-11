@@ -451,19 +451,19 @@ static WSC_EVENT *GetWscEvent() {
 
 static void DropWssEvent( WSS_EVENT *evt ) {
 	EnterCriticalSec( &l.csWssEvents );
-	DeleteFromSet( WSS_EVENT, &l.wssEvents, evt );
+	DeleteFromSet( WSS_EVENT, l.wssEvents, evt );
 	LeaveCriticalSec( &l.csWssEvents );
 }
 
 static void DropWssiEvent( WSSI_EVENT *evt ) {
 	EnterCriticalSec( &l.csWssiEvents );
-	DeleteFromSet( WSSI_EVENT, &l.wssiEvents, evt );
+	DeleteFromSet( WSSI_EVENT, l.wssiEvents, evt );
 	LeaveCriticalSec( &l.csWssiEvents );
 }
 
 static void DropWscEvent( WSC_EVENT *evt ) {
 	EnterCriticalSec( &l.csWscEvents );
-	DeleteFromSet( WSC_EVENT, &l.wscEvents, evt );
+	DeleteFromSet( WSC_EVENT, l.wscEvents, evt );
 	LeaveCriticalSec( &l.csWscEvents );
 }
 
