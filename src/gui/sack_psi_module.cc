@@ -3,6 +3,7 @@
 
 #include <psi.h>
 #include <psi/console.h>
+#include <psi/clock.h>
 
 static RegistrationObject *findRegistration( CTEXTSTR name );
 
@@ -697,6 +698,12 @@ void ControlObject::setButtonEvent( const FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+void ControlObject::makeAnalog( const FunctionCallbackInfo<Value>& args ) {
+	ControlObject *c = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	if( args.Length() == 0 )
+		MakeClockAnalog( c->control );
+}
+
 static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObject *obj ) {
 	CTEXTSTR type = GetControlTypeName( obj->control );
 	if( StrCmp( type, "PSI Console" ) == 0 ) {
@@ -742,6 +749,9 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 			, DontDelete );
 
 
+	} else if( StrCmp( type, "Basic Clock Widget" ) == 0 ) {
+		c->Set( String::NewFromUtf8( isolate, "analog" ), Function::New( isolate, ControlObject::makeAnalog ) );
+		
 	}
 }
 
