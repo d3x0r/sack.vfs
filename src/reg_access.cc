@@ -18,10 +18,10 @@ void RegObject::Init( Handle<Object> exports ) {
 }
 
 static HKEY resolveHive( char *name ) {
-	if( StrCaseCmp( name, "HKCU" ) || StrCaseCmp( name, "HKEY_CURRENT_USER" ) ) {
+	if( StrCaseCmp( name, "HKCU" ) == 0 || StrCaseCmp( name, "HKEY_CURRENT_USER" ) == 0 ) {
 		return HKEY_CURRENT_USER;
-	} else if( StrCaseCmp( name, "HKLM" ) || StrCaseCmp( name, "HKEY_LOCAL_MACHINE" ) ) {
-		return HKEY_LOCAL_MACHINE;;
+	} else if( StrCaseCmp( name, "HKLM" ) == 0 || StrCaseCmp( name, "HKEY_LOCAL_MACHINE" ) == 0 ) {
+		return HKEY_LOCAL_MACHINE;
 	} else {
 	}
    return (HKEY)0;
@@ -31,17 +31,13 @@ static HKEY resolveHive( char *name ) {
 
 void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = Isolate::GetCurrent();
-	lprintf( "Get Item! Yay." );
 	int argc = args.Length();
 	if( argc == 0 ) {
 		isolate->ThrowException( Exception::Error(
-																String::NewFromUtf8( isolate, "required parameter, regPath, is missing." ) ) );
+		    String::NewFromUtf8( isolate, "required parameter, regPath, is missing." ) ) );
 		return;
 	}
 
-	if( argc > 1 ) {
-
-	}
 	String::Utf8Value string1( args[0] );
 	char *key1 = StrDup( *string1 );
 	char *keyTmp = key1;
@@ -55,7 +51,6 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 																	String::NewFromUtf8( isolate, "required parameter, regKey, is missing." ) ) );
 			Deallocate( char*, key1 );
 			return;
-
 		}
 
 		end[0] = 0;
@@ -83,12 +78,15 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 		HKEY hTemp;
 		start = end+1;
 
-		dwStatus = RegOpenKeyEx( hive, end, 0, KEY_ALL_ACCESS, &hTemp );
-      lprintf( "open? %p  %s %08x %p", hive, end, dwStatus, hTemp );
+		dwStatus = RegOpenKeyEx( hive, end, 0
+		    , KEY_QUERY_VALUE|STANDARD_RIGHTS_READ|STANDARD_RIGHTS_READ
+		    , &hTemp );
+		if( dwStatus )
+			lprintf( "open? %p  %s %08x %p", hive, end, dwStatus, hTemp );
 		if( dwStatus == ERROR_FILE_NOT_FOUND )
 		{
 			// lprintf( "Key does not exist." );
-		        // on read don't create missing paths.
+			// on read don't create missing paths.
 			// return 'undefined'
 			return;
 
@@ -122,23 +120,20 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 										  , &dwRetType
 										, (PBYTE)pValue
 										  , &dwBufSize );
-		//lprintf( "status : %08x %s", dwStatus, keyStart );
-
-
-
-
-
 
 		RegCloseKey( hTemp );
-
-
-
-
 
 		bool swap;
 		if( dwStatus == ERROR_SUCCESS )
 		{
 			switch( dwRetType ) {
+			case REG_EXPAND_SZ:
+				{
+					char expand[1024];
+					ExpandEnvironmentStrings( pValue, expand, 1024 );
+					args.GetReturnValue().Set( String::NewFromUtf8( isolate, expand ) );
+				}
+				break;
 			case REG_SZ:
 				args.GetReturnValue().Set( String::NewFromUtf8( isolate, pValue ) );
 				break;
@@ -171,9 +166,7 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = Isolate::GetCurrent();
-
-	lprintf( "Set Item! Yay." );
+	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc == 0 ) {
 		isolate->ThrowException( Exception::Error(
@@ -181,9 +174,6 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 
-	if( argc > 1 ) {
-
-	}
 	String::Utf8Value string1( args[0] );
 	char *key1 = StrDup( *string1 );
 	char *keyTmp = key1;
@@ -226,6 +216,8 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 		start = end+1;
 
 		dwStatus = RegOpenKeyEx( hive, end, 0, KEY_ALL_ACCESS, &hTemp );
+		if( dwStatus )
+			lprintf( "open? %p  %s %08x %p", hive, end, dwStatus, hTemp );
 		if( dwStatus == ERROR_FILE_NOT_FOUND )
 		{
 			DWORD dwDisposition;
@@ -257,11 +249,12 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 			lprintf( "stauts of update is %d", dwStatus );
 
 		} else if( args[1]->IsString() ) {
-			String::Utf8Value val( args[0] );
+			String::Utf8Value val( args[1] );
 			dwStatus = RegSetValueEx(hTemp, keyStart, 0
 										  , REG_SZ
 										  , (const BYTE *)*val, (DWORD)StrLen( *val ) );
-
+			if( dwStatus )
+				lprintf( "Failed to set registry? %d %p %s", dwStatus, hTemp, keyStart );
 
 		} else {
 			isolate->ThrowException( Exception::Error(
