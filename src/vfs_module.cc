@@ -19,8 +19,8 @@ static void vfs_b64xor(const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc > 1 ) {
-  		String::Utf8Value xor1( args[0] );
-  		String::Utf8Value xor2( args[1] );
+		String::Utf8Value xor1( args[0] );
+		String::Utf8Value xor2( args[1] );
 		//lprintf( "is buffer overlapped? %s %s", *xor1, *xor2 );
 		char *r = b64xor( *xor1, *xor2 );
 		MaybeLocal<String> retval = String::NewFromUtf8( isolate, r );
@@ -33,8 +33,8 @@ static void vfs_u8xor(const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc > 0 ) {
-  		String::Utf8Value xor1( args[0] );
-  		Local<Object> key = args[1]->ToObject();
+		String::Utf8Value xor1( args[0] );
+		Local<Object> key = args[1]->ToObject();
 		//Handle<Object> 
 		Local<String> tmp;
 		Local<Value> keyValue = key->Get( String::NewFromUtf8( isolate, "key" ) );
