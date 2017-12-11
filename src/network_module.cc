@@ -112,7 +112,7 @@ static struct local {
 	int data;
 	uv_loop_t* loop;
 	PLIST strings;
-	PUDP_EVENTSET *udpEvents;
+	PUDP_EVENTSET udpEvents;
 	BinaryTree::PTREEROOT addresses;
 	BinaryTree::PTREEROOT addressesBySA;
 } l;
