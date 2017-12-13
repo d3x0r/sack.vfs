@@ -144,6 +144,9 @@ static void asyncmsg( uv_async_t* handle ) {
 				r = cb->Call( evt->control->state.Get( isolate ), 1, argv );
 				break;
 			}
+			case Event_Control_Close_Loop:
+				uv_close( (uv_handle_t*)&psiLocal.async, NULL );
+				break;
 			}
 			if( evt->waiter ) {
 				evt->flags.complete = TRUE;
@@ -191,13 +194,21 @@ int MakePSIEvent( ControlObject *control, enum eventType type, ... ) {
 }
 
 
-static void enableEventLoop( void ) {
+void enableEventLoop( void ) {
 	if( !psiLocal.eventLoopRegistered ) {
 		psiLocal.eventLoopRegistered = TRUE;
 		MemSet( &psiLocal.async, 0, sizeof( &psiLocal.async ) );
 		uv_async_init( uv_default_loop(), &psiLocal.async, asyncmsg );
 	}
 }
+
+void disableEventLoop( void ) {
+	if( psiLocal.eventLoopRegistered ) {
+		psiLocal.eventLoopRegistered = FALSE;
+		MakePSIEvent( NULL, Event_Control_Close_Loop );
+	}
+}
+
 
 void SetupControlColors( Isolate *isolate, Local<Object> object ) {
 	Local<Object> controlColors = Object::New( isolate );
