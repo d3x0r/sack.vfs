@@ -144,15 +144,15 @@ public:
 struct SqlObjectUserFunction {
 	class SqlObject *sql;
 	Persistent<Function> cb;
+	Persistent<Function> cb2;
 	Isolate *isolate;
-	PTHREAD thread;
-	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 };
+
 
 class SqlObject : public node::ObjectWrap {
 public:
 	PODBC odbc;
-   	int optionInitialized;
+	int optionInitialized;
 	static v8::Persistent<v8::Function> constructor;
 	int columns;
 	CTEXTSTR *result;
@@ -160,6 +160,10 @@ public:
 	CTEXTSTR *fields;
 	//Persistent<Object> volume;
 public:
+	PTHREAD thread;
+	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	PLIST userFunctions;
+	PLINKQUEUE messages;
 
 	static void Init( Handle<Object> exports );
 	SqlObject( const char *dsn );
@@ -178,6 +182,7 @@ public:
 	static void transact( const v8::FunctionCallbackInfo<Value>& args );
 	static void autoTransact( const v8::FunctionCallbackInfo<Value>& args );
 	static void userFunction( const v8::FunctionCallbackInfo<Value>& args );
+	static void aggregateFunction( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args );
 	static void enumOptionNodesInternal( const v8::FunctionCallbackInfo<Value>& args );

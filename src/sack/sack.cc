@@ -9993,6 +9993,44 @@ PSSQL_PROC( CTEXTSTR, GetSQLOffsetDate )( PODBC odbc, CTEXTSTR BeginOfDayType, i
    dest :    database to copy to
    */
 PSSQL_PROC( LOGICAL, BackupDatabase )( PODBC source, PODBC dest );
+/* return the underlaying native connection handle of the database connection
+ */
+// deprecated during dev, instead added function hook exports
+//PSSQL_PROC( POINTER, GetODBCHandle )( PODBC odbc );
+#if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
+PSSQL_PROC( int, PSSQL_AddSqliteFunction )( PODBC odbc
+	, const char *name
+	, void( *callUserFunction )( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv )
+	, int args
+	, void *userData );
+PSSQL_PROC( int, PSSQL_AddSqliteAggregate )( PODBC odbc
+	, const char *name
+	, void( *callStep )( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv )
+	, void( *callFinal )( struct sqlite3_context*onwhat )
+	, int args
+	, void *userData );
+PSSQL_PROC( POINTER, PSSQL_GetSqliteFunctionData )( struct sqlite3_context*context );
+PSSQL_PROC( void, PSSQL_ResultSqliteText )( struct sqlite3_context*context, const char *data, int dataLen, void (*done)(void*) );
+PSSQL_PROC( void, PSSQL_ResultSqliteBlob )( struct sqlite3_context*context, const char *data, int dataLen, void (*done)(void*) );
+PSSQL_PROC( void, PSSQL_ResultSqliteDouble )( struct sqlite3_context*context, double val );
+PSSQL_PROC( void, PSSQL_ResultSqliteInt )( struct sqlite3_context*context, int val );
+PSSQL_PROC( void, PSSQL_ResultSqliteInt64 )( struct sqlite3_context*context, int64_t val );
+PSSQL_PROC( void, PSSQL_ResultSqliteNull )( struct sqlite3_context*context );
+enum sqlite_data_types {
+	PSSQL_TYPE_INTEGER= 1,
+	PSSQL_TYPE_FLOAT= 2,
+	PSSQL_TYPE_TEXT = 3,
+	PSSQL_TYPE_BLOB  = 4,
+	PSSQL_TYPE_NULL = 5,
+};
+PSSQL_PROC( enum sqlite_data_types, PSSQL_GetSqliteValueType )( struct sqlite3_value *val );
+PSSQL_PROC( void, PSSQL_GetSqliteValueText )( struct sqlite3_value *val, const char **text, int *textLen );
+PSSQL_PROC( void, PSSQL_GetSqliteValueBlob )( struct sqlite3_value *val, const char **text, int *textLen );
+PSSQL_PROC( void, PSSQL_GetSqliteValueDouble )( struct sqlite3_value *val, double *result );
+PSSQL_PROC( void, PSSQL_GetSqliteValueInt )( struct sqlite3_value *val, int *result );
+PSSQL_PROC( void, PSSQL_GetSqliteValueInt64 )( struct sqlite3_value *val, int64_t *result );
+PSSQL_PROC( void, PSSQL_GetSqliteValue )( struct sqlite3_value *val, const char **text, int *textLen );
+#endif
 SQL_NAMESPACE_END
 #ifdef __cplusplus
 	using namespace sack::sql;
@@ -79798,7 +79836,7 @@ static void computePassword(sqlite3_context*onwhat,int argc,sqlite3_value**argv)
 }
 static void decomputePassword(sqlite3_context*onwhat,int n,sqlite3_value**argv)
 {
-   const unsigned char *val = sqlite3_value_text( argv[0] );
+	const unsigned char *val = sqlite3_value_text( argv[0] );
 	static TEXTCHAR *result;
 	if( result ) Release( result );
 	result = SRG_DecryptString( (CTEXTSTR)val );
@@ -79814,8 +79852,101 @@ static void decomputePassword(sqlite3_context*onwhat,int n,sqlite3_value**argv)
 	//Release( result );
 }
 #endif
-  //void (*xStep)(sqlite3_context*,int,sqlite3_value**),
-  //void (*xFinal)(sqlite3_context*)
+int PSSQL_AddSqliteFunction( PODBC odbc
+	, const char *name
+	, void( *callUserFunction )( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv )
+	, int args
+	, void *userData ) {
+	return sqlite3_create_function(
+ //sqlite3 *,
+		odbc->db
+  //const char *zFunctionName,
+		, name
+ //int nArg,
+		, args
+ //int eTextRep,
+		, SQLITE_UTF8
+ //void*,
+		, userData
+ //void (*xFunc)(sqlite3_context*,int,sqlite3_value**),
+		, callUserFunction
+ //void (*xStep)(sqlite3_context*,int,sqlite3_value**),
+		, NULL
+ //void (*xFinal)(sqlite3_context*)
+		, NULL
+	);
+}
+int PSSQL_AddSqliteAggregate( PODBC odbc
+	, const char *name
+	, void( *callStep )( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv )
+	, void( *callFinal )( struct sqlite3_context*onwhat )
+	, int args
+	, void *userData ) {
+	return sqlite3_create_function(
+ //sqlite3 *,
+		odbc->db
+  //const char *zFunctionName,
+		, name
+ //int nArg,
+		, args
+ //int eTextRep,
+		, SQLITE_UTF8
+ //void*,
+		, userData
+ //callUserFunction //void (*xFunc)(sqlite3_context*,int,sqlite3_value**),
+		, NULL
+ //void (*xStep)(sqlite3_context*,int,sqlite3_value**),
+		, callStep
+ //void (*xFinal)(sqlite3_context*)
+		, callFinal
+	);
+}
+POINTER PSSQL_GetSqliteFunctionData( struct sqlite3_context*context ) {
+	return sqlite3_user_data( context );
+}
+void PSSQL_ResultSqliteText( struct sqlite3_context*context, const char *data, int dataLen, void (*done)(void*) ) {
+	sqlite3_result_text( context, data, dataLen, done );
+}
+void PSSQL_ResultSqliteBlob( struct sqlite3_context*context, const char *data, int dataLen, void (*done)(void*) ) {
+	sqlite3_result_blob( context, data, dataLen, done );
+}
+void PSSQL_ResultSqliteDouble( struct sqlite3_context*context, double val ) {
+	sqlite3_result_double( context, val );
+}
+void PSSQL_ResultSqliteInt( struct sqlite3_context*context, int val ) {
+	sqlite3_result_int( context, val );
+}
+void PSSQL_ResultSqliteInt64( struct sqlite3_context*context, int64_t val ) {
+	sqlite3_result_int64( context, val );
+}
+void PSSQL_ResultSqliteNull( struct sqlite3_context*context ) {
+	sqlite3_result_null( context );
+}
+void PSSQL_GetSqliteValueText( struct sqlite3_value *val, const char **text, int *textLen ) {
+ // sqlite function is 'unsigned' result
+	(*text) = (const char *)sqlite3_value_text( val );
+	(*textLen) = sqlite3_value_bytes( val );
+}
+enum sqlite_data_types PSSQL_GetSqliteValueType( struct sqlite3_value *val ){
+	return (enum sqlite_data_types)sqlite3_value_type( val );
+}
+void PSSQL_GetSqliteValueBlob( struct sqlite3_value *val, const char **text, int *textLen ){
+ // sqlite function is 'unsigned' result
+	(*text) = (const char *)sqlite3_value_text( val );
+	(*textLen) = sqlite3_value_bytes( val );
+}
+void PSSQL_GetSqliteValueDouble( struct sqlite3_value *val, double *result ){
+ // sqlite function is 'unsigned' result
+	(*result) = sqlite3_value_double( val );
+}
+void PSSQL_GetSqliteValueInt( struct sqlite3_value *val, int *result ){
+ // sqlite function is 'unsigned' result
+	(*result) = sqlite3_value_int( val );
+}
+void PSSQL_GetSqliteValueInt64( struct sqlite3_value *val, int64_t *result ){
+ // sqlite function is 'unsigned' result
+	(*result) = sqlite3_value_int64( val );
+}
 void ExtendConnection( PODBC odbc )
 {
 	if( odbc->flags.bAutoClose )
@@ -84229,6 +84360,21 @@ PODBC SQLGetODBC( CTEXTSTR dsn )
 void SQLDropODBC( PODBC odbc )
 {
 	EnqueLink( &odbc->queue->connections, odbc );
+}
+POINTER GetODBCHandle( PODBC odbc ) {
+	if( odbc->flags.bSQLite_native )
+#if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
+		return (POINTER)odbc->db;
+#else
+		;
+#endif
+	else
+#ifdef USE_ODBC
+		return (POINTER)odbc->hdbc;
+#else
+		;
+#endif
+	return NULL;
 }
 void SQLDropAndCloseODBC( CTEXTSTR dsn )
 {

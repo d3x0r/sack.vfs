@@ -5,6 +5,16 @@
 void editOptions( const v8::FunctionCallbackInfo<Value>& args );
 #endif
 
+struct userMessage{
+	int mode;
+	struct sqlite3_context*onwhat;
+	int argc;
+	struct sqlite3_value**argv;
+	int done;
+	PTHREAD waiter;
+};
+
+
 //-----------------------------------------------------------
 //   SQL Object
 //-----------------------------------------------------------
@@ -30,6 +40,7 @@ void SqlObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "transaction", transact );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "commit", commit );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "autoTransact", autoTransact );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "function", userFunction );
 
 	// read a portion of the tree (passed to a callback)
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "eo", enumOptionNodes );
@@ -285,13 +296,36 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 Persistent<Function> SqlObject::constructor;
 SqlObject::SqlObject( const char *dsn )
 {
-   odbc = ConnectToDatabase( dsn );
-   SetSQLThreadProtect( odbc, FALSE );
-   //SetSQLAutoClose( odbc, TRUE );
-   optionInitialized = FALSE;
+	messages = NULL;
+	userFunctions = NULL;
+	thread = NULL;
+	memset( &async, 0, sizeof( async ) );
+	odbc = ConnectToDatabase( dsn );
+	SetSQLThreadProtect( odbc, FALSE );
+	//SetSQLAutoClose( odbc, TRUE );
+	optionInitialized = FALSE;
 }
 
 SqlObject::~SqlObject() {
+	INDEX idx;
+	struct SqlObjectUserFunction *data;
+	LIST_FORALL( userFunctions, idx, struct SqlObjectUserFunction*, data ) {
+		data->cb.Reset();
+	}
+	if( thread )
+	{
+		struct userMessage msg;
+		msg.mode = 0;
+		msg.onwhat = NULL;
+		msg.done = 0;
+		msg.waiter = MakeThread();
+		EnqueLink( &messages, &msg );
+		uv_async_send( &async );
+
+		while( !msg.done ) {
+			WakeableSleep( SLEEP_FOREVER );
+		}
+	}
 	CloseDatabase( odbc );
 }
 
@@ -730,7 +764,6 @@ void SqlObject::makeTable( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		table = GetFieldsInSQLEx( tableCommand, false DBG_SRC );
 		if( CheckODBCTable( sql->odbc, table, CTO_MERGE ) )
-
 			args.GetReturnValue().Set( True(isolate) );
 		args.GetReturnValue().Set( False( isolate ) );
 
@@ -739,8 +772,51 @@ void SqlObject::makeTable( const v8::FunctionCallbackInfo<Value>& args ) {
 	args.GetReturnValue().Set( False( isolate ) );
 }
 
-static void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv ) {
+static void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv );
+static void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv );
+static void callAggFinal( struct sqlite3_context*onwhat );
+
+static void sqlUserAsyncMsg( uv_async_t* handle ) {
+	SqlObject* myself = (SqlObject*)handle->data;
+	struct userMessage *msg = (struct userMessage*)DequeLink( &myself->messages );
+	if( msg->onwhat ) {
+		if( msg->mode == 1 )
+			callUserFunction( msg->onwhat, msg->argc, msg->argv );
+		else if( msg->mode == 2 )
+			callAggStep( msg->onwhat, msg->argc, msg->argv );
+		else if( msg->mode == 3 )
+			callAggFinal( msg->onwhat );
+	} else {
+		myself->thread = NULL;
+		uv_close( (uv_handle_t*)&myself->async, NULL );		
+	}	
+	msg->done = 1;
+	WakeThread( msg->waiter );
+}
+
+static void releaseBuffer( void *buffer ) {
+	Deallocate( void*, buffer );
+}
+
+void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv ) {
 	struct SqlObjectUserFunction *userData = (struct SqlObjectUserFunction*)PSSQL_GetSqliteFunctionData( onwhat );
+	if( userData->sql->thread != MakeThread() ) {
+		struct userMessage msg;
+		msg.mode = 1;
+		msg.onwhat = onwhat;
+		msg.argc = argc;
+		msg.argv = argv;
+		msg.done = 0;
+		msg.waiter = MakeThread();
+		EnqueLink( &userData->sql->messages, &msg );
+		uv_async_send( &userData->sql->async );
+
+		while( !msg.done ) {
+			WakeableSleep( SLEEP_FOREVER );
+		}
+		return;
+	}
+
 	Local<Value> *args;
 	if( argc > 0 ) {
 		int n;
@@ -749,7 +825,7 @@ static void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sq
 		args = new Local<Value>[argc];
 		for( n = 0; n < argc; n++ ) {
 			PSSQL_GetSqliteValueText( argv[n], (const char**)&text, &textLen );
-			args[n] = String::NewFromUtf8( userData->isolate, text, NewStringType::kNormal, textLen ).ToLocalChecked;
+			args[n] = String::NewFromUtf8( userData->isolate, text, NewStringType::kNormal, textLen ).ToLocalChecked();
 		}
 	} else {
 		args = NULL;
@@ -757,7 +833,17 @@ static void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sq
 	Local<Function> cb = Local<Function>::New( userData->isolate, userData->cb );
 	Local<Value> str = cb->Call( userData->sql->handle(), argc, args );
 	String::Utf8Value result( str->ToString() );
-	PSSQL_ResultSqliteText( onwhat, *result, result.length(), 0 );
+	if( str->IsTypedArray() ) {
+		lprintf( "unhandled result - typed array (blob)" );
+	} else if( str->IsNumber() ) {
+		if( str->IsInt32() )
+			PSSQL_ResultSqliteInt( onwhat, (int)str->IntegerValue() );
+		else
+			PSSQL_ResultSqliteDouble( onwhat, str->NumberValue() );
+	} else if( str->IsString() )
+		PSSQL_ResultSqliteText( onwhat, DupCStrLen( *result, result.length() ), result.length(), releaseBuffer );
+	else
+		lprintf( "unhandled result type (object? array? function?)" );
 	if( argc > 0 ) {
 		delete[] args;
 	}
@@ -765,31 +851,120 @@ static void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sq
 
 void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	int argc = args.Length();
+	if( !sql->thread ) {
+		sql->thread = MakeThread();
+		uv_async_init( uv_default_loop(), &sql->async, sqlUserAsyncMsg );
+		sql->async.data = sql;
+	}
 
 	if( argc > 0 ) {
-		SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 		String::Utf8Value name( args[0] );
 		struct SqlObjectUserFunction *userData = NewArray( struct SqlObjectUserFunction, 1 );
 		userData->isolate = isolate;
+		memset( &userData->cb, 0, sizeof( userData->cb ) );
 		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
 		userData->sql = sql;
-		userData->thread = MakeThread();
 	
 		PSSQL_AddSqliteFunction( sql->odbc, *name, callUserFunction, -1, userData );
-		/*
-		sqlite3 *db = GetODBCHandle( sql->odbc );
-		rc = sqlite3_create_function(
-			db //sqlite3 *,
-			, *name  //const char *zFunctionName,
-			, -1 //int nArg,
-			, SQLITE_UTF8 //int eTextRep,
-			, (void*)userData //void*,
-			, callUserFunction //void (*xFunc)(sqlite3_context*,int,sqlite3_value**),
-			, NULL //void (*xStep)(sqlite3_context*,int,sqlite3_value**),
-			, NULL //void (*xFinal)(sqlite3_context*)
-		);
-		*/
+	}
+}
+
+void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv ) {
+	struct SqlObjectUserFunction *userData = ( struct SqlObjectUserFunction* )PSSQL_GetSqliteFunctionData( onwhat );
+	if( userData->sql->thread != MakeThread() ) {
+		struct userMessage msg;
+		msg.mode = 2;
+		msg.onwhat = onwhat;
+		msg.argc = argc;
+		msg.argv = argv;
+		msg.done = 0;
+		msg.waiter = MakeThread();
+		EnqueLink( &userData->sql->messages, &msg );
+		uv_async_send( &userData->sql->async );
+
+		while( !msg.done ) {
+			WakeableSleep( SLEEP_FOREVER );
+		}
+		return;
+	}
+
+	Local<Value> *args;
+	if( argc > 0 ) {
+		int n;
+		char *text;
+		int textLen;
+		args = new Local<Value>[argc];
+		for( n = 0; n < argc; n++ ) {
+			PSSQL_GetSqliteValueText( argv[n], (const char**)&text, &textLen );
+			args[n] = String::NewFromUtf8( userData->isolate, text, NewStringType::kNormal, textLen ).ToLocalChecked();
+		}
+	} else {
+		args = NULL;
+	}
+	Local<Function> cb = Local<Function>::New( userData->isolate, userData->cb );
+	cb->Call( userData->sql->handle(), argc, args );
+	if( argc > 0 ) {
+		delete[] args;
+	}
+}
+
+void callAggFinal( struct sqlite3_context*onwhat ) {
+	struct SqlObjectUserFunction *userData = ( struct SqlObjectUserFunction* )PSSQL_GetSqliteFunctionData( onwhat );
+	if( userData->sql->thread != MakeThread() ) {
+		struct userMessage msg;
+		msg.mode = 3;
+		msg.onwhat = onwhat;
+		msg.done = 0;
+		msg.waiter = MakeThread();
+		EnqueLink( &userData->sql->messages, &msg );
+		uv_async_send( &userData->sql->async );
+
+		while( !msg.done ) {
+			WakeableSleep( SLEEP_FOREVER );
+		}
+
+		return;
+	}
+
+	Local<Function> cb = Local<Function>::New( userData->isolate, userData->cb );
+	Local<Value> str = cb->Call( userData->sql->handle(), 0, NULL );
+	if( str->IsTypedArray() ) {
+		lprintf( "unhandled result - typed array (blob)" );
+	} else if( str->IsNumber() ) {
+		if( str->IsInt32() )
+			PSSQL_ResultSqliteInt( onwhat, (int)str->IntegerValue() );
+		else
+			PSSQL_ResultSqliteDouble( onwhat, str->NumberValue() );
+	} else if( str->IsString() ) {
+		String::Utf8Value result( str->ToString() );
+		PSSQL_ResultSqliteText( onwhat, DupCStrLen( *result, result.length() ), result.length(), releaseBuffer );
+	}
+	else
+		lprintf( "unhandled result type (object? array? function?)" );
+}
+
+void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	int argc = args.Length();
+	if( !sql->thread ) {
+		sql->thread = MakeThread();
+		uv_async_init( uv_default_loop(), &sql->async, sqlUserAsyncMsg );
+		sql->async.data = sql;
+	}
+
+	if( argc > 2 ) {
+		String::Utf8Value name( args[0] );
+		struct SqlObjectUserFunction *userData = NewArray( struct SqlObjectUserFunction, 1 );
+		userData->isolate = isolate;
+		memset( &userData->cb, 0, sizeof( userData->cb ) );
+		memset( &userData->cb2, 0, sizeof( userData->cb2 ) );
+		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
+		userData->cb2.Reset( isolate, Handle<Function>::Cast( args[2] ) );
+		userData->sql = sql;
+		PSSQL_AddSqliteAggregate( sql->odbc, *name, callAggStep, callAggFinal, -1, userData );
 	}
 }
 
@@ -797,8 +972,6 @@ void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
 static uintptr_t RunEditor( PTHREAD thread ) {
 	int (*EditOptions)( PODBC odbc, PSI_CONTROL parent, LOGICAL wait );
 	extern void disableEventLoop( void );
-
-
 	EditOptions = (int(*)(PODBC,PSI_CONTROL,LOGICAL))GetThreadParam( thread );
 	EditOptions( NULL, NULL, TRUE );
 	disableEventLoop();
