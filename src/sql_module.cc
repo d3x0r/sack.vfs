@@ -1,6 +1,9 @@
 
 #include "global.h"
 
+#ifdef INCLUDE_GUI
+void editOptions( const v8::FunctionCallbackInfo<Value>& args );
+#endif
 
 //-----------------------------------------------------------
 //   SQL Object
@@ -54,6 +57,9 @@ void SqlObject::Init( Handle<Object> exports ) {
 	SET_READONLY_METHOD(sqlfunc, "eo", enumOptionNodesInternal );
 	SET_READONLY_METHOD(sqlfunc, "op", optionInternal );
 	SET_READONLY_METHOD(sqlfunc, "so", setOptionInternal );
+#ifdef INCLUDE_GUI
+	SET_READONLY_METHOD(sqlfunc, "optionEditor", editOptions );
+#endif
 
 	exports->Set( String::NewFromUtf8( isolate, "Sqlite" ),
 		sqlfunc );
@@ -733,3 +739,80 @@ void SqlObject::makeTable( const v8::FunctionCallbackInfo<Value>& args ) {
 	args.GetReturnValue().Set( False( isolate ) );
 }
 
+static void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv ) {
+	struct SqlObjectUserFunction *userData = (struct SqlObjectUserFunction*)PSSQL_GetSqliteFunctionData( onwhat );
+	Local<Value> *args;
+	if( argc > 0 ) {
+		int n;
+		char *text;
+		int textLen;
+		args = new Local<Value>[argc];
+		for( n = 0; n < argc; n++ ) {
+			PSSQL_GetSqliteValueText( argv[n], (const char**)&text, &textLen );
+			args[n] = String::NewFromUtf8( userData->isolate, text, NewStringType::kNormal, textLen ).ToLocalChecked;
+		}
+	} else {
+		args = NULL;
+	}
+	Local<Function> cb = Local<Function>::New( userData->isolate, userData->cb );
+	Local<Value> str = cb->Call( userData->sql->handle(), argc, args );
+	String::Utf8Value result( str->ToString() );
+	PSSQL_ResultSqliteText( onwhat, *result, result.length(), 0 );
+	if( argc > 0 ) {
+		delete[] args;
+	}
+}
+
+void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+
+	if( argc > 0 ) {
+		SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
+		String::Utf8Value name( args[0] );
+		struct SqlObjectUserFunction *userData = NewArray( struct SqlObjectUserFunction, 1 );
+		userData->isolate = isolate;
+		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
+		userData->sql = sql;
+		userData->thread = MakeThread();
+	
+		PSSQL_AddSqliteFunction( sql->odbc, *name, callUserFunction, -1, userData );
+		/*
+		sqlite3 *db = GetODBCHandle( sql->odbc );
+		rc = sqlite3_create_function(
+			db //sqlite3 *,
+			, *name  //const char *zFunctionName,
+			, -1 //int nArg,
+			, SQLITE_UTF8 //int eTextRep,
+			, (void*)userData //void*,
+			, callUserFunction //void (*xFunc)(sqlite3_context*,int,sqlite3_value**),
+			, NULL //void (*xStep)(sqlite3_context*,int,sqlite3_value**),
+			, NULL //void (*xFinal)(sqlite3_context*)
+		);
+		*/
+	}
+}
+
+#ifdef INCLUDE_GUI
+static uintptr_t RunEditor( PTHREAD thread ) {
+	int (*EditOptions)( PODBC odbc, PSI_CONTROL parent, LOGICAL wait );
+	extern void disableEventLoop( void );
+
+
+	EditOptions = (int(*)(PODBC,PSI_CONTROL,LOGICAL))GetThreadParam( thread );
+	EditOptions( NULL, NULL, TRUE );
+	disableEventLoop();
+	return 0;
+}
+
+void editOptions( const v8::FunctionCallbackInfo<Value>& args ){
+	int (*EditOptions)( PODBC odbc, PSI_CONTROL parent, LOGICAL wait );
+	extern void enableEventLoop( void );
+	EditOptions = (int(*)( PODBC, PSI_CONTROL,LOGICAL))LoadFunction( "EditOptions.plugin", "EditOptionsEx" );
+	if( EditOptions ) {
+		enableEventLoop();
+		ThreadTo( RunEditor, (uintptr_t)EditOptions );
+	} else
+		lprintf( "Failed to load editor..." );
+}
+#endif

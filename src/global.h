@@ -141,7 +141,13 @@ public:
 	~FileObject();
 };
 
-
+struct SqlObjectUserFunction {
+	class SqlObject *sql;
+	Persistent<Function> cb;
+	Isolate *isolate;
+	PTHREAD thread;
+	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+};
 
 class SqlObject : public node::ObjectWrap {
 public:
@@ -171,6 +177,7 @@ public:
 	static void commit( const v8::FunctionCallbackInfo<Value>& args );
 	static void transact( const v8::FunctionCallbackInfo<Value>& args );
 	static void autoTransact( const v8::FunctionCallbackInfo<Value>& args );
+	static void userFunction( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args );
 	static void enumOptionNodesInternal( const v8::FunctionCallbackInfo<Value>& args );
@@ -330,5 +337,5 @@ struct vfs_global_data {
 } vfs_global_data;
 
 #define GetHolder() GetFromSet( ARRAY_BUFFER_HOLDER, &vfs_global_data.holders )
-#define DropHolder(h) DeleteFromSet( ARRAY_BUFFER_HOLDER, &vfs_global_data.holders, h )
+#define DropHolder(h) DeleteFromSet( ARRAY_BUFFER_HOLDER, vfs_global_data.holders, h )
 
