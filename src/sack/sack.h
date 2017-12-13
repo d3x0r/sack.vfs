@@ -1633,7 +1633,7 @@ SACK_NAMESPACE_END
 #define LINKSTUFF
 	SACK_NAMESPACE
 	_CONTAINER_NAMESPACE
-#    define TYPELIB_CALLTYPE CPROC
+#    define TYPELIB_CALLTYPE
 #  if defined( _TYPELIBRARY_SOURCE_STEAL )
 #    define TYPELIB_PROC extern
 #  elif defined( NO_EXPORTS )
@@ -2126,6 +2126,7 @@ TYPELIB_PROC  PLINKQUEUE TYPELIB_CALLTYPE   CreateLinkQueueEx( DBG_VOIDPASS );
 TYPELIB_PROC  void TYPELIB_CALLTYPE         DeleteLinkQueueEx( PLINKQUEUE *pplq DBG_PASS );
 /* Enque a link to the queue.  */
 TYPELIB_PROC  PLINKQUEUE TYPELIB_CALLTYPE   EnqueLinkEx      ( PLINKQUEUE *pplq, POINTER link DBG_PASS );
+TYPELIB_PROC  void TYPELIB_CALLTYPE   EnqueLinkNLEx( PLINKQUEUE *pplq, POINTER link DBG_PASS );
 /* EnqueLink adds the new item at the end of the list. PrequeueLink
    puts the new item at the head of the queue (so it's the next
    one to be retrieved).                                            */
@@ -2134,6 +2135,7 @@ TYPELIB_PROC  PLINKQUEUE TYPELIB_CALLTYPE   PrequeLinkEx      ( PLINKQUEUE *pplq
    element in the queue and removes the element from the queue.
                                                                 */
 TYPELIB_PROC  POINTER TYPELIB_CALLTYPE      DequeLink        ( PLINKQUEUE *pplq );
+TYPELIB_PROC POINTER  TYPELIB_CALLTYPE      DequeLinkNL      ( PLINKQUEUE *pplq );
 /* Return TRUE/FALSE if the queue is empty or not. */
 TYPELIB_PROC  LOGICAL TYPELIB_CALLTYPE      IsQueueEmpty     ( PLINKQUEUE *pplq );
 /* Gets the number of elements current in the queue. */
@@ -2158,6 +2160,7 @@ TYPELIB_PROC  POINTER TYPELIB_CALLTYPE      PeekQueue    ( PLINKQUEUE plq );
 /* <combine sack::containers::queue::EnqueLinkEx@PLINKQUEUE *@POINTER link>
    \ \                                                                      */
 #define     EnqueLink(pplq, link) EnqueLinkEx( pplq, link DBG_SRC )
+#define     EnqueLinkNL(pplq, link) EnqueLinkNLEx( pplq, link DBG_SRC )
 #ifdef __cplusplus
 //		namespace queue {
 		}
@@ -2513,7 +2516,7 @@ typedef struct genericset_tag {
 TYPELIB_PROC  POINTER  TYPELIB_CALLTYPE GetFromSetEx( GENERICSET **pSet, int setsize, int unitsize, int maxcnt DBG_PASS );
 /* <combine sack::containers::sets::GetFromSetEx@GENERICSET **@int@int@int maxcnt>
    \ \                                                                             */
-#define GetFromSeta(ps, ss, us, max) GetFromSetEx( (ps), (ss), (us), (max) DBG_SRC )
+#define GetFromSeta(ps, ss, us, max) GetFromSetPoolEx( NULL, 0, 0, 0, (ps), (ss), (us), (max) DBG_SRC )
 /* <combine sack::containers::sets::GetFromSetEx@GENERICSET **@int@int@int maxcnt>
    \ \
    Parameters
@@ -2592,7 +2595,11 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  DeleteFromSetExx( GENERICSET *set, POINTER 
 #define DeleteFromSetEx( name, set, member, xx ) DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC )
 /* <combine sack::containers::sets::DeleteFromSetExx@GENERICSET *@POINTER@int@int max>
    \ \                                                                                 */
+#ifdef _DEBUG
+#define DeleteFromSet( name, set, member ) do { P##name##SET testset = set; DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC ); } while(0)
+#else
 #define DeleteFromSet( name, set, member ) DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC )
+#endif
 /* Marks a member in a set as usable.
    Parameters
    set :       pointer to a genericset pointer
@@ -5595,9 +5602,13 @@ MEM_PROC  POINTER MEM_API  AllocateEx ( uintptr_t nSize DBG_PASS );
    Parameters
    type :   type of the variable
    thing :  the thing to actually release.                    */
-#define Deallocate(type,thing) for(type _zzqz_tmp=thing;ReleaseEx((POINTER)(_zzqz_tmp)DBG_SRC),0;)
+#  ifdef _DEBUG
+#    define Deallocate(type,thing) for(type _zzqz_tmp=thing;ReleaseEx((POINTER)(_zzqz_tmp)DBG_SRC),0;)
+#  else
+#    define Deallocate(type,thing) ReleaseEx((POINTER)(thing)DBG_SRC)
+#  endif
 #else
-#define Deallocate(type,thing) (ReleaseEx((POINTER)(thing)DBG_SRC))
+#  define Deallocate(type,thing) (ReleaseEx((POINTER)(thing)DBG_SRC))
 #endif
 /* <combine sack::memory::HeapAllocateEx@PMEM@uintptr_t nSize>
    \ \                                                        */
