@@ -63,6 +63,7 @@ enum eventType {
 	Event_Control_ButtonClick,
 	/* console events*/
 	Event_Control_ConsoleInput,
+	Event_Control_Close_Loop,
 };
 
 struct event {
