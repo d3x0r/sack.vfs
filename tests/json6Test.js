@@ -59,7 +59,7 @@ console.log( "o is", o );
 var o = parse( "[123]" );
 console.log( "o is", o );
 var o = parse( "{\"a\":{\"b\":{\"c\":{\"d\":123}, e:456}, f:789}, g: 987}", (a,b)=>{
-	console.log( a, b ); return b;
+	console.log( "revive:'"+a+"'","=", b ); return b;
 	} );
 console.log( "o is", JSON.stringify( o ) );
 
@@ -67,6 +67,28 @@ console.log( "o is", JSON.stringify( o ) );
 // benchmark - needs some work; ended up somewhat divergent.
 if(true)
 {
+
+
+var start = Date.now();
+var n;
+for( n = 0; n < 1000000; n++ ) {
+	parse( "[123,[272,[362,[453]]]]" );
+	//parse( '"Simple String Value."' );
+}
+
+var end = Date.now();
+console.log( "1m in ", end-start );
+
+
+start = end;
+for( n = 0; n < 1000000; n++ ) {
+	JSON.parse( "[123,[272,[362,[453]]]]" );
+	//JSON.parse( translations[ntrans] );
+        //ntrans = (ntrans+1)&3;
+}
+end = Date.now();
+console.log( "1m in ", end-start );
+
 
 var start = Date.now();
 var n;
@@ -90,7 +112,14 @@ for( n = 0; n < 1000000; n++ ) {
 }
 end = Date.now();
 console.log( "1m in ", end-start );
+
+
+
+
+
 }
+
+
 
 
 
