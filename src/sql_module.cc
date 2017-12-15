@@ -41,6 +41,7 @@ void SqlObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "commit", commit );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "autoTransact", autoTransact );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "function", userFunction );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "aggregate", aggregateFunction );
 
 	// read a portion of the tree (passed to a callback)
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "eo", enumOptionNodes );
