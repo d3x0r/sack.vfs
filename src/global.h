@@ -333,6 +333,7 @@ DeclareSet( ARRAY_BUFFER_HOLDER );
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info );
 	
 void InitFS( const v8::FunctionCallbackInfo<Value>& args );
+void ConfigScriptInit( Handle<Object> exports );
 
 #ifndef VFS_MAIN_SOURCE
 extern
