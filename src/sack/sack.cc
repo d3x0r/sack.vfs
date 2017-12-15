@@ -12593,6 +12593,7 @@ struct va_args_tag {
  */
 #define my_va_arg(ap,type)     ((ap)[0]+=        ((sizeof(enum configArgType)+sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)),        (*(type *)((ap)[0]-((sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)))))
 #define my_va_arg_type(ap,type)     (         (*(type *)((ap)[0]-(sizeof(enum configArgType)+(sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)))))
+//#define my_va_next_arg_type(ap,type)     (*(type *)((ap)[0]))
 #define my_va_next_arg_type(ap)     ( ( *(enum configArgType *)((ap)[0]) ) )
 #define PARAM_COUNT( args ) (((int*)(args+1))[0])
 #define PARAM( args, type, name ) type name = my_va_arg( args, type )
@@ -55850,7 +55851,9 @@ int json6_parse_add_data( struct json_parse_state *state
 								(*output->pos++) = c;
 							}
 #endif
-							else if( ( c == 'x' || c == 'b' || c =='o' || c == 'X' || c == 'B' || c == 'O') && ( output->pos - output->buf ) == 1 ) {
+							else if( ( c == 'x' || c == 'b' || c =='o' || c == 'X' || c == 'B' || c == 'O')
+							       && ( output->pos - output->buf ) == 1
+							       && output->buf[0] == '0' ) {
 								// hex conversion.
 								if( !state->fromHex ) {
 									state->fromHex = TRUE;
