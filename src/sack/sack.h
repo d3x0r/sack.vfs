@@ -9462,6 +9462,16 @@ PSSQL_PROC( LOGICAL, BackupDatabase )( PODBC source, PODBC dest );
 // deprecated during dev, instead added function hook exports
 //PSSQL_PROC( POINTER, GetODBCHandle )( PODBC odbc );
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
+#ifdef __cplusplus
+SQL_NAMESPACE_END
+#endif
+//typedef struct sqlite3_value sqlite3_value;
+//typedef struct sqlite3_context sqlite3_context;
+struct sqlite3_value;
+struct sqlite3_context;
+#ifdef __cplusplus
+SQL_NAMESPACE
+#endif
 PSSQL_PROC( int, PSSQL_AddSqliteFunction )( PODBC odbc
 	, const char *name
 	, void( *callUserFunction )( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv )
