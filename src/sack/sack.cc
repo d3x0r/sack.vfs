@@ -10001,8 +10001,6 @@ PSSQL_PROC( LOGICAL, BackupDatabase )( PODBC source, PODBC dest );
 #ifdef __cplusplus
 SQL_NAMESPACE_END
 #endif
-//typedef struct sqlite3_value sqlite3_value;
-//typedef struct sqlite3_context sqlite3_context;
 struct sqlite3_value;
 struct sqlite3_context;
 #ifdef __cplusplus
