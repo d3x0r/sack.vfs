@@ -346,6 +346,8 @@ static void CPROC Closed( uintptr_t psv ) {
 
 udpObject::udpObject( struct udpOptions *opts ) {
 	SOCKADDR *addr = CreateSockAddress( opts->address, opts->port );
+	NetworkWait( NULL, 256, 2 );  // 1GB memory
+
 	pc = NULL;
 	pc = CPPServeUDPAddrEx( addr, (cReadCompleteEx)ReadComplete, (uintptr_t)this, (cCloseCallback)Closed, (uintptr_t)this, TRUE DBG_SRC );
 	if( pc ) {
