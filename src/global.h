@@ -188,6 +188,7 @@ public:
 	static void enumOptionNodesInternal( const v8::FunctionCallbackInfo<Value>& args );
 	static void findOptionNode( const v8::FunctionCallbackInfo<Value>& args );
 	static void getOptionNode( const v8::FunctionCallbackInfo<Value>& args );
+	static void error( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void doWrap( SqlObject *sql, Local<Object> o ); 
 
