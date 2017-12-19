@@ -62395,7 +62395,7 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 							 (char*)lpClient->RecvPending.buffer.p +
 							 lpClient->RecvPending.dwUsed,
 							 (int)lpClient->RecvPending.dwAvail,0);
-			lprintf( "Received %d", recv );
+			lprintf( "Received %d", nRecv );
 			if (nRecv == SOCKET_ERROR)
 			{
 				dwError = WSAGetLastError();
@@ -86840,11 +86840,17 @@ static int GrabExtra( PTEXT *word, TEXTSTR *result )
 	{
 		PTEXT type = NULL;
 		{
+			int parens = 0;
 			TEXTCHAR *tmp;
-			while( (*word) && ( ( tmp = GetText( *word ) )[0] != ',' ) && (tmp[0] != ')') )
+			while( (*word) && ( ( tmp = GetText( *word ) )[0] != ',' || ( parens > 0 ) ) && ( ( parens > 0 ) || (tmp[0] != ')') ) )
 			{
-				if( tmp[0] == ')' )
-					break;
+				lprintf( "word:%s", GetText( *word) );
+				if( tmp[0] == '(' )
+					parens++;
+				if( tmp[0] == ')' ) {
+					parens--;
+					//break;
+				}
 				type = SegAppend( type, SegDuplicate( *word ) );
 				(*word) = NEXTLINE( *word );
 			}
