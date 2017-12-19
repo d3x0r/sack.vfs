@@ -49,6 +49,11 @@ void SqlObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "fo", findOptionNode );
 	// get the node.
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "go", getOptionNode );
+
+	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "error" )
+			, FunctionTemplate::New( isolate, SqlObject::error )
+			, Local<FunctionTemplate>() );
+
 	// update the value from option node
 	//NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "wo", writeOptionNode );
 	// read value from the option node
@@ -944,6 +949,14 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 	}
 	else
 		lprintf( "unhandled result type (object? array? function?)" );
+}
+
+void SqlObject::error( const v8::FunctionCallbackInfo<Value>& args ) {
+	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	const char *error;
+	FetchSQLError( sql->odbc, &error );
+	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), error, NewStringType::kNormal, (int)strlen(error) ).ToLocalChecked() );
+
 }
 
 void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args ) {
