@@ -55074,31 +55074,28 @@ static int gatherString6(struct json_parse_state *state, CTEXTSTR msg, CTEXTSTR 
 			case 2028:
  // PS (paragraph separate)
 			case 2029:
-				state->escape = FALSE;
 				continue;
 			case '/':
+			case '\\':
+			case '\'':
+			case '"':
+			case '`':
 				( *mOut++ ) = c;
-				state->escape = FALSE;
 				break;
 			case 't':
 				( *mOut++ ) = '\t';
-				state->escape = FALSE;
 				break;
 			case 'b':
 				( *mOut++ ) = '\b';
-				state->escape = FALSE;
 				break;
 			case 'n':
 				( *mOut++ ) = '\n';
-				state->escape = FALSE;
 				break;
 			case 'r':
 				( *mOut++ ) = '\r';
-				state->escape = FALSE;
 				break;
 			case 'f':
 				( *mOut++ ) = '\f';
-				state->escape = FALSE;
 				break;
 			case '0': case '1': case '2': case '3':
 				state->stringOct = TRUE;
@@ -59685,7 +59682,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 						break;
 					}
 					if( event_data->pc->dwFlags & CF_AVAILABLE )
-                  break;
+						break;
 					Relinquish();
 				}
 				if( !(event_data->pc->dwFlags & CF_ACTIVE ) ) {
@@ -62395,10 +62392,10 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 							 (char*)lpClient->RecvPending.buffer.p +
 							 lpClient->RecvPending.dwUsed,
 							 (int)lpClient->RecvPending.dwAvail,0);
-			lprintf( "Received %d", nRecv );
 			if (nRecv == SOCKET_ERROR)
 			{
 				dwError = WSAGetLastError();
+				lprintf( "Received error (-1) %d", nRecv );
 				switch( dwError)
 				{
  // no data avail yet...
@@ -62436,6 +62433,7 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 			else if (!nRecv)
    // otherwise WSAEWOULDBLOCK would be generated.
 			{
+				lprintf( "Received (0) %d", nRecv );
 				//_lprintf( DBG_RELAY )( WIDE("Closing closed socket... Hope there's also an event... "));
 				lpClient->dwFlags |= CF_TOCLOSE;
  // while dwAvail... try read...
@@ -62444,6 +62442,7 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 			}
 			else
 			{
+				lprintf( "Received %d", nRecv );
 				if( globalNetworkData.flags.bShortLogReceivedData )
 				{
 					LogBinary( (uint8_t*)lpClient->RecvPending.buffer.p
