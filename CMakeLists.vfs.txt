@@ -246,7 +246,7 @@ if( WIN32 )
    target_link_libraries(${PROJECT_NAME} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll crypt32 cryptui )
 endif( WIN32 )
 if( UNIX )
-   target_link_libraries( ${PROJECT_NAME} uuid )
+   target_link_libraries( ${PROJECT_NAME} uuid unixODBC )
 endif( UNIX )
 
 

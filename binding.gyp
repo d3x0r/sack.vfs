@@ -23,7 +23,7 @@
     'conditions': [
           ['OS=="linux"', {
             'defines': [
-              '__LINUX__'
+              '__LINUX__', '__NO_ODBC__'
             ],
             'cflags_cc': ['-Wno-misleading-indentation','-Wno-parentheses','-Wno-unused-result'
 			,'-Wno-char-subscripts'
@@ -57,7 +57,7 @@
 	}],
 	['OS=="mac"', {
             'defines': [
-              '__LINUX__','__MAC__'
+              '__LINUX__','__MAC__', '__NO_ODBC__',"__NO_OPTIONS__"
             ],
             'xcode_settings': {
                 'OTHER_CFLAGS': [
@@ -118,8 +118,7 @@
           }]
         ],
 
-	'otherDefinss': [ '__64__=1',
-		"__NO_OPTIONS__","__NO_ODBC__" ],
+	# 'otherDefinss': [ "__NO_OPTIONS__" ],
 
     }
   ],
