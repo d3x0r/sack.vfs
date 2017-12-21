@@ -8,14 +8,25 @@ node_js:
 
 os:
   - linux
-  - osx
+#  - osx
 
 compiler:
   - gcc
   - clang
 
 env:
-  - CXX=g++-6
+#  - CXX=g++-6
+#  - clang-3.7
+
+matrix:
+  include:
+  - os: linux
+    compiler: gcc
+    env: CXX=g++-6
+  - os: osx
+    compiler: clang
+    env: 
+
 addons:
   apt:
     sources:
