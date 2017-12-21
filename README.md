@@ -978,6 +978,10 @@ Mostly unimplemented, more of a place holder than functional.
 ---
 
 ## Changelog
+- 0.1.99322 Some fixes building on mac.  Added error accessor to sqlite object.  Added user functions and aggregates to sqlite interface.
+Fixed windows registr access. Added interface to configscript parser.  Added analog interface for clock object (GUI build).  Lots of changes 
+SACK core code for user functions, json parse fixes, DeleteFromSet parameters, optimize poplink, added nolock dequelink, added callback for websocket
+data receive completion, 
 - 0.1.99321 Fix some edge json parsing cases.  Fixed some network issues.  Allow NUL characters in json parsing.
 - 0.1.99320 Fix json escape of strings containing NUL characters.  Add HTTP(s) request methods.
 Improve/modify PSI control registration/creation a little.  Expose font select dialog, color picker dialog, 
