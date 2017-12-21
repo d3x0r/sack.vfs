@@ -57811,6 +57811,7 @@ struct peer_thread_info
 #ifdef __LINUX__
 #  ifdef __MAC__
 	int kqueue;
+   PDATLIST kevents;
 #  else
 	int epoll_fd;
 #  endif
@@ -59429,10 +59430,10 @@ void RemoveThreadEvent( PCLIENT pc ) {
 			EV_SET64( &ev, pc->Socket, EVFILT_READ, EV_DELETE, 0, 0, (uint64_t)pc, NULL, NULL );
 			kevent64( thread->kqueue, &ev, 1, 0, 0, 0, 0 );
 		} else {
-			EV_SET64( &ev, pc->Socket, EVFILT_READ, EV_DELETE, 0, 0, (uintptr_t)pc );
-			kevent64( peer->kqueue, &ev, 1, 0, 0, 0, 0 );
-			EV_SET64( &ev, pc->Socket, EVFILT_WRITE, EV_DELETE, 0, 0, (uintptr_t)pc );
-			kevent64( peer->kqueue, &ev, 1, 0, 0, 0, 0 );
+			EV_SET64( &ev, pc->Socket, EVFILT_READ, EV_DELETE, 0, 0, (uintptr_t)pc, NULL, NULL );
+			kevent64( thread->kqueue, &ev, 1, 0, 0, 0, 0 );
+			EV_SET64( &ev, pc->Socket, EVFILT_WRITE, EV_DELETE, 0, 0, (uintptr_t)pc, NULL, NULL );
+			kevent64( thread->kqueue, &ev, 1, 0, 0, 0, 0 );
 		}
 		if( pc->SocketBroadcast ) {
 			EV_SET64( &ev, pc->SocketBroadcast, EVFILT_READ, EV_DELETE, 0, 0, (uint64_t)pc, NULL, NULL );
@@ -59441,16 +59442,16 @@ void RemoveThreadEvent( PCLIENT pc ) {
 #    else
 		kevent ev;
 		if( pc->dwFlags & CF_LISTEN ) {
-			EV_SET( &ev, pc->Socket, EVFILT_READ, EV_DELETE, 0, 0, (uint64_t)pc, NULL, NULL );
+			EV_SET( &ev, pc->Socket, EVFILT_READ, EV_DELETE, 0, 0, (uint64_t)pc );
 			kevent( thread->kqueue, &ev, 1, 0, 0, 0 );
 		} else {
 			EV_SET( &ev, pc->Socket, EVFILT_READ, EV_DELETE, 0, 0, (uintptr_t)pc );
-			kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
+			kevent( thread->kqueue, &ev, 1, 0, 0, 0 );
 			EV_SET( &ev, pc->Socket, EVFILT_WRITE, EV_DELETE, 0, 0, (uintptr_t)pc );
-			kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
+			kevent( thread->kqueue, &ev, 1, 0, 0, 0 );
 		}
 		if( pc->SocketBroadcast ) {
-			EV_SET( &ev, pc->SocketBroadcsat, EVFILT_READ, EV_DELETE, 0, 0, (uint64_t)pc, NULL, NULL );
+			EV_SET( &ev, pc->SocketBroadcsat, EVFILT_READ, EV_DELETE, 0, 0, (uint64_t)pc );
 			kevent( thread->kqueue, &ev, 1, 0, 0, 0 );
 		}
 #    endif
@@ -59628,10 +59629,10 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #  ifdef __MAC__
 #    ifdef __64__
 		kevent64_s events[10];
-		cnt = kevent64( thread->kqueue, NULL, 0, &events, 10, 0, NULL );
+		cnt = kevent64( thread->kqueue, NULL, 0, events, 10, 0, NULL );
 #    else
 		kevent events[10];
-		cnt = kevent( thread->kqueue, NULL, 0, &events, 10, NULL );
+		cnt = kevent( thread->kqueue, NULL, 0, events, 10, NULL );
 #    endif
 #  else
 		struct epoll_event events[10];
@@ -59659,7 +59660,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #  endif
 			for( n = 0; n < cnt; n++ ) {
 #  ifdef __MAC__
-				pc = (PCLIENT)events[n].udata;
+				event_data = (struct event_data*)events[n].udata;
 #  else
 				event_data = (struct event_data*)events[n].data.ptr;
 #  endif
@@ -84969,7 +84970,7 @@ TEXTSTR RevertEscapeBinary( CTEXTSTR blob, size_t *bloblen )
 	n = 0;
 	escape = 0;
 	targetlen = 0;
-	for( n = 0; blob[n]; n++ )
+	for( n = 0; n < blob[n]; n++ )
 	{
 		if( !escape && ( blob[n] == '\\' ) )
 			escape = 1;
@@ -84985,7 +84986,6 @@ TEXTSTR RevertEscapeBinary( CTEXTSTR blob, size_t *bloblen )
 			}
 			escape = 0;
 		}
-		n++;
 	}
 	if( bloblen )
 	{
@@ -86843,7 +86843,6 @@ static int GrabExtra( PTEXT *word, TEXTSTR *result )
 			TEXTCHAR *tmp;
 			while( (*word) && ( ( tmp = GetText( *word ) )[0] != ',' || ( parens > 0 ) ) && ( ( parens > 0 ) || (tmp[0] != ')') ) )
 			{
-				lprintf( "word:%s", GetText( *word) );
 				if( tmp[0] == '(' )
 					parens++;
 				if( tmp[0] == ')' ) {
