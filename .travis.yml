@@ -6,6 +6,14 @@ node_js:
   - "5"
 #  - "4"
 
+os:
+  - linux
+  - osx
+
+compiler:
+  - gcc
+  - clang
+
 env:
   - CXX=g++-6
 addons:
