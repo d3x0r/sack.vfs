@@ -49448,16 +49448,16 @@ static int
 #ifdef __LINUX__
      iPar = PARENB;
 #else
-	  iPar = EVENPARITY;
+		iPar = EVENPARITY;
 #endif
   }
   else if ( *p == 'm' || *p == 'M' )
   {
 #define CNSPAR 010000000000
 #ifdef __LINUX__
-	  iPar = CNSPAR|PARENB|PARODD;
+		iPar = CNSPAR|PARENB|PARODD;
 #else
-	  iPar = MARKPARITY;
+		iPar = MARKPARITY;
 #endif
   }
   else
@@ -49473,7 +49473,7 @@ static int
   if ( *p == 'o' || *p == 'O' )
   {
 #ifdef __LINUX__
-	  iPar = PARODD|PARENB;
+		iPar = PARODD|PARENB;
 #else
     iPar = ODDPARITY;
 #endif
@@ -49482,7 +49482,7 @@ static int
   if ( *p == 's' || *p == 'S' )
   {
 #ifdef __LINUX__
-	  iPar = CNSPAR|PARENB;
+		iPar = CNSPAR|PARENB;
 #else
     iPar = ODDPARITY;
 #endif
@@ -49511,16 +49511,16 @@ static int
   switch( *p )
   {
   case '5':
-	  iData = CS5;
+		iData = CS5;
      break;
   case '6':
-	  iData = CS6;
+		iData = CS6;
      break;
   case '7':
-	  iData = CS7;
+		iData = CS7;
      break;
   case '8':
-	  iData = CS8;
+		iData = CS8;
      break;
   }
 #else
@@ -49571,102 +49571,102 @@ static int
   }
   if( p[0] == ',' )
   {
-	    p++;
-	    if( p[0] == 'C' )
-	    {
-		      if( piCarrier ) *piCarrier = 1;
-	    }
-	    else
-		      if( piCarrier ) *piCarrier = 0;
-	    while( p[0] && p[0] != ',' ) p++;
+		  p++;
+		  if( p[0] == 'C' )
+		  {
+				  if( piCarrier ) *piCarrier = 1;
+		  }
+		  else
+				  if( piCarrier ) *piCarrier = 0;
+		  while( p[0] && p[0] != ',' ) p++;
   }
   if( p[0] == ',' )
   {
-	    p++;
-	    if( p[0] == 'R' )
-	    {
-		      if( piRTS ) *piRTS = 1;
-	    }
-	    else
-		      if( piRTS ) *piRTS = 0;
-	    while( p[0] && p[0] != ',' ) p++;
+		  p++;
+		  if( p[0] == 'R' )
+		  {
+				  if( piRTS ) *piRTS = 1;
+		  }
+		  else
+				  if( piRTS ) *piRTS = 0;
+		  while( p[0] && p[0] != ',' ) p++;
   }
   if( p[0] == ',' )
   {
-	    p++;
-	    if( p[0] == 'R' )
-	    {
-		      if( piRTSFlow ) *piRTSFlow = 1;
-	    }
-	    else
-		      if( piRTSFlow ) *piRTSFlow = 0;
-	    while( p[0] && p[0] != ',' ) p++;
+		  p++;
+		  if( p[0] == 'R' )
+		  {
+				  if( piRTSFlow ) *piRTSFlow = 1;
+		  }
+		  else
+				  if( piRTSFlow ) *piRTSFlow = 0;
+		  while( p[0] && p[0] != ',' ) p++;
   }
   if( dwBaud & 0xFFFF8000 )
   {
 #ifdef __LINUX__
-	  if( dwBaud == 230400ul )
-	  {
+		if( dwBaud == 230400ul )
+		{
         dwBaud = B230400;
-	  }
-	  else
+		}
+		else
 #endif
-	    if( dwBaud == 256000ul )
-	  {
+		  if( dwBaud == 256000ul )
+		{
 #ifndef __LINUX__
-		  dwBaud = CBR_256000;
+			dwBaud = CBR_256000;
 #endif
-	    }
-	    else if( dwBaud == 115200ul )
-	  {
+		  }
+		  else if( dwBaud == 115200ul )
+		{
 #ifdef __LINUX__
         dwBaud = B115200;
 #else
 #if defined( WIN32 )
-		  dwBaud = CBR_115200;
+			dwBaud = CBR_115200;
 #elif defined( BCC16 )
-		  dwBaud = 0xFEFF;
+			dwBaud = 0xFEFF;
 #else
 #endif
 #endif
-	    }
-	    else if( dwBaud == 128000ul )
-	  {
+		  }
+		  else if( dwBaud == 128000ul )
+		{
 #ifndef __LINUX__
-		  dwBaud = CBR_128000;
+			dwBaud = CBR_128000;
 #endif
-	    }
-	    else
-	    {
-		      if( (dwBaud != 57600ul) && (dwBaud != 38400ul) )
-		      {
+		  }
+		  else
+		  {
+				  if( (dwBaud != 57600ul) && (dwBaud != 38400ul) )
+				  {
 		       static TEXTCHAR buf[64];
 		       tnprintf( buf, sizeof( buf ), WIDE("Invalid Baud rate %08x"), dwBaud );
-			    if ( ppErr )
-				      *ppErr = buf;
-			  return -15;
-		  }
+				  if ( ppErr )
+					    *ppErr = buf;
+				return -15;
+			}
 #ifdef __LINUX__
-		  else
-			  if( dwBaud == 57600ul )
-				  dwBaud = B57600;
-			  else if( dwBaud == 38400ul )
-				  dwBaud = B38400;
+			else
+				if( dwBaud == 57600ul )
+					dwBaud = B57600;
+				else if( dwBaud == 38400ul )
+					dwBaud = B38400;
 #endif
      }
    }
    else
-	  switch ( dwBaud )
-	  {
+		switch ( dwBaud )
+		{
 #ifdef __LINUX__
-	  case 19200ul:  dwBaud = B19200;  break;
-	  case 9600ul:   dwBaud = B9600;   break;
-	  case 4800ul:   dwBaud = B4800;   break;
-	  case 2400ul:   dwBaud = B2400;   break;
-	  case 1200ul:   dwBaud = B1200;   break;
-	  case 600ul:    dwBaud = B600;    break;
-	  case 300ul:    dwBaud = B300;    break;
-	  case 110ul:    dwBaud = B110;    break;
+		case 19200ul:  dwBaud = B19200;  break;
+		case 9600ul:   dwBaud = B9600;   break;
+		case 4800ul:   dwBaud = B4800;   break;
+		case 2400ul:   dwBaud = B2400;   break;
+		case 1200ul:   dwBaud = B1200;   break;
+		case 600ul:    dwBaud = B600;    break;
+		case 300ul:    dwBaud = B300;    break;
+		case 110ul:    dwBaud = B110;    break;
 #else
 //  case 28000ul:  dwBaud = CBR_28000;  break;
     case 19200ul:  dwBaud = CBR_19200;  break;
@@ -49681,7 +49681,7 @@ static int
     case 1200ul:   dwBaud = CBR_1200;   break;
     case 600ul:    dwBaud = CBR_600;    break;
     case 300ul:    dwBaud = CBR_300;    break;
-	  case 110ul:    dwBaud = CBR_110;    break;
+		case 110ul:    dwBaud = CBR_110;    break;
 #endif
     default:
 #ifndef HIWORD
@@ -49691,8 +49691,8 @@ static int
       {
 	      static TEXTCHAR buf[64];
 	      tnprintf( buf, sizeof( buf ), WIDE("Invalid Baud rate %08x"), dwBaud );
-		    if ( ppErr )
-		      *ppErr = buf;
+			  if ( ppErr )
+			    *ppErr = buf;
           return -15;
       }
       break;
@@ -49830,47 +49830,51 @@ void DumpTermios( struct termios *opts )
 {
 #ifdef USE_REAL_FUNCTIONS
 	PCOM_TRACK pct;
-   ComLocalInit();
+	ComLocalInit();
 	{
-	  int iPar, iData, iStop, iCarrier, iRTS, iRTSFlow;
-	  uint32_t wBaud;
-	  const TEXTCHAR far *szErr;
-	  TEXTCHAR szInit[64];
-	  // capital letters on carrier, rts, rtsflow mean to enable - otherwise
-	  // don't pay attention to those signals.
+		int iPar, iData, iStop, iCarrier, iRTS, iRTSFlow;
+		uint32_t wBaud;
+		const TEXTCHAR far *szErr;
+		TEXTCHAR szInit[64];
+		// capital letters on carrier, rts, rtsflow mean to enable - otherwise
+		// don't pay attention to those signals.
 #ifndef __NO_OPTIONS__
-	  SACK_GetPrivateProfileString( WIDE("COM PORTS"), szPort, WIDE("57600,N,8,1,cARRIER,RTS,rTSFLOW"), szInit, sizeof( szInit ), WIDE("comports.ini") );
+		SACK_GetPrivateProfileString( WIDE("COM PORTS"), szPort, WIDE("57600,N,8,1,cARRIER,RTS,rTSFLOW"), szInit, sizeof( szInit ), WIDE("comports.ini") );
 #else
-	  GetPrivateProfileString( WIDE("COM PORTS"), szPort, WIDE(""), szInit, sizeof( szInit ), WIDE("comports.ini") );
+#ifdef _WIN32
+		GetPrivateProfileString( WIDE("COM PORTS"), szPort, WIDE(""), szInit, sizeof( szInit ), WIDE("comports.ini") );
 		if( !szPort[0] ) {
-			  WritePrivateProfileString( WIDE("COM PORTS"), szPort, WIDE("57600,N,8,1,cARRIER,RTS,rTSFLOW"), WIDE("comports.ini") );
+			WritePrivateProfileString( WIDE("COM PORTS"), szPort, WIDE("57600,N,8,1,cARRIER,RTS,rTSFLOW"), WIDE("comports.ini") );
 		}
+#else
+		strcpy( szPort, "57600,N,8,1,cARRIER,RTS,rTSFLOW" );
+#endif
 #endif
 #if defined(  _WIN32 ) || defined( __LINUX__ )
-	  if( !iTimerId )
-	  {
-		  // this timer is constantly getting scheduled later than it thinks it should be.
-		  ThreadTo( ReadThread, 0 );
-		  //iTimerId = AddTimer( 10, ReadTimer, 0 );
-	  }
+		if( !iTimerId )
+		{
+			// this timer is constantly getting scheduled later than it thinks it should be.
+			ThreadTo( ReadThread, 0 );
+			//iTimerId = AddTimer( 10, ReadTimer, 0 );
+		}
 #else
-	  if( !iTimerId )
-	      iTimerId = SetTimer( NULL, 100, 10, (TIMERPROC)ReadTimer );
+		if( !iTimerId )
+		    iTimerId = SetTimer( NULL, 100, 10, (TIMERPROC)ReadTimer );
 #endif
-	  if ( ParseComString ( szInit, &wBaud, &iPar
+		if ( ParseComString ( szInit, &wBaud, &iPar
 	                      , &iData, &iStop
 	                      , &iCarrier
 	                      , &iRTS, &iRTSFlow
 	                      , &szErr ) )
-	  {
+		{
 #ifndef __LINUX__
 	    MessageBox ( (HWND)NULL, szErr, WIDE("SackOpenComm: invalid init string")
-	               , MB_OK | MB_ICONHAND );
+		             , MB_OK | MB_ICONHAND );
 	    MessageBox ( (HWND)NULL, szInit, WIDE("SackOpenComm: invalid init string")
 						, MB_OK | MB_ICONHAND );
 #endif
 	    return FALSE;
-	  }
+		}
 		if( ( pct = FindComByName( szPort ) ) )
 		{
 			if( func )
@@ -49901,87 +49905,87 @@ void DumpTermios( struct termios *opts )
 				if( StrCaseCmpEx( szPort, WIDE("lpt"), 3 ) != 0 )
 				{
 					pct->flags.bOutputOnly = 0;
-					   SackFlushComm( (int)iCommId, 0 );
-					   SackFlushComm( (int)iCommId, 1 );
+					SackFlushComm( (int)iCommId, 0 );
+					SackFlushComm( (int)iCommId, 1 );
 #ifndef __LINUX__
 #ifdef BCC16
-			   pct->dcb.Id          = iCommId;
+					pct->dcb.Id          = iCommId;
 #else
-			   pct->dcb.DCBlength   = sizeof( pct->dcb );
+					pct->dcb.DCBlength   = sizeof( pct->dcb );
 #endif
-				pct->dcb.BaudRate    = wBaud;
-				pct->dcb.ByteSize    = iData;
-				pct->dcb.Parity      = iPar;
-				pct->dcb.StopBits    = iStop;
+					pct->dcb.BaudRate    = wBaud;
+					pct->dcb.ByteSize    = iData;
+					pct->dcb.Parity      = iPar;
+					pct->dcb.StopBits    = iStop;
  // yes! we want binary.
-				pct->dcb.fBinary     = 1;
+					pct->dcb.fBinary     = 1;
 #ifdef BCC16
-				pct->dcb.fRtsDisable = iRTS;
-				pct->dcb.fRtsflow    = iRTSFlow;
+					pct->dcb.fRtsDisable = iRTS;
+					pct->dcb.fRtsflow    = iRTSFlow;
 #else
-				if( iRTS && iRTSFlow )
-					pct->dcb.fRtsControl = RTS_CONTROL_TOGGLE;
-				else if( iRTS )
-					pct->dcb.fRtsControl = RTS_CONTROL_ENABLE;
-				else
-					pct->dcb.fRtsControl = RTS_CONTROL_DISABLE;
+					if( iRTS && iRTSFlow )
+						pct->dcb.fRtsControl = RTS_CONTROL_TOGGLE;
+					else if( iRTS )
+						pct->dcb.fRtsControl = RTS_CONTROL_ENABLE;
+					else
+						pct->dcb.fRtsControl = RTS_CONTROL_DISABLE;
 #endif
-            pct->dcb.fDtrControl = DTR_CONTROL_ENABLE;
+					pct->dcb.fDtrControl = DTR_CONTROL_ENABLE;
  // try this - remove maybe.
-				pct->flags.bUseCarrierDetect = iCarrier;
-				lprintf( WIDE( " pct->dcb.BaudRate is %lu pct->dcb.ByteSize is %lu pct->dcb.Parity is %lu pct->dcb.fRtsControl is %lu " )
-					, pct->dcb.BaudRate
-					, pct->dcb.ByteSize
-					, pct->dcb.Parity
-					, pct->dcb.fRtsControl
+					pct->flags.bUseCarrierDetect = iCarrier;
+					lprintf( WIDE( " pct->dcb.BaudRate is %lu pct->dcb.ByteSize is %lu pct->dcb.Parity is %lu pct->dcb.fRtsControl is %lu " )
+					       , pct->dcb.BaudRate
+					       , pct->dcb.ByteSize
+					       , pct->dcb.Parity
+					       , pct->dcb.fRtsControl
 					);
 				//EscapeCommFunction( (HANDLE)(intptr_t)iCommId, SETDTR );
 				//EscapeCommFunction( (HANDLE)(intptr_t)iCommId, SETRTS );
 				//SETDTR
 #ifdef BCC16
-		      if ( SetCommState( &pct->dcb ) )
+					if ( SetCommState( &pct->dcb ) )
 #else
-		      if ( !SetCommState( (HANDLE)(intptr_t)iCommId, &pct->dcb ) )
+					 if ( !SetCommState( (HANDLE)(intptr_t)iCommId, &pct->dcb ) )
 #endif
-		      {
+					{
 #ifdef _WIN32
-					lprintf( WIDE("Open: Invalid initialization string %d"), GetLastError() );
+						lprintf( WIDE("Open: Invalid initialization string %d"), GetLastError() );
 #endif
-				SackCloseComm( (int)iCommId );
-				iCommId = -1;
-				}
+						SackCloseComm( (int)iCommId );
+						iCommId = -1;
+					}
 #else
-				{
-					struct termios opts;
-               tcgetattr( iCommId, &opts );
-               DumpTermios(&opts);
-					//opts.c_iflag &= ~(BRKINT|PARMRK|INPCK|ISTRIP|INLCR|IXON|IXOFF|IMAXBEL);
-               opts.c_iflag = 0;
-					opts.c_iflag |= IGNBRK|IGNPAR|IGNCR|IXANY;
-					//opts.c_oflag &= ~(OLCUC|ONLCR|OCRNL|ONOCR|ONLRET|OFILL|OFDEL|NLDLY|TABDLY|BSDLY|VTDLY|FFDLY);
-               opts.c_oflag = 0;
+					{
+						struct termios opts;
+						tcgetattr( iCommId, &opts );
+						DumpTermios(&opts);
+						//opts.c_iflag &= ~(BRKINT|PARMRK|INPCK|ISTRIP|INLCR|IXON|IXOFF|IMAXBEL);
+						opts.c_iflag = 0;
+						opts.c_iflag |= IGNBRK|IGNPAR|IGNCR|IXANY;
+						//opts.c_oflag &= ~(OLCUC|ONLCR|OCRNL|ONOCR|ONLRET|OFILL|OFDEL|NLDLY|TABDLY|BSDLY|VTDLY|FFDLY);
+						opts.c_oflag = 0;
  // looks like nothing special to output...
-					opts.c_oflag |= 0;
-					//opts.c_cflag &= ~(CNSPAR|PARENB|PARODD|CSIZE|CSTOPB|CRTSCTS|CLOCAL);
-               opts.c_cflag = 0;
-					opts.c_cflag |= iPar | iData | iStop | wBaud | CREAD | CLOCAL;
-					//opts.c_lflag &= ~(ISIG|ICANON|XCASE|ECHO|ECHOE|ECHOK|ECHONL|ECHOCTL...);
-					opts.c_lflag = 0;
-					opts.c_lflag |= 0;
-					opts.c_cc[VMIN] = 1;
-               opts.c_cc[VTIME] = 0;
-					cfsetospeed( &opts, wBaud );
-					cfsetispeed( &opts, 0 );
-					DumpTermios(&opts);
-					if( tcsetattr( iCommId, TCSANOW, &opts ) )
-						lprintf( WIDE("tcsetattr failed: %d"), errno );
-				}
-            // setup the com port here (termios)
+						opts.c_oflag |= 0;
+						//opts.c_cflag &= ~(CNSPAR|PARENB|PARODD|CSIZE|CSTOPB|CRTSCTS|CLOCAL);
+						opts.c_cflag = 0;
+						opts.c_cflag |= iPar | iData | iStop | wBaud | CREAD | CLOCAL;
+						//opts.c_lflag &= ~(ISIG|ICANON|XCASE|ECHO|ECHOE|ECHOK|ECHONL|ECHOCTL...);
+						opts.c_lflag = 0;
+						opts.c_lflag |= 0;
+						opts.c_cc[VMIN] = 1;
+						opts.c_cc[VTIME] = 0;
+						cfsetospeed( &opts, wBaud );
+						cfsetispeed( &opts, 0 );
+						DumpTermios(&opts);
+						if( tcsetattr( iCommId, TCSANOW, &opts ) )
+							lprintf( WIDE("tcsetattr failed: %d"), errno );
+					}
+					// setup the com port here (termios)
 #endif
 				}
 				else
 				{
-               pct->flags.bOutputOnly = 1;
+					pct->flags.bOutputOnly = 1;
 				}
 			}
 			//else
@@ -50007,7 +50011,7 @@ void DumpTermios( struct termios *opts )
 	}
 #else
  //some non-zero comm id
-   return 42;
+	return 42;
 #endif
 }
 //-----------------------------------------------------------------------
@@ -50094,7 +50098,7 @@ void DumpTermios( struct termios *opts )
 		 // destroy pct here...
 		 CloseComm( iCommId );
 		 RemoveComTracking( pct );
-	    return 1;
+		 return 1;
 	 }
 	 else
 		 return 0;
@@ -50213,13 +50217,13 @@ void DumpTermios( struct termios *opts )
   \********************************************************************/
   if( !pnCharsRead )
   {
-	    xlprintf(LOG_NOISE)( WIDE("Failing - bad return count") );
-		    return SACKCOMM_ERR_BUFSIZE;
+	  xlprintf(LOG_NOISE)( WIDE("Failing - bad return count") );
+	  return SACKCOMM_ERR_BUFSIZE;
   }
   if( !buffer )
   {
-	    xlprintf(LOG_NOISE)( WIDE("Failing - bad buffer") );
-	    return SACKCOMM_ERR_POINTER;
+		  xlprintf(LOG_NOISE)( WIDE("Failing - bad buffer") );
+		  return SACKCOMM_ERR_POINTER;
   }
    pComTrack->flags.bInRead = 1;
    if( gbLog )
@@ -50275,25 +50279,25 @@ void DumpTermios( struct termios *opts )
 #ifndef __LINUX__
 #ifdef BCC16
 		uint32_t iEvents;
-	   iEvents = GetCommEventMask( iCommId, 0xFFFF );
-	   if( iEvents & EV_RLSDS )
+		iEvents = GetCommEventMask( iCommId, 0xFFFF );
+		if( iEvents & EV_RLSDS )
 #else
 		uint32_t iEvents;
 		GetCommMask( (HANDLE)(intptr_t)iCommId, (DWORD*)&iEvents );
 		if( !(iEvents & EV_RLSD ) )
 #endif
-	   {
-		   pComTrack->flags.bHaveCarrier = 1;
-	   }
-	   else
-	   {
-		   xlprintf(LOG_NOISE)( WIDE("No Carrier - failing read. ") );
-		   *pnCharsRead = 0;
-		   pComTrack->flags.bInRead = 0;
-		   if( gbLog )
+		{
+			pComTrack->flags.bHaveCarrier = 1;
+		}
+		else
+		{
+			xlprintf(LOG_NOISE)( WIDE("No Carrier - failing read. ") );
+			*pnCharsRead = 0;
+			pComTrack->flags.bInRead = 0;
+			if( gbLog )
 				xlprintf(LOG_NOISE)( WIDE("Leave comm read buffer") );
-		   pComTrack->current.dwEnd = 0;
-		   return SACKCOMM_ERR_TIMEOUT;
+			pComTrack->current.dwEnd = 0;
+			return SACKCOMM_ERR_TIMEOUT;
 		}
 #endif
 	}
@@ -50303,50 +50307,50 @@ void DumpTermios( struct termios *opts )
     * First, read the communications port.                            *
     \*****************************************************************/
     // don't call stub version - no change - but less confusion.
-    nCharsRead = ReadComm ( iCommId
+		nCharsRead = ReadComm ( iCommId
                           , buffer + pComTrack->current.nTotalRead
                           , len - pComTrack->current.nTotalRead );
     /*****************************************************************    * If data was read in without error (the normal condition), then  *
     * go ahead and break out of the loop, we're done.                 *
     \*****************************************************************/
-    if ( nCharsRead > 0 )
-    {
-		 if( bLogDataXfer & 2 )
-		 {
-			 xlprintf(LOG_NOISE)( WIDE("Recv COM: dump buffer") );
-			 //xlprintf(LOG_NOISE)( buffer + pComTrack->current.nTotalRead, nCharsRead );
-		 }
-		 pComTrack->current.dwLastRead = GetTickCount();
-		 pComTrack->current.nTotalRead += nCharsRead;
-		 if( pComTrack->current.nTotalRead == len )
-		 {
-			 *pnCharsRead = pComTrack->current.nTotalRead;
-			 pComTrack->flags.bInRead = 0;
-		    xlprintf(LOG_NOISE)( WIDE("Return buffer full.") );
-			pComTrack->current.dwEnd = 0;
-			return SACKCOMM_ERR_NONE;
-	    }
-      //Log1( WIDE("SackCommReadBuffer => SUCCESS : %d"), nCharsRead );
+		if ( nCharsRead > 0 )
+		{
+			if( bLogDataXfer & 2 )
+			{
+				xlprintf(LOG_NOISE)( WIDE("Recv COM: dump buffer") );
+				//xlprintf(LOG_NOISE)( buffer + pComTrack->current.nTotalRead, nCharsRead );
+			}
+			pComTrack->current.dwLastRead = GetTickCount();
+			pComTrack->current.nTotalRead += nCharsRead;
+			if( pComTrack->current.nTotalRead == len )
+			{
+				*pnCharsRead = pComTrack->current.nTotalRead;
+				pComTrack->flags.bInRead = 0;
+				xlprintf(LOG_NOISE)( WIDE("Return buffer full.") );
+				pComTrack->current.dwEnd = 0;
+				return SACKCOMM_ERR_NONE;
+			}
+			//Log1( WIDE("SackCommReadBuffer => SUCCESS : %d"), nCharsRead );
  // try reading some more...
-		continue;
-    }
+			continue;
+		}
     /*****************************************************************    * If the read was an error, then display the error message(s) to  *
     * the user and break with an error.                               *
     \*****************************************************************/
-    if ( nCharsRead < 0 )
-    {
-      TEXTCHAR cOut[128];
-      int  nCommError;
+		if ( nCharsRead < 0 )
+		{
+			TEXTCHAR cOut[128];
+			int  nCommError;
 #ifndef __LINUX__
 			nCommError = SackGetCommError ( iCommId, &pComTrack->cs );
 #else
-	nCommError = 0;
+			nCommError = 0;
 #endif
-      tnprintf ( cOut, sizeof( cOut ), WIDE("SackCommReadBuffer: read %d chars, error=%d")
+			tnprintf ( cOut, sizeof( cOut ), WIDE("SackCommReadBuffer: read %d chars, error=%d")
                , nCharsRead, nCommError );
-      xlprintf(LOG_NOISE)( WIDE("%s"), cOut );
+			xlprintf(LOG_NOISE)( WIDE("%s"), cOut );
 #ifndef __LINUX__
-      lprintf ( WIDE("    cs.status=%u,0x%02X  cs.in=%u  cs.out=%u")
+			lprintf ( WIDE("    cs.status=%u,0x%02X  cs.in=%u  cs.out=%u")
 #ifdef BCC_16
                , pComTrack->cs.status
 #else
@@ -50355,89 +50359,89 @@ void DumpTermios( struct termios *opts )
                , pComTrack->cs.cbInQue
 					, pComTrack->cs.cbOutQue );
 #endif
-      iResult = SACKCOMM_ERR_COMM;
-    }
+			iResult = SACKCOMM_ERR_COMM;
+		}
  // no data, check timeout
-    else if( GetTickCount() >= pComTrack->current.dwEnd )
-    {
-    /*****************************************************************    * If we have exceeded the timeout limit, then set the error.      *
-    \*****************************************************************/
-	    if( pComTrack->current.nTotalRead )
-	    {
-		    // can't get this message - the above code leaves with any data.
-	      _lprintf( DBG_RELAY )( WIDE( "SackCommReadBuffer() => TIMEOUT (WITH DATA %d)" )
-	             , pComTrack->current.nTotalRead );
-	      iResult = SACKCOMM_ERR_NONE;
- // get out of this loop.
-	      break;
-	   }
-	   else
-	   {
-		   if( pComTrack->flags.bUseCarrierDetect )
+		else if( GetTickCount() >= pComTrack->current.dwEnd )
+		{
+			/*****************************************************************			* If we have exceeded the timeout limit, then set the error.      *
+			\*****************************************************************/
+			if( pComTrack->current.nTotalRead )
 			{
+		    // can't get this message - the above code leaves with any data.
+				_lprintf( DBG_RELAY )( WIDE( "SackCommReadBuffer() => TIMEOUT (WITH DATA %d)" )
+	                 , pComTrack->current.nTotalRead );
+				iResult = SACKCOMM_ERR_NONE;
+ // get out of this loop.
+				break;
+			}
+			else
+			{
+				if( pComTrack->flags.bUseCarrierDetect )
+				{
 #ifndef __LINUX__
 #ifdef BCC16
-			   uint32_t iEvents;
-			   iEvents = GetCommEventMask( iCommId, 0xFFFF );
-			   if( !(iEvents & EV_RLSDS) )
+					uint32_t iEvents;
+					iEvents = GetCommEventMask( iCommId, 0xFFFF );
+					if( !(iEvents & EV_RLSDS) )
 #else
-			   uint32_t iEvents;
-				GetCommMask( (HANDLE)(intptr_t)iCommId, (DWORD*)&iEvents );
-				if( !(iEvents & EV_RLSD ) )
+					uint32_t iEvents;
+					GetCommMask( (HANDLE)(intptr_t)iCommId, (DWORD*)&iEvents );
+					if( !(iEvents & EV_RLSD ) )
 #endif
-			   {
-			      lprintf( WIDE("SackCommReadBuffer() => TIMEOUT(No Carrier)") );
-				   pComTrack->flags.bHaveCarrier = 0;
-			   }
-			   else
-			   {
-			      lprintf( WIDE("SackCommReadBuffer() => TIMEOUT(With carrier)") );
-			      iResult = SACKCOMM_ERR_TIMEOUT;
+					{
+						lprintf( WIDE("SackCommReadBuffer() => TIMEOUT(No Carrier)") );
+						pComTrack->flags.bHaveCarrier = 0;
+					}
+					else
+					{
+						lprintf( WIDE("SackCommReadBuffer() => TIMEOUT(With carrier)") );
+						iResult = SACKCOMM_ERR_TIMEOUT;
+					}
+#endif
 				}
-#endif
-		   }
-		   else
-		   {
-		      lprintf( WIDE("SackCommReadBuffer() => TIMEOUT(ignore carrier)") );
-		      iResult = SACKCOMM_ERR_TIMEOUT;
-		   }
+				else
+				{
+					lprintf( WIDE("SackCommReadBuffer() => TIMEOUT(ignore carrier)") );
+					iResult = SACKCOMM_ERR_TIMEOUT;
+				}
+			}
 		}
-    }
  // not timed out, nothing read.
-    else
-	 {
+		else
+		{
 #ifndef __LINUX__
-	    MSG msg;
-	     // check to see if we ever ready any
-	    if( pComTrack->current.nTotalRead &&
+			MSG msg;
+			// check to see if we ever ready any
+			if( pComTrack->current.nTotalRead &&
 	        ( GetTickCount() > ( pComTrack->current.dwLastRead + 25 ) ) )
-	    {
-		   *pnCharsRead = pComTrack->current.nTotalRead;
-		   pComTrack->flags.bInRead = 0;
-		   //xlprintf(LOG_NOISE)( WIDE("Leave comm read buffer") );
-		    iResult = SACKCOMM_ERR_NONE_MORE;
-	    }
-	    if( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) )
-	    {
-	       // unlock ourselves... think we can come back in and resume...
-		    pComTrack->flags.bInRead = 0;
-		    if( gbLog )
-				Log1( WIDE("Dispatching Message.. %d"), msg.message );
-		    DispatchMessage( &msg );
-		    pComTrack->flags.bInRead = 1;
-		}
+			{
+				*pnCharsRead = pComTrack->current.nTotalRead;
+				pComTrack->flags.bInRead = 0;
+				//xlprintf(LOG_NOISE)( WIDE("Leave comm read buffer") );
+				iResult = SACKCOMM_ERR_NONE_MORE;
+			}
+			if( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) )
+			{
+				// unlock ourselves... think we can come back in and resume...
+				pComTrack->flags.bInRead = 0;
+				if( gbLog )
+					Log1( WIDE("Dispatching Message.. %d"), msg.message );
+				DispatchMessage( &msg );
+				pComTrack->flags.bInRead = 1;
+			}
 #endif
-    }
-  }
-  while ( iResult == SACKCOMM_ERR_NONE );
-  *pnCharsRead = pComTrack->current.nTotalRead;
-   pComTrack->flags.bInRead = 0;
-   pComTrack->current.dwEnd = 0;
-   //xlprintf(LOG_NOISE)( WIDE("Leave comm read buffer") );
-  return iResult;
+		}
+	}
+	while ( iResult == SACKCOMM_ERR_NONE );
+	*pnCharsRead = pComTrack->current.nTotalRead;
+	pComTrack->flags.bInRead = 0;
+	pComTrack->current.dwEnd = 0;
+	//xlprintf(LOG_NOISE)( WIDE("Leave comm read buffer") );
+	return iResult;
 }
 //-----------------------------------------------------------------------
- int  SackCommReadDataEx( int iCommId
+int  SackCommReadDataEx( int iCommId
 												 , uint32_t timeout
 												 , char **pBuffer
 												 , int *pnCharsRead
@@ -50502,8 +50506,8 @@ void DumpTermios( struct termios *opts )
 			 thissend = -thissend;
 			 if( thissend == 0 )
 			 {
-				   xlprintf(LOG_NOISE)( WIDE("Data is not going anywhere - bail out.") );
-				   return SACKCOMM_ERR_COMM;
+				 xlprintf(LOG_NOISE)( WIDE("Data is not going anywhere - bail out.") );
+				 return SACKCOMM_ERR_COMM;
 			 }
 	     }
 	     sendofs += thissend;
@@ -50521,7 +50525,7 @@ void DumpTermios( struct termios *opts )
 *    Attempt to read from the portable until no more characters appear.       *
 *    The read will last at least as long as 100ms, but no longer then 5000ms. *
 \*****************************************************************************/
- void  SackCommFlush ( int nCommID )
+void  SackCommFlush ( int nCommID )
 {
 	PCOM_TRACK pct = FindComByNumber( nCommID );
 	if( pct )
@@ -50532,25 +50536,25 @@ void DumpTermios( struct termios *opts )
 	{
 //#if 0
     uint32_t   dwTicks = GetTickCount();
-    uint32_t   dwWaitUntilAtLeast = dwTicks + 100UL;
-    uint32_t   dwWaitNoMoreThan   = dwTicks + 5000UL;
+	 uint32_t   dwWaitUntilAtLeast = dwTicks + 100UL;
+	 uint32_t   dwWaitNoMoreThan   = dwTicks + 5000UL;
     int     nCharsRead;
-    char    cBuf[100];
+	 char    cBuf[100];
     PCOM_TRACK pComTrack = FindComByNumber( nCommID );
-    do
-    {
-		  nCharsRead = ReadComm ( (int)pComTrack->iCommId
+	 do
+	 {
+		 nCharsRead = ReadComm ( (int)pComTrack->iCommId
                 , cBuf
                 , 100 );
-        //Log1( WIDE("Read com chars: %d"), nCharsRead );
-        if ( nCharsRead < 0 )
-            nCharsRead = -nCharsRead;
-        else if( nCharsRead > 0 )
-	           dwWaitUntilAtLeast = GetTickCount() + 100;
-        if ( GetTickCount() > dwWaitNoMoreThan )
-           break;
-    }
-    while (  ( nCharsRead > 0 )
+		 //Log1( WIDE("Read com chars: %d"), nCharsRead );
+		 if ( nCharsRead < 0 )
+			 nCharsRead = -nCharsRead;
+		 else if( nCharsRead > 0 )
+			 dwWaitUntilAtLeast = GetTickCount() + 100;
+		 if ( GetTickCount() > dwWaitNoMoreThan )
+			 break;
+	 }
+	 while (  ( nCharsRead > 0 )
           || ( GetTickCount() < dwWaitUntilAtLeast )
           );
    }
@@ -57811,7 +57815,7 @@ struct peer_thread_info
 #ifdef __LINUX__
 #  ifdef __MAC__
 	int kqueue;
-   PDATLIST kevents;
+   PDATALIST kevents;
 #  else
 	int epoll_fd;
 #  endif
