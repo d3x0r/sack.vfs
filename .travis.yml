@@ -12,20 +12,20 @@ os:
 
 compiler:
   - gcc
-  - clang
+#  - clang
 
 env:
 #  - CXX=g++-6
 #  - clang-3.7
 
-matrix:
-  include:
-  - os: linux
-    compiler: gcc
-    env: CXX=g++-6
-  - os: osx
-    compiler: clang
-    env: 
+#matrix:
+#  include:
+#  - os: linux
+#    compiler: gcc
+#    env: CXX=g++-6
+#  - os: osx
+#    compiler: clang
+#    env: 
 
 addons:
   apt:
