@@ -49847,7 +49847,7 @@ void DumpTermios( struct termios *opts )
 			WritePrivateProfileString( WIDE("COM PORTS"), szPort, WIDE("57600,N,8,1,cARRIER,RTS,rTSFLOW"), WIDE("comports.ini") );
 		}
 #else
-		StrCpy( szPort, "57600,N,8,1,cARRIER,RTS,rTSFLOW" );
+		StrCpy( szInit, "57600,N,8,1,cARRIER,RTS,rTSFLOW" );
 #endif
 #endif
 #if defined(  _WIN32 ) || defined( __LINUX__ )
