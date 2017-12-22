@@ -978,6 +978,7 @@ Mostly unimplemented, more of a place holder than functional.
 ---
 
 ## Changelog
+- 0.1.99323 Fix mac ( got travis integration working for mac).
 - 0.1.99322 Some fixes building on mac.  Added error accessor to sqlite object.  Added user functions and aggregates to sqlite interface.
 Fixed windows registr access. Added interface to configscript parser.  Added analog interface for clock object (GUI build).  Lots of changes 
 SACK core code for user functions, json parse fixes, DeleteFromSet parameters, optimize poplink, added nolock dequelink, added callback for websocket
