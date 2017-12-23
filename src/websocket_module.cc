@@ -1179,7 +1179,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 	else {
 		String::Utf8Value ca( opts->Get( optName )->ToString() );
 		if( wssOpts->cert_chain ) {
-			wssOpts->cert_chain = (char*)Reallocate( wssOpts->cert_chain, wssOpts->cert_chain_len + ca.length() );
+			wssOpts->cert_chain = (char*)Reallocate( wssOpts->cert_chain, wssOpts->cert_chain_len + ca.length() + 1 );
 			strcpy( wssOpts->cert_chain + wssOpts->cert_chain_len, *ca );
 			wssOpts->cert_chain_len += ca.length();
 		} else {
@@ -1494,7 +1494,11 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Connection has already been closed." ) ) );
 		return;
 	}
-	if( args[0]->IsArrayBuffer() ) {
+	if( args[0]->IsTypedArray() ) {
+		Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
+		Local<ArrayBuffer> ab = ta->Buffer();
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+	} else if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
 	}
@@ -1810,7 +1814,9 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	if( args[0]->IsTypedArray() ) {
-		lprintf( "Typed array (unhandled)" );
+		Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
+		Local<ArrayBuffer> ab = ta->Buffer();
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
 	} else if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
