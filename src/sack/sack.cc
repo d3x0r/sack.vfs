@@ -5006,7 +5006,8 @@ SYSTEM_PROC( PTASK_INFO, LaunchProgram )( CTEXTSTR program, CTEXTSTR path, PCTEX
 // if (!StopProgram(task)) TerminateProgram(task) would be appropriate.
 SYSTEM_PROC( uintptr_t, TerminateProgram )( PTASK_INFO task );
 SYSTEM_PROC( void, ResumeProgram )( PTASK_INFO task );
-SYSTEM_PROC( uintptr_t, GetProramAddress )( PTASK_INFO task );
+// get first address of program startup code(?) Maybe first byte of program code?
+SYSTEM_PROC( uintptr_t, GetProgramAddress )( PTASK_INFO task );
 // before luanchProgramEx, there was no userdata...
 SYSTEM_PROC( void, SetProgramUserData )( PTASK_INFO task, uintptr_t psv );
 // attempt to implement a method on windows that allows a service to launch a user process
@@ -62769,7 +62770,7 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
 							 (int)pc->lpFirstPending->dwAvail,
 							 0);
 			if (nSent == SOCKET_ERROR) {
-            DWORD dwError;
+				uint32_t dwError;
 				dwError = WSAGetLastError();
   // this is alright.
 				if( dwError == WSAEWOULDBLOCK )
@@ -63013,8 +63014,8 @@ LOGICAL TCPDrainRead( PCLIENT pClient )
 //SOCKET_ERROR )
 		if( nDrainRead == 0 )
 		{
-			DWORD dwError;
-         dwError = WSAGetLastError();
+			uint32_t dwError;
+			dwError = WSAGetLastError();
 			if( dwError == WSAEWOULDBLOCK )
 			{
 				if( !pClient->bDrainExact )
