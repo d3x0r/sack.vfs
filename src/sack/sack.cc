@@ -9785,6 +9785,8 @@ PSSQL_VARARG_PROC( int, DoSQLCommandf, ( CTEXTSTR fmt, ... ) );
 //PSSQL_PROC( int, SQLRecordQueryf )( PODBC odbc, int *columns, CTEXTSTR **result, CTEXTSTR **fields, CTEXTSTR fmt, ... );
 PSSQL_VARARG_PROC( int, SQLRecordQueryf, ( PODBC odbc, int *columns, CTEXTSTR **result, CTEXTSTR **fields, CTEXTSTR fmt, ... ) );
 #define SQLRecordQueryf   (__SQLRecordQueryf( DBG_VOIDSRC ))
+PSSQL_VARARG_PROC( int, SQLRecordQueryf_v2, ( PODBC odbc, int *nResults, CTEXTSTR **result, size_t **resultLengths, CTEXTSTR **fields, CTEXTSTR fmt, ... ) );
+#define SQLRecordQueryf_v2   (__SQLRecordQueryf_v2( DBG_VOIDSRC ))
 /* This was the original implementation, it returned the results
    as a comma separated list, with quotes around results that
    had commas in them, and quotes around empty strings to
@@ -43983,16 +43985,21 @@ char * u8xor( const char *a, size_t alen, const char *b, size_t blen, int *ofs )
 		mask = _mask;
 		if( (v & 0x80) == 0x00 ) { if( l ) lprintf( "short utf8 sequence found" ); mask = 0x3f; _mask = 0x3f; }
 		else if( (v & 0xC0) == 0x80 ) { if( !l ) lprintf( "invalid utf8 sequence" ); l--; _mask = 0x3f; }
+		else if( (v & 0xE0) == 0xC0 ) { if( l )
   // 6 + 1 == 7
-		else if( (v & 0xE0) == 0xC0 ) { if( l ) lprintf( "short utf8 sequence found" ); l = 1; mask = 0x1; _mask = 0x3f; }
+			lprintf( "short utf8 sequence found" ); l = 1; mask = 0x1; _mask = 0x3f; }
+		else if( (v & 0xF0) == 0xE0 ) { if( l )
   // 6 + 5 + 0 == 11
-		else if( (v & 0xF0) == 0xE0 ) { if( l ) lprintf( "short utf8 sequence found" ); l = 2; mask = 0;  _mask = 0x1f; }
+			lprintf( "short utf8 sequence found" ); l = 2; mask = 0;  _mask = 0x1f; }
+		else if( (v & 0xF8) == 0xF0 ) { if( l )
   // 6(2) + 4 + 0 == 16
-		else if( (v & 0xF8) == 0xF0 ) { if( l ) lprintf( "short utf8 sequence found" ); l = 3; mask = 0;  _mask = 0x0f; }
+			lprintf( "short utf8 sequence found" ); l = 3; mask = 0;  _mask = 0x0f; }
+		else if( (v & 0xFC) == 0xF8 ) { if( l )
   // 6(3) + 3 + 0 == 21
-		else if( (v & 0xFC) == 0xF8 ) { if( l ) lprintf( "short utf8 sequence found" ); l = 4; mask = 0;  _mask = 0x07; }
+			lprintf( "short utf8 sequence found" ); l = 4; mask = 0;  _mask = 0x07; }
+		else if( (v & 0xFE) == 0xFC ) { if( l )
   // 6(4) + 2 + 0 == 26
-		else if( (v & 0xFE) == 0xFC ) { if( l ) lprintf( "short utf8 sequence found" ); l = 5; mask = 0;  _mask = 0x03; }
+			lprintf( "short utf8 sequence found" ); l = 5; mask = 0;  _mask = 0x03; }
 		char bchar = b[(n+o)%(keylen)];
 		(*out) = (v & ~mask ) | ( u8xor_table[v & mask ][bchar] & mask );
 		out++;
@@ -51202,7 +51209,7 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 							inflateReset( &websock->inflater );
 						}
 						else {
-							lprintf( "Completed packet; %d %d", websock->input_type, websock->fragment_collection_length );
+							//lprintf( "Completed packet; %d %d", websock->input_type, websock->fragment_collection_length );
 							websock->on_event( pc, websock->psv_open, websock->input_type, websock->fragment_collection, websock->fragment_collection_length );
 						}
 					}
@@ -51286,7 +51293,7 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 				// after processing any opcode (this is IN final, and length match) we're done, start next message
 				ResetInputState( websock );
 			} else if( websock->fragment_collection_length == websock->fragment_collection_avail ) {
-				lprintf( "Completed packet; still not final fragment though.... %d", websock->fragment_collection_avail );
+				//lprintf( "Completed packet; still not final fragment though.... %d", websock->fragment_collection_avail );
 				websock->input_msg_state = 0;
 				if( websock->on_fragment_done )
 					websock->on_fragment_done( pc, websock->psv_open, websock->input_type, (int)websock->fragment_collection_length );
@@ -60196,7 +60203,7 @@ NETWORK_PROC( LOGICAL, NetworkWait )(HWND hWndNotify,uint32_t wClients,int wUser
 	// please be mindful of the following data declared immediate...
 	if( GetLinkCount( globalNetworkData.pThreads ) )
 	{
-		xlprintf(200)( WIDE("Threads already active...") );
+		//xlprintf(200)( WIDE("Threads already active...") );
 		// might do something... might not...
  // network thread active, do not realloc
 		return TRUE;
@@ -61611,6 +61618,7 @@ return 0;
 }
 */
 //#define LOG_SOCKET_CREATION
+//#define DEBUG_SOCK_IO
 #define LIBRARY_DEF
 #ifndef UNDER_CE
 #endif
@@ -62388,11 +62396,11 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
   // if any room is availiable.
 		while( lpClient->RecvPending.dwAvail )
 		{
-//#ifdef VERBOSE_DEBUG
+#ifdef DEBUG_SOCK_IO
 			//nCount++;
 			_lprintf( DBG_RELAY )( WIDE("FinishPendingRead %d %d" )
 				, lpClient->RecvPending.dwUsed, lpClient->RecvPending.dwAvail );
-//#endif
+#endif
 			nRecv = recv(lpClient->Socket,
 							 (char*)lpClient->RecvPending.buffer.p +
 							 lpClient->RecvPending.dwUsed,
@@ -62400,7 +62408,9 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 			if (nRecv == SOCKET_ERROR)
 			{
 				dwError = WSAGetLastError();
+#ifdef DEBUG_SOCK_IO
 				lprintf( "Received error (-1) %d", nRecv );
+#endif
 				switch( dwError)
 				{
  // no data avail yet...
@@ -62438,7 +62448,9 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 			else if (!nRecv)
    // otherwise WSAEWOULDBLOCK would be generated.
 			{
+#ifdef DEBUG_SOCK_IO
 				lprintf( "Received (0) %d", nRecv );
+#endif
 				//_lprintf( DBG_RELAY )( WIDE("Closing closed socket... Hope there's also an event... "));
 				lpClient->dwFlags |= CF_TOCLOSE;
  // while dwAvail... try read...
@@ -62447,7 +62459,9 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 			}
 			else
 			{
+#ifdef DEBUG_SOCK_IO
 				lprintf( "Received %d", nRecv );
+#endif
 				if( globalNetworkData.flags.bShortLogReceivedData )
 				{
 					LogBinary( (uint8_t*)lpClient->RecvPending.buffer.p
@@ -62746,23 +62760,19 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
 							 pc->lpFirstPending->dwUsed,
 							 (int)pc->lpFirstPending->dwAvail );
 			}
-			lprintf( "Try to send... %d  %d", pc->lpFirstPending->dwUsed, pc->lpFirstPending->dwAvail );
+#ifdef DEBUG_SOCK_IO
+			_lprintf(DBG_RELAY)( "Try to send... %d  %d", pc->lpFirstPending->dwUsed, pc->lpFirstPending->dwAvail );
+#endif
 			nSent = send(pc->Socket,
 							 (char*)pc->lpFirstPending->buffer.c +
 							 pc->lpFirstPending->dwUsed,
 							 (int)pc->lpFirstPending->dwAvail,
 							 0);
-			lprintf( "sent... %d", nSent );
-			if( nSent < (int)pc->lpFirstPending->dwAvail ) {
-				//pc->lpFirstPending->dwUsed += nSent;
-				//pc->lpFirstPending->dwAvail -= nSent;
-				pc->dwFlags |= CF_WRITEPENDING;
-				//lprintf( "THIS IS ANOTHER PENDING CONDITION THAT WASN'T ACCOUNTED %d of %d", nSent, pc->lpFirstPending->dwAvail  );
-			}
-			else if (nSent == SOCKET_ERROR)
-			{
+			if (nSent == SOCKET_ERROR) {
+            DWORD dwError;
+				dwError = WSAGetLastError();
   // this is alright.
-				if( WSAGetLastError() == WSAEWOULDBLOCK )
+				if( dwError == WSAEWOULDBLOCK )
 				{
 #ifdef VERBOSE_DEBUG
 					lprintf( WIDE("Pending write...") );
@@ -62781,16 +62791,16 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
 				}
 				{
 					_lprintf(DBG_RELAY)(WIDE(" Network Send Error: %5d(buffer:%p ofs: %") _size_f WIDE("  Len: %") _size_f WIDE(")"),
-											  WSAGetLastError(),
+											  dwError,
 											  pc->lpFirstPending->buffer.c,
 											  pc->lpFirstPending->dwUsed,
 											  pc->lpFirstPending->dwAvail );
  // ENOTCONN
-					if( WSAGetLastError() == 10057
+					if( dwError == 10057
  // EFAULT
-						||WSAGetLastError() == 10014
+						||dwError == 10014
 #ifdef __LINUX__
-						|| WSAGetLastError() == EPIPE
+						|| dwError == EPIPE
 #endif
 					  )
 					{
@@ -62799,20 +62809,26 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
  // get out of here!
 					return FALSE;
 				}
-			}
-  // other side closed.
-			else if (!nSent)
-			{
+ // other side closed.
+			} else if (!nSent) {
 				lprintf( WIDE("sent zero bytes - assume it was closed - and HOPE there's an event...") );
 				InternalRemoveClient( pc );
 				// if this happened - don't return TRUE result which would
 				// result in queuing a pending buffer...
   // no sence processing the rest of this.
 				return FALSE;
+			} else if( nSent < (int)pc->lpFirstPending->dwAvail ) {
+				//pc->lpFirstPending->dwUsed += nSent;
+				//pc->lpFirstPending->dwAvail -= nSent;
+				pc->dwFlags |= CF_WRITEPENDING;
+				//lprintf( "THIS IS ANOTHER PENDING CONDITION THAT WASN'T ACCOUNTED %d of %d", nSent, pc->lpFirstPending->dwAvail  );
 			}
 		}
 		else
 			nSent = 0;
+#ifdef DEBUG_SOCK_IO
+		lprintf( "sent... %d", nSent );
+#endif
   // sent some data - update pending buffer status.
 		{
 			if( pc->lpFirstPending )
@@ -62997,14 +63013,16 @@ LOGICAL TCPDrainRead( PCLIENT pClient )
 //SOCKET_ERROR )
 		if( nDrainRead == 0 )
 		{
-			if( WSAGetLastError() == WSAEWOULDBLOCK )
+			DWORD dwError;
+         dwError = WSAGetLastError();
+			if( dwError == WSAEWOULDBLOCK )
 			{
 				if( !pClient->bDrainExact )
 					pClient->nDrainLength = 0;
 				break;
 			}
 			lprintf(WIDE(" Network Error during drain: %d (from: %p  to: %p  has: %") _size_f WIDE("  toget: %") _size_f WIDE(")")
-			       , WSAGetLastError()
+			       , dwError
 			       , pClient->Socket
 			       , pClient->RecvPending.buffer.p
 			       , pClient->RecvPending.dwUsed
@@ -63912,8 +63930,12 @@ static int handshake( PCLIENT pc ) {
 #ifdef DEBUG_SSL_IO
 						lprintf( "send %d %d for handshake", pending, read );
 #endif
-						if (read > 0)
+						if( read > 0 ) {
+#ifdef DEBUG_SSL_IO
+							lprintf( "handshake send %d", read );
+#endif
 							SendTCP( pc, ses->obuffer, read );
+						}
 					}
 				}
 			}
@@ -64028,7 +64050,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 				if( pending > 0 ) {
 					int read = BIO_read( pc->ssl_session->wbio, pc->ssl_session->obuffer, (int)pc->ssl_session->obuflen );
 #ifdef DEBUG_SSL_IO
-					lprintf( "Send pending %p %d", pc->ssl_session->obuffer, read );
+					lprintf( "Send pending control %p %d", pc->ssl_session->obuffer, read );
 #endif
 					SendTCP( pc, pc->ssl_session->obuffer, read );
 				}
@@ -84433,6 +84455,7 @@ SQL_NAMESPACE
 #undef SQLCommandf
 #undef SQLQueryf
 #undef SQLRecordQueryf
+#undef SQLRecordQueryf_v2
 #if defined( _DEBUG ) || defined( _DEBUG_INFO )
 #define WRAP(a,b,c)  CTEXTSTR _FILE_##b = _WIDE(__FILE__); int _LINE_##b; __f_##b __##b(DBG_VOIDPASS)  { _FILE_##b = pFile; _LINE_##b = nLine; return b; }
 #define DBG_ARGS(n)  , _FILE_##n, _LINE_##n
@@ -84446,6 +84469,7 @@ WRAP( int, DoSQLRecordQueryf, ( int *nResults, CTEXTSTR **result, CTEXTSTR **fie
 WRAP( int, SQLCommandf, ( PODBC odbc, CTEXTSTR fmt, ... ) )
 WRAP( int, SQLQueryf, ( PODBC odbc, CTEXTSTR *result, CTEXTSTR fmt, ... ) )
 WRAP( int, SQLRecordQueryf, ( PODBC odbc, int *nResults, CTEXTSTR **result, CTEXTSTR **fields, CTEXTSTR fmt, ... ) )
+WRAP( int, SQLRecordQueryf_v2, ( PODBC odbc, int *nResults, CTEXTSTR **result, CTEXTSTR **fields, size_t **fieldLengths, CTEXTSTR fmt, ... ) )
 int DoSQLCommandf( CTEXTSTR fmt, ... )
 {
 	int result;
@@ -84537,6 +84561,20 @@ int SQLRecordQueryf( PODBC odbc, int *nResults, CTEXTSTR **result, CTEXTSTR **fi
 	cmd = VarTextGet( pvt );
 	VarTextDestroy( &pvt );
 	result_code = SQLRecordQueryEx( odbc, GetText( cmd ), nResults, result,fields DBG_ARGS(SQLRecordQueryf) );
+	LineRelease( cmd );
+	return result_code;
+}
+int SQLRecordQueryf_v2( PODBC odbc, int *nResults, CTEXTSTR **result, size_t **resultLengths, CTEXTSTR **fields, CTEXTSTR fmt, ... )
+{
+	int result_code;
+	PTEXT cmd;
+	PVARTEXT pvt = VarTextCreate();
+	va_list args;
+	va_start( args, fmt );
+	vvtprintf( pvt, fmt, args );
+	cmd = VarTextGet( pvt );
+	VarTextDestroy( &pvt );
+	result_code = SQLRecordQueryExx( odbc, GetText( cmd ), GetTextSize( cmd ), nResults, result, resultLengths,fields  DBG_ARGS(SQLRecordQueryf_v2) );
 	LineRelease( cmd );
 	return result_code;
 }
