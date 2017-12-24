@@ -84910,7 +84910,7 @@ TEXTSTR EscapeSQLBinaryExx( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, uintpt
 		( *tmpnamebuf ) = 0;
 	}
 	if( resultLen )
-		( *resultLen ) = targetlen + bloblen;
+		( *resultLen ) = tmpnamebuf - result;
 	return result;
 }
 TEXTSTR EscapeSQLBinaryEx ( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen DBG_PASS )
@@ -89558,6 +89558,7 @@ LOGICAL New4CreateValue( POPTION_TREE tree, POPTION_TREE_NODE value, CTEXTSTR pV
 	CTEXTSTR result=NULL;
 	TEXTSTR newval = EscapeSQLBinaryOpt( tree->odbc_writer, pValue, StrLen( pValue ), TRUE );
 	LOGICAL retval = TRUE;
+	size_t tmpOfs;
 	if( pValue == NULL )
 	{
 		tnprintf( insert, sizeof( insert ), WIDE( "delete from " )OPTION4_VALUES WIDE( " where `option_id`='%s'" )
@@ -89570,15 +89571,19 @@ LOGICAL New4CreateValue( POPTION_TREE tree, POPTION_TREE_NODE value, CTEXTSTR pV
 		size_t len = StrLen( pValue );
 		size_t offset = 0;
 		int segment = 0;
+		size_t valLen;
 		while( len > 95)
 		{
-			newval = EscapeSQLBinaryOpt( tree->odbc_writer, pValue + offset, 95, TRUE );
-			tnprintf( insert, sizeof( insert ), WIDE( "replace into " )OPTION4_VALUES WIDE( " (`option_id`,`string`,`segment` ) values ('%s',%s,%d)" )
-					  , value->guid
-					  , newval
-					  , segment
-					  );
-			if( SQLCommand( tree->odbc_writer, insert ) )
+			newval = EscapeSQLBinaryExx( tree->odbc_writer, pValue + offset, 95, &valLen, TRUE DBG_SRC );
+			tmpOfs = tnprintf( insert, sizeof( insert ), WIDE( "replace into " )OPTION4_VALUES WIDE( " (`option_id`,`string`,`segment` ) values ('%s'," )
+				, value->guid
+			);
+			memcpy( insert + tmpOfs, newval, valLen );
+			tmpOfs += valLen;
+			tmpOfs += tnprintf( insert + tmpOfs, sizeof( insert ), WIDE( ", %d)" )
+				, segment
+			);
+			if( SQLCommandExx( tree->odbc_writer, insert, tmpOfs DBG_SRC ) )
 			{
 				value->value_guid = value->guid;
 			}
@@ -89592,14 +89597,16 @@ LOGICAL New4CreateValue( POPTION_TREE tree, POPTION_TREE_NODE value, CTEXTSTR pV
 			len -= 95;
 			segment++;
 		}
-		newval = EscapeSQLBinaryOpt( tree->odbc_writer, pValue + offset, len, TRUE );
-		tnprintf( insert, sizeof( insert ), WIDE( "replace into " )OPTION4_VALUES WIDE( " (`option_id`,`string`,`segment` ) values ('%s',%*.*s,%d)" )
+		newval = EscapeSQLBinaryExx( tree->odbc_writer, pValue + offset, len, &valLen, TRUE DBG_SRC );
+		tmpOfs = tnprintf( insert, sizeof( insert ), WIDE( "replace into " )OPTION4_VALUES WIDE( " (`option_id`,`string`,`segment` ) values ('%s',")
 				  , value->guid
-				  , len, len
-				  , newval
-				  , segment
 				  );
-		if( SQLCommand( tree->odbc_writer, insert ) )
+		memcpy( insert + tmpOfs, newval, valLen );
+		tmpOfs += valLen;
+		tmpOfs += tnprintf( insert + tmpOfs, sizeof( insert ), WIDE( ", %d)" )
+			, segment
+		);
+		if( SQLCommandExx( tree->odbc_writer, insert, tmpOfs DBG_SRC ) )
 		{
 		}
 		tnprintf( insert, sizeof( insert ), WIDE( "delete from " )OPTION4_VALUES WIDE( " where `option_id`='%s' and segment > %d" )
