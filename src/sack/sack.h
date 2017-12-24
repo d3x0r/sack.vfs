@@ -8820,7 +8820,7 @@ PSSQL_PROC( TEXTSTR ,EscapeStringEx )( CTEXTSTR name DBG_PASS );
 #define EscapeString(s) EscapeStringEx( s DBG_SRC )
 /* <combine sack::sql::EscapeStringEx@CTEXTSTR name>
    \ \                                               */
-#define EscapeStringOpt(s,q) EscapeSQLBinaryExx( NULL,s,StrLen(s),q DBG_SRC )
+#define EscapeStringOpt(s,q) EscapeSQLBinaryExx( NULL,s,StrLen(s),NULL, q DBG_SRC )
 /* \ \
    Parameters
    odbc :  connection to escape the string appropriately for. Different
@@ -8858,19 +8858,20 @@ PSSQL_PROC( TEXTSTR ,EscapeBinaryEx )( CTEXTSTR blob, uintptr_t bloblen DBG_PASS
 #define EscapeBinary(b,bl) EscapeBinaryEx(b,bl DBG_SRC )
 /* <combine sack::sql::EscapeBinaryEx@CTEXTSTR@uintptr_t bloblen>
    \ \                                                           */
-#define EscapeBinaryOpt(b,bl,q) EscapeSQLBinaryExx(NULL,b,bl,q DBG_SRC )
+#define EscapeBinaryOpt(b,bl,q) EscapeSQLBinaryExx(NULL,b,bl,NULL,q DBG_SRC )
 /* <combine sack::sql::EscapeBinaryEx@CTEXTSTR@uintptr_t bloblen>
    \ \                                                           */
-PSSQL_PROC( TEXTSTR,EscapeSQLBinaryExx )( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, LOGICAL bQuote DBG_PASS );
+PSSQL_PROC( TEXTSTR,EscapeSQLBinaryExx )( PODBC odbc, CTEXTSTR blob, size_t bloblen, size_t *resultLen, LOGICAL bQuote DBG_PASS );
 /* <combine sack::sql::EscapeBinaryEx@CTEXTSTR@uintptr_t bloblen>
    \ \                                                           */
-PSSQL_PROC( TEXTSTR,EscapeSQLBinaryEx )( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen DBG_PASS );
+//PSSQL_PROC( TEXTSTR,EscapeSQLBinaryEx )( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen DBG_PASS );
 /* <combine sack::sql::EscapeSQLBinaryEx@PODBC@CTEXTSTR@uintptr_t bloblen>
    \ \                                                                    */
-#define EscapeSQLBinary(odbc,blob,len) EscapeSQLBinaryEx( odbc,blob,len DBG_SRC )
+#define EscapeSQLBinary(odbc,blob,len) EscapeSQLBinaryExx( odbc,blob,len, NULL, FALSE DBG_SRC )
 /* <combine sack::sql::EscapeSQLBinaryEx@PODBC@CTEXTSTR@uintptr_t bloblen>
    \ \                                                                    */
-#define EscapeSQLBinaryOpt(odbc,blob,len,q) EscapeSQLBinaryExx( odbc,blob,len,q DBG_SRC )
+#define EscapeSQLBinaryOpt(odbc,blob,len,q) EscapeSQLBinaryExx( odbc,blob,len,NULL,q DBG_SRC )
+#define EscapeSQLBinaryLen(odbc,blob,len,resLen,q) EscapeSQLBinaryExx( odbc,blob,len,resLen, q DBG_SRC )
 /* Remove escape sequences which are inserted into a text
    string. (for things like quotes and binary characters?)
    Parameters

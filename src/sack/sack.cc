@@ -9356,7 +9356,7 @@ PSSQL_PROC( TEXTSTR ,EscapeStringEx )( CTEXTSTR name DBG_PASS );
 #define EscapeString(s) EscapeStringEx( s DBG_SRC )
 /* <combine sack::sql::EscapeStringEx@CTEXTSTR name>
    \ \                                               */
-#define EscapeStringOpt(s,q) EscapeSQLBinaryExx( NULL,s,StrLen(s),q DBG_SRC )
+#define EscapeStringOpt(s,q) EscapeSQLBinaryExx( NULL,s,StrLen(s),NULL, q DBG_SRC )
 /* \ \
    Parameters
    odbc :  connection to escape the string appropriately for. Different
@@ -9394,19 +9394,20 @@ PSSQL_PROC( TEXTSTR ,EscapeBinaryEx )( CTEXTSTR blob, uintptr_t bloblen DBG_PASS
 #define EscapeBinary(b,bl) EscapeBinaryEx(b,bl DBG_SRC )
 /* <combine sack::sql::EscapeBinaryEx@CTEXTSTR@uintptr_t bloblen>
    \ \                                                           */
-#define EscapeBinaryOpt(b,bl,q) EscapeSQLBinaryExx(NULL,b,bl,q DBG_SRC )
+#define EscapeBinaryOpt(b,bl,q) EscapeSQLBinaryExx(NULL,b,bl,NULL,q DBG_SRC )
 /* <combine sack::sql::EscapeBinaryEx@CTEXTSTR@uintptr_t bloblen>
    \ \                                                           */
-PSSQL_PROC( TEXTSTR,EscapeSQLBinaryExx )( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, LOGICAL bQuote DBG_PASS );
+PSSQL_PROC( TEXTSTR,EscapeSQLBinaryExx )( PODBC odbc, CTEXTSTR blob, size_t bloblen, size_t *resultLen, LOGICAL bQuote DBG_PASS );
 /* <combine sack::sql::EscapeBinaryEx@CTEXTSTR@uintptr_t bloblen>
    \ \                                                           */
-PSSQL_PROC( TEXTSTR,EscapeSQLBinaryEx )( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen DBG_PASS );
+//PSSQL_PROC( TEXTSTR,EscapeSQLBinaryEx )( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen DBG_PASS );
 /* <combine sack::sql::EscapeSQLBinaryEx@PODBC@CTEXTSTR@uintptr_t bloblen>
    \ \                                                                    */
-#define EscapeSQLBinary(odbc,blob,len) EscapeSQLBinaryEx( odbc,blob,len DBG_SRC )
+#define EscapeSQLBinary(odbc,blob,len) EscapeSQLBinaryExx( odbc,blob,len, NULL, FALSE DBG_SRC )
 /* <combine sack::sql::EscapeSQLBinaryEx@PODBC@CTEXTSTR@uintptr_t bloblen>
    \ \                                                                    */
-#define EscapeSQLBinaryOpt(odbc,blob,len,q) EscapeSQLBinaryExx( odbc,blob,len,q DBG_SRC )
+#define EscapeSQLBinaryOpt(odbc,blob,len,q) EscapeSQLBinaryExx( odbc,blob,len,NULL,q DBG_SRC )
+#define EscapeSQLBinaryLen(odbc,blob,len,resLen,q) EscapeSQLBinaryExx( odbc,blob,len,resLen, q DBG_SRC )
 /* Remove escape sequences which are inserted into a text
    string. (for things like quotes and binary characters?)
    Parameters
@@ -27497,22 +27498,22 @@ void  UnmakeThread( void )
 #endif
 	if( pThread )
 	{
-#ifdef _WIN32
-		//lprintf( WIDE("Unmaking thread event! on thread %016"_64fx"x"), pThread->thread_ident );
-		CloseHandle( pThread->thread_event->hEvent );
-		{
-			struct my_thread_info* _MyThreadInfo = GetThreadTLS();
-			Deallocate( struct my_thread_info*, _MyThreadInfo );
-			TlsSetValue( global_timer_structure->my_thread_info_tls, NULL );
-		}
-#else
-		closesem( (POINTER)pThread, 0 );
-#endif
 		// unlink from globalTimerData.threads list.
 		//if( ( (*pThread->me)=pThread->next ) )
 		//	pThread->next->me = pThread->me;
 		{
 			int tmp = SetAllocateLogging( FALSE );
+#ifdef _WIN32
+			//lprintf( WIDE("Unmaking thread event! on thread %016"_64fx"x"), pThread->thread_ident );
+			CloseHandle( pThread->thread_event->hEvent );
+			{
+				struct my_thread_info* _MyThreadInfo = GetThreadTLS();
+				Deallocate( struct my_thread_info*, _MyThreadInfo );
+				TlsSetValue( global_timer_structure->my_thread_info_tls, NULL );
+			}
+#else
+			closesem( (POINTER)pThread, 0 );
+#endif
 			Deallocate( TEXTSTR, pThread->thread_event_name );
 #ifdef _WIN32
 			Deallocate( TEXTSTR, pThread->thread_event->name );
@@ -53053,7 +53054,7 @@ char *json_escape_string( const char *string ) {
 #define _zero(result,from)  ((*from)++,0)
 #define _3char(result,from) ( ((*from) += 3),( ( ( result & 0xF ) << 12 ) | ( ( result & 0x3F00 ) >> 2 ) | ( ( result & 0x3f0000 ) >> 16 )) )
 #define _4char(result,from)  ( ((*from) += 4), ( ( ( result & 0x7 ) << 18 )						     | ( ( result & 0x3F00 ) << 4 )						   | ( ( result & 0x3f0000 ) >> 10 )						    | ( ( result & 0x3f000000 ) >> 24 ) ) )
-#define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),		     ( ( !(result & 0xFF) )              ?0	                                                           :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
+#define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),		     ( ( !(result & 0xFF) )              ?_zero(result,from)	                                                    :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
 #define GetUtfChar(x) __GetUtfChar(c,x)
 static int gatherString( CTEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TEXTSTR *pmOut, size_t *line, size_t *col, TEXTRUNE start_c, struct json_parse_state *state ) {
 	char *mOut = (*pmOut);
@@ -54953,7 +54954,7 @@ char *json6_escape_string( const char *string ) {
 #define _zero(result,from)  ((*from)++,0)
 #define _3char(result,from) ( ((*from) += 3),( ( ( result & 0xF ) << 12 ) | ( ( result & 0x3F00 ) >> 2 ) | ( ( result & 0x3f0000 ) >> 16 )) )
 #define _4char(result,from)  ( ((*from) += 4), ( ( ( result & 0x7 ) << 18 )						     | ( ( result & 0x3F00 ) << 4 )						   | ( ( result & 0x3f0000 ) >> 10 )						    | ( ( result & 0x3f000000 ) >> 24 ) ) )
-#define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),		     ( ( !(result & 0xFF) )              ?0	                                                           :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
+#define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),		     ( ( !(result & 0xFF) )              ?_zero(result,from)	                                                    :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
 #define GetUtfChar(x) __GetUtfChar(c,x)
 static int gatherString6(struct json_parse_state *state, CTEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TEXTSTR *pmOut, TEXTRUNE start_c
 		//, int literalString
@@ -54967,11 +54968,12 @@ static int gatherString6(struct json_parse_state *state, CTEXTSTR msg, CTEXTSTR 
 	TEXTRUNE c;
 	//escape = 0;
 	//cr_escaped = FALSE;
-	while( ( n = (*msg_input) - msg ), (( n < msglen ) && (c = GetUtfChar( msg_input ) )) && ( status >= 0 ) )
+	while( ( ( n = (*msg_input) - msg ), (c = GetUtfChar( msg_input ) ), ( n < msglen ) ) && ( status >= 0 ) )
 	{
 		(state->col)++;
 		if( c == start_c ) {
-			if( state->escape ) { ( *mOut++ ) = c; state->escape = FALSE; } else if( c == start_c ) {
+			if( state->escape ) { ( *mOut++ ) = c; state->escape = FALSE; }
+			else if( c == start_c ) {
 				status = 1;
 				break;
  // other else is not valid close quote; just store as content.
@@ -84794,7 +84796,7 @@ CTEXTSTR  GetLastInsertKeyEx( CTEXTSTR table, CTEXTSTR col DBG_PASS )
 //---------------------------------------------------------------------------
 #undef EscapeBinary
 #undef EscapeString
-TEXTSTR EscapeSQLBinaryExx( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, LOGICAL bQuote DBG_PASS )
+TEXTSTR EscapeSQLBinaryExx( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, uintptr_t *resultLen, LOGICAL bQuote DBG_PASS )
 {
 	int type_mysql = 1;
 #if MYSQL_ODBC_CONNECTION_IS_BROKEN
@@ -84895,45 +84897,46 @@ TEXTSTR EscapeSQLBinaryExx( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, LOGICA
 		n = 0;
 		result = tmpnamebuf = (TEXTSTR)AllocateEx( ( sizeof( TEXTCHAR ) * ( targetlen + bloblen + 3 ) ) DBG_RELAY );
 		if( bQuote )
-			(*tmpnamebuf++) = '\'';
-		while( n < bloblen )
-		{
+			( *tmpnamebuf++ ) = '\'';
+		while( n < bloblen ) {
 			if( blob[n] == '\'' )
-				(*tmpnamebuf++) = '\'';
-			(*tmpnamebuf++) = blob[n];
+				( *tmpnamebuf++ ) = '\'';
+			( *tmpnamebuf++ ) = blob[n];
 			n++;
 		}
 		if( bQuote )
-			(*tmpnamebuf++) = '\'';
+			( *tmpnamebuf++ ) = '\'';
  // best terminate this thing.
-		(*tmpnamebuf) = 0;
+		( *tmpnamebuf ) = 0;
 	}
+	if( resultLen )
+		( *resultLen ) = targetlen + bloblen;
 	return result;
 }
 TEXTSTR EscapeSQLBinaryEx ( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen DBG_PASS )
 {
-	return EscapeSQLBinaryExx( odbc, blob, bloblen, FALSE DBG_RELAY );
+	return EscapeSQLBinaryExx( odbc, blob, bloblen, NULL, FALSE DBG_RELAY );
 }
 TEXTSTR EscapeBinaryEx ( CTEXTSTR blob, uintptr_t bloblen DBG_PASS )
 {
-	return EscapeSQLBinaryExx( NULL, blob, bloblen, FALSE DBG_RELAY );
+	return EscapeSQLBinaryExx( NULL, blob, bloblen, NULL, FALSE DBG_RELAY );
 }
 TEXTCHAR * EscapeBinary ( CTEXTSTR blob, uintptr_t bloblen )
 {
-	return EscapeSQLBinaryExx( NULL, blob, bloblen, FALSE DBG_SRC );
+	return EscapeSQLBinaryExx( NULL, blob, bloblen, NULL, FALSE DBG_SRC );
 }
 //---------------------------------------------------------------------------
 TEXTCHAR * EscapeSQLStringEx ( PODBC odbc, CTEXTSTR name DBG_PASS )
 {
-	return EscapeSQLBinaryExx( odbc, name, strlen( name ), FALSE DBG_RELAY );
+	return EscapeSQLBinaryExx( odbc, name, strlen( name )+1, NULL, FALSE DBG_RELAY );
 }
 TEXTCHAR * EscapeStringEx ( CTEXTSTR name DBG_PASS )
 {
-	return EscapeSQLBinaryExx( NULL, name, (uint32_t)strlen( name ), FALSE DBG_RELAY );
+	return EscapeSQLBinaryExx( NULL, name, (uint32_t)strlen( name ) + 1, NULL, FALSE DBG_RELAY );
 }
 TEXTCHAR * EscapeString ( CTEXTSTR name )
 {
-	return EscapeSQLBinaryExx( NULL, name, strlen( name ), FALSE DBG_SRC );
+	return EscapeSQLBinaryExx( NULL, name, strlen( name ) + 1, NULL, FALSE DBG_SRC );
 }
 uint8_t hexbyte( TEXTCHAR *string )
 {
@@ -89590,8 +89593,9 @@ LOGICAL New4CreateValue( POPTION_TREE tree, POPTION_TREE_NODE value, CTEXTSTR pV
 			segment++;
 		}
 		newval = EscapeSQLBinaryOpt( tree->odbc_writer, pValue + offset, len, TRUE );
-		tnprintf( insert, sizeof( insert ), WIDE( "replace into " )OPTION4_VALUES WIDE( " (`option_id`,`string`,`segment` ) values ('%s',%s,%d)" )
+		tnprintf( insert, sizeof( insert ), WIDE( "replace into " )OPTION4_VALUES WIDE( " (`option_id`,`string`,`segment` ) values ('%s',%*.*s,%d)" )
 				  , value->guid
+				  , len, len
 				  , newval
 				  , segment
 				  );
