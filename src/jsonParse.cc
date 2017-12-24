@@ -463,7 +463,7 @@ void parseJSON( const v8::FunctionCallbackInfo<Value>& args )
 	else
 		r.revive = FALSE;
 	r.context = r.isolate->GetCurrentContext();
-	args.GetReturnValue().Set( ParseJSON( msg, strlen( msg ), &r ) );
+	args.GetReturnValue().Set( ParseJSON( msg, tmp.length(), &r ) );
 }
 
 
@@ -566,7 +566,7 @@ void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
         //logTick(1);	
 	r.context = r.isolate->GetCurrentContext();
 	
-	args.GetReturnValue().Set( ParseJSON6( msg, strlen( msg ), &r ) );
+	args.GetReturnValue().Set( ParseJSON6( msg, tmp.length(), &r ) );
 
 }
 
