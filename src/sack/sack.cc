@@ -87752,16 +87752,15 @@ typedef struct sack_option_tree_family_node OPTION_TREE_NODE;
 struct sack_option_tree_family_node {
 	CTEXTSTR name;
 	CTEXTSTR guid;
-	CTEXTSTR name_guid;
-	CTEXTSTR value_guid;
 	CTEXTSTR value;
 	PFAMILYNODE node;
 	struct {
 		BIT_FIELD bExpanded : 1;
+		BIT_FIELD bHasValue : 1;
 	} flags;
  // connection this was written on for the commit event.
 	PODBC uncommited_write;
-	uint32_t expansion_tick;
+	//uint32_t expansion_tick;
 };
 #define MAXOPTION_TREE_NODESPERSET 256
 DeclareSet( OPTION_TREE_NODE );
@@ -87986,8 +87985,7 @@ POPTION_TREE GetOptionTreeExxx( PODBC odbc, PFAMILYTREE existing_tree DBG_PASS )
 		tree->root = GetFromSet( OPTION_TREE_NODE, &tree->nodes );
 		//MemSet( tree->root, 0, sizeof( struct sack_option_tree_family_node ) );
 		tree->root->guid = GuidZero();
-		tree->root->name_guid = NULL;
-		tree->root->value_guid = NULL;
+		tree->root->flags.bHasValue = 0;
 		tree->root->value = NULL;
 		// if it's a new optiontree, pass it to create...
 		if( existing_tree )
@@ -88105,6 +88103,7 @@ static void CPROC OptionsCommited( uintptr_t psv, PODBC odbc )
 		if( optval->uncommited_write == odbc )
 		{
 			Deallocate( CTEXTSTR, optval->value );
+			optval->value = NULL;
 			optval->uncommited_write = NULL;
 		}
 	}
@@ -89394,8 +89393,7 @@ POPTION_TREE_NODE New4GetOptionIndexExxx( PODBC odbc, POPTION_TREE tree, POPTION
 						//MemSet( new_node, 0, sizeof( struct sack_option_tree_family_node ) );
 						new_node->guid = ID;
  // no value (yet?)
-						new_node->value_guid = NULL;
-						new_node->name_guid = IDName;
+						new_node->flags.bHasValue = 0;
 						new_node->name = SaveText( namebuf );
 						new_node->value = NULL;
 						new_node->node = FamilyTreeAddChild( &tree->option_tree, parent?parent->node:NULL, new_node, (uintptr_t)new_node->name );
@@ -89422,8 +89420,7 @@ POPTION_TREE_NODE New4GetOptionIndexExxx( PODBC odbc, POPTION_TREE tree, POPTION
 				lprintf( WIDE("found the node which has the name specified...") );
 #endif
 				new_node->guid = SaveText( result[0] );
-				new_node->value_guid = NULL;
-				new_node->name_guid = IDName;
+				new_node->flags.bHasValue = 0;
 				new_node->name = SaveText( namebuf );
 				new_node->value = NULL;
 				new_node->node = FamilyTreeAddChild( &tree->option_tree, parent?parent->node:NULL, new_node, (uintptr_t)new_node->name );
@@ -89453,8 +89450,10 @@ static int nBuffer;
 size_t New4GetOptionStringValue( PODBC odbc, POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len DBG_PASS )
 {
 	TEXTCHAR query[256];
-	CTEXTSTR result = NULL;
+	CTEXTSTR *result = NULL;
 	size_t result_len = 0;
+	size_t query_len;
+	size_t *result_lengths;
 	struct resultBuffer *buf;
 	PVARTEXT pvtResult = NULL;
 	buf = &plqBuffers[nBuffer++];
@@ -89492,32 +89491,35 @@ size_t New4GetOptionStringValue( PODBC odbc, POPTION_TREE_NODE optval, TEXTCHAR 
 	}
 #endif
 	PushSQLQueryEx( odbc );
-	tnprintf( query, sizeof( query ), WIDE( "select string from " )OPTION4_VALUES WIDE( " where option_id='%s' order by segment" ), optval->guid );
+	query_len = tnprintf( query, sizeof( query ), WIDE( "select string from " )OPTION4_VALUES WIDE( " where option_id='%s' order by segment" ), optval->guid );
 	// have to push here, the result of the prior is kept outstanding
 	// if this was not pushed, the prior result would evaporate.
 	(*buffer) = NULL;
 	//lprintf( WIDE("do query for value string...") );
 	result_len = (size_t)-1;
+	if( optval->value )
+		Release( (POINTER)optval->value );
 	optval->value = NULL;
-	optval->value_guid = optval->guid;
-	for( SQLQuery( odbc, query, &result ); result; FetchSQLResult( odbc, &result ) )
+	optval->flags.bHasValue = 1;
+	for( SQLRecordQueryLen( odbc, query, query_len, NULL, &result, &result_lengths, NULL ); result; FetchSQLRecord( odbc, &result ) )
 	{
 		if( !pvtResult )
 			pvtResult = VarTextCreate();
-		vtprintf( pvtResult, WIDE("%s"), result );
-		//lprintf( WIDE(" query succeeded....") );
+		VarTextAddData( pvtResult, result[0], result_lengths[0] );
 	}
 	if( pvtResult )
 	{
-		PTEXT pResult = VarTextGet( pvtResult );
-		result_len = GetTextSize( pResult ) + 1;
-		if( result_len > buf->buflen )  expandResultBuffer( buf, result_len * 2 );
-		(*buffer) = buf->buffer;
-		(*len) = result_len-1;
-		StrCpyEx( (*buffer), GetText( pResult ), result_len );
-		(*buffer)[result_len-1] = 0;
+		PTEXT pResult = VarTextPeek( pvtResult );
+		if( pResult ) {
+			result_len = GetTextSize( pResult ) + 1;
+			if( result_len > buf->buflen )  expandResultBuffer( buf, result_len );
+			( *buffer ) = buf->buffer;
+			( *len ) = result_len - 1;
+			memcpy( ( *buffer ), GetText( pResult ), result_len );
+			( *buffer )[result_len - 1] = 0;
+			optval->value = DupCStrLen( *buffer, result_len - 1 );
+		}
 		//optval->value = StrDup( GetText( pResult ) );
-		LineRelease( pResult );
 		VarTextDestroy( &pvtResult );
 	}
 	PopODBCEx( odbc );
@@ -89559,12 +89561,14 @@ LOGICAL New4CreateValue( POPTION_TREE tree, POPTION_TREE_NODE value, CTEXTSTR pV
 	TEXTSTR newval = EscapeSQLBinaryOpt( tree->odbc_writer, pValue, StrLen( pValue ), TRUE );
 	LOGICAL retval = TRUE;
 	size_t tmpOfs;
+	if( value->value )
+		Release( (POINTER)value->value );
+	value->value = NULL;
 	if( pValue == NULL )
 	{
 		tnprintf( insert, sizeof( insert ), WIDE( "delete from " )OPTION4_VALUES WIDE( " where `option_id`='%s'" )
 				  , value->guid
 				  );
-		value->value = NULL;
 	}
 	else
 	{
@@ -89585,7 +89589,7 @@ LOGICAL New4CreateValue( POPTION_TREE tree, POPTION_TREE_NODE value, CTEXTSTR pV
 			);
 			if( SQLCommandExx( tree->odbc_writer, insert, tmpOfs DBG_SRC ) )
 			{
-				value->value_guid = value->guid;
+				value->flags.bHasValue = 1;
 			}
 			else
 			{
@@ -89620,7 +89624,7 @@ LOGICAL New4CreateValue( POPTION_TREE tree, POPTION_TREE_NODE value, CTEXTSTR pV
 	AddLink( &tree->uncommited, value );
 	if( SQLCommand( tree->odbc_writer, insert ) )
 	{
-		value->value_guid = value->guid;
+		value->flags.bHasValue = 1;
 	}
 	else
 	{
@@ -89742,7 +89746,7 @@ static LOGICAL CPROC New4CheckOption( uintptr_t psvForeach, uintptr_t psvNode )
 	POPTION_TREE_NODE option_node = (POPTION_TREE_NODE)psvNode;
 	struct new4_enum_params *params = (struct new4_enum_params *)psvForeach;
 	return params->Process( params->psvEnum, option_node->name, option_node
-								 , ((option_node->value_guid)?1:0) );
+								 , ((option_node->flags.bHasValue)?1:0) );
 }
 void New4EnumOptions( PODBC odbc
 												  , POPTION_TREE_NODE parent
@@ -89774,10 +89778,10 @@ void New4EnumOptions( PODBC odbc
 		params.psvEnum = psvUser;
 		FamilyTreeForEachChild( node->option_tree, parent->node, New4CheckOption, (uintptr_t)&params );
 	}
-	if( !parent->flags.bExpanded || ( ( timeGetTime() - 5000 ) > parent->expansion_tick ) )
+	//if( !parent->flags.bExpanded || ( ( timeGetTime() - 5000 ) > parent->expansion_tick ) )
 	{
 		parent->flags.bExpanded = 1;
-		parent->expansion_tick = timeGetTime();
+		//parent->expansion_tick = timeGetTime();
 		// any existing query needs to be saved...
  // any subqueries will of course clean themselves up.
 		PushSQLQueryEx( odbc );
@@ -89803,15 +89807,14 @@ void New4EnumOptions( PODBC odbc
 				tmp_node = New( OPTION_TREE_NODE );
 				MemSet( tmp_node, 0, sizeof( struct sack_option_tree_family_node ) );
 				tmp_node->guid = SaveText( results[0] );
-				tmp_node->name_guid = SaveText( results[2] );
-				tmp_node->value_guid = NULL;
+				tmp_node->flags.bHasValue = 0;
 				tmp_node->name = SaveText( results[1] );
 				tmp_node->node = FamilyTreeAddChild( &node->option_tree, parent->node, tmp_node, (uintptr_t)tmp_node->name );
 				// psv is a pointer to args in some cases...
 				//lprintf( WIDE( "Enum %s %ld" ), optname, node );
 				//ReadFromNameTable( name, WIDE(""OPTION_NAME""), WIDE("name_id"), &result);
 				if( !Process( psvUser, tmp_node->name, tmp_node
-								, ((tmp_node->value_guid)?1:0)
+								, ((tmp_node->flags.bHasValue )?1:0)
 								) )
 				{
 					break;
@@ -89851,8 +89854,7 @@ void New4DuplicateOption( PODBC odbc, POPTION_TREE_NODE iRoot, CTEXTSTR pNewName
 		POPTION_TREE_NODE tmp_node = New( OPTION_TREE_NODE );
 		struct complex_args args;
 		tmp_node->guid = StrDup( result );
-		tmp_node->name_guid = NULL;
-		tmp_node->value_guid = NULL;
+		tmp_node->flags.bHasValue = iRoot->flags.bHasValue;
 		tmp_node->value = NULL;
 		SQLEndQuery( odbc );
 		iNewName = GetOptionIndexEx( tmp_node, NULL, pNewName, NULL, TRUE, FALSE DBG_SRC );
