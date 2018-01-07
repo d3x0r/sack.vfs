@@ -14,8 +14,12 @@ Vulkan API to be added eventually...
         nan (Native Abstractions for Node.js)
 
 #### Centos/linux
-        yum install gcc-c++ libuuid-devel
+        yum install gcc-c++ libuuid-devel unixodbc-devel
         
+#### Mac
+        (ODBC might be optioned out; just uses sqlite typically)
+	brew (brew install unixODBC)
+
 #### Windows
 	none
 
