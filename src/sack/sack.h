@@ -4998,7 +4998,8 @@ SYSTEM_PROC( PTASK_INFO, LaunchProgram )( CTEXTSTR program, CTEXTSTR path, PCTEX
 // if (!StopProgram(task)) TerminateProgram(task) would be appropriate.
 SYSTEM_PROC( uintptr_t, TerminateProgram )( PTASK_INFO task );
 SYSTEM_PROC( void, ResumeProgram )( PTASK_INFO task );
-SYSTEM_PROC( uintptr_t, GetProramAddress )( PTASK_INFO task );
+// get first address of program startup code(?) Maybe first byte of program code?
+SYSTEM_PROC( uintptr_t, GetProgramAddress )( PTASK_INFO task );
 // before luanchProgramEx, there was no userdata...
 SYSTEM_PROC( void, SetProgramUserData )( PTASK_INFO task, uintptr_t psv );
 // attempt to implement a method on windows that allows a service to launch a user process
@@ -8819,7 +8820,7 @@ PSSQL_PROC( TEXTSTR ,EscapeStringEx )( CTEXTSTR name DBG_PASS );
 #define EscapeString(s) EscapeStringEx( s DBG_SRC )
 /* <combine sack::sql::EscapeStringEx@CTEXTSTR name>
    \ \                                               */
-#define EscapeStringOpt(s,q) EscapeSQLBinaryExx( NULL,s,StrLen(s),q DBG_SRC )
+#define EscapeStringOpt(s,q) EscapeSQLBinaryExx( NULL,s,StrLen(s),NULL, q DBG_SRC )
 /* \ \
    Parameters
    odbc :  connection to escape the string appropriately for. Different
@@ -8857,19 +8858,20 @@ PSSQL_PROC( TEXTSTR ,EscapeBinaryEx )( CTEXTSTR blob, uintptr_t bloblen DBG_PASS
 #define EscapeBinary(b,bl) EscapeBinaryEx(b,bl DBG_SRC )
 /* <combine sack::sql::EscapeBinaryEx@CTEXTSTR@uintptr_t bloblen>
    \ \                                                           */
-#define EscapeBinaryOpt(b,bl,q) EscapeSQLBinaryExx(NULL,b,bl,q DBG_SRC )
+#define EscapeBinaryOpt(b,bl,q) EscapeSQLBinaryExx(NULL,b,bl,NULL,q DBG_SRC )
 /* <combine sack::sql::EscapeBinaryEx@CTEXTSTR@uintptr_t bloblen>
    \ \                                                           */
-PSSQL_PROC( TEXTSTR,EscapeSQLBinaryExx )( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, LOGICAL bQuote DBG_PASS );
+PSSQL_PROC( TEXTSTR,EscapeSQLBinaryExx )( PODBC odbc, CTEXTSTR blob, size_t bloblen, size_t *resultLen, LOGICAL bQuote DBG_PASS );
 /* <combine sack::sql::EscapeBinaryEx@CTEXTSTR@uintptr_t bloblen>
    \ \                                                           */
-PSSQL_PROC( TEXTSTR,EscapeSQLBinaryEx )( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen DBG_PASS );
+//PSSQL_PROC( TEXTSTR,EscapeSQLBinaryEx )( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen DBG_PASS );
 /* <combine sack::sql::EscapeSQLBinaryEx@PODBC@CTEXTSTR@uintptr_t bloblen>
    \ \                                                                    */
-#define EscapeSQLBinary(odbc,blob,len) EscapeSQLBinaryEx( odbc,blob,len DBG_SRC )
+#define EscapeSQLBinary(odbc,blob,len) EscapeSQLBinaryExx( odbc,blob,len, NULL, FALSE DBG_SRC )
 /* <combine sack::sql::EscapeSQLBinaryEx@PODBC@CTEXTSTR@uintptr_t bloblen>
    \ \                                                                    */
-#define EscapeSQLBinaryOpt(odbc,blob,len,q) EscapeSQLBinaryExx( odbc,blob,len,q DBG_SRC )
+#define EscapeSQLBinaryOpt(odbc,blob,len,q) EscapeSQLBinaryExx( odbc,blob,len,NULL,q DBG_SRC )
+#define EscapeSQLBinaryLen(odbc,blob,len,resLen,q) EscapeSQLBinaryExx( odbc,blob,len,resLen, q DBG_SRC )
 /* Remove escape sequences which are inserted into a text
    string. (for things like quotes and binary characters?)
    Parameters
@@ -9249,6 +9251,8 @@ PSSQL_VARARG_PROC( int, DoSQLCommandf, ( CTEXTSTR fmt, ... ) );
 //PSSQL_PROC( int, SQLRecordQueryf )( PODBC odbc, int *columns, CTEXTSTR **result, CTEXTSTR **fields, CTEXTSTR fmt, ... );
 PSSQL_VARARG_PROC( int, SQLRecordQueryf, ( PODBC odbc, int *columns, CTEXTSTR **result, CTEXTSTR **fields, CTEXTSTR fmt, ... ) );
 #define SQLRecordQueryf   (__SQLRecordQueryf( DBG_VOIDSRC ))
+PSSQL_VARARG_PROC( int, SQLRecordQueryf_v2, ( PODBC odbc, int *nResults, CTEXTSTR **result, size_t **resultLengths, CTEXTSTR **fields, CTEXTSTR fmt, ... ) );
+#define SQLRecordQueryf_v2   (__SQLRecordQueryf_v2( DBG_VOIDSRC ))
 /* This was the original implementation, it returned the results
    as a comma separated list, with quotes around results that
    had commas in them, and quotes around empty strings to
@@ -9798,8 +9802,7 @@ DEADSTART_PROC  void DEADSTART_CALLTYPE  DispelDeadstart ( void );
 /* Basic way to register a routine to run when the program exits
    gracefully.
    Example
-   \ \
-   <code>
+   \    <code>
    ATEXIT( MyExitRoutine )
    {
        // this will be run sometime during program shutdown
@@ -9916,7 +9919,12 @@ struct rt_init
 #else
 #  define PASS_FILENAME
 #endif
-#define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)	   __attribute__((section("deadstart_list"))) __attribute__((used))	 ={0,0,pr INIT_PADDING	     ,__LINE__,name	          PASS_FILENAME	        ,TOSTR(name)	        JUNKINIT(name)};	 void name(void) __attribute__((used));	  void name(void)
+#ifdef __MAC__
+#  define DEADSTART_SECTION "CODE,deadstart_list"
+#else
+#  define DEADSTART_SECTION "deadstart_list"
+#endif
+#define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)	   __attribute__((section(DEADSTART_SECTION))) __attribute__((used))	 ={0,0,pr INIT_PADDING	     ,__LINE__,name	          PASS_FILENAME	        ,TOSTR(name)	        JUNKINIT(name)};	 void name(void) __attribute__((used));	  void name(void)
 typedef void(*atexit_priority_proc)(void (*)(void),CTEXTSTR,int DBG_PASS);
 #define PRIORITY_ATEXIT(name,priority) static void name(void); static void pastejunk(atexit,name)(void) __attribute__((constructor));  void pastejunk(atexit,name)(void)                                                  {	                                                                        RegisterPriorityShutdownProc(name,TOSTR(name),priority,NULL DBG_SRC);                          }                                                                          void name(void)
 #define ATEXIT(name) PRIORITY_ATEXIT( name,ATEXIT_PRIORITY_DEFAULT )

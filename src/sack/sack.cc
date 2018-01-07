@@ -5006,7 +5006,8 @@ SYSTEM_PROC( PTASK_INFO, LaunchProgram )( CTEXTSTR program, CTEXTSTR path, PCTEX
 // if (!StopProgram(task)) TerminateProgram(task) would be appropriate.
 SYSTEM_PROC( uintptr_t, TerminateProgram )( PTASK_INFO task );
 SYSTEM_PROC( void, ResumeProgram )( PTASK_INFO task );
-SYSTEM_PROC( uintptr_t, GetProramAddress )( PTASK_INFO task );
+// get first address of program startup code(?) Maybe first byte of program code?
+SYSTEM_PROC( uintptr_t, GetProgramAddress )( PTASK_INFO task );
 // before luanchProgramEx, there was no userdata...
 SYSTEM_PROC( void, SetProgramUserData )( PTASK_INFO task, uintptr_t psv );
 // attempt to implement a method on windows that allows a service to launch a user process
@@ -7575,8 +7576,7 @@ DEADSTART_PROC  void DEADSTART_CALLTYPE  DispelDeadstart ( void );
 /* Basic way to register a routine to run when the program exits
    gracefully.
    Example
-   \ \
-   <code>
+   \    <code>
    ATEXIT( MyExitRoutine )
    {
        // this will be run sometime during program shutdown
@@ -7693,7 +7693,12 @@ struct rt_init
 #else
 #  define PASS_FILENAME
 #endif
-#define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)	   __attribute__((section("deadstart_list"))) __attribute__((used))	 ={0,0,pr INIT_PADDING	     ,__LINE__,name	          PASS_FILENAME	        ,TOSTR(name)	        JUNKINIT(name)};	 void name(void) __attribute__((used));	  void name(void)
+#ifdef __MAC__
+#  define DEADSTART_SECTION "CODE,deadstart_list"
+#else
+#  define DEADSTART_SECTION "deadstart_list"
+#endif
+#define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)	   __attribute__((section(DEADSTART_SECTION))) __attribute__((used))	 ={0,0,pr INIT_PADDING	     ,__LINE__,name	          PASS_FILENAME	        ,TOSTR(name)	        JUNKINIT(name)};	 void name(void) __attribute__((used));	  void name(void)
 typedef void(*atexit_priority_proc)(void (*)(void),CTEXTSTR,int DBG_PASS);
 #define PRIORITY_ATEXIT(name,priority) static void name(void); static void pastejunk(atexit,name)(void) __attribute__((constructor));  void pastejunk(atexit,name)(void)                                                  {	                                                                        RegisterPriorityShutdownProc(name,TOSTR(name),priority,NULL DBG_SRC);                          }                                                                          void name(void)
 #define ATEXIT(name) PRIORITY_ATEXIT( name,ATEXIT_PRIORITY_DEFAULT )
@@ -9355,7 +9360,7 @@ PSSQL_PROC( TEXTSTR ,EscapeStringEx )( CTEXTSTR name DBG_PASS );
 #define EscapeString(s) EscapeStringEx( s DBG_SRC )
 /* <combine sack::sql::EscapeStringEx@CTEXTSTR name>
    \ \                                               */
-#define EscapeStringOpt(s,q) EscapeSQLBinaryExx( NULL,s,StrLen(s),q DBG_SRC )
+#define EscapeStringOpt(s,q) EscapeSQLBinaryExx( NULL,s,StrLen(s),NULL, q DBG_SRC )
 /* \ \
    Parameters
    odbc :  connection to escape the string appropriately for. Different
@@ -9393,19 +9398,20 @@ PSSQL_PROC( TEXTSTR ,EscapeBinaryEx )( CTEXTSTR blob, uintptr_t bloblen DBG_PASS
 #define EscapeBinary(b,bl) EscapeBinaryEx(b,bl DBG_SRC )
 /* <combine sack::sql::EscapeBinaryEx@CTEXTSTR@uintptr_t bloblen>
    \ \                                                           */
-#define EscapeBinaryOpt(b,bl,q) EscapeSQLBinaryExx(NULL,b,bl,q DBG_SRC )
+#define EscapeBinaryOpt(b,bl,q) EscapeSQLBinaryExx(NULL,b,bl,NULL,q DBG_SRC )
 /* <combine sack::sql::EscapeBinaryEx@CTEXTSTR@uintptr_t bloblen>
    \ \                                                           */
-PSSQL_PROC( TEXTSTR,EscapeSQLBinaryExx )( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, LOGICAL bQuote DBG_PASS );
+PSSQL_PROC( TEXTSTR,EscapeSQLBinaryExx )( PODBC odbc, CTEXTSTR blob, size_t bloblen, size_t *resultLen, LOGICAL bQuote DBG_PASS );
 /* <combine sack::sql::EscapeBinaryEx@CTEXTSTR@uintptr_t bloblen>
    \ \                                                           */
-PSSQL_PROC( TEXTSTR,EscapeSQLBinaryEx )( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen DBG_PASS );
+//PSSQL_PROC( TEXTSTR,EscapeSQLBinaryEx )( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen DBG_PASS );
 /* <combine sack::sql::EscapeSQLBinaryEx@PODBC@CTEXTSTR@uintptr_t bloblen>
    \ \                                                                    */
-#define EscapeSQLBinary(odbc,blob,len) EscapeSQLBinaryEx( odbc,blob,len DBG_SRC )
+#define EscapeSQLBinary(odbc,blob,len) EscapeSQLBinaryExx( odbc,blob,len, NULL, FALSE DBG_SRC )
 /* <combine sack::sql::EscapeSQLBinaryEx@PODBC@CTEXTSTR@uintptr_t bloblen>
    \ \                                                                    */
-#define EscapeSQLBinaryOpt(odbc,blob,len,q) EscapeSQLBinaryExx( odbc,blob,len,q DBG_SRC )
+#define EscapeSQLBinaryOpt(odbc,blob,len,q) EscapeSQLBinaryExx( odbc,blob,len,NULL,q DBG_SRC )
+#define EscapeSQLBinaryLen(odbc,blob,len,resLen,q) EscapeSQLBinaryExx( odbc,blob,len,resLen, q DBG_SRC )
 /* Remove escape sequences which are inserted into a text
    string. (for things like quotes and binary characters?)
    Parameters
@@ -9785,6 +9791,8 @@ PSSQL_VARARG_PROC( int, DoSQLCommandf, ( CTEXTSTR fmt, ... ) );
 //PSSQL_PROC( int, SQLRecordQueryf )( PODBC odbc, int *columns, CTEXTSTR **result, CTEXTSTR **fields, CTEXTSTR fmt, ... );
 PSSQL_VARARG_PROC( int, SQLRecordQueryf, ( PODBC odbc, int *columns, CTEXTSTR **result, CTEXTSTR **fields, CTEXTSTR fmt, ... ) );
 #define SQLRecordQueryf   (__SQLRecordQueryf( DBG_VOIDSRC ))
+PSSQL_VARARG_PROC( int, SQLRecordQueryf_v2, ( PODBC odbc, int *nResults, CTEXTSTR **result, size_t **resultLengths, CTEXTSTR **fields, CTEXTSTR fmt, ... ) );
+#define SQLRecordQueryf_v2   (__SQLRecordQueryf_v2( DBG_VOIDSRC ))
 /* This was the original implementation, it returned the results
    as a comma separated list, with quotes around results that
    had commas in them, and quotes around empty strings to
@@ -16824,6 +16832,32 @@ extern
 #endif
 #define l (*local_systemlib)
 int TryShellExecute( PTASK_INFO task, CTEXTSTR path, CTEXTSTR program, PTEXT cmdline );
+#ifdef __MAC__
+//sourced from https://github.com/comex/myvmmap/blob/master/myvmmap.c Jan/7/2018
+#  include <mach/mach.h>
+#  if __IPHONE_OS_VERSION_MIN_REQUIRED
+kern_return_t mach_vm_read_overwrite(vm_map_t target_task, mach_vm_address_t address, mach_vm_size_t size, mach_vm_address_t data, mach_vm_size_t *outsize);
+kern_return_t mach_vm_region(vm_map_t target_task, mach_vm_address_t *address, mach_vm_size_t *size, vm_region_flavor_t flavor, vm_region_info_t info, mach_msg_type_number_t *infoCnt, mach_port_t *object_name);
+int proc_pidpath(int pid, void * buffer, uint32_t  buffersize);
+int proc_regionfilename(int pid, uint64_t address, void * buffer, uint32_t buffersize);
+#  else
+#    include <mach/mach_vm.h>
+#    include <libproc.h>
+#  endif
+//#include <stdio.h>
+#  include <assert.h>
+#  include <mach-o/loader.h>
+#  include <mach-o/nlist.h>
+//#include <string.h>
+//#include <stdbool.h>
+//#include <stdlib.h>
+//#include <setjmp.h>
+//#include <sys/queue.h>
+//#include <sys/param.h>
+#  if !__IPHONE_OS_VERSION_MIN_REQUIRED
+#    include <Security/Security.h>
+#  endif
+#endif
 //-------------------------------------------------------------------------
 //  Function/library manipulation routines...
 //-------------------------------------------------------------------------
@@ -16996,6 +17030,109 @@ void OSALOT_PrependEnvironmentVariable(CTEXTSTR name, CTEXTSTR value)
 #endif
 }
 #endif
+#ifdef __MAC__
+static bool is_64bit;
+static mach_port_t task;
+static int pid;
+static task_dyld_info_data_t dyld_info;
+static jmp_buf recovery_buf;
+static int read_from_task(void *p, mach_vm_address_t addr, mach_vm_size_t size) {
+    mach_vm_size_t outsize;
+    kern_return_t kr = mach_vm_read_overwrite(task, addr, size, (mach_vm_address_t) p, &outsize);
+    if(kr || outsize != size) {
+#if 0
+        fprintf(stderr, "read_from_task(0x%llx, 0x%llx): ", (long long) addr, (long long) size);
+        if(kr)
+            fprintf(stderr, "kr=%d\n", (int) kr);
+        else
+            fprintf(stderr, "short read\n");
+#endif
+				return 0;
+        //_longjmp(recovery_buf, 1);
+    }
+		return 1;
+}
+static uint64_t read_64(char **pp) {
+    return *(*(uint64_t **)pp)++;
+}
+static uint32_t read_32(char **pp) {
+    return *(*(uint32_t **)pp)++;
+}
+static mach_vm_address_t read_ptr(char **pp) {
+    return is_64bit ? read_64(pp) : read_32(pp);
+}
+static void lookup_dyld_images() {
+    char all_images[12], *p = all_images;
+    if( !read_from_task(p, dyld_info.all_image_info_addr + 4, 12) )
+			return;
+    uint32_t info_array_count = read_32(&p);
+    mach_vm_address_t info_array = read_ptr(&p);
+    if(info_array_count > 10000) {
+        fprintf(stderr, "** dyld image info had malformed data.\n");
+        return;
+    }
+    size_t size = (is_64bit ? 24 : 12) * info_array_count;
+    char *image_info = NewArray( char, size);
+    p = image_info;
+    if( !read_from_task(p, info_array, size) )
+			return;
+    for(uint32_t i = 0; i < info_array_count; i++) {
+        mach_vm_address_t
+            load_address = read_ptr(&p),
+            file_path_addr = read_ptr(&p);
+ // file_mod_date
+        read_ptr(&p);
+        //if(_setjmp(recovery_buf))
+        //    continue;
+        char path[MAXPATHLEN + 1];
+        if( !read_from_task(path, file_path_addr, sizeof(path)) )
+				   continue;
+        if(strnlen(path, sizeof(path)) == sizeof(path))
+            fprintf(stderr, "** dyld image info had malformed data.\n");
+        else {
+					  AddMappedLibrary( path, dlopen( path, 0 ) );
+            //printf( "PATH:%s %p", path, load_address );
+            //printf( "  load is %p\n", dlopen( path, 0 ) );
+            //if( dlsym( load_address, "dlsym" )) printf( "** FOUND DLSYM**\n");
+          }
+    }
+    return;
+}
+void loadMacLibraries(struct local_systemlib_data *init_l) {
+    bool got_showaddr = false;
+    mach_vm_address_t showaddr;
+    pid = getpid();
+    task = mach_task_self();
+    char path[MAXPATHLEN];
+    size_t path_size;
+    if((path_size = proc_pidpath(pid, path, sizeof(path))))
+        path[path_size] = 0;
+    else
+        strcpy(path, "????");
+    //printf("%d: %s\n", pid, path);
+    {
+				TEXTCHAR *ext, *ext1;
+				ext = (TEXTSTR)StrRChr( (CTEXTSTR)path, '.' );
+				if( ext )
+						ext[0] = 0;
+				ext1 = (TEXTSTR)pathrchr( path );
+				if( ext1 )
+				{
+						ext1[0] = 0;
+						(*init_l).filename = StrDupEx( ext1 + 1 DBG_SRC );
+						(*init_l).load_path = StrDupEx( path DBG_SRC );
+				}
+				else
+				{
+						(*init_l).filename = StrDupEx( path DBG_SRC );
+						(*init_l).load_path = StrDupEx( WIDE("") DBG_SRC );
+				}
+		}
+    assert(!task_info(task, TASK_DYLD_INFO, (task_info_t) &dyld_info, (mach_msg_type_number_t[]) {TASK_DYLD_INFO_COUNT}));
+    is_64bit = dyld_info.all_image_info_addr >= (1ull << 32);
+    lookup_dyld_images();
+}
+#endif
 static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 {
 	struct local_systemlib_data *init_l = (struct local_systemlib_data *)mem;
@@ -17149,7 +17286,9 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 	{
 		/* #include unistd.h, stdio.h, string.h */
 		{
-			char buf[256], *pb;
+			char buf[256];
+#       ifndef __MAC__
+			char *pb;
 			int n;
 			n = readlink("/proc/self/exe",buf,256);
 			if( n >= 0 )
@@ -17173,8 +17312,12 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 			//lprintf( WIDE("My execution: %s"), buf);
 			(*init_l).filename = StrDupEx( pb + 1 DBG_SRC );
 			(*init_l).load_path = StrDupEx( buf DBG_SRC );
+#       endif
 			local_systemlib = init_l;
 			AddMappedLibrary( "dummy", NULL );
+#       ifdef __MAC__
+			loadMacLibraries( init_l );
+#       endif
 			local_systemlib = NULL;
 			{
 				PLIBRARY library = (*init_l).libraries;
@@ -17184,6 +17327,7 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 						break;
 					library = library->next;
 				}
+				//if( library )
 				{
 					char *dupname;
 					char *path;
@@ -17194,7 +17338,7 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 					(*init_l).library_path = dupname;
 				}
 			}
-			setenv( WIDE("MY_LOAD_PATH"), buf, TRUE );
+			setenv( WIDE("MY_LOAD_PATH"), (*init_l).load_path, TRUE );
 			//strcpy( pMyPath, buf );
 			GetCurrentPath( buf, sizeof( buf ) );
 			setenv( WIDE( "MY_WORK_PATH" ), buf, TRUE );
@@ -17907,7 +18051,10 @@ static void LoadExistingLibraries( void )
 #endif
 	}
 #endif
-#ifdef __LINUX__
+#ifdef __MAC__
+	lookup_dyld_images();
+#else
+#  ifdef __LINUX__
 	{
 		FILE *maps;
 		char buf[256];
@@ -17918,9 +18065,7 @@ static void LoadExistingLibraries( void )
 			char *split = strchr( buf, '-' );
 			if( libpath && split )
 			{
-#ifndef __MAC__
 				char *dll_name = strrchr( libpath, '/' );
-#endif
 				size_t start, end;
 				char perms[8];
 				size_t offset;
@@ -17932,7 +18077,6 @@ static void LoadExistingLibraries( void )
 				scanned = sscanf( buf, "%zx-%zx %s %zx", &start, &end, perms, &offset );
 				if( scanned == 4 && offset == 0 )
 				{
-#ifndef __MAC__
 					if( ( perms[2] == 'x' )
 						&& ( ( end - start ) > 4 ) )
 						if( ( ((unsigned char*)start)[0] == ELFMAG0 )
@@ -17943,12 +18087,12 @@ static void LoadExistingLibraries( void )
 							//lprintf( "Add library %s %p", dll_name + 1, start );
 							AddMappedLibrary( libpath, (POINTER)start );
 						}
-#endif
 				}
 			}
 		}
 		sack_fclose( maps );
 	}
+#  endif
 #endif
 }
 SYSTEM_PROC( LOGICAL, IsMappedLibrary)( CTEXTSTR libname )
@@ -21142,7 +21286,7 @@ IMAGE_NAMESPACE_END
 #else
    // print out a compiler message can't perform zero-D transformations...
 #endif
-#if defined( _D3D_DRIVER ) || defined( _D3D10_DRIVER ) || ( !defined( __cplusplus ) && defined( __ANDROID__ ) )
+#if defined( _D3D_DRIVER ) || defined( _D3D10_DRIVER )
 #  ifndef MAKE_RCOORD_SINGLE
 #    define MAKE_RCOORD_SINGLE
 #  endif
@@ -21200,7 +21344,6 @@ typedef double RCOORD;
    \ \                                  */
 	typedef double *PRCOORD;
 #else
-#if defined( __cplusplus ) || defined( MAKE_RCOORD_SINGLE )
 	/* basic type that Vectlib is based on.
 	 This specifies a 'real' (aka float) coordinate.
 	 Combinations of coordinates create vectors and points.  */
@@ -21208,7 +21351,6 @@ typedef float RCOORD;
 /* <combine sack::math::vector::float::RCOORD>
    \ \                                  */
 typedef float *PRCOORD;
-#endif
 #endif
 // these SHOULD be dimension relative, but we lack much code for that...
 typedef RCOORD MATRIX[4][4];
@@ -24939,7 +25081,9 @@ typedef struct input_point
 #define TOUCHINPUTMASKF_EXTRAINFO       0x0002
   // the cxContact and cyContact fields are valid
 #define TOUCHINPUTMASKF_CONTACTAREA     0x0004
+#ifndef __ANDROID__
 typedef HANDLE HTOUCHINPUT;
+#endif
 #define WM_TOUCH 0x0240
 #define TWF_FINETOUCH 0x00000001
 #define TWF_WANTPALM 0x00000002
@@ -26299,7 +26443,15 @@ namespace sack {
 	namespace timers {
 #endif
 // bit set on dwLocks when someone hit it and it was locked
+#ifdef LOG_DEBUG_CRITICAL_SECTIONS
 #define SECTION_LOGGED_WAIT 0x80000000
+#define AND_NOT_SECTION_LOGGED_WAIT(n) ((n)&(~SECTION_LOGGED_WAIT))
+#define AND_SECTION_LOGGED_WAIT(n) ((n)&(SECTION_LOGGED_WAIT))
+#else
+#define SECTION_LOGGED_WAIT 0
+#define AND_NOT_SECTION_LOGGED_WAIT(n) (n)
+#define AND_SECTION_LOGGED_WAIT(n) (0)
+#endif
 // If you change this structure please change the public
 // reference of this structure, and please, do hand-count
 // the bytes to set there... so not include this file
@@ -27494,22 +27646,22 @@ void  UnmakeThread( void )
 #endif
 	if( pThread )
 	{
-#ifdef _WIN32
-		//lprintf( WIDE("Unmaking thread event! on thread %016"_64fx"x"), pThread->thread_ident );
-		CloseHandle( pThread->thread_event->hEvent );
-		{
-			struct my_thread_info* _MyThreadInfo = GetThreadTLS();
-			Deallocate( struct my_thread_info*, _MyThreadInfo );
-			TlsSetValue( global_timer_structure->my_thread_info_tls, NULL );
-		}
-#else
-		closesem( (POINTER)pThread, 0 );
-#endif
 		// unlink from globalTimerData.threads list.
 		//if( ( (*pThread->me)=pThread->next ) )
 		//	pThread->next->me = pThread->me;
 		{
 			int tmp = SetAllocateLogging( FALSE );
+#ifdef _WIN32
+			//lprintf( WIDE("Unmaking thread event! on thread %016"_64fx"x"), pThread->thread_ident );
+			CloseHandle( pThread->thread_event->hEvent );
+			{
+				struct my_thread_info* _MyThreadInfo = GetThreadTLS();
+				Deallocate( struct my_thread_info*, _MyThreadInfo );
+				TlsSetValue( global_timer_structure->my_thread_info_tls, NULL );
+			}
+#else
+			closesem( (POINTER)pThread, 0 );
+#endif
 			Deallocate( TEXTSTR, pThread->thread_event_name );
 #ifdef _WIN32
 			Deallocate( TEXTSTR, pThread->thread_event->name );
@@ -31764,7 +31916,15 @@ namespace sack {
 	namespace timers {
 #endif
 // bit set on dwLocks when someone hit it and it was locked
+#ifdef LOG_DEBUG_CRITICAL_SECTIONS
 #define SECTION_LOGGED_WAIT 0x80000000
+#define AND_NOT_SECTION_LOGGED_WAIT(n) ((n)&(~SECTION_LOGGED_WAIT))
+#define AND_SECTION_LOGGED_WAIT(n) ((n)&(SECTION_LOGGED_WAIT))
+#else
+#define SECTION_LOGGED_WAIT 0
+#define AND_NOT_SECTION_LOGGED_WAIT(n) (n)
+#define AND_SECTION_LOGGED_WAIT(n) (0)
+#endif
 // If you change this structure please change the public
 // reference of this structure, and please, do hand-count
 // the bytes to set there... so not include this file
@@ -32206,7 +32366,7 @@ uint64_t  LockedExchange64( volatile uint64_t* p, uint64_t val )
 #else
 	{
 		// swp is the instruction....
-	  // going to have to set IRQ, PIRQ on arm...
+		// going to have to set IRQ, PIRQ on arm...
 		uint64_t prior = *p;
 		*p = val;
 		return prior;
@@ -32215,7 +32375,7 @@ uint64_t  LockedExchange64( volatile uint64_t* p, uint64_t val )
 #  else
 	{
 		// swp is the instruction....
-	  // going to have to set IRQ, PIRQ on arm...
+		// going to have to set IRQ, PIRQ on arm...
 		uint64_t prior = *p;
 		*p = val;
 		return prior;
@@ -32251,9 +32411,9 @@ static void DumpSection( PCRITICALSECTION pcs )
 		}
 #endif
 #ifndef USE_NATIVE_CRITICAL_SECTION
-#  ifdef _MSC_VER
-#    pragma optimize( "st", off )
-#  endif
+//#  ifdef _MSC_VER
+//#    pragma optimize( "st", off )
+//#  endif
 		int32_t  EnterCriticalSecNoWaitEx( PCRITICALSECTION pcs, THREAD_ID *prior DBG_PASS )
 		{
 			THREAD_ID dwCurProc;
@@ -32278,7 +32438,7 @@ static void DumpSection( PCRITICALSECTION pcs )
 #else
 			dwCurProc = GetMyThreadID();
 #endif
-			if( !(pcs->dwLocks & ~(SECTION_LOGGED_WAIT)) )
+			if( !AND_NOT_SECTION_LOGGED_WAIT(pcs->dwLocks) )
 			{
 				// section is unowned...
 				if( pcs->dwThreadWaiting )
@@ -32292,8 +32452,6 @@ static void DumpSection( PCRITICALSECTION pcs )
 								ll__lprintf( DBG_RELAY )(WIDE( "waiter is not myself... this is more recent than him... claim now. %" ) _64fx WIDE( " %" ) _64fx WIDE( " %" ) _64fx, pcs->dwThreadWaiting, prior ? (*prior) : -1LL, pcs->dwThreadID);
 #endif
 								// this would stack me on top anyway so just allow the waitier to keep waiting....
-								pcs->dwLocks = 1;
-								pcs->dwThreadID = dwCurProc;
 #ifdef DEBUG_CRITICAL_SECTIONS
 #  ifdef _DEBUG
 								pcs->pFile[pcs->nPrior] = pFile;
@@ -32307,24 +32465,20 @@ static void DumpSection( PCRITICALSECTION pcs )
 								pcs->dwThreadPrior[pcs->nPrior] = dwCurProc;
 								pcs->nPrior = (pcs->nPrior + 1) % MAX_SECTION_LOG_QUEUE;
 #endif
-								pcs->dwUpdating = 0;
-								return 1;
 							}
 							else {
 #ifdef LOG_DEBUG_CRITICAL_SECTIONS
 								ll__lprintf( DBG_RELAY )(WIDE( "waiter is not myself... AND am in stack of waiter. %" ) _64fx WIDE( " %" ) _64fx WIDE( " %" ) _64fx, pcs->dwThreadWaiting, prior ? (*prior) : -1LL, pcs->dwThreadID);
 #endif
 								// prior is set, so someone has set their prior to me....
+								pcs->dwUpdating = 0;
+								return 0;
 							}
-							pcs->dwUpdating = 0;
-							return 0;
 						}
 						else {
 #ifdef LOG_DEBUG_CRITICAL_SECTIONS
 							ll__lprintf( DBG_RELAY )(WIDE( "Waiter which is quick-wait does not sleep; claiming section... %" ) _64fx WIDE( " %" ) _64fx WIDE( " %" ) _64fx, pcs->dwThreadWaiting, prior ? (*prior) : -1LL, pcs->dwThreadID);
 #endif
-							pcs->dwLocks = 1;
-							pcs->dwThreadID = dwCurProc;
 #ifdef DEBUG_CRITICAL_SECTIONS
 #  ifdef _DEBUG
 							pcs->pFile[pcs->nPrior] = pFile;
@@ -32338,8 +32492,6 @@ static void DumpSection( PCRITICALSECTION pcs )
 							pcs->dwThreadPrior[pcs->nPrior] = dwCurProc;
 							pcs->nPrior = (pcs->nPrior + 1) % MAX_SECTION_LOG_QUEUE;
 #endif
-							pcs->dwUpdating = 0;
-							return 1;
 						}
 					}
  //  waiting is me
@@ -32357,9 +32509,6 @@ static void DumpSection( PCRITICALSECTION pcs )
 						}
 						else
 							pcs->dwThreadWaiting = 0;
- // claim the section and return success
-						pcs->dwThreadID = dwCurProc;
-						pcs->dwLocks = 1;
 #ifdef DEBUG_CRITICAL_SECTIONS
 #  ifdef _DEBUG
 						pcs->pFile[pcs->nPrior] = pFile;
@@ -32373,8 +32522,6 @@ static void DumpSection( PCRITICALSECTION pcs )
 						pcs->dwThreadPrior[pcs->nPrior] = dwCurProc;
 						pcs->nPrior = (pcs->nPrior + 1) % MAX_SECTION_LOG_QUEUE;
 #endif
-						pcs->dwUpdating = 0;
-						return 1;
 					}
 				}
 				else {
@@ -32385,9 +32532,6 @@ static void DumpSection( PCRITICALSECTION pcs )
 #ifdef LOG_DEBUG_CRITICAL_SECTIONS
 					ll_lprintf( WIDE( "Claimed critical section." ) );
 #endif
- // claim the section and return success
-					pcs->dwThreadID = dwCurProc;
-					pcs->dwLocks = 1;
 #ifdef DEBUG_CRITICAL_SECTIONS
 #  ifdef _DEBUG
 					pcs->pFile[pcs->nPrior] = pFile;
@@ -32401,9 +32545,12 @@ static void DumpSection( PCRITICALSECTION pcs )
 					pcs->dwThreadPrior[pcs->nPrior] = dwCurProc;
 					pcs->nPrior = (pcs->nPrior + 1) % MAX_SECTION_LOG_QUEUE;
 #endif
-					pcs->dwUpdating = 0;
-					return 1;
 				}
+ // claim the section and return success
+				pcs->dwThreadID = dwCurProc;
+				pcs->dwLocks = 1;
+				pcs->dwUpdating = 0;
+				return 1;
 			}
 			else if( dwCurProc == pcs->dwThreadID )
 			{
@@ -32438,10 +32585,10 @@ static void DumpSection( PCRITICALSECTION pcs )
 				pcs->dwUpdating = 0;
 				return 1;
 			}
-			//if( !(pcs->dwLocks & SECTION_LOGGED_WAIT) )
+			//if( !(AND_SECTION_LOGGED_WAIT(pcs->dwLocks)) )
 			{
-				pcs->dwLocks |= SECTION_LOGGED_WAIT;
 #ifdef LOG_DEBUG_CRITICAL_SECTIONS
+				pcs->dwLocks |= SECTION_LOGGED_WAIT;
 				if( g.bLogCritical )
 					ll_lprintf( WIDE( "Waiting on critical section owned by %s(%d) %08lx %." ) _64fx, (pcs->pFile) ? (pcs->pFile) : WIDE( "Unknown" ), pcs->nLine, pcs->dwLocks, pcs->dwThreadID );
 #endif
@@ -32454,9 +32601,9 @@ static void DumpSection( PCRITICALSECTION pcs )
 					if( pcs->dwThreadWaiting != dwCurProc )
 					{
 						if( !pcs->dwThreadWaiting ) {
+							ll_lprintf( WIDE( "@@@ Someone stole the critical section that we were wiating on before we reentered. fail. %" )_64fx WIDE( " %" ) _64fx WIDE( " %" ) _64fx, pcs->dwThreadWaiting, dwCurProc, *prior );
 							DebugBreak();
 							// go back to sleep again.
-							ll_lprintf( WIDE( "@@@ Someone stole the critical section that we were wiating on before we reentered. fail. %" )_64fx WIDE( " %" ) _64fx WIDE( " %" ) _64fx, pcs->dwThreadWaiting, dwCurProc, *prior );
 							pcs->dwThreadWaiting = dwCurProc;
 						}
 						else {
@@ -32510,9 +32657,9 @@ static void DumpSection( PCRITICALSECTION pcs )
 #endif
 		//-------------------------------------------------------------------------
 #ifndef USE_NATIVE_CRITICAL_SECTION
-#  ifdef _MSC_VER
-#    pragma optimize( "st", off )
-#  endif
+//#  ifdef _MSC_VER
+//#    pragma optimize( "st", off )
+//#  endif
 		static LOGICAL LeaveCriticalSecNoWakeEx( PCRITICALSECTION pcs DBG_PASS )
 #define LeaveCriticalSecNoWake(pcs) LeaveCriticalSecNoWakeEx( pcs DBG_SRC )
 		{
@@ -32530,7 +32677,7 @@ static void DumpSection( PCRITICALSECTION pcs )
 				ll__lprintf( DBG_RELAY )(WIDE( "Locked %p for leaving..." ), pcs);
 #    endif
 #  endif
-			if( !(pcs->dwLocks & ~SECTION_LOGGED_WAIT) )
+			if( !AND_NOT_SECTION_LOGGED_WAIT(pcs->dwLocks) )
 			{
 				if( g.bLogCritical > 0 && g.bLogCritical < 2 )
 					ll_lprintf( DBG_FILELINEFMT WIDE( "Leaving a blank critical section" ) DBG_RELAY );
@@ -32546,9 +32693,9 @@ static void DumpSection( PCRITICALSECTION pcs )
 			if( pcs->dwThreadID == dwCurProc )
 			{
 				pcs->dwLocks--;
-				if( pcs->dwLocks & SECTION_LOGGED_WAIT )
+				if( AND_SECTION_LOGGED_WAIT(pcs->dwLocks) )
 				{
-					if( !(pcs->dwLocks & ~(SECTION_LOGGED_WAIT)) )
+					if( !AND_NOT_SECTION_LOGGED_WAIT(pcs->dwLocks) )
 					{
 #ifdef DEBUG_CRITICAL_SECTIONS
 #  ifdef _DEBUG
@@ -32563,7 +32710,9 @@ static void DumpSection( PCRITICALSECTION pcs )
 						pcs->dwThreadPrior[pcs->nPrior] = dwCurProc;
 						pcs->nPrior = (pcs->nPrior + 1) % MAX_SECTION_LOG_QUEUE;
 #endif
+#ifdef LOG_DEBUG_CRITICAL_SECTIONS
 						pcs->dwLocks = 0;
+#endif
 						pcs->dwThreadID = 0;
 						pcs->dwUpdating = 0;
  // allow whoever was waiting to go now...
@@ -32656,11 +32805,6 @@ LOGICAL OpenRootMemory()
 	}
 #ifdef DEBUG_GLOBAL_REGISTRATION
 	ll_lprintf( WIDE( "Opening space..." ) );
-#endif
-#ifdef UNICODE
-#define _S WIDE("ls")
-#else
-#define _S WIDE("s")
 #endif
 #ifdef WIN32
 	tnprintf( spacename, sizeof( spacename ), WIDE( "memory:%" ) _32fx, GetCurrentProcessId() );
@@ -43983,16 +44127,21 @@ char * u8xor( const char *a, size_t alen, const char *b, size_t blen, int *ofs )
 		mask = _mask;
 		if( (v & 0x80) == 0x00 ) { if( l ) lprintf( "short utf8 sequence found" ); mask = 0x3f; _mask = 0x3f; }
 		else if( (v & 0xC0) == 0x80 ) { if( !l ) lprintf( "invalid utf8 sequence" ); l--; _mask = 0x3f; }
+		else if( (v & 0xE0) == 0xC0 ) { if( l )
   // 6 + 1 == 7
-		else if( (v & 0xE0) == 0xC0 ) { if( l ) lprintf( "short utf8 sequence found" ); l = 1; mask = 0x1; _mask = 0x3f; }
+			lprintf( "short utf8 sequence found" ); l = 1; mask = 0x1; _mask = 0x3f; }
+		else if( (v & 0xF0) == 0xE0 ) { if( l )
   // 6 + 5 + 0 == 11
-		else if( (v & 0xF0) == 0xE0 ) { if( l ) lprintf( "short utf8 sequence found" ); l = 2; mask = 0;  _mask = 0x1f; }
+			lprintf( "short utf8 sequence found" ); l = 2; mask = 0;  _mask = 0x1f; }
+		else if( (v & 0xF8) == 0xF0 ) { if( l )
   // 6(2) + 4 + 0 == 16
-		else if( (v & 0xF8) == 0xF0 ) { if( l ) lprintf( "short utf8 sequence found" ); l = 3; mask = 0;  _mask = 0x0f; }
+			lprintf( "short utf8 sequence found" ); l = 3; mask = 0;  _mask = 0x0f; }
+		else if( (v & 0xFC) == 0xF8 ) { if( l )
   // 6(3) + 3 + 0 == 21
-		else if( (v & 0xFC) == 0xF8 ) { if( l ) lprintf( "short utf8 sequence found" ); l = 4; mask = 0;  _mask = 0x07; }
+			lprintf( "short utf8 sequence found" ); l = 4; mask = 0;  _mask = 0x07; }
+		else if( (v & 0xFE) == 0xFC ) { if( l )
   // 6(4) + 2 + 0 == 26
-		else if( (v & 0xFE) == 0xFC ) { if( l ) lprintf( "short utf8 sequence found" ); l = 5; mask = 0;  _mask = 0x03; }
+			lprintf( "short utf8 sequence found" ); l = 5; mask = 0;  _mask = 0x03; }
 		char bchar = b[(n+o)%(keylen)];
 		(*out) = (v & ~mask ) | ( u8xor_table[v & mask ][bchar] & mask );
 		out++;
@@ -51202,7 +51351,7 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 							inflateReset( &websock->inflater );
 						}
 						else {
-							lprintf( "Completed packet; %d %d", websock->input_type, websock->fragment_collection_length );
+							//lprintf( "Completed packet; %d %d", websock->input_type, websock->fragment_collection_length );
 							websock->on_event( pc, websock->psv_open, websock->input_type, websock->fragment_collection, websock->fragment_collection_length );
 						}
 					}
@@ -51286,7 +51435,7 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 				// after processing any opcode (this is IN final, and length match) we're done, start next message
 				ResetInputState( websock );
 			} else if( websock->fragment_collection_length == websock->fragment_collection_avail ) {
-				lprintf( "Completed packet; still not final fragment though.... %d", websock->fragment_collection_avail );
+				//lprintf( "Completed packet; still not final fragment though.... %d", websock->fragment_collection_avail );
 				websock->input_msg_state = 0;
 				if( websock->on_fragment_done )
 					websock->on_fragment_done( pc, websock->psv_open, websock->input_type, (int)websock->fragment_collection_length );
@@ -53045,7 +53194,7 @@ char *json_escape_string( const char *string ) {
 #define _zero(result,from)  ((*from)++,0)
 #define _3char(result,from) ( ((*from) += 3),( ( ( result & 0xF ) << 12 ) | ( ( result & 0x3F00 ) >> 2 ) | ( ( result & 0x3f0000 ) >> 16 )) )
 #define _4char(result,from)  ( ((*from) += 4), ( ( ( result & 0x7 ) << 18 )						     | ( ( result & 0x3F00 ) << 4 )						   | ( ( result & 0x3f0000 ) >> 10 )						    | ( ( result & 0x3f000000 ) >> 24 ) ) )
-#define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),		     ( ( !(result & 0xFF) )              ?0	                                                           :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
+#define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),		     ( ( !(result & 0xFF) )              ?_zero(result,from)	                                                    :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
 #define GetUtfChar(x) __GetUtfChar(c,x)
 static int gatherString( CTEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TEXTSTR *pmOut, size_t *line, size_t *col, TEXTRUNE start_c, struct json_parse_state *state ) {
 	char *mOut = (*pmOut);
@@ -54945,7 +55094,7 @@ char *json6_escape_string( const char *string ) {
 #define _zero(result,from)  ((*from)++,0)
 #define _3char(result,from) ( ((*from) += 3),( ( ( result & 0xF ) << 12 ) | ( ( result & 0x3F00 ) >> 2 ) | ( ( result & 0x3f0000 ) >> 16 )) )
 #define _4char(result,from)  ( ((*from) += 4), ( ( ( result & 0x7 ) << 18 )						     | ( ( result & 0x3F00 ) << 4 )						   | ( ( result & 0x3f0000 ) >> 10 )						    | ( ( result & 0x3f000000 ) >> 24 ) ) )
-#define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),		     ( ( !(result & 0xFF) )              ?0	                                                           :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
+#define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),		     ( ( !(result & 0xFF) )              ?_zero(result,from)	                                                    :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
 #define GetUtfChar(x) __GetUtfChar(c,x)
 static int gatherString6(struct json_parse_state *state, CTEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TEXTSTR *pmOut, TEXTRUNE start_c
 		//, int literalString
@@ -54959,11 +55108,12 @@ static int gatherString6(struct json_parse_state *state, CTEXTSTR msg, CTEXTSTR 
 	TEXTRUNE c;
 	//escape = 0;
 	//cr_escaped = FALSE;
-	while( ( n = (*msg_input) - msg ), (( n < msglen ) && (c = GetUtfChar( msg_input ) )) && ( status >= 0 ) )
+	while( ( ( n = (*msg_input) - msg ), (c = GetUtfChar( msg_input ) ), ( n < msglen ) ) && ( status >= 0 ) )
 	{
 		(state->col)++;
 		if( c == start_c ) {
-			if( state->escape ) { ( *mOut++ ) = c; state->escape = FALSE; } else if( c == start_c ) {
+			if( state->escape ) { ( *mOut++ ) = c; state->escape = FALSE; }
+			else if( c == start_c ) {
 				status = 1;
 				break;
  // other else is not valid close quote; just store as content.
@@ -58029,7 +58179,61 @@ SACK_NETWORK_NAMESPACE_END
 //#include <sys/timeb.h>
 //*******************8
 #include <net/if_arp.h>
+#ifndef __ANDROID__
 #include <ifaddrs.h>
+#else
+/* from https://github.com/morristech/android-ifaddrs/blob/master/ifaddrs.h  2017/25/12 */
+/*
+ * Copyright (c) 1995, 1999
+ *	Berkeley Software Design, Inc.  All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ *
+ * THIS SOFTWARE IS PROVIDED BY Berkeley Software Design, Inc. ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL Berkeley Software Design, Inc. BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ *
+ *	BSDI ifaddrs.h,v 2.5 2000/02/23 14:51:59 dab Exp
+ */
+#ifndef	_IFADDRS_H_
+#define	_IFADDRS_H_
+struct ifaddrs {
+	struct ifaddrs  *ifa_next;
+	char		*ifa_name;
+	unsigned int	 ifa_flags;
+	struct sockaddr	*ifa_addr;
+	struct sockaddr	*ifa_netmask;
+	struct sockaddr	*ifa_dstaddr;
+	void		*ifa_data;
+};
+/*
+ * This may have been defined in <net/if.h>.  Note that if <net/if.h> is
+ * to be included it must be included before this header file.
+ */
+#ifndef	ifa_broadaddr
+#define	ifa_broadaddr	ifa_dstaddr
+#endif
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+extern int getifaddrs(struct ifaddrs **ifap);
+extern void freeifaddrs(struct ifaddrs *ifa);
+__END_DECLS
+#endif
+#define EPOLLRDHUP EPOLLHUP
+#define EPOLL_CLOEXEC 0
+#endif
 #ifdef __MAC__
 #include <sys/event.h>
 #else
@@ -59429,7 +59633,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 	{
 #  ifdef __MAC__
 #    ifdef __64__
-		kevent64_s ev;
+		struct kevent64_s ev;
 		if( pc->dwFlags & CF_LISTEN ) {
 			EV_SET64( &ev, pc->Socket, EVFILT_READ, EV_DELETE, 0, 0, (uint64_t)pc, NULL, NULL );
 			kevent64( thread->kqueue, &ev, 1, 0, 0, 0, 0 );
@@ -59444,7 +59648,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 			kevent64( thread->kqueue, &ev, 1, 0, 0, 0, 0 );
 		}
 #    else
-		kevent ev;
+		struct kevent ev;
 		if( pc->dwFlags & CF_LISTEN ) {
 			EV_SET( &ev, pc->Socket, EVFILT_READ, EV_DELETE, 0, 0, (uint64_t)pc );
 			kevent( thread->kqueue, &ev, 1, 0, 0, 0 );
@@ -59571,7 +59775,7 @@ void AddThreadEvent( PCLIENT pc, int broadcast )
 	{
 #  ifdef __MAC__
 #    ifdef __64__
-		kevent64_s ev;
+		struct kevent64_s ev;
 		if( pc->dwFlags & CF_LISTEN ) {
 			EV_SET64( &ev, broadcast?pc->SocketBroadcast:pc->Socket, EVFILT_READ, EV_ADD, 0, 0, (uint64_t)pc, NULL, NULL );
 			kevent64( peer->kqueue, &ev, 1, 0, 0, 0, 0 );
@@ -59583,7 +59787,7 @@ void AddThreadEvent( PCLIENT pc, int broadcast )
 			kevent64( peer->kqueue, &ev, 1, 0, 0, 0, 0 );
 		}
 #    else
-		kevent ev;
+		struct kevent ev;
 		if( pc->dwFlags & CF_LISTEN ) {
 			EV_SET( &ev, broadcast?pc->SocketBroadcast:pc->Socket, EVFILT_READ, EV_ADD, 0, 0, (uintptr_t)pc );
 			kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
@@ -59632,7 +59836,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 	{
 #  ifdef __MAC__
 #    ifdef __64__
-		kevent64_s events[10];
+		struct kevent64_s events[10];
 		cnt = kevent64( thread->kqueue, NULL, 0, events, 10, 0, NULL );
 #    else
 		kevent events[10];
@@ -59932,18 +60136,23 @@ uintptr_t CPROC NetworkThreadProc( PTHREAD thread )
 #ifdef __MAC__
 	this_thread.kqueue = kqueue();
 #else
+#ifdef __ANDROID__
+ // close on exec (no inherit)
+	this_thread.epoll_fd = epoll_create( 128 );
+#else
  // close on exec (no inherit)
 	this_thread.epoll_fd = epoll_create1( EPOLL_CLOEXEC );
+#endif
 #endif
 	{
 #  ifdef __MAC__
 #    ifdef __64__
-		kevent64_s ev;
+		struct kevent64_s ev;
 		this_thread.kevents = CreateDataList( sizeof( ev ) );
 		EV_SET64( &ev, GetThreadSleeper( thread ), EVFILT_READ, EV_ADD, 0, 0, (uint64_t)1, NULL, NULL );
 		kevent64( this_thread.kqueue, &ev, 1, 0, 0, 0, 0 );
 #    else
-		kevent ev;
+		struct kevent ev;
 		this_thread.kevents = CreateDataList( sizeof( ev ) );
 		EV_SET( &ev, GetThreadSleeper( thread ), EVFILT_READ, EV_ADD, 0, 0, (uintptr_t)1 );
 		kevent( this_thread.kqueue, &ev, 1, 0, 0, 0 );
@@ -60196,7 +60405,7 @@ NETWORK_PROC( LOGICAL, NetworkWait )(HWND hWndNotify,uint32_t wClients,int wUser
 	// please be mindful of the following data declared immediate...
 	if( GetLinkCount( globalNetworkData.pThreads ) )
 	{
-		xlprintf(200)( WIDE("Threads already active...") );
+		//xlprintf(200)( WIDE("Threads already active...") );
 		// might do something... might not...
  // network thread active, do not realloc
 		return TRUE;
@@ -61611,6 +61820,7 @@ return 0;
 }
 */
 //#define LOG_SOCKET_CREATION
+//#define DEBUG_SOCK_IO
 #define LIBRARY_DEF
 #ifndef UNDER_CE
 #endif
@@ -62388,11 +62598,11 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
   // if any room is availiable.
 		while( lpClient->RecvPending.dwAvail )
 		{
-//#ifdef VERBOSE_DEBUG
+#ifdef DEBUG_SOCK_IO
 			//nCount++;
 			_lprintf( DBG_RELAY )( WIDE("FinishPendingRead %d %d" )
 				, lpClient->RecvPending.dwUsed, lpClient->RecvPending.dwAvail );
-//#endif
+#endif
 			nRecv = recv(lpClient->Socket,
 							 (char*)lpClient->RecvPending.buffer.p +
 							 lpClient->RecvPending.dwUsed,
@@ -62400,7 +62610,9 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 			if (nRecv == SOCKET_ERROR)
 			{
 				dwError = WSAGetLastError();
+#ifdef DEBUG_SOCK_IO
 				lprintf( "Received error (-1) %d", nRecv );
+#endif
 				switch( dwError)
 				{
  // no data avail yet...
@@ -62438,7 +62650,9 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 			else if (!nRecv)
    // otherwise WSAEWOULDBLOCK would be generated.
 			{
+#ifdef DEBUG_SOCK_IO
 				lprintf( "Received (0) %d", nRecv );
+#endif
 				//_lprintf( DBG_RELAY )( WIDE("Closing closed socket... Hope there's also an event... "));
 				lpClient->dwFlags |= CF_TOCLOSE;
  // while dwAvail... try read...
@@ -62447,7 +62661,9 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 			}
 			else
 			{
+#ifdef DEBUG_SOCK_IO
 				lprintf( "Received %d", nRecv );
+#endif
 				if( globalNetworkData.flags.bShortLogReceivedData )
 				{
 					LogBinary( (uint8_t*)lpClient->RecvPending.buffer.p
@@ -62746,23 +62962,19 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
 							 pc->lpFirstPending->dwUsed,
 							 (int)pc->lpFirstPending->dwAvail );
 			}
-			lprintf( "Try to send... %d  %d", pc->lpFirstPending->dwUsed, pc->lpFirstPending->dwAvail );
+#ifdef DEBUG_SOCK_IO
+			_lprintf(DBG_RELAY)( "Try to send... %d  %d", pc->lpFirstPending->dwUsed, pc->lpFirstPending->dwAvail );
+#endif
 			nSent = send(pc->Socket,
 							 (char*)pc->lpFirstPending->buffer.c +
 							 pc->lpFirstPending->dwUsed,
 							 (int)pc->lpFirstPending->dwAvail,
 							 0);
-			lprintf( "sent... %d", nSent );
-			if( nSent < (int)pc->lpFirstPending->dwAvail ) {
-				//pc->lpFirstPending->dwUsed += nSent;
-				//pc->lpFirstPending->dwAvail -= nSent;
-				pc->dwFlags |= CF_WRITEPENDING;
-				//lprintf( "THIS IS ANOTHER PENDING CONDITION THAT WASN'T ACCOUNTED %d of %d", nSent, pc->lpFirstPending->dwAvail  );
-			}
-			else if (nSent == SOCKET_ERROR)
-			{
+			if (nSent == SOCKET_ERROR) {
+				uint32_t dwError;
+				dwError = WSAGetLastError();
   // this is alright.
-				if( WSAGetLastError() == WSAEWOULDBLOCK )
+				if( dwError == WSAEWOULDBLOCK )
 				{
 #ifdef VERBOSE_DEBUG
 					lprintf( WIDE("Pending write...") );
@@ -62781,16 +62993,16 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
 				}
 				{
 					_lprintf(DBG_RELAY)(WIDE(" Network Send Error: %5d(buffer:%p ofs: %") _size_f WIDE("  Len: %") _size_f WIDE(")"),
-											  WSAGetLastError(),
+											  dwError,
 											  pc->lpFirstPending->buffer.c,
 											  pc->lpFirstPending->dwUsed,
 											  pc->lpFirstPending->dwAvail );
  // ENOTCONN
-					if( WSAGetLastError() == 10057
+					if( dwError == 10057
  // EFAULT
-						||WSAGetLastError() == 10014
+						||dwError == 10014
 #ifdef __LINUX__
-						|| WSAGetLastError() == EPIPE
+						|| dwError == EPIPE
 #endif
 					  )
 					{
@@ -62799,20 +63011,26 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
  // get out of here!
 					return FALSE;
 				}
-			}
-  // other side closed.
-			else if (!nSent)
-			{
+ // other side closed.
+			} else if (!nSent) {
 				lprintf( WIDE("sent zero bytes - assume it was closed - and HOPE there's an event...") );
 				InternalRemoveClient( pc );
 				// if this happened - don't return TRUE result which would
 				// result in queuing a pending buffer...
   // no sence processing the rest of this.
 				return FALSE;
+			} else if( nSent < (int)pc->lpFirstPending->dwAvail ) {
+				//pc->lpFirstPending->dwUsed += nSent;
+				//pc->lpFirstPending->dwAvail -= nSent;
+				pc->dwFlags |= CF_WRITEPENDING;
+				//lprintf( "THIS IS ANOTHER PENDING CONDITION THAT WASN'T ACCOUNTED %d of %d", nSent, pc->lpFirstPending->dwAvail  );
 			}
 		}
 		else
 			nSent = 0;
+#ifdef DEBUG_SOCK_IO
+		lprintf( "sent... %d", nSent );
+#endif
   // sent some data - update pending buffer status.
 		{
 			if( pc->lpFirstPending )
@@ -62997,14 +63215,16 @@ LOGICAL TCPDrainRead( PCLIENT pClient )
 //SOCKET_ERROR )
 		if( nDrainRead == 0 )
 		{
-			if( WSAGetLastError() == WSAEWOULDBLOCK )
+			uint32_t dwError;
+			dwError = WSAGetLastError();
+			if( dwError == WSAEWOULDBLOCK )
 			{
 				if( !pClient->bDrainExact )
 					pClient->nDrainLength = 0;
 				break;
 			}
 			lprintf(WIDE(" Network Error during drain: %d (from: %p  to: %p  has: %") _size_f WIDE("  toget: %") _size_f WIDE(")")
-			       , WSAGetLastError()
+			       , dwError
 			       , pClient->Socket
 			       , pClient->RecvPending.buffer.p
 			       , pClient->RecvPending.dwUsed
@@ -63912,8 +64132,12 @@ static int handshake( PCLIENT pc ) {
 #ifdef DEBUG_SSL_IO
 						lprintf( "send %d %d for handshake", pending, read );
 #endif
-						if (read > 0)
+						if( read > 0 ) {
+#ifdef DEBUG_SSL_IO
+							lprintf( "handshake send %d", read );
+#endif
 							SendTCP( pc, ses->obuffer, read );
+						}
 					}
 				}
 			}
@@ -64028,7 +64252,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 				if( pending > 0 ) {
 					int read = BIO_read( pc->ssl_session->wbio, pc->ssl_session->obuffer, (int)pc->ssl_session->obuflen );
 #ifdef DEBUG_SSL_IO
-					lprintf( "Send pending %p %d", pc->ssl_session->obuffer, read );
+					lprintf( "Send pending control %p %d", pc->ssl_session->obuffer, read );
 #endif
 					SendTCP( pc, pc->ssl_session->obuffer, read );
 				}
@@ -84433,6 +84657,7 @@ SQL_NAMESPACE
 #undef SQLCommandf
 #undef SQLQueryf
 #undef SQLRecordQueryf
+#undef SQLRecordQueryf_v2
 #if defined( _DEBUG ) || defined( _DEBUG_INFO )
 #define WRAP(a,b,c)  CTEXTSTR _FILE_##b = _WIDE(__FILE__); int _LINE_##b; __f_##b __##b(DBG_VOIDPASS)  { _FILE_##b = pFile; _LINE_##b = nLine; return b; }
 #define DBG_ARGS(n)  , _FILE_##n, _LINE_##n
@@ -84446,6 +84671,7 @@ WRAP( int, DoSQLRecordQueryf, ( int *nResults, CTEXTSTR **result, CTEXTSTR **fie
 WRAP( int, SQLCommandf, ( PODBC odbc, CTEXTSTR fmt, ... ) )
 WRAP( int, SQLQueryf, ( PODBC odbc, CTEXTSTR *result, CTEXTSTR fmt, ... ) )
 WRAP( int, SQLRecordQueryf, ( PODBC odbc, int *nResults, CTEXTSTR **result, CTEXTSTR **fields, CTEXTSTR fmt, ... ) )
+WRAP( int, SQLRecordQueryf_v2, ( PODBC odbc, int *nResults, CTEXTSTR **result, CTEXTSTR **fields, size_t **fieldLengths, CTEXTSTR fmt, ... ) )
 int DoSQLCommandf( CTEXTSTR fmt, ... )
 {
 	int result;
@@ -84537,6 +84763,20 @@ int SQLRecordQueryf( PODBC odbc, int *nResults, CTEXTSTR **result, CTEXTSTR **fi
 	cmd = VarTextGet( pvt );
 	VarTextDestroy( &pvt );
 	result_code = SQLRecordQueryEx( odbc, GetText( cmd ), nResults, result,fields DBG_ARGS(SQLRecordQueryf) );
+	LineRelease( cmd );
+	return result_code;
+}
+int SQLRecordQueryf_v2( PODBC odbc, int *nResults, CTEXTSTR **result, size_t **resultLengths, CTEXTSTR **fields, CTEXTSTR fmt, ... )
+{
+	int result_code;
+	PTEXT cmd;
+	PVARTEXT pvt = VarTextCreate();
+	va_list args;
+	va_start( args, fmt );
+	vvtprintf( pvt, fmt, args );
+	cmd = VarTextGet( pvt );
+	VarTextDestroy( &pvt );
+	result_code = SQLRecordQueryExx( odbc, GetText( cmd ), GetTextSize( cmd ), nResults, result, resultLengths,fields  DBG_ARGS(SQLRecordQueryf_v2) );
 	LineRelease( cmd );
 	return result_code;
 }
@@ -84755,7 +84995,7 @@ CTEXTSTR  GetLastInsertKeyEx( CTEXTSTR table, CTEXTSTR col DBG_PASS )
 //---------------------------------------------------------------------------
 #undef EscapeBinary
 #undef EscapeString
-TEXTSTR EscapeSQLBinaryExx( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, LOGICAL bQuote DBG_PASS )
+TEXTSTR EscapeSQLBinaryExx( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, uintptr_t *resultLen, LOGICAL bQuote DBG_PASS )
 {
 	int type_mysql = 1;
 #if MYSQL_ODBC_CONNECTION_IS_BROKEN
@@ -84856,45 +85096,46 @@ TEXTSTR EscapeSQLBinaryExx( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, LOGICA
 		n = 0;
 		result = tmpnamebuf = (TEXTSTR)AllocateEx( ( sizeof( TEXTCHAR ) * ( targetlen + bloblen + 3 ) ) DBG_RELAY );
 		if( bQuote )
-			(*tmpnamebuf++) = '\'';
-		while( n < bloblen )
-		{
+			( *tmpnamebuf++ ) = '\'';
+		while( n < bloblen ) {
 			if( blob[n] == '\'' )
-				(*tmpnamebuf++) = '\'';
-			(*tmpnamebuf++) = blob[n];
+				( *tmpnamebuf++ ) = '\'';
+			( *tmpnamebuf++ ) = blob[n];
 			n++;
 		}
 		if( bQuote )
-			(*tmpnamebuf++) = '\'';
+			( *tmpnamebuf++ ) = '\'';
  // best terminate this thing.
-		(*tmpnamebuf) = 0;
+		( *tmpnamebuf ) = 0;
 	}
+	if( resultLen )
+		( *resultLen ) = tmpnamebuf - result;
 	return result;
 }
 TEXTSTR EscapeSQLBinaryEx ( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen DBG_PASS )
 {
-	return EscapeSQLBinaryExx( odbc, blob, bloblen, FALSE DBG_RELAY );
+	return EscapeSQLBinaryExx( odbc, blob, bloblen, NULL, FALSE DBG_RELAY );
 }
 TEXTSTR EscapeBinaryEx ( CTEXTSTR blob, uintptr_t bloblen DBG_PASS )
 {
-	return EscapeSQLBinaryExx( NULL, blob, bloblen, FALSE DBG_RELAY );
+	return EscapeSQLBinaryExx( NULL, blob, bloblen, NULL, FALSE DBG_RELAY );
 }
 TEXTCHAR * EscapeBinary ( CTEXTSTR blob, uintptr_t bloblen )
 {
-	return EscapeSQLBinaryExx( NULL, blob, bloblen, FALSE DBG_SRC );
+	return EscapeSQLBinaryExx( NULL, blob, bloblen, NULL, FALSE DBG_SRC );
 }
 //---------------------------------------------------------------------------
 TEXTCHAR * EscapeSQLStringEx ( PODBC odbc, CTEXTSTR name DBG_PASS )
 {
-	return EscapeSQLBinaryExx( odbc, name, strlen( name ), FALSE DBG_RELAY );
+	return EscapeSQLBinaryExx( odbc, name, strlen( name )+1, NULL, FALSE DBG_RELAY );
 }
 TEXTCHAR * EscapeStringEx ( CTEXTSTR name DBG_PASS )
 {
-	return EscapeSQLBinaryExx( NULL, name, (uint32_t)strlen( name ), FALSE DBG_RELAY );
+	return EscapeSQLBinaryExx( NULL, name, (uint32_t)strlen( name ) + 1, NULL, FALSE DBG_RELAY );
 }
 TEXTCHAR * EscapeString ( CTEXTSTR name )
 {
-	return EscapeSQLBinaryExx( NULL, name, strlen( name ), FALSE DBG_SRC );
+	return EscapeSQLBinaryExx( NULL, name, strlen( name ) + 1, NULL, FALSE DBG_SRC );
 }
 uint8_t hexbyte( TEXTCHAR *string )
 {
@@ -87710,16 +87951,15 @@ typedef struct sack_option_tree_family_node OPTION_TREE_NODE;
 struct sack_option_tree_family_node {
 	CTEXTSTR name;
 	CTEXTSTR guid;
-	CTEXTSTR name_guid;
-	CTEXTSTR value_guid;
 	CTEXTSTR value;
 	PFAMILYNODE node;
 	struct {
 		BIT_FIELD bExpanded : 1;
+		BIT_FIELD bHasValue : 1;
 	} flags;
  // connection this was written on for the commit event.
 	PODBC uncommited_write;
-	uint32_t expansion_tick;
+	//uint32_t expansion_tick;
 };
 #define MAXOPTION_TREE_NODESPERSET 256
 DeclareSet( OPTION_TREE_NODE );
@@ -87944,8 +88184,7 @@ POPTION_TREE GetOptionTreeExxx( PODBC odbc, PFAMILYTREE existing_tree DBG_PASS )
 		tree->root = GetFromSet( OPTION_TREE_NODE, &tree->nodes );
 		//MemSet( tree->root, 0, sizeof( struct sack_option_tree_family_node ) );
 		tree->root->guid = GuidZero();
-		tree->root->name_guid = NULL;
-		tree->root->value_guid = NULL;
+		tree->root->flags.bHasValue = 0;
 		tree->root->value = NULL;
 		// if it's a new optiontree, pass it to create...
 		if( existing_tree )
@@ -88063,6 +88302,7 @@ static void CPROC OptionsCommited( uintptr_t psv, PODBC odbc )
 		if( optval->uncommited_write == odbc )
 		{
 			Deallocate( CTEXTSTR, optval->value );
+			optval->value = NULL;
 			optval->uncommited_write = NULL;
 		}
 	}
@@ -89352,8 +89592,7 @@ POPTION_TREE_NODE New4GetOptionIndexExxx( PODBC odbc, POPTION_TREE tree, POPTION
 						//MemSet( new_node, 0, sizeof( struct sack_option_tree_family_node ) );
 						new_node->guid = ID;
  // no value (yet?)
-						new_node->value_guid = NULL;
-						new_node->name_guid = IDName;
+						new_node->flags.bHasValue = 0;
 						new_node->name = SaveText( namebuf );
 						new_node->value = NULL;
 						new_node->node = FamilyTreeAddChild( &tree->option_tree, parent?parent->node:NULL, new_node, (uintptr_t)new_node->name );
@@ -89380,8 +89619,7 @@ POPTION_TREE_NODE New4GetOptionIndexExxx( PODBC odbc, POPTION_TREE tree, POPTION
 				lprintf( WIDE("found the node which has the name specified...") );
 #endif
 				new_node->guid = SaveText( result[0] );
-				new_node->value_guid = NULL;
-				new_node->name_guid = IDName;
+				new_node->flags.bHasValue = 0;
 				new_node->name = SaveText( namebuf );
 				new_node->value = NULL;
 				new_node->node = FamilyTreeAddChild( &tree->option_tree, parent?parent->node:NULL, new_node, (uintptr_t)new_node->name );
@@ -89411,8 +89649,10 @@ static int nBuffer;
 size_t New4GetOptionStringValue( PODBC odbc, POPTION_TREE_NODE optval, TEXTCHAR **buffer, size_t *len DBG_PASS )
 {
 	TEXTCHAR query[256];
-	CTEXTSTR result = NULL;
+	CTEXTSTR *result = NULL;
 	size_t result_len = 0;
+	size_t query_len;
+	size_t *result_lengths;
 	struct resultBuffer *buf;
 	PVARTEXT pvtResult = NULL;
 	buf = &plqBuffers[nBuffer++];
@@ -89450,32 +89690,35 @@ size_t New4GetOptionStringValue( PODBC odbc, POPTION_TREE_NODE optval, TEXTCHAR 
 	}
 #endif
 	PushSQLQueryEx( odbc );
-	tnprintf( query, sizeof( query ), WIDE( "select string from " )OPTION4_VALUES WIDE( " where option_id='%s' order by segment" ), optval->guid );
+	query_len = tnprintf( query, sizeof( query ), WIDE( "select string from " )OPTION4_VALUES WIDE( " where option_id='%s' order by segment" ), optval->guid );
 	// have to push here, the result of the prior is kept outstanding
 	// if this was not pushed, the prior result would evaporate.
 	(*buffer) = NULL;
 	//lprintf( WIDE("do query for value string...") );
 	result_len = (size_t)-1;
+	if( optval->value )
+		Release( (POINTER)optval->value );
 	optval->value = NULL;
-	optval->value_guid = optval->guid;
-	for( SQLQuery( odbc, query, &result ); result; FetchSQLResult( odbc, &result ) )
+	optval->flags.bHasValue = 1;
+	for( SQLRecordQueryLen( odbc, query, query_len, NULL, &result, &result_lengths, NULL ); result; FetchSQLRecord( odbc, &result ) )
 	{
 		if( !pvtResult )
 			pvtResult = VarTextCreate();
-		vtprintf( pvtResult, WIDE("%s"), result );
-		//lprintf( WIDE(" query succeeded....") );
+		VarTextAddData( pvtResult, result[0], result_lengths[0] );
 	}
 	if( pvtResult )
 	{
-		PTEXT pResult = VarTextGet( pvtResult );
-		result_len = GetTextSize( pResult ) + 1;
-		if( result_len > buf->buflen )  expandResultBuffer( buf, result_len * 2 );
-		(*buffer) = buf->buffer;
-		(*len) = result_len-1;
-		StrCpyEx( (*buffer), GetText( pResult ), result_len );
-		(*buffer)[result_len-1] = 0;
+		PTEXT pResult = VarTextPeek( pvtResult );
+		if( pResult ) {
+			result_len = GetTextSize( pResult ) + 1;
+			if( result_len > buf->buflen )  expandResultBuffer( buf, result_len );
+			( *buffer ) = buf->buffer;
+			( *len ) = result_len - 1;
+			memcpy( ( *buffer ), GetText( pResult ), result_len );
+			( *buffer )[result_len - 1] = 0;
+			optval->value = DupCStrLen( *buffer, result_len - 1 );
+		}
 		//optval->value = StrDup( GetText( pResult ) );
-		LineRelease( pResult );
 		VarTextDestroy( &pvtResult );
 	}
 	PopODBCEx( odbc );
@@ -89516,29 +89759,36 @@ LOGICAL New4CreateValue( POPTION_TREE tree, POPTION_TREE_NODE value, CTEXTSTR pV
 	CTEXTSTR result=NULL;
 	TEXTSTR newval = EscapeSQLBinaryOpt( tree->odbc_writer, pValue, StrLen( pValue ), TRUE );
 	LOGICAL retval = TRUE;
+	size_t tmpOfs;
+	if( value->value )
+		Release( (POINTER)value->value );
+	value->value = NULL;
 	if( pValue == NULL )
 	{
 		tnprintf( insert, sizeof( insert ), WIDE( "delete from " )OPTION4_VALUES WIDE( " where `option_id`='%s'" )
 				  , value->guid
 				  );
-		value->value = NULL;
 	}
 	else
 	{
 		size_t len = StrLen( pValue );
 		size_t offset = 0;
 		int segment = 0;
+		size_t valLen;
 		while( len > 95)
 		{
-			newval = EscapeSQLBinaryOpt( tree->odbc_writer, pValue + offset, 95, TRUE );
-			tnprintf( insert, sizeof( insert ), WIDE( "replace into " )OPTION4_VALUES WIDE( " (`option_id`,`string`,`segment` ) values ('%s',%s,%d)" )
-					  , value->guid
-					  , newval
-					  , segment
-					  );
-			if( SQLCommand( tree->odbc_writer, insert ) )
+			newval = EscapeSQLBinaryExx( tree->odbc_writer, pValue + offset, 95, &valLen, TRUE DBG_SRC );
+			tmpOfs = tnprintf( insert, sizeof( insert ), WIDE( "replace into " )OPTION4_VALUES WIDE( " (`option_id`,`string`,`segment` ) values ('%s'," )
+				, value->guid
+			);
+			memcpy( insert + tmpOfs, newval, valLen );
+			tmpOfs += valLen;
+			tmpOfs += tnprintf( insert + tmpOfs, sizeof( insert ), WIDE( ", %d)" )
+				, segment
+			);
+			if( SQLCommandExx( tree->odbc_writer, insert, tmpOfs DBG_SRC ) )
 			{
-				value->value_guid = value->guid;
+				value->flags.bHasValue = 1;
 			}
 			else
 			{
@@ -89550,13 +89800,16 @@ LOGICAL New4CreateValue( POPTION_TREE tree, POPTION_TREE_NODE value, CTEXTSTR pV
 			len -= 95;
 			segment++;
 		}
-		newval = EscapeSQLBinaryOpt( tree->odbc_writer, pValue + offset, len, TRUE );
-		tnprintf( insert, sizeof( insert ), WIDE( "replace into " )OPTION4_VALUES WIDE( " (`option_id`,`string`,`segment` ) values ('%s',%s,%d)" )
+		newval = EscapeSQLBinaryExx( tree->odbc_writer, pValue + offset, len, &valLen, TRUE DBG_SRC );
+		tmpOfs = tnprintf( insert, sizeof( insert ), WIDE( "replace into " )OPTION4_VALUES WIDE( " (`option_id`,`string`,`segment` ) values ('%s',")
 				  , value->guid
-				  , newval
-				  , segment
 				  );
-		if( SQLCommand( tree->odbc_writer, insert ) )
+		memcpy( insert + tmpOfs, newval, valLen );
+		tmpOfs += valLen;
+		tmpOfs += tnprintf( insert + tmpOfs, sizeof( insert ), WIDE( ", %d)" )
+			, segment
+		);
+		if( SQLCommandExx( tree->odbc_writer, insert, tmpOfs DBG_SRC ) )
 		{
 		}
 		tnprintf( insert, sizeof( insert ), WIDE( "delete from " )OPTION4_VALUES WIDE( " where `option_id`='%s' and segment > %d" )
@@ -89570,7 +89823,7 @@ LOGICAL New4CreateValue( POPTION_TREE tree, POPTION_TREE_NODE value, CTEXTSTR pV
 	AddLink( &tree->uncommited, value );
 	if( SQLCommand( tree->odbc_writer, insert ) )
 	{
-		value->value_guid = value->guid;
+		value->flags.bHasValue = 1;
 	}
 	else
 	{
@@ -89692,7 +89945,7 @@ static LOGICAL CPROC New4CheckOption( uintptr_t psvForeach, uintptr_t psvNode )
 	POPTION_TREE_NODE option_node = (POPTION_TREE_NODE)psvNode;
 	struct new4_enum_params *params = (struct new4_enum_params *)psvForeach;
 	return params->Process( params->psvEnum, option_node->name, option_node
-								 , ((option_node->value_guid)?1:0) );
+								 , ((option_node->flags.bHasValue)?1:0) );
 }
 void New4EnumOptions( PODBC odbc
 												  , POPTION_TREE_NODE parent
@@ -89724,10 +89977,10 @@ void New4EnumOptions( PODBC odbc
 		params.psvEnum = psvUser;
 		FamilyTreeForEachChild( node->option_tree, parent->node, New4CheckOption, (uintptr_t)&params );
 	}
-	if( !parent->flags.bExpanded || ( ( timeGetTime() - 5000 ) > parent->expansion_tick ) )
+	//if( !parent->flags.bExpanded || ( ( timeGetTime() - 5000 ) > parent->expansion_tick ) )
 	{
 		parent->flags.bExpanded = 1;
-		parent->expansion_tick = timeGetTime();
+		//parent->expansion_tick = timeGetTime();
 		// any existing query needs to be saved...
  // any subqueries will of course clean themselves up.
 		PushSQLQueryEx( odbc );
@@ -89753,15 +90006,14 @@ void New4EnumOptions( PODBC odbc
 				tmp_node = New( OPTION_TREE_NODE );
 				MemSet( tmp_node, 0, sizeof( struct sack_option_tree_family_node ) );
 				tmp_node->guid = SaveText( results[0] );
-				tmp_node->name_guid = SaveText( results[2] );
-				tmp_node->value_guid = NULL;
+				tmp_node->flags.bHasValue = 0;
 				tmp_node->name = SaveText( results[1] );
 				tmp_node->node = FamilyTreeAddChild( &node->option_tree, parent->node, tmp_node, (uintptr_t)tmp_node->name );
 				// psv is a pointer to args in some cases...
 				//lprintf( WIDE( "Enum %s %ld" ), optname, node );
 				//ReadFromNameTable( name, WIDE(""OPTION_NAME""), WIDE("name_id"), &result);
 				if( !Process( psvUser, tmp_node->name, tmp_node
-								, ((tmp_node->value_guid)?1:0)
+								, ((tmp_node->flags.bHasValue )?1:0)
 								) )
 				{
 					break;
@@ -89801,8 +90053,7 @@ void New4DuplicateOption( PODBC odbc, POPTION_TREE_NODE iRoot, CTEXTSTR pNewName
 		POPTION_TREE_NODE tmp_node = New( OPTION_TREE_NODE );
 		struct complex_args args;
 		tmp_node->guid = StrDup( result );
-		tmp_node->name_guid = NULL;
-		tmp_node->value_guid = NULL;
+		tmp_node->flags.bHasValue = iRoot->flags.bHasValue;
 		tmp_node->value = NULL;
 		SQLEndQuery( odbc );
 		iNewName = GetOptionIndexEx( tmp_node, NULL, pNewName, NULL, TRUE, FALSE DBG_SRC );
