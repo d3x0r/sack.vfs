@@ -62,6 +62,9 @@ set( DEFINITIONS   __STATIC__
                 _CRT_SECURE_NO_WARNINGS  NEED_SHLAPI NEED_SHLOBJ JSON_PARSER_MAIN_SOURCE "SQLITE_ENABLE_LOCKING_STYLE=0"
                  )
 
+if( APPLE )
+  set( DEFINITIONS ${DEFINITIONS} __MAC__ )
+endif( APPLE )
 
 if( EXISTS ${SACK_BASE} )
 
@@ -183,7 +186,9 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
 
 if( WIN32 )
 	set( PPCTOOL c:/tools/ppc.exe )
-else( WIN32 )
+elseif( APPLE )
+	set( PPCTOOL /usr/local/bin/ppc )
+else()
 	set( PPCTOOL /usr/bin/ppc )
 endif( WIN32 )
 
@@ -246,7 +251,14 @@ if( WIN32 )
    target_link_libraries(${PROJECT_NAME} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll crypt32 cryptui )
 endif( WIN32 )
 if( UNIX )
+<<<<<<< HEAD
    target_link_libraries( ${PROJECT_NAME} uuid odbc )
+=======
+   target_link_libraries( ${PROJECT_NAME} odbc	 )
+   if( NOT APPLE )
+       target_link_libraries( ${PROJECT_NAME} uuid )
+   endif( NOT APPLE )
+>>>>>>> b5b02eb394ed2c630f88f010fa6c212d5ec27442
 endif( UNIX )
 
 

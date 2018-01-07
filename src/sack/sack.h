@@ -9802,8 +9802,7 @@ DEADSTART_PROC  void DEADSTART_CALLTYPE  DispelDeadstart ( void );
 /* Basic way to register a routine to run when the program exits
    gracefully.
    Example
-   \ \
-   <code>
+   \    <code>
    ATEXIT( MyExitRoutine )
    {
        // this will be run sometime during program shutdown
@@ -9920,7 +9919,12 @@ struct rt_init
 #else
 #  define PASS_FILENAME
 #endif
-#define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)	   __attribute__((section("deadstart_list"))) __attribute__((used))	 ={0,0,pr INIT_PADDING	     ,__LINE__,name	          PASS_FILENAME	        ,TOSTR(name)	        JUNKINIT(name)};	 void name(void) __attribute__((used));	  void name(void)
+#ifdef __MAC__
+#  define DEADSTART_SECTION "CODE,deadstart_list"
+#else
+#  define DEADSTART_SECTION "deadstart_list"
+#endif
+#define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)	   __attribute__((section(DEADSTART_SECTION))) __attribute__((used))	 ={0,0,pr INIT_PADDING	     ,__LINE__,name	          PASS_FILENAME	        ,TOSTR(name)	        JUNKINIT(name)};	 void name(void) __attribute__((used));	  void name(void)
 typedef void(*atexit_priority_proc)(void (*)(void),CTEXTSTR,int DBG_PASS);
 #define PRIORITY_ATEXIT(name,priority) static void name(void); static void pastejunk(atexit,name)(void) __attribute__((constructor));  void pastejunk(atexit,name)(void)                                                  {	                                                                        RegisterPriorityShutdownProc(name,TOSTR(name),priority,NULL DBG_SRC);                          }                                                                          void name(void)
 #define ATEXIT(name) PRIORITY_ATEXIT( name,ATEXIT_PRIORITY_DEFAULT )

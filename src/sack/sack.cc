@@ -7576,8 +7576,7 @@ DEADSTART_PROC  void DEADSTART_CALLTYPE  DispelDeadstart ( void );
 /* Basic way to register a routine to run when the program exits
    gracefully.
    Example
-   \ \
-   <code>
+   \    <code>
    ATEXIT( MyExitRoutine )
    {
        // this will be run sometime during program shutdown
@@ -7694,7 +7693,12 @@ struct rt_init
 #else
 #  define PASS_FILENAME
 #endif
-#define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)	   __attribute__((section("deadstart_list"))) __attribute__((used))	 ={0,0,pr INIT_PADDING	     ,__LINE__,name	          PASS_FILENAME	        ,TOSTR(name)	        JUNKINIT(name)};	 void name(void) __attribute__((used));	  void name(void)
+#ifdef __MAC__
+#  define DEADSTART_SECTION "CODE,deadstart_list"
+#else
+#  define DEADSTART_SECTION "deadstart_list"
+#endif
+#define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)	   __attribute__((section(DEADSTART_SECTION))) __attribute__((used))	 ={0,0,pr INIT_PADDING	     ,__LINE__,name	          PASS_FILENAME	        ,TOSTR(name)	        JUNKINIT(name)};	 void name(void) __attribute__((used));	  void name(void)
 typedef void(*atexit_priority_proc)(void (*)(void),CTEXTSTR,int DBG_PASS);
 #define PRIORITY_ATEXIT(name,priority) static void name(void); static void pastejunk(atexit,name)(void) __attribute__((constructor));  void pastejunk(atexit,name)(void)                                                  {	                                                                        RegisterPriorityShutdownProc(name,TOSTR(name),priority,NULL DBG_SRC);                          }                                                                          void name(void)
 #define ATEXIT(name) PRIORITY_ATEXIT( name,ATEXIT_PRIORITY_DEFAULT )
@@ -16828,6 +16832,32 @@ extern
 #endif
 #define l (*local_systemlib)
 int TryShellExecute( PTASK_INFO task, CTEXTSTR path, CTEXTSTR program, PTEXT cmdline );
+#ifdef __MAC__
+//sourced from https://github.com/comex/myvmmap/blob/master/myvmmap.c Jan/7/2018
+#  include <mach/mach.h>
+#  if __IPHONE_OS_VERSION_MIN_REQUIRED
+kern_return_t mach_vm_read_overwrite(vm_map_t target_task, mach_vm_address_t address, mach_vm_size_t size, mach_vm_address_t data, mach_vm_size_t *outsize);
+kern_return_t mach_vm_region(vm_map_t target_task, mach_vm_address_t *address, mach_vm_size_t *size, vm_region_flavor_t flavor, vm_region_info_t info, mach_msg_type_number_t *infoCnt, mach_port_t *object_name);
+int proc_pidpath(int pid, void * buffer, uint32_t  buffersize);
+int proc_regionfilename(int pid, uint64_t address, void * buffer, uint32_t buffersize);
+#  else
+#    include <mach/mach_vm.h>
+#    include <libproc.h>
+#  endif
+//#include <stdio.h>
+#  include <assert.h>
+#  include <mach-o/loader.h>
+#  include <mach-o/nlist.h>
+//#include <string.h>
+//#include <stdbool.h>
+//#include <stdlib.h>
+//#include <setjmp.h>
+//#include <sys/queue.h>
+//#include <sys/param.h>
+#  if !__IPHONE_OS_VERSION_MIN_REQUIRED
+#    include <Security/Security.h>
+#  endif
+#endif
 //-------------------------------------------------------------------------
 //  Function/library manipulation routines...
 //-------------------------------------------------------------------------
@@ -17000,6 +17030,109 @@ void OSALOT_PrependEnvironmentVariable(CTEXTSTR name, CTEXTSTR value)
 #endif
 }
 #endif
+#ifdef __MAC__
+static bool is_64bit;
+static mach_port_t task;
+static int pid;
+static task_dyld_info_data_t dyld_info;
+static jmp_buf recovery_buf;
+static int read_from_task(void *p, mach_vm_address_t addr, mach_vm_size_t size) {
+    mach_vm_size_t outsize;
+    kern_return_t kr = mach_vm_read_overwrite(task, addr, size, (mach_vm_address_t) p, &outsize);
+    if(kr || outsize != size) {
+#if 0
+        fprintf(stderr, "read_from_task(0x%llx, 0x%llx): ", (long long) addr, (long long) size);
+        if(kr)
+            fprintf(stderr, "kr=%d\n", (int) kr);
+        else
+            fprintf(stderr, "short read\n");
+#endif
+				return 0;
+        //_longjmp(recovery_buf, 1);
+    }
+		return 1;
+}
+static uint64_t read_64(char **pp) {
+    return *(*(uint64_t **)pp)++;
+}
+static uint32_t read_32(char **pp) {
+    return *(*(uint32_t **)pp)++;
+}
+static mach_vm_address_t read_ptr(char **pp) {
+    return is_64bit ? read_64(pp) : read_32(pp);
+}
+static void lookup_dyld_images() {
+    char all_images[12], *p = all_images;
+    if( !read_from_task(p, dyld_info.all_image_info_addr + 4, 12) )
+			return;
+    uint32_t info_array_count = read_32(&p);
+    mach_vm_address_t info_array = read_ptr(&p);
+    if(info_array_count > 10000) {
+        fprintf(stderr, "** dyld image info had malformed data.\n");
+        return;
+    }
+    size_t size = (is_64bit ? 24 : 12) * info_array_count;
+    char *image_info = NewArray( char, size);
+    p = image_info;
+    if( !read_from_task(p, info_array, size) )
+			return;
+    for(uint32_t i = 0; i < info_array_count; i++) {
+        mach_vm_address_t
+            load_address = read_ptr(&p),
+            file_path_addr = read_ptr(&p);
+ // file_mod_date
+        read_ptr(&p);
+        //if(_setjmp(recovery_buf))
+        //    continue;
+        char path[MAXPATHLEN + 1];
+        if( !read_from_task(path, file_path_addr, sizeof(path)) )
+				   continue;
+        if(strnlen(path, sizeof(path)) == sizeof(path))
+            fprintf(stderr, "** dyld image info had malformed data.\n");
+        else {
+					  AddMappedLibrary( path, dlopen( path, 0 ) );
+            //printf( "PATH:%s %p", path, load_address );
+            //printf( "  load is %p\n", dlopen( path, 0 ) );
+            //if( dlsym( load_address, "dlsym" )) printf( "** FOUND DLSYM**\n");
+          }
+    }
+    return;
+}
+void loadMacLibraries(struct local_systemlib_data *init_l) {
+    bool got_showaddr = false;
+    mach_vm_address_t showaddr;
+    pid = getpid();
+    task = mach_task_self();
+    char path[MAXPATHLEN];
+    size_t path_size;
+    if((path_size = proc_pidpath(pid, path, sizeof(path))))
+        path[path_size] = 0;
+    else
+        strcpy(path, "????");
+    //printf("%d: %s\n", pid, path);
+    {
+				TEXTCHAR *ext, *ext1;
+				ext = (TEXTSTR)StrRChr( (CTEXTSTR)path, '.' );
+				if( ext )
+						ext[0] = 0;
+				ext1 = (TEXTSTR)pathrchr( path );
+				if( ext1 )
+				{
+						ext1[0] = 0;
+						(*init_l).filename = StrDupEx( ext1 + 1 DBG_SRC );
+						(*init_l).load_path = StrDupEx( path DBG_SRC );
+				}
+				else
+				{
+						(*init_l).filename = StrDupEx( path DBG_SRC );
+						(*init_l).load_path = StrDupEx( WIDE("") DBG_SRC );
+				}
+		}
+    assert(!task_info(task, TASK_DYLD_INFO, (task_info_t) &dyld_info, (mach_msg_type_number_t[]) {TASK_DYLD_INFO_COUNT}));
+    is_64bit = dyld_info.all_image_info_addr >= (1ull << 32);
+    lookup_dyld_images();
+}
+#endif
 static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 {
 	struct local_systemlib_data *init_l = (struct local_systemlib_data *)mem;
@@ -17153,7 +17286,9 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 	{
 		/* #include unistd.h, stdio.h, string.h */
 		{
-			char buf[256], *pb;
+			char buf[256];
+#       ifndef __MAC__
+			char *pb;
 			int n;
 			n = readlink("/proc/self/exe",buf,256);
 			if( n >= 0 )
@@ -17177,8 +17312,12 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 			//lprintf( WIDE("My execution: %s"), buf);
 			(*init_l).filename = StrDupEx( pb + 1 DBG_SRC );
 			(*init_l).load_path = StrDupEx( buf DBG_SRC );
+#       endif
 			local_systemlib = init_l;
 			AddMappedLibrary( "dummy", NULL );
+#       ifdef __MAC__
+			loadMacLibraries( init_l );
+#       endif
 			local_systemlib = NULL;
 			{
 				PLIBRARY library = (*init_l).libraries;
@@ -17188,6 +17327,7 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 						break;
 					library = library->next;
 				}
+				//if( library )
 				{
 					char *dupname;
 					char *path;
@@ -17198,7 +17338,7 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 					(*init_l).library_path = dupname;
 				}
 			}
-			setenv( WIDE("MY_LOAD_PATH"), buf, TRUE );
+			setenv( WIDE("MY_LOAD_PATH"), (*init_l).load_path, TRUE );
 			//strcpy( pMyPath, buf );
 			GetCurrentPath( buf, sizeof( buf ) );
 			setenv( WIDE( "MY_WORK_PATH" ), buf, TRUE );
@@ -17911,7 +18051,10 @@ static void LoadExistingLibraries( void )
 #endif
 	}
 #endif
-#ifdef __LINUX__
+#ifdef __MAC__
+	lookup_dyld_images();
+#else
+#  ifdef __LINUX__
 	{
 		FILE *maps;
 		char buf[256];
@@ -17922,9 +18065,7 @@ static void LoadExistingLibraries( void )
 			char *split = strchr( buf, '-' );
 			if( libpath && split )
 			{
-#ifndef __MAC__
 				char *dll_name = strrchr( libpath, '/' );
-#endif
 				size_t start, end;
 				char perms[8];
 				size_t offset;
@@ -17936,7 +18077,6 @@ static void LoadExistingLibraries( void )
 				scanned = sscanf( buf, "%zx-%zx %s %zx", &start, &end, perms, &offset );
 				if( scanned == 4 && offset == 0 )
 				{
-#ifndef __MAC__
 					if( ( perms[2] == 'x' )
 						&& ( ( end - start ) > 4 ) )
 						if( ( ((unsigned char*)start)[0] == ELFMAG0 )
@@ -17947,12 +18087,12 @@ static void LoadExistingLibraries( void )
 							//lprintf( "Add library %s %p", dll_name + 1, start );
 							AddMappedLibrary( libpath, (POINTER)start );
 						}
-#endif
 				}
 			}
 		}
 		sack_fclose( maps );
 	}
+#  endif
 #endif
 }
 SYSTEM_PROC( LOGICAL, IsMappedLibrary)( CTEXTSTR libname )
@@ -21146,7 +21286,7 @@ IMAGE_NAMESPACE_END
 #else
    // print out a compiler message can't perform zero-D transformations...
 #endif
-#if defined( _D3D_DRIVER ) || defined( _D3D10_DRIVER ) || ( !defined( __cplusplus ) && defined( __ANDROID__ ) )
+#if defined( _D3D_DRIVER ) || defined( _D3D10_DRIVER )
 #  ifndef MAKE_RCOORD_SINGLE
 #    define MAKE_RCOORD_SINGLE
 #  endif
@@ -21204,7 +21344,6 @@ typedef double RCOORD;
    \ \                                  */
 	typedef double *PRCOORD;
 #else
-#if defined( __cplusplus ) || defined( MAKE_RCOORD_SINGLE )
 	/* basic type that Vectlib is based on.
 	 This specifies a 'real' (aka float) coordinate.
 	 Combinations of coordinates create vectors and points.  */
@@ -21212,7 +21351,6 @@ typedef float RCOORD;
 /* <combine sack::math::vector::float::RCOORD>
    \ \                                  */
 typedef float *PRCOORD;
-#endif
 #endif
 // these SHOULD be dimension relative, but we lack much code for that...
 typedef RCOORD MATRIX[4][4];
@@ -24943,7 +25081,9 @@ typedef struct input_point
 #define TOUCHINPUTMASKF_EXTRAINFO       0x0002
   // the cxContact and cyContact fields are valid
 #define TOUCHINPUTMASKF_CONTACTAREA     0x0004
+#ifndef __ANDROID__
 typedef HANDLE HTOUCHINPUT;
+#endif
 #define WM_TOUCH 0x0240
 #define TWF_FINETOUCH 0x00000001
 #define TWF_WANTPALM 0x00000002
@@ -26303,7 +26443,15 @@ namespace sack {
 	namespace timers {
 #endif
 // bit set on dwLocks when someone hit it and it was locked
+#ifdef LOG_DEBUG_CRITICAL_SECTIONS
 #define SECTION_LOGGED_WAIT 0x80000000
+#define AND_NOT_SECTION_LOGGED_WAIT(n) ((n)&(~SECTION_LOGGED_WAIT))
+#define AND_SECTION_LOGGED_WAIT(n) ((n)&(SECTION_LOGGED_WAIT))
+#else
+#define SECTION_LOGGED_WAIT 0
+#define AND_NOT_SECTION_LOGGED_WAIT(n) (n)
+#define AND_SECTION_LOGGED_WAIT(n) (0)
+#endif
 // If you change this structure please change the public
 // reference of this structure, and please, do hand-count
 // the bytes to set there... so not include this file
@@ -31768,7 +31916,15 @@ namespace sack {
 	namespace timers {
 #endif
 // bit set on dwLocks when someone hit it and it was locked
+#ifdef LOG_DEBUG_CRITICAL_SECTIONS
 #define SECTION_LOGGED_WAIT 0x80000000
+#define AND_NOT_SECTION_LOGGED_WAIT(n) ((n)&(~SECTION_LOGGED_WAIT))
+#define AND_SECTION_LOGGED_WAIT(n) ((n)&(SECTION_LOGGED_WAIT))
+#else
+#define SECTION_LOGGED_WAIT 0
+#define AND_NOT_SECTION_LOGGED_WAIT(n) (n)
+#define AND_SECTION_LOGGED_WAIT(n) (0)
+#endif
 // If you change this structure please change the public
 // reference of this structure, and please, do hand-count
 // the bytes to set there... so not include this file
@@ -32210,7 +32366,7 @@ uint64_t  LockedExchange64( volatile uint64_t* p, uint64_t val )
 #else
 	{
 		// swp is the instruction....
-	  // going to have to set IRQ, PIRQ on arm...
+		// going to have to set IRQ, PIRQ on arm...
 		uint64_t prior = *p;
 		*p = val;
 		return prior;
@@ -32219,7 +32375,7 @@ uint64_t  LockedExchange64( volatile uint64_t* p, uint64_t val )
 #  else
 	{
 		// swp is the instruction....
-	  // going to have to set IRQ, PIRQ on arm...
+		// going to have to set IRQ, PIRQ on arm...
 		uint64_t prior = *p;
 		*p = val;
 		return prior;
@@ -32255,9 +32411,9 @@ static void DumpSection( PCRITICALSECTION pcs )
 		}
 #endif
 #ifndef USE_NATIVE_CRITICAL_SECTION
-#  ifdef _MSC_VER
-#    pragma optimize( "st", off )
-#  endif
+//#  ifdef _MSC_VER
+//#    pragma optimize( "st", off )
+//#  endif
 		int32_t  EnterCriticalSecNoWaitEx( PCRITICALSECTION pcs, THREAD_ID *prior DBG_PASS )
 		{
 			THREAD_ID dwCurProc;
@@ -32282,7 +32438,7 @@ static void DumpSection( PCRITICALSECTION pcs )
 #else
 			dwCurProc = GetMyThreadID();
 #endif
-			if( !(pcs->dwLocks & ~(SECTION_LOGGED_WAIT)) )
+			if( !AND_NOT_SECTION_LOGGED_WAIT(pcs->dwLocks) )
 			{
 				// section is unowned...
 				if( pcs->dwThreadWaiting )
@@ -32296,8 +32452,6 @@ static void DumpSection( PCRITICALSECTION pcs )
 								ll__lprintf( DBG_RELAY )(WIDE( "waiter is not myself... this is more recent than him... claim now. %" ) _64fx WIDE( " %" ) _64fx WIDE( " %" ) _64fx, pcs->dwThreadWaiting, prior ? (*prior) : -1LL, pcs->dwThreadID);
 #endif
 								// this would stack me on top anyway so just allow the waitier to keep waiting....
-								pcs->dwLocks = 1;
-								pcs->dwThreadID = dwCurProc;
 #ifdef DEBUG_CRITICAL_SECTIONS
 #  ifdef _DEBUG
 								pcs->pFile[pcs->nPrior] = pFile;
@@ -32311,24 +32465,20 @@ static void DumpSection( PCRITICALSECTION pcs )
 								pcs->dwThreadPrior[pcs->nPrior] = dwCurProc;
 								pcs->nPrior = (pcs->nPrior + 1) % MAX_SECTION_LOG_QUEUE;
 #endif
-								pcs->dwUpdating = 0;
-								return 1;
 							}
 							else {
 #ifdef LOG_DEBUG_CRITICAL_SECTIONS
 								ll__lprintf( DBG_RELAY )(WIDE( "waiter is not myself... AND am in stack of waiter. %" ) _64fx WIDE( " %" ) _64fx WIDE( " %" ) _64fx, pcs->dwThreadWaiting, prior ? (*prior) : -1LL, pcs->dwThreadID);
 #endif
 								// prior is set, so someone has set their prior to me....
+								pcs->dwUpdating = 0;
+								return 0;
 							}
-							pcs->dwUpdating = 0;
-							return 0;
 						}
 						else {
 #ifdef LOG_DEBUG_CRITICAL_SECTIONS
 							ll__lprintf( DBG_RELAY )(WIDE( "Waiter which is quick-wait does not sleep; claiming section... %" ) _64fx WIDE( " %" ) _64fx WIDE( " %" ) _64fx, pcs->dwThreadWaiting, prior ? (*prior) : -1LL, pcs->dwThreadID);
 #endif
-							pcs->dwLocks = 1;
-							pcs->dwThreadID = dwCurProc;
 #ifdef DEBUG_CRITICAL_SECTIONS
 #  ifdef _DEBUG
 							pcs->pFile[pcs->nPrior] = pFile;
@@ -32342,8 +32492,6 @@ static void DumpSection( PCRITICALSECTION pcs )
 							pcs->dwThreadPrior[pcs->nPrior] = dwCurProc;
 							pcs->nPrior = (pcs->nPrior + 1) % MAX_SECTION_LOG_QUEUE;
 #endif
-							pcs->dwUpdating = 0;
-							return 1;
 						}
 					}
  //  waiting is me
@@ -32361,9 +32509,6 @@ static void DumpSection( PCRITICALSECTION pcs )
 						}
 						else
 							pcs->dwThreadWaiting = 0;
- // claim the section and return success
-						pcs->dwThreadID = dwCurProc;
-						pcs->dwLocks = 1;
 #ifdef DEBUG_CRITICAL_SECTIONS
 #  ifdef _DEBUG
 						pcs->pFile[pcs->nPrior] = pFile;
@@ -32377,8 +32522,6 @@ static void DumpSection( PCRITICALSECTION pcs )
 						pcs->dwThreadPrior[pcs->nPrior] = dwCurProc;
 						pcs->nPrior = (pcs->nPrior + 1) % MAX_SECTION_LOG_QUEUE;
 #endif
-						pcs->dwUpdating = 0;
-						return 1;
 					}
 				}
 				else {
@@ -32389,9 +32532,6 @@ static void DumpSection( PCRITICALSECTION pcs )
 #ifdef LOG_DEBUG_CRITICAL_SECTIONS
 					ll_lprintf( WIDE( "Claimed critical section." ) );
 #endif
- // claim the section and return success
-					pcs->dwThreadID = dwCurProc;
-					pcs->dwLocks = 1;
 #ifdef DEBUG_CRITICAL_SECTIONS
 #  ifdef _DEBUG
 					pcs->pFile[pcs->nPrior] = pFile;
@@ -32405,9 +32545,12 @@ static void DumpSection( PCRITICALSECTION pcs )
 					pcs->dwThreadPrior[pcs->nPrior] = dwCurProc;
 					pcs->nPrior = (pcs->nPrior + 1) % MAX_SECTION_LOG_QUEUE;
 #endif
-					pcs->dwUpdating = 0;
-					return 1;
 				}
+ // claim the section and return success
+				pcs->dwThreadID = dwCurProc;
+				pcs->dwLocks = 1;
+				pcs->dwUpdating = 0;
+				return 1;
 			}
 			else if( dwCurProc == pcs->dwThreadID )
 			{
@@ -32442,10 +32585,10 @@ static void DumpSection( PCRITICALSECTION pcs )
 				pcs->dwUpdating = 0;
 				return 1;
 			}
-			//if( !(pcs->dwLocks & SECTION_LOGGED_WAIT) )
+			//if( !(AND_SECTION_LOGGED_WAIT(pcs->dwLocks)) )
 			{
-				pcs->dwLocks |= SECTION_LOGGED_WAIT;
 #ifdef LOG_DEBUG_CRITICAL_SECTIONS
+				pcs->dwLocks |= SECTION_LOGGED_WAIT;
 				if( g.bLogCritical )
 					ll_lprintf( WIDE( "Waiting on critical section owned by %s(%d) %08lx %." ) _64fx, (pcs->pFile) ? (pcs->pFile) : WIDE( "Unknown" ), pcs->nLine, pcs->dwLocks, pcs->dwThreadID );
 #endif
@@ -32458,9 +32601,9 @@ static void DumpSection( PCRITICALSECTION pcs )
 					if( pcs->dwThreadWaiting != dwCurProc )
 					{
 						if( !pcs->dwThreadWaiting ) {
+							ll_lprintf( WIDE( "@@@ Someone stole the critical section that we were wiating on before we reentered. fail. %" )_64fx WIDE( " %" ) _64fx WIDE( " %" ) _64fx, pcs->dwThreadWaiting, dwCurProc, *prior );
 							DebugBreak();
 							// go back to sleep again.
-							ll_lprintf( WIDE( "@@@ Someone stole the critical section that we were wiating on before we reentered. fail. %" )_64fx WIDE( " %" ) _64fx WIDE( " %" ) _64fx, pcs->dwThreadWaiting, dwCurProc, *prior );
 							pcs->dwThreadWaiting = dwCurProc;
 						}
 						else {
@@ -32514,9 +32657,9 @@ static void DumpSection( PCRITICALSECTION pcs )
 #endif
 		//-------------------------------------------------------------------------
 #ifndef USE_NATIVE_CRITICAL_SECTION
-#  ifdef _MSC_VER
-#    pragma optimize( "st", off )
-#  endif
+//#  ifdef _MSC_VER
+//#    pragma optimize( "st", off )
+//#  endif
 		static LOGICAL LeaveCriticalSecNoWakeEx( PCRITICALSECTION pcs DBG_PASS )
 #define LeaveCriticalSecNoWake(pcs) LeaveCriticalSecNoWakeEx( pcs DBG_SRC )
 		{
@@ -32534,7 +32677,7 @@ static void DumpSection( PCRITICALSECTION pcs )
 				ll__lprintf( DBG_RELAY )(WIDE( "Locked %p for leaving..." ), pcs);
 #    endif
 #  endif
-			if( !(pcs->dwLocks & ~SECTION_LOGGED_WAIT) )
+			if( !AND_NOT_SECTION_LOGGED_WAIT(pcs->dwLocks) )
 			{
 				if( g.bLogCritical > 0 && g.bLogCritical < 2 )
 					ll_lprintf( DBG_FILELINEFMT WIDE( "Leaving a blank critical section" ) DBG_RELAY );
@@ -32550,9 +32693,9 @@ static void DumpSection( PCRITICALSECTION pcs )
 			if( pcs->dwThreadID == dwCurProc )
 			{
 				pcs->dwLocks--;
-				if( pcs->dwLocks & SECTION_LOGGED_WAIT )
+				if( AND_SECTION_LOGGED_WAIT(pcs->dwLocks) )
 				{
-					if( !(pcs->dwLocks & ~(SECTION_LOGGED_WAIT)) )
+					if( !AND_NOT_SECTION_LOGGED_WAIT(pcs->dwLocks) )
 					{
 #ifdef DEBUG_CRITICAL_SECTIONS
 #  ifdef _DEBUG
@@ -32567,7 +32710,9 @@ static void DumpSection( PCRITICALSECTION pcs )
 						pcs->dwThreadPrior[pcs->nPrior] = dwCurProc;
 						pcs->nPrior = (pcs->nPrior + 1) % MAX_SECTION_LOG_QUEUE;
 #endif
+#ifdef LOG_DEBUG_CRITICAL_SECTIONS
 						pcs->dwLocks = 0;
+#endif
 						pcs->dwThreadID = 0;
 						pcs->dwUpdating = 0;
  // allow whoever was waiting to go now...
@@ -32660,11 +32805,6 @@ LOGICAL OpenRootMemory()
 	}
 #ifdef DEBUG_GLOBAL_REGISTRATION
 	ll_lprintf( WIDE( "Opening space..." ) );
-#endif
-#ifdef UNICODE
-#define _S WIDE("ls")
-#else
-#define _S WIDE("s")
 #endif
 #ifdef WIN32
 	tnprintf( spacename, sizeof( spacename ), WIDE( "memory:%" ) _32fx, GetCurrentProcessId() );
@@ -58039,7 +58179,61 @@ SACK_NETWORK_NAMESPACE_END
 //#include <sys/timeb.h>
 //*******************8
 #include <net/if_arp.h>
+#ifndef __ANDROID__
 #include <ifaddrs.h>
+#else
+/* from https://github.com/morristech/android-ifaddrs/blob/master/ifaddrs.h  2017/25/12 */
+/*
+ * Copyright (c) 1995, 1999
+ *	Berkeley Software Design, Inc.  All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ *
+ * THIS SOFTWARE IS PROVIDED BY Berkeley Software Design, Inc. ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL Berkeley Software Design, Inc. BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ *
+ *	BSDI ifaddrs.h,v 2.5 2000/02/23 14:51:59 dab Exp
+ */
+#ifndef	_IFADDRS_H_
+#define	_IFADDRS_H_
+struct ifaddrs {
+	struct ifaddrs  *ifa_next;
+	char		*ifa_name;
+	unsigned int	 ifa_flags;
+	struct sockaddr	*ifa_addr;
+	struct sockaddr	*ifa_netmask;
+	struct sockaddr	*ifa_dstaddr;
+	void		*ifa_data;
+};
+/*
+ * This may have been defined in <net/if.h>.  Note that if <net/if.h> is
+ * to be included it must be included before this header file.
+ */
+#ifndef	ifa_broadaddr
+#define	ifa_broadaddr	ifa_dstaddr
+#endif
+#include <sys/cdefs.h>
+__BEGIN_DECLS
+extern int getifaddrs(struct ifaddrs **ifap);
+extern void freeifaddrs(struct ifaddrs *ifa);
+__END_DECLS
+#endif
+#define EPOLLRDHUP EPOLLHUP
+#define EPOLL_CLOEXEC 0
+#endif
 #ifdef __MAC__
 #include <sys/event.h>
 #else
@@ -59439,7 +59633,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 	{
 #  ifdef __MAC__
 #    ifdef __64__
-		kevent64_s ev;
+		struct kevent64_s ev;
 		if( pc->dwFlags & CF_LISTEN ) {
 			EV_SET64( &ev, pc->Socket, EVFILT_READ, EV_DELETE, 0, 0, (uint64_t)pc, NULL, NULL );
 			kevent64( thread->kqueue, &ev, 1, 0, 0, 0, 0 );
@@ -59454,7 +59648,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 			kevent64( thread->kqueue, &ev, 1, 0, 0, 0, 0 );
 		}
 #    else
-		kevent ev;
+		struct kevent ev;
 		if( pc->dwFlags & CF_LISTEN ) {
 			EV_SET( &ev, pc->Socket, EVFILT_READ, EV_DELETE, 0, 0, (uint64_t)pc );
 			kevent( thread->kqueue, &ev, 1, 0, 0, 0 );
@@ -59581,7 +59775,7 @@ void AddThreadEvent( PCLIENT pc, int broadcast )
 	{
 #  ifdef __MAC__
 #    ifdef __64__
-		kevent64_s ev;
+		struct kevent64_s ev;
 		if( pc->dwFlags & CF_LISTEN ) {
 			EV_SET64( &ev, broadcast?pc->SocketBroadcast:pc->Socket, EVFILT_READ, EV_ADD, 0, 0, (uint64_t)pc, NULL, NULL );
 			kevent64( peer->kqueue, &ev, 1, 0, 0, 0, 0 );
@@ -59593,7 +59787,7 @@ void AddThreadEvent( PCLIENT pc, int broadcast )
 			kevent64( peer->kqueue, &ev, 1, 0, 0, 0, 0 );
 		}
 #    else
-		kevent ev;
+		struct kevent ev;
 		if( pc->dwFlags & CF_LISTEN ) {
 			EV_SET( &ev, broadcast?pc->SocketBroadcast:pc->Socket, EVFILT_READ, EV_ADD, 0, 0, (uintptr_t)pc );
 			kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
@@ -59642,7 +59836,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 	{
 #  ifdef __MAC__
 #    ifdef __64__
-		kevent64_s events[10];
+		struct kevent64_s events[10];
 		cnt = kevent64( thread->kqueue, NULL, 0, events, 10, 0, NULL );
 #    else
 		kevent events[10];
@@ -59942,18 +60136,23 @@ uintptr_t CPROC NetworkThreadProc( PTHREAD thread )
 #ifdef __MAC__
 	this_thread.kqueue = kqueue();
 #else
+#ifdef __ANDROID__
+ // close on exec (no inherit)
+	this_thread.epoll_fd = epoll_create( 128 );
+#else
  // close on exec (no inherit)
 	this_thread.epoll_fd = epoll_create1( EPOLL_CLOEXEC );
+#endif
 #endif
 	{
 #  ifdef __MAC__
 #    ifdef __64__
-		kevent64_s ev;
+		struct kevent64_s ev;
 		this_thread.kevents = CreateDataList( sizeof( ev ) );
 		EV_SET64( &ev, GetThreadSleeper( thread ), EVFILT_READ, EV_ADD, 0, 0, (uint64_t)1, NULL, NULL );
 		kevent64( this_thread.kqueue, &ev, 1, 0, 0, 0, 0 );
 #    else
-		kevent ev;
+		struct kevent ev;
 		this_thread.kevents = CreateDataList( sizeof( ev ) );
 		EV_SET( &ev, GetThreadSleeper( thread ), EVFILT_READ, EV_ADD, 0, 0, (uintptr_t)1 );
 		kevent( this_thread.kqueue, &ev, 1, 0, 0, 0 );
