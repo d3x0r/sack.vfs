@@ -251,14 +251,10 @@ if( WIN32 )
    target_link_libraries(${PROJECT_NAME} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll crypt32 cryptui )
 endif( WIN32 )
 if( UNIX )
-<<<<<<< HEAD
-   target_link_libraries( ${PROJECT_NAME} uuid odbc )
-=======
    target_link_libraries( ${PROJECT_NAME} odbc	 )
    if( NOT APPLE )
        target_link_libraries( ${PROJECT_NAME} uuid )
    endif( NOT APPLE )
->>>>>>> b5b02eb394ed2c630f88f010fa6c212d5ec27442
 endif( UNIX )
 
 
