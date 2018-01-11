@@ -5,6 +5,7 @@
   "main": "vfs_module.js",
   "private": false,
   "preferGlobal": false,
+  "license": "LGPL",
   "keywords": [
     "sqlite",
     "vfs",
