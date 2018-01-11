@@ -34,7 +34,7 @@ void ComObject::Init( Handle<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "write", writeCom );
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "close", closeCom );
 
-		
+
 		constructor.Reset( isolate, comTemplate->GetFunction() );
 		exports->Set( String::NewFromUtf8( isolate, "ComPort" ),
 			comTemplate->GetFunction() );
@@ -51,7 +51,7 @@ static void asyncmsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	
+
 	ComObject* myself = (ComObject*)handle->data;
 
 	HandleScope scope(isolate);
@@ -132,7 +132,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 			Local<Function> cons = Local<Function>::New( isolate, constructor );
 			args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
-			delete argv;
+			delete[] argv;
 		}
 }
 
@@ -156,7 +156,7 @@ void ComObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must pass callback to onRead handler" ) ) );
 		return;
 	}
-	
+
 	ComObject *com = ObjectWrap::Unwrap<ComObject>( args.This() );
 
 	if( com->handle >= 0 ) {
@@ -175,22 +175,21 @@ void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	Isolate* isolate = args.GetIsolate();
 	ComObject *com = ObjectWrap::Unwrap<ComObject>( args.This() );
-	
+
 	//assert(args[i]->IsFloat32Array());
 	if( args[0]->IsUint8Array() ) {
 		Local<Uint8Array> myarr = args[0].As<Uint8Array>();
 		ArrayBuffer::Contents ab_c = myarr->Buffer()->GetContents();
 		char *buf = static_cast<char*>(ab_c.Data()) + myarr->ByteOffset();
 		//LogBinary( buf, myarr->Length() );
-		SackWriteComm( com->handle, buf, (int)myarr->Length() );	
+		SackWriteComm( com->handle, buf, (int)myarr->Length() );
 	}
-	
+
 }
 
 void ComObject::closeCom( const v8::FunctionCallbackInfo<Value>& args ) {
-	
+
 	ComObject *com = ObjectWrap::Unwrap<ComObject>( args.This() );
 	SackCloseComm( com->handle );
 	com->handle = -1;
 }
-

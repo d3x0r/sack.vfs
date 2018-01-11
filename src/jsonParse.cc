@@ -5,9 +5,9 @@
 static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive );
 static Local<Value> makeValue( struct json_value_container *val, struct reviver_data *revive );
 
-static struct timings { 
+static struct timings {
 	uint64_t start;
-	uint64_t deltas[10];	
+	uint64_t deltas[10];
 }timings;
 
 static void makeJSON( const v8::FunctionCallbackInfo<Value>& args );
@@ -172,7 +172,7 @@ void parseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
-		delete argv;
+		delete[] argv;
 	}
 
 }
@@ -255,7 +255,7 @@ void parseObject::New6( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
-		delete argv;
+		delete[] argv;
 	}
 }
 
@@ -506,7 +506,7 @@ void escapeJSON( const v8::FunctionCallbackInfo<Value>& args ) {
 
 Local<Value> ParseJSON6(  const char *utf8String, size_t len, struct reviver_data *revive ) {
 	PDATALIST parsed = NULL;
-        //logTick(2);	
+        //logTick(2);
 	if( !json6_parse_message( (char*)utf8String, len, &parsed ) ) {
 		//PTEXT error = json_parse_get_error( parser->state );
 		//lprintf( "Failed to parse data..." );
@@ -523,19 +523,19 @@ Local<Value> ParseJSON6(  const char *utf8String, size_t len, struct reviver_dat
 		return Undefined(revive->isolate);
 		// outside should always be a single value
 	}
-        //logTick(3);	
+        //logTick(3);
 	Local<Value> value = convertMessageToJS( parsed, revive );
-        //logTick(4);	
+        //logTick(4);
 
 	json_dispose_message( &parsed );
-        //logTick(5);	
+        //logTick(5);
 
 	return value;
 }
 
 void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
 {
-	//logTick(0);	
+	//logTick(0);
 	struct reviver_data r;
 	r.isolate = Isolate::GetCurrent();
 	if( args.Length() == 0 ) {
@@ -563,9 +563,9 @@ void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
 	else
 		r.revive = FALSE;
 
-        //logTick(1);	
+        //logTick(1);
 	r.context = r.isolate->GetCurrentContext();
-	
+
 	args.GetReturnValue().Set( ParseJSON6( msg, tmp.length(), &r ) );
 
 }

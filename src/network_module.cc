@@ -71,8 +71,8 @@ public:
 	PLINKQUEUE eventQueue;
 	bool readStrings;  // return a string instead of a buffer
 	static Persistent<Function> constructor;
-	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; 
-	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; 
+	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
+	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback;
 	struct udpEvent *eventMessage;
 
 public:
@@ -405,7 +405,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 			Local<String> optName;
 			struct optionStrings *strings = getStrings( isolate );
-			// ---- get port 
+			// ---- get port
 			if( !opts->Has( optName = strings->portString->Get( isolate ) ) ) {
 				udpOpts.port = 0;
 			}
@@ -435,7 +435,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 			else {
 				udpOpts.address = StrDup( *String::Utf8Value(opts->Get( optName )->ToString()) );
 			}
-			// ---- get to port 
+			// ---- get to port
 			if( opts->Has( optName = strings->toPortString->Get( isolate ) ) ) {
 				udpOpts.toPort = (int)opts->Get( optName )->ToInteger()->Value();
 			}
@@ -445,7 +445,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( optName = strings->addressString->Get( isolate ) ) ) {
 				udpOpts.toAddress = StrDup( *String::Utf8Value( opts->Get( optName )->ToString() ) );
 			}
-			else 
+			else
 				udpOpts.toAddress = NULL;
 			// ---- get broadcast
 			if( opts->Has( optName = strings->broadcastString->Get( isolate ) ) ) {
@@ -495,7 +495,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
-		delete argv;
+		delete[] argv;
 	}
 }
 
@@ -688,4 +688,3 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 		args.GetReturnValue().Set( addr->_this.Get( isolate ) );
 	}
 }
-

@@ -313,7 +313,7 @@ void TLSObject::genKey( const v8::FunctionCallbackInfo<Value>& args ) {
 		int r = PEM_write_bio_PKCS8PrivateKey( keybuf, key, keypass?EVP_aes_256_cbc():NULL, keypass, (int)keypasslen, NULL, NULL );
 		//int r = PEM_write_bio_PrivateKey( keybuf, key, EVP_aes_256_cbc(), (unsigned char*)keypass, (int)keypasslen, NULL, NULL );
 		if( !r )
-		{	
+		{
 			struct info_params params;
 			params.isolate = isolate;
 			throwError( &params, "genkey: error encoding private key" );
@@ -632,7 +632,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.expire = (int)expire->Value();
 	}
 
-	
+
 	Local<String> passString = strings->passString->Get( isolate );;
 
 	String::Utf8Value *_password = NULL;
@@ -743,7 +743,7 @@ void MakeReq( struct info_params *params )
 						else
 							ASN1_STRING_set( val, addr->sa_data+2, (int)4 );
 						gname->type = GEN_IPADD;
-						
+
 						//gname->d.ip = val;
 						gname->d.iPAddress = val;
 
@@ -893,7 +893,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 		}
 	}
-		
+
 	if( !opts->Has( optName = strings->locString->Get( isolate ) ) ) {
 		isolate->ThrowException( Exception::Error(
 				String::NewFromUtf8( isolate, TranslateText("Missing required option 'locality'(city).") ) ) );
@@ -979,10 +979,10 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 	MakeReq( &params );
 	if( params.ca ) {
 		MaybeLocal<String> retval = String::NewFromUtf8( isolate, params.ca, NewStringType::kNormal, (int)params.ca_len );
-		args.GetReturnValue().Set( retval.ToLocalChecked() );		
+		args.GetReturnValue().Set( retval.ToLocalChecked() );
 		Deallocate( char *, params.ca );
 	}
-	if( _unit ) delete _unit;	
+	if( _unit ) delete _unit;
 	if( _password ) delete _password;
 }
 
@@ -1048,7 +1048,7 @@ static void SignReq( struct info_params *params )
 		throwError( params, "signreq: failed to set issuer" );
 		goto free_all;
 	}
-	
+
 	// set time
 	X509_time_adj_ex(X509_get_notBefore(cert), 0, 0, NULL);
 	// (60 seconds * 60 minutes * 24 hours * 365 days) = 31536000.
@@ -1276,7 +1276,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		MaybeLocal<String> retval = String::NewFromUtf8( isolate, params.ca, NewStringType::kNormal, (int)params.ca_len );
 		args.GetReturnValue().Set( retval.ToLocalChecked() );
 		Deallocate( char *, params.ca );
-		
+
 	}
 	if( _issuer ) delete _issuer;
 	if( _subject ) delete _subject;
@@ -1305,6 +1305,7 @@ static void PubKey( struct info_params *params ) {
 		BIO_write( keybuf, params->cert, (int)strlen( params->cert ) );
 		x509 = PEM_read_bio_X509( keybuf, &x509, NULL, NULL );
 		if( !x509 ) {
+			pkey = NULL;
 			throwError( params, "pubkey: bad certificate" );
 			goto free_all;
 		}
@@ -1317,18 +1318,18 @@ static void PubKey( struct info_params *params ) {
 /*
 	int r2 = PEM_write_bio_PKCS8PrivateKey( keybuf, pkey, NULL, NULL, 0, NULL, NULL );
 	if( !r2 )
-	{	
+	{
 		lprintf( "no private key?" );
 	}
-*/	
+*/
 	int r;
 	r = PEM_write_bio_PUBKEY( keybuf, pkey );
 	if( !r )
-	{	
+	{
 		throwError( params, "genkey: error writing public key" );
 		goto free_all;
 	}
-	
+
 	params->ca_len = BIO_pending( keybuf );
 	params->ca = NewArray( char, params->ca_len + 1 );
 	BIO_read( keybuf, params->ca, params->ca_len );
@@ -1355,7 +1356,7 @@ void TLSObject::pubKey( const v8::FunctionCallbackInfo<Value>& args ) {
 	params.isolate = isolate;
 	struct optionStrings *strings = getStrings( isolate );
 	Local<Object> opts = args[0]->ToObject();
-	
+
 	Local<String> keyString = strings->keyString->Get( isolate );
 	Local<String> certString = strings->certString->Get( isolate );
 	Local<String> passString = strings->passString->Get( isolate );
@@ -1399,7 +1400,7 @@ void TLSObject::pubKey( const v8::FunctionCallbackInfo<Value>& args ) {
 		args.GetReturnValue().Set( retval.ToLocalChecked() );
 		Deallocate( char *, params.ca );
 	}
-	
+
 	if( _key ) delete _key;
 	if( _password ) delete _password;
 }
@@ -1626,7 +1627,7 @@ static LOGICAL Validate( struct info_params *params ) {
 			DumpCert( badCert );
 			//flushErrors();
 			VarTextDestroy( &pvt );
-			
+
 		}
 		else
 			valid = TRUE;
@@ -1654,7 +1655,7 @@ void TLSObject::validate( const v8::FunctionCallbackInfo<Value>& args ) {
 	params.isolate = isolate;
 
 	Local<Object> opts = args[0]->ToObject();
-	
+
 	Local<String> certString = String::NewFromUtf8( isolate, "cert" );
 	Local<String> chainString = String::NewFromUtf8( isolate, "chain" );
 
@@ -1770,7 +1771,7 @@ static Local<Value> Expiration( struct info_params *params ) {
 	X509_free( x509 );
 	Local<Value> date = Date::New( params->isolate, (double)timegm( &t ) * 1000.0 );
 	//lprintf( "Converted: %d %d %d %d %d %d", t.tm_year, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec );
-	
+
 	return date;
 }
 
@@ -1794,8 +1795,8 @@ void TLSObject::expiration( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	Local<Value> xx = Expiration( &params );
 	args.GetReturnValue().Set( xx );
-	
-		
+
+
 }
 
 

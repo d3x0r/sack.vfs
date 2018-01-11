@@ -82,7 +82,7 @@ private:
 
 			Local<Function> cons = Local<Function>::New( isolate, constructor );
 			args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
-			delete argv;
+			delete[] argv;
 		}
 	}
 	static void reset( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -124,7 +124,7 @@ private:
 			int32_t bits = args[0]->Int32Value();
 			uint32_t *buffer = NewArray( uint32_t, (bits +31)/ 32 );
 			SRG_GetEntropyBuffer( obj->entropy, buffer, bits );
-			
+
 			Local<Object> arrayBuffer = ArrayBuffer::New( obj->isolate, buffer, (bits+7)/8 );
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->o.Reset( obj->isolate, arrayBuffer );

@@ -1311,7 +1311,7 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
 		MaybeLocal<Object> result = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
-		delete argv;
+		delete[] argv;
 		if( !result.IsEmpty() )
 			args.GetReturnValue().Set( result.ToLocalChecked() );
 	}
@@ -1762,7 +1762,7 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
-		delete argv;
+		delete[] argv;
 	}
 }
 
@@ -1876,7 +1876,21 @@ void wscObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 
 
 httpRequestObject::httpRequestObject() {
-	memset( this, 0, sizeof( *this ) );
+	pc = NULL;
+	memset( &_this, 0, sizeof( _this ) );
+	ssl = false;
+	port = 0;
+	hostname = NULL;
+	method = NULL;
+	ca = NULL;
+	path = NULL;
+	rejestUnauthorized = false;
+	firstDispatchDone = false;
+	dataDispatch = false;
+	endDispatch = false;
+	finished = false;
+	waiter = NULL;
+	result = NULL;
 }
 
 httpRequestObject::~httpRequestObject() {
