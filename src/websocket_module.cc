@@ -22,7 +22,7 @@ CONNECTING = 0
 OPEN (1)
 CLOSING (2)
 CLOSED (3)
---- 
+---
 LISTENING (4)
 
 
@@ -46,7 +46,7 @@ readonly attribute DOMString extensions;
 The extensions attribute returns the extensions selected by the server, if any. (Currently this will only ever be the empty string.)
 
 readonly attribute DOMString protocol;
-The protocol attribute returns the subprotocol selected by the server, if any. It can be used in conjunction with the array form 
+The protocol attribute returns the subprotocol selected by the server, if any. It can be used in conjunction with the array form
 of the constructor's second argument to perform subprotocol negotiation.
 
 attribute DOMString binaryType;
@@ -366,7 +366,7 @@ public:
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
-	
+
 public:
 
 	wscObject( wscOptions *opts );
@@ -403,7 +403,7 @@ public:
 	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
-	
+
 public:
 
 	wssiObject( );
@@ -515,7 +515,7 @@ static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 	result->Set( strings->remoteAddrString->Get( isolate ), remote );
 	result->Set( strings->remotePortString->Get( isolate ), Integer::New( isolate, (int32_t)GetNetworkLong( pc, GNL_PORT ) ) );
 	result->Set( strings->localFamilyString->Get( isolate )
-			, (localAddress->sa_family == AF_INET)?strings->v4String->Get(isolate): 
+			, (localAddress->sa_family == AF_INET)?strings->v4String->Get(isolate):
 				(localAddress->sa_family == AF_INET6) ? strings->v6String->Get( isolate ) : strings->vUString->Get(isolate)
 		);
 	result->Set( strings->localAddrString->Get( isolate ), local );
@@ -610,6 +610,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				uv_close( (uv_handle_t*)&myself->async, uv_closed_wss );
 				DropWssEvent( eventMessage );
 				DeleteLinkQueue( &myself->eventQueue );
+				return;
 			}
 
 			myself->eventMessage = NULL;
@@ -836,7 +837,7 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		wssTemplate->ReadOnlyPrototype();
 		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onmessage", wsObject::on );
 		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "on", wsObject::on );
-		
+
 		wssObject::constructor.Reset( isolate, wssTemplate->GetFunction() );
 		wssObject::tpl.Reset( isolate, wssTemplate );
 
@@ -876,7 +877,7 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 			, FunctionTemplate::New( isolate, wssiObject::getReadyState )
 			, Local<FunctionTemplate>() );
 		wssiTemplate->ReadOnlyPrototype();
-		
+
 		wssiObject::constructor.Reset( isolate, wssiTemplate->GetFunction() );
 		wssiObject::tpl.Reset( isolate, wssiTemplate );
 		//SET_READONLY( o, "Client", wscTemplate->GetFunction() );
@@ -896,14 +897,15 @@ static void Wait( void ) {
 
 static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 	wssObject *wss = (wssObject*)psv;
-
+	while( !wss->eventQueue )
+		Relinquish();
 	INDEX idx;
 	wssiObject *wssi;
 	LIST_FORALL( wss->opening, idx, wssiObject*, wssi ) {
 		if( wssi->pc == pc ) {
 			SetLink( &wss->opening, idx, NULL );
 			break;
-		}					
+		}
 	}
 	if( wssi ) {
 		struct wssiEvent *pevt = GetWssiEvent();
@@ -921,6 +923,15 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 	return 0;
 }
 
+static void webSockServerCloseEvent( wssObject *wss ) {
+	struct wssEvent *pevt = GetWssEvent();
+	//lprintf( "Server Websocket closed; post to javascript %p", wss );
+	(*pevt).eventType = WS_EVENT_CLOSE;
+	(*pevt)._this = wss;
+	EnqueLink( &wss->eventQueue, pevt );
+	uv_async_send( &wss->async );
+}
+
 static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char *reason )
 {
 	wssiObject *wssi = (wssiObject*)psv;
@@ -929,12 +940,10 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		lprintf( "Server Websocket closed; post to javascript %p  %p", pc, wssi );
 		(*pevt).eventType = WS_EVENT_CLOSE;
 		(*pevt)._this = wssi;
+		wssi->pc = NULL;
 		EnqueLink( &wssi->eventQueue, pevt );
 		uv_async_send( &wssi->async );
-		wssi->pc = NULL;
 	}
-	else
-		lprintf( "Duplicate close?" );
 }
 
 static void webSockServerError( PCLIENT pc, uintptr_t psv, int error ){
@@ -944,7 +953,6 @@ static void webSockServerError( PCLIENT pc, uintptr_t psv, int error ){
 	(*pevt)._this = wssi;
 	EnqueLink( &wssi->eventQueue, pevt );
 	uv_async_send( &wssi->async );
-
 }
 
 static void webSockServerEvent( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOINTER buffer, size_t msglen ){
@@ -1010,7 +1018,6 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( tmp && GetTextSize( tmp ) ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Headers have already been set; cannot change resulting status or headers" ) ) );
 		return;
-
 	}
 	int status = 404;
 	Local<Object> headers;
@@ -1064,7 +1071,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 		}
 	}
-	else 
+	else
 		vtprintf( obj->pvtResult, WIDE( "\r\n" ) );
 
 	if( doSend ) {
@@ -1087,6 +1094,8 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 		(*pevt)._this = wss;
 		EnqueLink( &wss->eventQueue, pevt );
 		uv_async_send( &wss->async );
+	} else {
+		RemoveClient( pc );
 	}
 	return 0;
 }
@@ -1095,6 +1104,7 @@ wssObject::wssObject( struct wssOptions *opts ) {
 	char tmp[256];
 	int clearUrl = 0;
 	readyState = INITIALIZING;
+	eventQueue = NULL;
 	opening = FALSE;
 	if( !opts->url ) {
 		if( opts->address ) {
@@ -1105,18 +1115,18 @@ wssObject::wssObject( struct wssOptions *opts ) {
 		}
 		else
 			snprintf( tmp, 256, "ws%s://[::]:%d/", opts->ssl?"s":"", opts->port ? opts->port : 8080 );
-  		//snprintf( tmp, 256, "ws://0.0.0.0:%d/", opts->port ? opts->port : 8080 );
-  		opts->url = tmp;
-  		clearUrl = 1;
+		//snprintf( tmp, 256, "ws://0.0.0.0:%d/", opts->port ? opts->port : 8080 );
+		opts->url = tmp;
+		clearUrl = 1;
 	}
 	closed = 0;
-	eventQueue = CreateLinkQueue();
 	NetworkWait( NULL, 256, 2 );  // 1GB memory
-	uv_async_init( l.loop, &async, wssAsyncMsg );
-	async.data = this;
 
 	pc = WebSocketCreate( opts->url, webSockServerOpen, webSockServerEvent, webSockServerClosed, webSockServerError, (uintptr_t)this );
 	if( pc ) {
+		uv_async_init( l.loop, &async, wssAsyncMsg );
+		async.data = this;
+
 		SetWebSocketHttpCallback( pc, webSockHttpRequest );
 		if( opts->deflate ) {
 			SetWebSocketDeflate( pc, WEBSOCK_DEFLATE_ENABLE );
@@ -1135,7 +1145,10 @@ wssObject::wssObject( struct wssOptions *opts ) {
 				, opts->pass, opts->pass_len );
 		}
 		SetWebSocketAcceptCallback( pc, webSockServerAccept );
+		eventQueue = CreateLinkQueue();
 		readyState = LISTENING;
+	} else {
+
 	}
 	if( clearUrl )
 		opts->url = NULL;
@@ -1276,6 +1289,11 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 			Deallocate( char *, wssOpts.address );
 		if( wssOpts.url )
 			Deallocate( char *, wssOpts.url );
+		if( !obj->pc ) {
+			delete obj;
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Failed to create listener." ) ) );
+			return;
+		}
 		if( args.Length() > 1 && args[1]->IsFunction() ) {
 			Handle<Function> arg0 = Handle<Function>::Cast( args[1] );
 			obj->openCallback.Reset( isolate, arg0 );
@@ -1292,8 +1310,10 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 			argv[n] = args[n];
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
+		MaybeLocal<Object> result = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
 		delete argv;
+		if( !result.IsEmpty() )
+			args.GetReturnValue().Set( result.ToLocalChecked() );
 	}
 }
 
@@ -1301,8 +1321,8 @@ void wssObject::close( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
 	obj->readyState = CLOSING;
-
 	RemoveClient( obj->pc );
+	webSockServerCloseEvent( obj );
 }
 
 void wssObject::on( const FunctionCallbackInfo<Value>& args ) {
@@ -1452,9 +1472,9 @@ void wssiObject::on( const FunctionCallbackInfo<Value>& args){
 		String::Utf8Value event( args[0]->ToString() );
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		if(  StrCmp( *event, "message" ) == 0 ) {
-			obj->messageCallback.Reset( isolate, cb);			
+			obj->messageCallback.Reset( isolate, cb);
 		} else if(  StrCmp( *event, "error" ) == 0 ) {
-			obj->errorCallback.Reset(isolate,cb);			
+			obj->errorCallback.Reset(isolate,cb);
 		} else if(  StrCmp( *event, "close" ) == 0 ){
 			obj->closeCallback.Reset(isolate,cb);
 		}
@@ -1753,7 +1773,7 @@ void wscObject::on( const FunctionCallbackInfo<Value>& args){
 		String::Utf8Value event( args[0]->ToString() );
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		if( StrCmp( *event, "open" ) == 0 ){
-			obj->openCallback.Reset(isolate,cb);			
+			obj->openCallback.Reset(isolate,cb);
 		} else if(  StrCmp( *event, "message" ) == 0 ) {
 			obj->messageCallback.Reset(isolate,cb);
 		} else if(  StrCmp( *event, "error" ) == 0 ) {
@@ -1895,7 +1915,7 @@ void httpRequestObject::on( const FunctionCallbackInfo<Value>& args ) {
 	/* abort, connect, continue, response, socket, timeout, upgrade, */
 	if( StrCmp( *eventName, "error" ) == 0 ) {
 
-	} 
+	}
 	args.GetReturnValue().Set( args.This() );
 }
 

@@ -1183,6 +1183,10 @@ SACK_NAMESPACE
 #  define _64fx   _WIDE(PRIx64)
 #  define _64fX   _WIDE(PRIX64)
 #  define _64fs   _WIDE(PRId64)
+#  define _64f    _WIDE(PRIu64)
+#  define _64fx   _WIDE(PRIx64)
+#  define _64fX   _WIDE(PRIX64)
+#  define _64fs   _WIDE(PRId64)
 // non-unicode strings
 #  define c_32f    PRIu32
 #  define c_32fx   PRIx32
@@ -1236,10 +1240,10 @@ SACK_NAMESPACE
 #      define c_size_fX   "zX"
 #      define c_size_fs   "zd"
 #    endif
-#    define _PTRSZVALfs _WIDE( PRIu64 )
-#    define _PTRSZVALfx _WIDE( PRIx64 )
-#    define cPTRSZVALfs PRIu64
-#    define cPTRSZVALfx PRIx64
+#    define _PTRSZVALfs _WIDE( PRIuPTR )
+#    define _PTRSZVALfx _WIDE( PRIxPTR )
+#    define cPTRSZVALfs PRIuPTR
+#    define cPTRSZVALfx PRIxPTR
 #  else
 #    if !defined( __GNUC__ ) || defined( _WIN32 )
 #      define _size_f    _64f
@@ -1260,10 +1264,10 @@ SACK_NAMESPACE
 #      define c_size_fX   "zX"
 #      define c_size_fs   "zd"
 #    endif
-#    define _PTRSZVALfs _64fs
-#    define _PTRSZVALfx _64fx
-#    define cPTRSZVALfs c_64fs
-#    define cPTRSZVALfx c_64fx
+#    define _PTRSZVALfs _WIDE( PRIuPTR )
+#    define _PTRSZVALfx _WIDE( PRIxPTR )
+#    define cPTRSZVALfs PRIuPTR
+#    define cPTRSZVALfx PRIxPTR
 #  endif
 #else
 #  if defined( __STDC_FORMAT_MACROS )
@@ -1287,10 +1291,10 @@ SACK_NAMESPACE
 #      define c_size_fX   "zX"
 #      define c_size_fs   "zd"
 #    endif
-#    define _PTRSZVALfs _WIDE( PRIu32 )
-#    define _PTRSZVALfx _WIDE( PRIx32 )
-#    define cPTRSZVALfs PRIu32
-#    define cPTRSZVALfx PRIx32
+#    define _PTRSZVALfs _WIDE( PRIuPTR )
+#    define _PTRSZVALfx _WIDE( PRIxPTR )
+#    define cPTRSZVALfs PRIuPTR
+#    define cPTRSZVALfx PRIxPTR
 #  else
       // this HAS been fixed in UCRT - 2015!  but it'll take 5 years before everyone has that...
 #    if !defined( __GNUC__ ) || defined( _WIN32 )
@@ -1312,10 +1316,10 @@ SACK_NAMESPACE
 #      define c_size_fX   "zX"
 #      define c_size_fs   "zd"
 #    endif
-#    define _PTRSZVALfs _32fs
-#    define _PTRSZVALfx _32fx
-#    define cPTRSZVALfs c_32fs
-#    define cPTRSZVALfx c_32fs
+#    define _PTRSZVALfs _WIDE( PRIuPTR )
+#    define _PTRSZVALfx _WIDE( PRIxPTR )
+#    define cPTRSZVALfs PRIuPTR
+#    define cPTRSZVALfx PRIxPTR
 #  endif
 #endif
 #define PTRSZVALf WIDE("p" )
@@ -7694,7 +7698,7 @@ struct rt_init
 #  define PASS_FILENAME
 #endif
 #ifdef __MAC__
-#  define DEADSTART_SECTION "CODE,deadstart_list"
+#  define DEADSTART_SECTION "TEXT,deadstart_list"
 #else
 #  define DEADSTART_SECTION "deadstart_list"
 #endif
@@ -32281,7 +32285,7 @@ PRIORITY_PRELOAD( InitGlobal, DEFAULT_PRELOAD_PRIORITY )
 #  ifndef __GNUC_VERSION
 #    define __GNUC_VERSION ( __GNUC__ * 10000 ) + ( __GNUC_MINOR__ * 100 )
 #  endif
-#  if  ( __GNUC_VERSION >= 40800 )
+#  if  ( __GNUC_VERSION >= 40800 ) || defined(__MAC__)
 #    define XCHG(p,val)  __atomic_exchange_n(p,val,__ATOMIC_RELAXED)
 ///  for some reason __GNUC_VERSION doesn't exist from android ?
 #  elif defined __ARM__ || defined __ANDROID__
@@ -52594,10 +52598,10 @@ static void CPROC closed( PCLIENT pc_client ) {
 	HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc_client, 0 );
 	//lprintf( "ServerWebSocket Connection closed event..." );
 	if( socket->input_state.on_close ) {
-      socket->input_state.on_close( pc_client, socket->input_state.psv_open, socket->input_state.close_code, socket->input_state.close_reason );
+		socket->input_state.on_close( pc_client, socket->input_state.psv_open, socket->input_state.close_code, socket->input_state.close_reason );
 	}
 	if( socket->input_state.close_reason )
-      Deallocate( char*, socket->input_state.close_reason );
+		Deallocate( char*, socket->input_state.close_reason );
 	if( socket->input_state.flags.deflate ) {
 		deflateEnd( &socket->input_state.deflater );
 		inflateEnd( &socket->input_state.inflater );
@@ -52654,6 +52658,10 @@ PCLIENT WebSocketCreate( CTEXTSTR hosturl
 	url = SACK_URLParse( hosturl );
 	socket->pc = OpenTCPListenerAddrEx( CreateSockAddress( url->host, url->port?url->port:url->default_port ), connected );
 	SACK_ReleaseURL( url );
+  if( !socket->pc ) {
+    Deallocate( HTML5WebSocket, socket );
+    return NULL;
+  }
 	socket->http_state = CreateHttpState();
 	SetNetworkLong( socket->pc, 0, (uintptr_t)socket );
 	SetNetworkLong( socket->pc, 1, (uintptr_t)&socket->input_state );
@@ -58755,8 +58763,10 @@ void TerminateClosedClientEx( PCLIENT pc DBG_PASS )
 	if( !pc )
 		return;
 	if( pc->dwFlags & CF_TOCLOSE ) {
-		lprintf( "WAIT FOR CLOSE LATER..." );
-		return;
+#ifdef VERBOSE_DEBUG
+		lprintf( "WAIT FOR CLOSE LATER... %x", pc->dwFlags );
+#endif
+		//return;
 	}
 	if( pc->dwFlags & CF_CLOSED )
 	{
@@ -59774,28 +59784,31 @@ void AddThreadEvent( PCLIENT pc, int broadcast )
 	// this means the list can be 61 and at this time no more.
 	{
 #  ifdef __MAC__
+		struct event_data *data = New( struct event_data );
+		data->pc = pc;
+		data->broadcast = broadcast;
 #    ifdef __64__
 		struct kevent64_s ev;
 		if( pc->dwFlags & CF_LISTEN ) {
-			EV_SET64( &ev, broadcast?pc->SocketBroadcast:pc->Socket, EVFILT_READ, EV_ADD, 0, 0, (uint64_t)pc, NULL, NULL );
+			EV_SET64( &ev, broadcast?pc->SocketBroadcast:pc->Socket, EVFILT_READ, EV_ADD, 0, 0, (uintptr_t)data, NULL, NULL );
 			kevent64( peer->kqueue, &ev, 1, 0, 0, 0, 0 );
 		}
 		else {
-			EV_SET64( &ev, broadcast?pc->SocketBroadcast:pc->Socket, EVFILT_READ, EV_ADD, 0, 0, (uint64_t)pc, NULL, NULL );
+			EV_SET64( &ev, broadcast?pc->SocketBroadcast:pc->Socket, EVFILT_READ, EV_ADD, 0, 0, (uintptr_t)data, NULL, NULL );
 			kevent64( peer->kqueue, &ev, 1, 0, 0, 0, 0 );
-			EV_SET64( &ev, broadcast?pc->SocketBroadcast:pc->Socket, EVFILT_WRITE, EV_ADD | EV_CLEAR, 0, 0, (uint64_t)pc, NULL, NULL );
+			EV_SET64( &ev, broadcast?pc->SocketBroadcast:pc->Socket, EVFILT_WRITE, EV_ADD | EV_CLEAR, 0, 0, (uintptr_t)data, NULL, NULL );
 			kevent64( peer->kqueue, &ev, 1, 0, 0, 0, 0 );
 		}
 #    else
 		struct kevent ev;
 		if( pc->dwFlags & CF_LISTEN ) {
-			EV_SET( &ev, broadcast?pc->SocketBroadcast:pc->Socket, EVFILT_READ, EV_ADD, 0, 0, (uintptr_t)pc );
+			EV_SET( &ev, broadcast?pc->SocketBroadcast:pc->Socket, EVFILT_READ, EV_ADD, 0, 0, (uintptr_t)data );
 			kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
 		}
 		else {
-			EV_SET( &ev, broadcast?pc->SocketBroadcast:pc->Socket, EVFILT_READ, EV_ADD|EV_ENABLE, 0, 0, (uintptr_t)pc );
+			EV_SET( &ev, broadcast?pc->SocketBroadcast:pc->Socket, EVFILT_READ, EV_ADD|EV_ENABLE, 0, 0, (uintptr_t)data );
 			kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
-			EV_SET( &ev, broadcast?pc->SocketBroadcast:pc->Socket, EVFILT_WRITE, EV_ADD|EV_ENABLE|EV_CLEAR, 0, 0, (uintptr_t)pc );
+			EV_SET( &ev, broadcast?pc->SocketBroadcast:pc->Socket, EVFILT_WRITE, EV_ADD|EV_ENABLE|EV_CLEAR, 0, 0, (uintptr_t)data );
 			kevent( peer->kqueue, &ev, 1, 0, 0, 0 );
 		}
 #    endif
@@ -59869,12 +59882,18 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 			for( n = 0; n < cnt; n++ ) {
 #  ifdef __MAC__
 				event_data = (struct event_data*)events[n].udata;
+#  ifdef LOG_NOTICES
+				lprintf( "Process %d %x %x"
+				       , ((uintptr_t)event_data == 1) ?0:event_data->broadcast?event_data->pc->SocketBroadcast:event_data->pc->Socket
+				       , ((uintptr_t)event_data == 1) ?0:event_data->pc->dwFlags
+				       , events[n].filter );
+#  endif
 #  else
 				event_data = (struct event_data*)events[n].data.ptr;
-#  endif
 #  ifdef LOG_NOTICES
 				lprintf( "Process %d %x", event_data->broadcast?event_data->pc->SocketBroadcast:event_data->pc->Socket
-						 , events[n].events );
+				       , events[n].events );
+#  endif
 #  endif
 				if( event_data == (struct event_data*)1 ) {
 					//char buf;
@@ -59894,7 +59913,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 						break;
 					Relinquish();
 				}
-				if( !(event_data->pc->dwFlags & CF_ACTIVE ) ) {
+				if( !(event_data->pc->dwFlags & (CF_ACTIVE|CF_CLOSED) ) ) {
 #  ifdef LOG_NETWORK_EVENT_THREAD
 					lprintf( "not active but locked? dwFlags : %8x", event_data->pc->dwFlags );
 #  endif
@@ -59913,13 +59932,44 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #  endif
 				{
 #  ifdef LOG_NETWORK_EVENT_THREAD
-					lprintf( "EPOLLIN/EVFILT_READ" );
+					lprintf( "EPOLLIN/EVFILT_READ %x", event_data->pc->dwFlags );
 #  endif
-					if( !(event_data->pc->dwFlags & CF_ACTIVE) )
-					{
+					if( event_data->pc->dwFlags & CF_CLOSED ) {
+						PCLIENT pClient = event_data->pc;
+						lprintf( "socket is already closed... what do we need to do?");
+						WakeableSleep( 100 );
+						if( !pClient->bDraining )
+						{
+							size_t bytes_read;
+							// act of reading can result in a close...
+							// there are things like IE which close and send
+							// adn we might get the close notice at application level indicating there might still be data...
+							while( ( bytes_read = FinishPendingRead( pClient DBG_SRC) ) > 0
+ // try and read...
+								&& bytes_read != (size_t)-1 );
+							//if( pClient->dwFlags & CF_TOCLOSE )
+							{
+								//lprintf( "Pending read failed - reset connection. (well this is FD_CLOSE so yeah...??]" );
+								//InternalRemoveClientEx( pc, TRUE, FALSE );
+							}
+						}
+#  ifdef LOG_NOTICES
+						if( globalNetworkData.flags.bLogNotices )
+							lprintf(WIDE( "FD_CLOSE... %p  %08x" ), pClient, pClient->dwFlags );
+#  endif
+						//if( pClient->dwFlags & CF_ACTIVE )
+						{
+							// might already be cleared and gone..
+							InternalRemoveClientEx( pClient, FALSE, TRUE );
+							TerminateClosedClient( pClient );
+						}
+						// section will be blank after termination...(correction, we keep the section state now)
+ // it's no longer closing.  (was set during the course of closure)
+						pClient->dwFlags &= ~CF_CLOSING;
+					} else if( !(event_data->pc->dwFlags & (CF_ACTIVE) ) ) {
+						lprintf( "Event on socket no longer active..." );
 						// change to inactive status by the time we got here...
-					}
-					else if( event_data->pc->dwFlags & CF_LISTEN )
+					} else if( event_data->pc->dwFlags & CF_LISTEN )
 					{
 #ifdef LOG_NOTICES
 						if( globalNetworkData.flags.bLogNotices )
@@ -59954,13 +60004,13 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 						// packet oriented things may probably be reading only
 						// partial messages at a time...
 						read = FinishPendingRead( event_data->pc DBG_SRC );
-                  //lprintf( "Read %d", read );
+						//lprintf( "Read %d", read );
 						if( ( read == -1 ) && ( event_data->pc->dwFlags & CF_TOCLOSE ) )
 						{
-//#ifdef LOG_NOTICES
-//							if( globalNetworkData.flags.bLogNotices )
+#ifdef LOG_NOTICES
+							if( globalNetworkData.flags.bLogNotices )
 								lprintf( WIDE( "Pending read failed - reset connection." ) );
-//#endif
+#endif
 							InternalRemoveClientEx( event_data->pc, FALSE, FALSE );
 							TerminateClosedClient( event_data->pc );
 						}
@@ -61290,7 +61340,7 @@ NETWORK_PROC( PCLIENT, NetworkLockEx)( PCLIENT lpClient DBG_PASS )
 #else
 		LeaveCriticalSecEx( &globalNetworkData.csNetwork  DBG_RELAY);
 #endif
-		if( !(lpClient->dwFlags & CF_ACTIVE ) )
+		if( !(lpClient->dwFlags & (CF_ACTIVE|CF_CLOSED) ) )
 		{
 			// change to inactive status by the time we got here...
 #ifdef USE_NATIVE_CRITICAL_SECTION
@@ -61410,7 +61460,9 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 			return;
 		}
 		if( lpClient->dwFlags & CF_WRITEPENDING ) {
+#ifdef LOG_DEBUG_CLOSING
 			lprintf( "CLOSE WHILE WAITING FOR WRITE TO FINISH..." );
+#endif
 			lpClient->dwFlags |= CF_TOCLOSE;
 			return;
 		}
@@ -61501,9 +61553,8 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 	} else
 #endif
 	{
-		  // UDP still needs to be done this way...
+		// UDP still needs to be done this way...
 		//
-		//lprintf( "UDP DO NORMAL CLOSE" );
 		InternalRemoveClientExx( lpClient, bBlockNotify, bLinger DBG_RELAY );
 		TerminateClosedClient( lpClient );
 	}
@@ -61651,8 +61702,13 @@ void LoadNetworkAddresses( void ) {
 			//SET_SOCKADDR_LENGTH( dup, IN6_SOCKADDR_LENGTH );
 		}
 		else {
-			memcpy( dup, tmp->ifa_netmask, IN_SOCKADDR_LENGTH );
-			SET_SOCKADDR_LENGTH( dup, IN_SOCKADDR_LENGTH );
+			if( tmp->ifa_netmask ) {
+				memcpy( dup, tmp->ifa_netmask, IN_SOCKADDR_LENGTH );
+				SET_SOCKADDR_LENGTH( dup, IN_SOCKADDR_LENGTH );
+			} else {
+				memset( dup, 0, IN_SOCKADDR_LENGTH );
+				SET_SOCKADDR_LENGTH( dup, IN_SOCKADDR_LENGTH );
+			}
 		}
 		ia->saMask = dup;
 		ia->saBroadcast = AllocAddr();
@@ -62021,9 +62077,15 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
 	pListen->Socket = OpenSocket( ((*(uint16_t*)pAddr) == AF_INET)?TRUE:FALSE, TRUE, FALSE, 0 );
 	if( pListen->Socket == INVALID_SOCKET )
 #endif
+#ifdef __MAC__
+		pListen->Socket = socket( ((uint8_t*)pAddr)[1]
+										, SOCK_STREAM
+										, ((((uint8_t*)pAddr)[1] == AF_INET)||((((uint8_t*)pAddr)[1]) == AF_INET6))?IPPROTO_TCP:0 );
+#else
 		pListen->Socket = socket( *(uint16_t*)pAddr
 										, SOCK_STREAM
 										, (((*(uint16_t*)pAddr) == AF_INET)||((*(uint16_t*)pAddr) == AF_INET6))?IPPROTO_TCP:0 );
+#endif
 #if WIN32
 	SetHandleInformation( (HANDLE)pListen->Socket, HANDLE_FLAG_INHERIT, 0 );
 #endif
@@ -62036,6 +62098,7 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
 	if( pListen->Socket == INVALID_SOCKET )
 	{
 		lprintf( WIDE(" Open Listen Socket Fail... %d"), errno);
+		DumpAddr( "passed address to select:", pAddr );
 		InternalRemoveClientEx( pListen, TRUE, FALSE );
 		NetworkUnlockEx( pListen DBG_SRC );
 		pListen = NULL;
@@ -62075,6 +62138,7 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
 		 bind(pListen->Socket ,pAddr, SOCKADDR_LENGTH( pAddr ) ) )
 	{
 		_lprintf(DBG_RELAY)( WIDE("Cannot bind to address..:%d"), WSAGetLastError() );
+		DumpAddr( "Bind address:", pAddr );
 		InternalRemoveClientEx( pListen, TRUE, FALSE );
 		NetworkUnlockEx( pListen DBG_SRC );
 		return NULL;
@@ -62214,9 +62278,15 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 		pResult->Socket = OpenSocket( ((*(uint16_t*)lpAddr) == AF_INET)?TRUE:FALSE, TRUE, FALSE, 0 );
 		if( pResult->Socket == INVALID_SOCKET )
 #endif
+#ifdef __MAC__
+			pResult->Socket=socket( ((uint8_t*)lpAddr)[1]
+			                      , SOCK_STREAM
+			                      , (((((uint8_t*)lpAddr)[1]) == AF_INET)||((((uint8_t*)lpAddr)[1]) == AF_INET6))?IPPROTO_TCP:0 );
+#else
 			pResult->Socket=socket( *(uint16_t*)lpAddr
-										 , SOCK_STREAM
-										 , (((*(uint16_t*)lpAddr) == AF_INET)||((*(uint16_t*)lpAddr) == AF_INET6))?IPPROTO_TCP:0 );
+			                      , SOCK_STREAM
+			                      , (((*(uint16_t*)lpAddr) == AF_INET)||((*(uint16_t*)lpAddr) == AF_INET6))?IPPROTO_TCP:0 );
+#endif
 #ifdef LOG_SOCKET_CREATION
 		lprintf( WIDE( "Created new socket %d" ), pResult->Socket );
 #endif
@@ -62245,8 +62315,8 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 #    endif
 			WSAEventSelect( pResult->Socket, pResult->event, FD_READ|FD_WRITE|FD_CONNECT|FD_CLOSE );
 #  else
-			if( WSAAsyncSelect( pResult->Socket,globalNetworkData.ghWndNetwork,SOCKMSG_TCP,
-									 FD_READ|FD_WRITE|FD_CLOSE|FD_CONNECT) )
+			if( WSAAsyncSelect( pResult->Socket,globalNetworkData.ghWndNetwork,SOCKMSG_TCP
+			                  , FD_READ|FD_WRITE|FD_CLOSE|FD_CONNECT) )
 			{
 				lprintf( WIDE(" Select NewClient Fail! %d"), WSAGetLastError() );
 				InternalRemoveClientEx( pResult, TRUE, FALSE );
@@ -62270,7 +62340,7 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 				pResult->saSource = DuplicateAddress( pFromAddr );
 				//DumpAddr( "source", pResult->saSource );
 				if( ( err = bind( pResult->Socket, pResult->saSource
-								, SOCKADDR_LENGTH( pResult->saSource ) ) ) )
+				                , SOCKADDR_LENGTH( pResult->saSource ) ) ) )
 				{
 					uint32_t dwError;
 					dwError = WSAGetLastError();
@@ -62581,7 +62651,7 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 		}
 		if( !(lpClient->dwFlags & CF_CONNECTED)  )
 		{
-#ifdef VERBOSE_DEBUG
+#ifdef DEBUG_SOCK_IO
 			lprintf( WIDE( "Finsih pending - return, not connected." ) );
 #endif
  // amount of data available...
@@ -62653,6 +62723,7 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 #ifdef DEBUG_SOCK_IO
 				lprintf( "Received (0) %d", nRecv );
 #endif
+				WakeableSleep( 100 );
 				//_lprintf( DBG_RELAY )( WIDE("Closing closed socket... Hope there's also an event... "));
 				lpClient->dwFlags |= CF_TOCLOSE;
  // while dwAvail... try read...
@@ -62680,7 +62751,7 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 				lpClient->RecvPending.dwAvail -= nRecv;
 				lpClient->RecvPending.dwUsed  += nRecv;
 				if( lpClient->RecvPending.s.bStream &&
-					lpClient->RecvPending.dwAvail )
+				    lpClient->RecvPending.dwAvail )
 					break;
 				//else
 				//	lprintf( WIDE("Was not a stream read - try reading more...") );
@@ -63349,9 +63420,15 @@ PCLIENT CPPServeUDPAddrEx( SOCKADDR *pAddr
 	pc->Socket = OpenSocket(((*(uint16_t*)pAddr) == AF_INET)?TRUE:FALSE,FALSE, FALSE, 0);
 	if( pc->Socket == INVALID_SOCKET )
 #endif
+#ifdef __MAC__
 		pc->Socket = socket( PF_INET
 		                   , SOCK_DGRAM
-		                   , (((*(uint16_t*)pAddr) == AF_INET)||((*(uint16_t*)pAddr) == AF_INET6))?IPPROTO_UDP:0);
+		                   , (((((uint8_t*)pAddr)[1]) == AF_INET)||((((uint8_t*)pAddr)[1]) == AF_INET6))?IPPROTO_UDP:0);
+#else
+    pc->Socket = socket( PF_INET
+                       , SOCK_DGRAM
+                       , (((*(uint16_t*)pAddr) == AF_INET)||((*(uint16_t*)pAddr) == AF_INET6))?IPPROTO_UDP:0);
+#endif
 	if( pc->Socket == INVALID_SOCKET )
 	{
 		_lprintf(DBG_RELAY)( WIDE("UDP Socket Fail") );
