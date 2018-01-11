@@ -1137,7 +1137,7 @@ typedef const void *CPOINTER;
 SACK_NAMESPACE_END
 //------------------------------------------------------
 // formatting macro defintions for [vsf]printf output of the above types
-#if ( _MSC_VER >= 1900 )
+#if !defined( _MSC_VER ) || ( _MSC_VER >= 1900 )
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
 #endif
@@ -1316,7 +1316,7 @@ SACK_NAMESPACE
 #endif
 #define PTRSZVALf WIDE("p" )
 #define _PTRSZVALf WIDE("p" )
-#if ( _MSC_VER < 1900 )
+#if defined( _MSC_VER ) && ( _MSC_VER < 1900 )
 /* 64 bit unsigned decimal output printf format specifier. This would
    otherwise be defined in \<inttypes.h\> as PRIu64              */
 #define _64f    WIDE("llu")
