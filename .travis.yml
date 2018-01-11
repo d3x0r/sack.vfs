@@ -8,7 +8,7 @@ node_js:
 
 os:
   - linux
-#  - osx
+  - osx
 
 compiler:
   - gcc
