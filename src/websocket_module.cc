@@ -937,7 +937,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	wssiObject *wssi = (wssiObject*)psv;
 	if( wssi ) {
 		struct wssiEvent *pevt = GetWssiEvent();
-		lprintf( "Server Websocket closed; post to javascript %p  %p", pc, wssi );
+		//lprintf( "Server Websocket closed; post to javascript %p  %p", pc, wssi );
 		(*pevt).eventType = WS_EVENT_CLOSE;
 		(*pevt)._this = wssi;
 		wssi->pc = NULL;
