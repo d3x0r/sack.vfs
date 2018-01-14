@@ -180,8 +180,9 @@ There are methods on the Sqlite() function call...
 | setOption | (section [,opName] ,value) | longer name of 'so' |
 | fo  | (opName) | find an option node under this one (returns null if node doesn't exist)<BR> fo( "name" ) |
 | go  | (opName) | get an option node      <BR>go( "name" ) |
-| eo  | (callback) |  enum option nodes from root of options, takes a callback as a paraemter.<br> callback parameters ( optionNode, optionName ) ... the callback parameters get a node and a name.   The node is another option node that migth be enumerated with eo...<BR> `function callback(node,name)  {console.log( "got", name, node.value );` |
-     
+| eo  | ( callback(node,name)) |  enum option nodes from root of options, takes a callback as a paraemter.<br> callback parameters ( optionNode, optionName ) ... the callback parameters get a node and a name.   The node is another option node that migth be enumerated with eo...<BR> `function callback(node,name)  {console.log( "got", name, node.value );` |
+| function | (name, callback(...args) | Add a user defined function to the current sql connection.  'name' is the name of the function.  Callback is called whenever the function is used in SQL statement given to sqlite.  Return value is given as result of function.   **ODBC CONNECTION UNDEFINED RESULT**
+| aggregate | ( name, stepCallback(...args), finalCallback() ) | Define an aggregate function called 'name' and when used, each row stepped is passed to the step callback, when the grouping issues a final, invoke the final callback.  Final result is given as the final value.  **ODBC CONNECTION UNDEFINED RESULT**
 
 example sql command?
 ```
@@ -193,7 +194,7 @@ example sql command?
 
 | Option Node Instance methods |  |   |
 |---|---|----|
-|fo | (option name) | find an option node under this one (returns null if node doesn't exist)   fo( "name" )  |
+| fo | (option name) | find an option node under this one (returns null if node doesn't exist)   fo( "name" )  |
 | go | (option name) |  get an option node      go( "name" )
 | eo | (callback)   | enum option nodes from root of options  <br> eo( cb )<br> function cb( node, name ) { console.log( "got", name, node.value ); }  |
 | value | getter/setter<BR>-none- | set/get current value |
@@ -208,6 +209,10 @@ rows = db.do( "select * from sqlite_master" );
 rows.forEach( row=&gt;{
     console.log( "row : ", row );
 }
+
+db.function( "MyFunction", (...args)=>{ console.log( "Use Args:", args ); return JSON.strinigfy(args); } );
+db.aggregate( "MyAggregate", (...args)=>{ console.log( "Use Args:", args ); }, ()=>{ return "Computed Aggregate Value"; );
+
 ```
 
 db.do returns a result set (if any).  It will be an array of objects.  Objects will have fields named that are the names from the sqlite query.  If the name is the same as another, the columns are amalgamated into another array....
