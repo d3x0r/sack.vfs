@@ -934,8 +934,10 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 		return;
 	}
 
-	Local<Function> cb = Local<Function>::New( userData->isolate, userData->cb );
-	Local<Value> str = cb->Call( userData->sql->handle(), 0, NULL );
+	Local<Function> cb2 = Local<Function>::New( userData->isolate, userData->cb2 );
+	Local<Value> str;
+	MaybeLocal<Value> mv = cb2->Call( userData->isolate->GetCurrentContext(), userData->sql->handle(), 0, NULL );
+	str = mv.ToLocalChecked();
 	if( str->IsTypedArray() ) {
 		lprintf( "unhandled result - typed array (blob)" );
 	} else if( str->IsNumber() ) {
@@ -963,11 +965,6 @@ void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args )
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	int argc = args.Length();
-	if( !sql->thread ) {
-		sql->thread = MakeThread();
-		uv_async_init( uv_default_loop(), &sql->async, sqlUserAsyncMsg );
-		sql->async.data = sql;
-	}
 
 	if( argc > 2 ) {
 		String::Utf8Value name( args[0] );
@@ -979,6 +976,16 @@ void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args )
 		userData->cb2.Reset( isolate, Handle<Function>::Cast( args[2] ) );
 		userData->sql = sql;
 		PSSQL_AddSqliteAggregate( sql->odbc, *name, callAggStep, callAggFinal, -1, userData );
+
+		if( !sql->thread ) {
+			sql->thread = MakeThread();
+			uv_async_init( uv_default_loop(), &sql->async, sqlUserAsyncMsg );
+			sql->async.data = sql;
+		}
+	}
+	else {
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "Aggregate requires 3 parameters (name,stepCallback(...args), finalCallback())") ) ) );
 	}
 }
 
