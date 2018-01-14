@@ -332,7 +332,7 @@ typedef struct arrayBufferHolder ARRAY_BUFFER_HOLDER, *PARRAY_BUFFER_HOLDER;
 DeclareSet( ARRAY_BUFFER_HOLDER );
 
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info );
-	
+
 void InitFS( const v8::FunctionCallbackInfo<Value>& args );
 void ConfigScriptInit( Handle<Object> exports );
 

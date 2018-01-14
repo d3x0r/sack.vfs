@@ -852,6 +852,24 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 				args[n] = Number::New( userData->isolate, val );
 				break;
 			}
+			case 4:
+			{
+				const char *data;
+				char *_data;
+				int len;
+				PSSQL_GetSqliteValueBlob( argv[n], &data, &len );
+				_data = NewArray( char, len );
+				memcpy( _data, data, len );
+				Local<Object> arrayBuffer = ArrayBuffer::New( userData->isolate, _data, len );
+				PARRAY_BUFFER_HOLDER holder = GetHolder();
+				holder->o.Reset( userData->isolate, arrayBuffer );
+				holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+				holder->buffer = _data;
+				break;
+			}
+			case 5:
+				args[n] = Null( userData->isolate );
+				break;
 			case 3:
 			default:
 				PSSQL_GetSqliteValueText( argv[n], (const char**)&text, &textLen );
@@ -947,6 +965,24 @@ void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3_value*
 				args[n] = Number::New( userData->isolate, val );
 				break;
 			}
+			case 4:
+			{
+				const char *data;
+				char *_data;
+				int len;
+				PSSQL_GetSqliteValueBlob( argv[n], &data, &len );
+				_data = NewArray( char, len );
+				memcpy( _data, data, len );
+				Local<Object> arrayBuffer = ArrayBuffer::New( userData->isolate, _data, len );
+				PARRAY_BUFFER_HOLDER holder = GetHolder();
+				holder->o.Reset( userData->isolate, arrayBuffer );
+				holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+				holder->buffer = _data;
+				break;
+			}
+			case 5:
+				args[n] = Null( userData->isolate );
+				break;
 			case 3:
 			default:
 				PSSQL_GetSqliteValueText( argv[n], (const char**)&text, &textLen );
