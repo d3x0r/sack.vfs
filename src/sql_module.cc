@@ -790,8 +790,10 @@ static void sqlUserAsyncMsg( uv_async_t* handle ) {
 			callUserFunction( msg->onwhat, msg->argc, msg->argv );
 		else if( msg->mode == 2 )
 			callAggStep( msg->onwhat, msg->argc, msg->argv );
-		else if( msg->mode == 3 )
+		else if( msg->mode == 3 ) {
 			callAggFinal( msg->onwhat );
+			uv_close( (uv_handle_t*)&myself->async, NULL );
+		}
 	} else {
 		myself->thread = NULL;
 		uv_close( (uv_handle_t*)&myself->async, NULL );		
@@ -932,6 +934,14 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 		}
 
 		return;
+	} else {
+		struct userMessage msg;
+		msg.mode = 3;
+		msg.onwhat = NULL;
+		msg.done = 0;
+		msg.waiter = MakeThread();
+		EnqueLink( &userData->sql->messages, &msg );
+		uv_async_send( &userData->sql->async );
 	}
 
 	Local<Function> cb2 = Local<Function>::New( userData->isolate, userData->cb2 );
