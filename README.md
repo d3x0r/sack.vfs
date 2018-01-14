@@ -144,6 +144,7 @@ File Constants
 
 ## Sqlite Interface
   (result from vfs.Sqlite() or vfs.Volume().Sqlite())
+  Sqlite command only processes one command at a time.  If a multiple command separated with ';' or '\0' is issued, only the first command will be done.  This makes most destructive SQL injection impossible other than to make a query generally fail; unless the substitution is the first command word.  If they are able to otherwise inject into a delete/drop command Still no joy;  Generally these are done during initialization with well formed things though...
 
 Sqlite() will create a in memory database<br>
 Sqlite( &lt;String&gt; ) will user the string to specify a filename.  Sqlite URI decoding is enabled.  `":memory:"` will also result in a memory only database.
