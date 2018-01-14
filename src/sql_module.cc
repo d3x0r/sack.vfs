@@ -771,11 +771,12 @@ void SqlObject::makeTable( const v8::FunctionCallbackInfo<Value>& args ) {
 		table = GetFieldsInSQLEx( tableCommand, false DBG_SRC );
 		if( CheckODBCTable( sql->odbc, table, CTO_MERGE ) )
 			args.GetReturnValue().Set( True(isolate) );
-		args.GetReturnValue().Set( False( isolate ) );
+		else
+			args.GetReturnValue().Set( False( isolate ) );
 
 	}
-	//args.GetReturnValue().Set( returnval );
-	args.GetReturnValue().Set( False( isolate ) );
+	else
+		args.GetReturnValue().Set( False( isolate ) );
 }
 
 static void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv );
@@ -832,8 +833,30 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 		int textLen;
 		args = new Local<Value>[argc];
 		for( n = 0; n < argc; n++ ) {
-			PSSQL_GetSqliteValueText( argv[n], (const char**)&text, &textLen );
-			args[n] = String::NewFromUtf8( userData->isolate, text, NewStringType::kNormal, textLen ).ToLocalChecked();
+			int type = PSSQL_GetSqliteValueType( argv[n] );
+			switch( type ) {
+			case 1:
+			{
+				int64_t val;
+				PSSQL_GetSqliteValueInt64( argv[n], &val );
+				if( val & 0xFFFFFFFF00000000ULL )
+					args[n] = Number::New( userData->isolate, (double)val );
+				else
+					args[n] = Integer::New( userData->isolate, (int32_t)val );
+				break;
+			}
+			case 2:
+			{
+				double val;
+				PSSQL_GetSqliteValueDouble( argv[n], &val );
+				args[n] = Number::New( userData->isolate, val );
+				break;
+			}
+			case 3:
+			default:
+				PSSQL_GetSqliteValueText( argv[n], (const char**)&text, &textLen );
+				args[n] = String::NewFromUtf8( userData->isolate, text, NewStringType::kNormal, textLen ).ToLocalChecked();
+			}
 		}
 	} else {
 		args = NULL;
@@ -905,8 +928,30 @@ void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3_value*
 		int textLen;
 		args = new Local<Value>[argc];
 		for( n = 0; n < argc; n++ ) {
-			PSSQL_GetSqliteValueText( argv[n], (const char**)&text, &textLen );
-			args[n] = String::NewFromUtf8( userData->isolate, text, NewStringType::kNormal, textLen ).ToLocalChecked();
+			int type = PSSQL_GetSqliteValueType( argv[n] );
+			switch( type ) {
+			case 1:
+			{
+				int64_t val;
+				PSSQL_GetSqliteValueInt64( argv[n], &val );
+				if( val & 0xFFFFFFFF00000000ULL )
+					args[n] = Number::New( userData->isolate, (double)val );
+				else
+					args[n] = Integer::New( userData->isolate, (int32_t)val );
+				break;
+			}
+			case 2:
+			{
+				double val;
+				PSSQL_GetSqliteValueDouble( argv[n], &val );
+				args[n] = Number::New( userData->isolate, val );
+				break;
+			}
+			case 3:
+			default:
+				PSSQL_GetSqliteValueText( argv[n], (const char**)&text, &textLen );
+				args[n] = String::NewFromUtf8( userData->isolate, text, NewStringType::kNormal, textLen ).ToLocalChecked();
+			}
 		}
 	} else {
 		args = NULL;
