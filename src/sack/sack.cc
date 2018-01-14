@@ -60063,9 +60063,9 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 							{
 								lprintf( WIDE("getsockname errno = %d"), errno );
 							}
-                     if( pc->saSource->sa_family == AF_INET )
+							if( pc->saSource->sa_family == AF_INET )
 								SET_SOCKADDR_LENGTH( pc->saSource, IN_SOCKADDR_LENGTH );
-                     else if( pc->saSource->sa_family == AF_INET6 )
+							else if( pc->saSource->sa_family == AF_INET6 )
 								SET_SOCKADDR_LENGTH( pc->saSource, IN6_SOCKADDR_LENGTH );
 							else
 								SET_SOCKADDR_LENGTH( pc->saSource, nLen );
@@ -85678,7 +85678,7 @@ void DumpSQLTable( PTABLE table )
 		lprintf( WIDE( "Column %d '%s' [%s] [%s]" )
 		        , n
 				 ,( table->fields.field[n].name )
-				 ,( table->fields.field[n].type )
+				, table->fields.field[n].type?table->fields.field[n].type:NULL
 				 ,( table->fields.field[n].extra )
 				 );
 		for( m = 0; table->fields.field[n].previous_names[m] && m < MAX_PREVIOUS_FIELD_NAMES; m++ )
@@ -85831,7 +85831,7 @@ retry:
 									  , WIDE("alter table [%s] add column [%s] %s%s%s")
 									  , table->name
 									  , table->fields.field[m].name
-									  , table->fields.field[m].type
+									  , table->fields.field[m].type?table->fields.field[m].type:""
 									  , table->fields.field[m].extra?WIDE(" "):WIDE("")
 									  , table->fields.field[m].extra?table->fields.field[m].extra:WIDE("")
 									  );
@@ -85878,7 +85878,7 @@ retry:
 				vtprintf( pvtCreate, WIDE("alter table [%s] add column [%s] %s%s%s")
 						  , table->name
 						  , table->fields.field[n].name
-						  , table->fields.field[n].type
+						  , table->fields.field[n].type?table->fields.field[n].type:""
 						  , table->fields.field[n].extra?WIDE(" "):WIDE("")
 						  , table->fields.field[n].extra?table->fields.field[n].extra:WIDE("")
 						  );
@@ -85943,7 +85943,7 @@ retry:
 					vtprintf( pvtCreate, WIDE("%s[%s] %s%s%s")
 							  , first?WIDE( "" ):WIDE( "," )
 							  , table->fields.field[n].name
-							  , type
+							  , type?type:""
 //table->fields.field[n].extra?WIDE( " " ):WIDE( "" )
 							  , WIDE( "" )
 //table->fields.field[n].extra?table->fields.field[n].extra:WIDE( "" )
@@ -85955,7 +85955,7 @@ retry:
 					vtprintf( pvtCreate, WIDE("%s[%s] %s%s%s")
 							  , first?WIDE( "" ):WIDE( "," )
 							  , table->fields.field[n].name
-							  , type
+							  , type?type:""
 //(strstr( table->fields.field[n].extra, WIDE( "auto_increment" ) ))?WIDE( "COUNTER" ):WIDE( "" )
 							  , WIDE( "" )
 //table->fields.field[n].extra?table->fields.field[n].extra:WIDE( "" )
@@ -86084,7 +86084,7 @@ retry:
 										 , WIDE("alter table `%s` add column `%s` %s%s%s;\n")
 										 , table->name
 										 , table->fields.field[m].name
-										 , table->fields.field[m].type
+										 , table->fields.field[m].type?table->fields.field[m].type:""
 										 , table->fields.field[m].extra?WIDE(" "):WIDE("")
 										 , table->fields.field[m].extra?table->fields.field[m].extra:WIDE("")
 										 );
@@ -86099,7 +86099,7 @@ retry:
 											  , WIDE("alter table `%s` add column `%s` %s%s%s")
 											  , table->name
 											  , table->fields.field[m].name
-											  , table->fields.field[m].type
+											 , table->fields.field[m].type?table->fields.field[m].type:""
 											  , table->fields.field[m].extra?WIDE(" "):WIDE("")
 											  , table->fields.field[m].extra?table->fields.field[m].extra:WIDE("")
 											  );
@@ -86170,7 +86170,7 @@ retry:
 					vtprintf( pvtCreate, WIDE("alter table `%s` add column `%s` %s%s%s")
 							  , table->name
 							  , table->fields.field[n].name
-							  , table->fields.field[n].type
+							  , table->fields.field[n].type?table->fields.field[n].type:""
 							  , table->fields.field[n].extra?WIDE(" "):WIDE("")
 							  , table->fields.field[n].extra?table->fields.field[n].extra:WIDE("")
 							  );
@@ -86266,7 +86266,7 @@ retry:
 								vtprintf( pvtCreate, WIDE("%s`%s` %s %s")
 										  , first?WIDE(""):WIDE(",")
 										  , table->fields.field[n].name
-										  , table->fields.field[n].type
+										  , table->fields.field[n].type? table->fields.field[n].type:""
 										  , extra
 										  );
 								Release( extra );
@@ -86275,7 +86275,7 @@ retry:
 								vtprintf( pvtCreate, WIDE("%s`%s` %s%s%s")
 										  , first?WIDE(""):WIDE(",")
 										  , table->fields.field[n].name
-										  , table->fields.field[n].type
+										  , table->fields.field[n].type ? table->fields.field[n].type : ""
 										  , table->fields.field[n].extra?WIDE(" "):WIDE("")
 										  , table->fields.field[n].extra?table->fields.field[n].extra:WIDE("")
 										  );
@@ -87055,7 +87055,7 @@ int GrabName( PTEXT *word, TEXTSTR *result, int *bQuoted DBG_PASS )
 {
 	TEXTSTR name = NULL;
 	//PTEXT start = (*word);
-   //printf( WIDE( "word is %s" ), GetText( *word ) );
+	//printf( WIDE( "word is %s" ), GetText( *word ) );
 	if( TextLike( (*word), WIDE( "`" ) ) )
 	{
 		PTEXT phrase = NULL;
@@ -87128,31 +87128,38 @@ static int GrabType( PTEXT *word, TEXTSTR *result DBG_PASS )
 	{
 		//int quote = 0;
 		//int escape = 0;
-		PTEXT type = SegDuplicate(*word);
-		type->format.position.offset.spaces = 0;
-		type->format.position.offset.tabs = 0;
-		(*word) = NEXTLINE( *word );
-		if( StrCaseCmp( GetText( type ), WIDE( "unsigned" ) ) == 0 )
+		int parens = 0;
+		TEXTCHAR *tmp;
+		if( (*word) && ( ( tmp = GetText( *word ) )[0] != ',' || ( parens > 0 ) ) && ( ( parens > 0 ) || (tmp[0] != ')') ) )
 		{
-			SegAppend( type, SegDuplicate(*word) );
+			PTEXT type = SegDuplicate(*word);
+			type->format.position.offset.spaces = 0;
+			type->format.position.offset.tabs = 0;
 			(*word) = NEXTLINE( *word );
-		}
-		if( (*word) && GetText( *word )[0] == '(' )
-		{
-			while( (*word) && GetText( *word )[0] != ')' )
+			if( StrCaseCmp( GetText( type ), WIDE( "unsigned" ) ) == 0 )
 			{
+				SegAppend( type, SegDuplicate(*word) );
+				(*word) = NEXTLINE( *word );
+			}
+			if( (*word) && GetText( *word )[0] == '(' )
+			{
+				while( (*word) && GetText( *word )[0] != ')' )
+				{
+					type = SegAppend( type, SegDuplicate( *word ) );
+					(*word) = NEXTLINE( *word );
+				}
 				type = SegAppend( type, SegDuplicate( *word ) );
 				(*word) = NEXTLINE( *word );
 			}
-			type = SegAppend( type, SegDuplicate( *word ) );
-			(*word) = NEXTLINE( *word );
-		}
-		{
-			PTEXT tmp = BuildLine( type );
-			LineRelease( type );
-			if( result )
-				(*result) = StrDupEx( GetText( tmp ) DBG_RELAY );
-			LineRelease( tmp );
+			{
+				PTEXT tmp = BuildLine( type );
+				LineRelease( type );
+				if( result )
+					(*result) = StrDupEx( GetText( tmp ) DBG_RELAY );
+				LineRelease( tmp );
+			}
+		}else {
+			(*result) = NULL;
 		}
 		return TRUE;
 	}
