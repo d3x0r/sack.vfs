@@ -254,34 +254,74 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	if( sql->columns )
 	{
+		int usedFields = 0;
+		struct fieldTypes {
+			const char *name;
+			int used;
+			int first;
+			Local<Array> array;
+		} *fields = NewArray( struct fieldTypes, sql->columns ) ;
+		struct colMap { int depth; int col; const char *table; }  *colMap = NewArray( struct colMap, sql->columns );
+
+		for( int n = 0; n < sql->columns; n++ ) {
+			int m;
+			for( m = 0; m < usedFields; m++ ) {
+				if( StrCaseCmp( fields[m].name, sql->fields[n] ) == 0 ) {
+					colMap[n].col = m;
+					colMap[n].depth = fields[m].used;
+					colMap[n].table = PSSQL_GetColumnTableName( sql->odbc, n );
+					fields[m].used++;
+					break;
+				}
+			}
+			if( m == usedFields ) {
+				colMap[n].col = m;
+				colMap[n].depth = 0;
+				colMap[n].table = PSSQL_GetColumnTableName( sql->odbc, n );
+				fields[usedFields].first = n;
+				fields[usedFields].name = sql->fields[n];
+				fields[usedFields].used = 1;
+				usedFields++;
+			}
+		}
 		Local<Array> records = Array::New( isolate );
 		Local<Object> record = Object::New( isolate );
 		if( sql->result ) {
 			int row = 0;
 			do {
+				Local<Value> val;
 				record = Object::New( isolate );
 				for( int n = 0; n < sql->columns; n++ ) {
+					if( fields[colMap[n].col].used > 1 ) {
+						if( fields[colMap[n].col].first == n ) {
+							record->Set( String::NewFromUtf8( isolate, sql->fields[colMap[n].col] )
+									  , fields[colMap[n].col].array = Array::New( isolate ) 
+									  );
+						}
+					}
+
 					if( sql->result[n] ) {
 						double f;
 						int64_t i;
 						int type = IsTextAnyNumber( sql->result[n], &f, &i );
+
 						if( type == 2 )
-							record->Set( String::NewFromUtf8( isolate, sql->fields[n] )
-										  , Number::New( isolate, f )
-										  );
+							val = Number::New( isolate, f );
 						else if( type == 1 )
-							record->Set( String::NewFromUtf8( isolate, sql->fields[n] )
-										  , Number::New( isolate, (double)i )
-										  );
+							val = Number::New( isolate, (double)i );
 						else
-							record->Set( String::NewFromUtf8( isolate, sql->fields[n] )
-										  , String::NewFromUtf8( isolate, sql->result[n], NewStringType::kNormal, (int)sql->resultLens[n] ).ToLocalChecked()
-										  );
+							val = String::NewFromUtf8( isolate, sql->result[n], NewStringType::kNormal, (int)sql->resultLens[n] ).ToLocalChecked();
 					}
 					else
-						record->Set( String::NewFromUtf8( isolate, sql->fields[n] )
-									  , Null(isolate)
-									  );
+						val = Null(isolate);
+
+					if( fields[colMap[n].col].used > 1 ) {
+						fields[colMap[n].col].array->Set( String::NewFromUtf8( isolate, colMap[n].table ), val );
+						fields[colMap[n].col].array->Set( colMap[n].depth, val );
+					}
+					else
+						record->Set( String::NewFromUtf8( isolate, sql->fields[colMap[n].col] ), val );
+
 				}
 				records->Set( row++, record );
 			} while( FetchSQLRecord( sql->odbc, &sql->result ) );
