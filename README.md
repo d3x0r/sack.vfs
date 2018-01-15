@@ -242,14 +242,25 @@ fruit_id color_id
 2 1
 3 2
 
-SELECT * from fruits join fruit_color join color 
+SELECT fruits.*,color.* from fruits join fruit_color join fruit_color join color 
 
-[ { fruit_id : [1,1], name: [apple, red], color_id, [3, 3] } 
- { fruit_id : [1,1], name: [apple, green], color_id, [4, 4] } 
- { fruit_id : [2,2], name: [banana, yellow], color_id, [1, 1] } 
-  { fruit_id : [3,3], name: [orange, orange], color_id, [2, 2] } 
+[ { fruit_id : 1, name: [apple, red], color_id,  3 } 
+ { fruit_id : 1, name: [apple, green], color_id,  4 } 
+ { fruit_id : 2, name: [banana, yellow], color_id,  1 } 
+  { fruit_id : 3, name: [orange, orange], color_id,  2 } 
  ]
- ```
+
+-- newer output style
+[ { fruits : { fruit_id : 1, name : apple }
+    color : { color_id : 3, name: red] 
+    fruit_id, 1,
+    name : [ apple,red ],
+    color_id : 3  },
+  ... 
+]
+
+
+```
 
 ```
  console.log( db.do( 'SELECT * from fruits join fruit_color join color' );
