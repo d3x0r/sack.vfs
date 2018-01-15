@@ -525,8 +525,6 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		else if(args[1]->IsString()) {
 			char *f = StrDup( *fName );
 			String::Utf8Value buffer( args[1] );
-			//Local<ArrayBuffer> myarr = args[1].As<ArrayBuffer>();
-			//Nan::TypedArrayContents<uint8_t> dest(myarr);
 			const char *buf = *buffer;
 			if( !overlong ) {
 				if( vol->volNative ) {

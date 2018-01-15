@@ -10050,6 +10050,7 @@ PSSQL_PROC( void, PSSQL_GetSqliteValueDouble )( struct sqlite3_value *val, doubl
 PSSQL_PROC( void, PSSQL_GetSqliteValueInt )( struct sqlite3_value *val, int *result );
 PSSQL_PROC( void, PSSQL_GetSqliteValueInt64 )( struct sqlite3_value *val, int64_t *result );
 PSSQL_PROC( const char *, PSSQL_GetColumnTableName )( PODBC odbc, int col );
+PSSQL_PROC( const char *, PSSQL_GetColumnTableAliasName )( PODBC odbc, int col );
 PSSQL_PROC( void, PSSQL_GetSqliteValue )( struct sqlite3_value *val, const char **text, int *textLen );
 #endif
 SQL_NAMESPACE_END
@@ -75969,6 +75970,7 @@ struct sqlite_interface
 	int ( FIXREF2*sqlite3_extended_errcode)(sqlite3 *db);
 	int ( FIXREF2*sqlite3_stmt_readonly)(sqlite3_stmt *pStmt);
 	const char *( FIXREF2*sqlite3_column_table_name )( sqlite3_stmt *odbc, int col );
+	const char *( FIXREF2*sqlite3_column_table_alais_name )( sqlite3_stmt *odbc, int col );
 };
 #  ifndef DEFINES_SQLITE_INTERFACE
 extern
@@ -76009,6 +76011,7 @@ PRIORITY_PRELOAD( LoadSQLiteInterface, SQL_PRELOAD_PRIORITY-1 )
 #    define sqlite3_extended_errcode     (FIXDEREF2 (sqlite_iface->sqlite3_extended_errcode))
 #    define sqlite3_stmt_readonly        (FIXDEREF2 (sqlite_iface->sqlite3_stmt_readonly))
 #    define sqlite3_column_table_name    (FIXDEREF2 (sqlite_iface->sqlite3_column_table_name))
+#    define sqlite3_column_table_alias_name (FIXDEREF2 (sqlite_iface->sqlite3_column_table_alias_name))
 #  endif
 #endif
 SQL_NAMESPACE_END
@@ -76019,23 +76022,23 @@ SQL_NAMESPACE
 static void InitVFS( CTEXTSTR name, struct file_system_mounted_interface *fsi );
 struct sqlite_interface my_sqlite_interface = {
 	sqlite3_result_text
-														 , sqlite3_user_data
-														 , sqlite3_last_insert_rowid
-														 , sqlite3_create_function
-														 , sqlite3_get_autocommit
-														 , sqlite3_open
-														 , sqlite3_open_v2
-														 , sqlite3_errmsg
-														 , sqlite3_finalize
-														 , sqlite3_close
+	 , sqlite3_user_data
+	 , sqlite3_last_insert_rowid
+	 , sqlite3_create_function
+	 , sqlite3_get_autocommit
+	 , sqlite3_open
+	 , sqlite3_open_v2
+	 , sqlite3_errmsg
+	 , sqlite3_finalize
+	 , sqlite3_close
 #if ( SQLITE_VERSION_NUMBER > 3007013 )
-														 , sqlite3_close_v2
+         , sqlite3_close_v2
 #endif
-                                           , sqlite3_prepare_v2
+         , sqlite3_prepare_v2
 #ifdef _UNICODE
-                                           , sqlite3_prepare16_v2
+         , sqlite3_prepare16_v2
 #else
-                                           , NULL
+         , NULL
 #endif
                                            , sqlite3_step
                                            , sqlite3_column_name
@@ -76052,6 +76055,7 @@ struct sqlite_interface my_sqlite_interface = {
 															 , sqlite3_backup_finish
 															 , sqlite3_extended_errcode
                                            , sqlite3_stmt_readonly
+                                           , sqlite3_column_table_name
                                            , sqlite3_column_table_alias_name
 };
 struct my_file_data
@@ -76967,6 +76971,7 @@ struct sqlite_interface
 	int ( FIXREF2*sqlite3_extended_errcode)(sqlite3 *db);
 	int ( FIXREF2*sqlite3_stmt_readonly)(sqlite3_stmt *pStmt);
 	const char *( FIXREF2*sqlite3_column_table_name )( sqlite3_stmt *odbc, int col );
+	const char *( FIXREF2*sqlite3_column_table_alais_name )( sqlite3_stmt *odbc, int col );
 };
 #  ifndef DEFINES_SQLITE_INTERFACE
 extern
@@ -77007,6 +77012,7 @@ PRIORITY_PRELOAD( LoadSQLiteInterface, SQL_PRELOAD_PRIORITY-1 )
 #    define sqlite3_extended_errcode     (FIXDEREF2 (sqlite_iface->sqlite3_extended_errcode))
 #    define sqlite3_stmt_readonly        (FIXDEREF2 (sqlite_iface->sqlite3_stmt_readonly))
 #    define sqlite3_column_table_name    (FIXDEREF2 (sqlite_iface->sqlite3_column_table_name))
+#    define sqlite3_column_table_alias_name (FIXDEREF2 (sqlite_iface->sqlite3_column_table_alias_name))
 #  endif
 #endif
 SQL_NAMESPACE_END
@@ -80371,6 +80377,19 @@ void PSSQL_GetSqliteValueInt64( struct sqlite3_value *val, int64_t *result ){
 	(*result) = sqlite3_value_int64( val );
 }
 const char * PSSQL_GetColumnTableName( PODBC odbc, int col) {
+	PCOLLECT pCollect;
+	pCollect = odbc ? odbc->collection : NULL;
+	if( pCollect ) {
+		const char *tmp;
+		//tmp = sqlite3_column_table_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
+		//tmp = sqlite3_column_origin_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
+ // sqlite function is 'unsigned' result
+		tmp = sqlite3_column_table_name( pCollect->stmt, col );
+		return tmp;
+	}
+	return NULL;
+}
+const char * PSSQL_GetColumnTableAliasName( PODBC odbc, int col ) {
 	PCOLLECT pCollect;
 	pCollect = odbc ? odbc->collection : NULL;
 	if( pCollect ) {
@@ -85775,7 +85794,7 @@ void DumpSQLTable( PTABLE table )
 		lprintf( WIDE( "Column %d '%s' [%s] [%s]" )
 		        , n
 				 ,( table->fields.field[n].name )
-				, table->fields.field[n].type?table->fields.field[n].type:NULL
+				, table->fields.field[n].type?table->fields.field[n].type:""
 				 ,( table->fields.field[n].extra )
 				 );
 		for( m = 0; table->fields.field[n].previous_names[m] && m < MAX_PREVIOUS_FIELD_NAMES; m++ )
@@ -86363,7 +86382,7 @@ retry:
 								vtprintf( pvtCreate, WIDE("%s`%s` %s %s")
 										  , first?WIDE(""):WIDE(",")
 										  , table->fields.field[n].name
-										  , table->fields.field[n].type
+										  , table->fields.field[n].type? table->fields.field[n].type:""
 										  , extra
 										  );
 								Release( extra );
@@ -86372,7 +86391,7 @@ retry:
 								vtprintf( pvtCreate, WIDE("%s`%s` %s%s%s")
 										  , first?WIDE(""):WIDE(",")
 										  , table->fields.field[n].name
-										  , table->fields.field[n].type
+										  , table->fields.field[n].type ? table->fields.field[n].type : ""
 										  , table->fields.field[n].extra?WIDE(" "):WIDE("")
 										  , table->fields.field[n].extra?table->fields.field[n].extra:WIDE("")
 										  );
@@ -86383,7 +86402,7 @@ retry:
 						vtprintf( pvtCreate, WIDE("%s`%s` %s%s%s")
 								  , first?WIDE(""):WIDE(",")
 								  , table->fields.field[n].name
-								  , table->fields.field[n].type
+								  , table->fields.field[n].type ? table->fields.field[n].type : ""
 								  , table->fields.field[n].extra?WIDE(" "):WIDE("")
 								  , table->fields.field[n].extra?table->fields.field[n].extra:WIDE("")
 								  );
@@ -88067,6 +88086,7 @@ struct sqlite_interface
 	int ( FIXREF2*sqlite3_extended_errcode)(sqlite3 *db);
 	int ( FIXREF2*sqlite3_stmt_readonly)(sqlite3_stmt *pStmt);
 	const char *( FIXREF2*sqlite3_column_table_name )( sqlite3_stmt *odbc, int col );
+	const char *( FIXREF2*sqlite3_column_table_alais_name )( sqlite3_stmt *odbc, int col );
 };
 #  ifndef DEFINES_SQLITE_INTERFACE
 extern
@@ -88107,6 +88127,7 @@ PRIORITY_PRELOAD( LoadSQLiteInterface, SQL_PRELOAD_PRIORITY-1 )
 #    define sqlite3_extended_errcode     (FIXDEREF2 (sqlite_iface->sqlite3_extended_errcode))
 #    define sqlite3_stmt_readonly        (FIXDEREF2 (sqlite_iface->sqlite3_stmt_readonly))
 #    define sqlite3_column_table_name    (FIXDEREF2 (sqlite_iface->sqlite3_column_table_name))
+#    define sqlite3_column_table_alias_name (FIXDEREF2 (sqlite_iface->sqlite3_column_table_alias_name))
 #  endif
 #endif
 SQL_NAMESPACE_END

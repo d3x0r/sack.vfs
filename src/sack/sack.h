@@ -9510,6 +9510,7 @@ PSSQL_PROC( void, PSSQL_GetSqliteValueDouble )( struct sqlite3_value *val, doubl
 PSSQL_PROC( void, PSSQL_GetSqliteValueInt )( struct sqlite3_value *val, int *result );
 PSSQL_PROC( void, PSSQL_GetSqliteValueInt64 )( struct sqlite3_value *val, int64_t *result );
 PSSQL_PROC( const char *, PSSQL_GetColumnTableName )( PODBC odbc, int col );
+PSSQL_PROC( const char *, PSSQL_GetColumnTableAliasName )( PODBC odbc, int col );
 PSSQL_PROC( void, PSSQL_GetSqliteValue )( struct sqlite3_value *val, const char **text, int *textLen );
 #endif
 SQL_NAMESPACE_END
