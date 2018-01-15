@@ -251,12 +251,28 @@ SELECT fruits.*,color.* from fruits join fruit_color join fruit_color join color
  ]
 
 -- newer output style
-[ { fruits : { fruit_id : 1, name : apple }
-    color : { color_id : 3, name: red] 
-    fruit_id, 1,
-    name : [ apple,red ],
-    color_id : 3  },
-  ... 
+select fruit.*,color.* from fruit join fruit_color on fruit_color.fruit_id=fruit.fruit_id join color on fruit_color.color_id=color.color_id
+[ { fruit: { fruit_id: 1, name: 'apple' },
+    color: { color_id: 1, name: 'red' },
+    fruit_id: 1,
+    name: [ 'apple', 'red', fruit: 'apple', color: 'red' ],
+    color_id: 1 },
+  { fruit: { fruit_id: 2, name: 'orange' },
+    color: { color_id: 2, name: 'orange' },
+    fruit_id: 2,
+    name: [ 'orange', 'orange', fruit: 'orange', color: 'orange' ],
+    color_id: 2 },
+  { fruit: { fruit_id: 3, name: 'banana' },
+    color: { color_id: 3, name: 'yellow' },
+    fruit_id: 3,
+    name: [ 'banana', 'yellow', fruit: 'banana', color: 'yellow' ],
+    color_id: 3 } ]
+
+
+select fruit.name as fruit,color.name as color from fruit join fruit_color on fruit_color.fruit_id=fruit.fruit_id join color on fruit_color.color_id=color.color_id
+[ { fruit: 'apple', color: 'red' },
+  { fruit: 'orange', color: 'orange' },
+  { fruit: 'banana', color: 'yellow' } ]  ... 
 ]
 
 
