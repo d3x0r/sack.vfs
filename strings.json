@@ -2,6 +2,7 @@
 	"DEFAULT":{
 		"1":" issuer:"
 		,"2":" subject:"
+		,"24":"Column name overlaps table alias"
 		,"3":"Missing required option 'cert'."
 		,"4":"Missing required option 'country'."
 		,"5":"Missing required option 'key' or 'cert'."
@@ -16,12 +17,12 @@
 		,"14":"Reviver parameter is not a function."
 		,"15":"Something"
 		,"16":"Volume failed to open."
-		,"23":"expiration : failed to parse cert"
-		,"17":"gencert : bad pubkey specified."
-		,"18":"pubkey: bad key or password"
-		,"19":"validate: bad certificate"
-		,"20":"validate: certificate signature failed:"
-		,"21":"validate: failed; unhandled error:"
-		,"22":"validate: unable to get issuer cert locally."
+		,"17":"expiration : failed to parse cert"
+		,"18":"gencert : bad pubkey specified."
+		,"19":"pubkey: bad key or password"
+		,"20":"validate: bad certificate"
+		,"21":"validate: certificate signature failed:"
+		,"22":"validate: failed; unhandled error:"
+		,"23":"validate: unable to get issuer cert locally."
 	}
 }
