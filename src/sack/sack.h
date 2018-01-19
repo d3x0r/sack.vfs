@@ -8247,6 +8247,15 @@ typedef struct required_field_tag
 /* <combine sack::sql::required_key_def>
    \ \                                   */
 typedef struct required_key_def  DB_KEY_DEF;
+enum uniqueResolutions {
+  // no on conflict specification.
+	UNIQRES_UNSET = 0,
+	UNIQRES_REPLACE,
+	UNIQRES_IGNORE,
+	UNIQRES_FAIL,
+	UNIQRES_ABORT,
+	UNIQRES_ROLLBACK
+};
 /* <combine sack::sql::required_key_def>
    \ \                                   */
 typedef struct required_key_def  *PDB_KEY_DEF;
@@ -8260,6 +8269,7 @@ struct required_key_def
 		BIT_FIELD bPrimary : 1;
 		/* the key is meant to be unique. */
 		BIT_FIELD bUnique : 1;
+		BIT_FIELD uniqueResolution : 3;
 	} flags;
 	/* Name of the key column. Can be NULL if primary. */
 	CTEXTSTR name;

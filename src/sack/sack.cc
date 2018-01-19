@@ -8787,6 +8787,15 @@ typedef struct required_field_tag
 /* <combine sack::sql::required_key_def>
    \ \                                   */
 typedef struct required_key_def  DB_KEY_DEF;
+enum uniqueResolutions {
+  // no on conflict specification.
+	UNIQRES_UNSET = 0,
+	UNIQRES_REPLACE,
+	UNIQRES_IGNORE,
+	UNIQRES_FAIL,
+	UNIQRES_ABORT,
+	UNIQRES_ROLLBACK
+};
 /* <combine sack::sql::required_key_def>
    \ \                                   */
 typedef struct required_key_def  *PDB_KEY_DEF;
@@ -8800,6 +8809,7 @@ struct required_key_def
 		BIT_FIELD bPrimary : 1;
 		/* the key is meant to be unique. */
 		BIT_FIELD bUnique : 1;
+		BIT_FIELD uniqueResolution : 3;
 	} flags;
 	/* Name of the key column. Can be NULL if primary. */
 	CTEXTSTR name;
@@ -60306,7 +60316,9 @@ int NetworkQuit(void)
 		PLIST wakeEvents = NULL;
 		struct peer_thread_info *peer_thread;
 		WSAEVENT hThread;
-		for( peer_thread = globalNetworkData.root_thread; peer_thread; peer_thread = peer_thread->child_peer ) {
+		peer_thread = globalNetworkData.root_thread;
+		globalNetworkData.root_thread = NULL;
+		for( ; peer_thread; peer_thread = peer_thread->child_peer ) {
 			AddLink( &wakeEvents, peer_thread->hThread );
 		}
 		LIST_FORALL( wakeEvents, idx, WSAEVENT, hThread )
@@ -65048,7 +65060,7 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.22.0"
 #define SQLITE_VERSION_NUMBER 3022000
-#define SQLITE_SOURCE_ID      "2018-01-07 21:58:17 0a50c9e3bb0dbdaaec819ac6453276ba287b475ea322918ddda1ab3a1ec4alt1"
+#define SQLITE_SOURCE_ID      "2018-01-17 16:11:26 a8aea925f8fde8f2dc5ff4b744d54aa2bf8916f3ee57f22d77fd1ddb5a35alt1"
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
 ** KEYWORDS: sqlite3_version sqlite3_sourceid
@@ -65422,7 +65434,6 @@ SQLITE_API int sqlite3_exec(
 #define SQLITE_CANTOPEN_ISDIR          (SQLITE_CANTOPEN | (2<<8))
 #define SQLITE_CANTOPEN_FULLPATH       (SQLITE_CANTOPEN | (3<<8))
 #define SQLITE_CANTOPEN_CONVPATH       (SQLITE_CANTOPEN | (4<<8))
-#define SQLITE_CANTOPEN_DIRTYWAL       (SQLITE_CANTOPEN | (5<<8))
 #define SQLITE_CORRUPT_VTAB            (SQLITE_CORRUPT | (1<<8))
 #define SQLITE_READONLY_RECOVERY       (SQLITE_READONLY | (1<<8))
 #define SQLITE_READONLY_CANTLOCK       (SQLITE_READONLY | (2<<8))
@@ -75970,7 +75981,7 @@ struct sqlite_interface
 	int ( FIXREF2*sqlite3_extended_errcode)(sqlite3 *db);
 	int ( FIXREF2*sqlite3_stmt_readonly)(sqlite3_stmt *pStmt);
 	const char *( FIXREF2*sqlite3_column_table_name )( sqlite3_stmt *odbc, int col );
-	const char *( FIXREF2*sqlite3_column_table_alais_name )( sqlite3_stmt *odbc, int col );
+	const char *( FIXREF2*sqlite3_column_table_alias_name )( sqlite3_stmt *odbc, int col );
 };
 #  ifndef DEFINES_SQLITE_INTERFACE
 extern
@@ -76971,7 +76982,7 @@ struct sqlite_interface
 	int ( FIXREF2*sqlite3_extended_errcode)(sqlite3 *db);
 	int ( FIXREF2*sqlite3_stmt_readonly)(sqlite3_stmt *pStmt);
 	const char *( FIXREF2*sqlite3_column_table_name )( sqlite3_stmt *odbc, int col );
-	const char *( FIXREF2*sqlite3_column_table_alais_name )( sqlite3_stmt *odbc, int col );
+	const char *( FIXREF2*sqlite3_column_table_alias_name )( sqlite3_stmt *odbc, int col );
 };
 #  ifndef DEFINES_SQLITE_INTERFACE
 extern
@@ -86482,7 +86493,7 @@ retry:
 						{
 							if( table->keys.key[n].flags.bUnique )
 							{
-								if( table->keys.key[n].flags.bUnique && table->keys.key[n].colnames[1] )
+								if( table->keys.key[n].colnames[1] )
 								{
 									int c;
 									vtprintf( pvtCreate, WIDE("%sCONSTRAINT `%s` UNIQUE (")
@@ -86491,7 +86502,16 @@ retry:
 											  );
 									for( c = 0; table->keys.key[n].colnames[c]; c++ )
 										vtprintf( pvtCreate, WIDE( "%s`%s`"), (c==0)?WIDE(""):WIDE(","), table->keys.key[n].colnames[c] );
-									vtprintf( pvtCreate, WIDE(") ON CONFLICT REPLACE")  );
+									vtprintf( pvtCreate, WIDE(")") );
+                           if( table->keys.key[n].flags.uniqueResolution != UNIQRES_UNSET )
+										vtprintf( pvtCreate, WIDE("ON CONFLICT %s")
+													, table->keys.key[n].flags.uniqueResolution == UNIQRES_REPLACE ? "REPLACE"
+													: table->keys.key[n].flags.uniqueResolution == UNIQRES_ABORT ? "ABORT"
+													: table->keys.key[n].flags.uniqueResolution == UNIQRES_FAIL ? "FAIL"
+													: table->keys.key[n].flags.uniqueResolution == UNIQRES_IGNORE ? "IGNORE"
+													: table->keys.key[n].flags.uniqueResolution == UNIQRES_ROLLBACK ? "ROLLBACK"
+													: "ABORT"
+												  );
 									first = 0;
 								}
 							}
@@ -87358,6 +87378,7 @@ void AddConstraint( PTABLE table, PTEXT *word )
 		table->keys.key[table->keys.count-1].flags.bUnique = 1;
 		table->keys.key[table->keys.count-1].name = tmpname;
 		table->keys.key[table->keys.count-1].colnames[0] = NULL;
+		table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_UNSET;
 		GrabKeyColumns( word, table->keys.key[table->keys.count-1].colnames );
 		if( StrCaseCmp( GetText(*word), WIDE( "ON" ) ) == 0 )
 		{
@@ -87367,6 +87388,27 @@ void AddConstraint( PTABLE table, PTEXT *word )
 				(*word) = NEXTLINE( *word );
 				if( StrCaseCmp( GetText(*word), WIDE( "REPLACE" ) ) == 0 )
 				{
+               table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_REPLACE;
+					(*word) = NEXTLINE( *word );
+				}
+				if( StrCaseCmp( GetText(*word), WIDE( "IGNORE" ) ) == 0 )
+				{
+               table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_IGNORE;
+					(*word) = NEXTLINE( *word );
+				}
+				if( StrCaseCmp( GetText(*word), WIDE( "FAIL" ) ) == 0 )
+				{
+               table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_FAIL;
+					(*word) = NEXTLINE( *word );
+				}
+				if( StrCaseCmp( GetText(*word), WIDE( "ABORT" ) ) == 0 )
+				{
+               table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_ABORT;
+					(*word) = NEXTLINE( *word );
+				}
+				if( StrCaseCmp( GetText(*word), WIDE( "ROLLBACK" ) ) == 0 )
+				{
+               table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_ROLLBACK;
 					(*word) = NEXTLINE( *word );
 				}
 			}
@@ -88086,7 +88128,7 @@ struct sqlite_interface
 	int ( FIXREF2*sqlite3_extended_errcode)(sqlite3 *db);
 	int ( FIXREF2*sqlite3_stmt_readonly)(sqlite3_stmt *pStmt);
 	const char *( FIXREF2*sqlite3_column_table_name )( sqlite3_stmt *odbc, int col );
-	const char *( FIXREF2*sqlite3_column_table_alais_name )( sqlite3_stmt *odbc, int col );
+	const char *( FIXREF2*sqlite3_column_table_alias_name )( sqlite3_stmt *odbc, int col );
 };
 #  ifndef DEFINES_SQLITE_INTERFACE
 extern
