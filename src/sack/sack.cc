@@ -61435,21 +61435,17 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 			}
 		}
 		else {
-//#if 0
 			struct linger lingerSet;
 			// linger ON causes delay on close... otherwise close returns immediately
  // on , with no time = off.
 			lingerSet.l_onoff = 1;
 			lingerSet.l_linger = 2;
 			// set server to allow reuse of socket port
-            lprintf( "Set 2 second linger" );
 			if( setsockopt( lpClient->Socket, SOL_SOCKET, SO_LINGER,
 				(char*)&lingerSet, sizeof( lingerSet ) ) <0 )
 			{
-				lprintf( WIDE( "error setting no linger in close." ) );
-				//cerr << "NFMSim:setHost:ERROR: could not set socket to linger." << endl;
+				lprintf( WIDE( "error setting 2 second linger in close." ) );
 			}
-//#endif
 		}
 		if( !(lpClient->dwFlags & CF_ACTIVE) )
 		{
@@ -64175,7 +64171,7 @@ void CloseSession( PCLIENT pc )
 		RemoveClient( pc );
 }
 static int logerr( const char *str, size_t len, void *userdata ) {
-	lprintf( "%p: %s", userdata, str );
+	lprintf( "%d: %s", *((int*)&userdata), str );
 	return 0;
 }
 static int handshake( PCLIENT pc ) {
@@ -64557,12 +64553,16 @@ LOGICAL ssl_BeginServer( PCLIENT pc, CPOINTER cert, size_t certlen, CPOINTER key
 		//PKCS12_parse( )
 		BIO_write( keybuf, cert, (int)certlen );
 		do {
+			if( !BIO_pending( keybuf ) )
+				break;
 			x509 = X509_new();
 			result = PEM_read_bio_X509( keybuf, &x509, NULL, NULL );
 			if( result )
 				sk_X509_push( certStruc->chain, x509 );
-			else
+			else {
+				ERR_print_errors_cb( logerr, (void*)__LINE__ );
 				X509_free( x509 );
+			}
 		} while( result );
 		BIO_free( keybuf );
 		ses->cert = certStruc;
@@ -64573,11 +64573,15 @@ LOGICAL ssl_BeginServer( PCLIENT pc, CPOINTER cert, size_t certlen, CPOINTER key
 	} else {
 		BIO *keybuf = BIO_new( BIO_s_mem() );
 		struct info_params params;
+		EVP_PKEY *result;
 		ses->cert->pkey = EVP_PKEY_new();
 		BIO_write( keybuf, keypair, (int)keylen );
 		params.password = (char*)keypass;
 		params.passlen = (int)keypasslen;
-		PEM_read_bio_PrivateKey( keybuf, &ses->cert->pkey, pem_password, &params );
+		result = PEM_read_bio_PrivateKey( keybuf, &ses->cert->pkey, pem_password, &params );
+		if( !result ) {
+			ERR_print_errors_cb( logerr, (void*)__LINE__ );
+		}
 		BIO_free( keybuf );
 	}
 	ses->ctx = SSL_CTX_new( TLSv1_2_server_method() );
@@ -64667,7 +64671,7 @@ LOGICAL ssl_BeginClientSession( PCLIENT pc, CPOINTER client_keypair, size_t clie
 			params.passlen = (int)keypasslen;
 			ses->cert->pkey = EVP_PKEY_new();
 			if( !PEM_read_bio_PrivateKey( keybuf, &ses->cert->pkey, pem_password, &params ) ) {
-				lprintf( "failed decode key..." );
+				ERR_print_errors_cb( logerr, (void*)__LINE__ );
 				BIO_free( keybuf );
 				return FALSE;
 			}
@@ -86126,6 +86130,7 @@ LOGICAL CPROC CheckMySQLODBCTable( PODBC odbc, PTABLE table, uint32_t options )
 	int success;
 	int buflen;
 	PVARTEXT pvtCreate = NULL;
+	int status = 1;
 	TEXTCHAR *cmd;
 	if( options & CTO_LOG_CHANGES )
 	{
@@ -86608,12 +86613,12 @@ retry:
 						vtprintf( pvtCreate, WIDE(" COMMENT=\'%s\'" ), table->comment );
 				}
 				PopODBCEx(odbc);
-				txt_cmd = VarTextGet( pvtCreate );
+				txt_cmd = VarTextPeek( pvtCreate );
 				if( f_odbc )
 					fprintf( f_odbc, WIDE( "%s;\n" ), GetText( txt_cmd ) );
 				else
-					SQLCommand( odbc, GetText( txt_cmd ) );
-				LineRelease( txt_cmd );
+					if( !SQLCommand( odbc, GetText( txt_cmd ) ) )
+						status = 0;
 			}
 			else
 			{
@@ -86626,7 +86631,7 @@ retry:
 		VarTextDestroy( &pvtCreate );
 	if( f_odbc )
 		fclose( f_odbc );
-	return 1;
+	return status;
 }
 LOGICAL CheckODBCTableEx( PODBC odbc, PTABLE table, uint32_t options DBG_PASS )
 {
