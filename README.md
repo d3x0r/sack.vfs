@@ -174,7 +174,7 @@ There are methods on the Sqlite() function call...
 | commit | ()  |  end a transaction successfully. |
 | autoTransact | (&lt;bool&gt;) | enabled/disable auto transaction features.    A command will begin a transaction, a timer will be set such that if no other command between happens, then a commit will be generated. So merely doing ```do()``` commands are optimized into transactions.
 | makeTable | (tableString) | evalute a sql create table clause, and create or update a table based on its definitions.          Additional columns will be added, old columns are untouched, even if the type specified changes.    Additional indexes and constraints can be added to existing tables.
-| do | ( &lt;String&gt;) | execute a sql command or query.  Results with null on error, or an array on success.  If command generates no output, array length will be 0.  |
+| do | ( &lt;String&gt;) | execute a single sql command or query.  Results with null on error, or an array on success.  If command generates no output, array length will be 0.  |
 | op  | (section [, opName],defaultValue) |  get an option from sqlite option database; return defaultValue  if not set, and set the option int he database to the default value.
 | getOption | (section [,opName],defaultValue) | longer name of 'op' |
 | so | (section [,opName] ,value) | set an option in sqlite option database |
@@ -1015,6 +1015,7 @@ Mostly unimplemented, more of a place holder than functional.
 ---
 
 ## Changelog
+- 0.9.111 - promote to more appropriate version.  If anyone else joins; this should go to 1.0.  Improve TLS error reporting and SQL result set ability.  Improve table parsing.
 - 0.1.99324 Test and Update sqlite user defined functions (function/aggregate); improved data type retention.
 - 0.1.99323 Fix mac ( got travis integration working for mac).
 - 0.1.99322 Some fixes building on mac.  Added error accessor to sqlite object.  Added user functions and aggregates to sqlite interface.
