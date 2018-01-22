@@ -15,8 +15,13 @@ compiler:
 
 env:
 
-if: NOT branch = master
+:if: NOT branch = master
 #if: NOT tag =~ ^[0-9]*.[0-9]*.[0-9]*
+
+branches:
+  - /^v[0-9]+\.[0-9]+.[0-9]+/
+only:
+  - /^v[0-9]+\.[0-9]+.[0-9]+/
 
 addons:
   apt:
