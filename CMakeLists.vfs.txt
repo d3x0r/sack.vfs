@@ -167,6 +167,17 @@ SET( EXTRA_SOURCES
 
 	${SACK_BASE}/src/translationlib/translate.c
 
+#$  {SACK_BASE}/src/msgsvr/client/global.h
+		${SACK_BASE}/src/typelib/msgqueue.c
+		${SACK_BASE}/src/msgsvr/client/client_common.c
+		${SACK_BASE}/src/msgsvr/client/client_client.c
+		${SACK_BASE}/src/msgsvr/client/client_events.c
+		${SACK_BASE}/src/msgsvr/client/client_input.c
+		${SACK_BASE}/src/msgsvr/client/client_local.c
+		${SACK_BASE}/src/msgsvr/client/client_output.c
+		${SACK_BASE}/src/msgsvr/client/client_service.c 
+		${SACK_BASE}/src/msgsvr/summoner/construct.c
+
 	${SACK_BASE}/src/deadstart/deadstart_lib.c
 )
 
