@@ -55128,7 +55128,7 @@ static int gatherString6(struct json_parse_state *state, CTEXTSTR msg, CTEXTSTR 
 	TEXTRUNE c;
 	//escape = 0;
 	//cr_escaped = FALSE;
-	while( ( ( n = (*msg_input) - msg ), (c = GetUtfChar( msg_input ) ), ( n < msglen ) ) && ( status >= 0 ) )
+	while( ( ( n = (*msg_input) - msg ), ( n < msglen ) ) && ( ( c = GetUtfChar( msg_input ) ), ( status >= 0 ) ) )
 	{
 		(state->col)++;
 		if( c == start_c ) {
@@ -55405,6 +55405,7 @@ int json6_parse_add_data( struct json_parse_state *state
 		output = (struct json_output_buffer*)DequeLinkNL( state->outQueue );
 		//lprintf( "output is %p", output );
 		state->n = input->pos - input->buf;
+		if( state->n > input->size ) DebugBreak();
 		if( state->gatheringString ) {
 			string_status = gatherString6( state, input->buf, &input->pos, input->size, &output->pos, state->gatheringStringFirstChar );
 			if( string_status < 0 )
@@ -55413,11 +55414,13 @@ int json6_parse_add_data( struct json_parse_state *state
 			{
 				state->gatheringString = FALSE;
 				state->n = input->pos - input->buf;
+				if( state->n > input->size ) DebugBreak();
 				state->val.stringLen = (output->pos - state->val.string)-1;
 				if( state->status ) state->val.value_type = VALUE_STRING;
 			}
 			else {
 				state->n = input->pos - input->buf;
+				if( state->n > input->size ) DebugBreak();
 			}
 		}
 		if( state->gatheringNumber ) {
@@ -55429,6 +55432,7 @@ int json6_parse_add_data( struct json_parse_state *state
 		{
 			state->col++;
 			state->n = input->pos - input->buf;
+			if( state->n > input->size ) DebugBreak();
 			if( state->comment ) {
 				if( state->comment == 1 ) {
 					if( c == '*' ) { state->comment = 3; continue; }
@@ -55712,6 +55716,7 @@ int json6_parse_add_data( struct json_parse_state *state
 							state->val.stringLen = (output->pos - state->val.string) - 1;
 						}
 						state->n = input->pos - input->buf;
+						if( state->n > input->size ) DebugBreak();
 						if( state->status ) {
 							state->val.value_type = VALUE_STRING;
 							//state->val.stringLen = (output->pos - state->val.string - 1);
@@ -55783,6 +55788,7 @@ int json6_parse_add_data( struct json_parse_state *state
 						state->status = FALSE;
 					}
 					state->n = input->pos - input->buf;
+					if( state->n > input->size ) DebugBreak();
 					if( state->status ) {
 						state->val.value_type = VALUE_STRING;
 						state->word = WORD_POS_END;
@@ -56028,6 +56034,7 @@ int json6_parse_add_data( struct json_parse_state *state
 							//lprintf( "Number input:%c", c );
 							state->col++;
 							state->n = (input->pos - input->buf);
+							if( state->n > input->size ) DebugBreak();
 							// leading zeros should be forbidden.
 							if( c == '_' )
 								continue;
@@ -56131,6 +56138,7 @@ int json6_parse_add_data( struct json_parse_state *state
 						if( input ) {
 							input->pos = _msg_input;
 							state->n = (input->pos - input->buf);
+							if( state->n > input->size ) DebugBreak();
 						}
 						//LogBinary( (uint8_t*)output->buf, output->size );
 						if( input && (!state->complete_at_end) && state->n == input->size )
@@ -56191,7 +56199,7 @@ int json6_parse_add_data( struct json_parse_state *state
 		}
 		//lprintf( "at end... %d %d comp:%d", state->n, input->size, state->completed );
 		if( input ) {
-			if( state->n == input->size ) {
+			if( state->n >= input->size ) {
 				DeleteFromSet( PARSE_BUFFER, jpsd.parseBuffers, input );
 				if( state->gatheringString || state->gatheringNumber || state->parse_context == CONTEXT_OBJECT_FIELD ) {
 					//lprintf( "output is still incomplete? " );
@@ -60306,7 +60314,7 @@ int NetworkQuit(void)
 		if( globalNetworkData.flags.bLogNotices )
 			lprintf( WIDE("NetworkQuit - Remove active client %p"), globalNetworkData.ActiveClients );
 #endif
-		InternalRemoveClientEx( globalNetworkData.ActiveClients, TRUE, FALSE );
+		//InternalRemoveClientEx( globalNetworkData.ActiveClients, TRUE, FALSE );
 	}
 	globalNetworkData.bQuit = TRUE;
 	{
@@ -85213,6 +85221,7 @@ TEXTSTR EscapeSQLBinaryExx( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, uintpt
 #if MYSQL_ODBC_CONNECTION_IS_BROKEN
 	int first_failure = 1;
 #endif
+	CTEXTSTR pBlob = blob;
 	TEXTCHAR *tmpnamebuf, *result;
 	unsigned int n;
 	int targetlen;
@@ -85230,7 +85239,7 @@ TEXTSTR EscapeSQLBinaryExx( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, uintpt
 		while( n < bloblen )
 		{
 #if MYSQL_ODBC_CONNECTION_IS_BROKEN
-			if( blob[n] == '\x9f' || blob[n] == '\x9c' )
+			if( (*pBlob) == '\x9f' || (*pBlob) == '\x9c' )
 			{
 				if( first_failure )
 				{
@@ -85242,10 +85251,10 @@ TEXTSTR EscapeSQLBinaryExx( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, uintpt
 				targetlen += 14;
 			}
 #endif
-			if( blob[n] == '\'' ||
-				blob[n] == '\\' ||
-				blob[n] == '\0' ||
-				blob[n] == '\"' )
+			if( (*pBlob) == '\'' ||
+				(*pBlob) == '\\' ||
+				(*pBlob) == '\0' ||
+				(*pBlob) == '\"' )
 				targetlen++;
 			n++;
 		}
@@ -85263,18 +85272,18 @@ TEXTSTR EscapeSQLBinaryExx( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, uintpt
 		while( n < bloblen )
 		{
 #if MYSQL_ODBC_CONNECTION_IS_BROKEN
-			if( blob[n] == '\x9f' || blob[n] == '\x9c' )
-				tmpnamebuf += tnprintf( tmpnamebuf, 15, "\',char(%d),\'", ((unsigned char*)blob)[n] );
+			if( (*pBlob) == '\x9f' || (*pBlob) == '\x9c' )
+				tmpnamebuf += tnprintf( tmpnamebuf, 15, "\',char(%d),\'", (unsigned char)(*pBlob) );
 				else
 #endif
 			{
-				if( blob[n] == '\'' ||
-					blob[n] == '\\' ||
-					blob[n] == '\0' ||
-					blob[n] == '\"' )
+				if( (*pBlob) == '\'' ||
+					(*pBlob) == '\\' ||
+					(*pBlob) == '\0' ||
+					(*pBlob) == '\"' )
 					(*tmpnamebuf++) = '\\';
-				if( blob[n] )
-					(*tmpnamebuf++) = blob[n];
+				if( (*pBlob) )
+					(*tmpnamebuf++) = (*pBlob);
 				else
 					(*tmpnamebuf++) = '0';
 			}
@@ -85301,7 +85310,9 @@ TEXTSTR EscapeSQLBinaryExx( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, uintpt
 		targetlen = 0;
 		while( n < bloblen )
 		{
-			if( blob[n] == '\'' )
+			if( (*pBlob) == '\'' )
+				targetlen++;
+			if( (*pBlob) == '\'' )
 				targetlen++;
 			n++;
 		}
@@ -85310,9 +85321,26 @@ TEXTSTR EscapeSQLBinaryExx( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, uintpt
 		if( bQuote )
 			( *tmpnamebuf++ ) = '\'';
 		while( n < bloblen ) {
-			if( blob[n] == '\'' )
+			if( bQuote && (*pBlob) == 0 ) {
 				( *tmpnamebuf++ ) = '\'';
-			( *tmpnamebuf++ ) = blob[n];
+				( *tmpnamebuf++ ) = '|';
+				( *tmpnamebuf++ ) = '|';
+				( *tmpnamebuf++ ) = 'C';
+				( *tmpnamebuf++ ) = 'H';
+				( *tmpnamebuf++ ) = 'A';
+				( *tmpnamebuf++ ) = 'R';
+				( *tmpnamebuf++ ) = '(';
+				( *tmpnamebuf++ ) = '0';
+				( *tmpnamebuf++ ) = ')';
+				( *tmpnamebuf++ ) = '|';
+				( *tmpnamebuf++ ) = '|';
+				( *tmpnamebuf++ ) = '\'';
+			}
+			else {
+				if( (*pBlob) == '\'' )
+					( *tmpnamebuf++ ) = '\'';
+				( *tmpnamebuf++ ) = (*pBlob);
+			}
 			n++;
 		}
 		if( bQuote )
@@ -85339,6 +85367,7 @@ TEXTCHAR * EscapeBinary ( CTEXTSTR blob, uintptr_t bloblen )
 //---------------------------------------------------------------------------
 TEXTCHAR * EscapeSQLStringEx ( PODBC odbc, CTEXTSTR name DBG_PASS )
 {
+	if( !name ) return NULL;
 	return EscapeSQLBinaryExx( odbc, name, strlen( name )+1, NULL, FALSE DBG_RELAY );
 }
 TEXTCHAR * EscapeStringEx ( CTEXTSTR name DBG_PASS )
@@ -85421,22 +85450,23 @@ TEXTSTR DeblobifyString( CTEXTSTR blob, TEXTSTR outbuf, size_t outbuflen  )
 TEXTSTR RevertEscapeBinary( CTEXTSTR blob, size_t *bloblen )
 {
 	TEXTCHAR *tmpnamebuf, *result;
+	CTEXTSTR pBlob = blob;
 	int n;
 	int escape;
 	int targetlen;
 	n = 0;
 	escape = 0;
 	targetlen = 0;
-	for( n = 0; n < blob[n]; n++ )
+	for( n = 0; (*pBlob); pBlob++, n++ )
 	{
-		if( !escape && ( blob[n] == '\\' ) )
+		if( !escape && ( (*pBlob) == '\\' ) )
 			escape = 1;
 		else if( escape )
 		{
-			if( blob[n] == '\\' ||
-				blob[n] == '0' ||
-				blob[n] =='\'' ||
-				blob[n] == '\"' )
+			if( (*pBlob) == '\\' ||
+				(*pBlob) == '0' ||
+				(*pBlob) =='\'' ||
+				(*pBlob) == '\"' )
 			{
 				// targetlen is a subtraction for missing charactercount
 				targetlen++;
@@ -85450,30 +85480,30 @@ TEXTSTR RevertEscapeBinary( CTEXTSTR blob, size_t *bloblen )
 	}
 	escape = 0;
 	result = tmpnamebuf = NewArray( TEXTCHAR, (*bloblen) );
-	for( n = 0; blob[n]; n++ )
+	for( n = 0; (*pBlob); n++ )
 	{
-		if( !escape && ( blob[n] == '\\' ) )
+		if( !escape && ( (*pBlob) == '\\' ) )
 			escape = 1;
 		else if( escape )
 		{
-			if( blob[n] == '\\' ||
-				blob[n] =='\'' ||
-				blob[n] == '\"' )
+			if( (*pBlob) == '\\' ||
+				(*pBlob) =='\'' ||
+				(*pBlob) == '\"' )
 			{
 			// targetlen is a subtraction for missing charactercount
-				(*tmpnamebuf++) = blob[n];
+				(*tmpnamebuf++) = (*pBlob);
 			}
-			else if( blob[n] == '0' )
+			else if( (*pBlob) == '0' )
 				(*tmpnamebuf++) = 0;
 			else
 			{
 				(*tmpnamebuf++) = '\\';
-				(*tmpnamebuf++) = blob[n];
+				(*tmpnamebuf++) = (*pBlob);
 			}
 			escape = 0;
 		}
 		else
-			(*tmpnamebuf++) = blob[n];
+			(*tmpnamebuf++) = (*pBlob);
 	}
  // best terminate this thing.
 	(*tmpnamebuf) = 0;
@@ -90786,6 +90816,4507 @@ PLIST GetTranslationIndexStrings( void )
 	return translate_local.index_list;
 }
 TRANSLATION_NAMESPACE_END
+/*
+ * Crafted by Jim Buckeyne
+ * Resembles function of SYSV IPC Message Queueus, and handle event based, inter-process, shared
+ * queue, message transport.
+ *
+ * (c)1999-2006++ Freedom Collective
+ *
+ */
+ // Sleep
+ // offsetof
+#ifdef __LINUX__
+#define SetLastError(n)  errno = n
+#else
+#define SetLastError(n)  SetLastError(n);errno = n
+#endif
+#ifdef __cplusplus
+namespace sack {
+	namespace containers {
+	namespace message {
+		using namespace sack::memory;
+		using namespace sack::timers;
+		using namespace sack::logging;
+#endif
+//#define DISABLE_MSGQUE_LOGBINARY
+//#define DISABLE_MSGQUE_LOGGING
+#define DISABLE_MSGQUE_LOGGING_DETAILED
+static INDEX _tmp, __tmp;
+void _UpdatePos( INDEX *tmp, INDEX inc DBG_PASS )
+{
+	if( inc == 0 )
+		DebugBreak();
+	__tmp = _tmp;
+	_tmp = (*tmp);
+	(*tmp) += inc;
+	if( (*tmp) > 0x8000 )
+		DebugBreak();
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+	_xlprintf(5 DBG_RELAY )( WIDE("updating position from %d,%d,%d by %d"), __tmp, _tmp, (*tmp), inc );
+#endif
+}
+void _SetPos( INDEX *tmp, INDEX inc, INDEX initial DBG_PASS )
+{
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+	if( initial )
+		_xlprintf(5 DBG_RELAY )( WIDE("Setting position to %d"), inc );
+	else
+		_xlprintf(5 DBG_RELAY )( WIDE("Setting position from %d to %d"), (*tmp), inc );
+#endif
+	if( !initial )
+	{
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+		__tmp = _tmp;
+		_tmp = (*tmp);
+#endif
+		(*tmp) = inc;
+	}
+	else
+	{
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+		__tmp = _tmp =
+#endif
+			(*tmp) = inc;
+	}
+}
+#define UpdatePos(t,i) _UpdatePos( &(t), (i) DBG_SRC )
+#define SetPos(t,i) _SetPos( &(t), (i), FALSE DBG_SRC )
+#define SetPosI(t,i) _SetPos( &(t), (i), TRUE DBG_SRC )
+//--------------------------------------------------------------------------
+//  MSG Queue functions.
+//--------------------------------------------------------------------------
+typedef PREFIX_PACKED struct MsgInternalData {
+	// length  & 0x80000000 == after msg, return to head of queue
+	// length == 0x80000000 == next is actually first in queue...
+	// length & 0x40000000 message has already been received...
+	// length & 0x20000000 message tag for request for specific message
+	//   then length(low) points at next waiting.
+	//   MsgID is the ID being waited for
+	//   datalength is sizeof( THREAD_ID ) and data is MyThreadID()
+	uint32_t length;
+ // size resulting in read...
+	uint32_t real_length;
+  // this is tick count + time to live, if tick count is greater than this, message is dropped.
+	uint32_t ttl;
+	// space which we added ourselves...
+} PACKED MSGCORE;
+typedef PREFIX_PACKED struct MsgData
+{
+	  MSGCORE msg;
+	long MsgID;
+	// ... end of this structure is
+	// defined by length & 0x0FFFFFFC
+} PACKED MSGDATA, *PMSGDATA;
+typedef PREFIX_PACKED struct ThreadWaitMsgData
+{
+	MSGDATA msgdata;
+	THREAD_ID thread;
+	// ... end of this structure is
+	// defined by length & 0x0FFFFFFC
+} PACKED THREADMSGDATA, *PTHREADMSGDATA;
+typedef struct MsgDataQueue
+{
+	TEXTCHAR name[128];
+	INDEX   Top;
+	INDEX   Bottom;
+   // number of times this is open, huh?
+	INDEX   Cnt;
+ // reference of first element in queue waiting for specific ID
+	uint32_t     waiter_top;
+ // reference of first element in queue waiting for specific ID
+	uint32_t     waiter_bottom;
+	//THREAD_ID waiting;  // a thread waiting for any message...
+	CRITICALSECTION cs;
+	INDEX   Size;
+	// this is a lot of people using this queue....
+	// 1000 unique people waiting for a message....
+	// this is fairly vast..
+	struct {
+ // and this is the message I wait for.
+		long msg;
+  // my ID - who I am that I am waiting...
+		THREAD_ID me;
+	} waiters[1024];
+	uint8_t      data[1];
+} MSGQUEUE, *PMSGQUEUE;
+typedef struct MsgDataHandle
+{
+	PMSGQUEUE pmq;
+	uint32_t default_ttl;
+	MsgQueueReadCallback Read;
+	uintptr_t psvRead;
+	DeclareLink( struct MsgDataHandle );
+} MSGHANDLE;
+//--------------------------------------------------------------------------
+//--------------------------------------------------------------------------
+// in this case size is the size of the queue, there
+// is no expansion possible...
+// this should be created such that it is at least 3 * largest message
+ PMSGHANDLE  SackCreateMsgQueue ( CTEXTSTR name, size_t size
+                                , MsgQueueReadCallback Read
+                                , uintptr_t psvRead )
+{
+	PMSGHANDLE pmh;
+	PMSGQUEUE pmq;
+	uintptr_t dwSize = size + sizeof( MSGQUEUE );
+	uint32_t bCreated;
+#ifdef __LINUX__
+	TEXTCHAR tmpname[128];
+	sprintf( tmpname, WIDE("/tmp/%s"), name );
+#endif
+	pmq = (PMSGQUEUE)OpenSpaceExx(
+#ifdef __LINUX__
+							 NULL
+						  , tmpname
+#else
+							 name
+						  , NULL
+#endif
+						  , 0
+						  , &dwSize
+							, &bCreated );
+	if( !pmq )
+		return NULL;
+	InitializeCriticalSec( &pmq->cs );
+	pmh          = (PMSGHANDLE)Allocate( sizeof( MSGHANDLE ) );
+	pmh->default_ttl = 250;
+	pmh->Read    = Read;
+	pmh->psvRead = psvRead;
+	pmh->pmq     = pmq;
+	// now - how to see if result is new...
+	// space is 0'd on create.
+	// so if the second open results before the create
+	// always increment this - otherwise the create open will
+	// obliterate the second opener's presense.
+	StrCpyEx( pmq->name, name?name:WIDE("Anonymous"),127 );
+	pmq->name[127] = 0;
+	pmq->Cnt++;
+	if( bCreated )
+	{
+		pmq->Size = size;
+	}
+	return pmh;
+}
+//--------------------------------------------------------------------------
+// in this case size is the size of the queue, there
+// is no expansion possible...
+// this should be created such that it is at least 3 * largest message
+ PMSGHANDLE  SackOpenMsgQueue ( CTEXTSTR name
+													 , MsgQueueReadCallback Read
+													 , uintptr_t psvRead )
+{
+	PMSGHANDLE pmh;
+	PMSGQUEUE pmq;
+	uintptr_t dwSize = 0;
+	uint32_t bCreated;
+#ifdef __LINUX__
+	char tmpname[128];
+	sprintf( tmpname, WIDE("/tmp/%s"), name );
+#endif
+	pmq = (PMSGQUEUE)OpenSpaceExx(
+#ifdef __LINUX__
+							 NULL
+						  , tmpname
+#else
+							 name
+						  , NULL
+#endif
+						  , 0
+						  , &dwSize
+							, &bCreated );
+	if( !pmq )
+		return NULL;
+	pmh          = (PMSGHANDLE)Allocate( sizeof( MSGHANDLE ) );
+	pmh->default_ttl = 250;
+	pmh->Read    = Read;
+	pmh->psvRead = psvRead;
+	pmh->pmq     = pmq;
+	// now - how to see if result is new...
+	// space is 0'd on create.
+	// so if the second open results before the create
+	// always increment this - otherwise the create open will
+	// obliterate the second opener's presense.
+	StrCpyEx( pmq->name, name?name:WIDE("Anonymous"), sizeof( pmq->name ) );
+	pmq->Cnt++;
+	if( bCreated )
+	{
+		lprintf( WIDE("SackOpenMsgQueue should never result with a created queue!") );
+		DebugBreak();
+		//pmq->Size = size;
+	}
+	return pmh;
+}
+//--------------------------------------------------------------------------
+ void  DeleteMsgQueueEx ( PMSGHANDLE *ppmh DBG_PASS )
+{
+	if( ppmh )
+	{
+		EnterCriticalSec( &(*ppmh)->pmq->cs );
+		if( (*ppmh)->pmq )
+		{
+			INDEX owners;
+			owners = --(*ppmh)->pmq->Cnt;
+			lprintf( WIDE("Remaining owners of queue: %") _size_f, owners );
+			CloseSpaceEx( (*ppmh)->pmq, (!owners) );
+		}
+		Release( *ppmh );
+		*ppmh = NULL;
+	}
+}
+#define DBG_SOURCE DBG_SRC
+//--------------------------------------------------------------------------
+#define ACTUAL_LEN_MASK           0x000FFFFF
+#define MARK_FLAGS                0xF0000000
+#define MARK_END_OF_QUE           0x80000000
+#define MARK_MESSAGE_ALREADY_READ 0x40000000
+#define MARK_THREAD_WAITING       0x20000000
+#define MESSAGE_SKIPABLE          0xc0000000
+//--------------------------------------------------------------------------
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+ void DumpMessageQueue( PMSGQUEUE pmq )
+ {
+	 int tmp;
+	 for( tmp = pmq->Bottom; tmp != pmq->Top; tmp = tmp + (((uint32_t*)(pmq->data+tmp))[0] & ACTUAL_LEN_MASK ) )
+	 {
+		 lprintf( "Message In Queue... %d", (((uint32_t*)(pmq->data+tmp))[0] & ACTUAL_LEN_MASK ) );
+		 LogBinary( pmq->data + tmp, (((uint32_t*)(pmq->data+tmp))[0] & ACTUAL_LEN_MASK ) );
+	 }
+ }
+void DumpWaiterQueue( PMSGQUEUE pmq )
+{
+	INDEX tmp;
+	tmp = pmq->waiter_bottom;
+	while( tmp != pmq->waiter_top )
+	{
+		lprintf( WIDE("[%d] waiter sleeping is %016") _64fX WIDE(" for %") _32f WIDE("")
+				  , tmp
+				 , pmq->waiters[tmp].me
+				 , pmq->waiters[tmp].msg
+				 );
+		tmp++;
+		if( tmp >= 1024 )
+			tmp = 0;
+	}
+}
+#endif
+//--------------------------------------------------------------------------
+static void CollapseWaiting( PMSGQUEUE pmq, long msg )
+{
+	//int nWoken = 0;
+	int32_t tmp = pmq->waiter_bottom;
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+	lprintf( WIDE("before moving the waiters forward on %s... msg %ld (or me? %s)"), pmq->name, msg, msg?"no":"yes" );
+	DumpWaiterQueue( pmq );
+#endif
+	// now walk tmp backwards...
+	// and move entried before the threads woken forward...
+	// end up with a new bottom always (if having awoken something)
+	if( pmq->waiter_top != pmq->waiter_bottom )
+	{
+		//uint32_t last = 0;
+		uint32_t found = 0;
+		uint32_t marked = 0;
+		int32_t next = pmq->waiter_top - 1;
+		INDEX tmp_bottom = pmq->waiter_bottom;
+		if( next < 0 )
+			next = 1023;
+		// start at the last used queue spot (tmp)
+		tmp = next;
+		tmp_bottom = pmq->waiter_bottom;
+		while( 1 )
+		{
+			if( !pmq->waiters[next].me ||
+				( msg &&
+				 ( msg == pmq->waiters[next].msg ) ) )
+			{
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+				lprintf( WIDE("Skipping a next %d... "), next );
+#endif
+				if( !marked )
+				{
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+					lprintf( WIDE("marking tmp to copy into...") );
+#endif
+					tmp = next;
+					marked = 1;
+				}
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+				else
+					lprintf( WIDE("Already marked... and moving every element..") );
+#endif
+				if( (++tmp_bottom) >= 1024 )
+				{
+					tmp_bottom = 0;
+				}
+				// no reason to move next if it's still NULL...
+				//continue;
+			}
+			else
+			{
+				found = 1;
+				if( marked )
+				{
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+					lprintf( WIDE("Marked something... and now we move next %d into %d"), next, tmp );
+#endif
+					pmq->waiters[tmp--] = pmq->waiters[next];
+					if( tmp < 0 )
+						tmp = 1023;
+					//continue;
+				}
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+				lprintf( WIDE("Next queue element is kept... set temp here.") );
+#endif
+			}
+			// update next
+			if( next == pmq->waiter_bottom )
+					break;
+			next--;
+			if( next < 0 )
+				next = 1023;
+		}
+		if( !found )
+		{
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+			lprintf( WIDE("Found nothing of interest.  Empty queue.") );
+#endif
+			pmq->waiter_bottom = pmq->waiter_top;
+		}
+		else if( marked )
+		{
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+			lprintf( WIDE("Moving final into last position, and updating bottom to %d"), tmp_bottom );
+#endif
+			pmq->waiters[tmp] = pmq->waiters[next];
+			pmq->waiter_bottom = (uint32_t)tmp_bottom;
+		}
+	}
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+	lprintf( WIDE("And then after moving waiters forward....") );
+	DumpWaiterQueue( pmq );
+#endif
+}
+//--------------------------------------------------------------------------
+static int ScanForWaiting( PMSGQUEUE pmq, long msg )
+{
+	int nWoken = 0;
+	INDEX tmp = pmq->waiter_bottom;
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+	lprintf( WIDE("before Scanning waiting on %s"), pmq->name );
+	DumpWaiterQueue( pmq );
+#endif
+	while( tmp != pmq->waiter_top )
+	{
+		if( pmq->waiters[tmp].me )
+		{
+			// if waiting for any message....
+			// or waiting for the exact message... and it is that message
+			// or waiting for any other message... and it's not the message...
+			if( !pmq->waiters[tmp].msg ||
+				( (msg & 0x80000000)
+				 ? (pmq->waiters[tmp].msg != (msg & 0x7FFFFFFF))
+				 : (pmq->waiters[tmp].msg == msg) ) )
+			{
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+				lprintf( WIDE("Wake thread %016Lx"), pmq->waiters[tmp].me );
+#endif
+				WakeThreadID( pmq->waiters[tmp].me );
+				// reset the waiter ID... it's been
+				// awoken, and is no longer waiting....
+				pmq->waiters[tmp].me = 0;
+				nWoken++;
+				// go through all possible people who might wake up
+				// because of this message... it's typically bad form
+				// to have two or more processes watiing on the same ID...
+			}
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+			else
+			{
+				lprintf( WIDE("Not waking thread %016Lx %08lx %08lx"), pmq->waiters[tmp].me
+						 , msg, pmq->waiters[tmp].msg );
+			}
+#endif
+		}
+		tmp++;
+		if( tmp >= 1024 )
+			tmp = 0;
+	}
+	// now walk tmp backwards...
+	// and move entried before the threads woken forward...
+	// end up with a new bottom always (if having awoken something)
+	if( nWoken )
+	{
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+		lprintf( WIDE("Scanning to delete messages that have been awoken.") );
+#endif
+		CollapseWaiting( pmq, 0 );
+	}
+	if( nWoken > 1 )
+	{
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+		lprintf( WIDE("Woke %d threads as a result of message id %08lx"), nWoken, msg );
+#endif
+	}
+	return 0;
+}
+//--------------------------------------------------------------------------
+ int  EnqueMsgEx ( PMSGHANDLE pmh,  POINTER msg, size_t size, uint32_t opts DBG_PASS )
+{
+	if( pmh )
+	{
+		PMSGQUEUE pmq = pmh->pmq;
+		INDEX tmp;
+#ifndef DISABLE_MSGQUE_LOGGING
+		int bNoSpace = 0;
+#endif
+		uint32_t realsize = (( size + (sizeof( MSGDATA ) ) ) + 3 ) & 0x7FFFFFFC;
+		if( !pmq )
+		{
+			// errno = ENOSPACE; // or something....
+ // cannot create this - no idea how big.
+			return -1;
+		}
+		if( ( size > ( pmq->Size >> 2 ) )
+			||( realsize > ( pmq->Size >> 2 ) ) )
+		{
+			//errno = E2BIG;
+ // message is too big for this queue...
+			return -1;
+		}
+		// probably someday need an error variable of
+		// some sort or another...
+#ifndef DISABLE_MSGQUE_LOGGING
+		_xlprintf(3 DBG_RELAY)( WIDE("Enque space left...raw: %") _size_f WIDE(" %") _size_f WIDE(" Avail: %") _size_f WIDE(" %") _size_f WIDE(" used: %") _size_f WIDE(" %") _size_f WIDE(" %d")
+				 , pmq->Top, pmq->Bottom
+				 , pmq->Bottom-pmq->Top, pmq->Size-pmq->Top + pmq->Bottom
+				 , pmq->Top-pmq->Bottom, pmq->Size-pmq->Bottom + pmq->Top
+				 , realsize );
+		_xlprintf(3 DBG_RELAY)( WIDE("[%s] ENqueMessage [%p] %ld len %") _MsgID_f WIDE(" %08") _32fx WIDE(""), pmq->name, pmq, *(MSGIDTYPE*)msg, size, *(uint32_t*)(pmq->data + pmq->Bottom) );
+		//LogBinary( pmq->data + pmq->Bottom, 32 );
+#endif
+		while( msg )
+		{
+			int nWaiting;
+			PMSGDATA pStoreMsg;
+			EnterCriticalSec( &pmq->cs  );
+			pStoreMsg = (PMSGDATA)(pmq->data + pmq->Top);
+			SetPosI( tmp, pmq->Top + realsize );
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+			lprintf( "pStoreMsg = %p, %d %d", pStoreMsg, pmq->Top, tmp );
+#endif
+			if( tmp == (pmq->Size) )
+			{
+				// space is exactly what we need.
+				pStoreMsg->msg.ttl = timeGetTime() + pmh->default_ttl;
+				pStoreMsg->msg.real_length = (uint32_t)size;
+				pStoreMsg->msg.length = realsize | MARK_END_OF_QUE | (( opts & MSGQUE_WAIT_ID )?MARK_THREAD_WAITING:0 );
+#ifndef DISABLE_MSGQUE_LOGGING
+				lprintf( WIDE("New tmp will be 0.") );
+#endif
+				SetPos( tmp, 0 );
+			}
+			else
+			{
+				if( tmp >= ( pmq->Size - sizeof( MSGDATA ) ) )
+				{
+					// okay - this message is too big to fit here...
+					// going to have to store at start, or I suppose whenever the
+					// queue has enough space...
+#ifndef DISABLE_MSGQUE_LOGGING
+					lprintf( WIDE("space left is not big enough for the message... %") _size_f WIDE(" %") _size_f WIDE(" %") _size_f WIDE(" %") _size_f WIDE("")
+							 , pmq->Top, pmq->Bottom, pmq->Bottom-pmq->Top, pmq->Size-pmq->Top + pmq->Bottom );
+#endif
+					if( ( pmq->Bottom == 0 ) ||
+						( pmq->Bottom <= size ) )
+					{
+						// Need to wait for some space...
+						LeaveCriticalSec( &pmq->cs );
+						if( opts & MSGQUE_NOWAIT )
+						{
+							//errno = EAGAIN;
+							return -1;
+						}
+#ifndef DISABLE_MSGQUE_LOGGING
+						lprintf( WIDE("bottom isn't far enough away either. Waiting for space") );
+#endif
+ // someone's gotta run and take their message.
+						Relinquish();
+						continue;
+					}
+#ifndef DISABLE_MSGQUE_LOGGING
+					lprintf( WIDE("Setting step to origin in length, going to origin, setting data %p"), pStoreMsg );
+#endif
+					// 0 data length, marked end, just junk...
+					// okay there, and it's deleted, so noone can read it
+					// even if they want a zero byte message :)
+					pStoreMsg->msg.length = MARK_END_OF_QUE|MARK_MESSAGE_ALREADY_READ;
+					// tmp needs to point to the next top.
+					SetPos( tmp, realsize );
+					pStoreMsg = (PMSGDATA)pmq->data;
+					lprintf( WIDE("pStoreMsg = %p, %") _size_f, pStoreMsg, pmq->Top );
+				}
+				else
+				{
+					// this is the size of this msg... we can store
+					// and there IS room for another message header of
+					// at least 0 bytes at the end.
+					if( tmp > pmq->Bottom && pmq->Top < pmq->Bottom )
+					{
+						lprintf( WIDE("No room left in queue...") );
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+						DumpMessageQueue( pmq );
+#endif
+						LeaveCriticalSec( &pmq->cs );
+						Relinquish();
+ // try again from the top...
+						continue;
+					}
+				}
+				pStoreMsg->msg.ttl = timeGetTime() + pmh->default_ttl;
+				lprintf( WIDE( "Send Message TTL Expired in queue... %d %d %d" ), pStoreMsg->msg.ttl, pmh->default_ttl );
+				pStoreMsg->msg.real_length = (uint32_t)size;
+				pStoreMsg->msg.length = realsize | (( opts & MSGQUE_WAIT_ID )?MARK_THREAD_WAITING:0 );
+			}
+			if( tmp == pmq->Bottom )
+			{
+#ifndef DISABLE_MSGQUE_LOGGING
+				bNoSpace = 1;
+				lprintf( WIDE("Head would collide with tail...") );
+#endif
+				LeaveCriticalSec( &pmq->cs );
+				if( opts & MSGQUE_NOWAIT )
+				{
+					//errno = EAGAIN;
+					return -1;
+				}
+#ifndef DISABLE_MSGQUE_LOGGING
+				lprintf( WIDE("Waiting for space") );
+#endif
+ // someone's gotta run and take their message.
+				Relinquish();
+				continue;
+			}
+			else
+			{
+#ifndef DISABLE_MSGQUE_LOGGING
+				if( bNoSpace )
+					lprintf( WIDE("Okay there's space now...") );
+#endif
+			}
+			MemCpy( &pStoreMsg->MsgID, msg, size + sizeof( pStoreMsg->MsgID ) );
+#ifndef DISABLE_MSGQUE_LOGGING
+			lprintf( WIDE("[%s] Stored message data..... at %") _size_f WIDE(" %") _size_f WIDE(""), pmq->name, pmq->Top ,size );
+#  ifndef DISABLE_MSGQUE_LOGBINARY
+			LogBinary( (uint8_t*)pStoreMsg, size + sizeof( pStoreMsg->MsgID ) + offsetof( MSGDATA, MsgID ) );
+#  endif
+#endif
+			msg = NULL;
+#ifndef DISABLE_MSGQUE_LOGGING
+			lprintf( WIDE("Update top to %") _size_f,tmp );
+#endif
+			pmq->Top = tmp;
+			if( !(opts & MSGQUE_WAIT_ID) )
+			{
+				// look for, and wake anyone waiting for this
+				// type of message... or anyone waiting on any message
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+				lprintf( WIDE("not sending a wait, therefore scan for messages...") );
+#endif
+				nWaiting = ScanForWaiting( pmq, pStoreMsg->MsgID );
+				LeaveCriticalSec( &pmq->cs );
+				if( nWaiting )
+					Relinquish();
+			}
+			else
+			{
+				//lprintf( WIDE("Okay then we leave here?") );
+				LeaveCriticalSec( &pmq->cs );
+			}
+		}
+		// return success
+		return 0;
+	}
+	// errno = EINVAL;
+ // fail if no pmh
+	return -1;
+}
+	//--------------------------------------------------------------------------
+int IsMsgQueueEmpty ( PMSGHANDLE pmh )
+{
+	PMSGQUEUE pmq = pmh->pmq;
+	if( !pmq || ( pmq->Bottom == pmq->Top ) )
+		return TRUE;
+	return FALSE;
+}
+//--------------------------------------------------------------------------
+// if this thread id known, you may change the MsgID
+// being waited for, which will result in this waking up
+// and reading for the new ID...
+int DequeMsgEx ( PMSGHANDLE pmh, long *MsgID, POINTER result, size_t size, uint32_t options DBG_PASS )
+{
+	PMSGQUEUE pmq = pmh->pmq;
+	int p;
+	int slept = 0;
+	INDEX tmp
+		, _tmp
+	;
+	uint32_t now = timeGetTime();
+	INDEX _Bottom, _Top;
+	//uint64_t tick, tick2;
+	if( !pmq )
+		return 0;
+	// if there's a read routine, this should not be called.
+	// instead the routine to handle
+	p = 0;
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+	_xlprintf(3 DBG_RELAY)( WIDE("[%s] Enter dequeue... for %") _32f WIDE(""), pmq->name, MsgID?*MsgID:0 );
+#endif
+	EnterCriticalSec( &pmq->cs );
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+	_xlprintf(3 DBG_RELAY)( WIDE("Deque space left... Top:%d Bottom:%d Avail: %d %d used: %d %d")
+			 , pmq->Top, pmq->Bottom
+			 , pmq->Bottom-pmq->Top, pmq->Size-pmq->Top + pmq->Bottom
+			 , pmq->Top-pmq->Bottom, pmq->Size-pmq->Bottom + pmq->Top );
+#endif
+	_Bottom = INVALID_INDEX;
+	_Top = INVALID_INDEX;
+	while( !p && !slept )
+	{
+		PTHREADMSGDATA pThreadMsg = NULL;
+		PMSGDATA pReadMsg;
+		PMSGDATA pLastReadMsg;
+		_tmp = tmp = pmq->Bottom;
+		//lprintf( WIDE("tmp = %d"), tmp );
+		if( !(options & MSGQUE_NOWAIT) )
+		{
+			long LastMsgID = *MsgID;
+			// then here we must wait...
+			// if the queue is empty, or we've already
+			// checked the queue, go to sleep.
+			while( ( ((_tmp = tmp),(tmp=pmq->Bottom)) == pmq->Top ||
+					(pmq->Bottom == _Bottom &&
+					pmq->Top == _Top )) && !slept )
+			{
+				//lprintf( WIDE("no message, waiting...") );
+				{
+					uint32_t tmp_top = pmq->waiter_top + 1;
+					if( tmp_top >= 1024 )
+						tmp_top = 0;
+#if 0
+					// do a scan to see if already waiting...
+					// but since we're single process... there may be multipel threads
+					// interacting here?  one on the server side reading, one on the client
+					// but still only one ID for that queue should be waiting for
+					// any specific message....
+					// not sure why this doesn't work to avoid redundant wakeups
+					tmp_top = pmq->waiter_bottom;
+					while( tmp_top != pmq->waiter_top )
+					{
+						//lprintf( WIDE("Checking %d msg:%d"), tmp_top, pmq->waiters[tmp_top].msg );
+						if( pmq->waiters[tmp_top].msg == *MsgID )
+						{
+							//lprintf( WIDE("waiting... leave...") );
+							break;
+						}
+						tmp_top++;
+						if( tmp_top >= 1024 )
+							tmp_top = 0;
+					}
+#else
+					tmp_top = pmq->waiter_top;
+#endif
+					// if waiter for message is already registered...
+					// do not mark him.
+					if( tmp_top == pmq->waiter_top )
+					{
+						tmp_top++;
+						if( tmp_top >= 1024 )
+							tmp_top = 0;
+						if( tmp_top != pmq->waiter_bottom )
+						{
+							pmq->waiters[pmq->waiter_top].me = GetMyThreadID();
+							pmq->waiters[pmq->waiter_top].msg = *MsgID;
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+							lprintf( WIDE("New waiter - waiting for %016") _64fX WIDE(" %") _32f WIDE("")
+									 , pmq->waiters[pmq->waiter_top].me
+									 , pmq->waiters[pmq->waiter_top].msg );
+#endif
+							pmq->waiter_top = tmp_top;
+						}
+						else
+						{
+							lprintf( WIDE("CRITICAL ERROR - No space to mark this process to wait.") );
+							Relinquish();
+							continue;
+						}
+					}
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+					else
+						lprintf( WIDE("Already waiting...") );
+					DumpWaiterQueue( pmq );
+#endif
+				}
+				LeaveCriticalSec( &pmq->cs );
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+				lprintf( WIDE("(left section) sleeping until message (%016Lx)")
+						 , GetMyThreadID() );
+#endif
+				// if someone wakes wakeable sleep - either a> there's a new message
+				// or b> someone wants to wakeup a process from Idle()... and we need to return
+				slept = 1;
+				WakeableSleep( SLEEP_FOREVER );
+				// remove wait message...
+#ifndef DISABLE_MSGQUE_LOGGING_DETAILED
+				lprintf( WIDE("Re-enter critical section here...(%016Lx)")
+						 , GetMyThreadID() );
+#endif
+				EnterCriticalSec( &pmq->cs );
+				CollapseWaiting( pmq, LastMsgID );
+				if( (*MsgID) == 0xFFFFFFFF )
+				{
+					lprintf( WIDE( "Aborting waiting read..." ) );
+					SetLastError( MSGQUE_ERROR_EABORT );
+					break;
+				}
+				//pmq->waiting = prior;
+			}
+#ifndef DISABLE_MSGQUE_LOGGING
+			//lprintf( WIDE("Fetching a message...") );
+#endif
+			now = timeGetTime();
+		}
+		else
+		{
+			// if the queue is empty, then result now with no message.
+			if( tmp == pmq->Top )
+			{
+#ifndef DISABLE_MSGQUE_LOGGING
+				lprintf( WIDE("[%s] NOWAIT option selected... resulting NOMSG."), pmq->name );
+#endif
+				SetLastError( MSGQUE_ERROR_NOMSG );
+				LeaveCriticalSec( &pmq->cs );
+				return -1;
+			}
+		}
+#ifndef DISABLE_MSGQUE_LOGGING
+		_xlprintf( 1 DBG_RELAY )( WIDE("------- tmp = %") _size_f WIDE(" bottom=%") _size_f WIDE(" top = %") _size_f WIDE(" ------"), tmp, pmq->Bottom, pmq->Top );
+#endif
+		pLastReadMsg = NULL;
+		while( tmp != pmq->Top )
+		{
+			// after returning a message, the next should be checked
+			// 2 conditions - if the length == MARK_END_OF_QUE or
+			// length & 0x40000000 then the next message needs to
+			// be consumed until said condition is not set.
+			pReadMsg = (PMSGDATA)(pmq->data + tmp);
+#ifndef DISABLE_MSGQUE_LOGGING
+			//lprintf( WIDE("Check for a message at %d (%08lx)"), tmp, pReadMsg->msg.length );
+			//LogBinary( (POINTER)pReadMsg, pReadMsg->msg.real_length + sizeof( pReadMsg->MsgID ) + sizeof( MSGDATA ));
+#endif
+			if( pReadMsg->msg.ttl < now )
+			{
+				lprintf( WIDE("Message TTL Expired in queue... %d %d %d"), pReadMsg->msg.ttl, now, now - pReadMsg->msg.ttl );
+				LogBinary( (uint8_t*)pReadMsg, pReadMsg->msg.length & ACTUAL_LEN_MASK );
+				pReadMsg->msg.length |= MARK_MESSAGE_ALREADY_READ;
+			}
+			if( pReadMsg->msg.length & MARK_MESSAGE_ALREADY_READ )
+			{
+#ifndef DISABLE_MSGQUE_LOGGING
+				//lprintf( WIDE("Message has already been read...") );
+#endif
+				if( tmp == pmq->Bottom )
+				{
+					if( pReadMsg->msg.length & MARK_END_OF_QUE )
+					{
+						SetPos( tmp, 0 );
+						pmq->Bottom = tmp;
+					}
+					else
+					{
+						UpdatePos( tmp, pReadMsg->msg.length & ACTUAL_LEN_MASK );
+						pmq->Bottom = tmp;
+					}
+				}
+				else
+				{
+					// next is start.
+					if( pReadMsg->msg.length & MARK_END_OF_QUE )
+					{
+#ifndef DISABLE_MSGQUE_LOGGING
+						lprintf( WIDE("Looking for a message %") _size_f WIDE("...at %") _size_f WIDE(" haven't found one yet. (%") _size_f WIDE(")"), *MsgID, tmp, (pReadMsg->msg.length + sizeof( MSGCORE )) & ACTUAL_LEN_MASK );
+#endif
+						SetPos( tmp, 0 );
+					}
+					else
+					{
+#ifndef DISABLE_MSGQUE_LOGGING
+						lprintf( WIDE("Looking for a message %") _size_f WIDE("...at %") _size_f WIDE(" haven't found one yet. (%") _size_f WIDE(")"), *MsgID, tmp, (pReadMsg->msg.length + sizeof( MSGCORE )) & ACTUAL_LEN_MASK );
+#  ifndef DISABLE_MSGQUE_LOGBINARY
+						LogBinary( (uint8_t*)pReadMsg, (pReadMsg->msg.length + sizeof( MSGCORE )) & ACTUAL_LEN_MASK );
+#  endif
+#endif
+						UpdatePos( tmp, pReadMsg->msg.length & ACTUAL_LEN_MASK );
+					}
+				}
+				// skip messages already read. (and/or throw them out
+				// by updating bottom, we remove them from the queue
+				// with no further consideration.
+				if( pLastReadMsg && ( pLastReadMsg->msg.length & MARK_MESSAGE_ALREADY_READ ) )
+				{
+					lprintf( WIDE("Collapsing two already read messages prior length was %") _32f WIDE("(%") _size_f WIDE(") and %")_32f WIDE("(%") _size_f WIDE(") (%s)")
+							 , pLastReadMsg->msg.length& ACTUAL_LEN_MASK
+							 , (uintptr_t)pLastReadMsg-(uintptr_t)pmq->data
+							 , pReadMsg->msg.length& ACTUAL_LEN_MASK
+							 , (uintptr_t)pReadMsg-(uintptr_t)pmq->data
+							 , (pReadMsg->msg.length&MARK_END_OF_QUE)?WIDE("end"):WIDE("") );
+						// prior message was read; collapse this one into it.
+					pLastReadMsg->msg.length |= (pReadMsg->msg.length & MARK_END_OF_QUE);
+					pLastReadMsg->msg.length += (pReadMsg->msg.length & ACTUAL_LEN_MASK);
+					lprintf( WIDE("Result in %")_32f WIDE(" %p   (tmp is %") _size_f WIDE(",t:%") _size_f WIDE(",b:%") _size_f WIDE(")"), pLastReadMsg->msg.length & ACTUAL_LEN_MASK
+						, (POINTER)((uintptr_t)pmq->data + (pLastReadMsg->msg.length & ACTUAL_LEN_MASK))
+						, tmp
+						, pmq->Top
+						, pmq->Bottom
+						);
+				}
+				else
+					pLastReadMsg = pReadMsg;
+				continue;
+			}
+			// just looped around to kill deleted messages.
+			if( p )
+				break;
+			if( pReadMsg->msg.length & MARK_THREAD_WAITING )
+			{
+#ifndef DISABLE_MSGQUE_LOGGING
+				lprintf( WIDE("A thread is waiting message...") );
+#endif
+				// skip these... don't care on read?
+				// well maybe we care if this is the
+				// wait message of me, in which case I can
+				// clean it up. It's likely the first message
+				// in the queue when I get awoke, it may be
+				// early - but all other near messages will
+				// likely also be thread wakes...
+				if( ((PTHREADMSGDATA)pReadMsg)->thread == GetMyThreadID() )
+				{
+					// retest this current message as already read.
+#ifndef DISABLE_MSGQUE_LOGGING
+					lprintf( WIDE("And it's the message that denoted *I* was waiting... delete please") );
+#endif
+					if( tmp != pmq->Bottom )
+					{
+						PTHREADMSGDATA pTmpMsg = (PTHREADMSGDATA)(pmq->data + pmq->Bottom);
+						if( pTmpMsg->msgdata.msg.length & MARK_THREAD_WAITING )
+						{
+							((PTHREADMSGDATA)pReadMsg)->thread = pTmpMsg->thread;
+							((PTHREADMSGDATA)pReadMsg)->msgdata.MsgID = pTmpMsg->msgdata.MsgID;
+							lprintf( WIDE("Mark message as having been read( should be a temporary wait message...") );
+							pTmpMsg->msgdata.msg.length |= MARK_MESSAGE_ALREADY_READ;
+						}
+						else
+						{
+							lprintf( WIDE("First message in queue is not a thread wait?!") );
+							pReadMsg->msg.length |= MARK_MESSAGE_ALREADY_READ;
+						}
+					}
+					else
+					{
+						lprintf( WIDE("Mark message as having been read( should be a temporary wait message...") );
+						pReadMsg->msg.length |= MARK_MESSAGE_ALREADY_READ;
+					}
+					// and now move forward still...
+					UpdatePos( tmp, pReadMsg->msg.length & ACTUAL_LEN_MASK );
+					pLastReadMsg = pReadMsg;
+					continue;
+				}
+				if( !pThreadMsg )
+				{
+					pThreadMsg = (PTHREADMSGDATA)pReadMsg;
+				}
+				else
+				{
+					// concatentate this new one in the old one.
+					// assuming there's space...
+				}
+				UpdatePos( tmp, pReadMsg->msg.length & ACTUAL_LEN_MASK );
+				pLastReadMsg = pReadMsg;
+				continue;
+			}
+			if( !(*MsgID) || ( pReadMsg->MsgID == (*MsgID) ) )
+			{
+				if( size > ( pReadMsg->msg.length & ACTUAL_LEN_MASK ) )
+				{
+					MemCpy( result
+							, &pReadMsg->MsgID
+							, pReadMsg->msg.real_length + sizeof( pReadMsg->MsgID ) );
+					p = pReadMsg->msg.real_length;
+#ifndef DISABLE_MSGQUE_LOGGING
+					lprintf( WIDE("DequeMessage [%p] %")_MsgID_f WIDE(" len %") _size_f , result, *(MSGIDTYPE*)result, p+sizeof( pReadMsg->MsgID ) );
+#  ifndef DISABLE_MSGQUE_LOGBINARY
+					LogBinary( (uint8_t*)result, p+sizeof( pReadMsg->MsgID ) );
+#  endif
+#endif
+					pReadMsg->msg.length |= MARK_MESSAGE_ALREADY_READ;
+				}
+				else
+				{
+#ifdef __LINUX__
+					errno = E2BIG;
+#endif
+					return -1;
+				}
+				//lprintf( WIDE("...") );
+ // reprocess this mesage...
+				continue;
+			}
+			else if( *MsgID )
+			{
+#ifndef DISABLE_MSGQUE_LOGGING
+				lprintf( WIDE("Looking for a message %")_MsgID_f WIDE("...at %") _size_f WIDE(" haven't found one yet."), *MsgID, tmp );
+#  ifndef DISABLE_MSGQUE_LOGBINARY
+				LogBinary( (uint8_t*)pReadMsg, (pReadMsg->msg.length + sizeof( MSGCORE )) & ACTUAL_LEN_MASK );
+#  endif
+#endif
+				pLastReadMsg = pReadMsg;
+				if( pReadMsg->msg.length & MARK_END_OF_QUE )
+				{
+					SetPos( tmp, 0 );
+					pLastReadMsg = NULL;
+				}
+				else
+					UpdatePos( tmp, ( pReadMsg->msg.length & ACTUAL_LEN_MASK ) );
+				continue;
+			}
+		}
+		if( !p )
+		{
+#ifndef DISABLE_MSGQUE_LOGGING
+			lprintf( WIDE("No message found... looping...") );
+#endif
+			if( options & MSGQUE_NOWAIT )
+			{
+				lprintf( WIDE("Retunign - not looping...err uhh...") );
+				SetLastError( MSGQUE_ERROR_NOMSG );
+				LeaveCriticalSec( &pmq->cs );
+				return -1;
+			}
+			_Bottom = pmq->Bottom;
+			_Top = pmq->Top;
+		}
+	}
+	LeaveCriticalSec( &pmq->cs );
+	if( !p )
+	{
+		SetLastError( MSGQUE_ERROR_NOMSG );
+		return -1;
+	}
+	return p;
+}
+#ifdef __cplusplus
+ //	namespace message {
+};
+ // namespace containers {
+};
+ //namespace sack {
+};
+#endif
+#define DEFINE_MESSAGE_SERVER_GLOBAL
+#ifdef __QNX__
+#define USE_SACK_MSGQ
+#endif
+//#define ENABLE_GENERAL_USEFUL_DEBUGGING
+#ifdef ENABLE_GENERAL_USEFUL_DEBUGGING
+//#define DEBUG_THREAD
+#define LOG_LOCAL_EVENT
+//#define DEBUG_RU_ALIVE_CHECK
+//#define DEBUG_HANDLER_LOCATE
+#define LOG_SENT_MESSAGES
+// event messages need to be enabled to log event message data...
+#define DEBUG_DATA_XFER
+//#define NO_LOGGING
+/// show event messages...
+#define DEBUG_EVENTS
+#define DEBUG_OUTEVENTS
+/// attempt to show the friendly name for messages handled
+#define LOG_HANDLED_MESSAGES
+//#define DEBUG_MESSAGE_BASE_ID
+#define _DEBUG_RECEIVE_DISPATCH_
+//#define DEBUG_THREADS
+//#define DEBUG_MSGQ_OPEN
+#endif
+#ifdef __LINUX__
+// ipc sysv msgque (msgget,msgsnd,msgrcv)
+#ifdef __ANDROID__
+#  include <linux/ipc.h>
+#  include <linux/msg.h>
+#else
+#  ifndef USE_SACK_MSGQ
+#    include <sys/ipc.h>
+#    include <sys/msg.h>
+#  endif
+#endif
+#define MSGTYPE (struct msgbuf*)
+#else
+#define MSGTYPE
+#endif
+#ifndef SERVER_MESSAGE_INTERFACE
+#define SERVER_MESSAGE_INTERFACE
+#ifdef BCC16
+# ifdef SERVERMSG_SOURCE
+# define SERVERMSG_PROC(type,name) type STDPROC _export name
+# else
+# define SERVERMSG_PROC(type,name) type STDPROC name
+# endif
+#else
+# ifdef SERVERMSG_SOURCE
+# define SERVERMSG_PROC(type,name) EXPORT_METHOD type CPROC name
+# else
+# define SERVERMSG_PROC(type,name) IMPORT_METHOD type CPROC name
+# endif
+#endif
+#ifdef __cplusplus
+#define _SERVER_NAMESPACE namespace server {
+#define MSGSERVER_NAMESPACE namespace sack { namespace msg { namespace server {
+#define MSGSERVER_NAMESPACE_END }} }
+#else
+#define _SERVER_NAMESPACE
+#define MSGSERVER_NAMESPACE
+#define MSGSERVER_NAMESPACE_END
+#endif
+SACK_NAMESPACE
+   _MSG_NAMESPACE
+/* Defines methods and events that the service side might want
+   to use.                                                     */
+	_SERVER_NAMESPACE
+#ifdef _DEBUG
+ // 2 seconds
+#define CLIENT_TIMEOUT   120000
+#else
+#define CLIENT_TIMEOUT   2000
+#endif
+/* User callback signature to return the function callback table
+   to the server for event dispatch to a service (?) (INTERNAL?) */
+typedef int (CPROC *GetServiceFunctionTable)(server_function_table *ppTable
+												  ,uint32_t *nEntries
+												  ,uint32_t MsgBase);
+#ifndef CLIENT_MESSAGE_INTERFACE
+#ifndef CLIENTMSG_SOURCE
+// now - is there some magic to allow libraries to link to
+// the core application?? - this is in the server's core
+// and is access by the services it loads.
+SERVERMSG_PROC(int, SendMultiServiceEvent)( uint32_t pid, uint32_t event
+								 , uint32_t parts
+								 , ... );
+/* <combine sack::msg::client::SendMultiServiceEvent@uint32_t@uint32_t@uint32_t@...>
+   \ \                                                                */
+#define SendServiceEvent(pid,event,data,len) SendMultiServiceEvent(pid,event,1,data,len)
+//void SendServiceEvent( uint32_t pid, uint32_t event, uint32_t *data, uint32_t len );
+#endif
+#endif
+MSGSERVER_NAMESPACE_END
+#ifdef __cplusplus
+using namespace sack::msg::server;
+#endif
+#endif
+// $Log: msgserver.h,v $
+// Revision 1.11  2005/05/12 21:12:50  jim
+// Merge process_service_branch into trunk development.
+//
+// Revision 1.10.2.1  2005/05/02 17:01:08  jim
+// Nearly works... time to move over to linux... still need some cleanup on exits... and dead clients.
+//
+// Revision 1.10  2003/10/28 01:14:34  panther
+// many changes to implement msgsvr on windows.  Even to get displaylib service to build, there's all sorts of errors in inconsistant definitions...
+//
+// Revision 1.9  2003/09/21 11:49:04  panther
+// Fix service refernce counting for unload.  Fix Making sub images hidden.
+// Fix Linking of services on server side....
+// cleanup some comments...
+//
+// Revision 1.8  2003/03/25 08:38:11  panther
+// Add logging
+//
+MSGCLIENT_NAMESPACE
+#define MSG_DEFAULT_RESULT_BUFFER_MAX (sizeof( uint32_t ) * 16384)
+#ifdef  _DEBUG
+ // standard transaction timout
+#define DEFAULT_TIMEOUT 300000
+#else
+ // standard transaction timout
+#define DEFAULT_TIMEOUT 500
+#endif
+#if defined( _WIN32 ) || defined(USE_SACK_MSGQ)
+#ifdef _MSC_VER
+#undef errno
+#define errno GetLastError()
+#endif
+#define MSGQ_TYPE PMSGHANDLE
+#else
+#define MSGQ_TYPE int
+#endif
+typedef PREFIX_PACKED struct message_header_tag
+{
+// internal message information
+	// transportable across messsage queues or networks
+   SERVICE_ENDPOINT source;
+	uint32_t msgid;
+// #define MSGDATA( msghdr ) ( (&msghdr.sourceid)+1 )
+} PACKED MSGHDR;
+typedef PREFIX_PACKED struct full_message_header_tag
+{
+	SERVICE_ENDPOINT dest;
+	MSGHDR hdr;
+#define QMSGDATA( qmsghdr ) ((uint32_t*)( (qmsghdr)+1 ))
+	//uint32_t data[];
+} PACKED QMSG;
+// these are client structures
+// services which are loaded result in the creation
+// of a handler device.
+typedef struct ServiceEventHandler_tag EVENTHANDLER, *PEVENTHANDLER;
+struct ServiceEventHandler_tag
+{
+	DeclareLink( EVENTHANDLER );
+	struct {
+		BIT_FIELD dispatched : 1;
+		BIT_FIELD notify_if_dispatched : 1;
+		BIT_FIELD destroyed : 1;
+		BIT_FIELD local_service : 1;
+	} flags;
+	// when receiving messages from the application...
+	// this is the event base which it will give me...
+	// it is also the unique routing ID
+	// my list will be built from the sum of all services
+	// connected to, and the number of MsgCount they claim to have..
+	SERVICE_ROUTE RouteID;
+	THREAD_ID EventID;
+	// destination address of this service's
+	// messages...
+	EventHandlerFunction Handler;
+	EventHandlerFunctionEx HandlerEx;
+	EventHandlerFunctionExx HandlerExx;
+	uintptr_t psv;
+	// this handler's events come from this queue.
+	MSGQ_TYPE msgq_events;
+	////CRITICALSECTION csMsgTransact;
+	// timeout on this local handler's reception of a responce.
+	TEXTSTR servicename;
+};
+typedef struct ServiceTransactionHandler_tag TRANSACTIONHANDLER, *PTRANSACTIONHANDLER;
+struct ServiceTransactionHandler_tag
+{
+	DeclareLink( TRANSACTIONHANDLER );
+	struct {
+		BIT_FIELD waiting_for_responce : 1;
+		BIT_FIELD responce_received : 1;
+		BIT_FIELD bCheckedResponce : 1;
+	} flags;
+  // the handler this transaction belongs to.
+	PEVENTHANDLER transaction_for_handler;
+	PSERVICE_ROUTE route;
+	CRITICALSECTION csMsgTransact;
+	// timeout on this local handler's reception of a responce.
+	uint32_t wait_for_responce;
+ // last outbound resquest - which is waiting for a responce
+	MSGIDTYPE LastMsgID;
+ // address of the reply message ID
+	MSGIDTYPE *MessageID;
+	POINTER msg;
+	size_t *len;
+	uint32_t last_check_tick;
+	PQMSG MessageIn;
+	size_t MessageLen;
+};
+// registration of a service results in a new
+// CLIENT_SERVICE structure.  Messages are received
+// from clients, and dispatched.. ..
+// Just like clients, services also support events...
+typedef struct service_tag
+{
+	struct {
+		BIT_FIELD bRegistered : 1;
+		BIT_FIELD bFailed : 1;
+		BIT_FIELD connected : 1;
+		BIT_FIELD bMasterServer : 1;
+		BIT_FIELD bWaitingInReceive : 1;
+		BIT_FIELD bClosed : 1;
+	} flags;
+	GetServiceFunctionTable GetFunctionTable;
+	server_function_table functions;
+	server_message_handler handler;
+	server_message_handler_ex handler_ex;
+	uintptr_t psv;
+	uint32_t entries;
+	uint32_t references;
+  // this is a static route that goes to the message server.
+	SERVICE_ROUTE route;
+  // when registered this is our ID for later message handler resolution
+	MSGIDTYPE ServiceID;
+	TEXTCHAR *name;
+	PTHREAD thread;
+	//uint32_t pid_me; // these pids should be phased out, and given an ID from msgsvr.
+ // these are clients that are connected to this service
+	PLIST service_routes;
+	PQMSG recv;
+	PQMSG result;
+	DeclareLink( struct service_tag );
+} CLIENT_SERVICE, *PCLIENT_SERVICE;
+// PEVENTHANDLER creation also results in the creation of one of these...
+// this allows the ProbeClientAlive to work correctly...
+// then on the server side, when the service is loaded, one of these is
+// created... allowing the server to monitor client connectivity.
+typedef struct service_client_tag
+{
+   SERVICE_ROUTE route;
+	//uint32_t pid; // process only? no thread?
+	uint32_t last_time_received;
+	struct {
+		BIT_FIELD valid : 1;
+ // uhmm - something like got a message from this but it wasn't known
+		BIT_FIELD error : 1;
+		BIT_FIELD status_queried : 1;
+ // created to track connection from client to service...
+		BIT_FIELD is_service : 1;
+	} flags;
+	PLIST services;
+	PEVENTHANDLER handler;
+	DeclareLink( struct service_client_tag );
+} SERVICE_CLIENT, *PSERVICE_CLIENT;
+typedef  struct sleeper_tag
+{
+	PTHREAD thread;
+   PTRANSACTIONHANDLER handler;
+} SLEEPER, *PSLEEPER;
+#define MAXBUFFER_LENGTH_PAIRSPERSET 256
+/* use a small local pool of these instead of allocate/release */
+/* this high-reuse area just causes fragmentation */
+DeclareSet( BUFFER_LENGTH_PAIR );
+#if defined( _WIN32 ) || defined( USE_SACK_MSGQ )
+#define IPC_NOWAIT MSGQUE_NOWAIT
+#ifndef ENOMSG
+#define ENOMSG MSGQUE_ERROR_NOMSG
+#endif
+#ifndef EINTR
+#define EINTR -1
+#endif
+#ifndef EIDRM
+#define EIDRM -2
+#endif
+#ifndef EINVAL
+#define EINVAL -3
+#endif
+#ifndef E2BIG
+#define E2BIG -4
+#endif
+#ifndef EABORT
+#define EABORT MSGQUE_ERROR_EABORT
+#endif
+#ifdef DEBUG_DATA_XFER
+#  define msgsnd( q,msg,len,opt) ( _lprintf(DBG_RELAY)( WIDE("Send Message...%d %d"), len, len+4 ), LogBinary( (uint8_t*)msg, (len)+4  ), EnqueMsg( q,(msg),(len),(opt)) )
+#else
+#  define msgsnd(a,b,c,d) EnqueMsg((PMSGHANDLE)a,b,c,d)
+#endif
+	#define msgrcv(q,m,sz,id,o) DequeMsg((PMSGHANDLE)q,&id,m,sz,o)
+	#define MSGQSIZE 32768
+	#define IPC_CREAT  1
+	#define IPC_EXCL	2
+#define msgget(name,n,opts) ( (opts) & IPC_CREAT )			? ( ( (opts) & IPC_EXCL)										    ? ( SackOpenMsgQueue( name, NULL, 0 )								 ? (MSGQ_TYPE)MSGFAIL															  : SackCreateMsgQueue( name, MSGQSIZE, NULL, 0 ))		    : SackCreateMsgQueue( name, MSGQSIZE, NULL, 0 ))			 : SackOpenMsgQueue( name, NULL, 0 )
+	//#define msgget(name,n,opts ) CreateMsgQueue( name, MSGQSIZE, NULL, 0 )
+	#define msgctl(n,o,f)
+	#define MSGFAIL NULL
+#else
+#ifdef DEBUG_DATA_XFER
+	//#define msgsnd( q,msg,len,opt) ( _xlprintf(1 DBG_RELAY)( WIDE("Send Message...") ), LogBinary( (POINTER)msg, (len)+4  ), msgsnd( q,(msg),(len),(opt)) )
+	#define msgsnd( q,msg,len,opt) ( lprintf( WIDE("Send Message...") ), LogBinary( (POINTER)msg, (len)+4  ), msgsnd( q,(msg),(len),(opt)) )
+#endif
+	#define msgget( name,n,opts) msgget( n,opts )
+	#define MSGFAIL -1
+#endif
+typedef struct global_message_service_tag
+{
+	struct {
+		BIT_FIELD message_responce_handler_ready : 1;
+		BIT_FIELD message_handler_ready : 1;
+		BIT_FIELD failed : 1;
+		BIT_FIELD events_ready : 1;
+		BIT_FIELD local_events_ready : 1;
+		BIT_FIELD disconnected : 1;
+		//BIT_FIELD connected : 1;
+		BIT_FIELD handling_client_message : 1;
+		BIT_FIELD bAliveThreadStarted : 1;
+		// enabled when my_message_id is resolved...
+		BIT_FIELD connected : 1;
+		BIT_FIELD bMasterServer : 1;
+ // thread for service handling...
+		BIT_FIELD bServiceHandlerStarted : 1;
+ // thread for service handling...
+		BIT_FIELD bCoreServiceHandlerStarted : 1;
+ // set this when a valid server was found - dont' reset master id
+		BIT_FIELD found_server : 1;
+ // receive is waiting to get service input messages
+		BIT_FIELD bWaitingInReceive : 1;
+		BIT_FIELD bCoreServiceInputHandlerStarted : 1;
+	} flags;
+   // idenfitier for this process.  Messages from me, and to me reference this ID.
+	MSGIDTYPE my_message_id;
+	PLIST pSleepers;
+			// handles messages on msgq_in (responce from service)
+	PTHREAD pThread;
+  // handles messages on msgq_out (request for service)
+	PTHREAD pMessageThread;
+	 // handles messages to msgq_event (client side events)
+	PTHREAD pEventThread;
+ // handles messages on msgq_local_event (client only internal events)
+	PTHREAD pLocalEventThread;
+	// these are client side connection managers.
+   // for each service connected to, there is a handler.
+	PEVENTHANDLER pHandlers;
+	// these are for handling send/receive matched response things
+   // maybe these are temporary based on PEVENTHANDLERs
+   PTRANSACTIONHANDLER pTransactions;
+	// this list is only populated in the master server.  This is all registered servers
+   // Actually, this service list is also maintained in the registerant of the service.
+	PCLIENT_SERVICE services;
+	// these are tracked from...
+   // clients have a pHandler in them.
+	PSERVICE_CLIENT clients;
+ // a static handler to cover communication with this library itself.
+	EVENTHANDLER _handler;
+	// this is the one waiting for a register service ack...
+	// I won't have the ServiceID
+	CRITICALSECTION csLoading;
+	CRITICALSECTION csMsgTransact;
+  // this is a static route that goes to the message server.
+	SERVICE_ROUTE master_service_route;
+	// id + 1 (thread 0)
+	MSGQ_TYPE msgq_in;
+  // id + 0 (thread 0)
+	MSGQ_TYPE msgq_out;
+// id + 2 (thread 1)
+	MSGQ_TYPE msgq_event;
+// id + 3 (thread 2 (or 1 if only local)
+	MSGQ_TYPE msgq_local;
+	PLINKQUEUE Messages;
+	int pending;
+} GLOBAL;
+#ifdef g
+#   undef g
+#endif
+#define g (*global_msgclient)
+#ifndef DEFINE_MESSAGE_SERVER_GLOBAL
+extern
+#endif
+GLOBAL *global_msgclient;
+//-----  client_common.c -------
+// register with amster is called as part of _InitMessageService...
+void RegisterWithMasterService( void );
+int _InitMessageService( int local );
+void CPROC MonitorClientActive( uintptr_t psv );
+void CloseMessageQueues( void );
+void DropMessageBuffer( PQMSG msg );
+PQMSG GetMessageBuffer( void );
+//------ client_input.c -------
+PTRANSACTIONHANDLER GetTransactionHandler( PSERVICE_ROUTE route );
+//int GetAMessageEx( MSGQ_TYPE msgq, CTEXTSTR q, int flags DBG_PASS );
+uintptr_t CPROC HandleMessages( PTHREAD thread );
+int WaitReceiveServerMsg ( PSLEEPER sleeper
+				, uint32_t MsgOut
+					DBG_PASS );
+int QueueWaitReceiveServerMsg ( PSLEEPER sleeper, PTRANSACTIONHANDLER handler
+										  , MSGIDTYPE *MsgIn
+										  , POINTER BufferIn
+										  , size_t *LengthIn
+											DBG_PASS );
+//------ client_client.c ------
+PSERVICE_CLIENT FindClient( PSERVICE_ROUTE pid );
+//-----  client_event.c ---------
+uintptr_t CPROC HandleEventMessages( PTHREAD thread );
+int HandleEvents( MSGQ_TYPE msgq, PQMSG MessageEvent, int initial_flags );
+//----- client_local.c -------
+uintptr_t CPROC HandleLocalEventMessages( PTHREAD thread );
+//----- client_service.c --------
+int ReceiveServerMessageEx( PTRANSACTIONHANDLER handler, PQMSG MessageIn, size_t MessageLen DBG_PASS );
+uintptr_t CPROC HandleServiceMessages( PTHREAD thread );
+LOGICAL HandleCoreMessage( PQMSG msg, size_t msglen DBG_PASS );
+MSGCLIENT_NAMESPACE_END
+MSGCLIENT_NAMESPACE
+//--------------------------------------------------------------------
+PRIORITY_PRELOAD( LoadMsgClientGlobal, MESSAGE_CLIENT_PRELOAD_PRIORITY )
+{
+	SimpleRegisterAndCreateGlobal( global_msgclient );
+	InitializeCriticalSec( &g.csMsgTransact );
+	InitializeCriticalSec( &g.csLoading );
+	//InitializeCriticalSec( &g._handler.csMsgTransact );
+}
+//--------------------------------------------------------------------
+static void EndClient( PSERVICE_CLIENT client )
+{
+	// call the service termination function.
+	PCLIENT_SERVICE service;
+	INDEX idx;
+	// for all services inform it that the client is defunct.
+	Log( WIDE("Ending client (from death)") );
+	if( client->flags.is_service )
+	{
+		lprintf( WIDE("Service is gone! please tell client...") );
+		if( client->handler->Handler )
+			client->handler->Handler( MSG_MateEnded, NULL, 0 );
+		if( client->handler->HandlerEx )
+			client->handler->HandlerEx( &client->handler->RouteID, MSG_MateEnded, NULL, 0 );
+		if( client->handler->HandlerExx )
+			client->handler->HandlerExx( client->handler->psv, &client->handler->RouteID, MSG_MateEnded, NULL, 0 );
+		UnlinkThing( client->handler );
+		Release( client->handler );
+	}
+	else
+	{
+		LIST_FORALL( client->services, idx, PCLIENT_SERVICE, service )
+		{
+			//lprintf( WIDE("Client had service... %p"), service );
+			if( service->handler )
+			{
+				service->handler( &client->route, MSG_ServiceUnload
+									 , NULL, 0
+									 , NULL, NULL );
+			}
+			else if( service->handler_ex )
+			{
+				service->handler_ex( service->psv
+										 , &client->route, MSG_ServiceUnload
+										 , NULL, 0
+										 , NULL, NULL );
+			}
+			else if( service->functions && service->functions[MSG_ServiceUnload].function )
+			{
+				uint32_t resultbuf[1];
+				size_t resultlen = 4;
+				service->functions[MSG_ServiceUnload].function( &client->route, NULL, 0
+																			 , resultbuf, &resultlen );
+			}
+			//Log( WIDE("Ending service on client...") );
+			// Use ungloadservice to signal server services of client loss...
+			//if( !UnloadService( service->first_message_index, client->pid ) )
+			//	Log( WIDE("Somehow unloading a known service failed...") );
+		}
+		DeleteList( &client->services );
+		{
+			static uint32_t msg[2048];
+			int32_t len;
+			//lprintf( "vvv" );
+			while( (len=msgrcv( g.msgq_out, MSGTYPE msg, 8192, client->route.source.process_id, IPC_NOWAIT )) >= 0 )
+				//	errno != ENOMSG )
+				lprintf( WIDE("Flushed a message to dead client(%") _MsgID_f WIDE(",%") _32f WIDE(") from output (%08") _32fx WIDE(":%") _32fs WIDE(" bytes)")
+						 , client->route.source.process_id
+						 , msg[0]
+						 , msg[1]
+						 , len );
+			//lprintf( "^^^" );
+			//lprintf( "vvv" );
+			while( msgrcv( g.msgq_event, MSGTYPE msg, 8192, client->route.source.process_id, IPC_NOWAIT ) >= 0 ||
+					GetLastError() != ENOMSG )
+				Log( WIDE("Flushed a message to dead client from event") );
+			//lprintf( "^^^" );
+		}
+	}
+	// delete the client.
+	Log( WIDE("Finally unlinking the client...") );
+	UnlinkThing( client );
+	Release( client );
+}
+//--------------------------------------------------------------------
+void CPROC MonitorClientActive( uintptr_t psv )
+{
+	// for all clients connected send an alive probe to see
+	// if we can free their resources.
+	PSERVICE_CLIENT client, next = g.clients;
+	//const char *pFile = __FILE__;
+	//int nLine = __LINE__;
+#ifdef DEBUG_RU_ALIVE_CHECK
+	Log( WIDE("Checking client alive") );
+#endif
+	// if am handling a message don't check alivenmess..
+	if( !g.flags.handling_client_message )
+	{
+		while( ( client = next ) )
+		{
+			next = client->next;
+#ifdef DEBUG_RU_ALIVE_CHECK
+			lprintf( WIDE("Client %d(%p) last received %d ms ago"), client->pid, client, timeGetTime() - client->last_time_received );
+#endif
+			if( ( client->last_time_received + CLIENT_TIMEOUT ) < timeGetTime() )
+			{
+				Log( WIDE("Client has been silent +") STRSYM(CLIENT_TIMEOUT) WIDE("ms - he's dead. (maybe he unloaded and we forgot to forget him?!)") );
+				EndClient( client );
+			}
+			else if( ( client->last_time_received + (CLIENT_TIMEOUT/2) ) <  timeGetTime() )
+			{
+				if( !client->flags.status_queried )
+				{
+					QMSG msg;
+					//uint32_t msg[3];
+#ifdef DEBUG_DATA_XFER
+					DBG_VARSRC;
+#endif
+					//Log1( WIDE("Asking if client %d is alive"), client->pid );
+					msg.dest.process_id            = client->route.dest.process_id;
+					msg.dest.service_id            = client->route.dest.service_id;
+					msg.hdr.source.process_id = client->route.source.process_id;
+					msg.hdr.source.service_id = client->route.source.service_id;
+					msg.hdr.msgid             = RU_ALIVE;
+					client->flags.status_queried = 1;
+#ifdef DEBUG_RU_ALIVE_CHECK
+					lprintf( "Ask RU_ALIVE..." );
+#endif
+					msgsnd( g.msgq_in, MSGTYPE &msg, sizeof( msg ) - sizeof( MSGIDTYPE ), 0 );
+				}
+				else
+				{
+#ifdef DEBUG_RU_ALIVE_CHECK
+					lprintf( "client has been queried for alivness..." );
+#endif
+				}
+			}
+			else
+			{
+				// hmm maybe a shorter timeout can happen...
+			}
+		}
+	}
+#if 0
+	{
+		PTRANSACTIONHANDLER pHandler, pNextHandler = g.pTransactions;
+		while( pHandler = pNextHandler )
+		{
+			lprintf( "Check event handler (Service) %p", pHandler );
+			pNextHandler = pHandler->next;
+			{
+				uint32_t tick;
+				if( ( pHandler->last_check_tick + (CLIENT_TIMEOUT) ) < ( tick = timeGetTime() ) )
+				{
+					pHandler->last_check_tick = tick;
+					if( !ProbeClientAlive( pHandler->ServiceID ) )
+					{
+						lprintf( "Service is gone! please tell client..." );
+						if( pHandler->Handler )
+							pHandler->Handler( MSG_MateEnded, NULL, 0 );
+						if( pHandler->HandlerEx )
+							pHandler->HandlerEx( pHandler->ServiceID, MSG_MateEnded, NULL, 0 );
+						if( pHandler->HandlerExx )
+							pHandler->HandlerExx( pHandler->psv, pHandler->ServiceID, MSG_MateEnded, NULL, 0 );
+						UnlinkThing( pHandler );
+						Release( pHandler );
+						// generate disconnect message to client(myself)
+						continue;
+					}
+					else
+						lprintf( "Service is okay..." );
+				}
+			}
+		}
+	}
+#endif
+}
+//--------------------------------------------------------------------
+void ResumeThreads( void )
+{
+#ifndef _WIN32
+	uint32_t tick;
+	if( g.pThread )
+	{
+		lprintf( WIDE("Resume Service") );
+		tick = timeGetTime();
+		g.pending = 1;
+		pthread_kill( ( GetThreadHandle( g.pThread ) ), SIGUSR2 );
+		while( ((tick+10)>timeGetTime()) && g.pending ) Relinquish();
+	}
+	if( g.pMessageThread )
+	{
+		lprintf( WIDE("Resume Responce") );
+		tick = timeGetTime();
+		g.pending = 1;
+		pthread_kill( ( GetThreadHandle( g.pMessageThread ) ), SIGUSR2 );
+		while( ((tick+10)>timeGetTime()) && g.pending ) Relinquish();
+	}
+	if( g.pEventThread )
+	{
+		lprintf( WIDE("Resume event") );
+		tick = timeGetTime();
+		g.pending = 1;
+		pthread_kill( ( GetThreadHandle( g.pEventThread ) ), SIGUSR2 );
+		while( ((tick+10)>timeGetTime()) && g.pending ) Relinquish();
+	}
+	if( g.pLocalEventThread )
+	{
+		lprintf( WIDE("Resume local event") );
+		tick = timeGetTime();
+		g.pending = 1;
+		pthread_kill( ( GetThreadHandle( g.pLocalEventThread ) ), SIGUSR2 );
+		while( ((tick+10)>timeGetTime()) && g.pending ) Relinquish();
+	}
+#else
+	if( g.pThread )
+		WakeThread( g.pThread );
+	if( g.pMessageThread )
+		WakeThread( g.pMessageThread );
+	if( g.pEventThread )
+		WakeThread( g.pEventThread );
+	if( g.pLocalEventThread )
+		WakeThread( g.pLocalEventThread );
+#endif
+}
+//--------------------------------------------------------------------
+void RegisterWithMasterService( void )
+{
+	MSGIDTYPE ServiceID;
+	if( g.flags.bMasterServer )
+	{
+		// I'm already done here....
+		// I am what I am, and that's it.
+		g.flags.connected = 1;
+		g.flags.found_server = 1;
+	}
+	if( !g.flags.connected )
+	{
+		MSGIDTYPE Result;
+		// result is a message ID that will be my SourceID
+		size_t msglen = sizeof( ServiceID );
+		/*
+		{
+			// create service 0 if it doesn't exist.
+			PCLIENT_SERVICE service;
+			for( service = g.services; service; service = service->next )
+			{
+				// process_id is already matched at this point, or we wouln't have the message
+				// just have to give it to the local service.
+				if( service->ServiceID == 0 )
+				{
+					//lprintf( WIDE("Found the service...%s"), service->name );
+					break;
+				}
+			}
+			if( !service )
+			{
+				service = New( CLIENT_SERVICE );
+				service->entries = 0;
+				service->name = WIDE( "Core Service" );
+				//service->
+			}
+		}
+		*/
+		lprintf( WIDE("Connecting first time to service server...%")_MsgID_f WIDE(",%") _MsgID_f, g.master_service_route.dest.process_id, g.master_service_route.dest.service_id );
+		if( !TransactServerMultiMessageExEx(DBG_VOIDSRC)( &g.master_service_route, CLIENT_CONNECT, 0
+													, &Result, &ServiceID, &msglen
+													, 100
+													)
+		  || Result != (CLIENT_CONNECT|SERVER_SUCCESS) )
+		{
+			Log( WIDE("Failed CLIENT_CONNECT") );
+			//g.flags.failed = TRUE;
+			// I see no purpose for this other than troubleshooting
+			// RegisterWithMaster is called well after this should
+			// have been set...
+			//g.flags.message_responce_handler_ready = TRUE;
+			return;
+		}
+		else
+		{
+			// result and pid in message received from server are trashed...
+			//g.master_server_pid = msg[0];
+			// modify my_message_id - this is now the
+			// ID of messages which will be sent
+			// and where repsonces will be returned
+			// this therefore means that
+			lprintf( WIDE("Initial service contact success") );
+			g.flags.found_server = 1;
+			g.flags.connected = 1;
+			//g.my_message_id = msg[0];
+			//lprintf( WIDE("Have changed my_message_id and now we need to wake all receivers...") );
+			// this causes them to re-queue their requests with the new
+			// flag... although the windows implementation passes the address
+			// of this variable, so next message will wake this thread, however,
+			// if the message was already posted, still will have to wake them
+			// so they can scan for new-ready.
+			ResumeThreads();
+		}
+	}
+}
+//--------------------------------------------------------------------
+static MSGQ_TYPE OpenQueueEx( CTEXTSTR name, int key, int flags DBG_PASS )
+#ifdef _WIN32
+#define OpenQueue(n,k,f) OpenQueueEx(n,0,f DBG_SRC)
+#else
+#define OpenQueue(n,k,f)  OpenQueueEx( n,k,f DBG_SRC )
+#endif
+{
+	static TEXTCHAR errbuf[256];
+	MSGQ_TYPE queue;
+	if( g.flags.bMasterServer )
+	{
+		queue = msgget( name, key, IPC_CREAT|IPC_EXCL|0666 );
+		if( queue == MSGFAIL )
+		{
+			//strerror_s(errbuf, sizeof( errbuf ), errno);
+         errbuf[0] = 0;
+			lprintf( WIDE("Failed to create message Q for \"%s\":%s for") DBG_FILELINEFMT, name
+				, errbuf
+				DBG_RELAY );
+			queue = msgget( name, key, 0 );
+			if( queue == MSGFAIL )
+			{
+				//perror( WIDE("Failed to open message Q") );
+			}
+			else
+			{
+				lprintf( WIDE("Removing message queue id for %s"), name );
+				msgctl( queue, IPC_RMID, NULL );
+				queue = msgget( name, key, IPC_CREAT|IPC_EXCL|0666 );
+				if( queue == MSGFAIL )
+				{
+					//strerror_s(errbuf, sizeof( errbuf ), errno);
+					errbuf[0] = 0;
+					lprintf( WIDE("Failed to open message Q for \"%s\":%s"), name
+						, errbuf
+						);
+				}
+			}
+		}
+	}
+	else
+	{
+		queue = msgget( name, key, flags|0666 );
+		if( queue == MSGFAIL )
+		{
+#ifdef DEBUG_MSGQ_OPEN
+			//strerror_s(errbuf, sizeof( errbuf ), errno);
+         errbuf[0] = 0;
+			lprintf( WIDE("Failed to create message Q for \"%s\":%s for ") DBG_FILELINEFMT, name
+				, errbuf
+				DBG_RELAY );
+#endif
+			//lprintf( WIDE("Failed to open message Q for \")%s\":%s", name, strerror(errno) );
+		}
+	}
+	return queue;
+}
+//--------------------------------------------------------------------
+#ifndef WIN32
+static void ResumeSignal( int signal )
+{
+	//lprintf( WIDE("Got a resume signal.... resuming uhmm some thread.") );
+	//lprintf( WIDE("Uhmm and then pending should be 0?") );
+	g.pending = 0;
+}
+#endif
+int _InitMessageService( int local )
+{
+#ifdef __LINUX__
+	key_t key, key2, key3, key4;
+ // ignore this ...
+	signal( SIGUSR2, ResumeSignal );
+#endif
+	// key and key2 are reversed from the server - so my out is his in
+	// and his inis my out.
+	// we do funny things here since we switch in/out vs server.
+#ifdef __LINUX__
+ // server input, client output
+	key = *(long*)MSGQ_ID_BASE;
+  // server output, client input
+	key2 = key + 1;
+  // pid-addressed events (all ways)
+	key3 = key + 2;
+  // pid-addressed events (all ways)
+	key4 = key + 3;
+#endif
+	// until connected, our message handler ID
+	// is my pid.  Then, once connected, we listen
+	// for messages with the ID which was granted by the message
+	// service.
+	// maybe this could be declared to be '2'
+	// and then before the client-connect is done, attempt
+	// to send to process 2... if a responce is given, someone
+	// else is currently registering with the message server
+	// and we need to wait.
+	// not failed... attempting to re-connect
+	g.flags.failed = 0;
+	if( !local )
+	{
+		if( g.flags.disconnected )
+		{
+			lprintf( WIDE("Previously we had closed all communication... allowing re-open.") );
+			g.flags.disconnected = 0;
+ // reset this... so we re-request for new path...
+			g.my_message_id = 0;
+		}
+	}
+	if( !g.flags.bAliveThreadStarted )
+	{
+		// this timer monitors ALL clients for inactivity
+		// it will probe them with RU_ALIVE messages
+		// to which they must respond otherwise be termintated.
+		g.flags.bAliveThreadStarted = 1;
+		AddTimer( CLIENT_TIMEOUT/4, MonitorClientActive, 0 );
+		// each service gets 1 thread to handle their own
+		// messages... services do not have 'events' generated
+		// to them.
+	}
+	if( !g.my_message_id )
+	{
+#ifdef __LINUX__
+ //pService->thread->ThreadID & 0x7FFFFFFFUL; /*(uint32_t)getpid()*/;
+		g.my_message_id = getpid();
+#else
+		g.my_message_id = GetCurrentProcessId();
+#endif
+	}
+	g.master_service_route.dest.process_id = 1;
+	g.master_service_route.dest.service_id = 0;
+	g.master_service_route.source.process_id = g.my_message_id;
+	g.master_service_route.source.service_id = 0;
+	if( !local && !g.msgq_in && !g.flags.message_responce_handler_ready )
+	{
+#ifdef DEBUG_MSGQ_OPEN
+		lprintf( WIDE("opening message queue? %d %d %d")
+				 , local, g.msgq_in, g.flags.message_responce_handler_ready );
+#endif
+		g.msgq_in = OpenQueue( MSGQ_ID_BASE WIDE("1"), key2, 0 );
+#ifdef DEBUG_MSGQ_OPEN
+		lprintf( WIDE("Result msgq_in = %ld"), g.msgq_in );
+#endif
+		if( g.msgq_in == MSGFAIL )
+		{
+			g.msgq_in = 0;
+			return FALSE;
+		}
+#ifdef DEBUG_THREADS
+		lprintf( WIDE("Creating thread to handle responces...") );
+#endif
+		AddIdleProc( ProcessClientMessages, 0 );
+		ThreadTo( HandleMessages, g.my_message_id );
+		while( !g.flags.message_responce_handler_ready )
+			Relinquish();
+	}
+	if( !local && !g.msgq_out && !g.flags.message_handler_ready )
+	{
+		g.msgq_out = OpenQueue( MSGQ_ID_BASE WIDE("0"), key, 0 );
+		if( g.msgq_out == MSGFAIL )
+		{
+			g.msgq_out = 0;
+			return FALSE;
+		}
+		// just allow this thread to be created later...
+		// need to open the Queue... but that's about it.
+#ifdef DEBUG_THREADS
+		//lprintf( WIDE("Creating thread to handle messages...") );
+		// thread is now created in RegisterService portion
+#endif
+	}
+	if( !local && !g.msgq_event && !g.flags.events_ready )
+	{
+		g.msgq_event = OpenQueue( MSGQ_ID_BASE WIDE("2"), key3, 0 );
+		if( g.msgq_event == MSGFAIL )
+		{
+			g.msgq_event = 0;
+			return FALSE;
+		}
+#ifdef DEBUG_THREADS
+		lprintf( WIDE("Creating thread to handle events...") );
+#endif
+		ThreadTo( HandleEventMessages, 0 );
+		while( !g.flags.events_ready )
+			Relinquish();
+	}
+	if( local && !g.msgq_local && !g.flags.local_events_ready )
+	{
+	// huh - how can I open this shm under linux?
+		g.msgq_local = OpenQueue( NULL, key4, IPC_CREAT );
+		if( g.msgq_local == MSGFAIL )
+		{
+			g.msgq_local = 0;
+			return FALSE;
+		}
+#ifdef DEBUG_THREADS
+		lprintf( WIDE("Creating thread to handle local events...") );
+#endif
+		AddIdleProc( ProcessClientMessages, 0 );
+		ThreadTo( HandleLocalEventMessages, 0 );
+		while( !g.flags.local_events_ready )
+			Relinquish();
+	}
+	// right now our PID is the message ID
+	// and after this we will have our correct message ID...
+	g._handler.RouteID.dest.process_id = 1;
+	g._handler.RouteID.dest.service_id = 0;
+	if( g.flags.failed )
+	{
+		//g.flags.initialized = FALSE;
+		return -1;
+	}
+	return 1;
+}
+//--------------------------------------------------------------------
+void CloseMessageQueues( void )
+{
+	g.flags.disconnected = TRUE;
+	if( g.flags.bMasterServer )
+	{
+		// master server closing, removes all id's
+		// removing the message queue should be enough
+		// to wake each of these threads...
+		if( g.msgq_in != MSGFAIL )
+		{
+			msgctl( g.msgq_in, IPC_RMID, NULL );
+			g.msgq_in = 0;
+		}
+		if( g.msgq_out != MSGFAIL )
+		{
+			msgctl( g.msgq_out, IPC_RMID, NULL );
+			g.msgq_out = 0;
+		}
+		if( g.msgq_event != MSGFAIL )
+		{
+			msgctl( g.msgq_event, IPC_RMID, NULL );
+			g.msgq_event = 0;
+		}
+		if( g.msgq_local != MSGFAIL )
+		{
+			msgctl( g.msgq_local, IPC_RMID, NULL );
+			g.msgq_local = 0;
+		}
+	}
+	else
+	{
+		// we have to wake up everyone, so they can realize we're disconnected
+		// and leave...
+		// then we wait some short time for everyone to exit...
+		ResumeThreads();
+	}
+	{
+		uint32_t attempts = 0;
+		uint32_t time;
+		g.msgq_in = 0;
+		g.msgq_out = 0;
+		g.msgq_event = 0;
+		g.msgq_local = 0;
+		g.my_message_id = 0;
+		do
+		{
+			time = timeGetTime();
+			while( ((time+100)>timeGetTime()) && g.pThread ) Relinquish();
+			time = timeGetTime();
+			while( ((time+100)>timeGetTime()) && g.pMessageThread ) Relinquish();
+			time = timeGetTime();
+			while( ((time+100)>timeGetTime()) && g.pEventThread ) Relinquish();
+			time = timeGetTime();
+			while( ((time+100)>timeGetTime()) && g.pLocalEventThread ) Relinquish();
+			if( g.pThread || g.pMessageThread || g.pEventThread || g.pLocalEventThread )
+			{
+				attempts++;
+				lprintf( WIDE("Threads are not exiting... %") _32f WIDE(" times"), attempts );
+				if( attempts < 10 )
+ // skips
+					continue;
+			}
+		} while( 0 );
+	}
+	// re-establish our communication ID if we
+	// end up with more work to do...
+	g.flags.connected = 0;
+}
+//--------------------------------------------------------------------
+static void DisconnectClient(void)
+{
+	static int bDone;
+	PEVENTHANDLER pHandler;
+	if( !global_msgclient || bDone )
+		return;
+	bDone = 1;
+	//lprintf( WIDE("Disconnect all clients... %Lx"), GetMyThreadID() );
+	while( ( pHandler = g.pHandlers ) )
+	{
+		//lprintf( WIDE("Unloading a service...") );
+		UnloadService( pHandler->servicename );
+	}
+	//lprintf( WIDE("Okay all registered services are gone.") );
+	// no real purpose in this....
+	// well perhaps... but eh...
+	// if( !master server )
+	//SendServerMessage( CLIENT_DISCONNECT, NULL, 0 );
+	CloseMessageQueues();
+}
+ATEXIT_PRIORITY( _DisconnectClient, ATEXIT_PRIORITY_MSGCLIENT )
+{
+	DisconnectClient();
+}
+//--------------------------------------------------------------------
+CLIENTMSG_PROC( int, ProbeClientAlive )( PSERVICE_ENDPOINT RouteID )
+{
+	MSGIDTYPE Responce;
+	SERVICE_ROUTE ping_route;
+	if( RouteID->process_id == g.my_message_id )
+	{
+		lprintf( WIDE("Yes, I, myself, am alive...") );
+		return TRUE;
+	}
+	lprintf( WIDE("Hmm is client %p") WIDE(" alive?"), RouteID );
+	{
+		PEVENTHANDLER handler;
+		for( handler = g.pHandlers; handler; handler = handler->next )
+			if( ( handler->RouteID.dest.process_id == RouteID->process_id )
+			  && ( handler->RouteID.dest.service_id == RouteID->service_id ) )
+				break;
+		if( !handler )
+		{
+			// has a nul name.
+			handler = New( EVENTHANDLER );
+			MemSet( handler, 0, sizeof( EVENTHANDLER ) );
+			//InitializeCriticalSec( &handler->csMsgTransact );
+			handler->RouteID.dest = RouteID[0];
+			LinkThing( g.pHandlers, handler );
+			lprintf( WIDE("Created a HANDLER to coordinate probe alive request..") );
+		}
+	}
+	ping_route.dest.process_id = RouteID->process_id;
+ // PING goes to service 0 (internals)
+	ping_route.dest.service_id = 0;
+	ping_route.source.process_id = g.my_message_id;
+	ping_route.source.service_id = 0;
+	if( TransactRoutedServerMultiMessageEx( &ping_route, RU_ALIVE, 0
+													  , &Responce, NULL, NULL
+#ifdef DEBUG_DATA_XFER
+														// if logging data xfer - we need more time
+													  , 250
+#else
+ // 10 millisecond timeout... should be more than generous.
+													  , 250
+#endif
+													  , NULL, NULL ) &&
+		Responce == ( IM_ALIVE ) )
+	{
+		lprintf( WIDE("Ping Success.") );
+		return TRUE;
+	}
+	lprintf( WIDE("Ping Failure.") );
+	return FALSE;
+}
+//-------------------------------------------------------------
+CLIENTMSG_PROC( int, SendOutMessageEx )( PQMSG buffer, size_t len DBG_PASS )
+{
+#ifdef DEBUG_MESSAGE_BASE_ID
+	//DBG_VARSRC;
+#endif
+	int stat;
+	if( ( stat = msgsnd( g.msgq_out, MSGTYPE (buffer), len, 0 ) ) < 0 )
+	{
+		TEXTCHAR msg[256];
+		//strerror_s(errbuf, sizeof( errbuf ), errno);
+		msg[0] = 0;
+		lprintf( WIDE("Error sending message: %s")
+			, msg );
+	}
+	return stat;
+}
+CLIENTMSG_PROC( int, SendOutMessage )( PQMSG buffer, size_t len )
+{
+	return SendOutMessageEx(buffer,len DBG_SRC);
+}
+//-------------------------------------------------------------
+CLIENTMSG_PROC( void, SetMasterServer )( void )
+{
+	g.flags.bMasterServer = 1;
+}
+//-------------------------------------------------------------
+CLIENTMSG_PROC( void, DumpServiceList )(void )
+{
+	PLIST list = NULL;
+	int bDone = 0;
+	PREFIX_PACKED struct {
+		PLIST *ppList;
+		int *pbDone;
+		PTHREAD me;
+	} PACKED mydata;
+	mydata.ppList = &list;
+	mydata.pbDone = &bDone;
+	if( !_InitMessageService( FALSE ) )
+	{
+		lprintf( WIDE("Initization of public message participation failed, cannot query service master") );
+		return;
+	}
+	RegisterWithMasterService();
+	mydata.me = MakeThread();
+	lprintf( WIDE("Sending message to server ... list services...") );
+	LogBinary( (uint8_t*)&mydata, sizeof(mydata) );
+	SendServerMessage( &g.master_service_route, CLIENT_LIST_SERVICES, &mydata, sizeof(mydata) );
+	// wait for end of list...
+	while( !bDone )
+	{
+		WakeableSleep( 5000 );
+		if( !bDone )
+		{
+			lprintf( WIDE("Treading water, but I think I'm stuck here forever...") );
+		}
+	}
+	{
+		INDEX idx;
+		char *service;
+		LIST_FORALL( list, idx, char *, service )
+		{
+			// ID of service MAY be available... but is not yet through
+			// thsi interface...
+			lprintf( WIDE("Available Service: %s"), service );
+			Release( service );
+		}
+		lprintf( WIDE("End of service list.") );
+		DeleteList( &list );
+	}
+}
+//-------------------------------------------------------------
+CLIENTMSG_PROC( void, GetServiceList )( PLIST *list )
+{
+	int bDone = 0;
+	PREFIX_PACKED struct {
+		PLIST *ppList;
+		int *pbDone;
+		PTHREAD me;
+	} PACKED mydata;
+	mydata.ppList = list;
+	mydata.pbDone = &bDone;
+	if( !_InitMessageService( FALSE ) )
+	{
+		lprintf( WIDE("Initization of public message participation failed, cannot query service master") );
+		return;
+	}
+	RegisterWithMasterService();
+	mydata.me = MakeThread();
+	lprintf( WIDE("Sending message to server ... list services...") );
+	SendServerMessage( &g.master_service_route, CLIENT_LIST_SERVICES, &mydata, sizeof(mydata) );
+	// wait for end of list...
+	while( !bDone )
+	{
+		WakeableSleep( 5000 );
+		if( !bDone )
+		{
+			lprintf( WIDE("Treading water, but I think I'm stuck here forever...") );
+		}
+	}
+	/*
+	{
+		INDEX idx;
+		char *service;
+		LIST_FORALL( list, idx, char *, service )
+		{
+			// ID of service MAY be available... but is not yet through
+			// thsi interface...
+			lprintf( WIDE("Available Service: %s"), service );
+		}
+		lprintf( WIDE("End of service list.") );
+		}
+		*/
+}
+CLIENTMSG_PROC( LOGICAL, IsSameMsgEndPoint )( PSERVICE_ENDPOINT a, PSERVICE_ENDPOINT b )
+{
+   return ( a->process_id == b->process_id ) && ( a->service_id == b->service_id );
+}
+CLIENTMSG_PROC( LOGICAL, IsSameMsgSource )( PSERVICE_ROUTE a, PSERVICE_ROUTE b )
+{
+	return IsSameMsgEndPoint( &a->source, &b->source );
+}
+CLIENTMSG_PROC( LOGICAL, IsSameMsgDest )( PSERVICE_ROUTE a, PSERVICE_ROUTE b )
+{
+	return IsSameMsgEndPoint( &a->dest, &b->dest );
+}
+CLIENTMSG_PROC( LOGICAL, IsMsgSourceSameAsMsgDest )( PSERVICE_ROUTE a, PSERVICE_ROUTE b )
+{
+	return IsSameMsgEndPoint( &a->source, &b->dest );
+}
+void DropMessageBuffer( PQMSG msg )
+{
+	EnqueLink( &g.Messages, msg );
+}
+PQMSG GetMessageBuffer( void )
+{
+	PQMSG msg = (PQMSG)DequeLink( &g.Messages );
+	if( !msg )
+	{
+		msg = NewPlus( QMSG, 8192 );
+		return msg;
+	}
+	return msg;
+}
+MSGCLIENT_NAMESPACE_END
+//-------------------------------------------------------------
+MSGCLIENT_NAMESPACE
+//--------------------------------------------------------------------
+PSERVICE_CLIENT FindClient( PSERVICE_ROUTE pid )
+{
+	PSERVICE_CLIENT client = g.clients;
+	while( client )
+	{
+		if( ( client->route.dest.process_id == pid->dest.process_id )
+         && ( client->route.dest.service_id == pid->dest.service_id ) )
+		{
+			break;
+		}
+		client = client->next;
+	}
+	return client;
+}
+//--------------------------------------------------------------------
+static PSERVICE_CLIENT AddClient( PSERVICE_ROUTE pid )
+{
+	{
+		PSERVICE_CLIENT client = FindClient( pid );
+		if( client )
+		{
+			//Log( WIDE("Client has reconnected?!?!?!") );
+			// reconnect is done when requesting a service from
+			// a server that supplies one or more services itself...
+			// suppose we can just let him continue...
+			return client;
+		}
+	}
+	{
+		PSERVICE_CLIENT client = New( SERVICE_CLIENT );
+		MemSet( client, 0, sizeof( SERVICE_CLIENT ) );
+		client->route = pid[0];
+		client->last_time_received = timeGetTime();
+		client->flags.valid = 1;
+		LinkThing( g.clients, client );
+		g.clients = client;
+		//Log( WIDE("Added client...") );
+		return client;
+	}
+}
+//--------------------------------------------------------------------
+static PSERVICE_ROUTE _LoadService( CTEXTSTR service
+							  , EventHandlerFunction EventHandler
+							  , EventHandlerFunctionEx EventHandlerEx
+							  , EventHandlerFunctionExx EventHandlerExx
+							  , server_message_handler handler
+                       , server_message_handler_ex handler_ex
+							  , uintptr_t psv
+							  )
+{
+	MSGIDTYPE MsgID;
+	MsgSrv_ReplyServiceLoad msg;
+ // expect MsgBase = 0, EventMessgaeCount = 1
+	size_t MsgLen = sizeof( msg );
+	PEVENTHANDLER pHandler;
+	// can check now if some other part of this has loaded
+	// this service.
+	// reset this status...
+	if( !_InitMessageService( service?FALSE:TRUE ) )
+	{
+#ifdef DEBUG_MSGQ_OPEN
+		lprintf( WIDE("Load of %s message service failed."), service );
+#endif
+		return NULL;
+	}
+	if( service )
+	{
+		RegisterWithMasterService();
+		if( !g.flags.bAliveThreadStarted )
+		{
+			// this timer monitors ALL clients for inactivity
+			// it will probe them with RU_ALIVE messages
+			// to which they must respond otherwise be termintated.
+			g.flags.bAliveThreadStarted = 1;
+			AddTimer( CLIENT_TIMEOUT/4, MonitorClientActive, 0 );
+			// each service gets 1 thread to handle their own
+			// messages... services do not have 'events' generated
+			// to them.
+		}
+#if 0
+		// always query for service, don't short cut... ?
+		while( pHandler )
+		{
+			// only one connection to any given service name
+			// may be maintained.  The service itself is resulted...
+			if( !strcmp( pHandler->servicename, service ) )
+				return &pHandler->RouteID;
+			pHandler = pHandler->next;
+		}
+#endif
+		EnterCriticalSec( &g.csLoading );
+		pHandler = New( EVENTHANDLER );
+		MemSet( pHandler, 0, sizeof( EVENTHANDLER ) );
+		//InitializeCriticalSec( &pHandler->csMsgTransact );
+		pHandler->servicename = StrDup( service );
+		pHandler->RouteID.dest.process_id = 1;
+		pHandler->RouteID.dest.service_id = 0;
+		pHandler->RouteID.source.process_id = g.my_message_id;
+		pHandler->RouteID.source.service_id = 0;
+		//lprintf( WIDE("Allocating local structure which manages our connection to this service...") );
+		// MsgInfo is used both on the send and receives the
+		// responce from the service...
+		// LoadService goes to the msgsvr and requests the
+		// location of the service.
+		if( !TransactRoutedServerMultiMessageEx( &pHandler->RouteID
+															, MSG_ServiceLoad, 1
+															, &MsgID, &msg, &MsgLen
+															, 250
+ // include NUL
+															, service, (StrLen( service ) + 1) *sizeof(TEXTCHAR)
+															) )
+		{
+			Log( WIDE("Transact message timeout.") );
+			Release( pHandler );
+			LeaveCriticalSec( &g.csLoading );
+			return NULL;
+		}
+		if( MsgID != (MSG_ServiceLoad|SERVER_SUCCESS) )
+		{
+			lprintf( WIDE("Server reports it failed to load [%s] (%08") _MsgID_f WIDE("!=%08" ) _MsgID_f WIDE(")")
+					 , service
+					 , MsgID
+					 , (MSGIDTYPE)(MSG_ServiceLoad|SERVER_SUCCESS) );
+			Release( pHandler );
+			LeaveCriticalSec( &g.csLoading );
+			return NULL;
+		}
+		// uncorrectable anymore.
+		//if( MsgLen == 16 )
+		//{
+		//	lprintf( WIDE("Old server load service responce... lacks the PID of the event handler.") );
+		//}
+		if( MsgLen != sizeof( msg ) )
+		{
+			lprintf( WIDE("Server responce was the wrong length!!! %") _size_f WIDE(" expecting %")_size_f, MsgLen, sizeof( msg ) );
+			Release( pHandler );
+			LeaveCriticalSec( &g.csLoading );
+			return NULL;
+		}
+	}
+	else
+	{
+		// loading special NULL service.
+		// the NULL service looks like a queue available
+      // for events only?  fakes a server response in msg.
+		pHandler = New( EVENTHANDLER );
+		MemSet( pHandler, 0, sizeof( EVENTHANDLER ) );
+		//InitializeCriticalSec( &pHandler->csMsgTransact );
+		pHandler->RouteID.dest.process_id = g.my_message_id;
+		pHandler->RouteID.dest.service_id = 0;
+		pHandler->servicename = StrDup( WIDE("local_events") );
+ // this is a special event channel to myself.
+		msg.ServiceID = 0;
+		//lprintf( WIDE("opening local only service... we're making up numbers here.") );
+		if( g.pLocalEventThread )
+		{
+			msg.thread = GetThreadID( g.pLocalEventThread );
+		}
+		else
+		{
+			lprintf( WIDE("Event message system has not started correctly...") );
+			Release( pHandler );
+			LeaveCriticalSec( &g.csLoading );
+			return NULL;
+		}
+	}
+	// EVENTHANDLER is the outbound structure to idenfity
+	// the service information which messages go where...
+	{
+		//pHandler = Allocate( sizeof( EVENTHANDLER ) + strlen( service?service:"local_events" ) );
+		//strcpy( pHandler->servicename, service?service:"local_events" );
+		//lprintf( WIDE("Allocating local structure which manages our connection to this service...") );
+		pHandler->flags.destroyed = 0;
+		pHandler->flags.dispatched = 0;
+		//pHandler->MsgCountEvents = msg.events;
+		//pHandler->MsgCount = msg.functions;
+		pHandler->Handler = EventHandler;
+		pHandler->HandlerEx = EventHandlerEx;
+		pHandler->HandlerExx = EventHandlerExx;
+      pHandler->psv = psv;
+		// thread ID to wake for events? or to probe?
+		// thread ID unused.
+		pHandler->EventID = msg.thread;
+		if( service )
+		{
+			pHandler->flags.local_service = 0;
+			//pHandler->RouteID.dest = msg.ServiceID; // magic place where source ID is..
+			pHandler->msgq_events = g.msgq_event;
+		}
+		else
+		{
+			pHandler->flags.local_service = 1;
+			pHandler->RouteID.dest.process_id = g.my_message_id;
+			pHandler->RouteID.dest.service_id = 0;
+			pHandler->msgq_events = g.msgq_local;
+		}
+		LinkThing( g.pHandlers, pHandler );
+		if( service )
+		{
+ // hang this on the list of services to check...
+			PSERVICE_CLIENT pClient = AddClient( &pHandler->RouteID );
+			pClient->flags.is_service = 1;
+			pClient->handler = pHandler;
+		}
+		LeaveCriticalSec( &g.csLoading );
+	}
+	return &pHandler->RouteID;
+}
+//--------------------------------------------------------------------
+CLIENTMSG_PROC( PSERVICE_ROUTE, LoadService)( CTEXTSTR service, EventHandlerFunction EventHandler )
+{
+	return _LoadService( service, EventHandler, NULL, NULL, NULL, NULL, 0 );
+}
+//--------------------------------------------------------------------
+CLIENTMSG_PROC( PSERVICE_ROUTE, LoadServiceEx)( CTEXTSTR service, EventHandlerFunctionEx EventHandlerEx )
+{
+	return _LoadService( service, NULL, EventHandlerEx, NULL, NULL, NULL, 0 );
+}
+//--------------------------------------------------------------------
+CLIENTMSG_PROC( PSERVICE_ROUTE, LoadServiceExx)( CTEXTSTR service, EventHandlerFunctionExx EventHandlerEx, uintptr_t psv )
+{
+	return _LoadService( service, NULL, NULL, EventHandlerEx, NULL, NULL, psv );
+}
+//--------------------------------------------------------------------
+CLIENTMSG_PROC( void, UnloadService )( CTEXTSTR name )
+{
+	PEVENTHANDLER pHandler;
+	pHandler = g.pHandlers;
+	while( pHandler )
+	{
+		if( StrCaseCmp( pHandler->servicename, name ) == 0 )
+			break;
+		pHandler = pHandler->next;
+	}
+	if( pHandler )
+	{
+		MSGIDTYPE Responce;
+		//lprintf( WIDE("Unload service: %s"), pHandler->servicename );
+		if( pHandler->flags.local_service )
+		{
+			//lprintf( WIDE("Local service... resulting quick success...") );
+			Responce = (MSG_ServiceUnload)|SERVER_SUCCESS;
+		}
+		else
+		{
+			//lprintf( WIDE("Requesting message %d from %d "), MSG_ServiceUnload , pHandler->MsgBase );
+			Responce = ((MSG_ServiceUnload)|SERVER_SUCCESS);
+			if( !TransactServerMessage( &pHandler->RouteID
+											  , MSG_ServiceUnload, NULL, 0
+/*NULL*/
+											  , &Responce, NULL, 0 ) )
+			{
+				lprintf( WIDE("Transaction to ServiceUnload failed...") );
+			}
+			else if( Responce != ((MSG_ServiceUnload)|SERVER_SUCCESS) )
+			{
+				lprintf( WIDE("Server reports it failed to unload the service %08") _MsgID_f WIDE(" %08") _MsgID_f WIDE("")
+						 , Responce, (MSGIDTYPE)((MSG_ServiceUnload)|SERVER_SUCCESS) );
+			// no matter what the result, this must still release this
+			// resource....
+			//return;
+			}
+			while( pHandler->flags.dispatched )
+			{
+				Relinquish();
+			}
+		}
+		UnlinkThing( pHandler );
+		//lprintf( WIDE("Release? wow release hangs forever?") );
+		//Release( pHandler );
+		if( 0 && !g.pHandlers )
+		{
+			Log( WIDE("No more services loaded - killing threads, disconnecting") );
+			if( g.pLocalEventThread )
+			{
+				EndThread( g.pLocalEventThread );
+				// wake up the thread...
+			}
+			if( g.pEventThread )
+				EndThread( g.pEventThread );
+			if( g.pThread )
+				EndThread( g.pThread );
+			CloseMessageQueues();
+			g.flags.events_ready = 0;
+			g.flags.local_events_ready = 0;
+			g.flags.failed = 0;
+			g.flags.message_handler_ready = 0;
+			g.flags.message_responce_handler_ready = 0;
+		}
+		//Log( WIDE("Done unloading services...") );
+		return;
+	}
+	Log( WIDE("Service was already Unloaded!?!?!?!?!?") );
+}
+MSGCLIENT_NAMESPACE_END
+//-------------------------------------------------------------
+MSGCLIENT_NAMESPACE
+//--------------------------------------------------------------------
+// this expects route to be destination-correct
+CLIENTMSG_PROC(int, SendMultiServiceEventPairsEx)( PSERVICE_ROUTE RouteID, uint32_t event
+															  , uint32_t parts
+															  , BUFFER_LENGTH_PAIR *pairs
+															  DBG_PASS
+															  )
+#define SendMultiServiceEventPairs(p,ev,par,pair) SendMultiServiceEventPairsEx(p,ev,par,pair DBG_SRC)
+{
+	static struct {
+		QMSG msg;
+		uint32_t data[2048-sizeof(QMSG)];
+	}msg;
+	static LOGICAL initialized;
+	static CRITICALSECTION cs;
+	uint8_t* msgbuf;
+	size_t sendlen = 0;
+	if( !initialized )
+	{
+		InitializeCriticalSec( &cs );
+		initialized = 1;
+	}
+#ifdef DEBUG_MESSAGE_BASE_ID
+	//DBG_VARSRC;
+#endif
+	EnterCriticalSec( &cs );
+	if( RouteID )
+	{
+		msg.msg.dest = RouteID->dest;
+		msg.msg.hdr.source = RouteID->source;
+	}
+	else
+	{
+		// local event message, should be hard coded?
+		msg.msg.dest.process_id = g.my_message_id;
+		msg.msg.dest.service_id = 0;
+		msg.msg.hdr.source.process_id = g.my_message_id;
+		msg.msg.hdr.source.service_id = 0;
+	}
+	msg.msg.hdr.msgid = event;
+	msgbuf = (uint8_t*)msg.data;
+	while( parts )
+	{
+		if( pairs->buffer && pairs->len )
+		{
+			MemCpy( msgbuf + sendlen, pairs->buffer, pairs->len );
+			sendlen += pairs->len;
+			pairs++;
+		}
+		parts--;
+	}
+						// outgoing que for this handler.
+#if defined( DEBUG_EVENTS )
+	_lprintf(DBG_RELAY)( WIDE("Send Event...") );
+#if !defined( DEBUG_DATA_XFER )
+	LogBinary( &msg, sendlen + sizeof( MSGHDR ) + sizeof( MSGIDTYPE ) );
+#endif
+#endif
+	if( !msg.msg.dest.process_id )
+		msg.msg.dest.process_id = g.my_message_id;
+	{
+		int status;
+		status = msgsnd( RouteID?g.msgq_event:g.msgq_local, MSGTYPE &msg
+							, sendlen + ( sizeof( QMSG ) - sizeof( MSGIDTYPE ) ), 0 );
+		LeaveCriticalSec( &cs );
+		return !status;
+	}
+}
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
+static struct {
+	CTEXTSTR pFile;
+	int nLine;
+}nextsmmse;
+#endif
+#undef SendMultiServiceEvent
+CLIENTMSG_PROC(int, SendMultiServiceEvent)( PSERVICE_ROUTE RouteID, uint32_t event
+								 , uint32_t parts
+								 , ... )
+{
+	int status;
+	BUFFER_LENGTH_PAIR *pairs = NewArray( BUFFER_LENGTH_PAIR, parts );
+	uint32_t n;
+	va_list args;
+	va_start( args, parts );
+	for( n = 0; n < parts; n++ )
+	{
+		pairs[n].buffer = va_arg( args, POINTER );
+		pairs[n].len = va_arg( args, uint32_t );
+	}
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
+	status = SendMultiServiceEventPairsEx( RouteID, event, parts, pairs, nextsmmse.pFile, nextsmmse.nLine );
+#else
+	status = SendMultiServiceEventPairsEx( RouteID, event, parts, pairs );
+#endif
+	Release( pairs );
+	return status;
+}
+CLIENTMSG_PROC(SendMultiServiceEventProto, SendMultiServiceEventEx)( DBG_VOIDPASS )
+{
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
+	nextsmmse.pFile = pFile;
+	nextsmmse.nLine = nLine;
+#endif
+	return SendMultiServiceEvent;
+}
+//--------------------------------------------------------------------
+uintptr_t CPROC HandleEventMessages( PTHREAD thread )
+{
+	g.pEventThread = thread;
+	g.flags.events_ready = TRUE;
+#ifdef DEBUG_THREADS
+	lprintf( WIDE("threadID: %Lx %lx"), GetThreadID( thread ), (unsigned long)(GetThreadID( thread ) & 0xFFFFFFFF) );
+#endif
+	//g.my_message_id = g.my_message_id; //(uint32_t)( thread->ThreadID & 0xFFFFFFFF );
+	while( !g.flags.disconnected )
+	{
+		int r;
+		if( thread == g.pEventThread )
+		{
+ // 8192 bytes
+			static uint32_t MessageEvent[2048];
+#ifdef DEBUG_EVENTS
+			lprintf( WIDE("Reading event...") );
+#endif
+			if( ( r = HandleEvents( g.msgq_event, (PQMSG)MessageEvent, 0 ) ) < 0 )
+			{
+				Log( WIDE("EventHandler has reported a fatal error condition.") );
+				break;
+			}
+#ifdef DEBUG_EVENTS
+			lprintf( WIDE("Read event...") );
+#endif
+		}
+		else if( r == 2 )
+		{
+			Log( WIDE("Thread has been restarted.") );
+			// don't clear ready or main event flag
+			// things.
+			return 0;
+		}
+	}
+	lprintf( WIDE("Done with this event thread - BAD! ") );
+	g.flags.events_ready = FALSE;
+	g.pEventThread = NULL;
+	return 0;
+}
+//--------------------------------------------------------------------
+int HandleEvents( MSGQ_TYPE msgq, PQMSG MessageEvent, int initial_flags )
+{
+	int receive_flags = initial_flags;
+	int receive_count = 0;
+	while( 1 )
+	{
+		int32_t MessageLen;
+#ifdef DEBUG_EVENTS
+		lprintf( WIDE("Reading eventqueue... my_message_id = %d"), g.my_message_id );
+#endif
+			//lprintf( "vvv" );
+		MessageLen = msgrcv( msgq
+								 , MSGTYPE MessageEvent, 8192
+								 , g.my_message_id
+								 , receive_flags );
+		//lprintf( "^^^" );
+#ifdef DEBUG_DATA_XFER
+      if( MessageLen >= 0 )
+			LogBinary( MessageEvent, MessageLen + sizeof( MSGIDTYPE ) );
+#endif
+		if( (MessageLen+ sizeof( MSGIDTYPE )) == 0 )
+		{
+			lprintf( WIDE("Recieved -4 message (no data?!) no message, should have been -1, ENOMSG") );
+		}
+		else if( MessageLen == -1 )
+		{
+#ifdef _WIN32
+			int my_errno = GetLastError();
+#  ifdef errno
+#    undef errno
+#  endif
+#  define errno my_errno
+#endif
+			//Log( WIDE("Failed a message...") );
+			if( errno == ENOMSG )
+			{
+				//Log( WIDE("No message...") );
+				if( receive_count )
+				{
+					PEVENTHANDLER pLastHandler;
+					PEVENTHANDLER pHandler = g.pHandlers;
+#ifdef DEBUG_EVENTS
+					lprintf( WIDE("Dispatch dispatch_pending..") );
+#endif
+					while( pHandler )
+					{
+						pHandler->flags.dispatched = 1;
+						if( pHandler->flags.notify_if_dispatched )
+						{
+							//lprintf( WIDE("Okay one had something pending...") );
+							if( pHandler->Handler )
+								pHandler->Handler( MSG_EventDispatchPending, NULL, 0 );
+							else if( pHandler->HandlerEx )
+								pHandler->HandlerEx( 0, MSG_EventDispatchPending, NULL, 0 );
+							else if( pHandler->HandlerExx )
+								pHandler->HandlerExx( pHandler->psv, 0, MSG_EventDispatchPending, NULL, 0 );
+							// okay did that... now clear status.
+							pHandler->flags.notify_if_dispatched = 0;
+						}
+						pLastHandler = pHandler;
+						pHandler = pHandler->next;
+						pLastHandler->flags.dispatched = 0;
+						//lprintf( WIDE("next handler please...") );
+					}
+				}
+ // re-enable pause.
+				receive_flags = 0;
+				//lprintf( WIDE("Done reading...") );
+ // done;
+				break;
+			}
+			else if( errno == EIDRM )
+			{
+				Log( WIDE("Queue was removed.") );
+				g.flags.events_ready = 0;
+				return -1;
+			}
+			else
+			{
+				if( errno != EINTR )
+					xlprintf( LOG_ALWAYS )( WIDE("msgrcv resulted in error: %d"), errno );
+				//else
+				//	Log( WIDE("EINTR received.") );
+				break;
+			}
+		}
+		else
+		{
+			PEVENTHANDLER pHandler = g.pHandlers;
+			receive_flags = IPC_NOWAIT;
+			receive_count++;
+#ifdef DEBUG_EVENTS
+			lprintf( WIDE("Got an event message...") );
+#endif
+			if( MessageEvent->hdr.msgid < MSG_EventUser )
+			{
+				// core server events...
+				// MessageEvent->hdr.sourceid == client_id (client_route_id)
+				switch( MessageEvent->hdr.msgid )
+				{
+				case MSG_SERVICE_DATA:
+					{
+						PREFIX_PACKED struct msg_service_name {
+							PLIST *list;
+							// so what i there's no reference to this?! OMG!
+							// I still need to have it defined!
+							SERVICE_ENDPOINT service_id;
+ // actually is the first element of an array of characters with nul terminator.
+							TEXTCHAR newname;
+						} PACKED *data_msg = (struct msg_service_name*)(MessageEvent+1);
+						// ahh - someone requested the list of services...
+						// client-application API...
+						// add to the list... what list?
+						PLIST *list = data_msg->list;
+						// MessageEvent[3] for this message is client_id
+						// which may be used to directly contact the client.
+						//lprintf( WIDE("Adding service %ld called %s to list.."), MessageEvent[4], MessageEvent + 5 );
+						// SetLink( data_msg->list, data_msg->dest.service_id, data_msg->newname );
+						AddLink( list
+								 , StrDup( &data_msg->newname ) );
+					}
+					break;
+				case MSG_SERVICE_NOMORE:
+					{
+						// ahh - someone requested the list of services...
+						// client-application API...
+						// this is the END of the list
+						PREFIX_PACKED struct msg_service_nomore {
+							int *bDone;
+							PTHREAD pThread;
+						} PACKED *data_msg = (struct msg_service_nomore*)(MessageEvent+1);
+						//int *bDone = *(int**)((&MessageEvent->hdr)+1);
+						//PTHREAD pThread = *(PTHREAD*)((int*)((&MessageEvent->hdr)+1)+1);
+						(*data_msg->bDone) = 1;
+						WakeThread( data_msg->pThread );
+					}
+					break;
+				}
+			}
+			else for( ; pHandler; pHandler = pHandler->next )
+			{
+				uint32_t Msg;
+#ifdef DEBUG_EVENTS
+				lprintf( WIDE("Finding handler for %ld-%d %p (from %lx to %lx)")
+						 , MessageEvent->hdr.msgid
+//pHandler->MsgCountEvents
+						 , 0
+						 , pHandler->Handler
+						 , (uint32_t*)((&MessageEvent->hdr)+1)
+ /*pHandler->ServiceID*/
+						 , 0 );
+#endif
+				//if( !pHandler->ServiceID )
+				//	pHandler->ServiceID = g.my_message_id;
+				if( ( pHandler->RouteID.source.process_id != MessageEvent->dest.process_id )
+               || ( pHandler->RouteID.source.service_id != MessageEvent->dest.service_id ) )
+				{
+					// if it's not from this handler's server... try the next.
+					continue;
+				}
+				Msg = MessageEvent->hdr.msgid;
+				//lprintf( WIDE("Msg now %d base %d %d"), Msg, pHandler->MsgBase, pHandler->MsgCountEvents );
+ // have a handler
+				if(( pHandler->Handler
+ // have a fancier handler....
+					 || pHandler->HandlerEx
+ // or an even fancier handler...
+                || pHandler->HandlerExx )
+ // not negative result (msg IS 32 bits)
+				  && !( Msg & 0x80000000 )
+				  /*&& ( Msg < pHandler->MsgCountEvents )*/
+ // in range of handler
+ )
+				{
+					int result_yesno;
+#ifdef DEBUG_EVENTS
+					lprintf( WIDE("Dispatch event message to handler...") );
+#endif
+					pHandler->flags.dispatched = 1;
+					if( pHandler->Handler )
+					{
+						//lprintf( WIDE("small handler") );
+						result_yesno = pHandler->Handler( Msg, (uint32_t*)((&MessageEvent->hdr)+1), MessageLen - sizeof( MSGHDR ) );
+					}
+					else if( pHandler->HandlerEx )
+					{
+						//lprintf( WIDE("ex handler...%d"), Msg );
+						result_yesno = pHandler->HandlerEx( (PSERVICE_ROUTE)MessageEvent
+																	 , Msg
+																	 , (uint32_t*)((&MessageEvent->hdr)+1)
+																	 , MessageLen - sizeof( MSGHDR ) );
+					}
+					else if( pHandler->HandlerExx )
+					{
+						//lprintf( WIDE("ex handler...%d"), Msg );
+						result_yesno = pHandler->HandlerExx( pHandler->psv
+																	  , (PSERVICE_ROUTE)(uintptr_t)MessageEvent->hdr.source.process_id
+																	  , Msg
+																	  , (uint32_t*)((&MessageEvent->hdr)+1)
+																	  , MessageLen - sizeof( MSGHDR ) );
+					}
+					if( result_yesno & EVENT_WAIT_DISPATCH )
+					{
+						//lprintf( WIDE("Setting status to send dispatch_events...") );
+						pHandler->flags.notify_if_dispatched = 1;
+					}
+					pHandler->flags.dispatched = 0;
+					break;
+				}
+			}
+		}
+	}
+	if( receive_count )
+		return 1;
+	return 0;
+}
+//--------------------------------------------------------------------
+CLIENTMSG_PROC( int, ProcessClientMessages )( uintptr_t unused )
+{
+	static uint32_t MessageBuffer[2048];
+	if( IsThisThread( g.pEventThread ) )
+	{
+		lprintf( WIDE("External handle event messages...") );
+/*IPC_NOWAIT*/
+		return HandleEvents( g.msgq_event, (PQMSG)MessageBuffer, 0 );
+	}
+	if( g.pLocalEventThread && IsThisThread( g.pLocalEventThread ) )
+	{
+#ifdef LOG_LOCAL_EVENT
+		lprintf( WIDE("External handle local event messages...") );
+#endif
+		// if this is thE thread... chances are someone can wake it up
+		// and it is allowed to go to sleep.  This thread is indeed wakable
+		// by normal measures.
+/*IPC_NOWAIT*/
+		return HandleEvents( g.msgq_local, (PQMSG)MessageBuffer, 0 );
+	}
+	return -1;
+}
+MSGCLIENT_NAMESPACE_END
+//-------------------------------------------------------------
+MSGCLIENT_NAMESPACE
+PTRANSACTIONHANDLER GetTransactionHandler( PSERVICE_ROUTE route )
+{
+	PTRANSACTIONHANDLER handler = g.pTransactions;
+	while( handler )
+	{
+		if( handler->route == route )
+			break;
+		handler = NextThing( handler );
+	}
+	if( !handler )
+	{
+		handler = New( TRANSACTIONHANDLER );
+		MemSet( handler, 0, sizeof( TRANSACTIONHANDLER ) );
+		InitializeCriticalSec( &handler->csMsgTransact );
+		handler->route = route;
+		LinkThing( g.pTransactions, handler );
+	}
+	return handler;
+}
+//--------------------------------------------------------------------
+static int GetAMessageEx( MSGQ_TYPE msgq, MSGIDTYPE MsgFilter, CTEXTSTR q, int flags DBG_PASS )
+#define GetAMessage(m,x,f) GetAMessageEx(m,x,_WIDE(#m),f DBG_SRC)
+{
+	//int bLog = 0;
+	if( IsThisThread( g.pThread ) )
+	{
+		int logged = 0;
+		PQMSG MessageIn = GetMessageBuffer();
+		int MessageLen;
+		do
+		{
+			//if( bLog )
+#ifdef DEBUG_THREADS
+			lprintf( WIDE("Attempt to recieve for %08lx %p"), MsgFilter, msgq );
+#endif
+			//lprintf( "vvv" );
+			MessageLen = msgrcv( msgq, MSGTYPE MessageIn, 8192, MsgFilter, flags );
+#ifdef DEBUG_DATA_XFER
+			LogBinary( MessageIn, MessageLen + sizeof( MSGIDTYPE ) );
+#endif
+			//lprintf( "^^^" );
+			//lprintf( WIDE("Got a receive...") );
+ // retry
+			if( ( MessageLen == (-((int32_t)sizeof(MSGIDTYPE))) ) )
+			{
+				lprintf( WIDE("Recieved -4 message (no data?!) no message, should have been -1, ENOMSG") );
+				MessageIn->hdr.msgid = RU_ALIVE;
+ // continue on do-while checks while condition - gofigure.
+				continue;
+			}
+			if( MessageLen == -1 )
+			{
+#ifdef _WIN32
+				int my_errno = GetLastError();
+#  ifdef errno
+#    undef errno
+#  endif
+#  define errno my_errno
+#endif
+				if( errno == ENOMSG )
+				{
+					lprintf( WIDE("No message... nowait was set?") );
+					return 0;
+				}
+				else if( errno == EIDRM )
+				{
+					lprintf( WIDE("No message... Message queue removed") );
+					return -1;
+				}
+				else
+				{
+					if( errno == EINTR ){
+						//bLog = 1;
+						//lprintf( WIDE("Error Interrupt - that's okay...") );
+					}
+					else if( errno == EINVAL )
+					{
+						lprintf( WIDE("msgrecv on q %d is invalid! open it. or what is %") _MsgID_f WIDE("(%08") _MsgID_f WIDE(") or %08d")
+								 , msgq, g.my_message_id, g.my_message_id, flags );
+					}
+					else
+					{
+						xlprintf( LOG_ALWAYS )( WIDE("msgrcv resulted in error: %d"), errno );
+					}
+ // loop back around.
+					MessageIn->hdr.msgid = RU_ALIVE;
+				}
+			}
+			else
+			{
+				if( MessageIn->dest.process_id == 0 )
+				{
+					lprintf( WIDE("---------- DO NOT BE HERE ----------------") );
+					HandleCoreMessage( MessageIn, (MessageLen-(sizeof(QMSG)-sizeof(MSGIDTYPE))) DBG_SRC );
+				}
+			}
+		}
+		while( !g.flags.disconnected
+  // RU_ALIVE receives are no receive.
+				&& MessageIn->hdr.msgid == RU_ALIVE );
+#ifdef DEBUG_THREADS
+		lprintf( WIDE("Responce received...%08lX"), MessageIn->hdr.msgid );
+#endif
+		if( !g.flags.disconnected )
+		{
+			int cnt = 0;
+			INDEX idx;
+			PSLEEPER sleeper;
+#ifdef DEBUG_THREADS
+			lprintf( WIDE("waking sleepers.") );
+#endif
+			LIST_FORALL( g.pSleepers, idx, PSLEEPER, sleeper )
+			{
+				if( (MessageIn->dest.process_id == sleeper->handler->route->source.process_id )
+					&& ( ( ( MessageIn->hdr.msgid & 0xFFFFFFF ) == MSG_ServiceLoad )
+					    || (MessageIn->dest.service_id == sleeper->handler->route->source.service_id ) ) )
+				{
+ // set to enable application to get it's message...
+					sleeper->handler->flags.responce_received = 1;
+					sleeper->handler->MessageIn = MessageIn;
+					sleeper->handler->MessageLen = MessageLen;
+					cnt++;
+#ifdef DEBUG_THREADS
+					lprintf( WIDE("Wake thread waiting for responces...%p"), sleeper->thread  );
+#endif
+					WakeThread( sleeper->thread );
+				}
+			}
+			if( !cnt )
+			{
+			//lprintf( WIDE("FATALITY - received responce from service, and noone was waiting for it!") );
+			//lprintf( WIDE("No Sleepers woken - maybe - they haven't gotten around to sleeping yet?") );
+			}
+		}
+	}
+	else
+	{
+		//lprintf( WIDE("Not the message thread... exiting quietly... %d %p %d %Ld")
+		//	, g.my_message_id
+		//	 , g.pThread
+		//	 , getpid()
+		//		, g.pThread->ThreadID
+		//	);
+		return 2;
+	}
+	return 1;
+}
+//--------------------------------------------------------------------
+// the work in this routine is basically to
+// find a handler to receive into?
+int WaitReceiveServerMsg ( PSLEEPER sleeper
+					, uint32_t MsgOut
+					DBG_PASS )
+{
+	PTRANSACTIONHANDLER handler = sleeper->handler;
+	if( sleeper->thread )
+	{
+		int received;
+		int IsThread = IsThisThread( g.pThread );
+		//lprintf( WIDE("waiting for cmd result") );
+#ifdef DEBUG_THREAD
+		lprintf( WIDE("This thread? %s"), IsThread?"Yes":"No" );
+#endif
+		do
+		{
+			// this library is totally serialized for one transaction
+			// at a time, from multiple threads.
+			received = 0;
+			while( ( handler->flags.bCheckedResponce ||
+					  !handler->flags.responce_received ) &&
+					(
+#ifdef DEBUG_DATA_XFER
+#ifdef _DEBUG
+					 (lprintf( WIDE("Compare %") _32f WIDE(" vs %") _32f WIDE(" (=%") _32fs WIDE(") (positive keep waiting)")
+								, handler->wait_for_responce
+								, timeGetTime()
+								, handler->wait_for_responce - timeGetTime()  ) ),
+#endif
+#endif
+ // wait for a responce
+					( handler->wait_for_responce > timeGetTime() )) )
+			{
+				received = 1;
+				// check for responces...
+				// will return immediate if is not this thread which
+				// is supposed to be there...
+				lprintf( WIDE("getting or waiting for... a message...") );
+				if( IsThread )
+				{
+					lprintf( WIDE("Get message (might be my thread") );
+					if( GetAMessage( g.msgq_in, g.my_message_id, IPC_NOWAIT ) == 2 )
+					{
+						Log( WIDE("Okay - won't check for messages anymore - just wait...") );
+						IsThread = 0;
+					}
+				}
+				// seperate test, can decide to not be the thread...
+				if( !IsThread )
+				{
+					if( handler->flags.responce_received && !handler->flags.bCheckedResponce )
+					{
+						DeleteLink( &g.pSleepers, sleeper );
+						goto dont_sleep;
+					}
+					handler->flags.bCheckedResponce = 0;
+					lprintf( WIDE("Going to sleep for %")_32fs
+							 , handler->wait_for_responce - timeGetTime()
+							 );
+					WakeableSleep( handler->wait_for_responce - timeGetTime() );
+					lprintf( WIDE("AWAKE! %d"), handler->flags.responce_received );
+					DeleteLink( &g.pSleepers, sleeper );
+				}
+				else
+				{
+					Relinquish();
+				}
+			}
+		       // timeout...?
+			if( !handler->flags.bCheckedResponce )
+				received = 1;
+			lprintf( WIDE("When we finished this loop still was waiting %")_32fs, handler->wait_for_responce - timeGetTime() );
+			//else
+			{
+				//lprintf( WIDE("Excellent... the responce is back before I could sleep!") );
+			}
+			if( !handler->flags.responce_received )
+			{
+				Log( WIDE("Responce timeout!") );
+				handler->flags.waiting_for_responce = 0;
+				LeaveCriticalSec( &handler->csMsgTransact );
+ // DONE - fail! abort!
+				return FALSE;
+			}
+			else
+			{
+				//Log( WIDE("Result to application... ") );
+			}
+		dont_sleep: ;
+			handler->flags.bCheckedResponce = 1;
+			//lprintf( WIDE("Read message...") );
+			// if the message is a response to me.....
+		}
+		while( received && ReceiveServerMessageEx( handler, handler->MessageIn, handler->MessageLen DBG_RELAY ) );
+		if( received )
+		{
+			handler->flags.waiting_for_responce = 0;
+			//Log2( WIDE("Got responce: %08x %d long"), *MsgIn, LengthIn?*LengthIn:-1 );
+			if( ( *handler->MessageID & 0x0FFFFFFF ) != ( (handler->LastMsgID) & 0x0FFFFFFF ) )
+			{
+				lprintf( WIDE("Mismatched server responce to client message: %")_MsgID_f WIDE(" to %")_MsgID_f
+						 , *handler->MessageID & 0x0FFFFFFF
+						 , handler->LastMsgID & 0x0FFFFFFF
+						  );
+			}
+			else
+			{
+				if( handler->route->dest.process_id == 1
+				  && handler->route->dest.service_id == 0
+				  && MsgOut == MSG_ServiceLoad
+				  && ( (*handler->MessageID) & SERVER_SUCCESS ) )
+				{
+					handler->route->dest = handler->MessageIn->hdr.source;
+				}
+			}
+			//lprintf( WIDE( "Clear received response" ) );
+			//handler->flags.responce_received = 0; // allow more responces to be received.
+		}
+	}
+	if( handler )
+	{
+		//lprintf( WIDE("cleanup...%p"), handler );
+		handler->flags.waiting_for_responce = 0;
+		//LeaveCriticalSec( &handler->csMsgTransact );
+	}
+	//lprintf( WIDE("done waiting...") );
+	return TRUE;
+}
+// the work in this routine is basically to
+// find a handler to receive into?
+int QueueWaitReceiveServerMsg ( PSLEEPER sleeper, PTRANSACTIONHANDLER handler
+										  , MSGIDTYPE *MsgIn
+										  , POINTER BufferIn
+										  , size_t *LengthIn
+											DBG_PASS )
+{
+	if( MsgIn )
+	{
+		//lprintf( WIDE("waiting for cmd result") );
+#ifdef DEBUG_THREAD
+		lprintf( WIDE("This thread? %s"), IsThread?"Yes":"No" );
+#endif
+		handler->MessageID = MsgIn;
+		handler->msg = BufferIn;
+		handler->len = LengthIn;
+		handler->flags.bCheckedResponce = 0;
+		sleeper->thread = MakeThread();
+		sleeper->handler = handler;
+		AddLink( &g.pSleepers, sleeper );
+	}
+	else
+	{
+		sleeper->handler = handler;
+		sleeper->thread = NULL;
+	}
+	//lprintf( WIDE("done waiting...") );
+	return TRUE;
+}
+uintptr_t CPROC HandleMessages( PTHREAD thread )
+{
+	MSGIDTYPE MsgFilter = (MSGIDTYPE)GetThreadParam( thread );
+	g.pThread = thread;
+#ifdef DEBUG_THREADS
+	lprintf( WIDE("threadID: %lx"), g.my_message_id );
+#endif
+	g.flags.message_responce_handler_ready = TRUE;
+	while( !g.flags.disconnected )
+	{
+		int r;
+		//Log( WIDE("enter read a message...") );
+		if( ( r = GetAMessage( g.msgq_in, MsgFilter, 0 ) ) < 0 )
+		{
+			Log( WIDE("thread is exiting...") );
+			g.flags.message_responce_handler_ready = FALSE;
+			break;
+		}
+		if( r == 2 )
+		{
+			Log( WIDE("THIS thread is no longer THE thread!?!?!?!?!?!") );
+			break;
+		}
+	}
+	g.pThread = NULL;
+	return 0;
+}
+MSGCLIENT_NAMESPACE_END
+//-------------------------------------------------------------
+MSGCLIENT_NAMESPACE
+//--------------------------------------------------------------------
+uintptr_t CPROC HandleLocalEventMessages( PTHREAD thread )
+{
+	g.pLocalEventThread = thread;
+	g.flags.local_events_ready = TRUE;
+	//g.my_message_id = getpid(); //(uint32_t)( thread->ThreadID & 0xFFFFFFFF );
+	while( !g.flags.disconnected )
+	{
+		int r;
+		if( thread == g.pLocalEventThread )
+		{
+			// thread local storage :)
+			static int levels;
+			static uint32_t *pBuffer;
+ // 8192 bytes
+			static uint32_t MessageEvent[2048];
+			if( !levels )
+				pBuffer = MessageEvent;
+			else
+				pBuffer = (uint32_t*)Allocate( sizeof( MessageEvent ) );
+			levels++;
+			//lprintf( WIDE("---- GET A LOCAL EVENT!") );
+			if( ( r = HandleEvents( g.msgq_local, (PQMSG)pBuffer, 0 ) ) < 0 )
+			{
+				Log( WIDE("EventHandler has reported a fatal error condition.") );
+				break;
+			}
+			levels--;
+			if( levels )
+				Release( pBuffer );
+		}
+		else if( r == 2 )
+		{
+			Log( WIDE("Thread has been restarted.") );
+			// don't clear ready or main event flag
+			// things.
+			return 0;
+		}
+	}
+	g.flags.local_events_ready = FALSE;
+	g.pLocalEventThread = NULL;
+	return 0;
+}
+MSGCLIENT_NAMESPACE_END
+MSGCLIENT_NAMESPACE
+//--------------------------------------------------------------------
+int SendInMultiMessageEx( PSERVICE_ROUTE routeID, uint32_t MsgID, uint32_t parts, BUFFER_LENGTH_PAIR *pairs DBG_PASS)
+{
+	CPOINTER msg;
+	size_t len;
+	size_t ofs;
+	uint32_t param;
+	PQMSG MessageOut;
+	// shouldn't use MessageOut probably.. ..
+	// protect msgout against multiple people.. ..
+	EnterCriticalSec( &g.csMsgTransact );
+	MessageOut = GetMessageBuffer();
+	MessageOut->dest.process_id              = routeID->dest.process_id;
+	MessageOut->dest.service_id     = routeID->dest.service_id;
+	MessageOut->hdr.source.process_id = routeID->source.process_id;
+	MessageOut->hdr.source.service_id = routeID->source.service_id;
+	MessageOut->hdr.msgid = MsgID;
+	ofs = 0;
+	for( param = 0; param < parts; param++ )
+	{
+		msg = pairs[param].buffer;
+		len = pairs[param].len;
+		if( len + ofs > 8192 )
+		{
+		// wow - this is a BIG message - lets see - what can we do?
+#ifdef WIN32
+#undef SetLastError
+			SetLastError( E2BIG );
+#else
+			errno = E2BIG;
+#endif
+			_lprintf(DBG_RELAY)( WIDE("Length of message is too big to transport...%") _size_f WIDE(" (len %") _size_f WIDE(" ofs %") _size_f WIDE(")"), len + ofs, len, ofs );
+			LeaveCriticalSec( &g.csMsgTransact );
+			return FALSE;
+		}
+		if( msg && len )
+		{
+			//Log3( WIDE("Adding %d bytes at %d: %08x "), len, ofs, ((uint32_t*)msg)[0] );
+			MemCpy( ((char*)QMSGDATA(MessageOut)) + ofs, msg, len );
+			ofs += len;
+		}
+	}
+	{
+		int stat;
+	// send to application inbound queue..
+#ifdef DEBUG_OUTEVENTS
+		lprintf( WIDE("Sending result to application...") );
+		LogBinary( (POINTER)MessageOut, ofs );
+#endif
+		stat = msgsnd( g.msgq_in, MSGTYPE MessageOut, ofs + sizeof(QMSG) - sizeof( MSGIDTYPE ), 0 );
+		DropMessageBuffer( MessageOut );
+		LeaveCriticalSec( &g.csMsgTransact );
+		return !stat;
+	}
+}
+int SendInMultiMessage( PSERVICE_ROUTE routeID, uint32_t MsgID, uint32_t parts, BUFFER_LENGTH_PAIR *pairs )
+#define SendInMultiMessage(r,m,parts,pairs) SendInMultiMessageEx(r,m,parts,pairs DBG_SRC )
+{
+	return SendInMultiMessage( routeID, MsgID, parts, pairs);
+}
+//--------------------------------------------------------------------
+int SendInMessage( PSERVICE_ROUTE routeID, uint32_t MsgID, POINTER buffer, size_t len )
+{
+	BUFFER_LENGTH_PAIR pair;
+	pair.buffer = buffer;
+	pair.len = len;
+	return SendInMultiMessage( routeID, MsgID, 1, &pair );
+}
+//--------------------------------------------------------------------
+#ifdef _DEBUG_RECEIVE_DISPATCH_
+int metamsgrcv( MSGQ_TYPE q, POINTER p, int len, long id, int opt DBG_PASS )
+{
+	int stat;
+	_xlprintf(1 DBG_RELAY)( WIDE("*** Read Message %d"), id);
+	stat = msgrcv( q,MSGTYPE p,len,id,opt );
+#undef msgrcv
+	#define msgrcv(q,p,l,i,o) metamsgrcv(q,p,l,i,o DBG_SRC)
+	_xlprintf(1 DBG_RELAY)( WIDE("*** Got message %d"), stat );
+	return stat;
+}
+#endif
+static int PrivateSendTransactionResponseMultiMessageEx( PSERVICE_ROUTE DestID
+																, uint32_t MessageID, uint32_t buffers
+																, BUFFER_LENGTH_PAIR *pairs
+																 DBG_PASS )
+#define PrivateSendTransactionResponseMultiMessage(d,m,bu,p) PrivateSendTransactionResponseMultiMessageEx(d,m,bu,p DBG_SRC )
+{
+	CPOINTER msg;
+	size_t len, ofs;
+	uint32_t param;
+	int status;
+	PQMSG MessageOut;
+	if( g.flags.disconnected )
+	{
+		_lprintf(DBG_RELAY)( WIDE("Have already disconnected from server... no further communication possible.") );
+		return TRUE;
+	}
+	MessageOut = GetMessageBuffer();
+	MessageOut->dest.process_id       = DestID->dest.process_id;
+	MessageOut->dest.service_id		  = DestID->dest.service_id;
+	MessageOut->hdr.source.process_id = DestID->source.process_id;
+	MessageOut->hdr.source.service_id = DestID->source.service_id;
+	MessageOut->hdr.msgid             = MessageID;
+	// don't know len at this point.. .. ..
+	//if( len > 8188 )
+	//{
+		// wow - this is a BIG message - lets see - what can we do?
+		//SetLastError( E2BIG );
+		//lprintf( WIDE("Lenght of message is too big to transport...") );
+		//return FALSE;
+	//}
+	ofs = 0;
+	//Log1( WIDE("Adding %d params"), buffers );
+	for( param = 0; param < buffers; param++ )
+	{
+		msg = pairs[param].buffer;
+		len = pairs[param].len;
+		if( len + ofs > 8192 )
+		{
+		// wow - this is a BIG message - lets see - what can we do?
+#ifdef WIN32
+			SetLastError( E2BIG );
+#else
+			errno = E2BIG;
+#endif
+			_lprintf(DBG_RELAY)( WIDE("Length of message is too big to transport...%") _size_f WIDE(" (len %") _size_f WIDE(" ofs %") _size_f WIDE(")"), len + ofs, len, ofs );
+			return FALSE;
+		}
+		if( msg && len )
+		{
+			//Log3( WIDE("Adding %d bytes at %d: %08x "), len, ofs, ((uint32_t*)msg)[0] );
+			MemCpy( ((char*)QMSGDATA( MessageOut )) + ofs, msg, len );
+			ofs += len;
+		}
+	}
+	// subtract 4 from the offset (the msg_id is not counted)
+	//Log2( WIDE("Sent %d  (%d) bytes"), g.MessageOut[0], ofs - sizeof( MSGIDTYPE ) );
+	// 0 success, non zero failure - return notted state
+				  //lprintf( WIDE("Send Message. %08lX"), *(uint32_t*)g.MessageOut );
+	//_xlprintf( 1 DBG_RELAY )( "blah." );
+#ifdef LOG_SENT_MESSAGES
+	_lprintf(DBG_RELAY)( "Send is %d", ofs );
+#endif
+	status = !msgsnd( g.msgq_out, MSGTYPE MessageOut, ofs + sizeof( QMSG )- sizeof( MSGIDTYPE ), 0 );
+	DropMessageBuffer( MessageOut );
+	return status;
+}
+CLIENTMSG_PROC( int, SendServerMultiMessage )( PSERVICE_ROUTE RouteID, uint32_t MessageID, uint32_t buffers, ... )
+{
+	BUFFER_LENGTH_PAIR *pairs = (BUFFER_LENGTH_PAIR*)Allocate( sizeof( BUFFER_LENGTH_PAIR ) * buffers );
+	uint32_t n;
+	va_list args;
+	int status;
+	va_start( args, buffers );
+	for( n = 0; n < buffers; n++ )
+	{
+		pairs[n].buffer = va_arg( args, POINTER );
+		pairs[n].len = va_arg( args, uint32_t );
+	}
+	status = PrivateSendTransactionResponseMultiMessage( RouteID, MessageID, buffers, pairs );
+	Release( pairs );
+	return status;
+}
+CLIENTMSG_PROC( int, SendRoutedServerMultiMessage )( PSERVICE_ROUTE RouteID, uint32_t MessageID, uint32_t buffers, ... )
+{
+	int status;
+	BUFFER_LENGTH_PAIR *pairs = (BUFFER_LENGTH_PAIR*)Allocate( sizeof( BUFFER_LENGTH_PAIR ) * buffers );
+	uint32_t n;
+	va_list args;
+	va_start( args, buffers );
+	for( n = 0; n < buffers; n++ )
+	{
+		pairs[n].buffer = va_arg( args, POINTER );
+		pairs[n].len = va_arg( args, uint32_t );
+	}
+	status = PrivateSendTransactionResponseMultiMessage( RouteID, MessageID, buffers, pairs );
+	Release( pairs );
+	return status;
+}
+CLIENTMSG_PROC( int, SendRoutedServerMessage )( PSERVICE_ROUTE RouteID, uint32_t MessageID, POINTER buffer, size_t len )
+{
+	int status;
+	BUFFER_LENGTH_PAIR pair;
+	pair.buffer = buffer;
+	pair.len = len;
+	status = PrivateSendTransactionResponseMultiMessage( RouteID, MessageID, 1, &pair );
+	return status;
+}
+CLIENTMSG_PROC( int, SendServerMessage )( PSERVICE_ROUTE RouteID, uint32_t MessageID, POINTER msg, size_t len )
+{
+	BUFFER_LENGTH_PAIR pair;
+	int status;
+	pair.buffer = msg;
+	pair.len = len;
+	status = PrivateSendTransactionResponseMultiMessage( RouteID, MessageID, 1, &pair );
+	return status;
+}
+// returns FALSE on timeout, else success.
+// this is used by msg.core.dll - used for forwarding messages
+// to real handlers...
+CLIENTMSG_PROC( int, TransactRoutedServerMultiMessageEx )( PSERVICE_ROUTE RouteID
+																			, MSGIDTYPE MsgOut, uint32_t buffers
+																			, MSGIDTYPE *MsgIn
+																			, POINTER BufferIn, size_t *LengthIn
+																			, uint32_t timeout
+																			// buffer starts arg list, length is
+																			// not used, but is here for demonstration
+																			, ... )
+{
+	BUFFER_LENGTH_PAIR *pairs = (BUFFER_LENGTH_PAIR*)Allocate( sizeof( BUFFER_LENGTH_PAIR ) * buffers );
+	uint32_t n;
+	va_list args;
+	SLEEPER sleeper;
+	int status;
+	PTRANSACTIONHANDLER handler = GetTransactionHandler( RouteID );
+	// can send the message, but may not get another responce
+	// until the first is done...
+	if( MsgIn || BufferIn )
+	{
+		if( !handler )
+		{
+			lprintf( WIDE("We have no business being here... no loadservice has been made to this service!") );
+			return 0;
+		}
+		lprintf( WIDE("Enter %p"), handler );
+		EnterCriticalSec( &handler->csMsgTransact );
+		switch( MsgOut )
+		{
+		case RU_ALIVE:
+			lprintf( WIDE("Lying about message to expect") );
+			handler->LastMsgID = IM_ALIVE;
+			break;
+		default:
+			lprintf( WIDE("set last msgID %") _MsgID_f, MsgOut );
+			handler->LastMsgID = MsgOut;
+			break;
+		}
+		if( ( handler->MessageID = MsgIn ) )
+			(*MsgIn) = handler->LastMsgID;
+		handler->wait_for_responce = timeGetTime() + (timeout?timeout:DEFAULT_TIMEOUT);
+	}
+	//lprintf( WIDE("transact message...") );
+	va_start( args, timeout );
+	for( n = 0; n < buffers; n++ )
+	{
+		pairs[n].buffer = va_arg( args, POINTER );
+		pairs[n].len = va_arg( args, uint32_t );
+	}
+	QueueWaitReceiveServerMsg( &sleeper, handler
+											, MsgIn
+											, BufferIn
+											, LengthIn
+											 DBG_SRC );
+	if( !( PrivateSendTransactionResponseMultiMessage( RouteID, MsgOut, buffers
+															  , pairs ) ) )
+	{
+		DeleteLink( &g.pSleepers, &sleeper );
+		Release( pairs );
+		if( handler )
+		{
+			handler->flags.waiting_for_responce = 0;
+			LeaveCriticalSec( &handler->csMsgTransact );
+		}
+		 return FALSE;
+	}
+	Release( pairs );
+	lprintf( WIDE("Entering wait after serving a message...") );
+	if( MsgIn || (BufferIn && LengthIn) )
+	{
+		status = WaitReceiveServerMsg( &sleeper, MsgOut DBG_SRC );
+	}
+	else
+	{
+		handler->flags.waiting_for_responce = 0;
+		LeaveCriticalSec( &handler->csMsgTransact );
+		status = TRUE;
+	}
+	DeleteLink( &g.pSleepers, &sleeper );
+	return status;
+}
+struct debug_transact {
+	CTEXTSTR pFile;
+	int nLine;
+}next_transact;
+#undef TransactServerMultiMessage
+CLIENTMSG_PROC( int, TransactServerMultiMessage )( PSERVICE_ROUTE RouteID, MSGIDTYPE MsgOut, uint32_t buffers
+										, MSGIDTYPE *MsgIn, POINTER BufferIn, size_t *LengthIn
+										 // buffer starts arg list, length is
+										 // not used, but is here for demonstration
+										, ... )
+{
+	SLEEPER sleeper;
+	BUFFER_LENGTH_PAIR *pairs = (BUFFER_LENGTH_PAIR*)Allocate( sizeof( BUFFER_LENGTH_PAIR ) * buffers );
+	PTRANSACTIONHANDLER handler = GetTransactionHandler( RouteID );
+	uint32_t n;
+	va_list args;
+	int stat;
+	va_start( args, LengthIn );
+	for( n = 0; n < buffers; n++ )
+	{
+		pairs[n].buffer = va_arg( args, CPOINTER );
+		pairs[n].len = va_arg( args, uint32_t );
+	}
+	//if( MsgOut == 0x23f )
+	//	DebugBreak();
+	QueueWaitReceiveServerMsg( &sleeper, handler
+											, MsgIn
+											, BufferIn
+											, LengthIn
+											 DBG_SRC );
+#ifdef LOG_SENT_MESSAGES
+	lprintf( WIDE( "%s(%d):Sending message..." ), next_transact.pFile, next_transact.nLine );
+#endif
+	switch( MsgOut )
+	{
+	case RU_ALIVE:
+		lprintf( WIDE("Lying about message to expect") );
+		handler->LastMsgID = IM_ALIVE;
+		break;
+	default:
+		//lprintf( WIDE("set last msgID %ld"), MsgOut );
+		handler->LastMsgID = MsgOut;
+		break;
+	}
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
+	if( !( PrivateSendTransactionResponseMultiMessageEx( RouteID, MsgOut, buffers
+																	, pairs
+																	, next_transact.pFile, next_transact.nLine
+																	) ) )
+#else
+	if( !( PrivateSendTransactionResponseMultiMessageEx( RouteID, MsgOut, buffers
+																	, pairs
+																	) ) )
+#endif
+	{
+		//lprintf( WIDE("Leaving...") );
+		//handler->flags.wait_for_responce = 0;
+		//LeaveCriticalSec( &handler->csMsgTransact );
+		DeleteLink( &g.pSleepers, &sleeper );
+		Release( pairs );
+		return FALSE;
+	}
+	Release( pairs );
+	handler->wait_for_responce = timeGetTime() + (DEFAULT_TIMEOUT);
+	//lprintf( WIDE("waiting... %p"), handler );
+	if( MsgIn || (BufferIn && LengthIn) )
+		stat = WaitReceiveServerMsg( &sleeper, MsgOut DBG_SRC );
+	else
+	{
+		handler->flags.waiting_for_responce = 0;
+		LeaveCriticalSec( &handler->csMsgTransact );
+		stat = TRUE;
+	}
+	DeleteLink( &g.pSleepers, &sleeper );
+	//lprintf( WIDE("Done %p %d"),handler, stat );
+	return stat;
+}
+// buffer starts arg list, length is
+// not used, but is here for demonstration
+CLIENTMSG_PROC( TSMMProto, TransactServerMultiMessageExEx )( DBG_VOIDPASS )
+{
+#ifdef LOG_SENT_MESSAGES
+#  ifdef _DEBUG
+	next_transact.pFile = pFile;
+	next_transact.nLine = nLine;
+#  endif
+#endif
+	return TransactServerMultiMessage;
+}
+CLIENTMSG_PROC( int, TransactServerMultiMessageEx )( PSERVICE_ROUTE RouteID, MSGIDTYPE MsgOut, uint32_t buffers
+																	, MSGIDTYPE *MsgIn, POINTER BufferIn, size_t *LengthIn
+																	, uint32_t timeout
+																	 // buffer starts arg list, length is
+																	 // not used, but is here for demonstration
+																	, ... )
+{
+	SLEEPER sleeper;
+	BUFFER_LENGTH_PAIR *pairs = (BUFFER_LENGTH_PAIR*)Allocate( sizeof( BUFFER_LENGTH_PAIR ) * buffers );
+	PTRANSACTIONHANDLER handler = GetTransactionHandler( RouteID );
+	uint32_t n;
+	va_list args;
+	int stat;
+	va_start( args, timeout );
+	for( n = 0; n < buffers; n++ )
+	{
+		pairs[n].buffer = va_arg( args, POINTER );
+		pairs[n].len = va_arg( args, uint32_t );
+	}
+	QueueWaitReceiveServerMsg( &sleeper, handler
+											, MsgIn
+											, BufferIn
+											, LengthIn
+											 DBG_SRC );
+	if( !(PrivateSendTransactionResponseMultiMessage( RouteID, MsgOut, buffers
+															 , pairs ) ) )
+	{
+		DeleteLink( &g.pSleepers, &sleeper );
+		Release( pairs );
+		handler->flags.waiting_for_responce = 0;
+		LeaveCriticalSec( &handler->csMsgTransact );
+		return FALSE;
+	}
+	Release( pairs );
+	handler->wait_for_responce = timeGetTime() + (timeout?timeout:DEFAULT_TIMEOUT);
+	if( MsgIn || (BufferIn && LengthIn) )
+		stat = WaitReceiveServerMsg( &sleeper, MsgOut DBG_SRC );
+	else
+	{
+		handler->flags.waiting_for_responce = 0;
+		LeaveCriticalSec( &handler->csMsgTransact );
+		stat = TRUE;
+	}
+	DeleteLink( &g.pSleepers, &sleeper );
+	return stat;
+}
+//--------------------------------------------------------------------
+CLIENTMSG_PROC( int, TransactServerMessageEx)( PSERVICE_ROUTE RouteID, MSGIDTYPE MsgOut, CPOINTER BufferOut, size_t LengthOut
+						  , MSGIDTYPE *MsgIn, POINTER BufferIn, size_t *LengthIn DBG_PASS )
+{
+	return TransactServerMultiMessageExEx(DBG_VOIDRELAY)( RouteID, MsgOut, 1, MsgIn, BufferIn, LengthIn
+												, BufferOut, LengthOut );
+}
+//--------------------------------------------------------------------
+CLIENTMSG_PROC( int, TransactServerMessageExx)( PSERVICE_ROUTE RouteID, MSGIDTYPE MsgOut, CPOINTER BufferOut, size_t LengthOut
+															 , MSGIDTYPE *MsgIn, POINTER BufferIn, size_t *LengthIn
+															  , uint32_t timeout DBG_PASS )
+{
+#ifdef LOG_SENT_MESSAGES
+#  ifdef _DEBUG
+	next_transact.pFile = pFile;
+	next_transact.nLine = nLine;
+#  endif
+#endif
+	return TransactServerMultiMessageEx( RouteID, MsgOut, 1, MsgIn, BufferIn, LengthIn, timeout
+												  , BufferOut, LengthOut );
+}
+MSGCLIENT_NAMESPACE_END
+MSGCLIENT_NAMESPACE
+//--------------------------------------------------------------------
+LOGICAL HandleCoreMessage( PQMSG msg, size_t msglen DBG_PASS )
+{
+	//Log2( WIDE("Read message to %d (%08x)"), g.pid_me, msg->hdr.msgid );
+	if( msg->hdr.msgid == IM_TARDY )
+	{
+		PTRANSACTIONHANDLER handler;
+		lprintf( WIDE("Server wants to extend timout to %") _32f WIDE(""), QMSGDATA( msg )[0] );
+		for( handler = g.pTransactions; handler; handler = handler->next )
+			if( ( handler->route->dest.process_id == msg->dest.process_id )
+				&& ( handler->route->dest.service_id == msg->dest.service_id ) )
+			{
+			// result of IM_TARDY, add an amount of time to the message...
+				handler->wait_for_responce = msg->hdr.msgid + timeGetTime();
+				break;
+			}
+		if( !handler )
+		{
+			lprintf( WIDE("A service announced it was going to be tardy to someone who was not talking to it!") );
+			DebugBreak();
+		}
+		// okay continue in a do_while will execute the while condition
+		// also, much like while(){} will...
+		msg->hdr.msgid = RU_ALIVE;
+ // handled.
+		return TRUE;
+	}
+	else if( msg->hdr.msgid == RU_ALIVE )
+	{
+		QMSG Msg;
+#ifdef DEBUG_MESSAGE_BASE_ID
+		DBG_VARSRC;
+#endif
+		//Log( WIDE("Got RU_ALIVE am responding  AM ALIVE!!") );
+		Msg.dest.process_id              = msg->hdr.source.process_id;
+		Msg.dest.service_id     = msg->hdr.source.service_id;
+		Msg.hdr.source.process_id = msg->dest.process_id;
+		Msg.hdr.source.service_id = msg->dest.service_id;
+		Msg.hdr.msgid = IM_ALIVE;
+		// by using the input message queue, it makes sure that
+		// both sides are processing input messages... otherwise
+		// previously queued messages would be received first.
+		msgsnd( g.msgq_in, MSGTYPE &Msg, sizeof(QMSG) - sizeof( MSGIDTYPE ), 0 );
+ // handled.
+		return TRUE;
+	}
+	else if( msg->hdr.msgid == IM_ALIVE )
+	{
+		PSERVICE_CLIENT client = FindClient( (PSERVICE_ROUTE)&msg );
+#ifdef DEBUG_RU_ALIVE_CHECK
+		lprintf( WIDE("Got message IM_ALIVE from client... %") _32f WIDE(""), msg->hdr.source.process_id );
+#endif
+		if( client )
+		{
+			//lprintf( WIDE("Updating client %p with current time...allowing him to requery.."), client );
+			if( client->flags.status_queried )
+			{
+				client->flags.status_queried = 0;
+				// fake a get-next-message... if status_queried is NOT set
+				// then, this is a request of ProbeClientAlive.
+				msg->hdr.msgid = RU_ALIVE;
+			}
+			client->last_time_received = timeGetTime();
+		}
+		// go back to top and get another message...
+		// application can care about this...
+		// maybe should check...
+		//msg->hdr.msgid = RU_ALIVE;
+ // handled.
+		return TRUE;
+	}
+	return FALSE;
+}
+uintptr_t CPROC HandleServiceMessages( PTHREAD thread )
+//#define DoHandleServiceMessages(p) DoHandleServiceMessagesEx(p DBG_SRC)
+{
+	static uint32_t one = 1;
+	LOGICAL master_service = (LOGICAL)GetThreadParam( thread );
+	int32_t length;
+	MSGIDTYPE msgid;
+ // default to ...
+	size_t result_length = INVALID_INDEX;
+	// can't use getpid cause we really want the threadID
+	// also this value may NOT be negative.
+	PQMSG recv = (PQMSG)Allocate( MSG_DEFAULT_RESULT_BUFFER_MAX );
+	PQMSG result = (PQMSG)Allocate( MSG_DEFAULT_RESULT_BUFFER_MAX );
+	// consume any outstanding messages... so we don't get confused
+	// someone may have requested things for this service...
+	//lprintf( "vvv" );
+	(msgid=master_service?one:g.my_message_id);
+#ifdef DEBUG_DATA_XFER
+	lprintf( "Recieving on %ld", msgid );
+#endif
+	while( msgrcv( g.msgq_out
+					 , MSGTYPE recv
+					 , 8192
+					 , msgid
+					 , IPC_NOWAIT ) > 0 )
+	{
+		//lprintf( WIDE("Dropping a message...") );
+	}
+			//lprintf( "^^^" );
+	while( !g.flags.disconnected )
+	{
+		//lprintf( WIDE("service is waiting for messages to %08lx"), g.my_message_id );
+		// receiving from the 'out' queue which is commands TO a service.
+			//lprintf( "vvv" );
+		g.flags.bWaitingInReceive = 1;
+#ifdef DEBUG_DATA_XFER
+		lprintf( "Recieving on %ld", msgid );
+#endif
+		length = msgrcv( g.msgq_out
+							, MSGTYPE recv
+							, 8192
+							, msgid
+							, 0 );
+		g.flags.bWaitingInReceive = 0;
+#ifdef DEBUG_DATA_XFER
+		lprintf( "^^^ %d", length );
+#endif
+		length -= ( sizeof( QMSG ) - sizeof( MSGIDTYPE ) );
+		if( length < 0 )
+		{
+#ifdef _WIN32
+				int my_errno = GetLastError();
+#  ifdef errno
+#    undef errno
+#  endif
+#  define errno my_errno
+#endif
+ // got a signal - ignore and try again.
+			if( errno == EINTR )
+				continue;
+			if( errno == EIDRM )
+			{
+				Log( WIDE("Server ended.") );
+				break;
+			}
+			if( errno == EINVAL )
+			{
+				Log( WIDE("Queues Closed?") );
+				g.flags.disconnected = 1;
+				break;
+			}
+#if defined( _WIN32 ) || defined( USE_SACK_MSGQ )
+			if( errno == EABORT )
+			{
+				Log( WIDE( "Server Read Abort." ) );
+				break;
+			}
+#endif
+			Log1( WIDE("msgrecv error: %d"), errno );
+			continue;
+		}
+#ifdef DEBUG_DATA_XFER
+		else
+		{
+			lprintf( WIDE("Received Message.... g.msgq_out %d"), length );
+			LogBinary( (uint8_t*)recv, length + sizeof( QMSG ) );
+		}
+#endif
+		// setup the result message to be a reply to the incoming message.
+		result->dest.process_id            = recv->hdr.source.process_id;
+		result->dest.service_id            = recv->hdr.source.service_id;
+		result->hdr.source.process_id = recv->dest.process_id;
+		result->hdr.source.service_id = recv->dest.service_id;
+		result->hdr.msgid             = recv->hdr.msgid | SERVER_UNHANDLED;
+		if( recv->hdr.msgid & 0xF0000000 )
+		{
+			// message is a responce from someone else...
+		}
+		else
+		{
+			if( recv->dest.service_id == 0 )
+			{
+				if( HandleCoreMessage( recv, length DBG_SRC ) )
+					continue;
+			}
+			{
+				int handled = FALSE;
+				PCLIENT_SERVICE service;
+				for( service = g.services; service; service = service->next )
+				{
+					// process_id is already matched at this point, or we wouln't have the message
+					// just have to give it to the local service.
+#ifdef DEBUG_DATA_XFER
+					lprintf( "is %d == %d", service->ServiceID, recv->dest.service_id );
+#endif
+					if( service->ServiceID == recv->dest.service_id )
+					{
+						//lprintf( WIDE("Found the service...%s"), service->name );
+						break;
+					}
+				}
+				if( service )
+				{
+					uint32_t msgid = recv->hdr.msgid;
+#ifdef DEBUG_MESSAGE_BASE_ID
+					lprintf( WIDE("service base %ld(+%ld) and this is from %s")
+							 , 0
+                       , service->entries
+							 , ( g.my_message_id == recv->hdr.source.process_id )?"myself":"someone else" );
+#endif
+					if( msgid < service->entries )
+					{
+						int result_okay = 0;
+						g.flags.handling_client_message = 1;
+						if( service->handler_ex )
+						{
+#if defined( LOG_HANDLED_MESSAGES )
+							lprintf( WIDE("Got a service message to handler: %08lx length %ld")
+									 , recv->hdr.source.process_id
+									 , length + sizeof(QMSG) );
+#endif
+							result_length = MSG_DEFAULT_RESULT_BUFFER_MAX;
+							handled = TRUE;
+							result_okay = service->handler_ex( service->psv
+																		, (PSERVICE_ROUTE)result
+																		, msgid
+																		, QMSGDATA(recv), length
+																		, QMSGDATA(result), &result_length ) ;
+						}
+						if( !handled && service->handler )
+						{
+#if defined( LOG_HANDLED_MESSAGES )
+							lprintf( WIDE("Got a service message to handler: %08lx length %ld")
+									 , recv->hdr.source.process_id
+									 , length + sizeof(QMSG) );
+#endif
+							result_length = MSG_DEFAULT_RESULT_BUFFER_MAX;
+							handled = TRUE;
+							result_okay = service->handler( (PSERVICE_ROUTE)result
+																	, msgid
+																	, QMSGDATA(recv), length
+																			, QMSGDATA(result), &result_length ) ;
+						}
+						if( !handled )
+						{
+							if( service->functions
+								&& service->functions[msgid].function )
+							{
+								//result_length = 4096; // maximum responce buffer...
+#if defined( LOG_HANDLED_MESSAGES )
+								lprintf( WIDE("Got a service : (%d)%s from %08lx length %ld")
+										 , msgid
+#ifdef _DEBUG
+										 , service->functions[msgid].name
+#else
+										 , WIDE("noname")
+#endif
+										 , recv->hdr.source.process_id
+										 , length + sizeof(QMSG) );
+#endif
+ // safer default. although uninformative.
+								result_length = 0;
+								handled = TRUE;
+								result_okay = service->functions[msgid].function( (PSERVICE_ROUTE)result
+																								, QMSGDATA( recv )
+																								, length
+																								, QMSGDATA(result)
+																								, &result_length );
+								switch( msgid )
+								{
+								case MSG_ServiceLoad:
+									if( result_okay && ( result_length == 0 ) )
+									{
+#if defined( LOG_HANDLED_MESSAGES )
+										lprintf( "Using default handler for service load" );
+#endif
+										((MsgSrv_ReplyServiceLoad*)QMSGDATA(result))->ServiceID = result->hdr.source.service_id;
+										((MsgSrv_ReplyServiceLoad*)QMSGDATA(result))->thread = 0;
+										result_length = sizeof( MsgSrv_ReplyServiceLoad );
+									}
+									break;
+								}
+							}
+							else if( service->functions )
+							{
+								switch( msgid )
+								{
+								case MSG_ServiceUnload:
+#if defined( LOG_HANDLED_MESSAGES )
+									lprintf( "Using default handler for service unload" );
+#endif
+									result_okay = 1;
+									break;
+								case MSG_ServiceLoad:
+#if defined( LOG_HANDLED_MESSAGES )
+									lprintf( "Using default handler for service load" );
+#endif
+									((MsgSrv_ReplyServiceLoad*)QMSGDATA(result))->ServiceID = result->dest.service_id;
+									((MsgSrv_ReplyServiceLoad*)QMSGDATA(result))->thread = 0;
+									result_length = sizeof( MsgSrv_ReplyServiceLoad );
+									result_okay = 1;
+									break;
+								default:
+#if defined( LOG_HANDLED_MESSAGES )
+									DebugBreak();
+									lprintf( WIDE("didn't have a function for 0x%lx (%ld) or %s")
+											 , msgid
+											 , msgid
+#ifdef _DEBUG
+											 , service->functions[msgid].name
+#else
+											 , WIDE("noname")
+#endif
+										 );
+#endif
+									result_okay = 0;
+									result_length = INVALID_INDEX;
+									break;
+								}
+							}
+							else
+							{
+								DebugBreak();
+								result_okay = 0;
+								result_length = 0;
+							}
+						}
+						if( result_okay )
+							result->hdr.msgid = recv->hdr.msgid | SERVER_SUCCESS;
+						else
+							result->hdr.msgid = recv->hdr.msgid | SERVER_FAILURE;
+						// a key result value to indicate there is
+						// no responce to be sent to the client.
+						if( result_length != INVALID_INDEX )
+						{
+#ifdef DEBUG_DATA_XFER
+							DBG_VARSRC;
+#endif
+							msgsnd( g.msgq_in, MSGTYPE result, result_length + (sizeof(QMSG) - sizeof( MSGIDTYPE )), 0 );
+						}
+						else
+						{
+							//Log( WIDE("No responce sent") );
+						}
+					}
+				}
+				else
+				{
+					lprintf( WIDE("Failed to find target service for message.") );
+				}
+			}
+#if defined(_DEBUG) && defined( LOG_HANDLED_MESSAGES )
+			Log( WIDE("Message complete...") );
+#endif
+			g.flags.handling_client_message = 0;
+		}
+	}
+	Release( recv );
+	Release( result );
+	return 0;
+}
+//--------------------------------------------------------------------
+void DoRegisterService( PCLIENT_SERVICE pService )
+{
+	MSGIDTYPE MsgID;
+	// if I'm the master service, I don't very well have to
+	// register with myself do I?
+	if( !pService->flags.bFailed )
+	{
+		//lprintf( WIDE("Transacting a message....") );
+		size_t result_len = sizeof( pService->ServiceID );
+		//lprintf( WIDE("Transacting a message....") );
+		if( !TransactServerMultiMessage( &g.master_service_route, CLIENT_REGISTER_SERVICE, 1
+												 , &MsgID, &pService->ServiceID, &result_len
+ // include NUL
+												 , pService->name, (StrLen( pService->name ) + 1) * sizeof(TEXTCHAR)
+												 ) )
+		{
+			pService->flags.bFailed = 1;
+			lprintf( WIDE("registration failed.") );
+		}
+		else
+		{
+			//lprintf( WIDE("MsgID is %lx and should be %lx? "),MsgID , ( CLIENT_REGISTER_SERVICE | SERVER_SUCCESS ) );
+			if( MsgID != ( CLIENT_REGISTER_SERVICE | SERVER_SUCCESS ) )
+			{
+				pService->flags.bFailed = 1;
+				lprintf( WIDE("registration failed.") );
+			}
+		}
+		pService->flags.bRegistered = 1;
+	}
+}
+//--------------------------------------------------------------------
+int ReceiveServerMessageEx( PTRANSACTIONHANDLER handler, PQMSG MessageIn, size_t MessageLen DBG_PASS )
+{
+	/*
+	 first check... LoadService() response.
+    LoadService() will have been called in another thread,
+    */
+	if( (MessageIn->hdr.msgid&0xFFFFFFF) == (MSG_ServiceLoad) )
+	{
+		lprintf( WIDE("Loading service responce... setup the service ID for future com") );
+		handler->route->dest.process_id = MessageIn->hdr.source.process_id;
+		handler->route->dest.service_id = MessageIn->hdr.source.service_id;
+		handler->route->source.process_id = MessageIn->dest.process_id;
+		handler->route->source.service_id = MessageIn->dest.service_id;
+		if( handler->MessageID )
+			(*handler->MessageID) = MessageIn->hdr.msgid;
+	}
+	if( MessageIn->hdr.source.process_id == 1
+		&& MessageIn->hdr.source.service_id == 0
+	  )
+	{
+		//if( handler != &g._handler )
+		{
+			// result received from some other handler (probably something like
+			//lprintf( WIDE("message from core service ... wrong handler?") );
+			if( MessageIn->hdr.msgid & SERVER_FAILURE )
+			{
+				// eat this message...
+				//return 0;
+			}
+			//else
+			//	return 1;
+			//DebugBreak();
+		}
+		if( handler->MessageID )
+			(*handler->MessageID) = MessageIn->hdr.msgid;
+  //	  handler = &g._handler;
+	}
+	if( ( handler->route->dest.process_id != MessageIn->hdr.source.process_id )
+		|| ( handler->route->dest.service_id != MessageIn->hdr.source.service_id ) )
+	{
+		//lprintf( WIDE("%ld and %ld "), handler->ServiceID, MessageIn->hdr.source.process_id );
+		// this handler is not for this message responce...
+		//DebugBreak();
+		//lprintf( WIDE("this handler is not THE handler!") );
+		return 1;
+	}
+	else
+	{
+		//lprintf( WIDE("All is well, check message ID %p"), handler );
+		if( handler->MessageID )
+			(*handler->MessageID) = MessageIn->hdr.msgid;
+		if( handler->LastMsgID != ( (MessageIn->hdr.msgid)& 0xFFFFFFF ) )
+		{
+			LogBinary( (uint8_t*)MessageIn, MessageLen );
+			lprintf( WIDE("len was %") _size_f, MessageLen );
+			lprintf( WIDE("Message is for this guy - but isn't the right ID! %") _MsgID_f WIDE(" %") _32f WIDE(" %") _32f WIDE("")
+					 , handler->LastMsgID, (MessageIn->hdr.msgid) & 0xFFFFFFF, 0 );
+			//DebugBreak();
+			return 1;
+		}
+	}
+	if( handler->msg && handler->len )
+	{
+  // subtract message ID and message source from it.
+		MessageLen -= sizeof(QMSG) - sizeof( MSGIDTYPE );
+		if( MessageLen > 0 )
+		{
+			if( (int32_t)(*handler->len) < MessageLen )
+			{
+				_lprintf( DBG_RELAY )( WIDE("Cutting out possible data to the application - should provide a failure! %") _size_f WIDE(" expected %") _size_f WIDE(" returned"), (*handler->len), MessageLen );
+				MessageLen = (*handler->len);
+			}
+			MemCpy( handler->msg, QMSGDATA( MessageIn ), MessageLen );
+		}
+		(*handler->len) = MessageLen;
+	}
+	else
+	{
+		// maybe it was just interested in the header...
+		// which will be the source ID and the message ID
+		if( MessageLen - ( sizeof( QMSG ) - sizeof( MSGIDTYPE ) ) )
+		{
+			LogBinary( (uint8_t*)MessageIn, MessageLen + sizeof( QMSG ) );
+			SystemLogEx( WIDE("Server returned result data which the client did not get") DBG_RELAY );
+		}
+	}
+	// we now have to wait for another response.
+	// this one has been consumed.
+	handler->flags.responce_received = 0;
+	return 0;
+}
+//--------------------------------------------------------------------
+#undef RegisterServiceEx
+CLIENTMSG_PROC( LOGICAL, RegisterServiceEx )( CTEXTSTR name
+														  , server_function_table functions
+														  , int entries
+														  , server_message_handler handler
+														)
+{
+   return RegisterServiceExx( name, functions, entries, handler, NULL, 0 );
+}
+// don't really get a route from this...
+// service_routes will become available as clients connect.
+CLIENTMSG_PROC( LOGICAL, RegisterServiceExx )( CTEXTSTR name
+															, server_function_table functions
+															, int entries
+															, server_message_handler handler
+															, server_message_handler_ex handler_ex
+															, uintptr_t psv
+															)
+{
+	int status;
+	if( !name )
+	{
+		g.flags.bMasterServer = 1;
+	}
+	if( ( status = _InitMessageService( FALSE ) ) < 1 )
+	{
+		if( status == -1 )
+			lprintf( WIDE("Initization of %s message service failed (service already exists? communication)."), name );
+		//if( status == 0 )
+		//	; //lprintf( WIDE("Initization of %s message service failed to initialize?)."), name );
+		return FALSE;
+	}
+	else
+	{
+		//static int nBaseMsg;
+		PCLIENT_SERVICE pService = New( CLIENT_SERVICE );
+		pService->service_routes = NULL;
+		pService->flags.bRegistered = 0;
+		pService->flags.bFailed = 0;
+		pService->flags.connected = 0;
+		pService->flags.bClosed = 0;
+		pService->flags.bWaitingInReceive = 0;
+		// setup service message base.
+		if( !name )
+		{
+			pService->flags.bMasterServer = 1;
+			pService->name = StrDup( WIDE("Master Server") );
+		}
+		else
+		{
+			pService->flags.bMasterServer = 0;
+			pService->name = StrDup( name );
+		}
+		pService->handler_ex = handler_ex;
+		pService->handler = handler;
+		pService->functions = functions;
+		pService->entries = entries?entries:256;
+		pService->references = 0;
+		if( !g.flags.bAliveThreadStarted )
+		{
+			// this timer monitors ALL clients for inactivity
+			// it will probe them with RU_ALIVE messages
+			// to which they must respond otherwise be termintated.
+			g.flags.bAliveThreadStarted = 1;
+			AddTimer( CLIENT_TIMEOUT/4, MonitorClientActive, 0 );
+			// each service gets 1 thread to handle their own
+			// messages... services do not have 'events' generated
+			// to them.
+		}
+		if( !pService->flags.bMasterServer && !g.flags.bServiceHandlerStarted )
+		{
+			// pass FALSE (not master service, begin receiving on my_message_id)
+			ThreadTo( HandleServiceMessages, (uintptr_t)0 );
+			g.flags.bServiceHandlerStarted = 1;
+		}
+		if( pService->flags.bMasterServer && !g.flags.bCoreServiceHandlerStarted )
+		{
+			// pass FALSE (IS master service, begin receiving on 1)
+			ThreadTo( HandleServiceMessages, (uintptr_t)1 );
+			g.flags.bCoreServiceHandlerStarted = 1;
+		}
+		if( pService->flags.bMasterServer && !g.flags.bCoreServiceHandlerStarted )
+		{
+			// pass 1 as message filter ID, begin receiving message 1 on input queue.
+			ThreadTo( HandleMessages, 1 );
+			g.flags.bCoreServiceInputHandlerStarted = 1;
+		}
+		if( !pService->flags.bMasterServer )
+		{
+			RegisterWithMasterService();
+			DoRegisterService( pService );
+		}
+		else
+		{
+			// should attempt some sort of ping before assuming it's good.
+			pService->ServiceID = 0;
+			pService->GetFunctionTable = NULL;
+			pService->flags.bRegistered = 1;
+		}
+		while( !pService->flags.bRegistered )
+			Relinquish();
+		if( pService->flags.bFailed )
+		{
+			pService->flags.bClosed = 1;
+			while( pService->flags.bWaitingInReceive )
+			{
+				pService->recv->dest.process_id = INVALID_MESSAGE;
+				if( pService->thread )
+					WakeThread( pService->thread );
+				else
+					break;
+				//Relinquish();
+			}
+			while( pService->thread )
+			{
+				Relinquish();
+				WakeThread( pService->thread );
+			}
+			Release( pService->name );
+			Release( pService );
+			return FALSE;
+		}
+		if( pService )
+		{
+			LinkThing( g.services, pService );
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+	//--------------------------------------------------------------------
+#undef RegisterService
+CLIENTMSG_PROC( LOGICAL, RegisterService )( TEXTCHAR *name
+														  , server_function_table functions
+														  , int entries
+														)
+{
+	return RegisterServiceEx( name, functions, entries, NULL );
+}
+MSGCLIENT_NAMESPACE_END
+//-------------------------------------------------------------
+#define SUMMONER_NAME WIDE("Master Summoner")
+enum {
+	MSG_RU_ALIVE = MSG_EventUser
+      , MSG_WHOAMI
+		, MSG_IM_STARTING
+		, MSG_IM_ALIVE
+		, MSG_IM_READY
+		, MSG_DIE
+     //, MSG_BREAK
+};
+#ifdef __cplusplus
+namespace sack { namespace task { namespace construct {
+using namespace sack::msg::client;
+#endif
+typedef struct local_tag
+{
+	int init_ran;
+	PSERVICE_ROUTE MsgBase;
+	TEXTCHAR my_name[256];
+	// handle a registry of external functions to call
+	// for alive checks... otherwise be simple and claim
+   // alive (at least the message services are alive)
+} LOCAL;
+static LOCAL l;
+static int CPROC HandleSummonerEvents( PSERVICE_ROUTE SourceID, MSGIDTYPE MsgID, uint32_t *data, size_t len )
+{
+	switch( MsgID )
+	{
+	case MSG_RU_ALIVE:
+		// echo the data back to the server..
+		// this helps mate requests and responces...
+		SendRoutedServerMessage( SourceID, MSG_IM_ALIVE, data, len );
+		break;
+	case MSG_DIE:
+		lprintf( WIDE("Command to die, therefore I shall...") );
+		exit(0);
+		break;
+	default:
+		lprintf( WIDE("Received unknown message %") _MsgID_f WIDE(" from %p"), MsgID, SourceID );
+		break;
+	}
+   return TRUE;
+}
+//#if 0
+PRELOAD( Started )
+{
+#ifndef __NO_OPTIONS__
+	if( SACK_GetProfileIntEx( WIDE( "SACK/Summoner" ), WIDE( "Auto register with summoner?" ), 0, TRUE ) )
+#else
+   if( 0 )
+#endif
+	{
+		l.init_ran = 1;
+		l.MsgBase = LoadServiceEx( SUMMONER_NAME, HandleSummonerEvents );
+		//lprintf( WIDE("Message base for service is %d"), l.MsgBase );
+		if( l.MsgBase )
+		{
+			MSGIDTYPE result;
+			size_t result_length;
+			result_length = sizeof( l.my_name );
+			if( !TransactServerMessage( l.MsgBase, MSG_WHOAMI, NULL, 0
+											  , &result, l.my_name, &result_length ) )
+			{
+				// since we JUST loaded it, this shold be nearly impossible to hit.
+				lprintf( WIDE("Failed to find out who I am from summoner.") );
+				UnloadService( SUMMONER_NAME );
+				l.MsgBase = NULL;
+				return;
+			}
+			else if( result != ((MSG_WHOAMI)|SERVER_SUCCESS ) )
+			{
+				lprintf( WIDE("Server responce was in error... disable support") );
+				UnloadService( SUMMONER_NAME );
+				l.MsgBase = NULL;
+				return;
+			}
+			else if( !result_length )
+			{
+				lprintf( WIDE("Summoner is not responsible for us, and requires no notifications." ) );
+				UnloadService( SUMMONER_NAME );
+				l.MsgBase = NULL;
+				return;
+			}
+			//else l.my_name is my task name from sommoner.config
+			if( !TransactServerMessage( l.MsgBase, MSG_IM_STARTING, l.my_name, (uint32_t)strlen( l.my_name ) + 1
+											  , NULL, NULL, 0 ) )
+			{
+				// this should almost be guaranteed to work...
+				lprintf( WIDE("Failed to send starting to summoner... disable support") );
+				UnloadService( SUMMONER_NAME );
+				l.MsgBase = NULL;
+				return;
+			}
+			//lprintf( WIDE("We're starting, go ahead.") );
+		}
+	}
+	else
+		l.MsgBase = NULL;
+}
+//#endif
+ void  LoadComplete ( void )
+{
+	uint32_t result;
+   // if we registered with the summoner...
+	if( l.MsgBase )
+	{
+		//lprintf( WIDE("Sending IM_READY to summoner...\n") );
+		result = ((MSG_IM_READY) | SERVER_SUCCESS);
+		if( TransactServerMessage( l.MsgBase, MSG_IM_READY, l.my_name, (uint32_t)strlen( l.my_name ) + 1
+ /*&result*/
+										 , NULL, NULL, 0 )
+		  )
+		{
+			if( result == ((MSG_IM_READY) | SERVER_SUCCESS) )
+			{
+			}
+			else
+			{
+				lprintf( WIDE("Summoner has somehow complained that we're started?!") );
+				DebugBreak();
+			}
+		}
+		else
+		{
+			lprintf( WIDE("Summoner has dissappeared.  Disabling support.") );
+			l.MsgBase = NULL;
+		}
+	}
+	//else
+   //   lprintf( WIDE("Service has been disabled.") );
+}
+ATEXIT( Ended )
+{
+	if( l.init_ran && l.MsgBase )
+	{
+		lprintf( WIDE("mark ready in summoner (dispatch as ended?)") );
+		LoadComplete();
+		UnloadService( SUMMONER_NAME );
+	}
+}
+#ifdef __cplusplus
+ //namespace sack namespace
+}}}
+#endif
 #define DISABLE_DEBUG_REGISTER_AND_DISPATCH
 #if defined( __GNUC__ )
 #ifndef __cplusplus

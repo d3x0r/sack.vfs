@@ -57,6 +57,9 @@ static void idGenerator(const v8::FunctionCallbackInfo<Value>& args ){
 	Deallocate( char*, r );
 }
 
+static void loadComplete( const v8::FunctionCallbackInfo<Value>& args ) {
+	LoadComplete();
+}
 
 static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 	DebugDumpMem( );
@@ -138,6 +141,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	constructor.Reset( isolate, volumeTemplate->GetFunction() );
 	exports->Set( String::NewFromUtf8( isolate, "Volume" ),
 		volumeTemplate->GetFunction() );
+	SET_READONLY_METHOD( exports, "loadComplete", loadComplete );
 	//NODE_SET_METHOD( exports, "InitFS", InitFS );
 }
 

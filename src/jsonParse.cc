@@ -120,6 +120,7 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 			struct reviver_data r;
 			r.revive = FALSE;
 			r.isolate = isolate;
+			r.context = r.isolate->GetCurrentContext();
 			argv[0] = convertMessageToJS( elements, &r );
 			Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 			{
