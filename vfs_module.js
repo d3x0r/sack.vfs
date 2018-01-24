@@ -20,6 +20,10 @@ try{
 vfs.JSON6.stringify = JSON.stringify;
 vfs.JSON.stringify = JSON.stringify;
 
+//vfs.Sqlite.so( "SACK/Summoner/Auto register with summoner?", 1 );
+//console.log( "register:", vfs.Sqlite.op( "SACK/Summoner/Auto register with summoner?", 0 ));
+//vfs.loadComplete();
+
 process.on( 'beforeExit', ()=> {
 	console.log( "Before Exit." );
 	vfs.Thread() 
