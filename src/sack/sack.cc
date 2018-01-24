@@ -55206,7 +55206,7 @@ static int gatherString6(struct json_parse_state *state, CTEXTSTR msg, CTEXTSTR 
 					state->hex_char *= 16;
 					if( c >= '0' && c <= '9' )      state->hex_char += c - '0';
 					else if( c >= 'A' && c <= 'F' ) state->hex_char += ( c - 'A' ) + 10;
-					else if( c >= 'a' && c <= 'f' ) state->hex_char += ( c - 'F' ) + 10;
+					else if( c >= 'a' && c <= 'f' ) state->hex_char += ( c - 'a' ) + 10;
 					else {
 						lprintf(WIDE("(escaped character, parsing hex of \\x) fault while parsing; '%c' unexpected at %")_size_f WIDE(" (near %*.*s[%c]%s)"), c, n
 							, (int)( ( n>3 ) ? 3 : n ), (int)( ( n>3 ) ? 3 : n )
@@ -60308,7 +60308,7 @@ int NetworkQuit(void)
 		globalNetworkData.uPendingTimer = 0;
 	}
 #endif
-	while( globalNetworkData.ActiveClients )
+	//while( globalNetworkData.ActiveClients )
 	{
 #ifdef LOG_NOTICES
 		if( globalNetworkData.flags.bLogNotices )
@@ -75528,8 +75528,8 @@ CLIENTMSG_PROC( LOGICAL, RegisterServiceExx )( CTEXTSTR name
 																	 );
 #define RegisterServiceEx( n,f,psv ) RegisterServiceExx( n,NULL,16,NULL,f,psv)
 #define RegisterService(n,f,e)        RegisterServiceExx(n,f,e,NULL,NULL,0)
-#define RegisterServiceHandler(n,f)   RegisterServiceExx(n,NULL,16,f,NULL,0)
-#define RegisterServiceHandlerEx(n,f,psv)   RegisterServiceExx(n,NULL,16,NULL,f,psv)
+#define RegisterServiceHandler(n,f)   RegisterServiceExx(n,NULL,65535,f,NULL,0)
+#define RegisterServiceHandlerEx(n,f,psv)   RegisterServiceExx(n,NULL,65535,NULL,f,psv)
 CLIENTMSG_PROC( void, UnregisterService )( CTEXTSTR name );
 CLIENTMSG_PROC( int, ProcessClientMessages )( uintptr_t unused );
 // returns INVALID_INDEX on failure - else is message base to servic.
@@ -85312,11 +85312,14 @@ TEXTSTR EscapeSQLBinaryExx( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, uintpt
 		{
 			if( (*pBlob) == '\'' )
 				targetlen++;
-			if( (*pBlob) == '\'' )
-				targetlen++;
+			if( (*pBlob) == '\0' )
+				targetlen += 13;
+			pBlob++;
 			n++;
 		}
 		n = 0;
+ // reset blob input
+		pBlob = blob;
 		result = tmpnamebuf = (TEXTSTR)AllocateEx( ( sizeof( TEXTCHAR ) * ( targetlen + bloblen + 3 ) ) DBG_RELAY );
 		if( bQuote )
 			( *tmpnamebuf++ ) = '\'';
@@ -85342,6 +85345,7 @@ TEXTSTR EscapeSQLBinaryExx( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, uintpt
 				( *tmpnamebuf++ ) = (*pBlob);
 			}
 			n++;
+			pBlob++;
 		}
 		if( bQuote )
 			( *tmpnamebuf++ ) = '\'';
@@ -85368,15 +85372,15 @@ TEXTCHAR * EscapeBinary ( CTEXTSTR blob, uintptr_t bloblen )
 TEXTCHAR * EscapeSQLStringEx ( PODBC odbc, CTEXTSTR name DBG_PASS )
 {
 	if( !name ) return NULL;
-	return EscapeSQLBinaryExx( odbc, name, strlen( name )+1, NULL, FALSE DBG_RELAY );
+	return EscapeSQLBinaryExx( odbc, name, strlen( name ), NULL, FALSE DBG_RELAY );
 }
 TEXTCHAR * EscapeStringEx ( CTEXTSTR name DBG_PASS )
 {
-	return EscapeSQLBinaryExx( NULL, name, (uint32_t)strlen( name ) + 1, NULL, FALSE DBG_RELAY );
+	return EscapeSQLBinaryExx( NULL, name, (uint32_t)strlen( name ), NULL, FALSE DBG_RELAY );
 }
 TEXTCHAR * EscapeString ( CTEXTSTR name )
 {
-	return EscapeSQLBinaryExx( NULL, name, strlen( name ) + 1, NULL, FALSE DBG_SRC );
+	return EscapeSQLBinaryExx( NULL, name, strlen( name ), NULL, FALSE DBG_SRC );
 }
 uint8_t hexbyte( TEXTCHAR *string )
 {
@@ -92858,7 +92862,7 @@ CLIENTMSG_PROC( int, ProbeClientAlive )( PSERVICE_ENDPOINT RouteID )
 		lprintf( WIDE("Yes, I, myself, am alive...") );
 		return TRUE;
 	}
-	lprintf( WIDE("Hmm is client %p") WIDE(" alive?"), RouteID );
+	//lprintf( WIDE("Hmm is client %p") WIDE(" alive?"), RouteID );
 	{
 		PEVENTHANDLER handler;
 		for( handler = g.pHandlers; handler; handler = handler->next )
@@ -92873,7 +92877,7 @@ CLIENTMSG_PROC( int, ProbeClientAlive )( PSERVICE_ENDPOINT RouteID )
 			//InitializeCriticalSec( &handler->csMsgTransact );
 			handler->RouteID.dest = RouteID[0];
 			LinkThing( g.pHandlers, handler );
-			lprintf( WIDE("Created a HANDLER to coordinate probe alive request..") );
+			//lprintf( WIDE("Created a HANDLER to coordinate probe alive request..") );
 		}
 	}
 	ping_route.dest.process_id = RouteID->process_id;
@@ -92893,10 +92897,10 @@ CLIENTMSG_PROC( int, ProbeClientAlive )( PSERVICE_ENDPOINT RouteID )
 													  , NULL, NULL ) &&
 		Responce == ( IM_ALIVE ) )
 	{
-		lprintf( WIDE("Ping Success.") );
+		//lprintf( WIDE("Ping Success.") );
 		return TRUE;
 	}
-	lprintf( WIDE("Ping Failure.") );
+	//lprintf( WIDE("Ping Failure.") );
 	return FALSE;
 }
 //-------------------------------------------------------------
@@ -93919,7 +93923,7 @@ int WaitReceiveServerMsg ( PSLEEPER sleeper
 				// check for responces...
 				// will return immediate if is not this thread which
 				// is supposed to be there...
-				lprintf( WIDE("getting or waiting for... a message...") );
+				_lprintf(DBG_RELAY)( WIDE("getting or waiting for... a message...") );
 				if( IsThread )
 				{
 					lprintf( WIDE("Get message (might be my thread") );
@@ -93938,11 +93942,11 @@ int WaitReceiveServerMsg ( PSLEEPER sleeper
 						goto dont_sleep;
 					}
 					handler->flags.bCheckedResponce = 0;
-					lprintf( WIDE("Going to sleep for %")_32fs
-							 , handler->wait_for_responce - timeGetTime()
-							 );
+					//lprintf( WIDE("Going to sleep for %")_32fs
+					//		 , handler->wait_for_responce - timeGetTime()
+					//		 );
 					WakeableSleep( handler->wait_for_responce - timeGetTime() );
-					lprintf( WIDE("AWAKE! %d"), handler->flags.responce_received );
+					//lprintf( WIDE("AWAKE! %d"), handler->flags.responce_received );
 					DeleteLink( &g.pSleepers, sleeper );
 				}
 				else
@@ -93953,7 +93957,7 @@ int WaitReceiveServerMsg ( PSLEEPER sleeper
 		       // timeout...?
 			if( !handler->flags.bCheckedResponce )
 				received = 1;
-			lprintf( WIDE("When we finished this loop still was waiting %")_32fs, handler->wait_for_responce - timeGetTime() );
+			//lprintf( WIDE("When we finished this loop still was waiting %")_32fs, handler->wait_for_responce - timeGetTime() );
 			//else
 			{
 				//lprintf( WIDE("Excellent... the responce is back before I could sleep!") );
@@ -94344,7 +94348,7 @@ CLIENTMSG_PROC( int, TransactRoutedServerMultiMessageEx )( PSERVICE_ROUTE RouteI
 		switch( MsgOut )
 		{
 		case RU_ALIVE:
-			lprintf( WIDE("Lying about message to expect") );
+			//lprintf( WIDE("Lying about message to expect") );
 			handler->LastMsgID = IM_ALIVE;
 			break;
 		default:
