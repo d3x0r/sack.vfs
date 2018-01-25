@@ -65070,9 +65070,9 @@ extern "C" {
 ** [sqlite3_libversion_number()], [sqlite3_sourceid()],
 ** [sqlite_version()] and [sqlite_source_id()].
 */
-#define SQLITE_VERSION        "3.22.0"
-#define SQLITE_VERSION_NUMBER 3022000
-#define SQLITE_SOURCE_ID      "2018-01-17 16:11:26 a8aea925f8fde8f2dc5ff4b744d54aa2bf8916f3ee57f22d77fd1ddb5a35alt1"
+#define SQLITE_VERSION        "3.23.0"
+#define SQLITE_VERSION_NUMBER 3023000
+#define SQLITE_SOURCE_ID      "2018-01-07 21:58:17 0a50c9e3bb0dbdaaec819ac6453276ba287b475ea322918ddda1ab3a1ec4alt1"
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
 ** KEYWORDS: sqlite3_version sqlite3_sourceid
@@ -65274,8 +65274,15 @@ SQLITE_API int sqlite3_close_v2(sqlite3*);
 ** The type for a callback function.
 ** This is legacy and deprecated.  It is included for historical
 ** compatibility and is not documented.
+** sqlite3_exec
 */
 typedef int (*sqlite3_callback)(void*,int,char**, char**);
+/*
+** The type for a v2 callback function.
+** This is revival of legacy and deprecated.
+** it is used with sqlite3_exec_v2();
+*/
+typedef int (*sqlite3_callback_v2)(void*,int,char**, char**, int*, int*);
 /*
 ** CAPI3REF: One-Step Query Execution Interface
 ** METHOD: sqlite3
@@ -65342,6 +65349,13 @@ SQLITE_API int sqlite3_exec(
   sqlite3*,
   const char *sql,
   int (*callback)(void*,int,char**,char**),
+  void *,
+  char **errmsg
+);
+SQLITE_API int sqlite3_exec_v2(
+  sqlite3*,
+  const char *sql,
+  int (*callback)(void*,int,char**,char**,int*,int*),
   void *,
   char **errmsg
 );
@@ -67845,8 +67859,8 @@ SQLITE_API SQLITE_DEPRECATED void *sqlite3_profile(sqlite3*,
 ** KEYWORDS: SQLITE_TRACE
 **
 ** These constants identify classes of events that can be monitored
-** using the [sqlite3_trace_v2()] tracing logic.  The third argument
-** to [sqlite3_trace_v2()] is an OR-ed combination of one or more of
+** using the [sqlite3_trace_v2()] tracing logic.  The M argument
+** to [sqlite3_trace_v2(D,M,X,P)] is an OR-ed combination of one or more of
 ** the following constants.  ^The first argument to the trace callback
 ** is one of the following constants.
 **
@@ -67929,6 +67943,18 @@ SQLITE_API int sqlite3_trace_v2(
   sqlite3*,
   unsigned uMask,
   int(*xCallback)(unsigned,void*,void*,void*),
+  void *pCtx
+);
+/*
+**  Same as V2; except last parameter is lenngth of data pointed at by 3rd.
+**  [SQLITE_TRACE], pCtx, (Expr*), data, length
+**
+*/
+SQLITE_API int sqlite3_trace_v3(
+  sqlite3*,
+  unsigned uMask,
+  // statements with nuls need length;
+  int(*xCallback)(unsigned,void*,void*,void*,int),
   void *pCtx
 );
 /*
@@ -69050,8 +69076,8 @@ SQLITE_API const char *sqlite3_column_table_name(sqlite3_stmt*,int);
 SQLITE_API const void *sqlite3_column_table_name16(sqlite3_stmt*,int);
 SQLITE_API const char *sqlite3_column_origin_name(sqlite3_stmt*,int);
 SQLITE_API const void *sqlite3_column_origin_name16(sqlite3_stmt*,int);
-SQLITE_API const char *sqlite3_column_table_alias_name(sqlite3_stmt*,int);
-SQLITE_API const void *sqlite3_column_table_alias_name16(sqlite3_stmt*,int);
+SQLITE_API const char *sqlite3_column_table_alias(sqlite3_stmt*,int);
+SQLITE_API const void *sqlite3_column_table_alias16(sqlite3_stmt*,int);
 /*
 ** CAPI3REF: Declared Datatype Of A Query Result
 ** METHOD: sqlite3_stmt
@@ -73806,6 +73832,35 @@ SQLITE_API int sqlite3session_indirect(sqlite3_session *pSession, int bIndirect)
 **
 ** SQLITE_OK is returned if the call completes without error. Or, if an error
 ** occurs, an SQLite error code (e.g. SQLITE_NOMEM) is returned.
+**
+** <h3>Special sqlite_stat1 Handling</h3>
+**
+** As of SQLite version 3.22.0, the "sqlite_stat1" table is an exception to
+** some of the rules above. In SQLite, the schema of sqlite_stat1 is:
+**  <pre>
+**  &nbsp;     CREATE TABLE sqlite_stat1(tbl,idx,stat)
+**  </pre>
+**
+** Even though sqlite_stat1 does not have a PRIMARY KEY, changes are
+** recorded for it as if the PRIMARY KEY is (tbl,idx). Additionally, changes
+** are recorded for rows for which (idx IS NULL) is true. However, for such
+** rows a zero-length blob (SQL value X'') is stored in the changeset or
+** patchset instead of a NULL value. This allows such changesets to be
+** manipulated by legacy implementations of sqlite3changeset_invert(),
+** concat() and similar.
+**
+** The sqlite3changeset_apply() function automatically converts the
+** zero-length blob back to a NULL value when updating the sqlite_stat1
+** table. However, if the application calls sqlite3changeset_new(),
+** sqlite3changeset_old() or sqlite3changeset_conflict on a changeset
+** iterator directly (including on a changeset iterator passed to a
+** conflict-handler callback) then the X'' value is returned. The application
+** must translate X'' to NULL itself if required.
+**
+** Legacy (older than 3.22.0) versions of the sessions module cannot capture
+** changes made to the sqlite_stat1 table. Legacy versions of the
+** sqlite3changeset_apply() function silently ignore any modifications to the
+** sqlite_stat1 table that are part of a changeset or patchset.
 */
 SQLITE_API int sqlite3session_attach(
   sqlite3_session *pSession,
@@ -75993,7 +76048,7 @@ struct sqlite_interface
 	int ( FIXREF2*sqlite3_extended_errcode)(sqlite3 *db);
 	int ( FIXREF2*sqlite3_stmt_readonly)(sqlite3_stmt *pStmt);
 	const char *( FIXREF2*sqlite3_column_table_name )( sqlite3_stmt *odbc, int col );
-	const char *( FIXREF2*sqlite3_column_table_alias_name )( sqlite3_stmt *odbc, int col );
+	const char *( FIXREF2*sqlite3_column_table_alias )( sqlite3_stmt *odbc, int col );
 };
 #  ifndef DEFINES_SQLITE_INTERFACE
 extern
@@ -76034,7 +76089,7 @@ PRIORITY_PRELOAD( LoadSQLiteInterface, SQL_PRELOAD_PRIORITY-1 )
 #    define sqlite3_extended_errcode     (FIXDEREF2 (sqlite_iface->sqlite3_extended_errcode))
 #    define sqlite3_stmt_readonly        (FIXDEREF2 (sqlite_iface->sqlite3_stmt_readonly))
 #    define sqlite3_column_table_name    (FIXDEREF2 (sqlite_iface->sqlite3_column_table_name))
-#    define sqlite3_column_table_alias_name (FIXDEREF2 (sqlite_iface->sqlite3_column_table_alias_name))
+#    define sqlite3_column_table_alias (FIXDEREF2 (sqlite_iface->sqlite3_column_table_alias))
 #  endif
 #endif
 SQL_NAMESPACE_END
@@ -76079,7 +76134,7 @@ struct sqlite_interface my_sqlite_interface = {
 															 , sqlite3_extended_errcode
                                            , sqlite3_stmt_readonly
                                            , sqlite3_column_table_name
-                                           , sqlite3_column_table_alias_name
+                                           , sqlite3_column_table_alias
 };
 struct my_file_data
 {
@@ -76994,7 +77049,7 @@ struct sqlite_interface
 	int ( FIXREF2*sqlite3_extended_errcode)(sqlite3 *db);
 	int ( FIXREF2*sqlite3_stmt_readonly)(sqlite3_stmt *pStmt);
 	const char *( FIXREF2*sqlite3_column_table_name )( sqlite3_stmt *odbc, int col );
-	const char *( FIXREF2*sqlite3_column_table_alias_name )( sqlite3_stmt *odbc, int col );
+	const char *( FIXREF2*sqlite3_column_table_alias )( sqlite3_stmt *odbc, int col );
 };
 #  ifndef DEFINES_SQLITE_INTERFACE
 extern
@@ -77035,7 +77090,7 @@ PRIORITY_PRELOAD( LoadSQLiteInterface, SQL_PRELOAD_PRIORITY-1 )
 #    define sqlite3_extended_errcode     (FIXDEREF2 (sqlite_iface->sqlite3_extended_errcode))
 #    define sqlite3_stmt_readonly        (FIXDEREF2 (sqlite_iface->sqlite3_stmt_readonly))
 #    define sqlite3_column_table_name    (FIXDEREF2 (sqlite_iface->sqlite3_column_table_name))
-#    define sqlite3_column_table_alias_name (FIXDEREF2 (sqlite_iface->sqlite3_column_table_alias_name))
+#    define sqlite3_column_table_alias (FIXDEREF2 (sqlite_iface->sqlite3_column_table_alias))
 #  endif
 #endif
 SQL_NAMESPACE_END
@@ -80420,7 +80475,7 @@ const char * PSSQL_GetColumnTableAliasName( PODBC odbc, int col ) {
 		//tmp = sqlite3_column_table_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
 		//tmp = sqlite3_column_origin_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
  // sqlite function is 'unsigned' result
-		tmp = sqlite3_column_table_alias_name( pCollect->stmt, col );
+		tmp = sqlite3_column_table_alias( pCollect->stmt, col );
 		return tmp;
 	}
 	return NULL;
@@ -88205,7 +88260,7 @@ struct sqlite_interface
 	int ( FIXREF2*sqlite3_extended_errcode)(sqlite3 *db);
 	int ( FIXREF2*sqlite3_stmt_readonly)(sqlite3_stmt *pStmt);
 	const char *( FIXREF2*sqlite3_column_table_name )( sqlite3_stmt *odbc, int col );
-	const char *( FIXREF2*sqlite3_column_table_alias_name )( sqlite3_stmt *odbc, int col );
+	const char *( FIXREF2*sqlite3_column_table_alias )( sqlite3_stmt *odbc, int col );
 };
 #  ifndef DEFINES_SQLITE_INTERFACE
 extern
@@ -88246,7 +88301,7 @@ PRIORITY_PRELOAD( LoadSQLiteInterface, SQL_PRELOAD_PRIORITY-1 )
 #    define sqlite3_extended_errcode     (FIXDEREF2 (sqlite_iface->sqlite3_extended_errcode))
 #    define sqlite3_stmt_readonly        (FIXDEREF2 (sqlite_iface->sqlite3_stmt_readonly))
 #    define sqlite3_column_table_name    (FIXDEREF2 (sqlite_iface->sqlite3_column_table_name))
-#    define sqlite3_column_table_alias_name (FIXDEREF2 (sqlite_iface->sqlite3_column_table_alias_name))
+#    define sqlite3_column_table_alias (FIXDEREF2 (sqlite_iface->sqlite3_column_table_alias))
 #  endif
 #endif
 SQL_NAMESPACE_END
