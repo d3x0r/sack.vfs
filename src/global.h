@@ -148,6 +148,17 @@ struct SqlObjectUserFunction {
 	Isolate *isolate;
 };
 
+class SqlStmtObject : public node::ObjectWrap {
+public:
+	static v8::Persistent<v8::Function> constructor;
+	class SqlObject *sql;
+	PDATALIST values;
+	SqlStmtObject() {
+		values = NULL;
+	}
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	static void Set( const v8::FunctionCallbackInfo<Value>& args );
+};
 
 class SqlObject : public node::ObjectWrap {
 public:
@@ -182,6 +193,7 @@ public:
 	static void transact( const v8::FunctionCallbackInfo<Value>& args );
 	static void autoTransact( const v8::FunctionCallbackInfo<Value>& args );
 	static void userFunction( const v8::FunctionCallbackInfo<Value>& args );
+	static void userProcedure( const v8::FunctionCallbackInfo<Value>& args );
 	static void aggregateFunction( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args );

@@ -9491,12 +9491,20 @@ SQL_NAMESPACE
 PSSQL_PROC( int, PSSQL_AddSqliteFunction )( PODBC odbc
 	, const char *name
 	, void( *callUserFunction )( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv )
+	, void( *callUserDestroy )( void * )
+	, int args
+	, void *userData );
+PSSQL_PROC( int, PSSQL_AddSqliteProcedure )( PODBC odbc
+	, const char *name
+	, void( *callUserFunction )( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv )
+	, void( *callUserDestroy )( void * )
 	, int args
 	, void *userData );
 PSSQL_PROC( int, PSSQL_AddSqliteAggregate )( PODBC odbc
 	, const char *name
 	, void( *callStep )( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv )
 	, void( *callFinal )( struct sqlite3_context*onwhat )
+	, void( *callUserDestroy )( void * )
 	, int args
 	, void *userData );
 PSSQL_PROC( POINTER, PSSQL_GetSqliteFunctionData )( struct sqlite3_context*context );

@@ -10031,12 +10031,20 @@ SQL_NAMESPACE
 PSSQL_PROC( int, PSSQL_AddSqliteFunction )( PODBC odbc
 	, const char *name
 	, void( *callUserFunction )( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv )
+	, void( *callUserDestroy )( void * )
+	, int args
+	, void *userData );
+PSSQL_PROC( int, PSSQL_AddSqliteProcedure )( PODBC odbc
+	, const char *name
+	, void( *callUserFunction )( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv )
+	, void( *callUserDestroy )( void * )
 	, int args
 	, void *userData );
 PSSQL_PROC( int, PSSQL_AddSqliteAggregate )( PODBC odbc
 	, const char *name
 	, void( *callStep )( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv )
 	, void( *callFinal )( struct sqlite3_context*onwhat )
+	, void( *callUserDestroy )( void * )
 	, int args
 	, void *userData );
 PSSQL_PROC( POINTER, PSSQL_GetSqliteFunctionData )( struct sqlite3_context*context );
@@ -10958,7 +10966,6 @@ static void AddSalt( uintptr_t psv, POINTER *salt, size_t *salt_size ) {
 	}
 	else if( vol->segment[vol->curseg] ) {
 		BLOCKINDEX sector = vol->segment[vol->curseg];
-		int tmp;
 		switch( vol->clusterKeyVersion ) {
 		case 0:
 			( *salt_size ) = sizeof( vol->segment[vol->curseg] );
@@ -80388,50 +80395,80 @@ static void decomputePassword(sqlite3_context*onwhat,int n,sqlite3_value**argv)
 int PSSQL_AddSqliteFunction( PODBC odbc
 	, const char *name
 	, void( *callUserFunction )( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv )
+	, void( *callDestroy )( void* )
 	, int args
 	, void *userData ) {
-	return sqlite3_create_function(
+	return sqlite3_create_function_v2(
  //sqlite3 *,
-		odbc->db
+	    odbc->db
   //const char *zFunctionName,
-		, name
+	    , name
  //int nArg,
-		, args
+	    , args
  //int eTextRep,
-		, SQLITE_UTF8
+	    , SQLITE_UTF8
  //void*,
-		, userData
+	    , userData
  //void (*xFunc)(sqlite3_context*,int,sqlite3_value**),
-		, callUserFunction
+	    , callUserFunction
  //void (*xStep)(sqlite3_context*,int,sqlite3_value**),
-		, NULL
+	    , NULL
  //void (*xFinal)(sqlite3_context*)
-		, NULL
+	    , NULL
+	    , callDestroy
+	);
+}
+int PSSQL_AddSqliteProcedure( PODBC odbc
+	, const char *name
+	, void( *callUserFunction )( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv )
+	, void( *callDestroy )( void* )
+	, int args
+	, void *userData ) {
+	return sqlite3_create_function_v2(
+ //sqlite3 *,
+	    odbc->db
+  //const char *zFunctionName,
+	    , name
+ //int nArg,
+	    , args
+ //int eTextRep,
+	    , SQLITE_UTF8|SQLITE_DETERMINISTIC
+ //void*,
+	    , userData
+ //void (*xFunc)(sqlite3_context*,int,sqlite3_value**),
+	    , callUserFunction
+ //void (*xStep)(sqlite3_context*,int,sqlite3_value**),
+	    , NULL
+ //void (*xFinal)(sqlite3_context*)
+	    , NULL
+	    , callDestroy
 	);
 }
 int PSSQL_AddSqliteAggregate( PODBC odbc
 	, const char *name
 	, void( *callStep )( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv )
 	, void( *callFinal )( struct sqlite3_context*onwhat )
+	, void( *callDestroy )( void* )
 	, int args
 	, void *userData ) {
-	return sqlite3_create_function(
+	return sqlite3_create_function_v2(
  //sqlite3 *,
-		odbc->db
+	    odbc->db
   //const char *zFunctionName,
-		, name
+	    , name
  //int nArg,
-		, args
+	    , args
  //int eTextRep,
-		, SQLITE_UTF8
+	    , SQLITE_UTF8
  //void*,
-		, userData
+	    , userData
  //callUserFunction //void (*xFunc)(sqlite3_context*,int,sqlite3_value**),
-		, NULL
+	    , NULL
  //void (*xStep)(sqlite3_context*,int,sqlite3_value**),
-		, callStep
+	    , callStep
  //void (*xFinal)(sqlite3_context*)
-		, callFinal
+	    , callFinal
+	    , callDestroy
 	);
 }
 POINTER PSSQL_GetSqliteFunctionData( struct sqlite3_context*context ) {

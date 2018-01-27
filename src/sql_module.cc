@@ -14,6 +14,8 @@ struct userMessage{
 	PTHREAD waiter;
 };
 
+Persistent<Function> SqlStmtObject::constructor;
+Persistent<Function> SqlObject::constructor;
 
 //-----------------------------------------------------------
 //   SQL Object
@@ -29,6 +31,13 @@ void SqlObject::Init( Handle<Object> exports ) {
 	sqlTemplate = FunctionTemplate::New( isolate, New );
 	sqlTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Sqlite" ) );
 	sqlTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
+
+	Local<FunctionTemplate> sqlStmtTemplate;
+	// Prepare constructor template
+	sqlStmtTemplate = FunctionTemplate::New( isolate, SqlStmtObject::New );
+	sqlStmtTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Sqlite.statement" ) );
+	sqlStmtTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
+	SqlStmtObject::constructor.Reset( isolate, sqlStmtTemplate->GetFunction() );
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "do", query );
@@ -239,189 +248,262 @@ void SqlObject::unescape( const v8::FunctionCallbackInfo<Value>& args ) {
 
 }
 //-----------------------------------------------------------
-void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	String::Utf8Value tmp( args[0] );
 
-	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	sql->fields = 0;
-	if( !SQLRecordQueryLen( sql->odbc, *tmp, tmp.length(), &sql->columns, &sql->result, &sql->resultLens, &sql->fields ) ) {
-		const char *error;
-		FetchSQLError( sql->odbc, &error );
+void SqlStmtObject::Set( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	SqlStmtObject *stmt = ObjectWrap::Unwrap<SqlStmtObject>( args.This() );
+	if( args.Length() < 2 ) {
 		isolate->ThrowException( Exception::Error(
-			String::NewFromUtf8( isolate, error ) ) );
+			String::NewFromUtf8( isolate, TranslateText( "Required parameters (column, new value) are missing." ) ) ) );
 		return;
 	}
-	if( sql->columns )
-	{
-		int usedFields = 0;
-		int maxDepth = 0;
-		struct fieldTypes {
-			const char *name;
-			int used;
-			int first;
-			Local<Array> array;
-		} *fields = NewArray( struct fieldTypes, sql->columns ) ;
-		int usedTables = 0;
-		struct tables {
-			const char *table;
-			const char *alias;
-			Local<Object> container;
-		}  *tables = NewArray( struct tables, sql->columns + 1);
-		struct colMap {
-			int depth; 
-			int col; 
-			const char *table; 
-			const char *alias; 
-			Local<Object> container;
-			struct tables *t;
-		}  *colMap = NewArray( struct colMap, sql->columns );
-		tables[usedTables].table = NULL;
-		tables[usedTables].alias = NULL;
-		usedTables++;
-
-		for( int n = 0; n < sql->columns; n++ ) {
-			int m;
-			for( m = 0; m < usedFields; m++ ) {
-				if( StrCaseCmp( fields[m].name, sql->fields[n] ) == 0 ) {
-					colMap[n].col = m;
-					colMap[n].depth = fields[m].used;
-					if( colMap[n].depth > maxDepth )
-						maxDepth = colMap[n].depth+1;
-					colMap[n].alias = PSSQL_GetColumnTableAliasName( sql->odbc, n );
-					int table;
-					for( table = 0; table < usedTables; table++ ) {
-						if( StrCmp( tables[table].alias, colMap[n].alias ) == 0 ) {
-							colMap[n].t = tables + table;
-							break;
-						}
-					}
-					if( table == usedTables ) {
-						tables[table].table = colMap[n].table;
-						tables[table].alias = colMap[n].alias;
-						colMap[n].t = tables + table;
-						usedTables++;
-					}
-					fields[m].used++;
-					break;
-				}
-			}
-			if( m == usedFields ) {
-				colMap[n].col = m;
-				colMap[n].depth = 0;
-				colMap[n].table = PSSQL_GetColumnTableName( sql->odbc, n );
-				colMap[n].alias = PSSQL_GetColumnTableAliasName( sql->odbc, n );
-				if( colMap[n].table && colMap[n].alias ) {
-					int table;
-					for( table = 0; table < usedTables; table++ ) {
-						if( StrCmp( tables[table].alias, colMap[n].alias ) == 0 ) {
-							colMap[n].t = tables + table;
-							break;
-						}
-					}
-					if( table == usedTables ) {
-						tables[table].table = colMap[n].table;
-						tables[table].alias = colMap[n].alias;
-						colMap[n].t = tables + table;
-						usedTables++;
-					}
-				} else
-					colMap[n].t = tables;
-				fields[usedFields].first = n;
-				fields[usedFields].name = sql->fields[n];
-				fields[usedFields].used = 1;
-				usedFields++;
-			}
-		}
-		if( usedTables > 1 )
-			for( int m = 0; m < usedFields; m++ ) {
-				for( int t = 1; t < usedTables; t++ ) {
-					if( StrCaseCmp( fields[m].name, tables[t].alias ) == 0 ) {
-						PVARTEXT pvtSafe = VarTextCreate();
-						vtprintf( pvtSafe, "%s : %s", TranslateText( "Column name overlaps table alias" ), tables[t].alias );
-						isolate->ThrowException( Exception::Error(
-							String::NewFromUtf8( isolate, GetText( VarTextPeek( pvtSafe ) ) ) ) );
-						VarTextDestroy( &pvtSafe );
-						return;
-					}
-				}
-			}
-		Local<Array> records = Array::New( isolate );
-		Local<Object> record;
-		if( sql->result ) {
-			int row = 0;
-			do {
-				Local<Value> val;
-				tables[0].container = record = Object::New( isolate );
-				if( usedTables > 1 && maxDepth > 1 )
-					for( int n = 1; n < usedTables; n++ ) {
-						tables[n].container = Object::New( isolate );
-						record->Set( String::NewFromUtf8( isolate, tables[n].alias ), tables[n].container );
-					}
-				else
-					for( int n = 0; n < usedTables; n++ )
-						tables[n].container = record;
-				for( int n = 0; n < sql->columns; n++ ) {
-					Local<Object> container = colMap[n].t->container;
-					if( fields[colMap[n].col].used > 1 ) {
-						if( fields[colMap[n].col].first == n ) {
-							record->Set( String::NewFromUtf8( isolate, sql->fields[n] )
-									  , fields[colMap[n].col].array = Array::New( isolate ) 
-									  );
-						}
-					}
-
-					if( sql->result[n] ) {
-						double f;
-						int64_t i;
-						int type = IsTextAnyNumber( sql->result[n], &f, &i );
-						if( fields[colMap[n].col].used > 1 ) {
-
-						}
-						if( type == 2 )
-							val = Number::New( isolate, f );
-						else if( type == 1 )
-							val = Number::New( isolate, (double)i );
-						else
-							val = String::NewFromUtf8( isolate, sql->result[n], NewStringType::kNormal, (int)sql->resultLens[n] ).ToLocalChecked();
-					}
-					else
-						val = Null(isolate);
-
-					if( fields[colMap[n].col].used == 1 )
-						container->Set( String::NewFromUtf8( isolate, sql->fields[n] ), val );
-					if( usedTables > 1 || ( fields[colMap[n].col].used > 1 ) ) {
-						if( fields[colMap[n].col].used > 1 ) {
-							if( colMap[n].alias )
-								fields[colMap[n].col].array->Set( String::NewFromUtf8( isolate, colMap[n].alias ), val );
-							fields[colMap[n].col].array->Set( colMap[n].depth, val );
-						}
-						else
-							record->Set( String::NewFromUtf8( isolate, sql->fields[n] ), val );
-					}
-
-				}
-				records->Set( row++, record );
-			} while( FetchSQLRecord( sql->odbc, &sql->result ) );
-		}
-		Deallocate( struct fieldTypes*, fields );
-		Deallocate( struct tables*, tables );
-		Deallocate( struct colMap*, colMap );
-
-		SQLEndQuery( sql->odbc );
-		args.GetReturnValue().Set( records );
+	int col = args[0]->ToInt32()->Value();
+	struct json_value_container val;
+	memset( &val, 0, sizeof( val ) );
+	int arg = 1;
+	if( args[arg]->IsInt32() ) {
+		val.value_type = VALUE_NUMBER;
+		val.result_n = args[arg]->ToInteger()->Value();
+		val.float_result = 0;
+		SetDataItem( &stmt->values, col, &val );
+	} else if( args[arg]->IsNumber() ) {
+		val.value_type = VALUE_NUMBER;
+		val.result_d = args[arg]->ToNumber()->Value();
+		val.float_result = 0;
+		SetDataItem( &stmt->values, col, &val );
+	} else if( args[arg]->IsArrayBuffer() ) {
+	} else if( args[arg]->IsInt8Array() ) {
+	} else if( args[arg]->IsTypedArray() ) {
 	}
-	else
-	{
-		SQLEndQuery( sql->odbc );
-		args.GetReturnValue().Set( True( isolate ) );
+
+}
+
+void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() == 0 ) {
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "Required parameter, SQL query, is missing.") ) ) );
+		return;
+	}
+	if( args.Length() > 1 ) {
+		int arg = 0;
+		PDATALIST values;
+		PVARTEXT pvtStmt = VarTextCreate();
+		struct json_value_container val;
+		memset( &val, 0, sizeof( val ) );
+		values = CreateDataList( sizeof( struct json_value_container ) );
+		for( arg = 0; arg < args.Length(); arg++ ) {
+			String::Utf8Value text( args[arg]->ToString() );
+			if( args[arg]->IsString() ) {
+				if( arg & 1 ) {
+					val.value_type = VALUE_STRING;
+					val.string = DupCStrLen( *text, text.length() );
+					AddDataItem( &values, &val );
+					VarTextAddCharacter( pvtStmt, '?' );
+				}else {
+					VarTextAddData( pvtStmt, *text, text.length() );
+				}
+			} else {
+				if( args[arg]->IsInt32() ) {
+					val.value_type = VALUE_NUMBER;
+					val.result_n = args[arg]->ToInteger()->Value();
+					val.float_result = 0;
+					AddDataItem( &values, &val );
+				} else if( args[arg]->IsNumber() ) {
+					val.value_type = VALUE_NUMBER;
+					val.result_d = args[arg]->ToNumber()->Value();
+					val.float_result = 0;
+					AddDataItem( &values, &val );
+				} else if( args[arg]->IsArrayBuffer() ) {
+				} else if( args[arg]->IsInt8Array() ) {
+				} else if( args[arg]->IsTypedArray() ) {
+				}
+				VarTextAddCharacter( pvtStmt, '?' );
+			}
+		}
+		VarTextDestroy( &pvtStmt );
+	}
+	if( args.Length() == 1 ) {
+		String::Utf8Value tmp( args[0] );
+
+		SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
+		sql->fields = 0;
+		if( !SQLRecordQueryLen( sql->odbc, *tmp, tmp.length(), &sql->columns, &sql->result, &sql->resultLens, &sql->fields ) ) {
+			const char *error;
+			FetchSQLError( sql->odbc, &error );
+			isolate->ThrowException( Exception::Error(
+				String::NewFromUtf8( isolate, error ) ) );
+			return;
+		}
+		if( sql->columns )
+		{
+			int usedFields = 0;
+			int maxDepth = 0;
+			struct fieldTypes {
+				const char *name;
+				int used;
+				int first;
+				Local<Array> array;
+			} *fields = NewArray( struct fieldTypes, sql->columns ) ;
+			int usedTables = 0;
+			struct tables {
+				const char *table;
+				const char *alias;
+				Local<Object> container;
+			}  *tables = NewArray( struct tables, sql->columns + 1);
+			struct colMap {
+				int depth;
+				int col;
+				const char *table;
+				const char *alias;
+				Local<Object> container;
+				struct tables *t;
+			}  *colMap = NewArray( struct colMap, sql->columns );
+			tables[usedTables].table = NULL;
+			tables[usedTables].alias = NULL;
+			usedTables++;
+
+			for( int n = 0; n < sql->columns; n++ ) {
+				int m;
+				for( m = 0; m < usedFields; m++ ) {
+					if( StrCaseCmp( fields[m].name, sql->fields[n] ) == 0 ) {
+						colMap[n].col = m;
+						colMap[n].depth = fields[m].used;
+						if( colMap[n].depth > maxDepth )
+							maxDepth = colMap[n].depth+1;
+						colMap[n].alias = PSSQL_GetColumnTableAliasName( sql->odbc, n );
+						int table;
+						for( table = 0; table < usedTables; table++ ) {
+							if( StrCmp( tables[table].alias, colMap[n].alias ) == 0 ) {
+								colMap[n].t = tables + table;
+								break;
+							}
+						}
+						if( table == usedTables ) {
+							tables[table].table = colMap[n].table;
+							tables[table].alias = colMap[n].alias;
+							colMap[n].t = tables + table;
+							usedTables++;
+						}
+						fields[m].used++;
+						break;
+					}
+				}
+				if( m == usedFields ) {
+					colMap[n].col = m;
+					colMap[n].depth = 0;
+					colMap[n].table = PSSQL_GetColumnTableName( sql->odbc, n );
+					colMap[n].alias = PSSQL_GetColumnTableAliasName( sql->odbc, n );
+					if( colMap[n].table && colMap[n].alias ) {
+						int table;
+						for( table = 0; table < usedTables; table++ ) {
+							if( StrCmp( tables[table].alias, colMap[n].alias ) == 0 ) {
+								colMap[n].t = tables + table;
+								break;
+							}
+						}
+						if( table == usedTables ) {
+							tables[table].table = colMap[n].table;
+							tables[table].alias = colMap[n].alias;
+							colMap[n].t = tables + table;
+							usedTables++;
+						}
+					} else
+						colMap[n].t = tables;
+					fields[usedFields].first = n;
+					fields[usedFields].name = sql->fields[n];
+					fields[usedFields].used = 1;
+					usedFields++;
+				}
+			}
+			if( usedTables > 1 )
+				for( int m = 0; m < usedFields; m++ ) {
+					for( int t = 1; t < usedTables; t++ ) {
+						if( StrCaseCmp( fields[m].name, tables[t].alias ) == 0 ) {
+							PVARTEXT pvtSafe = VarTextCreate();
+							vtprintf( pvtSafe, "%s : %s", TranslateText( "Column name overlaps table alias" ), tables[t].alias );
+							isolate->ThrowException( Exception::Error(
+								String::NewFromUtf8( isolate, GetText( VarTextPeek( pvtSafe ) ) ) ) );
+							VarTextDestroy( &pvtSafe );
+							return;
+						}
+					}
+				}
+			Local<Array> records = Array::New( isolate );
+			Local<Object> record;
+			if( sql->result ) {
+				int row = 0;
+				do {
+					Local<Value> val;
+					tables[0].container = record = Object::New( isolate );
+					if( usedTables > 1 && maxDepth > 1 )
+						for( int n = 1; n < usedTables; n++ ) {
+							tables[n].container = Object::New( isolate );
+							record->Set( String::NewFromUtf8( isolate, tables[n].alias ), tables[n].container );
+						}
+					else
+						for( int n = 0; n < usedTables; n++ )
+							tables[n].container = record;
+					for( int n = 0; n < sql->columns; n++ ) {
+						Local<Object> container = colMap[n].t->container;
+						if( fields[colMap[n].col].used > 1 ) {
+							if( fields[colMap[n].col].first == n ) {
+								record->Set( String::NewFromUtf8( isolate, sql->fields[n] )
+										  , fields[colMap[n].col].array = Array::New( isolate )
+										  );
+							}
+						}
+
+						if( sql->result[n] ) {
+							double f;
+							int64_t i;
+							int type = IsTextAnyNumber( sql->result[n], &f, &i );
+							if( fields[colMap[n].col].used > 1 ) {
+
+							}
+							if( type == 2 )
+								val = Number::New( isolate, f );
+							else if( type == 1 )
+								val = Number::New( isolate, (double)i );
+							else
+								val = String::NewFromUtf8( isolate, sql->result[n], NewStringType::kNormal, (int)sql->resultLens[n] ).ToLocalChecked();
+						}
+						else
+							val = Null(isolate);
+
+						if( fields[colMap[n].col].used == 1 )
+							container->Set( String::NewFromUtf8( isolate, sql->fields[n] ), val );
+						if( usedTables > 1 || ( fields[colMap[n].col].used > 1 ) ) {
+							if( fields[colMap[n].col].used > 1 ) {
+								if( colMap[n].alias )
+									fields[colMap[n].col].array->Set( String::NewFromUtf8( isolate, colMap[n].alias ), val );
+								fields[colMap[n].col].array->Set( colMap[n].depth, val );
+							}
+							else
+								record->Set( String::NewFromUtf8( isolate, sql->fields[n] ), val );
+						}
+
+					}
+					records->Set( row++, record );
+				} while( FetchSQLRecord( sql->odbc, &sql->result ) );
+			}
+			Deallocate( struct fieldTypes*, fields );
+			Deallocate( struct tables*, tables );
+			Deallocate( struct colMap*, colMap );
+
+			SQLEndQuery( sql->odbc );
+			args.GetReturnValue().Set( records );
+		}
+		else
+		{
+			SQLEndQuery( sql->odbc );
+			args.GetReturnValue().Set( True( isolate ) );
+		}
 	}
 }
 
 //-----------------------------------------------------------
 
-
-Persistent<Function> SqlObject::constructor;
 SqlObject::SqlObject( const char *dsn )
 {
 	messages = NULL;
@@ -1034,6 +1116,17 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 	}
 }
 
+
+void SqlStmtObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
+}
+
+static void destroyUserData( void *vpUserData ) {
+	struct SqlObjectUserFunction *userData = (struct SqlObjectUserFunction *)vpUserData;
+  	userData->cb.Reset();
+  	userData->cb2.Reset();
+   Release( userData );
+}
+
 void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
@@ -1047,12 +1140,32 @@ void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( argc > 0 ) {
 		String::Utf8Value name( args[0] );
 		struct SqlObjectUserFunction *userData = NewArray( struct SqlObjectUserFunction, 1 );
+		memset( &userData, 0, sizeof( userData[0] ) );
 		userData->isolate = isolate;
-		memset( &userData->cb, 0, sizeof( userData->cb ) );
 		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
 		userData->sql = sql;
-	
-		PSSQL_AddSqliteFunction( sql->odbc, *name, callUserFunction, -1, userData );
+		PSSQL_AddSqliteFunction( sql->odbc, *name, callUserFunction, destroyUserData, -1, userData );
+	}
+}
+
+void SqlObject::userProcedure( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	int argc = args.Length();
+	if( !sql->thread ) {
+		sql->thread = MakeThread();
+		uv_async_init( uv_default_loop(), &sql->async, sqlUserAsyncMsg );
+		sql->async.data = sql;
+	}
+
+	if( argc > 0 ) {
+		String::Utf8Value name( args[0] );
+		struct SqlObjectUserFunction *userData = NewArray( struct SqlObjectUserFunction, 1 );
+		memset( &userData, 0, sizeof( userData[0] ) );
+		userData->isolate = isolate;
+		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
+		userData->sql = sql;
+		PSSQL_AddSqliteProcedure( sql->odbc, *name, callUserFunction, destroyUserData, -1, userData );
 	}
 }
 
@@ -1210,13 +1323,12 @@ void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args )
 	if( argc > 2 ) {
 		String::Utf8Value name( args[0] );
 		struct SqlObjectUserFunction *userData = NewArray( struct SqlObjectUserFunction, 1 );
+		memset( &userData, 0, sizeof( userData[0] ) );
 		userData->isolate = isolate;
-		memset( &userData->cb, 0, sizeof( userData->cb ) );
-		memset( &userData->cb2, 0, sizeof( userData->cb2 ) );
 		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
 		userData->cb2.Reset( isolate, Handle<Function>::Cast( args[2] ) );
 		userData->sql = sql;
-		PSSQL_AddSqliteAggregate( sql->odbc, *name, callAggStep, callAggFinal, -1, userData );
+		PSSQL_AddSqliteAggregate( sql->odbc, *name, callAggStep, callAggFinal, destroyUserData, -1, userData );
 
 		if( !sql->thread ) {
 			sql->thread = MakeThread();

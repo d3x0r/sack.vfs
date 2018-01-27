@@ -62,7 +62,7 @@ vfs = {
         Sqlite has methods available on it to access native program options.
         Sqlite.op( opName, defaultValue ) - read/write default option database option.
         Sqlite.so( opName, newValue ) - write new value to default option database.
-    Volume(mountName,fileName,a,b) - a virtual disk partition that holds files.
+    Volume(mountName,fileName,version,a,b) - a virtual disk partition that holds files.
           mountName - the mount name used to mount to volume as a filesystem; it may be referenced 
                 later in the string passed to Sqlite.  It may be `null` if it is anonymous mount.
           if no parameters are passed, a Volume object representing the native filesystem is returned.
@@ -112,6 +112,7 @@ Volume = {
     mkdir - utility function to make directories which might not exist before volume does; (volume auto creates directories now)
             parameters - (pathname)
                 path to create- will created missing parent path parts too.
+    rekey(version,a,b) - set key for a volume.
 }
 
 
@@ -183,6 +184,7 @@ There are methods on the Sqlite() function call...
 | go  | (opName) | get an option node      <BR>go( "name" ) |
 | eo  | ( callback(node,name)) |  enum option nodes from root of options, takes a callback as a paraemter.<br> callback parameters ( optionNode, optionName ) ... the callback parameters get a node and a name.   The node is another option node that migth be enumerated with eo...<BR> `function callback(node,name)  {console.log( "got", name, node.value );` |
 | function | (name, callback(...args) | Add a user defined function to the current sql connection.  'name' is the name of the function.  Callback is called whenever the function is used in SQL statement given to sqlite.  Return value is given as result of function.   **ODBC CONNECTION UNDEFINED RESULT**
+| procedure | (name, callback(...args) | Add a user defined function to the current sql connection.  'name' is the name of the function.  Callback is called whenever the function is used in SQL statement given to sqlite.  Set as deterministic. Return value is given as result of function.   **ODBC CONNECTION UNDEFINED RESULT**
 | aggregate | ( name, stepCallback(...args), finalCallback() ) | Define an aggregate function called 'name' and when used, each row stepped is passed to the step callback, when the grouping issues a final, invoke the final callback.  Final result is given as the final value.  **ODBC CONNECTION UNDEFINED RESULT**
 
 example sql command?
@@ -1015,6 +1017,7 @@ Mostly unimplemented, more of a place holder than functional.
 ---
 
 ## Changelog
+- 0.9.113 - Added optional version parameter for VFS.
 - 0.9.112 - decode of unicode character escape had bad calculation.
 - 0.9.111 - promote to more appropriate version.  If anyone else joins; this should go to 1.0.  Improve TLS error reporting and SQL result set ability.  Improve table parsing.
 - 0.1.99324 Test and Update sqlite user defined functions (function/aggregate); improved data type retention.
