@@ -8554,11 +8554,11 @@ SACK_VFS_PROC struct volume * CPROC sack_vfs_load_volume( CTEXTSTR filepath );
 // if the volume does exist, a quick validity check is made on it, and then the result is opened
 // returns NULL if failure.  (permission denied to the file, or invalid filename passed, could be out of space... )
 // if the keys are NULL same as load_volume.
-SACK_VFS_PROC struct volume * CPROC sack_vfs_load_crypt_volume( CTEXTSTR filepath, CTEXTSTR userkey, CTEXTSTR devkey );
+SACK_VFS_PROC struct volume * CPROC sack_vfs_load_crypt_volume( CTEXTSTR filepath, uintptr_t version, CTEXTSTR userkey, CTEXTSTR devkey );
 // pass some memory and a memory length of the memory to use as a volume.
 // if userkey and/or devkey are not NULL the memory is assume to be encrypted with those keys.
 // the space is opened as readonly; write accesses/expanding operations will fail.
-SACK_VFS_PROC struct volume * CPROC sack_vfs_use_crypt_volume( POINTER filemem, size_t size, CTEXTSTR userkey, CTEXTSTR devkey );
+SACK_VFS_PROC struct volume * CPROC sack_vfs_use_crypt_volume( POINTER filemem, size_t size, uintptr_t version, CTEXTSTR userkey, CTEXTSTR devkey );
 // close a volume; release all resources; any open files will keep the volume open.
 // when the final file closes the volume will complete closing.
 SACK_VFS_PROC void            CPROC sack_vfs_unload_volume( struct volume * vol );
@@ -8568,7 +8568,7 @@ SACK_VFS_PROC void            CPROC sack_vfs_shrink_volume( struct volume * vol 
 // remove encryption from volume.
 SACK_VFS_PROC LOGICAL         CPROC sack_vfs_decrypt_volume( struct volume *vol );
 // change the key applied to a volume.
-SACK_VFS_PROC LOGICAL         CPROC sack_vfs_encrypt_volume( struct volume *vol, CTEXTSTR key1, CTEXTSTR key2 );
+SACK_VFS_PROC LOGICAL         CPROC sack_vfs_encrypt_volume( struct volume *vol, uintptr_t version, CTEXTSTR key1, CTEXTSTR key2 );
 // create a signature of current directory of volume.
 // can be used to validate content.  Returns 256 character hex string.
 SACK_VFS_PROC const char *    CPROC sack_vfs_get_signature( struct volume *vol );
@@ -10397,6 +10397,8 @@ PREFIX_PACKED struct volume {
 	LOGICAL external_memory;
 	LOGICAL closed;
 	uint32_t lock;
+	uint8_t tmpSalt[16];
+	uintptr_t clusterKeyVersion;
 } PACKED;
 PREFIX_PACKED struct directory_entry
 {
@@ -10955,8 +10957,26 @@ static void AddSalt( uintptr_t psv, POINTER *salt, size_t *salt_size ) {
 		vol->devkey = NULL;
 	}
 	else if( vol->segment[vol->curseg] ) {
-		(*salt_size) = sizeof( vol->segment[vol->curseg] );
-		(*salt) = &vol->segment[vol->curseg];
+		BLOCKINDEX sector = vol->segment[vol->curseg];
+		int tmp;
+		switch( vol->clusterKeyVersion ) {
+		case 0:
+			( *salt_size ) = sizeof( vol->segment[vol->curseg] );
+			( *salt ) = &vol->segment[vol->curseg];
+			break;
+		case 1:
+			memcpy( vol->tmpSalt, vol->key, 16 );
+			vol->tmpSalt[sector & 0xF] ^= ( (uint8_t*)( &vol->segment[vol->curseg] ) )[0];
+			vol->tmpSalt[( sector >> 4 ) & 0xF] ^= ( (uint8_t*)( &vol->segment[vol->curseg] ) )[1];
+			vol->tmpSalt[( sector >> 8 ) & 0xF] ^= ( (uint8_t*)( &vol->segment[vol->curseg] ) )[2];
+			vol->tmpSalt[( sector >> 12 ) & 0xF] ^= ( (uint8_t*)( &vol->segment[vol->curseg] ) )[3];
+			( (BLOCKINDEX*)vol->tmpSalt )[0] ^= sector;
+			( (BLOCKINDEX*)vol->tmpSalt )[1] ^= sector;
+// sizeof( vol->segment[vol->curseg] );
+			( *salt_size ) = 12;
+			( *salt ) = vol->tmpSalt;
+			break;
+		}
 	}
 	else
 		(*salt_size) = 0;
@@ -11002,9 +11022,11 @@ struct volume *sack_vfs_load_volume( const char * filepath )
 	if( !ExpandVolume( vol ) || !ValidateBAT( vol ) ) { Deallocate( struct volume*, vol ); return NULL; }
 	return vol;
 }
-struct volume *sack_vfs_load_crypt_volume( const char * filepath, const char * userkey, const char * devkey ) {
+struct volume *sack_vfs_load_crypt_volume( const char * filepath, uintptr_t version, const char * userkey, const char * devkey ) {
 	struct volume *vol = New( struct volume );
 	MemSet( vol, 0, sizeof( struct volume ) );
+	if( !version ) version = 2;
+	vol->clusterKeyVersion = version - 1;
 	vol->volname = SaveText( filepath );
 	vol->userkey = userkey;
 	vol->devkey = devkey;
@@ -11012,11 +11034,13 @@ struct volume *sack_vfs_load_crypt_volume( const char * filepath, const char * u
 	if( !ExpandVolume( vol ) || !ValidateBAT( vol ) ) { sack_vfs_unload_volume( vol ); return NULL; }
 	return vol;
 }
-struct volume *sack_vfs_use_crypt_volume( POINTER memory, size_t sz, const char * userkey, const char * devkey ) {
+struct volume *sack_vfs_use_crypt_volume( POINTER memory, size_t sz, uintptr_t version, const char * userkey, const char * devkey ) {
 	struct volume *vol = New( struct volume );
 	MemSet( vol, 0, sizeof( struct volume ) );
 	vol->read_only = 1;
 	AssignKey( vol, userkey, devkey );
+	if( !version ) version = 2;
+	vol->clusterKeyVersion = version - 1;
 	vol->external_memory = TRUE;
 	vol->diskReal = (struct disk*)memory;
 	vol->dwSize = sz;
@@ -11159,10 +11183,12 @@ LOGICAL sack_vfs_decrypt_volume( struct volume *vol )
 	vol->lock = 0;
 	return TRUE;
 }
-LOGICAL sack_vfs_encrypt_volume( struct volume *vol, CTEXTSTR key1, CTEXTSTR key2 ) {
+LOGICAL sack_vfs_encrypt_volume( struct volume *vol, uintptr_t version, CTEXTSTR key1, CTEXTSTR key2 ) {
 	while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
  // volume already has a key, cannot apply new key
 	if( vol->key ) { vol->lock = 0; return FALSE; }
+	if( !version ) version = 2;
+	vol->clusterKeyVersion = version-1;
 	AssignKey( vol, key1, key2 );
 	{
 		int done;
@@ -75581,7 +75607,7 @@ CLIENTMSG_PROC( LOGICAL, RegisterServiceExx )( CTEXTSTR name
 																	 , server_message_handler_ex handler_ex
 																	 , uintptr_t psv
 																	 );
-#define RegisterServiceEx( n,f,psv ) RegisterServiceExx( n,NULL,16,NULL,f,psv)
+#define RegisterServiceEx( n,f,psv ) RegisterServiceExx( n,NULL,65535,NULL,f,psv)
 #define RegisterService(n,f,e)        RegisterServiceExx(n,f,e,NULL,NULL,0)
 #define RegisterServiceHandler(n,f)   RegisterServiceExx(n,NULL,65535,f,NULL,0)
 #define RegisterServiceHandlerEx(n,f,psv)   RegisterServiceExx(n,NULL,65535,NULL,f,psv)
@@ -91885,7 +91911,7 @@ int DequeMsgEx ( PMSGHANDLE pmh, long *MsgID, POINTER result, size_t size, uint3
 #ifdef __QNX__
 #define USE_SACK_MSGQ
 #endif
-//#define ENABLE_GENERAL_USEFUL_DEBUGGING
+#define ENABLE_GENERAL_USEFUL_DEBUGGING
 #ifdef ENABLE_GENERAL_USEFUL_DEBUGGING
 //#define DEBUG_THREAD
 #define LOG_LOCAL_EVENT
@@ -91894,13 +91920,14 @@ int DequeMsgEx ( PMSGHANDLE pmh, long *MsgID, POINTER result, size_t size, uint3
 #define LOG_SENT_MESSAGES
 // event messages need to be enabled to log event message data...
 #define DEBUG_DATA_XFER
+#define DEBUG_SERVICE_INPUT
 //#define NO_LOGGING
 /// show event messages...
 #define DEBUG_EVENTS
 #define DEBUG_OUTEVENTS
 /// attempt to show the friendly name for messages handled
 #define LOG_HANDLED_MESSAGES
-//#define DEBUG_MESSAGE_BASE_ID
+#define DEBUG_MESSAGE_BASE_ID
 #define _DEBUG_RECEIVE_DISPATCH_
 //#define DEBUG_THREADS
 //#define DEBUG_MSGQ_OPEN
@@ -92171,6 +92198,7 @@ DeclareSet( BUFFER_LENGTH_PAIR );
 #ifndef EABORT
 #define EABORT MSGQUE_ERROR_EABORT
 #endif
+#define DEBUG_DATA_XFER
 #ifdef DEBUG_DATA_XFER
 #  define msgsnd( q,msg,len,opt) ( _lprintf(DBG_RELAY)( WIDE("Send Message...%d %d"), len, len+4 ), LogBinary( (uint8_t*)msg, (len)+4  ), EnqueMsg( q,(msg),(len),(opt)) )
 #else
@@ -92187,7 +92215,7 @@ DeclareSet( BUFFER_LENGTH_PAIR );
 #else
 #ifdef DEBUG_DATA_XFER
 	//#define msgsnd( q,msg,len,opt) ( _xlprintf(1 DBG_RELAY)( WIDE("Send Message...") ), LogBinary( (POINTER)msg, (len)+4  ), msgsnd( q,(msg),(len),(opt)) )
-	#define msgsnd( q,msg,len,opt) ( lprintf( WIDE("Send Message...") ), LogBinary( (POINTER)msg, (len)+4  ), msgsnd( q,(msg),(len),(opt)) )
+	#define msgsnd( q,msg,len,opt) ( lprintf( WIDE("Send Message...") ), LogBinary( (uint8_t*)msg, (len)+4  ), msgsnd( q,(msg),(len),(opt)) )
 #endif
 	#define msgget( name,n,opts) msgget( n,opts )
 	#define MSGFAIL -1
@@ -92483,7 +92511,9 @@ void ResumeThreads( void )
 	uint32_t tick;
 	if( g.pThread )
 	{
+#ifdef DEBUG_SERVICE_INPUT
 		lprintf( WIDE("Resume Service") );
+#endif
 		tick = timeGetTime();
 		g.pending = 1;
 		pthread_kill( ( GetThreadHandle( g.pThread ) ), SIGUSR2 );
@@ -92491,7 +92521,9 @@ void ResumeThreads( void )
 	}
 	if( g.pMessageThread )
 	{
+#ifdef DEBUG_SERVICE_INPUT
 		lprintf( WIDE("Resume Responce") );
+#endif
 		tick = timeGetTime();
 		g.pending = 1;
 		pthread_kill( ( GetThreadHandle( g.pMessageThread ) ), SIGUSR2 );
@@ -92499,7 +92531,9 @@ void ResumeThreads( void )
 	}
 	if( g.pEventThread )
 	{
+#ifdef DEBUG_SERVICE_INPUT
 		lprintf( WIDE("Resume event") );
+#endif
 		tick = timeGetTime();
 		g.pending = 1;
 		pthread_kill( ( GetThreadHandle( g.pEventThread ) ), SIGUSR2 );
@@ -92507,7 +92541,9 @@ void ResumeThreads( void )
 	}
 	if( g.pLocalEventThread )
 	{
+#ifdef DEBUG_SERVICE_INPUT
 		lprintf( WIDE("Resume local event") );
+#endif
 		tick = timeGetTime();
 		g.pending = 1;
 		pthread_kill( ( GetThreadHandle( g.pLocalEventThread ) ), SIGUSR2 );
@@ -92563,7 +92599,7 @@ void RegisterWithMasterService( void )
 			}
 		}
 		*/
-		lprintf( WIDE("Connecting first time to service server...%")_MsgID_f WIDE(",%") _MsgID_f, g.master_service_route.dest.process_id, g.master_service_route.dest.service_id );
+		//lprintf( WIDE("Connecting first time to service server...%")_MsgID_f WIDE(",%") _MsgID_f, g.master_service_route.dest.process_id, g.master_service_route.dest.service_id );
 		if( !TransactServerMultiMessageExEx(DBG_VOIDSRC)( &g.master_service_route, CLIENT_CONNECT, 0
 													, &Result, &ServiceID, &msglen
 													, 100
@@ -92585,8 +92621,10 @@ void RegisterWithMasterService( void )
 			// modify my_message_id - this is now the
 			// ID of messages which will be sent
 			// and where repsonces will be returned
-			// this therefore means that
+		// this therefore means that
+#ifdef DEBUG_SERVICE_INPUT
 			lprintf( WIDE("Initial service contact success") );
+#endif
 			g.flags.found_server = 1;
 			g.flags.connected = 1;
 			//g.my_message_id = msg[0];
@@ -93458,7 +93496,7 @@ CLIENTMSG_PROC(int, SendMultiServiceEventPairsEx)( PSERVICE_ROUTE RouteID, uint3
 #if defined( DEBUG_EVENTS )
 	_lprintf(DBG_RELAY)( WIDE("Send Event...") );
 #if !defined( DEBUG_DATA_XFER )
-	LogBinary( &msg, sendlen + sizeof( MSGHDR ) + sizeof( MSGIDTYPE ) );
+	LogBinary( (uint8_t*)&msg, sendlen + sizeof( MSGHDR ) + sizeof( MSGIDTYPE ) );
 #endif
 #endif
 	if( !msg.msg.dest.process_id )
@@ -93568,7 +93606,7 @@ int HandleEvents( MSGQ_TYPE msgq, PQMSG MessageEvent, int initial_flags )
 		//lprintf( "^^^" );
 #ifdef DEBUG_DATA_XFER
       if( MessageLen >= 0 )
-			LogBinary( MessageEvent, MessageLen + sizeof( MSGIDTYPE ) );
+			LogBinary( (uint8_t*)MessageEvent, MessageLen + sizeof( MSGIDTYPE ) );
 #endif
 		if( (MessageLen+ sizeof( MSGIDTYPE )) == 0 )
 		{
@@ -93830,7 +93868,7 @@ static int GetAMessageEx( MSGQ_TYPE msgq, MSGIDTYPE MsgFilter, CTEXTSTR q, int f
 			//lprintf( "vvv" );
 			MessageLen = msgrcv( msgq, MSGTYPE MessageIn, 8192, MsgFilter, flags );
 #ifdef DEBUG_DATA_XFER
-			LogBinary( MessageIn, MessageLen + sizeof( MSGIDTYPE ) );
+			LogBinary( (uint8_t*)MessageIn, MessageLen + sizeof( MSGIDTYPE ) );
 #endif
 			//lprintf( "^^^" );
 			//lprintf( WIDE("Got a receive...") );
@@ -93978,7 +94016,9 @@ int WaitReceiveServerMsg ( PSLEEPER sleeper
 				// check for responces...
 				// will return immediate if is not this thread which
 				// is supposed to be there...
+#ifdef DEBUG_DATA_XFER
 				_lprintf(DBG_RELAY)( WIDE("getting or waiting for... a message...") );
+#endif
 				if( IsThread )
 				{
 					lprintf( WIDE("Get message (might be my thread") );
@@ -94221,7 +94261,7 @@ int SendInMultiMessageEx( PSERVICE_ROUTE routeID, uint32_t MsgID, uint32_t parts
 	// send to application inbound queue..
 #ifdef DEBUG_OUTEVENTS
 		lprintf( WIDE("Sending result to application...") );
-		LogBinary( (POINTER)MessageOut, ofs );
+		LogBinary( (uint8_t*)MessageOut, ofs );
 #endif
 		stat = msgsnd( g.msgq_in, MSGTYPE MessageOut, ofs + sizeof(QMSG) - sizeof( MSGIDTYPE ), 0 );
 		DropMessageBuffer( MessageOut );
@@ -94398,7 +94438,7 @@ CLIENTMSG_PROC( int, TransactRoutedServerMultiMessageEx )( PSERVICE_ROUTE RouteI
 			lprintf( WIDE("We have no business being here... no loadservice has been made to this service!") );
 			return 0;
 		}
-		lprintf( WIDE("Enter %p"), handler );
+		//lprintf( WIDE("Enter %p"), handler );
 		EnterCriticalSec( &handler->csMsgTransact );
 		switch( MsgOut )
 		{
@@ -94407,7 +94447,7 @@ CLIENTMSG_PROC( int, TransactRoutedServerMultiMessageEx )( PSERVICE_ROUTE RouteI
 			handler->LastMsgID = IM_ALIVE;
 			break;
 		default:
-			lprintf( WIDE("set last msgID %") _MsgID_f, MsgOut );
+			//lprintf( WIDE("set last msgID %") _MsgID_f, MsgOut );
 			handler->LastMsgID = MsgOut;
 			break;
 		}
@@ -94440,7 +94480,7 @@ CLIENTMSG_PROC( int, TransactRoutedServerMultiMessageEx )( PSERVICE_ROUTE RouteI
 		 return FALSE;
 	}
 	Release( pairs );
-	lprintf( WIDE("Entering wait after serving a message...") );
+	//lprintf( WIDE("Entering wait after serving a message...") );
 	if( MsgIn || (BufferIn && LengthIn) )
 	{
 		status = WaitReceiveServerMsg( &sleeper, MsgOut DBG_SRC );
@@ -94615,7 +94655,9 @@ MSGCLIENT_NAMESPACE
 //--------------------------------------------------------------------
 LOGICAL HandleCoreMessage( PQMSG msg, size_t msglen DBG_PASS )
 {
-	//Log2( WIDE("Read message to %d (%08x)"), g.pid_me, msg->hdr.msgid );
+#ifdef DEBUG_SERVICE_INPUT
+	lprintf( WIDE("Read message to %d (%08x)"), msglen, msg->hdr.msgid );
+#endif
 	if( msg->hdr.msgid == IM_TARDY )
 	{
 		PTRANSACTIONHANDLER handler;
@@ -94811,7 +94853,7 @@ uintptr_t CPROC HandleServiceMessages( PTHREAD thread )
 					uint32_t msgid = recv->hdr.msgid;
 #ifdef DEBUG_MESSAGE_BASE_ID
 					lprintf( WIDE("service base %ld(+%ld) and this is from %s")
-							 , 0
+							 , msgid
                        , service->entries
 							 , ( g.my_message_id == recv->hdr.source.process_id )?"myself":"someone else" );
 #endif
@@ -94833,6 +94875,7 @@ uintptr_t CPROC HandleServiceMessages( PTHREAD thread )
 																		, msgid
 																		, QMSGDATA(recv), length
 																		, QMSGDATA(result), &result_length ) ;
+                     lprintf( "Output result is %d", result_length );
 						}
 						if( !handled && service->handler )
 						{
@@ -94847,6 +94890,9 @@ uintptr_t CPROC HandleServiceMessages( PTHREAD thread )
 																	, msgid
 																	, QMSGDATA(recv), length
 																			, QMSGDATA(result), &result_length ) ;
+#if defined( LOG_HANDLED_MESSAGES )
+							lprintf( "result length to send:%d", result_length );
+#endif
 						}
 						if( !handled )
 						{
@@ -94873,6 +94919,7 @@ uintptr_t CPROC HandleServiceMessages( PTHREAD thread )
 																								, length
 																								, QMSGDATA(result)
 																								, &result_length );
+								lprintf( "result length to send:%d", result_length );
 								switch( msgid )
 								{
 								case MSG_ServiceLoad:
@@ -94893,9 +94940,9 @@ uintptr_t CPROC HandleServiceMessages( PTHREAD thread )
 								switch( msgid )
 								{
 								case MSG_ServiceUnload:
-#if defined( LOG_HANDLED_MESSAGES )
+//#if defined( LOG_HANDLED_MESSAGES )
 									lprintf( "Using default handler for service unload" );
-#endif
+//#endif
 									result_okay = 1;
 									break;
 								case MSG_ServiceLoad:
@@ -94942,6 +94989,7 @@ uintptr_t CPROC HandleServiceMessages( PTHREAD thread )
 						{
 #ifdef DEBUG_DATA_XFER
 							DBG_VARSRC;
+							lprintf( "length:%d %d", result_length, sizeof( QMSG ) );
 #endif
 							msgsnd( g.msgq_in, MSGTYPE result, result_length + (sizeof(QMSG) - sizeof( MSGIDTYPE )), 0 );
 						}
@@ -95007,7 +95055,7 @@ int ReceiveServerMessageEx( PTRANSACTIONHANDLER handler, PQMSG MessageIn, size_t
     */
 	if( (MessageIn->hdr.msgid&0xFFFFFFF) == (MSG_ServiceLoad) )
 	{
-		lprintf( WIDE("Loading service responce... setup the service ID for future com") );
+		//lprintf( WIDE("Loading service responce... setup the service ID for future com") );
 		handler->route->dest.process_id = MessageIn->hdr.source.process_id;
 		handler->route->dest.service_id = MessageIn->hdr.source.service_id;
 		handler->route->source.process_id = MessageIn->dest.process_id;
@@ -95286,7 +95334,7 @@ PRELOAD( Started )
 	{
 		l.init_ran = 1;
 		l.MsgBase = LoadServiceEx( SUMMONER_NAME, HandleSummonerEvents );
-		//lprintf( WIDE("Message base for service is %d"), l.MsgBase );
+		lprintf( WIDE("Message base for service is %d"), l.MsgBase );
 		if( l.MsgBase )
 		{
 			MSGIDTYPE result;
@@ -95311,11 +95359,12 @@ PRELOAD( Started )
 			else if( !result_length )
 			{
 				lprintf( WIDE("Summoner is not responsible for us, and requires no notifications." ) );
-				UnloadService( SUMMONER_NAME );
+				//UnloadService( SUMMONER_NAME );
 				l.MsgBase = NULL;
 				return;
 			}
-			//else l.my_name is my task name from sommoner.config
+							 //else l.my_name is my task name from sommoner.config
+         lprintf( "SAY I AM STARTING with %s", l.my_name );
 			if( !TransactServerMessage( l.MsgBase, MSG_IM_STARTING, l.my_name, (uint32_t)strlen( l.my_name ) + 1
 											  , NULL, NULL, 0 ) )
 			{
@@ -95338,13 +95387,14 @@ PRELOAD( Started )
    // if we registered with the summoner...
 	if( l.MsgBase )
 	{
-		//lprintf( WIDE("Sending IM_READY to summoner...\n") );
+		lprintf( WIDE("Sending IM_READY to summoner...\n") );
 		result = ((MSG_IM_READY) | SERVER_SUCCESS);
 		if( TransactServerMessage( l.MsgBase, MSG_IM_READY, l.my_name, (uint32_t)strlen( l.my_name ) + 1
  /*&result*/
 										 , NULL, NULL, 0 )
 		  )
 		{
+			lprintf( "should be wait on true false: %d", result );
 			if( result == ((MSG_IM_READY) | SERVER_SUCCESS) )
 			{
 			}

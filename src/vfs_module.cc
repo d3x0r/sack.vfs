@@ -146,7 +146,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 }
 
 
-VolumeObject::VolumeObject( const char *mount, const char *filename, const char *key, const char *key2 )  {
+VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 )  {
 	mountName = (char *)mount;
 	if( !mount && !filename ) {
 		volNative = false;
@@ -157,7 +157,7 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, const char 
 		//lprintf( "volume: %s %p %p", filename, key, key2 );
 		fileName = StrDup( filename );
 		volNative = true;
-		vol = sack_vfs_load_crypt_volume( filename, key, key2 );
+		vol = sack_vfs_load_crypt_volume( filename, version, key, key2 );
 		if( vol )
 			fsMount = sack_mount_filesystem( mount, fsInt = sack_get_filesystem_interface( SACK_VFS_FILESYSTEM_NAME )
 					, 2000, (uintptr_t)vol, TRUE );
@@ -196,7 +196,7 @@ void VolumeObject::volRekey( const v8::FunctionCallbackInfo<Value>& args ){
 			key2 = new String::Utf8Value( args[1]->ToString() );
 		else
 			key2 = NULL;
-		sack_vfs_encrypt_volume( vol->vol, *key1[0], *key2[0] );
+		sack_vfs_encrypt_volume( vol->vol, 0, *key1[0], *key2[0] );
 		delete key1;
 		if( key2 ) delete key2;
 	}
@@ -648,7 +648,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			size_t length = vol->fsInt->find_get_size( fi );
 			Local<Object> entry = Object::New( isolate );
 			entry->Set( String::NewFromUtf8( isolate, "name" ), String::NewFromUtf8( isolate, name ) );
-         if( length == ((size_t)-1) )
+			if( length == ((size_t)-1) )
 				entry->Set( String::NewFromUtf8( isolate, "folder" ), True(isolate) );
 			else {
 				entry->Set( String::NewFromUtf8( isolate, "folder" ), False(isolate) );
@@ -668,19 +668,21 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			LOGICAL defaultFilename = TRUE;
 			char *key = NULL;
 			char *key2 = NULL;
+			uintptr_t version = 0;
 			int argc = args.Length();
 			if( argc == 0 ) {
-				VolumeObject* obj = new VolumeObject( NULL, NULL, NULL, NULL );
+				VolumeObject* obj = new VolumeObject( NULL, NULL, 0, NULL, NULL );
 				obj->Wrap( args.This() );
 				args.GetReturnValue().Set( args.This() );
 			}
 			else {
+				int arg = 0;
 				//if( argc > 0 ) {
-				String::Utf8Value fName( args[0]->ToString() );
+				String::Utf8Value fName( args[arg++]->ToString() );
 				mount_name = StrDup( *fName );
 				//}
 				if( argc > 1 ) {
-					String::Utf8Value fName( args[1]->ToString() );
+					String::Utf8Value fName( args[arg++]->ToString() );
 					defaultFilename = FALSE;
 					filename = StrDup( *fName );
 				}
@@ -689,22 +691,24 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 					filename = mount_name;
 					mount_name = NULL;
 				}
-				if( argc > 2 ) {
-					String::Utf8Value k( args[2] );
-					if( args[2]->IsNull() || args[2]->IsUndefined() )
-						key = NULL;
-					else
-					key = StrDup( *k );
+				//if( args[argc
+				if( args[arg]->IsNumber() ) {
+					version = (uintptr_t)args[arg++]->ToNumber()->Value();
 				}
-				if( argc > 3 ) {
-					String::Utf8Value k( args[3] );
-					if( args[3]->IsNull() || args[3]->IsUndefined() )
-						key2 = NULL;
-					else
+				if( argc > arg ) {
+					String::Utf8Value k( args[arg] );
+					if( !args[arg]->IsNull() && !args[arg]->IsUndefined() )
+						key = StrDup( *k );
+					arg++;
+				}
+				if( argc > arg ) {
+					String::Utf8Value k( args[arg] );
+					if( !args[arg]->IsNull() && !args[arg]->IsUndefined() )
 						key2 = StrDup( *k );
+					arg++;
 				}
 				// Invoked as constructor: `new MyObject(...)`
-				VolumeObject* obj = new VolumeObject( mount_name, filename, key, key2 );
+				VolumeObject* obj = new VolumeObject( mount_name, filename, version, key, key2 );
 				if( !obj->vol ) {
 					isolate->ThrowException( Exception::Error(
 						String::NewFromUtf8( isolate, TranslateText( "Volume failed to open." ) ) ) );
@@ -937,16 +941,18 @@ void FileObject::truncateFile(const v8::FunctionCallbackInfo<Value>& args) {
 
 void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 	Local<Context> context = Isolate::GetCurrent()->GetCurrentContext();
-	size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe(Local<Number>())->Value();
+	size_t num1 = (size_t)args[0]->ToNumber()->Value();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	if( args.Length() == 1 && args[0]->IsNumber() ) {
+		size_t num1 = (size_t)args[0]->ToNumber()->Value();
 		if( file->vol->volNative )
 			sack_vfs_seek( file->file, num1, SEEK_SET );
 		else
 			sack_fseek( file->cfile, num1, SEEK_SET );
 	}
 	if( args.Length() == 2 && args[0]->IsNumber() && args[1]->IsNumber() ) {
-		int num2 = (int)args[1]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
+		size_t num1 = (size_t)args[0]->ToNumber()->Value();
+		int num2 = (int)args[1]->ToNumber()->Value();
 		if( file->vol->volNative ) {
 			sack_vfs_seek( file->file, num1, (int)num2 );
 		}

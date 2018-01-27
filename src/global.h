@@ -74,7 +74,7 @@ public:
 public:
 
 	static void Init( Handle<Object> exports );
-	VolumeObject( const char *mount, const char *filename, const char *key, const char *key2 );
+	VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void getDirectory( const v8::FunctionCallbackInfo<Value>& args );
