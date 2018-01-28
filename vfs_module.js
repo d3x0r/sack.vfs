@@ -17,6 +17,7 @@ try{
   } 
 }
 
+vfs.Sqlite.so( "SACK/Summoner/Auto register with summoner?", 0 );
 vfs.JSON6.stringify = JSON.stringify;
 vfs.JSON.stringify = JSON.stringify;
 
@@ -37,3 +38,9 @@ process.on( 'uncaughtException', (err)=> {
 const thread = vfs.Thread(process._tickDomainCallback);
 module.exports =exports= vfs;
 
+process.on('SIGUSR2',function(){
+        console.log('SIGUSR2 recieved')
+        //socketcluster.killWorkers();
+        //socketcluster.killBrokers();
+        //process.exit(1)
+      })
