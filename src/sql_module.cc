@@ -1122,9 +1122,9 @@ void SqlStmtObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 static void destroyUserData( void *vpUserData ) {
 	struct SqlObjectUserFunction *userData = (struct SqlObjectUserFunction *)vpUserData;
-  	userData->cb.Reset();
-  	userData->cb2.Reset();
-   Release( userData );
+	userData->cb.Reset();
+	userData->cb2.Reset();
+	Release( userData );
 }
 
 void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -1140,7 +1140,7 @@ void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( argc > 0 ) {
 		String::Utf8Value name( args[0] );
 		struct SqlObjectUserFunction *userData = NewArray( struct SqlObjectUserFunction, 1 );
-		memset( &userData, 0, sizeof( userData[0] ) );
+		memset( userData, 0, sizeof( userData[0] ) );
 		userData->isolate = isolate;
 		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
 		userData->sql = sql;
@@ -1161,7 +1161,7 @@ void SqlObject::userProcedure( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( argc > 0 ) {
 		String::Utf8Value name( args[0] );
 		struct SqlObjectUserFunction *userData = NewArray( struct SqlObjectUserFunction, 1 );
-		memset( &userData, 0, sizeof( userData[0] ) );
+		memset( userData, 0, sizeof( userData[0] ) );
 		userData->isolate = isolate;
 		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
 		userData->sql = sql;
@@ -1323,7 +1323,7 @@ void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args )
 	if( argc > 2 ) {
 		String::Utf8Value name( args[0] );
 		struct SqlObjectUserFunction *userData = NewArray( struct SqlObjectUserFunction, 1 );
-		memset( &userData, 0, sizeof( userData[0] ) );
+		memset( userData, 0, sizeof( userData[0] ) );
 		userData->isolate = isolate;
 		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
 		userData->cb2.Reset( isolate, Handle<Function>::Cast( args[2] ) );

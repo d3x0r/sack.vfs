@@ -7057,14 +7057,14 @@ typedef struct NetworkClient *PCLIENT;
 //}CLIENT, *PCLIENT;
 //#endif
 NETWORK_PROC( CTEXTSTR, GetSystemName )( void );
-NETWORK_PROC( PCLIENT, NetworkLockEx )( PCLIENT pc DBG_PASS );
-NETWORK_PROC( void, NetworkUnlockEx )( PCLIENT pc DBG_PASS );
+NETWORK_PROC( PCLIENT, NetworkLockEx )( PCLIENT pc, int readWrite DBG_PASS );
+NETWORK_PROC( void, NetworkUnlockEx )( PCLIENT pc, int readWrite DBG_PASS );
 /* <combine sack::network::NetworkLockEx@PCLIENT pc>
    \ \                                               */
-#define NetworkLock(pc) NetworkLockEx( pc DBG_SRC )
+#define NetworkLock(pc,rw) NetworkLockEx( pc,rw DBG_SRC )
 /* <combine sack::network::NetworkUnlockEx@PCLIENT pc>
    \ \                                                 */
-#define NetworkUnlock(pc) NetworkUnlockEx( pc DBG_SRC )
+#define NetworkUnlock(pc,rw) NetworkUnlockEx( pc,rw DBG_SRC )
 typedef void (CPROC*cReadComplete)(PCLIENT, POINTER, size_t );
 typedef void (CPROC*cReadCompleteEx)(PCLIENT, POINTER, size_t, SOCKADDR * );
 typedef void (CPROC*cCloseCallback)(PCLIENT);
