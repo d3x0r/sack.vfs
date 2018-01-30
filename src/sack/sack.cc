@@ -59149,7 +59149,7 @@ static void HandleEvent( PCLIENT pClient )
 							//InternalRemoveClientEx( pc, TRUE, FALSE );
 						}
 					}
-					NetworkUnlock( pClient, 0 );
+					NetworkUnlock( pClient, 1 );
 				}
 				if( networkEvents.lNetworkEvents & FD_WRITE )
 				{
@@ -59888,7 +59888,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 				if( events[n].events & EPOLLIN )
 #  endif
 				{
-					while( !NetworkLock( event_data->pc, 0 ) ) {
+					while( !NetworkLock( event_data->pc, 1 ) ) {
 						if( !( event_data->pc->dwFlags & CF_ACTIVE ) ) {
 #  ifdef LOG_NETWORK_EVENT_THREAD
 							lprintf( "failed lock dwFlags : %8x", event_data->pc->dwFlags );
@@ -59908,7 +59908,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 					if( event_data->pc->dwFlags & CF_AVAILABLE )
 						continue;
 					if( !IsValid( event_data->pc->Socket ) ) {
-						NetworkUnlock( event_data->pc, 0 );
+						NetworkUnlock( event_data->pc, 1 );
 						continue;
 					}
 #  ifdef LOG_NETWORK_EVENT_THREAD
@@ -60017,7 +60017,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 					lprintf( "EPOLLOUT %s", ( event_data->pc->dwFlags & CF_CONNECTING )?"connecting"
 							  :( !(event_data->pc->dwFlags & CF_ACTIVE) )?"closed":"writing" );
 #  endif
-					while( !NetworkLock( event_data->pc, 1 ) ) {
+					while( !NetworkLock( event_data->pc, 0 ) ) {
 						if( !( event_data->pc->dwFlags & CF_ACTIVE ) ) {
 #  ifdef LOG_NETWORK_EVENT_THREAD
 							lprintf( "failed lock dwFlags : %8x", event_data->pc->dwFlags );
@@ -60037,7 +60037,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 					if( event_data->pc->dwFlags & CF_AVAILABLE )
 						continue;
 					if( !IsValid( event_data->pc->Socket ) ) {
-						NetworkUnlock( event_data->pc, 1 );
+						NetworkUnlock( event_data->pc, 0 );
 						continue;
 					}
 					if( !(event_data->pc->dwFlags & CF_ACTIVE) )
@@ -61471,7 +61471,7 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 			lpClient->dwFlags |= CF_TOCLOSE;
 			return;
 		}
-		while( !NetworkLockEx( lpClient, 1 DBG_SRC ) )
+		while( !NetworkLockEx( lpClient, 0 DBG_SRC ) )
 		{
 			if( !(lpClient->dwFlags & CF_ACTIVE ) )
 			{
@@ -61536,7 +61536,7 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 #endif
 		//lprintf( WIDE( "Leaving network critical section" ) );
 		LeaveCriticalSec( &globalNetworkData.csNetwork );
-		NetworkUnlockEx( lpClient, 1 DBG_SRC );
+		NetworkUnlockEx( lpClient, 0 DBG_SRC );
 	}
 #ifdef LOG_DEBUG_CLOSING
 	else
@@ -62220,7 +62220,7 @@ PCLIENT OpenTCPListenerExx(uint16_t wPort, cNotifyCallback NotifyCallback DBG_PA
 //----------------------------------------------------------------------------
 int NetworkConnectTCPEx( PCLIENT pc DBG_PASS ) {
 	int err;
-	while( !NetworkLockEx( pc, 1 DBG_SRC ) )
+	while( !NetworkLockEx( pc, 0 DBG_SRC ) )
 	{
 		if( !(pc->dwFlags & CF_ACTIVE) )
 		{
@@ -62245,7 +62245,7 @@ int NetworkConnectTCPEx( PCLIENT pc DBG_PASS ) {
 		{
 			_lprintf( DBG_RELAY )(WIDE( "Connect FAIL: %d %d %" ) _32f, pc->Socket, err, dwError);
 			InternalRemoveClientEx( pc, TRUE, FALSE );
-			NetworkUnlockEx( pc, 1 DBG_SRC );
+			NetworkUnlockEx( pc, 0 DBG_SRC );
 			pc = NULL;
 			return -1;
 		}
@@ -62260,7 +62260,7 @@ int NetworkConnectTCPEx( PCLIENT pc DBG_PASS ) {
 		lprintf( WIDE( "Connected before we even get a chance to wait" ) );
 #endif
 	}
-	NetworkUnlockEx( pc, 1 DBG_SRC );
+	NetworkUnlockEx( pc, 0 DBG_SRC );
 	return 0;
 }
 //----------------------------------------------------------------------------
@@ -62880,7 +62880,7 @@ size_t doReadExx2(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsSt
 		return -1;
 		// read on top of existing incoming 'guaranteed data'
 	}
-	while( !NetworkLockEx( lpClient, 0 DBG_RELAY ) )
+	while( !NetworkLockEx( lpClient, 1 DBG_RELAY ) )
 	{
 		if( !(lpClient->dwFlags & CF_ACTIVE ) )
 		{
@@ -62892,7 +62892,7 @@ size_t doReadExx2(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsSt
 	{
 		// like say the callback we're being invoked from closed it;
 		lprintf( WIDE( "inactive client, will not pend read." ) );
-		NetworkUnlockEx( lpClient, 0 DBG_SRC );
+		NetworkUnlockEx( lpClient, 1 DBG_SRC );
 		return -1;
 	}
 	//lprintf( "read %d", nBytes );
@@ -62954,7 +62954,7 @@ size_t doReadExx2(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsSt
 		{
 			uint32_t tick = timeGetTime();
 			lpClient->pWaiting = MakeThread();
-			NetworkUnlockEx( lpClient, 0 DBG_SRC );
+			NetworkUnlockEx( lpClient, 1 DBG_SRC );
 			while( lpClient->dwFlags & CF_READPENDING )
 			{
 				// wait 5 seconds, then bail.
@@ -62971,7 +62971,7 @@ size_t doReadExx2(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsSt
 				}
 			}
 		}
-		while( !NetworkLockEx( lpClient, 0 DBG_SRC ) )
+		while( !NetworkLockEx( lpClient, 1 DBG_SRC ) )
 		{
 			if( !(lpClient->dwFlags & CF_ACTIVE ) )
 			{
@@ -62981,18 +62981,18 @@ size_t doReadExx2(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsSt
 		}
 		if( !(lpClient->dwFlags & CF_ACTIVE ) )
 		{
-			NetworkUnlockEx( lpClient, 0 DBG_SRC );
+			NetworkUnlockEx( lpClient, 1 DBG_SRC );
 			return -1;
 		}
 		 lpClient->dwFlags &= ~CF_READWAITING;
-		NetworkUnlockEx( lpClient, 0 DBG_SRC);
+		NetworkUnlockEx( lpClient, 1 DBG_SRC);
 		if( timeout )
 			return 0;
 		else
 			return lpClient->RecvPending.dwUsed;
 	}
 	else
-		NetworkUnlockEx( lpClient, 0 DBG_SRC );
+		NetworkUnlockEx( lpClient, 1 DBG_SRC );
  // unknown result really... success prolly
 	return 0;
 }
@@ -63207,7 +63207,7 @@ LOGICAL doTCPWriteExx( PCLIENT lpClient
   // cannot process a closed channel. data not sent.
 		return FALSE;
 	}
-	while( !NetworkLockEx( lpClient, 1 DBG_SRC ) )
+	while( !NetworkLockEx( lpClient, 0 DBG_SRC ) )
 	{
 		if( !(lpClient->dwFlags & CF_ACTIVE ) )
 		{
@@ -63223,7 +63223,7 @@ LOGICAL doTCPWriteExx( PCLIENT lpClient
 		lprintf( WIDE("TCP Write failed - client is inactive") );
 #endif
 		// change to inactive status by the time we got here...
-		NetworkUnlockEx( lpClient, 1 DBG_SRC );
+		NetworkUnlockEx( lpClient, 0 DBG_SRC );
 		return FALSE;
 	}
  // will already be in a wait on network state...
@@ -63239,7 +63239,7 @@ LOGICAL doTCPWriteExx( PCLIENT lpClient
 //#endif
 			PendWrite( lpClient, pInBuffer, nInLen, bLongBuffer );
 			//TCPWriteEx( lpClient DBG_SRC ); // make sure we don't lose a write event during the queuing...
-			NetworkUnlockEx( lpClient, 1 DBG_SRC );
+			NetworkUnlockEx( lpClient, 0 DBG_SRC );
 			return TRUE;
 		}
 		else
@@ -63247,7 +63247,7 @@ LOGICAL doTCPWriteExx( PCLIENT lpClient
 #ifdef VERBOSE_DEBUG
 			lprintf( WIDE("Failing pend.") );
 #endif
-			NetworkUnlockEx( lpClient, 1 DBG_SRC );
+			NetworkUnlockEx( lpClient, 0 DBG_SRC );
 			return FALSE;
 		}
 	}
@@ -63280,7 +63280,7 @@ LOGICAL doTCPWriteExx( PCLIENT lpClient
 			_xlprintf( 1 DBG_RELAY )( WIDE("Data has been compeltely sent.") );
 #endif
 	}
-	NetworkUnlockEx( lpClient, 1 DBG_SRC );
+	NetworkUnlockEx( lpClient, 0 DBG_SRC );
  // assume the data was sent.
 	return TRUE;
 }
@@ -63317,7 +63317,7 @@ LOGICAL TCPDrainRead( PCLIENT pClient )
 			       , pClient->RecvPending.dwUsed
 			       , pClient->RecvPending.dwAvail );
 			InternalRemoveClient( pClient );
-			NetworkUnlockEx( pClient, 0 DBG_SRC );
+			NetworkUnlockEx( pClient, 1 DBG_SRC );
 			return FALSE;
 		}
 		else
@@ -63335,7 +63335,7 @@ LOGICAL TCPDrainRead( PCLIENT pClient )
 		{
  // closed.
 			InternalRemoveClient( pClient );
-			NetworkUnlockEx( pClient, 0 DBG_SRC );
+			NetworkUnlockEx( pClient, 1 DBG_SRC );
 			return FALSE;
 		}
 		if( pClient->bDrainExact )
@@ -63374,7 +63374,7 @@ NETWORK_PROC( LOGICAL, TCPDrainEx)( PCLIENT pClient, size_t nLength, int bExact 
  // default optimal read
 			pClient->nDrainLength = DRAIN_MAX_READ;
 		bytes = TCPDrainRead( pClient );
-		NetworkUnlockEx( pClient, 0 DBG_SRC );
+		NetworkUnlockEx( pClient, 1 DBG_SRC );
 		return bytes;
 	}
 	return 0;
