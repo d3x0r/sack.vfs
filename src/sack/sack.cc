@@ -59218,7 +59218,7 @@ static void HandleEvent( PCLIENT pClient )
 					//	lprintf( WIDE("FD_ACCEPT on %p"), pClient );
 #endif
 					AcceptClient(pClient);
-					NetworkUnlock( pClient, 1 );
+					//NetworkUnlock( pClient, 1 );
 				}
 				//lprintf( WIDE("leaveing event handler...") );
 				//lprintf( WIDE("Left event handler CS.") );
