@@ -1017,6 +1017,7 @@ Mostly unimplemented, more of a place holder than functional.
 ---
 
 ## Changelog
+- 0.9.115 - Fix stray unlock.
 - 0.9.114 - Fix leave critical section in release mode.
 - 0.9.113 - Added optional version parameter for VFS. Sync sack sources... A lot of reformats; updates for split network lock.  Added Sqlite.procedure to define deterministic function.
 - 0.9.112 - decode of unicode character escape had bad calculation.
