@@ -1017,7 +1017,7 @@ Mostly unimplemented, more of a place holder than functional.
 ---
 
 ## Changelog
-- 0.9.113 - Added optional version parameter for VFS.
+- 0.9.113 - Added optional version parameter for VFS. Sync sack sources... A lot of reformats; updates for split network lock.  Added Sqlite.procedure to define deterministic function.
 - 0.9.112 - decode of unicode character escape had bad calculation.
 - 0.9.111 - promote to more appropriate version.  If anyone else joins; this should go to 1.0.  Improve TLS error reporting and SQL result set ability.  Improve table parsing.
 - 0.1.99324 Test and Update sqlite user defined functions (function/aggregate); improved data type retention.
