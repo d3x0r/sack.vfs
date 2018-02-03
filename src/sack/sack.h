@@ -64,7 +64,8 @@
 #  define NOMEMMGR
                 // typedef METAFILEPICT
 #  define NOMETAFILE
-// #define NOMINMAX                  // Macros min(a,b) and max(a,b)
+                  // Macros min(a,b) and max(a,b)
+#  define NOMINMAX
 // #define NOMSG                     // typedef MSG and associated routines
 // #define NOOPENFILE                // OpenFile(), OemToAnsi, AnsiToOem, and OF_*
 // #define NOSCROLL                  // SB_* and scrolling routines
@@ -188,6 +189,9 @@ extern __sighandler_t bsd_signal(int, __sighandler_t);
 #  define GetCurrentProcessId() ((uint32_t)getpid())
 #  define GetCurrentThreadId() ((uint32_t)getpid())
   // end if( !__LINUX__ )
+#endif
+#ifndef NEED_MIN_MAX
+#  define NO_MIN_MAX_MACROS
 #endif
 #ifndef NO_MIN_MAX_MACROS
 #  ifdef __cplusplus

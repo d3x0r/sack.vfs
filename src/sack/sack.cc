@@ -72,7 +72,8 @@
 #  define NOMEMMGR
                 // typedef METAFILEPICT
 #  define NOMETAFILE
-// #define NOMINMAX                  // Macros min(a,b) and max(a,b)
+                  // Macros min(a,b) and max(a,b)
+#  define NOMINMAX
 // #define NOMSG                     // typedef MSG and associated routines
 // #define NOOPENFILE                // OpenFile(), OemToAnsi, AnsiToOem, and OF_*
 // #define NOSCROLL                  // SB_* and scrolling routines
@@ -196,6 +197,9 @@ extern __sighandler_t bsd_signal(int, __sighandler_t);
 #  define GetCurrentProcessId() ((uint32_t)getpid())
 #  define GetCurrentThreadId() ((uint32_t)getpid())
   // end if( !__LINUX__ )
+#endif
+#ifndef NEED_MIN_MAX
+#  define NO_MIN_MAX_MACROS
 #endif
 #ifndef NO_MIN_MAX_MACROS
 #  ifdef __cplusplus
@@ -25107,7 +25111,7 @@ typedef void (CPROC*HideAndRestoreCallback)( uintptr_t psvUser );
 typedef void (CPROC*RedrawCallback)( uintptr_t psvUser, PRENDERER self );
 /* function signature for the mouse callback  which can be specified to handle events from mouse motion on the display.  see SetMouseHandler.
   would be 'wise' to retun 0 if ignored, 1 if observed (perhaps not used), but NOT ignored.*/
-typedef int  (CPROC*MouseCallback)( uintptr_t psvUser, int32_t x, int32_t y, uint32_t b );
+typedef uintptr_t  (CPROC*MouseCallback)( uintptr_t psvUser, int32_t x, int32_t y, uint32_t b );
 typedef struct input_point
 {
    //
@@ -28876,36 +28880,39 @@ LOGICAL  LeaveCriticalSecEx( PCRITICALSECTION pcs DBG_PASS )
 {
 	THREAD_ID dwCurProc;
 #ifdef _DEBUG
-//GetTickCount();
-	uint32_t curtick = timeGetTime();
+	uint32_t curtick;
 #endif
-#ifdef ENABLE_CRITICALSEC_LOGGING
-	if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
-		_xlprintf( LOG_NOISE DBG_RELAY )( WIDE("Begin leave critical section %p %") _64fx, pcs, pcs->dwThreadWaiting );
-#endif
-	while( LockedExchange( &pcs->dwUpdating, 1 )
+	while( 1 ) {
 #ifdef _DEBUG
-//GetTickCount() )
-			&& ( (curtick+2000) > timeGetTime() )
+		curtick = timeGetTime();
 #endif
-	)
-	{
 #ifdef ENABLE_CRITICALSEC_LOGGING
 		if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
-			_lprintf( DBG_RELAY )( WIDE("On leave - section is updating, wait...") );
+			_xlprintf( LOG_NOISE DBG_RELAY )( WIDE( "Begin leave critical section %p %" ) _64fx, pcs, pcs->dwThreadWaiting );
 #endif
-		Relinquish();
-	}
-	dwCurProc = GetMyThreadID();
+		while( LockedExchange( &pcs->dwUpdating, 1 )
 #ifdef _DEBUG
-//GetTickCount() )
-	if( (curtick+2000) <= timeGetTime() )
-	{
-		lprintf( WIDE( "Timeout during critical section wait for lock.  No lock should take more than 1 task cycle" ) );
-		DebugBreak();
-		return FALSE;
-	}
+			//GetTickCount() )
+			&& ( ( curtick + 2000 ) > timeGetTime() )
 #endif
+			) {
+#ifdef ENABLE_CRITICALSEC_LOGGING
+			if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
+				_lprintf( DBG_RELAY )( WIDE( "On leave - section is updating, wait..." ) );
+#endif
+			Relinquish();
+}
+		dwCurProc = GetMyThreadID();
+#ifdef _DEBUG
+		//GetTickCount() )
+		if( ( curtick + 2000 ) <= timeGetTime() ) {
+			lprintf( WIDE( "Timeout during critical section wait for lock.  No lock should take more than 1 task cycle" ) );
+			DebugBreak();
+			continue;
+		}
+		break;
+#endif
+	}
 	if( !( pcs->dwLocks & ~SECTION_LOGGED_WAIT ) )
 	{
 #ifdef ENABLE_CRITICALSEC_LOGGING
@@ -54108,6 +54115,7 @@ void _json_dispose_message( PDATALIST *msg_data )
 {
 	struct json_value_container *val;
 	INDEX idx;
+	if( !msg_data ) return;
 	DATA_FORALL( (*msg_data), idx, struct json_value_container*, val )
 	{
 		//if( val->name ) Release( val->name );
@@ -54117,6 +54125,7 @@ void _json_dispose_message( PDATALIST *msg_data )
 	}
 	// quick method
 	DeleteFromSet( PDATALIST, jpsd.dataLists, msg_data );
+	( *msg_data ) = NULL;
 	//DeleteDataList( msg_data );
 }
 static uintptr_t FindDataList( void*p, uintptr_t psv ) {
@@ -58321,12 +58330,12 @@ PRELOAD( InitNetworkGlobalOptions )
 	globalNetworkData.flags.bLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data" ), 0, TRUE );
 	globalNetworkData.flags.bLogSentData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Sent Data" ), globalNetworkData.flags.bLogReceivedData, TRUE );
 #  ifdef LOG_NOTICES
-	globalNetworkData.flags.bLogNotices = 1 || SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Notifications" ), 0, TRUE );
+	globalNetworkData.flags.bLogNotices = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Notifications" ), 0, TRUE );
 #  endif
 	globalNetworkData.dwReadTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Read wait timeout" ), 5000, TRUE );
 	globalNetworkData.dwConnectTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Connect timeout" ), 10000, TRUE );
 #else
-	globalNetworkData.flags.bLogNotices = 1;
+	globalNetworkData.flags.bLogNotices = 0;
 	globalNetworkData.dwReadTimeout = 5000;
 	globalNetworkData.dwConnectTimeout = 10000;
 #endif
@@ -59119,7 +59128,7 @@ static void HandleEvent( PCLIENT pClient )
 				if( networkEvents.lNetworkEvents & FD_READ )
 				{
 					PCLIENT pcLock;
-					while( !( pcLock = NetworkLockEx( pClient, 0 DBG_SRC ) ) ) {
+					while( !( pcLock = NetworkLockEx( pClient, 1 DBG_SRC ) ) ) {
 						// done with events; inactive sockets can't have events
 						if( !( pClient->dwFlags & CF_ACTIVE ) ) {
 							pcLock = NULL;
@@ -59852,6 +59861,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 		}
 		if( cnt > 0 )
 		{
+			int closed = 0;
 			int n;
 			struct event_data *event_data;
 			THREAD_ID prior = 0;
@@ -59942,6 +59952,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 							// might already be cleared and gone..
 							InternalRemoveClientEx( pClient, FALSE, TRUE );
 							TerminateClosedClient( pClient );
+							closed = 1;
 						}
 						// section will be blank after termination...(correction, we keep the section state now)
  // it's no longer closing.  (was set during the course of closure)
@@ -59993,6 +60004,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #endif
 							InternalRemoveClientEx( event_data->pc, FALSE, FALSE );
 							TerminateClosedClient( event_data->pc );
+							closed = 1;
 						}
 						else if( !event_data->pc->RecvPending.s.bStream )
 							event_data->pc->dwFlags |= CF_READREADY;
@@ -60007,135 +60019,123 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 					}
 					LeaveCriticalSec( &event_data->pc->csLockRead );
 				}
+				if( !closed && ( event_data->pc->dwFlags & CF_ACTIVE ) ) {
 #  ifdef __MAC__
-				if( events[n].filter == EVFILT_WRITE )
+					if( events[n].filter == EVFILT_WRITE )
 #  else
-				if( events[n].events & EPOLLOUT )
+					if( events[n].events & EPOLLOUT )
 #  endif
-				{
+					{
 #  ifdef LOG_NETWORK_EVENT_THREAD
-					lprintf( "EPOLLOUT %s", ( event_data->pc->dwFlags & CF_CONNECTING )?"connecting"
-							  :( !(event_data->pc->dwFlags & CF_ACTIVE) )?"closed":"writing" );
+						lprintf( "EPOLLOUT %s", ( event_data->pc->dwFlags & CF_CONNECTING ) ? "connecting"
+							: ( !( event_data->pc->dwFlags & CF_ACTIVE ) ) ? "closed" : "writing" );
 #  endif
-					while( !NetworkLock( event_data->pc, 0 ) ) {
-						if( !( event_data->pc->dwFlags & CF_ACTIVE ) ) {
+						while( !NetworkLock( event_data->pc, 0 ) ) {
+							if( !( event_data->pc->dwFlags & CF_ACTIVE ) ) {
 #  ifdef LOG_NETWORK_EVENT_THREAD
-							lprintf( "failed lock dwFlags : %8x", event_data->pc->dwFlags );
+								lprintf( "failed lock dwFlags : %8x", event_data->pc->dwFlags );
 #  endif
-							break;
+								break;
+							}
+							if( event_data->pc->dwFlags & CF_AVAILABLE )
+								break;
+							Relinquish();
+						}
+						if( !( event_data->pc->dwFlags & ( CF_ACTIVE | CF_CLOSED ) ) ) {
+#  ifdef LOG_NETWORK_EVENT_THREAD
+							lprintf( "not active but locked? dwFlags : %8x", event_data->pc->dwFlags );
+#  endif
+							continue;
 						}
 						if( event_data->pc->dwFlags & CF_AVAILABLE )
-							break;
-						Relinquish();
-					}
-					if( !( event_data->pc->dwFlags & ( CF_ACTIVE | CF_CLOSED ) ) ) {
-#  ifdef LOG_NETWORK_EVENT_THREAD
-						lprintf( "not active but locked? dwFlags : %8x", event_data->pc->dwFlags );
-#  endif
-						continue;
-					}
-					if( event_data->pc->dwFlags & CF_AVAILABLE )
-						continue;
-					if( !IsValid( event_data->pc->Socket ) ) {
-						NetworkUnlock( event_data->pc, 0 );
-						continue;
-					}
-					if( !(event_data->pc->dwFlags & CF_ACTIVE) )
-					{
-						//lprintf( "FLAGS IS NOT ACTIVE BUT: %x", event_data->pc->dwFlags );
-						// change to inactive status by the time we got here...
-					}
-					else if( event_data->pc->dwFlags & CF_CONNECTING )
-					{
+							continue;
+						if( !IsValid( event_data->pc->Socket ) ) {
+							NetworkUnlock( event_data->pc, 0 );
+							continue;
+						}
+						if( !( event_data->pc->dwFlags & CF_ACTIVE ) ) {
+							//lprintf( "FLAGS IS NOT ACTIVE BUT: %x", event_data->pc->dwFlags );
+							// change to inactive status by the time we got here...
+						} else if( event_data->pc->dwFlags & CF_CONNECTING ) {
 #ifdef LOG_NOTICES
-						if( globalNetworkData.flags.bLogNotices )
-							lprintf( WIDE( "Connected!" ) );
+							if( globalNetworkData.flags.bLogNotices )
+								lprintf( WIDE( "Connected!" ) );
 #endif
-						event_data->pc->dwFlags |= CF_CONNECTED;
-						event_data->pc->dwFlags &= ~CF_CONNECTING;
-						{
-							PCLIENT pc = event_data->pc;
+							event_data->pc->dwFlags |= CF_CONNECTED;
+							event_data->pc->dwFlags &= ~CF_CONNECTING;
+							{
+								PCLIENT pc = event_data->pc;
 #ifdef __LINUX__
-							socklen_t
+								socklen_t
 #else
 								int
 #endif
-								nLen = MAGIC_SOCKADDR_LENGTH;
-							if( !pc->saSource )
-								pc->saSource = AllocAddr();
-							if( getsockname( pc->Socket, pc->saSource, &nLen ) )
-							{
-								lprintf( WIDE("getsockname errno = %d"), errno );
+									nLen = MAGIC_SOCKADDR_LENGTH;
+								if( !pc->saSource )
+									pc->saSource = AllocAddr();
+								if( getsockname( pc->Socket, pc->saSource, &nLen ) ) {
+									lprintf( WIDE( "getsockname errno = %d" ), errno );
+								}
+								if( pc->saSource->sa_family == AF_INET )
+									SET_SOCKADDR_LENGTH( pc->saSource, IN_SOCKADDR_LENGTH );
+								else if( pc->saSource->sa_family == AF_INET6 )
+									SET_SOCKADDR_LENGTH( pc->saSource, IN6_SOCKADDR_LENGTH );
+								else
+									SET_SOCKADDR_LENGTH( pc->saSource, nLen );
 							}
-							if( pc->saSource->sa_family == AF_INET )
-								SET_SOCKADDR_LENGTH( pc->saSource, IN_SOCKADDR_LENGTH );
-							else if( pc->saSource->sa_family == AF_INET6 )
-								SET_SOCKADDR_LENGTH( pc->saSource, IN6_SOCKADDR_LENGTH );
-							else
-								SET_SOCKADDR_LENGTH( pc->saSource, nLen );
-						}
-						{
-							int error;
-							socklen_t errlen = sizeof( error );
-							getsockopt( event_data->pc->Socket, SOL_SOCKET
-								, SO_ERROR
-										 , &error, &errlen );
-							//lprintf( WIDE( "Error checking for connect is: %s on %d" ), strerror( error ), event_data->pc->Socket );
-							if( event_data->pc->pWaiting )
 							{
+								int error;
+								socklen_t errlen = sizeof( error );
+								getsockopt( event_data->pc->Socket, SOL_SOCKET
+									, SO_ERROR
+									, &error, &errlen );
+								//lprintf( WIDE( "Error checking for connect is: %s on %d" ), strerror( error ), event_data->pc->Socket );
+								if( event_data->pc->pWaiting ) {
+#ifdef LOG_NOTICES
+									if( globalNetworkData.flags.bLogNotices )
+										lprintf( WIDE( "Got connect event, waking waiter.." ) );
+#endif
+									WakeThread( event_data->pc->pWaiting );
+								}
+								if( event_data->pc->connect.ThisConnected )
+									event_data->pc->connect.ThisConnected( event_data->pc, error );
 #ifdef LOG_NOTICES
 								if( globalNetworkData.flags.bLogNotices )
-									lprintf( WIDE( "Got connect event, waking waiter.." ) );
+									lprintf( "Connect error was: %d", error );
 #endif
-								WakeThread( event_data->pc->pWaiting );
+								// if connected okay - issue first read...
+								if( !error ) {
+#ifdef LOG_NOTICES
+									lprintf( "Read Complete" );
+#endif
+									if( event_data->pc->read.ReadComplete ) {
+#ifdef LOG_NOTICES
+										lprintf( "Initial Read Complete" );
+#endif
+										event_data->pc->read.ReadComplete( event_data->pc, NULL, 0 );
+									}
+									if( event_data->pc->lpFirstPending ) {
+										lprintf( WIDE( "Data was pending on a connecting socket, try sending it now" ) );
+										TCPWrite( event_data->pc );
+									}
+								} else {
+									event_data->pc->dwFlags |= CF_CONNECTERROR;
+								}
 							}
-							if( event_data->pc->connect.ThisConnected )
-								event_data->pc->connect.ThisConnected( event_data->pc, error );
+						} else if( event_data->pc->dwFlags & CF_UDP ) {
+							//lprintf( "UDP WRITE IS NEVER QUEUED." );
+							// udp write event complete....
+							// do we ever care? probably sometime...
+						} else {
 #ifdef LOG_NOTICES
 							if( globalNetworkData.flags.bLogNotices )
-								lprintf( "Connect error was: %d", error );
+								lprintf( WIDE( "TCP Write Event..." ) );
 #endif
-							// if connected okay - issue first read...
-							if( !error )
-							{
-#ifdef LOG_NOTICES
-								lprintf( "Read Complete" );
-#endif
-								if( event_data->pc->read.ReadComplete )
-								{
-#ifdef LOG_NOTICES
-									lprintf( "Initial Read Complete" );
-#endif
-									event_data->pc->read.ReadComplete( event_data->pc, NULL, 0 );
-								}
-								if( event_data->pc->lpFirstPending )
-								{
-									lprintf( WIDE( "Data was pending on a connecting socket, try sending it now" ) );
-									TCPWrite( event_data->pc );
-								}
-							}
-							else
-							{
-								event_data->pc->dwFlags |= CF_CONNECTERROR;
-							}
+							event_data->pc->dwFlags &= ~CF_WRITEISPENDED;
+							TCPWrite( event_data->pc );
 						}
+						LeaveCriticalSec( &event_data->pc->csLockWrite );
 					}
-					else if( event_data->pc->dwFlags & CF_UDP )
-					{
-						//lprintf( "UDP WRITE IS NEVER QUEUED." );
-						// udp write event complete....
-						// do we ever care? probably sometime...
-					}
-					else
-					{
-#ifdef LOG_NOTICES
-						if( globalNetworkData.flags.bLogNotices )
-							lprintf( WIDE( "TCP Write Event..." ) );
-#endif
-						event_data->pc->dwFlags &= ~CF_WRITEISPENDED;
-						TCPWrite( event_data->pc );
-					}
-					LeaveCriticalSec( &event_data->pc->csLockWrite );
 				}
 			}
 			// had some event  - return 1 to continue working...
@@ -62390,7 +62390,7 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 				ProcessNetworkMessages( this_thread, 1 );
 				if( !pResult->this_thread ) {
 					WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
-					lprintf( "Failed to schedule myself in a single run of root thread that I am running on." );
+					//lprintf( "Failed to schedule myself in a single run of root thread that I am running on." );
 				}
 			}
 			else {
@@ -75523,7 +75523,7 @@ struct fts5_api {
 #endif
 /******** End of fts5.h *********/
 # endif
-#if !USE_ODBC
+#if defined( __NO_ODBC__ )
 // if not using odbc, need these
 // otherwise they will be defined in sql.h
  // sqllite uses a generic int type for result codes
@@ -75536,6 +75536,7 @@ enum {
       , SQL_HANDLE_STMT
 };
 #else
+#  define USE_ODBC 1
 #  include <sql.h>
 #  include <sqlext.h>
 #endif
@@ -75815,7 +75816,7 @@ typedef struct data_collection_tag
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 	sqlite3_stmt *stmt;
 #endif
-#if USE_ODBC
+#if !defined( __NO_ODBC__ )
 	SQLHSTMT    hstmt;
 #endif
 	SQLSMALLINT columns;
@@ -75844,7 +75845,7 @@ struct odbc_handle_tag{
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 	sqlite3 *db;
 #endif
-#if USE_ODBC
+#if !defined( __NO_ODBC__ )
   // odbc database access handle...
 	SQLHENV    env;
  // handle to database connection
@@ -76752,7 +76753,7 @@ SQL_NAMESPACE_END
 #define SQL_STRUCT_DEFINED
 # if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 # endif
-#if !USE_ODBC
+#if defined( __NO_ODBC__ )
 // if not using odbc, need these
 // otherwise they will be defined in sql.h
  // sqllite uses a generic int type for result codes
@@ -76765,6 +76766,7 @@ enum {
       , SQL_HANDLE_STMT
 };
 #else
+#  define USE_ODBC 1
 #endif
  // critical section
 SQL_NAMESPACE
@@ -76816,7 +76818,7 @@ typedef struct data_collection_tag
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 	sqlite3_stmt *stmt;
 #endif
-#if USE_ODBC
+#if !defined( __NO_ODBC__ )
 	SQLHSTMT    hstmt;
 #endif
 	SQLSMALLINT columns;
@@ -76845,7 +76847,7 @@ struct odbc_handle_tag{
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 	sqlite3 *db;
 #endif
-#if USE_ODBC
+#if !defined( __NO_ODBC__ )
   // odbc database access handle...
 	SQLHENV    env;
  // handle to database connection
@@ -80123,6 +80125,7 @@ using namespace sack::memory;
 using namespace sack::timers;
 using namespace sack::config;
 #endif
+// undef if USE=0
 #ifdef USE_ODBC
 #  if !USE_ODBC
 #    undef USE_ODBC
@@ -87290,9 +87293,9 @@ int ValidateCreateTable( PTEXT *word )
 	if( !TextLike( (*word), WIDE( "create" ) ) )
 		return FALSE;
 	(*word) = NEXTLINE( (*word) );
-   if( TextLike( (*word), WIDE( "temporary" ) ) )
+	if( TextLike( (*word), WIDE( "temporary" ) ) )
 		(*word) = NEXTLINE( (*word) );
-   else if( TextLike( (*word), WIDE( "temp" ) ) )
+	else if( TextLike( (*word), WIDE( "temp" ) ) )
 		(*word) = NEXTLINE( (*word) );
 	if( !TextLike( (*word), WIDE( "table" ) ) )
 		return FALSE;
@@ -87311,7 +87314,7 @@ int ValidateCreateTable( PTEXT *word )
 		else
 			return FALSE;
 	}
-   return TRUE;
+	return TRUE;
 }
 //----------------------------------------------------------------------
 int GrabName( PTEXT *word, TEXTSTR *result, int *bQuoted DBG_PASS )
@@ -87465,7 +87468,7 @@ static int GrabExtra( PTEXT *word, TEXTSTR *result )
 			if( result )
 				(*result) = NULL;
 	}
-   return TRUE;
+	return TRUE;
 }
 void GrabKeyColumns( PTEXT *word, CTEXTSTR *columns )
 {
@@ -87502,8 +87505,8 @@ void AddConstraint( PTABLE table, PTEXT *word )
 		}
 		table->keys.count++;
 		table->keys.key = Renew( DB_KEY_DEF
-							   , table->keys.key
-							   , table->keys.count + 1 );
+		                  , table->keys.key
+		                  , table->keys.count + 1 );
 		table->keys.key[table->keys.count-1].null = NULL;
 		table->keys.key[table->keys.count-1].flags.bPrimary = 0;
 		table->keys.key[table->keys.count-1].flags.bUnique = 1;
@@ -87519,27 +87522,27 @@ void AddConstraint( PTABLE table, PTEXT *word )
 				(*word) = NEXTLINE( *word );
 				if( StrCaseCmp( GetText(*word), WIDE( "REPLACE" ) ) == 0 )
 				{
-               table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_REPLACE;
+					table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_REPLACE;
 					(*word) = NEXTLINE( *word );
 				}
 				if( StrCaseCmp( GetText(*word), WIDE( "IGNORE" ) ) == 0 )
 				{
-               table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_IGNORE;
+					table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_IGNORE;
 					(*word) = NEXTLINE( *word );
 				}
 				if( StrCaseCmp( GetText(*word), WIDE( "FAIL" ) ) == 0 )
 				{
-               table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_FAIL;
+					table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_FAIL;
 					(*word) = NEXTLINE( *word );
 				}
 				if( StrCaseCmp( GetText(*word), WIDE( "ABORT" ) ) == 0 )
 				{
-               table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_ABORT;
+					table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_ABORT;
 					(*word) = NEXTLINE( *word );
 				}
 				if( StrCaseCmp( GetText(*word), WIDE( "ROLLBACK" ) ) == 0 )
 				{
-               table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_ROLLBACK;
+					table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_ROLLBACK;
 					(*word) = NEXTLINE( *word );
 				}
 			}
@@ -87548,8 +87551,8 @@ void AddConstraint( PTABLE table, PTEXT *word )
 	}
 	table->constraints.count++;
 	table->constraints.constraint = Renew( DB_CONSTRAINT_DEF
-	                       , table->constraints.constraint
-	                       , table->constraints.count + 1 );
+                          , table->constraints.constraint
+                          , table->constraints.count + 1 );
 	table->constraints.constraint[table->constraints.count-1].name = tmpname;
 	if( StrCaseCmp( GetText(*word), WIDE( "UNIQUE" ) ) == 0 )
 	{
@@ -87562,8 +87565,9 @@ void AddConstraint( PTABLE table, PTEXT *word )
 		{
 			// next word is the type, skip that word too....
 			(*word) = NEXTLINE( *word );
-         table->constraints.constraint[table->constraints.count-1].flags.foreign_key = 1;
+			table->constraints.constraint[table->constraints.count-1].flags.foreign_key = 1;
 		}
+			table->constraints.constraint[table->constraints.count-1].flags.foreign_key = 1;
 	}
 	GrabKeyColumns( word, table->constraints.constraint[table->constraints.count-1].colnames );
 	if( StrCaseCmp( GetText(*word), WIDE( "REFERENCES" ) ) == 0 )
@@ -87655,8 +87659,8 @@ void AddIndexKey( PTABLE table, PTEXT *word, int has_name, int primary, int uniq
 {
 	table->keys.count++;
 	table->keys.key = Renew( DB_KEY_DEF
-	                       , table->keys.key
-	                       , table->keys.count + 1 );
+                          , table->keys.key
+                          , table->keys.count + 1 );
 	table->keys.key[table->keys.count-1].null = NULL;
 	table->keys.key[table->keys.count-1].flags.bPrimary = primary;
 	table->keys.key[table->keys.count-1].flags.bUnique = unique;
@@ -87674,7 +87678,7 @@ void AddIndexKey( PTABLE table, PTEXT *word, int has_name, int primary, int uniq
 		(*word) = NEXTLINE( *word );
 	}
 	GrabKeyColumns( word, table->keys.key[table->keys.count-1].colnames );
-   // using can be after the columns also...
+	// using can be after the columns also...
 	if( StrCaseCmp( GetText(*word), WIDE( "USING" ) ) == 0 )
 	{
 		(*word) = NEXTLINE( *word );
@@ -87689,27 +87693,27 @@ void AddIndexKey( PTABLE table, PTEXT *word, int has_name, int primary, int uniq
 			(*word) = NEXTLINE( *word );
 			if( StrCaseCmp( GetText(*word), WIDE( "REPLACE" ) ) == 0 )
 			{
-            table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_REPLACE;
+				table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_REPLACE;
 				(*word) = NEXTLINE( *word );
 			}
 			if( StrCaseCmp( GetText(*word), WIDE( "IGNORE" ) ) == 0 )
 			{
-            table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_IGNORE;
+				table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_IGNORE;
 				(*word) = NEXTLINE( *word );
 			}
 			if( StrCaseCmp( GetText(*word), WIDE( "FAIL" ) ) == 0 )
 			{
-            table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_FAIL;
+				table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_FAIL;
 				(*word) = NEXTLINE( *word );
 			}
 			if( StrCaseCmp( GetText(*word), WIDE( "ABORT" ) ) == 0 )
 			{
-            table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_ABORT;
+				table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_ABORT;
 				(*word) = NEXTLINE( *word );
 			}
 			if( StrCaseCmp( GetText(*word), WIDE( "ROLLBACK" ) ) == 0 )
 			{
-            table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_ROLLBACK;
+				table->keys.key[table->keys.count-1].flags.uniqueResolution = UNIQRES_ROLLBACK;
 				(*word) = NEXTLINE( *word );
 			}
 		}
@@ -87786,7 +87790,7 @@ int GetTableColumns( PTABLE table, PTEXT *word DBG_PASS )
 					Release( name );
 				}
 				else if( ( StrCaseCmp( name, WIDE( "INDEX" ) ) == 0 )
-					   || ( StrCaseCmp( name, WIDE( "KEY" ) ) == 0 ) )
+				      || ( StrCaseCmp( name, WIDE( "KEY" ) ) == 0 ) )
 				{
 					AddIndexKey( table, word, 1, 0, 0 );
 					Release( name );
@@ -87821,7 +87825,7 @@ int GetTableColumns( PTABLE table, PTEXT *word DBG_PASS )
 //----------------------------------------------------------------------
 int GetTableExtra( PTABLE table, PTEXT *word )
 {
-   return TRUE;
+	return TRUE;
 }
 void LogTable( PTABLE table )
 {
@@ -87894,9 +87898,9 @@ void LogTable( PTABLE table )
 			sack_fprintf( out, WIDE( "\n" ) );
 			sack_fprintf( out, WIDE("TABLE %s = { \"%s\" \n"), table->name, table->name );
 			sack_fprintf( out, WIDE( "	 , FIELDS( %s_fields )\n" ), table->name );
-         if( table->keys.count )
+			if( table->keys.count )
 				sack_fprintf( out, WIDE( "	 , TABLE_KEYS( %s_keys )\n" ), table->name );
-         else
+			else
 				sack_fprintf( out, WIDE( "	 , { 0, NULL }\n" ) );
 			sack_fprintf( out, WIDE( "	, { 0 }\n" ) );
 			sack_fprintf( out, WIDE( "	, NULL\n" ) );
@@ -87993,7 +87997,7 @@ SQL_NAMESPACE_END
 #define SQL_STRUCT_DEFINED
 # if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 # endif
-#if !USE_ODBC
+#if defined( __NO_ODBC__ )
 // if not using odbc, need these
 // otherwise they will be defined in sql.h
  // sqllite uses a generic int type for result codes
@@ -88006,6 +88010,7 @@ enum {
       , SQL_HANDLE_STMT
 };
 #else
+#  define USE_ODBC 1
 #endif
  // critical section
 SQL_NAMESPACE
@@ -88057,7 +88062,7 @@ typedef struct data_collection_tag
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 	sqlite3_stmt *stmt;
 #endif
-#if USE_ODBC
+#if !defined( __NO_ODBC__ )
 	SQLHSTMT    hstmt;
 #endif
 	SQLSMALLINT columns;
@@ -88086,7 +88091,7 @@ struct odbc_handle_tag{
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 	sqlite3 *db;
 #endif
-#if USE_ODBC
+#if !defined( __NO_ODBC__ )
   // odbc database access handle...
 	SQLHENV    env;
  // handle to database connection
