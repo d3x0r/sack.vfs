@@ -18,7 +18,7 @@
 	'defines': [
           'TARGETNAME="sack_vfs.node"',
            "__STATIC__","USE_SQLITE","USE_SQLITE_INTERFACE","FORCE_COLOR_MACROS",
-           "NO_OPEN_MACRO","NO_FILEOP_ALIAS","JSON_PARSER_MAIN_SOURCE", "SQLITE_ENABLE_LOCKING_STYLE=0","SQLITE_THREADSAFE=0","SQLITE_OMIT_UTF16","SQLITE_ENABLE_COLUMN_METADATA"
+           "NO_OPEN_MACRO","NO_FILEOP_ALIAS","JSON_PARSER_MAIN_SOURCE", "SQLITE_ENABLE_LOCKING_STYLE=0","SQLITE_THREADSAFE=0","SQLITE_OMIT_UTF16","SQLITE_ENABLE_COLUMN_METADATA=1", "SQLITE_DEFAULT_FOREIGN_KEYS=1", "NO_MIN_MAX_MACROS"
         ],
     'conditions': [
           ['OS=="linux"', {
@@ -68,7 +68,7 @@
 			, '-Wno-unused-variable', '-Wno-unused-function'
 			, '-Wno-sign-compare', '-Wno-null-dereference'
 			, '-Wno-address-of-packed-member', '-Wno-unknown-warning-option'
-			, '-Wno-unused-result', '-fexceptions'
+			, '-Wno-unused-result', '-fexceptions', '-Wno-unknown-pragma'
                 ],
              },
             'include_dirs': [
