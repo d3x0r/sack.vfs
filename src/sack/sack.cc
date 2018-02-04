@@ -43772,7 +43772,7 @@ LOGICAL ParseStringVector( CTEXTSTR data, CTEXTSTR **pData, int *nData )
 TEXTRUNE GetUtfChar( const char * *from )
 {
 	TEXTRUNE result = (unsigned char)(*from)[0];
-	if( !result ) return result;
+	//if( !result ) return result;
 	if( (*from)[0] & 0x80 )
 	{
 		if( ( (*from)[0] & 0xE0 ) == 0xC0 )
@@ -59173,12 +59173,14 @@ static void HandleEvent( PCLIENT pClient )
 						}
 						Relinquish();
 					}
+					if( pClient->dwFlags & CF_ACTIVE ) {
 #ifdef LOG_NOTICES
 					//if( globalNetworkData.flags.bLogNotices )
 					//	lprintf( WIDE("FD_Write") );
 #endif
-					TCPWrite(pClient);
-					NetworkUnlock( pClient, 1 );
+						TCPWrite(pClient);
+						NetworkUnlock( pClient, 1 );
+					}
 				}
 				if( networkEvents.lNetworkEvents & FD_CLOSE )
 				{
