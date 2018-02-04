@@ -59142,30 +59142,32 @@ static void HandleEvent( PCLIENT pClient )
 					//if( globalNetworkData.flags.bLogNotices )
 					//	lprintf( WIDE( "FD_READ" ) );
 #endif
-					if( pClient->bDraining )
-					{
-						TCPDrainRead( pClient );
-					}
-					else
-					{
-						// got a network event, and won't get another until recv is called.
-						// mark that the socket has data, then the pend_read code will trigger the finishpendingread.
-						if( FinishPendingRead( pClient DBG_SRC ) == 0 )
+					  if( ( pClient->dwFlags & CF_ACTIVE ) ) {
+						if( pClient->bDraining )
 						{
-							pClient->dwFlags |= CF_READREADY;
+							TCPDrainRead( pClient );
 						}
-						if( pClient->dwFlags & CF_TOCLOSE )
+						else
 						{
-							lprintf( WIDE( "Pending read failed - and wants to close." ) );
-							//InternalRemoveClientEx( pc, TRUE, FALSE );
+							// got a network event, and won't get another until recv is called.
+							// mark that the socket has data, then the pend_read code will trigger the finishpendingread.
+							if( FinishPendingRead( pClient DBG_SRC ) == 0 )
+							{
+								pClient->dwFlags |= CF_READREADY;
+							}
+							if( pClient->dwFlags & CF_TOCLOSE )
+							{
+								lprintf( WIDE( "Pending read failed - and wants to close." ) );
+								//InternalRemoveClientEx( pc, TRUE, FALSE );
+							}
 						}
+						NetworkUnlock( pClient, 1 );
 					}
-					NetworkUnlock( pClient, 1 );
 				}
 				if( networkEvents.lNetworkEvents & FD_WRITE )
 				{
 					PCLIENT pcLock;
-					while( !( pcLock = NetworkLockEx( pClient, 1 DBG_SRC ) ) ) {
+					while( !( pcLock = NetworkLockEx( pClient, 0 DBG_SRC ) ) ) {
 						// done with events; inactive sockets can't have events
 						if( !( pClient->dwFlags & CF_ACTIVE ) ) {
 							pcLock = NULL;
@@ -59179,7 +59181,7 @@ static void HandleEvent( PCLIENT pClient )
 					//	lprintf( WIDE("FD_Write") );
 #endif
 						TCPWrite(pClient);
-						NetworkUnlock( pClient, 1 );
+						NetworkUnlock( pClient, 0 );
 					}
 				}
 				if( networkEvents.lNetworkEvents & FD_CLOSE )
