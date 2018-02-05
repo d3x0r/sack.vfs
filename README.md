@@ -1095,6 +1095,10 @@ Mostly unimplemented, more of a place holder than functional.
 ---
 
 ## Changelog
+- 0.9.117 - lock on wrong side. 
+- 0.9.116 - Fix a windows network lock issue. Handle ArrayBuffer output for http response.
+- 0.9.115 - Fix stray unlock.
+- 0.9.114 - Fix leave critical section in release mode.
 - 0.9.113 - Added optional version parameter for VFS. Sync sack sources... A lot of reformats; updates for split network lock.  Added Sqlite.procedure to define deterministic function.
 - 0.9.112 - decode of unicode character escape had bad calculation.
 - 0.9.111 - promote to more appropriate version.  If anyone else joins; this should go to 1.0.  Improve TLS error reporting and SQL result set ability.  Improve table parsing.

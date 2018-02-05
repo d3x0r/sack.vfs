@@ -199,7 +199,9 @@ extern __sighandler_t bsd_signal(int, __sighandler_t);
   // end if( !__LINUX__ )
 #endif
 #ifndef NEED_MIN_MAX
-#  define NO_MIN_MAX_MACROS
+#  ifndef NO_MIN_MAX_MACROS
+#    define NO_MIN_MAX_MACROS
+#  endif
 #endif
 #ifndef NO_MIN_MAX_MACROS
 #  ifdef __cplusplus
@@ -28910,8 +28912,8 @@ LOGICAL  LeaveCriticalSecEx( PCRITICALSECTION pcs DBG_PASS )
 			DebugBreak();
 			continue;
 		}
-		break;
 #endif
+		break;
 	}
 	if( !( pcs->dwLocks & ~SECTION_LOGGED_WAIT ) )
 	{
@@ -43770,7 +43772,7 @@ LOGICAL ParseStringVector( CTEXTSTR data, CTEXTSTR **pData, int *nData )
 TEXTRUNE GetUtfChar( const char * *from )
 {
 	TEXTRUNE result = (unsigned char)(*from)[0];
-	if( !result ) return result;
+	//if( !result ) return result;
 	if( (*from)[0] & 0x80 )
 	{
 		if( ( (*from)[0] & 0xE0 ) == 0xC0 )
@@ -59140,30 +59142,32 @@ static void HandleEvent( PCLIENT pClient )
 					//if( globalNetworkData.flags.bLogNotices )
 					//	lprintf( WIDE( "FD_READ" ) );
 #endif
-					if( pClient->bDraining )
-					{
-						TCPDrainRead( pClient );
-					}
-					else
-					{
-						// got a network event, and won't get another until recv is called.
-						// mark that the socket has data, then the pend_read code will trigger the finishpendingread.
-						if( FinishPendingRead( pClient DBG_SRC ) == 0 )
+					  if( ( pClient->dwFlags & CF_ACTIVE ) ) {
+						if( pClient->bDraining )
 						{
-							pClient->dwFlags |= CF_READREADY;
+							TCPDrainRead( pClient );
 						}
-						if( pClient->dwFlags & CF_TOCLOSE )
+						else
 						{
-							lprintf( WIDE( "Pending read failed - and wants to close." ) );
-							//InternalRemoveClientEx( pc, TRUE, FALSE );
+							// got a network event, and won't get another until recv is called.
+							// mark that the socket has data, then the pend_read code will trigger the finishpendingread.
+							if( FinishPendingRead( pClient DBG_SRC ) == 0 )
+							{
+								pClient->dwFlags |= CF_READREADY;
+							}
+							if( pClient->dwFlags & CF_TOCLOSE )
+							{
+								lprintf( WIDE( "Pending read failed - and wants to close." ) );
+								//InternalRemoveClientEx( pc, TRUE, FALSE );
+							}
 						}
+						NetworkUnlock( pClient, 1 );
 					}
-					NetworkUnlock( pClient, 1 );
 				}
 				if( networkEvents.lNetworkEvents & FD_WRITE )
 				{
 					PCLIENT pcLock;
-					while( !( pcLock = NetworkLockEx( pClient, 1 DBG_SRC ) ) ) {
+					while( !( pcLock = NetworkLockEx( pClient, 0 DBG_SRC ) ) ) {
 						// done with events; inactive sockets can't have events
 						if( !( pClient->dwFlags & CF_ACTIVE ) ) {
 							pcLock = NULL;
@@ -59171,12 +59175,14 @@ static void HandleEvent( PCLIENT pClient )
 						}
 						Relinquish();
 					}
+					if( pClient->dwFlags & CF_ACTIVE ) {
 #ifdef LOG_NOTICES
 					//if( globalNetworkData.flags.bLogNotices )
 					//	lprintf( WIDE("FD_Write") );
 #endif
-					TCPWrite(pClient);
-					NetworkUnlock( pClient, 1 );
+						TCPWrite(pClient);
+						NetworkUnlock( pClient, 0 );
+					}
 				}
 				if( networkEvents.lNetworkEvents & FD_CLOSE )
 				{
@@ -59216,7 +59222,7 @@ static void HandleEvent( PCLIENT pClient )
 					//	lprintf( WIDE("FD_ACCEPT on %p"), pClient );
 #endif
 					AcceptClient(pClient);
-					NetworkUnlock( pClient, 1 );
+					//NetworkUnlock( pClient, 1 );
 				}
 				//lprintf( WIDE("leaveing event handler...") );
 				//lprintf( WIDE("Left event handler CS.") );

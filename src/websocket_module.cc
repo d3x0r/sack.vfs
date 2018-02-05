@@ -1062,7 +1062,12 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			vtprintf( obj->pvtResult, WIDE( "\r\n" ) );
 			VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
 		}
-		else if( args[0]->IsObject() ) {
+		else if( args[0]->IsArrayBuffer() ) {
+			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+			vtprintf( obj->pvtResult, "content-length:%d\r\n", ab->ByteLength() );
+			vtprintf( obj->pvtResult, WIDE( "\r\n" ) );
+			VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
+		} else if( args[0]->IsObject() ) {
 			Local<FunctionTemplate> wrapper_tpl = FileObject::tpl.Get( isolate );
 			if( (wrapper_tpl->HasInstance( args[0] )) ) {
 				FileObject *file = FileObject::Unwrap<FileObject>( args[0]->ToObject() );
