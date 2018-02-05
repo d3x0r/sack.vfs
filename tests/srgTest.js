@@ -10,7 +10,7 @@ for( var n = 0; n < 100000; n++ ) {
 	SRG.getBits();
 }
 var end = Date.now();
-console.log( n, " in ", end-start, n/(end-start));
+console.log( n, "(32 bits) in ", end-start, n/(end-start));
 
 SRG=vfs.SaltyRNG( (salt)=>{salt.push(1);} );
 
@@ -19,14 +19,14 @@ for( var n = 0; n < 100000; n++ ) {
 	SRG.getBits();
 }
 var end = Date.now();
-console.log( n, " in ", end-start, n/(end-start));
+console.log( n, "(32 bit signed) in ", end-start, n/(end-start));
 
 var start = Date.now();
 for( var n = 0; n < 100000; n++ ) {
 	SRG.getBuffer(1000);
 }
 var end = Date.now();
-console.log( n, " in ", end-start, n/(end-start));
+console.log( n, "(1000 bits) in ", end-start, n/(end-start));
 
 return
 
