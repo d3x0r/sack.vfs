@@ -285,6 +285,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 			String::NewFromUtf8( isolate, TranslateText( "Required parameter, SQL query, is missing.") ) ) );
 		return;
 	}
+	/*
 	if( args.Length() > 1 ) {
 		int arg = 0;
 		PDATALIST values;
@@ -323,6 +324,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 		VarTextDestroy( &pvtStmt );
 	}
+	*/
 	if( args.Length() == 1 ) {
 		String::Utf8Value tmp( args[0] );
 
@@ -473,14 +475,13 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 
 						if( fields[colMap[n].col].used == 1 )
 							container->Set( String::NewFromUtf8( isolate, sql->fields[n] ), val );
-						if( usedTables > 1 || ( fields[colMap[n].col].used > 1 ) ) {
+						else if( usedTables > 1 || ( fields[colMap[n].col].used > 1 ) ) {
 							if( fields[colMap[n].col].used > 1 ) {
+								colMap[n].t->container->Set( String::NewFromUtf8( isolate, sql->fields[n] ), val );
 								if( colMap[n].alias )
 									fields[colMap[n].col].array->Set( String::NewFromUtf8( isolate, colMap[n].alias ), val );
 								fields[colMap[n].col].array->Set( colMap[n].depth, val );
 							}
-							else
-								record->Set( String::NewFromUtf8( isolate, sql->fields[n] ), val );
 						}
 
 					}
