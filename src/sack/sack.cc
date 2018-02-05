@@ -58805,7 +58805,7 @@ void NetworkGloalLock( DBG_VOIDPASS ) {
 #endif
 		{
 #ifdef LOG_NETWORK_LOCKING
-			_lprintf( DBG_RELAY )(WIDE( "Failed enter global?" ));
+			_lprintf( DBG_RELAY )(WIDE( "Failed enter global? %lld" ), globalNetworkData.csNetwork.dwThreadId );
 #endif
 			Relinquish();
 		}
@@ -61333,13 +61333,14 @@ NETWORK_PROC( PCLIENT, NetworkLockEx)( PCLIENT lpClient, int readWrite DBG_PASS 
 		{
 			//lpClient->dwFlags &= ~CF_WANTS_GLOBAL_LOCK;
 #ifdef LOG_NETWORK_LOCKING
-			_lprintf(DBG_RELAY)( WIDE( "Failed enter global?" ) );
+			_lprintf(DBG_RELAY)( WIDE( "Failed enter global? %llx" ), globalNetworkData.csNetwork.dwThreadID  );
 #endif
+			Relinquish();
 			return NULL;
 			//DebugBreak();
 		}
 #ifdef LOG_NETWORK_LOCKING
-		_lprintf( DBG_RELAY )( WIDE( "Got global lock" ) );
+		_lprintf( DBG_RELAY )( WIDE( "Got global lock %p %d" ), lpClient, readWrite );
 #endif
 		//lpClient->dwFlags &= ~CF_WANTS_GLOBAL_LOCK;
 #ifdef USE_NATIVE_CRITICAL_SECTION
@@ -61379,6 +61380,9 @@ NETWORK_PROC( PCLIENT, NetworkLockEx)( PCLIENT lpClient, int readWrite DBG_PASS 
 			return NULL;
 		}
 	}
+#ifdef LOG_NETWORK_LOCKING
+		_lprintf( DBG_RELAY )( WIDE( "Got private lock %p %d" ), lpClient, readWrite );
+#endif
 	return lpClient;
 }
 //----------------------------------------------------------------------------
@@ -61388,6 +61392,9 @@ NETWORK_PROC( void, NetworkUnlockEx)( PCLIENT lpClient, int readWrite DBG_PASS )
 	// simple unlock.
 	if( lpClient )
 	{
+#ifdef LOG_NETWORK_LOCKING
+		_lprintf( DBG_RELAY )( WIDE( "Leave private lock %p %d" ), lpClient, readWrite );
+#endif
 #ifdef USE_NATIVE_CRITICAL_SECTION
 		LeaveCriticalSec( readWrite ? &lpClient->csLockRead : &lpClient->csLockWrite );
 #else
@@ -62896,6 +62903,7 @@ size_t doReadExx2(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsSt
 		return -1;
 		// read on top of existing incoming 'guaranteed data'
 	}
+#ifdef REQUIRE_READ_LOCK
 	while( !NetworkLockEx( lpClient, 1 DBG_RELAY ) )
 	{
 		if( !(lpClient->dwFlags & CF_ACTIVE ) )
@@ -62904,11 +62912,14 @@ size_t doReadExx2(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsSt
 		}
 		Relinquish();
 	}
+#endif
 	if( !(lpClient->dwFlags & CF_ACTIVE ) )
 	{
 		// like say the callback we're being invoked from closed it;
 		lprintf( WIDE( "inactive client, will not pend read." ) );
+#ifdef REQUIRE_READ_LOCK
 		NetworkUnlockEx( lpClient, 1 DBG_SRC );
+#endif
 		return -1;
 	}
 	//lprintf( "read %d", nBytes );
@@ -62970,7 +62981,9 @@ size_t doReadExx2(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsSt
 		{
 			uint32_t tick = timeGetTime();
 			lpClient->pWaiting = MakeThread();
+#ifdef REQUIRE_READ_LOCK
 			NetworkUnlockEx( lpClient, 1 DBG_SRC );
+#endif
 			while( lpClient->dwFlags & CF_READPENDING )
 			{
 				// wait 5 seconds, then bail.
@@ -62997,18 +63010,24 @@ size_t doReadExx2(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsSt
 		}
 		if( !(lpClient->dwFlags & CF_ACTIVE ) )
 		{
+#ifdef REQUIRE_READ_LOCK
 			NetworkUnlockEx( lpClient, 1 DBG_SRC );
+#endif
 			return -1;
 		}
 		 lpClient->dwFlags &= ~CF_READWAITING;
+#ifdef REQUIRE_READ_LOCK
 		NetworkUnlockEx( lpClient, 1 DBG_SRC);
+#endif
 		if( timeout )
 			return 0;
 		else
 			return lpClient->RecvPending.dwUsed;
 	}
+#ifdef REQUIRE_READ_LOCK
 	else
 		NetworkUnlockEx( lpClient, 1 DBG_SRC );
+#endif
  // unknown result really... success prolly
 	return 0;
 }
