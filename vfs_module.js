@@ -26,11 +26,11 @@ vfs.JSON.stringify = JSON.stringify;
 //vfs.loadComplete();
 
 process.on( 'beforeExit', ()=> {
-	console.log( "Before Exit." );
+	//console.log( "Before Exit." );
 	vfs.Thread() 
 });
 process.on( 'exit', ()=> {
-	console.log( "Process Exit." );
+	//console.log( "Process Exit." );
 });
 process.on( 'uncaughtException', (err)=> {
 	console.log( err )	

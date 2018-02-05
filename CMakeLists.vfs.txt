@@ -60,6 +60,7 @@ endif( WIN32 )
 set( DEFINITIONS   __STATIC__
 		USE_SQLITE USE_SQLITE_INTERFACE FORCE_COLOR_MACROS NO_FILEOP_ALIAS
                 _CRT_SECURE_NO_WARNINGS  NEED_SHLAPI NEED_SHLOBJ JSON_PARSER_MAIN_SOURCE "SQLITE_ENABLE_LOCKING_STYLE=0"
+		MINIMAL_JSON_PARSE_ALLOCATE
                  )
 
 if( APPLE )
@@ -244,6 +245,7 @@ add_library(${PROJECT_NAME} SHARED
 	src/srg_module.cc
 	src/websocket_module.cc
 	src/network_module.cc
+	src/config_module.cc
 	${MORE_MODULE_SOURCES}
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc

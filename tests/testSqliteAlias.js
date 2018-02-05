@@ -16,7 +16,7 @@ db.do( "insert into gap (parent_id,noOverlap,column,names) values (1,2,3,'asd'),
 console.log( db.do( "select * from egg as foo join gap as bar2 on foo.parent_id=bar2.parent_id" ) );
 
 console.log( db.do( "select foo.*,bar.* from egg as foo join egg as bar on foo.id=bar.parent_id" ) );
-console.log( db.do( "select * from egg as foo join egg as bar on foo.id=bar.parent_id join egg as egg on foo.id=egg2.parent_id" ) );
+console.log( db.do( "select * from egg as foo join egg as bar on foo.id=bar.parent_id join egg as egg on foo.id=egg.parent_id" ) );
 
 
 //console.log( db.do( "select * from egg as foo join egg as bar on foo.id=bar.parent_id" ) );
