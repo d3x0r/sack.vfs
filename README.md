@@ -86,6 +86,8 @@ vfs = {
     Network - Raw network utilities
         Address( address [,port] ) - holder for network addresses.
         UDP( ... ) - UDP Socket to send/received datagrams.
+    Config - Process configuration files; also streaming text parsing
+        (methods)[#Config_Methods]
     // windows only
     registry - an interface to windows registry options
     	set( path, value ) - set a new value in the registry
@@ -157,6 +159,9 @@ There are methods on the Sqlite() function call...
 | eo | (callback) | Enumerate Options.  Each option node in global database is passed to callback (see Option Nodes below) |
 | go | ( &lt;String&gt; [,&lt;String&gt; [,&lt;String&gt;]] ) | Get Option.  First string is section, second optional string is option name, final string is default value of option.  Option name may be concated to section ( "section/option", "default" ) === ("section", "option", "default" ) |
 | so | ( &lt;String&gt; [,&lt;String&gt; [,&lt;String&gt;]] ) | Set Option.  First string is section, second optional string is option name, final string is default value of option.  Option name may be concated to section ( "section/option", "new Value" ) === ("section", "option", "new Value" ) 
+|   |  |  |
+| GUI Functions |  | Added when compiled with full SACK library |
+| optionEditor | ()  | Open gui option editor for global options |
 
 
 #### Sqlite Instance Methods 
@@ -164,6 +169,7 @@ There are methods on the Sqlite() function call...
 ```
   var sack = require( 'sack.vfs' );
   var sqlite = sack.Sqlite( "test.db" );
+  var vfsSqlite = sack.Volume( "sql Volume", "data.vfs" ).Sqlite( "test.db" );
   // the following describes methods on the sqlite instance
 ```
 
@@ -182,14 +188,23 @@ There are methods on the Sqlite() function call...
 | setOption | (section [,opName] ,value) | longer name of 'so' |
 | fo  | (opName) | find an option node under this one (returns null if node doesn't exist)<BR> fo( "name" ) |
 | go  | (opName) | get an option node      <BR>go( "name" ) |
-| eo  | ( callback(node,name)) |  enum option nodes from root of options, takes a callback as a paraemter.<br> callback parameters ( optionNode, optionName ) ... the callback parameters get a node and a name.   The node is another option node that migth be enumerated with eo...<BR> `function callback(node,name)  {console.log( "got", name, node.value );` |
+| eo  | ( callback(node,name)) |  enum option nodes from root of options, takes a callback as a parameter.<br> callback parameters ( optionNode, optionName ) ... the callback parameters get a node and a name.   The node is another option node that migth be enumerated with eo...<BR> `function callback(node,name)  {console.log( "got", name, node.value );` |
 | function | (name, callback(...args) | Add a user defined function to the current sql connection.  'name' is the name of the function.  Set as deterministic; callback is called whenever the procedure's value is required by sqlite; values for inputs are cached so it doesn't need to always call the function.  Return value is given as result of function.   **ODBC CONNECTION UNDEFINED RESULT**
 | procedure | (name, callback(...args) | Add a user defined function to the current sql connection.  'name' is the name of the function.  Callback is called whenever the function is used in SQL statement given to sqlite.  Return value is given as result of function.   **ODBC CONNECTION UNDEFINED RESULT**
 | aggregate | ( name, stepCallback(...args), finalCallback() ) | Define an aggregate function called 'name' and when used, each row stepped is passed to the step callback, when the grouping issues a final, invoke the final callback.  Final result is given as the final value.  **ODBC CONNECTION UNDEFINED RESULT**
+|   |  |  |
+| GUI Functions |  | Added when compiled with full SACK library |
+| optionEditor | ()  | Open gui option editor with options in this database (Unimplemented) |
+
+
 
 example sql command?
 ```
     var results = sqlite.do("select * from table");  // do a sql command, if command doesn't generate data result will be true instead of an array
+
+    sqlite.function( "test", (val)=>val*3 );
+    console.log( sqlite.do( "select test(9)" ) ); // results with 27
+
 ```
 
 ### Option Database
@@ -831,7 +846,70 @@ COM port settings are kept in the default option database under
     port timeout is how long to wait for idle between sending com data.  
         (no data received for 100ms, post packet; this gives a slight delay between when the 
          data is received and actually dispatched)
+
 ```
+
+### Config Methods
+   Configuration file processing; for processing formatted statements in text configurations.  Can
+also be used to process streaming text input and responding with triggers based on configuration.
+Things like a log analyzer can be created using this interface.
+
+```
+var sack = require( "sack.vfs" );
+var processor = sack.Config();
+processor.add( "some line with %i words", (n) => console.log( "found line param:", n ); );
+
+//processor.go( "filename.txt" ); // reads configuration from a file...
+processor.write( "Some sort of file streaming data" );
+processor.write( "some line with 33 words" );
+
+
+```
+
+| Methods | arguments | description |
+|----|-----|-----|
+| add | (format, callback) | Add a matching expression to process match against the stream.  THe callback is passed the variables parts matched in the format statemnt in sequence of match. |
+| go | (filename) | Reads a file and processes each line in the file |
+| write | ( content) | Write some stream data to be processed; instead of coming from a file, data comes from this |
+| on | (event,callback) | defines some event handlers on the stream.  
+|   | "unhandled"  |  event is triggered on a line that does not match any format that has been added  |
+|   | "done" |  file has finished processing (redundant, go() does not return until file is finished anyway   |
+| begin | ( section name ) | begins a new configuration layer.  Rules can be added to this, and are applied until section is end()ed.  This allows defining things like custom configuration handler to handle sections of a configuration; an example might be the configuration defines controls in a layout, and some of the contorls are buttons that have different properties than say text fields. |
+| end | () | ends the current sub-section processing.  Pops the context off the current processing stack |
+| addFilter | ( data ) | Allows adding a transformation function on the data.  This can create custom ways to separate lines of text for instance (maybe it doesn't end with regular carriage returns).  Can also perform translation on the data and result with different data than it was passed. (Not yet implemented) |
+| clearFilters | () | removes filters from the current handler (Not yet implemented) |
+
+
+These methods are on the (module).Config object itself, not on an instance of the object.
+|Static methods| arguments | Description |
+| expand | (string) | Adds escape characters to the string to handle default filters.  (escape backslashes and hash marks for instane)
+| strip | (string) | Remove extra characters from a string (unescape).  Usually don't have to do this, expand written will be stripped when read. |
+| color | (color)  | format a parameter suitable for reading as a color formatted argument |
+| encode | (TYpedArray) | format a block of binary data so it can be read in text; it's a variation of base64 encoding |
+| decode | (stirng ) | result with a block of data that was previousy encoded |
+
+#### Supported Formats
+  This is a table of the format expressions allowed.  '%' character is the prefix of all of these.  if a literal percent is to be matched it should be prefixed with a backslash '\\%'
+
+| Character | meaning |
+|----|-----|
+| m | multi-word.  Matches a sequency of words.  Ends at either the next word after %m specified or the end of line |
+| w | single-word.  Matches a single word. |
+| i | integer.  Matches a number.  Argument is passed as an integer |
+| f | floating point number.  Matches a decimal/integer type number.  Argument is passed as a number. |
+| b | boolean.  Matches (yes/no, true/false, on/off, 1/0, open/close) and is passed as a boolean argument |
+| B | blob/binary.  String encountered matched binary encoded string; callback will be passed the binary buffer |
+| c | color.  String matched a formatted color.  Color is passed to the callback (may require GUI support to be useful) |
+| q | quotient.  Argument is passed as a fraction type (needs more support; fraction library interface not implemented) |
+| u | url.  Matches a URL (host.address:port/with/path) 
+| d | directory name.  allows gathering words with slashes as a path; must end with a slash (/ or \) |
+| n | name of file.  Allows gathering words with slashes as a filename (same as directory?) |
+| p | path (filepath).  Interpted path in sequence of words |
+| a | a network address... host.name:port; collect a hostname/IP and optional port as an expression |
+ 
+
+
+
 ---
 
 # GUI Interface objects
