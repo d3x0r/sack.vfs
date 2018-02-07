@@ -49,6 +49,7 @@ void SqlObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "transaction", transact );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "commit", commit );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "autoTransact", autoTransact );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "procedure", userProcedure );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "function", userFunction );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "aggregate", aggregateFunction );
 
