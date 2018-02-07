@@ -12,8 +12,9 @@ Persistent<Function> imageResult;
 Persistent<Object> priorThis;
 
 static struct imageLocal {
-	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
-
+	CDATA color;
+	uv_async_t colorAsync; // keep this instance around for as long as we might need to do the periodic callback
+	uv_async_t fontAsync; // keep this instance around for as long as we might need to do the periodic callback
 }imageLocal;
 
 static Local<Object> makeColor( Isolate *isolate, CDATA c ) {
@@ -35,7 +36,7 @@ static void fontAsyncmsg( uv_async_t* handle ) {
 		Local<Value> argv[1] = { Number::New( isolate, 0 ) };
 		cb->Call( _this, 1, argv );
 
-		uv_close( (uv_handle_t*)&imageLocal.async, NULL );
+		uv_close( (uv_handle_t*)&imageLocal.fontAsync, NULL );
 
 	}
 	//lprintf( "done calling message notice." );
@@ -47,13 +48,21 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	HandleScope scope( isolate );
 	//lprintf( "async message notice. %p", myself );
+	if( !imageResult.IsEmpty() )
 	{
 		Local<Function> cb = Local<Function>::New( isolate, imageResult );
 		Local<Object> _this = priorThis.Get( isolate );
-		Local<Value> argv[1] = { Number::New( isolate, 0 ) };
+		Local<Value> argv[1] = { ColorObject::makeColor( isolate, imageLocal.color ) };
 		cb->Call( _this, 1, argv );
+		uv_close( (uv_handle_t*)&imageLocal.colorAsync, NULL );
+	}
+	if( !fontResult.IsEmpty() ) {
+		Local<Function> cb = Local<Function>::New( isolate, fontResult );
+		Local<Object> _this = priorThis.Get( isolate );
+		//Local<Value> argv[1] = { Number::New( isolate, 0 ) };
+		cb->Call( _this, 0, NULL );
 
-		uv_close( (uv_handle_t*)&imageLocal.async, NULL );
+		uv_close( (uv_handle_t*)&imageLocal.fontAsync, NULL );
 
 	}
 	//lprintf( "done calling message notice." );
@@ -61,10 +70,10 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 
 
 static uintptr_t fontPickThread( PTHREAD thread ) {
-	MemSet( &imageLocal.async, 0, sizeof( &imageLocal.async ) );
-	uv_async_init( uv_default_loop(), &imageLocal.async, imageAsyncmsg );
+	MemSet( &imageLocal.fontAsync, 0, sizeof( &imageLocal.fontAsync ) );
+	uv_async_init( uv_default_loop(), &imageLocal.fontAsync, imageAsyncmsg );
 	SFTFont font = PickFont( 0, 0, NULL, NULL, NULL );
-	uv_async_send( &imageLocal.async );
+	uv_async_send( &imageLocal.fontAsync );
 
 	return 0;
 }
@@ -77,11 +86,12 @@ static void pickFont( const FunctionCallbackInfo<Value>&  args ) {
 }
 
 static uintptr_t colorPickThread( PTHREAD thread ) {
-	MemSet( &imageLocal.async, 0, sizeof( &imageLocal.async ) );
-	uv_async_init( uv_default_loop(), &imageLocal.async, imageAsyncmsg );
+	MemSet( &imageLocal.colorAsync, 0, sizeof( &imageLocal.colorAsync ) );
+	uv_async_init( uv_default_loop(), &imageLocal.colorAsync, imageAsyncmsg );
 	CDATA color;
 	PickColor( &color, 0, NULL );
-	uv_async_send( &imageLocal.async );
+	imageLocal.color = color;
+	uv_async_send( &imageLocal.colorAsync );
 
 	return 0;
 }

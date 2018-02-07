@@ -64,6 +64,11 @@ enum eventType {
 	/* console events*/
 	Event_Control_ConsoleInput,
 	Event_Control_Close_Loop,
+	/* listbox Events */
+	Event_Listbox_Selected,
+	Event_Listbox_DoubleClick,
+	/* menu events */
+	Event_Menu_Item_Selected,
 };
 
 struct event {
@@ -86,6 +91,12 @@ struct event {
 		struct {
 			PTEXT text;
 		}console;
+		struct {
+			uintptr_t pli;
+		}listbox;
+		struct {
+			uintptr_t pmi;
+		} popup;
 		struct {
 			is_control *control;
 		}InterShell;
