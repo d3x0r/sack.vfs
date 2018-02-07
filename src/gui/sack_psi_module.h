@@ -51,6 +51,7 @@ public:
 
 public:
 	void InitRegistration( Isolate *isolate, struct registrationOpts *opts );
+	RegistrationObject();
 	RegistrationObject( Isolate *isolate, const char *caption );
 	RegistrationObject( Isolate *isolate, struct registrationOpts *opts );
 
@@ -107,10 +108,12 @@ public:
 class PopupObject : public node::ObjectWrap {
 public:
 	PMENU popup;
+	class ControlObject *parent;
 	Persistent<Object> _this;
 
 	static v8::Persistent<v8::Function> constructor;   // Popup
-
+	uint32_t itemId;
+	PLIST menuItems;
 public:
 
 	PopupObject();
@@ -122,6 +125,45 @@ public:
 	static void addPopupItem( const FunctionCallbackInfo<Value>& args );
 	static void trackPopup( const FunctionCallbackInfo<Value>& args );
 
+};
+
+class ListboxItemObject : public node::ObjectWrap {
+public:
+	PLISTITEM pli;
+	class ControlObject *control;
+	Persistent<Object> _this;
+	static v8::Persistent<v8::Function> constructor;   // listbox item
+
+	ListboxItemObject();
+	~ListboxItemObject();
+
+	static void New( const FunctionCallbackInfo<Value>& args );
+	//static void Value( const FunctionCallbackInfo<Value>& args );
+	static void Select( const FunctionCallbackInfo<Value>& args );
+	static void removeListboxItem( const FunctionCallbackInfo<Value>&  args );
+
+	static void wrapSelf( Isolate* isolate, ListboxItemObject *_this, Local<Object> into );
+
+};
+
+class MenuItemObject : public node::ObjectWrap {
+public:
+	PMENUITEM pmi;
+	PopupObject *popup;
+	uintptr_t uid;
+	Persistent<Object> _this;
+	static v8::Persistent<v8::Function> constructor;   // menu itme
+
+	MenuItemObject();
+	~MenuItemObject();
+
+	static void New( const FunctionCallbackInfo<Value>& args );
+	static void Delete( const FunctionCallbackInfo<Value>& args );
+
+	Persistent<Function, CopyablePersistentTraits<Function>> cbSelected; // event callback        ()  // return true/false to allow creation
+	static void removeItem( const FunctionCallbackInfo<Value>&  args );
+
+	static void wrapSelf( Isolate* isolate, MenuItemObject*_this, Local<Object> into );
 };
 
 class ControlObject : public node::ObjectWrap {
@@ -195,6 +237,11 @@ public:
 	Persistent<Function, CopyablePersistentTraits<Function>> customEvents[5];  // event for button control callback (psi/console.h)
 
 
+	static void addListboxItem( const FunctionCallbackInfo<Value>&  args );
+	static void setListboxOnDouble( const FunctionCallbackInfo<Value>&  args );
+	static void setListboxOnSelect( const FunctionCallbackInfo<Value>&  args );
+#define listboxOnDouble customEvents[0]
+#define listboxOnSelect customEvents[1]
 
 																			 //1) Expose a function in the addon to allow Node to set the Javascript cb that will be periodically called back to :
 	Persistent<Function, CopyablePersistentTraits<Function>> cbInitEvent; // event callback        ()  // return true/false to allow creation

@@ -268,7 +268,7 @@ void RenderObject::reveal( const FunctionCallbackInfo<Value>& args ) {
 	RestoreDisplay( r->r );
 }
 
-static int CPROC doMouse( uintptr_t psv, int32_t x, int32_t y, uint32_t b ) {
+static uintptr_t CPROC doMouse( uintptr_t psv, int32_t x, int32_t y, uint32_t b ) {
 	RenderObject *r = (RenderObject *)psv;
 	if( !r->closed )
 		return MakeEvent( &r->async, &r->receive_queue, Event_Render_Mouse, x, y, b );
