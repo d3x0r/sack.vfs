@@ -59348,6 +59348,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 				EnterCriticalSec( &globalNetworkData.csNetwork );
 			}
 			else
+  // if it's processing, race it; build new list, count it.
 				break;
 			Relinquish();
 		}
@@ -59366,10 +59367,11 @@ void RemoveThreadEvent( PCLIENT pc ) {
 			}
 		}
 		thread->event_list->Cnt = c;
+		thread->nEvents = (int)c;
+		thread->counting = FALSE;
 		DeleteListEx( &thread->monitor_list DBG_SRC );
 		thread->monitor_list = newList;
 		pc->this_thread = NULL;
-		thread->nEvents = (int)c;
 #ifdef LOG_NETWORK_EVENT_THREAD
 		lprintf( "peer %p now has %d events", thread, thread->nEvents );
 #endif
@@ -59389,7 +59391,6 @@ void RemoveThreadEvent( PCLIENT pc ) {
 			tmp->parent_peer = thread;
 			thread->child_peer = tmp;
 		}
-	thread->counting = FALSE;
 }
 // unused parameter broadcsat on windows; not needed.
 void AddThreadEvent( PCLIENT pc, int broadcsat )
@@ -59604,7 +59605,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t qui
 			{
 				PCLIENT pc = (PCLIENT)GetLink( &thread->monitor_list, result - (WSA_WAIT_EVENT_0) );
 				//if( pcLock ) {
-					if( pc->dwFlags & CF_AVAILABLE ) {
+					if( !pc || ( pc->dwFlags & CF_AVAILABLE ) ) {
 						lprintf( "thread event happened on a now available client." );
 					}
 					else
