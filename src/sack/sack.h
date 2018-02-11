@@ -3899,6 +3899,8 @@ typedef struct user_input_buffer_tag {
 	INDEX CollectionIndex;
  // flag for whether we are inserting or overwriting
 	int   CollectionInsert;
+ // flag for whether we are inserting or overwriting
+	int   storeCR;
  // used to store partial from GatherLine
 	PTEXT CollectionBuffer;
  // called when a buffer is complete.
@@ -3928,7 +3930,7 @@ TYPELIB_PROC  LOGICAL TYPELIB_CALLTYPE  SetUserInputPosition ( PUSER_INPUT_BUFFE
 // bInsert < 0 toggle insert.  bInsert == 0 clear isnert(set overwrite) else
 // set insert (clear overwrite )
 TYPELIB_PROC  void TYPELIB_CALLTYPE  SetUserInputInsert ( PUSER_INPUT_BUFFER pci, int bInsert );
-TYPELIB_PROC  void TYPELIB_CALLTYPE  SetUserInputInsert ( PUSER_INPUT_BUFFER pci, int bInsert );
+TYPELIB_PROC  void TYPELIB_CALLTYPE  SetUserInputSaveCR( PUSER_INPUT_BUFFER pci, int bSaveCR );
 /* Get the next command in the queue in the speicifed direction
    Parameters
    pci :  pointer to command input buffer
