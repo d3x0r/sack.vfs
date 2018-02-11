@@ -3907,6 +3907,8 @@ typedef struct user_input_buffer_tag {
 	INDEX CollectionIndex;
  // flag for whether we are inserting or overwriting
 	int   CollectionInsert;
+ // flag for whether we are inserting or overwriting
+	int   storeCR;
  // used to store partial from GatherLine
 	PTEXT CollectionBuffer;
  // called when a buffer is complete.
@@ -3936,7 +3938,7 @@ TYPELIB_PROC  LOGICAL TYPELIB_CALLTYPE  SetUserInputPosition ( PUSER_INPUT_BUFFE
 // bInsert < 0 toggle insert.  bInsert == 0 clear isnert(set overwrite) else
 // set insert (clear overwrite )
 TYPELIB_PROC  void TYPELIB_CALLTYPE  SetUserInputInsert ( PUSER_INPUT_BUFFER pci, int bInsert );
-TYPELIB_PROC  void TYPELIB_CALLTYPE  SetUserInputInsert ( PUSER_INPUT_BUFFER pci, int bInsert );
+TYPELIB_PROC  void TYPELIB_CALLTYPE  SetUserInputSaveCR( PUSER_INPUT_BUFFER pci, int bSaveCR );
 /* Get the next command in the queue in the speicifed direction
    Parameters
    pci :  pointer to command input buffer
@@ -10446,6 +10448,7 @@ struct sack_vfs_file
  // which volume this is in
 	struct volume *vol;
 	FPI fpi;
+	BLOCKINDEX first_block;
  // this should be in-sync with current FPI always; plz
 	BLOCKINDEX block;
   // someone already deleted this...
@@ -11423,7 +11426,7 @@ struct sack_vfs_file * CPROC sack_vfs_openfile( struct volume *vol, const char *
 	file->vol = vol;
 	file->fpi = 0;
 	file->delete_on_close = 0;
-	file->block = file->entry->first_block ^ file->dirent_key.first_block;
+	file->first_block = file->block = file->entry->first_block ^ file->dirent_key.first_block;
 	AddLink( &vol->files, file );
 	vol->lock = 0;
 	return file;
@@ -11465,7 +11468,7 @@ size_t CPROC sack_vfs_seek( struct sack_vfs_file *file, size_t pos, int whence )
 	}
 	{
 		size_t n = 0;
-		BLOCKINDEX b = file->entry->first_block ^ file->dirent_key.first_block;
+		BLOCKINDEX b = file->first_block;
 		while( n * BLOCK_SIZE < ( pos & ~BLOCK_MASK ) ) {
 			b = vfs_GetNextBlock( file->vol, b, FALSE, TRUE );
 			n++;
@@ -11587,7 +11590,7 @@ size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t leng
 	file->vol->lock = 0;
 	return written;
 }
-static void sack_vfs_unlink_file_entry( struct volume *vol, struct directory_entry *entry, struct directory_entry *entkey ) {
+static void sack_vfs_unlink_file_entry( struct volume *vol, struct directory_entry *entry, struct directory_entry *entkey, BLOCKINDEX first_block ) {
 	BLOCKINDEX block, _block;
 	struct sack_vfs_file *file_found = NULL;
 	struct sack_vfs_file *file;
@@ -11595,12 +11598,18 @@ static void sack_vfs_unlink_file_entry( struct volume *vol, struct directory_ent
 	LIST_FORALL( vol->files, idx, struct sack_vfs_file *, file  ) {
 		if( file->entry == entry ) {
 			file_found = file;
+			//file->first_block = file->entry->first_block ^ file->dirent_key.first_block;
 			file->delete_on_close = TRUE;
 		}
 	}
+	if( file_found ) {
+		LoG( "Marking physical directory deleted." );
+		file_found->entry->first_block = file_found->dirent_key.first_block;
+	}
 	if( !file_found ) {
-		_block = block = entry->first_block ^ entkey->first_block;
-		LoG( "entry starts at %d", entry->first_block ^ entkey->first_block );
+// entry->first_block ^ entkey->first_block;
+		_block = block = first_block;
+		LoG( "(marking physical deleted (again?)) entry starts at %d", block );
  // zero the block... keep the name.
 		entry->first_block = entkey->first_block;
 		// wipe out file chain BAT
@@ -11665,7 +11674,7 @@ int CPROC sack_vfs_close( struct sack_vfs_file *file ) {
 	}
 #endif
 	DeleteLink( &file->vol->files, file );
-	if( file->delete_on_close ) sack_vfs_unlink_file_entry( file->vol, file->entry, &file->dirent_key );
+	if( file->delete_on_close ) sack_vfs_unlink_file_entry( file->vol, file->entry, &file->dirent_key, file->first_block );
 	file->vol->lock = 0;
 	if( file->vol->closed ) sack_vfs_unload_volume( file->vol );
 	Deallocate( struct sack_vfs_file *, file );
@@ -11679,7 +11688,7 @@ int CPROC sack_vfs_unlink_file( struct volume *vol, const char * filename ) {
 	while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
 	LoG( "unlink file:%s", filename );
 	if( ( entry  = ScanDirectory( vol, filename, &entkey ) ) ) {
-		sack_vfs_unlink_file_entry( vol, entry, &entkey );
+		sack_vfs_unlink_file_entry( vol, entry, &entkey, entry->first_block ^ entkey.first_block );
 		result = 1;
 	}
 	vol->lock = 0;
@@ -37782,7 +37791,8 @@ static	struct find_cursor * CPROC sack_filesys_find_create_cursor ( uintptr_t ps
 	struct find_cursor_data *cursor = New( struct find_cursor_data );
 	char maskbuf[512];
 	MemSet( cursor, 0, sizeof( *cursor ) );
-	snprintf( maskbuf, 512, "%s/%s", root ? root : ".", filemask?filemask:"*" );
+	//snprintf( maskbuf, 512, "%s/%s", root ? root : ".", filemask?filemask:"*" );
+	snprintf( maskbuf, 512, "%s/%s", root ? root : ".", "*" );
 	cursor->mask = StrDup( filemask );
 	cursor->root = StrDup( root?root:"." );
 // StrDup( filemask ? filemask : "*" );
@@ -43897,16 +43907,19 @@ TEXTRUNE GetUtfChar( const char * *from )
 //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 TEXTRUNE GetUtfCharIndexed( const char * pc, size_t *n, size_t length )
 {
-	CTEXTSTR orig = pc + n[0];
-	CTEXTSTR tmp = orig;
-	TEXTRUNE result = GetUtfChar( &tmp );
-	if( (size_t)(tmp-orig) <= length ) {
-		n[0] += tmp - orig;
-		return result;
+	if( length )
+	{
+		CTEXTSTR orig = pc + n[0];
+		CTEXTSTR tmp = orig;
+		TEXTRUNE result = GetUtfChar( &tmp );
+		if( (size_t)( tmp - orig ) <= length ) {
+			n[0] += tmp - orig;
+			return result;
+		}
+		// if illformed character was at the end... return 0
+	   // cap result to length.
+		( *n ) = length;
 	}
-	// if illformed character was at the end... return 0
-   // cap result to length.
-   (*n) = length;
 	return 0;
 }
 //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -52379,9 +52392,9 @@ static void HandleData( HTML5WebSocket socket, PCLIENT pc, POINTER buffer, size_
 }
 static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 {
+	HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc, 0 );
 	if( buffer )
 	{
-		HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc, 0 );
 		int result;
 #ifdef _UNICODE
 		TEXTSTR tmp = CharWConvertExx( (const char*)buffer, length DBG_SRC );
@@ -52643,10 +52656,11 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 	}
 	else
 	{
-		HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc, 0 );
+		//HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc, 0 );
 		buffer = socket->buffer = Allocate( 4096 );
 	}
-	ReadTCP( pc, buffer, 4096 );
+	if( !socket->input_state.flags.use_ssl )
+		ReadTCP( pc, buffer, 4096 );
 }
 static void CPROC closed( PCLIENT pc_client ) {
 	HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc_client, 0 );
@@ -58031,6 +58045,7 @@ struct peer_thread_info
 #ifdef _WIN32
 	WSAEVENT hThread;
 	int nEvents;
+	LOGICAL counting;
  // updated with count thread is waiting on
 	int nWaitEvents;
 #endif
@@ -59318,6 +59333,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 #ifdef LOG_NETWORK_EVENT_THREAD
 	lprintf( "Remove client %p from %p thread events...  proc:%d  ev:%d  wait:%d", pc, thread, thread->flags.bProcessing, thread->nEvents, thread->nWaitEvents );
 #endif
+	thread->counting = TRUE;
 	thread->nEvents = 1;
 	if( thread->thread != MakeThread() && !thread->flags.bProcessing )
 		while( thread->nEvents != thread->nWaitEvents ) {
@@ -59373,6 +59389,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 			tmp->parent_peer = thread;
 			thread->child_peer = tmp;
 		}
+	thread->counting = FALSE;
 }
 // unused parameter broadcsat on windows; not needed.
 void AddThreadEvent( PCLIENT pc, int broadcsat )
@@ -59452,7 +59469,7 @@ void AddThreadEvent( PCLIENT pc, int broadcsat )
 	pc->flags.bAddedToEvents = 1;
 	peer->nEvents++;
 #ifdef LOG_NETWORK_EVENT_THREAD
-	//lprintf( "peer %p now has %d events", peer, peer->nEvents );
+	lprintf( "peer %p now has %d events", peer, peer->nEvents );
 #endif
  // scheduler thread already awake do not wake him.
 	if( !peer->flags.bProcessing && peer->parent_peer )
@@ -59532,6 +59549,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t qui
 #endif
 		thread->nWaitEvents = thread->nEvents;
 		thread->flags.bProcessing = 0;
+		while( thread->counting ) Relinquish();
 		result = WSAWaitForMultipleEvents( thread->nEvents
 													, (const HANDLE *)thread->event_list->data
 													, FALSE
@@ -59822,7 +59840,7 @@ void AddThreadEvent( PCLIENT pc, int broadcast )
 		lprintf( "peer add socket to %d now has 0x%x events", peer->epoll_fd, ev.events );
 #endif
 		r = epoll_ctl( peer->epoll_fd, EPOLL_CTL_ADD, broadcast?pc->SocketBroadcast:pc->Socket, &ev );
-		if( r < 0 ) lprintf( "Error adding:%d", errno );
+		if( r < 0 ) lprintf( "Error adding:%d %d", errno, broadcast?pc->SocketBroadcast:pc->Socket );
 #  endif
 	}
 	if( !pc->this_thread ) {
@@ -61487,10 +61505,10 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 #endif
 			return;
 		}
-		if( lpClient->dwFlags & CF_WRITEPENDING ) {
-#ifdef LOG_DEBUG_CLOSING
+		if( lpClient->lpFirstPending || ( lpClient->dwFlags & CF_WRITEPENDING ) ) {
+//#ifdef LOG_DEBUG_CLOSING
 			lprintf( "CLOSE WHILE WAITING FOR WRITE TO FINISH..." );
-#endif
+//#endif
 			lpClient->dwFlags |= CF_TOCLOSE;
 			return;
 		}
@@ -61962,7 +61980,7 @@ void AcceptClient(PCLIENT pListen)
 										, pNewClient->saClient
 										,&nTemp
 										);
-   //lprintf( "Accept new client....%d", pNewClient->Socket );
+	//lprintf( "Accept new client....%d", pNewClient->Socket );
 #if WIN32
 	SetHandleInformation( (HANDLE)pNewClient->Socket, HANDLE_FLAG_INHERIT, 0 );
 #endif
@@ -62716,9 +62734,10 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 							 (char*)lpClient->RecvPending.buffer.p +
 							 lpClient->RecvPending.dwUsed,
 							 (int)lpClient->RecvPending.dwAvail,0);
+			 dwError = WSAGetLastError();
+			//lprintf( "Network receive %d %d %d", nRecv, lpClient->RecvPending.dwUsed, lpClient->RecvPending.dwAvail );
 			if (nRecv == SOCKET_ERROR)
 			{
-				dwError = WSAGetLastError();
 #ifdef DEBUG_SOCK_IO
 				lprintf( "Received error (-1) %d", nRecv );
 #endif
@@ -62759,9 +62778,9 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 			else if (!nRecv)
    // otherwise WSAEWOULDBLOCK would be generated.
 			{
-#ifdef DEBUG_SOCK_IO
+//#ifdef DEBUG_SOCK_IO
 				lprintf( "Received (0) %d", nRecv );
-#endif
+//#endif
 				WakeableSleep( 100 );
 				//_lprintf( DBG_RELAY )( WIDE("Closing closed socket... Hope there's also an event... "));
 				lpClient->dwFlags |= CF_TOCLOSE;
@@ -62788,6 +62807,7 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 					lpClient->dwFlags &= ~CF_READREADY;
 				lpClient->RecvPending.dwLastRead = nRecv;
 				lpClient->RecvPending.dwAvail -= nRecv;
+				//lprintf( "Receive pending is now %d after %d", lpClient->RecvPending.dwAvail, nRecv );
 				lpClient->RecvPending.dwUsed  += nRecv;
 				if( lpClient->RecvPending.s.bStream &&
 				    lpClient->RecvPending.dwAvail )
@@ -62928,6 +62948,7 @@ size_t doReadExx2(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsSt
 	{
 		// we can assume there is nothing now pending...
 		lpClient->RecvPending.buffer.p = lpBuffer;
+		//_lprintf(DBG_RELAY)( "Setup read avail: %d", nBytes );
 		lpClient->RecvPending.dwAvail = nBytes;
 		lpClient->RecvPending.dwUsed = 0;
 		lpClient->RecvPending.s.bStream = bIsStream;
@@ -63043,7 +63064,8 @@ static void PendWrite( PCLIENT pClient
 	}
 #endif
 	lpPend = New( PendingBuffer );
-	lpPend->dwAvail  = nLen;
+	//lprintf( "Write pend %d", nLen );
+	lpPend->dwAvail = nLen;
 	lpPend->dwUsed	= 0;
 	lpPend->lpNext	= NULL;
 	if( !bLongBuffer )
@@ -63078,6 +63100,7 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
 #endif
 		if( pc->lpFirstPending->dwAvail )
 		{
+			  uint32_t dwError;
 			if( globalNetworkData.flags.bLogSentData )
 			{
 				LogBinary( (uint8_t*)pc->lpFirstPending->buffer.c +
@@ -63092,9 +63115,9 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
 							 pc->lpFirstPending->dwUsed,
 							 (int)pc->lpFirstPending->dwAvail,
 							 0);
+			  dwError = WSAGetLastError();
+			//lprintf( "sent result: %d %d %d", nSent, pc->lpFirstPending->dwUsed, pc->lpFirstPending->dwAvail );
 			if (nSent == SOCKET_ERROR) {
-				uint32_t dwError;
-				dwError = WSAGetLastError();
   // this is alright.
 				if( dwError == WSAEWOULDBLOCK )
 				{
@@ -63151,13 +63174,14 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
 		else
 			nSent = 0;
 #ifdef DEBUG_SOCK_IO
-		lprintf( "sent... %d", nSent );
+		lprintf( "sent... %d %d %d", nSent, pc->lpFirstPending->dwUsed, pc->lpFirstPending->dwAvail );
 #endif
   // sent some data - update pending buffer status.
 		{
 			if( pc->lpFirstPending )
 			{
 				pc->lpFirstPending->dwAvail -= nSent;
+				//lprintf( "Subtracted %d got %d", nSent, pc->lpFirstPending->dwAvail );
 				pc->lpFirstPending->dwUsed  += nSent;
   // no more to send...
 				if (!pc->lpFirstPending->dwAvail)
@@ -63290,6 +63314,7 @@ LOGICAL doTCPWriteExx( PCLIENT lpClient
 	{
 		// have to steal the buffer - :(
 		lpClient->FirstWritePending.buffer.c   = pInBuffer;
+		//lprintf( "First pending Write set to %d", nInLen );
 		lpClient->FirstWritePending.dwAvail    = nInLen;
 		lpClient->FirstWritePending.dwUsed     = 0;
 		lpClient->FirstWritePending.s.bStream    = FALSE;
@@ -64191,6 +64216,7 @@ struct ssl_session {
 	size_t ibuflen;
 	uint8_t *dbuffer;
 	size_t dbuflen;
+	CRITICALSECTION csReadWrite;
 };
 static struct ssl_global
 {
@@ -64260,6 +64286,7 @@ static int handshake( PCLIENT pc ) {
 							if( ses->obuffer )
 								Deallocate( uint8_t *, ses->obuffer );
 							ses->obuffer = NewArray( uint8_t, ses->obuflen = pending*2 );
+							//lprintf( "making obuffer bigger %d %d", pending, pending * 2 );
 						}
 						read = BIO_read(ses->wbio, ses->obuffer, (int)pending);
 #ifdef DEBUG_SSL_IO
@@ -64293,6 +64320,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 #endif
 	if( pc->ssl_session )
 	{
+		EnterCriticalSec( &pc->ssl_session->csReadWrite );
 		if( buffer )
 		{
 			int len;
@@ -64305,6 +64333,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 #endif
 			if( len < (int)length ) {
 				lprintf( "Protocol failure?" );
+				LeaveCriticalSec( &pc->ssl_session->csReadWrite );
 				Release( pc->ssl_session );
 				RemoveClient( pc );
 				return;
@@ -64314,6 +64343,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 				// normal condition...
 				lprintf( "Receive handshake not complete iBuffer" );
 #endif
+				LeaveCriticalSec( &pc->ssl_session->csReadWrite );
 				ReadTCP( pc, pc->ssl_session->ibuffer, pc->ssl_session->ibuflen );
 				return;
 			}
@@ -64325,6 +64355,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 						int r;
 						if( ( r = SSL_get_verify_result( pc->ssl_session->ssl ) ) != X509_V_OK ) {
 							lprintf( "Certificate verification failed. %d", r );
+							LeaveCriticalSec( &pc->ssl_session->csReadWrite );
 							RemoveClientEx( pc, 0, 1 );
 							return;
 							//ERR_print_errors_cb( logerr, (void*)__LINE__ );
@@ -64371,6 +64402,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 				}
 			}
 			else if( hs_rc == -1 ) {
+				LeaveCriticalSec( &pc->ssl_session->csReadWrite );
 				  RemoveClient( pc );
 				  return;
 			}
@@ -64379,15 +64411,31 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 			{
 				// the read generated write data, output that data
 				size_t pending = BIO_ctrl_pending( pc->ssl_session->wbio );
-#ifdef DEBUG_SSL_IO
-				lprintf( "pending to send is %zd", pending );
-#endif
+				if( !pc->ssl_session ) {
+					lprintf( "SSL SESSION SELF DESTRUCTED!" );
+				}
 				if( pending > 0 ) {
-					int read = BIO_read( pc->ssl_session->wbio, pc->ssl_session->obuffer, (int)pc->ssl_session->obuflen );
+					int read;
 #ifdef DEBUG_SSL_IO
-					lprintf( "Send pending control %p %d", pc->ssl_session->obuffer, read );
+					lprintf( "pending to send is %zd into %zd %p " , pending, pc->ssl_session->obuflen, pc->ssl_session->obuffer );
 #endif
-					SendTCP( pc, pc->ssl_session->obuffer, read );
+					if( pending > pc->ssl_session->obuflen ) {
+						if( pc->ssl_session->obuffer )
+							Deallocate( uint8_t *, pc->ssl_session->obuffer );
+						pc->ssl_session->obuffer = NewArray( uint8_t, pc->ssl_session->obuflen = pending * 2 );
+						//lprintf( "making obuffer bigger %d %d", pending, pending * 2 );
+					}
+/*(int)pc->ssl_session->obuflen*/
+					read  = BIO_read( pc->ssl_session->wbio, pc->ssl_session->obuffer, pending );
+					if( read < 0 ) {
+						ERR_print_errors_cb( logerr, (void*)__LINE__ );
+						lprintf( "failed to read pending control data...SSL will fail without it." );
+					} else {
+#ifdef DEBUG_SSL_IO
+						lprintf( "Send pending control %p %d", pc->ssl_session->obuffer, read );
+#endif
+						SendTCP( pc, pc->ssl_session->obuffer, read );
+					}
 				}
 			}
 			// do was have any decrypted data to give to the application?
@@ -64438,6 +64486,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 							if( pc->ssl_session->obuffer )
 								Deallocate( uint8_t *, pc->ssl_session->obuffer );
 							pc->ssl_session->obuffer = NewArray( uint8_t, pc->ssl_session->obuflen = pending * 2 );
+							//lprintf( "making obuffer bigger %d %d", pending, pending * 2 );
 						}
 						read = BIO_read( pc->ssl_session->wbio, pc->ssl_session->obuffer, (int)pc->ssl_session->obuflen );
 						SendTCP( pc, pc->ssl_session->obuffer, read );
@@ -64446,8 +64495,10 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 			}
 		}
 		//lprintf( "Read more data..." );
-		if( pc->ssl_session )
+		if( pc->ssl_session ) {
+			LeaveCriticalSec( &pc->ssl_session->csReadWrite );
 			ReadTCP( pc, pc->ssl_session->ibuffer, pc->ssl_session->ibuflen );
+		}
 	}
 }
 LOGICAL ssl_Send( PCLIENT pc, CPOINTER buffer, size_t length )
@@ -64469,9 +64520,11 @@ LOGICAL ssl_Send( PCLIENT pc, CPOINTER buffer, size_t length )
 #ifdef DEBUG_SSL_IO
 		lprintf( "Sending %d of %d at %d", pending_out, length, offset );
 #endif
+      EnterCriticalSec( &pc->ssl_session->csReadWrite );
 		len = SSL_write( pc->ssl_session->ssl, (((uint8_t*)buffer) + offset), (int)pending_out );
 		if (len < 0) {
 			ERR_print_errors_cb(logerr, (void*)__LINE__);
+			LeaveCriticalSec( &pc->ssl_session->csReadWrite );
 			return FALSE;
 		}
 		offset += len;
@@ -64485,6 +64538,7 @@ LOGICAL ssl_Send( PCLIENT pc, CPOINTER buffer, size_t length )
 		if( SUS_GT( len, int, ses->obuflen, size_t ) )
 		{
 			Release( ses->obuffer );
+			lprintf( "making obuffer bigger %d %d", len, len * 2 );
 			ses->obuffer = NewArray( uint8_t, len * 2 );
 			ses->obuflen = len * 2;
 		}
@@ -64493,6 +64547,7 @@ LOGICAL ssl_Send( PCLIENT pc, CPOINTER buffer, size_t length )
 		lprintf( "ssl_Send  %d", len_out );
 #endif
 		SendTCP( pc, ses->obuffer, len_out );
+      LeaveCriticalSec( &pc->ssl_session->csReadWrite );
 	}
 	return TRUE;
 }
@@ -64513,6 +64568,7 @@ static void ssl_InitSession( struct ssl_session *ses ) {
 	ses->rbio = BIO_new( BIO_s_mem() );
 	ses->wbio = BIO_new( BIO_s_mem() );
 	SSL_set_bio( ses->ssl, ses->rbio, ses->wbio );
+   InitializeCriticalSec( &ses->csReadWrite );
 }
 static void ssl_CloseCallback( PCLIENT pc ) {
 	struct ssl_session *ses = pc->ssl_session;
@@ -64526,6 +64582,7 @@ static void ssl_CloseCallback( PCLIENT pc ) {
 		ses->cpp_user_close( pc->psvClose );
 	else
 		ses->user_close( pc );
+   DeleteCriticalSec( &ses->csReadWrite );
 	Release( ses->dbuffer );
 	Release( ses->ibuffer );
 	Release( ses->obuffer );
