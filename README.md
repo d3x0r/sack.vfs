@@ -1095,6 +1095,7 @@ Mostly unimplemented, more of a place holder than functional.
 ---
 
 ## Changelog
+- 0.9.118 - Fix lock issue with SSL read/write.  Fix windows wait on short event count.  Fix VES unlink so files disappear even though still open.
 - 0.9.117 - lock on wrong side. 
 - 0.9.116 - Fix a windows network lock issue. Handle ArrayBuffer output for http response.
 - 0.9.115 - Fix stray unlock.
