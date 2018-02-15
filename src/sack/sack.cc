@@ -59221,10 +59221,20 @@ static void HandleEvent( PCLIENT pClient )
 					}
 					if( pClient->dwFlags & CF_ACTIVE ) {
 #ifdef LOG_NOTICES
-					//if( globalNetworkData.flags.bLogNotices )
-					//	lprintf( WIDE("FD_Write") );
+						//if( globalNetworkData.flags.bLogNotices )
+						//	lprintf( WIDE("FD_Write") );
 #endif
+						// returns true while it wrote or there is data to write
 						TCPWrite(pClient);
+						if( !pClient->lpFirstPending ) {
+							if( pClient->dwFlags & CF_TOCLOSE )
+							{
+								pClient->dwFlags &= ~CF_TOCLOSE;
+								lprintf( WIDE( "Pending read failed - and wants to close." ) );
+								InternalRemoveClientEx( pClient, FALSE, TRUE );
+								TerminateClosedClient( pClient );
+							}
+						}
 						NetworkUnlock( pClient, 0 );
 					}
 				}
