@@ -64577,7 +64577,9 @@ LOGICAL ssl_Send( PCLIENT pc, CPOINTER buffer, size_t length )
 		if( SUS_GT( len, int, ses->obuflen, size_t ) )
 		{
 			Release( ses->obuffer );
+#ifdef DEBUG_SSL_IO
 			lprintf( "making obuffer bigger %d %d", len, len * 2 );
+#endif
 			ses->obuffer = NewArray( uint8_t, len * 2 );
 			ses->obuflen = len * 2;
 		}
