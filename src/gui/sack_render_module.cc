@@ -26,7 +26,7 @@ static Local<Value> ProcessEvent( Isolate* isolate, struct event *evt, RenderObj
 		}
 		break;
 	case Event_Render_Draw:
-		if( !r->drawn )
+		if( !r->surface.IsEmpty() )
 			r->surface.Reset( isolate, ImageObject::NewImage( isolate, GetDisplayImage( r->r ), TRUE ) );
 		return Local<Object>::New( isolate, r->surface );
 	case Event_Render_Key:

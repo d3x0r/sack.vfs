@@ -16,6 +16,7 @@ struct optionStrings {
 	Eternal<String> *drawString;
 	Eternal<String> *createString;
 	Eternal<String> *mouseString;
+	Eternal<String> *controlRegistrationString;
 	Eternal<String> *keyString;
 	Eternal<String> *destroyString;
 	Eternal<String> *sizeString;
@@ -45,7 +46,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		makeString( draw, "draw" );
 		makeString( size, "size" );
 		makeString( layout, "layout" );
-
+		makeString( controlRegistration, "control" );
 		//check->String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "" ) );
 		AddLink( &strings, check );
 	}
@@ -120,7 +121,7 @@ static void asyncmsg( uv_async_t* handle ) {
 		while( evt = (struct event *)DequeLink( &isLocal.core->events ) ) {
 			is_control *is = evt->data.InterShell.control;
 			InterShellObject* myself = is?is->type:NULL;
-			Local<Value> object;// = ProcessEvent( isolate, evt, myself );
+			Local<Object> object;// = ProcessEvent( isolate, evt, myself );
 			Local<Value> *argv = NULL;
 			int argc = 0;
 			Local<Function> cb;
@@ -178,6 +179,42 @@ static void asyncmsg( uv_async_t* handle ) {
 				evt->success = !r->IsNull() && !r->IsUndefined();
 			}
 			break;
+			case Event_Intershell_Control_Destroy:
+				Local<Value> _argv[] = { is->psvData.Get(isolate) };
+				argv = _argv;
+				argc = 1;
+				cb = Local<Function>::New( isolate, myself->cbDestroy );
+				Local<Value> r = cb->Call( is->psvControl.Get(isolate), argc, argv );
+				break;
+			case Event_Intershell_Control_Draw:
+				if( !is->surface.IsEmpty() )
+					is->surface.Reset( isolate, ImageObject::NewImage( isolate, GetControlSurface( InterShell_GetButtonControl( is->button ) ), TRUE ) );
+				Local<Value> _argv[] = { is->psvData.Get( isolate ), is->surface.Get( isolate ) };
+				argv = _argv;
+				argc = 1;
+				cb = Local<Function>::New( isolate, myself->cbDraw );
+				Local<Value> r = cb->Call( is->psvControl.Get( isolate ), argc, argv );
+				break;
+			case Event_Intershell_Control_Mouse:
+				static Persistent<Object> mo;
+				if( mo.IsEmpty() ) {
+					object = Object::New( isolate );
+					mo.Reset( isolate, object );
+				} else
+					object = Local<Object>::New( isolate, mo );
+
+				object->Set( String::NewFromUtf8( isolate, "x" ), Number::New( isolate, evt->data.mouse.x ) );
+				object->Set( String::NewFromUtf8( isolate, "y" ), Number::New( isolate, evt->data.mouse.y ) );
+				object->Set( String::NewFromUtf8( isolate, "b" ), Number::New( isolate, evt->data.mouse.b ) );
+
+				Local<Value> _argv[] = { is->psvData.Get( isolate ), object };
+				argv = _argv;
+				argc = 1;
+				cb = Local<Function>::New( isolate, myself->cbMouse );
+				Local<Value> r = cb->Call( is->psvControl.Get( isolate ), argc, argv );
+				break;
+
+
 			case Event_Intershell_ButtonClick:
 				cb = Local<Function>::New( isolate, myself->cbClick );
 				Local<Value> _argv[] = { Local<Object>::New( isolate, is->psvData ) };
@@ -570,21 +607,51 @@ void InterShellObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.IsConstructCall() ) {
 		char *name;
-		String::Utf8Value arg( args[0] );
-		name = StrDup( *arg );
+		Local<Object> opts;
+		Local<String> optName;
+		struct optionStrings *strings;
+		if( args[0]->IsString() ) {
+			String::Utf8Value arg( args[0] );
+			name = StrDup( *arg );
+		} else if( args[0]->IsObject() ) {
+			opts = args[0]->ToObject();
+			strings = getStrings( isolate );
+			if( opts->Has( optName = strings->nameString->Get( isolate ) ) ) {
+				String::Utf8Value arg( opts->Get( optName ) );
+				name = StrDup( *arg );
+			}
+		}
 		InterShellObject* obj;
-
 		obj = new InterShellObject( name, FALSE );
 
-		Local<Object> _this = args.This();
-		Local<Function> cons = Local<Function>::New( isolate, ControlObject::registrationConstructor );
-		Local<Object> temp;
-		obj->registrationObject.Reset( isolate, temp = cons->NewInstance( ) );
-		obj->registration = ObjectWrap::Unwrap<RegistrationObject>( temp );
-		_this->Set( String::NewFromUtf8( isolate, "registration" ), temp );
+		{
+			if( opts->Has( optName = strings->controlRegistrationString->Get( isolate ) ) ) {
+				Local<Object> registration = opts->Get( optName );
+				RegistrationObject *regobj = ObjectWrap::Unwrap<RegistrationObject>( registration );
+				obj->registrationObject.Reset( isolate, registration );
+				obj->registration = regobj;
+			}
+			if( opts->Has( optName = strings->createString->Get( isolate ) ) ) 
+				obj->cbCreate.Reset( isolate, Handle<Function>::Cast( opts->Get( optName ) ) );
+			if( opts->Has( optName = strings->destroyString->Get( isolate ) ) )
+				obj->cbDestroy.Reset( isolate, Handle<Function>::Cast( opts->Get( optName ) ) );
+			if( opts->Has( optName = strings->mouseString->Get( isolate ) ) )
+				obj->cbMouse.Reset( isolate, Handle<Function>::Cast( opts->Get( optName ) ) );
+			if( opts->Has( optName = strings->drawString->Get( isolate ) ) )
+				obj->cbDraw.Reset( isolate, Handle<Function>::Cast( opts->Get( optName ) ) );
+		}
 
-		obj->Wrap( _this );
-		args.GetReturnValue().Set( _this );
+			Local<Object> _this = args.This();
+
+			// this created a new registration so control events would be hooked to this.
+			//Local<Function> cons = Local<Function>::New( isolate, ControlObject::registrationConstructor );
+			//Local<Object> temp;
+			//obj->registrationObject.Reset( isolate, temp = cons->NewInstance() );
+			//obj->registration = ObjectWrap::Unwrap<RegistrationObject>( temp );
+			//_this->Set( String::NewFromUtf8( isolate, "registration" ), temp );
+
+			obj->Wrap( _this );
+			args.GetReturnValue().Set( _this );
 	}
 	else {
 		const int argc = 2;
@@ -803,7 +870,7 @@ static uintptr_t cbCreateControl( PSI_CONTROL parent, int32_t x, int32_t y, uint
 		c->pc = MakeNamedCaptionedControl( parent, io->name, x, y, w, h, -1, c->caption );
 		MakeISEvent( &isLocal.core->async, &isLocal.core->events, Event_Intershell_CreateControl, c );
 	} else {
-		c->pc = NULL;
+		c->pc = MakeNamedCaptionedControl( parent, io->registration->r.name, x, y, w, h, -1, c->caption );
 		MakeISEvent( &isLocal.core->async, &isLocal.core->events, Event_Intershell_CreateCustomControl, c, x, y, w, h );
 		c->pc = g.nextControlCreatePosition.resultControl;
 	}
@@ -814,11 +881,40 @@ static void defineCreateControl( char *name ) {
 	//DefineRegistryMethod(TASK_PREFIX,CreateControl,WIDE( "control" ),name,WIDE( "control_create" ),uintptr_t,(PSI_CONTROL,int32_t,int32_t,uint32_t,uint32_t))
 
 	TEXTCHAR buf[256];
-	lprintf( "Define Create Control %s", name );
+	//lprintf( "Define Create Control %s", name );
 	snprintf( buf, 256, "intershell/control/%s", name );
 	SimpleRegisterMethod( buf, cbCreateControl
 							  , "uintptr_t", "control_create", "(PSI_CONTROL,int32_t,int32_t,uint32_t,uint32_t)" );
 }
+
+static void cbDestroyControl( uintptr_t psvControl ) {
+	MakeISEvent( &isLocal.core->async, &isLocal.core->events, Event_Intershell_Control_Destroy );
+}
+
+static void defineDestroyControl( char *name ) {
+	//DefineRegistryMethod(TASK_PREFIX,CreateControl,WIDE( "control" ),name,WIDE( "control_create" ),uintptr_t,(PSI_CONTROL,int32_t,int32_t,uint32_t,uint32_t))
+
+	TEXTCHAR buf[256];
+	//lprintf( "Define Destroy Control %s", name );
+	snprintf( buf, 256, "intershell/control/%s", name );
+	SimpleRegisterMethod( buf, cbDestroyControl
+		, "void", "control_destroy", "(uintptr_t)" );
+}
+
+static void cbMouseControl( uintptr_t psvControl ) {
+	MakeISEvent( &isLocal.core->async, &isLocal.core->events, Event_Intershell_Control_Destroy );
+}
+
+static void defineMouseControl( char *name ) {
+	//DefineRegistryMethod(TASK_PREFIX,CreateControl,WIDE( "control" ),name,WIDE( "control_create" ),uintptr_t,(PSI_CONTROL,int32_t,int32_t,uint32_t,uint32_t))
+
+	TEXTCHAR buf[256];
+	//lprintf( "Define Mouse Control %s", name );
+	snprintf( buf, 256, "intershell/control/%s", name );
+	SimpleRegisterMethod( buf, cbMouseControl
+		, "int", "control_mouse", "(uintptr_t)" );
+}
+
 
 static LOGICAL cbQueryShowControl( uintptr_t psvInit) {
 	is_control *c = (is_control *)psvInit;
