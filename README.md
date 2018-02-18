@@ -8,7 +8,11 @@ Otherwise is the same as [sack.vfs](https://npmjs.org/packages/sack.vfs)
 Vulkan API to be added eventually... 
 
 ## Requirements
+
+CMake-js is required to build the GUI; to pull the full external sources.
+
 #### npm
+	cmake-js 
 	// don't use these anymore... but rather internal macros
 	// because I default all methods as readonly
 	// all objects exported by require are constants.
@@ -23,6 +27,9 @@ Vulkan API to be added eventually...
 
 #### Windows
 	none
+
+
+
 
 # Usage
 

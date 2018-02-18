@@ -1,5 +1,5 @@
 {
-  "name": "sack.gui",
+  "name": "sack-gui",
   "version": "0.9.117",
   "description": "Node.js VFS Addon",
   "main": "vfs_module.js",
@@ -29,6 +29,7 @@
     "database",
     "sack"
   ],
+  "dependencies": ["cmake-js"],
   "scripts": {
     "test": "node tests/vfsTest.js",
     "install": "npm run build-gui",
