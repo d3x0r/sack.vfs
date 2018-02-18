@@ -277,7 +277,7 @@ void SetupControlColors( Isolate *isolate, Local<Object> object ) {
 
 }
 
-void ControlObject::Init( Handle<Object> exports ) {
+void ControlObject::Init( Handle<Object> _exports ) {
 
 		Isolate* isolate = Isolate::GetCurrent();
 		Local<FunctionTemplate> psiTemplate;
@@ -286,7 +286,8 @@ void ControlObject::Init( Handle<Object> exports ) {
 		Local<FunctionTemplate> regTemplate;
 		Local<FunctionTemplate> listItemTemplate;
 		Local<FunctionTemplate> menuItemTemplate;
-
+		Handle<Object> exports = Object::New( isolate );
+		_exports->Set( String::NewFromUtf8( isolate, "PSI" ), exports );
 		// Prepare constructor template
 		psiTemplate = FunctionTemplate::New( isolate, New );
 		psiTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.PSI.Frame" ) );

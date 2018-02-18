@@ -7,6 +7,7 @@ public:
 	PSI_CONTROL pc;
 
 	struct menu_button *button;
+	Persistent<Object> surface; // used to pass to draw callback
 
 	Persistent<Object> psvControl;
 	// return value from javascript - javascript state object.
@@ -39,6 +40,9 @@ public:
 
 	Persistent<Function, CopyablePersistentTraits<Function>> cbClick; // event callback        ()  // return true/false to allow creation
 	Persistent<Function, CopyablePersistentTraits<Function>> cbCreate; // event callback        ()  // return true/false to allow creation
+	Persistent<Function, CopyablePersistentTraits<Function>> cbDestroy; // event callback        ()  // return true/false to allow creation
+	Persistent<Function, CopyablePersistentTraits<Function>> cbDraw; // event callback        ()  // return true/false to allow creation
+	Persistent<Function, CopyablePersistentTraits<Function>> cbMouse; // event callback        ()  // return true/false to allow creation
 
 public:
 
