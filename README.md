@@ -309,5 +309,6 @@ Mostly unimplemented, more of a place holder than functional.
 ---
 
 ## Changelog
+- 0.9.119 - fix critical failure to compile.
 - 0.9.118 - Update documentation and keywords. Fix building. 
 - 0.9.117 - Fork from sack.vfs 0.9.117.  Initial publication to NPM.
