@@ -1,6 +1,5 @@
 {
-  "name": "sack.vfs",
-  "version": "0.9.121",
+  "name": "sack.gui",
   "description": "Node.js VFS Addon",
   "main": "vfs_module.js",
   "private": false,
@@ -31,7 +30,7 @@
   ],
   "scripts": {
     "test": "node tests/vfsTest.js",
-    "install": "node-gyp configure build",
+    "install": "npm run build-gui",
     "build-gui": "npm run build-gui-config && npm run build-gui-run1 && npm run build-gui-config && npm run build-gui-run2",
     "build-gui-config": "cmake-js --CDMAKE_GUI=1 --CDCMAKE_BUILD_TYPE=Release configure",
     "build-gui-run1": "cmake-js build",
@@ -48,6 +47,6 @@
     "build-vfs-debug-config": "cmake-js --CDMAKE_GUI=0 --CDCMAKE_BUILD_TYPE=Debug -D configure",
     "build-vfs-debug-run1": "cmake-js build -D",
     "build-vfs-debug-run2": "cmake-js build -D",
-    "build": "node-gyp configure build"
+    "build": "npm run build-gui"
   }
 }
