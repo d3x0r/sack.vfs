@@ -1,5 +1,6 @@
 {
   "name": "sack.gui",
+  "version": "0.9.117",
   "description": "Node.js VFS Addon",
   "main": "vfs_module.js",
   "private": false,
