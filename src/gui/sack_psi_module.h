@@ -198,10 +198,12 @@ public:
 
 	static void registerControl( const FunctionCallbackInfo<Value>& args );
 
+	static void focus( const FunctionCallbackInfo<Value>& args );
 	static void show( const FunctionCallbackInfo<Value>& args );
 	static void edit( const FunctionCallbackInfo<Value>& args );
 	static void save( const FunctionCallbackInfo<Value>& args );
 
+	static void close( const FunctionCallbackInfo<Value>& args );
 	static void hide( const FunctionCallbackInfo<Value>& args );
 	static void reveal( const FunctionCallbackInfo<Value>& args );
 	static void redraw( const FunctionCallbackInfo<Value>& args );

@@ -444,9 +444,9 @@ void ControlObject::Init( Handle<Object> _exports ) {
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "Control", ControlObject::NewControl );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "Frame", ControlObject::createFrame );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "show", ControlObject::show );
-		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "hide", ControlObject::show );
+		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "hide", ControlObject::hide );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "reveal", ControlObject::show );
-		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "close", ControlObject::show );
+		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "close", ControlObject::close );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "edit", ControlObject::edit );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "save", ControlObject::save );
 
@@ -454,9 +454,10 @@ void ControlObject::Init( Handle<Object> _exports ) {
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "Control", ControlObject::NewControl );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "createFrame", ControlObject::createFrame );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "createControl", ControlObject::NewControl );
+		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "focus", ControlObject::focus );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "show", ControlObject::show );
-		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "hide", ControlObject::show );
-		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "reveal", ControlObject::show );
+		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "hide", ControlObject::hide );
+		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "reveal", ControlObject::reveal );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate2, "redraw", ControlObject::redraw );
 
 
@@ -965,16 +966,33 @@ void ControlObject::createFrame( const FunctionCallbackInfo<Value>& args ) {
 
 void ControlObject::redraw( const FunctionCallbackInfo<Value>& args ) {
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
-
 	SmudgeCommon( me->control );
+}
 
+
+void ControlObject::focus( const FunctionCallbackInfo<Value>& args ) {
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	SetCommonFocus( me->control );
 }
 
 void ControlObject::show( const FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
-
 	DisplayFrame( me->control );
+}
+
+void ControlObject::close( const FunctionCallbackInfo<Value>& args ) {
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	DestroyControl( me->control );
+}
+
+void ControlObject::hide( const FunctionCallbackInfo<Value>& args ) {
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	HideControl( me->control );
+}
+
+void ControlObject::reveal( const FunctionCallbackInfo<Value>& args ) {
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	RevealCommon( me->control );
 }
 
 void ControlObject::edit( const FunctionCallbackInfo<Value>& args ) {
