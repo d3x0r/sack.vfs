@@ -158,6 +158,9 @@ void ImageObject::Init( Handle<Object> exports ) {
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( fontTemplate, "measure", FontObject::measure );
+	NODE_SET_PROTOTYPE_METHOD( fontTemplate, "save", FontObject::save );
+
+	SET_READONLY_METHOD( fontTemplate->GetFunction(), "load", FontObject::load );
 
 	Local<FunctionTemplate> colorTemplate;
 
@@ -788,8 +791,13 @@ void ImageObject::imageData( const FunctionCallbackInfo<Value>& args ) {
 
 FontObject::~FontObject() {
 }
+
 FontObject::FontObject( const char *filename, int w, int h, int flags ) {
    font = InternalRenderFontFile( filename, w, h, NULL, NULL, flags );
+}
+
+FontObject::FontObject(  ) {
+	font = NULL;
 }
 
 void FontObject::New( const FunctionCallbackInfo<Value>& args ) {
@@ -807,6 +815,12 @@ void FontObject::New( const FunctionCallbackInfo<Value>& args ) {
 		if( argc > 0 ) {
 			String::Utf8Value fName( args[0]->ToString() );
 			filename = StrDup( *fName );
+		} else {
+			FontObject* obj;
+			obj = new FontObject();
+			obj->Wrap( args.This() );
+			args.GetReturnValue().Set( args.This() );
+			return;
 		}
 
 		if( argc > 1 ) {
@@ -833,13 +847,13 @@ void FontObject::New( const FunctionCallbackInfo<Value>& args ) {
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
 		int argc = args.Length();
-	   Local<Value> *argv = new Local<Value>[argc];
+		Local<Value> *argv = new Local<Value>[argc];
 		for( int n = 0; n < argc; n++ )
-        argv[n] = args[n];
+			argv[n] = args[n];
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
 		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
-     delete argv;
+		delete argv;
 	}
 }
 
@@ -848,6 +862,45 @@ void FontObject::measure( const FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		FontObject *fo = ObjectWrap::Unwrap<FontObject>( args.This() );
 		int argc = args.Length();
+}
+
+void FontObject::save( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	FontObject *fo = ObjectWrap::Unwrap<FontObject>( args.This() );
+	String::Utf8Value fName( args[0]->ToString() );
+	size_t dataLen;
+	POINTER data;
+	GetFontRenderData( fo->font, &data, &dataLen );
+	FILE *out = sack_fopen( 0, *fName, "wb" );
+	if( out ) {
+		sack_fwrite( data, dataLen, 1, out );
+		sack_fclose( out );
+	}
+}
+
+void FontObject::load( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	String::Utf8Value fName( args[0]->ToString() );
+	int argc = args.Length();
+
+	size_t dataLen;
+	PFONTDATA data;
+	FILE *out = sack_fopen( 0, *fName, "rb" );
+	if( out ) {
+		dataLen = sack_fsize( out );
+		data = (PFONTDATA)NewArray( uint8_t, dataLen );
+		sack_fread( data, dataLen, 1, out );
+		sack_fclose( out );
+	}
+
+	Local<Function> cons = Local<Function>::New( isolate, constructor );
+	Local<Object> result;
+	args.GetReturnValue().Set( result = cons->NewInstance( 0, NULL ) );
+
+	FontObject *fo = ObjectWrap::Unwrap<FontObject>( result );
+	FRACTION one = { 1,1 };
+	fo->font = RenderScaledFontData( data, &one, &one );
+
 }
 
 

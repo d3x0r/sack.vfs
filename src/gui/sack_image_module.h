@@ -52,27 +52,23 @@ public:
 
 
 class FontObject : public node::ObjectWrap{
-
 public:
-   FontObject *container;
+	//FontObject *container;
 	SFTFont font; // this control
 
 	static v8::Persistent<v8::Function> constructor;
 
-public:
-
 	static void Init( Handle<Object> exports );
-   FontObject( const char *filename, int w, int h, int flags );
+	FontObject( const char *filename, int w, int h, int flags );
+	FontObject();
 
 	static void New( const FunctionCallbackInfo<Value>& args );
 	
 	static void measure( const FunctionCallbackInfo<Value>& args );
-
-
+	static void save( const FunctionCallbackInfo<Value>& args );
+	static void load( const FunctionCallbackInfo<Value>& args );
 
    ~FontObject();
-
-
 };
 
 

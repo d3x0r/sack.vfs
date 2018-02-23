@@ -54,11 +54,22 @@ enum eventType {
 	Event_Intershell_ControlLoad,
 	Event_Intershell_Quit,
 
+	Event_Intershell_Control_Destroy,
+	Event_Intershell_Control_Mouse,
+	Event_Intershell_Control_Key,
+	Event_Intershell_Control_Draw,
+
+
 	Event_Control_Create,
 	Event_Control_Mouse,
 	Event_Control_Key,
 	Event_Control_Draw,
 	Event_Control_Load,
+
+	Event_Frame_Ok,
+	Event_Frame_Cancel,
+	Event_Frame_Abort,
+
 	/* button event*/
 	Event_Control_ButtonClick,
 	/* console events*/
