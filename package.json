@@ -1,12 +1,12 @@
 {
   "name": "sack-gui",
-  "version": "0.9.118",
+  "version": "0.9.120",
   "repository": {
       "type": "git",
       "url": "https://github.com/d3x0r/sack.vfs/",
       "branch": "sack-gui"
   },
-  "description": "Node.js VFS Addon",
+  "description": "Node.js GUI Addon",
   "main": "vfs_module.js",
   "private": false,
   "preferGlobal": false,
