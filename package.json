@@ -34,7 +34,7 @@
     "database",
     "sack"
   ],
-  "dependencies": ["cmake-js"],
+  "_dependencies": ["cmake-js"],
   "scripts": {
     "test": "node tests/vfsTest.js",
     "install": "npm run build-gui",
