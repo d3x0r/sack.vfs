@@ -378,6 +378,10 @@ public:
 	static void onError( const v8::FunctionCallbackInfo<Value>& args );
 	static void onClose( const v8::FunctionCallbackInfo<Value>& args );
 	static void onOpen( const v8::FunctionCallbackInfo<Value>& args );
+	static void getOnMessage( const v8::FunctionCallbackInfo<Value>& args );
+	static void getOnError( const v8::FunctionCallbackInfo<Value>& args );
+	static void getOnClose( const v8::FunctionCallbackInfo<Value>& args );
+	static void getOnOpen( const v8::FunctionCallbackInfo<Value>& args );
 	static void write( const v8::FunctionCallbackInfo<Value>& args );
 	static void getReadyState( const FunctionCallbackInfo<Value>& args );
 
@@ -857,6 +861,18 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "readyState" )
 			, FunctionTemplate::New( isolate, wscObject::getReadyState )
 			, Local<FunctionTemplate>() );
+		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "onopen" )
+			, FunctionTemplate::New( isolate, wscObject::getOnOpen )
+			, FunctionTemplate::New( isolate, wscObject::onOpen )
+		);
+		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "onmessage" )
+			, FunctionTemplate::New( isolate, wscObject::getOnMessage )
+			, FunctionTemplate::New( isolate, wscObject::onMessage )
+		);
+		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "onclose" )
+			, FunctionTemplate::New( isolate, wscObject::getOnClose )
+			, FunctionTemplate::New( isolate, wscObject::onClose )
+		);
 		wscTemplate->ReadOnlyPrototype();
 
 		wscObject::constructor.Reset( isolate, wscTemplate->GetFunction() );
@@ -1772,6 +1788,72 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 		delete[] argv;
 	}
 }
+
+void wscObject::onOpen( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+
+	if( args.Length() > 0 ) {
+		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		obj->openCallback.Reset( isolate, cb );
+	}
+}
+
+void wscObject::onMessage( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+
+	if( args.Length() > 0 ) {
+		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		obj->messageCallback.Reset( isolate, cb );
+	}
+}
+
+void wscObject::onClose( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+
+	if( args.Length() > 0 ) {
+		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		obj->closeCallback.Reset( isolate, cb );
+	}
+}
+
+void wscObject::onError( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+
+	if( args.Length() > 0 ) {
+		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		obj->errorCallback.Reset( isolate, cb );
+	}
+}
+
+
+void wscObject::getOnOpen( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+	args.GetReturnValue().Set( obj->openCallback.Get( isolate ) );
+}
+
+void wscObject::getOnMessage( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+	args.GetReturnValue().Set( obj->messageCallback.Get( isolate ) );
+}
+
+void wscObject::getOnClose( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+	args.GetReturnValue().Set( obj->closeCallback.Get( isolate ) );
+}
+
+void wscObject::getOnError( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+	args.GetReturnValue().Set( obj->errorCallback.Get( isolate ) );
+}
+
 
 void wscObject::on( const FunctionCallbackInfo<Value>& args){
 	if( args.Length() == 2 ) {
