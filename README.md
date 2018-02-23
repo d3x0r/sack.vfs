@@ -206,15 +206,24 @@ There are some constant colors already builtin in Image.colors.[color name]
 
 ```
 var font = sack.Image.Font.dialog( callback );  // callback is passed a font object represenging the font selected 
+font.save( "Picked font" );
 var font = sack.Image.Font( &lt;font name&gt;, width, height, render flags (0-3 for mono, 4bit, 8bit render) ); 
+
+var font = sack.Image.Font.load( "Picked Font" );
+
 ```
 
 When creating a font by name, it can either be the name of a font, or a filename that contains a font.
 
+| Font Method | Parameters | Description | 
+|----|-----|----|
+| load  | (filename)  | Load a font from a file |
+
 
 | Font Method | Parameters | Description | 
 |----|-----|----|
-| measure  | (string)  | /* unfinished; should result with some { width : xx, height: yy } type object */
+| measure  | (string)  | /* unfinished; should result with some { width : xx, height: yy } type object */ |
+| save  | (filename)  | Save font description to a file |
 
 
 ##Render Methods
@@ -252,12 +261,24 @@ Frame constructor requires a title.  If x, y are not specified, (0, 0) is used, 
 
 | Frame Methods | arguments | description |
 |----|----|----|
+| load | (filename) | Load a frame from a file |
+| Border | (description object) | make a custom border to apply to a frame |
+
+| Frame Methods | arguments | description |
+|----|----|----|
 | Frame | ( title, x, y, width, height ) | create a new frame over the existing frame.  This is a modal operation... that the existing frame will not get events until this frame is closed. |
 | Control | ( controlType, x, y, width, height ) | Create a control within the frame, the controlType is a string specifying the type of the control to be created.  Control types are available in an array as `sack.control.types`. |
 | show | () | show the Frame.  Frame is hidden allowing creating controls efficiently before showing the completed dialog. |
 | hide | () | hide the frame.  Does not close the frame, just removes it from being displayed. |
 | reveal | () | restore a frame.  (may be same as show()?) |
 | close | () | close a frame. |
+| border | accessor | Set border of frame | 
+| focus | () | Set focus to this. |
+| save | (filename) | Save this frame to a file |
+| get | (control ID) | Get control by text ID | 
+| edit | () | Enable/begin editing on thie dialog frame. | 
+| close | () | Destroy/close a frame/control. | 
+
 
 | Control Methods | arguments | description |
 |----|----|----|
@@ -269,12 +290,73 @@ Frame constructor requires a title.  If x, y are not specified, (0, 0) is used, 
 | reveal | () | reveal a hidden control. |
 | redraw | () | trigger an update to a control. |
 | close | () | (missing) |
+| focus | () | Set focus to this. |
+| get | (control ID) | Get control by text ID | 
+| close | () | Destroy/close a frame/control. | 
 |  |  |  |
 | (other) | ... | Depending on the control created, various addtional methods may be added.  (A button will get a way to set click event, listbox will have methods to add list items, etc) |
 | size | accessor | gets an object {width:#, height:#} which has the current width and height of the control.  Passing a similar object will set the width and height of a control. |
 | position | accessor | gets an object {x:#, y:#} which has the current x and y position of the control.  Passing a similar object will set the position of a control. |
 | layout | accessor |  gets an object {x:#, y:#, width:#, height:#} which has the current x and y position of the control and also size of the control.  Passing a similar object will set the position of a control and also size of the control. |
 | text | accessor | sets/gets the caption/text string of a control.  All controls have this, but not all controls show this. |
+
+### Specific control type extensions
+
+
+#### Button Controls (Image, Normal, Custom )
+
+| Control Methods | arguments | description |
+|----|----|----|
+| click | (cb) | Set callback to be triggerd when button is clicked |
+| on | (event,cb) | Set Event handler for button.  Suppoprted events (click).
+
+#### Check/Radio Button Controls
+
+| Control Methods | arguments | description |
+|----|----|----|
+
+#### Scroll Bar Controls
+
+| Control Methods | arguments | description |
+|----|----|----|
+
+#### Edit Field
+
+| Control Methods | arguments | description |
+|----|----|----|
+| password | &lt;accessor&gt; | Set password attribute of edit control (show ****) |
+
+#### List Box
+
+| Control Methods | arguments | description |
+|----|----|----|
+| addItem | (string) | Add a string item to listbox; results with an object representing the item |
+| removeItem | (item) | Remove an item from a listbox |
+| setTabs | (number array) | set position array for tab stops in listbox |
+| onSelect | (cb) | set callback to be triggered when an item in listbox is selected; it is passed the selected item |
+| onDoubleClick | (cb) | set callback to be triggered when an item in listbox is double clicked; it is passed the selected item |
+
+#### Sheet Control (tabbed pages)
+
+| Control Methods | arguments | description |
+|----|----|----|
+| addPage | (title, frame) | Add a page to a sheet control |
+
+#### Progress Control
+
+| Control Methods | arguments | description |
+|----|----|----|
+| range | accessor | Set the max range of progress |
+| progress | accessor | Set the current progress (within 0->range) |
+| colors | (a,b) | Set colors of the progress bar |
+| text | accessor | boolean; sets whether to show the text percentage or not |
+
+#### Clock Control
+
+| Control Methods | arguments | description |
+|----|----|----|
+|analog| () | Enable analog mode for clock control (instead of digital text) |
+
 
 ### Control Registration
 

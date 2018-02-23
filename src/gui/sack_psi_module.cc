@@ -921,10 +921,7 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 			, Function::New( isolate, ControlObject::setProgressBarProgress )
 			, Function::New( isolate, ControlObject::setProgressBarProgress )
 			, DontDelete );
-		c->SetAccessorProperty( String::NewFromUtf8( isolate, "colors" )
-			, Function::New( isolate, ControlObject::setProgressBarColors )
-			, Function::New( isolate, ControlObject::setProgressBarColors )
-			, DontDelete );
+		c->Set( String::NewFromUtf8( isolate, "colors" ), Function::New( isolate, ControlObject::setProgressBarColors ) );
 		c->SetAccessorProperty( String::NewFromUtf8( isolate, "text" )
 			, Function::New( isolate, ControlObject::setProgressBarTextEnable )
 			, Function::New( isolate, ControlObject::setProgressBarTextEnable )
@@ -1399,7 +1396,7 @@ void ControlObject::setProgressBarProgress( const FunctionCallbackInfo<Value>&  
 void ControlObject::setProgressBarColors( const FunctionCallbackInfo<Value>&  args ) {
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
 	CDATA c1 = ColorObject::getColor( args[0]->ToObject() );
-	CDATA c2 = ColorObject::getColor( args[0]->ToObject() );
+	CDATA c2 = ColorObject::getColor( args[1]->ToObject() );
 	ProgressBar_SetColors( me->control, c1, c2 );
 }
 void ControlObject::setProgressBarTextEnable( const FunctionCallbackInfo<Value>&  args ) {
