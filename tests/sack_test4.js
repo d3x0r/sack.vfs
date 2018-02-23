@@ -10,7 +10,7 @@ var x_del = 0;
 var y_del = 0;
 var scale = 1.0;
 
-var f = sack.Frame( "test", -1, -1, 600, 600 );
+var f = sack.PSI.Frame( "test", -1, -1, 600, 600 );
 
 var background = sack.Image( "the rror.jpg" );
 
@@ -25,7 +25,7 @@ b.text = "Quit...";
 var x = sack.Image.Color( {r:50,g:50,b:255,a:255} );
 
 
-var customControl = sack.Registration( { 
+var customControl = sack.PSI.Registration( { 
 	name: "image control",
 	width: 256,
 	height : 256,

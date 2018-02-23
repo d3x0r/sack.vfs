@@ -933,15 +933,6 @@ These methods are on the (module).Config object itself, not on an instance of th
  
 
 
-
----
-
-# GUI Interface objects
-
-Please see [sack-gui](https://npmjs.org/packages/sack-gui).
-Split documentation; sack-gui is a branch of this which just has diffs for package name and dependencies and its own version for NPM.
-
-
 ---
 
 ## Changelog

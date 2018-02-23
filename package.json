@@ -1,6 +1,11 @@
 {
   "name": "sack.vfs",
   "version": "0.9.121",
+  "repository": {
+      "type": "git",
+      "url": "https://github.com/d3x0r/sack.vfs/tree/sack-gui",
+      "branch": "sack-gui"
+  },
   "description": "Node.js VFS Addon",
   "repository": {
       "type": "git",
@@ -33,6 +38,7 @@
     "database",
     "sack"
   ],
+  "_dependencies": ["cmake-js"],
   "scripts": {
     "test": "node tests/vfsTest.js",
     "install": "node-gyp configure build",
