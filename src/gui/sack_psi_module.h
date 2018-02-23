@@ -42,6 +42,19 @@ struct registrationOpts {
 };
 
 
+class VoidObject : public node::ObjectWrap {
+
+public:
+	uintptr_t data;
+	Persistent<Object> _this;
+	static v8::Persistent<v8::Function> constructor;   // Popup
+	VoidObject( uintptr_t data = 0 ); // inits to 0; if the value passed is 0
+
+	static void Init( Isolate *isolate );
+	static void New( const FunctionCallbackInfo<Value>& args );
+	static void wrapSelf( Isolate* isolate, VoidObject *_this, Local<Object> into );
+	static void releaseSelf( VoidObject *_this );
+};
 
 class RegistrationObject : public node::ObjectWrap{
 
@@ -153,7 +166,6 @@ public:
 	uintptr_t uid;
 	Persistent<Object> _this;
 	static v8::Persistent<v8::Function> constructor;   // menu itme
-
 	MenuItemObject();
 	~MenuItemObject();
 
@@ -170,11 +182,15 @@ class ControlObject : public node::ObjectWrap {
 
 public:
 	ControlObject *frame;
+	int done;
+	int okay;
 	PSI_CONTROL control; // this control
+	PTHREAD waiter;
 	static v8::Persistent<v8::Function> constructor;   // Frame
 	static v8::Persistent<v8::Function> constructor2;  // Control
 	static v8::Persistent<v8::Function> registrationConstructor;  // Registration
 	static v8::Persistent<v8::FunctionTemplate> controlTemplate;
+	static v8::Persistent<v8::FunctionTemplate> frameTemplate;
 
 	Persistent<Object> state;
 	ImageObject *image;
@@ -184,7 +200,7 @@ public:
 	ControlObject( const char *caption, int w, int h, int x, int y, int borderFlags, ControlObject *parent );
 	ControlObject( ControlObject *parent, const char *caption, const char *title, int w, int h, int x, int y );
 	ControlObject( const char *type, ControlObject *parent, int32_t x, int32_t y, uint32_t w, uint32_t h );
-	ControlObject();
+	ControlObject( PSI_CONTROL control = NULL );
 	~ControlObject();
 
 	static void wrapSelf( Isolate* isolate, ControlObject *_this, Local<Object> into );
@@ -198,10 +214,18 @@ public:
 
 	static void registerControl( const FunctionCallbackInfo<Value>& args );
 
+	static void on( const FunctionCallbackInfo<Value>& args );
+	static void get( const FunctionCallbackInfo<Value>& args );
 	static void focus( const FunctionCallbackInfo<Value>& args );
 	static void show( const FunctionCallbackInfo<Value>& args );
 	static void edit( const FunctionCallbackInfo<Value>& args );
 	static void save( const FunctionCallbackInfo<Value>& args );
+	static void load( const FunctionCallbackInfo<Value>& args );
+
+	static void getControlFont( const FunctionCallbackInfo<Value>& args );
+	static void setControlFont( const FunctionCallbackInfo<Value>& args );
+
+	
 
 	static void close( const FunctionCallbackInfo<Value>& args );
 	static void hide( const FunctionCallbackInfo<Value>& args );
@@ -210,6 +234,8 @@ public:
 
 	static void addSheetsPage( const FunctionCallbackInfo<Value>& args );
 
+	static void getFrameBorder( const FunctionCallbackInfo<Value>& args );
+	static void setFrameBorder( const FunctionCallbackInfo<Value>& args );
 
 	static void setProgressBarRange( const FunctionCallbackInfo<Value>& args );
 	static void setProgressBarProgress( const FunctionCallbackInfo<Value>& args );
@@ -239,11 +265,20 @@ public:
 	Persistent<Function, CopyablePersistentTraits<Function>> customEvents[5];  // event for button control callback (psi/console.h)
 
 
+	static void setListboxTabs( const FunctionCallbackInfo<Value>& args );
 	static void addListboxItem( const FunctionCallbackInfo<Value>&  args );
 	static void setListboxOnDouble( const FunctionCallbackInfo<Value>&  args );
 	static void setListboxOnSelect( const FunctionCallbackInfo<Value>&  args );
 #define listboxOnDouble customEvents[0]
 #define listboxOnSelect customEvents[1]
+
+#define cbFrameEventOkay customEvents[0]
+#define cbFrameEventCancel customEvents[1]
+#define cbFrameEventAbort customEvents[2]
+
+
+	static void getPassword( const FunctionCallbackInfo<Value>&  args );
+	static void setPassword( const FunctionCallbackInfo<Value>&  args );
 
 																			 //1) Expose a function in the addon to allow Node to set the Javascript cb that will be periodically called back to :
 	Persistent<Function, CopyablePersistentTraits<Function>> cbInitEvent; // event callback        ()  // return true/false to allow creation

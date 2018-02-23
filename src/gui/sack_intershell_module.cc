@@ -180,46 +180,55 @@ static void asyncmsg( uv_async_t* handle ) {
 			}
 			break;
 			case Event_Intershell_Control_Destroy:
-				Local<Value> _argv[] = { is->psvData.Get(isolate) };
-				argv = _argv;
-				argc = 1;
-				cb = Local<Function>::New( isolate, myself->cbDestroy );
-				Local<Value> r = cb->Call( is->psvControl.Get(isolate), argc, argv );
+				{
+					Local<Value> _argv[] = { is->psvData.Get( isolate ) };
+					argv = _argv;
+					argc = 1;
+					cb = Local<Function>::New( isolate, myself->cbDestroy );
+					Local<Value> r = cb->Call( is->psvControl.Get( isolate ), argc, argv );
+				}
 				break;
 			case Event_Intershell_Control_Draw:
 				if( !is->surface.IsEmpty() )
 					is->surface.Reset( isolate, ImageObject::NewImage( isolate, GetControlSurface( InterShell_GetButtonControl( is->button ) ), TRUE ) );
-				Local<Value> _argv[] = { is->psvData.Get( isolate ), is->surface.Get( isolate ) };
-				argv = _argv;
-				argc = 1;
-				cb = Local<Function>::New( isolate, myself->cbDraw );
-				Local<Value> r = cb->Call( is->psvControl.Get( isolate ), argc, argv );
+				{
+					Local<Value> _argv[] = { is->psvData.Get( isolate ), is->surface.Get( isolate ) };
+					argv = _argv;
+					argc = 1;
+					cb = Local<Function>::New( isolate, myself->cbDraw );
+					Local<Value> r = cb->Call( is->psvControl.Get( isolate ), argc, argv );
+				}
 				break;
 			case Event_Intershell_Control_Mouse:
-				static Persistent<Object> mo;
-				if( mo.IsEmpty() ) {
-					object = Object::New( isolate );
-					mo.Reset( isolate, object );
-				} else
-					object = Local<Object>::New( isolate, mo );
+				{
+					static Persistent<Object> mo;
+					if( mo.IsEmpty() ) {
+						object = Object::New( isolate );
+						mo.Reset( isolate, object );
+					} else
+						object = Local<Object>::New( isolate, mo );
 
-				object->Set( String::NewFromUtf8( isolate, "x" ), Number::New( isolate, evt->data.mouse.x ) );
-				object->Set( String::NewFromUtf8( isolate, "y" ), Number::New( isolate, evt->data.mouse.y ) );
-				object->Set( String::NewFromUtf8( isolate, "b" ), Number::New( isolate, evt->data.mouse.b ) );
-
-				Local<Value> _argv[] = { is->psvData.Get( isolate ), object };
-				argv = _argv;
-				argc = 1;
-				cb = Local<Function>::New( isolate, myself->cbMouse );
-				Local<Value> r = cb->Call( is->psvControl.Get( isolate ), argc, argv );
+					object->Set( String::NewFromUtf8( isolate, "x" ), Number::New( isolate, evt->data.mouse.x ) );
+					object->Set( String::NewFromUtf8( isolate, "y" ), Number::New( isolate, evt->data.mouse.y ) );
+					object->Set( String::NewFromUtf8( isolate, "b" ), Number::New( isolate, evt->data.mouse.b ) );
+					{
+						Local<Value> _argv[] = { is->psvData.Get( isolate ), object };
+						argv = _argv;
+						argc = 1;
+						cb = Local<Function>::New( isolate, myself->cbMouse );
+					}
+					Local<Value> r = cb->Call( is->psvControl.Get( isolate ), argc, argv );
+				}
 				break;
 
 
 			case Event_Intershell_ButtonClick:
 				cb = Local<Function>::New( isolate, myself->cbClick );
-				Local<Value> _argv[] = { Local<Object>::New( isolate, is->psvData ) };
-				Local<Value> r = cb->Call( Local<Object>::New( isolate, is->psvControl ) , 1, _argv );
-				evt->success = (int)r->NumberValue();
+				{
+					Local<Value> _argv[] = { Local<Object>::New( isolate, is->psvData ) };
+					Local<Value> r; r = cb->Call( Local<Object>::New( isolate, is->psvControl ), 1, _argv );
+					evt->success = (int)r->NumberValue();
+				}
 				break;
 			//case Event_InterShell_Draw:
 			//	cb = Local<Function>::New( isolate, myself->cbDraw );
@@ -626,7 +635,7 @@ void InterShellObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 
 		{
 			if( opts->Has( optName = strings->controlRegistrationString->Get( isolate ) ) ) {
-				Local<Object> registration = opts->Get( optName );
+				Local<Object> registration = opts->Get( optName )->ToObject();
 				RegistrationObject *regobj = ObjectWrap::Unwrap<RegistrationObject>( registration );
 				obj->registrationObject.Reset( isolate, registration );
 				obj->registration = regobj;

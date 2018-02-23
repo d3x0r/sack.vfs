@@ -703,10 +703,12 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 			switch( eventMessage->eventType ) {
 			case WS_EVENT_OPEN:
 				cb = Local<Function>::New( isolate, wsc->openCallback );
-				struct optionStrings *strings;
-				strings = getStrings( isolate );
-				wsc->_this.Get(isolate)->Set( strings->connectionString->Get( isolate ), makeSocket( isolate, wsc->pc ) );
-				cb->Call( eventMessage->_this->_this.Get(isolate), 0, argv );
+				if( !cb.IsEmpty() ) {
+					struct optionStrings *strings;
+					strings = getStrings( isolate );
+					wsc->_this.Get( isolate )->Set( strings->connectionString->Get( isolate ), makeSocket( isolate, wsc->pc ) );
+					cb->Call( eventMessage->_this->_this.Get( isolate ), 0, argv );
+				}
 				break;
 			case WS_EVENT_READ:
 				size_t length;
@@ -1778,7 +1780,12 @@ void wscObject::on( const FunctionCallbackInfo<Value>& args){
 		String::Utf8Value event( args[0]->ToString() );
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		if( StrCmp( *event, "open" ) == 0 ){
-			obj->openCallback.Reset(isolate,cb);
+			if( obj->readyState == OPEN ) {
+				cb->Call( obj->_this.Get( isolate ), 0, NULL );
+			}
+			else {
+				obj->openCallback.Reset( isolate, cb );
+			}
 		} else if(  StrCmp( *event, "message" ) == 0 ) {
 			obj->messageCallback.Reset(isolate,cb);
 		} else if(  StrCmp( *event, "error" ) == 0 ) {
