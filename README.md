@@ -226,7 +226,7 @@ When creating a font by name, it can either be the name of a font, or a filename
 | save  | (filename)  | Save font description to a file |
 
 
-##Render Methods
+## Render Methods
 
 Render constructor takes several optional parameters. 
 
@@ -273,12 +273,14 @@ Frame constructor requires a title.  If x, y are not specified, (0, 0) is used, 
 | reveal | () | restore a frame.  (may be same as show()?) |
 | close | () | close a frame. |
 | border | accessor | Set border of frame | 
+| font | accessor | Set Font of this control (and all child controls) | 
 | focus | () | Set focus to this. |
 | save | (filename) | Save this frame to a file |
 | get | (control ID) | Get control by text ID | 
 | edit | () | Enable/begin editing on thie dialog frame. | 
 | close | () | Destroy/close a frame/control. | 
-
+| color | ... | accessor container for all colors of this control (and all child controls |
+| ... colors | 
 
 | Control Methods | arguments | description |
 |----|----|----|
@@ -293,6 +295,7 @@ Frame constructor requires a title.  If x, y are not specified, (0, 0) is used, 
 | focus | () | Set focus to this. |
 | get | (control ID) | Get control by text ID | 
 | close | () | Destroy/close a frame/control. | 
+| color | ... | accessor container for all colors of this control (and all child controls |
 |  |  |  |
 | (other) | ... | Depending on the control created, various addtional methods may be added.  (A button will get a way to set click event, listbox will have methods to add list items, etc) |
 | size | accessor | gets an object {width:#, height:#} which has the current width and height of the control.  Passing a similar object will set the width and height of a control. |
@@ -300,8 +303,81 @@ Frame constructor requires a title.  If x, y are not specified, (0, 0) is used, 
 | layout | accessor |  gets an object {x:#, y:#, width:#, height:#} which has the current x and y position of the control and also size of the control.  Passing a similar object will set the position of a control and also size of the control. |
 | text | accessor | sets/gets the caption/text string of a control.  All controls have this, but not all controls show this. |
 
+## Frame and Control Color names
+
+| Color Name | Usage |
+|:-----|-----|
+| highlight | used on highlight edges of controls (borders of controls) | 
+| normal | Normal background color | 
+| shade | used on shadow area of controls (borders of controls) | 
+| shadow | used on shadow area of controls (borders of controls) | 
+| textColor | Normal Text color used on most controls that have text | 
+| caption | The caption of the frame, this is the background | 
+| captionText | This is the color of the caption text. | 
+| inactiveCaption | When frame is not in focus, background color of caption | 
+| InactiveCaptionText | When frame is not in focus, text color used for caption | 
+| selectBack | Edit Control; this is the background of selected text | 
+| selectText | Edit control; this is the text of selected text | 
+| editBackground | edit control; background of edit control | 
+| editText | edit control; text of edit control | 
+| scrollBarBackground | background color of scrollbar (behind thumb) | 
+
+## Border flags 
+
+| Border Flag (sack.PSI.control.border.(flag) ) | Description
+|-----|----|
+|normal     | This is 0 value.  It shows a medium thick border. |
+|none     | no border at all, surface area of control is full size of control. |
+|thin  | a thin border that shows as a raised element |
+|thinner  | A 1 pixel border that shows as a raised element |
+|dent | A grooved border, fall outside, rise inside |
+|thinDent | A thiner grooved border, fall outside, rise inside |
+|thickDent | A wider grooved border, fall outside, rise inside |
+|user | User drawn; requires additional callbacks to be registered |
+|invert | A 4 pixel frame that is inset instead of raised |
+|invertThinner | A 1 pixel frame that is inset instead of raised |
+|invertThin | A 2 pixel frame that is inset instead of raised |
+|bump | a bump frame (rise outside, fall inside) |
+|caption | Show caption for control (title bar) |
+|noCaption | no caption (title bar) | 
+|noMove | do not allow movement of the frame |
+|close | has close button? |
+|resizable | can resize this Frame.  (Only applies for frame border) |
+|within | This is used with `Frame` controls, this allows a frame to be within this (modifies size behavior)
+|wantMouse | want to get mouse events for control, even if normally they are filtered |
+|exclusive | ? |
+|fixed | Control is not re-scaled because of font changes |
+|noExtraInit | Don't call extra init or extra destroy  (internal use only?) |
+|captionCloseButton | add caption close button |
+|noCaptionCloseButton | make sure there's no caption close button |
+|closeIsDone  | When close is clicked, trigger done instead of destroy |
+
+
+## Border Anchor Flags
+
+If the required border to draw is larger than the image, the image is stretched to cover the area.
+
+| Anchor Flag (sack.PSI.control.borderAnchor.(flag) ) | Description |
+|------|------|
+|topMin     | top edge is anchors so left side is 0, and border chops right side. |
+|topCenter | top edge is anchored at center, and border chops left and right sides.|
+|topMax | top edge is anchored at right, left side is chopped |
+|leftMin | left edge, anchored at top, chop bottom |
+|leftCenter| left edge, anchored at center, chop bottom and top |
+|leftMax| left edge, anchored at bottom, chop top |
+|rightMin | right edge, anchored at top, chop bottom |
+|rightCenter| right edge, anchored at center, chop bottom and top |
+|rightMax| right edge, anchored at bottom, chop top |
+|bottomMin     | bottom edge is anchors so left side is 0, and border chops right side. |
+|bottomCenter | bottom edge is anchored at center, and border chops left and right sides.|
+|bottomMax | bottom edge is anchored at right, left side is chopped |
+
+
+
+
 ### Specific control type extensions
 
+Builtin controls have various methods that are associated with them.  Such as a button's click event, which no other control has.
 
 #### Button Controls (Image, Normal, Custom )
 
@@ -391,5 +467,6 @@ Mostly unimplemented, more of a place holder than functional.
 ---
 
 ## Changelog
+- 0.9.119 - Fix missing websocket client event accessors.  Add custom border support.  
 - 0.9.118 - Update documentation and keywords. Fix building. 
 - 0.9.117 - Fork from sack.vfs 0.9.117.  Initial publication to NPM.
