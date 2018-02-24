@@ -365,7 +365,7 @@ static uintptr_t configMethod( uintptr_t psv, uintptr_t callback, arg_list args 
 
 void InterShellObject::Init( Handle<Object> exports ) {
 	if( !InterShell ) {
-		lprintf( "intershell interface not available." );
+		//lprintf( "intershell interface not available." );
 		return;
 	}
 	Isolate* isolate = Isolate::GetCurrent();
