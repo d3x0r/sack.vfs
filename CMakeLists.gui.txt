@@ -35,6 +35,19 @@ if( ${CMAKE_BUILD_TYPE} MATCHES "[dD][eE][bB][uU][gG]"
 endif( ${CMAKE_BUILD_TYPE} MATCHES "[dD][eE][bB][uU][gG]"
    OR ${CMAKE_BUILD_TYPE} MATCHES "[rR][eE][lL][wW][iI].*" )
 
+# visual studio headers change with _DEBUG defined... so it can't be release with _DEBUG defined
+if( NOT CMAKE_CXX_FLAGS_RELWITHDEBINFO MATCHES "-D_DEBUG_INFO" )
+	set(  CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_DEBUG} -D_DEBUG_INFO" )
+endif( NOT CMAKE_CXX_FLAGS_RELWITHDEBINFO MATCHES "-D_DEBUG_INFO" )
+
+# visual studio headers change with _DEBUG defined... so it can't be release with _DEBUG defined
+if( NOT CMAKE_C_FLAGS_RELWITHDEBINFO MATCHES "-D_DEBUG_INFO" )
+	set(  CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_DEBUG} -D_DEBUG_INFO" )
+endif( NOT CMAKE_C_FLAGS_RELWITHDEBINFO MATCHES "-D_DEBUG_INFO" )
+
+
+
+
 include( ExternalProject )
 
 if( WIN32 )
