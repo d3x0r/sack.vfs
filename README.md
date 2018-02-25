@@ -409,6 +409,9 @@ Builtin controls have various methods that are associated with them.  Such as a 
 | addItem | (string) | Add a string item to listbox; results with an object representing the item |
 | removeItem | (item) | Remove an item from a listbox |
 | setTabs | (number array) | set position array for tab stops in listbox |
+| measure | (string) | measure the length of an item in the listbox |
+| header | accessor - setonly | set the header of a listbox |
+| hScroll | (enable, max) | Enable parameter is a boolean (true/false).  Max sets the max scroll length of the bar (use measure item?) |
 | onSelect | (cb) | set callback to be triggered when an item in listbox is selected; it is passed the selected item |
 | onDoubleClick | (cb) | set callback to be triggered when an item in listbox is double clicked; it is passed the selected item |
 
@@ -467,6 +470,7 @@ Mostly unimplemented, more of a place holder than functional.
 ---
 
 ## Changelog
+- 0.9.120 - Add listbox methods.  Make control color accessors a templated object instead of adding an object with method extensions.  
 - 0.9.119 - Fix missing websocket client event accessors.  Add custom border support.  
 - 0.9.118 - Update documentation and keywords. Fix building. 
 - 0.9.117 - Fork from sack.vfs 0.9.117.  Initial publication to NPM.
