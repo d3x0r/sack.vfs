@@ -270,6 +270,11 @@ public:
 
 	static void setListboxTabs( const FunctionCallbackInfo<Value>& args );
 	static void addListboxItem( const FunctionCallbackInfo<Value>&  args );
+	static void getListboxHeader( const FunctionCallbackInfo<Value>&  args );
+	static void setListboxHeader( const FunctionCallbackInfo<Value>&  args );
+	static void setListboxHScroll( const FunctionCallbackInfo<Value>&  args );
+	static void measureListItem( const FunctionCallbackInfo<Value>&  args );
+
 	static void setListboxOnDouble( const FunctionCallbackInfo<Value>&  args );
 	static void setListboxOnSelect( const FunctionCallbackInfo<Value>&  args );
 #define listboxOnDouble customEvents[0]

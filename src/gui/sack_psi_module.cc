@@ -142,6 +142,18 @@ static void asyncmsg( uv_async_t* handle ) {
 				cb->Call( evt->control->state.Get( isolate ), 0, NULL );
 				break;
 			}
+			case Event_Control_Create:
+			{
+				Isolate* isolate = Isolate::GetCurrent();
+				Local<Object> object = ControlObject::NewWrappedControl( isolate, evt->data.pc );
+				ControlObject *control = ControlObject::Unwrap<ControlObject>( object );
+				AddLink( &psiLocal.controls, control );
+				evt->control = control;
+			}
+				break;
+			case Event_Control_Destroy:
+				ControlObject::releaseSelf( evt->control );
+				break;
 			case Event_Control_Draw: {
 				if( !evt->control->image ) {
 					evt->control->image = ImageObject::MakeNewImage( isolate, GetControlSurface( evt->control->control ), TRUE );
@@ -223,6 +235,9 @@ int MakePSIEvent( ControlObject *control, enum eventType type, ... ) {
 	e.control = control;
 	//e.registration = control->reg
 	switch( type ) {
+	case Event_Control_Create:
+		e.data.pc = va_arg( args, PSI_CONTROL );
+		break;
 	case Event_Control_Mouse:
 		e.data.mouse.x = va_arg( args, int32_t );
 		e.data.mouse.y = va_arg( args, int32_t );
@@ -346,11 +361,15 @@ static void newBorder( const FunctionCallbackInfo<Value>& args ) {
 
 
 static int CPROC CustomDefaultInit( PSI_CONTROL pc ) {
-	if( psiLocal.pendingCreate ) return 1;
+	if( psiLocal.pendingCreate ) return 1; // internal create in progress... it will result with its own object later.
 	Isolate* isolate = Isolate::GetCurrent();
-	Local<Object> object = ControlObject::NewWrappedControl( isolate, pc );
-	ControlObject *control = ControlObject::Unwrap<ControlObject>( object );
-	AddLink( &psiLocal.controls, control );
+	if( !isolate ) {
+		MakePSIEvent( NULL, Event_Control_Create, pc );
+	} else {
+		Local<Object> object = ControlObject::NewWrappedControl( isolate, pc );
+		ControlObject *control = ControlObject::Unwrap<ControlObject>( object );
+		AddLink( &psiLocal.controls, control );
+	}
 	return 1;
 }
 
@@ -362,7 +381,11 @@ static int CPROC CustomDefaultDestroy( PSI_CONTROL pc ) {
 		if( control->control == pc ) {
 			SetLink( &psiLocal.controls, idx, NULL );
 			//DeleteControlColors( control->state.Get() );
-			ControlObject::releaseSelf( control );
+			Isolate* isolate = Isolate::GetCurrent();
+			if( isolate )
+				ControlObject::releaseSelf( control );
+			else
+				MakePSIEvent( control, Event_Control_Destroy );
 			break;
 		}
 	}
@@ -405,8 +428,8 @@ void SetupControlColors( Isolate *isolate, Local<Object> object ) {
 
 
 void MakeControlColors( Isolate *isolate, Local<FunctionTemplate> tpl ) {
-	Local<Object> controlColors = Object::New( isolate );
-	struct optionStrings *strings = getStrings( isolate );
+	//Local<Object> controlColors = Object::New( isolate );
+	//struct optionStrings *strings = getStrings( isolate );
 
 #define makeAccessor(a,b,c,d,e) a->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, b ) \
 		, FunctionTemplate::New( isolate, c, Integer::New( isolate, e ) ) \
@@ -989,6 +1012,12 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 	} else if( StrCmp( type, LISTBOX_CONTROL_NAME ) == 0 ) {
 		c->Set( String::NewFromUtf8( isolate, "setTabs" ), Function::New( isolate, ControlObject::setListboxTabs ) );
 		c->Set( String::NewFromUtf8( isolate, "addItem" ), Function::New( isolate, ControlObject::addListboxItem ) );
+		c->SetAccessorProperty( String::NewFromUtf8( isolate, "header" )
+			, Function::New( isolate, ControlObject::getListboxHeader )
+			, Function::New( isolate, ControlObject::setListboxHeader )
+			, DontDelete );
+		c->Set( String::NewFromUtf8( isolate, "measure" ), Function::New( isolate, ControlObject::measureListItem ) );
+		c->Set( String::NewFromUtf8( isolate, "hScroll" ), Function::New( isolate, ControlObject::setListboxHScroll ) );
 		c->Set( String::NewFromUtf8( isolate, "removeItem" ), Function::New( isolate, ListboxItemObject::removeListboxItem ) );
 		c->Set( String::NewFromUtf8( isolate, "onSelect" ), Function::New( isolate, ControlObject::setListboxOnSelect ) );
 		c->Set( String::NewFromUtf8( isolate, "onDoubleClick" ), Function::New( isolate, ControlObject::setListboxOnDouble ) );
@@ -1520,6 +1549,36 @@ void ControlObject::addListboxItem( const FunctionCallbackInfo<Value>&  args ) {
 	pli->control = me;
 	args.GetReturnValue().Set( lio );
 
+}
+
+
+void ControlObject::measureListItem( const FunctionCallbackInfo<Value>&  args ) {
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	String::Utf8Value text( args[0]->ToString() );
+
+	Isolate* isolate = args.GetIsolate();
+	int width = MeasureListboxItem( me->control, *text );
+	args.GetReturnValue().Set( Int32::New( isolate, width ) );
+
+}
+void ControlObject::setListboxHScroll( const FunctionCallbackInfo<Value>&  args ) {
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	//String::Utf8Value text( args[0]->ToString() );
+
+	Isolate* isolate = args.GetIsolate();
+	SetListboxHorizontalScroll( me->control, args[0]->BooleanValue(), args[1]->Int32Value() );
+}
+
+
+void ControlObject::getListboxHeader( const FunctionCallbackInfo<Value>&  args ) {
+}
+
+void ControlObject::setListboxHeader( const FunctionCallbackInfo<Value>&  args ) {
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	String::Utf8Value text( args[0]->ToString() );
+
+	Isolate* isolate = args.GetIsolate();
+	SetListboxHeader( me->control, *text );
 }
 
 static void DoubleClickHandler( uintptr_t psvUser, PSI_CONTROL pc, PLISTITEM hli ){

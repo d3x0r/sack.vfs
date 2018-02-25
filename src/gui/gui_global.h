@@ -65,6 +65,7 @@ enum eventType {
 	Event_Control_Key,
 	Event_Control_Draw,
 	Event_Control_Load,
+	Event_Control_Destroy,
 
 	Event_Frame_Ok,
 	Event_Frame_Cancel,
@@ -85,6 +86,7 @@ enum eventType {
 struct event {
 	eventType type;
 	union {
+		PSI_CONTROL pc;
 		struct {
 			int32_t x, y;
 			uint32_t b;
