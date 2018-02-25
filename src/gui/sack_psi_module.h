@@ -47,7 +47,8 @@ class VoidObject : public node::ObjectWrap {
 public:
 	uintptr_t data;
 	Persistent<Object> _this;
-	static v8::Persistent<v8::Function> constructor;   // Popup
+	static v8::Persistent<v8::Function> constructor;   // generic void constructor
+	static v8::Persistent<v8::Function> constructor2;   // object color interface accessors
 	VoidObject( uintptr_t data = 0 ); // inits to 0; if the value passed is 0
 
 	static void Init( Isolate *isolate );
@@ -250,7 +251,9 @@ public:
 
 	static void getControlColor( const FunctionCallbackInfo<Value>& args );
 	static void setControlColor( const FunctionCallbackInfo<Value>&  args );
-	
+	static void getControlColor2( const FunctionCallbackInfo<Value>& args );
+	static void setControlColor2( const FunctionCallbackInfo<Value>&  args );
+
 	static void getControlText( const FunctionCallbackInfo<Value>&  args );
 	static void setControlText( const FunctionCallbackInfo<Value>&  args );
 	static void getCoordinate( const FunctionCallbackInfo<Value>&  args );

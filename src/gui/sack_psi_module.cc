@@ -35,6 +35,7 @@ Persistent<Function> PopupObject::constructor;
 Persistent<Function> ListboxItemObject::constructor;
 Persistent<Function> MenuItemObject::constructor;
 Persistent<Function> VoidObject::constructor;
+Persistent<Function> VoidObject::constructor2;
 
 struct optionStrings {
 	Isolate *isolate;
@@ -360,15 +361,13 @@ static int CPROC CustomDefaultDestroy( PSI_CONTROL pc ) {
 	LIST_FORALL( psiLocal.controls, idx, ControlObject *, control ) {
 		if( control->control == pc ) {
 			SetLink( &psiLocal.controls, idx, NULL );
+			//DeleteControlColors( control->state.Get() );
 			ControlObject::releaseSelf( control );
 			break;
 		}
 	}
 	return 1;
 }
-
-
-
 
 
 void SetupControlColors( Isolate *isolate, Local<Object> object ) {
@@ -403,6 +402,53 @@ void SetupControlColors( Isolate *isolate, Local<Object> object ) {
 
 }
 
+
+
+void MakeControlColors( Isolate *isolate, Local<FunctionTemplate> tpl ) {
+	Local<Object> controlColors = Object::New( isolate );
+	struct optionStrings *strings = getStrings( isolate );
+
+#define makeAccessor(a,b,c,d,e) a->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, b ) \
+		, FunctionTemplate::New( isolate, c, Integer::New( isolate, e ) ) \
+			, FunctionTemplate::New( isolate, d, Integer::New( isolate, e ) ) \
+			, DontDelete )
+#define makeColorAccessor(a,b,c) makeAccessor( a, b, ControlObject::getControlColor2, ControlObject::setControlColor2, c )
+
+	//controlColors->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, name ), data, ReadOnlyProperty )
+	makeColorAccessor( tpl, "highlight", HIGHLIGHT );
+	makeColorAccessor( tpl, "normal", NORMAL );
+	makeColorAccessor( tpl, "shade", SHADE );
+	makeColorAccessor( tpl, "shadow", SHADOW );
+	makeColorAccessor( tpl, "textColor", TEXTCOLOR );
+	makeColorAccessor( tpl, "caption", CAPTION );
+	makeColorAccessor( tpl, "captionText", CAPTIONTEXTCOLOR );
+	makeColorAccessor( tpl, "inactiveCaption", INACTIVECAPTION );
+	makeColorAccessor( tpl, "InactiveCaptionText", INACTIVECAPTIONTEXTCOLOR );
+	makeColorAccessor( tpl, "selectBack", SELECT_BACK );
+	makeColorAccessor( tpl, "selectText", SELECT_TEXT );
+	makeColorAccessor( tpl, "editBackground", EDIT_BACKGROUND );
+	makeColorAccessor( tpl, "editText", EDIT_TEXT );
+	makeColorAccessor( tpl, "scrollBarBackground", SCROLLBAR_BACK );
+#undef makeColorAccessor
+#undef makeAccessor
+}
+
+void AddControlColors( Isolate *isolate, Local<Object> control, ControlObject *c ) {
+
+	Local<Function> cons = Local<Function>::New( isolate, VoidObject::constructor2 );
+	Local<Object> colors = cons->NewInstance( 0, NULL );
+	VoidObject *v = VoidObject::Unwrap<VoidObject>( colors );
+	v->data = (uintptr_t)c;
+	SET_READONLY( control, "color", colors );
+}
+
+void DeleteControlColors( Isolate *isolate, Local<Object> control, ControlObject *c ) {
+	Local<Object> colors = control->Get( String::NewFromUtf8( isolate, "color" ) )->ToObject();
+
+	VoidObject *v = VoidObject::Unwrap<VoidObject>( colors );
+	VoidObject::releaseSelf( v );
+}
+
 void ControlObject::Init( Handle<Object> _exports ) {
 
 		Isolate* isolate = Isolate::GetCurrent();
@@ -414,6 +460,7 @@ void ControlObject::Init( Handle<Object> _exports ) {
 		Local<FunctionTemplate> listItemTemplate;
 		Local<FunctionTemplate> menuItemTemplate;
 		Local<FunctionTemplate> voidTemplate;
+		Local<FunctionTemplate> colorTemplate;
 		Handle<Object> exports = Object::New( isolate );
 
 		VoidObject::Init( isolate );
@@ -430,6 +477,13 @@ void ControlObject::Init( Handle<Object> _exports ) {
 		frameTemplate.Reset( isolate, psiTemplate );
 		psiTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.PSI.Frame" ) );
 		psiTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 internal field for wrap
+
+																	 // Prepare constructor template
+		colorTemplate = FunctionTemplate::New( isolate, VoidObject::New );
+		colorTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.PSI.Frame.Colors" ) );
+		colorTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 internal field for wrap
+		MakeControlColors( isolate, colorTemplate );
+		VoidObject::constructor2.Reset( isolate, colorTemplate->GetFunction() );
 
 
 				// Prepare constructor template
@@ -763,6 +817,35 @@ void ControlObject::setControlColor( const FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+
+void ControlObject::getControlColor2( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Value> data = args.Data();
+	int colorIndex = (int)data->IntegerValue();
+	VoidObject *v = ObjectWrap::Unwrap<VoidObject>( args.This() );
+	ControlObject *c = (ControlObject*)v->data;
+	args.GetReturnValue().Set( ColorObject::makeColor( isolate, GetControlColor( c->control, colorIndex ) ) );
+}
+
+void ControlObject::setControlColor2( const FunctionCallbackInfo<Value>& args ) {
+
+	Isolate* isolate = args.GetIsolate();
+	Local<Value> data = args.Data();
+	int colorIndex = (int)data->IntegerValue();
+	VoidObject *v = ObjectWrap::Unwrap<VoidObject>( args.This() );
+	ControlObject *c = (ControlObject*)v->data;
+	args.GetReturnValue().Set( ColorObject::makeColor( isolate, GetControlColor( c->control, colorIndex ) ) );
+
+	CDATA newColor;
+	Local<Object> color = args[0]->ToObject();
+	if( ColorObject::isColor( isolate, color ) ) {
+		newColor = ColorObject::getColor( color );
+	} else {
+		newColor = (uint32_t)args[0]->NumberValue();
+	}
+
+	SetControlColor( c->control, colorIndex, newColor );
+}
 
 
 ControlObject::ControlObject( ControlObject *over, const char *type, const char *title, int x, int y, int w, int h ) {
@@ -1295,7 +1378,8 @@ void ControlObject::load( const FunctionCallbackInfo<Value>& args ) {
 void ControlObject::wrapSelf( Isolate* isolate, ControlObject *_this, Local<Object> into ) {
 	_this->Wrap( into );
 	_this->state.Reset( isolate, into );
-	SetupControlColors( isolate, into );
+	//SetupControlColors( isolate, into );
+	AddControlColors( isolate, into, _this );
 	if( _this->control )
 		ProvideKnownCallbacks( isolate, into, _this );
 }

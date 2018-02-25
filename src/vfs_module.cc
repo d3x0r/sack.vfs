@@ -788,12 +788,12 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 		size_t position;
 		int whence;
 		if( args.Length() == 1 ) {
-			length = args[1]->ToInteger()->Value();
+			length = (int)args[1]->ToInteger()->Value();
 			whence = SEEK_CUR;
 		}
 		else if( args.Length() == 2 ) {
-			length = args[1]->ToInteger()->Value();
-			position = args[2]->ToInteger()->Value();
+			length = (int)args[1]->ToInteger()->Value();
+			position = (int)args[2]->ToInteger()->Value();
 			whence = SEEK_SET;
 		}
 		else {
@@ -888,7 +888,7 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 	size_t offset = 0;
 	LOGICAL setOffset = FALSE;
 	if( args.Length() == 2 ) {
-		offset = args[1]->ToInteger()->Value();
+		offset = (int)args[1]->ToInteger()->Value();
 		setOffset = TRUE;
 	}
 	if( args.Length() > 0 ) {
