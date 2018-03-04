@@ -91,10 +91,11 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	InitUDPSocket( isolate, exports );
 #ifdef INCLUDE_GUI
 	ImageObject::Init( exports );
-	InterShellObject::Init( exports );
-	ControlObject::Init( exports );
 	RenderObject::Init( exports );
+	ControlObject::Init( exports );
+	InterShellObject::Init( exports );
 #endif
+
 #ifdef WIN32
 	RegObject::Init( exports );
 #endif
