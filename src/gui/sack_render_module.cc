@@ -26,7 +26,7 @@ static Local<Value> ProcessEvent( Isolate* isolate, struct event *evt, RenderObj
 		}
 		break;
 	case Event_Render_Draw:
-		if( !r->surface.IsEmpty() )
+		if( r->surface.IsEmpty() )
 			r->surface.Reset( isolate, ImageObject::NewImage( isolate, GetDisplayImage( r->r ), TRUE ) );
 		return Local<Object>::New( isolate, r->surface );
 	case Event_Render_Key:
@@ -68,7 +68,10 @@ static void asyncmsg( uv_async_t* handle ) {
 			}
 			Local<Value> r = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
 			if( evt->waiter ) {
-				evt->success = (int)r->NumberValue();
+				if( r.IsEmpty() )
+					evt->success = true;
+				else
+					evt->success = (int)r->NumberValue();
 				evt->flags.complete = TRUE;
 				WakeThread( evt->waiter );
 			}

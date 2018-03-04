@@ -36,6 +36,8 @@ using namespace v8;
 
 #include "sack_intershell_module.h"
 
+#include "sack_vulkan_module.h"
+
 
 enum eventType {
 	Event_Init,
@@ -145,6 +147,6 @@ struct global {
 	} nextControlCreatePosition;
 } g;
 
-
+void InitInterfaces( int opengl, int vulkan );
 int MakeEvent( uv_async_t *async, PLINKQUEUE *queue, enum eventType type, ... );
 

@@ -487,12 +487,15 @@ void ControlObject::Init( Handle<Object> _exports ) {
 		Handle<Object> exports = Object::New( isolate );
 
 		VoidObject::Init( isolate );
+		VulkanObject::Init( isolate, _exports );
 
 		SimpleRegisterMethod( WIDE( "psi/control/rtti/extra init" )
 			, CustomDefaultInit, WIDE( "int" ), WIDE( "sack-gui init" ), WIDE( "(PCOMMON)" ) );
 		SimpleRegisterMethod( WIDE( "psi/control/rtti/extra destroy" )
 			, CustomDefaultDestroy, WIDE( "int" ), WIDE( "sack-gui destroy" ), WIDE( "(PCOMMON)" ) );
 
+		SetControlImageInterface( g.pii );
+		SetControlInterface( g.pdi );
 
 		_exports->Set( String::NewFromUtf8( isolate, "PSI" ), exports );
 		// Prepare constructor template
@@ -1181,8 +1184,11 @@ void ControlObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 					h = g.nextControlCreatePosition.h;
 				}
 				psiLocal.newControl = newControl;
-				ControlObject* obj = new ControlObject( type, container, x, y, w, h );
-				ControlObject::wrapSelf( isolate, obj, newControl );
+				ControlObject* obj = ObjectWrap::Unwrap<ControlObject>( newControl );
+				psiLocal.pendingCreate = obj;
+				PSI_CONTROL pc = MakeNamedControl( container->control, type, x, y, w, h, 0 );
+
+				obj->control = pc;
 
 				//g.nextControlCreatePosition.control->pc = obj->control;
 				//g.nextControlCreatePosition.resultControl = obj->control;
@@ -1311,6 +1317,8 @@ static uintptr_t waitDialog( PTHREAD thread ) {
 void ControlObject::show( const FunctionCallbackInfo<Value>& args ) {
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
 	DisplayFrame( me->control );
+	me->okay = 0;
+	me->done = 0;
 	me->waiter = ThreadTo( waitDialog, (uintptr_t)me );
 }
 
@@ -1810,7 +1818,8 @@ static int CPROC onCreate( PSI_CONTROL pc ) {
 	me[0] = psiLocal.pendingCreate;
 
 	Local<Function> cb = Local<Function>::New( isolate, registration->cbInitEvent );
-	ControlObject::wrapSelf( isolate, me[0], psiLocal.newControl );
+	// controls get wrapped sooner... 
+	//ControlObject::wrapSelf( isolate, me[0], psiLocal.newControl );
 
 	Local<Value> retval = cb->Call( psiLocal.newControl, 0, NULL );
 
