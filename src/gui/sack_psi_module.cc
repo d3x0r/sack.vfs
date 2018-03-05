@@ -1189,6 +1189,7 @@ void ControlObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 				PSI_CONTROL pc = MakeNamedControl( container->control, type, x, y, w, h, 0 );
 
 				obj->control = pc;
+				ProvideKnownCallbacks( isolate, newControl, obj );
 
 				//g.nextControlCreatePosition.control->pc = obj->control;
 				//g.nextControlCreatePosition.resultControl = obj->control;
@@ -1393,8 +1394,12 @@ void ControlObject::getFrameBorder( const FunctionCallbackInfo<Value>& args ) {
 }
 void ControlObject::setFrameBorder( const FunctionCallbackInfo<Value>& args ) {
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
-	VoidObject *border = ObjectWrap::Unwrap<VoidObject>( args[0]->ToObject() );
-	PSI_SetFrameBorder( me->control, (PFrameBorder)border->data );
+	if( args[0]->IsObject() ) {
+		VoidObject *border = ObjectWrap::Unwrap<VoidObject>( args[0]->ToObject() );
+		PSI_SetFrameBorder( me->control, (PFrameBorder)border->data );
+	}
+	else
+		PSI_SetFrameBorder( me->control, NULL );
 }
 
 void ControlObject::save( const FunctionCallbackInfo<Value>& args ) {

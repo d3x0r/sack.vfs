@@ -367,7 +367,7 @@ void InterShellObject::Init( Handle<Object> exports ) {
 	if( !InterShell ) {
 		//lprintf( "intershell interface not available." );
 		//LoadFunction( "InterShell.core", NULL );
-		return;
+		//return;
 	}
 	Isolate* isolate = Isolate::GetCurrent();
 	//Local<Object> intershellObject;
@@ -579,6 +579,11 @@ void InterShellObject::NewConfiguration( const FunctionCallbackInfo<Value>& args
 void InterShellObject::NewApplication( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.IsConstructCall() ) {
+		if( !InterShell ) {
+			LoadFunction( "bag.psi.dll", NULL );
+			LoadFunction( "sack_widgets.dll", NULL );
+			LoadFunction( "InterShell.core", NULL );
+		}
 		if( !isLocal.core ) {
 			char *name;
 			String::Utf8Value arg( args[0] );

@@ -13,10 +13,10 @@ void InitInterfaces( int opengl, int vulkan ) {
 			LoadFunction( "libbag.image.vulkan.so", NULL );
 			LoadFunction( "libbag.video.vulkan.so", NULL );
 #endif
-			RegisterClassAlias( "system/interfaces/render", "system/interfaces/vulkan.render" );
-			RegisterClassAlias( "system/interfaces/image", "system/interfaces/vulkan.image" );
-			RegisterClassAlias( "system/interfaces/render.3d", "system/interfaces/vulkan.render.3d" );
-			RegisterClassAlias( "system/interfaces/image.3d", "system/interfaces/vulkan.image.3d" );
+			RegisterClassAlias(  "system/interfaces/vulkan.render"   , "system/interfaces/render" );
+			RegisterClassAlias( "system/interfaces/vulkan.image"     ,"system/interfaces/image" );
+			RegisterClassAlias( "system/interfaces/vulkan.render.3d" ,"system/interfaces/render.3d" );
+			RegisterClassAlias( "system/interfaces/vulkan.image.3d"  ,"system/interfaces/image.3d" );
 		} else {
 #ifdef _WIN32
 			LoadFunction( "bag.image.dll", NULL );
@@ -26,8 +26,8 @@ void InitInterfaces( int opengl, int vulkan ) {
 			LoadFunction( "libbag.image.so", NULL );
 			LoadFunction( "libbag.video.so", NULL );
 #endif
-			RegisterClassAlias( "system/interfaces/render", "system/interfaces/sack.render" );
-			RegisterClassAlias( "system/interfaces/image", "system/interfaces/sack.image" );
+			RegisterClassAlias( "system/interfaces/sack.render", "system/interfaces/render" );
+			RegisterClassAlias( "system/interfaces/sack.image", "system/interfaces/image" );
 		}
 
 		g.pii = GetImageInterface();
