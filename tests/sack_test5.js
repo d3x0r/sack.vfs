@@ -1,11 +1,23 @@
 
 var sack = require( ".." );
 
+var intershell = sack.InterShell( { 
+	save( file ) {
+		console.log( "save a global configuration parameter" );
+		file.write( "Save Globally Some 3 string" );
+	},
+	load( config ) {
+		config.addMethod( "some %i string", function ( n ) {
+			console.log( "Recovered a configuration parameter...", n );
+		} );
+	},
+} );
+
 var customControl = sack.PSI.Registration( { 
 	name: "image control",
 	width: 256,
 	height : 256,
-	border : sack.control.border.bump,
+	border : sack.PSI.control.border.bump,
 	create() {
 		return true;  // can return false/0 to disallow control creation.
 	},
@@ -18,14 +30,14 @@ var customControl = sack.PSI.Registration( {
 	},
 	mouse( event ) {
 		console.log( "Mouse Event:", x_del, y_del, event.x, event.y, event.b );
-		if( event.b & sack.button.scroll_up ) { 
+		if( event.b & sack.PSI.button.scroll_up ) { 
 			scale *= 1.1;
 			this.redraw();
-		} else if( event.b & sack.button.scroll_down ) { 
+		} else if( event.b & sack.PSI.button.scroll_down ) { 
 			scale *= 0.9;
 			this.redraw();
-		} else if( event.b & sack.button.left ) {
-		if( !( _b & sack.button.left ) ) {
+		} else if( event.b & sack.PSI.button.left ) {
+		if( !( _b & sack.PSI.button.left ) ) {
 			// first down;
 			x_click = event.x;
 			y_click = event.y;
@@ -49,17 +61,6 @@ var customShellControl = sack.InterShell.Control( { name : "JS Control"
 	, control: customControl 
 } );
 
-var intershell = sack.InterShell( { 
-	save( file ) {
-		console.log( "save a global configuration parameter" );
-		file.write( "Save Globally Some 3 string" );
-	},
-	load( config ) {
-		config.addMethod( "some %i string", function ( n ) {
-			console.log( "Recovered a configuration parameter...", n );
-		} );
-	},
-} );
 
 intershell.start();
 

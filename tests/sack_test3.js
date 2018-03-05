@@ -49,14 +49,14 @@ console.log( n, "in", del, " ", 16*n/del, " in 16ms(60fps)" );
 } );
 
 r.on( "mouse", ( event )=>{	
-	if( event.b & sack.button.scroll_up ) { 
+	if( event.b & sack.PSI.button.scroll_up ) { 
 		scale *= 1.1;
 		r.redraw();
-	} else if( event.b & sack.button.scroll_down ) { 
+	} else if( event.b & sack.PSI.button.scroll_down ) { 
 		scale *= 0.9;
 		r.redraw();
-	} else if( event.b & sack.button.left ) {
-		if( !( _b & sack.button.left ) ) {
+	} else if( event.b & sack.PSI.button.left ) {
+		if( !( _b & sack.PSI.button.left ) ) {
 			// first down;
 			x_click = event.x;
 			y_click = event.y;
