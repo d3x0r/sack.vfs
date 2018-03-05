@@ -23,6 +23,15 @@ var myBorderDef = require( "./windowFrame.json6" );
 var border = sack.PSI.Frame.Border( myBorderDef );        
 //console.log( "Got border:", border );
 dialog.border = border;
+// default borders will be made too; if you want to remove any extra 
+// fany border can set this to null.
+//dialog.border = null;
+
+// because of the border, these set colors on the dialog border, 
+// so anyother thing also using this border will inherit these colors.
+// a dialog's own colors are only used if there is no border.
+dialog.color.textColor = sack.Image.Color( { r:0, g:0, b:0, a:255 } );
+dialog.color.normal = sack.Image.Color( { r:208, g:184, b:167, a:255 } );
 
 dialog.edit()
 

@@ -2,8 +2,8 @@
 
 {
 	image:"windowFrame-LightWoodFilled.png",
-        width: 51,
-        height: 48,
+        width: 52,
+        height: 52,
         anchors : 0,
         definesColors : false,
 }
