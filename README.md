@@ -14,11 +14,19 @@ Vulkan API to be added eventually...
         nan (Native Abstractions for Node.js)
 
 #### Centos/linux
-        yum install gcc-c++ libuuid-devel unixodbc-devel
-        
+
+ *  yum install gcc-c++ libuuid-devel unixodbc-devel
+    * (uuid/uuid.h sql.h)
+ *  apt-get install uuid-dev unixodbc-dev 
+    * (uuid/uuid.h sql.h)
+ *  pacman -S unixodbc util-linux
+    * (sql.h uuid/uuid.h(probably already available, fs2util) )
+ *  (?)emerge unixodbc
+
 #### Mac
-        (ODBC might be optioned out; just uses sqlite typically)
-	brew (brew install unixODBC)
+
+  *  (ODBC might be optioned out; just uses sqlite typically)
+  *  brew (brew install unixODBC)
 
 #### Windows
 	none
@@ -66,8 +74,8 @@ vfs = {
           mountName - the mount name used to mount to volume as a filesystem; it may be referenced 
                 later in the string passed to Sqlite.  It may be `null` if it is anonymous mount.
           if no parameters are passed, a Volume object representing the native filesystem is returned.
-    File - some native filsystem utility methods
-    SaltyRNG - creates a random number generator
+    File - some native filsystem utility methods(?)
+    SaltyRNG(feed salt callback) - creates a random number generator
     TLS - namespace for utilities to generate certificates/keys
         genkey( length [,password]) - Generates a keypair
         pubkey( {options} ) - gets public key of a keypair or certificate
@@ -92,7 +100,10 @@ vfs = {
     registry - an interface to windows registry options
     	set( path, value ) - set a new value in the registry
         get( path )  - get a value from the registry.
-}
+    Task(options) - an interface for createing and monitoring tasks.
+        Task constructor takes an option object.
+        end() - terminate careted task.
+}	
 ```
 
 
@@ -932,10 +943,65 @@ These methods are on the (module).Config object itself, not on an instance of th
 | a | a network address... host.name:port; collect a hostname/IP and optional port as an expression |
  
 
+ ---
+
+ ## Task
+
+Task interface for launching and monitoring tasks.  Windows tasks are launched first by name, 
+as processes, then as a shell execute (runs things like shortcut .lnk files), and then as 
+a `cmd.exe /c ... ` command to run batch files.  Linux processes are attempted first to exec by the
+name directly, and then try for each path set in PATH.
+
+Pipes are connected to a task's stdin/stdout/stderr inputs if a output callback is specified.  The pipes
+are left untouched otherwise.
+
+ | Task methods | Description |
+ |----|----|
+ |end() | Terminates the task.  It will first dispatch ctrl-c, ctrl-break, post a WM_QUIT message, and if the program does not end soon enough, terminates the process. | 
+ |write(buf) | Writes data to the task's stdin. |
+ |exitCode | After/during the `end` callback, this may be queried to get the return code of the task |
+
+ Task Option object may contain these options to control how the task is spawned.
+
+| Task options | Type | Description |
+|----|----|-----|
+| work  | string | specify the directory the task will be started in |
+| bin | string | program to run |
+| arguments | string or [ string [, string]...] | an argument or array of arguments to pass to the program |
+| env | object | key:value pairs to write to the environment before launching the process |
+| binary | bool | if true, buffer to input callback will be an ArrayBuffer else it will be a string |
+| input | callback(buffer) | A callback function which will receive output from the task(would have to update lower level library to split/identify if the input was stdout or stderr) | 
+| end | callback() | This callback will be triggered when the task exits. |
+| impersonate | bool | (Needs work;updated compatibility... this is for a service to launch a task as a user which is now impossible(?)) |
+| hidden | bool | set windows UI flags such that the next process is created with a hidden window.  Default: false |
+| firstArgIsArg | bool | Specified if the first argument in the array or string is the first argument or is the program name.  If it is the first argument set true.  Default: true |
+| newGroup | bool | create task as a new task group instead of a child of this group.  Default: false|
+| newConsole | bool | create a new console for the new task; instead of ineriting the existing console, default false |
+| suspend | bool | create task suspended.  Default: false |
+
+
+```
+var sack = require( "sack.vfs");
+
+// don't redirect/capture input/output
+var task1 = sack.Task( {bin:"echo", args:"hello, World"});
+
+// send tasks's output to console.log...
+var task2 = sack.Task( {bin:"echo", args:"hello, World", input:console.log });
+
+sack.Task( { bin: "notepad.exe", args:"test.txt" } );
+// default tasks exit when node does... or when garbage collected... 
+// unless end and or input event handlers are attached...
+setTimeout( ()=>{ }, 5000 );
+
+
+```
+
 
 ---
 
 ## Changelog
+- 0.9.122 - Add VESL parsing(in progress). Add Task interface.
 - 0.9.121 - Fix missing close after all data queued to be sent was sent.
 - 0.9.120 - Fix crash caused by closing socket during http request dispatch.
 - 0.9.119 - Network Scheduling error on windows.

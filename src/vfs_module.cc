@@ -9,6 +9,18 @@ Persistent<Function> VolumeObject::constructor;
 Persistent<Function> FileObject::constructor;
 Persistent<FunctionTemplate> FileObject::tpl;
 
+Local<String> localString( Isolate *isolate, const char *data, int len ) {
+	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
+	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
+	Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
+	PARRAY_BUFFER_HOLDER holder = GetHolder();
+	holder->s.Reset( isolate, arrayBuffer );
+	holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+	holder->buffer = (void*)data;
+	return arrayBuffer;
+}
+
+
 static void moduleExit( void *arg ) {
 	//SaveTranslationDataEx( "^/strings.dat" );
 	SaveTranslationDataEx( "@/../../strings.json" );
@@ -68,6 +80,7 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void VolumeObject::Init( Handle<Object> exports ) {
 	InvokeDeadstart();
+
 	node::AtExit( moduleExit );
 
 	//SetAllocateLogging( TRUE );
@@ -89,6 +102,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	InitSRG( isolate, exports );
 	InitWebSocket( isolate, exports );
 	InitUDPSocket( isolate, exports );
+	InitTask( isolate, exports );
 #ifdef INCLUDE_GUI
 	ImageObject::Init( exports );
 	InterShellObject::Init( exports );
@@ -128,6 +142,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	SET_READONLY_METHOD( exports, "u8xor", vfs_u8xor );
 	SET_READONLY_METHOD( exports, "b64xor", vfs_b64xor );
 	SET_READONLY_METHOD( exports, "id", idGenerator );
+	SET_READONLY_METHOD( VolFunc, "readAsString", fileReadString );
 
 	Local<Object> fileObject = Object::New( isolate );	
 	SET_READONLY( fileObject, "SeekSet", Integer::New( isolate, SEEK_SET ) );
@@ -415,7 +430,10 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 	PARRAY_BUFFER_HOLDER holder = info.GetParameter();
 	holder->o.ClearWeak();
-	holder->o.Reset();
+	if( !holder->o.IsEmpty() )
+		holder->o.Reset();
+	if( !holder->s.IsEmpty() )
+		holder->s.Reset();
 	Deallocate( void*, holder->buffer );
 	DropHolder( holder );
 }
@@ -478,6 +496,37 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			}
 			else
 				args.GetReturnValue().Set( Null( isolate ) );
+		}
+	}
+
+	void VolumeObject::fileReadString( const v8::FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+
+		if( args.Length() < 1 ) {
+			isolate->ThrowException( Exception::TypeError(
+				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open" ) ) ) );
+			return;
+		}
+
+		String::Utf8Value fName( args[0] );
+		size_t len = 0;
+		POINTER data = OpenSpace( NULL, *fName, &len );
+		if( data && len ) {
+			ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
+
+			MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
+			Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
+			PARRAY_BUFFER_HOLDER holder = GetHolder();
+			holder->s.Reset( isolate, arrayBuffer );
+			holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+			holder->buffer = data;
+
+			args.GetReturnValue().Set( arrayBuffer );
+
+		} else {
+			isolate->ThrowException( Exception::TypeError(
+				String::NewFromUtf8( isolate, TranslateText( "Failed to open file" ) ) ) );
 		}
 	}
 
@@ -808,6 +857,7 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 		}
 	}
 }
+
 
 static void vfs_string_read( char buf, size_t maxlen, struct sack_vfs_file *file ) {
 	lprintf( "volume string read is not implemented yet." );

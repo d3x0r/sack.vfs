@@ -13,12 +13,13 @@ static struct timings {
 static void makeJSON( const v8::FunctionCallbackInfo<Value>& args );
 static void escapeJSON( const v8::FunctionCallbackInfo<Value>& args );
 static void parseJSON( const v8::FunctionCallbackInfo<Value>& args );
+
 static void makeJSON6( const v8::FunctionCallbackInfo<Value>& args );
 static void escapeJSON6( const v8::FunctionCallbackInfo<Value>& args );
 static void parseJSON6( const v8::FunctionCallbackInfo<Value>& args );
-static void beginJSON6( const v8::FunctionCallbackInfo<Value>& args );
-static void writeJSON6( const v8::FunctionCallbackInfo<Value>& args );
-static void endJSON6( const v8::FunctionCallbackInfo<Value>& args );
+
+static void parseJSON6v( const v8::FunctionCallbackInfo<Value>& args );
+
 static void showTimings( const v8::FunctionCallbackInfo<Value>& args );
 
 class parseObject : public node::ObjectWrap {
@@ -26,6 +27,7 @@ class parseObject : public node::ObjectWrap {
 public:
 	static Persistent<Function> constructor;
 	static Persistent<Function> constructor6;
+	static Persistent<Function> constructor6v;
 	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
 
 public:
@@ -37,19 +39,22 @@ public:
 	static void write( const v8::FunctionCallbackInfo<Value>& args );
 	static void New6( const v8::FunctionCallbackInfo<Value>& args );
 	static void write6( const v8::FunctionCallbackInfo<Value>& args );
+	static void New6v( const v8::FunctionCallbackInfo<Value>& args );
+	static void write6v( const v8::FunctionCallbackInfo<Value>& args );
 
 	~parseObject();
 };
 
 Persistent<Function> parseObject::constructor;
 Persistent<Function> parseObject::constructor6;
+Persistent<Function> parseObject::constructor6v;
 
 void InitJSON( Isolate *isolate, Handle<Object> exports ){
 	Local<Object> o = Object::New( isolate );
 	SET_READONLY_METHOD( o, "parse", parseJSON );
 	NODE_SET_METHOD( o, "stringify", makeJSON );
 	NODE_SET_METHOD( o, "escape", escapeJSON );
-	NODE_SET_METHOD( o, "timing", showTimings );
+	//NODE_SET_METHOD( o, "timing", showTimings );
 	SET_READONLY( exports, "JSON", o );
 
 	{
@@ -68,7 +73,7 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 	SET_READONLY_METHOD( o2, "parse", parseJSON6 );
 	NODE_SET_METHOD( o2, "stringify", makeJSON6 );
 	NODE_SET_METHOD( o2, "escape", escapeJSON6 );
-	NODE_SET_METHOD( o2, "timing", showTimings );
+	//NODE_SET_METHOD( o2, "timing", showTimings );
 	SET_READONLY( exports, "JSON6", o2 );
 
 	{
@@ -79,6 +84,25 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write6 );
 
 		parseObject::constructor6.Reset( isolate, parseTemplate->GetFunction() );
+
+		SET_READONLY( o2, "begin", parseTemplate->GetFunction() );
+	}
+
+	Local<Object> o3 = Object::New( isolate );
+	SET_READONLY_METHOD( o3, "parse", parseJSON6v );
+	//NODE_SET_METHOD( o3, "stringify", makeJSON6 );
+	//NODE_SET_METHOD( o3, "escape", escapeJSON6 );
+	//NODE_SET_METHOD( o3, "timing", showTimings );
+	SET_READONLY( exports, "VESL", o3 );
+
+	{
+		Local<FunctionTemplate> parseTemplate;
+		parseTemplate = FunctionTemplate::New( isolate, parseObject::New6v );
+		parseTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.vesl_parser" ) );
+		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
+		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write6v );
+
+		parseObject::constructor6v.Reset( isolate, parseTemplate->GetFunction() );
 
 		SET_READONLY( o2, "begin", parseTemplate->GetFunction() );
 	}
@@ -254,11 +278,93 @@ void parseObject::New6( const v8::FunctionCallbackInfo<Value>& args ) {
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		Local<Function> cons = Local<Function>::New( isolate, constructor6 );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete[] argv;
 	}
 }
+
+
+void parseObject::write6v( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	parseObject *parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
+	int argc = args.Length();
+	if( argc == 0 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Missing data parameter." ) ) );
+		return;
+	}
+
+	String::Utf8Value data( args[0]->ToString() );
+	int result;
+	for( result = vesl_parse_add_data( parser->state, *data, data.length() );
+		result > 0;
+		result = vesl_parse_add_data( parser->state, NULL, 0 )
+		) {
+		struct json_value_container * val;
+		PDATALIST elements = json_parse_get_data( parser->state );
+		val = ( struct json_value_container * )GetDataItem( &elements, 0 );
+		if( val ) {
+			Local<Value> argv[1];
+			struct reviver_data r;
+			r.revive = FALSE;
+			r.isolate = isolate;
+			r.context = isolate->GetCurrentContext();
+			argv[0] = convertMessageToJS( elements, &r );
+			Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
+			{
+				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+				if( result.IsEmpty() ) // if an exception occurred stop, and return it.
+					return;
+			}
+			json_dispose_message( &elements );
+		}
+		if( result < 2 )
+			break;
+	}
+	if( result < 0 ) {
+		PTEXT error = json_parse_get_error( parser->state );
+		if( error ) {
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ) ) ) );
+			LineRelease( error );
+		} else
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "No Error Text" STRSYM( __LINE__ ) ) ) );
+		json_parse_clear_state( parser->state );
+		return;
+	}
+
+}
+
+
+void parseObject::New6v( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	if( argc == 0 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must callback function to get values." ) ) );
+		return;
+	}
+
+	if( args.IsConstructCall() ) {
+		// Invoked as constructor: `new MyObject(...)`
+		parseObject* obj = new parseObject();
+		Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+		Persistent<Function> cb( isolate, arg0 );
+		obj->readCallback = cb;
+
+		obj->Wrap( args.This() );
+		args.GetReturnValue().Set( args.This() );
+	} else {
+		// Invoked as plain function `MyObject(...)`, turn into construct call.
+		int argc = args.Length();
+		Local<Value> *argv = new Local<Value>[argc];
+		for( int n = 0; n < argc; n++ )
+			argv[n] = args[n];
+
+		Local<Function> cons = Local<Function>::New( isolate, constructor6v );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
+		delete[] argv;
+	}
+}
+
 
 #define MODE NewStringType::kNormal
 //#define MODE NewStringType::kInternalized
@@ -289,6 +395,9 @@ static inline Local<Value> makeValue( struct json_value_container *val, struct r
 	case VALUE_STRING:
 		result = String::NewFromUtf8( revive->isolate, val->string, MODE, (int)val->stringLen ).ToLocalChecked();
 		break;
+	case VALUE_OPERATOR:
+		result = String::NewFromUtf8( revive->isolate, val->string, MODE, (int)val->stringLen ).ToLocalChecked();
+		break;
 	case VALUE_NUMBER:
 		if( val->float_result )
 			result = Number::New( revive->isolate, val->result_d );
@@ -298,6 +407,7 @@ static inline Local<Value> makeValue( struct json_value_container *val, struct r
 	case VALUE_ARRAY:
 		result = Array::New( revive->isolate );
 		break;
+	case VALUE_EXPRESSION:
 	case VALUE_OBJECT:
 		result = Object::New( revive->isolate );
 		break;
@@ -399,7 +509,7 @@ Local<Value> convertMessageToJS( PDATALIST msg, struct reviver_data *revive ) {
 
 	struct json_value_container *val = (struct json_value_container *)GetDataItem( &msg, 0 );
 	if( val && val->contains ) {
-		if( val->value_type == VALUE_OBJECT )
+		if( val->value_type == VALUE_OBJECT || (val->value_type == VALUE_EXPRESSION ) )
 			o = Object::New( revive->isolate );
 		else if( val->value_type == VALUE_ARRAY )
 			o = Array::New( revive->isolate );
@@ -408,7 +518,9 @@ Local<Value> convertMessageToJS( PDATALIST msg, struct reviver_data *revive ) {
 		buildObject( val->contains, o, revive );
 		return o;
 	}
-	return makeValue( val, revive );
+	if( val )
+		return makeValue( val, revive );
+	return Undefined( revive->isolate );
 }
 
 
@@ -591,3 +703,70 @@ void escapeJSON6( const v8::FunctionCallbackInfo<Value>& args ) {
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, msg, NewStringType::kNormal, (int)outlen ).ToLocalChecked() );
 	Release( msg );
 }
+
+Local<Value> ParseJSON6v( const char *utf8String, size_t len, struct reviver_data *revive ) {
+	PDATALIST parsed = NULL;
+	//logTick(2);
+	if( !vesl_parse_message( (char*)utf8String, len, &parsed ) ) {
+		//PTEXT error = json_parse_get_error( parser->state );
+		//lprintf( "Failed to parse data..." );
+		PTEXT error = json_parse_get_error( NULL );
+		if( error )
+			revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate, GetText( error ) ) ) );
+		else
+			revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate, "No Error Text" STRSYM( __LINE__ ) ) ) );
+		LineRelease( error );
+		return Undefined( revive->isolate );
+	}
+	if( parsed && parsed->Cnt > 1 ) {
+		lprintf( "Multiple values would result, invalid parse." );
+		return Undefined( revive->isolate );
+		// outside should always be a single value
+	}
+	//logTick(3);
+	Local<Value> value = convertMessageToJS( parsed, revive );
+	//logTick(4);
+
+	json_dispose_message( &parsed );
+	//logTick(5);
+
+	return value;
+}
+
+void parseJSON6v( const v8::FunctionCallbackInfo<Value>& args )
+{
+	//logTick(0);
+	struct reviver_data r;
+	r.isolate = Isolate::GetCurrent();
+	if( args.Length() == 0 ) {
+		r.isolate->ThrowException( Exception::TypeError(
+			String::NewFromUtf8( r.isolate, TranslateText( "Missing parameter, data to parse" ) ) ) );
+		return;
+	}
+	const char *msg;
+	String::Utf8Value tmp( args[0] );
+	Handle<Function> reviver;
+	msg = *tmp;
+	if( args.Length() > 1 ) {
+		if( args[1]->IsFunction() ) {
+			r._this = args.Holder();
+			r.value = String::NewFromUtf8( r.isolate, "" );
+			r.revive = TRUE;
+			r.reviver = Handle<Function>::Cast( args[1] );
+		}
+		else {
+			r.isolate->ThrowException( Exception::TypeError(
+				String::NewFromUtf8( r.isolate, TranslateText( "Reviver parameter is not a function." ) ) ) );
+			return;
+		}
+	}
+	else
+		r.revive = FALSE;
+
+	//logTick(1);
+	r.context = r.isolate->GetCurrentContext();
+
+	args.GetReturnValue().Set( ParseJSON6v( msg, tmp.length(), &r ) );
+
+}
+
