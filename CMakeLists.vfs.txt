@@ -147,6 +147,7 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/netlib/html5.websocket/json/json_parser.c
 	${SACK_BASE}/src/netlib/html5.websocket/json/json6_parser.c
 	${SACK_BASE}/src/netlib/html5.websocket/json/json_emitter.c
+	${SACK_BASE}/src/netlib/html5.websocket/json/vesl_parser.c
 	${SACK_BASE}/src/netlib/network.c
 	${SACK_BASE}/src/netlib/tcpnetwork.c
 	${SACK_BASE}/src/netlib/udpnetwork.c
@@ -168,7 +169,13 @@ SET( EXTRA_SOURCES
 
 	${SACK_BASE}/src/translationlib/translate.c
 
-#$  {SACK_BASE}/src/msgsvr/client/global.h
+	${SACK_BASE}/src/deadstart/deadstart_lib.c
+)
+
+# android has to force this off....
+if( ON )
+set( EXTRA_SOURCES ${EXTRA_SOURCES} 
+		#${SACK_BASE}/src/msgsvr/client/global.h
 		${SACK_BASE}/src/typelib/msgqueue.c
 		${SACK_BASE}/src/msgsvr/client/client_common.c
 		${SACK_BASE}/src/msgsvr/client/client_client.c
@@ -178,9 +185,40 @@ SET( EXTRA_SOURCES
 		${SACK_BASE}/src/msgsvr/client/client_output.c
 		${SACK_BASE}/src/msgsvr/client/client_service.c 
 		${SACK_BASE}/src/msgsvr/summoner/construct.c
-
-	${SACK_BASE}/src/deadstart/deadstart_lib.c
 )
+endif( ON )
+
+if( __ANDROID__ )
+	set( EXTRA_SOURCES ${EXTRA_SOURCES} 
+		${SACK_BASE}/src/netlib/android_ifaddrs.h
+		${SACK_BASE}/src/netlib/android_ifaddrs.c
+	)
+endif( __ANDROID__ )
+
+set( NEED_UUID OFF )
+
+set( UUID_SOURCES
+  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid.c
+  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_md5.c
+  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_sha1.c
+  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_dce.c
+  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_mac.c
+  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_prng.c
+  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_str.c
+  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_time.c
+  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_ui128.c
+  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_ui64.c
+)
+
+if( NEED_UUID )
+  set( EXTRA_SOURCES ${EXTRA_SOURCES} ${UUID_SOURCES} )
+  if( MAKING_SACK_CORE )
+    add_definitions( -D__INTERNAL_UUID__ )
+  endif( MAKING_SACK_CORE )
+  add_definitions( -DUUID_SOURCE )
+endif( NEED_UUID )
+
+
 
 SET( BUILD_AMALGAM on )
 
@@ -246,6 +284,7 @@ add_library(${PROJECT_NAME} SHARED
 	src/websocket_module.cc
 	src/network_module.cc
 	src/config_module.cc
+	src/task_module.cc
 	${MORE_MODULE_SOURCES}
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc

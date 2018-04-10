@@ -17,7 +17,6 @@ try{
   } 
 }
 
-vfs.Sqlite.op( "SACK/Summoner/Auto register with summoner?", 0 );
 vfs.JSON6.stringify = JSON.stringify;
 vfs.JSON.stringify = JSON.stringify;
 //vfs.
@@ -28,11 +27,12 @@ require.extensions['.json6'] = function (module, filename) {
 };
 
 
+//vfs.Sqlite.op( "SACK/Summoner/Auto register with summoner?", 0 );
 //vfs.Sqlite.so( "SACK/Summoner/Auto register with summoner?", 1 );
 //console.log( "register:", vfs.Sqlite.op( "SACK/Summoner/Auto register with summoner?", 0 ));
 //vfs.loadComplete();
 const thread = vfs.Thread(process._tickDomainCallback);
-module.exports =exports= vfs;
+module.exports=exports=vfs;
 
 if( false ) {
 	process.on( 'beforeExit', ()=> {

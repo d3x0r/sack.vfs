@@ -19,11 +19,19 @@ CMake-js is required to build the GUI; to pull the full external sources.
         // nan (Native Abstractions for Node.js)
 
 #### Centos/linux
-        yum install gcc-c++ libuuid-devel unixodbc-devel
-        
+
+ *  yum install gcc-c++ libuuid-devel unixodbc-devel
+    * (uuid/uuid.h sql.h)
+ *  apt-get install uuid-dev unixodbc-dev 
+    * (uuid/uuid.h sql.h)
+ *  pacman -S unixodbc util-linux
+    * (sql.h uuid/uuid.h(probably already available, fs2util) )
+ *  (?)emerge unixodbc
+
 #### Mac
-        (ODBC might be optioned out; just uses sqlite typically)
-	brew (brew install unixODBC)
+
+  *  (ODBC might be optioned out; just uses sqlite typically)
+  *  brew (brew install unixODBC)
 
 #### Windows
 	none

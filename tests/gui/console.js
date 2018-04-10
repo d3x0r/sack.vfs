@@ -11,7 +11,6 @@ var dialog = sack.PSI.Frame.load( "console.frame" ); // if not loaded, gets a de
 
 if( !disk.exists( "console.font" ) ) {
 	sack.Image.Font.dialog( (font)=>{
-		console.log( "set font..." );
 		font.save( "console.font" );
 		dialog.font = font;	
 		console.log( "setter called?" );

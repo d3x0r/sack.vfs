@@ -45,7 +45,10 @@
 
 #endif
 
+
 using namespace v8;
+
+#include "task_module.h"
 
 //fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekSet" ), Integer::New( isolate, SEEK_SET ), ReadOnlyProperty );
 
@@ -56,6 +59,7 @@ void InitJSON( Isolate *isolate, Handle<Object> exports );
 void InitSRG( Isolate *isolate, Handle<Object> exports );
 void InitWebSocket( Isolate *isolate, Handle<Object> exports );
 void InitUDPSocket( Isolate *isolate, Handle<Object> exports );
+void InitTask( Isolate *isolate, Handle<Object> exports );
 
 #define ReadOnlyProperty (PropertyAttribute)((int)PropertyAttribute::ReadOnly | PropertyAttribute::DontDelete)
 
@@ -79,6 +83,7 @@ public:
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void getDirectory( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileRead( const v8::FunctionCallbackInfo<Value>& args );
+	static void fileReadString( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileReadJSON( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileWrite( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileExists( const v8::FunctionCallbackInfo<Value>& args );
@@ -338,12 +343,15 @@ Local<Value> convertMessageToJS( PDATALIST msg_data, struct reviver_data *revive
 struct arrayBufferHolder : public node::ObjectWrap {
 	void *buffer;
 	Persistent<Object> o;
+	Persistent<String> s;
 };
 typedef struct arrayBufferHolder ARRAY_BUFFER_HOLDER, *PARRAY_BUFFER_HOLDER;
 #define MAXARRAY_BUFFER_HOLDERSPERSET 128
 DeclareSet( ARRAY_BUFFER_HOLDER );
 
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info );
+Local<String> localString( Isolate *isolate, const char *data, int len );
+
 
 void InitFS( const v8::FunctionCallbackInfo<Value>& args );
 void ConfigScriptInit( Handle<Object> exports );

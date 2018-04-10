@@ -1974,6 +1974,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE       EmptyDataList ( PDATALIST *ppdl );
 /* <combine sack::containers::data_list::SetDataItemEx@PDATALIST *@INDEX@POINTER data>
    \ \                                                                                 */
 #define SetDataItem(p,i,v) ( SetDataItemEx( (p),(i),(v) DBG_SRC ) )
+#define GetDataItemAddress( t, p, i )   ( (t)((p)->data + (((p)->Size) * (i))))
    _DATALIST_NAMESPACE_END
 //--------------------------------------------------------
 #ifdef __cplusplus
@@ -4986,7 +4987,7 @@ typedef void (CPROC*TaskEnd)(uintptr_t, PTASK_INFO task_ended);
 typedef void (CPROC*TaskOutput)(uintptr_t, PTASK_INFO task, CTEXTSTR buffer, size_t size );
 // Run a program completely detached from the current process
 // it runs independantly.  Program does not suspend until it completes.
-// No way at all to know if the program works or fails.
+// Use GetTaskExitCode() to get the return code of the process
 #define LPP_OPTION_DO_NOT_HIDE           1
 // for services to launch normal processes (never got it to work; used to work in XP/NT?)
 #define LPP_OPTION_IMPERSONATE_EXPLORER  2
@@ -4995,12 +4996,12 @@ typedef void (CPROC*TaskOutput)(uintptr_t, PTASK_INFO task, CTEXTSTR buffer, siz
 #define LPP_OPTION_NEW_CONSOLE          16
 #define LPP_OPTION_SUSPEND              32
 SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramExx )( CTEXTSTR program, CTEXTSTR path, PCTEXTSTR args
-															  , int flags
-															  , TaskOutput OutputHandler
-															  , TaskEnd EndNotice
-															  , uintptr_t psv
-																DBG_PASS
-															  );
+                                               , int flags
+                                               , TaskOutput OutputHandler
+                                               , TaskEnd EndNotice
+                                               , uintptr_t psv
+                                                DBG_PASS
+                                               );
 SYSTEM_PROC( PTASK_INFO, LaunchProgramEx )( CTEXTSTR program, CTEXTSTR path, PCTEXTSTR args, TaskEnd EndNotice, uintptr_t psv );
 // launch a process, program name (including leading path), a optional path to start in (defaults to
 // current process' current working directory.  And a array of character pointers to args
@@ -5045,17 +5046,17 @@ SYSTEM_PROC( LOGICAL, IsSystemShuttingDown )( void );
 // HandlePeerOutput is called whenever a peer task has generated output on stdout or stderr
 //   - someday evolution may require processing stdout and stderr with different event handlers
 SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramEx )( CTEXTSTR program, CTEXTSTR path, PCTEXTSTR args
-															 , TaskOutput HandlePeerOutput
-															 , TaskEnd EndNotice
-															 , uintptr_t psv
-															  DBG_PASS
-															 );
+                                              , TaskOutput HandlePeerOutput
+                                              , TaskEnd EndNotice
+                                              , uintptr_t psv
+                                               DBG_PASS
+                                              );
 #define LaunchPeerProgram(prog,path,args,out,end,psv) LaunchPeerProgramEx(prog,path,args,out,end,psv DBG_SRC)
 SYSTEM_PROC( PTASK_INFO, SystemEx )( CTEXTSTR command_line
-															  , TaskOutput OutputHandler
-															  , uintptr_t psv
-																DBG_PASS
-											  );
+                                   , TaskOutput OutputHandler
+                                   , uintptr_t psv
+                                   DBG_PASS
+                                   );
 #define System(command_line,output_handler,user_data) SystemEx( command_line, output_handler, user_data DBG_SRC )
 // generate output to a task... read by peer task on standard input pipe
 // if a task has been opened with an output handler, than IO is trapped, and this is a method of
@@ -10086,6 +10087,7 @@ typedef void(*atexit_priority_proc)(void (*)(void),int,CTEXTSTR DBG_PASS);
 // UNDEFINED
 //------------------------------------------------------------------------------------
 #else
+#error "there's nothing I can do to wrap PRELOAD() or ATEXIT()!"
 /* This is the most basic way to define some startup code that
    runs at some point before the program starts. This code is
    declared as static, so the same preload initialization name
@@ -11655,6 +11657,22 @@ JSON_EMITTER_PROC( int, json6_parse_add_data )( struct json_parse_state *context
                                                  , const char * msg
                                                  , size_t msglen
                                                  );
+// Add some data to parse for json stream (which may consist of multiple values)
+// return 1 when a completed value/object is available.
+// after returning 1, call json_parse_get_data.  It is possible that there is
+// still unconsumed data that can begin a new object.  Call this with NULL, 0 for data
+// to consume this internal data.  if this returns 0, then there is no further object
+// to retrieve.
+// if this returns -1, an error in parsing has occured, and no further parsing can happen.
+JSON_EMITTER_PROC( int, vesl_parse_add_data )( struct json_parse_state *context
+	, const char * msg
+	, size_t msglen
+	);
+// one shot, just process this one message.
+JSON_EMITTER_PROC( LOGICAL, vesl_parse_message )(const char * msg
+	, size_t msglen
+	, PDATALIST *msg_data_out
+	);
 JSON_EMITTER_PROC( LOGICAL, json_decode_message )(  struct json_context *format
                                                   , PDATALIST parsedMsg
                                                   , struct json_context_object **result_format
@@ -11663,31 +11681,76 @@ JSON_EMITTER_PROC( LOGICAL, json_decode_message )(  struct json_context *format
 enum json_value_types {
 	VALUE_UNDEFINED = -1
 	, VALUE_UNSET = 0
- //= 1
+ //= 1 no data
 	, VALUE_NULL
- //= 2
+ //= 2 no data
 	, VALUE_TRUE
- //= 3
+ //= 3 no data
 	, VALUE_FALSE
- //= 4
+ //= 4 string
 	, VALUE_STRING
- //= 5
+ //= 5 string + result_d | result_n
 	, VALUE_NUMBER
- //= 6
+ //= 6 contains
 	, VALUE_OBJECT
- //= 7
+ //= 7 contains
 	, VALUE_ARRAY
- //= 8
+	// up to here is supported in JSON
+ //= 8 no data
 	, VALUE_NEG_NAN
- //= 9
+ //= 9 no data
 	, VALUE_NAN
- //= 10
+ //= 10 no data
 	, VALUE_NEG_INFINITY
- //= 11
+ //= 11 no data
 	, VALUE_INFINITY
-  // = 12
+  // = 12 UNIMPLEMENTED
 	, VALUE_DATE
+ // = 13 no data; used in [,,,] as place holder of empty
 	, VALUE_EMPTY
+	// --- up to here is supports in JSON(6)
+ // = 14 string needs to be parsed for expressions.
+	, VALUE_NEED_EVAL
+ // contains
+	, VALUE_VARIABLE
+ // code (string), contains
+	, VALUE_FUNCTION
+ // code (string), contains[n] = parameters
+	, VALUE_FUNCTION_CALL
+ //  ( ... ) or { ... } , string, contains[n] = value(s) last is THE value
+	, VALUE_EXPRESSION
+ // Symbolic operator, with combination rules so the operator text is complete.
+	, VALUE_OPERATOR
+ // 'if'  contains[1], contains[1], contains[2]
+	, VALUE_OP_IF
+ // '?'  contains[N] expressions to evaluate
+	, VALUE_OP_TRINARY_THEN
+ // ':'  contains[N] expressions to evaluate
+	, VALUE_OP_TRINARY_ELSE
+ // 'switch'
+	, VALUE_OP_SWITCH
+ // 'case'
+	, VALUE_OP_CASE
+ // 'for'   no data, contains[0], contains[1], contains[2],
+	, VALUE_OP_FOR
+ // 'break'  // strip optional label break
+	, VALUE_OP_BREAK
+ // 'while'
+	, VALUE_OP_WHILE
+ // 'do'
+	, VALUE_OP_DO
+ // 'continue'
+	, VALUE_OP_CONTINUE
+ // 'goto'
+	, VALUE_OP_GOTO
+ // 'stop'
+	, VALUE_OP_STOP
+ // 'this'
+	, VALUE_OP_THIS
+ // 'holder'
+	, VALUE_OP_HOLDER
+ // 'base'
+	, VALUE_OP_BASE
 };
 struct json_value_container {
   // name of this value (if it's contained in an object)
@@ -11700,11 +11763,14 @@ struct json_value_container {
 	size_t stringLen;
   // boolean whether to use result_n or result_d
 	int float_result;
-	double result_d;
-	int64_t result_n;
+	union {
+		double result_d;
+		int64_t result_n;
+		//struct json_value_container *nextToken;
+	};
   // list of struct json_value_container that this contains.
 	PDATALIST contains;
-  // list of struct json_value_container that this contains.
+  // acutal source datalist(?)
 	PDATALIST *_contains;
 };
 // any allocate mesage parts are released.
