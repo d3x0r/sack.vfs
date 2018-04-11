@@ -1001,7 +1001,8 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
-- 0.9.122 - Add VESL parsing(in progress). Add Task interface.  Fix create table emitter.
+- 0.9.123 - Fix missing sources in binding.gyp build rules.
+- 0.9.122(unpublished) - Add VESL parsing(in progress). Add Task interface.  Fix create table emitter.
 - 0.9.121 - Fix missing close after all data queued to be sent was sent.
 - 0.9.120 - Fix crash caused by closing socket during http request dispatch.
 - 0.9.119 - Network Scheduling error on windows.
