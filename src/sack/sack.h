@@ -1974,7 +1974,6 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE       EmptyDataList ( PDATALIST *ppdl );
 /* <combine sack::containers::data_list::SetDataItemEx@PDATALIST *@INDEX@POINTER data>
    \ \                                                                                 */
 #define SetDataItem(p,i,v) ( SetDataItemEx( (p),(i),(v) DBG_SRC ) )
-#define GetDataItemAddress( t, p, i )   ( (t)((p)->data + (((p)->Size) * (i))))
    _DATALIST_NAMESPACE_END
 //--------------------------------------------------------
 #ifdef __cplusplus
