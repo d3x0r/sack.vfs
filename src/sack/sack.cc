@@ -8825,9 +8825,9 @@ struct required_key_def
 	/* Name of the key column. Can be NULL if primary. */
 	CTEXTSTR name;
  // uhm up to 5 colnames...
-   CTEXTSTR colnames[MAX_KEY_COLUMNS];
+	CTEXTSTR colnames[MAX_KEY_COLUMNS];
  // if not null, broken structure...
-   CTEXTSTR null;
+	CTEXTSTR null;
 #ifdef __cplusplus
    /* <combine sack::sql::required_key_def>
       This is used when actually building C++ for providing an
@@ -37402,7 +37402,6 @@ size_t sack_fsize ( FILE *file_file ) {
 }
 static size_t sack_ftellEx ( FILE *file_file, struct file_system_mounted_interface *mount )
 {
-#undef tell
 	if( mount && mount->fsi )
 		return mount->fsi->tell( file_file );
 	return ftell( file_file );
@@ -58300,10 +58299,225 @@ static int gatherString6v(struct json_parse_state *state, CTEXTSTR msg, CTEXTSTR
 	(*pmOut) = mOut;
 	return status;
 }
+static int gatherIdentifier( struct json_parse_state *state, CTEXTSTR msg
+	, CTEXTSTR *msg_input, size_t msglen
+	, TEXTSTR *pmOut
+) {
+	char *mOut = (*pmOut);
+	// collect a string
+	int status = 0;
+	size_t n;
+	//int escape;
+	//LOGICAL cr_escaped;
+	TEXTRUNE c;
+	//escape = 0;
+	//cr_escaped = FALSE;
+	while( ((n = (*msg_input) - msg), (n < msglen)) && ((c = GetUtfChar( msg_input )), (status >= 0)) )
+	{
+		(state->col)++;
+		if( state->escape ) {
+			if( state->stringOct ) {
+/*'0'*/
+/*'9'*/
+				if( state->hex_char_len < 3 && c >= 48 && c <= 57 ) {
+					state->hex_char *= 8;
+/*.codePointAt(0)*/
+					state->hex_char += c - 0x30;
+					state->hex_char_len++;
+					if( state->hex_char_len == 3 ) {
+						mOut += ConvertToUTF8( mOut, state->hex_char );
+						state->stringOct = FALSE;
+						state->escape = FALSE;
+						continue;
+					}
+					continue;
+				}
+				else {
+					if( state->hex_char > 255 ) {
+						lprintf( WIDE( "(escaped character, parsing octal escape val=%d) fault while parsing; )" ) WIDE( " (near %*.*s[%c]%s)" )
+							, state->hex_char
+							, (int)((n>3) ? 3 : n), (int)((n>3) ? 3 : n)
+							, (*msg_input) - ((n>3) ? 3 : n)
+							, c
+							, (*msg_input) + 1
+// fault
+						);
+						status = -1;
+						break;
+					}
+					mOut += ConvertToUTF8( mOut, state->hex_char );
+					state->stringOct = FALSE;
+					state->escape = FALSE;
+					continue;
+				}
+			}
+			else if( state->unicodeWide ) {
+				if( c == '}' ) {
+					mOut += ConvertToUTF8( mOut, state->hex_char );
+					state->unicodeWide = FALSE;
+					state->stringUnicode = FALSE;
+					state->escape = FALSE;
+					continue;
+				}
+				state->hex_char *= 16;
+				if( c >= '0' && c <= '9' )      state->hex_char += c - '0';
+				else if( c >= 'A' && c <= 'F' ) state->hex_char += (c - 'A') + 10;
+				else if( c >= 'a' && c <= 'f' ) state->hex_char += (c - 'a') + 10;
+				else {
+					lprintf( WIDE( "(escaped character, parsing hex of \\u) fault while parsing; '%c' unexpected at %" )_size_f WIDE( " (near %*.*s[%c]%s)" ), c, n
+						, (int)((n > 3) ? 3 : n), (int)((n > 3) ? 3 : n)
+						, (*msg_input) - ((n > 3) ? 3 : n)
+						, c
+						, (*msg_input) + 1
+// fault
+					);
+					status = -1;
+					state->unicodeWide = FALSE;
+					state->escape = FALSE;
+				}
+				continue;
+			}
+			else if( state->stringHex || state->stringUnicode ) {
+				if( state->hex_char_len == 0 && c == '{' ) {
+					state->unicodeWide = TRUE;
+					continue;
+				}
+				if( state->hex_char_len < 2 || (state->stringUnicode && state->hex_char_len < 4) ) {
+					state->hex_char *= 16;
+					if( c >= '0' && c <= '9' )      state->hex_char += c - '0';
+					else if( c >= 'A' && c <= 'F' ) state->hex_char += (c - 'A') + 10;
+					else if( c >= 'a' && c <= 'f' ) state->hex_char += (c - 'a') + 10;
+					else {
+						lprintf( WIDE( "(escaped character, parsing hex of \\x) fault while parsing; '%c' unexpected at %" )_size_f WIDE( " (near %*.*s[%c]%s)" ), c, n
+							, (int)((n>3) ? 3 : n), (int)((n>3) ? 3 : n)
+							, (*msg_input) - ((n>3) ? 3 : n)
+							, c
+							, (*msg_input) + 1
+// fault
+						);
+						status = -1;
+						state->stringHex = FALSE;
+						state->escape = FALSE;
+						continue;
+					}
+				}
+				state->hex_char_len++;
+				if( state->stringUnicode ) {
+					if( state->hex_char_len == 4 ) {
+						mOut += ConvertToUTF8( mOut, state->hex_char );
+						state->stringUnicode = FALSE;
+						state->escape = FALSE;
+					}
+				}
+				else if( state->hex_char_len == 2 ) {
+					mOut += ConvertToUTF8( mOut, state->hex_char );
+					state->stringHex = FALSE;
+					state->escape = FALSE;
+				}
+				continue;
+			}
+			switch( c ) {
+			case '\r':
+				state->cr_escaped = TRUE;
+				continue;
+			case '\n':
+				state->line++;
+				state->col = 1;
+				if( state->cr_escaped ) state->cr_escaped = FALSE;
+				// fall through to clear escape status <CR><LF> support.
+ // LS (Line separator)
+			case 2028:
+ // PS (paragraph separate)
+			case 2029:
+				continue;
+			case '/':
+			case '\\':
+			case '\'':
+			case '"':
+			case '`':
+				(*mOut++) = c;
+				break;
+			case 't':
+				(*mOut++) = '\t';
+				break;
+			case 'b':
+				(*mOut++) = '\b';
+				break;
+			case 'n':
+				(*mOut++) = '\n';
+				break;
+			case 'r':
+				(*mOut++) = '\r';
+				break;
+			case 'f':
+				(*mOut++) = '\f';
+				break;
+			case '0': case '1': case '2': case '3':
+				state->stringOct = TRUE;
+				state->hex_char = c - 48;
+				state->hex_char_len = 1;
+				continue;
+			case 'x':
+				state->stringHex = TRUE;
+				state->hex_char_len = 0;
+				state->hex_char = 0;
+				continue;
+			case 'u':
+				state->stringUnicode = TRUE;
+				state->hex_char_len = 0;
+				state->hex_char = 0;
+				continue;
+			default:
+				if( state->cr_escaped ) {
+					state->cr_escaped = FALSE;
+					state->escape = FALSE;
+					mOut += ConvertToUTF8( mOut, c );
+				}
+				else {
+					lprintf( WIDE( "(escaped character) fault while parsing; '%c' unexpected %" )_size_f WIDE( " (near %*.*s[%c]%s)" ), c, n
+						, (int)((n>3) ? 3 : n), (int)((n>3) ? 3 : n)
+						, (*msg_input) - ((n>3) ? 3 : n)
+						, c
+						, (*msg_input) + 1
+// fault
+					);
+					status = -1;
+				}
+				break;
+			}
+			state->escape = 0;
+		}
+		else if( c == '\\' ) {
+			if( state->escape ) {
+				(*mOut++) = '\\';
+				state->escape = 0;
+			}
+			else state->escape = 1;
+		}
+		else
+		{
+			if( state->cr_escaped ) {
+				state->cr_escaped = FALSE;
+				if( c == '\n' ) {
+					state->line++;
+					state->col = 1;
+					state->escape = FALSE;
+					continue;
+				}
+			}
+			mOut += ConvertToUTF8( mOut, c );
+		}
+	}
+	if( status )
+  // terminate the string.
+		(*mOut++) = 0;
+	(*pmOut) = mOut;
+	return status;
+}
 static FLAGSET( isOp, 128 );
 static FLAGSET( isOp2[128], 128 );
 static void InitOperatorSyms( void ) {
-	static const char *ops = "=<>+-*/%^~!&|?:,.";
+	static const char *ops = "=<>+-*/%^~!&|?:.";
 	//@#\$_
  /*=*/
  /*<*/
@@ -58321,9 +58535,8 @@ static void InitOperatorSyms( void ) {
  /*|*/
  /*?*/
  /*:*/
- /*,*/
  /*.*/
-							   ,"=","=","=><&|","=&","=|",NULL,NULL,NULL,NULL };
+							   ,"=","=","=><&|","=&","=|",NULL,NULL,NULL };
 	int n;
 	int m;
 	for( n = 0; ops[n]; n++ ) {
@@ -58333,6 +58546,94 @@ static void InitOperatorSyms( void ) {
 }
 PRELOAD( InitVESLOpSyms ) {
 	InitOperatorSyms();
+}
+void emitWordFragment( struct json_parse_state *state, struct json_output_buffer* output ) {
+	switch( state->word ) {
+	case WORD_POS_FALSE_1:
+		(*output->pos++) = 'f';
+		break;
+	case WORD_POS_FALSE_2:
+		(*output->pos++) = 'f';
+		(*output->pos++) = 'a';
+		break;
+	case WORD_POS_FALSE_3:
+		(*output->pos++) = 'f';
+		(*output->pos++) = 'a';
+		(*output->pos++) = 'l';
+		break;
+	case WORD_POS_FALSE_4:
+		(*output->pos++) = 'f';
+		(*output->pos++) = 'a';
+		(*output->pos++) = 'l';
+		(*output->pos++) = 's';
+		break;
+	case WORD_POS_TRUE_1:
+		(*output->pos++) = 't';
+		break;
+	case WORD_POS_TRUE_2:
+		(*output->pos++) = 't';
+		(*output->pos++) = 'r';
+		break;
+	case WORD_POS_TRUE_3:
+		(*output->pos++) = 't';
+		(*output->pos++) = 'r';
+		(*output->pos++) = 'u';
+		break;
+	case WORD_POS_NULL_1:
+		(*output->pos++) = 'n';
+		break;
+	case WORD_POS_NULL_2:
+		(*output->pos++) = 'n';
+		(*output->pos++) = 'u';
+		break;
+	case WORD_POS_NULL_3:
+		(*output->pos++) = 'n';
+		(*output->pos++) = 'u';
+		(*output->pos++) = 'l';
+		break;
+	case WORD_POS_INFINITY_1:
+		(*output->pos++) = 'I';
+		break;
+	case WORD_POS_INFINITY_2:
+		(*output->pos++) = 'I';
+		(*output->pos++) = 'n';
+		break;
+	case WORD_POS_INFINITY_3:
+		(*output->pos++) = 'I';
+		(*output->pos++) = 'n';
+		(*output->pos++) = 'f';
+		break;
+	case WORD_POS_INFINITY_4:
+		(*output->pos++) = 'I';
+		(*output->pos++) = 'n';
+		(*output->pos++) = 'f';
+		(*output->pos++) = 'i';
+		break;
+	case WORD_POS_INFINITY_5:
+		(*output->pos++) = 'I';
+		(*output->pos++) = 'n';
+		(*output->pos++) = 'f';
+		(*output->pos++) = 'i';
+		(*output->pos++) = 'n';
+		break;
+	case WORD_POS_INFINITY_6:
+		(*output->pos++) = 'I';
+		(*output->pos++) = 'n';
+		(*output->pos++) = 'f';
+		(*output->pos++) = 'i';
+		(*output->pos++) = 'n';
+		(*output->pos++) = 'i';
+		break;
+	case WORD_POS_INFINITY_7:
+		(*output->pos++) = 'I';
+		(*output->pos++) = 'n';
+		(*output->pos++) = 'f';
+		(*output->pos++) = 'i';
+		(*output->pos++) = 'n';
+		(*output->pos++) = 'i';
+		(*output->pos++) = 't';
+		break;
+	}
 }
 int vesl_parse_add_data( struct json_parse_state *state
                             , const char * msg
@@ -58466,9 +58767,6 @@ int vesl_parse_add_data( struct json_parse_state *state
 			}
 			switch( c )
 			{
-			case '/':
-				if( !state->comment ) state->comment = 1;
-				break;
 			case '(':
 			case '{':
 				if( state->parse_context == CONTEXT_OBJECT_FIELD_VALUE
@@ -58480,16 +58778,18 @@ int vesl_parse_add_data( struct json_parse_state *state
 #endif
 					// looking for a field, and got another paren,
 					// is a unnamed expression within this oen.
-					if( state->parse_context == CONTEXT_OBJECT_FIELD || state->parse_context == CONTEXT_OBJECT_FIELD_VALUE ) {
-						if( state->word == WORD_POS_FIELD || state->word == WORD_POS_RESET ) {
-							state->val.value_type = VALUE_EXPRESSION;
+					if( state->val.value_type == VALUE_UNSET ) {
+						if( state->parse_context == CONTEXT_OBJECT_FIELD || state->parse_context == CONTEXT_OBJECT_FIELD_VALUE ) {
+							if( state->word == WORD_POS_FIELD || state->word == WORD_POS_RESET ) {
+								state->val.value_type = VALUE_EXPRESSION;
+							}
+							state->parse_context = CONTEXT_OBJECT_FIELD_VALUE;
 						}
-						state->parse_context = CONTEXT_OBJECT_FIELD_VALUE;
-					}
-					if( state->val.value_type && state->val.string ) {
-						// terminate the string.
-						state->val.stringLen = (output->pos - state->val.string);
-						(*output->pos++) = 0;
+						if( state->val.value_type && state->val.string ) {
+							// terminate the string.
+							state->val.stringLen = (output->pos - state->val.string);
+							(*output->pos++) = 0;
+						}
 					}
 					old_context->context = state->parse_context;
 					old_context->elements = state->elements;
@@ -58498,7 +58798,7 @@ int vesl_parse_add_data( struct json_parse_state *state
 // CreateDataList( sizeof( state->val ) );
 					if( !state->elements ) state->elements = GetFromSet( PDATALIST, &jpsd.dataLists );
 					if( !state->elements[0] ) state->elements[0] = CreateDataList( sizeof( state->val ) );
-					else state->elements[0]->Cnt = 0;
+					//else state->elements[0]->Cnt = 0;
 					lprintf( "Pushing pending thing, so this object is assicated under it as a list: %s", state->val.string );
 					PushLink( state->context_stack, old_context );
 					RESET_STATE_VAL();
@@ -58523,10 +58823,11 @@ int vesl_parse_add_data( struct json_parse_state *state
 					old_context->context = state->parse_context;
 					old_context->elements = state->elements;
 					old_context->valState = state->val;
+					state->elements = state->val._contains;
 // CreateDataList( sizeof( state->val ) );
-					state->elements = GetFromSet( PDATALIST, &jpsd.dataLists );
+					if( !state->elements ) state->elements = GetFromSet( PDATALIST, &jpsd.dataLists );
 					if( !state->elements[0] ) state->elements[0] = CreateDataList( sizeof( state->val ) );
-					else state->elements[0]->Cnt = 0;
+					//else state->elements[0]->Cnt = 0;
 					PushLink( state->context_stack, old_context );
 					RESET_STATE_VAL();
 					state->parse_context = CONTEXT_OBJECT_FIELD;
@@ -58547,54 +58848,14 @@ int vesl_parse_add_data( struct json_parse_state *state
 					old_context->context = state->parse_context;
 					old_context->elements = state->elements;
 					old_context->valState = state->val;
+					state->elements = state->val._contains;
 // CreateDataList( sizeof( state->val ) );
-					state->elements = GetFromSet( PDATALIST, &jpsd.dataLists );
+					if( !state->elements ) state->elements = GetFromSet( PDATALIST, &jpsd.dataLists );
 					if( !state->elements[0] ) state->elements[0] = CreateDataList( sizeof( state->val ) );
-					else state->elements[0]->Cnt = 0;
+					//else state->elements[0]->Cnt = 0;
 					PushLink( state->context_stack, old_context );
 					RESET_STATE_VAL();
 					state->parse_context = CONTEXT_IN_ARRAY;
-				}
-				break;
-			case ':':
-			case '=':
-				if( state->parse_context == CONTEXT_OBJECT_FIELD )
-				{
-					if( state->word != WORD_POS_RESET
-						&& state->word != WORD_POS_FIELD
-						&& state->word != WORD_POS_AFTER_FIELD ) {
-						// allow starting a new word
-						state->status = FALSE;
-						if( !state->pvtError ) state->pvtError = VarTextCreate();
-						vtprintf( state->pvtError, WIDE( "unquoted keyword used as object field name:parsing fault; unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-						break;
-					}
-					else if( state->word == WORD_POS_FIELD ) {
-						//state->val.stringLen = output->pos - state->val.string;
-						//lprintf( "Set string length:%d", state->val.stringLen );
-					}
-					if( !( state->val.value_type == VALUE_STRING ) )
-						(*output->pos++) = 0;
-					state->word = WORD_POS_RESET;
-					if( state->val.name ) {
-						if( !state->pvtError ) state->pvtError = VarTextCreate();
-						vtprintf( state->pvtError, "two names single value?" );
-					}
-					state->val.name = state->val.string;
-					state->val.nameLen = ( output->pos - state->val.string ) - 1;
-					state->val.string = NULL;
-					state->val.stringLen = 0;
-					state->parse_context = CONTEXT_OBJECT_FIELD_VALUE;
-					state->val.value_type = VALUE_UNSET;
-				}
-				else
-				{
-					if( !state->pvtError ) state->pvtError = VarTextCreate();
-					if( state->parse_context == CONTEXT_IN_ARRAY )
-						vtprintf( state->pvtError, WIDE( "(in array, got colon out of string):parsing fault; unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-					else
-						vtprintf( state->pvtError, WIDE( "(outside any object, got colon out of string):parsing fault; unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-					state->status = FALSE;
 				}
 				break;
 			case '}':
@@ -58611,7 +58872,7 @@ int vesl_parse_add_data( struct json_parse_state *state
 #endif
 					//if( (state->parse_context == CONTEXT_OBJECT_FIELD_VALUE) )
 					if( state->val.value_type == VALUE_UNSET ) {
-						state->val.value_type = VALUE_EMPTY;
+						state->val.value_type = VALUE_EXPRESSION;
 					}
 					if( state->val.value_type != VALUE_UNSET ) {
 						lprintf( "Close Expression; push value:%s %p", value_type_names[state->val.value_type], state->elements );
@@ -58678,66 +58939,16 @@ int vesl_parse_add_data( struct json_parse_state *state
 					state->status = FALSE;
 				}
 				break;
-			case ',':
-			case ';':
-				if( state->word == WORD_POS_END ) {
-					// allow starting a new word
-					state->word = WORD_POS_RESET;
-				}
-				if( state->parse_context == CONTEXT_IN_ARRAY )
-				{
-					if( state->val.value_type == VALUE_UNSET )
- // in an array, elements after a comma should init as undefined...
-						state->val.value_type = VALUE_EMPTY;
-							                                    // undefined allows [,,,] to be 4 values and [1,2,3,] to be 4 values with an undefined at end.
-					if( state->val.value_type != VALUE_UNSET ) {
-#ifdef _DEBUG_PARSING
-						lprintf( "back in array; push item %d", state->val.value_type );
-#endif
-						lprintf( "Comma;semi; push value:%s", value_type_names[state->val.value_type] );
-						AddDataItem( state->elements, &state->val );
-						RESET_STATE_VAL();
-					}
-				}
-				else if( state->parse_context == CONTEXT_OBJECT_FIELD_VALUE )
-				{
-					// after an array value, it will have returned to OBJECT_FIELD anyway
-#ifdef _DEBUG_PARSING
-					lprintf( "comma after field value, push field to object: %s", state->val.name );
-#endif
-					state->parse_context = CONTEXT_OBJECT_FIELD;
-					if( state->val.value_type != VALUE_UNSET ) {
-						lprintf( "comma;semi-2; push value:%s", value_type_names[state->val.value_type] );
-						AddDataItem( state->elements, &state->val );
-					}
-					RESET_STATE_VAL();
-				}
-				else
-				{
-					state->status = FALSE;
-					if( !state->pvtError ) state->pvtError = VarTextCreate();
-// fault
-					vtprintf( state->pvtError, WIDE( "bad context; fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-				}
-				break;
 			default:
 				if( state->parse_context == CONTEXT_OBJECT_FIELD_VALUE
 					&& c < 127 ) {
-					if( c == ':' ) {
-						// if not after a ? in expressions.....
-						if( state->word == WORD_POS_PROPER_NAME && !state->val.name ) {
-							(*output->pos++) = 0;
-							state->val.value_type = VALUE_UNSET;
-							state->word = WORD_POS_RESET;
-							state->val.name = state->val.string;
-							state->val.nameLen = output->pos - state->val.name;
-							state->val.string = NULL;
-							continue;
-						}
-					}
 					if( !state->operatorAccum ) {
 						if( TESTFLAG( isOp, c ) ) {
 							if( state->val.value_type ) {
+								if( state->word == WORD_POS_PROPER_NAME ) {
+									(*output->pos++) = c;
+									continue;
+								}
 								lprintf( "is an op; push value:%s %p", value_type_names[state->val.value_type], state->elements );
 								AddDataItem( state->elements, &state->val );
 								RESET_STATE_VAL();
@@ -58770,6 +58981,62 @@ int vesl_parse_add_data( struct json_parse_state *state
 							state->val.stringLen = 2;
 							(*output->pos++) = c;
 						}
+						else {
+							if( c == ':' ) {
+								// if not after a ? in expressions.....
+								// this should already be caught above....
+								if( state->word == WORD_POS_PROPER_NAME && !state->val.name ) {
+									(*output->pos++) = 0;
+									state->val.value_type = VALUE_UNSET;
+									state->word = WORD_POS_RESET;
+									state->val.name = state->val.string;
+									state->val.nameLen = output->pos - state->val.name;
+									state->val.string = NULL;
+									continue;
+								}
+							}
+							if( state->operatorAccum == ':' || state->operatorAccum == '=' ) {
+								if( state->parse_context == CONTEXT_OBJECT_FIELD )
+								{
+									if( state->word != WORD_POS_RESET
+										&& state->word != WORD_POS_FIELD
+										&& state->word != WORD_POS_AFTER_FIELD ) {
+										// allow starting a new word
+										state->status = FALSE;
+										if( !state->pvtError ) state->pvtError = VarTextCreate();
+										vtprintf( state->pvtError, WIDE( "unquoted keyword used as object field name:parsing fault; unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+										break;
+									}
+									else if( state->word == WORD_POS_FIELD ) {
+										//state->val.stringLen = output->pos - state->val.string;
+										//lprintf( "Set string length:%d", state->val.stringLen );
+									}
+									if( !(state->val.value_type == VALUE_STRING) )
+										(*output->pos++) = 0;
+									state->word = WORD_POS_RESET;
+									if( state->val.name ) {
+										if( !state->pvtError ) state->pvtError = VarTextCreate();
+										vtprintf( state->pvtError, "two names single value?" );
+									}
+									state->val.name = state->val.string;
+									state->val.nameLen = (output->pos - state->val.string) - 1;
+									state->val.string = NULL;
+									state->val.stringLen = 0;
+									state->parse_context = CONTEXT_OBJECT_FIELD_VALUE;
+									state->val.value_type = VALUE_UNSET;
+								}
+								else
+								{
+									if( !state->pvtError ) state->pvtError = VarTextCreate();
+									if( state->parse_context == CONTEXT_IN_ARRAY )
+										vtprintf( state->pvtError, WIDE( "(in array, got colon out of string):parsing fault; unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									else
+										vtprintf( state->pvtError, WIDE( "(outside any object, got colon out of string):parsing fault; unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									state->status = FALSE;
+								}
+								break;
+							}
+						}
 						// have to not set NUL character here, or else operator
 						// tokens could overflow the output buffer.  Have to rely
 						// instead on setting the stringLength;
@@ -58790,11 +59057,34 @@ int vesl_parse_add_data( struct json_parse_state *state
 				if( state->parse_context == CONTEXT_OBJECT_FIELD ) {
 					//lprintf( "gathering object field:%c  %*.*s", c, output->pos-output->buf, output->pos - output->buf, output->buf );
 					if( c < 0xFF ) {
+						if( c == ':' ) {
+							state->parse_context = CONTEXT_OBJECT_FIELD_VALUE;
+							if( state->val.string ) {
+								if( state->val.name ) {
+	// fault
+									vtprintf( state->pvtError, WIDE( "fault while parsing object field name  a second colon?; \\u00%02X unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									state->status = FALSE;
+									break;
+								}
+								state->word = WORD_POS_RESET;
+								state->val.name = state->val.string;
+								state->val.nameLen = output->pos - state->val.string;
+								(*output->pos++) = 0;
+								state->val.string = NULL;
+								state->val.stringLen = 0;
+							}
+							continue;
+						}
 						if( c == '@' ) {
 							if( state->word == WORD_POS_FIELD ) {
 								(*output->pos++) = c;
 								break;
 							}
+						}
+						if( c == ',' ) {
+							// is whitespace...
+							goto doComma;
+							break;
 						}
 						if( c == '.' ) {
 							if( state->word == WORD_POS_RESET ) {
@@ -58804,6 +59094,10 @@ int vesl_parse_add_data( struct json_parse_state *state
 							else if( state->word == WORD_POS_FIELD )
 								state->parse_context = CONTEXT_OBJECT_FIELD_VALUE;
 							(*output->pos++) = c;
+							break;
+						}
+						if( c == '/' ) {
+							if( !state->comment ) state->comment = 1;
 							break;
 						}
 						if( nonIdentifiers8[c] ) {
@@ -58866,18 +59160,23 @@ int vesl_parse_add_data( struct json_parse_state *state
 						}
 						break;
 					case ' ':
-						state->weakSpace = TRUE;
-						if( 0 ) {
-					case '\n':
-						state->line++;
-						state->col = 1;
-						// fall through to normal space handling - just updated line/col position
-					case '\t':
-					case '\r':
-						state->weakSpace = FALSE;
-						}
  // ZWNBS is WS though
 					case 0xFEFF:
+						state->weakSpace = TRUE;
+						if( 0 ) {
+					doComma:
+					case ',':
+					case ';':
+						if( 0 ) {
+					case '\n':
+							state->line++;
+							state->col = 1;
+						}
+							// fall through to normal space handling - just updated line/col position
+					case '\t':
+					case '\r':
+							state->weakSpace = FALSE;
+						}
 						if( !state->weakSpace && state->parse_context == CONTEXT_OBJECT_FIELD_VALUE
 						  && ( state->word == WORD_POS_RESET ) && state->val.value_type )
 						{
@@ -58911,9 +59210,9 @@ int vesl_parse_add_data( struct json_parse_state *state
 						if( state->word == WORD_POS_RESET || state->word == WORD_POS_AFTER_FIELD )
 							break;
 						else if( state->word == WORD_POS_FIELD ) {
-							if( strncmp( state->val.string, "get", 3 ) == 0 ) {
+							if( state->val.string && strncmp( state->val.string, "get", 3 ) == 0 ) {
 								state->word = WORD_POS_AFTER_GET;
-							} else if( strncmp( state->val.string, "set", 3 ) == 0 ) {
+							} else if( state->val.string && strncmp( state->val.string, "set", 3 ) == 0 ) {
 								state->word = WORD_POS_AFTER_SET;
 							} else
 								state->word = WORD_POS_AFTER_FIELD;
@@ -58992,15 +59291,17 @@ int vesl_parse_add_data( struct json_parse_state *state
 					}
 					break;
 				case ' ':
+				case 0xFEFF:
 					state->weakSpace = TRUE;
 					if(0) {
+				case ',':
+				case ';':
 				case '\n':
 					state->line++;
 					state->col = 1;
 					// FALLTHROUGH
 				case '\t':
 				case '\r':
-				case 0xFEFF:
 					state->weakSpace = FALSE;
 					}
 					if( state->word == WORD_POS_END ) {
@@ -59048,6 +59349,178 @@ int vesl_parse_add_data( struct json_parse_state *state
 					//----------------------------------------------------------
 					//  catch characters for true/false/null/undefined which are values outside of quotes
 					//  (get/set/....)
+					//----------------------------------------------------------
+					//----------------------------------------------------------
+					//  catch characters for true/false/null/undefined which are values outside of quotes
+				case 't':
+					if( state->word == WORD_POS_RESET ) state->word = WORD_POS_TRUE_1;
+					else if( state->word == WORD_POS_INFINITY_6 ) state->word = WORD_POS_INFINITY_7;
+					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
+					else {
+						emitWordFragment( state, output );
+						(*output->pos++) = c;
+						state->word = WORD_POS_PROPER_NAME;
+// fault
+					}
+					break;
+				case 'r':
+					if( state->word == WORD_POS_TRUE_1 ) state->word = WORD_POS_TRUE_2;
+					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
+					else {
+						emitWordFragment( state, output );
+						(*output->pos++) = c;
+						state->word = WORD_POS_PROPER_NAME;
+// fault
+					}
+					break;
+				case 'u':
+					if( state->word == WORD_POS_TRUE_2 ) state->word = WORD_POS_TRUE_3;
+					else if( state->word == WORD_POS_NULL_1 ) state->word = WORD_POS_NULL_2;
+					else if( state->word == WORD_POS_RESET ) state->word = WORD_POS_UNDEFINED_1;
+					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
+					else {
+						emitWordFragment( state, output );
+						(*output->pos++) = c;
+						state->word = WORD_POS_PROPER_NAME;
+// fault
+					}
+					break;
+				case 'e':
+					if( state->word == WORD_POS_TRUE_3 ) {
+						state->val.value_type = VALUE_TRUE;
+						state->word = WORD_POS_END;
+					}
+					else if( state->word == WORD_POS_FALSE_4 ) {
+						state->val.value_type = VALUE_FALSE;
+						state->word = WORD_POS_END;
+					}
+					else if( state->word == WORD_POS_UNDEFINED_3 ) state->word = WORD_POS_UNDEFINED_4;
+					else if( state->word == WORD_POS_UNDEFINED_7 ) state->word = WORD_POS_UNDEFINED_8;
+					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
+					else {
+						emitWordFragment( state, output );
+						(*output->pos++) = c;
+						state->word = WORD_POS_PROPER_NAME;
+// fault
+					}
+					break;
+				case 'n':
+					if( state->word == WORD_POS_RESET ) state->word = WORD_POS_NULL_1;
+					else if( state->word == WORD_POS_UNDEFINED_1 ) state->word = WORD_POS_UNDEFINED_2;
+					else if( state->word == WORD_POS_UNDEFINED_6 ) state->word = WORD_POS_UNDEFINED_7;
+					else if( state->word == WORD_POS_INFINITY_1 ) state->word = WORD_POS_INFINITY_2;
+					else if( state->word == WORD_POS_INFINITY_4 ) state->word = WORD_POS_INFINITY_5;
+					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
+					else {
+						emitWordFragment( state, output );
+						(*output->pos++) = c;
+						state->word = WORD_POS_PROPER_NAME;
+// fault
+					}
+					break;
+				case 'd':
+					if( state->word == WORD_POS_UNDEFINED_2 ) state->word = WORD_POS_UNDEFINED_3;
+					else if( state->word == WORD_POS_UNDEFINED_8 ) { state->val.value_type = VALUE_UNDEFINED; state->word = WORD_POS_END; }
+					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
+					else {
+						emitWordFragment( state, output );
+						(*output->pos++) = c;
+						state->word = WORD_POS_PROPER_NAME;
+// fault
+					}
+					break;
+				case 'i':
+					if( state->word == WORD_POS_UNDEFINED_5 ) state->word = WORD_POS_UNDEFINED_6;
+					else if( state->word == WORD_POS_INFINITY_3 ) state->word = WORD_POS_INFINITY_4;
+					else if( state->word == WORD_POS_INFINITY_5 ) state->word = WORD_POS_INFINITY_6;
+					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
+					else {
+						emitWordFragment( state, output );
+						(*output->pos++) = c;
+						state->word = WORD_POS_PROPER_NAME;
+// fault
+					}
+					break;
+				case 'l':
+					if( state->word == WORD_POS_NULL_2 ) state->word = WORD_POS_NULL_3;
+					else if( state->word == WORD_POS_NULL_3 ) {
+						state->val.value_type = VALUE_NULL;
+						state->word = WORD_POS_END;
+					}
+					else if( state->word == WORD_POS_FALSE_2 ) state->word = WORD_POS_FALSE_3;
+					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
+					else {
+						emitWordFragment( state, output );
+						(*output->pos++) = c;
+						state->word = WORD_POS_PROPER_NAME;
+// fault
+					}
+					break;
+				case 'f':
+					if( state->word == WORD_POS_RESET ) state->word = WORD_POS_FALSE_1;
+					else if( state->word == WORD_POS_UNDEFINED_4 ) state->word = WORD_POS_UNDEFINED_5;
+					else if( state->word == WORD_POS_INFINITY_2 ) state->word = WORD_POS_INFINITY_3;
+					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
+					else {
+						emitWordFragment( state, output );
+						(*output->pos++) = c;
+						state->word = WORD_POS_PROPER_NAME;
+// fault
+					}
+					break;
+				case 'a':
+					if( state->word == WORD_POS_FALSE_1 ) state->word = WORD_POS_FALSE_2;
+					else if( state->word == WORD_POS_NAN_1 ) state->word = WORD_POS_NAN_2;
+					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
+					else {
+						emitWordFragment( state, output );
+						(*output->pos++) = c;
+						state->word = WORD_POS_PROPER_NAME;
+// fault
+					}
+					break;
+				case 's':
+					if( state->word == WORD_POS_FALSE_3 ) state->word = WORD_POS_FALSE_4;
+					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
+					else {
+						emitWordFragment( state, output );
+						(*output->pos++) = c;
+						state->word = WORD_POS_PROPER_NAME;
+// fault
+					}
+					break;
+				case 'I':
+					if( state->word == WORD_POS_RESET ) state->word = WORD_POS_INFINITY_1;
+					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
+					else {
+						emitWordFragment( state, output );
+						(*output->pos++) = c;
+						state->word = WORD_POS_PROPER_NAME;
+// fault
+					}
+					break;
+				case 'N':
+					if( state->word == WORD_POS_RESET ) state->word = WORD_POS_NAN_1;
+					else if( state->word == WORD_POS_NAN_2 ) { state->val.value_type = state->negative ? VALUE_NEG_NAN : VALUE_NAN; state->word = WORD_POS_END; }
+					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
+					else {
+						emitWordFragment( state, output );
+						(*output->pos++) = c;
+						state->word = WORD_POS_PROPER_NAME;
+// fault
+					}
+					break;
+				case 'y':
+					if( state->word == WORD_POS_INFINITY_7 ) { state->val.value_type = state->negative ? VALUE_NEG_INFINITY : VALUE_INFINITY; state->word = WORD_POS_END; }
+					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
+					else {
+						emitWordFragment( state, output );
+						(*output->pos++) = c;
+						state->word = WORD_POS_PROPER_NAME;
+// fault
+					}
+					break;
+					//
 					//----------------------------------------------------------
 				default:
 					if( c == '.' ) {
@@ -88153,13 +88626,18 @@ retry:
 						int k;
 						for( k = 0; k < table->keys.count; k++ )
 						{
+							if( table->keys.key[k].flags.bPrimary && !table->keys.key[k].colnames[1] )
+							{
+								if( StrCmp( table->keys.key[k].colnames[0], table->fields.field[n].name ) == 0 )
+								{
+									vtprintf( pvtCreate, WIDE(" PRIMARY KEY") );
+								}
+							}
 							if( table->keys.key[k].flags.bUnique && !table->keys.key[k].colnames[1] )
 							{
 								if( StrCmp( table->keys.key[k].colnames[0], table->fields.field[n].name ) == 0 )
 								{
-									vtprintf( pvtCreate, WIDE(" CONSTRAINT `%s` UNIQUE")
-											  , table->keys.key[k].name
-											  );
+									vtprintf( pvtCreate, WIDE( " UNIQUE" ) );
 								}
 							}
 						}
@@ -90454,7 +90932,7 @@ static POPTION_TREE_NODE GetOptionIndexExxx( PODBC odbc, POPTION_TREE_NODE paren
 	if( og.flags.bUseProgramDefault )
 	{
 		if( !_program )
-         _program_length = StrLen( _program = GetProgramName() );
+		_program_length = StrLen( _program = GetProgramName() );
 		if( ( StrCaseCmp( file, DEFAULT_PUBLIC_KEY ) == 0 )
 			&& ( StrCaseCmpEx( pBranch, _program, _program_length ) == 0 ) )
 		{

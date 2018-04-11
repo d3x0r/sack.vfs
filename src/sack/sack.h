@@ -8283,9 +8283,9 @@ struct required_key_def
 	/* Name of the key column. Can be NULL if primary. */
 	CTEXTSTR name;
  // uhm up to 5 colnames...
-   CTEXTSTR colnames[MAX_KEY_COLUMNS];
+	CTEXTSTR colnames[MAX_KEY_COLUMNS];
  // if not null, broken structure...
-   CTEXTSTR null;
+	CTEXTSTR null;
 #ifdef __cplusplus
    /* <combine sack::sql::required_key_def>
       This is used when actually building C++ for providing an
