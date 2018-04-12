@@ -100,7 +100,7 @@ public:
 class ThreadObject : public node::ObjectWrap {
 public:
 	static v8::Persistent<v8::Function> constructor;
-   	static Persistent<Function, CopyablePersistentTraits<Function>> idleProc;
+   	static Persistent<Function> idleProc;
 public:
 
 	static void Init( Handle<Object> exports );

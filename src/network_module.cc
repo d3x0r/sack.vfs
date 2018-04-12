@@ -410,7 +410,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 				udpOpts.port = 0;
 			}
 			else {
-				udpOpts.port = (int)opts->Get( optName )->ToInteger()->Value();
+				udpOpts.port = (int)opts->Get( optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 			}
 			// ---- get family
 			if( opts->Has( optName = strings->familyString->Get( isolate ) ) ) {
@@ -633,7 +633,7 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 		argBase++;
 
 		if( (args.Length() >= argBase) && args[argBase]->IsNumber() ) {
-			port = args[argBase]->Int32Value();
+			port = args[argBase]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		}
 
 		Local<Object> _this = args.This();
@@ -681,7 +681,7 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 		argBase++;
 
 		if( (args.Length() >= argBase) && args[argBase]->IsNumber() ) {
-			port = args[argBase]->Int32Value();
+			port = args[argBase]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		}
 		addrObject *addr = ::getAddress( isolate, address, port );
 

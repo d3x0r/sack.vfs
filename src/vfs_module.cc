@@ -837,12 +837,12 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 		size_t position;
 		int whence;
 		if( args.Length() == 1 ) {
-			length = args[1]->ToInteger()->Value();
+			length = args[1]->Int32Value(isolate->GetCurrentContext()).FromMaybe(0);
 			whence = SEEK_CUR;
 		}
 		else if( args.Length() == 2 ) {
-			length = args[1]->ToInteger()->Value();
-			position = args[2]->ToInteger()->Value();
+			length = args[1]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
+			position = args[2]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 			whence = SEEK_SET;
 		}
 		else {
@@ -938,7 +938,7 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 	size_t offset = 0;
 	LOGICAL setOffset = FALSE;
 	if( args.Length() == 2 ) {
-		offset = args[1]->ToInteger()->Value();
+		offset = args[1]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		setOffset = TRUE;
 	}
 	if( args.Length() > 0 ) {

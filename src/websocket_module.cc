@@ -1040,7 +1040,7 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 	int status = 404;
 	Local<Object> headers;
 	if( args.Length() > 0 ) {
-		status = args[0]->Int32Value();
+		status = args[0]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 	}
 	HTTPState http = GetWebSocketHttpState( obj->pc );
 	int vers = GetHttpVersion( http );
@@ -1197,7 +1197,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		wssOpts->port = 8080;
 	}
 	else {
-		wssOpts->port = (int)opts->Get( optName )->ToInteger()->Value();
+		wssOpts->port = (int)opts->Get( optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 	}
 	if( !opts->Has( optName = strings->certString->Get( isolate ) ) ) {
 		wssOpts->cert_chain = NULL;
@@ -1891,7 +1891,7 @@ void wscObject::close( const FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		if( args[0]->IsNumber() ) {
-			int code = args[0]->Int32Value();
+			int code = args[0]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 			if( code == 1000 || (code >= 3000 && code <= 4999) ) {
 				if( args.Length() > 1 ) {
 					String::Utf8Value reason( args[1]->ToString() );
@@ -2050,7 +2050,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	}
 
 	if( options->Has( optName = strings->portString->Get( isolate ) ) ) {
-		int32_t x = options->Get( optName )->Int32Value();
+		int32_t x = options->Get( optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		httpRequest->port = x;
 	}
 

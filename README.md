@@ -1001,6 +1001,7 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.124 - Fix segfault in latest node; resolve ToInteger deprication warnings.  
 - 0.9.123 - Fix missing sources in binding.gyp build rules.
 - 0.9.122(unpublished) - Add VESL parsing(in progress). Add Task interface.  Fix create table emitter.
 - 0.9.121 - Fix missing close after all data queued to be sent was sent.
