@@ -52460,6 +52460,8 @@ static void CPROC closed( PCLIENT pc_client ) {
 static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 {
 	HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc, 0 );
+ // closing/closed....
+	if( !socket ) return;
 	if( buffer )
 	{
 		int result;
@@ -58283,6 +58285,7 @@ struct vesl_parser_shared_data {
 extern
 #endif
 struct vesl_parser_shared_data vpsd;
+// shared to code parser...
 void _vesl_dispose_message( PDATALIST *msg_data );
 #ifdef __cplusplus
 } } SACK_NAMESPACE_END
@@ -59277,14 +59280,14 @@ void vesl_preinit_state( struct vesl_parse_state *state ) {
 	state->parse_context = CONTEXT_OBJECT_FIELD;
 }
 /* I guess this is a good parser */
-static struct vesl_parse_state * vesl_begin_parse( void )
+struct vesl_parse_state * vesl_begin_parse( void )
 {
 //New( struct vesl_parse_state );
 	struct vesl_parse_state *state = GetFromSet( PARSE_STATE, &vpsd.parseStates );
 	vesl_state_init( state );
 	return state;
 }
-static PDATALIST vesl_parse_get_data( struct vesl_parse_state *state ) {
+PDATALIST vesl_parse_get_data( struct vesl_parse_state *state ) {
 	PDATALIST *result = state->elements;
 // CreateDataList( sizeof( state->val ) );
 	state->elements = GetFromSet( PDATALIST, &vpsd.dataLists );
@@ -59292,7 +59295,7 @@ static PDATALIST vesl_parse_get_data( struct vesl_parse_state *state ) {
 	else state->elements[0]->Cnt = 0;
 	return result[0];
 }
-static void _vesl_dispose_message( PDATALIST *msg_data )
+void _vesl_dispose_message( PDATALIST *msg_data )
 {
 	struct vesl_value_container *val;
 	INDEX idx;
@@ -59311,7 +59314,7 @@ static void _vesl_dispose_message( PDATALIST *msg_data )
 	(*msg_data) = NULL;
 	//DeleteDataList( msg_data );
 }
-static void vesl_parse_dispose_state( struct vesl_parse_state **ppState ) {
+void vesl_parse_dispose_state( struct vesl_parse_state **ppState ) {
 	struct vesl_parse_state *state = (*ppState);
 	struct vesl_parse_context *old_context;
 	PPARSE_BUFFER buffer;
@@ -60387,6 +60390,13 @@ void TerminateClosedClientEx( PCLIENT pc DBG_PASS )
 #ifdef VERBOSE_DEBUG
 			lprintf( "close soekcet." );
 #endif
+#if !defined( SHUT_WR ) && defined( _WIN32 )
+#  define SHUT_WR SD_SEND
+#endif
+			shutdown( pc->Socket, SHUT_WR );
+#if defined( _WIN32 )
+#undef SHUT_WR
+#endif
 			closesocket( pc->Socket );
 			while( pc->lpFirstPending )
 			{
@@ -60717,7 +60727,8 @@ static void HandleEvent( PCLIENT pClient )
 						//	lprintf( WIDE("FD_Write") );
 #endif
 						// returns true while it wrote or there is data to write
-						TCPWrite(pClient);
+						if( pClient->lpFirstPending )
+							TCPWrite(pClient);
 						if( !pClient->lpFirstPending ) {
 							if( pClient->dwFlags & CF_TOCLOSE )
 							{
@@ -61081,7 +61092,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t qui
 #endif
 		thread->nWaitEvents = thread->nEvents;
 		thread->flags.bProcessing = 0;
-		while( thread->counting ) Relinquish();
+		while( thread->counting ) { thread->nWaitEvents = thread->nEvents; Relinquish(); }
 		result = WSAWaitForMultipleEvents( thread->nEvents
 													, (const HANDLE *)thread->event_list->data
 													, FALSE
@@ -61137,7 +61148,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t qui
 				PCLIENT pc = (PCLIENT)GetLink( &thread->monitor_list, result - (WSA_WAIT_EVENT_0) );
 				//if( pcLock ) {
 					if( !pc || ( pc->dwFlags & CF_AVAILABLE ) ) {
-						lprintf( "thread event happened on a now available client." );
+						//lprintf( "thread event happened on a now available client." );
 					}
 					else
 						HandleEvent( pc );
@@ -63052,6 +63063,14 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 			}
 			Relinquish();
 		}
+		while( !NetworkLockEx( lpClient, 1 DBG_SRC ) )
+		{
+			if( !(lpClient->dwFlags & CF_ACTIVE) )
+			{
+				return;
+			}
+			Relinquish();
+		}
 		// allow application a chance to clean it's references
 		// to this structure before closing and cleaning it.
 		if( !bBlockNotify )
@@ -63110,6 +63129,7 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 		//lprintf( WIDE( "Leaving network critical section" ) );
 		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		NetworkUnlockEx( lpClient, 0 DBG_SRC );
+		NetworkUnlockEx( lpClient, 1 DBG_SRC );
 	}
 #ifdef LOG_DEBUG_CLOSING
 	else
@@ -63131,10 +63151,16 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 	} else
 #endif
 	{
+		int n = 0;
 		// UDP still needs to be done this way...
 		//
 		InternalRemoveClientExx( lpClient, bBlockNotify, bLinger DBG_RELAY );
-		TerminateClosedClient( lpClient );
+		if( NetworkLock( lpClient, 0 ) && ((n=1),NetworkLock( lpClient, 1 )) ) {
+			TerminateClosedClient( lpClient );
+		}
+		else if( n ) {
+			NetworkUnlock( lpClient, 0 );
+		}
 	}
 }
 CTEXTSTR GetSystemName( void )
