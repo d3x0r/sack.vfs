@@ -52880,69 +52880,69 @@ JSON_EMITTER_PROC( struct json_context *, json_create_context )( void );
 // Begin the definition of a json formatting object.
 // the root element must be a array or an object
 JSON_EMITTER_PROC( struct json_context_object *, json_create_object )( struct json_context *context
-																							, size_t object_size );
+                                                                     , size_t object_size );
 // Begin the definition of a json formatting object.
 // the root element must be a array or an object
 JSON_EMITTER_PROC( struct json_context_object *, json_create_array )( struct json_context *context
-																						  , size_t offset
-																						  , enum JSON_ObjectElementTypes type
-																						  , size_t count
-																						  , size_t count_offset
-																						  );
+                                                                    , size_t offset
+                                                                    , enum JSON_ObjectElementTypes type
+                                                                    , size_t count
+                                                                    , size_t count_offset
+                                                                    );
 // add a member element to a json object
 // if the member element is a object type, then a new context_object results, to which members may be added.
 JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member )( struct json_context_object *object
-																								 , CTEXTSTR name
-																								 , size_t offset
-																								 , enum JSON_ObjectElementTypes type
-																								 , size_t object_size
-																								 );
+                                                                         , CTEXTSTR name
+                                                                         , size_t offset
+                                                                         , enum JSON_ObjectElementTypes type
+                                                                         , size_t object_size
+                                                                         );
 // more complex method; add_object_member actually calls this to implement a 0 byte array of the same type.
 //  object_size is used if the type is JSON_Element_ObjectPointer for the parsing to be able to allocate
 // the message part.
 JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_array )( struct json_context_object *format
-																										 , CTEXTSTR name
-																										 , size_t offset
-																										 , enum JSON_ObjectElementTypes type
+                                                                               , CTEXTSTR name
+                                                                               , size_t offset
+                                                                               , enum JSON_ObjectElementTypes type
                                                                                , size_t object_size
-																										 , size_t count
-																										 , size_t count_offset
-																										 );
+                                                                               , size_t count
+                                                                               , size_t count_offset
+                                                                               );
 // more complex method; add_object_member actually calls this to implement a 0 byte array of the same type.
 //  object_size is used if the type is JSON_Element_ObjectPointer for the parsing to be able to allocate
 // the message part.  array is represented as a pointer, which will be dynamically allocated
 JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_array_pointer )( struct json_context_object *format
-																										 , CTEXTSTR name
-																										 , size_t offset
-																										 , enum JSON_ObjectElementTypes type
-																										 , size_t count_offset
-																										 );
+                                                                                       , CTEXTSTR name
+                                                                                       , size_t offset
+                                                                                       , enum JSON_ObjectElementTypes type
+                                                                                       , size_t count_offset
+                                                                                       );
 // adds a reference to a PLIST as an array with the content of the array specified as the type
 JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_list )( struct json_context_object *object
-																										, CTEXTSTR name
+                                                                              , CTEXTSTR name
   // offset of the list
-																										, size_t offset
+                                                                              , size_t offset
  // of of the members of the list
-																										, enum JSON_ObjectElementTypes content_type
+                                                                              , enum JSON_ObjectElementTypes content_type
   // object size if required
-																										, size_t object_size
-																										);
+                                                                              , size_t object_size
+                                                                              );
 // this allows recursive structures, so the structure may contain a reference to itself.
 // this allows buildling other objects and referencing them instead of building them in-place
 JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_object )( struct json_context_object *object
-																										  , CTEXTSTR name
-																										  , size_t offset
-																										  , enum JSON_ObjectElementTypes type
-																										  , struct json_context_object *child_object
-																										  );
+                                                                                , CTEXTSTR name
+                                                                                , size_t offset
+                                                                                , enum JSON_ObjectElementTypes type
+                                                                                , struct json_context_object *child_object
+                                                                                );
 JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_user_routine )( struct json_context_object *object
-																												  , CTEXTSTR name
-																												  , size_t offset, enum JSON_ObjectElementTypes type
-																												  , size_t object_size
-																												  , void (*user_formatter)(PVARTEXT,CPOINTER) );
+                                                                                      , CTEXTSTR name
+                                                                                      , size_t offset, enum JSON_ObjectElementTypes type
+                                                                                      , size_t object_size
+                                                                                      , void (*user_formatter)(PVARTEXT,CPOINTER) );
 // take a object format and a pointer to data and return a json message string
 JSON_EMITTER_PROC( TEXTSTR, json_build_message )( struct json_context_object *format
-                                             , POINTER msg );
+                                                , POINTER msg );
 // take a json string and a format and fill in a structure from the text.
 // tests all formats, to first-match;
 // take a json string and a format and fill in a structure from the text.
@@ -52955,7 +52955,7 @@ JSON_EMITTER_PROC( TEXTSTR, json_build_message )( struct json_context_object *fo
 JSON_EMITTER_PROC( LOGICAL, json_parse_message )(const char * msg
                                                 , size_t msglen
                                                 , PDATALIST *msg_data_out
-																);
+                                                );
 // allocates a parsing context and begins parsing data.
 JSON_EMITTER_PROC( struct json_parse_state *, json_begin_parse )( void );
 // return TRUE when a completed value/object is available.
@@ -52964,9 +52964,9 @@ JSON_EMITTER_PROC( struct json_parse_state *, json_begin_parse )( void );
 // to consume this internal data.  if this returns FALSE, then ther is no further object
 // to retrieve.
 JSON_EMITTER_PROC( int, json_parse_add_data )( struct json_parse_state *context
-                                                 , const char * msg
-                                                 , size_t msglen
-                                                 );
+                                             , const char * msg
+                                             , size_t msglen
+                                             );
 // these are common functions that work for json or json6 stream parsers
 JSON_EMITTER_PROC( PDATALIST, json_parse_get_data )( struct json_parse_state *context );
 JSON_EMITTER_PROC( void, json_parse_dispose_state )( struct json_parse_state **context );
@@ -52985,14 +52985,14 @@ JSON_EMITTER_PROC( PTEXT, json_parse_get_error )(struct json_parse_state *contex
 //   JSON(6?) support - undefined keyword value
 //       accept \uXXXX, \xXX, \[0-3]xx octal, \u{xxxxx} encodings in strings
 //       allow underscores in numbers to separate number groups ( works as ZWNBSP )
-JSON_EMITTER_PROC( LOGICAL, json6_parse_message )(const char * msg
-													, size_t msglen
-													, PDATALIST *msg_data_out
-																);
-JSON_EMITTER_PROC( LOGICAL, _json6_parse_message )(char * msg
-	, size_t msglen
-	, PDATALIST *msg_data_out
-	);
+JSON_EMITTER_PROC( LOGICAL, json6_parse_message )( const char * msg
+                                                 , size_t msglen
+                                                 , PDATALIST *msg_data_out
+                                                 );
+JSON_EMITTER_PROC( LOGICAL, _json6_parse_message )( char * msg
+                                                  , size_t msglen
+                                                  , PDATALIST *msg_data_out
+                                                  );
 // Add some data to parse for json stream (which may consist of multiple values)
 // return 1 when a completed value/object is available.
 // after returning 1, call json_parse_get_data.  It is possible that there is
@@ -53001,30 +53001,14 @@ JSON_EMITTER_PROC( LOGICAL, _json6_parse_message )(char * msg
 // to retrieve.
 // if this returns -1, an error in parsing has occured, and no further parsing can happen.
 JSON_EMITTER_PROC( int, json6_parse_add_data )( struct json_parse_state *context
-                                                 , const char * msg
-                                                 , size_t msglen
+                                              , const char * msg
+                                              , size_t msglen
+                                              );
+JSON_EMITTER_PROC( LOGICAL, json_decode_message )( struct json_context *format
+                                                 , PDATALIST parsedMsg
+                                                 , struct json_context_object **result_format
+                                                 , POINTER *msg_data_out
                                                  );
-// Add some data to parse for json stream (which may consist of multiple values)
-// return 1 when a completed value/object is available.
-// after returning 1, call json_parse_get_data.  It is possible that there is
-// still unconsumed data that can begin a new object.  Call this with NULL, 0 for data
-// to consume this internal data.  if this returns 0, then there is no further object
-// to retrieve.
-// if this returns -1, an error in parsing has occured, and no further parsing can happen.
-JSON_EMITTER_PROC( int, vesl_parse_add_data )( struct json_parse_state *context
-	, const char * msg
-	, size_t msglen
-	);
-// one shot, just process this one message.
-JSON_EMITTER_PROC( LOGICAL, vesl_parse_message )(const char * msg
-	, size_t msglen
-	, PDATALIST *msg_data_out
-	);
-JSON_EMITTER_PROC( LOGICAL, json_decode_message )(  struct json_context *format
-                                                  , PDATALIST parsedMsg
-                                                  , struct json_context_object **result_format
-                                                  , POINTER *msg_data_out
-												);
 enum json_value_types {
 	VALUE_UNDEFINED = -1
 	, VALUE_UNSET = 0
@@ -53055,49 +53039,6 @@ enum json_value_types {
 	, VALUE_DATE
  // = 13 no data; used in [,,,] as place holder of empty
 	, VALUE_EMPTY
-	// --- up to here is supports in JSON(6)
- // = 14 string needs to be parsed for expressions.
-	, VALUE_NEED_EVAL
- // contains
-	, VALUE_VARIABLE
- // code (string), contains
-	, VALUE_FUNCTION
- // code (string), contains[n] = parameters
-	, VALUE_FUNCTION_CALL
- //  ( ... ) or { ... } , string, contains[n] = value(s) last is THE value
-	, VALUE_EXPRESSION
- // Symbolic operator, with combination rules so the operator text is complete.
-	, VALUE_OPERATOR
- // 'if'  contains[1], contains[1], contains[2]
-	, VALUE_OP_IF
- // '?'  contains[N] expressions to evaluate
-	, VALUE_OP_TRINARY_THEN
- // ':'  contains[N] expressions to evaluate
-	, VALUE_OP_TRINARY_ELSE
- // 'switch'
-	, VALUE_OP_SWITCH
- // 'case'
-	, VALUE_OP_CASE
- // 'for'   no data, contains[0], contains[1], contains[2],
-	, VALUE_OP_FOR
- // 'break'  // strip optional label break
-	, VALUE_OP_BREAK
- // 'while'
-	, VALUE_OP_WHILE
- // 'do'
-	, VALUE_OP_DO
- // 'continue'
-	, VALUE_OP_CONTINUE
- // 'goto'
-	, VALUE_OP_GOTO
- // 'stop'
-	, VALUE_OP_STOP
- // 'this'
-	, VALUE_OP_THIS
- // 'holder'
-	, VALUE_OP_HOLDER
- // 'base'
-	, VALUE_OP_BASE
 };
 struct json_value_container {
   // name of this value (if it's contained in an object)
@@ -53332,6 +53273,7 @@ struct json_parse_state {
 	int hex_char_len;
 	LOGICAL stringOct;
 	LOGICAL weakSpace;
+	PDATALIST root;
 	//char *token_begin;
 };
 typedef struct json_parse_state PARSE_STATE, *PPARSE_STATE;
@@ -57998,7 +57940,353 @@ TEXTSTR json_build_message( struct json_context_object *object
 #ifdef __cplusplus
 } } }
 #endif
-#define JSON_EMITTER_SOURCE
+#define VESL_EMITTER_SOURCE
+#define VESL_PARSER_MAIN_SOURCE
+#ifndef VESL_EMITTER_HEADER_INCLUDED
+#define VESL_EMITTER_HEADER_INCLUDED
+#ifdef VESL_EMITTER_SOURCE
+#define VESL_EMITTER_PROC(type,name) EXPORT_METHOD type CPROC name
+#else
+#define VESL_EMITTER_PROC(type,name) IMPORT_METHOD type CPROC name
+#endif
+#ifdef __cplusplus
+SACK_NAMESPACE namespace network { namespace vesl {
+#endif
+struct vesl_context_object_element;
+struct vesl_context_object;
+struct vesl_context;
+// take a vesl string and a format and fill in a structure from the text.
+// tests all formats, to first-match;
+// take a vesl string and a format and fill in a structure from the text.
+// if object does not fit all members (may have extra, but must have at least all members in message in format to return TRUE)
+// then it returns false; that is if a member is in the 'msg' parameter that is not in
+// the format, then the result is FALSE.
+//  PDATALIST is full of struct vesl_value_container
+// turns out numbers can be  hex, octal and binary numbers  (0x[A-F,a-f,0-9]*, 0b[0-1]*, 0[0-9]*)
+// slightly faster (17%) than vesl6_parse_message because of fewer possible checks.
+VESL_EMITTER_PROC( LOGICAL, vesl_parse_message )(const char * msg
+                                                , size_t msglen
+                                                , PDATALIST *msg_data_out
+																);
+// allocates a parsing context and begins parsing data.
+VESL_EMITTER_PROC( struct vesl_parse_state *, vesl_begin_parse )( void );
+// return TRUE when a completed value/object is available.
+// after returning TRUE, call vesl_parse_get_data.  It is possible that there is
+// still unconsumed data that can begin a new object.  Call this with NULL, 0 for data
+// to consume this internal data.  if this returns FALSE, then ther is no further object
+// to retrieve.
+VESL_EMITTER_PROC( int, vesl_parse_add_data )( struct vesl_parse_state *context
+                                                 , const char * msg
+                                                 , size_t msglen
+                                                 );
+// these are common functions that work for VESL stream parsers
+VESL_EMITTER_PROC( PDATALIST, vesl_parse_get_data )( struct vesl_parse_state *context );
+VESL_EMITTER_PROC( void, vesl_parse_dispose_state )( struct vesl_parse_state **context );
+VESL_EMITTER_PROC( void, vesl_parse_clear_state )(struct vesl_parse_state *context);
+VESL_EMITTER_PROC( PTEXT, vesl_parse_get_error )(struct vesl_parse_state *context);
+// Add some data to parse for vesl stream (which may consist of multiple values)
+// return 1 when a completed value/object is available.
+// after returning 1, call vesl_parse_get_data.  It is possible that there is
+// still unconsumed data that can begin a new object.  Call this with NULL, 0 for data
+// to consume this internal data.  if this returns 0, then there is no further object
+// to retrieve.
+// if this returns -1, an error in parsing has occured, and no further parsing can happen.
+VESL_EMITTER_PROC( int, vesl_parse_add_data )( struct vesl_parse_state *context
+	, const char * msg
+	, size_t msglen
+	);
+// one shot, just process this one message.
+VESL_EMITTER_PROC( LOGICAL, vesl_parse_message )(const char * msg
+	, size_t msglen
+	, PDATALIST *msg_data_out
+	);
+// any allocate mesage parts are released.
+VESL_EMITTER_PROC( void, vesl_dispose_expressions )(PDATALIST *msg_data);
+enum vesl_value_types {
+	VESL_VALUE_UNDEFINED = -1
+	, VESL_VALUE_UNSET = 0
+ //= 1 no data
+	, VESL_VALUE_NULL
+ //= 2 no data
+	, VESL_VALUE_TRUE
+ //= 3 no data
+	, VESL_VALUE_FALSE
+ //= 4 string
+	, VESL_VALUE_STRING
+ //= 5 string + result_d | result_n
+	, VESL_VALUE_NUMBER
+ //= 6 contains
+	, VESL_VALUE_OBJECT
+ //= 7 contains
+	, VESL_VALUE_ARRAY
+	// up to here is supported in VESL
+ //= 8 no data
+	, VESL_VALUE_NEG_NAN
+ //= 9 no data
+	, VESL_VALUE_NAN
+ //= 10 no data
+	, VESL_VALUE_NEG_INFINITY
+ //= 11 no data
+	, VESL_VALUE_INFINITY
+  // = 12 UNIMPLEMENTED
+	, VESL_VALUE_DATE
+ // = 13 no data; used in [,,,] as place holder of empty
+	, VESL_VALUE_EMPTY
+	// --- up to here is supports in VESL(6)
+ // = 14 string needs to be parsed for expressions.
+	, VESL_VALUE_NEED_EVAL
+ // contains
+	, VESL_VALUE_VARIABLE
+ // code (string), contains
+	, VESL_VALUE_FUNCTION
+ // code (string), contains[n] = parameters
+	, VESL_VALUE_FUNCTION_CALL
+ //  ( ... ) or { ... } , string, contains[n] = value(s) last is THE value
+	, VESL_VALUE_EXPRESSION
+ // Symbolic operator, with combination rules so the operator text is complete.
+	, VESL_VALUE_OPERATOR
+ // 'if'  contains[1], contains[1], contains[2]
+	, VESL_VALUE_OP_IF
+ // '?'  contains[N] expressions to evaluate
+	, VESL_VALUE_OP_TRINARY_THEN
+ // ':'  contains[N] expressions to evaluate
+	, VESL_VALUE_OP_TRINARY_ELSE
+ // 'switch'
+	, VESL_VALUE_OP_SWITCH
+ // 'case'
+	, VESL_VALUE_OP_CASE
+ // 'for'   no data, contains[0], contains[1], contains[2],
+	, VESL_VALUE_OP_FOR
+ // 'break'  // strip optional label break
+	, VESL_VALUE_OP_BREAK
+ // 'while'
+	, VESL_VALUE_OP_WHILE
+ // 'do'
+	, VESL_VALUE_OP_DO
+ // 'continue'
+	, VESL_VALUE_OP_CONTINUE
+ // 'goto'
+	, VESL_VALUE_OP_GOTO
+ // 'stop'
+	, VESL_VALUE_OP_STOP
+ // 'this'
+	, VESL_VALUE_OP_THIS
+ // 'holder'
+	, VESL_VALUE_OP_HOLDER
+ // 'base'
+	, VESL_VALUE_OP_BASE
+};
+struct vesl_value_container {
+ // value from above indiciating the type of this value
+	enum vesl_value_types value_type;
+   // the string value of this value (strings and number types only)
+	char *string;
+	size_t stringLen;
+  // boolean whether to use result_n or result_d
+	int float_result;
+	union {
+		double result_d;
+		int64_t result_n;
+		//struct vesl_value_container *nextToken;
+	};
+	//PDATALIST contains;  // list of struct vesl_value_container that this contains.
+  // acutal source datalist(?)
+	PDATALIST *_contains;
+};
+#ifdef __cplusplus
+} } SACK_NAMESPACE_END
+using namespace sack::network::vesl;
+#endif
+#endif
+#ifdef __cplusplus
+SACK_NAMESPACE namespace network { namespace vesl {
+#endif
+enum word_char_states {
+ // not in a keyword
+	WORD_POS_RESET = 0,
+  // at end of a word, waiting for separator
+	WORD_POS_END,
+	WORD_POS_TRUE_1,
+	WORD_POS_TRUE_2,
+	WORD_POS_TRUE_3,
+	WORD_POS_TRUE_4,
+ // 11
+	WORD_POS_FALSE_1,
+	WORD_POS_FALSE_2,
+	WORD_POS_FALSE_3,
+	WORD_POS_FALSE_4,
+ // 21  get u
+	WORD_POS_NULL_1,
+ //  get l
+	WORD_POS_NULL_2,
+ //  get l
+	WORD_POS_NULL_3,
+  // 31
+	WORD_POS_UNDEFINED_1,
+	WORD_POS_UNDEFINED_2,
+	WORD_POS_UNDEFINED_3,
+	WORD_POS_UNDEFINED_4,
+	WORD_POS_UNDEFINED_5,
+	WORD_POS_UNDEFINED_6,
+	WORD_POS_UNDEFINED_7,
+	WORD_POS_UNDEFINED_8,
+	//WORD_POS_UNDEFINED_9, // instead of stepping to this value here, go to RESET
+	WORD_POS_NAN_1,
+	WORD_POS_NAN_2,
+	//WORD_POS_NAN_3,// instead of stepping to this value here, go to RESET
+	WORD_POS_INFINITY_1,
+	WORD_POS_INFINITY_2,
+	WORD_POS_INFINITY_3,
+	WORD_POS_INFINITY_4,
+	WORD_POS_INFINITY_5,
+	WORD_POS_INFINITY_6,
+	WORD_POS_INFINITY_7,
+	//WORD_POS_INFINITY_8,// instead of stepping to this value here, go to RESET
+	WORD_POS_FIELD,
+	WORD_POS_AFTER_FIELD,
+	WORD_POS_DOT_OPERATOR,
+	WORD_POS_PROPER_NAME,
+	WORD_POS_AFTER_PROPER_NAME,
+	WORD_POS_AFTER_GET,
+	WORD_POS_AFTER_SET,
+};
+enum parse_context_modes {
+ CONTEXT_UNKNOWN = 0,
+ CONTEXT_IN_ARRAY = 1,
+ CONTEXT_IN_OBJECT = 2,
+ CONTEXT_OBJECT_FIELD = 3,
+ CONTEXT_OBJECT_FIELD_VALUE = 4,
+ };
+struct vesl_parse_context {
+	enum parse_context_modes context;
+	PDATALIST *elements;
+	char *name;
+	size_t nameLen;
+	struct vesl_value_container valState;
+	struct vesl_context_object *object;
+};
+#ifdef RESET_VAL
+#  undef RESET_VAL
+#endif
+	 /*val.contains = NULL;     */
+#define RESET_VAL()  {	            val.value_type = VESL_VALUE_UNSET;	   val._contains = NULL;	         val.string = NULL;	            negative = FALSE; }
+#ifdef RESET_STATE_VAL
+#  undef RESET_STATE_VAL
+#endif
+	 /*state->val.contains = NULL; */
+#define RESET_STATE_VAL()  {	             state->val.value_type = VESL_VALUE_UNSET;	     state->val._contains = NULL;	         state->val.string = NULL;	            state->negative = FALSE; }
+typedef struct vesl_parse_context PARSE_CONTEXT, *PPARSE_CONTEXT;
+#define MAXPARSE_CONTEXTSPERSET 128
+DeclareSet( PARSE_CONTEXT );
+struct vesl_input_buffer {
+      // prior input buffer
+	char const * buf;
+ // size of prior input buffer
+	size_t       size;
+  // last position in _input if context closed before end of buffer
+	char const * pos;
+};
+struct vesl_output_buffer {
+      // prior input buffer
+	char * buf;
+ // size of prior input buffer
+	size_t  size;
+  // last position in _input if context closed before end of buffer
+	char * pos;
+};
+typedef struct vesl_input_buffer PARSE_BUFFER, *PPARSE_BUFFER;
+#define MAXPARSE_BUFFERSPERSET 128
+DeclareSet( PARSE_BUFFER );
+// this is the stack state that can be saved between parsing for streaming.
+struct vesl_parse_state {
+	//TEXTRUNE c;
+	PDATALIST *elements;
+ //
+	PLINKSTACK *outBuffers;
+ // matches input queue
+	PLINKQUEUE *outQueue;
+	PLIST *outValBuffers;
+	//TEXTSTR mOut;// = NewArray( char, msglen );
+	size_t line;
+	size_t col;
+ // character index;
+	size_t n;
+	//size_t _n = 0; // character index; (restore1)
+	enum word_char_states word;
+	LOGICAL status;
+	LOGICAL negative;
+	LOGICAL literalString;
+	PLINKSTACK *context_stack;
+	LOGICAL first_token;
+	//PPARSE_CONTEXT context;
+	enum parse_context_modes parse_context;
+	struct vesl_value_container val;
+	int comment;
+	TEXTRUNE operatorAccum;
+	PLINKQUEUE *inBuffers;
+	//char const * input;     // current input buffer start
+	//char const * msg_input; // current input buffer position (incremented while reading)
+	LOGICAL completed;
+	LOGICAL complete_at_end;
+	LOGICAL gatheringString;
+	TEXTRUNE gatheringStringFirstChar;
+	TEXTRUNE gatheringCodeLastChar;
+	int codeDepth;
+	LOGICAL gatheringNumber;
+	LOGICAL numberExponent;
+	LOGICAL numberFromHex;
+	LOGICAL numberFromDate;
+	PVARTEXT pvtError;
+	LOGICAL fromHex;
+	LOGICAL exponent;
+	LOGICAL exponent_sign;
+	LOGICAL exponent_digit;
+	LOGICAL escape;
+	LOGICAL cr_escaped;
+	LOGICAL unicodeWide;
+	LOGICAL stringUnicode;
+	LOGICAL stringHex;
+	TEXTRUNE hex_char;
+	int hex_char_len;
+	LOGICAL stringOct;
+	LOGICAL weakSpace;
+	struct vesl_output_buffer *output;
+	PDATALIST root;
+	//char *token_begin;
+};
+typedef struct vesl_parse_state PARSE_STATE, *PPARSE_STATE;
+#define MAXPARSE_STATESPERSET 32
+DeclareSet( PARSE_STATE );
+typedef PLIST *PPLIST;
+#define MAXPLISTSPERSET 256
+DeclareSet( PLIST );
+typedef PLINKSTACK *PPLINKSTACK;
+#define MAXPLINKSTACKSPERSET 256
+DeclareSet( PLINKSTACK );
+typedef PLINKQUEUE *PPLINKQUEUE;
+#define MAXPLINKQUEUESPERSET 256
+DeclareSet( PLINKQUEUE );
+typedef PDATALIST *PPDATALIST;
+#define MAXPDATALISTSPERSET 256
+DeclareSet( PDATALIST );
+struct vesl_parser_shared_data {
+	PPARSE_CONTEXTSET parseContexts;
+	PPARSE_BUFFERSET parseBuffers;
+	struct vesl_parse_state *last_parse_state;
+	PPARSE_STATESET parseStates;
+	PPLISTSET listSet;
+	PPLINKSTACKSET linkStacks;
+	PPLINKQUEUESET linkQueues;
+	PPDATALISTSET dataLists;
+};
+#ifndef VESL_PARSER_MAIN_SOURCE
+extern
+#endif
+struct vesl_parser_shared_data vpsd;
+void _vesl_dispose_message( PDATALIST *msg_data );
+#ifdef __cplusplus
+} } SACK_NAMESPACE_END
+#endif
 #define NUM_VALUE_NAMES  ((sizeof(value_type_names)/sizeof(value_type_names[0])))
 const char *value_type_names[] = {
 	"-unset-", "null", "true", "false"
@@ -58075,15 +58363,151 @@ ID_Continue    XID_Continue     All of the above, plus nonspacing marks, spacing
                                 known as ID_Only_Continue characters.
 */
 #ifdef __cplusplus
-SACK_NAMESPACE namespace network { namespace json {
+SACK_NAMESPACE namespace network { namespace vesl {
 #endif
 #define _2char(result,from) (((*from) += 2),( ( result & 0x1F ) << 6 ) | ( ( result & 0x3f00 )>>8))
 #define _zero(result,from)  ((*from)++,0)
 #define _3char(result,from) ( ((*from) += 3),( ( ( result & 0xF ) << 12 ) | ( ( result & 0x3F00 ) >> 2 ) | ( ( result & 0x3f0000 ) >> 16 )) )
-#define _4char(result,from)  ( ((*from) += 4), ( ( ( result & 0x7 ) << 18 )						     | ( ( result & 0x3F00 ) << 4 )						   | ( ( result & 0x3f0000 ) >> 10 )						    | ( ( result & 0x3f000000 ) >> 24 ) ) )
-#define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),		     ( ( !(result & 0xFF) )              ?_zero(result,from)	                                                    :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
+#define _4char(result,from)  ( ((*from) += 4), ( ( ( result & 0x7 ) << 18 )                                    | ( ( result & 0x3F00 ) << 4 )                                         | ( ( result & 0x3f0000 ) >> 10 )                                      | ( ( result & 0x3f000000 ) >> 24 ) ) )
+#define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),             ( ( !(result & 0xFF) )                     ?_zero(result,from)                                                           :( ( result & 0x80 )                       ?( ( result & 0xE0 ) == 0xC0 )               ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )                :( ( ( result & 0xF0 ) == 0xE0 )                                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )                   :( ( ( result & 0xF8 ) == 0xF0 )                      ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )                         ?_4char(result,from):_zero(result,from) )                                                                                                        :( ( ( result & 0xC0 ) == 0x80 )                                                                                                                    ?_zero(result,from)                                                                                                                                 : ( (*from)++, (result & 0x7F) ) ) ) )                                                                                               : ( (*from)++, (result & 0x7F) ) ) ) )
 #define GetUtfChar(x) __GetUtfChar(c,x)
-static int gatherString6v(struct json_parse_state *state, CTEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TEXTSTR *pmOut, TEXTRUNE start_c
+static void vesl_state_init( struct vesl_parse_state *state )
+{
+	PPDATALIST ppElements;
+	PPLIST ppList;
+	PPLINKQUEUE ppQueue;
+	PPLINKSTACK ppStack;
+	ppElements = GetFromSet( PDATALIST, &vpsd.dataLists );
+	if( !ppElements[0] ) ppElements[0] = CreateDataList( sizeof( state->val ) );
+	state->elements = ppElements;
+	state->elements[0]->Cnt = 0;
+	ppStack = GetFromSet( PLINKSTACK, &vpsd.linkStacks );
+	if( !ppStack[0] ) ppStack[0] = CreateLinkStack();
+	state->outBuffers = ppStack;
+	state->outBuffers[0]->Top = 0;
+	ppQueue = GetFromSet( PLINKQUEUE, &vpsd.linkQueues );
+	if( !ppQueue[0] ) ppQueue[0] = CreateLinkQueue();
+// CreateLinkQueue();
+	state->inBuffers = ppQueue;
+	state->inBuffers[0]->Top = state->inBuffers[0]->Bottom = 0;
+	ppQueue = GetFromSet( PLINKQUEUE, &vpsd.linkQueues );
+	if( !ppQueue[0] ) ppQueue[0] = CreateLinkQueue();
+// CreateLinkQueue();
+	state->outQueue = ppQueue;
+	state->outQueue[0]->Top = state->outQueue[0]->Bottom = 0;
+	ppList = GetFromSet( PLIST, &vpsd.listSet );
+	if( ppList[0] ) ppList[0]->Cnt = 0;
+	state->outValBuffers = ppList;
+	state->line = 1;
+	state->col = 1;
+ // character index;
+	state->n = 0;
+	state->word = WORD_POS_RESET;
+	state->status = TRUE;
+	state->negative = FALSE;
+// NULL;
+	state->context_stack = GetFromSet( PLINKSTACK, &vpsd.linkStacks );
+	if( state->context_stack[0] ) state->context_stack[0]->Top = 0;
+	//state->first_token = TRUE;
+	//state->context = GetFromSet( PARSE_CONTEXT, &vpsd.parseContexts );
+	state->parse_context = CONTEXT_UNKNOWN;
+	state->comment = 0;
+	state->completed = FALSE;
+	//state->mOut = msg;// = NewArray( char, msglen );
+	//state->msg_input = (char const *)msg;
+	state->val.value_type = VESL_VALUE_UNSET;
+	//state->val.contains = NULL;
+	state->val._contains = NULL;
+	state->val.string = NULL;
+	state->complete_at_end = FALSE;
+	state->gatheringString = FALSE;
+	state->gatheringNumber = FALSE;
+	state->pvtError = NULL;
+}
+static void vesl_start_container( struct vesl_parse_state *state ) {
+	{
+		struct vesl_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &vpsd.parseContexts );
+#ifdef _DEBUG_PARSING
+		lprintf( "Begin a new object; previously pushed into elements; but wait until trailing comma or close previously:%d", val.value_type );
+#endif
+		old_context->context = state->parse_context;
+		old_context->elements = state->elements;
+		old_context->valState = state->val;
+		state->elements = state->val._contains;
+// CreateDataList( sizeof( state->val ) );
+		if( !state->elements ) old_context->valState._contains = state->elements = GetFromSet( PDATALIST, &vpsd.dataLists );
+		if( !state->elements[0] ) state->elements[0] = CreateDataList( sizeof( state->val ) );
+		if( !state->root ) state->root = state->elements[0];
+		//else state->elements[0]->Cnt = 0;
+		lprintf( "Pushing pending thing, so this object is assicated under it as a list: %s", state->val.string );
+		PushLink( state->context_stack, old_context );
+		state->word = WORD_POS_RESET;
+		RESET_STATE_VAL();
+	}
+}
+static void commitPending( struct vesl_parse_state *state ) {
+	if( state->val.value_type ) {
+		if( state->val.string )
+			state->val.stringLen = state->output->pos - state->val.string;
+		AddDataItem( state->elements, &state->val );
+		RESET_STATE_VAL();
+		state->word = WORD_POS_RESET;
+		state->operatorAccum = 0;
+	}
+}
+static void vesl_start_expression( struct vesl_parse_state *state ) {
+	commitPending( state );
+	state->val.value_type = VESL_VALUE_EXPRESSION;
+	//AddDataItem( state->elements, &state->val );
+	//RESET_STATE_VAL();
+	vesl_start_container( state );
+	state->parse_context = CONTEXT_OBJECT_FIELD;
+}
+static void vesl_start_array( struct vesl_parse_state *state ) {
+	commitPending( state );
+	state->val.value_type = VESL_VALUE_ARRAY;
+	//AddDataItem( state->elements, &state->val );
+	//RESET_STATE_VAL();
+	vesl_start_container( state );
+	state->parse_context = CONTEXT_IN_ARRAY;
+}
+static void vesl_close_expression_array( struct vesl_parse_state *state ) {
+	commitPending( state );
+	{
+		struct vesl_parse_context *old_context = (struct vesl_parse_context *)PopLink( state->context_stack );
+		//struct vesl_value_container *oldVal = (struct vesl_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt - 1 );
+		//oldVal->contains = state->elements;  // save updated elements list in the old value in the last pushed list.
+ // this will restore as IN_ARRAY or OBJECT_FIELD
+		state->parse_context = old_context->context;
+		state->elements = old_context->elements;
+		state->val = old_context->valState;
+		DeleteFromSet( PARSE_CONTEXT, vpsd.parseContexts, old_context );
+	}
+}
+static void vesl_dump_parse_level( PDATALIST *pdl, int level ) {
+	struct vesl_value_container *val;
+	INDEX idx;
+	int n;
+	DATA_FORALL( pdl[0], idx, struct vesl_value_container *, val ) {
+		for( n = 0; n < level; n++ )
+			printf( "\t" );
+		if( val->value_type < 0 )
+			printf( "undefined" );
+		else if( val->value_type < NUM_VALUE_NAMES )
+			printf( "%s:", value_type_names[val->value_type] );
+		else
+			printf( "%d:", val->value_type );
+		if( val->string )
+			printf( "STRING(%*.*s)", (int)val->stringLen, (int)val->stringLen, val->string );
+		printf( "\n" );
+		if( val->_contains )
+			vesl_dump_parse_level( val->_contains, level + 1 );
+	}
+}
+static void vesl_dump_parse( PDATALIST pdl ) {
+	vesl_dump_parse_level( &pdl, 0 );
+}
+static int gatherString6v(struct vesl_parse_state *state, CTEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TEXTSTR *pmOut
 		//, int literalString
 		) {
 	char *mOut = (*pmOut);
@@ -58098,9 +58522,9 @@ static int gatherString6v(struct json_parse_state *state, CTEXTSTR msg, CTEXTSTR
 	while( ( ( n = (*msg_input) - msg ), ( n < msglen ) ) && ( ( c = GetUtfChar( msg_input ) ), ( status >= 0 ) ) )
 	{
 		(state->col)++;
-		if( c == start_c ) {
+		if( c == state->gatheringStringFirstChar ) {
 			if( state->escape ) { ( *mOut++ ) = c; state->escape = FALSE; }
-			else if( c == start_c ) {
+			else if( c == state->gatheringStringFirstChar ) {
 				status = 1;
 				break;
  // other else is not valid close quote; just store as content.
@@ -58289,228 +58713,61 @@ static int gatherString6v(struct json_parse_state *state, CTEXTSTR msg, CTEXTSTR
 					continue;
 				}
 			}
-			mOut += ConvertToUTF8( mOut, c );
+			if( c < 127 )
+				(*mOut++) = (char)c;
+			else
+				mOut += ConvertToUTF8( mOut, c );
 		}
 	}
-	if( status )
-  // terminate the string.
-		(*mOut++) = 0;
+	// this CAN nul terminate; since the end is a quote, which is lost; but let's be conservative.
+	//if( status )
+	//	(*mOut++) = 0;  // terminate the string.
 	(*pmOut) = mOut;
 	return status;
 }
-static int gatherIdentifier( struct json_parse_state *state, CTEXTSTR msg
-	, CTEXTSTR *msg_input, size_t msglen
+static int gatherIdentifier( struct vesl_parse_state *state, CTEXTSTR msg
+	, CTEXTSTR *msg_input, size_t msglen, TEXTRUNE *unused
 	, TEXTSTR *pmOut
 ) {
 	char *mOut = (*pmOut);
-	// collect a string
+	// collect an identifier
 	int status = 0;
 	size_t n;
-	//int escape;
-	//LOGICAL cr_escaped;
-	TEXTRUNE c;
-	//escape = 0;
-	//cr_escaped = FALSE;
-	while( ((n = (*msg_input) - msg), (n < msglen)) && ((c = GetUtfChar( msg_input )), (status >= 0)) )
+	TEXTRUNE c = (*unused);
+	do
 	{
 		(state->col)++;
-		if( state->escape ) {
-			if( state->stringOct ) {
-/*'0'*/
-/*'9'*/
-				if( state->hex_char_len < 3 && c >= 48 && c <= 57 ) {
-					state->hex_char *= 8;
-/*.codePointAt(0)*/
-					state->hex_char += c - 0x30;
-					state->hex_char_len++;
-					if( state->hex_char_len == 3 ) {
-						mOut += ConvertToUTF8( mOut, state->hex_char );
-						state->stringOct = FALSE;
-						state->escape = FALSE;
-						continue;
-					}
-					continue;
-				}
-				else {
-					if( state->hex_char > 255 ) {
-						lprintf( WIDE( "(escaped character, parsing octal escape val=%d) fault while parsing; )" ) WIDE( " (near %*.*s[%c]%s)" )
-							, state->hex_char
-							, (int)((n>3) ? 3 : n), (int)((n>3) ? 3 : n)
-							, (*msg_input) - ((n>3) ? 3 : n)
-							, c
-							, (*msg_input) + 1
-// fault
-						);
-						status = -1;
-						break;
-					}
-					mOut += ConvertToUTF8( mOut, state->hex_char );
-					state->stringOct = FALSE;
-					state->escape = FALSE;
-					continue;
-				}
-			}
-			else if( state->unicodeWide ) {
-				if( c == '}' ) {
-					mOut += ConvertToUTF8( mOut, state->hex_char );
-					state->unicodeWide = FALSE;
-					state->stringUnicode = FALSE;
-					state->escape = FALSE;
-					continue;
-				}
-				state->hex_char *= 16;
-				if( c >= '0' && c <= '9' )      state->hex_char += c - '0';
-				else if( c >= 'A' && c <= 'F' ) state->hex_char += (c - 'A') + 10;
-				else if( c >= 'a' && c <= 'f' ) state->hex_char += (c - 'a') + 10;
-				else {
-					lprintf( WIDE( "(escaped character, parsing hex of \\u) fault while parsing; '%c' unexpected at %" )_size_f WIDE( " (near %*.*s[%c]%s)" ), c, n
-						, (int)((n > 3) ? 3 : n), (int)((n > 3) ? 3 : n)
-						, (*msg_input) - ((n > 3) ? 3 : n)
-						, c
-						, (*msg_input) + 1
-// fault
-					);
-					status = -1;
-					state->unicodeWide = FALSE;
-					state->escape = FALSE;
-				}
-				continue;
-			}
-			else if( state->stringHex || state->stringUnicode ) {
-				if( state->hex_char_len == 0 && c == '{' ) {
-					state->unicodeWide = TRUE;
-					continue;
-				}
-				if( state->hex_char_len < 2 || (state->stringUnicode && state->hex_char_len < 4) ) {
-					state->hex_char *= 16;
-					if( c >= '0' && c <= '9' )      state->hex_char += c - '0';
-					else if( c >= 'A' && c <= 'F' ) state->hex_char += (c - 'A') + 10;
-					else if( c >= 'a' && c <= 'f' ) state->hex_char += (c - 'a') + 10;
-					else {
-						lprintf( WIDE( "(escaped character, parsing hex of \\x) fault while parsing; '%c' unexpected at %" )_size_f WIDE( " (near %*.*s[%c]%s)" ), c, n
-							, (int)((n>3) ? 3 : n), (int)((n>3) ? 3 : n)
-							, (*msg_input) - ((n>3) ? 3 : n)
-							, c
-							, (*msg_input) + 1
-// fault
-						);
-						status = -1;
-						state->stringHex = FALSE;
-						state->escape = FALSE;
-						continue;
-					}
-				}
-				state->hex_char_len++;
-				if( state->stringUnicode ) {
-					if( state->hex_char_len == 4 ) {
-						mOut += ConvertToUTF8( mOut, state->hex_char );
-						state->stringUnicode = FALSE;
-						state->escape = FALSE;
-					}
-				}
-				else if( state->hex_char_len == 2 ) {
-					mOut += ConvertToUTF8( mOut, state->hex_char );
-					state->stringHex = FALSE;
-					state->escape = FALSE;
-				}
-				continue;
-			}
-			switch( c ) {
-			case '\r':
-				state->cr_escaped = TRUE;
-				continue;
-			case '\n':
-				state->line++;
-				state->col = 1;
-				if( state->cr_escaped ) state->cr_escaped = FALSE;
-				// fall through to clear escape status <CR><LF> support.
- // LS (Line separator)
-			case 2028:
- // PS (paragraph separate)
-			case 2029:
-				continue;
-			case '/':
-			case '\\':
-			case '\'':
-			case '"':
-			case '`':
-				(*mOut++) = c;
-				break;
-			case 't':
-				(*mOut++) = '\t';
-				break;
-			case 'b':
-				(*mOut++) = '\b';
-				break;
-			case 'n':
-				(*mOut++) = '\n';
-				break;
-			case 'r':
-				(*mOut++) = '\r';
-				break;
-			case 'f':
-				(*mOut++) = '\f';
-				break;
-			case '0': case '1': case '2': case '3':
-				state->stringOct = TRUE;
-				state->hex_char = c - 48;
-				state->hex_char_len = 1;
-				continue;
-			case 'x':
-				state->stringHex = TRUE;
-				state->hex_char_len = 0;
-				state->hex_char = 0;
-				continue;
-			case 'u':
-				state->stringUnicode = TRUE;
-				state->hex_char_len = 0;
-				state->hex_char = 0;
-				continue;
-			default:
-				if( state->cr_escaped ) {
-					state->cr_escaped = FALSE;
-					state->escape = FALSE;
-					mOut += ConvertToUTF8( mOut, c );
-				}
-				else {
-					lprintf( WIDE( "(escaped character) fault while parsing; '%c' unexpected %" )_size_f WIDE( " (near %*.*s[%c]%s)" ), c, n
-						, (int)((n>3) ? 3 : n), (int)((n>3) ? 3 : n)
-						, (*msg_input) - ((n>3) ? 3 : n)
-						, c
-						, (*msg_input) + 1
-// fault
-					);
-					status = -1;
-				}
+		if( c < 0xFF ) {
+			if( nonIdentifiers8[c] ) {
+				status = 1;
+				(*unused) = c;
 				break;
 			}
-			state->escape = 0;
+		} else {
+			int n;
+			for( n = 0; n < (sizeof( nonIdentifiers ) / sizeof( nonIdentifiers[0] )); n++ ) {
+				if( c == nonIdentifiers[n] ) break;
+			}
+			if( c < (sizeof( nonIdentifiers ) / sizeof( nonIdentifiers[0] )) ) {
+				status = 1;
+				(*unused) = c;
+				break;
+			}
 		}
-		else if( c == '\\' ) {
-			if( state->escape ) {
-				(*mOut++) = '\\';
-				state->escape = 0;
-			}
-			else state->escape = 1;
+		if( state->val.value_type == VESL_VALUE_UNSET ) {
+			state->val.value_type = VESL_VALUE_VARIABLE;
+			state->val.string = mOut;
 		}
+		if( c < 127 )
+			(*mOut++) = (char)c;
 		else
-		{
-			if( state->cr_escaped ) {
-				state->cr_escaped = FALSE;
-				if( c == '\n' ) {
-					state->line++;
-					state->col = 1;
-					state->escape = FALSE;
-					continue;
-				}
-			}
 			mOut += ConvertToUTF8( mOut, c );
-		}
 	}
-	if( status )
-  // terminate the string.
-		(*mOut++) = 0;
-	(*pmOut) = mOut;
+	while( ((n = (*msg_input) - msg), (n < msglen)) && ((c = GetUtfChar( msg_input )), (status >= 0)) );
+	if( (*pmOut) != mOut ) {
+		status |= 2;
+		(*pmOut) = mOut;
+	}
 	return status;
 }
 static FLAGSET( isOp, 128 );
@@ -58543,119 +58800,34 @@ static void InitOperatorSyms( void ) {
 		if( op2[n] ) for( m = 0; op2[n][m]; m++ ) SETFLAG( isOp2[ops[n]], op2[n][m] );
 	}
 }
+static void setOperator( struct vesl_parse_state *state, TEXTRUNE c ) {
+}
 PRELOAD( InitVESLOpSyms ) {
 	InitOperatorSyms();
 }
-void emitWordFragment( struct json_parse_state *state, struct json_output_buffer* output ) {
-	switch( state->word ) {
-	case WORD_POS_FALSE_1:
-		(*output->pos++) = 'f';
-		break;
-	case WORD_POS_FALSE_2:
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'a';
-		break;
-	case WORD_POS_FALSE_3:
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'a';
-		(*output->pos++) = 'l';
-		break;
-	case WORD_POS_FALSE_4:
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'a';
-		(*output->pos++) = 'l';
-		(*output->pos++) = 's';
-		break;
-	case WORD_POS_TRUE_1:
-		(*output->pos++) = 't';
-		break;
-	case WORD_POS_TRUE_2:
-		(*output->pos++) = 't';
-		(*output->pos++) = 'r';
-		break;
-	case WORD_POS_TRUE_3:
-		(*output->pos++) = 't';
-		(*output->pos++) = 'r';
-		(*output->pos++) = 'u';
-		break;
-	case WORD_POS_NULL_1:
-		(*output->pos++) = 'n';
-		break;
-	case WORD_POS_NULL_2:
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'u';
-		break;
-	case WORD_POS_NULL_3:
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'u';
-		(*output->pos++) = 'l';
-		break;
-	case WORD_POS_INFINITY_1:
-		(*output->pos++) = 'I';
-		break;
-	case WORD_POS_INFINITY_2:
-		(*output->pos++) = 'I';
-		(*output->pos++) = 'n';
-		break;
-	case WORD_POS_INFINITY_3:
-		(*output->pos++) = 'I';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'f';
-		break;
-	case WORD_POS_INFINITY_4:
-		(*output->pos++) = 'I';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'i';
-		break;
-	case WORD_POS_INFINITY_5:
-		(*output->pos++) = 'I';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'i';
-		(*output->pos++) = 'n';
-		break;
-	case WORD_POS_INFINITY_6:
-		(*output->pos++) = 'I';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'i';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'i';
-		break;
-	case WORD_POS_INFINITY_7:
-		(*output->pos++) = 'I';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'i';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'i';
-		(*output->pos++) = 't';
-		break;
-	}
-}
-int vesl_parse_add_data( struct json_parse_state *state
+int vesl_parse_add_data( struct vesl_parse_state *state
                             , const char * msg
                             , size_t msglen )
 {
 	/* I guess this is a good parser */
 	TEXTRUNE c;
 	PPARSE_BUFFER input;
-	struct json_output_buffer* output;
+	struct vesl_output_buffer* output;
 	int string_status;
 	int retval = 0;
 	if( !state->status )
 		return -1;
 	if( msg && msglen ) {
-		input = GetFromSet( PARSE_BUFFER, &jpsd.parseBuffers );
+		input = GetFromSet( PARSE_BUFFER, &vpsd.parseBuffers );
 		input->pos = input->buf = msg;
 		input->size = msglen;
 		EnqueLinkNL( state->inBuffers, input );
-		if( state->gatheringString || state->gatheringNumber || state->parse_context == CONTEXT_OBJECT_FIELD ) {
+		output = (struct vesl_output_buffer*)DequeLinkNL( state->outQueue );
+		if( output && (state->gatheringString || state->gatheringNumber || state->parse_context == CONTEXT_OBJECT_FIELD) ) {
 			// have to extend the previous output buffer to include this one instead of allocating a split string.
 			size_t offset;
 			size_t offset2;
-			output = (struct json_output_buffer*)DequeLinkNL( state->outQueue );
+			output = (struct vesl_output_buffer*)DequeLinkNL( state->outQueue );
 			//lprintf( "output from before is %p", output );
 			offset = (output->pos - output->buf);
 			offset2 = state->val.string ? (state->val.string - output->buf) : 0;
@@ -58671,7 +58843,9 @@ int vesl_parse_add_data( struct json_parse_state *state
 			PrequeLink( state->outQueue, output );
 		}
 		else {
-			output = (struct json_output_buffer*)GetFromSet( PARSE_BUFFER, &jpsd.parseBuffers );
+			if( output )
+				PrequeLink( state->outQueue, output );
+			output = (struct vesl_output_buffer*)GetFromSet( PARSE_BUFFER, &vpsd.parseBuffers );
 			output->pos = output->buf = NewArray( char, msglen + 1 );
 			output->size = msglen;
 			EnqueLinkNL( state->outQueue, output );
@@ -58681,7 +58855,7 @@ int vesl_parse_add_data( struct json_parse_state *state
 		// zero length input buffer... terminate a number.
 		if( state->gatheringNumber ) {
 			//console.log( "Force completed.")
-			output = (struct json_output_buffer*)DequeLinkNL( state->outQueue );
+			output = (struct vesl_output_buffer*)DequeLinkNL( state->outQueue );
 			output->pos[0] = 0;
 			PushLink( state->outBuffers, output );
 			state->gatheringNumber = FALSE;
@@ -58697,7 +58871,7 @@ int vesl_parse_add_data( struct json_parse_state *state
 				state->val.result_n = IntCreateFromText( state->val.string );
 				if( state->negative ) { state->val.result_n = -state->val.result_n; state->negative = FALSE; }
 			}
-			state->val.value_type = VALUE_NUMBER;
+			state->val.value_type = VESL_VALUE_NUMBER;
 			if( state->parse_context == CONTEXT_UNKNOWN ) {
 				state->completed = TRUE;
 			}
@@ -58705,12 +58879,12 @@ int vesl_parse_add_data( struct json_parse_state *state
 		}
 	}
 	while( state->status && ( input = (PPARSE_BUFFER)DequeLinkNL( state->inBuffers ) ) ) {
-		output = (struct json_output_buffer*)DequeLinkNL( state->outQueue );
+		state->output = output = (struct vesl_output_buffer*)DequeLinkNL( state->outQueue );
 		//lprintf( "output is %p", output );
 		state->n = input->pos - input->buf;
 		if( state->n > input->size ) DebugBreak();
 		if( state->gatheringString ) {
-			string_status = gatherString6v( state, input->buf, &input->pos, input->size, &output->pos, state->gatheringStringFirstChar );
+			string_status = gatherString6v( state, input->buf, &input->pos, input->size, &output->pos );
 			if( string_status < 0 )
 				state->status = FALSE;
 			else if( string_status > 0 )
@@ -58719,7 +58893,7 @@ int vesl_parse_add_data( struct json_parse_state *state
 				state->n = input->pos - input->buf;
 				if( state->n > input->size ) DebugBreak();
 				state->val.stringLen = (output->pos - state->val.string)-1;
-				if( state->status ) state->val.value_type = VALUE_STRING;
+				if( state->status ) state->val.value_type = VESL_VALUE_STRING;
 			}
 			else {
 				state->n = input->pos - input->buf;
@@ -58733,13 +58907,15 @@ int vesl_parse_add_data( struct json_parse_state *state
 		//lprintf( "Completed at start?%d", state->completed );
 		while( state->status && (state->n < input->size) && (c = GetUtfChar( &input->pos )) )
 		{
+		retry:
 			state->col++;
 			state->n = input->pos - input->buf;
 			if( state->n > input->size ) DebugBreak();
 			lprintf( "  --- Character %c(%d) val:%d(%s) context:%d word:%d(%s)  isOp:%d"
-				, c, c, state->val.value_type, (state->val.value_type >= 0 && state->val.value_type < NUM_VALUE_NAMES)?value_type_names[state->val.value_type]:"????"
+				, c<32?'.':c, c, state->val.value_type, (state->val.value_type >= 0 && state->val.value_type < NUM_VALUE_NAMES)?value_type_names[state->val.value_type]:"????"
 				, state->parse_context, state->word, word_pos_names[state->word]
 				, (c<127)?TESTFLAG(isOp,c):0);
+			vesl_dump_parse( state->root );
 			if( state->comment ) {
 				if( state->comment == 1 ) {
 					if( c == '*' ) { state->comment = 3; continue; }
@@ -58768,203 +58944,210 @@ int vesl_parse_add_data( struct json_parse_state *state
 			{
 			case '(':
 			case '{':
-				if( state->parse_context == CONTEXT_OBJECT_FIELD_VALUE
-				  || state->parse_context == CONTEXT_IN_ARRAY
-				  || state->parse_context == CONTEXT_OBJECT_FIELD ) {
-					struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &jpsd.parseContexts );
-#ifdef _DEBUG_PARSING
-					lprintf( "Begin a new object; previously pushed into elements; but wait until trailing comma or close previously:%d", val.value_type );
-#endif
-					// looking for a field, and got another paren,
-					// is a unnamed expression within this oen.
-					if( state->val.value_type == VALUE_UNSET ) {
-						if( state->parse_context == CONTEXT_OBJECT_FIELD || state->parse_context == CONTEXT_OBJECT_FIELD_VALUE ) {
-							if( state->word == WORD_POS_FIELD || state->word == WORD_POS_RESET ) {
-								state->val.value_type = VALUE_EXPRESSION;
-							}
-							state->parse_context = CONTEXT_OBJECT_FIELD_VALUE;
-						}
-						if( state->val.value_type && state->val.string ) {
-							// terminate the string.
-							state->val.stringLen = (output->pos - state->val.string);
-							(*output->pos++) = 0;
-						}
-					}
-					old_context->context = state->parse_context;
-					old_context->elements = state->elements;
-					old_context->valState = state->val;
-					state->elements = state->val._contains;
-// CreateDataList( sizeof( state->val ) );
-					if( !state->elements ) state->elements = GetFromSet( PDATALIST, &jpsd.dataLists );
-					if( !state->elements[0] ) state->elements[0] = CreateDataList( sizeof( state->val ) );
-					//else state->elements[0]->Cnt = 0;
-					lprintf( "Pushing pending thing, so this object is assicated under it as a list: %s", state->val.string );
-					PushLink( state->context_stack, old_context );
-					RESET_STATE_VAL();
-					state->word = WORD_POS_RESET;
-					state->parse_context = CONTEXT_OBJECT_FIELD;
-					break;
-				}
-				if( state->word == WORD_POS_FIELD || state->word == WORD_POS_AFTER_FIELD || state->word == WORD_POS_DOT_OPERATOR ) {
-					if( !state->pvtError ) state->pvtError = VarTextCreate();
-					vtprintf( state->pvtError, "Fault while parsing; getting field name unexpected '%c' at %" _size_f " %" _size_f ":%" _size_f, c, state->n, state->line, state->col );
-					state->status = FALSE;
-					break;
-				}
-				{
-					struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &jpsd.parseContexts );
-#ifdef _DEBUG_PARSING
-					lprintf( "Begin a new object; previously pushed into elements; but wait until trailing comma or close previously:%d", val.value_type );
-#endif
- // it's going to be an expression list.
-					if( c == '(' && !state->val.value_type )
-						state->val.value_type = VALUE_EXPRESSION;
-					old_context->context = state->parse_context;
-					old_context->elements = state->elements;
-					old_context->valState = state->val;
-					state->elements = state->val._contains;
-// CreateDataList( sizeof( state->val ) );
-					if( !state->elements ) state->elements = GetFromSet( PDATALIST, &jpsd.dataLists );
-					if( !state->elements[0] ) state->elements[0] = CreateDataList( sizeof( state->val ) );
-					//else state->elements[0]->Cnt = 0;
-					PushLink( state->context_stack, old_context );
-					RESET_STATE_VAL();
-					state->parse_context = CONTEXT_OBJECT_FIELD;
-				}
+				vesl_start_expression( state );
 				break;
 			case '[':
-				if( state->parse_context == CONTEXT_OBJECT_FIELD || state->word == WORD_POS_DOT_OPERATOR ) {
-					if( !state->pvtError ) state->pvtError = VarTextCreate();
-					vtprintf( state->pvtError, WIDE( "Fault while parsing; while getting field name unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-					state->status = FALSE;
-					break;
-				}
-				{
-					struct json_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &jpsd.parseContexts );
-#ifdef _DEBUG_PARSING
-					lprintf( "Begin a new array; previously pushed into elements; but wait until trailing comma or close previously:%d", val.value_type );
-#endif
-					old_context->context = state->parse_context;
-					old_context->elements = state->elements;
-					old_context->valState = state->val;
-					state->elements = state->val._contains;
-// CreateDataList( sizeof( state->val ) );
-					if( !state->elements ) state->elements = GetFromSet( PDATALIST, &jpsd.dataLists );
-					if( !state->elements[0] ) state->elements[0] = CreateDataList( sizeof( state->val ) );
-					//else state->elements[0]->Cnt = 0;
-					PushLink( state->context_stack, old_context );
-					RESET_STATE_VAL();
-					state->parse_context = CONTEXT_IN_ARRAY;
-				}
+				vesl_start_array( state );
 				break;
 			case '}':
 			case ')':
-				if( state->word == WORD_POS_END ) {
-					// allow starting a new word
-					state->word = WORD_POS_RESET;
-				}
-				// coming back after pushing an array or sub-object will reset the contxt to FIELD, so an end with a field should still push value.
-				if( (state->parse_context == CONTEXT_OBJECT_FIELD)
-				  || (state->parse_context == CONTEXT_OBJECT_FIELD_VALUE) ) {
-#ifdef _DEBUG_PARSING
-					lprintf( "close object; empty object %d", state->val.value_type );
-#endif
-					//if( (state->parse_context == CONTEXT_OBJECT_FIELD_VALUE) )
-					if( state->val.value_type == VALUE_UNSET ) {
-						state->val.value_type = VALUE_EXPRESSION;
-					}
-					if( state->val.value_type != VALUE_UNSET ) {
-						lprintf( "Close Expression; push value:%s %p", value_type_names[state->val.value_type], state->elements );
-						AddDataItem( state->elements, &state->val );
-					}
-					//RESET_STATE_VAL();
-					{
-						struct json_parse_context *old_context = (struct json_parse_context *)PopLink( state->context_stack );
-						//struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt - 1 );
-						//oldVal->contains = state->elements;  // save updated elements list in the old value in the last pushed list.
-						old_context->valState.contains = state->elements[0];
-						old_context->valState._contains = state->elements;
- // this will restore as IN_ARRAY or OBJECT_FIELD
-						state->parse_context = old_context->context;
-						state->elements = old_context->elements;
-						state->val = old_context->valState;
-						DeleteFromSet( PARSE_CONTEXT, jpsd.parseContexts, old_context );
-					}
-					if( state->parse_context == CONTEXT_UNKNOWN ) {
-						state->completed = TRUE;
-					}
-				}
-				else
-				{
-					if( !state->pvtError ) state->pvtError = VarTextCreate();
-					vtprintf( state->pvtError, WIDE( "Fault while parsing; unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-					state->status = FALSE;
-				}
+				vesl_close_expression_array( state );
 				break;
 			case ']':
-				if( state->word == WORD_POS_END ) {
-					// allow starting a new word
-					state->word = WORD_POS_RESET;
-				}
-				if( state->parse_context == CONTEXT_IN_ARRAY )
-				{
-#ifdef _DEBUG_PARSING
-					lprintf( "close array, push last element: %d", state->val.value_type );
-#endif
-					if( state->val.value_type != VALUE_UNSET ) {
-						lprintf( "Close Array; push value:%s", value_type_names[state->val.value_type] );
-						AddDataItem( state->elements, &state->val );
-					}
-					{
-						struct json_parse_context *old_context = (struct json_parse_context *)PopLink( state->context_stack );
-						//struct json_value_container *oldVal = (struct json_value_container *)GetDataItem( &old_context->elements, old_context->elements->Cnt - 1 );
-						//oldVal->contains = state->elements;  // save updated elements list in the old value in the last pushed list.
-						old_context->valState.contains = state->elements[0];
-						old_context->valState._contains = state->elements;
-						state->parse_context = old_context->context;
-						state->elements = old_context->elements;
-						state->val = old_context->valState;
-						DeleteFromSet( PARSE_CONTEXT, jpsd.parseContexts, old_context );
-					}
-					if( state->parse_context == CONTEXT_UNKNOWN ) {
-						state->completed = TRUE;
-					}
-				}
-				else
-				{
-					if( !state->pvtError ) state->pvtError = VarTextCreate();
-// fault
-					vtprintf( state->pvtError, WIDE( "bad context %d; fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, state->parse_context, c, state->n, state->line, state->col );
-					state->status = FALSE;
-				}
+				vesl_close_expression_array( state );
 				break;
 			default:
-				if( state->parse_context == CONTEXT_OBJECT_FIELD_VALUE
-					&& c < 127 ) {
+				if( c == ' ' || c == 0xFEFF ) {
+					state->weakSpace = TRUE;
+					continue;
+				}
+				if( c == '\n' ) {
+					state->line++;
+					state->col = 1;
+					state->weakSpace = FALSE;
+					continue;
+				}
+				if( c == ',' || c == ';' || c == '\t' || c == '\r' ) {
+					state->weakSpace = FALSE;
+					continue;
+				}
+				if( c < 0xff ) {
+					if( (c >= '0' && c <= '9') )
+					{
+						LOGICAL fromDate;
+ // to unwind last character past number.
+						const char *_msg_input;
+												// always reset this here....
+												// keep it set to determine what sort of value is ready.
+						if( !state->gatheringNumber ) {
+							state->exponent = FALSE;
+							state->exponent_sign = FALSE;
+							state->exponent_digit = FALSE;
+							fromDate = FALSE;
+							state->fromHex = FALSE;
+							state->val.float_result = (c == '.');
+							state->val.string = output->pos;
+  // terminate the string.
+							(*output->pos++) = c;
+						}
+						else
+						{
+						continueNumber:
+							fromDate = state->numberFromDate;
+						}
+						while( (_msg_input = input->pos), ((state->n < input->size) && (c = GetUtfChar( &input->pos ))) )
+						{
+							//lprintf( "Number input:%c", c );
+							state->col++;
+							state->n = (input->pos - input->buf);
+							if( state->n > input->size ) DebugBreak();
+							// leading zeros should be forbidden.
+							if( c == '_' )
+								continue;
+							if( c >= '0' && c <= '9' )
+							{
+								(*output->pos++) = c;
+								if( state->exponent )
+									state->exponent_digit = TRUE;
+							}
+#if 0
+							// to be implemented (date parsing?)
+							else if( c == ':' || c == '-' || c == 'Z' || c == '+' ) {
+								/* toISOString()
+								var today = new Date('05 October 2011 14:48 UTC');
+								console.log(today.toISOString());
+								// Returns 2011-10-05T14:48:00.000Z
+								*/
+								(*output->pos++) = c;
+							}
+#endif
+							else if( (c == 'x' || c == 'b' || c == 'o' || c == 'X' || c == 'B' || c == 'O')
+								&& (output->pos - output->buf) == 1
+								&& output->buf[0] == '0' ) {
+								// hex conversion.
+								if( !state->fromHex ) {
+									state->fromHex = TRUE;
+ // force lower case.
+									(*output->pos++) = c | 0x20;
+								}
+								else {
+									state->status = FALSE;
+									if( !state->pvtError ) state->pvtError = VarTextCreate();
+									vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									break;
+								}
+							}
+							else if( (c == 'e') || (c == 'E') )
+							{
+								if( !state->exponent ) {
+									state->val.float_result = 1;
+									(*output->pos++) = c;
+									state->exponent = TRUE;
+								}
+								else {
+									state->status = FALSE;
+									if( !state->pvtError ) state->pvtError = VarTextCreate();
+									vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									break;
+								}
+							}
+							else if( c == '-' || c == '+' ) {
+								if( !state->exponent ) {
+									state->status = FALSE;
+									if( !state->pvtError ) state->pvtError = VarTextCreate();
+									vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									break;
+								}
+								else {
+									if( !state->exponent_sign && !state->exponent_digit ) {
+										(*output->pos++) = c;
+										state->exponent_sign = 1;
+									}
+									else {
+										state->status = FALSE;
+										if( !state->pvtError ) state->pvtError = VarTextCreate();
+										vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+										break;
+									}
+								}
+							}
+							else if( c == '.' )
+							{
+								if( !state->val.float_result && !state->fromHex ) {
+									state->val.float_result = 1;
+									(*output->pos++) = c;
+								}
+								else {
+									state->status = FALSE;
+									if( !state->pvtError ) state->pvtError = VarTextCreate();
+									vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+									break;
+								}
+							}
+							else
+							{
+								// in non streaming mode; these would be required to follow
+								//if( c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == 0xFEFF
+								//	|| c == ',' || c == ';' || c == ']' || c == '}' || c == ':' ) {
+								//lprintf( "Non numeric character received; push the value we have" );
+								// operator may be following, which is not lost.
+								//(*output->pos) = 0;
+								break;
+								//}
+								//else {
+								//	state->status = FALSE;
+								//	if( !state->pvtError ) state->pvtError = VarTextCreate();
+								//	vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+								//	break;
+								//}
+							}
+						}
+						if( input ) {
+							input->pos = _msg_input;
+							state->n = (input->pos - input->buf);
+							if( state->n > input->size ) DebugBreak();
+						}
+						//LogBinary( (uint8_t*)output->buf, output->size );
+						if( input && (!state->complete_at_end) && state->n == input->size )
+						{
+							//lprintf( "completion mode is not end of string; and at end of string" );
+							state->gatheringNumber = TRUE;
+							state->numberFromDate = fromDate;
+						}
+						else
+						{
+							(*output->pos++) = 0;
+							state->val.stringLen = (output->pos - state->val.string);
+							state->gatheringNumber = FALSE;
+							//lprintf( "result with number:%s", state->val.string );
+							if( state->val.float_result )
+							{
+								CTEXTSTR endpos;
+								state->val.result_d = FloatCreateFromText( state->val.string, &endpos );
+								if( state->negative ) { state->val.result_d = -state->val.result_d; state->negative = FALSE; }
+							}
+							else
+							{
+								state->val.result_n = IntCreateFromText( state->val.string );
+								if( state->negative ) { state->val.result_n = -state->val.result_n; state->negative = FALSE; }
+							}
+							state->val.value_type = VESL_VALUE_NUMBER;
+							if( state->parse_context == CONTEXT_UNKNOWN ) {
+								state->completed = TRUE;
+							}
+						}
+						continue;
+					}
 					if( !state->operatorAccum ) {
 						if( TESTFLAG( isOp, c ) ) {
-							if( state->val.value_type ) {
-								if( state->word == WORD_POS_PROPER_NAME ) {
-									(*output->pos++) = c;
-									continue;
-								}
-								lprintf( "is an op; push value:%s %p", value_type_names[state->val.value_type], state->elements );
-								AddDataItem( state->elements, &state->val );
-								RESET_STATE_VAL();
-								state->word = WORD_POS_RESET;
-							}
+							commitPending( state );
 							state->operatorAccum = c;
+ // is an operator... next!
 							continue;
 						}
 					}
 					else {
-						if( state->val.value_type ) {
-							lprintf( "operator accumulatored; push value:%s %p", value_type_names[state->val.value_type], state->elements );
-							AddDataItem( state->elements, &state->val );
-							RESET_STATE_VAL();
-							state->word = WORD_POS_RESET;
-						}
-						state->val.value_type = VALUE_OPERATOR;
+						state->val.value_type = VESL_VALUE_OPERATOR;
 						state->val.string = output->pos;
 						state->val.stringLen = 1;
 						(*output->pos++) = state->operatorAccum;
@@ -58979,767 +59162,66 @@ int vesl_parse_add_data( struct json_parse_state *state
 							}
 							state->val.stringLen = 2;
 							(*output->pos++) = c;
+							commitPending( state );
+							break;
 						}
-						else {
-							if( c == ':' ) {
-								// if not after a ? in expressions.....
-								// this should already be caught above....
-								if( state->word == WORD_POS_PROPER_NAME && !state->val.name ) {
-									(*output->pos++) = 0;
-									state->val.value_type = VALUE_UNSET;
-									state->word = WORD_POS_RESET;
-									state->val.name = state->val.string;
-									state->val.nameLen = output->pos - state->val.name;
-									state->val.string = NULL;
-									continue;
-								}
-							}
-							if( state->operatorAccum == ':' || state->operatorAccum == '=' ) {
-								if( state->parse_context == CONTEXT_OBJECT_FIELD )
-								{
-									if( state->word != WORD_POS_RESET
-										&& state->word != WORD_POS_FIELD
-										&& state->word != WORD_POS_AFTER_FIELD ) {
-										// allow starting a new word
-										state->status = FALSE;
-										if( !state->pvtError ) state->pvtError = VarTextCreate();
-										vtprintf( state->pvtError, WIDE( "unquoted keyword used as object field name:parsing fault; unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-										break;
-									}
-									else if( state->word == WORD_POS_FIELD ) {
-										//state->val.stringLen = output->pos - state->val.string;
-										//lprintf( "Set string length:%d", state->val.stringLen );
-									}
-									if( !(state->val.value_type == VALUE_STRING) )
-										(*output->pos++) = 0;
-									state->word = WORD_POS_RESET;
-									if( state->val.name ) {
-										if( !state->pvtError ) state->pvtError = VarTextCreate();
-										vtprintf( state->pvtError, "two names single value?" );
-									}
-									state->val.name = state->val.string;
-									state->val.nameLen = (output->pos - state->val.string) - 1;
-									state->val.string = NULL;
-									state->val.stringLen = 0;
-									state->parse_context = CONTEXT_OBJECT_FIELD_VALUE;
-									state->val.value_type = VALUE_UNSET;
-								}
-								else
-								{
-									if( !state->pvtError ) state->pvtError = VarTextCreate();
-									if( state->parse_context == CONTEXT_IN_ARRAY )
-										vtprintf( state->pvtError, WIDE( "(in array, got colon out of string):parsing fault; unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-									else
-										vtprintf( state->pvtError, WIDE( "(outside any object, got colon out of string):parsing fault; unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-									state->status = FALSE;
-								}
-								break;
-							}
-						}
-						// have to not set NUL character here, or else operator
-						// tokens could overflow the output buffer.  Have to rely
-						// instead on setting the stringLength;
 						lprintf( "flush operator; push value:%s %p", value_type_names[state->val.value_type], state->elements );
-						AddDataItem( state->elements, &state->val );
-						RESET_STATE_VAL();
-						state->word = WORD_POS_RESET;
-						state->operatorAccum = 0;
+						commitPending( state );
+						//goto retry;
 					}
 				}
-				if( state->parse_context == CONTEXT_UNKNOWN ) {
-					if( c == '=' ) {
-						if( state->word = WORD_POS_AFTER_PROPER_NAME ){
-							state->val.value_type = VALUE_VARIABLE;
-						}
-					}
-				}
-				if( state->parse_context == CONTEXT_OBJECT_FIELD ) {
-					//lprintf( "gathering object field:%c  %*.*s", c, output->pos-output->buf, output->pos - output->buf, output->buf );
-					if( c < 0xFF ) {
-						if( c == ':' ) {
-							state->parse_context = CONTEXT_OBJECT_FIELD_VALUE;
-							if( state->val.string ) {
-								if( state->val.name ) {
-	// fault
-									vtprintf( state->pvtError, WIDE( "fault while parsing object field name  a second colon?; \\u00%02X unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-									state->status = FALSE;
-									break;
-								}
-								state->word = WORD_POS_RESET;
-								state->val.name = state->val.string;
-								state->val.nameLen = output->pos - state->val.string;
-								(*output->pos++) = 0;
-								state->val.string = NULL;
-								state->val.stringLen = 0;
-							}
-							continue;
-						}
-						if( c == '@' ) {
-							if( state->word == WORD_POS_FIELD ) {
-								(*output->pos++) = c;
-								break;
-							}
-						}
-						if( c == ',' ) {
-							// is whitespace...
-							goto doComma;
-							break;
-						}
-						if( c == '.' ) {
-							if( state->word == WORD_POS_RESET ) {
-								state->word = WORD_POS_DOT_OPERATOR;
-								state->val.string = output->pos;
-							}
-							else if( state->word == WORD_POS_FIELD )
-								state->parse_context = CONTEXT_OBJECT_FIELD_VALUE;
-							(*output->pos++) = c;
-							break;
-						}
-						if( c == '/' ) {
-							if( !state->comment ) state->comment = 1;
-							break;
-						}
-						if( nonIdentifiers8[c] ) {
-							if( state->operatorAccum ) {
-								break;
-							}
-							// invalid start/continue
-							state->status = FALSE;
-							if( !state->pvtError ) state->pvtError = VarTextCreate();
-	// fault
-							vtprintf( state->pvtError, WIDE( "fault while parsing object field name; \\u00%02X unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-							break;
-						}
-					}
-					else {
-						int n;
-						for( n = 0; n < (sizeof( nonIdentifiers ) / sizeof( nonIdentifiers[0] )); n++ ) {
-							if( c == nonIdentifiers[n] ) {
-								state->status = FALSE;
-								if( !state->pvtError ) state->pvtError = VarTextCreate();
-	// fault
-								vtprintf( state->pvtError, WIDE( "fault while parsing object field name; \\u00%02X unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-								break;
-							}
-						}
-						if( c < (sizeof( nonIdentifiers ) / sizeof( nonIdentifiers[0] )) )
-							break;
-					}
-					switch( c )
-					{
-					case '`':
-						// this should be a special case that passes continuation to gatherString
-						// but gatherString now just gathers all strings
-					case '"':
-					case '\'':
-						if( !state->val.string )
-							state->val.string = output->pos;
-						state->gatheringString = TRUE;
-						state->gatheringStringFirstChar = c;
-						string_status = gatherString6v( state, input->buf, &input->pos, input->size, &output->pos, c );
-						//lprintf( "string gather status:%d", string_status );
-						if( string_status < 0 )
-							state->status = FALSE;
-						else if( string_status > 0 ) {
-							state->gatheringString = FALSE;
-							state->val.stringLen = (output->pos - state->val.string) - 1;
-						}
-						state->n = input->pos - input->buf;
-						if( state->n > input->size ) DebugBreak();
-						if( state->parse_context == CONTEXT_OBJECT_FIELD ) {
-							if( state->word == WORD_POS_DOT_OPERATOR ) {
-								state->word = WORD_POS_FIELD;
-								break;
-							}
-						}
-						if( state->status ) {
-							state->val.value_type = VALUE_STRING;
-							//state->val.stringLen = (output->pos - state->val.string - 1);
-							//lprintf( "Set string length:%d", state->val.stringLen );
-						}
-						break;
-					case ' ':
- // ZWNBS is WS though
-					case 0xFEFF:
-						state->weakSpace = TRUE;
-						if( 0 ) {
-					doComma:
-					case ',':
-					case ';':
-						if( 0 ) {
-					case '\n':
-							state->line++;
-							state->col = 1;
-						}
-							// fall through to normal space handling - just updated line/col position
-					case '\t':
-					case '\r':
-							state->weakSpace = FALSE;
-						}
-						if( !state->weakSpace && state->parse_context == CONTEXT_OBJECT_FIELD_VALUE
-						  && ( state->word == WORD_POS_RESET ) && state->val.value_type )
-						{
-							// after an array value, it will have returned to OBJECT_FIELD anyway
-#ifdef _DEBUG_PARSING
-							lprintf( "space after field value, push field to object: %s", state->val.name );
-#endif
-							state->parse_context = CONTEXT_OBJECT_FIELD;
-							if( state->val.value_type != VALUE_UNSET ) {
-								lprintf( "hard space after a value type...; push value:%s %p", value_type_names[state->val.value_type], state->elements );
-								AddDataItem( state->elements, &state->val );
-							}
-							RESET_STATE_VAL();
-						}
-						if( state->weakSpace
-							&& state->parse_context == CONTEXT_OBJECT_FIELD_VALUE
-							&& (state->word == WORD_POS_RESET)
-							&& state->val.value_type )
-						{
-							// after an array value, it will have returned to OBJECT_FIELD anyway
-#ifdef _DEBUG_PARSING
-							lprintf( "space after field value, push field to object: %s", state->val.name );
-#endif
-							//state->parse_context = CONTEXT_OBJECT_FIELD;
-							if( state->val.value_type != VALUE_UNSET ) {
-								lprintf( "space after a value in field value; push value:%s %p", value_type_names[state->val.value_type], state->elements );
-								AddDataItem( state->elements, &state->val );
-							}
-							RESET_STATE_VAL();
-						}
-						if( state->word == WORD_POS_RESET || state->word == WORD_POS_AFTER_FIELD )
-							break;
-						else if( state->word == WORD_POS_FIELD ) {
-							if( state->val.string && strncmp( state->val.string, "get", 3 ) == 0 ) {
-								state->word = WORD_POS_AFTER_GET;
-							} else if( state->val.string && strncmp( state->val.string, "set", 3 ) == 0 ) {
-								state->word = WORD_POS_AFTER_SET;
-							} else
-								state->word = WORD_POS_AFTER_FIELD;
-							//state->val.stringLen = output->pos - state->val.string;
-							//lprintf( "Set string length:%d", state->val.stringLen );
-							break;
-						}
-						if( state->val.value_type ) {
-							if( state->val.string )
-								state->val.stringLen = (output->pos - state->val.string);
-							lprintf( "space also after a val; push value:%s", value_type_names[state->val.value_type] );
-							AddDataItem( state->elements, &state->val );
-							RESET_STATE_VAL();
-						}
-						//state->status = FALSE;
-						//if( !state->pvtError ) state->pvtError = VarTextCreate();
-						//vtprintf( state->pvtError, WIDE( "fault while parsing; whitespace unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, state->n, state->line, state->col );	// fault
-						// skip whitespace
-						//n++;
-						//lprintf( "whitespace skip..." );
-						break;
-					default:
-						if( state->word == WORD_POS_AFTER_FIELD ) {
-							state->status = FALSE;
-							if( !state->pvtError ) state->pvtError = VarTextCreate();
-	// fault
-							vtprintf( state->pvtError, WIDE( "fault while parsing; unquoted space in field name at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, state->n, state->line, state->col );
-							break;
-						} else if( state->word == WORD_POS_RESET ) {
-							state->word = WORD_POS_FIELD;
-							state->val.string = output->pos;
-						} else if( state->word == WORD_POS_DOT_OPERATOR ) {
-							if( state->parse_context == CONTEXT_OBJECT_FIELD )
-								state->word = WORD_POS_FIELD;
-							else if( state->parse_context == CONTEXT_OBJECT_FIELD_VALUE )
-								state->word = WORD_POS_AFTER_FIELD;
-						}
-						if( c < 128 ) (*output->pos++) = c;
-						else output->pos += ConvertToUTF8( output->pos, c );
- // default
-						break;
-					}
-				}
-				else switch( c )
-				{
-				case '`':
-					// this should be a special case that passes continuation to gatherString
-					// but gatherString now just gathers all strings
-				case '"':
-				case '\'':
-					state->val.string = output->pos;
+				if( c == '`' || c == '"' || c == '\'' ) {
+					if( !state->val.string )
+						state->val.string = output->pos;
 					state->gatheringString = TRUE;
 					state->gatheringStringFirstChar = c;
-					string_status = gatherString6v( state, input->buf, &input->pos, input->size, &output->pos, c );
+					string_status = gatherString6v( state, input->buf, &input->pos, input->size, &output->pos );
 					//lprintf( "string gather status:%d", string_status );
 					if( string_status < 0 )
 						state->status = FALSE;
 					else if( string_status > 0 ) {
 						state->gatheringString = FALSE;
-						state->val.stringLen = (output->pos - state->val.string) - 1;
-					} else if( state->complete_at_end ) {
-						if( !state->pvtError ) state->pvtError = VarTextCreate();
-						vtprintf( state->pvtError, "End of string fail." );
-						state->status = FALSE;
+						state->val.stringLen = (output->pos - state->val.string);
 					}
 					state->n = input->pos - input->buf;
 					if( state->n > input->size ) DebugBreak();
 					if( state->status ) {
-						state->val.value_type = VALUE_STRING;
-						state->word = WORD_POS_END;
-						if( state->complete_at_end ) {
-							if( state->parse_context == CONTEXT_UNKNOWN ) {
-								state->completed = TRUE;
-							}
-						}
+						state->val.value_type = VESL_VALUE_STRING;
+						commitPending( state );
 					}
-					break;
-				case ' ':
-				case 0xFEFF:
-					state->weakSpace = TRUE;
-					if(0) {
-				case ',':
-				case ';':
-				case '\n':
-					state->line++;
-					state->col = 1;
-					// FALLTHROUGH
-				case '\t':
-				case '\r':
-					state->weakSpace = FALSE;
-					}
-					if( state->word == WORD_POS_END ) {
-						state->word = WORD_POS_RESET;
-						if( state->parse_context == CONTEXT_UNKNOWN ) {
-							state->completed = TRUE;
-						}
-						break;
-					}
-					if( state->word == WORD_POS_RESET ) {
-						if( !state->weakSpace && state->parse_context == CONTEXT_OBJECT_FIELD_VALUE && state->val.value_type )
-						{
-							// after an array value, it will have returned to OBJECT_FIELD anyway
-#ifdef _DEBUG_PARSING
-							lprintf( "comma after field value, push field to object: %s", state->val.name );
-#endif
-							state->parse_context = CONTEXT_OBJECT_FIELD;
-							if( state->val.value_type != VALUE_UNSET ) {
-								lprintf( "space not in field, but after field?; push value:%s", value_type_names[state->val.value_type] );
-								AddDataItem( state->elements, &state->val );
-							}
-							RESET_STATE_VAL();
-						}
-						break;
-					}
-					else if( state->word == WORD_POS_FIELD ) {
-						state->word = WORD_POS_AFTER_FIELD;
-					}
-					else {
-						if( state->val.value_type ) {
-							if( state->val.string )
-								state->val.stringLen = (output->pos - state->val.string);
-							lprintf( "space after field; push value:%s", value_type_names[state->val.value_type] );
-							AddDataItem( state->elements, &state->val );
-							RESET_STATE_VAL();
-						}
-						//state->status = FALSE;
-						//if( !state->pvtError ) state->pvtError = VarTextCreate();
-						//vtprintf( state->pvtError, WIDE( "fault while parsing; whitespace unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, state->n );	// fault
-					}
-					// skip whitespace
-					//n++;
-					//lprintf( "whitespace skip..." );
-					break;
-					//----------------------------------------------------------
-					//  catch characters for true/false/null/undefined which are values outside of quotes
-					//  (get/set/....)
-					//----------------------------------------------------------
-					//----------------------------------------------------------
-					//  catch characters for true/false/null/undefined which are values outside of quotes
-				case 't':
-					if( state->word == WORD_POS_RESET ) state->word = WORD_POS_TRUE_1;
-					else if( state->word == WORD_POS_INFINITY_6 ) state->word = WORD_POS_INFINITY_7;
-					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
-					else {
-						emitWordFragment( state, output );
-						(*output->pos++) = c;
-						state->word = WORD_POS_PROPER_NAME;
-// fault
-					}
-					break;
-				case 'r':
-					if( state->word == WORD_POS_TRUE_1 ) state->word = WORD_POS_TRUE_2;
-					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
-					else {
-						emitWordFragment( state, output );
-						(*output->pos++) = c;
-						state->word = WORD_POS_PROPER_NAME;
-// fault
-					}
-					break;
-				case 'u':
-					if( state->word == WORD_POS_TRUE_2 ) state->word = WORD_POS_TRUE_3;
-					else if( state->word == WORD_POS_NULL_1 ) state->word = WORD_POS_NULL_2;
-					else if( state->word == WORD_POS_RESET ) state->word = WORD_POS_UNDEFINED_1;
-					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
-					else {
-						emitWordFragment( state, output );
-						(*output->pos++) = c;
-						state->word = WORD_POS_PROPER_NAME;
-// fault
-					}
-					break;
-				case 'e':
-					if( state->word == WORD_POS_TRUE_3 ) {
-						state->val.value_type = VALUE_TRUE;
-						state->word = WORD_POS_END;
-					}
-					else if( state->word == WORD_POS_FALSE_4 ) {
-						state->val.value_type = VALUE_FALSE;
-						state->word = WORD_POS_END;
-					}
-					else if( state->word == WORD_POS_UNDEFINED_3 ) state->word = WORD_POS_UNDEFINED_4;
-					else if( state->word == WORD_POS_UNDEFINED_7 ) state->word = WORD_POS_UNDEFINED_8;
-					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
-					else {
-						emitWordFragment( state, output );
-						(*output->pos++) = c;
-						state->word = WORD_POS_PROPER_NAME;
-// fault
-					}
-					break;
-				case 'n':
-					if( state->word == WORD_POS_RESET ) state->word = WORD_POS_NULL_1;
-					else if( state->word == WORD_POS_UNDEFINED_1 ) state->word = WORD_POS_UNDEFINED_2;
-					else if( state->word == WORD_POS_UNDEFINED_6 ) state->word = WORD_POS_UNDEFINED_7;
-					else if( state->word == WORD_POS_INFINITY_1 ) state->word = WORD_POS_INFINITY_2;
-					else if( state->word == WORD_POS_INFINITY_4 ) state->word = WORD_POS_INFINITY_5;
-					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
-					else {
-						emitWordFragment( state, output );
-						(*output->pos++) = c;
-						state->word = WORD_POS_PROPER_NAME;
-// fault
-					}
-					break;
-				case 'd':
-					if( state->word == WORD_POS_UNDEFINED_2 ) state->word = WORD_POS_UNDEFINED_3;
-					else if( state->word == WORD_POS_UNDEFINED_8 ) { state->val.value_type = VALUE_UNDEFINED; state->word = WORD_POS_END; }
-					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
-					else {
-						emitWordFragment( state, output );
-						(*output->pos++) = c;
-						state->word = WORD_POS_PROPER_NAME;
-// fault
-					}
-					break;
-				case 'i':
-					if( state->word == WORD_POS_UNDEFINED_5 ) state->word = WORD_POS_UNDEFINED_6;
-					else if( state->word == WORD_POS_INFINITY_3 ) state->word = WORD_POS_INFINITY_4;
-					else if( state->word == WORD_POS_INFINITY_5 ) state->word = WORD_POS_INFINITY_6;
-					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
-					else {
-						emitWordFragment( state, output );
-						(*output->pos++) = c;
-						state->word = WORD_POS_PROPER_NAME;
-// fault
-					}
-					break;
-				case 'l':
-					if( state->word == WORD_POS_NULL_2 ) state->word = WORD_POS_NULL_3;
-					else if( state->word == WORD_POS_NULL_3 ) {
-						state->val.value_type = VALUE_NULL;
-						state->word = WORD_POS_END;
-					}
-					else if( state->word == WORD_POS_FALSE_2 ) state->word = WORD_POS_FALSE_3;
-					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
-					else {
-						emitWordFragment( state, output );
-						(*output->pos++) = c;
-						state->word = WORD_POS_PROPER_NAME;
-// fault
-					}
-					break;
-				case 'f':
-					if( state->word == WORD_POS_RESET ) state->word = WORD_POS_FALSE_1;
-					else if( state->word == WORD_POS_UNDEFINED_4 ) state->word = WORD_POS_UNDEFINED_5;
-					else if( state->word == WORD_POS_INFINITY_2 ) state->word = WORD_POS_INFINITY_3;
-					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
-					else {
-						emitWordFragment( state, output );
-						(*output->pos++) = c;
-						state->word = WORD_POS_PROPER_NAME;
-// fault
-					}
-					break;
-				case 'a':
-					if( state->word == WORD_POS_FALSE_1 ) state->word = WORD_POS_FALSE_2;
-					else if( state->word == WORD_POS_NAN_1 ) state->word = WORD_POS_NAN_2;
-					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
-					else {
-						emitWordFragment( state, output );
-						(*output->pos++) = c;
-						state->word = WORD_POS_PROPER_NAME;
-// fault
-					}
-					break;
-				case 's':
-					if( state->word == WORD_POS_FALSE_3 ) state->word = WORD_POS_FALSE_4;
-					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
-					else {
-						emitWordFragment( state, output );
-						(*output->pos++) = c;
-						state->word = WORD_POS_PROPER_NAME;
-// fault
-					}
-					break;
-				case 'I':
-					if( state->word == WORD_POS_RESET ) state->word = WORD_POS_INFINITY_1;
-					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
-					else {
-						emitWordFragment( state, output );
-						(*output->pos++) = c;
-						state->word = WORD_POS_PROPER_NAME;
-// fault
-					}
-					break;
-				case 'N':
-					if( state->word == WORD_POS_RESET ) state->word = WORD_POS_NAN_1;
-					else if( state->word == WORD_POS_NAN_2 ) { state->val.value_type = state->negative ? VALUE_NEG_NAN : VALUE_NAN; state->word = WORD_POS_END; }
-					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
-					else {
-						emitWordFragment( state, output );
-						(*output->pos++) = c;
-						state->word = WORD_POS_PROPER_NAME;
-// fault
-					}
-					break;
-				case 'y':
-					if( state->word == WORD_POS_INFINITY_7 ) { state->val.value_type = state->negative ? VALUE_NEG_INFINITY : VALUE_INFINITY; state->word = WORD_POS_END; }
-					else if( state->word == WORD_POS_FIELD || state->word == WORD_POS_PROPER_NAME ) (*output->pos++) = c;
-					else {
-						emitWordFragment( state, output );
-						(*output->pos++) = c;
-						state->word = WORD_POS_PROPER_NAME;
-// fault
-					}
-					break;
-					//
-					//----------------------------------------------------------
-				default:
-					if( c == '.' ) {
-						if( state->parse_context == CONTEXT_OBJECT_FIELD_VALUE
-						  ||( state->parse_context == CONTEXT_OBJECT_FIELD
-						    && state->word == WORD_POS_FIELD ) ) {
-							(*output->pos++) = c;
-							if( !state->val.value_type )
-								state->val.value_type = VALUE_OPERATOR;
-						}
-						break;
-					}
-					if( state->word == WORD_POS_RESET ) {
-						if( (c >= '0' && c <= '9') || (c == '+') || (c == '.') )
-						{
-							LOGICAL fromDate;
- // to unwind last character past number.
-							const char *_msg_input;
-							// always reset this here....
-							// keep it set to determine what sort of value is ready.
-							if( !state->gatheringNumber ) {
-								state->exponent = FALSE;
-								state->exponent_sign = FALSE;
-								state->exponent_digit = FALSE;
-								fromDate = FALSE;
-								state->fromHex = FALSE;
-								state->val.float_result = (c == '.');
-								state->val.string = output->pos;
-  // terminate the string.
-								(*output->pos++) = c;
-							}
-							else
-							{
-							continueNumber:
-								fromDate = state->numberFromDate;
-							}
-							while( (_msg_input = input->pos), ((state->n < input->size) && (c = GetUtfChar( &input->pos ))) )
-							{
-								//lprintf( "Number input:%c", c );
-								state->col++;
-								state->n = (input->pos - input->buf);
-								if( state->n > input->size ) DebugBreak();
-								// leading zeros should be forbidden.
-								if( c == '_' )
-									continue;
-								if( c >= '0' && c <= '9' )
-								{
-									(*output->pos++) = c;
-									if( state->exponent )
-										state->exponent_digit = TRUE;
-								}
-#if 0
-								// to be implemented
-								else if( c == ':' || c == '-' || c == 'Z' || c == '+' ) {
-									/* toISOString()
-									var today = new Date('05 October 2011 14:48 UTC');
-									console.log(today.toISOString());
-									// Returns 2011-10-05T14:48:00.000Z
-									*/
-									(*output->pos++) = c;
-								}
-#endif
-								else if( (c == 'x' || c == 'b' || c == 'o' || c == 'X' || c == 'B' || c == 'O')
-									&& (output->pos - output->buf) == 1
-									&& output->buf[0] == '0' ) {
-									// hex conversion.
-									if( !state->fromHex ) {
-										state->fromHex = TRUE;
- // force lower case.
-										(*output->pos++) = c | 0x20;
-									}
-									else {
-										state->status = FALSE;
-										if( !state->pvtError ) state->pvtError = VarTextCreate();
-										vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-										break;
-									}
-								}
-								else if( (c == 'e') || (c == 'E') )
-								{
-									if( !state->exponent ) {
-										state->val.float_result = 1;
-										(*output->pos++) = c;
-										state->exponent = TRUE;
-									}
-									else {
-										state->status = FALSE;
-										if( !state->pvtError ) state->pvtError = VarTextCreate();
-										vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-										break;
-									}
-								}
-								else if( c == '-' || c == '+' ) {
-									if( !state->exponent ) {
-										state->status = FALSE;
-										if( !state->pvtError ) state->pvtError = VarTextCreate();
-										vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-										break;
-									}
-									else {
-										if( !state->exponent_sign && !state->exponent_digit ) {
-											(*output->pos++) = c;
-											state->exponent_sign = 1;
-										}
-										else {
-											state->status = FALSE;
-											if( !state->pvtError ) state->pvtError = VarTextCreate();
-											vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-											break;
-										}
-									}
-								}
-								else if( c == '.' )
-								{
-									if( !state->val.float_result && !state->fromHex ) {
-										state->val.float_result = 1;
-										(*output->pos++) = c;
-									}
-									else {
-										state->status = FALSE;
-										if( !state->pvtError ) state->pvtError = VarTextCreate();
-										vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-										break;
-									}
-								}
-								else
-								{
-									// in non streaming mode; these would be required to follow
-									if( c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == 0xFEFF
-										|| c == ',' || c == ']' || c == '}' || c == ':' ) {
-										//lprintf( "Non numeric character received; push the value we have" );
-										(*output->pos) = 0;
-										break;
-									}
-									else {
-										state->status = FALSE;
-										if( !state->pvtError ) state->pvtError = VarTextCreate();
-										vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-										break;
-									}
-								}
-							}
-							if( input ) {
-								input->pos = _msg_input;
-								state->n = (input->pos - input->buf);
-								if( state->n > input->size ) DebugBreak();
-							}
-							//LogBinary( (uint8_t*)output->buf, output->size );
-							if( input && (!state->complete_at_end) && state->n == input->size )
-							{
-								//lprintf( "completion mode is not end of string; and at end of string" );
-								state->gatheringNumber = TRUE;
-								state->numberFromDate = fromDate;
-							}
-							else
-							{
-								(*output->pos++) = 0;
-								state->val.stringLen = (output->pos - state->val.string) - 1;
-								state->gatheringNumber = FALSE;
-								//lprintf( "result with number:%s", state->val.string );
-								if( state->val.float_result )
-								{
-									CTEXTSTR endpos;
-									state->val.result_d = FloatCreateFromText( state->val.string, &endpos );
-									if( state->negative ) { state->val.result_d = -state->val.result_d; state->negative = FALSE; }
-								}
-								else
-								{
-									state->val.result_n = IntCreateFromText( state->val.string );
-									if( state->negative ) { state->val.result_n = -state->val.result_n; state->negative = FALSE; }
-								}
-								state->val.value_type = VALUE_NUMBER;
-								if( state->parse_context == CONTEXT_UNKNOWN ) {
-									state->completed = TRUE;
-								}
-							}
-							break;
-						}
-					}
-					if( state->word == WORD_POS_RESET ) {
-						if( state->val.value_type ) {
-							if( state->val.string )
-								state->val.stringLen = (output->pos - state->val.string);
-							lprintf( "Start new proper name; push value:%s", value_type_names[state->val.value_type] );
-							AddDataItem( state->elements, &state->val );
-							RESET_STATE_VAL();
-						}
-						state->word = WORD_POS_PROPER_NAME;
-						state->val.value_type = VALUE_OPERATOR;
-						state->val.string = output->pos;
-					}
-					if( c < 128 ) (*output->pos++) = c;
-					else output->pos += ConvertToUTF8( output->pos, c );
- // default
-					break;
+					continue;
 				}
- // default of high level switch
-				break;
-			}
-			// got a completed value; skip out
-			if( state->completed ) {
-				if( state->word == WORD_POS_END ) {
-					state->word = WORD_POS_RESET;
+				switch( gatherIdentifier( state, input->buf, &input->pos, input->size, &c, &output->pos ) ) {
+ // no data.  C will not have data.
+				case 0:
+					break;
+ // c has a character
+				case 1:
+					goto retry;
+ // length, but ran out of data, no next character.
+				case 2:
+					commitPending( state );
+					break;
+ // length, but ran out of data, no next character.
+				case 3:
+					commitPending( state );
+					goto retry;
 				}
-				break;
 			}
 		}
 		//lprintf( "at end... %d %d comp:%d", state->n, input->size, state->completed );
 		if( input ) {
 			if( state->n >= input->size ) {
-				DeleteFromSet( PARSE_BUFFER, jpsd.parseBuffers, input );
-				if( state->gatheringString || state->gatheringNumber || state->parse_context == CONTEXT_OBJECT_FIELD ) {
+				DeleteFromSet( PARSE_BUFFER, vpsd.parseBuffers, input );
+				if( state->gatheringString || state->gatheringNumber || state->word != WORD_POS_RESET ) {
 					//lprintf( "output is still incomplete? " );
 					PrequeLink( state->outQueue, output );
 					retval = 0;
 				}
 				else {
 					PushLink( state->outBuffers, output );
-					if( state->parse_context == CONTEXT_UNKNOWN
-					  && ( state->val.value_type != VALUE_UNSET
+					if( state->parse_context == CONTEXT_OBJECT_FIELD
+					  && ( state->val.value_type != VESL_VALUE_UNSET
 					     || state->elements[0]->Cnt ) ) {
 						state->completed = TRUE;
 						retval = 1;
@@ -59764,8 +59246,9 @@ int vesl_parse_add_data( struct json_parse_state *state
 		// some error condition; cannot resume parsing.
 		return -1;
 	}
+	state->root = NULL;
 	if( state->completed ) {
-		if( state->val.value_type != VALUE_UNSET ) {
+		if( state->val.value_type != VESL_VALUE_UNSET ) {
 			lprintf( "Final completed, push expression; push value:%s", value_type_names[state->val.value_type] );
 			AddDataItem( state->elements, &state->val );
 			RESET_STATE_VAL();
@@ -59774,48 +59257,122 @@ int vesl_parse_add_data( struct json_parse_state *state
 	}
 	return retval;
 }
-static void vesl_dump_parse_level( PDATALIST pdl, int level ) {
-	struct json_value_container *val;
-	INDEX idx;
-	int n;
-	DATA_FORALL( pdl, idx, struct json_value_container *, val ) {
-		for( n = 0; n < level; n++ )
-			printf( "\t" );
-		if( val->value_type < 0 )
-			printf( "undefined" );
-		else if( val->value_type < NUM_VALUE_NAMES )
-			printf( "%s:", value_type_names[val->value_type] );
-		else
-			printf( "%d:", val->value_type );
-		if( val->name )
-			printf( "NAME(%s)", val->name );
-		if( val->string )
-			printf( "STRING(%*.*s)", val->stringLen, val->stringLen, val->string );
-		printf( "\n" );
-		if( val->contains )
-			vesl_dump_parse_level( val->contains, level + 1 );
-	}
+void vesl_preinit_state( struct vesl_parse_state *state ) {
+	struct vesl_parse_context *old_context = GetFromSet( PARSE_CONTEXT, &vpsd.parseContexts );
+#ifdef _DEBUG_PARSING
+	lprintf( "Begin a new object; previously pushed into elements; but wait until trailing comma or close previously:%d", val.value_type );
+#endif
+	// it's going to be an expression list.
+	state->val.value_type = VESL_VALUE_EXPRESSION;
+	old_context->context = state->parse_context;
+	old_context->elements = state->elements;
+	old_context->valState = state->val;
+	state->elements = state->val._contains;
+	if( !state->elements ) state->elements = GetFromSet( PDATALIST, &vpsd.dataLists );
+	if( !state->elements[0] ) state->elements[0] = CreateDataList( sizeof( state->val ) );
+	//if( !state->root ) state->root = state->elements[0];
+	//else state->elements[0]->Cnt = 0;
+	PushLink( state->context_stack, old_context );
+	RESET_STATE_VAL();
+	state->parse_context = CONTEXT_OBJECT_FIELD;
 }
-static void vesl_dump_parse( PDATALIST pdl ) {
-	vesl_dump_parse_level( pdl, 0 );
+/* I guess this is a good parser */
+static struct vesl_parse_state * vesl_begin_parse( void )
+{
+//New( struct vesl_parse_state );
+	struct vesl_parse_state *state = GetFromSet( PARSE_STATE, &vpsd.parseStates );
+	vesl_state_init( state );
+	return state;
+}
+static PDATALIST vesl_parse_get_data( struct vesl_parse_state *state ) {
+	PDATALIST *result = state->elements;
+// CreateDataList( sizeof( state->val ) );
+	state->elements = GetFromSet( PDATALIST, &vpsd.dataLists );
+	if( !state->elements[0] ) state->elements[0] = CreateDataList( sizeof( state->val ) );
+	else state->elements[0]->Cnt = 0;
+	return result[0];
+}
+static void _vesl_dispose_message( PDATALIST *msg_data )
+{
+	struct vesl_value_container *val;
+	INDEX idx;
+	if( !msg_data ) return;
+	DATA_FORALL( (*msg_data), idx, struct vesl_value_container*, val )
+	{
+		// names and string buffers for JSON parsed values in a single buffer
+		// associated with the root message.
+		//if( val->name ) Release( val->name );
+		//if( val->string ) Release( val->string );
+		if( val->_contains )
+			_vesl_dispose_message( val->_contains );
+	}
+	// quick method
+	DeleteFromSet( PDATALIST, vpsd.dataLists, msg_data );
+	(*msg_data) = NULL;
+	//DeleteDataList( msg_data );
+}
+static void vesl_parse_dispose_state( struct vesl_parse_state **ppState ) {
+	struct vesl_parse_state *state = (*ppState);
+	struct vesl_parse_context *old_context;
+	PPARSE_BUFFER buffer;
+	_vesl_dispose_message( state->elements );
+	//DeleteDataList( &state->elements );
+	while( buffer = (PPARSE_BUFFER)PopLink( state->outBuffers ) ) {
+		Deallocate( const char *, buffer->buf );
+		DeleteFromSet( PARSE_BUFFER, vpsd.parseBuffers, buffer );
+	}
+	{
+		char *buf;
+		INDEX idx;
+		LIST_FORALL( state->outValBuffers[0], idx, char*, buf ) {
+			Deallocate( char*, buf );
+		}
+		DeleteFromSet( PLIST, vpsd.listSet, state->outValBuffers );
+		//DeleteList( &state->outValBuffers );
+	}
+	while( buffer = (PPARSE_BUFFER)DequeLinkNL( state->inBuffers ) )
+		DeleteFromSet( PARSE_BUFFER, vpsd.parseBuffers, buffer );
+	while( buffer = (PPARSE_BUFFER)DequeLinkNL( state->outQueue ) ) {
+		Deallocate( const char*, buffer->buf );
+		DeleteFromSet( PARSE_BUFFER, vpsd.parseBuffers, buffer );
+	}
+	DeleteFromSet( PLINKQUEUE, vpsd.linkQueues, state->inBuffers );
+	//DeleteLinkQueue( &state->inBuffers );
+	DeleteFromSet( PLINKQUEUE, vpsd.linkQueues, state->outQueue );
+	//DeleteLinkQueue( &state->outQueue );
+	DeleteFromSet( PLINKSTACK, vpsd.linkStacks, state->outBuffers );
+	//DeleteLinkStack( &state->outBuffers );
+	//DeleteFromSet( PARSE_CONTEXT, vpsd.parseContexts, state->context );
+	while( (old_context = (struct vesl_parse_context *)PopLink( state->context_stack )) ) {
+		//lprintf( "warning unclosed contexts...." );
+		DeleteFromSet( PARSE_CONTEXT, vpsd.parseContexts, old_context );
+	}
+	if( state->context_stack )
+		DeleteFromSet( PLINKSTACK, vpsd.linkStacks, state->context_stack );
+	//DeleteLinkStack( &state->context_stack );
+	DeleteFromSet( PARSE_STATE, vpsd.parseStates, state );
+	//Deallocate( struct vesl_parse_state *, state );
+	(*ppState) = NULL;
 }
 LOGICAL vesl_parse_message( const char * msg
 	, size_t msglen
 	, PDATALIST *_msg_output ) {
-	struct json_parse_state *state = json_begin_parse();
-	static struct json_parse_state *_state;
+	struct vesl_parse_state *state = vesl_begin_parse();
+	static struct vesl_parse_state *_state;
+	int result;
+	vesl_preinit_state( state );
 	state->complete_at_end = TRUE;
-	int result = vesl_parse_add_data( state, msg, msglen );
-	if( _state ) json_parse_dispose_state( &_state );
+	result = vesl_parse_add_data( state, msg, msglen );
+	if( _state ) vesl_parse_dispose_state( &_state );
 	if( result > 0 ) {
-		(*_msg_output) = json_parse_get_data( state );
+		(*_msg_output) = vesl_parse_get_data( state );
 		vesl_dump_parse( (*_msg_output) );
 		_state = state;
 		//vesl_parse_dispose_state( &state );
 		return TRUE;
 	}
 	(*_msg_output) = NULL;
-	jpsd.last_parse_state = state;
+	vpsd.last_parse_state = state;
 	_state = state;
 	return FALSE;
 }
@@ -59827,7 +59384,7 @@ void vesl_dispose_decoded_message( struct vesl_context_object *format
 }
 void vesl_dispose_message( PDATALIST *msg_data )
 {
-	json_dispose_message( msg_data );
+	//vesl_dispose_message( msg_data );
 	return;
 }
 #undef GetUtfChar

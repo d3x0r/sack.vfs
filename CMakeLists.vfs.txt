@@ -95,6 +95,7 @@ SET( EXTRA_HEADERS
         ${SACK_BASE}/include/filesys.h
         ${SACK_BASE}/include/sack_vfs.h
         ${SACK_BASE}/include/json_emitter.h
+        ${SACK_BASE}/include/vesl_emitter.h
         ${SACK_BASE}/include/html5.websocket.client.h
         ${SACK_BASE}/include/html5.websocket.h
         ${SACK_BASE}/include/http.h

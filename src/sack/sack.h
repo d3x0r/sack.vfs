@@ -11532,69 +11532,69 @@ JSON_EMITTER_PROC( struct json_context *, json_create_context )( void );
 // Begin the definition of a json formatting object.
 // the root element must be a array or an object
 JSON_EMITTER_PROC( struct json_context_object *, json_create_object )( struct json_context *context
-																							, size_t object_size );
+                                                                     , size_t object_size );
 // Begin the definition of a json formatting object.
 // the root element must be a array or an object
 JSON_EMITTER_PROC( struct json_context_object *, json_create_array )( struct json_context *context
-																						  , size_t offset
-																						  , enum JSON_ObjectElementTypes type
-																						  , size_t count
-																						  , size_t count_offset
-																						  );
+                                                                    , size_t offset
+                                                                    , enum JSON_ObjectElementTypes type
+                                                                    , size_t count
+                                                                    , size_t count_offset
+                                                                    );
 // add a member element to a json object
 // if the member element is a object type, then a new context_object results, to which members may be added.
 JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member )( struct json_context_object *object
-																								 , CTEXTSTR name
-																								 , size_t offset
-																								 , enum JSON_ObjectElementTypes type
-																								 , size_t object_size
-																								 );
+                                                                         , CTEXTSTR name
+                                                                         , size_t offset
+                                                                         , enum JSON_ObjectElementTypes type
+                                                                         , size_t object_size
+                                                                         );
 // more complex method; add_object_member actually calls this to implement a 0 byte array of the same type.
 //  object_size is used if the type is JSON_Element_ObjectPointer for the parsing to be able to allocate
 // the message part.
 JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_array )( struct json_context_object *format
-																										 , CTEXTSTR name
-																										 , size_t offset
-																										 , enum JSON_ObjectElementTypes type
+                                                                               , CTEXTSTR name
+                                                                               , size_t offset
+                                                                               , enum JSON_ObjectElementTypes type
                                                                                , size_t object_size
-																										 , size_t count
-																										 , size_t count_offset
-																										 );
+                                                                               , size_t count
+                                                                               , size_t count_offset
+                                                                               );
 // more complex method; add_object_member actually calls this to implement a 0 byte array of the same type.
 //  object_size is used if the type is JSON_Element_ObjectPointer for the parsing to be able to allocate
 // the message part.  array is represented as a pointer, which will be dynamically allocated
 JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_array_pointer )( struct json_context_object *format
-																										 , CTEXTSTR name
-																										 , size_t offset
-																										 , enum JSON_ObjectElementTypes type
-																										 , size_t count_offset
-																										 );
+                                                                                       , CTEXTSTR name
+                                                                                       , size_t offset
+                                                                                       , enum JSON_ObjectElementTypes type
+                                                                                       , size_t count_offset
+                                                                                       );
 // adds a reference to a PLIST as an array with the content of the array specified as the type
 JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_list )( struct json_context_object *object
-																										, CTEXTSTR name
+                                                                              , CTEXTSTR name
   // offset of the list
-																										, size_t offset
+                                                                              , size_t offset
  // of of the members of the list
-																										, enum JSON_ObjectElementTypes content_type
+                                                                              , enum JSON_ObjectElementTypes content_type
   // object size if required
-																										, size_t object_size
-																										);
+                                                                              , size_t object_size
+                                                                              );
 // this allows recursive structures, so the structure may contain a reference to itself.
 // this allows buildling other objects and referencing them instead of building them in-place
 JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_object )( struct json_context_object *object
-																										  , CTEXTSTR name
-																										  , size_t offset
-																										  , enum JSON_ObjectElementTypes type
-																										  , struct json_context_object *child_object
-																										  );
+                                                                                , CTEXTSTR name
+                                                                                , size_t offset
+                                                                                , enum JSON_ObjectElementTypes type
+                                                                                , struct json_context_object *child_object
+                                                                                );
 JSON_EMITTER_PROC( struct json_context_object *, json_add_object_member_user_routine )( struct json_context_object *object
-																												  , CTEXTSTR name
-																												  , size_t offset, enum JSON_ObjectElementTypes type
-																												  , size_t object_size
-																												  , void (*user_formatter)(PVARTEXT,CPOINTER) );
+                                                                                      , CTEXTSTR name
+                                                                                      , size_t offset, enum JSON_ObjectElementTypes type
+                                                                                      , size_t object_size
+                                                                                      , void (*user_formatter)(PVARTEXT,CPOINTER) );
 // take a object format and a pointer to data and return a json message string
 JSON_EMITTER_PROC( TEXTSTR, json_build_message )( struct json_context_object *format
-                                             , POINTER msg );
+                                                , POINTER msg );
 // take a json string and a format and fill in a structure from the text.
 // tests all formats, to first-match;
 // take a json string and a format and fill in a structure from the text.
@@ -11607,7 +11607,7 @@ JSON_EMITTER_PROC( TEXTSTR, json_build_message )( struct json_context_object *fo
 JSON_EMITTER_PROC( LOGICAL, json_parse_message )(const char * msg
                                                 , size_t msglen
                                                 , PDATALIST *msg_data_out
-																);
+                                                );
 // allocates a parsing context and begins parsing data.
 JSON_EMITTER_PROC( struct json_parse_state *, json_begin_parse )( void );
 // return TRUE when a completed value/object is available.
@@ -11616,9 +11616,9 @@ JSON_EMITTER_PROC( struct json_parse_state *, json_begin_parse )( void );
 // to consume this internal data.  if this returns FALSE, then ther is no further object
 // to retrieve.
 JSON_EMITTER_PROC( int, json_parse_add_data )( struct json_parse_state *context
-                                                 , const char * msg
-                                                 , size_t msglen
-                                                 );
+                                             , const char * msg
+                                             , size_t msglen
+                                             );
 // these are common functions that work for json or json6 stream parsers
 JSON_EMITTER_PROC( PDATALIST, json_parse_get_data )( struct json_parse_state *context );
 JSON_EMITTER_PROC( void, json_parse_dispose_state )( struct json_parse_state **context );
@@ -11637,14 +11637,14 @@ JSON_EMITTER_PROC( PTEXT, json_parse_get_error )(struct json_parse_state *contex
 //   JSON(6?) support - undefined keyword value
 //       accept \uXXXX, \xXX, \[0-3]xx octal, \u{xxxxx} encodings in strings
 //       allow underscores in numbers to separate number groups ( works as ZWNBSP )
-JSON_EMITTER_PROC( LOGICAL, json6_parse_message )(const char * msg
-													, size_t msglen
-													, PDATALIST *msg_data_out
-																);
-JSON_EMITTER_PROC( LOGICAL, _json6_parse_message )(char * msg
-	, size_t msglen
-	, PDATALIST *msg_data_out
-	);
+JSON_EMITTER_PROC( LOGICAL, json6_parse_message )( const char * msg
+                                                 , size_t msglen
+                                                 , PDATALIST *msg_data_out
+                                                 );
+JSON_EMITTER_PROC( LOGICAL, _json6_parse_message )( char * msg
+                                                  , size_t msglen
+                                                  , PDATALIST *msg_data_out
+                                                  );
 // Add some data to parse for json stream (which may consist of multiple values)
 // return 1 when a completed value/object is available.
 // after returning 1, call json_parse_get_data.  It is possible that there is
@@ -11653,30 +11653,14 @@ JSON_EMITTER_PROC( LOGICAL, _json6_parse_message )(char * msg
 // to retrieve.
 // if this returns -1, an error in parsing has occured, and no further parsing can happen.
 JSON_EMITTER_PROC( int, json6_parse_add_data )( struct json_parse_state *context
-                                                 , const char * msg
-                                                 , size_t msglen
+                                              , const char * msg
+                                              , size_t msglen
+                                              );
+JSON_EMITTER_PROC( LOGICAL, json_decode_message )( struct json_context *format
+                                                 , PDATALIST parsedMsg
+                                                 , struct json_context_object **result_format
+                                                 , POINTER *msg_data_out
                                                  );
-// Add some data to parse for json stream (which may consist of multiple values)
-// return 1 when a completed value/object is available.
-// after returning 1, call json_parse_get_data.  It is possible that there is
-// still unconsumed data that can begin a new object.  Call this with NULL, 0 for data
-// to consume this internal data.  if this returns 0, then there is no further object
-// to retrieve.
-// if this returns -1, an error in parsing has occured, and no further parsing can happen.
-JSON_EMITTER_PROC( int, vesl_parse_add_data )( struct json_parse_state *context
-	, const char * msg
-	, size_t msglen
-	);
-// one shot, just process this one message.
-JSON_EMITTER_PROC( LOGICAL, vesl_parse_message )(const char * msg
-	, size_t msglen
-	, PDATALIST *msg_data_out
-	);
-JSON_EMITTER_PROC( LOGICAL, json_decode_message )(  struct json_context *format
-                                                  , PDATALIST parsedMsg
-                                                  , struct json_context_object **result_format
-                                                  , POINTER *msg_data_out
-												);
 enum json_value_types {
 	VALUE_UNDEFINED = -1
 	, VALUE_UNSET = 0
@@ -11707,49 +11691,6 @@ enum json_value_types {
 	, VALUE_DATE
  // = 13 no data; used in [,,,] as place holder of empty
 	, VALUE_EMPTY
-	// --- up to here is supports in JSON(6)
- // = 14 string needs to be parsed for expressions.
-	, VALUE_NEED_EVAL
- // contains
-	, VALUE_VARIABLE
- // code (string), contains
-	, VALUE_FUNCTION
- // code (string), contains[n] = parameters
-	, VALUE_FUNCTION_CALL
- //  ( ... ) or { ... } , string, contains[n] = value(s) last is THE value
-	, VALUE_EXPRESSION
- // Symbolic operator, with combination rules so the operator text is complete.
-	, VALUE_OPERATOR
- // 'if'  contains[1], contains[1], contains[2]
-	, VALUE_OP_IF
- // '?'  contains[N] expressions to evaluate
-	, VALUE_OP_TRINARY_THEN
- // ':'  contains[N] expressions to evaluate
-	, VALUE_OP_TRINARY_ELSE
- // 'switch'
-	, VALUE_OP_SWITCH
- // 'case'
-	, VALUE_OP_CASE
- // 'for'   no data, contains[0], contains[1], contains[2],
-	, VALUE_OP_FOR
- // 'break'  // strip optional label break
-	, VALUE_OP_BREAK
- // 'while'
-	, VALUE_OP_WHILE
- // 'do'
-	, VALUE_OP_DO
- // 'continue'
-	, VALUE_OP_CONTINUE
- // 'goto'
-	, VALUE_OP_GOTO
- // 'stop'
-	, VALUE_OP_STOP
- // 'this'
-	, VALUE_OP_THIS
- // 'holder'
-	, VALUE_OP_HOLDER
- // 'base'
-	, VALUE_OP_BASE
 };
 struct json_value_container {
   // name of this value (if it's contained in an object)
@@ -11795,6 +11736,162 @@ JSON_EMITTER_PROC( char*, json6_escape_string_length )( const char *string, size
 #ifdef __cplusplus
 } } SACK_NAMESPACE_END
 using namespace sack::network::json;
+#endif
+#endif
+#ifndef VESL_EMITTER_HEADER_INCLUDED
+#define VESL_EMITTER_HEADER_INCLUDED
+#ifdef VESL_EMITTER_SOURCE
+#define VESL_EMITTER_PROC(type,name) EXPORT_METHOD type CPROC name
+#else
+#define VESL_EMITTER_PROC(type,name) IMPORT_METHOD type CPROC name
+#endif
+#ifdef __cplusplus
+SACK_NAMESPACE namespace network { namespace vesl {
+#endif
+struct vesl_context_object_element;
+struct vesl_context_object;
+struct vesl_context;
+// take a vesl string and a format and fill in a structure from the text.
+// tests all formats, to first-match;
+// take a vesl string and a format and fill in a structure from the text.
+// if object does not fit all members (may have extra, but must have at least all members in message in format to return TRUE)
+// then it returns false; that is if a member is in the 'msg' parameter that is not in
+// the format, then the result is FALSE.
+//  PDATALIST is full of struct vesl_value_container
+// turns out numbers can be  hex, octal and binary numbers  (0x[A-F,a-f,0-9]*, 0b[0-1]*, 0[0-9]*)
+// slightly faster (17%) than vesl6_parse_message because of fewer possible checks.
+VESL_EMITTER_PROC( LOGICAL, vesl_parse_message )(const char * msg
+                                                , size_t msglen
+                                                , PDATALIST *msg_data_out
+																);
+// allocates a parsing context and begins parsing data.
+VESL_EMITTER_PROC( struct vesl_parse_state *, vesl_begin_parse )( void );
+// return TRUE when a completed value/object is available.
+// after returning TRUE, call vesl_parse_get_data.  It is possible that there is
+// still unconsumed data that can begin a new object.  Call this with NULL, 0 for data
+// to consume this internal data.  if this returns FALSE, then ther is no further object
+// to retrieve.
+VESL_EMITTER_PROC( int, vesl_parse_add_data )( struct vesl_parse_state *context
+                                                 , const char * msg
+                                                 , size_t msglen
+                                                 );
+// these are common functions that work for VESL stream parsers
+VESL_EMITTER_PROC( PDATALIST, vesl_parse_get_data )( struct vesl_parse_state *context );
+VESL_EMITTER_PROC( void, vesl_parse_dispose_state )( struct vesl_parse_state **context );
+VESL_EMITTER_PROC( void, vesl_parse_clear_state )(struct vesl_parse_state *context);
+VESL_EMITTER_PROC( PTEXT, vesl_parse_get_error )(struct vesl_parse_state *context);
+// Add some data to parse for vesl stream (which may consist of multiple values)
+// return 1 when a completed value/object is available.
+// after returning 1, call vesl_parse_get_data.  It is possible that there is
+// still unconsumed data that can begin a new object.  Call this with NULL, 0 for data
+// to consume this internal data.  if this returns 0, then there is no further object
+// to retrieve.
+// if this returns -1, an error in parsing has occured, and no further parsing can happen.
+VESL_EMITTER_PROC( int, vesl_parse_add_data )( struct vesl_parse_state *context
+	, const char * msg
+	, size_t msglen
+	);
+// one shot, just process this one message.
+VESL_EMITTER_PROC( LOGICAL, vesl_parse_message )(const char * msg
+	, size_t msglen
+	, PDATALIST *msg_data_out
+	);
+// any allocate mesage parts are released.
+VESL_EMITTER_PROC( void, vesl_dispose_expressions )(PDATALIST *msg_data);
+enum vesl_value_types {
+	VESL_VALUE_UNDEFINED = -1
+	, VESL_VALUE_UNSET = 0
+ //= 1 no data
+	, VESL_VALUE_NULL
+ //= 2 no data
+	, VESL_VALUE_TRUE
+ //= 3 no data
+	, VESL_VALUE_FALSE
+ //= 4 string
+	, VESL_VALUE_STRING
+ //= 5 string + result_d | result_n
+	, VESL_VALUE_NUMBER
+ //= 6 contains
+	, VESL_VALUE_OBJECT
+ //= 7 contains
+	, VESL_VALUE_ARRAY
+	// up to here is supported in VESL
+ //= 8 no data
+	, VESL_VALUE_NEG_NAN
+ //= 9 no data
+	, VESL_VALUE_NAN
+ //= 10 no data
+	, VESL_VALUE_NEG_INFINITY
+ //= 11 no data
+	, VESL_VALUE_INFINITY
+  // = 12 UNIMPLEMENTED
+	, VESL_VALUE_DATE
+ // = 13 no data; used in [,,,] as place holder of empty
+	, VESL_VALUE_EMPTY
+	// --- up to here is supports in VESL(6)
+ // = 14 string needs to be parsed for expressions.
+	, VESL_VALUE_NEED_EVAL
+ // contains
+	, VESL_VALUE_VARIABLE
+ // code (string), contains
+	, VESL_VALUE_FUNCTION
+ // code (string), contains[n] = parameters
+	, VESL_VALUE_FUNCTION_CALL
+ //  ( ... ) or { ... } , string, contains[n] = value(s) last is THE value
+	, VESL_VALUE_EXPRESSION
+ // Symbolic operator, with combination rules so the operator text is complete.
+	, VESL_VALUE_OPERATOR
+ // 'if'  contains[1], contains[1], contains[2]
+	, VESL_VALUE_OP_IF
+ // '?'  contains[N] expressions to evaluate
+	, VESL_VALUE_OP_TRINARY_THEN
+ // ':'  contains[N] expressions to evaluate
+	, VESL_VALUE_OP_TRINARY_ELSE
+ // 'switch'
+	, VESL_VALUE_OP_SWITCH
+ // 'case'
+	, VESL_VALUE_OP_CASE
+ // 'for'   no data, contains[0], contains[1], contains[2],
+	, VESL_VALUE_OP_FOR
+ // 'break'  // strip optional label break
+	, VESL_VALUE_OP_BREAK
+ // 'while'
+	, VESL_VALUE_OP_WHILE
+ // 'do'
+	, VESL_VALUE_OP_DO
+ // 'continue'
+	, VESL_VALUE_OP_CONTINUE
+ // 'goto'
+	, VESL_VALUE_OP_GOTO
+ // 'stop'
+	, VESL_VALUE_OP_STOP
+ // 'this'
+	, VESL_VALUE_OP_THIS
+ // 'holder'
+	, VESL_VALUE_OP_HOLDER
+ // 'base'
+	, VESL_VALUE_OP_BASE
+};
+struct vesl_value_container {
+ // value from above indiciating the type of this value
+	enum vesl_value_types value_type;
+   // the string value of this value (strings and number types only)
+	char *string;
+	size_t stringLen;
+  // boolean whether to use result_n or result_d
+	int float_result;
+	union {
+		double result_d;
+		int64_t result_n;
+		//struct vesl_value_container *nextToken;
+	};
+	//PDATALIST contains;  // list of struct vesl_value_container that this contains.
+  // acutal source datalist(?)
+	PDATALIST *_contains;
+};
+#ifdef __cplusplus
+} } SACK_NAMESPACE_END
+using namespace sack::network::vesl;
 #endif
 #endif
 #ifndef HTML5_WEBSOCKET_CLIENT_INCLUDED
