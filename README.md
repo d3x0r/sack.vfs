@@ -1001,6 +1001,7 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.129 - (cont) merge linux changes.
 - 0.9.128 - (cont) lost some changes; reapply on windows.
 - 0.9.127 - (cont) Also implement respecting keep-alive on connection.
 - 0.9.126 - (cont)

@@ -1,6 +1,6 @@
 {
   "name": "sack.vfs",
-  "version": "0.9.128",
+  "version": "0.9.129",
   "repository": {
       "type": "git",
       "url": "https://github.com/d3x0r/sack.vfs/tree/sack-gui",
