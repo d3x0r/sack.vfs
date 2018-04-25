@@ -534,6 +534,8 @@ static Local<Object> makeRequest( Isolate *isolate, struct optionStrings *string
 	Local<Object> socket;
 	req->Set( strings->connectionString->Get( isolate ), socket = makeSocket( isolate, pc ) );
 	req->Set( strings->headerString->Get( isolate ), socket->Get( strings->headerString->Get( isolate ) ) );
+	if( !GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) )
+		DebugBreak();
 	req->Set( strings->urlString->Get( isolate )
 		, String::NewFromUtf8( isolate
 			, GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) ) );
@@ -568,7 +570,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					httpObject *httpInternal = httpObject::Unwrap<httpObject>( http );
 					httpInternal->ssl = myself->ssl;
 					httpInternal->pc = eventMessage->pc;
-
+               //lprintf( "New request..." );
 					argv[0] = makeRequest( isolate, strings, eventMessage->pc );
 					argv[1] = http;
 					Local<Function> cb = Local<Function>::New( isolate, myself->requestCallback );
@@ -1065,6 +1067,21 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	bool doSend = true;
 	httpObject* obj = Unwrap<httpObject>( args.This() );
+	int include_close = 1;
+	{
+		PLIST headers = GetWebSocketHeaders( obj->pc );
+		INDEX idx;
+		struct HttpField *header;
+		LIST_FORALL( headers, idx, struct HttpField *, header ) {
+			if( StrCmp( GetText( header->name ), "Connection" ) == 0 ) {
+				if( StrCaseCmp( GetText( header->value ), "keep-alive" ) == 0 ) {
+               include_close = 0;
+				}
+			}
+		}
+      if( !include_close )
+			vtprintf( obj->pvtResult, "Connection: keep-alive\r\n" );
+	}
 	if( args.Length() > 0 ) {
 		if( args[0]->IsString() ) {
 			String::Utf8Value body( args[0] );
@@ -1104,7 +1121,15 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		else
 			SendTCP( obj->pc, GetText( buffer ), GetTextSize( buffer ) );
 	}
-	RemoveClientEx( obj->pc, 0, 1 );
+	{
+      if( include_close )
+			RemoveClientEx( obj->pc, 0, 1 );
+		else {
+         //lprintf( "End a request..." );
+			EndHttp( GetWebSocketHttpState( obj->pc ) );
+		}
+	}
+
 	VarTextEmpty( obj->pvtResult );
 }
 
@@ -1112,6 +1137,7 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 	wssObject *wss = (wssObject*)psv;
 	if( !wss->requestCallback.IsEmpty() ) {
 		struct wssEvent *pevt = GetWssEvent();
+      //lprintf( "posting request event to JS" );
 		(*pevt).eventType = WS_EVENT_REQUEST;
 		(*pevt). pc = pc;
 		(*pevt)._this = wss;
