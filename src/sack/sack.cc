@@ -8,6 +8,7 @@
  BAT[1] = name space; directory offsets land in a block referenced by this chain
  */
 #define SACK_VFS_SOURCE
+#if 1
 /* Includes the system platform as required or appropriate. If
    under a linux system, include appropriate basic linux type
    headers, if under windows pull "windows.h".
@@ -6915,7 +6916,7 @@ using namespace sack::timers;
 #endif
 #endif
  // tolower on linux
-#include <ctype.h>
+#  include <ctype.h>
 /*
  *  Created By Jim Buckeyne
  *
@@ -10337,6 +10338,15 @@ SQLGETOPTION_PROC( void, DropOptionODBC )( PODBC odbc );
 SQLGETOPTION_PROC( void, FindOptions )( PODBC odbc, PLIST *result_list, CTEXTSTR name );
 _OPTION_NAMESPACE_END _SQL_NAMESPACE_END SACK_NAMESPACE_END
 	USE_OPTION_NAMESPACE
+#endif
+#else
+#  include <sack.h>
+ // tolower on linux
+//#include <filesys.h>
+//#include <procreg.h>
+//#include <salty_generator.h>
+//#include <sack_vfs.h>
+//#include <sqlgetoption.h>
 #endif
 SACK_VFS_NAMESPACE
 //#define PARANOID_INIT
@@ -47654,6 +47664,8 @@ int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
 				//start = 0; // new packet and still collecting header....
 				for( pos = 0; ( pos < size ) && !pHttpState->final; pos++ )
 				{
+					if( (pos - start - bLine) < 0 )
+						continue;
 					if( c[pos] == '\r' )
 						bLine++;
 					else if( c[pos] == '\n' )
@@ -52249,7 +52261,6 @@ HTML5_WEBSOCKET_PROC( PLIST, GetWebSocketHeaders )( PCLIENT pc );
 */
 HTML5_WEBSOCKET_PROC( PTEXT, GetWebSocketResource )( PCLIENT pc );
 HTML5_WEBSOCKET_PROC( HTTPState, GetWebSocketHttpState )( PCLIENT pc );
-HTML5_WEBSOCKET_PROC( void, ResetWebsocketRequestHandler )( PCLIENT pc_client );
 HTML5_WEBSOCKET_NAMESPACE_END
 USE_HTML5_WEBSOCKET_NAMESPACE
 #endif
@@ -52418,14 +52429,6 @@ static void HandleData( HTML5WebSocket socket, PCLIENT pc, POINTER buffer, size_
 		}
 	}
 }
-void ResetWebsocketRequestHandler( PCLIENT pc ) {
-	HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc, 0 );
- // closing/closed....
-	if( !socket ) return;
-	socket->flags.initial_handshake_done = 0;
-	socket->flags.http_request_only = 0;
-   EndHttp( socket->http_state );
-}
 static void CPROC destroyHttpState( HTML5WebSocket socket, PCLIENT pc_client ) {
 	//HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc_client, 0 );
 	if( socket->flags.in_open_event ) {
@@ -52470,7 +52473,6 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 		TEXTSTR tmp = (TEXTSTR)buffer;
 #endif
 		//LogBinary( buffer, length );
-		//lprintf( "handle data: handshake: %d",socket->flags.initial_handshake_done );
 		if( !socket->flags.initial_handshake_done || socket->flags.http_request_only )
 		{
 			//lprintf( WIDE("Initial handshake is not done...") );
@@ -52498,9 +52500,9 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 						socket->flags.initial_handshake_done = 1;
 						socket->flags.http_request_only = 1;
 						socket->flags.in_open_event = 1;
-						if( socket->input_state.on_request ) {
+						if( socket->input_state.on_request )
 							socket->input_state.on_request( pc, socket->input_state.psv_on );
-						} else {
+						else {
 							socket->flags.in_open_event = 0;
 							RemoveClient( pc );
 							return;
@@ -52763,7 +52765,6 @@ static void CPROC connected( PCLIENT pc_server, PCLIENT pc_new )
 		socket->input_state.flags.use_ssl = 1;
  // start a new http state collector
 	socket->http_state = CreateHttpState();
-	//lprintf( "Init socket: handshake: %p %p  %d", pc_new, socket, socket->flags.initial_handshake_done );
 	SetNetworkLong( pc_new, 0, (uintptr_t)socket );
 	SetNetworkLong( pc_new, 1, (uintptr_t)&socket->input_state );
 	SetNetworkReadComplete( pc_new, read_complete );
@@ -60325,7 +60326,6 @@ void ClearClient( PCLIENT pc DBG_PASS )
 #endif
  // clear all information...
 	MemSet( pc, 0, sizeof( CLIENT ) );
-	// Socket is now 0; which for linux is a valid handle... which is what I get for events...
 	pc->csLockRead = csr;
 	pc->csLockWrite = csw;
 	pc->lpUserData = pbtemp;
@@ -60431,10 +60431,8 @@ void TerminateClosedClientEx( PCLIENT pc DBG_PASS )
 		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		//NetworkUnlock( pc );
 	}
-#ifdef LOG_PENDING
 	else
 		lprintf( WIDE("Client's state was not CLOSED...") );
-#endif
 }
 //----------------------------------------------------------------------------
 #ifdef _WIN32
@@ -61199,10 +61197,7 @@ static uintptr_t CPROC NetworkThreadProc( PTHREAD thread );
 void RemoveThreadEvent( PCLIENT pc ) {
 	struct peer_thread_info *thread = pc->this_thread;
 	// could be closed (accept, initial read, protocol causes close before ever completing getting scheduled)
-	if( !thread ) {
-		 lprintf( "didn't have one? %p", pc );
-		return;
-	}
+	if( !thread ) return;
 	{
 #  ifdef __MAC__
 #    ifdef __64__
@@ -61238,11 +61233,6 @@ void RemoveThreadEvent( PCLIENT pc ) {
 #    endif
 #  else
 		int r;
-#ifdef LOG_NETWORK_EVENT_THREAD
-		lprintf( "Removing event %p   %d from poll %d", pc, pc->Socket, thread->epoll_fd );
-#endif
-		//r = epoll_ctl( thread->epoll_fd, EPOLL_CTL_DISABLE, pc->Socket, NULL );
-		//if( r < 0 ) lprintf( "Error removing:%d", errno );
 		r = epoll_ctl( thread->epoll_fd, EPOLL_CTL_DEL, pc->Socket, NULL );
 		if( r < 0 ) lprintf( "Error removing:%d", errno );
 		if( pc->SocketBroadcast ) {
@@ -61278,12 +61268,8 @@ void AddThreadEvent( PCLIENT pc, int broadcast )
 {
 	struct peer_thread_info *peer = globalNetworkData.root_thread;
 	LOGICAL addPeer = FALSE;
-	if( pc->Socket <= 0 ) {
-		lprintf( "SAVED FROM A FATAL INFINITE EVENT LOOP");
-		return;
-	}
 #ifdef LOG_NOTICES
-	//if( globalNetworkData.flags.bLogNotices )
+	if( globalNetworkData.flags.bLogNotices )
 		lprintf( "Add thread event %p %d %08x  %s", pc, broadcast?pc->SocketBroadcast:pc->Socket, pc->dwFlags, broadcast?"broadcast":"direct" );
 #endif
 	if( !broadcast ) {
@@ -61396,15 +61382,12 @@ void AddThreadEvent( PCLIENT pc, int broadcast )
 			ev.events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET;
 		}
 #ifdef LOG_NETWORK_EVENT_THREAD
-		lprintf( "peer add socket %d to %d now has 0x%x events", pc->Socket, peer->epoll_fd, ev.events );
+		lprintf( "peer add socket to %d now has 0x%x events", peer->epoll_fd, ev.events );
 #endif
 		r = epoll_ctl( peer->epoll_fd, EPOLL_CTL_ADD, broadcast?pc->SocketBroadcast:pc->Socket, &ev );
 		if( r < 0 ) lprintf( "Error adding:%d %d", errno, broadcast?pc->SocketBroadcast:pc->Socket );
 #  endif
 	}
-#ifdef LOG_NETWORK_EVENT_THREAD
-	lprintf( "added thread: %p  %p  %p  ", pc, pc->this_thread, peer );
-#endif
 	if( !pc->this_thread ) {
 		LockedIncrement( &peer->nEvents );
 		pc->this_thread = peer;
@@ -61456,7 +61439,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 			lprintf( "process %d events", cnt );
 #  endif
 			for( n = 0; n < cnt; n++ ) {
-				closed = 0;
+            closed = 0;
 #  ifdef __MAC__
 				event_data = (struct event_data*)events[n].udata;
 #  ifdef LOG_NOTICES
@@ -61485,20 +61468,15 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 				if( events[n].events & EPOLLIN )
 #  endif
 				{
-					int locked;
-					locked = 1;
 					while( !NetworkLock( event_data->pc, 1 ) ) {
 						if( !( event_data->pc->dwFlags & CF_ACTIVE ) ) {
 #  ifdef LOG_NETWORK_EVENT_THREAD
 							lprintf( "failed lock dwFlags : %8x", event_data->pc->dwFlags );
 #  endif
-							locked = 0;
 							break;
 						}
-						if( event_data->pc->dwFlags & CF_AVAILABLE ) {
-							locked = 0;
+						if( event_data->pc->dwFlags & CF_AVAILABLE )
 							break;
-						}
 						Relinquish();
 					}
 					if( !( event_data->pc->dwFlags & ( CF_ACTIVE | CF_CLOSED ) ) ) {
@@ -61518,11 +61496,9 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #  endif
 					if( event_data->pc->dwFlags & CF_CLOSED ) {
 						PCLIENT pClient = event_data->pc;
-						// close notice went to application; all resources for application are gone.
-						// any pending reads are no longre valid.
-						//lprintf( "socket is already closed... what do we need to do?");
-						//WakeableSleep( 100 );
-						if( 0 && !pClient->bDraining )
+						lprintf( "socket is already closed... what do we need to do?");
+						WakeableSleep( 100 );
+						if( !pClient->bDraining )
 						{
 							size_t bytes_read;
 							// act of reading can result in a close...
@@ -61538,13 +61514,13 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 							}
 						}
 #  ifdef LOG_NOTICES
-						//if( globalNetworkData.flags.bLogNotices )
+						if( globalNetworkData.flags.bLogNotices )
 							lprintf(WIDE( "FD_CLOSE... %p  %08x" ), pClient, pClient->dwFlags );
 #  endif
 						//if( pClient->dwFlags & CF_ACTIVE )
 						{
 							// might already be cleared and gone..
-							//InternalRemoveClientEx( pClient, FALSE, TRUE );
+							InternalRemoveClientEx( pClient, FALSE, TRUE );
 							TerminateClosedClient( pClient );
 							closed = 1;
 						}
@@ -61593,10 +61569,10 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 						if( ( read == -1 ) && ( event_data->pc->dwFlags & CF_TOCLOSE ) )
 						{
 #ifdef LOG_NOTICES
-							//if( globalNetworkData.flags.bLogNotices )
+							if( globalNetworkData.flags.bLogNotices )
 								lprintf( WIDE( "Pending read failed - reset connection." ) );
 #endif
-							//InternalRemoveClientEx( event_data->pc, FALSE, FALSE );
+							InternalRemoveClientEx( event_data->pc, FALSE, FALSE );
 							TerminateClosedClient( event_data->pc );
 							closed = 1;
 						}
@@ -61611,12 +61587,9 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #endif
 						event_data->pc->dwFlags |= CF_READREADY;
 					}
-					if( locked )
-						LeaveCriticalSec( &event_data->pc->csLockRead );
+					LeaveCriticalSec( &event_data->pc->csLockRead );
 				}
 				if( !closed && ( event_data->pc->dwFlags & CF_ACTIVE ) ) {
-					int locked;
-					locked = 1;
 #  ifdef __MAC__
 					if( events[n].filter == EVFILT_WRITE )
 #  else
@@ -61628,21 +61601,14 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 							: ( !( event_data->pc->dwFlags & CF_ACTIVE ) ) ? "closed" : "writing" );
 #  endif
 						while( !NetworkLock( event_data->pc, 0 ) ) {
-							if( !( event_data->pc->dwFlags & CF_WRITEISPENDED ) ) {
-								locked = 0;
-								break;
-							}
 							if( !( event_data->pc->dwFlags & CF_ACTIVE ) ) {
 #  ifdef LOG_NETWORK_EVENT_THREAD
 								lprintf( "failed lock dwFlags : %8x", event_data->pc->dwFlags );
 #  endif
-								locked = 0;
 								break;
 							}
-							if( event_data->pc->dwFlags & CF_AVAILABLE ) {
-								locked = 0;
+							if( event_data->pc->dwFlags & CF_AVAILABLE )
 								break;
-							}
 							Relinquish();
 						}
 						if( !( event_data->pc->dwFlags & ( CF_ACTIVE | CF_CLOSED ) ) ) {
@@ -61738,11 +61704,8 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 							event_data->pc->dwFlags &= ~CF_WRITEISPENDED;
 							TCPWrite( event_data->pc );
 						}
-						if( locked )
-							NetworkUnlock( event_data->pc, 0 );
+						LeaveCriticalSec( &event_data->pc->csLockWrite );
 					}
-				} else {
-					//lprintf( "Already closed? Stop looping on this event? %p %d %x", event_data->pc, event_data->pc->Socket, event_data->pc->dwFlags );
 				}
 			}
 			// had some event  - return 1 to continue working...
@@ -63089,9 +63052,9 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 			return;
 		}
 		if( lpClient->lpFirstPending || ( lpClient->dwFlags & CF_WRITEPENDING ) ) {
-#ifdef LOG_DEBUG_CLOSING
+//#ifdef LOG_DEBUG_CLOSING
 			lprintf( "CLOSE WHILE WAITING FOR WRITE TO FINISH..." );
-#endif
+//#endif
 			lpClient->dwFlags |= CF_TOCLOSE;
 			return;
 		}
@@ -63195,14 +63158,12 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 		// UDP still needs to be done this way...
 		//
 		InternalRemoveClientExx( lpClient, bBlockNotify, bLinger DBG_RELAY );
-#ifndef __LINUX__
 		if( NetworkLock( lpClient, 0 ) && ((n=1),NetworkLock( lpClient, 1 )) ) {
 			TerminateClosedClient( lpClient );
 		}
 		else if( n ) {
 			NetworkUnlock( lpClient, 0 );
 		}
-#endif
 	}
 }
 CTEXTSTR GetSystemName( void )
@@ -63584,7 +63545,7 @@ void AcceptClient(PCLIENT pListen)
 	SetHandleInformation( (HANDLE)pNewClient->Socket, HANDLE_FLAG_INHERIT, 0 );
 #endif
 #ifdef LOG_SOCKET_CREATION
-	lprintf( WIDE("Accepted socket %p %d  (%d)"), pNewClient, pNewClient->Socket, nTemp );
+	Log2( WIDE("Accepted socket %d  (%d)"), pNewClient->Socket, nTemp );
 #endif
 	//DumpAddr( WIDE("Client's Address"), pNewClient->saClient );
 	{
@@ -63677,20 +63638,19 @@ void AcceptClient(PCLIENT pListen)
 					pNewClient->write.WriteComplete( pNewClient );
 				pNewClient->bWriteComplete = FALSE;
 			}
-			//lprintf( "Is it already closed HERE????");
-			if( pNewClient->Socket ) {
-#ifdef USE_WSA_EVENTS
-				if( globalNetworkData.flags.bLogNotices )
-					lprintf( WIDE( "SET GLOBAL EVENT (accepted socket added)  %p  %p" ), pNewClient, pNewClient->event );
-				EnqueLink( &globalNetworkData.client_schedule, pNewClient );
-				WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
-#endif
-#ifdef __LINUX__
-				AddThreadEvent( pNewClient, 0 );
-#endif
-			}
 			NetworkUnlockEx( pNewClient, 0 DBG_SRC );
 			NetworkUnlockEx( pNewClient, 1 DBG_SRC );
+		}
+		if( pNewClient->Socket ) {
+#ifdef USE_WSA_EVENTS
+			if( globalNetworkData.flags.bLogNotices )
+				lprintf( WIDE( "SET GLOBAL EVENT (accepted socket added)  %p  %p" ), pNewClient, pNewClient->event );
+			EnqueLink( &globalNetworkData.client_schedule, pNewClient );
+			WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
+#endif
+#ifdef __LINUX__
+			AddThreadEvent( pNewClient, 0 );
+#endif
 		}
 	}
  // accept failed...
@@ -64327,7 +64287,7 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 		{
 #ifdef DEBUG_SOCK_IO
 			//nCount++;
-			_lprintf( DBG_RELAY )( WIDE("FinishPendingRead %p %d %d" ), lpClient
+			_lprintf( DBG_RELAY )( WIDE("FinishPendingRead %d %d" )
 				, lpClient->RecvPending.dwUsed, lpClient->RecvPending.dwAvail );
 #endif
 			nRecv = recv(lpClient->Socket,
@@ -64420,7 +64380,7 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 		if( !( lpClient->dwFlags & CF_READWAITING ) )
 		{
 #ifdef LOG_PENDING
-			//lprintf( WIDE("Waiting on a queued read... result to callback.") );
+			lprintf( WIDE("Waiting on a queued read... result to callback.") );
 #endif
  // completed all of the read
 			if( ( !lpClient->RecvPending.dwAvail ||
@@ -64429,7 +64389,7 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 					lpClient->RecvPending.s.bStream ) ) )
 			{
 #ifdef LOG_PENDING
-				//lprintf( WIDE("Sending completed read to application") );
+				lprintf( WIDE("Sending completed read to application") );
 #endif
 				lpClient->dwFlags &= ~CF_READPENDING;
   // and there's a read complete callback available
