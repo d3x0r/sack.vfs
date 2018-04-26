@@ -106,7 +106,7 @@ private:
 		if( !args.Length() )
 			r = SRG_GetEntropy( obj->entropy, 32, true );
 		else {
-			int32_t bits = args[0]->Int32Value();
+			int32_t bits = args[0]->Int32Value( obj->isolate->GetCurrentContext() ).FromMaybe( 0 );
 			bool sign = false;
 			if( args.Length() > 1 )
 				sign = args[0]->BooleanValue();

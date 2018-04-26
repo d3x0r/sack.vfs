@@ -14,6 +14,8 @@
            "src/srg_module.cc",
            "src/websocket_module.cc",
            "src/network_module.cc",
+           "src/task_module.cc",
+           "src/config_module.cc",
           ],
 	'defines': [
           'TARGETNAME="sack_vfs.node"',

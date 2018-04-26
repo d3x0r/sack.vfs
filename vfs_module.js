@@ -1,24 +1,26 @@
 "use strict";
 
-var vfs;
+var sack;
 try{
-  vfs = require( "./build/RelWithDebInfo/sack_vfs.node" );
-} catch(err) { 
-  try { 
-    /*console.log( err ); */
-    vfs = require( "./build/Debug/sack_vfs.node" ); 
-  } catch( err ){  
-    try { 
-      /*console.log( err ); */
-      vfs = require( "./build/Release/sack_vfs.node" ); 
-    } catch( err ){  
-      console.log( err )
-    } 
-  } 
+  sack = require( "./build/RelWithDebInfo/sack_vfs.node" );
+} catch(err1) {
+  try {
+    //console.log( err1 );
+    sack = require( "./build/Debug/sack_vfs.node" );
+  } catch( err2 ){
+    try {
+      //console.log( err2 );
+      sack = require( "./build/Release/sack_vfs.node" );
+    } catch( err3 ){
+      console.log( err1 )
+      console.log( err2 )
+      console.log( err3 )
+    }
+  }
 }
 
-vfs.JSON6.stringify = JSON.stringify;
-vfs.JSON.stringify = JSON.stringify;
+sack.JSON6.stringify = JSON.stringify;
+sack.JSON.stringify = JSON.stringify;
 //vfs.
 var disk = sack.Volume();
 require.extensions['.json6'] = function (module, filename) {
@@ -27,23 +29,23 @@ require.extensions['.json6'] = function (module, filename) {
 };
 
 
-//vfs.Sqlite.op( "SACK/Summoner/Auto register with summoner?", 0 );
-//vfs.Sqlite.so( "SACK/Summoner/Auto register with summoner?", 1 );
-//console.log( "register:", vfs.Sqlite.op( "SACK/Summoner/Auto register with summoner?", 0 ));
-//vfs.loadComplete();
-const thread = vfs.Thread(process._tickDomainCallback);
-module.exports=exports=vfs;
+//sack.Sqlite.op( "SACK/Summoner/Auto register with summoner?", 0 );
+//sack.Sqlite.so( "SACK/Summoner/Auto register with summoner?", 1 );
+//console.log( "register:", sack.Sqlite.op( "SACK/Summoner/Auto register with summoner?", 0 ));
+//sack.loadComplete();
+const thread = sack.Thread(process._tickDomainCallback);
+module.exports=exports=sack;
 
 if( false ) {
 	process.on( 'beforeExit', ()=> {
 		//console.log( "Before Exit." );
-		vfs.Thread() 
+		sack.Thread()
 	});
 	process.on( 'exit', ()=> {
 		//console.log( "Process Exit." );
 	});
 	process.on( 'uncaughtException', (err)=> {
-		console.log( err )	
+		console.log( err )
 	});
 	process.on('SIGUSR2',function(){
         	console.log('SIGUSR2 recieved')

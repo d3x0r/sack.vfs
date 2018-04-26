@@ -24,6 +24,7 @@ static void showTimings( const v8::FunctionCallbackInfo<Value>& args );
 
 class parseObject : public node::ObjectWrap {
 	struct json_parse_state *state;
+	struct vesl_parse_state *vstate;
 public:
 	static Persistent<Function> constructor;
 	static Persistent<Function> constructor6;
@@ -296,9 +297,9 @@ void parseObject::write6v( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	String::Utf8Value data( args[0]->ToString() );
 	int result;
-	for( result = vesl_parse_add_data( parser->state, *data, data.length() );
+	for( result = vesl_parse_add_data( parser->vstate, *data, data.length() );
 		result > 0;
-		result = vesl_parse_add_data( parser->state, NULL, 0 )
+		result = vesl_parse_add_data( parser->vstate, NULL, 0 )
 		) {
 		struct json_value_container * val;
 		PDATALIST elements = json_parse_get_data( parser->state );
@@ -395,9 +396,6 @@ static inline Local<Value> makeValue( struct json_value_container *val, struct r
 	case VALUE_STRING:
 		result = String::NewFromUtf8( revive->isolate, val->string, MODE, (int)val->stringLen ).ToLocalChecked();
 		break;
-	case VALUE_OPERATOR:
-		result = String::NewFromUtf8( revive->isolate, val->string, MODE, (int)val->stringLen ).ToLocalChecked();
-		break;
 	case VALUE_NUMBER:
 		if( val->float_result )
 			result = Number::New( revive->isolate, val->result_d );
@@ -407,7 +405,6 @@ static inline Local<Value> makeValue( struct json_value_container *val, struct r
 	case VALUE_ARRAY:
 		result = Array::New( revive->isolate );
 		break;
-	case VALUE_EXPRESSION:
 	case VALUE_OBJECT:
 		result = Object::New( revive->isolate );
 		break;
@@ -509,7 +506,7 @@ Local<Value> convertMessageToJS( PDATALIST msg, struct reviver_data *revive ) {
 
 	struct json_value_container *val = (struct json_value_container *)GetDataItem( &msg, 0 );
 	if( val && val->contains ) {
-		if( val->value_type == VALUE_OBJECT || (val->value_type == VALUE_EXPRESSION ) )
+		if( val->value_type == VALUE_OBJECT )
 			o = Object::New( revive->isolate );
 		else if( val->value_type == VALUE_ARRAY )
 			o = Array::New( revive->isolate );

@@ -126,6 +126,7 @@ add_library(${PROJECT_NAME} SHARED
 	src/srg_module.cc
 	src/websocket_module.cc
 	src/network_module.cc
+	src/task_module.cc
 	${MORE_MODULE_SOURCES}
 	${GUI_SOURCES}	
         )

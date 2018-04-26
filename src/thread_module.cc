@@ -23,15 +23,14 @@ void ThreadObject::Init( Handle<Object> exports ) {
 }
 
 //-----------------------------------------------------------
-Persistent<Function, CopyablePersistentTraits<Function>> ThreadObject::idleProc;
+Persistent<Function> ThreadObject::idleProc;
 
 void ThreadObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() ) {
 		if( idleProc.IsEmpty() ) {
 			Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
-			Persistent<Function> cb( isolate, arg0 );
-			idleProc = cb;
+			idleProc.Reset( isolate, arg0 );
 		}
 	}
 	else

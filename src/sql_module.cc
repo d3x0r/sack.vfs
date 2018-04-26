@@ -264,12 +264,12 @@ void SqlStmtObject::Set( const v8::FunctionCallbackInfo<Value>& args ) {
 	int arg = 1;
 	if( args[arg]->IsInt32() ) {
 		val.value_type = VALUE_NUMBER;
-		val.result_n = args[arg]->ToInteger()->Value();
+		val.result_n = args[arg]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		val.float_result = 0;
 		SetDataItem( &stmt->values, col, &val );
 	} else if( args[arg]->IsNumber() ) {
 		val.value_type = VALUE_NUMBER;
-		val.result_d = args[arg]->ToNumber()->Value();
+		val.result_d = args[arg]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		val.float_result = 0;
 		SetDataItem( &stmt->values, col, &val );
 	} else if( args[arg]->IsArrayBuffer() ) {
@@ -308,12 +308,12 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 			} else {
 				if( args[arg]->IsInt32() ) {
 					val.value_type = VALUE_NUMBER;
-					val.result_n = args[arg]->ToInteger()->Value();
+					val.result_n = args[arg]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 					val.float_result = 0;
 					AddDataItem( &values, &val );
 				} else if( args[arg]->IsNumber() ) {
 					val.value_type = VALUE_NUMBER;
-					val.result_d = args[arg]->ToNumber()->Value();
+					val.result_d = args[arg]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 					val.float_result = 0;
 					AddDataItem( &values, &val );
 				} else if( args[arg]->IsArrayBuffer() ) {
