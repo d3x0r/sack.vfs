@@ -1433,10 +1433,10 @@ static void DumpCert( X509 *x509 ) {
 				lprintf( "NID: %d  = %32s     %s", n, OBJ_nid2sn( n ), OBJ_nid2ln( n ) );
 			}
 
+		//X509_Get_cert
+		int pkey_nid = 0;// OBJ_obj2nid( x509->cert_info->key->algor->algorithm );
 
-		int pkey_nid = OBJ_obj2nid( x509->cert_info->key->algor->algorithm );
-
-		lprintf( "algo nid = %d", pkey_nid );
+		lprintf( "(NO INFO; INTERNALS OPAQUED) algo nid = %d", pkey_nid );
 
 		int valid = X509_check_ca( x509 );
 
@@ -1487,11 +1487,11 @@ static void DumpCert( X509 *x509 ) {
 		for( n = 0; n < extCount; n++ )
 		{
 			X509_EXTENSION *ext = X509_get_ext( x509, n );
-			ASN1_OBJECT *o = ext->object;
+			ASN1_OBJECT *o = X509_EXTENSION_get_object(ext);
 			ASN1_STRING *v = (ASN1_STRING *)X509V3_EXT_d2i( ext );
 			int nid = OBJ_obj2nid( o );
 			//V_ASN1_OCTET_STRING
-			lprintf( "extension: %d %d  %s  %s  %d", ext->critical>0 ? "critical" : "",
+			lprintf( "extension: %d %d  %s  %s  %d", X509_EXTENSION_get_critical(ext)>0 ? "critical" : "",
 				nid, OBJ_nid2ln( nid ), OBJ_nid2sn( nid ), v->type );
 			if( nid == NID_authority_key_identifier ) {
 				AUTHORITY_KEYID *akid = (AUTHORITY_KEYID *)v;
@@ -1763,7 +1763,8 @@ static Local<Value> Expiration( struct info_params *params ) {
 	}
 	BIO_free( keybuf );
 
-	ASN1_TIME *before = x509->cert_info->validity->notAfter;
+	ASN1_TIME *before = X509_getm_notAfter( x509 );
+		//x509->cert_info->validity->notAfter;
 	struct tm t;
 	char * timestring = (char*)before->data;
 
@@ -1870,10 +1871,10 @@ static Local<Value> CertToString( struct info_params *params ) {
 				vtprintf( pvt, "NID: %d  = %32s     %s\n", n, OBJ_nid2sn( n ), OBJ_nid2ln( n ) );
 			}
 
+		//X509_get_algorithm
+		int pkey_nid = 0;// OBJ_obj2nid( x509->cert_info->key->algor->algorithm );
 
-		int pkey_nid = OBJ_obj2nid( x509->cert_info->key->algor->algorithm );
-
-		vtprintf( pvt, "algo nid = %d\n", pkey_nid );
+		vtprintf( pvt, "(OPQAUED INTERNAL NOINFO)algo nid = %d\n", pkey_nid );
 
 		int valid = X509_check_ca( x509 );
 
@@ -1917,8 +1918,8 @@ static Local<Value> CertToString( struct info_params *params ) {
 		//name->entries
 	}
 
-	ASN1_TIME *before = x509->cert_info->validity->notBefore;
-	ASN1_TIME *after = x509->cert_info->validity->notAfter;
+	ASN1_TIME *before = X509_getm_notBefore( x509 );// ->cert_info->validity->notBefore;
+	ASN1_TIME *after = X509_getm_notAfter( x509 );// ->cert_info->validity->notAfter;
 	if( before ) {
 		struct tm t;
 		ConvertTimeString( &t, before );
@@ -1941,11 +1942,11 @@ static Local<Value> CertToString( struct info_params *params ) {
 		for( n = 0; n < extCount; n++ )
 		{
 			X509_EXTENSION *ext = X509_get_ext( x509, n );
-			ASN1_OBJECT *o = ext->object;
+			ASN1_OBJECT *o = X509_EXTENSION_get_object( ext );
 			ASN1_STRING *v = (ASN1_STRING *)X509V3_EXT_d2i( ext );
 			int nid = OBJ_obj2nid( o );
 			//V_ASN1_OCTET_STRING
-			vtprintf( pvt, "extension: %d %d  %s  %s  %d\n", ext->critical>0 ? "critical" : "",
+			vtprintf( pvt, "extension: %d %d  %s  %s  %d\n", X509_EXTENSION_get_critical( ext )>0 ? "critical" : "",
 				nid, OBJ_nid2ln( nid ), OBJ_nid2sn( nid ), v->type );
 			if( nid == NID_authority_key_identifier ) {
 				AUTHORITY_KEYID *akid = (AUTHORITY_KEYID *)v;
@@ -1980,7 +1981,7 @@ static Local<Value> CertToString( struct info_params *params ) {
 			else if( nid == NID_subject_alt_name ) {
 				GENERAL_NAMES *names = (GENERAL_NAMES*)v;
 				int n;
-				for( n = 0; n < names->stack.num; n++ ) {
+				for( n = 0; n < sk_GENERAL_NAME_num( names ); n++ ) {
 					GENERAL_NAME *namePart = sk_GENERAL_NAME_value( names, n );
 					switch( namePart->type ) {
 					case GEN_DIRNAME:

@@ -258,7 +258,7 @@ void SqlStmtObject::Set( const v8::FunctionCallbackInfo<Value>& args ) {
 			String::NewFromUtf8( isolate, TranslateText( "Required parameters (column, new value) are missing." ) ) ) );
 		return;
 	}
-	int col = args[0]->ToInt32()->Value();
+	int col = args[0]->ToInt32(isolate)->Value();
 	struct json_value_container val;
 	memset( &val, 0, sizeof( val ) );
 	int arg = 1;

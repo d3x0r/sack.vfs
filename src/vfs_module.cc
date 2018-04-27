@@ -742,7 +742,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				}
 				//if( args[argc
 				if( args[arg]->IsNumber() ) {
-					version = (uintptr_t)args[arg++]->ToNumber()->Value();
+					version = (uintptr_t)args[arg++]->ToNumber(isolate)->Value();
 				}
 				if( argc > arg ) {
 					String::Utf8Value k( args[arg] );
@@ -799,7 +799,7 @@ void FileObject::Emitter(const v8::FunctionCallbackInfo<Value>& args)
 		args[0]->ToString()  // argument
 	};
 
-	node::MakeCallback(isolate, args.This(), "emit", 2, argv);
+	//node::MakeCallback(isolate, args.This(), "emit", 2, argv);
 }
 
 void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
@@ -991,18 +991,18 @@ void FileObject::truncateFile(const v8::FunctionCallbackInfo<Value>& args) {
 
 void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 	Local<Context> context = Isolate::GetCurrent()->GetCurrentContext();
-	size_t num1 = (size_t)args[0]->ToNumber()->Value();
+	size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	if( args.Length() == 1 && args[0]->IsNumber() ) {
-		size_t num1 = (size_t)args[0]->ToNumber()->Value();
+		size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
 		if( file->vol->volNative )
 			sack_vfs_seek( file->file, num1, SEEK_SET );
 		else
 			sack_fseek( file->cfile, num1, SEEK_SET );
 	}
 	if( args.Length() == 2 && args[0]->IsNumber() && args[1]->IsNumber() ) {
-		size_t num1 = (size_t)args[0]->ToNumber()->Value();
-		int num2 = (int)args[1]->ToNumber()->Value();
+		size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
+		int num2 = (int)args[1]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
 		if( file->vol->volNative ) {
 			sack_vfs_seek( file->file, num1, (int)num2 );
 		}
