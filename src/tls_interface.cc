@@ -12,6 +12,9 @@
 #define timegm _mkgmtime
 #endif
 
+#if OPENSSL_VERSION_NUMBER > 0x101000ff
+#  define USE_TLS_ACCESSORS
+#endif
 
 const int kExp = RSA_F4;
 
@@ -1762,9 +1765,11 @@ static Local<Value> Expiration( struct info_params *params ) {
 		return Undefined(params->isolate);// goto free_all;
 	}
 	BIO_free( keybuf );
-
+#ifdef USE_TLS_ACCESSORS
 	ASN1_TIME *before = X509_getm_notAfter( x509 );
-		//x509->cert_info->validity->notAfter;
+#else
+	ASN1_TIME *before = x509->cert_info->validity->notAfter;
+#endif
 	struct tm t;
 	char * timestring = (char*)before->data;
 
@@ -1918,8 +1923,14 @@ static Local<Value> CertToString( struct info_params *params ) {
 		//name->entries
 	}
 
+#ifdef USE_TLS_ACCESSORS
 	ASN1_TIME *before = X509_getm_notBefore( x509 );// ->cert_info->validity->notBefore;
 	ASN1_TIME *after = X509_getm_notAfter( x509 );// ->cert_info->validity->notAfter;
+#else
+	ASN1_TIME *before = x509->cert_info->validity->notBefore;
+	ASN1_TIME *after = x509->cert_info->validity->notAfter;
+#endif
+
 	if( before ) {
 		struct tm t;
 		ConvertTimeString( &t, before );

@@ -278,7 +278,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 }
 
-ATEXIT( terminate ) {
+ATEXIT( terminateStartedTasks ) {
 	TaskObject *task;
 	INDEX idx;
 	LIST_FORALL( l.tasks, idx, TaskObject *, task ) {

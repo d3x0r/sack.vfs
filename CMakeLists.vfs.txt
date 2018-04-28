@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.0)
 
 project (sack_vfs)
 
+ADD_DEFINITIONS( -DBUILD_NODE_ADDON )
+
 if( MSVC )
   #add_definitions( -D_CRT_SECURE_NO_WARNINGS -wd4995 -wd4996 )
   #add_definitions( -wd4996 )

@@ -65740,6 +65740,16 @@ int SystemCheck( void )
 }
 SACK_NETWORK_NAMESPACE_END
 #endif
+#ifdef BUILD_NODE_ADDON
+#  include <node_version.h>
+#endif
+#ifdef BUILD_NODE_ADDON
+#  ifdef NODE_MAJOR_VERSION
+#    if NODE_MAJOR_VERSION >= 10
+#      define HACK_NODE_TLS
+#    endif
+#  endif
+#endif
 #ifdef _WIN32
 #  include <prsht.h>
 #  include <cryptuiapi.h>
@@ -66301,7 +66311,12 @@ LOGICAL ssl_BeginServer( PCLIENT pc, CPOINTER cert, size_t certlen, CPOINTER key
 		}
 		BIO_free( keybuf );
 	}
-	ses->ctx = SSL_CTX_new( TLS_server_method()/*TLSv1_2_server_method()*/ );
+#ifdef HACK_NODE_TLS
+/*TLSv1_2_server_method()*/
+	ses->ctx = SSL_CTX_new( TLS_server_method() );
+#else
+	ses->ctx = SSL_CTX_new( TLSv1_2_server_method() );
+#endif
 	{
 		int r;
 		SSL_CTX_set_cipher_list( ses->ctx, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH" );
@@ -66375,7 +66390,16 @@ LOGICAL ssl_BeginClientSession( PCLIENT pc, CPOINTER client_keypair, size_t clie
 	ses = New( struct ssl_session );
 	MemSet( ses, 0, sizeof( struct ssl_session ) );
 	{
-		ses->ctx = SSL_CTX_new( TLS_client_method()/*TLSv1_2_client_method()*/ );
+#ifdef NODE_MAJOR_VERSION
+#  if NODE_MAJOR_VERSION >= 10
+ /*TLSv1_2_client_method()*/
+		ses->ctx = SSL_CTX_new( TLS_client_method() );
+#  else
+		ses->ctx = SSL_CTX_new( TLSv1_2_client_method() );
+#  endif
+#else
+		ses->ctx = SSL_CTX_new( TLSv1_2_client_method() );
+#endif
 		SSL_CTX_set_cipher_list( ses->ctx, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH" );
 		ses->cert = New( struct internalCert );
 		if( !client_keypair )
