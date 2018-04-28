@@ -1001,6 +1001,7 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0,9.132 - Make a pass to cleanup deprecated Utf8Value() usage.
 - 0.9.131 - Fixes for Node 10 (missing export TLS_1_2...; backfix for < 10)
 - 0.9.130 - Fixes for Node 10.
 - 0.9.129 - (cont) merge linux changes.

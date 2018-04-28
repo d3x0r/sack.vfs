@@ -152,13 +152,13 @@ void ConfigObject::Add( const v8::FunctionCallbackInfo<Value>& args ) {
 	memset( rule, 0, sizeof( struct CurrentRule ) );
 	rule->handler.Reset( args.GetIsolate(), Handle<Function>::Cast( args[1] ) );
 	AddLink( &config->handlers, rule );
-	String::Utf8Value format( args[0] );
+	String::Utf8Value format( args.GetIsolate(), args[0] );
 	AddConfigurationExx( config->pch, *format, handler, (uintptr_t)rule DBG_SRC );
 }
 
 void ConfigObject::On( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 1 ) {
-		String::Utf8Value event(args[0] );
+		String::Utf8Value event(args.GetIsolate(),args[0] );
 		if( StrCmp( *event, "done" ) == 0 ) {
 
 		}
@@ -213,13 +213,13 @@ static void configColor( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void ConfigObject::Go( const v8::FunctionCallbackInfo<Value>& args ) {
 	ConfigObject *config = ObjectWrap::Unwrap<ConfigObject>( args.This() );
-	String::Utf8Value filename( args[0] );
+	String::Utf8Value filename( args.GetIsolate(), args[0] );
 	ProcessConfigurationFile( config->pch, *filename, (uintptr_t)(*Null(args.GetIsolate() )) );
 }
 
 void ConfigObject::Write( const v8::FunctionCallbackInfo<Value>& args ) {
 	ConfigObject *config = ObjectWrap::Unwrap<ConfigObject>( args.This() );
-	String::Utf8Value input( args[0] );
+	String::Utf8Value input( args.GetIsolate(), args[0] );
 	config->lastResult = ProcessConfigurationInput( config->pch, *input, input.length(), config->lastResult );
 }
 

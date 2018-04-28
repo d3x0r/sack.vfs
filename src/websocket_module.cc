@@ -1056,8 +1056,8 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 		for( i = 0; i < len; i++ ) {
 			Local<Value> key = keys->Get( i );
 			Local<Value> val = headers->Get( key );
-			String::Utf8Value keyname( key );
-			String::Utf8Value keyval( val );
+			String::Utf8Value keyname( isolate, key );
+			String::Utf8Value keyval( isolate, val );
 			vtprintf( obj->pvtResult, WIDE( "%s:%s\r\n" ), *keyname, *keyval );
 		}
 	}
@@ -1084,7 +1084,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	if( args.Length() > 0 ) {
 		if( args[0]->IsString() ) {
-			String::Utf8Value body( args[0] );
+			String::Utf8Value body( isolate, args[0] );
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", body.length() );
 			vtprintf( obj->pvtResult, WIDE( "\r\n" ) );
 
@@ -1215,7 +1215,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 	struct optionStrings *strings = getStrings( isolate );
 
 	if( opts->Has( optName = strings->addressString->Get( isolate ) ) ) {
-		String::Utf8Value address( opts->Get( optName )->ToString() );
+		String::Utf8Value address( isolate, opts->Get( optName )->ToString() );
 		wssOpts->address = StrDup( *address );
 	}
 
@@ -1230,7 +1230,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		wssOpts->cert_chain_len =0;
 	}
 	else {
-		String::Utf8Value cert( opts->Get( optName )->ToString() );
+		String::Utf8Value cert( isolate, opts->Get( optName )->ToString() );
 		wssOpts->cert_chain = StrDup( *cert );
 		wssOpts->cert_chain_len = cert.length();
 	}
@@ -1239,7 +1239,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		wssOpts->cert_chain_len =0;
 	}
 	else {
-		String::Utf8Value ca( opts->Get( optName )->ToString() );
+		String::Utf8Value ca( isolate, opts->Get( optName )->ToString() );
 		if( wssOpts->cert_chain ) {
 			wssOpts->cert_chain = (char*)Reallocate( wssOpts->cert_chain, wssOpts->cert_chain_len + ca.length() + 1 );
 			strcpy( wssOpts->cert_chain + wssOpts->cert_chain_len, *ca );
@@ -1255,7 +1255,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		wssOpts->key_len = 0;
 	}
 	else {
-		String::Utf8Value cert( opts->Get( optName )->ToString() );
+		String::Utf8Value cert( isolate, opts->Get( optName )->ToString() );
 		wssOpts->key = StrDup( *cert );
 		wssOpts->key_len = cert.length();
 	}
@@ -1264,7 +1264,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		wssOpts->pass_len = 0;
 	}
 	else {
-		String::Utf8Value cert( opts->Get( optName )->ToString() );
+		String::Utf8Value cert( isolate, opts->Get( optName )->ToString() );
 		wssOpts->pass = StrDup( *cert );
 		wssOpts->pass_len = cert.length();
 	}
@@ -1312,7 +1312,7 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 		wssOpts.port = 0;
 		wssOpts.address = NULL;
 		if( args[argOfs]->IsString() ) {
-			String::Utf8Value url( args[argOfs]->ToString() );
+			String::Utf8Value url( isolate, args[argOfs]->ToString() );
 			wssOpts.url = StrDup( *url );
 			argOfs++;
 		}
@@ -1379,7 +1379,7 @@ void wssObject::on( const FunctionCallbackInfo<Value>& args ) {
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
 	if( args.Length() == 2 ) {
 		Isolate* isolate = args.GetIsolate();
-		String::Utf8Value event( args[0]->ToString() );
+		String::Utf8Value event( isolate, args[0]->ToString() );
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		if( StrCmp( *event, "request" ) == 0 ) {
 			if( cb->IsFunction() )
@@ -1437,7 +1437,7 @@ void wssObject::accept( const FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	if( args.Length() > 0 ) {
-		String::Utf8Value protocol( args[0]->ToString() );
+		String::Utf8Value protocol( isolate, args[0]->ToString() );
 		obj->eventMessage->protocol = StrDup( *protocol );
 	}
 	obj->eventMessage->accepted = 1;
@@ -1518,7 +1518,7 @@ void wssiObject::on( const FunctionCallbackInfo<Value>& args){
 
 	if( args.Length() == 2 ) {
 		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
-		String::Utf8Value event( args[0]->ToString() );
+		String::Utf8Value event( isolate, args[0]->ToString() );
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		if(  StrCmp( *event, "message" ) == 0 ) {
 			obj->messageCallback.Reset( isolate, cb);
@@ -1572,7 +1572,7 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
 	}
 	else if( args[0]->IsString() ) {
-		String::Utf8Value buf( args[0]->ToString() );
+		String::Utf8Value buf( isolate, args[0]->ToString() );
 		WebSocketSendText( obj->pc, *buf, buf.length() );
 	}
 	else {
@@ -1695,20 +1695,20 @@ void parseWscOptions( struct wscOptions *wscOpts, Isolate *isolate, Local<Object
 
 	if( opts->Has( optName = strings->caString->Get( isolate ) ) ) {
 		wscOpts->ssl = 1;
-		String::Utf8Value rootCa( opts->Get( optName )->ToString() );
+		String::Utf8Value rootCa( isolate, opts->Get( optName )->ToString() );
 		wscOpts->root_cert = StrDup( *rootCa );
 	}
 
 	if( opts->Has( optName = strings->keyString->Get( isolate ) ) ) {
 		wscOpts->ssl = 1;
-		String::Utf8Value rootCa( opts->Get( optName )->ToString() );
+		String::Utf8Value rootCa( isolate, opts->Get( optName )->ToString() );
 		wscOpts->key = StrDup( *rootCa );
 		wscOpts->key_len = rootCa.length();
 	}
 
 	if( opts->Has( optName = strings->passString->Get( isolate ) ) ) {
 		wscOpts->ssl = 1;
-		String::Utf8Value rootCa( opts->Get( optName )->ToString() );
+		String::Utf8Value rootCa( isolate, opts->Get( optName )->ToString() );
 		wscOpts->pass = StrDup( *rootCa );
 				wscOpts->pass_len = rootCa.length();
 	}
@@ -1742,7 +1742,7 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 		bool checkArg2;
 		// Invoked as constructor: `new MyObject(...)`
 		struct wscOptions wscOpts;
-		String::Utf8Value url( args[0]->ToString() );
+		String::Utf8Value url( isolate, args[0]->ToString() );
 		String::Utf8Value *protocol = NULL;
 		Local<Object> opts;
 		opts.Clear();
@@ -1756,15 +1756,15 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 
 		if( args[1]->IsString() ) {
 			checkArg2 = true;
-			protocol = new String::Utf8Value( args[1]->ToString() );
+			protocol = new String::Utf8Value( isolate, args[1]->ToString() );
 		}
 		else if( args[1]->IsArray() ) {
 			checkArg2 = true;
-			protocol = new String::Utf8Value( args[1]->ToString() );
+			protocol = new String::Utf8Value( isolate, args[1]->ToString() );
 		}
 		else if( args[1]->IsObject() ) {
 			checkArg2 = false;
-         parseWscOptions( &wscOpts, isolate, args[1]->ToObject() );
+			parseWscOptions( &wscOpts, isolate, args[1]->ToObject() );
 		}
 		else
 			checkArg2 = false;
@@ -1885,7 +1885,7 @@ void wscObject::on( const FunctionCallbackInfo<Value>& args){
 	if( args.Length() == 2 ) {
 		Isolate* isolate = args.GetIsolate();
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-		String::Utf8Value event( args[0]->ToString() );
+		String::Utf8Value event( isolate, args[0]->ToString() );
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		if( StrCmp( *event, "open" ) == 0 ){
 			if( obj->readyState == OPEN ) {
@@ -1920,7 +1920,7 @@ void wscObject::close( const FunctionCallbackInfo<Value>& args ) {
 			int code = args[0]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 			if( code == 1000 || (code >= 3000 && code <= 4999) ) {
 				if( args.Length() > 1 ) {
-					String::Utf8Value reason( args[1]->ToString() );
+					String::Utf8Value reason( isolate, args[1]->ToString() );
 					if( reason.length() > 123 ) {
 						isolate->ThrowException( Exception::Error(
 							String::NewFromUtf8( isolate, TranslateText( "SyntaxError (text reason too long)" ) ) ) );
@@ -1962,7 +1962,7 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
 	}
 	else if( args[0]->IsString() ) {
-		String::Utf8Value buf( args[0]->ToString() );
+		String::Utf8Value buf( isolate, args[0]->ToString() );
 		WebSocketSendText( obj->pc, *buf, buf.length() );
 	}
 	else {
@@ -2042,7 +2042,7 @@ void httpRequestObject::wait( const FunctionCallbackInfo<Value>& args ) {
 }
 
 void httpRequestObject::on( const FunctionCallbackInfo<Value>& args ) {
-	String::Utf8Value eventName( args[0]->ToString() );
+	String::Utf8Value eventName( args.GetIsolate(), args[0]->ToString() );
 	httpRequestObject *http = ObjectWrap::Unwrap<httpRequestObject>( args.This() );
 
 	Local<Function> cb = Local<Function>::Cast( args[1] );
@@ -2071,7 +2071,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	optionStrings *strings = getStrings( isolate );
 
 	if( options->Has( optName = strings->hostnameString->Get( isolate ) ) ) {
-		String::Utf8Value value( options->Get( optName ) );
+		String::Utf8Value value( isolate, options->Get( optName ) );
 		httpRequest->hostname = StrDup( *value );
 	}
 
@@ -2081,13 +2081,13 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	}
 
 	if( options->Has( optName = strings->methodString->Get( isolate ) ) ) {
-		String::Utf8Value value( options->Get( optName ) );
+		String::Utf8Value value( isolate, options->Get( optName ) );
 		httpRequest->method = StrDup( *value );
 	}
 
 	if( secure && options->Has( optName = strings->caString->Get( isolate ) ) ) {
 		if( options->Get( optName )->IsString() ) {
-			String::Utf8Value value( options->Get( optName ) );
+			String::Utf8Value value( isolate, options->Get( optName ) );
 			httpRequest->ca = StrDup( *value );
 		}
 	}
@@ -2097,7 +2097,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	}
 
 	if( options->Has( optName = strings->pathString->Get( isolate ) ) ) {
-		String::Utf8Value value( options->Get( optName ) );
+		String::Utf8Value value( isolate, options->Get( optName ) );
 		httpRequest->path = StrDup( *value );
 	}
 
