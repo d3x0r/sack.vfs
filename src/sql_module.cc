@@ -100,7 +100,7 @@ void SqlObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		char *dsn;
 		SqlObject* obj;
 		if( args.Length() > 0 ) {
-			String::Utf8Value arg( isolate, args[0] );
+			String::Utf8Value arg( USE_ISOLATE( isolate ) args[0] );
 			dsn = *arg;
 			obj = new SqlObject( dsn );
 		}
@@ -227,7 +227,7 @@ void SqlObject::escape( const v8::FunctionCallbackInfo<Value>& args ) {
 		args.GetReturnValue().Set( args[0] ); // undefined is still undefined
 		return;
 	}
-	String::Utf8Value tmp( isolate, args[0] );
+	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 	char *out = EscapeSQLString(sql->odbc, (*tmp) );
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, out ) );
 	Deallocate( char*, out );
@@ -241,7 +241,7 @@ void SqlObject::unescape( const v8::FunctionCallbackInfo<Value>& args ) {
 		args.GetReturnValue().Set( args[0] ); // undefined is still undefined
 		return;
 	}
-	String::Utf8Value tmp( isolate, args[0] );
+	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 	size_t outlen;
 	char *out = RevertEscapeBinary( (*tmp), &outlen );
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, out, NewStringType::kNormal, (int)outlen ).ToLocalChecked() );
@@ -327,7 +327,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	*/
 	if( args.Length() == 1 ) {
-		String::Utf8Value tmp( isolate, args[0] );
+		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 
 		SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 		sql->fields = 0;
@@ -610,7 +610,7 @@ void SqlObject::getOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 		sqlParent->optionInitialized = TRUE;
 	}
 
-	String::Utf8Value tmp( isolate, args[0] );
+	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 	char *optionPath = StrDup( *tmp );
 
 	Local<Function> cons = Local<Function>::New( isolate, OptionTreeObject::constructor );
@@ -635,7 +635,7 @@ void OptionTreeObject::getOptionNode( const v8::FunctionCallbackInfo<Value>& arg
 
 	OptionTreeObject *parent = ObjectWrap::Unwrap<OptionTreeObject>( args.Holder() );
 
-	String::Utf8Value tmp( isolate, args[0] );
+	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 	char *optionPath = StrDup( *tmp );
 
 	Local<Function> cons = Local<Function>::New( isolate, constructor );
@@ -659,7 +659,7 @@ void SqlObject::findOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( argc < 1 ) {
 		return;
 	}
-	String::Utf8Value tmp( isolate, args[0] );
+	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 	char *optionPath = StrDup( *tmp );
 	SqlObject *sqlParent = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	if( !sqlParent->optionInitialized ) {
@@ -694,7 +694,7 @@ void OptionTreeObject::findOptionNode( const v8::FunctionCallbackInfo<Value>& ar
 	POPTION_TREE_NODE newOption;
 	OptionTreeObject *parent = ObjectWrap::Unwrap<OptionTreeObject>( args.This() );
 
-	String::Utf8Value tmp( isolate, args[0] );
+	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 	char *optionPath = StrDup( *tmp );
 	newOption = GetOptionIndexExx( parent->odbc, parent->node, optionPath, NULL, NULL, NULL, FALSE, TRUE DBG_SRC );
 	if( newOption ) {
@@ -815,7 +815,7 @@ void OptionTreeObject::readOptionNode( v8::Local<v8::String> field,
 void OptionTreeObject::writeOptionNode( v8::Local<v8::String> field,
                               v8::Local<v8::Value> val,
                               const PropertyCallbackInfo<void>&info ) {
-	String::Utf8Value tmp( info.GetIsolate(), val );
+	String::Utf8Value tmp( USE_ISOLATE( info.GetIsolate() ) val );
 	OptionTreeObject* oto = node::ObjectWrap::Unwrap<OptionTreeObject>( info.Holder() );
 	SetOptionStringValueEx( oto->odbc, oto->node, *tmp );
 }
@@ -830,14 +830,14 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 	char *defaultVal;
 
 	if( argc > 0 ) {
-		String::Utf8Value tmp( isolate, args[0] );
+		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 		defaultVal = StrDup( *tmp );
 	}
 	else
 		defaultVal = StrDup( "" );
 
 	if( argc > 1 ) {
-		String::Utf8Value tmp( isolate, args[1] );
+		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[1] );
 		sect = defaultVal;
 		defaultVal = StrDup( *tmp );
 	}
@@ -845,7 +845,7 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 		sect = NULL;
 
 	if( argc > 2 ) {
-		String::Utf8Value tmp( isolate, args[2] );
+		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[2] );
 		optname = defaultVal;
 		defaultVal = StrDup( *tmp );
 	}
@@ -905,14 +905,14 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 	char *defaultVal;
 
 	if( argc > 0 ) {
-		String::Utf8Value tmp( isolate, args[0] );
+		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 		defaultVal = StrDup( *tmp );
 	}
 	else
 		defaultVal = StrDup( "" );
 
 	if( argc > 1 ) {
-		String::Utf8Value tmp( isolate, args[1] );
+		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[1] );
 		sect = defaultVal;
 		defaultVal = StrDup( *tmp );
 	}
@@ -920,7 +920,7 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 		sect = NULL;
 
 	if( argc > 2 ) {
-		String::Utf8Value tmp( isolate, args[2] );
+		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[2] );
 		optname = defaultVal;
 		defaultVal = StrDup( *tmp );
 	}
@@ -969,7 +969,7 @@ void SqlObject::makeTable( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	if( argc > 0 ) {
 		PTABLE table;
-		String::Utf8Value tmp( isolate, args[0] );
+		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 		tableCommand = StrDup( *tmp );
 
 		SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
@@ -1087,7 +1087,7 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 	}
 	Local<Function> cb = Local<Function>::New( userData->isolate, userData->cb );
 	Local<Value> str = cb->Call( userData->sql->handle(), argc, args );
-	String::Utf8Value result( userData->isolate, str->ToString() );
+	String::Utf8Value result( USE_ISOLATE( userData->isolate ) str->ToString() );
 	int type;
 	if( ( ( type = 1 ), str->IsArrayBuffer() ) || ( ( type = 2 ), str->IsUint8Array() ) ) {
 		uint8_t *buf = NULL;
@@ -1140,7 +1140,7 @@ void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 
 	if( argc > 0 ) {
-		String::Utf8Value name( isolate, args[0] );
+		String::Utf8Value name( USE_ISOLATE( isolate ) args[0] );
 		struct SqlObjectUserFunction *userData = NewArray( struct SqlObjectUserFunction, 1 );
 		memset( userData, 0, sizeof( userData[0] ) );
 		userData->isolate = isolate;
@@ -1161,7 +1161,7 @@ void SqlObject::userProcedure( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 
 	if( argc > 0 ) {
-		String::Utf8Value name( isolate, args[0] );
+		String::Utf8Value name( USE_ISOLATE( isolate ) args[0] );
 		struct SqlObjectUserFunction *userData = NewArray( struct SqlObjectUserFunction, 1 );
 		memset( userData, 0, sizeof( userData[0] ) );
 		userData->isolate = isolate;
@@ -1302,7 +1302,7 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 		else
 			PSSQL_ResultSqliteDouble( onwhat, str->NumberValue() );
 	} else if( str->IsString() ) {
-		String::Utf8Value result( userData->isolate, str->ToString() );
+		String::Utf8Value result( USE_ISOLATE( userData->isolate) str->ToString() );
 		PSSQL_ResultSqliteText( onwhat, DupCStrLen( *result, result.length() ), result.length(), releaseBuffer );
 	}
 	else
@@ -1323,7 +1323,7 @@ void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args )
 	int argc = args.Length();
 
 	if( argc > 2 ) {
-		String::Utf8Value name( isolate, args[0] );
+		String::Utf8Value name( USE_ISOLATE( isolate ) args[0] );
 		struct SqlObjectUserFunction *userData = NewArray( struct SqlObjectUserFunction, 1 );
 		memset( userData, 0, sizeof( userData[0] ) );
 		userData->isolate = isolate;

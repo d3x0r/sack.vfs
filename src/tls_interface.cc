@@ -242,7 +242,7 @@ void TLSObject::seed( const v8::FunctionCallbackInfo<Value>& args ) {
 			RAND_seed( *arr, (int)arr->Length() );
 		}
 		else {
-			String::Utf8Value val( args.GetIsolate(), args[0]->ToString() );
+			String::Utf8Value val( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString() );
 			RAND_seed( *val, val.length() );
 		}
 	}
@@ -302,7 +302,7 @@ void TLSObject::genKey( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( argc ) {
 		keylen = (int)args[0]->IntegerValue();
 		if( argc > 1 ) {
-  			pass = new String::Utf8Value( isolate, args[1]->ToString() );
+  			pass = new String::Utf8Value( USE_ISOLATE( isolate ) args[1]->ToString() );
 			keypass = *pass[0];
 			keypasslen = pass->length();
 		}
@@ -526,7 +526,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Object> state = opts->Get( optName )->ToObject();
-	String::Utf8Value _state( isolate, state->ToString() );
+	String::Utf8Value _state( USE_ISOLATE( isolate ) state->ToString() );
 	params.state = *_state;
 	params.statelen = _state.length();
 
@@ -536,7 +536,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Object> locality = opts->Get( optName )->ToObject();
-	String::Utf8Value _locality( isolate, locality->ToString() );
+	String::Utf8Value _locality( USE_ISOLATE( isolate ) locality->ToString() );
 	params.locality = *_locality;
 	params.localitylen = _locality.length();
 
@@ -546,7 +546,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Object> org = opts->Get( optName )->ToObject();
-	String::Utf8Value _org( isolate, org->ToString() );
+	String::Utf8Value _org( USE_ISOLATE( isolate ) org->ToString() );
 	params.org = *_org;
 	params.orglen = _org.length();
 
@@ -560,7 +560,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.orgUnit = NULL;
 	}else {
 		Local<Object> unit = opts->Get( unitString )->ToObject();
-		_unit = new String::Utf8Value( isolate, unit->ToString() );
+		_unit = new String::Utf8Value( USE_ISOLATE( isolate ) unit->ToString() );
 		params.orgUnit = *_unit[0];
 		params.orgUnitlen = _unit[0].length();
 	}
@@ -571,7 +571,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Object> common = opts->Get( optName )->ToObject();
-	String::Utf8Value _common( isolate, common->ToString() );
+	String::Utf8Value _common( USE_ISOLATE( isolate ) common->ToString() );
 	params.common = *_common;
 	params.commonlen = _common.length();
 
@@ -581,7 +581,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Object> key = opts->Get( optName )->ToObject();
-	String::Utf8Value _key( isolate, key->ToString() );
+	String::Utf8Value _key( USE_ISOLATE( isolate ) key->ToString() );
 	params.key = *_key;
 	params.keylen = _key.length();
 
@@ -590,7 +590,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	if( opts->Has( pubkeyString ) ) {
 		Local<Object> key = opts->Get( pubkeyString )->ToObject();
-		_pubkey = new String::Utf8Value( isolate, key->ToString() );
+		_pubkey = new String::Utf8Value( USE_ISOLATE( isolate ) key->ToString() );
 		params.pubkey = *_pubkey[0];
 		params.pubkeylen = _pubkey[0].length();
 	}
@@ -621,7 +621,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.issuer = NULL;
 	}else {
 		Local<Object> issuer = opts->Get( issuerString )->ToObject();
-		_issuer = new String::Utf8Value( isolate, issuer->ToString() );
+		_issuer = new String::Utf8Value( USE_ISOLATE( isolate ) issuer->ToString() );
 		params.issuer = *_issuer[0];
 		params.issuerlen = _issuer[0].length();
 	}
@@ -644,7 +644,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		Local<Object> password = opts->Get( passString )->ToObject();
-		_password = new String::Utf8Value( isolate, password->ToString() );
+		_password = new String::Utf8Value( USE_ISOLATE( isolate ) password->ToString() );
 		params.password = *_password[0];
 		params.passlen = _password[0].length();
 	}
@@ -830,7 +830,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Object> country = opts->Get( optName )->ToObject();
-	String::Utf8Value _country( isolate, country->ToString() );
+	String::Utf8Value _country( USE_ISOLATE( isolate ) country->ToString() );
 	params.country = *_country;
 	params.countrylen = _country.length();
 
@@ -839,7 +839,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'state' or province.") ) ) );
 		return;
 	}
-	String::Utf8Value _state( isolate, opts->Get( optName )->ToString() );
+	String::Utf8Value _state( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 	params.state = *_state;
 	params.statelen = _state.length();
 
@@ -863,12 +863,12 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 						int count = values->Length();
 						int n;
 						for( n = 0; n < count; n++ ) {
-							String::Utf8Value val( isolate, values->Get( n ) );
+							String::Utf8Value val( USE_ISOLATE( isolate ) values->Get( n ) );
 							AddLink( &params.altSubject.DNS, StrDup( *val ) );
 						}
 					}
 					else {
-						String::Utf8Value val( isolate, name->ToString() );
+						String::Utf8Value val( USE_ISOLATE( isolate ) name->ToString() );
 						AddLink( &params.altSubject.DNS, StrDup( *val ) );
 					}
 				} while( 0 );
@@ -884,12 +884,12 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 						int count = values->Length();
 						int n;
 						for( n = 0; n < count; n++ ) {
-							String::Utf8Value val( isolate, values->Get( n ) );
+							String::Utf8Value val( USE_ISOLATE( isolate ) values->Get( n ) );
 							AddLink( &params.altSubject.IP, StrDup( *val ) );
 						}
 					}
 					else {
-						String::Utf8Value val( isolate, name->ToString() );
+						String::Utf8Value val( USE_ISOLATE( isolate ) name->ToString() );
 						AddLink( &params.altSubject.IP, StrDup( *val ) );
 					}
 				} while( 0 );
@@ -902,7 +902,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 				String::NewFromUtf8( isolate, TranslateText("Missing required option 'locality'(city).") ) ) );
 		return;
 	}
-	String::Utf8Value _locality( isolate, opts->Get( optName )->ToString() );
+	String::Utf8Value _locality( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 	params.locality = *_locality;
 	params.localitylen = _locality.length();
 
@@ -911,7 +911,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'org'.") ) ) );
 		return;
 	}
-	String::Utf8Value _org( isolate, opts->Get( optName )->ToString() );
+	String::Utf8Value _org( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 	params.org = *_org;
 	params.orglen = _org.length();
 
@@ -923,7 +923,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		_unit = NULL;
 		params.orgUnit = NULL;
 	}else {
-		_unit = new String::Utf8Value( isolate, opts->Get( optName )->ToString() );
+		_unit = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 		params.orgUnit = *_unit[0];
 		params.orgUnitlen = _unit[0].length();
 	}
@@ -933,7 +933,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'name'.") ) ) );
 		return;
 	}
-	String::Utf8Value _common( isolate, opts->Get( optName )->ToString() );
+	String::Utf8Value _common( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 	params.common = *_common;
 	params.commonlen = _common.length();
 
@@ -962,7 +962,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Object> key = opts->Get( keyString )->ToObject();
-	String::Utf8Value _key( isolate, key->ToString() );
+	String::Utf8Value _key( USE_ISOLATE( isolate ) key->ToString() );
 	params.key = *_key;
 	params.keylen = _key.length();
 
@@ -974,7 +974,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		Local<Object> password = opts->Get( passString )->ToObject();
-		_password = new String::Utf8Value( isolate, password->ToString() );
+		_password = new String::Utf8Value( USE_ISOLATE( isolate ) password->ToString() );
 		params.password = *_password[0];
 		params.passlen = _password[0].length();
 	}
@@ -1171,7 +1171,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'signer'.") ) ) );
 		return;
 	}
-	String::Utf8Value _signingCert( isolate, opts->Get( optName )->ToString() );
+	String::Utf8Value _signingCert( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 	params.signingCert = *_signingCert;
 
 	if( !opts->Has( optName = strings->requestString->Get( isolate ) ) ) {
@@ -1179,7 +1179,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'request'.") ) ) );
 		return;
 	}
-	String::Utf8Value _request( isolate, opts->Get( optName )->ToString() );
+	String::Utf8Value _request( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 	params.signReq = *_request;
 
 	Local<String> expireString = strings->expireString->Get( isolate );
@@ -1196,7 +1196,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'key'.") ) ) );
 		return;
 	}
-	String::Utf8Value _key( isolate, opts->Get( optName )->ToString() );
+	String::Utf8Value _key( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 	params.key = *_key;
 	params.keylen = _key.length();
 
@@ -1229,7 +1229,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.issuer = NULL;
 	}
 	else {
-		_issuer = new String::Utf8Value( isolate, opts->Get( issuerString )->ToString() );
+		_issuer = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( issuerString )->ToString() );
 		params.issuer = *_issuer[0];
 		params.issuerlen = _issuer[0].length();
 	}
@@ -1243,7 +1243,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.subject = NULL;
 	}
 	else {
-		_subject = new String::Utf8Value( isolate, opts->Get( subjectString )->ToString() );
+		_subject = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( subjectString )->ToString() );
 		params.subject = *_subject[0];
 		params.subjectlen = _subject[0].length();
 	}
@@ -1254,7 +1254,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( opts->Has( pubkeyString ) ) {
 		lprintf( "using custom public key..." );
 		Local<Object> key = opts->Get( pubkeyString )->ToObject();
-		_pubkey = new String::Utf8Value( isolate, key->ToString() );
+		_pubkey = new String::Utf8Value( USE_ISOLATE( isolate ) key->ToString() );
 		params.pubkey = *_pubkey[0];
 		params.pubkeylen = _pubkey[0].length();
 	}
@@ -1269,7 +1269,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		Local<Object> password = opts->Get( passString )->ToObject();
-		_password = new String::Utf8Value( isolate, password->ToString() );
+		_password = new String::Utf8Value( USE_ISOLATE( isolate ) password->ToString() );
 		params.password = *_password[0];
 		params.passlen = _password[0].length();
 	}
@@ -1372,14 +1372,14 @@ void TLSObject::pubKey( const v8::FunctionCallbackInfo<Value>& args ) {
 			return;
 		}
 		MaybeLocal<Value> cert = opts->Get( context, certString );
-		_key = new String::Utf8Value( isolate, cert.ToLocalChecked()->ToString() );
+		_key = new String::Utf8Value( USE_ISOLATE( isolate ) cert.ToLocalChecked()->ToString() );
 		params.cert = *_key[0];
 		//params.certlen = _key[0].length();
 		params.key = NULL;
 	}
 	else{
 		MaybeLocal<Value> keyObj = opts->Get( context, keyString );
-		_key = new String::Utf8Value( isolate, keyObj.ToLocalChecked()->ToString() );
+		_key = new String::Utf8Value( USE_ISOLATE( isolate ) keyObj.ToLocalChecked()->ToString() );
 		params.key = *_key[0];
 		params.keylen = _key[0].length();
 		params.cert = NULL;
@@ -1391,7 +1391,7 @@ void TLSObject::pubKey( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		MaybeLocal<Value> password = opts->Get( context, passString );
-		_password = new String::Utf8Value( isolate, password.ToLocalChecked()->ToString() );
+		_password = new String::Utf8Value( USE_ISOLATE( isolate ) password.ToLocalChecked()->ToString() );
 		params.password = *_password[0];
 		params.passlen = _password[0].length();
 	}
@@ -1669,7 +1669,7 @@ void TLSObject::validate( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	MaybeLocal<Value> cert = opts->Get( context, certString );
-	_key = new String::Utf8Value( isolate, cert.ToLocalChecked()->ToString() );
+	_key = new String::Utf8Value( USE_ISOLATE( isolate ) cert.ToLocalChecked()->ToString() );
 	params.cert = *_key[0];
 	params.certlen = _key[0].length();
 	params.key = NULL;
@@ -1684,7 +1684,7 @@ void TLSObject::validate( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		MaybeLocal<Value> cert = opts->Get( context, chainString );
-		chain = new String::Utf8Value( isolate, cert.ToLocalChecked()->ToString() );
+		chain = new String::Utf8Value( USE_ISOLATE( isolate ) cert.ToLocalChecked()->ToString() );
 		params.chain = *chain[0];
 	}
 	params.ca = NULL;
@@ -1795,7 +1795,7 @@ void TLSObject::expiration( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	params.isolate = isolate;
 
-	String::Utf8Value cert( isolate, args[0]->ToString() );
+	String::Utf8Value cert( USE_ISOLATE( isolate ) args[0]->ToString() );
 	params.cert = *cert;
 	params.certlen = cert.length();
 
@@ -2070,7 +2070,7 @@ void TLSObject::certToString( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	params.isolate = isolate;
 
-	String::Utf8Value cert( isolate, args[0]->ToString() );
+	String::Utf8Value cert( USE_ISOLATE( isolate ) args[0]->ToString() );
 	params.cert = *cert;
 	params.certlen = cert.length();
 

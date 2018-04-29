@@ -38,7 +38,7 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 
-	String::Utf8Value string1( isolate, args[0] );
+	String::Utf8Value string1( USE_ISOLATE( isolate ) args[0] );
 	char *key1 = StrDup( *string1 );
 	char *keyTmp = key1;
 	while( keyTmp[0] ) { if( keyTmp[0] == '/' ) keyTmp[0] = '\\'; keyTmp++; }
@@ -174,7 +174,7 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 
-	String::Utf8Value string1( isolate, args[0] );
+	String::Utf8Value string1( USE_ISOLATE( isolate ) args[0] );
 	char *key1 = StrDup( *string1 );
 	char *keyTmp = key1;
 	while( keyTmp[0] ) { if( keyTmp[0] == '/' ) keyTmp[0] = '\\'; keyTmp++; }
@@ -249,7 +249,7 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 			lprintf( "stauts of update is %d", dwStatus );
 
 		} else if( args[1]->IsString() ) {
-			String::Utf8Value val( isolate, args[1] );
+			String::Utf8Value val( USE_ISOLATE( isolate ) args[1] );
 			dwStatus = RegSetValueEx(hTemp, keyStart, 0
 										  , REG_SZ
 										  , (const BYTE *)*val, (DWORD)StrLen( *val ) );

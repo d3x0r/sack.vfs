@@ -34,7 +34,7 @@ private:
 			}
 			for( uint32_t n = 0; n < ui->Length(); n++ ) {
 				Local<Value> elem = ui->Get( n );
-				String::Utf8Value val(obj->isolate,elem->ToString());
+				String::Utf8Value val( USE_ISOLATE( obj->isolate ) elem->ToString());
 				obj->seedBuf = (char*)Reallocate( obj->seedBuf, obj->seedLen + val.length() );
 				memcpy( obj->seedBuf + obj->seedLen, (*val), val.length() );
 			}
@@ -60,7 +60,7 @@ private:
 					obj = new SRGObject( new Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 ) );
 				}
 				else {
-					String::Utf8Value seed( isolate, args[0]->ToString() );
+					String::Utf8Value seed( USE_ISOLATE( isolate ) args[0]->ToString() );
 					obj = new SRGObject( *seed, seed.length() );
 				}
 				obj->Wrap( args.This() );
@@ -91,7 +91,7 @@ private:
 	}
 	static void seed( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( args.Length() > 0 ) {
-			String::Utf8Value seed( args.GetIsolate(), args[0]->ToString() );
+			String::Utf8Value seed( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString() );
 			SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
 			if( obj->seedBuf )
 				Deallocate( char *, obj->seedBuf );

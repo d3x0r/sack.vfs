@@ -172,7 +172,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				Local<Value> val;
 				if( opts->Get( optName )->IsString() ) {
 					char **args2;
-					args = new String::Utf8Value( isolate, opts->Get( optName )->ToString() );
+					args = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 					ParseIntoArgs( *args[0], &nArg, &argArray );
 
 					args2 = NewArray( char*, nArg + 1 );
@@ -188,7 +188,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 					Local<Array> arr = Local<Array>::Cast( opts->Get( optName ) );
 					argArray = NewArray( char *, arr->Length() + 1 );
 					for( n = 0; n < arr->Length(); n++ ) {
-						argArray[n] = StrDup( *String::Utf8Value( isolate, arr->Get( n )->ToString() ) );
+						argArray[n] = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) arr->Get( n )->ToString() ) );
 					}
 					argArray[n] = NULL;
 				}
@@ -196,12 +196,12 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( optName = strings->workString->Get( isolate ) ) ) {
 				Local<Value> val;
 				if( opts->Get( optName )->IsString() )
-					work = new String::Utf8Value( isolate, opts->Get( optName )->ToString() );
+					work = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 			}
 			if( opts->Has( optName = strings->binString->Get( isolate ) ) ) {
 				Local<Value> val;
 				if( opts->Get( optName )->IsString() )
-					bin = new String::Utf8Value( isolate, opts->Get( optName )->ToString() );
+					bin = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 			}
 			if( opts->Has( optName = strings->envString->Get( isolate ) ) ) {
 				Local<Value> val;

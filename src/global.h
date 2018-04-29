@@ -46,6 +46,13 @@
 #endif
 
 
+#if NODE_MAJOR_VERSION >= 10
+#  define USE_ISOLATE(i)   (i),
+#else
+#  define USE_ISOLATE(i)
+#endif
+
+
 using namespace v8;
 
 #include "task_module.h"

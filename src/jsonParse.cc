@@ -128,7 +128,7 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 
-	String::Utf8Value data( isolate, args[0]->ToString() );
+	String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString() );
 	int result;
 	for( result = json6_parse_add_data( parser->state, *data, data.length() );
 		result > 0;
@@ -214,7 +214,7 @@ void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 		return;
 	}
 
-	String::Utf8Value data( isolate, args[0]->ToString() );
+	String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString() );
 	int result;
 	for( result = json6_parse_add_data( parser->state, *data, data.length() );
 		result > 0;
@@ -295,7 +295,7 @@ void parseObject::write6v( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 
-	String::Utf8Value data( isolate, args[0]->ToString() );
+	String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString() );
 	int result;
 	for( result = vesl_parse_add_data( parser->vstate, *data, data.length() );
 		result > 0;
@@ -552,7 +552,7 @@ void parseJSON( const v8::FunctionCallbackInfo<Value>& args )
 	struct reviver_data r;
 	const char *msg;
 	r.isolate = Isolate::GetCurrent();
-	String::Utf8Value tmp( r.isolate, args[0] );
+	String::Utf8Value tmp( USE_ISOLATE(r.isolate) args[0] );
 	msg = *tmp;
 	Handle<Function> reviver;
 
@@ -606,7 +606,7 @@ void escapeJSON( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	char *msg;
-	String::Utf8Value tmp( isolate, args[0] );
+	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 	size_t outlen;
 	msg = json_escape_string_length( *tmp, tmp.length(), &outlen );
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, msg, NewStringType::kNormal, (int)outlen ).ToLocalChecked() );
@@ -654,7 +654,7 @@ void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
 		return;
 	}
 	const char *msg;
-	String::Utf8Value tmp( r.isolate, args[0] );
+	String::Utf8Value tmp( USE_ISOLATE( r.isolate ) args[0] );
 	Handle<Function> reviver;
 	msg = *tmp;
 	if( args.Length() > 1 ) {
@@ -694,7 +694,7 @@ void escapeJSON6( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	char *msg;
-	String::Utf8Value tmp( isolate, args[0] );
+	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 	size_t outlen;
 	msg = json6_escape_string_length( *tmp, tmp.length(), &outlen );
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, msg, NewStringType::kNormal, (int)outlen ).ToLocalChecked() );
@@ -741,7 +741,7 @@ void parseJSON6v( const v8::FunctionCallbackInfo<Value>& args )
 		return;
 	}
 	const char *msg;
-	String::Utf8Value tmp( r.isolate, args[0] );
+	String::Utf8Value tmp( USE_ISOLATE( r.isolate ) args[0] );
 	Handle<Function> reviver;
 	msg = *tmp;
 	if( args.Length() > 1 ) {

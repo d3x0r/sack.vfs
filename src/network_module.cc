@@ -397,7 +397,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		udpOpts.messageCallback.Empty();
 
 		if( args[argBase]->IsString() ) {
-			udpOpts.address = StrDup( *String::Utf8Value( isolate, args[argBase]->ToString() ) );
+			udpOpts.address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) args[argBase]->ToString() ) );
 			argBase++;
 		}
 		if( ( args.Length() >= argBase ) && args[argBase]->IsObject() ) {
@@ -414,7 +414,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 			}
 			// ---- get family
 			if( opts->Has( optName = strings->familyString->Get( isolate ) ) ) {
-				String::Utf8Value family( isolate, opts->Get( optName )->ToString() );
+				String::Utf8Value family( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 				udpOpts.v6 = (StrCmp( *family, "IPv6" ) == 0);
 				if( udpOpts.addressDefault ) {
 					Deallocate( char *, udpOpts.address );
@@ -433,7 +433,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 					udpOpts.address = StrDup( "0.0.0.0" );
 			}
 			else {
-				udpOpts.address = StrDup( *String::Utf8Value( isolate, opts->Get( optName )->ToString()) );
+				udpOpts.address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString()) );
 			}
 			// ---- get to port
 			if( opts->Has( optName = strings->toPortString->Get( isolate ) ) ) {
@@ -443,7 +443,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 				udpOpts.toPort = 0;
 			// ---- get toAddress
 			if( opts->Has( optName = strings->addressString->Get( isolate ) ) ) {
-				udpOpts.toAddress = StrDup( *String::Utf8Value( isolate, opts->Get( optName )->ToString() ) );
+				udpOpts.toAddress = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() ) );
 			}
 			else
 				udpOpts.toAddress = NULL;
@@ -514,7 +514,7 @@ void udpObject::on( const FunctionCallbackInfo<Value>& args ) {
 	udpObject *obj = ObjectWrap::Unwrap<udpObject>( args.Holder() );
 	if( args.Length() == 2 ) {
 		Isolate* isolate = args.GetIsolate();
-		String::Utf8Value event( isolate, args[0]->ToString() );
+		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString() );
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		if( StrCmp( *event, "error" ) == 0 ) {
 			// not sure how to get this... so many errors so few callbacks
@@ -563,7 +563,7 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 		SendUDPEx( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
 	}
 	else if( args[0]->IsString() ) {
-		String::Utf8Value buf( isolate, args[0]->ToString() );
+		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString() );
 		SendUDPEx( obj->pc, *buf, buf.length(), dest );
 	}
 	else {
@@ -629,7 +629,7 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 			args.GetReturnValue().Set( _this );
 			return;
 		}
-		address = StrDup( *String::Utf8Value( isolate, args[argBase]->ToString() ) );
+		address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) args[argBase]->ToString() ) );
 		argBase++;
 
 		if( (args.Length() >= argBase) && args[argBase]->IsNumber() ) {
@@ -677,7 +677,7 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 			obj->Wrap( _this );
 			return;
 		}
-		address = StrDup( *String::Utf8Value( isolate, args[argBase]->ToString() ) );
+		address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) args[argBase]->ToString() ) );
 		argBase++;
 
 		if( (args.Length() >= argBase) && args[argBase]->IsNumber() ) {
