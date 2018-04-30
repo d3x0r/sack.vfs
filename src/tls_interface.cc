@@ -11,8 +11,8 @@
 #if WIN32
 #define timegm _mkgmtime
 #endif
-
-#if OPENSSL_VERSION_NUMBER > 0x10100ff
+                             
+#if OPENSSL_VERSION_NUMBER >= 0x1010008f
 #  define USE_TLS_ACCESSORS
 #endif
 
