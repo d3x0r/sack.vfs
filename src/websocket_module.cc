@@ -1379,7 +1379,7 @@ void wssObject::on( const FunctionCallbackInfo<Value>& args ) {
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
 	if( args.Length() == 2 ) {
 		Isolate* isolate = args.GetIsolate();
-		String::Utf8Value event( isolate, args[0]->ToString() );
+		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString() );
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		if( StrCmp( *event, "request" ) == 0 ) {
 			if( cb->IsFunction() )
