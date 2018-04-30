@@ -516,7 +516,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Object> country = opts->Get( optName )->ToObject();
-	String::Utf8Value _country( isolate, country->ToString() );
+	String::Utf8Value _country( USE_ISOLATE( isolate ) country->ToString() );
 	params.country = *_country;
 	params.countrylen = _country.length();
 
