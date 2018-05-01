@@ -64330,7 +64330,9 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 		if( !( lpClient->dwFlags & CF_READPENDING ) )
 		{
 			//lpClient->dwFlags |= CF_READREADY; // read ready is set if FinishPendingRead returns 0; and it's from the core read...
+#ifdef DEBUG_SOCK_IO
 			lprintf( WIDE( "Finish pending - return, no pending read. %08x" ), lpClient->dwFlags );
+#endif
 			// without a pending read, don't read, the buffers are not correct.
 			return 0;
 		}
