@@ -1173,6 +1173,8 @@ wssObject::wssObject( struct wssOptions *opts ) {
 
 	pc = WebSocketCreate( opts->url, webSockServerOpen, webSockServerEvent, webSockServerClosed, webSockServerError, (uintptr_t)this );
 	if( pc ) {
+		SetSocketReusePort( pc, TRUE );
+		SetSocketReuseAddress( pc, TRUE );
 		uv_async_init( l.loop, &async, wssAsyncMsg );
 		async.data = this;
 
