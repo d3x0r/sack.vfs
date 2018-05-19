@@ -1001,6 +1001,7 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.135 - Fix unmounted volumes to instead mount hidden.
 - 0.9.134 - disable delay-load build option for node-gyp build.
 - 0.9.133 - Isolate in Utf8Value is actually a very new thing.
 - 0,9.132 - Make a pass to cleanup deprecated Utf8Value() usage.
