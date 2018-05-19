@@ -1,0 +1,30 @@
+
+(
+
+  :console.log( "hello world" )
+ 
+  (console.log( "hello_world" ))
+
+  staticFunction:()( console.log( "Function" ) )
+  staticFunction2:(with,arguments,map)( console.log( "Function" ) )
+
+  staticFunction()
+
+  /* this is like a noop for VESL? */
+  {
+ 	a:1,
+	b:()( console.log( "Method" ) )
+  }.b()
+
+  .a : 123,
+  .b : 456,
+  ' ' : { e: 1 },
+  .f@4 : (){ .' '.e++ },
+  
+)
+
+
+( 
+
+)
+
