@@ -173,6 +173,7 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t v
 		fileName = StrDup( filename );
 		volNative = true;
 		vol = sack_vfs_load_crypt_volume( filename, version, key, key2 );
+		//lprintf( "VOL: %p for %s %d %p %p", vol, filename, version, key, key2 );
 		if( vol )
 			fsMount = sack_mount_filesystem( mount, fsInt = sack_get_filesystem_interface( SACK_VFS_FILESYSTEM_NAME )
 					, 2000, (uintptr_t)vol, TRUE );
@@ -727,8 +728,14 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			else {
 				int arg = 0;
 				//if( argc > 0 ) {
-				String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString() );
-				mount_name = StrDup( *fName );
+				if( args[0]->IsString() ) {
+					String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString() );
+					mount_name = StrDup( *fName );
+				}
+				else  {
+					arg = 1;
+					mount_name = SRG_ID_Generator();
+				}
 				//}
 				if( argc > 1 ) {
 					String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString() );

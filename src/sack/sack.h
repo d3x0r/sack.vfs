@@ -10086,7 +10086,6 @@ typedef void(*atexit_priority_proc)(void (*)(void),int,CTEXTSTR DBG_PASS);
 // UNDEFINED
 //------------------------------------------------------------------------------------
 #else
-#error "there's nothing I can do to wrap PRELOAD() or ATEXIT()!"
 /* This is the most basic way to define some startup code that
    runs at some point before the program starts. This code is
    declared as static, so the same preload initialization name

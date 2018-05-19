@@ -8,7 +8,6 @@
  BAT[1] = name space; directory offsets land in a block referenced by this chain
  */
 #define SACK_VFS_SOURCE
-#if 1
 /* Includes the system platform as required or appropriate. If
    under a linux system, include appropriate basic linux type
    headers, if under windows pull "windows.h".
@@ -6916,7 +6915,7 @@ using namespace sack::timers;
 #endif
 #endif
  // tolower on linux
-#  include <ctype.h>
+#include <ctype.h>
 /*
  *  Created By Jim Buckeyne
  *
@@ -7841,7 +7840,6 @@ typedef void(*atexit_priority_proc)(void (*)(void),int,CTEXTSTR DBG_PASS);
 // UNDEFINED
 //------------------------------------------------------------------------------------
 #else
-#error "there's nothing I can do to wrap PRELOAD() or ATEXIT()!"
 /* This is the most basic way to define some startup code that
    runs at some point before the program starts. This code is
    declared as static, so the same preload initialization name
@@ -10338,15 +10336,6 @@ SQLGETOPTION_PROC( void, DropOptionODBC )( PODBC odbc );
 SQLGETOPTION_PROC( void, FindOptions )( PODBC odbc, PLIST *result_list, CTEXTSTR name );
 _OPTION_NAMESPACE_END _SQL_NAMESPACE_END SACK_NAMESPACE_END
 	USE_OPTION_NAMESPACE
-#endif
-#else
-#  include <sack.h>
- // tolower on linux
-//#include <filesys.h>
-//#include <procreg.h>
-//#include <salty_generator.h>
-//#include <sack_vfs.h>
-//#include <sqlgetoption.h>
 #endif
 SACK_VFS_NAMESPACE
 //#define PARANOID_INIT
@@ -15082,8 +15071,8 @@ SACK_DEADSTART_NAMESPACE_END
  * see also - include/logging.h
  *
  */
-//#define SUPPORT_LOG_ALLOCATE
-//#define DEFAULT_OUTPUT_STDERR
+#define SUPPORT_LOG_ALLOCATE
+#define DEFAULT_OUTPUT_STDERR
 #define COMPUTE_CPU_FREQUENCY
 #define NO_UNICODE_C
 //#undef UNICODE
@@ -20794,7 +20783,6 @@ RENDER_NAMESPACE_END
 #define KEY_Y         SDLK_Y
 #define KEY_Z         SDLK_Z
 #elif defined( USE_RAW_SCANCODE )
-#error RAW_SCANCODES have not been defined yet.
 #define KEY_SHIFT        0xFF
 #define KEY_LEFT_SHIFT   50
  // maybe?
@@ -24368,7 +24356,6 @@ IMAGE_PROC_PTR( void, ResetImageBuffers )( Image image, LOGICAL image_only );
 #define BlotScaledImageSizedEx             LEVEL_ALIAS(BlotScaledImageSizedEx )
 #define plot                               LEVEL_ALIAS(plot )
 #define plotalpha                          LEVEL_ALIAS(plotalpha )
-#error 566
 #define getpixel                           LEVEL_ALIAS(getpixel )
 #define do_line                            LEVEL_ALIAS(do_line )
 #define do_lineAlpha                       LEVEL_ALIAS(do_lineAlpha )
@@ -27599,6 +27586,7 @@ PRIORITY_PRELOAD( IgnoreSignalContinue, GLOBAL_INIT_PRELOAD_PRIORITY-1 )
 #if defined __ANDROID_OLD_PLATFORM_SUPPORT__
 	bsd_signal( SIGUSR1, ContinueSignal );
 #else
+   signal(SIGPIPE, SIG_IGN);
 	signal( SIGUSR1, ContinueSignal );
 #endif
 }
@@ -49869,7 +49857,6 @@ static int
 #elif defined( BCC16 )
 			dwBaud = 0xFEFF;
 #else
-#error no baud defined for this compiler.
 #endif
 #endif
 		  }
