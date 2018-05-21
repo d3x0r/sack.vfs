@@ -1,10 +1,14 @@
 
 
 var sack = require( ".." );
-var server = sack.WebSocket.Server( { port: 8080 } )
+var server 
+
+function open() {
+server = sack.WebSocket.Server( { port: 8081 } )
 
 console.log( "serving on 8080" );
 
+var script = "<SCRIPT> var ws = new WebSocket( 'ws://localhost:8081' ); </SCRIPT>";
 
 server.onrequest( function( req, res ) {
 
@@ -17,7 +21,7 @@ server.onrequest( function( req, res ) {
 	console.log( "Received request:", req );
 	if( req.url.endsWith( ".html" ) || req.url == "/" ) {
 		res.writeHead( 200 );
-		res.end( "<HTML><BODY>Success.</BODY></HTML>" );
+		res.end( `<HTML><BODY>Success.</BODY>${script}</HTML>` );
 	} else {
 		res.writeHead( 404 );
 		res.end();
@@ -45,3 +49,15 @@ server.onconnect( function (ws) {
         	console.log( "Remote closed" );
         } );
 } );
+
+
+}
+
+
+function reopen() {
+	if( server )
+		server.close();
+	open();
+	setTimeout( reopen, 2000 );
+}
+reopen();
