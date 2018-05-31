@@ -10086,6 +10086,7 @@ typedef void(*atexit_priority_proc)(void (*)(void),int,CTEXTSTR DBG_PASS);
 // UNDEFINED
 //------------------------------------------------------------------------------------
 #else
+#error "there's nothing I can do to wrap PRELOAD() or ATEXIT()!"
 /* This is the most basic way to define some startup code that
    runs at some point before the program starts. This code is
    declared as static, so the same preload initialization name
@@ -11102,7 +11103,7 @@ struct file_system_interface {
 	char * (CPROC *find_get_name)( struct find_cursor *cursor );
 	size_t (CPROC *find_get_size)( struct find_cursor *cursor );
 	LOGICAL (CPROC *find_is_directory)( struct find_cursor *cursor );
-	LOGICAL (CPROC *is_directory)( const char *cursor );
+	LOGICAL (CPROC *is_directory)( uintptr_t psvInstance, const char *cursor );
 	LOGICAL (CPROC *rename )( uintptr_t psvInstance, const char *original_name, const char *new_name );
 };
 /* \ \
@@ -11320,6 +11321,10 @@ FILESYS_PROC  size_t FILESYS_API  sack_ftell ( FILE *file_file );
 FILESYS_PROC  size_t FILESYS_API  sack_fsize ( FILE *file_file );
 FILESYS_PROC  LOGICAL FILESYS_API  sack_existsEx ( const char * filename, struct file_system_mounted_interface *mount );
 FILESYS_PROC  LOGICAL FILESYS_API  sack_exists ( const char *file_file );
+// tests if the text passed is a directory or path to a file... for a specific mount.
+FILESYS_PROC  LOGICAL FILESYS_API  sack_isPathEx ( const char *filename, struct file_system_mounted_interface *fsi );
+// tests if the text passed is a directory or path to a file... for all mounts
+FILESYS_PROC  LOGICAL FILESYS_API  sack_isPath( const char * filename );
 FILESYS_PROC  size_t FILESYS_API  sack_fread ( POINTER buffer, size_t size, int count,FILE *file_file );
 FILESYS_PROC  size_t FILESYS_API  sack_fwrite ( CPOINTER buffer, size_t size, int count,FILE *file_file );
 FILESYS_PROC  TEXTSTR FILESYS_API  sack_fgets ( TEXTSTR  buffer, size_t size,FILE *file_file );

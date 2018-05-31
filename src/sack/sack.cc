@@ -8,6 +8,7 @@
  BAT[1] = name space; directory offsets land in a block referenced by this chain
  */
 #define SACK_VFS_SOURCE
+#if 1
 /* Includes the system platform as required or appropriate. If
    under a linux system, include appropriate basic linux type
    headers, if under windows pull "windows.h".
@@ -6915,7 +6916,7 @@ using namespace sack::timers;
 #endif
 #endif
  // tolower on linux
-#include <ctype.h>
+#  include <ctype.h>
 /*
  *  Created By Jim Buckeyne
  *
@@ -7034,7 +7035,7 @@ struct file_system_interface {
 	char * (CPROC *find_get_name)( struct find_cursor *cursor );
 	size_t (CPROC *find_get_size)( struct find_cursor *cursor );
 	LOGICAL (CPROC *find_is_directory)( struct find_cursor *cursor );
-	LOGICAL (CPROC *is_directory)( const char *cursor );
+	LOGICAL (CPROC *is_directory)( uintptr_t psvInstance, const char *cursor );
 	LOGICAL (CPROC *rename )( uintptr_t psvInstance, const char *original_name, const char *new_name );
 };
 /* \ \
@@ -7252,6 +7253,10 @@ FILESYS_PROC  size_t FILESYS_API  sack_ftell ( FILE *file_file );
 FILESYS_PROC  size_t FILESYS_API  sack_fsize ( FILE *file_file );
 FILESYS_PROC  LOGICAL FILESYS_API  sack_existsEx ( const char * filename, struct file_system_mounted_interface *mount );
 FILESYS_PROC  LOGICAL FILESYS_API  sack_exists ( const char *file_file );
+// tests if the text passed is a directory or path to a file... for a specific mount.
+FILESYS_PROC  LOGICAL FILESYS_API  sack_isPathEx ( const char *filename, struct file_system_mounted_interface *fsi );
+// tests if the text passed is a directory or path to a file... for all mounts
+FILESYS_PROC  LOGICAL FILESYS_API  sack_isPath( const char * filename );
 FILESYS_PROC  size_t FILESYS_API  sack_fread ( POINTER buffer, size_t size, int count,FILE *file_file );
 FILESYS_PROC  size_t FILESYS_API  sack_fwrite ( CPOINTER buffer, size_t size, int count,FILE *file_file );
 FILESYS_PROC  TEXTSTR FILESYS_API  sack_fgets ( TEXTSTR  buffer, size_t size,FILE *file_file );
@@ -7840,6 +7845,7 @@ typedef void(*atexit_priority_proc)(void (*)(void),int,CTEXTSTR DBG_PASS);
 // UNDEFINED
 //------------------------------------------------------------------------------------
 #else
+#error "there's nothing I can do to wrap PRELOAD() or ATEXIT()!"
 /* This is the most basic way to define some startup code that
    runs at some point before the program starts. This code is
    declared as static, so the same preload initialization name
@@ -10337,6 +10343,15 @@ SQLGETOPTION_PROC( void, FindOptions )( PODBC odbc, PLIST *result_list, CTEXTSTR
 _OPTION_NAMESPACE_END _SQL_NAMESPACE_END SACK_NAMESPACE_END
 	USE_OPTION_NAMESPACE
 #endif
+#else
+#  include <sack.h>
+ // tolower on linux
+//#include <filesys.h>
+//#include <procreg.h>
+//#include <salty_generator.h>
+//#include <sack_vfs.h>
+//#include <sqlgetoption.h>
+#endif
 SACK_VFS_NAMESPACE
 //#define PARANOID_INIT
 //#define DEBUG_TRACE_LOG
@@ -10474,11 +10489,11 @@ static struct {
 #define GFB_INIT_DIRENT 1
 #define GFB_INIT_NAMES  2
 static BLOCKINDEX GetFreeBlock( struct volume *vol, int init );
-static struct directory_entry * ScanDirectory( struct volume *vol, const char * filename, struct directory_entry *dirkey );
+static struct directory_entry * ScanDirectory( struct volume *vol, const char * filename, struct directory_entry *dirkey, int path_match );
 static char mytolower( int c ) {	if( c == '\\' ) return '/'; return tolower( c ); }
 // read the byte from namespace at offset; decrypt byte in-register
 // compare against the filename bytes.
-static int MaskStrCmp( struct volume *vol, const char * filename, FPI name_offset ) {
+static int MaskStrCmp( struct volume *vol, const char * filename, FPI name_offset, int path_match ) {
 	if( vol->key ) {
 		int c;
 		while(  ( c = ( ((uint8_t*)vol->disk)[name_offset] ^ vol->usekey[BLOCK_CACHE_NAMES][name_offset&BLOCK_MASK] ) )
@@ -10487,12 +10502,28 @@ static int MaskStrCmp( struct volume *vol, const char * filename, FPI name_offse
 			if( del ) return del;
 			filename++;
 			name_offset++;
+			if( path_match && !filename[0] ) {
+				c = ( ((uint8_t*)vol->disk)[name_offset] ^ vol->usekey[BLOCK_CACHE_NAMES][name_offset&BLOCK_MASK] );
+				if( c == '/' || c == '\\' )
+					return 0;
+			}
 		}
 		// c will be 0 or filename will be 0...
 		return filename[0] - c;
 	} else {
 		//LoG( "doesn't volume always have a key?" );
-		return StrCaseCmp( filename, (const char *)(((uint8_t*)vol->disk) + name_offset) );
+		if( path_match ) {
+			int l;
+			int r = StrCaseCmpEx( filename, (const char *)(((uint8_t*)vol->disk) + name_offset), l = strlen( filename ) );
+			if( !r )
+				if( ((const char *)(((uint8_t*)vol->disk) + name_offset))[l] == '/' || ((const char *)(((uint8_t*)vol->disk) + name_offset))[l] == '\\' )
+					return 0;
+				else
+					return 1;
+			return r;
+		}
+		else
+			return StrCaseCmp( filename, (const char *)(((uint8_t*)vol->disk) + name_offset) );
 	}
 }
 #ifdef DEBUG_TRACE_LOG
@@ -10631,7 +10662,7 @@ static LOGICAL ValidateBAT( struct volume *vol ) {
 			if( m < BLOCKS_PER_BAT ) break;
 		}
 	}
-	if( !ScanDirectory( vol, NULL, NULL ) ) return FALSE;
+	if( !ScanDirectory( vol, NULL, NULL, 0 ) ) return FALSE;
 	return TRUE;
 }
 //-------------------------------------------------------
@@ -11284,11 +11315,12 @@ const char *sack_vfs_get_signature( struct volume *vol ) {
 	vol->lock = 0;
 	return signature;
 }
-struct directory_entry * ScanDirectory( struct volume *vol, const char * filename, struct directory_entry *dirkey ) {
+struct directory_entry * ScanDirectory( struct volume *vol, const char * filename, struct directory_entry *dirkey, int path_match ) {
 	size_t n;
 	BLOCKINDEX this_dir_block = 0;
 	BLOCKINDEX next_dir_block;
 	struct directory_entry *next_entries;
+	if( filename && filename[0] == '.' && filename[1] == '/' ) filename += 2;
 	do {
 		enum block_cache_entries cache = BLOCK_CACHE_DIRECTORY;
 		next_entries = BTSEEK( struct directory_entry *, vol, this_dir_block, cache );
@@ -11316,8 +11348,8 @@ struct directory_entry * ScanDirectory( struct volume *vol, const char * filenam
 			if( filename ) {
  // have to do the seek to the name block otherwise it might not be loaded.
 				TSEEK( const char *, vol, name_ofs, name_cache );
-				if( MaskStrCmp( vol, filename, name_ofs ) == 0 ) {
-					dirkey[0] = (*entkey);
+				if( MaskStrCmp( vol, filename, name_ofs, path_match ) == 0 ) {
+					if( dirkey ) dirkey[0] = (*entkey);
 					LoG( "return found entry: %p (%" _size_f ":%" _size_f ") %s", next_entries + n, name_ofs, next_entries[n].first_block ^ dirkey->first_block, filename );
 					return next_entries + n;
 				}
@@ -11359,7 +11391,7 @@ static FPI SaveFileName( struct volume *vol, const char * filename ) {
 				}
 			}
 			else
-				if( MaskStrCmp( vol, filename, name - (unsigned char*)vol->disk ) == 0 ) {
+				if( MaskStrCmp( vol, filename, name - (unsigned char*)vol->disk, 0 ) == 0 ) {
 					LoG( "using existing entry for new file...%s", filename );
 					return ((uintptr_t)name) - ((uintptr_t)vol->disk);
 				}
@@ -11414,7 +11446,7 @@ struct sack_vfs_file * CPROC sack_vfs_openfile( struct volume *vol, const char *
 	while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
 	if( filename[0] == '.' && filename[1] == '/' ) filename += 2;
 	LoG( "sack_vfs open %s = %p on %s", filename, file, vol->volname );
-	file->entry = ScanDirectory( vol, filename, &file->dirent_key );
+	file->entry = ScanDirectory( vol, filename, &file->dirent_key, 0 );
 	if( !file->entry ) {
 		if( vol->read_only ) { LoG( "Fail open: readonly" ); vol->lock = 0; Deallocate( struct sack_vfs_file *, file ); return NULL; }
 		else file->entry = GetNewDirectory( vol, filename );
@@ -11439,7 +11471,7 @@ int CPROC sack_vfs_exists( struct volume *vol, const char * file ) {
 	struct directory_entry *ent;
 	while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
 	if( file[0] == '.' && file[1] == '/' ) file += 2;
-	ent = ScanDirectory( vol, file, &entkey );
+	ent = ScanDirectory( vol, file, &entkey, 0 );
 	//lprintf( "sack_vfs exists %s %s", ent?"ya":"no", file );
 	vol->lock = 0;
 	if( ent ) return TRUE;
@@ -11687,7 +11719,7 @@ int CPROC sack_vfs_unlink_file( struct volume *vol, const char * filename ) {
 	if( !vol ) return 0;
 	while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
 	LoG( "unlink file:%s", filename );
-	if( ( entry  = ScanDirectory( vol, filename, &entkey ) ) ) {
+	if( ( entry  = ScanDirectory( vol, filename, &entkey, 0 ) ) ) {
 		sack_vfs_unlink_file_entry( vol, entry, &entkey, entry->first_block ^ entkey.first_block );
 		result = 1;
 	}
@@ -11782,17 +11814,23 @@ int CPROC sack_vfs_find_next( struct find_info *info ) { return iterate_find( in
 char * CPROC sack_vfs_find_get_name( struct find_info *info ) { return info->filename; }
 size_t CPROC sack_vfs_find_get_size( struct find_info *info ) { return info->filesize; }
 LOGICAL CPROC sack_vfs_find_is_directory( struct find_cursor *cursor ) { return FALSE; }
-LOGICAL CPROC sack_vfs_is_directory( const char *cursor ) { return FALSE; }
+LOGICAL CPROC sack_vfs_is_directory( uintptr_t psvInstance, const char *path ) {
+	struct volume *vol = (struct volume *)psvInstance;
+	if( ScanDirectory( vol, path, NULL, 1 ) ) {
+		return TRUE;
+	}
+	return FALSE;
+}
 static LOGICAL CPROC sack_vfs_rename( uintptr_t psvInstance, const char *original, const char *newname ) {
 	struct volume *vol = (struct volume *)psvInstance;
 	if( vol ) {
 		struct directory_entry entkey;
 		struct directory_entry *entry;
 		while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
-		if( ( entry  = ScanDirectory( vol, original, &entkey ) ) ) {
+		if( ( entry  = ScanDirectory( vol, original, &entkey, 0 ) ) ) {
 			struct directory_entry new_entkey;
 			struct directory_entry *new_entry;
-			if( ( new_entry = ScanDirectory( vol, newname, &new_entkey ) ) ) return FALSE;
+			if( ( new_entry = ScanDirectory( vol, newname, &new_entkey, 0 ) ) ) return FALSE;
 			entry->name_offset = SaveFileName( vol, newname ) ^ entkey.name_offset;
 			vol->lock = 0;
 			return TRUE;
@@ -12213,7 +12251,7 @@ char *SRG_ID_Generator( void ) {
 	SRG_GetEntropyBuffer( ctx, buf, 8*(16+16) );
 	return EncodeBase64Ex( (uint8*)buf, (16+16), &outlen, (const char *)1 );
 }
-#if WIN32
+#ifdef WIN32
 #if 0
 // if standalone?
 BOOL WINAPI DllMain(
@@ -15071,8 +15109,8 @@ SACK_DEADSTART_NAMESPACE_END
  * see also - include/logging.h
  *
  */
-#define SUPPORT_LOG_ALLOCATE
-#define DEFAULT_OUTPUT_STDERR
+//#define SUPPORT_LOG_ALLOCATE
+//#define DEFAULT_OUTPUT_STDERR
 #define COMPUTE_CPU_FREQUENCY
 #define NO_UNICODE_C
 //#undef UNICODE
@@ -18314,6 +18352,11 @@ SYSTEM_PROC( generic_function, LoadFunctionExx )( CTEXTSTR libname, CTEXTSTR fun
 			tnprintf( library->name
 				, fullnameLen - (library->name-library->full_name)
 				, WIDE("%s"), libname );
+			library->name = (char*)pathrchr( library->full_name );
+			if( library->name )
+				library->name++;
+			else
+				library->name = library->full_name;
 		}
 		else
 		{
@@ -18342,7 +18385,7 @@ SYSTEM_PROC( generic_function, LoadFunctionExx )( CTEXTSTR libname, CTEXTSTR fun
 #  ifdef UNICODE
 			char *libname = CStrDup( library->name );
 #  else
-#        define libname library->name
+//#        define libname library->name
 #  endif
 			//lprintf( "trying external load...%s", library->name );
 			l.ExternalLoadLibrary( libname );
@@ -20783,6 +20826,7 @@ RENDER_NAMESPACE_END
 #define KEY_Y         SDLK_Y
 #define KEY_Z         SDLK_Z
 #elif defined( USE_RAW_SCANCODE )
+#error RAW_SCANCODES have not been defined yet.
 #define KEY_SHIFT        0xFF
 #define KEY_LEFT_SHIFT   50
  // maybe?
@@ -24356,6 +24400,7 @@ IMAGE_PROC_PTR( void, ResetImageBuffers )( Image image, LOGICAL image_only );
 #define BlotScaledImageSizedEx             LEVEL_ALIAS(BlotScaledImageSizedEx )
 #define plot                               LEVEL_ALIAS(plot )
 #define plotalpha                          LEVEL_ALIAS(plotalpha )
+#error 566
 #define getpixel                           LEVEL_ALIAS(getpixel )
 #define do_line                            LEVEL_ALIAS(do_line )
 #define do_lineAlpha                       LEVEL_ALIAS(do_lineAlpha )
@@ -27586,7 +27631,6 @@ PRIORITY_PRELOAD( IgnoreSignalContinue, GLOBAL_INIT_PRELOAD_PRIORITY-1 )
 #if defined __ANDROID_OLD_PLATFORM_SUPPORT__
 	bsd_signal( SIGUSR1, ContinueSignal );
 #else
-   signal(SIGPIPE, SIG_IGN);
 	signal( SIGUSR1, ContinueSignal );
 #endif
 }
@@ -37589,6 +37633,37 @@ LOGICAL sack_exists( const char * filename )
 	return FALSE;
 }
 //----------------------------------------------------------------------------
+LOGICAL sack_isPathEx ( const char *filename, struct file_system_mounted_interface *fsi )
+{
+	FILE *tmp;
+	if( fsi && fsi->fsi && fsi->fsi->exists )
+	{
+		int result = fsi->fsi->is_directory( fsi->psvInstance, filename );
+		return result;
+	}
+	else if( ( tmp = fopen( filename, "rb" ) ) )
+	{
+		fclose( tmp );
+		return TRUE;
+	}
+	return FALSE;
+}
+//----------------------------------------------------------------------------
+LOGICAL sack_isPath( const char * filename )
+{
+	struct file_system_mounted_interface *mount = (*winfile_local).mounted_file_systems;
+	while( mount )
+	{
+		if( sack_isPathEx( filename, mount ) )
+		{
+			(*winfile_local).last_find_mount = mount;
+			return TRUE;
+		}
+		mount = mount->next;
+	}
+	return FALSE;
+}
+//----------------------------------------------------------------------------
 int  sack_renameEx ( CTEXTSTR file_source, CTEXTSTR new_name, struct file_system_mounted_interface *mount )
 {
 	int status;
@@ -37907,7 +37982,7 @@ static	LOGICAL CPROC sack_filesys_find_is_directory( struct find_cursor *_cursor
 	return IsPath( buffer );
 #endif
 }
-static	LOGICAL CPROC sack_filesys_is_directory( const char *buffer ){
+static	LOGICAL CPROC sack_filesys_is_directory( uintptr_t psvInstance, const char *buffer ){
 	return IsPath( buffer );
 }
 static struct file_system_interface native_fsi = {
@@ -38462,7 +38537,7 @@ typedef struct myfinddata {
 				findhandle(pInfo) = (HANDLECAST)-1;
 		else
 		{
-#if WIN32
+#ifdef WIN32
 			findhandle(pInfo) = findfirst( findmask, finddata(pInfo) );
 #else
 			lprintf( "opendir [%s]", findbasename(pInfo) );
@@ -38579,7 +38654,7 @@ getnext:
 	}
 	else
 	{
-#if WIN32
+#ifdef WIN32
 		//lprintf( "... %s", finddata(pInfo)->name );
 #  ifdef UNDER_CE
 		if( !StrCmp( WIDE("."), finddata(pInfo)->cFileName ) ||
@@ -38635,7 +38710,7 @@ getnext:
 			}
 			else
 			{
-#if WIN32
+#ifdef WIN32
 #  ifdef UNDER_CE
 				tnprintf( pData->buffer, MAX_PATH_NAME, WIDE("%s%s%s")
 						  , pData->prior?pData->prior->buffer:WIDE( "" )
@@ -38664,7 +38739,7 @@ getnext:
 			}
 			else
 			{
-#if WIN32
+#ifdef WIN32
 #  ifdef UNDER_CE
 				tnprintf( pData->buffer, MAX_PATH_NAME, WIDE("%s"), finddata(pInfo)->cFileName );
 #  else
@@ -38692,7 +38767,7 @@ getnext:
 	if( ((flags & (SFF_DIRECTORIES | SFF_SUBCURSE))
 		&& (pData->scanning_mount && pData->scanning_mount->fsi
 			&& (pData->scanning_mount->fsi->is_directory
-				&& pData->scanning_mount->fsi->is_directory( pDataBuffer ))))
+				&& pData->scanning_mount->fsi->is_directory( pData->scanning_mount->psvInstance, pDataBuffer ))))
 		|| (!(pData->scanning_mount ? pData->scanning_mount->fsi : NULL)
 #ifdef WIN32
 #  ifdef UNDER_CE
@@ -49857,6 +49932,7 @@ static int
 #elif defined( BCC16 )
 			dwBaud = 0xFEFF;
 #else
+#error no baud defined for this compiler.
 #endif
 #endif
 		  }
@@ -59865,6 +59941,9 @@ __END_DECLS
 SACK_NETWORK_NAMESPACE
 PRELOAD( InitNetworkGlobalOptions )
 {
+#ifdef __LINUX__
+	signal(SIGPIPE, SIG_IGN);
+#endif
 #ifndef __NO_OPTIONS__
 	globalNetworkData.flags.bLogProtocols = SACK_GetProfileIntEx( WIDE("SACK"), WIDE( "Network/Log Protocols" ), 0, TRUE );
 	globalNetworkData.flags.bShortLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data(64 byte max)" ), 0, TRUE );
@@ -60203,7 +60282,7 @@ void SetAddrName( SOCKADDR *addr, const char *name )
 SOCKADDR *AllocAddrEx( DBG_VOIDPASS )
 {
 	SOCKADDR *lpsaAddr=(SOCKADDR*)AllocateEx( MAGIC_SOCKADDR_LENGTH + 2 * sizeof( uintptr_t ) DBG_RELAY );
-	MemSet( lpsaAddr, 0, MAGIC_SOCKADDR_LENGTH );
+	memset( lpsaAddr, 0, MAGIC_SOCKADDR_LENGTH );
 	//initialize socket length to something identifiable?
 	((uintptr_t*)lpsaAddr)[0] = 3;
  // string representation of address
@@ -60237,7 +60316,7 @@ PCLIENT GrabClientEx( PCLIENT pClient DBG_PASS )
 	return pClient;
 }
 //----------------------------------------------------------------------------
-PCLIENT AddAvailable( PCLIENT pClient )
+static PCLIENT AddAvailable( PCLIENT pClient )
 {
 	if( pClient )
 	{
@@ -60255,6 +60334,7 @@ PCLIENT AddAvailable( PCLIENT pClient )
 	return pClient;
 }
 //----------------------------------------------------------------------------
+// used externally by udp/tcp
 PCLIENT AddActive( PCLIENT pClient )
 {
 	if( pClient )
@@ -60273,7 +60353,7 @@ PCLIENT AddActive( PCLIENT pClient )
 	return pClient;
 }
 //----------------------------------------------------------------------------
-PCLIENT AddClosed( PCLIENT pClient )
+static PCLIENT AddClosed( PCLIENT pClient )
 {
 	if( pClient )
 	{
@@ -60291,7 +60371,7 @@ PCLIENT AddClosed( PCLIENT pClient )
 	return pClient;
 }
 //----------------------------------------------------------------------------
-void ClearClient( PCLIENT pc DBG_PASS )
+static void ClearClient( PCLIENT pc DBG_PASS )
 {
 	uintptr_t* pbtemp;
 	PCLIENT next;
@@ -60335,7 +60415,7 @@ void ClearClient( PCLIENT pc DBG_PASS )
 	pc->dwFlags = dwFlags;
 }
 //----------------------------------------------------------------------------
-void NetworkGloalLock( DBG_VOIDPASS ) {
+static void NetworkGlobalLock( DBG_VOIDPASS ) {
 	LOGICAL locked = FALSE;
 	do {
 #ifdef USE_NATIVE_CRITICAL_SECTION
@@ -60345,7 +60425,7 @@ void NetworkGloalLock( DBG_VOIDPASS ) {
 #endif
 		{
 #ifdef LOG_NETWORK_LOCKING
-			_lprintf( DBG_RELAY )(WIDE( "Failed enter global? %lld" ), globalNetworkData.csNetwork.dwThreadId );
+			_lprintf( DBG_RELAY )(WIDE( "Failed enter global? %lld" ), globalNetworkData.csNetwork.dwThreadID );
 #endif
 			Relinquish();
 		}
@@ -62157,9 +62237,6 @@ get_client:
 #ifdef LOG_NETWORK_LOCKING
 		lprintf( WIDE("GetFreeNetworkClient left global") );
 #endif
-#if 0
-		RescheduleTimerEx( globalNetworkData.uPendingTimer, 1 );
-#endif
 		Relinquish();
 		if( globalNetworkData.AvailableClients )
 		{
@@ -63197,6 +63274,8 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 #ifndef __LINUX__
 		if( NetworkLock( lpClient, 0 ) && ((n=1),NetworkLock( lpClient, 1 )) ) {
 			TerminateClosedClient( lpClient );
+			NetworkUnlock( lpClient, 0 );
+			NetworkUnlock( lpClient, 1 );
 		}
 		else if( n ) {
 			NetworkUnlock( lpClient, 0 );
