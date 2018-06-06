@@ -81,7 +81,7 @@ public:
 	struct file_system_interface *fsInt;
 	struct file_system_mounted_interface* fsMount;
 	static v8::Persistent<v8::Function> constructor;
-	
+
 public:
 
 	static void Init( Handle<Object> exports );
@@ -213,6 +213,10 @@ public:
 	static void findOptionNode( const v8::FunctionCallbackInfo<Value>& args );
 	static void getOptionNode( const v8::FunctionCallbackInfo<Value>& args );
 	static void error( const v8::FunctionCallbackInfo<Value>& args );
+
+	static void getLogging( const v8::FunctionCallbackInfo<Value>& args );
+	static void setLogging( const v8::FunctionCallbackInfo<Value>& args );
+
 
 	static void doWrap( SqlObject *sql, Local<Object> o ); 
 

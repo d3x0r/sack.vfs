@@ -203,10 +203,10 @@ There are methods on the Sqlite() function call...
 | function | (name, callback(...args) | Add a user defined function to the current sql connection.  'name' is the name of the function.  Set as deterministic; callback is called whenever the procedure's value is required by sqlite; values for inputs are cached so it doesn't need to always call the function.  Return value is given as result of function.   **ODBC CONNECTION UNDEFINED RESULT**
 | procedure | (name, callback(...args) | Add a user defined function to the current sql connection.  'name' is the name of the function.  Callback is called whenever the function is used in SQL statement given to sqlite.  Return value is given as result of function.   **ODBC CONNECTION UNDEFINED RESULT**
 | aggregate | ( name, stepCallback(...args), finalCallback() ) | Define an aggregate function called 'name' and when used, each row stepped is passed to the step callback, when the grouping issues a final, invoke the final callback.  Final result is given as the final value.  **ODBC CONNECTION UNDEFINED RESULT**
+| log | accessor | set to false to disable logging on this specific connection (always returns false) |
 |   |  |  |
 | GUI Functions |  | Added when compiled with full SACK library |
 | optionEditor | ()  | Open gui option editor with options in this database (Unimplemented) |
-
 
 
 example sql command?
