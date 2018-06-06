@@ -2,7 +2,7 @@
   "targets": [
     {
       "target_name": "sack_vfs",
-      
+      'win_delay_load_hook': 'false',      
       "sources": [ "src/vfs_module.cc",
            "src/sack/sack.cc",
            "src/sack/sqlite3.c",
@@ -17,10 +17,11 @@
            "src/task_module.cc",
            "src/config_module.cc",
           ],
-	'defines': [
+	'defines': [ "BUILD_NODE_ADDON",
           'TARGETNAME="sack_vfs.node"',
            "__STATIC__","USE_SQLITE","USE_SQLITE_INTERFACE","FORCE_COLOR_MACROS",
-           "NO_OPEN_MACRO","NO_FILEOP_ALIAS","JSON_PARSER_MAIN_SOURCE", "SQLITE_ENABLE_LOCKING_STYLE=0","SQLITE_THREADSAFE=0","SQLITE_OMIT_UTF16","SQLITE_ENABLE_COLUMN_METADATA=1", "SQLITE_DEFAULT_FOREIGN_KEYS=1", "NO_MIN_MAX_MACROS"
+           "NO_OPEN_MACRO","NO_FILEOP_ALIAS","JSON_PARSER_MAIN_SOURCE", "SQLITE_ENABLE_LOCKING_STYLE=0","SQLITE_THREADSAFE=0","SQLITE_OMIT_UTF16","SQLITE_ENABLE_COLUMN_METADATA=1", "SQLITE_DEFAULT_FOREIGN_KEYS=1", "NO_MIN_MAX_MACROS",
+           "BUILD_NODE_ADDON"
         ],
     'conditions': [
           ['OS=="linux"', {

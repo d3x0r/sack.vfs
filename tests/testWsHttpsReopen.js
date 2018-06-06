@@ -66,9 +66,11 @@ function open() {
 } 
 
 var server = open();
+
 setTimeout( ()=>{
+	console.log( "server:", server )
 	server.close() 
-	setTimeout( ()=>{
+	//setTimeout( ()=>{
 		open(); 
-	}, 2000 );
+	//}, 2000 );
 }, 2000 );

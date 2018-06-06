@@ -31,8 +31,8 @@ static void vfs_b64xor(const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc > 1 ) {
-		String::Utf8Value xor1( args[0] );
-		String::Utf8Value xor2( args[1] );
+		String::Utf8Value xor1( USE_ISOLATE( isolate ) args[0] );
+		String::Utf8Value xor2( USE_ISOLATE( isolate ) args[1] );
 		//lprintf( "is buffer overlapped? %s %s", *xor1, *xor2 );
 		char *r = b64xor( *xor1, *xor2 );
 		MaybeLocal<String> retval = String::NewFromUtf8( isolate, r );
@@ -45,14 +45,14 @@ static void vfs_u8xor(const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc > 0 ) {
-		String::Utf8Value xor1( args[0] );
+		String::Utf8Value xor1( USE_ISOLATE( isolate ) args[0] );
 		Local<Object> key = args[1]->ToObject();
 		//Handle<Object> 
 		Local<String> tmp;
 		Local<Value> keyValue = key->Get( String::NewFromUtf8( isolate, "key" ) );
 		Local<Value> stepValue = key->Get( tmp = String::NewFromUtf8( isolate, "step" ) );
 		int step = (int)stepValue->IntegerValue();
-		String::Utf8Value xor2( keyValue );
+		String::Utf8Value xor2( USE_ISOLATE( isolate ) keyValue );
 		//lprintf( "is buffer overlapped? %s %s %d", *xor1, *xor2, step );
 		char *out = u8xor( *xor1, (size_t)xor1.length(), *xor2, (size_t)xor2.length(), &step );
 		//lprintf( "encoded1:%s %d", out, step );
@@ -174,6 +174,7 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t v
 		fileName = StrDup( filename );
 		volNative = true;
 		vol = sack_vfs_load_crypt_volume( filename, version, key, key2 );
+		//lprintf( "VOL: %p for %s %d %p %p", vol, filename, version, key, key2 );
 		if( vol )
 			fsMount = sack_mount_filesystem( mount, fsInt = sack_get_filesystem_interface( SACK_VFS_FILESYSTEM_NAME )
 					, 2000, (uintptr_t)vol, TRUE );
@@ -207,9 +208,9 @@ void VolumeObject::volRekey( const v8::FunctionCallbackInfo<Value>& args ){
 	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
 	sack_vfs_decrypt_volume( vol->vol );
 	if( argc > 0 ) {
-		key1 = new String::Utf8Value( args[0]->ToString() );
+		key1 = new String::Utf8Value( USE_ISOLATE( isolate ) args[0]->ToString() );
 		if( argc > 1 )
-			key2 = new String::Utf8Value( args[1]->ToString() );
+			key2 = new String::Utf8Value( USE_ISOLATE( isolate ) args[1]->ToString() );
 		else
 			key2 = NULL;
 		sack_vfs_encrypt_volume( vol->vol, 0, *key1[0], *key2[0] );
@@ -222,7 +223,7 @@ void VolumeObject::mkdir( const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc > 0 ) {
-  		String::Utf8Value fName( args[0] );
+  		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
   		MakePath( *fName );
 	}
 }
@@ -233,7 +234,7 @@ void VolumeObject::makeDirectory( const v8::FunctionCallbackInfo<Value>& args ){
 	if( argc > 0 ) {
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
 		if( vol ) {
-			String::Utf8Value fName( args[0] );
+			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 			if( vol->volNative ) {
 				// no directory support; noop.
 			} else {
@@ -263,7 +264,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 				return;
 				
 			}
-			String::Utf8Value fName( args[0] );
+			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 			SqlObject* obj;
 			char dbName[256];
          if( vol->mountName )
@@ -289,7 +290,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 		int argc = args.Length();
 		Local<Value> *argv = new Local<Value>[2];
 		char dbName[256];
-		String::Utf8Value fName( args[0] );
+		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
   		snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
   		argv[0] = String::NewFromUtf8( isolate, dbName );
 		argv[1] = args.Holder();
@@ -340,7 +341,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 			return;
 		}
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
-		String::Utf8Value fName( args[0] );
+		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 
 		if( vol->volNative ) {
 			struct sack_vfs_file *file = sack_vfs_openfile( vol->vol, (*fName) );
@@ -449,7 +450,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			return;
 		}
 
-		String::Utf8Value fName( args[0] );
+		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 
 		if( vol->volNative ) {
 			if( !sack_vfs_exists( vol->vol, *fName ) ) {
@@ -510,7 +511,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			return;
 		}
 
-		String::Utf8Value fName( args[0] );
+		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 		size_t len = 0;
 		POINTER data = OpenSpace( NULL, *fName, &len );
 		if( data && len ) {
@@ -545,7 +546,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			if( args[2]->ToBoolean()->Value() )
 				overlong = TRUE;
 		}
-		String::Utf8Value fName( args[0] );
+		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 		int type = 0;		
 		if( ( (type=1), args[1]->IsArrayBuffer()) || ((type=2),args[1]->IsUint8Array()) ) {
 			uint8_t *buf ;
@@ -578,7 +579,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		}
 		else if(args[1]->IsString()) {
 			char *f = StrDup( *fName );
-			String::Utf8Value buffer( args[1] );
+			String::Utf8Value buffer( USE_ISOLATE( isolate ) args[1] );
 			const char *buf = *buffer;
 			if( !overlong ) {
 				if( vol->volNative ) {
@@ -648,7 +649,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 	void VolumeObject::fileExists( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
-		String::Utf8Value fName( args[0] );
+		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 		if( vol->volNative ) {
 			args.GetReturnValue().Set( sack_vfs_exists( vol->vol, *fName ) );
 		}else {
@@ -660,7 +661,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 	void VolumeObject::fileVolDelete( const FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
-		String::Utf8Value fName( args[0] );
+		String::Utf8Value fName( USE_ISOLATE( isolate )args[0] );
 		if( vol->volNative ) {
 			args.GetReturnValue().Set( Boolean::New( isolate, sack_vfs_unlink_file( vol->vol, *fName ) != 0 ) );
 		}
@@ -671,7 +672,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 	void fileDelete( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
-		String::Utf8Value fName( args[0] );
+		String::Utf8Value fName( USE_ISOLATE( isolate )args[0] );
 		args.GetReturnValue().Set( Boolean::New( isolate, sack_unlink( 0, *fName ) != 0 ) );
 	}
 
@@ -680,9 +681,9 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
 		struct find_cursor *fi;
 		if( args.Length() > 0 ) {
-			String::Utf8Value path( args[0]->ToString() );
+			String::Utf8Value path( USE_ISOLATE( isolate )args[0]->ToString() );
 			if( args.Length() > 1 ) {
-				String::Utf8Value mask( args[1]->ToString() );
+				String::Utf8Value mask( USE_ISOLATE( isolate )args[1]->ToString() );
 				fi = vol->fsInt->find_create_cursor( (uintptr_t)vol->vol, *path, *mask );
 			}
          else
@@ -728,11 +729,17 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			else {
 				int arg = 0;
 				//if( argc > 0 ) {
-				String::Utf8Value fName( args[arg++]->ToString() );
-				mount_name = StrDup( *fName );
+				if( args[0]->IsString() ) {
+					String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString() );
+					mount_name = StrDup( *fName );
+				}
+				else  {
+					arg = 1;
+					mount_name = SRG_ID_Generator();
+				}
 				//}
 				if( argc > 1 ) {
-					String::Utf8Value fName( args[arg++]->ToString() );
+					String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString() );
 					defaultFilename = FALSE;
 					filename = StrDup( *fName );
 				}
@@ -743,16 +750,16 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				}
 				//if( args[argc
 				if( args[arg]->IsNumber() ) {
-					version = (uintptr_t)args[arg++]->ToNumber()->Value();
+					version = (uintptr_t)args[arg++]->ToNumber(isolate)->Value();
 				}
 				if( argc > arg ) {
-					String::Utf8Value k( args[arg] );
+					String::Utf8Value k( USE_ISOLATE( isolate ) args[arg] );
 					if( !args[arg]->IsNull() && !args[arg]->IsUndefined() )
 						key = StrDup( *k );
 					arg++;
 				}
 				if( argc > arg ) {
-					String::Utf8Value k( args[arg] );
+					String::Utf8Value k( USE_ISOLATE( isolate ) args[arg] );
 					if( !args[arg]->IsNull() && !args[arg]->IsUndefined() )
 						key2 = StrDup( *k );
 					arg++;
@@ -800,7 +807,7 @@ void FileObject::Emitter(const v8::FunctionCallbackInfo<Value>& args)
 		args[0]->ToString()  // argument
 	};
 
-	node::MakeCallback(isolate, args.This(), "emit", 2, argv);
+	//node::MakeCallback(isolate, args.This(), "emit", 2, argv);
 }
 
 void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
@@ -914,7 +921,7 @@ void FileObject::writeFile(const v8::FunctionCallbackInfo<Value>& args) {
 	//SACK_VFS_PROC size_t CPROC sack_vfs_write( struct sack_vfs_file *file, char * data, size_t length );
 	if( args.Length() == 1 ) {
 		if( args[0]->IsString() ) {
-			String::Utf8Value data( args[0]->ToString() );
+			String::Utf8Value data( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString() );
 			sack_vfs_write( file->file, *data, data.length() );
 		} else if( args[0]->IsArrayBuffer() ) {
 			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
@@ -944,7 +951,7 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 	}
 	if( args.Length() > 0 ) {
 		if( args[0]->IsString() ) {
-			String::Utf8Value data( args[0]->ToString() );
+			String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString() );
 			size_t datalen = data.length();
 			char *databuf = *data;
 			size_t check;
@@ -992,18 +999,18 @@ void FileObject::truncateFile(const v8::FunctionCallbackInfo<Value>& args) {
 
 void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 	Local<Context> context = Isolate::GetCurrent()->GetCurrentContext();
-	size_t num1 = (size_t)args[0]->ToNumber()->Value();
+	size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	if( args.Length() == 1 && args[0]->IsNumber() ) {
-		size_t num1 = (size_t)args[0]->ToNumber()->Value();
+		size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
 		if( file->vol->volNative )
 			sack_vfs_seek( file->file, num1, SEEK_SET );
 		else
 			sack_fseek( file->cfile, num1, SEEK_SET );
 	}
 	if( args.Length() == 2 && args[0]->IsNumber() && args[1]->IsNumber() ) {
-		size_t num1 = (size_t)args[0]->ToNumber()->Value();
-		int num2 = (int)args[1]->ToNumber()->Value();
+		size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
+		int num2 = (int)args[1]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
 		if( file->vol->volNative ) {
 			sack_vfs_seek( file->file, num1, (int)num2 );
 		}
@@ -1074,7 +1081,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		VolumeObject* vol;
 
 		if( args.IsConstructCall() ) {
-			String::Utf8Value fName( args[0] );
+			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 			// Invoked as constructor: `new MyObject(...)`
 			FileObject* obj;
 			if( args.Length() < 2 ) {

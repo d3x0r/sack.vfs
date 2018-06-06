@@ -95,7 +95,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			char *portName;
 			int argc = args.Length();
 			if( argc > 0 ) {
-				String::Utf8Value fName( args[0]->ToString() );
+				String::Utf8Value fName( USE_ISOLATE( isolate ) args[0]->ToString() );
 				portName = StrDup( *fName );
 			} else {
 				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must specify port name to open." ) ) );

@@ -7,6 +7,8 @@ project (sack_vfs)
 
 #include_directories( "../node_modules/nan" )
 
+ADD_DEFINITIONS( -DBUILD_NODE_ADDON )
+
 if( NOT WIN32 )
     ADD_DEFINITIONS( -D__LINUX__ )
 else( NOT WIN32 )
