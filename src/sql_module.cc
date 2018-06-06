@@ -63,6 +63,9 @@ void SqlObject::Init( Handle<Object> exports ) {
 	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "error" )
 			, FunctionTemplate::New( isolate, SqlObject::error )
 			, Local<FunctionTemplate>() );
+	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "log" )
+		, FunctionTemplate::New( isolate, SqlObject::getLogging )
+		, FunctionTemplate::New( isolate, SqlObject::setLogging ) );
 
 	// update the value from option node
 	//NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "wo", writeOptionNode );
@@ -1308,6 +1311,24 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 	else
 		lprintf( "unhandled result type (object? array? function?)" );
 }
+
+void SqlObject::getLogging( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	args.GetReturnValue().Set( False( isolate ) );
+}
+
+void SqlObject::setLogging( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	if( args.Length() ) {
+		Local<Boolean> b( args[0]->ToBoolean() );
+		if( *b )
+			SetSQLLoggingDisable( sql->odbc, FALSE );
+		else
+			SetSQLLoggingDisable( sql->odbc, TRUE );
+	}
+}
+
 
 void SqlObject::error( const v8::FunctionCallbackInfo<Value>& args ) {
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
