@@ -108,7 +108,18 @@ vfs = {
 
 
 ### Volume Interface 
- (result from vfs.Volume())
+
+  Arguments to Volume() constuctor `( mount name, filename, extra...)` .  If empty parameters `()`, the native filesystem is opened specifically.  If 
+a mount is desired to be opened, it filename must be passed as null; `Volume( "mount", null )`.  If the first parameter is only a string, a VFS volume
+by the name is opened and the volume is mounted anonymously; `Volume( "filename" )`. Similarly if the mount name is NULL, and a filename is passed as the second
+parameter `Volume( null, "filename" )`, the volume is also mounted anonymously, so it can be refeenced when opening sqlite databases in it.  
+
+`new` may be optionally applied to (most) any root object.  I may have gotten sloppy in some later works.  Everything behaves mostly as a factory by default.
+
+Two addditional strings may be applied to encrypt the volume using those two key parts.
+
+The following methods exist on the resulting object.
+
 ```
 Volume = {
     File(filename) - open a file (returns a new object)
@@ -1001,6 +1012,8 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.137 - fix pathchr insensitive path comparison; update tls interface for newer openssl; allow opening volumes by mount name only.
+- 0.9.136 - added log option to sql connections.
 - 0.9.135 - Fix unmounted volumes to instead mount hidden.
 - 0.9.134 - disable delay-load build option for node-gyp build.
 - 0.9.133 - Isolate in Utf8Value is actually a very new thing.
