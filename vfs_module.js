@@ -33,7 +33,9 @@ require.extensions['.json6'] = function (module, filename) {
 //sack.Sqlite.so( "SACK/Summoner/Auto register with summoner?", 1 );
 //console.log( "register:", sack.Sqlite.op( "SACK/Summoner/Auto register with summoner?", 0 ));
 //sack.loadComplete();
-const thread = sack.Thread(process._tickDomainCallback);
+if (process._tickDomainCallback || process._tickCallback)
+    sack.Thread(process._tickDomainCallback || process._tickCallback);
+
 module.exports=exports=sack;
 
 if( false ) {

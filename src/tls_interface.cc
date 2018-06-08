@@ -11,10 +11,7 @@
 #if WIN32
 #define timegm _mkgmtime
 #endif
-                             
-#if OPENSSL_VERSION_NUMBER >= 0x1010008f
-#  define USE_TLS_ACCESSORS
-#endif
+
 
 const int kExp = RSA_F4;
 
@@ -242,7 +239,7 @@ void TLSObject::seed( const v8::FunctionCallbackInfo<Value>& args ) {
 			RAND_seed( *arr, (int)arr->Length() );
 		}
 		else {
-			String::Utf8Value val( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString() );
+			String::Utf8Value val( args[0]->ToString() );
 			RAND_seed( *val, val.length() );
 		}
 	}
@@ -302,7 +299,7 @@ void TLSObject::genKey( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( argc ) {
 		keylen = (int)args[0]->IntegerValue();
 		if( argc > 1 ) {
-  			pass = new String::Utf8Value( USE_ISOLATE( isolate ) args[1]->ToString() );
+  			pass = new String::Utf8Value( args[1]->ToString() );
 			keypass = *pass[0];
 			keypasslen = pass->length();
 		}
@@ -516,7 +513,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Object> country = opts->Get( optName )->ToObject();
-	String::Utf8Value _country( USE_ISOLATE( isolate ) country->ToString() );
+	String::Utf8Value _country( country->ToString() );
 	params.country = *_country;
 	params.countrylen = _country.length();
 
@@ -526,7 +523,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Object> state = opts->Get( optName )->ToObject();
-	String::Utf8Value _state( USE_ISOLATE( isolate ) state->ToString() );
+	String::Utf8Value _state( state->ToString() );
 	params.state = *_state;
 	params.statelen = _state.length();
 
@@ -536,7 +533,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Object> locality = opts->Get( optName )->ToObject();
-	String::Utf8Value _locality( USE_ISOLATE( isolate ) locality->ToString() );
+	String::Utf8Value _locality( locality->ToString() );
 	params.locality = *_locality;
 	params.localitylen = _locality.length();
 
@@ -546,7 +543,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Object> org = opts->Get( optName )->ToObject();
-	String::Utf8Value _org( USE_ISOLATE( isolate ) org->ToString() );
+	String::Utf8Value _org( org->ToString() );
 	params.org = *_org;
 	params.orglen = _org.length();
 
@@ -560,7 +557,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.orgUnit = NULL;
 	}else {
 		Local<Object> unit = opts->Get( unitString )->ToObject();
-		_unit = new String::Utf8Value( USE_ISOLATE( isolate ) unit->ToString() );
+		_unit = new String::Utf8Value( unit->ToString() );
 		params.orgUnit = *_unit[0];
 		params.orgUnitlen = _unit[0].length();
 	}
@@ -571,7 +568,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Object> common = opts->Get( optName )->ToObject();
-	String::Utf8Value _common( USE_ISOLATE( isolate ) common->ToString() );
+	String::Utf8Value _common( common->ToString() );
 	params.common = *_common;
 	params.commonlen = _common.length();
 
@@ -581,7 +578,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Object> key = opts->Get( optName )->ToObject();
-	String::Utf8Value _key( USE_ISOLATE( isolate ) key->ToString() );
+	String::Utf8Value _key( key->ToString() );
 	params.key = *_key;
 	params.keylen = _key.length();
 
@@ -590,7 +587,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	if( opts->Has( pubkeyString ) ) {
 		Local<Object> key = opts->Get( pubkeyString )->ToObject();
-		_pubkey = new String::Utf8Value( USE_ISOLATE( isolate ) key->ToString() );
+		_pubkey = new String::Utf8Value( key->ToString() );
 		params.pubkey = *_pubkey[0];
 		params.pubkeylen = _pubkey[0].length();
 	}
@@ -621,7 +618,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.issuer = NULL;
 	}else {
 		Local<Object> issuer = opts->Get( issuerString )->ToObject();
-		_issuer = new String::Utf8Value( USE_ISOLATE( isolate ) issuer->ToString() );
+		_issuer = new String::Utf8Value( issuer->ToString() );
 		params.issuer = *_issuer[0];
 		params.issuerlen = _issuer[0].length();
 	}
@@ -644,7 +641,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		Local<Object> password = opts->Get( passString )->ToObject();
-		_password = new String::Utf8Value( USE_ISOLATE( isolate ) password->ToString() );
+		_password = new String::Utf8Value( password->ToString() );
 		params.password = *_password[0];
 		params.passlen = _password[0].length();
 	}
@@ -830,7 +827,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Object> country = opts->Get( optName )->ToObject();
-	String::Utf8Value _country( USE_ISOLATE( isolate ) country->ToString() );
+	String::Utf8Value _country( country->ToString() );
 	params.country = *_country;
 	params.countrylen = _country.length();
 
@@ -839,7 +836,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'state' or province.") ) ) );
 		return;
 	}
-	String::Utf8Value _state( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+	String::Utf8Value _state( opts->Get( optName )->ToString() );
 	params.state = *_state;
 	params.statelen = _state.length();
 
@@ -863,12 +860,12 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 						int count = values->Length();
 						int n;
 						for( n = 0; n < count; n++ ) {
-							String::Utf8Value val( USE_ISOLATE( isolate ) values->Get( n ) );
+							String::Utf8Value val( values->Get( n ) );
 							AddLink( &params.altSubject.DNS, StrDup( *val ) );
 						}
 					}
 					else {
-						String::Utf8Value val( USE_ISOLATE( isolate ) name->ToString() );
+						String::Utf8Value val( name->ToString() );
 						AddLink( &params.altSubject.DNS, StrDup( *val ) );
 					}
 				} while( 0 );
@@ -884,12 +881,12 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 						int count = values->Length();
 						int n;
 						for( n = 0; n < count; n++ ) {
-							String::Utf8Value val( USE_ISOLATE( isolate ) values->Get( n ) );
+							String::Utf8Value val( values->Get( n ) );
 							AddLink( &params.altSubject.IP, StrDup( *val ) );
 						}
 					}
 					else {
-						String::Utf8Value val( USE_ISOLATE( isolate ) name->ToString() );
+						String::Utf8Value val( name->ToString() );
 						AddLink( &params.altSubject.IP, StrDup( *val ) );
 					}
 				} while( 0 );
@@ -902,7 +899,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 				String::NewFromUtf8( isolate, TranslateText("Missing required option 'locality'(city).") ) ) );
 		return;
 	}
-	String::Utf8Value _locality( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+	String::Utf8Value _locality( opts->Get( optName )->ToString() );
 	params.locality = *_locality;
 	params.localitylen = _locality.length();
 
@@ -911,7 +908,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'org'.") ) ) );
 		return;
 	}
-	String::Utf8Value _org( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+	String::Utf8Value _org( opts->Get( optName )->ToString() );
 	params.org = *_org;
 	params.orglen = _org.length();
 
@@ -923,7 +920,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		_unit = NULL;
 		params.orgUnit = NULL;
 	}else {
-		_unit = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+		_unit = new String::Utf8Value( opts->Get( optName )->ToString() );
 		params.orgUnit = *_unit[0];
 		params.orgUnitlen = _unit[0].length();
 	}
@@ -933,7 +930,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'name'.") ) ) );
 		return;
 	}
-	String::Utf8Value _common( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+	String::Utf8Value _common( opts->Get( optName )->ToString() );
 	params.common = *_common;
 	params.commonlen = _common.length();
 
@@ -962,7 +959,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Object> key = opts->Get( keyString )->ToObject();
-	String::Utf8Value _key( USE_ISOLATE( isolate ) key->ToString() );
+	String::Utf8Value _key( key->ToString() );
 	params.key = *_key;
 	params.keylen = _key.length();
 
@@ -974,7 +971,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		Local<Object> password = opts->Get( passString )->ToObject();
-		_password = new String::Utf8Value( USE_ISOLATE( isolate ) password->ToString() );
+		_password = new String::Utf8Value( password->ToString() );
 		params.password = *_password[0];
 		params.passlen = _password[0].length();
 	}
@@ -1171,7 +1168,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'signer'.") ) ) );
 		return;
 	}
-	String::Utf8Value _signingCert( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+	String::Utf8Value _signingCert( opts->Get( optName )->ToString() );
 	params.signingCert = *_signingCert;
 
 	if( !opts->Has( optName = strings->requestString->Get( isolate ) ) ) {
@@ -1179,7 +1176,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'request'.") ) ) );
 		return;
 	}
-	String::Utf8Value _request( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+	String::Utf8Value _request( opts->Get( optName )->ToString() );
 	params.signReq = *_request;
 
 	Local<String> expireString = strings->expireString->Get( isolate );
@@ -1196,7 +1193,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'key'.") ) ) );
 		return;
 	}
-	String::Utf8Value _key( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+	String::Utf8Value _key( opts->Get( optName )->ToString() );
 	params.key = *_key;
 	params.keylen = _key.length();
 
@@ -1229,7 +1226,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.issuer = NULL;
 	}
 	else {
-		_issuer = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( issuerString )->ToString() );
+		_issuer = new String::Utf8Value( opts->Get( issuerString )->ToString() );
 		params.issuer = *_issuer[0];
 		params.issuerlen = _issuer[0].length();
 	}
@@ -1243,7 +1240,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.subject = NULL;
 	}
 	else {
-		_subject = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( subjectString )->ToString() );
+		_subject = new String::Utf8Value( opts->Get( subjectString )->ToString() );
 		params.subject = *_subject[0];
 		params.subjectlen = _subject[0].length();
 	}
@@ -1254,7 +1251,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( opts->Has( pubkeyString ) ) {
 		lprintf( "using custom public key..." );
 		Local<Object> key = opts->Get( pubkeyString )->ToObject();
-		_pubkey = new String::Utf8Value( USE_ISOLATE( isolate ) key->ToString() );
+		_pubkey = new String::Utf8Value( key->ToString() );
 		params.pubkey = *_pubkey[0];
 		params.pubkeylen = _pubkey[0].length();
 	}
@@ -1269,7 +1266,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		Local<Object> password = opts->Get( passString )->ToObject();
-		_password = new String::Utf8Value( USE_ISOLATE( isolate ) password->ToString() );
+		_password = new String::Utf8Value( password->ToString() );
 		params.password = *_password[0];
 		params.passlen = _password[0].length();
 	}
@@ -1372,14 +1369,14 @@ void TLSObject::pubKey( const v8::FunctionCallbackInfo<Value>& args ) {
 			return;
 		}
 		MaybeLocal<Value> cert = opts->Get( context, certString );
-		_key = new String::Utf8Value( USE_ISOLATE( isolate ) cert.ToLocalChecked()->ToString() );
+		_key = new String::Utf8Value( cert.ToLocalChecked()->ToString() );
 		params.cert = *_key[0];
 		//params.certlen = _key[0].length();
 		params.key = NULL;
 	}
 	else{
 		MaybeLocal<Value> keyObj = opts->Get( context, keyString );
-		_key = new String::Utf8Value( USE_ISOLATE( isolate ) keyObj.ToLocalChecked()->ToString() );
+		_key = new String::Utf8Value( keyObj.ToLocalChecked()->ToString() );
 		params.key = *_key[0];
 		params.keylen = _key[0].length();
 		params.cert = NULL;
@@ -1391,7 +1388,7 @@ void TLSObject::pubKey( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		MaybeLocal<Value> password = opts->Get( context, passString );
-		_password = new String::Utf8Value( USE_ISOLATE( isolate ) password.ToLocalChecked()->ToString() );
+		_password = new String::Utf8Value( password.ToLocalChecked()->ToString() );
 		params.password = *_password[0];
 		params.passlen = _password[0].length();
 	}
@@ -1436,10 +1433,10 @@ static void DumpCert( X509 *x509 ) {
 				lprintf( "NID: %d  = %32s     %s", n, OBJ_nid2sn( n ), OBJ_nid2ln( n ) );
 			}
 
-		//X509_Get_cert
-		int pkey_nid = 0;// OBJ_obj2nid( x509->cert_info->key->algor->algorithm );
 
-		lprintf( "(NO INFO; INTERNALS OPAQUED) algo nid = %d", pkey_nid );
+		//int pkey_nid = OBJ_obj2nid( x509_get_cert_ x509->cert_info->key->algor->algorithm );
+
+		//lprintf( "algo nid = %d", pkey_nid );
 
 		int valid = X509_check_ca( x509 );
 
@@ -1490,11 +1487,16 @@ static void DumpCert( X509 *x509 ) {
 		for( n = 0; n < extCount; n++ )
 		{
 			X509_EXTENSION *ext = X509_get_ext( x509, n );
-			ASN1_OBJECT *o = X509_EXTENSION_get_object(ext);
+#if 1
+			ASN1_OBJECT *o = X509_EXTENSION_get_object( ext );
+#else
+			ASN1_OBJECT *o = ext->object;
+#endif
 			ASN1_STRING *v = (ASN1_STRING *)X509V3_EXT_d2i( ext );
 			int nid = OBJ_obj2nid( o );
 			//V_ASN1_OCTET_STRING
-			lprintf( "extension: %d %d  %s  %s  %d", X509_EXTENSION_get_critical(ext)>0 ? "critical" : "",
+			lprintf( "extension: %d %d  %s  %s  %d", X509_EXTENSION_get_critical( ext )>0 ? "critical" : "",
+			//lprintf( "extension: %d %d  %s  %s  %d", ext->critical>0 ? "critical" : "",
 				nid, OBJ_nid2ln( nid ), OBJ_nid2sn( nid ), v->type );
 			if( nid == NID_authority_key_identifier ) {
 				AUTHORITY_KEYID *akid = (AUTHORITY_KEYID *)v;
@@ -1669,7 +1671,7 @@ void TLSObject::validate( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	MaybeLocal<Value> cert = opts->Get( context, certString );
-	_key = new String::Utf8Value( USE_ISOLATE( isolate ) cert.ToLocalChecked()->ToString() );
+	_key = new String::Utf8Value( cert.ToLocalChecked()->ToString() );
 	params.cert = *_key[0];
 	params.certlen = _key[0].length();
 	params.key = NULL;
@@ -1684,7 +1686,7 @@ void TLSObject::validate( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		MaybeLocal<Value> cert = opts->Get( context, chainString );
-		chain = new String::Utf8Value( USE_ISOLATE( isolate ) cert.ToLocalChecked()->ToString() );
+		chain = new String::Utf8Value( cert.ToLocalChecked()->ToString() );
 		params.chain = *chain[0];
 	}
 	params.ca = NULL;
@@ -1704,7 +1706,7 @@ void TLSObject::validate( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 
-static void ConvertTimeString( struct tm *t, ASN1_TIME *time ) {
+static void ConvertTimeString( struct tm *t, const ASN1_TIME *time ) {
 	char * timestring = (char*)time->data;
 	int val;
 	if( time->type == V_ASN1_UTCTIME )
@@ -1765,11 +1767,8 @@ static Local<Value> Expiration( struct info_params *params ) {
 		return Undefined(params->isolate);// goto free_all;
 	}
 	BIO_free( keybuf );
-#ifdef USE_TLS_ACCESSORS
-	ASN1_TIME *before = X509_getm_notAfter( x509 );
-#else
-	ASN1_TIME *before = x509->cert_info->validity->notAfter;
-#endif
+
+	const ASN1_TIME *before = X509_get0_notAfter( x509 );
 	struct tm t;
 	char * timestring = (char*)before->data;
 
@@ -1795,7 +1794,7 @@ void TLSObject::expiration( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	params.isolate = isolate;
 
-	String::Utf8Value cert( USE_ISOLATE( isolate ) args[0]->ToString() );
+	String::Utf8Value cert( args[0]->ToString() );
 	params.cert = *cert;
 	params.certlen = cert.length();
 
@@ -1876,10 +1875,9 @@ static Local<Value> CertToString( struct info_params *params ) {
 				vtprintf( pvt, "NID: %d  = %32s     %s\n", n, OBJ_nid2sn( n ), OBJ_nid2ln( n ) );
 			}
 
-		//X509_get_algorithm
-		int pkey_nid = 0;// OBJ_obj2nid( x509->cert_info->key->algor->algorithm );
 
-		vtprintf( pvt, "(OPQAUED INTERNAL NOINFO)algo nid = %d\n", pkey_nid );
+		//int pkey_nid = OBJ_obj2nid( EVP_Get X509_PUBKEY_get0( X509_get_X509_PUBKEY(  x509 ) )->algor->algorithm );
+		//vtprintf( pvt, "algo nid = %d\n", pkey_nid );
 
 		int valid = X509_check_ca( x509 );
 
@@ -1923,14 +1921,8 @@ static Local<Value> CertToString( struct info_params *params ) {
 		//name->entries
 	}
 
-#ifdef USE_TLS_ACCESSORS
-	ASN1_TIME *before = X509_getm_notBefore( x509 );// ->cert_info->validity->notBefore;
-	ASN1_TIME *after = X509_getm_notAfter( x509 );// ->cert_info->validity->notAfter;
-#else
-	ASN1_TIME *before = x509->cert_info->validity->notBefore;
-	ASN1_TIME *after = x509->cert_info->validity->notAfter;
-#endif
-
+	const ASN1_TIME *before = X509_get0_notBefore( x509 );
+	const ASN1_TIME *after = X509_get0_notAfter( x509 );
 	if( before ) {
 		struct tm t;
 		ConvertTimeString( &t, before );
@@ -1957,7 +1949,7 @@ static Local<Value> CertToString( struct info_params *params ) {
 			ASN1_STRING *v = (ASN1_STRING *)X509V3_EXT_d2i( ext );
 			int nid = OBJ_obj2nid( o );
 			//V_ASN1_OCTET_STRING
-			vtprintf( pvt, "extension: %d %d  %s  %s  %d\n", X509_EXTENSION_get_critical( ext )>0 ? "critical" : "",
+			vtprintf( pvt, "extension: %d %d  %s  %s  %d\n", X509_EXTENSION_get_critical( ext)>0 ? "critical" : "",
 				nid, OBJ_nid2ln( nid ), OBJ_nid2sn( nid ), v->type );
 			if( nid == NID_authority_key_identifier ) {
 				AUTHORITY_KEYID *akid = (AUTHORITY_KEYID *)v;
@@ -1990,9 +1982,9 @@ static Local<Value> CertToString( struct info_params *params ) {
 				vtprintf( pvt, "USAGE: %08x\n", usage );
 			}
 			else if( nid == NID_subject_alt_name ) {
-				GENERAL_NAMES *names = (GENERAL_NAMES*)v;
+				const GENERAL_NAMES *names = (const GENERAL_NAMES*)v;
 				int n;
-				for( n = 0; n < sk_GENERAL_NAME_num( names ); n++ ) {
+				for( n = 0; n < sk_GENERAL_NAME_num(names); n++ ) {
 					GENERAL_NAME *namePart = sk_GENERAL_NAME_value( names, n );
 					switch( namePart->type ) {
 					case GEN_DIRNAME:
@@ -2070,7 +2062,7 @@ void TLSObject::certToString( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	params.isolate = isolate;
 
-	String::Utf8Value cert( USE_ISOLATE( isolate ) args[0]->ToString() );
+	String::Utf8Value cert( args[0]->ToString() );
 	params.cert = *cert;
 	params.certlen = cert.length();
 

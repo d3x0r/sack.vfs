@@ -169,6 +169,13 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t v
 		fsInt = sack_get_filesystem_interface( "native" );
 		//lprintf( "open native mount" );
 		fsMount = sack_get_default_mount();
+	} else if( mount && !filename ) {
+		volNative = false;
+		fsMount = sack_get_mounted_filesystem( mount );
+		fsInt = sack_get_mounted_filesystem_interface( fsMount );
+		vol = (struct volume*)sack_get_mounted_filesystem_instance( fsMount );
+
+		//lprintf( "open native mount" );
 	} else {
 		//lprintf( "volume: %s %p %p", filename, key, key2 );
 		fileName = StrDup( filename );
@@ -686,7 +693,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				String::Utf8Value mask( USE_ISOLATE( isolate )args[1]->ToString() );
 				fi = vol->fsInt->find_create_cursor( (uintptr_t)vol->vol, *path, *mask );
 			}
-         else
+			else
 				fi = vol->fsInt->find_create_cursor( (uintptr_t)vol->vol, *path, "*" );
 		}
       else
@@ -739,9 +746,13 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				}
 				//}
 				if( argc > 1 ) {
-					String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString() );
-					defaultFilename = FALSE;
-					filename = StrDup( *fName );
+					if( args[arg]->IsString() ) {
+						String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString() );
+						defaultFilename = FALSE;
+						filename = StrDup( *fName );
+					}
+					else
+						filename = NULL;
 				}
 				else {
 					defaultFilename = FALSE;
