@@ -1771,7 +1771,7 @@ static Local<Value> Expiration( struct info_params *params ) {
 	}
 	BIO_free( keybuf );
 
-	const ASN1_TIME *before = X509_get0_notAfter( x509 );
+	const ASN1_TIME *before = X509_get_notAfter( x509 );
 	struct tm t;
 	char * timestring = (char*)before->data;
 
@@ -1924,8 +1924,8 @@ static Local<Value> CertToString( struct info_params *params ) {
 		//name->entries
 	}
 
-	const ASN1_TIME *before = X509_get0_notBefore( x509 );
-	const ASN1_TIME *after = X509_get0_notAfter( x509 );
+	const ASN1_TIME *before = X509_get_notBefore( x509 );
+	const ASN1_TIME *after = X509_get_notAfter( x509 );
 	if( before ) {
 		struct tm t;
 		ConvertTimeString( &t, before );
