@@ -10794,6 +10794,7 @@ static LOGICAL ExpandVolume( struct volume *vol ) {
 		}
 		new_disk = (struct disk*)OpenSpaceExx( NULL, vol->volname, 0, &vol->dwSize, &created );
 		if( new_disk && vol->dwSize ) {
+			CloseSpace( vol->diskReal );
 			vol->diskReal = new_disk;
 #ifdef WIN32
 			// elf has a different signature to check for .so extended data...
@@ -10845,6 +10846,7 @@ static LOGICAL ExpandVolume( struct volume *vol ) {
 	if( new_disk && new_disk != vol->disk ) {
 		INDEX idx;
 		struct sack_vfs_file *file;
+		CloseSpace( vol->diskReal );
 		vol->diskReal = new_disk;
 #ifdef WIN32
 		// elf has a different signature to check for .so extended data...
@@ -11001,7 +11003,11 @@ static BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int in
 		UpdateSegmentKey( vol, BLOCK_CACHE_BAT, seg );
 	}
 	check_val ^= ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[block & (BLOCKS_PER_BAT-1)];
-	if( check_val == EOFBLOCK ) {
+	if( check_val == EOBBLOCK ) {
+		(this_BAT[block & (BLOCKS_PER_BAT-1)]) = EOFBLOCK^((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[block & (BLOCKS_PER_BAT-1)];
+		(this_BAT[1+block & (BLOCKS_PER_BAT-1)]) = EOBBLOCK^((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[1+block & (BLOCKS_PER_BAT-1)];
+	}
+	if( check_val == EOFBLOCK || check_val == EOBBLOCK ) {
 		if( expand ) {
 			BLOCKINDEX key = vol->key?((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[block & (BLOCKS_PER_BAT-1)]:0;
 			check_val = GetFreeBlock( vol, init );
@@ -16931,6 +16937,8 @@ typedef struct loaded_library_tag
 	DeclareLink( struct loaded_library_tag );
  // points into full_name after last slash - just library name
 	TEXTCHAR *name;
+ // points into full_name passed name - may have a local path part
+	TEXTCHAR *long_name;
 	int loading;
 // this is appended after full_name and is l.library_path
 	TEXTCHAR *alt_full_name;
@@ -18387,6 +18395,7 @@ SYSTEM_PROC( generic_function, LoadFunctionExx )( CTEXTSTR libname, CTEXTSTR fun
 			tnprintf( library->name
 				, fullnameLen - (library->name-library->full_name)
 				, WIDE("%s"), libname );
+			library->long_name = library->name;
 			library->name = (char*)pathrchr( library->full_name );
 			if( library->name )
 				library->name++;
@@ -18397,6 +18406,7 @@ SYSTEM_PROC( generic_function, LoadFunctionExx )( CTEXTSTR libname, CTEXTSTR fun
 		{
 			StrCpy( library->full_name, libname );
 			library->alt_full_name = library->full_name;
+			library->long_name = library->full_name;
 			library->name = (char*)pathrchr( library->full_name );
 			library->loading = 0;
 			if( library->name )
@@ -36434,22 +36444,22 @@ static void DetectUnicodeBOM( FILE *file ) {
    //FF FE           UTF-16, little-endian
    //EF BB BF        UTF-8
 //Encoding	Representation (hexadecimal)	Representation (decimal)	Bytes as CP1252 characters
-//UTF-8[t 1]		EF BB BF		239 187 191	ï»¿
-//UTF-16 (BE)		FE FF			254 255	þÿ      þÿ
-//UTF-16 (LE)		FF FE			255 254	ÿþ      ÿþ
-//UTF-32 (BE)		00 00 FE FF		0 0 254 255	??þÿ (? refers to the ASCII null character)
-//UTF-32 (LE)		FF FE 00 00[t 2]	255 254 0 0	ÿþ?? (? refers to the ASCII null character)
+//UTF-8[t 1]		EF BB BF		239 187 191
+//UTF-16 (BE)		FE FF			254 255
+//UTF-16 (LE)		FF FE			255 254
+//UTF-32 (BE)		00 00 FE FF		0 0 254 255
+//UTF-32 (LE)		FF FE 00 00[t 2]	255 254 0 0
 //UTF-7[t 1]		2B 2F 76 38             43 47 118 56	+/v9
 //			2B 2F 76 39		43 47 118 43	+/v+
 //			2B 2F 76 2B             43 47 118 47	+/v/
 //			2B 2F 76 2F[t 3]	43 47 118 57	+/v8
 //			2B 2F 76 38 2D[t 4]	43 47 118 56 45	+/v8-
 //
-//UTF-1[t 1]		F7 64 4C	247 100 76	÷dL
-//UTF-EBCDIC[t 1]	DD 73 66 73	221 115 102 115	Ýsfs
-//SCSU[t 1]		0E FE FF[t 5]	14 254 255	?þÿ (? represents the ASCII "shift out" character)
-//BOCU-1[t 1]		FB EE 28	251 238 40	ûî(
-//GB-18030[t 1]		84 31 95 33	132 49 149 51	„1•3
+//UTF-1[t 1]		F7 64 4C	247 100 76
+//UTF-EBCDIC[t 1]	DD 73 66 73	221 115 102 115
+//SCSU[t 1]		0E FE FF[t 5]	14 254 255
+//BOCU-1[t 1]		FB EE 28	251 238 40
+//GB-18030[t 1]		84 31 95 33	132 49 149 51
 	struct file* _file = (struct file*)file;
 	// file was opened with 't' flag, test what sort of 't' the file might be.
 	// can result in conversion based on UNICODE (utf-16) compilation flag is set or not (UTF8).
@@ -37918,7 +37928,7 @@ static	struct find_cursor * CPROC sack_filesys_find_create_cursor ( uintptr_t ps
 #ifdef WIN32
    // windows mode is delayed until findfirst
 #else
-	cursor->handle = opendir( root );
+	cursor->handle = opendir( root?root:"." );
 #endif
 	return (struct find_cursor *)cursor;
 }
@@ -38575,13 +38585,15 @@ typedef struct myfinddata {
 		else {
 			tnprintf( findmask, sizeof( findmask ), WIDE( "*" ) );
 		}
-		if( pData->scanning_mount?pData->scanning_mount->fsi:NULL )
+		if( pData->scanning_mount?pData->scanning_mount->fsi:NULL ) {
+#ifndef _WIN32
+			de = NULL;
+#endif
 			if( pData->scanning_mount->fsi->find_first( findcursor(pInfo) ) )
 				findhandle(pInfo) = 0;
 			else
 				findhandle(pInfo) = (HANDLECAST)-1;
-		else
-		{
+		} else {
 #ifdef WIN32
 			findhandle(pInfo) = findfirst( findmask, finddata(pInfo) );
 #else
@@ -38912,7 +38924,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
 																							  , pData->file_buffer
 #  endif
 #else
-																							  , de->d_name
+																							  , pData->scanning_mount?pData->scanning_mount->fsi->find_get_name( findcursor( pInfo ) ) : de->d_name
 #endif
 																								// yes this is silly - but it's correct...
 																							  , (flags & SFF_IGNORECASE)?0:0 ) ) )
