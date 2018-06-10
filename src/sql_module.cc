@@ -1322,7 +1322,7 @@ void SqlObject::setLogging( const v8::FunctionCallbackInfo<Value>& args ) {
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	if( args.Length() ) {
 		Local<Boolean> b( args[0]->ToBoolean() );
-		if( *b )
+		if( b->Value () )
 			SetSQLLoggingDisable( sql->odbc, FALSE );
 		else
 			SetSQLLoggingDisable( sql->odbc, TRUE );
