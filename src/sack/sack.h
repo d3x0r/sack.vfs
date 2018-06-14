@@ -3871,7 +3871,7 @@ TYPELIB_PROC  TEXTCHAR * TYPELIB_CALLTYPE  EncodeBase64Ex( uint8_t* buf, size_t 
    outsize is updated with the length of the buffer.
    result should be Release()'d
  */
-TYPELIB_PROC  char * TYPELIB_CALLTYPE  DecodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const char *encoding );
+TYPELIB_PROC  uint8_t * TYPELIB_CALLTYPE  DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *encoding );
 /* xor a base64 encoded string over a utf8 string, keeping the utf8 characters in the same length...
    although technically this can result in invalid character encoding where upper bits get zeroed
    result should be Release()'d
@@ -12901,6 +12901,9 @@ SRG_EXPORT int32_t SRG_GetEntropy( struct random_context *ctx, int bits, int get
 // opportunity to reset an entropy generator back to initial condition
 // next call to getentropy will be the same as the first call after create.
 SRG_EXPORT void SRG_ResetEntropy( struct random_context *ctx );
+// Manually load some salt into the next enropy buffer to e retreived.
+// sets up to add the next salt into the buffer.
+SRG_EXPORT void SRG_FeedEntropy( struct random_context *ctx, const uint8_t *salt, size_t salt_size );
 // restore the random contxt from the external holder specified
 // {
 //    POINTER save_context;

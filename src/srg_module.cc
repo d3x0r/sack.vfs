@@ -12,6 +12,7 @@ public:
 	Persistent<Function, CopyablePersistentTraits<Function>> *seedCallback;
 	Isolate *isolate;
 	Persistent<Array> seedArray;
+	static PLINKQUEUE signingEntropies;
 public:
 
 	static void Init( Isolate *isolate, Handle<Object> exports );
@@ -138,8 +139,141 @@ private:
 	~SRGObject() {
 		SRG_DestroyEntropy( &entropy );
 	}
+
+	static POINTER nextSalt;
+	static size_t nextSaltLen;
+	static void feedSignSalt( uintptr_t psvUser, POINTER *salt, size_t *saltlen ) {
+		salt[0] = nextSalt;
+		saltlen[0] = nextSaltLen;
+	}
+
+	static LOGICAL signCheck( uint8_t *buf ) {
+		int n, b;
+		int is0 = 0;
+		int is1 = 0;
+		int long0 = 0;
+		int long1 = 0;
+		int longest0 = 0;
+		int longest1 = 0;
+		int ones = 0;
+		for( n = 0; n < 32; n++ ) {
+			for( b = 0; b < 8; b++ ) {
+				if( buf[n] & (1 << b) ) {
+					ones++;
+					if( is1 ) {
+						long1++;
+					}
+					else {
+						if( long0 > longest0 ) longest0 = long0;
+						is1 = 1;
+						is0 = 0;
+						long1 = 1;
+					}
+				}
+				else {
+					if( is0 ) {
+						long0++;
+					}
+					else {
+						if( long1 > longest1 ) longest1 = long1;
+						is0 = 1;
+						is1 = 0;
+						long0 = 1;
+					}
+				}
+			}
+		}
+
+// 167-128 = 39 = 40+ dif == 30 bits in a row approx
+#define overbal (167-128)
+		if( longest0 > 29 || longest1 > 29 || ones > (128+overbal) || ones < (128-overbal) ) {
+			if( ones > ( 128+overbal )|| ones < (128 - overbal) )
+				printf( "STRMb: %d %d  0s:%d 1s:%d ", longest0, longest1, 256-ones, ones );
+			else
+				printf( "STRMl: %d %d  0s:%d 1s:%d ", longest0, longest1, 256 - ones, ones );
+			return 1;
+		}
+		return 0;
+	}
+
+	static void sign( const v8::FunctionCallbackInfo<Value>& args ) {
+		String::Utf8Value buf( args[0]->ToString() );
+		//SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
+		char *id;
+		int tries = 0;
+		POINTER state = NULL;
+		nextSalt = NewArray( uint8_t, nextSaltLen = 32 );
+		//memcpy( nextSalt, *buf, buf.length() );
+		struct random_context *signEntropy = (struct random_context *)DequeLink( &signingEntropies );
+		if( !signEntropy )
+			signEntropy = SRG_CreateEntropy2( feedSignSalt, (uintptr_t)0 );
+
+		SRG_ResetEntropy( signEntropy );
+		SRG_FeedEntropy( signEntropy, (const uint8_t*)*buf, buf.length() );
+		SRG_SaveState( signEntropy, &state );
+		do {
+			SRG_RestoreState( signEntropy, state );
+			{
+				size_t len;
+				uint8_t outbuf[32];
+				uint8_t *bytes;
+				id = SRG_ID_Generator();
+				bytes = DecodeBase64Ex( id, 40, &len, (const char*)1 );
+				memcpy( (uint8_t*)nextSalt, bytes, 32 );
+				Release( bytes );
+				SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
+				tries++;
+				if( signCheck( outbuf ) )
+					printf( " %d  %s\n", tries, id );
+				else {
+					Release( id );
+					id = NULL;
+				}
+			}
+		} while( !id );
+		EnqueLink( &signingEntropies, signEntropy );
+		args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), id ) );
+		Release( state );
+	}
+
+	static void verify( const v8::FunctionCallbackInfo<Value>& args ) {
+		if( args.Length() > 1 ) {
+			String::Utf8Value buf( args[0]->ToString() );
+			String::Utf8Value hash( args[1]->ToString() );
+			//SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
+			char *id;
+			int tries = 0;
+			struct random_context *signEntropy = (struct random_context *)DequeLink( &signingEntropies );
+			nextSalt = NewArray( uint8_t, nextSaltLen = buf.length() + 32 );
+			memcpy( nextSalt, *buf, buf.length() );
+
+			if( !signEntropy )
+				signEntropy = SRG_CreateEntropy2( feedSignSalt, (uintptr_t)0 );
+			SRG_ResetEntropy( signEntropy );
+			{
+				size_t len;
+				uint8_t outbuf[32];
+				uint8_t *bytes;
+				id = *hash;
+				bytes = DecodeBase64Ex( id, 40, &len, (const char*)1 );
+				memcpy( ((uint8_t*)nextSalt) + nextSaltLen - 32, bytes, 32 );
+				Release( bytes );
+				SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
+				tries++;
+				if( signCheck( outbuf ) )
+					args.GetReturnValue().Set( True( args.GetIsolate() ) );
+				else {
+					args.GetReturnValue().Set( False( args.GetIsolate() ) );
+				}
+			}
+		}
+	}
+
 };
 
+POINTER SRGObject::nextSalt;
+size_t  SRGObject::nextSaltLen;
+PLINKQUEUE SRGObject::signingEntropies;
 v8::Persistent<v8::Function> SRGObject::constructor;
 
 
@@ -157,10 +291,12 @@ void SRGObject::Init( Isolate *isolate, Handle<Object> exports )
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "reset", SRGObject::reset );
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "getBits", SRGObject::getBits );
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "getBuffer", SRGObject::getBuffer );
+	Local<Function> f = srgTemplate->GetFunction();
+	SRGObject::constructor.Reset( isolate, f );
 
-	SRGObject::constructor.Reset( isolate, srgTemplate->GetFunction() );
-
-	SET_READONLY( exports, "SaltyRNG", srgTemplate->GetFunction() );
+	SET_READONLY( exports, "SaltyRNG", f );
+	SET_READONLY_METHOD( f, "sign", SRGObject::sign );
+	SET_READONLY_METHOD( f, "verify", SRGObject::verify );
 
 }
 
@@ -185,3 +321,4 @@ SRGObject::SRGObject( const char *seed, size_t seedLen ) {
 	this->seedCallback = NULL;
 	this->entropy = SRG_CreateEntropy2( SRGObject::getSeed, (uintptr_t) this );
 }
+

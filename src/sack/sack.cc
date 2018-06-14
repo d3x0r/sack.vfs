@@ -3880,7 +3880,7 @@ TYPELIB_PROC  TEXTCHAR * TYPELIB_CALLTYPE  EncodeBase64Ex( uint8_t* buf, size_t 
    outsize is updated with the length of the buffer.
    result should be Release()'d
  */
-TYPELIB_PROC  char * TYPELIB_CALLTYPE  DecodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const char *encoding );
+TYPELIB_PROC  uint8_t * TYPELIB_CALLTYPE  DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *encoding );
 /* xor a base64 encoded string over a utf8 string, keeping the utf8 characters in the same length...
    although technically this can result in invalid character encoding where upper bits get zeroed
    result should be Release()'d
@@ -8502,6 +8502,9 @@ SRG_EXPORT int32_t SRG_GetEntropy( struct random_context *ctx, int bits, int get
 // opportunity to reset an entropy generator back to initial condition
 // next call to getentropy will be the same as the first call after create.
 SRG_EXPORT void SRG_ResetEntropy( struct random_context *ctx );
+// Manually load some salt into the next enropy buffer to e retreived.
+// sets up to add the next salt into the buffer.
+SRG_EXPORT void SRG_FeedEntropy( struct random_context *ctx, const uint8_t *salt, size_t salt_size );
 // restore the random contxt from the external holder specified
 // {
 //    POINTER save_context;
@@ -10545,7 +10548,7 @@ static int MaskStrCmp( struct volume *vol, const char * filename, FPI name_offse
 	} else {
 		//LoG( "doesn't volume always have a key?" );
 		if( path_match ) {
-			int l;
+			size_t l;
 			int r = PathCaseCmpEx( filename, (const char *)(((uint8_t*)vol->disk) + name_offset), l = strlen( filename ) );
 			if( !r )
 				if( ((const char *)(((uint8_t*)vol->disk) + name_offset))[l] == '/' || ((const char *)(((uint8_t*)vol->disk) + name_offset))[l] == '\\' )
@@ -12267,6 +12270,13 @@ void SRG_ResetEntropy( struct random_context *ctx )
 		SHA1Reset( &ctx->sha1_ctx );
 	ctx->bits_used = 0;
 	ctx->bits_avail = 0;
+}
+void SRG_FeedEntropy( struct random_context *ctx, const uint8_t *salt, size_t salt_size )
+{
+	if( ctx->use_version2 )
+		sha512_update( &ctx->sha512, salt, (unsigned int)salt_size );
+	else
+		SHA1Input( &ctx->sha1_ctx, salt, salt_size );
 }
 void SRG_SaveState( struct random_context *ctx, POINTER *external_buffer_holder )
 {
@@ -35968,6 +35978,7 @@ extern
 		BIT_FIELD bInitialized : 1;
 		BIT_FIELD bDeallocateClosedFiles : 1;
 	} flags;
+	TEXTSTR local_data_file_root;
 	TEXTSTR data_file_root;
 	TEXTSTR producer;
 	TEXTSTR application;
@@ -35995,8 +36006,22 @@ static void UpdateLocalDataPath( void )
 		Deallocate( TEXTSTR, (*winfile_local).data_file_root );
 	(*winfile_local).data_file_root = realpath;
 	MakePath( (*winfile_local).data_file_root );
+	SHGetFolderPath( NULL, CSIDL_LOCAL_APPDATA, NULL, SHGFP_TYPE_CURRENT, path );
+	realpath = NewArray( TEXTCHAR, len = StrLen( path )
+							  + StrLen( (*winfile_local).producer?(*winfile_local).producer:WIDE("") )
+ // worse case +3
+							  + StrLen( (*winfile_local).application?(*winfile_local).application:WIDE("") ) + 3 );
+	tnprintf( realpath, len, WIDE("%s%s%s%s%s"), path
+			  , (*winfile_local).producer?WIDE("/"):WIDE(""), (*winfile_local).producer?(*winfile_local).producer:WIDE("")
+			  , (*winfile_local).application?WIDE("/"):WIDE(""), (*winfile_local).application?(*winfile_local).application:WIDE("")
+			  );
+	if( (*winfile_local).local_data_file_root )
+		Deallocate( TEXTSTR, (*winfile_local).local_data_file_root );
+	(*winfile_local).local_data_file_root = realpath;
+	MakePath( (*winfile_local).local_data_file_root );
 #else
 	(*winfile_local).data_file_root = StrDup( WIDE(".") );
+	(*winfile_local).local_data_file_root = StrDup( WIDE(".") );
 #endif
 }
 void sack_set_common_data_producer( CTEXTSTR name )
@@ -36231,6 +36256,14 @@ TEXTSTR ExpandPathEx( CTEXTSTR path, struct file_system_interface *fsi )
 				tnprintf( tmp_path, len, WIDE( "%s/%s" ), here, path + 2 );
 			}
 			else if( ( path[0] == '*' ) && ( ( path[1] == '/' ) || ( path[1] == '\\' ) ) )
+			{
+				CTEXTSTR here;
+				size_t len;
+				here = (*winfile_local).data_file_root;
+				tmp_path = NewArray( TEXTCHAR, len = ( StrLen( here ) + StrLen( path ) ) );
+				tnprintf( tmp_path, len, WIDE( "%s/%s" ), here, path + 2 );
+			}
+			else if( ( path[0] == ';' ) && ( ( path[1] == '/' ) || ( path[1] == '\\' ) ) )
 			{
 				CTEXTSTR here;
 				size_t len;
@@ -38102,12 +38135,12 @@ struct file_system_mounted_interface *sack_get_default_mount( void ) { return (*
 struct file_system_interface * sack_get_mounted_filesystem_interface( struct file_system_mounted_interface *mount ){
 	if( mount )
 		return mount->fsi;
-   return NULL;
+	return NULL;
 }
 uintptr_t sack_get_mounted_filesystem_instance( struct file_system_mounted_interface *mount ){
 	if( mount )
 		return mount->psvInstance;
-   return NULL;
+	return 0;
 }
 struct file_system_mounted_interface *sack_get_mounted_filesystem( const char *name )
 {
@@ -44370,7 +44403,7 @@ static void encodeblock( unsigned char in[3], TEXTCHAR out[4], size_t len, const
 	out[2] = (len > 1 ? base64[ ((in[1] & 0x0f) << 2) | ( ( len > 2 ) ? ((in[2] & 0xc0) >> 6) : 0 ) ] : base64[64]);
 	out[3] = (len > 2 ? base64[ in[2] & 0x3f ] : base64[64]);
 }
-static void decodeblock( unsigned char in[4], char out[3], size_t len, const char *base64 )
+static void decodeblock( char in[4], uint8_t out[3], size_t len, const char *base64 )
 {
 	const char *index[4];
 	int n;
@@ -44409,14 +44442,14 @@ TEXTCHAR *EncodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const ch
 	}
 	return real_output;
 }
-char *DecodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const char *base64 )
+uint8_t *DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *base64 )
 {
-	char * real_output;
+	uint8_t * real_output;
 	if( !base64 )
 		base64 = _base64;
 	else if( ((uintptr_t)base64) == 1 )
 		base64 = _base642;
-	real_output = NewArray( char, ( ( ( length + 1 ) * 3 ) / 4 ) + 1 );
+	real_output = NewArray( uint8_t, ( ( ( length + 1 ) * 3 ) / 4 ) + 1 );
 	{
 		size_t n;
 		for( n = 0; n < (length+3)/4; n++ )
@@ -44425,7 +44458,7 @@ char *DecodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const char *
 			blocklen = length - n*4;
 			if( blocklen > 4 )
 				blocklen = 4;
-			decodeblock( ((uint8_t*)buf) + n * 4, real_output + n*3, blocklen, base64 );
+			decodeblock( buf + n * 4, real_output + n*3, blocklen, base64 );
 		}
 		real_output[n*3] = 0;
 	}
@@ -66172,8 +66205,7 @@ static void ssl_ReadComplete( PCLIENT pc, POINTER buffer, size_t length )
 						pc->ssl_session->obuffer = NewArray( uint8_t, pc->ssl_session->obuflen = pending * 2 );
 						//lprintf( "making obuffer bigger %d %d", pending, pending * 2 );
 					}
-/*(int)pc->ssl_session->obuflen*/
-					read  = BIO_read( pc->ssl_session->wbio, pc->ssl_session->obuffer, pending );
+					read  = BIO_read( pc->ssl_session->wbio, pc->ssl_session->obuffer, (int)pending );
 					if( read < 0 ) {
 						ERR_print_errors_cb( logerr, (void*)__LINE__ );
 						lprintf( "failed to read pending control data...SSL will fail without it." );
