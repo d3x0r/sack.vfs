@@ -27034,6 +27034,10 @@ PRIORITY_ATEXIT( StopTimers, ATEXIT_PRIORITY_TIMERS )
 //--------------------------------------------------------------------------
 static void InitWakeup( PTHREAD thread, CTEXTSTR event_name )
 {
+#ifdef _DEBUG
+	int prior;
+	prior = SetAllocateLogging( FALSE );
+#endif
 	if( !event_name )
 		event_name = WIDE("ThreadSignal");
 	thread->thread_event_name = StrDup( event_name );
@@ -27138,6 +27142,9 @@ static void InitWakeup( PTHREAD thread, CTEXTSTR event_name )
 		//lprintf( WIDE("after semctl = %d %08lx"), semctl( thread->semaphore, 0, GETVAL ), thread->semaphore );
 	}
 #endif
+#endif
+#ifdef _DEBUG
+	SetAllocateLogging( prior );
 #endif
 }
 //--------------------------------------------------------------------------
@@ -44396,6 +44403,7 @@ char * u8xor( const char *a, size_t alen, const char *b, size_t blen, int *ofs )
 }
 static const char * const _base642 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$_=";
 static const char * const _base64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+static char _base64_r[256];
 static void encodeblock( unsigned char in[3], TEXTCHAR out[4], size_t len, const char *base64 )
 {
 	out[0] = base64[ in[0] >> 2 ];
@@ -44405,18 +44413,19 @@ static void encodeblock( unsigned char in[3], TEXTCHAR out[4], size_t len, const
 }
 static void decodeblock( char in[4], uint8_t out[3], size_t len, const char *base64 )
 {
-	const char *index[4];
+	int index[4];
 	int n;
 	for( n = 0; n < 4; n++ )
 	{
-		index[n] = strchr( base64, in[n] );
+//   strchr( base64, in[n] );
+		index[n] = _base64_r[in[n]];
 		//if( ( index[n] - base64 ) == 64 )
 		//	last_byte = 1;
 	}
 	//if(
-	out[0] = (char)(( index[0] - base64 ) << 2 | ( index[1] - base64 ) >> 4);
-	out[1] = (char)(( index[1] - base64 ) << 4 | ( ( ( index[2] - base64 ) >> 2 ) & 0x0f ));
-	out[2] = (char)(( index[2] - base64 ) << 6 | ( ( index[3] - base64 ) & 0x3F ));
+	out[0] = (char)(( index[0] ) << 2 | ( index[1] ) >> 4);
+	out[1] = (char)(( index[1] ) << 4 | ( ( ( index[2] ) >> 2 ) & 0x0f ));
+	out[2] = (char)(( index[2] ) << 6 | ( ( index[3] ) & 0x3F ));
 	//out[] = (len > 2 ? base64[ in[2] & 0x3f ] : 0);
 }
 TEXTCHAR *EncodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const char *base64 )
@@ -44442,6 +44451,14 @@ TEXTCHAR *EncodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const ch
 	}
 	return real_output;
 }
+static void setupDecodeBytes( const char *code ) {
+   int n = 0;
+   memset( _base64_r, 0, 256 );
+	while( *code ) {
+      _base64_r[*code] = n++;
+      code++;
+	}
+}
 uint8_t *DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *base64 )
 {
 	uint8_t * real_output;
@@ -44449,6 +44466,7 @@ uint8_t *DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *
 		base64 = _base64;
 	else if( ((uintptr_t)base64) == 1 )
 		base64 = _base642;
+	setupDecodeBytes( base64 );
 	real_output = NewArray( uint8_t, ( ( ( length + 1 ) * 3 ) / 4 ) + 1 );
 	{
 		size_t n;
@@ -44460,7 +44478,16 @@ uint8_t *DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *
 				blocklen = 4;
 			decodeblock( buf + n * 4, real_output + n*3, blocklen, base64 );
 		}
-		real_output[n*3] = 0;
+		if( buf[length - 1] == '=' ) {
+			if( buf[length - 2] == '=' ) {
+				(*outsize) = (length * 3 / 4) - 2;
+			}
+			else
+				(*outsize) = (length * 3 / 4) - 1;
+		}
+		else
+			(*outsize) = (length * 3 / 4) - 2;
+		real_output[(*outsize)] = 0;
 	}
 	return real_output;
 }
@@ -47692,6 +47719,7 @@ struct HttpState {
 		BIT_FIELD ssl : 1;
 		BIT_FIELD success : 1;
 	}flags;
+   uint32_t lock;
 };
 struct HttpServer {
 	PCLIENT server;
@@ -47717,6 +47745,12 @@ PRELOAD( loadOption ) {
 #ifndef __NO_OPTIONS__
 	l.flags.bLogReceived = SACK_GetProfileIntEx( GetProgramName(), WIDE( "SACK/HTTP/Enable Logging Received Data" ), 0, TRUE );
 #endif
+}
+static void lockHttp( struct HttpState *state ) {
+   while( LockedExchange( &state->lock, 1 ) );
+}
+static void unlockHttp( struct HttpState *state ) {
+   state->lock = 0;
 }
 void GatherHttpData( struct HttpState *pHttpState )
 {
@@ -47778,9 +47812,11 @@ void ProcessURL_CGI( struct HttpState *pHttpState, PTEXT params )
 //int ProcessHttp( struct HttpState *pHttpState )
 int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
 {
+   lockHttp( pHttpState );
 	if( pHttpState->final )
 	{
 		GatherHttpData( pHttpState );
+		unlockHttp( pHttpState );
 		if( pHttpState->flags.success && !pHttpState->returned_status ) {
 			pHttpState->returned_status = 1;
 			return pHttpState->numeric_code;
@@ -48087,6 +48123,7 @@ SegSplit( &pCurrent, start );
 			GatherHttpData( pHttpState );
 		}
 	}
+   unlockHttp( pHttpState );
 	if( pHttpState->final &&
 		( ( pHttpState->content_length
 			&& ( ( GetTextSize( pHttpState->partial ) >= pHttpState->content_length )
@@ -48233,6 +48270,7 @@ struct HttpState *CreateHttpState( void )
 }
 void EndHttp( struct HttpState *pHttpState )
 {
+   lockHttp( pHttpState );
 	pHttpState->final = 0;
 	pHttpState->content_length = 0;
 	LineRelease( pHttpState->method );
@@ -48265,6 +48303,7 @@ void EndHttp( struct HttpState *pHttpState )
 		}
 		EmptyList( &pHttpState->fields );
 	}
+   unlockHttp( pHttpState );
 }
 PTEXT GetHttpContent( struct HttpState *pHttpState )
 {
