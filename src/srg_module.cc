@@ -342,7 +342,7 @@ private:
 		}
 		struct random_context *signEntropy = (struct random_context *)DequeLink( &signingEntropies );
 		if( !signEntropy )
-			signEntropy = SRG_CreateEntropy2( NULL, (uintptr_t)0 );
+			signEntropy = SRG_CreateEntropy2_256( NULL, (uintptr_t)0 );
 
 		SRG_ResetEntropy( signEntropy );
 		SRG_FeedEntropy( signEntropy, (const uint8_t*)*buf, buf.length() );
@@ -397,7 +397,7 @@ private:
 			}
 
 			if( !signEntropy )
-				signEntropy = SRG_CreateEntropy2( NULL, (uintptr_t)0 );
+				signEntropy = SRG_CreateEntropy2_256( NULL, (uintptr_t)0 );
 			SRG_ResetEntropy( signEntropy );
 			SRG_FeedEntropy( signEntropy, (const uint8_t*)*buf, buf.length() );
 			{
