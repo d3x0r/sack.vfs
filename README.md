@@ -1012,6 +1012,7 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.138 - Add alpha methods for generating signing identifiers.  Fixes some lost network close notivications.
 - 0.9.137 - fix pathchr insensitive path comparison; update tls interface for newer openssl; allow opening volumes by mount name only.
 - 0.9.136 - added log option to sql connections.
 - 0.9.135 - Fix unmounted volumes to instead mount hidden.
