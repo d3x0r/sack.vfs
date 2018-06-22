@@ -117,6 +117,7 @@ SET( EXTRA_SOURCES
         ${SACK_BASE}/src/contrib/md5lib/md5c.c
         ${SACK_BASE}/src/contrib/sha1lib/sha1.c
         ${SACK_BASE}/src/contrib/sha2lib/sha2.c
+        ${SACK_BASE}/src/contrib/sha3lib/sha3.c
 	${SACK_BASE}/src/deadstart/deadstart_core.c
 	${SACK_BASE}/src/sysloglib/syslog.c
 	${SACK_BASE}/src/systemlib/system.c

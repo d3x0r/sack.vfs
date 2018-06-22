@@ -326,7 +326,7 @@ static void newBorder( const FunctionCallbackInfo<Value>& args ) {
 		Local<Object> config = Handle<Object>::Cast( args[0] );
 		Isolate* isolate = args.GetIsolate();
 		Local<Function> cons = Local<Function>::New( isolate, VoidObject::constructor );
-		Local<Object> borderObj = cons->NewInstance( 0, NULL );
+		Local<Object> borderObj = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 		VoidObject *v = VoidObject::Unwrap<VoidObject>( borderObj );
 		Image image;
 		int32_t width, height;
@@ -459,7 +459,7 @@ void MakeControlColors( Isolate *isolate, Local<FunctionTemplate> tpl ) {
 void AddControlColors( Isolate *isolate, Local<Object> control, ControlObject *c ) {
 
 	Local<Function> cons = Local<Function>::New( isolate, VoidObject::constructor2 );
-	Local<Object> colors = cons->NewInstance( 0, NULL );
+	Local<Object> colors = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 	VoidObject *v = VoidObject::Unwrap<VoidObject>( colors );
 	v->data = (uintptr_t)c;
 	SET_READONLY( control, "color", colors );
@@ -981,7 +981,7 @@ void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
 			argv[n] = args[n];
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
 }
@@ -1056,7 +1056,7 @@ Local<Object> ControlObject::NewWrappedControl( Isolate* isolate, PSI_CONTROL pc
 	CTEXTSTR type = GetControlTypeName( pc );
 
 	Local<Function> cons = Local<Function>::New( isolate, StrCmp( type, "Frame" ) == 0 ?constructor : constructor2 );
-	Local<Object> c = cons->NewInstance( 0, 0 );
+	Local<Object> c = cons->NewInstance( isolate->GetCurrentContext(), 0, 0 ).ToLocalChecked();
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( c );
 	me->control = pc;
 	if( pc )
@@ -1155,7 +1155,7 @@ void ControlObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor2 );
-		Local<Object> newControl = cons->NewInstance( 0, NULL );
+		Local<Object> newControl = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 		ControlObject *container = ObjectWrap::Unwrap<ControlObject>( args.Holder() );
 
 		if( argc > 0 ) {
@@ -1272,7 +1272,7 @@ void ControlObject::createFrame( const FunctionCallbackInfo<Value>& args ) {
 		argv[n] = args[n];
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor2 );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
 }
@@ -1554,7 +1554,7 @@ void ControlObject::addListboxItem( const FunctionCallbackInfo<Value>&  args ) {
 
 	Isolate* isolate = args.GetIsolate();
 	Local<Function> cons = Local<Function>::New( isolate, ListboxItemObject::constructor );
-	Local<Object> lio = cons->NewInstance( 0, NULL );
+	Local<Object> lio = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 	ListboxItemObject *pli = ObjectWrap::Unwrap<ListboxItemObject>( lio );
 
 	pli->pli = AddListItem( me->control, *text );
@@ -1649,7 +1649,7 @@ void ListboxItemObject::New( const FunctionCallbackInfo<Value>& args ) {
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( cons->NewInstance( 0, NULL ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 	}
 }
 
@@ -1685,7 +1685,7 @@ void MenuItemObject::New( const FunctionCallbackInfo<Value>& args ) {
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( cons->NewInstance( 0, NULL ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 	}
 }
 
@@ -1717,7 +1717,7 @@ void PopupObject::NewPopup( const FunctionCallbackInfo<Value>& args ) {
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( cons->NewInstance( 0, NULL ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 	}
 }
 
@@ -1726,7 +1726,7 @@ void PopupObject::addPopupItem( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 )
 	{
 		Local<Function> cons = Local<Function>::New( isolate, MenuItemObject::constructor );
-		Local<Object> menuItemObject = cons->NewInstance( NULL, 0 );
+		Local<Object> menuItemObject = cons->NewInstance( isolate->GetCurrentContext(), NULL, 0 ).ToLocalChecked();
 		MenuItemObject *mio = ObjectWrap::Unwrap<MenuItemObject>( menuItemObject );
 
 		PopupObject *popup = ObjectWrap::Unwrap<PopupObject>( args.This() );
@@ -1811,7 +1811,7 @@ static int CPROC onLoad( PSI_CONTROL pc, PTEXT params ) {
 	Local<Function> cb = Local<Function>::New( isolate, registration->cbLoadEvent );
 	Local<Value> retval = cb->Call( psiLocal.newControl, 0, NULL );
 
-	return retval->ToInt32()->Value();
+	return retval->ToInt32(USE_ISOLATE_VOID(isolate))->Value();
 }
 
 static int CPROC onCreate( PSI_CONTROL pc ) {
@@ -1828,7 +1828,7 @@ static int CPROC onCreate( PSI_CONTROL pc ) {
 
 	Local<Value> retval = cb->Call( psiLocal.newControl, 0, NULL );
 
-	return retval->ToInt32()->Value();
+	return retval->ToInt32(USE_ISOLATE_VOID( isolate))->Value();
 }
 
 RegistrationObject::RegistrationObject() {
@@ -1912,7 +1912,7 @@ void RegistrationObject::NewRegistration( const FunctionCallbackInfo<Value>& arg
 			argv[n] = args[n];
 
 		Local<Function> cons = Local<Function>::New( isolate, ControlObject::registrationConstructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
 }

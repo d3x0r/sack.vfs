@@ -19,6 +19,7 @@
 #include <procreg.h>
 #include <translation.h>
 #include <json_emitter.h>
+#include <vesl_emitter.h>
 #include <sqlgetoption.h>
 #include <sackcomm.h>
 #include <html5.websocket.h>
@@ -48,8 +49,10 @@
 
 #if NODE_MAJOR_VERSION >= 10
 #  define USE_ISOLATE(i)   (i),
+#  define USE_ISOLATE_VOID(i)   (i)
 #else
 #  define USE_ISOLATE(i)
+#  define USE_ISOLATE_VOID(i)
 #endif
 
 

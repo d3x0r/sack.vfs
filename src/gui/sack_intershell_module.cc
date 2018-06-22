@@ -139,7 +139,7 @@ static void asyncmsg( uv_async_t* handle ) {
 							  ? InterShellObject::buttonInstanceConstructor 
 							  : InterShellObject::controlInstanceConstructor
 						);
-					Local<Object> inst = cons->NewInstance( 0, NULL );
+					Local<Object> inst = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 					is->psvControl.Reset( isolate, inst );
 
 					if( !is->isButton ) // return the control handle automatically.
@@ -161,7 +161,7 @@ static void asyncmsg( uv_async_t* handle ) {
 					, InterShellObject::customControlInstanceConstructor
 				);
 
-				Local<Object> inst = cons->NewInstance( 0, NULL );
+				Local<Object> inst = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 				is->psvControl.Reset( isolate, inst );
 				defineOnQueryControl( is->type->name );
 				getCanvas( isolate, is->button );
@@ -546,7 +546,7 @@ void InterShellObject::NewButton( const FunctionCallbackInfo<Value>& args ) {
 		const int argc = 2;
 		Local<Value> argv[argc] = { args[0], args.Holder() };
 		Local<Function> cons = Local<Function>::New( isolate, buttonConstructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 	}
 }
 
@@ -572,7 +572,7 @@ void InterShellObject::NewConfiguration( const FunctionCallbackInfo<Value>& args
 		Local<Value> *argv = new Local<Value>[argc];// = { args[0], args.Holder() };
 		for( int n = 0; n < argc; n++ ) argv[n] = args[n];
 		Local<Function> cons = Local<Function>::New( isolate, controlConstructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 	}
 }
 
@@ -612,7 +612,7 @@ void InterShellObject::NewApplication( const FunctionCallbackInfo<Value>& args )
 		Local<Value> *argv = new Local<Value>[argc];// = { args[0], args.Holder() };
 		for( int n = 0; n < argc; n++ ) argv[n] = args[n];
 		Local<Function> cons = Local<Function>::New( isolate, intershellConstructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete[] argv;
 	}
 }
@@ -672,7 +672,7 @@ void InterShellObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 		const int argc = 2;
 		Local<Value> argv[argc] = { args[0], args.Holder() };
 		Local<Function> cons = Local<Function>::New( isolate, controlConstructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 	}
 }
 
@@ -696,7 +696,7 @@ void InterShellObject::NewCustomControl( const FunctionCallbackInfo<Value>& args
 		const int argc = 2;
 		Local<Value> argv[argc] = { args[0], args.Holder() };
 		Local<Function> cons = Local<Function>::New( isolate, customControlConstructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 	}
 }
 

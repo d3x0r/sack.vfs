@@ -2,7 +2,7 @@ set_property(GLOBAL PROPERTY USE_FOLDERS On)
 cmake_minimum_required(VERSION 3.0)
 
 
-project (sack_vfs)
+project (sack_gui)
 
 
 #include_directories( "../node_modules/nan" )

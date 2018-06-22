@@ -181,7 +181,7 @@ RenderObject::~RenderObject() {
 				argv[n] = args[n];
 
 			Local<Function> cons = Local<Function>::New( isolate, constructor );
-			args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+			args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 			delete argv;
 		}
 	}

@@ -140,23 +140,138 @@ private:
 		SRG_DestroyEntropy( &entropy );
 	}
 
-	static POINTER nextSalt;
-	static size_t nextSaltLen;
-	static void feedSignSalt( uintptr_t psvUser, POINTER *salt, size_t *saltlen ) {
-		salt[0] = nextSalt;
-		saltlen[0] = nextSaltLen;
+
+	struct bit_count_entry {
+		uint8_t ones, in0, in1, out0, out1, changes;
+	};
+	static struct bit_count_entry bit_counts[256];
+
+	static void InitBitCountLookupTables( void ) {
+		int in0 = 0;
+		int in1 = 0;
+		int out0 = 0;
+		int out1 = 0;
+		int ones;
+		int n;
+		for( n = 0; n < 256; n++ ) {
+			int changed;
+			in0 = 0;
+			in1 = 0;
+			out0 = 0;
+			out1 = 0;
+			ones = 0;
+			changed = 1;
+			if( (n & (1 << 7)) ) ones++;
+			if( (n & (1 << 6)) ) ones++;
+			if( (n & (1 << 5)) ) ones++;
+			if( (n & (1 << 4)) ) ones++;
+			if( (n & (1 << 3)) ) ones++;
+			if( (n & (1 << 2)) ) ones++;
+			if( (n & (1 << 1)) ) ones++;
+			if( (n & (1 << 0)) ) ones++;
+			do {
+				if( (n & (1 << 7)) ) {
+					out1++;
+					if( (n & (1 << 6)) ) out1++; else break;
+					if( (n & (1 << 5)) ) out1++; else break;
+					if( (n & (1 << 4)) ) out1++; else break;
+					if( (n & (1 << 3)) ) out1++; else break;
+					if( (n & (1 << 2)) ) out1++; else break;
+					if( (n & (1 << 1)) ) out1++; else break;
+					if( (n & (1 << 0)) ) out1++; else break;
+					changed = 0;
+				}
+				else {
+					out0++;
+					if( !(n & (1 << 6)) ) out0++; else break;
+					if( !(n & (1 << 5)) ) out0++; else break;
+					if( !(n & (1 << 4)) ) out0++; else break;
+					if( !(n & (1 << 3)) ) out0++; else break;
+					if( !(n & (1 << 2)) ) out0++; else break;
+					if( !(n & (1 << 1)) ) out0++; else break;
+					if( !(n & (1 << 0)) ) out0++; else break;
+					changed = 0;
+				}
+			} while( 0 );
+			if( !changed ) {
+				in1 = out1; in0 = out0;
+			} else do {
+				if( (n & (1 << 0)) ) {
+					in1++;
+					if( (n & (1 << 1)) ) in1++; else break;
+					if( (n & (1 << 2)) ) in1++; else break;
+					if( (n & (1 << 3)) ) in1++; else break;
+					if( (n & (1 << 4)) ) in1++; else break;
+					if( (n & (1 << 5)) ) in1++; else break;
+					if( (n & (1 << 6)) ) in1++; else break;
+					if( (n & (1 << 7)) ) in1++; else break;
+				}
+				else {
+					in0++;
+					if( !(n & (1 << 1)) ) in0++; else break;
+					if( !(n & (1 << 2)) ) in0++; else break;
+					if( !(n & (1 << 3)) ) in0++; else break;
+					if( !(n & (1 << 4)) ) in0++; else break;
+					if( !(n & (1 << 5)) ) in0++; else break;
+					if( !(n & (1 << 6)) ) in0++; else break;
+					if( !(n & (1 << 7)) ) in0++; else break;
+				}
+			} while( 0 );
+			bit_counts[n].in0 = in0;
+			bit_counts[n].in1 = in1;
+			bit_counts[n].out0 = out0;
+			bit_counts[n].out1 = out1;
+			bit_counts[n].changes = changed;
+			bit_counts[n].ones = ones;
+		}
 	}
 
-	static LOGICAL signCheck( uint8_t *buf ) {
+	static int signCheck( uint8_t *buf, int del1, int del2 ) {
 		int n, b;
-		int is0 = 0;
-		int is1 = 0;
+		int is0 = bit_counts[buf[0]].in0 != 0;
+		int is1 = bit_counts[buf[0]].in1 != 0;
 		int long0 = 0;
 		int long1 = 0;
 		int longest0 = 0;
 		int longest1 = 0;
 		int ones = 0;
+		int rval;
+		//LogBinary( buf, 32 );
 		for( n = 0; n < 32; n++ ) {
+			struct bit_count_entry *e = bit_counts + buf[n];
+			ones += e->ones;
+			if( is0 && e->in0 ) long0 += e->in0;
+			if( is1 && e->in1 ) long1 += e->in1;
+			if( e->changes ) {
+				if( long0 > longest0 ) longest0 = long0;
+				if( long1 > longest1 ) longest1 = long1;
+				if( long0 = e->out0 ) {
+					is0 = 1;
+					is1 = 0;
+				} 
+				else {
+					is1 = 1;
+					is0 = 0;
+				}
+				long1 = e->out1;
+			}
+			else {
+				if( !is0 && e->in0 ) {
+					if( long1 > longest1 ) longest1 = long1;
+					long0 = e->out0;
+					long1 = e->out1;
+					is0 = 1;
+					is1 = 0;
+				}
+				else if( !is1 && e->in1 ) {
+					if( long0 > longest0 ) longest0 = long0;
+					long0 = e->out0;
+					long1 = e->out1;
+					is0 = 0;
+					is1 = 1;
+				}
+			}
+#if 0
 			for( b = 0; b < 8; b++ ) {
 				if( buf[n] & (1 << b) ) {
 					ones++;
@@ -182,16 +297,25 @@ private:
 					}
 				}
 			}
+#endif
 		}
+		if( long0 > longest0 ) longest0 = long0;
+		if( long1 > longest1 ) longest1 = long1;
 
 // 167-128 = 39 = 40+ dif == 30 bits in a row approx
 #define overbal (167-128)
-		if( longest0 > 29 || longest1 > 29 || ones > (128+overbal) || ones < (128-overbal) ) {
-			if( ones > ( 128+overbal )|| ones < (128 - overbal) )
-				printf( "STRMb: %d %d  0s:%d 1s:%d ", longest0, longest1, 256-ones, ones );
+		if( longest0 > (29+del1) || longest1 > (29+del1) || ones > (128+overbal+del2) || ones < (128-overbal-del2) ) {
+			if( ones > ( 128 + overbal + del2 ) )
+				rval = 1;
+			else if( ones < (128 - overbal - del2) )
+				rval = 2;
+			else if( longest0 > (29+del1 ) )
+				rval = 3;
+			else if( longest1 > (29+del1 ) )
+				rval = 4;
 			else
-				printf( "STRMl: %d %d  0s:%d 1s:%d ", longest0, longest1, 256 - ones, ones );
-			return 1;
+				rval = 5;
+			return rval;
 		}
 		return 0;
 	}
@@ -201,12 +325,24 @@ private:
 		//SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
 		char *id;
 		int tries = 0;
+		int pad1 = 0, pad2 = 0;
+		int n = 0;
+		int argn = 1;
 		POINTER state = NULL;
-		nextSalt = NewArray( uint8_t, nextSaltLen = 32 );
-		//memcpy( nextSalt, *buf, buf.length() );
+		while( argn < args.Length() ) {
+			if( args[argn]->IsNumber() ) {
+				if( n ) {
+					pad2 = args[argn]->Int32Value();
+				} else {
+					n = 1;
+					pad1 = args[argn]->Int32Value();
+				}
+			}
+			argn++;
+		}
 		struct random_context *signEntropy = (struct random_context *)DequeLink( &signingEntropies );
 		if( !signEntropy )
-			signEntropy = SRG_CreateEntropy2( feedSignSalt, (uintptr_t)0 );
+			signEntropy = SRG_CreateEntropy2_256( NULL, (uintptr_t)0 );
 
 		SRG_ResetEntropy( signEntropy );
 		SRG_FeedEntropy( signEntropy, (const uint8_t*)*buf, buf.length() );
@@ -217,14 +353,15 @@ private:
 				size_t len;
 				uint8_t outbuf[32];
 				uint8_t *bytes;
+				int passed_as;
 				id = SRG_ID_Generator();
-				bytes = DecodeBase64Ex( id, 40, &len, (const char*)1 );
-				memcpy( (uint8_t*)nextSalt, bytes, 32 );
+				bytes = DecodeBase64Ex( id, 44, &len, (const char*)1 );
+				SRG_FeedEntropy( signEntropy, bytes, len );
 				Release( bytes );
 				SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
 				tries++;
-				if( signCheck( outbuf ) )
-					printf( " %d  %s\n", tries, id );
+				if( ( passed_as = signCheck( outbuf, pad1, pad2 ) ) )
+					printf( " %d  %s  %d\n", tries, id, passed_as );
 				else {
 					Release( id );
 					id = NULL;
@@ -243,36 +380,44 @@ private:
 			//SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
 			char *id;
 			int tries = 0;
+			int pad1 = 0, pad2 = 0;
+			int n = 0;
+			int argn = 1;
 			struct random_context *signEntropy = (struct random_context *)DequeLink( &signingEntropies );
-			nextSalt = NewArray( uint8_t, nextSaltLen = buf.length() + 32 );
-			memcpy( nextSalt, *buf, buf.length() );
+			while( argn < args.Length() ) {
+				if( args[argn]->IsNumber() ) {
+					if( n ) {
+						pad2 = args[argn]->Int32Value();
+					} else {
+						n = 1;
+						pad1 = args[argn]->Int32Value();
+					}
+				}
+				argn++;
+			}
 
 			if( !signEntropy )
-				signEntropy = SRG_CreateEntropy2( feedSignSalt, (uintptr_t)0 );
+				signEntropy = SRG_CreateEntropy2_256( NULL, (uintptr_t)0 );
 			SRG_ResetEntropy( signEntropy );
+			SRG_FeedEntropy( signEntropy, (const uint8_t*)*buf, buf.length() );
 			{
 				size_t len;
 				uint8_t outbuf[32];
 				uint8_t *bytes;
 				id = *hash;
-				bytes = DecodeBase64Ex( id, 40, &len, (const char*)1 );
-				memcpy( ((uint8_t*)nextSalt) + nextSaltLen - 32, bytes, 32 );
+				bytes = DecodeBase64Ex( id, 44, &len, (const char*)1 );
+				SRG_FeedEntropy( signEntropy, bytes, len );
 				Release( bytes );
 				SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
-				tries++;
-				if( signCheck( outbuf ) )
-					args.GetReturnValue().Set( True( args.GetIsolate() ) );
-				else {
-					args.GetReturnValue().Set( False( args.GetIsolate() ) );
-				}
+				args.GetReturnValue().Set( Number::New( args.GetIsolate(), signCheck( outbuf, pad1, pad2 ) ) );
 			}
+			EnqueLink( &signingEntropies, signEntropy );
 		}
 	}
 
 };
 
-POINTER SRGObject::nextSalt;
-size_t  SRGObject::nextSaltLen;
+struct SRGObject::bit_count_entry SRGObject::bit_counts[256];
 PLINKQUEUE SRGObject::signingEntropies;
 v8::Persistent<v8::Function> SRGObject::constructor;
 
@@ -283,6 +428,7 @@ void InitSRG( Isolate *isolate, Handle<Object> exports ) {
 
 void SRGObject::Init( Isolate *isolate, Handle<Object> exports )
 {
+	InitBitCountLookupTables();
 	Local<FunctionTemplate> srgTemplate;
 	srgTemplate = FunctionTemplate::New( isolate, New );
 	srgTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.srg" ) );

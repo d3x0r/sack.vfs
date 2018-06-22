@@ -56,7 +56,7 @@ static struct imageLocal {
 static Local<Object> makeColor( Isolate *isolate, CDATA c ) {
 	Local<Value> argv[1] = { Uint32::New( isolate, c ) };
 	Local<Function> cons = Local<Function>::New( isolate, ColorObject::constructor );
-	Local<Object> cObject = cons->NewInstance( 1, argv );
+	Local<Object> cObject = cons->NewInstance( isolate->GetCurrentContext(), 1, argv ).ToLocalChecked();
 	return cObject;
 }
 
@@ -79,7 +79,7 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 		Local<Function> cb = Local<Function>::New( isolate, fontResult );
 
 		Local<Function> cons = Local<Function>::New( isolate, FontObject::constructor );
-		Local<Object> result = cons->NewInstance( 0, NULL );
+		Local<Object> result = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 		FontObject *fo = FontObject::Unwrap<FontObject>( result );
 		FRACTION one = { 1,1 };
 		fo->font = imageLocal.fontResult;
@@ -413,7 +413,7 @@ void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 			argv[n] = args[n];
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
 }
@@ -462,7 +462,7 @@ void ImageObject::NewSubImage( const FunctionCallbackInfo<Value>& args ) {
 		argv[0] = args.Holder();
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
 }
@@ -475,7 +475,7 @@ Local<Object> ImageObject::NewImage( Isolate*isolate, Image image, LOGICAL exter
 	int argc = 0;
 	Local<Value> *argv = new Local<Value>[argc];
 	Local<Function> cons = Local<Function>::New( isolate, constructor );
-	Local<Object> lo = cons->NewInstance( argc, argv );
+	Local<Object> lo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked();
 	obj = ObjectWrap::Unwrap<ImageObject>( lo );
 	obj->image = image;
 	obj->external = external;
@@ -489,7 +489,7 @@ ImageObject * ImageObject::MakeNewImage( Isolate*isolate, Image image, LOGICAL e
 	int argc = 0;
 	Local<Value> *argv = new Local<Value>[argc];
 	Local<Function> cons = Local<Function>::New( isolate, constructor );
-	Local<Object> lo = cons->NewInstance( argc, argv );
+	Local<Object> lo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked();
 	obj = ObjectWrap::Unwrap<ImageObject>( lo );
 	obj->image = image;
 	obj->external = external;
@@ -891,7 +891,7 @@ void FontObject::New( const FunctionCallbackInfo<Value>& args ) {
 			argv[n] = args[n];
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
 }
@@ -934,7 +934,7 @@ void FontObject::load( const FunctionCallbackInfo<Value>& args ) {
 
 	Local<Function> cons = Local<Function>::New( isolate, constructor );
 	Local<Object> result;
-	args.GetReturnValue().Set( result = cons->NewInstance( 0, NULL ) );
+	args.GetReturnValue().Set( result = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 
 	FontObject *fo = ObjectWrap::Unwrap<FontObject>( result );
 	FRACTION one = { 1,1 };
@@ -969,7 +969,7 @@ CDATA ColorObject::getColor( Local<Object> object ) {
 
 Local<Object> ColorObject::makeColor( Isolate *isolate, CDATA rgba ) {
 	Local<Function> cons = Local<Function>::New( isolate, constructor );
-	Local<Object> _color = cons->NewInstance( 0, NULL );
+	Local<Object> _color = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( _color );
 	co->color = rgba;
 	return _color;
@@ -1037,7 +1037,7 @@ void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
 			argv[n] = args[n];
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
 }
