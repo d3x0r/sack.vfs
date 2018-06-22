@@ -127,7 +127,7 @@ struct event {
 	struct {
 		BIT_FIELD complete : 1;
 	}flags;
-	int success;
+	uintptr_t success;
 };
 typedef struct event IS_EVENT;
 #define MAXIS_EVENTSPERSET 64
@@ -143,7 +143,6 @@ struct global {
 		int32_t x, y;
 		uint32_t w, h;
 		is_control *control;
-		PSI_CONTROL resultControl;
 	} nextControlCreatePosition;
 } g;
 

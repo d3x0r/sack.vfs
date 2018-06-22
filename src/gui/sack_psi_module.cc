@@ -21,9 +21,11 @@ static struct psiLocal {
 	PTHREAD nodeThread;
 	ControlObject *pendingCreate;
 	Local<Object> newControl;
+	RegistrationObject *pendingRegistration;
 	LOGICAL eventLoopRegistered;
 	PLIST controls;
 	LOGICAL internalCreate;
+	IS_EVENTSET event_pool;
 } psiLocal;
 
 Persistent<FunctionTemplate> ControlObject::frameTemplate;
@@ -145,26 +147,53 @@ static void asyncmsg( uv_async_t* handle ) {
 			case Event_Control_Create:
 			{
 				Isolate* isolate = Isolate::GetCurrent();
-				Local<Object> object = ControlObject::NewWrappedControl( isolate, evt->data.pc );
-				ControlObject *control = ControlObject::Unwrap<ControlObject>( object );
-				AddLink( &psiLocal.controls, control );
-				evt->control = control;
+				if( psiLocal.pendingRegistration ) {
+
+					Local<Object> object = ControlObject::NewWrappedControl( isolate, evt->data.pc );
+					ControlObject *control = ControlObject::Unwrap<ControlObject>( object );
+					control->registration = psiLocal.pendingRegistration;
+					ControlObject **me = ControlData( ControlObject **, evt->data.pc );
+					if( me )
+						me[0] = control;
+
+					Local<Function> cb = Local<Function>::New( isolate, psiLocal.pendingRegistration->cbInitEvent );
+					// controls get wrapped sooner... 
+					// ControlObject::wrapSelf( isolate, me[0], psiLocal.newControl );
+					
+					Local<Value> retval = cb->Call( object, 0, NULL );
+
+					evt->success = retval->ToInt32( USE_ISOLATE_VOID( isolate ) )->Value();
+				}
+				else {
+					Local<Object> object = ControlObject::NewWrappedControl( isolate, evt->data.pc );
+					ControlObject *control = ControlObject::Unwrap<ControlObject>( object );
+					if( control->registration ) {
+						Local<Function> cb = Local<Function>::New( isolate, control->registration->cbInitEvent );
+						Local<Value> retval = cb->Call( psiLocal.newControl, 0, NULL );
+					}
+					AddLink( &psiLocal.controls, control );
+					evt->control = control;
+				}
+
 			}
 				break;
 			case Event_Control_Destroy:
 				ControlObject::releaseSelf( evt->control );
 				break;
 			case Event_Control_Draw: {
-				if( !evt->control->image ) {
-					evt->control->image = ImageObject::MakeNewImage( isolate, GetControlSurface( evt->control->control ), TRUE );
+				if( evt->control ) {
+					if( !evt->control->image ) {
+						evt->control->image = ImageObject::MakeNewImage( isolate, GetControlSurface( evt->control->control ), TRUE );
+					}
+					Local<Value> argv[1] = { evt->control->image->_this.Get( isolate ) };
+					cb = Local<Function>::New( isolate, evt->control->registration->cbDrawEvent );
+					r = cb->Call( evt->control->state.Get( isolate ), 1, argv );
+					if( !r.IsEmpty() )
+						evt->success = (int)r->IntegerValue();
+					else
+						evt->success = 1;
 				}
-				Local<Value> argv[1] = { evt->control->image->_this.Get( isolate ) };
-				cb = Local<Function>::New( isolate, evt->control->registration->cbDrawEvent );
-				r = cb->Call( evt->control->state.Get( isolate ), 1, argv );
-				if( !r.IsEmpty() )
-					evt->success = (int)r->IntegerValue();
-				else
-					evt->success = 1;
+				else evt->success = 0;
 				break;
 			}
 			case Event_Control_Mouse: {
@@ -221,20 +250,36 @@ static void asyncmsg( uv_async_t* handle ) {
 				evt->flags.complete = TRUE;
 				WakeThread( evt->waiter );
 			}
+			DeleteFromSet( IS_EVENT, &psiLocal.event_pool, evt );
 		}
 	}
 	//lprintf( "done calling message notice." );
 }
 
 
-int MakePSIEvent( ControlObject *control, enum eventType type, ... ) {
-	event e;
+void enableEventLoop( void ) {
+	if( !psiLocal.eventLoopRegistered ) {
+		psiLocal.eventLoopRegistered = TRUE;
+		MemSet( &psiLocal.async, 0, sizeof( &psiLocal.async ) );
+		uv_async_init( uv_default_loop(), &psiLocal.async, asyncmsg );
+	}
+}
+
+
+static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum eventType type, ... ) {
+	event *pe;
+#define e (*pe)
 	va_list args;
 	va_start( args, type );
+	if( type != Event_Control_Close_Loop )
+		enableEventLoop();
+	pe = GetFromSet( IS_EVENT, &psiLocal.event_pool );
 	e.type = type;
 	e.control = control;
 	//e.registration = control->reg
 	switch( type ) {
+	case Event_Control_Close_Loop:
+		break;
 	case Event_Control_Create:
 		e.data.pc = va_arg( args, PSI_CONTROL );
 		break;
@@ -266,25 +311,17 @@ int MakePSIEvent( ControlObject *control, enum eventType type, ... ) {
 	e.success = 0;
 	EnqueLink( &psiLocal.events, &e );
 	uv_async_send( &psiLocal.async );
-
-	while( !e.flags.complete ) WakeableSleep( 1000 );
+	if( block )
+		while( !e.flags.complete ) WakeableSleep( 1000 );
 
 	return e.success;
-}
-
-
-void enableEventLoop( void ) {
-	if( !psiLocal.eventLoopRegistered ) {
-		psiLocal.eventLoopRegistered = TRUE;
-		MemSet( &psiLocal.async, 0, sizeof( &psiLocal.async ) );
-		uv_async_init( uv_default_loop(), &psiLocal.async, asyncmsg );
-	}
+#undef e
 }
 
 void disableEventLoop( void ) {
 	if( psiLocal.eventLoopRegistered ) {
 		psiLocal.eventLoopRegistered = FALSE;
-		MakePSIEvent( NULL, Event_Control_Close_Loop );
+		MakePSIEvent( NULL, false, Event_Control_Close_Loop );
 	}
 }
 
@@ -364,7 +401,7 @@ static int CPROC CustomDefaultInit( PSI_CONTROL pc ) {
 	if( psiLocal.pendingCreate ) return 1; // internal create in progress... it will result with its own object later.
 	Isolate* isolate = Isolate::GetCurrent();
 	if( !isolate ) {
-		MakePSIEvent( NULL, Event_Control_Create, pc );
+		MakePSIEvent( NULL, false, Event_Control_Create, pc );
 	} else {
 		Local<Object> object = ControlObject::NewWrappedControl( isolate, pc );
 		ControlObject *control = ControlObject::Unwrap<ControlObject>( object );
@@ -385,7 +422,7 @@ static int CPROC CustomDefaultDestroy( PSI_CONTROL pc ) {
 			if( isolate )
 				ControlObject::releaseSelf( control );
 			else
-				MakePSIEvent( control, Event_Control_Destroy );
+				MakePSIEvent( control, false, Event_Control_Destroy );
 			break;
 		}
 	}
@@ -1075,7 +1112,7 @@ void ControlObject::writeConsole( const FunctionCallbackInfo<Value>& args) {
 }
 
 static void consoleInputEvent( uintptr_t arg, PTEXT text ) {
-	MakePSIEvent( (ControlObject*)arg, Event_Control_ConsoleInput, text );
+	MakePSIEvent( (ControlObject*)arg, true, Event_Control_ConsoleInput, text );
 }
 
 void ControlObject::setConsoleRead( const FunctionCallbackInfo<Value>& args ) {
@@ -1103,7 +1140,7 @@ void  ControlObject::addSheetsPage( const FunctionCallbackInfo<Value>& args ) {
 }
 
 static void buttonClicked( uintptr_t object, PSI_CONTROL ) {
-	MakePSIEvent( (ControlObject*)object, Event_Control_ButtonClick );
+	MakePSIEvent( (ControlObject*)object, true, Event_Control_ButtonClick );
 }
 
 void ControlObject::setButtonClick( const FunctionCallbackInfo<Value>& args ) {
@@ -1300,15 +1337,15 @@ static uintptr_t waitDialog( PTHREAD thread ) {
 	CommonWait( waiter->control );
 	if( waiter->done ) {
 		if( waiter->okay ) {
-			MakePSIEvent( waiter, Event_Frame_Ok );
+			MakePSIEvent( waiter, true, Event_Frame_Ok );
 		} else {
-			MakePSIEvent( waiter, Event_Frame_Cancel );
+			MakePSIEvent( waiter, true, Event_Frame_Cancel );
 		}
 	} else {
 		if( waiter->okay ) {
-			MakePSIEvent( waiter, Event_Frame_Ok );
+			MakePSIEvent( waiter, true, Event_Frame_Ok );
 		} else {
-			MakePSIEvent( waiter, Event_Frame_Abort );
+			MakePSIEvent( waiter, true, Event_Frame_Abort );
 		}
 	}
 	waiter->waiter = NULL;
@@ -1596,7 +1633,7 @@ void ControlObject::setListboxHeader( const FunctionCallbackInfo<Value>&  args )
 
 static void DoubleClickHandler( uintptr_t psvUser, PSI_CONTROL pc, PLISTITEM hli ){
 	ControlObject *me = (ControlObject *)psvUser;
-	MakePSIEvent( me, Event_Listbox_DoubleClick, (MenuItemObject*)GetItemData( hli ) );
+	MakePSIEvent( me, true, Event_Listbox_DoubleClick, (MenuItemObject*)GetItemData( hli ) );
 }
 
 void ControlObject::setListboxOnDouble( const FunctionCallbackInfo<Value>&  args ) {
@@ -1609,7 +1646,7 @@ void ControlObject::setListboxOnDouble( const FunctionCallbackInfo<Value>&  args
 
 static void SelChangeHandler( uintptr_t psvUser, PSI_CONTROL pc, PLISTITEM hli ) {
 	ControlObject *me = (ControlObject *)psvUser;
-	MakePSIEvent( me, Event_Listbox_Selected, ((MenuItemObject*)GetItemData( hli )) );
+	MakePSIEvent( me, true, Event_Listbox_Selected, ((MenuItemObject*)GetItemData( hli )) );
 }
 
 void ControlObject::setListboxOnSelect( const FunctionCallbackInfo<Value>&  args ) {
@@ -1772,7 +1809,7 @@ static uintptr_t TrackPopupThread( PTHREAD thread ) {
 	LIST_FORALL( popup->menuItems, idx, MenuItemObject *, mio ) {
 		if( mio->uid == result ) {
 			if( !mio->cbSelected.IsEmpty() )
-				MakePSIEvent( NULL, Event_Menu_Item_Selected, mio );
+				MakePSIEvent( NULL, true, Event_Menu_Item_Selected, mio );
 		}
 	}
 	disableEventLoop();
@@ -1818,17 +1855,27 @@ static int CPROC onCreate( PSI_CONTROL pc ) {
 	Isolate* isolate = Isolate::GetCurrent();
 	CTEXTSTR name = GetControlTypeName( pc );
 	RegistrationObject *registration = findRegistration( name );
-	psiLocal.pendingCreate->registration = registration;
-	ControlObject **me = ControlData( ControlObject **, pc );
-	me[0] = psiLocal.pendingCreate;
+	if( !psiLocal.pendingCreate ) {
+		psiLocal.pendingRegistration = registration;
+		int result = MakePSIEvent( NULL, true, Event_Control_Create, pc );
+		psiLocal.pendingRegistration = NULL;
+		return result;
+	}
+	else {
+		psiLocal.pendingCreate->registration = registration;
+	
+		ControlObject **me = ControlData( ControlObject **, pc );
+		me[0] = psiLocal.pendingCreate;
 
-	Local<Function> cb = Local<Function>::New( isolate, registration->cbInitEvent );
-	// controls get wrapped sooner... 
-	//ControlObject::wrapSelf( isolate, me[0], psiLocal.newControl );
+		Local<Function> cb = Local<Function>::New( isolate, registration->cbInitEvent );
+		// controls get wrapped sooner... 
+		// ControlObject::wrapSelf( isolate, me[0], psiLocal.newControl );
 
-	Local<Value> retval = cb->Call( psiLocal.newControl, 0, NULL );
+		Local<Value> retval = cb->Call( psiLocal.newControl, 0, NULL );
 
-	return retval->ToInt32(USE_ISOLATE_VOID( isolate))->Value();
+		return retval->ToInt32( USE_ISOLATE_VOID( isolate ) )->Value();
+	}
+
 }
 
 RegistrationObject::RegistrationObject() {
@@ -1950,7 +1997,7 @@ static int CPROC onDraw( PSI_CONTROL pc ) {
 	RegistrationObject *obj = findRegistration( name );
 	ControlObject **me = ControlData( ControlObject **, pc );
 
-	return MakePSIEvent( me[0], Event_Control_Draw, obj, me );
+	return MakePSIEvent( me[0], true, Event_Control_Draw, obj, me );
 }
 
 void RegistrationObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
@@ -1975,7 +2022,7 @@ static int CPROC cbMouse( PSI_CONTROL pc, int32_t x, int32_t y, uint32_t b ) {
 	RegistrationObject *obj = findRegistration( name );
 	ControlObject **me = ControlData( ControlObject **, pc );
 
-	return MakePSIEvent( me[0], Event_Control_Mouse, x, y, b );
+	return MakePSIEvent( me[0], true, Event_Control_Mouse, x, y, b );
 }
 
 void RegistrationObject::setMouse( const FunctionCallbackInfo<Value>& args ) {
@@ -1999,7 +2046,7 @@ static int CPROC cbKey( PSI_CONTROL pc, uint32_t key ) {
 	RegistrationObject *obj = findRegistration( name );
 	ControlObject **me = ControlData( ControlObject **, pc );
 
-	return MakePSIEvent( me[0], Event_Control_Key, key );
+	return MakePSIEvent( me[0], true, Event_Control_Key, key );
 }
 
 void RegistrationObject::setKey( const FunctionCallbackInfo<Value>& args ) {

@@ -764,7 +764,8 @@ void ImageObject::putImage( const FunctionCallbackInfo<Value>& args ) {
 					h = (int)args[8]->NumberValue();
 					if( h < 0 ) h = ii->image->height;
 				}
-				BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, 1, BLOT_COPY );
+				if( ow && oh && w && h )
+					BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, 1, BLOT_COPY );
 			}
 			else
 				BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, 0, BLOT_COPY );
