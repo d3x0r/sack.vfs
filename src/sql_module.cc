@@ -232,7 +232,9 @@ void SqlObject::escape( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 	char *out = EscapeSQLString(sql->odbc, (*tmp) );
-	args.GetReturnValue().Set( String::NewFromUtf8( isolate, out ) );
+	size_t resultlen;
+	char *out = EscapeSQLBinaryExx(sql->odbc, (*tmp), tmp.length(), &resultlen, FALSE DBG_SRC );
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, out, NewStringType::kNormal, resultlen ).ToLocalChecked() );
 	Deallocate( char*, out );
 
 }
