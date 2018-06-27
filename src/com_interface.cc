@@ -26,7 +26,7 @@ void ComObject::Init( Handle<Object> exports ) {
 		Local<FunctionTemplate> comTemplate;
 
 		comTemplate = FunctionTemplate::New( isolate, New );
-		comTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Volume" ) );
+		comTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.ComPort" ) );
 		comTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 		// Prototype
