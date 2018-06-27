@@ -111,6 +111,8 @@ void VolumeObject::Init( Handle<Object> exports ) {
 #endif
 #ifdef WIN32
 	RegObject::Init( exports );
+	KeyHidObjectInit( isolate, exports );
+
 #endif
 	TLSObject::Init( isolate, exports );
 
@@ -1101,6 +1103,12 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 			else {
 				vol = ObjectWrap::Unwrap<VolumeObject>( args[1]->ToObject() );
 				obj = new FileObject( vol, *fName, isolate, args[1]->ToObject() );
+				if( !obj->cfile ) {
+					isolate->ThrowException( Exception::Error(
+						String::NewFromUtf8( isolate, TranslateText( "Failed to open file." ) ) ) );
+					delete obj;
+					return;
+				}
 			}
 			obj->Wrap( args.This() );
 			args.GetReturnValue().Set( args.This() );
@@ -1109,7 +1117,9 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 			const int argc = 2;
 			Local<Value> argv[argc] = { args[0], args.Holder() };
 			Local<Function> cons = Local<Function>::New( isolate, constructor );
-			args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
+			MaybeLocal<Object> file = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
+			if( !file.IsEmpty() )
+				args.GetReturnValue().Set( file.ToLocalChecked() );
 		}
 	}
 
