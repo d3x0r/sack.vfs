@@ -1,10 +1,13 @@
 
 #include "global.h"
 
+//#define LoG(...)
+#define LoG lprintf
+
 
 static uintptr_t InputThread( PTHREAD thread );
 static void CPROC dispatchKey( uintptr_t psv, RAWINPUT *event, WCHAR ch, int len );
-
+#define WM_HOOK2 WM_USER+512
 
 class KeyHidObject : public node::ObjectWrap {
 public:
@@ -45,6 +48,9 @@ typedef struct global_tag
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	KeyHidObject *eventHandler;
 	PLIST inputs;
+	HHOOK hookHandle;
+	HHOOK hookHandleLL;
+	int skipEvent;
 } GLOBAL;
 
 static GLOBAL g;
@@ -120,11 +126,15 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
 				indev->name,
 				&uSize
 			);
+			lprintf( "New Device: %s", indev->name );
 			AddLink( &g.inputs, indev );
 		}
 #endif
 		//SetTimer( hWnd, 100, 1000, NULL );
 		return TRUE;
+	case WM_HOOK2:
+		lprintf( "HOOK2 MSG" );
+		return TRUE;;;;;;
 	case WM_INPUT:
 		if( GetRawInputData( (HRAWINPUT)lParam,
 			RID_INPUT, NULL, &uSize, sizeof( RAWINPUTHEADER ) ) == -1 ) {
@@ -179,12 +189,13 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
 					indev->name,
 					&uSize
 				);
+				lprintf( "New Device: %s", indev->name );
 				AddLink( &g.inputs, indev );
 			}
 		}
 		dispatchKey( (uintptr_t)g.eventHandler, input, keyChar, 0 );
-		if(0)
-		lprintf( "Got: %c(%d) %p %d %d %d %d %d %d %d ", keyChar,keyChar
+		//if(0)
+		LoG( "Got: %c(%d) %p %d %d %d %d %d %d %d ", keyChar,keyChar
 			, input->header.hDevice
 			, input->header.wParam
 			, input->data.keyboard.Reserved, input->data.keyboard.ExtraInformation,
@@ -239,13 +250,215 @@ int MakeProxyWindow( void )
 	return TRUE;
 }
 
+LRESULT WINAPI KeyboardProc( int code, WPARAM wParam, LPARAM lParam ) {
+	KBDLLHOOKSTRUCT *kbhook = (KBDLLHOOKSTRUCT*)lParam;
+	lprintf( "   keyhook for key... %08x  %d %d %x", wParam, kbhook->scanCode, kbhook->vkCode, kbhook->flags );
+	MSG msg;
+	while( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) )  lprintf( "had message..." );
+	return CallNextHookEx( g.hookHandle, code, wParam, lParam );
+}
+
+
+LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
+	KBDLLHOOKSTRUCT *kbhook = (KBDLLHOOKSTRUCT*)lParam;
+	static int resending;
+	static struct states {
+		int state;
+		int tick;
+		INPUT events[12];
+		INPUT eventsUp[12];
+		struct {
+			int code;
+			int wParam;
+			KBDLLHOOKSTRUCT lParam;
+		} pending[12];
+	} States[10];
+	static int lastDownSkip;
+	//static 
+	int n = 10;
+	int up = (kbhook->flags & LLKHF_UP) != 0;
+	if( resending ) {
+		return CallNextHookEx( g.hookHandleLL, code, wParam, lParam );
+	}
+	if( up ) {
+		if( lastDownSkip ) {
+			States[n].eventsUp[States[n].state].type = INPUT_KEYBOARD;
+			States[n].eventsUp[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
+			States[n].eventsUp[States[n].state].ki.dwFlags = kbhook->flags;
+			States[n].eventsUp[States[n].state].ki.time = kbhook->time;
+			States[n].eventsUp[States[n].state].ki.wScan = kbhook->scanCode;
+			States[n].eventsUp[States[n].state].ki.wVk = kbhook->vkCode;
+			lastDownSkip--;
+			return 1;
+		}
+		else {
+			return CallNextHookEx( g.hookHandleLL, code, wParam, lParam );
+		}
+	}
+	if( kbhook->vkCode == 'P' ) {
+		for( n = 0; n < 10; n++ ) {
+			if( !States[n].state ) {
+				States[n].events[States[n].state].type = INPUT_KEYBOARD;
+				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
+				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
+				States[n].events[States[n].state].ki.time = kbhook->time;
+				States[n].events[States[n].state].ki.wScan = kbhook->scanCode;
+				States[n].events[States[n].state].ki.wVk = kbhook->vkCode;
+
+				States[n].tick = GetTickCount();
+				LoG( "P KEY set state in %d", n );
+				States[n].state = 1;
+				break;
+			}
+		}
+	}
+	else if( kbhook->vkCode >= '0' && kbhook->vkCode <= '9' ) {
+		for( n = 0; n < 10; n++ ) {
+			if( States[n].state == 1 ) {
+				States[n].events[States[n].state].type = INPUT_KEYBOARD;
+				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
+				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
+				States[n].events[States[n].state].ki.time = kbhook->time;
+				States[n].events[States[n].state].ki.wScan = kbhook->scanCode;
+				States[n].events[States[n].state].ki.wVk = kbhook->vkCode;
+
+				States[n].tick = GetTickCount();
+				LoG( "# KEY set state in %d", n );
+				States[n].state = 2;
+				break;
+			}
+			if( States[n].state == 2 ) {
+				States[n].events[States[n].state].type = INPUT_KEYBOARD;
+				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
+				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
+				States[n].events[States[n].state].ki.time = kbhook->time;
+				States[n].events[States[n].state].ki.wScan = kbhook->scanCode;
+				States[n].events[States[n].state].ki.wVk = kbhook->vkCode;
+
+				States[n].tick = GetTickCount();
+				LoG( "# KEY set state in %d", n );
+				States[n].state = 3;
+				break;
+			}
+			if( States[n].state == 4 ) {
+				States[n].events[States[n].state].type = INPUT_KEYBOARD;
+				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
+				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
+				States[n].events[States[n].state].ki.time = kbhook->time;
+				States[n].events[States[n].state].ki.wScan = kbhook->scanCode;
+				States[n].events[States[n].state].ki.wVk = kbhook->vkCode;
+
+				States[n].tick = GetTickCount();
+				LoG( "# KEY set state in %d", n );
+				States[n].state = 5;
+				break;
+			}
+			if( States[n].state == 5 ) {
+				States[n].events[States[n].state].type = INPUT_KEYBOARD;
+				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
+				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
+				States[n].events[States[n].state].ki.time = kbhook->time;
+				States[n].events[States[n].state].ki.wScan = kbhook->scanCode;
+				States[n].events[States[n].state].ki.wVk = kbhook->vkCode;
+
+				States[n].tick = GetTickCount();
+				LoG( "# KEY set state in %d", n );
+				States[n].state = 6;
+				break;
+			}
+		}
+	}
+	else if( kbhook->vkCode == VK_RETURN ) {
+		for( n = 0; n < 10; n++ ) {
+			if( States[n].state == 6 ) {
+				States[n].events[States[n].state].type = INPUT_KEYBOARD;
+				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
+				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
+				States[n].events[States[n].state].ki.time = kbhook->time;
+				States[n].events[States[n].state].ki.wScan = kbhook->scanCode;
+				States[n].events[States[n].state].ki.wVk = kbhook->vkCode;
+
+				States[n].tick = GetTickCount();
+				LoG( "\r KEY set state in %d", n );
+				States[n].state = 0;
+				break;
+			}
+		}
+	}
+	else if( kbhook->vkCode == 'T' ) {
+		for( n = 0; n < 10; n++ ) {
+			if( States[n].state  == 3) {
+				States[n].events[States[n].state].type = INPUT_KEYBOARD;
+				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
+				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
+				States[n].events[States[n].state].ki.time = kbhook->time;
+				States[n].events[States[n].state].ki.wScan = kbhook->scanCode;
+				States[n].events[States[n].state].ki.wVk = kbhook->vkCode;
+
+				States[n].tick = GetTickCount();
+				LoG( "T KEY set state in %d", n );
+				States[n].state = 4;
+				break;
+			}
+		}
+	}
+	else {
+		for( n = 0; n < 10; n++ ) {
+			if( States[n].state ) {
+				LoG( "pending state...%d", n );
+				if( (GetTickCount() - States[n].tick) > 250 ) {
+					int e;
+					LoG( "Expired %d", States[n].state );
+					for( e = 0; e < States[n].state; e++ ) {
+						LoG( "Call next with what would have been?" );
+						//RawInput()
+						resending = 1;
+						States[n].events[e].ki.time = GetTickCount();
+						SendInput( 1, States[n].events + e, sizeof( INPUT ) );
+						States[n].eventsUp[e].ki.time = GetTickCount();
+						SendInput( 1, States[n].eventsUp + e, sizeof( INPUT ) );
+						resending = 0;
+						//CallNextHookEx( g.hookHandleLL, States[n].pending[e].code, States[n].pending[e].wParam, (LPARAM)&States[n].pending[e].lParam );
+					}
+					LoG( "State has been pending for tooo long. %d", n );
+					States[n].state = 0;
+				}
+				else {
+					LoG( "state pending, mismatch key; flush state?" );
+				}
+			}
+		}
+	}
+	if( n < 10 ) {
+		g.skipEvent = 1;
+		if( 0 ) {
+			LoG( "Drop key." );
+			lastDownSkip++;
+			return 1;
+		}
+	}
+	//SendMessage( g.hWnd, WM_HOOK2, 0, 0 );
+	LoG( "LL keyhook for key... %08x  %d %d %x", wParam, kbhook->scanCode, kbhook->vkCode, kbhook->flags );
+	MSG msg;
+	while( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) ) { DispatchMessage( &msg );  lprintf( "had LL message..." ); }
+	return CallNextHookEx( g.hookHandleLL, code, wParam, lParam );
+}
 
 uintptr_t InputThread( PTHREAD thread )
 {
-
+	// --- InstallHook (HookingRawInputDemoDLL.cpp) ---
+	// Register keyboard Hook
+	//WH_KEYBOARD_LL
+	HMODULE xx;
+	xx = GetModuleHandle( "sack_vfs.node" );
+	//lprintf( "%p", xx );
+	g.hookHandleLL = SetWindowsHookEx( WH_KEYBOARD_LL, (HOOKPROC)KeyboardProcLL, xx, 0 );
+	g.hookHandle = SetWindowsHookEx( WH_KEYBOARD, KeyboardProc, xx, 0 );
+	lprintf( "hook:%p %d", g.hookHandle, GetLastError() );
 	g.nWriteTimeout = 150; // at 9600 == 144 characters
 	if( MakeProxyWindow() ) {
 		MSG msg;
+		//lprintf( "Err:%d",GetLastError());
 		while( GetMessage( &msg, NULL, 0, 0 ) )
 			DispatchMessage( &msg );
 		return msg.wParam;
@@ -260,6 +473,9 @@ static void asyncmsg( uv_async_t* handle );
 KeyHidObject::KeyHidObject(  ) {
 	readQueue = CreateLinkQueue();
 	g.eventHandler = this;
+	MSG msg;
+	// create message queue on main thread.
+	PeekMessage( &msg, NULL, 0, 0, PM_NOREMOVE );
 	ThreadTo( InputThread, 0 );
 }
 
@@ -389,4 +605,5 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
 	com->readCallback = new Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 );
 }
+
 

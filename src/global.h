@@ -67,6 +67,7 @@ void InitSRG( Isolate *isolate, Handle<Object> exports );
 void InitWebSocket( Isolate *isolate, Handle<Object> exports );
 void InitUDPSocket( Isolate *isolate, Handle<Object> exports );
 void InitTask( Isolate *isolate, Handle<Object> exports );
+void KeyHidObjectInit( Isolate *isolate, Handle<Object> exports );
 
 #define ReadOnlyProperty (PropertyAttribute)((int)PropertyAttribute::ReadOnly | PropertyAttribute::DontDelete)
 
@@ -268,6 +269,7 @@ public:
 	ComObject( char *name );
 
 private:
+	Persistent<Object> jsObject;
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void onRead( const v8::FunctionCallbackInfo<Value>& args );

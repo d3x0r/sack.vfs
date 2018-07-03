@@ -652,6 +652,7 @@ Server events
   | accept |  optional callback, if it is configured on a server, it is called before connect, and is passed (new_websocket_connection).  Should call server.accept( protocol ), or server.reject() during this callback.  |
   | connect(depr.) | callback receives new connection from a client.  The new client object has a 'connection' object which provides information about the connection. |
   | request | callback is in a new object that is an httpObject; triggered when a non-upgrade request is received. |
+  | error | callback is passed a closed socket object with remote and local addresses. |
 
 
 Server Options
@@ -669,6 +670,20 @@ Server Options
   | cert | &lt;string&gt;; uses PEM certificate as server certificate chain to send to client. |
   | key  | &lt;string&gt;; uses PEM private key specified for encryption; used by clients to authenticate cerficates  |
   | passphrase | &lt;string&gt;; uses passphrase for key provided |
+
+Server Methods
+
+  | Server Methods |   |
+  |---|---|
+  | close | close server socket. |
+  | on | setup events ( connect, accept, request, error ), callback |
+  | onconnect | pass callback for when a WebSocket connection is initiated; allows inspecting protocols/resource requested to accept or reject. |
+  | onaccept | pass callback for when socket is accepted, and is completely open.... setup event handlers on passed socket |
+  | onrequest |pass callback for HTTP request (GET/POST/...).   |
+  | onerror | pass callback for error event.  callback is passed a closed socket object with remote and local addresses (see connection object below) |
+  | accept | Call this to accept a socket, pass protocols to accept with(?) |
+  | reject | Call this in onconnect to abort accepting the websocket. |
+
 
 Server Client Methods
   this is a slightly different object than a client, although accepts the same events except for on( "open" ) and onOpen() method.
@@ -1012,6 +1027,7 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.139 - Added onerror callback for websocket server connections.  Add low level windows keyboard interface module.  
 - 0.9.138 - Add alpha methods for generating signing identifiers.  Fixes some lost network close notivications.
 - 0.9.137 - fix pathchr insensitive path comparison; update tls interface for newer openssl; allow opening volumes by mount name only.
 - 0.9.136 - added log option to sql connections.

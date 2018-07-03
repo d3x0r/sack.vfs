@@ -10847,6 +10847,7 @@ SQLGETOPTION_PROC( int32_t, SACK_GetProfileInt )( CTEXTSTR pSection, CTEXTSTR pO
                   option values, this overrides the default to
                   disable prompting.                             */
 SQLGETOPTION_PROC( size_t, SACK_GetPrivateProfileStringEx )( CTEXTSTR pSection, CTEXTSTR pOptname, CTEXTSTR pDefaultbuf, TEXTCHAR *pBuffer, size_t nBuffer, CTEXTSTR pININame, LOGICAL bQuiet );
+SQLGETOPTION_PROC( LOGICAL, SACK_WritePrivateOptionStringEx )(PODBC odbc, CTEXTSTR pSection, CTEXTSTR pName, CTEXTSTR pValue, CTEXTSTR pINIFile, LOGICAL flush);
 /* <combine sack::sql::options::SACK_GetPrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@TEXTCHAR *@size_t@CTEXTSTR@LOGICAL>
    \ \                                                                                                                        */
 SQLGETOPTION_PROC( int32_t, SACK_GetPrivateProfileIntEx )( CTEXTSTR pSection, CTEXTSTR pOptname, int32_t nDefault, CTEXTSTR pININame, LOGICAL bQuiet );
@@ -12280,6 +12281,7 @@ HTML5_WEBSOCKET_PROC( PLIST, GetWebSocketHeaders )( PCLIENT pc );
 HTML5_WEBSOCKET_PROC( PTEXT, GetWebSocketResource )( PCLIENT pc );
 HTML5_WEBSOCKET_PROC( HTTPState, GetWebSocketHttpState )( PCLIENT pc );
 HTML5_WEBSOCKET_PROC( void, ResetWebsocketRequestHandler )( PCLIENT pc_client );
+HTML5_WEBSOCKET_PROC( uintptr_t, WebSocketGetServerData )( PCLIENT pc );
 HTML5_WEBSOCKET_NAMESPACE_END
 USE_HTML5_WEBSOCKET_NAMESPACE
 #endif

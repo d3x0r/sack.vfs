@@ -10252,6 +10252,7 @@ SQLGETOPTION_PROC( int32_t, SACK_GetProfileInt )( CTEXTSTR pSection, CTEXTSTR pO
                   option values, this overrides the default to
                   disable prompting.                             */
 SQLGETOPTION_PROC( size_t, SACK_GetPrivateProfileStringEx )( CTEXTSTR pSection, CTEXTSTR pOptname, CTEXTSTR pDefaultbuf, TEXTCHAR *pBuffer, size_t nBuffer, CTEXTSTR pININame, LOGICAL bQuiet );
+SQLGETOPTION_PROC( LOGICAL, SACK_WritePrivateOptionStringEx )(PODBC odbc, CTEXTSTR pSection, CTEXTSTR pName, CTEXTSTR pValue, CTEXTSTR pINIFile, LOGICAL flush);
 /* <combine sack::sql::options::SACK_GetPrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@TEXTCHAR *@size_t@CTEXTSTR@LOGICAL>
    \ \                                                                                                                        */
 SQLGETOPTION_PROC( int32_t, SACK_GetPrivateProfileIntEx )( CTEXTSTR pSection, CTEXTSTR pOptname, int32_t nDefault, CTEXTSTR pININame, LOGICAL bQuiet );
@@ -37899,6 +37900,7 @@ int  sack_fflush ( FILE *file_file )
 int  sack_fclose ( FILE *file_file )
 {
 	struct file *file;
+	if( !file_file ) return -1;
 	EnterCriticalSec( &(*winfile_local).cs_files );
 	file = FindFileByFILE( file_file );
 	if( file )
@@ -48418,7 +48420,7 @@ SegSplit( &pCurrent, start );
 				}
 				else if( TextLike( field->name, WIDE( "connection" ) ) )
 				{
-					if( TextLike( field->value, "upgrade" ) ) {
+					if( StrCaseStr( GetText( field->value ), "upgrade" ) ) {
 						pHttpState->flags.upgrade = 1;
 					}
 				}
@@ -52782,6 +52784,7 @@ HTML5_WEBSOCKET_PROC( PLIST, GetWebSocketHeaders )( PCLIENT pc );
 HTML5_WEBSOCKET_PROC( PTEXT, GetWebSocketResource )( PCLIENT pc );
 HTML5_WEBSOCKET_PROC( HTTPState, GetWebSocketHttpState )( PCLIENT pc );
 HTML5_WEBSOCKET_PROC( void, ResetWebsocketRequestHandler )( PCLIENT pc_client );
+HTML5_WEBSOCKET_PROC( uintptr_t, WebSocketGetServerData )( PCLIENT pc );
 HTML5_WEBSOCKET_NAMESPACE_END
 USE_HTML5_WEBSOCKET_NAMESPACE
 #endif
@@ -52957,6 +52960,12 @@ void ResetWebsocketRequestHandler( PCLIENT pc ) {
 	socket->flags.initial_handshake_done = 0;
 	socket->flags.http_request_only = 0;
    EndHttp( socket->http_state );
+}
+uintptr_t WebSocketGetServerData( PCLIENT pc ) {
+	HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc, 0 );
+ // closing/closed....
+	if( !socket ) return 0;
+	return socket->input_state.psv_on;
 }
 static void CPROC destroyHttpState( HTML5WebSocket socket, PCLIENT pc_client ) {
 	//HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc_client, 0 );
@@ -87676,7 +87685,7 @@ TEXTSTR EscapeSQLBinaryExx( PODBC odbc, CTEXTSTR blob, uintptr_t bloblen, uintpt
 		if( bQuote )
 			( *tmpnamebuf++ ) = '\'';
 		while( n < bloblen ) {
-			if( bQuote && (*pBlob) == 0 ) {
+			if( (*pBlob) == 0 ) {
 				( *tmpnamebuf++ ) = '\'';
 				( *tmpnamebuf++ ) = '|';
 				( *tmpnamebuf++ ) = '|';
@@ -92782,6 +92791,464 @@ SACK_OPTION_NAMESPACE_END
 // Checkpoint
 //
 //
+#ifdef _WIN32
+#define SACKHIDLIST_SOURCE
+#ifndef LISTHIDS_H
+#define LISTHIDS_H
+#ifdef SACKHIDLIST_SOURCE
+#define SACKHIDLIST_PROC(type,name) EXPORT_METHOD type CPROC name
+#else
+#define SACKHIDLIST_PROC(type,name) IMPORT_METHOD type CPROC name
+#endif
+#define VERSION_LISTHIDS 0x00020000
+#ifdef __cplusplus
+extern "C"{
+#endif
+//#include <windows.h>
+typedef struct
+{
+	TEXTSTR lpTechnology;
+	TEXTSTR lpHid;
+	TEXTSTR lpClass;
+	TEXTSTR lpClassGuid;
+}LISTHIDS_HIDINFO;
+typedef LOGICAL (CPROC* ListHidsCallback)( uintptr_t psv, LISTHIDS_HIDINFO* lpHidInfo );
+SACKHIDLIST_PROC( LOGICAL, ListHids )( ListHidsCallback lpCallback, uintptr_t psv );
+#ifdef __cplusplus
+}
+#endif
+#elif VERSION_LISTHIDS!=0x00020000
+#error You have included two LISTHIDS.H with different version numbers
+#endif
+//static LOGICAL Win9xListPorts( ListHidsCallback lpCallback, uintptr_t psv );
+//static LOGICAL WinNT40ListPorts( ListHidsCallback lpCallback, uintptr_t psv );
+static LOGICAL Win2000ListPorts( ListHidsCallback lpCallback, uintptr_t psv );
+//static LOGICAL WinCEListPorts( ListHidsCallback lpCallback, uintptr_t psv);
+static LOGICAL ScanEnumTree( CTEXTSTR lpEnumPath, ListHidsCallback lpCallback, uintptr_t psv );
+static uint32_t OpenSubKeyByIndex( HKEY hKey, uint32_t dwIndex, REGSAM samDesired, PHKEY phkResult, TEXTSTR* lppSubKeyName );
+static uint32_t QueryStringValue( HKEY hKey, CTEXTSTR lpValueName, TEXTSTR* lppStringValue );
+#if 0
+LOGICAL  CPROC cb( uintptr_t psv, LISTHIDS_HIDINFO* lpHidInfo ) {
+	lprintf( "%s %s %s %s", lpHidInfo->lpTechnology,
+		lpHidInfo->lpHid,
+		lpHidInfo->lpClass,
+		lpHidInfo->lpClassGuid );
+	return TRUE;
+}
+void dump( ) {
+	ListHids( cb, 0 );
+}
+PRELOAD( testhids ) {
+	dump();
+}
+#endif
+LOGICAL ListHids( ListHidsCallback lpCallback, uintptr_t psv )
+{
+#ifdef WIN32
+	OSVERSIONINFO osvinfo;
+	// check parameters
+	if( !lpCallback )
+	{
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return FALSE;
+	}
+	// determine which platform we're running on and forward
+	// to the appropriate routine
+	ZeroMemory( &osvinfo, sizeof( osvinfo ) );
+	osvinfo.dwOSVersionInfoSize = sizeof( osvinfo );
+	GetVersionEx( &osvinfo );
+	lprintf( WIDE(" Platform ID: %d, Major Version: %d"), osvinfo.dwPlatformId, osvinfo.dwMajorVersion );
+	switch( osvinfo.dwPlatformId )
+	{
+		case VER_PLATFORM_WIN32_WINDOWS:
+			//return Win9xListPorts( lpCallback, psv );
+			SetLastError( ERROR_OLD_WIN_VERSION );
+			return FALSE;
+			//break;
+		case VER_PLATFORM_WIN32_NT:
+			if( osvinfo.dwMajorVersion < 4 )
+			{
+				SetLastError( ERROR_OLD_WIN_VERSION );
+				return FALSE;
+			}
+			else if( osvinfo.dwMajorVersion == 4 )
+			{
+				//return WinNT40ListPorts( lpCallback, psv );
+				SetLastError( ERROR_OLD_WIN_VERSION );
+				return FALSE;
+			}
+			else
+			{
+ // hopefully it'll also work for XP
+				return Win2000ListPorts( lpCallback, psv );
+			}
+			break;
+#ifdef _WIN32_WCE
+		case VER_PLATFORM_WIN32_CE:
+			//return WinCEListPorts( lpCallback, lpCallbackValue );
+			SetLastError( ERROR_OLD_WIN_VERSION );
+			return FALSE;
+#endif
+		default:
+			SetLastError( ERROR_OLD_WIN_VERSION );
+			return FALSE;
+			break;
+	}
+#else
+#endif
+}
+/*
+static LOGICAL Win9xListPorts( ListHidsCallback lpCallback, uintptr_t psv )
+{
+	return ScanEnumTree( WIDE( "ENUM" ), lpCallback, psv );
+}
+*/
+/*
+static LOGICAL WinNT40ListPorts( ListHidsCallback lpCallback, uintptr_t psv )
+{
+	uint32_t     dwError = 0;
+	HKEY    hKey = NULL;
+	uint32_t     dwIndex;
+	TEXTSTR lpValueName = NULL;
+	TEXTSTR lpPortName = NULL;
+	if( dwError = RegOpenKeyEx( HKEY_LOCAL_MACHINE, WIDE( "HARDWARE\\DEVICEMAP\\SERIALCOMM" ), 0, KEY_READ,&hKey ) )
+	{
+		// it is really strange that this key does not exist, but could happen in theory
+		if( dwError == ERROR_FILE_NOT_FOUND ) dwError = 0;
+		goto end;
+	}
+	for(dwIndex=0;;++dwIndex)
+	{
+		uint32_t              cbValueName = 32 * sizeof( TEXTCHAR );
+		uint32_t              cbPortName = 32 * sizeof( TEXTCHAR );
+		LISTHIDS_HIDINFO portinfo;
+		// loop asking for the value data til we allocated enough memory
+		for(;;)
+		{
+			free( lpValueName );
+			if( !( lpValueName = (TEXTSTR)malloc( cbValueName ) ) )
+			{
+				dwError = ERROR_NOT_ENOUGH_MEMORY;
+				goto end;
+			}
+			free( lpPortName );
+			if( !( lpPortName = (TEXTSTR)malloc( cbPortName ) ) )
+			{
+				dwError = ERROR_NOT_ENOUGH_MEMORY;
+				goto end;
+			}
+			if( !( dwError = RegEnumValue( hKey, dwIndex, lpValueName, &cbValueName, NULL, NULL, (LPBYTE)lpPortName, &cbPortName) ) )
+			{
+				break; // we did it
+			}
+			else if( dwError == ERROR_MORE_DATA )
+			{
+				// not enough space
+				dwError = 0;
+				// no indication of space required, we try doubling
+				cbValueName =( cbValueName + sizeof( TEXTCHAR ) ) * 2;
+			}
+			else goto end;
+		}
+		portinfo.lpPortName = lpPortName;
+		portinfo.lpFriendlyName = lpPortName; // no friendly name in NT 4.0
+		portinfo.lpTechnology = WIDE(""); // this information is not available
+		if( !lpCallback( psv,&portinfo ) )
+		{
+			goto end; // listing aborted by callback
+		}
+	}
+end:
+	free( lpValueName );
+	free( lpPortName );
+	if( hKey != NULL )
+		RegCloseKey( hKey );
+	if( dwError!=0 )
+	{
+		SetLastError(dwError);
+		return FALSE;
+	}
+	else return TRUE;
+}
+*/
+static LOGICAL Win2000ListPorts( ListHidsCallback lpCallback, uintptr_t psv )
+{
+  return ScanEnumTree( WIDE( "SYSTEM\\CURRENTCONTROLSET\\ENUM" ), lpCallback, psv );
+}
+/*
+static LOGICAL WinCEListPorts( ListHidsCallback lpCallback, uintptr_t psv )
+{
+	uint32_t                 dwError = 0;
+	HKEY                hKey = NULL;
+	uint32_t                 dwIndex;
+	TEXTSTR             lpPortName = NULL;
+	HKEY                hkLevel1 = NULL;
+	TEXTSTR             lpFriendlyName = NULL;
+	LISTPORTS_PORTINFO  portinfo;
+	uint32_t                 index;
+	uint32_t                 wordSize = sizeof( uint32_t );
+	portinfo.lpPortName = (TEXTSTR)malloc( 64 );
+	if( dwError = RegOpenKeyEx( HKEY_LOCAL_MACHINE, WIDE( "Drivers\\BuiltIn" ), 0, KEY_READ, &hKey ) )
+	{
+		// it is really strange that this key does not exist, but could happen in theory
+		if( dwError == ERROR_FILE_NOT_FOUND )
+			dwError = 0;
+		goto end;
+	}
+	for( dwIndex=0; ; ++dwIndex )
+	{
+		dwError = 0;
+		if ( dwError = OpenSubKeyByIndex( hKey, dwIndex, KEY_ENUMERATE_SUB_KEYS, &hkLevel1, NULL ) )
+		{
+			if ( dwError == ERROR_NO_MORE_ITEMS ) dwError = 0;
+			break;
+		}
+		if ( dwError = QueryStringValue( hkLevel1, WIDE( "PREFIX" ), &lpPortName ) )
+		{
+			if( dwError == ERROR_FILE_NOT_FOUND )
+				continue;
+			else
+				break;
+		}
+		if ( StrCaseCmpEx( lpPortName, WIDE( "COM" ), 3 ) != 0 )
+			continue; // We want only COM serial ports
+		if ( dwError = RegQueryValueEx( hkLevel1, WIDE( "INDEX" ), NULL, NULL, (LPBYTE)&index, &wordSize) )
+		{
+			if( dwError == ERROR_FILE_NOT_FOUND )
+				continue;
+			else
+				break;
+		}
+		// Now "index" contains serial port number, we put it together with "COM"
+		// to format like "COM<index>"
+		snprintf( portinfo.lpPortName, sizeof( portinfo.lpPortName ), WIDE("COM%u"), index );
+		// Get friendly name
+		dwError = QueryStringValue( hkLevel1, WIDE( "FRIENDLYNAME" ), &lpFriendlyName );
+		portinfo.lpFriendlyName = dwError ? (TEXTSTR)WIDE( "" ) : lpFriendlyName;
+		portinfo.lpTechnology = WIDE( "" ); // this information is not available
+		if( !lpCallback( psv, &portinfo ) )
+		{
+			break;
+		}
+	}
+end:
+	free( portinfo.lpPortName );
+	free( lpFriendlyName );
+	free( lpPortName );
+	if( hKey != NULL )
+		RegCloseKey( hKey );
+	if( hkLevel1 != NULL )
+		RegCloseKey( hkLevel1 );
+	if( dwError != 0 )
+	{
+		SetLastError( dwError );
+		return FALSE;
+	}
+	else
+		return TRUE;
+}
+*/
+static LOGICAL ScanEnumTree( CTEXTSTR lpEnumPath, ListHidsCallback lpCallback, uintptr_t psv )
+{
+	uint32_t    dwError = 0;
+	HKEY   hkEnum = NULL;
+	uint32_t    dwIndex1;
+	HKEY   hkLevel1 = NULL;
+	uint32_t    dwIndex2;
+	HKEY   hkLevel2 = NULL;
+	uint32_t    dwIndex3;
+	HKEY   hkLevel3 = NULL;
+	TEXTSTR lpTechnology = NULL;
+	TEXTSTR lpClass = NULL;
+	TEXTSTR lpClassGuid = NULL;
+	TEXTSTR lpHid = NULL;
+	if( dwError = RegOpenKeyEx( HKEY_LOCAL_MACHINE, lpEnumPath, 0, KEY_ENUMERATE_SUB_KEYS, &hkEnum ) )
+	{
+		goto end;
+	}
+	for( dwIndex1 = 0; ; ++dwIndex1 )
+	{
+		if( hkLevel1 != NULL )
+		{
+			RegCloseKey( hkLevel1 );
+			hkLevel1 = NULL;
+		}
+		if( dwError = OpenSubKeyByIndex( hkEnum, dwIndex1, KEY_ENUMERATE_SUB_KEYS, &hkLevel1, &lpTechnology ) )
+		{
+			if( dwError == ERROR_NO_MORE_ITEMS )
+			{
+				dwError = 0;
+				break;
+			}
+			else
+				goto end;
+		}
+		for( dwIndex2 = 0; ; ++dwIndex2 )
+		{
+			if( hkLevel2 != NULL )
+			{
+				RegCloseKey( hkLevel2 );
+				hkLevel2 = NULL;
+			}
+			if( dwError = OpenSubKeyByIndex( hkLevel1, dwIndex2, KEY_ENUMERATE_SUB_KEYS, &hkLevel2, NULL ) )
+			{
+				if( dwError == ERROR_NO_MORE_ITEMS )
+				{
+					dwError = 0;
+					break;
+				}
+				else
+					goto end;
+			}
+			for( dwIndex3 = 0; ;++dwIndex3 )
+			{
+				LISTHIDS_HIDINFO hidinfo;
+				if( hkLevel3 != NULL )
+				{
+					RegCloseKey( hkLevel3 );
+					hkLevel3 = NULL;
+				}
+				if( dwError = OpenSubKeyByIndex( hkLevel2, dwIndex3, KEY_READ, &hkLevel3, &lpClass ) )
+				{
+					if( dwError == ERROR_NO_MORE_ITEMS )
+					{
+						dwError = 0;
+						break;
+					}
+					else
+						goto end;
+				}
+				dwError = QueryStringValue( hkLevel3, WIDE( "HardwareID" ), &lpHid );
+				if( dwError )
+				{
+					if( dwError == ERROR_FILE_NOT_FOUND )
+					{
+						// boy that was strange, we better skip this device
+						dwError = 0;
+						continue;
+					}
+					else
+						goto end;
+				}
+				/*
+				dwError = QueryStringValue( hkLevel3, WIDE( "Class" ), &lpClass );
+				if( dwError )
+				{
+					if( dwError == ERROR_FILE_NOT_FOUND )
+					{
+						dwError = 0;
+					}
+					else
+						goto end;
+				}
+				*/
+				dwError = QueryStringValue( hkLevel3, WIDE( "ClassGUID" ), &lpClassGuid );
+				if( dwError )
+				{
+					if( dwError == ERROR_FILE_NOT_FOUND )
+					{
+						dwError = 0;
+					}
+					else
+						goto end;
+				}
+				hidinfo.lpTechnology = lpTechnology;
+				hidinfo.lpHid = lpHid;
+				hidinfo.lpClass = lpClass;
+				hidinfo.lpClassGuid = lpClassGuid;
+				if( !lpCallback( psv, &hidinfo ) )
+				{
+ // listing aborted by callback
+					goto end;
+				}
+			}
+		}
+	}
+end:
+	free( lpTechnology );
+	free( lpHid );
+	free( lpClass );
+	free( lpClassGuid );
+	if( hkLevel3!=NULL ) RegCloseKey( hkLevel3 );
+	if( hkLevel2!=NULL ) RegCloseKey( hkLevel2 );
+	if( hkLevel1!=NULL ) RegCloseKey( hkLevel1 );
+	if( hkEnum != NULL )  RegCloseKey( hkEnum );
+	if( dwError != 0 )
+	{
+		SetLastError( dwError );
+		return FALSE;
+	}
+	else
+		return TRUE;
+}
+static uint32_t OpenSubKeyByIndex( HKEY hKey, uint32_t dwIndex, REGSAM samDesired, PHKEY phkResult, TEXTSTR* lppSubKeyName )
+{
+	uint32_t              dwError = 0;
+	LOGICAL          bLocalSubkeyName = FALSE;
+	TEXTSTR          lpSubkeyName = NULL;
+ // an initial guess
+	uint32_t              cbSubkeyName = 128 * sizeof( TEXTCHAR );
+	FILETIME         filetime;
+	if( lppSubKeyName == NULL )
+	{
+		bLocalSubkeyName = TRUE;
+		lppSubKeyName = &lpSubkeyName;
+	}
+	// loop asking for the subkey name til we allocated enough memory
+	for( ; ; )
+	{
+		free( *lppSubKeyName );
+		if( !( *lppSubKeyName = (TEXTSTR)malloc( cbSubkeyName ) ) )
+		{
+			dwError = ERROR_NOT_ENOUGH_MEMORY;
+			goto end;
+		}
+		if( !( dwError = RegEnumKeyEx( hKey, dwIndex, *lppSubKeyName, (LPDWORD)&cbSubkeyName, 0, NULL, NULL, &filetime ) ) )
+		{
+ // we did it
+			break;
+		}
+		else if( dwError == ERROR_MORE_DATA )
+		{
+			// not enough space
+			dwError=0;
+			// no indication of space required, we try doubling
+			cbSubkeyName = ( cbSubkeyName + sizeof( TEXTCHAR ) ) * 2;
+		}
+		else
+			goto end;
+	}
+	dwError = RegOpenKeyEx( hKey, *lppSubKeyName, 0, samDesired, phkResult );
+end:
+	if( bLocalSubkeyName )
+		free( *lppSubKeyName );
+	return dwError;
+}
+static uint32_t QueryStringValue( HKEY hKey, CTEXTSTR lpValueName, TEXTSTR* lppStringValue )
+{
+ // an initial guess
+	uint32_t cbStringValue = 128 * sizeof( TEXTCHAR );
+	for(;;)
+	{
+		uint32_t dwError;
+		free( *lppStringValue );
+		if( !( *lppStringValue = (TEXTSTR)malloc( cbStringValue ) ) )
+		{
+			return ERROR_NOT_ENOUGH_MEMORY;
+		}
+		if( !( dwError = RegQueryValueEx( hKey, lpValueName, NULL, NULL, (LPBYTE)*lppStringValue, (LPDWORD)&cbStringValue ) ) )
+		{
+			return ERROR_SUCCESS;
+		}
+		else if( dwError == ERROR_MORE_DATA )
+		{
+			// not enough space, keep looping
+		}
+		else
+			return dwError;
+	}
+}
+#endif
 #define TRANSLATION_SOURCE
 /* provides text translation.
   Primary Usage:
