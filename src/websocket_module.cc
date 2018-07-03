@@ -1075,11 +1075,11 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		LIST_FORALL( headers, idx, struct HttpField *, header ) {
 			if( StrCmp( GetText( header->name ), "Connection" ) == 0 ) {
 				if( StrCaseCmp( GetText( header->value ), "keep-alive" ) == 0 ) {
-               include_close = 0;
+					include_close = 0;
 				}
 			}
 		}
-      if( !include_close )
+		if( !include_close )
 			vtprintf( obj->pvtResult, "Connection: keep-alive\r\n" );
 	}
 	if( args.Length() > 0 ) {
