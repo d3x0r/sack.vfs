@@ -24,10 +24,14 @@ var cert = sack.TLS.signreq( {
 	, signer: signer, serial: 1005, key:keys[1] } );
 
 
-var server = sack.WebSocket.Server( { port: 8080, cert : cert+signer+certRoot, key: keys[2], passphrase:"password" } )
+var server = sack.WebSocket.Server( { port: 8085, cert : cert+signer+certRoot, key: keys[2], passphrase:"password" } )
 
 console.log( "serving on 8080" );
 
+server.onerror( function( failedConnection ) {
+	console.log( "Failed SSL ConnectioN:", failedConnection );
+        // ( failedConnection.remoteFamily, failedConnection.remoteAddress );
+} );
 
 server.onrequest( function( req, res ) {
 	console.log( "Received request:", req );

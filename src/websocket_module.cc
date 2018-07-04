@@ -72,7 +72,8 @@ enum wsEvents {
 	WS_EVENT_CLOSE,  // onClose callback (wss(internal only), wssi, wsc)
 	WS_EVENT_READ,   // onMessage callback (wssi,wsc)
 	WS_EVENT_ERROR,  // error event (unused)  (wssi,wss,wsc)
-	WS_EVENT_REQUEST // websocket non-upgrade request
+	WS_EVENT_REQUEST,// websocket non-upgrade request
+	WS_EVENT_ERROR_CLOSE, // illegal server connection
 };
 
 struct optionStrings {
@@ -266,6 +267,7 @@ public:
 	Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> acceptCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> requestCallback; //
+	Persistent<Function, CopyablePersistentTraits<Function>> errorCloseCallback; //
 	struct wssEvent *eventMessage;
 	bool ssl;
 	enum wsReadyStates readyState;
@@ -280,6 +282,7 @@ public:
 	static void onConnect( const v8::FunctionCallbackInfo<Value>& args );
 	static void onAccept( const v8::FunctionCallbackInfo<Value>& args );
 	static void onRequest( const v8::FunctionCallbackInfo<Value>& args );
+	static void onError( const v8::FunctionCallbackInfo<Value>& args );
 	static void accept( const v8::FunctionCallbackInfo<Value>& args );
 	static void reject( const v8::FunctionCallbackInfo<Value>& args );
 	static void getReadyState( const FunctionCallbackInfo<Value>& args );
@@ -484,6 +487,7 @@ static void uv_closed_wss( uv_handle_t* handle ) {
 	myself->openCallback.Reset();
 	myself->acceptCallback.Reset();
 	myself->requestCallback.Reset();
+	myself->errorCloseCallback.Reset();
 	myself->_this.Reset();
 }
 static void uv_closed_wsc( uv_handle_t* handle ) {
@@ -610,6 +614,20 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				else
 					eventMessage->accepted = 1;
 				eventMessage->result = wssiInternal;
+			}
+			else if( eventMessage->eventType == WS_EVENT_ERROR_CLOSE ) {
+				Local<Object> closingSock = makeSocket( isolate, eventMessage->pc );
+				if( !myself->errorCloseCallback.IsEmpty() ) {
+					Local<Function> cb = myself->errorCloseCallback.Get( isolate );
+					argv[0] = closingSock;
+					cb->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
+				}
+
+				//myself->readyState = CLOSED;
+				//uv_close( (uv_handle_t*)&myself->async, uv_closed_wss );
+				DropWssEvent( eventMessage );
+				//DeleteLinkQueue( &myself->eventQueue );
+				//return;
 			}
 			else if( eventMessage->eventType == WS_EVENT_CLOSE ) {
 				myself->readyState = CLOSED;
@@ -833,6 +851,7 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onconnect", wssObject::onConnect );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onaccept", wssObject::onAccept );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onrequest", wssObject::onRequest );
+		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onerror", wssObject::onError );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "accept", wssObject::accept );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "reject", wssObject::reject );
 
@@ -964,6 +983,26 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		EnqueLink( &wssi->eventQueue, pevt );
 		uv_async_send( &wssi->async );
 	}
+	else {
+		lprintf( "Illegal connection" );
+		SOCKADDR *ip = (SOCKADDR*)GetNetworkLong( pc, GNL_REMOTE_ADDRESS );
+		uintptr_t psvServer = WebSocketGetServerData( pc );
+		wssObject *wss = (wssObject*)psvServer;
+		DumpAddr( "IP", ip );
+		struct wssEvent *pevt = GetWssEvent();
+		//lprintf( "Server Websocket closed; post to javascript %p", wss );
+		(*pevt).eventType = WS_EVENT_ERROR_CLOSE;
+		(*pevt).waiter = MakeThread();
+
+		(*pevt).pc = pc;
+		(*pevt)._this = wss;
+		EnqueLink( &wss->eventQueue, pevt );
+		uv_async_send( &wss->async );
+
+		while( !(*pevt).done )
+			Wait();
+
+	}
 }
 
 static void webSockServerError( PCLIENT pc, uintptr_t psv, int error ){
@@ -1075,11 +1114,11 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		LIST_FORALL( headers, idx, struct HttpField *, header ) {
 			if( StrCmp( GetText( header->name ), "Connection" ) == 0 ) {
 				if( StrCaseCmp( GetText( header->value ), "keep-alive" ) == 0 ) {
-               include_close = 0;
+					include_close = 0;
 				}
 			}
 		}
-      if( !include_close )
+		if( !include_close )
 			vtprintf( obj->pvtResult, "Connection: keep-alive\r\n" );
 	}
 	if( args.Length() > 0 ) {
@@ -1395,6 +1434,10 @@ void wssObject::on( const FunctionCallbackInfo<Value>& args ) {
 			if( cb->IsFunction() )
 				obj->acceptCallback.Reset( isolate, cb );
 		}
+		if( StrCmp( *event, "error" ) == 0 ) {
+			if( cb->IsFunction() )
+				obj->errorCloseCallback.Reset( isolate, cb );
+		}
 	}
 }
 
@@ -1426,6 +1469,17 @@ void wssObject::onRequest( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
 			obj->requestCallback.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+		else
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
+	}
+}
+
+void wssObject::onError( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
+	if( args.Length() > 0 ) {
+		if( args[0]->IsFunction() )
+			obj->errorCloseCallback.Reset( isolate, Handle<Function>::Cast( args[0] ) );
 		else
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
 	}

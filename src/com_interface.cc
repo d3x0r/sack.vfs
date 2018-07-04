@@ -10,11 +10,14 @@ static struct local {
 Persistent<Function> ComObject::constructor;
 
 ComObject::ComObject( char *name ) {
+	memset( &this->jsObject, 0, sizeof( this->jsObject ) );
+	this->readQueue = CreateLinkQueue();
    	this->name = name;
 	handle = SackOpenComm( name, 0, 0 );
 }
 
 ComObject::~ComObject() {
+	lprintf( "Garbage collected" );
 	if( handle >=0 )
 		SackCloseComm( handle );
   	Deallocate( char*, name );
@@ -26,7 +29,7 @@ void ComObject::Init( Handle<Object> exports ) {
 		Local<FunctionTemplate> comTemplate;
 
 		comTemplate = FunctionTemplate::New( isolate, New );
-		comTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Volume" ) );
+		comTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.ComPort" ) );
 		comTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 		// Prototype
@@ -43,7 +46,7 @@ void ComObject::Init( Handle<Object> exports ) {
 
 struct msgbuf {
 	size_t buflen;
-   uint8_t buf[1];
+	uint8_t buf[1];
 };
 
 
@@ -67,7 +70,7 @@ static void asyncmsg( uv_async_t* handle ) {
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->o.Reset( isolate, ab );
 			holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-			holder->buffer = msg->buf;
+			holder->buffer = msg;
 
 			Local<Uint8Array> ui = Uint8Array::New( ab, 0, length );
 
@@ -75,15 +78,7 @@ static void asyncmsg( uv_async_t* handle ) {
 			Local<Function> cb = Local<Function>::New( isolate, myself->readCallback[0] );
 			//lprintf( "callback ... %p", myself );
 			// using obj->jsThis  fails. here...
-			{
-				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
-				if( result.IsEmpty() ) {
-					Deallocate( struct msgbuf *, msg );
-					return;
-				}
-			}
-			//lprintf( "called ..." );
-			Deallocate( struct msgbuf *, msg );
+			cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
 		}
 	}
 	//lprintf( "done calling message notice." );
@@ -117,7 +112,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 					l.loop = uv_default_loop();
 				uv_async_init( l.loop, &obj->async, asyncmsg );
 				obj->async.data = obj;
-
+				obj->jsObject.Reset( isolate, args.This() );
 				obj->Wrap( args.This() );
 				args.GetReturnValue().Set( args.This() );
 			}
@@ -131,7 +126,9 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				argv[n] = args[n];
 
 			Local<Function> cons = Local<Function>::New( isolate, constructor );
-			args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
+			MaybeLocal<Object> newInst = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
+			if( !newInst.IsEmpty() )
+				args.GetReturnValue().Set( newInst.ToLocalChecked() );
 			delete[] argv;
 		}
 }
@@ -140,12 +137,14 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 static void CPROC dispatchRead( uintptr_t psv, int nCommId, POINTER buffer, int len ) {
 	struct msgbuf *msgbuf = NewPlus( struct msgbuf, len );
-
+	//lprintf( "got read: %p %d", buffer, len );
 	MemCpy( msgbuf->buf, buffer, len );
 	msgbuf->buflen = len;
 	ComObject *com = (ComObject*)psv;
-	EnqueLink( &com->readQueue, msgbuf );
-	uv_async_send( &com->async );
+	if( !com->readCallback->IsEmpty() ) {
+		EnqueLink( &com->readQueue, msgbuf );
+		uv_async_send( &com->async );
+	}
 }
 
 
@@ -188,8 +187,9 @@ void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 void ComObject::closeCom( const v8::FunctionCallbackInfo<Value>& args ) {
-
+	
 	ComObject *com = ObjectWrap::Unwrap<ComObject>( args.This() );
+	com->jsObject.Reset();
 	SackCloseComm( com->handle );
 	com->handle = -1;
 }

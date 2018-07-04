@@ -231,8 +231,9 @@ void SqlObject::escape( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
-	char *out = EscapeSQLString(sql->odbc, (*tmp) );
-	args.GetReturnValue().Set( String::NewFromUtf8( isolate, out ) );
+	size_t resultlen;
+	char *out = EscapeSQLBinaryExx(sql->odbc, (*tmp), tmp.length(), &resultlen, FALSE DBG_SRC );
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, out, NewStringType::kNormal, (int)resultlen ).ToLocalChecked() );
 	Deallocate( char*, out );
 
 }
@@ -898,6 +899,13 @@ void SqlObject::optionInternal( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 //-----------------------------------------------------------
+namespace sack {
+	namespace sql {
+		namespace options {
+			SQLGETOPTION_PROC( LOGICAL, SACK_WritePrivateOptionStringEx )(PODBC odbc, CTEXTSTR pSection, CTEXTSTR pName, CTEXTSTR pValue, CTEXTSTR pINIFile, LOGICAL flush);
+		}
+	}
+}
 
 static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal ) {
 	Isolate* isolate = args.GetIsolate();
@@ -940,12 +948,19 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 		sql->fields = 0;
 		use_odbc = sql->odbc;
 	}
-
-	SACK_WriteOptionString( use_odbc
-		, sect
-		, optname
-		, defaultVal
-	);
+	if( ( sect && sect[0] == '/' ) ) {
+			SACK_WritePrivateOptionStringEx( use_odbc
+			, NULL
+			, optname
+			, defaultVal
+			, sect, FALSE );
+	} 
+	else
+		SACK_WriteOptionString( use_odbc
+			, sect
+			, optname
+			, defaultVal
+		);
 
 	Local<String> returnval = String::NewFromUtf8( isolate, readbuf );
 	args.GetReturnValue().Set( returnval );
