@@ -53031,7 +53031,7 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 					value = GetHTTPField( socket->http_state, WIDE( "Connection" ) );
 					value2 = GetHTTPField( socket->http_state, WIDE( "Upgrade" ) );
 					if( !value || !value2
-						|| !TextLike( value, "upgrade" )
+						|| !StrCaseStr( GetText(value), "upgrade" )
 						|| !TextLike( value2, "websocket" ) ) {
 						//lprintf( "request is not an upgrade for websocket." );
 						socket->flags.initial_handshake_done = 1;
@@ -54765,9 +54765,8 @@ void _json_dispose_message( PDATALIST *msg_data )
 			_json_dispose_message( val->_contains );
 	}
 	// quick method
+	DeleteDataList( msg_data );
 	DeleteFromSet( PDATALIST, jpsd.dataLists, msg_data );
-	( *msg_data ) = NULL;
-	//DeleteDataList( msg_data );
 }
 static uintptr_t FindDataList( void*p, uintptr_t psv ) {
 	if( ((PPDATALIST)p)[0] == (PDATALIST)psv )
