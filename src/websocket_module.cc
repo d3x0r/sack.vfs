@@ -197,6 +197,7 @@ static struct local {
 	int data;
 	uv_loop_t* loop;
 	int waiting;
+	PTHREAD jsThread;
 	CRITICALSECTION csWssEvents;
 	PWSS_EVENTSET wssEvents;
 	CRITICALSECTION csWssiEvents;
@@ -790,6 +791,7 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 
 	if( !l.loop )
 		l.loop = uv_default_loop();
+	l.jsThread = MakeThread();
 	//NetworkWait( NULL, 2000000, 16 );  // 1GB memory
 	InitializeCriticalSec( &l.csWssEvents );
 	InitializeCriticalSec( &l.csWssiEvents );
@@ -984,24 +986,35 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		uv_async_send( &wssi->async );
 	}
 	else {
-		lprintf( "Illegal connection" );
+		lprintf( "(close before accept)Illegal connection" );
 		SOCKADDR *ip = (SOCKADDR*)GetNetworkLong( pc, GNL_REMOTE_ADDRESS );
 		uintptr_t psvServer = WebSocketGetServerData( pc );
 		wssObject *wss = (wssObject*)psvServer;
 		DumpAddr( "IP", ip );
 		struct wssEvent *pevt = GetWssEvent();
-		//lprintf( "Server Websocket closed; post to javascript %p", wss );
-		(*pevt).eventType = WS_EVENT_ERROR_CLOSE;
-		(*pevt).waiter = MakeThread();
+		if( ( (*pevt).waiter = MakeThread() ) != l.jsThread )  {
+			//lprintf( "Server Websocket closed; post to javascript %p", wss );
+			(*pevt).eventType = WS_EVENT_ERROR_CLOSE;
+			(*pevt).waiter = MakeThread();
 
-		(*pevt).pc = pc;
-		(*pevt)._this = wss;
-		EnqueLink( &wss->eventQueue, pevt );
-		uv_async_send( &wss->async );
+			(*pevt).pc = pc;
+			(*pevt)._this = wss;
+			EnqueLink( &wss->eventQueue, pevt );
+			uv_async_send( &wss->async );
 
-		while( !(*pevt).done )
-			Wait();
-
+			while( !(*pevt).done )
+				Wait();
+		} else {
+			Isolate *isolate = Isolate::GetCurrent();
+			Local<Object> closingSock = makeSocket( isolate, pc );
+			if( !wss->errorCloseCallback.IsEmpty() ) {
+				Local<Function> cb = wss->errorCloseCallback.Get( isolate );
+				Local<Value> argv[1];
+				argv[1] = closingSock;
+				cb->Call( wss->_this.Get( isolate ), 1, argv );
+			}
+			DropWssEvent( pevt );
+		}
 	}
 }
 
