@@ -1220,6 +1220,7 @@ wssObject::wssObject( struct wssOptions *opts ) {
 	int clearUrl = 0;
 	readyState = INITIALIZING;
 	eventQueue = NULL;
+	requests = NULL;
 	opening = FALSE;
 	if( !opts->url ) {
 		if( opts->address ) {
