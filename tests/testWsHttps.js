@@ -1,5 +1,6 @@
 
 var sack = require( ".." );
+//console.log( sack.TLS );
 
 var keys = [ sack.TLS.genkey( 1024 ), sack.TLS.genkey( 1024 ), sack.TLS.genkey( 1024, "password" ) ];
 var certRoot = sack.TLS.gencert( { key:keys[0]
@@ -7,7 +8,7 @@ var certRoot = sack.TLS.gencert( { key:keys[0]
 	, state:"NV"
 	, locality:"Las Vegas"
 	, org:"Freedom Collective", unit:"Tests", name:"Root Cert", serial: 1001 }  )
-console.log( sack.TLS );
+
 var signer = ( sack.TLS.signreq( { 
 	request: sack.TLS.genreq( { key:keys[1]
 		, country:"US", state:"NV", locality:"Las Vegas"
@@ -24,9 +25,10 @@ var cert = sack.TLS.signreq( {
 	, signer: signer, serial: 1005, key:keys[1] } );
 
 
+console.log( signer+certRoot );
 var server = sack.WebSocket.Server( { port: 8085, cert : cert+signer+certRoot, key: keys[2], passphrase:"password" } )
 
-console.log( "serving on 8080" );
+console.log( "serving on 8085" );
 
 server.onerror( function( failedConnection ) {
 	console.log( "Failed SSL ConnectioN:", failedConnection );
