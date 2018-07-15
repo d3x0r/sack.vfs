@@ -92,6 +92,7 @@ public:
 	static void getDirectory( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileRead( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileReadString( const v8::FunctionCallbackInfo<Value>& args );
+	static void fileReadMemory( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileReadJSON( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileWrite( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileExists( const v8::FunctionCallbackInfo<Value>& args );
@@ -357,6 +358,7 @@ struct arrayBufferHolder : public node::ObjectWrap {
 	void *buffer;
 	Persistent<Object> o;
 	Persistent<String> s;
+	Persistent<ArrayBuffer> ab;
 };
 typedef struct arrayBufferHolder ARRAY_BUFFER_HOLDER, *PARRAY_BUFFER_HOLDER;
 #define MAXARRAY_BUFFER_HOLDERSPERSET 128

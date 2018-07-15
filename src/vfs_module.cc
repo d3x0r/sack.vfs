@@ -145,6 +145,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	SET_READONLY_METHOD( exports, "b64xor", vfs_b64xor );
 	SET_READONLY_METHOD( exports, "id", idGenerator );
 	SET_READONLY_METHOD( VolFunc, "readAsString", fileReadString );
+	SET_READONLY_METHOD( VolFunc, "mapFile", fileReadMemory );
 
 	Local<Object> fileObject = Object::New( isolate );	
 	SET_READONLY( fileObject, "SeekSet", Integer::New( isolate, SEEK_SET ) );
@@ -444,6 +445,8 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		holder->o.Reset();
 	if( !holder->s.IsEmpty() )
 		holder->s.Reset();
+	if( !holder->ab.IsEmpty() )
+		holder->ab.Reset();
 	Deallocate( void*, holder->buffer );
 	DropHolder( holder );
 }
@@ -530,6 +533,35 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->s.Reset( isolate, arrayBuffer );
 			holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+			holder->buffer = data;
+
+			args.GetReturnValue().Set( arrayBuffer );
+
+		} else {
+			isolate->ThrowException( Exception::TypeError(
+				String::NewFromUtf8( isolate, TranslateText( "Failed to open file" ) ) ) );
+		}
+	}
+
+	void VolumeObject::fileReadMemory( const v8::FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+
+		if( args.Length() < 1 ) {
+			isolate->ThrowException( Exception::TypeError(
+				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open" ) ) ) );
+			return;
+		}
+
+		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
+		size_t len = 0;
+		POINTER data = OpenSpace( NULL, *fName, &len );
+		if( data && len ) {
+			MaybeLocal<ArrayBuffer> _arrayBuffer = ArrayBuffer::New( isolate, data, len );
+			Local<ArrayBuffer> arrayBuffer = _arrayBuffer.ToLocalChecked();
+			PARRAY_BUFFER_HOLDER holder = GetHolder();
+			holder->ab.Reset( isolate, arrayBuffer );
+			holder->ab.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 			holder->buffer = data;
 
 			args.GetReturnValue().Set( arrayBuffer );

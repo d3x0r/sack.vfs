@@ -55,10 +55,6 @@ vfs = {
     JSON - A json parser.
         parse(string) - result with a V8 object created from the json string.  
         begin( cb ) - begin parsing JSON stream; callback is called as each value is completed.
-    mkdir(pathname) - utility function to make directories which might not exist before volume does; 
-            (Volume() auto creates directories now if specified path to filename does not exist)
-            parameters - (pathname)
-                path to create- will created missing parent path parts too.
     Sqlite(dbName) - an interface to sqlite which can open databases in the volume.
             parameters - ( databaseName )
                 databaseName maybe a simple ODBC name; if the name ends with .db, it is assumed to be 
@@ -74,6 +70,12 @@ vfs = {
           mountName - the mount name used to mount to volume as a filesystem; it may be referenced 
                 later in the string passed to Sqlite.  It may be `null` if it is anonymous mount.
           if no parameters are passed, a Volume object representing the native filesystem is returned.
+    Volume.mkdir(pathname) - utility function to make directories which might not exist before volume does; 
+            (Volume() auto creates directories now if specified path to filename does not exist)
+            parameters - (pathname)
+                path to create- will created missing parent path parts too.
+    Volume.readAsString( filename ) - memory map map a file from native filesystem as a utf8 string.
+    Volume.mapFile( filename ) - memory map map a file from native filesystem as an arrayBuffer.
     File - some native filsystem utility methods(?)
     SaltyRNG(feed salt callback) - creates a random number generator
     TLS - namespace for utilities to generate certificates/keys
