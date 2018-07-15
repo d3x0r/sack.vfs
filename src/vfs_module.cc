@@ -1135,12 +1135,21 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 			else {
 				vol = ObjectWrap::Unwrap<VolumeObject>( args[1]->ToObject() );
 				obj = new FileObject( vol, *fName, isolate, args[1]->ToObject() );
-				if( !obj->cfile ) {
-					isolate->ThrowException( Exception::Error(
-						String::NewFromUtf8( isolate, TranslateText( "Failed to open file." ) ) ) );
-					delete obj;
-					return;
-				}
+				if( vol->volNative ) {
+					if( !obj->file ) {
+						isolate->ThrowException( Exception::Error(
+							String::NewFromUtf8( isolate, TranslateText( "Failed to open file." ) ) ) );
+						delete obj;
+						return;
+					}
+
+				}else
+					if( !obj->cfile ) {
+						isolate->ThrowException( Exception::Error(
+							String::NewFromUtf8( isolate, TranslateText( "Failed to open file." ) ) ) );
+						delete obj;
+						return;
+					}
 			}
 			obj->Wrap( args.This() );
 			args.GetReturnValue().Set( args.This() );
