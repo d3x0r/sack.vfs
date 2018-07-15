@@ -1282,6 +1282,8 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 
 	Local<String> optName;
 	struct optionStrings *strings = getStrings( isolate );
+	wssOpts->cert_chain = NULL;
+	wssOpts->cert_chain_len = 0;
 
 	if( opts->Has( optName = strings->addressString->Get( isolate ) ) ) {
 		String::Utf8Value address( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
@@ -1294,20 +1296,12 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 	else {
 		wssOpts->port = (int)opts->Get( optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 	}
-	if( !opts->Has( optName = strings->certString->Get( isolate ) ) ) {
-		wssOpts->cert_chain = NULL;
-		wssOpts->cert_chain_len =0;
-	}
-	else {
+	if( opts->Has( optName = strings->certString->Get( isolate ) ) ) {
 		String::Utf8Value cert( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 		wssOpts->cert_chain = StrDup( *cert );
 		wssOpts->cert_chain_len = cert.length();
 	}
-	if( !opts->Has( optName = strings->caString->Get( isolate ) ) ) {
-		wssOpts->cert_chain = NULL;
-		wssOpts->cert_chain_len =0;
-	}
-	else {
+	if( opts->Has( optName = strings->caString->Get( isolate ) ) ) {
 		String::Utf8Value ca( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 		if( wssOpts->cert_chain ) {
 			wssOpts->cert_chain = (char*)Reallocate( wssOpts->cert_chain, wssOpts->cert_chain_len + ca.length() + 1 );
