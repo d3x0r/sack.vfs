@@ -10,10 +10,10 @@ WebSocket network library.  UDP sockets.
 Vulkan API to be added eventually... 
 
 ## Requirements
-#### npm
-        nan (Native Abstractions for Node.js)
 
-#### Centos/linux
+  ODBC and uuid support.
+
+#### Various Linux
 
  *  yum install gcc-c++ libuuid-devel unixodbc-devel
     * (uuid/uuid.h sql.h)
