@@ -75,7 +75,9 @@ vfs = {
             parameters - (pathname)
                 path to create- will created missing parent path parts too.
     Volume.readAsString( filename ) - memory map map a file from native filesystem as a utf8 string.
-    Volume.mapFile( filename ) - memory map map a file from native filesystem as an arrayBuffer.
+    Volume.mapFile( filename, loaded_callback ) - memory map map a file from native filesystem as an arrayBuffer.
+            if loaded callback is specified, a thread is created that touches every page in the file, when it's done
+            the callback is called with no parameters.
     File - some native filsystem utility methods(?)
     SaltyRNG(feed salt callback) - creates a random number generator
     TLS - namespace for utilities to generate certificates/keys
@@ -1029,6 +1031,7 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.141 - Add callback event to trigger background thread preload memory mapped files.
 - 0.9.140 - Fix bad test on opening file in VFS.
 - 0.9.139 - Added onerror callback for websocket server connections.  Add low level windows keyboard interface module.  Added memory mapped file to arraybuffer.  Fix https init failure with certain combinations of options.
 - 0.9.138 - Add alpha methods for generating signing identifiers.  Fixes some lost network close notivications.
