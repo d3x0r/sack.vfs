@@ -111,6 +111,7 @@
             },
             'sources': [
               # windows-only; exclude on other platforms.
+              'src/hid_module.cc',
               'src/reg_access.cc',
             ],
   	        'libraries':[ 'winmm', 'ws2_32', 'iphlpapi', 'rpcrt4', 'odbc32', 'crypt32', 'cryptui' ]
