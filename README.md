@@ -1031,6 +1031,7 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.142 - Fix node-gyp for windows build.
 - 0.9.141 - Add callback event to trigger background thread preload memory mapped files.
 - 0.9.140 - Fix bad test on opening file in VFS.
 - 0.9.139 - Added onerror callback for websocket server connections.  Add low level windows keyboard interface module.  Added memory mapped file to arraybuffer.  Fix https init failure with certain combinations of options.
