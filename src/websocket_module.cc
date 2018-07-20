@@ -197,6 +197,7 @@ static struct local {
 	int data;
 	uv_loop_t* loop;
 	int waiting;
+	PTHREAD jsThread;
 	CRITICALSECTION csWssEvents;
 	PWSS_EVENTSET wssEvents;
 	CRITICALSECTION csWssiEvents;
@@ -261,6 +262,7 @@ public:
 	Persistent<Object> _this;
 	PLINKQUEUE eventQueue;
 	PLIST opening;
+	PLIST requests;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	static Persistent<Function> constructor;
 	static Persistent<FunctionTemplate> tpl;
@@ -572,6 +574,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					http->Set( strings->connectionString->Get( isolate ), makeSocket( isolate, eventMessage->pc ) );
 
 					httpObject *httpInternal = httpObject::Unwrap<httpObject>( http );
+					AddLink( &myself->requests, httpInternal );
 					httpInternal->ssl = myself->ssl;
 					httpInternal->pc = eventMessage->pc;
                //lprintf( "New request..." );
@@ -790,6 +793,7 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 
 	if( !l.loop )
 		l.loop = uv_default_loop();
+	l.jsThread = MakeThread();
 	//NetworkWait( NULL, 2000000, 16 );  // 1GB memory
 	InitializeCriticalSec( &l.csWssEvents );
 	InitializeCriticalSec( &l.csWssiEvents );
@@ -984,24 +988,47 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		uv_async_send( &wssi->async );
 	}
 	else {
-		lprintf( "Illegal connection" );
+		//lprintf( "(close before accept)Illegal connection" );
 		SOCKADDR *ip = (SOCKADDR*)GetNetworkLong( pc, GNL_REMOTE_ADDRESS );
 		uintptr_t psvServer = WebSocketGetServerData( pc );
 		wssObject *wss = (wssObject*)psvServer;
-		DumpAddr( "IP", ip );
+		if( wss ) {	
+			httpObject *req;
+			INDEX idx;
+			// close on wssObjectEvent; may have served HTTP requests
+			LIST_FORALL( wss->requests, idx, httpObject *, req ) {
+				if( req->pc == pc ) {
+					SetLink( &wss->requests, idx, NULL );
+					return;
+				}
+			}
+		}
+		lprintf( "(close before accept)Illegal connection" );
+		//DumpAddr( "IP", ip );
 		struct wssEvent *pevt = GetWssEvent();
-		//lprintf( "Server Websocket closed; post to javascript %p", wss );
-		(*pevt).eventType = WS_EVENT_ERROR_CLOSE;
-		(*pevt).waiter = MakeThread();
+		if( ( (*pevt).waiter = MakeThread() ) != l.jsThread )  {
+			//lprintf( "Server Websocket closed; post to javascript %p", wss );
+			(*pevt).eventType = WS_EVENT_ERROR_CLOSE;
+			(*pevt).waiter = MakeThread();
 
-		(*pevt).pc = pc;
-		(*pevt)._this = wss;
-		EnqueLink( &wss->eventQueue, pevt );
-		uv_async_send( &wss->async );
+			(*pevt).pc = pc;
+			(*pevt)._this = wss;
+			EnqueLink( &wss->eventQueue, pevt );
+			uv_async_send( &wss->async );
 
-		while( !(*pevt).done )
-			Wait();
-
+			while( !(*pevt).done )
+				Wait();
+		} else {
+			Isolate *isolate = Isolate::GetCurrent();
+			Local<Object> closingSock = makeSocket( isolate, pc );
+			if( !wss->errorCloseCallback.IsEmpty() ) {
+				Local<Function> cb = wss->errorCloseCallback.Get( isolate );
+				Local<Value> argv[1];
+				argv[1] = closingSock;
+				cb->Call( wss->_this.Get( isolate ), 1, argv );
+			}
+			DropWssEvent( pevt );
+		}
 	}
 }
 
@@ -1176,7 +1203,7 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 	wssObject *wss = (wssObject*)psv;
 	if( !wss->requestCallback.IsEmpty() ) {
 		struct wssEvent *pevt = GetWssEvent();
-      //lprintf( "posting request event to JS" );
+		//lprintf( "posting request event to JS" );
 		(*pevt).eventType = WS_EVENT_REQUEST;
 		(*pevt). pc = pc;
 		(*pevt)._this = wss;
@@ -1193,6 +1220,7 @@ wssObject::wssObject( struct wssOptions *opts ) {
 	int clearUrl = 0;
 	readyState = INITIALIZING;
 	eventQueue = NULL;
+	requests = NULL;
 	opening = FALSE;
 	if( !opts->url ) {
 		if( opts->address ) {
@@ -1254,6 +1282,8 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 
 	Local<String> optName;
 	struct optionStrings *strings = getStrings( isolate );
+	wssOpts->cert_chain = NULL;
+	wssOpts->cert_chain_len = 0;
 
 	if( opts->Has( optName = strings->addressString->Get( isolate ) ) ) {
 		String::Utf8Value address( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
@@ -1266,20 +1296,12 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 	else {
 		wssOpts->port = (int)opts->Get( optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 	}
-	if( !opts->Has( optName = strings->certString->Get( isolate ) ) ) {
-		wssOpts->cert_chain = NULL;
-		wssOpts->cert_chain_len =0;
-	}
-	else {
+	if( opts->Has( optName = strings->certString->Get( isolate ) ) ) {
 		String::Utf8Value cert( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 		wssOpts->cert_chain = StrDup( *cert );
 		wssOpts->cert_chain_len = cert.length();
 	}
-	if( !opts->Has( optName = strings->caString->Get( isolate ) ) ) {
-		wssOpts->cert_chain = NULL;
-		wssOpts->cert_chain_len =0;
-	}
-	else {
+	if( opts->Has( optName = strings->caString->Get( isolate ) ) ) {
 		String::Utf8Value ca( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 		if( wssOpts->cert_chain ) {
 			wssOpts->cert_chain = (char*)Reallocate( wssOpts->cert_chain, wssOpts->cert_chain_len + ca.length() + 1 );

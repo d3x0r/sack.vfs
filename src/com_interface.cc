@@ -176,7 +176,12 @@ void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 	ComObject *com = ObjectWrap::Unwrap<ComObject>( args.This() );
 
 	//assert(args[i]->IsFloat32Array());
-	if( args[0]->IsUint8Array() ) {
+	if (args[0]->IsString()) {
+		String::Utf8Value u8str(args[0]->ToString());
+		SackWriteComm(com->handle, *u8str, u8str.length());
+
+	}
+	else if( args[0]->IsUint8Array() ) {
 		Local<Uint8Array> myarr = args[0].As<Uint8Array>();
 		ArrayBuffer::Contents ab_c = myarr->Buffer()->GetContents();
 		char *buf = static_cast<char*>(ab_c.Data()) + myarr->ByteOffset();
