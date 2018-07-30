@@ -9487,6 +9487,11 @@ PSSQL_PROC( LOGICAL, BackupDatabase )( PODBC source, PODBC dest );
  */
 // deprecated during dev, instead added function hook exports
 //PSSQL_PROC( POINTER, GetODBCHandle )( PODBC odbc );
+/* set a handler to be triggered when SQLite Database finds corruption type error...
+ */
+void SetSQLCorruptionHandler( PODBC odbc, void (CPROC*f)(uintptr_t psv, PODBC odbc), uintptr_t psv );
+/* Utility function to parse DSN according to sack sqlite vfs rules... */
+void ParseDSN( CTEXTSTR dsn, char **vfs, char **vfsInfo, char **dbFile );
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 #ifdef __cplusplus
 SQL_NAMESPACE_END
@@ -10573,7 +10578,9 @@ PROCREG_PROC( void, DropInterface )( CTEXTSTR pServiceName, POINTER interface_x 
 PROCREG_PROC( POINTER, GetInterfaceDbg )( CTEXTSTR pServiceName DBG_PASS );
 #define GetInterface(n) GetInterfaceDbg( n DBG_SRC )
 #define GetRegisteredInterface(name) GetInterface(name)
-PROCREG_PROC( LOGICAL, RegisterInterface )( CTEXTSTR name, POINTER(CPROC*load)(void), void(CPROC*unload)(POINTER));
+PROCREG_PROC( LOGICAL, RegisterInterfaceEx )( CTEXTSTR name, POINTER(CPROC*load)(void), void(CPROC*unload)(POINTER) DBG_PASS );
+PROCREG_PROC( LOGICAL, RegisterInterface )(CTEXTSTR name, POINTER( CPROC*load )(void), void(CPROC*unload)(POINTER));
+#define RegisterInterface(n,l,u) RegisterInterfaceEx( n,l,u DBG_SRC )
 // unregister a function, should be smart and do full return type
 // and parameters..... but for now this only references name, this indicates
 // that this has not been properly(fully) extended, and should be layered

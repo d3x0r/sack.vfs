@@ -8336,7 +8336,9 @@ PROCREG_PROC( void, DropInterface )( CTEXTSTR pServiceName, POINTER interface_x 
 PROCREG_PROC( POINTER, GetInterfaceDbg )( CTEXTSTR pServiceName DBG_PASS );
 #define GetInterface(n) GetInterfaceDbg( n DBG_SRC )
 #define GetRegisteredInterface(name) GetInterface(name)
-PROCREG_PROC( LOGICAL, RegisterInterface )( CTEXTSTR name, POINTER(CPROC*load)(void), void(CPROC*unload)(POINTER));
+PROCREG_PROC( LOGICAL, RegisterInterfaceEx )( CTEXTSTR name, POINTER(CPROC*load)(void), void(CPROC*unload)(POINTER) DBG_PASS );
+PROCREG_PROC( LOGICAL, RegisterInterface )(CTEXTSTR name, POINTER( CPROC*load )(void), void(CPROC*unload)(POINTER));
+#define RegisterInterface(n,l,u) RegisterInterfaceEx( n,l,u DBG_SRC )
 // unregister a function, should be smart and do full return type
 // and parameters..... but for now this only references name, this indicates
 // that this has not been properly(fully) extended, and should be layered
@@ -10057,6 +10059,11 @@ PSSQL_PROC( LOGICAL, BackupDatabase )( PODBC source, PODBC dest );
  */
 // deprecated during dev, instead added function hook exports
 //PSSQL_PROC( POINTER, GetODBCHandle )( PODBC odbc );
+/* set a handler to be triggered when SQLite Database finds corruption type error...
+ */
+void SetSQLCorruptionHandler( PODBC odbc, void (CPROC*f)(uintptr_t psv, PODBC odbc), uintptr_t psv );
+/* Utility function to parse DSN according to sack sqlite vfs rules... */
+void ParseDSN( CTEXTSTR dsn, char **vfs, char **vfsInfo, char **dbFile );
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 #ifdef __cplusplus
 SQL_NAMESPACE_END
@@ -11881,6 +11888,9 @@ LOGICAL CPROC sack_vfs_is_directory( uintptr_t psvInstance, const char *path ) {
 }
 static LOGICAL CPROC sack_vfs_rename( uintptr_t psvInstance, const char *original, const char *newname ) {
 	struct volume *vol = (struct volume *)psvInstance;
+	// fail if the names are the same.
+	if( strcmp( original, newname ) == 0 )
+		return FALSE;
 	if( vol ) {
 		struct directory_entry entkey;
 		struct directory_entry *entry;
@@ -11888,7 +11898,9 @@ static LOGICAL CPROC sack_vfs_rename( uintptr_t psvInstance, const char *origina
 		if( ( entry  = ScanDirectory( vol, original, &entkey, 0 ) ) ) {
 			struct directory_entry new_entkey;
 			struct directory_entry *new_entry;
-			if( ( new_entry = ScanDirectory( vol, newname, &new_entkey, 0 ) ) ) return FALSE;
+			if( (new_entry = ScanDirectory( vol, newname, &new_entkey, 0 )) ) {
+				sack_vfs_unlink_file( vol, newname );
+			}
 			entry->name_offset = SaveFileName( vol, newname ) ^ entkey.name_offset;
 			vol->lock = 0;
 			return TRUE;
@@ -31459,7 +31471,7 @@ PROCREG_PROC( uintptr_t, CreateRegisteredDataType)( CTEXTSTR classname
 typedef POINTER (CPROC *LOADPROC)( void );
 typedef void	 (CPROC *UNLOADPROC)( POINTER );
 //-----------------------------------------------------------------------
-LOGICAL RegisterInterface( CTEXTSTR servicename, POINTER(CPROC*load)(void), void(CPROC*unload)(POINTER))
+LOGICAL RegisterInterfaceEx( CTEXTSTR servicename, POINTER(CPROC*load)(void), void(CPROC*unload)(POINTER) DBG_PASS )
 {
 	//PARAM( args, TEXTCHAR*, servicename );
 	//PARAM( args, TEXTCHAR*, library );
@@ -31468,7 +31480,7 @@ LOGICAL RegisterInterface( CTEXTSTR servicename, POINTER(CPROC*load)(void), void
 	PCLASSROOT pcr = GetClassRoot( WIDE("system/interfaces") );
 	if( GetRegisteredProcedureExx( pcr, (PCLASSROOT)servicename, WIDE("POINTER"), WIDE("load"), WIDE("void") ) )
 	{
-		lprintf( WIDE("Service: %s has multiple definitions, will use last first.")
+		lprintf( WIDE("Service: %s has multiple definitions, using first registered.")
 				 , servicename );
 		return FALSE;
 	}
@@ -31479,13 +31491,13 @@ LOGICAL RegisterInterface( CTEXTSTR servicename, POINTER(CPROC*load)(void), void
 								  , WIDE("load")
 								  , WIDE("POINTER")
 								  , (PROCEDURE)load
-								  , WIDE("(void)"), NULL, NULL DBG_SRC );
+								  , WIDE("(void)"), NULL, NULL DBG_RELAY );
 		RegisterFunctionExx( pcr
 								  , (PCLASSROOT)servicename
 								  , WIDE("unload")
 								  , WIDE("void")
 								  , (PROCEDURE)unload
-								  , WIDE("(POINTER)"), NULL, NULL DBG_SRC );
+								  , WIDE("(POINTER)"), NULL, NULL DBG_RELAY );
 	}
 	return TRUE;
 }
@@ -78148,7 +78160,6 @@ struct odbc_handle_tag{
 		BIT_FIELD bAutoClose : 1;
  // sqlite; alternative to closing; generate wal_checkpoints automatically on idle.
 		BIT_FIELD bAutoCheckpoint : 1;
-		BIT_FIELD bVFS : 1;
 		BIT_FIELD bClosed : 1;
 	} flags;
  // this one tracks auto commit state; it is cleared when a commit happens
@@ -78170,6 +78181,8 @@ struct odbc_handle_tag{
 	struct odbc_queue *queue;
 	void (CPROC*auto_commit_callback)(uintptr_t,PODBC);
 	uintptr_t auto_commit_callback_psv;
+	void (CPROC*pCorruptionHandler)(uintptr_t psv, PODBC odbc);
+	uintptr_t psvCorruptionHandler;
 };
 struct odbc_queue
 {
@@ -78242,6 +78255,7 @@ INDEX GetIndexOfName(PODBC odbc, CTEXTSTR table,CTEXTSTR name);
 PTREEROOT GetTableCache( PODBC odbc, CTEXTSTR tablename );
 CTEXTSTR GetKeyOfName(PODBC odbc, CTEXTSTR table,CTEXTSTR name);
 int OpenSQL( DBG_VOIDPASS );
+void CloseDatabaseEx( PODBC odbc, LOGICAL ReleaseConnection );
 #ifdef USE_SQLITE_INTERFACE
 #  if defined( __WATCOMC__ ) && !defined( BUILDS_INTERFACE ) && ( __WATCOMC__ < 1300 )
 #    define FIXREF
@@ -79157,7 +79171,6 @@ struct odbc_handle_tag{
 		BIT_FIELD bAutoClose : 1;
  // sqlite; alternative to closing; generate wal_checkpoints automatically on idle.
 		BIT_FIELD bAutoCheckpoint : 1;
-		BIT_FIELD bVFS : 1;
 		BIT_FIELD bClosed : 1;
 	} flags;
  // this one tracks auto commit state; it is cleared when a commit happens
@@ -79179,6 +79192,8 @@ struct odbc_handle_tag{
 	struct odbc_queue *queue;
 	void (CPROC*auto_commit_callback)(uintptr_t,PODBC);
 	uintptr_t auto_commit_callback_psv;
+	void (CPROC*pCorruptionHandler)(uintptr_t psv, PODBC odbc);
+	uintptr_t psvCorruptionHandler;
 };
 struct odbc_queue
 {
@@ -79251,6 +79266,7 @@ INDEX GetIndexOfName(PODBC odbc, CTEXTSTR table,CTEXTSTR name);
 PTREEROOT GetTableCache( PODBC odbc, CTEXTSTR tablename );
 CTEXTSTR GetKeyOfName(PODBC odbc, CTEXTSTR table,CTEXTSTR name);
 int OpenSQL( DBG_VOIDPASS );
+void CloseDatabaseEx( PODBC odbc, LOGICAL ReleaseConnection );
 #ifdef USE_SQLITE_INTERFACE
 #  if defined( __WATCOMC__ ) && !defined( BUILDS_INTERFACE ) && ( __WATCOMC__ < 1300 )
 #    define FIXREF
@@ -82793,13 +82809,14 @@ const char * PSSQL_GetColumnTableAliasName( PODBC odbc, int col ) {
 }
 void ExtendConnection( PODBC odbc )
 {
+	int rc;
 	if( odbc->flags.bAutoClose )
 	{
 		lprintf( "Extned found autoclose" );
 		if( !odbc->auto_close_thread )
 			odbc->auto_close_thread = ThreadTo( AutoCloseThread, (uintptr_t)odbc );
 	}
-	int rc = sqlite3_create_function(
+	rc = sqlite3_create_function(
  //sqlite3 *,
 												odbc->db
   //const char *zFunctionName,
@@ -82961,7 +82978,6 @@ void ExtendConnection( PODBC odbc )
 		//DebugBreak();
 	}
 	//SQLCommandf( odbc, "PRAGMA read_uncommitted=True" );
-	//if( !odbc->flags.bVFS )
 	{
 		CTEXTSTR result;
 		int n = odbc->flags.bNoLogging;
@@ -83558,6 +83574,66 @@ PRIORITY_PRELOAD( FinalDeadstart, SYSLOG_PRELOAD_PRIORITY + 1 )
 {
 	g.flags.bDeadstartCompleted = 1;
 }
+void ParseDSN( CTEXTSTR dsn, char **vfs, char **vfsInfo, char **dbFile ) {
+	static TEXTCHAR *tmpvfsvfs;
+	static TEXTCHAR *tmp_name;
+	static char *tmp;
+	if( tmpvfsvfs ) Release( tmpvfsvfs );
+	if( tmp_name ) Release( tmp_name );
+	if( tmp ) Release( tmp );
+	if( dsn[0] == '$' ) {
+		char *vfs_name;
+		CTEXTSTR vfs_end = StrChr( dsn + 1, '@' );
+		CTEXTSTR vfs_vfs_end = StrRChr( vfs_end ? vfs_end : (dsn + 1), '$' );
+		TEXTCHAR *tmpvfs;
+		if( vfs_vfs_end ) {
+			tmp_name = ExpandPath( vfs_vfs_end + 1 );
+			if( vfs_end && vfs_end < vfs_vfs_end ) {
+				tmpvfs = NewArray( TEXTCHAR, (vfs_end - dsn) + 1 );
+				tmpvfsvfs = NewArray( TEXTCHAR, (vfs_vfs_end - vfs_end) + 1 );
+				StrCpyEx( tmpvfs, dsn + 1, vfs_end - dsn );
+				StrCpyEx( tmpvfsvfs, dsn + 1, vfs_vfs_end - vfs_end );
+				vfs_name = NewArray( TEXTCHAR, vfs_vfs_end - dsn );
+				StrCpyEx( vfs_name, dsn + 1, vfs_vfs_end - dsn );
+				StrCpyEx( tmpvfsvfs, vfs_end + 1, vfs_vfs_end - vfs_end );
+			}
+			else {
+				tmpvfsvfs = NULL;
+				tmpvfs = NewArray( TEXTCHAR, (vfs_vfs_end - dsn) + 1 );
+				StrCpyEx( tmpvfs, dsn + 1, vfs_vfs_end - dsn );
+				vfs_name = CStrDup( tmpvfs );
+			}
+			Deallocate( TEXTCHAR*, tmpvfs );
+		}
+		else {
+			tmp_name = ExpandPath( dsn + 1 );
+			vfs_name = NULL;
+			tmpvfsvfs = NULL;
+		}
+		tmp = CStrDup( tmp_name );
+		(*vfs) = vfs_name;
+		(*vfsInfo) = tmpvfsvfs;
+		(*dbFile) = tmp;
+		Deallocate( TEXTCHAR *, tmp_name );
+	}
+	else {
+		if( StrCaseCmpEx( dsn, "file:", 5 ) == 0
+			|| StrCaseCmpEx( dsn, ":memory:", 8 ) == 0 ) {
+			//lprintf( "open:%s", dsn );
+			(*vfs) = NULL;
+			(*vfsInfo) = NULL;
+			(*dbFile) =(char*) dsn;
+		}
+		else {
+			tmp_name = ExpandPath( dsn );
+			tmp = CStrDup( tmp_name );
+			(*vfs) = NULL;
+			(*vfsInfo) = NULL;
+			(*dbFile) = tmp;
+			Deallocate( TEXTCHAR *, tmp_name );
+		}
+	}
+}
 int OpenSQLConnectionEx( PODBC odbc DBG_PASS )
 {
 	int state = 0;
@@ -83807,42 +83883,12 @@ int OpenSQLConnectionEx( PODBC odbc DBG_PASS )
 			{
 				TEXTCHAR *tmp_name;
 				char *tmp;
-				if( odbc->info.pDSN[0] == '$' )
+				char *vfs_name;
+				TEXTCHAR *tmpvfsvfs;
+				ParseDSN( odbc->info.pDSN, &vfs_name, &tmpvfsvfs, &tmp );
+				if( vfs_name )
+				//if( odbc->info.pDSN[0] == '$' )
 				{
-					char *vfs_name;
-					CTEXTSTR vfs_end = StrChr( odbc->info.pDSN + 1, '@' );
-					CTEXTSTR vfs_vfs_end = StrRChr( vfs_end?vfs_end:(odbc->info.pDSN + 1), '$' );
-					TEXTCHAR *tmpvfs;
-					TEXTCHAR *tmpvfsvfs;
-					if( vfs_vfs_end )
-					{
-						tmp_name = ExpandPath( vfs_vfs_end + 1 );
-						if( vfs_end && vfs_end < vfs_vfs_end )
-						{
-							tmpvfs = NewArray( TEXTCHAR, ( vfs_end - odbc->info.pDSN ) + 1 );
-							tmpvfsvfs = NewArray( TEXTCHAR, ( vfs_vfs_end - vfs_end ) + 1 );
-							StrCpyEx( tmpvfs, odbc->info.pDSN + 1, vfs_end - odbc->info.pDSN );
-							StrCpyEx( tmpvfsvfs, odbc->info.pDSN + 1, vfs_vfs_end - vfs_end );
-							vfs_name = NewArray( TEXTCHAR, vfs_vfs_end - odbc->info.pDSN );
-							StrCpyEx( vfs_name, odbc->info.pDSN + 1, vfs_vfs_end - odbc->info.pDSN );
-							StrCpyEx( tmpvfsvfs, vfs_end + 1, vfs_vfs_end - vfs_end );
-						}
-						else
-						{
-							tmpvfsvfs = NULL;
-							tmpvfs = NewArray( TEXTCHAR, ( vfs_vfs_end - odbc->info.pDSN ) + 1 );
-							StrCpyEx( tmpvfs, odbc->info.pDSN + 1, vfs_vfs_end - odbc->info.pDSN );
-							vfs_name = CStrDup( tmpvfs );
-						}
-						Deallocate( TEXTCHAR*, tmpvfs );
-					}
-					else
-					{
-						tmp_name = ExpandPath( odbc->info.pDSN + 1 );
-						vfs_name = NULL;
-						tmpvfsvfs = NULL;
-					}
-					tmp = CStrDup( tmp_name );
 					if( vfs_name )
 					{
 #ifdef USE_SQLITE_INTERFACE
@@ -83861,11 +83907,7 @@ int OpenSQLConnectionEx( PODBC odbc DBG_PASS )
 #  endif
 #endif
 					}
-					odbc->flags.bVFS = 1;
 					rc3 = sqlite3_open_v2( tmp, &odbc->db, SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_URI, vfs_name );
-					Deallocate( char *, vfs_name );
-					Release( tmp );
-					Deallocate( TEXTCHAR *, tmp_name );
 				}
 				else
 				{
@@ -83875,11 +83917,7 @@ int OpenSQLConnectionEx( PODBC odbc DBG_PASS )
 						rc3 = sqlite3_open_v2( odbc->info.pDSN, &odbc->db, SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE|SQLITE_OPEN_URI, NULL );
 					}
 					else {
-						tmp_name = ExpandPath( odbc->info.pDSN );
-						tmp = CStrDup( tmp_name );
 						rc3 = sqlite3_open( tmp, &odbc->db );
-						Release( tmp );
-						Deallocate( TEXTCHAR *, tmp_name );
 					}
 				}
 				if( rc3 )
@@ -84979,6 +85017,7 @@ int __DoSQLCommandEx( PODBC odbc, PCOLLECT collection DBG_PASS )
 		EnterCriticalSec( &odbc->cs );
 		odbc->nProtect++;
 	}
+corruptRetry:
 	if( !OpenSQLConnectionEx( odbc DBG_SRC ) )
 	{
 		lprintf( WIDE("Fail connect odbc... should already be open?!") );
@@ -85070,6 +85109,12 @@ retry:
 			rc3 = sqlite3_step( collection->stmt );
 			switch( rc3 )
 			{
+			case SQLITE_CORRUPT:
+				if( odbc->pCorruptionHandler ) {
+					odbc->pCorruptionHandler( odbc->psvCorruptionHandler, odbc );
+					goto corruptRetry;
+				}
+				break;
 			case SQLITE_OK:
 			case SQLITE_DONE:
 			case SQLITE_ROW:
@@ -85094,6 +85139,8 @@ retry:
 				//  SQLITE_CONSTRAINT - statement like an insert with a key that already exists.
 				if( !odbc->flags.bNoLogging )
 					_lprintf(DBG_RELAY)( WIDE( "[%s] Unknown, unhandled SQLITE error: %s" ), odbc->info.pDSN?odbc->info.pDSN:WIDE( "NoDSN?" ), sqlite3_errmsg(odbc->db ) );
+				else
+					vtprintf( collection->pvt_errorinfo, "[%s] Unknown, unhandled SQLITE error: %s", odbc->info.pDSN ? odbc->info.pDSN : WIDE( "NoDSN?" ), sqlite3_errmsg( odbc->db ) );
 				//DebugBreak();
 				result_code = WM_SQL_RESULT_ERROR;
 				break;
@@ -85482,7 +85529,10 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 			case SQLITE_DONE:
 				break;
 			case SQLITE_CORRUPT:
-				lprintf( WIDE("Database is corrupt: %s"), sqlite3_errmsg(odbc->db ) );
+				if( odbc->pCorruptionHandler ) {
+					odbc->pCorruptionHandler( odbc->psvCorruptionHandler, odbc );
+				}
+				vtprintf( collection->pvt_errorinfo, WIDE("Database is corrupt (should retry): %s\n"), sqlite3_errmsg(odbc->db ) );
 				result_cmd = WM_SQL_RESULT_ERROR;
 				break;
 			default:
@@ -87231,6 +87281,12 @@ void SQLDropAndCloseODBC( CTEXTSTR dsn )
 				CloseDatabase( odbc );
 			break;
 		}
+	}
+}
+void SetSQLCorruptionHandler( PODBC odbc, void (CPROC*f)(uintptr_t psv,PODBC odbc), uintptr_t psv ) {
+	if( odbc ) {
+		odbc->pCorruptionHandler = f;
+		odbc->psvCorruptionHandler = psv;
 	}
 }
 SQL_NAMESPACE_END
@@ -89020,6 +89076,36 @@ retry:
 				else
 					if( !SQLCommand( odbc, GetText( txt_cmd ) ) )
 						status = 0;
+#if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
+				if( odbc->flags.bSQLite_native ) {
+					VarTextEmpty( pvtCreate );
+					for( n = 0; n < table->keys.count; n++ ) {
+						int col;
+						int colfirst;
+						colfirst = 1;
+						if( !table->keys.key[n].flags.bPrimary) {
+							vtprintf( pvtCreate, WIDE( "create %s index `%s` `%s` (" )
+								, table->keys.key[n].flags.bUnique ? WIDE( "UNIQUE " ) : WIDE( "" )
+								, table->keys.key[n].name
+								, table->name );
+							for( col = 0; table->keys.key[n].colnames[col]; col++ ) {
+								if( !table->keys.key[n].colnames[col] )
+									break;
+								vtprintf( pvtCreate, WIDE( "%s`%s`" )
+									, colfirst ? WIDE( "" ) : WIDE( "," )
+									, table->keys.key[n].colnames[col]
+								);
+								colfirst = 0;
+							}
+							vtprintf( pvtCreate, WIDE( ")" ) );
+							first = 0;
+							if( !SQLCommand( odbc, GetText( VarTextPeek( pvtCreate ) ) ) )
+								status = 0;
+							VarTextEmpty( pvtCreate );
+						}
+					}
+				}
+#endif
 			}
 			else
 			{
@@ -89596,16 +89682,17 @@ int ValidateCreateTable( PTEXT *word )
 int GrabName( PTEXT *word, TEXTSTR *result, int *bQuoted DBG_PASS )
 {
 	TEXTSTR name = NULL;
+	CTEXTSTR open;
 	//PTEXT start = (*word);
 	//printf( WIDE( "word is %s" ), GetText( *word ) );
-	if( TextLike( (*word), WIDE( "`" ) ) )
+	if( TextLike( (*word), open = WIDE( "`" ) ) || TextLike( (*word), open = "\'" ) )
 	{
 		PTEXT phrase = NULL;
 		PTEXT line;
 		if( bQuoted )
 			(*bQuoted) = 1;
 		(*word) = NEXTLINE( *word );
-		while( (*word) && ( GetText( *word )[0] != '`' ) )
+		while( (*word) && ( GetText( *word )[0] != open[0] ) )
 		{
 			phrase = SegAppend( phrase, SegDuplicateEx(*word DBG_RELAY ) );
 			(*word) = NEXTLINE( *word );
@@ -89617,10 +89704,10 @@ int GrabName( PTEXT *word, TEXTSTR *result, int *bQuoted DBG_PASS )
 			(*word) = NEXTLINE( *word );
 			LineRelease( phrase );
 			phrase = NULL;
-			if( TextLike( (*word), WIDE( "`" ) ) )
+			if( TextLike( (*word), open = WIDE( "`" ) ) || TextLike( (*word), open = "\'" ) )
 			{
 				(*word) = NEXTLINE( *word );
-				while( (*word) && ( GetText( *word )[0] != '`' ) )
+				while( (*word) && ( GetText( *word )[0] != open[0]) )
 				{
 					phrase = SegAppend( phrase, SegDuplicateEx(*word DBG_RELAY ) );
 					(*word) = NEXTLINE( *word );
@@ -90405,7 +90492,6 @@ struct odbc_handle_tag{
 		BIT_FIELD bAutoClose : 1;
  // sqlite; alternative to closing; generate wal_checkpoints automatically on idle.
 		BIT_FIELD bAutoCheckpoint : 1;
-		BIT_FIELD bVFS : 1;
 		BIT_FIELD bClosed : 1;
 	} flags;
  // this one tracks auto commit state; it is cleared when a commit happens
@@ -90427,6 +90513,8 @@ struct odbc_handle_tag{
 	struct odbc_queue *queue;
 	void (CPROC*auto_commit_callback)(uintptr_t,PODBC);
 	uintptr_t auto_commit_callback_psv;
+	void (CPROC*pCorruptionHandler)(uintptr_t psv, PODBC odbc);
+	uintptr_t psvCorruptionHandler;
 };
 struct odbc_queue
 {
@@ -90499,6 +90587,7 @@ INDEX GetIndexOfName(PODBC odbc, CTEXTSTR table,CTEXTSTR name);
 PTREEROOT GetTableCache( PODBC odbc, CTEXTSTR tablename );
 CTEXTSTR GetKeyOfName(PODBC odbc, CTEXTSTR table,CTEXTSTR name);
 int OpenSQL( DBG_VOIDPASS );
+void CloseDatabaseEx( PODBC odbc, LOGICAL ReleaseConnection );
 #ifdef USE_SQLITE_INTERFACE
 #  if defined( __WATCOMC__ ) && !defined( BUILDS_INTERFACE ) && ( __WATCOMC__ < 1300 )
 #    define FIXREF
@@ -91930,6 +92019,190 @@ ATEXIT( CommitOptions )
 		}
 	}
 }
+static void CloseAllODBC( CTEXTSTR dsn ) {
+	INDEX idx;
+	LOGICAL new_tracker = FALSE;
+	struct option_odbc_tracker *tracker;
+	if( !dsn )
+		dsn = GetDefaultOptionDatabaseDSN();
+	LIST_FORALL( og.odbc_list, idx, struct option_odbc_tracker *, tracker )
+	{
+		//lprintf( "Check %s(%d) vs %s(%d)", dsn, version, tracker->name, tracker->version );
+		if( StrCaseCmp( dsn, tracker->name ) == 0 ) {
+			//lprintf( "yes, it matched." );
+			break;
+		}
+	}
+	if( tracker ) {
+		PODBC odbc;
+		PLIST list = NULL;
+		LIST_FORALL( tracker->outstanding, idx, PODBC, odbc ) {
+			CloseDatabaseEx( odbc, FALSE );
+		}
+		while( odbc = (PODBC)DequeLink( &tracker->available ) ) {
+			CloseDatabaseEx( odbc, FALSE );
+			AddLink( &list, odbc );
+		}
+		LIST_FORALL( list, idx, PODBC, odbc ) {
+			EnqueLink( &tracker->available, odbc );
+		}
+	}
+}
+static void repairOptionDb( uintptr_t psv, PODBC odbc ) {
+	static int fixing = 0;
+	CTEXTSTR *results;
+	size_t *lengths;
+	int cols;
+	int n;
+	if( fixing ) {
+		lprintf( "Already fixing, must have been selecting something?" );
+		return;
+	}
+	fixing = 1;
+	//lprintf( "Check:" );
+	for( SQLRecordQueryf_v2( odbc, &cols, &results, &lengths, NULL, "pragma integrity_check" );
+		results;
+		FetchSQLRecord( odbc, &results ) ) {
+		for( n = 0; n < cols; n++ ) {
+			lprintf( "Rsult:%s", results[n] );
+		}
+	}
+	{
+		char newDb[256];
+		char newDbFile[256];
+		PODBC newOdbc;
+		CTEXTSTR *fields;
+		int row = 0;
+		struct file_system_mounted_interface *mount = NULL;
+		PVARTEXT pvtCmd = VarTextCreate();
+		char *pDbOrigFile;
+		{
+			char * pVfs, *pVfsInfo, *pDbFile;
+			//size_t nVfs, nVfsInfo, nDbFile;
+			//ParseDSN( odbc->info.pDSN, &pVfs, &nVfs, &pVfsInfo, &nVfsInfo, &pDbFile, &nDbFile );
+			ParseDSN( odbc->info.pDSN, &pVfs, &pVfsInfo, &pDbFile );
+			pDbOrigFile = StrDup( pDbFile );
+			snprintf( newDbFile, 256, "%s-r2", pDbFile );
+			if( pVfsInfo )
+				mount = sack_get_mounted_filesystem( pVfsInfo );
+			else
+				mount = sack_get_default_mount();
+			sack_unlinkEx( 0, newDbFile, mount );
+			snprintf( newDb, 256, "%s-r2", odbc->info.pDSN );
+		}
+		//snprintf( newDb, 256, "%s-r2", odbc->info.pDSN );
+		newOdbc = GetOptionODBC( newDb );
+		SetOptionDatabaseOption( newOdbc );
+		SQLCommand( odbc, "delete from option4_map" );
+		SQLCommand( odbc, "delete from option4_name" );
+		for( row=0, SQLRecordQueryf_v2( odbc, &cols, &results, &lengths, &fields, "select * from option4_map" );
+			results;
+			row++, FetchSQLRecord( odbc, &results ) ) {
+			if( !row ) {
+				vtprintf( pvtCmd, "insert into option4_map(" );
+				for( n = 0; n < cols; n++ ) {
+					vtprintf( pvtCmd, "%s'%s'", n ? "," : "", fields[n] );
+				}
+				vtprintf( pvtCmd, ")VALUES" );
+			}
+			vtprintf( pvtCmd, "%s(", row?",":"" );
+			for( n = 0; n < cols; n++ ) {
+				if( results[n] )
+					vtprintf( pvtCmd, "%s'%s'", n ? "," : "", EscapeSQLBinary( newOdbc, results[n], lengths[n] ) );
+				else
+					vtprintf( pvtCmd, "%sNULL", n ? "," : "" );
+			}
+			vtprintf( pvtCmd, ")" );
+		}
+		{
+			PTEXT cmd = VarTextPeek( pvtCmd );
+			if( cmd )
+				SQLCommand( newOdbc, GetText( cmd ) );
+		}
+		VarTextEmpty( pvtCmd );
+		for( row = 0, SQLRecordQueryf_v2( odbc, &cols, &results, &lengths, &fields, "select * from option4_name" );
+			results;
+			row++, FetchSQLRecord( odbc, &results ) ) {
+			if( !row ) {
+				vtprintf( pvtCmd, "insert into option4_name(" );
+				for( n = 0; n < cols; n++ ) {
+					vtprintf( pvtCmd, "%s'%s'", n ? "," : "", fields[n] );
+				}
+				vtprintf( pvtCmd, ")VALUES" );
+			}
+			vtprintf( pvtCmd, "%s(", row ? "," : "" );
+			for( n = 0; n < cols; n++ ) {
+				if( results[n] )
+					vtprintf( pvtCmd, "%s'%s'", n ? "," : "", EscapeSQLBinary( newOdbc, results[n], lengths[n] ) );
+				else
+					vtprintf( pvtCmd, "%sNULL", n ? "," : "" );
+			}
+			vtprintf( pvtCmd, ")" );
+		}
+		{
+			PTEXT cmd = VarTextPeek( pvtCmd );
+			if( cmd )
+				SQLCommand( newOdbc, GetText( cmd ) );
+		}
+		VarTextEmpty( pvtCmd );
+		for( row = 0, SQLRecordQueryf_v2( odbc, &cols, &results, &lengths, &fields, "select * from option4_values" );
+			results;
+			row++, FetchSQLRecord( odbc, &results ) ) {
+			if( !row ) {
+				vtprintf( pvtCmd, "insert into option4_values(" );
+				for( n = 0; n < cols; n++ ) {
+					vtprintf( pvtCmd, "%s'%s'", n ? "," : "", fields[n] );
+				}
+				vtprintf( pvtCmd, ")VALUES" );
+			}
+			vtprintf( pvtCmd, "%s(", row ? "," : "" );
+			for( n = 0; n < cols; n++ ) {
+				if( results[n] )
+					vtprintf( pvtCmd, "%s'%s'", n ? "," : "", EscapeSQLBinary( newOdbc, results[n], lengths[n] ) );
+				else
+					vtprintf( pvtCmd, "%sNULL", n ? "," : "" );
+			}
+			vtprintf( pvtCmd, ")" );
+		}
+		{
+			PTEXT cmd = VarTextPeek( pvtCmd );
+			if( cmd )
+				SQLCommand( newOdbc, GetText( cmd ) );
+		}
+		VarTextEmpty( pvtCmd );
+		for( row=0, SQLRecordQueryf_v2( odbc, &cols, &results, &lengths, &fields, "select * from option4_blobs" );
+			results;
+			row++, FetchSQLRecord( odbc, &results ) ) {
+			if( !row ) {
+				vtprintf( pvtCmd, "insert into option4_blobs(" );
+				for( n = 0; n < cols; n++ ) {
+					vtprintf( pvtCmd, "%s'%s'", n ? "," : "", fields[n] );
+				}
+				vtprintf( pvtCmd, ")VALUES" );
+			}
+			vtprintf( pvtCmd, "%s(", row ? "," : "" );
+			for( n = 0; n < cols; n++ ) {
+				if( results[n] )
+					vtprintf( pvtCmd, "%s'%s'", n ? "," : "", EscapeSQLBinary( newOdbc, results[n], lengths[n] ) );
+				else
+					vtprintf( pvtCmd, "%sNULL", n ? "," : "" );
+			}
+			vtprintf( pvtCmd, ")" );
+		}
+		{
+			PTEXT cmd = VarTextPeek( pvtCmd );
+			if( cmd )
+				SQLCommand( newOdbc, GetText( cmd ) );
+		}
+		VarTextDestroy( &pvtCmd );
+		CloseDatabaseEx( newOdbc, FALSE );
+		CloseAllODBC( odbc->info.pDSN );
+		sack_unlinkEx( 0, pDbOrigFile, mount );
+		sack_renameEx( pDbOrigFile, newDbFile, mount );
+		Release( pDbOrigFile );
+	}
+	fixing = 0;
+}
 SQLGETOPTION_PROC( CTEXTSTR, GetDefaultOptionDatabaseDSN )( void )
 {
 	return global_sqlstub_data->OptionDb.info.pDSN;
@@ -91969,6 +92242,7 @@ PODBC GetOptionODBCEx( CTEXTSTR dsn  DBG_PASS )
 			lprintf( "none available, create new connection." );
 #endif
 			odbc = ConnectToDatabaseExx( tracker->name, TRUE DBG_RELAY );
+			SetSQLCorruptionHandler( odbc, repairOptionDb, (uintptr_t)odbc );
 			{
 				INDEX idx;
 				CTEXTSTR cmd;
@@ -92102,6 +92376,9 @@ extern OPTION_GLOBAL *sack_global_option_data;
 //------------------------------------------------------------------------
 #define MKSTR(n,...) #__VA_ARGS__
 ;
+//------------------------------------------------------------------------
+void FixCorruption( PODBC odbc ) {
+}
 //------------------------------------------------------------------------
 CTEXTSTR New4ReadOptionNameTable( POPTION_TREE tree, CTEXTSTR name, CTEXTSTR table, CTEXTSTR col, CTEXTSTR namecol, int bCreate DBG_PASS )
 {
