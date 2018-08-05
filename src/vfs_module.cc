@@ -4,6 +4,10 @@
 
 static void fileDelete( const v8::FunctionCallbackInfo<Value>& args );
 
+static struct vfs_local {
+	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+
+} vl;
 
 Persistent<Function> VolumeObject::constructor;
 Persistent<Function> FileObject::constructor;
@@ -544,6 +548,43 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		}
 	}
 
+
+	struct preloadArgs {
+		uint8_t *memory;
+		size_t len;
+		Persistent<Function> *f;
+		Persistent<Object> _this;
+		uv_async_t async;
+	};
+
+
+	static void preloadCallback( uv_async_t* handle ) {
+		v8::Isolate* isolate = v8::Isolate::GetCurrent();
+		struct preloadArgs* myself = (struct preloadArgs*)handle->data;
+
+		HandleScope scope( isolate );
+		{
+			Local<Function> cb = myself->f->Get( isolate );
+			cb->Call( myself->_this.Get( isolate ), 0, NULL );
+			uv_close( (uv_handle_t*)&myself->async, NULL );
+		}
+		Release( myself );
+	}
+
+	static uintptr_t preloadFile( PTHREAD thread ) {
+		uintptr_t arg = GetThreadParam( thread );
+		struct preloadArgs *p = (struct preloadArgs*)arg;
+		size_t n;
+		size_t m = 0;
+		for( n = 0; n < p->len; n += 4096 ) {
+			m += p->memory[0];
+			p->memory += 4096;
+		}
+		uv_async_send( &p->async );
+		return m;
+	}
+
+
 	void VolumeObject::fileReadMemory( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
@@ -566,7 +607,18 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			holder->buffer = data;
 
 			args.GetReturnValue().Set( arrayBuffer );
-
+			if( args.Length() > 1 && args[1]->IsFunction() ) {
+				struct preloadArgs *pargs = NewArray( struct preloadArgs, 1 );
+				memset( pargs, 0, sizeof( preloadArgs ) );
+				pargs->f = new Persistent<Function>();
+				pargs->memory = (uint8_t*)data;
+				pargs->len = len;
+				pargs->f->Reset( isolate, Handle<Function>::Cast( args[1] ) );
+				pargs->_this.Reset( isolate, args.This() );
+				uv_async_init( uv_default_loop(), &pargs->async, preloadCallback );
+				pargs->async.data = pargs;
+				ThreadTo( preloadFile, (uintptr_t)pargs );
+			}
 		} else {
 			isolate->ThrowException( Exception::TypeError(
 				String::NewFromUtf8( isolate, TranslateText( "Failed to open file" ) ) ) );
@@ -1136,12 +1188,21 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 			else {
 				vol = ObjectWrap::Unwrap<VolumeObject>( args[1]->ToObject() );
 				obj = new FileObject( vol, *fName, isolate, args[1]->ToObject() );
-				if( !obj->cfile ) {
-					isolate->ThrowException( Exception::Error(
-						String::NewFromUtf8( isolate, TranslateText( "Failed to open file." ) ) ) );
-					delete obj;
-					return;
-				}
+				if( vol->volNative ) {
+					if( !obj->file ) {
+						isolate->ThrowException( Exception::Error(
+							String::NewFromUtf8( isolate, TranslateText( "Failed to open file." ) ) ) );
+						delete obj;
+						return;
+					}
+
+				}else
+					if( !obj->cfile ) {
+						isolate->ThrowException( Exception::Error(
+							String::NewFromUtf8( isolate, TranslateText( "Failed to open file." ) ) ) );
+						delete obj;
+						return;
+					}
 			}
 			obj->Wrap( args.This() );
 			args.GetReturnValue().Set( args.This() );

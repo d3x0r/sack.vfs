@@ -106,7 +106,9 @@ ENDFOREACH()
 include_directories(${CMAKE_JS_INC} ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/include/SACK )
 
 if( WIN32 )
-	set( MORE_MODULE_SOURCES src/reg_access.cc )
+	set( MORE_MODULE_SOURCES 
+		src/hid_module.cc
+		src/reg_access.cc )
 endif( WIN32 )
 
 set( GUI_SOURCES src/gui/sack_psi_module.cc

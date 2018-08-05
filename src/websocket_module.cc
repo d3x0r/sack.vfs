@@ -1003,7 +1003,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 				}
 			}
 		}
-		lprintf( "(close before accept)Illegal connection" );
+		//lprintf( "(close before accept)http request or Illegal connection" );
 		//DumpAddr( "IP", ip );
 		struct wssEvent *pevt = GetWssEvent();
 		if( ( (*pevt).waiter = MakeThread() ) != l.jsThread )  {
