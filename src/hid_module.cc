@@ -53,7 +53,7 @@ typedef struct global_tag
 	int skipEvent;
 } GLOBAL;
 
-static GLOBAL g;
+static GLOBAL hidg;
 
 static RAWINPUTDEVICE devices[] = {
 	{ 1, 6, RIDEV_NOLEGACY | RIDEV_INPUTSINK,  0 }
@@ -127,7 +127,7 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
 				&uSize
 			);
 			lprintf( "New Device: %s", indev->name );
-			AddLink( &g.inputs, indev );
+			AddLink( &hidg.inputs, indev );
 		}
 #endif
 		//SetTimer( hWnd, 100, 1000, NULL );
@@ -167,7 +167,7 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
 		{
 			INDEX idx;
 			struct input_data *indev;
-			LIST_FORALL( g.inputs, idx, struct input_data *, indev ) {
+			LIST_FORALL( hidg.inputs, idx, struct input_data *, indev ) {
 				if( indev->hDevice == input->header.hDevice )
 					break;
 			}
@@ -190,10 +190,10 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
 					&uSize
 				);
 				lprintf( "New Device: %s", indev->name );
-				AddLink( &g.inputs, indev );
+				AddLink( &hidg.inputs, indev );
 			}
 		}
-		dispatchKey( (uintptr_t)g.eventHandler, input, keyChar, 0 );
+		dispatchKey( (uintptr_t)hidg.eventHandler, input, keyChar, 0 );
 		//if(0)
 		LoG( "Got: %c(%d) %p %d %d %d %d %d %d %d ", keyChar,keyChar
 			, input->header.hDevice
@@ -230,7 +230,7 @@ int MakeProxyWindow( void )
 		}
 	}
 
-	g.hWnd = CreateWindowEx( 0,
+	hidg.hWnd = CreateWindowEx( 0,
 		(char*)aClass,
 		"sack.vfs.raw.input.receiver",
 		0,
@@ -242,7 +242,7 @@ int MakeProxyWindow( void )
 		NULL, // Menu
 		GetModuleHandle( NULL ),
 		(void*)1 );
-	if( !g.hWnd ) {
+	if( !hidg.hWnd ) {
 		Log( WIDE( "Failed to create window!?!?!?!" ) );
 		MessageBox( NULL, WIDE( "Failed to create window to handle raw input Messages" ), WIDE( "INIT FAILURE" ), MB_OK );
 		return FALSE;
@@ -255,7 +255,7 @@ LRESULT WINAPI KeyboardProc( int code, WPARAM wParam, LPARAM lParam ) {
 	lprintf( "   keyhook for key... %08x  %d %d %x", wParam, kbhook->scanCode, kbhook->vkCode, kbhook->flags );
 	MSG msg;
 	while( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) )  lprintf( "had message..." );
-	return CallNextHookEx( g.hookHandle, code, wParam, lParam );
+	return CallNextHookEx( hidg.hookHandle, code, wParam, lParam );
 }
 
 
@@ -278,7 +278,7 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 	int n = 10;
 	int up = (kbhook->flags & LLKHF_UP) != 0;
 	if( resending ) {
-		return CallNextHookEx( g.hookHandleLL, code, wParam, lParam );
+		return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
 	}
 	if( up ) {
 		if( lastDownSkip ) {
@@ -292,7 +292,7 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 			return 1;
 		}
 		else {
-			return CallNextHookEx( g.hookHandleLL, code, wParam, lParam );
+			return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
 		}
 	}
 	if( kbhook->vkCode == 'P' ) {
@@ -418,7 +418,7 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 						States[n].eventsUp[e].ki.time = GetTickCount();
 						SendInput( 1, States[n].eventsUp + e, sizeof( INPUT ) );
 						resending = 0;
-						//CallNextHookEx( g.hookHandleLL, States[n].pending[e].code, States[n].pending[e].wParam, (LPARAM)&States[n].pending[e].lParam );
+						//CallNextHookEx( hidg.hookHandleLL, States[n].pending[e].code, States[n].pending[e].wParam, (LPARAM)&States[n].pending[e].lParam );
 					}
 					LoG( "State has been pending for tooo long. %d", n );
 					States[n].state = 0;
@@ -430,18 +430,18 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 		}
 	}
 	if( n < 10 ) {
-		g.skipEvent = 1;
+		hidg.skipEvent = 1;
 		if( 0 ) {
 			LoG( "Drop key." );
 			lastDownSkip++;
 			return 1;
 		}
 	}
-	//SendMessage( g.hWnd, WM_HOOK2, 0, 0 );
+	//SendMessage( hidg.hWnd, WM_HOOK2, 0, 0 );
 	LoG( "LL keyhook for key... %08x  %d %d %x", wParam, kbhook->scanCode, kbhook->vkCode, kbhook->flags );
 	MSG msg;
 	while( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) ) { DispatchMessage( &msg );  lprintf( "had LL message..." ); }
-	return CallNextHookEx( g.hookHandleLL, code, wParam, lParam );
+	return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
 }
 
 uintptr_t InputThread( PTHREAD thread )
@@ -452,10 +452,10 @@ uintptr_t InputThread( PTHREAD thread )
 	HMODULE xx;
 	xx = GetModuleHandle( "sack_vfs.node" );
 	//lprintf( "%p", xx );
-	g.hookHandleLL = SetWindowsHookEx( WH_KEYBOARD_LL, (HOOKPROC)KeyboardProcLL, xx, 0 );
-	g.hookHandle = SetWindowsHookEx( WH_KEYBOARD, KeyboardProc, xx, 0 );
-	lprintf( "hook:%p %d", g.hookHandle, GetLastError() );
-	g.nWriteTimeout = 150; // at 9600 == 144 characters
+	hidg.hookHandleLL = SetWindowsHookEx( WH_KEYBOARD_LL, (HOOKPROC)KeyboardProcLL, xx, 0 );
+	hidg.hookHandle = SetWindowsHookEx( WH_KEYBOARD, KeyboardProc, xx, 0 );
+	lprintf( "hook:%p %d", hidg.hookHandle, GetLastError() );
+	hidg.nWriteTimeout = 150; // at 9600 == 144 characters
 	if( MakeProxyWindow() ) {
 		MSG msg;
 		//lprintf( "Err:%d",GetLastError());
@@ -472,7 +472,7 @@ static void asyncmsg( uv_async_t* handle );
 
 KeyHidObject::KeyHidObject(  ) {
 	readQueue = CreateLinkQueue();
-	g.eventHandler = this;
+	hidg.eventHandler = this;
 	MSG msg;
 	// create message queue on main thread.
 	PeekMessage( &msg, NULL, 0, 0, PM_NOREMOVE );
@@ -523,7 +523,7 @@ void asyncmsg( uv_async_t* handle ) {
 			Local<Object> eventObj = Object::New( isolate );
 			struct input_data *indev;
 			INDEX idx;
-			LIST_FORALL( g.inputs, idx, struct input_data *, indev ) {
+			LIST_FORALL( hidg.inputs, idx, struct input_data *, indev ) {
 				if( indev->hDevice == msg->event.header.hDevice ) {
 					if( indev->name ) {
 						indev->v8name.Set( isolate, String::NewFromUtf8( isolate, indev->name ) );
@@ -559,12 +559,12 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		// Invoked as constructor: `new MyObject(...)`
 		KeyHidObject* obj = new KeyHidObject( );
 		{
-			if( !g.loop )
-				g.loop = uv_default_loop();
+			if( !hidg.loop )
+				hidg.loop = uv_default_loop();
 
 			MemSet( &obj->async, 0, sizeof( obj->async ) );
 
-			uv_async_init( g.loop, &obj->async, asyncmsg );
+			uv_async_init( hidg.loop, &obj->async, asyncmsg );
 			obj->async.data = obj;
 
 			obj->Wrap( args.This() );

@@ -232,10 +232,18 @@ static void asyncmsg( uv_async_t* handle ) {
 
 			case Event_Intershell_ButtonClick:
 				cb = Local<Function>::New( isolate, myself->cbClick );
+				if( !cb.IsEmpty() )
 				{
-					Local<Value> _argv[] = { Local<Object>::New( isolate, is->psvData ) };
-					Local<Value> r; r = cb->Call( Local<Object>::New( isolate, is->psvControl ), 1, _argv );
-					evt->success = (int)r->NumberValue();
+
+					if( !is->psvData.IsEmpty() ) {
+						Local<Value> argv[] = { Local<Object>::New( isolate, is->psvData ) };
+						Local<Value> r; r = cb->Call( Local<Object>::New( isolate, is->psvControl ), 1, argv );
+						evt->success = (int)r->NumberValue();
+					}
+					else {
+						Local<Value> r; r = cb->Call( Local<Object>::New( isolate, is->psvControl ), 0, NULL );
+						evt->success = (int)r->NumberValue();
+					}
 				}
 				break;
 			//case Event_InterShell_Draw:
@@ -524,7 +532,7 @@ void is_control::NewControlInstance( const FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 		is_control* obj;
 		obj = new is_control();
-
+		obj->self.Reset( isolate, args.This() );
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
 	}
@@ -548,6 +556,7 @@ void InterShellObject::NewButton( const FunctionCallbackInfo<Value>& args ) {
 		InterShellObject* obj;
 		obj = new InterShellObject( name, TRUE );
 
+		obj->self.Reset( isolate, args.This() );
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
 	} else {
@@ -572,6 +581,7 @@ void InterShellObject::NewConfiguration( const FunctionCallbackInfo<Value>& args
 		obj = new InterShellObject();
 		obj->events = NULL;
 
+		obj->self.Reset( isolate, args.This() );
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
 	}
@@ -607,6 +617,7 @@ void InterShellObject::NewApplication( const FunctionCallbackInfo<Value>& args )
 			isLocal.core = obj;
 			isLocal.canvasObject.Reset( isolate, args.This() );
 
+			obj->self.Reset( isolate, args.This() );
 			obj->Wrap( args.This() );
 			args.GetReturnValue().Set( args.This() );
 		}
@@ -675,6 +686,7 @@ void InterShellObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 			//obj->registration = ObjectWrap::Unwrap<RegistrationObject>( temp );
 			//_this->Set( String::NewFromUtf8( isolate, "registration" ), temp );
 
+			obj->self.Reset( isolate, args.This() );
 			obj->Wrap( _this );
 			args.GetReturnValue().Set( _this );
 	}
@@ -779,11 +791,14 @@ void InterShellObject::onClickButton( const FunctionCallbackInfo<Value>& args ) 
 
 	InterShellObject *obj = ObjectWrap::Unwrap<InterShellObject>( args.This() );
 	defineButtonPress( obj->name );
-	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
-	Persistent<Function> cb( isolate, arg0 );
-	obj->cbClick = cb;
-
-	args.GetReturnValue().Set( True( isolate ) );
+	if( args[0]->IsFunction() ) {
+		Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+		obj->cbClick.Reset( isolate, arg0 );
+		args.GetReturnValue().Set( True( isolate ) );
+	}
+	else {
+		args.GetReturnValue().Set( False( isolate ) );
+	}
 }
 
 //-----------------------------------------------------------
