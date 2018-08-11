@@ -67,10 +67,10 @@ static void asyncmsg( uv_async_t* handle ) {
 											  msg->buf,
 											  length = msg->buflen );
 
-			PARRAY_BUFFER_HOLDER holder = GetHolder();
-			holder->o.Reset( isolate, ab );
-			holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-			holder->buffer = msg;
+			//PARRAY_BUFFER_HOLDER holder = GetHolder();
+			//holder->o.Reset( isolate, ab );
+			//holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+			//holder->buffer = msg->buf;
 
 			Local<Uint8Array> ui = Uint8Array::New( ab, 0, length );
 
@@ -78,7 +78,15 @@ static void asyncmsg( uv_async_t* handle ) {
 			Local<Function> cb = Local<Function>::New( isolate, myself->readCallback[0] );
 			//lprintf( "callback ... %p", myself );
 			// using obj->jsThis  fails. here...
-			cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+			{
+				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+				if( result.IsEmpty() ) {
+					Deallocate( struct msgbuf *, msg );
+					return;
+				}
+			}
+			//lprintf( "called ..." );	
+			Deallocate( struct msgbuf *, msg );
 		}
 	}
 	//lprintf( "done calling message notice." );
@@ -105,7 +113,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				isolate->ThrowException( Exception::Error( String::NewFromUtf8(isolate, msg) ) );
 			}
 			else {
-            //lprintf( "empty async...." );
+				//lprintf( "empty async...." );
 				//MemSet( &obj->async, 0, sizeof( obj->async ) );
 				//Environment* env = Environment::GetCurrent(args);
 				if( !l.loop )
@@ -181,7 +189,7 @@ void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 		SackWriteComm(com->handle, *u8str, u8str.length());
 
 	}
-	else if( args[0]->IsUint8Array() ) {
+	else if (args[0]->IsUint8Array()) {
 		Local<Uint8Array> myarr = args[0].As<Uint8Array>();
 		ArrayBuffer::Contents ab_c = myarr->Buffer()->GetContents();
 		char *buf = static_cast<char*>(ab_c.Data()) + myarr->ByteOffset();

@@ -106,7 +106,10 @@ vfs = {
         get( path )  - get a value from the registry.
     Task(options) - an interface for createing and monitoring tasks.
         Task constructor takes an option object.
-        end() - terminate careted task.
+        end() - cause a task to exit..
+        write() - send something to a task.
+        send() - send something to a task.
+        terminate() - terminate created task.
 }	
 ```
 
@@ -987,8 +990,10 @@ are left untouched otherwise.
 
  | Task methods | Description |
  |----|----|
- |end() | Terminates the task.  It will first dispatch ctrl-c, ctrl-break, post a WM_QUIT message, and if the program does not end soon enough, terminates the process. | 
+ |end() | attempt to cause a task to exit.  It will first dispatch ctrl-c, ctrl-break, post a WM_QUIT message, and if the program does not end soon enough, terminates the process.  (closing pipes to task could also be implemented?)| 
+ |terminate() | Terminates the task.  Terminates the process. |
  |write(buf) | Writes data to the task's stdin. |
+ |send(buf) | Writes data to the task's stdin. |
  |exitCode | After/during the `end` callback, this may be queried to get the return code of the task |
 
  Task Option object may contain these options to control how the task is spawned.
@@ -1031,6 +1036,7 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.143 - Improve task interface.  Simplify com data buffer; it's now only valid during receive callback. Improve websocket server handling http requests; add a event callback when socket closes, after server HTTP to distinguish between incomplete(TLS error) connections. Sync SACK updates: improve SQL parsing/table-index generation, library load path for current and name as passed, event for http close, some protection against dereferencing null parameters.
 - 0.9.142 - Fix node-gyp for windows build.
 - 0.9.141 - Add callback event to trigger background thread preload memory mapped files.
 - 0.9.140 - Fix bad test on opening file in VFS.

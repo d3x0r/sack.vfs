@@ -286,8 +286,8 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 			States[n].eventsUp[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
 			States[n].eventsUp[States[n].state].ki.dwFlags = kbhook->flags;
 			States[n].eventsUp[States[n].state].ki.time = kbhook->time;
-			States[n].eventsUp[States[n].state].ki.wScan = kbhook->scanCode;
-			States[n].eventsUp[States[n].state].ki.wVk = kbhook->vkCode;
+			States[n].eventsUp[States[n].state].ki.wScan = (WORD)kbhook->scanCode;
+			States[n].eventsUp[States[n].state].ki.wVk = (WORD)kbhook->vkCode;
 			lastDownSkip--;
 			return 1;
 		}
@@ -302,8 +302,8 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
 				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
 				States[n].events[States[n].state].ki.time = kbhook->time;
-				States[n].events[States[n].state].ki.wScan = kbhook->scanCode;
-				States[n].events[States[n].state].ki.wVk = kbhook->vkCode;
+				States[n].events[States[n].state].ki.wScan = (WORD)kbhook->scanCode;
+				States[n].events[States[n].state].ki.wVk = (WORD)kbhook->vkCode;
 
 				States[n].tick = GetTickCount();
 				LoG( "P KEY set state in %d", n );
@@ -319,8 +319,8 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
 				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
 				States[n].events[States[n].state].ki.time = kbhook->time;
-				States[n].events[States[n].state].ki.wScan = kbhook->scanCode;
-				States[n].events[States[n].state].ki.wVk = kbhook->vkCode;
+				States[n].events[States[n].state].ki.wScan = (WORD)kbhook->scanCode;
+				States[n].events[States[n].state].ki.wVk = (WORD)kbhook->vkCode;
 
 				States[n].tick = GetTickCount();
 				LoG( "# KEY set state in %d", n );
@@ -332,8 +332,8 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
 				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
 				States[n].events[States[n].state].ki.time = kbhook->time;
-				States[n].events[States[n].state].ki.wScan = kbhook->scanCode;
-				States[n].events[States[n].state].ki.wVk = kbhook->vkCode;
+				States[n].events[States[n].state].ki.wScan = (WORD)kbhook->scanCode;
+				States[n].events[States[n].state].ki.wVk = (WORD)kbhook->vkCode;
 
 				States[n].tick = GetTickCount();
 				LoG( "# KEY set state in %d", n );
@@ -345,8 +345,8 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
 				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
 				States[n].events[States[n].state].ki.time = kbhook->time;
-				States[n].events[States[n].state].ki.wScan = kbhook->scanCode;
-				States[n].events[States[n].state].ki.wVk = kbhook->vkCode;
+				States[n].events[States[n].state].ki.wScan = (WORD)kbhook->scanCode;
+				States[n].events[States[n].state].ki.wVk = (WORD)kbhook->vkCode;
 
 				States[n].tick = GetTickCount();
 				LoG( "# KEY set state in %d", n );
@@ -358,8 +358,8 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
 				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
 				States[n].events[States[n].state].ki.time = kbhook->time;
-				States[n].events[States[n].state].ki.wScan = kbhook->scanCode;
-				States[n].events[States[n].state].ki.wVk = kbhook->vkCode;
+				States[n].events[States[n].state].ki.wScan = (WORD)kbhook->scanCode;
+				States[n].events[States[n].state].ki.wVk = (WORD)kbhook->vkCode;
 
 				States[n].tick = GetTickCount();
 				LoG( "# KEY set state in %d", n );
@@ -375,8 +375,8 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
 				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
 				States[n].events[States[n].state].ki.time = kbhook->time;
-				States[n].events[States[n].state].ki.wScan = kbhook->scanCode;
-				States[n].events[States[n].state].ki.wVk = kbhook->vkCode;
+				States[n].events[States[n].state].ki.wScan = (WORD)kbhook->scanCode;
+				States[n].events[States[n].state].ki.wVk = (WORD)kbhook->vkCode;
 
 				States[n].tick = GetTickCount();
 				LoG( "\r KEY set state in %d", n );
@@ -392,8 +392,8 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
 				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
 				States[n].events[States[n].state].ki.time = kbhook->time;
-				States[n].events[States[n].state].ki.wScan = kbhook->scanCode;
-				States[n].events[States[n].state].ki.wVk = kbhook->vkCode;
+				States[n].events[States[n].state].ki.wScan = (WORD)kbhook->scanCode;
+				States[n].events[States[n].state].ki.wVk = (WORD)kbhook->vkCode;
 
 				States[n].tick = GetTickCount();
 				LoG( "T KEY set state in %d", n );
@@ -535,7 +535,7 @@ void asyncmsg( uv_async_t* handle ) {
 			}
 			eventObj->Set( String::NewFromUtf8( isolate, "down" ), (msg->event.data.keyboard.Flags&RI_KEY_BREAK)?True(isolate):False(isolate) );
 			eventObj->Set( String::NewFromUtf8( isolate, "char" ), String::NewFromTwoByte( isolate, (const uint16_t*)&msg->ch, NewStringType::kNormal, 1 ).ToLocalChecked() );
-			eventObj->Set( String::NewFromUtf8( isolate, "id" ), Number::New( isolate, idx ) );
+			eventObj->Set( String::NewFromUtf8( isolate, "id" ), Number::New( isolate,(double)idx ) );
 			eventObj->Set( String::NewFromUtf8( isolate, "device" ), indev->v8name.Get(isolate) );
 
 

@@ -227,7 +227,7 @@ private:
 	}
 
 	static int signCheck( uint8_t *buf, int del1, int del2 ) {
-		int n, b;
+		int n;
 		int is0 = bit_counts[buf[0]].in0 != 0;
 		int is1 = bit_counts[buf[0]].in1 != 0;
 		int long0 = 0;
@@ -272,6 +272,7 @@ private:
 				}
 			}
 #if 0
+			int b;
 			for( b = 0; b < 8; b++ ) {
 				if( buf[n] & (1 << b) ) {
 					ones++;

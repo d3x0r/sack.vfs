@@ -66,7 +66,10 @@ void InitTask( Isolate *isolate, Handle<Object> exports ) {
 	taskTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.task" ) );
 	taskTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "write", TaskObject::Write );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "send", TaskObject::Write );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "end", TaskObject::End );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "terminate", TaskObject::Terminate );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "isRunning", TaskObject::isRunning );
 	taskTemplate->ReadOnlyPrototype();
 	TaskObject::constructor.Reset( isolate, taskTemplate->GetFunction() );
 	SET_READONLY( exports, "Task", taskTemplate->GetFunction() );
@@ -75,6 +78,7 @@ void InitTask( Isolate *isolate, Handle<Object> exports ) {
 static void taskAsyncMsg( uv_async_t* handle ) {
 	TaskObject *task = (TaskObject*)handle->data;
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
 
 	if( task->ended ) {
 		task->endCallback.Get( isolate )->Call( task->_this.Get( isolate ), 0, NULL );
@@ -121,6 +125,8 @@ static void CPROC getTaskEnd( uintptr_t psvTask, PTASK_INFO task_ended ) {
 	if( !task->endCallback.IsEmpty() ) {
 		task->ended = true;
 		task->exitCode = GetTaskExitCode( task_ended );
+		task->waiter = NULL;
+		task->task = NULL;
 		uv_async_send( &task->async );
 	}
 }
@@ -288,9 +294,28 @@ ATEXIT( terminateStartedTasks ) {
 }
 
 void TaskObject::Write( const v8::FunctionCallbackInfo<Value>& args ) {
-	lprintf( "Still to implement: write()" );
+	//Isolate* isolate = args.GetIsolate();
+	TaskObject* task = Unwrap<TaskObject>( args.This() );
+	String::Utf8Value s( args[0]->ToString() );
+	pprintf( task->task, "%s", *s );
 }
 
 void TaskObject::End( const v8::FunctionCallbackInfo<Value>& args ) {
-	lprintf( "Still to implement: end()" );
+	TaskObject* task = Unwrap<TaskObject>( args.This() );
+	if( task && task->task )
+		StopProgram( task->task );
+}
+
+void TaskObject::Terminate( const v8::FunctionCallbackInfo<Value>& args ) {
+	TaskObject* task = Unwrap<TaskObject>( args.This() );
+	if( task && task->task )
+		TerminateProgram( task->task );
+}
+
+void TaskObject::isRunning( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	TaskObject* task = Unwrap<TaskObject>( args.This() );
+	if( task && task->task )
+		args.GetReturnValue().Set( (!task->ended) ? True( isolate ) : False( isolate ) );
+	args.GetReturnValue().Set( (!task->ended) ? True( isolate ) : False( isolate ) );
 }

@@ -15499,7 +15499,7 @@ SACK_DEADSTART_NAMESPACE_END
  *
  */
 //#define SUPPORT_LOG_ALLOCATE
-//#define DEFAULT_OUTPUT_STDERR
+#define DEFAULT_OUTPUT_STDERR
 #define COMPUTE_CPU_FREQUENCY
 #define NO_UNICODE_C
 //#undef UNICODE
@@ -17285,11 +17285,11 @@ typedef struct loaded_library_tag
 	DeclareLink( struct loaded_library_tag );
  // points into full_name after last slash - just library name
 	TEXTCHAR *name;
- // points into full_name passed name - may have a local path part
-	TEXTCHAR *long_name;
 	int loading;
 // this is appended after full_name and is l.library_path
 	TEXTCHAR *alt_full_name;
+	TEXTCHAR *cur_full_name;
+	TEXTCHAR *orig_name;
 // this is more than 1; allocation pads extra bytes for the name. prefixed iwth l.load_path
 	TEXTCHAR full_name[1];
 } LIBRARY, *PLIBRARY;
@@ -18731,30 +18731,42 @@ SYSTEM_PROC( generic_function, LoadFunctionExx )( CTEXTSTR libname, CTEXTSTR fun
 	if( !library )
 	{
 		size_t fullnameLen;
-		size_t maxlen = ( fullnameLen = StrLen( l.load_path ) + 1 + StrLen( libname ) + 1 ) + StrLen( l.library_path ) + 1 + StrLen(libname) + 1;
+		size_t orignameLen;
+		size_t curnameLen;
+		TEXTCHAR curPath[MAXPATH];
+		size_t maxlen;
+		GetCurrentPath( curPath, sizeof( curPath ) );
+		maxlen = (fullnameLen = StrLen( l.load_path ) + 1 + StrLen( libname ) + 1)
+			+ (orignameLen = StrLen( libname ) + 1)
+			+ (curnameLen = StrLen( curPath ) + 1 + StrLen( libname ) + 1)
+			+ StrLen( l.library_path ) + 1 + StrLen( libname ) + 1
+			;
 		library = NewPlus( LIBRARY, sizeof(TEXTCHAR)*((maxlen<0xFFFFFF)?(uint32_t)maxlen:0) );
 		library->alt_full_name = library->full_name + fullnameLen;
 		//lprintf( "New library %s", libname );
 		if( !IsAbsolutePath( libname ) )
 		{
+			library->orig_name = library->full_name + fullnameLen;
+			library->cur_full_name = library->full_name + fullnameLen + orignameLen;
+			library->alt_full_name = library->full_name + fullnameLen + orignameLen + curnameLen;
 			library->name = library->full_name
 				+ tnprintf( library->full_name, maxlen, WIDE("%s/"), l.load_path );
+			tnprintf( library->orig_name, maxlen, WIDE( "%s" ), libname );
+			tnprintf( library->cur_full_name, maxlen, WIDE( "%s/%s" ), curPath, libname );
 			tnprintf( library->alt_full_name, maxlen, WIDE( "%s/%s" ), l.library_path, libname );
 			tnprintf( library->name
 				, fullnameLen - (library->name-library->full_name)
 				, WIDE("%s"), libname );
-			library->long_name = library->name;
+			//library->long_name = library->name;
 			library->name = (char*)pathrchr( library->full_name );
-			if( library->name )
-				library->name++;
-			else
-				library->name = library->full_name;
 		}
 		else
 		{
 			StrCpy( library->full_name, libname );
+			library->orig_name = library->full_name;
+			library->cur_full_name = library->full_name;
 			library->alt_full_name = library->full_name;
-			library->long_name = library->full_name;
+			//library->long_name = library->full_name;
 			library->name = (char*)pathrchr( library->full_name );
 			library->loading = 0;
 			if( library->name )
@@ -18808,39 +18820,40 @@ SYSTEM_PROC( generic_function, LoadFunctionExx )( CTEXTSTR libname, CTEXTSTR fun
 		}
 		library->loading--;
 	}
-		SuspendDeadstart();
-		if( !library->library )
-		{
+	SuspendDeadstart();
+	if( !library->library ) {
+		library->library = LoadLibrary( library->cur_full_name );
+	}
+	if( !library->library ) {
 #  ifdef DEBUG_LIBRARY_LOADING
-			lprintf( "trying load...%s", library->full_name );
+		lprintf( "trying load...%s", library->full_name );
 #  endif
-			library->library = LoadLibrary( library->full_name );
-			if( !library->library )
-			{
-				library->library = LoadLibrary( library->alt_full_name );
-				if( !library->library )
-				{
+		library->library = LoadLibrary( library->full_name );
+	}
+	if( !library->library ) {
+		library->library = LoadLibrary( library->alt_full_name );
+	}
+	if( !library->library ) {
+		library->library = LoadLibrary( library->orig_name );
+	}
+	if( !library->library ) {
 #  ifdef DEBUG_LIBRARY_LOADING
-					lprintf( "trying load...%s", library->name );
+		lprintf( "trying load...%s", library->name );
 #  endif
-					library->library = LoadLibrary( library->name );
-					if( !library->library )
-					{
-						if( !library->loading )
-						{
-							if( l.flags.bLog )
-								_xlprintf( 2 DBG_RELAY )(WIDE( "Attempt to load %s[%s](%s) failed: %d." ), libname, library->full_name, funcname ? funcname : WIDE( "all" ), GetLastError());
-							UnlinkThing( library );
-							ReleaseEx( library DBG_SRC );
-						}
-						ResumeDeadstart();
-						return NULL;
-					}
-				}
-			}
+		library->library = LoadLibrary( library->name );
+	}
+	if( !library->library ) {
+		if( !library->loading ) {
+			if( l.flags.bLog )
+				_xlprintf( 2 DBG_RELAY )(WIDE( "Attempt to load %s[%s](%s) failed: %d." ), libname, library->full_name, funcname ? funcname : WIDE( "all" ), GetLastError());
+			UnlinkThing( library );
+			ReleaseEx( library DBG_SRC );
 		}
+		ResumeDeadstart();
+		return NULL;
+	}
 #else
-		SuspendDeadstart();
+	SuspendDeadstart();
 #  ifndef __ANDROID__
 		// ANDROID This will always fail from the application manager.
 #    ifdef UNICODE
@@ -36764,6 +36777,12 @@ static TEXTSTR PrependBasePathEx( INDEX groupid, struct Group *group, CTEXTSTR f
 			lprintf(WIDE("prepend %s[%s] with %s"), group->base_path, tmp_path, filename );
 #endif
 		tnprintf( fullname, len, WIDE("%s/%s"), tmp_path, real_filename );
+		{
+			// resolve recusive % paths...
+			TEXTSTR tmp2 = ExpandPath( fullname );
+			Release( fullname );
+			fullname = tmp2;
+		}
 #if __ANDROID__
 		{
 			int len_base;
@@ -48689,19 +48708,27 @@ PTEXT GetHttpField( struct HttpState *pHttpState, CTEXTSTR name )
 }
 PTEXT GetHttpResponce( struct HttpState *pHttpState )
 {
-	return pHttpState->response_status;
+	if( pHttpState )
+		return pHttpState->response_status;
+	return NULL;
 }
 PTEXT GetHttpRequest( struct HttpState *pHttpState )
 {
-	return pHttpState->resource;
+	if( pHttpState )
+		return pHttpState->resource;
+	return NULL;
 }
 PTEXT GetHttpResource( struct HttpState *pHttpState )
 {
-	return pHttpState->resource;
+	if( pHttpState )
+		return pHttpState->resource;
+	return NULL;
 }
 PTEXT GetHttpMethod( struct HttpState *pHttpState )
 {
-	return pHttpState->method;
+	if( pHttpState )
+		return pHttpState->method;
+	return NULL;
 }
 void DestroyHttpStateEx( struct HttpState *pHttpState DBG_PASS )
 {
@@ -51420,6 +51447,7 @@ length, and what is received will be exactly like the block that was sent.
 // become the new value used for future uintptr_t parameters to other events.
 typedef uintptr_t (*web_socket_opened)( PCLIENT pc, uintptr_t psv );
 typedef void (*web_socket_closed)( PCLIENT pc, uintptr_t psv, int code, const char *reason );
+typedef void( *web_socket_http_close )(PCLIENT pc, uintptr_t psv);
 typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
 typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOINTER buffer, size_t msglen );
 // protocolsAccepted value set can be released in opened callback, or it may be simply assigned as protocols passed...
@@ -51472,6 +51500,7 @@ WEBSOCKET_EXPORT void SetWebSocketReadCallback( PCLIENT pc, web_socket_event cal
 WEBSOCKET_EXPORT void SetWebSocketCloseCallback( PCLIENT pc, web_socket_closed callback );
 WEBSOCKET_EXPORT void SetWebSocketErrorCallback( PCLIENT pc, web_socket_error callback );
 WEBSOCKET_EXPORT void SetWebSocketHttpCallback( PCLIENT pc, web_socket_http_request callback );
+WEBSOCKET_EXPORT void SetWebSocketHttpCloseCallback( PCLIENT pc, web_socket_http_close callback );
 // if set in server accept callback, this will return without extension set
 // on client socket (default), does not request permessage-deflate
 #define WEBSOCK_DEFLATE_DISABLE 0
@@ -51549,6 +51578,7 @@ struct web_socket_input_state
 	size_t frame_length;
 	web_socket_event on_event;
 	web_socket_closed on_close;
+	web_socket_http_close on_http_close;
 	web_socket_opened on_open;
 	web_socket_error on_error;
   // server socket event
@@ -52186,6 +52216,13 @@ void SetWebSocketHttpCallback( PCLIENT pc, web_socket_http_request callback )
 		input_state->on_request = callback;
 	}
 }
+void SetWebSocketHttpCloseCallback( PCLIENT pc, web_socket_http_close callback )
+{
+	if( pc ) {
+		struct web_socket_input_state *input_state = (struct web_socket_input_state*)GetNetworkLong( pc, 1 );
+		input_state->on_http_close = callback;
+	}
+}
 void SetWebSocketErrorCallback( PCLIENT pc, web_socket_error callback )
 {
 	if( pc ) {
@@ -52272,6 +52309,7 @@ struct web_socket_input_state
 	size_t frame_length;
 	web_socket_event on_event;
 	web_socket_closed on_close;
+	web_socket_http_close on_http_close;
 	web_socket_opened on_open;
 	web_socket_error on_error;
   // server socket event
@@ -52988,6 +53026,9 @@ static void CPROC destroyHttpState( HTML5WebSocket socket, PCLIENT pc_client ) {
 	//lprintf( "ServerWebSocket Connection closed event..." );
 	if( pc_client && socket->input_state.on_close ) {
 		socket->input_state.on_close( pc_client, socket->input_state.psv_open, socket->input_state.close_code, socket->input_state.close_reason );
+	}
+	if( pc_client && socket->input_state.on_http_close ) {
+		socket->input_state.on_http_close( pc_client, socket->input_state.psv_on );
 	}
 	if( socket->input_state.close_reason )
 		Deallocate( char*, socket->input_state.close_reason );
@@ -63510,7 +63551,8 @@ NETWORK_PROC( PCLIENT, NetworkLockEx)( PCLIENT lpClient, int readWrite DBG_PASS 
 #endif
 			//lprintf( "Idle... socket lock failed, had global though..." );
 			Relinquish();
-			goto start_lock;
+			return NULL;
+			//goto start_lock;
 		}
 		//EnterCriticalSec( readWrite ? &lpClient->csLockRead : &lpClient->csLockWrite );
 #ifdef USE_NATIVE_CRITICAL_SECTION
@@ -65424,9 +65466,9 @@ LOGICAL doTCPWriteExx( PCLIENT lpClient
 	}
 	while( !NetworkLockEx( lpClient, 0 DBG_SRC ) )
 	{
-		if( !(lpClient->dwFlags & CF_ACTIVE ) )
+		if( (!(lpClient->dwFlags & CF_ACTIVE )) || (lpClient->dwFlags & CF_TOCLOSE) )
 		{
-			_lprintf(DBG_RELAY)( "Failing send..." );
+			_lprintf(DBG_RELAY)( "Failing send... inactive or closing" );
 			LogBinary( (uint8_t*)pInBuffer, nInLen );
 			return FALSE;
 		}
@@ -83578,9 +83620,9 @@ void ParseDSN( CTEXTSTR dsn, char **vfs, char **vfsInfo, char **dbFile ) {
 	static TEXTCHAR *tmpvfsvfs;
 	static TEXTCHAR *tmp_name;
 	static char *tmp;
-	if( tmpvfsvfs ) Release( tmpvfsvfs );
-	if( tmp_name ) Release( tmp_name );
-	if( tmp ) Release( tmp );
+	if( tmpvfsvfs ) { Release( tmpvfsvfs ); tmpvfsvfs = NULL; }
+	if( tmp_name ) { Release( tmp_name ); tmp_name = NULL; }
+	if( tmp ) { Release( tmp ); tmp = NULL; }
 	if( dsn[0] == '$' ) {
 		char *vfs_name;
 		CTEXTSTR vfs_end = StrChr( dsn + 1, '@' );
@@ -83615,6 +83657,7 @@ void ParseDSN( CTEXTSTR dsn, char **vfs, char **vfsInfo, char **dbFile ) {
 		(*vfsInfo) = tmpvfsvfs;
 		(*dbFile) = tmp;
 		Deallocate( TEXTCHAR *, tmp_name );
+		tmp_name = NULL;
 	}
 	else {
 		if( StrCaseCmpEx( dsn, "file:", 5 ) == 0
@@ -83631,6 +83674,7 @@ void ParseDSN( CTEXTSTR dsn, char **vfs, char **vfsInfo, char **dbFile ) {
 			(*vfsInfo) = NULL;
 			(*dbFile) = tmp;
 			Deallocate( TEXTCHAR *, tmp_name );
+			tmp_name = NULL;
 		}
 	}
 }
@@ -83881,7 +83925,6 @@ int OpenSQLConnectionEx( PODBC odbc DBG_PASS )
 			// and - we REQUIRE connection...
 			if( !( odbc->flags.bForceConnection && !odbc->flags.bSkipODBC ) )
 			{
-				TEXTCHAR *tmp_name;
 				char *tmp;
 				char *vfs_name;
 				TEXTCHAR *tmpvfsvfs;
@@ -89084,14 +89127,14 @@ retry:
 						int colfirst;
 						colfirst = 1;
 						if( !table->keys.key[n].flags.bPrimary) {
-							vtprintf( pvtCreate, WIDE( "create %s index `%s` `%s` (" )
+							vtprintf( pvtCreate, WIDE( "CREATE %sINDEX '%s' ON '%s'(" )
 								, table->keys.key[n].flags.bUnique ? WIDE( "UNIQUE " ) : WIDE( "" )
 								, table->keys.key[n].name
 								, table->name );
 							for( col = 0; table->keys.key[n].colnames[col]; col++ ) {
 								if( !table->keys.key[n].colnames[col] )
 									break;
-								vtprintf( pvtCreate, WIDE( "%s`%s`" )
+								vtprintf( pvtCreate, WIDE( "%s'%s'" )
 									, colfirst ? WIDE( "" ) : WIDE( "," )
 									, table->keys.key[n].colnames[col]
 								);
@@ -89685,7 +89728,7 @@ int GrabName( PTEXT *word, TEXTSTR *result, int *bQuoted DBG_PASS )
 	CTEXTSTR open;
 	//PTEXT start = (*word);
 	//printf( WIDE( "word is %s" ), GetText( *word ) );
-	if( TextLike( (*word), open = WIDE( "`" ) ) || TextLike( (*word), open = "\'" ) )
+	if( TextLike( (*word), open = WIDE( "`" ) ) || TextLike( (*word), open = "\'" ) || TextLike( (*word),open="\"") )
 	{
 		PTEXT phrase = NULL;
 		PTEXT line;
@@ -89704,7 +89747,7 @@ int GrabName( PTEXT *word, TEXTSTR *result, int *bQuoted DBG_PASS )
 			(*word) = NEXTLINE( *word );
 			LineRelease( phrase );
 			phrase = NULL;
-			if( TextLike( (*word), open = WIDE( "`" ) ) || TextLike( (*word), open = "\'" ) )
+			if( TextLike( (*word), open = WIDE( "`" ) ) || TextLike( (*word), open = "\'" ) || TextLike( (*word), open = "\"" ) )
 			{
 				(*word) = NEXTLINE( *word );
 				while( (*word) && ( GetText( *word )[0] != open[0]) )
@@ -91103,6 +91146,40 @@ void OpenWriterEx( POPTION_TREE option DBG_PASS )
 		_lprintf(DBG_RELAY)( WIDE( "Connect to writer database for tree %p odbc %p" ), option, option->odbc );
 #endif
 		option->odbc_writer = ConnectToDatabaseExx( option->odbc?option->odbc->info.pDSN:global_sqlstub_data->Primary.info.pDSN, FALSE DBG_RELAY );
+		SQLCommand( option->odbc_writer, "pragma foreign_keys=on" );
+      /*
+		SQLCommand( option->odbc_writer, "pragma integrity_check" );
+		{
+			CTEXTSTR res = NULL;
+			for( SQLQuery( option->odbc_writer, "select * from option4_name where name = 'system Settings'", &res );
+				res;
+				FetchSQLResult( option->odbc_writer, &res ) );
+			for( SQLQuery( option->odbc_writer, "PRAGMA foreign_key_check", &res );
+				res;
+				FetchSQLResult( option->odbc_writer, &res ) )
+				;// lprintf( "result:%s", res );;
+			for( SQLQuery( option->odbc_writer, "PRAGMA foreign_key_check(option4_map)", &res );
+				res;
+				FetchSQLResult( option->odbc_writer, &res ) )
+				;//lprintf( "result:%s", res );;
+			for( SQLQuery( option->odbc_writer, "PRAGMA foreign_key_list(option4_map)", &res );
+				res;
+				FetchSQLResult( option->odbc_writer, &res ) )
+				;//lprintf( "result:%s", res );;
+			for( SQLQuery( option->odbc_writer, "PRAGMA foreign_key_list(option4_name)", &res );
+				res;
+				FetchSQLResult( option->odbc_writer, &res ) )
+				;//lprintf( "result:%s", res );;
+			for( SQLQuery( option->odbc_writer, "PRAGMA foreign_key_list(option4_value)", &res );
+				res;
+				FetchSQLResult( option->odbc_writer, &res ) )
+				;//lprintf( "result:%s", res );;
+			for( SQLQuery( option->odbc_writer, "select * from sqlite_master", &res );
+				res;
+				FetchSQLResult( option->odbc_writer, &res ) )
+				;//lprintf( "result:%s", res );;
+		}
+*/
 		//option->odbc_writer = SQLGetODBC( option->odbc?option->odbc->info.pDSN:global_sqlstub_data->Primary.info.pDSN );
 		if( option->odbc_writer )
 		{
@@ -92243,6 +92320,7 @@ PODBC GetOptionODBCEx( CTEXTSTR dsn  DBG_PASS )
 #endif
 			odbc = ConnectToDatabaseExx( tracker->name, TRUE DBG_RELAY );
 			SetSQLCorruptionHandler( odbc, repairOptionDb, (uintptr_t)odbc );
+			SQLCommand( odbc, "pragma foreign_keys=on" );
 			{
 				INDEX idx;
 				CTEXTSTR cmd;
@@ -92563,10 +92641,8 @@ POPTION_TREE_NODE New4GetOptionIndexExxx( PODBC odbc, POPTION_TREE tree, POPTION
 					else
 					{
 						CTEXTSTR error;
-						FetchSQLError( tree->odbc, &error );
-#ifdef DETAILED_LOGGING
+						FetchSQLError( tree->odbc_writer, &error );
 						lprintf( WIDE("Error inserting option: %s"), error );
-#endif
 						ID = NULL;
 					}
 #ifdef DETAILED_LOGGING
