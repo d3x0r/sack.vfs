@@ -10,6 +10,7 @@ public:
 	Persistent<Function, CopyablePersistentTraits<Function>> inputCallback; //
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	bool binary;
+	bool ending;
 	bool ended;
 	uint32_t exitCode;
 	bool killAtExit;

@@ -52,7 +52,7 @@ TaskObject::TaskObject() {
 
 TaskObject::~TaskObject() {
 	DeleteLink( &l.tasks, this );
-	if( task ) {
+	if( task && !ended ) {
 		StopProgram( task );
 	}
 }
@@ -80,9 +80,13 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	HandleScope scope( isolate );
 
-	if( task->ended ) {
-		task->endCallback.Get( isolate )->Call( task->_this.Get( isolate ), 0, NULL );
-		task->ended = FALSE;
+	if( task->ending ) {
+		if( !task->endCallback.IsEmpty() )
+			task->endCallback.Get( isolate )->Call( task->_this.Get( isolate ), 0, NULL );
+		task->ending = FALSE;
+		task->ended = TRUE;
+		// these is a chance output will still come in?
+		uv_close( (uv_handle_t*)&task->async, NULL );
 	}
 	if( task->buffer ) {
 		Local<Value> argv[1];
@@ -122,13 +126,12 @@ static void CPROC getTaskInput( uintptr_t psvTask, PTASK_INFO pTask, CTEXTSTR bu
 
 static void CPROC getTaskEnd( uintptr_t psvTask, PTASK_INFO task_ended ) {
 	TaskObject *task = (TaskObject*)psvTask;
-	if( !task->endCallback.IsEmpty() ) {
-		task->ended = true;
-		task->exitCode = GetTaskExitCode( task_ended );
-		task->waiter = NULL;
-		task->task = NULL;
-		uv_async_send( &task->async );
-	}
+	task->ending = true;
+	task->exitCode = GetTaskExitCode( task_ended );
+	task->waiter = NULL;
+	task->task = NULL;
+	//closes async
+	uv_async_send( &task->async );
 }
 
 void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -174,20 +177,27 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			char **argArray;
 			int nArg;
 
+			if( opts->Has( optName = strings->binString->Get( isolate ) ) ) {
+				Local<Value> val;
+				if( opts->Get( optName )->IsString() )
+					bin = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+			} else {
+				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "required option 'bin' missing." ) ) );			
+			}
 			if( opts->Has( optName = strings->argString->Get( isolate ) ) ) {
 				Local<Value> val;
+				lprintf( "Has args option...");
 				if( opts->Get( optName )->IsString() ) {
 					char **args2;
 					args = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 					ParseIntoArgs( *args[0], &nArg, &argArray );
-
-					args2 = NewArray( char*, nArg + 1 );
+					args2 = NewArray( char*, nArg + 2 );
 					int n;
 					for( n = 0; n < nArg; n++ )
-						args2[n] = argArray[n];
-					args2[n] = NULL;
+						args2[n+1] = argArray[n];
+					args2[0] = *bin[0];
+					args2[n+1] = NULL;
 					Release( argArray );
-
 					argArray = args2;
 				} else if( opts->Get( optName )->IsArray() ) {
 					uint32_t n;
@@ -203,11 +213,6 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				Local<Value> val;
 				if( opts->Get( optName )->IsString() )
 					work = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
-			}
-			if( opts->Has( optName = strings->binString->Get( isolate ) ) ) {
-				Local<Value> val;
-				if( opts->Get( optName )->IsString() )
-					bin = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 			}
 			if( opts->Has( optName = strings->envString->Get( isolate ) ) ) {
 				Local<Value> val;
@@ -262,7 +267,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				| (newConsole ? LPP_OPTION_NEW_CONSOLE : 0)
 				| (suspend? LPP_OPTION_SUSPEND : 0)
 				, input ? getTaskInput : NULL
-				, end ? getTaskEnd : NULL
+				, (end||input) ? getTaskEnd : NULL
 				, (uintptr_t)newTask DBG_SRC );
 
 		}
@@ -288,7 +293,7 @@ ATEXIT( terminateStartedTasks ) {
 	TaskObject *task;
 	INDEX idx;
 	LIST_FORALL( l.tasks, idx, TaskObject *, task ) {
-		if( task->killAtExit )
+		if( task->killAtExit && ! task->ended )
 			StopProgram( task->task );
 	}
 }
