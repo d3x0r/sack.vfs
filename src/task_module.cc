@@ -11,6 +11,7 @@ struct optionStrings {
 	Eternal<String> *binaryString;
 	Eternal<String> *inputString;
 	Eternal<String> *endString;
+	Eternal<String> *firstArgIsArgString;
 };
 
 
@@ -40,6 +41,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->binaryString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "binary" ) );
 		check->inputString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "input" ) );
 		check->endString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "end" ) );
+		check->firstArgIsArgString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "firstArgIsArg" ) );
 	}
 	return check;
 }
@@ -186,22 +188,22 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 			if( opts->Has( optName = strings->argString->Get( isolate ) ) ) {
 				Local<Value> val;
-				lprintf( "Has args option...");
 				if( opts->Get( optName )->IsString() ) {
 					char **args2;
 					args = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
 					ParseIntoArgs( *args[0], &nArg, &argArray );
-					args2 = NewArray( char*, nArg + 2 );
+
+					args2 = NewArray( char*, nArg + 1 );
 					int n;
 					for( n = 0; n < nArg; n++ )
-						args2[n+1] = argArray[n];
-					args2[0] = *bin[0];
-					args2[n+1] = NULL;
+						args2[n] = argArray[n];
+					args2[n] = NULL;
 					Release( argArray );
 					argArray = args2;
 				} else if( opts->Get( optName )->IsArray() ) {
 					uint32_t n;
 					Local<Array> arr = Local<Array>::Cast( opts->Get( optName ) );
+
 					argArray = NewArray( char *, arr->Length() + 1 );
 					for( n = 0; n < arr->Length(); n++ ) {
 						argArray[n] = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) arr->Get( n )->ToString() ) );
@@ -235,6 +237,9 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 					newTask->inputCallback.Reset( isolate, Handle<Function>::Cast( opts->Get( optName ) ) );
 					input = true;
 				}
+			}
+			if( opts->Has( optName = strings->firstArgIsArgString->Get( isolate ) ) ) {
+				firstArgIsArg = opts->Get( optName )->BooleanValue();
 			}
 			if( opts->Has( optName = strings->endString->Get( isolate ) ) ) {
 				Local<Value> val;
