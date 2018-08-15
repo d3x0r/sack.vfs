@@ -1002,7 +1002,7 @@ are left untouched otherwise.
 |----|----|-----|
 | work  | string | specify the directory the task will be started in |
 | bin | string | program to run |
-| arguments | string or [ string [, string]...] | an argument or array of arguments to pass to the program |
+| args | string or [ string [, string]...] | an argument or array of arguments to pass to the program |
 | env | object | key:value pairs to write to the environment before launching the process |
 | binary | bool | if true, buffer to input callback will be an ArrayBuffer else it will be a string |
 | input | callback(buffer) | A callback function which will receive output from the task(would have to update lower level library to split/identify if the input was stdout or stderr) | 
