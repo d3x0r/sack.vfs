@@ -1,10 +1,16 @@
 
 var sack = require( ".." );
 
-if( Process.system === "linux" )
-	sack.Task( { bin: "cat", args:"testTask.js" } );
+function logOutput(buf ) {
+	console.log( "TASK OUTPUT:", buf );
+}
+
+if( process.platform === "linux" )
+	sack.Task( { bin: "cat", args:"testTask.js", input:logOutput } );
 else
 	sack.Task( { bin: "notepad.exe", args:"testTask.js" } );
 
+if(false)
 setTimeout( ()=>{
+	console.log( "TICK? fault and end program?")
 }, 5000 );
