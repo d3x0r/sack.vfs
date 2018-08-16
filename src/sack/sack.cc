@@ -15502,7 +15502,7 @@ SACK_DEADSTART_NAMESPACE_END
  * see also - include/logging.h
  *
  */
-//#define SUPPORT_LOG_ALLOCATE
+#define SUPPORT_LOG_ALLOCATE
 #define DEFAULT_OUTPUT_STDERR
 #define COMPUTE_CPU_FREQUENCY
 #define NO_UNICODE_C
@@ -19958,15 +19958,15 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramExx )( CTEXTSTR program, CTEXTSTR path
 				// the program name to get filled into.
 				// this memory doesn't leak; it's squashed by exec.
 				if( flags & LPP_OPTION_FIRST_ARG_IS_ARG ) {
-					char *const* newArgs;
+					char ** newArgs;
 					int n;
 					for( n = 0; args[n]; n++ );
-					newArgs = NewArray( char *, n + 1 );
+					newArgs = NewArray( char *, n + 2 );
 					for( n = 0; args[n]; n++ ) {
-						newArgs[n + 1] = args[n];
+						newArgs[n + 1] = (char*)args[n];
 					}
-					newArgs[n + 1] = args[n];
-					newArgs[0] = program;
+					newArgs[n + 1] = (char*)args[n];
+					newArgs[0] = (char*) program;
 					args = newArgs;
 				}
 				char *_program = CStrDup( program );
@@ -53053,10 +53053,10 @@ static void CPROC destroyHttpState( HTML5WebSocket socket, PCLIENT pc_client ) {
 		return;
 	}
 	//lprintf( "ServerWebSocket Connection closed event..." );
-	if( pc_client && socket->input_state.on_close ) {
+	if( pc_client && socket->input_state.on_close && socket->input_state.psv_open  ) {
 		socket->input_state.on_close( pc_client, socket->input_state.psv_open, socket->input_state.close_code, socket->input_state.close_reason );
 	}
-	if( pc_client && socket->input_state.on_http_close ) {
+	else if( pc_client && socket->input_state.on_http_close ) {
 		socket->input_state.on_http_close( pc_client, socket->input_state.psv_on );
 	}
 	if( socket->input_state.close_reason )

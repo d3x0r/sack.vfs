@@ -1006,8 +1006,6 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		uv_async_send( &wssi->async );
 	}
 	else {
-		lprintf( "(close before accept)Illegal connection" );
-		SOCKADDR *ip = (SOCKADDR*)GetNetworkLong( pc, GNL_REMOTE_ADDRESS );
 		uintptr_t psvServer = WebSocketGetServerData( pc );
 		wssObject *wss = (wssObject*)psvServer;
 		if( wss ) {	
@@ -1016,11 +1014,11 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 			int tot = 0;
 			LOGICAL requested = FALSE;
 			// close on wssObjectEvent; may have served HTTP requests
-			lprintf( "requests %p is %d", wss->requests, wss->requests?wss->requests->Cnt:0 );
+			//lprintf( "requests %p is %d", wss->requests, wss->requests?wss->requests->Cnt:0 );
 			LIST_FORALL( wss->requests, idx, httpObject *, req ) {
 				tot++;
 				if( req->pc == pc ) {
-					lprintf( "Removing request from wss %d %d", idx, tot );
+					//lprintf( "Removing request from wss %d %d", idx, tot );
 					SetLink( &wss->requests, idx, NULL );
 					requested = TRUE;
 					tot--;
@@ -1227,8 +1225,6 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 	wssObject *wss = (wssObject*)psv;
-	lprintf( "(close before accept)Illegal connection" );
-	SOCKADDR *ip = (SOCKADDR*)GetNetworkLong( pc, GNL_REMOTE_ADDRESS );
 	uintptr_t psvServer = WebSocketGetServerData( pc );
 
 	if( wss ) {
@@ -1237,11 +1233,10 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 		int tot = 0;
 		LOGICAL requested = FALSE;
 		// close on wssObjectEvent; may have served HTTP requests
-		lprintf( "requests %p is %d", wss->requests, wss->requests ? wss->requests->Cnt : 0 );
 		LIST_FORALL( wss->requests, idx, httpObject *, req ) {
 			tot++;
 			if( req->pc == pc ) {
-				lprintf( "Removing request from wss %d %d", idx, tot );
+				//lprintf( "Removing request from wss %d %d", idx, tot );
 				SetLink( &wss->requests, idx, NULL );
 				requested = TRUE;
 				tot--;
@@ -1252,6 +1247,7 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 			return;
 	}
 
+	lprintf( "(close before accept)Illegal connection" );
 
 	struct wssEvent *pevt = GetWssEvent();
 	(*pevt).eventType = WS_EVENT_ERROR_CLOSE;
@@ -1260,8 +1256,14 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 	(*pevt).waiter = MakeThread();
 	EnqueLink( &wss->eventQueue, pevt );
 	uv_async_send( &wss->async );
-	while( !(*pevt).done )
-		Wait();
+	if( (*pevt).waiter == l.jsThread ) {
+		wssAsyncMsg( &wss->async );
+	}
+	else {
+		uv_async_send( &wss->async );
+		while( (*pevt).done )
+			Wait();
+	}
 
 }
 
