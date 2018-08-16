@@ -1003,6 +1003,7 @@ are left untouched otherwise.
 | work  | string | specify the directory the task will be started in |
 | bin | string | program to run |
 | args | string or [ string [, string]...] | an argument or array of arguments to pass to the program |
+| firstArgIsArg | bool | If false, first argument in `args` is program name and not an argument (POSIX exec); default is true, and the first argument in `args` is the first argument |
 | env | object | key:value pairs to write to the environment before launching the process |
 | binary | bool | if true, buffer to input callback will be an ArrayBuffer else it will be a string |
 | input | callback(buffer) | A callback function which will receive output from the task(would have to update lower level library to split/identify if the input was stdout or stderr) | 
