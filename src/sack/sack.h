@@ -6693,7 +6693,11 @@ using namespace sack::timers;
 //
 #ifndef MAXPATH
 // windef.h has MAX_PATH
-# define MAXPATH MAX_PATH
+#  define MAXPATH MAX_PATH
+#  if (!MAXPATH)
+#    undef MAXPATH
+#    define MAXPATH 256
+#  endif
 #endif
 #ifndef PATH_MAX
 // sometimes PATH_MAX is what's used, well it's should be MAXPATH which is MAX_PATH

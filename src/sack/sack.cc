@@ -6702,7 +6702,11 @@ using namespace sack::timers;
 //
 #ifndef MAXPATH
 // windef.h has MAX_PATH
-# define MAXPATH MAX_PATH
+#  define MAXPATH MAX_PATH
+#  if (!MAXPATH)
+#    undef MAXPATH
+#    define MAXPATH 256
+#  endif
 #endif
 #ifndef PATH_MAX
 // sometimes PATH_MAX is what's used, well it's should be MAXPATH which is MAX_PATH
@@ -17820,6 +17824,15 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 						break;
 					library = library->next;
 				}
+				if( !library ) {
+					lprintf( "FATALITY:Did not manage to find self:%s", TARGETNAME );
+					PLIBRARY library = (*init_l).libraries;
+					while( library )
+					{
+						lprintf( "library->name:%s", library->name );
+						library = library->next;
+					}
+				}
 				//if( library )
 				{
 					char *dupname;
@@ -18000,9 +18013,10 @@ LOGICAL CPROC StopProgram( PTASK_INFO task )
 	else
 		return TRUE;
 #else
-   lprintf( "need to send kill() to signal process to top" );
+	//lprintf( "need to send kill() to signal process to stop" );
+	kill( task->pid, SIGINT );
 #endif
-	 return FALSE;
+	return FALSE;
 }
 uintptr_t CPROC TerminateProgram( PTASK_INFO task )
 {
@@ -18568,10 +18582,11 @@ static void LoadExistingLibraries( void )
 					continue;
 				buf[offset-1] = 0;
 				scanned = sscanf( buf, "%zx-%zx %s %zx", &start, &end, perms, &offset );
+				//lprintf( "so sscanf said: %d %d", scanned, offset );
 				if( scanned == 4 && offset == 0 )
 				{
-					if( ( perms[2] == 'x' )
-						&& ( ( end - start ) > 4 ) )
+					//lprintf( "Perms:%s", perms );
+					if( ( end - start ) > 4 )
 						if( ( ((unsigned char*)start)[0] == ELFMAG0 )
 						   && ( ((unsigned char*)start)[1] == ELFMAG1 )
 						   && ( ((unsigned char*)start)[2] == ELFMAG2 )
@@ -19939,6 +19954,21 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramExx )( CTEXTSTR program, CTEXTSTR path
 			}
 			if( !( newpid = fork() ) )
 			{
+				// after fork; check that args has a space for
+				// the program name to get filled into.
+				// this memory doesn't leak; it's squashed by exec.
+				if( flags & LPP_OPTION_FIRST_ARG_IS_ARG ) {
+					char *const* newArgs;
+					int n;
+					for( n = 0; args[n]; n++ );
+					newArgs = NewArray( char *, n + 1 );
+					for( n = 0; args[n]; n++ ) {
+						newArgs[n + 1] = args[n];
+					}
+					newArgs[n + 1] = args[n];
+					newArgs[0] = program;
+					args = newArgs;
+				}
 				char *_program = CStrDup( program );
 				// in case exec fails, we need to
 				// drop any registered exit procs...
@@ -19951,9 +19981,8 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramExx )( CTEXTSTR program, CTEXTSTR path
 					dup2( task->hStdOut.pair[1], 2 );
 				}
 				DispelDeadstart();
-				//usleep( 100000 );
 				execve( _program, (char *const*)args, environ );
-				lprintf( WIDE( "Direct execute failed... trying along path..." ) );
+				//lprintf( WIDE( "Direct execute failed... trying along path..." ) );
 				{
 					char *tmp = strdup( getenv( "PATH" ) );
 					char *tok;
@@ -36780,7 +36809,7 @@ static TEXTSTR PrependBasePathEx( INDEX groupid, struct Group *group, CTEXTSTR f
 		{
 			// resolve recusive % paths...
 			TEXTSTR tmp2 = ExpandPath( fullname );
-			Release( fullname );
+			Deallocate( TEXTSTR, fullname );
 			fullname = tmp2;
 		}
 #if __ANDROID__
