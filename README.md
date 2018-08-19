@@ -476,6 +476,58 @@ object passed to the control Registration constructor.
 
 Mostly unimplemented, more of a place holder than functional.
 
+| InterShell Object Methods | description |
+|----|----|
+| setSave | set callback for onSave(global info) |
+| setLoad | set callback for onLoad( globalinfo?") |
+| start | show intershell surface |
+| Button | (name) register a button method for creating buttons |
+| Control | (name) register a control |
+| Custom | (name) register a custom control |
+
+
+| InterShell Button Methods | description |
+|-----|-----|
+| setCreate | set callback for when button is created (return false to prevent creation) |
+| setClick | set callback handler for when button is clicked |
+| setSave | callback for when button is saved |
+| setLoad | callback for when button is loaded |
+
+
+| InterShell Button Instance Methods | description |
+|-----|-----|
+| setTitle | Set text shown on button |
+| setStyle | set button style name |
+| setTextColor | set color for button text |
+| setBackground | set primary background color |
+| setSecondar | set seconary background color |
+
+
+
+| InterShell Custom Control Methods | description |
+|-----|-----|
+| setCreate | set callback for when button is created (return false to prevent creation) |
+| setSave | callback for when button is saved |
+| setLoad | callback for when button is loaded |
+
+
+| InterShell Custom Control Instance Methods | description |
+|-----|-----|
+| setTitle | Set text shown on button |
+
+
+| InterShell Control Methods | description |
+|-----|-----|
+| setCreate | set callback for when button is created (return false to prevent creation) |
+| setSave | callback for when button is saved |
+| setLoad | callback for when button is loaded |
+
+
+| InterShell Control Instance Methods | description |
+|-----|-----|
+| setTitle | Set text shown on button |
+
+
 
 ---
 

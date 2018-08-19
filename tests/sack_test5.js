@@ -69,6 +69,11 @@ var customShellControl = sack.InterShell.Control( { name : "JS Control"
 } );
 
 
+var btn = sack.InterShell.Button( "JS/Button 1" );
+btn.setClick( ()=>{
+	console.log( "button clicked" );
+} );
+
 intershell.start();
 
 console.log( "Should be able to dispatch some events?" );
