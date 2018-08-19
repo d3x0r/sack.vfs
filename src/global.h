@@ -186,6 +186,8 @@ public:
 	CTEXTSTR *result;
 	size_t *resultLens;
 	CTEXTSTR *fields;
+	v8::Persistent<v8::Function> onCorruption;
+	Persistent<Object> _this;
 	//Persistent<Object> volume;
 public:
 	PTHREAD thread;
@@ -212,6 +214,7 @@ public:
 	static void userFunction( const v8::FunctionCallbackInfo<Value>& args );
 	static void userProcedure( const v8::FunctionCallbackInfo<Value>& args );
 	static void aggregateFunction( const v8::FunctionCallbackInfo<Value>& args );
+	static void setOnCorruption( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args );
 	static void enumOptionNodesInternal( const v8::FunctionCallbackInfo<Value>& args );

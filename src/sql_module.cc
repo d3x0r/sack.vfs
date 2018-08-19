@@ -52,6 +52,8 @@ void SqlObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "procedure", userProcedure );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "function", userFunction );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "aggregate", aggregateFunction );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "onCorruption", setOnCorruption );
+
 
 	// read a portion of the tree (passed to a callback)
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "eo", enumOptionNodes );
@@ -110,6 +112,7 @@ void SqlObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		else {
 			obj = new SqlObject( ":memory:" );
 		}
+		obj->_this.Reset( isolate, args.This() );
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
 	} else {
@@ -1350,6 +1353,23 @@ void SqlObject::error( const v8::FunctionCallbackInfo<Value>& args ) {
 	const char *error;
 	FetchSQLError( sql->odbc, &error );
 	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), error, NewStringType::kNormal, (int)strlen(error) ).ToLocalChecked() );
+
+}
+
+static void handleCorruption( uintptr_t psv, PODBC odbc ) {
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	SqlObject *sql = (SqlObject*)psv;
+	Local<Function> cb = Local<Function>::New( isolate, sql->onCorruption.Get( isolate ) );
+	cb->Call( sql->_this.Get( isolate ), 0, 0 );
+}
+
+
+void SqlObject::setOnCorruption( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	int argc = args.Length();
+	sql->onCorruption.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+	SetSQLCorruptionHandler( sql->odbc, handleCorruption, (uintptr_t)sql );
 
 }
 

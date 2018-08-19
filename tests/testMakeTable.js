@@ -1,7 +1,24 @@
 
 var sack = require( ".." );
-sack.Volume().unlink( "makeTable.db" );
+//sack.Volume().unlink( "makeTable.db" );
 var db = sack.Sqlite( "makeTable.db" );
+
+stat = db.makeTable( "create table users3 ( \
+	account char PRIMARY KEY COLLATE NOCASE, \
+	user_id char(42) default (getKUID()), \
+	username char COLLATE NOCASE, \
+	email char COLLATE NOCASE, \
+	client_id char(42), \
+	password char, \
+ 	`requests` int, \
+	createdUser  DATETIME DEFAULT CURRENT_TIMESTAMP, \
+	FOREIGN KEY(client_id) REFERENCES clientKeys(key) ON DELETE CASCADE, \
+	UNIQUE KEY user_id_key(user_id), \
+	UNIQUE KEY emailkey(email), \
+	UNIQUE KEY user_name_key(username) \
+)") 
+
+        if( !stat ) console.log( "error?", db.error );
 
 	var stat;
 	stat = db.makeTable( 'create table game_state ( \

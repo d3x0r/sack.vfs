@@ -261,6 +261,9 @@ public:
 	PCLIENT pc;
 	Persistent<Object> _this;
 	PLINKQUEUE eventQueue;
+	int last_count_handled;
+	int closing;
+	PTHREAD event_waker;
 	PLIST opening;
 	PLIST requests;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
@@ -440,6 +443,7 @@ Persistent<FunctionTemplate> wscObject::tpl;
 static WSS_EVENT *GetWssEvent() {
 	EnterCriticalSec( &l.csWssEvents );
 	WSS_EVENT *evt = GetFromSet( WSS_EVENT, &l.wssEvents );
+	memset( evt, 0, sizeof( WSS_EVENT ) );
 	LeaveCriticalSec( &l.csWssEvents );
 	return evt;
 }
@@ -447,6 +451,7 @@ static WSS_EVENT *GetWssEvent() {
 static WSSI_EVENT *GetWssiEvent() {
 	EnterCriticalSec( &l.csWssiEvents );
 	WSSI_EVENT *evt = GetFromSet( WSSI_EVENT, &l.wssiEvents );
+	memset( evt, 0, sizeof( WSSI_EVENT ) );
 	LeaveCriticalSec( &l.csWssiEvents );
 	return evt;
 }
@@ -454,6 +459,7 @@ static WSSI_EVENT *GetWssiEvent() {
 static WSC_EVENT *GetWscEvent() {
 	EnterCriticalSec( &l.csWscEvents );
 	WSC_EVENT *evt = GetFromSet( WSC_EVENT, &l.wscEvents );
+	memset( evt, 0, sizeof( WSC_EVENT ) );
 	LeaveCriticalSec( &l.csWscEvents );
 	return evt;
 }
@@ -506,8 +512,8 @@ static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 	PTEXT resource = GetWebSocketResource( pc );
 	SOCKADDR *remoteAddress = (SOCKADDR *)GetNetworkLong( pc, GNL_REMOTE_ADDRESS );
 	SOCKADDR *localAddress = (SOCKADDR *)GetNetworkLong( pc, GNL_LOCAL_ADDRESS );
-	Local<String> remote = String::NewFromUtf8( isolate, GetAddrName( remoteAddress ) );
-	Local<String> local = String::NewFromUtf8( isolate, GetAddrName( localAddress ) );
+	Local<String> remote = String::NewFromUtf8( isolate, remoteAddress?GetAddrName( remoteAddress ):"0.0.0.0" );
+	Local<String> local = String::NewFromUtf8( isolate, localAddress?GetAddrName( localAddress ):"0.0.0.0" );
 	Local<Object> result = Object::New( isolate );
 	Local<Object> arr = Object::New( isolate );
 	INDEX idx;
@@ -518,12 +524,14 @@ static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 	}
 	optionStrings *strings = getStrings( isolate );
 	result->Set( strings->headerString->Get( isolate ), arr );
+	if( remoteAddress )
 	result->Set( strings->remoteFamilyString->Get( isolate )
 			, (remoteAddress->sa_family == AF_INET) ? strings->v4String->Get( isolate ) :
 				(remoteAddress->sa_family == AF_INET6) ? strings->v6String->Get( isolate ) : strings->vUString->Get( isolate )
 		);
 	result->Set( strings->remoteAddrString->Get( isolate ), remote );
 	result->Set( strings->remotePortString->Get( isolate ), Integer::New( isolate, (int32_t)GetNetworkLong( pc, GNL_PORT ) ) );
+	if( localAddress )
 	result->Set( strings->localFamilyString->Get( isolate )
 			, (localAddress->sa_family == AF_INET)?strings->v4String->Get(isolate):
 				(localAddress->sa_family == AF_INET6) ? strings->v6String->Get( isolate ) : strings->vUString->Get(isolate)
@@ -553,12 +561,13 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	wssObject* myself = (wssObject*)handle->data;
-
+	int handled = 0;
 	HandleScope scope(isolate);
 	{
 		struct wssEvent *eventMessage;
 		while( eventMessage = (struct wssEvent *)DequeLink( &myself->eventQueue ) ) {
 			Local<Value> argv[3];
+			handled++;
 			myself->eventMessage = eventMessage;
 			if( eventMessage->eventType == WS_EVENT_REQUEST ) {
 				if( !myself->requestCallback.IsEmpty() ) {
@@ -574,10 +583,13 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					http->Set( strings->connectionString->Get( isolate ), makeSocket( isolate, eventMessage->pc ) );
 
 					httpObject *httpInternal = httpObject::Unwrap<httpObject>( http );
-					AddLink( &myself->requests, httpInternal );
 					httpInternal->ssl = myself->ssl;
 					httpInternal->pc = eventMessage->pc;
-               //lprintf( "New request..." );
+					AddLink( &myself->requests, httpInternal );
+					//if( myself->requests->Cnt > 200 )
+					//	DebugBreak();
+					//lprintf( "requests %p is %d", myself->requests, myself->requests->Cnt );
+					//lprintf( "New request..." );
 					argv[0] = makeRequest( isolate, strings, eventMessage->pc );
 					argv[1] = http;
 					Local<Function> cb = Local<Function>::New( isolate, myself->requestCallback );
@@ -644,6 +656,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 			eventMessage->done = TRUE;
 			WakeThread( eventMessage->waiter );
 		}
+		myself->last_count_handled = handled;
 	}
 }
 
@@ -971,8 +984,13 @@ static void webSockServerCloseEvent( wssObject *wss ) {
 	//lprintf( "Server Websocket closed; post to javascript %p", wss );
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wss;
+	wss->closing = 1;
 	EnqueLink( &wss->eventQueue, pevt );
 	uv_async_send( &wss->async );
+	while( wss->event_waker ) {
+		WakeThread( wss->event_waker );
+		Relinquish();
+	}
 }
 
 static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char *reason )
@@ -988,29 +1006,36 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		uv_async_send( &wssi->async );
 	}
 	else {
-		//lprintf( "(close before accept)Illegal connection" );
-		SOCKADDR *ip = (SOCKADDR*)GetNetworkLong( pc, GNL_REMOTE_ADDRESS );
 		uintptr_t psvServer = WebSocketGetServerData( pc );
 		wssObject *wss = (wssObject*)psvServer;
 		if( wss ) {	
 			httpObject *req;
 			INDEX idx;
+			int tot = 0;
+			LOGICAL requested = FALSE;
 			// close on wssObjectEvent; may have served HTTP requests
+			//lprintf( "requests %p is %d", wss->requests, wss->requests?wss->requests->Cnt:0 );
 			LIST_FORALL( wss->requests, idx, httpObject *, req ) {
+				tot++;
 				if( req->pc == pc ) {
+					//lprintf( "Removing request from wss %d %d", idx, tot );
 					SetLink( &wss->requests, idx, NULL );
-					return;
+					requested = TRUE;
+					tot--;
+					//return;
 				}
 			}
+			if( requested ) 
+				return;
 		}
-		//lprintf( "(close before accept)http request or Illegal connection" );
+		lprintf( "(close before accept)Illegal connection" );
 		//DumpAddr( "IP", ip );
 		struct wssEvent *pevt = GetWssEvent();
 		if( ( (*pevt).waiter = MakeThread() ) != l.jsThread )  {
 			//lprintf( "Server Websocket closed; post to javascript %p", wss );
 			(*pevt).eventType = WS_EVENT_ERROR_CLOSE;
 			(*pevt).waiter = MakeThread();
-
+			if( (*pevt).done ) lprintf( "FAIL!" );
 			(*pevt).pc = pc;
 			(*pevt)._this = wss;
 			EnqueLink( &wss->eventQueue, pevt );
@@ -1198,12 +1223,56 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	VarTextEmpty( obj->pvtResult );
 }
+static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
+	wssObject *wss = (wssObject*)psv;
+	uintptr_t psvServer = WebSocketGetServerData( pc );
+
+	if( wss ) {
+		httpObject *req;
+		INDEX idx;
+		int tot = 0;
+		LOGICAL requested = FALSE;
+		// close on wssObjectEvent; may have served HTTP requests
+		LIST_FORALL( wss->requests, idx, httpObject *, req ) {
+			tot++;
+			if( req->pc == pc ) {
+				//lprintf( "Removing request from wss %d %d", idx, tot );
+				SetLink( &wss->requests, idx, NULL );
+				requested = TRUE;
+				tot--;
+				//return;
+			}
+		}
+		if( requested )
+			return;
+	}
+
+	lprintf( "(close before accept)Illegal connection" );
+
+	struct wssEvent *pevt = GetWssEvent();
+	(*pevt).eventType = WS_EVENT_ERROR_CLOSE;
+	(*pevt)._this = wss;
+	(*pevt).pc = pc;
+	(*pevt).waiter = MakeThread();
+	EnqueLink( &wss->eventQueue, pevt );
+	uv_async_send( &wss->async );
+	if( (*pevt).waiter == l.jsThread ) {
+		wssAsyncMsg( &wss->async );
+	}
+	else {
+		uv_async_send( &wss->async );
+		while( (*pevt).done )
+			Wait();
+	}
+
+}
 
 static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 	wssObject *wss = (wssObject*)psv;
 	if( !wss->requestCallback.IsEmpty() ) {
 		struct wssEvent *pevt = GetWssEvent();
 		//lprintf( "posting request event to JS" );
+		SetWebSocketHttpCloseCallback( pc, webSockHttpClose );
 		(*pevt).eventType = WS_EVENT_REQUEST;
 		(*pevt). pc = pc;
 		(*pevt)._this = wss;
@@ -1215,9 +1284,22 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 	return 0;
 }
 
+static uintptr_t catchLostEvents( PTHREAD thread ) {
+	wssObject *wss = (wssObject*)GetThreadParam( thread );
+	while( !wss->closing ) {
+		if( wss->last_count_handled )
+			uv_async_send( &wss->async );
+		WakeableSleep( 1000 );
+	}
+	wss->event_waker = NULL;
+	return 0;
+}
+
 wssObject::wssObject( struct wssOptions *opts ) {
 	char tmp[256];
 	int clearUrl = 0;
+	last_count_handled = 0;
+	closing = 0;
 	readyState = INITIALIZING;
 	eventQueue = NULL;
 	requests = NULL;
@@ -1243,9 +1325,11 @@ wssObject::wssObject( struct wssOptions *opts ) {
 		SetSocketReusePort( pc, TRUE );
 		SetSocketReuseAddress( pc, TRUE );
 		uv_async_init( l.loop, &async, wssAsyncMsg );
+		event_waker = ThreadTo( catchLostEvents, (uintptr_t)this );
 		async.data = this;
 
 		SetWebSocketHttpCallback( pc, webSockHttpRequest );
+
 		if( opts->deflate ) {
 			SetWebSocketDeflate( pc, WEBSOCK_DEFLATE_ENABLE );
 			//lprintf( "deflate yes" );
