@@ -10065,9 +10065,9 @@ PSSQL_PROC( LOGICAL, BackupDatabase )( PODBC source, PODBC dest );
 //PSSQL_PROC( POINTER, GetODBCHandle )( PODBC odbc );
 /* set a handler to be triggered when SQLite Database finds corruption type error...
  */
-void SetSQLCorruptionHandler( PODBC odbc, void (CPROC*f)(uintptr_t psv, PODBC odbc), uintptr_t psv );
+PSSQL_PROC( void, SetSQLCorruptionHandler )( PODBC odbc, void (CPROC*f)(uintptr_t psv, PODBC odbc), uintptr_t psv );
 /* Utility function to parse DSN according to sack sqlite vfs rules... */
-void ParseDSN( CTEXTSTR dsn, char **vfs, char **vfsInfo, char **dbFile );
+PSSQL_PROC( void, ParseDSN )( CTEXTSTR dsn, char **vfs, char **vfsInfo, char **dbFile );
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 #ifdef __cplusplus
 SQL_NAMESPACE_END
@@ -15502,7 +15502,7 @@ SACK_DEADSTART_NAMESPACE_END
  * see also - include/logging.h
  *
  */
-#define SUPPORT_LOG_ALLOCATE
+//#define SUPPORT_LOG_ALLOCATE
 #define DEFAULT_OUTPUT_STDERR
 #define COMPUTE_CPU_FREQUENCY
 #define NO_UNICODE_C
@@ -19966,7 +19966,7 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramExx )( CTEXTSTR program, CTEXTSTR path
 						newArgs[n + 1] = (char*)args[n];
 					}
 					newArgs[n + 1] = (char*)args[n];
-					newArgs[0] = (char*) program;
+					newArgs[0] = (char*)program;
 					args = newArgs;
 				}
 				char *_program = CStrDup( program );
@@ -37540,11 +37540,14 @@ FILE * sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_
 			}
 			else
 			{
-				file->fullname = PrependBasePathEx( group, filegroup, file->name, !mount );
+				TEXTSTR tmp;
+				tmp = PrependBasePathEx( group, filegroup, file->name, !mount );
+				file->fullname = ExpandPath( tmp );
 #if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 				if( (*winfile_local).flags.bLogOpenClose )
 					lprintf( WIDE("full is %s %d"), file->fullname, (int)group );
 #endif
+				Deallocate( TEXTSTR, tmp );
 			}
 			//file->fullname = file->name;
 		}
@@ -37690,14 +37693,14 @@ default_fopen:
 	}
 	if( !handle )
 	{
-		DeleteLink( &(*winfile_local).files, file );
-		Deallocate( TEXTCHAR*, file->name );
-		Deallocate( TEXTCHAR*, file->fullname );
-		Deallocate( struct file*, file );
 #if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
 		if( (*winfile_local).flags.bLogOpenClose )
 			lprintf( WIDE( "Failed to open file [%s]=[%s]" ), file->name, file->fullname );
 #endif
+		DeleteLink( &(*winfile_local).files, file );
+		Deallocate( TEXTCHAR*, file->name );
+		Deallocate( TEXTCHAR*, file->fullname );
+		Deallocate( struct file*, file );
 		return NULL;
 	}
 #if !defined( __NO_OPTIONS__ ) && !defined( __FILESYS_NO_FILE_LOGGING__ )
