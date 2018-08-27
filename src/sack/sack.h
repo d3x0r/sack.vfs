@@ -397,10 +397,6 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #     ifndef RENDER_LIBRARY_SOURCE
 #       define RENDER_LIBRARY_SOURCE
 #     endif
-#     ifndef __NO_WIN32API__
-// this is moved to a CMake option (based on whter it's arm or not right now)
-//#define _OPENGL_ENABLED
-#     endif
 // define a type that is a public name struct type...
 // good thing that typedef and struct were split
 // during the process of port to /clr option.

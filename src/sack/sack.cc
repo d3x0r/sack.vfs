@@ -406,10 +406,6 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #     ifndef RENDER_LIBRARY_SOURCE
 #       define RENDER_LIBRARY_SOURCE
 #     endif
-#     ifndef __NO_WIN32API__
-// this is moved to a CMake option (based on whter it's arm or not right now)
-//#define _OPENGL_ENABLED
-#     endif
 // define a type that is a public name struct type...
 // good thing that typedef and struct were split
 // during the process of port to /clr option.
@@ -21756,7 +21752,10 @@ IMAGE_NAMESPACE_END
 #include <D3D11.h>
 #endif
 #ifdef _VULKAN_DRIVER
-#include <vulkan/vulkan.h>
+#  ifdef _WIN32
+#    define VK_USE_PLATFORM_WIN32_KHR
+#  endif
+#  include <vulkan/vulkan.h>
 #endif
 // one day I'd like to make a multidimensional library
 // but for now - 3D is sufficient - it can handle everything
@@ -51869,7 +51868,6 @@ static int CPROC inflateBackOutput( void* state, unsigned char *output, unsigned
 void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint8_t* msg, size_t length )
 {
 	size_t n;
-	//lprintf( "Process packet: %d", length );
 	for( n = 0; n < length; n++ )
 	{
 		switch( websock->input_msg_state )
@@ -51930,7 +51928,7 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 			break;
  // byte 1, extended payload uint16_t
 		case 3:
-			websock->frame_length |= msg[3];
+			websock->frame_length |= msg[n];
 			if( websock->mask )
 				websock->input_msg_state = 12;
 			else
@@ -52132,6 +52130,7 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 					break;
 				default:
 					lprintf( WIDE("Bad WebSocket opcode: %d"), websock->opcode );
+					RemoveClient( pc );
 					return;
 				}
 				// after processing any opcode (this is IN final, and length match) we're done, start next message
@@ -52871,6 +52870,7 @@ HTML5_WEBSOCKET_NAMESPACE_END
 USE_HTML5_WEBSOCKET_NAMESPACE
 #endif
 HTML5_WEBSOCKET_NAMESPACE
+#define WSS_DEFAULT_BUFFER_SIZE 4096
 typedef struct html5_web_socket *HTML5WebSocket;
 const TEXTCHAR *wssbase64 = WIDE("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=");
 static void wssencodeblock( unsigned char in[3], TEXTCHAR out[4], int len )
@@ -53368,10 +53368,10 @@ static void CPROC read_complete( PCLIENT pc, POINTER buffer, size_t length )
 	else
 	{
 		//HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc, 0 );
-		buffer = socket->buffer = Allocate( 4096 );
+		buffer = socket->buffer = Allocate( WSS_DEFAULT_BUFFER_SIZE );
 	}
 	if( !socket->input_state.flags.use_ssl )
-		ReadTCP( pc, buffer, 4096 );
+		ReadTCP( pc, buffer, WSS_DEFAULT_BUFFER_SIZE );
 }
 static void CPROC connected( PCLIENT pc_server, PCLIENT pc_new )
 {
@@ -63820,7 +63820,6 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 		// UDP still needs to be done this way...
 		//
 		InternalRemoveClientExx( lpClient, bBlockNotify, bLinger DBG_RELAY );
-#ifndef __LINUX__
 		if( NetworkLock( lpClient, 0 ) && ((n=1),NetworkLock( lpClient, 1 )) ) {
 			TerminateClosedClient( lpClient );
 			NetworkUnlock( lpClient, 0 );
@@ -63829,7 +63828,6 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 		else if( n ) {
 			NetworkUnlock( lpClient, 0 );
 		}
-#endif
 	}
 }
 CTEXTSTR GetSystemName( void )
