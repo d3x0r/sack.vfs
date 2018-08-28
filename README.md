@@ -990,6 +990,12 @@ name directly, and then try for each path set in PATH.
 Pipes are connected to a task's stdin/stdout/stderr inputs if a output callback is specified.  The pipes
 are left untouched otherwise.
 
+| Task Static Methods | description |
+| loadLibrary( libname ) | Load external shared library. ex: `sack.Task.loadLibrary( "xxx" );` |
+
+Having created a task instance with `sack.Task( {...} );` the following methods are available
+to interact with the process.
+
  | Task methods | Description |
  |----|----|
  |end() | attempt to cause a task to exit.  It will first dispatch ctrl-c, ctrl-break, post a WM_QUIT message, and if the program does not end soon enough, terminates the process.  (closing pipes to task could also be implemented?)| 

@@ -27,6 +27,7 @@ public:
 	static void End( const v8::FunctionCallbackInfo<Value>& args );
 	static void Terminate( const v8::FunctionCallbackInfo<Value>& args );
 	static void isRunning( const v8::FunctionCallbackInfo<Value>& args );
+	static void loadLibrary( const v8::FunctionCallbackInfo<Value>& args );
 
 };
 

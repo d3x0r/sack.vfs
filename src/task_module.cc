@@ -74,7 +74,9 @@ void InitTask( Isolate *isolate, Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "isRunning", TaskObject::isRunning );
 	taskTemplate->ReadOnlyPrototype();
 	TaskObject::constructor.Reset( isolate, taskTemplate->GetFunction() );
-	SET_READONLY( exports, "Task", taskTemplate->GetFunction() );
+	Local<Function> taskF;
+	SET_READONLY( exports, "Task", taskF = taskTemplate->GetFunction() );
+	SET_READONLY_METHOD( taskF, "loadLibrary", TaskObject::loadLibrary );
 }
 
 static void taskAsyncMsg( uv_async_t* handle ) {
@@ -301,6 +303,15 @@ ATEXIT( terminateStartedTasks ) {
 		if( task->killAtExit && ! task->ended )
 			StopProgram( task->task );
 	}
+}
+
+void TaskObject::loadLibrary( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	String::Utf8Value s( args[0]->ToString() );
+	if( LoadFunction( *s, NULL ) )
+		args.GetReturnValue().Set( True( isolate ) );
+	args.GetReturnValue().Set( False( isolate ) );
+
 }
 
 void TaskObject::Write( const v8::FunctionCallbackInfo<Value>& args ) {
