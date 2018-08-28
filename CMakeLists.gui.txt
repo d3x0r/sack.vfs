@@ -71,7 +71,7 @@ ExternalProject_Add( sack
 		-DSACK_LIBRARY_ONLY=1 -DUSE_SYSLOG_STDOUT_DEFAULT=ON
 		-DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}
 		-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-
+		-DINCLUDE_EXTRAS=1
 )
 if( EXISTS ${CMAKE_BINARY_DIR}/sack-src/src/sack/src/InterShell.stable )
 
@@ -158,6 +158,7 @@ target_link_libraries(${PROJECT_NAME} bag++ bag.externals bag.psi++ ${VFSLIB} ${
 
   add_custom_command( TARGET ${PROJECT_NAME} POST_BUILD
 			#COMMAND cmake -E echo ${AMALG_COMMAND}
+   			COMMAND ${CMAKE_COMMAND} -E echo Updating deps....
    			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/bin ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
    			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/resources ${CMAKE_BINARY_DIR}/resources
 			${EXTRACOPY}
