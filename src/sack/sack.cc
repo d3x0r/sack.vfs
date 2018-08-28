@@ -26735,7 +26735,8 @@ struct render_interface_tag
 #undef USE_RENDER_INTERFACE
 #endif
 #if !defined(FORCE_NO_RENDER_INTERFACE)
-/* RENDER_PROC( PRENDER_INTERFACE, GetDisplayInterface )( void );
+/* RENDER_PROC( PRENDER_INTERFACE, GetDisplayInterface )( void
+ );
    Gets the interface the proper way - by name.
    Returns
    Pointer to the render interface.                            */
@@ -52108,7 +52109,8 @@ void ProcessWebSockProtocol( WebSocketInputState websock, PCLIENT pc, const uint
 						websock->on_close = NULL;
 					}
 					websock->fragment_collection_length = 0;
-					RemoveClientEx( pc, 0, 1 );
+ // this should not linger; client already sent closed, nothing more to receive.
+					RemoveClientEx( pc, 0, 0 );
 					// resetInputstate after this would squash next memory....
 					return;
 					break;
@@ -52718,6 +52720,7 @@ void WebSocketClose( PCLIENT pc, int code, const char *reason )
 	else {
 		buflen = 0;
 	}
+ // struct html5_web_socket
 	if( websock->Magic == 0x20130912 ) {
 		struct html5_web_socket *serverSock = (struct html5_web_socket*)websock;
 		if( serverSock->flags.initial_handshake_done ) {
@@ -52731,6 +52734,7 @@ void WebSocketClose( PCLIENT pc, int code, const char *reason )
 		}
 	}
 	else {
+ // struct web_socket_client
 		if( websock->Magic == 0x20130911 ) {
 			//lprintf( "send client side close?" );
 			if( websock->flags.connected ) {
@@ -53041,7 +53045,7 @@ void ResetWebsocketRequestHandler( PCLIENT pc ) {
 	if( !socket ) return;
 	socket->flags.initial_handshake_done = 0;
 	socket->flags.http_request_only = 0;
-   EndHttp( socket->http_state );
+	EndHttp( socket->http_state );
 }
 uintptr_t WebSocketGetServerData( PCLIENT pc ) {
 	HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc, 0 );
