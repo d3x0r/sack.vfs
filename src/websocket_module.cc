@@ -272,6 +272,7 @@ public:
 	Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> acceptCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> requestCallback; //
+	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> errorCloseCallback; //
 	struct wssEvent *eventMessage;
 	bool ssl;
@@ -287,6 +288,8 @@ public:
 	static void onConnect( const v8::FunctionCallbackInfo<Value>& args );
 	static void onAccept( const v8::FunctionCallbackInfo<Value>& args );
 	static void onRequest( const v8::FunctionCallbackInfo<Value>& args );
+	static void onClose( const v8::FunctionCallbackInfo<Value>& args );
+	static void getOnClose( const v8::FunctionCallbackInfo<Value>& args );
 	static void onError( const v8::FunctionCallbackInfo<Value>& args );
 	static void accept( const v8::FunctionCallbackInfo<Value>& args );
 	static void reject( const v8::FunctionCallbackInfo<Value>& args );
@@ -647,6 +650,10 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 			else if( eventMessage->eventType == WS_EVENT_CLOSE ) {
 				myself->readyState = CLOSED;
 				uv_close( (uv_handle_t*)&myself->async, uv_closed_wss );
+				if( !myself->closeCallback.IsEmpty() ) {
+					Local<Function> cb = myself->closeCallback.Get( isolate );
+					cb->Call( eventMessage->_this->_this.Get( isolate ), 0, NULL );					
+				}
 				DropWssEvent( eventMessage );
 				DeleteLinkQueue( &myself->eventQueue );
 				return;
@@ -868,6 +875,11 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onconnect", wssObject::onConnect );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onaccept", wssObject::onAccept );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onrequest", wssObject::onRequest );
+		wssTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "onclose" )
+			, FunctionTemplate::New( isolate, wssObject::getOnClose )
+			, FunctionTemplate::New( isolate, wssObject::onClose )
+		);
+		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onclose", wssObject::onClose );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onerror", wssObject::onError );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "accept", wssObject::accept );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "reject", wssObject::reject );
@@ -981,7 +993,7 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 
 static void webSockServerCloseEvent( wssObject *wss ) {
 	struct wssEvent *pevt = GetWssEvent();
-	//lprintf( "Server Websocket closed; post to javascript %p", wss );
+	lprintf( "Server Websocket closed; post to javascript %p", wss );
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wss;
 	wss->closing = 1;
@@ -1517,6 +1529,7 @@ void wssObject::close( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
 	obj->readyState = CLOSING;
+	lprintf( "remove client." );
 	RemoveClient( obj->pc );
 	webSockServerCloseEvent( obj );
 }
@@ -1539,6 +1552,10 @@ void wssObject::on( const FunctionCallbackInfo<Value>& args ) {
 		if( StrCmp( *event, "accept" ) == 0 ) {
 			if( cb->IsFunction() )
 				obj->acceptCallback.Reset( isolate, cb );
+		}
+		if( StrCmp( *event, "close" ) == 0 ) {
+			if( cb->IsFunction() )
+				obj->closeCallback.Reset( isolate, cb );
 		}
 		if( StrCmp( *event, "error" ) == 0 ) {
 			if( cb->IsFunction() )
@@ -1588,6 +1605,21 @@ void wssObject::onError( const FunctionCallbackInfo<Value>& args ) {
 			obj->errorCloseCallback.Reset( isolate, Handle<Function>::Cast( args[0] ) );
 		else
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
+	}
+}
+
+void wssObject::getOnClose( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
+	args.GetReturnValue().Set( obj->closeCallback.Get( isolate ) );
+}
+void wssObject::onClose( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+
+	if( args.Length() > 0 ) {
+		wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
+		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		obj->closeCallback.Reset( isolate, cb );
 	}
 }
 
@@ -1715,7 +1747,8 @@ void wssiObject::onclose( const FunctionCallbackInfo<Value>& args ) {
 void wssiObject::close( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
-	WebSocketClose( obj->pc, 1000, NULL );
+	if( obj->pc && !obj->closed )
+		WebSocketClose( obj->pc, 1000, NULL );
 }
 
 void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
