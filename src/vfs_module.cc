@@ -138,6 +138,8 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "unlink", fileVolDelete );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "rm", fileVolDelete );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "rekey", volRekey );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mv", renameFile );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "rename", renameFile );
 
 	Local<Function> VolFunc = volumeTemplate->GetFunction();
 
@@ -749,7 +751,19 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		}
 	}
 
-
+	void VolumeObject::renameFile( const FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		String::Utf8Value fName( USE_ISOLATE( isolate )args[0] );
+		String::Utf8Value fNameTo( USE_ISOLATE( isolate )args[1] );
+		if( vol->volNative ) {
+			args.GetReturnValue().Set( Boolean::New( isolate, sack_vfs_rename_file( vol->vol, *fName, *fNameTo ) != 0 ) );
+		}
+		else {
+			args.GetReturnValue().Set( Boolean::New( isolate, sack_renameEx( *fName, *fNameTo, vol->fsMount ) != 0 ) );
+		}
+	}
+	
 	void VolumeObject::fileVolDelete( const FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );

@@ -140,6 +140,7 @@ Volume = {
     write(fileName,arrayBuffer/string) - writes a string or arraybuffer to a file. 
     Sqlite(database) - an interface to sqlite database in this volume.
     rm(file),delete(file),unlink(file) - delete a file.
+    mv(file,new_filename),rename(file,new_filename) - rename a file. (mostly limited to same physical device)
     mkdir - utility function to make directories which might not exist before volume does; (volume auto creates directories now)
             parameters - (pathname)
                 path to create- will created missing parent path parts too.
@@ -1045,6 +1046,7 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.145 - Add 'mv', 'rename' methods to Volume() instance.  Split locks and ssl read/write.  Fix VFS directory truncation issue (early EODMARK injection). 
 - 0.9.144 - Fix websocket receiving packets with multiple frames.
 - 0.9.143 - Improve task interface.  Simplify com data buffer; it's now only valid during receive callback. Improve websocket server handling http requests; add a event callback when socket closes, after server HTTP to distinguish between incomplete(TLS error) connections. Sync SACK updates: improve SQL parsing/table-index generation, library load path for current and name as passed, event for http close, some protection against dereferencing null parameters.
 - 0.9.142 - Fix node-gyp for windows build.
