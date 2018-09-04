@@ -757,7 +757,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		String::Utf8Value fName( USE_ISOLATE( isolate )args[0] );
 		String::Utf8Value fNameTo( USE_ISOLATE( isolate )args[1] );
 		if( vol->volNative ) {
-			args.GetReturnValue().Set( Boolean::New( isolate, sack_vfs_rename_file( vol->vol, *fName, *fNameTo ) != 0 ) );
+			args.GetReturnValue().Set( Boolean::New( isolate, sack_vfs_rename( (uintptr_t)vol->vol, *fName, *fNameTo ) != 0 ) );
 		}
 		else {
 			args.GetReturnValue().Set( Boolean::New( isolate, sack_renameEx( *fName, *fNameTo, vol->fsMount ) != 0 ) );
