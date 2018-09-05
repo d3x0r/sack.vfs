@@ -46,6 +46,7 @@ void SqlObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "encode", escape );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "decode", unescape );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "end", closeDb );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "close", closeDb );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "transaction", transact );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "commit", commit );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "autoTransact", autoTransact );
