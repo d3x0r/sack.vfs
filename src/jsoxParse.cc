@@ -155,10 +155,6 @@ void JSOXObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 
-
-
-
-
 #define MODE NewStringType::kNormal
 //#define MODE NewStringType::kInternalized
 
@@ -210,6 +206,28 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 			case 11:// "f64"
 				result = Float64Array::New( ab, 0, val->stringLen );
 				break;
+			case 12:// "ref"
+				//lprintf( "THIS should have a container? %p", val->contains );
+				{
+					struct jsox_value_container *pathVal;
+					INDEX idx;
+					Local<Object> refObj = revive->rootObject;
+					DATA_FORALL( val->contains, idx, struct jsox_value_container *, pathVal ) {
+						if( pathVal->value_type == JSOX_VALUE_NUMBER ) {
+							refObj = refObj->Get( revive->context, (uint32_t)pathVal->result_n ).ToLocalChecked()->ToObject();
+						}
+						else if( pathVal->value_type == JSOX_VALUE_STRING ) {
+							refObj = refObj->Get( revive->context
+								, String::NewFromUtf8( revive->isolate
+									, pathVal->string
+									, NewStringType::kNormal
+									, (int)pathVal->stringLen ).ToLocalChecked() ).ToLocalChecked()->ToObject();
+						}
+						//lprintf( "%d %s", pathVal->value_type, pathVal->string );
+					}
+					result = refObj;
+				}
+				break;
 			default:
 				result = Undefined( revive->isolate );
 			}
@@ -260,7 +278,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 		result = Number::New(revive->isolate, INFINITY);
 		break;
 	case JSOX_VALUE_BIGINT:
-		script = Script::Compile( String::NewFromUtf8( revive->isolate, val->string, NewStringType::kNormal, val->stringLen ).ToLocalChecked()
+		script = Script::Compile( String::NewFromUtf8( revive->isolate, val->string, NewStringType::kNormal, (int)val->stringLen ).ToLocalChecked()
 			, String::NewFromUtf8( revive->isolate, "BigIntFormatter", NewStringType::kInternalized ).ToLocalChecked() );
 		result = script->Run();
 		//BigInt::NewFromWords();
@@ -366,6 +384,7 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 			o = Array::New( revive->isolate );
 		else
 			lprintf( "Value has contents, but is not a container type?!" );
+		revive->rootObject = o;
 		buildObject( val->contains, o, revive );
 		return o;
 	}

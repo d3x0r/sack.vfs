@@ -57501,7 +57501,7 @@ enum jsox_value_types {
   // = 15 string is base64 encoding of bytes.
 	, JSOX_VALUE_TYPED_ARRAY
   // = 14 string is base64 encoding of bytes.
-	, JSOX_VALUE_TYPED_ARRAY_MAX = 15+12
+	, JSOX_VALUE_TYPED_ARRAY_MAX = JSOX_VALUE_TYPED_ARRAY +12
 };
 struct jsox_value_container {
   // name of this value (if it's contained in an object)
@@ -57851,6 +57851,7 @@ static void registerKnownArrayTypeNames(void) {
 	AddLink( &knownArrayTypeNames, "s64" );
 	AddLink( &knownArrayTypeNames, "f32" );
 	AddLink( &knownArrayTypeNames, "f64" );
+	AddLink( &knownArrayTypeNames, "ref" );
 }
 static void jsox_state_init( struct jsox_parse_state *state )
 {
@@ -58263,7 +58264,7 @@ static LOGICAL openArray( struct jsox_parse_state *state, struct jsox_output_buf
 			if( strcmp( state->val.string, name ) == 0 )
 				break;
 		}
-		if( typeIndex < 12 ) {
+		if( typeIndex < 13 ) {
 			state->word = JSOX_WORD_POS_FIELD;
 			state->arrayType = typeIndex;
 #ifdef DEBUG_PARSING
@@ -58666,6 +58667,9 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				state->n = input->pos - input->buf;
 				if( state->n > input->size ) DebugBreak();
 				state->val.stringLen = (output->pos - state->val.string)-1;
+#ifdef DEBUG_PARSING
+				lprintf( "STRING: %s %d", state->val.string, state->val.stringLen );
+#endif
 				if( state->status ) state->val.value_type = JSOX_VALUE_STRING;
 			}
 			else {
@@ -58834,8 +58838,13 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					//if( (state->parse_context == JSOX_CONTEXT_OBJECT_FIELD_VALUE) )
 					if( state->val.value_type != JSOX_VALUE_UNSET ) {
 						if( state->val.string ) {
-							state->val.stringLen = output->pos - state->val.string;
-							(*output->pos++) = 0;
+							if( state->val.value_type != JSOX_VALUE_STRING ) {
+								state->val.stringLen = output->pos - state->val.string;
+#ifdef DEBUG_PARSING
+								lprintf( "STRING: %s %d", state->val.string, state->val.stringLen );
+#endif
+								(*output->pos++) = 0;
+							}
 						}
 						pushValue( state, state->elements, &state->val );
 						JSOX_RESET_STATE_VAL();
@@ -58882,8 +58891,13 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 #endif
 					if( state->val.value_type != JSOX_VALUE_UNSET ) {
 						if( state->val.string ) {
-							state->val.stringLen = output->pos - state->val.string;
-							(*output->pos++) = 0;
+							if( state->val.value_type != JSOX_VALUE_STRING ) {
+								state->val.stringLen = output->pos - state->val.string;
+#ifdef DEBUG_PARSING
+								lprintf( "STRING: %s %d", state->val.string, state->val.stringLen );
+#endif
+								(*output->pos++) = 0;
+							}
 						}
 						pushValue( state, state->elements, &state->val );
 					}
@@ -59029,6 +59043,9 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						else if( string_status > 0 ) {
 							state->gatheringString = FALSE;
 							state->val.stringLen = (output->pos - state->val.string) - 1;
+#ifdef DEBUG_PARSING
+							lprintf( "STRING: %s %d", state->val.string, state->val.stringLen );
+#endif
 						}
 						state->n = input->pos - input->buf;
 						if( state->n > input->size ) DebugBreak();
@@ -59105,6 +59122,9 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					else if( string_status > 0 ) {
 						state->gatheringString = FALSE;
 						state->val.stringLen = (output->pos - state->val.string) - 1;
+#ifdef DEBUG_PARSING
+						lprintf( "STRING: %s %d", state->val.string, state->val.stringLen );
+#endif
 					} else if( state->complete_at_end ) {
 						if( !state->pvtError ) state->pvtError = VarTextCreate();
 						vtprintf( state->pvtError, "End of string fail." );
@@ -59397,6 +59417,9 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						{
 							(*output->pos++) = 0;
 							state->val.stringLen = (output->pos - state->val.string) - 1;
+#ifdef DEBUG_PARSING
+							lprintf( "STRING: %s %d", state->val.string, state->val.stringLen );
+#endif
 							state->gatheringNumber = FALSE;
 							//lprintf( "result with number:%s", state->val.string );
 							if( state->val.float_result )

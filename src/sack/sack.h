@@ -12024,7 +12024,7 @@ enum jsox_value_types {
   // = 15 string is base64 encoding of bytes.
 	, JSOX_VALUE_TYPED_ARRAY
   // = 14 string is base64 encoding of bytes.
-	, JSOX_VALUE_TYPED_ARRAY_MAX = 15+12
+	, JSOX_VALUE_TYPED_ARRAY_MAX = JSOX_VALUE_TYPED_ARRAY +12
 };
 struct jsox_value_container {
   // name of this value (if it's contained in an object)
