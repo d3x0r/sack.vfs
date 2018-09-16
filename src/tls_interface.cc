@@ -1552,9 +1552,10 @@ static LOGICAL Validate( struct info_params *params ) {
 
 	if( params->chain ) {
 		LOGICAL goodRead;
+		int n;
 		BIO_write( keybuf, params->chain, (int)strlen( params->chain ) );
-		while( ( BIO_pending( keybuf )?(goodRead=TRUE):(goodRead=FALSE) ) &&
-			PEM_read_bio_X509( keybuf, &x509, NULL, NULL ) ) {
+		while( ( (n=BIO_pending( keybuf ))?(goodRead=TRUE):(goodRead=FALSE) ) &&
+				PEM_read_bio_X509( keybuf, &x509, NULL, NULL ) ) {
 			if( X509_check_ca( x509 ) ) {
 				/* Function return 0, if it is not CA certificate, 1 if it is proper
 				X509v3 CA certificate with basicConstraints extension CA : TRUE,
@@ -1571,7 +1572,7 @@ static LOGICAL Validate( struct info_params *params ) {
 				goto free_all;
 			}
 		}
-		if( goodRead ) {
+		if( goodRead && ( n > 1 ) ) {
 			throwError( params, "validate : failed to read cert chain" );
 			goto free_all;
 		}
@@ -1622,6 +1623,10 @@ static LOGICAL Validate( struct info_params *params ) {
 				break;
 			case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY:
 				VarTextAddData( pvt, TranslateText( "validate: unable to get issuer cert locally." ), VARTEXT_ADD_DATA_NULTERM );
+				_throwError( params, GetText( VarTextPeek( pvt ) ) );
+				break;
+			case X509_V_ERR_CERT_NOT_YET_VALID:
+				VarTextAddData( pvt, TranslateText( "validate: certificate is not valid yet." ), VARTEXT_ADD_DATA_NULTERM );
 				_throwError( params, GetText( VarTextPeek( pvt ) ) );
 				break;
 			default:
