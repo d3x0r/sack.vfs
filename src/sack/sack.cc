@@ -35278,6 +35278,7 @@ void  DebugDumpHeapMemEx ( PMEM pHeap, LOGICAL bVerbose )
 	FILE *file;
 	if( !USE_CUSTOM_ALLOCER )
 		return;
+#if USE_CUSTOM_ALLOCER
 	Fopen( file, pFilename, WIDE("wt") );
 	if( file )
 	{
@@ -35381,6 +35382,7 @@ void  DebugDumpHeapMemEx ( PMEM pHeap, LOGICAL bVerbose )
 		DropMem( pMem );
 		 fclose( file );
 	}
+#endif
 }
 //------------------------------------------------------------------------------------------------------
  void  DebugDumpMemFile ( CTEXTSTR pFilename )
@@ -58769,8 +58771,13 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						// allow blank comma at end to not be a field
 						struct jsox_parse_context *old_context = (struct jsox_parse_context *)PopLink( state->context_stack );
 						if(state->val.string) {
+							struct jsox_class_field *field = GetFromSet( JSOX_CLASS_FIELD, &jxpsd.class_fields );
+							field->name = state->val.string;
+							field->nameLen = output->pos - state->val.string;
 							(*output->pos++) = 0;
-							AddLink( &state->current_class->fields, state->val.string );
+							state->val.string = NULL;
+							AddLink( &state->current_class->fields, field );
+							//AddLink( &state->current_class->fields, state->val.string );
 						}
 						JSOX_RESET_STATE_VAL();
 						state->word = JSOX_WORD_POS_RESET;
@@ -58790,10 +58797,12 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					}
 				} else if( ( state->parse_context == JSOX_CONTEXT_OBJECT_FIELD ) || state->parse_context == JSOX_CONTEXT_CLASS_VALUE ) {
 					if( state->val.value_type != JSOX_VALUE_UNSET ) {
+						struct jsox_class_field *field = (struct jsox_class_field *)GetLink( &state->current_class->fields, state->current_class_item++ );
+						state->val.name = field->name;
+						state->val.nameLen = field->nameLen;
 #ifdef DEBUG_PARSING
 						lprintf( "Push value closing class value %d %p", state->current_class_item, state->current_class );
 #endif
-						state->val.name = (char*)GetLink( &state->current_class->fields, state->current_class_item++ );
 						pushValue( state, state->elements, &state->val );
 						JSOX_RESET_STATE_VAL();
 					}
@@ -58915,9 +58924,9 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				if( state->parse_context == JSOX_CONTEXT_CLASS_FIELD ) {
 					if( state->current_class ) {
 						struct jsox_class_field *field = GetFromSet( JSOX_CLASS_FIELD, &jxpsd.class_fields );
-						(*output->pos++) = 0;
 						field->name = state->val.string;
 						field->nameLen = output->pos - state->val.string;
+						(*output->pos++) = 0;
 						state->val.string = NULL;
 						AddLink( &state->current_class->fields, field );
 						state->word = JSOX_WORD_POS_FIELD;
