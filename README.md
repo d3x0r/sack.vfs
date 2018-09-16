@@ -4,6 +4,7 @@
 
 Node addon for a custom virtual file system interface.  
 JSON/JSON6 (stream)parser, 
+JSOX (streaming) parser, 
 COM/serial port access, Sqlite interface, an option/configuration database built on Sqlite.
 Windows specific registry access for application settings. 
 WebSocket network library.  UDP sockets.
@@ -49,7 +50,10 @@ This is the object returned from require( 'sack.vfs' );
 ```
 vfs = {
     ComPort(comport) - access to com ports.
-    JSON6 - A json parser. (JSON5 Compatible)
+    JSOX - A jsox (JavaScript Object eXchange) parser. (JSON5/6 input compatible)
+        parse(string) - result with a V8 object created from the json string.  
+        begin( cb ) - begin parsing JSOX stream; callback is called as each value is completed.
+    JSON6 - A json parser. (JSON5 input compatible)
         parse(string) - result with a V8 object created from the json string.  
         begin( cb ) - begin parsing JSON6 stream; callback is called as each value is completed.
     JSON - A json parser.
@@ -137,6 +141,7 @@ Volume = {
     read(fileName) - read a file from a volume; return an ArrayBuffer with a toString() that returns the buffer as utf8 as a string.
     readJSON(fileName, callback) - read a file from a volume; calls callback with each object decoded from the file interpreted as JSON (unimplemented)
     readJSON6(fileName, callback) - read a file from a volume; calls callback with each object decoded from the file interpreted as JSON6.
+    readJSOX(fileName, callback) - read a file from a volume; calls callback with each object decoded from the file interpreted as JSOX.
     write(fileName,arrayBuffer/string) - writes a string or arraybuffer to a file. 
     Sqlite(database) - an interface to sqlite database in this volume.
     rm(file),delete(file),unlink(file) - delete a file.
@@ -415,9 +420,17 @@ tick();
 ```
 
 
-## JSON( [JSON6](https://www.github.com/d3x0r/json6) ) - JSON and JSON6 compatible processor 
+## JSOX, and JSON( [JSON6](https://www.github.com/d3x0r/json6) ) - JSON and JSON6 compatible processor 
 
-Slightly extended json parser to allows simple types to be returned as values, not requiring { or [ to start
+[JSOX](https://www.github.com/d3x0r/jsox) further extends JSON6 with Date support(subtype of numbers), BigInt support and TypedArray encoding.
+It also adds the ability to define classes, which reduces data replication in the output, but also reduces
+overhead serializing by having to parse shorter data; and gathering just values instead of `<Field> ':' <Value>` is less output usage.
+Also, objects that are recovered with a class tag share the same prototype, allowing the objects read to be more readily used in applications.
+JSOX parsing is 100% compatible with JSON6, JSON, and ES6(non code/function) parsing; that is JSOX can read their content with no issues.  There
+is one small exception, when reading JSON6 in a streaming mode, it was possible to parse `1 23[45]` as `1`,`23`,`[45]` (similarly with {} instead of []), 
+but JSOX requires at least one whitepsace between a number and a open brace or bracket, otherwise it tries to interpret it as a class tag.
+
+JSON6 is a slightly extended json parser to allows simple types to be returned as values, not requiring { or [ to start
 the JSON input.  JSON6 parsing is 100% compatible with JSON parsing; that is JSON6 can read JSON content with no issues.
 
 Simple values, objects and arrays can result from parsing.  Simple values are true,false,null, Numbers and Strings.
@@ -430,6 +443,10 @@ Added support 'reviver' parameter.
      - begin( callback )
          - write( data )
   - JSON6
+     - parse( string [,reviver] )
+     - begin( callback )
+         - write( data )
+  - JSOX
      - parse( string [,reviver] )
      - begin( callback )
          - write( data )
@@ -1046,6 +1063,7 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.146 - Add JSOX parser.
 - 0.9.145 - Add 'mv', 'rename' methods to Volume() instance.  Split locks and ssl read/write.  Fix VFS directory truncation issue (early EODMARK injection). 
 - 0.9.144 - Fix websocket receiving packets with multiple frames.
 - 0.9.143 - Improve task interface.  Simplify com data buffer; it's now only valid during receive callback. Improve websocket server handling http requests; add a event callback when socket closes, after server HTTP to distinguish between incomplete(TLS error) connections. Sync SACK updates: improve SQL parsing/table-index generation, library load path for current and name as passed, event for http close, some protection against dereferencing null parameters.

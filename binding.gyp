@@ -10,6 +10,7 @@
            "src/sql_module.cc",
            "src/thread_module.cc",
            "src/jsonParse.cc",
+           "src/jsoxParse.cc",
            "src/tls_interface.cc",
            "src/srg_module.cc",
            "src/websocket_module.cc",

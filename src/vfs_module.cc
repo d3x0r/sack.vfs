@@ -102,6 +102,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	FileObject::Init();
 	SqlObject::Init( exports );
 	ComObject::Init( exports );
+	InitJSOX( isolate, exports );
 	InitJSON( isolate, exports );
 	InitSRG( isolate, exports );
 	InitWebSocket( isolate, exports );
@@ -131,6 +132,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "exists", fileExists );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "read", fileRead );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "readJSON", fileReadJSON );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "readJSOX", fileReadJSOX );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "write", fileWrite );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mkdir", makeDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "Sqlite", openVolDb );
@@ -443,6 +445,106 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 		}
 	}
+
+	void VolumeObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+
+		if( args.Length() < 2 ) {
+			isolate->ThrowException( Exception::TypeError(
+				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data callback" ) ) ) );
+			return;
+		}
+		Local<Function> cb = Handle<Function>::Cast( args[1] );
+		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
+
+		if( vol->volNative ) {
+			struct sack_vfs_file *file = sack_vfs_openfile( vol->vol, (*fName) );
+			if( file ) {
+				char *buf = NewArray( char, 4096 );
+				size_t len = sack_vfs_size( file );
+				size_t read = 0;
+				size_t newRead;
+				struct jsox_parse_state *parser = jsox_begin_parse();
+				// CAN open directories; and they have 7ffffffff sizes.
+				while( (read < len) && (newRead = sack_vfs_read( file, buf, 4096 )) ) {
+					read += newRead;
+					int result;
+					for( (result = jsox_parse_add_data( parser, buf, newRead ));
+						result > 0;
+						result = jsox_parse_add_data( parser, NULL, 0 ) ) {
+						Local<Object> obj = Object::New( isolate );
+						PDATALIST data;
+						data = jsox_parse_get_data( parser );
+						struct reviver_data r;
+						r.revive = FALSE;
+						r.isolate = isolate;
+						r.context = isolate->GetCurrentContext();
+						Local<Value> val = convertMessageToJS2( data, &r );
+						{
+							MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
+							if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
+								jsox_dispose_message( &data );
+								jsox_parse_dispose_state( &parser );
+								return;
+							}
+						}
+						jsox_dispose_message( &data );
+						if( result == 1 )
+							break;
+					}
+				}
+				jsox_parse_dispose_state( &parser );
+				Deallocate( char *, buf );
+				sack_vfs_close( file );
+			}
+
+		}
+		else {
+			FILE *file = sack_fopenEx( 0, (*fName), "rb", vol->fsMount );
+			if( file ) {
+				char *buf = NewArray( char, 4096 );
+				size_t len = sack_fsize( file );
+				size_t read = 0;
+				size_t newRead;
+				struct jsox_parse_state *parser = jsox_begin_parse();
+				// CAN open directories; and they have 7ffffffff sizes.
+				while( (read < len) && (newRead = sack_fread( buf, 4096, 1, file )) ) {
+					read += newRead;
+					int result;
+					for( (result = jsox_parse_add_data( parser, buf, newRead ));
+						result > 0;
+						result = jsox_parse_add_data( parser, NULL, 0 ) ) {
+						Local<Object> obj = Object::New( isolate );
+						PDATALIST data;
+						data = jsox_parse_get_data( parser );
+						if( data->Cnt ) {
+							struct reviver_data r;
+							r.revive = FALSE;
+							r.isolate = isolate;
+							r.context = isolate->GetCurrentContext();
+							Local<Value> val = convertMessageToJS2( data, &r );
+							{
+								MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
+								if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
+									jsox_dispose_message( &data );
+									jsox_parse_dispose_state( &parser );
+									return;
+								}
+							}
+						}
+						jsox_dispose_message( &data );
+						if( result == 1 )
+							break;
+					}
+				}
+				jsox_parse_dispose_state( &parser );
+				Deallocate( char *, buf );
+				sack_fclose( file );
+			}
+		}
+	}
+
 
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 	PARRAY_BUFFER_HOLDER holder = info.GetParameter();

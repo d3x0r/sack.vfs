@@ -62,6 +62,7 @@ using namespace v8;
 #define SET_READONLY( object, name, data ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name), data, ReadOnlyProperty )
 #define SET_READONLY_METHOD( object, name, method ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name), v8::Function::New(isolate, method ), ReadOnlyProperty )
 
+void InitJSOX( Isolate *isolate, Handle<Object> exports );
 void InitJSON( Isolate *isolate, Handle<Object> exports );
 void InitSRG( Isolate *isolate, Handle<Object> exports );
 void InitWebSocket( Isolate *isolate, Handle<Object> exports );
@@ -94,6 +95,7 @@ public:
 	static void fileReadString( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileReadMemory( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileReadJSON( const v8::FunctionCallbackInfo<Value>& args );
+	static void fileReadJSOX( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileWrite( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileExists( const v8::FunctionCallbackInfo<Value>& args );
 	static void openVolDb( const v8::FunctionCallbackInfo<Value>& args );
@@ -357,6 +359,7 @@ struct reviver_data {
 };
 
 Local<Value> convertMessageToJS( PDATALIST msg_data, struct reviver_data *reviver );
+Local<Value> convertMessageToJS2( PDATALIST msg_data, struct reviver_data *reviver );
 
 struct arrayBufferHolder : public node::ObjectWrap {
 	void *buffer;
