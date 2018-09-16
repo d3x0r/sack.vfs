@@ -165,6 +165,7 @@ void JSOXObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 static inline Local<Value> makeValue( struct jsox_value_container *val, struct reviver_data *revive ) {
 
 	Local<Value> result;
+	Local<Script> script;
 	switch( val->value_type ) {
 	case JSOX_VALUE_UNDEFINED:
 		result = Undefined( revive->isolate );
@@ -259,10 +260,19 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 		result = Number::New(revive->isolate, INFINITY);
 		break;
 	case JSOX_VALUE_BIGINT:
-		result = BigInt::New( revive->isolate, 0 );
+		script = Script::Compile( String::NewFromUtf8( revive->isolate, val->string, NewStringType::kNormal, val->stringLen ).ToLocalChecked()
+			, String::NewFromUtf8( revive->isolate, "BigIntFormatter", NewStringType::kInternalized ).ToLocalChecked() );
+		result = script->Run();
+		//BigInt::NewFromWords();
+		//result = BigInt::New( revive->isolate, 0 );
 		break;
 	case JSOX_VALUE_DATE:
-		result = Date::New( revive->isolate, 0 );
+		char buf[64];
+		snprintf( buf, 64, "new Date('%s')", val->string );
+		script = Script::Compile( String::NewFromUtf8( revive->isolate, buf, NewStringType::kNormal ).ToLocalChecked()
+			, String::NewFromUtf8( revive->isolate, "DateFormatter", NewStringType::kInternalized ).ToLocalChecked() );
+		result = script->Run();
+		//result = Date::New( revive->isolate, 0 );
 		break;
 	}
 	if( revive->revive ) {

@@ -59340,6 +59340,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 									}
 								}
 							} else if( c == 'n' ) {
+								(*output->pos++) = c;
 								state->numberFromBigInt = TRUE;
  // consume character.
 								_msg_input = input->pos;
