@@ -548,13 +548,19 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 	PARRAY_BUFFER_HOLDER holder = info.GetParameter();
-	holder->o.ClearWeak();
-	if( !holder->o.IsEmpty() )
+
+	if( !holder->o.IsEmpty() ) {
+		holder->o.ClearWeak();
 		holder->o.Reset();
-	if( !holder->s.IsEmpty() )
+	}
+	if( !holder->s.IsEmpty() ) {
+		holder->s.ClearWeak();
 		holder->s.Reset();
-	if( !holder->ab.IsEmpty() )
+	}
+	if( !holder->ab.IsEmpty() ) {
+		holder->ab.ClearWeak();
 		holder->ab.Reset();
+	}
 	Deallocate( void*, holder->buffer );
 	DropHolder( holder );
 }
