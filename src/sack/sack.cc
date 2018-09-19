@@ -58173,7 +58173,8 @@ static int openObject( struct jsox_parse_state *state, struct jsox_output_buffer
 	if( state->word > JSOX_WORD_POS_RESET && state->word < JSOX_WORD_POS_FIELD )
 		recoverIdent( state, output, -1 );
 	if( state->parse_context == JSOX_CONTEXT_UNKNOWN ) {
-		if( state->word == JSOX_WORD_POS_FIELD || state->word == JSOX_WORD_POS_AFTER_FIELD ) {
+ /*|| state->word == JSOX_WORD_POS_AFTER_FIELD*/
+		if( state->word == JSOX_WORD_POS_FIELD ) {
 			INDEX idx;
 			(*output->pos++) = 0;
 #ifdef DEBUG_PARSING
@@ -58200,7 +58201,8 @@ static int openObject( struct jsox_parse_state *state, struct jsox_output_buffer
 			nextMode = JSOX_CONTEXT_OBJECT_FIELD;
 			state->word = JSOX_WORD_POS_FIELD;
 		}
-	} else if( state->word == JSOX_WORD_POS_FIELD || state->word == JSOX_WORD_POS_AFTER_FIELD || state->parse_context == JSOX_CONTEXT_IN_ARRAY || state->parse_context == JSOX_CONTEXT_OBJECT_FIELD_VALUE ) {
+ /*|| state->word == JSOX_WORD_POS_AFTER_FIELD*/
+	} else if( state->word == JSOX_WORD_POS_FIELD || state->parse_context == JSOX_CONTEXT_IN_ARRAY || state->parse_context == JSOX_CONTEXT_OBJECT_FIELD_VALUE ) {
 		if( state->word != JSOX_WORD_POS_RESET ) {
 			INDEX idx;
 			(*output->pos++) = 0;
@@ -58311,34 +58313,157 @@ static LOGICAL openArray( struct jsox_parse_state *state, struct jsox_output_buf
 	return TRUE;
 }
 int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* output, int cInt ) {
-	if( !state->val.string ) {
+	if( state->word != JSOX_WORD_POS_RESET ) {
+		if( !state->val.string ) {
 #ifdef DEBUG_PARSINGs
-		lprintf( "Updating string postion?" );
+			lprintf( "Updating string postion?" );
 #endif
-		state->val.string = output->pos;
-	}
-	if( state->word == JSOX_WORD_POS_END ) {
-		switch( state->val.value_type ) {
-		case JSOX_VALUE_TRUE:
+			state->val.string = output->pos;
+		}
+		if( state->word == JSOX_WORD_POS_END ) {
+			switch( state->val.value_type ) {
+			case JSOX_VALUE_TRUE:
+				(*output->pos++) = 't';
+				(*output->pos++) = 'r';
+				(*output->pos++) = 'u';
+				(*output->pos++) = 'e';
+				break;
+			case JSOX_VALUE_FALSE:
+				(*output->pos++) = 'f';
+				(*output->pos++) = 'a';
+				(*output->pos++) = 'l';
+				(*output->pos++) = 's';
+				(*output->pos++) = 'e';
+				break;
+			case JSOX_VALUE_NULL:
+				(*output->pos++) = 'n';
+				(*output->pos++) = 'u';
+				(*output->pos++) = 'l';
+				(*output->pos++) = 'l';
+				break;
+			case JSOX_VALUE_UNDEFINED:
+				(*output->pos++) = 'u';
+				(*output->pos++) = 'n';
+				(*output->pos++) = 'd';
+				(*output->pos++) = 'e';
+				(*output->pos++) = 'f';
+				(*output->pos++) = 'i';
+				(*output->pos++) = 'n';
+				(*output->pos++) = 'e';
+				(*output->pos++) = 'd';
+				break;
+			case JSOX_VALUE_NEG_NAN:
+				(*output->pos++) = '-';
+			case JSOX_VALUE_NAN:
+				(*output->pos++) = 'N';
+				(*output->pos++) = 'a';
+				(*output->pos++) = 'N';
+				break;
+			case JSOX_VALUE_NEG_INFINITY:
+				(*output->pos++) = '-';
+			case JSOX_VALUE_INFINITY:
+				(*output->pos++) = 'I';
+				(*output->pos++) = 'n';
+				(*output->pos++) = 'f';
+				(*output->pos++) = 'i';
+				(*output->pos++) = 'n';
+				(*output->pos++) = 'i';
+				(*output->pos++) = 't';
+				(*output->pos++) = 'y';
+				break;
+			}
+		}
+		switch( state->word ) {
+		case JSOX_WORD_POS_TRUE_1:
+			(*output->pos++) = 't';
+			break;
+		case JSOX_WORD_POS_TRUE_2:
+			(*output->pos++) = 't';
+			(*output->pos++) = 'r';
+			break;
+		case JSOX_WORD_POS_TRUE_3:
 			(*output->pos++) = 't';
 			(*output->pos++) = 'r';
 			(*output->pos++) = 'u';
-			(*output->pos++) = 'e';
 			break;
-		case JSOX_VALUE_FALSE:
+ // 11
+		case JSOX_WORD_POS_FALSE_1:
+			(*output->pos++) = 'f';
+			break;
+		case JSOX_WORD_POS_FALSE_2:
+			(*output->pos++) = 'f';
+			(*output->pos++) = 'a';
+			break;
+		case JSOX_WORD_POS_FALSE_3:
+			(*output->pos++) = 'f';
+			(*output->pos++) = 'a';
+			(*output->pos++) = 'l';
+			break;
+		case JSOX_WORD_POS_FALSE_4:
 			(*output->pos++) = 'f';
 			(*output->pos++) = 'a';
 			(*output->pos++) = 'l';
 			(*output->pos++) = 's';
-			(*output->pos++) = 'e';
 			break;
-		case JSOX_VALUE_NULL:
+ // 21  get u
+		case JSOX_WORD_POS_NULL_1:
+			(*output->pos++) = 'n';
+			break;
+ //  get l
+		case JSOX_WORD_POS_NULL_2:
+			(*output->pos++) = 'n';
+			(*output->pos++) = 'u';
+			break;
+ //  get l
+		case JSOX_WORD_POS_NULL_3:
 			(*output->pos++) = 'n';
 			(*output->pos++) = 'u';
 			(*output->pos++) = 'l';
-			(*output->pos++) = 'l';
 			break;
-		case JSOX_VALUE_UNDEFINED:
+  // 31
+		case JSOX_WORD_POS_UNDEFINED_1:
+			(*output->pos++) = 'u';
+			break;
+		case JSOX_WORD_POS_UNDEFINED_2:
+			(*output->pos++) = 'u';
+			(*output->pos++) = 'n';
+			break;
+		case JSOX_WORD_POS_UNDEFINED_3:
+			(*output->pos++) = 'u';
+			(*output->pos++) = 'n';
+			(*output->pos++) = 'd';
+			break;
+		case JSOX_WORD_POS_UNDEFINED_4:
+			(*output->pos++) = 'u';
+			(*output->pos++) = 'n';
+			(*output->pos++) = 'd';
+			(*output->pos++) = 'e';
+			break;
+		case JSOX_WORD_POS_UNDEFINED_5:
+			(*output->pos++) = 'u';
+			(*output->pos++) = 'n';
+			(*output->pos++) = 'd';
+			(*output->pos++) = 'e';
+			(*output->pos++) = 'f';
+			break;
+		case JSOX_WORD_POS_UNDEFINED_6:
+			(*output->pos++) = 'u';
+			(*output->pos++) = 'n';
+			(*output->pos++) = 'd';
+			(*output->pos++) = 'e';
+			(*output->pos++) = 'f';
+			(*output->pos++) = 'i';
+			break;
+		case JSOX_WORD_POS_UNDEFINED_7:
+			(*output->pos++) = 'u';
+			(*output->pos++) = 'n';
+			(*output->pos++) = 'd';
+			(*output->pos++) = 'e';
+			(*output->pos++) = 'f';
+			(*output->pos++) = 'i';
+			(*output->pos++) = 'n';
+			break;
+		case JSOX_WORD_POS_UNDEFINED_8:
 			(*output->pos++) = 'u';
 			(*output->pos++) = 'n';
 			(*output->pos++) = 'd';
@@ -58347,14 +58472,60 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 			(*output->pos++) = 'i';
 			(*output->pos++) = 'n';
 			(*output->pos++) = 'e';
-			(*output->pos++) = 'd';
 			break;
-		case JSOX_VALUE_NAN:
+		case JSOX_WORD_POS_NAN_1:
+			(*output->pos++) = 'N';
+			break;
+		case JSOX_WORD_POS_NAN_2:
 			(*output->pos++) = 'N';
 			(*output->pos++) = 'a';
-			(*output->pos++) = 'N';
 			break;
-		case JSOX_VALUE_INFINITY:
+		case JSOX_WORD_POS_INFINITY_1:
+			if( state->negative )
+				(*output->pos++) = '-';
+			(*output->pos++) = 'I';
+			break;
+		case JSOX_WORD_POS_INFINITY_2:
+			if( state->negative )
+				(*output->pos++) = '-';
+			(*output->pos++) = 'I';
+			(*output->pos++) = 'n';
+			break;
+		case JSOX_WORD_POS_INFINITY_3:
+			if( state->negative )
+				(*output->pos++) = '-';
+			(*output->pos++) = 'I';
+			(*output->pos++) = 'n';
+			(*output->pos++) = 'f';
+			break;
+		case JSOX_WORD_POS_INFINITY_4:
+			if( state->negative )
+				(*output->pos++) = '-';
+			(*output->pos++) = 'I';
+			(*output->pos++) = 'n';
+			(*output->pos++) = 'f';
+			(*output->pos++) = 'i';
+			break;
+		case JSOX_WORD_POS_INFINITY_5:
+			if( state->negative )
+				(*output->pos++) = '-';
+			(*output->pos++) = 'I';
+			(*output->pos++) = 'n';
+			(*output->pos++) = 'f';
+			(*output->pos++) = 'i';
+			(*output->pos++) = 'n';
+			break;
+		case JSOX_WORD_POS_INFINITY_6:
+			if( state->negative )
+				(*output->pos++) = '-';
+			(*output->pos++) = 'I';
+			(*output->pos++) = 'n';
+			(*output->pos++) = 'f';
+			(*output->pos++) = 'i';
+			(*output->pos++) = 'n';
+			(*output->pos++) = 'i';
+			break;
+		case JSOX_WORD_POS_INFINITY_7:
 			if( state->negative )
 				(*output->pos++) = '-';
 			(*output->pos++) = 'I';
@@ -58364,178 +58535,15 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 			(*output->pos++) = 'n';
 			(*output->pos++) = 'i';
 			(*output->pos++) = 't';
-			(*output->pos++) = 'y';
 			break;
 		}
-	}
-	switch( state->word ) {
-	case JSOX_WORD_POS_TRUE_1:
-		(*output->pos++) = 't';
-		break;
-	case JSOX_WORD_POS_TRUE_2:
-		(*output->pos++) = 't';
-		(*output->pos++) = 'r';
-		break;
-	case JSOX_WORD_POS_TRUE_3:
-		(*output->pos++) = 't';
-		(*output->pos++) = 'r';
-		(*output->pos++) = 'u';
-		break;
- // 11
-	case JSOX_WORD_POS_FALSE_1:
-		(*output->pos++) = 'f';
-		break;
-	case JSOX_WORD_POS_FALSE_2:
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'a';
-		break;
-	case JSOX_WORD_POS_FALSE_3:
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'a';
-		(*output->pos++) = 'l';
-		break;
-	case JSOX_WORD_POS_FALSE_4:
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'a';
-		(*output->pos++) = 'l';
-		(*output->pos++) = 's';
-		break;
- // 21  get u
-	case JSOX_WORD_POS_NULL_1:
-		(*output->pos++) = 'n';
-		break;
- //  get l
-	case JSOX_WORD_POS_NULL_2:
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'u';
-		break;
- //  get l
-	case JSOX_WORD_POS_NULL_3:
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'u';
-		(*output->pos++) = 'l';
-		break;
-  // 31
-	case JSOX_WORD_POS_UNDEFINED_1:
-		(*output->pos++) = 'u';
-		break;
-	case JSOX_WORD_POS_UNDEFINED_2:
-		(*output->pos++) = 'u';
-		(*output->pos++) = 'n';
-		break;
-	case JSOX_WORD_POS_UNDEFINED_3:
-		(*output->pos++) = 'u';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'd';
-		break;
-	case JSOX_WORD_POS_UNDEFINED_4:
-		(*output->pos++) = 'u';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'd';
-		(*output->pos++) = 'e';
-		break;
-	case JSOX_WORD_POS_UNDEFINED_5:
-		(*output->pos++) = 'u';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'd';
-		(*output->pos++) = 'e';
-		(*output->pos++) = 'f';
-		break;
-	case JSOX_WORD_POS_UNDEFINED_6:
-		(*output->pos++) = 'u';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'd';
-		(*output->pos++) = 'e';
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'i';
-		break;
-	case JSOX_WORD_POS_UNDEFINED_7:
-		(*output->pos++) = 'u';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'd';
-		(*output->pos++) = 'e';
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'i';
-		(*output->pos++) = 'n';
-		break;
-	case JSOX_WORD_POS_UNDEFINED_8:
-		(*output->pos++) = 'u';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'd';
-		(*output->pos++) = 'e';
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'i';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'e';
-		break;
-	case JSOX_WORD_POS_NAN_1:
-		(*output->pos++) = 'N';
-		break;
-	case JSOX_WORD_POS_NAN_2:
-		(*output->pos++) = 'N';
-		(*output->pos++) = 'a';
-		break;
-	case JSOX_WORD_POS_INFINITY_1:
-		if( state->negative )
-			(*output->pos++) = '-';
-		(*output->pos++) = 'I';
-		break;
-	case JSOX_WORD_POS_INFINITY_2:
-		if( state->negative )
-			(*output->pos++) = '-';
-		(*output->pos++) = 'I';
-		(*output->pos++) = 'n';
-		break;
-	case JSOX_WORD_POS_INFINITY_3:
-		if( state->negative )
-			(*output->pos++) = '-';
-		(*output->pos++) = 'I';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'f';
-		break;
-	case JSOX_WORD_POS_INFINITY_4:
-		if( state->negative )
-			(*output->pos++) = '-';
-		(*output->pos++) = 'I';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'i';
-		break;
-	case JSOX_WORD_POS_INFINITY_5:
-		if( state->negative )
-			(*output->pos++) = '-';
-		(*output->pos++) = 'I';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'i';
-		(*output->pos++) = 'n';
-		break;
-	case JSOX_WORD_POS_INFINITY_6:
-		if( state->negative )
-			(*output->pos++) = '-';
-		(*output->pos++) = 'I';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'i';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'i';
-		break;
-	case JSOX_WORD_POS_INFINITY_7:
-		if( state->negative )
-			(*output->pos++) = '-';
-		(*output->pos++) = 'I';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'f';
-		(*output->pos++) = 'i';
-		(*output->pos++) = 'n';
-		(*output->pos++) = 'i';
-		(*output->pos++) = 't';
-		break;
 	}
 #ifdef DEBUG_PARSING
 	lprintf( "RECOVER IDENT: TURN INTO FIELD NAME" );
 #endif
 	state->word = JSOX_WORD_POS_FIELD;
+	state->negative = FALSE;
+	state->val.value_type = JSOX_VALUE_STRING;
 /*'{'*/
 	if( cInt == 123 )
 		openObject( state, output, cInt );
@@ -58545,7 +58553,7 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 	else if( cInt >= 0 ) {
 		// ignore white space.
 /*' '*/
-		if( cInt == 32 || cInt == 13 || cInt == 10 || cInt == 9 || cInt == 0xFEFF )
+		if( cInt == 32 || cInt == 13 || cInt == 10 || cInt == 9 || cInt == 0xFEFF || cInt == 2028 || cInt == 2029 )
 			return 0;
 /*','*/
 /*'}'*/
@@ -59062,6 +59070,10 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					case ' ':
 					case '\t':
 					case '\r':
+ // LS (Line separator)
+					case 2028:
+ // PS (paragraph separate)
+					case 2029:
  // ZWNBS is WS though
 					case 0xFEFF:
 						if( state->word == JSOX_WORD_POS_END ) {
@@ -59074,6 +59086,10 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						if( (state->word == JSOX_WORD_POS_RESET) || ( state->word == JSOX_WORD_POS_AFTER_FIELD ) )
 							break;
 						else if( state->word == JSOX_WORD_POS_FIELD ) {
+							if( state->parse_context == JSOX_CONTEXT_UNKNOWN ) {
+								state->completed = TRUE;
+								break;
+							}
 							if( state->val.string )
 								state->word = JSOX_WORD_POS_AFTER_FIELD;
 						}
@@ -59097,6 +59113,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						} else if( state->word == JSOX_WORD_POS_RESET ) {
 							state->word = JSOX_WORD_POS_FIELD;
 							state->val.string = output->pos;
+							state->val.value_type = JSOX_VALUE_STRING;
 						}
 						if( !state->val.string ) state->val.string = output->pos;
 						if( c < 128 ) (*output->pos++) = c;
@@ -59147,6 +59164,10 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					state->col = 1;
 					// FALLTHROUGH
 				case ' ':
+ // LS (Line separator)
+				case 2028:
+ // PS (paragraph separate)
+				case 2029:
 				case '\t':
 				case '\r':
 				case 0xFEFF:
