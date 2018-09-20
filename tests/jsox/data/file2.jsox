@@ -1,4 +1,4 @@
-card { author, title }
+card{ author, title }
 [ card{ "bob", "book" },
   card{ "tom", "cool" },
   card{ "ted", "mule" }
