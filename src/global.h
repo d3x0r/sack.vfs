@@ -357,6 +357,7 @@ struct reviver_data {
 	Handle<Value> value;
 	Handle<Object> _this;
 	Handle<Function> reviver;
+	Handle<Object> rootObject;
 };
 
 Local<Value> convertMessageToJS( PDATALIST msg_data, struct reviver_data *reviver );
