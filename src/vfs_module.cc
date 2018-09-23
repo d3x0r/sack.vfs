@@ -140,6 +140,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "unlink", fileVolDelete );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "rm", fileVolDelete );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "rekey", volRekey );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "decrypt", volDecrypt );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mv", renameFile );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "rename", renameFile );
 
@@ -215,6 +216,15 @@ void logBinary( char *x, int n )
 			printf( "%c", (x[m]>32 && x[m]<127)?x[m]:'.' );
 		}
 	}
+}
+
+void VolumeObject::volDecrypt( const v8::FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	String::Utf8Value *key1;
+	String::Utf8Value *key2;
+	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
+	sack_vfs_decrypt_volume( vol->vol );
 }
 
 void VolumeObject::volRekey( const v8::FunctionCallbackInfo<Value>& args ){
