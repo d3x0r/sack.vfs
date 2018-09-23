@@ -140,6 +140,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "unlink", fileVolDelete );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "rm", fileVolDelete );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "rekey", volRekey );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "decrypt", volDecrypt );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mv", renameFile );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "rename", renameFile );
 
@@ -215,6 +216,15 @@ void logBinary( char *x, int n )
 			printf( "%c", (x[m]>32 && x[m]<127)?x[m]:'.' );
 		}
 	}
+}
+
+void VolumeObject::volDecrypt( const v8::FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	String::Utf8Value *key1;
+	String::Utf8Value *key2;
+	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
+	sack_vfs_decrypt_volume( vol->vol );
 }
 
 void VolumeObject::volRekey( const v8::FunctionCallbackInfo<Value>& args ){
@@ -548,13 +558,19 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 	PARRAY_BUFFER_HOLDER holder = info.GetParameter();
-	holder->o.ClearWeak();
-	if( !holder->o.IsEmpty() )
+
+	if( !holder->o.IsEmpty() ) {
+		holder->o.ClearWeak();
 		holder->o.Reset();
-	if( !holder->s.IsEmpty() )
+	}
+	if( !holder->s.IsEmpty() ) {
+		holder->s.ClearWeak();
 		holder->s.Reset();
-	if( !holder->ab.IsEmpty() )
+	}
+	if( !holder->ab.IsEmpty() ) {
+		holder->ab.ClearWeak();
 		holder->ab.Reset();
+	}
 	Deallocate( void*, holder->buffer );
 	DropHolder( holder );
 }

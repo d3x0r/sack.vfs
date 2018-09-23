@@ -117,7 +117,8 @@ static void CPROC getTaskInput( uintptr_t psvTask, PTASK_INFO pTask, CTEXTSTR bu
 	TaskObject *task = (TaskObject*)psvTask;
 	//if( !task->inputCallback.IsEmpty() ) 
 	{
-		task->buffer = buffer;
+		task->buffer = NewArray( char, size );
+		memcpy( (char*)task->buffer, buffer, size );
 		task->size = size;
 		task->waiter = MakeThread();
 		uv_async_send( &task->async );
