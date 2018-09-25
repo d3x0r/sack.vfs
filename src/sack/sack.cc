@@ -183,7 +183,11 @@ __declspec(dllimport) DWORD WINAPI timeGetTime(void);
 #    ifdef __ANDROID__
 #      define DebugBreak()
 #    else
-#      define DebugBreak()  asm("int $3\n" )
+#      ifdef __EMSCRIPTEN__
+#        define DebugBreak()
+#      else
+#        define DebugBreak()  asm("int $3\n" )
+#      endif
 #    endif
 #  endif
 #  ifdef __ANDROID_OLD_PLATFORM_SUPPORT__
@@ -10465,6 +10469,54 @@ PREFIX_PACKED struct volume {
 	uint8_t tmpSalt[16];
 	uintptr_t clusterKeyVersion;
 } PACKED;
+PREFIX_PACKED struct fs_volume {
+	const char * volname;
+	FILE *file;
+//	struct disk *disk;
+//	struct disk *diskReal; // disk might be offset from diskReal because it's a .exe attached.
+	//uint32_t dirents;  // constant 0
+	//uint32_t nameents; // constant 1
+	uintptr_t dwSize;
+  // used for directory signatures
+	const char * datakey;
+	const char * userkey;
+	const char * devkey;
+	enum block_cache_entries curseg;
+// cached segment with usekey[n]
+	BLOCKINDEX _segment[BLOCK_CACHE_COUNT];
+// associated with usekey[n]
+	BLOCKINDEX segment[BLOCK_CACHE_COUNT];
+	uint8_t fileCacheAge[BLOCK_CACHE_FILE_LAST - BLOCK_CACHE_FILE];
+	uint8_t fileNextAge;
+	struct random_context *entropy;
+  // allow byte encrypting...
+	uint8_t* key;
+  // allow byte encrypting... key based on sector volume file index
+	uint8_t* segkey;
+  // signature of executable attached as header
+	uint8_t* sigkey;
+ // composite key
+	uint8_t* usekey[BLOCK_CACHE_COUNT];
+  // allow byte encrypting...
+	uint8_t* key_buffer;
+  // allow byte encrypting... key based on sector volume file index
+	uint8_t* segkey_buffer;
+  // signature of executable attached as header
+	uint8_t* sigkey_buffer;
+ // composite key
+	uint8_t* usekey_buffer[BLOCK_CACHE_COUNT];
+  // (unused) adds salt for the signature?
+	uint8_t* sigsalt;
+	size_t sigkeyLength;
+ // when reopened file structures need to be updated also...
+	PLIST files;
+	LOGICAL read_only;
+	LOGICAL external_memory;
+	LOGICAL closed;
+	uint32_t lock;
+	uint8_t tmpSalt[16];
+	uintptr_t clusterKeyVersion;
+} PACKED;
 PREFIX_PACKED struct directory_entry
 {
   // name offset from beginning of disk
@@ -10503,8 +10555,27 @@ struct sack_vfs_file
   // someone already deleted this...
 	LOGICAL delete_on_close;
 };
+struct sack_vfs_fs_file
+{
+  // has file size within
+	struct directory_entry *entry;
+	struct directory_entry dirent_key;
+ // which volume this is in
+	struct fs_volume *vol;
+	FPI fpi;
+	BLOCKINDEX first_block;
+ // this should be in-sync with current FPI always; plz
+	BLOCKINDEX block;
+  // someone already deleted this...
+	LOGICAL delete_on_close;
+};
+#ifdef SACK_VFS_FS_SOURCE
+#define TSEEK(type,v,o,c) ((type)vfs_fs_SEEK(v,o,&c))
+#define BTSEEK(type,v,o,c) ((type)vfs_fs_BSEEK(v,o,&c))
+#else
 #define TSEEK(type,v,o,c) ((type)vfs_SEEK(v,o,&c))
 #define BTSEEK(type,v,o,c) ((type)vfs_BSEEK(v,o,&c))
+#endif
 #ifdef __GNUC__
 #define HIDDEN __attribute__ ((visibility ("hidden")))
 #else
@@ -10513,6 +10584,8 @@ struct sack_vfs_file
 uintptr_t vfs_SEEK( struct volume *vol, FPI offset, enum block_cache_entries *cache_index ) HIDDEN;
 uintptr_t vfs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index ) HIDDEN;
 //BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int init, LOGICAL expand );
+uintptr_t vfs_fs_SEEK( struct fs_volume *vol, FPI offset, enum block_cache_entries *cache_index ) HIDDEN;
+uintptr_t vfs_fs_BSEEK( struct fs_volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index ) HIDDEN;
 static struct {
 	struct directory_entry zero_entkey;
 	uint8_t zerokey[BLOCK_SIZE];
@@ -10694,8 +10767,6 @@ static LOGICAL ValidateBAT( struct volume *vol ) {
 			BLOCKINDEX *blockKey;
 			BAT = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE);
 			blockKey = ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT]);
-			//vol->segment[BLOCK_CACHE_BAT] = n + 1;
-			//while( LockedExchange( &vol->key_lock[BLOCK_CACHE_BAT], 1 ) ) Relinquish();
 			UpdateSegmentKey( vol, BLOCK_CACHE_BAT, n + 1 );
 			for( m = 0; m < BLOCKS_PER_BAT; m++ )
 			{
@@ -10706,7 +10777,6 @@ static LOGICAL ValidateBAT( struct volume *vol ) {
 				if( block >= last_block ) return FALSE;
 			}
 			if( m < BLOCKS_PER_BAT ) break;
-			//vol->key_lock[BLOCK_CACHE_BAT] = 0;
 		}
 	} else {
 		for( n = first_slab; n < slab; n += BLOCKS_PER_SECTOR  ) {
@@ -10966,6 +11036,11 @@ uintptr_t vfs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entr
 		BLOCKINDEX seg = ( b / BLOCK_SIZE ) + 1;
 		if( seg != vol->segment[cache_index[0]] ) {
 			//vol->segment[cache_index] = seg;
+			if( (cache_index[0] == BLOCK_CACHE_FILE)
+				&& (seg < 3) ) {
+				lprintf( "CRITICAL FAILURE, SEEK OUT OF DISK %d", seg );
+				(*(int*)0) = 0;
+			}
 			cache_index[0] = UpdateSegmentKey( vol, cache_index[0], seg );
 		}
 	}
@@ -10986,7 +11061,7 @@ static BLOCKINDEX GetFreeBlock( struct volume *vol, int init )
 		for( n = 0; n < BLOCKS_PER_BAT; n++ )
 		{
 			check_val = current_BAT[0] ^ blockKey[0];
-			if( !check_val || (check_val == 1) )
+			if( !check_val || (check_val == EOBBLOCK) )
 			{
 				// mark it as claimed; will be enf of file marker...
 				// adn thsi result will overwrite previous EOF.
@@ -11038,15 +11113,19 @@ static BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int in
 	}
 	check_val ^= ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[block & (BLOCKS_PER_BAT-1)];
 	if( check_val == EOBBLOCK ) {
-		(this_BAT[block & (BLOCKS_PER_BAT-1)]) = EOFBLOCK^((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[block & (BLOCKS_PER_BAT-1)];
-		(this_BAT[1+block & (BLOCKS_PER_BAT-1)]) = EOBBLOCK^((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[1+block & (BLOCKS_PER_BAT-1)];
+		lprintf( "the file itself should never get a EOBBLOCK in it." );
+		(*(int*)0) = 0;
+		// the file itself should never get a EOBBLOCK in it.
+		//(this_BAT[block & (BLOCKS_PER_BAT-1)]) = EOFBLOCK^((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[block & (BLOCKS_PER_BAT-1)];
+		//(this_BAT[1+block & (BLOCKS_PER_BAT-1)]) = EOBBLOCK^((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[1+block & (BLOCKS_PER_BAT-1)];
 	}
-	if( check_val == EOFBLOCK || check_val == EOBBLOCK ) {
+	if( check_val == EOFBLOCK ) {
 		if( expand ) {
-			BLOCKINDEX key = vol->key?((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[block & (BLOCKS_PER_BAT-1)]:0;
+			BLOCKINDEX key;
 			check_val = GetFreeBlock( vol, init );
 			// free block might have expanded...
 			this_BAT = TSEEK( BLOCKINDEX*, vol, sector * ( BLOCKS_PER_SECTOR*BLOCK_SIZE ), cache );
+			key = vol->key ? ((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[block & (BLOCKS_PER_BAT - 1)] : 0;
 			if( !this_BAT ) return 0;
 			// segment could already be set from the GetFreeBlock...
 			this_BAT[block & (BLOCKS_PER_BAT-1)] = check_val ^ key;
@@ -11427,7 +11506,7 @@ struct directory_entry * ScanDirectory( struct volume *vol, const char * filenam
 				}
 			}
 		}
-		next_dir_block = vfs_GetNextBlock( vol, this_dir_block, FALSE, TRUE );
+		next_dir_block = vfs_GetNextBlock( vol, this_dir_block, GFB_INIT_DIRENT, TRUE );
 #ifdef _DEBUG
 		if( this_dir_block == next_dir_block ) DebugBreak();
 #endif
@@ -11726,7 +11805,6 @@ static void sack_vfs_unlink_file_entry( struct volume *vol, struct directory_ent
 			BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX*, vol, ( ( block >> BLOCK_SHIFT ) * ( BLOCKS_PER_SECTOR*BLOCK_SIZE) ), cache );
 			BLOCKINDEX _thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[BLOCK_CACHE_BAT])[_block & (BLOCKS_PER_BAT-1)]:0;
 			BLOCKINDEX b = BLOCK_SIZE + (block >> BLOCK_SHIFT) * (BLOCKS_PER_SECTOR*BLOCK_SIZE) + (block & (BLOCKS_PER_BAT - 1)) * BLOCK_SIZE;
-			//uint8_t* blockData = (uint8_t*)vfs_BSEEK( vol, block, BLOCK_CACHE_DATAKEY );
 			uint8_t* blockData = (uint8_t*)(((uintptr_t)vol->disk) + b);
 			//LoG( "Clearing file datablock...%p", (uintptr_t)blockData - (uintptr_t)vol->disk );
 			memset( blockData, 0, BLOCK_SIZE );
@@ -32860,7 +32938,7 @@ PRIORITY_PRELOAD( InitGlobal, DEFAULT_PRELOAD_PRIORITY )
 #  ifndef __GNUC_VERSION
 #    define __GNUC_VERSION ( __GNUC__ * 10000 ) + ( __GNUC_MINOR__ * 100 )
 #  endif
-#  if  ( __GNUC_VERSION >= 40800 ) || defined(__MAC__)
+#  if  ( __GNUC_VERSION >= 40800 ) || defined(__MAC__) || defined( __EMSCRIPTEN__ )
 #    define XCHG(p,val)  __atomic_exchange_n(p,val,__ATOMIC_RELAXED)
 ///  for some reason __GNUC_VERSION doesn't exist from android ?
 #  elif defined __ARM__ || defined __ANDROID__
@@ -33370,8 +33448,11 @@ static uint32_t dwAllocated;
 static uint32_t dwFree;
 #endif
 //------------------------------------------------------------------------------------------------------
+#ifndef __NO_MMAP__
 static void DoCloseSpace( PSPACE ps, int bFinal );
+#endif
 //------------------------------------------------------------------------------------------------------
+#ifndef __NO_MMAP__
 LOGICAL OpenRootMemory()
 {
 	uintptr_t size = sizeof( SPACEPOOL );
@@ -33425,10 +33506,11 @@ LOGICAL OpenRootMemory()
 	// but then... blah
 	return created;
 }
+#endif
 // hmm this runs
 PRIORITY_ATEXIT(ReleaseAllMemory,ATEXIT_PRIORITY_SHAREMEM)
 {
-#ifdef __SKIP_RELEASE_OPEN_SPACES__
+#if defined( __SKIP_RELEASE_OPEN_SPACES__ ) || defined( __NO_MMAP__ )
 	// actually, under linux, it releases /tmp/.shared files.
 	//ll_lprintf( WIDE( "No super significant reason to release all memory blocks?" ) );
 	//ll_lprintf( WIDE( "Short circuit on memory shutdown." ) );
@@ -33487,6 +33569,7 @@ PRIORITY_ATEXIT(ReleaseAllMemory,ATEXIT_PRIORITY_SHAREMEM)
 //------------------------------------------------------------------------------------------------------
 void InitSharedMemory( void )
 {
+#ifndef __NO_MMAP__
 	if( !g.bInit )
 	{
 	// this would be really slick to do
@@ -33526,9 +33609,11 @@ void InitSharedMemory( void )
 			ODS( WIDE("already initialized?") );
 #endif
 	}
+#endif
 }
 //------------------------------------------------------------------------------------------------------
 // private
+#ifndef __NO_MMAP__
 static PSPACE AddSpace( PSPACE pAddAfter
 #if defined( WIN32 ) || defined( __CYGWIN__ )
 							, HANDLE hFile
@@ -33675,6 +33760,7 @@ static void DoCloseSpace( PSPACE ps, int bFinal )
 		return ps->dwSmallSize;
 	return 0;
 }
+#endif
 #if defined( __LINUX__ ) && !defined( __CYGWIN__ )
 uintptr_t GetFileSize( int fd )
 {
@@ -33684,6 +33770,7 @@ uintptr_t GetFileSize( int fd )
 }
 #endif
 //------------------------------------------------------------------------------------------------------
+#ifndef __NO_MMAP__
  POINTER  OpenSpaceExx ( CTEXTSTR pWhat, CTEXTSTR pWhere, uintptr_t address, uintptr_t *dwSize, uint32_t* bCreated )
 {
 	POINTER pMem = NULL;
@@ -34259,6 +34346,7 @@ uintptr_t GetFileSize( int fd )
 {
 	return OpenSpaceEx( pWhat, pWhere, 0, dwSize );
 }
+#endif
 //------------------------------------------------------------------------------------------------------
  int  InitHeap( PMEM pMem, uintptr_t dwSize )
 {
@@ -34276,6 +34364,7 @@ uintptr_t GetFileSize( int fd )
 		ll_lprintf( WIDE("Memory was already initialized as a heap?") );
 		return FALSE;
 	}
+#ifndef __NO_MMAP__
 	if( !FindSpace( pMem ) )
 	{
 		//ll_lprintf( WIDE("space for heap has not been tracked yet....") );
@@ -34284,6 +34373,7 @@ uintptr_t GetFileSize( int fd )
 		// a file or memory handle.
 		AddSpace( NULL, 0, 0, pMem, dwSize, TRUE );
 	}
+#endif
 	// the size passed is the full size of the memory, so we need to remove sizeof(MEM)
 	// so there is room to track heap info at the start of the heap.
 	dwSize -= sizeof( MEM );
@@ -34318,6 +34408,7 @@ uintptr_t GetFileSize( int fd )
 	return TRUE;
 }
 //------------------------------------------------------------------------------------------------------
+#ifndef __NO_MMAP__
 PMEM DigSpace( TEXTSTR pWhat, TEXTSTR pWhere, uintptr_t *dwSize )
 {
 	PMEM pMem = (PMEM)OpenSpace( pWhat, pWhere, dwSize );
@@ -34361,10 +34452,12 @@ int ExpandSpace( PMEM pHeap, uintptr_t dwAmount )
 	}
 	return TRUE;
 }
+#endif
 //------------------------------------------------------------------------------------------------------
 static PMEM InitMemory( void ) {
 	uintptr_t MinSize = SYSTEM_CAPACITY;
 	// generic internal memory, unnamed, unshared, unsaved
+#ifndef __NO_MMAP__
 	g.pMemInstance = DigSpace( NULL, NULL, &MinSize );
 	if( !g.pMemInstance )
 	{
@@ -34372,6 +34465,7 @@ static PMEM InitMemory( void ) {
 		ODS( WIDE( "Failed to allocate memory - assuming fatailty at Allocation service level." ) );
 		return NULL;
 	}
+#endif
 	return g.pMemInstance;
 }
 //------------------------------------------------------------------------------------------------------
@@ -34479,6 +34573,7 @@ POINTER HeapAllocateAlignedEx( PMEM pHeap, uintptr_t dwSize, uint16_t alignment 
 			return pc->byData;
 		}
 	}
+#if USE_CUSTOM_ALLOCER
 	else
 	{
 		PHEAP_CHUNK pc;
@@ -34676,6 +34771,7 @@ POINTER HeapAllocateAlignedEx( PMEM pHeap, uintptr_t dwSize, uint16_t alignment 
 			return pc->byData;
 		}
 	}
+#endif
 	return NULL;
 }
 //------------------------------------------------------------------------------------------------------
@@ -34835,6 +34931,7 @@ POINTER ReleaseEx ( POINTER pData DBG_PASS )
 {
 	if( pData )
 	{
+#ifndef __NO_MMAP__
 		// how to figure if it's a CHUNK or a HEAP_CHUNK?
 		if( !( ((uintptr_t)pData) & 0x3FF ) )
 		{
@@ -34847,6 +34944,7 @@ POINTER ReleaseEx ( POINTER pData DBG_PASS )
 				return NULL;
 			}
 		}
+#endif
 		if( !USE_CUSTOM_ALLOCER )
 		{
 			//PMEM pMem = (PMEM)(pData - offsetof( MEM, pRoot ));
@@ -34885,6 +34983,7 @@ POINTER ReleaseEx ( POINTER pData DBG_PASS )
 			}
 			return pData;
 		}
+#if USE_CUSTOM_ALLOCER
 		else
 		{
 			PCHUNK pc = (PCHUNK)(((uintptr_t)pData) - ( ( (uint16_t*)pData)[-1] +
@@ -35131,6 +35230,7 @@ POINTER ReleaseEx ( POINTER pData DBG_PASS )
 				GetHeapMemStatsEx(pMem, &dwFree,&dwAllocated,&dwBlocks,&dwFreeBlocks DBG_RELAY);
 #endif
 		}
+#endif
 	}
 	return NULL;
 }
@@ -35184,6 +35284,7 @@ POINTER ReleaseEx ( POINTER pData DBG_PASS )
 //------------------------------------------------------------------------------------------------------
 void  DebugDumpHeapMemEx ( PMEM pHeap, LOGICAL bVerbose )
 {
+#if USE_CUSTOM_ALLOCER
 	if( USE_CUSTOM_ALLOCER )
 	{
 		PCHUNK pc, _pc;
@@ -35265,6 +35366,7 @@ void  DebugDumpHeapMemEx ( PMEM pHeap, LOGICAL bVerbose )
 		DropMem( pMem );
 	}
 	else
+#endif
 		xlprintf(LOG_ALWAYS)( WIDE( "Cannot log chunks allocated that are not using custom allocer." ) );
 }
 	//------------------------------------------------------------------------------------------------------
@@ -35275,7 +35377,9 @@ void  DebugDumpHeapMemEx ( PMEM pHeap, LOGICAL bVerbose )
 //------------------------------------------------------------------------------------------------------
  void  DebugDumpHeapMemFile ( PMEM pHeap, CTEXTSTR pFilename )
 {
+#if USE_CUSTOM_ALLOCER
 	FILE *file;
+#endif
 	if( !USE_CUSTOM_ALLOCER )
 		return;
 #if USE_CUSTOM_ALLOCER
@@ -35479,13 +35583,16 @@ void  DebugDumpHeapMemEx ( PMEM pHeap, LOGICAL bVerbose )
 //------------------------------------------------------------------------------------------------------
  void  GetHeapMemStatsEx ( PMEM pHeap, uint32_t *pFree, uint32_t *pUsed, uint32_t *pChunks, uint32_t *pFreeChunks DBG_PASS )
 {
+#if USE_CUSTOM_ALLOCER
 	int nChunks = 0, nFreeChunks = 0, nSpaces = 0;
 	uintptr_t nFree = 0, nUsed = 0;
 	PCHUNK pc, _pc;
 	PMEM pMem;
 	PSPACE pMemSpace;
+#endif
 	if( !USE_CUSTOM_ALLOCER )
       return;
+#if USE_CUSTOM_ALLOCER
 	if( !pHeap )
 		pHeap = g.pMemInstance;
 	pMem = GrabMem( pHeap );
@@ -35595,6 +35702,7 @@ void  DebugDumpHeapMemEx ( PMEM pHeap, LOGICAL bVerbose )
 		*pChunks = nChunks;
 	if( pFreeChunks )
 		*pFreeChunks = nFreeChunks;
+#endif
 }
 //------------------------------------------------------------------------------------------------------
  void  GetMemStats ( uint32_t *pFree, uint32_t *pUsed, uint32_t *pChunks, uint32_t *pFreeChunks )
@@ -39904,8 +40012,13 @@ static struct list_local_data
 {
 	volatile uint32_t lock;
 } s_list_local, *_list_local;
-#define list_local  ((_list_local)?(*_list_local):(s_list_local))
-#define list_local_lock ((_list_local)?(&_list_local->lock):(&s_list_local.lock))
+#ifdef __STATIC_GLOBALS__
+#  define list_local  (s_list_local)
+#  define list_local_lock (&s_list_local.lock)
+#else
+#  define list_local  ((_list_local)?(*_list_local):(s_list_local))
+#  define list_local_lock ((_list_local)?(&_list_local->lock):(&s_list_local.lock))
+#endif
 #ifdef UNDER_CE
 #define LockedExchange InterlockedExchange
 #endif
@@ -40152,7 +40265,7 @@ static uintptr_t CPROC KillLink( uintptr_t value, INDEX i, POINTER *link )
 	}
 	return 0;
 }
- LOGICAL  DeleteLink ( PLIST *pList, CPOINTER value )
+LOGICAL  DeleteLink( PLIST *pList, CPOINTER value )
 {
 	if( ForAllLinks( pList, KillLink, (uintptr_t)value ) )
 		return TRUE;
@@ -40164,7 +40277,7 @@ static uintptr_t CPROC RemoveItem( uintptr_t value, INDEX i, POINTER *link )
 	*link = NULL;
 	return 0;
 }
- void			EmptyList		( PLIST *pList )
+void EmptyList( PLIST *pList )
 {
 	ForAllLinks( pList, RemoveItem, 0 );
 }
@@ -40177,8 +40290,13 @@ static struct data_list_local_data
 {
 	uint32_t lock;
 } s_data_list_local, *_data_list_local;
-#define data_list_local  ((_data_list_local)?(*_data_list_local):(s_data_list_local))
-#define data_list_local_lock  ((_data_list_local)?(&_data_list_local->lock):(&s_data_list_local.lock))
+#ifdef __STATIC_GLOBALS__
+#  define data_list_local  ((s_data_list_local))
+#  define data_list_local_lock  ((&s_data_list_local.lock))
+#else
+#  define data_list_local  ((_data_list_local)?(*_data_list_local):(s_data_list_local))
+#  define data_list_local_lock  ((_data_list_local)?(&_data_list_local->lock):(&s_data_list_local.lock))
+#endif
 //--------------------------------------------------------------------------
 PDATALIST ExpandDataListEx( PDATALIST *ppdl, INDEX entries DBG_PASS )
 {
@@ -40492,9 +40610,15 @@ static struct link_queue_local_data
 	volatile PTHREAD thread;
 //#endif
 } s_link_queue_local, *_link_queue_local;
-#define link_queue_local  ((_link_queue_local)?(*_link_queue_local):(s_link_queue_local))
-#define link_queue_local_thread  ((_link_queue_local)?(*_link_queue_local).thread:(s_link_queue_local.thread))
-#define link_queue_local_lock  ((_link_queue_local)?(&_link_queue_local->lock):(&s_link_queue_local.lock))
+#ifdef __STATIC_GLOBALS__
+#  define link_queue_local  ((s_link_queue_local))
+#  define link_queue_local_thread  ((s_link_queue_local.thread))
+#  define link_queue_local_lock  ((&s_link_queue_local.lock))
+#else
+#  define link_queue_local  ((_link_queue_local)?(*_link_queue_local):(s_link_queue_local))
+#  define link_queue_local_thread  ((_link_queue_local)?(*_link_queue_local).thread:(s_link_queue_local.thread))
+#  define link_queue_local_lock  ((_link_queue_local)?(&_link_queue_local->lock):(&s_link_queue_local.lock))
+#endif
 PLINKQUEUE CreateLinkQueueEx( DBG_VOIDPASS )
 {
 	PLINKQUEUE plq = 0;
@@ -40928,8 +41052,13 @@ static struct data_queue_local_data
 {
 	volatile uint32_t lock;
 } s_data_queue_local, *_data_queue_local;
-#define data_queue_local  ((_data_queue_local)?(*_data_queue_local):(s_data_queue_local))
-#define data_queue_local_lock ((_data_queue_local)?(&_data_queue_local->lock):(&s_data_queue_local.lock))
+#ifdef __STATIC_GLOBALS__
+#  define data_queue_local  ((s_data_queue_local))
+#  define data_queue_local_lock ((&s_data_queue_local.lock))
+#else
+#  define data_queue_local  ((_data_queue_local)?(*_data_queue_local):(s_data_queue_local))
+#  define data_queue_local_lock ((_data_queue_local)?(&_data_queue_local->lock):(&s_data_queue_local.lock))
+#endif
 PDATAQUEUE CreateDataQueueEx( INDEX size DBG_PASS )
 {
 	PDATAQUEUE pdq;
@@ -41177,20 +41306,22 @@ void  EmptyDataQueue ( PDATAQUEUE *ppdq )
 //		namespace data_queue {
 };
 #endif
+#ifndef __STATIC_GLOBALS__
 PRIORITY_PRELOAD( InitLocals, NAMESPACE_PRELOAD_PRIORITY + 1 )
 {
-#ifdef __cplusplus
+#  ifdef __cplusplus
 	RegisterAndCreateGlobal((POINTER*)&list::_list_local, sizeof( *list::_list_local ), WIDE("_list_local") );
 	RegisterAndCreateGlobal((POINTER*)&data_list::_data_list_local, sizeof( *data_list::_data_list_local ), WIDE("_data_list_local") );
 	RegisterAndCreateGlobal((POINTER*)&queue::_link_queue_local, sizeof( *queue::_link_queue_local ), WIDE("_link_queue_local") );
 	RegisterAndCreateGlobal((POINTER*)&data_queue::_data_queue_local, sizeof( *data_queue::_data_queue_local ), WIDE("_data_queue_local") );
-#else
+#  else
 	SimpleRegisterAndCreateGlobal( _list_local );
 	SimpleRegisterAndCreateGlobal( _data_list_local );
 	SimpleRegisterAndCreateGlobal( _link_queue_local );
 	SimpleRegisterAndCreateGlobal( _data_queue_local );
-#endif
+#  endif
 }
+#endif
 #ifdef __cplusplus
  //namespace sack {
 };
@@ -55174,6 +55305,94 @@ LOGICAL json_decode_message( struct json_context *format
 } } SACK_NAMESPACE_END
 #endif
 #define JSON_EMITTER_SOURCE
+static struct unicodeNonIdentifierBitSet{ int firstChar, lastChar; int bits[16]; } nonIdentifierBits[] =
+{ { 0,384,{ 0xffd9ff,0xff6aff,0x1fc00,0x380000,0x0,0xfffff8,0xffffff,0x7fffff,0x800000,0x0,0x80,0x0,0x0,0x0,0x0,0x0 } },
+{ 384,768,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x3c00,0xe0fffc,0xffffaf } },
+{ 768,1152,{ 0x0,0x0,0x0,0x0,0x200000,0x3040,0x0,0x0,0x0,0x0,0x40,0x0,0x0,0x0,0x0,0x0 } },
+{ 1152,1536,{ 0x304,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xfc,0x0,0xe6,0x0,0x4940,0x0,0x1800 } },
+{ 1536,1920,{ 0xffff,0xd8,0x0,0x0,0x3c00,0x0,0x0,0x0,0x100000,0x20060,0xff6000,0xbf,0x0,0x0,0x0,0x0 } },
+{ 1920,2304,{ 0x0,0x0,0x0,0x0,0xc00000,0x3,0x0,0x7fff00,0x0,0x40,0x0,0x0,0x0,0x0,0x40000,0x0 } },
+{ 2304,2688,{ 0x0,0x0,0x0,0x0,0x10030,0x0,0x0,0x0,0x0,0x0,0x2ffc,0x0,0x0,0x0,0x0,0x0 } },
+{ 2688,3072,{ 0x0,0x0,0x0,0x0,0x30000,0x0,0x0,0x0,0x0,0x0,0xfd,0x0,0x0,0x0,0x0,0x7ff00 } },
+{ 3072,3456,{ 0x0,0x0,0x0,0x0,0x0,0xff,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x800000,0x7f00,0x3ff00 } },
+{ 3456,3840,{ 0x0,0x0,0x0,0x0,0x100000,0x0,0x0,0x800000,0x8000,0xc,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 3840,4224,{ 0xfffffe,0xfc00fc,0x3d5f,0x0,0x0,0x2000,0x0,0xc00000,0xffdfbf,0x7,0x0,0x0,0x0,0xfc0000,0x0,0x0 } },
+{ 4224,4608,{ 0x0,0xc0,0x0,0x0,0x0,0x8,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 4608,4992,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xff0000,0x1ffc01 } },
+{ 4992,5376,{ 0xff0000,0x3,0x0,0x0,0x0,0x100,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 5376,5760,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x60 } },
+{ 5760,6144,{ 0x1,0x18,0x0,0x0,0x3800,0x0,0x0,0x6000,0x0,0x0,0x0,0x0,0x0,0x0,0xf70,0x3ff00 } },
+{ 6144,6528,{ 0x47ff,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x3100,0x0,0x0 } },
+{ 6528,6912,{ 0x0,0x0,0x0,0xc00000,0xffffff,0xff,0xc000,0x0,0x0,0x0,0x0,0x0,0x3f7f,0x40,0x0,0x0 } },
+{ 6912,7296,{ 0x0,0x0,0x0,0xfc0000,0xf007ff,0x1f,0x0,0x0,0x0,0x0,0xf000,0x0,0x0,0xf8,0x0,0xc00000 } },
+{ 7296,7680,{ 0x0,0x0,0xff0000,0x800,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 8064,8448,{ 0x0,0x0,0x3a000,0xe000e0,0xe000,0xffff60,0xffffff,0x7fffff,0xeffffe,0xffdfff,0xff7ff1,0x7f,0xffffff,0xff,0x1de000,0x0 } },
+{ 8448,8832,{ 0xd0037b,0x2afc0,0x1f0c00,0xffffbc,0x0,0xe0000,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff } },
+{ 8832,9216,{ 0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff } },
+{ 9216,9600,{ 0xffffff,0x7fff,0xff0000,0x7,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff } },
+{ 9600,9984,{ 0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff } },
+{ 9984,10368,{ 0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff } },
+{ 10368,10752,{ 0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff } },
+{ 10752,11136,{ 0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffcfff } },
+{ 11136,11520,{ 0x3fffff,0xffffff,0xffe3ff,0x7fd,0xf000,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xe00000,0xfe0007 } },
+{ 11520,11904,{ 0x0,0x0,0x0,0x0,0x10000,0x0,0x0,0x0,0x0,0x0,0xff0000,0xffffff,0xffffff,0x3ffff,0x0,0x0 } },
+{ 11904,12288,{ 0xffffff,0xfffffb,0xffffff,0xffffff,0xfffff,0xffff00,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0x3f,0xfff00 } },
+{ 12288,12672,{ 0xffff1f,0x1ff,0xe0c1,0x0,0x0,0x0,0x10000,0x0,0x0,0x0,0x800,0x0,0x0,0x0,0x0,0x0 } },
+{ 12672,13056,{ 0xff0000,0xff,0xff0000,0xffffff,0xf,0xffff00,0xff7fff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0x7fffff } },
+{ 13056,13440,{ 0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffff,0x0,0x0,0x0,0x0,0x0 } },
+{ 19584,19968,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xffff00,0xffffff,0xffffff } },
+{ 41856,42240,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xffff00,0xffffff,0x7fff,0x0,0xc00000 } },
+{ 42240,42624,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xe0,0x0,0x0,0x0,0x400f00 } },
+{ 42624,43008,{ 0x0,0x0,0x0,0x0,0xfc0000,0xffff00,0x3007f,0x0,0x0,0x0,0x0,0x6,0x0,0x0,0x0,0x0 } },
+{ 43008,43392,{ 0x0,0xf0000,0x3ff,0x0,0xf00000,0x0,0x0,0x0,0xc000,0x0,0x1700,0x0,0xc000,0x0,0x8000,0x0 } },
+{ 43392,43776,{ 0x0,0x0,0xfe0000,0xc0003f,0x0,0x0,0x0,0x0,0x0,0xf0,0x380,0x0,0x0,0x0,0xc000,0x300 } },
+{ 43776,44160,{ 0x0,0x0,0x0,0x80000,0x0,0x0,0x0,0x0,0x0,0x80000,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 64128,64512,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x2,0x0,0x0,0x0,0x0,0xfc0000,0x3ff,0x0,0x0 } },
+{ 64512,64896,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xc0,0x0,0x0 } },
+{ 64896,65280,{ 0x0,0x0,0x0,0x0,0x0,0x30,0x3ff,0xffe700,0xf71fff,0xf7fff,0x0,0x0,0x0,0x0,0x0,0x800000 } },
+{ 65280,65664,{ 0xfffe,0x1fc,0x17800,0xf80000,0x3f,0x0,0x0,0x0,0x0,0x7f7f00,0x3e00,0x0,0x0,0x0,0x0,0x0 } },
+{ 65664,66048,{ 0x0,0x0,0x0,0x0,0x0,0xff8700,0xffffff,0xff8fff,0x0,0x0,0xffffe0,0xfff7f,0x1,0x0,0xffffff,0x1fffff } },
+{ 66048,66432,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xfffe00,0xfff,0x0,0xf,0x0,0x0,0x0 } },
+{ 66432,66816,{ 0x0,0x80,0x0,0x100,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 66816,67200,{ 0x0,0x0,0x0,0x0,0x8000,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 67584,67968,{ 0x0,0x0,0x0,0xff8000,0x800000,0xff,0x800000,0xff,0x0,0x0,0xf800,0x8fc000,0x0,0x80,0x0,0x0 } },
+{ 67968,68352,{ 0x0,0x0,0xff3000,0xfffcff,0xffffff,0xff,0x0,0x0,0xff00ff,0x1,0xe000,0xe00000,0x0,0x10000,0x0,0x7ff8 } },
+{ 68352,68736,{ 0x0,0x0,0xfe00,0xff0000,0x0,0xff,0x1e00,0xfe,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 68736,69120,{ 0x0,0x0,0x0,0x0,0x0,0xfc,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 69120,69504,{ 0x0,0x0,0x0,0x0,0xffffff,0x7f,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 69504,69888,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xfc3f80,0x3fff,0x0,0x0,0x0,0x3f8,0x0,0x0 } },
+{ 69888,70272,{ 0x0,0x0,0xf0000,0x0,0x300000,0x0,0x0,0x0,0x23e0,0xfffee8,0x1f,0x0,0x0,0x3f,0x0,0x0 } },
+{ 70272,70656,{ 0x0,0x20000,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 70656,71040,{ 0x0,0x0,0x0,0x2800f8,0x0,0x0,0x0,0x0,0x40,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 71040,71424,{ 0x0,0x0,0xfe0000,0xffff,0x0,0x0,0x0,0x0,0xe,0x1fff00,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 71424,71808,{ 0x0,0x0,0xfc00,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 71808,72192,{ 0x0,0x0,0x0,0x0,0x7fc00,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 72192,72576,{ 0x0,0x0,0x7f8000,0x0,0x0,0x0,0x7dc00,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 72576,72960,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x3e,0x1ffffc,0x3,0x0,0x0,0x0,0x0,0x0 } },
+{ 74496,74880,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x1f00 } },
+{ 92544,92928,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xc00000,0x0,0x0,0x0,0x0,0x0,0x2000 } },
+{ 92928,93312,{ 0x0,0x0,0x30ff80,0xf80000,0x3,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 113664,114048,{ 0x0,0x0,0x0,0x0,0x0,0x0,0xf9000,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 118656,119040,{ 0x0,0x0,0x0,0x0,0x0,0xffff00,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0x3fff } },
+{ 119040,119424,{ 0xffffff,0xfe7fff,0xffffff,0xffffff,0xf81c1f,0xf01807,0xffffff,0xffffc3,0xffffff,0x1ffff,0xff0000,0xffffff,0xffffff,0x23ff,0x0,0x0 } },
+{ 119424,119808,{ 0x0,0x0,0x0,0x0,0x0,0xffff00,0xffffff,0xffffff,0x7fffff,0xffff00,0x3,0x0,0x0,0x0,0x0,0x0 } },
+{ 120192,120576,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x200,0x800,0x80000 } },
+{ 120576,120960,{ 0x200000,0x0,0x20,0x80,0x8000,0x20000,0x0,0x2,0x8,0x0,0xff0000,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff } },
+{ 120960,121344,{ 0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff } },
+{ 121344,121728,{ 0x0,0x0,0x780,0x0,0xdfe000,0xfefff,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 124800,125184,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xff8000,0x0,0x0 } },
+{ 125184,125568,{ 0x0,0x0,0x0,0xc00000,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 126336,126720,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x300 } },
+{ 126720,127104,{ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xff0000,0xffffff,0xff0fff,0xffffff,0xffffff,0xffffff } },
+{ 127104,127488,{ 0xfffff,0x7fff00,0xfefffe,0xfffeff,0x3fffff,0x1fff00,0xffffff,0xffff7f,0xffffff,0xfffff,0xffffff,0xffffff,0x1fff,0x0,0xc00000,0xffffff } },
+{ 127488,127872,{ 0xff0007,0xffffff,0xff0fff,0x301,0x3f,0x0,0x0,0x0,0x0,0x0,0xff0000,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff } },
+{ 127872,128256,{ 0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff } },
+{ 128256,128640,{ 0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff,0xffffff } },
+{ 128640,129024,{ 0xffffff,0xffffff,0xffffff,0x1fff,0xff1fff,0xffff01,0xffffff,0xffffff,0xffffff,0xffffff,0xff000f,0xffffff,0xffffff,0xffffff,0x1f,0x0 } },
+{ 129024,129408,{ 0xff0fff,0xffffff,0xffffff,0x3ff00,0xffffff,0xffff,0xffffff,0x3f,0x0,0x0,0xff0000,0xffff0f,0xffffff,0x1fff7f,0xffffff,0xf } },
+{ 129408,129792,{ 0xffffff,0x0,0x10000,0xffff00,0x7f,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0 } },
+{ 917376,917760,{ 0x0,0x0,0x0,0x0,0x0,0x200,0xff0000,0xffffff,0xffffff,0xffffff } }
+};
 static uint8_t const nonIdentifiers8[255] = {
 	 1,1,1,1,1,1,1,1,1,0,0,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,0,1,1,0
 	,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
@@ -55183,6 +55402,7 @@ static uint8_t const nonIdentifiers8[255] = {
 	,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 	,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0
 };
+/*
 static TEXTRUNE const nonIdentifiers[] = {
  0x02C2,0x02C3,0x02C4,0x02C5,0x02D2,0x02D3,0x02D4,0x02D5,0x02D6,0x02D7,0x02D8,0x02D9,0x02DA
 ,0x02DB,0x02DC,0x02DD,0x02DE,0x02DF,0x02E5,0x02E6,0x02E7,0x02E8,0x02E9,0x02EA,0x02EB,0x02ED
@@ -55865,6 +56085,7 @@ static TEXTRUNE const nonIdentifiers[] = {
 ,0xE0066,0xE0067,0xE0068,0xE0069,0xE006A,0xE006B,0xE006C,0xE006D,0xE006E,0xE006F,0xE0070,0xE0071
 ,0xE0072,0xE0073,0xE0074,0xE0075,0xE0076,0xE0077,0xE0078,0xE0079,0xE007A,0xE007B,0xE007C,0xE007D
 };
+*/
 //#define DEBUG_PARSING
 /*
 Code Point	Name	Abbreviation	Usage
@@ -56485,8 +56706,10 @@ int json6_parse_add_data( struct json_parse_state *state
 					}
 					else {
 						int n;
-						for( n = 0; n < (sizeof( nonIdentifiers ) / sizeof( nonIdentifiers[0] )); n++ ) {
-							if( c == nonIdentifiers[n] ) {
+						for( n = 0; n < (sizeof( nonIdentifierBits ) / sizeof( nonIdentifierBits[0] )); n++ ) {
+							if( c >= (TEXTRUNE)nonIdentifierBits[n].firstChar && c < (TEXTRUNE)nonIdentifierBits[n].lastChar &&
+								(nonIdentifierBits[n].bits[(c - nonIdentifierBits[n].firstChar) / 24]
+									& (1 << ((c - nonIdentifierBits[n].firstChar) % 24))) ) {
 								state->status = FALSE;
 								if( !state->pvtError ) state->pvtError = VarTextCreate();
 	// fault
@@ -56494,7 +56717,7 @@ int json6_parse_add_data( struct json_parse_state *state
 								break;
 							}
 						}
-						if( c < (sizeof( nonIdentifiers ) / sizeof( nonIdentifiers[0] )) )
+						if( c < (sizeof( nonIdentifierBits ) / sizeof( nonIdentifierBits[0] )) )
 							break;
 					}
 					switch( c )
@@ -57664,7 +57887,7 @@ enum jsox_word_char_states {
 enum jsox_parse_context_modes {
 	JSOX_CONTEXT_UNKNOWN = 0,
 	JSOX_CONTEXT_IN_ARRAY = 1,
-	JSOX_CONTEXT_IN_OBJECT = 2,
+	//JSOX_CONTEXT_IN_OBJECT = 2,
 	JSOX_CONTEXT_OBJECT_FIELD = 3,
 	JSOX_CONTEXT_OBJECT_FIELD_VALUE = 4,
 	JSOX_CONTEXT_CLASS_FIELD = 5,
@@ -58562,7 +58785,9 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 		if( cInt == 44 || cInt == 125 || cInt == 93 || cInt == 58 )
 			vtprintf( state->pvtError, WIDE( "invalid character; unexpected %c at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, cInt, state->n, state->line, state->col );
 		else {
-			(*output->pos++) = cInt;
+			if( !state->val.string )  state->val.string = output->pos;
+			if( cInt < 128 ) (*output->pos++) = cInt;
+			else output->pos += ConvertToUTF8( output->pos, cInt );
 #ifdef DEBUG_PARSING
 			lprintf( "Collected .. %d %c  %*.*s", cInt, cInt, output->pos - state->val.string, output->pos - state->val.string, state->val.string );
 #endif
@@ -58575,7 +58800,7 @@ static void pushValue( struct jsox_parse_state *state, PDATALIST *pdl, struct js
 #ifdef DEBUG_PARSING
 	lprintf( "pushValue:%d %d", val->value_type, state->arrayType );
 	if( val->name )
-		lprintf( "push named:%s %d", val->name, line );
+		lprintf( "push named:%*.*s %d", val->nameLen, val->nameLen, val->name, line );
 #endif
 	if( val->value_type == JSOX_VALUE_ARRAY ) {
 		if( state->arrayType >= 0 ) {
@@ -58589,6 +58814,23 @@ static void pushValue( struct jsox_parse_state *state, PDATALIST *pdl, struct js
 		}
 	}
 	AddDataItem( pdl, val );
+}
+static LOGICAL isNonIdentifier( TEXTRUNE c ) {
+	if( c < 0xFF ) {
+		if( nonIdentifiers8[c] ) {
+			return TRUE;
+		}
+	}
+	else {
+		int n;
+		for( n = 0; n < (sizeof( nonIdentifierBits ) / sizeof( nonIdentifierBits[0] )); n++ ) {
+			if( c >= (TEXTRUNE)nonIdentifierBits[n].firstChar && c < (TEXTRUNE)nonIdentifierBits[n].lastChar &&
+				(nonIdentifierBits[n].bits[(c - nonIdentifierBits[n].firstChar) / 24]
+					& (1 << ((c - nonIdentifierBits[n].firstChar) % 24))) )
+				return TRUE;
+		}
+	}
+	return FALSE;
 }
 int jsox_parse_add_data( struct jsox_parse_state *state
                             , const char * msg
@@ -58749,7 +58991,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						//state->val.stringLen = output->pos - state->val.string;
 						//lprintf( "Set string length:%d", state->val.stringLen );
 					}
-					if( !( state->val.value_type == JSOX_VALUE_STRING ) )
+					if( !(state->val.value_type == JSOX_VALUE_STRING) || state->word == JSOX_WORD_POS_FIELD )
 						(*output->pos++) = 0;
 					state->word = JSOX_WORD_POS_RESET;
 					if( state->val.name ) {
@@ -59009,31 +59251,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				   || (state->parse_context == JSOX_CONTEXT_OBJECT_FIELD_VALUE && state->word == JSOX_WORD_POS_FIELD )
 				   || state->parse_context == JSOX_CONTEXT_CLASS_FIELD
 				) {
-					//lprintf( "gathering object field:%c  %*.*s", c, output->pos-output->buf, output->pos - output->buf, output->buf );
-					if( c < 0xFF ) {
-						if( nonIdentifiers8[c] ) {
-							// invalid start/continue
-							state->status = FALSE;
-							if( !state->pvtError ) state->pvtError = VarTextCreate();
-	// fault
-							vtprintf( state->pvtError, WIDE( "fault while parsing object field name; \\u00%02X unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-							break;
-						}
-					}
-					else {
-						int n;
-						for( n = 0; n < (sizeof( nonIdentifiers ) / sizeof( nonIdentifiers[0] )); n++ ) {
-							if( c == nonIdentifiers[n] ) {
-								state->status = FALSE;
-								if( !state->pvtError ) state->pvtError = VarTextCreate();
-	// fault
-								vtprintf( state->pvtError, WIDE( "fault while parsing object field name; \\u00%02X unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-								break;
-							}
-						}
-						if( c < (sizeof( nonIdentifiers ) / sizeof( nonIdentifiers[0] )) )
-							break;
-					}
+					//lprintf( "gathering object field:%c  %*.*s", c, output->pos- state->val.string, output->pos - state->val.string, state->val.string );
 					switch( c )
 					{
 					case '`':
@@ -59108,12 +59326,19 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 							state->status = FALSE;
 							if( !state->pvtError ) state->pvtError = VarTextCreate();
 	// fault
-							vtprintf( state->pvtError, WIDE( "fault while parsing; unquoted space in field name at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, state->n, state->line, state->col );
+							vtprintf( state->pvtError, WIDE( "fault while parsing; second string in field name at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, state->n, state->line, state->col );
 							break;
 						} else if( state->word == JSOX_WORD_POS_RESET ) {
 							state->word = JSOX_WORD_POS_FIELD;
 							state->val.string = output->pos;
 							state->val.value_type = JSOX_VALUE_STRING;
+						}
+						if( isNonIdentifier( c ) ) {
+							state->status = FALSE;
+							if( !state->pvtError ) state->pvtError = VarTextCreate();
+	// fault
+							vtprintf( state->pvtError, WIDE( "fault while parsing object field name; \\u00%02X unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+							break;
 						}
 						if( !state->val.string ) state->val.string = output->pos;
 						if( c < 128 ) (*output->pos++) = c;
@@ -61635,10 +61860,13 @@ static int gatherIdentifier( struct vesl_parse_state *state, CTEXTSTR msg
 			}
 		} else {
 			int n;
-			for( n = 0; n < (sizeof( nonIdentifiers ) / sizeof( nonIdentifiers[0] )); n++ ) {
-				if( c == nonIdentifiers[n] ) break;
+			for( n = 0; n < (sizeof( nonIdentifierBits ) / sizeof( nonIdentifierBits[0] )); n++ ) {
+				if( c >= (TEXTRUNE)nonIdentifierBits[n].firstChar && c < (TEXTRUNE)nonIdentifierBits[n].lastChar &&
+					(nonIdentifierBits[n].bits[(c - nonIdentifierBits[n].firstChar) / 24]
+						& (1 << ((c - nonIdentifierBits[n].firstChar) % 24))) )
+					break;
 			}
-			if( c < (sizeof( nonIdentifiers ) / sizeof( nonIdentifiers[0] )) ) {
+			if( c < (sizeof( nonIdentifierBits ) / sizeof( nonIdentifierBits[0] )) ) {
 				status = 1;
 				(*unused) = c;
 				break;
@@ -69084,7 +69312,7 @@ static void ssl_CloseCallback( PCLIENT pc ) {
 		return;
 	}
 	pc->ssl_session = NULL;
-   //lprintf( "Socket got close event... notify application..." );
+	//lprintf( "Socket got close event... notify application..." );
 	if( ses->dwOriginalFlags & CF_CPPCLOSE )
 		ses->cpp_user_close( pc->psvClose );
 	else
@@ -69552,8 +69780,8 @@ void loadSystemCerts( X509_STORE *store )
 			X509_free(x509);
 		}
 	}
-	 CertFreeCertificateContext(pContext);
-	 CertCloseStore(hStore, 0);
+	CertFreeCertificateContext(pContext);
+	CertCloseStore(hStore, 0);
 }
 #endif
 SACK_NETWORK_NAMESPACE_END
