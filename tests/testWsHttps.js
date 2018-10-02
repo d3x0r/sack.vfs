@@ -20,12 +20,12 @@ var cert = sack.TLS.signreq( {
 	request: sack.TLS.genreq( { key:keys[2], password:"password"
 		, country:"US", state:"NV", locality:"Las Vegas"
 		, org:"Freedom Collective", unit:"Tests", name:"Cert", serial: 1004
-		//, subject: { DNS:dnsNames, IP:internal?config.run.internal_addresses:config.run.addresses } 
+		, subject: { DNS:["localhost","*.localhost"], IP:["127.0.0.1"] } 
 	} )
 	, signer: signer, serial: 1005, key:keys[1] } );
 
 
-console.log( signer+certRoot );
+console.log( certRoot+signer+cert );
 var server = sack.WebSocket.Server( { port: 8085, cert : cert+signer+certRoot, key: keys[2], passphrase:"password" } )
 
 console.log( "serving on 8085" );
