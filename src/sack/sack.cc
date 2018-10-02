@@ -8657,6 +8657,106 @@ SACK_VFS_PROC int CPROC sack_vfs_find_next( struct find_info *info );
 SACK_VFS_PROC char * CPROC sack_vfs_find_get_name( struct find_info *info );
 // get file information for the file at the current cursor position...
 SACK_VFS_PROC size_t CPROC sack_vfs_find_get_size( struct find_info *info );
+// open a volume at the specified pathname.
+// if the volume does not exist, will create it.
+// if the volume does exist, a quick validity check is made on it, and then the result is opened
+// returns NULL if failure.  (permission denied to the file, or invalid filename passed, could be out of space... )
+// same as load_cyrypt_volume with userkey and devkey NULL.
+SACK_VFS_PROC struct fs_volume * CPROC sack_vfs_fs_load_volume( CTEXTSTR filepath );
+// open a volume at the specified pathname.  Use the specified keys to encrypt it.
+// if the volume does not exist, will create it.
+// if the volume does exist, a quick validity check is made on it, and then the result is opened
+// returns NULL if failure.  (permission denied to the file, or invalid filename passed, could be out of space... )
+// if the keys are NULL same as load_volume.
+SACK_VFS_PROC struct fs_volume * CPROC sack_vfs_fs_load_crypt_volume( CTEXTSTR filepath, uintptr_t version, CTEXTSTR userkey, CTEXTSTR devkey );
+// pass some memory and a memory length of the memory to use as a volume.
+// if userkey and/or devkey are not NULL the memory is assume to be encrypted with those keys.
+// the space is opened as readonly; write accesses/expanding operations will fail.
+SACK_VFS_PROC struct fs_volume * CPROC sack_vfs_fs_use_crypt_volume( POINTER filemem, size_t size, uintptr_t version, CTEXTSTR userkey, CTEXTSTR devkey );
+// close a volume; release all resources; any open files will keep the volume open.
+// when the final file closes the volume will complete closing.
+SACK_VFS_PROC void            CPROC sack_vfs_fs_unload_volume( struct fs_volume * vol );
+// remove unused extra allocated space at end of volume.  During working process, extra space is preallocated for
+// things to be stored in.
+SACK_VFS_PROC void            CPROC sack_vfs_fs_shrink_volume( struct fs_volume * vol );
+// remove encryption from volume.
+SACK_VFS_PROC LOGICAL         CPROC sack_vfs_fs_decrypt_volume( struct fs_volume *vol );
+// change the key applied to a volume.
+SACK_VFS_PROC LOGICAL         CPROC sack_vfs_fs_encrypt_volume( struct fs_volume *vol, uintptr_t version, CTEXTSTR key1, CTEXTSTR key2 );
+// create a signature of current directory of volume.
+// can be used to validate content.  Returns 256 character hex string.
+SACK_VFS_PROC const char *    CPROC sack_vfs_fs_get_signature( struct fs_volume *vol );
+// pass an offset from memory start and the memory start...
+// computes the distance, uses that to generate a signature
+// returns BLOCK_SIZE length signature; recommend using at least 128 bits of it.
+SACK_VFS_PROC const uint8_t * CPROC sack_vfs_fs_get_signature2( POINTER disk, POINTER diskReal );
+// ---------- Operations on files in volumes ------------------
+// open a file, creates if does not exist.
+SACK_VFS_PROC struct sack_vfs_fs_file * CPROC sack_vfs_fs_openfile( struct fs_volume *vol, CTEXTSTR filename );
+// check if a file exists (if it does not exist, and you don't want it created, can use this and not openfile)
+SACK_VFS_PROC int CPROC sack_vfs_fs_exists( struct fs_volume *vol, const char * file );
+// close a file.
+SACK_VFS_PROC int CPROC sack_vfs_fs_close( struct sack_vfs_fs_file *file );
+// get the current File Position Index (FPI).
+SACK_VFS_PROC size_t CPROC sack_vfs_fs_tell( struct sack_vfs_fs_file *file );
+// get the length of the file
+SACK_VFS_PROC size_t CPROC sack_vfs_fs_size( struct sack_vfs_fs_file *file );
+// set the current File Position Index (FPI).
+SACK_VFS_PROC size_t CPROC sack_vfs_fs_seek( struct sack_vfs_fs_file *file, size_t pos, int whence );
+// write starting at the current FPI.
+SACK_VFS_PROC size_t CPROC sack_vfs_fs_write( struct sack_vfs_fs_file *file, const char * data, size_t length );
+// read starting at the current FPI.
+SACK_VFS_PROC size_t CPROC sack_vfs_fs_read( struct sack_vfs_fs_file *file, char * data, size_t length );
+// sets the file length to the current FPI.
+SACK_VFS_PROC size_t CPROC sack_vfs_fs_truncate( struct sack_vfs_fs_file *file );
+// psv should be struct fs_volume *vol;
+// delete a filename.  Clear the space it was occupying.
+SACK_VFS_PROC int CPROC sack_vfs_fs_unlink_file( struct fs_volume *vol, const char * filename );
+// rename a file within the filesystem; if the target name exists, it is deleted.  If the target file is also open, it will be prevented from deletion; and duplicate filenames will end up exising(?)
+SACK_VFS_PROC LOGICAL CPROC sack_vfs_fs_rename( uintptr_t psvInstance, const char *original, const char *newname );
+// -----------  directory interface commands. ----------------------
+// returns find_info which is then used in subsequent commands.
+SACK_VFS_PROC struct find_info * CPROC sack_vfs_fs_find_create_cursor( uintptr_t psvInst, const char *base, const char *mask );
+// reset find_info to the first directory entry.  returns 0 if no entry.
+SACK_VFS_PROC int CPROC sack_vfs_fs_find_first( struct find_info *info );
+// closes a find cursor; returns 0.
+SACK_VFS_PROC int CPROC sack_vfs_fs_find_close( struct find_info *info );
+// move to the next entry returns 0 if no entry.
+SACK_VFS_PROC int CPROC sack_vfs_fs_find_next( struct find_info *info );
+// get file information for the file at the current cursor position...
+SACK_VFS_PROC char * CPROC sack_vfs_fs_find_get_name( struct find_info *info );
+// get file information for the file at the current cursor position...
+SACK_VFS_PROC size_t CPROC sack_vfs_fs_find_get_size( struct find_info *info );
+#if defined USE_VFS_FS_INTERFACE
+#define volume fs_volume
+#define sack_vfs_file sack_vfs_fs_file
+#define sack_vfs_load_volume  sack_vfs_fs_load_volume
+#define sack_vfs_load_crypt_volume  sack_vfs_fs_load_crypt_volume
+#define sack_vfs_use_crypt_volume  sack_vfs_fs_use_crypt_volume
+#define sack_vfs_unload_volume  sack_vfs_fs_unload_volume
+#define sack_vfs_shrink_volume  sack_vfs_fs_shrink_volume
+#define sack_vfs_decrypt_volume  sack_vfs_fs_decrypt_volume
+#define sack_vfs_encrypt_volume  sack_vfs_fs_encrypt_volume
+#define sack_vfs_get_signature  sack_vfs_fs_get_signature
+#define sack_vfs_get_signature2  sack_vfs_fs_get_signature2
+#define sack_vfs_openfile  sack_vfs_fs_openfile
+#define sack_vfs_exists  sack_vfs_fs_exists
+#define sack_vfs_close  sack_vfs_fs_close
+#define sack_vfs_tell  sack_vfs_fs_tell
+#define sack_vfs_size  sack_vfs_fs_size
+#define sack_vfs_seek  sack_vfs_fs_seek
+#define sack_vfs_write  sack_vfs_fs_write
+#define sack_vfs_read  sack_vfs_fs_read
+#define sack_vfs_truncate  sack_vfs_fs_truncate
+#define sack_vfs_unlink_file  sack_vfs_fs_unlink_file
+#define sack_vfs_rename  sack_vfs_fs_rename
+#define sack_vfs_find_create_cursor  sack_vfs_fs_find_create_cursor
+#define sack_vfs_find_first  sack_vfs_fs_find_first
+#define sack_vfs_find_close  sack_vfs_fs_find_close
+#define sack_vfs_find_next  sack_vfs_fs_find_next
+#define sack_vfs_find_get_name  sack_vfs_fs_find_get_name
+#define sack_vfs_find_get_size  sack_vfs_fs_find_get_size
+#endif
 SACK_VFS_NAMESPACE_END
 #ifdef __cplusplus
 using namespace sack::SACK_VFS;
@@ -10415,13 +10515,20 @@ SACK_VFS_NAMESPACE
 #define BLOCKS_PER_SECTOR (1 + (BLOCK_SIZE/sizeof(BLOCKINDEX)))
 // per-sector perumation; needs to be a power of 2 (in bytes)
 #define SHORTKEY_LENGTH 16
+#ifndef VFS_DISK_DATATYPE
+#  define VFS_DISK_DATATYPE size_t
+#endif
  // BLOCK_SIZE blocks...
-typedef size_t BLOCKINDEX;
+typedef VFS_DISK_DATATYPE BLOCKINDEX;
  // file position type
-typedef size_t FPI;
+typedef VFS_DISK_DATATYPE FPI;
 enum block_cache_entries
 {
 	BLOCK_CACHE_DIRECTORY
+#ifdef VIRTUAL_OBJECT_STORE
+	, BLOCK_CACHE_HASH_DIRECTORY
+	, BLOCK_CACHE_HASH_DIRECTORY_LAST = BLOCK_CACHE_HASH_DIRECTORY + 16
+#endif
 	, BLOCK_CACHE_NAMES
 	, BLOCK_CACHE_BAT
 	, BLOCK_CACHE_DATAKEY
@@ -10429,94 +10536,6 @@ enum block_cache_entries
 	, BLOCK_CACHE_FILE_LAST = BLOCK_CACHE_FILE + 10
 	, BLOCK_CACHE_COUNT
 };
-PREFIX_PACKED struct volume {
-	const char * volname;
-	struct disk *disk;
- // disk might be offset from diskReal because it's a .exe attached.
-	struct disk *diskReal;
-	//uint32_t dirents;  // constant 0
-	//uint32_t nameents; // constant 1
-	uintptr_t dwSize;
-  // used for directory signatures
-	const char * datakey;
-	const char * userkey;
-	const char * devkey;
-	enum block_cache_entries curseg;
-// cached segment with usekey[n]
-	BLOCKINDEX _segment[BLOCK_CACHE_COUNT];
-// associated with usekey[n]
-	BLOCKINDEX segment[BLOCK_CACHE_COUNT];
-	uint8_t fileCacheAge[BLOCK_CACHE_FILE_LAST - BLOCK_CACHE_FILE];
-	uint8_t fileNextAge;
-	struct random_context *entropy;
-  // allow byte encrypting...
-	uint8_t* key;
-  // allow byte encrypting... key based on sector volume file index
-	uint8_t* segkey;
-  // signature of executable attached as header
-	uint8_t* sigkey;
-  // signature of executable attached as header
-	uint8_t* sigsalt;
-	size_t sigkeyLength;
- // composite key
-	uint8_t* usekey[BLOCK_CACHE_COUNT];
- // when reopened file structures need to be updated also...
-	PLIST files;
-	LOGICAL read_only;
-	LOGICAL external_memory;
-	LOGICAL closed;
-	uint32_t lock;
-	uint8_t tmpSalt[16];
-	uintptr_t clusterKeyVersion;
-} PACKED;
-PREFIX_PACKED struct fs_volume {
-	const char * volname;
-	FILE *file;
-//	struct disk *disk;
-//	struct disk *diskReal; // disk might be offset from diskReal because it's a .exe attached.
-	//uint32_t dirents;  // constant 0
-	//uint32_t nameents; // constant 1
-	uintptr_t dwSize;
-  // used for directory signatures
-	const char * datakey;
-	const char * userkey;
-	const char * devkey;
-	enum block_cache_entries curseg;
-// cached segment with usekey[n]
-	BLOCKINDEX _segment[BLOCK_CACHE_COUNT];
-// associated with usekey[n]
-	BLOCKINDEX segment[BLOCK_CACHE_COUNT];
-	uint8_t fileCacheAge[BLOCK_CACHE_FILE_LAST - BLOCK_CACHE_FILE];
-	uint8_t fileNextAge;
-	struct random_context *entropy;
-  // allow byte encrypting...
-	uint8_t* key;
-  // allow byte encrypting... key based on sector volume file index
-	uint8_t* segkey;
-  // signature of executable attached as header
-	uint8_t* sigkey;
- // composite key
-	uint8_t* usekey[BLOCK_CACHE_COUNT];
-  // allow byte encrypting...
-	uint8_t* key_buffer;
-  // allow byte encrypting... key based on sector volume file index
-	uint8_t* segkey_buffer;
-  // signature of executable attached as header
-	uint8_t* sigkey_buffer;
- // composite key
-	uint8_t* usekey_buffer[BLOCK_CACHE_COUNT];
-  // (unused) adds salt for the signature?
-	uint8_t* sigsalt;
-	size_t sigkeyLength;
- // when reopened file structures need to be updated also...
-	PLIST files;
-	LOGICAL read_only;
-	LOGICAL external_memory;
-	LOGICAL closed;
-	uint32_t lock;
-	uint8_t tmpSalt[16];
-	uintptr_t clusterKeyVersion;
-} PACKED;
 PREFIX_PACKED struct directory_entry
 {
   // name offset from beginning of disk
@@ -10524,7 +10543,7 @@ PREFIX_PACKED struct directory_entry
   // first block of data of the file
 	BLOCKINDEX first_block;
   // how big the file is
-	size_t filesize;
+	VFS_DISK_DATATYPE filesize;
 	//uint32_t filler;  // extra data(unused)
 } PACKED;
 #define VFS_DIRECTORY_ENTRIES ( BLOCK_SIZE/sizeof( struct directory_entry) )
@@ -10541,24 +10560,50 @@ struct disk
 	//char  names[BLOCK_SIZE/sizeof(char)];
 	uint8_t  block_data[BLOCKS_PER_BAT][BLOCK_SIZE];
 };
-struct sack_vfs_file
-{
-  // has file size within
-	struct directory_entry *entry;
-	struct directory_entry dirent_key;
- // which volume this is in
-	struct volume *vol;
-	FPI fpi;
-	BLOCKINDEX first_block;
- // this should be in-sync with current FPI always; plz
-	BLOCKINDEX block;
-  // someone already deleted this...
-	LOGICAL delete_on_close;
-};
+#ifdef SACK_VFS_FS_SOURCE
+PREFIX_PACKED struct fs_volume {
+	const char * volname;
+	FILE *file;
+	uintptr_t dwSize;
+  // used for directory signatures
+	const char * datakey;
+	const char * userkey;
+	const char * devkey;
+	enum block_cache_entries curseg;
+// cached segment with usekey[n]
+	BLOCKINDEX _segment[BLOCK_CACHE_COUNT];
+// associated with usekey[n]
+	BLOCKINDEX segment[BLOCK_CACHE_COUNT];
+	FLAGSET( dirty, BLOCK_CACHE_COUNT );
+	uint8_t fileCacheAge[BLOCK_CACHE_FILE_LAST - BLOCK_CACHE_FILE];
+	uint8_t fileNextAge;
+	struct random_context *entropy;
+  // allow byte encrypting...
+	uint8_t* key;
+  // allow byte encrypting... key based on sector volume file index
+	uint8_t* segkey;
+  // signature of executable attached as header
+	uint8_t* sigkey;
+ // composite key
+	uint8_t* usekey[BLOCK_CACHE_COUNT];
+  // (unused) adds salt for the signature?
+	uint8_t* sigsalt;
+	size_t sigkeyLength;
+ // when reopened file structures need to be updated also...
+	PLIST files;
+	LOGICAL read_only;
+	LOGICAL external_memory;
+	LOGICAL closed;
+	uint32_t lock;
+	uint8_t tmpSalt[16];
+	uintptr_t clusterKeyVersion;
+} PACKED;
 struct sack_vfs_fs_file
 {
+  // where to write the directory entry update to
+	FPI entry_fpi;
   // has file size within
-	struct directory_entry *entry;
+	struct directory_entry entry;
 	struct directory_entry dirent_key;
  // which volume this is in
 	struct fs_volume *vol;
@@ -10569,10 +10614,83 @@ struct sack_vfs_fs_file
   // someone already deleted this...
 	LOGICAL delete_on_close;
 };
-#ifdef SACK_VFS_FS_SOURCE
 #define TSEEK(type,v,o,c) ((type)vfs_fs_SEEK(v,o,&c))
 #define BTSEEK(type,v,o,c) ((type)vfs_fs_BSEEK(v,o,&c))
 #else
+PREFIX_PACKED struct volume {
+	const char * volname;
+#ifdef FILE_BASED_VFS
+	FILE *file;
+#else
+	struct disk *disk;
+ // disk might be offset from diskReal because it's a .exe attached.
+	struct disk *diskReal;
+#endif
+	//uint32_t dirents;  // constant 0
+	//uint32_t nameents; // constant 1
+	uintptr_t dwSize;
+  // used for directory signatures
+	const char * datakey;
+	const char * userkey;
+	const char * devkey;
+	enum block_cache_entries curseg;
+// cached segment with usekey[n]
+	BLOCKINDEX _segment[BLOCK_CACHE_COUNT];
+// associated with usekey[n]
+	BLOCKINDEX segment[BLOCK_CACHE_COUNT];
+	uint8_t fileCacheAge[BLOCK_CACHE_FILE_LAST - BLOCK_CACHE_FILE];
+	uint8_t fileNextAge;
+	struct random_context *entropy;
+  // root of all cached key buffers
+	uint8_t* key;
+  // allow byte encrypting... key based on sector volume file index
+	uint8_t* segkey;
+  // signature of executable attached as header
+	uint8_t* sigkey;
+  // signature of executable attached as header
+	uint8_t* sigsalt;
+	size_t sigkeyLength;
+ // composite key
+	uint8_t* usekey[BLOCK_CACHE_COUNT];
+  // root buffer space of all cache blocks
+	uint8_t* key_buffer;
+ // data cache blocks
+	uint8_t* usekey_buffer[BLOCK_CACHE_COUNT];
+#ifdef FILE_BASED_VFS
+	FPI bufferFPI[BLOCK_CACHE_COUNT];
+#endif
+ // when reopened file structures need to be updated also...
+	PLIST files;
+	LOGICAL read_only;
+	LOGICAL external_memory;
+	LOGICAL closed;
+	uint32_t lock;
+	uint8_t tmpSalt[16];
+	uintptr_t clusterKeyVersion;
+} PACKED;
+struct sack_vfs_file
+{
+#ifdef FILE_BASED_VFS
+  // where to write the directory entry update to
+	FPI entry_fpi;
+  // has file size within
+	struct directory_entry _entry;
+  // has file size within
+	struct directory_entry *entry;
+#else
+  // has file size within
+	struct directory_entry *entry;
+#endif
+	struct directory_entry dirent_key;
+ // which volume this is in
+	struct volume *vol;
+	FPI fpi;
+	BLOCKINDEX _first_block;
+ // this should be in-sync with current FPI always; plz
+	BLOCKINDEX block;
+  // someone already deleted this...
+	LOGICAL delete_on_close;
+};
 #define TSEEK(type,v,o,c) ((type)vfs_SEEK(v,o,&c))
 #define BTSEEK(type,v,o,c) ((type)vfs_BSEEK(v,o,&c))
 #endif
@@ -11026,7 +11144,7 @@ uintptr_t vfs_SEEK( struct volume *vol, FPI offset, enum block_cache_entries *ca
 			cache_index[0] = UpdateSegmentKey( vol, cache_index[0], seg );
 		}
 	}
-	return ((uintptr_t)vol->disk) + offset;
+	return ((uintptr_t)vol->disk) + (uintptr_t)offset;
 }
 // shared with fuse module
 uintptr_t vfs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index ) {
@@ -11044,7 +11162,7 @@ uintptr_t vfs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entr
 			cache_index[0] = UpdateSegmentKey( vol, cache_index[0], seg );
 		}
 	}
-	return ((uintptr_t)vol->disk) + b;
+	return ((uintptr_t)vol->disk) + (uintptr_t)b;
 }
 static BLOCKINDEX GetFreeBlock( struct volume *vol, int init )
 {
@@ -11322,7 +11440,7 @@ void sack_vfs_shrink_volume( struct volume * vol ) {
 	Deallocate( struct disk *, vol->diskReal );
 	SetFileLength( vol->volname,
 			((uintptr_t)vol->disk - (uintptr_t)vol->diskReal) +
-			last_bat * BLOCKS_PER_SECTOR * BLOCK_SIZE + ( last_block + 1 + 1 )* BLOCK_SIZE );
+			(size_t)(last_bat * BLOCKS_PER_SECTOR * BLOCK_SIZE + ( last_block + 1 + 1 )* BLOCK_SIZE) );
 	// setting 0 size will cause expand to do an initial open instead of expanding
 	vol->dwSize = 0;
 }
@@ -11613,7 +11731,7 @@ struct sack_vfs_file * CPROC sack_vfs_openfile( struct volume *vol, const char *
 	file->vol = vol;
 	file->fpi = 0;
 	file->delete_on_close = 0;
-	file->first_block = file->block = file->entry->first_block ^ file->dirent_key.first_block;
+	file->_first_block = file->block = file->entry->first_block ^ file->dirent_key.first_block;
 	AddLink( &vol->files, file );
 	vol->lock = 0;
 	return file;
@@ -11632,8 +11750,8 @@ int CPROC sack_vfs_exists( struct volume *vol, const char * file ) {
 	if( ent ) return TRUE;
 	return FALSE;
 }
-size_t CPROC sack_vfs_tell( struct sack_vfs_file *file ) { return file->fpi; }
-size_t CPROC sack_vfs_size( struct sack_vfs_file *file ) {	return file->entry->filesize ^ file->dirent_key.filesize; }
+size_t CPROC sack_vfs_tell( struct sack_vfs_file *file ) { return (size_t)file->fpi; }
+size_t CPROC sack_vfs_size( struct sack_vfs_file *file ) { return (size_t)(file->entry->filesize ^ file->dirent_key.filesize); }
 size_t CPROC sack_vfs_seek( struct sack_vfs_file *file, size_t pos, int whence )
 {
 	FPI old_fpi = file->fpi;
@@ -11646,7 +11764,7 @@ size_t CPROC sack_vfs_seek( struct sack_vfs_file *file, size_t pos, int whence )
 			do {
 				if( ( file->fpi & ( ~BLOCK_MASK ) ) == ( old_fpi & ( ~BLOCK_MASK ) ) ) {
 					file->vol->lock = 0;
-					return file->fpi;
+					return (size_t)file->fpi;
 				}
 				file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
 				old_fpi += BLOCK_SIZE;
@@ -11655,7 +11773,7 @@ size_t CPROC sack_vfs_seek( struct sack_vfs_file *file, size_t pos, int whence )
 	}
 	{
 		size_t n = 0;
-		BLOCKINDEX b = file->first_block;
+		BLOCKINDEX b = file->_first_block;
 		while( n * BLOCK_SIZE < ( pos & ~BLOCK_MASK ) ) {
 			b = vfs_GetNextBlock( file->vol, b, FALSE, TRUE );
 			n++;
@@ -11663,7 +11781,7 @@ size_t CPROC sack_vfs_seek( struct sack_vfs_file *file, size_t pos, int whence )
 		file->block = b;
 	}
 	file->vol->lock = 0;
-	return file->fpi;
+	return (size_t)file->fpi;
 }
 static void MaskBlock( struct volume *vol, uint8_t* usekey, uint8_t* block, BLOCKINDEX block_ofs, size_t ofs, const char *data, size_t length ) {
 	size_t n;
@@ -11736,7 +11854,7 @@ size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t leng
 		if( ( file->entry->filesize  ^ file->dirent_key.filesize ) < file->fpi )
 			length = 0;
 		else
-			length = ( file->entry->filesize  ^ file->dirent_key.filesize ) - file->fpi;
+			length = (size_t)( file->entry->filesize  ^ file->dirent_key.filesize ) - (size_t)file->fpi;
 	}
 	if( !length ) {  file->vol->lock = 0; return 0; }
 	if( ofs ) {
@@ -11777,28 +11895,25 @@ size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t leng
 	file->vol->lock = 0;
 	return written;
 }
-static void sack_vfs_unlink_file_entry( struct volume *vol, struct directory_entry *entry, struct directory_entry *entkey, BLOCKINDEX first_block ) {
+static void sack_vfs_unlink_file_entry( struct volume *vol, struct directory_entry *entry, struct directory_entry *entkey, BLOCKINDEX first_block, LOGICAL deleted ) {
 	BLOCKINDEX block, _block;
 	struct sack_vfs_file *file_found = NULL;
 	struct sack_vfs_file *file;
 	INDEX idx;
-	LIST_FORALL( vol->files, idx, struct sack_vfs_file *, file  ) {
-		if( file->entry == entry ) {
+	LIST_FORALL( vol->files, idx, struct sack_vfs_file *, file ) {
+		if( file->_first_block == entry->first_block ) {
 			file_found = file;
-			//file->first_block = file->entry->first_block ^ file->dirent_key.first_block;
 			file->delete_on_close = TRUE;
 		}
 	}
-	if( file_found ) {
-		LoG( "Marking physical directory deleted." );
-		file_found->entry->first_block = file_found->dirent_key.first_block;
+	if( !deleted ) {
+ // zero the block... keep the name.
+		entry->first_block = entkey->first_block;
 	}
 	if( !file_found ) {
 // entry->first_block ^ entkey->first_block;
 		_block = block = first_block;
 		LoG( "(marking physical deleted (again?)) entry starts at %d", block );
- // zero the block... keep the name.
-		entry->first_block = entkey->first_block;
 		// wipe out file chain BAT
 		do {
 			enum block_cache_entries cache = BLOCK_CACHE_BAT;
@@ -11845,7 +11960,7 @@ static void shrinkBAT( struct sack_vfs_file *file ) {
 		_block = block;
 	} while( block != EOFBLOCK );
 }
-size_t CPROC sack_vfs_truncate( struct sack_vfs_file *file ) { file->entry->filesize = file->fpi ^ file->dirent_key.filesize; shrinkBAT( file ); return file->fpi; }
+size_t CPROC sack_vfs_truncate( struct sack_vfs_file *file ) { file->entry->filesize = file->fpi ^ file->dirent_key.filesize; shrinkBAT( file ); return (size_t)file->fpi; }
 int CPROC sack_vfs_close( struct sack_vfs_file *file ) {
 	while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
 #ifdef DEBUG_TRACE_LOG
@@ -11860,7 +11975,7 @@ int CPROC sack_vfs_close( struct sack_vfs_file *file ) {
 	}
 #endif
 	DeleteLink( &file->vol->files, file );
-	if( file->delete_on_close ) sack_vfs_unlink_file_entry( file->vol, file->entry, &file->dirent_key, file->first_block );
+	if( file->delete_on_close ) sack_vfs_unlink_file_entry( file->vol, file->entry, &file->dirent_key, file->_first_block, TRUE );
 	file->vol->lock = 0;
 	if( file->vol->closed ) sack_vfs_unload_volume( file->vol );
 	Deallocate( struct sack_vfs_file *, file );
@@ -11874,7 +11989,7 @@ int CPROC sack_vfs_unlink_file( struct volume *vol, const char * filename ) {
 	while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
 	LoG( "unlink file:%s", filename );
 	if( ( entry  = ScanDirectory( vol, filename, &entkey, 0 ) ) ) {
-		sack_vfs_unlink_file_entry( vol, entry, &entkey, entry->first_block ^ entkey.first_block );
+		sack_vfs_unlink_file_entry( vol, entry, &entkey, entry->first_block ^ entkey.first_block, FALSE );
 		result = 1;
 	}
 	vol->lock = 0;
@@ -11890,7 +12005,7 @@ struct find_info {
 	CTEXTSTR base;
 	size_t base_len;
 	size_t filenamelen;
-	size_t filesize;
+	VFS_DISK_DATATYPE filesize;
 	CTEXTSTR mask;
 	size_t thisent;
 };
@@ -11966,7 +12081,7 @@ int CPROC sack_vfs_find_first( struct find_info *info ) {
 int CPROC sack_vfs_find_close( struct find_info *info ) { Deallocate( struct find_info*, info ); return 0; }
 int CPROC sack_vfs_find_next( struct find_info *info ) { return iterate_find( info ); }
 char * CPROC sack_vfs_find_get_name( struct find_info *info ) { return info->filename; }
-size_t CPROC sack_vfs_find_get_size( struct find_info *info ) { return info->filesize; }
+size_t CPROC sack_vfs_find_get_size( struct find_info *info ) { return (size_t)info->filesize; }
 LOGICAL CPROC sack_vfs_find_is_directory( struct find_cursor *cursor ) { return FALSE; }
 LOGICAL CPROC sack_vfs_is_directory( uintptr_t psvInstance, const char *path ) {
 	if( path[0] == '.' && path[1] == 0 ) return TRUE;
@@ -37606,7 +37721,7 @@ FILE * sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_
 	EnterCriticalSec( &(*winfile_local).cs_files );
 	if( !mount )
 		mount = (*winfile_local).mounted_file_systems;
-	if( !StrChr( opts, 'r' ) && !StrChr( opts, '+' ) )
+	if( StrChr( opts, '+' ) || StrChr( opts, 'a' ) || StrChr( opts, 'w' ) )
 		while( mount )
   // skip roms...
 		{
@@ -38763,6 +38878,23 @@ int sack_fputs( const char *format,FILE *file )
 	}
 	return 0;
 }
+LOGICAL SetFileLength( CTEXTSTR path, size_t length )
+{
+#ifdef __LINUX__
+	// files are by default binary in linux
+#  ifndef O_BINARY
+#	define O_BINARY 0
+#  endif
+#endif
+	INDEX file;
+	file = sack_iopen( 0, path, O_RDWR | O_BINARY );
+	if( file == INVALID_INDEX )
+		return FALSE;
+	sack_ilseek( file, length, SEEK_SET );
+	sack_iset_eof( file );
+	sack_iclose( file );
+	return TRUE;
+}
 FILESYS_NAMESPACE_END
 #define NO_UNICODE_C
 #ifdef _MSC_VER
@@ -39537,7 +39669,9 @@ FILESYS_NAMESPACE_END
 #endif
 //-----------------------------------------------------------------------
 FILESYS_NAMESPACE
+#ifndef __NO_SACK_FILESYS__
 extern TEXTSTR ExpandPath( CTEXTSTR path );
+#endif
  CTEXTSTR  pathrchr ( CTEXTSTR path )
 {
 	CTEXTSTR end1, end2;
@@ -39629,7 +39763,11 @@ uint64_t GetTimeAsFileTime ( void )
  // last modification time.
  uint64_t  GetFileWriteTime( CTEXTSTR name )
 {
+#ifndef __NO_SACK_FILESYS__
 	TEXTSTR tmppath = ExpandPath( name );
+#else
+#  define tmppath name
+#endif
 #ifdef _WIN32
 	HANDLE hFile = CreateFile( tmppath
  // device access?
@@ -39639,6 +39777,9 @@ uint64_t GetTimeAsFileTime ( void )
 								  , OPEN_EXISTING
 								  , 0
 								  , NULL );
+#ifndef __NO_SACK_FILESYS__
+	Deallocate( TEXTSTR, tmppath );
+#endif
 	if( hFile != INVALID_HANDLE_VALUE )
 	{
 		FILETIME filetime;
@@ -39903,7 +40044,11 @@ int  SetCurrentPath ( CTEXTSTR path )
 	TEXTSTR tmp_path;
 	if( !path )
 		return 0;
+#ifndef __NO_SACK_FILESYS__
 	tmp_path = ExpandPath( path );
+#else
+#  define tmp_path path
+#endif
 #ifndef UNDER_CE
 #  ifdef _WIN32
 	status = SetCurrentDirectory( tmp_path );
@@ -39919,12 +40064,16 @@ int  SetCurrentPath ( CTEXTSTR path )
 	 status = !chdir( tmp_path );
 #	endif
 #  endif
+#ifndef __NO_SACK_FILESYS__
 	Release( tmp_path );
+#endif
 	if( status )
 	{
+#ifndef __NO_SACK_FILESYS__
 		TEXTCHAR tmp[256];
 		path = GetCurrentPath( tmp, sizeof( tmp ) );
 		SetDefaultFilePath( path );
+#endif
 	}
 	else
 	{
@@ -39955,23 +40104,6 @@ LOGICAL IsAbsolutePath( CTEXTSTR path )
 #endif
 	}
 	return FALSE;
-}
-LOGICAL SetFileLength( CTEXTSTR path, size_t length )
-{
-#ifdef __LINUX__
-	// files are by default binary in linux
-#  ifndef O_BINARY
-#	define O_BINARY 0
-#  endif
-#endif
-	INDEX file;
-	file = sack_iopen( 0, path, O_RDWR|O_BINARY );
-	if( file == INVALID_INDEX )
-		return FALSE;
-	sack_ilseek( file, length, SEEK_SET );
-	sack_iset_eof( file );
-	sack_iclose( file );
-	return TRUE;
 }
 FILESYS_NAMESPACE_END
 //-----------------------------------------------------------------------
