@@ -457,11 +457,12 @@ void MakeCert(  struct info_params *params )
 				}
 				{
 					BASIC_CONSTRAINTS bc;
-					bc.ca = 1;
+					bc.ca = ~0;
 					bc.pathlen = NULL;
 					X509_add1_ext_i2d( x509, NID_basic_constraints, &bc, 1, X509V3_ADD_DEFAULT );
 				}
 				{
+					lprintf( "SIGNING ON ROOT CERT" );
 					int _usage = KU_CRL_SIGN | KU_KEY_CERT_SIGN | KU_DIGITAL_SIGNATURE;
 					ASN1_INTEGER *usage = ASN1_INTEGER_new();
 					ASN1_INTEGER_set( usage, _usage );
@@ -734,10 +735,10 @@ void MakeReq( struct info_params *params )
 						if( !addr ) {
 							char buf[256];
 							snprintf( buf, 256, "%s:%s", TranslateText("Bad address passed"), name );
-                     params->isolate->ThrowException( Exception::Error(
+							params->isolate->ThrowException( Exception::Error(
 																							  String::NewFromUtf8( params->isolate, buf ) ) );
-                     params->ca = NULL;
-                     return;
+							params->ca = NULL;
+							return;
 						}
 						AddLink( &addresses, addr );
 						ASN1_IA5STRING *val = ASN1_IA5STRING_new();
@@ -768,6 +769,14 @@ void MakeReq( struct info_params *params )
 					X509_EXTENSION *ex = X509V3_EXT_i2d( NID_subject_alt_name, 0, names );// X509V3_EXT_conf_nid( NULL, NULL, NID_subject_alt_name, (char*)out );
 					if( !ex ) {
 						throwError( params, "Something" );
+					}
+					sk_X509_EXTENSION_push( exts, ex );
+
+					const X509V3_EXT_METHOD *method = X509V3_EXT_get_nid( NID_certificate_policies );
+					void *ext_struc = (X509_EXTENSION*)method->r2i( method, NULL, "2.5.29.32.0" );
+					ex = X509V3_EXT_i2d( NID_certificate_policies, 0, ext_struc );
+					if( !ex ) {
+						throwError( params, "Failed to make certificate policy extension" );
 					}
 					sk_X509_EXTENSION_push( exts, ex );
 
@@ -1109,16 +1118,29 @@ static void SignReq( struct info_params *params )
 			pathlen = sbc->pathlen ? ASN1_INTEGER_get( sbc->pathlen ) : 1;
 			if( pathlen > 0 ) {
 				BASIC_CONSTRAINTS bc;
-				bc.ca = 1;
+				bc.ca = ~0;
 				bc.pathlen = ASN1_INTEGER_new();;
 				ASN1_INTEGER_set( bc.pathlen, pathlen - 1 );
+				if( sbc->pathlen && pathlen == 1 )
+					bc.ca = 0;
 				X509_add1_ext_i2d( cert, NID_basic_constraints, &bc, 1, X509V3_ADD_DEFAULT );
-				{
+				if( sbc->pathlen && pathlen == 1 ) {
+					lprintf( "SET TERMINAL USAGE" );
+					int _usage = KU_DIGITAL_SIGNATURE;
+					ASN1_INTEGER *usage = ASN1_INTEGER_new();
+					ASN1_INTEGER_set( usage, _usage );
+					X509_add1_ext_i2d( cert, NID_key_usage, usage, 1, X509V3_ADD_DEFAULT );
+				}
+				else {
+					lprintf( "SET CA USAGE" );
 					int _usage = KU_CRL_SIGN | KU_KEY_CERT_SIGN | KU_DIGITAL_SIGNATURE;
 					ASN1_INTEGER *usage = ASN1_INTEGER_new();
 					ASN1_INTEGER_set( usage, _usage );
 					X509_add1_ext_i2d( cert, NID_key_usage, usage, 1, X509V3_ADD_DEFAULT );
 				}
+			}
+			else {
+
 			}
 		}
 	}
@@ -1534,6 +1556,76 @@ static void DumpCert( X509 *x509 ) {
 			else
 				if( v->data )
 					LogBinary( v->data, v->length );
+			/*
+			X509V3_EXT_METHOD v3_cpols = {
+					NID_certificate_policies, 0,ASN1_ITEM_ref(CERTIFICATEPOLICIES),
+				0,0,0,0,
+				0,0,
+				0,0,
+				(X509V3_EXT_I2R)i2r_certpol,
+				(X509V3_EXT_R2I)r2i_certpol,
+				NULL
+			};
+
+				https://www.alvestrand.no/objectid/2.5.29.32.0.html
+				certificatePolicies = 2.5.29.32.0
+				2.5.29.32 - Certificate Policies
+				2.5.29 - certificateExtension (id-ce)
+				2.5 - X.500 Directory Services
+				2 - ISO/ITU-T jointly assigned OIDs
+
+				pol = (struct stack_st *) X509_get_ext_d2i(pCert, NID_certificate_policies, NULL, NULL);
+
+				if(pol != NULL)
+				{
+					for(j = 0; j < sk_POLICYINFO_num(pol); j++)
+					{
+						pinfo = sk_POLICYINFO_value(pol, j);
+						if(pinfo != NULL)
+						{
+							char szBuffer[32] = {0};
+							OBJ_obj2txt(szBuffer, 64, pinfo->policyid, 0);
+							if (0 == strcmp(szBuffer, RRN_OID))// || 0 == strcmp(szBuffer, CERTIPOST_OID))
+							{
+								iRet = X509_V_OK;
+								bFound = TRUE;
+								break;
+							}
+						}
+					}
+				}
+
+				bool x509v3ext::parse_certpol(QString *, QString *adv) const
+				{
+					bool retval = true;
+					QStringList pols;
+					QString myadv;
+					int i;
+					STACK_OF(POLICYINFO) *pol = (STACK_OF(POLICYINFO) *)d2i();
+
+					if (!pol)
+						return false;
+
+					for (i = 0; i < sk_POLICYINFO_num(pol); i++) {
+						POLICYINFO *pinfo = sk_POLICYINFO_value(pol, i);
+						if (!pinfo->qualifiers) {
+							pols << obj2SnOid(pinfo->policyid);
+							continue;
+						}
+						QString tag = QString("certpol%1_sect").arg(i);
+						pols << QString("@") + tag;
+						if (!gen_cpol_qual_sect(tag, pinfo, &myadv)) {
+							retval = false;
+							break;
+						}
+					}
+					if (retval && adv)
+						*adv = QString("certificatePolicies=%1ia5org,%2\n").
+						arg(parse_critical()).arg(pols.join(", ")) + *adv + myadv;
+					sk_POLICYINFO_free(pol);
+					return retval;
+				}
+			*/
 		}
 	}
 }
