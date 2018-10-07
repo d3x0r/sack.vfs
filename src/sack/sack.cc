@@ -15707,7 +15707,7 @@ SACK_DEADSTART_NAMESPACE_END
  * see also - include/logging.h
  *
  */
-#define SUPPORT_LOG_ALLOCATE
+//#define SUPPORT_LOG_ALLOCATE
 #define DEFAULT_OUTPUT_STDERR
 #define COMPUTE_CPU_FREQUENCY
 #define NO_UNICODE_C
@@ -37721,7 +37721,7 @@ FILE * sack_fopenEx( INDEX group, CTEXTSTR filename, CTEXTSTR opts, struct file_
 	EnterCriticalSec( &(*winfile_local).cs_files );
 	if( !mount )
 		mount = (*winfile_local).mounted_file_systems;
-	if( StrChr( opts, '+' ) || StrChr( opts, 'a' ) || StrChr( opts, 'w' ) )
+	if( !StrChr( opts, 'r' ) && !StrChr( opts, '+' ) )
 		while( mount )
   // skip roms...
 		{
@@ -59050,7 +59050,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				if( state->n > input->size ) DebugBreak();
 				state->val.stringLen = (output->pos - state->val.string)-1;
 #ifdef DEBUG_PARSING
-				lprintf( "STRING: %s %d", state->val.string, state->val.stringLen );
+				lprintf( "STRING1: %s %d", state->val.string, state->val.stringLen );
 #endif
 				if( state->status ) state->val.value_type = JSOX_VALUE_STRING;
 			}
@@ -59067,7 +59067,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 		while( state->status && (state->n < input->size) && (c = GetUtfChar( &input->pos )) )
 		{
 #ifdef DEBUG_PARSING
-			lprintf( "parse character %c %d %d", c, state->word, state->parse_context );
+			lprintf( "parse character %c %d %d %d %d", c<32?".":c, state->word, state->parse_context, state->parse_context, state->word );
 #endif
 			state->col++;
 			state->n = input->pos - input->buf;
@@ -59223,7 +59223,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 							if( state->val.value_type != JSOX_VALUE_STRING ) {
 								state->val.stringLen = output->pos - state->val.string;
 #ifdef DEBUG_PARSING
-								lprintf( "STRING: %s %d", state->val.string, state->val.stringLen );
+								lprintf( "STRING2: %s %d", state->val.string, state->val.stringLen );
 #endif
 								(*output->pos++) = 0;
 							}
@@ -59276,7 +59276,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 							if( state->val.value_type != JSOX_VALUE_STRING ) {
 								state->val.stringLen = output->pos - state->val.string;
 #ifdef DEBUG_PARSING
-								lprintf( "STRING: %s %d", state->val.string, state->val.stringLen );
+								lprintf( "STRING3: %s %d", state->val.string, state->val.stringLen );
 #endif
 								(*output->pos++) = 0;
 							}
@@ -59401,8 +59401,9 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						else if( string_status > 0 ) {
 							state->gatheringString = FALSE;
 							state->val.stringLen = (output->pos - state->val.string) - 1;
+							if( state->parse_context == JSOX_CONTEXT_UNKNOWN ) state->completed = TRUE;
 #ifdef DEBUG_PARSING
-							lprintf( "STRING: %s %d", state->val.string, state->val.stringLen );
+							lprintf( "STRING4: %s %d", state->val.string, state->val.stringLen );
 #endif
 						}
 						state->n = input->pos - input->buf;
@@ -59454,6 +59455,9 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						//lprintf( "whitespace skip..." );
 						break;
 					default:
+						if( state->word == JSOX_WORD_POS_RESET && ( (c >= '0' && c <= '9') || (c == '+') || (c == '.') ) ) {
+							goto beginNumber;
+						}
 						if( state->word == JSOX_WORD_POS_AFTER_FIELD ) {
 							state->status = FALSE;
 							if( !state->pvtError ) state->pvtError = VarTextCreate();
@@ -59497,7 +59501,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						state->gatheringString = FALSE;
 						state->val.stringLen = (output->pos - state->val.string) - 1;
 #ifdef DEBUG_PARSING
-						lprintf( "STRING: %s %d", state->val.string, state->val.stringLen );
+						lprintf( "STRING5: %s %d", state->val.string, state->val.stringLen );
 #endif
 					} else if( state->complete_at_end ) {
 						if( !state->pvtError ) state->pvtError = VarTextCreate();
@@ -59654,6 +59658,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						const char *_msg_input;
 						// always reset this here....
 						// keep it set to determine what sort of value is ready.
+					beginNumber:
 						if( !state->gatheringNumber ) {
 							state->numberFromBigInt = FALSE;
 							state->numberFromDate = FALSE;
@@ -59796,7 +59801,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 							(*output->pos++) = 0;
 							state->val.stringLen = (output->pos - state->val.string) - 1;
 #ifdef DEBUG_PARSING
-							lprintf( "STRING: %s %d", state->val.string, state->val.stringLen );
+							lprintf( "STRING6: %s %d", state->val.string, state->val.stringLen );
 #endif
 							state->gatheringNumber = FALSE;
 							//lprintf( "result with number:%s", state->val.string );
