@@ -1063,7 +1063,12 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
-- 0.9.145 - Add 'mv', 'rename' methods to Volume() instance.  Split locks and ssl read/write.  Fix VFS directory truncation issue (early EODMARK injection). Add JSOX Parser.
+- 0.9.145 
+   - Add 'mv', 'rename' methods to Volume() instance.  
+   - Split locks on ssl read/write.  
+   - Fix VFS directory truncation issue (early EODMARK injection). 
+   - TLS Certificate add Certificate Policy
+   - Add JSOX Parser.
 - 0.9.144 - Fix websocket receiving packets with multiple frames.
 - 0.9.143 - Improve task interface.  Simplify com data buffer; it's now only valid during receive callback. Improve websocket server handling http requests; add a event callback when socket closes, after server HTTP to distinguish between incomplete(TLS error) connections. Sync SACK updates: improve SQL parsing/table-index generation, library load path for current and name as passed, event for http close, some protection against dereferencing null parameters.
 - 0.9.142 - Fix node-gyp for windows build.
