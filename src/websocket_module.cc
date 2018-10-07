@@ -93,6 +93,7 @@ struct optionStrings {
 	Eternal<String> *headerString;
 	Eternal<String> *certString;
 	Eternal<String> *CGIString;
+	Eternal<String> *contentString;
 	Eternal<String> *keyString;
 	Eternal<String> *pemString;
 	Eternal<String> *passString;
@@ -528,7 +529,6 @@ static void cgiParamSave(uintptr_t psv, PTEXT name, PTEXT value){
 
 
 static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
-	struct HttpState *pHttpState = GetWebSocketHttpState( pc );
 	PLIST headers = GetWebSocketHeaders( pc );
 	PTEXT resource = GetWebSocketResource( pc );
 	SOCKADDR *remoteAddress = (SOCKADDR *)GetNetworkLong( pc, GNL_REMOTE_ADDRESS );
@@ -544,15 +544,6 @@ static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 			, String::NewFromUtf8( isolate, (const char*)GetText( header->value ), NewStringType::kNormal, (int)GetTextSize( header->value ) ).ToLocalChecked() );
 	}
 	optionStrings *strings = getStrings( isolate );
-	if( pHttpState )
-	{
-		struct cgiParams cgi;
-		cgi.isolate = isolate;
-		cgi.cgi = Object::New( isolate );
-		ProcessCGIFields( pHttpState, cgiParamSave, (uintptr_t)&cgi );
-
-		result->Set( strings->CGIString->Get( isolate ), cgi.cgi );
-	}
 	result->Set( strings->headerString->Get( isolate ), arr );
 	if( remoteAddress )
 	result->Set( strings->remoteFamilyString->Get( isolate )
@@ -576,8 +567,21 @@ static Local<Object> makeRequest( Isolate *isolate, struct optionStrings *string
 	// .socket
 	Local<Object> req = Object::New( isolate );
 	Local<Object> socket;
+	struct HttpState *pHttpState = GetWebSocketHttpState( pc );
+	if( pHttpState ) {
+		struct cgiParams cgi;
+		cgi.isolate = isolate;
+		cgi.cgi = Object::New( isolate );
+		ProcessCGIFields( pHttpState, cgiParamSave, (uintptr_t)&cgi );
+
+		req->Set( strings->CGIString->Get( isolate ), cgi.cgi );
+	}
 	req->Set( strings->connectionString->Get( isolate ), socket = makeSocket( isolate, pc ) );
 	req->Set( strings->headerString->Get( isolate ), socket->Get( strings->headerString->Get( isolate ) ) );
+	if( GetHttpContent( pHttpState ) )
+		req->Set( strings->contentString->Get( isolate ), String::NewFromUtf8( isolate, GetText( GetHttpContent( pHttpState ) ) ) );
+	else
+		req->Set( strings->contentString->Get( isolate ), Null(isolate) );
 	if( !GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) )
 		DebugBreak();
 	req->Set( strings->urlString->Get( isolate )
