@@ -6,9 +6,9 @@ Node addon for a custom virtual file system interface.
 JSON/JSON6 (stream)parser, 
 JSOX (streaming) parser, 
 COM/serial port access, Sqlite interface, an option/configuration database built on Sqlite.
-Windows specific registry access for application settings. 
-WebSocket network library.  UDP sockets.
+WebSocket/HTTP/HTTPS network library.  UDP sockets.
 Vulkan API to be added eventually... 
+Windows specific registry access for application settings. 
 
 ## Requirements
 
@@ -420,7 +420,7 @@ tick();
 ```
 
 
-## JSOX, and JSON( [JSON6](https://www.github.com/d3x0r/json6) ) - JSON and JSON6 compatible processor 
+## [JSOX](https://www.github.com/d3x0r/jsox), and JSON( [JSON6](https://www.github.com/d3x0r/json6) ) - JSON and JSON6 compatible processor 
 
 [JSOX](https://www.github.com/d3x0r/jsox) further extends JSON6 with Date support(subtype of numbers), BigInt support and TypedArray encoding.
 It also adds the ability to define classes, which reduces data replication in the output, but also reduces
@@ -1063,8 +1063,7 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
-- 0.9.146 - Add JSOX parser.
-- 0.9.145 - Add 'mv', 'rename' methods to Volume() instance.  Split locks and ssl read/write.  Fix VFS directory truncation issue (early EODMARK injection). 
+- 0.9.145 - Add 'mv', 'rename' methods to Volume() instance.  Split locks and ssl read/write.  Fix VFS directory truncation issue (early EODMARK injection). Add JSOX Parser.
 - 0.9.144 - Fix websocket receiving packets with multiple frames.
 - 0.9.143 - Improve task interface.  Simplify com data buffer; it's now only valid during receive callback. Improve websocket server handling http requests; add a event callback when socket closes, after server HTTP to distinguish between incomplete(TLS error) connections. Sync SACK updates: improve SQL parsing/table-index generation, library load path for current and name as passed, event for http close, some protection against dereferencing null parameters.
 - 0.9.142 - Fix node-gyp for windows build.
