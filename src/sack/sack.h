@@ -11508,56 +11508,56 @@ SACK_VFS_PROC size_t CPROC sack_vfs_find_get_size( struct find_info *info );
 // if the volume does exist, a quick validity check is made on it, and then the result is opened
 // returns NULL if failure.  (permission denied to the file, or invalid filename passed, could be out of space... )
 // same as load_cyrypt_volume with userkey and devkey NULL.
-SACK_VFS_PROC struct fs_volume * CPROC sack_vfs_fs_load_volume( CTEXTSTR filepath );
+SACK_VFS_PROC struct volume * CPROC sack_vfs_fs_load_volume( CTEXTSTR filepath );
 // open a volume at the specified pathname.  Use the specified keys to encrypt it.
 // if the volume does not exist, will create it.
 // if the volume does exist, a quick validity check is made on it, and then the result is opened
 // returns NULL if failure.  (permission denied to the file, or invalid filename passed, could be out of space... )
 // if the keys are NULL same as load_volume.
-SACK_VFS_PROC struct fs_volume * CPROC sack_vfs_fs_load_crypt_volume( CTEXTSTR filepath, uintptr_t version, CTEXTSTR userkey, CTEXTSTR devkey );
+SACK_VFS_PROC struct volume * CPROC sack_vfs_fs_load_crypt_volume( CTEXTSTR filepath, uintptr_t version, CTEXTSTR userkey, CTEXTSTR devkey );
 // pass some memory and a memory length of the memory to use as a volume.
 // if userkey and/or devkey are not NULL the memory is assume to be encrypted with those keys.
 // the space is opened as readonly; write accesses/expanding operations will fail.
-SACK_VFS_PROC struct fs_volume * CPROC sack_vfs_fs_use_crypt_volume( POINTER filemem, size_t size, uintptr_t version, CTEXTSTR userkey, CTEXTSTR devkey );
+SACK_VFS_PROC struct volume * CPROC sack_vfs_fs_use_crypt_volume( POINTER filemem, size_t size, uintptr_t version, CTEXTSTR userkey, CTEXTSTR devkey );
 // close a volume; release all resources; any open files will keep the volume open.
 // when the final file closes the volume will complete closing.
-SACK_VFS_PROC void            CPROC sack_vfs_fs_unload_volume( struct fs_volume * vol );
+SACK_VFS_PROC void            CPROC sack_vfs_fs_unload_volume( struct volume * vol );
 // remove unused extra allocated space at end of volume.  During working process, extra space is preallocated for
 // things to be stored in.
-SACK_VFS_PROC void            CPROC sack_vfs_fs_shrink_volume( struct fs_volume * vol );
+SACK_VFS_PROC void            CPROC sack_vfs_fs_shrink_volume( struct volume * vol );
 // remove encryption from volume.
-SACK_VFS_PROC LOGICAL         CPROC sack_vfs_fs_decrypt_volume( struct fs_volume *vol );
+SACK_VFS_PROC LOGICAL         CPROC sack_vfs_fs_decrypt_volume( struct volume *vol );
 // change the key applied to a volume.
-SACK_VFS_PROC LOGICAL         CPROC sack_vfs_fs_encrypt_volume( struct fs_volume *vol, uintptr_t version, CTEXTSTR key1, CTEXTSTR key2 );
+SACK_VFS_PROC LOGICAL         CPROC sack_vfs_fs_encrypt_volume( struct volume *vol, uintptr_t version, CTEXTSTR key1, CTEXTSTR key2 );
 // create a signature of current directory of volume.
 // can be used to validate content.  Returns 256 character hex string.
-SACK_VFS_PROC const char *    CPROC sack_vfs_fs_get_signature( struct fs_volume *vol );
+SACK_VFS_PROC const char *    CPROC sack_vfs_fs_get_signature( struct volume *vol );
 // pass an offset from memory start and the memory start...
 // computes the distance, uses that to generate a signature
 // returns BLOCK_SIZE length signature; recommend using at least 128 bits of it.
 SACK_VFS_PROC const uint8_t * CPROC sack_vfs_fs_get_signature2( POINTER disk, POINTER diskReal );
 // ---------- Operations on files in volumes ------------------
 // open a file, creates if does not exist.
-SACK_VFS_PROC struct sack_vfs_fs_file * CPROC sack_vfs_fs_openfile( struct fs_volume *vol, CTEXTSTR filename );
+SACK_VFS_PROC struct sack_vfs_file * CPROC sack_vfs_fs_openfile( struct volume *vol, CTEXTSTR filename );
 // check if a file exists (if it does not exist, and you don't want it created, can use this and not openfile)
-SACK_VFS_PROC int CPROC sack_vfs_fs_exists( struct fs_volume *vol, const char * file );
+SACK_VFS_PROC int CPROC sack_vfs_fs_exists( struct volume *vol, const char * file );
 // close a file.
-SACK_VFS_PROC int CPROC sack_vfs_fs_close( struct sack_vfs_fs_file *file );
+SACK_VFS_PROC int CPROC sack_vfs_fs_close( struct sack_vfs_file *file );
 // get the current File Position Index (FPI).
-SACK_VFS_PROC size_t CPROC sack_vfs_fs_tell( struct sack_vfs_fs_file *file );
+SACK_VFS_PROC size_t CPROC sack_vfs_fs_tell( struct sack_vfs_file *file );
 // get the length of the file
-SACK_VFS_PROC size_t CPROC sack_vfs_fs_size( struct sack_vfs_fs_file *file );
+SACK_VFS_PROC size_t CPROC sack_vfs_fs_size( struct sack_vfs_file *file );
 // set the current File Position Index (FPI).
-SACK_VFS_PROC size_t CPROC sack_vfs_fs_seek( struct sack_vfs_fs_file *file, size_t pos, int whence );
+SACK_VFS_PROC size_t CPROC sack_vfs_fs_seek( struct sack_vfs_file *file, size_t pos, int whence );
 // write starting at the current FPI.
-SACK_VFS_PROC size_t CPROC sack_vfs_fs_write( struct sack_vfs_fs_file *file, const char * data, size_t length );
+SACK_VFS_PROC size_t CPROC sack_vfs_fs_write( struct sack_vfs_file *file, const char * data, size_t length );
 // read starting at the current FPI.
-SACK_VFS_PROC size_t CPROC sack_vfs_fs_read( struct sack_vfs_fs_file *file, char * data, size_t length );
+SACK_VFS_PROC size_t CPROC sack_vfs_fs_read( struct sack_vfs_file *file, char * data, size_t length );
 // sets the file length to the current FPI.
-SACK_VFS_PROC size_t CPROC sack_vfs_fs_truncate( struct sack_vfs_fs_file *file );
-// psv should be struct fs_volume *vol;
+SACK_VFS_PROC size_t CPROC sack_vfs_fs_truncate( struct sack_vfs_file *file );
+// psv should be struct volume *vol;
 // delete a filename.  Clear the space it was occupying.
-SACK_VFS_PROC int CPROC sack_vfs_fs_unlink_file( struct fs_volume *vol, const char * filename );
+SACK_VFS_PROC int CPROC sack_vfs_fs_unlink_file( struct volume *vol, const char * filename );
 // rename a file within the filesystem; if the target name exists, it is deleted.  If the target file is also open, it will be prevented from deletion; and duplicate filenames will end up exising(?)
 SACK_VFS_PROC LOGICAL CPROC sack_vfs_fs_rename( uintptr_t psvInstance, const char *original, const char *newname );
 // -----------  directory interface commands. ----------------------
@@ -11574,8 +11574,8 @@ SACK_VFS_PROC char * CPROC sack_vfs_fs_find_get_name( struct find_info *info );
 // get file information for the file at the current cursor position...
 SACK_VFS_PROC size_t CPROC sack_vfs_fs_find_get_size( struct find_info *info );
 #if defined USE_VFS_FS_INTERFACE
-#define volume fs_volume
-#define sack_vfs_file sack_vfs_fs_file
+#define volume volume
+#define sack_vfs_file sack_vfs_file
 #define sack_vfs_load_volume  sack_vfs_fs_load_volume
 #define sack_vfs_load_crypt_volume  sack_vfs_fs_load_crypt_volume
 #define sack_vfs_use_crypt_volume  sack_vfs_fs_use_crypt_volume
