@@ -13,7 +13,7 @@ static struct timings {
 static void makeJSOX( const v8::FunctionCallbackInfo<Value>& args );
 static void escapeJSOX( const v8::FunctionCallbackInfo<Value>& args );
 static void parseJSOX( const v8::FunctionCallbackInfo<Value>& args );
-
+static void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args );
 static void showTimings( const v8::FunctionCallbackInfo<Value>& args );
 
 class JSOXObject : public node::ObjectWrap {
@@ -32,16 +32,17 @@ public:
 
 	~JSOXObject();
 };
-
+static Persistent<Map> fromPrototypeMap;
 Persistent<Function> JSOXObject::constructor;
 
 void InitJSOX( Isolate *isolate, Handle<Object> exports ){
 
 	Local<Object> o2 = Object::New( isolate );
 	SET_READONLY_METHOD( o2, "parse", parseJSOX );
-	NODE_SET_METHOD( o2, "stringify", makeJSOX );
-	NODE_SET_METHOD( o2, "escape", escapeJSOX );
-	//NODE_SET_METHOD( o2, "timing", showTimings );
+	//NODE_SET_METHOD( o2, "stringify", makeJSOX );
+	SET_READONLY_METHOD( o2, "setFromPrototypeMap", setFromPrototypeMap );
+	SET_READONLY_METHOD( o2, "escape", escapeJSOX );
+	//SET_READONLY_METHOD( o2, "timing", showTimings );
 	SET_READONLY( exports, "JSOX", o2 );
 
 	{
@@ -251,6 +252,13 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 		break;
 	case JSOX_VALUE_STRING:
 		result = String::NewFromUtf8( revive->isolate, val->string, MODE, (int)val->stringLen ).ToLocalChecked();
+		if( val->className ) {
+			Local<Function> cb = fromPrototypeMap.Get( revive->isolate )->
+				Get( revive->context
+					, String::NewFromUtf8( revive->isolate, val->className )
+				).ToLocalChecked().As<Function>();
+			result = cb->Call( result, 0, NULL );
+		}
 		break;
 	case JSOX_VALUE_NUMBER:
 		if( val->float_result )
@@ -344,6 +352,13 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				o->Set( index++, sub_o = Array::New( revive->isolate ) );
 			}
 			buildObject( val->contains, sub_o, revive );
+			if( val->className ) {
+				Local<Function> cb = fromPrototypeMap.Get( revive->isolate )->
+					Get( revive->context
+						, String::NewFromUtf8( revive->isolate, val->className )
+					).ToLocalChecked().As<Function>();
+				sub_o = cb->Call( sub_o, 0, NULL ).As<Object>();
+			}
 			if( revive->revive ) {
 				Local<Value> args[2] = { thisKey, sub_o };
 				revive->reviver->Call( revive->_this, 2, args );
@@ -363,6 +378,13 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 			}
 
 			buildObject( val->contains, sub_o, revive );
+			if( val->className ) {
+				Local<Function> cb = fromPrototypeMap.Get( revive->isolate )->
+					Get( revive->context
+						, String::NewFromUtf8( revive->isolate, val->className )
+					).ToLocalChecked().As<Function>();
+				sub_o = cb->Call( sub_o, 0, NULL ).As<Object>();
+			}
 			if( revive->revive ) {
 				Local<Value> args[2] = { thisKey, sub_o };
 				revive->reviver->Call( revive->_this, 2, args );
@@ -503,4 +525,6 @@ void makeJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
 	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), "undefined :) Stringify is not completed" ) );
 }
 
-
+void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {
+	fromPrototypeMap.Reset( args.GetIsolate(), args[0].As<Map>() );
+}

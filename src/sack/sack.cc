@@ -59442,6 +59442,12 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						// but gatherString now just gathers all strings
 					case '"':
 					case '\'':
+						if( state->word == JSOX_WORD_POS_FIELD
+							|| ( state->val.value_type == JSOX_VALUE_STRING
+								&& !state->val.className ) ) {
+							(*output->pos++) = 0;
+							state->val.className = state->val.string;
+						}
 						state->val.string = output->pos;
 						state->gatheringString = TRUE;
 						state->gatheringStringFirstChar = c;
