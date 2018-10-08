@@ -53,6 +53,8 @@ vfs = {
     JSOX - A jsox (JavaScript Object eXchange) parser. (JSON5/6 input compatible)
         parse(string) - result with a V8 object created from the json string.  
         begin( cb ) - begin parsing JSOX stream; callback is called as each value is completed.
+        stringifier() - create a reusable stringifier which can be used for custom types
+        stringify(object,replacer,pretty) - stringify an object; same API as JSON.
     JSON6 - A json parser. (JSON5 input compatible)
         parse(string) - result with a V8 object created from the json string.  
         begin( cb ) - begin parsing JSON6 stream; callback is called as each value is completed.
@@ -450,6 +452,27 @@ Added support 'reviver' parameter.
      - parse( string [,reviver] )
      - begin( callback )
          - write( data )
+     - stringifier() - create a reusable stringifier which can be used for custom types
+         - stringify(value[,replacer[,space]] ) - stringify using this stringifier.
+         - setQuote( quote ) - specifies the perfered quoting to use (instead of default double-quote (") )
+         - defineClass( name, object ) - registers a typed object for output; first object defintion is output which contains the failes, and later, typed objects are just their values.  Uses prototype of the object, unless it is the same as Object, or uses the fields of the object to compare that the object is of the same type.
+     - stringify(object,replacer,pretty) - stringify an object; same API as JSON.
+     - registerToJSOX(typeName,prototype,cb) - if an object that is an instance of prototype, the object is passed to the callback, and the resulting string used for output.
+     - registerFromJSOX(typeName,fromCb) - if an object of the specified name is encountered, the related object/array/string is passed to the callback, and the result is used as the revived object.
+     - registerToFrom(name,prototype,toCb, fromCb) - register both ToJSOX and FromJSOX handlers.
+
+
+|JSOX Methods | parameters | Description |
+|-----|-----|-----|
+|parse| (string [,reviver]) | supports all of the JSOX features listed above, as well as the native [`reviver` argument][json-parse]. |
+|stringify | ( value[,replacer[,space]] ) | converts object to JSOX.  [stringify][json-stringify] |
+|stringifier | () | Gets a utility object that can stringify.  The object can have classes defined on it for stringification |
+|escape | ( string ) | substitutes ", \, ', and \` with backslashed sequences. (prevent 'JSON injection') |
+|begin| (cb [,reviver] ) | create a JSOX stream processor.  cb is called with (value) for each value decoded from input given with write().  Optional reviver is called with each object before being passed to callback. |
+|registerToJSOX  | (name,prototype,toCb) | For each object that matches the prototype, the name is used to prefix the type; and the cb is called to get toJSOX |
+|registerFromJSOX| (name,fromCb) | fromCb is called whenever the type 'name' is revived.  The type of object following the name is passd as 'this'. |
+|registerToFrom  | (name,prototype,toCb, fromCb) | register both to and from for the same name |
+
 
 Reviver callback parameter is not provided for streaming callback.
 
@@ -461,6 +484,16 @@ var object = vfs.JSON.parse(string [, reviver]);
 var object2 = vfs.JSON6.parse(string [, reviver]);
 
 ```
+
+### Stringifier reference
+
+|Stringifier method | parameters | Description |
+|-------|------|-----|
+|stringify | (value[,replacer[,space]] ) | converts object to JSOX attempting to match objects to classes defined in stringifier.  [stringify][json-stringify] |
+|setQuote | ( quote ) | the argument passed is used as the default quote for strings and identifiers as required. |
+|defineClass | ( name, object ) | Defines a class using name 'name' and the fields in 'object'.  This allows defining for some pre-existing object; it also uses the prototype to test (if not Object), otherwise it matches based on they Object.keys() array. |
+
+
 
 ### Streaming JSON Parsing
 
@@ -727,6 +760,9 @@ Http Request/Server Client fields
   | url | the URL requested |
   | connection | same as a Websocket Connection object |
   | headers | headers from the http request |
+  | CGI | Parsed CGI Parameters from URL |
+  | content | if the message was a POST, content will be non-null |
+
 
 Http Response methods
    These methods are available on the 'res' object received in the Server "request" event.
