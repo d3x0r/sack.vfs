@@ -34,18 +34,19 @@ require.extensions['.jsox'] = function (module, filename) {
     module.exports = sack.JSOX.parse(content);
 };
 
+const _DEBUG_STRINGIFY = false;
 var toProtoTypes = new WeakMap();
 var fromProtoTypes = new Map();
 
 //sack.Sqlite.op( "SACK/Summoner/Auto register with summoner?", 0 );
 //sack.Sqlite.so( "SACK/Summoner/Auto register with summoner?", 1 );
-//console.log( "register:", sack.Sqlite.op( "SACK/Summoner/Auto register with summoner?", 0 ));
 //sack.loadComplete();
 if (process._tickDomainCallback || process._tickCallback)
     sack.Thread(process._tickDomainCallback || process._tickCallback);
 
 /* init prototypes */
 {
+	sack.JSOX.setFromPrototypeMap( fromProtoTypes );
 	toProtoTypes.set( Object.prototype, { external:false, name:Object.prototype.constructor.name, cb:null } );
 
 
@@ -81,7 +82,7 @@ if (process._tickDomainCallback || process._tickCallback)
 	} );
 	toProtoTypes.set( String.prototype, { external:false
 	    , name : "String"
-	    , cb:function(){ return '"' + JSOX.escape(this_value.apply(this)) + '"' } } );
+	    , cb:function(){ return '"' + sack.JSOX.escape(this_value.apply(this)) + '"' } } );
 	if( typeof BigInt === "function" )
 		toProtoTypes.set( BigInt.prototype
 		     , { external:false, name:"BigInt", cb:function() { return this + 'n' } } );
@@ -138,8 +139,8 @@ sack.JSOX.registerFromJSOX = function( prototypeName, f ) {
 }
 sack.JSOX.registerToFrom = function( prototypeName, prototype, to, from ) {
 	//console.log( "INPUT:", prototype );
-	JSOX.registerToJSOX( prototypeName, prototype, to );
-	JSOX.registerFromJSOX( prototypeName, from );
+	sack.JSOX.registerToJSOX( prototypeName, prototype, to );
+	sack.JSOX.registerFromJSOX( prototypeName, from );
 }
 
 var arrayToJSOX;
@@ -256,7 +257,7 @@ sack.JSOX.stringifier = function() {
 			// should check also for if any non ident in string...
 			if( n < s.lenth || [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s ) || s.includes( " " ) 
 				|| /[\(\)\<\>\!\+\-\*\/\.\, ]/.test( s ) )
-				return useQuote + JSOX.escape(s) +useQuote;
+				return useQuote + sack.JSOX.escape(s) +useQuote;
 			return s;
 
 		}
@@ -557,7 +558,7 @@ sack.JSOX.stringifier = function() {
 	
 	
 sack.JSOX.stringify = function( object, replacer, space ) {
-	var stringifier = JSOX.stringifier();
+	var stringifier = sack.JSOX.stringifier();
 	return stringifier.stringify( object, replacer, space );
 }
 
