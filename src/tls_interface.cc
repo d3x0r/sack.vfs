@@ -457,7 +457,7 @@ void MakeCert(  struct info_params *params )
 				}
 				{
 					BASIC_CONSTRAINTS bc;
-					bc.ca = ~0;
+					bc.ca = 1;
 					bc.pathlen = NULL;
 					X509_add1_ext_i2d( x509, NID_basic_constraints, &bc, 1, X509V3_ADD_DEFAULT );
 				}
@@ -1118,7 +1118,7 @@ static void SignReq( struct info_params *params )
 			pathlen = sbc->pathlen ? ASN1_INTEGER_get( sbc->pathlen ) : 1;
 			if( pathlen > 0 ) {
 				BASIC_CONSTRAINTS bc;
-				bc.ca = ~0;
+				bc.ca = 1;
 				bc.pathlen = ASN1_INTEGER_new();;
 				ASN1_INTEGER_set( bc.pathlen, pathlen - 1 );
 				if( sbc->pathlen && pathlen == 1 )
