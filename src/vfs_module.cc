@@ -221,8 +221,6 @@ void logBinary( char *x, int n )
 void VolumeObject::volDecrypt( const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
-	String::Utf8Value *key1;
-	String::Utf8Value *key2;
 	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
 	sack_vfs_decrypt_volume( vol->vol );
 }

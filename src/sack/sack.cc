@@ -59442,6 +59442,14 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						// but gatherString now just gathers all strings
 					case '"':
 					case '\'':
+						if( state->val.value_type == JSOX_VALUE_STRING
+							&& state->val.className ) {
+							state->status = FALSE;
+							if( !state->pvtError ) state->pvtError = VarTextCreate();
+// fault
+							vtprintf( state->pvtError, WIDE( "too many strings in a row; fault while parsing; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+							break;
+						}
 						if( state->word == JSOX_WORD_POS_FIELD
 							|| ( state->val.value_type == JSOX_VALUE_STRING
 								&& !state->val.className ) ) {
