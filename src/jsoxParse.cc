@@ -286,18 +286,18 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 		result = Number::New(revive->isolate, INFINITY);
 		break;
 	case JSOX_VALUE_BIGINT:
-		script = Script::Compile( String::NewFromUtf8( revive->isolate, val->string, NewStringType::kNormal, (int)val->stringLen ).ToLocalChecked()
-			, String::NewFromUtf8( revive->isolate, "BigIntFormatter", NewStringType::kInternalized ).ToLocalChecked() );
-		result = script->Run();
-		//BigInt::NewFromWords();
+		script = Script::Compile( revive->context, String::NewFromUtf8( revive->isolate, val->string, NewStringType::kNormal, (int)val->stringLen ).ToLocalChecked()
+			, new ScriptOrigin( String::NewFromUtf8( revive->isolate, "BigIntFormatter", NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
+		result = script->Run( revive->context ).ToLocalChecked();
 		//result = BigInt::New( revive->isolate, 0 );
 		break;
 	case JSOX_VALUE_DATE:
 		char buf[64];
 		snprintf( buf, 64, "new Date('%s')", val->string );
-		script = Script::Compile( String::NewFromUtf8( revive->isolate, buf, NewStringType::kNormal ).ToLocalChecked()
-			, String::NewFromUtf8( revive->isolate, "DateFormatter", NewStringType::kInternalized ).ToLocalChecked() );
-		result = script->Run();
+		script = Script::Compile( revive->context
+			, String::NewFromUtf8( revive->isolate, buf, NewStringType::kNormal ).ToLocalChecked()
+			, new ScriptOrigin( String::NewFromUtf8( revive->isolate, "DateFormatter", NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
+		result = script->Run( revive->context ).ToLocalChecked();
 		//result = Date::New( revive->isolate, 0 );
 		break;
 	}
