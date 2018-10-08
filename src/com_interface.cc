@@ -185,7 +185,7 @@ void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	//assert(args[i]->IsFloat32Array());
 	if (args[0]->IsString()) {
-		String::Utf8Value u8str(args[0]->ToString());
+		String::Utf8Value u8str( USE_ISOLATE( isolate ) args[0]->ToString());
 		SackWriteComm(com->handle, *u8str, u8str.length());
 
 	}

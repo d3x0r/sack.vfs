@@ -322,7 +322,7 @@ private:
 	}
 
 	static void sign( const v8::FunctionCallbackInfo<Value>& args ) {
-		String::Utf8Value buf( args[0]->ToString() );
+		String::Utf8Value buf( USE_ISOLATE( args.GetIsolate() )args[0]->ToString() );
 		//SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
 		char *id;
 		int tries = 0;
@@ -376,8 +376,8 @@ private:
 
 	static void verify( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( args.Length() > 1 ) {
-			String::Utf8Value buf( args[0]->ToString() );
-			String::Utf8Value hash( args[1]->ToString() );
+			String::Utf8Value buf( USE_ISOLATE( args.GetIsolate()) args[0]->ToString() );
+			String::Utf8Value hash( USE_ISOLATE( args.GetIsolate() ) args[1]->ToString() );
 			//SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
 			char *id;
 			int tries = 0;
