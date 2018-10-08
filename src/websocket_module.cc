@@ -232,6 +232,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->remoteFamilyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "remoteFamily" ) );
 		check->headerString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "headers" ) );
 		check->CGIString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "CGI" ) );
+		check->contentString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "content" ) );
 		check->certString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "cert" ) );
 		check->keyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "key" ) );
 		check->pemString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "pem" ) );
