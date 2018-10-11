@@ -92,6 +92,8 @@ struct optionStrings {
 	Eternal<String> *remoteAddrString;
 	Eternal<String> *headerString;
 	Eternal<String> *certString;
+	Eternal<String> *CGIString;
+	Eternal<String> *contentString;
 	Eternal<String> *keyString;
 	Eternal<String> *pemString;
 	Eternal<String> *passString;
@@ -229,6 +231,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->localFamilyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "localFamily" ) );
 		check->remoteFamilyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "remoteFamily" ) );
 		check->headerString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "headers" ) );
+		check->CGIString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "CGI" ) );
+		check->contentString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "content" ) );
 		check->certString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "cert" ) );
 		check->keyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "key" ) );
 		check->pemString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "pem" ) );
@@ -410,7 +414,7 @@ public:
 	LOGICAL closed;
 	const char *protocolResponse;
 	enum wsReadyStates readyState;
-	wssObject *server;
+wssObject *server;
 public:
 	static Persistent<Function> constructor;
 	static Persistent<FunctionTemplate> tpl;
@@ -421,7 +425,7 @@ public:
 
 public:
 
-	wssiObject( );
+	wssiObject();
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void write( const v8::FunctionCallbackInfo<Value>& args );
@@ -510,6 +514,21 @@ static void uv_closed_wsc( uv_handle_t* handle ) {
 	myself->_this.Reset();
 }
 
+struct cgiParams {
+	Isolate *isolate;
+	Local<Object> cgi;
+};
+
+static void cgiParamSave(uintptr_t psv, PTEXT name, PTEXT value){
+	struct cgiParams *cgi = (struct cgiParams*)psv;
+	if( value )
+		cgi->cgi->Set( String::NewFromUtf8( cgi->isolate, GetText( name ) ), String::NewFromUtf8( cgi->isolate, GetText( value ) ) );
+	else
+		cgi->cgi->Set( String::NewFromUtf8( cgi->isolate, GetText( name ) ), Null( cgi->isolate ) );
+
+}
+
+
 static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 	PLIST headers = GetWebSocketHeaders( pc );
 	PTEXT resource = GetWebSocketResource( pc );
@@ -549,8 +568,21 @@ static Local<Object> makeRequest( Isolate *isolate, struct optionStrings *string
 	// .socket
 	Local<Object> req = Object::New( isolate );
 	Local<Object> socket;
+	struct HttpState *pHttpState = GetWebSocketHttpState( pc );
+	if( pHttpState ) {
+		struct cgiParams cgi;
+		cgi.isolate = isolate;
+		cgi.cgi = Object::New( isolate );
+		ProcessCGIFields( pHttpState, cgiParamSave, (uintptr_t)&cgi );
+
+		req->Set( strings->CGIString->Get( isolate ), cgi.cgi );
+	}
 	req->Set( strings->connectionString->Get( isolate ), socket = makeSocket( isolate, pc ) );
 	req->Set( strings->headerString->Get( isolate ), socket->Get( strings->headerString->Get( isolate ) ) );
+	if( GetHttpContent( pHttpState ) )
+		req->Set( strings->contentString->Get( isolate ), String::NewFromUtf8( isolate, GetText( GetHttpContent( pHttpState ) ) ) );
+	else
+		req->Set( strings->contentString->Get( isolate ), Null(isolate) );
 	if( !GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) )
 		DebugBreak();
 	req->Set( strings->urlString->Get( isolate )
@@ -1061,7 +1093,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 			if( !wss->errorCloseCallback.IsEmpty() ) {
 				Local<Function> cb = wss->errorCloseCallback.Get( isolate );
 				Local<Value> argv[1];
-				argv[1] = closingSock;
+				argv[0] = closingSock;
 				cb->Call( wss->_this.Get( isolate ), 1, argv );
 			}
 			DropWssEvent( pevt );

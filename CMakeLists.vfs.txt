@@ -99,6 +99,7 @@ SET( EXTRA_HEADERS
         ${SACK_BASE}/include/sack_vfs.h
         ${SACK_BASE}/include/json_emitter.h
         ${SACK_BASE}/include/vesl_emitter.h
+        ${SACK_BASE}/include/jsox_parser.h
         ${SACK_BASE}/include/html5.websocket.client.h
         ${SACK_BASE}/include/html5.websocket.h
         ${SACK_BASE}/include/http.h
@@ -151,6 +152,7 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/netlib/html5.websocket/server/html5.websocket.c
 	${SACK_BASE}/src/netlib/html5.websocket/json/json_parser.c
 	${SACK_BASE}/src/netlib/html5.websocket/json/json6_parser.c
+	${SACK_BASE}/src/netlib/html5.websocket/json/jsox_parser.c
 	${SACK_BASE}/src/netlib/html5.websocket/json/json_emitter.c
 	${SACK_BASE}/src/netlib/html5.websocket/json/vesl_parser.c
 	${SACK_BASE}/src/netlib/network.c
@@ -287,6 +289,7 @@ add_library(${PROJECT_NAME} SHARED
 	src/sql_module.cc
 	src/com_interface.cc
 	src/jsonParse.cc
+	src/jsoxParse.cc
 	src/tls_interface.cc
 	src/srg_module.cc
 	src/websocket_module.cc

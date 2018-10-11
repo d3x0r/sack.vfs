@@ -117,7 +117,8 @@ static void CPROC getTaskInput( uintptr_t psvTask, PTASK_INFO pTask, CTEXTSTR bu
 	TaskObject *task = (TaskObject*)psvTask;
 	//if( !task->inputCallback.IsEmpty() ) 
 	{
-		task->buffer = buffer;
+		task->buffer = NewArray( char, size );
+		memcpy( (char*)task->buffer, buffer, size );
 		task->size = size;
 		task->waiter = MakeThread();
 		uv_async_send( &task->async );
@@ -307,7 +308,7 @@ ATEXIT( terminateStartedTasks ) {
 
 void TaskObject::loadLibrary( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	String::Utf8Value s( args[0]->ToString() );
+	String::Utf8Value s( USE_ISOLATE(isolate) args[0]->ToString() );
 	if( LoadFunction( *s, NULL ) )
 		args.GetReturnValue().Set( True( isolate ) );
 	args.GetReturnValue().Set( False( isolate ) );
@@ -317,7 +318,7 @@ void TaskObject::loadLibrary( const v8::FunctionCallbackInfo<Value>& args ) {
 void TaskObject::Write( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
-	String::Utf8Value s( args[0]->ToString() );
+	String::Utf8Value s( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString() );
 	pprintf( task->task, "%s", *s );
 }
 
