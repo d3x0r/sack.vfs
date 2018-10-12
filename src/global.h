@@ -363,7 +363,7 @@ struct reviver_data {
 Local<Value> convertMessageToJS( PDATALIST msg_data, struct reviver_data *reviver );
 Local<Value> convertMessageToJS2( PDATALIST msg_data, struct reviver_data *reviver );
 
-struct arrayBufferHolder : public node::ObjectWrap {
+struct arrayBufferHolder {
 	void *buffer;
 	Persistent<Object> o;
 	Persistent<String> s;
