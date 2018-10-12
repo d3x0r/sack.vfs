@@ -19,6 +19,7 @@
 #include <procreg.h>
 #include <translation.h>
 #include <json_emitter.h>
+#include <jsox_parser.h>
 #include <vesl_emitter.h>
 #include <sqlgetoption.h>
 #include <sackcomm.h>
