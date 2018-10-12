@@ -20,10 +20,11 @@ var cert3 = vfs.TLS.genreq( { country:"\0\0", state:"Conscious", locality:"C-316
 	, key:key3, password:"pass4"
 	, subject:{ DNS:["localhost"], IP:["127.0.0.1","192.168.173.13", "2001:db8::1"] } } );
 
-console.log( cert3 );
 var signedCert3 = vfs.TLS.signreq( { request:cert3, signer:signedCert2, key:key2, serial: 1005, expire: 100, password:"pass2" } );
 
 console.log( signedCert3 );
+console.log( signedCert2 );
+console.log( cert );
 
 if( vfs.TLS.validate( {cert:signedCert3, chain:signedCert2+cert} ) )
 	console.log( "Chain is valid." );
