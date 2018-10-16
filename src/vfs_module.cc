@@ -110,10 +110,11 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	InitTask( isolate, exports );
 #ifdef INCLUDE_GUI
 	ImageObject::Init( exports );
-	InterShellObject::Init( exports );
-	ControlObject::Init( exports );
 	RenderObject::Init( exports );
+	ControlObject::Init( exports );
+	InterShellObject::Init( exports );
 #endif
+
 #ifdef WIN32
 	RegObject::Init( exports );
 	KeyHidObjectInit( isolate, exports );

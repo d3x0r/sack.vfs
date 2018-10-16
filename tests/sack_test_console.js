@@ -1,7 +1,9 @@
 
 var sack = require( ".." );
 
-var f = sack.Frame( "test", -1, -1, 600, 600 );
+sack.Sqlite.optionEditor();
+
+var f = sack.PSI.Frame( "test", -1, -1, 600, 600 );
 
 var b = f.Control( "Button", "Test", 10, 10, 100, 20 );
 

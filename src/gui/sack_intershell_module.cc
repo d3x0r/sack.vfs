@@ -127,6 +127,8 @@ static void asyncmsg( uv_async_t* handle ) {
 			Local<Function> cb;
 			switch( evt->type ) {
 			case Event_Intershell_Quit:
+				extern void disableEventLoop( void );
+				disableEventLoop();
 				uv_close( (uv_handle_t*)&isLocal.core->async, NULL );
 				DeleteFromSet( IS_EVENT, isLocal.events, evt );
 				return;
@@ -139,19 +141,21 @@ static void asyncmsg( uv_async_t* handle ) {
 							  ? InterShellObject::buttonInstanceConstructor 
 							  : InterShellObject::controlInstanceConstructor
 						);
-					Local<Object> inst = cons->NewInstance( 0, NULL );
+					Local<Object> inst = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 					is->psvControl.Reset( isolate, inst );
 
-					if( !is->isButton ) // return the control handle automatically.
-						defineOnQueryControl( is->type->name );
 
 					Local<Value> _argv[] = { inst  };
 					argv = _argv;
 					argc = 1;
-					cb = Local<Function>::New( isolate, myself->cbCreate );
-					Local<Value> r = cb->Call( inst, argc, argv );
-					is->psvData.Reset( isolate, r->ToObject() );
-					evt->success = !r->IsNull() && !r->IsUndefined();
+					if( !myself->cbCreate.IsEmpty() ) {
+						cb = Local<Function>::New( isolate, myself->cbCreate );
+						Local<Value> r = cb->Call( inst, argc, argv );
+						is->psvData.Reset( isolate, r->ToObject() );
+						evt->success = !r->IsNull() && !r->IsUndefined();
+					}
+					else
+						evt->success = 1;
 				}
 				break;
 			case Event_Intershell_CreateCustomControl:
@@ -161,9 +165,9 @@ static void asyncmsg( uv_async_t* handle ) {
 					, InterShellObject::customControlInstanceConstructor
 				);
 
-				Local<Object> inst = cons->NewInstance( 0, NULL );
+				Local<Object> inst = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 				is->psvControl.Reset( isolate, inst );
-				defineOnQueryControl( is->type->name );
+				//defineOnQueryControl( is->type->name );
 				getCanvas( isolate, is->button );
 				inst->Set( String::NewFromUtf8( isolate, "parent" ), Local<Object>::New( isolate, isLocal.canvasObject ) );
 				inst->Set( String::NewFromUtf8( isolate, "x" ), Number::New( isolate, evt->data.createCustomControl.x ) );
@@ -173,10 +177,14 @@ static void asyncmsg( uv_async_t* handle ) {
 				Local<Value> _argv[] = { inst };
 				argv = _argv;
 				argc = 1;
-				cb = Local<Function>::New( isolate, myself->cbCreate );
-				Local<Value> r = cb->Call( inst, argc, argv );
-				is->psvData.Reset( isolate, r->ToObject() );
-				evt->success = !r->IsNull() && !r->IsUndefined();
+				if( !myself->cbCreate.IsEmpty() ) {
+					cb = Local<Function>::New( isolate, myself->cbCreate );
+					Local<Value> r = cb->Call( inst, argc, argv );
+					is->psvData.Reset( isolate, r->ToObject() );
+					evt->success = !r->IsNull() && !r->IsUndefined();
+				}
+				else
+					evt->success = 1;
 			}
 			break;
 			case Event_Intershell_Control_Destroy:
@@ -224,10 +232,18 @@ static void asyncmsg( uv_async_t* handle ) {
 
 			case Event_Intershell_ButtonClick:
 				cb = Local<Function>::New( isolate, myself->cbClick );
+				if( !cb.IsEmpty() )
 				{
-					Local<Value> _argv[] = { Local<Object>::New( isolate, is->psvData ) };
-					Local<Value> r; r = cb->Call( Local<Object>::New( isolate, is->psvControl ), 1, _argv );
-					evt->success = (int)r->NumberValue();
+
+					if( !is->psvData.IsEmpty() ) {
+						Local<Value> argv[] = { Local<Object>::New( isolate, is->psvData ) };
+						Local<Value> r; r = cb->Call( Local<Object>::New( isolate, is->psvControl ), 1, argv );
+						evt->success = (int)r->NumberValue();
+					}
+					else {
+						Local<Value> r; r = cb->Call( Local<Object>::New( isolate, is->psvControl ), 0, NULL );
+						evt->success = (int)r->NumberValue();
+					}
 				}
 				break;
 			//case Event_InterShell_Draw:
@@ -365,8 +381,9 @@ static uintptr_t configMethod( uintptr_t psv, uintptr_t callback, arg_list args 
 
 void InterShellObject::Init( Handle<Object> exports ) {
 	if( !InterShell ) {
-		lprintf( "intershell interface not available." );
-		return;
+		//lprintf( "intershell interface not available." );
+		//LoadFunction( "InterShell.core", NULL );
+		//return;
 	}
 	Isolate* isolate = Isolate::GetCurrent();
 	//Local<Object> intershellObject;
@@ -515,7 +532,7 @@ void is_control::NewControlInstance( const FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 		is_control* obj;
 		obj = new is_control();
-
+		obj->self.Reset( isolate, args.This() );
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
 	}
@@ -539,13 +556,14 @@ void InterShellObject::NewButton( const FunctionCallbackInfo<Value>& args ) {
 		InterShellObject* obj;
 		obj = new InterShellObject( name, TRUE );
 
+		obj->self.Reset( isolate, args.This() );
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
 	} else {
 		const int argc = 2;
 		Local<Value> argv[argc] = { args[0], args.Holder() };
 		Local<Function> cons = Local<Function>::New( isolate, buttonConstructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 	}
 }
 
@@ -563,6 +581,7 @@ void InterShellObject::NewConfiguration( const FunctionCallbackInfo<Value>& args
 		obj = new InterShellObject();
 		obj->events = NULL;
 
+		obj->self.Reset( isolate, args.This() );
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
 	}
@@ -571,13 +590,18 @@ void InterShellObject::NewConfiguration( const FunctionCallbackInfo<Value>& args
 		Local<Value> *argv = new Local<Value>[argc];// = { args[0], args.Holder() };
 		for( int n = 0; n < argc; n++ ) argv[n] = args[n];
 		Local<Function> cons = Local<Function>::New( isolate, controlConstructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 	}
 }
 
 void InterShellObject::NewApplication( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.IsConstructCall() ) {
+		if( !InterShell ) {
+			LoadFunction( "bag.psi.dll", NULL );
+			LoadFunction( "sack_widgets.dll", NULL );
+			LoadFunction( "InterShell.core", NULL );
+		}
 		if( !isLocal.core ) {
 			char *name;
 			String::Utf8Value arg( args[0] );
@@ -593,6 +617,7 @@ void InterShellObject::NewApplication( const FunctionCallbackInfo<Value>& args )
 			isLocal.core = obj;
 			isLocal.canvasObject.Reset( isolate, args.This() );
 
+			obj->self.Reset( isolate, args.This() );
 			obj->Wrap( args.This() );
 			args.GetReturnValue().Set( args.This() );
 		}
@@ -606,7 +631,7 @@ void InterShellObject::NewApplication( const FunctionCallbackInfo<Value>& args )
 		Local<Value> *argv = new Local<Value>[argc];// = { args[0], args.Holder() };
 		for( int n = 0; n < argc; n++ ) argv[n] = args[n];
 		Local<Function> cons = Local<Function>::New( isolate, intershellConstructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete[] argv;
 	}
 }
@@ -640,6 +665,8 @@ void InterShellObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 				obj->registrationObject.Reset( isolate, registration );
 				obj->registration = regobj;
 			}
+			defineOnQueryControl( name );
+
 			if( opts->Has( optName = strings->createString->Get( isolate ) ) ) 
 				obj->cbCreate.Reset( isolate, Handle<Function>::Cast( opts->Get( optName ) ) );
 			if( opts->Has( optName = strings->destroyString->Get( isolate ) ) )
@@ -659,6 +686,7 @@ void InterShellObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 			//obj->registration = ObjectWrap::Unwrap<RegistrationObject>( temp );
 			//_this->Set( String::NewFromUtf8( isolate, "registration" ), temp );
 
+			obj->self.Reset( isolate, args.This() );
 			obj->Wrap( _this );
 			args.GetReturnValue().Set( _this );
 	}
@@ -666,7 +694,7 @@ void InterShellObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 		const int argc = 2;
 		Local<Value> argv[argc] = { args[0], args.Holder() };
 		Local<Function> cons = Local<Function>::New( isolate, controlConstructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 	}
 }
 
@@ -690,7 +718,7 @@ void InterShellObject::NewCustomControl( const FunctionCallbackInfo<Value>& args
 		const int argc = 2;
 		Local<Value> argv[argc] = { args[0], args.Holder() };
 		Local<Function> cons = Local<Function>::New( isolate, customControlConstructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 	}
 }
 
@@ -763,11 +791,14 @@ void InterShellObject::onClickButton( const FunctionCallbackInfo<Value>& args ) 
 
 	InterShellObject *obj = ObjectWrap::Unwrap<InterShellObject>( args.This() );
 	defineButtonPress( obj->name );
-	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
-	Persistent<Function> cb( isolate, arg0 );
-	obj->cbClick = cb;
-
-	args.GetReturnValue().Set( True( isolate ) );
+	if( args[0]->IsFunction() ) {
+		Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+		obj->cbClick.Reset( isolate, arg0 );
+		args.GetReturnValue().Set( True( isolate ) );
+	}
+	else {
+		args.GetReturnValue().Set( False( isolate ) );
+	}
 }
 
 //-----------------------------------------------------------
@@ -831,19 +862,18 @@ void InterShellObject::onLoadControl( const FunctionCallbackInfo<Value>& args ) 
 InterShellObject::InterShellObject(  )
 {
 	bCustom = FALSE;
-
 }
 
 InterShellObject::InterShellObject( char *name, LOGICAL bButton )
 {
 	this->name = name;
-	bCustom = FALSE; // custom control will later set it.
 	if( !bButton ) {
+		bCustom = TRUE; // custom control will later set it.
 		defineCreateControl( name );
 	}
 	else {
+		bCustom = FALSE; // custom control will later set it.
 		defineCreateButton( name );
-
 	}
 	AddLink( &isLocal.controlTypes, this );
 }
@@ -881,7 +911,7 @@ static uintptr_t cbCreateControl( PSI_CONTROL parent, int32_t x, int32_t y, uint
 	} else {
 		c->pc = MakeNamedCaptionedControl( parent, io->registration->r.name, x, y, w, h, -1, c->caption );
 		MakeISEvent( &isLocal.core->async, &isLocal.core->events, Event_Intershell_CreateCustomControl, c, x, y, w, h );
-		c->pc = g.nextControlCreatePosition.resultControl;
+		//c->pc = g.nextControlCreatePosition.resultControl;
 	}
 	return (uintptr_t)c;
 }
@@ -947,7 +977,7 @@ static PSI_CONTROL cbQueryControl( uintptr_t psvInit ) {
 static void defineOnQueryControl( char *name ) {
 	TEXTCHAR buf[256];
 	//DefineRegistryMethod( TASK_PREFIX, GetControl, WIDE( "control" ), name, WIDE( "get_control" ), PSI_CONTROL, (uintptr_t) )	TEXTCHAR buf[256];
-	lprintf( "Define Create Control %s", name );
+	lprintf( "Define Query Control %s", name );
 	snprintf( buf, 256, "intershell/control/%s", name );
 	SimpleRegisterMethod( buf, cbQueryControl
 		, "PSI_CONTROL", "get_control", "(uintptr_t)" );
@@ -1004,6 +1034,7 @@ int MakeISEvent( uv_async_t *async, PLINKQUEUE *queue, enum eventType type, ... 
 	switch( type ) {
 	case Event_Intershell_Quit:
 		e->data.InterShell.control = NULL;
+		e->flags.complete = 1;
 		break;
 	case Event_Intershell_ButtonClick: {
 		is_control *c = va_arg( args, is_control * );
@@ -1037,13 +1068,15 @@ int MakeISEvent( uv_async_t *async, PLINKQUEUE *queue, enum eventType type, ... 
 	//e->value = 0;
 	EnqueLink( queue, e );
 	uv_async_send( async );
-
-	while( !e->flags.complete ) WakeableSleep( 1000 );
-	{
-		int success = e->success;
-		DeleteFromSet( IS_EVENT, isLocal.events, e );
-		return success;
+	if( !e->flags.complete ) {
+		while( !e->flags.complete ) WakeableSleep( 1000 );
+		{
+			int success = (int)e->success;
+			DeleteFromSet( IS_EVENT, isLocal.events, e );
+			return success;
+		}
 	}
+	return 1;
 }
 
 static void OnApplicationQuit( "Intershell Core" )(void) {

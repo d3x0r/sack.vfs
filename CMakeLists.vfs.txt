@@ -114,7 +114,6 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/utils/virtual_file_system/vfs.c
 	${SACK_BASE}/src/utils/virtual_file_system/vfs_fs.c
 	${SACK_BASE}/src/utils/virtual_file_system/vfs_os.c
-	${SACK_BASE}/src/utils/virtual_file_system/vfs_internal.h
         ${SACK_BASE}/src/salty_random_generator/salty_generator.c
         ${SACK_BASE}/src/salty_random_generator/crypt_util.c
         ${SACK_BASE}/src/contrib/md5lib/md5c.c

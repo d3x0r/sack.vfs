@@ -19,6 +19,8 @@
 #include <procreg.h>
 #include <translation.h>
 #include <json_emitter.h>
+#include <jsox_parser.h>
+#include <vesl_emitter.h>
 #include <sqlgetoption.h>
 #include <sackcomm.h>
 #include <html5.websocket.h>
@@ -48,8 +50,10 @@
 
 #if NODE_MAJOR_VERSION >= 10
 #  define USE_ISOLATE(i)   (i),
+#  define USE_ISOLATE_VOID(i)   (i)
 #else
 #  define USE_ISOLATE(i)
+#  define USE_ISOLATE_VOID(i)
 #endif
 
 
@@ -107,6 +111,41 @@ public:
 	static void volDecrypt( const v8::FunctionCallbackInfo<Value>& args );
 
 	~VolumeObject();
+};
+
+
+class ObjectStorageObject : public node::ObjectWrap {
+public:
+	struct volume *vol;
+	//bool volNative;
+	char *mountName;
+	char *fileName;
+	//struct file_system_interface *fsInt;
+	//struct file_system_mounted_interface* fsMount;
+	static v8::Persistent<v8::Function> constructor;
+
+public:
+
+	static void Init( Isolate *isolate, Handle<Object> exports );
+	ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
+
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	// get object pass object ID
+	static void getObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// get object and all recursive objects associated from here (for 1 level?)
+	static void mapObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// pass object, result with object ID.
+	static void putObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// pass object ID, get back a ObjectStorageFileObject ( support seek/read/write? )
+	static void openObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// utility to remove the key so it can be diagnosed.
+	static void volDecrypt( const v8::FunctionCallbackInfo<Value>& args );
+
+	~ObjectStorageObject();
 };
 
 

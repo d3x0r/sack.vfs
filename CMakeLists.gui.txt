@@ -37,6 +37,19 @@ if( ${CMAKE_BUILD_TYPE} MATCHES "[dD][eE][bB][uU][gG]"
 endif( ${CMAKE_BUILD_TYPE} MATCHES "[dD][eE][bB][uU][gG]"
    OR ${CMAKE_BUILD_TYPE} MATCHES "[rR][eE][lL][wW][iI].*" )
 
+# visual studio headers change with _DEBUG defined... so it can't be release with _DEBUG defined
+if( NOT CMAKE_CXX_FLAGS_RELWITHDEBINFO MATCHES "-D_DEBUG_INFO" )
+	set(  CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_DEBUG} -D_DEBUG_INFO" )
+endif( NOT CMAKE_CXX_FLAGS_RELWITHDEBINFO MATCHES "-D_DEBUG_INFO" )
+
+# visual studio headers change with _DEBUG defined... so it can't be release with _DEBUG defined
+if( NOT CMAKE_C_FLAGS_RELWITHDEBINFO MATCHES "-D_DEBUG_INFO" )
+	set(  CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_DEBUG} -D_DEBUG_INFO" )
+endif( NOT CMAKE_C_FLAGS_RELWITHDEBINFO MATCHES "-D_DEBUG_INFO" )
+
+
+
+
 include( ExternalProject )
 
 if( WIN32 )
@@ -55,10 +68,10 @@ ExternalProject_Add( sack
 	GIT_SHALLOW 1
 	INSTALL_DIR ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}
 	CMAKE_ARGS -DNEED_JPEG=1 -DNEED_FREETYPE=1 -DNEED_PNG=1 -DNEED_ZLIB=1
-		-DSACK_LIBRARY_ONLY=1
+		-DSACK_LIBRARY_ONLY=1 -DUSE_SYSLOG_STDOUT_DEFAULT=ON
 		-DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}
 		-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-
+		-DINCLUDE_EXTRAS=1
 )
 if( EXISTS ${CMAKE_BINARY_DIR}/sack-src/src/sack/src/InterShell.stable )
 
@@ -93,13 +106,17 @@ ENDFOREACH()
 include_directories(${CMAKE_JS_INC} ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/include/SACK )
 
 if( WIN32 )
-	set( MORE_MODULE_SOURCES src/reg_access.cc )
+	set( MORE_MODULE_SOURCES 
+		src/hid_module.cc
+		src/reg_access.cc )
 endif( WIN32 )
 
 set( GUI_SOURCES src/gui/sack_psi_module.cc
 	src/gui/sack_image_module.cc
 	src/gui/sack_render_module.cc
-	src/gui/sack_intershell_module.cc )
+	src/gui/sack_intershell_module.cc 
+	src/gui/sack_vulkan_module.cc 
+)
 
 source_group( "Source Files\\GUI" FILES ${GUI_SOURCES} ) #REGULAR_EXPRESSION  src/gui/.*)
 
@@ -142,6 +159,7 @@ target_link_libraries(${PROJECT_NAME} bag++ bag.externals bag.psi++ ${VFSLIB} ${
 
   add_custom_command( TARGET ${PROJECT_NAME} POST_BUILD
 			#COMMAND cmake -E echo ${AMALG_COMMAND}
+   			COMMAND ${CMAKE_COMMAND} -E echo Updating deps....
    			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/bin ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
    			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/resources ${CMAKE_BINARY_DIR}/resources
 			${EXTRACOPY}

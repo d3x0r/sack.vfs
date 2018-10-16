@@ -36,6 +36,8 @@ using namespace v8;
 
 #include "sack_intershell_module.h"
 
+#include "sack_vulkan_module.h"
+
 
 enum eventType {
 	Event_Init,
@@ -65,6 +67,7 @@ enum eventType {
 	Event_Control_Key,
 	Event_Control_Draw,
 	Event_Control_Load,
+	Event_Control_Destroy,
 
 	Event_Frame_Ok,
 	Event_Frame_Cancel,
@@ -85,6 +88,7 @@ enum eventType {
 struct event {
 	eventType type;
 	union {
+		PSI_CONTROL pc;
 		struct {
 			int32_t x, y;
 			uint32_t b;
@@ -123,7 +127,7 @@ struct event {
 	struct {
 		BIT_FIELD complete : 1;
 	}flags;
-	int success;
+	uintptr_t success;
 };
 typedef struct event IS_EVENT;
 #define MAXIS_EVENTSPERSET 64
@@ -139,10 +143,9 @@ struct global {
 		int32_t x, y;
 		uint32_t w, h;
 		is_control *control;
-		PSI_CONTROL resultControl;
 	} nextControlCreatePosition;
 } g;
 
-
+void InitInterfaces( int opengl, int vulkan );
 int MakeEvent( uv_async_t *async, PLINKQUEUE *queue, enum eventType type, ... );
 

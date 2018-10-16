@@ -2,6 +2,41 @@
 #include "../global.h"
 
 
+void InitInterfaces( int opengl, int vulkan ) {
+	if( !g.pii ) {
+		if( vulkan ) {
+#ifdef _WIN32
+			LoadFunction( "bag.image.vulkan.dll", NULL );
+			LoadFunction( "bag.video.vulkan.dll", NULL );
+#endif
+#ifdef __LINUX__
+			LoadFunction( "libbag.image.vulkan.so", NULL );
+			LoadFunction( "libbag.video.vulkan.so", NULL );
+#endif
+			RegisterClassAlias(  "system/interfaces/vulkan.render"   , "system/interfaces/render" );
+			RegisterClassAlias( "system/interfaces/vulkan.image"     ,"system/interfaces/image" );
+			RegisterClassAlias( "system/interfaces/vulkan.render.3d" ,"system/interfaces/render.3d" );
+			RegisterClassAlias( "system/interfaces/vulkan.image.3d"  ,"system/interfaces/image.3d" );
+		} else {
+#ifdef _WIN32
+			LoadFunction( "bag.image.dll", NULL );
+			LoadFunction( "bag.video.dll", NULL );
+#endif
+#ifdef __LINUX__
+			LoadFunction( "libbag.image.so", NULL );
+			LoadFunction( "libbag.video.so", NULL );
+#endif
+			RegisterClassAlias( "system/interfaces/sack.render", "system/interfaces/render" );
+			RegisterClassAlias( "system/interfaces/sack.image", "system/interfaces/image" );
+		}
+
+		g.pii = GetImageInterface();
+		g.pdi = GetDisplayInterface();
+	} else {
+	}
+
+}
+
 Persistent<Function> ImageObject::constructor;
 Persistent<FunctionTemplate> ImageObject::tpl;
 Persistent<Function> FontObject::constructor;
@@ -15,31 +50,14 @@ static struct imageLocal {
 	CDATA color;
 	uv_async_t colorAsync; // keep this instance around for as long as we might need to do the periodic callback
 	uv_async_t fontAsync; // keep this instance around for as long as we might need to do the periodic callback
+	SFTFont fontResult;
 }imageLocal;
 
 static Local<Object> makeColor( Isolate *isolate, CDATA c ) {
 	Local<Value> argv[1] = { Uint32::New( isolate, c ) };
 	Local<Function> cons = Local<Function>::New( isolate, ColorObject::constructor );
-	Local<Object> cObject = cons->NewInstance( 1, argv );
+	Local<Object> cObject = cons->NewInstance( isolate->GetCurrentContext(), 1, argv ).ToLocalChecked();
 	return cObject;
-}
-
-static void fontAsyncmsg( uv_async_t* handle ) {
-	// Called by UV in main thread after our worker thread calls uv_async_send()
-	//    I.e. it's safe to callback to the CB we defined in node!
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope( isolate );
-	//lprintf( "async message notice. %p", myself );
-	{
-		Local<Function> cb = Local<Function>::New( isolate, fontResult );
-		Local<Object> _this = priorThis.Get( isolate );
-		Local<Value> argv[1] = { Number::New( isolate, 0 ) };
-		cb->Call( _this, 1, argv );
-
-		uv_close( (uv_handle_t*)&imageLocal.fontAsync, NULL );
-
-	}
-	//lprintf( "done calling message notice." );
 }
 
 static void imageAsyncmsg( uv_async_t* handle ) {
@@ -55,14 +73,22 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 		Local<Value> argv[1] = { ColorObject::makeColor( isolate, imageLocal.color ) };
 		cb->Call( _this, 1, argv );
 		uv_close( (uv_handle_t*)&imageLocal.colorAsync, NULL );
+		imageResult.Reset();
 	}
 	if( !fontResult.IsEmpty() ) {
 		Local<Function> cb = Local<Function>::New( isolate, fontResult );
-		Local<Object> _this = priorThis.Get( isolate );
-		//Local<Value> argv[1] = { Number::New( isolate, 0 ) };
-		cb->Call( _this, 0, NULL );
+
+		Local<Function> cons = Local<Function>::New( isolate, FontObject::constructor );
+		Local<Object> result = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
+		FontObject *fo = FontObject::Unwrap<FontObject>( result );
+		FRACTION one = { 1,1 };
+		fo->font = imageLocal.fontResult;
+
+		Local<Value> argv[1] = { result };
+		cb->Call( result, 1, argv );
 
 		uv_close( (uv_handle_t*)&imageLocal.fontAsync, NULL );
+		fontResult.Reset();
 
 	}
 	//lprintf( "done calling message notice." );
@@ -72,9 +98,8 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 static uintptr_t fontPickThread( PTHREAD thread ) {
 	MemSet( &imageLocal.fontAsync, 0, sizeof( &imageLocal.fontAsync ) );
 	uv_async_init( uv_default_loop(), &imageLocal.fontAsync, imageAsyncmsg );
-	SFTFont font = PickFont( 0, 0, NULL, NULL, NULL );
+	imageLocal.fontResult = PickFont( 0, 0, NULL, NULL, NULL );
 	uv_async_send( &imageLocal.fontAsync );
-
 	return 0;
 }
 
@@ -105,9 +130,8 @@ static void pickColor( const FunctionCallbackInfo<Value>&  args ) {
 
 
 void ImageObject::Init( Handle<Object> exports ) {
-	g.pii = GetImageInterface();
-	g.pdi = GetDisplayInterface();
-
+	InitInterfaces( SACK_GetProfileInt( NULL, "SACK/Video Render/Use OpenGL 2", 0 )
+					, SACK_GetProfileInt( NULL, "SACK/Video Render/Use Vulkan", 0 ) );
 
 	Isolate* isolate = Isolate::GetCurrent();
 	Local<FunctionTemplate> imageTemplate;
@@ -389,7 +413,7 @@ void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 			argv[n] = args[n];
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
 }
@@ -438,7 +462,7 @@ void ImageObject::NewSubImage( const FunctionCallbackInfo<Value>& args ) {
 		argv[0] = args.Holder();
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
 }
@@ -451,7 +475,7 @@ Local<Object> ImageObject::NewImage( Isolate*isolate, Image image, LOGICAL exter
 	int argc = 0;
 	Local<Value> *argv = new Local<Value>[argc];
 	Local<Function> cons = Local<Function>::New( isolate, constructor );
-	Local<Object> lo = cons->NewInstance( argc, argv );
+	Local<Object> lo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked();
 	obj = ObjectWrap::Unwrap<ImageObject>( lo );
 	obj->image = image;
 	obj->external = external;
@@ -465,7 +489,7 @@ ImageObject * ImageObject::MakeNewImage( Isolate*isolate, Image image, LOGICAL e
 	int argc = 0;
 	Local<Value> *argv = new Local<Value>[argc];
 	Local<Function> cons = Local<Function>::New( isolate, constructor );
-	Local<Object> lo = cons->NewInstance( argc, argv );
+	Local<Object> lo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked();
 	obj = ObjectWrap::Unwrap<ImageObject>( lo );
 	obj->image = image;
 	obj->external = external;
@@ -484,30 +508,45 @@ void ImageObject::fill( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int argc = args.Length();
-	int x, y, w, h, c;
-	if( argc > 0 ) {
-		x = (int)args[0]->NumberValue();
-	}
-	if( argc > 1 ) {
-		y = (int)args[1]->NumberValue();
-	}
-	if( argc > 2 ) {
-		w = (int)args[2]->NumberValue();
-	}
-	if( argc > 3 ) {
-		h = (int)args[3]->NumberValue();
-	}
-	if( argc > 4 ) {
-		if( args[4]->IsObject() ) {
-			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject() );
+	int x, y, w, h, c = BASE_COLOR_BLACK;
+	if( argc == 1 ) {
+		if( args[0]->IsObject() ) {
+			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[0]->ToObject() );
 			c = co->color;
-		}
-		else if( args[4]->IsUint32() )
-			c = (int)args[4]->Uint32Value();
-		else if( args[4]->IsNumber() )
-			c = (int)args[4]->NumberValue();
+		} else if( args[0]->IsUint32() )
+			c = (int)args[0]->Uint32Value();
+		else if( args[0]->IsNumber() )
+			c = (int)args[0]->NumberValue();
 		else
 			c = 0;
+		x = 0;
+		y = 0;
+		w = io->image->width;
+		h = io->image->height;
+	} else {
+		if( argc > 0 ) {
+			x = (int)args[0]->NumberValue();
+		}
+		if( argc > 1 ) {
+			y = (int)args[1]->NumberValue();
+		}
+		if( argc > 2 ) {
+			w = (int)args[2]->NumberValue();
+		}
+		if( argc > 3 ) {
+			h = (int)args[3]->NumberValue();
+		}
+		if( argc > 4 ) {
+			if( args[4]->IsObject() ) {
+				ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject() );
+				c = co->color;
+			} else if( args[4]->IsUint32() )
+				c = (int)args[4]->Uint32Value();
+			else if( args[4]->IsNumber() )
+				c = (int)args[4]->NumberValue();
+			else
+				c = 0;
+		}
 	}
 	BlatColor( io->image, x, y, w, h, c );
 }
@@ -725,7 +764,8 @@ void ImageObject::putImage( const FunctionCallbackInfo<Value>& args ) {
 					h = (int)args[8]->NumberValue();
 					if( h < 0 ) h = ii->image->height;
 				}
-				BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, 1, BLOT_COPY );
+				if( ow && oh && w && h )
+					BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, 1, BLOT_COPY );
 			}
 			else
 				BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, 0, BLOT_COPY );
@@ -852,7 +892,7 @@ void FontObject::New( const FunctionCallbackInfo<Value>& args ) {
 			argv[n] = args[n];
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
 }
@@ -895,7 +935,7 @@ void FontObject::load( const FunctionCallbackInfo<Value>& args ) {
 
 	Local<Function> cons = Local<Function>::New( isolate, constructor );
 	Local<Object> result;
-	args.GetReturnValue().Set( result = cons->NewInstance( 0, NULL ) );
+	args.GetReturnValue().Set( result = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 
 	FontObject *fo = ObjectWrap::Unwrap<FontObject>( result );
 	FRACTION one = { 1,1 };
@@ -930,7 +970,7 @@ CDATA ColorObject::getColor( Local<Object> object ) {
 
 Local<Object> ColorObject::makeColor( Isolate *isolate, CDATA rgba ) {
 	Local<Function> cons = Local<Function>::New( isolate, constructor );
-	Local<Object> _color = cons->NewInstance( 0, NULL );
+	Local<Object> _color = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( _color );
 	co->color = rgba;
 	return _color;
@@ -998,7 +1038,7 @@ void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
 			argv[n] = args[n];
 
 		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		args.GetReturnValue().Set( cons->NewInstance( argc, argv ) );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
 }

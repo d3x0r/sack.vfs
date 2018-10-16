@@ -7,6 +7,7 @@ public:
 	PSI_CONTROL pc;
 
 	struct menu_button *button;
+	Persistent<Object> self;
 	Persistent<Object> surface; // used to pass to draw callback
 
 	Persistent<Object> psvControl;
@@ -36,6 +37,7 @@ public:
 
 	LOGICAL bCustom;
 
+	Persistent<Object> self;
 	Persistent<Object> registrationObject;
 
 	Persistent<Function, CopyablePersistentTraits<Function>> cbClick; // event callback        ()  // return true/false to allow creation
