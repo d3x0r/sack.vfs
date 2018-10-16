@@ -114,6 +114,41 @@ public:
 };
 
 
+class ObjectStorageObject : public node::ObjectWrap {
+public:
+	struct volume *vol;
+	//bool volNative;
+	char *mountName;
+	char *fileName;
+	//struct file_system_interface *fsInt;
+	//struct file_system_mounted_interface* fsMount;
+	static v8::Persistent<v8::Function> constructor;
+
+public:
+
+	static void Init( Isolate *isolate, Handle<Object> exports );
+	ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
+
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	// get object pass object ID
+	static void getObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// get object and all recursive objects associated from here (for 1 level?)
+	static void mapObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// pass object, result with object ID.
+	static void putObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// pass object ID, get back a ObjectStorageFileObject ( support seek/read/write? )
+	static void openObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// utility to remove the key so it can be diagnosed.
+	static void volDecrypt( const v8::FunctionCallbackInfo<Value>& args );
+
+	~ObjectStorageObject();
+};
+
+
 class ThreadObject : public node::ObjectWrap {
 public:
 	static v8::Persistent<v8::Function> constructor;
