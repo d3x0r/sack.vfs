@@ -63353,10 +63353,10 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						break;
 					}
 					else if( state->word == JSOX_WORD_POS_FIELD ) {
-						//state->val.stringLen = output->pos - state->val.string;
-						//lprintf( "Set string length:%d", state->val.stringLen );
+						state->val.stringLen = ( output->pos - state->val.string );
+						(*output->pos++) = 0;
 					}
-					if( (state->val.value_type == JSOX_VALUE_STRING) && !state->completedString ) {
+					else if( (state->val.value_type == JSOX_VALUE_STRING) && !state->completedString ) {
 						state->val.stringLen = ( output->pos - state->val.string );
 						(*output->pos++) = 0;
 					}
@@ -63660,6 +63660,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						if( state->status ) {
 							state->val.value_type = JSOX_VALUE_STRING;
 							state->completedString = TRUE;
+							state->word = JSOX_WORD_POS_AFTER_FIELD;
 							//state->val.stringLen = (output->pos - state->val.string - 1);
 							//lprintf( "Set string length:%d", state->val.stringLen );
 						}
@@ -63764,7 +63765,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					if( state->status ) {
 						state->val.value_type = JSOX_VALUE_STRING;
 						state->completedString = TRUE;
-						state->word = JSOX_WORD_POS_END;
+						state->word = JSOX_WORD_POS_AFTER_FIELD;
 						if( state->complete_at_end ) {
 							if( state->parse_context == JSOX_CONTEXT_UNKNOWN ) {
 								state->completed = TRUE;
