@@ -392,7 +392,7 @@ struct reviver_data {
 	Isolate *isolate;
 	Local<Context> context;
 	LOGICAL revive;
-	int index;
+	//int index;
 	Handle<Value> value;
 	Handle<Object> _this;
 	Handle<Function> reviver;

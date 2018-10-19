@@ -16323,6 +16323,9 @@ PRIORITY_PRELOAD( Sack_VFS_OS_RegisterDefaultFilesystem, SQL_PRELOAD_PRIORITY + 
 #  undef sack_fread
 #  undef sack_fwrite
 #  undef sack_ftell
+#  undef free
+#  undef StrDup
+#  define StrDup(o) StrDupEx( (o) DBG_SRC )
 #endif
 SACK_VFS_NAMESPACE_END
 #undef l
@@ -63408,6 +63411,8 @@ int jsox_parse_add_data( struct jsox_parse_state *state
  // this will restore as IN_ARRAY or OBJECT_FIELD
 						state->parse_context = old_context->context;
 						state->elements = old_context->elements;
+						state->val.name = old_context->name;
+						state->val.nameLen = old_context->nameLen;
 						state->current_class = old_context->current_class;
 						state->current_class_item = old_context->current_class_item;
 						state->arrayType = old_context->arrayType;
@@ -63439,6 +63444,8 @@ int jsox_parse_add_data( struct jsox_parse_state *state
  // this will restore as IN_ARRAY or OBJECT_FIELD
 						state->parse_context = old_context->context;
 						state->elements = old_context->elements;
+						state->val.name = old_context->name;
+						state->val.nameLen = old_context->nameLen;
 						state->current_class = old_context->current_class;
 						state->current_class_item = old_context->current_class_item;
 						state->arrayType = old_context->arrayType;

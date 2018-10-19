@@ -69,6 +69,12 @@ JSOXObject::~JSOXObject() {
 
 #define logTick(n) do { uint64_t tick = GetCPUTick(); if( n >= 0 ) timings.deltas[n] += tick-timings.start; timings.start = tick; } while(0)
 
+void ReportException( v8::Isolate* isolate, v8::TryCatch* handler ) {
+}
+
+const char* ToCString( const v8::String::Utf8Value& value ) {
+	return *value ? *value : "<string conversion failed>";
+}
 
 void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -81,6 +87,9 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString() );
 	int result;
+	//Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
+	Local<Context> context = isolate->GetCurrentContext();
+	Local<Object> global = context->Global();
 	for( result = jsox_parse_add_data( parser->state, *data, data.length() );
 		result > 0;
 		result = jsox_parse_add_data( parser->state, NULL, 0 )
@@ -98,11 +107,21 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 			r.isolate = isolate;
 			r.context = r.isolate->GetCurrentContext();
 			argv[0] = convertMessageToJS2( elements, &r );
-			Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 			{
-				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
-				if( result.IsEmpty() ) // if an exception occurred stop, and return it.
+				v8::TryCatch try_catch( isolate );
+				Local<Function> cb( parser->readCallback.Get( isolate ) );
+				MaybeLocal<Value> cbResult = cb->Call( context, global, 1, argv );
+				if( try_catch.HasCaught() ) {
+					v8::String::Utf8Value exception( try_catch.Exception() );
+					const char* exception_string = ToCString( exception );
+					v8::Local<v8::Message> message = try_catch.Message();
+					lprintf( "%s", exception_string );
+					if( cbResult.IsEmpty() )
+						return;
+				}
+				if( cbResult.IsEmpty() )
 					return;
+
 			}
 		}
 		jsox_dispose_message( &elements );
@@ -134,8 +153,7 @@ void JSOXObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		// Invoked as constructor: `new MyObject(...)`
 		JSOXObject* obj = new JSOXObject();
 		Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
-		Persistent<Function> cb( isolate, arg0 );
-		obj->readCallback = cb;
+		obj->readCallback.Reset( isolate, arg0 );
 
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
@@ -357,7 +375,8 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 					Get( revive->context
 						, String::NewFromUtf8( revive->isolate, val->className )
 					).ToLocalChecked().As<Function>();
-				sub_o = cb->Call( sub_o, 0, NULL ).As<Object>();
+				if( cb->IsFunction() )
+					sub_o = cb->Call( sub_o, 0, NULL ).As<Object>();
 			}
 			if( revive->revive ) {
 				Local<Value> args[2] = { thisKey, sub_o };
@@ -383,7 +402,8 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 					Get( revive->context
 						, String::NewFromUtf8( revive->isolate, val->className )
 					).ToLocalChecked().As<Function>();
-				sub_o = cb->Call( sub_o, 0, NULL ).As<Object>();
+				if( cb->IsFunction() )
+					sub_o = cb->Call( sub_o, 0, NULL ).As<Object>();
 			}
 			if( revive->revive ) {
 				Local<Value> args[2] = { thisKey, sub_o };
