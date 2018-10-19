@@ -164,6 +164,15 @@ sack.JSOX.stringifier = function() {
 			       , tag:Object.keys(obj).toString()
 			       , proto : Object.getPrototypeOf(obj)
 			       , fields : Object.keys(obj) } );
+			for(var n = 1; n < cls.fields.length; n++) {
+				if( cls.fields[n] < cls.fields[n-1] ) {
+					let tmp = cls.fields[n-1];
+					cls.fields[n-1] = cls.fields[n];
+					cls.fields[n] = tmp;
+					if( n > 1 )
+						n-=2;
+				}
+			}
 			if( cls.proto === Object.getPrototypeOf( {} ) ) cls.proto = null;
 		},
 		stringify(o,r,s) { return stringify(o,r,s) },
@@ -415,8 +424,21 @@ sack.JSOX.stringifier = function() {
 
 					// Otherwise, iterate through all of the keys in the object.
 					partialClass = matchObject( value );
-
+					var keys = [];
 					for (k in value) {
+						if (Object.prototype.hasOwnProperty.call(value, k)) {
+							var n;
+							for( n = 0; n < keys.length; n++ ) 
+								if( keys[n] > k ) {	
+									keys.splice(n,0,k );
+									break;
+								}
+							if( n == keys.length )
+								keys.push(k);
+						}
+					}
+					for(n = 0; n < keys.length; n++) {
+						k = keys[n];
 						if (Object.prototype.hasOwnProperty.call(value, k)) {
 							path[thisNodeNameIndex] = k;
 							v = str(k, value);
