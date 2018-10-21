@@ -18,8 +18,8 @@ var x = sack.Image.Color( {r:50,g:50,b:255,a:255} );
 var con = f.Control( "PSI Console", 0, 40, 500, 500 );
 
 con.oninput( function( string ) {
-console.log( "Event string:", string );
-	con.write( string );
+	console.log( "Event string:", string );
+	con.write( string + "\n" );
 } );
 
 con.write( "Enter any text to have it echoed..." );
