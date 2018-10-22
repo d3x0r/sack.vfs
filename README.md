@@ -631,6 +631,11 @@ Salty Random Generator
        byte count.
     
 
+| SaltRNG Methods | Args | Description |
+|----|-----|-----|
+| sign | ( [pad1 [, pad2],] string | get a signing identifier for string |
+| setSigningThreads | ( n ) | Set the number of threads to sign with to n |
+| verify | ( buffer, key ) | returns true/false if key is a signing key of buffer |
 
 
 ```
