@@ -813,6 +813,8 @@ SACK_NAMESPACE
 #define FILELINE_PASS        , CTEXTSTR pFile, uint32_t nLine
 /* specify a consistant macro to forward file and line parameters.   This are appended parameters, and common usage is to only use these with _DEBUG set. */
 #define FILELINE_RELAY       , pFile, nLine
+/* specify a consistant macro to forward file and line parameters.   This are appended parameters, and common usage is to only use these with _DEBUG set. */
+#define FILELINE_NULL        , NULL, 0
 /* specify a consistant macro to forward file and line parameters, to functions which have void parameter lists without this information.  This are appended parameters, and common usage is to only use these with _DEBUG set. */
 #define FILELINE_VOIDRELAY   pFile, nLine
 /* specify a consistant macro to format file and line information for printf formated strings. */
@@ -852,6 +854,9 @@ SACK_NAMESPACE
 /* <combine sack::DBG_PASS>
    in NDEBUG mode, pass nothing */
 #define DBG_RELAY
+/* <combine sack::DBG_PASS>
+   in _DEBUG mode, pass FILELINE_NULL */
+#define DBG_NULL
 /* <combine sack::DBG_PASS>
    in NDEBUG mode, pass nothing */
 #define DBG_VOIDRELAY
@@ -1037,6 +1042,9 @@ SACK_NAMESPACE
    in _DEBUG mode, pass FILELINE_RELAY */
 #define DBG_RELAY       FILELINE_RELAY
 /* <combine sack::DBG_PASS>
+	  in _DEBUG mode, pass FILELINE_NULL */
+#define DBG_NULL        FILELINE_NULL
+/* <combine sack::DBG_PASS>
    in _DEBUG mode, pass FILELINE_VOIDRELAY */
 #define DBG_VOIDRELAY   FILELINE_VOIDRELAY
 /* <combine sack::DBG_PASS>
@@ -1060,6 +1068,12 @@ typedef void             *P_0;
  * should be used instead of uint32_t (DWORD)
  */
 typedef unsigned int  BIT_FIELD;
+/*
+ * several compilers are rather picky about the types of data
+ * used for bit field declaration, therefore this type
+ * should be used instead of int32_t (LONG)
+ */
+typedef int  SBIT_FIELD;
 // have to do this on a per structure basis - otherwise
 // any included headers with structures to use will get FUCKED
 #ifndef PACKED
@@ -1751,7 +1765,7 @@ public:
 	inline void remove( POINTER p ) { DeleteLink( &list, p ); }
 	inline POINTER first( void ) { POINTER p; for( idx = 0, p = NULL;list && (idx < list->Cnt) && (( p = GetLink( &list, idx ) )==0); )idx++; return p; }
 	inline POINTER next( void ) { POINTER p; for( idx++;list && (( p = GetLink( &list, idx ) )==0) && idx < list->Cnt; )idx++; return p; }
-	inline POINTER get(INDEX idx) { return GetLink( &list, idx ); }
+	inline POINTER get(INDEX index) { return GetLink( &list, index ); }
 } *piList;
 #endif
 // address of the thing...
@@ -1875,8 +1889,8 @@ TYPELIB_PROC  uintptr_t TYPELIB_CALLTYPE     ForAllLinks    ( PLIST *pList, ForP
    \ \                                                                 */
 #define SetLink(p,i,v)     ( SetLinkEx( (p),(i),((POINTER)(v)) DBG_SRC ) )
 #ifdef __cplusplus
-//		namespace list;
-	};
+ //		namespace list;
+	}
 #endif
 //--------------------------------------------------------
 _DATALIST_NAMESPACE
@@ -2061,8 +2075,8 @@ TYPELIB_PROC  POINTER TYPELIB_CALLTYPE      PeekLinkEx         ( PLINKSTACK *pls
    Macro to pass default debug file and line information.                    */
 #define PushLink(p, v)     PushLinkEx((p),(v) DBG_SRC)
 #ifdef __cplusplus
-//		namespace link_stack {
-		};
+ //		namespace link_stack {
+		}
 #endif
 //--------------------------------------------------------
 #ifdef __cplusplus
@@ -2370,7 +2384,7 @@ TYPELIB_PROC  int TYPELIB_CALLTYPE  EnqueMsgEx ( PMSGHANDLE pmh, POINTER buffer,
 TYPELIB_PROC  int TYPELIB_CALLTYPE  IsMsgQueueEmpty ( PMSGHANDLE pmh );
 #ifdef __cplusplus
  //namespace message {
-};
+}
 #endif
 /* Routines to deal with SLAB allocated blocks of structures.
    Each slab has multiple elements of a type in it, and the
@@ -2614,11 +2628,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  DeleteFromSetExx( GENERICSET *set, POINTER 
 #define DeleteFromSetEx( name, set, member, xx ) DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC )
 /* <combine sack::containers::sets::DeleteFromSetExx@GENERICSET *@POINTER@int@int max>
    \ \                                                                                 */
-#ifdef _DEBUG
-#define DeleteFromSet( name, set, member ) do { P##name##SET testset = set; DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC ); } while(0)
-#else
 #define DeleteFromSet( name, set, member ) DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC )
-#endif
 /* Marks a member in a set as usable.
    Parameters
    set :       pointer to a genericset pointer
@@ -2959,7 +2969,7 @@ enum TextFlags {
    Parameters
    name :  name of the variable to create
    size :  size of the static text element. (0 content)          */
-#define DECLTEXTSZ( name, size ) DECLTEXTSZTYPE( name,(size) )	 = { TF_STATIC, NULL, NULL, {{1,1}} }
+#define DECLTEXTSZ( name, size ) DECLTEXTSZTYPE( name,(size) )	 = { TF_STATIC, NULL, NULL, {{1,1  ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}} }
 /* Defines an initializer block which can be used to satisfy a
    TEXT elemnt of a structure
    Parameters
@@ -4013,7 +4023,7 @@ TYPELIB_PROC LOGICAL TYPELIB_CALLTYPE ParseStringVector( CTEXTSTR data, CTEXTSTR
 TYPELIB_PROC LOGICAL TYPELIB_CALLTYPE ParseIntVector( CTEXTSTR data, int **pData, int *nData );
 #ifdef __cplusplus
  //namespace text {
-};
+}
 #endif
 //--------------------------------------------------------------------------
 #ifdef __cplusplus
@@ -4336,7 +4346,7 @@ TYPELIB_PROC  uint32_t TYPELIB_CALLTYPE  GetNodeCount ( PTREEROOT root );
 TYPELIB_PROC  PTREEROOT TYPELIB_CALLTYPE  ShadowBinaryTree( PTREEROOT root );
 #ifdef __cplusplus
  //namespace BinaryTree {
-	};
+	}
 #endif
 //--------------------------------------------------------------------------
 #ifdef __cplusplus
@@ -4374,16 +4384,16 @@ TYPELIB_PROC LOGICAL TYPELIB_CALLTYPE FamilyTreeForEach( PFAMILYTREE root, PFAMI
 			, uintptr_t psvUserData );
 #ifdef __cplusplus
  //namespace family {
-};
+}
 #endif
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
 #ifdef __cplusplus
 //} // extern "c"
  // namespace containers
-};
+}
  // namespace sack
-};
+}
 using namespace sack::containers::link_stack;
 using namespace sack::containers::data_stack;
 using namespace sack::containers::data_list;
@@ -4559,7 +4569,7 @@ CONSTRUCT_NAMESPACE_END
 #endif
 #ifdef __cplusplus
 #define LOGGING_NAMESPACE namespace sack { namespace logging {
-#define LOGGING_NAMESPACE_END }; };
+#define LOGGING_NAMESPACE_END } }
 #else
 #define LOGGING_NAMESPACE
 #define LOGGING_NAMESPACE_END
@@ -5427,9 +5437,9 @@ MEM_PROC  void MEM_API  InitializeCriticalSec ( PCRITICALSECTION pcs );
    releasing memory.                                            */
 #ifdef __cplusplus
  // namespace timers
-};
+}
  // namespace sack
-};
+}
 using namespace sack::timers;
 #endif
 #ifdef __cplusplus
@@ -5936,9 +5946,6 @@ MEM_PROC  int MEM_API  MemCmp ( CPOINTER pOne, CPOINTER pTwo, size_t sz );
 	/* nothing.
    does nothing, returns nothing. */
 //#define memnop(mem,sz,comment)
-#ifdef __cplusplus
-//};
-#endif
 /* Compares two strings. Must match exactly.
    Parameters
    s1 :  string to compare
@@ -6208,9 +6215,9 @@ MEM_PROC  int MEM_API  PequeMessage ( struct transport_queue_tag *queue, POINTER
 //------------------------------------------------------------------------
 #ifdef __cplusplus
  // namespace memory
-};
+}
  // namespace sack
-};
+}
 using namespace sack::memory;
 #if defined( _DEBUG ) || defined( _DEBUG_INFO )
 /*
@@ -7710,7 +7717,13 @@ struct rt_init
 #endif
 #endif
 } __attribute__((packed));
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
+#if defined( __GNUC__ ) && defined( __64__)
+#define JUNKINIT(name) ,&pastejunk(name,_ctor_label), {0,0}
+#else
 #define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
+#endif
+#endif
 #define RTINIT_STATIC static
 #define ATEXIT_PRIORITY PRIORITY_ATEXIT
 #if defined( _DEBUG ) || defined( _DEBUG_INFO )
@@ -8355,18 +8368,23 @@ PROCREG_PROC( int, ReleaseRegisteredFunctionEx )( PCLASSROOT root
 /* This is a macro used to paste two symbols together. */
 #define paste_(a,b) _WIDE(a##b)
 #define paste(a,b) paste_(a,b)
-#define ___DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(Register,name),Method),line), SQL_PRELOAD_PRIORITY ) {	  SimpleRegisterMethod( task WIDE("/") classtype, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) );    RegisterValue( task WIDE("/") classtype WIDE("/") methodname, WIDE("Description"), desc ); }	                                                                          static returntype CPROC paste(name,line)
+#ifdef __cplusplus
+#define EXTRA_PRELOAD_SYMBOL _
+#else
+#define EXTRA_PRELOAD_SYMBOL
+#endif
+#define ___DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(paste(Register,name),Method),EXTRA_PRELOAD_SYMBOL),line), SQL_PRELOAD_PRIORITY ) {	  SimpleRegisterMethod( task WIDE("/") classtype, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) );    RegisterValue( task WIDE("/") classtype WIDE("/") methodname, WIDE("Description"), desc ); }	                                                                          static returntype CPROC paste(name,line)
 #define __DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)	   ___DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)
-#define ___DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(Register,name),Method),line), priority ) {	  SimpleRegisterMethod( task WIDE("/") classtype, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) );    RegisterValue( task WIDE("/") classtype WIDE("/") methodname, WIDE("Description"), desc ); }	                                                                          static returntype CPROC paste(name,line)
+#define ___DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(paste(Register,name),Method),EXTRA_PRELOAD_SYMBOL),line), priority ) {	  SimpleRegisterMethod( task WIDE("/") classtype, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) );    RegisterValue( task WIDE("/") classtype WIDE("/") methodname, WIDE("Description"), desc ); }	                                                                          static returntype CPROC paste(name,line)
 #define __DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   ___DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)
-#define ___DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(Register##name##Button,line) ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
+#define ___DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(Register##name##Button##EXTRA_PRELOAD_SYMBOL,line) ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
 #define __DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   ___DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)
 #define _DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   static returntype __DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)
 #define DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes)	  __DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,__LINE__)
 // this macro is used for ___DefineRegistryMethodP. Because this is used with complex names
 // an extra define wrapper of priority_preload must be used to fully resolve paramters.
 #define PRIOR_PRELOAD(a,p) PRIORITY_PRELOAD(a,p)
-#define ___DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIOR_PRELOAD( paste(Register##name##Button,line), priority ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
+#define ___DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIOR_PRELOAD( paste(Register##name##Button##EXTRA_PRELOAD_SYMBOL,line), priority ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
 /* <combine sack::app::registry::SimpleRegisterMethod>
    General form to build a registered procedure. Used by simple
    macros to create PRELOAD'ed registered functions. This flavor
@@ -8401,7 +8419,7 @@ PROCREG_PROC( int, ReleaseRegisteredFunctionEx )( PCLASSROOT root
 #define __DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   ___DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)
 #define _DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   __DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)
 #define DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes)	  _DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,__LINE__)
-#define _DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(Register##name##Button,line) ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase WIDE("/") methodname, paste(name,line)	  , _WIDE(#returntype), subname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
+#define _DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(Register##name##Button##EXTRA_PRELOAD_SYMBOL,line) ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase WIDE("/") methodname, paste(name,line)	  , _WIDE(#returntype), subname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
 #define DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes)	  _DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes,__LINE__)
 /* attempts to use dynamic linking functions to resolve passed
    global name if that fails, then a type is registered for this
@@ -9967,7 +9985,7 @@ PSSQL_PROC( int, GetSQLTypes )( void );
        }
    </code>                                                      */
 PSSQL_PROC( int, FetchSQLTypes )( PODBC );
-#define PSSQL_VARARG_PROC(a,b,c)  PSSQL_PROC(a,b)c; typedef a(CPROC * __f_##b)c; PSSQL_PROC( __f_##b, __##b )(DBG_VOIDPASS);
+#define PSSQL_VARARG_PROC(a,b,c)  PSSQL_PROC(a,b)c; typedef a(CPROC * __f_##b)c; PSSQL_PROC( __f_##b, __##b )(DBG_VOIDPASS)
 /* Do a SQL query on the default odbc connection. The first
    record results immediately if there are any records. Returns
    the results as an array of strings. If you know the select
@@ -10351,7 +10369,7 @@ SQL_NAMESPACE_END
 #define SQL_GET_OPTION_DEFINED
 #ifdef __cplusplus
 #define _OPTION_NAMESPACE namespace options {
-#define _OPTION_NAMESPACE_END };
+#define _OPTION_NAMESPACE_END }
 #define USE_OPTION_NAMESPACE	 using namespace sack::sql::options;
 #else
 #define _OPTION_NAMESPACE
@@ -14296,7 +14314,7 @@ uintptr_t vfs_os_FSEEK( struct volume *vol, BLOCKINDEX firstblock, FPI offset, e
 		firstblock = vfs_os_GetNextBlock( vol, firstblock, 0, 0 );
 		offset -= BLOCK_SIZE;
 	}
-	data = (uint8_t*)vfs_os_BSEEK_( vol, firstblock, cache_index, NULL, 0 );
+	data = (uint8_t*)vfs_os_BSEEK_( vol, firstblock, cache_index DBG_NULL );
 	return (uintptr_t)(data + (offset));
 }
 static int  _os_PathCaseCmpEx ( CTEXTSTR s1, CTEXTSTR s2, size_t maxlen )
@@ -16666,32 +16684,32 @@ void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_
 	uint32_t partial_bits = 0;
 	uint32_t get_bits;
 	uint32_t resultBits = 0;
-	do
-	{
+	if( !ctx ) DebugBreak();
+	//if( ctx->bits_used > 512 ) DebugBreak();
+	do {
 		if( bits > sizeof( tmp ) * 8 )
 			get_bits = sizeof( tmp ) * 8;
 		else
 			get_bits = bits;
 		// if there were 1-31 bits of data in partial, then can only get 32-partial max.
-		if( ( 32 - partial_bits ) < get_bits )
-			get_bits = 32-partial_bits;
+		if( 32 < (get_bits + partial_bits) )
+			get_bits = 32 - partial_bits;
 		// check1 :
 		//    if get_bits == 32
 		//    but bits_used is 1-7, then it would have to pull 5 bytes to get the 32 required
 		//    so truncate get_bits to 25-31 bits
-		if( ( 32 - ( ctx->bits_used & 0x7 ) ) < get_bits )
-			get_bits = ( 32 - ( ctx->bits_used & 0x7 ) );
+		if( 32 < (get_bits + (ctx->bits_used & 0x7)) )
+			get_bits = (32 - (ctx->bits_used & 0x7));
 		// if resultBits is 1-7 offset, then would have to store up to 5 bytes of value
 		//    so have to truncate to just the up to 4 bytes that will fit.
-		if( get_bits > (32 - resultBits ) )
-			get_bits = 32-resultBits;
+		if( (get_bits+ resultBits) > 32 )
+			get_bits = 32 - resultBits;
 		// only greater... if equal just grab the bits.
-		if( get_bits > ( ctx->bits_avail - ctx->bits_used ) )
-		{
+		if( (get_bits + ctx->bits_used) > ctx->bits_avail ) {
 			// if there are any bits left, grab the partial bits.
-			if( ctx->bits_avail - ctx->bits_used )
-			{
+			if( ctx->bits_avail > ctx->bits_used ) {
 				partial_bits = (uint32_t)(ctx->bits_avail - ctx->bits_used);
+				if( partial_bits > get_bits ) partial_bits = get_bits;
 				// partial can never be greater than 32; input is only max of 32
 				//if( partial_bits > (sizeof( partial_tmp ) * 8) )
 				//	partial_bits = (sizeof( partial_tmp ) * 8);
@@ -16707,8 +16725,7 @@ void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_
 			NeedBits( ctx );
 			bits -= partial_bits;
 		}
-		else
-		{
+		else {
 			if( ctx->use_version3 )
 				tmp = MY_GET_MASK( ctx->entropy3, ctx->bits_used, get_bits );
 			else if( ctx->use_version2_256 )
@@ -16718,9 +16735,9 @@ void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_
 			else
 				tmp = MY_GET_MASK( ctx->entropy, ctx->bits_used, get_bits );
 			ctx->bits_used += get_bits;
-			if( partial_bits )
-			{
-				tmp = partial_tmp | ( tmp << partial_bits );
+			//if( ctx->bits_used > 512 ) DebugBreak();
+			if( partial_bits ) {
+				tmp = partial_tmp | (tmp << partial_bits);
 				partial_bits = 0;
 			}
 			(*buffer) = tmp << resultBits;
@@ -16733,6 +16750,7 @@ void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_
 #endif
 				resultBits -= 8;
 			}
+			//if( get_bits > bits ) DebugBreak();
 			bits -= get_bits;
 		}
 	} while( bits );
@@ -16786,6 +16804,7 @@ void SRG_RestoreState( struct random_context *ctx, POINTER external_buffer_holde
 }
 static void salt_generator(uintptr_t psv, POINTER *salt, size_t *salt_size ) {
 	static uint32_t tick;
+	(void)psv;
 	tick = GetTickCount();
 	salt[0] = &tick;
 	salt_size[0] = sizeof( tick );
@@ -16799,11 +16818,20 @@ char *SRG_ID_Generator( void ) {
 	return EncodeBase64Ex( (uint8*)buf, (16+16), &outlen, (const char *)1 );
 }
 char *SRG_ID_Generator_256( void ) {
-	static struct random_context *ctx;
+	static struct random_context *_ctx[32];
+	static uint32_t used[32];
 	uint32_t buf[2 * (16 + 16)];
 	size_t outlen;
-	if( !ctx ) ctx = SRG_CreateEntropy2_256( salt_generator, 0 );
+	int usingCtx;
+	static struct random_context *ctx;
+	usingCtx = 0;
+	do {
+		while( used[++usingCtx] ) { if( ++usingCtx >= 32 ) usingCtx = 0; }
+	} while( LockedExchange( used + usingCtx, 1 ) );
+	ctx = _ctx[usingCtx];
+	if( !ctx ) ctx = _ctx[usingCtx] = SRG_CreateEntropy2_256( salt_generator, 0 );
 	SRG_GetEntropyBuffer( ctx, buf, 8 * (16 + 16) );
+	used[usingCtx] = 0;
 	return EncodeBase64Ex( (uint8*)buf, (16 + 16), &outlen, (const char *)1 );
 }
 char *SRG_ID_Generator3( void ) {
@@ -17039,7 +17067,7 @@ SACK_NAMESPACE
 #define BASE_COLOR_PURPLE        Color( 0x7A, 0x11, 0x7C )
 #ifdef __cplusplus
  //	 namespace image {
-};
+}
 SACK_NAMESPACE_END
 using namespace sack::image;
 #endif
@@ -19914,9 +19942,9 @@ IDLE_PROC( int, Idle )( void );
 IDLE_PROC( int, IdleFor )( uint32_t dwMilliseconds );
 #ifdef __cplusplus
 //	namespace timers {
-	};
+	}
 //namespace sack {
-};
+}
 using namespace sack::timers;
 #endif
 #endif
@@ -20171,7 +20199,7 @@ uint64_t GetCPUTick(void )
 			uint64_t tick;
 			PREFIX_PACKED struct { uint32_t low, high; } PACKED parts;
 		}tick;
-		asm( "rdtsc\n" : "=a"(tick.parts.low), "=d"(tick.parts.high) );
+		//asm( "rdtsc\n" : "=a"(tick.parts.low), "=d"(tick.parts.high) );
 		if( !(*syslog_local).lasttick )
 			(*syslog_local).lasttick = tick.tick;
 		else if( tick.tick < (*syslog_local).lasttick )
@@ -20857,6 +20885,8 @@ static void SyslogdSystemLog( const TEXTCHAR *message )
 //---------------------------------------------------------------------------
 LOGICAL IsBadReadPtr( CPOINTER pointer, uintptr_t len )
 {
+ // reference unused.
+   (void)len;
 	static FILE *maps;
 	//return FALSE;
 	//DebugBreak();
@@ -21232,7 +21262,7 @@ void  SetSystemLog ( enum syslog_types type, const void *data )
 	}
 	else if( type == SYSLOG_CALLBACK )
 	{
-		(*syslog_local).UserCallback = (UserLoggingCallback)data;
+		(*syslog_local).UserCallback = (UserLoggingCallback)(uintptr_t)data;
 	}
 	else
 	{
@@ -21294,6 +21324,10 @@ static struct next_lprint_info *GetNextInfo( void )
 }
 static INDEX CPROC _null_vlprintf ( CTEXTSTR format, va_list args )
 {
+ // fix unused
+   (void)format;
+ // fix unused
+   (void)args;
 	return 0;
 }
 static INDEX CPROC _real_vlprintf ( CTEXTSTR format, va_list args )
@@ -21420,6 +21454,8 @@ static INDEX CPROC _real_lprintf( CTEXTSTR f, ... )
 }
 static INDEX CPROC _null_lprintf( CTEXTSTR f, ... )
 {
+ // fix unused
+   (void)f;
 	return 0;
 }
 RealVLogFunction  _vxlprintf ( uint32_t level DBG_PASS )
@@ -22383,8 +22419,10 @@ LOGICAL CPROC StopProgram( PTASK_INFO task )
 	else
 		return TRUE;
 #else
-	//lprintf( "need to send kill() to signal process to stop" );
-	kill( task->pid, SIGINT );
+//lprintf( "need to send kill() to signal process to stop" );
+#ifndef PEDANTIC_TEST
+	kill task->pid, SIGINT );
+#endif
 #endif
 	return FALSE;
 }
@@ -22451,7 +22489,9 @@ uintptr_t CPROC TerminateProgram( PTASK_INFO task )
 //			else
 //				lprintf( WIDE( "Would have close handles rudely." ) );
 #else
+#ifndef PEDANTIC_TEST
 			kill( task->pid, SIGTERM );
+#endif
 			// wait a moment for it to die...
 #endif
 		}
@@ -26230,10 +26270,10 @@ IMAGE_NAMESPACE_END
 #  define USE_VECTOR_NAMESPACE
 #endif
 #ifdef MAKE_RCOORD_SINGLE
-#  define VECTOR_METHOD(r,n,args) MATHLIB_EXPORT r n##f args;
+#  define VECTOR_METHOD(r,n,args) MATHLIB_EXPORT r n##f args
 #  define EXTERNAL_NAME(n)  n##f
 #else
-#  define VECTOR_METHOD(r,n,args) MATHLIB_EXPORT r n##d args;
+#  define VECTOR_METHOD(r,n,args) MATHLIB_EXPORT r n##d args
 #  define EXTERNAL_NAME(n)  n##d
 #endif
 #ifndef VECTOR_TYPES_DEFINED
@@ -31394,8 +31434,8 @@ struct critical_section_tag {
 typedef struct critical_section_tag CRITICALSECTION;
 #endif
 #ifdef __cplusplus
-	};
-};
+	}
+}
 #endif
 #ifdef __cplusplus
 namespace sack {
@@ -31481,8 +31521,8 @@ struct memory_block_tag
 };
 typedef struct memory_block_tag MEM;
 #ifdef __cplusplus
-	};
-};
+	}
+}
 #endif
 #endif
 #endif
@@ -35131,6 +35171,7 @@ PROCREG_PROC( LOGICAL, RegisterFunctionExx )( PCLASSROOT root
 												  , s2 = GetFullName( oldname->data.proc.name )
 												  //,library
 												  , oldname->data.proc.procname );
+					DumpRegisteredNames();
 					Release( s1 );
 					Release( s2 );
 					// perhaps it's same in a different library...
@@ -36886,8 +36927,8 @@ struct critical_section_tag {
 typedef struct critical_section_tag CRITICALSECTION;
 #endif
 #ifdef __cplusplus
-	};
-};
+	}
+}
 #endif
 #ifdef __cplusplus
 namespace sack {
@@ -36973,8 +37014,8 @@ struct memory_block_tag
 };
 typedef struct memory_block_tag MEM;
 #ifdef __cplusplus
-	};
-};
+	}
+}
 #endif
 #endif
 #endif
@@ -37345,7 +37386,7 @@ static void DumpSection( PCRITICALSECTION pcs )
 #endif
 #ifdef __cplusplus
  // namespace memory {
-};
+}
  // begin timer namespace
 	namespace timers {
 #endif
@@ -37723,7 +37764,7 @@ static void DumpSection( PCRITICALSECTION pcs )
 #endif
 #ifdef __cplusplus
  // namespace timers {
-	};
+	}
  // resume memory namespace
 	namespace memory {
 #endif
@@ -38098,6 +38139,9 @@ uintptr_t GetFileSize( int fd )
 		int exists = FALSE;
 		if( !pWhat && !pWhere)
 		{
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS 0x20
+#endif
 			pMem = mmap( 0, *dwSize
 						 , PROT_READ|PROT_WRITE
 						 , MAP_SHARED|MAP_ANONYMOUS
@@ -38890,10 +38934,12 @@ POINTER HeapAllocateAlignedEx( PMEM pHeap, uintptr_t dwSize, uint16_t alignment 
 			pHeap = g.pMemInstance;
 		pMem = GrabMem( pHeap );
 #ifdef __64__
+		dwPad = (((dwSize + 7) & 0xFFFFFFFFFFFFFFF8) - dwSize);
  // fix size to allocate at least _32s which
 		dwSize += 7;
 		dwSize &= 0xFFFFFFFFFFFFFFF8;
 #else
+		dwPad = (((dwSize + 3) & 0xFFFFFFFC) -dwSize);
  // fix size to allocate at least _32s which
 		dwSize += 3;
 		dwSize &= 0xFFFFFFFC;
@@ -40120,9 +40166,9 @@ PRELOAD( ShareMemToVSAllocHook )
 #endif
 #ifdef __cplusplus
 //namespace sack {
-};
+}
 //	namespace memory {
-};
+}
 #endif
 /*
  *  Crafted by James Buckeyne
@@ -42429,7 +42475,7 @@ size_t  sack_fread ( POINTER buffer, size_t size, int count,FILE *file_file )
 {
 	struct file *file;
 	file = FindFileByFILE( file_file );
-	if( file->mount && file->mount->fsi )
+	if( file && file->mount && file->mount->fsi )
 		return file->mount->fsi->_read( file_file, (char*)buffer, size * count );
 	return fread( buffer, size, count, file_file );
 }
@@ -50514,15 +50560,20 @@ PFAMILYNODE  FamilyTreeAddChild ( PFAMILYTREE *root, PFAMILYNODE parent, POINTER
 		node->parent = parent;
 		if( !node->parent )
 		{
-			if( ( node->elder = (*root)->family ) )
-				(*root)->family->younger = node;
+			if( (*root)->prior ) {
+				if( ( node->elder = (*root)->prior->child ) )
+					(*root)->family->younger = node;
+			} else
+				node->elder = NULL;
 			(*root)->family = node;
 		}
 		else
 		{
-			if( ( node->elder = (*root)->prior->child ) )
-				node->elder->younger = node;
-			(*root)->prior->child = node;
+			if( (*root)->prior ) {
+				if( ( node->elder = (*root)->prior->child ) )
+					node->elder->younger = node;
+				(*root)->prior->child = node;
+			}
 		}
 		(*root)->prior = node;
 		(*root)->lastfound = node;
@@ -52021,17 +52072,17 @@ typedef class network
    static void CPROC SetClose( PCLIENT pc, cppCloseCallback, uintptr_t psv );
 public:
 	network() { NetworkStart(); pc = NULL; TCP = TRUE; };
-	network( PCLIENT pc ) { NetworkStart(); this->pc = pc; TCP = TRUE; };
+	network( PCLIENT _pc ) { NetworkStart(); this->pc = _pc; TCP = TRUE; };
 	network( network &cp ) { cp.pc = pc; cp.TCP = TCP; };
 	~network() { if( pc ) RemoveClientEx( pc, TRUE, FALSE ); pc = NULL; };
 	inline void MakeUDP( void ) { TCP = FALSE; }
-	virtual void ReadComplete( POINTER buffer, size_t nSize ) {}
-	virtual void ReadComplete( POINTER buffer, size_t nSize, SOCKADDR *sa ) {}
-	virtual void WriteComplete( void ) {}
-	virtual void ConnectComplete( int nError ) {}
+	virtual void ReadComplete( POINTER buffer, size_t nSize ) = 0;
+	virtual void ReadComplete( POINTER buffer, size_t nSize, SOCKADDR *sa ) = 0;
+	virtual void WriteComplete( void ) = 0;
+	virtual void ConnectComplete( int nError ) =0;
 	// received on the server listen object...
-	virtual void ConnectComplete( class network &pNewClient ) {}
-	virtual void CloseCallback( void ) {}
+	virtual void ConnectComplete( class network &pNewClient ) =0;
+	virtual void CloseCallback( void ) =0;
 	inline int Connect( SOCKADDR *sa )
 	{
 		if( !pc )
@@ -59579,6 +59630,9 @@ static void FillDataToElement( struct json_context_object_element *element
 		{
 			switch( val->value_type )
 			{
+			default:
+				lprintf( "FAULT: UNEXPECTED VALUE TYPE RECOVERINT IDENT:%d", val->value_type );
+				break;
 			case VALUE_NUMBER:
 				if( val->float_result )
 				{
@@ -59594,6 +59648,9 @@ static void FillDataToElement( struct json_context_object_element *element
 			}
 		}
 		break;
+	default:
+		lprintf( "FAULT: UNEXPECTED ELEMENT TYPE" );
+      break;
 	}
 }
 LOGICAL json_decode_message( struct json_context *format
@@ -61440,8 +61497,8 @@ int json6_parse_add_data( struct json_parse_state *state
 							}
 #endif
 							else if( ( c == 'x' || c == 'b' || c =='o' || c == 'X' || c == 'B' || c == 'O')
-							       && ( output->pos - output->buf ) == 1
-							       && output->buf[0] == '0' ) {
+							       && ( output->pos - state->val.string ) == 1
+							       && state->val.string[0] == '0' ) {
 								// hex conversion.
 								if( !state->fromHex ) {
 									state->fromHex = TRUE;
@@ -61512,10 +61569,16 @@ int json6_parse_add_data( struct json_parse_state *state
 									break;
 								}
 								else {
-									state->status = FALSE;
-									if( !state->pvtError ) state->pvtError = VarTextCreate();
-									vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-									break;
+									if( state->parse_context == CONTEXT_UNKNOWN ) {
+										(*output->pos) = 0;
+										break;
+									}
+									else {
+										state->status = FALSE;
+										if( !state->pvtError ) state->pvtError = VarTextCreate();
+										vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+										break;
+									}
 								}
 							}
 						}
@@ -61595,6 +61658,9 @@ int json6_parse_add_data( struct json_parse_state *state
 					if( state->parse_context == CONTEXT_UNKNOWN
 					  && ( state->val.value_type != VALUE_UNSET
 					     || state->elements[0]->Cnt ) ) {
+						if( state->word == WORD_POS_END ) {
+							state->word = WORD_POS_RESET;
+						}
 						state->completed = TRUE;
 						retval = 1;
 					}
@@ -61957,6 +62023,9 @@ static void FillDataToElement6( struct json_context_object_element *element
 		{
 			switch( val->value_type )
 			{
+			default:
+				lprintf( "FAULT: UNEXPECTED VALUE TYPE RECOVERINT IDENT:%d", val->value_type );
+				break;
 			case VALUE_NUMBER:
 				if( val->float_result )
 				{
@@ -62896,6 +62965,7 @@ static LOGICAL openArray( struct jsox_parse_state *state, struct jsox_output_buf
 		PushLink( state->context_stack, old_context );
 		JSOX_RESET_STATE_VAL();
 		state->parse_context = JSOX_CONTEXT_IN_ARRAY;
+		state->word = JSOX_WORD_POS_RESET;
 	}
 	return TRUE;
 }
@@ -62909,6 +62979,9 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 		}
 		if( state->word == JSOX_WORD_POS_END ) {
 			switch( state->val.value_type ) {
+			default:
+				lprintf( "FAULT: UNEXPECTED VALUE TYPE RECOVERINT IDENT:%d", state->val.value_type );
+				break;
 			case JSOX_VALUE_TRUE:
 				(*output->pos++) = 't';
 				(*output->pos++) = 'r';
@@ -62961,6 +63034,14 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 			}
 		}
 		switch( state->word ) {
+		default:
+			lprintf( "FAULT: UNEXPECTED VALUE WORD POS RECOVERING IDENT:%d", state->word );
+			break;
+		case JSOX_WORD_POS_AFTER_FIELD:
+		case JSOX_WORD_POS_FIELD:
+  // full text fro before.
+		case JSOX_WORD_POS_END:
+			break;
 		case JSOX_WORD_POS_TRUE_1:
 			(*output->pos++) = 't';
 			break;
@@ -63141,8 +63222,11 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 	else if( cInt >= 0 ) {
 		// ignore white space.
 /*' '*/
-		if( cInt == 32 || cInt == 13 || cInt == 10 || cInt == 9 || cInt == 0xFEFF || cInt == 2028 || cInt == 2029 )
+		if( cInt == 32 || cInt == 13 || cInt == 10 || cInt == 9 || cInt == 0xFEFF || cInt == 2028 || cInt == 2029 ) {
+			state->word = JSOX_WORD_POS_END;
+			state->val.stringLen = output->pos - state->val.string;
 			return 0;
+		}
 /*','*/
 /*'}'*/
 /*']'*/
@@ -63156,6 +63240,7 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 #ifdef DEBUG_PARSING
 			lprintf( "Collected .. %d %c  %*.*s", cInt, cInt, output->pos - state->val.string, output->pos - state->val.string, state->val.string );
 #endif
+			state->val.stringLen = output->pos - state->val.string;
 		}
 	}
 	return 0;
@@ -63214,7 +63299,10 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 		input->pos = input->buf = msg;
 		input->size = msglen;
 		EnqueLinkNL( state->inBuffers, input );
-		if( state->gatheringString || state->gatheringNumber || state->parse_context == JSOX_CONTEXT_OBJECT_FIELD ) {
+		if( state->gatheringString
+			|| state->gatheringNumber
+			|| state->word == JSOX_WORD_POS_FIELD
+			|| state->parse_context == JSOX_CONTEXT_OBJECT_FIELD ) {
 			// have to extend the previous output buffer to include this one instead of allocating a split string.
 			size_t offset;
 			size_t offset2;
@@ -63368,6 +63456,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						if( !state->pvtError ) state->pvtError = VarTextCreate();
 						vtprintf( state->pvtError, "two names single value?" );
 					}
+					state->word = JSOX_WORD_POS_RESET;
 					state->val.name = state->val.string;
 					state->val.nameLen = state->val.stringLen;
 					state->val.string = NULL;
@@ -63504,10 +63593,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				}
 				break;
 			case ']':
-				if( state->word == JSOX_WORD_POS_END ) {
-					// allow starting a new word
-					state->word = JSOX_WORD_POS_RESET;
-				}
+				state->word = JSOX_WORD_POS_RESET;
 				if( state->parse_context == JSOX_CONTEXT_IN_ARRAY )
 				{
 #ifdef DEBUG_PARSING
@@ -63621,7 +63707,8 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				break;
 			default:
 				if( state->parse_context == JSOX_CONTEXT_OBJECT_FIELD
-				   || state->parse_context == JSOX_CONTEXT_UNKNOWN
+				   //|| state->parse_context == JSOX_CONTEXT_UNKNOWN
+				   //|| state->parse_context == JSOX_CONTEXT_IN_ARRAY
 				   || (state->parse_context == JSOX_CONTEXT_OBJECT_FIELD_VALUE && state->word == JSOX_WORD_POS_FIELD )
 				   || state->parse_context == JSOX_CONTEXT_CLASS_FIELD
 				) {
@@ -63699,8 +63786,12 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 								state->completed = TRUE;
 								break;
 							}
-							if( state->val.string )
+							if( state->val.string ) {
+								state->val.value_type = JSOX_VALUE_STRING;
 								state->word = JSOX_WORD_POS_AFTER_FIELD;
+								if( state->parse_context == JSOX_CONTEXT_UNKNOWN )
+									state->completed = TRUE;
+							}
 						}
 						else {
 							state->status = FALSE;
@@ -63772,7 +63863,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					if( state->status ) {
 						state->val.value_type = JSOX_VALUE_STRING;
 						state->completedString = TRUE;
-						state->word = JSOX_WORD_POS_AFTER_FIELD;
+						state->word = JSOX_WORD_POS_END;
 						if( state->complete_at_end ) {
 							if( state->parse_context == JSOX_CONTEXT_UNKNOWN ) {
 								state->completed = TRUE;
@@ -63803,8 +63894,12 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						break;
 					}
 					else if( state->word == JSOX_WORD_POS_FIELD ) {
-						if( state->val.string )
+						if( state->val.string ) {
+							state->val.value_type = JSOX_VALUE_STRING;
 							state->word = JSOX_WORD_POS_AFTER_FIELD;
+							if( state->parse_context == JSOX_CONTEXT_UNKNOWN )
+								state->completed = TRUE;
+						}
 					}
 					else {
 						state->status = FALSE;
@@ -63963,8 +64058,8 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 								state->numberFromDate = TRUE;
 							}
 							else if( ( c == 'x' || c == 'b' || c =='o' || c == 'X' || c == 'B' || c == 'O')
-							       && ( output->pos - output->buf ) == 1
-							       && output->buf[0] == '0' ) {
+							       && ( output->pos - state->val.string) == 1
+							       && state->val.string[0] == '0' ) {
 								// hex conversion.
 								if( !state->fromHex ) {
 									state->fromHex = TRUE;
@@ -64037,10 +64132,16 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 									break;
 								}
 								else {
-									state->status = FALSE;
-									if( !state->pvtError ) state->pvtError = VarTextCreate();
-									vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-									break;
+									if( state->parse_context == JSOX_CONTEXT_UNKNOWN ) {
+										(*output->pos) = 0;
+										break;
+									}
+									else {
+										state->status = FALSE;
+										if( !state->pvtError ) state->pvtError = VarTextCreate();
+										vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+										break;
+									}
 								}
 							}
 						}
@@ -64109,7 +64210,10 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 		if( input ) {
 			if( state->n >= input->size ) {
 				DeleteFromSet( JSOX_PARSE_BUFFER, jxpsd.parseBuffers, input );
-				if( state->gatheringString || state->gatheringNumber || state->parse_context == JSOX_CONTEXT_OBJECT_FIELD ) {
+				if( state->gatheringString
+					|| state->gatheringNumber
+					|| state->parse_context == JSOX_CONTEXT_OBJECT_FIELD
+					|| state->word == JSOX_WORD_POS_FIELD ) {
 					//lprintf( "output is still incomplete? " );
 					PrequeLink( state->outQueue, output );
 					retval = 0;
@@ -64119,6 +64223,9 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					if( state->parse_context == JSOX_CONTEXT_UNKNOWN
 					  && ( state->val.value_type != JSOX_VALUE_UNSET
 					     || state->elements[0]->Cnt ) ) {
+						if( state->word == JSOX_WORD_POS_END ) {
+							state->word = JSOX_WORD_POS_RESET;
+						}
 						state->completed = TRUE;
 						retval = 1;
 					}
@@ -73711,7 +73818,7 @@ static LOGICAL ssl_InitLibrary( void ){
 		ssl_global.lock_cs = NewArray( uint32_t, CRYPTO_num_locks() );
 		memset( ssl_global.lock_cs, 0, sizeof( uint32_t ) * CRYPTO_num_locks() );
 		CRYPTO_set_locking_callback(win32_locking_callback);
-		CRYPTO_set_id_callback((unsigned long (*)())pthreads_thread_id);
+		CRYPTO_set_id_callback(pthreads_thread_id);
 		//tls_init();
 		//ssl_global.tls_config = tls_config_new();
 		SSL_load_error_strings();
@@ -85670,21 +85777,33 @@ int xDeviceCharacteristics(sqlite3_file*file)
 	//struct my_file_data *my_file = (struct my_file_data*)file;
 	return SQLITE_IOCAP_ATOMIC|SQLITE_IOCAP_SAFE_APPEND|SQLITE_IOCAP_UNDELETABLE_WHEN_OPEN|SQLITE_IOCAP_POWERSAFE_OVERWRITE;
 }
-  int xShmMap(sqlite3_file*file, int iPg, int pgsz, int a, void volatile**b)
-  {
-	  return 0;
-  }
-  int xShmLock(sqlite3_file*file, int offset, int n, int flags)
-  {
-	  return 0;
-  }
-  void xShmBarrier(sqlite3_file*file)
-  {
-  }
-  int xShmUnmap(sqlite3_file*file, int deleteFlag)
-  {
-	  return 0;
-  }
+int xShmMap(sqlite3_file*file, int iPg, int pgsz, int a, void volatile**b)
+{
+	(void)file;
+	(void)iPg;
+	(void)pgsz;
+	(void)a;
+	(void)b;
+	return 0;
+}
+int xShmLock(sqlite3_file*file, int offset, int n, int flags)
+{
+	(void)file;
+	(void)offset;
+	(void)n;
+	(void)flags;
+	return 0;
+}
+void xShmBarrier(sqlite3_file*file)
+{
+	(void)file;
+}
+int xShmUnmap(sqlite3_file*file, int deleteFlag)
+{
+	(void)file;
+	(void)deleteFlag;
+	return 0;
+}
 /* Methods above are valid for version 1 */
 //int xShmMap(sqlite3_file*file, int iPg, int pgsz, int, void volatile**);
 //int xShmLock(sqlite3_file*file, int offset, int n, int flags);
@@ -86517,6 +86636,7 @@ struct config_element_tag
 				// either the count will be specified, or this will have to
 				// be auto expanded....
 };
+#define CONFIG_EMPTY_EXTRA ,NULL,NULL,NULL,{0,0,0,0},0,{0}
 typedef struct config_test_tag
 {
 	// this constant list could be a more optimized structure like
@@ -86957,8 +87077,9 @@ static PTEXT CPROC FilterTerminators( POINTER *scratch, PTEXT buffer )
 /* does not need scratch buffer... */
 static PTEXT CPROC FilterEscapesAndComments( POINTER *scratch, PTEXT pText )
 {
-	CTEXTSTR text = GetText( pText );
+	TEXTSTR text = GetText( pText );
 	PTEXT pNewText;
+   (void)scratch;
  /*&& strchr( text, '\\' )*/
 	if( text )
 	{
@@ -86967,7 +87088,7 @@ static PTEXT CPROC FilterEscapesAndComments( POINTER *scratch, PTEXT pText )
 		while( tmp )
 		{
 			int dest = 0, src = 0;
-			TEXTSTR text = GetText( tmp );
+			text = GetText( tmp );
 			while( text && text[src] )
 			{
 				if( text[src] == '\\' )
@@ -87492,7 +87613,7 @@ int IsBooleanVar( PCONFIG_ELEMENT pce, PTEXT *start )
 }
 int GetBooleanVar( PTEXT *start, LOGICAL *data )
 {
-	CONFIG_ELEMENT element = { CONFIG_BOOLEAN };
+	CONFIG_ELEMENT element = { CONFIG_BOOLEAN CONFIG_EMPTY_EXTRA };
 	if( IsBooleanVar( &element, start ) )
 	{
 		if( data )
@@ -87708,7 +87829,7 @@ int IsColorVar( PCONFIG_ELEMENT pce, PTEXT *start )
 }
 int GetColorVar( PTEXT *start, CDATA *data )
 {
-	CONFIG_ELEMENT element = { CONFIG_COLOR };
+	CONFIG_ELEMENT element = { CONFIG_COLOR CONFIG_EMPTY_EXTRA};
 	if( IsColorVar( &element, start ) )
 	{
 		if( data )
@@ -87720,7 +87841,7 @@ int GetColorVar( PTEXT *start, CDATA *data )
 //---------------------------------------------------------------------
 int IsFloatVar( PCONFIG_ELEMENT pce, PTEXT *start )
 {
-	//char *text;
+   (void)start;
 	if( pce->type != CONFIG_FLOAT )
 		return FALSE;
 	//text = GetText( *start );
@@ -87887,7 +88008,7 @@ int IsSingleWordVar( PCONFIG_ELEMENT pce, PTEXT *start )
 			}
 			LIST_FORALL( pce->data[0].multiword.pEnds, idx, struct config_element_tag *, pEnd ){
 				PTEXT _start = *start;
-				if( matched = IsAnyVar( pEnd, start ) )
+				if( ( matched = IsAnyVar( pEnd, start ) ) != 0 )
 				{
 					pce->data[0].singleword.pWhichEnd = pEnd;
 					pce->next = pEnd->next;
@@ -87961,7 +88082,7 @@ int IsMultiWordVar( PCONFIG_ELEMENT pce, PTEXT *start )
 		INDEX idx;
 		LIST_FORALL( pce->data[0].multiword.pEnds, idx, struct config_element_tag *, pEnd )
 		{
-			if( matched = IsAnyVar( pEnd, start ) ) {
+			if( ( matched = IsAnyVar( pEnd, start ) ) != 0 ){
 				pce->data[0].multiword.pWhichEnd = pEnd;
 				if( g.flags.bLogTrace )
 					lprintf( "Matched one of several?  set next to %p", pEnd, pEnd->next );
@@ -89783,28 +89904,41 @@ void PSSQL_GetSqliteValueInt64( struct sqlite3_value *val, int64_t *result ){
 	(*result) = sqlite3_value_int64( val );
 }
 const char * PSSQL_GetColumnTableName( PODBC odbc, int col) {
-	PCOLLECT pCollect;
-	pCollect = odbc ? odbc->collection : NULL;
-	if( pCollect ) {
-		const char *tmp;
-		//tmp = sqlite3_column_table_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
-		//tmp = sqlite3_column_origin_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
+	if( odbc->flags.bSQLite_native ) {
+		PCOLLECT pCollect;
+		pCollect = odbc ? odbc->collection : NULL;
+		if( pCollect ) {
+			const char *tmp;
+			//tmp = sqlite3_column_table_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
+			//tmp = sqlite3_column_origin_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
  // sqlite function is 'unsigned' result
-		tmp = sqlite3_column_table_name( pCollect->stmt, col );
-		return tmp;
+			tmp = sqlite3_column_table_name( pCollect->stmt, col );
+			return tmp;
+		}
 	}
+	else
+		return "?";
 	return NULL;
 }
 const char * PSSQL_GetColumnTableAliasName( PODBC odbc, int col ) {
-	PCOLLECT pCollect;
-	pCollect = odbc ? odbc->collection : NULL;
-	if( pCollect ) {
-		const char *tmp;
-		//tmp = sqlite3_column_table_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
-		//tmp = sqlite3_column_origin_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
+	if( odbc->flags.bSQLite_native ) {
+		PCOLLECT pCollect;
+		pCollect = odbc ? odbc->collection : NULL;
+		if( pCollect ) {
+			const char *tmp;
+			//tmp = sqlite3_column_table_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
+			//tmp = sqlite3_column_origin_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
  // sqlite function is 'unsigned' result
-		tmp = sqlite3_column_table_alias( pCollect->stmt, col );
-		return tmp;
+			tmp = sqlite3_column_table_alias( pCollect->stmt, col );
+			return tmp;
+		}
+	}
+	else {
+		PCOLLECT pCollect;
+		pCollect = odbc ? odbc->collection : NULL;
+		if( pCollect ) {
+		}
+		return "?";
 	}
 	return NULL;
 }
@@ -92786,7 +92920,6 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
  // nullable ptr ?
 											 , NULL
 											 );
-					collection->result_len[idx - 1] = colsize;
 					colsize = (colsize * 2) + 1 + 1024 ;
 					if( colsize >= sizeof( byResultStatic ) )
 					{
@@ -92844,6 +92977,7 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 							lprintf( WIDE( "SQL overflow (no room for nul character) %d of %d" ), (int)ResultLen, (int)colsize );
 						}
 					}
+					collection->result_len[idx - 1] = ResultLen;
 					//lprintf( WIDE( "Column %s colsize %d coltype %d coltype %d idx %d" ), collection->fields[idx-1], colsize, coltype, collection->coltypes[idx-1], idx );
 					if( collection->coltypes && coltype != collection->coltypes[idx-1] )
 					{
@@ -94595,7 +94729,6 @@ CTEXTSTR FetchLastInsertKeyEx( PODBC odbc, CTEXTSTR table, CTEXTSTR col DBG_PASS
 	//lprintf( "getting last insert ID?" );
 #ifdef POSGRES_BACKEND
 	{
-		CTEXTSTR result = NULL;
 		TEXTCHAR query[256];
 		sprintf( query, WIDE("select currval('%s_%s_seq')"), table, col );
 		if( SQLQueryEx( odbc, query, &result ) && result DBG_RELAY )
@@ -94618,13 +94751,11 @@ CTEXTSTR FetchLastInsertKeyEx( PODBC odbc, CTEXTSTR table, CTEXTSTR col DBG_PASS
 	PushSQLQueryEx( odbc );
 	if( odbc->flags.bAccess )
 	{
-		CTEXTSTR result = NULL;
 		if( SQLQueryEx( odbc, WIDE( "select @@IDENTITY" ), &result DBG_RELAY ) && result )
 			RecordID = StrDup( result );
 	}
 	else if( odbc->flags.bODBC )
 	{
-		CTEXTSTR result = NULL;
 		if( SQLQueryEx( odbc, WIDE("select LAST_INSERT_ID()"), &result DBG_RELAY ) && result )
 		{
 			RecordID = StrDup( result );

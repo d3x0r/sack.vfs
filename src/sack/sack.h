@@ -804,6 +804,8 @@ SACK_NAMESPACE
 #define FILELINE_PASS        , CTEXTSTR pFile, uint32_t nLine
 /* specify a consistant macro to forward file and line parameters.   This are appended parameters, and common usage is to only use these with _DEBUG set. */
 #define FILELINE_RELAY       , pFile, nLine
+/* specify a consistant macro to forward file and line parameters.   This are appended parameters, and common usage is to only use these with _DEBUG set. */
+#define FILELINE_NULL        , NULL, 0
 /* specify a consistant macro to forward file and line parameters, to functions which have void parameter lists without this information.  This are appended parameters, and common usage is to only use these with _DEBUG set. */
 #define FILELINE_VOIDRELAY   pFile, nLine
 /* specify a consistant macro to format file and line information for printf formated strings. */
@@ -843,6 +845,9 @@ SACK_NAMESPACE
 /* <combine sack::DBG_PASS>
    in NDEBUG mode, pass nothing */
 #define DBG_RELAY
+/* <combine sack::DBG_PASS>
+   in _DEBUG mode, pass FILELINE_NULL */
+#define DBG_NULL
 /* <combine sack::DBG_PASS>
    in NDEBUG mode, pass nothing */
 #define DBG_VOIDRELAY
@@ -1028,6 +1033,9 @@ SACK_NAMESPACE
    in _DEBUG mode, pass FILELINE_RELAY */
 #define DBG_RELAY       FILELINE_RELAY
 /* <combine sack::DBG_PASS>
+	  in _DEBUG mode, pass FILELINE_NULL */
+#define DBG_NULL        FILELINE_NULL
+/* <combine sack::DBG_PASS>
    in _DEBUG mode, pass FILELINE_VOIDRELAY */
 #define DBG_VOIDRELAY   FILELINE_VOIDRELAY
 /* <combine sack::DBG_PASS>
@@ -1051,6 +1059,12 @@ typedef void             *P_0;
  * should be used instead of uint32_t (DWORD)
  */
 typedef unsigned int  BIT_FIELD;
+/*
+ * several compilers are rather picky about the types of data
+ * used for bit field declaration, therefore this type
+ * should be used instead of int32_t (LONG)
+ */
+typedef int  SBIT_FIELD;
 // have to do this on a per structure basis - otherwise
 // any included headers with structures to use will get FUCKED
 #ifndef PACKED
@@ -1742,7 +1756,7 @@ public:
 	inline void remove( POINTER p ) { DeleteLink( &list, p ); }
 	inline POINTER first( void ) { POINTER p; for( idx = 0, p = NULL;list && (idx < list->Cnt) && (( p = GetLink( &list, idx ) )==0); )idx++; return p; }
 	inline POINTER next( void ) { POINTER p; for( idx++;list && (( p = GetLink( &list, idx ) )==0) && idx < list->Cnt; )idx++; return p; }
-	inline POINTER get(INDEX idx) { return GetLink( &list, idx ); }
+	inline POINTER get(INDEX index) { return GetLink( &list, index ); }
 } *piList;
 #endif
 // address of the thing...
@@ -1866,8 +1880,8 @@ TYPELIB_PROC  uintptr_t TYPELIB_CALLTYPE     ForAllLinks    ( PLIST *pList, ForP
    \ \                                                                 */
 #define SetLink(p,i,v)     ( SetLinkEx( (p),(i),((POINTER)(v)) DBG_SRC ) )
 #ifdef __cplusplus
-//		namespace list;
-	};
+ //		namespace list;
+	}
 #endif
 //--------------------------------------------------------
 _DATALIST_NAMESPACE
@@ -2052,8 +2066,8 @@ TYPELIB_PROC  POINTER TYPELIB_CALLTYPE      PeekLinkEx         ( PLINKSTACK *pls
    Macro to pass default debug file and line information.                    */
 #define PushLink(p, v)     PushLinkEx((p),(v) DBG_SRC)
 #ifdef __cplusplus
-//		namespace link_stack {
-		};
+ //		namespace link_stack {
+		}
 #endif
 //--------------------------------------------------------
 #ifdef __cplusplus
@@ -2361,7 +2375,7 @@ TYPELIB_PROC  int TYPELIB_CALLTYPE  EnqueMsgEx ( PMSGHANDLE pmh, POINTER buffer,
 TYPELIB_PROC  int TYPELIB_CALLTYPE  IsMsgQueueEmpty ( PMSGHANDLE pmh );
 #ifdef __cplusplus
  //namespace message {
-};
+}
 #endif
 /* Routines to deal with SLAB allocated blocks of structures.
    Each slab has multiple elements of a type in it, and the
@@ -2605,11 +2619,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  DeleteFromSetExx( GENERICSET *set, POINTER 
 #define DeleteFromSetEx( name, set, member, xx ) DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC )
 /* <combine sack::containers::sets::DeleteFromSetExx@GENERICSET *@POINTER@int@int max>
    \ \                                                                                 */
-#ifdef _DEBUG
-#define DeleteFromSet( name, set, member ) do { P##name##SET testset = set; DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC ); } while(0)
-#else
 #define DeleteFromSet( name, set, member ) DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC )
-#endif
 /* Marks a member in a set as usable.
    Parameters
    set :       pointer to a genericset pointer
@@ -2950,7 +2960,7 @@ enum TextFlags {
    Parameters
    name :  name of the variable to create
    size :  size of the static text element. (0 content)          */
-#define DECLTEXTSZ( name, size ) DECLTEXTSZTYPE( name,(size) )	 = { TF_STATIC, NULL, NULL, {{1,1}} }
+#define DECLTEXTSZ( name, size ) DECLTEXTSZTYPE( name,(size) )	 = { TF_STATIC, NULL, NULL, {{1,1  ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}} }
 /* Defines an initializer block which can be used to satisfy a
    TEXT elemnt of a structure
    Parameters
@@ -4004,7 +4014,7 @@ TYPELIB_PROC LOGICAL TYPELIB_CALLTYPE ParseStringVector( CTEXTSTR data, CTEXTSTR
 TYPELIB_PROC LOGICAL TYPELIB_CALLTYPE ParseIntVector( CTEXTSTR data, int **pData, int *nData );
 #ifdef __cplusplus
  //namespace text {
-};
+}
 #endif
 //--------------------------------------------------------------------------
 #ifdef __cplusplus
@@ -4327,7 +4337,7 @@ TYPELIB_PROC  uint32_t TYPELIB_CALLTYPE  GetNodeCount ( PTREEROOT root );
 TYPELIB_PROC  PTREEROOT TYPELIB_CALLTYPE  ShadowBinaryTree( PTREEROOT root );
 #ifdef __cplusplus
  //namespace BinaryTree {
-	};
+	}
 #endif
 //--------------------------------------------------------------------------
 #ifdef __cplusplus
@@ -4365,16 +4375,16 @@ TYPELIB_PROC LOGICAL TYPELIB_CALLTYPE FamilyTreeForEach( PFAMILYTREE root, PFAMI
 			, uintptr_t psvUserData );
 #ifdef __cplusplus
  //namespace family {
-};
+}
 #endif
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
 #ifdef __cplusplus
 //} // extern "c"
  // namespace containers
-};
+}
  // namespace sack
-};
+}
 using namespace sack::containers::link_stack;
 using namespace sack::containers::data_stack;
 using namespace sack::containers::data_list;
@@ -4550,7 +4560,7 @@ CONSTRUCT_NAMESPACE_END
 #endif
 #ifdef __cplusplus
 #define LOGGING_NAMESPACE namespace sack { namespace logging {
-#define LOGGING_NAMESPACE_END }; };
+#define LOGGING_NAMESPACE_END } }
 #else
 #define LOGGING_NAMESPACE
 #define LOGGING_NAMESPACE_END
@@ -5418,9 +5428,9 @@ MEM_PROC  void MEM_API  InitializeCriticalSec ( PCRITICALSECTION pcs );
    releasing memory.                                            */
 #ifdef __cplusplus
  // namespace timers
-};
+}
  // namespace sack
-};
+}
 using namespace sack::timers;
 #endif
 #ifdef __cplusplus
@@ -5927,9 +5937,6 @@ MEM_PROC  int MEM_API  MemCmp ( CPOINTER pOne, CPOINTER pTwo, size_t sz );
 	/* nothing.
    does nothing, returns nothing. */
 //#define memnop(mem,sz,comment)
-#ifdef __cplusplus
-//};
-#endif
 /* Compares two strings. Must match exactly.
    Parameters
    s1 :  string to compare
@@ -6199,9 +6206,9 @@ MEM_PROC  int MEM_API  PequeMessage ( struct transport_queue_tag *queue, POINTER
 //------------------------------------------------------------------------
 #ifdef __cplusplus
  // namespace memory
-};
+}
  // namespace sack
-};
+}
 using namespace sack::memory;
 #if defined( _DEBUG ) || defined( _DEBUG_INFO )
 /*
@@ -7811,17 +7818,17 @@ typedef class network
    static void CPROC SetClose( PCLIENT pc, cppCloseCallback, uintptr_t psv );
 public:
 	network() { NetworkStart(); pc = NULL; TCP = TRUE; };
-	network( PCLIENT pc ) { NetworkStart(); this->pc = pc; TCP = TRUE; };
+	network( PCLIENT _pc ) { NetworkStart(); this->pc = _pc; TCP = TRUE; };
 	network( network &cp ) { cp.pc = pc; cp.TCP = TCP; };
 	~network() { if( pc ) RemoveClientEx( pc, TRUE, FALSE ); pc = NULL; };
 	inline void MakeUDP( void ) { TCP = FALSE; }
-	virtual void ReadComplete( POINTER buffer, size_t nSize ) {}
-	virtual void ReadComplete( POINTER buffer, size_t nSize, SOCKADDR *sa ) {}
-	virtual void WriteComplete( void ) {}
-	virtual void ConnectComplete( int nError ) {}
+	virtual void ReadComplete( POINTER buffer, size_t nSize ) = 0;
+	virtual void ReadComplete( POINTER buffer, size_t nSize, SOCKADDR *sa ) = 0;
+	virtual void WriteComplete( void ) = 0;
+	virtual void ConnectComplete( int nError ) =0;
 	// received on the server listen object...
-	virtual void ConnectComplete( class network &pNewClient ) {}
-	virtual void CloseCallback( void ) {}
+	virtual void ConnectComplete( class network &pNewClient ) =0;
+	virtual void CloseCallback( void ) =0;
 	inline int Connect( SOCKADDR *sa )
 	{
 		if( !pc )
@@ -9177,7 +9184,7 @@ PSSQL_PROC( int, GetSQLTypes )( void );
        }
    </code>                                                      */
 PSSQL_PROC( int, FetchSQLTypes )( PODBC );
-#define PSSQL_VARARG_PROC(a,b,c)  PSSQL_PROC(a,b)c; typedef a(CPROC * __f_##b)c; PSSQL_PROC( __f_##b, __##b )(DBG_VOIDPASS);
+#define PSSQL_VARARG_PROC(a,b,c)  PSSQL_PROC(a,b)c; typedef a(CPROC * __f_##b)c; PSSQL_PROC( __f_##b, __##b )(DBG_VOIDPASS)
 /* Do a SQL query on the default odbc connection. The first
    record results immediately if there are any records. Returns
    the results as an array of strings. If you know the select
@@ -9952,7 +9959,13 @@ struct rt_init
 #endif
 #endif
 } __attribute__((packed));
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
+#if defined( __GNUC__ ) && defined( __64__)
+#define JUNKINIT(name) ,&pastejunk(name,_ctor_label), {0,0}
+#else
 #define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
+#endif
+#endif
 #define RTINIT_STATIC static
 #define ATEXIT_PRIORITY PRIORITY_ATEXIT
 #if defined( _DEBUG ) || defined( _DEBUG_INFO )
@@ -10597,18 +10610,23 @@ PROCREG_PROC( int, ReleaseRegisteredFunctionEx )( PCLASSROOT root
 /* This is a macro used to paste two symbols together. */
 #define paste_(a,b) _WIDE(a##b)
 #define paste(a,b) paste_(a,b)
-#define ___DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(Register,name),Method),line), SQL_PRELOAD_PRIORITY ) {	  SimpleRegisterMethod( task WIDE("/") classtype, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) );    RegisterValue( task WIDE("/") classtype WIDE("/") methodname, WIDE("Description"), desc ); }	                                                                          static returntype CPROC paste(name,line)
+#ifdef __cplusplus
+#define EXTRA_PRELOAD_SYMBOL _
+#else
+#define EXTRA_PRELOAD_SYMBOL
+#endif
+#define ___DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(paste(Register,name),Method),EXTRA_PRELOAD_SYMBOL),line), SQL_PRELOAD_PRIORITY ) {	  SimpleRegisterMethod( task WIDE("/") classtype, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) );    RegisterValue( task WIDE("/") classtype WIDE("/") methodname, WIDE("Description"), desc ); }	                                                                          static returntype CPROC paste(name,line)
 #define __DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)	   ___DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)
-#define ___DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(Register,name),Method),line), priority ) {	  SimpleRegisterMethod( task WIDE("/") classtype, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) );    RegisterValue( task WIDE("/") classtype WIDE("/") methodname, WIDE("Description"), desc ); }	                                                                          static returntype CPROC paste(name,line)
+#define ___DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(paste(Register,name),Method),EXTRA_PRELOAD_SYMBOL),line), priority ) {	  SimpleRegisterMethod( task WIDE("/") classtype, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) );    RegisterValue( task WIDE("/") classtype WIDE("/") methodname, WIDE("Description"), desc ); }	                                                                          static returntype CPROC paste(name,line)
 #define __DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   ___DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)
-#define ___DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(Register##name##Button,line) ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
+#define ___DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(Register##name##Button##EXTRA_PRELOAD_SYMBOL,line) ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
 #define __DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   ___DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)
 #define _DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   static returntype __DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)
 #define DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes)	  __DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,__LINE__)
 // this macro is used for ___DefineRegistryMethodP. Because this is used with complex names
 // an extra define wrapper of priority_preload must be used to fully resolve paramters.
 #define PRIOR_PRELOAD(a,p) PRIORITY_PRELOAD(a,p)
-#define ___DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIOR_PRELOAD( paste(Register##name##Button,line), priority ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
+#define ___DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIOR_PRELOAD( paste(Register##name##Button##EXTRA_PRELOAD_SYMBOL,line), priority ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
 /* <combine sack::app::registry::SimpleRegisterMethod>
    General form to build a registered procedure. Used by simple
    macros to create PRELOAD'ed registered functions. This flavor
@@ -10643,7 +10661,7 @@ PROCREG_PROC( int, ReleaseRegisteredFunctionEx )( PCLASSROOT root
 #define __DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   ___DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)
 #define _DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   __DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)
 #define DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes)	  _DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,__LINE__)
-#define _DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(Register##name##Button,line) ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase WIDE("/") methodname, paste(name,line)	  , _WIDE(#returntype), subname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
+#define _DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(Register##name##Button##EXTRA_PRELOAD_SYMBOL,line) ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase WIDE("/") methodname, paste(name,line)	  , _WIDE(#returntype), subname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
 #define DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes)	  _DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes,__LINE__)
 /* attempts to use dynamic linking functions to resolve passed
    global name if that fails, then a type is registered for this
@@ -10728,7 +10746,7 @@ PROCREG_NAMESPACE_END
 #endif
 #ifdef __cplusplus
 #define _OPTION_NAMESPACE namespace options {
-#define _OPTION_NAMESPACE_END };
+#define _OPTION_NAMESPACE_END }
 #define USE_OPTION_NAMESPACE	 using namespace sack::sql::options;
 #else
 #define _OPTION_NAMESPACE
@@ -10995,9 +11013,9 @@ IDLE_PROC( int, Idle )( void );
 IDLE_PROC( int, IdleFor )( uint32_t dwMilliseconds );
 #ifdef __cplusplus
 //	namespace timers {
-	};
+	}
 //namespace sack {
-};
+}
 using namespace sack::timers;
 #endif
 #endif
@@ -12887,7 +12905,7 @@ SACK_NAMESPACE
 #define BASE_COLOR_PURPLE        Color( 0x7A, 0x11, 0x7C )
 #ifdef __cplusplus
  //	 namespace image {
-};
+}
 SACK_NAMESPACE_END
 using namespace sack::image;
 #endif
