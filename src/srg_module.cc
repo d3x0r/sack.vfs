@@ -314,15 +314,17 @@ private:
 	struct signParams {
 		PTHREAD main;
 		struct random_context *signEntropy;
-		POINTER state;
-		char *salt;
+		POINTER state; // this thread's entropy working state
+		char *salt;  // this thread's salt.
 		int saltLen;
+#ifdef DEBUG_SIGNING
 		int tries;
-		char *id;
-		int pad1;
-		int pad2;
-		int ended;
-		int *done;
+#endif
+		char *id;  // result ID
+		int pad1;  // extra length 1 to try
+		int pad2;  // extra length 2 to try
+		int ended; // this thread has ended.
+		int *done; // all threads need to be done.
 	};
 	static int signingThreads;
 	static struct random_context *(*makeEntropy)( void( *getsalt )(uintptr_t, POINTER *salt, size_t *salt_size), uintptr_t psv_user );
@@ -342,7 +344,9 @@ private:
 				bytes = DecodeBase64Ex( params->id, 44, &len, (const char*)1 );
 				SRG_FeedEntropy( params->signEntropy, bytes, len );
 				SRG_GetEntropyBuffer( params->signEntropy, (uint32_t*)outbuf, 256 );
+#ifdef DEBUG_SIGNING
 				params->tries++;
+#endif
 				if( (passed_as = signCheck( outbuf, params->pad1, params->pad2, &s )) ) {
 #ifdef DEBUG_SIGNING
 					lprintf( "FEED %s", params->id );
@@ -378,7 +382,9 @@ private:
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString() );
 		static signParams threadParams[32];
 		int found = 0;
+#ifdef DEBUG_SIGNING
 		int tries = 0;
+#endif
 		int done = 0;
 		int pad1 = 0, pad2 = 0;
 		int n = 0;
@@ -397,7 +403,6 @@ private:
 			}
 			argn++;
 		}
-
 
 #ifdef DEBUG_SIGNING
 		lprintf( "RESET ENTROPY TO START" );
@@ -418,7 +423,9 @@ private:
 			threadParams[n].pad1 = pad1;
 			threadParams[n].pad2 = pad2;
 			threadParams[n].ended = 0;
+#ifdef DEBUG_SIGNING
 			threadParams[n].tries = 0;
+#endif
 			threadParams[n].done = &done;
 			ThreadTo( signWork, (uintptr_t)(threadParams +n) );
 		}
@@ -428,14 +435,18 @@ private:
 		}
 		for( n = 0; n < threads; n++ ) {
 			while( !threadParams[n].ended ) Relinquish();
+#ifdef DEBUG_SIGNING
 			tries += threadParams[n].tries;
+#endif
 		}
 		for( n = 0; n < threads; n++ ) {
 			if( threadParams[n].id ) {
 				if( found ) {
 				}
 				else {
+#ifdef DEBUG_SIGNING
 					lprintf( " %d  %s \n", tries, threadParams[n].id );
+#endif
 					args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), threadParams[n].id ) );
 				}
 				Release( threadParams[n].id );
@@ -461,7 +472,6 @@ private:
 			String::Utf8Value hash( USE_ISOLATE( isolate ) args[1]->ToString() );
 			//SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
 			char *id;
-			int tries = 0;
 			int pad1 = 0, pad2 = 0;
 			int n = 0;
 			int argn = 1;
