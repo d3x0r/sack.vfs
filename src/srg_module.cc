@@ -226,7 +226,12 @@ private:
 		}
 	}
 
-	static int signCheck( uint8_t *buf, int del1, int del2 ) {
+	struct signature {
+		const char *id;
+		int extent;
+		int classifier;
+	};
+	static int signCheck( uint8_t *buf, int del1, int del2, struct signature *s ) {
 		int n;
 		int is0 = bit_counts[buf[0]].in0 != 0;
 		int is1 = bit_counts[buf[0]].in1 != 0;
@@ -271,34 +276,6 @@ private:
 					is1 = 1;
 				}
 			}
-#if 0
-			int b;
-			for( b = 0; b < 8; b++ ) {
-				if( buf[n] & (1 << b) ) {
-					ones++;
-					if( is1 ) {
-						long1++;
-					}
-					else {
-						if( long0 > longest0 ) longest0 = long0;
-						is1 = 1;
-						is0 = 0;
-						long1 = 1;
-					}
-				}
-				else {
-					if( is0 ) {
-						long0++;
-					}
-					else {
-						if( long1 > longest1 ) longest1 = long1;
-						is0 = 1;
-						is1 = 0;
-						long0 = 1;
-					}
-				}
-			}
-#endif
 		}
 		if( long0 > longest0 ) longest0 = long0;
 		if( long1 > longest1 ) longest1 = long1;
@@ -306,18 +283,30 @@ private:
 // 167-128 = 39 = 40+ dif == 30 bits in a row approx
 #define overbal (167-128)
 		if( longest0 > (29+del1) || longest1 > (29+del1) || ones > (128+overbal+del2) || ones < (128-overbal-del2) ) {
-			if( ones > ( 128 + overbal + del2 ) )
-				rval = 1;
-			else if( ones < (128 - overbal - del2) )
-				rval = 2;
-			else if( longest0 > (29+del1 ) )
-				rval = 3;
-			else if( longest1 > (29+del1 ) )
-				rval = 4;
-			else
-				rval = 5;
+			if( ones > ( 128 + overbal + del2 ) ) {
+				s->classifier = rval = 1;
+				s->extent = ones-128 - overbal;
+			} 
+			else if( ones < (128 - overbal - del2) ) {
+				s->classifier = rval = 2;
+				s->extent = 128-ones - overbal;
+			}
+			else if( longest0 > ( 29 + del1 ) ) {
+				s->classifier = rval = 3;
+				s->extent = longest0 - 29;
+			}
+			else if( longest1 > (29 + del1) ) {
+				s->classifier = rval = 4;
+				s->extent = longest1 - 29;
+			}
+			else {
+				s->classifier = rval = 5;
+				s->extent = 0;
+			}
 			return rval;
 		}
+		s->classifier = 0;
+		s->extent = 0;
 		return 0;
 	}
 
@@ -336,6 +325,7 @@ private:
 		int *done;
 	};
 	static int signingThreads;
+	static struct random_context *(*makeEntropy)( void( *getsalt )(uintptr_t, POINTER *salt, size_t *salt_size), uintptr_t psv_user );
 
 	static uintptr_t signWork( PTHREAD thread ) {
 		struct signParams *params = (struct signParams *)GetThreadParam( thread );
@@ -347,23 +337,26 @@ private:
 				uint8_t outbuf[32];
 				uint8_t *bytes;
 				int passed_as;
+				struct signature s;
 				params->id = SRG_ID_Generator_256();
 				bytes = DecodeBase64Ex( params->id, 44, &len, (const char*)1 );
 				SRG_FeedEntropy( params->signEntropy, bytes, len );
-				Release( bytes );
 				SRG_GetEntropyBuffer( params->signEntropy, (uint32_t*)outbuf, 256 );
 				params->tries++;
-				if( (passed_as = signCheck( outbuf, params->pad1, params->pad2 )) ) {
-					//lprintf( "FEED" );
-					//LogBinary( bytes, len );
-					//lprintf( "GOT" );
-					//LogBinary( outbuf, 256 / 8 );
+				if( (passed_as = signCheck( outbuf, params->pad1, params->pad2, &s )) ) {
+#ifdef DEBUG_SIGNING
+					lprintf( "FEED %s", params->id );
+					LogBinary( bytes, len );
+					lprintf( "GOT" );
+					LogBinary( outbuf, 256 / 8 );
 					printf( " %d  %s  %d\n", params->tries, params->id, passed_as );
+#endif
 				} 
 				else {
 					Release( params->id );
 					params->id = NULL;
 				}
+				Release( bytes );
 			}
 		} while( !params->id && !params->done[0] );
 		if( !params->done[0] ) {
@@ -406,20 +399,22 @@ private:
 		}
 
 
-		//lprintf( "RESET ENTROPY TO START" );
-		//LogBinary( (const uint8_t*)*buf, buf.length() );
+#ifdef DEBUG_SIGNING
+		lprintf( "RESET ENTROPY TO START" );
+		LogBinary( (const uint8_t*)*buf, buf.length() );
+#endif
 
 		for( n = 0; n < threads; n++ ) {
 			threadParams[n].main = MakeThread();
 			if( !threadParams[n].signEntropy )
-				threadParams[n].signEntropy = SRG_CreateEntropy2_256( NULL, 0 );
+				threadParams[n].signEntropy = makeEntropy( NULL, 0 );
 
 			SRG_ResetEntropy( threadParams[n].signEntropy );
 			SRG_FeedEntropy( threadParams[n].signEntropy, (const uint8_t*)*buf, buf.length() );
 			threadParams[n].state = NULL;
 			SRG_SaveState( threadParams[n].signEntropy, &threadParams[n].state );
-			threadParams[n].salt = SRG_ID_Generator();
-			threadParams[n].saltLen = strlen( threadParams[n].salt );
+			threadParams[n].salt = SRG_ID_Generator_256();
+			threadParams[n].saltLen = (int)strlen( threadParams[n].salt );
 			threadParams[n].pad1 = pad1;
 			threadParams[n].pad2 = pad2;
 			threadParams[n].ended = 0;
@@ -484,7 +479,7 @@ private:
 			}
 
 			if( !signEntropy )
-				signEntropy = SRG_CreateEntropy2_256( NULL, (uintptr_t)0 );
+				signEntropy = makeEntropy( NULL, (uintptr_t)0 );
 			SRG_ResetEntropy( signEntropy );
 			SRG_FeedEntropy( signEntropy, (const uint8_t*)*buf, buf.length() );
 			{
@@ -493,22 +488,36 @@ private:
 				uint8_t *bytes;
 				id = *hash;
 				bytes = DecodeBase64Ex( id, 44, &len, (const char*)1 );
-				//lprintf( "FEED INIT" );
-				//LogBinary( (*buf), buf.length() );
-				//lprintf( "FEED" );
-				//LogBinary( bytes,len );
+#ifdef DEBUG_SIGNING
+				lprintf( "FEED INIT %s", id );
+				LogBinary( (*buf), buf.length() );
+				lprintf( "FEED" );
+				LogBinary( bytes,len );
+#endif
 				SRG_FeedEntropy( signEntropy, bytes, len );
 				Release( bytes );
 				SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
-				//lprintf( "GET" );
-				//LogBinary( outbuf, 256 / 8 );
-				args.GetReturnValue().Set( Number::New( args.GetIsolate(), signCheck( outbuf, pad1, pad2 ) ) );
+#ifdef DEBUG_SIGNING
+				lprintf( "GET" );
+				LogBinary( outbuf, 256 / 8 );
+#endif
+				Local<Object> result = Object::New( isolate );
+				struct signature s;
+				signCheck( outbuf, pad1, pad2, &s );
+				result->Set( String::NewFromUtf8( isolate, (const char*)"classifier" ), Number::New( args.GetIsolate(), s.classifier ) );
+				result->Set( String::NewFromUtf8( isolate, (const char*)"extent" ), Number::New( args.GetIsolate(), s.extent ) );
+				char *rid = EncodeBase64Ex( outbuf, 256 / 8, &len, (const char *)1 );
+				result->Set( String::NewFromUtf8( isolate, (const char*)"key" ), localString( isolate, rid, (int)(len -1)) );
+				args.GetReturnValue().Set( result );
 			}
 			EnqueLink( &signingEntropies, signEntropy );
 		}
 	}
 
 };
+
+int SRGObject::signingThreads = 1;
+struct random_context *(*SRGObject::makeEntropy)(void( *getsalt )(uintptr_t, POINTER *salt, size_t *salt_size), uintptr_t psv_user) = SRG_CreateEntropy2_256;
 
 struct SRGObject::bit_count_entry SRGObject::bit_counts[256];
 PLINKQUEUE SRGObject::signingEntropies;
