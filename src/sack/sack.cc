@@ -7718,11 +7718,13 @@ struct rt_init
 #endif
 } __attribute__((packed));
 #if defined( _DEBUG ) || defined( _DEBUG_INFO )
-#if defined( __GNUC__ ) && defined( __64__)
-#define JUNKINIT(name) ,&pastejunk(name,_ctor_label), {0,0}
+#  if defined( __GNUC__ ) && defined( __64__)
+#    define JUNKINIT(name) ,&pastejunk(name,_ctor_label), {0,0}
+#  else
+#    define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
+#  endif
 #else
-#define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
-#endif
+#  define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
 #endif
 #define RTINIT_STATIC static
 #define ATEXIT_PRIORITY PRIORITY_ATEXIT
@@ -19884,6 +19886,7 @@ void RootDestructor( void )
 #endif
 #endif
 #endif
+#undef l
 SACK_DEADSTART_NAMESPACE_END
 /*
  *  Crafted by James Buckeyne
@@ -22421,7 +22424,7 @@ LOGICAL CPROC StopProgram( PTASK_INFO task )
 #else
 //lprintf( "need to send kill() to signal process to stop" );
 #ifndef PEDANTIC_TEST
-	kill task->pid, SIGINT );
+	kill( task->pid, SIGINT );
 #endif
 #endif
 	return FALSE;
@@ -33698,6 +33701,9 @@ void  RescheduleTimer( uint32_t ID )
 	LeaveCriticalSec( &globalTimerData.csGrab );
 }
 //--------------------------------------------------------------------------
+#ifndef TARGETNAME
+#  define TARGETNAME ""
+#endif
 static void OnDisplayPause( WIDE("@Internal Timers") _WIDE(TARGETNAME) )( void )
 {
 	globalTimerData.flags.bHaltTimers = 1;
@@ -40762,7 +40768,7 @@ SACK_MEMORY_NAMESPACE_END
 #ifdef WIN32
 #endif
 #ifndef UNDER_CE
-//#include <fcntl.h>
+  // O_BINARY
 //#include <io.h>
 #endif
 FILESYS_NAMESPACE
@@ -43107,7 +43113,11 @@ LOGICAL SetFileLength( CTEXTSTR path, size_t length )
 #ifdef __LINUX__
 	// files are by default binary in linux
 #  ifndef O_BINARY
-#	define O_BINARY 0
+#	   define O_BINARY 0
+#  endif
+#else
+#  ifndef O_BINARY
+#	   define O_BINARY 0x8000
 #  endif
 #endif
 	INDEX file;
@@ -49300,6 +49310,7 @@ char * u8xor( const char *a, size_t alen, const char *b, size_t blen, int *ofs )
 }
 static const char * const _base642 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$_=";
 static const char * const _base64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+static const char * _last_base64_set;
 static char _base64_r[256];
 static void encodeblock( unsigned char in[3], TEXTCHAR out[4], size_t len, const char *base64 )
 {
@@ -49314,7 +49325,7 @@ static void decodeblock( char in[4], uint8_t out[3], size_t len, const char *bas
 	int n;
 	for( n = 0; n < 4; n++ )
 	{
-//   strchr( base64, in[n] );
+		//strchr( base64, in[n] );
 		index[n] = _base64_r[in[n]];
 		//if( ( index[n] - base64 ) == 64 )
 		//	last_byte = 1;
@@ -49351,11 +49362,14 @@ TEXTCHAR *EncodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const ch
 	return real_output;
 }
 static void setupDecodeBytes( const char *code ) {
-   int n = 0;
-   memset( _base64_r, 0, 256 );
-	while( *code ) {
-      _base64_r[*code] = n++;
-      code++;
+	int n = 0;
+	if( _last_base64_set != code ) {
+		_last_base64_set = code;
+		memset( _base64_r, 0, 256 );
+		while( *code ) {
+			_base64_r[*code] = n++;
+			code++;
+		}
 	}
 }
 uint8_t *DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *base64 )
@@ -61821,12 +61835,6 @@ LOGICAL json6_parse_message( const char * msg
 	_state = state;
 	return FALSE;
 }
-void json6_dispose_decoded_message( struct json6_context_object *format
-                                 , POINTER msg_data )
-{
-	// a complex format might have sub-parts .... but for now we'll assume simple flat structures
-	//Release( msg_data );
-}
 void json6_dispose_message( PDATALIST *msg_data )
 {
 	json_dispose_message( msg_data );
@@ -62604,7 +62612,7 @@ char *jsox_escape_string( const char *string ) {
 #define _4char(result,from)  ( ((*from) += 4), ( ( ( result & 0x7 ) << 18 )						     | ( ( result & 0x3F00 ) << 4 )						   | ( ( result & 0x3f0000 ) >> 10 )						    | ( ( result & 0x3f000000 ) >> 24 ) ) )
 #define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),		     ( ( !(result & 0xFF) )              ?_zero(result,from)	                                                    :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
 #define GetUtfChar(x) __GetUtfChar(c,x)
-static int gatherString6(struct jsox_parse_state *state, CTEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TEXTSTR *pmOut, TEXTRUNE start_c
+static int gatherStringX(struct jsox_parse_state *state, CTEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TEXTSTR *pmOut, TEXTRUNE start_c
 		//, int literalString
 		) {
 	char *mOut = (*pmOut);
@@ -63361,7 +63369,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 		state->n = input->pos - input->buf;
 		if( state->n > input->size ) DebugBreak();
 		if( state->gatheringString ) {
-			string_status = gatherString6( state, input->buf, &input->pos, input->size, &output->pos, state->gatheringStringFirstChar );
+			string_status = gatherStringX( state, input->buf, &input->pos, input->size, &output->pos, state->gatheringStringFirstChar );
 			if( string_status < 0 )
 				state->status = FALSE;
 			else if( string_status > 0 )
@@ -63737,7 +63745,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						state->val.string = output->pos;
 						state->gatheringString = TRUE;
 						state->gatheringStringFirstChar = c;
-						string_status = gatherString6( state, input->buf, &input->pos, input->size, &output->pos, c );
+						string_status = gatherStringX( state, input->buf, &input->pos, input->size, &output->pos, c );
 						//lprintf( "string gather status:%d", string_status );
 						if( string_status < 0 )
 							state->status = FALSE;
@@ -63843,7 +63851,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					state->val.string = output->pos;
 					state->gatheringString = TRUE;
 					state->gatheringStringFirstChar = c;
-					string_status = gatherString6( state, input->buf, &input->pos, input->size, &output->pos, c );
+					string_status = gatherStringX( state, input->buf, &input->pos, input->size, &output->pos, c );
 					//lprintf( "string gather status:%d", string_status );
 					if( string_status < 0 )
 						state->status = FALSE;
@@ -64284,13 +64292,13 @@ void _jsox_dispose_message( PDATALIST *msg_data )
 	DeleteDataList( msg_data );
 	DeleteFromSet( PDATALIST, jxpsd.dataLists, msg_data );
 }
-static uintptr_t FindDataList( void*p, uintptr_t psv ) {
+static uintptr_t jsox_FindDataList( void*p, uintptr_t psv ) {
 	if( ((PPDATALIST)p)[0] == (PDATALIST)psv )
 		return (uintptr_t)p;
 	return 0;
 }
 void jsox_dispose_message( PDATALIST *msg_data ) {
-	uintptr_t actual = ForAllInSet( PDATALIST, jxpsd.dataLists, FindDataList, (uintptr_t)msg_data[0] );
+	uintptr_t actual = ForAllInSet( PDATALIST, jxpsd.dataLists, jsox_FindDataList, (uintptr_t)msg_data[0] );
 	_jsox_dispose_message( (PDATALIST*)actual );
 	msg_data[0] = NULL;
 }
@@ -93092,8 +93100,10 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 			// or connection closes and destroyes the collection.
 			collection->flags.bTemporary = 1;
 			collection->flags.bEndOfFile = 1;
+#if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 			sqlite3_finalize( collection->stmt );
 			collection->stmt = NULL;
+#endif
 			//lprintf( WIDE("What about the remainging results?") );
 			//ReleaseCollectionResults( collection );
 		}
