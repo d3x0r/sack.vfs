@@ -114,41 +114,6 @@ public:
 };
 
 
-class ObjectStorageObject : public node::ObjectWrap {
-public:
-	struct volume *vol;
-	//bool volNative;
-	char *mountName;
-	char *fileName;
-	//struct file_system_interface *fsInt;
-	//struct file_system_mounted_interface* fsMount;
-	static v8::Persistent<v8::Function> constructor;
-
-public:
-
-	static void Init( Isolate *isolate, Handle<Object> exports );
-	ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
-
-	static void New( const v8::FunctionCallbackInfo<Value>& args );
-	// get object pass object ID
-	static void getObject( const v8::FunctionCallbackInfo<Value>& args );
-
-	// get object and all recursive objects associated from here (for 1 level?)
-	static void mapObject( const v8::FunctionCallbackInfo<Value>& args );
-
-	// pass object, result with object ID.
-	static void putObject( const v8::FunctionCallbackInfo<Value>& args );
-
-	// pass object ID, get back a ObjectStorageFileObject ( support seek/read/write? )
-	static void openObject( const v8::FunctionCallbackInfo<Value>& args );
-
-	// utility to remove the key so it can be diagnosed.
-	static void volDecrypt( const v8::FunctionCallbackInfo<Value>& args );
-
-	~ObjectStorageObject();
-};
-
-
 class ThreadObject : public node::ObjectWrap {
 public:
 	static v8::Persistent<v8::Function> constructor;
@@ -402,6 +367,24 @@ struct reviver_data {
 Local<Value> convertMessageToJS( PDATALIST msg_data, struct reviver_data *reviver );
 Local<Value> convertMessageToJS2( PDATALIST msg_data, struct reviver_data *reviver );
 
+class JSOXObject : public node::ObjectWrap {
+public:
+	struct jsox_parse_state *state;
+	static Persistent<Function> constructor;
+	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
+
+public:
+
+	static void Init( Handle<Object> exports );
+	JSOXObject();
+
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	static void write( const v8::FunctionCallbackInfo<Value>& args );
+
+	~JSOXObject();
+};
+
+
 struct arrayBufferHolder {
 	void *buffer;
 	Persistent<Object> o;
@@ -418,6 +401,8 @@ Local<String> localString( Isolate *isolate, const char *data, int len );
 
 void InitFS( const v8::FunctionCallbackInfo<Value>& args );
 void ConfigScriptInit( Handle<Object> exports );
+
+void ObjectStorageInit( Isolate *isoalte, Handle<Object> exports );
 
 #ifndef VFS_MAIN_SOURCE
 extern
