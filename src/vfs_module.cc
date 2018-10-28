@@ -6,7 +6,6 @@ static void fileDelete( const v8::FunctionCallbackInfo<Value>& args );
 
 static struct vfs_local {
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
-
 } vl;
 
 Persistent<Function> VolumeObject::constructor;
@@ -108,6 +107,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	InitWebSocket( isolate, exports );
 	InitUDPSocket( isolate, exports );
 	InitTask( isolate, exports );
+	ObjectStorageInit( isolate, exports );
 #ifdef INCLUDE_GUI
 	ImageObject::Init( exports );
 	RenderObject::Init( exports );
@@ -203,7 +203,7 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t v
 }
 
 
-
+#if 0
 void logBinary( char *x, int n )
 {
 	int m;
@@ -218,6 +218,8 @@ void logBinary( char *x, int n )
 		}
 	}
 }
+#endif
+
 
 void VolumeObject::volDecrypt( const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
@@ -957,7 +959,6 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 					mount_name = StrDup( *fName );
 				}
 				else  {
-					arg = 1;
 					mount_name = SRG_ID_Generator();
 				}
 				//}
@@ -973,7 +974,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				else {
 					defaultFilename = FALSE;
 					filename = mount_name;
-					mount_name = NULL;
+					mount_name = SRG_ID_Generator();
 				}
 				//if( args[argc
 				if( args[arg]->IsNumber() ) {
