@@ -16,22 +16,6 @@ static void parseJSOX( const v8::FunctionCallbackInfo<Value>& args );
 static void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args );
 static void showTimings( const v8::FunctionCallbackInfo<Value>& args );
 
-class JSOXObject : public node::ObjectWrap {
-	struct jsox_parse_state *state;
-public:
-	static Persistent<Function> constructor;
-	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
-
-public:
-
-	static void Init( Handle<Object> exports );
-	JSOXObject();
-
-	static void New( const v8::FunctionCallbackInfo<Value>& args );
-	static void write( const v8::FunctionCallbackInfo<Value>& args );
-
-	~JSOXObject();
-};
 static Persistent<Map> fromPrototypeMap;
 Persistent<Function> JSOXObject::constructor;
 
@@ -54,7 +38,8 @@ void InitJSOX( Isolate *isolate, Handle<Object> exports ){
 
 		JSOXObject::constructor.Reset( isolate, parseTemplate->GetFunction() );
 
-		SET_READONLY( o2, "begin", parseTemplate->GetFunction() );
+		//SET_READONLY( o2, "begin", parseTemplate->GetFunction() );
+		o2->Set( String::NewFromUtf8( isolate, "begin"), parseTemplate->GetFunction() );
 	}
 
 }
@@ -108,20 +93,10 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 			r.context = r.isolate->GetCurrentContext();
 			argv[0] = convertMessageToJS2( elements, &r );
 			{
-				v8::TryCatch try_catch( isolate );
 				Local<Function> cb( parser->readCallback.Get( isolate ) );
 				MaybeLocal<Value> cbResult = cb->Call( context, global, 1, argv );
-				if( try_catch.HasCaught() ) {
-					v8::String::Utf8Value exception( try_catch.Exception() );
-					const char* exception_string = ToCString( exception );
-					v8::Local<v8::Message> message = try_catch.Message();
-					lprintf( "%s", exception_string );
-					if( cbResult.IsEmpty() )
-						return;
-				}
 				if( cbResult.IsEmpty() )
 					return;
-
 			}
 		}
 		jsox_dispose_message( &elements );
@@ -436,10 +411,6 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 }
 
 
-
-void makeJSON( const v8::FunctionCallbackInfo<Value>& args ) {
-	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), "undefined :) Stringify is not completed" ) );
-}
 
 void showTimings( const v8::FunctionCallbackInfo<Value>& args ) {
      uint32_t val;
