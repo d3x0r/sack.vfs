@@ -286,6 +286,7 @@ endif( WIN32 )
 
 add_library(${PROJECT_NAME} SHARED
 	src/vfs_module.cc
+	src/objStore_module.cc
 	src/thread_module.cc
 	src/sql_module.cc
 	src/com_interface.cc
