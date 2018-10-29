@@ -77,6 +77,12 @@ void KeyHidObjectInit( Isolate *isolate, Handle<Object> exports );
 #define ReadOnlyProperty (PropertyAttribute)((int)PropertyAttribute::ReadOnly | PropertyAttribute::DontDelete)
 
 
+struct PromiseWrapper {
+	Persistent<Promise::Resolver> resolver;
+	Persistent<Function> resolve;
+	Persistent<Function> reject;
+};
+struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate );
 
 class VolumeObject : public node::ObjectWrap {
 public:
@@ -362,6 +368,7 @@ struct reviver_data {
 	Handle<Object> _this;
 	Handle<Function> reviver;
 	Handle<Object> rootObject;
+	class JSOXObject *parser;
 };
 
 Local<Value> convertMessageToJS( PDATALIST msg_data, struct reviver_data *reviver );
@@ -372,6 +379,8 @@ public:
 	struct jsox_parse_state *state;
 	static Persistent<Function> constructor;
 	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
+	Persistent<Map> fromPrototypeMap;
+	Persistent<Map> promiseFromPrototypeMap;
 
 public:
 
@@ -380,6 +389,8 @@ public:
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void write( const v8::FunctionCallbackInfo<Value>& args );
+	static void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args );
+	static void setPromiseFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args );
 
 	~JSOXObject();
 };

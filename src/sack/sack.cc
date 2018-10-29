@@ -14805,6 +14805,8 @@ LOGICAL _os_ExpandVolume( struct volume *vol ) {
 		}
 		sack_fseek( vol->file, 0, SEEK_END );
 		vol->dwSize = sack_ftell( vol->file );
+		if( vol->dwSize == 0 )
+			created = TRUE;
 		sack_fseek( vol->file, 0, SEEK_SET );
 	}
 	//vol->dwSize += ((uintptr_t)vol->disk - (uintptr_t)vol->diskReal);
@@ -15451,6 +15453,7 @@ LOGICAL _os_ScanDirectory_( struct volume *vol, const char * filename
 					int d;
 					//LoG( "this name: %s", names );
 					if( ( d = _os_MaskStrCmp( vol, filename+ofs, nameBlock, name_ofs, path_match ) ) == 0 ) {
+                  if( file )
 						{
 							file->dirent_key = (*entkey);
 							file->cache = cache;
@@ -63640,6 +63643,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 							}
 						}
 						pushValue( state, state->elements, &state->val );
+						JSOX_RESET_STATE_VAL();
 					}
 					state->val.value_type = JSOX_VALUE_ARRAY;
 					//state->val.string = NULL;
@@ -63723,6 +63727,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					lprintf( "comma after field value, push field to object: %s", state->val.name );
 #endif
 					state->parse_context = JSOX_CONTEXT_OBJECT_FIELD;
+					state->word = JSOX_WORD_POS_RESET;
 					if( state->val.value_type != JSOX_VALUE_UNSET )
 						pushValue( state, state->elements, &state->val );
 					JSOX_RESET_STATE_VAL();
@@ -63870,6 +63875,12 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					// but gatherString now just gathers all strings
 				case '"':
 				case '\'':
+					if( state->word == JSOX_WORD_POS_FIELD
+						|| ( state->val.value_type == JSOX_VALUE_STRING
+							 && !state->val.className ) ) {
+						(*output->pos++) = 0;
+						state->val.className = state->val.string;
+					}
 					state->val.string = output->pos;
 					state->gatheringString = TRUE;
 					state->gatheringStringFirstChar = c;

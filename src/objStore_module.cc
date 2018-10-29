@@ -209,6 +209,7 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 	}
 	ObjectStorageObject *vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
 	String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
+	//lprintf( "OPEN FILE:%s", *fName );
 	if( vol->volNative ) {
 		struct objStore::sack_vfs_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
 		if( file ) {
@@ -225,6 +226,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 	ObjectStorageObject *vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
 	struct jsox_parse_state *parser = NULL;
 	LOGICAL tempParser = FALSE;
+	JSOXObject *parserObject = NULL;
 
 	if( args.Length() < 2 ) {
 		isolate->ThrowException( Exception::TypeError(
@@ -236,12 +238,14 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 	int arg = 1;
 	while( arg < args.Length() ) {
 		if( args[arg]->IsFunction() ) {
-			cb = Handle<Function>::Cast( args[1] );
+			cb = Handle<Function>::Cast( args[arg] );
+			arg++;
 		}
 		else if( args[arg]->IsObject() ) {
 			Local<Object> useParser = args[arg]->ToObject();
-			JSOXObject *file = ObjectWrap::Unwrap<JSOXObject>( useParser );
-			parser = file->state;
+			parserObject = ObjectWrap::Unwrap<JSOXObject>( useParser );
+			parser = parserObject->state;
+			arg++;
 		}
 	}
 
@@ -253,6 +257,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 	if( vol->volNative ) {
 		if( !objStore::sack_vfs_os_exists( vol->vol, (*fName) ) ) return;
 
+		lprintf( "OPEN FILE:%s", *fName );
 		struct objStore::sack_vfs_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
 		if( file ) {
 			char *buf = NewArray( char, 4096 );
@@ -264,6 +269,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			while( (read < len) && (newRead = objStore::sack_vfs_os_read( file, buf, 4096 )) ) {
 				read += newRead;
 				int result;
+				//lprintf( "Parse file: %s", buf, newRead );
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
 					result = jsox_parse_add_data( parser, NULL, 0 ) ) {
@@ -272,8 +278,10 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					data = jsox_parse_get_data( parser );
 					struct reviver_data r;
 					r.revive = FALSE;
+					r._this = args.This();
 					r.isolate = isolate;
 					r.context = isolate->GetCurrentContext();
+					r.parser = parserObject;
 					Local<Value> val = convertMessageToJS2( data, &r );
 					{
 						MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
@@ -305,6 +313,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			while( (read < len) && (newRead = sack_fread( buf, 4096, 1, file )) ) {
 				read += newRead;
 				int result;
+				//lprintf( "Parse file:", buf );
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
 					result = jsox_parse_add_data( parser, NULL, 0 ) ) {

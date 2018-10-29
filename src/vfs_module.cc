@@ -24,6 +24,40 @@ Local<String> localString( Isolate *isolate, const char *data, int len ) {
 }
 
 
+
+static void promiseResolveCallback( const v8::FunctionCallbackInfo<Value>& args ) {
+	v8::Local<v8::External> ext = args.Data().As<v8::External>();
+	PromiseWrapper* pw = static_cast<PromiseWrapper*>(ext->Value());
+	Local<Promise::Resolver> lpr = pw->resolver.Get( args.GetIsolate() );
+	lpr->Resolve( args[0] );
+}
+static void promiseRejectCallback( const v8::FunctionCallbackInfo<Value>& args ) {
+	v8::Local<v8::External> ext = args.Data().As<v8::External>();
+	PromiseWrapper* pw = static_cast<PromiseWrapper*>(ext->Value());
+	Local<Promise::Resolver> lpr = pw->resolver.Get( args.GetIsolate() );
+	lpr->Reject( args[0] );
+}
+
+
+struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate ) {
+	static struct PromiseWrapper blank;
+	struct PromiseWrapper *pw = NewArray( struct PromiseWrapper, 1 );
+	memcpy( pw, &blank, sizeof( struct PromiseWrapper ) );
+	MaybeLocal<Promise::Resolver> ml_resolver = Promise::Resolver::New( context );
+	Local<Promise::Resolver> resolver = ml_resolver.ToLocalChecked();
+	Local<Promise> pr = resolver->GetPromise();
+	Local<External> lex_pw = External::New( isolate, (void *)pw );
+	MaybeLocal<Function> prsc = Function::New( context, promiseResolveCallback, lex_pw );
+	pw->resolve.Reset( isolate, prsc.ToLocalChecked() );
+	MaybeLocal<Function> prjc = Function::New( context, promiseRejectCallback, lex_pw );
+	pw->reject.Reset( isolate, prjc.ToLocalChecked() );
+	return pw;
+	//Local<Value> args[] = { prsc.ToLocalChecked(), prjc.ToLocalChecked() };
+
+
+
+}
+
 static void moduleExit( void *arg ) {
 	//SaveTranslationDataEx( "^/strings.dat" );
 	SaveTranslationDataEx( "@/../../strings.json" );
