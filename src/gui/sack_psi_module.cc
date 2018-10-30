@@ -1027,11 +1027,14 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 	CTEXTSTR type = GetControlTypeName( obj->control );
 	if( StrCmp( type, CONTROL_FRAME_NAME ) == 0 ) {
 		SetCommonButtons( obj->control, &obj->done, &obj->okay );
-
 	} else if( StrCmp( type, "PSI Console" ) == 0 ) {
 		c->Set( String::NewFromUtf8( isolate, "write" ), Function::New( isolate, ControlObject::writeConsole ) );
 		c->Set( String::NewFromUtf8( isolate, "oninput" ), Function::New( isolate, ControlObject::setConsoleRead ) );
 	} else if( StrCmp( type, NORMAL_BUTTON_NAME ) == 0 ) {
+		int ID = GetControlID( obj->control );
+		if( ID == BTN_OKAY || ID == BTN_CANCEL ) {
+			SetCommonButtons( obj->control, &obj->done, &obj->okay );
+		}
 		c->Set( String::NewFromUtf8( isolate, "on" ), Function::New( isolate, ControlObject::setButtonEvent ) );
 		c->Set( String::NewFromUtf8( isolate, "click" ), Function::New( isolate, ControlObject::setButtonClick ) );
 	} else if( StrCmp( type, IMAGE_BUTTON_NAME ) == 0 ) {
@@ -1090,6 +1093,14 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 
 Local<Object> ControlObject::NewWrappedControl( Isolate* isolate, PSI_CONTROL pc ) {
 	// Invoked as plain function `MyObject(...)`, turn into construct call.
+	ControlObject *control;
+	INDEX idx;
+	LIST_FORALL( psiLocal.controls, idx, ControlObject *, control ) {
+		if( control->control == pc ) {
+			return control->state.Get( isolate );
+		}
+	}
+
 	CTEXTSTR type = GetControlTypeName( pc );
 
 	Local<Function> cons = Local<Function>::New( isolate, StrCmp( type, "Frame" ) == 0 ?constructor : constructor2 );
@@ -1448,8 +1459,12 @@ void ControlObject::save( const FunctionCallbackInfo<Value>& args ) {
 void ControlObject::load( const FunctionCallbackInfo<Value>& args ) {
 	//ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
 	String::Utf8Value name( args[0]->ToString() );
+	PSI_CONTROL pc = LoadXMLFrame( *name );
+	Local<Object> blah = NewWrappedControl( args.GetIsolate(), pc );
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( blah );
+	SetCommonButtons( pc, &me->done, &me->okay );
 
-	args.GetReturnValue().Set( NewWrappedControl( args.GetIsolate(), LoadXMLFrame( *name ) ) );
+	args.GetReturnValue().Set( blah );
 }
 
 //-------------------------------------------------------
