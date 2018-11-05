@@ -143,7 +143,7 @@ if( CMAKE_COMPILER_IS_GNUCC )
    set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_FLAGS "-Wno-unused-result")
 endif( CMAKE_COMPILER_IS_GNUCC )
 
-set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_DEFINITIONS "TARGETNAME=\"${PROJECT_NAME}.node\";${MOREDEFS}" )
+set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT_NAME}.node\";${MOREDEFS}" )
 add_dependencies( ${PROJECT_NAME} sack intershell )
 
 if( UNIX )
@@ -165,7 +165,6 @@ target_link_libraries(${PROJECT_NAME} bag++ bag.externals bag.psi++ ${VFSLIB} ${
 			${EXTRACOPY}
                    DEPENDS ${PROJECT_NAME}
   )
-#  add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc )
 
 
 if( WIN32 )
