@@ -29,13 +29,13 @@ static void promiseResolveCallback( const v8::FunctionCallbackInfo<Value>& args 
 	v8::Local<v8::External> ext = args.Data().As<v8::External>();
 	PromiseWrapper* pw = static_cast<PromiseWrapper*>(ext->Value());
 	Local<Promise::Resolver> lpr = pw->resolver.Get( args.GetIsolate() );
-	lpr->Resolve( args[0] );
+	lpr->Resolve( args.GetIsolate()->GetCurrentContext(), args[0] );
 }
 static void promiseRejectCallback( const v8::FunctionCallbackInfo<Value>& args ) {
 	v8::Local<v8::External> ext = args.Data().As<v8::External>();
 	PromiseWrapper* pw = static_cast<PromiseWrapper*>(ext->Value());
 	Local<Promise::Resolver> lpr = pw->resolver.Get( args.GetIsolate() );
-	lpr->Reject( args[0] );
+	lpr->Reject( args.GetIsolate()->GetCurrentContext(), args[0] );
 }
 
 
