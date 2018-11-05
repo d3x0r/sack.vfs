@@ -7,7 +7,6 @@ var vfs = sack.Volume( "cmount", "container.vfs" );
 
 var store = sack.objectStorage( "cmount@storage.os" );
 
-sack.JSOX.parse( ` {data:{data:{key:"Q$Rs8jxhKL_ixzepmzlEArxFAT7UD1ZPaW7RM0QGtCA=",signed:[~os"ggolHF2N2JhIAROgIObAgbMnjyqUiBBoBBhFtAARYgA="],unsigned:[~os"VPRaPIXjol51rxYWMRkuK_uoBNA0CWkpDFcq6VP$f$0="]},nonce:null},id:"Q$Rs8jxhKL_ixzepmzlEArxFAT7UD1ZPaW7RM0QGtCA="} ` );
 
 var rootKey;
 
