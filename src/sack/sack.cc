@@ -129,6 +129,12 @@
 #  if defined( WIN32 ) && defined( NEED_SHLOBJ )
 #    include <shlobj.h>
 #  endif
+#  if _MSC_VER > 1500
+#    define mkdir _mkdir
+#    define fileno _fileno
+#    define stricmp _stricmp
+#    define strdup _strdup
+#  endif
 //#  include <windowsx.h>
 // we like timeGetTime() instead of GetTickCount()
 //#  include <mmsystem.h>
@@ -225,7 +231,8 @@ extern __sighandler_t bsd_signal(int, __sighandler_t);
 #    define max(a,b) (((a)>(b))?(a):(b))
 #  endif
 #endif
-/* please Include sthdrs.h */
+#ifndef SACK_PRIMITIVE_TYPES_INCLUDED
+#define SACK_PRIMITIVE_TYPES_INCLUDED
 /* Define most of the sack core types on which everything else is
    based. Also defines some of the primitive container
    structures. We also handle a lot of platform/compiler
@@ -5033,6 +5040,7 @@ using namespace sack;
 using namespace sack::containers;
 #endif
 #endif
+#endif
 // incldue this first so we avoid a conflict.
 // hopefully this comes from sack system?
 /*
@@ -5170,7 +5178,7 @@ SYSTEM_PROC( void, DeAttachThreadToLibraries )( LOGICAL attach );
 #define LoadFunction(l,f) LoadFunctionEx(l,f DBG_SRC )
 SYSTEM_PROC( generic_function, LoadPrivateFunctionEx )( CTEXTSTR libname, CTEXTSTR funcname DBG_PASS );
 #define LoadPrivateFunction(l,f) LoadPrivateFunctionEx(l,f DBG_SRC )
-#define OnLibraryLoad(name)	  __DefineRegistryMethod(WIDE("SACK"),_OnLibraryLoad,WIDE("system/library"),WIDE("load_event"),name WIDE("_LoadEvent"),void,(void), __LINE__)
+#define OnLibraryLoad(name)	  DefineRegistryMethod(WIDE("SACK"),_OnLibraryLoad,WIDE("system/library"),WIDE("load_event"),name WIDE("_LoadEvent"),void,(void), __LINE__)
 // the callback passed will be called during LoadLibrary to allow an external
 // handler to download or extract the library; the resulting library should also
 // be loaded by the callback using the standard 'LoadFunction' methods
@@ -5452,6 +5460,9 @@ struct critical_section_tag {
  // ID of thread waiting for this..
 	THREAD_ID dwThreadWaiting;
 #ifdef DEBUG_CRITICAL_SECTIONS
+	// these are not included without a special compile flag
+	// only required by low level deveopers who may be against
+   // undefined behavior.
 #define MAX_SECTION_LOG_QUEUE 16
 	uint32_t bCollisions ;
 	CTEXTSTR pFile[16];
@@ -8448,18 +8459,30 @@ PROCREG_PROC( int, ReleaseRegisteredFunctionEx )( PCLASSROOT root
 #else
 #define EXTRA_PRELOAD_SYMBOL
 #endif
-#define ___DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(paste(Register,name),Method),EXTRA_PRELOAD_SYMBOL),line), SQL_PRELOAD_PRIORITY ) {	  SimpleRegisterMethod( task WIDE("/") classtype, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) );    RegisterValue( task WIDE("/") classtype WIDE("/") methodname, WIDE("Description"), desc ); }	                                                                          static returntype CPROC paste(name,line)
-#define __DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)	   ___DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)
-#define ___DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(paste(Register,name),Method),EXTRA_PRELOAD_SYMBOL),line), priority ) {	  SimpleRegisterMethod( task WIDE("/") classtype, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) );    RegisterValue( task WIDE("/") classtype WIDE("/") methodname, WIDE("Description"), desc ); }	                                                                          static returntype CPROC paste(name,line)
-#define __DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   ___DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)
-#define ___DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(Register##name##Button##EXTRA_PRELOAD_SYMBOL,line) ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
-#define __DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   ___DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)
-#define _DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   static returntype __DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)
-#define DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes)	  __DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,__LINE__)
+#define DefineRegistryMethod2_i(task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(paste(Register,name),Method),EXTRA_PRELOAD_SYMBOL),line), SQL_PRELOAD_PRIORITY ) {	  SimpleRegisterMethod( task WIDE("/") classtype, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) );    RegisterValue( task WIDE("/") classtype WIDE("/") methodname, WIDE("Description"), desc ); }	                                                                          static returntype CPROC paste(name,line)
+#define DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)	   DefineRegistryMethod2_i(task,name,classtype,methodname,desc,returntype,argtypes,line)
+/* Dekware uses this macro.
+     passes preload priority override.
+	 so it can register new internal commands before initial macros are run.
+*/
+#define DefineRegistryMethod2P_i(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(paste(Register,name),Method),EXTRA_PRELOAD_SYMBOL),line), priority ) {	  SimpleRegisterMethod( task WIDE("/") classtype, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) );    RegisterValue( task WIDE("/") classtype WIDE("/") methodname, WIDE("Description"), desc ); }	                                                                          static returntype CPROC paste(name,line)
+/* This macro indirection is to resolve inner macros like WIDE("") around text.  */
+#define DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   DefineRegistryMethod2P_i(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)
+/*
+    This method is used by PSI/Intershell.
+	no description
+*/
+#define DefineRegistryMethod_i(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(Register##name##Button##EXTRA_PRELOAD_SYMBOL,line) ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
+#define DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   DefineRegistryMethod_i(task,name,classtype,classbase,methodname,returntype,argtypes,line)
+/*
+#define _0_DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   static returntype _1__DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)
+#define DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes)	  _1__DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,__LINE__)
+*/
 // this macro is used for ___DefineRegistryMethodP. Because this is used with complex names
 // an extra define wrapper of priority_preload must be used to fully resolve paramters.
-#define PRIOR_PRELOAD(a,p) PRIORITY_PRELOAD(a,p)
-#define ___DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIOR_PRELOAD( paste(Register##name##Button##EXTRA_PRELOAD_SYMBOL,line), priority ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
+/*
+#define DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIOR_PRELOAD( paste(Register##name##Button##EXTRA_PRELOAD_SYMBOL,line), priority ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
+*/
 /* <combine sack::app::registry::SimpleRegisterMethod>
    General form to build a registered procedure. Used by simple
    macros to create PRELOAD'ed registered functions. This flavor
@@ -8491,11 +8514,13 @@ PROCREG_PROC( int, ReleaseRegisteredFunctionEx )( PCLASSROOT root
    from the registered name.
    Example
    See <link sack::app::registry::GetFirstRegisteredNameEx@PCLASSROOT@CTEXTSTR@PCLASSROOT *, GetFirstRegisteredNameEx> */
-#define __DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   ___DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)
-#define _DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   __DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)
-#define DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes)	  _DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,__LINE__)
-#define _DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(Register##name##Button##EXTRA_PRELOAD_SYMBOL,line) ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase WIDE("/") methodname, paste(name,line)	  , _WIDE(#returntype), subname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
-#define DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes)	  _DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes,__LINE__)
+/*
+#define _1__DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   _2___DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)
+#define _0_DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   _1__DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)
+#define DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes)	  _0_DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,__LINE__)
+*/
+#define DefineRegistrySubMethod_i(task,name,classtype,classbase,methodname,subname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(Register##name##Button##EXTRA_PRELOAD_SYMBOL,line) ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase WIDE("/") methodname, paste(name,line)	  , _WIDE(#returntype), subname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
+#define DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes)	  DefineRegistrySubMethod_i(task,name,classtype,classbase,methodname,subname,returntype,argtypes,__LINE__)
 /* attempts to use dynamic linking functions to resolve passed
    global name if that fails, then a type is registered for this
    global, and an instance created, so that that instance may be
@@ -11198,7 +11223,7 @@ static LOGICAL ExpandVolume( struct volume *vol ) {
 	LOGICAL created;
 	LOGICAL path_checked = FALSE;
 	struct disk* new_disk;
-	size_t oldsize = vol->dwSize;
+	BLOCKINDEX oldsize = (BLOCKINDEX)vol->dwSize;
 	if( vol->read_only ) return TRUE;
 	if( !vol->dwSize ) {
 		{
@@ -12802,7 +12827,7 @@ static enum block_cache_entries _fs_UpdateSegmentKey( struct volume *vol, enum b
 }
 static LOGICAL _fs_ValidateBAT( struct volume *vol ) {
 	BLOCKINDEX first_slab = 0;
-	BLOCKINDEX slab = vol->dwSize / ( BLOCK_SIZE );
+	BLOCKINDEX slab = (BLOCKINDEX)(vol->dwSize / ( BLOCK_SIZE ));
 	BLOCKINDEX last_block = ( slab * BLOCKS_PER_BAT ) / BLOCKS_PER_SECTOR;
 	BLOCKINDEX n;
 	enum block_cache_entries cache = BC(BAT);
@@ -16464,8 +16489,8 @@ SACK_VFS_NAMESPACE_END
  *      Please read the file sha1.c for more information.
  *
  */
-#ifndef _SHA1_H_
-#define _SHA1_H_
+#ifndef INCLUDED_SHA1_H_
+#define INCLUDED_SHA1_H_
 #ifdef SHA1_SOURCE
 #define SHA1_PROC(type,name) EXPORT_METHOD type CPROC name
 #else
@@ -18021,8 +18046,8 @@ static void MD5_memset (uint8_t* output, int value, unsigned int len)
  *      Please read the file sha1.c for more information.
  *
  */
-#ifndef _SHA1_H_
-#define _SHA1_H_
+#ifndef INCLUDED_SHA1_H_
+#define INCLUDED_SHA1_H_
 #ifdef SHA1_SOURCE
 #define SHA1_PROC(type,name) EXPORT_METHOD type CPROC name
 #else
@@ -20302,7 +20327,9 @@ uint64_t GetCPUTick(void )
 			uint64_t tick;
 			PREFIX_PACKED struct { uint32_t low, high; } PACKED parts;
 		}tick;
-		//asm( "rdtsc\n" : "=a"(tick.parts.low), "=d"(tick.parts.high) );
+#ifndef PEDANTIC_TEST
+		asm( "rdtsc\n" : "=a"(tick.parts.low), "=d"(tick.parts.high) );
+#endif
 		if( !(*syslog_local).lasttick )
 			(*syslog_local).lasttick = tick.tick;
 		else if( tick.tick < (*syslog_local).lasttick )
@@ -24480,7 +24507,7 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramExx )( CTEXTSTR program, CTEXTSTR path
 					}
 					newArgs[n + 1] = (char*)args[n];
 					newArgs[0] = (char*)program;
-					args = newArgs;
+					args = (PCTEXTSTR)newArgs;
 				}
 				char *_program = CStrDup( program );
 				// in case exec fails, we need to
@@ -26271,6 +26298,8 @@ IMAGE_NAMESPACE_END
 #ifdef _VULKAN_DRIVER
 #  ifdef _WIN32
 #    define VK_USE_PLATFORM_WIN32_KHR
+#  else
+#    define VK_USE_PLATFORM_XCB_KHR
 #  endif
 #  include <vulkan/vulkan.h>
 #endif
@@ -30109,7 +30138,7 @@ enum {
 #define MINGW_SUX
 #endif
 // static void OnBeginShutdown( "Unique Name" )( void ) { /* run shutdown code */ }
-#define OnBeginShutdown(name)	 __DefineRegistryMethod(WIDE("SACK"),BeginShutdown,WIDE("System"),WIDE("Begin Shutdown"),name WIDE("_begin_shutdown"),void,(void),__LINE__)
+#define OnBeginShutdown(name)	 DefineRegistryMethod(WIDE("SACK"),BeginShutdown,WIDE("System"),WIDE("Begin Shutdown"),name WIDE("_begin_shutdown"),void,(void),__LINE__)
 /* function signature for the close callback  which can be specified to handle events to close the display.  see SetCloseHandler. */
 typedef void (CPROC*CloseCallback)( uintptr_t psvUser );
 /* function signature to define hide/restore callback, it just gets the user data of the callback... */
@@ -30864,7 +30893,7 @@ RENDER_PROC( int, UnbindKey )( PRENDERER pRenderer, uint32_t scancode, uint32_t 
    0.                                                          */
 RENDER_PROC( int, IsTouchDisplay )( void );
 // static void OnInputTouch( "Touch Handler" )(
-#define OnSurfaceInput(name)	 __DefineRegistryMethod(WIDE("sack/render"),SurfaceInput,WIDE("surface input"),WIDE("SurfaceInput"),name,void,( int nInputs, PINPUT_POINT pInputs ),__LINE__)
+#define OnSurfaceInput(name)	 DefineRegistryMethod(WIDE("sack/render"),SurfaceInput,WIDE("surface input"),WIDE("SurfaceInput"),name,void,( int nInputs, PINPUT_POINT pInputs ),__LINE__)
 #ifndef PSPRITE_METHOD
 /* Unused. Incomplete. */
 #define PSPRITE_METHOD PSPRITE_METHOD
@@ -31434,17 +31463,17 @@ typedef int check_this_variable;
 	// OnDisplayPause is called on systems that allow the application to suspend its display.
 	// Sleep mode may also trigger such an event, allows application to save state
    // a media player, for instance, may recover unplayed buffers to prepare for resume
-#define OnDisplaySizeChange(name)	 __DefineRegistryMethod(WIDE("sack/render"),OnDisplaySizeChange,WIDE("display"),name,WIDE("on_display_size_change"),void,( uintptr_t psv_redraw, int nDisplay, int32_t x, int32_t y, uint32_t width, uint32_t height ),__LINE__)
+#define OnDisplaySizeChange(name)	 DefineRegistryMethod(WIDE("sack/render"),OnDisplaySizeChange,WIDE("display"),name,WIDE("on_display_size_change"),void,( uintptr_t psv_redraw, int nDisplay, int32_t x, int32_t y, uint32_t width, uint32_t height ),__LINE__)
 // static void OnDisplayPause( WIDE("") )( void )
 	// OnDisplayPause is called on systems that allow the application to suspend its display.
 	// Sleep mode may also trigger such an event, allows application to save state
    // a media player, for instance, may recover unplayed buffers to prepare for resume
-#define OnDisplayPause(name)	 __DefineRegistryMethod(WIDE("sack/render/android"),OnDisplayPause,WIDE("display"),name,WIDE("on_display_pause"),void,(void),__LINE__)
+#define OnDisplayPause(name)	 DefineRegistryMethod(WIDE("sack/render/android"),OnDisplayPause,WIDE("display"),name,WIDE("on_display_pause"),void,(void),__LINE__)
 // static void OnDisplayResume( WIDE("") )( void )
 	// OnDisplayResume is called on systems that allow the application to suspend its display.
 	// Wake from sleep mode may also trigger such an event, allows application to restore saved state
    // a media player, for instance, may continue playing ( it might be good to wait just a little longer than 'now')
-#define OnDisplayResume(name)	 __DefineRegistryMethod(WIDE("sack/render/android"),OnDisplayResume,WIDE("display"),name,WIDE("on_display_resume"),void,(void),__LINE__)
+#define OnDisplayResume(name)	 DefineRegistryMethod(WIDE("sack/render/android"),OnDisplayResume,WIDE("display"),name,WIDE("on_display_resume"),void,(void),__LINE__)
 	struct display_app;
 	struct display_app_local;
 	// static void OnDisplayConnect( WIDE("") )( struct display_app*app, struct display_app_local ***pppLocal )
@@ -31459,9 +31488,9 @@ typedef int check_this_variable;
 	//       //... init local here
 	//  }
 	//
-#define OnDisplayConnect(name)	 __DefineRegistryMethod(WIDE("/sack/render/remote display"),OnDisplayConnect,WIDE("connect"),name,WIDE("new_display_connect"),void,(struct display_app*app, struct display_app_local ***),__LINE__)
+#define OnDisplayConnect(name)	 DefineRegistryMethod(WIDE("/sack/render/remote display"),OnDisplayConnect,WIDE("connect"),name,WIDE("new_display_connect"),void,(struct display_app*app, struct display_app_local ***),__LINE__)
 	// unimplemented.
-#define OnDisplayConnected(name)	 __DefineRegistryMethod(WIDE("/sack/render/remote display"),OnDisplayConnect,WIDE("connect"),name,WIDE("new_display_connected"),void,(struct display_app*app),__LINE__)
+#define OnDisplayConnected(name)	 DefineRegistryMethod(WIDE("/sack/render/remote display"),OnDisplayConnect,WIDE("connect"),name,WIDE("new_display_connected"),void,(struct display_app*app),__LINE__)
 RENDER_NAMESPACE_END
 #ifdef __cplusplus
 #ifdef _D3D_DRIVER
@@ -34242,9 +34271,9 @@ IDLE_PROC( int, IdleFor )( uint32_t dwMilliseconds )
 #undef procs
 #ifdef __cplusplus
  //namespace sack {
-};
+}
  //	namespace idle {
-};
+}
 #endif
 #define NO_UNICODE_C
 #define PROCREG_SOURCE
@@ -37335,7 +37364,7 @@ struct global_memory_tag global_memory_data = { 0x10000 * 0x08, 1, 1
 #else
 #define BLOCK_TAG(pc)  (*(uint32_t*)((pc)->byData + (pc)->dwSize - (pc)->dwPad ))
 // so when we look at memory this stamp is 12345678
-#define TAG_FORMAT_MODIFIER ""
+#define TAG_FORMAT_MODIFIER "l"
 #define BLOCK_TAG_ID 0x78563412L
 #endif
 // file/line info are at the very end of the physical block...
@@ -37366,10 +37395,10 @@ PRIORITY_PRELOAD( InitGlobal, DEFAULT_PRELOAD_PRIORITY )
 	g.allowLogging = 1;
 }
 #if __GNUC__
+//#  pragma message( "GNUC COMPILER")
 #  ifndef __ATOMIC_RELAXED
 #    define __ATOMIC_RELAXED 0
 #  endif
-//#    define DoXchg  XCHG
 #  ifndef __GNUC_VERSION
 #    define __GNUC_VERSION ( __GNUC__ * 10000 ) + ( __GNUC_MINOR__ * 100 )
 #  endif
@@ -40072,10 +40101,10 @@ void  DebugDumpHeapMemEx ( PMEM pHeap, LOGICAL bVerbose )
 						int minPad = MAGIC_SIZE;
 						if( pMem && !(pMem->dwFlags & HEAP_FLAG_NO_DEBUG) )
 							minPad += MAGIC_SIZE * 2;
-						if( pc->dwPad >= minPad && BLOCK_TAG(pc) != BLOCK_TAG_ID )
+						if( ( pc->dwPad >= minPad ) && ( BLOCK_TAG(pc) != BLOCK_TAG_ID ) )
 						{
 #ifndef NO_LOGGING
-							ll_lprintf( WIDE("memory block: %p %08") TAG_FORMAT_MODIFIER WIDE("x insted of %08")TAG_FORMAT_MODIFIER WIDE("x"), pc->byData, BLOCK_TAG(pc), BLOCK_TAG_ID );
+							ll_lprintf( WIDE("memory block: %p(%p) %08") TAG_FORMAT_MODIFIER WIDE("x instead of %08")TAG_FORMAT_MODIFIER WIDE("x"), pc, pc->byData, BLOCK_TAG(pc), BLOCK_TAG_ID );
 							if( !(pMemCheck->dwFlags & HEAP_FLAG_NO_DEBUG ) )
 							{
 								CTEXTSTR file = BLOCK_FILE(pc);
@@ -43009,7 +43038,7 @@ static	size_t CPROC sack_filesys_find_get_size( struct find_cursor *_cursor ) {
 			lprintf( "getsize stat error:%d", errno );
 			return -2;
 		}
-		if( s.st_mode & S_IFREG )
+		if( S_ISREG(s.st_mode) )
 			return s.st_size;
 		return -1;
 	}
@@ -44000,6 +44029,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
 }
 FILESYS_NAMESPACE_END
 #ifdef __LINUX__
+//#include <linux/time.h> // struct tz
 #endif
 //-----------------------------------------------------------------------
 FILESYS_NAMESPACE
@@ -44081,9 +44111,10 @@ uint64_t GetTimeAsFileTime ( void )
 {
 #if defined( __LINUX__ )
 	struct timeval tmp;
-	struct timezone tz;
+	//struct timezone tz;
 	FILETIME result;
-	gettimeofday( &tmp, &tz );
+//&tz );
+	gettimeofday( &tmp, NULL );
 	result = ( tmp.tv_usec * 10LL ) + ( tmp.tv_sec * 1000LL * 1000LL * 10LL );
 	return result;
 #else
@@ -45790,9 +45821,9 @@ PRIORITY_PRELOAD( InitLocals, NAMESPACE_PRELOAD_PRIORITY + 1 )
 #endif
 #ifdef __cplusplus
  //namespace sack {
-};
+}
  //	namespace containers {
-};
+}
 #endif
 //--------------------------------------------------------------
 // $Log: typecode.c,v $
@@ -49353,10 +49384,10 @@ PRELOAD( initTables ) {
 	int n, m;
 	for( n = 0; n < (sizeof( encodings )-1); n++ )
 		for( m = 0; m < (sizeof( encodings )-1); m++ ) {
-			b64xor_table[encodings[n]][encodings[m]] = encodings[n^m];
-			u8xor_table[n][encodings[m]] = n^m;
-			b64xor_table2[encodings2[n]][encodings2[m]] = encodings2[n^m];
-			u8xor_table2[n][encodings2[m]] = n^m;
+			b64xor_table[(uint8_t)encodings[n]][(uint8_t)encodings[m]] = encodings[n^m];
+			u8xor_table[n][(uint8_t)encodings[m]] = n^m;
+			b64xor_table2[(uint8_t)encodings2[n]][(uint8_t)encodings2[m]] = encodings2[n^m];
+			u8xor_table2[n][(uint8_t)encodings2[m]] = n^m;
 	}
 	//LogBinary( (uint8_t*)u8xor_table[0], sizeof( u8xor_table ) );
 	b64xor_table['=']['='] = '=';
@@ -49365,7 +49396,7 @@ char * b64xor( const char *a, const char *b ) {
 	int n;
 	char *out = NewArray( char, strlen(a) + 1);
 	for( n = 0; a[n]; n++ ) {
-		out[n] = b64xor_table[a[n]][b[n]];
+		out[n] = b64xor_table[(uint8_t)a[n]][(uint8_t)b[n]];
 	}
 	out[n] = 0;
 	return out;
@@ -49508,11 +49539,11 @@ uint8_t *DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *
 }
 #ifdef __cplusplus
  //namespace text {
-};
+}
  //namespace containers {
-};
+}
  // namespace sack {
-};
+}
 #endif
 /*
  *  Crafted by James Buckeyne
@@ -50428,11 +50459,11 @@ PTREEROOT ShadowBinaryTree( PTREEROOT Original )
 }
 #ifdef __cplusplus
  // namespace BinaryTree {
-};
+}
  //namespace containers {
-};
+}
  //namespace sack {
-};
+}
 #endif
 //---------------------------------------------------------------------------
 // $Log: binarylist.c,v $
@@ -50698,11 +50729,11 @@ PFAMILYNODE  FamilyTreeAddChild ( PFAMILYTREE *root, PFAMILYNODE parent, POINTER
 }
 #ifdef __cplusplus
  //namespace family {
-};
+}
  //namespace containers {
-};
+}
  //namespace sack {
-};
+}
 #endif
 /*
  *
@@ -51237,11 +51268,11 @@ uintptr_t ForEachSetMember( GENERICSET *pSet, int unitsize, int max, FESMCallbac
 }
 #ifdef __cplusplus
 //	namespace sets {
-	};
+	}
  //	namespace containers {
-	};
+	}
  //namespace sack {
-};
+}
 #endif
 // $Log: sets.c,v $
 // Revision 1.15  2005/05/20 21:47:10  jim
@@ -57281,7 +57312,7 @@ static void CPROC WebSocketClientClosed( PCLIENT pc )
 		Release( websock );
 	}
 	else
-		lprintf( "websocket handle is gone from socket|" );
+		lprintf( "websocket handle is gone from socket?""?""!" );
 }
 static void CPROC WebSocketClientConnected( PCLIENT pc, int error )
 {
@@ -67144,6 +67175,11 @@ void vesl_dispose_message( PDATALIST *msg_data )
 //
 //  DEBUG FLAGS IN netstruc.h
 //
+#ifndef _DEFAULT_SOURCE
+//#define __USE_MISC
+  // for features.h
+#define _DEFAULT_SOURCE
+#endif
 #define FIX_RELEASE_COM_COLLISION
 #define NO_UNICODE_C
 #define MAIN_PROGRAM
@@ -70163,6 +70199,10 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 	{
 		if( lpName )
 		{
+#ifndef h_addr
+#define h_addr h_addr_list[0]
+#define H_ADDR_DEFINED
+#endif
 #ifdef WIN32
 			{
 				struct addrinfo *result;
@@ -70207,8 +70247,8 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 						lpsaAddr->sin_family = AF_INET;
            // save IP address from host entry.
 						memcpy( &lpsaAddr->sin_addr.S_un.S_addr,
-							 phe->h_addr,
-							 phe->h_length);
+							    phe->h_addr,
+						       phe->h_length);
 					}
 				}
 				else
@@ -70242,6 +70282,10 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 					 phe->h_addr,
 					 phe->h_length);
 			}
+#endif
+#ifdef H_ADDR_DEFINED
+#  undef H_ADDR_DEFINED
+#  undef h_addr
 #endif
 		}
 		else
@@ -89641,12 +89685,6 @@ using namespace sack::memory;
 using namespace sack::timers;
 using namespace sack::config;
 #endif
-// undef if USE=0
-#ifdef USE_ODBC
-#  if !USE_ODBC
-#    undef USE_ODBC
-#  endif
-#endif
 SQL_NAMESPACE
 #ifdef _cplusplus_cli
 using namespace CORE::Database;
@@ -101005,7 +101043,6 @@ void SaveTranslationDataToFile( FILE *output )
 	sack_fprintf( output, "{\n" );
 	{
 		INDEX idx;
-		LOGICAL firstTranslation = TRUE;
 		LOGICAL first = TRUE;
 		//TEXTCHAR *string;
 		struct translation *translation;
@@ -102308,11 +102345,11 @@ int DequeMsgEx ( PMSGHANDLE pmh, long *MsgID, POINTER result, size_t size, uint3
 }
 #ifdef __cplusplus
  //	namespace message {
-};
+}
  // namespace containers {
-};
+}
  //namespace sack {
-};
+}
 #endif
 #define DEFINE_MESSAGE_SERVER_GLOBAL
 #ifdef __QNX__
