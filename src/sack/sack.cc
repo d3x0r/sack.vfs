@@ -74115,7 +74115,7 @@ static LOGICAL ssl_InitLibrary( void ){
 	{
 		SSL_library_init();
 		ssl_global.lock_cs = NewArray( uint32_t, CRYPTO_num_locks() );
-		memset( ssl_global.lock_cs, 0, sizeof( CRYPTO_num_locks() ) );
+		memset( ssl_global.lock_cs, 0, sizeof( uint32_t ) * CRYPTO_num_locks() );
 		CRYPTO_set_locking_callback(win32_locking_callback);
 		CRYPTO_set_id_callback(pthreads_thread_id);
 		//tls_init();
