@@ -17,6 +17,10 @@
 /* A macro to build a wide character string of __FILE__ */
 #define _WIDE__FILE__(n) WIDE(n)
 #define WIDE__FILE__ _WIDE__FILE__(__FILE__)
+#if _XOPEN_SOURCE < 500
+#  undef _XOPEN_SOURCE
+#  define _XOPEN_SOURCE 500
+#endif
 #ifndef STANDARD_HEADERS_INCLUDED
 /* multiple inclusion protection symbol */
 #define STANDARD_HEADERS_INCLUDED
@@ -192,7 +196,7 @@ __declspec(dllimport) DWORD WINAPI timeGetTime(void);
 #      ifdef __EMSCRIPTEN__
 #        define DebugBreak()
 #      else
-#        define DebugBreak()  asm("int $3\n" )
+#        define DebugBreak()  __asm__("int $3\n" )
 #      endif
 #    endif
 #  endif
@@ -6339,6 +6343,8 @@ inline void operator delete (void * p)
 #endif
 #endif
 #endif
+#ifdef __LINUX__
+#endif
 #ifndef _TIMER_NAMESPACE
 #ifdef __cplusplus
 #define _TIMER_NAMESPACE namespace timers {
@@ -8440,7 +8446,7 @@ PROCREG_PROC( POINTER, GetInterfaceDbg )( CTEXTSTR pServiceName DBG_PASS );
 #define GetInterface(n) GetInterfaceDbg( n DBG_SRC )
 #define GetRegisteredInterface(name) GetInterface(name)
 PROCREG_PROC( LOGICAL, RegisterInterfaceEx )( CTEXTSTR name, POINTER(CPROC*load)(void), void(CPROC*unload)(POINTER) DBG_PASS );
-PROCREG_PROC( LOGICAL, RegisterInterface )(CTEXTSTR name, POINTER( CPROC*load )(void), void(CPROC*unload)(POINTER));
+//PROCREG_PROC( LOGICAL, RegisterInterface )(CTEXTSTR name, POINTER( CPROC*load )(void), void(CPROC*unload)(POINTER));
 #define RegisterInterface(n,l,u) RegisterInterfaceEx( n,l,u DBG_SRC )
 // unregister a function, should be smart and do full return type
 // and parameters..... but for now this only references name, this indicates
@@ -9629,6 +9635,18 @@ PSSQL_PROC( int, ReadFromNameTableExEx )( INDEX id, CTEXTSTR table, CTEXTSTR id_
    namecol :  name of column containing the name to lookup.
    bCreate :  if TRUE, will insert the name into the table, and
               return the resulting columns.                     */
+PSSQL_PROC( TEXTSTR, SQLReadNameTableKeyExEx)( PODBC odbc, CTEXTSTR name, CTEXTSTR table, CTEXTSTR col, CTEXTSTR namecol, int bCreate DBG_PASS );
+/* This is a better name resolution function. It will also
+   create a table that contains the required columns, but the
+   column names may be more intelligent than 'ID' and 'name'.
+   Parameters
+   odbc :     database connection to read from
+   name :     the name to lookup the ID for
+   table :    table the name column is in
+   col :      name of the key column(s) to read.
+   namecol :  name of column containing the name to lookup.
+   bCreate :  if TRUE, will insert the name into the table, and
+              return the resulting columns.                     */
 PSSQL_PROC( INDEX, SQLReadNameTableExEx)( PODBC odbc, CTEXTSTR name, CTEXTSTR table, CTEXTSTR col, CTEXTSTR namecol, int bCreate DBG_PASS );
 /* <combine sack::sql::SQLReadNameTableExEx@PODBC@CTEXTSTR@CTEXTSTR@CTEXTSTR@CTEXTSTR@int bCreate>
    \ \                                                                                             */
@@ -10759,11 +10777,43 @@ typedef VFS_DISK_DATATYPE BLOCKINDEX;
 typedef VFS_DISK_DATATYPE FPI;
 #undef BC
 #ifdef VIRTUAL_OBJECT_STORE
-#define BC(n) BLOCK_CACHE_VOS_##n
+#  define BC(n) BLOCK_CACHE_VOS_##n
+#  ifndef __cplusplus
+#    ifdef block_cache_entries
+#      undef block_cache_entires
+#      undef directory_entry
+#      undef disk
+#      undef directory_hash_lookup_block
+#      undef volume
+#      undef sack_vfs_file
+#    endif
+#    define block_cache_entries block_cache_entries_os
+#    define directory_entry directory_entry_os
+#    define disk disk_os
+#    define directory_hash_lookup_block directory_hash_lookup_block_os
+//#    define volume volume_os
+//#    define sack_vfs_file sack_vfs_file_os
+#  endif
 #elif defined FILE_BASED_VFS
-#define BC(n) BLOCK_CACHE_FS_##n
+#  define BC(n) BLOCK_CACHE_FS_##n
+#  ifndef __cplusplus
+#    ifdef block_cache_entries
+#      undef block_cache_entires
+#      undef directory_entry
+#      undef disk
+#      undef directory_hash_lookup_block
+#      undef volume
+#      undef sack_vfs_file
+#    endif
+#    define block_cache_entries block_cache_entries_fs
+#    define directory_entry directory_entry_fs
+#    define disk disk_fs
+#    define directory_hash_lookup_block directory_hash_lookup_block_fs
+//#    define volume volume_fs
+//#    define sack_vfs_file sack_vfs_file_fs
+#  endif
 #else
-#define BC(n) BLOCK_CACHE_##n
+#  define BC(n) BLOCK_CACHE_##n
 #endif
 enum block_cache_entries
 {
@@ -10925,13 +10975,19 @@ struct sack_vfs_file
 #else
 #define HIDDEN
 #endif
+#if !defined( VIRTUAL_OBJECT_STORE ) && !defined( FILE_BASED_VFS )
 uintptr_t vfs_SEEK( struct volume *vol, FPI offset, enum block_cache_entries *cache_index ) HIDDEN;
 uintptr_t vfs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index ) HIDDEN;
+#endif
 //BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int init, LOGICAL expand );
+#if defined( FILE_BASED_VFS )
 uintptr_t vfs_fs_SEEK( struct volume *vol, FPI offset, enum block_cache_entries *cache_index ) HIDDEN;
 uintptr_t vfs_fs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index ) HIDDEN;
+#endif
+#if defined( VIRTUAL_OBJECT_STORE )
 uintptr_t vfs_os_SEEK( struct volume *vol, FPI offset, enum block_cache_entries *cache_index ) HIDDEN;
 uintptr_t vfs_os_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index ) HIDDEN;
+#endif
 static struct {
 	struct directory_entry zero_entkey;
 	uint8_t zerokey[BLOCK_SIZE];
@@ -12392,6 +12448,7 @@ PRIORITY_PRELOAD( Sack_VFS_RegisterDefaultFilesystem, SQL_PRELOAD_PRIORITY + 1 )
 	}
 }
 SACK_VFS_NAMESPACE_END
+#if !defined( SACK_AMALGAMATE ) || defined( __cplusplus )
 /*
  BLOCKINDEX BAT[BLOCKS_PER_BAT] // link of next blocks; 0 if free, FFFFFFFF if end of file block
  uint8_t  block_data[BLOCKS_PER_BAT][BLOCK_SIZE];
@@ -12474,11 +12531,43 @@ typedef VFS_DISK_DATATYPE BLOCKINDEX;
 typedef VFS_DISK_DATATYPE FPI;
 #undef BC
 #ifdef VIRTUAL_OBJECT_STORE
-#define BC(n) BLOCK_CACHE_VOS_##n
+#  define BC(n) BLOCK_CACHE_VOS_##n
+#  ifndef __cplusplus
+#    ifdef block_cache_entries
+#      undef block_cache_entires
+#      undef directory_entry
+#      undef disk
+#      undef directory_hash_lookup_block
+#      undef volume
+#      undef sack_vfs_file
+#    endif
+#    define block_cache_entries block_cache_entries_os
+#    define directory_entry directory_entry_os
+#    define disk disk_os
+#    define directory_hash_lookup_block directory_hash_lookup_block_os
+//#    define volume volume_os
+//#    define sack_vfs_file sack_vfs_file_os
+#  endif
 #elif defined FILE_BASED_VFS
-#define BC(n) BLOCK_CACHE_FS_##n
+#  define BC(n) BLOCK_CACHE_FS_##n
+#  ifndef __cplusplus
+#    ifdef block_cache_entries
+#      undef block_cache_entires
+#      undef directory_entry
+#      undef disk
+#      undef directory_hash_lookup_block
+#      undef volume
+#      undef sack_vfs_file
+#    endif
+#    define block_cache_entries block_cache_entries_fs
+#    define directory_entry directory_entry_fs
+#    define disk disk_fs
+#    define directory_hash_lookup_block directory_hash_lookup_block_fs
+//#    define volume volume_fs
+//#    define sack_vfs_file sack_vfs_file_fs
+#  endif
 #else
-#define BC(n) BLOCK_CACHE_##n
+#  define BC(n) BLOCK_CACHE_##n
 #endif
 enum block_cache_entries
 {
@@ -12640,13 +12729,19 @@ struct sack_vfs_file
 #else
 #define HIDDEN
 #endif
+#if !defined( VIRTUAL_OBJECT_STORE ) && !defined( FILE_BASED_VFS )
 uintptr_t vfs_SEEK( struct volume *vol, FPI offset, enum block_cache_entries *cache_index ) HIDDEN;
 uintptr_t vfs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index ) HIDDEN;
+#endif
 //BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int init, LOGICAL expand );
+#if defined( FILE_BASED_VFS )
 uintptr_t vfs_fs_SEEK( struct volume *vol, FPI offset, enum block_cache_entries *cache_index ) HIDDEN;
 uintptr_t vfs_fs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index ) HIDDEN;
+#endif
+#if defined( VIRTUAL_OBJECT_STORE )
 uintptr_t vfs_os_SEEK( struct volume *vol, FPI offset, enum block_cache_entries *cache_index ) HIDDEN;
 uintptr_t vfs_os_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index ) HIDDEN;
+#endif
 #undef TSEEK
 #define TSEEK(type,v,o,c) ((type)vfs_fs_SEEK(v,o,&c))
 #undef BTSEEK
@@ -14109,6 +14204,8 @@ PRIORITY_PRELOAD( Sack_VFS_FS_RegisterDefaultFilesystem, SQL_PRELOAD_PRIORITY + 
 #endif
 SACK_VFS_NAMESPACE_END
 #undef l
+#endif
+#if !defined( SACK_AMALGAMATE ) || defined( __cplusplus )
 /*
  BLOCKINDEX BAT[BLOCKS_PER_BAT] // link of next blocks; 0 if free, FFFFFFFF if end of file block
  uint8_t  block_data[BLOCKS_PER_BAT][BLOCK_SIZE];
@@ -14202,11 +14299,43 @@ typedef VFS_DISK_DATATYPE BLOCKINDEX;
 typedef VFS_DISK_DATATYPE FPI;
 #undef BC
 #ifdef VIRTUAL_OBJECT_STORE
-#define BC(n) BLOCK_CACHE_VOS_##n
+#  define BC(n) BLOCK_CACHE_VOS_##n
+#  ifndef __cplusplus
+#    ifdef block_cache_entries
+#      undef block_cache_entires
+#      undef directory_entry
+#      undef disk
+#      undef directory_hash_lookup_block
+#      undef volume
+#      undef sack_vfs_file
+#    endif
+#    define block_cache_entries block_cache_entries_os
+#    define directory_entry directory_entry_os
+#    define disk disk_os
+#    define directory_hash_lookup_block directory_hash_lookup_block_os
+//#    define volume volume_os
+//#    define sack_vfs_file sack_vfs_file_os
+#  endif
 #elif defined FILE_BASED_VFS
-#define BC(n) BLOCK_CACHE_FS_##n
+#  define BC(n) BLOCK_CACHE_FS_##n
+#  ifndef __cplusplus
+#    ifdef block_cache_entries
+#      undef block_cache_entires
+#      undef directory_entry
+#      undef disk
+#      undef directory_hash_lookup_block
+#      undef volume
+#      undef sack_vfs_file
+#    endif
+#    define block_cache_entries block_cache_entries_fs
+#    define directory_entry directory_entry_fs
+#    define disk disk_fs
+#    define directory_hash_lookup_block directory_hash_lookup_block_fs
+//#    define volume volume_fs
+//#    define sack_vfs_file sack_vfs_file_fs
+#  endif
 #else
-#define BC(n) BLOCK_CACHE_##n
+#  define BC(n) BLOCK_CACHE_##n
 #endif
 enum block_cache_entries
 {
@@ -14368,13 +14497,19 @@ struct sack_vfs_file
 #else
 #define HIDDEN
 #endif
+#if !defined( VIRTUAL_OBJECT_STORE ) && !defined( FILE_BASED_VFS )
 uintptr_t vfs_SEEK( struct volume *vol, FPI offset, enum block_cache_entries *cache_index ) HIDDEN;
 uintptr_t vfs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index ) HIDDEN;
+#endif
 //BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int init, LOGICAL expand );
+#if defined( FILE_BASED_VFS )
 uintptr_t vfs_fs_SEEK( struct volume *vol, FPI offset, enum block_cache_entries *cache_index ) HIDDEN;
 uintptr_t vfs_fs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index ) HIDDEN;
+#endif
+#if defined( VIRTUAL_OBJECT_STORE )
 uintptr_t vfs_os_SEEK( struct volume *vol, FPI offset, enum block_cache_entries *cache_index ) HIDDEN;
 uintptr_t vfs_os_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index ) HIDDEN;
+#endif
 #define vfs_SEEK vfs_os_SEEK
 #define vfs_BSEEK vfs_os_BSEEK
 #define l vfs_os_local
@@ -16474,6 +16609,7 @@ PRIORITY_PRELOAD( Sack_VFS_OS_RegisterDefaultFilesystem, SQL_PRELOAD_PRIORITY + 
 #undef free
 SACK_VFS_NAMESPACE_END
 #undef l
+#endif
 /*
  *  sha1.h
  *
@@ -34507,6 +34643,9 @@ struct procreg_local_tag {
 #ifdef l
 #   undef l
 #endif
+#ifdef __cplusplus
+#  define procreg_local_data  procreg_local_data_pp
+#endif
 #define l (*procreg_local_data)
 static struct procreg_local_tag *procreg_local_data;
 static CTEXTSTR SaveName( CTEXTSTR name );
@@ -34898,7 +35037,7 @@ static void Init( void )
 {
 	// don't call this function, preserves the process line cache, just check the flag and simple skip any call.
 	// use SAFE_INIT();
-#define SAFE_INIT() if( !procreg_local_data ) SimpleRegisterAndCreateGlobalWithInit( procreg_local_data, InitGlobalSpace );
+#define SAFE_INIT() if( !procreg_local_data ) RegisterAndCreateGlobalWithInit( (POINTER*)&procreg_local_data, sizeof( *procreg_local_data ), "procreg_local_data", InitGlobalSpace )
 	SAFE_INIT();
 }
 static void ReadConfiguration( void );
@@ -52679,12 +52818,12 @@ HTTP_EXPORT int HTTPAPI GetHttpResponseCode( HTTPState pHttpState );
 #define CreateHttpServer2(interface_address,site,default_handler,psv) CreateHttpServerEx( interface_address,NULL,site,default_handler,psv )
 // receives events for either GET if aspecific OnHttpRequest has not been defined for the specific resource
 // Return TRUE if processed, otherwise will attempt to match other Get Handlers
-#define OnHttpGet( site, resource )	 __DefineRegistryMethod(WIDE( "SACK/Http/Methods" ),OnHttpGet,site,resource,WIDE( "Get" ),LOGICAL,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
+#define OnHttpGet( site, resource )	 DefineRegistryMethod(WIDE( "SACK/Http/Methods" ),OnHttpGet,site,resource,WIDE( "Get" ),LOGICAL,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
 // receives events for either GET if aspecific OnHttpRequest has not been defined for the specific resource
 // Return TRUE if processed, otherwise will attempt to match other Get Handlers
-#define OnHttpPost( site, resource )	 __DefineRegistryMethod(WIDE( "SACK/Http/Methods" ),OnHttpPost,site,resource,WIDE( "Post" ),LOGICAL,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
+#define OnHttpPost( site, resource )	 DefineRegistryMethod(WIDE( "SACK/Http/Methods" ),OnHttpPost,site,resource,WIDE( "Post" ),LOGICAL,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
 // define a specific handler for a specific resource name on a host
-#define OnHttpRequest( site, resource )	 __DefineRegistryMethod(WIDE( "SACK/Http/Methods" ),OnHttpRequest,WIDE( "something" ),site WIDE( "/" ) resource,WIDE( "Get" ),void,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
+#define OnHttpRequest( site, resource )	 DefineRegistryMethod(WIDE( "SACK/Http/Methods" ),OnHttpRequest,WIDE( "something" ),site WIDE( "/" ) resource,WIDE( "Get" ),void,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
 //--------------------------------------------------------------
 //  URL.c  (url parsing utility)
 struct url_cgi_data
@@ -73976,7 +74115,7 @@ static LOGICAL ssl_InitLibrary( void ){
 	{
 		SSL_library_init();
 		ssl_global.lock_cs = NewArray( uint32_t, CRYPTO_num_locks() );
-		memset( ssl_global.lock_cs, 0, sizeof( CRYPTO_num_locks() ) );
+		memset( ssl_global.lock_cs, 0, sizeof( uint32_t ) * CRYPTO_num_locks() );
 		CRYPTO_set_locking_callback(win32_locking_callback);
 		CRYPTO_set_id_callback(pthreads_thread_id);
 		//tls_init();
@@ -74113,11 +74252,11 @@ LOGICAL ssl_BeginServer( PCLIENT pc, CPOINTER cert, size_t certlen, CPOINTER key
 		}
 		BIO_free( keybuf );
 	}
-#ifdef HACK_NODE_TLS
-/*TLSv1_2_server_method()*/
-	ses->ctx = SSL_CTX_new( TLS_server_method() );
-#else
+#if NODE_MAJOR_VERSION < 10
 	ses->ctx = SSL_CTX_new( TLSv1_2_server_method() );
+#else
+	ses->ctx = SSL_CTX_new( TLS_server_method() );
+	SSL_CTX_set_min_proto_version( ses->ctx, TLS1_2_VERSION );
 #endif
 	{
 		int r;
@@ -74192,15 +74331,11 @@ LOGICAL ssl_BeginClientSession( PCLIENT pc, CPOINTER client_keypair, size_t clie
 	ses = New( struct ssl_session );
 	MemSet( ses, 0, sizeof( struct ssl_session ) );
 	{
-#ifdef NODE_MAJOR_VERSION
-#  if NODE_MAJOR_VERSION >= 10
- /*TLSv1_2_client_method()*/
-		ses->ctx = SSL_CTX_new( TLS_client_method() );
-#  else
+#if NODE_MAJOR_VERSION < 10
 		ses->ctx = SSL_CTX_new( TLSv1_2_client_method() );
-#  endif
 #else
-		ses->ctx = SSL_CTX_new( TLSv1_2_client_method() );
+		ses->ctx = SSL_CTX_new( TLS_client_method() );
+		SSL_CTX_set_min_proto_version( ses->ctx, TLS1_2_VERSION );
 #endif
 		SSL_CTX_set_cipher_list( ses->ctx, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH" );
 		ses->cert = New( struct internalCert );
@@ -95297,6 +95432,46 @@ TEXTSTR RevertEscapeString( CTEXTSTR name )
 {
 	return SQLReadNameTableExEx( NULL, name, table,col,namecol,bCreate DBG_RELAY );
 }
+ TEXTSTR  SQLReadNameTableKeyExEx( PODBC odbc, CTEXTSTR name, CTEXTSTR table, CTEXTSTR col, CTEXTSTR namecol, int bCreate DBG_PASS )
+ {
+	 TEXTCHAR query[256];
+	 TEXTCHAR *tmp;
+	 CTEXTSTR result = NULL;
+	 TEXTSTR IDName = NULL;
+	 if( !table || !name )
+		 return IDName;
+	 // look in internal cache first...
+	 IDName = (TEXTSTR)GetKeyOfName( odbc, table, name );
+	 if( IDName != NULL )
+		 return IDName;
+	 PushSQLQueryEx( odbc );
+	 tmp = EscapeSQLStringEx( odbc, name DBG_RELAY );
+	 tnprintf( query, sizeof( query ), WIDE( "select %s from %s where %s like \'%s\'" ), col ? col : WIDE( "id" ), table, namecol, tmp );
+	 Release( tmp );
+	 if( SQLQueryEx( odbc, query, &result DBG_RELAY ) && result ) {
+		 IDName = StrDup( result );
+	 }
+	 else if( bCreate ) {
+		 TEXTSTR newval = EscapeSQLString( odbc, name );
+		 tnprintf( query, sizeof( query ), WIDE( "insert into %s (%s) values( \'%s\' )" ), table, namecol, newval );
+		 if( !SQLCommandEx( odbc, query DBG_RELAY ) ) {
+			 lprintf( WIDE( "insert failed, how can we define name %s?" ), name );
+			 // inser failed...
+		 }
+		 else {
+			 // all is well.
+			 IDName = (TEXTSTR)FetchLastInsertKeyEx( odbc, table, col ? col : WIDE( "id" ) DBG_RELAY );
+		 }
+		 Release( newval );
+	 }
+	 PopODBCEx( odbc );
+	 if( IDName ) {
+		 // instead of strdup, consider here using SaveName from procreg?
+		 AddBinaryNode( GetTableCache( odbc, table ), IDName
+			 , (uintptr_t)StrDup( name ) );
+	 }
+	 return IDName;
+ }
 //---------------------------------------------------------------------------
  INDEX  ReadNameTableEx( CTEXTSTR name, CTEXTSTR table, CTEXTSTR col DBG_PASS )
 {
@@ -98239,7 +98414,7 @@ WIDE( " ) TYPE=InnoDB;\n" ) );
 //#left join option_name as ong on ong.name_id=g.name_id
 //#left join option_name as onh on onh.name_id=h.name_id
 ;
-SQLGETOPTION_PROC( void,SetOptionStringValueEx )( PODBC odbc, POPTION_TREE_NODE node, CTEXTSTR pValue )
+SQLGETOPTION_PROC( void, SetOptionStringValueEx )( PODBC odbc, POPTION_TREE_NODE node, CTEXTSTR pValue )
 {
 	int drop_odbc = FALSE;
 	if( !odbc )
@@ -98252,6 +98427,15 @@ SQLGETOPTION_PROC( void,SetOptionStringValueEx )( PODBC odbc, POPTION_TREE_NODE 
 	New4CreateValue( tree, node, pValue );
 	if( drop_odbc )
 		DropOptionODBC( odbc );
+}
+LOGICAL SetOptionStringValue( POPTION_TREE tree, POPTION_TREE_NODE optval, CTEXTSTR pValue )
+{
+	LOGICAL retval = TRUE;
+	EnterCriticalSec( &og.cs_option );
+	OpenWriter( tree );
+	retval = New4CreateValue( tree, optval, pValue );
+	LeaveCriticalSec( &og.cs_option );
+	return retval;
 }
 SQLGETOPTION_PROC( POPTION_TREE_NODE, GetOptionIndexEx )( POPTION_TREE_NODE parent, const TEXTCHAR *file, const TEXTCHAR *pBranch, const TEXTCHAR *pValue, int bCreate, int bBypassParsing DBG_PASS );
 #define GetOptionIndex(p,f,b,v) GetOptionIndexEx( p,f,b,v,FALSE,FALSE DBG_SRC )
@@ -98375,9 +98559,13 @@ SQLGETOPTION_PROC( void, CreateOptionDatabaseEx )( PODBC odbc, POPTION_TREE tree
 									);
 				}
 				SQLEndQuery( tree->odbc );
+				//for( SQLQueryf( tree->odbc, &result, "select * from option4_map" ); result; FetchSQLResult( tree->odbc, &result ));
+				//SQLEndQuery( tree->odbc );
+				//for( SQLQueryf( tree->odbc, &result, "select * from option4_name" ); result; FetchSQLResult( tree->odbc, &result ));
+				//SQLEndQuery( tree->odbc );
+				//for( SQLQueryf( tree->odbc, &result, "select * from option4_values" ); result; FetchSQLResult( tree->odbc, &result ));
+				//SQLEndQuery( tree->odbc );
 			}
-			//SQLCommit( odbc );
-			//SQLCommand( odbc, WIDE( "COMMIT" ) );
 			tree->flags.bCreated = 1;
 		}
 	}
@@ -98723,15 +98911,6 @@ static LOGICAL CreateValue( POPTION_TREE tree, POPTION_TREE_NODE iOption, CTEXTS
 */
 //------------------------------------------------------------------------
 // result with option value ID
-LOGICAL SetOptionStringValue( POPTION_TREE tree, POPTION_TREE_NODE optval, CTEXTSTR pValue )
-{
-	LOGICAL retval = TRUE;
-	EnterCriticalSec( &og.cs_option );
-	OpenWriter( tree );
-	retval = New4CreateValue( tree, optval, pValue );
-	LeaveCriticalSec( &og.cs_option );
-	return retval;
-}
 //------------------------------------------------------------------------
 // result with option value ID
 static LOGICAL SetOptionBlobValueEx( POPTION_TREE tree, POPTION_TREE_NODE optval, POINTER buffer, size_t length )
