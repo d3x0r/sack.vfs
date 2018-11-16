@@ -453,6 +453,7 @@ void MakeCert(  struct info_params *params )
 					kid.keyid = data;
 					kid.serial = NULL;
 					kid.issuer = NULL;
+
 					X509_add1_ext_i2d( x509, NID_authority_key_identifier, &kid, 0, X509V3_ADD_DEFAULT );
 				}
 				{
@@ -1098,8 +1099,21 @@ static void SignReq( struct info_params *params )
 				ASN1_STRING_set( subj, params->issuer, params->issuerlen );
 			}
 			kid.keyid = subj;
-			kid.serial = X509_get_serialNumber( x509 );
+			kid.serial = NULL;// X509_get_serialNumber( x509 );
 			kid.issuer = NULL;
+
+			kid.issuer = NULL;// GENERAL_NAMES_new();
+#if 0
+			GENERAL_NAME *gname = GENERAL_NAME_new();
+			ASN1_IA5STRING *val = ASN1_IA5STRING_new();
+			ASN1_STRING_set( val, name, (int)strlen( name ) );
+			gname->type = GEN_DNS;
+			gname->d.dNSName = val;
+			//GENERAL_NAME_set0_value( gname, GEN_DNS, val );
+			sk_GENERAL_NAME_push( kid.issuer, gname );
+#endif
+
+
 			X509_add1_ext_i2d( cert, NID_authority_key_identifier, &kid, 0, X509V3_ADD_DEFAULT );
 
 			// copy request extensions to signed output.

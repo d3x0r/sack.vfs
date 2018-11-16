@@ -182,8 +182,36 @@ File Constants
 
 ```
 
+## Object Storage
+
+(Added from 0.9.145)
+Object storage interface is a hybrid combination of virtual file system and JSOX for object encoding.
+
+```
+
+const sack = require( "sack.vfs" );
+const objectStorage = sack.objectStorage( 'filename.data' );
+
+```
+
+| Object Storage constructor arguments | Description  |
+|----|----|
+| filename | Filename to use for object storage database.  If the filename includes '@' the part before the '@' is treated as a mount name; ie. 'vfsMount@object.store'.
+
+
+| Object methods | Return | Arguments | Description |
+|----------|------------|-------------|
+| put | unique ID | ( object \[, sign\] ) | Stores or updates an object into storage.  If the object was not previously stored or loaded, a unique ID for the object is returned. |
+| get | promise |  ( id ) | Returns a promise; success is passed the object loaded from storage.  Loads an object using the specified ID. |
+| map | promise |  ( id ) | Same as get, but also loads any objects of specified ID. |
+| -- | | | |
+| delete |  | (id/object) | remove object from storage... (danging references in other stored records?) |
+| 
+
+
 ## Sqlite Interface
-  (result from vfs.Sqlite() or vfs.Volume().Sqlite())
+
+  (result from vfs.Sqlite("dbName.db") or vfs.Volume().Sqlite("dbName.db"))
   Sqlite command only processes one command at a time.  If a multiple command separated with ';' or '\0' is issued, only the first command will be done.  This makes most destructive SQL injection impossible other than to make a query generally fail; unless the substitution is the first command word.  If they are able to otherwise inject into a delete/drop command Still no joy;  Generally these are done during initialization with well formed things though...
 
 Sqlite() will create a in memory database<br>
@@ -452,6 +480,8 @@ Added support 'reviver' parameter.
      - parse( string [,reviver] )
      - begin( callback )
          - write( data )
+         - registerToJSOX(typeName,prototype,cb) - if an object that is an instance of prototype, the object is passed to the callback, and the resulting string used for output.
+         - registerFromJSOX(typeName,fromCb) - if an object of the specified name is encountered, the related object/array/string is passed to the callback, and the result is used as the revived object.
      - stringifier() - create a reusable stringifier which can be used for custom types
          - stringify(value[,replacer[,space]] ) - stringify using this stringifier.
          - setQuote( quote ) - specifies the perfered quoting to use (instead of default double-quote (") )
@@ -631,6 +661,11 @@ Salty Random Generator
        byte count.
     
 
+| SaltRNG Methods | Args | Description |
+|----|-----|-----|
+| sign | ( [pad1 [, pad2],] string | get a signing identifier for string |
+| setSigningThreads | ( n ) | Set the number of threads to sign with to n |
+| verify | ( buffer, key ) | returns true/false if key is a signing key of buffer |
 
 
 ```
@@ -1105,6 +1140,7 @@ setTimeout( ()=>{ }, 5000 );
    - Fix VFS directory truncation issue (early EODMARK injection). 
    - TLS Certificate add Certificate Policy
    - Add JSOX Parser.
+   - Add Object Storage Module.
 - 0.9.144 - Fix websocket receiving packets with multiple frames.
 - 0.9.143 - Improve task interface.  Simplify com data buffer; it's now only valid during receive callback. Improve websocket server handling http requests; add a event callback when socket closes, after server HTTP to distinguish between incomplete(TLS error) connections. Sync SACK updates: improve SQL parsing/table-index generation, library load path for current and name as passed, event for http close, some protection against dereferencing null parameters.
 - 0.9.142 - Fix node-gyp for windows build.

@@ -129,6 +129,12 @@
 #  if defined( WIN32 ) && defined( NEED_SHLOBJ )
 #    include <shlobj.h>
 #  endif
+#  if _MSC_VER > 1500
+#    define mkdir _mkdir
+#    define fileno _fileno
+#    define stricmp _stricmp
+#    define strdup _strdup
+#  endif
 //#  include <windowsx.h>
 // we like timeGetTime() instead of GetTickCount()
 //#  include <mmsystem.h>
@@ -225,7 +231,8 @@ extern __sighandler_t bsd_signal(int, __sighandler_t);
 #    define max(a,b) (((a)>(b))?(a):(b))
 #  endif
 #endif
-/* please Include sthdrs.h */
+#ifndef SACK_PRIMITIVE_TYPES_INCLUDED
+#define SACK_PRIMITIVE_TYPES_INCLUDED
 /* Define most of the sack core types on which everything else is
    based. Also defines some of the primitive container
    structures. We also handle a lot of platform/compiler
@@ -813,6 +820,8 @@ SACK_NAMESPACE
 #define FILELINE_PASS        , CTEXTSTR pFile, uint32_t nLine
 /* specify a consistant macro to forward file and line parameters.   This are appended parameters, and common usage is to only use these with _DEBUG set. */
 #define FILELINE_RELAY       , pFile, nLine
+/* specify a consistant macro to forward file and line parameters.   This are appended parameters, and common usage is to only use these with _DEBUG set. */
+#define FILELINE_NULL        , NULL, 0
 /* specify a consistant macro to forward file and line parameters, to functions which have void parameter lists without this information.  This are appended parameters, and common usage is to only use these with _DEBUG set. */
 #define FILELINE_VOIDRELAY   pFile, nLine
 /* specify a consistant macro to format file and line information for printf formated strings. */
@@ -852,6 +861,9 @@ SACK_NAMESPACE
 /* <combine sack::DBG_PASS>
    in NDEBUG mode, pass nothing */
 #define DBG_RELAY
+/* <combine sack::DBG_PASS>
+   in _DEBUG mode, pass FILELINE_NULL */
+#define DBG_NULL
 /* <combine sack::DBG_PASS>
    in NDEBUG mode, pass nothing */
 #define DBG_VOIDRELAY
@@ -1037,6 +1049,9 @@ SACK_NAMESPACE
    in _DEBUG mode, pass FILELINE_RELAY */
 #define DBG_RELAY       FILELINE_RELAY
 /* <combine sack::DBG_PASS>
+	  in _DEBUG mode, pass FILELINE_NULL */
+#define DBG_NULL        FILELINE_NULL
+/* <combine sack::DBG_PASS>
    in _DEBUG mode, pass FILELINE_VOIDRELAY */
 #define DBG_VOIDRELAY   FILELINE_VOIDRELAY
 /* <combine sack::DBG_PASS>
@@ -1052,7 +1067,8 @@ SACK_NAMESPACE
 // cannot declare _0 since that overloads the
 // vector library definition for origin (0,0,0,0,...)
 //typedef void             _0; // totally unusable to declare 0 size things.
-/* the only type other than when used in a function declaration that void is valid is as a pointer to void. no _0 type exists (it does, but it's in vectlib, and is an origin vector)*/
+/* the only type other than when used in a function declaration that void is valid is as a pointer to void. no _0 type exists
+	 (it does, but it's in vectlib, and is an origin vector)*/
 typedef void             *P_0;
 /*
  * several compilers are rather picky about the types of data
@@ -1060,10 +1076,18 @@ typedef void             *P_0;
  * should be used instead of uint32_t (DWORD)
  */
 typedef unsigned int  BIT_FIELD;
+/*
+ * several compilers are rather picky about the types of data
+ * used for bit field declaration, therefore this type
+ * should be used instead of int32_t (LONG)
+ */
+typedef int  SBIT_FIELD;
 // have to do this on a per structure basis - otherwise
-// any included headers with structures to use will get FUCKED
+// any included headers with structures to use will get
+// padded as normal; this is appended to a strcture
+// and is ued on GCC comiplers for __attribute__((packed))
 #ifndef PACKED
-#define PACKED
+#  define PACKED
 #endif
 /* An pointer to a volatile unsigned integer type that is 64 bits long. */
 //typedef volatile uint64_t  *volatile int64_t*;
@@ -1351,46 +1375,108 @@ SACK_NAMESPACE
 typedef uint64_t THREAD_ID;
 #define GetMyThreadIDNL GetMyThreadID
 #if defined( _WIN32 ) || defined( __CYGWIN__ )
-#define _GetMyThreadID()  ( (( ((uint64_t)GetCurrentProcessId()) << 32 ) | ( (uint64_t)GetCurrentThreadId() ) ) )
-#define GetMyThreadID()  (GetThisThreadID())
+#  define _GetMyThreadID()  ( (( ((uint64_t)GetCurrentProcessId()) << 32 ) | ( (uint64_t)GetCurrentThreadId() ) ) )
+#  define GetMyThreadID()  (GetThisThreadID())
 #else
 // this is now always the case
 // it's a safer solution anyhow...
-#ifndef GETPID_RETURNS_PPID
-#define GETPID_RETURNS_PPID
+#  ifndef GETPID_RETURNS_PPID
+#    define GETPID_RETURNS_PPID
+#  endif
+#  ifdef GETPID_RETURNS_PPID
+#    ifdef __ANDROID__
+#      define GetMyThreadID()  (( ((uint64_t)getpid()) << 32 ) | ( (uint64_t)(gettid()) ) )
+#    else
+#      define GetMyThreadID()  (( ((uint64_t)getpid()) << 32 ) | ( (uint64_t)(pthread_self()) ) )
+#    endif
+#  else
+#    define GetMyThreadID()  (( ((uint64_t)getppid()) << 32 ) | ( (uint64_t)(getpid()|0x40000000)) )
+#  endif
+#    define _GetMyThreadID GetMyThreadID
 #endif
-#ifdef GETPID_RETURNS_PPID
-#ifdef __ANDROID__
-#define GetMyThreadID()  (( ((uint64_t)getpid()) << 32 ) | ( (uint64_t)(gettid()) ) )
-#else
-#define GetMyThreadID()  (( ((uint64_t)getpid()) << 32 ) | ( (uint64_t)(pthread_self()) ) )
-#endif
-#else
-#define GetMyThreadID()  (( ((uint64_t)getppid()) << 32 ) | ( (uint64_t)(getpid()|0x40000000)) )
-#endif
-#define _GetMyThreadID GetMyThreadID
-#endif
-//#error blah
-// general macros for linking lists using
+//---------------------- Declare Link; 'single and a half'ly-linked lists -----------------------
+// Thse macros are for linking and unlininking things in a linked list.
+// The list is basically a singly-linked list, but also references the pointer that
+// is pointing at the current node.  This simplifies insert/remove operations, because
+// the specific list that the node is in, is not required.
+// List heads will always be updated correctly.
+//
+// A few 'tricks' are available, such as
+//     0) These are deemed dangerous; and uncomprehendable by anyone but the maintainer.
+//        use at your own time and expense required to explain WHY these work.
+//     1) when declaring a root node, include another node before it, and it's
+//        simple to make this a circularly linked list.
+//     2) defining DeclareLink at the start of the strcture, the 'me' pointer
+//        also happens to be 'prior', so you can step through the list in both
+//        directions.
+//
+//
+//
+// struct my_node {
+//    DeclareLink( struct my_node );
+//    // ...
+// };
+//
+// that declares
+//      struct my_node *next;  // the next node in list.
+//      struct my_node **me;   // address of the pointer pointing to 'me';
+//
+//
+//  struct my_node *root; // a root of a list of my_node.  It should be initialized to NULL.
+//
+//  struct my_node *newNode = (struct my_node*)malloc( sizeof( *newNode ) );
+//     // does not require next or me to be initiialized.
+//  LinkThing( root, newNode );
+//     // now newNode is in the list.
+//
+//  to remove from a list
+//
+//  struct my_node *someNode; // this should be a pointer to some valid node.
+//  UnlinkThing( someNode );
+//     The new node is now not in the list.
+//
+//  To move one node from one list to another
+//
+//   struct my_node *rootAvail;  // available nodes
+//   struct my_node *rootUsed;   // nodes in use
+//
+//   struct my_node *someNode; // some node in a list
+//   someNode = rootAvail; // get first available.
+//   if( !someNode ) ; // create a new one or abort
+//   RelinkThing( rootUsed, someNode );
+//      'someNode' is removed from its existing list, and added to the 'rootUsed' list.
+//
+// For Declaring the link structure members for lists
 #define DeclareLink( type )  type *next;type **me
-#define RelinkThing( root, node )	   ((( node->me && ( (*node->me)=node->next ) )?	  node->next->me = node->me:0),(node->next = NULL),(node->me = NULL),node),	 ((( node->next = root )?	        (root->me = &node->next):0),	  (node->me = &root),	             (root = node) )
 /* Link a new node into the list.
    Example
    struct mynode
    {
-   DeclareLink( struct mynode );
+       DeclareLink( struct mynode );
    } *node;
-   struct mynode *list;
-   LinkThing( list_root, node );  */
+	struct mynode *list;
+   // node allocation not shown.
+	LinkThing( list_root, node );
+*/
 #define LinkThing( root, node )		     ((( (node)->next = (root) )?	        (((root)->me) = &((node)->next)):0),	  (((node)->me) = &(root)),	             ((root) = (node)) )
-/* Link a node to the end of a list. Link thing inserts the new
-   node as the new head of the list.                            */
+/* Link a node to the end of a list. LinkThing() inserts the new
+ node as the new head of the list.
+ this has to scan the list to find the end, so it is a O(n) operation.
+ All other linked list operations are O(1)
+ */
 #define LinkLast( root, type, node ) if( node ) do { if( !root )	 { root = node; (node)->me=&root; }	 else { type tmp;	 for( tmp = root; tmp->next; tmp = tmp->next );	 tmp->next = (node);	 (node)->me = &tmp->next;	 } } while (0)
 // put 'Thing' after 'node'
+// inserts 'node' after Thing
 #define LinkThingAfter( node, thing )	 ( ( (thing)&&(node))	   ?(((((thing)->next = (node)->next))?((node)->next->me = &(thing)->next):0)	  ,((thing)->me = &(node)->next), ((node)->next = thing))	  :((node)=(thing)) )
 //
 // put 'Thing' before 'node'... so (*node->me) = thing
+// similar to LinkThingAfter but puts the new 'thing'
+// before the 'node' specified.
 #define LinkThingBefore( node, thing )	 {  thing->next = (*node->me);	(*node->me) = thing;    thing->me = node->me;       node->me = &thing->next;     }
+// move a list from one list to another.
+// unlinks node from where it was, inserts at the head of another.
+// this can also be use to reproiritize within the same list.
+#define RelinkThing( root, node )	   ((( node->me && ( (*node->me)=node->next ) )?	  node->next->me = node->me:0),(node->next = NULL),(node->me = NULL),node),	 ((( node->next = root )?	        (root->me = &node->next):0),	  (node->me = &root),	             (root = node) )
 /* Remove a node from a list. Requires only the node. */
 #define UnlinkThing( node )	                      ((( (node) && (node)->me && ( (*(node)->me)=(node)->next ) )?	  (node)->next->me = (node)->me:0),((node)->next = NULL),((node)->me = NULL),(node))
 // this has two expressions duplicated...
@@ -1398,18 +1484,18 @@ typedef uint64_t THREAD_ID;
 // the self-circular link needs to be duplicated.
 // GrabThing is used for nodes which are circularly bound
 #define GrabThing( node )	    ((node)?(((node)->me)?(((*(node)->me)=(node)->next)?	 ((node)->next->me=(node)->me),((node)->me=&(node)->next):NULL):((node)->me=&(node)->next)):NULL)
-/* Go to the next node with links declared by DeclareLink */
+/* Go to the next node with links declared by DeclareLink
+ safe iterator macro that tests if node is valid, which returns
+ the next item in the list, else returns NULL
+ */
 #define NextLink(node) ((node)?(node)->next:NULL)
 // everything else is called a thing... should probably migrate to using this...
 #define NextThing(node) ((node)?(node)->next:NULL)
-//#ifndef FALSE
-//#define FALSE 0
-//#endif
-//#ifndef TRUE
-//#define TRUE (!FALSE)
-//#endif
-/* the default type to use for flag sets - flag sets are arrays of bits which can be toggled on and off by an index. */
-#define FLAGSETTYPE uint32_t
+//----------- FLAG SETS (single bit fields) -----------------
+/* the default type to use for flag sets - flag sets are arrays of bits
+ which can be set/read with/as integer values an index.
+ All of the fields in a maskset are the same width */
+#define FLAGSETTYPE uintmax_t
 /* the number of bits a specific type is.
    Example
    int bit_size_int = FLAGTYPEBITS( int ); */
@@ -1423,17 +1509,33 @@ typedef uint64_t THREAD_ID;
 // declare a set of flags...
 #define FLAGSET(v,n)   FLAGSETTYPE (v)[((n)+FLAGROUND(FLAGSETTYPE))/FLAGTYPEBITS(FLAGSETTYPE)]
 // set a single flag index
-#define SETFLAG(v,n)   ( (v)[(n)/FLAGTYPEBITS((v)[0])] |= 1 << ( (n) & FLAGROUND((v)[0]) ))
+#define SETFLAG(v,n)   ( ( (v)[(n)/FLAGTYPEBITS((v)[0])] |= (FLAGSETTYPE)1 << ( (n) & FLAGROUND((v)[0]) )),1)
 // clear a single flag index
-#define RESETFLAG(v,n) ( (v)[(n)/FLAGTYPEBITS((v)[0])] &= ~( 1 << ( (n) & FLAGROUND((v)[0]) ) ) )
+#define RESETFLAG(v,n) ( ( (v)[(n)/FLAGTYPEBITS((v)[0])] &= ~( (FLAGSETTYPE)1 << ( (n) & FLAGROUND((v)[0]) ) ) ),0)
 // test if a flags is set
-#define TESTFLAG(v,n)  ( (v)[(n)/FLAGTYPEBITS((v)[0])] & ( 1 << ( (n) & FLAGROUND((v)[0]) ) ) )
+//  result is 0 or not; the value returned is the bit shifted within the word, and not always '1'
+#define TESTFLAG(v,n)  ( (v)[(n)/FLAGTYPEBITS((v)[0])] & ( (FLAGSETTYPE)1 << ( (n) & FLAGROUND((v)[0]) ) ) )
 // reverse a flag from 1 to 0 and vice versa
-#define TOGGLEFLAG(v,n)   ( (v)[(n)/FLAGTYPEBITS((v)[0])] ^= 1 << ( (n) & FLAGROUND((v)[0]) ))
+// return value is undefined... and is a whole bunch of flags from some offset...
+// if you want ot toggle and flag and test the result, use TESTGOGGLEFLAG() instead.
+#define TOGGLEFLAG(v,n)   ( (v)[(n)/FLAGTYPEBITS((v)[0])] ^= (FLAGSETTYPE)1 << ( (n) & FLAGROUND((v)[0]) ))
+// Toggle a bit, return the state of the bit after toggling.
+#define TESTTOGGLEFLAG(v,n)  ( TOGGLEFLAG(v,n), TESTFLAG(v,n) )
+//----------- MASK SETS -----------------
+//  MASK Sets are arrays of bit-fields of some bit-width (5, 3, ... )
+//  they are set/returned as integer values.
+//  They are stored-in/accessed via a uint8_t which gives byte-offset calculations.
+// they return their value as uintmax_t from the offset memory address directly;
+//   Some platforms(Arm) may SIGBUS because of wide offset accesses spanning word boundaries.
+//   This issue may be fixed by rounding, grabbing the word aligned values and shifting manually
+// Declarataion/Instantiation of a mask set is done with MASKSET macro below
 // 32 bits max for range on mask
-#define MASK_MAX_LENGTH 32
-// gives a 32 bit mask possible from flagset..
-#define MASKSET_READTYPE uint32_t
+#define MASK_MAX_LENGTH (sizeof(MASKSET_READTYPE)*CHAR_BIT)
+/* gives a 32 bit mask possible from flagset..
+ - updated; return max int possible; but only the low N bits will be set
+ - mask sets are meant for small values, but could be used for like 21 bit fields. (another form of unicode encoding I suppose)
+ */
+#define MASKSET_READTYPE uintmax_t
 // gives byte index...
 #define MASKSETTYPE uint8_t
 /* how many bits the type specified can hold
@@ -1464,38 +1566,27 @@ typedef uint64_t THREAD_ID;
 #define MASK_MASK(n,length)   (MASK_TOP_MASK(length) << (((n)*(length))&0x7) )
 // masks value with the mask size, then applies that mask back to the correct word indexing
 #define MASK_MASK_VAL(n,length,val)   (MASK_TOP_MASK_VAL(length,val) << (((n)*(length))&0x7) )
-/* declare a mask set. */
+/* declare a mask set.
+ MASKSET( maskVariableName
+        , 32 //number of items
+		  , 5 // number of bits per field
+		  );
+   declares
+	uint8_t maskVariableName[ (32*5 +(CHAR_BIT-1))/CHAR_BIT ];  //data array used for storage.
+   const int askVariableName_mask_size = 5;  // used aautomatically by macros
+*/
 #define MASKSET(v,n,r)  MASKSETTYPE  (v)[(((n)*(r))+MASK_MAX_ROUND())/MASKTYPEBITS(MASKSETTYPE)]; const int v##_mask_size = r;
-// set a field index to a value
+/* set a field index to a value
+    SETMASK( askVariableName, 3, 13 );  // set set member 3 to the value '13'
+ */
 #define SETMASK(v,n,val)    (((MASKSET_READTYPE*)((v)+((n)*(v##_mask_size))/MASKTYPEBITS((v)[0])))[0] =    ( ((MASKSET_READTYPE*)((v)+((n)*(v##_mask_size))/MASKTYPEBITS(uint8_t)))[0]                                  & (~(MASK_MASK(n,v##_mask_size))) )	                                                                           | MASK_MASK_VAL(n,v##_mask_size,val) )
-// get the value of a field
-#define GETMASK(v,n)  ( ( ((MASKSET_READTYPE*)((v)+((n)*(v##_mask_size))/MASKTYPEBITS((v)[0])))[0]                                  & MASK_MASK(n,v##_mask_size) )	                                                                           >> (((n)*(v##_mask_size))&0x7))
+/* get the value of a field
+     GETMASK( maskVariableName, 3 );   // returns '13' given the SETMASK() example code.
+ */
+#define GETMASK(v,n)  ( ( ((MASKSET_READTYPE*)((v)+((n)*(v##_mask_size))/MASKTYPEBITS((v)[0])))[0]         & MASK_MASK(n,v##_mask_size) )	                                                                           >> (((n)*(v##_mask_size))&0x7))
 /* This type stores data, it has a self-contained length in
    bytes of the data stored.  Length is in characters       */
 _CONTAINER_NAMESPACE
-#define DECLDATA(name,length) struct {size_t size; TEXTCHAR data[length];} name
-// Hmm - this can be done with MemLib alone...
-// although this library is not nessecarily part of that?
-// and it's not nessecarily allocated.
-typedef struct SimpleDataBlock {
-   size_t size;
-/* unsigned size; size is sometimes a pointer value... this
-                    means bad thing when we change platforms... Defined as
-                    uintptr_t now, so it's relative to the size of the platform
-                    anyhow.                                                    */
-#ifdef _MSC_VER
-#pragma warning (disable:4200)
-#endif
-   uint8_t  data[
-#ifndef __cplusplus
-   1
-#endif
- // beginning of var data - this is created size+sizeof(uint8_t)
-   ];
-#ifdef _MSC_VER
-#pragma warning (default:4200)
-#endif
-} DATA, *PDATA;
 /* This is a slab array of pointers, each pointer may be
    assigned to point to any user data.
    Remarks
@@ -1751,7 +1842,7 @@ public:
 	inline void remove( POINTER p ) { DeleteLink( &list, p ); }
 	inline POINTER first( void ) { POINTER p; for( idx = 0, p = NULL;list && (idx < list->Cnt) && (( p = GetLink( &list, idx ) )==0); )idx++; return p; }
 	inline POINTER next( void ) { POINTER p; for( idx++;list && (( p = GetLink( &list, idx ) )==0) && idx < list->Cnt; )idx++; return p; }
-	inline POINTER get(INDEX idx) { return GetLink( &list, idx ); }
+	inline POINTER get(INDEX index) { return GetLink( &list, index ); }
 } *piList;
 #endif
 // address of the thing...
@@ -1875,8 +1966,8 @@ TYPELIB_PROC  uintptr_t TYPELIB_CALLTYPE     ForAllLinks    ( PLIST *pList, ForP
    \ \                                                                 */
 #define SetLink(p,i,v)     ( SetLinkEx( (p),(i),((POINTER)(v)) DBG_SRC ) )
 #ifdef __cplusplus
-//		namespace list;
-	};
+ //		namespace list;
+	}
 #endif
 //--------------------------------------------------------
 _DATALIST_NAMESPACE
@@ -2061,8 +2152,8 @@ TYPELIB_PROC  POINTER TYPELIB_CALLTYPE      PeekLinkEx         ( PLINKSTACK *pls
    Macro to pass default debug file and line information.                    */
 #define PushLink(p, v)     PushLinkEx((p),(v) DBG_SRC)
 #ifdef __cplusplus
-//		namespace link_stack {
-		};
+ //		namespace link_stack {
+		}
 #endif
 //--------------------------------------------------------
 #ifdef __cplusplus
@@ -2370,7 +2461,7 @@ TYPELIB_PROC  int TYPELIB_CALLTYPE  EnqueMsgEx ( PMSGHANDLE pmh, POINTER buffer,
 TYPELIB_PROC  int TYPELIB_CALLTYPE  IsMsgQueueEmpty ( PMSGHANDLE pmh );
 #ifdef __cplusplus
  //namespace message {
-};
+}
 #endif
 /* Routines to deal with SLAB allocated blocks of structures.
    Each slab has multiple elements of a type in it, and the
@@ -2614,11 +2705,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  DeleteFromSetExx( GENERICSET *set, POINTER 
 #define DeleteFromSetEx( name, set, member, xx ) DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC )
 /* <combine sack::containers::sets::DeleteFromSetExx@GENERICSET *@POINTER@int@int max>
    \ \                                                                                 */
-#ifdef _DEBUG
-#define DeleteFromSet( name, set, member ) do { P##name##SET testset = set; DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC ); } while(0)
-#else
 #define DeleteFromSet( name, set, member ) DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC )
-#endif
 /* Marks a member in a set as usable.
    Parameters
    set :       pointer to a genericset pointer
@@ -2952,6 +3039,9 @@ enum TextFlags {
 // flag combinatoin which represents actual data is present even with 0 size
 // extended format operations (position, ops) are also considered data.
 #define IS_DATA_FLAGS (TF_QUOTE|TF_SQUOTE|TF_BRACKET|TF_BRACE|                              TF_PAREN|TF_TAG|TF_FORMATEX|TF_FORMATABS|TF_FORMATREL)
+// this THis defines/initializes the data part of a PTEXT/TEXT structure.
+// used with DECLTEXTSZTYPE
+#define DECLDATA(name,length) struct {size_t size; TEXTCHAR data[length];} name
 #define DECLTEXTSZTYPE( name, size ) struct {    uint32_t flags;    struct text_segment_tag *Next, *Prior;    FORMAT format;    DECLDATA(data, size); } name
 /* A macro to declare a structure which is the same physically
    as a PTEXT, (for declaring static buffers). Has to be cast to
@@ -2959,7 +3049,7 @@ enum TextFlags {
    Parameters
    name :  name of the variable to create
    size :  size of the static text element. (0 content)          */
-#define DECLTEXTSZ( name, size ) DECLTEXTSZTYPE( name,(size) )	 = { TF_STATIC, NULL, NULL, {{1,1}} }
+#define DECLTEXTSZ( name, size ) DECLTEXTSZTYPE( name,(size) )	 = { TF_STATIC, NULL, NULL, {{1,1  ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}} }
 /* Defines an initializer block which can be used to satisfy a
    TEXT elemnt of a structure
    Parameters
@@ -4013,7 +4103,7 @@ TYPELIB_PROC LOGICAL TYPELIB_CALLTYPE ParseStringVector( CTEXTSTR data, CTEXTSTR
 TYPELIB_PROC LOGICAL TYPELIB_CALLTYPE ParseIntVector( CTEXTSTR data, int **pData, int *nData );
 #ifdef __cplusplus
  //namespace text {
-};
+}
 #endif
 //--------------------------------------------------------------------------
 #ifdef __cplusplus
@@ -4336,7 +4426,7 @@ TYPELIB_PROC  uint32_t TYPELIB_CALLTYPE  GetNodeCount ( PTREEROOT root );
 TYPELIB_PROC  PTREEROOT TYPELIB_CALLTYPE  ShadowBinaryTree( PTREEROOT root );
 #ifdef __cplusplus
  //namespace BinaryTree {
-	};
+	}
 #endif
 //--------------------------------------------------------------------------
 #ifdef __cplusplus
@@ -4374,16 +4464,16 @@ TYPELIB_PROC LOGICAL TYPELIB_CALLTYPE FamilyTreeForEach( PFAMILYTREE root, PFAMI
 			, uintptr_t psvUserData );
 #ifdef __cplusplus
  //namespace family {
-};
+}
 #endif
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
 #ifdef __cplusplus
 //} // extern "c"
  // namespace containers
-};
+}
  // namespace sack
-};
+}
 using namespace sack::containers::link_stack;
 using namespace sack::containers::data_stack;
 using namespace sack::containers::data_list;
@@ -4559,7 +4649,7 @@ CONSTRUCT_NAMESPACE_END
 #endif
 #ifdef __cplusplus
 #define LOGGING_NAMESPACE namespace sack { namespace logging {
-#define LOGGING_NAMESPACE_END }; };
+#define LOGGING_NAMESPACE_END } }
 #else
 #define LOGGING_NAMESPACE
 #define LOGGING_NAMESPACE_END
@@ -4950,6 +5040,7 @@ using namespace sack;
 using namespace sack::containers;
 #endif
 #endif
+#endif
 // incldue this first so we avoid a conflict.
 // hopefully this comes from sack system?
 /*
@@ -5087,7 +5178,7 @@ SYSTEM_PROC( void, DeAttachThreadToLibraries )( LOGICAL attach );
 #define LoadFunction(l,f) LoadFunctionEx(l,f DBG_SRC )
 SYSTEM_PROC( generic_function, LoadPrivateFunctionEx )( CTEXTSTR libname, CTEXTSTR funcname DBG_PASS );
 #define LoadPrivateFunction(l,f) LoadPrivateFunctionEx(l,f DBG_SRC )
-#define OnLibraryLoad(name)	  __DefineRegistryMethod(WIDE("SACK"),_OnLibraryLoad,WIDE("system/library"),WIDE("load_event"),name WIDE("_LoadEvent"),void,(void), __LINE__)
+#define OnLibraryLoad(name)	  DefineRegistryMethod(WIDE("SACK"),_OnLibraryLoad,WIDE("system/library"),WIDE("load_event"),name WIDE("_LoadEvent"),void,(void), __LINE__)
 // the callback passed will be called during LoadLibrary to allow an external
 // handler to download or extract the library; the resulting library should also
 // be loaded by the callback using the standard 'LoadFunction' methods
@@ -5369,6 +5460,9 @@ struct critical_section_tag {
  // ID of thread waiting for this..
 	THREAD_ID dwThreadWaiting;
 #ifdef DEBUG_CRITICAL_SECTIONS
+	// these are not included without a special compile flag
+	// only required by low level deveopers who may be against
+   // undefined behavior.
 #define MAX_SECTION_LOG_QUEUE 16
 	uint32_t bCollisions ;
 	CTEXTSTR pFile[16];
@@ -5427,9 +5521,9 @@ MEM_PROC  void MEM_API  InitializeCriticalSec ( PCRITICALSECTION pcs );
    releasing memory.                                            */
 #ifdef __cplusplus
  // namespace timers
-};
+}
  // namespace sack
-};
+}
 using namespace sack::timers;
 #endif
 #ifdef __cplusplus
@@ -5936,9 +6030,6 @@ MEM_PROC  int MEM_API  MemCmp ( CPOINTER pOne, CPOINTER pTwo, size_t sz );
 	/* nothing.
    does nothing, returns nothing. */
 //#define memnop(mem,sz,comment)
-#ifdef __cplusplus
-//};
-#endif
 /* Compares two strings. Must match exactly.
    Parameters
    s1 :  string to compare
@@ -6208,9 +6299,9 @@ MEM_PROC  int MEM_API  PequeMessage ( struct transport_queue_tag *queue, POINTER
 //------------------------------------------------------------------------
 #ifdef __cplusplus
  // namespace memory
-};
+}
  // namespace sack
-};
+}
 using namespace sack::memory;
 #if defined( _DEBUG ) || defined( _DEBUG_INFO )
 /*
@@ -7710,7 +7801,15 @@ struct rt_init
 #endif
 #endif
 } __attribute__((packed));
-#define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
+#  if defined( __GNUC__ ) && defined( __64__)
+#    define JUNKINIT(name) ,&pastejunk(name,_ctor_label), {0,0}
+#  else
+#    define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
+#  endif
+#else
+#  define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
+#endif
 #define RTINIT_STATIC static
 #define ATEXIT_PRIORITY PRIORITY_ATEXIT
 #if defined( _DEBUG ) || defined( _DEBUG_INFO )
@@ -8355,18 +8454,35 @@ PROCREG_PROC( int, ReleaseRegisteredFunctionEx )( PCLASSROOT root
 /* This is a macro used to paste two symbols together. */
 #define paste_(a,b) _WIDE(a##b)
 #define paste(a,b) paste_(a,b)
-#define ___DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(Register,name),Method),line), SQL_PRELOAD_PRIORITY ) {	  SimpleRegisterMethod( task WIDE("/") classtype, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) );    RegisterValue( task WIDE("/") classtype WIDE("/") methodname, WIDE("Description"), desc ); }	                                                                          static returntype CPROC paste(name,line)
-#define __DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)	   ___DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)
-#define ___DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(Register,name),Method),line), priority ) {	  SimpleRegisterMethod( task WIDE("/") classtype, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) );    RegisterValue( task WIDE("/") classtype WIDE("/") methodname, WIDE("Description"), desc ); }	                                                                          static returntype CPROC paste(name,line)
-#define __DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   ___DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)
-#define ___DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(Register##name##Button,line) ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
-#define __DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   ___DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)
-#define _DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   static returntype __DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)
-#define DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes)	  __DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,__LINE__)
+#ifdef __cplusplus
+#define EXTRA_PRELOAD_SYMBOL _
+#else
+#define EXTRA_PRELOAD_SYMBOL
+#endif
+#define DefineRegistryMethod2_i(task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(paste(Register,name),Method),EXTRA_PRELOAD_SYMBOL),line), SQL_PRELOAD_PRIORITY ) {	  SimpleRegisterMethod( task WIDE("/") classtype, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) );    RegisterValue( task WIDE("/") classtype WIDE("/") methodname, WIDE("Description"), desc ); }	                                                                          static returntype CPROC paste(name,line)
+#define DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)	   DefineRegistryMethod2_i(task,name,classtype,methodname,desc,returntype,argtypes,line)
+/* Dekware uses this macro.
+     passes preload priority override.
+	 so it can register new internal commands before initial macros are run.
+*/
+#define DefineRegistryMethod2P_i(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(paste(Register,name),Method),EXTRA_PRELOAD_SYMBOL),line), priority ) {	  SimpleRegisterMethod( task WIDE("/") classtype, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) );    RegisterValue( task WIDE("/") classtype WIDE("/") methodname, WIDE("Description"), desc ); }	                                                                          static returntype CPROC paste(name,line)
+/* This macro indirection is to resolve inner macros like WIDE("") around text.  */
+#define DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   DefineRegistryMethod2P_i(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)
+/*
+    This method is used by PSI/Intershell.
+	no description
+*/
+#define DefineRegistryMethod_i(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(Register##name##Button##EXTRA_PRELOAD_SYMBOL,line) ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
+#define DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   DefineRegistryMethod_i(task,name,classtype,classbase,methodname,returntype,argtypes,line)
+/*
+#define _0_DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   static returntype _1__DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)
+#define DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes)	  _1__DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,__LINE__)
+*/
 // this macro is used for ___DefineRegistryMethodP. Because this is used with complex names
 // an extra define wrapper of priority_preload must be used to fully resolve paramters.
-#define PRIOR_PRELOAD(a,p) PRIORITY_PRELOAD(a,p)
-#define ___DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIOR_PRELOAD( paste(Register##name##Button,line), priority ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
+/*
+#define DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIOR_PRELOAD( paste(Register##name##Button##EXTRA_PRELOAD_SYMBOL,line), priority ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase, paste(name,line)	  , _WIDE(#returntype), methodname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
+*/
 /* <combine sack::app::registry::SimpleRegisterMethod>
    General form to build a registered procedure. Used by simple
    macros to create PRELOAD'ed registered functions. This flavor
@@ -8398,11 +8514,13 @@ PROCREG_PROC( int, ReleaseRegisteredFunctionEx )( PCLASSROOT root
    from the registered name.
    Example
    See <link sack::app::registry::GetFirstRegisteredNameEx@PCLASSROOT@CTEXTSTR@PCLASSROOT *, GetFirstRegisteredNameEx> */
-#define __DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   ___DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)
-#define _DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   __DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)
-#define DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes)	  _DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,__LINE__)
-#define _DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(Register##name##Button,line) ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase WIDE("/") methodname, paste(name,line)	  , _WIDE(#returntype), subname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
-#define DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes)	  _DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes,__LINE__)
+/*
+#define _1__DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   _2___DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)
+#define _0_DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   _1__DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)
+#define DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes)	  _0_DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,__LINE__)
+*/
+#define DefineRegistrySubMethod_i(task,name,classtype,classbase,methodname,subname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(Register##name##Button##EXTRA_PRELOAD_SYMBOL,line) ) {	  SimpleRegisterMethod( task WIDE("/") classtype WIDE("/") classbase WIDE("/") methodname, paste(name,line)	  , _WIDE(#returntype), subname, _WIDE(#argtypes) ); }	                                                                          static returntype CPROC paste(name,line)
+#define DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes)	  DefineRegistrySubMethod_i(task,name,classtype,classbase,methodname,subname,returntype,argtypes,__LINE__)
 /* attempts to use dynamic linking functions to resolve passed
    global name if that fails, then a type is registered for this
    global, and an instance created, so that that instance may be
@@ -9967,7 +10085,7 @@ PSSQL_PROC( int, GetSQLTypes )( void );
        }
    </code>                                                      */
 PSSQL_PROC( int, FetchSQLTypes )( PODBC );
-#define PSSQL_VARARG_PROC(a,b,c)  PSSQL_PROC(a,b)c; typedef a(CPROC * __f_##b)c; PSSQL_PROC( __f_##b, __##b )(DBG_VOIDPASS);
+#define PSSQL_VARARG_PROC(a,b,c)  PSSQL_PROC(a,b)c; typedef a(CPROC * __f_##b)c; PSSQL_PROC( __f_##b, __##b )(DBG_VOIDPASS)
 /* Do a SQL query on the default odbc connection. The first
    record results immediately if there are any records. Returns
    the results as an array of strings. If you know the select
@@ -10351,7 +10469,7 @@ SQL_NAMESPACE_END
 #define SQL_GET_OPTION_DEFINED
 #ifdef __cplusplus
 #define _OPTION_NAMESPACE namespace options {
-#define _OPTION_NAMESPACE_END };
+#define _OPTION_NAMESPACE_END }
 #define USE_OPTION_NAMESPACE	 using namespace sack::sql::options;
 #else
 #define _OPTION_NAMESPACE
@@ -11105,7 +11223,7 @@ static LOGICAL ExpandVolume( struct volume *vol ) {
 	LOGICAL created;
 	LOGICAL path_checked = FALSE;
 	struct disk* new_disk;
-	size_t oldsize = vol->dwSize;
+	BLOCKINDEX oldsize = (BLOCKINDEX)vol->dwSize;
 	if( vol->read_only ) return TRUE;
 	if( !vol->dwSize ) {
 		{
@@ -12283,7 +12401,7 @@ SACK_VFS_NAMESPACE_END
  */
 #define SACK_VFS_SOURCE
 //#define SACK_VFS_FS_SOURCE
-#define USE_STDIO
+//#define USE_STDIO
 #if 1
  // tolower on linux
 #ifndef USE_STDIO
@@ -12709,7 +12827,7 @@ static enum block_cache_entries _fs_UpdateSegmentKey( struct volume *vol, enum b
 }
 static LOGICAL _fs_ValidateBAT( struct volume *vol ) {
 	BLOCKINDEX first_slab = 0;
-	BLOCKINDEX slab = vol->dwSize / ( BLOCK_SIZE );
+	BLOCKINDEX slab = (BLOCKINDEX)(vol->dwSize / ( BLOCK_SIZE ));
 	BLOCKINDEX last_block = ( slab * BLOCKS_PER_BAT ) / BLOCKS_PER_SECTOR;
 	BLOCKINDEX n;
 	enum block_cache_entries cache = BC(BAT);
@@ -13588,7 +13706,7 @@ size_t CPROC sack_vfs_fs_write( struct sack_vfs_file *file, const char * data, s
 		uint8_t* block = (uint8_t*)vfs_fs_BSEEK( file->vol, file->block, &cache );
 		if( length >= ( BLOCK_SIZE - ( ofs ) ) ) {
 			_fs_MaskBlock( file->vol, file->vol->usekey[cache], block, ofs, ofs, data, BLOCK_SIZE - ofs );
-			sack_fwrite( block + ofs, 1, BLOCK_SIZE - ofs, file->vol->file );
+			sack_fwrite( block + ofs, BLOCK_SIZE - ofs, 1, file->vol->file );
 			data += BLOCK_SIZE - ofs;
 			written += BLOCK_SIZE - ofs;
 			file->fpi += BLOCK_SIZE - ofs;
@@ -13600,7 +13718,7 @@ size_t CPROC sack_vfs_fs_write( struct sack_vfs_file *file, const char * data, s
 			length -= BLOCK_SIZE - ofs;
 		} else {
 			_fs_MaskBlock( file->vol, file->vol->usekey[cache], block, ofs, ofs, data, length );
-			sack_fwrite( file->vol->usekey_buffer[cache] + ofs, 1, BLOCK_SIZE - ofs, file->vol->file );
+			sack_fwrite( file->vol->usekey_buffer[cache] + ofs, BLOCK_SIZE - ofs, 1, file->vol->file );
 			data += length;
 			written += length;
 			file->fpi += length;
@@ -13956,6 +14074,7 @@ static struct file_system_interface sack_vfs_fs_fsi = {
                                                    };
 PRIORITY_PRELOAD( Sack_VFS_FS_Register, CONFIG_SCRIPT_PRELOAD_PRIORITY - 2 )
 {
+#undef DEFAULT_VFS_NAME
 #ifdef ALT_VFS_NAME
 #   define DEFAULT_VFS_NAME SACK_VFS_FILESYSTEM_NAME ".runner"
 #else
@@ -14296,7 +14415,7 @@ uintptr_t vfs_os_FSEEK( struct volume *vol, BLOCKINDEX firstblock, FPI offset, e
 		firstblock = vfs_os_GetNextBlock( vol, firstblock, 0, 0 );
 		offset -= BLOCK_SIZE;
 	}
-	data = (uint8_t*)vfs_os_BSEEK_( vol, firstblock, cache_index, NULL, 0 );
+	data = (uint8_t*)vfs_os_BSEEK_( vol, firstblock, cache_index DBG_NULL );
 	return (uintptr_t)(data + (offset));
 }
 static int  _os_PathCaseCmpEx ( CTEXTSTR s1, CTEXTSTR s2, size_t maxlen )
@@ -14747,6 +14866,9 @@ LOGICAL _os_ExpandVolume( struct volume *vol ) {
 	size_t oldsize = vol->dwSize;
 	if( vol->file && vol->read_only ) return TRUE;
 	if( !vol->file ) {
+		char *fname;
+		char *iface;
+		char *tmp;
 		{
 			char *tmp = StrDup( vol->volname );
 			char *dir = (char*)pathrchr( tmp );
@@ -14757,13 +14879,33 @@ LOGICAL _os_ExpandVolume( struct volume *vol ) {
 			free( tmp );
 			//Deallocate( char*, tmp );
 		}
-		vol->file = sack_fopen( 0, vol->volname, "rb+" );
-		if( !vol->file ) {
-			created = TRUE;
-			vol->file = sack_fopen( 0, vol->volname, "wb+" );
+		if( tmp =(char*)StrChr( vol->volname, '@' ) ) {
+			tmp[0] = 0;
+			iface = (char*)vol->volname;
+			fname = tmp + 1;
+			struct file_system_mounted_interface *mount = sack_get_mounted_filesystem( iface );
+			//struct file_system_interface *iface = sack_get_filesystem_interface( iface );
+			if( !sack_exists( fname ) ) {
+				vol->file = sack_fopenEx( 0, fname, "rb+", mount );
+				if( !vol->file )
+					vol->file = sack_fopenEx( 0, fname, "wb+", mount );
+				created = TRUE;
+			}
+			else
+				vol->file = sack_fopenEx( 0, fname, "wb+", mount );
+			tmp[0] = '@';
+		}
+		else {
+			vol->file = sack_fopen( 0, vol->volname, "rb+" );
+			if( !vol->file ) {
+				created = TRUE;
+				vol->file = sack_fopen( 0, vol->volname, "wb+" );
+			}
 		}
 		sack_fseek( vol->file, 0, SEEK_END );
 		vol->dwSize = sack_ftell( vol->file );
+		if( vol->dwSize == 0 )
+			created = TRUE;
 		sack_fseek( vol->file, 0, SEEK_SET );
 	}
 	//vol->dwSize += ((uintptr_t)vol->disk - (uintptr_t)vol->diskReal);
@@ -15410,6 +15552,7 @@ LOGICAL _os_ScanDirectory_( struct volume *vol, const char * filename
 					int d;
 					//LoG( "this name: %s", names );
 					if( ( d = _os_MaskStrCmp( vol, filename+ofs, nameBlock, name_ofs, path_match ) ) == 0 ) {
+                  if( file )
 						{
 							file->dirent_key = (*entkey);
 							file->cache = cache;
@@ -16292,6 +16435,7 @@ static struct file_system_interface sack_vfs_os_fsi = {
                                                    };
 PRIORITY_PRELOAD( Sack_VFS_OS_Register, CONFIG_SCRIPT_PRELOAD_PRIORITY - 2 )
 {
+#undef DEFAULT_VFS_NAME
 #ifdef ALT_VFS_NAME
 #   define DEFAULT_VFS_NAME SACK_VFS_FILESYSTEM_NAME "-os.runner"
 #else
@@ -16327,6 +16471,7 @@ PRIORITY_PRELOAD( Sack_VFS_OS_RegisterDefaultFilesystem, SQL_PRELOAD_PRIORITY + 
 #  undef StrDup
 #  define StrDup(o) StrDupEx( (o) DBG_SRC )
 #endif
+#undef free
 SACK_VFS_NAMESPACE_END
 #undef l
 /*
@@ -16344,8 +16489,8 @@ SACK_VFS_NAMESPACE_END
  *      Please read the file sha1.c for more information.
  *
  */
-#ifndef _SHA1_H_
-#define _SHA1_H_
+#ifndef INCLUDED_SHA1_H_
+#define INCLUDED_SHA1_H_
 #ifdef SHA1_SOURCE
 #define SHA1_PROC(type,name) EXPORT_METHOD type CPROC name
 #else
@@ -16666,32 +16811,32 @@ void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_
 	uint32_t partial_bits = 0;
 	uint32_t get_bits;
 	uint32_t resultBits = 0;
-	do
-	{
+	if( !ctx ) DebugBreak();
+	//if( ctx->bits_used > 512 ) DebugBreak();
+	do {
 		if( bits > sizeof( tmp ) * 8 )
 			get_bits = sizeof( tmp ) * 8;
 		else
 			get_bits = bits;
 		// if there were 1-31 bits of data in partial, then can only get 32-partial max.
-		if( ( 32 - partial_bits ) < get_bits )
-			get_bits = 32-partial_bits;
+		if( 32 < (get_bits + partial_bits) )
+			get_bits = 32 - partial_bits;
 		// check1 :
 		//    if get_bits == 32
 		//    but bits_used is 1-7, then it would have to pull 5 bytes to get the 32 required
 		//    so truncate get_bits to 25-31 bits
-		if( ( 32 - ( ctx->bits_used & 0x7 ) ) < get_bits )
-			get_bits = ( 32 - ( ctx->bits_used & 0x7 ) );
+		if( 32 < (get_bits + (ctx->bits_used & 0x7)) )
+			get_bits = (32 - (ctx->bits_used & 0x7));
 		// if resultBits is 1-7 offset, then would have to store up to 5 bytes of value
 		//    so have to truncate to just the up to 4 bytes that will fit.
-		if( get_bits > (32 - resultBits ) )
-			get_bits = 32-resultBits;
+		if( (get_bits+ resultBits) > 32 )
+			get_bits = 32 - resultBits;
 		// only greater... if equal just grab the bits.
-		if( get_bits > ( ctx->bits_avail - ctx->bits_used ) )
-		{
+		if( (get_bits + ctx->bits_used) > ctx->bits_avail ) {
 			// if there are any bits left, grab the partial bits.
-			if( ctx->bits_avail - ctx->bits_used )
-			{
+			if( ctx->bits_avail > ctx->bits_used ) {
 				partial_bits = (uint32_t)(ctx->bits_avail - ctx->bits_used);
+				if( partial_bits > get_bits ) partial_bits = get_bits;
 				// partial can never be greater than 32; input is only max of 32
 				//if( partial_bits > (sizeof( partial_tmp ) * 8) )
 				//	partial_bits = (sizeof( partial_tmp ) * 8);
@@ -16707,8 +16852,7 @@ void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_
 			NeedBits( ctx );
 			bits -= partial_bits;
 		}
-		else
-		{
+		else {
 			if( ctx->use_version3 )
 				tmp = MY_GET_MASK( ctx->entropy3, ctx->bits_used, get_bits );
 			else if( ctx->use_version2_256 )
@@ -16718,9 +16862,9 @@ void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_
 			else
 				tmp = MY_GET_MASK( ctx->entropy, ctx->bits_used, get_bits );
 			ctx->bits_used += get_bits;
-			if( partial_bits )
-			{
-				tmp = partial_tmp | ( tmp << partial_bits );
+			//if( ctx->bits_used > 512 ) DebugBreak();
+			if( partial_bits ) {
+				tmp = partial_tmp | (tmp << partial_bits);
 				partial_bits = 0;
 			}
 			(*buffer) = tmp << resultBits;
@@ -16733,6 +16877,7 @@ void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_
 #endif
 				resultBits -= 8;
 			}
+			//if( get_bits > bits ) DebugBreak();
 			bits -= get_bits;
 		}
 	} while( bits );
@@ -16786,6 +16931,7 @@ void SRG_RestoreState( struct random_context *ctx, POINTER external_buffer_holde
 }
 static void salt_generator(uintptr_t psv, POINTER *salt, size_t *salt_size ) {
 	static uint32_t tick;
+	(void)psv;
 	tick = GetTickCount();
 	salt[0] = &tick;
 	salt_size[0] = sizeof( tick );
@@ -16799,11 +16945,20 @@ char *SRG_ID_Generator( void ) {
 	return EncodeBase64Ex( (uint8*)buf, (16+16), &outlen, (const char *)1 );
 }
 char *SRG_ID_Generator_256( void ) {
-	static struct random_context *ctx;
+	static struct random_context *_ctx[32];
+	static uint32_t used[32];
 	uint32_t buf[2 * (16 + 16)];
 	size_t outlen;
-	if( !ctx ) ctx = SRG_CreateEntropy2_256( salt_generator, 0 );
+	int usingCtx;
+	static struct random_context *ctx;
+	usingCtx = 0;
+	do {
+		while( used[++usingCtx] ) { if( ++usingCtx >= 32 ) usingCtx = 0; }
+	} while( LockedExchange( used + usingCtx, 1 ) );
+	ctx = _ctx[usingCtx];
+	if( !ctx ) ctx = _ctx[usingCtx] = SRG_CreateEntropy2_256( salt_generator, 0 );
 	SRG_GetEntropyBuffer( ctx, buf, 8 * (16 + 16) );
+	used[usingCtx] = 0;
 	return EncodeBase64Ex( (uint8*)buf, (16 + 16), &outlen, (const char *)1 );
 }
 char *SRG_ID_Generator3( void ) {
@@ -17039,7 +17194,7 @@ SACK_NAMESPACE
 #define BASE_COLOR_PURPLE        Color( 0x7A, 0x11, 0x7C )
 #ifdef __cplusplus
  //	 namespace image {
-};
+}
 SACK_NAMESPACE_END
 using namespace sack::image;
 #endif
@@ -17891,8 +18046,8 @@ static void MD5_memset (uint8_t* output, int value, unsigned int len)
  *      Please read the file sha1.c for more information.
  *
  */
-#ifndef _SHA1_H_
-#define _SHA1_H_
+#ifndef INCLUDED_SHA1_H_
+#define INCLUDED_SHA1_H_
 #ifdef SHA1_SOURCE
 #define SHA1_PROC(type,name) EXPORT_METHOD type CPROC name
 #else
@@ -19856,6 +20011,7 @@ void RootDestructor( void )
 #endif
 #endif
 #endif
+#undef l
 SACK_DEADSTART_NAMESPACE_END
 /*
  *  Crafted by James Buckeyne
@@ -19914,9 +20070,9 @@ IDLE_PROC( int, Idle )( void );
 IDLE_PROC( int, IdleFor )( uint32_t dwMilliseconds );
 #ifdef __cplusplus
 //	namespace timers {
-	};
+	}
 //namespace sack {
-};
+}
 using namespace sack::timers;
 #endif
 #endif
@@ -20171,7 +20327,9 @@ uint64_t GetCPUTick(void )
 			uint64_t tick;
 			PREFIX_PACKED struct { uint32_t low, high; } PACKED parts;
 		}tick;
+#ifndef PEDANTIC_TEST
 		asm( "rdtsc\n" : "=a"(tick.parts.low), "=d"(tick.parts.high) );
+#endif
 		if( !(*syslog_local).lasttick )
 			(*syslog_local).lasttick = tick.tick;
 		else if( tick.tick < (*syslog_local).lasttick )
@@ -20857,6 +21015,8 @@ static void SyslogdSystemLog( const TEXTCHAR *message )
 //---------------------------------------------------------------------------
 LOGICAL IsBadReadPtr( CPOINTER pointer, uintptr_t len )
 {
+ // reference unused.
+   (void)len;
 	static FILE *maps;
 	//return FALSE;
 	//DebugBreak();
@@ -21232,7 +21392,7 @@ void  SetSystemLog ( enum syslog_types type, const void *data )
 	}
 	else if( type == SYSLOG_CALLBACK )
 	{
-		(*syslog_local).UserCallback = (UserLoggingCallback)data;
+		(*syslog_local).UserCallback = (UserLoggingCallback)(uintptr_t)data;
 	}
 	else
 	{
@@ -21294,6 +21454,10 @@ static struct next_lprint_info *GetNextInfo( void )
 }
 static INDEX CPROC _null_vlprintf ( CTEXTSTR format, va_list args )
 {
+ // fix unused
+   (void)format;
+ // fix unused
+   (void)args;
 	return 0;
 }
 static INDEX CPROC _real_vlprintf ( CTEXTSTR format, va_list args )
@@ -21420,6 +21584,8 @@ static INDEX CPROC _real_lprintf( CTEXTSTR f, ... )
 }
 static INDEX CPROC _null_lprintf( CTEXTSTR f, ... )
 {
+ // fix unused
+   (void)f;
 	return 0;
 }
 RealVLogFunction  _vxlprintf ( uint32_t level DBG_PASS )
@@ -21975,7 +22141,7 @@ void loadMacLibraries(struct local_systemlib_data *init_l) {
     if((path_size = proc_pidpath(pid, path, sizeof(path))))
         path[path_size] = 0;
     else
-        strcpy(path, "????");
+        strcpy(path, "~/");
     //printf("%d: %s\n", pid, path);
     {
 				TEXTCHAR *ext, *ext1;
@@ -22383,8 +22549,10 @@ LOGICAL CPROC StopProgram( PTASK_INFO task )
 	else
 		return TRUE;
 #else
-	//lprintf( "need to send kill() to signal process to stop" );
+//lprintf( "need to send kill() to signal process to stop" );
+#ifndef PEDANTIC_TEST
 	kill( task->pid, SIGINT );
+#endif
 #endif
 	return FALSE;
 }
@@ -22451,7 +22619,9 @@ uintptr_t CPROC TerminateProgram( PTASK_INFO task )
 //			else
 //				lprintf( WIDE( "Would have close handles rudely." ) );
 #else
+#ifndef PEDANTIC_TEST
 			kill( task->pid, SIGTERM );
+#endif
 			// wait a moment for it to die...
 #endif
 		}
@@ -24337,7 +24507,7 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramExx )( CTEXTSTR program, CTEXTSTR path
 					}
 					newArgs[n + 1] = (char*)args[n];
 					newArgs[0] = (char*)program;
-					args = newArgs;
+					args = (PCTEXTSTR)newArgs;
 				}
 				char *_program = CStrDup( program );
 				// in case exec fails, we need to
@@ -26128,6 +26298,8 @@ IMAGE_NAMESPACE_END
 #ifdef _VULKAN_DRIVER
 #  ifdef _WIN32
 #    define VK_USE_PLATFORM_WIN32_KHR
+#  else
+#    define VK_USE_PLATFORM_XCB_KHR
 #  endif
 #  include <vulkan/vulkan.h>
 #endif
@@ -26230,10 +26402,10 @@ IMAGE_NAMESPACE_END
 #  define USE_VECTOR_NAMESPACE
 #endif
 #ifdef MAKE_RCOORD_SINGLE
-#  define VECTOR_METHOD(r,n,args) MATHLIB_EXPORT r n##f args;
+#  define VECTOR_METHOD(r,n,args) MATHLIB_EXPORT r n##f args
 #  define EXTERNAL_NAME(n)  n##f
 #else
-#  define VECTOR_METHOD(r,n,args) MATHLIB_EXPORT r n##d args;
+#  define VECTOR_METHOD(r,n,args) MATHLIB_EXPORT r n##d args
 #  define EXTERNAL_NAME(n)  n##d
 #endif
 #ifndef VECTOR_TYPES_DEFINED
@@ -29966,7 +30138,7 @@ enum {
 #define MINGW_SUX
 #endif
 // static void OnBeginShutdown( "Unique Name" )( void ) { /* run shutdown code */ }
-#define OnBeginShutdown(name)	 __DefineRegistryMethod(WIDE("SACK"),BeginShutdown,WIDE("System"),WIDE("Begin Shutdown"),name WIDE("_begin_shutdown"),void,(void),__LINE__)
+#define OnBeginShutdown(name)	 DefineRegistryMethod(WIDE("SACK"),BeginShutdown,WIDE("System"),WIDE("Begin Shutdown"),name WIDE("_begin_shutdown"),void,(void),__LINE__)
 /* function signature for the close callback  which can be specified to handle events to close the display.  see SetCloseHandler. */
 typedef void (CPROC*CloseCallback)( uintptr_t psvUser );
 /* function signature to define hide/restore callback, it just gets the user data of the callback... */
@@ -30721,7 +30893,7 @@ RENDER_PROC( int, UnbindKey )( PRENDERER pRenderer, uint32_t scancode, uint32_t 
    0.                                                          */
 RENDER_PROC( int, IsTouchDisplay )( void );
 // static void OnInputTouch( "Touch Handler" )(
-#define OnSurfaceInput(name)	 __DefineRegistryMethod(WIDE("sack/render"),SurfaceInput,WIDE("surface input"),WIDE("SurfaceInput"),name,void,( int nInputs, PINPUT_POINT pInputs ),__LINE__)
+#define OnSurfaceInput(name)	 DefineRegistryMethod(WIDE("sack/render"),SurfaceInput,WIDE("surface input"),WIDE("SurfaceInput"),name,void,( int nInputs, PINPUT_POINT pInputs ),__LINE__)
 #ifndef PSPRITE_METHOD
 /* Unused. Incomplete. */
 #define PSPRITE_METHOD PSPRITE_METHOD
@@ -31291,17 +31463,17 @@ typedef int check_this_variable;
 	// OnDisplayPause is called on systems that allow the application to suspend its display.
 	// Sleep mode may also trigger such an event, allows application to save state
    // a media player, for instance, may recover unplayed buffers to prepare for resume
-#define OnDisplaySizeChange(name)	 __DefineRegistryMethod(WIDE("sack/render"),OnDisplaySizeChange,WIDE("display"),name,WIDE("on_display_size_change"),void,( uintptr_t psv_redraw, int nDisplay, int32_t x, int32_t y, uint32_t width, uint32_t height ),__LINE__)
+#define OnDisplaySizeChange(name)	 DefineRegistryMethod(WIDE("sack/render"),OnDisplaySizeChange,WIDE("display"),name,WIDE("on_display_size_change"),void,( uintptr_t psv_redraw, int nDisplay, int32_t x, int32_t y, uint32_t width, uint32_t height ),__LINE__)
 // static void OnDisplayPause( WIDE("") )( void )
 	// OnDisplayPause is called on systems that allow the application to suspend its display.
 	// Sleep mode may also trigger such an event, allows application to save state
    // a media player, for instance, may recover unplayed buffers to prepare for resume
-#define OnDisplayPause(name)	 __DefineRegistryMethod(WIDE("sack/render/android"),OnDisplayPause,WIDE("display"),name,WIDE("on_display_pause"),void,(void),__LINE__)
+#define OnDisplayPause(name)	 DefineRegistryMethod(WIDE("sack/render/android"),OnDisplayPause,WIDE("display"),name,WIDE("on_display_pause"),void,(void),__LINE__)
 // static void OnDisplayResume( WIDE("") )( void )
 	// OnDisplayResume is called on systems that allow the application to suspend its display.
 	// Wake from sleep mode may also trigger such an event, allows application to restore saved state
    // a media player, for instance, may continue playing ( it might be good to wait just a little longer than 'now')
-#define OnDisplayResume(name)	 __DefineRegistryMethod(WIDE("sack/render/android"),OnDisplayResume,WIDE("display"),name,WIDE("on_display_resume"),void,(void),__LINE__)
+#define OnDisplayResume(name)	 DefineRegistryMethod(WIDE("sack/render/android"),OnDisplayResume,WIDE("display"),name,WIDE("on_display_resume"),void,(void),__LINE__)
 	struct display_app;
 	struct display_app_local;
 	// static void OnDisplayConnect( WIDE("") )( struct display_app*app, struct display_app_local ***pppLocal )
@@ -31316,9 +31488,9 @@ typedef int check_this_variable;
 	//       //... init local here
 	//  }
 	//
-#define OnDisplayConnect(name)	 __DefineRegistryMethod(WIDE("/sack/render/remote display"),OnDisplayConnect,WIDE("connect"),name,WIDE("new_display_connect"),void,(struct display_app*app, struct display_app_local ***),__LINE__)
+#define OnDisplayConnect(name)	 DefineRegistryMethod(WIDE("/sack/render/remote display"),OnDisplayConnect,WIDE("connect"),name,WIDE("new_display_connect"),void,(struct display_app*app, struct display_app_local ***),__LINE__)
 	// unimplemented.
-#define OnDisplayConnected(name)	 __DefineRegistryMethod(WIDE("/sack/render/remote display"),OnDisplayConnect,WIDE("connect"),name,WIDE("new_display_connected"),void,(struct display_app*app),__LINE__)
+#define OnDisplayConnected(name)	 DefineRegistryMethod(WIDE("/sack/render/remote display"),OnDisplayConnect,WIDE("connect"),name,WIDE("new_display_connected"),void,(struct display_app*app),__LINE__)
 RENDER_NAMESPACE_END
 #ifdef __cplusplus
 #ifdef _D3D_DRIVER
@@ -31394,8 +31566,8 @@ struct critical_section_tag {
 typedef struct critical_section_tag CRITICALSECTION;
 #endif
 #ifdef __cplusplus
-	};
-};
+	}
+}
 #endif
 #ifdef __cplusplus
 namespace sack {
@@ -31481,8 +31653,8 @@ struct memory_block_tag
 };
 typedef struct memory_block_tag MEM;
 #ifdef __cplusplus
-	};
-};
+	}
+}
 #endif
 #endif
 #endif
@@ -33658,6 +33830,9 @@ void  RescheduleTimer( uint32_t ID )
 	LeaveCriticalSec( &globalTimerData.csGrab );
 }
 //--------------------------------------------------------------------------
+#ifndef TARGETNAME
+#  define TARGETNAME ""
+#endif
 static void OnDisplayPause( WIDE("@Internal Timers") _WIDE(TARGETNAME) )( void )
 {
 	globalTimerData.flags.bHaltTimers = 1;
@@ -34096,9 +34271,9 @@ IDLE_PROC( int, IdleFor )( uint32_t dwMilliseconds )
 #undef procs
 #ifdef __cplusplus
  //namespace sack {
-};
+}
  //	namespace idle {
-};
+}
 #endif
 #define NO_UNICODE_C
 #define PROCREG_SOURCE
@@ -35131,6 +35306,7 @@ PROCREG_PROC( LOGICAL, RegisterFunctionExx )( PCLASSROOT root
 												  , s2 = GetFullName( oldname->data.proc.name )
 												  //,library
 												  , oldname->data.proc.procname );
+					DumpRegisteredNames();
 					Release( s1 );
 					Release( s2 );
 					// perhaps it's same in a different library...
@@ -36886,8 +37062,8 @@ struct critical_section_tag {
 typedef struct critical_section_tag CRITICALSECTION;
 #endif
 #ifdef __cplusplus
-	};
-};
+	}
+}
 #endif
 #ifdef __cplusplus
 namespace sack {
@@ -36973,8 +37149,8 @@ struct memory_block_tag
 };
 typedef struct memory_block_tag MEM;
 #ifdef __cplusplus
-	};
-};
+	}
+}
 #endif
 #endif
 #endif
@@ -37188,7 +37364,7 @@ struct global_memory_tag global_memory_data = { 0x10000 * 0x08, 1, 1
 #else
 #define BLOCK_TAG(pc)  (*(uint32_t*)((pc)->byData + (pc)->dwSize - (pc)->dwPad ))
 // so when we look at memory this stamp is 12345678
-#define TAG_FORMAT_MODIFIER ""
+#define TAG_FORMAT_MODIFIER "l"
 #define BLOCK_TAG_ID 0x78563412L
 #endif
 // file/line info are at the very end of the physical block...
@@ -37219,10 +37395,10 @@ PRIORITY_PRELOAD( InitGlobal, DEFAULT_PRELOAD_PRIORITY )
 	g.allowLogging = 1;
 }
 #if __GNUC__
+//#  pragma message( "GNUC COMPILER")
 #  ifndef __ATOMIC_RELAXED
 #    define __ATOMIC_RELAXED 0
 #  endif
-//#    define DoXchg  XCHG
 #  ifndef __GNUC_VERSION
 #    define __GNUC_VERSION ( __GNUC__ * 10000 ) + ( __GNUC_MINOR__ * 100 )
 #  endif
@@ -37262,8 +37438,8 @@ uint32_t  LockedExchange( volatile uint32_t* p, uint32_t val )
 	//   return __atomic_exchange_n(p,val,__ATOMIC_RELAXED);
 #  else
 	{
-			// swp is the instruction....
-			uint32_t prior = *p;
+		// swp is the instruction....
+		uint32_t prior = *p;
 		*p = val;
 		return prior;
 	}
@@ -37345,7 +37521,7 @@ static void DumpSection( PCRITICALSECTION pcs )
 #endif
 #ifdef __cplusplus
  // namespace memory {
-};
+}
  // begin timer namespace
 	namespace timers {
 #endif
@@ -37723,7 +37899,7 @@ static void DumpSection( PCRITICALSECTION pcs )
 #endif
 #ifdef __cplusplus
  // namespace timers {
-	};
+	}
  // resume memory namespace
 	namespace memory {
 #endif
@@ -38098,6 +38274,9 @@ uintptr_t GetFileSize( int fd )
 		int exists = FALSE;
 		if( !pWhat && !pWhere)
 		{
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS 0x20
+#endif
 			pMem = mmap( 0, *dwSize
 						 , PROT_READ|PROT_WRITE
 						 , MAP_SHARED|MAP_ANONYMOUS
@@ -38890,10 +39069,12 @@ POINTER HeapAllocateAlignedEx( PMEM pHeap, uintptr_t dwSize, uint16_t alignment 
 			pHeap = g.pMemInstance;
 		pMem = GrabMem( pHeap );
 #ifdef __64__
+		dwPad = (((dwSize + 7) & 0xFFFFFFFFFFFFFFF8) - dwSize);
  // fix size to allocate at least _32s which
 		dwSize += 7;
 		dwSize &= 0xFFFFFFFFFFFFFFF8;
 #else
+		dwPad = (((dwSize + 3) & 0xFFFFFFFC) -dwSize);
  // fix size to allocate at least _32s which
 		dwSize += 3;
 		dwSize &= 0xFFFFFFFC;
@@ -39920,10 +40101,10 @@ void  DebugDumpHeapMemEx ( PMEM pHeap, LOGICAL bVerbose )
 						int minPad = MAGIC_SIZE;
 						if( pMem && !(pMem->dwFlags & HEAP_FLAG_NO_DEBUG) )
 							minPad += MAGIC_SIZE * 2;
-						if( pc->dwPad >= minPad && BLOCK_TAG(pc) != BLOCK_TAG_ID )
+						if( ( pc->dwPad >= minPad ) && ( BLOCK_TAG(pc) != BLOCK_TAG_ID ) )
 						{
 #ifndef NO_LOGGING
-							ll_lprintf( WIDE("memory block: %p %08") TAG_FORMAT_MODIFIER WIDE("x insted of %08")TAG_FORMAT_MODIFIER WIDE("x"), pc->byData, BLOCK_TAG(pc), BLOCK_TAG_ID );
+							ll_lprintf( WIDE("memory block: %p(%p) %08") TAG_FORMAT_MODIFIER WIDE("x instead of %08")TAG_FORMAT_MODIFIER WIDE("x"), pc, pc->byData, BLOCK_TAG(pc), BLOCK_TAG_ID );
 							if( !(pMemCheck->dwFlags & HEAP_FLAG_NO_DEBUG ) )
 							{
 								CTEXTSTR file = BLOCK_FILE(pc);
@@ -40120,9 +40301,9 @@ PRELOAD( ShareMemToVSAllocHook )
 #endif
 #ifdef __cplusplus
 //namespace sack {
-};
+}
 //	namespace memory {
-};
+}
 #endif
 /*
  *  Crafted by James Buckeyne
@@ -40716,7 +40897,7 @@ SACK_MEMORY_NAMESPACE_END
 #ifdef WIN32
 #endif
 #ifndef UNDER_CE
-//#include <fcntl.h>
+  // O_BINARY
 //#include <io.h>
 #endif
 FILESYS_NAMESPACE
@@ -42429,7 +42610,7 @@ size_t  sack_fread ( POINTER buffer, size_t size, int count,FILE *file_file )
 {
 	struct file *file;
 	file = FindFileByFILE( file_file );
-	if( file->mount && file->mount->fsi )
+	if( file && file->mount && file->mount->fsi )
 		return file->mount->fsi->_read( file_file, (char*)buffer, size * count );
 	return fread( buffer, size, count, file_file );
 }
@@ -42857,7 +43038,7 @@ static	size_t CPROC sack_filesys_find_get_size( struct find_cursor *_cursor ) {
 			lprintf( "getsize stat error:%d", errno );
 			return -2;
 		}
-		if( s.st_mode & S_IFREG )
+		if( S_ISREG(s.st_mode) )
 			return s.st_size;
 		return -1;
 	}
@@ -43061,7 +43242,11 @@ LOGICAL SetFileLength( CTEXTSTR path, size_t length )
 #ifdef __LINUX__
 	// files are by default binary in linux
 #  ifndef O_BINARY
-#	define O_BINARY 0
+#	   define O_BINARY 0
+#  endif
+#else
+#  ifndef O_BINARY
+#	   define O_BINARY 0x8000
 #  endif
 #endif
 	INDEX file;
@@ -43844,6 +44029,7 @@ tnprintf( tmpbuf, sizeof( tmpbuf ), WIDE( "%s/%s" ), findbasename( pInfo ), de->
 }
 FILESYS_NAMESPACE_END
 #ifdef __LINUX__
+//#include <linux/time.h> // struct tz
 #endif
 //-----------------------------------------------------------------------
 FILESYS_NAMESPACE
@@ -43925,9 +44111,10 @@ uint64_t GetTimeAsFileTime ( void )
 {
 #if defined( __LINUX__ )
 	struct timeval tmp;
-	struct timezone tz;
+	//struct timezone tz;
 	FILETIME result;
-	gettimeofday( &tmp, &tz );
+//&tz );
+	gettimeofday( &tmp, NULL );
 	result = ( tmp.tv_usec * 10LL ) + ( tmp.tv_sec * 1000LL * 1000LL * 10LL );
 	return result;
 #else
@@ -45634,9 +45821,9 @@ PRIORITY_PRELOAD( InitLocals, NAMESPACE_PRELOAD_PRIORITY + 1 )
 #endif
 #ifdef __cplusplus
  //namespace sack {
-};
+}
  //	namespace containers {
-};
+}
 #endif
 //--------------------------------------------------------------
 // $Log: typecode.c,v $
@@ -49197,10 +49384,10 @@ PRELOAD( initTables ) {
 	int n, m;
 	for( n = 0; n < (sizeof( encodings )-1); n++ )
 		for( m = 0; m < (sizeof( encodings )-1); m++ ) {
-			b64xor_table[encodings[n]][encodings[m]] = encodings[n^m];
-			u8xor_table[n][encodings[m]] = n^m;
-			b64xor_table2[encodings2[n]][encodings2[m]] = encodings2[n^m];
-			u8xor_table2[n][encodings2[m]] = n^m;
+			b64xor_table[(uint8_t)encodings[n]][(uint8_t)encodings[m]] = encodings[n^m];
+			u8xor_table[n][(uint8_t)encodings[m]] = n^m;
+			b64xor_table2[(uint8_t)encodings2[n]][(uint8_t)encodings2[m]] = encodings2[n^m];
+			u8xor_table2[n][(uint8_t)encodings2[m]] = n^m;
 	}
 	//LogBinary( (uint8_t*)u8xor_table[0], sizeof( u8xor_table ) );
 	b64xor_table['=']['='] = '=';
@@ -49209,7 +49396,7 @@ char * b64xor( const char *a, const char *b ) {
 	int n;
 	char *out = NewArray( char, strlen(a) + 1);
 	for( n = 0; a[n]; n++ ) {
-		out[n] = b64xor_table[a[n]][b[n]];
+		out[n] = b64xor_table[(uint8_t)a[n]][(uint8_t)b[n]];
 	}
 	out[n] = 0;
 	return out;
@@ -49254,6 +49441,7 @@ char * u8xor( const char *a, size_t alen, const char *b, size_t blen, int *ofs )
 }
 static const char * const _base642 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$_=";
 static const char * const _base64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+static const char * _last_base64_set;
 static char _base64_r[256];
 static void encodeblock( unsigned char in[3], TEXTCHAR out[4], size_t len, const char *base64 )
 {
@@ -49268,7 +49456,7 @@ static void decodeblock( char in[4], uint8_t out[3], size_t len, const char *bas
 	int n;
 	for( n = 0; n < 4; n++ )
 	{
-//   strchr( base64, in[n] );
+		//strchr( base64, in[n] );
 		index[n] = _base64_r[in[n]];
 		//if( ( index[n] - base64 ) == 64 )
 		//	last_byte = 1;
@@ -49305,11 +49493,14 @@ TEXTCHAR *EncodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const ch
 	return real_output;
 }
 static void setupDecodeBytes( const char *code ) {
-   int n = 0;
-   memset( _base64_r, 0, 256 );
-	while( *code ) {
-      _base64_r[*code] = n++;
-      code++;
+	int n = 0;
+	if( _last_base64_set != code ) {
+		_last_base64_set = code;
+		memset( _base64_r, 0, 256 );
+		while( *code ) {
+			_base64_r[*code] = n++;
+			code++;
+		}
 	}
 }
 uint8_t *DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *base64 )
@@ -49348,11 +49539,11 @@ uint8_t *DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *
 }
 #ifdef __cplusplus
  //namespace text {
-};
+}
  //namespace containers {
-};
+}
  // namespace sack {
-};
+}
 #endif
 /*
  *  Crafted by James Buckeyne
@@ -50268,11 +50459,11 @@ PTREEROOT ShadowBinaryTree( PTREEROOT Original )
 }
 #ifdef __cplusplus
  // namespace BinaryTree {
-};
+}
  //namespace containers {
-};
+}
  //namespace sack {
-};
+}
 #endif
 //---------------------------------------------------------------------------
 // $Log: binarylist.c,v $
@@ -50514,15 +50705,20 @@ PFAMILYNODE  FamilyTreeAddChild ( PFAMILYTREE *root, PFAMILYNODE parent, POINTER
 		node->parent = parent;
 		if( !node->parent )
 		{
-			if( ( node->elder = (*root)->family ) )
-				(*root)->family->younger = node;
+			if( (*root)->prior ) {
+				if( ( node->elder = (*root)->prior->child ) )
+					(*root)->family->younger = node;
+			} else
+				node->elder = NULL;
 			(*root)->family = node;
 		}
 		else
 		{
-			if( ( node->elder = (*root)->prior->child ) )
-				node->elder->younger = node;
-			(*root)->prior->child = node;
+			if( (*root)->prior ) {
+				if( ( node->elder = (*root)->prior->child ) )
+					node->elder->younger = node;
+				(*root)->prior->child = node;
+			}
 		}
 		(*root)->prior = node;
 		(*root)->lastfound = node;
@@ -50533,11 +50729,11 @@ PFAMILYNODE  FamilyTreeAddChild ( PFAMILYTREE *root, PFAMILYNODE parent, POINTER
 }
 #ifdef __cplusplus
  //namespace family {
-};
+}
  //namespace containers {
-};
+}
  //namespace sack {
-};
+}
 #endif
 /*
  *
@@ -51072,11 +51268,11 @@ uintptr_t ForEachSetMember( GENERICSET *pSet, int unitsize, int max, FESMCallbac
 }
 #ifdef __cplusplus
 //	namespace sets {
-	};
+	}
  //	namespace containers {
-	};
+	}
  //namespace sack {
-};
+}
 #endif
 // $Log: sets.c,v $
 // Revision 1.15  2005/05/20 21:47:10  jim
@@ -52021,17 +52217,17 @@ typedef class network
    static void CPROC SetClose( PCLIENT pc, cppCloseCallback, uintptr_t psv );
 public:
 	network() { NetworkStart(); pc = NULL; TCP = TRUE; };
-	network( PCLIENT pc ) { NetworkStart(); this->pc = pc; TCP = TRUE; };
+	network( PCLIENT _pc ) { NetworkStart(); this->pc = _pc; TCP = TRUE; };
 	network( network &cp ) { cp.pc = pc; cp.TCP = TCP; };
 	~network() { if( pc ) RemoveClientEx( pc, TRUE, FALSE ); pc = NULL; };
 	inline void MakeUDP( void ) { TCP = FALSE; }
-	virtual void ReadComplete( POINTER buffer, size_t nSize ) {}
-	virtual void ReadComplete( POINTER buffer, size_t nSize, SOCKADDR *sa ) {}
-	virtual void WriteComplete( void ) {}
-	virtual void ConnectComplete( int nError ) {}
+	virtual void ReadComplete( POINTER buffer, size_t nSize ) = 0;
+	virtual void ReadComplete( POINTER buffer, size_t nSize, SOCKADDR *sa ) = 0;
+	virtual void WriteComplete( void ) = 0;
+	virtual void ConnectComplete( int nError ) =0;
 	// received on the server listen object...
-	virtual void ConnectComplete( class network &pNewClient ) {}
-	virtual void CloseCallback( void ) {}
+	virtual void ConnectComplete( class network &pNewClient ) =0;
+	virtual void CloseCallback( void ) =0;
 	inline int Connect( SOCKADDR *sa )
 	{
 		if( !pc )
@@ -57116,7 +57312,7 @@ static void CPROC WebSocketClientClosed( PCLIENT pc )
 		Release( websock );
 	}
 	else
-		lprintf( "websocket handle is gone from socket|" );
+		lprintf( "websocket handle is gone from socket?""?""!" );
 }
 static void CPROC WebSocketClientConnected( PCLIENT pc, int error )
 {
@@ -59579,6 +59775,9 @@ static void FillDataToElement( struct json_context_object_element *element
 		{
 			switch( val->value_type )
 			{
+			default:
+				lprintf( "FAULT: UNEXPECTED VALUE TYPE RECOVERINT IDENT:%d", val->value_type );
+				break;
 			case VALUE_NUMBER:
 				if( val->float_result )
 				{
@@ -59594,6 +59793,9 @@ static void FillDataToElement( struct json_context_object_element *element
 			}
 		}
 		break;
+	default:
+		lprintf( "FAULT: UNEXPECTED ELEMENT TYPE" );
+      break;
 	}
 }
 LOGICAL json_decode_message( struct json_context *format
@@ -61440,8 +61642,8 @@ int json6_parse_add_data( struct json_parse_state *state
 							}
 #endif
 							else if( ( c == 'x' || c == 'b' || c =='o' || c == 'X' || c == 'B' || c == 'O')
-							       && ( output->pos - output->buf ) == 1
-							       && output->buf[0] == '0' ) {
+							       && ( output->pos - state->val.string ) == 1
+							       && state->val.string[0] == '0' ) {
 								// hex conversion.
 								if( !state->fromHex ) {
 									state->fromHex = TRUE;
@@ -61512,10 +61714,16 @@ int json6_parse_add_data( struct json_parse_state *state
 									break;
 								}
 								else {
-									state->status = FALSE;
-									if( !state->pvtError ) state->pvtError = VarTextCreate();
-									vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-									break;
+									if( state->parse_context == CONTEXT_UNKNOWN ) {
+										(*output->pos) = 0;
+										break;
+									}
+									else {
+										state->status = FALSE;
+										if( !state->pvtError ) state->pvtError = VarTextCreate();
+										vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+										break;
+									}
 								}
 							}
 						}
@@ -61595,6 +61803,9 @@ int json6_parse_add_data( struct json_parse_state *state
 					if( state->parse_context == CONTEXT_UNKNOWN
 					  && ( state->val.value_type != VALUE_UNSET
 					     || state->elements[0]->Cnt ) ) {
+						if( state->word == WORD_POS_END ) {
+							state->word = WORD_POS_RESET;
+						}
 						state->completed = TRUE;
 						retval = 1;
 					}
@@ -61754,12 +61965,6 @@ LOGICAL json6_parse_message( const char * msg
 	jpsd.last_parse_state = state;
 	_state = state;
 	return FALSE;
-}
-void json6_dispose_decoded_message( struct json6_context_object *format
-                                 , POINTER msg_data )
-{
-	// a complex format might have sub-parts .... but for now we'll assume simple flat structures
-	//Release( msg_data );
 }
 void json6_dispose_message( PDATALIST *msg_data )
 {
@@ -61957,6 +62162,9 @@ static void FillDataToElement6( struct json_context_object_element *element
 		{
 			switch( val->value_type )
 			{
+			default:
+				lprintf( "FAULT: UNEXPECTED VALUE TYPE RECOVERINT IDENT:%d", val->value_type );
+				break;
 			case VALUE_NUMBER:
 				if( val->float_result )
 				{
@@ -62535,7 +62743,7 @@ char *jsox_escape_string( const char *string ) {
 #define _4char(result,from)  ( ((*from) += 4), ( ( ( result & 0x7 ) << 18 )						     | ( ( result & 0x3F00 ) << 4 )						   | ( ( result & 0x3f0000 ) >> 10 )						    | ( ( result & 0x3f000000 ) >> 24 ) ) )
 #define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),		     ( ( !(result & 0xFF) )              ?_zero(result,from)	                                                    :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
 #define GetUtfChar(x) __GetUtfChar(c,x)
-static int gatherString6(struct jsox_parse_state *state, CTEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TEXTSTR *pmOut, TEXTRUNE start_c
+static int gatherStringX(struct jsox_parse_state *state, CTEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TEXTSTR *pmOut, TEXTRUNE start_c
 		//, int literalString
 		) {
 	char *mOut = (*pmOut);
@@ -62896,6 +63104,7 @@ static LOGICAL openArray( struct jsox_parse_state *state, struct jsox_output_buf
 		PushLink( state->context_stack, old_context );
 		JSOX_RESET_STATE_VAL();
 		state->parse_context = JSOX_CONTEXT_IN_ARRAY;
+		state->word = JSOX_WORD_POS_RESET;
 	}
 	return TRUE;
 }
@@ -62909,6 +63118,9 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 		}
 		if( state->word == JSOX_WORD_POS_END ) {
 			switch( state->val.value_type ) {
+			default:
+				lprintf( "FAULT: UNEXPECTED VALUE TYPE RECOVERINT IDENT:%d", state->val.value_type );
+				break;
 			case JSOX_VALUE_TRUE:
 				(*output->pos++) = 't';
 				(*output->pos++) = 'r';
@@ -62961,6 +63173,14 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 			}
 		}
 		switch( state->word ) {
+		default:
+			lprintf( "FAULT: UNEXPECTED VALUE WORD POS RECOVERING IDENT:%d", state->word );
+			break;
+		case JSOX_WORD_POS_AFTER_FIELD:
+		case JSOX_WORD_POS_FIELD:
+  // full text fro before.
+		case JSOX_WORD_POS_END:
+			break;
 		case JSOX_WORD_POS_TRUE_1:
 			(*output->pos++) = 't';
 			break;
@@ -63141,8 +63361,11 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 	else if( cInt >= 0 ) {
 		// ignore white space.
 /*' '*/
-		if( cInt == 32 || cInt == 13 || cInt == 10 || cInt == 9 || cInt == 0xFEFF || cInt == 2028 || cInt == 2029 )
+		if( cInt == 32 || cInt == 13 || cInt == 10 || cInt == 9 || cInt == 0xFEFF || cInt == 2028 || cInt == 2029 ) {
+			state->word = JSOX_WORD_POS_END;
+			state->val.stringLen = output->pos - state->val.string;
 			return 0;
+		}
 /*','*/
 /*'}'*/
 /*']'*/
@@ -63156,6 +63379,7 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 #ifdef DEBUG_PARSING
 			lprintf( "Collected .. %d %c  %*.*s", cInt, cInt, output->pos - state->val.string, output->pos - state->val.string, state->val.string );
 #endif
+			state->val.stringLen = output->pos - state->val.string;
 		}
 	}
 	return 0;
@@ -63214,7 +63438,10 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 		input->pos = input->buf = msg;
 		input->size = msglen;
 		EnqueLinkNL( state->inBuffers, input );
-		if( state->gatheringString || state->gatheringNumber || state->parse_context == JSOX_CONTEXT_OBJECT_FIELD ) {
+		if( state->gatheringString
+			|| state->gatheringNumber
+			|| state->word == JSOX_WORD_POS_FIELD
+			|| state->parse_context == JSOX_CONTEXT_OBJECT_FIELD ) {
 			// have to extend the previous output buffer to include this one instead of allocating a split string.
 			size_t offset;
 			size_t offset2;
@@ -63273,7 +63500,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 		state->n = input->pos - input->buf;
 		if( state->n > input->size ) DebugBreak();
 		if( state->gatheringString ) {
-			string_status = gatherString6( state, input->buf, &input->pos, input->size, &output->pos, state->gatheringStringFirstChar );
+			string_status = gatherStringX( state, input->buf, &input->pos, input->size, &output->pos, state->gatheringStringFirstChar );
 			if( string_status < 0 )
 				state->status = FALSE;
 			else if( string_status > 0 )
@@ -63368,6 +63595,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						if( !state->pvtError ) state->pvtError = VarTextCreate();
 						vtprintf( state->pvtError, "two names single value?" );
 					}
+					state->word = JSOX_WORD_POS_RESET;
 					state->val.name = state->val.string;
 					state->val.nameLen = state->val.stringLen;
 					state->val.string = NULL;
@@ -63504,10 +63732,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				}
 				break;
 			case ']':
-				if( state->word == JSOX_WORD_POS_END ) {
-					// allow starting a new word
-					state->word = JSOX_WORD_POS_RESET;
-				}
+				state->word = JSOX_WORD_POS_RESET;
 				if( state->parse_context == JSOX_CONTEXT_IN_ARRAY )
 				{
 #ifdef DEBUG_PARSING
@@ -63524,6 +63749,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 							}
 						}
 						pushValue( state, state->elements, &state->val );
+						JSOX_RESET_STATE_VAL();
 					}
 					state->val.value_type = JSOX_VALUE_ARRAY;
 					//state->val.string = NULL;
@@ -63607,6 +63833,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					lprintf( "comma after field value, push field to object: %s", state->val.name );
 #endif
 					state->parse_context = JSOX_CONTEXT_OBJECT_FIELD;
+					state->word = JSOX_WORD_POS_RESET;
 					if( state->val.value_type != JSOX_VALUE_UNSET )
 						pushValue( state, state->elements, &state->val );
 					JSOX_RESET_STATE_VAL();
@@ -63621,7 +63848,8 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				break;
 			default:
 				if( state->parse_context == JSOX_CONTEXT_OBJECT_FIELD
-				   || state->parse_context == JSOX_CONTEXT_UNKNOWN
+				   //|| state->parse_context == JSOX_CONTEXT_UNKNOWN
+				   //|| state->parse_context == JSOX_CONTEXT_IN_ARRAY
 				   || (state->parse_context == JSOX_CONTEXT_OBJECT_FIELD_VALUE && state->word == JSOX_WORD_POS_FIELD )
 				   || state->parse_context == JSOX_CONTEXT_CLASS_FIELD
 				) {
@@ -63650,7 +63878,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						state->val.string = output->pos;
 						state->gatheringString = TRUE;
 						state->gatheringStringFirstChar = c;
-						string_status = gatherString6( state, input->buf, &input->pos, input->size, &output->pos, c );
+						string_status = gatherStringX( state, input->buf, &input->pos, input->size, &output->pos, c );
 						//lprintf( "string gather status:%d", string_status );
 						if( string_status < 0 )
 							state->status = FALSE;
@@ -63699,8 +63927,12 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 								state->completed = TRUE;
 								break;
 							}
-							if( state->val.string )
+							if( state->val.string ) {
+								state->val.value_type = JSOX_VALUE_STRING;
 								state->word = JSOX_WORD_POS_AFTER_FIELD;
+								if( state->parse_context == JSOX_CONTEXT_UNKNOWN )
+									state->completed = TRUE;
+							}
 						}
 						else {
 							state->status = FALSE;
@@ -63749,10 +63981,16 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					// but gatherString now just gathers all strings
 				case '"':
 				case '\'':
+					if( state->word == JSOX_WORD_POS_FIELD
+						|| ( state->val.value_type == JSOX_VALUE_STRING
+							 && !state->val.className ) ) {
+						(*output->pos++) = 0;
+						state->val.className = state->val.string;
+					}
 					state->val.string = output->pos;
 					state->gatheringString = TRUE;
 					state->gatheringStringFirstChar = c;
-					string_status = gatherString6( state, input->buf, &input->pos, input->size, &output->pos, c );
+					string_status = gatherStringX( state, input->buf, &input->pos, input->size, &output->pos, c );
 					//lprintf( "string gather status:%d", string_status );
 					if( string_status < 0 )
 						state->status = FALSE;
@@ -63772,7 +64010,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					if( state->status ) {
 						state->val.value_type = JSOX_VALUE_STRING;
 						state->completedString = TRUE;
-						state->word = JSOX_WORD_POS_AFTER_FIELD;
+						state->word = JSOX_WORD_POS_END;
 						if( state->complete_at_end ) {
 							if( state->parse_context == JSOX_CONTEXT_UNKNOWN ) {
 								state->completed = TRUE;
@@ -63803,8 +64041,12 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						break;
 					}
 					else if( state->word == JSOX_WORD_POS_FIELD ) {
-						if( state->val.string )
+						if( state->val.string ) {
+							state->val.value_type = JSOX_VALUE_STRING;
 							state->word = JSOX_WORD_POS_AFTER_FIELD;
+							if( state->parse_context == JSOX_CONTEXT_UNKNOWN )
+								state->completed = TRUE;
+						}
 					}
 					else {
 						state->status = FALSE;
@@ -63963,8 +64205,8 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 								state->numberFromDate = TRUE;
 							}
 							else if( ( c == 'x' || c == 'b' || c =='o' || c == 'X' || c == 'B' || c == 'O')
-							       && ( output->pos - output->buf ) == 1
-							       && output->buf[0] == '0' ) {
+							       && ( output->pos - state->val.string) == 1
+							       && state->val.string[0] == '0' ) {
 								// hex conversion.
 								if( !state->fromHex ) {
 									state->fromHex = TRUE;
@@ -64037,10 +64279,16 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 									break;
 								}
 								else {
-									state->status = FALSE;
-									if( !state->pvtError ) state->pvtError = VarTextCreate();
-									vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
-									break;
+									if( state->parse_context == JSOX_CONTEXT_UNKNOWN ) {
+										(*output->pos) = 0;
+										break;
+									}
+									else {
+										state->status = FALSE;
+										if( !state->pvtError ) state->pvtError = VarTextCreate();
+										vtprintf( state->pvtError, WIDE( "fault white parsing number; '%c' unexpected at %" ) _size_f WIDE( "  %" ) _size_f WIDE( ":%" ) _size_f, c, state->n, state->line, state->col );
+										break;
+									}
 								}
 							}
 						}
@@ -64109,7 +64357,10 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 		if( input ) {
 			if( state->n >= input->size ) {
 				DeleteFromSet( JSOX_PARSE_BUFFER, jxpsd.parseBuffers, input );
-				if( state->gatheringString || state->gatheringNumber || state->parse_context == JSOX_CONTEXT_OBJECT_FIELD ) {
+				if( state->gatheringString
+					|| state->gatheringNumber
+					|| state->parse_context == JSOX_CONTEXT_OBJECT_FIELD
+					|| state->word == JSOX_WORD_POS_FIELD ) {
 					//lprintf( "output is still incomplete? " );
 					PrequeLink( state->outQueue, output );
 					retval = 0;
@@ -64119,6 +64370,9 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					if( state->parse_context == JSOX_CONTEXT_UNKNOWN
 					  && ( state->val.value_type != JSOX_VALUE_UNSET
 					     || state->elements[0]->Cnt ) ) {
+						if( state->word == JSOX_WORD_POS_END ) {
+							state->word = JSOX_WORD_POS_RESET;
+						}
 						state->completed = TRUE;
 						retval = 1;
 					}
@@ -64177,13 +64431,13 @@ void _jsox_dispose_message( PDATALIST *msg_data )
 	DeleteDataList( msg_data );
 	DeleteFromSet( PDATALIST, jxpsd.dataLists, msg_data );
 }
-static uintptr_t FindDataList( void*p, uintptr_t psv ) {
+static uintptr_t jsox_FindDataList( void*p, uintptr_t psv ) {
 	if( ((PPDATALIST)p)[0] == (PDATALIST)psv )
 		return (uintptr_t)p;
 	return 0;
 }
 void jsox_dispose_message( PDATALIST *msg_data ) {
-	uintptr_t actual = ForAllInSet( PDATALIST, jxpsd.dataLists, FindDataList, (uintptr_t)msg_data[0] );
+	uintptr_t actual = ForAllInSet( PDATALIST, jxpsd.dataLists, jsox_FindDataList, (uintptr_t)msg_data[0] );
 	_jsox_dispose_message( (PDATALIST*)actual );
 	msg_data[0] = NULL;
 }
@@ -66427,7 +66681,7 @@ int vesl_parse_add_data( struct vesl_parse_state *state
 			state->n = input->pos - input->buf;
 			if( state->n > input->size ) DebugBreak();
 			lprintf( "  --- Character %c(%d) val:%d(%s) context:%d word:%d(%s)  isOp:%d"
-				, c<32?'.':c, c, state->val.value_type, (state->val.value_type >= 0 && state->val.value_type < NUM_VALUE_NAMES)?value_type_names[state->val.value_type]:"????"
+				, c<32?'.':c, c, state->val.value_type, (state->val.value_type >= 0 && state->val.value_type < NUM_VALUE_NAMES)?value_type_names[state->val.value_type]:"?""?""?"
 				, state->parse_context, state->word, word_pos_names[state->word]
 				, (c<127)?TESTFLAG(isOp,c):0);
 			vesl_dump_parse( state->root );
@@ -66921,6 +67175,11 @@ void vesl_dispose_message( PDATALIST *msg_data )
 //
 //  DEBUG FLAGS IN netstruc.h
 //
+#ifndef _DEFAULT_SOURCE
+//#define __USE_MISC
+  // for features.h
+#define _DEFAULT_SOURCE
+#endif
 #define FIX_RELEASE_COM_COLLISION
 #define NO_UNICODE_C
 #define MAIN_PROGRAM
@@ -69940,6 +70199,10 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 	{
 		if( lpName )
 		{
+#ifndef h_addr
+#define h_addr h_addr_list[0]
+#define H_ADDR_DEFINED
+#endif
 #ifdef WIN32
 			{
 				struct addrinfo *result;
@@ -69984,8 +70247,8 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 						lpsaAddr->sin_family = AF_INET;
            // save IP address from host entry.
 						memcpy( &lpsaAddr->sin_addr.S_un.S_addr,
-							 phe->h_addr,
-							 phe->h_length);
+							    phe->h_addr,
+						       phe->h_length);
 					}
 				}
 				else
@@ -70019,6 +70282,10 @@ SOCKADDR *CreateRemote( CTEXTSTR lpName,uint16_t nHisPort)
 					 phe->h_addr,
 					 phe->h_length);
 			}
+#endif
+#ifdef H_ADDR_DEFINED
+#  undef H_ADDR_DEFINED
+#  undef h_addr
 #endif
 		}
 		else
@@ -71190,7 +71457,7 @@ void AcceptClient(PCLIENT pListen)
 					pNewClient->write.WriteComplete( pNewClient );
 				pNewClient->bWriteComplete = FALSE;
 			}
-			//lprintf( "Is it already closed HERE????");
+			//lprintf( "Is it already closed HERE?""?""?");
 			if( pNewClient->Socket ) {
 #ifdef USE_WSA_EVENTS
 				if( globalNetworkData.flags.bLogNotices )
@@ -73709,9 +73976,9 @@ static LOGICAL ssl_InitLibrary( void ){
 	{
 		SSL_library_init();
 		ssl_global.lock_cs = NewArray( uint32_t, CRYPTO_num_locks() );
-		memset( ssl_global.lock_cs, 0, sizeof( uint32_t ) * CRYPTO_num_locks() );
+		memset( ssl_global.lock_cs, 0, sizeof( CRYPTO_num_locks() ) );
 		CRYPTO_set_locking_callback(win32_locking_callback);
-		CRYPTO_set_id_callback((unsigned long (*)())pthreads_thread_id);
+		CRYPTO_set_id_callback(pthreads_thread_id);
 		//tls_init();
 		//ssl_global.tls_config = tls_config_new();
 		SSL_load_error_strings();
@@ -85670,21 +85937,33 @@ int xDeviceCharacteristics(sqlite3_file*file)
 	//struct my_file_data *my_file = (struct my_file_data*)file;
 	return SQLITE_IOCAP_ATOMIC|SQLITE_IOCAP_SAFE_APPEND|SQLITE_IOCAP_UNDELETABLE_WHEN_OPEN|SQLITE_IOCAP_POWERSAFE_OVERWRITE;
 }
-  int xShmMap(sqlite3_file*file, int iPg, int pgsz, int a, void volatile**b)
-  {
-	  return 0;
-  }
-  int xShmLock(sqlite3_file*file, int offset, int n, int flags)
-  {
-	  return 0;
-  }
-  void xShmBarrier(sqlite3_file*file)
-  {
-  }
-  int xShmUnmap(sqlite3_file*file, int deleteFlag)
-  {
-	  return 0;
-  }
+int xShmMap(sqlite3_file*file, int iPg, int pgsz, int a, void volatile**b)
+{
+	(void)file;
+	(void)iPg;
+	(void)pgsz;
+	(void)a;
+	(void)b;
+	return 0;
+}
+int xShmLock(sqlite3_file*file, int offset, int n, int flags)
+{
+	(void)file;
+	(void)offset;
+	(void)n;
+	(void)flags;
+	return 0;
+}
+void xShmBarrier(sqlite3_file*file)
+{
+	(void)file;
+}
+int xShmUnmap(sqlite3_file*file, int deleteFlag)
+{
+	(void)file;
+	(void)deleteFlag;
+	return 0;
+}
 /* Methods above are valid for version 1 */
 //int xShmMap(sqlite3_file*file, int iPg, int pgsz, int, void volatile**);
 //int xShmLock(sqlite3_file*file, int offset, int n, int flags);
@@ -86517,6 +86796,7 @@ struct config_element_tag
 				// either the count will be specified, or this will have to
 				// be auto expanded....
 };
+#define CONFIG_EMPTY_EXTRA ,NULL,NULL,NULL,{0,0,0,0},0,{0}
 typedef struct config_test_tag
 {
 	// this constant list could be a more optimized structure like
@@ -86957,8 +87237,9 @@ static PTEXT CPROC FilterTerminators( POINTER *scratch, PTEXT buffer )
 /* does not need scratch buffer... */
 static PTEXT CPROC FilterEscapesAndComments( POINTER *scratch, PTEXT pText )
 {
-	CTEXTSTR text = GetText( pText );
+	TEXTSTR text = GetText( pText );
 	PTEXT pNewText;
+   (void)scratch;
  /*&& strchr( text, '\\' )*/
 	if( text )
 	{
@@ -86967,7 +87248,7 @@ static PTEXT CPROC FilterEscapesAndComments( POINTER *scratch, PTEXT pText )
 		while( tmp )
 		{
 			int dest = 0, src = 0;
-			TEXTSTR text = GetText( tmp );
+			text = GetText( tmp );
 			while( text && text[src] )
 			{
 				if( text[src] == '\\' )
@@ -87492,7 +87773,7 @@ int IsBooleanVar( PCONFIG_ELEMENT pce, PTEXT *start )
 }
 int GetBooleanVar( PTEXT *start, LOGICAL *data )
 {
-	CONFIG_ELEMENT element = { CONFIG_BOOLEAN };
+	CONFIG_ELEMENT element = { CONFIG_BOOLEAN CONFIG_EMPTY_EXTRA };
 	if( IsBooleanVar( &element, start ) )
 	{
 		if( data )
@@ -87708,7 +87989,7 @@ int IsColorVar( PCONFIG_ELEMENT pce, PTEXT *start )
 }
 int GetColorVar( PTEXT *start, CDATA *data )
 {
-	CONFIG_ELEMENT element = { CONFIG_COLOR };
+	CONFIG_ELEMENT element = { CONFIG_COLOR CONFIG_EMPTY_EXTRA};
 	if( IsColorVar( &element, start ) )
 	{
 		if( data )
@@ -87720,7 +88001,7 @@ int GetColorVar( PTEXT *start, CDATA *data )
 //---------------------------------------------------------------------
 int IsFloatVar( PCONFIG_ELEMENT pce, PTEXT *start )
 {
-	//char *text;
+   (void)start;
 	if( pce->type != CONFIG_FLOAT )
 		return FALSE;
 	//text = GetText( *start );
@@ -87887,7 +88168,7 @@ int IsSingleWordVar( PCONFIG_ELEMENT pce, PTEXT *start )
 			}
 			LIST_FORALL( pce->data[0].multiword.pEnds, idx, struct config_element_tag *, pEnd ){
 				PTEXT _start = *start;
-				if( matched = IsAnyVar( pEnd, start ) )
+				if( ( matched = IsAnyVar( pEnd, start ) ) != 0 )
 				{
 					pce->data[0].singleword.pWhichEnd = pEnd;
 					pce->next = pEnd->next;
@@ -87961,7 +88242,7 @@ int IsMultiWordVar( PCONFIG_ELEMENT pce, PTEXT *start )
 		INDEX idx;
 		LIST_FORALL( pce->data[0].multiword.pEnds, idx, struct config_element_tag *, pEnd )
 		{
-			if( matched = IsAnyVar( pEnd, start ) ) {
+			if( ( matched = IsAnyVar( pEnd, start ) ) != 0 ){
 				pce->data[0].multiword.pWhichEnd = pEnd;
 				if( g.flags.bLogTrace )
 					lprintf( "Matched one of several?  set next to %p", pEnd, pEnd->next );
@@ -89404,12 +89685,6 @@ using namespace sack::memory;
 using namespace sack::timers;
 using namespace sack::config;
 #endif
-// undef if USE=0
-#ifdef USE_ODBC
-#  if !USE_ODBC
-#    undef USE_ODBC
-#  endif
-#endif
 SQL_NAMESPACE
 #ifdef _cplusplus_cli
 using namespace CORE::Database;
@@ -89783,28 +90058,41 @@ void PSSQL_GetSqliteValueInt64( struct sqlite3_value *val, int64_t *result ){
 	(*result) = sqlite3_value_int64( val );
 }
 const char * PSSQL_GetColumnTableName( PODBC odbc, int col) {
-	PCOLLECT pCollect;
-	pCollect = odbc ? odbc->collection : NULL;
-	if( pCollect ) {
-		const char *tmp;
-		//tmp = sqlite3_column_table_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
-		//tmp = sqlite3_column_origin_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
+	if( odbc->flags.bSQLite_native ) {
+		PCOLLECT pCollect;
+		pCollect = odbc ? odbc->collection : NULL;
+		if( pCollect ) {
+			const char *tmp;
+			//tmp = sqlite3_column_table_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
+			//tmp = sqlite3_column_origin_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
  // sqlite function is 'unsigned' result
-		tmp = sqlite3_column_table_name( pCollect->stmt, col );
-		return tmp;
+			tmp = sqlite3_column_table_name( pCollect->stmt, col );
+			return tmp;
+		}
 	}
+	else
+		return "?";
 	return NULL;
 }
 const char * PSSQL_GetColumnTableAliasName( PODBC odbc, int col ) {
-	PCOLLECT pCollect;
-	pCollect = odbc ? odbc->collection : NULL;
-	if( pCollect ) {
-		const char *tmp;
-		//tmp = sqlite3_column_table_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
-		//tmp = sqlite3_column_origin_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
+	if( odbc->flags.bSQLite_native ) {
+		PCOLLECT pCollect;
+		pCollect = odbc ? odbc->collection : NULL;
+		if( pCollect ) {
+			const char *tmp;
+			//tmp = sqlite3_column_table_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
+			//tmp = sqlite3_column_origin_name( pCollect->stmt, col ); // sqlite function is 'unsigned' result
  // sqlite function is 'unsigned' result
-		tmp = sqlite3_column_table_alias( pCollect->stmt, col );
-		return tmp;
+			tmp = sqlite3_column_table_alias( pCollect->stmt, col );
+			return tmp;
+		}
+	}
+	else {
+		PCOLLECT pCollect;
+		pCollect = odbc ? odbc->collection : NULL;
+		if( pCollect ) {
+		}
+		return "?";
 	}
 	return NULL;
 }
@@ -92786,7 +93074,6 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
  // nullable ptr ?
 											 , NULL
 											 );
-					collection->result_len[idx - 1] = colsize;
 					colsize = (colsize * 2) + 1 + 1024 ;
 					if( colsize >= sizeof( byResultStatic ) )
 					{
@@ -92844,6 +93131,7 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 							lprintf( WIDE( "SQL overflow (no room for nul character) %d of %d" ), (int)ResultLen, (int)colsize );
 						}
 					}
+					collection->result_len[idx - 1] = ResultLen;
 					//lprintf( WIDE( "Column %s colsize %d coltype %d coltype %d idx %d" ), collection->fields[idx-1], colsize, coltype, collection->coltypes[idx-1], idx );
 					if( collection->coltypes && coltype != collection->coltypes[idx-1] )
 					{
@@ -92958,8 +93246,10 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 			// or connection closes and destroyes the collection.
 			collection->flags.bTemporary = 1;
 			collection->flags.bEndOfFile = 1;
+#if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 			sqlite3_finalize( collection->stmt );
 			collection->stmt = NULL;
+#endif
 			//lprintf( WIDE("What about the remainging results?") );
 			//ReleaseCollectionResults( collection );
 		}
@@ -94595,7 +94885,6 @@ CTEXTSTR FetchLastInsertKeyEx( PODBC odbc, CTEXTSTR table, CTEXTSTR col DBG_PASS
 	//lprintf( "getting last insert ID?" );
 #ifdef POSGRES_BACKEND
 	{
-		CTEXTSTR result = NULL;
 		TEXTCHAR query[256];
 		sprintf( query, WIDE("select currval('%s_%s_seq')"), table, col );
 		if( SQLQueryEx( odbc, query, &result ) && result DBG_RELAY )
@@ -94618,13 +94907,11 @@ CTEXTSTR FetchLastInsertKeyEx( PODBC odbc, CTEXTSTR table, CTEXTSTR col DBG_PASS
 	PushSQLQueryEx( odbc );
 	if( odbc->flags.bAccess )
 	{
-		CTEXTSTR result = NULL;
 		if( SQLQueryEx( odbc, WIDE( "select @@IDENTITY" ), &result DBG_RELAY ) && result )
 			RecordID = StrDup( result );
 	}
 	else if( odbc->flags.bODBC )
 	{
-		CTEXTSTR result = NULL;
 		if( SQLQueryEx( odbc, WIDE("select LAST_INSERT_ID()"), &result DBG_RELAY ) && result )
 		{
 			RecordID = StrDup( result );
@@ -100756,7 +101043,6 @@ void SaveTranslationDataToFile( FILE *output )
 	sack_fprintf( output, "{\n" );
 	{
 		INDEX idx;
-		LOGICAL firstTranslation = TRUE;
 		LOGICAL first = TRUE;
 		//TEXTCHAR *string;
 		struct translation *translation;
@@ -102059,11 +102345,11 @@ int DequeMsgEx ( PMSGHANDLE pmh, long *MsgID, POINTER result, size_t size, uint3
 }
 #ifdef __cplusplus
  //	namespace message {
-};
+}
  // namespace containers {
-};
+}
  //namespace sack {
-};
+}
 #endif
 #define DEFINE_MESSAGE_SERVER_GLOBAL
 #ifdef __QNX__

@@ -1,28 +1,33 @@
 
 var sack = require( ".." );
+var vol = sack.Volume();
 //console.log( sack.TLS );
 
-var keys = [ sack.TLS.genkey( 1024 ), sack.TLS.genkey( 1024 ), sack.TLS.genkey( 1024, "password" ) ];
+const baseSerial = 1051;
+
+var keys = [ sack.TLS.genkey( 2048 ), sack.TLS.genkey( 2048 ), sack.TLS.genkey( 2048, "password" ) ];
 var certRoot = sack.TLS.gencert( { key:keys[0]
 	, country:"US"
 	, state:"NV"
 	, locality:"Las Vegas"
-	, org:"Freedom Collective", unit:"Tests", name:"Root Cert", serial: 1001 }  )
+	, org:"Freedom Collective", unit:"Tests", name:"Root Cert", serial: baseSerial }  )
+
+vol.write( "testcert.pem", certRoot );
 
 var signer = ( sack.TLS.signreq( { 
 	request: sack.TLS.genreq( { key:keys[1]
 		, country:"US", state:"NV", locality:"Las Vegas"
 		, org:"Freedom Collective", unit:"Tests"
-		, name:"CA Cert", serial: 1002 } )
-	, signer: certRoot, serial: 1003, key:keys[0] } ) );
+		, name:"CA Cert", serial: baseSerial+1 } )
+	, signer: certRoot, serial: baseSerial+2, key:keys[0] } ) );
 
 var cert = sack.TLS.signreq( { 
 	request: sack.TLS.genreq( { key:keys[2], password:"password"
 		, country:"US", state:"NV", locality:"Las Vegas"
-		, org:"Freedom Collective", unit:"Tests", name:"Cert", serial: 1004
+		, org:"Freedom Collective", unit:"Tests", name:"localhost", serial: baseSerial + 3
 		, subject: { DNS:["localhost","*.localhost"], IP:["127.0.0.1"] } 
 	} )
-	, signer: signer, serial: 1005, key:keys[1] } );
+	, signer: signer, serial: baseSerial+4, key:keys[1] } );
 
 
 console.log( certRoot+signer+cert );
