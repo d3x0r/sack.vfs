@@ -463,9 +463,9 @@ sack.JSOX.stringifier = function() {
 	function getReference( here ) {
 		if( here === null ) return undefined;
 		var field = fieldMap.get( here );
-		_DEBUG_STRINGIFY && console.log( "path:", JSON.stringify(path), field );
+		_DEBUG_STRINGIFY && console.log( "path:", sack.JSON.stringify(path), field );
 		if( !field ) {
-			fieldMap.set( here, JSON.stringify(path) );
+			fieldMap.set( here, sack.JSON.stringify(path) );
 			return undefined;
 		}
 		return field;
