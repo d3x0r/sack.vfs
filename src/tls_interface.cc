@@ -1125,14 +1125,14 @@ static void SignReq( struct info_params *params )
 					bc.ca = 0;
 				X509_add1_ext_i2d( cert, NID_basic_constraints, &bc, 1, X509V3_ADD_DEFAULT );
 				if( sbc->pathlen && pathlen == 1 ) {
-					lprintf( "SET TERMINAL USAGE" );
+					//lprintf( "SET TERMINAL USAGE" );
 					int _usage = KU_DIGITAL_SIGNATURE;
 					ASN1_INTEGER *usage = ASN1_INTEGER_new();
 					ASN1_INTEGER_set( usage, _usage );
 					X509_add1_ext_i2d( cert, NID_key_usage, usage, 1, X509V3_ADD_DEFAULT );
 				}
 				else {
-					lprintf( "SET CA USAGE" );
+					//lprintf( "SET CA USAGE" );
 					int _usage = KU_CRL_SIGN | KU_KEY_CERT_SIGN | KU_DIGITAL_SIGNATURE;
 					ASN1_INTEGER *usage = ASN1_INTEGER_new();
 					ASN1_INTEGER_set( usage, _usage );
