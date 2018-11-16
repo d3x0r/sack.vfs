@@ -212,28 +212,29 @@ void ImageObject::Init( Handle<Object> exports ) {
 	SET_READONLY_METHOD( fontTemplate->GetFunction(), "dialog", pickFont );
 
 	Local<Object> colors = Object::New( isolate );
-	SET_READONLY( colors, "white", makeColor( isolate, BASE_COLOR_WHITE ) );
-	SET_READONLY( colors, "black", makeColor( isolate, BASE_COLOR_BLACK ) );
-	SET_READONLY( colors, "green", makeColor( isolate, BASE_COLOR_GREEN ) );
-	SET_READONLY( colors, "blue", makeColor( isolate, BASE_COLOR_BLUE ) );
-	SET_READONLY( colors, "red", makeColor( isolate, BASE_COLOR_RED ) );
-	SET_READONLY( colors, "darkBlue", makeColor( isolate, BASE_COLOR_DARKBLUE ) );
-	SET_READONLY( colors, "cyan", makeColor( isolate, BASE_COLOR_CYAN ) );
-	SET_READONLY( colors, "brown", makeColor( isolate, BASE_COLOR_BROWN ) );
-	SET_READONLY( colors, "lightBrown", makeColor( isolate, BASE_COLOR_LIGHTBROWN ) );
-	SET_READONLY( colors, "magenta", makeColor( isolate, BASE_COLOR_MAGENTA ) );
-	SET_READONLY( colors, "lightGrey", makeColor( isolate, BASE_COLOR_LIGHTGREY ) );
-	SET_READONLY( colors, "darkGrey", makeColor( isolate, BASE_COLOR_DARKGREY ) );
-	SET_READONLY( colors, "lightBlue", makeColor( isolate, BASE_COLOR_LIGHTBLUE ) );
-	SET_READONLY( colors, "lightGreen", makeColor( isolate, BASE_COLOR_LIGHTGREEN ) );
-	SET_READONLY( colors, "lightCyan", makeColor( isolate, BASE_COLOR_LIGHTCYAN ) );
-	SET_READONLY( colors, "lightRed", makeColor( isolate, BASE_COLOR_LIGHTRED ) );
-	SET_READONLY( colors, "lightMagenta", makeColor( isolate, BASE_COLOR_LIGHTMAGENTA ) );
-	SET_READONLY( colors, "yellow", makeColor( isolate, BASE_COLOR_YELLOW ) );
-	SET_READONLY( colors, "orange", makeColor( isolate, BASE_COLOR_ORANGE ) );
-	SET_READONLY( colors, "niceOrange", makeColor( isolate, BASE_COLOR_NICE_ORANGE ) );
-	SET_READONLY( colors, "purple", makeColor( isolate, BASE_COLOR_PURPLE ) );
-
+	if( g.pii ) {
+		SET_READONLY( colors, "white", makeColor( isolate, BASE_COLOR_WHITE ) );
+		SET_READONLY( colors, "black", makeColor( isolate, BASE_COLOR_BLACK ) );
+		SET_READONLY( colors, "green", makeColor( isolate, BASE_COLOR_GREEN ) );
+		SET_READONLY( colors, "blue", makeColor( isolate, BASE_COLOR_BLUE ) );
+		SET_READONLY( colors, "red", makeColor( isolate, BASE_COLOR_RED ) );
+		SET_READONLY( colors, "darkBlue", makeColor( isolate, BASE_COLOR_DARKBLUE ) );
+		SET_READONLY( colors, "cyan", makeColor( isolate, BASE_COLOR_CYAN ) );
+		SET_READONLY( colors, "brown", makeColor( isolate, BASE_COLOR_BROWN ) );
+		SET_READONLY( colors, "lightBrown", makeColor( isolate, BASE_COLOR_LIGHTBROWN ) );
+		SET_READONLY( colors, "magenta", makeColor( isolate, BASE_COLOR_MAGENTA ) );
+		SET_READONLY( colors, "lightGrey", makeColor( isolate, BASE_COLOR_LIGHTGREY ) );
+		SET_READONLY( colors, "darkGrey", makeColor( isolate, BASE_COLOR_DARKGREY ) );
+		SET_READONLY( colors, "lightBlue", makeColor( isolate, BASE_COLOR_LIGHTBLUE ) );
+		SET_READONLY( colors, "lightGreen", makeColor( isolate, BASE_COLOR_LIGHTGREEN ) );
+		SET_READONLY( colors, "lightCyan", makeColor( isolate, BASE_COLOR_LIGHTCYAN ) );
+		SET_READONLY( colors, "lightRed", makeColor( isolate, BASE_COLOR_LIGHTRED ) );
+		SET_READONLY( colors, "lightMagenta", makeColor( isolate, BASE_COLOR_LIGHTMAGENTA ) );
+		SET_READONLY( colors, "yellow", makeColor( isolate, BASE_COLOR_YELLOW ) );
+		SET_READONLY( colors, "orange", makeColor( isolate, BASE_COLOR_ORANGE ) );
+		SET_READONLY( colors, "niceOrange", makeColor( isolate, BASE_COLOR_NICE_ORANGE ) );
+		SET_READONLY( colors, "purple", makeColor( isolate, BASE_COLOR_PURPLE ) );
+	}
 	Local<Function> i = imageTemplate->GetFunction();
 	SET_READONLY( i, "colors", colors );
 	SET_READONLY( i, "Color", colorTemplate->GetFunction() );
