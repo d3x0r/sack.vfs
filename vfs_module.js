@@ -28,7 +28,6 @@ require.extensions['.json6'] = function (module, filename) {
     module.exports = sack.JSON6.parse(content);
 };
 
-var disk = sack.Volume();
 require.extensions['.jsox'] = function (module, filename) {
     var content = disk.read(filename).toString();
     module.exports = sack.JSOX.parse(content);
@@ -37,6 +36,8 @@ require.extensions['.jsox'] = function (module, filename) {
 const _DEBUG_STRINGIFY = false;
 var toProtoTypes = new WeakMap();
 var fromProtoTypes = new Map();
+sack.SaltyRNG.setSigningThreads( require( "os" ).cpus().length );
+
 
 //sack.Sqlite.op( "SACK/Summoner/Auto register with summoner?", 0 );
 //sack.Sqlite.so( "SACK/Summoner/Auto register with summoner?", 1 );
@@ -143,7 +144,274 @@ sack.JSOX.registerToFrom = function( prototypeName, prototype, to, from ) {
 	sack.JSOX.registerFromJSOX( prototypeName, from );
 }
 
+var JSOXBegin = sack.JSOX.begin;
+
+sack.JSOX.begin = function(cb) {
+	var parser = JSOXBegin( cb );
+	var localFromProtoTypes = new Map();;
+	var localPromiseFromProtoTypes = new Map();;
+	parser.setFromPrototypeMap( localFromProtoTypes );
+	parser.setPromiseFromPrototypeMap( localPromiseFromProtoTypes );
+	parser.registerFromJSOX = function( prototypeName, f ) {
+		if( localFromProtoTypes.get(prototypeName) ) throw new Error( "Existing fromJSOX has been registered for prototype" );
+		localFromProtoTypes.set( prototypeName, f );
+	}
+	parser.registerPromiseFromJSOX = function( prototypeName, f ) {
+		if( localPromiseFromProtoTypes.get(prototypeName) ) throw new Error( "Existing fromJSOX has been registered for prototype" );
+		localPromiseFromProtoTypes.set( prototypeName, f );
+	}
+	return parser;
+}
+
 var arrayToJSOX;
+
+var _objectStorage = sack.objectStorage;
+
+function objectStorageContainer(o,sign) {
+	if( !this instanceof objectStorageContainer ) return new objectStorageContainer(o,sign);
+	this.data = {	
+			nonce : sign?sack.SaltyRNG.sign( sack.JSOX.stringify(o), 3, 3 ):null,
+			data : o
+		}
+	if( sign ) {
+		var v = sack.SaltyRNG.verify( sack.JSOX.stringify(o), this.data.nonce, 3, 3 );
+		//console.log( "TEST:", v );
+		this.id = v.key;
+		v.key = this.data.nonce;
+		this.data.nonce = v;
+	} else {
+		this.id = sack.id();
+	}
+	//console.log( "Container:", this );
+}
+
+sack.objectStorage.prototype.defineClasss = function(a,b) {
+	this.stringifier.defineClass(a,b);
+}
+
+sack.objectStorage.prototype.put = function( obj,sign ) {
+	
+	var container = this.stored.get( obj );
+	var storage;
+	//console.log( "Put found object?", container, obj );
+	if( container ) {
+		if( !container.nonce ) {
+			container = this.cachedContainer.get( container ); 
+			//console.log( "Container:", container );
+			storage = this.stringifier.stringify( container );
+			//console.log( "Update to:", container.id, storage );
+			this.write( container.id, storage );
+			return container.id;
+		} else { 
+			throw new Error( "record is signed" );
+		}
+	}
+	container = new objectStorageContainer(obj,sign);
+
+	//console.log( "saving stored container.id", obj, container.id );
+
+	this.stored.delete( obj );
+	//this.stored.set( obj, container.id );
+	this.cached.set( container.id, container.data.data );
+	this.cachedContainer.set( container.id, container );
+	
+	storage = this.stringifier.stringify( container );
+
+	//console.log( "Create file:", container.id );
+	this.write( container.id, storage );
+	//console.log( "OUTPUT:", storage );
+	return container.id;
+}
+
+/*
+sack.objectStorage.prototype.update( objId, obj ) {
+	
+	var container = new objectStorageContainer(sack.JSOX.stringify(obj),sign);
+	this.stored.set( obj, container.id );
+	this.cached.set( container.id, container );
+	return container.id;
+}
+
+*/
+
+sack.objectStorage.prototype.get = function( key ) {
+	//this.parser.
+	var resolve;
+	var reject;
+
+	function parserObject( obj ) {
+	}
+
+
+	var parser = sack.JSOX.begin( parserObject );
+	parser.registerFromJSOX( "~os", decodeStoredObjectKeyImmediate );
+	//console.log( "Something... " );
+
+	function decodeStoredObjectKey(objId,res,rej){
+		console.log( "Promised Reviver:", objId, this.mapping );
+
+		if( this.mapping ) {
+			var exist = this.cached.get( objId );
+			if( !exist ) {
+				console.log( "Chained get...",objid );
+				this.get( objId ).then( (obj)=>{
+					console.log( "Storage returned:", this, obj );
+					this.cached.set( objId, obj );
+					this.stored.set( obj, objId );
+					
+					res( obj );
+				} );
+			}
+			//console.log( "Otherwise returning existing:", exist );
+			//return exist;
+		} else {
+			console.log( "Returning existing" );
+			resolve( objId );
+			//return objId;
+		}
+	};
+
+	this.decoding.push( key );
+	function decodeStoredObjectKeyImmediate(objId,ref){
+		//console.log( "Revive:", objId, ref, this.mapping, this.decoding );
+		if( this.decoding.find( pending=>pending===objId ) ) {
+			//console.log( "Push a pending resolution for:",  {id:objId, ref: ref } );
+			this.pending.push( {id:objId, ref: ref } );
+			return objId;
+		}
+		this.decoding.push( objId );
+		if( this.mapping ) {
+			var exist = this.cached.get( objId );
+			if( !exist ) {
+				//console.log( "Chained get..." );
+
+				var parser = sack.JSOX.begin( parserObject );
+				parser.registerFromJSOX( "~os", decodeStoredObjectKeyImmediate );
+				//console.log( "Something.22.. ",objId );
+				this.read( objId, parser, (obj)=>{
+					//console.log( "Immediate result" );
+					// with a new parser, only a partial decode before revive again...
+					if( obj ){
+						Object.setPrototypeOf( obj, objectStorageContainer.prototype );
+						exist = obj.data.data;
+
+						this.stored.set( obj.data.data, obj.id );
+						this.cachedContainer.set( obj.id, obj ); 
+
+					}
+				} );
+				this.decoding.pop();
+				if( !this.decoding.length ) {
+					console.log( "So... I am?", sack.JSOX.stringify( obj ) );
+				}
+				var found;
+
+				do {
+					var found = this.pending.findIndex( pending=>pending.id === objId );
+					if( found >= 0 ) {
+						this.pending[found].ref.o[this.pending[found].ref.f] = exist;
+						this.pending.splice( found, 1 );
+					}
+				} while( found >= 0 );
+			}
+			//console.log( "Otherwise returning existing:", exist );
+			return exist;
+		} else {
+			//console.log( "Returning existing" );
+			resolve( objId );
+			return objId;
+		}
+	};
+
+	console.log( "Read Key:", key );
+	var p = new Promise( function(res,rej) {
+		resolve = res;  reject = rej;
+	} );
+	//console.log( "Read does exist..." );
+	this.read( key, parser, (obj)=>{
+		// with a new parser, only a partial decode before revive again...
+				var found;
+
+				do {
+					var found = this.pending.findIndex( pending=>pending.id === key );
+					if( found >= 0 ) {
+						this.pending[found].ref.o[this.pending[found].ref.f] = obj.data.data;
+						this.pending.splice( found, 1 );
+					}
+				} while( found >= 0 );
+
+		if( obj ){
+			Object.setPrototypeOf( obj, objectStorageContainer.prototype );
+			//console.log( "GOTzz:", obj );
+			this.stored.set( obj.data.data, obj.id );
+			this.cachedContainer.set( obj.id, obj ); 
+			
+			resolve(obj.data.data);
+		}else
+			reject();
+	} );
+
+
+	return p;
+}
+
+
+
+sack.objectStorage = function (...args) {
+	var mapping = false;
+	var newStorage = new _objectStorage(...args);
+	newStorage.cached = new Map();
+	newStorage.cachedContainer = new Map();
+	newStorage.stored = new WeakMap();
+	newStorage.decoding = [];
+	newStorage.pending = [];
+
+	newStorage.stringifier = sack.JSOX.stringifier();
+	function objectToJSOX(){
+		
+		//console.log( "THIS GOT CALLED?", this );
+		var exist = newStorage.stored.get( this );
+		//console.log( "THIS GOT CALLED? RECOVERED:", exist );
+		if( exist ) {
+			var obj = newStorage.cachedContainer.get( exist );
+			if( newStorage.stringifier.isEncoding( obj ) ) return this;
+			return '~os"'+exist+'"';
+		} else {			
+			if( this instanceof objectStorageContainer ) {
+				//console.log( "THIS SHOULD ALREADY BE IN THE STORAGE!", this, newStorage.stored.get( this.data.data ) );
+				//newStorage.stored.set( this.data.data, this.id );
+				//newStorage.cached.set( this.id, this.data.data );
+				//newStorage.cachedContainer.set( this.id, this );
+				newStorage.stored.set( this.data.data, this.id );
+			} else {
+				newStorage.cached.set( this.id, this );
+			}
+			//console.log( "Commit as stored; first" );
+		}
+		return this;
+	}
+	newStorage.stringifier.setDefaultObjectToJSOX( objectToJSOX );
+	newStorage.stringifier.registerToJSOX( "~os", objectStorageContainer.prototype, objectToJSOX );
+
+
+	newStorage.map = function( expr ) {
+		newStorage.mapping = true;
+		//this.parser.
+		var resolve;
+
+		this.get( expr ).then( (obj)=>{
+			resolve(obj);
+			newStorage.mapping = false;
+
+		} );
+		return new Promise( function(res,rej) {
+			resolve = res;
+		} );
+	}
+
+	return newStorage;
+	//Object.assign( newStorage
+}
 
 sack.JSOX.stringifier = function() {
 	var classes = [];
@@ -151,6 +419,9 @@ sack.JSOX.stringifier = function() {
 
 	var fieldMap = new WeakMap();
 	var path = [];
+	var encoding = [];
+	var localToPrototypes = new WeakMap();
+	var objectToJSOX = null;
 
 	if( !toProtoTypes.get( Array.prototype ) )
 		toProtoTypes.set( Array.prototype, arrayToJSOX = { external:false, name:Array.prototype.constructor.name
@@ -158,6 +429,11 @@ sack.JSOX.stringifier = function() {
 		} );
 
 	return {
+		registerToJSOX( name, prototype, f ) {
+			if( localToPrototypes.get(prototype) ) throw new Error( "Existing toJSOX has been registered for prototype" );
+			localToPrototypes.set( prototype, { external:true, name:name||f.constructor.name, cb:f } );
+		},
+
 		defineClass(name,obj) { 
 			var cls; 
 			classes.push( cls = { name : name
@@ -175,16 +451,21 @@ sack.JSOX.stringifier = function() {
 			}
 			if( cls.proto === Object.getPrototypeOf( {} ) ) cls.proto = null;
 		},
+		setDefaultObjectToJSOX( cb ) { objectToJSOX = cb },
 		stringify(o,r,s) { return stringify(o,r,s) },
-		setQuote(q) { useQuote = q; }
+		setQuote(q) { useQuote = q; },
+		isEncoding(o) { 
+			/*console.log( "is object encoding?", o, encoding ); */
+			return !!encoding.find( (eo,i)=>eo===o && i < (encoding.length-1) ) 
+		},
 	}
 
 	function getReference( here ) {
 		if( here === null ) return undefined;
 		var field = fieldMap.get( here );
-		_DEBUG_STRINGIFY && console.log( "path:", JSON.stringify(path), field );
+		_DEBUG_STRINGIFY && console.log( "path:", sack.JSON.stringify(path), field );
 		if( !field ) {
-			fieldMap.set( here, JSON.stringify(path) );
+			fieldMap.set( here, sack.JSON.stringify(path) );
 			return undefined;
 		}
 		return field;
@@ -251,6 +532,7 @@ sack.JSOX.stringifier = function() {
 		}
 
 		path = [];
+		encoding = [];
 		fieldMap = new WeakMap();
 
 		return str( "", {"":object} );
@@ -291,6 +573,7 @@ sack.JSOX.stringifier = function() {
 						partial[i] = str(i, this) || "null";
 					}
 					path.splice( thisNodeNameIndex, 1 );
+					encoding.splice( thisNodeNameIndex, 1 );
 			
 					// Join all of the elements together, separated with commas, and wrap them in
 					// brackets.
@@ -322,12 +605,16 @@ sack.JSOX.stringifier = function() {
 			var partialClass;
 			var partial;
 			let thisNodeNameIndex = path.length;
-			var value = holder[key];
-			var protoConverter = (value !== undefined
-			    && value !== null) && ( toProtoTypes.get( Object.getPrototypeOf( value ) ) || null )
-			var toJSOX = protoConverter && protoConverter.cb;
+			let value = holder[key];
+			let isObject = (typeof value === "object");
+			var protoConverter = (value !== undefined && value !== null) 
+				&& ( localToPrototypes.get( Object.getPrototypeOf( value ) ) 
+				|| toProtoTypes.get( Object.getPrototypeOf( value ) ) 
+				|| null )
+		
+			var toJSOX = ( protoConverter && protoConverter.cb ) || ( isObject && objectToJSOX );
 			// If the value has a toJSOX method, call it to obtain a replacement value.
-			_DEBUG_STRINGIFY && console.log( "type:", typeof value, protoConverter, !!toJSOX, path );
+			_DEBUG_STRINGIFY && console.log( "type:", typeof value, protoConverter, !!toJSOX, path, isObject );
 
 			if( value !== undefined
 			    && value !== null
@@ -340,6 +627,9 @@ sack.JSOX.stringifier = function() {
 				}
 
 				let newValue = toJSOX.apply(value);
+				if( newValue === value ) {
+					protoConverter = null;
+				}
 				if(_DEBUG_STRINGIFY ) { 
 					console.log( "translated ", newValue, value );
 				}
@@ -405,6 +695,7 @@ sack.JSOX.stringifier = function() {
 						if (typeof rep[i] === "string") {
 							k = rep[i];
 							path[thisNodeNameIndex] = k;
+							encoding[thisNodeNameIndex] = value;
 							v = str(k, value);
 
 							if (v) {
@@ -420,6 +711,7 @@ sack.JSOX.stringifier = function() {
 						}
 					}
 					path.splice( thisNodeNameIndex, 1 );
+					encoding.splice( thisNodeNameIndex, 1 );
 				} else {
 
 					// Otherwise, iterate through all of the keys in the object.
@@ -441,6 +733,7 @@ sack.JSOX.stringifier = function() {
 						k = keys[n];
 						if (Object.prototype.hasOwnProperty.call(value, k)) {
 							path[thisNodeNameIndex] = k;
+							encoding[thisNodeNameIndex] = value;
 							v = str(k, value);
 
 							if (v) {
@@ -456,6 +749,7 @@ sack.JSOX.stringifier = function() {
 						}
 					}
 					path.splice( thisNodeNameIndex, 1 );
+					encoding.splice( thisNodeNameIndex, 1 );
 				}
 
 				// Join all of the member texts together, separated with commas,
@@ -585,7 +879,7 @@ sack.JSOX.stringify = function( object, replacer, space ) {
 }
 
 const nonIdent = 
-[ [ 0,384,[ 0xffd9ff,0xff6aff,0x1fc00,0x380000,0x0,0xfffff8,0xffffff,0x7fffff,0x800000,0x0,0x80,0x0,0x0,0x0,0x0,0x0 ] ],
+[ [ 0,264,[ 0xffd9ff,0xff6aff,0x1fc00,0x380000,0x0,0xfffff8,0xffffff,0x7fffff,0x800000,0x0,0x80 ] ],
 ]/*
 [ 384,768,[ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x3c00,0xe0fffc,0xffffaf ] ],
 [ 768,1152,[ 0x0,0x0,0x0,0x0,0x200000,0x3040,0x0,0x0,0x0,0x0,0x40,0x0,0x0,0x0,0x0,0x0 ] ],

@@ -23,7 +23,7 @@ var cert = sack.TLS.signreq( {
 	} )
 	, signer: signer, serial: 1005, key:keys[1] } );
 
-console.log(  cert+signer+certRoot );
+//console.log(  cert+signer+certRoot );
 function open() {
 	var server = sack.WebSocket.Server( { port: 8080, ca : cert+signer+certRoot, key: keys[2], passphrase:"password" } )
 
@@ -62,11 +62,6 @@ function open() {
 				console.log( "Remote closed" );
 			} );
 	} );
-	return server;
-} 
-
-var server = open();
-
 setTimeout( ()=>{
 	console.log( "server:", server )
 	server.close() 
@@ -74,3 +69,8 @@ setTimeout( ()=>{
 		open(); 
 	//}, 2000 );
 }, 2000 );
+	return server;
+} 
+
+var server = open();
+

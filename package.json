@@ -55,11 +55,15 @@
     "build-vfs": "npm run build-vfs-config && npm run build-vfs-run1 && npm run build-vfs-config && npm run build-vfs-run2",
     "build-vfs-config": "cmake-js --CDMAKE_GUI=0 --CDCMAKE_BUILD_TYPE=Release configure",
     "build-vfs-run1": "cmake-js build",
-    "build-vfs-run2": "cmake-js build",
-    "build-vfs-debug": "npm run build-vfs-debug-config && npm run build-vfs-debug-run1 && npm run build-vfs-debug-config && npm run build-vfs-debug-run2",
+
+    "build-vfs-debug": "npm run build-vfs-debug-config && npm run build-vfs-debug-run1",
     "build-vfs-debug-config": "cmake-js --CDMAKE_GUI=0 --CDCMAKE_BUILD_TYPE=Debug -D configure",
-    "build-vfs-debug-run1": "cmake-js build -D",
     "build-vfs-debug-run2": "cmake-js build -D",
+
+    "build-vfs-reldeb": "npm run build-vfs-reldeb-config && npm run build-vfs-reldeb-run1",
+    "build-vfs-reldeb-config": "cmake-js --CDMAKE_GUI=0 --CDCMAKE_BUILD_TYPE=RelWithDebINfo -D configure",
+    "build-vfs-reldeb-run1": "cmake-js build -D --CDCMAKE_BUILD_TYPE=RelWithDebINfo",
+
     "build": "npm run build-gui"
   }
 }

@@ -351,7 +351,7 @@ public:
 	static Persistent<Function> constructor;
 	PVARTEXT pvtResult;
 	bool ssl;
-
+	wssObject* wss;
 public:
 
 	httpObject();
@@ -618,6 +618,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					http->Set( strings->connectionString->Get( isolate ), makeSocket( isolate, eventMessage->pc ) );
 
 					httpObject *httpInternal = httpObject::Unwrap<httpObject>( http );
+					httpInternal->wss = myself;
 					httpInternal->ssl = myself->ssl;
 					httpInternal->pc = eventMessage->pc;
 					AddLink( &myself->requests, httpInternal );
@@ -1152,7 +1153,11 @@ httpObject::httpObject() {
 }
 
 httpObject::~httpObject() {
-
+	httpObject *req;
+	INDEX idx = FindLink( &this->wss->requests, this );
+	if( idx != INVALID_INDEX ) {
+		SetLink( &wss->requests, idx, NULL );
+	}
 }
 
 void httpObject::New( const FunctionCallbackInfo<Value>& args ) {
@@ -1180,20 +1185,22 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 		status = args[0]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 	}
 	HTTPState http = GetWebSocketHttpState( obj->pc );
-	int vers = GetHttpVersion( http );
-	vtprintf( obj->pvtResult, WIDE( "HTTP/%d.%d %d %s\r\n" ), vers/100, vers%100, status, "OK" );
+	if( http ) {
+		int vers = GetHttpVersion( http );
+		vtprintf( obj->pvtResult, WIDE( "HTTP/%d.%d %d %s\r\n" ), vers / 100, vers % 100, status, "OK" );
 
-	if( args.Length() > 1 ) {
-		headers = args[1]->ToObject();
-		Local<Array> keys = headers->GetPropertyNames();
-		int len = keys->Length();
-		int i;
-		for( i = 0; i < len; i++ ) {
-			Local<Value> key = keys->Get( i );
-			Local<Value> val = headers->Get( key );
-			String::Utf8Value keyname( USE_ISOLATE(isolate) key );
-			String::Utf8Value keyval( USE_ISOLATE( isolate ) val );
-			vtprintf( obj->pvtResult, WIDE( "%s:%s\r\n" ), *keyname, *keyval );
+		if( args.Length() > 1 ) {
+			headers = args[1]->ToObject();
+			Local<Array> keys = headers->GetPropertyNames();
+			int len = keys->Length();
+			int i;
+			for( i = 0; i < len; i++ ) {
+				Local<Value> key = keys->Get( i );
+				Local<Value> val = headers->Get( key );
+				String::Utf8Value keyname( USE_ISOLATE( isolate ) key );
+				String::Utf8Value keyval( USE_ISOLATE( isolate ) val );
+				vtprintf( obj->pvtResult, WIDE( "%s:%s\r\n" ), *keyname, *keyval );
+			}
 		}
 	}
 }
@@ -1257,11 +1264,12 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			SendTCP( obj->pc, GetText( buffer ), GetTextSize( buffer ) );
 	}
 	{
-      if( include_close )
+		struct HttpState *pHttpState = GetWebSocketHttpState( obj->pc );
+		if( include_close )
 			RemoveClientEx( obj->pc, 0, 1 );
 		else {
-         //lprintf( "End a request..." );
-			EndHttp( GetWebSocketHttpState( obj->pc ) );
+			//lprintf( "End a request..." );
+			EndHttp( pHttpState );
 		}
 	}
 
@@ -1270,7 +1278,6 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 	wssObject *wss = (wssObject*)psv;
 	uintptr_t psvServer = WebSocketGetServerData( pc );
-
 	if( wss ) {
 		httpObject *req;
 		INDEX idx;
@@ -1287,6 +1294,7 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 				//return;
 			}
 		}
+
 		if( requested )
 			return;
 	}
