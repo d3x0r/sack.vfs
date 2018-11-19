@@ -211,7 +211,7 @@ const objectStorage = sack.objectStorage( 'filename.data' );
 
 
 | Object methods | Return | Arguments | Description |
-|----------|------------|-------------|
+|----------|------------|-------------|----|
 | put | unique ID | ( object \[, sign\] ) | Stores or updates an object into storage.  If the object was not previously stored or loaded, a unique ID for the object is returned. |
 | get | promise |  ( id ) | Returns a promise; success is passed the object loaded from storage.  Loads an object using the specified ID. |
 | map | promise |  ( id ) | Same as get, but also loads any objects of specified ID. |
