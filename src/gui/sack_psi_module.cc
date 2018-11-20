@@ -1671,9 +1671,12 @@ void ControlObject::setListboxOnSelect( const FunctionCallbackInfo<Value>&  args
 	SetSelChangeHandler( me->control, SelChangeHandler, (uintptr_t)me );
 }
 
+
+
 void ListboxItemObject::removeListboxItem( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-	ListboxItemObject *me = ObjectWrap::Unwrap<ListboxItemObject>( args.This() );
+	//ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	ListboxItemObject *me = ObjectWrap::Unwrap<ListboxItemObject>( args[0]->ToObject() );
 	DeleteListItem( me->control->control, me->pli );
 	me->_this.Reset();
 }
