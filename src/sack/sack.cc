@@ -3266,6 +3266,7 @@ TYPELIB_PROC  int TYPELIB_CALLTYPE  TextSimilar  ( PTEXT pText, CTEXTSTR text );
 //#define SameText( l1, l2 )  ( strcmp( GetText(l1), GetText(l2) ) )
 #define textmin(a,b) ( (((a)>0)&&((b)>0))?(((a)<(b))?(a):(b)):(((a)>0)?(a):((b)>0)?(b):0) )
 #ifdef __LINUX__
+#  include <strings.h>
 /* windows went with stricmp() and strnicmp(), whereas linux
  went with strcasecmp() and strncasecmp()                  */
 #  ifdef UNICODE
@@ -4423,9 +4424,9 @@ TYPELIB_PROC  CPOINTER TYPELIB_CALLTYPE  GetPriorNode( PTREEROOT root );
 /* \Returns the total number of nodes in the tree.
    Example
    <code lang="c++">
-   uint32_t total_nodes = GetNodeCount(tree);
+   int total_nodes = GetNodeCount(tree);
    </code>                                         */
-TYPELIB_PROC  uint32_t TYPELIB_CALLTYPE  GetNodeCount ( PTREEROOT root );
+TYPELIB_PROC  int TYPELIB_CALLTYPE  GetNodeCount ( PTREEROOT root );
  // returns a shadow of the original.
 TYPELIB_PROC  PTREEROOT TYPELIB_CALLTYPE  ShadowBinaryTree( PTREEROOT root );
 #ifdef __cplusplus
@@ -17003,7 +17004,15 @@ void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_
 				tmp = partial_tmp | (tmp << partial_bits);
 				partial_bits = 0;
 			}
-			(*buffer) = tmp << resultBits;
+			if( (get_bits+resultBits) > 24 )
+				(*buffer) |= tmp << resultBits;
+			else if( (get_bits+resultBits) > 16 ) {
+				(*((uint16_t*)buffer)) |= tmp << resultBits;
+				(*(((uint8_t*)buffer)+2)) |= ((tmp << resultBits) & 0xFF0000)>>16;
+			} else if( (get_bits+resultBits) > 8 )
+				(*((uint16_t*)buffer)) |= tmp << resultBits;
+			else
+				(*((uint8_t*)buffer)) |= tmp << resultBits;
 			resultBits += get_bits;
 			while( resultBits >= 8 ) {
 #if defined( __cplusplus ) || defined( __GNUC__ )
@@ -17020,7 +17029,7 @@ void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_
 }
 int32_t SRG_GetEntropy( struct random_context *ctx, int bits, int get_signed )
 {
-	int32_t result;
+	int32_t result = 0;
 	SRG_GetEntropyBuffer( ctx, (uint32_t*)&result, bits );
 	if( get_signed )
 		if( result & ( 1 << ( bits - 1 ) ) )
@@ -21862,6 +21871,8 @@ LOGGING_NAMESPACE_END
 #ifndef NO_FILEOP_ALIAS
 #  define NO_FILEOP_ALIAS
 #endif
+// setenv()
+#define _POSIX_C_SOURCE 2
 #ifdef WIN32
 //#undef StrDup
 //#undef StrRChr
@@ -34197,9 +34208,9 @@ HANDLE  GetWakeEvent( void )
 #endif
 #ifdef __cplusplus
 //	namespace timers {
-};
+}
 //namespace sack {
-};
+}
 #endif
 //--------------------------------------------------------------------------
 // $Log: timers.c,v $
@@ -34900,7 +34911,7 @@ static CTEXTSTR DoSaveNameEx( CTEXTSTR stripped, size_t len DBG_PASS )
 		if( l.flags.bIndexNameTable )
 		{
 			AddBinaryNode( l.NameIndex, p, (uintptr_t)p );
-			BalanceBinaryTree( l.NameIndex );
+			//BalanceBinaryTree( l.NameIndex );
 		}
 	}
 	// otherwise it will be single threaded?
@@ -49699,6 +49710,9 @@ uint8_t *DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *
  * see also - include/typelib.h
  *
  */
+//#define DEFINE_BINARYLIST_PERF_COUNTERS
+#ifdef DEFINE_BINARYLIST_PERF_COUNTERS
+#endif
 //#include <sack_types.h>
 //#include <sharemem.h>
 //#include <logging.h>
@@ -49716,7 +49730,9 @@ struct treenode_tag {
 		BIT_FIELD bUsed:1;
 		BIT_FIELD bRoot:1;
 	} flags;
-	uint32_t children;
+	int depth;
+  // required to know how many nodes are in the tree; especially with branch transplants.
+	int children;
 	CPOINTER userdata;
 	uintptr_t key;
 	struct treenode_tag *lesser;
@@ -49725,7 +49741,7 @@ struct treenode_tag {
 	struct treenode_tag *parent;
 };
 typedef struct treenode_tag TREENODE;
-#define MAXTREENODESPERSET 256
+#define MAXTREENODESPERSET 4096
 DeclareSet( TREENODE );
 typedef struct treeroot_tag {
 	struct {
@@ -49735,14 +49751,26 @@ typedef struct treeroot_tag {
 		BIT_FIELD bShadow:1;
 		BIT_FIELD bNoDuplicate : 1;
 	} flags;
-	uint32_t children;
+	int depth;
+	int children;
 	uint32_t lock;
+#ifdef DEFINE_BINARYLIST_PERF_COUNTERS
+	int maxHeights[30];
+	int maxSwaps[10];
+	int maxScans;
+	int balancedFromLeft;
+	int balancedFromRight;
+#endif
 	GenericDestroy Destroy;
 	GenericCompare Compare;
 	PTREENODE tree;
 	PTREENODE prior, current, lastfound;
 } TREEROOT;
 static PTREENODESET TreeNodeSet;
+//---------------------------------------------------------------------------
+#define MAXTREEROOTSPERSET 128
+DeclareSet( TREEROOT );
+static PTREEROOTSET treepool;
 CPOINTER GetLesserNodeExx( PTREEROOT root, PTREENODE *from );
 CPOINTER GetGreaterNodeExx( PTREEROOT root, PTREENODE *from );
 //---------------------------------------------------------------------------
@@ -49764,6 +49792,7 @@ int CPROC BinaryCompareInt( uintptr_t old, uintptr_t new_key )
 	return 0;
 }
 //---------------------------------------------------------------------------
+#if 0
 PTREENODE RotateToRight( PTREENODE node )
 {
 	PTREENODE greater = node->greater;
@@ -49811,7 +49840,7 @@ PTREENODE RotateToLeft( PTREENODE node )
 }
 //---------------------------------------------------------------------------
 // RotateToLeft - make left node root/current.
-// RotateToRight - make right node root/current
+// RotateToRight - make rightDepth node root/current
 static int BalanceBinaryBranch( PTREENODE root )
 {
 	PTREENODE check;
@@ -49824,23 +49853,23 @@ static int BalanceBinaryBranch( PTREENODE root )
 		    if( check->lesser && check->greater)
 		 {
 			int left = check->lesser->children
-			 , right = check->greater->children;
-			if( left && right && ( left > ( right * 2 ) ) )
+			 , rightDepth = check->greater->children;
+			if( left && rightDepth && ( left > ( rightDepth * 2 ) ) )
 			{
-				//if( left > 2+((left+right)*55)/100 )
+				//if( left > 2+((left+rightDepth)*55)/100 )
 				{
-					 //Log2( WIDE("rotateing to left (%d/%d)"), left, right );
+					 //Log2( WIDE("rotateing to left (%d/%d)"), left, rightDepth );
 					root = RotateToLeft( check );
 					balances++;
 				}
 				//else
 				//	root = NULL;
 			}
-			else if( right > ( left * 2 ) )
+			else if( rightDepth > ( left * 2 ) )
 			{
-				//if( right  > 2+((left+right)*55)/100 )
+				//if( rightDepth  > 2+((left+rightDepth)*55)/100 )
 				{
-					 //Log2( WIDE("rotateing to right (%d/%d)"), right, left );
+					 //Log2( WIDE("rotateing to rightDepth (%d/%d)"), rightDepth, left );
 					root = RotateToRight( check );
 					balances++;
 				}
@@ -49856,7 +49885,7 @@ static int BalanceBinaryBranch( PTREENODE root )
 		 }
 		 else if( check->greater && ( check->children >= 2 )  )
 		 {
-			 //Log1( WIDE("rotateing to right (%d)"), check->children );
+			 //Log1( WIDE("rotateing to rightDepth (%d)"), check->children );
 			 root = RotateToRight( check );
 			balances++;
 		 }
@@ -49871,14 +49900,142 @@ static int BalanceBinaryBranch( PTREENODE root )
 	 }
 	 return balances;
 }
+#endif
 //---------------------------------------------------------------------------
 void BalanceBinaryTree( PTREEROOT root )
 {
+#if SACK_BINARYLIST_USE_CHILD_COUNTS
 	while( LockedExchange( &root->lock, 1 ) )
 		Relinquish();
 	while( BalanceBinaryBranch( root->tree ) > 1 && 0);
 	root->lock = 0;
+#endif
 	//Log( WIDE("=========") );;
+}
+//---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
+//static PTREENODE AVL_RotateToRight( PTREENODE node )
+	                                                  /* Perform rotation*/
+	                            /* Update heights */
+#define AVL_RotateToRight(node)                                         {	                                            PTREENODE left = node->lesser;	           PTREENODE T2 = left->greater;	                                                         node->children -= (left->children + 1);	                                               node->me[0] = left;	left->me = node->me;	left->parent = node->parent;	 left->greater = node;	  node->me = &left->greater;	  node->parent = left;	                     node->lesser = T2;	              if( T2 ) {		              T2->me = &node->lesser;		              T2->parent = node;		              node->children += (left->greater->children + 1);		              left->children -= (left->greater->children + 1);	              }	              left->children += (node->children + 1);	                 {		              int leftDepth, rightDepth;		              leftDepth = node->lesser ? node->lesser->depth : 0;		              rightDepth = node->greater ? node->greater->depth : 0;		              if( leftDepth > rightDepth )			              node->depth = leftDepth + 1;		              else			              node->depth = rightDepth + 1;		                            leftDepth = left->lesser ? left->lesser->depth : 0;		              rightDepth = left->greater ? left->greater->depth : 0;		              if( leftDepth > rightDepth ) {			              left->depth = leftDepth + 1;		              }		              else			              left->depth = rightDepth + 1;	              }              }
+//---------------------------------------------------------------------------
+//static PTREENODE AVL_RotateToLeft( PTREENODE node )
+	                                                  /* Perform rotation  */
+	                                         /*  Update heights */
+#define AVL_RotateToLeft(node)                                         {	                                         PTREENODE right = node->greater;	                                         PTREENODE T2 = right->lesser;	                                                                                  node->children -= (right->children + 1);	                                                                                  node->me[0] = right;	                                         right->me = node->me;	                                         right->parent = node->parent;	                                       right->lesser = node;	                                         node->me = &right->lesser;	                                         node->parent = right;	                                         node->greater = T2;	                                         if( T2 ) {		                                         T2->me = &node->greater;		                                         T2->parent = node;		                                         node->children += (right->lesser->children + 1);		                                         right->children -= (right->lesser->children + 1);	                                         }	                                         right->children += (node->children + 1);	                                         {		                                         int left, rightDepth;		                                         left = node->lesser ? node->lesser->depth : 0;		                                         rightDepth = node->greater ? node->greater->depth : 0;		                                         if( left > rightDepth )			                                         node->depth = left + 1;		                                         else			                                         node->depth = rightDepth + 1;		                                                                                  left = right->lesser ? right->lesser->depth : 0;		                                         rightDepth = right->greater ? right->greater->depth : 0;		                                         if( left > rightDepth )			                                         right->depth = left + 1;		                                               else			                                                                       right->depth = rightDepth + 1;	                                         }                                                                              }
+//---------------------------------------------------------------------------
+#ifdef DEFINE_BINARYLIST_PERF_COUNTERS
+int zz;
+PRIORITY_PRELOAD( InitReadyToLog, 999 ) {
+	zz = 1;
+}
+#endif
+static void AVLbalancer( PTREEROOT root, PTREENODE node ) {
+	PTREENODE _x = NULL;
+	PTREENODE _y = NULL;
+	PTREENODE _z = NULL;
+	PTREENODE tmp;
+	int leftDepth;
+	int rightDepth;
+#ifdef DEFINE_BINARYLIST_PERF_COUNTERS
+	int height = 0;
+	int swaps = 0;
+#endif
+	_z = node;
+	while( _z && !_z->flags.bRoot ) {
+		int doBalance;
+#ifdef DEFINE_BINARYLIST_PERF_COUNTERS
+		height++;
+#endif
+		doBalance = FALSE;
+		if( tmp = _z->greater )
+			rightDepth = tmp->depth;
+		else
+			rightDepth = 0;
+		if( tmp = _z->lesser )
+			leftDepth = tmp->depth;
+		else
+			leftDepth = 0;
+		if( leftDepth > rightDepth ) {
+			if( (1 + leftDepth) == _z->depth ) {
+				//if( zz )
+				//	lprintf( "Stopped checking: %d %d %d", height, leftDepth, rightDepth );
+#ifdef DEFINE_BINARYLIST_PERF_COUNTERS
+				root->balancedFromLeft++;
+#endif
+				break;
+			}
+			_z->depth = 1 + leftDepth;
+			if( (leftDepth -rightDepth) > 1 ) {
+				doBalance = TRUE;
+			}
+		} else {
+			if( (1 + rightDepth) == _z->depth ) {
+				//if(zz)
+				//	lprintf( "Stopped checking: %d %d %d", height, leftDepth, rightDepth );
+#ifdef DEFINE_BINARYLIST_PERF_COUNTERS
+				root->balancedFromRight++;
+#endif
+				break;
+			}
+			_z->depth = 1 + rightDepth;
+			if( (rightDepth- leftDepth) > 1 ) {
+				doBalance = TRUE;
+			}
+		}
+		if( doBalance ) {
+#ifdef DEFINE_BINARYLIST_PERF_COUNTERS
+			swaps++;
+#endif
+			if( _x ) {
+				if( _x == _y->lesser ) {
+					if( _y == _z->lesser ) {
+						// left/left
+						AVL_RotateToRight( _z );
+					}
+					else {
+						//left/rightDepth
+						AVL_RotateToRight( _y );
+						AVL_RotateToLeft( _z );
+					}
+				}
+				else {
+					if( _y == _z->lesser ) {
+						AVL_RotateToLeft( _y );
+						AVL_RotateToRight( _z );
+						// rightDepth.left
+					}
+					else {
+						//rightDepth/rightDepth
+						AVL_RotateToLeft( _z );
+					}
+				}
+			}
+			else {
+				//lprintf( "Not deep enough for balancing." );
+			}
+		}
+		_x = _y;
+		_y = _z;
+		_z = _z->parent;
+	}
+#ifdef DEFINE_BINARYLIST_PERF_COUNTERS
+	if( !node->parent->flags.bRoot
+		&& node->parent->lesser != node
+		&& node->parent->greater != node ) {
+		*(int*)0 = 0;
+	}
+	if( height < 31 )
+		root->maxHeights[height]++;
+	else
+		root->maxHeights[0]++;
+	if( swaps < 10 )
+		root->maxSwaps[swaps]++;
+	else
+		root->maxSwaps[0]++;
+	if( !_z )
+		root->maxScans++;
+#endif
 }
 //---------------------------------------------------------------------------
 int HangBinaryNode( PTREEROOT root, PTREENODE node )
@@ -49898,7 +50055,7 @@ int HangBinaryNode( PTREEROOT root, PTREENODE node )
 	 while( check )
 	 {
 		 int dir = root->Compare( node->key, check->key );
-		 check->children += (node->children + 1);
+		check->children += (node->children + 1);
 		 if( dir < 0 )
 		 {
 			 if( check->lesser )
@@ -49935,17 +50092,27 @@ int HangBinaryNode( PTREEROOT root, PTREENODE node )
 			if( check )
 				check->children -= (node->children + 1);
 			DeleteFromSet( TREENODE, TreeNodeSet, node );
-			//Release( node );
-		 return 0;
+			return 0;
 		}
 		else
 		{
+#if SACK_BINARYLIST_USE_CHILD_COUNTS
 			int leftchildren = 0, rightchildren = 0;
 			if( check->lesser )
 				leftchildren = check->lesser->children;
 			if( check->greater )
 				rightchildren = check->greater->children;
 			if( leftchildren <= rightchildren )
+#else
+			// allow duplicates; but link in as a near node, either left
+			// or right... depending on the depth.
+			int leftdepth = 0, rightdepth = 0;
+			if( check->lesser )
+				leftdepth = check->lesser->depth;
+			if( check->greater )
+				rightdepth = check->greater->depth;
+			if( leftdepth < rightdepth )
+#endif
 			{
 				if( check->lesser )
 					check = check->lesser;
@@ -49971,6 +50138,10 @@ int HangBinaryNode( PTREEROOT root, PTREENODE node )
 			}
 		}
 	}
+	if( node->parent->lesser != node && node->parent->greater != node ) {
+		*(int*)0 = 0;
+	}
+	AVLbalancer( root, node );
 	return 1;
 }
 //---------------------------------------------------------------------------
@@ -49987,6 +50158,7 @@ int AddBinaryNodeEx( PTREEROOT root
 	node->greater = NULL;
 	node->me = NULL;
 	node->children = 0;
+	node->depth = 0;
 	node->userdata = userdata;
 	node->key = key;
 	node->flags.bUsed = 1;
@@ -50016,6 +50188,7 @@ static void RehangBranch( PTREEROOT root, PTREENODE node )
 			RehangBranch( root, node->lesser );
 		}
 		node->children = 0;
+		node->depth = 0;
 		//lprintf( "putting self node back in tree %p", node );
 		HangBinaryNode( root, node );
 	}
@@ -50033,8 +50206,9 @@ static void NativeRemoveBinaryNode( PTREEROOT root, PTREENODE node )
 	if( root )
 	{
 		// lprintf( "Removing node from tree.. %p under %p", node, node->parent );
-		if( node->parent->lesser != node && node->parent->greater != node )
-		{
+		if( !node->parent->flags.bRoot
+			&& node->parent->lesser != node
+			&& node->parent->greater != node ) {
 			*(int*)0=0;
 		}
 		// lprintf( "%p should be removed!", node );
@@ -50085,20 +50259,25 @@ static void NativeRemoveBinaryNode( PTREEROOT root, PTREENODE node )
 	return ;
 }
 //---------------------------------------------------------------------------
-#define MAXTREEROOTSPERSET 128
-DeclareSet( TREEROOT );
-static PTREEROOTSET treepool;
-//---------------------------------------------------------------------------
 void ResetBinaryTree( PTREEROOT root )
 {
 	while( root->tree )
 		NativeRemoveBinaryNode( root, root->tree );
 }
 //---------------------------------------------------------------------------
+static void DestroyBinaryTreeNode( PTREEROOT root, PTREENODE node )
+{
+	if( node ) {
+		if( node->lesser )
+			DestroyBinaryTreeNode( root, node->lesser );
+		if( node->greater )
+			DestroyBinaryTreeNode( root, node->greater );
+		NativeRemoveBinaryNode( root, node );
+	}
+}
 void DestroyBinaryTree( PTREEROOT root )
 {
-	while( root->tree )
-		NativeRemoveBinaryNode( root, root->tree );
+	DestroyBinaryTreeNode( root, root->tree );
 	DeleteFromSet( TREEROOT, treepool, root );
 }
 //---------------------------------------------------------------------------
@@ -50115,7 +50294,7 @@ PTREEROOT CreateBinaryTreeExtended( uint32_t flags
 	if( flags & BT_OPT_NODUPLICATES  )
 		root->flags.bNoDuplicate = 1;
 	root->Destroy = Destroy;
-	//root->return  = NULL; // upgoing... (return from right )
+	//root->return  = NULL; // upgoing... (return from rightDepth )
 	if( Compare )
 		root->Compare = Compare;
 	else
@@ -50132,6 +50311,9 @@ PTREEROOT CreateBinaryTreeEx( GenericCompare Compare
 int maxlevel = 0;
 void DumpNode( PTREENODE node, int level, int (*DumpMethod)( CPOINTER user, uintptr_t key ) )
 {
+#ifdef SACK_BINARYLIST_USE_PRIMITIVE_LOGGING
+	static char buf[256];
+#endif
 	int print;
 	if( !node )
 		return;
@@ -50143,25 +50325,66 @@ void DumpNode( PTREENODE node, int level, int (*DumpMethod)( CPOINTER user, uint
 	else
 		print = TRUE;
 	//else
-	if( print )
-		lprintf( WIDE("[%3d] %p Node has %3")_32f WIDE(" children (%p %3")_32f WIDE(",%p %3")_32f WIDE("). %10") _PTRSZVALfs
-				 , level, node, node->children
-				 , node->lesser
-				 , (node->lesser)?(node->lesser->children+1):0
-				 , node->greater
-				 , (node->greater)?(node->greater->children+1):0
-				 , node->key
-				 );
+	if( print ) {
+#ifdef SACK_BINARYLIST_USE_PRIMITIVE_LOGGING
+		snprintf( buf, 256, WIDE( "[%3d] %p Node has %3d depth  %3" )_32f WIDE( " children (%p %3" )_32f WIDE( ",%p %3" )_32f WIDE( "). %10" ) _PTRSZVALfs
+			, level, node, node->depth, node->children
+			, node->lesser
+			, (node->lesser) ? (node->lesser->children + 1) : 0
+			, node->greater
+			, (node->greater) ? (node->greater->children + 1) : 0
+			, node->key
+		);
+		puts( buf );
+#else
+		lprintf( WIDE( "[%3d] %p Node has %3d depth  %3" )_32f WIDE( " children (%p %3" )_32f WIDE( ",%p %3" )_32f WIDE( "). %10" ) _PTRSZVALfs
+			, level, node, node->depth, node->children
+			, node->lesser
+			, (node->lesser) ? (node->lesser->children + 1) : 0
+			, node->greater
+			, (node->greater) ? (node->greater->children + 1) : 0
+			, node->key
+		);
+#endif
+	}
 	DumpNode( node->greater, level+1, DumpMethod );
 }
 //---------------------------------------------------------------------------
+#ifdef DEFINE_BINARYLIST_PERF_COUNTERS
+PUBLIC( void, GetTreePerf )( PTREEROOT root, int **heights, int **swaps, int *maxScans, int*bfl, int *bfr ) {
+	if( heights ) heights[0] = root->maxHeights;
+	if( swaps ) swaps[0] = root->maxSwaps;
+	if( maxScans ) maxScans[0] = root->maxScans;
+	if( bfl ) bfl[0] = root->balancedFromLeft;
+	if( bfr ) bfr[0] = root->balancedFromRight;
+}
+#endif
 void DumpTree( PTREEROOT root
 				 , int (*Dump)( CPOINTER user, uintptr_t key ) )
 {
+#ifdef SACK_BINARYLIST_USE_PRIMITIVE_LOGGING
+	static char buf[256];
 	maxlevel = 0;
-	if( !Dump ) lprintf( WIDE("Tree %p has %")_32f WIDE(" nodes. %p is root"), root, root->children, root->tree );
+	if( !Dump ) {
+		snprintf( buf, 256, WIDE( "Tree %p has %" )_32f WIDE( " nodes. %p is root" ), root, root->children, root->tree );
+		puts( buf );
+	}
 	DumpNode( root->tree, 1, Dump );
-	if( !Dump ) lprintf( WIDE("Tree had %d levels."), maxlevel );
+	if( !Dump ) {
+		snprintf( buf, 256, WIDE("Tree had %d levels."), maxlevel );
+		puts( buf );
+	}
+	fflush( stdout );
+#else
+	maxlevel = 0;
+	if( !Dump ) {
+		lprintf(  WIDE( "Tree %p has %" )_32f WIDE( " nodes. %p is root" ), root, root->children, root->tree );
+	}
+	DumpNode( root->tree, 1, Dump );
+	if( !Dump ) {
+		lprintf( WIDE("Tree had %d levels."), maxlevel );
+	}
+#endif
 }
 //---------------------------------------------------------------------------
 CPOINTER FindInBinaryTree( PTREEROOT root, uintptr_t key )
@@ -50576,7 +50799,7 @@ CPOINTER GetPriorNode( PTREEROOT root )
 	return GetPriorNodeEx( root, (POINTER*)&root->current );
 }
 //---------------------------------------------------------------------------
-uint32_t GetNodeCount( PTREEROOT root )
+int GetNodeCount( PTREEROOT root )
 {
 	return root->children;
 }
@@ -50591,6 +50814,7 @@ PTREEROOT ShadowBinaryTree( PTREEROOT Original )
 	root->flags.bUsed = 1;
 	root->flags.bShadow = 1;
 	root->children = 0;
+	root->depth = 0;
 	root->Compare = Original->Compare;
 	root->Destroy = Original->Destroy;
 	root->tree = Original->tree;
@@ -50604,54 +50828,6 @@ PTREEROOT ShadowBinaryTree( PTREEROOT Original )
  //namespace sack {
 }
 #endif
-//---------------------------------------------------------------------------
-// $Log: binarylist.c,v $
-// Revision 1.19  2005/01/27 07:18:34  panther
-// Linux cleaned.
-//
-// Revision 1.18  2004/05/04 17:23:44  d3x0r
-// Fix getlessernode
-//
-// Revision 1.17  2004/04/26 09:47:26  d3x0r
-// Cleanup some C++ problems, and standard C issues even...
-//
-// Revision 1.16  2004/01/31 01:30:20  d3x0r
-// Mods to extend/test procreglib.
-//
-// Revision 1.15  2004/01/29 10:13:44  d3x0r
-// Remove ifdeffed logging, fix dumpnode to dump to log if no write method
-//
-// Revision 1.14  2003/10/24 14:50:11  panther
-// Fix remove binary node, keep last found for quick delete
-//
-// Revision 1.13  2003/03/06 09:06:07  panther
-// Oops - forgot to decrement the root count itself
-//
-// Revision 1.12  2003/03/06 08:56:06  panther
-// fix code to unwind non-hung nodes
-//
-// Revision 1.11  2003/03/06 08:39:16  panther
-// Stripped \r's.  Added GetNodeCount()
-//
-// Revision 1.10  2003/03/04 16:28:36  panther
-// Cleanup warnings in typecode.  Convert uintptr_t to POINTER literal in binarylist
-//
-// Revision 1.9  2003/03/02 18:50:21  panther
-// Added NO_DUPLICATES opption to  binary trees
-//
-// Revision 1.8  2003/02/20 02:35:17  panther
-// Added debug message option flag
-//
-// Revision 1.7  2003/01/13 00:40:13  panther
-// removed old msvc projects.
-// Added new visual studio projects.
-// Mods to compile cleanly under msvc.
-//
-// Revision 1.6  2002/08/12 22:16:02  panther
-// Fixed buf in GetGreaterNode - last test tested prior->greater vs current
-// which will never be true.
-//
-//
 /*
  *  Crafted by James Buckeyne
  *
@@ -57014,63 +57190,71 @@ void WebSocketPing( PCLIENT pc, uint32_t timeout )
  // UTF8 RFC3629
 void WebSocketSendText( PCLIENT pc, const char *buffer, size_t length )
 {
-	struct web_socket_input_state *input = (struct web_socket_input_state *)GetNetworkLong( pc, 1 );
-	if( length > 8100 ) {
-		size_t sentLen;
-		size_t maxLen = length - 8100;
-		for( sentLen = 0; sentLen < maxLen; sentLen += 8100 )
-			WebSocketBeginSendText( pc, buffer + sentLen, 8100 );
-		length = length - ( sentLen );
-		buffer = buffer + ( sentLen );
+	if( pc ) {
+		struct web_socket_input_state *input = (struct web_socket_input_state *)GetNetworkLong( pc, 1 );
+		if( length > 8100 ) {
+			size_t sentLen;
+			size_t maxLen = length - 8100;
+			for( sentLen = 0; sentLen < maxLen; sentLen += 8100 )
+				WebSocketBeginSendText( pc, buffer + sentLen, 8100 );
+			length = length - ( sentLen );
+			buffer = buffer + ( sentLen );
+		}
+		SendWebSocketMessage( pc, input->flags.sent_type?0:1, 1, input->flags.expect_masking, (uint8_t*)buffer, length, input->flags.use_ssl );
+		input->flags.sent_type = 0;
 	}
-	SendWebSocketMessage( pc, input->flags.sent_type?0:1, 1, input->flags.expect_masking, (uint8_t*)buffer, length, input->flags.use_ssl );
-	input->flags.sent_type = 0;
 }
 // there is a control bit for whether the content is text or binary or a continuation
  // UTF8 RFC3629
 void WebSocketBeginSendText( PCLIENT pc, const char *buffer, size_t length )
 {
-	struct web_socket_input_state *output = (struct web_socket_input_state *)GetNetworkLong(pc, 1);
-	if( length > 8100 ) {
-		size_t sentLen;
-		size_t maxLen = length - 8100;
-		for( sentLen = 0; sentLen < maxLen; sentLen += 8100 )
-			WebSocketBeginSendText( pc, buffer + sentLen, 8100 );
-		length = length - ( sentLen );
-		buffer = buffer + ( sentLen );
+	if( pc ) {
+		struct web_socket_input_state *output = (struct web_socket_input_state *)GetNetworkLong(pc, 1);
+		if( length > 8100 ) {
+			size_t sentLen;
+			size_t maxLen = length - 8100;
+			for( sentLen = 0; sentLen < maxLen; sentLen += 8100 )
+				WebSocketBeginSendText( pc, buffer + sentLen, 8100 );
+			length = length - ( sentLen );
+			buffer = buffer + ( sentLen );
+		}
+		SendWebSocketMessage( pc, output->flags.sent_type?0:1, 0, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
+		output->flags.sent_type = 1;
 	}
-	SendWebSocketMessage( pc, output->flags.sent_type?0:1, 0, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
-	output->flags.sent_type = 1;
 }
 // literal binary sending; this may happen to be base64 encoded too
 void WebSocketSendBinary( PCLIENT pc, const uint8_t *buffer, size_t length )
 {
-	struct web_socket_input_state *output = (struct web_socket_input_state *)GetNetworkLong(pc, 1);
-	if( length > 8100 ) {
-		size_t sentLen;
-		size_t maxLen = length - 8100;
-		for( sentLen = 0; sentLen < maxLen; sentLen += 8100 )
-			WebSocketBeginSendBinary( pc, buffer + sentLen, 8100 );
-		length = length - ( sentLen );
-		buffer = buffer + ( sentLen );
+	if( pc ) {
+		struct web_socket_input_state *output = (struct web_socket_input_state *)GetNetworkLong(pc, 1);
+		if( length > 8100 ) {
+			size_t sentLen;
+			size_t maxLen = length - 8100;
+			for( sentLen = 0; sentLen < maxLen; sentLen += 8100 )
+				WebSocketBeginSendBinary( pc, buffer + sentLen, 8100 );
+			length = length - ( sentLen );
+			buffer = buffer + ( sentLen );
+		}
+		SendWebSocketMessage( pc, output->flags.sent_type?0:2, 1, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
+		output->flags.sent_type = 0;
 	}
-	SendWebSocketMessage( pc, output->flags.sent_type?0:2, 1, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
-	output->flags.sent_type = 0;
 }
 // literal binary sending; this may happen to be base64 encoded too
 void WebSocketBeginSendBinary( PCLIENT pc, const uint8_t *buffer, size_t length )
 {
-	struct web_socket_input_state *output = (struct web_socket_input_state *)GetNetworkLong(pc, 1);
-	if( length > 8100 ) {
-		size_t sentLen;
-		size_t maxLen = length - 8100;
-		for( sentLen = 0; sentLen < maxLen; sentLen += 8100 )
-			WebSocketBeginSendBinary( pc, buffer + sentLen, 8100 );
-		length = length - ( sentLen );
-		buffer = buffer + ( sentLen );
+	if( pc ) {
+		struct web_socket_input_state *output = (struct web_socket_input_state *)GetNetworkLong(pc, 1);
+		if( length > 8100 ) {
+			size_t sentLen;
+			size_t maxLen = length - 8100;
+			for( sentLen = 0; sentLen < maxLen; sentLen += 8100 )
+				WebSocketBeginSendBinary( pc, buffer + sentLen, 8100 );
+			length = length - ( sentLen );
+			buffer = buffer + ( sentLen );
+		}
+		SendWebSocketMessage( pc, output->flags.sent_type?0:2, 0, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
+		output->flags.sent_type = 1;
 	}
-	SendWebSocketMessage( pc, output->flags.sent_type?0:2, 0, output->flags.expect_masking, (const uint8_t*)buffer, length, output->flags.use_ssl );
-	output->flags.sent_type = 1;
 }
 void SetWebSocketAcceptCallback( PCLIENT pc, web_socket_accept callback )
 {
@@ -58838,7 +59022,8 @@ char *json_escape_string( const char *string ) {
 #define _zero(result,from)  ((*from)++,0)
 #define _3char(result,from) ( ((*from) += 3),( ( ( result & 0xF ) << 12 ) | ( ( result & 0x3F00 ) >> 2 ) | ( ( result & 0x3f0000 ) >> 16 )) )
 #define _4char(result,from)  ( ((*from) += 4), ( ( ( result & 0x7 ) << 18 )						     | ( ( result & 0x3F00 ) << 4 )						   | ( ( result & 0x3f0000 ) >> 10 )						    | ( ( result & 0x3f000000 ) >> 24 ) ) )
-#define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),		     ( ( !(result & 0xFF) )              ?_zero(result,from)	                                                    :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
+#define get4Chars(p) ((((TEXTRUNE*) ((uintptr_t)(p) & ~0x3) )[0]				  >> (CHAR_BIT*((uintptr_t)(p) & 0x3)))			             | (( ((uintptr_t)(p)) & 0x3 )				                          ? (((TEXTRUNE*) ((uintptr_t)(p) & ~0x3) )[1]					      << (CHAR_BIT*(4-((uintptr_t)(p) & 0x3))))				     :(TEXTRUNE)0 ))
+#define __GetUtfChar( result, from )           ((result = get4Chars(*from)),		     ( ( !(result & 0xFF) )              ?_zero(result,from)	                                                    :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
 #define GetUtfChar(x) __GetUtfChar(c,x)
 static int gatherString( CTEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TEXTSTR *pmOut, size_t *line, size_t *col, TEXTRUNE start_c, struct json_parse_state *state ) {
 	char *mOut = (*pmOut);
@@ -60837,7 +61022,8 @@ char *json6_escape_string( const char *string ) {
 #define _zero(result,from)  ((*from)++,0)
 #define _3char(result,from) ( ((*from) += 3),( ( ( result & 0xF ) << 12 ) | ( ( result & 0x3F00 ) >> 2 ) | ( ( result & 0x3f0000 ) >> 16 )) )
 #define _4char(result,from)  ( ((*from) += 4), ( ( ( result & 0x7 ) << 18 )						     | ( ( result & 0x3F00 ) << 4 )						   | ( ( result & 0x3f0000 ) >> 10 )						    | ( ( result & 0x3f000000 ) >> 24 ) ) )
-#define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),		     ( ( !(result & 0xFF) )              ?_zero(result,from)	                                                    :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
+#define get4Chars(p) ((((TEXTRUNE*) ((uintptr_t)(p) & ~0x3) )[0]				  >> (CHAR_BIT*((uintptr_t)(p) & 0x3)))			             | (( ((uintptr_t)(p)) & 0x3 )				                          ? (((TEXTRUNE*) ((uintptr_t)(p) & ~0x3) )[1]					      << (CHAR_BIT*(4-((uintptr_t)(p) & 0x3))))				     :(TEXTRUNE)0 ))
+#define __GetUtfChar( result, from )           ((result = get4Chars(*from)),		     ( ( !(result & 0xFF) )              ?_zero(result,from)	                                                    :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
 #define GetUtfChar(x) __GetUtfChar(c,x)
 static int gatherString6(struct json_parse_state *state, CTEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TEXTSTR *pmOut, TEXTRUNE start_c
 		//, int literalString
@@ -62880,7 +63066,8 @@ char *jsox_escape_string( const char *string ) {
 #define _zero(result,from)  ((*from)++,0)
 #define _3char(result,from) ( ((*from) += 3),( ( ( result & 0xF ) << 12 ) | ( ( result & 0x3F00 ) >> 2 ) | ( ( result & 0x3f0000 ) >> 16 )) )
 #define _4char(result,from)  ( ((*from) += 4), ( ( ( result & 0x7 ) << 18 )						     | ( ( result & 0x3F00 ) << 4 )						   | ( ( result & 0x3f0000 ) >> 10 )						    | ( ( result & 0x3f000000 ) >> 24 ) ) )
-#define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),		     ( ( !(result & 0xFF) )              ?_zero(result,from)	                                                    :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
+#define get4Chars(p) ((((TEXTRUNE*) ((uintptr_t)(p) & ~0x3) )[0]				  >> (CHAR_BIT*((uintptr_t)(p) & 0x3)))			             | (( ((uintptr_t)(p)) & 0x3 )				                          ? (((TEXTRUNE*) ((uintptr_t)(p) & ~0x3) )[1]					      << (CHAR_BIT*(4-((uintptr_t)(p) & 0x3))))				     :(TEXTRUNE)0 ))
+#define __GetUtfChar( result, from )           ((result = get4Chars(*from)),		     ( ( !(result & 0xFF) )              ?_zero(result,from)	                                                    :( ( result & 0x80 )		                       ?( ( result & 0xE0 ) == 0xC0 )			   ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )			    :( ( ( result & 0xF0 ) == 0xE0 )				                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )				   :( ( ( result & 0xF8 ) == 0xF0 )		                       ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )					  ?_4char(result,from):_zero(result,from) )				                                                                                                                  :( ( ( result & 0xC0 ) == 0x80 )					                                                                                                  ?_zero(result,from)					                                                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )		                                                                                       : ( (*from)++, (result & 0x7F) ) ) ) )
 #define GetUtfChar(x) __GetUtfChar(c,x)
 static int gatherStringX(struct jsox_parse_state *state, CTEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TEXTSTR *pmOut, TEXTRUNE start_c
 		//, int literalString
@@ -66274,7 +66461,8 @@ SACK_NAMESPACE namespace network { namespace vesl {
 #define _zero(result,from)  ((*from)++,0)
 #define _3char(result,from) ( ((*from) += 3),( ( ( result & 0xF ) << 12 ) | ( ( result & 0x3F00 ) >> 2 ) | ( ( result & 0x3f0000 ) >> 16 )) )
 #define _4char(result,from)  ( ((*from) += 4), ( ( ( result & 0x7 ) << 18 )                                    | ( ( result & 0x3F00 ) << 4 )                                         | ( ( result & 0x3f0000 ) >> 10 )                                      | ( ( result & 0x3f000000 ) >> 24 ) ) )
-#define __GetUtfChar( result, from )           ((result = ((TEXTRUNE*)*from)[0]),             ( ( !(result & 0xFF) )                     ?_zero(result,from)                                                           :( ( result & 0x80 )                       ?( ( result & 0xE0 ) == 0xC0 )               ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )                :( ( ( result & 0xF0 ) == 0xE0 )                                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )                   :( ( ( result & 0xF8 ) == 0xF0 )                      ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )                         ?_4char(result,from):_zero(result,from) )                                                                                                        :( ( ( result & 0xC0 ) == 0x80 )                                                                                                                    ?_zero(result,from)                                                                                                                                 : ( (*from)++, (result & 0x7F) ) ) ) )                                                                                               : ( (*from)++, (result & 0x7F) ) ) ) )
+#define get4Chars(p) ((((TEXTRUNE*) ((uintptr_t)(p) & ~0x3) )[0]				  >> (CHAR_BIT*((uintptr_t)(p) & 0x3)))			             | (( ((uintptr_t)(p)) & 0x3 )				                          ? (((TEXTRUNE*) ((uintptr_t)(p) & ~0x3) )[1]					      << (CHAR_BIT*(4-((uintptr_t)(p) & 0x3))))				     :(TEXTRUNE)0 ))
+#define __GetUtfChar( result, from )           ((result = get4Chars(*from)),             ( ( !(result & 0xFF) )                     ?_zero(result,from)                                                           :( ( result & 0x80 )                       ?( ( result & 0xE0 ) == 0xC0 )               ?( ( ( result & 0xC000 ) == 0x8000 ) ?_2char(result,from) : _zero(result,from)  )                :( ( ( result & 0xF0 ) == 0xE0 )                                           ?( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) ) ? _3char(result,from) : _zero(result,from)  )                   :( ( ( result & 0xF8 ) == 0xF0 )                      ? ( ( ( ( result & 0xC000 ) == 0x8000 ) && ( ( result & 0xC00000 ) == 0x800000 ) && ( ( result & 0xC0000000 ) == 0x80000000 ) )                         ?_4char(result,from):_zero(result,from) )                                                                                                        :( ( ( result & 0xC0 ) == 0x80 )                                                                                                                    ?_zero(result,from)                                                                                                                                 : ( (*from)++, (result & 0x7F) ) ) ) )                                                                                               : ( (*from)++, (result & 0x7F) ) ) ) )
 #define GetUtfChar(x) __GetUtfChar(c,x)
 static void vesl_state_init( struct vesl_parse_state *state )
 {
@@ -67860,9 +68048,9 @@ NETWORK_PROC( int, GetMacAddress)(PCLIENT pc, uint8_t* buf, size_t *buflen )
 	MemCpy( &arpr.arp_pa, pc->saClient, sizeof( SOCKADDR ) );
 	arpr.arp_ha.sa_family = AF_INET;
 	{
-		char buf[256];
-		ifc.ifc_len = sizeof( buf );
-		ifc.ifc_buf = buf;
+		char ifbuf[256];
+		ifc.ifc_len = sizeof( ifbuf );
+		ifc.ifc_buf = ifbuf;
 		ioctl( pc->Socket, SIOCGIFCONF, &ifc );
 		{
 			int i;
@@ -67943,9 +68131,9 @@ NETWORK_PROC( PLIST, GetMacAddresses)( void )
 	MemCpy( &arpr.arp_pa, pc->saClient, sizeof( SOCKADDR ) );
 	arpr.arp_ha.sa_family = AF_INET;
 	{
-		char buf[256];
-		ifc.ifc_len = sizeof( buf );
-		ifc.ifc_buf = buf;
+		char ifbuf[256];
+		ifc.ifc_len = sizeof( ifbuf );
+		ifc.ifc_buf = ifbuf;
 		ioctl( pc->Socket, SIOCGIFCONF, &ifc );
 		{
 			int i;
@@ -68295,10 +68483,10 @@ void TerminateClosedClientEx( PCLIENT pc DBG_PASS )
 	{
 		PendingBuffer * lpNext;
 		EnterCriticalSec( &globalNetworkData.csNetwork );
+		RemoveThreadEvent( pc );
 #ifdef VERBOSE_DEBUG
 		lprintf( "REMOVED EVENT...." );
 #endif
-		RemoveThreadEvent( pc );
 		//lprintf( WIDE( "Terminating closed client..." ) );
 		if( IsValid( pc->Socket ) )
 		{
@@ -68800,10 +68988,13 @@ void RemoveThreadEvent( PCLIENT pc ) {
 			{
 				// have to make sure threads reset to the new list.
 				//lprintf( "have to wait for thread to be in wait state..." );
-				WSASetEvent( thread->hThread );
 				LeaveCriticalSec( &globalNetworkData.csNetwork );
-				while( (thread->nWaitEvents > 1) || thread->flags.bProcessing )
+				LeaveCriticalSec( &globalNetworkData.csNetwork );
+				while( (thread->nWaitEvents > 1) || thread->flags.bProcessing ) {
+					WSASetEvent( thread->hThread );
 					Relinquish();
+				}
+				EnterCriticalSec( &globalNetworkData.csNetwork );
 				EnterCriticalSec( &globalNetworkData.csNetwork );
 			}
 			else
@@ -68959,8 +69150,8 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t qui
 				next = pc->next;
 				if( +GetTickCount() > (pc->LastEvent + 1000) )
 				{
-					lprintf( "Remove thread event on closed thread (should be terminate here..)" );
-  // also does the remove.
+					//lprintf( "Remove thread event on closed thread (should be terminate here..)" );
+					// also does the remove.
 					TerminateClosedClient( pc );
 					//RemoveThreadEvent( pc ); // also does the close.
 				}
@@ -69167,6 +69358,9 @@ void RemoveThreadEvent( PCLIENT pc ) {
 #  endif
 	}
 	LockedDecrement( &thread->nEvents );
+#ifdef LOG_NETWORK_EVENT_THREAD
+	lprintf( "peer %p now has %d events", thread, thread->nEvents );
+#endif
 	// don't bubble sort root thread
 	if( thread->parent_peer )
 		while( (thread->nEvents < thread->parent_peer->nEvents) && thread->parent_peer->parent_peer ) {
@@ -69346,7 +69540,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #  else
 		struct epoll_event events[10];
 #    ifdef LOG_NETWORK_EVENT_THREAD
-		lprintf( "Wait on %d", thread->epoll_fd );
+		lprintf( "Wait on %d   %d", thread->epoll_fd, thread->nEvents );
 #    endif
 		cnt = epoll_wait( thread->epoll_fd, events, 10, -1 );
 #  endif
@@ -69381,15 +69575,19 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #  else
 				event_data = (struct event_data*)events[n].data.ptr;
 #  ifdef LOG_NOTICES
-				lprintf( "Process %d %x", event_data->broadcast?event_data->pc->SocketBroadcast:event_data->pc->Socket
-				       , events[n].events );
+				if( event_data != (struct event_data*)1 ) {
+					lprintf( "Process %d %x", event_data->broadcast?event_data->pc->SocketBroadcast:event_data->pc->Socket
+							 , events[n].events );
+				}
 #  endif
 #  endif
 				if( event_data == (struct event_data*)1 ) {
 					//char buf;
-					//stat = read( GetThreadSleeper( thread->pThread ), &buf, 1 );
+               //int stat;
+					//stat = read( GetThreadSleeper( thread->thread ), &buf, 1 );
 					//call wakeable sleep to just clear the sleep; because this is an event on the sleep pipe.
-					WakeableSleep( SLEEP_FOREVER );
+					WakeableSleep( 1 );
+               //lprintf( "This should sleep forever..." );
 					return 1;
 				}
 #  ifdef __MAC__
@@ -70059,7 +70257,7 @@ get_client:
 				goto get_client;
 			}
 		} while( d < 1 );
-		if( pClient->dwFlags & CF_STATEFLAGS )
+		if( pClient->dwFlags & ( CF_STATEFLAGS & (~CF_AVAILABLE)) )
 			DebugBreak();
  // clear client is redundant here... but saves the critical section now
 		ClearClient( pClient DBG_SRC );
@@ -71014,21 +71212,32 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 			//return;
 			// continue on; otherwise the close event gets lost...
 		}
-		while( !NetworkLockEx( lpClient, 0 DBG_SRC ) )
 		{
-			if( !(lpClient->dwFlags & CF_ACTIVE ) )
-			{
-				return;
-			}
-			Relinquish();
-		}
-		while( !NetworkLockEx( lpClient, 1 DBG_SRC ) )
-		{
-			if( !(lpClient->dwFlags & CF_ACTIVE) )
-			{
-				return;
-			}
-			Relinquish();
+			int notLocked = TRUE;
+			do {
+				if( !NetworkLockEx( lpClient, 0 DBG_SRC ) )
+				{
+ // if it's already been closed
+					if( !(lpClient->dwFlags & CF_ACTIVE ) )
+					{
+						return;
+					}
+					Relinquish();
+					continue;
+				}
+				if( !NetworkLockEx( lpClient, 1 DBG_SRC ) )
+				{
+					NetworkUnlock( lpClient, 0 );
+  // if it's already been closed
+					if( !(lpClient->dwFlags & CF_ACTIVE) )
+					{
+						return;
+					}
+					Relinquish();
+					continue;
+				}
+				notLocked = FALSE;
+			} while( notLocked );
 		}
 		// allow application a chance to clean it's references
 		// to this structure before closing and cleaning it.
@@ -71737,7 +71946,9 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
 	WSASetEvent( globalNetworkData.hMonitorThreadControlEvent );
 #endif
 #ifdef __LINUX__
+	EnterCriticalSec( &globalNetworkData.csNetwork );
 	AddThreadEvent( pListen, 0 );
+	LeaveCriticalSec( &globalNetworkData.csNetwork );
 #endif
 	return pListen;
 }

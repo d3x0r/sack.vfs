@@ -3257,6 +3257,7 @@ TYPELIB_PROC  int TYPELIB_CALLTYPE  TextSimilar  ( PTEXT pText, CTEXTSTR text );
 //#define SameText( l1, l2 )  ( strcmp( GetText(l1), GetText(l2) ) )
 #define textmin(a,b) ( (((a)>0)&&((b)>0))?(((a)<(b))?(a):(b)):(((a)>0)?(a):((b)>0)?(b):0) )
 #ifdef __LINUX__
+#  include <strings.h>
 /* windows went with stricmp() and strnicmp(), whereas linux
  went with strcasecmp() and strncasecmp()                  */
 #  ifdef UNICODE
@@ -4414,9 +4415,9 @@ TYPELIB_PROC  CPOINTER TYPELIB_CALLTYPE  GetPriorNode( PTREEROOT root );
 /* \Returns the total number of nodes in the tree.
    Example
    <code lang="c++">
-   uint32_t total_nodes = GetNodeCount(tree);
+   int total_nodes = GetNodeCount(tree);
    </code>                                         */
-TYPELIB_PROC  uint32_t TYPELIB_CALLTYPE  GetNodeCount ( PTREEROOT root );
+TYPELIB_PROC  int TYPELIB_CALLTYPE  GetNodeCount ( PTREEROOT root );
  // returns a shadow of the original.
 TYPELIB_PROC  PTREEROOT TYPELIB_CALLTYPE  ShadowBinaryTree( PTREEROOT root );
 #ifdef __cplusplus
