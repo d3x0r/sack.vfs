@@ -22,6 +22,7 @@
 #define USE_IMAGE_INTERFACE g.pii
 #include <image.h>
 #include <render.h>
+#include <render3d.h>
 #include <psi.h>
 
 
@@ -66,6 +67,8 @@ enum eventType {
 	Event_Control_Mouse,
 	Event_Control_Key,
 	Event_Control_Draw,
+	Event_Control_Move,
+	Event_Control_Resize,
 	Event_Control_Load,
 	Event_Control_Destroy,
 
@@ -93,6 +96,14 @@ struct event {
 			int32_t x, y;
 			uint32_t b;
 		}mouse;
+		struct {
+			uint32_t w,h;
+			LOGICAL start;
+		}size;
+		struct {
+			int32_t x, y;
+			LOGICAL start;
+		}move;
 		struct {
 			RegistrationObject* type;
 			struct {
@@ -139,6 +150,7 @@ extern
 struct global {
 	PIMAGE_INTERFACE pii;
 	PRENDER_INTERFACE pdi;
+	PRENDER3D_INTERFACE p3di;
 	struct {
 		int32_t x, y;
 		uint32_t w, h;

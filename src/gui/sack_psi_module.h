@@ -79,6 +79,9 @@ public:
 	static void setKey( const FunctionCallbackInfo<Value>& args );
 	static void setTouch( const FunctionCallbackInfo<Value>& args );
 
+	static void setMove( const FunctionCallbackInfo<Value>& args );
+	static void setSize( const FunctionCallbackInfo<Value>& args );
+
    ~RegistrationObject();
 
 

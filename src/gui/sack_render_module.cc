@@ -109,6 +109,8 @@ void RenderObject::Init( Handle<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "close", RenderObject::close );
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "on", RenderObject::on );
 
+		Local<Function> renderFunc = renderTemplate->GetFunction();
+		SET_READONLY_METHOD( renderFunc, "is3D", RenderObject::is3D );
 
 		constructor.Reset( isolate, renderTemplate->GetFunction() );
 		SET_READONLY( exports, "Renderer", renderTemplate->GetFunction() );
@@ -185,6 +187,16 @@ RenderObject::~RenderObject() {
 			delete argv;
 		}
 	}
+
+
+	
+void RenderObject::is3D( const FunctionCallbackInfo<Value>& args ) {
+	if( GetRender3dInterface() )
+		args.GetReturnValue().Set( True( args.GetIsolate() ));
+	else
+		args.GetReturnValue().Set( False( args.GetIsolate() ));
+}
+
 
 void RenderObject::close( const FunctionCallbackInfo<Value>& args ) {
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
