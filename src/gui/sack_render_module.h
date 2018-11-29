@@ -32,6 +32,7 @@ public:
 	static void on( const FunctionCallbackInfo<Value>& args );
 	static void getImage( const FunctionCallbackInfo<Value>& args );
 	static void getDisplay( const FunctionCallbackInfo<Value>& args );
+	static void is3D( const FunctionCallbackInfo<Value>& args );
 
    ~RenderObject();
 

@@ -222,6 +222,22 @@ static void asyncmsg( uv_async_t* handle ) {
 				r = cb->Call( evt->control->state.Get( isolate ), 1, argv );
 				break;
 			}
+			case Event_Control_Resize: {
+				cb = Local<Function>::New( isolate, evt->control->cbSizeEvent );
+				Local<Value> argv[3] = { Number::New(isolate, evt->data.size.w )
+					, Number::New( isolate, evt->data.size.h )
+					, Boolean::New( isolate, evt->data.move.start ) };
+				r = cb->Call( evt->control->state.Get( isolate ), 2, argv );
+				break;
+			}
+			case Event_Control_Move: {
+				cb = Local<Function>::New( isolate, evt->control->cbMoveEvent );
+				Local<Value> argv[3] = { Number::New( isolate, evt->data.move.x )
+					, Number::New( isolate, evt->data.move.y )
+					, Boolean::New( isolate, evt->data.move.start ) };
+				r = cb->Call( evt->control->state.Get( isolate ), 2, argv );
+				break;
+			}
 			case Event_Control_Close_Loop:
 				uv_close( (uv_handle_t*)&psiLocal.async, NULL );
 				break;
@@ -303,6 +319,20 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum eventTyp
 		break;
 	case Event_Menu_Item_Selected:
 		e.data.popup.pmi = va_arg( args, uintptr_t );
+		break;
+	case Event_Control_Move:
+		if( control->cbMoveEvent.IsEmpty() )
+			return false;
+		e.data.move.x = va_arg( args, int32_t );
+		e.data.move.y = va_arg( args, int32_t );
+		e.data.move.start = va_arg( args, LOGICAL );
+		break;
+	case Event_Control_Resize:
+		if( control->cbSizeEvent.IsEmpty() )
+			return false;
+		e.data.size.w = va_arg( args, uint32_t );
+		e.data.size.h = va_arg( args, uint32_t );
+		e.data.size.start = va_arg( args, LOGICAL );
 		break;
 	}
 
@@ -700,6 +730,8 @@ void ControlObject::Init( Handle<Object> _exports ) {
 		NODE_SET_PROTOTYPE_METHOD( regTemplate, "setMouse", RegistrationObject::setMouse );
 		NODE_SET_PROTOTYPE_METHOD( regTemplate, "setKey", RegistrationObject::setKey );
 		NODE_SET_PROTOTYPE_METHOD( regTemplate, "setTouch", RegistrationObject::setTouch );
+		//NODE_SET_PROTOTYPE_METHOD( regTemplate, "setMove", RegistrationObject::setMove );
+		//NODE_SET_PROTOTYPE_METHOD( regTemplate, "setSize", RegistrationObject::setSize );
 
 		// Prototype
 		NODE_SET_PROTOTYPE_METHOD( psiTemplate, "Control", ControlObject::NewControl );
@@ -722,6 +754,19 @@ void ControlObject::Init( Handle<Object> _exports ) {
 			, FunctionTemplate::New( isolate, ControlObject::getControlFont )
 			, FunctionTemplate::New( isolate, ControlObject::setControlFont )
 			, DontDelete );
+		psiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "size" )
+			, FunctionTemplate::New( isolate, ControlObject::getCoordinate, Integer::New( isolate, 12 ) )
+			, FunctionTemplate::New( isolate, ControlObject::setCoordinate, Integer::New( isolate, 11 ) )
+			, DontDelete );
+		psiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "position" )
+			, FunctionTemplate::New( isolate, ControlObject::getCoordinate, Integer::New( isolate, 12 ) )
+			, FunctionTemplate::New( isolate, ControlObject::setCoordinate, Integer::New( isolate, 10 ) )
+			, DontDelete );
+		psiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "layout" )
+			, FunctionTemplate::New( isolate, ControlObject::getCoordinate, Integer::New( isolate, 12 ) )
+			, FunctionTemplate::New( isolate, ControlObject::setCoordinate, Integer::New( isolate, 12 ) )
+			, DontDelete );
+
 
 		Local<Function> frameConstructor = psiTemplate->GetFunction();
 		SET_READONLY_METHOD( frameConstructor, "Border", newBorder );
@@ -757,11 +802,11 @@ void ControlObject::Init( Handle<Object> _exports ) {
 		*/
 		psiTemplate2->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "size" )
 			, FunctionTemplate::New( isolate, ControlObject::getCoordinate, Integer::New( isolate, 12 ) )
-			, FunctionTemplate::New( isolate, ControlObject::setCoordinate, Integer::New( isolate, 10 ) )
+			, FunctionTemplate::New( isolate, ControlObject::setCoordinate, Integer::New( isolate, 11 ) )
 			, DontDelete );
 		psiTemplate2->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "position" )
 			, FunctionTemplate::New( isolate, ControlObject::getCoordinate, Integer::New( isolate, 12 ) )
-			, FunctionTemplate::New( isolate, ControlObject::setCoordinate, Integer::New( isolate, 11 ) )
+			, FunctionTemplate::New( isolate, ControlObject::setCoordinate, Integer::New( isolate, 10 ) )
 			, DontDelete );
 		psiTemplate2->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "layout" )
 			, FunctionTemplate::New( isolate, ControlObject::getCoordinate, Integer::New( isolate, 12 ) )
@@ -929,6 +974,7 @@ ControlObject::ControlObject( const char *title, int x, int y, int w, int h, int
 	frame = over;
 	psiLocal.pendingCreate = this;
 	control = ::CreateFrame( title, x, y, w, h, border, over ? over->control : (PSI_CONTROL)NULL );
+	SetCommonUserData( control, (uintptr_t)this );
 	psiLocal.pendingCreate = NULL;
 }
 
@@ -1027,6 +1073,7 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 	CTEXTSTR type = GetControlTypeName( obj->control );
 	if( StrCmp( type, CONTROL_FRAME_NAME ) == 0 ) {
 		SetCommonButtons( obj->control, &obj->done, &obj->okay );
+
 	} else if( StrCmp( type, "PSI Console" ) == 0 ) {
 		c->Set( String::NewFromUtf8( isolate, "write" ), Function::New( isolate, ControlObject::writeConsole ) );
 		c->Set( String::NewFromUtf8( isolate, "oninput" ), Function::New( isolate, ControlObject::setConsoleRead ) );
@@ -1348,15 +1395,20 @@ static uintptr_t waitDialog( PTHREAD thread ) {
 	CommonWait( waiter->control );
 	if( waiter->done ) {
 		if( waiter->okay ) {
-			MakePSIEvent( waiter, true, Event_Frame_Ok );
+			if( !waiter->cbFrameEventOkay.IsEmpty() )
+				MakePSIEvent( waiter, true, Event_Frame_Ok );
 		} else {
-			MakePSIEvent( waiter, true, Event_Frame_Cancel );
+			if( !waiter->cbFrameEventCancel.IsEmpty() )
+				MakePSIEvent( waiter, true, Event_Frame_Cancel );
 		}
 	} else {
 		if( waiter->okay ) {
 			MakePSIEvent( waiter, true, Event_Frame_Ok );
 		} else {
-			MakePSIEvent( waiter, true, Event_Frame_Abort );
+			if( !waiter->cbFrameEventAbort.IsEmpty() )
+				MakePSIEvent( waiter, true, Event_Frame_Abort );
+			else if( !waiter->cbFrameEventCancel.IsEmpty() )
+				MakePSIEvent( waiter, true, Event_Frame_Cancel );
 		}
 	}
 	waiter->waiter = NULL;
@@ -1406,6 +1458,26 @@ void ControlObject::get( const FunctionCallbackInfo<Value>& args ) {
 	//args.GetReturnValue().Set( NewWrappedControl( isolate, pc ) );
 }
 
+static void OnMoveCommon( CONTROL_FRAME_NAME )( PSI_CONTROL pc, LOGICAL startOrMoved ) {
+	ControlObject *control = (ControlObject *)GetCommonUserData( pc );
+	if( control ) {
+		int32_t x, y;
+		GetFramePosition( pc, &x, &y );
+		GetPhysicalCoordinate( pc, &x, &y, TRUE );
+		MakePSIEvent( control, false, Event_Control_Move, x, y, startOrMoved );
+	}
+}
+
+static void OnSizeCommon( CONTROL_FRAME_NAME )(PSI_CONTROL pc, LOGICAL startOrMoved) {
+	ControlObject *control = (ControlObject *)GetCommonUserData( pc );
+	if( control ) {
+		uint32_t w, h;
+		GetFrameSize( pc, &w, &h );
+		MakePSIEvent( control, false, Event_Control_Resize, w, h, startOrMoved );
+	}
+}
+
+
 void ControlObject::on( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() >= 2 ) {
 		Isolate* isolate = args.GetIsolate();
@@ -1423,6 +1495,12 @@ void ControlObject::on( const FunctionCallbackInfo<Value>& args ) {
 		}
 		if( strcmp( *name, "unshow" ) == 0 ) {
 			//me->cbFrameEventAbort.Reset( isolate, cb );
+		}
+		if( strcmp( *name, "move" ) == 0 ) {
+			me->cbMoveEvent.Reset( isolate, cb );
+		}
+		if( strcmp( *name, "size" ) == 0 ) {
+			me->cbSizeEvent.Reset( isolate, cb );
 		}
 	}
 }
@@ -1462,6 +1540,7 @@ void ControlObject::load( const FunctionCallbackInfo<Value>& args ) {
 	PSI_CONTROL pc = LoadXMLFrame( *name );
 	Local<Object> blah = NewWrappedControl( args.GetIsolate(), pc );
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( blah );
+	SetCommonUserData( pc, (uintptr_t)me );
 	SetCommonButtons( pc, &me->done, &me->okay );
 
 	args.GetReturnValue().Set( blah );
