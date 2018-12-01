@@ -397,11 +397,11 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		udpOpts.messageCallback.Empty();
 
 		if( args[argBase]->IsString() ) {
-			udpOpts.address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) args[argBase]->ToString() ) );
+			udpOpts.address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) args[argBase]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
 			argBase++;
 		}
 		if( ( args.Length() >= argBase ) && args[argBase]->IsObject() ) {
-			Local<Object> opts = args[argBase]->ToObject();
+			Local<Object> opts = args[argBase]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 
 			Local<String> optName;
 			struct optionStrings *strings = getStrings( isolate );
@@ -414,7 +414,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 			}
 			// ---- get family
 			if( opts->Has( optName = strings->familyString->Get( isolate ) ) ) {
-				String::Utf8Value family( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+				String::Utf8Value family( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 				udpOpts.v6 = (StrCmp( *family, "IPv6" ) == 0);
 				if( udpOpts.addressDefault ) {
 					Deallocate( char *, udpOpts.address );
@@ -433,23 +433,23 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 					udpOpts.address = StrDup( "0.0.0.0" );
 			}
 			else {
-				udpOpts.address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString()) );
+				udpOpts.address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked()) );
 			}
 			// ---- get to port
 			if( opts->Has( optName = strings->toPortString->Get( isolate ) ) ) {
-				udpOpts.toPort = (int)opts->Get( optName )->ToInteger()->Value();
+				udpOpts.toPort = (int)opts->Get( optName )->ToInteger(isolate->GetCurrentContext()).ToLocalChecked()->Value();
 			}
 			else
 				udpOpts.toPort = 0;
 			// ---- get toAddress
 			if( opts->Has( optName = strings->addressString->Get( isolate ) ) ) {
-				udpOpts.toAddress = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() ) );
+				udpOpts.toAddress = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
 			}
 			else
 				udpOpts.toAddress = NULL;
 			// ---- get broadcast
 			if( opts->Has( optName = strings->broadcastString->Get( isolate ) ) ) {
-				udpOpts.broadcast = opts->Get( optName )->ToBoolean()->Value();
+				udpOpts.broadcast = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 			}
 			// ---- get message callback
 			if( opts->Has( optName = strings->messageString->Get( isolate ) ) ) {
@@ -457,16 +457,16 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 			}
 			// ---- get read strings setting
 			if( opts->Has( optName = strings->readStringsString->Get( isolate ) ) ) {
-				udpOpts.readStrings = opts->Get( optName )->ToBoolean()->Value();
+				udpOpts.readStrings = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 			}
 			// ---- get reuse address
 			if( opts->Has( optName = strings->reuseAddrString->Get( isolate ) ) ) {
-				udpOpts.reuseAddr = opts->Get( optName )->ToBoolean()->Value();
+				udpOpts.reuseAddr = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 			}
 			else udpOpts.reuseAddr = false;
 			// ---- get reuse port
 			if( opts->Has( optName = strings->reusePortString->Get( isolate ) ) ) {
-				udpOpts.reusePort = opts->Get( optName )->ToBoolean()->Value();
+				udpOpts.reusePort = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 			}
 			else udpOpts.reusePort = false;
 			argBase++;
@@ -506,7 +506,7 @@ void udpObject::setBroadcast( const FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	udpObject *obj = ObjectWrap::Unwrap<udpObject>( args.This() );
-	UDPEnableBroadcast( obj->pc, args[0]->ToBoolean()->Value() );
+	UDPEnableBroadcast( obj->pc, args[0]->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value() );
 }
 
 void udpObject::on( const FunctionCallbackInfo<Value>& args ) {
@@ -514,7 +514,7 @@ void udpObject::on( const FunctionCallbackInfo<Value>& args ) {
 	udpObject *obj = ObjectWrap::Unwrap<udpObject>( args.Holder() );
 	if( args.Length() == 2 ) {
 		Isolate* isolate = args.GetIsolate();
-		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString() );
+		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		if( StrCmp( *event, "error" ) == 0 ) {
 			// not sure how to get this... so many errors so few callbacks
@@ -547,9 +547,9 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 	SOCKADDR *dest = NULL;
 	if( args.Length() > 1 ) {
 		Local<FunctionTemplate> tpl = addrObject::tpl.Get( isolate );
-		Local<Object> argObj = args[1]->ToObject();
+		Local<Object> argObj = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 		if( !argObj.IsEmpty() && tpl->HasInstance( argObj ) ) {
-			addrObject *obj = ObjectWrap::Unwrap<addrObject>( args[1]->ToObject() );
+			addrObject *obj = ObjectWrap::Unwrap<addrObject>( args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked() );
 			if( obj )
 				dest = obj->addr;
 		}
@@ -563,7 +563,7 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 		SendUDPEx( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
 	}
 	else if( args[0]->IsString() ) {
-		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString() );
+		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		SendUDPEx( obj->pc, *buf, buf.length(), dest );
 	}
 	else {
@@ -629,7 +629,7 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 			args.GetReturnValue().Set( _this );
 			return;
 		}
-		address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) args[argBase]->ToString() ) );
+		address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) args[argBase]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
 		argBase++;
 
 		if( (args.Length() >= argBase) && args[argBase]->IsNumber() ) {
@@ -677,7 +677,7 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 			obj->Wrap( _this );
 			return;
 		}
-		address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) args[argBase]->ToString() ) );
+		address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) args[argBase]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
 		argBase++;
 
 		if( (args.Length() >= argBase) && args[argBase]->IsNumber() ) {

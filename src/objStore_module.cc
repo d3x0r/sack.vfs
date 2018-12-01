@@ -130,7 +130,9 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		else {
 			int arg = 0;
 			if( args[0]->IsString() ) {
-				String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString() );
+
+				//TooObject( isolate.getCurrentContext().FromMaybe( Local<Object>() )
+				String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 				mount_name = StrDup( *fName );
 			}
 			else {
@@ -138,7 +140,7 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 			if( argc > 1 ) {
 				if( args[arg]->IsString() ) {
-					String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString() );
+					String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					defaultFilename = FALSE;
 					filename = StrDup( *fName );
 				}
@@ -152,7 +154,7 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 			//if( args[argc
 			if( args[arg]->IsNumber() ) {
-				version = (uintptr_t)args[arg++]->ToNumber( isolate )->Value();
+				version = (uintptr_t)args[arg++]->ToNumber( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 			}
 			if( argc > arg ) {
 				if( !args[arg]->IsNull() && !args[arg]->IsUndefined() ) {
@@ -242,7 +244,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			arg++;
 		}
 		else if( args[arg]->IsObject() ) {
-			Local<Object> useParser = args[arg]->ToObject();
+			Local<Object> useParser = args[arg]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 			parserObject = ObjectWrap::Unwrap<JSOXObject>( useParser );
 			parser = parserObject->state;
 			arg++;
