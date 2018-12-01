@@ -1153,7 +1153,6 @@ httpObject::httpObject() {
 }
 
 httpObject::~httpObject() {
-	httpObject *req;
 	INDEX idx = FindLink( &this->wss->requests, this );
 	if( idx != INVALID_INDEX ) {
 		SetLink( &wss->requests, idx, NULL );

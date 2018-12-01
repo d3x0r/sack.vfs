@@ -284,6 +284,67 @@ void SqlStmtObject::Set( const v8::FunctionCallbackInfo<Value>& args ) {
 	} else if( args[arg]->IsInt8Array() ) {
 	} else if( args[arg]->IsTypedArray() ) {
 	}
+}
+
+static void PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg, String::Utf8Value *name ) {
+	struct json_value_container val;
+	if( name ) {
+		val.name = DupCStrLen( *name[0], val.nameLen = name[0].length() );
+	}
+	else {
+		val.name = NULL;
+		val.nameLen = 0;
+	}
+	if( arg->IsString() ) {
+		String::Utf8Value text( arg->ToString() );
+		val.value_type = VALUE_STRING;
+		val.string = DupCStrLen( *text, val.stringLen = text.length() );
+		AddDataItem( pdlParams, &val );
+	}
+	else if( arg->IsInt32() ) {
+		val.value_type = VALUE_NUMBER;
+		val.result_n = arg->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
+		val.float_result = 0;
+		AddDataItem( pdlParams, &val );
+	}
+	else if( arg->IsBoolean() ) {
+		val.value_type = VALUE_NUMBER;
+		val.result_n = arg->BooleanValue( isolate->GetCurrentContext() ).FromMaybe(false);
+		val.float_result = 0;
+		AddDataItem( pdlParams, &val );
+	}
+	else if( arg->IsNumber() ) {
+		val.value_type = VALUE_NUMBER;
+		val.result_d = arg->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
+		val.float_result = 1;
+		AddDataItem( pdlParams, &val );
+	}
+	else if( arg->IsArrayBuffer() ) {
+		Local<ArrayBuffer> myarr = arg.As<ArrayBuffer>();
+		val.string = (char*)myarr->GetContents().Data();
+		val.stringLen = myarr->ByteLength();
+		val.value_type = VALUE_TYPED_ARRAY;
+		AddDataItem( pdlParams, &val );
+	}
+	else if( arg->IsUint8Array() ) {
+		Local<Uint8Array> _myarr = arg.As<Uint8Array>();
+		Local<ArrayBuffer> buffer = _myarr->Buffer();
+		val.string = (char*)buffer->GetContents().Data();
+		val.stringLen = buffer->ByteLength();
+		val.value_type = VALUE_TYPED_ARRAY;
+		AddDataItem( pdlParams, &val );
+	}
+	else if( arg->IsTypedArray() ) {
+		Local<TypedArray> _myarr = arg.As<TypedArray>();
+		Local<ArrayBuffer> buffer = _myarr->Buffer();
+		val.string = (char*)buffer->GetContents().Data();
+		val.stringLen = buffer->ByteLength();
+		val.value_type = VALUE_TYPED_ARRAY;
+		AddDataItem( pdlParams, &val );
+	}
+	else {
+		lprintf( "Unsupported TYPE" );
+	}
 
 }
 
@@ -294,56 +355,99 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 			String::NewFromUtf8( isolate, TranslateText( "Required parameter, SQL query, is missing.") ) ) );
 		return;
 	}
-	/*
+	String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
+	PTEXT statement;
+	PDATALIST pdlParams = NULL;
+
+	if( args.Length() == 1 ) {
+		String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
+		statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
+	}
+
+
 	if( args.Length() > 1 ) {
-		int arg = 0;
-		PDATALIST values;
+		int arg = 1;
+		LOGICAL isFormatString;
 		PVARTEXT pvtStmt = VarTextCreate();
 		struct json_value_container val;
 		memset( &val, 0, sizeof( val ) );
-		values = CreateDataList( sizeof( struct json_value_container ) );
-		for( arg = 0; arg < args.Length(); arg++ ) {
-			String::Utf8Value text( args[arg]->ToString() );
-			if( args[arg]->IsString() ) {
-				if( arg & 1 ) {
-					val.value_type = VALUE_STRING;
-					val.string = DupCStrLen( *text, text.length() );
-					AddDataItem( &values, &val );
+		if( StrChr( *sqlStmt, ':' )
+			|| StrChr( *sqlStmt, '@' )
+			|| StrChr( *sqlStmt, '$' ) ) {
+			if( args[1]->IsObject() ) {
+				arg = 2;
+				pdlParams = CreateDataList( sizeof( struct json_value_container ) );
+				Local<Object> params = Local<Object>::Cast( args[1] );
+				Local<Array> paramNames = params->GetOwnPropertyNames();
+				for( int p = 0; p < paramNames->Length(); p++ ) {
+					Local<Value> valName = paramNames->Get( p );
+					Local<Value> value = params->Get( valName );
+					String::Utf8Value name( valName->ToString() );
+					PushValue( isolate, &pdlParams, value, &name );
+				}
+			}
+			else {
+				isolate->ThrowException( Exception::Error(
+					String::NewFromUtf8( isolate, TranslateText( "Required parameter 2, Named Paramter Object, is missing." ) ) ) );
+				return;
+			}
+			isFormatString = TRUE;
+		}
+		else if( StrChr( *sqlStmt, '?' ) ) {
+			String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
+			statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
+			isFormatString = TRUE;
+		} 
+		else {
+			arg = 0;
+			isFormatString = FALSE;
+		}
+
+		if( !pdlParams )
+			pdlParams = CreateDataList( sizeof( struct json_value_container ) );
+		if( !isFormatString ) {
+			for( ; arg < args.Length(); arg++ ) {
+				if( args[arg]->IsString() ) {
+					String::Utf8Value text( args[arg]->ToString() );
+					if( arg & 1 ) { // every odd parameter is inserted
+						val.value_type = VALUE_STRING;
+						val.string = DupCStrLen( *text, text.length() );
+						AddDataItem( &pdlParams, &val );
+						VarTextAddCharacter( pvtStmt, '?' );
+					}
+					else {
+						VarTextAddData( pvtStmt, *text, text.length() );
+						continue;
+					}
+				}
+				else {
+					PushValue( isolate, &pdlParams, args[arg], NULL );
 					VarTextAddCharacter( pvtStmt, '?' );
-				}else {
-					VarTextAddData( pvtStmt, *text, text.length() );
 				}
-			} else {
-				if( args[arg]->IsInt32() ) {
-					val.value_type = VALUE_NUMBER;
-					val.result_n = args[arg]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
-					val.float_result = 0;
-					AddDataItem( &values, &val );
-				} else if( args[arg]->IsNumber() ) {
-					val.value_type = VALUE_NUMBER;
-					val.result_d = args[arg]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
-					val.float_result = 0;
-					AddDataItem( &values, &val );
-				} else if( args[arg]->IsArrayBuffer() ) {
-				} else if( args[arg]->IsInt8Array() ) {
-				} else if( args[arg]->IsTypedArray() ) {
-				}
-				VarTextAddCharacter( pvtStmt, '?' );
+			}
+			statement = VarTextGet( pvtStmt );
+			VarTextDestroy( &pvtStmt );
+		}
+		else {
+			String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
+			statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
+			for( ; arg < args.Length(); arg++ ) {
+				PushValue( isolate, &pdlParams, args[arg], NULL );
 			}
 		}
-		VarTextDestroy( &pvtStmt );
 	}
-	*/
-	if( args.Length() == 1 ) {
-		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
+	
+	if( statement ) {
+		//String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
 
 		SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 		sql->fields = 0;
-		if( !SQLRecordQueryLen( sql->odbc, *tmp, tmp.length(), &sql->columns, &sql->result, &sql->resultLens, &sql->fields ) ) {
+		if( !SQLRecordQuery_v4( sql->odbc, GetText(statement), GetTextSize(statement), &sql->columns, &sql->result, &sql->resultLens, &sql->fields, pdlParams DBG_SRC ) ) {
 			const char *error;
 			FetchSQLError( sql->odbc, &error );
 			isolate->ThrowException( Exception::Error(
 				String::NewFromUtf8( isolate, error ) ) );
+			DeleteDataList( &pdlParams );
 			return;
 		}
 		if( sql->columns )
@@ -436,6 +540,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							isolate->ThrowException( Exception::Error(
 								String::NewFromUtf8( isolate, GetText( VarTextPeek( pvtSafe ) ) ) ) );
 							VarTextDestroy( &pvtSafe );
+							DeleteDataList( &pdlParams );
 							return;
 						}
 					}
@@ -509,6 +614,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 			SQLEndQuery( sql->odbc );
 			args.GetReturnValue().Set( True( isolate ) );
 		}
+		DeleteDataList( &pdlParams );
 	}
 }
 

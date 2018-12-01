@@ -9981,20 +9981,27 @@ PSSQL_PROC( int, SQLRecordQueryEx )( PODBC odbc
               field names
    Example
    See SQLRecordQueryf, but omit the database parameter.         */
-PSSQL_PROC( int, SQLRecordQueryExx )( PODBC odbc
+PSSQL_PROC( int, SQLRecordQuery_v4 )( PODBC odbc
                                    , CTEXTSTR query
                                    , size_t queryLength
                                    , int *pnResult
                                    , CTEXTSTR **result
                                    , size_t **resultLengths
                                    , CTEXTSTR **fields
+                                   , PDATALIST pdlParameters
                                    DBG_PASS);
 /* <combine sack::sql::SQLRecordQueryEx@PODBC@CTEXTSTR@int *@CTEXTSTR **@CTEXTSTR **fields>
    \ \                                                                                      */
 #define SQLRecordQuery(o,q,prn,r,f) SQLRecordQueryEx( o,q,prn,r,f DBG_SRC )
 /* <combine sack::sql::SQLRecordQueryExx@PODBC@CTEXTSTR@size_t@int *@CTEXTSTR **@size_t *@CTEXTSTR **fields>
    \ \                                                                                      */
-#define SQLRecordQueryLen(o,q,ql,prn,r,rl,f) SQLRecordQueryExx( o,q,ql,prn,r,rl,f DBG_SRC )
+#if defined _DEBUG || defined _DEBUG_INFO
+#  define SQLRecordQueryLen(o,q,ql,prn,r,rl,f) SQLRecordQueryExx( o,q,ql,prn,r,rl,f, __FILE__,__LINE__ )
+#  define SQLRecordQueryExx(o,q,ql,ppr,res,reslen,fields ,file,line )  SQLRecordQuery_v4(o,q,ql,ppr,res,reslen,fields,NULL ,file,line )
+#else
+#  define SQLRecordQueryLen(o,q,ql,prn,r,rl,f) SQLRecordQueryExx( o,q,ql,prn,r,rl,f  )
+#  define SQLRecordQueryExx(o,q,ql,ppr,res,reslen,fields )  SQLRecordQuery_v4(o,q,ql,ppr,res,reslen,fields,NULL )
+#endif
    /* Gets the next result from a query.
    Parameters
    odbc :     database connection that the query was executed on
@@ -68870,8 +68877,10 @@ static void HandleEvent( PCLIENT pClient )
 					if( pClient->dwFlags & CF_ACTIVE )
 					{
 						// might already be cleared and gone..
++						EnterCriticalSec( &globalNetworkData.csNetwork );
 						InternalRemoveClientEx( pClient, FALSE, TRUE );
 						TerminateClosedClient( pClient );
++						LeaveCriticalSec( &globalNetworkData.csNetwork );
 					}
 					// section will be blank after termination...(correction, we keep the section state now)
  // it's no longer closing.  (was set during the course of closure)
@@ -71236,7 +71245,9 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 					Relinquish();
 					continue;
 				}
+				LeaveCriticalSec( &globalNetworkData.csNetwork );
 				notLocked = FALSE;
+				EnterCriticalSec( &globalNetworkData.csNetwork );
 			} while( notLocked );
 		}
 		// allow application a chance to clean it's references
@@ -71322,6 +71333,7 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 		int n = 0;
 		// UDP still needs to be done this way...
 		//
+		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientExx( lpClient, bBlockNotify, bLinger DBG_RELAY );
 		if( NetworkLock( lpClient, 0 ) && ((n=1),NetworkLock( lpClient, 1 )) ) {
 			TerminateClosedClient( lpClient );
@@ -71331,6 +71343,7 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 		else if( n ) {
 			NetworkUnlock( lpClient, 0 );
 		}
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
 	}
 }
 CTEXTSTR GetSystemName( void )
@@ -90000,6 +90013,7 @@ CTEXTSTR FormatColor( CDATA color )
 #define USES_SQLITE_INTERFACE
 //#define DEFINES_SQLITE_INTERFACE
 #endif
+  // uses generic 'json_value_container'
 // please remove this reference ASAP
 //#include <controls.h> // temp graphic interface for debugging....
 #ifdef SYSTRAY_LIBRARAY
@@ -93765,7 +93779,42 @@ int GetSQLResult( CTEXTSTR *result )
 	return FALSE;
 }
 //-----------------------------------------------------------------------
-int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t queryLength DBG_PASS )
+#if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
+static void __DoSQLiteBinding( sqlite3_stmt *db, PDATALIST pdlItems ) {
+	INDEX idx;
+	struct json_value_container *val;
+	DATA_FORALL( pdlItems, idx, struct json_value_container *, val ) {
+		int useIndex = idx + 1;
+		int rc;
+		if( val->name ) {
+			useIndex = sqlite3_bind_parameter_index( db, val->name );
+		}
+		switch( val->value_type ) {
+		default:
+			lprintf( "Failed to handline binding for type: %d", val->value_type );
+			DebugBreak();
+			break;
+		case VALUE_NUMBER:
+			if( val->float_result ) {
+				rc = sqlite3_bind_double( db, useIndex, val->result_d );
+			} else {
+				rc = sqlite3_bind_int64( db, useIndex, val->result_n );
+			}
+			break;
+		case VALUE_TYPED_ARRAY:
+			rc = sqlite3_bind_blob( db, useIndex, val->string, val->stringLen, NULL );
+			break;
+		case VALUE_STRING:
+			rc = sqlite3_bind_text( db, useIndex, val->string, val->stringLen, NULL );
+			break;
+		}
+		if( rc )
+			lprintf( "Error binding:%d %d", useIndex, rc );
+	}
+}
+#endif
+//-----------------------------------------------------------------------
+int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t queryLength, PDATALIST pdlParams DBG_PASS )
 {
 	size_t queryLen;
 	PTEXT tmp = NULL;
@@ -93908,6 +93957,8 @@ int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t que
 			}
 			in_error = 1;
 		} else {
+         if( pdlParams )
+				__DoSQLiteBinding( collection->stmt, pdlParams );
 			if( odbc->flags.bAutoCheckpoint && !sqlite3_stmt_readonly( collection->stmt ) )
 				startAutoCheckpoint( odbc );
 		}
@@ -94026,7 +94077,7 @@ int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t que
 }
 //------------------------------------------------------------------
 int __DoSQLQueryEx( PODBC odbc, PCOLLECT collection, CTEXTSTR query DBG_PASS ) {
-	return __DoSQLQueryExx( odbc, collection, query, strlen( query ) DBG_RELAY );
+	return __DoSQLQueryExx( odbc, collection, query, strlen( query ), NULL DBG_RELAY );
 }
 //------------------------------------------------------------------
 void PopODBCExx( PODBC odbc, LOGICAL bAllowNonPush DBG_PASS )
@@ -94090,13 +94141,15 @@ void SQLEndQuery( PODBC odbc )
 //	PopODBCExx( odbc, TRUE );
 }
 //-----------------------------------------------------------------------
-int SQLRecordQueryExx( PODBC odbc
+int SQLRecordQuery_v4( PODBC odbc
                      , CTEXTSTR query
                      , size_t queryLen
                      , int *nResults
                      , CTEXTSTR **result
                      , size_t **resultLengths
-                     , CTEXTSTR **fields DBG_PASS )
+                     , CTEXTSTR **fields
+                     , PDATALIST pdlParams
+                     DBG_PASS )
 {
 	PODBC use_odbc;
 	int once = 0;
@@ -94146,7 +94199,7 @@ int SQLRecordQueryExx( PODBC odbc
 		// this will do an open, and delay queue processing and all sorts
 		// of good fun stuff...
 	}
-	while( __DoSQLQueryExx( use_odbc, use_odbc->collection, query, queryLen DBG_RELAY) );
+	while( __DoSQLQueryExx( use_odbc, use_odbc->collection, query, queryLen, pdlParams DBG_RELAY) );
 	if( use_odbc->collection->responce == WM_SQL_RESULT_DATA )
 	{
 		//lprintf( WIDE("Result with data...") );
@@ -94180,7 +94233,7 @@ int SQLRecordQueryEx( PODBC odbc
 	, int *nResults
 	, CTEXTSTR **result, CTEXTSTR **fields DBG_PASS )
 {
-	return SQLRecordQueryExx( odbc, query, strlen( query ), nResults, result, NULL, fields DBG_RELAY );
+	return SQLRecordQuery_v4( odbc, query, strlen( query ), nResults, result, NULL, fields, NULL DBG_RELAY );
 }
 //--------------------------------------------------------------------
 int SQLQueryEx( PODBC odbc, CTEXTSTR query, CTEXTSTR *result DBG_PASS )
