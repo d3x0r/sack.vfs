@@ -95222,7 +95222,7 @@ int SQLRecordQueryf_v2( PODBC odbc, int *nResults, CTEXTSTR **result, size_t **r
 	vvtprintf( pvt, fmt, args );
 	cmd = VarTextGet( pvt );
 	VarTextDestroy( &pvt );
-	result_code = SQLRecordQueryExx( odbc, GetText( cmd ), GetTextSize( cmd ), nResults, result, resultLengths,fields  DBG_ARGS(SQLRecordQueryf_v2) );
+	result_code = SQLRecordQuery_v4( odbc, GetText( cmd ), GetTextSize( cmd ), nResults, result, resultLengths,fields,NULL DBG_ARGS(SQLRecordQueryf_v2) );
 	LineRelease( cmd );
 	return result_code;
 }

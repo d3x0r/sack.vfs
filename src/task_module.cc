@@ -165,7 +165,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		{
 			Local<String> optName;
 			struct optionStrings *strings = getStrings( isolate );
-			Local<Object> opts = args[0]->ToObject();
+			Local<Object> opts = args[0]->ToObject( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked();
 			String::Utf8Value *args = NULL;
 			String::Utf8Value *bin = NULL;
 			String::Utf8Value *work = NULL;
@@ -185,7 +185,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( optName = strings->binString->Get( isolate ) ) ) {
 				Local<Value> val;
 				if( opts->Get( optName )->IsString() )
-					bin = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+					bin = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			} else {
 				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "required option 'bin' missing." ) ) );			
 			}
@@ -193,7 +193,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				Local<Value> val;
 				if( opts->Get( optName )->IsString() ) {
 					char **args2;
-					args = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+					args = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					ParseIntoArgs( *args[0], &nArg, &argArray );
 
 					args2 = NewArray( char*, nArg + 1 );
@@ -209,7 +209,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 					argArray = NewArray( char *, arr->Length() + 1 );
 					for( n = 0; n < arr->Length(); n++ ) {
-						argArray[n] = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) arr->Get( n )->ToString() ) );
+						argArray[n] = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) arr->Get( n )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
 					}
 					argArray[n] = NULL;
 				}
@@ -217,7 +217,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( optName = strings->workString->Get( isolate ) ) ) {
 				Local<Value> val;
 				if( opts->Get( optName )->IsString() )
-					work = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+					work = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			}
 			if( opts->Has( optName = strings->envString->Get( isolate ) ) ) {
 				Local<Value> val;
@@ -231,7 +231,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( optName = strings->binaryString->Get( isolate ) ) ) {
 				Local<Value> val;
 				if( opts->Get( optName )->IsBoolean() ) {
-					newTask->binary = opts->Get( optName )->BooleanValue();
+					newTask->binary = opts->Get( optName )->BooleanValue( isolate->GetCurrentContext() ).ToChecked();
 				}
 			}
 			if( opts->Has( optName = strings->inputString->Get( isolate ) ) ) {
@@ -242,7 +242,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				}
 			}
 			if( opts->Has( optName = strings->firstArgIsArgString->Get( isolate ) ) ) {
-				firstArgIsArg = opts->Get( optName )->BooleanValue();
+				firstArgIsArg = opts->Get( optName )->BooleanValue( isolate->GetCurrentContext() ).ToChecked();
 			}
 			if( opts->Has( optName = strings->endString->Get( isolate ) ) ) {
 				Local<Value> val;
@@ -308,7 +308,7 @@ ATEXIT( terminateStartedTasks ) {
 
 void TaskObject::loadLibrary( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	String::Utf8Value s( USE_ISOLATE(isolate) args[0]->ToString() );
+	String::Utf8Value s( USE_ISOLATE(isolate) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
 	if( LoadFunction( *s, NULL ) )
 		args.GetReturnValue().Set( True( isolate ) );
 	args.GetReturnValue().Set( False( isolate ) );
@@ -318,7 +318,7 @@ void TaskObject::loadLibrary( const v8::FunctionCallbackInfo<Value>& args ) {
 void TaskObject::Write( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
-	String::Utf8Value s( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString() );
+	String::Utf8Value s( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
 	pprintf( task->task, "%s", *s );
 }
 

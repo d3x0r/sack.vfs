@@ -51,7 +51,7 @@ ConfigObject::ConfigObject() {
 }
 
 ConfigObject::~ConfigObject() {
-	Local<Object> deleteMe = ( (Value*)lastResult )->ToObject();
+	Local<Object> deleteMe = ( (Value*)lastResult )->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 	DestroyConfigurationEvaluator( pch );
 }
 
@@ -140,7 +140,7 @@ static uintptr_t CPROC handler( uintptr_t psv, uintptr_t psvRule, arg_list args 
 		}
 	}
 	Local<Function> cb = rule->handler.Get( config->isolate );
-	Local<Value> result = cb->Call( ( (Value*)psv )->ToObject(), argc, argv );
+	Local<Value> result = cb->Call( ( (Value*)psv )->ToObject( config->isolate->GetCurrentContext() ).ToLocalChecked(), argc, argv );
 	config->lastResult = (uintptr_t)*result;
 	result.Clear();
 	return config->lastResult;

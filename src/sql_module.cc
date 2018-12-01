@@ -208,7 +208,7 @@ void SqlObject::autoTransact( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	SetSQLAutoTransact( sql->odbc, args[0]->BooleanValue() );
+	SetSQLAutoTransact( sql->odbc, args[0]->BooleanValue(args.GetIsolate()->GetCurrentContext()).ToChecked() );
 }
 //-----------------------------------------------------------
 void SqlObject::transact( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -266,7 +266,7 @@ void SqlStmtObject::Set( const v8::FunctionCallbackInfo<Value>& args ) {
 			String::NewFromUtf8( isolate, TranslateText( "Required parameters (column, new value) are missing." ) ) ) );
 		return;
 	}
-	int col = args[0]->ToInt32(isolate)->Value();
+	int col = args[0]->ToInt32(isolate->GetCurrentContext()).ToLocalChecked()->Value();
 	struct json_value_container val;
 	memset( &val, 0, sizeof( val ) );
 	int arg = 1;
@@ -296,7 +296,7 @@ static void PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg,
 		val.nameLen = 0;
 	}
 	if( arg->IsString() ) {
-		String::Utf8Value text( arg->ToString() );
+		String::Utf8Value text( USE_ISOLATE( isolate ) arg->ToString(isolate->GetCurrentContext()).ToLocalChecked() );
 		val.value_type = VALUE_STRING;
 		val.string = DupCStrLen( *text, val.stringLen = text.length() );
 		AddDataItem( pdlParams, &val );
@@ -382,7 +382,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 				for( uint32_t p = 0; p < paramNames->Length(); p++ ) {
 					Local<Value> valName = paramNames->Get( p );
 					Local<Value> value = params->Get( valName );
-					String::Utf8Value name( valName->ToString() );
+					String::Utf8Value name( USE_ISOLATE( isolate ) valName->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					PushValue( isolate, &pdlParams, value, &name );
 				}
 			}
@@ -408,7 +408,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( !isFormatString ) {
 			for( ; arg < args.Length(); arg++ ) {
 				if( args[arg]->IsString() ) {
-					String::Utf8Value text( args[arg]->ToString() );
+					String::Utf8Value text( USE_ISOLATE(isolate) args[arg]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					if( arg & 1 ) { // every odd parameter is inserted
 						val.value_type = VALUE_STRING;
 						val.string = DupCStrLen( *text, text.length() );
@@ -1215,7 +1215,7 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 	}
 	Local<Function> cb = Local<Function>::New( userData->isolate, userData->cb );
 	Local<Value> str = cb->Call( userData->sql->handle(), argc, args );
-	String::Utf8Value result( USE_ISOLATE( userData->isolate ) str->ToString() );
+	String::Utf8Value result( USE_ISOLATE( userData->isolate ) str->ToString( userData->isolate->GetCurrentContext() ).ToLocalChecked() );
 	int type;
 	if( ( ( type = 1 ), str->IsArrayBuffer() ) || ( ( type = 2 ), str->IsUint8Array() ) ) {
 		uint8_t *buf = NULL;
@@ -1234,9 +1234,9 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 			PSSQL_ResultSqliteBlob( onwhat, (const char *)buf, (int)length, NULL );
 	} else if( str->IsNumber() ) {
 		if( str->IsInt32() )
-			PSSQL_ResultSqliteInt( onwhat, (int)str->IntegerValue() );
+			PSSQL_ResultSqliteInt( onwhat, (int)str->IntegerValue( userData->isolate->GetCurrentContext() ).ToChecked() );
 		else
-			PSSQL_ResultSqliteDouble( onwhat, str->NumberValue() );
+			PSSQL_ResultSqliteDouble( onwhat, str->NumberValue( userData->isolate->GetCurrentContext() ).ToChecked() );
 	} else if( str->IsString() )
 		PSSQL_ResultSqliteText( onwhat, DupCStrLen( *result, result.length() ), result.length(), releaseBuffer );
 	else
@@ -1426,11 +1426,11 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 			PSSQL_ResultSqliteBlob( onwhat, (const char *)buf, (int)length, releaseBuffer );
 	} else if( str->IsNumber() ) {
 		if( str->IsInt32() )
-			PSSQL_ResultSqliteInt( onwhat, (int)str->IntegerValue() );
+			PSSQL_ResultSqliteInt( onwhat, (int)str->IntegerValue( userData->isolate->GetCurrentContext() ).ToChecked() );
 		else
-			PSSQL_ResultSqliteDouble( onwhat, str->NumberValue() );
+			PSSQL_ResultSqliteDouble( onwhat, str->NumberValue( userData->isolate->GetCurrentContext() ).ToChecked() );
 	} else if( str->IsString() ) {
-		String::Utf8Value result( USE_ISOLATE( userData->isolate) str->ToString() );
+		String::Utf8Value result( USE_ISOLATE( userData->isolate) str->ToString( userData->isolate->GetCurrentContext() ).ToLocalChecked() );
 		PSSQL_ResultSqliteText( onwhat, DupCStrLen( *result, result.length() ), result.length(), releaseBuffer );
 	}
 	else
@@ -1446,7 +1446,7 @@ void SqlObject::setLogging( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	if( args.Length() ) {
-		Local<Boolean> b( args[0]->ToBoolean() );
+		Local<Boolean> b( args[0]->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked() );
 		if( b->Value () )
 			SetSQLLoggingDisable( sql->odbc, FALSE );
 		else

@@ -35,7 +35,7 @@ private:
 			}
 			for( uint32_t n = 0; n < ui->Length(); n++ ) {
 				Local<Value> elem = ui->Get( n );
-				String::Utf8Value val( USE_ISOLATE( obj->isolate ) elem->ToString());
+				String::Utf8Value val( USE_ISOLATE( obj->isolate ) elem->ToString(obj->isolate->GetCurrentContext() ).ToLocalChecked()  );
 				obj->seedBuf = (char*)Reallocate( obj->seedBuf, obj->seedLen + val.length() );
 				memcpy( obj->seedBuf + obj->seedLen, (*val), val.length() );
 			}
@@ -61,7 +61,7 @@ private:
 					obj = new SRGObject( new Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 ) );
 				}
 				else {
-					String::Utf8Value seed( USE_ISOLATE( isolate ) args[0]->ToString() );
+					String::Utf8Value seed( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					obj = new SRGObject( *seed, seed.length() );
 				}
 				obj->Wrap( args.This() );
@@ -92,7 +92,7 @@ private:
 	}
 	static void seed( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( args.Length() > 0 ) {
-			String::Utf8Value seed( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString() );
+			String::Utf8Value seed( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
 			SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
 			if( obj->seedBuf )
 				Deallocate( char *, obj->seedBuf );
@@ -110,7 +110,7 @@ private:
 			int32_t bits = args[0]->Int32Value( obj->isolate->GetCurrentContext() ).FromMaybe( 0 );
 			bool sign = false;
 			if( args.Length() > 1 )
-				sign = args[0]->BooleanValue();
+				sign = args[0]->BooleanValue( obj->isolate->GetCurrentContext() ).ToChecked();
 			r = SRG_GetEntropy( obj->entropy, bits, sign );
 		}
 		args.GetReturnValue().Set( Integer::New( obj->isolate, r ) );
@@ -122,7 +122,7 @@ private:
 			obj->isolate->ThrowException( Exception::Error( String::NewFromUtf8( obj->isolate, "required parameter missing, count of bits" ) ) );
 		}
 		else {
-			int32_t bits = args[0]->Int32Value();
+			int32_t bits = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).ToChecked();
 			uint32_t *buffer = NewArray( uint32_t, (bits +31)/ 32 );
 			SRG_GetEntropyBuffer( obj->entropy, buffer, bits );
 
@@ -379,7 +379,7 @@ private:
 
 	static void sign( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
-		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString() );
+		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		static signParams threadParams[32];
 		int found = 0;
 #ifdef DEBUG_SIGNING
@@ -394,11 +394,11 @@ private:
 		while( argn < args.Length() ) {
 			if( args[argn]->IsNumber() ) {
 				if( n ) {
-					pad2 = args[argn]->Int32Value();
+					pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
 				}
 				else {
 					n = 1;
-					pad1 = args[argn]->Int32Value();
+					pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
 				}
 			}
 			argn++;
@@ -461,15 +461,15 @@ private:
 
 	static void setThraads( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( args.Length() )
-			signingThreads = args[0]->Int32Value();
+			signingThreads = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).ToChecked();
 	}
 
 
 	static void verify( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		if( args.Length() > 1 ) {
-			String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString() );
-			String::Utf8Value hash( USE_ISOLATE( isolate ) args[1]->ToString() );
+			String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+			String::Utf8Value hash( USE_ISOLATE( isolate ) args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			//SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
 			char *id;
 			int pad1 = 0, pad2 = 0;
@@ -479,10 +479,10 @@ private:
 			while( argn < args.Length() ) {
 				if( args[argn]->IsNumber() ) {
 					if( n ) {
-						pad2 = args[argn]->Int32Value();
+						pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
 					} else {
 						n = 1;
-						pad1 = args[argn]->Int32Value();
+						pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
 					}
 				}
 				argn++;

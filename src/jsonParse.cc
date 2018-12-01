@@ -128,7 +128,7 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 
-	String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString() );
+	String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 	int result;
 	for( result = json6_parse_add_data( parser->state, *data, data.length() );
 		result > 0;
@@ -214,7 +214,7 @@ void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 		return;
 	}
 
-	String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString() );
+	String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 	int result;
 	for( result = json6_parse_add_data( parser->state, *data, data.length() );
 		result > 0;
@@ -295,7 +295,7 @@ void parseObject::write6v( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 
-	String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString() );
+	String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 	int result;
 	for( result = vesl_parse_add_data( parser->vstate, *data, data.length() );
 		result > 0;

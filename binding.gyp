@@ -17,6 +17,7 @@
            "src/network_module.cc",
            "src/task_module.cc",
            "src/config_module.cc",
+           "src/objStore_module.cc",
           ],
 	'defines': [ "BUILDING_NODE_EXTENSION","BUILD_NODE_ADDON",
           'TARGETNAME="sack_vfs.node"',
