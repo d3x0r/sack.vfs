@@ -4,8 +4,7 @@ const db = sack.Sqlite( 'test.db' );
 
 console.log( db.do( "select * from sqlite_master" ) );
 try {
-db.do( `drop table table1` );;
-//db.do( `drop table \`table\`` );;
+	db.do( `drop table table1` );;
 } catch( err) { }
 
 console.log( db.do( "select * from sqlite_master" ) );
