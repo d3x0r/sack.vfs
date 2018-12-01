@@ -68877,10 +68877,10 @@ static void HandleEvent( PCLIENT pClient )
 					if( pClient->dwFlags & CF_ACTIVE )
 					{
 						// might already be cleared and gone..
-+						EnterCriticalSec( &globalNetworkData.csNetwork );
+						EnterCriticalSec( &globalNetworkData.csNetwork );
 						InternalRemoveClientEx( pClient, FALSE, TRUE );
 						TerminateClosedClient( pClient );
-+						LeaveCriticalSec( &globalNetworkData.csNetwork );
+						LeaveCriticalSec( &globalNetworkData.csNetwork );
 					}
 					// section will be blank after termination...(correction, we keep the section state now)
  // it's no longer closing.  (was set during the course of closure)
@@ -93779,9 +93779,98 @@ int GetSQLResult( CTEXTSTR *result )
 	return FALSE;
 }
 //-----------------------------------------------------------------------
+#if defined USE_ODBC && 0
+static void __DoODBCBinding( HSTMT hstmt, PDATALIST pdlItems ) {
+	INDEX idx;
+	struct json_value_container *val;
+	DATA_FORALL( pdlItems, idx, struct json_value_container *, val ) {
+		int useIndex = idx + 1;
+		int rc;
+		//if( val->name ) {
+		//	useIndex = sqlite3_bind_parameter_index( db, val->name );
+		//}
+		switch( val->value_type ) {
+		default:
+			lprintf( "Failed to handline binding for type: %d", val->value_type );
+			DebugBreak();
+			break;
+		case VALUE_NUMBER:
+			if( val->float_result ) {
+				rc = SQLBindParamter( hstmt
+  // parameter number
+										  , useIndex
+ // inputoutputtype
+										  , SQL_PARAM_INPUT
+  // value type
+										  , SQL_C_DOUBLE
+    // parameter type
+										  , SQL_DOUBLE
+ // precision (colsize)
+										  , 100
+ // decimal digits
+										  , 0
+  // pointer value
+										  , &val->result_d
+ // bufferlength
+										  , sizeof( val->result_d )
+										  , SQL_NULL_DATA
+										  );
+			} else {
+				rc = SQLBindParamter( hstmt
+  // parameter number
+										  , useIndex
+ // inputoutputtype
+										  , SQL_PARAM_INPUT
+  // value type
+										  , SQL_C_UBIGINT
+    // parameter type
+										  , SQL_BIGINT
+ // precision (colsize)
+										  , 100
+ // decimal digits
+										  , 0
+  // pointer value
+										  , &val->result_n
+ // bufferlength
+										  , sizeof( val->result_n )
+										  , SQL_NULL_DATA
+										  );
+			}
+			break;
+		case VALUE_TYPED_ARRAY:
+			rc = sqlite3_bind_blob( db, useIndex, val->string, val->stringLen, NULL );
+			break;
+		case VALUE_STRING:
+			rc = sqlite3_bind_text( db, useIndex, val->string, val->stringLen, NULL );
+				rc = SQLBindParamter( hstmt
+  // parameter number
+										  , useIndex
+ // inputoutputtype
+										  , SQL_PARAM_INPUT
+  // value type
+										  , SQL_C_CHAR
+    // parameter type
+										  , SQL_CHAR
+ // precision (colsize)
+										  , 100
+ // decimal digits
+										  , 0
+  // pointer value
+										  , val->string
+ // bufferlength
+										  , val->stringLen
+										  , SQL_NULL_DATA
+										  );
+			break;
+		}
+		if( rc )
+			lprintf( "Error binding:%d %d", useIndex, rc );
+	}
+}
+#endif
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 static void __DoSQLiteBinding( sqlite3_stmt *db, PDATALIST pdlItems ) {
-	INDEX idx;
+	int idx;
 	struct json_value_container *val;
 	DATA_FORALL( pdlItems, idx, struct json_value_container *, val ) {
 		int useIndex = idx + 1;
@@ -93802,10 +93891,10 @@ static void __DoSQLiteBinding( sqlite3_stmt *db, PDATALIST pdlItems ) {
 			}
 			break;
 		case VALUE_TYPED_ARRAY:
-			rc = sqlite3_bind_blob( db, useIndex, val->string, val->stringLen, NULL );
+			rc = sqlite3_bind_blob( db, useIndex, val->string, (int)val->stringLen, NULL );
 			break;
 		case VALUE_STRING:
-			rc = sqlite3_bind_text( db, useIndex, val->string, val->stringLen, NULL );
+			rc = sqlite3_bind_text( db, useIndex, val->string, (int)val->stringLen, NULL );
 			break;
 		}
 		if( rc )
@@ -93995,6 +94084,10 @@ int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t que
 		}
 		else
 		{
+#if 0
+         if( pdlParams )
+				__DoODBCBinding( collection->hstmt, pdlParams );
+#endif
 			rc = SQLExecDirect( collection->hstmt
 									,
 #ifdef _UNICODE

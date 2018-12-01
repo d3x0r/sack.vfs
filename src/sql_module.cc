@@ -379,7 +379,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 				pdlParams = CreateDataList( sizeof( struct json_value_container ) );
 				Local<Object> params = Local<Object>::Cast( args[1] );
 				Local<Array> paramNames = params->GetOwnPropertyNames();
-				for( int p = 0; p < paramNames->Length(); p++ ) {
+				for( uint32_t p = 0; p < paramNames->Length(); p++ ) {
 					Local<Value> valName = paramNames->Get( p );
 					Local<Value> value = params->Get( valName );
 					String::Utf8Value name( valName->ToString() );
