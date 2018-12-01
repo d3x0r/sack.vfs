@@ -293,9 +293,9 @@ example sql command?
     sqlite.do( "select * from users where name=? and password=?", "userName", passHash );
     sqlite.do( "select * from users where name=?2 and password=?1", passHash, "userName" );
 
-    sqlite.do( "select * from users where name=$user and password=$pass", { user:"userName", pass: passHash } );
+    sqlite.do( "select * from users where name=$user and password=$pass", { $user:"userName", $pass: passHash } );
     
-    sqlite.do( "select * from users where name=$user and password=$pass and deleted=?", { user:"userName", pass: passHash }, false );
+    sqlite.do( "select * from users where name=$user and password=$pass and deleted=?", { $user:"userName", $pass: passHash }, true );
 
 ```
 
