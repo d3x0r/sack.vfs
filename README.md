@@ -257,7 +257,10 @@ There are methods on the Sqlite() function call...
 | commit | ()  |  end a transaction successfully. |
 | autoTransact | (&lt;bool&gt;) | enabled/disable auto transaction features.    A command will begin a transaction, a timer will be set such that if no other command between happens, then a commit will be generated. So merely doing ```do()``` commands are optimized into transactions.
 | makeTable | (tableString) | evalute a sql create table clause, and create or update a table based on its definitions.          Additional columns will be added, old columns are untouched, even if the type specified changes.    Additional indexes and constraints can be added to existing tables.
-| do | ( &lt;String&gt;) | execute a single sql command or query.  Results with null on error, or an array on success.  If command generates no output, array length will be 0.  |
+| do | ( &lt;String&gt;) | execute a single sql command or query.  Results with null on error, or an array on success of a select, and true/false/scalar int on result of other commands.    If command generates no output, array length will be 0.  |
+| do | ( &lt;Format String&gt; [,bound parameters... ] ) | This varaition, if the first string contains '?', then the first string is taken as the sql statement, and all extra paramters are passed to be bound to 1-N.  |
+| do | ( &lt;Format String&gt; , object  [,bound parameters... ] ) | This varaition, if the first string contains ':','@', or '$', works like other format string, but second parameter must be an object with field names that match the names specified in the query.   (see examples below) |
+| do | ( &lt;String&gt; [,bound parameters , &lt;More SQL String&gt; [,param,sql ... ] ) | The SQL statement is composed dynamically from parts.  Literal text of the query is interleaved with bound variables.  Each variable is replaced with a '?', and passed as an argument to bind to the statement. |
 | op  | (section [, opName],defaultValue) |  get an option from sqlite option database; return defaultValue  if not set, and set the option int he database to the default value.
 | getOption | (section [,opName],defaultValue) | longer name of 'op' |
 | so | (section [,opName] ,value) | set an option in sqlite option database |
@@ -282,6 +285,17 @@ example sql command?
 
     sqlite.function( "test", (val)=>val*3 );
     console.log( sqlite.do( "select test(9)" ) ); // results with 27
+
+
+    var passHash = "0123456";
+    sqlite.do( "select * from users where name=","userName","and password=", passHash );
+
+    sqlite.do( "select * from users where name=? and password=?", "userName", passHash );
+    sqlite.do( "select * from users where name=?2 and password=?1", passHash, "userName" );
+
+    sqlite.do( "select * from users where name=$user and password=$pass", { user:"userName", pass: passHash } );
+    
+    sqlite.do( "select * from users where name=$user and password=$pass and deleted=?", { user:"userName", pass: passHash }, false );
 
 ```
 
