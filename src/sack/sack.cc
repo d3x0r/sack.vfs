@@ -9970,6 +9970,28 @@ PSSQL_PROC( int, SQLRecordQueryEx )( PODBC odbc
    odbc :     connection to do the query on.
    query :    query to execute.
    queryLength : actual length of the query (allows embedded NUL characters)
+   PDATALIST* :  pointer to datalist pointer which will contain struct json_val_containers.
+			 for each result in this list until VALUE_UNDEFINED is used.
+		.name is the field name (constant)
+		.string is the text, value_type is the value type (so numbers can stay numbers)
+	pdlParams : parameters to bind to the query.
+   Example
+   See SQLRecordQueryf, but omit the database parameter.         */
+int SQLRecordQuery_js( PODBC odbc
+	, CTEXTSTR query
+	, size_t queryLen
+	, PDATALIST *pdlResults
+	, PDATALIST pdlParams
+	DBG_PASS );
+/* Do a SQL query on the default odbc connection. The first
+   record results immediately if there are any records. Returns
+   the results as an array of strings. If you know the select
+   you are using .... "select a,b,c from xyz" then you know that
+   this will have 3 columns resulting.
+   Parameters
+   odbc :     connection to do the query on.
+   query :    query to execute.
+   queryLength : actual length of the query (allows embedded NUL characters)
    columns :  pointer to an int to receive the number of columns
               in the result. (the user will know this based on
               the query issued usually, so it can be NULL to
@@ -10019,6 +10041,15 @@ PSSQL_PROC( int, FetchSQLResult )( PODBC, CTEXTSTR *result );
    Values received are invalid after the next FetchSQLRecord or
    possibly other query.                                        */
 PSSQL_PROC( int, FetchSQLRecord )( PODBC, CTEXTSTR **result );
+/* Gets the next record result from the connection.
+   Parameters
+   odbc :     connection to get the result from; if NULL, uses
+			  \internal static connection.
+   result\ :  (unchanged; is same list as original)
+   Remarks
+   Values received are invalid after the next FetchSQLRecord or
+   possibly other query.                                        */
+PSSQL_PROC( int, FetchSQLRecordJS )(PODBC odbc, PDATALIST *ppdlRecord);
 /* Gets the last result on the specified ODBC connection.
    Parameters
    odbc :     connection to get the last error of
@@ -17012,7 +17043,7 @@ void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_
 				partial_bits = 0;
 			}
 			if( (get_bits+resultBits) > 24 )
-				(*buffer) |= tmp << resultBits;
+				(*buffer) = tmp << resultBits;
 			else if( (get_bits+resultBits) > 16 ) {
 				(*((uint16_t*)buffer)) |= tmp << resultBits;
 				(*(((uint8_t*)buffer)+2)) |= ((tmp << resultBits) & 0xFF0000)>>16;
@@ -37805,7 +37836,8 @@ static void DumpSection( PCRITICALSECTION pcs )
 				else {
 					if( prior && *prior ) {
 						// shouldn't happen, if there's no waiter set, then there shouldn't be a prior.
-						DebugBreak();
+						if( *prior != 1 )
+							DebugBreak();
 					}
 #ifdef LOG_DEBUG_CRITICAL_SECTIONS
 					ll_lprintf( WIDE( "Claimed critical section." ) );
@@ -67839,6 +67871,7 @@ LOCATION struct network_global_data{
 		BIT_FIELD bNetworkReady : 1;
 		BIT_FIELD bThreadInitOkay : 1;
 		BIT_FIELD bLogProtocols : 1;
+		BIT_FIELD bOptionsRead : 1;
 	} flags;
  // how many peer threads do we have
 	int nPeers;
@@ -67970,30 +68003,34 @@ __END_DECLS
 SACK_NETWORK_NAMESPACE
 PRELOAD( InitNetworkGlobalOptions )
 {
+	if( !globalNetworkData.flags.bOptionsRead ) {
 #ifdef __LINUX__
-	signal(SIGPIPE, SIG_IGN);
+		signal(SIGPIPE, SIG_IGN);
 #endif
 #ifndef __NO_OPTIONS__
-	globalNetworkData.flags.bLogProtocols = SACK_GetProfileIntEx( WIDE("SACK"), WIDE( "Network/Log Protocols" ), 0, TRUE );
-	globalNetworkData.flags.bShortLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data(64 byte max)" ), 0, TRUE );
-	globalNetworkData.flags.bLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data" ), 0, TRUE );
-	globalNetworkData.flags.bLogSentData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Sent Data" ), globalNetworkData.flags.bLogReceivedData, TRUE );
+		globalNetworkData.flags.bLogProtocols = SACK_GetProfileIntEx( WIDE("SACK"), WIDE( "Network/Log Protocols" ), 0, TRUE );
+		globalNetworkData.flags.bShortLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data(64 byte max)" ), 0, TRUE );
+		globalNetworkData.flags.bLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data" ), 0, TRUE );
+		globalNetworkData.flags.bLogSentData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Sent Data" ), globalNetworkData.flags.bLogReceivedData, TRUE );
 #  ifdef LOG_NOTICES
-	globalNetworkData.flags.bLogNotices = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Notifications" ), 0, TRUE );
+		globalNetworkData.flags.bLogNotices = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Notifications" ), 0, TRUE );
 #  endif
-	globalNetworkData.dwReadTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Read wait timeout" ), 5000, TRUE );
-	globalNetworkData.dwConnectTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Connect timeout" ), 10000, TRUE );
+		globalNetworkData.dwReadTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Read wait timeout" ), 5000, TRUE );
+		globalNetworkData.dwConnectTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Connect timeout" ), 10000, TRUE );
 #else
-	globalNetworkData.flags.bLogNotices = 0;
-	globalNetworkData.dwReadTimeout = 5000;
-	globalNetworkData.dwConnectTimeout = 10000;
+		globalNetworkData.flags.bLogNotices = 0;
+		globalNetworkData.dwReadTimeout = 5000;
+		globalNetworkData.dwConnectTimeout = 10000;
 #endif
+		globalNetworkData.flags.bOptionsRead = 1;
+	}
 }
 static void LowLevelNetworkInit( void )
 {
 	if( !global_network_data ) {
 		SimpleRegisterAndCreateGlobal( global_network_data );
-		InitializeCriticalSec( &globalNetworkData.csNetwork );
+		if( !globalNetworkData.ClientSlabs )
+			InitializeCriticalSec( &globalNetworkData.csNetwork );
 	}
 }
 PRIORITY_PRELOAD( InitNetworkGlobal, CONFIG_SCRIPT_PRELOAD_PRIORITY - 1 )
@@ -69595,7 +69632,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
                //int stat;
 					//stat = read( GetThreadSleeper( thread->thread ), &buf, 1 );
 					//call wakeable sleep to just clear the sleep; because this is an event on the sleep pipe.
-					WakeableSleep( 1 );
+					//WakeableSleep( 1 );
                //lprintf( "This should sleep forever..." );
 					return 1;
 				}
@@ -69714,10 +69751,12 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 						{
 #ifdef LOG_NOTICES
 							//if( globalNetworkData.flags.bLogNotices )
-								lprintf( WIDE( "Pending read failed - reset connection." ) );
+							lprintf( WIDE( "Pending read failed - reset connection." ) );
 #endif
+							EnterCriticalSec( &globalNetworkData.csNetwork );
 							InternalRemoveClientEx( event_data->pc, FALSE, FALSE );
 							TerminateClosedClient( event_data->pc );
+							LeaveCriticalSec( &globalNetworkData.csNetwork );
 							closed = 1;
 						}
 						else if( !event_data->pc->RecvPending.s.bStream )
@@ -69939,10 +69978,10 @@ uintptr_t CPROC NetworkThreadProc( PTHREAD thread )
 		kevent( this_thread.kqueue, &ev, 1, 0, 0, 0 );
 #    endif
 #  else
-		struct epoll_event ev;
-		ev.data.ptr = (void*)1;
-		ev.events = EPOLLIN;
-		epoll_ctl( this_thread.epoll_fd, EPOLL_CTL_ADD, GetThreadSleeper( thread ), &ev );
+		//struct epoll_event ev;
+		//ev.data.ptr = (void*)1;
+		//ev.events = EPOLLIN;
+		//epoll_ctl( this_thread.epoll_fd, EPOLL_CTL_ADD, GetThreadSleeper( thread ), &ev );
 #  endif
 	}
 #endif
@@ -71773,7 +71812,9 @@ void AcceptClient(PCLIENT pListen)
  // if there was a select error...
 		{
 			lprintf(WIDE( " Accept select Error" ));
+			EnterCriticalSec( &globalNetworkData.csNetwork );
 			InternalRemoveClientEx( pNewClient, TRUE, FALSE );
+			LeaveCriticalSec( &globalNetworkData.csNetwork );
 			NetworkUnlockEx( pNewClient, 0 DBG_SRC );
 			NetworkUnlockEx( pNewClient, 1 DBG_SRC );
 			pNewClient = NULL;
@@ -71837,7 +71878,9 @@ void AcceptClient(PCLIENT pListen)
  // accept failed...
 	else
 	{
+		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientEx( pNewClient, TRUE, FALSE );
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		NetworkUnlockEx( pNewClient, 0 DBG_SRC );
 		NetworkUnlockEx( pNewClient, 1 DBG_SRC );
 		pNewClient = NULL;
@@ -71889,7 +71932,9 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
 	{
 		lprintf( WIDE(" Open Listen Socket Fail... %d"), errno);
 		DumpAddr( "passed address to select:", pAddr );
+		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientEx( pListen, TRUE, FALSE );
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		NetworkUnlockEx( pListen, 0 DBG_SRC );
 		NetworkUnlockEx( pListen, 1 DBG_SRC );
 		pListen = NULL;
@@ -71904,7 +71949,9 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
                        SOCKMSG_TCP, FD_ACCEPT|FD_CLOSE ) )
 	{
 		lprintf( WIDE("Windows AsynchSelect failed: %d"), WSAGetLastError() );
+		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientEx( pListen, TRUE, FALSE );
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		NetworkUnlockEx( pListen, 0 DBG_SRC );
 		NetworkUnlockEx( pListen, 1 DBG_SRC );
 		return NULL;
@@ -71931,7 +71978,9 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
 	{
 		_lprintf(DBG_RELAY)( WIDE("Cannot bind to address..:%d"), WSAGetLastError() );
 		DumpAddr( "Bind address:", pAddr );
+		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientEx( pListen, TRUE, FALSE );
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		NetworkUnlockEx( pListen, 0 DBG_SRC );
 		NetworkUnlockEx( pListen, 1 DBG_SRC );
 		return NULL;
@@ -71940,7 +71989,9 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
 	if(listen(pListen->Socket, SOMAXCONN ) == SOCKET_ERROR )
 	{
 		lprintf( WIDE("listen(5) failed: %d"), WSAGetLastError() );
+		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientEx( pListen, TRUE, FALSE );
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		NetworkUnlockEx( pListen, 0 DBG_SRC );
 		NetworkUnlockEx( pListen, 1 DBG_SRC );
 		return NULL;
@@ -72028,7 +72079,9 @@ int NetworkConnectTCPEx( PCLIENT pc DBG_PASS ) {
 			)
 		{
 			_lprintf( DBG_RELAY )(WIDE( "Connect FAIL: %d %d %" ) _32f, pc->Socket, err, dwError);
+			EnterCriticalSec( &globalNetworkData.csNetwork );
 			InternalRemoveClientEx( pc, TRUE, FALSE );
+			LeaveCriticalSec( &globalNetworkData.csNetwork );
 			NetworkUnlockEx( pc, 0 DBG_SRC );
 			pc = NULL;
 			return -1;
@@ -72090,7 +72143,9 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 		if (pResult->Socket==INVALID_SOCKET)
 		{
 			lprintf( WIDE("Create socket failed. %d"), WSAGetLastError() );
+			EnterCriticalSec( &globalNetworkData.csNetwork );
 			InternalRemoveClientEx( pResult, TRUE, FALSE );
+			LeaveCriticalSec( &globalNetworkData.csNetwork );
 			NetworkUnlockEx( pResult, 1 DBG_SRC );
 			NetworkUnlockEx( pResult, 0 DBG_SRC );
 			return NULL;
@@ -72117,7 +72172,9 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 			                  , FD_READ|FD_WRITE|FD_CLOSE|FD_CONNECT) )
 			{
 				lprintf( WIDE(" Select NewClient Fail! %d"), WSAGetLastError() );
+				EnterCriticalSec( &globalNetworkData.csNetwork );
 				InternalRemoveClientEx( pResult, TRUE, FALSE );
+				LeaveCriticalSec( &globalNetworkData.csNetwork );
 				NetworkUnlockEx( pResult, 1 DBG_SRC );
 				NetworkUnlockEx( pResult, 0 DBG_SRC );
 				pResult = NULL;
@@ -72245,7 +72302,9 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 					}
 					else
 						lprintf( WIDE("Connect FAIL: Timeout") );
+					EnterCriticalSec( &globalNetworkData.csNetwork );
 					InternalRemoveClientEx( pResult, TRUE, FALSE );
+					LeaveCriticalSec( &globalNetworkData.csNetwork );
 					pResult->dwFlags &= ~CF_CONNECT_WAITING;
 					pResult = NULL;
 					goto LeaveNow;
@@ -85699,11 +85758,12 @@ typedef struct data_collection_tag
 	struct odbc_handle_tag *odbc;
 	uint32_t      responce;
 	uint32_t      lastop;
-   int    *column_types;
+	int    *column_types;
 	size_t *result_len;
 	TEXTSTR *results;
 	//uint32_t nResults; // this is columns
 	TEXTSTR *fields;
+	PDATALIST *ppdlResults;
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 	sqlite3_stmt *stmt;
 #endif
@@ -86572,10 +86632,16 @@ void InitVFS( CTEXTSTR name, struct file_system_mounted_interface *mount )
 }
 void errorLogCallback(void *pArg, int iErrCode, const char *zMsg){
 	if( iErrCode == SQLITE_NOTICE_RECOVER_WAL ) {
+#ifdef __STATIC_GLOBALS__
+#  define sg (global_sqlstub_data)
+		extern struct pssql_global global_sqlstub_data;
+#else
+#  define sg (*global_sqlstub_data)
 		extern struct pssql_global *global_sqlstub_data;
+#endif
 		lprintf( "Sqlite3 Notice: wal recovered: generating checkpoint:%s", zMsg);
 		// after open returns, generate an automatic wal_checkpoint.
-		global_sqlstub_data->flags.bAutoCheckpointRecover = 1;
+		sg.flags.bAutoCheckpointRecover = 1;
 	}
 	else if( iErrCode == SQLITE_NOTICE_RECOVER_ROLLBACK ) {
 		lprintf( "Sqlite3 Notice: journal rollback:%s", zMsg );
@@ -86722,11 +86788,12 @@ typedef struct data_collection_tag
 	struct odbc_handle_tag *odbc;
 	uint32_t      responce;
 	uint32_t      lastop;
-   int    *column_types;
+	int    *column_types;
 	size_t *result_len;
 	TEXTSTR *results;
 	//uint32_t nResults; // this is columns
 	TEXTSTR *fields;
+	PDATALIST *ppdlResults;
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 	sqlite3_stmt *stmt;
 #endif
@@ -90133,13 +90200,22 @@ struct update_task_def
 	void (CPROC *CheckTables)( PODBC );
 	DeclareLink( struct update_task_def );
 };
+#ifdef __STATIC_GLOBALS__
+struct pssql_global global_sqlstub_data;
+#  ifdef g
+#    undef g
+#  endif
+#  define g (global_sqlstub_data)
+#else
 struct pssql_global *global_sqlstub_data;
-#ifdef g
-#  undef g
+#  ifdef g
+#    undef g
+#  endif
+#  define g (*global_sqlstub_data)
 #endif
-#define g (*global_sqlstub_data)
 //----------------------------------------------------------------------
 static void SqlStubInitLibrary( void );
+#ifndef __STATIC_GLOBALS__
 PRIORITY_PRELOAD( InitGlobalData, SQL_PRELOAD_PRIORITY )
 {
 	// is null initialized.
@@ -90156,6 +90232,17 @@ ATEXIT_PRIORITY( CloseConnections, ATEXIT_PRIORITY_SYSLOG - 3 )
 			CloseDatabaseEx( odbc, FALSE );
 		}
 }
+#else
+ATEXIT_PRIORITY( CloseConnections, ATEXIT_PRIORITY_SYSLOG - 3 )
+{
+	PODBC odbc;
+	INDEX idx;
+		LIST_FORALL( global_sqlstub_data.pOpenODBC, idx, PODBC, odbc  )
+		{
+			CloseDatabaseEx( odbc, FALSE );
+		}
+}
+#endif
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 static void GetColumnSize(sqlite3_context*onwhat,int n,sqlite3_value**something) {
 	switch( sqlite3_value_type( something[0] ) ) {
@@ -92341,6 +92428,9 @@ void DestroyCollectorEx( PCOLLECT pCollect DBG_PASS )
 	{
 		return;
 	}
+	if( pCollect->ppdlResults ) {
+		DeleteDataList( pCollect->ppdlResults );
+	}
 	ReleaseCollectionResults( pCollect, TRUE );
 	VarTextDestroy( &pCollect->pvt_out );
 	VarTextDestroy( &pCollect->pvt_result );
@@ -93224,7 +93314,101 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 			return 0;
 		}
 		ReleaseCollectionResults( collection, FALSE );
-		if( collection->flags.bBuildResultArray )
+		if( collection->ppdlResults ) {
+			int len;
+			struct json_value_container *val = (struct json_value_container *)GetDataItem( collection->ppdlResults, collection->columns );
+			struct json_value_container valSet;
+			if( !val ) {
+				val = &valSet;
+				memset( &valSet, 0, sizeof( valSet ) );
+				valSet._contains = &valSet.contains;
+				for( len = 0; len < collection->columns; len++ )
+					SetDataItem( collection->ppdlResults, len, &valSet );
+				val->value_type = VALUE_UNDEFINED;
+				SetDataItem( collection->ppdlResults, collection->columns, val );
+				// okay and now - pull column info from magic place...
+				{
+#ifdef USE_ODBC
+					TEXTCHAR colname[256];
+					short namelen;
+#endif
+					int idx;
+					for( idx = 1; idx <= collection->columns; idx++ ) {
+						val = (struct json_value_container *)GetDataItem( collection->ppdlResults, idx - 1 );
+#if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
+						//const unsigned char *sqlite3_column_text(sqlite3_stmt*, int iCol);
+						if( odbc->flags.bSQLite_native ) {
+							int coltype;
+							val->name = DupCStr( sqlite3_column_name( collection->stmt, idx - 1 ) );
+							val->nameLen = strlen( val->name );
+							switch( coltype = sqlite3_column_type( collection->stmt, idx - 1 ) ) {
+							default:
+								lprintf( "Unhandled SQLITE type: %d", coltype );
+								break;
+							case SQLITE_BLOB:
+								val->value_type = VALUE_TYPED_ARRAY;
+								break;
+							case SQLITE_TEXT:
+								val->value_type = VALUE_STRING;
+								break;
+							case SQLITE_INTEGER:
+								val->value_type = VALUE_NUMBER;
+								val->float_result = 0;
+								break;
+							case SQLITE_FLOAT:
+								val->value_type = VALUE_NUMBER;
+								val->float_result = 1;
+								break;
+							}
+						}
+#endif
+#if ( defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE ) ) && defined( USE_ODBC )
+						else
+#endif
+#ifdef USE_ODBC
+						{
+							SQLSMALLINT coltype;
+							SQLULEN colsize;
+							rc = SQLDescribeCol( collection->hstmt
+								, idx
+								,
+#ifdef _UNICODE
+								( SQLWCHAR* )colname
+								, sizeof( colname )
+#else
+								(SQLCHAR*)colname
+								, sizeof( colname )
+#endif
+								, (SQLSMALLINT*)&namelen
+ // data type short int
+								, &coltype
+ // columnsize int
+								, &colsize
+ // decimal digits short int
+								, NULL
+ // nullable ptr ?
+								, NULL
+							);
+							//lprintf( WIDE("column %s is type %d(%d)"), colname, coltypes[idx-1], colsizes[idx-1] );
+							if( rc != SQL_SUCCESS_WITH_INFO &&
+								rc != SQL_SUCCESS ) {
+								retry = DumpInfo( odbc, collection->pvt_errorinfo, SQL_HANDLE_STMT, &collection->hstmt, odbc->flags.bNoLogging );
+								lprintf( WIDE( "GetData failed..." ) );
+								result_cmd = WM_SQL_RESULT_ERROR;
+								break;
+							}
+ // always nul terminate this.
+							colname[namelen] = 0;
+							val->name = StrDup( colname );
+							val->nameLen = StrLen( colname );
+						}
+#endif
+ // for
+					}
+				}
+			}
+		}
+		else if( collection->flags.bBuildResultArray )
 		{
 			int len;
 			// after initial, and clear, these sizes will be NULL
@@ -93378,12 +93562,74 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 				if( odbc->flags.bSQLite_native )
 				{
-					char *text = (char*)sqlite3_column_text( collection->stmt, idx - 1 );
+					char *text;
 					TEXTSTR real_text;
 					int colsize;
-					colsize = sqlite3_column_bytes( collection->stmt, idx - 1 );
-					real_text = DupCStrLen( text, colsize );
-					if( collection->flags.bBuildResultArray )
+					if( collection->ppdlResults ) {
+						struct json_value_container *val = (struct json_value_container *)GetDataItem( collection->ppdlResults, idx - 1 );
+						int coltype;
+						switch( coltype = sqlite3_column_type( collection->stmt, idx - 1 ) ) {
+						default:
+							lprintf( "Uhnaldes SQL data type:%d", coltype );
+							text = (char*)sqlite3_column_text( collection->stmt, idx - 1 );
+							colsize = sqlite3_column_bytes( collection->stmt, idx - 1 );
+							val->stringLen = colsize;
+							if( val->string )
+								Release( val->string );
+							real_text = DupCStrLen( text, colsize );
+							if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), real_text );
+							val->string = real_text;
+							val->value_type = VALUE_STRING;
+							break;
+						case SQLITE_NULL:
+							if( val->string )
+								Release( val->string );
+							val->string = NULL;
+							val->value_type = VALUE_NULL;
+							break;
+						case SQLITE_FLOAT:
+							val->float_result = 1;
+							val->result_d = sqlite3_column_double( collection->stmt, idx - 1 );
+							if( pvtData )vtprintf( pvtData, WIDE( "%s%g" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), val->result_d );
+							val->value_type = VALUE_NUMBER;
+							break;
+						case SQLITE_INTEGER:
+							val->float_result = 0;
+							val->result_n = sqlite3_column_int64( collection->stmt, idx - 1 );
+							if( pvtData )vtprintf( pvtData, WIDE( "%s%d" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), (int)val->result_n );
+							val->value_type = VALUE_NUMBER;
+							break;
+						case SQLITE_BLOB:
+							text = (char*)sqlite3_column_blob( collection->stmt, idx - 1 );
+							val->stringLen = sqlite3_column_bytes( collection->stmt, idx - 1 );
+							//lprintf( "Got a blob..." );
+							if( pvtData )vtprintf( pvtData, WIDE( "%s<binary>" ), idx > 1 ? WIDE( "," ) : WIDE( "" ) );
+							if( val->string )
+								Release( val->string );
+							if( text ) {
+								val->string = NewArray( TEXTCHAR, val->stringLen );
+								MemCpy( val->string, text, val->stringLen );
+							}
+							else {
+								val->string = NULL;
+								val->stringLen = 0;
+							}
+							val->value_type = VALUE_TYPED_ARRAY;
+							break;
+						case SQLITE_TEXT:
+							text = (char*)sqlite3_column_text( collection->stmt, idx - 1 );
+							colsize = sqlite3_column_bytes( collection->stmt, idx - 1 );
+							val->stringLen = colsize;
+							if( val->string )
+								Release( val->string );
+							real_text = DupCStrLen( text, colsize );
+							if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), real_text );
+							val->string = real_text;
+							val->value_type = VALUE_STRING;
+							break;
+						}
+					}
+					else if( collection->flags.bBuildResultArray )
 					{
 						collection->result_len[idx - 1] = colsize;
 						if( collection->results[idx-1] )
@@ -93397,6 +93643,9 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 							MemCpy( collection->results[idx-1], text, collection->result_len[idx - 1] );
 							break;
 						default:
+							if( collection->results[idx - 1] )
+								Release( collection->results[idx - 1] );
+							real_text = DupCStrLen( text, colsize );
 							if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), real_text );
 							collection->results[idx-1] = real_text;
 							break;
@@ -93667,6 +93916,35 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 	}
 	return 0;
 }
+int FetchSQLRecordJS( PODBC odbc, PDATALIST *ppdlRecord ) {
+	if( ppdlRecord ) {
+		if( !odbc )
+			odbc = g.odbc;
+		if( odbc ) {
+			if( odbc->flags.bThreadProtect ) {
+				EnterCriticalSec( &odbc->cs );
+				odbc->nProtect++;
+			}
+			while( odbc->collection && odbc->collection->flags.bTemporary ) {
+				DestroyCollector( odbc->collection );
+			}
+			if( !odbc->collection ) {
+				lprintf( WIDE( "Lost ODBC result collection..." ) );
+				return 0;
+			}
+			odbc->collection->flags.bBuildResultArray = 1;
+			__GetSQLResult( odbc, odbc->collection, FALSE );
+			if( odbc->collection->responce == WM_SQL_RESULT_DATA ) {
+			}
+			if( odbc->flags.bThreadProtect ) {
+				LeaveCriticalSec( &odbc->cs );
+				odbc->nProtect--;
+			}
+			return odbc->collection->responce == WM_SQL_RESULT_DATA ? TRUE : 0;
+		}
+	}
+	return FALSE;
+}
 //-----------------------------------------------------------------------
 int FetchSQLRecord( PODBC odbc, CTEXTSTR **result )
 {
@@ -93870,7 +94148,7 @@ static void __DoODBCBinding( HSTMT hstmt, PDATALIST pdlItems ) {
 #endif
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 static void __DoSQLiteBinding( sqlite3_stmt *db, PDATALIST pdlItems ) {
-	int idx;
+	INDEX idx;
 	struct json_value_container *val;
 	DATA_FORALL( pdlItems, idx, struct json_value_container *, val ) {
 		int useIndex = idx + 1;
@@ -93883,6 +94161,9 @@ static void __DoSQLiteBinding( sqlite3_stmt *db, PDATALIST pdlItems ) {
 			lprintf( "Failed to handline binding for type: %d", val->value_type );
 			DebugBreak();
 			break;
+		case VALUE_NULL:
+			rc = sqlite3_bind_null( db, useIndex );
+			break;
 		case VALUE_NUMBER:
 			if( val->float_result ) {
 				rc = sqlite3_bind_double( db, useIndex, val->result_d );
@@ -93891,10 +94172,10 @@ static void __DoSQLiteBinding( sqlite3_stmt *db, PDATALIST pdlItems ) {
 			}
 			break;
 		case VALUE_TYPED_ARRAY:
-			rc = sqlite3_bind_blob( db, useIndex, val->string, (int)val->stringLen, NULL );
+			rc = sqlite3_bind_blob( db, useIndex, val->string, val->stringLen, NULL );
 			break;
 		case VALUE_STRING:
-			rc = sqlite3_bind_text( db, useIndex, val->string, (int)val->stringLen, NULL );
+			rc = sqlite3_bind_text( db, useIndex, val->string, val->stringLen, NULL );
 			break;
 		}
 		if( rc )
@@ -94035,7 +94316,7 @@ int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t que
 			}
 			//DebugBreak();
 			tmp = sqlite3_errmsg(odbc->db);
-         // this will have to have a Char based version
+			// this will have to have a Char based version
 			if( strnicmp( tmp, "no such table", 13 ) == 0 )
 				vtprintf( collection->pvt_errorinfo, WIDE( "(S0002)" ) );
 			vtprintf( collection->pvt_errorinfo, WIDE( "Result of prepare failed? %s at-or near char %")_size_f WIDE("[%") _cstring_f WIDE("] in [%") _string_f WIDE("]" ), tmp, tail - query, tail, query );
@@ -94046,8 +94327,11 @@ int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t que
 			}
 			in_error = 1;
 		} else {
-         if( pdlParams )
+			if( pdlParams ) {
 				__DoSQLiteBinding( collection->stmt, pdlParams );
+				//char *realSql = sqlite3_expanded_sql( collection->stmt );
+				//lprintf( "DO:%s", realSql );
+			}
 			if( odbc->flags.bAutoCheckpoint && !sqlite3_stmt_readonly( collection->stmt ) )
 				startAutoCheckpoint( odbc );
 		}
@@ -94234,23 +94518,18 @@ void SQLEndQuery( PODBC odbc )
 //	PopODBCExx( odbc, TRUE );
 }
 //-----------------------------------------------------------------------
-int SQLRecordQuery_v4( PODBC odbc
+int SQLRecordQuery_js( PODBC odbc
                      , CTEXTSTR query
                      , size_t queryLen
-                     , int *nResults
-                     , CTEXTSTR **result
-                     , size_t **resultLengths
-                     , CTEXTSTR **fields
+                     , PDATALIST *pdlResults
                      , PDATALIST pdlParams
                      DBG_PASS )
 {
 	PODBC use_odbc;
 	int once = 0;
+	if( !(*pdlResults) )
+		(*pdlResults) = CreateDataList( sizeof ( struct json_value_container  ) );
 	// clean up what we think of as our result set data (reset to nothing)
-	if( result )
-		(*result) = NULL;
-	if( nResults )
-		*nResults = 0;
 	do
 	{
 		if( !IsSQLOpenEx( odbc DBG_RELAY ) )
@@ -94289,12 +94568,76 @@ int SQLRecordQuery_v4( PODBC odbc
 		use_odbc->collection->flags.bTemporary = 0;
 		// ask the collector to build the type of result set we want...
 		use_odbc->collection->flags.bBuildResultArray = 1;
+		use_odbc->collection->ppdlResults = pdlResults;
 		// this will do an open, and delay queue processing and all sorts
 		// of good fun stuff...
 	}
 	while( __DoSQLQueryExx( use_odbc, use_odbc->collection, query, queryLen, pdlParams DBG_RELAY) );
 	if( use_odbc->collection->responce == WM_SQL_RESULT_DATA )
 	{
+		return TRUE;
+	}
+	else if( use_odbc->collection->responce == WM_SQL_RESULT_NO_DATA )
+	{
+		return TRUE;
+	}
+	return FALSE;
+}
+int SQLRecordQuery_v4( PODBC odbc
+	, CTEXTSTR query
+	, size_t queryLen
+	, int *nResults
+	, CTEXTSTR **result
+	, size_t **resultLengths
+	, CTEXTSTR **fields
+	, PDATALIST pdlParams
+	DBG_PASS )
+{
+	PODBC use_odbc;
+	int once = 0;
+	// clean up what we think of as our result set data (reset to nothing)
+	if( result )
+		(*result) = NULL;
+	if( nResults )
+		*nResults = 0;
+	do {
+		if( !IsSQLOpenEx( odbc DBG_RELAY ) )
+			return FALSE;
+		if( !(use_odbc = odbc) ) {
+			// setup error as invalid databse handle... well.. try the default one also
+			// but mostly fail.
+			use_odbc = g.odbc;
+		}
+		// if not a [sS]elect then begin a transaction.... some code uses query record for everything.
+		if( !once && query[0] != 's' && query[0] != 'S' ) {
+			once = 1;
+			BeginTransactEx( use_odbc, 0 );
+		}
+		// collection is very important to have - even if we will have to be opened,
+		// we ill need one, so make at least one.
+		if( !use_odbc->collection || !use_odbc->collection->flags.bTemporary ) {
+			if( use_odbc->collection && use_odbc->collection->flags.bTemporary ) {
+#ifdef LOG_COLLECTOR_STATES
+				lprintf( WIDE( "using existing collector..." ) );
+#endif
+				use_odbc->collection->flags.bTemporary = 0;
+			}
+			else {
+#ifdef LOG_COLLECTOR_STATES
+				lprintf( WIDE( "creating collector..." ) );
+#endif
+				use_odbc->collection = CreateCollector( 0, use_odbc, FALSE );
+			}
+		}
+		// if it was temporary, it shouldn't be anymore
+		use_odbc->collection->flags.bTemporary = 0;
+		// ask the collector to build the type of result set we want...
+		use_odbc->collection->flags.bBuildResultArray = 1;
+		use_odbc->collection->ppdlResults = NULL;
+		// this will do an open, and delay queue processing and all sorts
+		// of good fun stuff...
+	} while( __DoSQLQueryExx( use_odbc, use_odbc->collection, query, queryLen, pdlParams DBG_RELAY ) );
+	if( use_odbc->collection->responce == WM_SQL_RESULT_DATA ) {
 		//lprintf( WIDE("Result with data...") );
 		if( nResults )
 			(*nResults) = use_odbc->collection->columns;
@@ -94308,8 +94651,7 @@ int SQLRecordQuery_v4( PODBC odbc
 		//use_odbc->collection->results = NULL;
 		return TRUE;
 	}
-	else if( use_odbc->collection->responce == WM_SQL_RESULT_NO_DATA )
-	{
+	else if( use_odbc->collection->responce == WM_SQL_RESULT_NO_DATA ) {
 		if( nResults )
 			(*nResults) = use_odbc->collection->columns;
 		if( resultLengths )
@@ -95222,7 +95564,7 @@ int SQLRecordQueryf_v2( PODBC odbc, int *nResults, CTEXTSTR **result, size_t **r
 	vvtprintf( pvt, fmt, args );
 	cmd = VarTextGet( pvt );
 	VarTextDestroy( &pvt );
-	result_code = SQLRecordQuery_v4( odbc, GetText( cmd ), GetTextSize( cmd ), nResults, result, resultLengths,fields,NULL DBG_ARGS(SQLRecordQueryf_v2) );
+	result_code = SQLRecordQuery_v4( odbc, GetText( cmd ), GetTextSize( cmd ), nResults, result, resultLengths,fields,NULL  DBG_ARGS(SQLRecordQueryf_v2) );
 	LineRelease( cmd );
 	return result_code;
 }
@@ -95232,12 +95574,17 @@ SQL_NAMESPACE_END
 #define USES_SQLITE_INTERFACE
 #endif
 SQL_NAMESPACE
+#ifdef __STATIC_GLOBALS__
+extern struct pssql_global global_sqlstub_data;
+#  define g (global_sqlstub_data)
+#else
 extern struct pssql_global *global_sqlstub_data;
-#define g (*global_sqlstub_data)
+#  define g (*global_sqlstub_data)
 PRIORITY_PRELOAD( InitGlobalSqlUtil, GLOBAL_INIT_PRELOAD_PRIORITY )
 {
 	SimpleRegisterAndCreateGlobal( global_sqlstub_data );
 }
+#endif
 #ifdef __cplusplus
 using namespace sack::containers::BinaryTree;
 using namespace sack::memory;
@@ -98260,11 +98607,12 @@ typedef struct data_collection_tag
 	struct odbc_handle_tag *odbc;
 	uint32_t      responce;
 	uint32_t      lastop;
-   int    *column_types;
+	int    *column_types;
 	size_t *result_len;
 	TEXTSTR *results;
 	//uint32_t nResults; // this is columns
 	TEXTSTR *fields;
+	PDATALIST *ppdlResults;
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 	sqlite3_stmt *stmt;
 #endif
@@ -98561,7 +98909,13 @@ SQL_NAMESPACE_END
 #define DEFAULT_PUBLIC_KEY WIDE( "DEFAULT" )
 //#define DEFAULT_PUBLIC_KEY "system"
 SQL_NAMESPACE
-extern struct pssql_global *global_sqlstub_data;
+#ifdef __STATIC_GLOBALS__
+#  define sg (global_sqlstub_data)
+	extern struct pssql_global global_sqlstub_data;
+#else
+#  define sg (*global_sqlstub_data)
+	extern struct pssql_global *global_sqlstub_data;
+#endif
 SQL_NAMESPACE_END
 /*
  Dump Option table...
@@ -98673,8 +99027,13 @@ typedef struct sack_option_global_tag OPTION_GLOBAL;
 #ifdef _cut_sql_statments_
 SQL table create is in 'mkopttabs.sql'
 #endif
-#define og (*sack_global_option_data)
+#ifdef __STATIC_GLOBALS__
+#  define og (sack_global_option_data)
+	OPTION_GLOBAL sack_global_option_data;
+#else
+#  define og (*sack_global_option_data)
 	OPTION_GLOBAL *sack_global_option_data;
+#endif
 //------------------------------------------------------------------------
 //int mystrcmp( TEXTCHAR *x, TEXTCHAR *y )
 //{
@@ -98879,7 +99238,7 @@ SQLGETOPTION_PROC( void, CreateOptionDatabaseEx )( PODBC odbc, POPTION_TREE tree
 #ifdef DETAILED_LOGGING
 	lprintf( "Create Option Database. %d", tree->flags.bCreated );
 #endif
-	if( !global_sqlstub_data->flags.bLogOptionConnection )
+	if( !sg.flags.bLogOptionConnection )
 		SetSQLLoggingDisable( tree->odbc, TRUE );
 	{
 		PTABLE table;
@@ -98932,7 +99291,7 @@ void SetOptionDatabaseOption( PODBC odbc )
 	POPTION_TREE tree = GetOptionTreeExxx( odbc, NULL DBG_SRC );
 	if( tree )
 	{
-		if( global_sqlstub_data->flags.bInited )
+		if( sg.flags.bInited )
 			CreateOptionDatabaseEx( odbc, tree );
 	}
 }
@@ -98958,7 +99317,7 @@ void OpenWriterEx( POPTION_TREE option DBG_PASS )
 #ifdef DETAILED_LOGGING
 		_lprintf(DBG_RELAY)( WIDE( "Connect to writer database for tree %p odbc %p" ), option, option->odbc );
 #endif
-		option->odbc_writer = ConnectToDatabaseExx( option->odbc?option->odbc->info.pDSN:global_sqlstub_data->Primary.info.pDSN, FALSE DBG_RELAY );
+		option->odbc_writer = ConnectToDatabaseExx( option->odbc?option->odbc->info.pDSN:sg.Primary.info.pDSN, FALSE DBG_RELAY );
 		SQLCommand( option->odbc_writer, "pragma foreign_keys=on" );
       /*
 		SQLCommand( option->odbc_writer, "pragma integrity_check" );
@@ -98993,10 +99352,10 @@ void OpenWriterEx( POPTION_TREE option DBG_PASS )
 				;//lprintf( "result:%s", res );;
 		}
 */
-		//option->odbc_writer = SQLGetODBC( option->odbc?option->odbc->info.pDSN:global_sqlstub_data->Primary.info.pDSN );
+		//option->odbc_writer = SQLGetODBC( option->odbc?option->odbc->info.pDSN:sg.Primary.info.pDSN );
 		if( option->odbc_writer )
 		{
-			if( !global_sqlstub_data->flags.bLogOptionConnection )
+			if( !sg.flags.bLogOptionConnection )
 				SetSQLLoggingDisable( option->odbc_writer, TRUE );
 			SetSQLThreadProtect( option->odbc_writer, TRUE );
 			SetSQLAutoTransactCallback( option->odbc_writer, OptionsCommited, (uintptr_t)option );
@@ -99465,7 +99824,7 @@ SQLGETOPTION_PROC( size_t, SACK_GetPrivateProfileStringExxx )( PODBC odbc
 		size_t buflen;
 		// maybe do an if( l.flags.bLogOptionsRead )
 #if defined( _DEBUG )
-		if( global_sqlstub_data->flags.bLogOptionConnection )
+		if( sg.flags.bLogOptionConnection )
 			_lprintf(DBG_RELAY)( WIDE( "Getting option {%s}[%s]%s=%s" ), pINIFile, pSection, pOptname, pDefaultbuf );
 #endif
 		opt_node = GetOptionIndexExx( odbc, OPTION_ROOT_VALUE, NULL, pINIFile, pSection, pOptname, TRUE, FALSE DBG_RELAY );
@@ -99502,7 +99861,7 @@ SQLGETOPTION_PROC( size_t, SACK_GetPrivateProfileStringExxx )( PODBC odbc
 			{
 				SetOptionStringValue( GetOptionTreeExxx( odbc, NULL DBG_SRC ), opt_node, pBuffer );
 #if defined( _DEBUG )
-				if( global_sqlstub_data->flags.bLogOptionConnection )
+				if( sg.flags.bLogOptionConnection )
 					lprintf( WIDE("default Result [%s]"), pBuffer );
 #endif
 				if( drop_odbc )
@@ -99518,7 +99877,7 @@ SQLGETOPTION_PROC( size_t, SACK_GetPrivateProfileStringExxx )( PODBC odbc
 			buflen--;
 			pBuffer[buflen] = 0;
 #if defined( _DEBUG )
-			if( global_sqlstub_data->flags.bLogOptionConnection )
+			if( sg.flags.bLogOptionConnection )
 				lprintf( WIDE( "buffer result is [%s]" ), pBuffer );
 #endif
 			if( drop_odbc )
@@ -99654,7 +100013,7 @@ SQLGETOPTION_PROC( LOGICAL, SACK_WritePrivateOptionStringEx )( PODBC odbc, CTEXT
       pINIFile = ResolveININame( odbc, pSection, buf, pINIFile );
 	}
 #if defined( _DEBUG )
-	if( global_sqlstub_data->flags.bLogOptionConnection )
+	if( sg.flags.bLogOptionConnection )
 		_lprintf( DBG_SRC )( WIDE( "Setting option {%s}[%s]%s=%s" ), pINIFile, pSection, pName, pValue );
 #endif
 	optval = GetOptionIndexExxx( odbc, NULL, NULL, pINIFile, pSection, pName, TRUE, FALSE, FALSE DBG_SRC );
@@ -99830,11 +100189,13 @@ PRIORITY_UNLOAD( AllocateOptionGlobal, CONFIG_SCRIPT_PRELOAD_PRIORITY )
    // other data to destroy?
 	DeleteCriticalSec( &og.cs_option );
 }
+#ifndef __STATIC_GLOBALS__
 PRIORITY_PRELOAD( AllocateOptionGlobal, CONFIG_SCRIPT_PRELOAD_PRIORITY )
 {
 	SimpleRegisterAndCreateGlobal( sack_global_option_data );
 	InitializeCriticalSec( &og.cs_option );
 }
+#endif
 PRIORITY_PRELOAD(RegisterSQLOptionInterface, SQL_PRELOAD_PRIORITY + 1 )
 {
    // have a multiple test because of C++ and C playing together with shared global; not threading issue
@@ -99886,7 +100247,9 @@ ATEXIT( CommitOptions )
 #ifdef DETAILED_LOGGING
 	lprintf( WIDE( "Running Option cleanup..." ) );
 #endif
+#ifndef __STATIC_GLOBALS__
 	if( sack_global_option_data )
+#endif
 	{
 		LIST_FORALL( og.trees, idx, POPTION_TREE, tree )
 		{
@@ -100086,7 +100449,7 @@ static void repairOptionDb( uintptr_t psv, PODBC odbc ) {
 }
 SQLGETOPTION_PROC( CTEXTSTR, GetDefaultOptionDatabaseDSN )( void )
 {
-	return global_sqlstub_data->OptionDb.info.pDSN;
+	return sg.OptionDb.info.pDSN;
 }
 PODBC GetOptionODBCEx( CTEXTSTR dsn  DBG_PASS )
 {
@@ -100129,7 +100492,7 @@ PODBC GetOptionODBCEx( CTEXTSTR dsn  DBG_PASS )
 				INDEX idx;
 				CTEXTSTR cmd;
 				CTEXTSTR result;
-				LIST_FORALL( global_sqlstub_data->option_database_init, idx, CTEXTSTR, cmd ) {
+				LIST_FORALL( sg.option_database_init, idx, CTEXTSTR, cmd ) {
 					SQLQueryf( odbc, &result, cmd );
 					//if( result )
 					//	lprintf( WIDE( " %s" ), result );
@@ -100227,6 +100590,8 @@ void FindOptions( PODBC odbc, PLIST *result_list, CTEXTSTR name )
 	tree = GetOptionTreeExxx( odbc, NULL DBG_SRC );
 	New4FindOptions( tree, result_list, name );
 }
+#undef sg
+#undef og
 SACK_OPTION_NAMESPACE_END
 #ifndef GETOPTION_SOURCE
 #define GETOPTION_SOURCE
@@ -100240,7 +100605,13 @@ SACK_OPTION_NAMESPACE_END
 // referencing of option tree...
 //#define DETAILED_LOGGING
 SQL_NAMESPACE
-extern struct pssql_global *global_sqlstub_data;
+#ifdef __STATIC_GLOBALS__
+#  define sg (global_sqlstub_data)
+	extern struct pssql_global global_sqlstub_data;
+#else
+#  define sg (*global_sqlstub_data)
+	extern struct pssql_global *global_sqlstub_data;
+#endif
 SQL_NAMESPACE_END
 /*
  Dump Option table...
@@ -100253,8 +100624,13 @@ SQL_NAMESPACE_END
 */
 SACK_OPTION_NAMESPACE
 typedef struct sack_option_global_tag OPTION_GLOBAL;
-#define og (*sack_global_option_data)
-extern OPTION_GLOBAL *sack_global_option_data;
+#ifdef __STATIC_GLOBALS__
+#  define og (sack_global_option_data)
+	extern OPTION_GLOBAL sack_global_option_data;
+#else
+#  define og (*sack_global_option_data)
+	extern OPTION_GLOBAL *sack_global_option_data;
+#endif
 //------------------------------------------------------------------------
 #define MKSTR(n,...) #__VA_ARGS__
 ;
@@ -100470,7 +100846,7 @@ POPTION_TREE_NODE New4GetOptionIndexExxx( PODBC odbc, POPTION_TREE tree, POPTION
  // get out of this loop, continue outer.
 					continue;
 				}
-				if( global_sqlstub_data->flags.bLogOptionConnection )
+				if( sg.flags.bLogOptionConnection )
 					_lprintf(DBG_RELAY)( WIDE("Option node missing; and was not created='%s'"), namebuf );
 				if( !bIKnowItDoesntExist )
 					PopODBCEx( tree->odbc );
@@ -100743,7 +101119,11 @@ SACK_OPTION_NAMESPACE_END
 // we want access to GLOBAL from sqltub
 #define SQLLIB_SOURCE
 SQL_NAMESPACE
-extern struct pssql_global *global_sqlstub_data;
+#ifdef __STATIC_GLOBALS__
+	extern struct pssql_global global_sqlstub_data;
+#else
+	extern struct pssql_global *global_sqlstub_data;
+#endif
 SQL_NAMESPACE_END
 SACK_OPTION_NAMESPACE
 SQLGETOPTION_PROC( void, EnumOptionsEx )( PODBC odbc, POPTION_TREE_NODE parent
@@ -100794,8 +101174,13 @@ SACK_OPTION_NAMESPACE_END
 #define GETOPTION_SOURCE
 #endif
 SACK_OPTION_NAMESPACE
-#define og (*sack_global_option_data)
-extern struct sack_option_global_tag *sack_global_option_data;
+#ifdef __STATIC_GLOBALS__
+#  define og (sack_global_option_data)
+	extern struct sack_option_global_tag sack_global_option_data;
+#else
+#  define og (*sack_global_option_data)
+	extern struct sack_option_global_tag *sack_global_option_data;
+#endif
 #define ENUMOPT_FLAG_HAS_VALUE 1
 #define ENUMOPT_FLAG_HAS_CHILDREN 2
 struct new4_enum_params
