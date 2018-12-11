@@ -463,7 +463,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 		DATA_FORALL( pdlRecord, idx, struct json_value_container *, val ) {
 			if( val->value_type == VALUE_UNDEFINED ) break;
 		}
-		items = idx;
+		items = (int)idx;
 
 		//&sql->columns, &sql->result, &sql->resultLens, &sql->fields
 		if( pdlRecord )
@@ -506,7 +506,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 						colMap[idx].depth = fields[m].used;
 						if( colMap[idx].depth > maxDepth )
 							maxDepth = colMap[idx].depth+1;
-						colMap[idx].alias = PSSQL_GetColumnTableAliasName( sql->odbc, idx );
+						colMap[idx].alias = PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx );
 						int table;
 						for( table = 0; table < usedTables; table++ ) {
 							if( StrCmp( tables[table].alias, colMap[idx].alias ) == 0 ) {
@@ -527,8 +527,8 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 				if( m == usedFields ) {
 					colMap[idx].col = m;
 					colMap[idx].depth = 0;
-					colMap[idx].table = PSSQL_GetColumnTableName( sql->odbc, idx );
-					colMap[idx].alias = PSSQL_GetColumnTableAliasName( sql->odbc, idx );
+					colMap[idx].table = PSSQL_GetColumnTableName( sql->odbc, (int)idx );
+					colMap[idx].alias = PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx );
 					if( colMap[idx].table && colMap[idx].alias ) {
 						int table;
 						for( table = 0; table < usedTables; table++ ) {
@@ -545,7 +545,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 						}
 					} else
 						colMap[idx].t = tables;
-					fields[usedFields].first = idx;
+					fields[usedFields].first = (int)idx;
 					fields[usedFields].name = val->name;// sql->fields[idx];
 					fields[usedFields].used = 1;
 					usedFields++;
@@ -612,7 +612,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							if( !jsval->string )
 								val = Null( isolate );
 							else
-								val = String::NewFromUtf8( isolate, jsval->string, NewStringType::kNormal, (int)jsval->stringLen ).ToLocalChecked();
+								val = localString( isolate, jsval->string, (int)jsval->stringLen );
 							break;
 						case VALUE_TYPED_ARRAY:
 							//lprintf( "Should result with a binary thing" );
@@ -624,6 +624,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							holder->o.Reset( isolate, ab );
 							holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 							holder->buffer = jsval->string;
+							jsval->string = NULL; // steal this buffer, don't let DB release it.
 
 							val = ab;
 							break;
