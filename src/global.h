@@ -403,12 +403,12 @@ struct arrayBufferHolder {
 	Persistent<ArrayBuffer> ab;
 };
 typedef struct arrayBufferHolder ARRAY_BUFFER_HOLDER, *PARRAY_BUFFER_HOLDER;
-#define MAXARRAY_BUFFER_HOLDERSPERSET 128
+#define MAXARRAY_BUFFER_HOLDERSPERSET 512
 DeclareSet( ARRAY_BUFFER_HOLDER );
 
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info );
 Local<String> localString( Isolate *isolate, const char *data, int len );
-
++Local<String> localStringExternal( Isolate *isolate, const char *data, int len, const char *real_root );
 
 void InitFS( const v8::FunctionCallbackInfo<Value>& args );
 void ConfigScriptInit( Handle<Object> exports );

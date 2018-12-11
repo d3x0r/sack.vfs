@@ -23,6 +23,23 @@ Local<String> localString( Isolate *isolate, const char *data, int len ) {
 	return arrayBuffer;
 }
 
+Local<String> localStringExternal( Isolate *isolate, const char *data, int len, const char *real_root ) {
+	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
+	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
+	Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
+	static const char *prior_root;
+	if( prior_root != real_root )
+	{
+		prior_root = real_root;
+		PARRAY_BUFFER_HOLDER holder = GetHolder();
+		holder->s.Reset( isolate, arrayBuffer );
+		holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+		Hold( (char*)real_root );
+		holder->buffer = (void*)real_root;
+	}
+	return arrayBuffer;
+}
+
 
 
 static void promiseResolveCallback( const v8::FunctionCallbackInfo<Value>& args ) {
