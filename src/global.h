@@ -99,6 +99,7 @@ public:
 	static void Init( Handle<Object> exports );
 	VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
 
+	static void vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args );
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void getDirectory( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileRead( const v8::FunctionCallbackInfo<Value>& args );
@@ -117,6 +118,46 @@ public:
 	static void volDecrypt( const v8::FunctionCallbackInfo<Value>& args );
 
 	~VolumeObject();
+};
+
+
+class ObjectStorageObject : public node::ObjectWrap {
+public:
+	struct objStore::volume *vol;
+	bool volNative;
+	char *mountName;
+	char *fileName;
+	struct file_system_interface *fsInt;
+	struct file_system_mounted_interface* fsMount;
+	static v8::Persistent<v8::Function> constructor;
+
+public:
+
+	static void Init( Isolate *isolate, Handle<Object> exports );
+	ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
+
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+
+	// get object pass object ID
+	static void getObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// get object and all recursive objects associated from here (for 1 level?)
+	static void mapObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// pass object, result with object ID.
+	static void putObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// pass object ID, get back a ObjectStorageFileObject ( support seek/read/write? )
+	static void openObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// utility to remove the key so it can be diagnosed.
+	static void volDecrypt( const v8::FunctionCallbackInfo<Value>& args );
+
+	static void fileReadJSOX( const v8::FunctionCallbackInfo<Value>& args );
+
+	static void fileWrite( const v8::FunctionCallbackInfo<Value>& args );
+	static ObjectStorageObject* openInVFS( Isolate *isolate, struct volume *vol, const char *mount, const char *name, const char *key1, const char *key2 );
+	~ObjectStorageObject();
 };
 
 
@@ -193,10 +234,10 @@ public:
 	PODBC odbc;
 	int optionInitialized;
 	static v8::Persistent<v8::Function> constructor;
-	int columns;
-	CTEXTSTR *result;
-	size_t *resultLens;
-	CTEXTSTR *fields;
+	//int columns;
+	//CTEXTSTR *result;
+	//size_t *resultLens;
+	//CTEXTSTR *fields;
 	v8::Persistent<v8::Function> onCorruption;
 	Persistent<Object> _this;
 	//Persistent<Object> volume;

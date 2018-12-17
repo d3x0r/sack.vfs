@@ -441,8 +441,8 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 		//String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
 
 		SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-		sql->fields = 0;
-		if( !SQLRecordQuery_v4( sql->odbc, GetText(statement), GetTextSize(statement), &sql->columns, &sql->result, &sql->resultLens, &sql->fields, pdlParams DBG_SRC ) ) {
+		PDATALIST pdlRecord = NULL;
+		if( !SQLRecordQuery_js( sql->odbc, GetText(statement), GetTextSize(statement), &pdlRecord, pdlParams DBG_SRC ) ) {
 			const char *error;
 			FetchSQLError( sql->odbc, &error );
 			isolate->ThrowException( Exception::Error(
@@ -450,7 +450,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 			DeleteDataList( &pdlParams );
 			return;
 		}
-		if( sql->columns )
+		if( pdlRecord && pdlRecord->Cnt )
 		{
 			int usedFields = 0;
 			int maxDepth = 0;
@@ -459,13 +459,13 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 				int used;
 				int first;
 				Local<Array> array;
-			} *fields = NewArray( struct fieldTypes, sql->columns ) ;
+			} *fields = NewArray( struct fieldTypes, pdlRecord->Cnt ) ;
 			int usedTables = 0;
 			struct tables {
 				const char *table;
 				const char *alias;
 				Local<Object> container;
-			}  *tables = NewArray( struct tables, sql->columns + 1);
+			}  *tables = NewArray( struct tables, pdlRecord->Cnt + 1);
 			struct colMap {
 				int depth;
 				int col;
@@ -473,15 +473,17 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 				const char *alias;
 				Local<Object> container;
 				struct tables *t;
-			}  *colMap = NewArray( struct colMap, sql->columns );
+			}  *colMap = NewArray( struct colMap, pdlRecord->Cnt );
 			tables[usedTables].table = NULL;
 			tables[usedTables].alias = NULL;
 			usedTables++;
 
-			for( int n = 0; n < sql->columns; n++ ) {
+			struct json_value_container * jsval;
+			INDEX n;
+			DATA_FORALL( pdlRecord, n, struct json_value_container *, jsval ) {
 				int m;
 				for( m = 0; m < usedFields; m++ ) {
-					if( StrCaseCmp( fields[m].name, sql->fields[n] ) == 0 ) {
+					if( StrCaseCmp( fields[m].name, jsval->name ) == 0 ) {
 						colMap[n].col = m;
 						colMap[n].depth = fields[m].used;
 						if( colMap[n].depth > maxDepth )
@@ -526,7 +528,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 					} else
 						colMap[n].t = tables;
 					fields[usedFields].first = n;
-					fields[usedFields].name = sql->fields[n];
+					fields[usedFields].name = jsval->name;
 					fields[usedFields].used = 1;
 					usedFields++;
 				}
@@ -547,7 +549,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 				}
 			Local<Array> records = Array::New( isolate );
 			Local<Object> record;
-			if( sql->result ) {
+			if( pdlRecord ) {
 				int row = 0;
 				do {
 					Local<Value> val;
@@ -560,38 +562,60 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 					else
 						for( int n = 0; n < usedTables; n++ )
 							tables[n].container = record;
-					for( int n = 0; n < sql->columns; n++ ) {
+					DATA_FORALL( pdlRecord, n, struct json_value_container *, jsval ) {
+						if( jsval->value_type == VALUE_UNDEFINED ) break;
+
 						Local<Object> container = colMap[n].t->container;
 						if( fields[colMap[n].col].used > 1 ) {
 							if( fields[colMap[n].col].first == n ) {
-								record->Set( String::NewFromUtf8( isolate, sql->fields[n] )
+								record->Set( String::NewFromUtf8( isolate, jsval->name )
 										  , fields[colMap[n].col].array = Array::New( isolate )
 										  );
 							}
 						}
 
-						if( sql->result[n] ) {
-							double f;
-							int64_t i;
-							int type = IsTextAnyNumber( sql->result[n], &f, &i );
-							if( fields[colMap[n].col].used > 1 ) {
-
+						switch( jsval->value_type ) {
+						default:
+							lprintf( "Unhandled value result type:%d", jsval->value_type );
+							break;
+						case VALUE_NULL:
+							val = Null( isolate );
+							break;
+						case VALUE_NUMBER:
+							if( jsval->float_result ) {
+								val = Number::New( isolate, jsval->result_d );
 							}
-							if( type == 2 )
-								val = Number::New( isolate, f );
-							else if( type == 1 )
-								val = Number::New( isolate, (double)i );
+							else {
+								val = Number::New( isolate, (double)jsval->result_n );
+							}
+							break;
+						case VALUE_STRING:
+							if( !jsval->string )
+								val = Null( isolate );
 							else
-								val = String::NewFromUtf8( isolate, sql->result[n], NewStringType::kNormal, (int)sql->resultLens[n] ).ToLocalChecked();
+								val = localString( isolate, jsval->string, (int)jsval->stringLen );
+							break;
+						case VALUE_TYPED_ARRAY:
+							//lprintf( "Should result with a binary thing" );
+
+							Local<ArrayBuffer> ab =
+								ArrayBuffer::New( isolate, jsval->string, jsval->stringLen );
+
+							PARRAY_BUFFER_HOLDER holder = GetHolder();
+							holder->o.Reset( isolate, ab );
+							holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+							holder->buffer = jsval->string;
+							jsval->string = NULL; // steal this buffer, don't let DB release it.
+
+							val = ab;
+							break;
 						}
-						else
-							val = Null(isolate);
 
 						if( fields[colMap[n].col].used == 1 )
-							container->Set( String::NewFromUtf8( isolate, sql->fields[n] ), val );
-						else if( usedTables > 1 || ( fields[colMap[n].col].used > 1 ) ) {
+							container->Set( String::NewFromUtf8( isolate, jsval->name ), val );
+						else if( usedTables > 1 || (fields[colMap[n].col].used > 1) ) {
 							if( fields[colMap[n].col].used > 1 ) {
-								colMap[n].t->container->Set( String::NewFromUtf8( isolate, sql->fields[n] ), val );
+								colMap[n].t->container->Set( String::NewFromUtf8( isolate, jsval->name ), val );
 								if( colMap[n].alias )
 									fields[colMap[n].col].array->Set( String::NewFromUtf8( isolate, colMap[n].alias ), val );
 								fields[colMap[n].col].array->Set( colMap[n].depth, val );
@@ -600,7 +624,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 
 					}
 					records->Set( row++, record );
-				} while( FetchSQLRecord( sql->odbc, &sql->result ) );
+				} while( FetchSQLRecordJS( sql->odbc, &pdlRecord ) );
 			}
 			Deallocate( struct fieldTypes*, fields );
 			Deallocate( struct tables*, tables );
@@ -973,7 +997,6 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 	} else 
 	{
 		SqlObject *sql = SqlObject::Unwrap<SqlObject>( args.This() );
-		sql->fields = 0;
 
 		if( !sql->optionInitialized ) {
 			SetOptionDatabaseOption( sql->odbc );
@@ -1055,7 +1078,6 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 	} else 
 	{
 		SqlObject *sql = SqlObject::Unwrap<SqlObject>( args.This() );
-		sql->fields = 0;
 		use_odbc = sql->odbc;
 	}
 	if( ( sect && sect[0] == '/' ) ) {
