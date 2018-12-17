@@ -449,7 +449,7 @@ DeclareSet( ARRAY_BUFFER_HOLDER );
 
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info );
 Local<String> localString( Isolate *isolate, const char *data, int len );
-+Local<String> localStringExternal( Isolate *isolate, const char *data, int len, const char *real_root );
+Local<String> localStringExternal( Isolate *isolate, const char *data, int len, const char *real_root );
 
 void InitFS( const v8::FunctionCallbackInfo<Value>& args );
 void ConfigScriptInit( Handle<Object> exports );
