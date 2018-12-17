@@ -6362,9 +6362,9 @@ inline void operator delete (void * p)
 // this is a method replacement to use PIPEs instead of SEMAPHORES
 // replacement code only affects linux.
 #if defined( __QNX__ ) || defined( __MAC__) || defined( __LINUX__ ) || defined( __ANDROID__ )
-#  define USE_PIPE_SEMS
+//#  define USE_PIPE_SEMS
 // no semtimedop; no semctl, etc
-//#include <sys/sem.h>
+#include <sys/sem.h>
 #endif
 #ifdef USE_PIPE_SEMS
 #  define _NO_SEMTIMEDOP_
@@ -9970,6 +9970,28 @@ PSSQL_PROC( int, SQLRecordQueryEx )( PODBC odbc
    odbc :     connection to do the query on.
    query :    query to execute.
    queryLength : actual length of the query (allows embedded NUL characters)
+   PDATALIST* :  pointer to datalist pointer which will contain struct json_val_containers.
+			 for each result in this list until VALUE_UNDEFINED is used.
+		.name is the field name (constant)
+		.string is the text, value_type is the value type (so numbers can stay numbers)
+	pdlParams : parameters to bind to the query.
+   Example
+   See SQLRecordQueryf, but omit the database parameter.         */
+int SQLRecordQuery_js( PODBC odbc
+	, CTEXTSTR query
+	, size_t queryLen
+	, PDATALIST *pdlResults
+	, PDATALIST pdlParams
+	DBG_PASS );
+/* Do a SQL query on the default odbc connection. The first
+   record results immediately if there are any records. Returns
+   the results as an array of strings. If you know the select
+   you are using .... "select a,b,c from xyz" then you know that
+   this will have 3 columns resulting.
+   Parameters
+   odbc :     connection to do the query on.
+   query :    query to execute.
+   queryLength : actual length of the query (allows embedded NUL characters)
    columns :  pointer to an int to receive the number of columns
               in the result. (the user will know this based on
               the query issued usually, so it can be NULL to
@@ -10019,6 +10041,15 @@ PSSQL_PROC( int, FetchSQLResult )( PODBC, CTEXTSTR *result );
    Values received are invalid after the next FetchSQLRecord or
    possibly other query.                                        */
 PSSQL_PROC( int, FetchSQLRecord )( PODBC, CTEXTSTR **result );
+/* Gets the next record result from the connection.
+   Parameters
+   odbc :     connection to get the result from; if NULL, uses
+			  \internal static connection.
+   result\ :  (unchanged; is same list as original)
+   Remarks
+   Values received are invalid after the next FetchSQLRecord or
+   possibly other query.                                        */
+PSSQL_PROC( int, FetchSQLRecordJS )(PODBC odbc, PDATALIST *ppdlRecord);
 /* Gets the last result on the specified ODBC connection.
    Parameters
    odbc :     connection to get the last error of
@@ -10772,8 +10803,8 @@ SACK_VFS_NAMESPACE
 #define BLOCK_SHIFT (BLOCK_SIZE_BITS-(sizeof(BLOCKINDEX)==16?4:sizeof(BLOCKINDEX)==8?3:sizeof(BLOCKINDEX)==4?2:sizeof(BLOCKINDEX)==2?1:0) )
 #define BLOCK_SIZE (1<<BLOCK_SIZE_BITS)
 #define BLOCK_MASK (BLOCK_SIZE-1)
-#define BLOCKS_PER_BAT (BLOCK_SIZE/sizeof(BLOCKINDEX))
-#define BLOCKS_PER_SECTOR (1 + (BLOCK_SIZE/sizeof(BLOCKINDEX)))
+#define BLOCKS_PER_BAT (1<<BLOCK_SHIFT)
+#define BLOCKS_PER_SECTOR (1 + BLOCKS_PER_BAT)
 // per-sector perumation; needs to be a power of 2 (in bytes)
 #define SHORTKEY_LENGTH 16
 #ifndef VFS_DISK_DATATYPE
@@ -10825,13 +10856,17 @@ typedef VFS_DISK_DATATYPE FPI;
 #endif
 enum block_cache_entries
 {
-	BC(DIRECTORY)
+	BC( DIRECTORY )
 #ifdef VIRTUAL_OBJECT_STORE
-	, BC(DIRECTORY_LAST) = BC(DIRECTORY) + 64
+	, BC( DIRECTORY_LAST ) = BC( DIRECTORY ) + 64
 #endif
-	, BC(NAMES)
-	, BC(NAMES_LAST) = BC(NAMES) + 16
-	, BC(BAT)
+	, BC( NAMES )
+	, BC( NAMES_LAST ) = BC( NAMES ) + 16
+	, BC( BAT )
+#ifdef VIRTUAL_OBJECT_STORE
+	// keep a few tables for cache (file system too?)
+	, BC( BAT_LAST ) = BC( BAT ) + 4
+#endif
 	, BC(DATAKEY)
 	, BC(FILE)
 	, BC(FILE_LAST) = BC(FILE) + 10
@@ -10883,6 +10918,7 @@ PREFIX_PACKED struct volume {
 	const char * volname;
 #ifdef FILE_BASED_VFS
 	FILE *file;
+	struct file_system_mounted_interface *mount;
 #else
 	struct disk *disk;
  // disk might be offset from diskReal because it's a .exe attached.
@@ -10907,6 +10943,7 @@ PREFIX_PACKED struct volume {
 	uint8_t fileCacheAge[BC(FILE_LAST) - BC(FILE)];
 #ifdef VIRTUAL_OBJECT_STORE
 	uint8_t dirHashCacheAge[BC(DIRECTORY_LAST) - BC(DIRECTORY)];
+	uint8_t batHashCacheAge[BC(BAT_LAST) - BC(BAT)];
 #endif
 	uint8_t nameCacheAge[BC(NAMES_LAST) - BC(NAMES)];
 	struct random_context *entropy;
@@ -10930,6 +10967,8 @@ PREFIX_PACKED struct volume {
 	FLAGSET( _dirty, BC( COUNT ) );
 	FPI bufferFPI[BC(COUNT)];
 #endif
+	BLOCKINDEX lastBatBlock;
+	PDATALIST pdlFreeBlocks;
  // when reopened file structures need to be updated also...
 	PLIST files;
 	LOGICAL read_only;
@@ -10964,6 +11003,9 @@ struct sack_vfs_file
 	BLOCKINDEX block;
   // someone already deleted this...
 	LOGICAL delete_on_close;
+	BLOCKINDEX *blockChain;
+	int blockChainAvail;
+	int blockChainLength;
 };
 #undef TSEEK
 #undef BTSEEK
@@ -11088,6 +11130,34 @@ static void MaskStrCpy( char *output, size_t outlen, struct volume *vol, FPI nam
 	}
 }
 #endif
+static void ExtendBlockChain( struct sack_vfs_file *file ) {
+	int newSize = ( file->blockChainAvail ) * 2 + 1;
+	file->blockChain = (BLOCKINDEX*)Reallocate( file->blockChain, newSize * sizeof( BLOCKINDEX ) );
+	// debug
+	memset( file->blockChain + file->blockChainAvail, 0, (newSize - file->blockChainAvail ) * sizeof(BLOCKINDEX) );
+	file->blockChainAvail = newSize;
+}
+static void SetBlockChain( struct sack_vfs_file *file, FPI fpi, BLOCKINDEX newBlock ) {
+	FPI fileBlock = fpi >> BLOCK_SIZE_BITS;
+#ifdef _DEBUG
+	if( !newBlock ) DebugBreak();
+#endif
+	while( (fileBlock) >= file->blockChainAvail ) {
+		ExtendBlockChain( file );
+	}
+	if( fileBlock >= file->blockChainLength )
+		file->blockChainLength = fileBlock + 1;
+	//_lprintf(DBG_RELAY)( "setting %d to %d", (int)fileBlock, (int)newBlock );
+	if( file->blockChain[fileBlock] ) {
+		if( file->blockChain[fileBlock] == newBlock ) {
+			return;
+		}
+#ifdef _DEBUG
+		DebugBreak();
+#endif
+	}
+	file->blockChain[fileBlock] = newBlock;
+}
 static enum block_cache_entries UpdateSegmentKey( struct volume *vol, enum block_cache_entries cache_idx, BLOCKINDEX segment )
 {
 	if( !vol->key ) {
@@ -11183,8 +11253,16 @@ static LOGICAL ValidateBAT( struct volume *vol ) {
 				BLOCKINDEX block = BAT[0] ^ blockKey[0];
 				BAT++; blockKey++;
 				if( block == EOFBLOCK ) continue;
-				if( block == EOBBLOCK ) break;
+				if( block == EOBBLOCK ) {
+					vol->lastBatBlock = n+m;
+					break;
+				}
 				if( block >= last_block ) return FALSE;
+				if( block == 0 ) {
+ // use as a temp variable....
+					vol->lastBatBlock = n + m;
+					AddDataItem( &vol->pdlFreeBlocks, &vol->lastBatBlock );
+				}
 			}
 			if( m < BLOCKS_PER_BAT ) break;
 		}
@@ -11195,8 +11273,16 @@ static LOGICAL ValidateBAT( struct volume *vol ) {
 			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
 				BLOCKINDEX block = BAT[m];
 				if( block == EOFBLOCK ) continue;
-				if( block == EOBBLOCK ) break;
+				if( block == EOBBLOCK ) {
+					vol->lastBatBlock = n + m;
+					break;
+				}
 				if( block >= last_block ) return FALSE;
+				if( block == 0 ) {
+ // use as a temp variable....
+					vol->lastBatBlock = n + m;
+					AddDataItem( &vol->pdlFreeBlocks, &vol->lastBatBlock );
+				}
 			}
 			if( m < BLOCKS_PER_BAT ) break;
 		}
@@ -11340,7 +11426,7 @@ static LOGICAL ExpandVolume( struct volume *vol ) {
 				// initialize first BAT block.
 				cache = BC(BAT);
 				TSEEK( BLOCKINDEX*, vol, 0, cache );
-				((BLOCKINDEX*)(((uintptr_t)vol->disk) + 0))[0] = EOBBLOCK ^ ((BLOCKINDEX*)vol->usekey[BC(BAT)])[0];
+				((BLOCKINDEX*)(((uintptr_t)vol->disk) + 0))[0] = EOBBLOCK ^ ((BLOCKINDEX*)vol->usekey[cache])[0];
 			}
 			return TRUE;
 		}
@@ -11462,54 +11548,58 @@ static BLOCKINDEX GetFreeBlock( struct volume *vol, int init )
 	int b = 0;
 	enum block_cache_entries cache = BC(BAT);
 	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, cache );
+	BLOCKINDEX *blockKey;
+	BLOCKINDEX check_val;
+	if( vol->pdlFreeBlocks->Cnt ) {
+		BLOCKINDEX newblock = ((BLOCKINDEX*)GetDataItem( &vol->pdlFreeBlocks, vol->pdlFreeBlocks->Cnt - 1 ))[0];
+		check_val = 0;
+		b = newblock / BLOCKS_PER_SECTOR;
+		n = newblock % BLOCKS_PER_SECTOR;
+		vol->pdlFreeBlocks->Cnt--;
+	}
+	else {
+		check_val = EOBBLOCK;
+		b = vol->lastBatBlock / BLOCKS_PER_SECTOR;
+		n = vol->lastBatBlock % BLOCKS_PER_SECTOR;
+	}
+	//lprintf( "check, start, b, n %d %d %d %d", (int)check_val, (int) vol->lastBatBlock, (int)b, (int)n );
+	current_BAT = TSEEK( BLOCKINDEX*, vol, b*BLOCKS_PER_SECTOR*BLOCK_SIZE, cache ) + n;
+	blockKey = ((BLOCKINDEX*)vol->usekey[cache]) + n;
 	if( !current_BAT ) return 0;
-	do
-	{
-		BLOCKINDEX check_val;
-		BLOCKINDEX *blockKey;
-		blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
-		for( n = 0; n < BLOCKS_PER_BAT; n++ )
-		{
-			check_val = current_BAT[0] ^ blockKey[0];
-			if( !check_val || (check_val == EOBBLOCK) )
-			{
-				// mark it as claimed; will be enf of file marker...
-				// adn thsi result will overwrite previous EOF.
-				current_BAT[0] = EOFBLOCK ^ blockKey[0];
-				if( init )
-				{
-					enum block_cache_entries cache;
-					cache = UpdateSegmentKey( vol, BC(FILE), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 );
-					while( ((vol->segment[cache]-1)*BLOCK_SIZE) > vol->dwSize ){
-						LoG( "looping to get a size %d", ((vol->segment[cache]-1)*BLOCK_SIZE) );
-						if( !ExpandVolume( vol ) ) return 0;
-					}
-					if( init == GFB_INIT_DIRENT )
-						((struct directory_entry*)(((uint8_t*)vol->disk) + (vol->segment[cache]-1) * BLOCK_SIZE))[0].first_block = EODMARK^((struct directory_entry*)vol->usekey[cache])->first_block;
-					else if( init == GFB_INIT_NAMES )
-						((char*)(((uint8_t*)vol->disk) + (vol->segment[cache]-1) * BLOCK_SIZE))[0] = ((char*)vol->usekey[cache])[0];
-					//else
-					//	memcpy( ((uint8_t*)vol->disk) + (vol->segment[cache]-1) * BLOCK_SIZE, vol->usekey[cache], BLOCK_SIZE );
-				}
-				if( (check_val == EOBBLOCK) )
-					if(n < (BLOCKS_PER_BAT-1))
-						current_BAT[1] = EOBBLOCK ^ blockKey[1];
-					else {
-						current_BAT = TSEEK( BLOCKINDEX*, vol, (b + 1) * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
-						blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
-						current_BAT[0] = EOBBLOCK ^ blockKey[0];
-					}
-				return b * BLOCKS_PER_BAT + n;
-			}
-			current_BAT++;
-			blockKey++;
+	current_BAT[0] = EOFBLOCK ^ blockKey[0];
+	if( (check_val == EOBBLOCK) ) {
+		if( n < (BLOCKS_PER_BAT - 1) ) {
+			current_BAT[1] = EOBBLOCK ^ blockKey[1];
+			vol->lastBatBlock++;
 		}
-		b++;
-		current_BAT = TSEEK( BLOCKINDEX*, vol, b * ( BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
-	}while( 1 );
+		else {
+			cache = BC( BAT );
+			current_BAT = TSEEK( BLOCKINDEX*, vol, (b + 1) * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
+			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
+			current_BAT[0] = EOBBLOCK ^ blockKey[0];
+			vol->lastBatBlock = (b + 1) * BLOCKS_PER_SECTOR;
+			//lprintf( "Set last block....%d", (int)vol->lastBatBlock );
+		}
+	}
+	if( init ) {
+		enum block_cache_entries cache;
+		cache = UpdateSegmentKey( vol, BC( FILE ), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 );
+		while( ((vol->segment[cache] - 1)*BLOCK_SIZE) > vol->dwSize ) {
+			LoG( "looping to get a size %d", ((vol->segment[cache] - 1)*BLOCK_SIZE) );
+			if( !ExpandVolume( vol ) ) return 0;
+		}
+		if( init == GFB_INIT_DIRENT )
+			((struct directory_entry*)(((uint8_t*)vol->disk) + (vol->segment[cache] - 1) * BLOCK_SIZE))[0].first_block = EODMARK ^ ((struct directory_entry*)vol->usekey[cache])->first_block;
+		else if( init == GFB_INIT_NAMES )
+			((char*)(((uint8_t*)vol->disk) + (vol->segment[cache] - 1) * BLOCK_SIZE))[0] = ((char*)vol->usekey[cache])[0];
+		//else
+		//	memcpy( ((uint8_t*)vol->disk) + (vol->segment[cache]-1) * BLOCK_SIZE, vol->usekey[cache], BLOCK_SIZE );
+	}
+	//lprintf( "Return block:%d   %d  %d", (int)(b*BLOCKS_PER_BAT + n), (int)b, (int)n );
+	return b * BLOCKS_PER_BAT + n;
 }
 static BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int init, LOGICAL expand ) {
-	BLOCKINDEX sector = block >> BLOCK_SHIFT;
+	BLOCKINDEX sector = block / BLOCKS_PER_BAT;
 	enum block_cache_entries cache = BC(BAT);
 	BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX *, vol, sector * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
 	BLOCKINDEX seg;
@@ -11517,11 +11607,11 @@ static BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int in
  // if this passes, later ones will also.
 	if( !this_BAT ) return 0;
 	seg = ( ((uintptr_t)this_BAT - (uintptr_t)vol->disk) / BLOCK_SIZE ) + 1;
-	if( seg != vol->segment[BC(BAT)] ) {
+	if( seg != vol->segment[cache] ) {
 		//vol->segment[BC(BAT)] = seg;
-		UpdateSegmentKey( vol, BC(BAT), seg );
+		UpdateSegmentKey( vol, cache, seg );
 	}
-	check_val ^= ((BLOCKINDEX*)vol->usekey[BC(BAT)])[block & (BLOCKS_PER_BAT-1)];
+	check_val ^= ((BLOCKINDEX*)vol->usekey[cache])[block & (BLOCKS_PER_BAT-1)];
 	if( check_val == EOBBLOCK ) {
 		lprintf( "the file itself should never get a EOBBLOCK in it." );
 		(*(int*)0) = 0;
@@ -11534,9 +11624,13 @@ static BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int in
 			BLOCKINDEX key;
 			check_val = GetFreeBlock( vol, init );
 			// free block might have expanded...
+			cache = BC( BAT );
 			this_BAT = TSEEK( BLOCKINDEX*, vol, sector * ( BLOCKS_PER_SECTOR*BLOCK_SIZE ), cache );
-			key = vol->key ? ((BLOCKINDEX*)vol->usekey[BC(BAT)])[block & (BLOCKS_PER_BAT - 1)] : 0;
+			key = vol->key ? ((BLOCKINDEX*)vol->usekey[cache])[block & (BLOCKS_PER_BAT - 1)] : 0;
 			if( !this_BAT ) return 0;
+#ifdef _DEBUG
+			if( !block ) DebugBreak();
+#endif
 			// segment could already be set from the GetFreeBlock...
 			this_BAT[block & (BLOCKS_PER_BAT-1)] = check_val ^ key;
 		}
@@ -11625,6 +11719,7 @@ struct volume *sack_vfs_load_volume( const char * filepath )
 {
 	struct volume *vol = New( struct volume );
 	memset( vol, 0, sizeof( struct volume ) );
+	vol->pdlFreeBlocks = CreateDataList( sizeof( BLOCKINDEX ) );
 	vol->volname = SaveText( filepath );
 	AssignKey( vol, NULL, NULL );
 	if( !ExpandVolume( vol ) || !ValidateBAT( vol ) ) { Deallocate( struct volume*, vol ); return NULL; }
@@ -11634,6 +11729,7 @@ struct volume *sack_vfs_load_crypt_volume( const char * filepath, uintptr_t vers
 	struct volume *vol = New( struct volume );
 	MemSet( vol, 0, sizeof( struct volume ) );
 	if( !version ) version = 2;
+	vol->pdlFreeBlocks = CreateDataList( sizeof( BLOCKINDEX ) );
 	vol->clusterKeyVersion = version - 1;
 	vol->volname = SaveText( filepath );
 	vol->userkey = userkey;
@@ -11648,6 +11744,7 @@ struct volume *sack_vfs_use_crypt_volume( POINTER memory, size_t sz, uintptr_t v
 	vol->read_only = 1;
 	AssignKey( vol, userkey, devkey );
 	if( !version ) version = 2;
+	vol->pdlFreeBlocks = CreateDataList( sizeof( BLOCKINDEX ) );
 	vol->clusterKeyVersion = version - 1;
 	vol->external_memory = TRUE;
 	vol->diskReal = (struct disk*)memory;
@@ -11694,6 +11791,7 @@ void sack_vfs_unload_volume( struct volume * vol ) {
 		return;
 	}
 	DeleteListEx( &vol->files DBG_SRC );
+	DeleteDataList( &vol->pdlFreeBlocks );
 	if( !vol->external_memory )	CloseSpace( vol->diskReal );
 	if( vol->key ) {
 		Deallocate( uint8_t*, vol->key );
@@ -11714,7 +11812,7 @@ void sack_vfs_shrink_volume( struct volume * vol ) {
 	do {
 		BLOCKINDEX check_val;
 		BLOCKINDEX *blockKey;
-		blockKey = (BLOCKINDEX*)vol->usekey[BC(BAT)];
+		blockKey = (BLOCKINDEX*)vol->usekey[cache];
 		for( n = 0; n < BLOCKS_PER_BAT; n++ ) {
 			check_val = *(current_BAT++);
 			if( vol->key )	check_val ^= *(blockKey++);
@@ -11776,7 +11874,7 @@ LOGICAL sack_vfs_decrypt_volume( struct volume *vol )
 // = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * (BLOCKS_PER_SECTOR * BLOCK_SIZE));
 			BLOCKINDEX *block;
 			block = TSEEK( BLOCKINDEX*, vol, n * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
-			blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
+			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
 			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
 				block[0] ^= blockKey[0];
 				if( block[0] == EOBBLOCK ) break;
@@ -11810,7 +11908,7 @@ LOGICAL sack_vfs_encrypt_volume( struct volume *vol, uintptr_t version, CTEXTSTR
 // = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * (BLOCKS_PER_SECTOR * BLOCK_SIZE));
 			BLOCKINDEX *block;
 			block = TSEEK( BLOCKINDEX*, vol, n * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
-			blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
+			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
 			//vol->segment[BC(BAT)] = n + 1;
 			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
 				if( block[0] == EOBBLOCK ) done = TRUE;
@@ -11849,10 +11947,12 @@ const char *sack_vfs_get_signature( struct volume *vol ) {
 					for( n = 0; n < BLOCKS_PER_BAT; n++ )
 						datakey[n] ^= next_entries[n] ^ ((BLOCKINDEX*)(((uint8_t*)usekey)))[n];
 					next_dir_block = vfs_GetNextBlock( vol, this_dir_block, GFB_INIT_DIRENT, FALSE );
+#ifdef _DEBUG
 					if( this_dir_block == next_dir_block )
 						DebugBreak();
 					if( next_dir_block == 0 )
 						DebugBreak();
+#endif
 					this_dir_block = next_dir_block;
 				}
 				while( next_dir_block != EOFBLOCK );
@@ -11919,9 +12019,9 @@ struct directory_entry * ScanDirectory( struct volume *vol, const char * filenam
 		next_dir_block = vfs_GetNextBlock( vol, this_dir_block, GFB_INIT_DIRENT, TRUE );
 #ifdef _DEBUG
 		if( this_dir_block == next_dir_block ) DebugBreak();
-#endif
   // should have a last-entry before no more blocks....
 		if( next_dir_block == 0 ) { DebugBreak(); return NULL; }
+#endif
 		this_dir_block = next_dir_block;
 	}
 	while( 1 );
@@ -12024,6 +12124,11 @@ struct sack_vfs_file * CPROC sack_vfs_openfile( struct volume *vol, const char *
 	file->fpi = 0;
 	file->delete_on_close = 0;
 	file->_first_block = file->block = file->entry->first_block ^ file->dirent_key.first_block;
+	LoG( "file block is %d", (int)file->block );
+	file->blockChain = NULL;
+	file->blockChainAvail = 0;
+	file->blockChainLength = 0;
+	SetBlockChain( file, 0, file->block );
 	AddLink( &vol->files, file );
 	vol->lock = 0;
 	return file;
@@ -12047,30 +12152,57 @@ size_t CPROC sack_vfs_size( struct sack_vfs_file *file ) { return (size_t)(file-
 size_t CPROC sack_vfs_seek( struct sack_vfs_file *file, size_t pos, int whence )
 {
 	FPI old_fpi = file->fpi;
+	BLOCKINDEX b;
 	if( whence == SEEK_SET ) file->fpi = pos;
 	if( whence == SEEK_CUR ) file->fpi += pos;
 	if( whence == SEEK_END ) file->fpi = ( file->entry->filesize  ^ file->dirent_key.filesize ) + pos;
 	while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
+	if( (file->fpi >> BLOCK_SIZE_BITS) < file->blockChainLength ) {
+		enum block_cache_entries cache = BC( FILE );
+		file->block = file->blockChain[file->fpi >> BLOCK_SIZE_BITS];
+#ifdef _DEBUG
+		if( !file->block )DebugBreak();
+#endif
+		LoG( "file block is %d", (int)file->block );
+		vfs_BSEEK( file->vol, file->block, &cache );
+		file->vol->lock = 0;
+		return (size_t)file->fpi;
+	}
+	else {
+		LoG( "NEed more blocks after end of file...." );
+		file->block = b = file->blockChain[file->blockChainLength - 1];
+		old_fpi = ( file->blockChainLength - 1 ) * BLOCK_SIZE;
+	}
 	{
 		if( ( file->fpi & ( ~BLOCK_MASK ) ) >= ( old_fpi & ( ~BLOCK_MASK ) ) ) {
 			do {
 				if( ( file->fpi & ( ~BLOCK_MASK ) ) == ( old_fpi & ( ~BLOCK_MASK ) ) ) {
+					file->block = b;
 					file->vol->lock = 0;
+					LoG( "-- file block is finally %d", (int)b );
 					return (size_t)file->fpi;
 				}
-				file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
+				b = vfs_GetNextBlock( file->vol, b, FALSE, TRUE );
+				LoG( "-- file block will be %d   %d  %d", (int)b, (int)file->fpi, (int)(old_fpi) );
+// the actual old FPI already had a block (input file->block), new FPI gets this block.
 				old_fpi += BLOCK_SIZE;
+				SetBlockChain( file, old_fpi, b );
+				//SetBlockChain( file, old_fpi, file->block );
 			} while( 1 );
 		}
 	}
 	{
-		size_t n = 0;
-		BLOCKINDEX b = file->_first_block;
+		size_t n = file->blockChainLength - 1;
+#ifdef _DEBUG
+		if( n & 0x80000000 ) DebugBreak();
+#endif
 		while( n * BLOCK_SIZE < ( pos & ~BLOCK_MASK ) ) {
 			b = vfs_GetNextBlock( file->vol, b, FALSE, TRUE );
 			n++;
 		}
 		file->block = b;
+		LoG( "++ file block is %d", (int)file->block );
+		SetBlockChain( file, file->fpi, file->block );
 	}
 	file->vol->lock = 0;
 	return (size_t)file->fpi;
@@ -12100,6 +12232,8 @@ size_t CPROC sack_vfs_write( struct sack_vfs_file *file, const char * data, size
 			if( file->fpi > ( file->entry->filesize ^ file->dirent_key.filesize ) )
 				file->entry->filesize = file->fpi ^ file->dirent_key.filesize;
 			file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
+			LoG( "file block is %d", (int)file->block );
+			SetBlockChain( file, file->fpi, file->block );
 			length -= BLOCK_SIZE - ofs;
 		} else {
 			MaskBlock( file->vol, file->vol->usekey[cache], block, ofs, ofs, data, length );
@@ -12121,9 +12255,15 @@ size_t CPROC sack_vfs_write( struct sack_vfs_file *file, const char * data, size
 			data += BLOCK_SIZE;
 			written += BLOCK_SIZE;
 			file->fpi += BLOCK_SIZE;
-			if( file->fpi > ( file->entry->filesize ^ file->dirent_key.filesize ) )
-				file->entry->filesize = file->fpi ^ file->dirent_key.filesize;
 			file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
+#ifdef _DEBUG
+			if( !file->block ) DebugBreak();
+#endif
+			if( file->fpi > ( file->entry->filesize ^ file->dirent_key.filesize ) ) {
+				SetBlockChain( file, file->fpi, file->block );
+				file->entry->filesize = file->fpi ^ file->dirent_key.filesize;
+			}
+			LoG( "file block is %d", (int)file->block );
 			length -= BLOCK_SIZE;
 		} else {
 			MaskBlock( file->vol, file->vol->usekey[cache], block, 0, 0, data, length );
@@ -12159,6 +12299,8 @@ size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t leng
 			length -= BLOCK_SIZE - ofs;
 			file->fpi += BLOCK_SIZE - ofs;
 			file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
+			LoG( "file block is %d", (int)file->block );
+			SetBlockChain( file, file->fpi, file->block );
 		} else {
 			MaskBlock( file->vol, file->vol->usekey[cache], (uint8_t*)data, 0, ofs, (const char*)(block+ofs), length );
 			written += length;
@@ -12177,6 +12319,8 @@ size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t leng
 			length -= BLOCK_SIZE;
 			file->fpi += BLOCK_SIZE;
 			file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
+			LoG( "file block is %d", (int)file->block );
+			SetBlockChain( file, file->fpi, file->block );
 		} else {
 			MaskBlock( file->vol, file->vol->usekey[cache], (uint8_t*)data, 0, 0, (const char*)block, length );
 			written += length;
@@ -12210,13 +12354,14 @@ static void sack_vfs_unlink_file_entry( struct volume *vol, struct directory_ent
 		do {
 			enum block_cache_entries cache = BC(BAT);
 			BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX*, vol, ( ( block >> BLOCK_SHIFT ) * ( BLOCKS_PER_SECTOR*BLOCK_SIZE) ), cache );
-			BLOCKINDEX _thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[BC(BAT)])[_block & (BLOCKS_PER_BAT-1)]:0;
+			BLOCKINDEX _thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[cache])[_block & (BLOCKS_PER_BAT-1)]:0;
 			BLOCKINDEX b = BLOCK_SIZE + (block >> BLOCK_SHIFT) * (BLOCKS_PER_SECTOR*BLOCK_SIZE) + (block & (BLOCKS_PER_BAT - 1)) * BLOCK_SIZE;
 			uint8_t* blockData = (uint8_t*)(((uintptr_t)vol->disk) + b);
 			//LoG( "Clearing file datablock...%p", (uintptr_t)blockData - (uintptr_t)vol->disk );
 			memset( blockData, 0, BLOCK_SIZE );
 			block = vfs_GetNextBlock( vol, block, FALSE, FALSE );
 			this_BAT[_block & (BLOCKS_PER_BAT-1)] = _thiskey;
+			AddDataItem( &vol->pdlFreeBlocks, &_block );
 			_block = block;
 		} while( block != EOFBLOCK );
 	}
@@ -12233,7 +12378,7 @@ static void shrinkBAT( struct sack_vfs_file *file ) {
 		enum block_cache_entries data_cache = BC(DATAKEY);
 		BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX*, vol, ( ( block >> BLOCK_SHIFT ) * ( BLOCKS_PER_SECTOR*BLOCK_SIZE) ), cache );
 		BLOCKINDEX _thiskey;
-		_thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[BC(BAT)])[_block & (BLOCKS_PER_BAT-1)]:0;
+		_thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[cache])[_block & (BLOCKS_PER_BAT-1)]:0;
 		block = vfs_GetNextBlock( vol, block, FALSE, FALSE );
 		if( bsize > (entry->filesize ^ entkey->filesize) ) {
 			uint8_t* blockData = (uint8_t*)vfs_BSEEK( file->vol, _block, &data_cache );
@@ -12526,8 +12671,8 @@ namespace fs {
 #define BLOCK_SHIFT (BLOCK_SIZE_BITS-(sizeof(BLOCKINDEX)==16?4:sizeof(BLOCKINDEX)==8?3:sizeof(BLOCKINDEX)==4?2:sizeof(BLOCKINDEX)==2?1:0) )
 #define BLOCK_SIZE (1<<BLOCK_SIZE_BITS)
 #define BLOCK_MASK (BLOCK_SIZE-1)
-#define BLOCKS_PER_BAT (BLOCK_SIZE/sizeof(BLOCKINDEX))
-#define BLOCKS_PER_SECTOR (1 + (BLOCK_SIZE/sizeof(BLOCKINDEX)))
+#define BLOCKS_PER_BAT (1<<BLOCK_SHIFT)
+#define BLOCKS_PER_SECTOR (1 + BLOCKS_PER_BAT)
 // per-sector perumation; needs to be a power of 2 (in bytes)
 #define SHORTKEY_LENGTH 16
 #ifndef VFS_DISK_DATATYPE
@@ -12579,13 +12724,17 @@ typedef VFS_DISK_DATATYPE FPI;
 #endif
 enum block_cache_entries
 {
-	BC(DIRECTORY)
+	BC( DIRECTORY )
 #ifdef VIRTUAL_OBJECT_STORE
-	, BC(DIRECTORY_LAST) = BC(DIRECTORY) + 64
+	, BC( DIRECTORY_LAST ) = BC( DIRECTORY ) + 64
 #endif
-	, BC(NAMES)
-	, BC(NAMES_LAST) = BC(NAMES) + 16
-	, BC(BAT)
+	, BC( NAMES )
+	, BC( NAMES_LAST ) = BC( NAMES ) + 16
+	, BC( BAT )
+#ifdef VIRTUAL_OBJECT_STORE
+	// keep a few tables for cache (file system too?)
+	, BC( BAT_LAST ) = BC( BAT ) + 4
+#endif
 	, BC(DATAKEY)
 	, BC(FILE)
 	, BC(FILE_LAST) = BC(FILE) + 10
@@ -12637,6 +12786,7 @@ PREFIX_PACKED struct volume {
 	const char * volname;
 #ifdef FILE_BASED_VFS
 	FILE *file;
+	struct file_system_mounted_interface *mount;
 #else
 	struct disk *disk;
  // disk might be offset from diskReal because it's a .exe attached.
@@ -12661,6 +12811,7 @@ PREFIX_PACKED struct volume {
 	uint8_t fileCacheAge[BC(FILE_LAST) - BC(FILE)];
 #ifdef VIRTUAL_OBJECT_STORE
 	uint8_t dirHashCacheAge[BC(DIRECTORY_LAST) - BC(DIRECTORY)];
+	uint8_t batHashCacheAge[BC(BAT_LAST) - BC(BAT)];
 #endif
 	uint8_t nameCacheAge[BC(NAMES_LAST) - BC(NAMES)];
 	struct random_context *entropy;
@@ -12684,6 +12835,8 @@ PREFIX_PACKED struct volume {
 	FLAGSET( _dirty, BC( COUNT ) );
 	FPI bufferFPI[BC(COUNT)];
 #endif
+	BLOCKINDEX lastBatBlock;
+	PDATALIST pdlFreeBlocks;
  // when reopened file structures need to be updated also...
 	PLIST files;
 	LOGICAL read_only;
@@ -12718,6 +12871,9 @@ struct sack_vfs_file
 	BLOCKINDEX block;
   // someone already deleted this...
 	LOGICAL delete_on_close;
+	BLOCKINDEX *blockChain;
+	int blockChainAvail;
+	int blockChainLength;
 };
 #undef TSEEK
 #undef BTSEEK
@@ -14294,8 +14450,8 @@ namespace objStore {
 #define BLOCK_SHIFT (BLOCK_SIZE_BITS-(sizeof(BLOCKINDEX)==16?4:sizeof(BLOCKINDEX)==8?3:sizeof(BLOCKINDEX)==4?2:sizeof(BLOCKINDEX)==2?1:0) )
 #define BLOCK_SIZE (1<<BLOCK_SIZE_BITS)
 #define BLOCK_MASK (BLOCK_SIZE-1)
-#define BLOCKS_PER_BAT (BLOCK_SIZE/sizeof(BLOCKINDEX))
-#define BLOCKS_PER_SECTOR (1 + (BLOCK_SIZE/sizeof(BLOCKINDEX)))
+#define BLOCKS_PER_BAT (1<<BLOCK_SHIFT)
+#define BLOCKS_PER_SECTOR (1 + BLOCKS_PER_BAT)
 // per-sector perumation; needs to be a power of 2 (in bytes)
 #define SHORTKEY_LENGTH 16
 #ifndef VFS_DISK_DATATYPE
@@ -14347,13 +14503,17 @@ typedef VFS_DISK_DATATYPE FPI;
 #endif
 enum block_cache_entries
 {
-	BC(DIRECTORY)
+	BC( DIRECTORY )
 #ifdef VIRTUAL_OBJECT_STORE
-	, BC(DIRECTORY_LAST) = BC(DIRECTORY) + 64
+	, BC( DIRECTORY_LAST ) = BC( DIRECTORY ) + 64
 #endif
-	, BC(NAMES)
-	, BC(NAMES_LAST) = BC(NAMES) + 16
-	, BC(BAT)
+	, BC( NAMES )
+	, BC( NAMES_LAST ) = BC( NAMES ) + 16
+	, BC( BAT )
+#ifdef VIRTUAL_OBJECT_STORE
+	// keep a few tables for cache (file system too?)
+	, BC( BAT_LAST ) = BC( BAT ) + 4
+#endif
 	, BC(DATAKEY)
 	, BC(FILE)
 	, BC(FILE_LAST) = BC(FILE) + 10
@@ -14405,6 +14565,7 @@ PREFIX_PACKED struct volume {
 	const char * volname;
 #ifdef FILE_BASED_VFS
 	FILE *file;
+	struct file_system_mounted_interface *mount;
 #else
 	struct disk *disk;
  // disk might be offset from diskReal because it's a .exe attached.
@@ -14429,6 +14590,7 @@ PREFIX_PACKED struct volume {
 	uint8_t fileCacheAge[BC(FILE_LAST) - BC(FILE)];
 #ifdef VIRTUAL_OBJECT_STORE
 	uint8_t dirHashCacheAge[BC(DIRECTORY_LAST) - BC(DIRECTORY)];
+	uint8_t batHashCacheAge[BC(BAT_LAST) - BC(BAT)];
 #endif
 	uint8_t nameCacheAge[BC(NAMES_LAST) - BC(NAMES)];
 	struct random_context *entropy;
@@ -14452,6 +14614,8 @@ PREFIX_PACKED struct volume {
 	FLAGSET( _dirty, BC( COUNT ) );
 	FPI bufferFPI[BC(COUNT)];
 #endif
+	BLOCKINDEX lastBatBlock;
+	PDATALIST pdlFreeBlocks;
  // when reopened file structures need to be updated also...
 	PLIST files;
 	LOGICAL read_only;
@@ -14486,6 +14650,9 @@ struct sack_vfs_file
 	BLOCKINDEX block;
   // someone already deleted this...
 	LOGICAL delete_on_close;
+	BLOCKINDEX *blockChain;
+	int blockChainAvail;
+	int blockChainLength;
 };
 #undef TSEEK
 #undef BTSEEK
@@ -14547,7 +14714,6 @@ LOGICAL _os_ScanDirectory_( struct volume *vol, const char * filename
 #define _os_ScanDirectory(v,f,db,nb,file,pm) ((l.leadinDepth = 0), _os_ScanDirectory_(v,f,db,nb,file,pm, l.leadin, &l.leadinDepth ))
 static BLOCKINDEX vfs_os_GetNextBlock( struct volume *vol, BLOCKINDEX block, int init, LOGICAL expand );
 static LOGICAL _os_ExpandVolume( struct volume *vol );
-static char _os_mytolower( int c ) {	if( c == '\\' ) return '/'; return tolower( c ); }
 #define vfs_os_BSEEK(v,b,c) vfs_os_BSEEK_(v,b,c DBG_SRC )
 uintptr_t vfs_os_BSEEK_( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index DBG_PASS );
 // seek by byte position from a starting block; as file; result with an offset into a block.
@@ -14561,6 +14727,7 @@ uintptr_t vfs_os_FSEEK( struct volume *vol, BLOCKINDEX firstblock, FPI offset, e
 	data = (uint8_t*)vfs_os_BSEEK_( vol, firstblock, cache_index DBG_NULL );
 	return (uintptr_t)(data + (offset));
 }
+#define tolower_(c) (c)
 static int  _os_PathCaseCmpEx ( CTEXTSTR s1, CTEXTSTR s2, size_t maxlen )
 {
 	if( !s1 )
@@ -14574,12 +14741,10 @@ static int  _os_PathCaseCmpEx ( CTEXTSTR s1, CTEXTSTR s2, size_t maxlen )
 	if( s1 == s2 )
  // ==0 is success.
 		return 0;
-	for( ;s1[0] && s2[0] && ( (s1[0]=='/'&&s2[0]=='\\')||(s1[0]=='\\'&&s2[0]=='/')||
-									 (((s1[0] >='a' && s1[0] <='z' )?s1[0]-('a'-'A'):s1[0])
-									 == ((s2[0] >='a' && s2[0] <='z' )?s2[0]-('a'-'A'):s2[0])) ) && maxlen;
+	for( ;s1[0] && (s2[0] != 0xFE) && (s1[0] == s2[0]) && maxlen;
 		  s1++, s2++, maxlen-- );
 	if( maxlen )
-		return tolower(s1[0]) - tolower(s2[0]);
+		return tolower_(s1[0]) - ((s2[0] == 0xFE)?0:tolower_(s2[0]));
 	return 0;
 }
 // read the byte from namespace at offset; decrypt byte in-register
@@ -14592,9 +14757,9 @@ static int _os_MaskStrCmp( struct volume *vol, const char * filename, BLOCKINDEX
 	dirkey = (const char*)(vol->usekey[cache]) + (name_offset & BLOCK_MASK );
 	if( vol->key ) {
 		int c;
-		while(  ( c = (dirname[0] ^ dirkey[0] ) )
+		while( ( c = (dirname[0] ^ dirkey[0] ) != 0xFE )
 			  && filename[0] ) {
-			int del = _os_mytolower(filename[0]) - _os_mytolower(c);
+			int del = tolower_(filename[0]) - tolower_(c);
 			if( del ) return del;
 			filename++;
 			dirname++;
@@ -14628,7 +14793,7 @@ static void MaskStrCpy( char *output, size_t outlen, struct volume *vol, FPI nam
 	if( vol->key ) {
 		int c;
 		FPI name_start = name_offset;
-		while(  ( c = ( vol->usekey_buffer[BC(NAMES)][name_offset&BLOCK_MASK] ^ vol->usekey[BC(NAMES)][name_offset&BLOCK_MASK] ) ) ) {
+		while( 0xFE != ( c = ( vol->usekey_buffer[BC(NAMES)][name_offset&BLOCK_MASK] ^ vol->usekey[BC(NAMES)][name_offset&BLOCK_MASK] ) ) ) {
 			if( ( name_offset - name_start ) < outlen )
 				output[name_offset-name_start] = c;
 			name_offset++;
@@ -14765,6 +14930,9 @@ static void _os_updateCacheAge_( struct volume *vol, enum block_cache_entries *c
 	}
 	if( n == (ageLength) ) {
 		int useCache = cacheRoot + nLeast;
+#ifdef _DEBUG
+		if( least > ageLength ) DebugBreak();
+#endif
   // age evernthing.
 		for( n = 0; n < (ageLength); n++ ) {
 			if( age[n] > least )
@@ -14788,7 +14956,7 @@ static void _os_updateCacheAge_( struct volume *vol, enum block_cache_entries *c
 		// read new buffer for new segment
 		sack_fseek( vol->file, (size_t)(vol->bufferFPI[cache_idx[0]] = (size_t)((segment-1)*BLOCK_SIZE)), SEEK_SET );
 #ifdef DEBUG_DISK_IO
-		LoG_( "Read into block: %x %d %d", vol->bufferFPI[cache_idx[0]], cache_idx[0] , n, segment );
+		LoG_( "Read into block: fpi:%x cache:%d n:%d  seg:%d", (int)vol->bufferFPI[cache_idx[0]], (int)cache_idx[0] , (int)n, (int)segment );
 #endif
 		if( !sack_fread( vol->usekey_buffer[cache_idx[0]], 1, BLOCK_SIZE, vol->file ) )
 			memset( vol->usekey_buffer[cache_idx[0]], 0, BLOCK_SIZE );
@@ -14801,6 +14969,7 @@ static void _os_updateCacheAge_( struct volume *vol, enum block_cache_entries *c
 #define _os_UpdateSegmentKey(v,c,s) _os_UpdateSegmentKey_(v,c,s DBG_SRC )
 static enum block_cache_entries _os_UpdateSegmentKey_( struct volume *vol, enum block_cache_entries cache_idx, BLOCKINDEX segment DBG_PASS )
 {
+	//lprintf( "UPDATE OS SEGKEY %d %d", cache_idx, segment );
 	if( cache_idx == BC(FILE) ) {
 		_os_updateCacheAge_( vol, &cache_idx, segment, vol->fileCacheAge, (BC(FILE_LAST) - BC(FILE)) DBG_RELAY );
 	}
@@ -14810,6 +14979,9 @@ static enum block_cache_entries _os_UpdateSegmentKey_( struct volume *vol, enum 
 #ifdef VIRTUAL_OBJECT_STORE
 	else if( cache_idx == BC(DIRECTORY) ) {
 		_os_updateCacheAge_( vol, &cache_idx, segment, vol->dirHashCacheAge, (BC(DIRECTORY_LAST) - BC(DIRECTORY)) DBG_RELAY );
+	}
+	else if( cache_idx == BC( BAT ) ) {
+		_os_updateCacheAge_( vol, &cache_idx, segment, vol->batHashCacheAge, (BC(BAT_LAST) - BC(BAT)) DBG_RELAY );
 	}
 #endif
 	else {
@@ -14829,14 +15001,17 @@ static enum block_cache_entries _os_UpdateSegmentKey_( struct volume *vol, enum 
 			// read new buffer for new segment
 			sack_fseek( vol->file, (size_t)(vol->bufferFPI[cache_idx]=(segment - 1)*BLOCK_SIZE), SEEK_SET);
 #ifdef DEBUG_DISK_IO
-			LoG( "read old sector: %d %d", cache_idx, segment );
+			LoG( "OS VFS read old sector: fpi:%d %d %d", (int)vol->bufferFPI[cache_idx], cache_idx, segment );
 #endif
-			if( !sack_fread( vol->usekey_buffer[cache_idx], 1, BLOCK_SIZE, vol->file ) )
+			if( !sack_fread( vol->usekey_buffer[cache_idx], 1, BLOCK_SIZE, vol->file ) ) {
+				//lprintf( "Cleared BLock on failed read." );
 				memset( vol->usekey_buffer[cache_idx], 0, BLOCK_SIZE );
+			}
 		}
 		vol->segment[cache_idx] = segment;
 	}
 	if( !vol->key ) {
+		//lprintf( "Resulting stored segment in %d", cache_idx );
 		return cache_idx;
 	}
 	while( ((segment)*BLOCK_SIZE) > vol->dwSize ) {
@@ -14845,8 +15020,10 @@ static enum block_cache_entries _os_UpdateSegmentKey_( struct volume *vol, enum 
 		}
 	}
 	//vol->segment[cache_idx] = segment;
-	if( vol->segment[cache_idx] == vol->_segment[cache_idx] )
+	if( vol->segment[cache_idx] == vol->_segment[cache_idx] ) {
+		//lprintf( "Resulting stored segment in %d", cache_idx );
 		return cache_idx;
+	}
 	SRG_ResetEntropy( vol->entropy );
 	vol->_segment[cache_idx] = vol->segment[cache_idx];
   // so we know which 'segment[idx]' to use.
@@ -14878,6 +15055,7 @@ static enum block_cache_entries _os_UpdateSegmentKey_( struct volume *vol, enum 
 		}
 #endif
 	}
+	//LoG( "Resulting stored segment in %d", cache_idx );
 	return cache_idx;
 }
 static LOGICAL _os_ValidateBAT( struct volume *vol ) {
@@ -14895,15 +15073,23 @@ static LOGICAL _os_ValidateBAT( struct volume *vol ) {
 			//sack_fseek( vol->file, (size_t)n * BLOCK_SIZE, SEEK_SET );
 			//if( !sack_fread( vol->usekey_buffer[BC(BAT)], 1, BLOCK_SIZE, vol->file ) ) return FALSE;
 			//BAT = (BLOCKINDEX*)vol->usekey_buffer[BC(BAT)];
-			blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
-			_os_UpdateSegmentKey( vol, BC(BAT), n + 1 );
+			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
+			_os_UpdateSegmentKey( vol, cache, n + 1 );
 			for( m = 0; m < BLOCKS_PER_BAT; m++ )
 			{
 				BLOCKINDEX block = BAT[0] ^ blockKey[0];
 				BAT++; blockKey++;
 				if( block == EOFBLOCK ) continue;
-				if( block == EOBBLOCK ) break;
+				if( block == EOBBLOCK ) {
+					vol->lastBatBlock = n + m;
+					break;
+				}
 				if( block >= last_block ) return FALSE;
+				if( block == 0 ) {
+ // use as a temp variable....
+					vol->lastBatBlock = n + m;
+					AddDataItem( &vol->pdlFreeBlocks, &vol->lastBatBlock );
+				}
 			}
 			if( m < BLOCKS_PER_BAT ) break;
 		}
@@ -14911,12 +15097,20 @@ static LOGICAL _os_ValidateBAT( struct volume *vol ) {
 		for( n = first_slab; n < slab; n += BLOCKS_PER_SECTOR  ) {
 			size_t m;
 			BLOCKINDEX *BAT = TSEEK( BLOCKINDEX*, vol, n * BLOCK_SIZE, cache );
-			BAT = (BLOCKINDEX*)vol->usekey_buffer[BC(BAT)];
+			BAT = (BLOCKINDEX*)vol->usekey_buffer[cache];
 			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
 				BLOCKINDEX block = BAT[m];
 				if( block == EOFBLOCK ) continue;
-				if( block == EOBBLOCK ) break;
+				if( block == EOBBLOCK ) {
+					vol->lastBatBlock = n + m;
+					break;
+				}
 				if( block >= last_block ) return FALSE;
+				if( block == 0 ) {
+ // use as a temp variable....
+					vol->lastBatBlock = n + m;
+					AddDataItem( &vol->pdlFreeBlocks, &vol->lastBatBlock );
+				}
 			}
 			if( m < BLOCKS_PER_BAT ) break;
 		}
@@ -15081,19 +15275,19 @@ uintptr_t vfs_os_SEEK( struct volume *vol, FPI offset, enum block_cache_entries 
 	{
 		BLOCKINDEX seg = (offset / BLOCK_SIZE) + 1;
 		cache_index[0] = _os_UpdateSegmentKey( vol, cache_index[0], seg );
-		sack_fseek( vol->file, (size_t)(vol->bufferFPI[cache_index[0]]), SEEK_SET );
+		//LoG( "RETURNING SEEK CACHED %p %d  0x%x   %d", vol->usekey_buffer[cache_index[0]], cache_index[0], (int)offset, (int)seg );
 		return ((uintptr_t)vol->usekey_buffer[cache_index[0]]) + (offset&BLOCK_MASK);
 	}
 }
 // shared with fuse module
 // seek by block, outside of BAT.  block 0 = first block after first BAT.
 uintptr_t vfs_os_BSEEK_( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index DBG_PASS ) {
-	BLOCKINDEX b = BLOCK_SIZE + (block >> BLOCK_SHIFT) * (BLOCKS_PER_SECTOR*BLOCK_SIZE) + ( block & (BLOCKS_PER_BAT-1) ) * BLOCK_SIZE;
+	BLOCKINDEX b = ( 1 + (block >> BLOCK_SHIFT) * (BLOCKS_PER_SECTOR) + ( block & (BLOCKS_PER_BAT-1) ) ) * BLOCK_SIZE;
 	while( b >= vol->dwSize ) if( !_os_ExpandVolume( vol ) ) return 0;
 	{
 		BLOCKINDEX seg = ( b / BLOCK_SIZE ) + 1;
 		cache_index[0] = _os_UpdateSegmentKey_( vol, cache_index[0], seg DBG_RELAY );
-		sack_fseek( vol->file, (size_t)(vol->bufferFPI[cache_index[0]]), SEEK_SET );
+		//LoG( "RETURNING BSEEK CACHED %p  %d %d %d  0x%x  %d   %d", vol->usekey_buffer[cache_index[0]], cache_index[0], (int)(block>>BLOCK_SHIFT), (int)(BLOCKS_PER_BAT-1), (int)b, (int)block, (int)seg );
 		return ((uintptr_t)vol->usekey_buffer[cache_index[0]]) + (b&BLOCK_MASK);
 	}
 }
@@ -15101,95 +15295,105 @@ static BLOCKINDEX _os_GetFreeBlock_( struct volume *vol, int init DBG_PASS )
 {
 	size_t n;
 	int b = 0;
-	enum block_cache_entries cache = BC(BAT);
-	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, cache );
-	FPI start_POS = sack_ftell( vol->file );
-	BLOCKINDEX *start_BAT = current_BAT;
+	enum block_cache_entries cache = BC( BAT );
+// = TSEEK( BLOCKINDEX*, vol, 0, cache );
+	BLOCKINDEX *current_BAT;
+	BLOCKINDEX *blockKey;
+	BLOCKINDEX check_val;
+	if( vol->pdlFreeBlocks->Cnt ) {
+		BLOCKINDEX newblock = ((BLOCKINDEX*)GetDataItem( &vol->pdlFreeBlocks, vol->pdlFreeBlocks->Cnt - 1 ))[0];
+		check_val = 0;
+		b = newblock / BLOCKS_PER_SECTOR;
+		n = newblock % BLOCKS_PER_SECTOR;
+		vol->pdlFreeBlocks->Cnt--;
+	}
+	else {
+		check_val = EOBBLOCK;
+		b = vol->lastBatBlock / BLOCKS_PER_SECTOR;
+		n = vol->lastBatBlock % BLOCKS_PER_SECTOR;
+	}
+	//lprintf( "check, start, b, n %d %d %d %d", (int)check_val, (int) vol->lastBatBlock, (int)b, (int)n );
+	current_BAT = TSEEK( BLOCKINDEX*, vol, b*BLOCKS_PER_SECTOR*BLOCK_SIZE, cache ) + n;
+	blockKey = ((BLOCKINDEX*)vol->usekey[cache]) + n;
 	if( !current_BAT ) return 0;
-	do
-	{
-		BLOCKINDEX check_val;
-		BLOCKINDEX *blockKey;
-		blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
-		for( n = 0; n < BLOCKS_PER_BAT; n++ )
-		{
-			check_val = current_BAT[0] ^ blockKey[0];
-			if( !check_val || (check_val == 1) )
-			{
-				// mark it as claimed; will be enf of file marker...
-				// adn thsi result will overwrite previous EOF.
-				current_BAT[0] = ( EOFBLOCK ) ^ blockKey[0];
-				SETFLAG( vol->dirty, cache );
-				if( (check_val == EOBBLOCK) )
-					if( n < (BLOCKS_PER_BAT - 1) ) {
-						current_BAT[1] = EOBBLOCK ^ blockKey[1];
-					}
-					else {
-						// have to write what is there now, seek will read new block in...
-						cache = BC( BAT );
-						current_BAT = TSEEK( BLOCKINDEX*, vol, (b + 1) * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
-						blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
-						current_BAT[0] = EOBBLOCK ^ blockKey[0];
-						SETFLAG( vol->dirty, cache );
-					}
-				if( init )
-				{
-					enum block_cache_entries newcache;
-					if( init == GFB_INIT_DIRENT ) {
-						struct directory_hash_lookup_block *dir;
-						struct directory_hash_lookup_block *dirkey;
-						newcache = _os_UpdateSegmentKey_( vol, BC(DIRECTORY), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 DBG_RELAY );
-						memset( vol->usekey_buffer[newcache], 0, BLOCK_SIZE );
-						dir = (struct directory_hash_lookup_block *)vol->usekey_buffer[newcache];
-						dirkey = (struct directory_hash_lookup_block *)vol->usekey[newcache];
-						dir->names_first_block = _os_GetFreeBlock( vol, GFB_INIT_NAMES ) ^ dirkey->names_first_block;
-						dir->used_names = 0 ^ dirkey->used_names;
-						//((struct directory_hash_lookup_block*)(vol->usekey_buffer[newcache]))->entries[0].first_block = EODMARK ^ ((struct directory_hash_lookup_block*)vol->usekey[cache])->entries[0].first_block;
-					}
-					else if( init == GFB_INIT_NAMES ) {
-						newcache = _os_UpdateSegmentKey_( vol, BC(NAMES), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 DBG_RELAY );
-						memset( vol->usekey_buffer[newcache], 0, BLOCK_SIZE );
-						((char*)(vol->usekey_buffer[newcache]))[0] = (char)0xFF ^ ((char*)vol->usekey[newcache])[0];
-						//LoG( "New Name Buffer: %x %p", vol->segment[newcache], vol->usekey_buffer[newcache] );
-					}
-					else {
-						//	memcpy( ((uint8_t*)vol->disk) + (vol->segment[newcache]-1) * BLOCK_SIZE, vol->usekey[newcache], BLOCK_SIZE );
-						newcache = _os_UpdateSegmentKey_( vol, BC(FILE), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 DBG_RELAY );
-					}
-					SETFLAG( vol->dirty, newcache );
-				}
-				//LoG_( "Free Block: %d %d %x", (int)b, (int)n, b * BLOCKS_PER_BAT + n );
-				return b * BLOCKS_PER_BAT + n;
-			}
-			current_BAT++;
-			blockKey++;
+	current_BAT[0] = EOFBLOCK ^ blockKey[0];
+	if( (check_val == EOBBLOCK) ) {
+		if( n < (BLOCKS_PER_BAT - 1) ) {
+			current_BAT[1] = EOBBLOCK ^ blockKey[1];
+			vol->lastBatBlock++;
 		}
-		b++;
-		cache = BC( BAT );
-		current_BAT = TSEEK( BLOCKINDEX*, vol, b * ( BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
-		start_POS = sack_ftell( vol->file );
-	}while( 1 );
+		else {
+			cache = BC( BAT );
+			current_BAT = TSEEK( BLOCKINDEX*, vol, (b + 1) * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
+			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
+			current_BAT[0] = EOBBLOCK ^ blockKey[0];
+			vol->lastBatBlock = (b + 1) * BLOCKS_PER_SECTOR;
+			//lprintf( "Set last block....%d", (int)vol->lastBatBlock );
+		}
+		SETFLAG( vol->dirty, cache );
+	}
+	if( init ) {
+		enum block_cache_entries newcache;
+		if( init == GFB_INIT_DIRENT ) {
+			struct directory_hash_lookup_block *dir;
+			struct directory_hash_lookup_block *dirkey;
+			LoG( "Create new directory: result %d", (int)(b * BLOCKS_PER_BAT + n) );
+			newcache = _os_UpdateSegmentKey_( vol, BC( DIRECTORY ), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 DBG_RELAY );
+			memset( vol->usekey_buffer[newcache], 0, BLOCK_SIZE );
+			dir = (struct directory_hash_lookup_block *)vol->usekey_buffer[newcache];
+			dirkey = (struct directory_hash_lookup_block *)vol->usekey[newcache];
+			LoG( "And then create a name block" );
+			dir->names_first_block = _os_GetFreeBlock( vol, GFB_INIT_NAMES ) ^ dirkey->names_first_block;
+			LoG( "dir cache is %d", newcache );
+			dir->used_names = 0 ^ dirkey->used_names;
+			//((struct directory_hash_lookup_block*)(vol->usekey_buffer[newcache]))->entries[0].first_block = EODMARK ^ ((struct directory_hash_lookup_block*)vol->usekey[cache])->entries[0].first_block;
+		}
+		else if( init == GFB_INIT_NAMES ) {
+			newcache = _os_UpdateSegmentKey_( vol, BC( NAMES ), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 DBG_RELAY );
+			memset( vol->usekey_buffer[newcache], 0, BLOCK_SIZE );
+			((char*)(vol->usekey_buffer[newcache]))[0] = (char)0xFF ^ ((char*)vol->usekey[newcache])[0];
+			//LoG( "New Name Buffer: %x %p", vol->segment[newcache], vol->usekey_buffer[newcache] );
+		}
+		else {
+			//	memcpy( ((uint8_t*)vol->disk) + (vol->segment[newcache]-1) * BLOCK_SIZE, vol->usekey[newcache], BLOCK_SIZE );
+			newcache = _os_UpdateSegmentKey_( vol, BC( FILE ), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 DBG_RELAY );
+		}
+		SETFLAG( vol->dirty, newcache );
+	}
+	LoG( "Return block:%d   %d  %d", (int)(b*BLOCKS_PER_BAT + n), (int)b, (int)n );
+	return b * BLOCKS_PER_BAT + n;
 }
 static BLOCKINDEX vfs_os_GetNextBlock( struct volume *vol, BLOCKINDEX block, int init, LOGICAL expand ) {
-	BLOCKINDEX sector = block >> BLOCK_SHIFT;
+	BLOCKINDEX sector = block / BLOCKS_PER_BAT;
 	enum block_cache_entries cache = BC(BAT);
 	BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX *, vol, sector * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
 	BLOCKINDEX check_val;
  // if this passes, later ones will also.
 	if( !this_BAT ) return 0;
-	check_val = (this_BAT[block & (BLOCKS_PER_BAT - 1)]) ^ ((BLOCKINDEX*)vol->usekey[BC(BAT)])[block & (BLOCKS_PER_BAT-1)];
+#ifdef _DEBUG
+	if( !block ) DebugBreak();
+#endif
+	check_val = (this_BAT[block & (BLOCKS_PER_BAT - 1)]) ^ ((BLOCKINDEX*)vol->usekey[cache])[block & (BLOCKS_PER_BAT-1)];
+#ifdef _DEBUG
+	if( !check_val ) {
+		lprintf( "STOP: %p  %d  %d  %d", this_BAT, (int)check_val, (int)(block), (int)sector );
+		DebugBreak();
+	}
+#endif
 	if( check_val == EOBBLOCK ) {
-		(this_BAT[block & (BLOCKS_PER_BAT-1)]) = EOFBLOCK^((BLOCKINDEX*)vol->usekey[BC(BAT)])[block & (BLOCKS_PER_BAT-1)];
+		(this_BAT[block & (BLOCKS_PER_BAT-1)]) = EOFBLOCK^((BLOCKINDEX*)vol->usekey[cache])[block & (BLOCKS_PER_BAT-1)];
 		if( block < (BLOCKS_PER_BAT - 1) )
 			(this_BAT[1 + block & (BLOCKS_PER_BAT - 1)]) = EOBBLOCK ^ ((BLOCKINDEX*)vol->usekey[BC( BAT )])[1 + block & (BLOCKS_PER_BAT - 1)];
-		else
-//
-			lprintf( "THIS NEEDS A NEW BAT BLOCK TO MOVE THE MARKER" );
+		//else
+		//	lprintf( "THIS NEEDS A NEW BAT BLOCK TO MOVE THE MARKER" );//
 	}
 	if( check_val == EOFBLOCK || check_val == EOBBLOCK ) {
 		if( expand ) {
-			BLOCKINDEX key = vol->key?((BLOCKINDEX*)vol->usekey[BC(BAT)])[block & (BLOCKS_PER_BAT-1)]:0;
+			BLOCKINDEX key = vol->key?((BLOCKINDEX*)vol->usekey[cache])[block & (BLOCKS_PER_BAT-1)]:0;
 			check_val = _os_GetFreeBlock( vol, init );
+#ifdef _DEBUG
+			if( !check_val )DebugBreak();
+#endif
 			// free block might have expanded...
 			this_BAT = TSEEK( BLOCKINDEX*, vol, sector * ( BLOCKS_PER_SECTOR*BLOCK_SIZE ), cache );
 			if( !this_BAT ) return 0;
@@ -15198,6 +15402,10 @@ static BLOCKINDEX vfs_os_GetNextBlock( struct volume *vol, BLOCKINDEX block, int
 			SETFLAG( vol->dirty, cache );
 		}
 	}
+#ifdef _DEBUG
+	if( !check_val )DebugBreak();
+#endif
+	LoG( "return next block:%d %d", (int)block, (int)check_val );
 	return check_val;
 }
 static void _os_AddSalt( uintptr_t psv, POINTER *salt, size_t *salt_size ) {
@@ -15350,6 +15558,7 @@ struct volume *sack_vfs_os_load_volume( const char * filepath )
 {
 	struct volume *vol = New( struct volume );
 	memset( vol, 0, sizeof( struct volume ) );
+	vol->pdlFreeBlocks = CreateDataList( sizeof( BLOCKINDEX ) );
 	vol->volname = StrDup( filepath );
 	_os_AssignKey( vol, NULL, NULL );
 	if( !_os_ExpandVolume( vol ) || !_os_ValidateBAT( vol ) ) { Deallocate( struct volume*, vol ); return NULL; }
@@ -15363,6 +15572,7 @@ struct volume *sack_vfs_os_load_crypt_volume( const char * filepath, uintptr_t v
 	struct volume *vol = New( struct volume );
 	MemSet( vol, 0, sizeof( struct volume ) );
 	if( !version ) version = 2;
+	vol->pdlFreeBlocks = CreateDataList( sizeof( BLOCKINDEX ) );
 	vol->clusterKeyVersion = version - 1;
 	vol->volname = StrDup( filepath );
 	vol->userkey = userkey;
@@ -15371,50 +15581,6 @@ struct volume *sack_vfs_os_load_crypt_volume( const char * filepath, uintptr_t v
 	if( !_os_ExpandVolume( vol ) || !_os_ValidateBAT( vol ) ) { sack_vfs_os_unload_volume( vol ); return NULL; }
 	return vol;
 }
-#if 0
-struct volume *sack_vfs_os_use_crypt_volume( POINTER memory, size_t sz, uintptr_t version, const char * userkey, const char * devkey ) {
-	struct volume *vol = New( struct volume );
-	MemSet( vol, 0, sizeof( struct volume ) );
-	vol->read_only = 1;
-	_os_AssignKey( vol, userkey, devkey );
-	if( !version ) version = 2;
-	vol->clusterKeyVersion = version - 1;
-	vol->external_memory = TRUE;
-	vol->diskReal = (struct disk*)memory;
-	vol->dwSize = sz;
-#ifdef WIN32
-	// elf has a different signature to check for .so extended data...
-	struct disk *actual_disk;
-	if( ((char*)memory)[0] == 'M' && ((char*)memory)[1] == 'Z' ) {
-		actual_disk = (struct disk*)GetExtraData( memory );
-		if( actual_disk ) {
-			if( ( ( (uintptr_t)actual_disk - (uintptr_t)memory ) < vol->dwSize ) ) {
-				const uint8_t *sig = sack_vfs_os_get_signature2( (POINTER)((uintptr_t)actual_disk-BLOCK_SIZE), memory );
-				if( memcmp( sig, (POINTER)(((uintptr_t)actual_disk)-BLOCK_SIZE), BLOCK_SIZE ) ) {
-					lprintf( "Signature failed comparison; the core has changed since it was attached" );
-					vol->diskReal = NULL;
-					vol->dwSize = 0;
-					sack_vfs_os_unload_volume( vol );
-					return FALSE;
-				}
-				vol->dwSize -= ((uintptr_t)actual_disk - (uintptr_t)memory);
-				memory = (POINTER)actual_disk;
-			} else {
-				lprintf( "Signature failed comparison; the core is not attached to anything." );
-				vol->diskReal = NULL;
-				vol->disk = NULL;
-				vol->dwSize = 0;
-				sack_vfs_os_unload_volume( vol );
-				return NULL;
-			}
-		}
-	}
-#endif
-	vol->disk = (struct disk*)memory;
-	if( !_os_ValidateBAT( vol ) ) { sack_vfs_os_unload_volume( vol );  return NULL; }
-	return vol;
-}
-#endif
 void sack_vfs_os_unload_volume( struct volume * vol ) {
 	INDEX idx;
 	struct sack_vfs_file *file;
@@ -15449,7 +15615,7 @@ void sack_vfs_os_shrink_volume( struct volume * vol ) {
 	do {
 		BLOCKINDEX check_val;
 		BLOCKINDEX *blockKey;
-		blockKey = (BLOCKINDEX*)vol->usekey[BC(BAT)];
+		blockKey = (BLOCKINDEX*)vol->usekey[cache];
 		for( n = 0; n < BLOCKS_PER_BAT; n++ ) {
 			check_val = *(current_BAT++);
 			if( vol->key )	check_val ^= *(blockKey++);
@@ -15513,7 +15679,7 @@ LOGICAL sack_vfs_os_decrypt_volume( struct volume *vol )
 // = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * (BLOCKS_PER_SECTOR * BLOCK_SIZE));
 			BLOCKINDEX *block;
 			block = TSEEK( BLOCKINDEX*, vol, n * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
-			blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
+			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
 			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
 				block[0] ^= blockKey[0];
 				if( block[0] == EOBBLOCK ) break;
@@ -15547,7 +15713,7 @@ LOGICAL sack_vfs_os_encrypt_volume( struct volume *vol, uintptr_t version, CTEXT
 // = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * (BLOCKS_PER_SECTOR * BLOCK_SIZE));
 			BLOCKINDEX *block;
 			block = TSEEK( BLOCKINDEX*, vol, n * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
-			blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
+			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
 			//vol->segment[BC(BAT)] = n + 1;
 			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
 				if( block[0] == EOBBLOCK ) done = TRUE;
@@ -15586,10 +15752,12 @@ const char *sack_vfs_os_get_signature( struct volume *vol ) {
 					for( n = 0; n < BLOCKS_PER_BAT; n++ )
 						datakey[n] ^= next_entries[n] ^ ((BLOCKINDEX*)(((uint8_t*)usekey)))[n];
 					next_dir_block = vfs_os_GetNextBlock( vol, this_dir_block, GFB_INIT_DIRENT, FALSE );
+#ifdef _DEBUG
 					if( this_dir_block == next_dir_block )
 						DebugBreak();
 					if( next_dir_block == 0 )
 						DebugBreak();
+#endif
 					this_dir_block = next_dir_block;
 				}
 				while( next_dir_block != EOFBLOCK );
@@ -15666,7 +15834,7 @@ LOGICAL _os_ScanDirectory_( struct volume *vol, const char * filename
 		curName = (usedNames) >> 1;
 		{
 			next_entries = dirblock->entries;
-			while( minName <= usedNames )
+			while( minName <= usedNames && ( curName < usedNames ) && ( curName > 0 ) )
 			//for( n = 0; n < VFS_DIRECTORY_ENTRIES; n++ )
 			{
 				BLOCKINDEX bi;
@@ -15676,6 +15844,7 @@ LOGICAL _os_ScanDirectory_( struct volume *vol, const char * filename
 				//const char * testname;
 				FPI name_ofs = next_entries[n].name_offset ^ entkey->name_offset;
 				//if( filename && !name_ofs )	return FALSE; // done.
+				if(0)
 				LoG( "%d name_ofs = %" _size_f "(%" _size_f ") block = %d  vs %s"
 				   , n, name_ofs
 				   , next_entries[n].name_offset ^ entkey->name_offset
@@ -15695,7 +15864,7 @@ LOGICAL _os_ScanDirectory_( struct volume *vol, const char * filename
 					int d;
 					//LoG( "this name: %s", names );
 					if( ( d = _os_MaskStrCmp( vol, filename+ofs, nameBlock, name_ofs, path_match ) ) == 0 ) {
-                  if( file )
+						if( file )
 						{
 							file->dirent_key = (*entkey);
 							file->cache = cache;
@@ -15725,18 +15894,21 @@ LOGICAL _os_ScanDirectory_( struct volume *vol, const char * filename
 		next_dir_block = vfs_os_GetNextBlock( vol, this_dir_block, FALSE, TRUE );
 #ifdef _DEBUG
 		if( this_dir_block == next_dir_block ) DebugBreak();
-#endif
   // should have a last-entry before no more blocks....
 		if( next_dir_block == 0 ) { DebugBreak(); return FALSE; }
+#endif
 		this_dir_block = next_dir_block;
 	}
 	while( 1 );
 }
 // this results in an absolute disk position
-static FPI _os_SaveFileName( struct volume *vol, BLOCKINDEX firstNameBlock, const char * filename ) {
+static FPI _os_SaveFileName( struct volume *vol, BLOCKINDEX firstNameBlock, const char * filename, size_t namelen ) {
 	size_t n;
 	int blocks = 0;
 	BLOCKINDEX this_name_block = firstNameBlock;
+#ifdef _DEBUG
+	if( !firstNameBlock ) DebugBreak();
+#endif
 	while( 1 ) {
 		enum block_cache_entries cache = BC(NAMES);
 		TEXTSTR names = BTSEEK( TEXTSTR, vol, this_name_block, cache );
@@ -15745,16 +15917,14 @@ static FPI _os_SaveFileName( struct volume *vol, BLOCKINDEX firstNameBlock, cons
 			int c = name[0];
 			if( vol->key ) c = c ^ vol->usekey[cache][(uintptr_t)name-(uintptr_t)names];
 			if( c == 0xFF ) {
-				size_t namelen;
-				if( ( namelen = StrLen( filename ) ) < (size_t)( ( (unsigned char*)names + BLOCK_SIZE ) - name ) ) {
+				if( namelen < (size_t)( ( (unsigned char*)names + BLOCK_SIZE ) - name ) ) {
 					//LoG( "using unused entry for new file...%" _size_f " %d(%d)  %" _size_f " %s", this_name_block, cache, cache - BC(NAMES), (uintptr_t)name - (uintptr_t)names, filename );
 					if( vol->key ) {
-						for( n = 0; n < namelen + 1; n++ )
+						for( n = 0; n < namelen; n++ )
 							name[n] = filename[n] ^ vol->usekey[cache][n + (name-(unsigned char*)names)];
-						if( (namelen + 1) < (size_t)(((unsigned char*)names + BLOCK_SIZE) - name) )
-							name[n] = vol->usekey[cache][n + (name - (unsigned char*)names)];
 					} else
-						memcpy( name, filename, ( namelen + 1 ) );
+						memcpy( name, filename, namelen );
+					name[namelen+0] = 0xFE ^ vol->usekey[cache][(uintptr_t)name - (uintptr_t)names + namelen+0];
 					name[namelen+1] = 0xFF ^ vol->usekey[cache][(uintptr_t)name - (uintptr_t)names + namelen+1];
 					SETFLAG( vol->dirty, cache );
 					//lprintf( "OFFSET:%d %d", ((uintptr_t)name) - ((uintptr_t)names), +blocks * BLOCK_SIZE );
@@ -15766,11 +15936,8 @@ static FPI _os_SaveFileName( struct volume *vol, BLOCKINDEX firstNameBlock, cons
 					LoG( "using existing entry for new file...%s", filename );
 					return ((uintptr_t)name) - ((uintptr_t)names) + blocks * BLOCK_SIZE;
 				}
-			if( vol->key ) {
-				while( ( name[0] ^ vol->usekey[cache][name-(unsigned char*)names] ) ) name++;
-				name++;
-			} else
-				name = name + StrLen( (const char*)name ) + 1;
+			while( 0xFE != ( name[0] ^ vol->usekey[cache][name-(unsigned char*)names] ) ) name++;
+			name++;
 			//LoG( "new position is %" _size_f "  %" _size_f, this_name_block, (uintptr_t)name - (uintptr_t)names );
 		}
 		this_name_block = vfs_os_GetNextBlock( vol, this_name_block, GFB_INIT_NAMES, TRUE );
@@ -15781,6 +15948,7 @@ static FPI _os_SaveFileName( struct volume *vol, BLOCKINDEX firstNameBlock, cons
 static void ConvertDirectory( struct volume *vol, const char *leadin, int leadinLength, BLOCKINDEX this_dir_block, struct directory_hash_lookup_block *orig_dirblock, enum block_cache_entries *newCache ) {
 	size_t n;
 	int ofs = 0;
+	LoG( "------------ BEGIN CONVERT DIRECTORY ----------------------" );
 	do {
 		enum block_cache_entries cache = BC(DIRECTORY);
 		FPI nameoffset = 0;
@@ -15799,6 +15967,7 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 			int f;
 			enum block_cache_entries name_cache;
 			BLOCKINDEX name_block = dirblock->names_first_block ^ dirblockkey->names_first_block;
+			// read name block chain into a single array
 			do {
 				uint8_t *out = namebuffer + nameoffset;
 				name_cache = BC( NAMES );
@@ -15813,10 +15982,6 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 				name_block = vfs_os_GetNextBlock( vol, name_block, 0, 0 );
 				nameoffset += 4096;
 			} while( name_block != EOFBLOCK );
-			for( n = 0; n < 128; n++ )
-				if( namebuffer[n] )
-					break;
-			if( n == 128 ) DebugBreak();
 			memset( counters, 0, sizeof( counters ) );
 			// 257/85
 			for( f = 0; f < VFS_DIRECTORY_ENTRIES; f++ ) {
@@ -15842,10 +16007,17 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 				int usedNames = dirblock->used_names ^ dirblockkey->used_names;
 				int _usedNames = usedNames;
 				int nf = 0;
+				int firstNameOffset = -1;
+				int finalNameOffset = 0;;
 				cache = BC(DIRECTORY);
 				newDirblock = BTSEEK( struct directory_hash_lookup_block *, vol, new_dir_block, cache );
+				LoG( "new dir block cache is  %d   %d", cache, (int)new_dir_block );
 				newDirblockkey = (struct directory_hash_lookup_block *)vol->usekey[cache];
 				newFirstNameBlock = newDirblock->names_first_block ^ newDirblockkey->names_first_block;
+#ifdef _DEBUG
+				if( !newDirblock->names_first_block )
+					DebugBreak();
+#endif
 				// SETFLAG( vol->dirty, cache ); // this will be dirty because it was init above.
 				for( f = 0; f < usedNames; f++ ) {
 					BLOCKINDEX first = dirblock->entries[f].first_block ^ dirblockkey->entries[f].first_block;
@@ -15859,11 +16031,14 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 					entkey = dirblockkey->entries + (f);
 					name = entry->name_offset ^ entkey->name_offset;
 					if( namebuffer[name] == imax ) {
+						int namelen;
 						newEntry = newDirblock->entries + (nf);
 						newEntkey = newDirblockkey->entries + (nf);
 						//LoG( "Saving existing name %d %s", name, namebuffer + name );
 						//LogBinary( namebuffer, 32 );
-						name_ofs = _os_SaveFileName( vol, newFirstNameBlock, (char*)(namebuffer + name + 1) ) ^ newEntkey->name_offset;
+						namelen = 0;
+						while( namebuffer[name + namelen] != 0xFE )namelen++;
+						name_ofs = _os_SaveFileName( vol, newFirstNameBlock, (char*)(namebuffer + name + 1), namelen -1 ) ^ newEntkey->name_offset;
 						{
 							INDEX idx;
 							struct sack_vfs_file  * file;
@@ -15892,7 +16067,9 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 										^ dirblockkey->entries[m].name_offset;
 									dirblock->entries[m].filesize = (0)
 										^ dirblockkey->entries[m].filesize;
+#ifdef _DEBUG
 									if( !dirblock->names_first_block ) DebugBreak();
+#endif
 								}
 								else {
 									dirblock->entries[m].first_block = (dirblock->entries[m + 1].first_block
@@ -15904,7 +16081,9 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 									dirblock->entries[m].filesize = (dirblock->entries[m + 1].filesize
 										^ dirblockkey->entries[m + 1].filesize)
 										^ dirblockkey->entries[m].filesize;
+#ifdef _DEBUG
 									if( !dirblock->names_first_block ) DebugBreak();
+#endif
 								}
 							}
 							usedNames--;
@@ -15913,45 +16092,28 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 					}
 				}
 				if( usedNames ) {
+					static uint8_t newnamebuffer[18 * 4096];
+					int newout = 0;
 					int otherf;
 					int min_name = BLOCK_SIZE + 1;
  // min found has to be after this one.
 					int _min_name = -1;
 					//lprintf( "%d names remained.", usedNames );
-					while( _min_name < nameoffset ) {
-						min_name = ((_min_name +1)& ~BLOCK_MASK) + ( BLOCK_SIZE + 1 );
-						for( f = 0; f < usedNames; f++ ) {
-							struct directory_entry *entry;
-							struct directory_entry *entkey;
-							FPI name;
-							entry = dirblock->entries + (f);
-							entkey = dirblockkey->entries + (f);
-							name = entry->name_offset ^ entkey->name_offset;
-							if( USS_LT( name, FPI, min_name, int ) && USS_GT( name , FPI, _min_name, int ) ) {
-								min_name = (int)name;
-							}
-						}
-						if( (min_name & ~BLOCK_MASK) != ((_min_name+1) & ~BLOCK_MASK) ) {
-							_min_name = (min_name & ~BLOCK_MASK) - 1;
-							continue;
-						}
-						{
-							if( min_name > _min_name + 1 ) {
-								int namelen = min_name - (_min_name + 1);
-								memcpy( namebuffer + _min_name + 1, namebuffer + min_name, (BLOCK_SIZE - (min_name&BLOCK_MASK)) );
-								for( otherf = 0; otherf < usedNames; otherf++ ) {
-									FPI existFPI = (dirblock->entries[otherf].name_offset
-										^ dirblockkey->entries[otherf].name_offset);
-									if( USS_GT( existFPI, FPI, _min_name, int ) ) {
-										dirblock->entries[otherf].name_offset = (existFPI - namelen)
-											^ dirblockkey->entries[otherf].name_offset;
-									}
-									// this name is deleted.
-								}
-							}
-							_min_name = (_min_name + 1) + (int)strlen( (const char *)(namebuffer + _min_name + 1) );
-						}
-					};
+					for( f = 0; f < usedNames; f++ ) {
+						struct directory_entry *entry;
+						struct directory_entry *entkey;
+						FPI name;
+						entry = dirblock->entries + (f);
+						entkey = dirblockkey->entries + (f);
+						name = entry->name_offset ^ entkey->name_offset;
+						entry->name_offset = newout ^ entkey->name_offset;
+						while( namebuffer[name] != 0xFE )
+							newnamebuffer[newout++] = namebuffer[name++];
+						newnamebuffer[newout++] = namebuffer[name++];
+					}
+					newnamebuffer[newout++] = 0xFF;
+					memcpy( namebuffer, newnamebuffer, newout );
+					memset( newnamebuffer, 0, newout );
 				}
 				else {
 					namebuffer[0] = 0xFF;
@@ -16005,7 +16167,9 @@ static struct directory_entry * _os_GetNewDirectory( struct volume *vol, const c
 		BLOCKINDEX firstNameBlock;
 		cache = BC( DIRECTORY );
 		dirblock = BTSEEK( struct directory_hash_lookup_block *, vol, this_dir_block, cache );
+#ifdef _DEBUG
 		if( !dirblock->names_first_block ) DebugBreak();
+#endif
 		dirblockFPI = sack_ftell( vol->file );
 		dirblockkey = (struct directory_hash_lookup_block *)vol->usekey[cache];
 		firstNameBlock = dirblock->names_first_block^dirblockkey->names_first_block;
@@ -16059,7 +16223,7 @@ static struct directory_entry * _os_GetNewDirectory( struct volume *vol, const c
 				dirblock->used_names = (uint8_t)((n + 1) ^ dirblockkey->used_names);
 			}
 			//LoG( "Get New Directory save naem:%s", filename );
-			name_ofs = _os_SaveFileName( vol, firstNameBlock, filename ) ^ entkey->name_offset;
+			name_ofs = _os_SaveFileName( vol, firstNameBlock, filename, StrLen( filename ) ) ^ entkey->name_offset;
 			// have to allocate a block for the file, otherwise it would be deleted.
 			first_blk = _os_GetFreeBlock( vol, FALSE ) ^ entkey->first_block;
 			ent->filesize = entkey->filesize;
@@ -16190,7 +16354,9 @@ size_t CPROC sack_vfs_os_write( struct sack_vfs_file *file, const char * data, s
 	{
 		enum block_cache_entries cache = BC(FILE);
 		uint8_t* block = (uint8_t*)vfs_os_BSEEK( file->vol, file->block, &cache );
+#ifdef _DEBUG
 		if( file->block < 2 ) DebugBreak();
+#endif
 		if( length >= BLOCK_SIZE ) {
 			_os_MaskBlock( file->vol, file->vol->usekey[cache], block, 0, 0, data, BLOCK_SIZE );
 			SETFLAG( file->vol->dirty, cache );
@@ -16307,6 +16473,7 @@ static void sack_vfs_os_unlink_file_entry( struct volume *vol, struct sack_vfs_f
 			SETFLAG( vol->dirty, cache );
 			block = vfs_os_GetNextBlock( vol, block, FALSE, FALSE );
 			this_BAT[_block & (BLOCKS_PER_BAT-1)] = _thiskey;
+			AddDataItem( &vol->pdlFreeBlocks, &_block );
 			_block = block;
 		} while( block != EOFBLOCK );
 	}
@@ -16358,6 +16525,16 @@ int CPROC sack_vfs_os_close( struct sack_vfs_file *file ) {
 #endif
 	DeleteLink( &file->vol->files, file );
 	if( file->delete_on_close ) sack_vfs_os_unlink_file_entry( file->vol, file, file->_first_block, TRUE );
+	{
+		INDEX idx;
+		struct sack_vfs_file * testFile;
+		LIST_FORALL( file->vol->files, idx, struct sack_vfs_file *, testFile ) {
+			if( testFile->cache == file->cache )
+				break;
+		}
+		if( !testFile )
+			RESETFLAG( file->vol->seglock, file->cache );
+	}
 	file->vol->lock = 0;
 	if( file->vol->closed ) sack_vfs_os_unload_volume( file->vol );
 	Deallocate( struct sack_vfs_file *, file );
@@ -17012,7 +17189,7 @@ void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_
 				partial_bits = 0;
 			}
 			if( (get_bits+resultBits) > 24 )
-				(*buffer) |= tmp << resultBits;
+				(*buffer) = tmp << resultBits;
 			else if( (get_bits+resultBits) > 16 ) {
 				(*((uint16_t*)buffer)) |= tmp << resultBits;
 				(*(((uint8_t*)buffer)+2)) |= ((tmp << resultBits) & 0xFF0000)>>16;
@@ -31877,6 +32054,7 @@ struct threads_tag
 #endif
  // use this as a status of pipes if USE_PIPE_SEMS is used...; otherwise it's a ipcsem
 	int semaphore;
+	pthread_mutex_t mutex;
 	pthread_t hThread;
 #endif
 	struct {
@@ -31971,7 +32149,6 @@ struct my_thread_info {
 #ifdef __ANDROID__
 #include <linux/sem.h>
 #else
-#include <sys/sem.h>
 #endif
 #endif
 void  RemoveTimerEx( uint32_t ID DBG_PASS );
@@ -32061,11 +32238,7 @@ uintptr_t closesem( POINTER p, uintptr_t psv )
 	thread->pipe_ends[1] = -1;
 	thread->semaphore = -1;
 #else
-	if( semctl( thread->semaphore, 0, IPC_RMID ) == -1 )
-	{
-		lprintf( WIDE( "Error: %08x %s" ), thread->semaphore, strerror( errno ) );
-	}
-	thread->semaphore = -1;
+	pthread_mutex_destroy( &thread->mutex );
 #endif
 	return 0;
 }
@@ -32191,35 +32364,17 @@ static void InitWakeup( PTHREAD thread, CTEXTSTR event_name )
 		while( !success );
 	}
 #else
-	thread->semaphore = semget( IPC_PRIVATE
-	                          , 1, IPC_CREAT | 0600 );
+	thread->semaphore = pthread_mutex_init( &thread->mutex, NULL );
+	pthread_mutex_lock( &thread->mutex );
+	//thread->semaphore = semget( IPC_PRIVATE
+	//                          , 1, IPC_CREAT | 0600 );
 	if( thread->semaphore == -1 )
 	{
 		// basically this can't really happen....
-		if( errno ==  EEXIST )
-		{
-			thread->semaphore = semget( IPC_PRIVATE
-			                          , 1, 0 );
-			if( thread->semaphore == -1 )
-				lprintf( WIDE("FAILED TO CREATE SEMAPHORE! : %d"), errno );
-		}
-		if( errno == ENOSPC )
-		{
-			lprintf( WIDE("Hmm Need to cleanup some semaphore objects!!!") );
-		}
-		else
-			lprintf( WIDE("Failed to get semaphore! %d"), errno );
+		lprintf( WIDE("Failed to get semaphore! %d"), errno );
 	}
 	if( thread->semaphore != -1 )
 	{
-		//union semun ctl;
-		//ctl.val = 0;
-		//lprintf( WIDE("Setting thread semaphore to 0 (locked).") );
-		if( semctl( thread->semaphore, 0, SETVAL, 0 ) < 0 )
-		{
-			lprintf( WIDE("Errro setting semaphre value: %d"), errno );
-		}
-		//lprintf( WIDE("after semctl = %d %08lx"), semctl( thread->semaphore, 0, GETVAL ), thread->semaphore );
 	}
 #endif
 #endif
@@ -32439,33 +32594,17 @@ void  WakeThreadEx( PTHREAD thread DBG_PASS )
 #  ifdef DEBUG_PIPE_USAGE
 		_lprintf(DBG_RELAY)( "(wakethread)wil write pipe... %p", thread );
 #  endif
-		write( thread->pipe_ends[1], "G", 1 );
+		if( write( thread->pipe_ends[1], "G", 1 ) != 1 ) {
+			int e = errno;
+			lprintf( "Pipe Error? %d", e );
+		}
 		//lprintf( "did write pipe..." );
 		Relinquish();
 	}
 #else
 	if( thread->semaphore != -1 )
 	{
-		int stat;
-		int val;
-		struct sembuf semdo;
-		semdo.sem_num = 0;
-		semdo.sem_op = 1;
-		semdo.sem_flg = 0;
-		//_xlprintf( 1 DBG_RELAY )( WIDE("Resetting event on %08x %016"_64fx"x"), thread->semaphore, thread->thread_ident );
-		//lprintf( WIDE("Before semval = %d %08lx"), semctl( thread->semaphore, 0, GETVAL ), thread->semaphore );
-		stat = semop( thread->semaphore, &semdo, 1 );
-		if( stat == -1 )
-		{
-			if( errno != ERANGE )
-				lprintf( WIDE("semop error (wake) : %d"), errno );
-		}
-		//lprintf( WIDE("After semval = %d %08lx"), val = semctl( thread->semaphore, 0, GETVAL ), thread->semaphore );
-		if( !val )
-		{
-			//DebugBreak();
-			//lprintf( WIDE("Did we fail the semop?!") );
-		}
+		pthread_mutex_unlock( &thread->mutex );
  // may or may not execute other thread before this...
 		Relinquish();
 	}
@@ -32644,14 +32783,16 @@ static void  InternalWakeableNamedSleepEx( CTEXTSTR name, uint32_t n, LOGICAL th
 						lprintf( "end read" );
 #  endif
 #else
-# ifdef _NO_SEMTIMEDOP_
-						stat = semop( pThread->semaphore, semdo, 1 );
-# else
 						struct timespec timeout;
-						timeout.tv_nsec = ( n % 1000 ) * 1000000L;
-						timeout.tv_sec = n / 1000;
-						stat = semtimedop( pThread->semaphore, semdo, 1, &timeout );
-# endif
+						clock_gettime(CLOCK_REALTIME, &timeout);
+						timeout.tv_nsec += ( n % 1000 ) * 1000000L;
+						timeout.tv_sec += n / 1000;
+						timeout.tv_sec += timeout.tv_nsec / 1000000000L;
+						timeout.tv_nsec %= 1000000000L;
+						//lprintf( "Timed wait:%d %d", timeout.tv_nsec, timeout.tv_sec );
+						stat = pthread_mutex_timedlock( &pThread->mutex, &timeout );
+						//lprintf( "Stat for timed lock:%d", stat );
+						//stat = semtimedop( pThread->semaphore, semdo, 1, &timeout );
 #endif
 					}
 					else
@@ -32666,7 +32807,8 @@ static void  InternalWakeableNamedSleepEx( CTEXTSTR name, uint32_t n, LOGICAL th
 						lprintf( "end read" );
 #  endif
 #else
-						stat = semop( pThread->semaphore, semdo, 1 );
+						stat = pthread_mutex_lock( &pThread->mutex );
+						//stat = semop( pThread->semaphore, semdo, 1 );
 #endif
 					}
 					//lprintf( WIDE("After semval = %d %08lx"), semctl( pThread->semaphore, 0, GETVAL ), pThread->semaphore );
@@ -32715,7 +32857,7 @@ static void  InternalWakeableNamedSleepEx( CTEXTSTR name, uint32_t n, LOGICAL th
 #ifdef USE_PIPE_SEMS
 						// flush? empty the pipe?
 #else
-						semctl( pThread->semaphore, 0, SETVAL, 0 );
+						//semctl( pThread->semaphore, 0, SETVAL, 0 );
 #endif
 						break;
 					}
@@ -32812,6 +32954,8 @@ static void TimerWakeableSleep( uint32_t n )
 #ifdef USE_PIPE_SEMS
 			InternalWakeableNamedSleepEx( NULL, n, FALSE DBG_SRC );
 #else
+			pthread_mutex_lock( &globalTimerData.pTimerThread->mutex );
+#   if asdfasdfasdfasdf
 			struct sembuf semdo;
 			semdo.sem_num = 0;
 			semdo.sem_op = -1;
@@ -32841,6 +32985,7 @@ static void TimerWakeableSleep( uint32_t n )
 					break;
 				}
 			}
+#   endif
 #endif
 			//lprintf( WIDE("After semval = %d %08lx")
 			//	      , semctl( globalTimerData.pTimerThread->semaphore, 0, GETVAL )
@@ -34113,9 +34258,19 @@ LOGICAL  LeaveCriticalSecEx( PCRITICALSECTION pcs DBG_PASS )
 #ifdef _DEBUG
 		//GetTickCount() )
 		if( ( curtick + 2000 ) <= timeGetTime() ) {
+#ifdef DEBUG_CRITICAL_SECTIONS
+			lprintf( "FROM: %s(%d)  %s(%d) %s(%d)"
+					  , pcs->pFile[(pcs->nPrior+(MAX_SECTION_LOG_QUEUE-1))%MAX_SECTION_LOG_QUEUE]
+					  , pcs->nLine[(pcs->nPrior+(MAX_SECTION_LOG_QUEUE-1))%MAX_SECTION_LOG_QUEUE]
+					  , pcs->pFile[(pcs->nPrior+(MAX_SECTION_LOG_QUEUE-2))%MAX_SECTION_LOG_QUEUE]
+					  , pcs->nLine[(pcs->nPrior+(MAX_SECTION_LOG_QUEUE-2))%MAX_SECTION_LOG_QUEUE]
+					  , pcs->pFile[(pcs->nPrior+(MAX_SECTION_LOG_QUEUE-3))%MAX_SECTION_LOG_QUEUE]
+					 , pcs->nLine[(pcs->nPrior+(MAX_SECTION_LOG_QUEUE-3))%MAX_SECTION_LOG_QUEUE]
+					 );
+#endif
 			lprintf( WIDE( "Timeout during critical section wait for lock.  No lock should take more than 1 task cycle" ) );
-			DebugBreak();
-			continue;
+			//DebugBreak();
+			//continue;
 		}
 #endif
 		break;
@@ -34152,23 +34307,22 @@ LOGICAL  LeaveCriticalSecEx( PCRITICALSECTION pcs DBG_PASS )
 #endif
 		if( !( pcs->dwLocks & ~(SECTION_LOGGED_WAIT) ) )
 		{
+			THREAD_ID dwWaiting = pcs->dwThreadWaiting;
 			pcs->dwLocks = 0;
 			pcs->dwThreadID = 0;
+			pcs->dwUpdating = pcs->dwLocks;
 			// wake the prior (if there is one sleeping)
-			if( pcs->dwThreadWaiting )
+			if( dwWaiting )
 			{
-				pcs->dwUpdating = 0;
 #ifdef ENABLE_CRITICALSEC_LOGGING
 				if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
-					_lprintf( DBG_RELAY )( WIDE("%8")_64fx WIDE(" Waking a thread which is waiting..."), pcs->dwThreadWaiting );
+					_lprintf( DBG_RELAY )( WIDE("%8")_64fx WIDE(" Waking a thread which is waiting..."), dwWaiting );
 #endif
 				// don't clear waiting... so the proper thread can
 				// allow itself to claim section...
-				WakeNamedThreadSleeperEx( WIDE("sack.critsec"), pcs->dwThreadWaiting DBG_RELAY );
+				WakeNamedThreadSleeperEx( WIDE("sack.critsec"), dwWaiting DBG_RELAY );
 				//WakeThreadIDEx( wake DBG_RELAY);
 			}
-			else
-				pcs->dwUpdating = 0;
 			return TRUE;
 		}
 	}
@@ -37805,7 +37959,8 @@ static void DumpSection( PCRITICALSECTION pcs )
 				else {
 					if( prior && *prior ) {
 						// shouldn't happen, if there's no waiter set, then there shouldn't be a prior.
-						DebugBreak();
+						if( *prior != 1 )
+							DebugBreak();
 					}
 #ifdef LOG_DEBUG_CRITICAL_SECTIONS
 					ll_lprintf( WIDE( "Claimed critical section." ) );
@@ -45076,12 +45231,8 @@ POINTER  PeekLinkEx ( PLINKSTACK *pls, INDEX n )
 {
 	// should lock - but it's fast enough?
 	POINTER p = NULL;
-	if( pls && (*pls) && n >= (*pls)->Top )
-		return NULL;
-	if( pls && *pls && ((*pls)->Top-n) )
-		p = (*pls)->pNode[(*pls)->Top-(n+1)];
-	else
-		return NULL;
+	if( pls && *pls && ((*pls)->Top > n) )
+		p = (*pls)->pNode[(*pls)->Top - (n + 1)];
 	return p;
 }
 //--------------------------------------------------------------------------
@@ -51115,6 +51266,8 @@ PGENERICSET GetFromSetPoolEx( GENERICSET **pSetSet, int setsetsizea, int setunit
 	uint32_t maxbias = 0;
 	void *unit = NULL;
 	uintptr_t ofs = ( ( ( maxcnt + 31 ) / 32 ) * 4 );
+	//if( pSet && (*pSet) && ( (*pSet)->nBias > 1000 ))
+	//	_lprintf( DBG_RELAY )("GetFromSet: %p", pSet );
 	if( !pSet )
  // can never return something from nothing.
 		return NULL;
@@ -51372,7 +51525,9 @@ void DeleteFromSetExx( GENERICSET *pSet, void *unit, int unitsize, int max DBG_P
 	uintptr_t nUnit = (uintptr_t)unit;
 	uintptr_t ofs = ( ( max + 31 ) / 32) * 4;
 	uintptr_t base;
-	//if( bLog ) _lprintf(DBG_RELAY)( WIDE("Deleting from  %p of %p "), pSet, unit );
+	//if( bLog )
+	//if( pSet && ((pSet)->nBias > 1000) )
+	//	_lprintf(DBG_RELAY)( WIDE("Deleting from  %p of %p "), pSet, unit );
 	while( pSet )
 	{
 		base = ( (uintptr_t)( pSet->bUsed ) + ofs );
@@ -58642,6 +58797,8 @@ JSON_EMITTER_PROC( int, json_parse_add_data )( struct json_parse_state *context
                                              );
 // these are common functions that work for json or json6 stream parsers
 JSON_EMITTER_PROC( PDATALIST, json_parse_get_data )( struct json_parse_state *context );
+// get actual allocated root for a value... allows holding that.
+JSON_EMITTER_PROC( const char *, json_get_parse_buffer )(struct json_parse_state *pState, const char *buf);
 JSON_EMITTER_PROC( void, json_parse_dispose_state )( struct json_parse_state **context );
 JSON_EMITTER_PROC( void, json_parse_clear_state )(struct json_parse_state *context);
 JSON_EMITTER_PROC( PTEXT, json_parse_get_error )(struct json_parse_state *context);
@@ -58666,6 +58823,8 @@ JSON_EMITTER_PROC( LOGICAL, _json6_parse_message )( char * msg
                                                   , size_t msglen
                                                   , PDATALIST *msg_data_out
                                                   );
+JSON_EMITTER_PROC( struct json_parse_state *, json6_get_message_parser )( void );
+JSON_EMITTER_PROC( struct json_parse_state *, json_get_message_parser )( void );
 // Add some data to parse for json stream (which may consist of multiple values)
 // return 1 when a completed value/object is available.
 // after returning 1, call json_parse_get_data.  It is possible that there is
@@ -58978,6 +59137,10 @@ struct json_parser_shared_data {
 	PPLINKSTACKSET linkStacks;
 	PPLINKQUEUESET linkQueues;
 	PPDATALISTSET dataLists;
+ // used by simple parse_message interface.
+	struct json_parse_state *json_state;
+ // used by simple parse_message interface.
+	struct json_parse_state *json6_state;
 };
 #ifndef JSON_PARSER_MAIN_SOURCE
 extern
@@ -59331,7 +59494,9 @@ int json_parse_add_data( struct json_parse_state *state
 			//lprintf( "output from before is %p", output );
 			offset = (output->pos - output->buf);
 			offset2 = state->val.string - output->buf;
-			AddLink( state->outValBuffers, output->buf );
+			struct json_output_buffer *tmpout = (struct json_output_buffer*)GetFromSet( PARSE_BUFFER, &jpsd.parseBuffers );
+			tmpout[0] = output[0];
+			AddLink( state->outValBuffers, tmpout );
 			output->buf = NewArray( char, output->size + msglen + 1 );
 			MemCpy( output->buf + offset2, state->val.string, offset-offset2 );
 			output->size += msglen;
@@ -59867,19 +60032,23 @@ LOGICAL json_parse_message( const char * msg
 	, size_t msglen
 	, PDATALIST *_msg_output ) {
 	struct json_parse_state *state = json_begin_parse();
-	static struct json_parse_state *_state;
+	//static struct json_parse_state *_state;
 	state->complete_at_end = TRUE;
 	int result = json_parse_add_data( state, msg, msglen );
-	if( _state ) json_parse_dispose_state( &_state );
+	if( jpsd.json_state ) json_parse_dispose_state( &jpsd.json_state );
 	if( result > 0 ) {
 		(*_msg_output) = json_parse_get_data( state );
-		_state = state;
+		jpsd.json_state = state;
 		//json6_parse_dispose_state( &state );
 		return TRUE;
 	}
 	(*_msg_output) = NULL;
 	json_parse_dispose_state( &state );
 	return FALSE;
+}
+struct json_parse_state *json_get_message_parser( void ) {
+	//lprintf( "Return simple json parser:%p", jpsd.json_state );
+	return jpsd.json_state;
 }
 void json_dispose_decoded_message( struct json_context_object *format
                                  , POINTER msg_data )
@@ -61272,7 +61441,9 @@ int json6_parse_add_data( struct json_parse_state *state
 			//lprintf( "output from before is %p", output );
 			offset = (output->pos - output->buf);
 			offset2 = state->val.string ? (state->val.string - output->buf) : 0;
-			AddLink( state->outValBuffers, output->buf );
+			struct json_output_buffer *saveout = (struct json_output_buffer*)GetFromSet( PARSE_BUFFER, &jpsd.parseBuffers );
+			saveout[0] = output[0];
+			AddLink( state->outValBuffers, saveout );
 			output->buf = NewArray( char, output->size + msglen + 1 );
 			if( state->val.string ) {
 				MemCpy( output->buf + offset2, state->val.string, offset - offset2 );
@@ -62236,6 +62407,23 @@ PTEXT json_parse_get_error( struct json_parse_state *state ) {
 	}
 	return NULL;
 }
+const char *json_get_parse_buffer( struct json_parse_state *pState, const char *buf ) {
+	int idx;
+	PPARSE_BUFFER buffer;
+	//lprintf( "Getting buffer from %p", pState );
+	for( idx = 0; buffer = (PPARSE_BUFFER)PeekLinkEx( pState->outBuffers, idx ); idx++ )
+		if( ((uintptr_t)buf) >= ((uintptr_t)buffer->buf) && ((uintptr_t)buf) < ((uintptr_t)buffer->pos) )
+			return buffer->buf;
+	for( idx = 0; buffer = (PPARSE_BUFFER)PeekQueueEx( *pState->outQueue, idx ); idx++ )
+		if( ((uintptr_t)buf) >= ((uintptr_t)buffer->buf) && ((uintptr_t)buf) < ((uintptr_t)buffer->pos) )
+			return buffer->buf;
+	LIST_FORALL( pState->outValBuffers[0], idx, PPARSE_BUFFER, buffer ) {
+		if( ((uintptr_t)buf) >= ((uintptr_t)buffer->buf) && ((uintptr_t)buf) < ((uintptr_t)buffer->pos) )
+			return buffer->buf;
+	}
+	lprintf( "FAILED TO FIND BUFFER TO RETURN" );
+	return NULL;
+}
 void json_parse_dispose_state( struct json_parse_state **ppState ) {
 	struct json_parse_state *state = (*ppState);
 	struct json_parse_context *old_context;
@@ -62247,10 +62435,12 @@ void json_parse_dispose_state( struct json_parse_state **ppState ) {
 		DeleteFromSet( PARSE_BUFFER, jpsd.parseBuffers, buffer );
 	}
 	{
-		char *buf;
+		PPARSE_BUFFER buf;
 		INDEX idx;
-		LIST_FORALL( state->outValBuffers[0], idx, char*, buf ) {
-			Deallocate( char*, buf );
+		LIST_FORALL( state->outValBuffers[0], idx, PPARSE_BUFFER, buf ) {
+			Deallocate( const char *, buf->buf );
+			DeleteFromSet( PARSE_BUFFER, jpsd.parseBuffers, buf );
+			Deallocate( PPARSE_BUFFER, buf );
 		}
 		DeleteFromSet( PLIST, jpsd.listSet, state->outValBuffers );
 		//DeleteList( &state->outValBuffers );
@@ -62283,20 +62473,24 @@ LOGICAL json6_parse_message( const char * msg
 	, size_t msglen
 	, PDATALIST *_msg_output ) {
 	struct json_parse_state *state = json_begin_parse();
-	static struct json_parse_state *_state;
+	//static struct json_parse_state *_state;
 	state->complete_at_end = TRUE;
 	int result = json6_parse_add_data( state, msg, msglen );
-	if( _state ) json_parse_dispose_state( &_state );
+	if( jpsd.json6_state ) json_parse_dispose_state( &jpsd.json6_state );
 	if( result > 0 ) {
 		(*_msg_output) = json_parse_get_data( state );
-		_state = state;
+		jpsd.json6_state = state;
 		//json6_parse_dispose_state( &state );
 		return TRUE;
 	}
 	(*_msg_output) = NULL;
 	jpsd.last_parse_state = state;
-	_state = state;
+	jpsd.json6_state = state;
 	return FALSE;
+}
+struct json_parse_state *json6_get_message_parser( void ) {
+	//lprintf( "Return simple json6 parser:%p", jpsd.json6_state );
+	return jpsd.json6_state;
 }
 void json6_dispose_message( PDATALIST *msg_data )
 {
@@ -62654,6 +62848,8 @@ struct jsox_value_container {
 JSOX_PARSER_PROC( struct jsox_parse_state *, jsox_begin_parse )(void);
 // clear state; after an error state, this can allow reusing a state.
 JSOX_PARSER_PROC( void, jsox_parse_clear_state )( struct jsox_parse_state *state );
+// get actual allocated root for a value... allows holding that.
+JSOX_PARSER_PROC( const char *, jsox_get_parse_buffer )(struct jsox_parse_state *pState, const char *buf);
 // destroy current parse state.
 JSOX_PARSER_PROC( void, jsox_parse_dispose_state )(struct jsox_parse_state **ppState);
 // return >0 when a completed value/object is available.
@@ -62675,6 +62871,7 @@ JSOX_PARSER_PROC( LOGICAL, jsox_parse_message )(const char * msg
 	);
 // release all resources of a message from jsox_parse_message or jsox_parse_get_data
 JSOX_PARSER_PROC( void, jsox_dispose_message )(PDATALIST *msg_data);
+JSOX_PARSER_PROC( struct jsox_parse_state *, jsox_get_messge_parser )(void);
 JSOX_PARSER_PROC( char *, jsox_escape_string_length )(const char *string, size_t len, size_t *outlen);
 JSOX_PARSER_PROC( char *, jsox_escape_string )(const char *string);
 #ifdef __cplusplus
@@ -62934,6 +63131,8 @@ struct jsox_parser_shared_data {
 	PPDATALISTSET dataLists;
 	PJSOX_CLASSSET  classes;
 	PJSOX_CLASS_FIELDSET  class_fields;
+ // static parsing state for simple message interface.
+	struct jsox_parse_state *_state;
 };
 #ifndef JSOX_PARSER_MAIN_SOURCE
 extern
@@ -64746,6 +64945,18 @@ PDATALIST jsox_parse_get_data( struct jsox_parse_state *state ) {
 	else state->elements[0]->Cnt = 0;
 	return result[0];
 }
+const char *jsox_get_parse_buffer( struct jsox_parse_state *pState, const char *buf ) {
+	int idx;
+	PJSOX_PARSE_BUFFER buffer;
+	for( idx = 0; ; idx-- )
+		while( buffer = (PJSOX_PARSE_BUFFER)PeekLinkEx( pState->outBuffers, idx ) ) {
+			if( !buffer ) break;
+			if( ((uintptr_t)buf) >= ((uintptr_t)buffer->buf) && ((uintptr_t)buf) < ((uintptr_t)buffer->pos) )
+				return buffer->buf;
+		}
+	lprintf( "FAILED TO FIND BUFFER TO RETURN" );
+	return NULL;
+}
 void _jsox_dispose_message( PDATALIST *msg_data )
 {
 	struct jsox_value_container *val;
@@ -64879,20 +65090,23 @@ LOGICAL jsox_parse_message( const char * msg
 	, size_t msglen
 	, PDATALIST *_msg_output ) {
 	struct jsox_parse_state *state = jsox_begin_parse();
-	static struct jsox_parse_state *_state;
+	//static struct jsox_parse_state *_state;
 	state->complete_at_end = TRUE;
 	int result = jsox_parse_add_data( state, msg, msglen );
-	if( _state ) jsox_parse_dispose_state( &_state );
+	if( jxpsd._state ) jsox_parse_dispose_state( &jxpsd._state );
 	if( result > 0 ) {
 		(*_msg_output) = jsox_parse_get_data( state );
-		_state = state;
+		jxpsd._state = state;
 		//jsox_parse_dispose_state( &state );
 		return TRUE;
 	}
 	(*_msg_output) = NULL;
 	jxpsd.last_parse_state = state;
-	_state = state;
+	jxpsd._state = state;
 	return FALSE;
+}
+struct jsox_parse_state *jsox_get_messge_parser( void ) {
+	return jxpsd._state;
 }
 #undef GetUtfChar
 #ifdef __cplusplus
@@ -67510,9 +67724,11 @@ void vesl_dispose_message( PDATALIST *msg_data )
 //  DEBUG FLAGS IN netstruc.h
 //
 #ifndef _DEFAULT_SOURCE
-//#define __USE_MISC
   // for features.h
 #define _DEFAULT_SOURCE
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #endif
 #define FIX_RELEASE_COM_COLLISION
 #define NO_UNICODE_C
@@ -67839,6 +68055,7 @@ LOCATION struct network_global_data{
 		BIT_FIELD bNetworkReady : 1;
 		BIT_FIELD bThreadInitOkay : 1;
 		BIT_FIELD bLogProtocols : 1;
+		BIT_FIELD bOptionsRead : 1;
 	} flags;
  // how many peer threads do we have
 	int nPeers;
@@ -67970,30 +68187,34 @@ __END_DECLS
 SACK_NETWORK_NAMESPACE
 PRELOAD( InitNetworkGlobalOptions )
 {
+	if( !globalNetworkData.flags.bOptionsRead ) {
 #ifdef __LINUX__
-	signal(SIGPIPE, SIG_IGN);
+		signal(SIGPIPE, SIG_IGN);
 #endif
 #ifndef __NO_OPTIONS__
-	globalNetworkData.flags.bLogProtocols = SACK_GetProfileIntEx( WIDE("SACK"), WIDE( "Network/Log Protocols" ), 0, TRUE );
-	globalNetworkData.flags.bShortLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data(64 byte max)" ), 0, TRUE );
-	globalNetworkData.flags.bLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data" ), 0, TRUE );
-	globalNetworkData.flags.bLogSentData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Sent Data" ), globalNetworkData.flags.bLogReceivedData, TRUE );
+		globalNetworkData.flags.bLogProtocols = SACK_GetProfileIntEx( WIDE("SACK"), WIDE( "Network/Log Protocols" ), 0, TRUE );
+		globalNetworkData.flags.bShortLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data(64 byte max)" ), 0, TRUE );
+		globalNetworkData.flags.bLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data" ), 0, TRUE );
+		globalNetworkData.flags.bLogSentData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Sent Data" ), globalNetworkData.flags.bLogReceivedData, TRUE );
 #  ifdef LOG_NOTICES
-	globalNetworkData.flags.bLogNotices = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Notifications" ), 0, TRUE );
+		globalNetworkData.flags.bLogNotices = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Notifications" ), 0, TRUE );
 #  endif
-	globalNetworkData.dwReadTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Read wait timeout" ), 5000, TRUE );
-	globalNetworkData.dwConnectTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Connect timeout" ), 10000, TRUE );
+		globalNetworkData.dwReadTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Read wait timeout" ), 5000, TRUE );
+		globalNetworkData.dwConnectTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Connect timeout" ), 10000, TRUE );
 #else
-	globalNetworkData.flags.bLogNotices = 0;
-	globalNetworkData.dwReadTimeout = 5000;
-	globalNetworkData.dwConnectTimeout = 10000;
+		globalNetworkData.flags.bLogNotices = 0;
+		globalNetworkData.dwReadTimeout = 5000;
+		globalNetworkData.dwConnectTimeout = 10000;
 #endif
+		globalNetworkData.flags.bOptionsRead = 1;
+	}
 }
 static void LowLevelNetworkInit( void )
 {
 	if( !global_network_data ) {
 		SimpleRegisterAndCreateGlobal( global_network_data );
-		InitializeCriticalSec( &globalNetworkData.csNetwork );
+		if( !globalNetworkData.ClientSlabs )
+			InitializeCriticalSec( &globalNetworkData.csNetwork );
 	}
 }
 PRIORITY_PRELOAD( InitNetworkGlobal, CONFIG_SCRIPT_PRELOAD_PRIORITY - 1 )
@@ -69592,11 +69813,11 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #  endif
 				if( event_data == (struct event_data*)1 ) {
 					//char buf;
-               //int stat;
+					//int stat;
 					//stat = read( GetThreadSleeper( thread->thread ), &buf, 1 );
 					//call wakeable sleep to just clear the sleep; because this is an event on the sleep pipe.
-					WakeableSleep( 1 );
-               //lprintf( "This should sleep forever..." );
+					//WakeableSleep( 1 );
+					//lprintf( "This should sleep forever..." );
 					return 1;
 				}
 #  ifdef __MAC__
@@ -69714,10 +69935,12 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 						{
 #ifdef LOG_NOTICES
 							//if( globalNetworkData.flags.bLogNotices )
-								lprintf( WIDE( "Pending read failed - reset connection." ) );
+							lprintf( WIDE( "Pending read failed - reset connection." ) );
 #endif
+							EnterCriticalSec( &globalNetworkData.csNetwork );
 							InternalRemoveClientEx( event_data->pc, FALSE, FALSE );
 							TerminateClosedClient( event_data->pc );
+							LeaveCriticalSec( &globalNetworkData.csNetwork );
 							closed = 1;
 						}
 						else if( !event_data->pc->RecvPending.s.bStream )
@@ -69939,10 +70162,10 @@ uintptr_t CPROC NetworkThreadProc( PTHREAD thread )
 		kevent( this_thread.kqueue, &ev, 1, 0, 0, 0 );
 #    endif
 #  else
-		struct epoll_event ev;
-		ev.data.ptr = (void*)1;
-		ev.events = EPOLLIN;
-		epoll_ctl( this_thread.epoll_fd, EPOLL_CTL_ADD, GetThreadSleeper( thread ), &ev );
+		//struct epoll_event ev;
+		//ev.data.ptr = (void*)1;
+		//ev.events = EPOLLIN;
+		//epoll_ctl( this_thread.epoll_fd, EPOLL_CTL_ADD, GetThreadSleeper( thread ), &ev );
 #  endif
 	}
 #endif
@@ -71773,7 +71996,9 @@ void AcceptClient(PCLIENT pListen)
  // if there was a select error...
 		{
 			lprintf(WIDE( " Accept select Error" ));
+			EnterCriticalSec( &globalNetworkData.csNetwork );
 			InternalRemoveClientEx( pNewClient, TRUE, FALSE );
+			LeaveCriticalSec( &globalNetworkData.csNetwork );
 			NetworkUnlockEx( pNewClient, 0 DBG_SRC );
 			NetworkUnlockEx( pNewClient, 1 DBG_SRC );
 			pNewClient = NULL;
@@ -71837,7 +72062,9 @@ void AcceptClient(PCLIENT pListen)
  // accept failed...
 	else
 	{
+		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientEx( pNewClient, TRUE, FALSE );
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		NetworkUnlockEx( pNewClient, 0 DBG_SRC );
 		NetworkUnlockEx( pNewClient, 1 DBG_SRC );
 		pNewClient = NULL;
@@ -71889,7 +72116,9 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
 	{
 		lprintf( WIDE(" Open Listen Socket Fail... %d"), errno);
 		DumpAddr( "passed address to select:", pAddr );
+		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientEx( pListen, TRUE, FALSE );
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		NetworkUnlockEx( pListen, 0 DBG_SRC );
 		NetworkUnlockEx( pListen, 1 DBG_SRC );
 		pListen = NULL;
@@ -71904,7 +72133,9 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
                        SOCKMSG_TCP, FD_ACCEPT|FD_CLOSE ) )
 	{
 		lprintf( WIDE("Windows AsynchSelect failed: %d"), WSAGetLastError() );
+		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientEx( pListen, TRUE, FALSE );
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		NetworkUnlockEx( pListen, 0 DBG_SRC );
 		NetworkUnlockEx( pListen, 1 DBG_SRC );
 		return NULL;
@@ -71931,7 +72162,9 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
 	{
 		_lprintf(DBG_RELAY)( WIDE("Cannot bind to address..:%d"), WSAGetLastError() );
 		DumpAddr( "Bind address:", pAddr );
+		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientEx( pListen, TRUE, FALSE );
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		NetworkUnlockEx( pListen, 0 DBG_SRC );
 		NetworkUnlockEx( pListen, 1 DBG_SRC );
 		return NULL;
@@ -71940,7 +72173,9 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
 	if(listen(pListen->Socket, SOMAXCONN ) == SOCKET_ERROR )
 	{
 		lprintf( WIDE("listen(5) failed: %d"), WSAGetLastError() );
+		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientEx( pListen, TRUE, FALSE );
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		NetworkUnlockEx( pListen, 0 DBG_SRC );
 		NetworkUnlockEx( pListen, 1 DBG_SRC );
 		return NULL;
@@ -72028,7 +72263,9 @@ int NetworkConnectTCPEx( PCLIENT pc DBG_PASS ) {
 			)
 		{
 			_lprintf( DBG_RELAY )(WIDE( "Connect FAIL: %d %d %" ) _32f, pc->Socket, err, dwError);
+			EnterCriticalSec( &globalNetworkData.csNetwork );
 			InternalRemoveClientEx( pc, TRUE, FALSE );
+			LeaveCriticalSec( &globalNetworkData.csNetwork );
 			NetworkUnlockEx( pc, 0 DBG_SRC );
 			pc = NULL;
 			return -1;
@@ -72090,7 +72327,9 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 		if (pResult->Socket==INVALID_SOCKET)
 		{
 			lprintf( WIDE("Create socket failed. %d"), WSAGetLastError() );
+			EnterCriticalSec( &globalNetworkData.csNetwork );
 			InternalRemoveClientEx( pResult, TRUE, FALSE );
+			LeaveCriticalSec( &globalNetworkData.csNetwork );
 			NetworkUnlockEx( pResult, 1 DBG_SRC );
 			NetworkUnlockEx( pResult, 0 DBG_SRC );
 			return NULL;
@@ -72117,7 +72356,9 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 			                  , FD_READ|FD_WRITE|FD_CLOSE|FD_CONNECT) )
 			{
 				lprintf( WIDE(" Select NewClient Fail! %d"), WSAGetLastError() );
+				EnterCriticalSec( &globalNetworkData.csNetwork );
 				InternalRemoveClientEx( pResult, TRUE, FALSE );
+				LeaveCriticalSec( &globalNetworkData.csNetwork );
 				NetworkUnlockEx( pResult, 1 DBG_SRC );
 				NetworkUnlockEx( pResult, 0 DBG_SRC );
 				pResult = NULL;
@@ -72245,7 +72486,9 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 					}
 					else
 						lprintf( WIDE("Connect FAIL: Timeout") );
+					EnterCriticalSec( &globalNetworkData.csNetwork );
 					InternalRemoveClientEx( pResult, TRUE, FALSE );
+					LeaveCriticalSec( &globalNetworkData.csNetwork );
 					pResult->dwFlags &= ~CF_CONNECT_WAITING;
 					pResult = NULL;
 					goto LeaveNow;
@@ -85699,11 +85942,12 @@ typedef struct data_collection_tag
 	struct odbc_handle_tag *odbc;
 	uint32_t      responce;
 	uint32_t      lastop;
-   int    *column_types;
+	int    *column_types;
 	size_t *result_len;
 	TEXTSTR *results;
 	//uint32_t nResults; // this is columns
 	TEXTSTR *fields;
+	PDATALIST *ppdlResults;
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 	sqlite3_stmt *stmt;
 #endif
@@ -86572,10 +86816,16 @@ void InitVFS( CTEXTSTR name, struct file_system_mounted_interface *mount )
 }
 void errorLogCallback(void *pArg, int iErrCode, const char *zMsg){
 	if( iErrCode == SQLITE_NOTICE_RECOVER_WAL ) {
+#ifdef __STATIC_GLOBALS__
+#  define sg (global_sqlstub_data)
+		extern struct pssql_global global_sqlstub_data;
+#else
+#  define sg (*global_sqlstub_data)
 		extern struct pssql_global *global_sqlstub_data;
+#endif
 		lprintf( "Sqlite3 Notice: wal recovered: generating checkpoint:%s", zMsg);
 		// after open returns, generate an automatic wal_checkpoint.
-		global_sqlstub_data->flags.bAutoCheckpointRecover = 1;
+		sg.flags.bAutoCheckpointRecover = 1;
 	}
 	else if( iErrCode == SQLITE_NOTICE_RECOVER_ROLLBACK ) {
 		lprintf( "Sqlite3 Notice: journal rollback:%s", zMsg );
@@ -86722,11 +86972,12 @@ typedef struct data_collection_tag
 	struct odbc_handle_tag *odbc;
 	uint32_t      responce;
 	uint32_t      lastop;
-   int    *column_types;
+	int    *column_types;
 	size_t *result_len;
 	TEXTSTR *results;
 	//uint32_t nResults; // this is columns
 	TEXTSTR *fields;
+	PDATALIST *ppdlResults;
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 	sqlite3_stmt *stmt;
 #endif
@@ -90133,13 +90384,22 @@ struct update_task_def
 	void (CPROC *CheckTables)( PODBC );
 	DeclareLink( struct update_task_def );
 };
+#ifdef __STATIC_GLOBALS__
+struct pssql_global global_sqlstub_data;
+#  ifdef g
+#    undef g
+#  endif
+#  define g (global_sqlstub_data)
+#else
 struct pssql_global *global_sqlstub_data;
-#ifdef g
-#  undef g
+#  ifdef g
+#    undef g
+#  endif
+#  define g (*global_sqlstub_data)
 #endif
-#define g (*global_sqlstub_data)
 //----------------------------------------------------------------------
 static void SqlStubInitLibrary( void );
+#ifndef __STATIC_GLOBALS__
 PRIORITY_PRELOAD( InitGlobalData, SQL_PRELOAD_PRIORITY )
 {
 	// is null initialized.
@@ -90156,6 +90416,17 @@ ATEXIT_PRIORITY( CloseConnections, ATEXIT_PRIORITY_SYSLOG - 3 )
 			CloseDatabaseEx( odbc, FALSE );
 		}
 }
+#else
+ATEXIT_PRIORITY( CloseConnections, ATEXIT_PRIORITY_SYSLOG - 3 )
+{
+	PODBC odbc;
+	INDEX idx;
+		LIST_FORALL( global_sqlstub_data.pOpenODBC, idx, PODBC, odbc  )
+		{
+			CloseDatabaseEx( odbc, FALSE );
+		}
+}
+#endif
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 static void GetColumnSize(sqlite3_context*onwhat,int n,sqlite3_value**something) {
 	switch( sqlite3_value_type( something[0] ) ) {
@@ -92341,6 +92612,9 @@ void DestroyCollectorEx( PCOLLECT pCollect DBG_PASS )
 	{
 		return;
 	}
+	if( pCollect->ppdlResults ) {
+		DeleteDataList( pCollect->ppdlResults );
+	}
 	ReleaseCollectionResults( pCollect, TRUE );
 	VarTextDestroy( &pCollect->pvt_out );
 	VarTextDestroy( &pCollect->pvt_result );
@@ -93224,7 +93498,101 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 			return 0;
 		}
 		ReleaseCollectionResults( collection, FALSE );
-		if( collection->flags.bBuildResultArray )
+		if( collection->ppdlResults ) {
+			int len;
+			struct json_value_container *val = (struct json_value_container *)GetDataItem( collection->ppdlResults, collection->columns );
+			struct json_value_container valSet;
+			if( !val ) {
+				val = &valSet;
+				memset( &valSet, 0, sizeof( valSet ) );
+				valSet._contains = &valSet.contains;
+				for( len = 0; len < collection->columns; len++ )
+					SetDataItem( collection->ppdlResults, len, &valSet );
+				val->value_type = VALUE_UNDEFINED;
+				SetDataItem( collection->ppdlResults, collection->columns, val );
+				// okay and now - pull column info from magic place...
+				{
+#ifdef USE_ODBC
+					TEXTCHAR colname[256];
+					short namelen;
+#endif
+					int idx;
+					for( idx = 1; idx <= collection->columns; idx++ ) {
+						val = (struct json_value_container *)GetDataItem( collection->ppdlResults, idx - 1 );
+#if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
+						//const unsigned char *sqlite3_column_text(sqlite3_stmt*, int iCol);
+						if( odbc->flags.bSQLite_native ) {
+							int coltype;
+							val->name = DupCStr( sqlite3_column_name( collection->stmt, idx - 1 ) );
+							val->nameLen = strlen( val->name );
+							switch( coltype = sqlite3_column_type( collection->stmt, idx - 1 ) ) {
+							default:
+								lprintf( "Unhandled SQLITE type: %d", coltype );
+								break;
+							case SQLITE_BLOB:
+								val->value_type = VALUE_TYPED_ARRAY;
+								break;
+							case SQLITE_TEXT:
+								val->value_type = VALUE_STRING;
+								break;
+							case SQLITE_INTEGER:
+								val->value_type = VALUE_NUMBER;
+								val->float_result = 0;
+								break;
+							case SQLITE_FLOAT:
+								val->value_type = VALUE_NUMBER;
+								val->float_result = 1;
+								break;
+							}
+						}
+#endif
+#if ( defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE ) ) && defined( USE_ODBC )
+						else
+#endif
+#ifdef USE_ODBC
+						{
+							SQLSMALLINT coltype;
+							SQLULEN colsize;
+							rc = SQLDescribeCol( collection->hstmt
+								, idx
+								,
+#ifdef _UNICODE
+								( SQLWCHAR* )colname
+								, sizeof( colname )
+#else
+								(SQLCHAR*)colname
+								, sizeof( colname )
+#endif
+								, (SQLSMALLINT*)&namelen
+ // data type short int
+								, &coltype
+ // columnsize int
+								, &colsize
+ // decimal digits short int
+								, NULL
+ // nullable ptr ?
+								, NULL
+							);
+							//lprintf( WIDE("column %s is type %d(%d)"), colname, coltypes[idx-1], colsizes[idx-1] );
+							if( rc != SQL_SUCCESS_WITH_INFO &&
+								rc != SQL_SUCCESS ) {
+								retry = DumpInfo( odbc, collection->pvt_errorinfo, SQL_HANDLE_STMT, &collection->hstmt, odbc->flags.bNoLogging );
+								lprintf( WIDE( "GetData failed..." ) );
+								result_cmd = WM_SQL_RESULT_ERROR;
+								break;
+							}
+ // always nul terminate this.
+							colname[namelen] = 0;
+							val->name = StrDup( colname );
+							val->nameLen = StrLen( colname );
+						}
+#endif
+ // for
+					}
+				}
+			}
+		}
+		else if( collection->flags.bBuildResultArray )
 		{
 			int len;
 			// after initial, and clear, these sizes will be NULL
@@ -93378,12 +93746,74 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 				if( odbc->flags.bSQLite_native )
 				{
-					char *text = (char*)sqlite3_column_text( collection->stmt, idx - 1 );
+					char *text;
 					TEXTSTR real_text;
 					int colsize;
-					colsize = sqlite3_column_bytes( collection->stmt, idx - 1 );
-					real_text = DupCStrLen( text, colsize );
-					if( collection->flags.bBuildResultArray )
+					if( collection->ppdlResults ) {
+						struct json_value_container *val = (struct json_value_container *)GetDataItem( collection->ppdlResults, idx - 1 );
+						int coltype;
+						switch( coltype = sqlite3_column_type( collection->stmt, idx - 1 ) ) {
+						default:
+							lprintf( "Uhnaldes SQL data type:%d", coltype );
+							text = (char*)sqlite3_column_text( collection->stmt, idx - 1 );
+							colsize = sqlite3_column_bytes( collection->stmt, idx - 1 );
+							val->stringLen = colsize;
+							if( val->string )
+								Release( val->string );
+							real_text = DupCStrLen( text, colsize );
+							if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), real_text );
+							val->string = real_text;
+							val->value_type = VALUE_STRING;
+							break;
+						case SQLITE_NULL:
+							if( val->string )
+								Release( val->string );
+							val->string = NULL;
+							val->value_type = VALUE_NULL;
+							break;
+						case SQLITE_FLOAT:
+							val->float_result = 1;
+							val->result_d = sqlite3_column_double( collection->stmt, idx - 1 );
+							if( pvtData )vtprintf( pvtData, WIDE( "%s%g" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), val->result_d );
+							val->value_type = VALUE_NUMBER;
+							break;
+						case SQLITE_INTEGER:
+							val->float_result = 0;
+							val->result_n = sqlite3_column_int64( collection->stmt, idx - 1 );
+							if( pvtData )vtprintf( pvtData, WIDE( "%s%d" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), (int)val->result_n );
+							val->value_type = VALUE_NUMBER;
+							break;
+						case SQLITE_BLOB:
+							text = (char*)sqlite3_column_blob( collection->stmt, idx - 1 );
+							val->stringLen = sqlite3_column_bytes( collection->stmt, idx - 1 );
+							//lprintf( "Got a blob..." );
+							if( pvtData )vtprintf( pvtData, WIDE( "%s<binary>" ), idx > 1 ? WIDE( "," ) : WIDE( "" ) );
+							if( val->string )
+								Release( val->string );
+							if( text ) {
+								val->string = NewArray( TEXTCHAR, val->stringLen );
+								MemCpy( val->string, text, val->stringLen );
+							}
+							else {
+								val->string = NULL;
+								val->stringLen = 0;
+							}
+							val->value_type = VALUE_TYPED_ARRAY;
+							break;
+						case SQLITE_TEXT:
+							text = (char*)sqlite3_column_text( collection->stmt, idx - 1 );
+							colsize = sqlite3_column_bytes( collection->stmt, idx - 1 );
+							val->stringLen = colsize;
+							if( val->string )
+								Release( val->string );
+							real_text = DupCStrLen( text, colsize );
+							if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), real_text );
+							val->string = real_text;
+							val->value_type = VALUE_STRING;
+							break;
+						}
+					}
+					else if( collection->flags.bBuildResultArray )
 					{
 						collection->result_len[idx - 1] = colsize;
 						if( collection->results[idx-1] )
@@ -93392,11 +93822,18 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 						{
 						case SQLITE_BLOB:
 							//lprintf( "Got a blob..." );
+							text = (char*)sqlite3_column_blob( collection->stmt, idx - 1 );
+							colsize = sqlite3_column_bytes( collection->stmt, idx - 1 );
 							if( pvtData )vtprintf( pvtData, WIDE( "%s<binary>" ), idx>1?WIDE( "," ):WIDE( "" ) );
 							collection->results[idx-1] = NewArray( TEXTCHAR, collection->result_len[idx - 1] );
 							MemCpy( collection->results[idx-1], text, collection->result_len[idx - 1] );
 							break;
 						default:
+							text = (char*)sqlite3_column_text( collection->stmt, idx - 1 );
+							colsize = sqlite3_column_bytes( collection->stmt, idx - 1 );
+							if( collection->results[idx - 1] )
+								Release( collection->results[idx - 1] );
+							real_text = DupCStrLen( text, colsize );
 							if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), real_text );
 							collection->results[idx-1] = real_text;
 							break;
@@ -93404,11 +93841,12 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 					}
 					else
 					{
-						if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), real_text?real_text:WIDE( "<NULL>" ) );
+						text = (char*)sqlite3_column_text( collection->stmt, idx - 1 );
+						colsize = sqlite3_column_bytes( collection->stmt, idx - 1 );
+						if( pvtData )VarTextAddData( pvtData, text?text:"<NULL>", text?colsize:6 );
 						//lprintf( WIDE( "... %p" ), text );
-						vtprintf( collection->pvt_result, WIDE("%s%s"), first?WIDE( "" ):WIDE( "," ), real_text?real_text:WIDE( "" ) );
+						vtprintf( collection->pvt_result, WIDE("%s%s"), first?WIDE( "" ):WIDE( "," ), text );
 						first=0;
-						Release( real_text );
 					}
 				}
 #endif
@@ -93667,6 +94105,35 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 	}
 	return 0;
 }
+int FetchSQLRecordJS( PODBC odbc, PDATALIST *ppdlRecord ) {
+	if( ppdlRecord ) {
+		if( !odbc )
+			odbc = g.odbc;
+		if( odbc ) {
+			if( odbc->flags.bThreadProtect ) {
+				EnterCriticalSec( &odbc->cs );
+				odbc->nProtect++;
+			}
+			while( odbc->collection && odbc->collection->flags.bTemporary ) {
+				DestroyCollector( odbc->collection );
+			}
+			if( !odbc->collection ) {
+				lprintf( WIDE( "Lost ODBC result collection..." ) );
+				return 0;
+			}
+			odbc->collection->flags.bBuildResultArray = 1;
+			__GetSQLResult( odbc, odbc->collection, FALSE );
+			if( odbc->collection->responce == WM_SQL_RESULT_DATA ) {
+			}
+			if( odbc->flags.bThreadProtect ) {
+				LeaveCriticalSec( &odbc->cs );
+				odbc->nProtect--;
+			}
+			return odbc->collection->responce == WM_SQL_RESULT_DATA ? TRUE : 0;
+		}
+	}
+	return FALSE;
+}
 //-----------------------------------------------------------------------
 int FetchSQLRecord( PODBC odbc, CTEXTSTR **result )
 {
@@ -93870,7 +94337,7 @@ static void __DoODBCBinding( HSTMT hstmt, PDATALIST pdlItems ) {
 #endif
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 static void __DoSQLiteBinding( sqlite3_stmt *db, PDATALIST pdlItems ) {
-	int idx;
+	INDEX idx;
 	struct json_value_container *val;
 	DATA_FORALL( pdlItems, idx, struct json_value_container *, val ) {
 		int useIndex = idx + 1;
@@ -93883,6 +94350,9 @@ static void __DoSQLiteBinding( sqlite3_stmt *db, PDATALIST pdlItems ) {
 			lprintf( "Failed to handline binding for type: %d", val->value_type );
 			DebugBreak();
 			break;
+		case VALUE_NULL:
+			rc = sqlite3_bind_null( db, useIndex );
+			break;
 		case VALUE_NUMBER:
 			if( val->float_result ) {
 				rc = sqlite3_bind_double( db, useIndex, val->result_d );
@@ -93891,10 +94361,10 @@ static void __DoSQLiteBinding( sqlite3_stmt *db, PDATALIST pdlItems ) {
 			}
 			break;
 		case VALUE_TYPED_ARRAY:
-			rc = sqlite3_bind_blob( db, useIndex, val->string, (int)val->stringLen, NULL );
+			rc = sqlite3_bind_blob( db, useIndex, val->string, val->stringLen, NULL );
 			break;
 		case VALUE_STRING:
-			rc = sqlite3_bind_text( db, useIndex, val->string, (int)val->stringLen, NULL );
+			rc = sqlite3_bind_text( db, useIndex, val->string, val->stringLen, NULL );
 			break;
 		}
 		if( rc )
@@ -94035,7 +94505,7 @@ int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t que
 			}
 			//DebugBreak();
 			tmp = sqlite3_errmsg(odbc->db);
-         // this will have to have a Char based version
+			// this will have to have a Char based version
 			if( strnicmp( tmp, "no such table", 13 ) == 0 )
 				vtprintf( collection->pvt_errorinfo, WIDE( "(S0002)" ) );
 			vtprintf( collection->pvt_errorinfo, WIDE( "Result of prepare failed? %s at-or near char %")_size_f WIDE("[%") _cstring_f WIDE("] in [%") _string_f WIDE("]" ), tmp, tail - query, tail, query );
@@ -94046,8 +94516,11 @@ int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t que
 			}
 			in_error = 1;
 		} else {
-         if( pdlParams )
+			if( pdlParams ) {
 				__DoSQLiteBinding( collection->stmt, pdlParams );
+				//char *realSql = sqlite3_expanded_sql( collection->stmt );
+				//lprintf( "DO:%s", realSql );
+			}
 			if( odbc->flags.bAutoCheckpoint && !sqlite3_stmt_readonly( collection->stmt ) )
 				startAutoCheckpoint( odbc );
 		}
@@ -94234,23 +94707,18 @@ void SQLEndQuery( PODBC odbc )
 //	PopODBCExx( odbc, TRUE );
 }
 //-----------------------------------------------------------------------
-int SQLRecordQuery_v4( PODBC odbc
+int SQLRecordQuery_js( PODBC odbc
                      , CTEXTSTR query
                      , size_t queryLen
-                     , int *nResults
-                     , CTEXTSTR **result
-                     , size_t **resultLengths
-                     , CTEXTSTR **fields
+                     , PDATALIST *pdlResults
                      , PDATALIST pdlParams
                      DBG_PASS )
 {
 	PODBC use_odbc;
 	int once = 0;
+	if( !(*pdlResults) )
+		(*pdlResults) = CreateDataList( sizeof ( struct json_value_container  ) );
 	// clean up what we think of as our result set data (reset to nothing)
-	if( result )
-		(*result) = NULL;
-	if( nResults )
-		*nResults = 0;
 	do
 	{
 		if( !IsSQLOpenEx( odbc DBG_RELAY ) )
@@ -94289,12 +94757,77 @@ int SQLRecordQuery_v4( PODBC odbc
 		use_odbc->collection->flags.bTemporary = 0;
 		// ask the collector to build the type of result set we want...
 		use_odbc->collection->flags.bBuildResultArray = 1;
+		use_odbc->collection->ppdlResults = pdlResults;
 		// this will do an open, and delay queue processing and all sorts
 		// of good fun stuff...
 	}
 	while( __DoSQLQueryExx( use_odbc, use_odbc->collection, query, queryLen, pdlParams DBG_RELAY) );
 	if( use_odbc->collection->responce == WM_SQL_RESULT_DATA )
 	{
+		return TRUE;
+	}
+	else if( use_odbc->collection->responce == WM_SQL_RESULT_NO_DATA )
+	{
+		DeleteDataList( pdlResults );
+		return TRUE;
+	}
+	return FALSE;
+}
+int SQLRecordQuery_v4( PODBC odbc
+	, CTEXTSTR query
+	, size_t queryLen
+	, int *nResults
+	, CTEXTSTR **result
+	, size_t **resultLengths
+	, CTEXTSTR **fields
+	, PDATALIST pdlParams
+	DBG_PASS )
+{
+	PODBC use_odbc;
+	int once = 0;
+	// clean up what we think of as our result set data (reset to nothing)
+	if( result )
+		(*result) = NULL;
+	if( nResults )
+		*nResults = 0;
+	do {
+		if( !IsSQLOpenEx( odbc DBG_RELAY ) )
+			return FALSE;
+		if( !(use_odbc = odbc) ) {
+			// setup error as invalid databse handle... well.. try the default one also
+			// but mostly fail.
+			use_odbc = g.odbc;
+		}
+		// if not a [sS]elect then begin a transaction.... some code uses query record for everything.
+		if( !once && query[0] != 's' && query[0] != 'S' ) {
+			once = 1;
+			BeginTransactEx( use_odbc, 0 );
+		}
+		// collection is very important to have - even if we will have to be opened,
+		// we ill need one, so make at least one.
+		if( !use_odbc->collection || !use_odbc->collection->flags.bTemporary ) {
+			if( use_odbc->collection && use_odbc->collection->flags.bTemporary ) {
+#ifdef LOG_COLLECTOR_STATES
+				lprintf( WIDE( "using existing collector..." ) );
+#endif
+				use_odbc->collection->flags.bTemporary = 0;
+			}
+			else {
+#ifdef LOG_COLLECTOR_STATES
+				lprintf( WIDE( "creating collector..." ) );
+#endif
+				use_odbc->collection = CreateCollector( 0, use_odbc, FALSE );
+			}
+		}
+		// if it was temporary, it shouldn't be anymore
+		use_odbc->collection->flags.bTemporary = 0;
+		// ask the collector to build the type of result set we want...
+		use_odbc->collection->flags.bBuildResultArray = 1;
+		use_odbc->collection->ppdlResults = NULL;
+		// this will do an open, and delay queue processing and all sorts
+		// of good fun stuff...
+	} while( __DoSQLQueryExx( use_odbc, use_odbc->collection, query, queryLen, pdlParams DBG_RELAY ) );
+	if( use_odbc->collection->responce == WM_SQL_RESULT_DATA ) {
 		//lprintf( WIDE("Result with data...") );
 		if( nResults )
 			(*nResults) = use_odbc->collection->columns;
@@ -94308,8 +94841,7 @@ int SQLRecordQuery_v4( PODBC odbc
 		//use_odbc->collection->results = NULL;
 		return TRUE;
 	}
-	else if( use_odbc->collection->responce == WM_SQL_RESULT_NO_DATA )
-	{
+	else if( use_odbc->collection->responce == WM_SQL_RESULT_NO_DATA ) {
 		if( nResults )
 			(*nResults) = use_odbc->collection->columns;
 		if( resultLengths )
@@ -94372,6 +94904,7 @@ int SQLQueryEx( PODBC odbc, CTEXTSTR query, CTEXTSTR *result DBG_PASS )
 		}
 		use_odbc->collection->flags.bTemporary = 0;
 		// ask the collector GetSQLResult to build our sort of data...
+		use_odbc->collection->ppdlResults = NULL;
 		use_odbc->collection->flags.bBuildResultArray = 0;
 		// go ahead, open connection, issue command, get some data
 		// or have some sort of failure along that path.
@@ -95222,7 +95755,7 @@ int SQLRecordQueryf_v2( PODBC odbc, int *nResults, CTEXTSTR **result, size_t **r
 	vvtprintf( pvt, fmt, args );
 	cmd = VarTextGet( pvt );
 	VarTextDestroy( &pvt );
-	result_code = SQLRecordQuery_v4( odbc, GetText( cmd ), GetTextSize( cmd ), nResults, result, resultLengths,fields,NULL DBG_ARGS(SQLRecordQueryf_v2) );
+	result_code = SQLRecordQuery_v4( odbc, GetText( cmd ), GetTextSize( cmd ), nResults, result, resultLengths,fields,NULL  DBG_ARGS(SQLRecordQueryf_v2) );
 	LineRelease( cmd );
 	return result_code;
 }
@@ -95232,12 +95765,17 @@ SQL_NAMESPACE_END
 #define USES_SQLITE_INTERFACE
 #endif
 SQL_NAMESPACE
+#ifdef __STATIC_GLOBALS__
+extern struct pssql_global global_sqlstub_data;
+#  define g (global_sqlstub_data)
+#else
 extern struct pssql_global *global_sqlstub_data;
-#define g (*global_sqlstub_data)
+#  define g (*global_sqlstub_data)
 PRIORITY_PRELOAD( InitGlobalSqlUtil, GLOBAL_INIT_PRELOAD_PRIORITY )
 {
 	SimpleRegisterAndCreateGlobal( global_sqlstub_data );
 }
+#endif
 #ifdef __cplusplus
 using namespace sack::containers::BinaryTree;
 using namespace sack::memory;
@@ -98260,11 +98798,12 @@ typedef struct data_collection_tag
 	struct odbc_handle_tag *odbc;
 	uint32_t      responce;
 	uint32_t      lastop;
-   int    *column_types;
+	int    *column_types;
 	size_t *result_len;
 	TEXTSTR *results;
 	//uint32_t nResults; // this is columns
 	TEXTSTR *fields;
+	PDATALIST *ppdlResults;
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 	sqlite3_stmt *stmt;
 #endif
@@ -98561,7 +99100,13 @@ SQL_NAMESPACE_END
 #define DEFAULT_PUBLIC_KEY WIDE( "DEFAULT" )
 //#define DEFAULT_PUBLIC_KEY "system"
 SQL_NAMESPACE
-extern struct pssql_global *global_sqlstub_data;
+#ifdef __STATIC_GLOBALS__
+#  define sg (global_sqlstub_data)
+	extern struct pssql_global global_sqlstub_data;
+#else
+#  define sg (*global_sqlstub_data)
+	extern struct pssql_global *global_sqlstub_data;
+#endif
 SQL_NAMESPACE_END
 /*
  Dump Option table...
@@ -98673,8 +99218,13 @@ typedef struct sack_option_global_tag OPTION_GLOBAL;
 #ifdef _cut_sql_statments_
 SQL table create is in 'mkopttabs.sql'
 #endif
-#define og (*sack_global_option_data)
+#ifdef __STATIC_GLOBALS__
+#  define og (sack_global_option_data)
+	OPTION_GLOBAL sack_global_option_data;
+#else
+#  define og (*sack_global_option_data)
 	OPTION_GLOBAL *sack_global_option_data;
+#endif
 //------------------------------------------------------------------------
 //int mystrcmp( TEXTCHAR *x, TEXTCHAR *y )
 //{
@@ -98879,7 +99429,7 @@ SQLGETOPTION_PROC( void, CreateOptionDatabaseEx )( PODBC odbc, POPTION_TREE tree
 #ifdef DETAILED_LOGGING
 	lprintf( "Create Option Database. %d", tree->flags.bCreated );
 #endif
-	if( !global_sqlstub_data->flags.bLogOptionConnection )
+	if( !sg.flags.bLogOptionConnection )
 		SetSQLLoggingDisable( tree->odbc, TRUE );
 	{
 		PTABLE table;
@@ -98932,7 +99482,7 @@ void SetOptionDatabaseOption( PODBC odbc )
 	POPTION_TREE tree = GetOptionTreeExxx( odbc, NULL DBG_SRC );
 	if( tree )
 	{
-		if( global_sqlstub_data->flags.bInited )
+		if( sg.flags.bInited )
 			CreateOptionDatabaseEx( odbc, tree );
 	}
 }
@@ -98958,7 +99508,7 @@ void OpenWriterEx( POPTION_TREE option DBG_PASS )
 #ifdef DETAILED_LOGGING
 		_lprintf(DBG_RELAY)( WIDE( "Connect to writer database for tree %p odbc %p" ), option, option->odbc );
 #endif
-		option->odbc_writer = ConnectToDatabaseExx( option->odbc?option->odbc->info.pDSN:global_sqlstub_data->Primary.info.pDSN, FALSE DBG_RELAY );
+		option->odbc_writer = ConnectToDatabaseExx( option->odbc?option->odbc->info.pDSN:sg.Primary.info.pDSN, FALSE DBG_RELAY );
 		SQLCommand( option->odbc_writer, "pragma foreign_keys=on" );
       /*
 		SQLCommand( option->odbc_writer, "pragma integrity_check" );
@@ -98993,10 +99543,10 @@ void OpenWriterEx( POPTION_TREE option DBG_PASS )
 				;//lprintf( "result:%s", res );;
 		}
 */
-		//option->odbc_writer = SQLGetODBC( option->odbc?option->odbc->info.pDSN:global_sqlstub_data->Primary.info.pDSN );
+		//option->odbc_writer = SQLGetODBC( option->odbc?option->odbc->info.pDSN:sg.Primary.info.pDSN );
 		if( option->odbc_writer )
 		{
-			if( !global_sqlstub_data->flags.bLogOptionConnection )
+			if( !sg.flags.bLogOptionConnection )
 				SetSQLLoggingDisable( option->odbc_writer, TRUE );
 			SetSQLThreadProtect( option->odbc_writer, TRUE );
 			SetSQLAutoTransactCallback( option->odbc_writer, OptionsCommited, (uintptr_t)option );
@@ -99465,7 +100015,7 @@ SQLGETOPTION_PROC( size_t, SACK_GetPrivateProfileStringExxx )( PODBC odbc
 		size_t buflen;
 		// maybe do an if( l.flags.bLogOptionsRead )
 #if defined( _DEBUG )
-		if( global_sqlstub_data->flags.bLogOptionConnection )
+		if( sg.flags.bLogOptionConnection )
 			_lprintf(DBG_RELAY)( WIDE( "Getting option {%s}[%s]%s=%s" ), pINIFile, pSection, pOptname, pDefaultbuf );
 #endif
 		opt_node = GetOptionIndexExx( odbc, OPTION_ROOT_VALUE, NULL, pINIFile, pSection, pOptname, TRUE, FALSE DBG_RELAY );
@@ -99502,7 +100052,7 @@ SQLGETOPTION_PROC( size_t, SACK_GetPrivateProfileStringExxx )( PODBC odbc
 			{
 				SetOptionStringValue( GetOptionTreeExxx( odbc, NULL DBG_SRC ), opt_node, pBuffer );
 #if defined( _DEBUG )
-				if( global_sqlstub_data->flags.bLogOptionConnection )
+				if( sg.flags.bLogOptionConnection )
 					lprintf( WIDE("default Result [%s]"), pBuffer );
 #endif
 				if( drop_odbc )
@@ -99518,7 +100068,7 @@ SQLGETOPTION_PROC( size_t, SACK_GetPrivateProfileStringExxx )( PODBC odbc
 			buflen--;
 			pBuffer[buflen] = 0;
 #if defined( _DEBUG )
-			if( global_sqlstub_data->flags.bLogOptionConnection )
+			if( sg.flags.bLogOptionConnection )
 				lprintf( WIDE( "buffer result is [%s]" ), pBuffer );
 #endif
 			if( drop_odbc )
@@ -99654,7 +100204,7 @@ SQLGETOPTION_PROC( LOGICAL, SACK_WritePrivateOptionStringEx )( PODBC odbc, CTEXT
       pINIFile = ResolveININame( odbc, pSection, buf, pINIFile );
 	}
 #if defined( _DEBUG )
-	if( global_sqlstub_data->flags.bLogOptionConnection )
+	if( sg.flags.bLogOptionConnection )
 		_lprintf( DBG_SRC )( WIDE( "Setting option {%s}[%s]%s=%s" ), pINIFile, pSection, pName, pValue );
 #endif
 	optval = GetOptionIndexExxx( odbc, NULL, NULL, pINIFile, pSection, pName, TRUE, FALSE, FALSE DBG_SRC );
@@ -99830,11 +100380,13 @@ PRIORITY_UNLOAD( AllocateOptionGlobal, CONFIG_SCRIPT_PRELOAD_PRIORITY )
    // other data to destroy?
 	DeleteCriticalSec( &og.cs_option );
 }
+#ifndef __STATIC_GLOBALS__
 PRIORITY_PRELOAD( AllocateOptionGlobal, CONFIG_SCRIPT_PRELOAD_PRIORITY )
 {
 	SimpleRegisterAndCreateGlobal( sack_global_option_data );
 	InitializeCriticalSec( &og.cs_option );
 }
+#endif
 PRIORITY_PRELOAD(RegisterSQLOptionInterface, SQL_PRELOAD_PRIORITY + 1 )
 {
    // have a multiple test because of C++ and C playing together with shared global; not threading issue
@@ -99886,7 +100438,9 @@ ATEXIT( CommitOptions )
 #ifdef DETAILED_LOGGING
 	lprintf( WIDE( "Running Option cleanup..." ) );
 #endif
+#ifndef __STATIC_GLOBALS__
 	if( sack_global_option_data )
+#endif
 	{
 		LIST_FORALL( og.trees, idx, POPTION_TREE, tree )
 		{
@@ -100086,7 +100640,7 @@ static void repairOptionDb( uintptr_t psv, PODBC odbc ) {
 }
 SQLGETOPTION_PROC( CTEXTSTR, GetDefaultOptionDatabaseDSN )( void )
 {
-	return global_sqlstub_data->OptionDb.info.pDSN;
+	return sg.OptionDb.info.pDSN;
 }
 PODBC GetOptionODBCEx( CTEXTSTR dsn  DBG_PASS )
 {
@@ -100129,7 +100683,7 @@ PODBC GetOptionODBCEx( CTEXTSTR dsn  DBG_PASS )
 				INDEX idx;
 				CTEXTSTR cmd;
 				CTEXTSTR result;
-				LIST_FORALL( global_sqlstub_data->option_database_init, idx, CTEXTSTR, cmd ) {
+				LIST_FORALL( sg.option_database_init, idx, CTEXTSTR, cmd ) {
 					SQLQueryf( odbc, &result, cmd );
 					//if( result )
 					//	lprintf( WIDE( " %s" ), result );
@@ -100227,6 +100781,8 @@ void FindOptions( PODBC odbc, PLIST *result_list, CTEXTSTR name )
 	tree = GetOptionTreeExxx( odbc, NULL DBG_SRC );
 	New4FindOptions( tree, result_list, name );
 }
+#undef sg
+#undef og
 SACK_OPTION_NAMESPACE_END
 #ifndef GETOPTION_SOURCE
 #define GETOPTION_SOURCE
@@ -100240,7 +100796,13 @@ SACK_OPTION_NAMESPACE_END
 // referencing of option tree...
 //#define DETAILED_LOGGING
 SQL_NAMESPACE
-extern struct pssql_global *global_sqlstub_data;
+#ifdef __STATIC_GLOBALS__
+#  define sg (global_sqlstub_data)
+	extern struct pssql_global global_sqlstub_data;
+#else
+#  define sg (*global_sqlstub_data)
+	extern struct pssql_global *global_sqlstub_data;
+#endif
 SQL_NAMESPACE_END
 /*
  Dump Option table...
@@ -100253,8 +100815,13 @@ SQL_NAMESPACE_END
 */
 SACK_OPTION_NAMESPACE
 typedef struct sack_option_global_tag OPTION_GLOBAL;
-#define og (*sack_global_option_data)
-extern OPTION_GLOBAL *sack_global_option_data;
+#ifdef __STATIC_GLOBALS__
+#  define og (sack_global_option_data)
+	extern OPTION_GLOBAL sack_global_option_data;
+#else
+#  define og (*sack_global_option_data)
+	extern OPTION_GLOBAL *sack_global_option_data;
+#endif
 //------------------------------------------------------------------------
 #define MKSTR(n,...) #__VA_ARGS__
 ;
@@ -100470,7 +101037,7 @@ POPTION_TREE_NODE New4GetOptionIndexExxx( PODBC odbc, POPTION_TREE tree, POPTION
  // get out of this loop, continue outer.
 					continue;
 				}
-				if( global_sqlstub_data->flags.bLogOptionConnection )
+				if( sg.flags.bLogOptionConnection )
 					_lprintf(DBG_RELAY)( WIDE("Option node missing; and was not created='%s'"), namebuf );
 				if( !bIKnowItDoesntExist )
 					PopODBCEx( tree->odbc );
@@ -100743,7 +101310,11 @@ SACK_OPTION_NAMESPACE_END
 // we want access to GLOBAL from sqltub
 #define SQLLIB_SOURCE
 SQL_NAMESPACE
-extern struct pssql_global *global_sqlstub_data;
+#ifdef __STATIC_GLOBALS__
+	extern struct pssql_global global_sqlstub_data;
+#else
+	extern struct pssql_global *global_sqlstub_data;
+#endif
 SQL_NAMESPACE_END
 SACK_OPTION_NAMESPACE
 SQLGETOPTION_PROC( void, EnumOptionsEx )( PODBC odbc, POPTION_TREE_NODE parent
@@ -100794,8 +101365,13 @@ SACK_OPTION_NAMESPACE_END
 #define GETOPTION_SOURCE
 #endif
 SACK_OPTION_NAMESPACE
-#define og (*sack_global_option_data)
-extern struct sack_option_global_tag *sack_global_option_data;
+#ifdef __STATIC_GLOBALS__
+#  define og (sack_global_option_data)
+	extern struct sack_option_global_tag sack_global_option_data;
+#else
+#  define og (*sack_global_option_data)
+	extern struct sack_option_global_tag *sack_global_option_data;
+#endif
 #define ENUMOPT_FLAG_HAS_VALUE 1
 #define ENUMOPT_FLAG_HAS_CHILDREN 2
 struct new4_enum_params
