@@ -1,43 +1,6 @@
 #include "global.h"
 
 
-class ObjectStorageObject : public node::ObjectWrap {
-public:
-	struct objStore::volume *vol;
-	bool volNative;
-	char *mountName;
-	char *fileName;
-	struct file_system_interface *fsInt;
-	struct file_system_mounted_interface* fsMount;
-	static v8::Persistent<v8::Function> constructor;
-
-public:
-
-	static void Init( Isolate *isolate, Handle<Object> exports );
-	ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
-
-	static void New( const v8::FunctionCallbackInfo<Value>& args );
-
-	// get object pass object ID
-	static void getObject( const v8::FunctionCallbackInfo<Value>& args );
-
-	// get object and all recursive objects associated from here (for 1 level?)
-	static void mapObject( const v8::FunctionCallbackInfo<Value>& args );
-
-	// pass object, result with object ID.
-	static void putObject( const v8::FunctionCallbackInfo<Value>& args );
-
-	// pass object ID, get back a ObjectStorageFileObject ( support seek/read/write? )
-	static void openObject( const v8::FunctionCallbackInfo<Value>& args );
-
-	// utility to remove the key so it can be diagnosed.
-	static void volDecrypt( const v8::FunctionCallbackInfo<Value>& args );
-	
-	static void fileReadJSOX( const v8::FunctionCallbackInfo<Value>& args );
-
-	static void fileWrite( const v8::FunctionCallbackInfo<Value>& args );
-	~ObjectStorageObject();
-};
 
 static struct objStoreLocal {
 	PLIST open;
@@ -67,7 +30,7 @@ void ObjectStorageObject::Init( Isolate *isolate, Handle<Object> exports ) {
 
 
 	constructor.Reset( isolate, clsTemplate->GetFunction() );
-	exports->Set( String::NewFromUtf8( isolate, "objectStorage" ),
+	exports->Set( String::NewFromUtf8( isolate, "ObjectStorage" ),
 					 clsTemplate->GetFunction() );
 
 }
@@ -352,7 +315,19 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 
 }
 
+ObjectStorageObject*  ObjectStorageObject::openInVFS( Isolate *isolate, struct volume *vol, const char *mount, const char *name, const char *key1, const char *key2 ) {
 
+	// Invoked as constructor: `new MyObject(...)`
+	ObjectStorageObject* obj = new ObjectStorageObject( mount, name, 0, key1, key2 );
+	if( !obj->vol ) {
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "Volume failed to open." ) ) ) );
+		delete obj;
+		obj = NULL;
+	}
+	return obj;
+
+}
 
 void ObjectStorageInit( Isolate *isolate, Handle<Object> exports ) {
 	ObjectStorageObject::Init( isolate, exports );

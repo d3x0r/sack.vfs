@@ -1016,7 +1016,6 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 	} else 
 	{
 		SqlObject *sql = SqlObject::Unwrap<SqlObject>( args.This() );
-		sql->fields = 0;
 
 		if( !sql->optionInitialized ) {
 			SetOptionDatabaseOption( sql->odbc );
@@ -1098,7 +1097,6 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 	} else 
 	{
 		SqlObject *sql = SqlObject::Unwrap<SqlObject>( args.This() );
-		sql->fields = 0;
 		use_odbc = sql->odbc;
 	}
 	if( ( sect && sect[0] == '/' ) ) {

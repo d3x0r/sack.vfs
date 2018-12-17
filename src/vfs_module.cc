@@ -180,6 +180,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "File", FileObject::openFile );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "ObjectStorage", vfsObjectStorage );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "dir", getDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "exists", fileExists );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "read", fileRead );
@@ -270,6 +271,69 @@ void logBinary( char *x, int n )
 	}
 }
 #endif
+
+void VolumeObject::vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
+
+	char *mount_name;
+	char *filename = (char*)"default.os";
+	LOGICAL defaultFilename = TRUE;
+	char *key = NULL;
+	char *key2 = NULL;
+	int argc = args.Length();
+
+	int arg = 0;
+	if( args[0]->IsString() ) {
+
+		//TooObject( isolate.getCurrentContext().FromMaybe( Local<Object>() )
+		String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		mount_name = StrDup( *fName );
+	}
+	else {
+		mount_name = SRG_ID_Generator();
+	}
+	if( argc > 1 ) {
+		if( args[arg]->IsString() ) {
+			String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+			defaultFilename = FALSE;
+			filename = StrDup( *fName );
+		}
+		else
+			filename = NULL;
+	}
+	else {
+		defaultFilename = FALSE;
+		filename = mount_name;
+		mount_name = SRG_ID_Generator();
+	}
+	//if( args[argc
+	if( args[arg]->IsNumber() ) {
+		//version = (uintptr_t)args[arg++]->ToNumber( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
+		arg++;
+	}
+	if( argc > arg ) {
+		if( !args[arg]->IsNull() && !args[arg]->IsUndefined() ) {
+			String::Utf8Value k( USE_ISOLATE( isolate ) args[arg] );
+			key = StrDup( *k );
+		}
+		arg++;
+	}
+	if( argc > arg ) {
+		if( !args[arg]->IsNull() && !args[arg]->IsUndefined() ) {
+			String::Utf8Value k( USE_ISOLATE( isolate ) args[arg] );
+			key2 = StrDup( *k );
+		}
+		arg++;
+	}
+
+
+	ObjectStorageObject *oso = ObjectStorageObject::openInVFS( isolate, vol->vol, mount_name, filename, key, key2 );
+	if( oso ) {
+		// uhmm this needs 'this' to know what to return as...
+	}
+
+}
 
 
 void VolumeObject::volDecrypt( const v8::FunctionCallbackInfo<Value>& args ){
