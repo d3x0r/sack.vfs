@@ -93529,6 +93529,9 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 							default:
 								lprintf( "Unhandled SQLITE type: %d", coltype );
 								break;
+							case SQLITE_NULL:
+								val->value_type = VALUE_NULL;
+								break;
 							case SQLITE_BLOB:
 								val->value_type = VALUE_TYPED_ARRAY;
 								break;
@@ -94756,7 +94759,7 @@ int SQLRecordQuery_js( PODBC odbc
 		// if it was temporary, it shouldn't be anymore
 		use_odbc->collection->flags.bTemporary = 0;
 		// ask the collector to build the type of result set we want...
-		use_odbc->collection->flags.bBuildResultArray = 1;
+		use_odbc->collection->flags.bBuildResultArray = 0;
 		use_odbc->collection->ppdlResults = pdlResults;
 		// this will do an open, and delay queue processing and all sorts
 		// of good fun stuff...
@@ -94768,6 +94771,7 @@ int SQLRecordQuery_js( PODBC odbc
 	}
 	else if( use_odbc->collection->responce == WM_SQL_RESULT_NO_DATA )
 	{
+		use_odbc->collection->ppdlResults = NULL;
 		DeleteDataList( pdlResults );
 		return TRUE;
 	}
