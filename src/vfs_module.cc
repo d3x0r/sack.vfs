@@ -1075,6 +1075,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				}
 				else  {
 					mount_name = SRG_ID_Generator();
+					arg++;
 				}
 				//}
 				if( argc > 1 ) {
