@@ -655,7 +655,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 		else
 		{
 			SQLEndQuery( sql->odbc );
-			args.GetReturnValue().Set( True( isolate ) );
+			args.GetReturnValue().Set( Array::New( isolate ) );
 		}
 		DeleteDataList( &pdlParams );
 	}
