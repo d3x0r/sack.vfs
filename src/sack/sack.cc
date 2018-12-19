@@ -11153,8 +11153,10 @@ static void MaskStrCpy( char *output, size_t outlen, struct volume *vol, FPI nam
 static void ExtendBlockChain( struct sack_vfs_file *file ) {
 	int newSize = ( file->blockChainAvail ) * 2 + 1;
 	file->blockChain = (BLOCKINDEX*)Reallocate( file->blockChain, newSize * sizeof( BLOCKINDEX ) );
+#ifdef _DEBUG
 	// debug
 	memset( file->blockChain + file->blockChainAvail, 0, (newSize - file->blockChainAvail ) * sizeof(BLOCKINDEX) );
+#endif
 	file->blockChainAvail = newSize;
 }
 static void SetBlockChain( struct sack_vfs_file *file, FPI fpi, BLOCKINDEX newBlock ) {
@@ -11172,9 +11174,6 @@ static void SetBlockChain( struct sack_vfs_file *file, FPI fpi, BLOCKINDEX newBl
 		if( file->blockChain[fileBlock] == newBlock ) {
 			return;
 		}
-#ifdef _DEBUG
-		DebugBreak();
-#endif
 	}
 	file->blockChain[fileBlock] = newBlock;
 }
@@ -72095,7 +72094,7 @@ void AcceptClient(PCLIENT pListen)
 										, pNewClient->saClient
 										,&nTemp
 										);
-	//lprintf( "Accept new client....%d", pNewClient->Socket );
+	lprintf( "Accept new client...%p %d", pNewClient, pNewClient->Socket );
 #if WIN32
 	SetHandleInformation( (HANDLE)pNewClient->Socket, HANDLE_FLAG_INHERIT, 0 );
 #endif
@@ -73247,9 +73246,9 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
 							 pc->lpFirstPending->dwUsed,
 							 (int)pc->lpFirstPending->dwAvail );
 			}
-#ifdef DEBUG_SOCK_IO
+//#ifdef DEBUG_SOCK_IO
 			_lprintf(DBG_RELAY)( "Try to send... %d  %d", pc->lpFirstPending->dwUsed, pc->lpFirstPending->dwAvail );
-#endif
+//#endif
 			nSent = send(pc->Socket,
 							 (char*)pc->lpFirstPending->buffer.c +
 							 pc->lpFirstPending->dwUsed,

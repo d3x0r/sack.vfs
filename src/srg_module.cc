@@ -13,6 +13,7 @@ public:
 	Isolate *isolate;
 	Persistent<Array> seedArray;
 	static PLINKQUEUE signingEntropies;
+	PLINKQUEUE SigningEntropies = NULL;
 public:
 
 	static void Init( Isolate *isolate, Handle<Object> exports );
@@ -85,6 +86,10 @@ private:
 			args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 			delete[] argv;
 		}
+	}
+	static void setVersion( const v8::FunctionCallbackInfo<Value>& args ) {
+		SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
+		obj->MakeEntropy = SRG_CreateEntropy3;
 	}
 	static void reset( const v8::FunctionCallbackInfo<Value>& args ) {
 		SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
@@ -327,7 +332,9 @@ private:
 		int *done; // all threads need to be done.
 	};
 	static int signingThreads;
+	int SigningThreads = 1;
 	static struct random_context *(*makeEntropy)( void( *getsalt )(uintptr_t, POINTER *salt, size_t *salt_size), uintptr_t psv_user );
+	struct random_context *(*MakeEntropy)(void( *getsalt )(uintptr_t, POINTER *salt, size_t *salt_size), uintptr_t psv_user);
 
 	static uintptr_t signWork( PTHREAD thread ) {
 		struct signParams *params = (struct signParams *)GetThreadParam( thread );
@@ -418,7 +425,7 @@ private:
 			SRG_FeedEntropy( threadParams[n].signEntropy, (const uint8_t*)*buf, buf.length() );
 			threadParams[n].state = NULL;
 			SRG_SaveState( threadParams[n].signEntropy, &threadParams[n].state );
-			threadParams[n].salt = SRG_ID_Generator_256();
+			threadParams[n].salt = SRG_ID_Generator_256(); // give the thread a starting point
 			threadParams[n].saltLen = (int)strlen( threadParams[n].salt );
 			threadParams[n].pad1 = pad1;
 			threadParams[n].pad2 = pad2;
@@ -524,6 +531,158 @@ private:
 		}
 	}
 
+
+	static void srg_sign( const v8::FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		SRGObject *srg = ObjectWrap::Unwrap<SRGObject>( args.This() );
+		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		static signParams threadParams[32];
+		int found = 0;
+#ifdef DEBUG_SIGNING
+		int tries = 0;
+#endif
+		int done = 0;
+		int pad1 = 0, pad2 = 0;
+		int n = 0;
+		int argn = 1;
+		int threads = signingThreads;
+		POINTER state = NULL;
+		while( argn < args.Length() ) {
+			if( args[argn]->IsNumber() ) {
+				if( n ) {
+					pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+				}
+				else {
+					n = 1;
+					pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+				}
+			}
+			argn++;
+		}
+
+#ifdef DEBUG_SIGNING
+		lprintf( "RESET ENTROPY TO START" );
+		LogBinary( (const uint8_t*)*buf, buf.length() );
+#endif
+
+		for( n = 0; n < threads; n++ ) {
+			threadParams[n].main = MakeThread();
+			if( !threadParams[n].signEntropy )
+				threadParams[n].signEntropy = srg->makeEntropy( NULL, 0 );
+
+			SRG_ResetEntropy( threadParams[n].signEntropy );
+			SRG_FeedEntropy( threadParams[n].signEntropy, (const uint8_t*)*buf, buf.length() );
+			threadParams[n].state = NULL;
+			SRG_SaveState( threadParams[n].signEntropy, &threadParams[n].state );
+			threadParams[n].salt = SRG_ID_Generator_256(); // give the thread a starting point
+			threadParams[n].saltLen = (int)strlen( threadParams[n].salt );
+			threadParams[n].pad1 = pad1;
+			threadParams[n].pad2 = pad2;
+			threadParams[n].ended = 0;
+#ifdef DEBUG_SIGNING
+			threadParams[n].tries = 0;
+#endif
+			threadParams[n].done = &done;
+			ThreadTo( signWork, (uintptr_t)(threadParams + n) );
+		}
+
+		while( !done ) {
+			WakeableSleep( 500 );
+		}
+		for( n = 0; n < threads; n++ ) {
+			while( !threadParams[n].ended ) Relinquish();
+#ifdef DEBUG_SIGNING
+			tries += threadParams[n].tries;
+#endif
+		}
+		for( n = 0; n < threads; n++ ) {
+			if( threadParams[n].id ) {
+				if( found ) {
+				}
+				else {
+#ifdef DEBUG_SIGNING
+					lprintf( " %d  %s \n", tries, threadParams[n].id );
+#endif
+					args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), threadParams[n].id ) );
+				}
+				Release( threadParams[n].id );
+				found++;
+			}
+			threadParams[n].id = NULL;
+			Release( threadParams[n].salt );
+			Release( threadParams[n].state );
+		}
+
+	}
+
+	static void srg_setThraads( const v8::FunctionCallbackInfo<Value>& args ) {
+		SRGObject *srg = ObjectWrap::Unwrap<SRGObject>( args.This() );
+		if( args.Length() )
+			srg->SigningThreads = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).ToChecked();
+	}
+
+
+	static void srg_verify( const v8::FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		SRGObject *srg = ObjectWrap::Unwrap<SRGObject>( args.This() );
+		if( args.Length() > 1 ) {
+			String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+			String::Utf8Value hash( USE_ISOLATE( isolate ) args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+			//SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
+			char *id;
+			int pad1 = 0, pad2 = 0;
+			int n = 0;
+			int argn = 1;
+			struct random_context *signEntropy = (struct random_context *)DequeLink( &srg->SigningEntropies );
+			while( argn < args.Length() ) {
+				if( args[argn]->IsNumber() ) {
+					if( n ) {
+						pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+					}
+					else {
+						n = 1;
+						pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+					}
+				}
+				argn++;
+			}
+
+			if( !signEntropy )
+				signEntropy = srg->makeEntropy( NULL, (uintptr_t)0 );
+			SRG_ResetEntropy( signEntropy );
+			SRG_FeedEntropy( signEntropy, (const uint8_t*)*buf, buf.length() );
+			{
+				size_t len;
+				uint8_t outbuf[32];
+				uint8_t *bytes;
+				id = *hash;
+				bytes = DecodeBase64Ex( id, 44, &len, (const char*)1 );
+#ifdef DEBUG_SIGNING
+				lprintf( "FEED INIT %s", id );
+				LogBinary( (*buf), buf.length() );
+				lprintf( "FEED" );
+				LogBinary( bytes, len );
+#endif
+				SRG_FeedEntropy( signEntropy, bytes, len );
+				Release( bytes );
+				SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
+#ifdef DEBUG_SIGNING
+				lprintf( "GET" );
+				LogBinary( outbuf, 256 / 8 );
+#endif
+				Local<Object> result = Object::New( isolate );
+				struct signature s;
+				signCheck( outbuf, pad1, pad2, &s );
+				result->Set( String::NewFromUtf8( isolate, (const char*)"classifier" ), Number::New( args.GetIsolate(), s.classifier ) );
+				result->Set( String::NewFromUtf8( isolate, (const char*)"extent" ), Number::New( args.GetIsolate(), s.extent ) );
+				char *rid = EncodeBase64Ex( outbuf, 256 / 8, &len, (const char *)1 );
+				result->Set( String::NewFromUtf8( isolate, (const char*)"key" ), localString( isolate, rid, (int)(len - 1) ) );
+				args.GetReturnValue().Set( result );
+			}
+			EnqueLink( &srg->SigningEntropies, signEntropy );
+		}
+	}
+
 };
 
 int SRGObject::signingThreads = 1;
@@ -549,6 +708,10 @@ void SRGObject::Init( Isolate *isolate, Handle<Object> exports )
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "reset", SRGObject::reset );
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "getBits", SRGObject::getBits );
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "getBuffer", SRGObject::getBuffer );
+	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "setVersion", SRGObject::setVersion );
+	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "sign", SRGObject::srg_sign );
+	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "setSigningThreads", SRGObject::srg_setThraads );
+	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "verify", SRGObject::srg_verify );
 	Local<Function> f = srgTemplate->GetFunction();
 	SRGObject::constructor.Reset( isolate, f );
 
@@ -560,6 +723,7 @@ void SRGObject::Init( Isolate *isolate, Handle<Object> exports )
 }
 
 SRGObject::SRGObject( Persistent<Function, CopyablePersistentTraits<Function>> *callback ) {
+	this->MakeEntropy = SRG_CreateEntropy2_256;
 	this->seedBuf = NULL;
 	this->seedLen = 0;
 	this->seedCallback = callback;
@@ -568,6 +732,7 @@ SRGObject::SRGObject( Persistent<Function, CopyablePersistentTraits<Function>> *
 }
 
 SRGObject::SRGObject() {
+	this->MakeEntropy = SRG_CreateEntropy2_256;
 	this->seedBuf = NULL;
 	this->seedLen = 0;
 	this->seedCallback = NULL;
@@ -575,6 +740,7 @@ SRGObject::SRGObject() {
 }
 
 SRGObject::SRGObject( const char *seed, size_t seedLen ) {
+	this->MakeEntropy = SRG_CreateEntropy2_256;
 	this->seedBuf = StrDup( seed );
 	this->seedLen = seedLen;
 	this->seedCallback = NULL;

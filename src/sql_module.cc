@@ -612,13 +612,13 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							if( !jsval->string )
 								val = Null( isolate );
 							else
-								val = localString( isolate, jsval->string, (int)jsval->stringLen );
+								val = localString( isolate, (char*)Hold(jsval->string), (int)jsval->stringLen );
 							break;
 						case VALUE_TYPED_ARRAY:
 							//lprintf( "Should result with a binary thing" );
 
 							Local<ArrayBuffer> ab =
-								ArrayBuffer::New( isolate, jsval->string, jsval->stringLen );
+								ArrayBuffer::New( isolate, (char*)Hold( jsval->string ), jsval->stringLen );
 
 							PARRAY_BUFFER_HOLDER holder = GetHolder();
 							holder->o.Reset( isolate, ab );

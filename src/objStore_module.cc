@@ -24,6 +24,7 @@ void ObjectStorageObject::Init( Isolate *isolate, Handle<Object> exports ) {
 
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "read", ObjectStorageObject::fileReadJSOX );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "write", ObjectStorageObject::fileWrite );
+	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "store", ObjectStorageObject::fileStore );
 
 	Local<Function> VolFunc = clsTemplate->GetFunction();
 	//SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
@@ -163,6 +164,10 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			args.GetReturnValue().Set( mo.ToLocalChecked() );
 		delete[] argv;
 	}
+}
+
+void ObjectStorageObject::fileStore( const v8::FunctionCallbackInfo<Value>& args ) {
+
 }
 
 void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args ) {
