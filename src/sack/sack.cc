@@ -3970,12 +3970,12 @@ TYPELIB_PROC  INDEX TYPELIB_CALLTYPE  vvtprintf( PVARTEXT pvt, CTEXTSTR format, 
 /* encode binary buffer into base64 encoding.
    outsize is updated with the length of the buffer.
  */
-TYPELIB_PROC  TEXTCHAR * TYPELIB_CALLTYPE  EncodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const char *encoding );
+TYPELIB_PROC  TEXTCHAR * TYPELIB_CALLTYPE  EncodeBase64Ex( const uint8_t* buf, size_t length, size_t *outsize, const char *encoding );
 /* decode base64 buffer into binary buffer
    outsize is updated with the length of the buffer.
    result should be Release()'d
  */
-TYPELIB_PROC  uint8_t * TYPELIB_CALLTYPE  DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *encoding );
+TYPELIB_PROC  uint8_t * TYPELIB_CALLTYPE  DecodeBase64Ex( const char* buf, size_t length, size_t *outsize, const char *encoding );
 /* xor a base64 encoded string over a utf8 string, keeping the utf8 characters in the same length...
    although technically this can result in invalid character encoding where upper bits get zeroed
    result should be Release()'d
@@ -7139,6 +7139,13 @@ struct file_system_interface {
 	LOGICAL (CPROC *find_is_directory)( struct find_cursor *cursor );
 	LOGICAL (CPROC *is_directory)( uintptr_t psvInstance, const char *cursor );
 	LOGICAL (CPROC *rename )( uintptr_t psvInstance, const char *original_name, const char *new_name );
+	void (CPROC *ioctl)( uintptr_t psvInstance, uintptr_t opCode, va_list args );
+};
+enum sack_file_ssytem_ioctl_ops {
+  // psvInstance should be a file handle pass (char*, size_t length )
+	SFSIO_PROVIDE_SEALANT,
+ // test if file has been tampered, is is still sealed. pass (address of int)
+	SFSIO_TAMPERED,
 };
 /* \ \
    Parameters
@@ -7378,6 +7385,7 @@ FILESYS_PROC  int FILESYS_API  sack_renameEx ( CTEXTSTR file_source, CTEXTSTR ne
 FILESYS_PROC  int FILESYS_API  sack_rename ( CTEXTSTR file_source, CTEXTSTR new_name );
 FILESYS_PROC  void FILESYS_API sack_set_common_data_application( CTEXTSTR name );
 FILESYS_PROC  void FILESYS_API sack_set_common_data_producer( CTEXTSTR name );
+FILESYS_PROC  void FILESYS_API  sack_ioctl( FILE *file, uintptr_t opCode, ... );
 #ifndef NO_FILEOP_ALIAS
 #  ifndef NO_OPEN_MACRO
 # define open(a,...) sack_iopen(0,a,##__VA_ARGS__)
@@ -10869,9 +10877,16 @@ enum block_cache_entries
 #endif
 	, BC(DATAKEY)
 	, BC(FILE)
-	, BC(FILE_LAST) = BC(FILE) + 10
+	, BC(FILE_LAST) = BC(FILE) + 32
 	, BC(COUNT)
 };
+// could effecitvely be fewer than this
+// 82 dirents * 512 byte names = 40000
+#define DIRENT_NAME_OFFSET_OFFSET        0x0001FFFF
+// (sealant length / 4)  (mulitply by 4 to get real length)
+#define DIRENT_NAME_OFFSET_FLAG_SEALANT  0x003E0000
+#define DIRENT_NAME_OFFSET_FLAG_SEALANT_SHIFT 17
+#define DIRENT_NAME_OFFSET_UNUSED        0xFFC00000
 PREFIX_PACKED struct directory_entry
 {
   // name offset from beginning of disk
@@ -10985,6 +11000,11 @@ struct sack_vfs_file
 	FPI entry_fpi;
 #ifdef VIRTUAL_OBJECT_STORE
 	enum block_cache_entries cache;
+	uint8_t *sealant;
+	uint8_t sealantLen;
+ // boolean, on read, validates seal.  Defaults to FALSE.
+	uint8_t sealed;
+	char *filename;
 #endif
   // has file size within
 	struct directory_entry _entry;
@@ -11004,8 +11024,8 @@ struct sack_vfs_file
   // someone already deleted this...
 	LOGICAL delete_on_close;
 	BLOCKINDEX *blockChain;
-	int blockChainAvail;
-	int blockChainLength;
+	unsigned int blockChainAvail;
+	unsigned int blockChainLength;
 };
 #undef TSEEK
 #undef BTSEEK
@@ -11146,7 +11166,7 @@ static void SetBlockChain( struct sack_vfs_file *file, FPI fpi, BLOCKINDEX newBl
 		ExtendBlockChain( file );
 	}
 	if( fileBlock >= file->blockChainLength )
-		file->blockChainLength = fileBlock + 1;
+		file->blockChainLength = (unsigned int)(fileBlock + 1);
 	//_lprintf(DBG_RELAY)( "setting %d to %d", (int)fileBlock, (int)newBlock );
 	if( file->blockChain[fileBlock] ) {
 		if( file->blockChain[fileBlock] == newBlock ) {
@@ -11545,7 +11565,7 @@ uintptr_t vfs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entr
 static BLOCKINDEX GetFreeBlock( struct volume *vol, int init )
 {
 	size_t n;
-	int b = 0;
+	unsigned int b = 0;
 	enum block_cache_entries cache = BC(BAT);
 	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, cache );
 	BLOCKINDEX *blockKey;
@@ -11553,13 +11573,13 @@ static BLOCKINDEX GetFreeBlock( struct volume *vol, int init )
 	if( vol->pdlFreeBlocks->Cnt ) {
 		BLOCKINDEX newblock = ((BLOCKINDEX*)GetDataItem( &vol->pdlFreeBlocks, vol->pdlFreeBlocks->Cnt - 1 ))[0];
 		check_val = 0;
-		b = newblock / BLOCKS_PER_SECTOR;
+		b = (unsigned int)(newblock / BLOCKS_PER_SECTOR);
 		n = newblock % BLOCKS_PER_SECTOR;
 		vol->pdlFreeBlocks->Cnt--;
 	}
 	else {
 		check_val = EOBBLOCK;
-		b = vol->lastBatBlock / BLOCKS_PER_SECTOR;
+		b = (unsigned int)(vol->lastBatBlock / BLOCKS_PER_SECTOR);
 		n = vol->lastBatBlock % BLOCKS_PER_SECTOR;
 	}
 	//lprintf( "check, start, b, n %d %d %d %d", (int)check_val, (int) vol->lastBatBlock, (int)b, (int)n );
@@ -11801,10 +11821,10 @@ void sack_vfs_unload_volume( struct volume * vol ) {
 }
 void sack_vfs_shrink_volume( struct volume * vol ) {
 	size_t n;
-	int b = 0;
+	unsigned int b = 0;
 	//int found_free; // this block has free data; should be last BAT?
 	BLOCKINDEX last_block = 0;
-	int last_bat = 0;
+	unsigned int last_bat = 0;
 	enum block_cache_entries cache = BC(BAT);
 	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, cache );
  // expand failed, tseek failed in response, so don't do anything
@@ -12737,9 +12757,16 @@ enum block_cache_entries
 #endif
 	, BC(DATAKEY)
 	, BC(FILE)
-	, BC(FILE_LAST) = BC(FILE) + 10
+	, BC(FILE_LAST) = BC(FILE) + 32
 	, BC(COUNT)
 };
+// could effecitvely be fewer than this
+// 82 dirents * 512 byte names = 40000
+#define DIRENT_NAME_OFFSET_OFFSET        0x0001FFFF
+// (sealant length / 4)  (mulitply by 4 to get real length)
+#define DIRENT_NAME_OFFSET_FLAG_SEALANT  0x003E0000
+#define DIRENT_NAME_OFFSET_FLAG_SEALANT_SHIFT 17
+#define DIRENT_NAME_OFFSET_UNUSED        0xFFC00000
 PREFIX_PACKED struct directory_entry
 {
   // name offset from beginning of disk
@@ -12853,6 +12880,11 @@ struct sack_vfs_file
 	FPI entry_fpi;
 #ifdef VIRTUAL_OBJECT_STORE
 	enum block_cache_entries cache;
+	uint8_t *sealant;
+	uint8_t sealantLen;
+ // boolean, on read, validates seal.  Defaults to FALSE.
+	uint8_t sealed;
+	char *filename;
 #endif
   // has file size within
 	struct directory_entry _entry;
@@ -12872,8 +12904,8 @@ struct sack_vfs_file
   // someone already deleted this...
 	LOGICAL delete_on_close;
 	BLOCKINDEX *blockChain;
-	int blockChainAvail;
-	int blockChainLength;
+	unsigned int blockChainAvail;
+	unsigned int blockChainLength;
 };
 #undef TSEEK
 #undef BTSEEK
@@ -13560,10 +13592,10 @@ void sack_vfs_fs_unload_volume( struct volume * vol ) {
 }
 void sack_vfs_fs_shrink_volume( struct volume * vol ) {
 	size_t n;
-	int b = 0;
+	unsigned int b = 0;
 	//int found_free; // this block has free data; should be last BAT?
 	BLOCKINDEX last_block = 0;
-	int last_bat = 0;
+	unsigned int last_bat = 0;
 	enum block_cache_entries cache = BC(BAT);
 	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, cache );
  // expand failed, tseek failed in response, so don't do anything
@@ -14516,9 +14548,16 @@ enum block_cache_entries
 #endif
 	, BC(DATAKEY)
 	, BC(FILE)
-	, BC(FILE_LAST) = BC(FILE) + 10
+	, BC(FILE_LAST) = BC(FILE) + 32
 	, BC(COUNT)
 };
+// could effecitvely be fewer than this
+// 82 dirents * 512 byte names = 40000
+#define DIRENT_NAME_OFFSET_OFFSET        0x0001FFFF
+// (sealant length / 4)  (mulitply by 4 to get real length)
+#define DIRENT_NAME_OFFSET_FLAG_SEALANT  0x003E0000
+#define DIRENT_NAME_OFFSET_FLAG_SEALANT_SHIFT 17
+#define DIRENT_NAME_OFFSET_UNUSED        0xFFC00000
 PREFIX_PACKED struct directory_entry
 {
   // name offset from beginning of disk
@@ -14632,6 +14671,11 @@ struct sack_vfs_file
 	FPI entry_fpi;
 #ifdef VIRTUAL_OBJECT_STORE
 	enum block_cache_entries cache;
+	uint8_t *sealant;
+	uint8_t sealantLen;
+ // boolean, on read, validates seal.  Defaults to FALSE.
+	uint8_t sealed;
+	char *filename;
 #endif
   // has file size within
 	struct directory_entry _entry;
@@ -14651,8 +14695,8 @@ struct sack_vfs_file
   // someone already deleted this...
 	LOGICAL delete_on_close;
 	BLOCKINDEX *blockChain;
-	int blockChainAvail;
-	int blockChainLength;
+	unsigned int blockChainAvail;
+	unsigned int blockChainLength;
 };
 #undef TSEEK
 #undef BTSEEK
@@ -15294,7 +15338,7 @@ uintptr_t vfs_os_BSEEK_( struct volume *vol, BLOCKINDEX block, enum block_cache_
 static BLOCKINDEX _os_GetFreeBlock_( struct volume *vol, int init DBG_PASS )
 {
 	size_t n;
-	int b = 0;
+	unsigned int b = 0;
 	enum block_cache_entries cache = BC( BAT );
 // = TSEEK( BLOCKINDEX*, vol, 0, cache );
 	BLOCKINDEX *current_BAT;
@@ -15303,13 +15347,13 @@ static BLOCKINDEX _os_GetFreeBlock_( struct volume *vol, int init DBG_PASS )
 	if( vol->pdlFreeBlocks->Cnt ) {
 		BLOCKINDEX newblock = ((BLOCKINDEX*)GetDataItem( &vol->pdlFreeBlocks, vol->pdlFreeBlocks->Cnt - 1 ))[0];
 		check_val = 0;
-		b = newblock / BLOCKS_PER_SECTOR;
+		b = (unsigned int)(newblock / BLOCKS_PER_SECTOR);
 		n = newblock % BLOCKS_PER_SECTOR;
 		vol->pdlFreeBlocks->Cnt--;
 	}
 	else {
 		check_val = EOBBLOCK;
-		b = vol->lastBatBlock / BLOCKS_PER_SECTOR;
+		b = (unsigned int)(vol->lastBatBlock / BLOCKS_PER_SECTOR);
 		n = vol->lastBatBlock % BLOCKS_PER_SECTOR;
 	}
 	//lprintf( "check, start, b, n %d %d %d %d", (int)check_val, (int) vol->lastBatBlock, (int)b, (int)n );
@@ -15604,10 +15648,10 @@ void sack_vfs_os_unload_volume( struct volume * vol ) {
 }
 void sack_vfs_os_shrink_volume( struct volume * vol ) {
 	size_t n;
-	int b = 0;
+	unsigned int b = 0;
 	//int found_free; // this block has free data; should be last BAT?
 	BLOCKINDEX last_block = 0;
-	int last_bat = 0;
+	unsigned int last_bat = 0;
 	enum block_cache_entries cache = BC(BAT);
 	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, cache );
  // expand failed, tseek failed in response, so don't do anything
@@ -15842,7 +15886,7 @@ LOGICAL _os_ScanDirectory_( struct volume *vol, const char * filename
 				struct directory_entry *entkey = dirblockkey->entries + (n=curName);
 				struct directory_entry *entry = dirblock->entries + n;
 				//const char * testname;
-				FPI name_ofs = next_entries[n].name_offset ^ entkey->name_offset;
+				FPI name_ofs = ( next_entries[n].name_offset ^ entkey->name_offset ) & DIRENT_NAME_OFFSET_OFFSET;
 				//if( filename && !name_ofs )	return FALSE; // done.
 				if(0)
 				LoG( "%d name_ofs = %" _size_f "(%" _size_f ") block = %d  vs %s"
@@ -16029,7 +16073,7 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 					FPI name_ofs;
 					entry = dirblock->entries + (f);
 					entkey = dirblockkey->entries + (f);
-					name = entry->name_offset ^ entkey->name_offset;
+					name = ( entry->name_offset ^ entkey->name_offset ) & DIRENT_NAME_OFFSET_OFFSET;
 					if( namebuffer[name] == imax ) {
 						int namelen;
 						newEntry = newDirblock->entries + (nf);
@@ -16094,7 +16138,6 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 				if( usedNames ) {
 					static uint8_t newnamebuffer[18 * 4096];
 					int newout = 0;
-					int otherf;
 					int min_name = BLOCK_SIZE + 1;
  // min found has to be after this one.
 					int _min_name = -1;
@@ -16105,8 +16148,10 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 						FPI name;
 						entry = dirblock->entries + (f);
 						entkey = dirblockkey->entries + (f);
-						name = entry->name_offset ^ entkey->name_offset;
-						entry->name_offset = newout ^ entkey->name_offset;
+						name = ( entry->name_offset ^ entkey->name_offset ) & DIRENT_NAME_OFFSET_OFFSET;
+						entry->name_offset = ( newout ^ entkey->name_offset )
+							| ( (entry->name_offset ^ entkey->name_offset)
+								& ~DIRENT_NAME_OFFSET_OFFSET );
 						while( namebuffer[name] != 0xFE )
 							newnamebuffer[newout++] = namebuffer[name++];
 						newnamebuffer[newout++] = namebuffer[name++];
@@ -16202,7 +16247,7 @@ static struct directory_entry * _os_GetNewDirectory( struct volume *vol, const c
 			for( n = 0; USS_LT( n, size_t, usedNames, int ); n++ ) {
 				ent = dirblock->entries + (n);
 				entkey = dirblockkey->entries + (n);
-				name_ofs = ent->name_offset ^ entkey->name_offset;
+				name_ofs = ( ent->name_offset ^ entkey->name_offset ) & DIRENT_NAME_OFFSET_OFFSET;
 				first_blk = ent->first_block ^ entkey->first_block;
 				// not name_offset (end of list) or not first_block(free entry) use this entry
 				//if( name_ofs && (first_blk > 1) )  continue;
@@ -16251,6 +16296,20 @@ struct sack_vfs_file * CPROC sack_vfs_os_openfile( struct volume *vol, const cha
 	if( !_os_ScanDirectory( vol, filename, 0, NULL, file, 0 ) ) {
 		if( vol->read_only ) { LoG( "Fail open: readonly" ); vol->lock = 0; Deallocate( struct sack_vfs_file *, file ); return NULL; }
 		else _os_GetNewDirectory( vol, filename, file );
+	}
+	{
+		BLOCKINDEX offset = (file->entry->name_offset ^ file->dirent_key.name_offset);
+		uint32_t sealLen = (offset & DIRENT_NAME_OFFSET_FLAG_SEALANT) >> DIRENT_NAME_OFFSET_FLAG_SEALANT_SHIFT;
+		if( sealLen ) {
+			file->sealant = NewArray( uint8_t, sealLen );
+			file->sealantLen = sealLen;
+		}
+		else {
+			file->sealant = NULL;
+			file->sealantLen = 0;
+		}
+		file->filename = StrDup( filename );
+		file->sealed = FALSE;
 	}
 	file->vol = vol;
 	file->fpi = 0;
@@ -16382,12 +16441,41 @@ size_t CPROC sack_vfs_os_write( struct sack_vfs_file *file, const char * data, s
 			length = 0;
 		}
 	}
+	if( file->sealant && (void*)file->sealant != (void*)data ) {
+		BLOCKINDEX saveSize = file->entry->filesize;
+		BLOCKINDEX saveFpi = file->fpi;
+		sack_vfs_os_write( file, (char*)file->sealant, file->sealantLen );
+		file->entry->filesize = saveSize;
+		file->fpi = saveFpi;
+	}
 	if( updated ) {
  // directory cache block (locked)
 		SETFLAG( file->vol->dirty, file->cache );
 	}
 	file->vol->lock = 0;
 	return written;
+}
+static LOGICAL ValidateSeal( struct sack_vfs_file *file, char *data, size_t length ) {
+	BLOCKINDEX offset = (file->entry->name_offset ^ file->dirent_key.name_offset);
+	uint32_t sealLen = ( offset & DIRENT_NAME_OFFSET_FLAG_SEALANT ) >> DIRENT_NAME_OFFSET_FLAG_SEALANT_SHIFT;
+// = (struct random_context *)DequeLink( &signingEntropies );
+	struct random_context *signEntropy;
+	uint8_t outbuf[32];
+	signEntropy = SRG_CreateEntropy3( NULL, (uintptr_t)0 );
+	SRG_ResetEntropy( signEntropy );
+	SRG_FeedEntropy( signEntropy, (const uint8_t*)data, length );
+	SRG_FeedEntropy( signEntropy, (const uint8_t*)file->sealant, file->sealantLen );
+	SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
+	SRG_DestroyEntropy( &signEntropy );
+	{
+		LOGICAL success = FALSE;
+		size_t len;
+		char *rid = EncodeBase64Ex( outbuf, 256 / 8, &len, (const char *)1 );
+		if( StrCmp( file->filename, rid ) == 0 )
+			success = TRUE;
+		Deallocate( char *, rid );
+		return success;
+	}
 }
 size_t CPROC sack_vfs_os_read( struct sack_vfs_file *file, char * data, size_t length ) {
 	size_t written = 0;
@@ -16434,6 +16522,16 @@ size_t CPROC sack_vfs_os_read( struct sack_vfs_file *file, char * data, size_t l
 			file->fpi += length;
 			length = 0;
 		}
+	}
+	if( file->sealant
+		&& (void*)file->sealant != (void*)data
+		&& length == ( file->entry->filesize ^ file->dirent_key.filesize ) ) {
+		BLOCKINDEX saveSize = file->entry->filesize;
+		BLOCKINDEX saveFpi = file->fpi;
+		sack_vfs_os_read( file, (char*)file->sealant, file->sealantLen );
+		file->entry->filesize = saveSize;
+		file->fpi = saveFpi;
+		file->sealed = ValidateSeal( file, data, length );
 	}
 	file->vol->lock = 0;
 	return written;
@@ -16535,6 +16633,9 @@ int CPROC sack_vfs_os_close( struct sack_vfs_file *file ) {
 		if( !testFile )
 			RESETFLAG( file->vol->seglock, file->cache );
 	}
+	Deallocate( char *, file->filename );
+	if( file->sealant )
+		Deallocate( uint8_t*, file->sealant );
 	file->vol->lock = 0;
 	if( file->vol->closed ) sack_vfs_os_unload_volume( file->vol );
 	Deallocate( struct sack_vfs_file *, file );
@@ -16622,7 +16723,7 @@ static int _os_iterate_find( struct find_info *_info ) {
 		next_entries = dirBlock->entries;
 		for( n = (int)node.thisent; n < (dirBlock->used_names ^ dirBlockKey->used_names); n++ ) {
 			struct directory_entry *entkey = ( info->vol->key)?((struct directory_hash_lookup_block *)info->vol->usekey[cache])->entries+n:&l.zero_entkey;
-			FPI name_ofs = next_entries[n].name_offset ^ entkey->name_offset;
+			FPI name_ofs = ( next_entries[n].name_offset ^ entkey->name_offset ) & DIRENT_NAME_OFFSET_OFFSET;
 			const char *filename;
 			int l;
 			// if file is deleted; don't check it's name.
@@ -16729,6 +16830,44 @@ LOGICAL CPROC sack_vfs_os_rename( uintptr_t psvInstance, const char *original, c
 #endif
 	return FALSE;
 }
+void CPROC sack_vfs_ioctl( uintptr_t psvInstance, uintptr_t opCode, va_list args ) {
+	//va_list args;
+	//va_start( args, opCode );
+	switch( opCode ) {
+	default:
+		// unhandled/ignored opcode
+		break;
+	case SFSIO_TAMPERED:
+		{
+			struct sack_vfs_file *file = (struct sack_vfs_file *)psvInstance;
+			int *result = va_arg( args, int* );
+			if( file->sealant )
+				(*result) = file->sealed;
+			(*result) = 1;
+		}
+		break;
+	case SFSIO_PROVIDE_SEALANT:
+		{
+			const char *sealant = va_arg( args, const char * );
+			size_t sealantLen = va_arg( args, size_t );
+			struct sack_vfs_file *file = (struct sack_vfs_file *)psvInstance;
+			{
+				size_t len;
+				uint8_t *bytes;
+				bytes = DecodeBase64Ex( sealant, sealantLen, &len, (const char*)1 );
+				file->sealant = NewArray( uint8_t, len );
+				memcpy( file->sealant, bytes, len );
+				file->sealantLen = (uint8_t)len;
+				//file->sealant = sealant;
+				//file->sealantLen = sealantLen;
+				// set the sealant length in the name offset.
+				file->entry->name_offset = ( ( ( file->entry->name_offset ^ file->dirent_key.name_offset )
+					| ( ( len >> 2 ) << 17 ) ) ^ file->dirent_key.name_offset );
+			}
+		}
+		break;
+	}
+}
 #ifndef USE_STDIO
 static struct file_system_interface sack_vfs_os_fsi = {
                                                      (void*(CPROC*)(uintptr_t,const char *, const char*))sack_vfs_os_open
@@ -16752,6 +16891,7 @@ static struct file_system_interface sack_vfs_os_fsi = {
                                                    , sack_vfs_os_find_is_directory
                                                    , sack_vfs_os_is_directory
                                                    , sack_vfs_os_rename
+                                                   , sack_vfs_ioctl
                                                    };
 PRIORITY_PRELOAD( Sack_VFS_OS_Register, CONFIG_SCRIPT_PRELOAD_PRIORITY - 2 )
 {
@@ -43549,6 +43689,18 @@ int sack_fputs( const char *format,FILE *file )
 	}
 	return 0;
 }
+void sack_ioctl( FILE *file_handle, uintptr_t opCode, ... ) {
+	struct file *file;
+	va_list args;
+	va_start( args, opCode );
+	file = FindFileByFILE( file_handle );
+	if( file && file->mount && file->mount->fsi && file->mount->fsi->ioctl ) {
+			file->mount->fsi->ioctl( (uintptr_t)file_handle, opCode, args );
+	}
+	else {
+		 // unknown file handle; ignore unknown ioctl.
+	}
+}
 LOGICAL SetFileLength( CTEXTSTR path, size_t length )
 {
 #ifdef __LINUX__
@@ -49758,7 +49910,7 @@ static void encodeblock( unsigned char in[3], TEXTCHAR out[4], size_t len, const
 	out[2] = (len > 1 ? base64[ ((in[1] & 0x0f) << 2) | ( ( len > 2 ) ? ((in[2] & 0xc0) >> 6) : 0 ) ] : base64[64]);
 	out[3] = (len > 2 ? base64[ in[2] & 0x3f ] : base64[64]);
 }
-static void decodeblock( char in[4], uint8_t out[3], size_t len, const char *base64 )
+static void decodeblock( const char in[4], uint8_t out[3], size_t len, const char *base64 )
 {
 	int index[4];
 	int n;
@@ -49775,7 +49927,7 @@ static void decodeblock( char in[4], uint8_t out[3], size_t len, const char *bas
 	out[2] = (char)(( index[2] ) << 6 | ( ( index[3] ) & 0x3F ));
 	//out[] = (len > 2 ? base64[ in[2] & 0x3f ] : 0);
 }
-TEXTCHAR *EncodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const char *base64 )
+TEXTCHAR *EncodeBase64Ex( const uint8_t* buf, size_t length, size_t *outsize, const char *base64 )
 {
 	size_t fake_outsize;
 	TEXTCHAR * real_output;
@@ -49811,7 +49963,7 @@ static void setupDecodeBytes( const char *code ) {
 		}
 	}
 }
-uint8_t *DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *base64 )
+uint8_t *DecodeBase64Ex( const char* buf, size_t length, size_t *outsize, const char *base64 )
 {
 	size_t fake_outsize;
 	uint8_t * real_output;
@@ -94343,7 +94495,7 @@ static void __DoSQLiteBinding( sqlite3_stmt *db, PDATALIST pdlItems ) {
 	INDEX idx;
 	struct json_value_container *val;
 	DATA_FORALL( pdlItems, idx, struct json_value_container *, val ) {
-		int useIndex = idx + 1;
+		int useIndex = (int)(idx + 1);
 		int rc;
 		if( val->name ) {
 			useIndex = sqlite3_bind_parameter_index( db, val->name );
@@ -94364,10 +94516,10 @@ static void __DoSQLiteBinding( sqlite3_stmt *db, PDATALIST pdlItems ) {
 			}
 			break;
 		case VALUE_TYPED_ARRAY:
-			rc = sqlite3_bind_blob( db, useIndex, val->string, val->stringLen, NULL );
+			rc = sqlite3_bind_blob( db, useIndex, val->string, (int)val->stringLen, NULL );
 			break;
 		case VALUE_STRING:
-			rc = sqlite3_bind_text( db, useIndex, val->string, val->stringLen, NULL );
+			rc = sqlite3_bind_text( db, useIndex, val->string, (int)val->stringLen, NULL );
 			break;
 		}
 		if( rc )

@@ -3961,12 +3961,12 @@ TYPELIB_PROC  INDEX TYPELIB_CALLTYPE  vvtprintf( PVARTEXT pvt, CTEXTSTR format, 
 /* encode binary buffer into base64 encoding.
    outsize is updated with the length of the buffer.
  */
-TYPELIB_PROC  TEXTCHAR * TYPELIB_CALLTYPE  EncodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const char *encoding );
+TYPELIB_PROC  TEXTCHAR * TYPELIB_CALLTYPE  EncodeBase64Ex( const uint8_t* buf, size_t length, size_t *outsize, const char *encoding );
 /* decode base64 buffer into binary buffer
    outsize is updated with the length of the buffer.
    result should be Release()'d
  */
-TYPELIB_PROC  uint8_t * TYPELIB_CALLTYPE  DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *encoding );
+TYPELIB_PROC  uint8_t * TYPELIB_CALLTYPE  DecodeBase64Ex( const char* buf, size_t length, size_t *outsize, const char *encoding );
 /* xor a base64 encoded string over a utf8 string, keeping the utf8 characters in the same length...
    although technically this can result in invalid character encoding where upper bits get zeroed
    result should be Release()'d
@@ -11296,6 +11296,13 @@ struct file_system_interface {
 	LOGICAL (CPROC *find_is_directory)( struct find_cursor *cursor );
 	LOGICAL (CPROC *is_directory)( uintptr_t psvInstance, const char *cursor );
 	LOGICAL (CPROC *rename )( uintptr_t psvInstance, const char *original_name, const char *new_name );
+	void (CPROC *ioctl)( uintptr_t psvInstance, uintptr_t opCode, va_list args );
+};
+enum sack_file_ssytem_ioctl_ops {
+  // psvInstance should be a file handle pass (char*, size_t length )
+	SFSIO_PROVIDE_SEALANT,
+ // test if file has been tampered, is is still sealed. pass (address of int)
+	SFSIO_TAMPERED,
 };
 /* \ \
    Parameters
@@ -11535,6 +11542,7 @@ FILESYS_PROC  int FILESYS_API  sack_renameEx ( CTEXTSTR file_source, CTEXTSTR ne
 FILESYS_PROC  int FILESYS_API  sack_rename ( CTEXTSTR file_source, CTEXTSTR new_name );
 FILESYS_PROC  void FILESYS_API sack_set_common_data_application( CTEXTSTR name );
 FILESYS_PROC  void FILESYS_API sack_set_common_data_producer( CTEXTSTR name );
+FILESYS_PROC  void FILESYS_API  sack_ioctl( FILE *file, uintptr_t opCode, ... );
 #ifndef NO_FILEOP_ALIAS
 #  ifndef NO_OPEN_MACRO
 # define open(a,...) sack_iopen(0,a,##__VA_ARGS__)
