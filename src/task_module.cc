@@ -122,9 +122,9 @@ static void CPROC getTaskInput( uintptr_t psvTask, PTASK_INFO pTask, CTEXTSTR bu
 		task->size = size;
 		task->waiter = MakeThread();
 		uv_async_send( &task->async );
-		while( task->buffer ) {
-			WakeableSleep( 200 );
-		}
+		//while( task->buffer ) {
+		//	WakeableSleep( 200 );
+		//}
 	}
 
 }
