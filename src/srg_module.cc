@@ -89,6 +89,7 @@ private:
 	}
 	static void setVersion( const v8::FunctionCallbackInfo<Value>& args ) {
 		SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
+		lprintf( "Make will be 3?" );
 		obj->MakeEntropy = SRG_CreateEntropy3;
 	}
 	static void reset( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -568,7 +569,7 @@ private:
 		for( n = 0; n < threads; n++ ) {
 			threadParams[n].main = MakeThread();
 			if( !threadParams[n].signEntropy )
-				threadParams[n].signEntropy = srg->makeEntropy( NULL, 0 );
+				threadParams[n].signEntropy = srg->MakeEntropy( NULL, 0 );
 
 			SRG_ResetEntropy( threadParams[n].signEntropy );
 			SRG_FeedEntropy( threadParams[n].signEntropy, (const uint8_t*)*buf, buf.length() );
@@ -648,7 +649,7 @@ private:
 			}
 
 			if( !signEntropy )
-				signEntropy = srg->makeEntropy( NULL, (uintptr_t)0 );
+				signEntropy = srg->MakeEntropy( NULL, (uintptr_t)0 );
 			SRG_ResetEntropy( signEntropy );
 			SRG_FeedEntropy( signEntropy, (const uint8_t*)*buf, buf.length() );
 			{
