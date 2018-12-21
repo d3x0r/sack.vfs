@@ -54329,8 +54329,10 @@ static void httpConnected( PCLIENT pc, int error ) {
 }
 HTTPState GetHttpQuery( PTEXT address, PTEXT url )
 {
+	int retries = 0;
 	if( !address )
 		return NULL;
+	for( retries = 0; retries < 3; retries++ )
 	{
 		PCLIENT pc;
 		SOCKADDR *addr = CreateSockAddress( GetText( address ), 443 );
@@ -54374,8 +54376,10 @@ HTTPState GetHttpQuery( PTEXT address, PTEXT url )
 }
 HTTPState GetHttpsQuery( PTEXT address, PTEXT url, const char *certChain )
 {
+	int retries;
 	if( !address )
 		return NULL;
+	for( retries = 0; retries < 3; retries++ )
 	{
 		struct HttpState *state = CreateHttpState();
 		static PCLIENT pc;
@@ -68879,6 +68883,7 @@ void TerminateClosedClientEx( PCLIENT pc DBG_PASS )
 #if defined( _WIN32 )
 #undef SHUT_WR
 #endif
+			//lprintf( "Win32:ShutdownWR+closesocket %p", pc );
 			closesocket( pc->Socket );
 			while( pc->lpFirstPending )
 			{
@@ -69187,7 +69192,7 @@ static void HandleEvent( PCLIENT pClient )
 							}
 							if( pClient->dwFlags & CF_TOCLOSE )
 							{
-								lprintf( WIDE( "Pending read failed - and wants to close." ) );
+								//lprintf( WIDE( "Pending read failed - and wants to close." ) );
 								//InternalRemoveClientEx( pc, TRUE, FALSE );
 							}
 						}
@@ -69217,9 +69222,11 @@ static void HandleEvent( PCLIENT pClient )
 							if( pClient->dwFlags & CF_TOCLOSE )
 							{
 								pClient->dwFlags &= ~CF_TOCLOSE;
-								lprintf( WIDE( "Pending read failed - and wants to close." ) );
+								//lprintf( WIDE( "Pending read failed - and wants to close." ) );
+								EnterCriticalSec( &globalNetworkData.csNetwork );
 								InternalRemoveClientEx( pClient, FALSE, TRUE );
 								TerminateClosedClient( pClient );
+								LeaveCriticalSec( &globalNetworkData.csNetwork );
 							}
 						}
 						NetworkUnlock( pClient, 0 );
@@ -69227,15 +69234,17 @@ static void HandleEvent( PCLIENT pClient )
 				}
 				if( networkEvents.lNetworkEvents & FD_CLOSE )
 				{
+					//lprintf( "FD_CLOSE %p", pClient );
 					if( !pClient->bDraining )
 					{
 						size_t bytes_read;
 						// act of reading can result in a close...
 						// there are things like IE which close and send
 						// adn we might get the close notice at application level indicating there might still be data...
+						//lprintf( "closed, try pending read %p", pClient );
 						while( ( bytes_read = FinishPendingRead( pClient DBG_SRC) ) > 0
  // try and read...
-							&& bytes_read != (size_t)-1 );
+							&& bytes_read != (size_t)-1 )
 						//if( pClient->dwFlags & CF_TOCLOSE )
 						{
 							//lprintf( "Pending read failed - reset connection. (well this is FD_CLOSE so yeah...??]" );
@@ -71697,12 +71706,11 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 #  define SHUT_WR SD_SEND
 #endif
 	if( !lpClient ) return;
-#if 0
-	if( !( lpClient->dwFlags & CF_UDP ) ) {
-		lprintf( "TRIGGER SHUTDOWN WRITES" );
+	if( !( lpClient->dwFlags & CF_UDP )
+		&& ( lpClient->dwFlags & ( CF_CONNECTED ) ) ) {
+		//lprintf( "TRIGGER SHUTDOWN WRITES" );
 		shutdown( lpClient->Socket, SHUT_WR );
 	} else
-#endif
 	{
 		int n = 0;
 		// UDP still needs to be done this way...
@@ -72094,7 +72102,7 @@ void AcceptClient(PCLIENT pListen)
 										, pNewClient->saClient
 										,&nTemp
 										);
-	lprintf( "Accept new client...%p %d", pNewClient, pNewClient->Socket );
+	//lprintf( "Accept new client...%p %d", pNewClient, pNewClient->Socket );
 #if WIN32
 	SetHandleInformation( (HANDLE)pNewClient->Socket, HANDLE_FLAG_INHERIT, 0 );
 #endif
@@ -72473,7 +72481,7 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 			                      , (((*(uint16_t*)lpAddr) == AF_INET)||((*(uint16_t*)lpAddr) == AF_INET6))?IPPROTO_TCP:0 );
 #endif
 #ifdef LOG_SOCKET_CREATION
-		lprintf( WIDE( "Created new socket %d" ), pResult->Socket );
+		lprintf( WIDE( "Created new socket %p %d" ), pResult, pResult->Socket );
 #endif
 		if (pResult->Socket==INVALID_SOCKET)
 		{
@@ -73246,9 +73254,9 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
 							 pc->lpFirstPending->dwUsed,
 							 (int)pc->lpFirstPending->dwAvail );
 			}
-//#ifdef DEBUG_SOCK_IO
-			_lprintf(DBG_RELAY)( "Try to send... %d  %d", pc->lpFirstPending->dwUsed, pc->lpFirstPending->dwAvail );
-//#endif
+#ifdef DEBUG_SOCK_IO
+			_lprintf(DBG_RELAY)( "Try to send... %p  %d  %d", pc, pc->lpFirstPending->dwUsed, pc->lpFirstPending->dwAvail );
+#endif
 			nSent = send(pc->Socket,
 							 (char*)pc->lpFirstPending->buffer.c +
 							 pc->lpFirstPending->dwUsed,
