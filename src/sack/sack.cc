@@ -93985,17 +93985,17 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 						case SQLITE_BLOB:
 							//lprintf( "Got a blob..." );
 							text = (char*)sqlite3_column_blob( collection->stmt, idx - 1 );
-							colsize = sqlite3_column_bytes( collection->stmt, idx - 1 );
+							collection->result_len[idx - 1] = sqlite3_column_bytes( collection->stmt, idx - 1 );
 							if( pvtData )vtprintf( pvtData, WIDE( "%s<binary>" ), idx>1?WIDE( "," ):WIDE( "" ) );
 							collection->results[idx-1] = NewArray( TEXTCHAR, collection->result_len[idx - 1] );
 							MemCpy( collection->results[idx-1], text, collection->result_len[idx - 1] );
 							break;
 						default:
 							text = (char*)sqlite3_column_text( collection->stmt, idx - 1 );
-							colsize = sqlite3_column_bytes( collection->stmt, idx - 1 );
+							collection->result_len[idx-1] = sqlite3_column_bytes( collection->stmt, idx - 1 );
 							if( collection->results[idx - 1] )
 								Release( collection->results[idx - 1] );
-							real_text = DupCStrLen( text, colsize );
+							real_text = DupCStrLen( text, collection->result_len[idx - 1] );
 							if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), real_text );
 							collection->results[idx-1] = real_text;
 							break;
