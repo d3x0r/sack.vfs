@@ -7,7 +7,6 @@ JSON/JSON6 (stream)parser,
 JSOX (streaming) parser, 
 COM/serial port access, Sqlite interface, an option/configuration database built on Sqlite.
 WebSocket/HTTP/HTTPS network library.  UDP sockets.
-Vulkan API to be added eventually... 
 Windows specific registry access for application settings. 
 
 ## Requirements
@@ -72,7 +71,8 @@ vfs = {
         Sqlite has methods available on it to access native program options.
         Sqlite.op( opName, defaultValue ) - read/write default option database option.
         Sqlite.so( opName, newValue ) - write new value to default option database.
-    Volume(mountName,fileName,version,a,b) - a virtual disk partition that holds files.
+    ObjectStore( fileName [, version] ) - open a JS object storage database. 
+    Volume([mountName,]fileName[,version]) - a virtual disk partition that holds files.
           mountName - the mount name used to mount to volume as a filesystem; it may be referenced 
                 later in the string passed to Sqlite.  It may be `null` if it is anonymous mount.
           if no parameters are passed, a Volume object representing the native filesystem is returned.
@@ -1168,6 +1168,7 @@ setTimeout( ()=>{ }, 5000 );
    - Add Object Storage Module.
    - Added support for paramter binding in Sqlite.
    - Improve data marshalling for Sqlite to JS and vice versa.
+   - Network improvement for send and close edge conditions.
 - 0.9.144 - Fix websocket receiving packets with multiple frames.
 - 0.9.143 - Improve task interface.  Simplify com data buffer; it's now only valid during receive callback. Improve websocket server handling http requests; add a event callback when socket closes, after server HTTP to distinguish between incomplete(TLS error) connections. Sync SACK updates: improve SQL parsing/table-index generation, library load path for current and name as passed, event for http close, some protection against dereferencing null parameters.
 - 0.9.142 - Fix node-gyp for windows build.
