@@ -6352,10 +6352,14 @@ inline void operator delete (void * p)
 #endif
 // this is a method replacement to use PIPEs instead of SEMAPHORES
 // replacement code only affects linux.
-#if defined( __QNX__ ) || defined( __MAC__) || defined( __LINUX__ ) || defined( __ANDROID__ )
-//#  define USE_PIPE_SEMS
+#if defined( __QNX__ ) || defined( __MAC__) || defined( __LINUX__ )
+#  if defined( __ANDROID__ )
+// android > 21 can use pthread_mutex_timedop
+#    define USE_PIPE_SEMS
+#  else
 // no semtimedop; no semctl, etc
-#include <sys/sem.h>
+//#    include <sys/sem.h>
+#endif
 #endif
 #ifdef USE_PIPE_SEMS
 #  define _NO_SEMTIMEDOP_
@@ -11296,13 +11300,8 @@ struct file_system_interface {
 	LOGICAL (CPROC *find_is_directory)( struct find_cursor *cursor );
 	LOGICAL (CPROC *is_directory)( uintptr_t psvInstance, const char *cursor );
 	LOGICAL (CPROC *rename )( uintptr_t psvInstance, const char *original_name, const char *new_name );
-	void (CPROC *ioctl)( uintptr_t psvInstance, uintptr_t opCode, va_list args );
-};
-enum sack_file_ssytem_ioctl_ops {
-  // psvInstance should be a file handle pass (char*, size_t length )
-	SFSIO_PROVIDE_SEALANT,
- // test if file has been tampered, is is still sealed. pass (address of int)
-	SFSIO_TAMPERED,
+	uintptr_t (CPROC *ioctl)( uintptr_t psvInstance, uintptr_t opCode, va_list args );
+	uintptr_t (CPROC *fs_ioctl)(uintptr_t psvInstance, uintptr_t opCode, va_list args);
 };
 /* \ \
    Parameters
@@ -11542,7 +11541,8 @@ FILESYS_PROC  int FILESYS_API  sack_renameEx ( CTEXTSTR file_source, CTEXTSTR ne
 FILESYS_PROC  int FILESYS_API  sack_rename ( CTEXTSTR file_source, CTEXTSTR new_name );
 FILESYS_PROC  void FILESYS_API sack_set_common_data_application( CTEXTSTR name );
 FILESYS_PROC  void FILESYS_API sack_set_common_data_producer( CTEXTSTR name );
-FILESYS_PROC  void FILESYS_API  sack_ioctl( FILE *file, uintptr_t opCode, ... );
+FILESYS_PROC  uintptr_t FILESYS_API  sack_ioctl( FILE *file, uintptr_t opCode, ... );
+FILESYS_PROC  uintptr_t FILESYS_API  sack_fs_ioctl( struct file_system_mounted_interface *mount, uintptr_t opCode, ... );
 #ifndef NO_FILEOP_ALIAS
 #  ifndef NO_OPEN_MACRO
 # define open(a,...) sack_iopen(0,a,##__VA_ARGS__)
@@ -11768,6 +11768,24 @@ namespace fs {
 #ifdef __cplusplus
 namespace objStore {
 #endif
+	/* thse should probably be moved to sack_vfs_os.h being file system specific extensions. */
+	enum sack_object_store_file_system_file_ioctl_ops {
+  // psvInstance should be a file handle pass (char*, size_t length )
+		SOSFSFIO_PROVIDE_SEALANT,
+ // test if file has been tampered, is is still sealed. pass (address of int)
+		SOSFSFIO_TAMPERED,
+ // get the resulting storage ID.  (Move ID creation into low level driver)
+		SOSFSFIO_STORE_OBJECT,
+		//SFSIO_GET_OBJECT_ID, // get the resulting storage ID.  (Move ID creation into low level driver)
+	};
+	enum sack_object_store_file_system_system_ioctl_ops {
+ // get the resulting storage ID.  (Move ID creation into low level driver)
+		SOSFSSIO_STORE_OBJECT,
+		SOSFSSIO_PATCH_OBJECT,
+		SOSFSSIO_LOAD_OBJECT,
+		//SFSIO_GET_OBJECT_ID, // get the resulting storage ID.  (Move ID creation into low level driver)
+	};
+#define sack_vfs_os_ioctl_store_object( objId,objIdLen, obj,objlen, seal,seallen, result )
 	struct volume;
 	struct sack_vfs_file;
 	struct find_info;
@@ -12348,9 +12366,9 @@ parse_message
 		  int index;
         struct jsox_value_container *value;
 		  DATALIST_FORALL( pdlMessage, index, struct jsox_value_container *. value ) {
-           /* for each value in the result.... the first layer will
-           always be just one element, either a simple type, or a VALUE_ARRAY or VALUE_OBJECT, which
-           then for each value->contains (as a datalist like above), process each of those values.
+           // for each value in the result.... the first layer will
+           // always be just one element, either a simple type, or a VALUE_ARRAY or VALUE_OBJECT, which
+           // then for each value->contains (as a datalist like above), process each of those values.
 		  }
         jsox_dispose_mesage( &pdlMessage );
     }
@@ -12373,9 +12391,9 @@ parse_message
         int index;
         struct jsox_value_container *value;
         DATALIST_FORALL( pdlMessage, index, struct jsox_value_container *. value ) {
-           /* for each value in the result.... the first layer will
-           always be just one element, either a simple type, or a VALUE_ARRAY or VALUE_OBJECT, which
-           then for each value->contains (as a datalist like above), process each of those values.
+           // for each value in the result.... the first layer will
+           // always be just one element, either a simple type, or a VALUE_ARRAY or VALUE_OBJECT, which
+           // then for each value->contains (as a datalist like above), process each of those values.
         }
         jsox_dispose_mesage( &pdlMessage );
 		  jsox_parse_add_data( parser, NULL, 0 ); // trigger parsing next message.

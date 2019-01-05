@@ -6361,10 +6361,14 @@ inline void operator delete (void * p)
 #endif
 // this is a method replacement to use PIPEs instead of SEMAPHORES
 // replacement code only affects linux.
-#if defined( __QNX__ ) || defined( __MAC__) || defined( __LINUX__ ) || defined( __ANDROID__ )
-//#  define USE_PIPE_SEMS
+#if defined( __QNX__ ) || defined( __MAC__) || defined( __LINUX__ )
+#  if defined( __ANDROID__ )
+// android > 21 can use pthread_mutex_timedop
+#    define USE_PIPE_SEMS
+#  else
 // no semtimedop; no semctl, etc
-#include <sys/sem.h>
+//#    include <sys/sem.h>
+#endif
 #endif
 #ifdef USE_PIPE_SEMS
 #  define _NO_SEMTIMEDOP_
@@ -7139,13 +7143,8 @@ struct file_system_interface {
 	LOGICAL (CPROC *find_is_directory)( struct find_cursor *cursor );
 	LOGICAL (CPROC *is_directory)( uintptr_t psvInstance, const char *cursor );
 	LOGICAL (CPROC *rename )( uintptr_t psvInstance, const char *original_name, const char *new_name );
-	void (CPROC *ioctl)( uintptr_t psvInstance, uintptr_t opCode, va_list args );
-};
-enum sack_file_ssytem_ioctl_ops {
-  // psvInstance should be a file handle pass (char*, size_t length )
-	SFSIO_PROVIDE_SEALANT,
- // test if file has been tampered, is is still sealed. pass (address of int)
-	SFSIO_TAMPERED,
+	uintptr_t (CPROC *ioctl)( uintptr_t psvInstance, uintptr_t opCode, va_list args );
+	uintptr_t (CPROC *fs_ioctl)(uintptr_t psvInstance, uintptr_t opCode, va_list args);
 };
 /* \ \
    Parameters
@@ -7385,7 +7384,8 @@ FILESYS_PROC  int FILESYS_API  sack_renameEx ( CTEXTSTR file_source, CTEXTSTR ne
 FILESYS_PROC  int FILESYS_API  sack_rename ( CTEXTSTR file_source, CTEXTSTR new_name );
 FILESYS_PROC  void FILESYS_API sack_set_common_data_application( CTEXTSTR name );
 FILESYS_PROC  void FILESYS_API sack_set_common_data_producer( CTEXTSTR name );
-FILESYS_PROC  void FILESYS_API  sack_ioctl( FILE *file, uintptr_t opCode, ... );
+FILESYS_PROC  uintptr_t FILESYS_API  sack_ioctl( FILE *file, uintptr_t opCode, ... );
+FILESYS_PROC  uintptr_t FILESYS_API  sack_fs_ioctl( struct file_system_mounted_interface *mount, uintptr_t opCode, ... );
 #ifndef NO_FILEOP_ALIAS
 #  ifndef NO_OPEN_MACRO
 # define open(a,...) sack_iopen(0,a,##__VA_ARGS__)
@@ -8872,6 +8872,24 @@ namespace fs {
 #ifdef __cplusplus
 namespace objStore {
 #endif
+	/* thse should probably be moved to sack_vfs_os.h being file system specific extensions. */
+	enum sack_object_store_file_system_file_ioctl_ops {
+  // psvInstance should be a file handle pass (char*, size_t length )
+		SOSFSFIO_PROVIDE_SEALANT,
+ // test if file has been tampered, is is still sealed. pass (address of int)
+		SOSFSFIO_TAMPERED,
+ // get the resulting storage ID.  (Move ID creation into low level driver)
+		SOSFSFIO_STORE_OBJECT,
+		//SFSIO_GET_OBJECT_ID, // get the resulting storage ID.  (Move ID creation into low level driver)
+	};
+	enum sack_object_store_file_system_system_ioctl_ops {
+ // get the resulting storage ID.  (Move ID creation into low level driver)
+		SOSFSSIO_STORE_OBJECT,
+		SOSFSSIO_PATCH_OBJECT,
+		SOSFSSIO_LOAD_OBJECT,
+		//SFSIO_GET_OBJECT_ID, // get the resulting storage ID.  (Move ID creation into low level driver)
+	};
+#define sack_vfs_os_ioctl_store_object( objId,objIdLen, obj,objlen, seal,seallen, result )
 	struct volume;
 	struct sack_vfs_file;
 	struct find_info;
@@ -10902,16 +10920,11 @@ PREFIX_PACKED struct directory_entry
 // subtract name has index
 // subtrace name index
 #define VFS_DIRECTORY_ENTRIES ( ( BLOCK_SIZE - ( 2*sizeof(BLOCKINDEX) + 256*sizeof(BLOCKINDEX)) ) /sizeof( struct directory_entry) )
+#define VFS_PATCH_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
 #else
 #define VFS_DIRECTORY_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
+#define VFS_PATCH_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
 #endif
-PREFIX_PACKED struct directory_hash_lookup_block
-{
-	BLOCKINDEX next_block[256];
-	struct directory_entry entries[VFS_DIRECTORY_ENTRIES];
-	BLOCKINDEX names_first_block;
-	uint8_t used_names;
-} PACKED;
 struct disk
 {
 	// BAT is at 0 of every BLOCK_SIZE blocks (4097 total)
@@ -11000,6 +11013,7 @@ struct sack_vfs_file
 	FPI entry_fpi;
 #ifdef VIRTUAL_OBJECT_STORE
 	enum block_cache_entries cache;
+	uint8_t *seal;
 	uint8_t *sealant;
 	uint8_t sealantLen;
  // boolean, on read, validates seal.  Defaults to FALSE.
@@ -12781,16 +12795,11 @@ PREFIX_PACKED struct directory_entry
 // subtract name has index
 // subtrace name index
 #define VFS_DIRECTORY_ENTRIES ( ( BLOCK_SIZE - ( 2*sizeof(BLOCKINDEX) + 256*sizeof(BLOCKINDEX)) ) /sizeof( struct directory_entry) )
+#define VFS_PATCH_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
 #else
 #define VFS_DIRECTORY_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
+#define VFS_PATCH_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
 #endif
-PREFIX_PACKED struct directory_hash_lookup_block
-{
-	BLOCKINDEX next_block[256];
-	struct directory_entry entries[VFS_DIRECTORY_ENTRIES];
-	BLOCKINDEX names_first_block;
-	uint8_t used_names;
-} PACKED;
 struct disk
 {
 	// BAT is at 0 of every BLOCK_SIZE blocks (4097 total)
@@ -12879,6 +12888,7 @@ struct sack_vfs_file
 	FPI entry_fpi;
 #ifdef VIRTUAL_OBJECT_STORE
 	enum block_cache_entries cache;
+	uint8_t *seal;
 	uint8_t *sealant;
 	uint8_t sealantLen;
  // boolean, on read, validates seal.  Defaults to FALSE.
@@ -14572,16 +14582,11 @@ PREFIX_PACKED struct directory_entry
 // subtract name has index
 // subtrace name index
 #define VFS_DIRECTORY_ENTRIES ( ( BLOCK_SIZE - ( 2*sizeof(BLOCKINDEX) + 256*sizeof(BLOCKINDEX)) ) /sizeof( struct directory_entry) )
+#define VFS_PATCH_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
 #else
 #define VFS_DIRECTORY_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
+#define VFS_PATCH_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
 #endif
-PREFIX_PACKED struct directory_hash_lookup_block
-{
-	BLOCKINDEX next_block[256];
-	struct directory_entry entries[VFS_DIRECTORY_ENTRIES];
-	BLOCKINDEX names_first_block;
-	uint8_t used_names;
-} PACKED;
 struct disk
 {
 	// BAT is at 0 of every BLOCK_SIZE blocks (4097 total)
@@ -14670,6 +14675,7 @@ struct sack_vfs_file
 	FPI entry_fpi;
 #ifdef VIRTUAL_OBJECT_STORE
 	enum block_cache_entries cache;
+	uint8_t *seal;
 	uint8_t *sealant;
 	uint8_t sealantLen;
  // boolean, on read, validates seal.  Defaults to FALSE.
@@ -14741,9 +14747,65 @@ static struct {
 #define EOFBLOCK  (~(BLOCKINDEX)0)
 #define EOBBLOCK  ((BLOCKINDEX)1)
 #define EODMARK   (1)
-#define GFB_INIT_NONE   0
-#define GFB_INIT_DIRENT 1
-#define GFB_INIT_NAMES  2
+#define GFB_INIT_NONE       0
+#define GFB_INIT_DIRENT     1
+#define GFB_INIT_NAMES      2
+#define GFB_INIT_PATCHBLOCK 3
+// End Of Text Block
+#define UTF8_EOTB 0xFF
+// End Of Text
+#define UTF8_EOT 0xFE
+// use this character in hash as parent directory (block & char)
+#define DIRNAME_CHAR_PARENT 0xFF
+PREFIX_PACKED struct directory_hash_lookup_block
+{
+	BLOCKINDEX next_block[256];
+	struct directory_entry entries[VFS_DIRECTORY_ENTRIES];
+	BLOCKINDEX names_first_block;
+	uint8_t used_names;
+} PACKED;
+PREFIX_PACKED struct directory_patch_block
+{
+	union direction_patch_block_entry_union {
+		struct direction_patch_block_entry {
+			BIT_FIELD index : 8;
+			BIT_FIELD hash_block : 24;
+		} dirIndex;
+		uint32_t raw;
+	}entries[(BLOCK_SIZE-sizeof(BLOCKINDEX))/sizeof(uint32_t)];
+	uint8_t usedEntries;
+	BLOCKINDEX morePatches;
+} PACKED;
+PREFIX_PACKED struct directory_patch_ref_block
+{
+	PREFIX_PACKED struct directory_patch_ref_entry {
+		BLOCKINDEX patchBlockStart;
+ // first patch block
+		BLOCKINDEX dirBlock;
+		uint16_t patchNum;
+ // which directory entry this patches
+		uint8_t dirEntry;
+	} entries[(BLOCK_SIZE)/sizeof( struct directory_patch_ref_entry )] PACKED;
+} PACKED;
+enum sack_vfs_os_seal_states {
+	SACK_VFS_OS_SEAL_NONE = 0,
+	SACK_VFS_OS_SEAL_LOAD,
+	SACK_VFS_OS_SEAL_VALID,
+	SACK_VFS_OS_SEAL_STORE,
+  // validate failed (read whole file check)
+	SACK_VFS_OS_SEAL_INVALID,
+  // stored patch is writeable
+	SACK_VFS_OS_SEAL_CLEARED,
+  // stored patch new sealant (after read valid, new write)
+	SACK_VFS_OS_SEAL_STORE_PATCH,
+};
+PREFIX_PACKED struct sealant_suffix {
+	BLOCKINDEX firstPatchBlock;
+ // first patch block
+	BLOCKINDEX patchRefBlock;
+ // patch entry that this is a patch to.
+	uint16_t patchRefIndex;
+}PACKED;
 static BLOCKINDEX _os_GetFreeBlock_( struct volume *vol, int init DBG_PASS );
 #define _os_GetFreeBlock(v,i) _os_GetFreeBlock_(v,i DBG_SRC )
 LOGICAL _os_ScanDirectory_( struct volume *vol, const char * filename
@@ -14784,10 +14846,10 @@ static int  _os_PathCaseCmpEx ( CTEXTSTR s1, CTEXTSTR s2, size_t maxlen )
 	if( s1 == s2 )
  // ==0 is success.
 		return 0;
-	for( ;s1[0] && (s2[0] != 0xFE) && (s1[0] == s2[0]) && maxlen;
+	for( ;s1[0] && ((unsigned char)s2[0] != UTF8_EOT) && (s1[0] == s2[0]) && maxlen;
 		  s1++, s2++, maxlen-- );
 	if( maxlen )
-		return tolower_(s1[0]) - ((s2[0] == 0xFE)?0:tolower_(s2[0]));
+		return tolower_(s1[0]) - (((unsigned char)s2[0] == UTF8_EOT)?0:tolower_(s2[0]));
 	return 0;
 }
 // read the byte from namespace at offset; decrypt byte in-register
@@ -14800,7 +14862,7 @@ static int _os_MaskStrCmp( struct volume *vol, const char * filename, BLOCKINDEX
 	dirkey = (const char*)(vol->usekey[cache]) + (name_offset & BLOCK_MASK );
 	if( vol->key ) {
 		int c;
-		while( ( c = (dirname[0] ^ dirkey[0] ) != 0xFE )
+		while( ((unsigned char)( c = (dirname[0] ^ dirkey[0] )) != UTF8_EOT )
 			  && filename[0] ) {
 			int del = tolower_(filename[0]) - tolower_(c);
 			if( del ) return del;
@@ -14836,7 +14898,7 @@ static void MaskStrCpy( char *output, size_t outlen, struct volume *vol, FPI nam
 	if( vol->key ) {
 		int c;
 		FPI name_start = name_offset;
-		while( 0xFE != ( c = ( vol->usekey_buffer[BC(NAMES)][name_offset&BLOCK_MASK] ^ vol->usekey[BC(NAMES)][name_offset&BLOCK_MASK] ) ) ) {
+		while( UTF8_EOT != (unsigned char)( c = ( vol->usekey_buffer[BC(NAMES)][name_offset&BLOCK_MASK] ^ vol->usekey[BC(NAMES)][name_offset&BLOCK_MASK] ) ) ) {
 			if( ( name_offset - name_start ) < outlen )
 				output[name_offset-name_start] = c;
 			name_offset++;
@@ -15304,9 +15366,6 @@ LOGICAL _os_ExpandVolume( struct volume *vol ) {
 		vol->bufferFPI[BC( BAT )] = 0;
 		{
 			BLOCKINDEX dirblock = _os_GetFreeBlock( vol, GFB_INIT_DIRENT );
-			enum block_cache_entries cache = BC(DIRECTORY);
-			struct directory_hash_lookup_block *dir = BTSEEK( struct directory_hash_lookup_block *, vol, dirblock, cache );
-			SETFLAG( vol->dirty, cache );
 		}
 	}
 	return TRUE;
@@ -15385,16 +15444,14 @@ static BLOCKINDEX _os_GetFreeBlock_( struct volume *vol, int init DBG_PASS )
 			memset( vol->usekey_buffer[newcache], 0, BLOCK_SIZE );
 			dir = (struct directory_hash_lookup_block *)vol->usekey_buffer[newcache];
 			dirkey = (struct directory_hash_lookup_block *)vol->usekey[newcache];
-			LoG( "And then create a name block" );
 			dir->names_first_block = _os_GetFreeBlock( vol, GFB_INIT_NAMES ) ^ dirkey->names_first_block;
-			LoG( "dir cache is %d", newcache );
 			dir->used_names = 0 ^ dirkey->used_names;
 			//((struct directory_hash_lookup_block*)(vol->usekey_buffer[newcache]))->entries[0].first_block = EODMARK ^ ((struct directory_hash_lookup_block*)vol->usekey[cache])->entries[0].first_block;
 		}
 		else if( init == GFB_INIT_NAMES ) {
 			newcache = _os_UpdateSegmentKey_( vol, BC( NAMES ), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 DBG_RELAY );
 			memset( vol->usekey_buffer[newcache], 0, BLOCK_SIZE );
-			((char*)(vol->usekey_buffer[newcache]))[0] = (char)0xFF ^ ((char*)vol->usekey[newcache])[0];
+			((char*)(vol->usekey_buffer[newcache]))[0] = (char)UTF8_EOTB ^ ((char*)vol->usekey[newcache])[0];
 			//LoG( "New Name Buffer: %x %p", vol->segment[newcache], vol->usekey_buffer[newcache] );
 		}
 		else {
@@ -15959,7 +16016,7 @@ static FPI _os_SaveFileName( struct volume *vol, BLOCKINDEX firstNameBlock, cons
 		while( name < ( (unsigned char*)names + BLOCK_SIZE ) ) {
 			int c = name[0];
 			if( vol->key ) c = c ^ vol->usekey[cache][(uintptr_t)name-(uintptr_t)names];
-			if( c == 0xFF ) {
+			if( (unsigned char)c == UTF8_EOTB ) {
 				if( namelen < (size_t)( ( (unsigned char*)names + BLOCK_SIZE ) - name ) ) {
 					//LoG( "using unused entry for new file...%" _size_f " %d(%d)  %" _size_f " %s", this_name_block, cache, cache - BC(NAMES), (uintptr_t)name - (uintptr_t)names, filename );
 					if( vol->key ) {
@@ -15967,8 +16024,8 @@ static FPI _os_SaveFileName( struct volume *vol, BLOCKINDEX firstNameBlock, cons
 							name[n] = filename[n] ^ vol->usekey[cache][n + (name-(unsigned char*)names)];
 					} else
 						memcpy( name, filename, namelen );
-					name[namelen+0] = 0xFE ^ vol->usekey[cache][(uintptr_t)name - (uintptr_t)names + namelen+0];
-					name[namelen+1] = 0xFF ^ vol->usekey[cache][(uintptr_t)name - (uintptr_t)names + namelen+1];
+					name[namelen+0] = UTF8_EOT ^ vol->usekey[cache][(uintptr_t)name - (uintptr_t)names + namelen+0];
+					name[namelen+1] = UTF8_EOTB ^ vol->usekey[cache][(uintptr_t)name - (uintptr_t)names + namelen+1];
 					SETFLAG( vol->dirty, cache );
 					//lprintf( "OFFSET:%d %d", ((uintptr_t)name) - ((uintptr_t)names), +blocks * BLOCK_SIZE );
 					return ((uintptr_t)name) - ((uintptr_t)names) + blocks * BLOCK_SIZE;
@@ -15979,7 +16036,7 @@ static FPI _os_SaveFileName( struct volume *vol, BLOCKINDEX firstNameBlock, cons
 					LoG( "using existing entry for new file...%s", filename );
 					return ((uintptr_t)name) - ((uintptr_t)names) + blocks * BLOCK_SIZE;
 				}
-			while( 0xFE != ( name[0] ^ vol->usekey[cache][name-(unsigned char*)names] ) ) name++;
+			while( UTF8_EOT != ( name[0] ^ vol->usekey[cache][name-(unsigned char*)names] ) ) name++;
 			name++;
 			//LoG( "new position is %" _size_f "  %" _size_f, this_name_block, (uintptr_t)name - (uintptr_t)names );
 		}
@@ -16061,6 +16118,7 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 				if( !newDirblock->names_first_block )
 					DebugBreak();
 #endif
+				newDirblock->next_block[DIRNAME_CHAR_PARENT] = (this_dir_block << 8) | imax;
 				// SETFLAG( vol->dirty, cache ); // this will be dirty because it was init above.
 				for( f = 0; f < usedNames; f++ ) {
 					BLOCKINDEX first = dirblock->entries[f].first_block ^ dirblockkey->entries[f].first_block;
@@ -16080,7 +16138,7 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 						//LoG( "Saving existing name %d %s", name, namebuffer + name );
 						//LogBinary( namebuffer, 32 );
 						namelen = 0;
-						while( namebuffer[name + namelen] != 0xFE )namelen++;
+						while( namebuffer[name + namelen] != UTF8_EOT )namelen++;
 						name_ofs = _os_SaveFileName( vol, newFirstNameBlock, (char*)(namebuffer + name + 1), namelen -1 ) ^ newEntkey->name_offset;
 						{
 							INDEX idx;
@@ -16151,16 +16209,16 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 						entry->name_offset = ( newout ^ entkey->name_offset )
 							| ( (entry->name_offset ^ entkey->name_offset)
 								& ~DIRENT_NAME_OFFSET_OFFSET );
-						while( namebuffer[name] != 0xFE )
+						while( namebuffer[name] != UTF8_EOT )
 							newnamebuffer[newout++] = namebuffer[name++];
 						newnamebuffer[newout++] = namebuffer[name++];
 					}
-					newnamebuffer[newout++] = 0xFF;
+					newnamebuffer[newout++] = UTF8_EOTB;
 					memcpy( namebuffer, newnamebuffer, newout );
 					memset( newnamebuffer, 0, newout );
 				}
 				else {
-					namebuffer[0] = 0xFF;
+					namebuffer[0] = UTF8_EOTB;
 				}
 				{
 					name_block = dirblock->names_first_block ^ dirblockkey->names_first_block;
@@ -16302,13 +16360,14 @@ struct sack_vfs_file * CPROC sack_vfs_os_openfile( struct volume *vol, const cha
 		if( sealLen ) {
 			file->sealant = NewArray( uint8_t, sealLen );
 			file->sealantLen = sealLen;
+			file->sealed = SACK_VFS_OS_SEAL_LOAD;
 		}
 		else {
 			file->sealant = NULL;
 			file->sealantLen = 0;
+			file->sealed = SACK_VFS_OS_SEAL_NONE;
 		}
 		file->filename = StrDup( filename );
-		file->sealed = FALSE;
 	}
 	file->vol = vol;
 	file->fpi = 0;
@@ -16320,6 +16379,40 @@ struct sack_vfs_file * CPROC sack_vfs_os_openfile( struct volume *vol, const cha
 }
 static struct sack_vfs_file * CPROC sack_vfs_os_open( uintptr_t psvInstance, const char * filename, const char *opts ) {
 	return sack_vfs_os_openfile( (struct volume*)psvInstance, filename );
+}
+static char * getFilename( const char *objBuf, size_t objBufLen, char *sealBuf, size_t sealBufLen, char *idBuf, size_t idBufLen ) {
+	if( sealBuf ) {
+		struct random_context *signEntropy = SRG_CreateEntropy3( NULL, (uintptr_t)0 );
+		char *fileKey;
+		size_t keyLen;
+		uint8_t outbuf[32];
+		SRG_ResetEntropy( signEntropy );
+		SRG_FeedEntropy( signEntropy, (const uint8_t*)sealBuf, sealBufLen );
+		SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
+		SRG_ResetEntropy( signEntropy );
+		SRG_FeedEntropy( signEntropy, (const uint8_t*)objBuf, objBufLen );
+		SRG_FeedEntropy( signEntropy, (const uint8_t*)outbuf, 32 );
+		fileKey = EncodeBase64Ex( outbuf, 32, &keyLen, (const char*)1 );
+		SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
+		SRG_DestroyEntropy( &signEntropy );
+		{
+			size_t len;
+			char *rid = EncodeBase64Ex( outbuf, 256 / 8, &len, (const char *)1 );
+			//rid[43] = '=';
+			StrCpyEx( idBuf, rid, idBufLen );
+			Deallocate( char*, rid );
+		}
+		return fileKey;
+	}
+	else {
+		char *objid = SRG_ID_Generator3();
+		objid[43] = 0;
+		StrCpyEx( idBuf, objid, idBufLen );
+		Deallocate( char*, objid );
+		if( idBuf )
+			idBuf[0] = 0;
+		return NULL;
+	}
 }
 int CPROC sack_vfs_os_exists( struct volume *vol, const char * file ) {
 	LOGICAL result;
@@ -16376,6 +16469,16 @@ size_t CPROC sack_vfs_os_write( struct sack_vfs_file *file, const char * data, s
 	size_t ofs = file->fpi & BLOCK_MASK;
 	LOGICAL updated = FALSE;
 	while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
+	if( file->entry->name_offset & DIRENT_NAME_OFFSET_FLAG_SEALANT ) {
+		char filename[64];
+		// read-only data block.
+		lprintf( "INCOMPLETE - TODO WRITE PATCH" );
+		char *sealer = getFilename( data, length, (char*)file->sealant, file->sealantLen, filename, 64 );
+		struct sack_vfs_file *pFile = sack_vfs_os_openfile( file->vol, filename );
+		pFile->sealant = (uint8_t*)sealer;
+		pFile->sealantLen = 32;
+		return sack_vfs_os_write( pFile, data, length );
+	}
 #ifdef DEBUG_FILE_OPS
 	LoG( "Write to file %p %" _size_f "  @%" _size_f, file, length, ofs );
 #endif
@@ -16454,24 +16557,30 @@ size_t CPROC sack_vfs_os_write( struct sack_vfs_file *file, const char * data, s
 	file->vol->lock = 0;
 	return written;
 }
-static LOGICAL ValidateSeal( struct sack_vfs_file *file, char *data, size_t length ) {
+static enum sack_vfs_os_seal_states ValidateSeal( struct sack_vfs_file *file, char *data, size_t length ) {
 	BLOCKINDEX offset = (file->entry->name_offset ^ file->dirent_key.name_offset);
-	uint32_t sealLen = ( offset & DIRENT_NAME_OFFSET_FLAG_SEALANT ) >> DIRENT_NAME_OFFSET_FLAG_SEALANT_SHIFT;
+	uint32_t sealLen = (offset & DIRENT_NAME_OFFSET_FLAG_SEALANT) >> DIRENT_NAME_OFFSET_FLAG_SEALANT_SHIFT;
 // = (struct random_context *)DequeLink( &signingEntropies );
 	struct random_context *signEntropy;
 	uint8_t outbuf[32];
 	signEntropy = SRG_CreateEntropy3( NULL, (uintptr_t)0 );
 	SRG_ResetEntropy( signEntropy );
+	SRG_FeedEntropy( signEntropy, (const uint8_t*)file->sealant, file->sealantLen );
+	SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
+	if( (file->sealantLen != 32) || MemCmp( outbuf, file->sealant, 32 ) )
+		return SACK_VFS_OS_SEAL_INVALID;
+	SRG_ResetEntropy( signEntropy );
 	SRG_FeedEntropy( signEntropy, (const uint8_t*)data, length );
+	// DO NOT DOUBLE_PROCESS THIS DATA
 	SRG_FeedEntropy( signEntropy, (const uint8_t*)file->sealant, file->sealantLen );
 	SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
 	SRG_DestroyEntropy( &signEntropy );
 	{
-		LOGICAL success = FALSE;
+		enum sack_vfs_os_seal_states success = SACK_VFS_OS_SEAL_INVALID;
 		size_t len;
 		char *rid = EncodeBase64Ex( outbuf, 256 / 8, &len, (const char *)1 );
 		if( StrCmp( file->filename, rid ) == 0 )
-			success = TRUE;
+			success = SACK_VFS_OS_SEAL_VALID;
 		Deallocate( char *, rid );
 		return success;
 	}
@@ -16527,10 +16636,58 @@ size_t CPROC sack_vfs_os_read( struct sack_vfs_file *file, char * data, size_t l
 		&& length == ( file->entry->filesize ^ file->dirent_key.filesize ) ) {
 		BLOCKINDEX saveSize = file->entry->filesize;
 		BLOCKINDEX saveFpi = file->fpi;
+		file->entry->filesize = ((file->entry->filesize
+			^ file->dirent_key.filesize) + file->sealantLen + sizeof( BLOCKINDEX ))
+			^ file->dirent_key.filesize;
 		sack_vfs_os_read( file, (char*)file->sealant, file->sealantLen );
 		file->entry->filesize = saveSize;
 		file->fpi = saveFpi;
 		file->sealed = ValidateSeal( file, data, length );
+	}
+	file->vol->lock = 0;
+	return written;
+}
+static BLOCKINDEX sack_vfs_os_read_patches( struct sack_vfs_file *file ) {
+	size_t written = 0;
+	BLOCKINDEX saveFpi = file->fpi;
+	size_t length;
+	while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
+	length = (size_t)(file->entry->filesize  ^ file->dirent_key.filesize);
+	if( !length ) { file->vol->lock = 0; return 0; }
+	sack_vfs_os_seek( file, length, SEEK_SET );
+	if( file->sealant ) {
+		BLOCKINDEX saveSize = file->entry->filesize;
+		BLOCKINDEX patches;
+		file->entry->filesize = ((file->entry->filesize
+			^ file->dirent_key.filesize) + file->sealantLen + sizeof( BLOCKINDEX ))
+			^ file->dirent_key.filesize;
+		sack_vfs_os_read( file, (char*)file->sealant, file->sealantLen );
+		sack_vfs_os_read( file, (char*)&patches, sizeof( BLOCKINDEX ) );
+		file->entry->filesize = saveSize;
+		file->fpi = saveFpi;
+		file->sealed = SACK_VFS_OS_SEAL_LOAD;
+		return patches;
+	}
+	file->vol->lock = 0;
+	return written;
+}
+static size_t sack_vfs_os_set_patch_block( struct sack_vfs_file *file, BLOCKINDEX patchBlock ) {
+	size_t written = 0;
+	size_t length;
+	BLOCKINDEX saveFpi = file->fpi;
+	while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
+	length = (size_t)(file->entry->filesize  ^ file->dirent_key.filesize);
+	if( !length ) { file->vol->lock = 0; return 0; }
+	sack_vfs_os_seek( file, length, SEEK_SET );
+	if( file->sealant ) {
+		BLOCKINDEX saveSize = file->entry->filesize;
+		file->entry->filesize = ((file->entry->filesize
+			^ file->dirent_key.filesize) + file->sealantLen + sizeof( BLOCKINDEX ))
+			^ file->dirent_key.filesize;
+		sack_vfs_os_seek( file, file->sealantLen, SEEK_CUR );
+		sack_vfs_os_write( file, (char*)&patchBlock, sizeof( BLOCKINDEX ) );
+		file->entry->filesize = saveSize;
+		file->fpi = saveFpi;
 	}
 	file->vol->lock = 0;
 	return written;
@@ -16799,72 +16956,161 @@ LOGICAL CPROC sack_vfs_os_rename( uintptr_t psvInstance, const char *original, c
 	struct volume *vol = (struct volume *)psvInstance;
 	lprintf( "RENAME IS NOT SUPPORTED IN OBJECT STORAGE(OR NEEDS TO BE FIXED)" );
 	// fail if the names are the same.
-#if 0
-	if( strcmp( original, newname ) == 0 )
-		return FALSE;
-	if( vol ) {
-		struct directory_entry entkey;
-		struct directory_entry entry;
-		BLOCKINDEX namesBlock;
-		struct sack_vfs_file tmpdirinfo;
-		FPI entFPI;
-		while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
-		if( ( _os_ScanDirectory( vol, original, &namesBlock, &tmpdirinfo, 0 ) ) ) {
-			//struct directory_entry new_entkey;
-			//struct directory_entry new_entry;
-			struct sack_vfs_file newtmpdirinfo;
-			if( (_os_ScanDirectory( vol, newname, &namesBlock, &newtmpdirinfo, 0 )) ) {
-				vol->lock = 0;
-				sack_vfs_os_unlink_file( vol, newname );
-				while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
-			}
-			entry.name_offset = _os_SaveFileName( vol, namesBlock, newname ) ^ tmpdirinfo.dirent_key.name_offset;
-			sack_fseek( vol->file, (size_t)entFPI, SEEK_SET );
-			sack_fwrite( &entry, 1, sizeof( entry ), vol->file );
-			vol->lock = 0;
-			return TRUE;
-		}
-		vol->lock = 0;
-	}
-#endif
-	return FALSE;
+	return TRUE;
 }
-void CPROC sack_vfs_ioctl( uintptr_t psvInstance, uintptr_t opCode, va_list args ) {
+uintptr_t CPROC sack_vfs_file_ioctl( uintptr_t psvInstance, uintptr_t opCode, va_list args ) {
 	//va_list args;
 	//va_start( args, opCode );
 	switch( opCode ) {
 	default:
 		// unhandled/ignored opcode
+		return FALSE;
 		break;
-	case SFSIO_TAMPERED:
-		{
-			struct sack_vfs_file *file = (struct sack_vfs_file *)psvInstance;
-			int *result = va_arg( args, int* );
-			if( file->sealant )
-				(*result) = file->sealed;
-			(*result) = 1;
-		}
-		break;
-	case SFSIO_PROVIDE_SEALANT:
-		{
-			const char *sealant = va_arg( args, const char * );
-			size_t sealantLen = va_arg( args, size_t );
-			struct sack_vfs_file *file = (struct sack_vfs_file *)psvInstance;
-			{
-				size_t len;
-				uint8_t *bytes;
-				bytes = DecodeBase64Ex( sealant, sealantLen, &len, (const char*)1 );
-				file->sealant = NewArray( uint8_t, len );
-				memcpy( file->sealant, bytes, len );
-				file->sealantLen = (uint8_t)len;
-				//file->sealant = sealant;
-				//file->sealantLen = sealantLen;
-				// set the sealant length in the name offset.
-				file->entry->name_offset = ( ( ( file->entry->name_offset ^ file->dirent_key.name_offset )
-					| ( ( len >> 2 ) << 17 ) ) ^ file->dirent_key.name_offset );
+	case SOSFSFIO_TAMPERED:
+	{
+		struct sack_vfs_file *file = (struct sack_vfs_file *)psvInstance;
+		int *result = va_arg( args, int* );
+		if( file->sealant ) {
+			switch( file->sealed ) {
+			case SACK_VFS_OS_SEAL_STORE:
+			case SACK_VFS_OS_SEAL_VALID:
+				(*result) = 1;
+			default:
+				(*result) = 0;
 			}
 		}
-		break;
+		else
+			(*result) = 1;
+	}
+	break;
+	case SOSFSFIO_PROVIDE_SEALANT:
+	{
+		const char *sealant = va_arg( args, const char * );
+		size_t sealantLen = va_arg( args, size_t );
+		struct sack_vfs_file *file = (struct sack_vfs_file *)psvInstance;
+		{
+			size_t len;
+			if( file->sealant )
+				Release( file->sealant );
+			file->sealant = (uint8_t*)DecodeBase64Ex( sealant, sealantLen, &len, (const char*)1 );
+			file->sealantLen = (uint8_t)len;
+			if( file->sealed == SACK_VFS_OS_SEAL_NONE )
+				file->sealed = SACK_VFS_OS_SEAL_STORE;
+			else if( file->sealed == SACK_VFS_OS_SEAL_VALID || file->sealed == SACK_VFS_OS_SEAL_LOAD )
+				file->sealed = SACK_VFS_OS_SEAL_STORE_PATCH;
+			else
+				lprintf( "Unhandled SEAL state." );
+			//file->sealant = sealant;
+			//file->sealantLen = sealantLen;
+			// set the sealant length in the name offset.
+			file->entry->name_offset = (((file->entry->name_offset ^ file->dirent_key.name_offset)
+				| ((len >> 2) << 17)) ^ file->dirent_key.name_offset);
+		}
+	}
+	break;
+	}
+	return TRUE;
+}
+uintptr_t CPROC sack_vfs_system_ioctl( uintptr_t psvInstance, uintptr_t opCode, va_list args ) {
+	struct volume *vol = (struct volume *)psvInstance;
+	//va_list args;
+	//va_start( args, opCode );
+	switch( opCode ) {
+	default:
+		// unhandled/ignored opcode
+		return FALSE;
+	case SOSFSSIO_LOAD_OBJECT:
+		return FALSE;
+	case SOSFSSIO_PATCH_OBJECT:
+	{
+		char *objIdBuf = va_arg( args, char * );
+		size_t objIdBufLen = va_arg( args, size_t );
+		char *objBuf = va_arg( args, char * );
+		size_t objBufLen = va_arg( args, size_t );
+		char *sealBuf = va_arg( args, char * );
+		size_t sealBufLen = va_arg( args, size_t );
+		char *idBuf = va_arg( args, char * );
+		size_t idBufLen = va_arg( args, size_t );
+		if( sack_vfs_os_exists( vol, objIdBuf ) ) {
+			struct sack_vfs_file* file = sack_vfs_os_openfile( vol, objIdBuf );
+			BLOCKINDEX patchBlock = sack_vfs_os_read_patches( file );
+			if( !patchBlock ) {
+				patchBlock = _os_GetFreeBlock( vol, GFB_INIT_PATCHBLOCK );
+			}
+			{
+				enum block_cache_entries cache;
+				struct directory_patch_block *newPatchblock;
+				struct directory_patch_block *newPatchblockkey;
+				cache = BC(FILE);
+				newPatchblock = BTSEEK( struct directory_patch_block *, vol, patchBlock, cache );
+				newPatchblockkey = (struct directory_patch_block *)vol->usekey[cache];
+				while( 1 ) {
+					//char objId[45];
+					//size_t objIdLen;
+					char *seal = getFilename( objBuf, objBufLen, sealBuf, sealBufLen, idBuf, idBufLen );
+					if( sack_vfs_os_exists( vol, idBuf ) ) {
+ // accidental key collision.
+						if( !sealBuf ) {
+ // try again.
+							continue;
+						}
+						else {
+							// deliberate key collision; and record already exists.
+							return TRUE;
+						}
+					}
+					else {
+						struct sack_vfs_file* file = sack_vfs_os_openfile( vol, idBuf );
+						//  file->entry_fpi
+						newPatchblock->entries[newPatchblock->usedEntries].raw
+							= file->entry_fpi ^ newPatchblockkey->entries[newPatchblock->usedEntries].raw;
+						newPatchblock->usedEntries = (newPatchblock->usedEntries + 1) ^ newPatchblockkey->usedEntries;
+						SETFLAG( vol->dirty, cache );
+						file->sealant = (uint8_t*)seal;
+						file->sealantLen = (uint8_t)strlen( seal );
+						sack_vfs_os_write( file, objBuf, objBufLen );
+						sack_vfs_os_close( file );
+					}
+					return TRUE;
+				}
+			}
+		}
+ // object to patch was not found.
+		return FALSE;
+	}
+	break;
+	case SOSFSSIO_STORE_OBJECT:
+	{
+		char *objBuf = va_arg( args, char * );
+		size_t objBufLen = va_arg( args, size_t );
+		char *sealBuf = va_arg( args, char * );
+		size_t sealBufLen = va_arg( args, size_t );
+		char *idBuf = va_arg( args, char * );
+		size_t idBufLen = va_arg( args, size_t );
+		while( 1 ) {
+			char *seal = getFilename( objBuf, objBufLen, sealBuf, sealBufLen, idBuf, idBufLen );
+			if( sack_vfs_os_exists( vol, idBuf ) ) {
+ // accidental key collision.
+				if( !sealBuf ) {
+ // try again.
+					continue;
+				}
+				else {
+					// deliberate key collision; and record already exists.
+					return TRUE;
+				}
+			}
+			else {
+				struct sack_vfs_file* file = sack_vfs_os_openfile( vol, idBuf );
+				file->sealant = (uint8_t*)seal;
+				file->sealantLen = (uint8_t)strlen( seal );
+				sack_vfs_os_write( file, objBuf, objBufLen );
+				sack_vfs_os_close( file );
+			}
+			return TRUE;
+		}
+	}
+	break;
 	}
 }
 #ifndef USE_STDIO
@@ -16890,8 +17136,9 @@ static struct file_system_interface sack_vfs_os_fsi = {
                                                    , sack_vfs_os_find_is_directory
                                                    , sack_vfs_os_is_directory
                                                    , sack_vfs_os_rename
-                                                   , sack_vfs_ioctl
-                                                   };
+                                                   , sack_vfs_file_ioctl
+												   , sack_vfs_system_ioctl
+};
 PRIORITY_PRELOAD( Sack_VFS_OS_Register, CONFIG_SCRIPT_PRELOAD_PRIORITY - 2 )
 {
 #undef DEFAULT_VFS_NAME
@@ -32290,6 +32537,7 @@ struct my_thread_info {
 #ifdef __ANDROID__
 #include <linux/sem.h>
 #else
+#include <sys/sem.h>
 #endif
 #endif
 void  RemoveTimerEx( uint32_t ID DBG_PASS );
@@ -43690,17 +43938,29 @@ int sack_fputs( const char *format,FILE *file )
 	}
 	return 0;
 }
-void sack_ioctl( FILE *file_handle, uintptr_t opCode, ... ) {
+uintptr_t sack_ioctl( FILE *file_handle, uintptr_t opCode, ... ) {
 	struct file *file;
 	va_list args;
 	va_start( args, opCode );
 	file = FindFileByFILE( file_handle );
 	if( file && file->mount && file->mount->fsi && file->mount->fsi->ioctl ) {
-			file->mount->fsi->ioctl( (uintptr_t)file_handle, opCode, args );
+			return file->mount->fsi->ioctl( (uintptr_t)file_handle, opCode, args );
 	}
 	else {
 		 // unknown file handle; ignore unknown ioctl.
 	}
+	return 0;
+}
+uintptr_t sack_fs_ioctl( struct file_system_mounted_interface *mount, uintptr_t opCode, ... ) {
+	va_list args;
+	va_start( args, opCode );
+	if( mount && mount->fsi && mount->fsi->fs_ioctl ) {
+		return mount->fsi->fs_ioctl( mount->psvInstance, opCode, args );
+	}
+	else {
+		// unknown file handle; ignore unknown ioctl.
+	}
+	return 0;
 }
 LOGICAL SetFileLength( CTEXTSTR path, size_t length )
 {
@@ -49915,14 +50175,14 @@ static void decodeblock( const char in[4], uint8_t out[3], size_t len, const cha
 {
 	int index[4];
 	int n;
-	for( n = 0; n < 4; n++ )
+	for( n = 0; n < len; n++ )
 	{
-		//strchr( base64, in[n] );
-		index[n] = _base64_r[in[n]];
-		//if( ( index[n] - base64 ) == 64 )
-		//	last_byte = 1;
+		// propagate terminator.
+		if( n && ( index[n - 1] == 64 ) ) index[n] = 0;
+		else index[n] = _base64_r[in[n]];
 	}
-	//if(
+	for( ; n < 4; n++ )
+		index[n] = 0;
 	out[0] = (char)(( index[0] ) << 2 | ( index[1] ) >> 4);
 	out[1] = (char)(( index[1] ) << 4 | ( ( ( index[2] ) >> 2 ) & 0x0f ));
 	out[2] = (char)(( index[2] ) << 6 | ( ( index[3] ) & 0x3F ));
@@ -49955,6 +50215,34 @@ TEXTCHAR *EncodeBase64Ex( const uint8_t* buf, size_t length, size_t *outsize, co
 }
 static void setupDecodeBytes( const char *code ) {
 	int n = 0;
+	// default all of these, allow code to override them.
+	// allow nul terminators (sortof)
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r[0] = 64;
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r['~'] = 64;
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r['='] = 64;
+	// My JS Encoding $_ and = at the end.  allows most to be identifiers too.
+	// 'standard' encoding +/
+	// variants -/
+	//          +,
+	//          ._
+	// variants -_
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r['$'] = 62;
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r['+'] = 62;
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r['-'] = 62;
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r['.'] = 62;
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r['_'] = 63;
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r['/'] = 63;
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r[','] = 63;
 	if( _last_base64_set != code ) {
 		_last_base64_set = code;
 		memset( _base64_r, 0, 256 );
@@ -49966,6 +50254,7 @@ static void setupDecodeBytes( const char *code ) {
 }
 uint8_t *DecodeBase64Ex( const char* buf, size_t length, size_t *outsize, const char *base64 )
 {
+	static const char *useBase64;
 	size_t fake_outsize;
 	uint8_t * real_output;
 	if( !outsize ) outsize = &fake_outsize;
@@ -49973,7 +50262,10 @@ uint8_t *DecodeBase64Ex( const char* buf, size_t length, size_t *outsize, const 
 		base64 = _base64;
 	else if( ((uintptr_t)base64) == 1 )
 		base64 = _base642;
-	setupDecodeBytes( base64 );
+	if( useBase64 != base64 ) {
+		base64 = useBase64;
+		setupDecodeBytes( base64 );
+	}
 	real_output = NewArray( uint8_t, ( ( ( length + 1 ) * 3 ) / 4 ) + 1 );
 	{
 		size_t n;
@@ -53577,7 +53869,7 @@ int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
 				//start = 0; // new packet and still collecting header....
 				for( pos = 0; ( pos < size ) && !pHttpState->final; pos++ )
 				{
-					if( (pos - start - bLine) < 0 )
+					if( ((int)pos - (int)start - (int)bLine) < 0 )
 						continue;
 					if( c[pos] == '\r' )
 						bLine++;
@@ -62893,9 +63185,9 @@ parse_message
 		  int index;
         struct jsox_value_container *value;
 		  DATALIST_FORALL( pdlMessage, index, struct jsox_value_container *. value ) {
-           /* for each value in the result.... the first layer will
-           always be just one element, either a simple type, or a VALUE_ARRAY or VALUE_OBJECT, which
-           then for each value->contains (as a datalist like above), process each of those values.
+           // for each value in the result.... the first layer will
+           // always be just one element, either a simple type, or a VALUE_ARRAY or VALUE_OBJECT, which
+           // then for each value->contains (as a datalist like above), process each of those values.
 		  }
         jsox_dispose_mesage( &pdlMessage );
     }
@@ -62918,9 +63210,9 @@ parse_message
         int index;
         struct jsox_value_container *value;
         DATALIST_FORALL( pdlMessage, index, struct jsox_value_container *. value ) {
-           /* for each value in the result.... the first layer will
-           always be just one element, either a simple type, or a VALUE_ARRAY or VALUE_OBJECT, which
-           then for each value->contains (as a datalist like above), process each of those values.
+           // for each value in the result.... the first layer will
+           // always be just one element, either a simple type, or a VALUE_ARRAY or VALUE_OBJECT, which
+           // then for each value->contains (as a datalist like above), process each of those values.
         }
         jsox_dispose_mesage( &pdlMessage );
 		  jsox_parse_add_data( parser, NULL, 0 ); // trigger parsing next message.
@@ -93680,40 +93972,8 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 					int idx;
 					for( idx = 1; idx <= collection->columns; idx++ ) {
 						val = (struct json_value_container *)GetDataItem( collection->ppdlResults, idx - 1 );
-#if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
-						//const unsigned char *sqlite3_column_text(sqlite3_stmt*, int iCol);
-						if( odbc->flags.bSQLite_native ) {
-							int coltype;
-							val->name = DupCStr( sqlite3_column_name( collection->stmt, idx - 1 ) );
-							val->nameLen = strlen( val->name );
-							switch( coltype = sqlite3_column_type( collection->stmt, idx - 1 ) ) {
-							default:
-								lprintf( "Unhandled SQLITE type: %d", coltype );
-								break;
-							case SQLITE_NULL:
-								val->value_type = VALUE_NULL;
-								break;
-							case SQLITE_BLOB:
-								val->value_type = VALUE_TYPED_ARRAY;
-								break;
-							case SQLITE_TEXT:
-								val->value_type = VALUE_STRING;
-								break;
-							case SQLITE_INTEGER:
-								val->value_type = VALUE_NUMBER;
-								val->float_result = 0;
-								break;
-							case SQLITE_FLOAT:
-								val->value_type = VALUE_NUMBER;
-								val->float_result = 1;
-								break;
-							}
-						}
-#endif
-#if ( defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE ) ) && defined( USE_ODBC )
-						else
-#endif
 #ifdef USE_ODBC
+						if( !odbc->flags.bSQLite_native )
 						{
 							SQLSMALLINT coltype;
 							SQLULEN colsize;
@@ -93745,10 +94005,8 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 								result_cmd = WM_SQL_RESULT_ERROR;
 								break;
 							}
- // always nul terminate this.
-							colname[namelen] = 0;
-							val->name = StrDup( colname );
-							val->nameLen = StrLen( colname );
+							val->name = DupCStrLen( colname, namelen );
+							val->nameLen = namelen;
 						}
 #endif
  // for
@@ -94052,140 +94310,199 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 					{
 						byResult = byResultStatic;
 					}
-					if( collection->coltypes && ( ( collection->coltypes[idx-1] == SQL_VARBINARY ) || ( collection->coltypes[idx-1] == SQL_LONGVARBINARY ) ) )
-					{
-						rc = SQLGetData( collection->hstmt
-											, (short)(idx)
-											, SQL_C_BINARY
-											, byResult
-											, colsize
-											, &ResultLen );
-						if( SUS_GT( ResultLen,SQLINTEGER,collection->colsizes[idx-1],SQLUINTEGER) )
-						{
-							lprintf( WIDE( "SQL Result returned more data than the column described! (returned %d expected %d)" ), (int)ResultLen, (int)(collection->colsizes[idx-1]) );
+					if( collection->ppdlResults ) {
+						struct json_value_container *val = (struct json_value_container *)GetDataItem( collection->ppdlResults, idx - 1 );
+						switch( coltype ) {
+						default:
+							lprintf( "Unhandled coltype:%d", coltype );
+							break;
+						case SQL_CHAR:
+						case SQL_VARCHAR:
+						case SQL_WCHAR:
+							val->value_type = VALUE_STRING;
+							rc = SQLGetData( collection->hstmt
+								, (short)(idx)
+								, SQL_CHAR
+								, byResult
+								, colsize
+								, &ResultLen );
+							if( ResultLen == SQL_NULL_DATA ) {
+								val->value_type = VALUE_NULL;
+								val->string = NULL;
+								val->stringLen = 0;
+							}
+							else {
+								val->string = DupCStrLen( byResult, ResultLen );
+								val->stringLen = ResultLen;
+							}
+							break;
+						case SQL_DECIMAL:
+						case SQL_REAL:
+						case SQL_FLOAT:
+						case SQL_DOUBLE:
+							val->value_type = VALUE_NUMBER;
+							val->float_result = 1;
+							rc = SQLGetData( collection->hstmt
+								, (short)(idx)
+								, SQL_C_DOUBLE
+								, &val->result_d
+								, colsize
+								, &ResultLen );
+							if( ResultLen == SQL_NULL_DATA ) {
+								val->value_type = VALUE_NULL;
+								val->string = NULL;
+								val->stringLen = 0;
+							}
+							break;
+						case SQL_INTEGER:
+						case SQL_SMALLINT:
+							val->value_type = VALUE_NUMBER;
+							val->float_result = 1;
+							val->result_n = 0;
+							rc = SQLGetData( collection->hstmt
+								, (short)(idx)
+								, SQL_C_LONG
+								, &val->result_n
+								, colsize
+								, &ResultLen );
+							if( ResultLen == SQL_NULL_DATA ) {
+								val->value_type = VALUE_NULL;
+								val->string = NULL;
+								val->stringLen = 0;
+							}
+							else {
+							}
+							break;
 						}
-					}
-					else
-					{
-						rc = SQLGetData( collection->hstmt
-											, (short)(idx)
-#ifdef _UNICODE
-											, SQL_C_WCHAR
-#else
-											, SQL_C_CHAR
-#endif
-											, byResult
-											, colsize
-											, &ResultLen );
-						// hvaing this cast as a UINTEGER for colsize comparison
-						// breaks -1 being less than colsize... so test negative special and
-						// do the same thing as < colsize
-						if( ( ResultLen & 0x8000000 )
-									|| ( (SQLUINTEGER)ResultLen < colsize ) )
+					} else {
+						if( collection->coltypes && ( ( collection->coltypes[idx-1] == SQL_VARBINARY ) || ( collection->coltypes[idx-1] == SQL_LONGVARBINARY ) ) )
 						{
-							if( (int)ResultLen < 0 )
-								byResult[0] = 0;
-							else
-								byResult[ResultLen] = 0;
+							rc = SQLGetData( collection->hstmt
+												, (short)(idx)
+												, SQL_C_BINARY
+												, byResult
+												, colsize
+												, &ResultLen );
+							if( SUS_GT( ResultLen,SQLINTEGER,collection->colsizes[idx-1],SQLUINTEGER) )
+							{
+								lprintf( WIDE( "SQL Result returned more data than the column described! (returned %d expected %d)" ), (int)ResultLen, (int)(collection->colsizes[idx-1]) );
+							}
 						}
 						else
 						{
-							lprintf( WIDE( "SQL overflow (no room for nul character) %d of %d" ), (int)ResultLen, (int)colsize );
+							rc = SQLGetData( collection->hstmt
+												, (short)(idx)
+	#ifdef _UNICODE
+												, SQL_C_WCHAR
+	#else
+												, SQL_C_CHAR
+	#endif
+												, byResult
+												, colsize
+												, &ResultLen );
+							// hvaing this cast as a UINTEGER for colsize comparison
+							// breaks -1 being less than colsize... so test negative special and
+							// do the same thing as < colsize
+							if( ( ResultLen & 0x8000000 )
+										|| ( (SQLUINTEGER)ResultLen < colsize ) )
+							{
+								if( (int)ResultLen < 0 )
+									byResult[0] = 0;
+								else
+									byResult[ResultLen] = 0;
+							}
+							else
+							{
+								lprintf( WIDE( "SQL overflow (no room for nul character) %d of %d" ), (int)ResultLen, (int)colsize );
+							}
 						}
-					}
-					collection->result_len[idx - 1] = ResultLen;
-					//lprintf( WIDE( "Column %s colsize %d coltype %d coltype %d idx %d" ), collection->fields[idx-1], colsize, coltype, collection->coltypes[idx-1], idx );
-					if( collection->coltypes && coltype != collection->coltypes[idx-1] )
-					{
-						lprintf( WIDE( "Col type mismatch?" ) );
-						DebugBreak();
-					}
-					if( rc == SQL_SUCCESS ||
-						rc == SQL_SUCCESS_WITH_INFO )
-					{
+						//lprintf( WIDE( "Column %s colsize %d coltype %d coltype %d idx %d" ), collection->fields[idx-1], colsize, coltype, collection->coltypes[idx-1], idx );
+						if( collection->coltypes && coltype != collection->coltypes[idx-1] )
+						{
+							lprintf( WIDE( "Col type mismatch?" ) );
+							DebugBreak();
+						}
+						if( rc == SQL_SUCCESS ||
+							rc == SQL_SUCCESS_WITH_INFO ) {
   // -4
-						if( ResultLen == SQL_NO_TOTAL ||
+							if( ResultLen == SQL_NO_TOTAL ||
   // -1
-							ResultLen == SQL_NULL_DATA )
-						{
-							//lprintf( WIDE("result data failed...") );
-						}
-						if( ResultLen > 0 )
-						{
-							if( collection->flags.bBuildResultArray )
+								ResultLen == SQL_NULL_DATA )
 							{
-								if( collection->coltypes[idx-1] == SQL_LONGVARBINARY )
-								{
-									// I won't modify this anyhow, and it results
-									// to users as a CTEXSTR, preventing them from changing it also...
-									//lprintf( "Got a blob..." );
-									//lprintf( WIDE( "size is %d" ), collection->colsizes[idx-1] );
-									if( pvtData )
-									{
-										SQLUINTEGER n;
-										vtprintf( pvtData, WIDE( "%s<" ), idx>1?WIDE( "," ):WIDE( "" ) );
-										for( n = 0; n < collection->colsizes[idx-1]; n++ )
-											vtprintf( pvtData, WIDE( "%02x " ), byResult[n] );
-										vtprintf( pvtData, WIDE( ">" ) );
-									}
-									collection->results[idx-1] = NewArray( TEXTCHAR, collection->colsizes[idx-1] );
-									//lprintf( WIDE( "dest is %p and src is %p" ), collection->results[idx-1], byResult );
-									MemCpy( collection->results[idx-1], byResult, collection->colsizes[idx-1] );
-									//lprintf( WIDE( "Column %s colsize %d coltype %d coltype %d idx %d" ), collection->fields[idx-1], colsize, coltype, coltypes[idx-1], idx );
-									//collection->results[idx-1] = (TEXTSTR)Deblobify( byResult, colsizes[idx-1] );
+								//lprintf( WIDE("result data failed...") );
+							}
+							if( ResultLen > 0 ) {
+								if( collection->ppdlResults ) {
+									lprintf( "Unifnished" );
 								}
-								else
-								{
-									if( collection->results[idx-1] )
-										Release( (char*)collection->results[idx-1] );
-									if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), byResult );
-									collection->results[idx-1] = StrDup( byResult );
+								else if( collection->flags.bBuildResultArray ) {
+									collection->result_len[idx - 1] = ResultLen;
+									if( collection->coltypes[idx - 1] == SQL_LONGVARBINARY ) {
+										// I won't modify this anyhow, and it results
+										// to users as a CTEXSTR, preventing them from changing it also...
+										//lprintf( "Got a blob..." );
+										//lprintf( WIDE( "size is %d" ), collection->colsizes[idx-1] );
+										if( pvtData ) {
+											SQLUINTEGER n;
+											vtprintf( pvtData, WIDE( "%s<" ), idx > 1 ? WIDE( "," ) : WIDE( "" ) );
+											for( n = 0; n < collection->colsizes[idx - 1]; n++ )
+												vtprintf( pvtData, WIDE( "%02x " ), byResult[n] );
+											vtprintf( pvtData, WIDE( ">" ) );
+										}
+										collection->results[idx - 1] = NewArray( TEXTCHAR, collection->colsizes[idx - 1] );
+										//lprintf( WIDE( "dest is %p and src is %p" ), collection->results[idx-1], byResult );
+										MemCpy( collection->results[idx - 1], byResult, collection->colsizes[idx - 1] );
+										//lprintf( WIDE( "Column %s colsize %d coltype %d coltype %d idx %d" ), collection->fields[idx-1], colsize, coltype, coltypes[idx-1], idx );
+										//collection->results[idx-1] = (TEXTSTR)Deblobify( byResult, colsizes[idx-1] );
+									}
+									else {
+										if( collection->results[idx - 1] )
+											Release( (char*)collection->results[idx - 1] );
+										if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), byResult );
+										collection->results[idx - 1] = StrDup( byResult );
+									}
+								}
+								else {
+									//lprintf( WIDE("Got a result: \'%s\'"), byResult );
+									/*
+									* if this is auto processed for the application, there is no
+									* result indicator indicating how long it is, therefore the application
+									* must in turn call Deblobify or some other custom routine to handle
+									* this SQL database's binary format...
+									*/
+									/*
+									if( coltypes[idx-1] == SQL_LONGVARBINARY )
+									{
+									POINTER tmp;
+									vtprintf( collection->pvt_result, WIDE("%s%s"), first?WIDE( "" ):WIDE( "," ), tmp = Deblobify( byResult, collection->colsizes[idx-1] ) );
+									Release( tmp );
+									}
+									else
+									*/
+									vtprintf( collection->pvt_result, WIDE( "%s%s" ), first ? WIDE( "" ) : WIDE( "," ), byResult );
+									if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), byResult );
+									first = 0;
 								}
 							}
-							else
-							{
-								//lprintf( WIDE("Got a result: \'%s\'"), byResult );
-								/*
-								* if this is auto processed for the application, there is no
-								* result indicator indicating how long it is, therefore the application
-								* must in turn call Deblobify or some other custom routine to handle
-								* this SQL database's binary format...
-								*/
-								/*
-								if( coltypes[idx-1] == SQL_LONGVARBINARY )
-								{
-								POINTER tmp;
-								vtprintf( collection->pvt_result, WIDE("%s%s"), first?WIDE( "" ):WIDE( "," ), tmp = Deblobify( byResult, collection->colsizes[idx-1] ) );
-								Release( tmp );
+							else {
+								if( !collection->flags.bBuildResultArray ) {
+									//lprintf( WIDE("Didn't get a result... null field?") );
+									vtprintf( collection->pvt_result, WIDE( "%s" ), first ? WIDE( "" ) : WIDE( "," ) );
+									if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), byResult );
+									first = 0;
 								}
-								else
-								*/
-								vtprintf( collection->pvt_result, WIDE("%s%s"), first?WIDE( "" ):WIDE( "," ), byResult );
-								if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), byResult );
-								first = 0;
+								else {
+									if( pvtData )vtprintf( pvtData, WIDE( "%s<NULL>" ), idx > 1 ? WIDE( "," ) : WIDE( "" ) );
+								}
+								// otherwise the entry will be NULL
 							}
 						}
 						else
 						{
-							if( !collection->flags.bBuildResultArray )
-							{
-								//lprintf( WIDE("Didn't get a result... null field?") );
-								vtprintf( collection->pvt_result, WIDE("%s"), first?WIDE( "" ):WIDE( "," ) );
-								if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), byResult );
-								first=0;
-							}
-							else
-							{
-								if( pvtData )vtprintf( pvtData, WIDE( "%s<NULL>" ), idx>1?WIDE( "," ):WIDE( "" ) );
-							}
-							// otherwise the entry will be NULL
+							retry = DumpInfo( odbc, collection->pvt_errorinfo, SQL_HANDLE_STMT, &collection->hstmt, odbc->flags.bNoLogging );
+							lprintf( WIDE("GetData failed...") );
+							result_cmd = WM_SQL_RESULT_ERROR;
 						}
-					}
-					else
-					{
-						retry = DumpInfo( odbc, collection->pvt_errorinfo, SQL_HANDLE_STMT, &collection->hstmt, odbc->flags.bNoLogging );
-						lprintf( WIDE("GetData failed...") );
-						result_cmd = WM_SQL_RESULT_ERROR;
 					}
 				}
 #endif
@@ -102422,7 +102739,7 @@ void LoadTranslationDataFromMemory( POINTER input, size_t length )
 						struct translation *translation = CreateTranslation( val->name );
 						DATA_FORALL( val->contains, idx2, struct json_value_container *, val2 ) {
 							int64_t index = IntCreateFromText( val2->name );
-							SetTranslatedString( translation, index, val2->string );
+							SetTranslatedString( translation, (INDEX)index, val2->string );
 						}
 					}
 				}
