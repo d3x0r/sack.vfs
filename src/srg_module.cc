@@ -321,8 +321,8 @@ private:
 		PTHREAD main;
 		struct random_context *signEntropy;
 		POINTER state; // this thread's entropy working state
-		char *salt;  // this thread's salt.
-		int saltLen;
+		//char *salt;  // this thread's salt.
+		//int saltLen;
 #ifdef DEBUG_SIGNING
 		int tries;
 #endif
@@ -341,17 +341,24 @@ private:
 		struct signParams *params = (struct signParams *)GetThreadParam( thread );
 
 		do {
-			SRG_RestoreState( params->signEntropy, params->state );
 			{
 				size_t len;
 				uint8_t outbuf[32];
 				uint8_t *bytes;
+				char *actual_id;
 				int passed_as;
 				struct signature s;
 				params->id = SRG_ID_Generator_256();
 				bytes = DecodeBase64Ex( params->id, 44, &len, (const char*)1 );
-				SRG_FeedEntropy( params->signEntropy, bytes, len );
+				SRG_ResetEntropy( params->signEntropy );
+				SRG_FeedEntropy( params->signEntropy, bytes, 32 );
 				SRG_GetEntropyBuffer( params->signEntropy, (uint32_t*)outbuf, 256 );
+				Release( params->id );
+				params->id = EncodeBase64Ex( outbuf, 32, &len, (const char*)1 );
+				SRG_RestoreState( params->signEntropy, params->state );
+				SRG_FeedEntropy( params->signEntropy, outbuf, 32 );
+				SRG_GetEntropyBuffer( params->signEntropy, (uint32_t*)outbuf, 256 );
+
 #ifdef DEBUG_SIGNING
 				params->tries++;
 #endif
@@ -377,12 +384,6 @@ private:
 		}
 		params->ended = 1;
 		return 0;
-	}
-
-	static void addSigningSalt( uintptr_t psv, POINTER *salt, size_t *saltLen ) {
-		struct signParams *params = (struct signParams *)psv;
-		salt[0] = params->salt;
-		saltLen[0] = params->saltLen;
 	}
 
 	static void sign( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -425,9 +426,9 @@ private:
 			SRG_ResetEntropy( threadParams[n].signEntropy );
 			SRG_FeedEntropy( threadParams[n].signEntropy, (const uint8_t*)*buf, buf.length() );
 			threadParams[n].state = NULL;
-			SRG_SaveState( threadParams[n].signEntropy, &threadParams[n].state );
-			threadParams[n].salt = SRG_ID_Generator_256(); // give the thread a starting point
-			threadParams[n].saltLen = (int)strlen( threadParams[n].salt );
+			SRG_SaveState( threadParams[n].signEntropy, &threadParams[n].state, NULL );
+			//threadParams[n].salt = SRG_ID_Generator_256(); // give the thread a starting point
+			//threadParams[n].saltLen = (int)strlen( threadParams[n].salt );
 			threadParams[n].pad1 = pad1;
 			threadParams[n].pad2 = pad2;
 			threadParams[n].ended = 0;
@@ -461,8 +462,8 @@ private:
 				found++;
 			}
 			threadParams[n].id = NULL;
-			Release( threadParams[n].salt );
-			Release( threadParams[n].state );
+			//Release( threadParams[n].salt );
+			//Release( threadParams[n].state );
 		}
 
 	}
@@ -574,9 +575,9 @@ private:
 			SRG_ResetEntropy( threadParams[n].signEntropy );
 			SRG_FeedEntropy( threadParams[n].signEntropy, (const uint8_t*)*buf, buf.length() );
 			threadParams[n].state = NULL;
-			SRG_SaveState( threadParams[n].signEntropy, &threadParams[n].state );
-			threadParams[n].salt = SRG_ID_Generator_256(); // give the thread a starting point
-			threadParams[n].saltLen = (int)strlen( threadParams[n].salt );
+			SRG_SaveState( threadParams[n].signEntropy, &threadParams[n].state, NULL );
+			//threadParams[n].salt = SRG_ID_Generator_256(); // give the thread a starting point
+			//threadParams[n].saltLen = (int)strlen( threadParams[n].salt );
 			threadParams[n].pad1 = pad1;
 			threadParams[n].pad2 = pad2;
 			threadParams[n].ended = 0;
@@ -610,8 +611,6 @@ private:
 				found++;
 			}
 			threadParams[n].id = NULL;
-			Release( threadParams[n].salt );
-			Release( threadParams[n].state );
 		}
 
 	}
@@ -658,13 +657,20 @@ private:
 				uint8_t *bytes;
 				id = *hash;
 				bytes = DecodeBase64Ex( id, 44, &len, (const char*)1 );
+				SRG_ResetEntropy( signEntropy );
+				SRG_FeedEntropy( signEntropy, bytes, len );
+				SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
+
+				SRG_ResetEntropy( signEntropy );
+				SRG_FeedEntropy( signEntropy, (const uint8_t*)*buf, buf.length() );
+
 #ifdef DEBUG_SIGNING
 				lprintf( "FEED INIT %s", id );
 				LogBinary( (*buf), buf.length() );
 				lprintf( "FEED" );
 				LogBinary( bytes, len );
 #endif
-				SRG_FeedEntropy( signEntropy, bytes, len );
+				SRG_FeedEntropy( signEntropy, outbuf, 32 );
 				Release( bytes );
 				SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
 #ifdef DEBUG_SIGNING
