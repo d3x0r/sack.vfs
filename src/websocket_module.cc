@@ -1515,7 +1515,7 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 			argOfs++;
 		}
 		if( args[argOfs]->IsNumber() ) {
-			wssOpts.port = (int)args[0]->IntegerValue(isolate->GetCurrentContext()).ToChecked();
+			wssOpts.port = (int)args[0]->IntegerValue(isolate->GetCurrentContext()).FromMaybe(0);
 			argOfs++;
 		}
 		if( args[argOfs]->IsObject() ) {

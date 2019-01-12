@@ -208,7 +208,7 @@ void SqlObject::autoTransact( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	SetSQLAutoTransact( sql->odbc, args[0]->BooleanValue(args.GetIsolate()->GetCurrentContext()).ToChecked() );
+	SetSQLAutoTransact( sql->odbc, args[0]->BooleanValue(args.GetIsolate()->GetCurrentContext()).FromMaybe(0) );
 }
 //-----------------------------------------------------------
 void SqlObject::transact( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -1275,9 +1275,9 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 			PSSQL_ResultSqliteBlob( onwhat, (const char *)buf, (int)length, NULL );
 	} else if( str->IsNumber() ) {
 		if( str->IsInt32() )
-			PSSQL_ResultSqliteInt( onwhat, (int)str->IntegerValue( userData->isolate->GetCurrentContext() ).ToChecked() );
+			PSSQL_ResultSqliteInt( onwhat, (int)str->IntegerValue( userData->isolate->GetCurrentContext() ).FromMaybe(0) );
 		else
-			PSSQL_ResultSqliteDouble( onwhat, str->NumberValue( userData->isolate->GetCurrentContext() ).ToChecked() );
+			PSSQL_ResultSqliteDouble( onwhat, str->NumberValue( userData->isolate->GetCurrentContext() ).FromMaybe( 0 ) );
 	} else if( str->IsString() )
 		PSSQL_ResultSqliteText( onwhat, DupCStrLen( *result, result.length() ), result.length(), releaseBuffer );
 	else
@@ -1467,9 +1467,9 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 			PSSQL_ResultSqliteBlob( onwhat, (const char *)buf, (int)length, releaseBuffer );
 	} else if( str->IsNumber() ) {
 		if( str->IsInt32() )
-			PSSQL_ResultSqliteInt( onwhat, (int)str->IntegerValue( userData->isolate->GetCurrentContext() ).ToChecked() );
+			PSSQL_ResultSqliteInt( onwhat, (int)str->IntegerValue( userData->isolate->GetCurrentContext() ).FromMaybe( 0 ) );
 		else
-			PSSQL_ResultSqliteDouble( onwhat, str->NumberValue( userData->isolate->GetCurrentContext() ).ToChecked() );
+			PSSQL_ResultSqliteDouble( onwhat, str->NumberValue( userData->isolate->GetCurrentContext() ).FromMaybe(0) );
 	} else if( str->IsString() ) {
 		String::Utf8Value result( USE_ISOLATE( userData->isolate) str->ToString( userData->isolate->GetCurrentContext() ).ToLocalChecked() );
 		PSSQL_ResultSqliteText( onwhat, DupCStrLen( *result, result.length() ), result.length(), releaseBuffer );

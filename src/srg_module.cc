@@ -116,7 +116,7 @@ private:
 			int32_t bits = args[0]->Int32Value( obj->isolate->GetCurrentContext() ).FromMaybe( 0 );
 			bool sign = false;
 			if( args.Length() > 1 )
-				sign = args[0]->BooleanValue( obj->isolate->GetCurrentContext() ).ToChecked();
+				sign = args[0]->BooleanValue( obj->isolate->GetCurrentContext() ).FromMaybe(0);
 			r = SRG_GetEntropy( obj->entropy, bits, sign );
 		}
 		args.GetReturnValue().Set( Integer::New( obj->isolate, r ) );
@@ -128,7 +128,7 @@ private:
 			obj->isolate->ThrowException( Exception::Error( String::NewFromUtf8( obj->isolate, "required parameter missing, count of bits" ) ) );
 		}
 		else {
-			int32_t bits = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).ToChecked();
+			int32_t bits = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe(0);
 			uint32_t *buffer = NewArray( uint32_t, (bits +31)/ 32 );
 			SRG_GetEntropyBuffer( obj->entropy, buffer, bits );
 
@@ -403,11 +403,11 @@ private:
 		while( argn < args.Length() ) {
 			if( args[argn]->IsNumber() ) {
 				if( n ) {
-					pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+					pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).FromMaybe(0);
 				}
 				else {
 					n = 1;
-					pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+					pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).FromMaybe(0);
 				}
 			}
 			argn++;
@@ -470,7 +470,7 @@ private:
 
 	static void setThraads( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( args.Length() )
-			signingThreads = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).ToChecked();
+			signingThreads = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe(0);
 	}
 
 
@@ -488,10 +488,10 @@ private:
 			while( argn < args.Length() ) {
 				if( args[argn]->IsNumber() ) {
 					if( n ) {
-						pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+						pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).FromMaybe(0);
 					} else {
 						n = 1;
-						pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+						pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).FromMaybe(0);
 					}
 				}
 				argn++;
@@ -552,11 +552,11 @@ private:
 		while( argn < args.Length() ) {
 			if( args[argn]->IsNumber() ) {
 				if( n ) {
-					pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+					pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).FromMaybe(0);
 				}
 				else {
 					n = 1;
-					pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+					pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).FromMaybe(0);
 				}
 			}
 			argn++;
@@ -618,7 +618,7 @@ private:
 	static void srg_setThraads( const v8::FunctionCallbackInfo<Value>& args ) {
 		SRGObject *srg = ObjectWrap::Unwrap<SRGObject>( args.This() );
 		if( args.Length() )
-			srg->SigningThreads = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).ToChecked();
+			srg->SigningThreads = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe(0);
 	}
 
 
@@ -637,11 +637,11 @@ private:
 			while( argn < args.Length() ) {
 				if( args[argn]->IsNumber() ) {
 					if( n ) {
-						pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+						pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).FromMaybe(0);
 					}
 					else {
 						n = 1;
-						pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+						pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).FromMaybe(0);
 					}
 				}
 				argn++;

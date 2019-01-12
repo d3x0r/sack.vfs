@@ -300,7 +300,7 @@ void TLSObject::genKey( const v8::FunctionCallbackInfo<Value>& args ) {
 	size_t keypasslen = 0;
 	String::Utf8Value *pass = NULL;
 	if( argc ) {
-		keylen = (int)args[0]->IntegerValue( isolate->GetCurrentContext() ).ToChecked();
+		keylen = (int)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe(0);
 		if( argc > 1 ) {
   			pass = new String::Utf8Value( USE_ISOLATE( isolate ) args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			keypass = *pass[0];
@@ -608,7 +608,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		//Local<Integer> serial = 
-		params.serial = opts->Get( serialString )->IntegerValue( isolate->GetCurrentContext() ).ToChecked();
+		params.serial = opts->Get( serialString )->IntegerValue( isolate->GetCurrentContext() ).FromMaybe(0);
 		if( params.serial < 1 ) {
 			isolate->ThrowException( Exception::Error(
 				String::NewFromUtf8( isolate, TranslateText( "Missing required option 'serial' must be more than 0." ) ) ) );
@@ -633,7 +633,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.expire = 0;
 	}
 	else {
-		params.expire = (int)opts->Get( expireString )->IntegerValue( isolate->GetCurrentContext() ).ToChecked();
+		params.expire = (int)opts->Get( expireString )->IntegerValue( isolate->GetCurrentContext() ).FromMaybe(0);
 	}
 
 
@@ -954,7 +954,7 @@ void TLSObject::genReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	else {
-		Local<Integer> serial = opts->Get( serialString )->IntegerValue( isolate->GetCurrentContext() ).ToChecked();
+		Local<Integer> serial = opts->Get( serialString )->IntegerValue( isolate->GetCurrentContext() ).FromMaybe(0);
 		params.serial = serial->Value();
 		if( params.serial < 1 ) {
 			isolate->ThrowException( Exception::Error(
@@ -1222,7 +1222,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.expire = 0;
 	}
 	else {
-		params.expire = (int)opts->Get( expireString )->IntegerValue( isolate->GetCurrentContext() ).ToChecked();
+		params.expire = (int)opts->Get( expireString )->IntegerValue( isolate->GetCurrentContext() ).FromMaybe(0);
 	}
 
 	if( !opts->Has( optName = strings->keyString->Get( isolate ) ) ) {
@@ -1242,7 +1242,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	else {
-		params.serial = opts->Get( serialString )->IntegerValue( isolate->GetCurrentContext() ).ToChecked();
+		params.serial = opts->Get( serialString )->IntegerValue( isolate->GetCurrentContext() ).FromMaybe(0);
 		if( params.serial < 1 ) {
 			isolate->ThrowException( Exception::Error(
 				String::NewFromUtf8( isolate, TranslateText( "Missing required option 'serial' must be more than 0." ) ) ) );
