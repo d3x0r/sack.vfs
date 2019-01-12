@@ -46,10 +46,19 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 	return check;
 }
 
-static TaskObject _blankTask;
-
-TaskObject::TaskObject() {
-	memcpy( this, &_blankTask, sizeof( *this ) );
+TaskObject::TaskObject():_this(), endCallback(), inputCallback() 
+{
+    task = NULL;
+    binary = false;
+    ending = false;
+    ended = false;
+    exitCode = 0;
+    killAtExit = false;
+    buffer = NULL;
+    size = 0;
+    waiter = NULL;
+    
+	//this[0] = _blankTask;
 }
 
 TaskObject::~TaskObject() {
@@ -197,6 +206,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 					ParseIntoArgs( *args[0], &nArg, &argArray );
 
 					args2 = NewArray( char*, nArg + 1 );
+			
 					int n;
 					for( n = 0; n < nArg; n++ )
 						args2[n] = argArray[n];

@@ -7,7 +7,6 @@ JSON/JSON6 (stream)parser,
 JSOX (streaming) parser, 
 COM/serial port access, Sqlite interface, an option/configuration database built on Sqlite.
 WebSocket/HTTP/HTTPS network library.  UDP sockets.
-Vulkan API to be added eventually... 
 Windows specific registry access for application settings. 
 
 ## Requirements
@@ -72,7 +71,8 @@ vfs = {
         Sqlite has methods available on it to access native program options.
         Sqlite.op( opName, defaultValue ) - read/write default option database option.
         Sqlite.so( opName, newValue ) - write new value to default option database.
-    Volume(mountName,fileName,version,a,b) - a virtual disk partition that holds files.
+    ObjectStore( fileName [, version] ) - open a JS object storage database. 
+    Volume([mountName,]fileName[,version]) - a virtual disk partition that holds files.
           mountName - the mount name used to mount to volume as a filesystem; it may be referenced 
                 later in the string passed to Sqlite.  It may be `null` if it is anonymous mount.
           if no parameters are passed, a Volume object representing the native filesystem is returned.
@@ -1177,6 +1177,7 @@ setTimeout( ()=>{ }, 5000 );
    - Add Object Storage Module.
    - Added support for paramter binding in Sqlite.
    - Improve data marshalling for Sqlite to JS and vice versa.
+   - Network improvement for send and close edge conditions.
    - Implement parameter binding for sqlite and ODBC (less tested).
    - Fixed spurious HTTP request failures when the connection closed with writes pending.
    - Improves SRG module; allow configuring SRG instance with a specific entropy generator.

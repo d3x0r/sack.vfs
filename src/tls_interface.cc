@@ -1885,7 +1885,7 @@ static Local<Value> Expiration( struct info_params *params ) {
 
 	ConvertTimeString( &t, before );
 	X509_free( x509 );
-	Local<Value> date = Date::New( params->isolate, (double)timegm( &t ) * 1000.0 );
+	Local<Value> date = Date::New( params->isolate->GetCurrentContext(), (double)timegm( &t ) * 1000.0 ).ToLocalChecked();
 	//lprintf( "Converted: %d %d %d %d %d %d", t.tm_year, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec );
 
 	return date;

@@ -2229,9 +2229,9 @@ void wscObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 }
 
 
-httpRequestObject::httpRequestObject() {
+httpRequestObject::httpRequestObject():_this() {
 	pc = NULL;
-	memset( &_this, 0, sizeof( _this ) );
+	//memset( &_this, 0, sizeof( _this ) );
 	ssl = false;
 	port = 0;
 	hostname = NULL;
