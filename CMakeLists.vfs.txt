@@ -75,6 +75,7 @@ if( EXISTS ${SACK_BASE} )
 set( INCLUDES
 	-I${SACK_BASE}/include
 	-I${SACK_BASE}/src/contrib/sha1lib
+	-I${SACK_BASE}/src/contrib/K12/lib
 	-I${SACK_BASE}/src/contrib/sqlite/3.23.0-MySqlite
  )
 
@@ -114,12 +115,7 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/utils/virtual_file_system/vfs.c
 	${SACK_BASE}/src/utils/virtual_file_system/vfs_fs.c
 	${SACK_BASE}/src/utils/virtual_file_system/vfs_os.c
-        ${SACK_BASE}/src/salty_random_generator/salty_generator.c
-        ${SACK_BASE}/src/salty_random_generator/crypt_util.c
-        ${SACK_BASE}/src/contrib/md5lib/md5c.c
-        ${SACK_BASE}/src/contrib/sha1lib/sha1.c
-        ${SACK_BASE}/src/contrib/sha2lib/sha2.c
-        ${SACK_BASE}/src/contrib/sha3lib/sha3.c
+
 	${SACK_BASE}/src/deadstart/deadstart_core.c
 	${SACK_BASE}/src/sysloglib/syslog.c
 	${SACK_BASE}/src/systemlib/system.c
@@ -161,6 +157,16 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/netlib/udpnetwork.c
         ${SACK_BASE}/src/netlib/net_winsock2.c
 	${SACK_BASE}/src/netlib/ssl_layer.c
+
+        ${SACK_BASE}/src/salty_random_generator/salty_generator.c
+        ${SACK_BASE}/src/salty_random_generator/crypt_util.c
+        ${SACK_BASE}/src/salty_random_generator/block_shuffle.c
+
+        ${SACK_BASE}/src/contrib/md5lib/md5c.c
+        ${SACK_BASE}/src/contrib/sha1lib/sha1.c
+        ${SACK_BASE}/src/contrib/sha2lib/sha2.c
+        ${SACK_BASE}/src/contrib/sha3lib/sha3.c
+        ${SACK_BASE}/src/contrib/K12/lib/KangarooTwelve.c
 
 	${SACK_BASE}/src/contrib/sqlite/sqlite_interface.c
         ${SACK_BASE}/src/SQLlib/sqlstruc.h
