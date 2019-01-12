@@ -38,7 +38,9 @@
 #  define WINVER 0x0601
 #endif
 #ifndef _WIN32
-#  define __LINUX__
+#  ifndef __LINUX__
+#    define __LINUX__
+#  endif
 #endif
 #if !defined(__LINUX__)
 #  ifndef STRICT
@@ -74351,8 +74353,8 @@ struct byte_shuffle_key {
 };
 #define MY_MASK_MASK(n,length)	(MASK_TOP_MASK(length) << ((n)&0x7) )
 #define MY_GET_MASK(v,n,mask_size)  ( ( ((MASKSET_READTYPE*)((((uintptr_t)v))+(n)/CHAR_BIT))[0]											 & MY_MASK_MASK(n,mask_size) )																										>> (((n))&0x7))
-#define SRG_GetBit_(tmp,ctx)    (	    (ctx->total_bits_used += 1),	  (( (ctx->bits_used) >= ctx->bits_avail )?		  NeedBits( ctx ):0),	  ( tmp = MY_GET_MASK( ctx->entropy, ctx->bits_used, 1 ) ),	  ( ctx->bits_used += 1 ),	  ( tmp ) )
-#define SRG_GetByte_(tmp,ctx)    (	    (ctx->total_bits_used += 8),	  (( (ctx->bits_used) >= ctx->bits_avail )?		  NeedBits( ctx ):0),	  ( tmp = MY_GET_MASK( ctx->entropy, ctx->bits_used, 8 ) ),	  ( ctx->bits_used += 8 ),	  ( tmp ) )
+#define SRG_GetBit_(tmp,ctx)    (	    (ctx->total_bits_used += 1),	  (( (ctx->bits_used) >= ctx->bits_avail )?		  NeedBits( ctx ):(void)0),	  ( tmp = MY_GET_MASK( ctx->entropy, ctx->bits_used, 1 ) ),	  ( ctx->bits_used += 1 ),	  ( tmp ) )
+#define SRG_GetByte_(tmp,ctx)    (	    (ctx->total_bits_used += 8),	  (( (ctx->bits_used) >= ctx->bits_avail )?		  NeedBits( ctx ):(void)0),	  ( tmp = MY_GET_MASK( ctx->entropy, ctx->bits_used, 8 ) ),	  ( ctx->bits_used += 8 ),	  ( tmp ) )
 #ifndef SALTY_RANDOM_GENERATOR_SOURCE
 extern
 #endif

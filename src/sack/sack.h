@@ -29,7 +29,9 @@
 #  define WINVER 0x0601
 #endif
 #ifndef _WIN32
-#  define __LINUX__
+#  ifndef __LINUX__
+#    define __LINUX__
+#  endif
 #endif
 #if !defined(__LINUX__)
 #  ifndef STRICT
