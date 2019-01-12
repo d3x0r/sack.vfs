@@ -587,9 +587,12 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 						Local<Object> container = colMap[idx].t->container;
 						if( fields[colMap[idx].col].used > 1 ) {
 							if( fields[colMap[idx].col].first == idx ) {
-								record->Set( String::NewFromUtf8( isolate, jsval->name )
-										  , fields[colMap[idx].col].array = Array::New( isolate )
-										  );
+								if( !jsval->name )
+									lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
+								else
+									record->Set( String::NewFromUtf8( isolate, jsval->name )
+									           , fields[colMap[idx].col].array = Array::New( isolate )
+									           );
 							}
 						}
 
