@@ -96895,6 +96895,12 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 					int idx;
 					for( idx = 1; idx <= collection->columns; idx++ ) {
 						val = (struct json_value_container *)GetDataItem( collection->ppdlResults, idx - 1 );
+#  if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
+						if( odbc->flags.bSQLite_native ) {
+							val->name = DupCStr( sqlite3_column_name( collection->stmt, idx - 1 ) );
+							val->nameLen = StrLen( val->name );
+						}
+#endif
 #ifdef USE_ODBC
 #  if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 						if( !odbc->flags.bSQLite_native )
