@@ -633,11 +633,18 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							break;
 						}
 
-						if( fields[colMap[idx].col].used == 1 )
-							container->Set( String::NewFromUtf8( isolate, jsval->name ), val );
+						if( fields[colMap[idx].col].used == 1 ){
+							if( !jsval->name )
+								lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
+							else
+								container->Set( String::NewFromUtf8( isolate, jsval->name ), val );
+						}
 						else if( usedTables > 1 || ( fields[colMap[idx].col].used > 1 ) ) {
 							if( fields[colMap[idx].col].used > 1 ) {
-								colMap[idx].t->container->Set( String::NewFromUtf8( isolate, jsval->name ), val );
+								if( !jsval->name )
+									lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
+								else
+									colMap[idx].t->container->Set( String::NewFromUtf8( isolate, jsval->name ), val );
 								if( colMap[idx].alias )
 									fields[colMap[idx].col].array->Set( String::NewFromUtf8( isolate, colMap[idx].alias ), val );
 								fields[colMap[idx].col].array->Set( colMap[idx].depth, val );
