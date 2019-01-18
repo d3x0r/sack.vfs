@@ -93,6 +93,8 @@ for( n = 0; n < 1000000; n++ ) {
 	JSON6.parse( "{\"a\":{\"b\":{\"c\":{\"d\":123}}}}" );
 	JSON6.parse( '"Simple String value"' );
 	JSON6.parse( '123456789' );
+        //if( (Date.now() - start)%1000 == 0 )
+         //       console.log( n );
 }
 
 var end = Date.now();

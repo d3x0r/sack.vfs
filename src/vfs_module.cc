@@ -23,6 +23,23 @@ Local<String> localString( Isolate *isolate, const char *data, int len ) {
 	return arrayBuffer;
 }
 
+Local<String> localStringExternal( Isolate *isolate, const char *data, int len, const char *real_root ) {
+	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
+	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
+	Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
+	static const char *prior_root;
+	if( prior_root != real_root )
+	{
+		prior_root = real_root;
+		PARRAY_BUFFER_HOLDER holder = GetHolder();
+		holder->s.Reset( isolate, arrayBuffer );
+		holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+		Hold( (char*)real_root );
+		holder->buffer = (void*)real_root;
+	}
+	return arrayBuffer;
+}
+
 
 
 static void promiseResolveCallback( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -40,9 +57,7 @@ static void promiseRejectCallback( const v8::FunctionCallbackInfo<Value>& args )
 
 
 struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate ) {
-	static struct PromiseWrapper blank;
-	struct PromiseWrapper *pw = NewArray( struct PromiseWrapper, 1 );
-	memcpy( pw, &blank, sizeof( struct PromiseWrapper ) );
+	struct PromiseWrapper *pw = new PromiseWrapper();
 	MaybeLocal<Promise::Resolver> ml_resolver = Promise::Resolver::New( context );
 	Local<Promise::Resolver> resolver = ml_resolver.ToLocalChecked();
 	Local<Promise> pr = resolver->GetPromise();
@@ -88,7 +103,7 @@ static void vfs_u8xor(const v8::FunctionCallbackInfo<Value>& args ){
 		Local<String> tmp;
 		Local<Value> keyValue = key->Get( String::NewFromUtf8( isolate, "key" ) );
 		Local<Value> stepValue = key->Get( tmp = String::NewFromUtf8( isolate, "step" ) );
-		int step = (int)stepValue->IntegerValue( isolate->GetCurrentContext() ).ToChecked();
+		int step = (int)stepValue->IntegerValue( isolate->GetCurrentContext() ).FromMaybe(0);
 		String::Utf8Value xor2( USE_ISOLATE( isolate ) keyValue );
 		//lprintf( "is buffer overlapped? %s %s %d", *xor1, *xor2, step );
 		char *out = u8xor( *xor1, (size_t)xor1.length(), *xor2, (size_t)xor2.length(), &step );
@@ -115,7 +130,9 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 
-void VolumeObject::Init( Handle<Object> exports ) {
+
+void VolumeObject::doInit( Handle<Object> exports ) 
+{
 	InvokeDeadstart();
 
 	node::AtExit( moduleExit );
@@ -163,6 +180,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "File", FileObject::openFile );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "ObjectStorage", vfsObjectStorage );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "dir", getDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "exists", fileExists );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "read", fileRead );
@@ -207,6 +225,13 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	//NODE_SET_METHOD( exports, "InitFS", InitFS );
 }
 
+void VolumeObject::Init( Local<Object> exports, Local<Value> val, void* p )  {
+	doInit( exports );	
+}
+
+void VolumeObject::Init( Handle<Object> exports )  {
+	doInit( exports );
+}
 
 VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 )  {
 	mountName = (char *)mount;
@@ -253,6 +278,69 @@ void logBinary( char *x, int n )
 	}
 }
 #endif
+
+void VolumeObject::vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
+
+	char *mount_name;
+	char *filename = (char*)"default.os";
+	LOGICAL defaultFilename = TRUE;
+	char *key = NULL;
+	char *key2 = NULL;
+	int argc = args.Length();
+
+	int arg = 0;
+	if( args[0]->IsString() ) {
+
+		//TooObject( isolate.getCurrentContext().FromMaybe( Local<Object>() )
+		String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		mount_name = StrDup( *fName );
+	}
+	else {
+		mount_name = SRG_ID_Generator();
+	}
+	if( argc > 1 ) {
+		if( args[arg]->IsString() ) {
+			String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+			defaultFilename = FALSE;
+			filename = StrDup( *fName );
+		}
+		else
+			filename = NULL;
+	}
+	else {
+		defaultFilename = FALSE;
+		filename = mount_name;
+		mount_name = SRG_ID_Generator();
+	}
+	//if( args[argc
+	if( args[arg]->IsNumber() ) {
+		//version = (uintptr_t)args[arg++]->ToNumber( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
+		arg++;
+	}
+	if( argc > arg ) {
+		if( !args[arg]->IsNull() && !args[arg]->IsUndefined() ) {
+			String::Utf8Value k( USE_ISOLATE( isolate ) args[arg] );
+			key = StrDup( *k );
+		}
+		arg++;
+	}
+	if( argc > arg ) {
+		if( !args[arg]->IsNull() && !args[arg]->IsUndefined() ) {
+			String::Utf8Value k( USE_ISOLATE( isolate ) args[arg] );
+			key2 = StrDup( *k );
+		}
+		arg++;
+	}
+
+
+	ObjectStorageObject *oso = ObjectStorageObject::openInVFS( isolate, vol->vol, mount_name, filename, key, key2 );
+	if( oso ) {
+		// uhmm this needs 'this' to know what to return as...
+	}
+
+}
 
 
 void VolumeObject::volDecrypt( const v8::FunctionCallbackInfo<Value>& args ){
@@ -762,8 +850,8 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 			args.GetReturnValue().Set( arrayBuffer );
 			if( args.Length() > 1 && args[1]->IsFunction() ) {
-				struct preloadArgs *pargs = NewArray( struct preloadArgs, 1 );
-				memset( pargs, 0, sizeof( preloadArgs ) );
+				struct preloadArgs *pargs = new preloadArgs();
+				//memset( pargs, 0, sizeof( preloadArgs ) );
 				pargs->f = new Persistent<Function>();
 				pargs->memory = (uint8_t*)data;
 				pargs->len = len;

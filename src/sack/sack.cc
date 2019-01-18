@@ -37,6 +37,11 @@
 #ifndef WINVER
 #  define WINVER 0x0601
 #endif
+#ifndef _WIN32
+#  ifndef __LINUX__
+#    define __LINUX__
+#  endif
+#endif
 #if !defined(__LINUX__)
 #  ifndef STRICT
 #    define STRICT
@@ -3970,12 +3975,12 @@ TYPELIB_PROC  INDEX TYPELIB_CALLTYPE  vvtprintf( PVARTEXT pvt, CTEXTSTR format, 
 /* encode binary buffer into base64 encoding.
    outsize is updated with the length of the buffer.
  */
-TYPELIB_PROC  TEXTCHAR * TYPELIB_CALLTYPE  EncodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const char *encoding );
+TYPELIB_PROC  TEXTCHAR * TYPELIB_CALLTYPE  EncodeBase64Ex( const uint8_t* buf, size_t length, size_t *outsize, const char *encoding );
 /* decode base64 buffer into binary buffer
    outsize is updated with the length of the buffer.
    result should be Release()'d
  */
-TYPELIB_PROC  uint8_t * TYPELIB_CALLTYPE  DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *encoding );
+TYPELIB_PROC  uint8_t * TYPELIB_CALLTYPE  DecodeBase64Ex( const char* buf, size_t length, size_t *outsize, const char *encoding );
 /* xor a base64 encoded string over a utf8 string, keeping the utf8 characters in the same length...
    although technically this can result in invalid character encoding where upper bits get zeroed
    result should be Release()'d
@@ -4739,6 +4744,39 @@ SYSLOG_SOCKET_SYSLOGD
 SYSLOG_PROC  LOGICAL SYSLOG_API  IsBadReadPtr ( CPOINTER pointer, uintptr_t len );
 #endif
 SYSLOG_PROC  CTEXTSTR SYSLOG_API  GetPackedTime ( void );
+//  returns the millisecond of the day (since UNIX Epoch) * 256 ( << 8 )
+// the lowest 8 bits are the timezone / 15.
+// The effect of the low [7/]8 bits being the time zone is that within the same millisecond
+// UTC +0 sorts first, followed by +1, +2, ... etc until -14, -13, -12,... -1
+// the low [7/]8 bits are the signed timezone
+// (timezone could have been either be hr*100 + min (ISO TZ format)
+// or in minutes (hr*60+mn) this would only take 7 bits
+// one would think 8 bit shifts would be slightly more efficient than 7 bits.
+// and sign extension for 8 bits already exists.
+// - REVISION - timezone with hr*100 does not divide by 15 cleanly.
+//     The timezone is ( hour*60 + min ) / 15 which is a range from -56 to 48
+//     minimal representation is 7 bits (0 - 127 or -64 - 63)
+//     still keeping 8 bits for shifting, so the effective range is only -56 to 48 of -128 to 127
+// struct time_of_day {
+//    uint64_t epoch_milliseconds : 56;
+//    int64_t timezone : 8; divided by 15... hours * 100 / 15
+// }
+SYSLOG_PROC  int64_t SYSLOG_API GetTimeOfDay( void );
+typedef struct sack_expanded_time_tag
+{
+	uint16_t ms;
+	uint8_t sc,mn,hr,dy,mo;
+	uint16_t yr;
+	int8_t zhr, zmn;
+} SACK_TIME;
+typedef struct sack_expanded_time_tag *PSACK_TIME;
+// convert a integer time value to an expanded structure.
+SYSLOG_PROC void     SYSLOG_API ConvertTickToTime( int64_t, PSACK_TIME st );
+// convert a expanded time structure to a integer value.
+SYSLOG_PROC int64_t SYSLOG_API ConvertTimeToTick( PSACK_TIME st );
+// returns timezone as hours*100 + minutes.
+// result is often negated?
+SYSLOG_PROC  int SYSLOG_API GetTimeZone(void);
 //
 typedef void (CPROC*UserLoggingCallback)( CTEXTSTR log_string );
 SYSLOG_PROC  void SYSLOG_API  SetSystemLog ( enum syslog_types type, const void *data );
@@ -5393,6 +5431,12 @@ typedef struct win_sockaddr_in SOCKADDR_IN;
 #undef StrDup
 #undef StrRChr
 #undef StrStr
+#endif
+#if defined( __MAC__ )
+#  define strdup(s) StrDup(s)
+#  define strdup_free(s) Release(s)
+#else
+#  define strdup_free(s) free(s)
 #endif
 #ifdef __cplusplus
 #define SACK_MEMORY_NAMESPACE SACK_NAMESPACE namespace memory {
@@ -6361,10 +6405,14 @@ inline void operator delete (void * p)
 #endif
 // this is a method replacement to use PIPEs instead of SEMAPHORES
 // replacement code only affects linux.
-#if defined( __QNX__ ) || defined( __MAC__) || defined( __LINUX__ ) || defined( __ANDROID__ )
-#  define USE_PIPE_SEMS
+#if defined( __QNX__ ) || defined( __MAC__) || defined( __LINUX__ )
+#  if defined( __ANDROID__ )
+// android > 21 can use pthread_mutex_timedop
+#    define USE_PIPE_SEMS
+#  else
 // no semtimedop; no semctl, etc
-//#include <sys/sem.h>
+//#    include <sys/sem.h>
+#endif
 #endif
 #ifdef USE_PIPE_SEMS
 #  define _NO_SEMTIMEDOP_
@@ -7139,6 +7187,8 @@ struct file_system_interface {
 	LOGICAL (CPROC *find_is_directory)( struct find_cursor *cursor );
 	LOGICAL (CPROC *is_directory)( uintptr_t psvInstance, const char *cursor );
 	LOGICAL (CPROC *rename )( uintptr_t psvInstance, const char *original_name, const char *new_name );
+	uintptr_t (CPROC *ioctl)( uintptr_t psvInstance, uintptr_t opCode, va_list args );
+	uintptr_t (CPROC *fs_ioctl)(uintptr_t psvInstance, uintptr_t opCode, va_list args);
 };
 /* \ \
    Parameters
@@ -7378,6 +7428,8 @@ FILESYS_PROC  int FILESYS_API  sack_renameEx ( CTEXTSTR file_source, CTEXTSTR ne
 FILESYS_PROC  int FILESYS_API  sack_rename ( CTEXTSTR file_source, CTEXTSTR new_name );
 FILESYS_PROC  void FILESYS_API sack_set_common_data_application( CTEXTSTR name );
 FILESYS_PROC  void FILESYS_API sack_set_common_data_producer( CTEXTSTR name );
+FILESYS_PROC  uintptr_t FILESYS_API  sack_ioctl( FILE *file, uintptr_t opCode, ... );
+FILESYS_PROC  uintptr_t FILESYS_API  sack_fs_ioctl( struct file_system_mounted_interface *mount, uintptr_t opCode, ... );
 #ifndef NO_FILEOP_ALIAS
 #  ifndef NO_OPEN_MACRO
 # define open(a,...) sack_iopen(0,a,##__VA_ARGS__)
@@ -8627,9 +8679,13 @@ SRG_EXPORT struct random_context *SRG_CreateEntropy2( void (*getsalt)( uintptr_t
 //  uses a sha2-256
 SRG_EXPORT struct random_context *SRG_CreateEntropy2_256( void (*getsalt)( uintptr_t, POINTER *salt, size_t *salt_size ), uintptr_t psv_user );
 //
-// struct random_context *entropy = CreateEntropy2( void (*getsalt)( uintptr_t, POINTER *salt, size_t *salt_size ), uintptr_t psv_user );
-//  uses a sha3-512
+// struct random_context *entropy = CreateEntropy3( void (*getsalt)( uintptr_t, POINTER *salt, size_t *salt_size ), uintptr_t psv_user );
+//  uses a sha3-512 (keccak)
 SRG_EXPORT struct random_context *SRG_CreateEntropy3( void (*getsalt)( uintptr_t, POINTER *salt, size_t *salt_size ), uintptr_t psv_user );
+//
+// struct random_context *entropy = CreateEntropy4( void (*getsalt)( uintptr_t, POINTER *salt, size_t *salt_size ), uintptr_t psv_user );
+//  uses a K12-32768
+SRG_EXPORT struct random_context *SRG_CreateEntropy4( void( *getsalt )(uintptr_t, POINTER *salt, size_t *salt_size), uintptr_t psv_user );
 // Destroya  context.  Pass the address of your 'struct random_context *entropy;   ... SRG_DestroyEntropy( &entropy );
 SRG_EXPORT void SRG_DestroyEntropy( struct random_context **ppEntropy );
 // get a large number of bits of entropy from the random_context
@@ -8639,16 +8695,29 @@ SRG_EXPORT void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buff
 // if get_signed is not 0, the result will be sign extended if the last bit is set
 //  (coded on little endian; tests for if ( result & ( 1 << bits - 1 ) ) then sign extend
 SRG_EXPORT int32_t SRG_GetEntropy( struct random_context *ctx, int bits, int get_signed );
+// get a single bit.
+SRG_EXPORT uint32_t SRG_GetBit( struct random_context *ctx );
 // opportunity to reset an entropy generator back to initial condition
 // next call to getentropy will be the same as the first call after create.
 SRG_EXPORT void SRG_ResetEntropy( struct random_context *ctx );
+// After SRG_ResetEntropy(), this takes the existing entropy
+// already in the random_context and seeds the entropy generator
+// with this existing digest;  GetEntropy/GetEntropyBuffer do this
+// internally; but for user control, this is separated from just
+// ResetEntropy().
+//   SRG_ResetEntropy(ctx);   // reset entropy generator to empty.
+//   SRG_StreamEntropy(ctx);  // continue from last ending
+//   SRG_FeedEntropy(ctx, /*buffer*/ ); // mix in some more entropy
+//
+SRG_EXPORT void SRG_StreamEntropy( struct random_context *ctx );
 // Manually load some salt into the next enropy buffer to e retreived.
 // sets up to add the next salt into the buffer.
 SRG_EXPORT void SRG_FeedEntropy( struct random_context *ctx, const uint8_t *salt, size_t salt_size );
 // restore the random contxt from the external holder specified
 // {
 //    POINTER save_context;
-//    SRG_RestoreState( ctx, save_context );
+//    SRG_SaveState( ctx, &save_context );  // will allocate space for the context
+//    SRG_RestoreState( ctx, save_context ); // context should previously be saved
 // }
 SRG_EXPORT void SRG_RestoreState( struct random_context *ctx, POINTER external_buffer_holder );
 // save the random context in an external buffer holder.
@@ -8657,7 +8726,25 @@ SRG_EXPORT void SRG_RestoreState( struct random_context *ctx, POINTER external_b
 //    POINTER save_context = NULL;
 //    SRG_SaveState( ctx, &save_context );
 // }
-SRG_EXPORT void SRG_SaveState( struct random_context *ctx, POINTER *external_buffer_holder );
+SRG_EXPORT void SRG_SaveState( struct random_context *ctx, POINTER *external_buffer_holder, size_t *dataSize );
+//
+// Randeom Hash generators.  Returns a 256 bit hash in a base 64 string.
+// internally seeded by clocks
+// Are thread safe; current thread pool is 32 before having to wait
+//
+// return a unique ID using SHA1
+SRG_EXPORT char * SRG_ID_Generator( void );
+// return a unique ID using SHA2_512
+SRG_EXPORT char * SRG_ID_Generator2( void );
+// return a unique ID using SHA2_256
+SRG_EXPORT char *SRG_ID_Generator_256( void );
+// return a unique ID using SHA3-keccak-512
+SRG_EXPORT char *SRG_ID_Generator3( void );
+// return a unique ID using SHA3-K12-512
+SRG_EXPORT char *SRG_ID_Generator4( void );
+//------------------------------------------------------------------------
+//   crypt_util.c extra simple routines - kinda like 'passwd'
+//
 // usage
 /// { uint8_t* buf; size_t buflen; SRG_DecryptData( <resultfrom encrypt>, &buf, &buflen ); }
 //  buffer result must be released by user
@@ -8672,12 +8759,107 @@ SRG_EXPORT TEXTCHAR * SRG_EncryptData( CPOINTER buffer, size_t buflen );
 // text result must release by user
 // calls EncrytpData with buffer and string length + 1 to include the null for decryption.
 SRG_EXPORT TEXTCHAR * SRG_EncryptString( CTEXTSTR buffer );
-// return a unique ID using SRG2
-SRG_EXPORT char * SRG_ID_Generator( void );
-// return a unique ID using SRG2_256
-SRG_EXPORT char *SRG_ID_Generator_256( void );
-// return a unique ID using SRG3
-SRG_EXPORT char *SRG_ID_Generator3( void );
+// Simplified encyprtion wrapper around OpenSSL/LibreSSL EVP AES-256-CBC, uses key as IV also.
+// result is length; address of pointer to cyphertext is filled in with an Allocated buffer.
+// Limitation of 4G-byte encryption.
+// automaically adds padding as required.
+SRG_EXPORT int SRG_AES_decrypt( uint8_t *ciphertext, int ciphertext_len, uint8_t *key, uint8_t **plaintext );
+// Simplified encyprtion wrapper around OpenSSL/LibreSSL EVP AES-256-CBC, uses key as IV also.
+// result is length; address of pointer to cyphertext is filled in with an Allocated buffer.
+// Limitation of 4G-byte encryption.
+// automaically adds padding as required.
+SRG_EXPORT size_t SRG_AES_encrypt( uint8_t *plaintext, size_t plaintext_len, uint8_t *key, uint8_t **ciphertext );
+// xor-sub-wipe-sub encryption.
+// encrypts objBuf of objBufLen using (keyBuf+tick)
+// pointers refrenced passed to outBuf and outBufLen are filled in with the result
+// Will automatically add 4 bytes and pad up to 8
+SRG_EXPORT void SRG_XSWS_encryptData( uint8_t *objBuf, size_t objBufLen
+	, uint64_t tick, uint8_t *keyBuf, size_t keyBufLen
+	, uint8_t **outBuf, size_t *outBufLen
+);
+// xor-sub-wipe-sub decryption.
+// decrypts objBuf of objBufLen using (keyBuf+tick)
+// pointers refrenced passed to outBuf and outBufLen are filled in with the result
+//
+SRG_EXPORT void SRG_XSWS_decryptData( uint8_t *objBuf, size_t objBufLen
+	, uint64_t tick, uint8_t *keyBuf, size_t keyBufLen
+	, uint8_t **outBuf, size_t *outBufLen
+);
+//--------------------------------------------------------------
+// block_shuffle.c
+//
+// Utilities to shuffle 2D data.
+//
+//  This can use a small swap block to tile over a larger 2D area
+//
+//  shuffles a matrix of bytes
+//  1D operation is available by setting either height to 1
+//  (arrays are 'wide' before they are 'high')
+/*
+{
+	struct block_shuffle_key *key = BlockShuffle_CreateKey( SRG_CreateEntropy( NULL, 0 ), 8, 8 );
+	uint8_t input_bytes[8][18];
+	uint8_t encoded_bytes[8][8];
+	uint8_t output_bytes[8][36];
+	BlockShuffle_SetDataBlock( key, input, 2, 2, 15, 3, sizeof( input_bytes[0] )
+		encoded, 0, 0, sizeof( encoded_bytes[0] ) );
+	BlockShuffle_GetDataBlock( key, encoded, 2, 2, 15, 3, sizeof( encoded_bytes[0] )
+		output_bytes, 0, 0, sizeof( input_bytes[0] ) );
+}
+{
+	struct block_shuffle_key *BlockShuffle_CreateKey( SRG_CreateEntropy( NULL, 0 ), 8, 8 );
+	uint8_t input_bytes[8][18];
+	uint8_t encoded_bytes[8][8];
+	uint8_t output_bytes[8][36];
+}
+*/
+// API subjet to CHANGE!
+// creates a swap-matrix of width by height matrix.  Could be a linear
+// swap width (or height) is 1
+SRG_EXPORT struct block_shuffle_key *BlockShuffle_CreateKey( struct random_context *ctx, size_t width, size_t height );
+// do substitution within a range of data
+SRG_EXPORT void BlockShuffle_SetDataBlock( struct block_shuffle_key *key
+	, uint8_t* encrypted, int x, int y, size_t w, size_t h, size_t output_stride
+	, uint8_t* input, int ofs_x, int ofs_y, size_t input_stride );
+// do linear substitution over a range
+SRG_EXPORT void BlockShuffle_SetData( struct block_shuffle_key *key
+	, uint8_t* encrypted, int x, size_t w
+	, uint8_t* input, int ofs_x );
+// reverse subsittuion within a range of data
+SRG_EXPORT void BlockShuffle_GetDataBlock( struct block_shuffle_key *key
+	, uint8_t* encrypted, int x, int y, size_t w, size_t h, size_t encrypted_stride
+	, uint8_t* output, int ofs_x, int ofs_y, size_t stride );
+// reverse linear substituion over a range.
+SRG_EXPORT void BlockShuffle_GetData( struct block_shuffle_key *key
+	, uint8_t* encrypted, size_t x, size_t w
+	, uint8_t* output, size_t ofs_x );
+// Allocate a byte shuffler.
+// This transformation creates a unique mapping of byteA to byteB.
+// The SubByte and BusByte operations may be performed in either order
+// but the complimentary function is required to decode the buffer.
+//  (A->B) mapping with SubByte is different from (A->B) mapping with BusByte
+// Bus(A) != Sub(A)  but  Bus(Sub(A)) == Sub(Bus(A)) == A
+SRG_EXPORT struct byte_shuffle_key *BlockShuffle_ByteShuffler( struct random_context *ctx );
+// Releases any resource sassociated with_byte shuffler_key.
+void BlockShuffle_DropByteShuffler( struct byte_shuffle_key *key );
+// BlockSHuffle_SubBytes and BLockShuffle_BusBytes are reflective routines.
+//  They read bytes from 'bytes' and otuput to 'out_bytes'
+//  in-place operation (bytes == out_bytes) is posssible.
+// SubBytes swaps A->B
+SRG_EXPORT void BlockShuffle_SubBytes( struct byte_shuffle_key *key
+	, uint8_t *bytes, uint8_t *out_bytes, size_t byteCount );
+// swap a single byte; can be in-place.
+SRG_EXPORT void BlockShuffle_SubByte( struct byte_shuffle_key *key
+	, uint8_t *bytes, uint8_t *out_bytes );
+// BlockSHuffle_SubBytes and BlockShuffle_BusBytes are reflective routines.
+//  They read bytes from 'bytes' and otuput to 'out_bytes'
+//  in-place operation (bytes == out_bytes) is posssible.
+// BusBytes swaps B->A
+SRG_EXPORT void BlockShuffle_BusBytes( struct byte_shuffle_key *key, uint8_t *bytes
+	, uint8_t *out_bytes, size_t byteCount );
+// swap a single byte; can be in-place.
+SRG_EXPORT void BlockShuffle_BusByte( struct byte_shuffle_key *key
+	, uint8_t *bytes, uint8_t *out_bytes );
 #ifndef SACK_VFS_DEFINED
 /* Header multiple inclusion protection symbol. */
 #define SACK_VFS_DEFINED
@@ -8864,6 +9046,129 @@ namespace fs {
 #ifdef __cplusplus
 namespace objStore {
 #endif
+	/* thse should probably be moved to sack_vfs_os.h being file system specific extensions. */
+	enum sack_object_store_file_system_file_ioctl_ops {
+  // psvInstance should be a file handle pass (char*, size_t length )
+		SOSFSFIO_PROVIDE_SEALANT,
+ // test if file has been tampered, is is still sealed. pass (address of int)
+		SOSFSFIO_TAMPERED,
+ // get the resulting storage ID.  (Move ID creation into low level driver)
+		SOSFSFIO_STORE_OBJECT,
+ // set key required to read this record.
+		SOSFSFIO_PROVIDE_READKEY,
+		//SFSIO_GET_OBJECT_ID, // get the resulting storage ID.  (Move ID creation into low level driver)
+	};
+	enum sack_object_store_file_system_system_ioctl_ops {
+ // get the resulting storage ID.  (Move ID creation into low level driver)
+		SOSFSSIO_STORE_OBJECT,
+		SOSFSSIO_PATCH_OBJECT,
+		SOSFSSIO_LOAD_OBJECT,
+		//SFSIO_GET_OBJECT_ID, // get the resulting storage ID.  (Move ID creation into low level driver)
+	};
+// returns a pointer to and array of buffers.
+// the last pointer in the list is NULL.
+// each pointer in the list points to a structure containing a pointer to the data and the length of the data
+#define sack_vfs_os_ioctl_load_decrypt_object( vol, objId,objIdLen, seal,seallen )                            ((struct {uint8_t*, size_t}*)sack_fs_ioctl( vol, SOSFSSIO_LOAD_OBJECT, objId, objIdLen, seal, seallen ))
+// returns a pointer to and array of buffers.
+// the last pointer in the list is NULL.
+// each pointer in the list points to a structure containing a pointer to the data and the length of the data
+#define sack_vfs_os_ioctl_load_object( vol, objId,objIdLen )                                                  ((struct {uint8_t*, size_t}*)sack_fs_ioctl( vol, SOSFSSIO_LOAD_OBJECT, objId, objIdLen ))
+// unsealed store/update(patch)
+// returns TRUE/FALSE. true if the object already exists, or was successfully written.
+// store object data, get a unique ID for the data.
+// {
+//     char data[] = "some data";
+//     char result[44];
+//     sack_vfs_os_ioctl_store_rw_object( vol, data, sizeof( data ), result, 44 );
+// }
+#define sack_vfs_os_ioctl_store_rw_object( vol, obj,objlen, result, resultlen )                                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, FALSE, FALSE, obj, objlen, NULL, 0, result, resultlen )
+// re-write an object with new content using old ID.
+// returns TRUE/FALSE. true if the patch already exists, or was successfully written.
+// {
+//     char data[] = "some data";
+//     char oldResult[] = "AAAAAAAAAAAAAAAAAAAAAAAA"; // ID from previous store result
+//     char result[44];
+//     sack_vfs_os_ioctl_patch_rw_object( vol, oldResult, sizeof( oldReult-1 ), data, sizeof( data ), result, 44 );
+// }
+#define sack_vfs_os_ioctl_patch_rw_object( vol, objId,objIdLen, obj,objlen )                                     sack_fs_ioctl( vol, SOSFSSIO_PATCH_OBJECT, FALSE, FALSE, objId, objIdLen, NULL, 0, obj, objlen, NULL, 0, NULL, 0 )
+// sealed store and patch
+// store a unencrypted, sealed object using specified sealant
+// store data to a new sealed block.  Also encrypt the data
+// returns TRUE/FALSE. true if the object already exists, or was successfully written.
+// {
+//     char data[] = "some data";
+//     char seal[] = "BBBBBBBBBBBBBBBBBBBBBBBB"; // Some sealant bsea64
+//     char result[44];
+//     sack_vfs_os_ioctl_store_crypt_object( vol, data, sizeof( data ), seal, sizeof( seal ), result, 44 );
+// }
+#define sack_vfs_os_ioctl_store_crypt_owned_object( vol, obj,objlen, seal,seallen, result, resultlen )                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, TRUE,TRUE,  obj, objlen, seal, seallen, result, resultlen )
+// store data to a new sealed block.  Also encrypt the data
+// returns TRUE/FALSE. true if the object already exists, or was successfully written.
+// {
+//     char data[] = "some data";
+//     char seal[] = "BBBBBBBBBBBBBBBBBBBBBBBB"; // Some sealant bsea64
+//     char result[44];
+//     sack_vfs_os_ioctl_store_crypt_object( vol, data, sizeof( data ), seal, sizeof( seal ), result, 44 );
+// }
+#define sack_vfs_os_ioctl_store_crypt_sealed_object( vol, obj,objlen, seal,seallen, result, resultlen )                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, TRUE,FALSE,  obj, objlen, seal, seallen, result, resultlen )
+// store patch to an existing sealed block.  (Writes never change existing data), also encrypt the data
+// returns TRUE/FALSE. true if the patch already exists, or was successfully written.
+// {
+//     char data[] = "some data";
+//     char seal[] = "BBBBBBBBBBBBBBBBBBBBBBBB"; // Some sealant bsea64
+//     char oldResult[] = "AAAAAAAAAAAAAAAAAAAAAAAA"; // ID from previous store result
+//     char result[44];
+//     sack_vfs_os_ioctl_patch_crypt_object( vol, oldResult, sizeof( oldResult )-1, data, sizeof( data ), seal, sizeof( seal ), result, 44 );
+// }
+#define sack_vfs_os_ioctl_patch_crypt_owned_object( vol, objId,objIdLen, obj,objlen, seal,seallen, result, resultlen ) sack_fs_ioctl( vol, SOSFSSIO_PATCH_OBJECT, TRUE, TRUE, objId, objIdLen, authId, authIdLen, obj, objlen, seal, seallen, result, resultlen )
+// store patch to an existing sealed block.  (Writes never change existing data), also encrypt the data
+// returns TRUE/FALSE. true if the patch already exists, or was successfully written.
+// {
+//     char data[] = "some data";
+//     char seal[] = "BBBBBBBBBBBBBBBBBBBBBBBB"; // Some sealant bsea64
+//     char oldResult[] = "AAAAAAAAAAAAAAAAAAAAAAAA"; // ID from previous store result
+//     char result[44];
+//     sack_vfs_os_ioctl_patch_crypt_object( vol, oldResult, sizeof( oldResult )-1, data, sizeof( data ), seal, sizeof( seal ), result, 44 );
+// }
+#define sack_vfs_os_ioctl_patch_crypt_sealed_object( vol, objId,objIdLen, obj,objlen, seal,seallen, result, resultlen ) sack_fs_ioctl( vol, SOSFSSIO_PATCH_OBJECT, TRUE, FALSE, objId, objIdLen, authId, authIdLen, obj, objlen, seal, seallen, result, resultlen )
+// store data to a new sealed block.  Data is publically readable.
+// returns TRUE/FALSE. true if the object already exists, or was successfully written.
+// {
+//     char data[] = "some data";
+//     char seal[] = "BBBBBBBBBBBBBBBBBBBBBBBB"; // Some sealant bsea64
+//     char result[44];
+//     sack_vfs_os_ioctl_store_owned_object( vol, data, sizeof( data ), seal, sizeof( seal ), result, 44 );
+// }
+#define sack_vfs_os_ioctl_store_owned_object( vol, obj,objlen, seal,seallen, result, resultlen )                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, FALSE, TRUE, obj, objlen, seal, seallen, result, resultlen )
+// store data to a new sealed block.  Data is publically readable.
+// returns TRUE/FALSE. true if the object already exists, or was successfully written.
+// {
+//     char data[] = "some data";
+//     char seal[] = "BBBBBBBBBBBBBBBBBBBBBBBB"; // Some sealant bsea64
+//     char result[44];
+//     sack_vfs_os_ioctl_store_sealed_object( vol, data, sizeof( data ), seal, sizeof( seal ), result, 44 );
+// }
+#define sack_vfs_os_ioctl_store_sealed_object( vol, obj,objlen, seal,seallen, result, resultlen )                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, FALSE, FALSE, obj, objlen, seal, seallen, result, resultlen )
+// store patch to an existing sealed block.  (Writes never change existing data).  Data is publically readable.
+// returns TRUE/FALSE. true if the patch already exists, or was successfully written.
+// {
+//     char data[] = "some data";
+//     char seal[] = "BBBBBBBBBBBBBBBBBBBBBBBB"; // Some sealant bsea64
+//     char oldResult[] = "AAAAAAAAAAAAAAAAAAAAAAAA"; // ID from previous store result
+//     char result[44];
+//     sack_vfs_os_ioctl_patch_object( vol, oldResult, sizeof( oldResult )-1, data, sizeof( data ), seal, sizeof( seal ), result, 44 );
+// }
+#define sack_vfs_os_ioctl_patch_owned_object( vol, objId,objIdLen, obj,objlen, seal,seallen, result, resultlen ) sack_fs_ioctl( vol, SOSFSSIO_PATCH_OBJECT, FALSE, TRUE, objId, objIdLen, authId, authIdLen, obj, objlen, seal, seallen, result, resultlen )
+// store patch to an existing sealed block.  (Writes never change existing data).  Data is publically readable.
+// returns TRUE/FALSE. true if the patch already exists, or was successfully written.
+// {
+//     char data[] = "some data";
+//     char seal[] = "BBBBBBBBBBBBBBBBBBBBBBBB"; // Some sealant bsea64
+//     char oldResult[] = "AAAAAAAAAAAAAAAAAAAAAAAA"; // ID from previous store result
+//     char result[44];
+//     sack_vfs_os_ioctl_patch_object( vol, oldResult, sizeof( oldResult )-1, data, sizeof( data ), seal, sizeof( seal ), result, 44 );
+// }
+#define sack_vfs_os_ioctl_patch_sealed_object( vol, objId,objIdLen, obj,objlen, seal,seallen, result, resultlen ) sack_fs_ioctl( vol, SOSFSSIO_PATCH_OBJECT, FALSE, FALSE, objId, objIdLen, authId, authIdLen, obj, objlen, seal, seallen, result, resultlen )
 	struct volume;
 	struct sack_vfs_file;
 	struct find_info;
@@ -9970,6 +10275,28 @@ PSSQL_PROC( int, SQLRecordQueryEx )( PODBC odbc
    odbc :     connection to do the query on.
    query :    query to execute.
    queryLength : actual length of the query (allows embedded NUL characters)
+   PDATALIST* :  pointer to datalist pointer which will contain struct json_val_containers.
+			 for each result in this list until VALUE_UNDEFINED is used.
+		.name is the field name (constant)
+		.string is the text, value_type is the value type (so numbers can stay numbers)
+	pdlParams : parameters to bind to the query.
+   Example
+   See SQLRecordQueryf, but omit the database parameter.         */
+int SQLRecordQuery_js( PODBC odbc
+	, CTEXTSTR query
+	, size_t queryLen
+	, PDATALIST *pdlResults
+	, PDATALIST pdlParams
+	DBG_PASS );
+/* Do a SQL query on the default odbc connection. The first
+   record results immediately if there are any records. Returns
+   the results as an array of strings. If you know the select
+   you are using .... "select a,b,c from xyz" then you know that
+   this will have 3 columns resulting.
+   Parameters
+   odbc :     connection to do the query on.
+   query :    query to execute.
+   queryLength : actual length of the query (allows embedded NUL characters)
    columns :  pointer to an int to receive the number of columns
               in the result. (the user will know this based on
               the query issued usually, so it can be NULL to
@@ -10019,6 +10346,15 @@ PSSQL_PROC( int, FetchSQLResult )( PODBC, CTEXTSTR *result );
    Values received are invalid after the next FetchSQLRecord or
    possibly other query.                                        */
 PSSQL_PROC( int, FetchSQLRecord )( PODBC, CTEXTSTR **result );
+/* Gets the next record result from the connection.
+   Parameters
+   odbc :     connection to get the result from; if NULL, uses
+			  \internal static connection.
+   result\ :  (unchanged; is same list as original)
+   Remarks
+   Values received are invalid after the next FetchSQLRecord or
+   possibly other query.                                        */
+PSSQL_PROC( int, FetchSQLRecordJS )(PODBC odbc, PDATALIST *ppdlRecord);
 /* Gets the last result on the specified ODBC connection.
    Parameters
    odbc :     connection to get the last error of
@@ -10772,8 +11108,8 @@ SACK_VFS_NAMESPACE
 #define BLOCK_SHIFT (BLOCK_SIZE_BITS-(sizeof(BLOCKINDEX)==16?4:sizeof(BLOCKINDEX)==8?3:sizeof(BLOCKINDEX)==4?2:sizeof(BLOCKINDEX)==2?1:0) )
 #define BLOCK_SIZE (1<<BLOCK_SIZE_BITS)
 #define BLOCK_MASK (BLOCK_SIZE-1)
-#define BLOCKS_PER_BAT (BLOCK_SIZE/sizeof(BLOCKINDEX))
-#define BLOCKS_PER_SECTOR (1 + (BLOCK_SIZE/sizeof(BLOCKINDEX)))
+#define BLOCKS_PER_BAT (1<<BLOCK_SHIFT)
+#define BLOCKS_PER_SECTOR (1 + BLOCKS_PER_BAT)
 // per-sector perumation; needs to be a power of 2 (in bytes)
 #define SHORTKEY_LENGTH 16
 #ifndef VFS_DISK_DATATYPE
@@ -10825,18 +11161,31 @@ typedef VFS_DISK_DATATYPE FPI;
 #endif
 enum block_cache_entries
 {
-	BC(DIRECTORY)
+	BC( DIRECTORY )
 #ifdef VIRTUAL_OBJECT_STORE
-	, BC(DIRECTORY_LAST) = BC(DIRECTORY) + 64
+	, BC( DIRECTORY_LAST ) = BC( DIRECTORY ) + 64
 #endif
-	, BC(NAMES)
-	, BC(NAMES_LAST) = BC(NAMES) + 16
-	, BC(BAT)
+	, BC( NAMES )
+	, BC( NAMES_LAST ) = BC( NAMES ) + 16
+	, BC( BAT )
+#ifdef VIRTUAL_OBJECT_STORE
+	// keep a few tables for cache (file system too?)
+	, BC( BAT_LAST ) = BC( BAT ) + 4
+#endif
 	, BC(DATAKEY)
 	, BC(FILE)
-	, BC(FILE_LAST) = BC(FILE) + 10
+	, BC(FILE_LAST) = BC(FILE) + 32
 	, BC(COUNT)
 };
+// could effecitvely be fewer than this
+// 82 dirents * 512 byte names = 40000
+#define DIRENT_NAME_OFFSET_OFFSET             0x0001FFFF
+// (sealant length / 4)  (mulitply by 4 to get real length)
+#define DIRENT_NAME_OFFSET_FLAG_SEALANT       0x003E0000
+#define DIRENT_NAME_OFFSET_FLAG_SEALANT_SHIFT 17
+#define DIRENT_NAME_OFFSET_FLAG_OWNED         0x00400000
+#define DIRENT_NAME_OFFSET_FLAG_READ_KEYED    0x00800000
+#define DIRENT_NAME_OFFSET_UNUSED             0xFF000000
 PREFIX_PACKED struct directory_entry
 {
   // name offset from beginning of disk
@@ -10845,6 +11194,10 @@ PREFIX_PACKED struct directory_entry
 	BLOCKINDEX first_block;
   // how big the file is
 	VFS_DISK_DATATYPE filesize;
+#ifdef VIRTUAL_OBJECT_STORE
+  // when the file was created/last written
+	uint64_t tick;
+#endif
 	//uint32_t filler;  // extra data(unused)
 } PACKED;
 #undef VFS_DIRECTORY_ENTRIES
@@ -10852,16 +11205,11 @@ PREFIX_PACKED struct directory_entry
 // subtract name has index
 // subtrace name index
 #define VFS_DIRECTORY_ENTRIES ( ( BLOCK_SIZE - ( 2*sizeof(BLOCKINDEX) + 256*sizeof(BLOCKINDEX)) ) /sizeof( struct directory_entry) )
+#define VFS_PATCH_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
 #else
 #define VFS_DIRECTORY_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
+#define VFS_PATCH_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
 #endif
-PREFIX_PACKED struct directory_hash_lookup_block
-{
-	BLOCKINDEX next_block[256];
-	struct directory_entry entries[VFS_DIRECTORY_ENTRIES];
-	BLOCKINDEX names_first_block;
-	uint8_t used_names;
-} PACKED;
 struct disk
 {
 	// BAT is at 0 of every BLOCK_SIZE blocks (4097 total)
@@ -10883,6 +11231,7 @@ PREFIX_PACKED struct volume {
 	const char * volname;
 #ifdef FILE_BASED_VFS
 	FILE *file;
+	struct file_system_mounted_interface *mount;
 #else
 	struct disk *disk;
  // disk might be offset from diskReal because it's a .exe attached.
@@ -10907,6 +11256,7 @@ PREFIX_PACKED struct volume {
 	uint8_t fileCacheAge[BC(FILE_LAST) - BC(FILE)];
 #ifdef VIRTUAL_OBJECT_STORE
 	uint8_t dirHashCacheAge[BC(DIRECTORY_LAST) - BC(DIRECTORY)];
+	uint8_t batHashCacheAge[BC(BAT_LAST) - BC(BAT)];
 #endif
 	uint8_t nameCacheAge[BC(NAMES_LAST) - BC(NAMES)];
 	struct random_context *entropy;
@@ -10930,6 +11280,8 @@ PREFIX_PACKED struct volume {
 	FLAGSET( _dirty, BC( COUNT ) );
 	FPI bufferFPI[BC(COUNT)];
 #endif
+	BLOCKINDEX lastBatBlock;
+	PDATALIST pdlFreeBlocks;
  // when reopened file structures need to be updated also...
 	PLIST files;
 	LOGICAL read_only;
@@ -10946,6 +11298,14 @@ struct sack_vfs_file
 	FPI entry_fpi;
 #ifdef VIRTUAL_OBJECT_STORE
 	enum block_cache_entries cache;
+	uint8_t *seal;
+	uint8_t *sealant;
+	uint8_t *readKey;
+	uint16_t readKeyLen;
+	uint8_t sealantLen;
+ // boolean, on read, validates seal.  Defaults to FALSE.
+	uint8_t sealed;
+	char *filename;
 #endif
   // has file size within
 	struct directory_entry _entry;
@@ -10964,6 +11324,9 @@ struct sack_vfs_file
 	BLOCKINDEX block;
   // someone already deleted this...
 	LOGICAL delete_on_close;
+	BLOCKINDEX *blockChain;
+	unsigned int blockChainAvail;
+	unsigned int blockChainLength;
 };
 #undef TSEEK
 #undef BTSEEK
@@ -11088,6 +11451,33 @@ static void MaskStrCpy( char *output, size_t outlen, struct volume *vol, FPI nam
 	}
 }
 #endif
+static void ExtendBlockChain( struct sack_vfs_file *file ) {
+	int newSize = ( file->blockChainAvail ) * 2 + 1;
+	file->blockChain = (BLOCKINDEX*)Reallocate( file->blockChain, newSize * sizeof( BLOCKINDEX ) );
+#ifdef _DEBUG
+	// debug
+	memset( file->blockChain + file->blockChainAvail, 0, (newSize - file->blockChainAvail ) * sizeof(BLOCKINDEX) );
+#endif
+	file->blockChainAvail = newSize;
+}
+static void SetBlockChain( struct sack_vfs_file *file, FPI fpi, BLOCKINDEX newBlock ) {
+	FPI fileBlock = fpi >> BLOCK_SIZE_BITS;
+#ifdef _DEBUG
+	if( !newBlock ) DebugBreak();
+#endif
+	while( (fileBlock) >= file->blockChainAvail ) {
+		ExtendBlockChain( file );
+	}
+	if( fileBlock >= file->blockChainLength )
+		file->blockChainLength = (unsigned int)(fileBlock + 1);
+	//_lprintf(DBG_RELAY)( "setting %d to %d", (int)fileBlock, (int)newBlock );
+	if( file->blockChain[fileBlock] ) {
+		if( file->blockChain[fileBlock] == newBlock ) {
+			return;
+		}
+	}
+	file->blockChain[fileBlock] = newBlock;
+}
 static enum block_cache_entries UpdateSegmentKey( struct volume *vol, enum block_cache_entries cache_idx, BLOCKINDEX segment )
 {
 	if( !vol->key ) {
@@ -11183,8 +11573,16 @@ static LOGICAL ValidateBAT( struct volume *vol ) {
 				BLOCKINDEX block = BAT[0] ^ blockKey[0];
 				BAT++; blockKey++;
 				if( block == EOFBLOCK ) continue;
-				if( block == EOBBLOCK ) break;
+				if( block == EOBBLOCK ) {
+					vol->lastBatBlock = n+m;
+					break;
+				}
 				if( block >= last_block ) return FALSE;
+				if( block == 0 ) {
+ // use as a temp variable....
+					vol->lastBatBlock = n + m;
+					AddDataItem( &vol->pdlFreeBlocks, &vol->lastBatBlock );
+				}
 			}
 			if( m < BLOCKS_PER_BAT ) break;
 		}
@@ -11195,8 +11593,16 @@ static LOGICAL ValidateBAT( struct volume *vol ) {
 			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
 				BLOCKINDEX block = BAT[m];
 				if( block == EOFBLOCK ) continue;
-				if( block == EOBBLOCK ) break;
+				if( block == EOBBLOCK ) {
+					vol->lastBatBlock = n + m;
+					break;
+				}
 				if( block >= last_block ) return FALSE;
+				if( block == 0 ) {
+ // use as a temp variable....
+					vol->lastBatBlock = n + m;
+					AddDataItem( &vol->pdlFreeBlocks, &vol->lastBatBlock );
+				}
 			}
 			if( m < BLOCKS_PER_BAT ) break;
 		}
@@ -11340,7 +11746,7 @@ static LOGICAL ExpandVolume( struct volume *vol ) {
 				// initialize first BAT block.
 				cache = BC(BAT);
 				TSEEK( BLOCKINDEX*, vol, 0, cache );
-				((BLOCKINDEX*)(((uintptr_t)vol->disk) + 0))[0] = EOBBLOCK ^ ((BLOCKINDEX*)vol->usekey[BC(BAT)])[0];
+				((BLOCKINDEX*)(((uintptr_t)vol->disk) + 0))[0] = EOBBLOCK ^ ((BLOCKINDEX*)vol->usekey[cache])[0];
 			}
 			return TRUE;
 		}
@@ -11459,57 +11865,61 @@ uintptr_t vfs_BSEEK( struct volume *vol, BLOCKINDEX block, enum block_cache_entr
 static BLOCKINDEX GetFreeBlock( struct volume *vol, int init )
 {
 	size_t n;
-	int b = 0;
+	unsigned int b = 0;
 	enum block_cache_entries cache = BC(BAT);
 	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, cache );
+	BLOCKINDEX *blockKey;
+	BLOCKINDEX check_val;
+	if( vol->pdlFreeBlocks->Cnt ) {
+		BLOCKINDEX newblock = ((BLOCKINDEX*)GetDataItem( &vol->pdlFreeBlocks, vol->pdlFreeBlocks->Cnt - 1 ))[0];
+		check_val = 0;
+		b = (unsigned int)(newblock / BLOCKS_PER_SECTOR);
+		n = newblock % BLOCKS_PER_SECTOR;
+		vol->pdlFreeBlocks->Cnt--;
+	}
+	else {
+		check_val = EOBBLOCK;
+		b = (unsigned int)(vol->lastBatBlock / BLOCKS_PER_SECTOR);
+		n = vol->lastBatBlock % BLOCKS_PER_SECTOR;
+	}
+	//lprintf( "check, start, b, n %d %d %d %d", (int)check_val, (int) vol->lastBatBlock, (int)b, (int)n );
+	current_BAT = TSEEK( BLOCKINDEX*, vol, b*BLOCKS_PER_SECTOR*BLOCK_SIZE, cache ) + n;
+	blockKey = ((BLOCKINDEX*)vol->usekey[cache]) + n;
 	if( !current_BAT ) return 0;
-	do
-	{
-		BLOCKINDEX check_val;
-		BLOCKINDEX *blockKey;
-		blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
-		for( n = 0; n < BLOCKS_PER_BAT; n++ )
-		{
-			check_val = current_BAT[0] ^ blockKey[0];
-			if( !check_val || (check_val == EOBBLOCK) )
-			{
-				// mark it as claimed; will be enf of file marker...
-				// adn thsi result will overwrite previous EOF.
-				current_BAT[0] = EOFBLOCK ^ blockKey[0];
-				if( init )
-				{
-					enum block_cache_entries cache;
-					cache = UpdateSegmentKey( vol, BC(FILE), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 );
-					while( ((vol->segment[cache]-1)*BLOCK_SIZE) > vol->dwSize ){
-						LoG( "looping to get a size %d", ((vol->segment[cache]-1)*BLOCK_SIZE) );
-						if( !ExpandVolume( vol ) ) return 0;
-					}
-					if( init == GFB_INIT_DIRENT )
-						((struct directory_entry*)(((uint8_t*)vol->disk) + (vol->segment[cache]-1) * BLOCK_SIZE))[0].first_block = EODMARK^((struct directory_entry*)vol->usekey[cache])->first_block;
-					else if( init == GFB_INIT_NAMES )
-						((char*)(((uint8_t*)vol->disk) + (vol->segment[cache]-1) * BLOCK_SIZE))[0] = ((char*)vol->usekey[cache])[0];
-					//else
-					//	memcpy( ((uint8_t*)vol->disk) + (vol->segment[cache]-1) * BLOCK_SIZE, vol->usekey[cache], BLOCK_SIZE );
-				}
-				if( (check_val == EOBBLOCK) )
-					if(n < (BLOCKS_PER_BAT-1))
-						current_BAT[1] = EOBBLOCK ^ blockKey[1];
-					else {
-						current_BAT = TSEEK( BLOCKINDEX*, vol, (b + 1) * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
-						blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
-						current_BAT[0] = EOBBLOCK ^ blockKey[0];
-					}
-				return b * BLOCKS_PER_BAT + n;
-			}
-			current_BAT++;
-			blockKey++;
+	current_BAT[0] = EOFBLOCK ^ blockKey[0];
+	if( (check_val == EOBBLOCK) ) {
+		if( n < (BLOCKS_PER_BAT - 1) ) {
+			current_BAT[1] = EOBBLOCK ^ blockKey[1];
+			vol->lastBatBlock++;
 		}
-		b++;
-		current_BAT = TSEEK( BLOCKINDEX*, vol, b * ( BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
-	}while( 1 );
+		else {
+			cache = BC( BAT );
+			current_BAT = TSEEK( BLOCKINDEX*, vol, (b + 1) * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
+			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
+			current_BAT[0] = EOBBLOCK ^ blockKey[0];
+			vol->lastBatBlock = (b + 1) * BLOCKS_PER_SECTOR;
+			//lprintf( "Set last block....%d", (int)vol->lastBatBlock );
+		}
+	}
+	if( init ) {
+		enum block_cache_entries cache;
+		cache = UpdateSegmentKey( vol, BC( FILE ), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 );
+		while( ((vol->segment[cache] - 1)*BLOCK_SIZE) > vol->dwSize ) {
+			LoG( "looping to get a size %d", ((vol->segment[cache] - 1)*BLOCK_SIZE) );
+			if( !ExpandVolume( vol ) ) return 0;
+		}
+		if( init == GFB_INIT_DIRENT )
+			((struct directory_entry*)(((uint8_t*)vol->disk) + (vol->segment[cache] - 1) * BLOCK_SIZE))[0].first_block = EODMARK ^ ((struct directory_entry*)vol->usekey[cache])->first_block;
+		else if( init == GFB_INIT_NAMES )
+			((char*)(((uint8_t*)vol->disk) + (vol->segment[cache] - 1) * BLOCK_SIZE))[0] = ((char*)vol->usekey[cache])[0];
+		//else
+		//	memcpy( ((uint8_t*)vol->disk) + (vol->segment[cache]-1) * BLOCK_SIZE, vol->usekey[cache], BLOCK_SIZE );
+	}
+	//lprintf( "Return block:%d   %d  %d", (int)(b*BLOCKS_PER_BAT + n), (int)b, (int)n );
+	return b * BLOCKS_PER_BAT + n;
 }
 static BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int init, LOGICAL expand ) {
-	BLOCKINDEX sector = block >> BLOCK_SHIFT;
+	BLOCKINDEX sector = block / BLOCKS_PER_BAT;
 	enum block_cache_entries cache = BC(BAT);
 	BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX *, vol, sector * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
 	BLOCKINDEX seg;
@@ -11517,11 +11927,11 @@ static BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int in
  // if this passes, later ones will also.
 	if( !this_BAT ) return 0;
 	seg = ( ((uintptr_t)this_BAT - (uintptr_t)vol->disk) / BLOCK_SIZE ) + 1;
-	if( seg != vol->segment[BC(BAT)] ) {
+	if( seg != vol->segment[cache] ) {
 		//vol->segment[BC(BAT)] = seg;
-		UpdateSegmentKey( vol, BC(BAT), seg );
+		UpdateSegmentKey( vol, cache, seg );
 	}
-	check_val ^= ((BLOCKINDEX*)vol->usekey[BC(BAT)])[block & (BLOCKS_PER_BAT-1)];
+	check_val ^= ((BLOCKINDEX*)vol->usekey[cache])[block & (BLOCKS_PER_BAT-1)];
 	if( check_val == EOBBLOCK ) {
 		lprintf( "the file itself should never get a EOBBLOCK in it." );
 		(*(int*)0) = 0;
@@ -11534,9 +11944,13 @@ static BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int in
 			BLOCKINDEX key;
 			check_val = GetFreeBlock( vol, init );
 			// free block might have expanded...
+			cache = BC( BAT );
 			this_BAT = TSEEK( BLOCKINDEX*, vol, sector * ( BLOCKS_PER_SECTOR*BLOCK_SIZE ), cache );
-			key = vol->key ? ((BLOCKINDEX*)vol->usekey[BC(BAT)])[block & (BLOCKS_PER_BAT - 1)] : 0;
+			key = vol->key ? ((BLOCKINDEX*)vol->usekey[cache])[block & (BLOCKS_PER_BAT - 1)] : 0;
 			if( !this_BAT ) return 0;
+#ifdef _DEBUG
+			if( !block ) DebugBreak();
+#endif
 			// segment could already be set from the GetFreeBlock...
 			this_BAT[block & (BLOCKS_PER_BAT-1)] = check_val ^ key;
 		}
@@ -11625,6 +12039,7 @@ struct volume *sack_vfs_load_volume( const char * filepath )
 {
 	struct volume *vol = New( struct volume );
 	memset( vol, 0, sizeof( struct volume ) );
+	vol->pdlFreeBlocks = CreateDataList( sizeof( BLOCKINDEX ) );
 	vol->volname = SaveText( filepath );
 	AssignKey( vol, NULL, NULL );
 	if( !ExpandVolume( vol ) || !ValidateBAT( vol ) ) { Deallocate( struct volume*, vol ); return NULL; }
@@ -11634,6 +12049,7 @@ struct volume *sack_vfs_load_crypt_volume( const char * filepath, uintptr_t vers
 	struct volume *vol = New( struct volume );
 	MemSet( vol, 0, sizeof( struct volume ) );
 	if( !version ) version = 2;
+	vol->pdlFreeBlocks = CreateDataList( sizeof( BLOCKINDEX ) );
 	vol->clusterKeyVersion = version - 1;
 	vol->volname = SaveText( filepath );
 	vol->userkey = userkey;
@@ -11648,6 +12064,7 @@ struct volume *sack_vfs_use_crypt_volume( POINTER memory, size_t sz, uintptr_t v
 	vol->read_only = 1;
 	AssignKey( vol, userkey, devkey );
 	if( !version ) version = 2;
+	vol->pdlFreeBlocks = CreateDataList( sizeof( BLOCKINDEX ) );
 	vol->clusterKeyVersion = version - 1;
 	vol->external_memory = TRUE;
 	vol->diskReal = (struct disk*)memory;
@@ -11694,6 +12111,7 @@ void sack_vfs_unload_volume( struct volume * vol ) {
 		return;
 	}
 	DeleteListEx( &vol->files DBG_SRC );
+	DeleteDataList( &vol->pdlFreeBlocks );
 	if( !vol->external_memory )	CloseSpace( vol->diskReal );
 	if( vol->key ) {
 		Deallocate( uint8_t*, vol->key );
@@ -11703,10 +12121,10 @@ void sack_vfs_unload_volume( struct volume * vol ) {
 }
 void sack_vfs_shrink_volume( struct volume * vol ) {
 	size_t n;
-	int b = 0;
+	unsigned int b = 0;
 	//int found_free; // this block has free data; should be last BAT?
 	BLOCKINDEX last_block = 0;
-	int last_bat = 0;
+	unsigned int last_bat = 0;
 	enum block_cache_entries cache = BC(BAT);
 	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, cache );
  // expand failed, tseek failed in response, so don't do anything
@@ -11714,7 +12132,7 @@ void sack_vfs_shrink_volume( struct volume * vol ) {
 	do {
 		BLOCKINDEX check_val;
 		BLOCKINDEX *blockKey;
-		blockKey = (BLOCKINDEX*)vol->usekey[BC(BAT)];
+		blockKey = (BLOCKINDEX*)vol->usekey[cache];
 		for( n = 0; n < BLOCKS_PER_BAT; n++ ) {
 			check_val = *(current_BAT++);
 			if( vol->key )	check_val ^= *(blockKey++);
@@ -11776,7 +12194,7 @@ LOGICAL sack_vfs_decrypt_volume( struct volume *vol )
 // = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * (BLOCKS_PER_SECTOR * BLOCK_SIZE));
 			BLOCKINDEX *block;
 			block = TSEEK( BLOCKINDEX*, vol, n * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
-			blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
+			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
 			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
 				block[0] ^= blockKey[0];
 				if( block[0] == EOBBLOCK ) break;
@@ -11810,7 +12228,7 @@ LOGICAL sack_vfs_encrypt_volume( struct volume *vol, uintptr_t version, CTEXTSTR
 // = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * (BLOCKS_PER_SECTOR * BLOCK_SIZE));
 			BLOCKINDEX *block;
 			block = TSEEK( BLOCKINDEX*, vol, n * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
-			blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
+			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
 			//vol->segment[BC(BAT)] = n + 1;
 			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
 				if( block[0] == EOBBLOCK ) done = TRUE;
@@ -11849,10 +12267,12 @@ const char *sack_vfs_get_signature( struct volume *vol ) {
 					for( n = 0; n < BLOCKS_PER_BAT; n++ )
 						datakey[n] ^= next_entries[n] ^ ((BLOCKINDEX*)(((uint8_t*)usekey)))[n];
 					next_dir_block = vfs_GetNextBlock( vol, this_dir_block, GFB_INIT_DIRENT, FALSE );
+#ifdef _DEBUG
 					if( this_dir_block == next_dir_block )
 						DebugBreak();
 					if( next_dir_block == 0 )
 						DebugBreak();
+#endif
 					this_dir_block = next_dir_block;
 				}
 				while( next_dir_block != EOFBLOCK );
@@ -11919,9 +12339,9 @@ struct directory_entry * ScanDirectory( struct volume *vol, const char * filenam
 		next_dir_block = vfs_GetNextBlock( vol, this_dir_block, GFB_INIT_DIRENT, TRUE );
 #ifdef _DEBUG
 		if( this_dir_block == next_dir_block ) DebugBreak();
-#endif
   // should have a last-entry before no more blocks....
 		if( next_dir_block == 0 ) { DebugBreak(); return NULL; }
+#endif
 		this_dir_block = next_dir_block;
 	}
 	while( 1 );
@@ -12024,6 +12444,11 @@ struct sack_vfs_file * CPROC sack_vfs_openfile( struct volume *vol, const char *
 	file->fpi = 0;
 	file->delete_on_close = 0;
 	file->_first_block = file->block = file->entry->first_block ^ file->dirent_key.first_block;
+	LoG( "file block is %d", (int)file->block );
+	file->blockChain = NULL;
+	file->blockChainAvail = 0;
+	file->blockChainLength = 0;
+	SetBlockChain( file, 0, file->block );
 	AddLink( &vol->files, file );
 	vol->lock = 0;
 	return file;
@@ -12047,30 +12472,57 @@ size_t CPROC sack_vfs_size( struct sack_vfs_file *file ) { return (size_t)(file-
 size_t CPROC sack_vfs_seek( struct sack_vfs_file *file, size_t pos, int whence )
 {
 	FPI old_fpi = file->fpi;
+	BLOCKINDEX b;
 	if( whence == SEEK_SET ) file->fpi = pos;
 	if( whence == SEEK_CUR ) file->fpi += pos;
 	if( whence == SEEK_END ) file->fpi = ( file->entry->filesize  ^ file->dirent_key.filesize ) + pos;
 	while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
+	if( (file->fpi >> BLOCK_SIZE_BITS) < file->blockChainLength ) {
+		enum block_cache_entries cache = BC( FILE );
+		file->block = file->blockChain[file->fpi >> BLOCK_SIZE_BITS];
+#ifdef _DEBUG
+		if( !file->block )DebugBreak();
+#endif
+		LoG( "file block is %d", (int)file->block );
+		vfs_BSEEK( file->vol, file->block, &cache );
+		file->vol->lock = 0;
+		return (size_t)file->fpi;
+	}
+	else {
+		LoG( "NEed more blocks after end of file...." );
+		file->block = b = file->blockChain[file->blockChainLength - 1];
+		old_fpi = ( file->blockChainLength - 1 ) * BLOCK_SIZE;
+	}
 	{
 		if( ( file->fpi & ( ~BLOCK_MASK ) ) >= ( old_fpi & ( ~BLOCK_MASK ) ) ) {
 			do {
 				if( ( file->fpi & ( ~BLOCK_MASK ) ) == ( old_fpi & ( ~BLOCK_MASK ) ) ) {
+					file->block = b;
 					file->vol->lock = 0;
+					LoG( "-- file block is finally %d", (int)b );
 					return (size_t)file->fpi;
 				}
-				file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
+				b = vfs_GetNextBlock( file->vol, b, FALSE, TRUE );
+				LoG( "-- file block will be %d   %d  %d", (int)b, (int)file->fpi, (int)(old_fpi) );
+// the actual old FPI already had a block (input file->block), new FPI gets this block.
 				old_fpi += BLOCK_SIZE;
+				SetBlockChain( file, old_fpi, b );
+				//SetBlockChain( file, old_fpi, file->block );
 			} while( 1 );
 		}
 	}
 	{
-		size_t n = 0;
-		BLOCKINDEX b = file->_first_block;
+		size_t n = file->blockChainLength - 1;
+#ifdef _DEBUG
+		if( n & 0x80000000 ) DebugBreak();
+#endif
 		while( n * BLOCK_SIZE < ( pos & ~BLOCK_MASK ) ) {
 			b = vfs_GetNextBlock( file->vol, b, FALSE, TRUE );
 			n++;
 		}
 		file->block = b;
+		LoG( "++ file block is %d", (int)file->block );
+		SetBlockChain( file, file->fpi, file->block );
 	}
 	file->vol->lock = 0;
 	return (size_t)file->fpi;
@@ -12100,6 +12552,8 @@ size_t CPROC sack_vfs_write( struct sack_vfs_file *file, const char * data, size
 			if( file->fpi > ( file->entry->filesize ^ file->dirent_key.filesize ) )
 				file->entry->filesize = file->fpi ^ file->dirent_key.filesize;
 			file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
+			LoG( "file block is %d", (int)file->block );
+			SetBlockChain( file, file->fpi, file->block );
 			length -= BLOCK_SIZE - ofs;
 		} else {
 			MaskBlock( file->vol, file->vol->usekey[cache], block, ofs, ofs, data, length );
@@ -12121,9 +12575,15 @@ size_t CPROC sack_vfs_write( struct sack_vfs_file *file, const char * data, size
 			data += BLOCK_SIZE;
 			written += BLOCK_SIZE;
 			file->fpi += BLOCK_SIZE;
-			if( file->fpi > ( file->entry->filesize ^ file->dirent_key.filesize ) )
-				file->entry->filesize = file->fpi ^ file->dirent_key.filesize;
 			file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
+#ifdef _DEBUG
+			if( !file->block ) DebugBreak();
+#endif
+			if( file->fpi > ( file->entry->filesize ^ file->dirent_key.filesize ) ) {
+				SetBlockChain( file, file->fpi, file->block );
+				file->entry->filesize = file->fpi ^ file->dirent_key.filesize;
+			}
+			LoG( "file block is %d", (int)file->block );
 			length -= BLOCK_SIZE;
 		} else {
 			MaskBlock( file->vol, file->vol->usekey[cache], block, 0, 0, data, length );
@@ -12159,6 +12619,8 @@ size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t leng
 			length -= BLOCK_SIZE - ofs;
 			file->fpi += BLOCK_SIZE - ofs;
 			file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
+			LoG( "file block is %d", (int)file->block );
+			SetBlockChain( file, file->fpi, file->block );
 		} else {
 			MaskBlock( file->vol, file->vol->usekey[cache], (uint8_t*)data, 0, ofs, (const char*)(block+ofs), length );
 			written += length;
@@ -12177,6 +12639,8 @@ size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t leng
 			length -= BLOCK_SIZE;
 			file->fpi += BLOCK_SIZE;
 			file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
+			LoG( "file block is %d", (int)file->block );
+			SetBlockChain( file, file->fpi, file->block );
 		} else {
 			MaskBlock( file->vol, file->vol->usekey[cache], (uint8_t*)data, 0, 0, (const char*)block, length );
 			written += length;
@@ -12210,13 +12674,14 @@ static void sack_vfs_unlink_file_entry( struct volume *vol, struct directory_ent
 		do {
 			enum block_cache_entries cache = BC(BAT);
 			BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX*, vol, ( ( block >> BLOCK_SHIFT ) * ( BLOCKS_PER_SECTOR*BLOCK_SIZE) ), cache );
-			BLOCKINDEX _thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[BC(BAT)])[_block & (BLOCKS_PER_BAT-1)]:0;
+			BLOCKINDEX _thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[cache])[_block & (BLOCKS_PER_BAT-1)]:0;
 			BLOCKINDEX b = BLOCK_SIZE + (block >> BLOCK_SHIFT) * (BLOCKS_PER_SECTOR*BLOCK_SIZE) + (block & (BLOCKS_PER_BAT - 1)) * BLOCK_SIZE;
 			uint8_t* blockData = (uint8_t*)(((uintptr_t)vol->disk) + b);
 			//LoG( "Clearing file datablock...%p", (uintptr_t)blockData - (uintptr_t)vol->disk );
 			memset( blockData, 0, BLOCK_SIZE );
 			block = vfs_GetNextBlock( vol, block, FALSE, FALSE );
 			this_BAT[_block & (BLOCKS_PER_BAT-1)] = _thiskey;
+			AddDataItem( &vol->pdlFreeBlocks, &_block );
 			_block = block;
 		} while( block != EOFBLOCK );
 	}
@@ -12233,7 +12698,7 @@ static void shrinkBAT( struct sack_vfs_file *file ) {
 		enum block_cache_entries data_cache = BC(DATAKEY);
 		BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX*, vol, ( ( block >> BLOCK_SHIFT ) * ( BLOCKS_PER_SECTOR*BLOCK_SIZE) ), cache );
 		BLOCKINDEX _thiskey;
-		_thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[BC(BAT)])[_block & (BLOCKS_PER_BAT-1)]:0;
+		_thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[cache])[_block & (BLOCKS_PER_BAT-1)]:0;
 		block = vfs_GetNextBlock( vol, block, FALSE, FALSE );
 		if( bsize > (entry->filesize ^ entkey->filesize) ) {
 			uint8_t* blockData = (uint8_t*)vfs_BSEEK( file->vol, _block, &data_cache );
@@ -12526,8 +12991,8 @@ namespace fs {
 #define BLOCK_SHIFT (BLOCK_SIZE_BITS-(sizeof(BLOCKINDEX)==16?4:sizeof(BLOCKINDEX)==8?3:sizeof(BLOCKINDEX)==4?2:sizeof(BLOCKINDEX)==2?1:0) )
 #define BLOCK_SIZE (1<<BLOCK_SIZE_BITS)
 #define BLOCK_MASK (BLOCK_SIZE-1)
-#define BLOCKS_PER_BAT (BLOCK_SIZE/sizeof(BLOCKINDEX))
-#define BLOCKS_PER_SECTOR (1 + (BLOCK_SIZE/sizeof(BLOCKINDEX)))
+#define BLOCKS_PER_BAT (1<<BLOCK_SHIFT)
+#define BLOCKS_PER_SECTOR (1 + BLOCKS_PER_BAT)
 // per-sector perumation; needs to be a power of 2 (in bytes)
 #define SHORTKEY_LENGTH 16
 #ifndef VFS_DISK_DATATYPE
@@ -12579,18 +13044,31 @@ typedef VFS_DISK_DATATYPE FPI;
 #endif
 enum block_cache_entries
 {
-	BC(DIRECTORY)
+	BC( DIRECTORY )
 #ifdef VIRTUAL_OBJECT_STORE
-	, BC(DIRECTORY_LAST) = BC(DIRECTORY) + 64
+	, BC( DIRECTORY_LAST ) = BC( DIRECTORY ) + 64
 #endif
-	, BC(NAMES)
-	, BC(NAMES_LAST) = BC(NAMES) + 16
-	, BC(BAT)
+	, BC( NAMES )
+	, BC( NAMES_LAST ) = BC( NAMES ) + 16
+	, BC( BAT )
+#ifdef VIRTUAL_OBJECT_STORE
+	// keep a few tables for cache (file system too?)
+	, BC( BAT_LAST ) = BC( BAT ) + 4
+#endif
 	, BC(DATAKEY)
 	, BC(FILE)
-	, BC(FILE_LAST) = BC(FILE) + 10
+	, BC(FILE_LAST) = BC(FILE) + 32
 	, BC(COUNT)
 };
+// could effecitvely be fewer than this
+// 82 dirents * 512 byte names = 40000
+#define DIRENT_NAME_OFFSET_OFFSET             0x0001FFFF
+// (sealant length / 4)  (mulitply by 4 to get real length)
+#define DIRENT_NAME_OFFSET_FLAG_SEALANT       0x003E0000
+#define DIRENT_NAME_OFFSET_FLAG_SEALANT_SHIFT 17
+#define DIRENT_NAME_OFFSET_FLAG_OWNED         0x00400000
+#define DIRENT_NAME_OFFSET_FLAG_READ_KEYED    0x00800000
+#define DIRENT_NAME_OFFSET_UNUSED             0xFF000000
 PREFIX_PACKED struct directory_entry
 {
   // name offset from beginning of disk
@@ -12599,6 +13077,10 @@ PREFIX_PACKED struct directory_entry
 	BLOCKINDEX first_block;
   // how big the file is
 	VFS_DISK_DATATYPE filesize;
+#ifdef VIRTUAL_OBJECT_STORE
+  // when the file was created/last written
+	uint64_t tick;
+#endif
 	//uint32_t filler;  // extra data(unused)
 } PACKED;
 #undef VFS_DIRECTORY_ENTRIES
@@ -12606,16 +13088,11 @@ PREFIX_PACKED struct directory_entry
 // subtract name has index
 // subtrace name index
 #define VFS_DIRECTORY_ENTRIES ( ( BLOCK_SIZE - ( 2*sizeof(BLOCKINDEX) + 256*sizeof(BLOCKINDEX)) ) /sizeof( struct directory_entry) )
+#define VFS_PATCH_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
 #else
 #define VFS_DIRECTORY_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
+#define VFS_PATCH_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
 #endif
-PREFIX_PACKED struct directory_hash_lookup_block
-{
-	BLOCKINDEX next_block[256];
-	struct directory_entry entries[VFS_DIRECTORY_ENTRIES];
-	BLOCKINDEX names_first_block;
-	uint8_t used_names;
-} PACKED;
 struct disk
 {
 	// BAT is at 0 of every BLOCK_SIZE blocks (4097 total)
@@ -12637,6 +13114,7 @@ PREFIX_PACKED struct volume {
 	const char * volname;
 #ifdef FILE_BASED_VFS
 	FILE *file;
+	struct file_system_mounted_interface *mount;
 #else
 	struct disk *disk;
  // disk might be offset from diskReal because it's a .exe attached.
@@ -12661,6 +13139,7 @@ PREFIX_PACKED struct volume {
 	uint8_t fileCacheAge[BC(FILE_LAST) - BC(FILE)];
 #ifdef VIRTUAL_OBJECT_STORE
 	uint8_t dirHashCacheAge[BC(DIRECTORY_LAST) - BC(DIRECTORY)];
+	uint8_t batHashCacheAge[BC(BAT_LAST) - BC(BAT)];
 #endif
 	uint8_t nameCacheAge[BC(NAMES_LAST) - BC(NAMES)];
 	struct random_context *entropy;
@@ -12684,6 +13163,8 @@ PREFIX_PACKED struct volume {
 	FLAGSET( _dirty, BC( COUNT ) );
 	FPI bufferFPI[BC(COUNT)];
 #endif
+	BLOCKINDEX lastBatBlock;
+	PDATALIST pdlFreeBlocks;
  // when reopened file structures need to be updated also...
 	PLIST files;
 	LOGICAL read_only;
@@ -12700,6 +13181,14 @@ struct sack_vfs_file
 	FPI entry_fpi;
 #ifdef VIRTUAL_OBJECT_STORE
 	enum block_cache_entries cache;
+	uint8_t *seal;
+	uint8_t *sealant;
+	uint8_t *readKey;
+	uint16_t readKeyLen;
+	uint8_t sealantLen;
+ // boolean, on read, validates seal.  Defaults to FALSE.
+	uint8_t sealed;
+	char *filename;
 #endif
   // has file size within
 	struct directory_entry _entry;
@@ -12718,6 +13207,9 @@ struct sack_vfs_file
 	BLOCKINDEX block;
   // someone already deleted this...
 	LOGICAL delete_on_close;
+	BLOCKINDEX *blockChain;
+	unsigned int blockChainAvail;
+	unsigned int blockChainLength;
 };
 #undef TSEEK
 #undef BTSEEK
@@ -13391,7 +13883,7 @@ void sack_vfs_fs_unload_volume( struct volume * vol ) {
 		vol->closed = TRUE;
 		return;
 	}
-	free( (char*)vol->volname );
+	strdup_free( (char*)vol->volname );
 	DeleteListEx( &vol->files DBG_SRC );
 	sack_fclose( vol->file );
 	//if( !vol->external_memory )	CloseSpace( vol->diskReal );
@@ -13404,10 +13896,10 @@ void sack_vfs_fs_unload_volume( struct volume * vol ) {
 }
 void sack_vfs_fs_shrink_volume( struct volume * vol ) {
 	size_t n;
-	int b = 0;
+	unsigned int b = 0;
 	//int found_free; // this block has free data; should be last BAT?
 	BLOCKINDEX last_block = 0;
-	int last_bat = 0;
+	unsigned int last_bat = 0;
 	enum block_cache_entries cache = BC(BAT);
 	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, cache );
  // expand failed, tseek failed in response, so don't do anything
@@ -14294,8 +14786,8 @@ namespace objStore {
 #define BLOCK_SHIFT (BLOCK_SIZE_BITS-(sizeof(BLOCKINDEX)==16?4:sizeof(BLOCKINDEX)==8?3:sizeof(BLOCKINDEX)==4?2:sizeof(BLOCKINDEX)==2?1:0) )
 #define BLOCK_SIZE (1<<BLOCK_SIZE_BITS)
 #define BLOCK_MASK (BLOCK_SIZE-1)
-#define BLOCKS_PER_BAT (BLOCK_SIZE/sizeof(BLOCKINDEX))
-#define BLOCKS_PER_SECTOR (1 + (BLOCK_SIZE/sizeof(BLOCKINDEX)))
+#define BLOCKS_PER_BAT (1<<BLOCK_SHIFT)
+#define BLOCKS_PER_SECTOR (1 + BLOCKS_PER_BAT)
 // per-sector perumation; needs to be a power of 2 (in bytes)
 #define SHORTKEY_LENGTH 16
 #ifndef VFS_DISK_DATATYPE
@@ -14347,18 +14839,31 @@ typedef VFS_DISK_DATATYPE FPI;
 #endif
 enum block_cache_entries
 {
-	BC(DIRECTORY)
+	BC( DIRECTORY )
 #ifdef VIRTUAL_OBJECT_STORE
-	, BC(DIRECTORY_LAST) = BC(DIRECTORY) + 64
+	, BC( DIRECTORY_LAST ) = BC( DIRECTORY ) + 64
 #endif
-	, BC(NAMES)
-	, BC(NAMES_LAST) = BC(NAMES) + 16
-	, BC(BAT)
+	, BC( NAMES )
+	, BC( NAMES_LAST ) = BC( NAMES ) + 16
+	, BC( BAT )
+#ifdef VIRTUAL_OBJECT_STORE
+	// keep a few tables for cache (file system too?)
+	, BC( BAT_LAST ) = BC( BAT ) + 4
+#endif
 	, BC(DATAKEY)
 	, BC(FILE)
-	, BC(FILE_LAST) = BC(FILE) + 10
+	, BC(FILE_LAST) = BC(FILE) + 32
 	, BC(COUNT)
 };
+// could effecitvely be fewer than this
+// 82 dirents * 512 byte names = 40000
+#define DIRENT_NAME_OFFSET_OFFSET             0x0001FFFF
+// (sealant length / 4)  (mulitply by 4 to get real length)
+#define DIRENT_NAME_OFFSET_FLAG_SEALANT       0x003E0000
+#define DIRENT_NAME_OFFSET_FLAG_SEALANT_SHIFT 17
+#define DIRENT_NAME_OFFSET_FLAG_OWNED         0x00400000
+#define DIRENT_NAME_OFFSET_FLAG_READ_KEYED    0x00800000
+#define DIRENT_NAME_OFFSET_UNUSED             0xFF000000
 PREFIX_PACKED struct directory_entry
 {
   // name offset from beginning of disk
@@ -14367,6 +14872,10 @@ PREFIX_PACKED struct directory_entry
 	BLOCKINDEX first_block;
   // how big the file is
 	VFS_DISK_DATATYPE filesize;
+#ifdef VIRTUAL_OBJECT_STORE
+  // when the file was created/last written
+	uint64_t tick;
+#endif
 	//uint32_t filler;  // extra data(unused)
 } PACKED;
 #undef VFS_DIRECTORY_ENTRIES
@@ -14374,16 +14883,11 @@ PREFIX_PACKED struct directory_entry
 // subtract name has index
 // subtrace name index
 #define VFS_DIRECTORY_ENTRIES ( ( BLOCK_SIZE - ( 2*sizeof(BLOCKINDEX) + 256*sizeof(BLOCKINDEX)) ) /sizeof( struct directory_entry) )
+#define VFS_PATCH_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
 #else
 #define VFS_DIRECTORY_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
+#define VFS_PATCH_ENTRIES ( ( BLOCK_SIZE ) /sizeof( struct directory_entry) )
 #endif
-PREFIX_PACKED struct directory_hash_lookup_block
-{
-	BLOCKINDEX next_block[256];
-	struct directory_entry entries[VFS_DIRECTORY_ENTRIES];
-	BLOCKINDEX names_first_block;
-	uint8_t used_names;
-} PACKED;
 struct disk
 {
 	// BAT is at 0 of every BLOCK_SIZE blocks (4097 total)
@@ -14405,6 +14909,7 @@ PREFIX_PACKED struct volume {
 	const char * volname;
 #ifdef FILE_BASED_VFS
 	FILE *file;
+	struct file_system_mounted_interface *mount;
 #else
 	struct disk *disk;
  // disk might be offset from diskReal because it's a .exe attached.
@@ -14429,6 +14934,7 @@ PREFIX_PACKED struct volume {
 	uint8_t fileCacheAge[BC(FILE_LAST) - BC(FILE)];
 #ifdef VIRTUAL_OBJECT_STORE
 	uint8_t dirHashCacheAge[BC(DIRECTORY_LAST) - BC(DIRECTORY)];
+	uint8_t batHashCacheAge[BC(BAT_LAST) - BC(BAT)];
 #endif
 	uint8_t nameCacheAge[BC(NAMES_LAST) - BC(NAMES)];
 	struct random_context *entropy;
@@ -14452,6 +14958,8 @@ PREFIX_PACKED struct volume {
 	FLAGSET( _dirty, BC( COUNT ) );
 	FPI bufferFPI[BC(COUNT)];
 #endif
+	BLOCKINDEX lastBatBlock;
+	PDATALIST pdlFreeBlocks;
  // when reopened file structures need to be updated also...
 	PLIST files;
 	LOGICAL read_only;
@@ -14468,6 +14976,14 @@ struct sack_vfs_file
 	FPI entry_fpi;
 #ifdef VIRTUAL_OBJECT_STORE
 	enum block_cache_entries cache;
+	uint8_t *seal;
+	uint8_t *sealant;
+	uint8_t *readKey;
+	uint16_t readKeyLen;
+	uint8_t sealantLen;
+ // boolean, on read, validates seal.  Defaults to FALSE.
+	uint8_t sealed;
+	char *filename;
 #endif
   // has file size within
 	struct directory_entry _entry;
@@ -14486,6 +15002,9 @@ struct sack_vfs_file
 	BLOCKINDEX block;
   // someone already deleted this...
 	LOGICAL delete_on_close;
+	BLOCKINDEX *blockChain;
+	unsigned int blockChainAvail;
+	unsigned int blockChainLength;
 };
 #undef TSEEK
 #undef BTSEEK
@@ -14527,13 +15046,70 @@ static struct {
 	uint16_t index[256][256];
 	char leadin[256];
 	int leadinDepth;
+	PLINKQUEUE plqCrypters;
 } l;
 #define EOFBLOCK  (~(BLOCKINDEX)0)
 #define EOBBLOCK  ((BLOCKINDEX)1)
 #define EODMARK   (1)
-#define GFB_INIT_NONE   0
-#define GFB_INIT_DIRENT 1
-#define GFB_INIT_NAMES  2
+#define GFB_INIT_NONE       0
+#define GFB_INIT_DIRENT     1
+#define GFB_INIT_NAMES      2
+#define GFB_INIT_PATCHBLOCK 3
+// End Of Text Block
+#define UTF8_EOTB 0xFF
+// End Of Text
+#define UTF8_EOT 0xFE
+// use this character in hash as parent directory (block & char)
+#define DIRNAME_CHAR_PARENT 0xFF
+PREFIX_PACKED struct directory_hash_lookup_block
+{
+	BLOCKINDEX next_block[256];
+	struct directory_entry entries[VFS_DIRECTORY_ENTRIES];
+	BLOCKINDEX names_first_block;
+	uint8_t used_names;
+} PACKED;
+PREFIX_PACKED struct directory_patch_block
+{
+	union direction_patch_block_entry_union {
+		struct direction_patch_block_entry {
+			BIT_FIELD index : 8;
+			BIT_FIELD hash_block : 24;
+		} dirIndex;
+		uint32_t raw;
+	}entries[(BLOCK_SIZE-sizeof(BLOCKINDEX))/sizeof(uint32_t)];
+	uint8_t usedEntries;
+	BLOCKINDEX morePatches;
+} PACKED;
+PREFIX_PACKED struct directory_patch_ref_block
+{
+	PREFIX_PACKED struct directory_patch_ref_entry {
+		BLOCKINDEX patchBlockStart;
+ // first patch block
+		BLOCKINDEX dirBlock;
+		uint16_t patchNum;
+ // which directory entry this patches
+		uint8_t dirEntry;
+	} entries[(BLOCK_SIZE)/sizeof( struct directory_patch_ref_entry )] PACKED;
+} PACKED;
+enum sack_vfs_os_seal_states {
+	SACK_VFS_OS_SEAL_NONE = 0,
+	SACK_VFS_OS_SEAL_LOAD,
+	SACK_VFS_OS_SEAL_VALID,
+	SACK_VFS_OS_SEAL_STORE,
+  // validate failed (read whole file check)
+	SACK_VFS_OS_SEAL_INVALID,
+  // stored patch is writeable
+	SACK_VFS_OS_SEAL_CLEARED,
+  // stored patch new sealant (after read valid, new write)
+	SACK_VFS_OS_SEAL_STORE_PATCH,
+};
+PREFIX_PACKED struct sealant_suffix {
+	BLOCKINDEX firstPatchBlock;
+ // first patch block
+	BLOCKINDEX patchRefBlock;
+ // patch entry that this is a patch to.
+	uint16_t patchRefIndex;
+}PACKED;
 static BLOCKINDEX _os_GetFreeBlock_( struct volume *vol, int init DBG_PASS );
 #define _os_GetFreeBlock(v,i) _os_GetFreeBlock_(v,i DBG_SRC )
 LOGICAL _os_ScanDirectory_( struct volume *vol, const char * filename
@@ -14547,7 +15123,6 @@ LOGICAL _os_ScanDirectory_( struct volume *vol, const char * filename
 #define _os_ScanDirectory(v,f,db,nb,file,pm) ((l.leadinDepth = 0), _os_ScanDirectory_(v,f,db,nb,file,pm, l.leadin, &l.leadinDepth ))
 static BLOCKINDEX vfs_os_GetNextBlock( struct volume *vol, BLOCKINDEX block, int init, LOGICAL expand );
 static LOGICAL _os_ExpandVolume( struct volume *vol );
-static char _os_mytolower( int c ) {	if( c == '\\' ) return '/'; return tolower( c ); }
 #define vfs_os_BSEEK(v,b,c) vfs_os_BSEEK_(v,b,c DBG_SRC )
 uintptr_t vfs_os_BSEEK_( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index DBG_PASS );
 // seek by byte position from a starting block; as file; result with an offset into a block.
@@ -14561,6 +15136,7 @@ uintptr_t vfs_os_FSEEK( struct volume *vol, BLOCKINDEX firstblock, FPI offset, e
 	data = (uint8_t*)vfs_os_BSEEK_( vol, firstblock, cache_index DBG_NULL );
 	return (uintptr_t)(data + (offset));
 }
+#define tolower_(c) (c)
 static int  _os_PathCaseCmpEx ( CTEXTSTR s1, CTEXTSTR s2, size_t maxlen )
 {
 	if( !s1 )
@@ -14574,12 +15150,10 @@ static int  _os_PathCaseCmpEx ( CTEXTSTR s1, CTEXTSTR s2, size_t maxlen )
 	if( s1 == s2 )
  // ==0 is success.
 		return 0;
-	for( ;s1[0] && s2[0] && ( (s1[0]=='/'&&s2[0]=='\\')||(s1[0]=='\\'&&s2[0]=='/')||
-									 (((s1[0] >='a' && s1[0] <='z' )?s1[0]-('a'-'A'):s1[0])
-									 == ((s2[0] >='a' && s2[0] <='z' )?s2[0]-('a'-'A'):s2[0])) ) && maxlen;
+	for( ;s1[0] && ((unsigned char)s2[0] != UTF8_EOT) && (s1[0] == s2[0]) && maxlen;
 		  s1++, s2++, maxlen-- );
 	if( maxlen )
-		return tolower(s1[0]) - tolower(s2[0]);
+		return tolower_(s1[0]) - (((unsigned char)s2[0] == UTF8_EOT)?0:tolower_(s2[0]));
 	return 0;
 }
 // read the byte from namespace at offset; decrypt byte in-register
@@ -14592,9 +15166,9 @@ static int _os_MaskStrCmp( struct volume *vol, const char * filename, BLOCKINDEX
 	dirkey = (const char*)(vol->usekey[cache]) + (name_offset & BLOCK_MASK );
 	if( vol->key ) {
 		int c;
-		while(  ( c = (dirname[0] ^ dirkey[0] ) )
+		while( ((unsigned char)( c = (dirname[0] ^ dirkey[0] )) != UTF8_EOT )
 			  && filename[0] ) {
-			int del = _os_mytolower(filename[0]) - _os_mytolower(c);
+			int del = tolower_(filename[0]) - tolower_(c);
 			if( del ) return del;
 			filename++;
 			dirname++;
@@ -14628,7 +15202,7 @@ static void MaskStrCpy( char *output, size_t outlen, struct volume *vol, FPI nam
 	if( vol->key ) {
 		int c;
 		FPI name_start = name_offset;
-		while(  ( c = ( vol->usekey_buffer[BC(NAMES)][name_offset&BLOCK_MASK] ^ vol->usekey[BC(NAMES)][name_offset&BLOCK_MASK] ) ) ) {
+		while( UTF8_EOT != (unsigned char)( c = ( vol->usekey_buffer[BC(NAMES)][name_offset&BLOCK_MASK] ^ vol->usekey[BC(NAMES)][name_offset&BLOCK_MASK] ) ) ) {
 			if( ( name_offset - name_start ) < outlen )
 				output[name_offset-name_start] = c;
 			name_offset++;
@@ -14765,6 +15339,9 @@ static void _os_updateCacheAge_( struct volume *vol, enum block_cache_entries *c
 	}
 	if( n == (ageLength) ) {
 		int useCache = cacheRoot + nLeast;
+#ifdef _DEBUG
+		if( least > ageLength ) DebugBreak();
+#endif
   // age evernthing.
 		for( n = 0; n < (ageLength); n++ ) {
 			if( age[n] > least )
@@ -14788,7 +15365,7 @@ static void _os_updateCacheAge_( struct volume *vol, enum block_cache_entries *c
 		// read new buffer for new segment
 		sack_fseek( vol->file, (size_t)(vol->bufferFPI[cache_idx[0]] = (size_t)((segment-1)*BLOCK_SIZE)), SEEK_SET );
 #ifdef DEBUG_DISK_IO
-		LoG_( "Read into block: %x %d %d", vol->bufferFPI[cache_idx[0]], cache_idx[0] , n, segment );
+		LoG_( "Read into block: fpi:%x cache:%d n:%d  seg:%d", (int)vol->bufferFPI[cache_idx[0]], (int)cache_idx[0] , (int)n, (int)segment );
 #endif
 		if( !sack_fread( vol->usekey_buffer[cache_idx[0]], 1, BLOCK_SIZE, vol->file ) )
 			memset( vol->usekey_buffer[cache_idx[0]], 0, BLOCK_SIZE );
@@ -14801,6 +15378,7 @@ static void _os_updateCacheAge_( struct volume *vol, enum block_cache_entries *c
 #define _os_UpdateSegmentKey(v,c,s) _os_UpdateSegmentKey_(v,c,s DBG_SRC )
 static enum block_cache_entries _os_UpdateSegmentKey_( struct volume *vol, enum block_cache_entries cache_idx, BLOCKINDEX segment DBG_PASS )
 {
+	//lprintf( "UPDATE OS SEGKEY %d %d", cache_idx, segment );
 	if( cache_idx == BC(FILE) ) {
 		_os_updateCacheAge_( vol, &cache_idx, segment, vol->fileCacheAge, (BC(FILE_LAST) - BC(FILE)) DBG_RELAY );
 	}
@@ -14810,6 +15388,9 @@ static enum block_cache_entries _os_UpdateSegmentKey_( struct volume *vol, enum 
 #ifdef VIRTUAL_OBJECT_STORE
 	else if( cache_idx == BC(DIRECTORY) ) {
 		_os_updateCacheAge_( vol, &cache_idx, segment, vol->dirHashCacheAge, (BC(DIRECTORY_LAST) - BC(DIRECTORY)) DBG_RELAY );
+	}
+	else if( cache_idx == BC( BAT ) ) {
+		_os_updateCacheAge_( vol, &cache_idx, segment, vol->batHashCacheAge, (BC(BAT_LAST) - BC(BAT)) DBG_RELAY );
 	}
 #endif
 	else {
@@ -14829,14 +15410,17 @@ static enum block_cache_entries _os_UpdateSegmentKey_( struct volume *vol, enum 
 			// read new buffer for new segment
 			sack_fseek( vol->file, (size_t)(vol->bufferFPI[cache_idx]=(segment - 1)*BLOCK_SIZE), SEEK_SET);
 #ifdef DEBUG_DISK_IO
-			LoG( "read old sector: %d %d", cache_idx, segment );
+			LoG( "OS VFS read old sector: fpi:%d %d %d", (int)vol->bufferFPI[cache_idx], cache_idx, segment );
 #endif
-			if( !sack_fread( vol->usekey_buffer[cache_idx], 1, BLOCK_SIZE, vol->file ) )
+			if( !sack_fread( vol->usekey_buffer[cache_idx], 1, BLOCK_SIZE, vol->file ) ) {
+				//lprintf( "Cleared BLock on failed read." );
 				memset( vol->usekey_buffer[cache_idx], 0, BLOCK_SIZE );
+			}
 		}
 		vol->segment[cache_idx] = segment;
 	}
 	if( !vol->key ) {
+		//lprintf( "Resulting stored segment in %d", cache_idx );
 		return cache_idx;
 	}
 	while( ((segment)*BLOCK_SIZE) > vol->dwSize ) {
@@ -14845,8 +15429,10 @@ static enum block_cache_entries _os_UpdateSegmentKey_( struct volume *vol, enum 
 		}
 	}
 	//vol->segment[cache_idx] = segment;
-	if( vol->segment[cache_idx] == vol->_segment[cache_idx] )
+	if( vol->segment[cache_idx] == vol->_segment[cache_idx] ) {
+		//lprintf( "Resulting stored segment in %d", cache_idx );
 		return cache_idx;
+	}
 	SRG_ResetEntropy( vol->entropy );
 	vol->_segment[cache_idx] = vol->segment[cache_idx];
   // so we know which 'segment[idx]' to use.
@@ -14878,6 +15464,7 @@ static enum block_cache_entries _os_UpdateSegmentKey_( struct volume *vol, enum 
 		}
 #endif
 	}
+	//LoG( "Resulting stored segment in %d", cache_idx );
 	return cache_idx;
 }
 static LOGICAL _os_ValidateBAT( struct volume *vol ) {
@@ -14895,15 +15482,23 @@ static LOGICAL _os_ValidateBAT( struct volume *vol ) {
 			//sack_fseek( vol->file, (size_t)n * BLOCK_SIZE, SEEK_SET );
 			//if( !sack_fread( vol->usekey_buffer[BC(BAT)], 1, BLOCK_SIZE, vol->file ) ) return FALSE;
 			//BAT = (BLOCKINDEX*)vol->usekey_buffer[BC(BAT)];
-			blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
-			_os_UpdateSegmentKey( vol, BC(BAT), n + 1 );
+			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
+			_os_UpdateSegmentKey( vol, cache, n + 1 );
 			for( m = 0; m < BLOCKS_PER_BAT; m++ )
 			{
 				BLOCKINDEX block = BAT[0] ^ blockKey[0];
 				BAT++; blockKey++;
 				if( block == EOFBLOCK ) continue;
-				if( block == EOBBLOCK ) break;
+				if( block == EOBBLOCK ) {
+					vol->lastBatBlock = n + m;
+					break;
+				}
 				if( block >= last_block ) return FALSE;
+				if( block == 0 ) {
+ // use as a temp variable....
+					vol->lastBatBlock = n + m;
+					AddDataItem( &vol->pdlFreeBlocks, &vol->lastBatBlock );
+				}
 			}
 			if( m < BLOCKS_PER_BAT ) break;
 		}
@@ -14911,12 +15506,20 @@ static LOGICAL _os_ValidateBAT( struct volume *vol ) {
 		for( n = first_slab; n < slab; n += BLOCKS_PER_SECTOR  ) {
 			size_t m;
 			BLOCKINDEX *BAT = TSEEK( BLOCKINDEX*, vol, n * BLOCK_SIZE, cache );
-			BAT = (BLOCKINDEX*)vol->usekey_buffer[BC(BAT)];
+			BAT = (BLOCKINDEX*)vol->usekey_buffer[cache];
 			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
 				BLOCKINDEX block = BAT[m];
 				if( block == EOFBLOCK ) continue;
-				if( block == EOBBLOCK ) break;
+				if( block == EOBBLOCK ) {
+					vol->lastBatBlock = n + m;
+					break;
+				}
 				if( block >= last_block ) return FALSE;
+				if( block == 0 ) {
+ // use as a temp variable....
+					vol->lastBatBlock = n + m;
+					AddDataItem( &vol->pdlFreeBlocks, &vol->lastBatBlock );
+				}
 			}
 			if( m < BLOCKS_PER_BAT ) break;
 		}
@@ -15067,9 +15670,6 @@ LOGICAL _os_ExpandVolume( struct volume *vol ) {
 		vol->bufferFPI[BC( BAT )] = 0;
 		{
 			BLOCKINDEX dirblock = _os_GetFreeBlock( vol, GFB_INIT_DIRENT );
-			enum block_cache_entries cache = BC(DIRECTORY);
-			struct directory_hash_lookup_block *dir = BTSEEK( struct directory_hash_lookup_block *, vol, dirblock, cache );
-			SETFLAG( vol->dirty, cache );
 		}
 	}
 	return TRUE;
@@ -15081,115 +15681,123 @@ uintptr_t vfs_os_SEEK( struct volume *vol, FPI offset, enum block_cache_entries 
 	{
 		BLOCKINDEX seg = (offset / BLOCK_SIZE) + 1;
 		cache_index[0] = _os_UpdateSegmentKey( vol, cache_index[0], seg );
-		sack_fseek( vol->file, (size_t)(vol->bufferFPI[cache_index[0]]), SEEK_SET );
+		//LoG( "RETURNING SEEK CACHED %p %d  0x%x   %d", vol->usekey_buffer[cache_index[0]], cache_index[0], (int)offset, (int)seg );
 		return ((uintptr_t)vol->usekey_buffer[cache_index[0]]) + (offset&BLOCK_MASK);
 	}
 }
 // shared with fuse module
 // seek by block, outside of BAT.  block 0 = first block after first BAT.
 uintptr_t vfs_os_BSEEK_( struct volume *vol, BLOCKINDEX block, enum block_cache_entries *cache_index DBG_PASS ) {
-	BLOCKINDEX b = BLOCK_SIZE + (block >> BLOCK_SHIFT) * (BLOCKS_PER_SECTOR*BLOCK_SIZE) + ( block & (BLOCKS_PER_BAT-1) ) * BLOCK_SIZE;
+	BLOCKINDEX b = ( 1 + (block >> BLOCK_SHIFT) * (BLOCKS_PER_SECTOR) + ( block & (BLOCKS_PER_BAT-1) ) ) * BLOCK_SIZE;
 	while( b >= vol->dwSize ) if( !_os_ExpandVolume( vol ) ) return 0;
 	{
 		BLOCKINDEX seg = ( b / BLOCK_SIZE ) + 1;
 		cache_index[0] = _os_UpdateSegmentKey_( vol, cache_index[0], seg DBG_RELAY );
-		sack_fseek( vol->file, (size_t)(vol->bufferFPI[cache_index[0]]), SEEK_SET );
+		//LoG( "RETURNING BSEEK CACHED %p  %d %d %d  0x%x  %d   %d", vol->usekey_buffer[cache_index[0]], cache_index[0], (int)(block>>BLOCK_SHIFT), (int)(BLOCKS_PER_BAT-1), (int)b, (int)block, (int)seg );
 		return ((uintptr_t)vol->usekey_buffer[cache_index[0]]) + (b&BLOCK_MASK);
 	}
 }
 static BLOCKINDEX _os_GetFreeBlock_( struct volume *vol, int init DBG_PASS )
 {
 	size_t n;
-	int b = 0;
-	enum block_cache_entries cache = BC(BAT);
-	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, cache );
-	FPI start_POS = sack_ftell( vol->file );
-	BLOCKINDEX *start_BAT = current_BAT;
+	unsigned int b = 0;
+	enum block_cache_entries cache = BC( BAT );
+// = TSEEK( BLOCKINDEX*, vol, 0, cache );
+	BLOCKINDEX *current_BAT;
+	BLOCKINDEX *blockKey;
+	BLOCKINDEX check_val;
+	if( vol->pdlFreeBlocks->Cnt ) {
+		BLOCKINDEX newblock = ((BLOCKINDEX*)GetDataItem( &vol->pdlFreeBlocks, vol->pdlFreeBlocks->Cnt - 1 ))[0];
+		check_val = 0;
+		b = (unsigned int)(newblock / BLOCKS_PER_SECTOR);
+		n = newblock % BLOCKS_PER_SECTOR;
+		vol->pdlFreeBlocks->Cnt--;
+	}
+	else {
+		check_val = EOBBLOCK;
+		b = (unsigned int)(vol->lastBatBlock / BLOCKS_PER_SECTOR);
+		n = vol->lastBatBlock % BLOCKS_PER_SECTOR;
+	}
+	//lprintf( "check, start, b, n %d %d %d %d", (int)check_val, (int) vol->lastBatBlock, (int)b, (int)n );
+	current_BAT = TSEEK( BLOCKINDEX*, vol, b*BLOCKS_PER_SECTOR*BLOCK_SIZE, cache ) + n;
+	blockKey = ((BLOCKINDEX*)vol->usekey[cache]) + n;
 	if( !current_BAT ) return 0;
-	do
-	{
-		BLOCKINDEX check_val;
-		BLOCKINDEX *blockKey;
-		blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
-		for( n = 0; n < BLOCKS_PER_BAT; n++ )
-		{
-			check_val = current_BAT[0] ^ blockKey[0];
-			if( !check_val || (check_val == 1) )
-			{
-				// mark it as claimed; will be enf of file marker...
-				// adn thsi result will overwrite previous EOF.
-				current_BAT[0] = ( EOFBLOCK ) ^ blockKey[0];
-				SETFLAG( vol->dirty, cache );
-				if( (check_val == EOBBLOCK) )
-					if( n < (BLOCKS_PER_BAT - 1) ) {
-						current_BAT[1] = EOBBLOCK ^ blockKey[1];
-					}
-					else {
-						// have to write what is there now, seek will read new block in...
-						cache = BC( BAT );
-						current_BAT = TSEEK( BLOCKINDEX*, vol, (b + 1) * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
-						blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
-						current_BAT[0] = EOBBLOCK ^ blockKey[0];
-						SETFLAG( vol->dirty, cache );
-					}
-				if( init )
-				{
-					enum block_cache_entries newcache;
-					if( init == GFB_INIT_DIRENT ) {
-						struct directory_hash_lookup_block *dir;
-						struct directory_hash_lookup_block *dirkey;
-						newcache = _os_UpdateSegmentKey_( vol, BC(DIRECTORY), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 DBG_RELAY );
-						memset( vol->usekey_buffer[newcache], 0, BLOCK_SIZE );
-						dir = (struct directory_hash_lookup_block *)vol->usekey_buffer[newcache];
-						dirkey = (struct directory_hash_lookup_block *)vol->usekey[newcache];
-						dir->names_first_block = _os_GetFreeBlock( vol, GFB_INIT_NAMES ) ^ dirkey->names_first_block;
-						dir->used_names = 0 ^ dirkey->used_names;
-						//((struct directory_hash_lookup_block*)(vol->usekey_buffer[newcache]))->entries[0].first_block = EODMARK ^ ((struct directory_hash_lookup_block*)vol->usekey[cache])->entries[0].first_block;
-					}
-					else if( init == GFB_INIT_NAMES ) {
-						newcache = _os_UpdateSegmentKey_( vol, BC(NAMES), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 DBG_RELAY );
-						memset( vol->usekey_buffer[newcache], 0, BLOCK_SIZE );
-						((char*)(vol->usekey_buffer[newcache]))[0] = (char)0xFF ^ ((char*)vol->usekey[newcache])[0];
-						//LoG( "New Name Buffer: %x %p", vol->segment[newcache], vol->usekey_buffer[newcache] );
-					}
-					else {
-						//	memcpy( ((uint8_t*)vol->disk) + (vol->segment[newcache]-1) * BLOCK_SIZE, vol->usekey[newcache], BLOCK_SIZE );
-						newcache = _os_UpdateSegmentKey_( vol, BC(FILE), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 DBG_RELAY );
-					}
-					SETFLAG( vol->dirty, newcache );
-				}
-				//LoG_( "Free Block: %d %d %x", (int)b, (int)n, b * BLOCKS_PER_BAT + n );
-				return b * BLOCKS_PER_BAT + n;
-			}
-			current_BAT++;
-			blockKey++;
+	current_BAT[0] = EOFBLOCK ^ blockKey[0];
+	if( (check_val == EOBBLOCK) ) {
+		if( n < (BLOCKS_PER_BAT - 1) ) {
+			current_BAT[1] = EOBBLOCK ^ blockKey[1];
+			vol->lastBatBlock++;
 		}
-		b++;
-		cache = BC( BAT );
-		current_BAT = TSEEK( BLOCKINDEX*, vol, b * ( BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
-		start_POS = sack_ftell( vol->file );
-	}while( 1 );
+		else {
+			cache = BC( BAT );
+			current_BAT = TSEEK( BLOCKINDEX*, vol, (b + 1) * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
+			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
+			current_BAT[0] = EOBBLOCK ^ blockKey[0];
+			vol->lastBatBlock = (b + 1) * BLOCKS_PER_SECTOR;
+			//lprintf( "Set last block....%d", (int)vol->lastBatBlock );
+		}
+		SETFLAG( vol->dirty, cache );
+	}
+	if( init ) {
+		enum block_cache_entries newcache;
+		if( init == GFB_INIT_DIRENT ) {
+			struct directory_hash_lookup_block *dir;
+			struct directory_hash_lookup_block *dirkey;
+			LoG( "Create new directory: result %d", (int)(b * BLOCKS_PER_BAT + n) );
+			newcache = _os_UpdateSegmentKey_( vol, BC( DIRECTORY ), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 DBG_RELAY );
+			memset( vol->usekey_buffer[newcache], 0, BLOCK_SIZE );
+			dir = (struct directory_hash_lookup_block *)vol->usekey_buffer[newcache];
+			dirkey = (struct directory_hash_lookup_block *)vol->usekey[newcache];
+			dir->names_first_block = _os_GetFreeBlock( vol, GFB_INIT_NAMES ) ^ dirkey->names_first_block;
+			dir->used_names = 0 ^ dirkey->used_names;
+			//((struct directory_hash_lookup_block*)(vol->usekey_buffer[newcache]))->entries[0].first_block = EODMARK ^ ((struct directory_hash_lookup_block*)vol->usekey[cache])->entries[0].first_block;
+		}
+		else if( init == GFB_INIT_NAMES ) {
+			newcache = _os_UpdateSegmentKey_( vol, BC( NAMES ), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 DBG_RELAY );
+			memset( vol->usekey_buffer[newcache], 0, BLOCK_SIZE );
+			((char*)(vol->usekey_buffer[newcache]))[0] = (char)UTF8_EOTB ^ ((char*)vol->usekey[newcache])[0];
+			//LoG( "New Name Buffer: %x %p", vol->segment[newcache], vol->usekey_buffer[newcache] );
+		}
+		else {
+			//	memcpy( ((uint8_t*)vol->disk) + (vol->segment[newcache]-1) * BLOCK_SIZE, vol->usekey[newcache], BLOCK_SIZE );
+			newcache = _os_UpdateSegmentKey_( vol, BC( FILE ), b * (BLOCKS_PER_SECTOR)+n + 1 + 1 DBG_RELAY );
+		}
+		SETFLAG( vol->dirty, newcache );
+	}
+	LoG( "Return block:%d   %d  %d", (int)(b*BLOCKS_PER_BAT + n), (int)b, (int)n );
+	return b * BLOCKS_PER_BAT + n;
 }
 static BLOCKINDEX vfs_os_GetNextBlock( struct volume *vol, BLOCKINDEX block, int init, LOGICAL expand ) {
-	BLOCKINDEX sector = block >> BLOCK_SHIFT;
+	BLOCKINDEX sector = block / BLOCKS_PER_BAT;
 	enum block_cache_entries cache = BC(BAT);
 	BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX *, vol, sector * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
 	BLOCKINDEX check_val;
  // if this passes, later ones will also.
 	if( !this_BAT ) return 0;
-	check_val = (this_BAT[block & (BLOCKS_PER_BAT - 1)]) ^ ((BLOCKINDEX*)vol->usekey[BC(BAT)])[block & (BLOCKS_PER_BAT-1)];
+#ifdef _DEBUG
+	if( !block ) DebugBreak();
+#endif
+	check_val = (this_BAT[block & (BLOCKS_PER_BAT - 1)]) ^ ((BLOCKINDEX*)vol->usekey[cache])[block & (BLOCKS_PER_BAT-1)];
+#ifdef _DEBUG
+	if( !check_val ) {
+		lprintf( "STOP: %p  %d  %d  %d", this_BAT, (int)check_val, (int)(block), (int)sector );
+		DebugBreak();
+	}
+#endif
 	if( check_val == EOBBLOCK ) {
-		(this_BAT[block & (BLOCKS_PER_BAT-1)]) = EOFBLOCK^((BLOCKINDEX*)vol->usekey[BC(BAT)])[block & (BLOCKS_PER_BAT-1)];
+		(this_BAT[block & (BLOCKS_PER_BAT-1)]) = EOFBLOCK^((BLOCKINDEX*)vol->usekey[cache])[block & (BLOCKS_PER_BAT-1)];
 		if( block < (BLOCKS_PER_BAT - 1) )
 			(this_BAT[1 + block & (BLOCKS_PER_BAT - 1)]) = EOBBLOCK ^ ((BLOCKINDEX*)vol->usekey[BC( BAT )])[1 + block & (BLOCKS_PER_BAT - 1)];
-		else
-//
-			lprintf( "THIS NEEDS A NEW BAT BLOCK TO MOVE THE MARKER" );
+		//else
+		//	lprintf( "THIS NEEDS A NEW BAT BLOCK TO MOVE THE MARKER" );//
 	}
 	if( check_val == EOFBLOCK || check_val == EOBBLOCK ) {
 		if( expand ) {
-			BLOCKINDEX key = vol->key?((BLOCKINDEX*)vol->usekey[BC(BAT)])[block & (BLOCKS_PER_BAT-1)]:0;
+			BLOCKINDEX key = vol->key?((BLOCKINDEX*)vol->usekey[cache])[block & (BLOCKS_PER_BAT-1)]:0;
 			check_val = _os_GetFreeBlock( vol, init );
+#ifdef _DEBUG
+			if( !check_val )DebugBreak();
+#endif
 			// free block might have expanded...
 			this_BAT = TSEEK( BLOCKINDEX*, vol, sector * ( BLOCKS_PER_SECTOR*BLOCK_SIZE ), cache );
 			if( !this_BAT ) return 0;
@@ -15198,6 +15806,10 @@ static BLOCKINDEX vfs_os_GetNextBlock( struct volume *vol, BLOCKINDEX block, int
 			SETFLAG( vol->dirty, cache );
 		}
 	}
+#ifdef _DEBUG
+	if( !check_val )DebugBreak();
+#endif
+	LoG( "return next block:%d %d", (int)block, (int)check_val );
 	return check_val;
 }
 static void _os_AddSalt( uintptr_t psv, POINTER *salt, size_t *salt_size ) {
@@ -15350,6 +15962,7 @@ struct volume *sack_vfs_os_load_volume( const char * filepath )
 {
 	struct volume *vol = New( struct volume );
 	memset( vol, 0, sizeof( struct volume ) );
+	vol->pdlFreeBlocks = CreateDataList( sizeof( BLOCKINDEX ) );
 	vol->volname = StrDup( filepath );
 	_os_AssignKey( vol, NULL, NULL );
 	if( !_os_ExpandVolume( vol ) || !_os_ValidateBAT( vol ) ) { Deallocate( struct volume*, vol ); return NULL; }
@@ -15363,6 +15976,7 @@ struct volume *sack_vfs_os_load_crypt_volume( const char * filepath, uintptr_t v
 	struct volume *vol = New( struct volume );
 	MemSet( vol, 0, sizeof( struct volume ) );
 	if( !version ) version = 2;
+	vol->pdlFreeBlocks = CreateDataList( sizeof( BLOCKINDEX ) );
 	vol->clusterKeyVersion = version - 1;
 	vol->volname = StrDup( filepath );
 	vol->userkey = userkey;
@@ -15371,50 +15985,6 @@ struct volume *sack_vfs_os_load_crypt_volume( const char * filepath, uintptr_t v
 	if( !_os_ExpandVolume( vol ) || !_os_ValidateBAT( vol ) ) { sack_vfs_os_unload_volume( vol ); return NULL; }
 	return vol;
 }
-#if 0
-struct volume *sack_vfs_os_use_crypt_volume( POINTER memory, size_t sz, uintptr_t version, const char * userkey, const char * devkey ) {
-	struct volume *vol = New( struct volume );
-	MemSet( vol, 0, sizeof( struct volume ) );
-	vol->read_only = 1;
-	_os_AssignKey( vol, userkey, devkey );
-	if( !version ) version = 2;
-	vol->clusterKeyVersion = version - 1;
-	vol->external_memory = TRUE;
-	vol->diskReal = (struct disk*)memory;
-	vol->dwSize = sz;
-#ifdef WIN32
-	// elf has a different signature to check for .so extended data...
-	struct disk *actual_disk;
-	if( ((char*)memory)[0] == 'M' && ((char*)memory)[1] == 'Z' ) {
-		actual_disk = (struct disk*)GetExtraData( memory );
-		if( actual_disk ) {
-			if( ( ( (uintptr_t)actual_disk - (uintptr_t)memory ) < vol->dwSize ) ) {
-				const uint8_t *sig = sack_vfs_os_get_signature2( (POINTER)((uintptr_t)actual_disk-BLOCK_SIZE), memory );
-				if( memcmp( sig, (POINTER)(((uintptr_t)actual_disk)-BLOCK_SIZE), BLOCK_SIZE ) ) {
-					lprintf( "Signature failed comparison; the core has changed since it was attached" );
-					vol->diskReal = NULL;
-					vol->dwSize = 0;
-					sack_vfs_os_unload_volume( vol );
-					return FALSE;
-				}
-				vol->dwSize -= ((uintptr_t)actual_disk - (uintptr_t)memory);
-				memory = (POINTER)actual_disk;
-			} else {
-				lprintf( "Signature failed comparison; the core is not attached to anything." );
-				vol->diskReal = NULL;
-				vol->disk = NULL;
-				vol->dwSize = 0;
-				sack_vfs_os_unload_volume( vol );
-				return NULL;
-			}
-		}
-	}
-#endif
-	vol->disk = (struct disk*)memory;
-	if( !_os_ValidateBAT( vol ) ) { sack_vfs_os_unload_volume( vol );  return NULL; }
-	return vol;
-}
-#endif
 void sack_vfs_os_unload_volume( struct volume * vol ) {
 	INDEX idx;
 	struct sack_vfs_file *file;
@@ -15425,7 +15995,7 @@ void sack_vfs_os_unload_volume( struct volume * vol ) {
 		return;
 	}
 	sack_vfs_os_flush_volume( vol );
-	free( (char*)vol->volname );
+	strdup_free( (char*)vol->volname );
 	DeleteListEx( &vol->files DBG_SRC );
 	sack_fclose( vol->file );
 	//if( !vol->external_memory )	CloseSpace( vol->diskReal );
@@ -15438,10 +16008,10 @@ void sack_vfs_os_unload_volume( struct volume * vol ) {
 }
 void sack_vfs_os_shrink_volume( struct volume * vol ) {
 	size_t n;
-	int b = 0;
+	unsigned int b = 0;
 	//int found_free; // this block has free data; should be last BAT?
 	BLOCKINDEX last_block = 0;
-	int last_bat = 0;
+	unsigned int last_bat = 0;
 	enum block_cache_entries cache = BC(BAT);
 	BLOCKINDEX *current_BAT = TSEEK( BLOCKINDEX*, vol, 0, cache );
  // expand failed, tseek failed in response, so don't do anything
@@ -15449,7 +16019,7 @@ void sack_vfs_os_shrink_volume( struct volume * vol ) {
 	do {
 		BLOCKINDEX check_val;
 		BLOCKINDEX *blockKey;
-		blockKey = (BLOCKINDEX*)vol->usekey[BC(BAT)];
+		blockKey = (BLOCKINDEX*)vol->usekey[cache];
 		for( n = 0; n < BLOCKS_PER_BAT; n++ ) {
 			check_val = *(current_BAT++);
 			if( vol->key )	check_val ^= *(blockKey++);
@@ -15513,7 +16083,7 @@ LOGICAL sack_vfs_os_decrypt_volume( struct volume *vol )
 // = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * (BLOCKS_PER_SECTOR * BLOCK_SIZE));
 			BLOCKINDEX *block;
 			block = TSEEK( BLOCKINDEX*, vol, n * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
-			blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
+			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
 			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
 				block[0] ^= blockKey[0];
 				if( block[0] == EOBBLOCK ) break;
@@ -15547,7 +16117,7 @@ LOGICAL sack_vfs_os_encrypt_volume( struct volume *vol, uintptr_t version, CTEXT
 // = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * (BLOCKS_PER_SECTOR * BLOCK_SIZE));
 			BLOCKINDEX *block;
 			block = TSEEK( BLOCKINDEX*, vol, n * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
-			blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
+			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
 			//vol->segment[BC(BAT)] = n + 1;
 			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
 				if( block[0] == EOBBLOCK ) done = TRUE;
@@ -15586,10 +16156,12 @@ const char *sack_vfs_os_get_signature( struct volume *vol ) {
 					for( n = 0; n < BLOCKS_PER_BAT; n++ )
 						datakey[n] ^= next_entries[n] ^ ((BLOCKINDEX*)(((uint8_t*)usekey)))[n];
 					next_dir_block = vfs_os_GetNextBlock( vol, this_dir_block, GFB_INIT_DIRENT, FALSE );
+#ifdef _DEBUG
 					if( this_dir_block == next_dir_block )
 						DebugBreak();
 					if( next_dir_block == 0 )
 						DebugBreak();
+#endif
 					this_dir_block = next_dir_block;
 				}
 				while( next_dir_block != EOFBLOCK );
@@ -15666,7 +16238,7 @@ LOGICAL _os_ScanDirectory_( struct volume *vol, const char * filename
 		curName = (usedNames) >> 1;
 		{
 			next_entries = dirblock->entries;
-			while( minName <= usedNames )
+			while( minName <= usedNames && ( curName < usedNames ) && ( curName > 0 ) )
 			//for( n = 0; n < VFS_DIRECTORY_ENTRIES; n++ )
 			{
 				BLOCKINDEX bi;
@@ -15674,8 +16246,9 @@ LOGICAL _os_ScanDirectory_( struct volume *vol, const char * filename
 				struct directory_entry *entkey = dirblockkey->entries + (n=curName);
 				struct directory_entry *entry = dirblock->entries + n;
 				//const char * testname;
-				FPI name_ofs = next_entries[n].name_offset ^ entkey->name_offset;
+				FPI name_ofs = ( next_entries[n].name_offset ^ entkey->name_offset ) & DIRENT_NAME_OFFSET_OFFSET;
 				//if( filename && !name_ofs )	return FALSE; // done.
+				if(0)
 				LoG( "%d name_ofs = %" _size_f "(%" _size_f ") block = %d  vs %s"
 				   , n, name_ofs
 				   , next_entries[n].name_offset ^ entkey->name_offset
@@ -15695,7 +16268,7 @@ LOGICAL _os_ScanDirectory_( struct volume *vol, const char * filename
 					int d;
 					//LoG( "this name: %s", names );
 					if( ( d = _os_MaskStrCmp( vol, filename+ofs, nameBlock, name_ofs, path_match ) ) == 0 ) {
-                  if( file )
+						if( file )
 						{
 							file->dirent_key = (*entkey);
 							file->cache = cache;
@@ -15725,18 +16298,21 @@ LOGICAL _os_ScanDirectory_( struct volume *vol, const char * filename
 		next_dir_block = vfs_os_GetNextBlock( vol, this_dir_block, FALSE, TRUE );
 #ifdef _DEBUG
 		if( this_dir_block == next_dir_block ) DebugBreak();
-#endif
   // should have a last-entry before no more blocks....
 		if( next_dir_block == 0 ) { DebugBreak(); return FALSE; }
+#endif
 		this_dir_block = next_dir_block;
 	}
 	while( 1 );
 }
 // this results in an absolute disk position
-static FPI _os_SaveFileName( struct volume *vol, BLOCKINDEX firstNameBlock, const char * filename ) {
+static FPI _os_SaveFileName( struct volume *vol, BLOCKINDEX firstNameBlock, const char * filename, size_t namelen ) {
 	size_t n;
 	int blocks = 0;
 	BLOCKINDEX this_name_block = firstNameBlock;
+#ifdef _DEBUG
+	if( !firstNameBlock ) DebugBreak();
+#endif
 	while( 1 ) {
 		enum block_cache_entries cache = BC(NAMES);
 		TEXTSTR names = BTSEEK( TEXTSTR, vol, this_name_block, cache );
@@ -15744,18 +16320,16 @@ static FPI _os_SaveFileName( struct volume *vol, BLOCKINDEX firstNameBlock, cons
 		while( name < ( (unsigned char*)names + BLOCK_SIZE ) ) {
 			int c = name[0];
 			if( vol->key ) c = c ^ vol->usekey[cache][(uintptr_t)name-(uintptr_t)names];
-			if( c == 0xFF ) {
-				size_t namelen;
-				if( ( namelen = StrLen( filename ) ) < (size_t)( ( (unsigned char*)names + BLOCK_SIZE ) - name ) ) {
+			if( (unsigned char)c == UTF8_EOTB ) {
+				if( namelen < (size_t)( ( (unsigned char*)names + BLOCK_SIZE ) - name ) ) {
 					//LoG( "using unused entry for new file...%" _size_f " %d(%d)  %" _size_f " %s", this_name_block, cache, cache - BC(NAMES), (uintptr_t)name - (uintptr_t)names, filename );
 					if( vol->key ) {
-						for( n = 0; n < namelen + 1; n++ )
+						for( n = 0; n < namelen; n++ )
 							name[n] = filename[n] ^ vol->usekey[cache][n + (name-(unsigned char*)names)];
-						if( (namelen + 1) < (size_t)(((unsigned char*)names + BLOCK_SIZE) - name) )
-							name[n] = vol->usekey[cache][n + (name - (unsigned char*)names)];
 					} else
-						memcpy( name, filename, ( namelen + 1 ) );
-					name[namelen+1] = 0xFF ^ vol->usekey[cache][(uintptr_t)name - (uintptr_t)names + namelen+1];
+						memcpy( name, filename, namelen );
+					name[namelen+0] = UTF8_EOT ^ vol->usekey[cache][(uintptr_t)name - (uintptr_t)names + namelen+0];
+					name[namelen+1] = UTF8_EOTB ^ vol->usekey[cache][(uintptr_t)name - (uintptr_t)names + namelen+1];
 					SETFLAG( vol->dirty, cache );
 					//lprintf( "OFFSET:%d %d", ((uintptr_t)name) - ((uintptr_t)names), +blocks * BLOCK_SIZE );
 					return ((uintptr_t)name) - ((uintptr_t)names) + blocks * BLOCK_SIZE;
@@ -15766,11 +16340,8 @@ static FPI _os_SaveFileName( struct volume *vol, BLOCKINDEX firstNameBlock, cons
 					LoG( "using existing entry for new file...%s", filename );
 					return ((uintptr_t)name) - ((uintptr_t)names) + blocks * BLOCK_SIZE;
 				}
-			if( vol->key ) {
-				while( ( name[0] ^ vol->usekey[cache][name-(unsigned char*)names] ) ) name++;
-				name++;
-			} else
-				name = name + StrLen( (const char*)name ) + 1;
+			while( UTF8_EOT != ( name[0] ^ vol->usekey[cache][name-(unsigned char*)names] ) ) name++;
+			name++;
 			//LoG( "new position is %" _size_f "  %" _size_f, this_name_block, (uintptr_t)name - (uintptr_t)names );
 		}
 		this_name_block = vfs_os_GetNextBlock( vol, this_name_block, GFB_INIT_NAMES, TRUE );
@@ -15781,6 +16352,7 @@ static FPI _os_SaveFileName( struct volume *vol, BLOCKINDEX firstNameBlock, cons
 static void ConvertDirectory( struct volume *vol, const char *leadin, int leadinLength, BLOCKINDEX this_dir_block, struct directory_hash_lookup_block *orig_dirblock, enum block_cache_entries *newCache ) {
 	size_t n;
 	int ofs = 0;
+	LoG( "------------ BEGIN CONVERT DIRECTORY ----------------------" );
 	do {
 		enum block_cache_entries cache = BC(DIRECTORY);
 		FPI nameoffset = 0;
@@ -15799,6 +16371,7 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 			int f;
 			enum block_cache_entries name_cache;
 			BLOCKINDEX name_block = dirblock->names_first_block ^ dirblockkey->names_first_block;
+			// read name block chain into a single array
 			do {
 				uint8_t *out = namebuffer + nameoffset;
 				name_cache = BC( NAMES );
@@ -15813,10 +16386,6 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 				name_block = vfs_os_GetNextBlock( vol, name_block, 0, 0 );
 				nameoffset += 4096;
 			} while( name_block != EOFBLOCK );
-			for( n = 0; n < 128; n++ )
-				if( namebuffer[n] )
-					break;
-			if( n == 128 ) DebugBreak();
 			memset( counters, 0, sizeof( counters ) );
 			// 257/85
 			for( f = 0; f < VFS_DIRECTORY_ENTRIES; f++ ) {
@@ -15842,10 +16411,18 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 				int usedNames = dirblock->used_names ^ dirblockkey->used_names;
 				int _usedNames = usedNames;
 				int nf = 0;
+				int firstNameOffset = -1;
+				int finalNameOffset = 0;;
 				cache = BC(DIRECTORY);
 				newDirblock = BTSEEK( struct directory_hash_lookup_block *, vol, new_dir_block, cache );
+				LoG( "new dir block cache is  %d   %d", cache, (int)new_dir_block );
 				newDirblockkey = (struct directory_hash_lookup_block *)vol->usekey[cache];
 				newFirstNameBlock = newDirblock->names_first_block ^ newDirblockkey->names_first_block;
+#ifdef _DEBUG
+				if( !newDirblock->names_first_block )
+					DebugBreak();
+#endif
+				newDirblock->next_block[DIRNAME_CHAR_PARENT] = (this_dir_block << 8) | imax;
 				// SETFLAG( vol->dirty, cache ); // this will be dirty because it was init above.
 				for( f = 0; f < usedNames; f++ ) {
 					BLOCKINDEX first = dirblock->entries[f].first_block ^ dirblockkey->entries[f].first_block;
@@ -15857,13 +16434,16 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 					FPI name_ofs;
 					entry = dirblock->entries + (f);
 					entkey = dirblockkey->entries + (f);
-					name = entry->name_offset ^ entkey->name_offset;
+					name = ( entry->name_offset ^ entkey->name_offset ) & DIRENT_NAME_OFFSET_OFFSET;
 					if( namebuffer[name] == imax ) {
+						int namelen;
 						newEntry = newDirblock->entries + (nf);
 						newEntkey = newDirblockkey->entries + (nf);
 						//LoG( "Saving existing name %d %s", name, namebuffer + name );
 						//LogBinary( namebuffer, 32 );
-						name_ofs = _os_SaveFileName( vol, newFirstNameBlock, (char*)(namebuffer + name + 1) ) ^ newEntkey->name_offset;
+						namelen = 0;
+						while( namebuffer[name + namelen] != UTF8_EOT )namelen++;
+						name_ofs = _os_SaveFileName( vol, newFirstNameBlock, (char*)(namebuffer + name + 1), namelen -1 ) ^ newEntkey->name_offset;
 						{
 							INDEX idx;
 							struct sack_vfs_file  * file;
@@ -15876,6 +16456,7 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 						}
 						dirblock->used_names = ((dirblock->used_names ^ dirblockkey->used_names) - 1) ^ dirblockkey->used_names;
 						newEntry->filesize = (entry->filesize ^ entkey->filesize) ^ newEntkey->filesize;
+						newEntry->tick     = (entry->tick     ^ entkey->tick)     ^ newEntkey->tick;
 						newEntry->name_offset = name_ofs;
 						newEntry->first_block = (entry->first_block ^ entkey->first_block) ^ newEntkey->first_block;
 						SETFLAG( vol->dirty, cache );
@@ -15892,7 +16473,11 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 										^ dirblockkey->entries[m].name_offset;
 									dirblock->entries[m].filesize = (0)
 										^ dirblockkey->entries[m].filesize;
+									dirblock->entries[m].tick = (0)
+										^ dirblockkey->entries[m].tick;
+#ifdef _DEBUG
 									if( !dirblock->names_first_block ) DebugBreak();
+#endif
 								}
 								else {
 									dirblock->entries[m].first_block = (dirblock->entries[m + 1].first_block
@@ -15904,7 +16489,12 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 									dirblock->entries[m].filesize = (dirblock->entries[m + 1].filesize
 										^ dirblockkey->entries[m + 1].filesize)
 										^ dirblockkey->entries[m].filesize;
+									dirblock->entries[m].tick = (dirblock->entries[m + 1].tick
+										^ dirblockkey->entries[m + 1].tick)
+										^ dirblockkey->entries[m].tick;
+#ifdef _DEBUG
 									if( !dirblock->names_first_block ) DebugBreak();
+#endif
 								}
 							}
 							usedNames--;
@@ -15913,48 +16503,32 @@ static void ConvertDirectory( struct volume *vol, const char *leadin, int leadin
 					}
 				}
 				if( usedNames ) {
-					int otherf;
+					static uint8_t newnamebuffer[18 * 4096];
+					int newout = 0;
 					int min_name = BLOCK_SIZE + 1;
  // min found has to be after this one.
 					int _min_name = -1;
 					//lprintf( "%d names remained.", usedNames );
-					while( _min_name < nameoffset ) {
-						min_name = ((_min_name +1)& ~BLOCK_MASK) + ( BLOCK_SIZE + 1 );
-						for( f = 0; f < usedNames; f++ ) {
-							struct directory_entry *entry;
-							struct directory_entry *entkey;
-							FPI name;
-							entry = dirblock->entries + (f);
-							entkey = dirblockkey->entries + (f);
-							name = entry->name_offset ^ entkey->name_offset;
-							if( USS_LT( name, FPI, min_name, int ) && USS_GT( name , FPI, _min_name, int ) ) {
-								min_name = (int)name;
-							}
-						}
-						if( (min_name & ~BLOCK_MASK) != ((_min_name+1) & ~BLOCK_MASK) ) {
-							_min_name = (min_name & ~BLOCK_MASK) - 1;
-							continue;
-						}
-						{
-							if( min_name > _min_name + 1 ) {
-								int namelen = min_name - (_min_name + 1);
-								memcpy( namebuffer + _min_name + 1, namebuffer + min_name, (BLOCK_SIZE - (min_name&BLOCK_MASK)) );
-								for( otherf = 0; otherf < usedNames; otherf++ ) {
-									FPI existFPI = (dirblock->entries[otherf].name_offset
-										^ dirblockkey->entries[otherf].name_offset);
-									if( USS_GT( existFPI, FPI, _min_name, int ) ) {
-										dirblock->entries[otherf].name_offset = (existFPI - namelen)
-											^ dirblockkey->entries[otherf].name_offset;
-									}
-									// this name is deleted.
-								}
-							}
-							_min_name = (_min_name + 1) + (int)strlen( (const char *)(namebuffer + _min_name + 1) );
-						}
-					};
+					for( f = 0; f < usedNames; f++ ) {
+						struct directory_entry *entry;
+						struct directory_entry *entkey;
+						FPI name;
+						entry = dirblock->entries + (f);
+						entkey = dirblockkey->entries + (f);
+						name = ( entry->name_offset ^ entkey->name_offset ) & DIRENT_NAME_OFFSET_OFFSET;
+						entry->name_offset = ( newout ^ entkey->name_offset )
+							| ( (entry->name_offset ^ entkey->name_offset)
+								& ~DIRENT_NAME_OFFSET_OFFSET );
+						while( namebuffer[name] != UTF8_EOT )
+							newnamebuffer[newout++] = namebuffer[name++];
+						newnamebuffer[newout++] = namebuffer[name++];
+					}
+					newnamebuffer[newout++] = UTF8_EOTB;
+					memcpy( namebuffer, newnamebuffer, newout );
+					memset( newnamebuffer, 0, newout );
 				}
 				else {
-					namebuffer[0] = 0xFF;
+					namebuffer[0] = UTF8_EOTB;
 				}
 				{
 					name_block = dirblock->names_first_block ^ dirblockkey->names_first_block;
@@ -16005,7 +16579,9 @@ static struct directory_entry * _os_GetNewDirectory( struct volume *vol, const c
 		BLOCKINDEX firstNameBlock;
 		cache = BC( DIRECTORY );
 		dirblock = BTSEEK( struct directory_hash_lookup_block *, vol, this_dir_block, cache );
+#ifdef _DEBUG
 		if( !dirblock->names_first_block ) DebugBreak();
+#endif
 		dirblockFPI = sack_ftell( vol->file );
 		dirblockkey = (struct directory_hash_lookup_block *)vol->usekey[cache];
 		firstNameBlock = dirblock->names_first_block^dirblockkey->names_first_block;
@@ -16038,7 +16614,7 @@ static struct directory_entry * _os_GetNewDirectory( struct volume *vol, const c
 			for( n = 0; USS_LT( n, size_t, usedNames, int ); n++ ) {
 				ent = dirblock->entries + (n);
 				entkey = dirblockkey->entries + (n);
-				name_ofs = ent->name_offset ^ entkey->name_offset;
+				name_ofs = ( ent->name_offset ^ entkey->name_offset ) & DIRENT_NAME_OFFSET_OFFSET;
 				first_blk = ent->first_block ^ entkey->first_block;
 				// not name_offset (end of list) or not first_block(free entry) use this entry
 				//if( name_ofs && (first_blk > 1) )  continue;
@@ -16046,9 +16622,10 @@ static struct directory_entry * _os_GetNewDirectory( struct volume *vol, const c
 					int m;
 					LoG( "Insert new directory" );
 					for( m = dirblock->used_names; SUS_GT( m, int, n, size_t ); m-- ) {
-						dirblock->entries[m].filesize = dirblock->entries[m - 1].filesize ^ dirblockkey->entries[m - 1].filesize;
+						dirblock->entries[m].filesize    = dirblock->entries[m - 1].filesize    ^ dirblockkey->entries[m - 1].filesize;
 						dirblock->entries[m].first_block = dirblock->entries[m - 1].first_block ^ dirblockkey->entries[m - 1].first_block;
 						dirblock->entries[m].name_offset = dirblock->entries[m - 1].name_offset ^ dirblockkey->entries[m - 1].name_offset;
+						dirblock->entries[m].tick        = dirblock->entries[m - 1].tick        ^ dirblockkey->entries[m - 1].tick;
 					}
 					dirblock->used_names++;
 					break;
@@ -16059,12 +16636,13 @@ static struct directory_entry * _os_GetNewDirectory( struct volume *vol, const c
 				dirblock->used_names = (uint8_t)((n + 1) ^ dirblockkey->used_names);
 			}
 			//LoG( "Get New Directory save naem:%s", filename );
-			name_ofs = _os_SaveFileName( vol, firstNameBlock, filename ) ^ entkey->name_offset;
+			name_ofs = _os_SaveFileName( vol, firstNameBlock, filename, StrLen( filename ) ) ^ entkey->name_offset;
 			// have to allocate a block for the file, otherwise it would be deleted.
 			first_blk = _os_GetFreeBlock( vol, FALSE ) ^ entkey->first_block;
 			ent->filesize = entkey->filesize;
 			ent->name_offset = name_ofs;
 			ent->first_block = first_blk;
+			ent->tick = GetTimeOfDay() ^ entkey->tick;
 			if( file ) {
 				SETFLAG( vol->seglock, cache );
 				file->entry_fpi = dirblockFPI + ((uintptr_t)(((struct directory_hash_lookup_block *)0)->entries + n));
@@ -16088,6 +16666,23 @@ struct sack_vfs_file * CPROC sack_vfs_os_openfile( struct volume *vol, const cha
 		if( vol->read_only ) { LoG( "Fail open: readonly" ); vol->lock = 0; Deallocate( struct sack_vfs_file *, file ); return NULL; }
 		else _os_GetNewDirectory( vol, filename, file );
 	}
+	{
+		BLOCKINDEX offset = (file->entry->name_offset ^ file->dirent_key.name_offset);
+		uint32_t sealLen = (offset & DIRENT_NAME_OFFSET_FLAG_SEALANT) >> DIRENT_NAME_OFFSET_FLAG_SEALANT_SHIFT;
+		if( sealLen ) {
+			file->seal = NewArray( uint8_t, sealLen );
+			file->sealantLen = sealLen;
+			file->sealed = SACK_VFS_OS_SEAL_LOAD;
+		}
+		else {
+			file->seal = NULL;
+			file->sealantLen = 0;
+			file->sealed = SACK_VFS_OS_SEAL_NONE;
+		}
+		file->filename = StrDup( filename );
+	}
+	file->readKey = NULL;
+	file->readKeyLen = 0;
 	file->vol = vol;
 	file->fpi = 0;
 	file->delete_on_close = 0;
@@ -16098,6 +16693,52 @@ struct sack_vfs_file * CPROC sack_vfs_os_openfile( struct volume *vol, const cha
 }
 static struct sack_vfs_file * CPROC sack_vfs_os_open( uintptr_t psvInstance, const char * filename, const char *opts ) {
 	return sack_vfs_os_openfile( (struct volume*)psvInstance, filename );
+}
+static char * getFilename( const char *objBuf, size_t objBufLen, char *sealBuf, size_t sealBufLen, LOGICAL owner, char *idBuf, size_t idBufLen ) {
+	if( sealBuf ) {
+		struct random_context *signEntropy = (struct random_context *)DequeLink( &l.plqCrypters );
+		char *fileKey;
+		size_t keyLen;
+		uint8_t outbuf[32];
+		if( !signEntropy )
+			signEntropy = SRG_CreateEntropy3( NULL, (uintptr_t)0 );
+		if( owner ) {
+			char *metakey = SRG_ID_Generator3();
+			SRG_ResetEntropy( signEntropy );
+			SRG_FeedEntropy( signEntropy, (const uint8_t*)metakey, 44 );
+			SRG_FeedEntropy( signEntropy, (const uint8_t*)sealBuf, sealBufLen );
+			SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
+		}
+		else {
+			SRG_ResetEntropy( signEntropy );
+			SRG_FeedEntropy( signEntropy, (const uint8_t*)sealBuf, sealBufLen );
+			SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
+		}
+		SRG_ResetEntropy( signEntropy );
+		SRG_FeedEntropy( signEntropy, (const uint8_t*)objBuf, objBufLen );
+		SRG_FeedEntropy( signEntropy, (const uint8_t*)outbuf, 32 );
+		fileKey = EncodeBase64Ex( outbuf, 32, &keyLen, (const char*)1 );
+		SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
+		SRG_DestroyEntropy( &signEntropy );
+		{
+			size_t len;
+			char *rid = EncodeBase64Ex( outbuf, 256 / 8, &len, (const char *)1 );
+			//rid[43] = '=';
+			StrCpyEx( idBuf, rid, idBufLen );
+			Deallocate( char*, rid );
+		}
+		EnqueLink( &l.plqCrypters, signEntropy );
+		return fileKey;
+	}
+	else {
+		char *objid = SRG_ID_Generator3();
+		objid[43] = 0;
+		StrCpyEx( idBuf, objid, idBufLen );
+		Deallocate( char*, objid );
+		if( idBuf )
+			idBuf[0] = 0;
+		return NULL;
+	}
 }
 int CPROC sack_vfs_os_exists( struct volume *vol, const char * file ) {
 	LOGICAL result;
@@ -16149,11 +16790,35 @@ static void _os_MaskBlock( struct volume *vol, uint8_t* usekey, uint8_t* block, 
 	else
 		memcpy( block, data, length );
 }
+#define IS_OWNED(file)  ( (file->entry->name_offset^file->dirent_key.name_offset) & DIRENT_NAME_OFFSET_FLAG_OWNED )
 size_t CPROC sack_vfs_os_write( struct sack_vfs_file *file, const char * data, size_t length ) {
 	size_t written = 0;
 	size_t ofs = file->fpi & BLOCK_MASK;
 	LOGICAL updated = FALSE;
+	uint8_t *cdata;
+	size_t cdataLen;
+	if( file->readKey ) {
+		SRG_XSWS_encryptData( (uint8_t*)data, length, file->entry->tick^ file->dirent_key.tick
+			, file->readKey, file->readKeyLen
+			, &cdata, &cdataLen );
+		data = (const char *)cdata;
+		length = cdataLen;
+	}
+	else {
+		cdata = NULL;
+	}
 	while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
+	if( (file->entry->name_offset^file->dirent_key.name_offset) & DIRENT_NAME_OFFSET_FLAG_SEALANT ) {
+		char filename[64];
+		// read-only data block.
+		lprintf( "INCOMPLETE - TODO WRITE PATCH" );
+		char *sealer = getFilename( data, length, (char*)file->sealant, file->sealantLen, IS_OWNED(file), filename, 64 );
+		struct sack_vfs_file *pFile = sack_vfs_os_openfile( file->vol, filename );
+		pFile->sealant = (uint8_t*)sealer;
+		pFile->sealantLen = 32;
+		if( cdata ) Release( cdata );
+		return sack_vfs_os_write( pFile, data, length );
+	}
 #ifdef DEBUG_FILE_OPS
 	LoG( "Write to file %p %" _size_f "  @%" _size_f, file, length, ofs );
 #endif
@@ -16190,7 +16855,9 @@ size_t CPROC sack_vfs_os_write( struct sack_vfs_file *file, const char * data, s
 	{
 		enum block_cache_entries cache = BC(FILE);
 		uint8_t* block = (uint8_t*)vfs_os_BSEEK( file->vol, file->block, &cache );
+#ifdef _DEBUG
 		if( file->block < 2 ) DebugBreak();
+#endif
 		if( length >= BLOCK_SIZE ) {
 			_os_MaskBlock( file->vol, file->vol->usekey[cache], block, 0, 0, data, BLOCK_SIZE );
 			SETFLAG( file->vol->dirty, cache );
@@ -16216,16 +16883,55 @@ size_t CPROC sack_vfs_os_write( struct sack_vfs_file *file, const char * data, s
 			length = 0;
 		}
 	}
+	if( file->sealant && (void*)file->sealant != (void*)data ) {
+		BLOCKINDEX saveSize = file->entry->filesize;
+		BLOCKINDEX saveFpi = file->fpi;
+		sack_vfs_os_write( file, (char*)file->sealant, file->sealantLen );
+		file->entry->filesize = saveSize;
+		file->fpi = saveFpi;
+	}
 	if( updated ) {
  // directory cache block (locked)
 		SETFLAG( file->vol->dirty, file->cache );
 	}
+	if( cdata ) Release( cdata );
 	file->vol->lock = 0;
 	return written;
+}
+static enum sack_vfs_os_seal_states ValidateSeal( struct sack_vfs_file *file, char *data, size_t length ) {
+	BLOCKINDEX offset = (file->entry->name_offset ^ file->dirent_key.name_offset);
+	uint32_t sealLen = (offset & DIRENT_NAME_OFFSET_FLAG_SEALANT) >> DIRENT_NAME_OFFSET_FLAG_SEALANT_SHIFT;
+// = (struct random_context *)DequeLink( &signingEntropies );
+	struct random_context *signEntropy;
+	uint8_t outbuf[32];
+	signEntropy = SRG_CreateEntropy3( NULL, (uintptr_t)0 );
+	SRG_ResetEntropy( signEntropy );
+	SRG_FeedEntropy( signEntropy, (const uint8_t*)file->sealant, file->sealantLen );
+	SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
+	if( (file->sealantLen != 32) || MemCmp( outbuf, file->sealant, 32 ) )
+		return SACK_VFS_OS_SEAL_INVALID;
+	SRG_ResetEntropy( signEntropy );
+	SRG_FeedEntropy( signEntropy, (const uint8_t*)data, length );
+	// DO NOT DOUBLE_PROCESS THIS DATA
+	SRG_FeedEntropy( signEntropy, (const uint8_t*)file->sealant, file->sealantLen );
+	SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
+	SRG_DestroyEntropy( &signEntropy );
+	{
+		enum sack_vfs_os_seal_states success = SACK_VFS_OS_SEAL_INVALID;
+		size_t len;
+		char *rid = EncodeBase64Ex( outbuf, 256 / 8, &len, (const char *)1 );
+		if( StrCmp( file->filename, rid ) == 0 )
+			success = SACK_VFS_OS_SEAL_VALID;
+		Deallocate( char *, rid );
+		return success;
+	}
 }
 size_t CPROC sack_vfs_os_read( struct sack_vfs_file *file, char * data, size_t length ) {
 	size_t written = 0;
 	size_t ofs = file->fpi & BLOCK_MASK;
+	if( (file->entry->name_offset ^ file->dirent_key.name_offset) & DIRENT_NAME_OFFSET_FLAG_READ_KEYED ) {
+		if( !file->readKey ) return 0;
+	}
 	while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
 	if( ( file->entry->filesize  ^ file->dirent_key.filesize ) < ( file->fpi + length ) ) {
 		if( ( file->entry->filesize  ^ file->dirent_key.filesize ) < file->fpi )
@@ -16269,6 +16975,78 @@ size_t CPROC sack_vfs_os_read( struct sack_vfs_file *file, char * data, size_t l
 			length = 0;
 		}
 	}
+	if( file->readKey
+	   && ( file->fpi == ( file->entry->filesize ^ file->dirent_key.filesize ) )
+	   && ( (file->entry->name_offset ^ file->dirent_key.name_offset)
+	      & DIRENT_NAME_OFFSET_FLAG_READ_KEYED) )
+	{
+		uint8_t *outbuf;
+		size_t outlen;
+		SRG_XSWS_decryptData( (uint8_t*)data, written, (file->entry->tick ^ file->dirent_key.tick )
+		                    , file->readKey, file->readKeyLen
+		                    , &outbuf, &outlen );
+		memcpy( data, outbuf, outlen );
+		Release( outbuf );
+		written = outlen;
+	}
+	if( file->sealant
+		&& (void*)file->sealant != (void*)data
+		&& length == ( file->entry->filesize ^ file->dirent_key.filesize ) ) {
+		BLOCKINDEX saveSize = file->entry->filesize;
+		BLOCKINDEX saveFpi = file->fpi;
+		file->entry->filesize = ((file->entry->filesize
+			^ file->dirent_key.filesize) + file->sealantLen + sizeof( BLOCKINDEX ))
+			^ file->dirent_key.filesize;
+		sack_vfs_os_read( file, (char*)file->sealant, file->sealantLen );
+		file->entry->filesize = saveSize;
+		file->fpi = saveFpi;
+		file->sealed = ValidateSeal( file, data, length );
+	}
+	file->vol->lock = 0;
+	return written;
+}
+static BLOCKINDEX sack_vfs_os_read_patches( struct sack_vfs_file *file ) {
+	size_t written = 0;
+	BLOCKINDEX saveFpi = file->fpi;
+	size_t length;
+	while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
+	length = (size_t)(file->entry->filesize  ^ file->dirent_key.filesize);
+	if( !length ) { file->vol->lock = 0; return 0; }
+	sack_vfs_os_seek( file, length, SEEK_SET );
+	if( file->sealant ) {
+		BLOCKINDEX saveSize = file->entry->filesize;
+		BLOCKINDEX patches;
+		file->entry->filesize = ((file->entry->filesize
+			^ file->dirent_key.filesize) + file->sealantLen + sizeof( BLOCKINDEX ))
+			^ file->dirent_key.filesize;
+		sack_vfs_os_read( file, (char*)file->sealant, file->sealantLen );
+		sack_vfs_os_read( file, (char*)&patches, sizeof( BLOCKINDEX ) );
+		file->entry->filesize = saveSize;
+		file->fpi = saveFpi;
+		file->sealed = SACK_VFS_OS_SEAL_LOAD;
+		return patches;
+	}
+	file->vol->lock = 0;
+	return written;
+}
+static size_t sack_vfs_os_set_patch_block( struct sack_vfs_file *file, BLOCKINDEX patchBlock ) {
+	size_t written = 0;
+	size_t length;
+	BLOCKINDEX saveFpi = file->fpi;
+	while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
+	length = (size_t)(file->entry->filesize  ^ file->dirent_key.filesize);
+	if( !length ) { file->vol->lock = 0; return 0; }
+	sack_vfs_os_seek( file, length, SEEK_SET );
+	if( file->sealant ) {
+		BLOCKINDEX saveSize = file->entry->filesize;
+		file->entry->filesize = ((file->entry->filesize
+			^ file->dirent_key.filesize) + file->sealantLen + sizeof( BLOCKINDEX ))
+			^ file->dirent_key.filesize;
+		sack_vfs_os_seek( file, file->sealantLen, SEEK_CUR );
+		sack_vfs_os_write( file, (char*)&patchBlock, sizeof( BLOCKINDEX ) );
+		file->entry->filesize = saveSize;
+		file->fpi = saveFpi;
+	}
 	file->vol->lock = 0;
 	return written;
 }
@@ -16307,6 +17085,7 @@ static void sack_vfs_os_unlink_file_entry( struct volume *vol, struct sack_vfs_f
 			SETFLAG( vol->dirty, cache );
 			block = vfs_os_GetNextBlock( vol, block, FALSE, FALSE );
 			this_BAT[_block & (BLOCKS_PER_BAT-1)] = _thiskey;
+			AddDataItem( &vol->pdlFreeBlocks, &_block );
 			_block = block;
 		} while( block != EOFBLOCK );
 	}
@@ -16358,6 +17137,19 @@ int CPROC sack_vfs_os_close( struct sack_vfs_file *file ) {
 #endif
 	DeleteLink( &file->vol->files, file );
 	if( file->delete_on_close ) sack_vfs_os_unlink_file_entry( file->vol, file, file->_first_block, TRUE );
+	{
+		INDEX idx;
+		struct sack_vfs_file * testFile;
+		LIST_FORALL( file->vol->files, idx, struct sack_vfs_file *, testFile ) {
+			if( testFile->cache == file->cache )
+				break;
+		}
+		if( !testFile )
+			RESETFLAG( file->vol->seglock, file->cache );
+	}
+	Deallocate( char *, file->filename );
+	if( file->sealant )
+		Deallocate( uint8_t*, file->sealant );
 	file->vol->lock = 0;
 	if( file->vol->closed ) sack_vfs_os_unload_volume( file->vol );
 	Deallocate( struct sack_vfs_file *, file );
@@ -16445,7 +17237,7 @@ static int _os_iterate_find( struct find_info *_info ) {
 		next_entries = dirBlock->entries;
 		for( n = (int)node.thisent; n < (dirBlock->used_names ^ dirBlockKey->used_names); n++ ) {
 			struct directory_entry *entkey = ( info->vol->key)?((struct directory_hash_lookup_block *)info->vol->usekey[cache])->entries+n:&l.zero_entkey;
-			FPI name_ofs = next_entries[n].name_offset ^ entkey->name_offset;
+			FPI name_ofs = ( next_entries[n].name_offset ^ entkey->name_offset ) & DIRENT_NAME_OFFSET_OFFSET;
 			const char *filename;
 			int l;
 			// if file is deleted; don't check it's name.
@@ -16522,35 +17314,189 @@ LOGICAL CPROC sack_vfs_os_rename( uintptr_t psvInstance, const char *original, c
 	struct volume *vol = (struct volume *)psvInstance;
 	lprintf( "RENAME IS NOT SUPPORTED IN OBJECT STORAGE(OR NEEDS TO BE FIXED)" );
 	// fail if the names are the same.
-#if 0
-	if( strcmp( original, newname ) == 0 )
+	return TRUE;
+}
+uintptr_t CPROC sack_vfs_file_ioctl( uintptr_t psvInstance, uintptr_t opCode, va_list args ) {
+	//va_list args;
+	//va_start( args, opCode );
+	switch( opCode ) {
+	default:
+		// unhandled/ignored opcode
 		return FALSE;
-	if( vol ) {
-		struct directory_entry entkey;
-		struct directory_entry entry;
-		BLOCKINDEX namesBlock;
-		struct sack_vfs_file tmpdirinfo;
-		FPI entFPI;
-		while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
-		if( ( _os_ScanDirectory( vol, original, &namesBlock, &tmpdirinfo, 0 ) ) ) {
-			//struct directory_entry new_entkey;
-			//struct directory_entry new_entry;
-			struct sack_vfs_file newtmpdirinfo;
-			if( (_os_ScanDirectory( vol, newname, &namesBlock, &newtmpdirinfo, 0 )) ) {
-				vol->lock = 0;
-				sack_vfs_os_unlink_file( vol, newname );
-				while( LockedExchange( &vol->lock, 1 ) ) Relinquish();
+		break;
+	case SOSFSFIO_TAMPERED:
+	{
+		struct sack_vfs_file *file = (struct sack_vfs_file *)psvInstance;
+		int *result = va_arg( args, int* );
+		if( file->sealant ) {
+			switch( file->sealed ) {
+			case SACK_VFS_OS_SEAL_STORE:
+			case SACK_VFS_OS_SEAL_VALID:
+				(*result) = 1;
+			default:
+				(*result) = 0;
 			}
-			entry.name_offset = _os_SaveFileName( vol, namesBlock, newname ) ^ tmpdirinfo.dirent_key.name_offset;
-			sack_fseek( vol->file, (size_t)entFPI, SEEK_SET );
-			sack_fwrite( &entry, 1, sizeof( entry ), vol->file );
-			vol->lock = 0;
+		}
+		else
+			(*result) = 1;
+	}
+	break;
+	case SOSFSFIO_PROVIDE_SEALANT:
+	{
+		const char *sealant = va_arg( args, const char * );
+		size_t sealantLen = va_arg( args, size_t );
+		struct sack_vfs_file *file = (struct sack_vfs_file *)psvInstance;
+		{
+			size_t len;
+			if( file->sealant )
+				Release( file->sealant );
+			file->sealant = (uint8_t*)DecodeBase64Ex( sealant, sealantLen, &len, (const char*)1 );
+			file->sealantLen = (uint8_t)len;
+			if( file->sealed == SACK_VFS_OS_SEAL_NONE )
+				file->sealed = SACK_VFS_OS_SEAL_STORE;
+			else if( file->sealed == SACK_VFS_OS_SEAL_VALID || file->sealed == SACK_VFS_OS_SEAL_LOAD )
+				file->sealed = SACK_VFS_OS_SEAL_STORE_PATCH;
+			else
+				lprintf( "Unhandled SEAL state." );
+			//file->sealant = sealant;
+			//file->sealantLen = sealantLen;
+			// set the sealant length in the name offset.
+			file->entry->name_offset = (((file->entry->name_offset ^ file->dirent_key.name_offset)
+				| ((len >> 2) << 17)) ^ file->dirent_key.name_offset);
+		}
+	}
+	break;
+	case SOSFSFIO_PROVIDE_READKEY:
+	{
+		const char *sealant = va_arg( args, const char * );
+		size_t sealantLen = va_arg( args, size_t );
+		struct sack_vfs_file *file = (struct sack_vfs_file *)psvInstance;
+		{
+			size_t len;
+			if( file->readKey )
+				Release( file->readKey );
+			file->readKey = (uint8_t*)DecodeBase64Ex( sealant, sealantLen, &len, (const char*)1 );
+			file->readKeyLen = (uint16_t)len;
+			// set the sealant length in the name offset.
+			file->entry->name_offset = (((file->entry->name_offset ^ file->dirent_key.name_offset)
+				| DIRENT_NAME_OFFSET_FLAG_READ_KEYED) ^ file->dirent_key.name_offset);
+		}
+	}
+	break;
+	}
+	return TRUE;
+}
+uintptr_t CPROC sack_vfs_system_ioctl( uintptr_t psvInstance, uintptr_t opCode, va_list args ) {
+	struct volume *vol = (struct volume *)psvInstance;
+	//va_list args;
+	//va_start( args, opCode );
+	switch( opCode ) {
+	default:
+		// unhandled/ignored opcode
+		return FALSE;
+	case SOSFSSIO_LOAD_OBJECT:
+		return FALSE;
+	case SOSFSSIO_PATCH_OBJECT:
+		{
+  // seal input is a constant, generate random meta key
+		LOGICAL owner = va_arg( args, LOGICAL );
+		char *objIdBuf = va_arg( args, char * );
+		size_t objIdBufLen = va_arg( args, size_t );
+		char *patchAuth = va_arg( args, char * );
+		size_t patchAuthLen = va_arg( args, size_t );
+		char *objBuf = va_arg( args, char * );
+		size_t objBufLen = va_arg( args, size_t );
+		char *sealBuf = va_arg( args, char * );
+		size_t sealBufLen = va_arg( args, size_t );
+		char *keyBuf = va_arg( args, char * );
+		size_t keyBufLen = va_arg( args, size_t );
+		char *idBuf = va_arg( args, char * );
+		size_t idBufLen = va_arg( args, size_t );
+		if( sack_vfs_os_exists( vol, objIdBuf ) ) {
+			struct sack_vfs_file* file = sack_vfs_os_openfile( vol, objIdBuf );
+			BLOCKINDEX patchBlock = sack_vfs_os_read_patches( file );
+			if( !patchBlock ) {
+				patchBlock = _os_GetFreeBlock( vol, GFB_INIT_PATCHBLOCK );
+			}
+			{
+				enum block_cache_entries cache;
+				struct directory_patch_block *newPatchblock;
+				struct directory_patch_block *newPatchblockkey;
+				cache = BC(FILE);
+				newPatchblock = BTSEEK( struct directory_patch_block *, vol, patchBlock, cache );
+				newPatchblockkey = (struct directory_patch_block *)vol->usekey[cache];
+				while( 1 ) {
+					//char objId[45];
+					//size_t objIdLen;
+					char *seal = getFilename( objBuf, objBufLen, sealBuf, sealBufLen, FALSE, idBuf, idBufLen );
+					if( sack_vfs_os_exists( vol, idBuf ) ) {
+ // accidental key collision.
+						if( !sealBuf ) {
+ // try again.
+							continue;
+						}
+						else {
+							// deliberate key collision; and record already exists.
+							return TRUE;
+						}
+					}
+					else {
+						struct sack_vfs_file* file = sack_vfs_os_openfile( vol, idBuf );
+						//  file->entry_fpi
+						newPatchblock->entries[newPatchblock->usedEntries].raw
+							= file->entry_fpi ^ newPatchblockkey->entries[newPatchblock->usedEntries].raw;
+						newPatchblock->usedEntries = (newPatchblock->usedEntries + 1) ^ newPatchblockkey->usedEntries;
+						SETFLAG( vol->dirty, cache );
+						file->sealant = (uint8_t*)seal;
+						file->sealantLen = (uint8_t)strlen( seal );
+						sack_vfs_os_write( file, objBuf, objBufLen );
+						sack_vfs_os_close( file );
+					}
+					return TRUE;
+				}
+			}
+		}
+ // object to patch was not found.
+		return FALSE;
+	}
+	break;
+	case SOSFSSIO_STORE_OBJECT:
+	{
+  // seal input is a constant, generate random meta key
+		LOGICAL owner = va_arg( args, LOGICAL );
+		char *objBuf = va_arg( args, char * );
+		size_t objBufLen = va_arg( args, size_t );
+		char *sealBuf = va_arg( args, char * );
+		size_t sealBufLen = va_arg( args, size_t );
+		char *keyBuf = va_arg( args, char * );
+		size_t keyBufLen = va_arg( args, size_t );
+		char *idBuf = va_arg( args, char * );
+		size_t idBufLen = va_arg( args, size_t );
+		while( 1 ) {
+			char *seal = getFilename( objBuf, objBufLen, sealBuf, sealBufLen, owner, idBuf, idBufLen );
+			if( sack_vfs_os_exists( vol, idBuf ) ) {
+ // accidental key collision.
+				if( !sealBuf ) {
+ // try again.
+					continue;
+				}
+				else {
+					// deliberate key collision; and record already exists.
+					return TRUE;
+				}
+			}
+			else {
+				struct sack_vfs_file* file = sack_vfs_os_openfile( vol, idBuf );
+				file->sealant = (uint8_t*)seal;
+				file->sealantLen = (uint8_t)strlen( seal );
+				sack_vfs_os_write( file, objBuf, objBufLen );
+				sack_vfs_os_close( file );
+			}
 			return TRUE;
 		}
-		vol->lock = 0;
 	}
-#endif
-	return FALSE;
+	break;
+	}
 }
 #ifndef USE_STDIO
 static struct file_system_interface sack_vfs_os_fsi = {
@@ -16575,7 +17521,9 @@ static struct file_system_interface sack_vfs_os_fsi = {
                                                    , sack_vfs_os_find_is_directory
                                                    , sack_vfs_os_is_directory
                                                    , sack_vfs_os_rename
-                                                   };
+                                                   , sack_vfs_file_ioctl
+												   , sack_vfs_system_ioctl
+};
 PRIORITY_PRELOAD( Sack_VFS_OS_Register, CONFIG_SCRIPT_PRELOAD_PRIORITY - 2 )
 {
 #undef DEFAULT_VFS_NAME
@@ -16618,2909 +17566,6 @@ PRIORITY_PRELOAD( Sack_VFS_OS_RegisterDefaultFilesystem, SQL_PRELOAD_PRIORITY + 
 SACK_VFS_NAMESPACE_END
 #undef l
 #endif
-/*
- *  sha1.h
- *
- *  Description:
- *      This is the header file for code which implements the Secure
- *      Hashing Algorithm 1 as defined in FIPS PUB 180-1 published
- *      April 17, 1995.
- *
- *      Many of the variable names in this code, especially the
- *      single character names, were used because those were the names
- *      used in the publication.
- *
- *      Please read the file sha1.c for more information.
- *
- */
-#ifndef INCLUDED_SHA1_H_
-#define INCLUDED_SHA1_H_
-#ifdef SHA1_SOURCE
-#define SHA1_PROC(type,name) EXPORT_METHOD type CPROC name
-#else
-#define SHA1_PROC(type,name) IMPORT_METHOD type CPROC name
-#endif
-#if !defined(  HAS_STDINT )
-#ifndef __WATCOMC__
-	typedef unsigned long uint32_t;
-	typedef short int_least16_t;
-	typedef unsigned char uint8_t;
-#else
-#endif
-//typedef unsigned char uint8_t;
-//typedef int int_least16_t;
-#endif
-/*
- * If you do not have the ISO standard stdint.h header file, then you
- * must typdef the following:
- *    name              meaning
- *  uint32_t         unsigned 32 bit integer
- *  uint8_t          unsigned 8 bit integer (i.e., unsigned char)
- *  int_least16_t    integer of >= 16 bits
- *
- */
-#ifndef _SHA_enum_
-#define _SHA_enum_
-enum
-{
-    shaSuccess = 0,
-    shaNull,
-    shaInputTooLong,
-    shaStateError
-};
-#endif
-#define SHA1HashSize 20
-/*
- *  This structure will hold context information for the SHA-1
- *  hashing operation
- */
-typedef struct SHA1Context
-{
-    uint32_t Intermediate_Hash[SHA1HashSize/4];
-    uint32_t Length_Low;
-    uint32_t Length_High;
-                               /* Index into message block array   */
-    int_least16_t Message_Block_Index;
-    uint8_t Message_Block[64];
-    int Computed;
-    int Corrupted;
-} SHA1Context;
-/*
- *  Function Prototypes
- */
-SHA1_PROC( int, SHA1Reset )(  SHA1Context *);
-SHA1_PROC( int, SHA1Input )(  SHA1Context *,
-                const uint8_t *,
-                size_t);
-SHA1_PROC( int, SHA1Result )( SHA1Context *,
-                uint8_t Message_Digest[SHA1HashSize]);
-#endif
-// $Log: $
-#ifdef SACK_BAG_EXPORTS
-#define SHA2_SOURCE
-#endif
-/*
- * FIPS 180-2 SHA-224/256/384/512 implementation
- * Last update: 02/02/2007
- * Issue date:  04/30/2005
- *
- * Copyright (C) 2005, 2007 Olivier Gay <olivier.gay@a3.epfl.ch>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the project nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE PROJECT OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
- */
-#ifndef SHA2_H
-#define SHA2_H
-#ifdef SHA2_SOURCE
-#define SHA2_PROC   EXPORT_METHOD
-#else
-#define SHA2_PROC   IMPORT_METHOD
-#endif
-#define SHA224_DIGEST_SIZE ( 224 / 8)
-#define SHA256_DIGEST_SIZE ( 256 / 8)
-#define SHA384_DIGEST_SIZE ( 384 / 8)
-#define SHA512_DIGEST_SIZE ( 512 / 8)
-#define SHA256_BLOCK_SIZE  ( 512 / 8)
-#define SHA512_BLOCK_SIZE  (1024 / 8)
-#define SHA384_BLOCK_SIZE  SHA512_BLOCK_SIZE
-#define SHA224_BLOCK_SIZE  SHA256_BLOCK_SIZE
-#ifndef SHA2_TYPES
-#define SHA2_TYPES
-typedef unsigned char uint8;
-typedef unsigned int  uint32;
-typedef unsigned long long uint64;
-#endif
-#ifdef __cplusplus
-extern "C" {
-#endif
-typedef struct {
-    unsigned int tot_len;
-    unsigned int len;
-    unsigned char block[2 * SHA256_BLOCK_SIZE];
-    uint32 h[8];
-}sha256_ctx;
-typedef struct {
-    unsigned int tot_len;
-    unsigned int len;
-    unsigned char block[2 * SHA512_BLOCK_SIZE];
-    uint64 h[8];
-}sha512_ctx;
-typedef sha512_ctx sha384_ctx;
-typedef sha256_ctx sha224_ctx;
-SHA2_PROC void sha224_init(sha224_ctx *ctx);
-SHA2_PROC void sha224_update(sha224_ctx *ctx, const unsigned char *message,
-                   unsigned int len);
-SHA2_PROC void sha224_final(sha224_ctx *ctx, unsigned char *digest);
-SHA2_PROC void sha224(const unsigned char *message, unsigned int len,
-            unsigned char *digest);
-SHA2_PROC void sha256_init(sha256_ctx * ctx);
-SHA2_PROC void sha256_update(sha256_ctx *ctx, const unsigned char *message,
-                   unsigned int len);
-SHA2_PROC void sha256_final(sha256_ctx *ctx, unsigned char *digest);
-SHA2_PROC void sha256(const unsigned char *message, unsigned int len,
-            unsigned char *digest);
-SHA2_PROC void sha384_init(sha384_ctx *ctx);
-SHA2_PROC void sha384_update(sha384_ctx *ctx, const unsigned char *message,
-                   unsigned int len);
-SHA2_PROC void sha384_final(sha384_ctx *ctx, unsigned char *digest);
-SHA2_PROC void sha384(const unsigned char *message, unsigned int len,
-            unsigned char *digest);
-SHA2_PROC void sha512_init(sha512_ctx *ctx);
-SHA2_PROC void sha512_update(sha512_ctx *ctx, const unsigned char *message,
-                   unsigned int len);
-SHA2_PROC void sha512_final(sha512_ctx *ctx, unsigned char *digest);
-SHA2_PROC void sha512(const unsigned char *message, unsigned int len,
-            unsigned char *digest);
-#ifdef __cplusplus
-}
-#endif
-#endif
-// from https://github.com/mjosaarinen/tiny_sha3/blob/master/sha3.h  2017/19/12
-// sha3.h
-// 19-Nov-11  Markku-Juhani O. Saarinen <mjos@iki.fi>
-// 2018-06-16 modified _final api to pass context then digest (reverse params from original)
-#ifndef SHA3_H
-#define SHA3_H
-#ifndef KECCAKF_ROUNDS
-#define KECCAKF_ROUNDS 24
-#endif
-#ifndef ROTL64
-#define ROTL64(x, y) (((x) << (y)) | ((x) >> (64 - (y))))
-#endif
-// state context
-typedef struct {
-                                 // state:
-    union {
-                     // 8-bit bytes
-        uint8_t b[200];
-                     // 64-bit words
-        uint64_t q[25];
-    } st;
-                    // these don't overflow
-    int pt, rsiz, mdlen;
-} sha3_ctx_t;
-// Compression function.
-void sha3_keccakf(uint64_t st[25]);
-// OpenSSL - like interfece
-    // mdlen = hash output in bytes
-int sha3_init(sha3_ctx_t *c, int mdlen);
-int sha3_update(sha3_ctx_t *c, const void *data, size_t len);
-    // digest goes to md
-int sha3_final(sha3_ctx_t *c, void *md );
-// compute a sha3 hash (md) of given byte length from "in"
-void *sha3(const void *in, size_t inlen, void *md, int mdlen);
-// SHAKE128 and SHAKE256 extensible-output functions
-#define shake128_init(c) sha3_init(c, 16)
-#define shake256_init(c) sha3_init(c, 32)
-#define shake_update sha3_update
-void shake_xof(sha3_ctx_t *c);
-void shake_out(sha3_ctx_t *c, void *out, size_t len);
-#endif
-#ifndef SALTY_RANDOM_GENERATOR_SOURCE
-#define SALTY_RANDOM_GENERATOR_SOURCE
-#endif
-#define MY_MASK_MASK(n,length)	(MASK_TOP_MASK(length) << ((n)&0x7) )
-#define MY_GET_MASK(v,n,mask_size)  ( ( ((MASKSET_READTYPE*)((((uintptr_t)v))+(n)/CHAR_BIT))[0]											 & MY_MASK_MASK(n,mask_size) )																										>> (((n))&0x7))
-struct random_context {
-	LOGICAL use_version2 : 1;
-	LOGICAL use_version2_256 : 1;
-	LOGICAL use_version3 : 1;
-	SHA1Context sha1_ctx;
-	sha512_ctx  sha512;
-	sha256_ctx  sha256;
-	sha3_ctx_t  sha3;
-	POINTER salt;
-	size_t salt_size;
-	void (*getsalt)( uintptr_t, POINTER *salt, size_t *salt_size );
-	uintptr_t psv_user;
-	uint8_t entropy[SHA1HashSize];
-	uint8_t entropy2[SHA512_DIGEST_SIZE];
-	uint8_t entropy2_256[SHA256_DIGEST_SIZE];
-#define SHA3_DIGEST_SIZE 64
-	uint8_t entropy3[SHA3_DIGEST_SIZE];
-	size_t bits_used;
-	size_t bits_avail;
-};
-static void NeedBits( struct random_context *ctx )
-{
-	if( ctx->getsalt )
-		ctx->getsalt( ctx->psv_user, &ctx->salt, &ctx->salt_size );
-	else
-		ctx->salt_size = 0;
-	if( ctx->use_version3 ) {
-		if( ctx->salt_size )
-			sha3_update( &ctx->sha3, (const uint8_t*)ctx->salt, (unsigned int)ctx->salt_size );
-		sha3_final( &ctx->sha3, ctx->entropy3 );
-		sha3_init( &ctx->sha3, SHA3_DIGEST_SIZE );
-		sha3_update( &ctx->sha3, ctx->entropy3, SHA3_DIGEST_SIZE );
-		ctx->bits_avail = sizeof( ctx->entropy3 ) * 8;
-	} else if( ctx->use_version2_256 ) {
-		if( ctx->salt_size )
-			sha256_update( &ctx->sha256, (const uint8_t*)ctx->salt, (unsigned int)ctx->salt_size );
-		sha256_final( &ctx->sha256, ctx->entropy2_256 );
-		sha256_init( &ctx->sha256 );
-		sha256_update( &ctx->sha256, ctx->entropy2_256, SHA256_DIGEST_SIZE );
-		ctx->bits_avail = sizeof( ctx->entropy2_256 ) * 8;
-	} else if( ctx->use_version2 )
-	{
-		if( ctx->salt_size )
-			sha512_update( &ctx->sha512, (const uint8_t*)ctx->salt, (unsigned int)ctx->salt_size );
-		sha512_final( &ctx->sha512, ctx->entropy2 );
-		sha512_init( &ctx->sha512 );
-		sha512_update( &ctx->sha512, ctx->entropy2, SHA512_DIGEST_SIZE );
-		ctx->bits_avail = sizeof( ctx->entropy2 ) * 8;
-	}
-	else
-	{
-		if( ctx->salt_size )
-			SHA1Input( &ctx->sha1_ctx, (const uint8_t*)ctx->salt, ctx->salt_size );
-		SHA1Result( &ctx->sha1_ctx, ctx->entropy );
-		SHA1Reset( &ctx->sha1_ctx );
-		SHA1Input( &ctx->sha1_ctx, ctx->entropy, SHA1HashSize );
-		ctx->bits_avail = sizeof( ctx->entropy ) * 8;
-	}
-	ctx->bits_used = 0;
-}
-struct random_context *SRG_CreateEntropyInternal( void (*getsalt)( uintptr_t, POINTER *salt, size_t *salt_size ), uintptr_t psv_user
-                                                , LOGICAL version2
-                                                , LOGICAL version2_256
-                                                , LOGICAL version3
-                                                )
-{
-	struct random_context *ctx = New( struct random_context );
-	ctx->use_version3 = version3;
-	ctx->use_version2_256 = version2_256;
-	ctx->use_version2 = version2;
-	if( ctx->use_version3 )
-		sha3_init( &ctx->sha3, SHA3_DIGEST_SIZE );
-	else if( ctx->use_version2_256 )
-		sha256_init( &ctx->sha256 );
-	else if( ctx->use_version2 )
-		sha512_init( &ctx->sha512 );
-	else
-		SHA1Reset( &ctx->sha1_ctx );
-	ctx->getsalt = getsalt;
-	ctx->psv_user = psv_user;
-	ctx->bits_used = 0;
-	ctx->bits_avail = 0;
-	return ctx;
-}
-struct random_context *SRG_CreateEntropy( void (*getsalt)( uintptr_t, POINTER *salt, size_t *salt_size ), uintptr_t psv_user )
-{
-	return SRG_CreateEntropyInternal( getsalt, psv_user, FALSE, FALSE, FALSE );
-}
-struct random_context *SRG_CreateEntropy2( void (*getsalt)( uintptr_t, POINTER *salt, size_t *salt_size ), uintptr_t psv_user )
-{
-	return SRG_CreateEntropyInternal( getsalt, psv_user, TRUE, FALSE, FALSE );
-}
-struct random_context *SRG_CreateEntropy2_256( void( *getsalt )(uintptr_t, POINTER *salt, size_t *salt_size), uintptr_t psv_user )
-{
-	return SRG_CreateEntropyInternal( getsalt, psv_user, FALSE, TRUE, FALSE );
-}
-struct random_context *SRG_CreateEntropy3( void( *getsalt )(uintptr_t, POINTER *salt, size_t *salt_size), uintptr_t psv_user )
-{
-	return SRG_CreateEntropyInternal( getsalt, psv_user, FALSE, FALSE, TRUE );
-}
-void SRG_DestroyEntropy( struct random_context **ppEntropy )
-{
-	Release( (*ppEntropy) );
-	(*ppEntropy) = NULL;
-}
-void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_t bits )
-{
-	uint32_t tmp;
-	uint32_t partial_tmp;
-	uint32_t partial_bits = 0;
-	uint32_t get_bits;
-	uint32_t resultBits = 0;
-	if( !ctx ) DebugBreak();
-	//if( ctx->bits_used > 512 ) DebugBreak();
-	do {
-		if( bits > sizeof( tmp ) * 8 )
-			get_bits = sizeof( tmp ) * 8;
-		else
-			get_bits = bits;
-		// if there were 1-31 bits of data in partial, then can only get 32-partial max.
-		if( 32 < (get_bits + partial_bits) )
-			get_bits = 32 - partial_bits;
-		// check1 :
-		//    if get_bits == 32
-		//    but bits_used is 1-7, then it would have to pull 5 bytes to get the 32 required
-		//    so truncate get_bits to 25-31 bits
-		if( 32 < (get_bits + (ctx->bits_used & 0x7)) )
-			get_bits = (32 - (ctx->bits_used & 0x7));
-		// if resultBits is 1-7 offset, then would have to store up to 5 bytes of value
-		//    so have to truncate to just the up to 4 bytes that will fit.
-		if( (get_bits+ resultBits) > 32 )
-			get_bits = 32 - resultBits;
-		// only greater... if equal just grab the bits.
-		if( (get_bits + ctx->bits_used) > ctx->bits_avail ) {
-			// if there are any bits left, grab the partial bits.
-			if( ctx->bits_avail > ctx->bits_used ) {
-				partial_bits = (uint32_t)(ctx->bits_avail - ctx->bits_used);
-				if( partial_bits > get_bits ) partial_bits = get_bits;
-				// partial can never be greater than 32; input is only max of 32
-				//if( partial_bits > (sizeof( partial_tmp ) * 8) )
-				//	partial_bits = (sizeof( partial_tmp ) * 8);
-				if( ctx->use_version3 )
-					partial_tmp = MY_GET_MASK( ctx->entropy3, ctx->bits_used, partial_bits );
-				else if( ctx->use_version2_256 )
-					partial_tmp = MY_GET_MASK( ctx->entropy2_256, ctx->bits_used, partial_bits );
-				else if( ctx->use_version2 )
-					partial_tmp = MY_GET_MASK( ctx->entropy2, ctx->bits_used, partial_bits );
-				else
-					partial_tmp = MY_GET_MASK( ctx->entropy, ctx->bits_used, partial_bits );
-			}
-			NeedBits( ctx );
-			bits -= partial_bits;
-		}
-		else {
-			if( ctx->use_version3 )
-				tmp = MY_GET_MASK( ctx->entropy3, ctx->bits_used, get_bits );
-			else if( ctx->use_version2_256 )
-				tmp = MY_GET_MASK( ctx->entropy2_256, ctx->bits_used, get_bits );
-			else if( ctx->use_version2 )
-				tmp = MY_GET_MASK( ctx->entropy2, ctx->bits_used, get_bits );
-			else
-				tmp = MY_GET_MASK( ctx->entropy, ctx->bits_used, get_bits );
-			ctx->bits_used += get_bits;
-			//if( ctx->bits_used > 512 ) DebugBreak();
-			if( partial_bits ) {
-				tmp = partial_tmp | (tmp << partial_bits);
-				partial_bits = 0;
-			}
-			if( (get_bits+resultBits) > 24 )
-				(*buffer) |= tmp << resultBits;
-			else if( (get_bits+resultBits) > 16 ) {
-				(*((uint16_t*)buffer)) |= tmp << resultBits;
-				(*(((uint8_t*)buffer)+2)) |= ((tmp << resultBits) & 0xFF0000)>>16;
-			} else if( (get_bits+resultBits) > 8 )
-				(*((uint16_t*)buffer)) |= tmp << resultBits;
-			else
-				(*((uint8_t*)buffer)) |= tmp << resultBits;
-			resultBits += get_bits;
-			while( resultBits >= 8 ) {
-#if defined( __cplusplus ) || defined( __GNUC__ )
-				buffer = (uint32_t*)(((uintptr_t)buffer) + 1);
-#else
-				((intptr_t)buffer)++;
-#endif
-				resultBits -= 8;
-			}
-			//if( get_bits > bits ) DebugBreak();
-			bits -= get_bits;
-		}
-	} while( bits );
-}
-int32_t SRG_GetEntropy( struct random_context *ctx, int bits, int get_signed )
-{
-	int32_t result = 0;
-	SRG_GetEntropyBuffer( ctx, (uint32_t*)&result, bits );
-	if( get_signed )
-		if( result & ( 1 << ( bits - 1 ) ) )
-		{
-			uint32_t negone = ~0;
-			negone <<= bits;
-			return (int32_t)( result | negone );
-		}
-	return result;
-}
-void SRG_ResetEntropy( struct random_context *ctx )
-{
-	if( ctx->use_version3 )
-		sha3_init( &ctx->sha3, SHA3_DIGEST_SIZE );
-	else if( ctx->use_version2_256 )
-		sha256_init( &ctx->sha256 );
-	else if( ctx->use_version2 )
-		sha512_init( &ctx->sha512 );
-	else
-		SHA1Reset( &ctx->sha1_ctx );
-	ctx->bits_used = 0;
-	ctx->bits_avail = 0;
-}
-void SRG_FeedEntropy( struct random_context *ctx, const uint8_t *salt, size_t salt_size )
-{
-	if( ctx->use_version3 )
-		sha3_update( &ctx->sha3, salt, (unsigned int)salt_size );
-	else if( ctx->use_version2_256 )
-		sha256_update( &ctx->sha256, salt, (unsigned int)salt_size );
-	else if( ctx->use_version2 )
-		sha512_update( &ctx->sha512, salt, (unsigned int)salt_size );
-	else
-		SHA1Input( &ctx->sha1_ctx, salt, salt_size );
-}
-void SRG_SaveState( struct random_context *ctx, POINTER *external_buffer_holder )
-{
-	if( !(*external_buffer_holder) )
-		(*external_buffer_holder) = New( struct random_context );
-	MemCpy( (*external_buffer_holder), ctx, sizeof( struct random_context ) );
-}
-void SRG_RestoreState( struct random_context *ctx, POINTER external_buffer_holder )
-{
-	MemCpy( ctx, (external_buffer_holder), sizeof( struct random_context ) );
-}
-static void salt_generator(uintptr_t psv, POINTER *salt, size_t *salt_size ) {
-	static uint32_t tick;
-	(void)psv;
-	tick = GetTickCount();
-	salt[0] = &tick;
-	salt_size[0] = sizeof( tick );
-}
-char *SRG_ID_Generator( void ) {
-	static struct random_context *ctx;
-	uint32_t buf[2*(16+16)];
-	size_t outlen;
-	if( !ctx ) ctx = SRG_CreateEntropy2( salt_generator, 0 );
-	SRG_GetEntropyBuffer( ctx, buf, 8*(16+16) );
-	return EncodeBase64Ex( (uint8*)buf, (16+16), &outlen, (const char *)1 );
-}
-char *SRG_ID_Generator_256( void ) {
-	static struct random_context *_ctx[32];
-	static uint32_t used[32];
-	uint32_t buf[2 * (16 + 16)];
-	size_t outlen;
-	int usingCtx;
-	static struct random_context *ctx;
-	usingCtx = 0;
-	do {
-		while( used[++usingCtx] ) { if( ++usingCtx >= 32 ) usingCtx = 0; }
-	} while( LockedExchange( used + usingCtx, 1 ) );
-	ctx = _ctx[usingCtx];
-	if( !ctx ) ctx = _ctx[usingCtx] = SRG_CreateEntropy2_256( salt_generator, 0 );
-	SRG_GetEntropyBuffer( ctx, buf, 8 * (16 + 16) );
-	used[usingCtx] = 0;
-	return EncodeBase64Ex( (uint8*)buf, (16 + 16), &outlen, (const char *)1 );
-}
-char *SRG_ID_Generator3( void ) {
-	static struct random_context *ctx;
-	uint32_t buf[2 * (16 + 16)];
-	size_t outlen;
-	if( !ctx ) ctx = SRG_CreateEntropy3( salt_generator, 0 );
-	SRG_GetEntropyBuffer( ctx, buf, 8 * (16 + 16) );
-	return EncodeBase64Ex( (uint8*)buf, (16 + 16), &outlen, (const char *)1 );
-}
-#ifdef WIN32
-#if 0
-// if standalone?
-BOOL WINAPI DllMain(
-	HINSTANCE hinstDLL,
-	DWORD fdwReason,
-	LPVOID lpvReserved
-						 )
-{
-	return TRUE;
-}
-#endif
-// this is the watcom deadstart entry point.
-// by supplying this routine, then the native runtime doesn't get pulled
-// and no external clbr symbols are required.
-//void __DLLstart( void )
-//{
-//}
-#endif
-/*
- *  Creator: Jim Buckeyne
- *  Header for configscript.lib(bag.lib)
- *  Provides definitions for handling configuration files
- *  or any particular file which has machine generated
- *  characteristics, it can handle translators to decrypt
- *  encrypt.  Method of operation is to create a configuration
- *  evaluator, then AddConfiguratMethod()s to it.
- *  configuration methods are format descriptors for the lines
- *  and a routine which is called when such a line is matched.
- *  One might think of it as a trigger library for MUDs ( a
- *  way to trigger an event based on certain text input,
- *  variations in the text input may be assigned as variables
- *  to be used within the event.
- *
- *  More about configuration string parsing is available in
- *  $(SACK_BASE)/src/configlib/config.rules text file.
- *
- *  A vague attempt at providing a class to derrive a config-
- *  uration reader class, which may contain private data
- *  within such a class, or otherwise provide an object with
- *  simple namespace usage. ( add(), go() )
- *
- *  This library also imlements several PTEXT based methods
- *  which can evaluate text segments into valid binary types
- *  such as text to integer, float, color, etc.  Some of the type
- *  validators applied for the format argument matching of added
- *  methods are available for external reference.
- *
- */
-#ifndef CONFIGURATION_SCRIPT_HANDLER
-#define CONFIGURATION_SCRIPT_HANDLER
-/* Define COLOR type. Basically the image library regards color
-   as 32 bits of data. User applications end up needing to
-   specify colors in the correct method for the platform they
-   are working on. This provides aliases to rearrange colors.
-   For instance the colors on windows and the colors for OpenGL
-   are not exactly the same. If the OpenGL driver is specified
-   as the output device, the entire code would need to be
-   rebuilt for specifying colors correctly for opengl. While
-   otherwise they are both 32 bits, and peices work, they get
-   very ugly colors output.
-   See Also
-   <link Colors>                                                */
-#ifndef COLOR_STRUCTURE_DEFINED
-/* An exclusion symbol for defining CDATA and color operations. */
-#define COLOR_STRUCTURE_DEFINED
-#ifdef __cplusplus
-SACK_NAMESPACE
-	namespace image {
-#endif
-		// byte index values for colors on the video buffer...
-		enum color_byte_index {
- I_BLUE  = 0,
- I_GREEN = 1,
- I_RED   = 2,
- I_ALPHA = 3
-		};
-#if defined( __ANDROID__ ) || defined( _OPENGL_DRIVER )
-#  define USE_OPENGL_COMPAT_COLORS
-#endif
-#if ( !defined( IMAGE_LIBRARY_SOURCE_MAIN ) && ( !defined( FORCE_NO_INTERFACE ) || defined( ALLOW_IMAGE_INTERFACE ) ) )      && !defined( FORCE_COLOR_MACROS )
-#define Color( r,g,b ) MakeColor(r,g,b)
-#define AColor( r,g,b,a ) MakeAlphaColor(r,g,b,a)
-#define SetAlpha( rgb, a ) SetAlphaValue( rgb, a )
-#define SetGreen( rgb, g ) SetGreeValue(rgb,g )
-#define AlphaVal(color) GetAlphaValue( color )
-#define RedVal(color)   GetRedValue(color)
-#define GreenVal(color) GetGreenValue(color)
-#define BlueVal(color)  GetBlueValue(color)
-#else
-#if defined( _OPENGL_DRIVER ) || defined( USE_OPENGL_COMPAT_COLORS )
-#  define Color( r,g,b ) (((uint32_t)( ((uint8_t)(r))|((uint16_t)((uint8_t)(g))<<8))|(((uint32_t)((uint8_t)(b))<<16)))|0xFF000000)
-#  define AColor( r,g,b,a ) (((uint32_t)( ((uint8_t)(r))|((uint16_t)((uint8_t)(g))<<8))|(((uint32_t)((uint8_t)(b))<<16)))|((a)<<24))
-#  define SetAlpha( rgb, a ) ( ((rgb)&0x00FFFFFF) | ( (a)<<24 ) )
-#  define SetGreen( rgb, g ) ( ((rgb)&0xFFFF00FF) | ( ((g)&0xFF)<<8 ) )
-#  define SetBlue( rgb, b )  ( ((rgb)&0xFF00FFFF) | ( ((b)&0xFF)<<16 ) )
-#  define SetRed( rgb, r )   ( ((rgb)&0xFFFFFF00) | ( ((r)&0xFF)<<0 ) )
-#  define GLColor( c )  (c)
-#  define AlphaVal(color) ((color&0xFF000000) >> 24)
-#  define RedVal(color)   ((color&0x000000FF) >> 0)
-#  define GreenVal(color) ((color&0x0000FF00) >> 8)
-#  define BlueVal(color)  ((color&0x00FF0000) >> 16)
-#else
-#  ifdef _WIN64
-#    define AND_FF &0xFF
-#  else
-/* This is a macro to cure a 64bit warning in visual studio. */
-#    define AND_FF
-#  endif
-/* A macro to create a solid color from R G B coordinates.
-   Example
-   <code lang="c++">
-   CDATA color1 = Color( 255,0,0 ); // Red only, so this is bright red
-   CDATA color2 = Color( 0,255,0); // green only, this is bright green
-   CDATA color3 = Color( 0,0,255); // blue only, this is birght blue
-   CDATA color4 = Color(93,93,32); // this is probably a goldish grey
-   </code>                                                             */
-#define Color( r,g,b ) (((uint32_t)( ((uint8_t)((b)AND_FF))|((uint16_t)((uint8_t)((g))AND_FF)<<8))|(((uint32_t)((uint8_t)((r))AND_FF)<<16)))|0xFF000000)
-/* Build a color with alpha specified. */
-#define AColor( r,g,b,a ) (((uint32_t)( ((uint8_t)((b)AND_FF))|((uint16_t)((uint8_t)((g))AND_FF)<<8))|(((uint32_t)((uint8_t)((r))AND_FF)<<16)))|(((a)AND_FF)<<24))
-/* Sets the alpha part of a color. (0-255 value, 0 being
-   transparent, and 255 solid(opaque))
-   Example
-   <code lang="c++">
-   CDATA color = BASE_COLOR_RED;
-   CDATA hazy_color = SetAlpha( color, 128 );
-   </code>
- */
-#define SetAlpha( rgb, a ) ( ((rgb)&0x00FFFFFF) | ( (a)<<24 ) )
-/* Sets the green channel of a color. Expects a value 0-255.  */
-#define SetGreen( rgb, g ) ( ((rgb)&0xFFFF00FF) | ( ((g)&0x0000FF)<<8 ) )
-/* Sets the blue channel of a color. Expects a value 0-255.  */
-#define SetBlue( rgb, b ) ( ((rgb)&0xFFFFFF00) | ( ((b)&0x0000FF)<<0 ) )
-/* Sets the red channel of a color. Expects a value 0-255.  */
-#define SetRed( rgb, r ) ( ((rgb)&0xFF00FFFF) | ( ((r)&0x0000FF)<<16 ) )
-/* Return a CDATA that is meant for output to OpenGL. */
-#define GLColor( c )  (((c)&0xFF00FF00)|(((c)&0xFF0000)>>16)|(((c)&0x0000FF)<<16))
-/* Get the alpha value of a color. This is a 0-255 unsigned
-   byte.                                                    */
-#define AlphaVal(color) (((color) >> 24) & 0xFF)
-/* Get the red value of a color. This is a 0-255 unsigned byte. */
-#define RedVal(color)   (((color) >> 16) & 0xFF)
-/* Get the green value of a color. This is a 0-255 unsigned
-   byte.                                                    */
-#define GreenVal(color) (((color) >> 8) & 0xFF)
-/* Get the blue value of a color. This is a 0-255 unsigned byte. */
-#define BlueVal(color)  (((color)) & 0xFF)
-#endif
- // IMAGE_LIBRARY_SOURCE
-#endif
-		/* a definition for a single color channel - for function replacements for ___Val macros*/
-		typedef unsigned char COLOR_CHANNEL;
-        /* a 4 byte array of color (not really used, we mostly went with CDATA and PCDATA instead of COLOR and PCOLOR */
-		typedef COLOR_CHANNEL COLOR[4];
-		// color data raw...
-		typedef uint32_t CDATA;
-		/* pointer to an array of 32 bit colors */
-		typedef uint32_t *PCDATA;
-		/* A Pointer to <link COLOR>. Probably an array of color (a
-		 block of pixels for instance)                            */
-		typedef COLOR *PCOLOR;
-//-----------------------------------------------
-// common color definitions....
-//-----------------------------------------------
-// both yellows need to be fixed.
-#define BASE_COLOR_BLACK         Color( 0,0,0 )
-#define BASE_COLOR_BLUE          Color( 0, 0, 128 )
-#define BASE_COLOR_DARKBLUE          Color( 0, 0, 42 )
-/* An opaque Green.
-   See Also
-   <link Colors>    */
-#define BASE_COLOR_GREEN         Color( 0, 128, 0 )
-/* An opaque cyan - kind of a light sky like blue.
-   See Also
-   <link Colors>                                   */
-#define BASE_COLOR_CYAN          Color( 0, 128, 128 )
-/* An opaque red.
-   See Also
-   <link Colors>  */
-#define BASE_COLOR_RED           Color( 192, 32, 32 )
-/* An opaque BROWN. Brown is dark yellow... so this might be
-   more like a gold sort of color instead.
-   See Also
-   <link Colors>                                             */
-#define BASE_COLOR_BROWN         Color( 140, 140, 0 )
-#define BASE_COLOR_LIGHTBROWN         Color( 221, 221, 85 )
-#define BASE_COLOR_MAGENTA       Color( 160, 0, 160 )
-#define BASE_COLOR_LIGHTGREY     Color( 192, 192, 192 )
-/* An opaque darker grey (gray?).
-   See Also
-   <link Colors>                  */
-#define BASE_COLOR_DARKGREY      Color( 128, 128, 128 )
-/* An opaque a bight or light color blue.
-   See Also
-   <link Colors>                          */
-#define BASE_COLOR_LIGHTBLUE     Color( 0, 0, 255 )
-/* An opaque lighter, brighter green color.
-   See Also
-   <link Colors>                            */
-#define BASE_COLOR_LIGHTGREEN    Color( 0, 255, 0 )
-/* An opaque a lighter, more bight cyan color.
-   See Also
-   <link Colors>                               */
-#define BASE_COLOR_LIGHTCYAN     Color( 0, 255, 255 )
-/* An opaque bright red.
-   See Also
-   <link Colors>         */
-#define BASE_COLOR_LIGHTRED      Color( 255, 0, 0 )
-/* An opaque Lighter pink sort of red-blue color.
-   See Also
-   <link Colors>                                  */
-#define BASE_COLOR_LIGHTMAGENTA  Color( 255, 0, 255 )
-/* An opaque bright yellow.
-   See Also
-   <link Colors>            */
-#define BASE_COLOR_YELLOW        Color( 255, 255, 0 )
-/* An opaque White.
-   See Also
-   <link Colors>    */
-#define BASE_COLOR_WHITE         Color( 255, 255, 255 )
-#define BASE_COLOR_ORANGE        Color( 204,96,7 )
-#define BASE_COLOR_NICE_ORANGE   Color( 0xE9, 0x7D, 0x26 )
-#define BASE_COLOR_PURPLE        Color( 0x7A, 0x11, 0x7C )
-#ifdef __cplusplus
- //	 namespace image {
-}
-SACK_NAMESPACE_END
-using namespace sack::image;
-#endif
-#endif
-// $Log: colordef.h,v $
-// Revision 1.4  2003/04/24 00:03:49  panther
-// Added ColorAverage to image... Fixed a couple macros
-//
-// Revision 1.3  2003/03/25 08:38:11  panther
-// Add logging
-//
-/* Defines a simple FRACTION type. Fractions are useful for
-   scaling one value to another. These operations are handles
-   continously. so iterating a fraction like 13 denominations of
-   100 will be smooth.                                           */
-#ifndef FRACTIONS_DEFINED
-/* Multiple inclusion protection symbol. */
-#define FRACTIONS_DEFINED
-#ifdef __cplusplus
-#  define _FRACTION_NAMESPACE namespace fraction {
-#  define _FRACTION_NAMESPACE_END }
-#  ifndef _MATH_NAMESPACE
-#    define _MATH_NAMESPACE namespace math {
-#  endif
-#  define	 SACK_MATH_FRACTION_NAMESPACE_END } } }
-#else
-#  define _FRACTION_NAMESPACE
-#  define _FRACTION_NAMESPACE_END
-#  ifndef _MATH_NAMESPACE
-#    define _MATH_NAMESPACE
-#  endif
-#  define	 SACK_MATH_FRACTION_NAMESPACE_END
-#endif
-SACK_NAMESPACE
-	/* Namespace of custom math routines.  Contains operators
-	 for Vectors and fractions. */
-	_MATH_NAMESPACE
-	/* Fraction namespace contains a PFRACTION type which is used to
-   store integer fraction values. Provides for ration and
-   proportion scaling. Can also represent fractions that contain
-   a whole part and a fractional part (5 2/3 : five and
-	two-thirds).                                                  */
-	_FRACTION_NAMESPACE
-/* Define the call type of the function. */
-#define FRACTION_API CPROC
-#  ifdef FRACTION_SOURCE
-#    define FRACTION_PROC EXPORT_METHOD
-#  else
-/* Define the library linkage for a these functions. */
-#    define FRACTION_PROC IMPORT_METHOD
-#  endif
-/* The faction type. Stores a fraction as integer
-   numerator/denominator instead of a floating point scalar. */
-/* Pointer to a <link sack::math::fraction::FRACTION, FRACTION>. */
-/* The faction type. Stores a fraction as integer
-   numerator/denominator instead of a floating point scalar. */
-typedef struct fraction_tag {
-	/* Numerator of the fraction. (This is the number on top of a
-	   fraction.)                                                 */
-	int numerator;
-	/* Denominator of the fraction. (This is the number on bottom of
-	   a fraction.) This specifies the denominations.                */
-	int denominator;
-} FRACTION, *PFRACTION;
-#ifdef HAVE_ANONYMOUS_STRUCTURES
-typedef struct coordpair_tag {
-	union {
-		FRACTION x;
-		FRACTION width;
-	};
-	union {
-		FRACTION y;
-		FRACTION height;
-	};
-} COORDPAIR, *PCOORDPAIR;
-#else
-/* A coordinate pair is a 2 dimensional fraction expression. can
-   be regarded as x, y or width,height. Each coordiante is a
-   Fraction type.                                                */
-typedef struct coordpair_tag {
-	       /* The x part of the coordpair. */
-	       FRACTION x;
-	       /* The y part of the coordpair. */
-	       FRACTION y;
-} COORDPAIR, *PCOORDPAIR;
-#endif
-/* \ \
-   Parameters
-   fraction :     the fraction to set
-   numerator :    numerator of the fraction
-   demoninator :  denominator of the fraction */
-#define SetFraction(f,n,d) ((((f).numerator=((int)(n)) ),((f).denominator=((int)(d)))),(f))
-/* Sets the value of a FRACTION. This is passed as the whole
-   number and the fraction.
-   Parameters
-   fraction :  the fraction to set
-   w :         this is the whole number to set
-   n :         numerator of remainder to set
-   d :         denominator of fraction to set.
-   Example
-   Fraction f = 3 1/2;
-   <code lang="c++">
-   FRACTION f;
-   SetFractionV( f, 3, 1, 2 );
-   // the resulting fraction will be 7/2
-   </code>                                                   */
-#define SetFractionV(f,w,n,d) (  (d)?	 ((((f).numerator=((int)((n)*(w))) )	  ,((f).denominator=((int)(d)))),(f))	  :	 ((((f).numerator=((int)((w))) )	  ,((f).denominator=((int)(1)))),(f))  )
-/* \ \
-   Parameters
-   base :    origin point (content is modified by adding offset
-             to it)
-   offset :  offset point                                       */
-FRACTION_PROC  void FRACTION_API  AddCoords ( PCOORDPAIR base, PCOORDPAIR offset );
-/* Add one fraction to another.
-   Parameters
-   base :    This is the starting value, and recevies the result
-             of (base+offset)
-   offset :  This is the fraction to add to base.
-   Returns
-   base                                                          */
-FRACTION_PROC  PFRACTION FRACTION_API  AddFractions ( PFRACTION base, PFRACTION offset );
-/* Add one fraction to another.
-   Parameters
-   base :    This is the starting value, and recevies the result
-             of (base+offset)
-   offset :  This is the fraction to add to base.
-   Returns
-   base                                                          */
-FRACTION_PROC  PFRACTION FRACTION_API  SubtractFractions ( PFRACTION base, PFRACTION offset );
-/* NOT IMPLEMENTED */
-FRACTION_PROC  PFRACTION FRACTION_API  MulFractions ( PFRACTION f, PFRACTION x );
-/* Log a fraction into a string. */
-FRACTION_PROC  int FRACTION_API  sLogFraction ( TEXTCHAR *string, PFRACTION x );
-/* Unsafe log of a coordinate pair's value into a string. The
-   string should be at least 69 characters long.
-   Parameters
-   string :  the string to print the fraction into
-   pcp :     the coordinate pair to print                     */
-FRACTION_PROC  int FRACTION_API  sLogCoords ( TEXTCHAR *string, PCOORDPAIR pcp );
-/* Log coordpair to logfile. */
-FRACTION_PROC  void FRACTION_API  LogCoords ( PCOORDPAIR pcp );
-/* scales a fraction by a signed integer value.
-   Parameters
-   result\ :  pointer to a FRACTION to receive the result
-   value :    the amount to be scaled
-   f :        the fraction to multiply the value by
-   Returns
-   \result; the pointer the fraction to receive the result. */
-FRACTION_PROC  PFRACTION FRACTION_API  ScaleFraction ( PFRACTION result, int32_t value, PFRACTION f );
-/* Results in the integer part of the fraction. If the faction
-   was 330/10 then the result would be 33.                     */
-FRACTION_PROC  int32_t FRACTION_API  ReduceFraction ( PFRACTION f );
-/* Scales a 32 bit integer value by a fraction. The result is
-   the scaled value result.
-   Parameters
-   f :      pointer to the faction to multiply value by
-   value :  the value to scale
-   Returns
-   The (value * f) integer value of.                          */
-FRACTION_PROC  uint32_t FRACTION_API  ScaleValue ( PFRACTION f, int32_t value );
-/* \ \
-   Parameters
-   f :      The fraction to scale the value by
-   value :  the value to scale by (1/f)
-   Returns
-   the value of ( value * 1/ f )               */
-FRACTION_PROC  uint32_t FRACTION_API  InverseScaleValue ( PFRACTION f, int32_t value );
-	SACK_MATH_FRACTION_NAMESPACE_END
-#ifdef __cplusplus
-using namespace sack::math::fraction;
-#endif
-#endif
-//---------------------------------------------------------------------------
-// $Log: fractions.h,v $
-// Revision 1.6  2004/09/03 14:43:40  d3x0r
-// flexible frame reactions to font changes...
-//
-// Revision 1.5  2003/03/25 08:38:11  panther
-// Add logging
-//
-// Revision 1.4  2003/01/27 09:45:03  panther
-// Fix lack of anonymous structures
-//
-// Revision 1.3  2002/10/09 13:16:02  panther
-// Support for linux shared memory mapping.
-// Support for better linux compilation of configuration scripts...
-// Timers library is now Threads AND Timers.
-//
-//
-#ifdef CONFIGURATION_LIBRARY_SOURCE
-#define CONFIGSCR_PROC(type,name) EXPORT_METHOD type CPROC name
-#else
-#define CONFIGSCR_PROC(type,name) IMPORT_METHOD type CPROC name
-#endif
-#ifdef __cplusplus
-SACK_NAMESPACE namespace config {
-#endif
-typedef char *__arg_list[1];
-typedef __arg_list arg_list;
-// declare 'va_list args = NULL;' to use successfully...
-// the resulting thing is of type va_list.
-typedef struct va_args_tag va_args;
-enum configArgType {
-	CONFIG_ARG_STRING,
-	CONFIG_ARG_INT64,
-	CONFIG_ARG_FLOAT,
-	CONFIG_ARG_DATA,
-	CONFIG_ARG_DATA_SIZE,
-	CONFIG_ARG_LOGICAL,
-	CONFIG_ARG_FRACTION,
-	CONFIG_ARG_COLOR,
-};
-struct va_args_tag {
-	int argsize; arg_list *args; arg_list *tmp_args; int argCount;
-};
-//#define va_args struct { int argsize; arg_list *args; arg_list *tmp_args; }
-#define init_args(name) name.argCount = 0; name.argsize = 0; name.args = NULL;
-  // 32 bits.
-#define ARG_STACK_SIZE 4
-#define PushArgument( argset, argType, type, arg )	 ((argset.args = (arg_list*)Preallocate( argset.args		  , argset.argsize += ((sizeof( enum configArgType )				 + sizeof( type )				  + (ARG_STACK_SIZE-1) )&-ARG_STACK_SIZE) ) )	 ?(argset.argCount++),((*(enum configArgType*)(argset.args))=(argType)),(*(type*)(((uintptr_t)argset.args)+sizeof(enum configArgType)) = (arg)),0	   :0)
-#define PopArguments( argset ) { Release( argset.args ); argset.args=NULL; }
-#define pass_args(argset) (( (argset).tmp_args = (argset).args ),(*(arg_list*)(&argset.tmp_args)))
-/*
- * Config methods are passed an arg_list
- * parameters from arg_list are retrieved using
- * PARAM( arg_list_param_name, arg_type, arg_name );
- * ex.
- *
- *   PARAM( args, char *, name );
- *    // results in a variable called name
- *    // initialized from the first argument in arg_list args;
- */
-#define my_va_arg(ap,type)     ((ap)[0]+=        ((sizeof(enum configArgType)+sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)),        (*(type *)((ap)[0]-((sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)))))
-#define my_va_arg_type(ap,type)     (         (*(type *)((ap)[0]-(sizeof(enum configArgType)+(sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)))))
-//#define my_va_next_arg_type(ap,type)     (*(type *)((ap)[0]))
-#define my_va_next_arg_type(ap)     ( ( *(enum configArgType *)((ap)[0]) ) )
-#define PARAM_COUNT( args ) (((int*)(args+1))[0])
-#define PARAM( args, type, name ) type name = my_va_arg( args, type )
-#define PARAMEX( args, type, name, argTypeName ) type name = my_va_arg( args, type ); enum configArgType argTypeName = my_va_arg_type(args)
-#define FP_PARAM( args, type, name, fa ) type (CPROC*name)fa = (type (CPROC*)fa)(my_va_arg( args, void *))
-typedef struct config_file_tag* PCONFIG_HANDLER;
-CONFIGSCR_PROC( PCONFIG_HANDLER, CreateConfigurationEvaluator )( void );
-#define CreateConfigurationHandler CreateConfigurationEvaluator
-CONFIGSCR_PROC( void, DestroyConfigurationEvaluator )( PCONFIG_HANDLER pch );
-#define DestroyConfigurationHandler DestroyConfigurationEvaluator
-// this pushes all prior state information about configuration file
-// processing, and allows a new set of rules to be made...
-CONFIGSCR_PROC( void, BeginConfiguration )( PCONFIG_HANDLER pch );
-// begins a sub configuration, and marks to save it for future use
-// so we don't have to always recreate the configuration states...
-CONFIGSCR_PROC( LOGICAL, BeginNamedConfiguration )( PCONFIG_HANDLER pch, CTEXTSTR name );
-// then, when you're done with the new set of rules (end of config section)
-// use this to restore the prior configuration state.
-CONFIGSCR_PROC( void, EndConfiguration )( PCONFIG_HANDLER pch );
-typedef uintptr_t (CPROC*USER_CONFIG_HANDLER)( uintptr_t, arg_list args );
-typedef uintptr_t( CPROC*USER_CONFIG_HANDLER_EX )(uintptr_t, uintptr_t, arg_list args);
-CONFIGSCR_PROC( void, AddConfigurationEx )( PCONFIG_HANDLER pch
-														, CTEXTSTR format
-														, USER_CONFIG_HANDLER Process DBG_PASS );
-CONFIGSCR_PROC( void, AddConfigurationExx )(PCONFIG_HANDLER pch
-	, CTEXTSTR format
-	, USER_CONFIG_HANDLER_EX Process, uintptr_t processHandler DBG_PASS);
-//CONFIGSCR_PROC( void, AddConfiguration )( PCONFIG_HANDLER pch
-//					, char *format
-//													 , USER_CONFIG_HANDLER Process );
-// make a nice wrapper - otherwise we get billions of complaints.
-//#define AddConfiguration(pch,format,process) AddConfiguration( (pch), (format), process )
-#define AddConfiguration(pch,f,pr) AddConfigurationEx(pch,f,pr DBG_SRC )
-#define AddConfigurationMethod AddConfiguration
-// FILTER receives a uintptr_t that was given at configuration (addition to handler)
-// it receives a PTEXT block of (binary) data... and must result with
-// PTEXT segments which are lines which may or may not have \r\n\\ all
-// of which are removed before being resulted to the application.
-//   POINTER* is a pointer to a pointer, this pointer may be used
-//      for private state data.  The last line of the configuration will
-//      call the filter chain with NULL to flush data...
-typedef PTEXT (CPROC*USER_FILTER)( POINTER *, PTEXT );
-CONFIGSCR_PROC( void, AddConfigurationFilter )( PCONFIG_HANDLER pch, USER_FILTER filter );
-CONFIGSCR_PROC( void, ClearDefaultFilters )( PCONFIG_HANDLER pch );
-CONFIGSCR_PROC( void, SetConfigurationEndProc )( PCONFIG_HANDLER pch, uintptr_t (CPROC *Process)( uintptr_t ) );
-CONFIGSCR_PROC( void, SetConfigurationUnhandled )( PCONFIG_HANDLER pch
-																, uintptr_t (CPROC *Process)( uintptr_t, CTEXTSTR ) );
-CONFIGSCR_PROC( int, ProcessConfigurationFile )( PCONFIG_HANDLER pch
-															  , CTEXTSTR name
-															  , uintptr_t psv
-															  );
-CONFIGSCR_PROC( uintptr_t, ProcessConfigurationInput )( PCONFIG_HANDLER pch, CTEXTSTR block, size_t size, uintptr_t psv );
-/*
- * TO BE IMPLEMENTED
- *
-CONFIGSCR_PROC( int, vcsprintf )( PCONFIG_HANDLER pch, CTEXTSTR format, va_list args );
-CONFIGSCR_PROC( int, csprintf )( PCONFIG_HANDLER pch, CTEXTSTR format, ... );
-*/
-CONFIGSCR_PROC( int, GetBooleanVar )( PTEXT *start, LOGICAL *data );
-CONFIGSCR_PROC( int, GetColorVar )( PTEXT *start, CDATA *data );
-//CONFIGSCR_PROC( int, IsBooleanVar )( PCONFIG_ELEMENT pce, PTEXT *start );
-//CONFIGSCR_PROC( int, IsColorVar )( PCONFIG_ELEMENT pce, PTEXT *start );
-// takes a binary block of data and creates a base64-like string which may be stored.
-CONFIGSCR_PROC( void, EncodeBinaryConfig )( TEXTSTR *encode, POINTER data, size_t length );
-// this isn't REALLY the same function that's used, but serves the same purpose...
-CONFIGSCR_PROC( int, DecodeBinaryConfig )( CTEXTSTR String, POINTER *binary_buffer, size_t *buflen );
-CONFIGSCR_PROC( CTEXTSTR, FormatColor )( CDATA color );
-CONFIGSCR_PROC( void, StripConfigString )( TEXTSTR out, CTEXTSTR in );
-CONFIGSCR_PROC( void, ExpandConfigString )( TEXTSTR out, CTEXTSTR in );
-#ifdef __cplusplus
-//typedef uintptr_t CPROC ::(*USER_CONFIG_METHOD)( ... );
-typedef class config_reader {
-   PCONFIG_HANDLER pch;
-public:
-	config_reader() {
-      pch = CreateConfigurationEvaluator();
-	}
-	~config_reader() {
-		if( pch ) DestroyConfigurationEvaluator( pch );
-      pch = (PCONFIG_HANDLER)NULL;
-	}
-	inline void add( CTEXTSTR format, USER_CONFIG_HANDLER Process )
-	{
-      AddConfiguration( pch, format, Process );
-	}
-   /*
-	inline void add( char *format, USER_CONFIG_METHOD Process )
-	{
-		union {
-			struct {
-				uint32_t junk;
-            USER_CONFIG_HANDLER Process
-			} c;
-         USER_CONFIG_METHOD Process;
-		} x;
-      x.Process = Process;
-      AddConfiguration( pch, format, x.c.Process );
-		}
-      */
-	inline int go( CTEXTSTR file, POINTER p )
-	{
-		return ProcessConfigurationFile( pch, file, (uintptr_t)p );
-	}
-} CONFIG_READER;
-#endif
-#ifdef __cplusplus
- //namespace sack { namespace config {
-}
-SACK_NAMESPACE_END
-using namespace sack::config;
-#endif
-#endif
-// $Log: configscript.h,v $
-// Revision 1.17  2004/12/05 15:32:06  panther
-// Some minor cleanups fixed a couple memory leaks
-//
-// Revision 1.16  2004/08/13 16:48:19  d3x0r
-// added ability to put filters on config script data read.
-//
-// Revision 1.15  2004/02/18 20:46:37  d3x0r
-// Add some aliases for badly named routines
-//
-// Revision 1.14  2004/02/08 23:33:15  d3x0r
-// Add a iList class for c++, public access to building parameter va_lists
-//
-// Revision 1.13  2003/12/09 16:15:56  panther
-// Define unhnalded callback set
-//
-// Revision 1.12  2003/11/09 22:31:58  panther
-// Fix CPROC indication on endconfig method
-//
-// Revision 1.11  2003/10/13 04:25:14  panther
-// Fix configscript library... make sure types are consistant (watcom)
-//
-// Revision 1.10  2003/10/12 02:47:05  panther
-// Cleaned up most var-arg stack abuse ARM seems to work.
-//
-// Revision 1.9  2003/09/24 02:53:58  panther
-// Define c++ wrapper for config script library
-//
-// Revision 1.8  2003/07/24 22:49:01  panther
-// Modify addconfig method macro to auto typecast - dangerous by simpler
-//
-// Revision 1.7  2003/07/24 16:56:41  panther
-// Updates to expliclity define C procedure model for callbacks and assembly modules - incomplete
-//
-// Revision 1.6  2003/04/17 09:32:51  panther
-// Added true/false result from processconfigfile.  Added default load from /etc to msgsvr and display
-//
-// Revision 1.5  2003/03/25 08:38:11  panther
-// Add logging
-//
-#ifndef SALTY_RANDOM_GENERATOR_SOURCE
-#define SALTY_RANDOM_GENERATOR_SOURCE
-#endif
-static struct crypt_local
-{
-	char * use_salt;
-	struct random_context *entropy;
-} crypt_local;
-static void FeedSalt( uintptr_t psv, POINTER *salt, size_t *salt_size )
-{
-	if( crypt_local.use_salt)
-	{
-		(*salt) = crypt_local.use_salt;
-		(*salt_size) = 4;
-	}
-	else
-	{
-		static uint32_t tick;
-		tick = timeGetTime();
-		(*salt) = &tick;
-		(*salt_size) = 4;
-	}
-}
-void SRG_DecryptRawData( CPOINTER binary, size_t length, uint8_t* *buffer, size_t *chars )
-{
-	if( !crypt_local.entropy )
-		crypt_local.entropy = SRG_CreateEntropy( FeedSalt, (uintptr_t)0 );
-	{
-		uint32_t mask;
-		uint8_t* pass_byte_in;
-		uint8_t* pass_byte_out;
-		int index;
-		//if( length < chars )
-		{
-			SRG_ResetEntropy( crypt_local.entropy );
-			crypt_local.use_salt = (char *)binary;
-			pass_byte_in = ((uint8_t*)binary) + 4;
-			length -= 4;
-			(*buffer) = NewArray( uint8_t, length );
-			pass_byte_out = (*buffer);
-			for( index = 0; length; length--, index++ )
-			{
-				if( ( index & 3 ) == 0 )
-					mask = SRG_GetEntropy( crypt_local.entropy, 32, FALSE );
-				pass_byte_out[0] = pass_byte_in[0] ^ ((uint8_t*)&mask)[ index & 0x3 ];
-				pass_byte_out++;
-				pass_byte_in++;
-			}
-			(*chars) = pass_byte_out - (*buffer);
-		}
-	}
-}
-void SRG_DecryptData( CTEXTSTR local_password, uint8_t* *buffer, size_t *chars )
-{
-	{
-		POINTER binary;
-		size_t length;
-		if( local_password && DecodeBinaryConfig( local_password, &binary, &length ) )
-		{
-			SRG_DecryptRawData( (uint8_t*)binary, length, buffer, chars );
-		}
-		else
-		{
-			(*buffer) = 0;
-			(*chars) = 0;
-			//lprintf( WIDE("failed to decode data") );
-		}
-	}
-}
-TEXTSTR SRG_DecryptString( CTEXTSTR local_password )
-{
-	uint8_t* buffer;
-	size_t chars;
-	SRG_DecryptData( local_password, &buffer, &chars );
-	return (TEXTSTR)buffer;
-}
-void SRG_EncryptRawData( CPOINTER buffer, size_t buflen, uint8_t* *result_buf, size_t *result_size )
-{
-	if( !crypt_local.entropy )
-		crypt_local.entropy = SRG_CreateEntropy( FeedSalt, 0 );
-	{
-		{
-			uint32_t mask;
-			uint32_t seed;
-			uint8_t* pass_byte_in;
-			uint8_t* pass_byte_out;
-			int index;
-			uint8_t* tmpbuf;
-			crypt_local.use_salt = NULL;
-			(*result_buf) = tmpbuf = NewArray( uint8_t, buflen + 4 );
-			(*result_size) = buflen + 4;
-			SRG_ResetEntropy( crypt_local.entropy );
-			seed = (uint32_t)GetCPUTick();
-			tmpbuf[0] = ((seed >> 17) & 0xFF) ^ ((seed >> 8) & 0xFF);
-			tmpbuf[1] = ((seed >> 11) & 0xFF) ^ ((seed >> 4) & 0xFF);
-			tmpbuf[2] = ((seed >> 5) & 0xFF) ^ ((seed >> 12) & 0xFF);
-			tmpbuf[3] = ((seed >> 0) & 0xFF) ^ ((seed >> 13) & 0xFF);
-			crypt_local.use_salt = (char*)tmpbuf;
-			SRG_ResetEntropy( crypt_local.entropy );
-			pass_byte_in = ((uint8_t*)buffer);
-			pass_byte_out = (uint8_t*)tmpbuf + 4;
-			for( index = 0; buflen; buflen--, index++ )
-			{
-				if( ( index & 3 ) == 0 )
-					mask = SRG_GetEntropy( crypt_local.entropy, 32, FALSE );
-				pass_byte_out[0] = pass_byte_in[0] ^ ((uint8_t*)&mask)[ index & 0x3 ];
-				pass_byte_out++;
-				pass_byte_in++;
-			}
-		}
-	}
-}
-TEXTCHAR * SRG_EncryptData( CPOINTER buffer, size_t buflen )
-{
-	if( !crypt_local.entropy )
-		crypt_local.entropy = SRG_CreateEntropy( FeedSalt, 0 );
-	{
-		uint8_t* result_buf;
-		size_t result_size;
-		TEXTSTR tmpbuf;
-		SRG_EncryptRawData( buffer, buflen, &result_buf, &result_size );
-		EncodeBinaryConfig( &tmpbuf, result_buf, buflen + 4 );
-		return tmpbuf;
-	}
-	return NULL;
-}
-TEXTSTR SRG_EncryptString( CTEXTSTR buffer )
-{
-	return SRG_EncryptData( (uint8_t*)buffer, StrLen( buffer ) + 1 );
-}
-/* MD5C.C - RSA Data Security, Inc., MD5 message-digest algorithm
- */
-/* Copyright (C) 1991-2, RSA Data Security, Inc. Created 1991. All
-rights reserved.
-License to copy and use this software is granted provided that it
-is identified as the "RSA Data Security, Inc. MD5 Message-Digest
-Algorithm" in all material mentioning or referencing this software
-or this function.
-License is also granted to make and use derivative works provided
-that such works are identified as "derived from the RSA Data
-Security, Inc. MD5 Message-Digest Algorithm" in all material
-mentioning or referencing the derived work.
-RSA Data Security, Inc. makes no representations concerning either
-the merchantability of this software or the suitability of this
-software for any particular purpose. It is provided "as is"
-without express or implied warranty of any kind.
-These notices must be retained in any copies of any part of this
-documentation and/or software.
- */
-#define MD5_SOURCE
-/* MD5.H - header file for MD5C.C
- */
-/* Copyright (C) 1991-2, RSA Data Security, Inc. Created 1991. All
-rights reserved.
-License to copy and use this software is granted provided that it
-is identified as the "RSA Data Security, Inc. MD5 Message-Digest
-Algorithm" in all material mentioning or referencing this software
-or this function.
-License is also granted to make and use derivative works provided
-that such works are identified as "derived from the RSA Data
-Security, Inc. MD5 Message-Digest Algorithm" in all material
-mentioning or referencing the derived work.
-RSA Data Security, Inc. makes no representations concerning either
-the merchantability of this software or the suitability of this
-software for any particular purpose. It is provided "as is"
-without express or implied warranty of any kind.
-These notices must be retained in any copies of any part of this
-documentation and/or software.
- */
-#ifndef MD5_ALGORITHM_DEFINED
-#define MD5_ALGORITHM_DEFINED
-#ifdef MD5_SOURCE
-#define MD5_PROC(type,name) EXPORT_METHOD type name
-#else
-#define MD5_PROC(type,name) IMPORT_METHOD type name
-#endif
-/* MD5 context. */
-typedef struct {
-	uint32_t state[4];
-	uint32_t count[2];
-  unsigned char buffer[64];
-} MD5_CTX;
-MD5_PROC( void, MD5Init )(MD5_CTX *);
-MD5_PROC( void, MD5Update )(MD5_CTX *, unsigned char *, unsigned int);
-MD5_PROC( void, MD5Final )(unsigned char [16], MD5_CTX *);
-#endif
-/* Constants for MD5Transform routine.
- */
-#define S11 7
-#define S12 12
-#define S13 17
-#define S14 22
-#define S21 5
-#define S22 9
-#define S23 14
-#define S24 20
-#define S31 4
-#define S32 11
-#define S33 16
-#define S34 23
-#define S41 6
-#define S42 10
-#define S43 15
-#define S44 21
-static void MD5Transform (uint32_t [4], unsigned char [64]);
-static void Encode (unsigned char *, uint32_t *, unsigned int);
-static void Decode (uint32_t *, unsigned char *, unsigned int);
-static void MD5_memcpy (uint8_t*, uint8_t*, unsigned int);
-static void MD5_memset (uint8_t*, int, unsigned int);
-static unsigned char PADDING[64] = {
-  0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-};
-/* F, G, H and I are basic MD5 functions.
- */
-#define F(x, y, z) (((x) & (y)) | ((~x) & (z)))
-#define G(x, y, z) (((x) & (z)) | ((y) & (~z)))
-#define H(x, y, z) ((x) ^ (y) ^ (z))
-#define I(x, y, z) ((y) ^ ((x) | (~z)))
-/* ROTATE_LEFT rotates x left n bits.
- */
-#define ROTATE_LEFT(x, n) (((x) << (n)) | ((x) >> (32-(n))))
-/* FF, GG, HH, and II transformations for rounds 1, 2, 3, and 4.
-Rotation is separate from addition to prevent recomputation.
- */
-#define FF(a, b, c, d, x, s, ac) {  (a) += F ((b), (c), (d)) + (x) + (uint32_t)(ac);  (a) = ROTATE_LEFT ((a), (s));  (a) += (b);   }
-#define GG(a, b, c, d, x, s, ac) {  (a) += G ((b), (c), (d)) + (x) + (uint32_t)(ac);  (a) = ROTATE_LEFT ((a), (s));  (a) += (b);   }
-#define HH(a, b, c, d, x, s, ac) {  (a) += H ((b), (c), (d)) + (x) + (uint32_t)(ac);  (a) = ROTATE_LEFT ((a), (s));  (a) += (b);   }
-#define II(a, b, c, d, x, s, ac) {  (a) += I ((b), (c), (d)) + (x) + (uint32_t)(ac);  (a) = ROTATE_LEFT ((a), (s));  (a) += (b);   }
-/* MD5 initialization. Begins an MD5 operation, writing a new context.
- */
-MD5_PROC( void, MD5Init )( MD5_CTX *context )
-{
-  context->count[0] = context->count[1] = 0;
-  /* Load magic initialization constants.
-*/
-  context->state[0] = 0x67452301;
-  context->state[1] = 0xefcdab89;
-  context->state[2] = 0x98badcfe;
-  context->state[3] = 0x10325476;
-}
-/* MD5 block update operation. Continues an MD5 message-digest
-  operation, processing another message block, and updating the
-  context.
- */
-MD5_PROC( void, MD5Update ) ( MD5_CTX *context
-									 , unsigned char *input
-									 , unsigned int inputLen)
-{
-  unsigned int i, index, partLen;
-  /* Compute number of bytes mod 64 */
-  index = (unsigned int)((context->count[0] >> 3) & 0x3F);
-  /* Update number of bits */
-  if ((context->count[0] += ((uint32_t)inputLen << 3))
-   < ((uint32_t)inputLen << 3))
- context->count[1]++;
-  context->count[1] += ((uint32_t)inputLen >> 29);
-  partLen = 64 - index;
-  /* Transform as many times as possible.
-*/
-  if (inputLen >= partLen) {
- MD5_memcpy
-   ((uint8_t*)&context->buffer[index], (uint8_t*)input, partLen);
- MD5Transform (context->state, context->buffer);
- for (i = partLen; i + 63 < inputLen; i += 64)
-   MD5Transform (context->state, &input[i]);
- index = 0;
-  }
-  else
- i = 0;
-  /* Buffer remaining input */
-  MD5_memcpy
- ((uint8_t*)&context->buffer[index], (uint8_t*)&input[i],
-  inputLen-i);
-}
-/* MD5 finalization. Ends an MD5 message-digest operation, writing the
-  the message digest and zeroizing the context.
- */
-MD5_PROC( void, MD5Final )(unsigned char *digest, MD5_CTX *context)
-{
-  unsigned char bits[8];
-  unsigned int index, padLen;
-  /* Save number of bits */
-  Encode (bits, context->count, 8);
-  /* Pad out to 56 mod 64.
-*/
-  index = (unsigned int)((context->count[0] >> 3) & 0x3f);
-  padLen = (index < 56) ? (56 - index) : (120 - index);
-  MD5Update (context, PADDING, padLen);
-  /* Append length (before padding) */
-  MD5Update (context, bits, 8);
-  /* Store state in digest */
-  Encode (digest, context->state, 16);
-  /* Zeroize sensitive information.
-*/
-  MD5_memset ((uint8_t*)context, 0, sizeof (*context));
-}
-/* MD5 basic transformation. Transforms state based on block.
- */
-static void MD5Transform (uint32_t state[4], unsigned char block[64])
-{
-  uint32_t a = state[0], b = state[1], c = state[2], d = state[3], x[16];
-  Decode (x, block, 64);
-  /* Round 1 */
-  FF (a, b, c, d, x[ 0], S11, 0xd76aa478);
-  FF (d, a, b, c, x[ 1], S12, 0xe8c7b756);
-  FF (c, d, a, b, x[ 2], S13, 0x242070db);
-  FF (b, c, d, a, x[ 3], S14, 0xc1bdceee);
-  FF (a, b, c, d, x[ 4], S11, 0xf57c0faf);
-  FF (d, a, b, c, x[ 5], S12, 0x4787c62a);
-  FF (c, d, a, b, x[ 6], S13, 0xa8304613);
-  FF (b, c, d, a, x[ 7], S14, 0xfd469501);
-  FF (a, b, c, d, x[ 8], S11, 0x698098d8);
-  FF (d, a, b, c, x[ 9], S12, 0x8b44f7af);
-  FF (c, d, a, b, x[10], S13, 0xffff5bb1);
-  FF (b, c, d, a, x[11], S14, 0x895cd7be);
-  FF (a, b, c, d, x[12], S11, 0x6b901122);
-  FF (d, a, b, c, x[13], S12, 0xfd987193);
-  FF (c, d, a, b, x[14], S13, 0xa679438e);
-  FF (b, c, d, a, x[15], S14, 0x49b40821);
- /* Round 2 */
-  GG (a, b, c, d, x[ 1], S21, 0xf61e2562);
-  GG (d, a, b, c, x[ 6], S22, 0xc040b340);
-  GG (c, d, a, b, x[11], S23, 0x265e5a51);
-  GG (b, c, d, a, x[ 0], S24, 0xe9b6c7aa);
-  GG (a, b, c, d, x[ 5], S21, 0xd62f105d);
-  GG (d, a, b, c, x[10], S22,  0x2441453);
-  GG (c, d, a, b, x[15], S23, 0xd8a1e681);
-  GG (b, c, d, a, x[ 4], S24, 0xe7d3fbc8);
-  GG (a, b, c, d, x[ 9], S21, 0x21e1cde6);
-  GG (d, a, b, c, x[14], S22, 0xc33707d6);
-  GG (c, d, a, b, x[ 3], S23, 0xf4d50d87);
-  GG (b, c, d, a, x[ 8], S24, 0x455a14ed);
-  GG (a, b, c, d, x[13], S21, 0xa9e3e905);
-  GG (d, a, b, c, x[ 2], S22, 0xfcefa3f8);
-  GG (c, d, a, b, x[ 7], S23, 0x676f02d9);
-  GG (b, c, d, a, x[12], S24, 0x8d2a4c8a);
-  /* Round 3 */
-  HH (a, b, c, d, x[ 5], S31, 0xfffa3942);
-  HH (d, a, b, c, x[ 8], S32, 0x8771f681);
-  HH (c, d, a, b, x[11], S33, 0x6d9d6122);
-  HH (b, c, d, a, x[14], S34, 0xfde5380c);
-  HH (a, b, c, d, x[ 1], S31, 0xa4beea44);
-  HH (d, a, b, c, x[ 4], S32, 0x4bdecfa9);
-  HH (c, d, a, b, x[ 7], S33, 0xf6bb4b60);
-  HH (b, c, d, a, x[10], S34, 0xbebfbc70);
-  HH (a, b, c, d, x[13], S31, 0x289b7ec6);
-  HH (d, a, b, c, x[ 0], S32, 0xeaa127fa);
-  HH (c, d, a, b, x[ 3], S33, 0xd4ef3085);
-  HH (b, c, d, a, x[ 6], S34,  0x4881d05);
-  HH (a, b, c, d, x[ 9], S31, 0xd9d4d039);
-  HH (d, a, b, c, x[12], S32, 0xe6db99e5);
-  HH (c, d, a, b, x[15], S33, 0x1fa27cf8);
-  HH (b, c, d, a, x[ 2], S34, 0xc4ac5665);
-  /* Round 4 */
-  II (a, b, c, d, x[ 0], S41, 0xf4292244);
-  II (d, a, b, c, x[ 7], S42, 0x432aff97);
-  II (c, d, a, b, x[14], S43, 0xab9423a7);
-  II (b, c, d, a, x[ 5], S44, 0xfc93a039);
-  II (a, b, c, d, x[12], S41, 0x655b59c3);
-  II (d, a, b, c, x[ 3], S42, 0x8f0ccc92);
-  II (c, d, a, b, x[10], S43, 0xffeff47d);
-  II (b, c, d, a, x[ 1], S44, 0x85845dd1);
-  II (a, b, c, d, x[ 8], S41, 0x6fa87e4f);
-  II (d, a, b, c, x[15], S42, 0xfe2ce6e0);
-  II (c, d, a, b, x[ 6], S43, 0xa3014314);
-  II (b, c, d, a, x[13], S44, 0x4e0811a1);
-  II (a, b, c, d, x[ 4], S41, 0xf7537e82);
-  II (d, a, b, c, x[11], S42, 0xbd3af235);
-  II (c, d, a, b, x[ 2], S43, 0x2ad7d2bb);
-  II (b, c, d, a, x[ 9], S44, 0xeb86d391);
-  state[0] += a;
-  state[1] += b;
-  state[2] += c;
-  state[3] += d;
-  /* Zeroize sensitive information.
-   */
-  MD5_memset ((uint8_t*)x, 0, sizeof (x));
-}
-/* Encodes input (uint32_t) into output (unsigned char). Assumes len is
-  a multiple of 4.
- */
-static void Encode (unsigned char *output, uint32_t *input, unsigned int len)
-{
-  unsigned int i, j;
-  for (i = 0, j = 0; j < len; i++, j += 4) {
- output[j] = (unsigned char)(input[i] & 0xff);
- output[j+1] = (unsigned char)((input[i] >> 8) & 0xff);
- output[j+2] = (unsigned char)((input[i] >> 16) & 0xff);
- output[j+3] = (unsigned char)((input[i] >> 24) & 0xff);
-  }
-}
-/* Decodes input (unsigned char) into output (uint32_t). Assumes len is
-  a multiple of 4.
- */
-static void Decode (uint32_t *output, unsigned char *input, unsigned int len)
-{
-  unsigned int i, j;
-  for (i = 0, j = 0; j < len; i++, j += 4)
- output[i] = ((uint32_t)input[j]) | (((uint32_t)input[j+1]) << 8) |
-   (((uint32_t)input[j+2]) << 16) | (((uint32_t)input[j+3]) << 24);
-}
-/* Note: Replace "for loop" with standard memcpy if possible.
- */
-static void MD5_memcpy (uint8_t* output, uint8_t* input, unsigned int len)
-{
-  unsigned int i;
-  for (i = 0; i < len; i++)
-    output[i] = input[i];
-}
-/* Note: Replace "for loop" with standard memset if possible.
- */
-static void MD5_memset (uint8_t* output, int value, unsigned int len)
-{
-  unsigned int i;
-  for (i = 0; i < len; i++)
- ((char *)output)[i] = (char)value;
-}
-/*
- *  sha1.c
- *
- *  Description:
- *      This file implements the Secure Hashing Algorithm 1 as
- *      defined in FIPS PUB 180-1 published April 17, 1995.
- *
- *      The SHA-1, produces a 160-bit message digest for a given
- *      data stream.  It should take about 2**n steps to find a
- *      message with the same digest as a given message and
- *      2**(n/2) to find any two messages with the same digest,
- *      when n is the digest size in bits.  Therefore, this
- *      algorithm can serve as a means of providing a
- *      "fingerprint" for a message.
- *
- *  Portability Issues:
- *      SHA-1 is defined in terms of 32-bit "words".  This code
- *      uses <stdint.h> (included via "sha1.h" to define 32 and 8
- *      bit unsigned integer types.  If your C compiler does not
- *      support 32 bit unsigned integers, this code is not
- *      appropriate.
- *
- *  Caveats:
- *      SHA-1 is designed to work with messages less than 2^64 bits
- *      long.  Although SHA-1 allows a message digest to be generated
- *      for messages of any number of bits less than 2^64, this
- *      implementation only works with messages with a length that is
- *      a multiple of the size of an 8-bit character.
- *
- */
-/*
- *  sha1.h
- *
- *  Description:
- *      This is the header file for code which implements the Secure
- *      Hashing Algorithm 1 as defined in FIPS PUB 180-1 published
- *      April 17, 1995.
- *
- *      Many of the variable names in this code, especially the
- *      single character names, were used because those were the names
- *      used in the publication.
- *
- *      Please read the file sha1.c for more information.
- *
- */
-#ifndef INCLUDED_SHA1_H_
-#define INCLUDED_SHA1_H_
-#ifdef SHA1_SOURCE
-#define SHA1_PROC(type,name) EXPORT_METHOD type CPROC name
-#else
-#define SHA1_PROC(type,name) IMPORT_METHOD type CPROC name
-#endif
-#if !defined(  HAS_STDINT )
-#ifndef __WATCOMC__
-	typedef unsigned long uint32_t;
-	typedef short int_least16_t;
-	typedef unsigned char uint8_t;
-#else
-#endif
-//typedef unsigned char uint8_t;
-//typedef int int_least16_t;
-#endif
-/*
- * If you do not have the ISO standard stdint.h header file, then you
- * must typdef the following:
- *    name              meaning
- *  uint32_t         unsigned 32 bit integer
- *  uint8_t          unsigned 8 bit integer (i.e., unsigned char)
- *  int_least16_t    integer of >= 16 bits
- *
- */
-#ifndef _SHA_enum_
-#define _SHA_enum_
-enum
-{
-    shaSuccess = 0,
-    shaNull,
-    shaInputTooLong,
-    shaStateError
-};
-#endif
-#define SHA1HashSize 20
-/*
- *  This structure will hold context information for the SHA-1
- *  hashing operation
- */
-typedef struct SHA1Context
-{
-    uint32_t Intermediate_Hash[SHA1HashSize/4];
-    uint32_t Length_Low;
-    uint32_t Length_High;
-                               /* Index into message block array   */
-    int_least16_t Message_Block_Index;
-    uint8_t Message_Block[64];
-    int Computed;
-    int Corrupted;
-} SHA1Context;
-/*
- *  Function Prototypes
- */
-SHA1_PROC( int, SHA1Reset )(  SHA1Context *);
-SHA1_PROC( int, SHA1Input )(  SHA1Context *,
-                const uint8_t *,
-                size_t);
-SHA1_PROC( int, SHA1Result )( SHA1Context *,
-                uint8_t Message_Digest[SHA1HashSize]);
-#endif
-// $Log: $
-#ifndef SHA1HashSize
-#define SHA1Context SHA1_CTX
-#endif
-/*
- *  Define the SHA1 circular left shift macro
- */
-#define SHA1CircularShift(bits,word)                 (((word) << (bits)) | ((word) >> (32-(bits))))
-/* Local Function Prototyptes */
-void SHA1PadMessage(SHA1Context *);
-void SHA1ProcessMessageBlock(SHA1Context *);
-/*
- *  SHA1Reset
- *
- *  Description:
- *      This function will initialize the SHA1Context in preparation
- *      for computing a new SHA1 message digest.
- *
- *  Parameters:
- *      context: [in/out]
- *          The context to reset.
- *
- *  Returns:
- *      sha Error Code.
- *
- */
-int SHA1Reset(SHA1Context *context)
-{
-    if (!context)
-    {
-        return shaNull;
-    }
-    context->Length_Low             = 0;
-    context->Length_High            = 0;
-    context->Message_Block_Index    = 0;
-    context->Intermediate_Hash[0]   = 0x67452301;
-    context->Intermediate_Hash[1]   = 0xEFCDAB89;
-    context->Intermediate_Hash[2]   = 0x98BADCFE;
-    context->Intermediate_Hash[3]   = 0x10325476;
-    context->Intermediate_Hash[4]   = 0xC3D2E1F0;
-    context->Computed   = 0;
-    context->Corrupted  = 0;
-    return shaSuccess;
-}
-/*
- *  SHA1Result
- *
- *  Description:
- *      This function will return the 160-bit message digest into the
- *      Message_Digest array  provided by the caller.
- *      NOTE: The first octet of hash is stored in the 0th element,
- *            the last octet of hash in the 19th element.
- *
- *  Parameters:
- *      context: [in/out]
- *          The context to use to calculate the SHA-1 hash.
- *      Message_Digest: [out]
- *          Where the digest is returned.
- *
- *  Returns:
- *      sha Error Code.
- *
- */
-int SHA1Result( SHA1Context *context,
-                uint8_t Message_Digest[SHA1HashSize])
-{
-    int i;
-    if (!context || !Message_Digest)
-    {
-        return shaNull;
-    }
-    if (context->Corrupted)
-    {
-        return context->Corrupted;
-    }
-    if (!context->Computed)
-    {
-        SHA1PadMessage(context);
-        for(i=0; i<64; ++i)
-        {
-            /* message may be sensitive, clear it out */
-            context->Message_Block[i] = 0;
-        }
-        context->Length_Low = 0;
-        context->Length_High = 0;
-        context->Computed = 1;
-    }
-    for(i = 0; i < SHA1HashSize; ++i)
-    {
-        Message_Digest[i] = (uint8_t)(context->Intermediate_Hash[i>>2]
-                            >> 8 * ( 3 - ( i & 0x03 ) ));
-    }
-    return shaSuccess;
-}
-/*
- *  SHA1Input
- *
- *  Description:
- *      This function accepts an array of octets as the next portion
- *      of the message.
- *
- *  Parameters:
- *      context: [in/out]
- *          The SHA context to update
- *      message_array: [in]
- *          An array of characters representing the next portion of
- *          the message.
- *      length: [in]
- *          The length of the message in message_array
- *
- *  Returns:
- *      sha Error Code.
- *
- */
-int SHA1Input(    SHA1Context    *context,
-                  const uint8_t  *message_array,
-                  size_t       length)
-{
-    if (!length)
-    {
-        return shaSuccess;
-    }
-    if (!context || !message_array)
-    {
-        return shaNull;
-    }
-    if (context->Computed)
-    {
-        context->Corrupted = shaStateError;
-        return shaStateError;
-    }
-    if (context->Corrupted)
-    {
-         return context->Corrupted;
-    }
-    while(length-- && !context->Corrupted)
-    {
-    context->Message_Block[context->Message_Block_Index++] =
-                    (*message_array & 0xFF);
-    context->Length_Low += 8;
-    if (context->Length_Low == 0)
-    {
-        context->Length_High++;
-        if (context->Length_High == 0)
-        {
-            /* Message is too long */
-            context->Corrupted = 1;
-        }
-    }
-    if (context->Message_Block_Index == 64)
-    {
-        SHA1ProcessMessageBlock(context);
-    }
-    message_array++;
-    }
-    return shaSuccess;
-}
-/*
- *  SHA1ProcessMessageBlock
- *
- *  Description:
- *      This function will process the next 512 bits of the message
- *      stored in the Message_Block array.
- *
- *  Parameters:
- *      None.
- *
- *  Returns:
- *      Nothing.
- *
- *  Comments:
- *      Many of the variable names in this code, especially the
- *      single character names, were used because those were the
- *      names used in the publication.
- *
- *
- */
-void SHA1ProcessMessageBlock(SHA1Context *context)
-{
-    const uint32_t K[] =    {
-                            0x5A827999,
-                            0x6ED9EBA1,
-                            0x8F1BBCDC,
-                            0xCA62C1D6
-                            };
-    int           t;
-    uint32_t      temp;
-    uint32_t      W[80];
-    uint32_t      A, B, C, D, E;
-    /*
-     *  Initialize the first 16 words in the array W
-     */
-    for(t = 0; t < 16; t++)
-    {
-        W[t] = context->Message_Block[t * 4] << 24;
-        W[t] |= context->Message_Block[t * 4 + 1] << 16;
-        W[t] |= context->Message_Block[t * 4 + 2] << 8;
-        W[t] |= context->Message_Block[t * 4 + 3];
-    }
-    for(t = 16; t < 80; t++)
-    {
-       W[t] = SHA1CircularShift(1,W[t-3] ^ W[t-8] ^ W[t-14] ^ W[t-16]);
-    }
-    A = context->Intermediate_Hash[0];
-    B = context->Intermediate_Hash[1];
-    C = context->Intermediate_Hash[2];
-    D = context->Intermediate_Hash[3];
-    E = context->Intermediate_Hash[4];
-    for(t = 0; t < 20; t++)
-    {
-        temp =  SHA1CircularShift(5,A) +
-                ((B & C) | ((~B) & D)) + E + W[t] + K[0];
-        E = D;
-        D = C;
-        C = SHA1CircularShift(30,B);
-        B = A;
-        A = temp;
-    }
-    for(t = 20; t < 40; t++)
-    {
-        temp = SHA1CircularShift(5,A) + (B ^ C ^ D) + E + W[t] + K[1];
-        E = D;
-        D = C;
-        C = SHA1CircularShift(30,B);
-        B = A;
-        A = temp;
-    }
-    for(t = 40; t < 60; t++)
-    {
-        temp = SHA1CircularShift(5,A) +
-               ((B & C) | (B & D) | (C & D)) + E + W[t] + K[2];
-        E = D;
-        D = C;
-        C = SHA1CircularShift(30,B);
-        B = A;
-        A = temp;
-    }
-    for(t = 60; t < 80; t++)
-    {
-        temp = SHA1CircularShift(5,A) + (B ^ C ^ D) + E + W[t] + K[3];
-        E = D;
-        D = C;
-        C = SHA1CircularShift(30,B);
-        B = A;
-        A = temp;
-    }
-    context->Intermediate_Hash[0] += A;
-    context->Intermediate_Hash[1] += B;
-    context->Intermediate_Hash[2] += C;
-    context->Intermediate_Hash[3] += D;
-    context->Intermediate_Hash[4] += E;
-    context->Message_Block_Index = 0;
-}
-/*
- *  SHA1PadMessage
- *
- *  Description:
- *      According to the standard, the message must be padded to an even
- *      512 bits.  The first padding bit must be a '1'.  The last 64
- *      bits represent the length of the original message.  All bits in
- *      between should be 0.  This function will pad the message
- *      according to those rules by filling the Message_Block array
- *      accordingly.  It will also call the ProcessMessageBlock function
- *      provided appropriately.  When it returns, it can be assumed that
- *      the message digest has been computed.
- *
- *  Parameters:
- *      context: [in/out]
- *          The context to pad
- *      ProcessMessageBlock: [in]
- *          The appropriate SHA*ProcessMessageBlock function
- *  Returns:
- *      Nothing.
- *
- */
-void SHA1PadMessage(SHA1Context *context)
-{
-    /*
-     *  Check to see if the current message block is too small to hold
-     *  the initial padding bits and length.  If so, we will pad the
-     *  block, process it, and then continue padding into a second
-     *  block.
-     */
-    if (context->Message_Block_Index > 55)
-    {
-        context->Message_Block[context->Message_Block_Index++] = 0x80;
-        while(context->Message_Block_Index < 64)
-        {
-            context->Message_Block[context->Message_Block_Index++] = 0;
-        }
-        SHA1ProcessMessageBlock(context);
-        while(context->Message_Block_Index < 56)
-        {
-            context->Message_Block[context->Message_Block_Index++] = 0;
-        }
-    }
-    else
-    {
-        context->Message_Block[context->Message_Block_Index++] = 0x80;
-        while(context->Message_Block_Index < 56)
-        {
-            context->Message_Block[context->Message_Block_Index++] = 0;
-        }
-    }
-    /*
-     *  Store the message length as the last 8 octets
-     */
-    context->Message_Block[56] = (uint8_t)(context->Length_High >> 24);
-    context->Message_Block[57] = (uint8_t)(context->Length_High >> 16);
-    context->Message_Block[58] = (uint8_t)(context->Length_High >> 8);
-    context->Message_Block[59] = (uint8_t)(context->Length_High);
-    context->Message_Block[60] = (uint8_t)(context->Length_Low >> 24);
-    context->Message_Block[61] = (uint8_t)(context->Length_Low >> 16);
-    context->Message_Block[62] = (uint8_t)(context->Length_Low >> 8);
-    context->Message_Block[63] = (uint8_t)(context->Length_Low);
-    SHA1ProcessMessageBlock(context);
-}
-// $Log: sha1.c,v $
-// Revision 1.5  2003/05/13 09:14:08  panther
-// Remove carriage returns
-//
-// Revision 1.4  2003/03/25 08:45:57  panther
-// Added CVS logging tag
-//
-/*
- * FIPS 180-2 SHA-224/256/384/512 implementation
- * Last update: 02/02/2007
- * Issue date:  04/30/2005
- *
- * Copyright (C) 2005, 2007 Olivier Gay <olivier.gay@a3.epfl.ch>
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the project nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE PROJECT OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
- */
-#if 0
-#define UNROLL_LOOPS
-#endif
-#define SHA2_SOURCE
-#define SHFR(x, n)    (x >> n)
-#define ROTR(x, n)   ((x >> n) | (x << ((sizeof(x) << 3) - n)))
-#define ROTL(x, n)   ((x << n) | (x >> ((sizeof(x) << 3) - n)))
-#define CH(x, y, z)  ((x & y) ^ (~x & z))
-#define MAJ(x, y, z) ((x & y) ^ (x & z) ^ (y & z))
-#define SHA256_F1(x) (ROTR(x,  2) ^ ROTR(x, 13) ^ ROTR(x, 22))
-#define SHA256_F2(x) (ROTR(x,  6) ^ ROTR(x, 11) ^ ROTR(x, 25))
-#define SHA256_F3(x) (ROTR(x,  7) ^ ROTR(x, 18) ^ SHFR(x,  3))
-#define SHA256_F4(x) (ROTR(x, 17) ^ ROTR(x, 19) ^ SHFR(x, 10))
-#define SHA512_F1(x) (ROTR(x, 28) ^ ROTR(x, 34) ^ ROTR(x, 39))
-#define SHA512_F2(x) (ROTR(x, 14) ^ ROTR(x, 18) ^ ROTR(x, 41))
-#define SHA512_F3(x) (ROTR(x,  1) ^ ROTR(x,  8) ^ SHFR(x,  7))
-#define SHA512_F4(x) (ROTR(x, 19) ^ ROTR(x, 61) ^ SHFR(x,  6))
-#define UNPACK32(x, str)                      {                                                 *((str) + 3) = (uint8) ((x)      );           *((str) + 2) = (uint8) ((x) >>  8);           *((str) + 1) = (uint8) ((x) >> 16);           *((str) + 0) = (uint8) ((x) >> 24);       }
-#define PACK32(str, x)                        {                                                 *(x) =   ((uint32) *((str) + 3)      )               | ((uint32) *((str) + 2) <<  8)               | ((uint32) *((str) + 1) << 16)               | ((uint32) *((str) + 0) << 24);   }
-#define UNPACK64(x, str)                      {                                                 *((str) + 7) = (uint8) ((x)      );           *((str) + 6) = (uint8) ((x) >>  8);           *((str) + 5) = (uint8) ((x) >> 16);           *((str) + 4) = (uint8) ((x) >> 24);           *((str) + 3) = (uint8) ((x) >> 32);           *((str) + 2) = (uint8) ((x) >> 40);           *((str) + 1) = (uint8) ((x) >> 48);           *((str) + 0) = (uint8) ((x) >> 56);       }
-#define PACK64(str, x)                        {                                                 *(x) =   ((uint64) *((str) + 7)      )               | ((uint64) *((str) + 6) <<  8)               | ((uint64) *((str) + 5) << 16)               | ((uint64) *((str) + 4) << 24)               | ((uint64) *((str) + 3) << 32)               | ((uint64) *((str) + 2) << 40)               | ((uint64) *((str) + 1) << 48)               | ((uint64) *((str) + 0) << 56);   }
-/* Macros used for loops unrolling */
-#define SHA256_SCR(i)                         {                                                 w[i] =  SHA256_F4(w[i -  2]) + w[i -  7]            + SHA256_F3(w[i - 15]) + w[i - 16]; }
-#define SHA512_SCR(i)                         {                                                 w[i] =  SHA512_F4(w[i -  2]) + w[i -  7]            + SHA512_F3(w[i - 15]) + w[i - 16]; }
-#define SHA256_EXP(a, b, c, d, e, f, g, h, j)               {                                                               t1 = wv[h] + SHA256_F2(wv[e]) + CH(wv[e], wv[f], wv[g])          + sha256_k[j] + w[j];                                  t2 = SHA256_F1(wv[a]) + MAJ(wv[a], wv[b], wv[c]);           wv[d] += t1;                                                wv[h] = t1 + t2;                                        }
-#define SHA512_EXP(a, b, c, d, e, f, g ,h, j)               {                                                               t1 = wv[h] + SHA512_F2(wv[e]) + CH(wv[e], wv[f], wv[g])          + sha512_k[j] + w[j];                                  t2 = SHA512_F1(wv[a]) + MAJ(wv[a], wv[b], wv[c]);           wv[d] += t1;                                                wv[h] = t1 + t2;                                        }
-static uint32 sha224_h0[8] =
-            {0xc1059ed8, 0x367cd507, 0x3070dd17, 0xf70e5939,
-             0xffc00b31, 0x68581511, 0x64f98fa7, 0xbefa4fa4};
-static uint32 sha256_h0[8] =
-            {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-             0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
-static uint64 sha384_h0[8] =
-            {0xcbbb9d5dc1059ed8ULL, 0x629a292a367cd507ULL,
-             0x9159015a3070dd17ULL, 0x152fecd8f70e5939ULL,
-             0x67332667ffc00b31ULL, 0x8eb44a8768581511ULL,
-             0xdb0c2e0d64f98fa7ULL, 0x47b5481dbefa4fa4ULL};
-static uint64 sha512_h0[8] =
-            {0x6a09e667f3bcc908ULL, 0xbb67ae8584caa73bULL,
-             0x3c6ef372fe94f82bULL, 0xa54ff53a5f1d36f1ULL,
-             0x510e527fade682d1ULL, 0x9b05688c2b3e6c1fULL,
-             0x1f83d9abfb41bd6bULL, 0x5be0cd19137e2179ULL};
-static uint32 sha256_k[64] =
-            {0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
-             0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-             0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
-             0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-             0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
-             0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-             0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-             0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-             0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
-             0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-             0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
-             0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-             0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
-             0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-             0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
-             0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
-static uint64 sha512_k[80] =
-            {0x428a2f98d728ae22ULL, 0x7137449123ef65cdULL,
-             0xb5c0fbcfec4d3b2fULL, 0xe9b5dba58189dbbcULL,
-             0x3956c25bf348b538ULL, 0x59f111f1b605d019ULL,
-             0x923f82a4af194f9bULL, 0xab1c5ed5da6d8118ULL,
-             0xd807aa98a3030242ULL, 0x12835b0145706fbeULL,
-             0x243185be4ee4b28cULL, 0x550c7dc3d5ffb4e2ULL,
-             0x72be5d74f27b896fULL, 0x80deb1fe3b1696b1ULL,
-             0x9bdc06a725c71235ULL, 0xc19bf174cf692694ULL,
-             0xe49b69c19ef14ad2ULL, 0xefbe4786384f25e3ULL,
-             0x0fc19dc68b8cd5b5ULL, 0x240ca1cc77ac9c65ULL,
-             0x2de92c6f592b0275ULL, 0x4a7484aa6ea6e483ULL,
-             0x5cb0a9dcbd41fbd4ULL, 0x76f988da831153b5ULL,
-             0x983e5152ee66dfabULL, 0xa831c66d2db43210ULL,
-             0xb00327c898fb213fULL, 0xbf597fc7beef0ee4ULL,
-             0xc6e00bf33da88fc2ULL, 0xd5a79147930aa725ULL,
-             0x06ca6351e003826fULL, 0x142929670a0e6e70ULL,
-             0x27b70a8546d22ffcULL, 0x2e1b21385c26c926ULL,
-             0x4d2c6dfc5ac42aedULL, 0x53380d139d95b3dfULL,
-             0x650a73548baf63deULL, 0x766a0abb3c77b2a8ULL,
-             0x81c2c92e47edaee6ULL, 0x92722c851482353bULL,
-             0xa2bfe8a14cf10364ULL, 0xa81a664bbc423001ULL,
-             0xc24b8b70d0f89791ULL, 0xc76c51a30654be30ULL,
-             0xd192e819d6ef5218ULL, 0xd69906245565a910ULL,
-             0xf40e35855771202aULL, 0x106aa07032bbd1b8ULL,
-             0x19a4c116b8d2d0c8ULL, 0x1e376c085141ab53ULL,
-             0x2748774cdf8eeb99ULL, 0x34b0bcb5e19b48a8ULL,
-             0x391c0cb3c5c95a63ULL, 0x4ed8aa4ae3418acbULL,
-             0x5b9cca4f7763e373ULL, 0x682e6ff3d6b2b8a3ULL,
-             0x748f82ee5defb2fcULL, 0x78a5636f43172f60ULL,
-             0x84c87814a1f0ab72ULL, 0x8cc702081a6439ecULL,
-             0x90befffa23631e28ULL, 0xa4506cebde82bde9ULL,
-             0xbef9a3f7b2c67915ULL, 0xc67178f2e372532bULL,
-             0xca273eceea26619cULL, 0xd186b8c721c0c207ULL,
-             0xeada7dd6cde0eb1eULL, 0xf57d4f7fee6ed178ULL,
-             0x06f067aa72176fbaULL, 0x0a637dc5a2c898a6ULL,
-             0x113f9804bef90daeULL, 0x1b710b35131c471bULL,
-             0x28db77f523047d84ULL, 0x32caab7b40c72493ULL,
-             0x3c9ebe0a15c9bebcULL, 0x431d67c49c100d4cULL,
-             0x4cc5d4becb3e42b6ULL, 0x597f299cfc657e2aULL,
-             0x5fcb6fab3ad6faecULL, 0x6c44198c4a475817ULL};
-/* SHA-256 functions */
-void sha256_transf(sha256_ctx *ctx, const unsigned char *message,
-                   unsigned int block_nb)
-{
-    uint32 w[64];
-    uint32 wv[8];
-    uint32 t1, t2;
-    const unsigned char *sub_block;
-    int i;
-#ifndef UNROLL_LOOPS
-    int j;
-#endif
-    for (i = 0; i < (int) block_nb; i++) {
-        sub_block = message + (i << 6);
-#ifndef UNROLL_LOOPS
-        for (j = 0; j < 16; j++) {
-            PACK32(&sub_block[j << 2], &w[j]);
-        }
-        for (j = 16; j < 64; j++) {
-            SHA256_SCR(j);
-        }
-        for (j = 0; j < 8; j++) {
-            wv[j] = ctx->h[j];
-        }
-        for (j = 0; j < 64; j++) {
-            t1 = wv[7] + SHA256_F2(wv[4]) + CH(wv[4], wv[5], wv[6])
-                + sha256_k[j] + w[j];
-            t2 = SHA256_F1(wv[0]) + MAJ(wv[0], wv[1], wv[2]);
-            wv[7] = wv[6];
-            wv[6] = wv[5];
-            wv[5] = wv[4];
-            wv[4] = wv[3] + t1;
-            wv[3] = wv[2];
-            wv[2] = wv[1];
-            wv[1] = wv[0];
-            wv[0] = t1 + t2;
-        }
-        for (j = 0; j < 8; j++) {
-            ctx->h[j] += wv[j];
-        }
-#else
-        PACK32(&sub_block[ 0], &w[ 0]); PACK32(&sub_block[ 4], &w[ 1]);
-        PACK32(&sub_block[ 8], &w[ 2]); PACK32(&sub_block[12], &w[ 3]);
-        PACK32(&sub_block[16], &w[ 4]); PACK32(&sub_block[20], &w[ 5]);
-        PACK32(&sub_block[24], &w[ 6]); PACK32(&sub_block[28], &w[ 7]);
-        PACK32(&sub_block[32], &w[ 8]); PACK32(&sub_block[36], &w[ 9]);
-        PACK32(&sub_block[40], &w[10]); PACK32(&sub_block[44], &w[11]);
-        PACK32(&sub_block[48], &w[12]); PACK32(&sub_block[52], &w[13]);
-        PACK32(&sub_block[56], &w[14]); PACK32(&sub_block[60], &w[15]);
-        SHA256_SCR(16); SHA256_SCR(17); SHA256_SCR(18); SHA256_SCR(19);
-        SHA256_SCR(20); SHA256_SCR(21); SHA256_SCR(22); SHA256_SCR(23);
-        SHA256_SCR(24); SHA256_SCR(25); SHA256_SCR(26); SHA256_SCR(27);
-        SHA256_SCR(28); SHA256_SCR(29); SHA256_SCR(30); SHA256_SCR(31);
-        SHA256_SCR(32); SHA256_SCR(33); SHA256_SCR(34); SHA256_SCR(35);
-        SHA256_SCR(36); SHA256_SCR(37); SHA256_SCR(38); SHA256_SCR(39);
-        SHA256_SCR(40); SHA256_SCR(41); SHA256_SCR(42); SHA256_SCR(43);
-        SHA256_SCR(44); SHA256_SCR(45); SHA256_SCR(46); SHA256_SCR(47);
-        SHA256_SCR(48); SHA256_SCR(49); SHA256_SCR(50); SHA256_SCR(51);
-        SHA256_SCR(52); SHA256_SCR(53); SHA256_SCR(54); SHA256_SCR(55);
-        SHA256_SCR(56); SHA256_SCR(57); SHA256_SCR(58); SHA256_SCR(59);
-        SHA256_SCR(60); SHA256_SCR(61); SHA256_SCR(62); SHA256_SCR(63);
-        wv[0] = ctx->h[0]; wv[1] = ctx->h[1];
-        wv[2] = ctx->h[2]; wv[3] = ctx->h[3];
-        wv[4] = ctx->h[4]; wv[5] = ctx->h[5];
-        wv[6] = ctx->h[6]; wv[7] = ctx->h[7];
-        SHA256_EXP(0,1,2,3,4,5,6,7, 0); SHA256_EXP(7,0,1,2,3,4,5,6, 1);
-        SHA256_EXP(6,7,0,1,2,3,4,5, 2); SHA256_EXP(5,6,7,0,1,2,3,4, 3);
-        SHA256_EXP(4,5,6,7,0,1,2,3, 4); SHA256_EXP(3,4,5,6,7,0,1,2, 5);
-        SHA256_EXP(2,3,4,5,6,7,0,1, 6); SHA256_EXP(1,2,3,4,5,6,7,0, 7);
-        SHA256_EXP(0,1,2,3,4,5,6,7, 8); SHA256_EXP(7,0,1,2,3,4,5,6, 9);
-        SHA256_EXP(6,7,0,1,2,3,4,5,10); SHA256_EXP(5,6,7,0,1,2,3,4,11);
-        SHA256_EXP(4,5,6,7,0,1,2,3,12); SHA256_EXP(3,4,5,6,7,0,1,2,13);
-        SHA256_EXP(2,3,4,5,6,7,0,1,14); SHA256_EXP(1,2,3,4,5,6,7,0,15);
-        SHA256_EXP(0,1,2,3,4,5,6,7,16); SHA256_EXP(7,0,1,2,3,4,5,6,17);
-        SHA256_EXP(6,7,0,1,2,3,4,5,18); SHA256_EXP(5,6,7,0,1,2,3,4,19);
-        SHA256_EXP(4,5,6,7,0,1,2,3,20); SHA256_EXP(3,4,5,6,7,0,1,2,21);
-        SHA256_EXP(2,3,4,5,6,7,0,1,22); SHA256_EXP(1,2,3,4,5,6,7,0,23);
-        SHA256_EXP(0,1,2,3,4,5,6,7,24); SHA256_EXP(7,0,1,2,3,4,5,6,25);
-        SHA256_EXP(6,7,0,1,2,3,4,5,26); SHA256_EXP(5,6,7,0,1,2,3,4,27);
-        SHA256_EXP(4,5,6,7,0,1,2,3,28); SHA256_EXP(3,4,5,6,7,0,1,2,29);
-        SHA256_EXP(2,3,4,5,6,7,0,1,30); SHA256_EXP(1,2,3,4,5,6,7,0,31);
-        SHA256_EXP(0,1,2,3,4,5,6,7,32); SHA256_EXP(7,0,1,2,3,4,5,6,33);
-        SHA256_EXP(6,7,0,1,2,3,4,5,34); SHA256_EXP(5,6,7,0,1,2,3,4,35);
-        SHA256_EXP(4,5,6,7,0,1,2,3,36); SHA256_EXP(3,4,5,6,7,0,1,2,37);
-        SHA256_EXP(2,3,4,5,6,7,0,1,38); SHA256_EXP(1,2,3,4,5,6,7,0,39);
-        SHA256_EXP(0,1,2,3,4,5,6,7,40); SHA256_EXP(7,0,1,2,3,4,5,6,41);
-        SHA256_EXP(6,7,0,1,2,3,4,5,42); SHA256_EXP(5,6,7,0,1,2,3,4,43);
-        SHA256_EXP(4,5,6,7,0,1,2,3,44); SHA256_EXP(3,4,5,6,7,0,1,2,45);
-        SHA256_EXP(2,3,4,5,6,7,0,1,46); SHA256_EXP(1,2,3,4,5,6,7,0,47);
-        SHA256_EXP(0,1,2,3,4,5,6,7,48); SHA256_EXP(7,0,1,2,3,4,5,6,49);
-        SHA256_EXP(6,7,0,1,2,3,4,5,50); SHA256_EXP(5,6,7,0,1,2,3,4,51);
-        SHA256_EXP(4,5,6,7,0,1,2,3,52); SHA256_EXP(3,4,5,6,7,0,1,2,53);
-        SHA256_EXP(2,3,4,5,6,7,0,1,54); SHA256_EXP(1,2,3,4,5,6,7,0,55);
-        SHA256_EXP(0,1,2,3,4,5,6,7,56); SHA256_EXP(7,0,1,2,3,4,5,6,57);
-        SHA256_EXP(6,7,0,1,2,3,4,5,58); SHA256_EXP(5,6,7,0,1,2,3,4,59);
-        SHA256_EXP(4,5,6,7,0,1,2,3,60); SHA256_EXP(3,4,5,6,7,0,1,2,61);
-        SHA256_EXP(2,3,4,5,6,7,0,1,62); SHA256_EXP(1,2,3,4,5,6,7,0,63);
-        ctx->h[0] += wv[0]; ctx->h[1] += wv[1];
-        ctx->h[2] += wv[2]; ctx->h[3] += wv[3];
-        ctx->h[4] += wv[4]; ctx->h[5] += wv[5];
-        ctx->h[6] += wv[6]; ctx->h[7] += wv[7];
-#endif
-    }
-}
-void sha256(const unsigned char *message, unsigned int len, unsigned char *digest)
-{
-    sha256_ctx ctx;
-    sha256_init(&ctx);
-    sha256_update(&ctx, message, len);
-    sha256_final(&ctx, digest);
-}
-void sha256_init(sha256_ctx *ctx)
-{
-#ifndef UNROLL_LOOPS
-    int i;
-    for (i = 0; i < 8; i++) {
-        ctx->h[i] = sha256_h0[i];
-    }
-#else
-    ctx->h[0] = sha256_h0[0]; ctx->h[1] = sha256_h0[1];
-    ctx->h[2] = sha256_h0[2]; ctx->h[3] = sha256_h0[3];
-    ctx->h[4] = sha256_h0[4]; ctx->h[5] = sha256_h0[5];
-    ctx->h[6] = sha256_h0[6]; ctx->h[7] = sha256_h0[7];
-#endif
-    ctx->len = 0;
-    ctx->tot_len = 0;
-}
-void sha256_update(sha256_ctx *ctx, const unsigned char *message,
-                   unsigned int len)
-{
-    unsigned int block_nb;
-    unsigned int new_len, rem_len, tmp_len;
-    const unsigned char *shifted_message;
-    tmp_len = SHA256_BLOCK_SIZE - ctx->len;
-    rem_len = len < tmp_len ? len : tmp_len;
-    memcpy(&ctx->block[ctx->len], message, rem_len);
-    if (ctx->len + len < SHA256_BLOCK_SIZE) {
-        ctx->len += len;
-        return;
-    }
-    new_len = len - rem_len;
-    block_nb = new_len / SHA256_BLOCK_SIZE;
-    shifted_message = message + rem_len;
-    sha256_transf(ctx, ctx->block, 1);
-    sha256_transf(ctx, shifted_message, block_nb);
-    rem_len = new_len % SHA256_BLOCK_SIZE;
-    memcpy(ctx->block, &shifted_message[block_nb << 6],
-           rem_len);
-    ctx->len = rem_len;
-    ctx->tot_len += (block_nb + 1) << 6;
-}
-void sha256_final(sha256_ctx *ctx, unsigned char *digest)
-{
-    unsigned int block_nb;
-    unsigned int pm_len;
-    unsigned int len_b;
-#ifndef UNROLL_LOOPS
-    int i;
-#endif
-    block_nb = (1 + ((SHA256_BLOCK_SIZE - 9)
-                     < (ctx->len % SHA256_BLOCK_SIZE)));
-    len_b = (ctx->tot_len + ctx->len) << 3;
-    pm_len = block_nb << 6;
-    memset(ctx->block + ctx->len, 0, pm_len - ctx->len);
-    ctx->block[ctx->len] = 0x80;
-    UNPACK32(len_b, ctx->block + pm_len - 4);
-    sha256_transf(ctx, ctx->block, block_nb);
-#ifndef UNROLL_LOOPS
-    for (i = 0 ; i < 8; i++) {
-        UNPACK32(ctx->h[i], &digest[i << 2]);
-    }
-#else
-   UNPACK32(ctx->h[0], &digest[ 0]);
-   UNPACK32(ctx->h[1], &digest[ 4]);
-   UNPACK32(ctx->h[2], &digest[ 8]);
-   UNPACK32(ctx->h[3], &digest[12]);
-   UNPACK32(ctx->h[4], &digest[16]);
-   UNPACK32(ctx->h[5], &digest[20]);
-   UNPACK32(ctx->h[6], &digest[24]);
-   UNPACK32(ctx->h[7], &digest[28]);
-#endif
-}
-/* SHA-512 functions */
-void sha512_transf(sha512_ctx *ctx, const unsigned char *message,
-                   unsigned int block_nb)
-{
-    uint64 w[80];
-    uint64 wv[8];
-    uint64 t1, t2;
-    const unsigned char *sub_block;
-    int i, j;
-    for (i = 0; i < (int) block_nb; i++) {
-        sub_block = message + (i << 7);
-#ifndef UNROLL_LOOPS
-        for (j = 0; j < 16; j++) {
-            PACK64(&sub_block[j << 3], &w[j]);
-        }
-        for (j = 16; j < 80; j++) {
-            SHA512_SCR(j);
-        }
-        for (j = 0; j < 8; j++) {
-            wv[j] = ctx->h[j];
-        }
-        for (j = 0; j < 80; j++) {
-            t1 = wv[7] + SHA512_F2(wv[4]) + CH(wv[4], wv[5], wv[6])
-                + sha512_k[j] + w[j];
-            t2 = SHA512_F1(wv[0]) + MAJ(wv[0], wv[1], wv[2]);
-            wv[7] = wv[6];
-            wv[6] = wv[5];
-            wv[5] = wv[4];
-            wv[4] = wv[3] + t1;
-            wv[3] = wv[2];
-            wv[2] = wv[1];
-            wv[1] = wv[0];
-            wv[0] = t1 + t2;
-        }
-        for (j = 0; j < 8; j++) {
-            ctx->h[j] += wv[j];
-        }
-#else
-        PACK64(&sub_block[  0], &w[ 0]); PACK64(&sub_block[  8], &w[ 1]);
-        PACK64(&sub_block[ 16], &w[ 2]); PACK64(&sub_block[ 24], &w[ 3]);
-        PACK64(&sub_block[ 32], &w[ 4]); PACK64(&sub_block[ 40], &w[ 5]);
-        PACK64(&sub_block[ 48], &w[ 6]); PACK64(&sub_block[ 56], &w[ 7]);
-        PACK64(&sub_block[ 64], &w[ 8]); PACK64(&sub_block[ 72], &w[ 9]);
-        PACK64(&sub_block[ 80], &w[10]); PACK64(&sub_block[ 88], &w[11]);
-        PACK64(&sub_block[ 96], &w[12]); PACK64(&sub_block[104], &w[13]);
-        PACK64(&sub_block[112], &w[14]); PACK64(&sub_block[120], &w[15]);
-        SHA512_SCR(16); SHA512_SCR(17); SHA512_SCR(18); SHA512_SCR(19);
-        SHA512_SCR(20); SHA512_SCR(21); SHA512_SCR(22); SHA512_SCR(23);
-        SHA512_SCR(24); SHA512_SCR(25); SHA512_SCR(26); SHA512_SCR(27);
-        SHA512_SCR(28); SHA512_SCR(29); SHA512_SCR(30); SHA512_SCR(31);
-        SHA512_SCR(32); SHA512_SCR(33); SHA512_SCR(34); SHA512_SCR(35);
-        SHA512_SCR(36); SHA512_SCR(37); SHA512_SCR(38); SHA512_SCR(39);
-        SHA512_SCR(40); SHA512_SCR(41); SHA512_SCR(42); SHA512_SCR(43);
-        SHA512_SCR(44); SHA512_SCR(45); SHA512_SCR(46); SHA512_SCR(47);
-        SHA512_SCR(48); SHA512_SCR(49); SHA512_SCR(50); SHA512_SCR(51);
-        SHA512_SCR(52); SHA512_SCR(53); SHA512_SCR(54); SHA512_SCR(55);
-        SHA512_SCR(56); SHA512_SCR(57); SHA512_SCR(58); SHA512_SCR(59);
-        SHA512_SCR(60); SHA512_SCR(61); SHA512_SCR(62); SHA512_SCR(63);
-        SHA512_SCR(64); SHA512_SCR(65); SHA512_SCR(66); SHA512_SCR(67);
-        SHA512_SCR(68); SHA512_SCR(69); SHA512_SCR(70); SHA512_SCR(71);
-        SHA512_SCR(72); SHA512_SCR(73); SHA512_SCR(74); SHA512_SCR(75);
-        SHA512_SCR(76); SHA512_SCR(77); SHA512_SCR(78); SHA512_SCR(79);
-        wv[0] = ctx->h[0]; wv[1] = ctx->h[1];
-        wv[2] = ctx->h[2]; wv[3] = ctx->h[3];
-        wv[4] = ctx->h[4]; wv[5] = ctx->h[5];
-        wv[6] = ctx->h[6]; wv[7] = ctx->h[7];
-        j = 0;
-        do {
-            SHA512_EXP(0,1,2,3,4,5,6,7,j); j++;
-            SHA512_EXP(7,0,1,2,3,4,5,6,j); j++;
-            SHA512_EXP(6,7,0,1,2,3,4,5,j); j++;
-            SHA512_EXP(5,6,7,0,1,2,3,4,j); j++;
-            SHA512_EXP(4,5,6,7,0,1,2,3,j); j++;
-            SHA512_EXP(3,4,5,6,7,0,1,2,j); j++;
-            SHA512_EXP(2,3,4,5,6,7,0,1,j); j++;
-            SHA512_EXP(1,2,3,4,5,6,7,0,j); j++;
-        } while (j < 80);
-        ctx->h[0] += wv[0]; ctx->h[1] += wv[1];
-        ctx->h[2] += wv[2]; ctx->h[3] += wv[3];
-        ctx->h[4] += wv[4]; ctx->h[5] += wv[5];
-        ctx->h[6] += wv[6]; ctx->h[7] += wv[7];
-#endif
-    }
-}
-void sha512(const unsigned char *message, unsigned int len,
-            unsigned char *digest)
-{
-    sha512_ctx ctx;
-    sha512_init(&ctx);
-    sha512_update(&ctx, message, len);
-    sha512_final(&ctx, digest);
-}
-void sha512_init(sha512_ctx *ctx)
-{
-#ifndef UNROLL_LOOPS
-    int i;
-    for (i = 0; i < 8; i++) {
-        ctx->h[i] = sha512_h0[i];
-    }
-#else
-    ctx->h[0] = sha512_h0[0]; ctx->h[1] = sha512_h0[1];
-    ctx->h[2] = sha512_h0[2]; ctx->h[3] = sha512_h0[3];
-    ctx->h[4] = sha512_h0[4]; ctx->h[5] = sha512_h0[5];
-    ctx->h[6] = sha512_h0[6]; ctx->h[7] = sha512_h0[7];
-#endif
-    ctx->len = 0;
-    ctx->tot_len = 0;
-}
-void sha512_update(sha512_ctx *ctx, const unsigned char *message,
-                   unsigned int len)
-{
-    unsigned int block_nb;
-    unsigned int new_len, rem_len, tmp_len;
-    const unsigned char *shifted_message;
-    tmp_len = SHA512_BLOCK_SIZE - ctx->len;
-    rem_len = len < tmp_len ? len : tmp_len;
-    memcpy(&ctx->block[ctx->len], message, rem_len);
-    if (ctx->len + len < SHA512_BLOCK_SIZE) {
-        ctx->len += len;
-        return;
-    }
-    new_len = len - rem_len;
-    block_nb = new_len / SHA512_BLOCK_SIZE;
-    shifted_message = message + rem_len;
-    sha512_transf(ctx, ctx->block, 1);
-    sha512_transf(ctx, shifted_message, block_nb);
-    rem_len = new_len % SHA512_BLOCK_SIZE;
-    memcpy(ctx->block, &shifted_message[block_nb << 7],
-           rem_len);
-    ctx->len = rem_len;
-    ctx->tot_len += (block_nb + 1) << 7;
-}
-void sha512_final(sha512_ctx *ctx, unsigned char *digest)
-{
-    unsigned int block_nb;
-    unsigned int pm_len;
-    unsigned int len_b;
-#ifndef UNROLL_LOOPS
-    int i;
-#endif
-    block_nb = 1 + ((SHA512_BLOCK_SIZE - 17)
-                     < (ctx->len % SHA512_BLOCK_SIZE));
-    len_b = (ctx->tot_len + ctx->len) << 3;
-    pm_len = block_nb << 7;
-    memset(ctx->block + ctx->len, 0, pm_len - ctx->len);
-    ctx->block[ctx->len] = 0x80;
-    UNPACK32(len_b, ctx->block + pm_len - 4);
-    sha512_transf(ctx, ctx->block, block_nb);
-#ifndef UNROLL_LOOPS
-    for (i = 0 ; i < 8; i++) {
-        UNPACK64(ctx->h[i], &digest[i << 3]);
-    }
-#else
-    UNPACK64(ctx->h[0], &digest[ 0]);
-    UNPACK64(ctx->h[1], &digest[ 8]);
-    UNPACK64(ctx->h[2], &digest[16]);
-    UNPACK64(ctx->h[3], &digest[24]);
-    UNPACK64(ctx->h[4], &digest[32]);
-    UNPACK64(ctx->h[5], &digest[40]);
-    UNPACK64(ctx->h[6], &digest[48]);
-    UNPACK64(ctx->h[7], &digest[56]);
-#endif
-}
-/* SHA-384 functions */
-void sha384(const unsigned char *message, unsigned int len,
-            unsigned char *digest)
-{
-    sha384_ctx ctx;
-    sha384_init(&ctx);
-    sha384_update(&ctx, message, len);
-    sha384_final(&ctx, digest);
-}
-void sha384_init(sha384_ctx *ctx)
-{
-#ifndef UNROLL_LOOPS
-    int i;
-    for (i = 0; i < 8; i++) {
-        ctx->h[i] = sha384_h0[i];
-    }
-#else
-    ctx->h[0] = sha384_h0[0]; ctx->h[1] = sha384_h0[1];
-    ctx->h[2] = sha384_h0[2]; ctx->h[3] = sha384_h0[3];
-    ctx->h[4] = sha384_h0[4]; ctx->h[5] = sha384_h0[5];
-    ctx->h[6] = sha384_h0[6]; ctx->h[7] = sha384_h0[7];
-#endif
-    ctx->len = 0;
-    ctx->tot_len = 0;
-}
-void sha384_update(sha384_ctx *ctx, const unsigned char *message,
-                   unsigned int len)
-{
-    unsigned int block_nb;
-    unsigned int new_len, rem_len, tmp_len;
-    const unsigned char *shifted_message;
-    tmp_len = SHA384_BLOCK_SIZE - ctx->len;
-    rem_len = len < tmp_len ? len : tmp_len;
-    memcpy(&ctx->block[ctx->len], message, rem_len);
-    if (ctx->len + len < SHA384_BLOCK_SIZE) {
-        ctx->len += len;
-        return;
-    }
-    new_len = len - rem_len;
-    block_nb = new_len / SHA384_BLOCK_SIZE;
-    shifted_message = message + rem_len;
-    sha512_transf(ctx, ctx->block, 1);
-    sha512_transf(ctx, shifted_message, block_nb);
-    rem_len = new_len % SHA384_BLOCK_SIZE;
-    memcpy(ctx->block, &shifted_message[block_nb << 7],
-           rem_len);
-    ctx->len = rem_len;
-    ctx->tot_len += (block_nb + 1) << 7;
-}
-void sha384_final(sha384_ctx *ctx, unsigned char *digest)
-{
-    unsigned int block_nb;
-    unsigned int pm_len;
-    unsigned int len_b;
-#ifndef UNROLL_LOOPS
-    int i;
-#endif
-    block_nb = (1 + ((SHA384_BLOCK_SIZE - 17)
-                     < (ctx->len % SHA384_BLOCK_SIZE)));
-    len_b = (ctx->tot_len + ctx->len) << 3;
-    pm_len = block_nb << 7;
-    memset(ctx->block + ctx->len, 0, pm_len - ctx->len);
-    ctx->block[ctx->len] = 0x80;
-    UNPACK32(len_b, ctx->block + pm_len - 4);
-    sha512_transf(ctx, ctx->block, block_nb);
-#ifndef UNROLL_LOOPS
-    for (i = 0 ; i < 6; i++) {
-        UNPACK64(ctx->h[i], &digest[i << 3]);
-    }
-#else
-    UNPACK64(ctx->h[0], &digest[ 0]);
-    UNPACK64(ctx->h[1], &digest[ 8]);
-    UNPACK64(ctx->h[2], &digest[16]);
-    UNPACK64(ctx->h[3], &digest[24]);
-    UNPACK64(ctx->h[4], &digest[32]);
-    UNPACK64(ctx->h[5], &digest[40]);
-#endif
-}
-/* SHA-224 functions */
-void sha224(const unsigned char *message, unsigned int len,
-            unsigned char *digest)
-{
-    sha224_ctx ctx;
-    sha224_init(&ctx);
-    sha224_update(&ctx, message, len);
-    sha224_final(&ctx, digest);
-}
-void sha224_init(sha224_ctx *ctx)
-{
-#ifndef UNROLL_LOOPS
-    int i;
-    for (i = 0; i < 8; i++) {
-        ctx->h[i] = sha224_h0[i];
-    }
-#else
-    ctx->h[0] = sha224_h0[0]; ctx->h[1] = sha224_h0[1];
-    ctx->h[2] = sha224_h0[2]; ctx->h[3] = sha224_h0[3];
-    ctx->h[4] = sha224_h0[4]; ctx->h[5] = sha224_h0[5];
-    ctx->h[6] = sha224_h0[6]; ctx->h[7] = sha224_h0[7];
-#endif
-    ctx->len = 0;
-    ctx->tot_len = 0;
-}
-void sha224_update(sha224_ctx *ctx, const unsigned char *message,
-                   unsigned int len)
-{
-    unsigned int block_nb;
-    unsigned int new_len, rem_len, tmp_len;
-    const unsigned char *shifted_message;
-    tmp_len = SHA224_BLOCK_SIZE - ctx->len;
-    rem_len = len < tmp_len ? len : tmp_len;
-    memcpy(&ctx->block[ctx->len], message, rem_len);
-    if (ctx->len + len < SHA224_BLOCK_SIZE) {
-        ctx->len += len;
-        return;
-    }
-    new_len = len - rem_len;
-    block_nb = new_len / SHA224_BLOCK_SIZE;
-    shifted_message = message + rem_len;
-    sha256_transf(ctx, ctx->block, 1);
-    sha256_transf(ctx, shifted_message, block_nb);
-    rem_len = new_len % SHA224_BLOCK_SIZE;
-    memcpy(ctx->block, &shifted_message[block_nb << 6],
-           rem_len);
-    ctx->len = rem_len;
-    ctx->tot_len += (block_nb + 1) << 6;
-}
-void sha224_final(sha224_ctx *ctx, unsigned char *digest)
-{
-    unsigned int block_nb;
-    unsigned int pm_len;
-    unsigned int len_b;
-#ifndef UNROLL_LOOPS
-    int i;
-#endif
-    block_nb = (1 + ((SHA224_BLOCK_SIZE - 9)
-                     < (ctx->len % SHA224_BLOCK_SIZE)));
-    len_b = (ctx->tot_len + ctx->len) << 3;
-    pm_len = block_nb << 6;
-    memset(ctx->block + ctx->len, 0, pm_len - ctx->len);
-    ctx->block[ctx->len] = 0x80;
-    UNPACK32(len_b, ctx->block + pm_len - 4);
-    sha256_transf(ctx, ctx->block, block_nb);
-#ifndef UNROLL_LOOPS
-    for (i = 0 ; i < 7; i++) {
-        UNPACK32(ctx->h[i], &digest[i << 2]);
-    }
-#else
-   UNPACK32(ctx->h[0], &digest[ 0]);
-   UNPACK32(ctx->h[1], &digest[ 4]);
-   UNPACK32(ctx->h[2], &digest[ 8]);
-   UNPACK32(ctx->h[3], &digest[12]);
-   UNPACK32(ctx->h[4], &digest[16]);
-   UNPACK32(ctx->h[5], &digest[20]);
-   UNPACK32(ctx->h[6], &digest[24]);
-#endif
-}
-#ifdef TEST_VECTORS
-/* FIPS 180-2 Validation tests */
-void test(const char *vector, unsigned char *digest,
-          unsigned int digest_size)
-{
-    char output[2 * SHA512_DIGEST_SIZE + 1];
-    int i;
-    output[2 * digest_size] = '\0';
-    for (i = 0; i < (int) digest_size ; i++) {
-       sprintf(output + 2 * i, "%02x", digest[i]);
-    }
-    printf("H: %s\n", output);
-    if (strcmp(vector, output)) {
-        fprintf(stderr, "Test failed.\n");
-        exit(EXIT_FAILURE);
-    }
-}
-int main(void)
-{
-    static const char *vectors[4][3] =
-    {
-        {
-        "23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7",
-        "75388b16512776cc5dba5da1fd890150b0c6455cb4f58b1952522525",
-        "20794655980c91d8bbb4c1ea97618a4bf03f42581948b2ee4ee7ad67",
-        },
-        /* SHA-256 */
-        {
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-        "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1",
-        "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0",
-        },
-        /* SHA-384 */
-        {
-        "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed"
-        "8086072ba1e7cc2358baeca134c825a7",
-        "09330c33f71147e83d192fc782cd1b4753111b173b3b05d22fa08086e3b0f712"
-        "fcc7c71a557e2db966c3e9fa91746039",
-        "9d0e1809716474cb086e834e310a4a1ced149e9c00f248527972cec5704c2a5b"
-        "07b8b3dc38ecc4ebae97ddd87f3d8985",
-        },
-        /* SHA-512 */
-        {
-        "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a"
-        "2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
-        "8e959b75dae313da8cf4f72814fc143f8f7779c6eb9f7fa17299aeadb6889018"
-        "501d289e4900f7e4331b99dec4b5433ac7d329eeb6dd26545e96e55b874be909",
-        "e718483d0ce769644e2e42c7bc15b4638e1f98b13b2044285632a803afa973eb"
-        "de0ff244877ea60a4cb0432ce577c31beb009c5c2c49aa2e4eadb217ad8cc09b"
-        }
-    };
-    static const char message1[] = "abc";
-    static const char message2a[] = "abcdbcdecdefdefgefghfghighijhi"
-                                    "jkijkljklmklmnlmnomnopnopq";
-    static const char message2b[] = "abcdefghbcdefghicdefghijdefghijkefghij"
-                                    "klfghijklmghijklmnhijklmnoijklmnopjklm"
-                                    "nopqklmnopqrlmnopqrsmnopqrstnopqrstu";
-    unsigned char *message3;
-    unsigned int message3_len = 1000000;
-    unsigned char digest[SHA512_DIGEST_SIZE];
-    message3 = malloc(message3_len);
-    if (message3 == NULL) {
-        fprintf(stderr, "Can't allocate memory\n");
-        return -1;
-    }
-    memset(message3, 'a', message3_len);
-    printf("SHA-2 FIPS 180-2 Validation tests\n\n");
-    printf("SHA-224 Test vectors\n");
-    sha224((const unsigned char *) message1, strlen(message1), digest);
-    test(vectors[0][0], digest, SHA224_DIGEST_SIZE);
-    sha224((const unsigned char *) message2a, strlen(message2a), digest);
-    test(vectors[0][1], digest, SHA224_DIGEST_SIZE);
-    sha224(message3, message3_len, digest);
-    test(vectors[0][2], digest, SHA224_DIGEST_SIZE);
-    printf("\n");
-    printf("SHA-256 Test vectors\n");
-    sha256((const unsigned char *) message1, strlen(message1), digest);
-    test(vectors[1][0], digest, SHA256_DIGEST_SIZE);
-    sha256((const unsigned char *) message2a, strlen(message2a), digest);
-    test(vectors[1][1], digest, SHA256_DIGEST_SIZE);
-    sha256(message3, message3_len, digest);
-    test(vectors[1][2], digest, SHA256_DIGEST_SIZE);
-    printf("\n");
-    printf("SHA-384 Test vectors\n");
-    sha384((const unsigned char *) message1, strlen(message1), digest);
-    test(vectors[2][0], digest, SHA384_DIGEST_SIZE);
-    sha384((const unsigned char *)message2b, strlen(message2b), digest);
-    test(vectors[2][1], digest, SHA384_DIGEST_SIZE);
-    sha384(message3, message3_len, digest);
-    test(vectors[2][2], digest, SHA384_DIGEST_SIZE);
-    printf("\n");
-    printf("SHA-512 Test vectors\n");
-    sha512((const unsigned char *) message1, strlen(message1), digest);
-    test(vectors[3][0], digest, SHA512_DIGEST_SIZE);
-    sha512((const unsigned char *) message2b, strlen(message2b), digest);
-    test(vectors[3][1], digest, SHA512_DIGEST_SIZE);
-    sha512(message3, message3_len, digest);
-    test(vectors[3][2], digest, SHA512_DIGEST_SIZE);
-    printf("\n");
-    printf("All tests passed.\n");
-    return 0;
-}
-#endif
-// http://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.202.pdf
-// from https://github.com/mjosaarinen/tiny_sha3/blob/master/sha3.c  2017/19/12
-// sha3.c
-// 19-Nov-11  Markku-Juhani O. Saarinen <mjos@iki.fi>
-// Revised 07-Aug-15 to match with official release of FIPS PUB 202 "SHA3"
-// Revised 03-Sep-15 for portability + OpenSSL - style API
-// 2018-06-16 modified _final api to pass context then digest (reverse params from original)
-// from https://github.com/mjosaarinen/tiny_sha3/blob/master/sha3.h  2017/19/12
-// sha3.h
-// 19-Nov-11  Markku-Juhani O. Saarinen <mjos@iki.fi>
-// 2018-06-16 modified _final api to pass context then digest (reverse params from original)
-#ifndef SHA3_H
-#define SHA3_H
-#ifndef KECCAKF_ROUNDS
-#define KECCAKF_ROUNDS 24
-#endif
-#ifndef ROTL64
-#define ROTL64(x, y) (((x) << (y)) | ((x) >> (64 - (y))))
-#endif
-// state context
-typedef struct {
-                                 // state:
-    union {
-                     // 8-bit bytes
-        uint8_t b[200];
-                     // 64-bit words
-        uint64_t q[25];
-    } st;
-                    // these don't overflow
-    int pt, rsiz, mdlen;
-} sha3_ctx_t;
-// Compression function.
-void sha3_keccakf(uint64_t st[25]);
-// OpenSSL - like interfece
-    // mdlen = hash output in bytes
-int sha3_init(sha3_ctx_t *c, int mdlen);
-int sha3_update(sha3_ctx_t *c, const void *data, size_t len);
-    // digest goes to md
-int sha3_final(sha3_ctx_t *c, void *md );
-// compute a sha3 hash (md) of given byte length from "in"
-void *sha3(const void *in, size_t inlen, void *md, int mdlen);
-// SHAKE128 and SHAKE256 extensible-output functions
-#define shake128_init(c) sha3_init(c, 16)
-#define shake256_init(c) sha3_init(c, 32)
-#define shake_update sha3_update
-void shake_xof(sha3_ctx_t *c);
-void shake_out(sha3_ctx_t *c, void *out, size_t len);
-#endif
-// update the state with given number of rounds
-void sha3_keccakf(uint64_t st[25])
-{
-    // constants
-    const uint64_t keccakf_rndc[24] = {
-        0x0000000000000001, 0x0000000000008082, 0x800000000000808a,
-        0x8000000080008000, 0x000000000000808b, 0x0000000080000001,
-        0x8000000080008081, 0x8000000000008009, 0x000000000000008a,
-        0x0000000000000088, 0x0000000080008009, 0x000000008000000a,
-        0x000000008000808b, 0x800000000000008b, 0x8000000000008089,
-        0x8000000000008003, 0x8000000000008002, 0x8000000000000080,
-        0x000000000000800a, 0x800000008000000a, 0x8000000080008081,
-        0x8000000000008080, 0x0000000080000001, 0x8000000080008008
-    };
-    const int keccakf_rotc[24] = {
-        1,  3,  6,  10, 15, 21, 28, 36, 45, 55, 2,  14,
-        27, 41, 56, 8,  25, 43, 62, 18, 39, 61, 20, 44
-    };
-    const int keccakf_piln[24] = {
-        10, 7,  11, 17, 18, 3, 5,  16, 8,  21, 24, 4,
-        15, 23, 19, 13, 12, 2, 20, 14, 22, 9,  6,  1
-    };
-    // variables
-    int i, j, r;
-    uint64_t t, bc[5];
-#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
-    uint8_t *v;
-    // endianess conversion. this is redundant on little-endian targets
-    for (i = 0; i < 25; i++) {
-        v = (uint8_t *) &st[i];
-        st[i] = ((uint64_t) v[0])     | (((uint64_t) v[1]) << 8) |
-            (((uint64_t) v[2]) << 16) | (((uint64_t) v[3]) << 24) |
-            (((uint64_t) v[4]) << 32) | (((uint64_t) v[5]) << 40) |
-            (((uint64_t) v[6]) << 48) | (((uint64_t) v[7]) << 56);
-    }
-#endif
-    // actual iteration
-    for (r = 0; r < KECCAKF_ROUNDS; r++) {
-        // Theta
-        for (i = 0; i < 5; i++)
-            bc[i] = st[i] ^ st[i + 5] ^ st[i + 10] ^ st[i + 15] ^ st[i + 20];
-        for (i = 0; i < 5; i++) {
-            t = bc[(i + 4) % 5] ^ ROTL64(bc[(i + 1) % 5], 1);
-            for (j = 0; j < 25; j += 5)
-                st[j + i] ^= t;
-        }
-        // Rho Pi
-        t = st[1];
-        for (i = 0; i < 24; i++) {
-            j = keccakf_piln[i];
-            bc[0] = st[j];
-            st[j] = ROTL64(t, keccakf_rotc[i]);
-            t = bc[0];
-        }
-        //  Chi
-        for (j = 0; j < 25; j += 5) {
-            for (i = 0; i < 5; i++)
-                bc[i] = st[j + i];
-            for (i = 0; i < 5; i++)
-                st[j + i] ^= (~bc[(i + 1) % 5]) & bc[(i + 2) % 5];
-        }
-        //  Iota
-        st[0] ^= keccakf_rndc[r];
-    }
-#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
-    // endianess conversion. this is redundant on little-endian targets
-    for (i = 0; i < 25; i++) {
-        v = (uint8_t *) &st[i];
-        t = st[i];
-        v[0] = t & 0xFF;
-        v[1] = (t >> 8) & 0xFF;
-        v[2] = (t >> 16) & 0xFF;
-        v[3] = (t >> 24) & 0xFF;
-        v[4] = (t >> 32) & 0xFF;
-        v[5] = (t >> 40) & 0xFF;
-        v[6] = (t >> 48) & 0xFF;
-        v[7] = (t >> 56) & 0xFF;
-    }
-#endif
-}
-// Initialize the context for SHA3
-int sha3_init(sha3_ctx_t *c, int mdlen)
-{
-    int i;
-	if( mdlen > 100 )
-        mdlen = 100;
-    for (i = 0; i < 25; i++)
-        c->st.q[i] = 0;
-    c->mdlen = mdlen;
-    c->rsiz = 200 - 2 * mdlen;
-    c->pt = 0;
-    return 1;
-}
-// update state with more data
-int sha3_update(sha3_ctx_t *c, const void *data, size_t len)
-{
-    size_t i;
-    int j;
-    j = c->pt;
-    for (i = 0; i < len; i++) {
-        c->st.b[j++] ^= ((const uint8_t *) data)[i];
-        if (j >= c->rsiz) {
-            sha3_keccakf(c->st.q);
-            j = 0;
-        }
-    }
-    c->pt = j;
-    return 1;
-}
-// finalize and output a hash
-int sha3_final( sha3_ctx_t *c, void *md )
-{
-    int i;
-    c->st.b[c->pt] ^= 0x06;
-    c->st.b[c->rsiz - 1] ^= 0x80;
-    sha3_keccakf(c->st.q);
-    for (i = 0; i < c->mdlen; i++) {
-        ((uint8_t *) md)[i] = c->st.b[i];
-    }
-    return 1;
-}
-// compute a SHA-3 hash (md) of given byte length from "in"
-void *sha3(const void *in, size_t inlen, void *md, int mdlen)
-{
-    sha3_ctx_t sha3;
-    sha3_init(&sha3, mdlen);
-    sha3_update(&sha3, in, inlen);
-    sha3_final(&sha3, md);
-    return md;
-}
-// SHAKE128 and SHAKE256 extensible-output functionality
-void shake_xof(sha3_ctx_t *c)
-{
-    c->st.b[c->pt] ^= 0x1F;
-    c->st.b[c->rsiz - 1] ^= 0x80;
-    sha3_keccakf(c->st.q);
-    c->pt = 0;
-}
-void shake_out(sha3_ctx_t *c, void *out, size_t len)
-{
-    size_t i;
-    int j;
-    j = c->pt;
-    for (i = 0; i < len; i++) {
-        if (j >= c->rsiz) {
-            sha3_keccakf(c->st.q);
-            j = 0;
-        }
-        ((uint8_t *) out)[i] = c->st.b[j++];
-    }
-    c->pt = j;
-}
 #ifdef _WIN64
 #ifndef __64__
 #define __64__
@@ -20188,8 +18233,8 @@ SACK_DEADSTART_NAMESPACE_END
 #ifdef __LCC__
 #include <intrinsics.h>
 #endif
-#ifdef __LINUX__
 #include <time.h>
+#ifdef __LINUX__
  // struct sockaddr_un
 #include <sys/un.h>
 #endif
@@ -20825,6 +18870,189 @@ CTEXTSTR GetPackedTime( void )
 	        , timething );
 #endif
 	return timebuffer;
+}
+int GetTimeZone( void ){
+    time_t gmt, rawtime = time(NULL);
+    struct tm *ptm;
+#if !defined(WIN32)
+    struct tm gbuf;
+    ptm = gmtime_r(&rawtime, &gbuf);
+#else
+    ptm = gmtime(&rawtime);
+#endif
+    // Request that mktime() looksup dst in timezone database
+    ptm->tm_isdst = -1;
+    gmt = mktime(ptm);
+	{
+		int seconds = (int)difftime( rawtime, gmt );
+		int sign = 1;
+		if( seconds < 0 ) {
+			sign = -1;
+			seconds = -seconds;
+		}
+		return sign * (((seconds / 60 / 60) * 100) + ((seconds / 60) % 60));
+	}
+}
+#if 0
+#ifdef _WIN32
+	{
+		static int isSet;
+		static int tz;
+		if( isSet ) return tz;
+		// Get the local system time.
+		{
+			DWORD dwType;
+			DWORD dwValue;
+			DWORD dwSize = sizeof( dwValue );
+			HKEY hTemp;
+			DWORD dwStatus;
+			dwStatus = RegOpenKeyEx( HKEY_LOCAL_MACHINE
+			                       , "SYSTEM\\CurrentControlSet\\Control\\TimeZoneInformation", 0
+			                       , KEY_READ, &hTemp );
+			if( (dwStatus == ERROR_SUCCESS) && hTemp )
+			{
+				dwSize = sizeof( dwValue );
+				dwStatus = RegQueryValueEx(hTemp, "ActiveTimeBias", 0
+				                          , &dwType
+				                          , (PBYTE)&dwValue
+				                          , &dwSize );
+				RegCloseKey( hTemp );
+			}
+			else
+				dwValue = 0;
+			//HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\TimeZoneInformation
+			// Get the timezone info.
+			//TIME_ZONE_INFORMATION TimeZoneInfo;
+			//GetTimeZoneInformation( &TimeZoneInfo );
+			// Convert local time to UTC.
+			//TzSpecificLocalTimeToSystemTime( &TimeZoneInfo,
+			//								 &LocalTime,
+			//								 &GmtTime );
+			// Local time expressed in terms of GMT bias.
+			{
+				timebuf->zhr = (int8_t)( -( (int)dwValue/60 ) ) ;
+				timebuf->zmn = (dwValue>0)?( dwValue % 60 ):((-dwValue)%60);
+			}
+			tz = (int)dwValue;
+			isSet = TRUE;
+			return tz;
+		}
+	}
+#else
+#endif
+}
+#endif
+void ConvertTickToTime( int64_t tick, PSACK_TIME st ) {
+	int8_t tz = (int8_t)tick;
+	int sign = (tz < 0) ? -1 : 1;
+	if( tz < 0 ) tz = -tz;
+#ifdef _WIN32
+	static const uint64_t EPOCH = ((uint64_t)116444736000000000ULL);
+	tick >>= 8;
+	tick *= 10000LL;
+	tick += EPOCH;
+	// Note: some broken versions only have 8 trailing zero's, the correct epoch has 9 trailing zero's
+	// This magic number is the number of 100 nanosecond intervals since January 1, 1601 (UTC)
+	// until 00:00:00 January 1, 1970
+	uint64_t result;
+	SYSTEMTIME  system_time;
+	FILETIME    file_time;
+	file_time.dwLowDateTime = tick & 0xFFFFFFFF;
+	file_time.dwHighDateTime = ( tick >> 32 ) & 0xFFFFFFFF;
+	FileTimeToSystemTime( &file_time, &system_time );
+	st->yr = system_time.wYear;
+	st->mo = (uint8_t)system_time.wMonth;
+	st->dy = (uint8_t)system_time.wDay;
+	st->hr = (uint8_t)system_time.wHour;
+	st->mn = (uint8_t)system_time.wMinute;
+	st->sc = (uint8_t)system_time.wSecond;
+	st->ms = system_time.wMilliseconds;
+	st->zhr = sign* (( tz * 15 ) / 60);
+	st->zmn = (tz*15) % 60;
+#else
+	struct timeval tv;
+	struct tm tm;
+	tv.tv_sec = ( tick >> 8 ) / 1000;
+	tv.tv_usec =  ( ( tick >> 8 ) % 1000 ) * 1000;
+	gmtime_r( &tv.tv_sec, &tm );
+	st->yr = tm.tm_year + 1900;
+	st->mo = tm.tm_mon+1;
+	st->dy = tm.tm_mday;
+	st->hr = tm.tm_hour;
+	st->mn = tm.tm_min;
+	st->sc = tm.tm_sec;
+	st->ms = tv.tv_usec / 1000;
+	st->zhr = sign* (( tz * 15 ) / 60);
+	st->zmn = (tz*15) % 60;
+#endif
+}
+int64_t GetTimeOfDay( void )
+{
+	//struct timezone tzp;
+	int tz = GetTimeZone();
+	if( tz < 0 )
+ // -840/15 = -56
+		tz = -(((-tz / 100) * 60) + (-tz % 100)) / 15;
+	else
+ // -840/15 = -56  720/15 = 48
+		tz = (((tz / 100) * 60) + (tz % 100)) / 15;
+#ifdef _WIN32
+	// Note: some broken versions only have 8 trailing zero's, the correct epoch has 9 trailing zero's
+	// This magic number is the number of 100 nanosecond intervals since January 1, 1601 (UTC)
+	// until 00:00:00 January 1, 1970
+	static const uint64_t EPOCH = ((uint64_t)116444736000000000ULL);
+	SYSTEMTIME  system_time;
+	FILETIME    file_time;
+	uint64_t    time;
+	GetSystemTime( &system_time );
+	SystemTimeToFileTime( &system_time, &file_time );
+	time = ((uint64_t)file_time.dwLowDateTime);
+	time += ((uint64_t)file_time.dwHighDateTime) << 32;
+	return (((uint64_t)((time - EPOCH) / 10000L)) << 8) | (tz & 0xFF);
+#else
+	{
+		struct timeval tp;
+		gettimeofday( &tp, NULL );
+		return  (((uint64_t)(tp.tv_sec * 1000L) + (uint64_t)(tp.tv_usec)) << 8) | (tz & 0xFF);
+	}
+#endif
+}
+int64_t ConvertTimeToTick( PSACK_TIME st ) {
+	int tz;
+	int sign = st->zhr < 0 ? -1 : 1;
+	tz = sign * (((sign*st->zhr * 60) + st->zmn) / 15);
+#ifdef _WIN32
+	SYSTEMTIME  system_time;
+	FILETIME    file_time;
+	uint64_t    time;
+	system_time.wYear = st->yr;
+	system_time.wMonth = st->mo;
+	system_time.wDay = st->dy;
+	system_time.wHour = st->hr;
+	system_time.wMinute = st->mn;
+	system_time.wSecond = st->sc;
+	system_time.wMilliseconds = st->ms;
+	SystemTimeToFileTime( &system_time, &file_time );
+	static const uint64_t EPOCH = ((uint64_t)116444736000000000ULL);
+	time = ((uint64_t)file_time.dwLowDateTime);
+	time += ((uint64_t)file_time.dwHighDateTime) << 32;
+	return (((uint64_t)((time - EPOCH) / 10000L)) << 8) | (tz & 0xFF);
+#else
+	struct tm t;
+	time_t t_of_day;
+	t.tm_year = st->yr - 1900;
+           // Month, 0 - jan
+	t.tm_mon = st->mo-1;
+          // Day of the month
+	t.tm_mday = st->dy;
+	t.tm_hour = st->hr;
+	t.tm_min = st->mn;
+	t.tm_sec = st->sc;
+        // Is DST on? 1 = yes, 0 = no, -1 = unknown
+	t.tm_isdst = 0;
+	t_of_day = timegm( &t );
+	return ((((int64_t)t_of_day) * 1000ULL + st->ms) << 8) | (tz&0xFF);
+#endif
 }
 //----------------------------------------------------------------------------
  // no gettime of day - no milliseconds
@@ -21879,7 +20107,9 @@ LOGGING_NAMESPACE_END
 #  define NO_FILEOP_ALIAS
 #endif
 // setenv()
-#define _POSIX_C_SOURCE 2
+#ifndef _POSIX_C_SOURCE
+#  define _POSIX_C_SOURCE 2
+#endif
 #ifdef WIN32
 //#undef StrDup
 //#undef StrRChr
@@ -26243,6 +24473,370 @@ RENDER_NAMESPACE_END
 #if defined( _MSC_VER ) && defined( SACK_BAG_EXPORTS ) && 0
 #define HAS_ASSEMBLY
 #endif
+/* Define COLOR type. Basically the image library regards color
+   as 32 bits of data. User applications end up needing to
+   specify colors in the correct method for the platform they
+   are working on. This provides aliases to rearrange colors.
+   For instance the colors on windows and the colors for OpenGL
+   are not exactly the same. If the OpenGL driver is specified
+   as the output device, the entire code would need to be
+   rebuilt for specifying colors correctly for opengl. While
+   otherwise they are both 32 bits, and peices work, they get
+   very ugly colors output.
+   See Also
+   <link Colors>                                                */
+#ifndef COLOR_STRUCTURE_DEFINED
+/* An exclusion symbol for defining CDATA and color operations. */
+#define COLOR_STRUCTURE_DEFINED
+#ifdef __cplusplus
+SACK_NAMESPACE
+	namespace image {
+#endif
+		// byte index values for colors on the video buffer...
+		enum color_byte_index {
+ I_BLUE  = 0,
+ I_GREEN = 1,
+ I_RED   = 2,
+ I_ALPHA = 3
+		};
+#if defined( __ANDROID__ ) || defined( _OPENGL_DRIVER )
+#  define USE_OPENGL_COMPAT_COLORS
+#endif
+#if ( !defined( IMAGE_LIBRARY_SOURCE_MAIN ) && ( !defined( FORCE_NO_INTERFACE ) || defined( ALLOW_IMAGE_INTERFACE ) ) )      && !defined( FORCE_COLOR_MACROS )
+#define Color( r,g,b ) MakeColor(r,g,b)
+#define AColor( r,g,b,a ) MakeAlphaColor(r,g,b,a)
+#define SetAlpha( rgb, a ) SetAlphaValue( rgb, a )
+#define SetGreen( rgb, g ) SetGreeValue(rgb,g )
+#define AlphaVal(color) GetAlphaValue( color )
+#define RedVal(color)   GetRedValue(color)
+#define GreenVal(color) GetGreenValue(color)
+#define BlueVal(color)  GetBlueValue(color)
+#else
+#if defined( _OPENGL_DRIVER ) || defined( USE_OPENGL_COMPAT_COLORS )
+#  define Color( r,g,b ) (((uint32_t)( ((uint8_t)(r))|((uint16_t)((uint8_t)(g))<<8))|(((uint32_t)((uint8_t)(b))<<16)))|0xFF000000)
+#  define AColor( r,g,b,a ) (((uint32_t)( ((uint8_t)(r))|((uint16_t)((uint8_t)(g))<<8))|(((uint32_t)((uint8_t)(b))<<16)))|((a)<<24))
+#  define SetAlpha( rgb, a ) ( ((rgb)&0x00FFFFFF) | ( (a)<<24 ) )
+#  define SetGreen( rgb, g ) ( ((rgb)&0xFFFF00FF) | ( ((g)&0xFF)<<8 ) )
+#  define SetBlue( rgb, b )  ( ((rgb)&0xFF00FFFF) | ( ((b)&0xFF)<<16 ) )
+#  define SetRed( rgb, r )   ( ((rgb)&0xFFFFFF00) | ( ((r)&0xFF)<<0 ) )
+#  define GLColor( c )  (c)
+#  define AlphaVal(color) ((color&0xFF000000) >> 24)
+#  define RedVal(color)   ((color&0x000000FF) >> 0)
+#  define GreenVal(color) ((color&0x0000FF00) >> 8)
+#  define BlueVal(color)  ((color&0x00FF0000) >> 16)
+#else
+#  ifdef _WIN64
+#    define AND_FF &0xFF
+#  else
+/* This is a macro to cure a 64bit warning in visual studio. */
+#    define AND_FF
+#  endif
+/* A macro to create a solid color from R G B coordinates.
+   Example
+   <code lang="c++">
+   CDATA color1 = Color( 255,0,0 ); // Red only, so this is bright red
+   CDATA color2 = Color( 0,255,0); // green only, this is bright green
+   CDATA color3 = Color( 0,0,255); // blue only, this is birght blue
+   CDATA color4 = Color(93,93,32); // this is probably a goldish grey
+   </code>                                                             */
+#define Color( r,g,b ) (((uint32_t)( ((uint8_t)((b)AND_FF))|((uint16_t)((uint8_t)((g))AND_FF)<<8))|(((uint32_t)((uint8_t)((r))AND_FF)<<16)))|0xFF000000)
+/* Build a color with alpha specified. */
+#define AColor( r,g,b,a ) (((uint32_t)( ((uint8_t)((b)AND_FF))|((uint16_t)((uint8_t)((g))AND_FF)<<8))|(((uint32_t)((uint8_t)((r))AND_FF)<<16)))|(((a)AND_FF)<<24))
+/* Sets the alpha part of a color. (0-255 value, 0 being
+   transparent, and 255 solid(opaque))
+   Example
+   <code lang="c++">
+   CDATA color = BASE_COLOR_RED;
+   CDATA hazy_color = SetAlpha( color, 128 );
+   </code>
+ */
+#define SetAlpha( rgb, a ) ( ((rgb)&0x00FFFFFF) | ( (a)<<24 ) )
+/* Sets the green channel of a color. Expects a value 0-255.  */
+#define SetGreen( rgb, g ) ( ((rgb)&0xFFFF00FF) | ( ((g)&0x0000FF)<<8 ) )
+/* Sets the blue channel of a color. Expects a value 0-255.  */
+#define SetBlue( rgb, b ) ( ((rgb)&0xFFFFFF00) | ( ((b)&0x0000FF)<<0 ) )
+/* Sets the red channel of a color. Expects a value 0-255.  */
+#define SetRed( rgb, r ) ( ((rgb)&0xFF00FFFF) | ( ((r)&0x0000FF)<<16 ) )
+/* Return a CDATA that is meant for output to OpenGL. */
+#define GLColor( c )  (((c)&0xFF00FF00)|(((c)&0xFF0000)>>16)|(((c)&0x0000FF)<<16))
+/* Get the alpha value of a color. This is a 0-255 unsigned
+   byte.                                                    */
+#define AlphaVal(color) (((color) >> 24) & 0xFF)
+/* Get the red value of a color. This is a 0-255 unsigned byte. */
+#define RedVal(color)   (((color) >> 16) & 0xFF)
+/* Get the green value of a color. This is a 0-255 unsigned
+   byte.                                                    */
+#define GreenVal(color) (((color) >> 8) & 0xFF)
+/* Get the blue value of a color. This is a 0-255 unsigned byte. */
+#define BlueVal(color)  (((color)) & 0xFF)
+#endif
+ // IMAGE_LIBRARY_SOURCE
+#endif
+		/* a definition for a single color channel - for function replacements for ___Val macros*/
+		typedef unsigned char COLOR_CHANNEL;
+        /* a 4 byte array of color (not really used, we mostly went with CDATA and PCDATA instead of COLOR and PCOLOR */
+		typedef COLOR_CHANNEL COLOR[4];
+		// color data raw...
+		typedef uint32_t CDATA;
+		/* pointer to an array of 32 bit colors */
+		typedef uint32_t *PCDATA;
+		/* A Pointer to <link COLOR>. Probably an array of color (a
+		 block of pixels for instance)                            */
+		typedef COLOR *PCOLOR;
+//-----------------------------------------------
+// common color definitions....
+//-----------------------------------------------
+// both yellows need to be fixed.
+#define BASE_COLOR_BLACK         Color( 0,0,0 )
+#define BASE_COLOR_BLUE          Color( 0, 0, 128 )
+#define BASE_COLOR_DARKBLUE          Color( 0, 0, 42 )
+/* An opaque Green.
+   See Also
+   <link Colors>    */
+#define BASE_COLOR_GREEN         Color( 0, 128, 0 )
+/* An opaque cyan - kind of a light sky like blue.
+   See Also
+   <link Colors>                                   */
+#define BASE_COLOR_CYAN          Color( 0, 128, 128 )
+/* An opaque red.
+   See Also
+   <link Colors>  */
+#define BASE_COLOR_RED           Color( 192, 32, 32 )
+/* An opaque BROWN. Brown is dark yellow... so this might be
+   more like a gold sort of color instead.
+   See Also
+   <link Colors>                                             */
+#define BASE_COLOR_BROWN         Color( 140, 140, 0 )
+#define BASE_COLOR_LIGHTBROWN         Color( 221, 221, 85 )
+#define BASE_COLOR_MAGENTA       Color( 160, 0, 160 )
+#define BASE_COLOR_LIGHTGREY     Color( 192, 192, 192 )
+/* An opaque darker grey (gray?).
+   See Also
+   <link Colors>                  */
+#define BASE_COLOR_DARKGREY      Color( 128, 128, 128 )
+/* An opaque a bight or light color blue.
+   See Also
+   <link Colors>                          */
+#define BASE_COLOR_LIGHTBLUE     Color( 0, 0, 255 )
+/* An opaque lighter, brighter green color.
+   See Also
+   <link Colors>                            */
+#define BASE_COLOR_LIGHTGREEN    Color( 0, 255, 0 )
+/* An opaque a lighter, more bight cyan color.
+   See Also
+   <link Colors>                               */
+#define BASE_COLOR_LIGHTCYAN     Color( 0, 255, 255 )
+/* An opaque bright red.
+   See Also
+   <link Colors>         */
+#define BASE_COLOR_LIGHTRED      Color( 255, 0, 0 )
+/* An opaque Lighter pink sort of red-blue color.
+   See Also
+   <link Colors>                                  */
+#define BASE_COLOR_LIGHTMAGENTA  Color( 255, 0, 255 )
+/* An opaque bright yellow.
+   See Also
+   <link Colors>            */
+#define BASE_COLOR_YELLOW        Color( 255, 255, 0 )
+/* An opaque White.
+   See Also
+   <link Colors>    */
+#define BASE_COLOR_WHITE         Color( 255, 255, 255 )
+#define BASE_COLOR_ORANGE        Color( 204,96,7 )
+#define BASE_COLOR_NICE_ORANGE   Color( 0xE9, 0x7D, 0x26 )
+#define BASE_COLOR_PURPLE        Color( 0x7A, 0x11, 0x7C )
+#ifdef __cplusplus
+ //	 namespace image {
+}
+SACK_NAMESPACE_END
+using namespace sack::image;
+#endif
+#endif
+// $Log: colordef.h,v $
+// Revision 1.4  2003/04/24 00:03:49  panther
+// Added ColorAverage to image... Fixed a couple macros
+//
+// Revision 1.3  2003/03/25 08:38:11  panther
+// Add logging
+//
+/* Defines a simple FRACTION type. Fractions are useful for
+   scaling one value to another. These operations are handles
+   continously. so iterating a fraction like 13 denominations of
+   100 will be smooth.                                           */
+#ifndef FRACTIONS_DEFINED
+/* Multiple inclusion protection symbol. */
+#define FRACTIONS_DEFINED
+#ifdef __cplusplus
+#  define _FRACTION_NAMESPACE namespace fraction {
+#  define _FRACTION_NAMESPACE_END }
+#  ifndef _MATH_NAMESPACE
+#    define _MATH_NAMESPACE namespace math {
+#  endif
+#  define	 SACK_MATH_FRACTION_NAMESPACE_END } } }
+#else
+#  define _FRACTION_NAMESPACE
+#  define _FRACTION_NAMESPACE_END
+#  ifndef _MATH_NAMESPACE
+#    define _MATH_NAMESPACE
+#  endif
+#  define	 SACK_MATH_FRACTION_NAMESPACE_END
+#endif
+SACK_NAMESPACE
+	/* Namespace of custom math routines.  Contains operators
+	 for Vectors and fractions. */
+	_MATH_NAMESPACE
+	/* Fraction namespace contains a PFRACTION type which is used to
+   store integer fraction values. Provides for ration and
+   proportion scaling. Can also represent fractions that contain
+   a whole part and a fractional part (5 2/3 : five and
+	two-thirds).                                                  */
+	_FRACTION_NAMESPACE
+/* Define the call type of the function. */
+#define FRACTION_API CPROC
+#  ifdef FRACTION_SOURCE
+#    define FRACTION_PROC EXPORT_METHOD
+#  else
+/* Define the library linkage for a these functions. */
+#    define FRACTION_PROC IMPORT_METHOD
+#  endif
+/* The faction type. Stores a fraction as integer
+   numerator/denominator instead of a floating point scalar. */
+/* Pointer to a <link sack::math::fraction::FRACTION, FRACTION>. */
+/* The faction type. Stores a fraction as integer
+   numerator/denominator instead of a floating point scalar. */
+typedef struct fraction_tag {
+	/* Numerator of the fraction. (This is the number on top of a
+	   fraction.)                                                 */
+	int numerator;
+	/* Denominator of the fraction. (This is the number on bottom of
+	   a fraction.) This specifies the denominations.                */
+	int denominator;
+} FRACTION, *PFRACTION;
+#ifdef HAVE_ANONYMOUS_STRUCTURES
+typedef struct coordpair_tag {
+	union {
+		FRACTION x;
+		FRACTION width;
+	};
+	union {
+		FRACTION y;
+		FRACTION height;
+	};
+} COORDPAIR, *PCOORDPAIR;
+#else
+/* A coordinate pair is a 2 dimensional fraction expression. can
+   be regarded as x, y or width,height. Each coordiante is a
+   Fraction type.                                                */
+typedef struct coordpair_tag {
+	       /* The x part of the coordpair. */
+	       FRACTION x;
+	       /* The y part of the coordpair. */
+	       FRACTION y;
+} COORDPAIR, *PCOORDPAIR;
+#endif
+/* \ \
+   Parameters
+   fraction :     the fraction to set
+   numerator :    numerator of the fraction
+   demoninator :  denominator of the fraction */
+#define SetFraction(f,n,d) ((((f).numerator=((int)(n)) ),((f).denominator=((int)(d)))),(f))
+/* Sets the value of a FRACTION. This is passed as the whole
+   number and the fraction.
+   Parameters
+   fraction :  the fraction to set
+   w :         this is the whole number to set
+   n :         numerator of remainder to set
+   d :         denominator of fraction to set.
+   Example
+   Fraction f = 3 1/2;
+   <code lang="c++">
+   FRACTION f;
+   SetFractionV( f, 3, 1, 2 );
+   // the resulting fraction will be 7/2
+   </code>                                                   */
+#define SetFractionV(f,w,n,d) (  (d)?	 ((((f).numerator=((int)((n)*(w))) )	  ,((f).denominator=((int)(d)))),(f))	  :	 ((((f).numerator=((int)((w))) )	  ,((f).denominator=((int)(1)))),(f))  )
+/* \ \
+   Parameters
+   base :    origin point (content is modified by adding offset
+             to it)
+   offset :  offset point                                       */
+FRACTION_PROC  void FRACTION_API  AddCoords ( PCOORDPAIR base, PCOORDPAIR offset );
+/* Add one fraction to another.
+   Parameters
+   base :    This is the starting value, and recevies the result
+             of (base+offset)
+   offset :  This is the fraction to add to base.
+   Returns
+   base                                                          */
+FRACTION_PROC  PFRACTION FRACTION_API  AddFractions ( PFRACTION base, PFRACTION offset );
+/* Add one fraction to another.
+   Parameters
+   base :    This is the starting value, and recevies the result
+             of (base+offset)
+   offset :  This is the fraction to add to base.
+   Returns
+   base                                                          */
+FRACTION_PROC  PFRACTION FRACTION_API  SubtractFractions ( PFRACTION base, PFRACTION offset );
+/* NOT IMPLEMENTED */
+FRACTION_PROC  PFRACTION FRACTION_API  MulFractions ( PFRACTION f, PFRACTION x );
+/* Log a fraction into a string. */
+FRACTION_PROC  int FRACTION_API  sLogFraction ( TEXTCHAR *string, PFRACTION x );
+/* Unsafe log of a coordinate pair's value into a string. The
+   string should be at least 69 characters long.
+   Parameters
+   string :  the string to print the fraction into
+   pcp :     the coordinate pair to print                     */
+FRACTION_PROC  int FRACTION_API  sLogCoords ( TEXTCHAR *string, PCOORDPAIR pcp );
+/* Log coordpair to logfile. */
+FRACTION_PROC  void FRACTION_API  LogCoords ( PCOORDPAIR pcp );
+/* scales a fraction by a signed integer value.
+   Parameters
+   result\ :  pointer to a FRACTION to receive the result
+   value :    the amount to be scaled
+   f :        the fraction to multiply the value by
+   Returns
+   \result; the pointer the fraction to receive the result. */
+FRACTION_PROC  PFRACTION FRACTION_API  ScaleFraction ( PFRACTION result, int32_t value, PFRACTION f );
+/* Results in the integer part of the fraction. If the faction
+   was 330/10 then the result would be 33.                     */
+FRACTION_PROC  int32_t FRACTION_API  ReduceFraction ( PFRACTION f );
+/* Scales a 32 bit integer value by a fraction. The result is
+   the scaled value result.
+   Parameters
+   f :      pointer to the faction to multiply value by
+   value :  the value to scale
+   Returns
+   The (value * f) integer value of.                          */
+FRACTION_PROC  uint32_t FRACTION_API  ScaleValue ( PFRACTION f, int32_t value );
+/* \ \
+   Parameters
+   f :      The fraction to scale the value by
+   value :  the value to scale by (1/f)
+   Returns
+   the value of ( value * 1/ f )               */
+FRACTION_PROC  uint32_t FRACTION_API  InverseScaleValue ( PFRACTION f, int32_t value );
+	SACK_MATH_FRACTION_NAMESPACE_END
+#ifdef __cplusplus
+using namespace sack::math::fraction;
+#endif
+#endif
+//---------------------------------------------------------------------------
+// $Log: fractions.h,v $
+// Revision 1.6  2004/09/03 14:43:40  d3x0r
+// flexible frame reactions to font changes...
+//
+// Revision 1.5  2003/03/25 08:38:11  panther
+// Add logging
+//
+// Revision 1.4  2003/01/27 09:45:03  panther
+// Fix lack of anonymous structures
+//
+// Revision 1.3  2002/10/09 13:16:02  panther
+// Support for linux shared memory mapping.
+// Support for better linux compilation of configuration scripts...
+// Timers library is now Threads AND Timers.
+//
+//
 #ifndef __NO_INTERFACES__
 #endif
 # ifndef SECOND_IMAGE_LEVEL
@@ -31877,6 +30471,7 @@ struct threads_tag
 #endif
  // use this as a status of pipes if USE_PIPE_SEMS is used...; otherwise it's a ipcsem
 	int semaphore;
+	pthread_mutex_t mutex;
 	pthread_t hThread;
 #endif
 	struct {
@@ -32061,11 +30656,7 @@ uintptr_t closesem( POINTER p, uintptr_t psv )
 	thread->pipe_ends[1] = -1;
 	thread->semaphore = -1;
 #else
-	if( semctl( thread->semaphore, 0, IPC_RMID ) == -1 )
-	{
-		lprintf( WIDE( "Error: %08x %s" ), thread->semaphore, strerror( errno ) );
-	}
-	thread->semaphore = -1;
+	pthread_mutex_destroy( &thread->mutex );
 #endif
 	return 0;
 }
@@ -32191,35 +30782,17 @@ static void InitWakeup( PTHREAD thread, CTEXTSTR event_name )
 		while( !success );
 	}
 #else
-	thread->semaphore = semget( IPC_PRIVATE
-	                          , 1, IPC_CREAT | 0600 );
+	thread->semaphore = pthread_mutex_init( &thread->mutex, NULL );
+	pthread_mutex_lock( &thread->mutex );
+	//thread->semaphore = semget( IPC_PRIVATE
+	//                          , 1, IPC_CREAT | 0600 );
 	if( thread->semaphore == -1 )
 	{
 		// basically this can't really happen....
-		if( errno ==  EEXIST )
-		{
-			thread->semaphore = semget( IPC_PRIVATE
-			                          , 1, 0 );
-			if( thread->semaphore == -1 )
-				lprintf( WIDE("FAILED TO CREATE SEMAPHORE! : %d"), errno );
-		}
-		if( errno == ENOSPC )
-		{
-			lprintf( WIDE("Hmm Need to cleanup some semaphore objects!!!") );
-		}
-		else
-			lprintf( WIDE("Failed to get semaphore! %d"), errno );
+		lprintf( WIDE("Failed to get semaphore! %d"), errno );
 	}
 	if( thread->semaphore != -1 )
 	{
-		//union semun ctl;
-		//ctl.val = 0;
-		//lprintf( WIDE("Setting thread semaphore to 0 (locked).") );
-		if( semctl( thread->semaphore, 0, SETVAL, 0 ) < 0 )
-		{
-			lprintf( WIDE("Errro setting semaphre value: %d"), errno );
-		}
-		//lprintf( WIDE("after semctl = %d %08lx"), semctl( thread->semaphore, 0, GETVAL ), thread->semaphore );
 	}
 #endif
 #endif
@@ -32439,33 +31012,17 @@ void  WakeThreadEx( PTHREAD thread DBG_PASS )
 #  ifdef DEBUG_PIPE_USAGE
 		_lprintf(DBG_RELAY)( "(wakethread)wil write pipe... %p", thread );
 #  endif
-		write( thread->pipe_ends[1], "G", 1 );
+		if( write( thread->pipe_ends[1], "G", 1 ) != 1 ) {
+			int e = errno;
+			lprintf( "Pipe Error? %d", e );
+		}
 		//lprintf( "did write pipe..." );
 		Relinquish();
 	}
 #else
 	if( thread->semaphore != -1 )
 	{
-		int stat;
-		int val;
-		struct sembuf semdo;
-		semdo.sem_num = 0;
-		semdo.sem_op = 1;
-		semdo.sem_flg = 0;
-		//_xlprintf( 1 DBG_RELAY )( WIDE("Resetting event on %08x %016"_64fx"x"), thread->semaphore, thread->thread_ident );
-		//lprintf( WIDE("Before semval = %d %08lx"), semctl( thread->semaphore, 0, GETVAL ), thread->semaphore );
-		stat = semop( thread->semaphore, &semdo, 1 );
-		if( stat == -1 )
-		{
-			if( errno != ERANGE )
-				lprintf( WIDE("semop error (wake) : %d"), errno );
-		}
-		//lprintf( WIDE("After semval = %d %08lx"), val = semctl( thread->semaphore, 0, GETVAL ), thread->semaphore );
-		if( !val )
-		{
-			//DebugBreak();
-			//lprintf( WIDE("Did we fail the semop?!") );
-		}
+		pthread_mutex_unlock( &thread->mutex );
  // may or may not execute other thread before this...
 		Relinquish();
 	}
@@ -32644,14 +31201,16 @@ static void  InternalWakeableNamedSleepEx( CTEXTSTR name, uint32_t n, LOGICAL th
 						lprintf( "end read" );
 #  endif
 #else
-# ifdef _NO_SEMTIMEDOP_
-						stat = semop( pThread->semaphore, semdo, 1 );
-# else
 						struct timespec timeout;
-						timeout.tv_nsec = ( n % 1000 ) * 1000000L;
-						timeout.tv_sec = n / 1000;
-						stat = semtimedop( pThread->semaphore, semdo, 1, &timeout );
-# endif
+						clock_gettime(CLOCK_REALTIME, &timeout);
+						timeout.tv_nsec += ( n % 1000 ) * 1000000L;
+						timeout.tv_sec += n / 1000;
+						timeout.tv_sec += timeout.tv_nsec / 1000000000L;
+						timeout.tv_nsec %= 1000000000L;
+						//lprintf( "Timed wait:%d %d", timeout.tv_nsec, timeout.tv_sec );
+						stat = pthread_mutex_timedlock( &pThread->mutex, &timeout );
+						//lprintf( "Stat for timed lock:%d", stat );
+						//stat = semtimedop( pThread->semaphore, semdo, 1, &timeout );
 #endif
 					}
 					else
@@ -32666,7 +31225,8 @@ static void  InternalWakeableNamedSleepEx( CTEXTSTR name, uint32_t n, LOGICAL th
 						lprintf( "end read" );
 #  endif
 #else
-						stat = semop( pThread->semaphore, semdo, 1 );
+						stat = pthread_mutex_lock( &pThread->mutex );
+						//stat = semop( pThread->semaphore, semdo, 1 );
 #endif
 					}
 					//lprintf( WIDE("After semval = %d %08lx"), semctl( pThread->semaphore, 0, GETVAL ), pThread->semaphore );
@@ -32715,7 +31275,7 @@ static void  InternalWakeableNamedSleepEx( CTEXTSTR name, uint32_t n, LOGICAL th
 #ifdef USE_PIPE_SEMS
 						// flush? empty the pipe?
 #else
-						semctl( pThread->semaphore, 0, SETVAL, 0 );
+						//semctl( pThread->semaphore, 0, SETVAL, 0 );
 #endif
 						break;
 					}
@@ -32812,6 +31372,8 @@ static void TimerWakeableSleep( uint32_t n )
 #ifdef USE_PIPE_SEMS
 			InternalWakeableNamedSleepEx( NULL, n, FALSE DBG_SRC );
 #else
+			pthread_mutex_lock( &globalTimerData.pTimerThread->mutex );
+#   if asdfasdfasdfasdf
 			struct sembuf semdo;
 			semdo.sem_num = 0;
 			semdo.sem_op = -1;
@@ -32841,6 +31403,7 @@ static void TimerWakeableSleep( uint32_t n )
 					break;
 				}
 			}
+#   endif
 #endif
 			//lprintf( WIDE("After semval = %d %08lx")
 			//	      , semctl( globalTimerData.pTimerThread->semaphore, 0, GETVAL )
@@ -34113,9 +32676,19 @@ LOGICAL  LeaveCriticalSecEx( PCRITICALSECTION pcs DBG_PASS )
 #ifdef _DEBUG
 		//GetTickCount() )
 		if( ( curtick + 2000 ) <= timeGetTime() ) {
+#ifdef DEBUG_CRITICAL_SECTIONS
+			lprintf( "FROM: %s(%d)  %s(%d) %s(%d)"
+					  , pcs->pFile[(pcs->nPrior+(MAX_SECTION_LOG_QUEUE-1))%MAX_SECTION_LOG_QUEUE]
+					  , pcs->nLine[(pcs->nPrior+(MAX_SECTION_LOG_QUEUE-1))%MAX_SECTION_LOG_QUEUE]
+					  , pcs->pFile[(pcs->nPrior+(MAX_SECTION_LOG_QUEUE-2))%MAX_SECTION_LOG_QUEUE]
+					  , pcs->nLine[(pcs->nPrior+(MAX_SECTION_LOG_QUEUE-2))%MAX_SECTION_LOG_QUEUE]
+					  , pcs->pFile[(pcs->nPrior+(MAX_SECTION_LOG_QUEUE-3))%MAX_SECTION_LOG_QUEUE]
+					 , pcs->nLine[(pcs->nPrior+(MAX_SECTION_LOG_QUEUE-3))%MAX_SECTION_LOG_QUEUE]
+					 );
+#endif
 			lprintf( WIDE( "Timeout during critical section wait for lock.  No lock should take more than 1 task cycle" ) );
-			DebugBreak();
-			continue;
+			//DebugBreak();
+			//continue;
 		}
 #endif
 		break;
@@ -34152,23 +32725,22 @@ LOGICAL  LeaveCriticalSecEx( PCRITICALSECTION pcs DBG_PASS )
 #endif
 		if( !( pcs->dwLocks & ~(SECTION_LOGGED_WAIT) ) )
 		{
+			THREAD_ID dwWaiting = pcs->dwThreadWaiting;
 			pcs->dwLocks = 0;
 			pcs->dwThreadID = 0;
+			pcs->dwUpdating = pcs->dwLocks;
 			// wake the prior (if there is one sleeping)
-			if( pcs->dwThreadWaiting )
+			if( dwWaiting )
 			{
-				pcs->dwUpdating = 0;
 #ifdef ENABLE_CRITICALSEC_LOGGING
 				if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
-					_lprintf( DBG_RELAY )( WIDE("%8")_64fx WIDE(" Waking a thread which is waiting..."), pcs->dwThreadWaiting );
+					_lprintf( DBG_RELAY )( WIDE("%8")_64fx WIDE(" Waking a thread which is waiting..."), dwWaiting );
 #endif
 				// don't clear waiting... so the proper thread can
 				// allow itself to claim section...
-				WakeNamedThreadSleeperEx( WIDE("sack.critsec"), pcs->dwThreadWaiting DBG_RELAY );
+				WakeNamedThreadSleeperEx( WIDE("sack.critsec"), dwWaiting DBG_RELAY );
 				//WakeThreadIDEx( wake DBG_RELAY);
 			}
-			else
-				pcs->dwUpdating = 0;
 			return TRUE;
 		}
 	}
@@ -34431,6 +33003,236 @@ IDLE_PROC( int, IdleFor )( uint32_t dwMilliseconds )
 #endif
 #define NO_UNICODE_C
 #define PROCREG_SOURCE
+/*
+ *  Creator: Jim Buckeyne
+ *  Header for configscript.lib(bag.lib)
+ *  Provides definitions for handling configuration files
+ *  or any particular file which has machine generated
+ *  characteristics, it can handle translators to decrypt
+ *  encrypt.  Method of operation is to create a configuration
+ *  evaluator, then AddConfiguratMethod()s to it.
+ *  configuration methods are format descriptors for the lines
+ *  and a routine which is called when such a line is matched.
+ *  One might think of it as a trigger library for MUDs ( a
+ *  way to trigger an event based on certain text input,
+ *  variations in the text input may be assigned as variables
+ *  to be used within the event.
+ *
+ *  More about configuration string parsing is available in
+ *  $(SACK_BASE)/src/configlib/config.rules text file.
+ *
+ *  A vague attempt at providing a class to derrive a config-
+ *  uration reader class, which may contain private data
+ *  within such a class, or otherwise provide an object with
+ *  simple namespace usage. ( add(), go() )
+ *
+ *  This library also imlements several PTEXT based methods
+ *  which can evaluate text segments into valid binary types
+ *  such as text to integer, float, color, etc.  Some of the type
+ *  validators applied for the format argument matching of added
+ *  methods are available for external reference.
+ *
+ */
+#ifndef CONFIGURATION_SCRIPT_HANDLER
+#define CONFIGURATION_SCRIPT_HANDLER
+#ifdef CONFIGURATION_LIBRARY_SOURCE
+#define CONFIGSCR_PROC(type,name) EXPORT_METHOD type CPROC name
+#else
+#define CONFIGSCR_PROC(type,name) IMPORT_METHOD type CPROC name
+#endif
+#ifdef __cplusplus
+SACK_NAMESPACE namespace config {
+#endif
+typedef char *__arg_list[1];
+typedef __arg_list arg_list;
+// declare 'va_list args = NULL;' to use successfully...
+// the resulting thing is of type va_list.
+typedef struct va_args_tag va_args;
+enum configArgType {
+	CONFIG_ARG_STRING,
+	CONFIG_ARG_INT64,
+	CONFIG_ARG_FLOAT,
+	CONFIG_ARG_DATA,
+	CONFIG_ARG_DATA_SIZE,
+	CONFIG_ARG_LOGICAL,
+	CONFIG_ARG_FRACTION,
+	CONFIG_ARG_COLOR,
+};
+struct va_args_tag {
+	int argsize; arg_list *args; arg_list *tmp_args; int argCount;
+};
+//#define va_args struct { int argsize; arg_list *args; arg_list *tmp_args; }
+#define init_args(name) name.argCount = 0; name.argsize = 0; name.args = NULL;
+  // 32 bits.
+#define ARG_STACK_SIZE 4
+#define PushArgument( argset, argType, type, arg )	 ((argset.args = (arg_list*)Preallocate( argset.args		  , argset.argsize += ((sizeof( enum configArgType )				 + sizeof( type )				  + (ARG_STACK_SIZE-1) )&-ARG_STACK_SIZE) ) )	 ?(argset.argCount++),((*(enum configArgType*)(argset.args))=(argType)),(*(type*)(((uintptr_t)argset.args)+sizeof(enum configArgType)) = (arg)),0	   :0)
+#define PopArguments( argset ) { Release( argset.args ); argset.args=NULL; }
+#define pass_args(argset) (( (argset).tmp_args = (argset).args ),(*(arg_list*)(&argset.tmp_args)))
+/*
+ * Config methods are passed an arg_list
+ * parameters from arg_list are retrieved using
+ * PARAM( arg_list_param_name, arg_type, arg_name );
+ * ex.
+ *
+ *   PARAM( args, char *, name );
+ *    // results in a variable called name
+ *    // initialized from the first argument in arg_list args;
+ */
+#define my_va_arg(ap,type)     ((ap)[0]+=        ((sizeof(enum configArgType)+sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)),        (*(type *)((ap)[0]-((sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)))))
+#define my_va_arg_type(ap,type)     (         (*(type *)((ap)[0]-(sizeof(enum configArgType)+(sizeof(type)+ARG_STACK_SIZE-1)&~(ARG_STACK_SIZE-1)))))
+//#define my_va_next_arg_type(ap,type)     (*(type *)((ap)[0]))
+#define my_va_next_arg_type(ap)     ( ( *(enum configArgType *)((ap)[0]) ) )
+#define PARAM_COUNT( args ) (((int*)(args+1))[0])
+#define PARAM( args, type, name ) type name = my_va_arg( args, type )
+#define PARAMEX( args, type, name, argTypeName ) type name = my_va_arg( args, type ); enum configArgType argTypeName = my_va_arg_type(args)
+#define FP_PARAM( args, type, name, fa ) type (CPROC*name)fa = (type (CPROC*)fa)(my_va_arg( args, void *))
+typedef struct config_file_tag* PCONFIG_HANDLER;
+CONFIGSCR_PROC( PCONFIG_HANDLER, CreateConfigurationEvaluator )( void );
+#define CreateConfigurationHandler CreateConfigurationEvaluator
+CONFIGSCR_PROC( void, DestroyConfigurationEvaluator )( PCONFIG_HANDLER pch );
+#define DestroyConfigurationHandler DestroyConfigurationEvaluator
+// this pushes all prior state information about configuration file
+// processing, and allows a new set of rules to be made...
+CONFIGSCR_PROC( void, BeginConfiguration )( PCONFIG_HANDLER pch );
+// begins a sub configuration, and marks to save it for future use
+// so we don't have to always recreate the configuration states...
+CONFIGSCR_PROC( LOGICAL, BeginNamedConfiguration )( PCONFIG_HANDLER pch, CTEXTSTR name );
+// then, when you're done with the new set of rules (end of config section)
+// use this to restore the prior configuration state.
+CONFIGSCR_PROC( void, EndConfiguration )( PCONFIG_HANDLER pch );
+typedef uintptr_t (CPROC*USER_CONFIG_HANDLER)( uintptr_t, arg_list args );
+typedef uintptr_t( CPROC*USER_CONFIG_HANDLER_EX )(uintptr_t, uintptr_t, arg_list args);
+CONFIGSCR_PROC( void, AddConfigurationEx )( PCONFIG_HANDLER pch
+														, CTEXTSTR format
+														, USER_CONFIG_HANDLER Process DBG_PASS );
+CONFIGSCR_PROC( void, AddConfigurationExx )(PCONFIG_HANDLER pch
+	, CTEXTSTR format
+	, USER_CONFIG_HANDLER_EX Process, uintptr_t processHandler DBG_PASS);
+//CONFIGSCR_PROC( void, AddConfiguration )( PCONFIG_HANDLER pch
+//					, char *format
+//													 , USER_CONFIG_HANDLER Process );
+// make a nice wrapper - otherwise we get billions of complaints.
+//#define AddConfiguration(pch,format,process) AddConfiguration( (pch), (format), process )
+#define AddConfiguration(pch,f,pr) AddConfigurationEx(pch,f,pr DBG_SRC )
+#define AddConfigurationMethod AddConfiguration
+// FILTER receives a uintptr_t that was given at configuration (addition to handler)
+// it receives a PTEXT block of (binary) data... and must result with
+// PTEXT segments which are lines which may or may not have \r\n\\ all
+// of which are removed before being resulted to the application.
+//   POINTER* is a pointer to a pointer, this pointer may be used
+//      for private state data.  The last line of the configuration will
+//      call the filter chain with NULL to flush data...
+typedef PTEXT (CPROC*USER_FILTER)( POINTER *, PTEXT );
+CONFIGSCR_PROC( void, AddConfigurationFilter )( PCONFIG_HANDLER pch, USER_FILTER filter );
+CONFIGSCR_PROC( void, ClearDefaultFilters )( PCONFIG_HANDLER pch );
+CONFIGSCR_PROC( void, SetConfigurationEndProc )( PCONFIG_HANDLER pch, uintptr_t (CPROC *Process)( uintptr_t ) );
+CONFIGSCR_PROC( void, SetConfigurationUnhandled )( PCONFIG_HANDLER pch
+																, uintptr_t (CPROC *Process)( uintptr_t, CTEXTSTR ) );
+CONFIGSCR_PROC( int, ProcessConfigurationFile )( PCONFIG_HANDLER pch
+															  , CTEXTSTR name
+															  , uintptr_t psv
+															  );
+CONFIGSCR_PROC( uintptr_t, ProcessConfigurationInput )( PCONFIG_HANDLER pch, CTEXTSTR block, size_t size, uintptr_t psv );
+/*
+ * TO BE IMPLEMENTED
+ *
+CONFIGSCR_PROC( int, vcsprintf )( PCONFIG_HANDLER pch, CTEXTSTR format, va_list args );
+CONFIGSCR_PROC( int, csprintf )( PCONFIG_HANDLER pch, CTEXTSTR format, ... );
+*/
+CONFIGSCR_PROC( int, GetBooleanVar )( PTEXT *start, LOGICAL *data );
+CONFIGSCR_PROC( int, GetColorVar )( PTEXT *start, CDATA *data );
+//CONFIGSCR_PROC( int, IsBooleanVar )( PCONFIG_ELEMENT pce, PTEXT *start );
+//CONFIGSCR_PROC( int, IsColorVar )( PCONFIG_ELEMENT pce, PTEXT *start );
+// takes a binary block of data and creates a base64-like string which may be stored.
+CONFIGSCR_PROC( void, EncodeBinaryConfig )( TEXTSTR *encode, POINTER data, size_t length );
+// this isn't REALLY the same function that's used, but serves the same purpose...
+CONFIGSCR_PROC( int, DecodeBinaryConfig )( CTEXTSTR String, POINTER *binary_buffer, size_t *buflen );
+CONFIGSCR_PROC( CTEXTSTR, FormatColor )( CDATA color );
+CONFIGSCR_PROC( void, StripConfigString )( TEXTSTR out, CTEXTSTR in );
+CONFIGSCR_PROC( void, ExpandConfigString )( TEXTSTR out, CTEXTSTR in );
+#ifdef __cplusplus
+//typedef uintptr_t CPROC ::(*USER_CONFIG_METHOD)( ... );
+typedef class config_reader {
+   PCONFIG_HANDLER pch;
+public:
+	config_reader() {
+      pch = CreateConfigurationEvaluator();
+	}
+	~config_reader() {
+		if( pch ) DestroyConfigurationEvaluator( pch );
+      pch = (PCONFIG_HANDLER)NULL;
+	}
+	inline void add( CTEXTSTR format, USER_CONFIG_HANDLER Process )
+	{
+      AddConfiguration( pch, format, Process );
+	}
+   /*
+	inline void add( char *format, USER_CONFIG_METHOD Process )
+	{
+		union {
+			struct {
+				uint32_t junk;
+            USER_CONFIG_HANDLER Process
+			} c;
+         USER_CONFIG_METHOD Process;
+		} x;
+      x.Process = Process;
+      AddConfiguration( pch, format, x.c.Process );
+		}
+      */
+	inline int go( CTEXTSTR file, POINTER p )
+	{
+		return ProcessConfigurationFile( pch, file, (uintptr_t)p );
+	}
+} CONFIG_READER;
+#endif
+#ifdef __cplusplus
+ //namespace sack { namespace config {
+}
+SACK_NAMESPACE_END
+using namespace sack::config;
+#endif
+#endif
+// $Log: configscript.h,v $
+// Revision 1.17  2004/12/05 15:32:06  panther
+// Some minor cleanups fixed a couple memory leaks
+//
+// Revision 1.16  2004/08/13 16:48:19  d3x0r
+// added ability to put filters on config script data read.
+//
+// Revision 1.15  2004/02/18 20:46:37  d3x0r
+// Add some aliases for badly named routines
+//
+// Revision 1.14  2004/02/08 23:33:15  d3x0r
+// Add a iList class for c++, public access to building parameter va_lists
+//
+// Revision 1.13  2003/12/09 16:15:56  panther
+// Define unhnalded callback set
+//
+// Revision 1.12  2003/11/09 22:31:58  panther
+// Fix CPROC indication on endconfig method
+//
+// Revision 1.11  2003/10/13 04:25:14  panther
+// Fix configscript library... make sure types are consistant (watcom)
+//
+// Revision 1.10  2003/10/12 02:47:05  panther
+// Cleaned up most var-arg stack abuse ARM seems to work.
+//
+// Revision 1.9  2003/09/24 02:53:58  panther
+// Define c++ wrapper for config script library
+//
+// Revision 1.8  2003/07/24 22:49:01  panther
+// Modify addconfig method macro to auto typecast - dangerous by simpler
+//
+// Revision 1.7  2003/07/24 16:56:41  panther
+// Updates to expliclity define C procedure model for callbacks and assembly modules - incomplete
+//
+// Revision 1.6  2003/04/17 09:32:51  panther
+// Added true/false result from processconfigfile.  Added default load from /etc to msgsvr and display
+//
+// Revision 1.5  2003/03/25 08:38:11  panther
+// Add logging
+//
 #ifdef __ANDROID__
 #  ifdef DEBUG_FIRST_UNICODE_OPERATION
 #  endif
@@ -34817,7 +33619,7 @@ static CTEXTSTR DoSaveNameEx( CTEXTSTR stripped, size_t len DBG_PASS )
 #define DoSaveName(a,b) DoSaveNameEx(a,b DBG_SRC )
 {
 	PNAMESPACE space = l.NameSpace;
-	TEXTCHAR *p;
+	TEXTCHAR *p = NULL;
 	// cannot save 0 length strings.
 	if( !stripped || !stripped[0] || !len )
 	{
@@ -37805,7 +36607,8 @@ static void DumpSection( PCRITICALSECTION pcs )
 				else {
 					if( prior && *prior ) {
 						// shouldn't happen, if there's no waiter set, then there shouldn't be a prior.
-						DebugBreak();
+						if( *prior != 1 )
+							DebugBreak();
 					}
 #ifdef LOG_DEBUG_CRITICAL_SECTIONS
 					ll_lprintf( WIDE( "Claimed critical section." ) );
@@ -39193,7 +37996,7 @@ POINTER HeapAllocateAlignedEx( PMEM pHeap, uintptr_t dwSize, uint16_t alignment 
  /*pc->alignemnt = */
 			((uint16_t*)(retval - sizeof(uint32_t)))[0] =alignment;
  /*pc->to_chunk_start = */
-			((uint16_t*)(retval - sizeof(uint32_t)))[1] =(uint16_t)(((((uintptr_t)pc->byData) + (alignment - 1)) & masks[alignment]) - (uintptr_t)pc->byData);
+			((uint16_t*)(retval - sizeof(uint32_t)))[1] =(uint16_t)(((((uintptr_t)pc->byData) + (alignment - 1)) & mask) - (uintptr_t)pc->byData);
 			return (POINTER)retval;
 		}
 		else {
@@ -41796,6 +40599,7 @@ HANDLE sack_open( INDEX group, CTEXTSTR filename, int opts, ... )
 	switch( opts & 3 )
 	{
 	case 0:
+	default:
 	handle = CreateFile( file->fullname
 							, GENERIC_READ
 							, FILE_SHARE_READ
@@ -43391,6 +42195,30 @@ int sack_fputs( const char *format,FILE *file )
 	{
 		size_t len = strlen( format );
 		return (int)( sack_fwrite( format, 1, (int)len, file ) & 0x7FFFFFFF );
+	}
+	return 0;
+}
+uintptr_t sack_ioctl( FILE *file_handle, uintptr_t opCode, ... ) {
+	struct file *file;
+	va_list args;
+	va_start( args, opCode );
+	file = FindFileByFILE( file_handle );
+	if( file && file->mount && file->mount->fsi && file->mount->fsi->ioctl ) {
+		return file->mount->fsi->ioctl( (uintptr_t)file_handle, opCode, args );
+	}
+	else {
+		 // unknown file handle; ignore unknown ioctl.
+	}
+	return 0;
+}
+uintptr_t sack_fs_ioctl( struct file_system_mounted_interface *mount, uintptr_t opCode, ... ) {
+	va_list args;
+	va_start( args, opCode );
+	if( mount && mount->fsi && mount->fsi->fs_ioctl ) {
+		return mount->fsi->fs_ioctl( mount->psvInstance, opCode, args );
+	}
+	else {
+		// unknown file handle; ignore unknown ioctl.
 	}
 	return 0;
 }
@@ -45076,12 +43904,8 @@ POINTER  PeekLinkEx ( PLINKSTACK *pls, INDEX n )
 {
 	// should lock - but it's fast enough?
 	POINTER p = NULL;
-	if( pls && (*pls) && n >= (*pls)->Top )
-		return NULL;
-	if( pls && *pls && ((*pls)->Top-n) )
-		p = (*pls)->pNode[(*pls)->Top-(n+1)];
-	else
-		return NULL;
+	if( pls && *pls && ((*pls)->Top > n) )
+		p = (*pls)->pNode[(*pls)->Top - (n + 1)];
 	return p;
 }
 //--------------------------------------------------------------------------
@@ -47937,7 +46761,7 @@ double FloatCreateFromSeg( PTEXT pText )
 // otherwise, only as many segments as are needed for the number are used...
 int IsSegAnyNumberEx( PTEXT *ppText, double *fNumber, int64_t *iNumber, int *bIntNumber, int bUseAll )
 {
-	CTEXTSTR pCurrentCharacter;
+	CTEXTSTR pCurrentCharacter = NULL;
 	PTEXT pBegin;
 	PTEXT pText = *ppText;
 	int decimal_count, s, begin = TRUE, digits;
@@ -49607,24 +48431,24 @@ static void encodeblock( unsigned char in[3], TEXTCHAR out[4], size_t len, const
 	out[2] = (len > 1 ? base64[ ((in[1] & 0x0f) << 2) | ( ( len > 2 ) ? ((in[2] & 0xc0) >> 6) : 0 ) ] : base64[64]);
 	out[3] = (len > 2 ? base64[ in[2] & 0x3f ] : base64[64]);
 }
-static void decodeblock( char in[4], uint8_t out[3], size_t len, const char *base64 )
+static void decodeblock( const char in[4], uint8_t out[3], size_t len, const char *base64 )
 {
 	int index[4];
 	int n;
-	for( n = 0; n < 4; n++ )
+	for( n = 0; n < len; n++ )
 	{
-		//strchr( base64, in[n] );
-		index[n] = _base64_r[in[n]];
-		//if( ( index[n] - base64 ) == 64 )
-		//	last_byte = 1;
+		// propagate terminator.
+		if( n && ( index[n - 1] == 64 ) ) index[n] = 0;
+		else index[n] = _base64_r[in[n]];
 	}
-	//if(
+	for( ; n < 4; n++ )
+		index[n] = 0;
 	out[0] = (char)(( index[0] ) << 2 | ( index[1] ) >> 4);
 	out[1] = (char)(( index[1] ) << 4 | ( ( ( index[2] ) >> 2 ) & 0x0f ));
 	out[2] = (char)(( index[2] ) << 6 | ( ( index[3] ) & 0x3F ));
 	//out[] = (len > 2 ? base64[ in[2] & 0x3f ] : 0);
 }
-TEXTCHAR *EncodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const char *base64 )
+TEXTCHAR *EncodeBase64Ex( const uint8_t* buf, size_t length, size_t *outsize, const char *base64 )
 {
 	size_t fake_outsize;
 	TEXTCHAR * real_output;
@@ -49651,6 +48475,34 @@ TEXTCHAR *EncodeBase64Ex( uint8_t* buf, size_t length, size_t *outsize, const ch
 }
 static void setupDecodeBytes( const char *code ) {
 	int n = 0;
+	// default all of these, allow code to override them.
+	// allow nul terminators (sortof)
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r[0] = 64;
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r['~'] = 64;
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r['='] = 64;
+	// My JS Encoding $_ and = at the end.  allows most to be identifiers too.
+	// 'standard' encoding +/
+	// variants -/
+	//          +,
+	//          ._
+	// variants -_
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r['$'] = 62;
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r['+'] = 62;
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r['-'] = 62;
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r['.'] = 62;
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r['_'] = 63;
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r['/'] = 63;
+ // = ix 64 (0x40) and mask is & 0x3F dropping the upper bit.
+	_base64_r[','] = 63;
 	if( _last_base64_set != code ) {
 		_last_base64_set = code;
 		memset( _base64_r, 0, 256 );
@@ -49660,8 +48512,9 @@ static void setupDecodeBytes( const char *code ) {
 		}
 	}
 }
-uint8_t *DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *base64 )
+uint8_t *DecodeBase64Ex( const char* buf, size_t length, size_t *outsize, const char *base64 )
 {
+	static const char *useBase64;
 	size_t fake_outsize;
 	uint8_t * real_output;
 	if( !outsize ) outsize = &fake_outsize;
@@ -49669,7 +48522,10 @@ uint8_t *DecodeBase64Ex( char* buf, size_t length, size_t *outsize, const char *
 		base64 = _base64;
 	else if( ((uintptr_t)base64) == 1 )
 		base64 = _base642;
-	setupDecodeBytes( base64 );
+	if( useBase64 != base64 ) {
+		base64 = useBase64;
+		setupDecodeBytes( base64 );
+	}
 	real_output = NewArray( uint8_t, ( ( ( length + 1 ) * 3 ) / 4 ) + 1 );
 	{
 		size_t n;
@@ -51115,6 +49971,8 @@ PGENERICSET GetFromSetPoolEx( GENERICSET **pSetSet, int setsetsizea, int setunit
 	uint32_t maxbias = 0;
 	void *unit = NULL;
 	uintptr_t ofs = ( ( ( maxcnt + 31 ) / 32 ) * 4 );
+	//if( pSet && (*pSet) && ( (*pSet)->nBias > 1000 ))
+	//	_lprintf( DBG_RELAY )("GetFromSet: %p", pSet );
 	if( !pSet )
  // can never return something from nothing.
 		return NULL;
@@ -51372,7 +50230,9 @@ void DeleteFromSetExx( GENERICSET *pSet, void *unit, int unitsize, int max DBG_P
 	uintptr_t nUnit = (uintptr_t)unit;
 	uintptr_t ofs = ( ( max + 31 ) / 32) * 4;
 	uintptr_t base;
-	//if( bLog ) _lprintf(DBG_RELAY)( WIDE("Deleting from  %p of %p "), pSet, unit );
+	//if( bLog )
+	//if( pSet && ((pSet)->nBias > 1000) )
+	//	_lprintf(DBG_RELAY)( WIDE("Deleting from  %p of %p "), pSet, unit );
 	while( pSet )
 	{
 		base = ( (uintptr_t)( pSet->bUsed ) + ofs );
@@ -51458,7 +50318,9 @@ void **GetLinearSetArrayEx( GENERICSET *pSet, int *pCount, int unitsize, int max
 	void  **array;
 	int items, cnt, n, ofs;
 	INDEX nMin, nNewMin;
-	GENERICSET *pCur, *pNewMin;
+	GENERICSET *pCur;
+ // useless initialization.  nNewMin will be set if this is valid; and there was no error generated for using THAT uninitialized.
+	GENERICSET *pNewMin = NULL;
 	//Log2( WIDE("Building Array unit size: %d(%08x)"), unitsize, unitsize );
 	items = CountUsedInSetEx( pSet, max );
 	if( pCount )
@@ -53269,7 +52131,7 @@ int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
 				//start = 0; // new packet and still collecting header....
 				for( pos = 0; ( pos < size ) && !pHttpState->final; pos++ )
 				{
-					if( (pos - start - bLine) < 0 )
+					if( ((int)pos - (int)start - (int)bLine) < 0 )
 						continue;
 					if( c[pos] == '\r' )
 						bLine++;
@@ -54023,8 +52885,10 @@ static void httpConnected( PCLIENT pc, int error ) {
 }
 HTTPState GetHttpQuery( PTEXT address, PTEXT url )
 {
+	int retries = 0;
 	if( !address )
 		return NULL;
+	for( retries = 0; retries < 3; retries++ )
 	{
 		PCLIENT pc;
 		SOCKADDR *addr = CreateSockAddress( GetText( address ), 443 );
@@ -54068,8 +52932,10 @@ HTTPState GetHttpQuery( PTEXT address, PTEXT url )
 }
 HTTPState GetHttpsQuery( PTEXT address, PTEXT url, const char *certChain )
 {
+	int retries;
 	if( !address )
 		return NULL;
+	for( retries = 0; retries < 3; retries++ )
 	{
 		struct HttpState *state = CreateHttpState();
 		static PCLIENT pc;
@@ -54401,7 +53267,8 @@ struct url_data * SACK_URLParse( const char *url )
 {
 	const char *_url = url;;
 	struct url_data *data = New( struct url_data );
-	struct url_cgi_data *cgi_data;
+ // another useless initialization.  This WILL be a value whereever the code needs to use it. NOT AN ERROR!
+	struct url_cgi_data *cgi_data = NULL;
 	TEXTRUNE ch;
 	int outchar = 0;
 	char * outbuf = NewArray( TEXTCHAR, StrLen( url ) + 1 );
@@ -57813,6 +56680,84 @@ PRELOAD( InitWebSocketServer )
 #define HTML5_WEBSOCKET_SOURCE
  // websocketclose is a common...
 #define SACK_WEBSOCKET_CLIENT_SOURCE
+/*
+ *  sha1.h
+ *
+ *  Description:
+ *      This is the header file for code which implements the Secure
+ *      Hashing Algorithm 1 as defined in FIPS PUB 180-1 published
+ *      April 17, 1995.
+ *
+ *      Many of the variable names in this code, especially the
+ *      single character names, were used because those were the names
+ *      used in the publication.
+ *
+ *      Please read the file sha1.c for more information.
+ *
+ */
+#ifndef INCLUDED_SHA1_H_
+#define INCLUDED_SHA1_H_
+#ifdef SHA1_SOURCE
+#define SHA1_PROC(type,name) EXPORT_METHOD type CPROC name
+#else
+#define SHA1_PROC(type,name) IMPORT_METHOD type CPROC name
+#endif
+#if !defined(  HAS_STDINT )
+#ifndef __WATCOMC__
+	typedef unsigned long uint32_t;
+	typedef short int_least16_t;
+	typedef unsigned char uint8_t;
+#else
+#endif
+//typedef unsigned char uint8_t;
+//typedef int int_least16_t;
+#endif
+/*
+ * If you do not have the ISO standard stdint.h header file, then you
+ * must typdef the following:
+ *    name              meaning
+ *  uint32_t         unsigned 32 bit integer
+ *  uint8_t          unsigned 8 bit integer (i.e., unsigned char)
+ *  int_least16_t    integer of >= 16 bits
+ *
+ */
+#ifndef _SHA_enum_
+#define _SHA_enum_
+enum
+{
+    shaSuccess = 0,
+    shaNull,
+    shaInputTooLong,
+    shaStateError
+};
+#endif
+#define SHA1HashSize 20
+/*
+ *  This structure will hold context information for the SHA-1
+ *  hashing operation
+ */
+typedef struct SHA1Context
+{
+    uint32_t Intermediate_Hash[SHA1HashSize/4];
+    uint32_t Length_Low;
+    uint32_t Length_High;
+                               /* Index into message block array   */
+    int_least16_t Message_Block_Index;
+    uint8_t Message_Block[64];
+    int Computed;
+    int Corrupted;
+} SHA1Context;
+/*
+ *  Function Prototypes
+ */
+SHA1_PROC( int, SHA1Reset )(  SHA1Context *);
+SHA1_PROC( int, SHA1Input )(  SHA1Context *,
+                const uint8_t *,
+                size_t);
+SHA1_PROC( int, SHA1Result )( SHA1Context *,
+                uint8_t Message_Digest[SHA1HashSize]);
+#endif
+// $Log: $
 /* MD5.H - header file for MD5C.C
  */
 /* Copyright (C) 1991-2, RSA Data Security, Inc. Created 1991. All
@@ -58642,6 +57587,8 @@ JSON_EMITTER_PROC( int, json_parse_add_data )( struct json_parse_state *context
                                              );
 // these are common functions that work for json or json6 stream parsers
 JSON_EMITTER_PROC( PDATALIST, json_parse_get_data )( struct json_parse_state *context );
+// get actual allocated root for a value... allows holding that.
+JSON_EMITTER_PROC( const char *, json_get_parse_buffer )(struct json_parse_state *pState, const char *buf);
 JSON_EMITTER_PROC( void, json_parse_dispose_state )( struct json_parse_state **context );
 JSON_EMITTER_PROC( void, json_parse_clear_state )(struct json_parse_state *context);
 JSON_EMITTER_PROC( PTEXT, json_parse_get_error )(struct json_parse_state *context);
@@ -58666,6 +57613,8 @@ JSON_EMITTER_PROC( LOGICAL, _json6_parse_message )( char * msg
                                                   , size_t msglen
                                                   , PDATALIST *msg_data_out
                                                   );
+JSON_EMITTER_PROC( struct json_parse_state *, json6_get_message_parser )( void );
+JSON_EMITTER_PROC( struct json_parse_state *, json_get_message_parser )( void );
 // Add some data to parse for json stream (which may consist of multiple values)
 // return 1 when a completed value/object is available.
 // after returning 1, call json_parse_get_data.  It is possible that there is
@@ -58978,6 +57927,10 @@ struct json_parser_shared_data {
 	PPLINKSTACKSET linkStacks;
 	PPLINKQUEUESET linkQueues;
 	PPDATALISTSET dataLists;
+ // used by simple parse_message interface.
+	struct json_parse_state *json_state;
+ // used by simple parse_message interface.
+	struct json_parse_state *json6_state;
 };
 #ifndef JSON_PARSER_MAIN_SOURCE
 extern
@@ -59331,7 +58284,9 @@ int json_parse_add_data( struct json_parse_state *state
 			//lprintf( "output from before is %p", output );
 			offset = (output->pos - output->buf);
 			offset2 = state->val.string - output->buf;
-			AddLink( state->outValBuffers, output->buf );
+			struct json_output_buffer *tmpout = (struct json_output_buffer*)GetFromSet( PARSE_BUFFER, &jpsd.parseBuffers );
+			tmpout[0] = output[0];
+			AddLink( state->outValBuffers, tmpout );
 			output->buf = NewArray( char, output->size + msglen + 1 );
 			MemCpy( output->buf + offset2, state->val.string, offset-offset2 );
 			output->size += msglen;
@@ -59867,19 +58822,23 @@ LOGICAL json_parse_message( const char * msg
 	, size_t msglen
 	, PDATALIST *_msg_output ) {
 	struct json_parse_state *state = json_begin_parse();
-	static struct json_parse_state *_state;
+	//static struct json_parse_state *_state;
 	state->complete_at_end = TRUE;
 	int result = json_parse_add_data( state, msg, msglen );
-	if( _state ) json_parse_dispose_state( &_state );
+	if( jpsd.json_state ) json_parse_dispose_state( &jpsd.json_state );
 	if( result > 0 ) {
 		(*_msg_output) = json_parse_get_data( state );
-		_state = state;
+		jpsd.json_state = state;
 		//json6_parse_dispose_state( &state );
 		return TRUE;
 	}
 	(*_msg_output) = NULL;
 	json_parse_dispose_state( &state );
 	return FALSE;
+}
+struct json_parse_state *json_get_message_parser( void ) {
+	//lprintf( "Return simple json parser:%p", jpsd.json_state );
+	return jpsd.json_state;
 }
 void json_dispose_decoded_message( struct json_context_object *format
                                  , POINTER msg_data )
@@ -61272,7 +60231,9 @@ int json6_parse_add_data( struct json_parse_state *state
 			//lprintf( "output from before is %p", output );
 			offset = (output->pos - output->buf);
 			offset2 = state->val.string ? (state->val.string - output->buf) : 0;
-			AddLink( state->outValBuffers, output->buf );
+			struct json_output_buffer *saveout = (struct json_output_buffer*)GetFromSet( PARSE_BUFFER, &jpsd.parseBuffers );
+			saveout[0] = output[0];
+			AddLink( state->outValBuffers, saveout );
 			output->buf = NewArray( char, output->size + msglen + 1 );
 			if( state->val.string ) {
 				MemCpy( output->buf + offset2, state->val.string, offset - offset2 );
@@ -62236,6 +61197,23 @@ PTEXT json_parse_get_error( struct json_parse_state *state ) {
 	}
 	return NULL;
 }
+const char *json_get_parse_buffer( struct json_parse_state *pState, const char *buf ) {
+	int idx;
+	PPARSE_BUFFER buffer;
+	//lprintf( "Getting buffer from %p", pState );
+	for( idx = 0; buffer = (PPARSE_BUFFER)PeekLinkEx( pState->outBuffers, idx ); idx++ )
+		if( ((uintptr_t)buf) >= ((uintptr_t)buffer->buf) && ((uintptr_t)buf) < ((uintptr_t)buffer->pos) )
+			return buffer->buf;
+	for( idx = 0; buffer = (PPARSE_BUFFER)PeekQueueEx( *pState->outQueue, idx ); idx++ )
+		if( ((uintptr_t)buf) >= ((uintptr_t)buffer->buf) && ((uintptr_t)buf) < ((uintptr_t)buffer->pos) )
+			return buffer->buf;
+	LIST_FORALL( pState->outValBuffers[0], idx, PPARSE_BUFFER, buffer ) {
+		if( ((uintptr_t)buf) >= ((uintptr_t)buffer->buf) && ((uintptr_t)buf) < ((uintptr_t)buffer->pos) )
+			return buffer->buf;
+	}
+	lprintf( "FAILED TO FIND BUFFER TO RETURN" );
+	return NULL;
+}
 void json_parse_dispose_state( struct json_parse_state **ppState ) {
 	struct json_parse_state *state = (*ppState);
 	struct json_parse_context *old_context;
@@ -62247,10 +61225,12 @@ void json_parse_dispose_state( struct json_parse_state **ppState ) {
 		DeleteFromSet( PARSE_BUFFER, jpsd.parseBuffers, buffer );
 	}
 	{
-		char *buf;
+		PPARSE_BUFFER buf;
 		INDEX idx;
-		LIST_FORALL( state->outValBuffers[0], idx, char*, buf ) {
-			Deallocate( char*, buf );
+		LIST_FORALL( state->outValBuffers[0], idx, PPARSE_BUFFER, buf ) {
+			Deallocate( const char *, buf->buf );
+			DeleteFromSet( PARSE_BUFFER, jpsd.parseBuffers, buf );
+			Deallocate( PPARSE_BUFFER, buf );
 		}
 		DeleteFromSet( PLIST, jpsd.listSet, state->outValBuffers );
 		//DeleteList( &state->outValBuffers );
@@ -62283,20 +61263,24 @@ LOGICAL json6_parse_message( const char * msg
 	, size_t msglen
 	, PDATALIST *_msg_output ) {
 	struct json_parse_state *state = json_begin_parse();
-	static struct json_parse_state *_state;
+	//static struct json_parse_state *_state;
 	state->complete_at_end = TRUE;
 	int result = json6_parse_add_data( state, msg, msglen );
-	if( _state ) json_parse_dispose_state( &_state );
+	if( jpsd.json6_state ) json_parse_dispose_state( &jpsd.json6_state );
 	if( result > 0 ) {
 		(*_msg_output) = json_parse_get_data( state );
-		_state = state;
+		jpsd.json6_state = state;
 		//json6_parse_dispose_state( &state );
 		return TRUE;
 	}
 	(*_msg_output) = NULL;
 	jpsd.last_parse_state = state;
-	_state = state;
+	jpsd.json6_state = state;
 	return FALSE;
+}
+struct json_parse_state *json6_get_message_parser( void ) {
+	//lprintf( "Return simple json6 parser:%p", jpsd.json6_state );
+	return jpsd.json6_state;
 }
 void json6_dispose_message( PDATALIST *msg_data )
 {
@@ -62542,9 +61526,9 @@ parse_message
 		  int index;
         struct jsox_value_container *value;
 		  DATALIST_FORALL( pdlMessage, index, struct jsox_value_container *. value ) {
-           /* for each value in the result.... the first layer will
-           always be just one element, either a simple type, or a VALUE_ARRAY or VALUE_OBJECT, which
-           then for each value->contains (as a datalist like above), process each of those values.
+           // for each value in the result.... the first layer will
+           // always be just one element, either a simple type, or a VALUE_ARRAY or VALUE_OBJECT, which
+           // then for each value->contains (as a datalist like above), process each of those values.
 		  }
         jsox_dispose_mesage( &pdlMessage );
     }
@@ -62567,9 +61551,9 @@ parse_message
         int index;
         struct jsox_value_container *value;
         DATALIST_FORALL( pdlMessage, index, struct jsox_value_container *. value ) {
-           /* for each value in the result.... the first layer will
-           always be just one element, either a simple type, or a VALUE_ARRAY or VALUE_OBJECT, which
-           then for each value->contains (as a datalist like above), process each of those values.
+           // for each value in the result.... the first layer will
+           // always be just one element, either a simple type, or a VALUE_ARRAY or VALUE_OBJECT, which
+           // then for each value->contains (as a datalist like above), process each of those values.
         }
         jsox_dispose_mesage( &pdlMessage );
 		  jsox_parse_add_data( parser, NULL, 0 ); // trigger parsing next message.
@@ -62654,6 +61638,8 @@ struct jsox_value_container {
 JSOX_PARSER_PROC( struct jsox_parse_state *, jsox_begin_parse )(void);
 // clear state; after an error state, this can allow reusing a state.
 JSOX_PARSER_PROC( void, jsox_parse_clear_state )( struct jsox_parse_state *state );
+// get actual allocated root for a value... allows holding that.
+JSOX_PARSER_PROC( const char *, jsox_get_parse_buffer )(struct jsox_parse_state *pState, const char *buf);
 // destroy current parse state.
 JSOX_PARSER_PROC( void, jsox_parse_dispose_state )(struct jsox_parse_state **ppState);
 // return >0 when a completed value/object is available.
@@ -62675,6 +61661,7 @@ JSOX_PARSER_PROC( LOGICAL, jsox_parse_message )(const char * msg
 	);
 // release all resources of a message from jsox_parse_message or jsox_parse_get_data
 JSOX_PARSER_PROC( void, jsox_dispose_message )(PDATALIST *msg_data);
+JSOX_PARSER_PROC( struct jsox_parse_state *, jsox_get_messge_parser )(void);
 JSOX_PARSER_PROC( char *, jsox_escape_string_length )(const char *string, size_t len, size_t *outlen);
 JSOX_PARSER_PROC( char *, jsox_escape_string )(const char *string);
 #ifdef __cplusplus
@@ -62934,6 +61921,8 @@ struct jsox_parser_shared_data {
 	PPDATALISTSET dataLists;
 	PJSOX_CLASSSET  classes;
 	PJSOX_CLASS_FIELDSET  class_fields;
+ // static parsing state for simple message interface.
+	struct jsox_parse_state *_state;
 };
 #ifndef JSOX_PARSER_MAIN_SOURCE
 extern
@@ -64746,6 +63735,18 @@ PDATALIST jsox_parse_get_data( struct jsox_parse_state *state ) {
 	else state->elements[0]->Cnt = 0;
 	return result[0];
 }
+const char *jsox_get_parse_buffer( struct jsox_parse_state *pState, const char *buf ) {
+	int idx;
+	PJSOX_PARSE_BUFFER buffer;
+	for( idx = 0; ; idx-- )
+		while( buffer = (PJSOX_PARSE_BUFFER)PeekLinkEx( pState->outBuffers, idx ) ) {
+			if( !buffer ) break;
+			if( ((uintptr_t)buf) >= ((uintptr_t)buffer->buf) && ((uintptr_t)buf) < ((uintptr_t)buffer->pos) )
+				return buffer->buf;
+		}
+	lprintf( "FAILED TO FIND BUFFER TO RETURN" );
+	return NULL;
+}
 void _jsox_dispose_message( PDATALIST *msg_data )
 {
 	struct jsox_value_container *val;
@@ -64879,20 +63880,23 @@ LOGICAL jsox_parse_message( const char * msg
 	, size_t msglen
 	, PDATALIST *_msg_output ) {
 	struct jsox_parse_state *state = jsox_begin_parse();
-	static struct jsox_parse_state *_state;
+	//static struct jsox_parse_state *_state;
 	state->complete_at_end = TRUE;
 	int result = jsox_parse_add_data( state, msg, msglen );
-	if( _state ) jsox_parse_dispose_state( &_state );
+	if( jxpsd._state ) jsox_parse_dispose_state( &jxpsd._state );
 	if( result > 0 ) {
 		(*_msg_output) = jsox_parse_get_data( state );
-		_state = state;
+		jxpsd._state = state;
 		//jsox_parse_dispose_state( &state );
 		return TRUE;
 	}
 	(*_msg_output) = NULL;
 	jxpsd.last_parse_state = state;
-	_state = state;
+	jxpsd._state = state;
 	return FALSE;
+}
+struct jsox_parse_state *jsox_get_messge_parser( void ) {
+	return jxpsd._state;
 }
 #undef GetUtfChar
 #ifdef __cplusplus
@@ -67510,9 +66514,11 @@ void vesl_dispose_message( PDATALIST *msg_data )
 //  DEBUG FLAGS IN netstruc.h
 //
 #ifndef _DEFAULT_SOURCE
-//#define __USE_MISC
   // for features.h
 #define _DEFAULT_SOURCE
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #endif
 #define FIX_RELEASE_COM_COLLISION
 #define NO_UNICODE_C
@@ -67839,6 +66845,7 @@ LOCATION struct network_global_data{
 		BIT_FIELD bNetworkReady : 1;
 		BIT_FIELD bThreadInitOkay : 1;
 		BIT_FIELD bLogProtocols : 1;
+		BIT_FIELD bOptionsRead : 1;
 	} flags;
  // how many peer threads do we have
 	int nPeers;
@@ -67970,30 +66977,34 @@ __END_DECLS
 SACK_NETWORK_NAMESPACE
 PRELOAD( InitNetworkGlobalOptions )
 {
+	if( !globalNetworkData.flags.bOptionsRead ) {
 #ifdef __LINUX__
-	signal(SIGPIPE, SIG_IGN);
+		signal(SIGPIPE, SIG_IGN);
 #endif
 #ifndef __NO_OPTIONS__
-	globalNetworkData.flags.bLogProtocols = SACK_GetProfileIntEx( WIDE("SACK"), WIDE( "Network/Log Protocols" ), 0, TRUE );
-	globalNetworkData.flags.bShortLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data(64 byte max)" ), 0, TRUE );
-	globalNetworkData.flags.bLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data" ), 0, TRUE );
-	globalNetworkData.flags.bLogSentData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Sent Data" ), globalNetworkData.flags.bLogReceivedData, TRUE );
+		globalNetworkData.flags.bLogProtocols = SACK_GetProfileIntEx( WIDE("SACK"), WIDE( "Network/Log Protocols" ), 0, TRUE );
+		globalNetworkData.flags.bShortLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data(64 byte max)" ), 0, TRUE );
+		globalNetworkData.flags.bLogReceivedData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Received Data" ), 0, TRUE );
+		globalNetworkData.flags.bLogSentData = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Sent Data" ), globalNetworkData.flags.bLogReceivedData, TRUE );
 #  ifdef LOG_NOTICES
-	globalNetworkData.flags.bLogNotices = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Notifications" ), 0, TRUE );
+		globalNetworkData.flags.bLogNotices = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Log Network Notifications" ), 0, TRUE );
 #  endif
-	globalNetworkData.dwReadTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Read wait timeout" ), 5000, TRUE );
-	globalNetworkData.dwConnectTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Connect timeout" ), 10000, TRUE );
+		globalNetworkData.dwReadTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Read wait timeout" ), 5000, TRUE );
+		globalNetworkData.dwConnectTimeout = SACK_GetProfileIntEx( WIDE( "SACK" ), WIDE( "Network/Connect timeout" ), 10000, TRUE );
 #else
-	globalNetworkData.flags.bLogNotices = 0;
-	globalNetworkData.dwReadTimeout = 5000;
-	globalNetworkData.dwConnectTimeout = 10000;
+		globalNetworkData.flags.bLogNotices = 0;
+		globalNetworkData.dwReadTimeout = 5000;
+		globalNetworkData.dwConnectTimeout = 10000;
 #endif
+		globalNetworkData.flags.bOptionsRead = 1;
+	}
 }
 static void LowLevelNetworkInit( void )
 {
 	if( !global_network_data ) {
 		SimpleRegisterAndCreateGlobal( global_network_data );
-		InitializeCriticalSec( &globalNetworkData.csNetwork );
+		if( !globalNetworkData.ClientSlabs )
+			InitializeCriticalSec( &globalNetworkData.csNetwork );
 	}
 }
 PRIORITY_PRELOAD( InitNetworkGlobal, CONFIG_SCRIPT_PRELOAD_PRIORITY - 1 )
@@ -68507,6 +67518,7 @@ void TerminateClosedClientEx( PCLIENT pc DBG_PASS )
 #if defined( _WIN32 )
 #undef SHUT_WR
 #endif
+			//lprintf( "Win32:ShutdownWR+closesocket %p", pc );
 			closesocket( pc->Socket );
 			while( pc->lpFirstPending )
 			{
@@ -68815,7 +67827,7 @@ static void HandleEvent( PCLIENT pClient )
 							}
 							if( pClient->dwFlags & CF_TOCLOSE )
 							{
-								lprintf( WIDE( "Pending read failed - and wants to close." ) );
+								//lprintf( WIDE( "Pending read failed - and wants to close." ) );
 								//InternalRemoveClientEx( pc, TRUE, FALSE );
 							}
 						}
@@ -68845,9 +67857,11 @@ static void HandleEvent( PCLIENT pClient )
 							if( pClient->dwFlags & CF_TOCLOSE )
 							{
 								pClient->dwFlags &= ~CF_TOCLOSE;
-								lprintf( WIDE( "Pending read failed - and wants to close." ) );
+								//lprintf( WIDE( "Pending read failed - and wants to close." ) );
+								EnterCriticalSec( &globalNetworkData.csNetwork );
 								InternalRemoveClientEx( pClient, FALSE, TRUE );
 								TerminateClosedClient( pClient );
+								LeaveCriticalSec( &globalNetworkData.csNetwork );
 							}
 						}
 						NetworkUnlock( pClient, 0 );
@@ -68855,15 +67869,17 @@ static void HandleEvent( PCLIENT pClient )
 				}
 				if( networkEvents.lNetworkEvents & FD_CLOSE )
 				{
+					//lprintf( "FD_CLOSE %p", pClient );
 					if( !pClient->bDraining )
 					{
 						size_t bytes_read;
 						// act of reading can result in a close...
 						// there are things like IE which close and send
 						// adn we might get the close notice at application level indicating there might still be data...
+						//lprintf( "closed, try pending read %p", pClient );
 						while( ( bytes_read = FinishPendingRead( pClient DBG_SRC) ) > 0
  // try and read...
-							&& bytes_read != (size_t)-1 );
+							&& bytes_read != (size_t)-1 )
 						//if( pClient->dwFlags & CF_TOCLOSE )
 						{
 							//lprintf( "Pending read failed - reset connection. (well this is FD_CLOSE so yeah...??]" );
@@ -69592,11 +68608,11 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #  endif
 				if( event_data == (struct event_data*)1 ) {
 					//char buf;
-               //int stat;
+					//int stat;
 					//stat = read( GetThreadSleeper( thread->thread ), &buf, 1 );
 					//call wakeable sleep to just clear the sleep; because this is an event on the sleep pipe.
-					WakeableSleep( 1 );
-               //lprintf( "This should sleep forever..." );
+					//WakeableSleep( 1 );
+					//lprintf( "This should sleep forever..." );
 					return 1;
 				}
 #  ifdef __MAC__
@@ -69714,10 +68730,12 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 						{
 #ifdef LOG_NOTICES
 							//if( globalNetworkData.flags.bLogNotices )
-								lprintf( WIDE( "Pending read failed - reset connection." ) );
+							lprintf( WIDE( "Pending read failed - reset connection." ) );
 #endif
+							EnterCriticalSec( &globalNetworkData.csNetwork );
 							InternalRemoveClientEx( event_data->pc, FALSE, FALSE );
 							TerminateClosedClient( event_data->pc );
+							LeaveCriticalSec( &globalNetworkData.csNetwork );
 							closed = 1;
 						}
 						else if( !event_data->pc->RecvPending.s.bStream )
@@ -69930,19 +68948,23 @@ uintptr_t CPROC NetworkThreadProc( PTHREAD thread )
 #    ifdef __64__
 		struct kevent64_s ev;
 		this_thread.kevents = CreateDataList( sizeof( ev ) );
+#      ifdef USE_PIPE_SEMS
 		EV_SET64( &ev, GetThreadSleeper( thread ), EVFILT_READ, EV_ADD, 0, 0, (uint64_t)1, NULL, NULL );
+#      endif
 		kevent64( this_thread.kqueue, &ev, 1, 0, 0, 0, 0 );
 #    else
 		struct kevent ev;
 		this_thread.kevents = CreateDataList( sizeof( ev ) );
+#      ifdef USE_PIPE_SEMS
 		EV_SET( &ev, GetThreadSleeper( thread ), EVFILT_READ, EV_ADD, 0, 0, (uintptr_t)1 );
+#      endif
 		kevent( this_thread.kqueue, &ev, 1, 0, 0, 0 );
 #    endif
 #  else
-		struct epoll_event ev;
-		ev.data.ptr = (void*)1;
-		ev.events = EPOLLIN;
-		epoll_ctl( this_thread.epoll_fd, EPOLL_CTL_ADD, GetThreadSleeper( thread ), &ev );
+		//struct epoll_event ev;
+		//ev.data.ptr = (void*)1;
+		//ev.events = EPOLLIN;
+		//epoll_ctl( this_thread.epoll_fd, EPOLL_CTL_ADD, GetThreadSleeper( thread ), &ev );
 #  endif
 	}
 #endif
@@ -70403,14 +69425,16 @@ NETWORK_PROC( SOCKADDR *,CreateAddress_hton)( uint32_t dwIP,uint16_t nHisPort)
 }
 //---------------------------------------------------------------------------
 #if defined( __LINUX__ ) && !defined( __CYGWIN__ )
- #define UNIX_PATH_MAX	 108
+#  ifndef __LINUX__
+#    define UNIX_PATH_MAX	 108
 struct sockaddr_un {
-#ifdef __MAC__
+#    ifdef __MAC__
 	u_char   sa_len;
-#endif
+#    endif
 	sa_family_t  sun_family;
 	char	       sun_path[UNIX_PATH_MAX];
 };
+#  endif
 NETWORK_PROC( SOCKADDR *,CreateUnixAddress)( CTEXTSTR path )
 {
 	struct sockaddr_un *lpsaAddr;
@@ -70429,7 +69453,7 @@ NETWORK_PROC( SOCKADDR *,CreateUnixAddress)( CTEXTSTR path )
 	strncpy( lpsaAddr->sun_path, path, 107 );
 #endif
 #ifdef __MAC__
-	lpsaAddr->sa_len = 2+strlen( lpsaAddr->sun_path );
+	lpsaAddr->sun_len = 2+strlen( lpsaAddr->sun_path );
 #endif
 	return((SOCKADDR*)lpsaAddr);
 }
@@ -71323,12 +70347,11 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 #  define SHUT_WR SD_SEND
 #endif
 	if( !lpClient ) return;
-#if 0
-	if( !( lpClient->dwFlags & CF_UDP ) ) {
-		lprintf( "TRIGGER SHUTDOWN WRITES" );
+	if( !( lpClient->dwFlags & CF_UDP )
+		&& ( lpClient->dwFlags & ( CF_CONNECTED ) ) ) {
+		//lprintf( "TRIGGER SHUTDOWN WRITES" );
 		shutdown( lpClient->Socket, SHUT_WR );
 	} else
-#endif
 	{
 		int n = 0;
 		// UDP still needs to be done this way...
@@ -71668,18 +70691,18 @@ return 0;
 #endif
 #ifdef __LINUX__
 #ifdef __LINUX__
-#undef s_addr
+#  undef s_addr
  // IPPROTO_TCP
 //#include <linux/in.h>  // IPPROTO_TCP
  // TCP_NODELAY
-#include <netinet/tcp.h>
+#  include <netinet/tcp.h>
 //#include <linux/tcp.h> // TCP_NODELAY
-#else
-#endif
+#  else
+#  endif
  // SIGHUP defined
-#define NetWakeSignal SIGHUP
+#  define NetWakeSignal SIGHUP
 #else
-#define ioctl ioctlsocket
+#  define ioctl ioctlsocket
 #endif
 //#define NO_LOGGING // force neverlog....
 SACK_NETWORK_NAMESPACE
@@ -71720,7 +70743,7 @@ void AcceptClient(PCLIENT pListen)
 										, pNewClient->saClient
 										,&nTemp
 										);
-	//lprintf( "Accept new client....%d", pNewClient->Socket );
+	//lprintf( "Accept new client...%p %d", pNewClient, pNewClient->Socket );
 #if WIN32
 	SetHandleInformation( (HANDLE)pNewClient->Socket, HANDLE_FLAG_INHERIT, 0 );
 #endif
@@ -71773,7 +70796,9 @@ void AcceptClient(PCLIENT pListen)
  // if there was a select error...
 		{
 			lprintf(WIDE( " Accept select Error" ));
+			EnterCriticalSec( &globalNetworkData.csNetwork );
 			InternalRemoveClientEx( pNewClient, TRUE, FALSE );
+			LeaveCriticalSec( &globalNetworkData.csNetwork );
 			NetworkUnlockEx( pNewClient, 0 DBG_SRC );
 			NetworkUnlockEx( pNewClient, 1 DBG_SRC );
 			pNewClient = NULL;
@@ -71837,7 +70862,9 @@ void AcceptClient(PCLIENT pListen)
  // accept failed...
 	else
 	{
+		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientEx( pNewClient, TRUE, FALSE );
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		NetworkUnlockEx( pNewClient, 0 DBG_SRC );
 		NetworkUnlockEx( pNewClient, 1 DBG_SRC );
 		pNewClient = NULL;
@@ -71889,7 +70916,9 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
 	{
 		lprintf( WIDE(" Open Listen Socket Fail... %d"), errno);
 		DumpAddr( "passed address to select:", pAddr );
+		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientEx( pListen, TRUE, FALSE );
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		NetworkUnlockEx( pListen, 0 DBG_SRC );
 		NetworkUnlockEx( pListen, 1 DBG_SRC );
 		pListen = NULL;
@@ -71904,7 +70933,9 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
                        SOCKMSG_TCP, FD_ACCEPT|FD_CLOSE ) )
 	{
 		lprintf( WIDE("Windows AsynchSelect failed: %d"), WSAGetLastError() );
+		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientEx( pListen, TRUE, FALSE );
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		NetworkUnlockEx( pListen, 0 DBG_SRC );
 		NetworkUnlockEx( pListen, 1 DBG_SRC );
 		return NULL;
@@ -71931,7 +70962,9 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
 	{
 		_lprintf(DBG_RELAY)( WIDE("Cannot bind to address..:%d"), WSAGetLastError() );
 		DumpAddr( "Bind address:", pAddr );
+		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientEx( pListen, TRUE, FALSE );
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		NetworkUnlockEx( pListen, 0 DBG_SRC );
 		NetworkUnlockEx( pListen, 1 DBG_SRC );
 		return NULL;
@@ -71940,7 +70973,9 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
 	if(listen(pListen->Socket, SOMAXCONN ) == SOCKET_ERROR )
 	{
 		lprintf( WIDE("listen(5) failed: %d"), WSAGetLastError() );
+		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientEx( pListen, TRUE, FALSE );
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		NetworkUnlockEx( pListen, 0 DBG_SRC );
 		NetworkUnlockEx( pListen, 1 DBG_SRC );
 		return NULL;
@@ -72028,7 +71063,9 @@ int NetworkConnectTCPEx( PCLIENT pc DBG_PASS ) {
 			)
 		{
 			_lprintf( DBG_RELAY )(WIDE( "Connect FAIL: %d %d %" ) _32f, pc->Socket, err, dwError);
+			EnterCriticalSec( &globalNetworkData.csNetwork );
 			InternalRemoveClientEx( pc, TRUE, FALSE );
+			LeaveCriticalSec( &globalNetworkData.csNetwork );
 			NetworkUnlockEx( pc, 0 DBG_SRC );
 			pc = NULL;
 			return -1;
@@ -72085,12 +71122,14 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 			                      , (((*(uint16_t*)lpAddr) == AF_INET)||((*(uint16_t*)lpAddr) == AF_INET6))?IPPROTO_TCP:0 );
 #endif
 #ifdef LOG_SOCKET_CREATION
-		lprintf( WIDE( "Created new socket %d" ), pResult->Socket );
+		lprintf( WIDE( "Created new socket %p %d" ), pResult, pResult->Socket );
 #endif
 		if (pResult->Socket==INVALID_SOCKET)
 		{
 			lprintf( WIDE("Create socket failed. %d"), WSAGetLastError() );
+			EnterCriticalSec( &globalNetworkData.csNetwork );
 			InternalRemoveClientEx( pResult, TRUE, FALSE );
+			LeaveCriticalSec( &globalNetworkData.csNetwork );
 			NetworkUnlockEx( pResult, 1 DBG_SRC );
 			NetworkUnlockEx( pResult, 0 DBG_SRC );
 			return NULL;
@@ -72117,7 +71156,9 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 			                  , FD_READ|FD_WRITE|FD_CLOSE|FD_CONNECT) )
 			{
 				lprintf( WIDE(" Select NewClient Fail! %d"), WSAGetLastError() );
+				EnterCriticalSec( &globalNetworkData.csNetwork );
 				InternalRemoveClientEx( pResult, TRUE, FALSE );
+				LeaveCriticalSec( &globalNetworkData.csNetwork );
 				NetworkUnlockEx( pResult, 1 DBG_SRC );
 				NetworkUnlockEx( pResult, 0 DBG_SRC );
 				pResult = NULL;
@@ -72245,7 +71286,9 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 					}
 					else
 						lprintf( WIDE("Connect FAIL: Timeout") );
+					EnterCriticalSec( &globalNetworkData.csNetwork );
 					InternalRemoveClientEx( pResult, TRUE, FALSE );
+					LeaveCriticalSec( &globalNetworkData.csNetwork );
 					pResult->dwFlags &= ~CF_CONNECT_WAITING;
 					pResult = NULL;
 					goto LeaveNow;
@@ -72853,7 +71896,7 @@ int TCPWriteEx(PCLIENT pc DBG_PASS)
 							 (int)pc->lpFirstPending->dwAvail );
 			}
 #ifdef DEBUG_SOCK_IO
-			_lprintf(DBG_RELAY)( "Try to send... %d  %d", pc->lpFirstPending->dwUsed, pc->lpFirstPending->dwAvail );
+			_lprintf(DBG_RELAY)( "Try to send... %p  %d  %d", pc, pc->lpFirstPending->dwUsed, pc->lpFirstPending->dwAvail );
 #endif
 			nSent = send(pc->Socket,
 							 (char*)pc->lpFirstPending->buffer.c +
@@ -73206,6 +72249,9 @@ void SetClientKeepAlive( PCLIENT pClient, int bEnable )
 		// log some sort of error... and ignore...
 	}
 }
+#ifndef __LINUX__
+#  undef ioctl
+#endif
 SACK_NETWORK_TCP_NAMESPACE_END
 #define LIBRARY_DEF
 #ifdef __LINUX__
@@ -73756,6 +72802,9 @@ int SetSocketReusePort( PCLIENT lpClient, int32_t enable )
 #endif
 	return 1;
 }
+#ifndef __LINUX__
+#  undef ioctl
+#endif
 _UDP_NAMESPACE_END
 SACK_NETWORK_NAMESPACE_END
 #ifndef __LINUX__
@@ -74836,6 +73885,4576 @@ void loadSystemCerts( X509_STORE *store )
 SACK_NETWORK_NAMESPACE_END
 #endif
 #endif
+#ifndef SALTY_RANDOM_GENERATOR_SOURCE
+#define SALTY_RANDOM_GENERATOR_SOURCE
+#endif
+#ifndef SACK_SRG_INTERNAL_INCLUDED
+#define SACK_SRG_INTERNAL_INCLUDED
+#ifdef SACK_BAG_EXPORTS
+#define SHA2_SOURCE
+#endif
+/*
+ * FIPS 180-2 SHA-224/256/384/512 implementation
+ * Last update: 02/02/2007
+ * Issue date:  04/30/2005
+ *
+ * Copyright (C) 2005, 2007 Olivier Gay <olivier.gay@a3.epfl.ch>
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the project nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE PROJECT OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+#ifndef SHA2_H
+#define SHA2_H
+#ifdef SHA2_SOURCE
+#define SHA2_PROC   EXPORT_METHOD
+#else
+#define SHA2_PROC   IMPORT_METHOD
+#endif
+#define SHA224_DIGEST_SIZE ( 224 / 8)
+#define SHA256_DIGEST_SIZE ( 256 / 8)
+#define SHA384_DIGEST_SIZE ( 384 / 8)
+#define SHA512_DIGEST_SIZE ( 512 / 8)
+#define SHA256_BLOCK_SIZE  ( 512 / 8)
+#define SHA512_BLOCK_SIZE  (1024 / 8)
+#define SHA384_BLOCK_SIZE  SHA512_BLOCK_SIZE
+#define SHA224_BLOCK_SIZE  SHA256_BLOCK_SIZE
+#ifndef SHA2_TYPES
+#define SHA2_TYPES
+typedef unsigned char uint8;
+typedef unsigned int  uint32;
+typedef unsigned long long uint64;
+#endif
+#ifdef __cplusplus
+extern "C" {
+#endif
+typedef struct {
+    unsigned int tot_len;
+    unsigned int len;
+    unsigned char block[2 * SHA256_BLOCK_SIZE];
+    uint32 h[8];
+}sha256_ctx;
+typedef struct {
+    unsigned int tot_len;
+    unsigned int len;
+    unsigned char block[2 * SHA512_BLOCK_SIZE];
+    uint64 h[8];
+}sha512_ctx;
+typedef sha512_ctx sha384_ctx;
+typedef sha256_ctx sha224_ctx;
+SHA2_PROC void sha224_init(sha224_ctx *ctx);
+SHA2_PROC void sha224_update(sha224_ctx *ctx, const unsigned char *message,
+                   unsigned int len);
+SHA2_PROC void sha224_final(sha224_ctx *ctx, unsigned char *digest);
+SHA2_PROC void sha224(const unsigned char *message, unsigned int len,
+            unsigned char *digest);
+SHA2_PROC void sha256_init(sha256_ctx * ctx);
+SHA2_PROC void sha256_update(sha256_ctx *ctx, const unsigned char *message,
+                   unsigned int len);
+SHA2_PROC void sha256_final(sha256_ctx *ctx, unsigned char *digest);
+SHA2_PROC void sha256(const unsigned char *message, unsigned int len,
+            unsigned char *digest);
+SHA2_PROC void sha384_init(sha384_ctx *ctx);
+SHA2_PROC void sha384_update(sha384_ctx *ctx, const unsigned char *message,
+                   unsigned int len);
+SHA2_PROC void sha384_final(sha384_ctx *ctx, unsigned char *digest);
+SHA2_PROC void sha384(const unsigned char *message, unsigned int len,
+            unsigned char *digest);
+SHA2_PROC void sha512_init(sha512_ctx *ctx);
+SHA2_PROC void sha512_update(sha512_ctx *ctx, const unsigned char *message,
+                   unsigned int len);
+SHA2_PROC void sha512_final(sha512_ctx *ctx, unsigned char *digest);
+SHA2_PROC void sha512(const unsigned char *message, unsigned int len,
+            unsigned char *digest);
+#ifdef __cplusplus
+}
+#endif
+#endif
+// from https://github.com/mjosaarinen/tiny_sha3/blob/master/sha3.h  2017/19/12
+// sha3.h
+// 19-Nov-11  Markku-Juhani O. Saarinen <mjos@iki.fi>
+// 2018-06-16 modified _final api to pass context then digest (reverse params from original)
+#ifndef SHA3_H
+#define SHA3_H
+#ifndef KECCAKF_ROUNDS
+#define KECCAKF_ROUNDS 24
+#endif
+#ifndef ROTL64
+#define ROTL64(x, y) (((x) << (y)) | ((x) >> (64 - (y))))
+#endif
+// state context
+typedef struct {
+                                 // state:
+    union {
+                     // 8-bit bytes
+        uint8_t b[200];
+                     // 64-bit words
+        uint64_t q[25];
+    } st;
+                    // these don't overflow
+    int pt, rsiz, mdlen;
+} sha3_ctx_t;
+// Compression function.
+void sha3_keccakf(uint64_t st[25]);
+// OpenSSL - like interfece
+    // mdlen = hash output in bytes
+int sha3_init(sha3_ctx_t *c, int mdlen);
+int sha3_update(sha3_ctx_t *c, const void *data, size_t len);
+    // digest goes to md
+int sha3_final(sha3_ctx_t *c, void *md );
+// compute a sha3 hash (md) of given byte length from "in"
+void *sha3(const void *in, size_t inlen, void *md, int mdlen);
+// SHAKE128 and SHAKE256 extensible-output functions
+#define shake128_init(c) sha3_init(c, 16)
+#define shake256_init(c) sha3_init(c, 32)
+#define shake_update sha3_update
+void shake_xof(sha3_ctx_t *c);
+void shake_out(sha3_ctx_t *c, void *out, size_t len);
+#endif
+/*
+Implementation by Ronny Van Keer, hereby denoted as "the implementer".
+For more information, feedback or questions, please refer to our website:
+https://keccak.team/
+To the extent possible under law, the implementer has waived all copyright
+and related or neighboring rights to the source code in this file.
+http://creativecommons.org/publicdomain/zero/1.0/
+*/
+#ifndef _KangarooTwelve_h_
+#define _KangarooTwelve_h_
+//#include "KeccakP-1600-SnP.h"
+#ifdef __64__
+/*
+Implementation by the Keccak Team, namely, Guido Bertoni, Joan Daemen,
+Michaël Peeters, Gilles Van Assche and Ronny Van Keer,
+hereby denoted as "the implementer".
+For more information, feedback or questions, please refer to our website:
+https://keccak.team/
+To the extent possible under law, the implementer has waived all copyright
+and related or neighboring rights to the source code in this file.
+http://creativecommons.org/publicdomain/zero/1.0/
+---
+Please refer to the XKCP for more details.
+*/
+#ifndef _KeccakP_1600_SnP_h_
+#define _KeccakP_1600_SnP_h_
+/*
+ ---------------------------------------------------------------------------
+ Copyright (c) 1998-2008, Brian Gladman, Worcester, UK. All rights reserved.
+ LICENSE TERMS
+ The redistribution and use of this software (with or without changes)
+ is allowed without the payment of fees or royalties provided that:
+  1. source code distributions include the above copyright notice, this
+     list of conditions and the following disclaimer;
+  2. binary distributions include the above copyright notice, this list
+     of conditions and the following disclaimer in their documentation;
+  3. the name of the copyright holder is not used to endorse products
+     built using this software without specific written permission.
+ DISCLAIMER
+ This software is provided 'as is' with no explicit or implied warranties
+ in respect of its properties, including, but not limited to, correctness
+ and/or fitness for purpose.
+ ---------------------------------------------------------------------------
+ Issue Date: 20/12/2007
+ Changes for ARM 9/9/2010
+*/
+#ifndef _BRG_ENDIAN_H
+#define _BRG_ENDIAN_H
+#define IS_BIG_ENDIAN      4321
+#define IS_LITTLE_ENDIAN   1234
+#if 0
+/* Include files where endian defines and byteswap functions may reside */
+#if defined( __sun )
+#  include <sys/isa_defs.h>
+#elif defined( __FreeBSD__ ) || defined( __OpenBSD__ ) || defined( __NetBSD__ )
+#  include <sys/endian.h>
+#elif defined( BSD ) && ( BSD >= 199103 ) || defined( __APPLE__ ) ||       defined( __CYGWIN32__ ) || defined( __DJGPP__ ) || defined( __osf__ )
+#  include <machine/endian.h>
+#elif defined( __linux__ ) || defined( __GNUC__ ) || defined( __GNU_LIBRARY__ )
+#  if !defined( __MINGW32__ ) && !defined( _AIX )
+#    include <endian.h>
+#    if !defined( __BEOS__ )
+#      include <byteswap.h>
+#    endif
+#  endif
+#endif
+#endif
+/* Now attempt to set the define for platform byte order using any  */
+/* of the four forms SYMBOL, _SYMBOL, __SYMBOL & __SYMBOL__, which  */
+/* seem to encompass most endian symbol definitions                 */
+#if defined( BIG_ENDIAN ) && defined( LITTLE_ENDIAN )
+#  if defined( BYTE_ORDER ) && BYTE_ORDER == BIG_ENDIAN
+#    define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
+#  elif defined( BYTE_ORDER ) && BYTE_ORDER == LITTLE_ENDIAN
+#    define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
+#  endif
+#elif defined( BIG_ENDIAN )
+#  define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
+#elif defined( LITTLE_ENDIAN )
+#  define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
+#endif
+#if defined( _BIG_ENDIAN ) && defined( _LITTLE_ENDIAN )
+#  if defined( _BYTE_ORDER ) && _BYTE_ORDER == _BIG_ENDIAN
+#    define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
+#  elif defined( _BYTE_ORDER ) && _BYTE_ORDER == _LITTLE_ENDIAN
+#    define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
+#  endif
+#elif defined( _BIG_ENDIAN )
+#  define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
+#elif defined( _LITTLE_ENDIAN )
+#  define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
+#endif
+#if defined( __BIG_ENDIAN ) && defined( __LITTLE_ENDIAN )
+#  if defined( __BYTE_ORDER ) && __BYTE_ORDER == __BIG_ENDIAN
+#    define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
+#  elif defined( __BYTE_ORDER ) && __BYTE_ORDER == __LITTLE_ENDIAN
+#    define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
+#  endif
+#elif defined( __BIG_ENDIAN )
+#  define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
+#elif defined( __LITTLE_ENDIAN )
+#  define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
+#endif
+#if defined( __BIG_ENDIAN__ ) && defined( __LITTLE_ENDIAN__ )
+#  if defined( __BYTE_ORDER__ ) && __BYTE_ORDER__ == __BIG_ENDIAN__
+#    define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
+#  elif defined( __BYTE_ORDER__ ) && __BYTE_ORDER__ == __LITTLE_ENDIAN__
+#    define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
+#  endif
+#elif defined( __BIG_ENDIAN__ )
+#  define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
+#elif defined( __LITTLE_ENDIAN__ )
+#  define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
+#endif
+/*  if the platform byte order could not be determined, then try to */
+/*  set this define using common machine defines                    */
+#if !defined(PLATFORM_BYTE_ORDER)
+#if   defined( __alpha__ ) || defined( __alpha ) || defined( i386 )       ||       defined( __i386__ )  || defined( _M_I86 )  || defined( _M_IX86 )    ||       defined( __OS2__ )   || defined( sun386 )  || defined( __TURBOC__ ) ||       defined( vax )       || defined( vms )     || defined( VMS )        ||       defined( __VMS )     || defined( _M_X64 )
+#  define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
+#elif defined( AMIGA )    || defined( applec )    || defined( __AS400__ )  ||       defined( _CRAY )    || defined( __hppa )    || defined( __hp9000 )   ||       defined( ibm370 )   || defined( mc68000 )   || defined( m68k )       ||       defined( __MRC__ )  || defined( __MVS__ )   || defined( __MWERKS__ ) ||       defined( sparc )    || defined( __sparc)    || defined( SYMANTEC_C ) ||       defined( __VOS__ )  || defined( __TIGCC__ ) || defined( __TANDEM )   ||       defined( THINK_C )  || defined( __VMCMS__ ) || defined( _AIX )       ||       defined( __s390__ ) || defined( __s390x__ ) || defined( __zarch__ )
+#  define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
+#elif defined(__arm__)
+# ifdef __BIG_ENDIAN
+#  define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
+# else
+#  define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
+# endif
+#elif 1
+#  define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
+#elif 0
+#  define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
+#else
+#  error Please edit lines 132 or 134 in brg_endian.h to set the platform byte order
+#endif
+#endif
+#endif
+#define KeccakP1600_implementation_config "all rounds unrolled"
+#define KeccakP1600_fullUnrolling
+/* Or */
+/*
+#define KeccakP1600_implementation_config "6 rounds unrolled"
+#define KeccakP1600_unrolling 6
+*/
+/* Or */
+/*
+#define KeccakP1600_implementation_config "lane complementing, 6 rounds unrolled"
+#define KeccakP1600_unrolling 6
+#define KeccakP1600_useLaneComplementing
+*/
+/* Or */
+/*
+#define KeccakP1600_implementation_config "lane complementing, all rounds unrolled"
+#define KeccakP1600_fullUnrolling
+#define KeccakP1600_useLaneComplementing
+*/
+/* Or */
+/*
+#define KeccakP1600_implementation_config "lane complementing, all rounds unrolled, using SHLD for rotations"
+#define KeccakP1600_fullUnrolling
+#define KeccakP1600_useLaneComplementing
+#define KeccakP1600_useSHLD
+*/
+#define KeccakP1600_implementation      "generic 64-bit optimized implementation (" KeccakP1600_implementation_config ")"
+#define KeccakP1600_stateSizeInBytes    200
+#define KeccakP1600_stateAlignment      8
+#define KeccakF1600_FastLoop_supported
+#define KeccakP1600_12rounds_FastLoop_supported
+#define KeccakP1600_StaticInitialize()
+void KeccakP1600_Initialize(void *state);
+#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
+#define KeccakP1600_AddByte(state, byte, offset)     ((unsigned char*)(state))[(offset)] ^= (byte)
+#else
+void KeccakP1600_AddByte(void *state, unsigned char data, unsigned int offset);
+#endif
+void KeccakP1600_AddBytes(void *state, const unsigned char *data, unsigned int offset, unsigned int length);
+void KeccakP1600_Permute_12rounds(void *state);
+void KeccakP1600_ExtractBytes(const void *state, unsigned char *data, unsigned int offset, unsigned int length);
+size_t KeccakP1600_12rounds_FastLoop_Absorb(void *state, unsigned int laneCount, const unsigned char *data, size_t dataByteLen);
+#endif
+#else
+/*
+Implementation by Ronny Van Keer, hereby denoted as "the implementer".
+For more information, feedback or questions, please refer to our website:
+https://keccak.team/
+To the extent possible under law, the implementer has waived all copyright
+and related or neighboring rights to the source code in this file.
+http://creativecommons.org/publicdomain/zero/1.0/
+---
+Please refer to the XKCP for more details.
+*/
+#ifndef _KeccakP_1600_SnP_h_
+#define _KeccakP_1600_SnP_h_
+#define KeccakP1600_implementation      "in-place 32-bit optimized implementation"
+#define KeccakP1600_stateSizeInBytes    200
+#define KeccakP1600_stateAlignment      8
+#define KeccakP1600_StaticInitialize()
+void KeccakP1600_Initialize(void *state);
+void KeccakP1600_AddByte(void *state, unsigned char data, unsigned int offset);
+void KeccakP1600_AddBytes(void *state, const unsigned char *data, unsigned int offset, unsigned int length);
+void KeccakP1600_Permute_12rounds(void *state);
+void KeccakP1600_ExtractBytes(const void *state, unsigned char *data, unsigned int offset, unsigned int length);
+#endif
+#endif
+#ifdef ALIGN
+#undef ALIGN
+#endif
+#if defined(__GNUC__)
+#define ALIGN(x) __attribute__ ((aligned(x)))
+#elif defined(_MSC_VER)
+#define ALIGN(x) __declspec(align(x))
+#elif defined(__ARMCC_VERSION)
+#define ALIGN(x) __align(x)
+#else
+#define ALIGN(x)
+#endif
+ALIGN(KeccakP1600_stateAlignment) typedef struct KeccakWidth1600_12rounds_SpongeInstanceStruct {
+    unsigned char state[KeccakP1600_stateSizeInBytes];
+    unsigned int rate;
+    unsigned int byteIOIndex;
+    int squeezing;
+} KeccakWidth1600_12rounds_SpongeInstance;
+typedef enum {
+    NOT_INITIALIZED,
+    ABSORBING,
+    FINAL,
+    SQUEEZING
+} KCP_Phases;
+typedef KCP_Phases KangarooTwelve_Phases;
+typedef struct {
+    KeccakWidth1600_12rounds_SpongeInstance queueNode;
+    KeccakWidth1600_12rounds_SpongeInstance finalNode;
+    size_t fixedOutputLength;
+    size_t blockNumber;
+    unsigned int queueAbsorbedLen;
+    KangarooTwelve_Phases phase;
+} KangarooTwelve_Instance;
+/** Extendable ouput function KangarooTwelve.
+  * @param  input           Pointer to the input message (M).
+  * @param  inputByteLen    The length of the input message in bytes.
+  * @param  output          Pointer to the output buffer.
+  * @param  outputByteLen   The desired number of output bytes.
+  * @param  customization   Pointer to the customization string (C).
+  * @param  customByteLen   The length of the customization string in bytes.
+  * @return 0 if successful, 1 otherwise.
+  */
+int KangarooTwelve(const unsigned char *input, size_t inputByteLen, unsigned char *output, size_t outputByteLen, const unsigned char *customization, size_t customByteLen );
+/**
+  * Function to initialize a KangarooTwelve instance.
+  * @param  ktInstance      Pointer to the instance to be initialized.
+  * @param  outputByteLen   The desired number of output bytes,
+  *                         or 0 for an arbitrarily-long output.
+  * @return 0 if successful, 1 otherwise.
+  */
+int KangarooTwelve_Initialize(KangarooTwelve_Instance *ktInstance, size_t outputByteLen);
+/**
+  * Function to give input data to be absorbed.
+  * @param  ktInstance      Pointer to the instance initialized by KangarooTwelve_Initialize().
+  * @param  input           Pointer to the input message data (M).
+  * @param  inputByteLen    The number of bytes provided in the input message data.
+  * @return 0 if successful, 1 otherwise.
+  */
+int KangarooTwelve_Update(KangarooTwelve_Instance *ktInstance, const unsigned char *input, size_t inputByteLen);
+/**
+  * Function to call after all the input message has been input, and to get
+  * output bytes if the length was specified when calling KangarooTwelve_Initialize().
+  * @param  ktInstance      Pointer to the hash instance initialized by KangarooTwelve_Initialize().
+  * If @a outputByteLen was not 0 in the call to KangarooTwelve_Initialize(), the number of
+  *     output bytes is equal to @a outputByteLen.
+  * If @a outputByteLen was 0 in the call to KangarooTwelve_Initialize(), the output bytes
+  *     must be extracted using the KangarooTwelve_Squeeze() function.
+  * @param  output          Pointer to the buffer where to store the output data.
+  * @param  customization   Pointer to the customization string (C).
+  * @param  customByteLen   The length of the customization string in bytes.
+  * @return 0 if successful, 1 otherwise.
+  */
+int KangarooTwelve_Final(KangarooTwelve_Instance *ktInstance, unsigned char *output, const unsigned char *customization, size_t customByteLen);
+/**
+  * Function to squeeze output data.
+  * @param  ktInstance     Pointer to the hash instance initialized by KangarooTwelve_Initialize().
+  * @param  data           Pointer to the buffer where to store the output data.
+  * @param  outputByteLen  The number of output bytes desired.
+  * @pre    KangarooTwelve_Final() must have been already called.
+  * @return 0 if successful, 1 otherwise.
+  */
+int KangarooTwelve_Squeeze(KangarooTwelve_Instance *ktInstance, unsigned char *output, size_t outputByteLen);
+#endif
+struct random_context {
+	LOGICAL use_version2 : 1;
+	LOGICAL use_version2_256 : 1;
+	LOGICAL use_version3 : 1;
+	LOGICAL use_versionK12 : 1;
+	union {
+		SHA1Context sha1_ctx;
+		sha512_ctx  sha512;
+		sha256_ctx  sha256;
+		sha3_ctx_t  sha3;
+		KangarooTwelve_Instance K12i;
+	} f;
+	size_t total_bits_used;
+	POINTER salt;
+	size_t salt_size;
+	void( *getsalt )(uintptr_t, POINTER *salt, size_t *salt_size);
+	uintptr_t psv_user;
+	uint8_t *entropy;
+	union {
+		uint8_t entropy0[SHA1HashSize];
+		uint8_t entropy2[SHA512_DIGEST_SIZE];
+		uint8_t entropy2_256[SHA256_DIGEST_SIZE];
+ // 512 bits
+#define SHA3_DIGEST_SIZE 64
+		uint8_t entropy3[SHA3_DIGEST_SIZE];
+  // 512 bits
+#define K12_DIGEST_SIZE 64
+		uint8_t entropy4[K12_DIGEST_SIZE];
+	} s;
+	size_t bits_used;
+	size_t bits_avail;
+};
+struct byte_shuffle_key {
+// shuffle works on ints.
+	uint8_t map[256];
+	uint8_t dmap[256];
+};
+#define MY_MASK_MASK(n,length)	(MASK_TOP_MASK(length) << ((n)&0x7) )
+#define MY_GET_MASK(v,n,mask_size)  ( ( ((MASKSET_READTYPE*)((((uintptr_t)v))+(n)/CHAR_BIT))[0]											 & MY_MASK_MASK(n,mask_size) )																										>> (((n))&0x7))
+#define SRG_GetBit_(tmp,ctx)    (	    (ctx->total_bits_used += 1),	  (( (ctx->bits_used) >= ctx->bits_avail )?		  NeedBits( ctx ):(void)0),	  ( tmp = MY_GET_MASK( ctx->entropy, ctx->bits_used, 1 ) ),	  ( ctx->bits_used += 1 ),	  ( tmp ) )
+#define SRG_GetByte_(tmp,ctx)    (	    (ctx->total_bits_used += 8),	  (( (ctx->bits_used) >= ctx->bits_avail )?		  NeedBits( ctx ):(void)0),	  ( tmp = MY_GET_MASK( ctx->entropy, ctx->bits_used, 8 ) ),	  ( ctx->bits_used += 8 ),	  ( tmp ) )
+#ifndef SALTY_RANDOM_GENERATOR_SOURCE
+extern
+#endif
+ void NeedBits( struct random_context *ctx );
+#define BlockShuffle_SubByte_(key, bytes_input, bytes_output )  ( (bytes_output)[0] = key->map[(bytes_input)[0]] )
+#define BlockShuffle_Sub1Byte_(key, byte_input )  ( key->map[byte_input] )
+#define BlockShuffle_SubBytes_(key, in, out, byteCount ) {	  size_t n;	   uint8_t *bytes_input = in, *bytes_output = out;	  uint8_t *map = key->map;	  for( n = 0; n < byteCount; n++, bytes_input++, bytes_output++ ) {		  bytes_output[0] = map[bytes_input[0]];	  }  }
+#define BlockShuffle_BusByte_(key, bytes_input, bytes_output )  ( (bytes_output)[0] = key->dmap[(bytes_input)[0]] )
+#define BlockShuffle_Bus1Byte_(key, byte_input )  ( key->dmap[byte_input] )
+#define BlockShuffle_BusBytes_(key, in, out, byteCount )  {	  size_t n;	   uint8_t *bytes_input = in, *bytes_output = out;	  uint8_t *map = key->dmap;	  for( n = 0; n < byteCount; n++, bytes_input++, bytes_output++ ) {		  bytes_output[0] = map[bytes_input[0]];	   }  }
+#endif
+#define USE_K12_LONG_SQUEEZE 1
+#define K12_SQUEEZE_LENGTH   32768
+void NeedBits( struct random_context *ctx )
+{
+	if( ctx->use_versionK12 ) {
+#if USE_K12_LONG_SQUEEZE
+		if( ctx->f.K12i.phase == ABSORBING || ctx->total_bits_used > K12_SQUEEZE_LENGTH ) {
+			if( ctx->f.K12i.phase == SQUEEZING ) {
+				KangarooTwelve_Initialize( &ctx->f.K12i, 0 );
+				KangarooTwelve_Update( &ctx->f.K12i, ctx->s.entropy4, K12_DIGEST_SIZE );
+			}
+			if( ctx->getsalt ) {
+				ctx->getsalt( ctx->psv_user, &ctx->salt, &ctx->salt_size );
+				KangarooTwelve_Update( &ctx->f.K12i, (const uint8_t*)ctx->salt, (unsigned int)ctx->salt_size );
+			}
+ // customization is a final pad string.
+			KangarooTwelve_Final( &ctx->f.K12i, NULL, NULL, 0 );
+			ctx->total_bits_used = 0;
+		}
+		if( ctx->f.K12i.phase == SQUEEZING )
+ // customization is a final pad string.
+			KangarooTwelve_Squeeze( &ctx->f.K12i, ctx->s.entropy4, K12_DIGEST_SIZE );
+#else
+		if( ctx->getsalt ) {
+			ctx->getsalt( ctx->psv_user, &ctx->salt, &ctx->salt_size );
+			KangarooTwelve_Update( &ctx->f.K12i, (const uint8_t*)ctx->salt, (unsigned int)ctx->salt_size );
+		}
+ // customization is a final pad string.
+		KangarooTwelve_Final( &ctx->f.K12i, ctx->s.entropy4, NULL, 0 );
+		KangarooTwelve_Initialize( &ctx->f.K12i, K12_DIGEST_SIZE );
+		KangarooTwelve_Update( &ctx->f.K12i, ctx->s.entropy4, K12_DIGEST_SIZE );
+#endif
+		ctx->bits_avail = sizeof( ctx->s.entropy4 ) * CHAR_BIT;
+		ctx->entropy = ctx->s.entropy4;
+	}
+	else {
+		if( ctx->getsalt )
+			ctx->getsalt( ctx->psv_user, &ctx->salt, &ctx->salt_size );
+		else
+			ctx->salt_size = 0;
+		if( ctx->use_version3 ) {
+			if( ctx->salt_size )
+				sha3_update( &ctx->f.sha3, (const uint8_t*)ctx->salt, (unsigned int)ctx->salt_size );
+			sha3_final( &ctx->f.sha3, ctx->s.entropy3 );
+			sha3_init( &ctx->f.sha3, SHA3_DIGEST_SIZE );
+			sha3_update( &ctx->f.sha3, ctx->s.entropy3, SHA3_DIGEST_SIZE );
+			ctx->bits_avail = sizeof( ctx->s.entropy3 ) * CHAR_BIT;
+			ctx->entropy = ctx->s.entropy3;
+		}
+		else if( ctx->use_version2_256 ) {
+			if( ctx->salt_size )
+				sha256_update( &ctx->f.sha256, (const uint8_t*)ctx->salt, (unsigned int)ctx->salt_size );
+			sha256_final( &ctx->f.sha256, ctx->s.entropy2_256 );
+			sha256_init( &ctx->f.sha256 );
+			sha256_update( &ctx->f.sha256, ctx->s.entropy2_256, SHA256_DIGEST_SIZE );
+			ctx->bits_avail = sizeof( ctx->s.entropy2_256 ) * CHAR_BIT;
+			ctx->entropy = ctx->s.entropy2_256;
+		}
+		else if( ctx->use_version2 ) {
+			if( ctx->salt_size )
+				sha512_update( &ctx->f.sha512, (const uint8_t*)ctx->salt, (unsigned int)ctx->salt_size );
+			sha512_final( &ctx->f.sha512, ctx->s.entropy2 );
+			sha512_init( &ctx->f.sha512 );
+			sha512_update( &ctx->f.sha512, ctx->s.entropy2, SHA512_DIGEST_SIZE );
+			ctx->bits_avail = sizeof( ctx->s.entropy2 ) * CHAR_BIT;
+			ctx->entropy = ctx->s.entropy2;
+		}
+		else {
+			if( ctx->salt_size )
+				SHA1Input( &ctx->f.sha1_ctx, (const uint8_t*)ctx->salt, ctx->salt_size );
+			SHA1Result( &ctx->f.sha1_ctx, ctx->s.entropy0 );
+			SHA1Reset( &ctx->f.sha1_ctx );
+			SHA1Input( &ctx->f.sha1_ctx, ctx->s.entropy0, SHA1HashSize );
+			ctx->bits_avail = sizeof( ctx->s.entropy0 ) * CHAR_BIT;
+			ctx->entropy = ctx->s.entropy0;
+		}
+	}
+	ctx->bits_used = 0;
+}
+struct random_context *SRG_CreateEntropyInternal( void (*getsalt)( uintptr_t, POINTER *salt, size_t *salt_size ), uintptr_t psv_user
+                                                , LOGICAL version2
+                                                , LOGICAL version2_256
+                                                , LOGICAL version3
+                                                , LOGICAL versionk12
+                                                )
+{
+	struct random_context *ctx = New( struct random_context );
+	ctx->use_versionK12 = versionk12;
+	ctx->use_version3 = version3;
+	ctx->use_version2_256 = version2_256;
+	ctx->use_version2 = version2;
+	if( ctx->use_versionK12 )
+		KangarooTwelve_Initialize( &ctx->f.K12i, USE_K12_LONG_SQUEEZE ?0: K12_DIGEST_SIZE );
+	if( ctx->use_version3 )
+		sha3_init( &ctx->f.sha3, SHA3_DIGEST_SIZE );
+	else if( ctx->use_version2_256 )
+		sha256_init( &ctx->f.sha256 );
+	else if( ctx->use_version2 )
+		sha512_init( &ctx->f.sha512 );
+	else
+		SHA1Reset( &ctx->f.sha1_ctx );
+	ctx->getsalt = getsalt;
+	ctx->psv_user = psv_user;
+	ctx->bits_used = 0;
+	ctx->bits_avail = 0;
+	return ctx;
+}
+struct random_context *SRG_CreateEntropy( void (*getsalt)( uintptr_t, POINTER *salt, size_t *salt_size ), uintptr_t psv_user )
+{
+	return SRG_CreateEntropyInternal( getsalt, psv_user, FALSE, FALSE, FALSE, FALSE );
+}
+struct random_context *SRG_CreateEntropy2( void (*getsalt)( uintptr_t, POINTER *salt, size_t *salt_size ), uintptr_t psv_user )
+{
+	return SRG_CreateEntropyInternal( getsalt, psv_user, TRUE, FALSE, FALSE, FALSE );
+}
+struct random_context *SRG_CreateEntropy2_256( void( *getsalt )(uintptr_t, POINTER *salt, size_t *salt_size), uintptr_t psv_user )
+{
+	return SRG_CreateEntropyInternal( getsalt, psv_user, FALSE, TRUE, FALSE, FALSE );
+}
+struct random_context *SRG_CreateEntropy3( void( *getsalt )(uintptr_t, POINTER *salt, size_t *salt_size), uintptr_t psv_user )
+{
+	return SRG_CreateEntropyInternal( getsalt, psv_user, FALSE, FALSE, TRUE, FALSE );
+}
+struct random_context *SRG_CreateEntropy4( void( *getsalt )(uintptr_t, POINTER *salt, size_t *salt_size), uintptr_t psv_user )
+{
+	return SRG_CreateEntropyInternal( getsalt, psv_user, FALSE, FALSE, FALSE, TRUE );
+}
+void SRG_DestroyEntropy( struct random_context **ppEntropy )
+{
+	Release( (*ppEntropy) );
+	(*ppEntropy) = NULL;
+}
+uint32_t SRG_GetBit( struct random_context *ctx )
+{
+	uint32_t tmp;
+	if( !ctx ) DebugBreak();
+	ctx->total_bits_used += 1;
+	//if( ctx->bits_used > 512 ) DebugBreak();
+	if( (ctx->bits_used) >= ctx->bits_avail ) {
+		NeedBits( ctx );
+	}
+	tmp = MY_GET_MASK( ctx->entropy, ctx->bits_used, 1 );
+	ctx->bits_used += 1;
+	return tmp;
+}
+void SRG_GetEntropyBuffer( struct random_context *ctx, uint32_t *buffer, uint32_t bits )
+{
+	uint32_t tmp;
+	uint32_t partial_tmp;
+	uint32_t partial_bits = 0;
+	uint32_t get_bits;
+	uint32_t resultBits = 0;
+	if( !ctx ) DebugBreak();
+	ctx->total_bits_used += bits;
+	//if( ctx->bits_used > 512 ) DebugBreak();
+	do {
+		if( bits > sizeof( tmp ) * 8 )
+			get_bits = sizeof( tmp ) * 8;
+		else
+			get_bits = bits;
+		// if there were 1-31 bits of data in partial, then can only get 32-partial max.
+		if( 32 < (get_bits + partial_bits) )
+			get_bits = 32 - partial_bits;
+		// check1 :
+		//    if get_bits == 32
+		//    but bits_used is 1-7, then it would have to pull 5 bytes to get the 32 required
+		//    so truncate get_bits to 25-31 bits
+		if( 32 < (get_bits + (ctx->bits_used & 0x7)) )
+			get_bits = (32 - (ctx->bits_used & 0x7));
+		// if resultBits is 1-7 offset, then would have to store up to 5 bytes of value
+		//    so have to truncate to just the up to 4 bytes that will fit.
+		if( (get_bits+ resultBits) > 32 )
+			get_bits = 32 - resultBits;
+		// only greater... if equal just grab the bits.
+		if( (get_bits + ctx->bits_used) > ctx->bits_avail ) {
+			// if there are any bits left, grab the partial bits.
+			if( ctx->bits_avail > ctx->bits_used ) {
+				partial_bits = (uint32_t)(ctx->bits_avail - ctx->bits_used);
+				if( partial_bits > get_bits ) partial_bits = get_bits;
+				// partial can never be greater than 32; input is only max of 32
+				//if( partial_bits > (sizeof( partial_tmp ) * 8) )
+				//	partial_bits = (sizeof( partial_tmp ) * 8);
+				partial_tmp = MY_GET_MASK( ctx->entropy, ctx->bits_used, partial_bits );
+			}
+			NeedBits( ctx );
+			bits -= partial_bits;
+		}
+		else {
+			tmp = MY_GET_MASK( ctx->entropy, ctx->bits_used, get_bits );
+			ctx->bits_used += get_bits;
+			//if( ctx->bits_used > 512 ) DebugBreak();
+			if( partial_bits ) {
+				tmp = partial_tmp | (tmp << partial_bits);
+				partial_bits = 0;
+			}
+			if( (get_bits+resultBits) > 24 )
+				(*buffer) = tmp << resultBits;
+			else if( (get_bits+resultBits) > 16 ) {
+				(*((uint16_t*)buffer)) |= tmp << resultBits;
+				(*(((uint8_t*)buffer)+2)) |= ((tmp << resultBits) & 0xFF0000)>>16;
+			} else if( (get_bits+resultBits) > 8 )
+				(*((uint16_t*)buffer)) |= tmp << resultBits;
+			else
+				(*((uint8_t*)buffer)) |= tmp << resultBits;
+			resultBits += get_bits;
+			while( resultBits >= 8 ) {
+#if defined( __cplusplus ) || defined( __GNUC__ )
+				buffer = (uint32_t*)(((uintptr_t)buffer) + 1);
+#else
+				((intptr_t)buffer)++;
+#endif
+				resultBits -= 8;
+			}
+			//if( get_bits > bits ) DebugBreak();
+			bits -= get_bits;
+		}
+	} while( bits );
+}
+int32_t SRG_GetEntropy( struct random_context *ctx, int bits, int get_signed )
+{
+	int32_t result = 0;
+	SRG_GetEntropyBuffer( ctx, (uint32_t*)&result, bits );
+	if( get_signed )
+		if( result & ( 1 << ( bits - 1 ) ) )
+		{
+			uint32_t negone = ~0;
+			negone <<= bits;
+			return (int32_t)( result | negone );
+		}
+	return result;
+}
+void SRG_ResetEntropy( struct random_context *ctx )
+{
+	ctx->total_bits_used = 0;
+	if( ctx->use_versionK12 )
+		KangarooTwelve_Initialize( &ctx->f.K12i, USE_K12_LONG_SQUEEZE ? 0:K12_DIGEST_SIZE  );
+	else if( ctx->use_version3 )
+		sha3_init( &ctx->f.sha3, SHA3_DIGEST_SIZE );
+	else if( ctx->use_version2_256 )
+		sha256_init( &ctx->f.sha256 );
+	else if( ctx->use_version2 )
+		sha512_init( &ctx->f.sha512 );
+	else
+		SHA1Reset( &ctx->f.sha1_ctx );
+	ctx->bits_used = 0;
+	ctx->bits_avail = 0;
+}
+void SRG_StreamEntropy( struct random_context *ctx )
+{
+	if( ctx->use_versionK12 )
+		KangarooTwelve_Update( &ctx->f.K12i, ctx->s.entropy4, K12_DIGEST_SIZE );
+	else if( ctx->use_version3 )
+		sha3_update( &ctx->f.sha3, ctx->s.entropy4, SHA3_DIGEST_SIZE );
+	else if( ctx->use_version2_256 )
+		sha256_update( &ctx->f.sha256, ctx->s.entropy2_256, SHA256_DIGEST_SIZE );
+	else if( ctx->use_version2 )
+		sha512_update( &ctx->f.sha512, ctx->s.entropy2, SHA512_DIGEST_SIZE );
+	else
+		SHA1Input( &ctx->f.sha1_ctx, ctx->s.entropy0, SHA1HashSize );
+}
+void SRG_FeedEntropy( struct random_context *ctx, const uint8_t *salt, size_t salt_size )
+{
+	if( ctx->use_versionK12 )
+		KangarooTwelve_Update( &ctx->f.K12i, salt, (unsigned int)salt_size );
+	else if( ctx->use_version3 )
+		sha3_update( &ctx->f.sha3, salt, (unsigned int)salt_size );
+	else if( ctx->use_version2_256 )
+		sha256_update( &ctx->f.sha256, salt, (unsigned int)salt_size );
+	else if( ctx->use_version2 )
+		sha512_update( &ctx->f.sha512, salt, (unsigned int)salt_size );
+	else
+		SHA1Input( &ctx->f.sha1_ctx, salt, salt_size );
+}
+void SRG_SaveState( struct random_context *ctx, POINTER *external_buffer_holder, size_t *dataSize )
+{
+	if( !(*external_buffer_holder) )
+		(*external_buffer_holder) = New( struct random_context );
+	(*(struct random_context*)(*external_buffer_holder)) = (*ctx);
+	if( dataSize )
+		(*dataSize) = sizeof( struct random_context );
+}
+void SRG_RestoreState( struct random_context *ctx, POINTER external_buffer_holder )
+{
+	(*ctx) = *(struct random_context*)external_buffer_holder;
+}
+static void salt_generator(uintptr_t psv, POINTER *salt, size_t *salt_size ) {
+	static struct tickBuffer {
+		uint32_t tick;
+		uint64_t cputick;
+	} tick;
+	(void)psv;
+	tick.cputick = GetCPUTick();
+	tick.tick = GetTickCount();
+	salt[0] = &tick;
+	salt_size[0] = sizeof( tick );
+}
+#define SRG_MAX_GENERATOR_THREADS 32
+static struct random_context *getGenerator(
+			struct random_context *pool[SRG_MAX_GENERATOR_THREADS]
+			, uint32_t used[SRG_MAX_GENERATOR_THREADS]
+			, struct random_context * (*generator)(void( *)(uintptr_t , POINTER *, size_t *), uintptr_t)
+			, int *pUsingCtx
+		)
+{
+	struct random_context *ctx;
+	int usingCtx;
+	usingCtx = 0;
+	do {
+		while( used[++usingCtx] ) { if( ++usingCtx >= SRG_MAX_GENERATOR_THREADS ) usingCtx = 0; }
+	} while( LockedExchange( used + usingCtx, 1 ) );
+	ctx = pool[usingCtx];
+	if( !ctx ) ctx = pool[usingCtx] = generator( salt_generator, 0 );
+	(*pUsingCtx) = usingCtx;
+	return ctx;
+}
+char *SRG_ID_Generator( void ) {
+	struct random_context *ctx;
+	uint32_t buf[(16 + 16) / 4];
+	size_t outlen;
+	static struct random_context *_ctx[SRG_MAX_GENERATOR_THREADS];
+	static uint32_t used[SRG_MAX_GENERATOR_THREADS];
+	int usingCtx;
+	ctx = getGenerator( _ctx, used, SRG_CreateEntropy2, &usingCtx );
+	do {
+		SRG_GetEntropyBuffer( ctx, buf, 8 * (16 + 16) );
+	} while( ( buf[0] & 0x3f ) < 10 );
+	used[usingCtx] = 0;
+	return EncodeBase64Ex( (uint8*)buf, (16 + 16), &outlen, (const char *)1 );
+}
+char *SRG_ID_Generator_256( void ) {
+	struct random_context *ctx;
+	uint32_t buf[(16 + 16) / 4];
+	size_t outlen;
+	static struct random_context *_ctx[SRG_MAX_GENERATOR_THREADS];
+	static uint32_t used[SRG_MAX_GENERATOR_THREADS];
+	int usingCtx;
+	ctx = getGenerator( _ctx, used, SRG_CreateEntropy2_256, &usingCtx );
+	do {
+		SRG_GetEntropyBuffer( ctx, buf, 8 * (16 + 16) );
+	} while( (buf[0] & 0x3f) < 10 );
+	used[usingCtx] = 0;
+	return EncodeBase64Ex( (uint8*)buf, (16 + 16), &outlen, (const char *)1 );
+}
+char *SRG_ID_Generator3( void ) {
+	struct random_context *ctx;
+	uint32_t buf[(16 + 16) / 4];
+	size_t outlen;
+	static struct random_context *_ctx[SRG_MAX_GENERATOR_THREADS];
+	static uint32_t used[SRG_MAX_GENERATOR_THREADS];
+	int usingCtx;
+	usingCtx = 0;
+	ctx = getGenerator( _ctx, used, SRG_CreateEntropy3, &usingCtx );
+	do {
+		SRG_GetEntropyBuffer( ctx, buf, 8 * (16 + 16) );
+	} while( (buf[0] & 0x3f) < 10 );
+	used[usingCtx] = 0;
+	return EncodeBase64Ex( (uint8*)buf, (16 + 16), &outlen, (const char *)1 );
+}
+char *SRG_ID_Generator4( void ) {
+	struct random_context *ctx;
+	uint32_t buf[(16 + 16)/4];
+	size_t outlen;
+	static struct random_context *_ctx[SRG_MAX_GENERATOR_THREADS];
+	static uint32_t used[SRG_MAX_GENERATOR_THREADS];
+	int usingCtx;
+	usingCtx = 0;
+	ctx = getGenerator( _ctx, used, SRG_CreateEntropy4, &usingCtx );
+	do {
+		SRG_GetEntropyBuffer( ctx, buf, 8 * (16 + 16) );
+	} while( (buf[0] & 0x3f) < 10 );
+	used[usingCtx] = 0;
+	return EncodeBase64Ex( (uint8*)buf, (16 + 16), &outlen, (const char *)1 );
+}
+#ifndef SALTY_RANDOM_GENERATOR_SOURCE
+#define SALTY_RANDOM_GENERATOR_SOURCE
+#endif
+static struct crypt_local
+{
+	char * use_salt;
+	struct random_context *entropy;
+	PLINKQUEUE plqCrypters;
+} crypt_local;
+static void FeedSalt( uintptr_t psv, POINTER *salt, size_t *salt_size )
+{
+	if( crypt_local.use_salt)
+	{
+		(*salt) = crypt_local.use_salt;
+		(*salt_size) = 4;
+	}
+	else
+	{
+		static uint32_t tick;
+		tick = timeGetTime();
+		(*salt) = &tick;
+		(*salt_size) = 4;
+	}
+}
+void SRG_DecryptRawData( CPOINTER binary, size_t length, uint8_t* *buffer, size_t *chars )
+{
+	if( !crypt_local.entropy )
+		crypt_local.entropy = SRG_CreateEntropy( FeedSalt, (uintptr_t)0 );
+	{
+		uint32_t mask;
+		uint8_t* pass_byte_in;
+		uint8_t* pass_byte_out;
+		int index;
+		//if( length < chars )
+		{
+			SRG_ResetEntropy( crypt_local.entropy );
+			crypt_local.use_salt = (char *)binary;
+			pass_byte_in = ((uint8_t*)binary) + 4;
+			length -= 4;
+			(*buffer) = NewArray( uint8_t, length );
+			pass_byte_out = (*buffer);
+			for( index = 0; length; length--, index++ )
+			{
+				if( ( index & 3 ) == 0 )
+					mask = SRG_GetEntropy( crypt_local.entropy, 32, FALSE );
+				pass_byte_out[0] = pass_byte_in[0] ^ ((uint8_t*)&mask)[ index & 0x3 ];
+				pass_byte_out++;
+				pass_byte_in++;
+			}
+			(*chars) = pass_byte_out - (*buffer);
+		}
+	}
+}
+void SRG_DecryptData( CTEXTSTR local_password, uint8_t* *buffer, size_t *chars )
+{
+	{
+		POINTER binary;
+		size_t length;
+		if( local_password && DecodeBinaryConfig( local_password, &binary, &length ) )
+		{
+			SRG_DecryptRawData( (uint8_t*)binary, length, buffer, chars );
+		}
+		else
+		{
+			(*buffer) = 0;
+			(*chars) = 0;
+			//lprintf( WIDE("failed to decode data") );
+		}
+	}
+}
+TEXTSTR SRG_DecryptString( CTEXTSTR local_password )
+{
+	uint8_t* buffer;
+	size_t chars;
+	SRG_DecryptData( local_password, &buffer, &chars );
+	return (TEXTSTR)buffer;
+}
+void SRG_EncryptRawData( CPOINTER buffer, size_t buflen, uint8_t* *result_buf, size_t *result_size )
+{
+	if( !crypt_local.entropy )
+		crypt_local.entropy = SRG_CreateEntropy( FeedSalt, 0 );
+	{
+		{
+			uint32_t mask;
+			uint32_t seed;
+			uint8_t* pass_byte_in;
+			uint8_t* pass_byte_out;
+			int index;
+			uint8_t* tmpbuf;
+			crypt_local.use_salt = NULL;
+			(*result_buf) = tmpbuf = NewArray( uint8_t, buflen + 4 );
+			(*result_size) = buflen + 4;
+			SRG_ResetEntropy( crypt_local.entropy );
+			seed = (uint32_t)GetCPUTick();
+			tmpbuf[0] = ((seed >> 17) & 0xFF) ^ ((seed >> 8) & 0xFF);
+			tmpbuf[1] = ((seed >> 11) & 0xFF) ^ ((seed >> 4) & 0xFF);
+			tmpbuf[2] = ((seed >> 5) & 0xFF) ^ ((seed >> 12) & 0xFF);
+			tmpbuf[3] = ((seed >> 0) & 0xFF) ^ ((seed >> 13) & 0xFF);
+			crypt_local.use_salt = (char*)tmpbuf;
+			SRG_ResetEntropy( crypt_local.entropy );
+			pass_byte_in = ((uint8_t*)buffer);
+			pass_byte_out = (uint8_t*)tmpbuf + 4;
+			for( index = 0; buflen; buflen--, index++ )
+			{
+				if( ( index & 3 ) == 0 )
+					mask = SRG_GetEntropy( crypt_local.entropy, 32, FALSE );
+				pass_byte_out[0] = pass_byte_in[0] ^ ((uint8_t*)&mask)[ index & 0x3 ];
+				pass_byte_out++;
+				pass_byte_in++;
+			}
+		}
+	}
+}
+TEXTCHAR * SRG_EncryptData( CPOINTER buffer, size_t buflen )
+{
+	if( !crypt_local.entropy )
+		crypt_local.entropy = SRG_CreateEntropy( FeedSalt, 0 );
+	{
+		uint8_t* result_buf;
+		size_t result_size;
+		TEXTSTR tmpbuf;
+		SRG_EncryptRawData( buffer, buflen, &result_buf, &result_size );
+		EncodeBinaryConfig( &tmpbuf, result_buf, buflen + 4 );
+		return tmpbuf;
+	}
+	return NULL;
+}
+TEXTSTR SRG_EncryptString( CTEXTSTR buffer )
+{
+	return SRG_EncryptData( (uint8_t*)buffer, StrLen( buffer ) + 1 );
+}
+#ifndef NO_SSL
+#  include <openssl/evp.h>
+static void handleErrors( void )
+{
+	ERR_print_errors_fp( stderr );
+	abort();
+}
+size_t SRG_AES_encrypt( uint8_t *plaintext, size_t plaintext_len, uint8_t *key, uint8_t **ciphertext )
+{
+	EVP_CIPHER_CTX *ctx;
+	int len;
+	int ciphertext_len;
+	/* Create and initialise the context */
+	if( !(ctx = EVP_CIPHER_CTX_new()) ) handleErrors();
+	/* Initialise the encryption operation. IMPORTANT - ensure you use a key
+	 * and IV size appropriate for your cipher
+	 * In this example we are using 256 bit AES (i.e. a 256 bit key). The
+	 * IV size for *most* modes is the same as the block size. For AES this
+	 * is 128 bits */
+	if( 1 != EVP_EncryptInit_ex( ctx, EVP_aes_256_cbc(), NULL, key, key ) )
+		handleErrors();
+	EVP_CIPHER_CTX_set_padding( ctx, 0 );
+	int blockSize = EVP_CIPHER_CTX_block_size( ctx );
+	if( blockSize < 16 ) DebugBreak();
+	int outSize = (int)(plaintext_len + sizeof( uint32_t ) + (blockSize - 1));
+	uint8_t *block = NewArray( uint8_t, blockSize );
+	outSize -= outSize % blockSize;
+	ciphertext[0] = NewArray( uint8_t, outSize );
+	((uint32_t*)block)[0] = (uint32_t)plaintext_len;
+	int remaining = blockSize - sizeof( uint32_t );
+	if( remaining > plaintext_len ) {
+		memcpy( block + sizeof( uint32_t ), plaintext, plaintext_len );
+		remaining = (int)(plaintext_len + sizeof( uint32_t ));
+		plaintext_len = 0;
+	}
+	else {
+		memcpy( block + sizeof( uint32_t ), plaintext, blockSize - sizeof( uint32_t ) );
+		remaining = blockSize;
+		plaintext_len -= (blockSize - sizeof( uint32_t ));
+	}
+	/* Provide the message to be encrypted, and obtain the encrypted output.
+	 * EVP_EncryptUpdate can be called multiple times if necessary
+	 */
+	if( 1 != EVP_EncryptUpdate( ctx, ciphertext[0], &len, (const unsigned char*)block, remaining ) )
+		handleErrors();
+	ciphertext_len = len;
+	Release( block );
+	if( plaintext_len > 0 ) {
+		if( plaintext_len % blockSize ) {
+			int tailLen = plaintext_len % blockSize;
+			if( 1 != EVP_EncryptUpdate( ctx, ciphertext[0] + ciphertext_len, &len
+				, plaintext + (blockSize - sizeof( uint32_t ))
+				, (int)(plaintext_len - tailLen) ) )
+				handleErrors();
+			ciphertext_len += len;
+			memcpy( block
+				, plaintext + (blockSize - sizeof( uint32_t )) + plaintext_len - tailLen
+				, tailLen);
+			memset( block + tailLen, 0, blockSize - tailLen );
+			if( 1 != EVP_EncryptUpdate( ctx, ciphertext[0] + ciphertext_len, &len
+				, block
+				, blockSize ) )
+				handleErrors();
+		}
+		else {
+			if( 1 != EVP_EncryptUpdate( ctx, ciphertext[0] + ciphertext_len, &len
+				, plaintext + (blockSize - sizeof( uint32_t ))
+				, (int)plaintext_len ) )
+				handleErrors();
+		}
+		ciphertext_len += len;
+	}
+	/* Finalise the encryption. Further ciphertext bytes may be written at
+	 * this stage.
+	 */
+	len = 0;
+	if( 1 != EVP_EncryptFinal_ex( ctx, ciphertext[0] + ciphertext_len, &len ) ) handleErrors();
+	ciphertext_len += len;
+	/* Clean up */
+	EVP_CIPHER_CTX_free( ctx );
+	return ciphertext_len;
+}
+int SRG_AES_decrypt( uint8_t *ciphertext, int ciphertext_len, uint8_t *key, uint8_t **plaintext )
+{
+	EVP_CIPHER_CTX *ctx;
+	int len;
+	int used = 0;
+	int plaintext_len;
+	/* Create and initialise the context */
+	if( !(ctx = EVP_CIPHER_CTX_new()) ) handleErrors();
+	/* Initialise the decryption operation. IMPORTANT - ensure you use a key
+	 * and IV size appropriate for your cipher
+	 * In this example we are using 256 bit AES (i.e. a 256 bit key). The
+	 * IV size for *most* modes is the same as the block size. For AES this
+	 * is 128 bits */
+	if( 1 != EVP_DecryptInit_ex( ctx, EVP_aes_256_cbc(), NULL, key, key ) )
+		handleErrors();
+	EVP_CIPHER_CTX_set_padding( ctx, 0 );
+	int blockSize = EVP_CIPHER_CTX_block_size( ctx );
+	uint8_t *block = NewArray( uint8_t, blockSize * 2 );
+	// read the first block of 1 block size.  This has the length so we know
+	// how much more to read.
+	if( 1 != EVP_DecryptUpdate( ctx, block, &len, ciphertext, blockSize ) )
+		handleErrors();
+	used += blockSize;
+	if( !len ) {
+		if( 1 != EVP_DecryptUpdate( ctx, block, &len, ciphertext + used, blockSize ) )
+			handleErrors();
+		used += blockSize;
+		if( !len ) {
+			lprintf( "Really? Give me the first block!" );
+			DebugBreak();
+		}
+	}
+	plaintext_len = ((uint32_t*)block)[0];
+ // have to accept over-writes from crypt
+	int outSize = (plaintext_len + (blockSize - 1));
+	outSize -= outSize % blockSize;
+	plaintext[0] = NewArray( uint8_t, outSize );
+	memcpy( plaintext[0], block + sizeof( uint32_t ), blockSize - sizeof( uint32_t ) );
+	if( ciphertext_len > blockSize ) {
+		/* Provide the message to be decrypted, and obtain the plaintext output.
+		 * EVP_DecryptUpdate can be called multiple times if necessary
+		 */
+		if( 1 != EVP_DecryptUpdate( ctx
+			, plaintext[0] + (blockSize - sizeof( uint32_t )), &len
+			, ciphertext + used
+			, ciphertext_len - used ) )
+			handleErrors();
+		//plaintext_len = len;
+	}
+	/* Finalise the decryption. Further plaintext bytes may be written at
+	 * this stage.
+	 */
+	if( 1 != EVP_DecryptFinal_ex( ctx, plaintext[0] + plaintext_len, &len ) ) handleErrors();
+	plaintext_len += len;
+	/* Clean up */
+	EVP_CIPHER_CTX_free( ctx );
+	Release( block );
+	return plaintext_len;
+}
+#endif
+// bit size of masking hash.
+#define RNGHASH 256
+static void encryptBlock( struct byte_shuffle_key *bytKey
+	, uint8_t *output, size_t outlen
+	, uint8_t bufKey[RNGHASH/8]
+) {
+	uint8_t *curBuf_out;
+	size_t n;
+	curBuf_out = output;
+#if __64__
+	for( n = 0; n < outlen; n += 8, curBuf_out += 8 ) {
+ /*((uint64_t*)curBuf_in)[0] ^*/
+		((uint64_t*)curBuf_out)[0] ^= ((uint64_t*)(bufKey + (n % (RNGHASH / 8))))[0];;
+	}
+#else
+	for( n = 0; n < outlen; n += 4, curBuf_out += 4 ) {
+ /* ((uint32_t*)curBuf_in)[0] ^ */
+		((uint32_t*)curBuf_out)[0] ^= ((uint32_t*)(bufKey + (n % (RNGHASH / 8))))[0];
+	}
+#endif
+	BlockShuffle_SubBytes_( bytKey, output, output, outlen );
+	curBuf_out = output;
+	uint8_t p = 0x55;
+	for( n = 0; n < outlen; n++, curBuf_out++ ) {
+		//p = curBuf_out[0] = BlockShuffle_Sub1Byte_( bytKey, curBuf_out[0] ^ p );
+		p = curBuf_out[0] = curBuf_out[0] ^ p;
+	}
+	BlockShuffle_SubBytes_( bytKey, output, output, outlen );
+	curBuf_out--;
+	p = 0xAA;
+	for( n = 0; n < outlen; n++, curBuf_out-- ) {
+		p = curBuf_out[0] = curBuf_out[0] ^ p;
+	}
+	BlockShuffle_SubBytes_( bytKey, output, output, outlen );
+}
+void SRG_XSWS_encryptData( uint8_t *objBuf, size_t objBufLen
+	, uint64_t tick, uint8_t *keyBuf, size_t keyBufLen
+	, uint8_t **outBuf, size_t *outBufLen
+) {
+	struct random_context *signEntropy = (struct random_context *)DequeLink( &crypt_local.plqCrypters );
+	if( !signEntropy )
+		signEntropy = SRG_CreateEntropy4( NULL, (uintptr_t)0 );
+	SRG_ResetEntropy( signEntropy );
+	SRG_FeedEntropy( signEntropy, (const uint8_t*)&tick, sizeof( tick ) );
+	SRG_FeedEntropy( signEntropy, (const uint8_t*)keyBuf, keyBufLen );
+	static uint8_t bufKey[RNGHASH /8];
+	SRG_GetEntropyBuffer( signEntropy, (uint32_t*)bufKey, RNGHASH );
+	struct byte_shuffle_key *bytKey = BlockShuffle_ByteShuffler( signEntropy );
+	(*outBufLen) = (sizeof( uint8_t ))
+		+ objBufLen
+		+ (((objBufLen + sizeof( uint8_t )) & 0x7)
+			? (8 - ((objBufLen + sizeof( uint8_t )) & 0x7))
+			: 0);
+	//outBuf[0] = (uint8_t*)HeapAllocateAligned( NULL, (*outBufLen), 4096 );
+	outBuf[0] = (uint8_t*)HeapAllocate( NULL, (*outBufLen) );
+ // clear any padding bits.
+	((uint64_t*)(outBuf[0] + (*outBufLen) - 8))[0] = 0;
+  // copy contents for in-place encrypt.
+	memcpy( outBuf[0], objBuf, objBufLen );
+	((uint8_t*)(outBuf[0] + (*outBufLen) - 1))[0] = (uint8_t)(*outBufLen - objBufLen);
+	for( size_t b = 0; b < (*outBufLen); b += 4096 ) {
+		size_t bs = (*outBufLen) - b;
+		if( bs > 4096 )
+			encryptBlock( bytKey, outBuf[0] + b, 4096, bufKey );
+		else
+			encryptBlock( bytKey, outBuf[0] + b, bs, bufKey );
+	}
+	BlockShuffle_DropByteShuffler( bytKey );
+	EnqueLink( &crypt_local.plqCrypters, signEntropy );
+}
+static void decryptBlock( struct byte_shuffle_key *bytKey
+	, uint8_t *input, size_t len
+	, uint8_t *output
+	, uint8_t bufKey[RNGHASH / 8]
+	, LOGICAL lastBLock
+) {
+	int n;
+	BlockShuffle_BusBytes_( bytKey, input, output, len );
+	uint8_t *curBuf = output;
+	for( n = 0; n < (len - 1); n++, curBuf++ ) {
+		curBuf[0] = curBuf[0] ^ curBuf[1];
+	}
+	curBuf[0] = curBuf[0] ^ 0xAA;
+	BlockShuffle_BusBytes_( bytKey, output, output, len );
+	curBuf = output + len - 1;
+	for( n = (int)(len - 1); n > 0; n--, curBuf-- ) {
+		//curBuf[0] = BlockShuffle_Bus1Byte_( bytKey, curBuf[0] ) ^ curBuf[-1];
+		curBuf[0] = curBuf[0] ^ curBuf[-1];
+	}
+	//curBuf[0] = BlockShuffle_Bus1Byte_( bytKey, curBuf[0] ) ^ 0x55;
+	curBuf[0] = curBuf[0] ^ 0x55;
+	BlockShuffle_BusBytes_( bytKey, output, output, len );
+#if __64__
+	for( n = 0; n < len; n += 8, output += 8 ) {
+		((uint64_t*)output)[0] ^= ((uint64_t*)(bufKey + (n % (RNGHASH / 8))))[0];
+	}
+#else
+	for( n = 0; n < len; n += 4, output += 4 ) {
+		((uint32_t*)output)[0] ^= ((uint32_t*)(bufKey + (n % (RNGHASH / 8))))[0];
+	}
+#endif
+}
+void SRG_XSWS_decryptData( uint8_t *objBuf, size_t objBufLen
+	, uint64_t tick, uint8_t *keyBuf, size_t keyBufLen
+	, uint8_t **outBuf, size_t *outBufLen
+) {
+	struct random_context *signEntropy = (struct random_context *)DequeLink( &crypt_local.plqCrypters );
+	if( !signEntropy )
+		signEntropy = SRG_CreateEntropy4( NULL, (uintptr_t)0 );
+	SRG_ResetEntropy( signEntropy );
+	SRG_FeedEntropy( signEntropy, (const uint8_t*)&tick, sizeof( tick ) );
+	SRG_FeedEntropy( signEntropy, (const uint8_t*)keyBuf, keyBufLen );
+	static uint8_t bufKey[RNGHASH /8];
+	SRG_GetEntropyBuffer( signEntropy, (uint32_t*)bufKey, RNGHASH );
+	struct byte_shuffle_key *bytKey = BlockShuffle_ByteShuffler( signEntropy );
+	outBuf[0] = NewArray( uint8_t, (*outBufLen) = objBufLen );
+	for( size_t b = 0; b < objBufLen; b += 4096 ) {
+		size_t bs = objBufLen - b;
+		if( bs > 4096 )
+			decryptBlock( bytKey, objBuf + b, 4096, outBuf[0] + b, bufKey, 0 );
+		else
+			decryptBlock( bytKey, objBuf + b, bs, outBuf[0] + b, bufKey, 1 );
+	}
+	(*outBufLen) -= ((uint8_t*)(outBuf[0] + objBufLen - 1))[0];
+	BlockShuffle_DropByteShuffler( bytKey );
+	EnqueLink( &crypt_local.plqCrypters, signEntropy );
+}
+#if 0
+// internal test code...
+// some performance benchmarking for instance.
+void logBinary( uint8_t *inbuf, int len ) {
+#define BINBUFSIZE 280
+#define LINELEN 64
+	char buf[280];
+	int ofs;
+	for( int i = 0; i < 32; i++ ) {
+		int j;
+		ofs = 0;
+		for( j = 0; j < 64; j++ ) {
+			if( (i * 64 + j) >= len ) break;
+			ofs += snprintf( buf + ofs, BINBUFSIZE - ofs, "%02x ", inbuf[i * LINELEN + j] );
+		}
+		for( ; j < 64; j++ ) {
+			ofs += snprintf( buf + ofs, BINBUFSIZE - ofs, "   " );
+		}
+		ofs += snprintf( buf + ofs, BINBUFSIZE - ofs, "   " );
+		for( int j = 0; j < LINELEN; j++ ) {
+			if( (i * 64 + j) >= len ) break;
+			ofs += snprintf( buf + ofs, BINBUFSIZE - ofs, "%c", (inbuf[i * LINELEN + j] >= 32 && inbuf[i * LINELEN + j] <= 127) ? inbuf[i * LINELEN + j] : '.' );
+		}
+		puts( buf );
+		if( (i * LINELEN + j) >= len ) break;
+	}
+}
+PRELOAD( CryptTestBuiltIn ) {
+	// this sample happened to be 44 bytes + 4 for the length = 48 = 3*16
+	// happened to be a perfect pad.
+	// with padding (libressl) padds a while extra block.
+	static char message[] = "Hello, This is a test, this is Only a test.";
+	static char messageBig[2048] = "Hello, This is a test, this is Only a test.";
+	static char messageMega[2048 * 2048] = "Hello, This is a test, this is Only a test.";
+	// this is a 1 bit change in message from message
+	static char message2[] = "Hello, This is a test, this is only a test.";
+	// this is a slightly shorter message, which needs padding
+	// (manual pad test to avoid a full 16 byte 0 pad block)
+	static char message3[] = "Hello, This is a test, this is the test.";
+	static uint8_t key[] = { 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0
+						   , 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0
+						   , 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0
+						   , 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0
+	};
+	uint8_t *output;
+	size_t outlen;
+	uint8_t *orig;
+	size_t origlen;
+#define DO_PERF_TESTS
+#define LENGTH_RECOVERY_TESTING
+#ifdef LENGTH_RECOVERY_TESTING
+	for( int p = 0; p < 10; p++ ) {
+		printf( "TESTDATA  %d\n", p );
+		logBinary( (uint8_t*)message, sizeof( message ) );
+		SRG_XSWS_encryptData( (uint8_t*)message, sizeof( message ) - p, 1234, key, sizeof( key ), &output, &outlen );
+		puts( "BINARY" );
+		logBinary( output, outlen );
+		SRG_XSWS_decryptData( (uint8_t*)output, outlen, 1234, key, sizeof( key ), &orig, &origlen );
+		puts( "ORIG" );
+		logBinary( orig, origlen );
+		Release( output );
+		Release( orig );
+	}
+	SRG_XSWS_encryptData( (uint8_t*)message2, sizeof( message2 ), 1234, key, sizeof( key ), &output, &outlen );
+	puts( "BINARY - 1 bit change input" );
+	logBinary( output, outlen );
+	Release( output );
+#endif
+#ifdef DO_PERF_TESTS
+	uint32_t start, end;
+	int i;
+	start = timeGetTime();
+	for( i = 0; i < 900000; i++ ) {
+		SRG_XSWS_encryptData( (uint8_t*)message, sizeof( message ), 1234, key, sizeof( key ), &output, &outlen );
+		Release( output );
+	}
+	end = timeGetTime();
+	printf( "Tiny DID %d in %d   %d %d\n", i, end - start, i * 1000 / (end - start)
+		, (i * 1000 / (end - start)) * sizeof( message )
+	);
+	Sleep( 1000 );
+	start = timeGetTime();
+	for( i = 0; i < 300000; i++ ) {
+		SRG_XSWS_encryptData( (uint8_t*)messageBig, sizeof( messageBig ), 1234, key, sizeof( key ), &output, &outlen );
+		Release( output );
+	}
+	end = timeGetTime();
+	printf( "Big DID %d in %d   %d %d\n", i, end - start, i * 1000 / (end - start)
+		, (i * 1000 / (end - start))*sizeof( messageBig )
+	);
+	Sleep( 1000 );
+	start = timeGetTime();
+	for( i = 0; i < 300; i++ ) {
+		SRG_XSWS_encryptData( (uint8_t*)messageMega, sizeof( messageMega ), 1234, key, sizeof( key ), &output, &outlen );
+		Release( output );
+	}
+	end = timeGetTime();
+	printf( "Mega DID %d in %d   %d %d\n", i, end - start, i * 1000 / (end - start)
+		, (i * 1000 / (end - start)) * sizeof( messageMega )
+	);
+	Sleep( 1000 );
+#endif
+#ifndef NO_SSL
+#  ifdef DO_PERF_TESTS
+	// SRG_AES_encrypt and SRG_AES_decrypt are symmetric.
+	start = timeGetTime();
+	for( i = 0; i < 300000; i++ ) {
+		SRG_XSWS_decryptData( (uint8_t*)message, sizeof( message ), 1234, key, sizeof( key ), &output, &outlen );
+		Release( output );
+	}
+	end = timeGetTime();
+	printf( "DID %d in %d   %d\n", i, end - start, i * 1000 / (end - start) );
+	Sleep( 1000 );
+#  endif
+	puts( "TESTDATA" );
+	logBinary( (uint8_t*)message, sizeof( message ) );
+	outlen = SRG_AES_encrypt( (uint8_t*)message, sizeof( message ), key, &output );
+	puts( "BINARY" );
+	logBinary( output, outlen );
+	origlen = SRG_AES_decrypt( output, outlen, key, &orig );
+	puts( "ORIG" );
+	logBinary( orig, origlen );
+	Release( output );
+	Release( orig );
+	puts( "TESTDATA" );
+	logBinary( (uint8_t*)message2, sizeof( message2 ) );
+	outlen = SRG_AES_encrypt( (uint8_t*)message2, sizeof( message2 ), key, &output );
+	puts( "BINARY" );
+	logBinary( output, outlen );
+	origlen = SRG_AES_decrypt( output, outlen, key, &orig );
+	puts( "ORIG" );
+	logBinary( orig, origlen );
+	Release( output );
+	Release( orig );
+	puts( "TESTDATA" );
+	logBinary( (uint8_t*)message3, sizeof( message3 ) );
+	outlen = SRG_AES_encrypt( (uint8_t*)message3, sizeof( message3 ), key, &output );
+	puts( "BINARY" );
+	logBinary( output, outlen );
+	origlen = SRG_AES_decrypt( output, outlen, key, &orig );
+	puts( "ORIG" );
+	logBinary( orig, origlen );
+	Release( output );
+	Release( orig );
+#endif
+#if 0
+	// memory leak tests.... if in 2M tests memory is +0, probably no leaks.
+	// is about 5 seconds for these tests each....
+	start = timeGetTime();
+	for( i = 0; i < 4000000; i++ ) {
+		outlen = SRG_AES_encrypt( (uint8_t*)message, sizeof( message ), key, &output );
+		Release( output );
+	}
+	end = timeGetTime();
+	printf( "tiny DID %d in %d   %d   %d\n", i, end - start, i * 1000 / (end - start)
+		, (i * 1000 / (end - start)) * sizeof( message )
+	);
+	start = timeGetTime();
+	for( i = 0; i < 200000; i++ ) {
+		outlen = SRG_AES_encrypt( (uint8_t*)messageBig, sizeof( messageBig ), key, &output );
+		Release( output );
+	}
+	end = timeGetTime();
+	printf( "Big DID %d in %d   %d   %d\n", i, end - start, i * 1000 / (end - start)
+		, (i * 1000 / (end - start)) * sizeof( messageBig )
+	);
+	start = timeGetTime();
+	for( i = 0; i < 100; i++ ) {
+		outlen = SRG_AES_encrypt( (uint8_t*)messageMega, sizeof( messageMega ), key, &output );
+		Release( output );
+	}
+	end = timeGetTime();
+	printf( "Mega DID %d in %d   %d   %d\n", i, end - start, i * 1000 / (end - start)
+		, (i * 1000 / (end - start)) * sizeof( messageMega )
+	);
+#endif
+#if 0
+	outlen = SRG_AES_encrypt( (uint8_t*)messageBig, sizeof( messageBig ), key, &output );
+	start = timeGetTime();
+	for( i = 0; i < 100000; i++ ) {
+		origlen = SRG_AES_decrypt( output, outlen, key, &orig );
+		Release( orig );
+	}
+	end = timeGetTime();
+	printf( "DID %d in %d   %d\n", i, end - start, i * 1000 / (end - start) );
+	Release( output );
+	Sleep( 1000 );
+	start = timeGetTime();
+	for( i = 0; i < 100000; i++ ) {
+		outlen = SRG_AES_encrypt( (uint8_t*)message, sizeof( message ), key, &output );
+		Release( output );
+	}
+	end = timeGetTime();
+	printf( "DID %d in %d   %d\n", i, end - start, i * 1000 / (end - start) );
+	outlen = SRG_AES_encrypt( (uint8_t*)message, sizeof( message ), key, &output );
+	start = timeGetTime();
+	for( i = 0; i < 100000; i++ ) {
+		origlen = SRG_AES_decrypt( output, outlen, key, &orig );
+		Release( orig );
+	}
+	end = timeGetTime();
+	printf( "DID %d in %d   %d\n", i, end - start, i * 1000 / (end - start) );
+	Release( output );
+	Sleep( 1000 );
+#endif
+}
+#endif
+struct block_shuffle_key
+{
+	size_t width;
+	size_t height;
+  // in case the map isn't entirely rectangular
+	size_t extra;
+	int *map;
+	struct random_context *ctx;
+};
+typedef struct holder_tag
+{
+	int number;
+	int r;
+	int pLess, pMore;
+} HOLDER, *PHOLDER;
+static int sort( int *nHolders, PHOLDER holders, int nTree, int number, int r )
+{
+	PHOLDER tree = holders + nTree;
+	if( nTree < 0 )
+	{
+		tree = holders + (*nHolders)++;
+		tree->number = number;
+		tree->r = r;
+		tree->pLess = tree->pMore = -1;
+		return (int)(tree - holders);
+	}
+	else
+	{
+		if( r > tree->r )
+			tree->pMore = sort( nHolders, holders, tree->pMore, number, r );
+		else
+			tree->pLess = sort( nHolders, holders, tree->pLess, number, r );
+	}
+	return nTree;
+}
+static void FoldTree( int *nNumber, int *numbers, PHOLDER holders, int nTree )
+{
+	PHOLDER tree = holders + nTree;
+	if( tree->pLess >= 0 )
+		FoldTree( nNumber, numbers, holders, tree->pLess );
+	numbers[(*nNumber)++] = tree->number;
+	if( tree->pMore >= 0 )
+		FoldTree( nNumber, numbers, holders, tree->pMore );
+}
+static void Shuffle( struct block_shuffle_key *key, int *numbers , int count )
+{
+	int tree;
+	int n;
+	int nHolders = 0;
+	int nNumber = 0;
+	int need_bits;
+	PHOLDER holders = NewArray( HOLDER, count );
+	tree = -1;
+	nNumber = 0;
+	for( n = 31; n > 0; n-- )
+		if( count & ( 1 << n ) )
+			break;
+	need_bits = n + 1;
+	for( n = 0; n < count; n++ )
+		tree = sort( &nHolders, holders, tree, numbers[n], SRG_GetEntropy( key->ctx, need_bits, 0 ) );
+	FoldTree( &nNumber, numbers, holders, tree );
+	Release( holders );
+}
+struct block_shuffle_key *BlockShuffle_CreateKey( struct random_context *ctx, size_t width, size_t height )
+{
+	struct block_shuffle_key *key = New( struct block_shuffle_key );
+	size_t n;
+	key->width = width;
+	key->height = height;
+	key->extra = 0;
+	key->map = NewArray( int, width * height );
+	key->ctx = ctx;
+	{
+		size_t m;
+		for( n = 0; n < width; n++ )
+			for( m = 0; m < height; m++ )
+			{
+				key->map[m*width+n] = (int)(m*width+n);
+			}
+		Shuffle( key, key->map, (int)(width * height) );
+	}
+	return key;
+}
+void BlockShuffle_GetDataBlock( struct block_shuffle_key *key
+	, uint8_t* encrypted, int x, int y, size_t w, size_t h, size_t encrypted_stride
+	, uint8_t* output, int ofs_x, int ofs_y, size_t stride )
+{
+	size_t ix, iy;
+	for( ix = 0; ix < (w); ix++ ) {
+		for( iy = 0; iy < (h); iy++ ) {
+			int km = key->map[ix%key->width + (iy%key->height) * key->width];
+			int kmx = km % key->width;
+			int kmy = (int)(km / key->width);
+			((uint8_t*)( ( (uintptr_t)output ) + (ix + ofs_x ) + stride * ( iy + ofs_y ) ))[0] =
+				((uint8_t*)( ( (uintptr_t)encrypted ) + (x+kmx)+(y*kmy)*encrypted_stride ))[0];
+		}
+	}
+}
+void BlockShuffle_GetData( struct block_shuffle_key *key
+	, uint8_t* encrypted, size_t x, size_t w
+	, uint8_t* output, size_t ofs_x )
+{
+	BlockShuffle_GetDataBlock( key, encrypted, (int)x, 0, w, 1, 0, output, (int)ofs_x, 0, 0 );
+}
+void BlockShuffle_SetDataBlock( struct block_shuffle_key *key
+	, uint8_t* encrypted, int x, int y, size_t w, size_t h, size_t output_stride
+	, uint8_t* input, int ofs_x, int ofs_y, size_t input_stride
+)
+{
+	size_t ix, iy;
+	for( ix = 0; ix < ( w ); ix++ )
+	{
+		for( iy = 0; iy < ( h ); iy++ )
+		{
+			int km = key->map[ix%key->width + (iy%key->height) * key->width];
+			int kmx = km % key->width;
+			int kmy = (int)(km / key->width);
+			((uint8_t*)( ( (uintptr_t)encrypted ) + (x + kmx) + (y+kmy)*output_stride  ))[0]
+				= ((uint8_t*)( ( (uintptr_t)input ) + (ix + ofs_x ) + input_stride * ( iy + ofs_y ) ))[0];
+		}
+	}
+}
+void BlockShuffle_SetData( struct block_shuffle_key *key
+	, uint8_t* encrypted, int x, size_t w
+	, uint8_t* input, int ofs_x )
+{
+	BlockShuffle_SetDataBlock( key, encrypted, x, 0, w, 1, 0
+		, input, ofs_x, 0, 0 );
+}
+//------------------------------------------------------------------
+// Byte Swap (works better than a position swap?)
+//------------------------------------------------------------------
+void BlockShuffle_DropByteShuffler( struct byte_shuffle_key *key ) {
+	Release( key );
+}
+//0, 43, 86
+//128, 171, 214
+static uint8_t leftStacks[3][2] = { { 0, 43 }, {43, 43}, {86,42} };
+static uint8_t rightStacks[4][2] = { { 128, 43 }, {171, 43}, {214,42} };
+static uint8_t leftOrders[4][3] = { { 1, 0, 2 }, { 1, 2, 0 }, {2, 1, 0 }, {2, 0, 1 } };
+static uint8_t rightOrders[4][3] = { { 0, 2, 1 }, { 2, 0, 1 }, { 1, 2, 0 }, {2, 1, 0 } };
+struct halfDeck {
+	int from;
+	int until;
+	int cut;
+	uint8_t starts[3];
+	uint8_t lens[3];
+};
+struct byte_shuffle_key *BlockShuffle_ByteShuffler( struct random_context *ctx ) {
+	//struct byte_shuffle_key *key = New( struct byte_shuffle_key );
+	struct byte_shuffle_key *key = ( struct byte_shuffle_key *)HeapAllocateAligned( NULL, sizeof( struct byte_shuffle_key ), 256 );
+	int n;
+	int srcMap;
+	for( n = 0; n < 256; n++ )
+		key->map[n] = n;
+	// simple-in-place shuffler.
+#if 1
+	for( n = 0; n < 256; n++ ) {
+		int m;
+		int t;
+		SRG_GetByte_( m, ctx );
+		t = key->map[m];
+		key->map[m] = key->map[n];
+		key->map[n] = t;
+	}
+#endif
+#if 0
+		// validate that each number is in the mapping only once.
+		{
+			srcMap = 0;
+			uint8_t *check = maps[1 - srcMap];
+			int n;
+			for( n = 0; n < 256; n++ ) {
+				for( int m = 0; m < 256; m++ ) {
+					if( m == n ) continue;
+					if( check[n] == check[m] ) {
+						lprintf( "Index %d matches %d  %d", n, m, check[n] );
+						DebugBreak();
+					}
+				}
+			}
+		}
+#endif
+	for( n = 0; n < 256; n++ )
+		key->dmap[key->map[n]] = n;
+	return key;
+}
+// Small Entropy version.  (SE)
+struct byte_shuffle_key *BlockShuffle_ByteShufflerSE( struct random_context *ctx ) {
+	struct byte_shuffle_key *key = New( struct byte_shuffle_key );
+	int n;
+	int srcMap;
+	uint8_t *maps[2] = { key->dmap, key->map };
+	for( n = 0; n < 256; n++ )
+		key->map[n] = n;
+	srcMap = 1;
+#define BLOCKSHUF_BYTE_ROUNDS 5
+	uint8_t stacks[86];
+	uint8_t halves[8][2];
+	uint8_t lrStarts[8];
+	uint8_t lrStart;
+	uint8_t *readLMap;
+	uint8_t *readRMap;
+	uint8_t *writeMap;
+	/* 40 bits for 8 shuffles. */
+	for( n = 0; n < BLOCKSHUF_BYTE_ROUNDS; n++ ) {
+		halves[n][0] = SRG_GetEntropy( ctx, 2, 0 );
+		halves[n][1] = SRG_GetEntropy( ctx, 2, 0 );
+		lrStarts[n] = SRG_GetEntropy( ctx, 1, 0 );
+	}
+	int t[2] = { 0, 0 };
+	SRG_GetBit_( lrStart, ctx );
+	for( n = 0; (t[0] < 43 || t[1] < 43) && n < 86; n++ ) {
+		int bit;
+		int c;
+		c = 1;
+		while( c < (5 - lrStart) && (SRG_GetBit_( bit, ctx ), !bit) ) {
+			c++;
+		}
+		lrStart = !lrStart;
+		stacks[n] = c;
+		t[n & 1] += c;
+	}
+	for( n = 0; n < BLOCKSHUF_BYTE_ROUNDS; n++ ) {
+		struct halfDeck left, right;
+		int s;
+		int useCards;
+		left.starts[0] = leftStacks[leftOrders[halves[n][0]][0]][0];
+		left.lens[0] = leftStacks[leftOrders[halves[n][0]][0]][1];
+		left.starts[1] = leftStacks[leftOrders[halves[n][0]][1]][0];
+		left.lens[1] = leftStacks[leftOrders[halves[n][0]][1]][1];
+		left.starts[2] = leftStacks[leftOrders[halves[n][0]][2]][0];
+		left.lens[2] = leftStacks[leftOrders[halves[n][0]][2]][1];
+		left.cut = 0;
+		left.from = left.starts[left.cut];
+		left.until = left.starts[left.cut] + left.lens[left.cut];
+		right.starts[0] = rightStacks[rightOrders[halves[n][1]][0]][0];
+		right.lens[0] = rightStacks[rightOrders[halves[n][1]][0]][1];
+		right.starts[1] = rightStacks[rightOrders[halves[n][1]][1]][0];
+		right.lens[1] = rightStacks[rightOrders[halves[n][1]][1]][1];
+		right.starts[2] = rightStacks[rightOrders[halves[n][1]][2]][0];
+		right.lens[2] = rightStacks[rightOrders[halves[n][1]][2]][1];
+		right.cut = 0;
+		right.from = right.starts[right.cut];
+		right.until = right.starts[right.cut] + right.lens[right.cut];
+		lrStart = lrStarts[n];
+		useCards = stacks[s = 0];
+		readLMap = maps[srcMap] + left.from;
+		readRMap = maps[srcMap] + right.from;
+		writeMap = maps[1 - srcMap];
+		s = 0;
+		for( int outCard = 0; outCard < 256; ) {
+			useCards = stacks[s];
+			for( int c = 0; c < useCards; c++ ) {
+				if( lrStart ) {
+					(writeMap++)[0] = (readLMap++)[0];
+					outCard++;
+					left.from++;
+					//maps[1 - srcMap][outCard++] = maps[srcMap][left.from++];
+					if( left.from >= left.until ) {
+						if( ++left.cut < 3 ) {
+							s = 0;
+							useCards = stacks[s];
+							c = -1;
+							left.from = left.starts[left.cut];
+							left.until = left.starts[left.cut] + left.lens[left.cut];
+							readLMap = maps[srcMap] + left.from;
+						}
+						while( left.cut != right.cut ) {
+							(writeMap++)[0] = (readRMap++)[0];
+							outCard++;
+							right.from++;
+							//maps[1 - srcMap][outCard++] = maps[srcMap][right.from++];
+							if( right.from >= right.until ) {
+								if( ++right.cut < 3 ) {
+									right.from = right.starts[right.cut];
+									right.until = right.starts[right.cut] + right.lens[right.cut];
+									readRMap = maps[srcMap] + right.from;
+								}
+							}
+						}
+						if( s ) break;
+						// L/R 2 new stacks... lrStart = same for whole stack each 3 subpart so...;
+					}
+				}
+				else {
+					(writeMap++)[0] = (readRMap++)[0];
+					outCard++;
+					right.from++;
+					//maps[1 - srcMap][outCard++] = maps[srcMap][right.from++];
+					if( right.from >= right.until ) {
+						if( ++right.cut < 3 ) {
+							s = 0;
+							useCards = stacks[s];
+							c = -1;
+							right.from = right.starts[right.cut];
+							right.until = right.starts[right.cut] + right.lens[right.cut];
+							readRMap = maps[srcMap] + right.from;
+						}
+						while( left.cut != right.cut ) {
+							(writeMap++)[0] = (readLMap++)[0];
+							outCard++;
+							left.from++;
+							//maps[1 - srcMap][outCard++] = maps[srcMap][left.from++];
+							if( left.from >= left.until ) {
+								if( ++left.cut < 3 ) {
+									left.from = left.starts[left.cut];
+									left.until = left.starts[left.cut] + left.lens[left.cut];
+									readLMap = maps[srcMap] + left.from;
+								}
+							}
+						}
+						if( s ) break;
+						// L/R 2 new stacks... lrStart = same for whole stack each 3 subpart so...;
+					}
+				}
+			}
+			if( outCard >= 256 )
+				break;
+			lrStart = 1 - lrStart;
+			s++;
+			if( s >= 86 ) {
+				useCards = stacks[s = 0];
+			}
+		}
+	}
+#if 0
+	// validate that each number is in the mapping only once.
+	{
+		uint8_t *check = maps[1 - srcMap];
+		int n;
+		for( n = 0; n < 256; n++ ) {
+			for( int m = 0; m < 256; m++ ) {
+				if( m == n ) continue;
+				if( check[n] == check[m] ) {
+					lprintf( "Index %d matches %d  %d", n, m, check[n] );
+					DebugBreak();
+				}
+			}
+		}
+	}
+#endif
+	for( n = 0; n < 256; n++ )
+		key->dmap[key->map[n]] = n;
+	return key;
+}
+void BlockShuffle_SubByte( struct byte_shuffle_key *key
+	, uint8_t *bytes_input, uint8_t *bytes_output ) {
+	bytes_output[0] = key->map[bytes_input[0]];
+}
+void BlockShuffle_SubBytes( struct byte_shuffle_key *key
+	, uint8_t *bytes_input, uint8_t *bytes_output
+	, size_t byteCount )
+{
+	size_t n;
+	uint8_t *map = key->map;
+	for( n = 0; n < byteCount; n++, bytes_input++, bytes_output++ ) {
+		bytes_output[0] = map[bytes_input[0]];
+	}
+}
+void BlockShuffle_BusByte( struct byte_shuffle_key *key
+	, uint8_t *bytes_input, uint8_t *bytes_output ) {
+	bytes_output[0] = key->dmap[bytes_input[0]];
+}
+void BlockShuffle_BusBytes( struct byte_shuffle_key *key
+	, uint8_t *bytes_input, uint8_t *bytes_output
+	, size_t byteCount )
+{
+	size_t n;
+	uint8_t *map = key->dmap;
+	for( n = 0; n < byteCount; n++, bytes_input++, bytes_output++ ) {
+		bytes_output[0] = map[bytes_input[0]];
+	}
+}
+/* MD5C.C - RSA Data Security, Inc., MD5 message-digest algorithm
+ */
+/* Copyright (C) 1991-2, RSA Data Security, Inc. Created 1991. All
+rights reserved.
+License to copy and use this software is granted provided that it
+is identified as the "RSA Data Security, Inc. MD5 Message-Digest
+Algorithm" in all material mentioning or referencing this software
+or this function.
+License is also granted to make and use derivative works provided
+that such works are identified as "derived from the RSA Data
+Security, Inc. MD5 Message-Digest Algorithm" in all material
+mentioning or referencing the derived work.
+RSA Data Security, Inc. makes no representations concerning either
+the merchantability of this software or the suitability of this
+software for any particular purpose. It is provided "as is"
+without express or implied warranty of any kind.
+These notices must be retained in any copies of any part of this
+documentation and/or software.
+ */
+#define MD5_SOURCE
+/* MD5.H - header file for MD5C.C
+ */
+/* Copyright (C) 1991-2, RSA Data Security, Inc. Created 1991. All
+rights reserved.
+License to copy and use this software is granted provided that it
+is identified as the "RSA Data Security, Inc. MD5 Message-Digest
+Algorithm" in all material mentioning or referencing this software
+or this function.
+License is also granted to make and use derivative works provided
+that such works are identified as "derived from the RSA Data
+Security, Inc. MD5 Message-Digest Algorithm" in all material
+mentioning or referencing the derived work.
+RSA Data Security, Inc. makes no representations concerning either
+the merchantability of this software or the suitability of this
+software for any particular purpose. It is provided "as is"
+without express or implied warranty of any kind.
+These notices must be retained in any copies of any part of this
+documentation and/or software.
+ */
+#ifndef MD5_ALGORITHM_DEFINED
+#define MD5_ALGORITHM_DEFINED
+#ifdef MD5_SOURCE
+#define MD5_PROC(type,name) EXPORT_METHOD type name
+#else
+#define MD5_PROC(type,name) IMPORT_METHOD type name
+#endif
+/* MD5 context. */
+typedef struct {
+	uint32_t state[4];
+	uint32_t count[2];
+  unsigned char buffer[64];
+} MD5_CTX;
+MD5_PROC( void, MD5Init )(MD5_CTX *);
+MD5_PROC( void, MD5Update )(MD5_CTX *, unsigned char *, unsigned int);
+MD5_PROC( void, MD5Final )(unsigned char [16], MD5_CTX *);
+#endif
+/* Constants for MD5Transform routine.
+ */
+#define S11 7
+#define S12 12
+#define S13 17
+#define S14 22
+#define S21 5
+#define S22 9
+#define S23 14
+#define S24 20
+#define S31 4
+#define S32 11
+#define S33 16
+#define S34 23
+#define S41 6
+#define S42 10
+#define S43 15
+#define S44 21
+static void MD5Transform (uint32_t [4], unsigned char [64]);
+static void Encode (unsigned char *, uint32_t *, unsigned int);
+static void Decode (uint32_t *, unsigned char *, unsigned int);
+static void MD5_memcpy (uint8_t*, uint8_t*, unsigned int);
+static void MD5_memset (uint8_t*, int, unsigned int);
+static unsigned char PADDING[64] = {
+  0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+/* F, G, H and I are basic MD5 functions.
+ */
+#define F(x, y, z) (((x) & (y)) | ((~x) & (z)))
+#define G(x, y, z) (((x) & (z)) | ((y) & (~z)))
+#define H(x, y, z) ((x) ^ (y) ^ (z))
+#define I(x, y, z) ((y) ^ ((x) | (~z)))
+/* ROTATE_LEFT rotates x left n bits.
+ */
+#define ROTATE_LEFT(x, n) (((x) << (n)) | ((x) >> (32-(n))))
+/* FF, GG, HH, and II transformations for rounds 1, 2, 3, and 4.
+Rotation is separate from addition to prevent recomputation.
+ */
+#define FF(a, b, c, d, x, s, ac) {  (a) += F ((b), (c), (d)) + (x) + (uint32_t)(ac);  (a) = ROTATE_LEFT ((a), (s));  (a) += (b);   }
+#define GG(a, b, c, d, x, s, ac) {  (a) += G ((b), (c), (d)) + (x) + (uint32_t)(ac);  (a) = ROTATE_LEFT ((a), (s));  (a) += (b);   }
+#define HH(a, b, c, d, x, s, ac) {  (a) += H ((b), (c), (d)) + (x) + (uint32_t)(ac);  (a) = ROTATE_LEFT ((a), (s));  (a) += (b);   }
+#define II(a, b, c, d, x, s, ac) {  (a) += I ((b), (c), (d)) + (x) + (uint32_t)(ac);  (a) = ROTATE_LEFT ((a), (s));  (a) += (b);   }
+/* MD5 initialization. Begins an MD5 operation, writing a new context.
+ */
+MD5_PROC( void, MD5Init )( MD5_CTX *context )
+{
+  context->count[0] = context->count[1] = 0;
+  /* Load magic initialization constants.
+*/
+  context->state[0] = 0x67452301;
+  context->state[1] = 0xefcdab89;
+  context->state[2] = 0x98badcfe;
+  context->state[3] = 0x10325476;
+}
+/* MD5 block update operation. Continues an MD5 message-digest
+  operation, processing another message block, and updating the
+  context.
+ */
+MD5_PROC( void, MD5Update ) ( MD5_CTX *context
+									 , unsigned char *input
+									 , unsigned int inputLen)
+{
+  unsigned int i, index, partLen;
+  /* Compute number of bytes mod 64 */
+  index = (unsigned int)((context->count[0] >> 3) & 0x3F);
+  /* Update number of bits */
+  if ((context->count[0] += ((uint32_t)inputLen << 3))
+   < ((uint32_t)inputLen << 3))
+ context->count[1]++;
+  context->count[1] += ((uint32_t)inputLen >> 29);
+  partLen = 64 - index;
+  /* Transform as many times as possible.
+*/
+  if (inputLen >= partLen) {
+ MD5_memcpy
+   ((uint8_t*)&context->buffer[index], (uint8_t*)input, partLen);
+ MD5Transform (context->state, context->buffer);
+ for (i = partLen; i + 63 < inputLen; i += 64)
+   MD5Transform (context->state, &input[i]);
+ index = 0;
+  }
+  else
+ i = 0;
+  /* Buffer remaining input */
+  MD5_memcpy
+ ((uint8_t*)&context->buffer[index], (uint8_t*)&input[i],
+  inputLen-i);
+}
+/* MD5 finalization. Ends an MD5 message-digest operation, writing the
+  the message digest and zeroizing the context.
+ */
+MD5_PROC( void, MD5Final )(unsigned char *digest, MD5_CTX *context)
+{
+  unsigned char bits[8];
+  unsigned int index, padLen;
+  /* Save number of bits */
+  Encode (bits, context->count, 8);
+  /* Pad out to 56 mod 64.
+*/
+  index = (unsigned int)((context->count[0] >> 3) & 0x3f);
+  padLen = (index < 56) ? (56 - index) : (120 - index);
+  MD5Update (context, PADDING, padLen);
+  /* Append length (before padding) */
+  MD5Update (context, bits, 8);
+  /* Store state in digest */
+  Encode (digest, context->state, 16);
+  /* Zeroize sensitive information.
+*/
+  MD5_memset ((uint8_t*)context, 0, sizeof (*context));
+}
+/* MD5 basic transformation. Transforms state based on block.
+ */
+static void MD5Transform (uint32_t state[4], unsigned char block[64])
+{
+  uint32_t a = state[0], b = state[1], c = state[2], d = state[3], x[16];
+  Decode (x, block, 64);
+  /* Round 1 */
+  FF (a, b, c, d, x[ 0], S11, 0xd76aa478);
+  FF (d, a, b, c, x[ 1], S12, 0xe8c7b756);
+  FF (c, d, a, b, x[ 2], S13, 0x242070db);
+  FF (b, c, d, a, x[ 3], S14, 0xc1bdceee);
+  FF (a, b, c, d, x[ 4], S11, 0xf57c0faf);
+  FF (d, a, b, c, x[ 5], S12, 0x4787c62a);
+  FF (c, d, a, b, x[ 6], S13, 0xa8304613);
+  FF (b, c, d, a, x[ 7], S14, 0xfd469501);
+  FF (a, b, c, d, x[ 8], S11, 0x698098d8);
+  FF (d, a, b, c, x[ 9], S12, 0x8b44f7af);
+  FF (c, d, a, b, x[10], S13, 0xffff5bb1);
+  FF (b, c, d, a, x[11], S14, 0x895cd7be);
+  FF (a, b, c, d, x[12], S11, 0x6b901122);
+  FF (d, a, b, c, x[13], S12, 0xfd987193);
+  FF (c, d, a, b, x[14], S13, 0xa679438e);
+  FF (b, c, d, a, x[15], S14, 0x49b40821);
+ /* Round 2 */
+  GG (a, b, c, d, x[ 1], S21, 0xf61e2562);
+  GG (d, a, b, c, x[ 6], S22, 0xc040b340);
+  GG (c, d, a, b, x[11], S23, 0x265e5a51);
+  GG (b, c, d, a, x[ 0], S24, 0xe9b6c7aa);
+  GG (a, b, c, d, x[ 5], S21, 0xd62f105d);
+  GG (d, a, b, c, x[10], S22,  0x2441453);
+  GG (c, d, a, b, x[15], S23, 0xd8a1e681);
+  GG (b, c, d, a, x[ 4], S24, 0xe7d3fbc8);
+  GG (a, b, c, d, x[ 9], S21, 0x21e1cde6);
+  GG (d, a, b, c, x[14], S22, 0xc33707d6);
+  GG (c, d, a, b, x[ 3], S23, 0xf4d50d87);
+  GG (b, c, d, a, x[ 8], S24, 0x455a14ed);
+  GG (a, b, c, d, x[13], S21, 0xa9e3e905);
+  GG (d, a, b, c, x[ 2], S22, 0xfcefa3f8);
+  GG (c, d, a, b, x[ 7], S23, 0x676f02d9);
+  GG (b, c, d, a, x[12], S24, 0x8d2a4c8a);
+  /* Round 3 */
+  HH (a, b, c, d, x[ 5], S31, 0xfffa3942);
+  HH (d, a, b, c, x[ 8], S32, 0x8771f681);
+  HH (c, d, a, b, x[11], S33, 0x6d9d6122);
+  HH (b, c, d, a, x[14], S34, 0xfde5380c);
+  HH (a, b, c, d, x[ 1], S31, 0xa4beea44);
+  HH (d, a, b, c, x[ 4], S32, 0x4bdecfa9);
+  HH (c, d, a, b, x[ 7], S33, 0xf6bb4b60);
+  HH (b, c, d, a, x[10], S34, 0xbebfbc70);
+  HH (a, b, c, d, x[13], S31, 0x289b7ec6);
+  HH (d, a, b, c, x[ 0], S32, 0xeaa127fa);
+  HH (c, d, a, b, x[ 3], S33, 0xd4ef3085);
+  HH (b, c, d, a, x[ 6], S34,  0x4881d05);
+  HH (a, b, c, d, x[ 9], S31, 0xd9d4d039);
+  HH (d, a, b, c, x[12], S32, 0xe6db99e5);
+  HH (c, d, a, b, x[15], S33, 0x1fa27cf8);
+  HH (b, c, d, a, x[ 2], S34, 0xc4ac5665);
+  /* Round 4 */
+  II (a, b, c, d, x[ 0], S41, 0xf4292244);
+  II (d, a, b, c, x[ 7], S42, 0x432aff97);
+  II (c, d, a, b, x[14], S43, 0xab9423a7);
+  II (b, c, d, a, x[ 5], S44, 0xfc93a039);
+  II (a, b, c, d, x[12], S41, 0x655b59c3);
+  II (d, a, b, c, x[ 3], S42, 0x8f0ccc92);
+  II (c, d, a, b, x[10], S43, 0xffeff47d);
+  II (b, c, d, a, x[ 1], S44, 0x85845dd1);
+  II (a, b, c, d, x[ 8], S41, 0x6fa87e4f);
+  II (d, a, b, c, x[15], S42, 0xfe2ce6e0);
+  II (c, d, a, b, x[ 6], S43, 0xa3014314);
+  II (b, c, d, a, x[13], S44, 0x4e0811a1);
+  II (a, b, c, d, x[ 4], S41, 0xf7537e82);
+  II (d, a, b, c, x[11], S42, 0xbd3af235);
+  II (c, d, a, b, x[ 2], S43, 0x2ad7d2bb);
+  II (b, c, d, a, x[ 9], S44, 0xeb86d391);
+  state[0] += a;
+  state[1] += b;
+  state[2] += c;
+  state[3] += d;
+  /* Zeroize sensitive information.
+   */
+  MD5_memset ((uint8_t*)x, 0, sizeof (x));
+}
+/* Encodes input (uint32_t) into output (unsigned char). Assumes len is
+  a multiple of 4.
+ */
+static void Encode (unsigned char *output, uint32_t *input, unsigned int len)
+{
+  unsigned int i, j;
+  for (i = 0, j = 0; j < len; i++, j += 4) {
+ output[j] = (unsigned char)(input[i] & 0xff);
+ output[j+1] = (unsigned char)((input[i] >> 8) & 0xff);
+ output[j+2] = (unsigned char)((input[i] >> 16) & 0xff);
+ output[j+3] = (unsigned char)((input[i] >> 24) & 0xff);
+  }
+}
+/* Decodes input (unsigned char) into output (uint32_t). Assumes len is
+  a multiple of 4.
+ */
+static void Decode (uint32_t *output, unsigned char *input, unsigned int len)
+{
+  unsigned int i, j;
+  for (i = 0, j = 0; j < len; i++, j += 4)
+ output[i] = ((uint32_t)input[j]) | (((uint32_t)input[j+1]) << 8) |
+   (((uint32_t)input[j+2]) << 16) | (((uint32_t)input[j+3]) << 24);
+}
+/* Note: Replace "for loop" with standard memcpy if possible.
+ */
+static void MD5_memcpy (uint8_t* output, uint8_t* input, unsigned int len)
+{
+  unsigned int i;
+  for (i = 0; i < len; i++)
+    output[i] = input[i];
+}
+/* Note: Replace "for loop" with standard memset if possible.
+ */
+static void MD5_memset (uint8_t* output, int value, unsigned int len)
+{
+  unsigned int i;
+  for (i = 0; i < len; i++)
+ ((char *)output)[i] = (char)value;
+}
+/*
+ *  sha1.c
+ *
+ *  Description:
+ *      This file implements the Secure Hashing Algorithm 1 as
+ *      defined in FIPS PUB 180-1 published April 17, 1995.
+ *
+ *      The SHA-1, produces a 160-bit message digest for a given
+ *      data stream.  It should take about 2**n steps to find a
+ *      message with the same digest as a given message and
+ *      2**(n/2) to find any two messages with the same digest,
+ *      when n is the digest size in bits.  Therefore, this
+ *      algorithm can serve as a means of providing a
+ *      "fingerprint" for a message.
+ *
+ *  Portability Issues:
+ *      SHA-1 is defined in terms of 32-bit "words".  This code
+ *      uses <stdint.h> (included via "sha1.h" to define 32 and 8
+ *      bit unsigned integer types.  If your C compiler does not
+ *      support 32 bit unsigned integers, this code is not
+ *      appropriate.
+ *
+ *  Caveats:
+ *      SHA-1 is designed to work with messages less than 2^64 bits
+ *      long.  Although SHA-1 allows a message digest to be generated
+ *      for messages of any number of bits less than 2^64, this
+ *      implementation only works with messages with a length that is
+ *      a multiple of the size of an 8-bit character.
+ *
+ */
+/*
+ *  sha1.h
+ *
+ *  Description:
+ *      This is the header file for code which implements the Secure
+ *      Hashing Algorithm 1 as defined in FIPS PUB 180-1 published
+ *      April 17, 1995.
+ *
+ *      Many of the variable names in this code, especially the
+ *      single character names, were used because those were the names
+ *      used in the publication.
+ *
+ *      Please read the file sha1.c for more information.
+ *
+ */
+#ifndef INCLUDED_SHA1_H_
+#define INCLUDED_SHA1_H_
+#ifdef SHA1_SOURCE
+#define SHA1_PROC(type,name) EXPORT_METHOD type CPROC name
+#else
+#define SHA1_PROC(type,name) IMPORT_METHOD type CPROC name
+#endif
+#if !defined(  HAS_STDINT )
+#ifndef __WATCOMC__
+	typedef unsigned long uint32_t;
+	typedef short int_least16_t;
+	typedef unsigned char uint8_t;
+#else
+#endif
+//typedef unsigned char uint8_t;
+//typedef int int_least16_t;
+#endif
+/*
+ * If you do not have the ISO standard stdint.h header file, then you
+ * must typdef the following:
+ *    name              meaning
+ *  uint32_t         unsigned 32 bit integer
+ *  uint8_t          unsigned 8 bit integer (i.e., unsigned char)
+ *  int_least16_t    integer of >= 16 bits
+ *
+ */
+#ifndef _SHA_enum_
+#define _SHA_enum_
+enum
+{
+    shaSuccess = 0,
+    shaNull,
+    shaInputTooLong,
+    shaStateError
+};
+#endif
+#define SHA1HashSize 20
+/*
+ *  This structure will hold context information for the SHA-1
+ *  hashing operation
+ */
+typedef struct SHA1Context
+{
+    uint32_t Intermediate_Hash[SHA1HashSize/4];
+    uint32_t Length_Low;
+    uint32_t Length_High;
+                               /* Index into message block array   */
+    int_least16_t Message_Block_Index;
+    uint8_t Message_Block[64];
+    int Computed;
+    int Corrupted;
+} SHA1Context;
+/*
+ *  Function Prototypes
+ */
+SHA1_PROC( int, SHA1Reset )(  SHA1Context *);
+SHA1_PROC( int, SHA1Input )(  SHA1Context *,
+                const uint8_t *,
+                size_t);
+SHA1_PROC( int, SHA1Result )( SHA1Context *,
+                uint8_t Message_Digest[SHA1HashSize]);
+#endif
+// $Log: $
+#ifndef SHA1HashSize
+#define SHA1Context SHA1_CTX
+#endif
+/*
+ *  Define the SHA1 circular left shift macro
+ */
+#define SHA1CircularShift(bits,word)                 (((word) << (bits)) | ((word) >> (32-(bits))))
+/* Local Function Prototyptes */
+void SHA1PadMessage(SHA1Context *);
+void SHA1ProcessMessageBlock(SHA1Context *);
+/*
+ *  SHA1Reset
+ *
+ *  Description:
+ *      This function will initialize the SHA1Context in preparation
+ *      for computing a new SHA1 message digest.
+ *
+ *  Parameters:
+ *      context: [in/out]
+ *          The context to reset.
+ *
+ *  Returns:
+ *      sha Error Code.
+ *
+ */
+int SHA1Reset(SHA1Context *context)
+{
+    if (!context)
+    {
+        return shaNull;
+    }
+    context->Length_Low             = 0;
+    context->Length_High            = 0;
+    context->Message_Block_Index    = 0;
+    context->Intermediate_Hash[0]   = 0x67452301;
+    context->Intermediate_Hash[1]   = 0xEFCDAB89;
+    context->Intermediate_Hash[2]   = 0x98BADCFE;
+    context->Intermediate_Hash[3]   = 0x10325476;
+    context->Intermediate_Hash[4]   = 0xC3D2E1F0;
+    context->Computed   = 0;
+    context->Corrupted  = 0;
+    return shaSuccess;
+}
+/*
+ *  SHA1Result
+ *
+ *  Description:
+ *      This function will return the 160-bit message digest into the
+ *      Message_Digest array  provided by the caller.
+ *      NOTE: The first octet of hash is stored in the 0th element,
+ *            the last octet of hash in the 19th element.
+ *
+ *  Parameters:
+ *      context: [in/out]
+ *          The context to use to calculate the SHA-1 hash.
+ *      Message_Digest: [out]
+ *          Where the digest is returned.
+ *
+ *  Returns:
+ *      sha Error Code.
+ *
+ */
+int SHA1Result( SHA1Context *context,
+                uint8_t Message_Digest[SHA1HashSize])
+{
+    int i;
+    if (!context || !Message_Digest)
+    {
+        return shaNull;
+    }
+    if (context->Corrupted)
+    {
+        return context->Corrupted;
+    }
+    if (!context->Computed)
+    {
+        SHA1PadMessage(context);
+        for(i=0; i<64; ++i)
+        {
+            /* message may be sensitive, clear it out */
+            context->Message_Block[i] = 0;
+        }
+        context->Length_Low = 0;
+        context->Length_High = 0;
+        context->Computed = 1;
+    }
+    for(i = 0; i < SHA1HashSize; ++i)
+    {
+        Message_Digest[i] = (uint8_t)(context->Intermediate_Hash[i>>2]
+                            >> 8 * ( 3 - ( i & 0x03 ) ));
+    }
+    return shaSuccess;
+}
+/*
+ *  SHA1Input
+ *
+ *  Description:
+ *      This function accepts an array of octets as the next portion
+ *      of the message.
+ *
+ *  Parameters:
+ *      context: [in/out]
+ *          The SHA context to update
+ *      message_array: [in]
+ *          An array of characters representing the next portion of
+ *          the message.
+ *      length: [in]
+ *          The length of the message in message_array
+ *
+ *  Returns:
+ *      sha Error Code.
+ *
+ */
+int SHA1Input(    SHA1Context    *context,
+                  const uint8_t  *message_array,
+                  size_t       length)
+{
+    if (!length)
+    {
+        return shaSuccess;
+    }
+    if (!context || !message_array)
+    {
+        return shaNull;
+    }
+    if (context->Computed)
+    {
+        context->Corrupted = shaStateError;
+        return shaStateError;
+    }
+    if (context->Corrupted)
+    {
+         return context->Corrupted;
+    }
+    while(length-- && !context->Corrupted)
+    {
+    context->Message_Block[context->Message_Block_Index++] =
+                    (*message_array & 0xFF);
+    context->Length_Low += 8;
+    if (context->Length_Low == 0)
+    {
+        context->Length_High++;
+        if (context->Length_High == 0)
+        {
+            /* Message is too long */
+            context->Corrupted = 1;
+        }
+    }
+    if (context->Message_Block_Index == 64)
+    {
+        SHA1ProcessMessageBlock(context);
+    }
+    message_array++;
+    }
+    return shaSuccess;
+}
+/*
+ *  SHA1ProcessMessageBlock
+ *
+ *  Description:
+ *      This function will process the next 512 bits of the message
+ *      stored in the Message_Block array.
+ *
+ *  Parameters:
+ *      None.
+ *
+ *  Returns:
+ *      Nothing.
+ *
+ *  Comments:
+ *      Many of the variable names in this code, especially the
+ *      single character names, were used because those were the
+ *      names used in the publication.
+ *
+ *
+ */
+void SHA1ProcessMessageBlock(SHA1Context *context)
+{
+    const uint32_t K[] =    {
+                            0x5A827999,
+                            0x6ED9EBA1,
+                            0x8F1BBCDC,
+                            0xCA62C1D6
+                            };
+    int           t;
+    uint32_t      temp;
+    uint32_t      W[80];
+    uint32_t      A, B, C, D, E;
+    /*
+     *  Initialize the first 16 words in the array W
+     */
+    for(t = 0; t < 16; t++)
+    {
+        W[t] = context->Message_Block[t * 4] << 24;
+        W[t] |= context->Message_Block[t * 4 + 1] << 16;
+        W[t] |= context->Message_Block[t * 4 + 2] << 8;
+        W[t] |= context->Message_Block[t * 4 + 3];
+    }
+    for(t = 16; t < 80; t++)
+    {
+       W[t] = SHA1CircularShift(1,W[t-3] ^ W[t-8] ^ W[t-14] ^ W[t-16]);
+    }
+    A = context->Intermediate_Hash[0];
+    B = context->Intermediate_Hash[1];
+    C = context->Intermediate_Hash[2];
+    D = context->Intermediate_Hash[3];
+    E = context->Intermediate_Hash[4];
+    for(t = 0; t < 20; t++)
+    {
+        temp =  SHA1CircularShift(5,A) +
+                ((B & C) | ((~B) & D)) + E + W[t] + K[0];
+        E = D;
+        D = C;
+        C = SHA1CircularShift(30,B);
+        B = A;
+        A = temp;
+    }
+    for(t = 20; t < 40; t++)
+    {
+        temp = SHA1CircularShift(5,A) + (B ^ C ^ D) + E + W[t] + K[1];
+        E = D;
+        D = C;
+        C = SHA1CircularShift(30,B);
+        B = A;
+        A = temp;
+    }
+    for(t = 40; t < 60; t++)
+    {
+        temp = SHA1CircularShift(5,A) +
+               ((B & C) | (B & D) | (C & D)) + E + W[t] + K[2];
+        E = D;
+        D = C;
+        C = SHA1CircularShift(30,B);
+        B = A;
+        A = temp;
+    }
+    for(t = 60; t < 80; t++)
+    {
+        temp = SHA1CircularShift(5,A) + (B ^ C ^ D) + E + W[t] + K[3];
+        E = D;
+        D = C;
+        C = SHA1CircularShift(30,B);
+        B = A;
+        A = temp;
+    }
+    context->Intermediate_Hash[0] += A;
+    context->Intermediate_Hash[1] += B;
+    context->Intermediate_Hash[2] += C;
+    context->Intermediate_Hash[3] += D;
+    context->Intermediate_Hash[4] += E;
+    context->Message_Block_Index = 0;
+}
+/*
+ *  SHA1PadMessage
+ *
+ *  Description:
+ *      According to the standard, the message must be padded to an even
+ *      512 bits.  The first padding bit must be a '1'.  The last 64
+ *      bits represent the length of the original message.  All bits in
+ *      between should be 0.  This function will pad the message
+ *      according to those rules by filling the Message_Block array
+ *      accordingly.  It will also call the ProcessMessageBlock function
+ *      provided appropriately.  When it returns, it can be assumed that
+ *      the message digest has been computed.
+ *
+ *  Parameters:
+ *      context: [in/out]
+ *          The context to pad
+ *      ProcessMessageBlock: [in]
+ *          The appropriate SHA*ProcessMessageBlock function
+ *  Returns:
+ *      Nothing.
+ *
+ */
+void SHA1PadMessage(SHA1Context *context)
+{
+    /*
+     *  Check to see if the current message block is too small to hold
+     *  the initial padding bits and length.  If so, we will pad the
+     *  block, process it, and then continue padding into a second
+     *  block.
+     */
+    if (context->Message_Block_Index > 55)
+    {
+        context->Message_Block[context->Message_Block_Index++] = 0x80;
+        while(context->Message_Block_Index < 64)
+        {
+            context->Message_Block[context->Message_Block_Index++] = 0;
+        }
+        SHA1ProcessMessageBlock(context);
+        while(context->Message_Block_Index < 56)
+        {
+            context->Message_Block[context->Message_Block_Index++] = 0;
+        }
+    }
+    else
+    {
+        context->Message_Block[context->Message_Block_Index++] = 0x80;
+        while(context->Message_Block_Index < 56)
+        {
+            context->Message_Block[context->Message_Block_Index++] = 0;
+        }
+    }
+    /*
+     *  Store the message length as the last 8 octets
+     */
+    context->Message_Block[56] = (uint8_t)(context->Length_High >> 24);
+    context->Message_Block[57] = (uint8_t)(context->Length_High >> 16);
+    context->Message_Block[58] = (uint8_t)(context->Length_High >> 8);
+    context->Message_Block[59] = (uint8_t)(context->Length_High);
+    context->Message_Block[60] = (uint8_t)(context->Length_Low >> 24);
+    context->Message_Block[61] = (uint8_t)(context->Length_Low >> 16);
+    context->Message_Block[62] = (uint8_t)(context->Length_Low >> 8);
+    context->Message_Block[63] = (uint8_t)(context->Length_Low);
+    SHA1ProcessMessageBlock(context);
+}
+// $Log: sha1.c,v $
+// Revision 1.5  2003/05/13 09:14:08  panther
+// Remove carriage returns
+//
+// Revision 1.4  2003/03/25 08:45:57  panther
+// Added CVS logging tag
+//
+/*
+ * FIPS 180-2 SHA-224/256/384/512 implementation
+ * Last update: 02/02/2007
+ * Issue date:  04/30/2005
+ *
+ * Copyright (C) 2005, 2007 Olivier Gay <olivier.gay@a3.epfl.ch>
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the project nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE PROJECT OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+#if 0
+#define UNROLL_LOOPS
+#endif
+#define SHA2_SOURCE
+#define SHFR(x, n)    (x >> n)
+#define ROTR(x, n)   ((x >> n) | (x << ((sizeof(x) << 3) - n)))
+#define ROTL(x, n)   ((x << n) | (x >> ((sizeof(x) << 3) - n)))
+#define CH(x, y, z)  ((x & y) ^ (~x & z))
+#define MAJ(x, y, z) ((x & y) ^ (x & z) ^ (y & z))
+#define SHA256_F1(x) (ROTR(x,  2) ^ ROTR(x, 13) ^ ROTR(x, 22))
+#define SHA256_F2(x) (ROTR(x,  6) ^ ROTR(x, 11) ^ ROTR(x, 25))
+#define SHA256_F3(x) (ROTR(x,  7) ^ ROTR(x, 18) ^ SHFR(x,  3))
+#define SHA256_F4(x) (ROTR(x, 17) ^ ROTR(x, 19) ^ SHFR(x, 10))
+#define SHA512_F1(x) (ROTR(x, 28) ^ ROTR(x, 34) ^ ROTR(x, 39))
+#define SHA512_F2(x) (ROTR(x, 14) ^ ROTR(x, 18) ^ ROTR(x, 41))
+#define SHA512_F3(x) (ROTR(x,  1) ^ ROTR(x,  8) ^ SHFR(x,  7))
+#define SHA512_F4(x) (ROTR(x, 19) ^ ROTR(x, 61) ^ SHFR(x,  6))
+#define UNPACK32(x, str)                      {                                                 *((str) + 3) = (uint8) ((x)      );           *((str) + 2) = (uint8) ((x) >>  8);           *((str) + 1) = (uint8) ((x) >> 16);           *((str) + 0) = (uint8) ((x) >> 24);       }
+#define PACK32(str, x)                        {                                                 *(x) =   ((uint32) *((str) + 3)      )               | ((uint32) *((str) + 2) <<  8)               | ((uint32) *((str) + 1) << 16)               | ((uint32) *((str) + 0) << 24);   }
+#define UNPACK64(x, str)                      {                                                 *((str) + 7) = (uint8) ((x)      );           *((str) + 6) = (uint8) ((x) >>  8);           *((str) + 5) = (uint8) ((x) >> 16);           *((str) + 4) = (uint8) ((x) >> 24);           *((str) + 3) = (uint8) ((x) >> 32);           *((str) + 2) = (uint8) ((x) >> 40);           *((str) + 1) = (uint8) ((x) >> 48);           *((str) + 0) = (uint8) ((x) >> 56);       }
+#define PACK64(str, x)                        {                                                 *(x) =   ((uint64) *((str) + 7)      )               | ((uint64) *((str) + 6) <<  8)               | ((uint64) *((str) + 5) << 16)               | ((uint64) *((str) + 4) << 24)               | ((uint64) *((str) + 3) << 32)               | ((uint64) *((str) + 2) << 40)               | ((uint64) *((str) + 1) << 48)               | ((uint64) *((str) + 0) << 56);   }
+/* Macros used for loops unrolling */
+#define SHA256_SCR(i)                         {                                                 w[i] =  SHA256_F4(w[i -  2]) + w[i -  7]            + SHA256_F3(w[i - 15]) + w[i - 16]; }
+#define SHA512_SCR(i)                         {                                                 w[i] =  SHA512_F4(w[i -  2]) + w[i -  7]            + SHA512_F3(w[i - 15]) + w[i - 16]; }
+#define SHA256_EXP(a, b, c, d, e, f, g, h, j)               {                                                               t1 = wv[h] + SHA256_F2(wv[e]) + CH(wv[e], wv[f], wv[g])          + sha256_k[j] + w[j];                                  t2 = SHA256_F1(wv[a]) + MAJ(wv[a], wv[b], wv[c]);           wv[d] += t1;                                                wv[h] = t1 + t2;                                        }
+#define SHA512_EXP(a, b, c, d, e, f, g ,h, j)               {                                                               t1 = wv[h] + SHA512_F2(wv[e]) + CH(wv[e], wv[f], wv[g])          + sha512_k[j] + w[j];                                  t2 = SHA512_F1(wv[a]) + MAJ(wv[a], wv[b], wv[c]);           wv[d] += t1;                                                wv[h] = t1 + t2;                                        }
+static uint32 sha224_h0[8] =
+            {0xc1059ed8, 0x367cd507, 0x3070dd17, 0xf70e5939,
+             0xffc00b31, 0x68581511, 0x64f98fa7, 0xbefa4fa4};
+static uint32 sha256_h0[8] =
+            {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+             0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+static uint64 sha384_h0[8] =
+            {0xcbbb9d5dc1059ed8ULL, 0x629a292a367cd507ULL,
+             0x9159015a3070dd17ULL, 0x152fecd8f70e5939ULL,
+             0x67332667ffc00b31ULL, 0x8eb44a8768581511ULL,
+             0xdb0c2e0d64f98fa7ULL, 0x47b5481dbefa4fa4ULL};
+static uint64 sha512_h0[8] =
+            {0x6a09e667f3bcc908ULL, 0xbb67ae8584caa73bULL,
+             0x3c6ef372fe94f82bULL, 0xa54ff53a5f1d36f1ULL,
+             0x510e527fade682d1ULL, 0x9b05688c2b3e6c1fULL,
+             0x1f83d9abfb41bd6bULL, 0x5be0cd19137e2179ULL};
+static uint32 sha256_k[64] =
+            {0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+             0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+             0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+             0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+             0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+             0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+             0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+             0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+             0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+             0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+             0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
+             0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+             0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
+             0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+             0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+             0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
+static uint64 sha512_k[80] =
+            {0x428a2f98d728ae22ULL, 0x7137449123ef65cdULL,
+             0xb5c0fbcfec4d3b2fULL, 0xe9b5dba58189dbbcULL,
+             0x3956c25bf348b538ULL, 0x59f111f1b605d019ULL,
+             0x923f82a4af194f9bULL, 0xab1c5ed5da6d8118ULL,
+             0xd807aa98a3030242ULL, 0x12835b0145706fbeULL,
+             0x243185be4ee4b28cULL, 0x550c7dc3d5ffb4e2ULL,
+             0x72be5d74f27b896fULL, 0x80deb1fe3b1696b1ULL,
+             0x9bdc06a725c71235ULL, 0xc19bf174cf692694ULL,
+             0xe49b69c19ef14ad2ULL, 0xefbe4786384f25e3ULL,
+             0x0fc19dc68b8cd5b5ULL, 0x240ca1cc77ac9c65ULL,
+             0x2de92c6f592b0275ULL, 0x4a7484aa6ea6e483ULL,
+             0x5cb0a9dcbd41fbd4ULL, 0x76f988da831153b5ULL,
+             0x983e5152ee66dfabULL, 0xa831c66d2db43210ULL,
+             0xb00327c898fb213fULL, 0xbf597fc7beef0ee4ULL,
+             0xc6e00bf33da88fc2ULL, 0xd5a79147930aa725ULL,
+             0x06ca6351e003826fULL, 0x142929670a0e6e70ULL,
+             0x27b70a8546d22ffcULL, 0x2e1b21385c26c926ULL,
+             0x4d2c6dfc5ac42aedULL, 0x53380d139d95b3dfULL,
+             0x650a73548baf63deULL, 0x766a0abb3c77b2a8ULL,
+             0x81c2c92e47edaee6ULL, 0x92722c851482353bULL,
+             0xa2bfe8a14cf10364ULL, 0xa81a664bbc423001ULL,
+             0xc24b8b70d0f89791ULL, 0xc76c51a30654be30ULL,
+             0xd192e819d6ef5218ULL, 0xd69906245565a910ULL,
+             0xf40e35855771202aULL, 0x106aa07032bbd1b8ULL,
+             0x19a4c116b8d2d0c8ULL, 0x1e376c085141ab53ULL,
+             0x2748774cdf8eeb99ULL, 0x34b0bcb5e19b48a8ULL,
+             0x391c0cb3c5c95a63ULL, 0x4ed8aa4ae3418acbULL,
+             0x5b9cca4f7763e373ULL, 0x682e6ff3d6b2b8a3ULL,
+             0x748f82ee5defb2fcULL, 0x78a5636f43172f60ULL,
+             0x84c87814a1f0ab72ULL, 0x8cc702081a6439ecULL,
+             0x90befffa23631e28ULL, 0xa4506cebde82bde9ULL,
+             0xbef9a3f7b2c67915ULL, 0xc67178f2e372532bULL,
+             0xca273eceea26619cULL, 0xd186b8c721c0c207ULL,
+             0xeada7dd6cde0eb1eULL, 0xf57d4f7fee6ed178ULL,
+             0x06f067aa72176fbaULL, 0x0a637dc5a2c898a6ULL,
+             0x113f9804bef90daeULL, 0x1b710b35131c471bULL,
+             0x28db77f523047d84ULL, 0x32caab7b40c72493ULL,
+             0x3c9ebe0a15c9bebcULL, 0x431d67c49c100d4cULL,
+             0x4cc5d4becb3e42b6ULL, 0x597f299cfc657e2aULL,
+             0x5fcb6fab3ad6faecULL, 0x6c44198c4a475817ULL};
+/* SHA-256 functions */
+void sha256_transf(sha256_ctx *ctx, const unsigned char *message,
+                   unsigned int block_nb)
+{
+    uint32 w[64];
+    uint32 wv[8];
+    uint32 t1, t2;
+    const unsigned char *sub_block;
+    int i;
+#ifndef UNROLL_LOOPS
+    int j;
+#endif
+    for (i = 0; i < (int) block_nb; i++) {
+        sub_block = message + (i << 6);
+#ifndef UNROLL_LOOPS
+        for (j = 0; j < 16; j++) {
+            PACK32(&sub_block[j << 2], &w[j]);
+        }
+        for (j = 16; j < 64; j++) {
+            SHA256_SCR(j);
+        }
+        for (j = 0; j < 8; j++) {
+            wv[j] = ctx->h[j];
+        }
+        for (j = 0; j < 64; j++) {
+            t1 = wv[7] + SHA256_F2(wv[4]) + CH(wv[4], wv[5], wv[6])
+                + sha256_k[j] + w[j];
+            t2 = SHA256_F1(wv[0]) + MAJ(wv[0], wv[1], wv[2]);
+            wv[7] = wv[6];
+            wv[6] = wv[5];
+            wv[5] = wv[4];
+            wv[4] = wv[3] + t1;
+            wv[3] = wv[2];
+            wv[2] = wv[1];
+            wv[1] = wv[0];
+            wv[0] = t1 + t2;
+        }
+        for (j = 0; j < 8; j++) {
+            ctx->h[j] += wv[j];
+        }
+#else
+        PACK32(&sub_block[ 0], &w[ 0]); PACK32(&sub_block[ 4], &w[ 1]);
+        PACK32(&sub_block[ 8], &w[ 2]); PACK32(&sub_block[12], &w[ 3]);
+        PACK32(&sub_block[16], &w[ 4]); PACK32(&sub_block[20], &w[ 5]);
+        PACK32(&sub_block[24], &w[ 6]); PACK32(&sub_block[28], &w[ 7]);
+        PACK32(&sub_block[32], &w[ 8]); PACK32(&sub_block[36], &w[ 9]);
+        PACK32(&sub_block[40], &w[10]); PACK32(&sub_block[44], &w[11]);
+        PACK32(&sub_block[48], &w[12]); PACK32(&sub_block[52], &w[13]);
+        PACK32(&sub_block[56], &w[14]); PACK32(&sub_block[60], &w[15]);
+        SHA256_SCR(16); SHA256_SCR(17); SHA256_SCR(18); SHA256_SCR(19);
+        SHA256_SCR(20); SHA256_SCR(21); SHA256_SCR(22); SHA256_SCR(23);
+        SHA256_SCR(24); SHA256_SCR(25); SHA256_SCR(26); SHA256_SCR(27);
+        SHA256_SCR(28); SHA256_SCR(29); SHA256_SCR(30); SHA256_SCR(31);
+        SHA256_SCR(32); SHA256_SCR(33); SHA256_SCR(34); SHA256_SCR(35);
+        SHA256_SCR(36); SHA256_SCR(37); SHA256_SCR(38); SHA256_SCR(39);
+        SHA256_SCR(40); SHA256_SCR(41); SHA256_SCR(42); SHA256_SCR(43);
+        SHA256_SCR(44); SHA256_SCR(45); SHA256_SCR(46); SHA256_SCR(47);
+        SHA256_SCR(48); SHA256_SCR(49); SHA256_SCR(50); SHA256_SCR(51);
+        SHA256_SCR(52); SHA256_SCR(53); SHA256_SCR(54); SHA256_SCR(55);
+        SHA256_SCR(56); SHA256_SCR(57); SHA256_SCR(58); SHA256_SCR(59);
+        SHA256_SCR(60); SHA256_SCR(61); SHA256_SCR(62); SHA256_SCR(63);
+        wv[0] = ctx->h[0]; wv[1] = ctx->h[1];
+        wv[2] = ctx->h[2]; wv[3] = ctx->h[3];
+        wv[4] = ctx->h[4]; wv[5] = ctx->h[5];
+        wv[6] = ctx->h[6]; wv[7] = ctx->h[7];
+        SHA256_EXP(0,1,2,3,4,5,6,7, 0); SHA256_EXP(7,0,1,2,3,4,5,6, 1);
+        SHA256_EXP(6,7,0,1,2,3,4,5, 2); SHA256_EXP(5,6,7,0,1,2,3,4, 3);
+        SHA256_EXP(4,5,6,7,0,1,2,3, 4); SHA256_EXP(3,4,5,6,7,0,1,2, 5);
+        SHA256_EXP(2,3,4,5,6,7,0,1, 6); SHA256_EXP(1,2,3,4,5,6,7,0, 7);
+        SHA256_EXP(0,1,2,3,4,5,6,7, 8); SHA256_EXP(7,0,1,2,3,4,5,6, 9);
+        SHA256_EXP(6,7,0,1,2,3,4,5,10); SHA256_EXP(5,6,7,0,1,2,3,4,11);
+        SHA256_EXP(4,5,6,7,0,1,2,3,12); SHA256_EXP(3,4,5,6,7,0,1,2,13);
+        SHA256_EXP(2,3,4,5,6,7,0,1,14); SHA256_EXP(1,2,3,4,5,6,7,0,15);
+        SHA256_EXP(0,1,2,3,4,5,6,7,16); SHA256_EXP(7,0,1,2,3,4,5,6,17);
+        SHA256_EXP(6,7,0,1,2,3,4,5,18); SHA256_EXP(5,6,7,0,1,2,3,4,19);
+        SHA256_EXP(4,5,6,7,0,1,2,3,20); SHA256_EXP(3,4,5,6,7,0,1,2,21);
+        SHA256_EXP(2,3,4,5,6,7,0,1,22); SHA256_EXP(1,2,3,4,5,6,7,0,23);
+        SHA256_EXP(0,1,2,3,4,5,6,7,24); SHA256_EXP(7,0,1,2,3,4,5,6,25);
+        SHA256_EXP(6,7,0,1,2,3,4,5,26); SHA256_EXP(5,6,7,0,1,2,3,4,27);
+        SHA256_EXP(4,5,6,7,0,1,2,3,28); SHA256_EXP(3,4,5,6,7,0,1,2,29);
+        SHA256_EXP(2,3,4,5,6,7,0,1,30); SHA256_EXP(1,2,3,4,5,6,7,0,31);
+        SHA256_EXP(0,1,2,3,4,5,6,7,32); SHA256_EXP(7,0,1,2,3,4,5,6,33);
+        SHA256_EXP(6,7,0,1,2,3,4,5,34); SHA256_EXP(5,6,7,0,1,2,3,4,35);
+        SHA256_EXP(4,5,6,7,0,1,2,3,36); SHA256_EXP(3,4,5,6,7,0,1,2,37);
+        SHA256_EXP(2,3,4,5,6,7,0,1,38); SHA256_EXP(1,2,3,4,5,6,7,0,39);
+        SHA256_EXP(0,1,2,3,4,5,6,7,40); SHA256_EXP(7,0,1,2,3,4,5,6,41);
+        SHA256_EXP(6,7,0,1,2,3,4,5,42); SHA256_EXP(5,6,7,0,1,2,3,4,43);
+        SHA256_EXP(4,5,6,7,0,1,2,3,44); SHA256_EXP(3,4,5,6,7,0,1,2,45);
+        SHA256_EXP(2,3,4,5,6,7,0,1,46); SHA256_EXP(1,2,3,4,5,6,7,0,47);
+        SHA256_EXP(0,1,2,3,4,5,6,7,48); SHA256_EXP(7,0,1,2,3,4,5,6,49);
+        SHA256_EXP(6,7,0,1,2,3,4,5,50); SHA256_EXP(5,6,7,0,1,2,3,4,51);
+        SHA256_EXP(4,5,6,7,0,1,2,3,52); SHA256_EXP(3,4,5,6,7,0,1,2,53);
+        SHA256_EXP(2,3,4,5,6,7,0,1,54); SHA256_EXP(1,2,3,4,5,6,7,0,55);
+        SHA256_EXP(0,1,2,3,4,5,6,7,56); SHA256_EXP(7,0,1,2,3,4,5,6,57);
+        SHA256_EXP(6,7,0,1,2,3,4,5,58); SHA256_EXP(5,6,7,0,1,2,3,4,59);
+        SHA256_EXP(4,5,6,7,0,1,2,3,60); SHA256_EXP(3,4,5,6,7,0,1,2,61);
+        SHA256_EXP(2,3,4,5,6,7,0,1,62); SHA256_EXP(1,2,3,4,5,6,7,0,63);
+        ctx->h[0] += wv[0]; ctx->h[1] += wv[1];
+        ctx->h[2] += wv[2]; ctx->h[3] += wv[3];
+        ctx->h[4] += wv[4]; ctx->h[5] += wv[5];
+        ctx->h[6] += wv[6]; ctx->h[7] += wv[7];
+#endif
+    }
+}
+void sha256(const unsigned char *message, unsigned int len, unsigned char *digest)
+{
+    sha256_ctx ctx;
+    sha256_init(&ctx);
+    sha256_update(&ctx, message, len);
+    sha256_final(&ctx, digest);
+}
+void sha256_init(sha256_ctx *ctx)
+{
+#ifndef UNROLL_LOOPS
+    int i;
+    for (i = 0; i < 8; i++) {
+        ctx->h[i] = sha256_h0[i];
+    }
+#else
+    ctx->h[0] = sha256_h0[0]; ctx->h[1] = sha256_h0[1];
+    ctx->h[2] = sha256_h0[2]; ctx->h[3] = sha256_h0[3];
+    ctx->h[4] = sha256_h0[4]; ctx->h[5] = sha256_h0[5];
+    ctx->h[6] = sha256_h0[6]; ctx->h[7] = sha256_h0[7];
+#endif
+    ctx->len = 0;
+    ctx->tot_len = 0;
+}
+void sha256_update(sha256_ctx *ctx, const unsigned char *message,
+                   unsigned int len)
+{
+    unsigned int block_nb;
+    unsigned int new_len, rem_len, tmp_len;
+    const unsigned char *shifted_message;
+    tmp_len = SHA256_BLOCK_SIZE - ctx->len;
+    rem_len = len < tmp_len ? len : tmp_len;
+    memcpy(&ctx->block[ctx->len], message, rem_len);
+    if (ctx->len + len < SHA256_BLOCK_SIZE) {
+        ctx->len += len;
+        return;
+    }
+    new_len = len - rem_len;
+    block_nb = new_len / SHA256_BLOCK_SIZE;
+    shifted_message = message + rem_len;
+    sha256_transf(ctx, ctx->block, 1);
+    sha256_transf(ctx, shifted_message, block_nb);
+    rem_len = new_len % SHA256_BLOCK_SIZE;
+    memcpy(ctx->block, &shifted_message[block_nb << 6],
+           rem_len);
+    ctx->len = rem_len;
+    ctx->tot_len += (block_nb + 1) << 6;
+}
+void sha256_final(sha256_ctx *ctx, unsigned char *digest)
+{
+    unsigned int block_nb;
+    unsigned int pm_len;
+    unsigned int len_b;
+#ifndef UNROLL_LOOPS
+    int i;
+#endif
+    block_nb = (1 + ((SHA256_BLOCK_SIZE - 9)
+                     < (ctx->len % SHA256_BLOCK_SIZE)));
+    len_b = (ctx->tot_len + ctx->len) << 3;
+    pm_len = block_nb << 6;
+    memset(ctx->block + ctx->len, 0, pm_len - ctx->len);
+    ctx->block[ctx->len] = 0x80;
+    UNPACK32(len_b, ctx->block + pm_len - 4);
+    sha256_transf(ctx, ctx->block, block_nb);
+#ifndef UNROLL_LOOPS
+    for (i = 0 ; i < 8; i++) {
+        UNPACK32(ctx->h[i], &digest[i << 2]);
+    }
+#else
+   UNPACK32(ctx->h[0], &digest[ 0]);
+   UNPACK32(ctx->h[1], &digest[ 4]);
+   UNPACK32(ctx->h[2], &digest[ 8]);
+   UNPACK32(ctx->h[3], &digest[12]);
+   UNPACK32(ctx->h[4], &digest[16]);
+   UNPACK32(ctx->h[5], &digest[20]);
+   UNPACK32(ctx->h[6], &digest[24]);
+   UNPACK32(ctx->h[7], &digest[28]);
+#endif
+}
+/* SHA-512 functions */
+void sha512_transf(sha512_ctx *ctx, const unsigned char *message,
+                   unsigned int block_nb)
+{
+    uint64 w[80];
+    uint64 wv[8];
+    uint64 t1, t2;
+    const unsigned char *sub_block;
+    int i, j;
+    for (i = 0; i < (int) block_nb; i++) {
+        sub_block = message + (i << 7);
+#ifndef UNROLL_LOOPS
+        for (j = 0; j < 16; j++) {
+            PACK64(&sub_block[j << 3], &w[j]);
+        }
+        for (j = 16; j < 80; j++) {
+            SHA512_SCR(j);
+        }
+        for (j = 0; j < 8; j++) {
+            wv[j] = ctx->h[j];
+        }
+        for (j = 0; j < 80; j++) {
+            t1 = wv[7] + SHA512_F2(wv[4]) + CH(wv[4], wv[5], wv[6])
+                + sha512_k[j] + w[j];
+            t2 = SHA512_F1(wv[0]) + MAJ(wv[0], wv[1], wv[2]);
+            wv[7] = wv[6];
+            wv[6] = wv[5];
+            wv[5] = wv[4];
+            wv[4] = wv[3] + t1;
+            wv[3] = wv[2];
+            wv[2] = wv[1];
+            wv[1] = wv[0];
+            wv[0] = t1 + t2;
+        }
+        for (j = 0; j < 8; j++) {
+            ctx->h[j] += wv[j];
+        }
+#else
+        PACK64(&sub_block[  0], &w[ 0]); PACK64(&sub_block[  8], &w[ 1]);
+        PACK64(&sub_block[ 16], &w[ 2]); PACK64(&sub_block[ 24], &w[ 3]);
+        PACK64(&sub_block[ 32], &w[ 4]); PACK64(&sub_block[ 40], &w[ 5]);
+        PACK64(&sub_block[ 48], &w[ 6]); PACK64(&sub_block[ 56], &w[ 7]);
+        PACK64(&sub_block[ 64], &w[ 8]); PACK64(&sub_block[ 72], &w[ 9]);
+        PACK64(&sub_block[ 80], &w[10]); PACK64(&sub_block[ 88], &w[11]);
+        PACK64(&sub_block[ 96], &w[12]); PACK64(&sub_block[104], &w[13]);
+        PACK64(&sub_block[112], &w[14]); PACK64(&sub_block[120], &w[15]);
+        SHA512_SCR(16); SHA512_SCR(17); SHA512_SCR(18); SHA512_SCR(19);
+        SHA512_SCR(20); SHA512_SCR(21); SHA512_SCR(22); SHA512_SCR(23);
+        SHA512_SCR(24); SHA512_SCR(25); SHA512_SCR(26); SHA512_SCR(27);
+        SHA512_SCR(28); SHA512_SCR(29); SHA512_SCR(30); SHA512_SCR(31);
+        SHA512_SCR(32); SHA512_SCR(33); SHA512_SCR(34); SHA512_SCR(35);
+        SHA512_SCR(36); SHA512_SCR(37); SHA512_SCR(38); SHA512_SCR(39);
+        SHA512_SCR(40); SHA512_SCR(41); SHA512_SCR(42); SHA512_SCR(43);
+        SHA512_SCR(44); SHA512_SCR(45); SHA512_SCR(46); SHA512_SCR(47);
+        SHA512_SCR(48); SHA512_SCR(49); SHA512_SCR(50); SHA512_SCR(51);
+        SHA512_SCR(52); SHA512_SCR(53); SHA512_SCR(54); SHA512_SCR(55);
+        SHA512_SCR(56); SHA512_SCR(57); SHA512_SCR(58); SHA512_SCR(59);
+        SHA512_SCR(60); SHA512_SCR(61); SHA512_SCR(62); SHA512_SCR(63);
+        SHA512_SCR(64); SHA512_SCR(65); SHA512_SCR(66); SHA512_SCR(67);
+        SHA512_SCR(68); SHA512_SCR(69); SHA512_SCR(70); SHA512_SCR(71);
+        SHA512_SCR(72); SHA512_SCR(73); SHA512_SCR(74); SHA512_SCR(75);
+        SHA512_SCR(76); SHA512_SCR(77); SHA512_SCR(78); SHA512_SCR(79);
+        wv[0] = ctx->h[0]; wv[1] = ctx->h[1];
+        wv[2] = ctx->h[2]; wv[3] = ctx->h[3];
+        wv[4] = ctx->h[4]; wv[5] = ctx->h[5];
+        wv[6] = ctx->h[6]; wv[7] = ctx->h[7];
+        j = 0;
+        do {
+            SHA512_EXP(0,1,2,3,4,5,6,7,j); j++;
+            SHA512_EXP(7,0,1,2,3,4,5,6,j); j++;
+            SHA512_EXP(6,7,0,1,2,3,4,5,j); j++;
+            SHA512_EXP(5,6,7,0,1,2,3,4,j); j++;
+            SHA512_EXP(4,5,6,7,0,1,2,3,j); j++;
+            SHA512_EXP(3,4,5,6,7,0,1,2,j); j++;
+            SHA512_EXP(2,3,4,5,6,7,0,1,j); j++;
+            SHA512_EXP(1,2,3,4,5,6,7,0,j); j++;
+        } while (j < 80);
+        ctx->h[0] += wv[0]; ctx->h[1] += wv[1];
+        ctx->h[2] += wv[2]; ctx->h[3] += wv[3];
+        ctx->h[4] += wv[4]; ctx->h[5] += wv[5];
+        ctx->h[6] += wv[6]; ctx->h[7] += wv[7];
+#endif
+    }
+}
+void sha512(const unsigned char *message, unsigned int len,
+            unsigned char *digest)
+{
+    sha512_ctx ctx;
+    sha512_init(&ctx);
+    sha512_update(&ctx, message, len);
+    sha512_final(&ctx, digest);
+}
+void sha512_init(sha512_ctx *ctx)
+{
+#ifndef UNROLL_LOOPS
+    int i;
+    for (i = 0; i < 8; i++) {
+        ctx->h[i] = sha512_h0[i];
+    }
+#else
+    ctx->h[0] = sha512_h0[0]; ctx->h[1] = sha512_h0[1];
+    ctx->h[2] = sha512_h0[2]; ctx->h[3] = sha512_h0[3];
+    ctx->h[4] = sha512_h0[4]; ctx->h[5] = sha512_h0[5];
+    ctx->h[6] = sha512_h0[6]; ctx->h[7] = sha512_h0[7];
+#endif
+    ctx->len = 0;
+    ctx->tot_len = 0;
+}
+void sha512_update(sha512_ctx *ctx, const unsigned char *message,
+                   unsigned int len)
+{
+    unsigned int block_nb;
+    unsigned int new_len, rem_len, tmp_len;
+    const unsigned char *shifted_message;
+    tmp_len = SHA512_BLOCK_SIZE - ctx->len;
+    rem_len = len < tmp_len ? len : tmp_len;
+    memcpy(&ctx->block[ctx->len], message, rem_len);
+    if (ctx->len + len < SHA512_BLOCK_SIZE) {
+        ctx->len += len;
+        return;
+    }
+    new_len = len - rem_len;
+    block_nb = new_len / SHA512_BLOCK_SIZE;
+    shifted_message = message + rem_len;
+    sha512_transf(ctx, ctx->block, 1);
+    sha512_transf(ctx, shifted_message, block_nb);
+    rem_len = new_len % SHA512_BLOCK_SIZE;
+    memcpy(ctx->block, &shifted_message[block_nb << 7],
+           rem_len);
+    ctx->len = rem_len;
+    ctx->tot_len += (block_nb + 1) << 7;
+}
+void sha512_final(sha512_ctx *ctx, unsigned char *digest)
+{
+    unsigned int block_nb;
+    unsigned int pm_len;
+    unsigned int len_b;
+#ifndef UNROLL_LOOPS
+    int i;
+#endif
+    block_nb = 1 + ((SHA512_BLOCK_SIZE - 17)
+                     < (ctx->len % SHA512_BLOCK_SIZE));
+    len_b = (ctx->tot_len + ctx->len) << 3;
+    pm_len = block_nb << 7;
+    memset(ctx->block + ctx->len, 0, pm_len - ctx->len);
+    ctx->block[ctx->len] = 0x80;
+    UNPACK32(len_b, ctx->block + pm_len - 4);
+    sha512_transf(ctx, ctx->block, block_nb);
+#ifndef UNROLL_LOOPS
+    for (i = 0 ; i < 8; i++) {
+        UNPACK64(ctx->h[i], &digest[i << 3]);
+    }
+#else
+    UNPACK64(ctx->h[0], &digest[ 0]);
+    UNPACK64(ctx->h[1], &digest[ 8]);
+    UNPACK64(ctx->h[2], &digest[16]);
+    UNPACK64(ctx->h[3], &digest[24]);
+    UNPACK64(ctx->h[4], &digest[32]);
+    UNPACK64(ctx->h[5], &digest[40]);
+    UNPACK64(ctx->h[6], &digest[48]);
+    UNPACK64(ctx->h[7], &digest[56]);
+#endif
+}
+/* SHA-384 functions */
+void sha384(const unsigned char *message, unsigned int len,
+            unsigned char *digest)
+{
+    sha384_ctx ctx;
+    sha384_init(&ctx);
+    sha384_update(&ctx, message, len);
+    sha384_final(&ctx, digest);
+}
+void sha384_init(sha384_ctx *ctx)
+{
+#ifndef UNROLL_LOOPS
+    int i;
+    for (i = 0; i < 8; i++) {
+        ctx->h[i] = sha384_h0[i];
+    }
+#else
+    ctx->h[0] = sha384_h0[0]; ctx->h[1] = sha384_h0[1];
+    ctx->h[2] = sha384_h0[2]; ctx->h[3] = sha384_h0[3];
+    ctx->h[4] = sha384_h0[4]; ctx->h[5] = sha384_h0[5];
+    ctx->h[6] = sha384_h0[6]; ctx->h[7] = sha384_h0[7];
+#endif
+    ctx->len = 0;
+    ctx->tot_len = 0;
+}
+void sha384_update(sha384_ctx *ctx, const unsigned char *message,
+                   unsigned int len)
+{
+    unsigned int block_nb;
+    unsigned int new_len, rem_len, tmp_len;
+    const unsigned char *shifted_message;
+    tmp_len = SHA384_BLOCK_SIZE - ctx->len;
+    rem_len = len < tmp_len ? len : tmp_len;
+    memcpy(&ctx->block[ctx->len], message, rem_len);
+    if (ctx->len + len < SHA384_BLOCK_SIZE) {
+        ctx->len += len;
+        return;
+    }
+    new_len = len - rem_len;
+    block_nb = new_len / SHA384_BLOCK_SIZE;
+    shifted_message = message + rem_len;
+    sha512_transf(ctx, ctx->block, 1);
+    sha512_transf(ctx, shifted_message, block_nb);
+    rem_len = new_len % SHA384_BLOCK_SIZE;
+    memcpy(ctx->block, &shifted_message[block_nb << 7],
+           rem_len);
+    ctx->len = rem_len;
+    ctx->tot_len += (block_nb + 1) << 7;
+}
+void sha384_final(sha384_ctx *ctx, unsigned char *digest)
+{
+    unsigned int block_nb;
+    unsigned int pm_len;
+    unsigned int len_b;
+#ifndef UNROLL_LOOPS
+    int i;
+#endif
+    block_nb = (1 + ((SHA384_BLOCK_SIZE - 17)
+                     < (ctx->len % SHA384_BLOCK_SIZE)));
+    len_b = (ctx->tot_len + ctx->len) << 3;
+    pm_len = block_nb << 7;
+    memset(ctx->block + ctx->len, 0, pm_len - ctx->len);
+    ctx->block[ctx->len] = 0x80;
+    UNPACK32(len_b, ctx->block + pm_len - 4);
+    sha512_transf(ctx, ctx->block, block_nb);
+#ifndef UNROLL_LOOPS
+    for (i = 0 ; i < 6; i++) {
+        UNPACK64(ctx->h[i], &digest[i << 3]);
+    }
+#else
+    UNPACK64(ctx->h[0], &digest[ 0]);
+    UNPACK64(ctx->h[1], &digest[ 8]);
+    UNPACK64(ctx->h[2], &digest[16]);
+    UNPACK64(ctx->h[3], &digest[24]);
+    UNPACK64(ctx->h[4], &digest[32]);
+    UNPACK64(ctx->h[5], &digest[40]);
+#endif
+}
+/* SHA-224 functions */
+void sha224(const unsigned char *message, unsigned int len,
+            unsigned char *digest)
+{
+    sha224_ctx ctx;
+    sha224_init(&ctx);
+    sha224_update(&ctx, message, len);
+    sha224_final(&ctx, digest);
+}
+void sha224_init(sha224_ctx *ctx)
+{
+#ifndef UNROLL_LOOPS
+    int i;
+    for (i = 0; i < 8; i++) {
+        ctx->h[i] = sha224_h0[i];
+    }
+#else
+    ctx->h[0] = sha224_h0[0]; ctx->h[1] = sha224_h0[1];
+    ctx->h[2] = sha224_h0[2]; ctx->h[3] = sha224_h0[3];
+    ctx->h[4] = sha224_h0[4]; ctx->h[5] = sha224_h0[5];
+    ctx->h[6] = sha224_h0[6]; ctx->h[7] = sha224_h0[7];
+#endif
+    ctx->len = 0;
+    ctx->tot_len = 0;
+}
+void sha224_update(sha224_ctx *ctx, const unsigned char *message,
+                   unsigned int len)
+{
+    unsigned int block_nb;
+    unsigned int new_len, rem_len, tmp_len;
+    const unsigned char *shifted_message;
+    tmp_len = SHA224_BLOCK_SIZE - ctx->len;
+    rem_len = len < tmp_len ? len : tmp_len;
+    memcpy(&ctx->block[ctx->len], message, rem_len);
+    if (ctx->len + len < SHA224_BLOCK_SIZE) {
+        ctx->len += len;
+        return;
+    }
+    new_len = len - rem_len;
+    block_nb = new_len / SHA224_BLOCK_SIZE;
+    shifted_message = message + rem_len;
+    sha256_transf(ctx, ctx->block, 1);
+    sha256_transf(ctx, shifted_message, block_nb);
+    rem_len = new_len % SHA224_BLOCK_SIZE;
+    memcpy(ctx->block, &shifted_message[block_nb << 6],
+           rem_len);
+    ctx->len = rem_len;
+    ctx->tot_len += (block_nb + 1) << 6;
+}
+void sha224_final(sha224_ctx *ctx, unsigned char *digest)
+{
+    unsigned int block_nb;
+    unsigned int pm_len;
+    unsigned int len_b;
+#ifndef UNROLL_LOOPS
+    int i;
+#endif
+    block_nb = (1 + ((SHA224_BLOCK_SIZE - 9)
+                     < (ctx->len % SHA224_BLOCK_SIZE)));
+    len_b = (ctx->tot_len + ctx->len) << 3;
+    pm_len = block_nb << 6;
+    memset(ctx->block + ctx->len, 0, pm_len - ctx->len);
+    ctx->block[ctx->len] = 0x80;
+    UNPACK32(len_b, ctx->block + pm_len - 4);
+    sha256_transf(ctx, ctx->block, block_nb);
+#ifndef UNROLL_LOOPS
+    for (i = 0 ; i < 7; i++) {
+        UNPACK32(ctx->h[i], &digest[i << 2]);
+    }
+#else
+   UNPACK32(ctx->h[0], &digest[ 0]);
+   UNPACK32(ctx->h[1], &digest[ 4]);
+   UNPACK32(ctx->h[2], &digest[ 8]);
+   UNPACK32(ctx->h[3], &digest[12]);
+   UNPACK32(ctx->h[4], &digest[16]);
+   UNPACK32(ctx->h[5], &digest[20]);
+   UNPACK32(ctx->h[6], &digest[24]);
+#endif
+}
+#ifdef TEST_VECTORS
+/* FIPS 180-2 Validation tests */
+void test(const char *vector, unsigned char *digest,
+          unsigned int digest_size)
+{
+    char output[2 * SHA512_DIGEST_SIZE + 1];
+    int i;
+    output[2 * digest_size] = '\0';
+    for (i = 0; i < (int) digest_size ; i++) {
+       sprintf(output + 2 * i, "%02x", digest[i]);
+    }
+    printf("H: %s\n", output);
+    if (strcmp(vector, output)) {
+        fprintf(stderr, "Test failed.\n");
+        exit(EXIT_FAILURE);
+    }
+}
+int main(void)
+{
+    static const char *vectors[4][3] =
+    {
+        {
+        "23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7",
+        "75388b16512776cc5dba5da1fd890150b0c6455cb4f58b1952522525",
+        "20794655980c91d8bbb4c1ea97618a4bf03f42581948b2ee4ee7ad67",
+        },
+        /* SHA-256 */
+        {
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1",
+        "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0",
+        },
+        /* SHA-384 */
+        {
+        "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed"
+        "8086072ba1e7cc2358baeca134c825a7",
+        "09330c33f71147e83d192fc782cd1b4753111b173b3b05d22fa08086e3b0f712"
+        "fcc7c71a557e2db966c3e9fa91746039",
+        "9d0e1809716474cb086e834e310a4a1ced149e9c00f248527972cec5704c2a5b"
+        "07b8b3dc38ecc4ebae97ddd87f3d8985",
+        },
+        /* SHA-512 */
+        {
+        "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a"
+        "2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
+        "8e959b75dae313da8cf4f72814fc143f8f7779c6eb9f7fa17299aeadb6889018"
+        "501d289e4900f7e4331b99dec4b5433ac7d329eeb6dd26545e96e55b874be909",
+        "e718483d0ce769644e2e42c7bc15b4638e1f98b13b2044285632a803afa973eb"
+        "de0ff244877ea60a4cb0432ce577c31beb009c5c2c49aa2e4eadb217ad8cc09b"
+        }
+    };
+    static const char message1[] = "abc";
+    static const char message2a[] = "abcdbcdecdefdefgefghfghighijhi"
+                                    "jkijkljklmklmnlmnomnopnopq";
+    static const char message2b[] = "abcdefghbcdefghicdefghijdefghijkefghij"
+                                    "klfghijklmghijklmnhijklmnoijklmnopjklm"
+                                    "nopqklmnopqrlmnopqrsmnopqrstnopqrstu";
+    unsigned char *message3;
+    unsigned int message3_len = 1000000;
+    unsigned char digest[SHA512_DIGEST_SIZE];
+    message3 = malloc(message3_len);
+    if (message3 == NULL) {
+        fprintf(stderr, "Can't allocate memory\n");
+        return -1;
+    }
+    memset(message3, 'a', message3_len);
+    printf("SHA-2 FIPS 180-2 Validation tests\n\n");
+    printf("SHA-224 Test vectors\n");
+    sha224((const unsigned char *) message1, strlen(message1), digest);
+    test(vectors[0][0], digest, SHA224_DIGEST_SIZE);
+    sha224((const unsigned char *) message2a, strlen(message2a), digest);
+    test(vectors[0][1], digest, SHA224_DIGEST_SIZE);
+    sha224(message3, message3_len, digest);
+    test(vectors[0][2], digest, SHA224_DIGEST_SIZE);
+    printf("\n");
+    printf("SHA-256 Test vectors\n");
+    sha256((const unsigned char *) message1, strlen(message1), digest);
+    test(vectors[1][0], digest, SHA256_DIGEST_SIZE);
+    sha256((const unsigned char *) message2a, strlen(message2a), digest);
+    test(vectors[1][1], digest, SHA256_DIGEST_SIZE);
+    sha256(message3, message3_len, digest);
+    test(vectors[1][2], digest, SHA256_DIGEST_SIZE);
+    printf("\n");
+    printf("SHA-384 Test vectors\n");
+    sha384((const unsigned char *) message1, strlen(message1), digest);
+    test(vectors[2][0], digest, SHA384_DIGEST_SIZE);
+    sha384((const unsigned char *)message2b, strlen(message2b), digest);
+    test(vectors[2][1], digest, SHA384_DIGEST_SIZE);
+    sha384(message3, message3_len, digest);
+    test(vectors[2][2], digest, SHA384_DIGEST_SIZE);
+    printf("\n");
+    printf("SHA-512 Test vectors\n");
+    sha512((const unsigned char *) message1, strlen(message1), digest);
+    test(vectors[3][0], digest, SHA512_DIGEST_SIZE);
+    sha512((const unsigned char *) message2b, strlen(message2b), digest);
+    test(vectors[3][1], digest, SHA512_DIGEST_SIZE);
+    sha512(message3, message3_len, digest);
+    test(vectors[3][2], digest, SHA512_DIGEST_SIZE);
+    printf("\n");
+    printf("All tests passed.\n");
+    return 0;
+}
+#endif
+// http://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.202.pdf
+// from https://github.com/mjosaarinen/tiny_sha3/blob/master/sha3.c  2017/19/12
+// sha3.c
+// 19-Nov-11  Markku-Juhani O. Saarinen <mjos@iki.fi>
+// Revised 07-Aug-15 to match with official release of FIPS PUB 202 "SHA3"
+// Revised 03-Sep-15 for portability + OpenSSL - style API
+// 2018-06-16 modified _final api to pass context then digest (reverse params from original)
+// from https://github.com/mjosaarinen/tiny_sha3/blob/master/sha3.h  2017/19/12
+// sha3.h
+// 19-Nov-11  Markku-Juhani O. Saarinen <mjos@iki.fi>
+// 2018-06-16 modified _final api to pass context then digest (reverse params from original)
+#ifndef SHA3_H
+#define SHA3_H
+#ifndef KECCAKF_ROUNDS
+#define KECCAKF_ROUNDS 24
+#endif
+#ifndef ROTL64
+#define ROTL64(x, y) (((x) << (y)) | ((x) >> (64 - (y))))
+#endif
+// state context
+typedef struct {
+                                 // state:
+    union {
+                     // 8-bit bytes
+        uint8_t b[200];
+                     // 64-bit words
+        uint64_t q[25];
+    } st;
+                    // these don't overflow
+    int pt, rsiz, mdlen;
+} sha3_ctx_t;
+// Compression function.
+void sha3_keccakf(uint64_t st[25]);
+// OpenSSL - like interfece
+    // mdlen = hash output in bytes
+int sha3_init(sha3_ctx_t *c, int mdlen);
+int sha3_update(sha3_ctx_t *c, const void *data, size_t len);
+    // digest goes to md
+int sha3_final(sha3_ctx_t *c, void *md );
+// compute a sha3 hash (md) of given byte length from "in"
+void *sha3(const void *in, size_t inlen, void *md, int mdlen);
+// SHAKE128 and SHAKE256 extensible-output functions
+#define shake128_init(c) sha3_init(c, 16)
+#define shake256_init(c) sha3_init(c, 32)
+#define shake_update sha3_update
+void shake_xof(sha3_ctx_t *c);
+void shake_out(sha3_ctx_t *c, void *out, size_t len);
+#endif
+// update the state with given number of rounds
+void sha3_keccakf(uint64_t st[25])
+{
+    // constants
+    const uint64_t keccakf_rndc[24] = {
+        0x0000000000000001, 0x0000000000008082, 0x800000000000808a,
+        0x8000000080008000, 0x000000000000808b, 0x0000000080000001,
+        0x8000000080008081, 0x8000000000008009, 0x000000000000008a,
+        0x0000000000000088, 0x0000000080008009, 0x000000008000000a,
+        0x000000008000808b, 0x800000000000008b, 0x8000000000008089,
+        0x8000000000008003, 0x8000000000008002, 0x8000000000000080,
+        0x000000000000800a, 0x800000008000000a, 0x8000000080008081,
+        0x8000000000008080, 0x0000000080000001, 0x8000000080008008
+    };
+    const int keccakf_rotc[24] = {
+        1,  3,  6,  10, 15, 21, 28, 36, 45, 55, 2,  14,
+        27, 41, 56, 8,  25, 43, 62, 18, 39, 61, 20, 44
+    };
+    const int keccakf_piln[24] = {
+        10, 7,  11, 17, 18, 3, 5,  16, 8,  21, 24, 4,
+        15, 23, 19, 13, 12, 2, 20, 14, 22, 9,  6,  1
+    };
+    // variables
+    int i, j, r;
+    uint64_t t, bc[5];
+#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+    uint8_t *v;
+    // endianess conversion. this is redundant on little-endian targets
+    for (i = 0; i < 25; i++) {
+        v = (uint8_t *) &st[i];
+        st[i] = ((uint64_t) v[0])     | (((uint64_t) v[1]) << 8) |
+            (((uint64_t) v[2]) << 16) | (((uint64_t) v[3]) << 24) |
+            (((uint64_t) v[4]) << 32) | (((uint64_t) v[5]) << 40) |
+            (((uint64_t) v[6]) << 48) | (((uint64_t) v[7]) << 56);
+    }
+#endif
+    // actual iteration
+    for (r = 0; r < KECCAKF_ROUNDS; r++) {
+        // Theta
+        for (i = 0; i < 5; i++)
+            bc[i] = st[i] ^ st[i + 5] ^ st[i + 10] ^ st[i + 15] ^ st[i + 20];
+        for (i = 0; i < 5; i++) {
+            t = bc[(i + 4) % 5] ^ ROTL64(bc[(i + 1) % 5], 1);
+            for (j = 0; j < 25; j += 5)
+                st[j + i] ^= t;
+        }
+        // Rho Pi
+        t = st[1];
+        for (i = 0; i < 24; i++) {
+            j = keccakf_piln[i];
+            bc[0] = st[j];
+            st[j] = ROTL64(t, keccakf_rotc[i]);
+            t = bc[0];
+        }
+        //  Chi
+        for (j = 0; j < 25; j += 5) {
+            for (i = 0; i < 5; i++)
+                bc[i] = st[j + i];
+            for (i = 0; i < 5; i++)
+                st[j + i] ^= (~bc[(i + 1) % 5]) & bc[(i + 2) % 5];
+        }
+        //  Iota
+        st[0] ^= keccakf_rndc[r];
+    }
+#if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+    // endianess conversion. this is redundant on little-endian targets
+    for (i = 0; i < 25; i++) {
+        v = (uint8_t *) &st[i];
+        t = st[i];
+        v[0] = t & 0xFF;
+        v[1] = (t >> 8) & 0xFF;
+        v[2] = (t >> 16) & 0xFF;
+        v[3] = (t >> 24) & 0xFF;
+        v[4] = (t >> 32) & 0xFF;
+        v[5] = (t >> 40) & 0xFF;
+        v[6] = (t >> 48) & 0xFF;
+        v[7] = (t >> 56) & 0xFF;
+    }
+#endif
+}
+// Initialize the context for SHA3
+int sha3_init(sha3_ctx_t *c, int mdlen)
+{
+    int i;
+	if( mdlen > 100 )
+        mdlen = 100;
+    for (i = 0; i < 25; i++)
+        c->st.q[i] = 0;
+    c->mdlen = mdlen;
+    c->rsiz = 200 - 2 * mdlen;
+    c->pt = 0;
+    return 1;
+}
+// update state with more data
+int sha3_update(sha3_ctx_t *c, const void *data, size_t len)
+{
+    size_t i;
+    int j;
+    j = c->pt;
+    for (i = 0; i < len; i++) {
+        c->st.b[j++] ^= ((const uint8_t *) data)[i];
+        if (j >= c->rsiz) {
+            sha3_keccakf(c->st.q);
+            j = 0;
+        }
+    }
+    c->pt = j;
+    return 1;
+}
+// finalize and output a hash
+int sha3_final( sha3_ctx_t *c, void *md )
+{
+    int i;
+    c->st.b[c->pt] ^= 0x06;
+    c->st.b[c->rsiz - 1] ^= 0x80;
+    sha3_keccakf(c->st.q);
+    for (i = 0; i < c->mdlen; i++) {
+        ((uint8_t *) md)[i] = c->st.b[i];
+    }
+    return 1;
+}
+// compute a SHA-3 hash (md) of given byte length from "in"
+void *sha3(const void *in, size_t inlen, void *md, int mdlen)
+{
+    sha3_ctx_t sha3;
+    sha3_init(&sha3, mdlen);
+    sha3_update(&sha3, in, inlen);
+    sha3_final(&sha3, md);
+    return md;
+}
+// SHAKE128 and SHAKE256 extensible-output functionality
+void shake_xof(sha3_ctx_t *c)
+{
+    c->st.b[c->pt] ^= 0x1F;
+    c->st.b[c->rsiz - 1] ^= 0x80;
+    sha3_keccakf(c->st.q);
+    c->pt = 0;
+}
+void shake_out(sha3_ctx_t *c, void *out, size_t len)
+{
+    size_t i;
+    int j;
+    j = c->pt;
+    for (i = 0; i < len; i++) {
+        if (j >= c->rsiz) {
+            sha3_keccakf(c->st.q);
+            j = 0;
+        }
+        ((uint8_t *) out)[i] = c->st.b[j++];
+    }
+    c->pt = j;
+}
+/*
+Implementation by Ronny Van Keer, hereby denoted as "the implementer".
+For more information, feedback or questions, please refer to our website:
+https://keccak.team/
+To the extent possible under law, the implementer has waived all copyright
+and related or neighboring rights to the source code in this file.
+http://creativecommons.org/publicdomain/zero/1.0/
+*/
+#ifdef __64__
+#define KeccakP1600_implementation_config "all rounds unrolled"
+#define KeccakP1600_fullUnrolling
+/* Or */
+/*
+#define KeccakP1600_implementation_config "6 rounds unrolled"
+#define KeccakP1600_unrolling 6
+*/
+/* Or */
+/*
+#define KeccakP1600_implementation_config "lane complementing, 6 rounds unrolled"
+#define KeccakP1600_unrolling 6
+#define KeccakP1600_useLaneComplementing
+*/
+/* Or */
+/*
+#define KeccakP1600_implementation_config "lane complementing, all rounds unrolled"
+#define KeccakP1600_fullUnrolling
+#define KeccakP1600_useLaneComplementing
+*/
+/* Or */
+/*
+#define KeccakP1600_implementation_config "lane complementing, all rounds unrolled, using SHLD for rotations"
+#define KeccakP1600_fullUnrolling
+#define KeccakP1600_useLaneComplementing
+#define KeccakP1600_useSHLD
+*/
+/*
+Implementation by the Keccak Team, namely, Guido Bertoni, Joan Daemen,
+Michaël Peeters, Gilles Van Assche and Ronny Van Keer,
+hereby denoted as "the implementer".
+For more information, feedback or questions, please refer to our website:
+https://keccak.team/
+To the extent possible under law, the implementer has waived all copyright
+and related or neighboring rights to the source code in this file.
+http://creativecommons.org/publicdomain/zero/1.0/
+---
+Please refer to the XKCP for more details.
+*/
+typedef unsigned char UINT8;
+typedef unsigned long long int UINT64;
+#if defined(KeccakP1600_useLaneComplementing)
+#define UseBebigokimisa
+#endif
+#if defined(_MSC_VER )
+#define ROL64(a, offset) ((((UINT64)a) << offset) | (((UINT64)a) >> (64-offset)))
+//#define ROL64(a, offset) ( ( offset == 1 ) ? ( ( (a) & 0x8000000000000000ULL ) ? ((a) = (((a) << 1)|1)) : ( (a)<<1)  ) : ( _rotl64(a, offset) ) )
+//#define ROL64(a, offset)  _rotl64(a, offset)
+#elif defined(KeccakP1600_useSHLD)
+    #define ROL64(x,N) ({     register UINT64 __out;     register UINT64 __in = x;     __asm__ ("shld %2,%0,%0" : "=r"(__out) : "0"(__in), "i"(N));     __out;     })
+#else
+#define ROL64(a, offset) ((((UINT64)a) << offset) | (((UINT64)a) >> (64-offset)))
+#endif
+#ifdef KeccakP1600_fullUnrolling
+#define FullUnrolling
+#else
+#define Unrolling KeccakP1600_unrolling
+#endif
+static const UINT64 KeccakF1600RoundConstants[24] = {
+    0x0000000000000001ULL,
+    0x0000000000008082ULL,
+    0x800000000000808aULL,
+    0x8000000080008000ULL,
+    0x000000000000808bULL,
+    0x0000000080000001ULL,
+    0x8000000080008081ULL,
+    0x8000000000008009ULL,
+    0x000000000000008aULL,
+    0x0000000000000088ULL,
+    0x0000000080008009ULL,
+    0x000000008000000aULL,
+    0x000000008000808bULL,
+    0x800000000000008bULL,
+    0x8000000000008089ULL,
+    0x8000000000008003ULL,
+    0x8000000000008002ULL,
+    0x8000000000000080ULL,
+    0x000000000000800aULL,
+    0x800000008000000aULL,
+    0x8000000080008081ULL,
+    0x8000000000008080ULL,
+    0x0000000080000001ULL,
+    0x8000000080008008ULL };
+/* ---------------------------------------------------------------- */
+void KeccakP1600_Initialize(void *state)
+{
+    memset(state, 0, 200);
+#ifdef KeccakP1600_useLaneComplementing
+    ((UINT64*)state)[ 1] = ~(UINT64)0;
+    ((UINT64*)state)[ 2] = ~(UINT64)0;
+    ((UINT64*)state)[ 8] = ~(UINT64)0;
+    ((UINT64*)state)[12] = ~(UINT64)0;
+    ((UINT64*)state)[17] = ~(UINT64)0;
+    ((UINT64*)state)[20] = ~(UINT64)0;
+#endif
+}
+/* ---------------------------------------------------------------- */
+void KeccakP1600_AddBytesInLane(void *state, unsigned int lanePosition, const unsigned char *data, unsigned int offset, unsigned int length)
+{
+#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
+    UINT64 lane;
+    if (length == 0)
+        return;
+    if (length == 1)
+        lane = data[0];
+    else {
+        lane = 0;
+        memcpy(&lane, data, length);
+    }
+    lane <<= offset*8;
+#else
+    UINT64 lane = 0;
+    unsigned int i;
+    for(i=0; i<length; i++)
+        lane |= ((UINT64)data[i]) << ((i+offset)*8);
+#endif
+    ((UINT64*)state)[lanePosition] ^= lane;
+}
+/* ---------------------------------------------------------------- */
+void KeccakP1600_AddLanes(void *state, const unsigned char *data, unsigned int laneCount)
+{
+#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
+    unsigned int i = 0;
+#ifdef NO_MISALIGNED_ACCESSES
+    /* If either pointer is misaligned, fall back to byte-wise xor. */
+    if (((((uintptr_t)state) & 7) != 0) || ((((uintptr_t)data) & 7) != 0)) {
+      for (i = 0; i < laneCount * 8; i++) {
+        ((unsigned char*)state)[i] ^= data[i];
+      }
+    }
+    else
+#endif
+    {
+      /* Otherwise... */
+      for( ; (i+8)<=laneCount; i+=8) {
+          ((UINT64*)state)[i+0] ^= ((UINT64*)data)[i+0];
+          ((UINT64*)state)[i+1] ^= ((UINT64*)data)[i+1];
+          ((UINT64*)state)[i+2] ^= ((UINT64*)data)[i+2];
+          ((UINT64*)state)[i+3] ^= ((UINT64*)data)[i+3];
+          ((UINT64*)state)[i+4] ^= ((UINT64*)data)[i+4];
+          ((UINT64*)state)[i+5] ^= ((UINT64*)data)[i+5];
+          ((UINT64*)state)[i+6] ^= ((UINT64*)data)[i+6];
+          ((UINT64*)state)[i+7] ^= ((UINT64*)data)[i+7];
+      }
+      for( ; (i+4)<=laneCount; i+=4) {
+          ((UINT64*)state)[i+0] ^= ((UINT64*)data)[i+0];
+          ((UINT64*)state)[i+1] ^= ((UINT64*)data)[i+1];
+          ((UINT64*)state)[i+2] ^= ((UINT64*)data)[i+2];
+          ((UINT64*)state)[i+3] ^= ((UINT64*)data)[i+3];
+      }
+      for( ; (i+2)<=laneCount; i+=2) {
+          ((UINT64*)state)[i+0] ^= ((UINT64*)data)[i+0];
+          ((UINT64*)state)[i+1] ^= ((UINT64*)data)[i+1];
+      }
+      if (i<laneCount) {
+          ((UINT64*)state)[i+0] ^= ((UINT64*)data)[i+0];
+      }
+    }
+#else
+    unsigned int i;
+    const UINT8 *curData = data;
+    for(i=0; i<laneCount; i++, curData+=8) {
+        UINT64 lane = (UINT64)curData[0]
+            | ((UINT64)curData[1] <<  8)
+            | ((UINT64)curData[2] << 16)
+            | ((UINT64)curData[3] << 24)
+            | ((UINT64)curData[4] << 32)
+            | ((UINT64)curData[5] << 40)
+            | ((UINT64)curData[6] << 48)
+            | ((UINT64)curData[7] << 56);
+        ((UINT64*)state)[i] ^= lane;
+    }
+#endif
+}
+/* ---------------------------------------------------------------- */
+#if (PLATFORM_BYTE_ORDER != IS_LITTLE_ENDIAN)
+void KeccakP1600_AddByte(void *state, unsigned char byte, unsigned int offset)
+{
+    UINT64 lane = byte;
+    lane <<= (offset%8)*8;
+    ((UINT64*)state)[offset/8] ^= lane;
+}
+#endif
+/* ---------------------------------------------------------------- */
+#define SnP_AddBytes(state, data, offset, length, SnP_AddLanes, SnP_AddBytesInLane, SnP_laneLengthInBytes)     {         if ((offset) == 0) {             SnP_AddLanes(state, data, (length)/SnP_laneLengthInBytes);             SnP_AddBytesInLane(state,                 (length)/SnP_laneLengthInBytes,                 (data)+((length)/SnP_laneLengthInBytes)*SnP_laneLengthInBytes,                 0,                 (length)%SnP_laneLengthInBytes);         }         else {             unsigned int _sizeLeft = (length);             unsigned int _lanePosition = (offset)/SnP_laneLengthInBytes;             unsigned int _offsetInLane = (offset)%SnP_laneLengthInBytes;             const unsigned char *_curData = (data);             while(_sizeLeft > 0) {                 unsigned int _bytesInLane = SnP_laneLengthInBytes - _offsetInLane;                 if (_bytesInLane > _sizeLeft)                     _bytesInLane = _sizeLeft;                 SnP_AddBytesInLane(state, _lanePosition, _curData, _offsetInLane, _bytesInLane);                 _sizeLeft -= _bytesInLane;                 _lanePosition++;                 _offsetInLane = 0;                 _curData += _bytesInLane;             }         }     }
+void KeccakP1600_AddBytes(void *state, const unsigned char *data, unsigned int offset, unsigned int length)
+{
+    SnP_AddBytes(state, data, offset, length, KeccakP1600_AddLanes, KeccakP1600_AddBytesInLane, 8);
+}
+/* ---------------------------------------------------------------- */
+#define declareABCDE     UINT64 Aba, Abe, Abi, Abo, Abu;     UINT64 Aga, Age, Agi, Ago, Agu;     UINT64 Aka, Ake, Aki, Ako, Aku;     UINT64 Ama, Ame, Ami, Amo, Amu;     UINT64 Asa, Ase, Asi, Aso, Asu;     UINT64 Bba, Bbe, Bbi, Bbo, Bbu;     UINT64 Bga, Bge, Bgi, Bgo, Bgu;     UINT64 Bka, Bke, Bki, Bko, Bku;     UINT64 Bma, Bme, Bmi, Bmo, Bmu;     UINT64 Bsa, Bse, Bsi, Bso, Bsu;     UINT64 Ca, Ce, Ci, Co, Cu;     UINT64 Da, De, Di, Do, Du;     UINT64 Eba, Ebe, Ebi, Ebo, Ebu;     UINT64 Ega, Ege, Egi, Ego, Egu;     UINT64 Eka, Eke, Eki, Eko, Eku;     UINT64 Ema, Eme, Emi, Emo, Emu;     UINT64 Esa, Ese, Esi, Eso, Esu;
+#define prepareTheta     Ca = Aba^Aga^Aka^Ama^Asa;     Ce = Abe^Age^Ake^Ame^Ase;     Ci = Abi^Agi^Aki^Ami^Asi;     Co = Abo^Ago^Ako^Amo^Aso;     Cu = Abu^Agu^Aku^Amu^Asu;
+#ifdef UseBebigokimisa
+/* --- Code for round, with prepare-theta (lane complementing pattern 'bebigokimisa') */
+/* --- 64-bit lanes mapped to 64-bit words */
+#define thetaRhoPiChiIotaPrepareTheta(i, A, E)     Da = Cu^ROL64(Ce, 1);     De = Ca^ROL64(Ci, 1);     Di = Ce^ROL64(Co, 1);     Do = Ci^ROL64(Cu, 1);     Du = Co^ROL64(Ca, 1);     A##ba ^= Da;     Bba = A##ba;     A##ge ^= De;     Bbe = ROL64(A##ge, 44);     A##ki ^= Di;     Bbi = ROL64(A##ki, 43);     A##mo ^= Do;     Bbo = ROL64(A##mo, 21);     A##su ^= Du;     Bbu = ROL64(A##su, 14);     E##ba =   Bba ^(  Bbe |  Bbi );     E##ba ^= KeccakF1600RoundConstants[i];     Ca = E##ba;     E##be =   Bbe ^((~Bbi)|  Bbo );     Ce = E##be;     E##bi =   Bbi ^(  Bbo &  Bbu );     Ci = E##bi;     E##bo =   Bbo ^(  Bbu |  Bba );     Co = E##bo;     E##bu =   Bbu ^(  Bba &  Bbe );     Cu = E##bu;     A##bo ^= Do;     Bga = ROL64(A##bo, 28);     A##gu ^= Du;     Bge = ROL64(A##gu, 20);     A##ka ^= Da;     Bgi = ROL64(A##ka, 3);     A##me ^= De;     Bgo = ROL64(A##me, 45);     A##si ^= Di;     Bgu = ROL64(A##si, 61);     E##ga =   Bga ^(  Bge |  Bgi );     Ca ^= E##ga;     E##ge =   Bge ^(  Bgi &  Bgo );     Ce ^= E##ge;     E##gi =   Bgi ^(  Bgo |(~Bgu));     Ci ^= E##gi;     E##go =   Bgo ^(  Bgu |  Bga );     Co ^= E##go;     E##gu =   Bgu ^(  Bga &  Bge );     Cu ^= E##gu;     A##be ^= De;     Bka = ROL64(A##be, 1);     A##gi ^= Di;     Bke = ROL64(A##gi, 6);     A##ko ^= Do;     Bki = ROL64(A##ko, 25);     A##mu ^= Du;     Bko = ROL64(A##mu, 8);     A##sa ^= Da;     Bku = ROL64(A##sa, 18);     E##ka =   Bka ^(  Bke |  Bki );     Ca ^= E##ka;     E##ke =   Bke ^(  Bki &  Bko );     Ce ^= E##ke;     E##ki =   Bki ^((~Bko)&  Bku );     Ci ^= E##ki;     E##ko = (~Bko)^(  Bku |  Bka );     Co ^= E##ko;     E##ku =   Bku ^(  Bka &  Bke );     Cu ^= E##ku;     A##bu ^= Du;     Bma = ROL64(A##bu, 27);     A##ga ^= Da;     Bme = ROL64(A##ga, 36);     A##ke ^= De;     Bmi = ROL64(A##ke, 10);     A##mi ^= Di;     Bmo = ROL64(A##mi, 15);     A##so ^= Do;     Bmu = ROL64(A##so, 56);     E##ma =   Bma ^(  Bme &  Bmi );     Ca ^= E##ma;     E##me =   Bme ^(  Bmi |  Bmo );     Ce ^= E##me;     E##mi =   Bmi ^((~Bmo)|  Bmu );     Ci ^= E##mi;     E##mo = (~Bmo)^(  Bmu &  Bma );     Co ^= E##mo;     E##mu =   Bmu ^(  Bma |  Bme );     Cu ^= E##mu;     A##bi ^= Di;     Bsa = ROL64(A##bi, 62);     A##go ^= Do;     Bse = ROL64(A##go, 55);     A##ku ^= Du;     Bsi = ROL64(A##ku, 39);     A##ma ^= Da;     Bso = ROL64(A##ma, 41);     A##se ^= De;     Bsu = ROL64(A##se, 2);     E##sa =   Bsa ^((~Bse)&  Bsi );     Ca ^= E##sa;     E##se = (~Bse)^(  Bsi |  Bso );     Ce ^= E##se;     E##si =   Bsi ^(  Bso &  Bsu );     Ci ^= E##si;     E##so =   Bso ^(  Bsu |  Bsa );     Co ^= E##so;     E##su =   Bsu ^(  Bsa &  Bse );     Cu ^= E##su;
+/* --- Code for round (lane complementing pattern 'bebigokimisa') */
+/* --- 64-bit lanes mapped to 64-bit words */
+#define thetaRhoPiChiIota(i, A, E)     Da = Cu^ROL64(Ce, 1);     De = Ca^ROL64(Ci, 1);     Di = Ce^ROL64(Co, 1);     Do = Ci^ROL64(Cu, 1);     Du = Co^ROL64(Ca, 1);     A##ba ^= Da;     Bba = A##ba;     A##ge ^= De;     Bbe = ROL64(A##ge, 44);     A##ki ^= Di;     Bbi = ROL64(A##ki, 43);     A##mo ^= Do;     Bbo = ROL64(A##mo, 21);     A##su ^= Du;     Bbu = ROL64(A##su, 14);     E##ba =   Bba ^(  Bbe |  Bbi );     E##ba ^= KeccakF1600RoundConstants[i];     E##be =   Bbe ^((~Bbi)|  Bbo );     E##bi =   Bbi ^(  Bbo &  Bbu );     E##bo =   Bbo ^(  Bbu |  Bba );     E##bu =   Bbu ^(  Bba &  Bbe );     A##bo ^= Do;     Bga = ROL64(A##bo, 28);     A##gu ^= Du;     Bge = ROL64(A##gu, 20);     A##ka ^= Da;     Bgi = ROL64(A##ka, 3);     A##me ^= De;     Bgo = ROL64(A##me, 45);     A##si ^= Di;     Bgu = ROL64(A##si, 61);     E##ga =   Bga ^(  Bge |  Bgi );     E##ge =   Bge ^(  Bgi &  Bgo );     E##gi =   Bgi ^(  Bgo |(~Bgu));     E##go =   Bgo ^(  Bgu |  Bga );     E##gu =   Bgu ^(  Bga &  Bge );     A##be ^= De;     Bka = ROL64(A##be, 1);     A##gi ^= Di;     Bke = ROL64(A##gi, 6);     A##ko ^= Do;     Bki = ROL64(A##ko, 25);     A##mu ^= Du;     Bko = ROL64(A##mu, 8);     A##sa ^= Da;     Bku = ROL64(A##sa, 18);     E##ka =   Bka ^(  Bke |  Bki );     E##ke =   Bke ^(  Bki &  Bko );     E##ki =   Bki ^((~Bko)&  Bku );     E##ko = (~Bko)^(  Bku |  Bka );     E##ku =   Bku ^(  Bka &  Bke );     A##bu ^= Du;     Bma = ROL64(A##bu, 27);     A##ga ^= Da;     Bme = ROL64(A##ga, 36);     A##ke ^= De;     Bmi = ROL64(A##ke, 10);     A##mi ^= Di;     Bmo = ROL64(A##mi, 15);     A##so ^= Do;     Bmu = ROL64(A##so, 56);     E##ma =   Bma ^(  Bme &  Bmi );     E##me =   Bme ^(  Bmi |  Bmo );     E##mi =   Bmi ^((~Bmo)|  Bmu );     E##mo = (~Bmo)^(  Bmu &  Bma );     E##mu =   Bmu ^(  Bma |  Bme );     A##bi ^= Di;     Bsa = ROL64(A##bi, 62);     A##go ^= Do;     Bse = ROL64(A##go, 55);     A##ku ^= Du;     Bsi = ROL64(A##ku, 39);     A##ma ^= Da;     Bso = ROL64(A##ma, 41);     A##se ^= De;     Bsu = ROL64(A##se, 2);     E##sa =   Bsa ^((~Bse)&  Bsi );     E##se = (~Bse)^(  Bsi |  Bso );     E##si =   Bsi ^(  Bso &  Bsu );     E##so =   Bso ^(  Bsu |  Bsa );     E##su =   Bsu ^(  Bsa &  Bse );
+#else
+/* --- Code for round, with prepare-theta */
+/* --- 64-bit lanes mapped to 64-bit words */
+#define thetaRhoPiChiIotaPrepareTheta(i, A, E)     Da = Cu^ROL64(Ce, 1);     De = Ca^ROL64(Ci, 1);     Di = Ce^ROL64(Co, 1);     Do = Ci^ROL64(Cu, 1);     Du = Co^ROL64(Ca, 1);     A##ba ^= Da;     Bba = A##ba;     A##ge ^= De;     Bbe = ROL64(A##ge, 44);     A##ki ^= Di;     Bbi = ROL64(A##ki, 43);     A##mo ^= Do;     Bbo = ROL64(A##mo, 21);     A##su ^= Du;     Bbu = ROL64(A##su, 14);     E##ba =   Bba ^((~Bbe)&  Bbi );     E##ba ^= KeccakF1600RoundConstants[i];     Ca = E##ba;     E##be =   Bbe ^((~Bbi)&  Bbo );     Ce = E##be;     E##bi =   Bbi ^((~Bbo)&  Bbu );     Ci = E##bi;     E##bo =   Bbo ^((~Bbu)&  Bba );     Co = E##bo;     E##bu =   Bbu ^((~Bba)&  Bbe );     Cu = E##bu;     A##bo ^= Do;     Bga = ROL64(A##bo, 28);     A##gu ^= Du;     Bge = ROL64(A##gu, 20);     A##ka ^= Da;     Bgi = ROL64(A##ka, 3);     A##me ^= De;     Bgo = ROL64(A##me, 45);     A##si ^= Di;     Bgu = ROL64(A##si, 61);     E##ga =   Bga ^((~Bge)&  Bgi );     Ca ^= E##ga;     E##ge =   Bge ^((~Bgi)&  Bgo );     Ce ^= E##ge;     E##gi =   Bgi ^((~Bgo)&  Bgu );     Ci ^= E##gi;     E##go =   Bgo ^((~Bgu)&  Bga );     Co ^= E##go;     E##gu =   Bgu ^((~Bga)&  Bge );     Cu ^= E##gu;     A##be ^= De;     Bka = ROL64(A##be, 1);     A##gi ^= Di;     Bke = ROL64(A##gi, 6);     A##ko ^= Do;     Bki = ROL64(A##ko, 25);     A##mu ^= Du;     Bko = ROL64(A##mu, 8);     A##sa ^= Da;     Bku = ROL64(A##sa, 18);     E##ka =   Bka ^((~Bke)&  Bki );     Ca ^= E##ka;     E##ke =   Bke ^((~Bki)&  Bko );     Ce ^= E##ke;     E##ki =   Bki ^((~Bko)&  Bku );     Ci ^= E##ki;     E##ko =   Bko ^((~Bku)&  Bka );     Co ^= E##ko;     E##ku =   Bku ^((~Bka)&  Bke );     Cu ^= E##ku;     A##bu ^= Du;     Bma = ROL64(A##bu, 27);     A##ga ^= Da;     Bme = ROL64(A##ga, 36);     A##ke ^= De;     Bmi = ROL64(A##ke, 10);     A##mi ^= Di;     Bmo = ROL64(A##mi, 15);     A##so ^= Do;     Bmu = ROL64(A##so, 56);     E##ma =   Bma ^((~Bme)&  Bmi );     Ca ^= E##ma;     E##me =   Bme ^((~Bmi)&  Bmo );     Ce ^= E##me;     E##mi =   Bmi ^((~Bmo)&  Bmu );     Ci ^= E##mi;     E##mo =   Bmo ^((~Bmu)&  Bma );     Co ^= E##mo;     E##mu =   Bmu ^((~Bma)&  Bme );     Cu ^= E##mu;     A##bi ^= Di;     Bsa = ROL64(A##bi, 62);     A##go ^= Do;     Bse = ROL64(A##go, 55);     A##ku ^= Du;     Bsi = ROL64(A##ku, 39);     A##ma ^= Da;     Bso = ROL64(A##ma, 41);     A##se ^= De;     Bsu = ROL64(A##se, 2);     E##sa =   Bsa ^((~Bse)&  Bsi );     Ca ^= E##sa;     E##se =   Bse ^((~Bsi)&  Bso );     Ce ^= E##se;     E##si =   Bsi ^((~Bso)&  Bsu );     Ci ^= E##si;     E##so =   Bso ^((~Bsu)&  Bsa );     Co ^= E##so;     E##su =   Bsu ^((~Bsa)&  Bse );     Cu ^= E##su;
+/* --- Code for round */
+/* --- 64-bit lanes mapped to 64-bit words */
+#define thetaRhoPiChiIota(i, A, E)     Da = Cu^ROL64(Ce, 1);     De = Ca^ROL64(Ci, 1);     Di = Ce^ROL64(Co, 1);     Do = Ci^ROL64(Cu, 1);     Du = Co^ROL64(Ca, 1);     A##ba ^= Da;     Bba = A##ba;     A##ge ^= De;     Bbe = ROL64(A##ge, 44);     A##ki ^= Di;     Bbi = ROL64(A##ki, 43);     A##mo ^= Do;     Bbo = ROL64(A##mo, 21);     A##su ^= Du;     Bbu = ROL64(A##su, 14);     E##ba =   Bba ^((~Bbe)&  Bbi );     E##ba ^= KeccakF1600RoundConstants[i];     E##be =   Bbe ^((~Bbi)&  Bbo );     E##bi =   Bbi ^((~Bbo)&  Bbu );     E##bo =   Bbo ^((~Bbu)&  Bba );     E##bu =   Bbu ^((~Bba)&  Bbe );     A##bo ^= Do;     Bga = ROL64(A##bo, 28);     A##gu ^= Du;     Bge = ROL64(A##gu, 20);     A##ka ^= Da;     Bgi = ROL64(A##ka, 3);     A##me ^= De;     Bgo = ROL64(A##me, 45);     A##si ^= Di;     Bgu = ROL64(A##si, 61);     E##ga =   Bga ^((~Bge)&  Bgi );     E##ge =   Bge ^((~Bgi)&  Bgo );     E##gi =   Bgi ^((~Bgo)&  Bgu );     E##go =   Bgo ^((~Bgu)&  Bga );     E##gu =   Bgu ^((~Bga)&  Bge );     A##be ^= De;     Bka = ROL64(A##be, 1);     A##gi ^= Di;     Bke = ROL64(A##gi, 6);     A##ko ^= Do;     Bki = ROL64(A##ko, 25);     A##mu ^= Du;     Bko = ROL64(A##mu, 8);     A##sa ^= Da;     Bku = ROL64(A##sa, 18);     E##ka =   Bka ^((~Bke)&  Bki );     E##ke =   Bke ^((~Bki)&  Bko );     E##ki =   Bki ^((~Bko)&  Bku );     E##ko =   Bko ^((~Bku)&  Bka );     E##ku =   Bku ^((~Bka)&  Bke );     A##bu ^= Du;     Bma = ROL64(A##bu, 27);     A##ga ^= Da;     Bme = ROL64(A##ga, 36);     A##ke ^= De;     Bmi = ROL64(A##ke, 10);     A##mi ^= Di;     Bmo = ROL64(A##mi, 15);     A##so ^= Do;     Bmu = ROL64(A##so, 56);     E##ma =   Bma ^((~Bme)&  Bmi );     E##me =   Bme ^((~Bmi)&  Bmo );     E##mi =   Bmi ^((~Bmo)&  Bmu );     E##mo =   Bmo ^((~Bmu)&  Bma );     E##mu =   Bmu ^((~Bma)&  Bme );     A##bi ^= Di;     Bsa = ROL64(A##bi, 62);     A##go ^= Do;     Bse = ROL64(A##go, 55);     A##ku ^= Du;     Bsi = ROL64(A##ku, 39);     A##ma ^= Da;     Bso = ROL64(A##ma, 41);     A##se ^= De;     Bsu = ROL64(A##se, 2);     E##sa =   Bsa ^((~Bse)&  Bsi );     E##se =   Bse ^((~Bsi)&  Bso );     E##si =   Bsi ^((~Bso)&  Bsu );     E##so =   Bso ^((~Bsu)&  Bsa );     E##su =   Bsu ^((~Bsa)&  Bse );
+#endif
+#define copyFromState(X, state)     X##ba = state[ 0];     X##be = state[ 1];     X##bi = state[ 2];     X##bo = state[ 3];     X##bu = state[ 4];     X##ga = state[ 5];     X##ge = state[ 6];     X##gi = state[ 7];     X##go = state[ 8];     X##gu = state[ 9];     X##ka = state[10];     X##ke = state[11];     X##ki = state[12];     X##ko = state[13];     X##ku = state[14];     X##ma = state[15];     X##me = state[16];     X##mi = state[17];     X##mo = state[18];     X##mu = state[19];     X##sa = state[20];     X##se = state[21];     X##si = state[22];     X##so = state[23];     X##su = state[24];
+#define copyToState(state, X)     state[ 0] = X##ba;     state[ 1] = X##be;     state[ 2] = X##bi;     state[ 3] = X##bo;     state[ 4] = X##bu;     state[ 5] = X##ga;     state[ 6] = X##ge;     state[ 7] = X##gi;     state[ 8] = X##go;     state[ 9] = X##gu;     state[10] = X##ka;     state[11] = X##ke;     state[12] = X##ki;     state[13] = X##ko;     state[14] = X##ku;     state[15] = X##ma;     state[16] = X##me;     state[17] = X##mi;     state[18] = X##mo;     state[19] = X##mu;     state[20] = X##sa;     state[21] = X##se;     state[22] = X##si;     state[23] = X##so;     state[24] = X##su;
+#define copyStateVariables(X, Y)     X##ba = Y##ba;     X##be = Y##be;     X##bi = Y##bi;     X##bo = Y##bo;     X##bu = Y##bu;     X##ga = Y##ga;     X##ge = Y##ge;     X##gi = Y##gi;     X##go = Y##go;     X##gu = Y##gu;     X##ka = Y##ka;     X##ke = Y##ke;     X##ki = Y##ki;     X##ko = Y##ko;     X##ku = Y##ku;     X##ma = Y##ma;     X##me = Y##me;     X##mi = Y##mi;     X##mo = Y##mo;     X##mu = Y##mu;     X##sa = Y##sa;     X##se = Y##se;     X##si = Y##si;     X##so = Y##so;     X##su = Y##su;
+#if ((defined(FullUnrolling)) || (Unrolling == 12))
+#define rounds12     prepareTheta     thetaRhoPiChiIotaPrepareTheta(12, A, E)     thetaRhoPiChiIotaPrepareTheta(13, E, A)     thetaRhoPiChiIotaPrepareTheta(14, A, E)     thetaRhoPiChiIotaPrepareTheta(15, E, A)     thetaRhoPiChiIotaPrepareTheta(16, A, E)     thetaRhoPiChiIotaPrepareTheta(17, E, A)     thetaRhoPiChiIotaPrepareTheta(18, A, E)     thetaRhoPiChiIotaPrepareTheta(19, E, A)     thetaRhoPiChiIotaPrepareTheta(20, A, E)     thetaRhoPiChiIotaPrepareTheta(21, E, A)     thetaRhoPiChiIotaPrepareTheta(22, A, E)     thetaRhoPiChiIota(23, E, A)
+#elif (Unrolling == 6)
+#define rounds12     prepareTheta     for(i=12; i<24; i+=6) {         thetaRhoPiChiIotaPrepareTheta(i  , A, E)         thetaRhoPiChiIotaPrepareTheta(i+1, E, A)         thetaRhoPiChiIotaPrepareTheta(i+2, A, E)         thetaRhoPiChiIotaPrepareTheta(i+3, E, A)         thetaRhoPiChiIotaPrepareTheta(i+4, A, E)         thetaRhoPiChiIotaPrepareTheta(i+5, E, A)     }
+#elif (Unrolling == 4)
+#define rounds12     prepareTheta     for(i=12; i<24; i+=4) {         thetaRhoPiChiIotaPrepareTheta(i  , A, E)         thetaRhoPiChiIotaPrepareTheta(i+1, E, A)         thetaRhoPiChiIotaPrepareTheta(i+2, A, E)         thetaRhoPiChiIotaPrepareTheta(i+3, E, A)     }
+#elif (Unrolling == 3)
+#define rounds12     prepareTheta     for(i=12; i<24; i+=3) {         thetaRhoPiChiIotaPrepareTheta(i  , A, E)         thetaRhoPiChiIotaPrepareTheta(i+1, E, A)         thetaRhoPiChiIotaPrepareTheta(i+2, A, E)         copyStateVariables(A, E)     }
+#elif (Unrolling == 2)
+#define rounds12     prepareTheta     for(i=12; i<24; i+=2) {         thetaRhoPiChiIotaPrepareTheta(i  , A, E)         thetaRhoPiChiIotaPrepareTheta(i+1, E, A)     }
+#elif (Unrolling == 1)
+#define rounds12     prepareTheta     for(i=12; i<24; i++) {         thetaRhoPiChiIotaPrepareTheta(i  , A, E)         copyStateVariables(A, E)     }
+#else
+#error "Unrolling is not correctly specified!"
+#endif
+void KeccakP1600_Permute_12rounds(void *state)
+{
+    declareABCDE
+    #ifndef KeccakP1600_fullUnrolling
+    unsigned int i;
+    #endif
+    UINT64 *stateAsLanes = (UINT64*)state;
+    copyFromState(A, stateAsLanes)
+    rounds12
+    copyToState(stateAsLanes, A)
+}
+/* ---------------------------------------------------------------- */
+void KeccakP1600_ExtractBytesInLane(const void *state, unsigned int lanePosition, unsigned char *data, unsigned int offset, unsigned int length)
+{
+    UINT64 lane = ((UINT64*)state)[lanePosition];
+#ifdef KeccakP1600_useLaneComplementing
+    if ((lanePosition == 1) || (lanePosition == 2) || (lanePosition == 8) || (lanePosition == 12) || (lanePosition == 17) || (lanePosition == 20))
+        lane = ~lane;
+#endif
+#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
+    {
+        UINT64 lane1[1];
+        lane1[0] = lane;
+        memcpy(data, (UINT8*)lane1+offset, length);
+    }
+#else
+    unsigned int i;
+    lane >>= offset*8;
+    for(i=0; i<length; i++) {
+        data[i] = lane & 0xFF;
+        lane >>= 8;
+    }
+#endif
+}
+/* ---------------------------------------------------------------- */
+#if (PLATFORM_BYTE_ORDER != IS_LITTLE_ENDIAN)
+static void fromWordToBytes(UINT8 *bytes, const UINT64 word)
+{
+    unsigned int i;
+    for(i=0; i<(64/8); i++)
+        bytes[i] = (word >> (8*i)) & 0xFF;
+}
+#endif
+void KeccakP1600_ExtractLanes(const void *state, unsigned char *data, unsigned int laneCount)
+{
+#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
+    memcpy(data, state, laneCount*8);
+#else
+    unsigned int i;
+    for(i=0; i<laneCount; i++)
+        fromWordToBytes(data+(i*8), ((const UINT64*)state)[i]);
+#endif
+#ifdef KeccakP1600_useLaneComplementing
+    if (laneCount > 1) {
+        ((UINT64*)data)[ 1] = ~((UINT64*)data)[ 1];
+        if (laneCount > 2) {
+            ((UINT64*)data)[ 2] = ~((UINT64*)data)[ 2];
+            if (laneCount > 8) {
+                ((UINT64*)data)[ 8] = ~((UINT64*)data)[ 8];
+                if (laneCount > 12) {
+                    ((UINT64*)data)[12] = ~((UINT64*)data)[12];
+                    if (laneCount > 17) {
+                        ((UINT64*)data)[17] = ~((UINT64*)data)[17];
+                        if (laneCount > 20) {
+                            ((UINT64*)data)[20] = ~((UINT64*)data)[20];
+                        }
+                    }
+                }
+            }
+        }
+    }
+#endif
+}
+/* ---------------------------------------------------------------- */
+#define SnP_ExtractBytes(state, data, offset, length, SnP_ExtractLanes, SnP_ExtractBytesInLane, SnP_laneLengthInBytes)     {         if ((offset) == 0) {             SnP_ExtractLanes(state, data, (length)/SnP_laneLengthInBytes);             SnP_ExtractBytesInLane(state,                 (length)/SnP_laneLengthInBytes,                 (data)+((length)/SnP_laneLengthInBytes)*SnP_laneLengthInBytes,                 0,                 (length)%SnP_laneLengthInBytes);         }         else {             unsigned int _sizeLeft = (length);             unsigned int _lanePosition = (offset)/SnP_laneLengthInBytes;             unsigned int _offsetInLane = (offset)%SnP_laneLengthInBytes;             unsigned char *_curData = (data);             while(_sizeLeft > 0) {                 unsigned int _bytesInLane = SnP_laneLengthInBytes - _offsetInLane;                 if (_bytesInLane > _sizeLeft)                     _bytesInLane = _sizeLeft;                 SnP_ExtractBytesInLane(state, _lanePosition, _curData, _offsetInLane, _bytesInLane);                 _sizeLeft -= _bytesInLane;                 _lanePosition++;                 _offsetInLane = 0;                 _curData += _bytesInLane;             }         }     }
+void KeccakP1600_ExtractBytes(const void *state, unsigned char *data, unsigned int offset, unsigned int length)
+{
+    SnP_ExtractBytes(state, data, offset, length, KeccakP1600_ExtractLanes, KeccakP1600_ExtractBytesInLane, 8);
+}
+/* ---------------------------------------------------------------- */
+#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
+#define HTOLE64(x) (x)
+#else
+#define HTOLE64(x) (  ((x & 0xff00000000000000ull) >> 56) |   ((x & 0x00ff000000000000ull) >> 40) |   ((x & 0x0000ff0000000000ull) >> 24) |   ((x & 0x000000ff00000000ull) >> 8)  |   ((x & 0x00000000ff000000ull) << 8)  |   ((x & 0x0000000000ff0000ull) << 24) |   ((x & 0x000000000000ff00ull) << 40) |   ((x & 0x00000000000000ffull) << 56))
+#endif
+#define addInput(X, input, laneCount)     if (laneCount == 21) {         X##ba ^= HTOLE64(input[ 0]);         X##be ^= HTOLE64(input[ 1]);         X##bi ^= HTOLE64(input[ 2]);         X##bo ^= HTOLE64(input[ 3]);         X##bu ^= HTOLE64(input[ 4]);         X##ga ^= HTOLE64(input[ 5]);         X##ge ^= HTOLE64(input[ 6]);         X##gi ^= HTOLE64(input[ 7]);         X##go ^= HTOLE64(input[ 8]);         X##gu ^= HTOLE64(input[ 9]);         X##ka ^= HTOLE64(input[10]);         X##ke ^= HTOLE64(input[11]);         X##ki ^= HTOLE64(input[12]);         X##ko ^= HTOLE64(input[13]);         X##ku ^= HTOLE64(input[14]);         X##ma ^= HTOLE64(input[15]);         X##me ^= HTOLE64(input[16]);         X##mi ^= HTOLE64(input[17]);         X##mo ^= HTOLE64(input[18]);         X##mu ^= HTOLE64(input[19]);         X##sa ^= HTOLE64(input[20]);     }     else if (laneCount < 16) {         if (laneCount < 8) {             if (laneCount < 4) {                 if (laneCount < 2) {                     if (laneCount < 1) {                     }                     else {                         X##ba ^= HTOLE64(input[ 0]);                     }                 }                 else {                     X##ba ^= HTOLE64(input[ 0]);                     X##be ^= HTOLE64(input[ 1]);                     if (laneCount < 3) {                     }                     else {                         X##bi ^= HTOLE64(input[ 2]);                     }                 }             }             else {                 X##ba ^= HTOLE64(input[ 0]);                 X##be ^= HTOLE64(input[ 1]);                 X##bi ^= HTOLE64(input[ 2]);                 X##bo ^= HTOLE64(input[ 3]);                 if (laneCount < 6) {                     if (laneCount < 5) {                     }                     else {                         X##bu ^= HTOLE64(input[ 4]);                     }                 }                 else {                     X##bu ^= HTOLE64(input[ 4]);                     X##ga ^= HTOLE64(input[ 5]);                     if (laneCount < 7) {                     }                     else {                         X##ge ^= HTOLE64(input[ 6]);                     }                 }             }         }         else {             X##ba ^= HTOLE64(input[ 0]);             X##be ^= HTOLE64(input[ 1]);             X##bi ^= HTOLE64(input[ 2]);             X##bo ^= HTOLE64(input[ 3]);             X##bu ^= HTOLE64(input[ 4]);             X##ga ^= HTOLE64(input[ 5]);             X##ge ^= HTOLE64(input[ 6]);             X##gi ^= HTOLE64(input[ 7]);             if (laneCount < 12) {                 if (laneCount < 10) {                     if (laneCount < 9) {                     }                     else {                         X##go ^= HTOLE64(input[ 8]);                     }                 }                 else {                     X##go ^= HTOLE64(input[ 8]);                     X##gu ^= HTOLE64(input[ 9]);                     if (laneCount < 11) {                     }                     else {                         X##ka ^= HTOLE64(input[10]);                     }                 }             }             else {                 X##go ^= HTOLE64(input[ 8]);                 X##gu ^= HTOLE64(input[ 9]);                 X##ka ^= HTOLE64(input[10]);                 X##ke ^= HTOLE64(input[11]);                 if (laneCount < 14) {                     if (laneCount < 13) {                     }                     else {                         X##ki ^= HTOLE64(input[12]);                     }                 }                 else {                     X##ki ^= HTOLE64(input[12]);                     X##ko ^= HTOLE64(input[13]);                     if (laneCount < 15) {                     }                     else {                         X##ku ^= HTOLE64(input[14]);                     }                 }             }         }     }     else {         X##ba ^= HTOLE64(input[ 0]);         X##be ^= HTOLE64(input[ 1]);         X##bi ^= HTOLE64(input[ 2]);         X##bo ^= HTOLE64(input[ 3]);         X##bu ^= HTOLE64(input[ 4]);         X##ga ^= HTOLE64(input[ 5]);         X##ge ^= HTOLE64(input[ 6]);         X##gi ^= HTOLE64(input[ 7]);         X##go ^= HTOLE64(input[ 8]);         X##gu ^= HTOLE64(input[ 9]);         X##ka ^= HTOLE64(input[10]);         X##ke ^= HTOLE64(input[11]);         X##ki ^= HTOLE64(input[12]);         X##ko ^= HTOLE64(input[13]);         X##ku ^= HTOLE64(input[14]);         X##ma ^= HTOLE64(input[15]);         if (laneCount < 24) {             if (laneCount < 20) {                 if (laneCount < 18) {                     if (laneCount < 17) {                     }                     else {                         X##me ^= HTOLE64(input[16]);                     }                 }                 else {                     X##me ^= HTOLE64(input[16]);                     X##mi ^= HTOLE64(input[17]);                     if (laneCount < 19) {                     }                     else {                         X##mo ^= HTOLE64(input[18]);                     }                 }             }             else {                 X##me ^= HTOLE64(input[16]);                 X##mi ^= HTOLE64(input[17]);                 X##mo ^= HTOLE64(input[18]);                 X##mu ^= HTOLE64(input[19]);                 if (laneCount < 22) {                     if (laneCount < 21) {                     }                     else {                         X##sa ^= HTOLE64(input[20]);                     }                 }                 else {                     X##sa ^= HTOLE64(input[20]);                     X##se ^= HTOLE64(input[21]);                     if (laneCount < 23) {                     }                     else {                         X##si ^= HTOLE64(input[22]);                     }                 }             }         }         else {             X##me ^= HTOLE64(input[16]);             X##mi ^= HTOLE64(input[17]);             X##mo ^= HTOLE64(input[18]);             X##mu ^= HTOLE64(input[19]);             X##sa ^= HTOLE64(input[20]);             X##se ^= HTOLE64(input[21]);             X##si ^= HTOLE64(input[22]);             X##so ^= HTOLE64(input[23]);             if (laneCount < 25) {             }             else {                 X##su ^= HTOLE64(input[24]);             }         }     }
+size_t KeccakP1600_12rounds_FastLoop_Absorb(void *state, unsigned int laneCount, const unsigned char *data, size_t dataByteLen)
+{
+    size_t originalDataByteLen = dataByteLen;
+    declareABCDE
+    #ifndef KeccakP1600_fullUnrolling
+    unsigned int i;
+    #endif
+    UINT64 *stateAsLanes = (UINT64*)state;
+    UINT64 *inDataAsLanes = (UINT64*)data;
+    copyFromState(A, stateAsLanes)
+    while(dataByteLen >= laneCount*8) {
+        addInput(A, inDataAsLanes, laneCount)
+        rounds12
+        inDataAsLanes += laneCount;
+        dataByteLen -= laneCount*8;
+    }
+    copyToState(stateAsLanes, A)
+    return originalDataByteLen - dataByteLen;
+}
+#else
+/*
+Implementation by Ronny Van Keer, hereby denoted as "the implementer".
+For more information, feedback or questions, please refer to our website:
+https://keccak.team/
+To the extent possible under law, the implementer has waived all copyright
+and related or neighboring rights to the source code in this file.
+http://creativecommons.org/publicdomain/zero/1.0/
+---
+Please refer to the XKCP for more details.
+*/
+/*
+Implementation by Ronny Van Keer, hereby denoted as "the implementer".
+For more information, feedback or questions, please refer to our website:
+https://keccak.team/
+To the extent possible under law, the implementer has waived all copyright
+and related or neighboring rights to the source code in this file.
+http://creativecommons.org/publicdomain/zero/1.0/
+---
+Please refer to the XKCP for more details.
+*/
+#ifndef _KeccakP_1600_SnP_h_
+#define _KeccakP_1600_SnP_h_
+#define KeccakP1600_implementation      "in-place 32-bit optimized implementation"
+#define KeccakP1600_stateSizeInBytes    200
+#define KeccakP1600_stateAlignment      8
+#define KeccakP1600_StaticInitialize()
+void KeccakP1600_Initialize(void *state);
+void KeccakP1600_AddByte(void *state, unsigned char data, unsigned int offset);
+void KeccakP1600_AddBytes(void *state, const unsigned char *data, unsigned int offset, unsigned int length);
+void KeccakP1600_Permute_12rounds(void *state);
+void KeccakP1600_ExtractBytes(const void *state, unsigned char *data, unsigned int offset, unsigned int length);
+#endif
+typedef unsigned char UINT8;
+typedef unsigned int UINT32;
+/* WARNING: on 8-bit and 16-bit platforms, this should be replaced by: */
+/* typedef unsigned long       UINT32; */
+#define ROL32(a, offset) ((((UINT32)a) << (offset)) ^ (((UINT32)a) >> (32-(offset))))
+/* Credit to Henry S. Warren, Hacker's Delight, Addison-Wesley, 2002 */
+#define prepareToBitInterleaving(low, high, temp, temp0, temp1)         temp0 = (low);         temp = (temp0 ^ (temp0 >>  1)) & 0x22222222UL;  temp0 = temp0 ^ temp ^ (temp <<  1);         temp = (temp0 ^ (temp0 >>  2)) & 0x0C0C0C0CUL;  temp0 = temp0 ^ temp ^ (temp <<  2);         temp = (temp0 ^ (temp0 >>  4)) & 0x00F000F0UL;  temp0 = temp0 ^ temp ^ (temp <<  4);         temp = (temp0 ^ (temp0 >>  8)) & 0x0000FF00UL;  temp0 = temp0 ^ temp ^ (temp <<  8);         temp1 = (high);         temp = (temp1 ^ (temp1 >>  1)) & 0x22222222UL;  temp1 = temp1 ^ temp ^ (temp <<  1);         temp = (temp1 ^ (temp1 >>  2)) & 0x0C0C0C0CUL;  temp1 = temp1 ^ temp ^ (temp <<  2);         temp = (temp1 ^ (temp1 >>  4)) & 0x00F000F0UL;  temp1 = temp1 ^ temp ^ (temp <<  4);         temp = (temp1 ^ (temp1 >>  8)) & 0x0000FF00UL;  temp1 = temp1 ^ temp ^ (temp <<  8);
+#define toBitInterleavingAndXOR(low, high, even, odd, temp, temp0, temp1)         prepareToBitInterleaving(low, high, temp, temp0, temp1)         even ^= (temp0 & 0x0000FFFF) | (temp1 << 16);         odd ^= (temp0 >> 16) | (temp1 & 0xFFFF0000);
+#define toBitInterleavingAndAND(low, high, even, odd, temp, temp0, temp1)         prepareToBitInterleaving(low, high, temp, temp0, temp1)         even &= (temp0 & 0x0000FFFF) | (temp1 << 16);         odd &= (temp0 >> 16) | (temp1 & 0xFFFF0000);
+#define toBitInterleavingAndSet(low, high, even, odd, temp, temp0, temp1)         prepareToBitInterleaving(low, high, temp, temp0, temp1)         even = (temp0 & 0x0000FFFF) | (temp1 << 16);         odd = (temp0 >> 16) | (temp1 & 0xFFFF0000);
+/* Credit to Henry S. Warren, Hacker's Delight, Addison-Wesley, 2002 */
+#define prepareFromBitInterleaving(even, odd, temp, temp0, temp1)         temp0 = (even);         temp1 = (odd);         temp = (temp0 & 0x0000FFFF) | (temp1 << 16);         temp1 = (temp0 >> 16) | (temp1 & 0xFFFF0000);         temp0 = temp;         temp = (temp0 ^ (temp0 >>  8)) & 0x0000FF00UL;  temp0 = temp0 ^ temp ^ (temp <<  8);         temp = (temp0 ^ (temp0 >>  4)) & 0x00F000F0UL;  temp0 = temp0 ^ temp ^ (temp <<  4);         temp = (temp0 ^ (temp0 >>  2)) & 0x0C0C0C0CUL;  temp0 = temp0 ^ temp ^ (temp <<  2);         temp = (temp0 ^ (temp0 >>  1)) & 0x22222222UL;  temp0 = temp0 ^ temp ^ (temp <<  1);         temp = (temp1 ^ (temp1 >>  8)) & 0x0000FF00UL;  temp1 = temp1 ^ temp ^ (temp <<  8);         temp = (temp1 ^ (temp1 >>  4)) & 0x00F000F0UL;  temp1 = temp1 ^ temp ^ (temp <<  4);         temp = (temp1 ^ (temp1 >>  2)) & 0x0C0C0C0CUL;  temp1 = temp1 ^ temp ^ (temp <<  2);         temp = (temp1 ^ (temp1 >>  1)) & 0x22222222UL;  temp1 = temp1 ^ temp ^ (temp <<  1);
+#define fromBitInterleaving(even, odd, low, high, temp, temp0, temp1)         prepareFromBitInterleaving(even, odd, temp, temp0, temp1)         low = temp0;         high = temp1;
+#define fromBitInterleavingAndXOR(even, odd, lowIn, highIn, lowOut, highOut, temp, temp0, temp1)         prepareFromBitInterleaving(even, odd, temp, temp0, temp1)         lowOut = lowIn ^ temp0;         highOut = highIn ^ temp1;
+void KeccakP1600_SetBytesInLaneToZero(void *state, unsigned int lanePosition, unsigned int offset, unsigned int length)
+{
+    UINT8 laneAsBytes[8];
+    UINT32 low, high;
+    UINT32 temp, temp0, temp1;
+    UINT32 *stateAsHalfLanes = (UINT32*)state;
+    memset(laneAsBytes, 0xFF, offset);
+    memset(laneAsBytes+offset, 0x00, length);
+    memset(laneAsBytes+offset+length, 0xFF, 8-offset-length);
+#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
+    low = *((UINT32*)(laneAsBytes+0));
+    high = *((UINT32*)(laneAsBytes+4));
+#else
+    low = laneAsBytes[0]
+        | ((UINT32)(laneAsBytes[1]) << 8)
+        | ((UINT32)(laneAsBytes[2]) << 16)
+        | ((UINT32)(laneAsBytes[3]) << 24);
+    high = laneAsBytes[4]
+        | ((UINT32)(laneAsBytes[5]) << 8)
+        | ((UINT32)(laneAsBytes[6]) << 16)
+        | ((UINT32)(laneAsBytes[7]) << 24);
+#endif
+    toBitInterleavingAndAND(low, high, stateAsHalfLanes[lanePosition*2+0], stateAsHalfLanes[lanePosition*2+1], temp, temp0, temp1);
+}
+/* ---------------------------------------------------------------- */
+void KeccakP1600_Initialize(void *state)
+{
+    memset(state, 0, 200);
+}
+/* ---------------------------------------------------------------- */
+void KeccakP1600_AddByte(void *state, unsigned char byte, unsigned int offset)
+{
+    unsigned int lanePosition = offset/8;
+    unsigned int offsetInLane = offset%8;
+    UINT32 low, high;
+    UINT32 temp, temp0, temp1;
+    UINT32 *stateAsHalfLanes = (UINT32*)state;
+    if (offsetInLane < 4) {
+        low = (UINT32)byte << (offsetInLane*8);
+        high = 0;
+    }
+    else {
+        low = 0;
+        high = (UINT32)byte << ((offsetInLane-4)*8);
+    }
+    toBitInterleavingAndXOR(low, high, stateAsHalfLanes[lanePosition*2+0], stateAsHalfLanes[lanePosition*2+1], temp, temp0, temp1);
+}
+/* ---------------------------------------------------------------- */
+void KeccakP1600_AddBytesInLane(void *state, unsigned int lanePosition, const unsigned char *data, unsigned int offset, unsigned int length)
+{
+    UINT8 laneAsBytes[8];
+    UINT32 low, high;
+    UINT32 temp, temp0, temp1;
+    UINT32 *stateAsHalfLanes = (UINT32*)state;
+    memset(laneAsBytes, 0, 8);
+    memcpy(laneAsBytes+offset, data, length);
+#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
+    low = *((UINT32*)(laneAsBytes+0));
+    high = *((UINT32*)(laneAsBytes+4));
+#else
+    low = laneAsBytes[0]
+        | ((UINT32)(laneAsBytes[1]) << 8)
+        | ((UINT32)(laneAsBytes[2]) << 16)
+        | ((UINT32)(laneAsBytes[3]) << 24);
+    high = laneAsBytes[4]
+        | ((UINT32)(laneAsBytes[5]) << 8)
+        | ((UINT32)(laneAsBytes[6]) << 16)
+        | ((UINT32)(laneAsBytes[7]) << 24);
+#endif
+    toBitInterleavingAndXOR(low, high, stateAsHalfLanes[lanePosition*2+0], stateAsHalfLanes[lanePosition*2+1], temp, temp0, temp1);
+}
+/* ---------------------------------------------------------------- */
+void KeccakP1600_AddLanes(void *state, const unsigned char *data, unsigned int laneCount)
+{
+#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
+    const UINT32 * pI = (const UINT32 *)data;
+    UINT32 * pS = (UINT32*)state;
+    UINT32 t, x0, x1;
+    int i;
+    for (i = laneCount-1; i >= 0; --i) {
+#ifdef NO_MISALIGNED_ACCESSES
+        UINT32 low;
+        UINT32 high;
+        memcpy(&low, pI++, 4);
+        memcpy(&high, pI++, 4);
+        toBitInterleavingAndXOR(low, high, *(pS++), *(pS++), t, x0, x1);
+#else
+        toBitInterleavingAndXOR(*(pI++), *(pI++), *(pS++), *(pS++), t, x0, x1)
+#endif
+    }
+#else
+    unsigned int lanePosition;
+    for(lanePosition=0; lanePosition<laneCount; lanePosition++) {
+        UINT8 laneAsBytes[8];
+        memcpy(laneAsBytes, data+lanePosition*8, 8);
+        UINT32 low = laneAsBytes[0]
+            | ((UINT32)(laneAsBytes[1]) << 8)
+            | ((UINT32)(laneAsBytes[2]) << 16)
+            | ((UINT32)(laneAsBytes[3]) << 24);
+        UINT32 high = laneAsBytes[4]
+            | ((UINT32)(laneAsBytes[5]) << 8)
+            | ((UINT32)(laneAsBytes[6]) << 16)
+            | ((UINT32)(laneAsBytes[7]) << 24);
+        UINT32 even, odd, temp, temp0, temp1;
+        UINT32 *stateAsHalfLanes = (UINT32*)state;
+        toBitInterleavingAndXOR(low, high, stateAsHalfLanes[lanePosition*2+0], stateAsHalfLanes[lanePosition*2+1], temp, temp0, temp1);
+    }
+#endif
+}
+/* ---------------------------------------------------------------- */
+#define SnP_AddBytes(state, data, offset, length, SnP_AddLanes, SnP_AddBytesInLane, SnP_laneLengthInBytes)     {         if ((offset) == 0) {             SnP_AddLanes(state, data, (length)/SnP_laneLengthInBytes);             SnP_AddBytesInLane(state,                 (length)/SnP_laneLengthInBytes,                 (data)+((length)/SnP_laneLengthInBytes)*SnP_laneLengthInBytes,                 0,                 (length)%SnP_laneLengthInBytes);         }         else {             unsigned int _sizeLeft = (length);             unsigned int _lanePosition = (offset)/SnP_laneLengthInBytes;             unsigned int _offsetInLane = (offset)%SnP_laneLengthInBytes;             const unsigned char *_curData = (data);             while(_sizeLeft > 0) {                 unsigned int _bytesInLane = SnP_laneLengthInBytes - _offsetInLane;                 if (_bytesInLane > _sizeLeft)                     _bytesInLane = _sizeLeft;                 SnP_AddBytesInLane(state, _lanePosition, _curData, _offsetInLane, _bytesInLane);                 _sizeLeft -= _bytesInLane;                 _lanePosition++;                 _offsetInLane = 0;                 _curData += _bytesInLane;             }         }     }
+void KeccakP1600_AddBytes(void *state, const unsigned char *data, unsigned int offset, unsigned int length)
+{
+    SnP_AddBytes(state, data, offset, length, KeccakP1600_AddLanes, KeccakP1600_AddBytesInLane, 8);
+}
+/* ---------------------------------------------------------------- */
+void KeccakP1600_ExtractBytesInLane(const void *state, unsigned int lanePosition, unsigned char *data, unsigned int offset, unsigned int length)
+{
+    UINT32 *stateAsHalfLanes = (UINT32*)state;
+    UINT32 low, high, temp, temp0, temp1;
+    UINT8 laneAsBytes[8];
+    fromBitInterleaving(stateAsHalfLanes[lanePosition*2], stateAsHalfLanes[lanePosition*2+1], low, high, temp, temp0, temp1);
+#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
+    *((UINT32*)(laneAsBytes+0)) = low;
+    *((UINT32*)(laneAsBytes+4)) = high;
+#else
+    laneAsBytes[0] = low & 0xFF;
+    laneAsBytes[1] = (low >> 8) & 0xFF;
+    laneAsBytes[2] = (low >> 16) & 0xFF;
+    laneAsBytes[3] = (low >> 24) & 0xFF;
+    laneAsBytes[4] = high & 0xFF;
+    laneAsBytes[5] = (high >> 8) & 0xFF;
+    laneAsBytes[6] = (high >> 16) & 0xFF;
+    laneAsBytes[7] = (high >> 24) & 0xFF;
+#endif
+    memcpy(data, laneAsBytes+offset, length);
+}
+/* ---------------------------------------------------------------- */
+void KeccakP1600_ExtractLanes(const void *state, unsigned char *data, unsigned int laneCount)
+{
+#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
+    UINT32 * pI = (UINT32 *)data;
+    const UINT32 * pS = ( const UINT32 *)state;
+    UINT32 t, x0, x1;
+    int i;
+    for (i = laneCount-1; i >= 0; --i) {
+#ifdef NO_MISALIGNED_ACCESSES
+        UINT32 low;
+        UINT32 high;
+        fromBitInterleaving(*(pS++), *(pS++), low, high, t, x0, x1);
+        memcpy(pI++, &low, 4);
+        memcpy(pI++, &high, 4);
+#else
+        fromBitInterleaving(*(pS++), *(pS++), *(pI++), *(pI++), t, x0, x1)
+#endif
+    }
+#else
+    unsigned int lanePosition;
+    for(lanePosition=0; lanePosition<laneCount; lanePosition++) {
+        UINT32 *stateAsHalfLanes = (UINT32*)state;
+        UINT32 low, high, temp, temp0, temp1;
+        fromBitInterleaving(stateAsHalfLanes[lanePosition*2], stateAsHalfLanes[lanePosition*2+1], low, high, temp, temp0, temp1);
+        UINT8 laneAsBytes[8];
+        laneAsBytes[0] = low & 0xFF;
+        laneAsBytes[1] = (low >> 8) & 0xFF;
+        laneAsBytes[2] = (low >> 16) & 0xFF;
+        laneAsBytes[3] = (low >> 24) & 0xFF;
+        laneAsBytes[4] = high & 0xFF;
+        laneAsBytes[5] = (high >> 8) & 0xFF;
+        laneAsBytes[6] = (high >> 16) & 0xFF;
+        laneAsBytes[7] = (high >> 24) & 0xFF;
+        memcpy(data+lanePosition*8, laneAsBytes, 8);
+    }
+#endif
+}
+/* ---------------------------------------------------------------- */
+#define SnP_ExtractBytes(state, data, offset, length, SnP_ExtractLanes, SnP_ExtractBytesInLane, SnP_laneLengthInBytes)     {         if ((offset) == 0) {             SnP_ExtractLanes(state, data, (length)/SnP_laneLengthInBytes);             SnP_ExtractBytesInLane(state,                 (length)/SnP_laneLengthInBytes,                 (data)+((length)/SnP_laneLengthInBytes)*SnP_laneLengthInBytes,                 0,                 (length)%SnP_laneLengthInBytes);         }         else {             unsigned int _sizeLeft = (length);             unsigned int _lanePosition = (offset)/SnP_laneLengthInBytes;             unsigned int _offsetInLane = (offset)%SnP_laneLengthInBytes;             unsigned char *_curData = (data);             while(_sizeLeft > 0) {                 unsigned int _bytesInLane = SnP_laneLengthInBytes - _offsetInLane;                 if (_bytesInLane > _sizeLeft)                     _bytesInLane = _sizeLeft;                 SnP_ExtractBytesInLane(state, _lanePosition, _curData, _offsetInLane, _bytesInLane);                 _sizeLeft -= _bytesInLane;                 _lanePosition++;                 _offsetInLane = 0;                 _curData += _bytesInLane;             }         }     }
+void KeccakP1600_ExtractBytes(const void *state, unsigned char *data, unsigned int offset, unsigned int length)
+{
+    SnP_ExtractBytes(state, data, offset, length, KeccakP1600_ExtractLanes, KeccakP1600_ExtractBytesInLane, 8);
+}
+/* ---------------------------------------------------------------- */
+static const UINT32 KeccakF1600RoundConstants_int2[2*24+1] =
+{
+    0x00000001UL,    0x00000000UL,
+    0x00000000UL,    0x00000089UL,
+    0x00000000UL,    0x8000008bUL,
+    0x00000000UL,    0x80008080UL,
+    0x00000001UL,    0x0000008bUL,
+    0x00000001UL,    0x00008000UL,
+    0x00000001UL,    0x80008088UL,
+    0x00000001UL,    0x80000082UL,
+    0x00000000UL,    0x0000000bUL,
+    0x00000000UL,    0x0000000aUL,
+    0x00000001UL,    0x00008082UL,
+    0x00000000UL,    0x00008003UL,
+    0x00000001UL,    0x0000808bUL,
+    0x00000001UL,    0x8000000bUL,
+    0x00000001UL,    0x8000008aUL,
+    0x00000001UL,    0x80000081UL,
+    0x00000000UL,    0x80000081UL,
+    0x00000000UL,    0x80000008UL,
+    0x00000000UL,    0x00000083UL,
+    0x00000000UL,    0x80008003UL,
+    0x00000001UL,    0x80008088UL,
+    0x00000000UL,    0x80000088UL,
+    0x00000001UL,    0x00008000UL,
+    0x00000000UL,    0x80008082UL,
+    0x000000FFUL
+};
+#define KeccakRound0()         Cx = Abu0^Agu0^Aku0^Amu0^Asu0;         Du1 = Abe1^Age1^Ake1^Ame1^Ase1;         Da0 = Cx^ROL32(Du1, 1);         Cz = Abu1^Agu1^Aku1^Amu1^Asu1;         Du0 = Abe0^Age0^Ake0^Ame0^Ase0;         Da1 = Cz^Du0;         Cw = Abi0^Agi0^Aki0^Ami0^Asi0;         Do0 = Cw^ROL32(Cz, 1);         Cy = Abi1^Agi1^Aki1^Ami1^Asi1;         Do1 = Cy^Cx;         Cx = Aba0^Aga0^Aka0^Ama0^Asa0;         De0 = Cx^ROL32(Cy, 1);         Cz = Aba1^Aga1^Aka1^Ama1^Asa1;         De1 = Cz^Cw;         Cy = Abo1^Ago1^Ako1^Amo1^Aso1;         Di0 = Du0^ROL32(Cy, 1);         Cw = Abo0^Ago0^Ako0^Amo0^Aso0;         Di1 = Du1^Cw;         Du0 = Cw^ROL32(Cz, 1);         Du1 = Cy^Cx;         Ba = (Aba0^Da0);         Be = ROL32((Age0^De0), 22);         Bi = ROL32((Aki1^Di1), 22);         Bo = ROL32((Amo1^Do1), 11);         Bu = ROL32((Asu0^Du0),  7);         Aba0 =   Ba ^((~Be)&  Bi );         Aba0 ^= *(pRoundConstants++);         Age0 =   Be ^((~Bi)&  Bo );         Aki1 =   Bi ^((~Bo)&  Bu );         Amo1 =   Bo ^((~Bu)&  Ba );         Asu0 =   Bu ^((~Ba)&  Be );         Ba = (Aba1^Da1);         Be = ROL32((Age1^De1), 22);         Bi = ROL32((Aki0^Di0), 21);         Bo = ROL32((Amo0^Do0), 10);         Bu = ROL32((Asu1^Du1),  7);         Aba1 =   Ba ^((~Be)&  Bi );         Aba1 ^= *(pRoundConstants++);         Age1 =   Be ^((~Bi)&  Bo );         Aki0 =   Bi ^((~Bo)&  Bu );         Amo0 =   Bo ^((~Bu)&  Ba );         Asu1 =   Bu ^((~Ba)&  Be );         Bi = ROL32((Aka1^Da1),  2);         Bo = ROL32((Ame1^De1), 23);         Bu = ROL32((Asi1^Di1), 31);         Ba = ROL32((Abo0^Do0), 14);         Be = ROL32((Agu0^Du0), 10);         Aka1 =   Ba ^((~Be)&  Bi );         Ame1 =   Be ^((~Bi)&  Bo );         Asi1 =   Bi ^((~Bo)&  Bu );         Abo0 =   Bo ^((~Bu)&  Ba );         Agu0 =   Bu ^((~Ba)&  Be );         Bi = ROL32((Aka0^Da0),  1);         Bo = ROL32((Ame0^De0), 22);         Bu = ROL32((Asi0^Di0), 30);         Ba = ROL32((Abo1^Do1), 14);         Be = ROL32((Agu1^Du1), 10);         Aka0 =   Ba ^((~Be)&  Bi );         Ame0 =   Be ^((~Bi)&  Bo );         Asi0 =   Bi ^((~Bo)&  Bu );         Abo1 =   Bo ^((~Bu)&  Ba );         Agu1 =   Bu ^((~Ba)&  Be );         Bu = ROL32((Asa0^Da0),  9);         Ba = ROL32((Abe1^De1),  1);         Be = ROL32((Agi0^Di0),  3);         Bi = ROL32((Ako1^Do1), 13);         Bo = ROL32((Amu0^Du0),  4);         Asa0 =   Ba ^((~Be)&  Bi );         Abe1 =   Be ^((~Bi)&  Bo );         Agi0 =   Bi ^((~Bo)&  Bu );         Ako1 =   Bo ^((~Bu)&  Ba );         Amu0 =   Bu ^((~Ba)&  Be );         Bu = ROL32((Asa1^Da1),  9);         Ba = (Abe0^De0);         Be = ROL32((Agi1^Di1),  3);         Bi = ROL32((Ako0^Do0), 12);         Bo = ROL32((Amu1^Du1),  4);         Asa1 =   Ba ^((~Be)&  Bi );         Abe0 =   Be ^((~Bi)&  Bo );         Agi1 =   Bi ^((~Bo)&  Bu );         Ako0 =   Bo ^((~Bu)&  Ba );         Amu1 =   Bu ^((~Ba)&  Be );         Be = ROL32((Aga0^Da0), 18);         Bi = ROL32((Ake0^De0),  5);         Bo = ROL32((Ami1^Di1),  8);         Bu = ROL32((Aso0^Do0), 28);         Ba = ROL32((Abu1^Du1), 14);         Aga0 =   Ba ^((~Be)&  Bi );         Ake0 =   Be ^((~Bi)&  Bo );         Ami1 =   Bi ^((~Bo)&  Bu );         Aso0 =   Bo ^((~Bu)&  Ba );         Abu1 =   Bu ^((~Ba)&  Be );         Be = ROL32((Aga1^Da1), 18);         Bi = ROL32((Ake1^De1),  5);         Bo = ROL32((Ami0^Di0),  7);         Bu = ROL32((Aso1^Do1), 28);         Ba = ROL32((Abu0^Du0), 13);         Aga1 =   Ba ^((~Be)&  Bi );         Ake1 =   Be ^((~Bi)&  Bo );         Ami0 =   Bi ^((~Bo)&  Bu );         Aso1 =   Bo ^((~Bu)&  Ba );         Abu0 =   Bu ^((~Ba)&  Be );         Bo = ROL32((Ama1^Da1), 21);         Bu = ROL32((Ase0^De0),  1);         Ba = ROL32((Abi0^Di0), 31);         Be = ROL32((Ago1^Do1), 28);         Bi = ROL32((Aku1^Du1), 20);         Ama1 =   Ba ^((~Be)&  Bi );         Ase0 =   Be ^((~Bi)&  Bo );         Abi0 =   Bi ^((~Bo)&  Bu );         Ago1 =   Bo ^((~Bu)&  Ba );         Aku1 =   Bu ^((~Ba)&  Be );         Bo = ROL32((Ama0^Da0), 20);         Bu = ROL32((Ase1^De1),  1);         Ba = ROL32((Abi1^Di1), 31);         Be = ROL32((Ago0^Do0), 27);         Bi = ROL32((Aku0^Du0), 19);         Ama0 =   Ba ^((~Be)&  Bi );         Ase1 =   Be ^((~Bi)&  Bo );         Abi1 =   Bi ^((~Bo)&  Bu );         Ago0 =   Bo ^((~Bu)&  Ba );         Aku0 =   Bu ^((~Ba)&  Be )
+#define KeccakRound1()         Cx = Asu0^Agu0^Amu0^Abu1^Aku1;         Du1 = Age1^Ame0^Abe0^Ake1^Ase1;         Da0 = Cx^ROL32(Du1, 1);         Cz = Asu1^Agu1^Amu1^Abu0^Aku0;         Du0 = Age0^Ame1^Abe1^Ake0^Ase0;         Da1 = Cz^Du0;         Cw = Aki1^Asi1^Agi0^Ami1^Abi0;         Do0 = Cw^ROL32(Cz, 1);         Cy = Aki0^Asi0^Agi1^Ami0^Abi1;         Do1 = Cy^Cx;         Cx = Aba0^Aka1^Asa0^Aga0^Ama1;         De0 = Cx^ROL32(Cy, 1);         Cz = Aba1^Aka0^Asa1^Aga1^Ama0;         De1 = Cz^Cw;         Cy = Amo0^Abo1^Ako0^Aso1^Ago0;         Di0 = Du0^ROL32(Cy, 1);         Cw = Amo1^Abo0^Ako1^Aso0^Ago1;         Di1 = Du1^Cw;         Du0 = Cw^ROL32(Cz, 1);         Du1 = Cy^Cx;         Ba = (Aba0^Da0);         Be = ROL32((Ame1^De0), 22);         Bi = ROL32((Agi1^Di1), 22);         Bo = ROL32((Aso1^Do1), 11);         Bu = ROL32((Aku1^Du0),  7);         Aba0 =   Ba ^((~Be)&  Bi );         Aba0 ^= *(pRoundConstants++);         Ame1 =   Be ^((~Bi)&  Bo );         Agi1 =   Bi ^((~Bo)&  Bu );         Aso1 =   Bo ^((~Bu)&  Ba );         Aku1 =   Bu ^((~Ba)&  Be );         Ba = (Aba1^Da1);         Be = ROL32((Ame0^De1), 22);         Bi = ROL32((Agi0^Di0), 21);         Bo = ROL32((Aso0^Do0), 10);         Bu = ROL32((Aku0^Du1),  7);         Aba1 =   Ba ^((~Be)&  Bi );         Aba1 ^= *(pRoundConstants++);         Ame0 =   Be ^((~Bi)&  Bo );         Agi0 =   Bi ^((~Bo)&  Bu );         Aso0 =   Bo ^((~Bu)&  Ba );         Aku0 =   Bu ^((~Ba)&  Be );         Bi = ROL32((Asa1^Da1),  2);         Bo = ROL32((Ake1^De1), 23);         Bu = ROL32((Abi1^Di1), 31);         Ba = ROL32((Amo1^Do0), 14);         Be = ROL32((Agu0^Du0), 10);         Asa1 =   Ba ^((~Be)&  Bi );         Ake1 =   Be ^((~Bi)&  Bo );         Abi1 =   Bi ^((~Bo)&  Bu );         Amo1 =   Bo ^((~Bu)&  Ba );         Agu0 =   Bu ^((~Ba)&  Be );         Bi = ROL32((Asa0^Da0),  1);         Bo = ROL32((Ake0^De0), 22);         Bu = ROL32((Abi0^Di0), 30);         Ba = ROL32((Amo0^Do1), 14);         Be = ROL32((Agu1^Du1), 10);         Asa0 =   Ba ^((~Be)&  Bi );         Ake0 =   Be ^((~Bi)&  Bo );         Abi0 =   Bi ^((~Bo)&  Bu );         Amo0 =   Bo ^((~Bu)&  Ba );         Agu1 =   Bu ^((~Ba)&  Be );         Bu = ROL32((Ama1^Da0),  9);         Ba = ROL32((Age1^De1),  1);         Be = ROL32((Asi1^Di0),  3);         Bi = ROL32((Ako0^Do1), 13);         Bo = ROL32((Abu1^Du0),  4);         Ama1 =   Ba ^((~Be)&  Bi );         Age1 =   Be ^((~Bi)&  Bo );         Asi1 =   Bi ^((~Bo)&  Bu );         Ako0 =   Bo ^((~Bu)&  Ba );         Abu1 =   Bu ^((~Ba)&  Be );         Bu = ROL32((Ama0^Da1),  9);         Ba = (Age0^De0);         Be = ROL32((Asi0^Di1),  3);         Bi = ROL32((Ako1^Do0), 12);         Bo = ROL32((Abu0^Du1),  4);         Ama0 =   Ba ^((~Be)&  Bi );         Age0 =   Be ^((~Bi)&  Bo );         Asi0 =   Bi ^((~Bo)&  Bu );         Ako1 =   Bo ^((~Bu)&  Ba );         Abu0 =   Bu ^((~Ba)&  Be );         Be = ROL32((Aka1^Da0), 18);         Bi = ROL32((Abe1^De0),  5);         Bo = ROL32((Ami0^Di1),  8);         Bu = ROL32((Ago1^Do0), 28);         Ba = ROL32((Asu1^Du1), 14);         Aka1 =   Ba ^((~Be)&  Bi );         Abe1 =   Be ^((~Bi)&  Bo );         Ami0 =   Bi ^((~Bo)&  Bu );         Ago1 =   Bo ^((~Bu)&  Ba );         Asu1 =   Bu ^((~Ba)&  Be );         Be = ROL32((Aka0^Da1), 18);         Bi = ROL32((Abe0^De1),  5);         Bo = ROL32((Ami1^Di0),  7);         Bu = ROL32((Ago0^Do1), 28);         Ba = ROL32((Asu0^Du0), 13);         Aka0 =   Ba ^((~Be)&  Bi );         Abe0 =   Be ^((~Bi)&  Bo );         Ami1 =   Bi ^((~Bo)&  Bu );         Ago0 =   Bo ^((~Bu)&  Ba );         Asu0 =   Bu ^((~Ba)&  Be );         Bo = ROL32((Aga1^Da1), 21);         Bu = ROL32((Ase0^De0),  1);         Ba = ROL32((Aki1^Di0), 31);         Be = ROL32((Abo1^Do1), 28);         Bi = ROL32((Amu1^Du1), 20);         Aga1 =   Ba ^((~Be)&  Bi );         Ase0 =   Be ^((~Bi)&  Bo );         Aki1 =   Bi ^((~Bo)&  Bu );         Abo1 =   Bo ^((~Bu)&  Ba );         Amu1 =   Bu ^((~Ba)&  Be );         Bo = ROL32((Aga0^Da0), 20);         Bu = ROL32((Ase1^De1),  1);         Ba = ROL32((Aki0^Di1), 31);         Be = ROL32((Abo0^Do0), 27);         Bi = ROL32((Amu0^Du0), 19);         Aga0 =   Ba ^((~Be)&  Bi );         Ase1 =   Be ^((~Bi)&  Bo );         Aki0 =   Bi ^((~Bo)&  Bu );         Abo0 =   Bo ^((~Bu)&  Ba );         Amu0 =   Bu ^((~Ba)&  Be );
+#define KeccakRound2()         Cx = Aku1^Agu0^Abu1^Asu1^Amu1;         Du1 = Ame0^Ake0^Age0^Abe0^Ase1;         Da0 = Cx^ROL32(Du1, 1);         Cz = Aku0^Agu1^Abu0^Asu0^Amu0;         Du0 = Ame1^Ake1^Age1^Abe1^Ase0;         Da1 = Cz^Du0;         Cw = Agi1^Abi1^Asi1^Ami0^Aki1;         Do0 = Cw^ROL32(Cz, 1);         Cy = Agi0^Abi0^Asi0^Ami1^Aki0;         Do1 = Cy^Cx;         Cx = Aba0^Asa1^Ama1^Aka1^Aga1;         De0 = Cx^ROL32(Cy, 1);         Cz = Aba1^Asa0^Ama0^Aka0^Aga0;         De1 = Cz^Cw;         Cy = Aso0^Amo0^Ako1^Ago0^Abo0;         Di0 = Du0^ROL32(Cy, 1);         Cw = Aso1^Amo1^Ako0^Ago1^Abo1;         Di1 = Du1^Cw;         Du0 = Cw^ROL32(Cz, 1);         Du1 = Cy^Cx;         Ba = (Aba0^Da0);         Be = ROL32((Ake1^De0), 22);         Bi = ROL32((Asi0^Di1), 22);         Bo = ROL32((Ago0^Do1), 11);         Bu = ROL32((Amu1^Du0),  7);         Aba0 =   Ba ^((~Be)&  Bi );         Aba0 ^= *(pRoundConstants++);         Ake1 =   Be ^((~Bi)&  Bo );         Asi0 =   Bi ^((~Bo)&  Bu );         Ago0 =   Bo ^((~Bu)&  Ba );         Amu1 =   Bu ^((~Ba)&  Be );         Ba = (Aba1^Da1);         Be = ROL32((Ake0^De1), 22);         Bi = ROL32((Asi1^Di0), 21);         Bo = ROL32((Ago1^Do0), 10);         Bu = ROL32((Amu0^Du1),  7);         Aba1 =   Ba ^((~Be)&  Bi );         Aba1 ^= *(pRoundConstants++);         Ake0 =   Be ^((~Bi)&  Bo );         Asi1 =   Bi ^((~Bo)&  Bu );         Ago1 =   Bo ^((~Bu)&  Ba );         Amu0 =   Bu ^((~Ba)&  Be );         Bi = ROL32((Ama0^Da1),  2);         Bo = ROL32((Abe0^De1), 23);         Bu = ROL32((Aki0^Di1), 31);         Ba = ROL32((Aso1^Do0), 14);         Be = ROL32((Agu0^Du0), 10);         Ama0 =   Ba ^((~Be)&  Bi );         Abe0 =   Be ^((~Bi)&  Bo );         Aki0 =   Bi ^((~Bo)&  Bu );         Aso1 =   Bo ^((~Bu)&  Ba );         Agu0 =   Bu ^((~Ba)&  Be );         Bi = ROL32((Ama1^Da0),  1);         Bo = ROL32((Abe1^De0), 22);         Bu = ROL32((Aki1^Di0), 30);         Ba = ROL32((Aso0^Do1), 14);         Be = ROL32((Agu1^Du1), 10);         Ama1 =   Ba ^((~Be)&  Bi );         Abe1 =   Be ^((~Bi)&  Bo );         Aki1 =   Bi ^((~Bo)&  Bu );         Aso0 =   Bo ^((~Bu)&  Ba );         Agu1 =   Bu ^((~Ba)&  Be );         Bu = ROL32((Aga1^Da0),  9);         Ba = ROL32((Ame0^De1),  1);         Be = ROL32((Abi1^Di0),  3);         Bi = ROL32((Ako1^Do1), 13);         Bo = ROL32((Asu1^Du0),  4);         Aga1 =   Ba ^((~Be)&  Bi );         Ame0 =   Be ^((~Bi)&  Bo );         Abi1 =   Bi ^((~Bo)&  Bu );         Ako1 =   Bo ^((~Bu)&  Ba );         Asu1 =   Bu ^((~Ba)&  Be );         Bu = ROL32((Aga0^Da1),  9);         Ba = (Ame1^De0);         Be = ROL32((Abi0^Di1),  3);         Bi = ROL32((Ako0^Do0), 12);         Bo = ROL32((Asu0^Du1),  4);         Aga0 =   Ba ^((~Be)&  Bi );         Ame1 =   Be ^((~Bi)&  Bo );         Abi0 =   Bi ^((~Bo)&  Bu );         Ako0 =   Bo ^((~Bu)&  Ba );         Asu0 =   Bu ^((~Ba)&  Be );         Be = ROL32((Asa1^Da0), 18);         Bi = ROL32((Age1^De0),  5);         Bo = ROL32((Ami1^Di1),  8);         Bu = ROL32((Abo1^Do0), 28);         Ba = ROL32((Aku0^Du1), 14);         Asa1 =   Ba ^((~Be)&  Bi );         Age1 =   Be ^((~Bi)&  Bo );         Ami1 =   Bi ^((~Bo)&  Bu );         Abo1 =   Bo ^((~Bu)&  Ba );         Aku0 =   Bu ^((~Ba)&  Be );         Be = ROL32((Asa0^Da1), 18);         Bi = ROL32((Age0^De1),  5);         Bo = ROL32((Ami0^Di0),  7);         Bu = ROL32((Abo0^Do1), 28);         Ba = ROL32((Aku1^Du0), 13);         Asa0 =   Ba ^((~Be)&  Bi );         Age0 =   Be ^((~Bi)&  Bo );         Ami0 =   Bi ^((~Bo)&  Bu );         Abo0 =   Bo ^((~Bu)&  Ba );         Aku1 =   Bu ^((~Ba)&  Be );         Bo = ROL32((Aka0^Da1), 21);         Bu = ROL32((Ase0^De0),  1);         Ba = ROL32((Agi1^Di0), 31);         Be = ROL32((Amo0^Do1), 28);         Bi = ROL32((Abu0^Du1), 20);         Aka0 =   Ba ^((~Be)&  Bi );         Ase0 =   Be ^((~Bi)&  Bo );         Agi1 =   Bi ^((~Bo)&  Bu );         Amo0 =   Bo ^((~Bu)&  Ba );         Abu0 =   Bu ^((~Ba)&  Be );         Bo = ROL32((Aka1^Da0), 20);         Bu = ROL32((Ase1^De1),  1);         Ba = ROL32((Agi0^Di1), 31);         Be = ROL32((Amo1^Do0), 27);         Bi = ROL32((Abu1^Du0), 19);         Aka1 =   Ba ^((~Be)&  Bi );         Ase1 =   Be ^((~Bi)&  Bo );         Agi0 =   Bi ^((~Bo)&  Bu );         Amo1 =   Bo ^((~Bu)&  Ba );         Abu1 =   Bu ^((~Ba)&  Be );
+#define KeccakRound3()         Cx = Amu1^Agu0^Asu1^Aku0^Abu0;         Du1 = Ake0^Abe1^Ame1^Age0^Ase1;         Da0 = Cx^ROL32(Du1, 1);         Cz = Amu0^Agu1^Asu0^Aku1^Abu1;         Du0 = Ake1^Abe0^Ame0^Age1^Ase0;         Da1 = Cz^Du0;         Cw = Asi0^Aki0^Abi1^Ami1^Agi1;         Do0 = Cw^ROL32(Cz, 1);         Cy = Asi1^Aki1^Abi0^Ami0^Agi0;         Do1 = Cy^Cx;         Cx = Aba0^Ama0^Aga1^Asa1^Aka0;         De0 = Cx^ROL32(Cy, 1);         Cz = Aba1^Ama1^Aga0^Asa0^Aka1;         De1 = Cz^Cw;         Cy = Ago1^Aso0^Ako0^Abo0^Amo1;         Di0 = Du0^ROL32(Cy, 1);         Cw = Ago0^Aso1^Ako1^Abo1^Amo0;         Di1 = Du1^Cw;         Du0 = Cw^ROL32(Cz, 1);         Du1 = Cy^Cx;         Ba = (Aba0^Da0);         Be = ROL32((Abe0^De0), 22);         Bi = ROL32((Abi0^Di1), 22);         Bo = ROL32((Abo0^Do1), 11);         Bu = ROL32((Abu0^Du0),  7);         Aba0 =   Ba ^((~Be)&  Bi );         Aba0 ^= *(pRoundConstants++);         Abe0 =   Be ^((~Bi)&  Bo );         Abi0 =   Bi ^((~Bo)&  Bu );         Abo0 =   Bo ^((~Bu)&  Ba );         Abu0 =   Bu ^((~Ba)&  Be );         Ba = (Aba1^Da1);         Be = ROL32((Abe1^De1), 22);         Bi = ROL32((Abi1^Di0), 21);         Bo = ROL32((Abo1^Do0), 10);         Bu = ROL32((Abu1^Du1),  7);         Aba1 =   Ba ^((~Be)&  Bi );         Aba1 ^= *(pRoundConstants++);         Abe1 =   Be ^((~Bi)&  Bo );         Abi1 =   Bi ^((~Bo)&  Bu );         Abo1 =   Bo ^((~Bu)&  Ba );         Abu1 =   Bu ^((~Ba)&  Be );         Bi = ROL32((Aga0^Da1),  2);         Bo = ROL32((Age0^De1), 23);         Bu = ROL32((Agi0^Di1), 31);         Ba = ROL32((Ago0^Do0), 14);         Be = ROL32((Agu0^Du0), 10);         Aga0 =   Ba ^((~Be)&  Bi );         Age0 =   Be ^((~Bi)&  Bo );         Agi0 =   Bi ^((~Bo)&  Bu );         Ago0 =   Bo ^((~Bu)&  Ba );         Agu0 =   Bu ^((~Ba)&  Be );         Bi = ROL32((Aga1^Da0),  1);         Bo = ROL32((Age1^De0), 22);         Bu = ROL32((Agi1^Di0), 30);         Ba = ROL32((Ago1^Do1), 14);         Be = ROL32((Agu1^Du1), 10);         Aga1 =   Ba ^((~Be)&  Bi );         Age1 =   Be ^((~Bi)&  Bo );         Agi1 =   Bi ^((~Bo)&  Bu );         Ago1 =   Bo ^((~Bu)&  Ba );         Agu1 =   Bu ^((~Ba)&  Be );         Bu = ROL32((Aka0^Da0),  9);         Ba = ROL32((Ake0^De1),  1);         Be = ROL32((Aki0^Di0),  3);         Bi = ROL32((Ako0^Do1), 13);         Bo = ROL32((Aku0^Du0),  4);         Aka0 =   Ba ^((~Be)&  Bi );         Ake0 =   Be ^((~Bi)&  Bo );         Aki0 =   Bi ^((~Bo)&  Bu );         Ako0 =   Bo ^((~Bu)&  Ba );         Aku0 =   Bu ^((~Ba)&  Be );         Bu = ROL32((Aka1^Da1),  9);         Ba = (Ake1^De0);         Be = ROL32((Aki1^Di1),  3);         Bi = ROL32((Ako1^Do0), 12);         Bo = ROL32((Aku1^Du1),  4);         Aka1 =   Ba ^((~Be)&  Bi );         Ake1 =   Be ^((~Bi)&  Bo );         Aki1 =   Bi ^((~Bo)&  Bu );         Ako1 =   Bo ^((~Bu)&  Ba );         Aku1 =   Bu ^((~Ba)&  Be );         Be = ROL32((Ama0^Da0), 18);         Bi = ROL32((Ame0^De0),  5);         Bo = ROL32((Ami0^Di1),  8);         Bu = ROL32((Amo0^Do0), 28);         Ba = ROL32((Amu0^Du1), 14);         Ama0 =   Ba ^((~Be)&  Bi );         Ame0 =   Be ^((~Bi)&  Bo );         Ami0 =   Bi ^((~Bo)&  Bu );         Amo0 =   Bo ^((~Bu)&  Ba );         Amu0 =   Bu ^((~Ba)&  Be );         Be = ROL32((Ama1^Da1), 18);         Bi = ROL32((Ame1^De1),  5);         Bo = ROL32((Ami1^Di0),  7);         Bu = ROL32((Amo1^Do1), 28);         Ba = ROL32((Amu1^Du0), 13);         Ama1 =   Ba ^((~Be)&  Bi );         Ame1 =   Be ^((~Bi)&  Bo );         Ami1 =   Bi ^((~Bo)&  Bu );         Amo1 =   Bo ^((~Bu)&  Ba );         Amu1 =   Bu ^((~Ba)&  Be );         Bo = ROL32((Asa0^Da1), 21);         Bu = ROL32((Ase0^De0),  1);         Ba = ROL32((Asi0^Di0), 31);         Be = ROL32((Aso0^Do1), 28);         Bi = ROL32((Asu0^Du1), 20);         Asa0 =   Ba ^((~Be)&  Bi );         Ase0 =   Be ^((~Bi)&  Bo );         Asi0 =   Bi ^((~Bo)&  Bu );         Aso0 =   Bo ^((~Bu)&  Ba );         Asu0 =   Bu ^((~Ba)&  Be );         Bo = ROL32((Asa1^Da0), 20);         Bu = ROL32((Ase1^De1),  1);         Ba = ROL32((Asi1^Di1), 31);         Be = ROL32((Aso1^Do0), 27);         Bi = ROL32((Asu1^Du0), 19);         Asa1 =   Ba ^((~Be)&  Bi );         Ase1 =   Be ^((~Bi)&  Bo );         Asi1 =   Bi ^((~Bo)&  Bu );         Aso1 =   Bo ^((~Bu)&  Ba );         Asu1 =   Bu ^((~Ba)&  Be );
+void KeccakP1600_Permute_Nrounds(void *state, unsigned int nRounds)
+{
+    UINT32 Da0, De0, Di0, Do0, Du0;
+    UINT32 Da1, De1, Di1, Do1, Du1;
+    UINT32 Ba, Be, Bi, Bo, Bu;
+    UINT32 Cx, Cy, Cz, Cw;
+    const UINT32 *pRoundConstants = KeccakF1600RoundConstants_int2+(24-nRounds)*2;
+    UINT32 *stateAsHalfLanes = (UINT32*)state;
+    #define Aba0 stateAsHalfLanes[ 0]
+    #define Aba1 stateAsHalfLanes[ 1]
+    #define Abe0 stateAsHalfLanes[ 2]
+    #define Abe1 stateAsHalfLanes[ 3]
+    #define Abi0 stateAsHalfLanes[ 4]
+    #define Abi1 stateAsHalfLanes[ 5]
+    #define Abo0 stateAsHalfLanes[ 6]
+    #define Abo1 stateAsHalfLanes[ 7]
+    #define Abu0 stateAsHalfLanes[ 8]
+    #define Abu1 stateAsHalfLanes[ 9]
+    #define Aga0 stateAsHalfLanes[10]
+    #define Aga1 stateAsHalfLanes[11]
+    #define Age0 stateAsHalfLanes[12]
+    #define Age1 stateAsHalfLanes[13]
+    #define Agi0 stateAsHalfLanes[14]
+    #define Agi1 stateAsHalfLanes[15]
+    #define Ago0 stateAsHalfLanes[16]
+    #define Ago1 stateAsHalfLanes[17]
+    #define Agu0 stateAsHalfLanes[18]
+    #define Agu1 stateAsHalfLanes[19]
+    #define Aka0 stateAsHalfLanes[20]
+    #define Aka1 stateAsHalfLanes[21]
+    #define Ake0 stateAsHalfLanes[22]
+    #define Ake1 stateAsHalfLanes[23]
+    #define Aki0 stateAsHalfLanes[24]
+    #define Aki1 stateAsHalfLanes[25]
+    #define Ako0 stateAsHalfLanes[26]
+    #define Ako1 stateAsHalfLanes[27]
+    #define Aku0 stateAsHalfLanes[28]
+    #define Aku1 stateAsHalfLanes[29]
+    #define Ama0 stateAsHalfLanes[30]
+    #define Ama1 stateAsHalfLanes[31]
+    #define Ame0 stateAsHalfLanes[32]
+    #define Ame1 stateAsHalfLanes[33]
+    #define Ami0 stateAsHalfLanes[34]
+    #define Ami1 stateAsHalfLanes[35]
+    #define Amo0 stateAsHalfLanes[36]
+    #define Amo1 stateAsHalfLanes[37]
+    #define Amu0 stateAsHalfLanes[38]
+    #define Amu1 stateAsHalfLanes[39]
+    #define Asa0 stateAsHalfLanes[40]
+    #define Asa1 stateAsHalfLanes[41]
+    #define Ase0 stateAsHalfLanes[42]
+    #define Ase1 stateAsHalfLanes[43]
+    #define Asi0 stateAsHalfLanes[44]
+    #define Asi1 stateAsHalfLanes[45]
+    #define Aso0 stateAsHalfLanes[46]
+    #define Aso1 stateAsHalfLanes[47]
+    #define Asu0 stateAsHalfLanes[48]
+    #define Asu1 stateAsHalfLanes[49]
+    nRounds &= 3;
+    switch ( nRounds )
+    {
+        #define I0 Ba
+        #define I1 Be
+        #define T0 Bi
+        #define T1 Bo
+        #define SwapPI13( in0,in1,in2,in3,eo0,eo1,eo2,eo3 )             I0 = (in0)[0]; I1 = (in0)[1];                   T0 = (in1)[0]; T1 = (in1)[1];                   (in0)[eo0] = T0; (in0)[eo0^1] = T1;             T0 = (in2)[0]; T1 = (in2)[1];                   (in1)[eo1] = T0; (in1)[eo1^1] = T1;             T0 = (in3)[0]; T1 = (in3)[1];                   (in2)[eo2] = T0; (in2)[eo2^1] = T1;             (in3)[eo3] = I0; (in3)[eo3^1] = I1
+        #define SwapPI2( in0,in1,in2,in3 )             I0 = (in0)[0]; I1 = (in0)[1];             T0 = (in1)[0]; T1 = (in1)[1];             (in0)[1] = T0; (in0)[0] = T1;             (in1)[1] = I0; (in1)[0] = I1;             I0 = (in2)[0]; I1 = (in2)[1];             T0 = (in3)[0]; T1 = (in3)[1];             (in2)[1] = T0; (in2)[0] = T1;             (in3)[1] = I0; (in3)[0] = I1
+        #define SwapEO( even,odd ) T0 = even; even = odd; odd = T0
+        case 1:
+            SwapPI13( &Aga0, &Aka0, &Asa0, &Ama0, 1, 0, 1, 0 );
+            SwapPI13( &Abe0, &Age0, &Ame0, &Ake0, 0, 1, 0, 1 );
+            SwapPI13( &Abi0, &Aki0, &Agi0, &Asi0, 1, 0, 1, 0 );
+            SwapEO( Ami0, Ami1 );
+            SwapPI13( &Abo0, &Amo0, &Aso0, &Ago0, 1, 0, 1, 0 );
+            SwapEO( Ako0, Ako1 );
+            SwapPI13( &Abu0, &Asu0, &Aku0, &Amu0, 0, 1, 0, 1 );
+            break;
+        case 2:
+            SwapPI2( &Aga0, &Asa0, &Aka0, &Ama0 );
+            SwapPI2( &Abe0, &Ame0, &Age0, &Ake0 );
+            SwapPI2( &Abi0, &Agi0, &Aki0, &Asi0 );
+            SwapPI2( &Abo0, &Aso0, &Ago0, &Amo0 );
+            SwapPI2( &Abu0, &Aku0, &Amu0, &Asu0 );
+            break;
+        case 3:
+            SwapPI13( &Aga0, &Ama0, &Asa0, &Aka0, 0, 1, 0, 1 );
+            SwapPI13( &Abe0, &Ake0, &Ame0, &Age0, 1, 0, 1, 0 );
+            SwapPI13( &Abi0, &Asi0, &Agi0, &Aki0, 0, 1, 0, 1 );
+            SwapEO( Ami0, Ami1 );
+            SwapPI13( &Abo0, &Ago0, &Aso0, &Amo0, 0, 1, 0, 1 );
+            SwapEO( Ako0, Ako1 );
+            SwapPI13( &Abu0, &Amu0, &Aku0, &Asu0, 1, 0, 1, 0 );
+            break;
+        #undef I0
+        #undef I1
+        #undef T0
+        #undef T1
+        #undef SwapPI13
+        #undef SwapPI2
+        #undef SwapEO
+    }
+    do
+    {
+        /* Code for 4 rounds, using factor 2 interleaving, 64-bit lanes mapped to 32-bit words */
+        switch ( nRounds )
+        {
+            case 0: KeccakRound0();
+            case 3: KeccakRound1();
+            case 2: KeccakRound2();
+            case 1: KeccakRound3();
+        }
+        nRounds = 0;
+    }
+    while ( *pRoundConstants != 0xFF );
+    #undef Aba0
+    #undef Aba1
+    #undef Abe0
+    #undef Abe1
+    #undef Abi0
+    #undef Abi1
+    #undef Abo0
+    #undef Abo1
+    #undef Abu0
+    #undef Abu1
+    #undef Aga0
+    #undef Aga1
+    #undef Age0
+    #undef Age1
+    #undef Agi0
+    #undef Agi1
+    #undef Ago0
+    #undef Ago1
+    #undef Agu0
+    #undef Agu1
+    #undef Aka0
+    #undef Aka1
+    #undef Ake0
+    #undef Ake1
+    #undef Aki0
+    #undef Aki1
+    #undef Ako0
+    #undef Ako1
+    #undef Aku0
+    #undef Aku1
+    #undef Ama0
+    #undef Ama1
+    #undef Ame0
+    #undef Ame1
+    #undef Ami0
+    #undef Ami1
+    #undef Amo0
+    #undef Amo1
+    #undef Amu0
+    #undef Amu1
+    #undef Asa0
+    #undef Asa1
+    #undef Ase0
+    #undef Ase1
+    #undef Asi0
+    #undef Asi1
+    #undef Aso0
+    #undef Aso1
+    #undef Asu0
+    #undef Asu1
+}
+/* ---------------------------------------------------------------- */
+void KeccakP1600_Permute_12rounds(void *state)
+{
+     KeccakP1600_Permute_Nrounds(state, 12);
+}
+#endif
+int KeccakWidth1600_12rounds_SpongeInitialize(KeccakWidth1600_12rounds_SpongeInstance *spongeInstance, unsigned int rate, unsigned int capacity);
+int KeccakWidth1600_12rounds_SpongeAbsorb(KeccakWidth1600_12rounds_SpongeInstance *spongeInstance, const unsigned char *data, size_t dataByteLen);
+int KeccakWidth1600_12rounds_SpongeAbsorbLastFewBits(KeccakWidth1600_12rounds_SpongeInstance *spongeInstance, unsigned char delimitedData);
+int KeccakWidth1600_12rounds_SpongeSqueeze(KeccakWidth1600_12rounds_SpongeInstance *spongeInstance, unsigned char *data, size_t dataByteLen);
+int KeccakWidth1600_12rounds_SpongeInitialize(KeccakWidth1600_12rounds_SpongeInstance *instance, unsigned int rate, unsigned int capacity)
+{
+    if (rate+capacity != 1600)
+        return 1;
+    if ((rate <= 0) || (rate > 1600) || ((rate % 8) != 0))
+        return 1;
+    KeccakP1600_StaticInitialize();
+    KeccakP1600_Initialize(instance->state);
+    instance->rate = rate;
+    instance->byteIOIndex = 0;
+    instance->squeezing = 0;
+    return 0;
+}
+/* ---------------------------------------------------------------- */
+int KeccakWidth1600_12rounds_SpongeAbsorb(KeccakWidth1600_12rounds_SpongeInstance *instance, const unsigned char *data, size_t dataByteLen)
+{
+    size_t i, j;
+    unsigned int partialBlock;
+    const unsigned char *curData;
+    unsigned int rateInBytes = instance->rate/8;
+    if (instance->squeezing)
+        return 1;
+    i = 0;
+    curData = data;
+    while(i < dataByteLen) {
+        if ((instance->byteIOIndex == 0) && (dataByteLen >= (i + rateInBytes))) {
+#ifdef KeccakP1600_12rounds_FastLoop_supported
+            /* processing full blocks first */
+            if ((rateInBytes % (1600/200)) == 0) {
+                /* fast lane: whole lane rate */
+                j = KeccakP1600_12rounds_FastLoop_Absorb(instance->state, rateInBytes/(1600/200), curData, dataByteLen - i);
+                i += j;
+                curData += j;
+            }
+            else {
+#endif
+                for(j=dataByteLen-i; j>=rateInBytes; j-=rateInBytes) {
+                    KeccakP1600_AddBytes(instance->state, curData, 0, rateInBytes);
+                    KeccakP1600_Permute_12rounds(instance->state);
+                    curData+=rateInBytes;
+                }
+                i = dataByteLen - j;
+#ifdef KeccakP1600_12rounds_FastLoop_supported
+            }
+#endif
+        }
+        else {
+            /* normal lane: using the message queue */
+            partialBlock = (unsigned int)(dataByteLen - i);
+            if (partialBlock+instance->byteIOIndex > rateInBytes)
+                partialBlock = rateInBytes-instance->byteIOIndex;
+            i += partialBlock;
+            KeccakP1600_AddBytes(instance->state, curData, instance->byteIOIndex, partialBlock);
+            curData += partialBlock;
+            instance->byteIOIndex += partialBlock;
+            if (instance->byteIOIndex == rateInBytes) {
+                KeccakP1600_Permute_12rounds(instance->state);
+                instance->byteIOIndex = 0;
+            }
+        }
+    }
+    return 0;
+}
+/* ---------------------------------------------------------------- */
+int KeccakWidth1600_12rounds_SpongeAbsorbLastFewBits(KeccakWidth1600_12rounds_SpongeInstance *instance, unsigned char delimitedData)
+{
+    unsigned int rateInBytes = instance->rate/8;
+    if (delimitedData == 0)
+        return 1;
+    if (instance->squeezing)
+        return 1;
+    /* Last few bits, whose delimiter coincides with first bit of padding */
+    KeccakP1600_AddByte(instance->state, delimitedData, instance->byteIOIndex);
+    /* If the first bit of padding is at position rate-1, we need a whole new block for the second bit of padding */
+    if ((delimitedData >= 0x80) && (instance->byteIOIndex == (rateInBytes-1)))
+        KeccakP1600_Permute_12rounds(instance->state);
+    /* Second bit of padding */
+    KeccakP1600_AddByte(instance->state, 0x80, rateInBytes-1);
+    KeccakP1600_Permute_12rounds(instance->state);
+    instance->byteIOIndex = 0;
+    instance->squeezing = 1;
+    return 0;
+}
+/* ---------------------------------------------------------------- */
+int KeccakWidth1600_12rounds_SpongeSqueeze(KeccakWidth1600_12rounds_SpongeInstance *instance, unsigned char *data, size_t dataByteLen)
+{
+    size_t i, j;
+    unsigned int partialBlock;
+    unsigned int rateInBytes = instance->rate/8;
+    unsigned char *curData;
+    if (!instance->squeezing)
+        KeccakWidth1600_12rounds_SpongeAbsorbLastFewBits(instance, 0x01);
+    i = 0;
+    curData = data;
+    while(i < dataByteLen) {
+        if ((instance->byteIOIndex == rateInBytes) && (dataByteLen >= (i + rateInBytes))) {
+            for(j=dataByteLen-i; j>=rateInBytes; j-=rateInBytes) {
+                KeccakP1600_Permute_12rounds(instance->state);
+                KeccakP1600_ExtractBytes(instance->state, curData, 0, rateInBytes);
+                curData+=rateInBytes;
+            }
+            i = dataByteLen - j;
+        }
+        else {
+            /* normal lane: using the message queue */
+            if (instance->byteIOIndex == rateInBytes) {
+                KeccakP1600_Permute_12rounds(instance->state);
+                instance->byteIOIndex = 0;
+            }
+            partialBlock = (unsigned int)(dataByteLen - i);
+            if (partialBlock+instance->byteIOIndex > rateInBytes)
+                partialBlock = rateInBytes-instance->byteIOIndex;
+            i += partialBlock;
+            KeccakP1600_ExtractBytes(instance->state, curData, instance->byteIOIndex, partialBlock);
+            curData += partialBlock;
+            instance->byteIOIndex += partialBlock;
+        }
+    }
+    return 0;
+}
+/* ---------------------------------------------------------------- */
+#define chunkSize       8192
+#define laneSize        8
+#define suffixLeaf      0x0B
+#define security        128
+#define capacity        (2*security)
+#define capacityInBytes (capacity/8)
+#define capacityInLanes (capacityInBytes/laneSize)
+#define rate            (1600-capacity)
+#define rateInBytes     (rate/8)
+#define rateInLanes     (rateInBytes/laneSize)
+#define ParallelSpongeFastLoop( Parallellism )     while ( inLen >= Parallellism * chunkSize ) {         ALIGN(KeccakP1600times##Parallellism##_statesAlignment) unsigned char states[KeccakP1600times##Parallellism##_statesSizeInBytes];         unsigned char intermediate[Parallellism*capacityInBytes];         unsigned int localBlockLen = chunkSize;         const unsigned char * localInput = input;         unsigned int i;         unsigned int fastLoopOffset;                 KeccakP1600times##Parallellism##_StaticInitialize();         KeccakP1600times##Parallellism##_InitializeAll(states);         fastLoopOffset = KeccakP1600times##Parallellism##_12rounds_FastLoop_Absorb(states, rateInLanes, chunkSize / laneSize, rateInLanes, localInput, Parallellism * chunkSize);         localBlockLen -= fastLoopOffset;         localInput += fastLoopOffset;         for ( i = 0; i < Parallellism; ++i, localInput += chunkSize ) {             KeccakP1600times##Parallellism##_AddBytes(states, i, localInput, 0, localBlockLen);             KeccakP1600times##Parallellism##_AddByte(states, i, suffixLeaf, localBlockLen);             KeccakP1600times##Parallellism##_AddByte(states, i, 0x80, rateInBytes-1);         }         KeccakP1600times##Parallellism##_PermuteAll_12rounds(states);         input += Parallellism * chunkSize;         inLen -= Parallellism * chunkSize;         ktInstance->blockNumber += Parallellism;         KeccakP1600times##Parallellism##_ExtractLanesAll(states, intermediate, capacityInLanes, capacityInLanes );         if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, intermediate, Parallellism * capacityInBytes) != 0) return 1;     }
+#define ParallelSpongeLoop( Parallellism )     while ( inLen >= Parallellism * chunkSize ) {         ALIGN(KeccakP1600times##Parallellism##_statesAlignment) unsigned char states[KeccakP1600times##Parallellism##_statesSizeInBytes];         unsigned char intermediate[Parallellism*capacityInBytes];         unsigned int localBlockLen = chunkSize;         const unsigned char * localInput = input;         unsigned int i;                 KeccakP1600times##Parallellism##_StaticInitialize();         KeccakP1600times##Parallellism##_InitializeAll(states);         while(localBlockLen >= rateInBytes) {             KeccakP1600times##Parallellism##_AddLanesAll(states, localInput, rateInLanes, chunkSize / laneSize);             KeccakP1600times##Parallellism##_PermuteAll_12rounds(states);             localBlockLen -= rateInBytes;             localInput += rateInBytes;            }         for ( i = 0; i < Parallellism; ++i, localInput += chunkSize ) {             KeccakP1600times##Parallellism##_AddBytes(states, i, localInput, 0, localBlockLen);             KeccakP1600times##Parallellism##_AddByte(states, i, suffixLeaf, localBlockLen);             KeccakP1600times##Parallellism##_AddByte(states, i, 0x80, rateInBytes-1);         }         KeccakP1600times##Parallellism##_PermuteAll_12rounds(states);         input += Parallellism * chunkSize;         inLen -= Parallellism * chunkSize;         ktInstance->blockNumber += Parallellism;         KeccakP1600times##Parallellism##_ExtractLanesAll(states, intermediate, capacityInLanes, capacityInLanes );         if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, intermediate, Parallellism * capacityInBytes) != 0) return 1;     }
+static unsigned int right_encode( unsigned char * encbuf, size_t value )
+{
+    unsigned int n, i;
+    size_t v;
+    for ( v = value, n = 0; v && (n < sizeof(size_t)); ++n, v >>= 8 )
+        ;
+    for ( i = 1; i <= n; ++i )
+        encbuf[i-1] = (unsigned char)(value >> (8 * (n-i)));
+    encbuf[n] = (unsigned char)n;
+    return n + 1;
+}
+int KangarooTwelve_Initialize(KangarooTwelve_Instance *ktInstance, size_t outputLen)
+{
+    ktInstance->fixedOutputLength = outputLen;
+    ktInstance->queueAbsorbedLen = 0;
+    ktInstance->blockNumber = 0;
+    ktInstance->phase = ABSORBING;
+    return KeccakWidth1600_12rounds_SpongeInitialize(&ktInstance->finalNode, rate, capacity);
+}
+int KangarooTwelve_Update(KangarooTwelve_Instance *ktInstance, const unsigned char *input, size_t inLen)
+{
+    if (ktInstance->phase != ABSORBING)
+        return 1;
+    if ( ktInstance->blockNumber == 0 ) {
+        /* First block, absorb in final node */
+        unsigned int len = (inLen < (chunkSize - ktInstance->queueAbsorbedLen)) ? inLen : (chunkSize - ktInstance->queueAbsorbedLen);
+        if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, input, len) != 0)
+            return 1;
+        input += len;
+        inLen -= len;
+        ktInstance->queueAbsorbedLen += len;
+        if ( (ktInstance->queueAbsorbedLen == chunkSize) && (inLen != 0) ) {
+            /* First block complete and more input data available, finalize it */
+            const unsigned char padding = 0x03;
+            ktInstance->queueAbsorbedLen = 0;
+            ktInstance->blockNumber = 1;
+            if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, &padding, 1) != 0)
+                return 1;
+            ktInstance->finalNode.byteIOIndex = (ktInstance->finalNode.byteIOIndex + 7) & ~7;
+        }
+    }
+    else if ( ktInstance->queueAbsorbedLen != 0 ) {
+        /* There is data in the queue, absorb further in queue until block complete */
+        unsigned int len = (inLen < (chunkSize - ktInstance->queueAbsorbedLen)) ? inLen : (chunkSize - ktInstance->queueAbsorbedLen);
+        if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->queueNode, input, len) != 0)
+            return 1;
+        input += len;
+        inLen -= len;
+        ktInstance->queueAbsorbedLen += len;
+        if ( ktInstance->queueAbsorbedLen == chunkSize ) {
+            unsigned char intermediate[capacityInBytes];
+            ktInstance->queueAbsorbedLen = 0;
+            ++ktInstance->blockNumber;
+            if (KeccakWidth1600_12rounds_SpongeAbsorbLastFewBits(&ktInstance->queueNode, suffixLeaf) != 0)
+                return 1;
+            if (KeccakWidth1600_12rounds_SpongeSqueeze(&ktInstance->queueNode, intermediate, capacityInBytes) != 0)
+                return 1;
+            if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, intermediate, capacityInBytes) != 0)
+                return 1;
+        }
+    }
+    #if defined(KeccakP1600times8_implementation) && !defined(KeccakP1600times8_isFallback)
+    #if defined(KeccakP1600times8_12rounds_FastLoop_supported)
+    ParallelSpongeFastLoop( 8 )
+    #else
+    ParallelSpongeLoop( 8 )
+    #endif
+    #endif
+    #if defined(KeccakP1600times4_implementation) && !defined(KeccakP1600times4_isFallback)
+    #if defined(KeccakP1600times4_12rounds_FastLoop_supported)
+    ParallelSpongeFastLoop( 4 )
+    #else
+    ParallelSpongeLoop( 4 )
+    #endif
+    #endif
+    #if defined(KeccakP1600times2_implementation) && !defined(KeccakP1600times2_isFallback)
+    #if defined(KeccakP1600times2_12rounds_FastLoop_supported)
+    ParallelSpongeFastLoop( 2 )
+    #else
+    ParallelSpongeLoop( 2 )
+    #endif
+    #endif
+    while ( inLen > 0 ) {
+        unsigned int len = (inLen < chunkSize) ? inLen : chunkSize;
+        if (KeccakWidth1600_12rounds_SpongeInitialize(&ktInstance->queueNode, rate, capacity) != 0)
+            return 1;
+        if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->queueNode, input, len) != 0)
+            return 1;
+        input += len;
+        inLen -= len;
+        if ( len == chunkSize ) {
+            unsigned char intermediate[capacityInBytes];
+            ++ktInstance->blockNumber;
+            if (KeccakWidth1600_12rounds_SpongeAbsorbLastFewBits(&ktInstance->queueNode, suffixLeaf) != 0)
+                return 1;
+            if (KeccakWidth1600_12rounds_SpongeSqueeze(&ktInstance->queueNode, intermediate, capacityInBytes) != 0)
+                return 1;
+            if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, intermediate, capacityInBytes) != 0)
+                return 1;
+        }
+        else
+            ktInstance->queueAbsorbedLen = len;
+    }
+    return 0;
+}
+int KangarooTwelve_Final(KangarooTwelve_Instance *ktInstance, unsigned char * output, const unsigned char * customization, size_t customLen)
+{
+    unsigned char encbuf[sizeof(size_t)+1+2];
+    unsigned char padding;
+    if (ktInstance->phase != ABSORBING)
+        return 1;
+    /* Absorb customization | right_encode(customLen) */
+    if ((customLen != 0) && (KangarooTwelve_Update(ktInstance, customization, customLen) != 0))
+        return 1;
+    if (KangarooTwelve_Update(ktInstance, encbuf, right_encode(encbuf, customLen)) != 0)
+        return 1;
+    if ( ktInstance->blockNumber == 0 ) {
+        /* Non complete first block in final node, pad it */
+        padding = 0x07;
+    }
+    else {
+        unsigned int n;
+        if ( ktInstance->queueAbsorbedLen != 0 ) {
+            /* There is data in the queue node */
+            unsigned char intermediate[capacityInBytes];
+            ++ktInstance->blockNumber;
+            if (KeccakWidth1600_12rounds_SpongeAbsorbLastFewBits(&ktInstance->queueNode, suffixLeaf) != 0)
+                return 1;
+            if (KeccakWidth1600_12rounds_SpongeSqueeze(&ktInstance->queueNode, intermediate, capacityInBytes) != 0)
+                return 1;
+            if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, intermediate, capacityInBytes) != 0)
+                return 1;
+        }
+        --ktInstance->blockNumber;
+        n = right_encode(encbuf, ktInstance->blockNumber);
+        encbuf[n++] = 0xFF;
+        encbuf[n++] = 0xFF;
+        if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, encbuf, n) != 0)
+            return 1;
+        padding = 0x06;
+    }
+    if (KeccakWidth1600_12rounds_SpongeAbsorbLastFewBits(&ktInstance->finalNode, padding) != 0)
+        return 1;
+    if ( ktInstance->fixedOutputLength != 0 ) {
+        ktInstance->phase = FINAL;
+        return KeccakWidth1600_12rounds_SpongeSqueeze(&ktInstance->finalNode, output, ktInstance->fixedOutputLength);
+    }
+    ktInstance->phase = SQUEEZING;
+    return 0;
+}
+int KangarooTwelve_Squeeze(KangarooTwelve_Instance *ktInstance, unsigned char * output, size_t outputLen)
+{
+    if (ktInstance->phase != SQUEEZING)
+        return 1;
+    return KeccakWidth1600_12rounds_SpongeSqueeze(&ktInstance->finalNode, output, outputLen);
+}
+int KangarooTwelve( const unsigned char * input, size_t inLen, unsigned char * output, size_t outLen, const unsigned char * customization, size_t customLen )
+{
+    KangarooTwelve_Instance ktInstance;
+    if (outLen == 0)
+        return 1;
+    if (KangarooTwelve_Initialize(&ktInstance, outLen) != 0)
+        return 1;
+    if (KangarooTwelve_Update(&ktInstance, input, inLen) != 0)
+        return 1;
+    return KangarooTwelve_Final(&ktInstance, output, customization, customLen);
+}
 #define NO_UNICODE_C
 #ifdef __WATCOMC__
 // definition of SH_DENYNO
@@ -85699,11 +89318,12 @@ typedef struct data_collection_tag
 	struct odbc_handle_tag *odbc;
 	uint32_t      responce;
 	uint32_t      lastop;
-   int    *column_types;
+	int    *column_types;
 	size_t *result_len;
 	TEXTSTR *results;
 	//uint32_t nResults; // this is columns
 	TEXTSTR *fields;
+	PDATALIST *ppdlResults;
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 	sqlite3_stmt *stmt;
 #endif
@@ -86572,10 +90192,16 @@ void InitVFS( CTEXTSTR name, struct file_system_mounted_interface *mount )
 }
 void errorLogCallback(void *pArg, int iErrCode, const char *zMsg){
 	if( iErrCode == SQLITE_NOTICE_RECOVER_WAL ) {
+#ifdef __STATIC_GLOBALS__
+#  define sg (global_sqlstub_data)
+		extern struct pssql_global global_sqlstub_data;
+#else
+#  define sg (*global_sqlstub_data)
 		extern struct pssql_global *global_sqlstub_data;
+#endif
 		lprintf( "Sqlite3 Notice: wal recovered: generating checkpoint:%s", zMsg);
 		// after open returns, generate an automatic wal_checkpoint.
-		global_sqlstub_data->flags.bAutoCheckpointRecover = 1;
+		sg.flags.bAutoCheckpointRecover = 1;
 	}
 	else if( iErrCode == SQLITE_NOTICE_RECOVER_ROLLBACK ) {
 		lprintf( "Sqlite3 Notice: journal rollback:%s", zMsg );
@@ -86722,11 +90348,12 @@ typedef struct data_collection_tag
 	struct odbc_handle_tag *odbc;
 	uint32_t      responce;
 	uint32_t      lastop;
-   int    *column_types;
+	int    *column_types;
 	size_t *result_len;
 	TEXTSTR *results;
 	//uint32_t nResults; // this is columns
 	TEXTSTR *fields;
+	PDATALIST *ppdlResults;
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 	sqlite3_stmt *stmt;
 #endif
@@ -90133,13 +93760,22 @@ struct update_task_def
 	void (CPROC *CheckTables)( PODBC );
 	DeclareLink( struct update_task_def );
 };
+#ifdef __STATIC_GLOBALS__
+struct pssql_global global_sqlstub_data;
+#  ifdef g
+#    undef g
+#  endif
+#  define g (global_sqlstub_data)
+#else
 struct pssql_global *global_sqlstub_data;
-#ifdef g
-#  undef g
+#  ifdef g
+#    undef g
+#  endif
+#  define g (*global_sqlstub_data)
 #endif
-#define g (*global_sqlstub_data)
 //----------------------------------------------------------------------
 static void SqlStubInitLibrary( void );
+#ifndef __STATIC_GLOBALS__
 PRIORITY_PRELOAD( InitGlobalData, SQL_PRELOAD_PRIORITY )
 {
 	// is null initialized.
@@ -90156,6 +93792,17 @@ ATEXIT_PRIORITY( CloseConnections, ATEXIT_PRIORITY_SYSLOG - 3 )
 			CloseDatabaseEx( odbc, FALSE );
 		}
 }
+#else
+ATEXIT_PRIORITY( CloseConnections, ATEXIT_PRIORITY_SYSLOG - 3 )
+{
+	PODBC odbc;
+	INDEX idx;
+		LIST_FORALL( global_sqlstub_data.pOpenODBC, idx, PODBC, odbc  )
+		{
+			CloseDatabaseEx( odbc, FALSE );
+		}
+}
+#endif
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 static void GetColumnSize(sqlite3_context*onwhat,int n,sqlite3_value**something) {
 	switch( sqlite3_value_type( something[0] ) ) {
@@ -92341,6 +95988,9 @@ void DestroyCollectorEx( PCOLLECT pCollect DBG_PASS )
 	{
 		return;
 	}
+	if( pCollect->ppdlResults ) {
+		DeleteDataList( pCollect->ppdlResults );
+	}
 	ReleaseCollectionResults( pCollect, TRUE );
 	VarTextDestroy( &pCollect->pvt_out );
 	VarTextDestroy( &pCollect->pvt_result );
@@ -93224,7 +96874,72 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 			return 0;
 		}
 		ReleaseCollectionResults( collection, FALSE );
-		if( collection->flags.bBuildResultArray )
+		if( collection->ppdlResults ) {
+			int len;
+			struct json_value_container *val = (struct json_value_container *)GetDataItem( collection->ppdlResults, collection->columns );
+			struct json_value_container valSet;
+			if( !val ) {
+				val = &valSet;
+				memset( &valSet, 0, sizeof( valSet ) );
+				valSet._contains = &valSet.contains;
+				for( len = 0; len < collection->columns; len++ )
+					SetDataItem( collection->ppdlResults, len, &valSet );
+				val->value_type = VALUE_UNDEFINED;
+				SetDataItem( collection->ppdlResults, collection->columns, val );
+				// okay and now - pull column info from magic place...
+				{
+#ifdef USE_ODBC
+					TEXTCHAR colname[256];
+					short namelen;
+#endif
+					int idx;
+					for( idx = 1; idx <= collection->columns; idx++ ) {
+						val = (struct json_value_container *)GetDataItem( collection->ppdlResults, idx - 1 );
+#ifdef USE_ODBC
+#  if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
+						if( !odbc->flags.bSQLite_native )
+#  endif
+						{
+							SQLSMALLINT coltype;
+							SQLULEN colsize;
+							rc = SQLDescribeCol( collection->hstmt
+								, idx
+								,
+#  ifdef _UNICODE
+								( SQLWCHAR* )colname
+								, sizeof( colname )
+#  else
+								(SQLCHAR*)colname
+								, sizeof( colname )
+#  endif
+								, (SQLSMALLINT*)&namelen
+ // data type short int
+								, &coltype
+ // columnsize int
+								, &colsize
+ // decimal digits short int
+								, NULL
+ // nullable ptr ?
+								, NULL
+							);
+							//lprintf( WIDE("column %s is type %d(%d)"), colname, coltypes[idx-1], colsizes[idx-1] );
+							if( rc != SQL_SUCCESS_WITH_INFO &&
+								rc != SQL_SUCCESS ) {
+								retry = DumpInfo( odbc, collection->pvt_errorinfo, SQL_HANDLE_STMT, &collection->hstmt, odbc->flags.bNoLogging );
+								lprintf( WIDE( "GetData failed..." ) );
+								result_cmd = WM_SQL_RESULT_ERROR;
+								break;
+							}
+							val->name = DupCStrLen( colname, namelen );
+							val->nameLen = namelen;
+						}
+#endif
+ // for
+					}
+				}
+			}
+		}
+		else if( collection->flags.bBuildResultArray )
 		{
 			int len;
 			// after initial, and clear, these sizes will be NULL
@@ -93378,12 +97093,74 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 				if( odbc->flags.bSQLite_native )
 				{
-					char *text = (char*)sqlite3_column_text( collection->stmt, idx - 1 );
+					char *text;
 					TEXTSTR real_text;
 					int colsize;
-					colsize = sqlite3_column_bytes( collection->stmt, idx - 1 );
-					real_text = DupCStrLen( text, colsize );
-					if( collection->flags.bBuildResultArray )
+					if( collection->ppdlResults ) {
+						struct json_value_container *val = (struct json_value_container *)GetDataItem( collection->ppdlResults, idx - 1 );
+						int coltype;
+						switch( coltype = sqlite3_column_type( collection->stmt, idx - 1 ) ) {
+						default:
+							lprintf( "Uhnaldes SQL data type:%d", coltype );
+							text = (char*)sqlite3_column_text( collection->stmt, idx - 1 );
+							colsize = sqlite3_column_bytes( collection->stmt, idx - 1 );
+							val->stringLen = colsize;
+							if( val->string )
+								Release( val->string );
+							real_text = DupCStrLen( text, colsize );
+							if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), real_text );
+							val->string = real_text;
+							val->value_type = VALUE_STRING;
+							break;
+						case SQLITE_NULL:
+							if( val->string )
+								Release( val->string );
+							val->string = NULL;
+							val->value_type = VALUE_NULL;
+							break;
+						case SQLITE_FLOAT:
+							val->float_result = 1;
+							val->result_d = sqlite3_column_double( collection->stmt, idx - 1 );
+							if( pvtData )vtprintf( pvtData, WIDE( "%s%g" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), val->result_d );
+							val->value_type = VALUE_NUMBER;
+							break;
+						case SQLITE_INTEGER:
+							val->float_result = 0;
+							val->result_n = sqlite3_column_int64( collection->stmt, idx - 1 );
+							if( pvtData )vtprintf( pvtData, WIDE( "%s%d" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), (int)val->result_n );
+							val->value_type = VALUE_NUMBER;
+							break;
+						case SQLITE_BLOB:
+							text = (char*)sqlite3_column_blob( collection->stmt, idx - 1 );
+							val->stringLen = sqlite3_column_bytes( collection->stmt, idx - 1 );
+							//lprintf( "Got a blob..." );
+							if( pvtData )vtprintf( pvtData, WIDE( "%s<binary>" ), idx > 1 ? WIDE( "," ) : WIDE( "" ) );
+							if( val->string )
+								Release( val->string );
+							if( text ) {
+								val->string = NewArray( TEXTCHAR, val->stringLen );
+								MemCpy( val->string, text, val->stringLen );
+							}
+							else {
+								val->string = NULL;
+								val->stringLen = 0;
+							}
+							val->value_type = VALUE_TYPED_ARRAY;
+							break;
+						case SQLITE_TEXT:
+							text = (char*)sqlite3_column_text( collection->stmt, idx - 1 );
+							colsize = sqlite3_column_bytes( collection->stmt, idx - 1 );
+							val->stringLen = colsize;
+							if( val->string )
+								Release( val->string );
+							real_text = DupCStrLen( text, colsize );
+							if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), real_text );
+							val->string = real_text;
+							val->value_type = VALUE_STRING;
+							break;
+						}
+					}
+					else if( collection->flags.bBuildResultArray )
 					{
 						collection->result_len[idx - 1] = colsize;
 						if( collection->results[idx-1] )
@@ -93392,11 +97169,18 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 						{
 						case SQLITE_BLOB:
 							//lprintf( "Got a blob..." );
+							text = (char*)sqlite3_column_blob( collection->stmt, idx - 1 );
+							collection->result_len[idx - 1] = sqlite3_column_bytes( collection->stmt, idx - 1 );
 							if( pvtData )vtprintf( pvtData, WIDE( "%s<binary>" ), idx>1?WIDE( "," ):WIDE( "" ) );
 							collection->results[idx-1] = NewArray( TEXTCHAR, collection->result_len[idx - 1] );
 							MemCpy( collection->results[idx-1], text, collection->result_len[idx - 1] );
 							break;
 						default:
+							text = (char*)sqlite3_column_text( collection->stmt, idx - 1 );
+							collection->result_len[idx-1] = sqlite3_column_bytes( collection->stmt, idx - 1 );
+							if( collection->results[idx - 1] )
+								Release( collection->results[idx - 1] );
+							real_text = DupCStrLen( text, collection->result_len[idx - 1] );
 							if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), real_text );
 							collection->results[idx-1] = real_text;
 							break;
@@ -93404,11 +97188,12 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 					}
 					else
 					{
-						if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), real_text?real_text:WIDE( "<NULL>" ) );
+						text = (char*)sqlite3_column_text( collection->stmt, idx - 1 );
+						colsize = sqlite3_column_bytes( collection->stmt, idx - 1 );
+						if( pvtData )VarTextAddData( pvtData, text?text:"<NULL>", text?colsize:6 );
 						//lprintf( WIDE( "... %p" ), text );
-						vtprintf( collection->pvt_result, WIDE("%s%s"), first?WIDE( "" ):WIDE( "," ), real_text?real_text:WIDE( "" ) );
+						vtprintf( collection->pvt_result, WIDE("%s%s"), first?WIDE( "" ):WIDE( "," ), text );
 						first=0;
-						Release( real_text );
 					}
 				}
 #endif
@@ -93450,140 +97235,199 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 					{
 						byResult = byResultStatic;
 					}
-					if( collection->coltypes && ( ( collection->coltypes[idx-1] == SQL_VARBINARY ) || ( collection->coltypes[idx-1] == SQL_LONGVARBINARY ) ) )
-					{
-						rc = SQLGetData( collection->hstmt
-											, (short)(idx)
-											, SQL_C_BINARY
-											, byResult
-											, colsize
-											, &ResultLen );
-						if( SUS_GT( ResultLen,SQLINTEGER,collection->colsizes[idx-1],SQLUINTEGER) )
-						{
-							lprintf( WIDE( "SQL Result returned more data than the column described! (returned %d expected %d)" ), (int)ResultLen, (int)(collection->colsizes[idx-1]) );
+					if( collection->ppdlResults ) {
+						struct json_value_container *val = (struct json_value_container *)GetDataItem( collection->ppdlResults, idx - 1 );
+						switch( coltype ) {
+						default:
+							lprintf( "Unhandled coltype:%d", coltype );
+							break;
+						case SQL_CHAR:
+						case SQL_VARCHAR:
+						case SQL_WCHAR:
+							val->value_type = VALUE_STRING;
+							rc = SQLGetData( collection->hstmt
+								, (short)(idx)
+								, SQL_CHAR
+								, byResult
+								, colsize
+								, &ResultLen );
+							if( ResultLen == SQL_NULL_DATA ) {
+								val->value_type = VALUE_NULL;
+								val->string = NULL;
+								val->stringLen = 0;
+							}
+							else {
+								val->string = DupCStrLen( byResult, ResultLen );
+								val->stringLen = ResultLen;
+							}
+							break;
+						case SQL_DECIMAL:
+						case SQL_REAL:
+						case SQL_FLOAT:
+						case SQL_DOUBLE:
+							val->value_type = VALUE_NUMBER;
+							val->float_result = 1;
+							rc = SQLGetData( collection->hstmt
+								, (short)(idx)
+								, SQL_C_DOUBLE
+								, &val->result_d
+								, colsize
+								, &ResultLen );
+							if( ResultLen == SQL_NULL_DATA ) {
+								val->value_type = VALUE_NULL;
+								val->string = NULL;
+								val->stringLen = 0;
+							}
+							break;
+						case SQL_INTEGER:
+						case SQL_SMALLINT:
+							val->value_type = VALUE_NUMBER;
+							val->float_result = 1;
+							val->result_n = 0;
+							rc = SQLGetData( collection->hstmt
+								, (short)(idx)
+								, SQL_C_LONG
+								, &val->result_n
+								, colsize
+								, &ResultLen );
+							if( ResultLen == SQL_NULL_DATA ) {
+								val->value_type = VALUE_NULL;
+								val->string = NULL;
+								val->stringLen = 0;
+							}
+							else {
+							}
+							break;
 						}
-					}
-					else
-					{
-						rc = SQLGetData( collection->hstmt
-											, (short)(idx)
-#ifdef _UNICODE
-											, SQL_C_WCHAR
-#else
-											, SQL_C_CHAR
-#endif
-											, byResult
-											, colsize
-											, &ResultLen );
-						// hvaing this cast as a UINTEGER for colsize comparison
-						// breaks -1 being less than colsize... so test negative special and
-						// do the same thing as < colsize
-						if( ( ResultLen & 0x8000000 )
-									|| ( (SQLUINTEGER)ResultLen < colsize ) )
+					} else {
+						if( collection->coltypes && ( ( collection->coltypes[idx-1] == SQL_VARBINARY ) || ( collection->coltypes[idx-1] == SQL_LONGVARBINARY ) ) )
 						{
-							if( (int)ResultLen < 0 )
-								byResult[0] = 0;
-							else
-								byResult[ResultLen] = 0;
+							rc = SQLGetData( collection->hstmt
+												, (short)(idx)
+												, SQL_C_BINARY
+												, byResult
+												, colsize
+												, &ResultLen );
+							if( SUS_GT( ResultLen,SQLINTEGER,collection->colsizes[idx-1],SQLUINTEGER) )
+							{
+								lprintf( WIDE( "SQL Result returned more data than the column described! (returned %d expected %d)" ), (int)ResultLen, (int)(collection->colsizes[idx-1]) );
+							}
 						}
 						else
 						{
-							lprintf( WIDE( "SQL overflow (no room for nul character) %d of %d" ), (int)ResultLen, (int)colsize );
+							rc = SQLGetData( collection->hstmt
+												, (short)(idx)
+	#ifdef _UNICODE
+												, SQL_C_WCHAR
+	#else
+												, SQL_C_CHAR
+	#endif
+												, byResult
+												, colsize
+												, &ResultLen );
+							// hvaing this cast as a UINTEGER for colsize comparison
+							// breaks -1 being less than colsize... so test negative special and
+							// do the same thing as < colsize
+							if( ( ResultLen & 0x8000000 )
+										|| ( (SQLUINTEGER)ResultLen < colsize ) )
+							{
+								if( (int)ResultLen < 0 )
+									byResult[0] = 0;
+								else
+									byResult[ResultLen] = 0;
+							}
+							else
+							{
+								lprintf( WIDE( "SQL overflow (no room for nul character) %d of %d" ), (int)ResultLen, (int)colsize );
+							}
 						}
-					}
-					collection->result_len[idx - 1] = ResultLen;
-					//lprintf( WIDE( "Column %s colsize %d coltype %d coltype %d idx %d" ), collection->fields[idx-1], colsize, coltype, collection->coltypes[idx-1], idx );
-					if( collection->coltypes && coltype != collection->coltypes[idx-1] )
-					{
-						lprintf( WIDE( "Col type mismatch?" ) );
-						DebugBreak();
-					}
-					if( rc == SQL_SUCCESS ||
-						rc == SQL_SUCCESS_WITH_INFO )
-					{
+						//lprintf( WIDE( "Column %s colsize %d coltype %d coltype %d idx %d" ), collection->fields[idx-1], colsize, coltype, collection->coltypes[idx-1], idx );
+						if( collection->coltypes && coltype != collection->coltypes[idx-1] )
+						{
+							lprintf( WIDE( "Col type mismatch?" ) );
+							DebugBreak();
+						}
+						if( rc == SQL_SUCCESS ||
+							rc == SQL_SUCCESS_WITH_INFO ) {
   // -4
-						if( ResultLen == SQL_NO_TOTAL ||
+							if( ResultLen == SQL_NO_TOTAL ||
   // -1
-							ResultLen == SQL_NULL_DATA )
-						{
-							//lprintf( WIDE("result data failed...") );
-						}
-						if( ResultLen > 0 )
-						{
-							if( collection->flags.bBuildResultArray )
+								ResultLen == SQL_NULL_DATA )
 							{
-								if( collection->coltypes[idx-1] == SQL_LONGVARBINARY )
-								{
-									// I won't modify this anyhow, and it results
-									// to users as a CTEXSTR, preventing them from changing it also...
-									//lprintf( "Got a blob..." );
-									//lprintf( WIDE( "size is %d" ), collection->colsizes[idx-1] );
-									if( pvtData )
-									{
-										SQLUINTEGER n;
-										vtprintf( pvtData, WIDE( "%s<" ), idx>1?WIDE( "," ):WIDE( "" ) );
-										for( n = 0; n < collection->colsizes[idx-1]; n++ )
-											vtprintf( pvtData, WIDE( "%02x " ), byResult[n] );
-										vtprintf( pvtData, WIDE( ">" ) );
-									}
-									collection->results[idx-1] = NewArray( TEXTCHAR, collection->colsizes[idx-1] );
-									//lprintf( WIDE( "dest is %p and src is %p" ), collection->results[idx-1], byResult );
-									MemCpy( collection->results[idx-1], byResult, collection->colsizes[idx-1] );
-									//lprintf( WIDE( "Column %s colsize %d coltype %d coltype %d idx %d" ), collection->fields[idx-1], colsize, coltype, coltypes[idx-1], idx );
-									//collection->results[idx-1] = (TEXTSTR)Deblobify( byResult, colsizes[idx-1] );
+								//lprintf( WIDE("result data failed...") );
+							}
+							if( ResultLen > 0 ) {
+								if( collection->ppdlResults ) {
+									lprintf( "Unifnished" );
 								}
-								else
-								{
-									if( collection->results[idx-1] )
-										Release( (char*)collection->results[idx-1] );
-									if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), byResult );
-									collection->results[idx-1] = StrDup( byResult );
+								else if( collection->flags.bBuildResultArray ) {
+									collection->result_len[idx - 1] = ResultLen;
+									if( collection->coltypes[idx - 1] == SQL_LONGVARBINARY ) {
+										// I won't modify this anyhow, and it results
+										// to users as a CTEXSTR, preventing them from changing it also...
+										//lprintf( "Got a blob..." );
+										//lprintf( WIDE( "size is %d" ), collection->colsizes[idx-1] );
+										if( pvtData ) {
+											SQLUINTEGER n;
+											vtprintf( pvtData, WIDE( "%s<" ), idx > 1 ? WIDE( "," ) : WIDE( "" ) );
+											for( n = 0; n < collection->colsizes[idx - 1]; n++ )
+												vtprintf( pvtData, WIDE( "%02x " ), byResult[n] );
+											vtprintf( pvtData, WIDE( ">" ) );
+										}
+										collection->results[idx - 1] = NewArray( TEXTCHAR, collection->colsizes[idx - 1] );
+										//lprintf( WIDE( "dest is %p and src is %p" ), collection->results[idx-1], byResult );
+										MemCpy( collection->results[idx - 1], byResult, collection->colsizes[idx - 1] );
+										//lprintf( WIDE( "Column %s colsize %d coltype %d coltype %d idx %d" ), collection->fields[idx-1], colsize, coltype, coltypes[idx-1], idx );
+										//collection->results[idx-1] = (TEXTSTR)Deblobify( byResult, colsizes[idx-1] );
+									}
+									else {
+										if( collection->results[idx - 1] )
+											Release( (char*)collection->results[idx - 1] );
+										if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), byResult );
+										collection->results[idx - 1] = StrDup( byResult );
+									}
+								}
+								else {
+									//lprintf( WIDE("Got a result: \'%s\'"), byResult );
+									/*
+									* if this is auto processed for the application, there is no
+									* result indicator indicating how long it is, therefore the application
+									* must in turn call Deblobify or some other custom routine to handle
+									* this SQL database's binary format...
+									*/
+									/*
+									if( coltypes[idx-1] == SQL_LONGVARBINARY )
+									{
+									POINTER tmp;
+									vtprintf( collection->pvt_result, WIDE("%s%s"), first?WIDE( "" ):WIDE( "," ), tmp = Deblobify( byResult, collection->colsizes[idx-1] ) );
+									Release( tmp );
+									}
+									else
+									*/
+									vtprintf( collection->pvt_result, WIDE( "%s%s" ), first ? WIDE( "" ) : WIDE( "," ), byResult );
+									if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), byResult );
+									first = 0;
 								}
 							}
-							else
-							{
-								//lprintf( WIDE("Got a result: \'%s\'"), byResult );
-								/*
-								* if this is auto processed for the application, there is no
-								* result indicator indicating how long it is, therefore the application
-								* must in turn call Deblobify or some other custom routine to handle
-								* this SQL database's binary format...
-								*/
-								/*
-								if( coltypes[idx-1] == SQL_LONGVARBINARY )
-								{
-								POINTER tmp;
-								vtprintf( collection->pvt_result, WIDE("%s%s"), first?WIDE( "" ):WIDE( "," ), tmp = Deblobify( byResult, collection->colsizes[idx-1] ) );
-								Release( tmp );
+							else {
+								if( !collection->flags.bBuildResultArray ) {
+									//lprintf( WIDE("Didn't get a result... null field?") );
+									vtprintf( collection->pvt_result, WIDE( "%s" ), first ? WIDE( "" ) : WIDE( "," ) );
+									if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx > 1 ? WIDE( "," ) : WIDE( "" ), byResult );
+									first = 0;
 								}
-								else
-								*/
-								vtprintf( collection->pvt_result, WIDE("%s%s"), first?WIDE( "" ):WIDE( "," ), byResult );
-								if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), byResult );
-								first = 0;
+								else {
+									if( pvtData )vtprintf( pvtData, WIDE( "%s<NULL>" ), idx > 1 ? WIDE( "," ) : WIDE( "" ) );
+								}
+								// otherwise the entry will be NULL
 							}
 						}
 						else
 						{
-							if( !collection->flags.bBuildResultArray )
-							{
-								//lprintf( WIDE("Didn't get a result... null field?") );
-								vtprintf( collection->pvt_result, WIDE("%s"), first?WIDE( "" ):WIDE( "," ) );
-								if( pvtData )vtprintf( pvtData, WIDE( "%s%s" ), idx>1?WIDE( "," ):WIDE( "" ), byResult );
-								first=0;
-							}
-							else
-							{
-								if( pvtData )vtprintf( pvtData, WIDE( "%s<NULL>" ), idx>1?WIDE( "," ):WIDE( "" ) );
-							}
-							// otherwise the entry will be NULL
+							retry = DumpInfo( odbc, collection->pvt_errorinfo, SQL_HANDLE_STMT, &collection->hstmt, odbc->flags.bNoLogging );
+							lprintf( WIDE("GetData failed...") );
+							result_cmd = WM_SQL_RESULT_ERROR;
 						}
-					}
-					else
-					{
-						retry = DumpInfo( odbc, collection->pvt_errorinfo, SQL_HANDLE_STMT, &collection->hstmt, odbc->flags.bNoLogging );
-						lprintf( WIDE("GetData failed...") );
-						result_cmd = WM_SQL_RESULT_ERROR;
 					}
 				}
 #endif
@@ -93666,6 +97510,35 @@ int __GetSQLResult( PODBC odbc, PCOLLECT collection, int bMore )
 		LeaveCriticalSec( &odbc->cs );
 	}
 	return 0;
+}
+int FetchSQLRecordJS( PODBC odbc, PDATALIST *ppdlRecord ) {
+	if( ppdlRecord ) {
+		if( !odbc )
+			odbc = g.odbc;
+		if( odbc ) {
+			if( odbc->flags.bThreadProtect ) {
+				EnterCriticalSec( &odbc->cs );
+				odbc->nProtect++;
+			}
+			while( odbc->collection && odbc->collection->flags.bTemporary ) {
+				DestroyCollector( odbc->collection );
+			}
+			if( !odbc->collection ) {
+				lprintf( WIDE( "Lost ODBC result collection..." ) );
+				return 0;
+			}
+			odbc->collection->flags.bBuildResultArray = 1;
+			__GetSQLResult( odbc, odbc->collection, FALSE );
+			if( odbc->collection->responce == WM_SQL_RESULT_DATA ) {
+			}
+			if( odbc->flags.bThreadProtect ) {
+				LeaveCriticalSec( &odbc->cs );
+				odbc->nProtect--;
+			}
+			return odbc->collection->responce == WM_SQL_RESULT_DATA ? TRUE : 0;
+		}
+	}
+	return FALSE;
 }
 //-----------------------------------------------------------------------
 int FetchSQLRecord( PODBC odbc, CTEXTSTR **result )
@@ -93870,10 +97743,10 @@ static void __DoODBCBinding( HSTMT hstmt, PDATALIST pdlItems ) {
 #endif
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 static void __DoSQLiteBinding( sqlite3_stmt *db, PDATALIST pdlItems ) {
-	int idx;
+	INDEX idx;
 	struct json_value_container *val;
 	DATA_FORALL( pdlItems, idx, struct json_value_container *, val ) {
-		int useIndex = idx + 1;
+		int useIndex = (int)(idx + 1);
 		int rc;
 		if( val->name ) {
 			useIndex = sqlite3_bind_parameter_index( db, val->name );
@@ -93882,6 +97755,9 @@ static void __DoSQLiteBinding( sqlite3_stmt *db, PDATALIST pdlItems ) {
 		default:
 			lprintf( "Failed to handline binding for type: %d", val->value_type );
 			DebugBreak();
+			break;
+		case VALUE_NULL:
+			rc = sqlite3_bind_null( db, useIndex );
 			break;
 		case VALUE_NUMBER:
 			if( val->float_result ) {
@@ -94035,7 +97911,7 @@ int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t que
 			}
 			//DebugBreak();
 			tmp = sqlite3_errmsg(odbc->db);
-         // this will have to have a Char based version
+			// this will have to have a Char based version
 			if( strnicmp( tmp, "no such table", 13 ) == 0 )
 				vtprintf( collection->pvt_errorinfo, WIDE( "(S0002)" ) );
 			vtprintf( collection->pvt_errorinfo, WIDE( "Result of prepare failed? %s at-or near char %")_size_f WIDE("[%") _cstring_f WIDE("] in [%") _string_f WIDE("]" ), tmp, tail - query, tail, query );
@@ -94046,8 +97922,11 @@ int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t que
 			}
 			in_error = 1;
 		} else {
-         if( pdlParams )
+			if( pdlParams ) {
 				__DoSQLiteBinding( collection->stmt, pdlParams );
+				//char *realSql = sqlite3_expanded_sql( collection->stmt );
+				//lprintf( "DO:%s", realSql );
+			}
 			if( odbc->flags.bAutoCheckpoint && !sqlite3_stmt_readonly( collection->stmt ) )
 				startAutoCheckpoint( odbc );
 		}
@@ -94234,23 +98113,18 @@ void SQLEndQuery( PODBC odbc )
 //	PopODBCExx( odbc, TRUE );
 }
 //-----------------------------------------------------------------------
-int SQLRecordQuery_v4( PODBC odbc
+int SQLRecordQuery_js( PODBC odbc
                      , CTEXTSTR query
                      , size_t queryLen
-                     , int *nResults
-                     , CTEXTSTR **result
-                     , size_t **resultLengths
-                     , CTEXTSTR **fields
+                     , PDATALIST *pdlResults
                      , PDATALIST pdlParams
                      DBG_PASS )
 {
 	PODBC use_odbc;
 	int once = 0;
+	if( !(*pdlResults) )
+		(*pdlResults) = CreateDataList( sizeof ( struct json_value_container  ) );
 	// clean up what we think of as our result set data (reset to nothing)
-	if( result )
-		(*result) = NULL;
-	if( nResults )
-		*nResults = 0;
 	do
 	{
 		if( !IsSQLOpenEx( odbc DBG_RELAY ) )
@@ -94288,13 +98162,79 @@ int SQLRecordQuery_v4( PODBC odbc
 		// if it was temporary, it shouldn't be anymore
 		use_odbc->collection->flags.bTemporary = 0;
 		// ask the collector to build the type of result set we want...
-		use_odbc->collection->flags.bBuildResultArray = 1;
+		use_odbc->collection->flags.bBuildResultArray = 0;
+		use_odbc->collection->ppdlResults = pdlResults;
 		// this will do an open, and delay queue processing and all sorts
 		// of good fun stuff...
 	}
 	while( __DoSQLQueryExx( use_odbc, use_odbc->collection, query, queryLen, pdlParams DBG_RELAY) );
 	if( use_odbc->collection->responce == WM_SQL_RESULT_DATA )
 	{
+		return TRUE;
+	}
+	else if( use_odbc->collection->responce == WM_SQL_RESULT_NO_DATA )
+	{
+		use_odbc->collection->ppdlResults = NULL;
+		DeleteDataList( pdlResults );
+		return TRUE;
+	}
+	return FALSE;
+}
+int SQLRecordQuery_v4( PODBC odbc
+	, CTEXTSTR query
+	, size_t queryLen
+	, int *nResults
+	, CTEXTSTR **result
+	, size_t **resultLengths
+	, CTEXTSTR **fields
+	, PDATALIST pdlParams
+	DBG_PASS )
+{
+	PODBC use_odbc;
+	int once = 0;
+	// clean up what we think of as our result set data (reset to nothing)
+	if( result )
+		(*result) = NULL;
+	if( nResults )
+		*nResults = 0;
+	do {
+		if( !IsSQLOpenEx( odbc DBG_RELAY ) )
+			return FALSE;
+		if( !(use_odbc = odbc) ) {
+			// setup error as invalid databse handle... well.. try the default one also
+			// but mostly fail.
+			use_odbc = g.odbc;
+		}
+		// if not a [sS]elect then begin a transaction.... some code uses query record for everything.
+		if( !once && query[0] != 's' && query[0] != 'S' ) {
+			once = 1;
+			BeginTransactEx( use_odbc, 0 );
+		}
+		// collection is very important to have - even if we will have to be opened,
+		// we ill need one, so make at least one.
+		if( !use_odbc->collection || !use_odbc->collection->flags.bTemporary ) {
+			if( use_odbc->collection && use_odbc->collection->flags.bTemporary ) {
+#ifdef LOG_COLLECTOR_STATES
+				lprintf( WIDE( "using existing collector..." ) );
+#endif
+				use_odbc->collection->flags.bTemporary = 0;
+			}
+			else {
+#ifdef LOG_COLLECTOR_STATES
+				lprintf( WIDE( "creating collector..." ) );
+#endif
+				use_odbc->collection = CreateCollector( 0, use_odbc, FALSE );
+			}
+		}
+		// if it was temporary, it shouldn't be anymore
+		use_odbc->collection->flags.bTemporary = 0;
+		// ask the collector to build the type of result set we want...
+		use_odbc->collection->flags.bBuildResultArray = 1;
+		use_odbc->collection->ppdlResults = NULL;
+		// this will do an open, and delay queue processing and all sorts
+		// of good fun stuff...
+	} while( __DoSQLQueryExx( use_odbc, use_odbc->collection, query, queryLen, pdlParams DBG_RELAY ) );
+	if( use_odbc->collection->responce == WM_SQL_RESULT_DATA ) {
 		//lprintf( WIDE("Result with data...") );
 		if( nResults )
 			(*nResults) = use_odbc->collection->columns;
@@ -94308,8 +98248,7 @@ int SQLRecordQuery_v4( PODBC odbc
 		//use_odbc->collection->results = NULL;
 		return TRUE;
 	}
-	else if( use_odbc->collection->responce == WM_SQL_RESULT_NO_DATA )
-	{
+	else if( use_odbc->collection->responce == WM_SQL_RESULT_NO_DATA ) {
 		if( nResults )
 			(*nResults) = use_odbc->collection->columns;
 		if( resultLengths )
@@ -94372,6 +98311,7 @@ int SQLQueryEx( PODBC odbc, CTEXTSTR query, CTEXTSTR *result DBG_PASS )
 		}
 		use_odbc->collection->flags.bTemporary = 0;
 		// ask the collector GetSQLResult to build our sort of data...
+		use_odbc->collection->ppdlResults = NULL;
 		use_odbc->collection->flags.bBuildResultArray = 0;
 		// go ahead, open connection, issue command, get some data
 		// or have some sort of failure along that path.
@@ -95222,7 +99162,7 @@ int SQLRecordQueryf_v2( PODBC odbc, int *nResults, CTEXTSTR **result, size_t **r
 	vvtprintf( pvt, fmt, args );
 	cmd = VarTextGet( pvt );
 	VarTextDestroy( &pvt );
-	result_code = SQLRecordQuery_v4( odbc, GetText( cmd ), GetTextSize( cmd ), nResults, result, resultLengths,fields,NULL DBG_ARGS(SQLRecordQueryf_v2) );
+	result_code = SQLRecordQuery_v4( odbc, GetText( cmd ), GetTextSize( cmd ), nResults, result, resultLengths,fields,NULL  DBG_ARGS(SQLRecordQueryf_v2) );
 	LineRelease( cmd );
 	return result_code;
 }
@@ -95232,12 +99172,17 @@ SQL_NAMESPACE_END
 #define USES_SQLITE_INTERFACE
 #endif
 SQL_NAMESPACE
+#ifdef __STATIC_GLOBALS__
+extern struct pssql_global global_sqlstub_data;
+#  define g (global_sqlstub_data)
+#else
 extern struct pssql_global *global_sqlstub_data;
-#define g (*global_sqlstub_data)
+#  define g (*global_sqlstub_data)
 PRIORITY_PRELOAD( InitGlobalSqlUtil, GLOBAL_INIT_PRELOAD_PRIORITY )
 {
 	SimpleRegisterAndCreateGlobal( global_sqlstub_data );
 }
+#endif
 #ifdef __cplusplus
 using namespace sack::containers::BinaryTree;
 using namespace sack::memory;
@@ -98260,11 +102205,12 @@ typedef struct data_collection_tag
 	struct odbc_handle_tag *odbc;
 	uint32_t      responce;
 	uint32_t      lastop;
-   int    *column_types;
+	int    *column_types;
 	size_t *result_len;
 	TEXTSTR *results;
 	//uint32_t nResults; // this is columns
 	TEXTSTR *fields;
+	PDATALIST *ppdlResults;
 #if defined( USE_SQLITE ) || defined( USE_SQLITE_INTERFACE )
 	sqlite3_stmt *stmt;
 #endif
@@ -98561,7 +102507,13 @@ SQL_NAMESPACE_END
 #define DEFAULT_PUBLIC_KEY WIDE( "DEFAULT" )
 //#define DEFAULT_PUBLIC_KEY "system"
 SQL_NAMESPACE
-extern struct pssql_global *global_sqlstub_data;
+#ifdef __STATIC_GLOBALS__
+#  define sg (global_sqlstub_data)
+	extern struct pssql_global global_sqlstub_data;
+#else
+#  define sg (*global_sqlstub_data)
+	extern struct pssql_global *global_sqlstub_data;
+#endif
 SQL_NAMESPACE_END
 /*
  Dump Option table...
@@ -98673,8 +102625,13 @@ typedef struct sack_option_global_tag OPTION_GLOBAL;
 #ifdef _cut_sql_statments_
 SQL table create is in 'mkopttabs.sql'
 #endif
-#define og (*sack_global_option_data)
+#ifdef __STATIC_GLOBALS__
+#  define og (sack_global_option_data)
+	OPTION_GLOBAL sack_global_option_data;
+#else
+#  define og (*sack_global_option_data)
 	OPTION_GLOBAL *sack_global_option_data;
+#endif
 //------------------------------------------------------------------------
 //int mystrcmp( TEXTCHAR *x, TEXTCHAR *y )
 //{
@@ -98879,7 +102836,7 @@ SQLGETOPTION_PROC( void, CreateOptionDatabaseEx )( PODBC odbc, POPTION_TREE tree
 #ifdef DETAILED_LOGGING
 	lprintf( "Create Option Database. %d", tree->flags.bCreated );
 #endif
-	if( !global_sqlstub_data->flags.bLogOptionConnection )
+	if( !sg.flags.bLogOptionConnection )
 		SetSQLLoggingDisable( tree->odbc, TRUE );
 	{
 		PTABLE table;
@@ -98932,7 +102889,7 @@ void SetOptionDatabaseOption( PODBC odbc )
 	POPTION_TREE tree = GetOptionTreeExxx( odbc, NULL DBG_SRC );
 	if( tree )
 	{
-		if( global_sqlstub_data->flags.bInited )
+		if( sg.flags.bInited )
 			CreateOptionDatabaseEx( odbc, tree );
 	}
 }
@@ -98958,7 +102915,7 @@ void OpenWriterEx( POPTION_TREE option DBG_PASS )
 #ifdef DETAILED_LOGGING
 		_lprintf(DBG_RELAY)( WIDE( "Connect to writer database for tree %p odbc %p" ), option, option->odbc );
 #endif
-		option->odbc_writer = ConnectToDatabaseExx( option->odbc?option->odbc->info.pDSN:global_sqlstub_data->Primary.info.pDSN, FALSE DBG_RELAY );
+		option->odbc_writer = ConnectToDatabaseExx( option->odbc?option->odbc->info.pDSN:sg.Primary.info.pDSN, FALSE DBG_RELAY );
 		SQLCommand( option->odbc_writer, "pragma foreign_keys=on" );
       /*
 		SQLCommand( option->odbc_writer, "pragma integrity_check" );
@@ -98993,10 +102950,10 @@ void OpenWriterEx( POPTION_TREE option DBG_PASS )
 				;//lprintf( "result:%s", res );;
 		}
 */
-		//option->odbc_writer = SQLGetODBC( option->odbc?option->odbc->info.pDSN:global_sqlstub_data->Primary.info.pDSN );
+		//option->odbc_writer = SQLGetODBC( option->odbc?option->odbc->info.pDSN:sg.Primary.info.pDSN );
 		if( option->odbc_writer )
 		{
-			if( !global_sqlstub_data->flags.bLogOptionConnection )
+			if( !sg.flags.bLogOptionConnection )
 				SetSQLLoggingDisable( option->odbc_writer, TRUE );
 			SetSQLThreadProtect( option->odbc_writer, TRUE );
 			SetSQLAutoTransactCallback( option->odbc_writer, OptionsCommited, (uintptr_t)option );
@@ -99465,7 +103422,7 @@ SQLGETOPTION_PROC( size_t, SACK_GetPrivateProfileStringExxx )( PODBC odbc
 		size_t buflen;
 		// maybe do an if( l.flags.bLogOptionsRead )
 #if defined( _DEBUG )
-		if( global_sqlstub_data->flags.bLogOptionConnection )
+		if( sg.flags.bLogOptionConnection )
 			_lprintf(DBG_RELAY)( WIDE( "Getting option {%s}[%s]%s=%s" ), pINIFile, pSection, pOptname, pDefaultbuf );
 #endif
 		opt_node = GetOptionIndexExx( odbc, OPTION_ROOT_VALUE, NULL, pINIFile, pSection, pOptname, TRUE, FALSE DBG_RELAY );
@@ -99502,7 +103459,7 @@ SQLGETOPTION_PROC( size_t, SACK_GetPrivateProfileStringExxx )( PODBC odbc
 			{
 				SetOptionStringValue( GetOptionTreeExxx( odbc, NULL DBG_SRC ), opt_node, pBuffer );
 #if defined( _DEBUG )
-				if( global_sqlstub_data->flags.bLogOptionConnection )
+				if( sg.flags.bLogOptionConnection )
 					lprintf( WIDE("default Result [%s]"), pBuffer );
 #endif
 				if( drop_odbc )
@@ -99518,7 +103475,7 @@ SQLGETOPTION_PROC( size_t, SACK_GetPrivateProfileStringExxx )( PODBC odbc
 			buflen--;
 			pBuffer[buflen] = 0;
 #if defined( _DEBUG )
-			if( global_sqlstub_data->flags.bLogOptionConnection )
+			if( sg.flags.bLogOptionConnection )
 				lprintf( WIDE( "buffer result is [%s]" ), pBuffer );
 #endif
 			if( drop_odbc )
@@ -99654,7 +103611,7 @@ SQLGETOPTION_PROC( LOGICAL, SACK_WritePrivateOptionStringEx )( PODBC odbc, CTEXT
       pINIFile = ResolveININame( odbc, pSection, buf, pINIFile );
 	}
 #if defined( _DEBUG )
-	if( global_sqlstub_data->flags.bLogOptionConnection )
+	if( sg.flags.bLogOptionConnection )
 		_lprintf( DBG_SRC )( WIDE( "Setting option {%s}[%s]%s=%s" ), pINIFile, pSection, pName, pValue );
 #endif
 	optval = GetOptionIndexExxx( odbc, NULL, NULL, pINIFile, pSection, pName, TRUE, FALSE, FALSE DBG_SRC );
@@ -99830,11 +103787,13 @@ PRIORITY_UNLOAD( AllocateOptionGlobal, CONFIG_SCRIPT_PRELOAD_PRIORITY )
    // other data to destroy?
 	DeleteCriticalSec( &og.cs_option );
 }
+#ifndef __STATIC_GLOBALS__
 PRIORITY_PRELOAD( AllocateOptionGlobal, CONFIG_SCRIPT_PRELOAD_PRIORITY )
 {
 	SimpleRegisterAndCreateGlobal( sack_global_option_data );
 	InitializeCriticalSec( &og.cs_option );
 }
+#endif
 PRIORITY_PRELOAD(RegisterSQLOptionInterface, SQL_PRELOAD_PRIORITY + 1 )
 {
    // have a multiple test because of C++ and C playing together with shared global; not threading issue
@@ -99886,7 +103845,9 @@ ATEXIT( CommitOptions )
 #ifdef DETAILED_LOGGING
 	lprintf( WIDE( "Running Option cleanup..." ) );
 #endif
+#ifndef __STATIC_GLOBALS__
 	if( sack_global_option_data )
+#endif
 	{
 		LIST_FORALL( og.trees, idx, POPTION_TREE, tree )
 		{
@@ -100086,7 +104047,7 @@ static void repairOptionDb( uintptr_t psv, PODBC odbc ) {
 }
 SQLGETOPTION_PROC( CTEXTSTR, GetDefaultOptionDatabaseDSN )( void )
 {
-	return global_sqlstub_data->OptionDb.info.pDSN;
+	return sg.OptionDb.info.pDSN;
 }
 PODBC GetOptionODBCEx( CTEXTSTR dsn  DBG_PASS )
 {
@@ -100129,7 +104090,7 @@ PODBC GetOptionODBCEx( CTEXTSTR dsn  DBG_PASS )
 				INDEX idx;
 				CTEXTSTR cmd;
 				CTEXTSTR result;
-				LIST_FORALL( global_sqlstub_data->option_database_init, idx, CTEXTSTR, cmd ) {
+				LIST_FORALL( sg.option_database_init, idx, CTEXTSTR, cmd ) {
 					SQLQueryf( odbc, &result, cmd );
 					//if( result )
 					//	lprintf( WIDE( " %s" ), result );
@@ -100227,6 +104188,8 @@ void FindOptions( PODBC odbc, PLIST *result_list, CTEXTSTR name )
 	tree = GetOptionTreeExxx( odbc, NULL DBG_SRC );
 	New4FindOptions( tree, result_list, name );
 }
+#undef sg
+#undef og
 SACK_OPTION_NAMESPACE_END
 #ifndef GETOPTION_SOURCE
 #define GETOPTION_SOURCE
@@ -100240,7 +104203,13 @@ SACK_OPTION_NAMESPACE_END
 // referencing of option tree...
 //#define DETAILED_LOGGING
 SQL_NAMESPACE
-extern struct pssql_global *global_sqlstub_data;
+#ifdef __STATIC_GLOBALS__
+#  define sg (global_sqlstub_data)
+	extern struct pssql_global global_sqlstub_data;
+#else
+#  define sg (*global_sqlstub_data)
+	extern struct pssql_global *global_sqlstub_data;
+#endif
 SQL_NAMESPACE_END
 /*
  Dump Option table...
@@ -100253,8 +104222,13 @@ SQL_NAMESPACE_END
 */
 SACK_OPTION_NAMESPACE
 typedef struct sack_option_global_tag OPTION_GLOBAL;
-#define og (*sack_global_option_data)
-extern OPTION_GLOBAL *sack_global_option_data;
+#ifdef __STATIC_GLOBALS__
+#  define og (sack_global_option_data)
+	extern OPTION_GLOBAL sack_global_option_data;
+#else
+#  define og (*sack_global_option_data)
+	extern OPTION_GLOBAL *sack_global_option_data;
+#endif
 //------------------------------------------------------------------------
 #define MKSTR(n,...) #__VA_ARGS__
 ;
@@ -100470,7 +104444,7 @@ POPTION_TREE_NODE New4GetOptionIndexExxx( PODBC odbc, POPTION_TREE tree, POPTION
  // get out of this loop, continue outer.
 					continue;
 				}
-				if( global_sqlstub_data->flags.bLogOptionConnection )
+				if( sg.flags.bLogOptionConnection )
 					_lprintf(DBG_RELAY)( WIDE("Option node missing; and was not created='%s'"), namebuf );
 				if( !bIKnowItDoesntExist )
 					PopODBCEx( tree->odbc );
@@ -100743,7 +104717,11 @@ SACK_OPTION_NAMESPACE_END
 // we want access to GLOBAL from sqltub
 #define SQLLIB_SOURCE
 SQL_NAMESPACE
-extern struct pssql_global *global_sqlstub_data;
+#ifdef __STATIC_GLOBALS__
+	extern struct pssql_global global_sqlstub_data;
+#else
+	extern struct pssql_global *global_sqlstub_data;
+#endif
 SQL_NAMESPACE_END
 SACK_OPTION_NAMESPACE
 SQLGETOPTION_PROC( void, EnumOptionsEx )( PODBC odbc, POPTION_TREE_NODE parent
@@ -100794,8 +104772,13 @@ SACK_OPTION_NAMESPACE_END
 #define GETOPTION_SOURCE
 #endif
 SACK_OPTION_NAMESPACE
-#define og (*sack_global_option_data)
-extern struct sack_option_global_tag *sack_global_option_data;
+#ifdef __STATIC_GLOBALS__
+#  define og (sack_global_option_data)
+	extern struct sack_option_global_tag sack_global_option_data;
+#else
+#  define og (*sack_global_option_data)
+	extern struct sack_option_global_tag *sack_global_option_data;
+#endif
 #define ENUMOPT_FLAG_HAS_VALUE 1
 #define ENUMOPT_FLAG_HAS_CHILDREN 2
 struct new4_enum_params
@@ -101681,7 +105664,7 @@ void LoadTranslationDataFromMemory( POINTER input, size_t length )
 						struct translation *translation = CreateTranslation( val->name );
 						DATA_FORALL( val->contains, idx2, struct json_value_container *, val2 ) {
 							int64_t index = IntCreateFromText( val2->name );
-							SetTranslatedString( translation, index, val2->string );
+							SetTranslatedString( translation, (INDEX)index, val2->string );
 						}
 					}
 				}

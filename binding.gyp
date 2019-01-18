@@ -35,7 +35,7 @@
 			,'-Wno-empty-body','-Wno-format', '-Wno-address'
 			, '-Wno-strict-aliasing', '-Wno-switch', '-Wno-missing-field-initializers' 
 			, '-Wno-unused-variable', '-Wno-unused-function', '-Wno-unused-but-set-variable', '-Wno-maybe-uninitialized'
-			, '-Wno-sign-compare', '-Wno-unknown-warning', '-fexceptions'
+			, '-Wno-sign-compare', '-Wno-unknown-warning', '-fexceptions', '-Wno-cast-function-type'
 			],
             'cflags': ['-Wno-implicit-fallthrough'
 			],
@@ -62,7 +62,7 @@
 	}],
 	['OS=="mac"', {
             'defines': [
-              '__LINUX__','__MAC__', '__NO_ODBC__',"__NO_OPTIONS__"
+              '__LINUX__','__MAC__', '__NO_ODBC__',"__NO_OPTIONS__",'_DARWIN_C_SOURCE'
             ],
             'xcode_settings': {
                 'OTHER_CFLAGS': [

@@ -241,7 +241,7 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 
 		if( args[1]->IsNumber() ) {
-			double v = args[1]->NumberValue(isolate->GetCurrentContext()).ToChecked();
+			double v = args[1]->NumberValue(isolate->GetCurrentContext()).FromMaybe(0);
 			DWORD dw = (DWORD)v;
 			dwStatus = RegSetValueEx(hTemp, keyStart, 0
 										  , REG_DWORD

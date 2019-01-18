@@ -1264,9 +1264,9 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	{
 		struct HttpState *pHttpState = GetWebSocketHttpState( obj->pc );
-		if( include_close )
+		if( include_close ) {
 			RemoveClientEx( obj->pc, 0, 1 );
-		else {
+		} else {
 			//lprintf( "End a request..." );
 			EndHttp( pHttpState );
 		}
@@ -1515,7 +1515,7 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 			argOfs++;
 		}
 		if( args[argOfs]->IsNumber() ) {
-			wssOpts.port = (int)args[0]->IntegerValue(isolate->GetCurrentContext()).ToChecked();
+			wssOpts.port = (int)args[0]->IntegerValue(isolate->GetCurrentContext()).FromMaybe(0);
 			argOfs++;
 		}
 		if( args[argOfs]->IsObject() ) {
@@ -2229,9 +2229,9 @@ void wscObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 }
 
 
-httpRequestObject::httpRequestObject() {
+httpRequestObject::httpRequestObject():_this() {
 	pc = NULL;
-	memset( &_this, 0, sizeof( _this ) );
+	//memset( &_this, 0, sizeof( _this ) );
 	ssl = false;
 	port = 0;
 	hostname = NULL;
@@ -2345,13 +2345,21 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		PTEXT address = VarTextPeek( pvtAddress );
 		PTEXT url = SegCreateFromText( httpRequest->path );
 
-		HTTPState state;
-		//lprintf( "request: %s  %s", GetText( address ), GetText( url ) );
-		if( httpRequest->ssl )
-			state = GetHttpsQuery( address, url, httpRequest->ca );
-		else
-			state = GetHttpQuery( address, url );
-
+		HTTPState state = NULL;
+		int retries;
+		for( retries = 0; !state && retries < 3; retries++ ) {
+			//lprintf( "request: %s  %s", GetText( address ), GetText( url ) );
+			if( httpRequest->ssl )
+				state = GetHttpsQuery( address, url, httpRequest->ca );
+			else
+				state = GetHttpQuery( address, url );
+		}
+		if( !state ) {
+			result->Set( String::NewFromUtf8( isolate, "error" ),
+				state ? String::NewFromUtf8( isolate, "No Content" ) : String::NewFromUtf8( isolate, "Connect Error" ) );
+			args.GetReturnValue().Set( result );
+			return;
+		}
 		PTEXT content = GetHttpContent(state);
 		if( state && content )
 		{

@@ -5,7 +5,7 @@ var sack = require( "../.." );
 var vfs = sack.Volume( "cmount", "container.vfs" );
 //console.log( "sack:", sack );
 
-var store = sack.objectStorage( "cmount@storage.os" );
+var store = sack.ObjectStorage( "cmount@storage.os" );
 
 
 var rootKey;

@@ -3,7 +3,7 @@
 var sack = require( ".." );
 const path = require( "path" );
 var serverOpts;
-var server = sack.WebSocket.Server( serverOpts = { port: 8080 } )
+var server = sack.WebSocket.Server( serverOpts = { port: Number(process.argv[2])||8080 } )
 var disk = sack.Volume();
 console.log( "serving on " + serverOpts.port );
 
@@ -24,6 +24,7 @@ server.onrequest( function( req, res ) {
 	console.log( ":", extname, filePath )
 	switch (extname) {
 		  case '.js':
+		  case '.mjs':
 			  contentType = 'text/javascript';
 			  break;
 		  case '.css':
