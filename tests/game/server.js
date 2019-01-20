@@ -44,22 +44,20 @@ server.onconnect( function (ws) {
 			id : player_id++,
 			unused : false,
 		};
+		players.push( player );
 	else {
 		player.unused = false;
 		player.ws = ws;
 	}
-	players.push( player );
-	
 	ws.onmessage( function( msg ) {
-        	//console.log( "Received data:", msg );
 		var _msg = JSON.parse( msg );
+		_msg.id = player.id;
 		players.forEach( player=>{
 			if( player.ws === ws || player.unused ) return;
-			_msg.id = player.id;
 			//console.log( "set player id:", player.id );
-			setTimeout( ()=>{
-				player.ws.send( JSON.stringify( _msg ) );
-			}, 400 );
+			setTimeout( ((_msg)=>()=>{
+				player.ws.send(  _msg );
+			})(JSON.stringify(_msg)), 400 );
 		} );
         } );
 	ws.onclose( function() {

@@ -20,15 +20,20 @@ var customControl = sack.PSI.Registration( {
 	draw( image ) {
 		image.fill( background );
 		//image.fill( sack.Image.Color.black );
-		console.log( "draw..." );
+		//console.log( "draw..." );
 		players.forEach( (player)=>{
 		        image.fill( player.x, player.y, 5, 5, player.color );
 		} )
+
+	        image.fill( player.x, player.y, 5, 5, player.color );
 		return true;
 	},
 	mouse( event ) {
 		//console.log( "Mouse Event:", x_del, y_del, event.x, event.y, event.b );
 	        if( ws ) {
+			player.x = event.x;
+			player.y = event.y;
+			board.redraw();
         		ws.send( `{x:${event.x},y:${event.y}}` );
 	        }
 		if( event.b & sack.PSI.button.scroll_up ) { 
@@ -62,8 +67,8 @@ var board = f.Control( "image control", 0, 40, 500, 500 );
 f.show();
 
 
-var players = [ { x : 50, y : 50, color : sack.Image.colors.white } ];
-
+var players = [  ];
+var player = { x : 50, y : 50, color : sack.Image.colors.white };
 var x, y;
 //var background = sack.Image( "the rror.jpg" );
 //console.log( "background=", r );
@@ -107,7 +112,6 @@ function open() {
 		//console.log( "ws: ", this );
 		this.on( "message", function( msg ) {
 			msg = JSON.parse( msg );
-	        	console.log( "message Received:", msg );
 			if( "id" in msg ) {
 				var player = players[msg.id];
 				if( !player ) 
