@@ -57,9 +57,7 @@ static void promiseRejectCallback( const v8::FunctionCallbackInfo<Value>& args )
 
 
 struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate ) {
-	static struct PromiseWrapper blank;
-	struct PromiseWrapper *pw = NewArray( struct PromiseWrapper, 1 );
-	memcpy( pw, &blank, sizeof( struct PromiseWrapper ) );
+	struct PromiseWrapper *pw = new PromiseWrapper();
 	MaybeLocal<Promise::Resolver> ml_resolver = Promise::Resolver::New( context );
 	Local<Promise::Resolver> resolver = ml_resolver.ToLocalChecked();
 	Local<Promise> pr = resolver->GetPromise();
@@ -132,7 +130,9 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 
-void VolumeObject::Init( Handle<Object> exports ) {
+
+void VolumeObject::doInit( Handle<Object> exports ) 
+{
 	InvokeDeadstart();
 
 	node::AtExit( moduleExit );
@@ -225,6 +225,13 @@ void VolumeObject::Init( Handle<Object> exports ) {
 	//NODE_SET_METHOD( exports, "InitFS", InitFS );
 }
 
+void VolumeObject::Init( Local<Object> exports, Local<Value> val, void* p )  {
+	doInit( exports );	
+}
+
+void VolumeObject::Init( Handle<Object> exports )  {
+	doInit( exports );
+}
 
 VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 )  {
 	mountName = (char *)mount;
@@ -843,8 +850,8 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 			args.GetReturnValue().Set( arrayBuffer );
 			if( args.Length() > 1 && args[1]->IsFunction() ) {
-				struct preloadArgs *pargs = NewArray( struct preloadArgs, 1 );
-				memset( pargs, 0, sizeof( preloadArgs ) );
+				struct preloadArgs *pargs = new preloadArgs();
+				//memset( pargs, 0, sizeof( preloadArgs ) );
 				pargs->f = new Persistent<Function>();
 				pargs->memory = (uint8_t*)data;
 				pargs->len = len;

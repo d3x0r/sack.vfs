@@ -96,7 +96,9 @@ public:
 
 public:
 
+	static void doInit( Handle<Object> exports );
 	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports, Local<Value> val, void* p );
 	VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
 
 	static void vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args );
@@ -216,6 +218,7 @@ struct SqlObjectUserFunction {
 	Persistent<Function> cb;
 	Persistent<Function> cb2;
 	Isolate *isolate;
+	SqlObjectUserFunction() : cb(), cb2() {}
 };
 
 class SqlStmtObject : public node::ObjectWrap {

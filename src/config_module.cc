@@ -10,6 +10,7 @@ struct currentState {
 struct CurrentRule {
 	Persistent<Function> handler;
 	class ConfigObject *config;
+	CurrentRule() : handler() {}
 };
 
 class ConfigObject : public node::ObjectWrap {
@@ -148,8 +149,7 @@ static uintptr_t CPROC handler( uintptr_t psv, uintptr_t psvRule, arg_list args 
 
 void ConfigObject::Add( const v8::FunctionCallbackInfo<Value>& args ) {
 	ConfigObject *config = ObjectWrap::Unwrap<ConfigObject>( args.This() );
-	struct CurrentRule *rule = NewArray( struct CurrentRule, 1 );
-	memset( rule, 0, sizeof( struct CurrentRule ) );
+	struct CurrentRule *rule = new CurrentRule();
 	rule->handler.Reset( args.GetIsolate(), Handle<Function>::Cast( args[1] ) );
 	AddLink( &config->handlers, rule );
 	String::Utf8Value format( USE_ISOLATE( args.GetIsolate() ) args[0] );

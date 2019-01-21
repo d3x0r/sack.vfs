@@ -208,7 +208,7 @@ void SqlObject::autoTransact( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	SetSQLAutoTransact( sql->odbc, args[0]->BooleanValue(args.GetIsolate()->GetCurrentContext()).ToChecked() );
+	SetSQLAutoTransact( sql->odbc, args[0]->BooleanValue(args.GetIsolate()->GetCurrentContext()).FromMaybe(0) );
 }
 //-----------------------------------------------------------
 void SqlObject::transact( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -448,7 +448,6 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 		PDATALIST pdlRecord = NULL;
 		INDEX idx;
 		int items;
-		struct json_value_container * val;
 		struct json_value_container * jsval;
 
 		if( !SQLRecordQuery_js( sql->odbc, GetText(statement), GetTextSize(statement), &pdlRecord, pdlParams DBG_SRC ) ) {
@@ -460,8 +459,8 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 			return;
 		}
 
-		DATA_FORALL( pdlRecord, idx, struct json_value_container *, val ) {
-			if( val->value_type == VALUE_UNDEFINED ) break;
+		DATA_FORALL( pdlRecord, idx, struct json_value_container *, jsval ) {
+			if( jsval->value_type == VALUE_UNDEFINED ) break;
 		}
 		items = (int)idx;
 
@@ -496,12 +495,12 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 
-			DATA_FORALL( pdlRecord, idx, struct json_value_container *, val ) {
+			DATA_FORALL( pdlRecord, idx, struct json_value_container *, jsval ) {
 				int m;
-				if( val->value_type == VALUE_UNDEFINED ) break;
+				if( jsval->value_type == VALUE_UNDEFINED ) break;
 
 				for( m = 0; m < usedFields; m++ ) {
-					if( StrCaseCmp( fields[m].name, val->name ) == 0 ) {
+					if( StrCaseCmp( fields[m].name, jsval->name ) == 0 ) {
 						colMap[idx].col = m;
 						colMap[idx].depth = fields[m].used;
 						if( colMap[idx].depth > maxDepth )
@@ -546,7 +545,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 					} else
 						colMap[idx].t = tables;
 					fields[usedFields].first = (int)idx;
-					fields[usedFields].name = val->name;// sql->fields[idx];
+					fields[usedFields].name = jsval->name;// sql->fields[idx];
 					fields[usedFields].used = 1;
 					usedFields++;
 				}
@@ -587,9 +586,12 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 						Local<Object> container = colMap[idx].t->container;
 						if( fields[colMap[idx].col].used > 1 ) {
 							if( fields[colMap[idx].col].first == idx ) {
-								record->Set( String::NewFromUtf8( isolate, jsval->name )
-										  , fields[colMap[idx].col].array = Array::New( isolate )
-										  );
+								if( !jsval->name )
+									lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
+								else
+									record->Set( String::NewFromUtf8( isolate, jsval->name )
+									           , fields[colMap[idx].col].array = Array::New( isolate )
+									           );
 							}
 						}
 
@@ -630,11 +632,18 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							break;
 						}
 
-						if( fields[colMap[idx].col].used == 1 )
-							container->Set( String::NewFromUtf8( isolate, jsval->name ), val );
+						if( fields[colMap[idx].col].used == 1 ){
+							if( !jsval->name )
+								lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
+							else
+								container->Set( String::NewFromUtf8( isolate, jsval->name ), val );
+						}
 						else if( usedTables > 1 || ( fields[colMap[idx].col].used > 1 ) ) {
 							if( fields[colMap[idx].col].used > 1 ) {
-								colMap[idx].t->container->Set( String::NewFromUtf8( isolate, jsval->name ), val );
+								if( !jsval->name )
+									lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
+								else
+									colMap[idx].t->container->Set( String::NewFromUtf8( isolate, jsval->name ), val );
 								if( colMap[idx].alias )
 									fields[colMap[idx].col].array->Set( String::NewFromUtf8( isolate, colMap[idx].alias ), val );
 								fields[colMap[idx].col].array->Set( colMap[idx].depth, val );
@@ -1275,9 +1284,9 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 			PSSQL_ResultSqliteBlob( onwhat, (const char *)buf, (int)length, NULL );
 	} else if( str->IsNumber() ) {
 		if( str->IsInt32() )
-			PSSQL_ResultSqliteInt( onwhat, (int)str->IntegerValue( userData->isolate->GetCurrentContext() ).ToChecked() );
+			PSSQL_ResultSqliteInt( onwhat, (int)str->IntegerValue( userData->isolate->GetCurrentContext() ).FromMaybe(0) );
 		else
-			PSSQL_ResultSqliteDouble( onwhat, str->NumberValue( userData->isolate->GetCurrentContext() ).ToChecked() );
+			PSSQL_ResultSqliteDouble( onwhat, str->NumberValue( userData->isolate->GetCurrentContext() ).FromMaybe( 0 ) );
 	} else if( str->IsString() )
 		PSSQL_ResultSqliteText( onwhat, DupCStrLen( *result, result.length() ), result.length(), releaseBuffer );
 	else
@@ -1310,8 +1319,7 @@ void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	if( argc > 0 ) {
 		String::Utf8Value name( USE_ISOLATE( isolate ) args[0] );
-		struct SqlObjectUserFunction *userData = NewArray( struct SqlObjectUserFunction, 1 );
-		memset( userData, 0, sizeof( userData[0] ) );
+		struct SqlObjectUserFunction *userData = new SqlObjectUserFunction();
 		userData->isolate = isolate;
 		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
 		userData->sql = sql;
@@ -1331,8 +1339,7 @@ void SqlObject::userProcedure( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	if( argc > 0 ) {
 		String::Utf8Value name( USE_ISOLATE( isolate ) args[0] );
-		struct SqlObjectUserFunction *userData = NewArray( struct SqlObjectUserFunction, 1 );
-		memset( userData, 0, sizeof( userData[0] ) );
+		struct SqlObjectUserFunction *userData = new SqlObjectUserFunction();
 		userData->isolate = isolate;
 		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
 		userData->sql = sql;
@@ -1467,9 +1474,9 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 			PSSQL_ResultSqliteBlob( onwhat, (const char *)buf, (int)length, releaseBuffer );
 	} else if( str->IsNumber() ) {
 		if( str->IsInt32() )
-			PSSQL_ResultSqliteInt( onwhat, (int)str->IntegerValue( userData->isolate->GetCurrentContext() ).ToChecked() );
+			PSSQL_ResultSqliteInt( onwhat, (int)str->IntegerValue( userData->isolate->GetCurrentContext() ).FromMaybe( 0 ) );
 		else
-			PSSQL_ResultSqliteDouble( onwhat, str->NumberValue( userData->isolate->GetCurrentContext() ).ToChecked() );
+			PSSQL_ResultSqliteDouble( onwhat, str->NumberValue( userData->isolate->GetCurrentContext() ).FromMaybe(0) );
 	} else if( str->IsString() ) {
 		String::Utf8Value result( USE_ISOLATE( userData->isolate) str->ToString( userData->isolate->GetCurrentContext() ).ToLocalChecked() );
 		PSSQL_ResultSqliteText( onwhat, DupCStrLen( *result, result.length() ), result.length(), releaseBuffer );
@@ -1528,8 +1535,7 @@ void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args )
 
 	if( argc > 2 ) {
 		String::Utf8Value name( USE_ISOLATE( isolate ) args[0] );
-		struct SqlObjectUserFunction *userData = NewArray( struct SqlObjectUserFunction, 1 );
-		memset( userData, 0, sizeof( userData[0] ) );
+		struct SqlObjectUserFunction *userData = new SqlObjectUserFunction();
 		userData->isolate = isolate;
 		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
 		userData->cb2.Reset( isolate, Handle<Function>::Cast( args[2] ) );

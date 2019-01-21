@@ -646,6 +646,8 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				struct optionStrings *strings = getStrings( isolate );
 				Local<Object> socket;
 				wssiObject *wssiInternal = wssiObject::Unwrap<wssiObject>( wssi );
+				if( !eventMessage->pc )
+					lprintf( "FATALITY - ACCEPT EVENT IS SETTING SOCKET TO NULL." );
 				wssiInternal->pc = eventMessage->pc;
 				wssiInternal->server = myself;
 				AddLink( &myself->opening, wssiInternal );
@@ -1043,7 +1045,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	wssiObject *wssi = (wssiObject*)psv;
 	if( wssi ) {
 		struct wssiEvent *pevt = GetWssiEvent();
-		//lprintf( "Server Websocket closed; post to javascript %p  %p", pc, wssi );
+		lprintf( "Server Websocket closed; post to javascript %p  %p", pc, wssi );
 		(*pevt).eventType = WS_EVENT_CLOSE;
 		(*pevt)._this = wssi;
 		wssi->pc = NULL;
@@ -1131,6 +1133,7 @@ static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char *proto
 	struct wssEvent evt;
 	evt.protocol = protocols;
 	evt.resource = resource;
+	if( !pc ) lprintf( "FATALITY - ACCEPT EVENT RECEVIED ON A NON SOCKET!?" );
 	evt.pc = pc;
 	evt.accepted = 0;
 	evt.eventType = WS_EVENT_ACCEPT;
@@ -1515,7 +1518,7 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 			argOfs++;
 		}
 		if( args[argOfs]->IsNumber() ) {
-			wssOpts.port = (int)args[0]->IntegerValue(isolate->GetCurrentContext()).ToChecked();
+			wssOpts.port = (int)args[0]->IntegerValue(isolate->GetCurrentContext()).FromMaybe(0);
 			argOfs++;
 		}
 		if( args[argOfs]->IsObject() ) {
@@ -1852,6 +1855,7 @@ static uintptr_t webSockClientOpen( PCLIENT pc, uintptr_t psv ) {
 static void webSockClientClosed( PCLIENT pc, uintptr_t psv, int code, const char *reason )
 {
 	wscObject *wsc = (wscObject*)psv;
+	wsc->readyState = CLOSED;
 	struct wscEvent *pevt = GetWscEvent();
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wsc;
@@ -2229,9 +2233,8 @@ void wscObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 }
 
 
-httpRequestObject::httpRequestObject() {
+httpRequestObject::httpRequestObject():_this() {
 	pc = NULL;
-	memset( &_this, 0, sizeof( _this ) );
 	ssl = false;
 	port = 0;
 	hostname = NULL;
