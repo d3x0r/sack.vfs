@@ -1153,7 +1153,6 @@ httpObject::httpObject() {
 }
 
 httpObject::~httpObject() {
-	httpObject *req;
 	INDEX idx = FindLink( &this->wss->requests, this );
 	if( idx != INVALID_INDEX ) {
 		SetLink( &wss->requests, idx, NULL );
@@ -1190,7 +1189,7 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 		vtprintf( obj->pvtResult, WIDE( "HTTP/%d.%d %d %s\r\n" ), vers / 100, vers % 100, status, "OK" );
 
 		if( args.Length() > 1 ) {
-			headers = args[1]->ToObject();
+			headers = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 			Local<Array> keys = headers->GetPropertyNames();
 			int len = keys->Length();
 			int i;
@@ -1247,7 +1246,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		} else if( args[0]->IsObject() ) {
 			Local<FunctionTemplate> wrapper_tpl = FileObject::tpl.Get( isolate );
 			if( (wrapper_tpl->HasInstance( args[0] )) ) {
-				FileObject *file = FileObject::Unwrap<FileObject>( args[0]->ToObject() );
+				FileObject *file = FileObject::Unwrap<FileObject>( args[0]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked() );
 				lprintf( "Incomplete; streaming file content to socket...." );
 				doSend = false;
 			}
@@ -1265,9 +1264,9 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	{
 		struct HttpState *pHttpState = GetWebSocketHttpState( obj->pc );
-		if( include_close )
+		if( include_close ) {
 			RemoveClientEx( obj->pc, 0, 1 );
-		else {
+		} else {
 			//lprintf( "End a request..." );
 			EndHttp( pHttpState );
 		}
@@ -1422,7 +1421,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 	wssOpts->cert_chain_len = 0;
 
 	if( opts->Has( optName = strings->addressString->Get( isolate ) ) ) {
-		String::Utf8Value address( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+		String::Utf8Value address( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		wssOpts->address = StrDup( *address );
 	}
 
@@ -1433,12 +1432,12 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		wssOpts->port = (int)opts->Get( optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 	}
 	if( opts->Has( optName = strings->certString->Get( isolate ) ) ) {
-		String::Utf8Value cert( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+		String::Utf8Value cert( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		wssOpts->cert_chain = StrDup( *cert );
 		wssOpts->cert_chain_len = cert.length();
 	}
 	if( opts->Has( optName = strings->caString->Get( isolate ) ) ) {
-		String::Utf8Value ca( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+		String::Utf8Value ca( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		if( wssOpts->cert_chain ) {
 			wssOpts->cert_chain = (char*)Reallocate( wssOpts->cert_chain, wssOpts->cert_chain_len + ca.length() + 1 );
 			strcpy( wssOpts->cert_chain + wssOpts->cert_chain_len, *ca );
@@ -1454,7 +1453,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		wssOpts->key_len = 0;
 	}
 	else {
-		String::Utf8Value cert( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+		String::Utf8Value cert( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		wssOpts->key = StrDup( *cert );
 		wssOpts->key_len = cert.length();
 	}
@@ -1463,7 +1462,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		wssOpts->pass_len = 0;
 	}
 	else {
-		String::Utf8Value cert( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+		String::Utf8Value cert( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		wssOpts->pass = StrDup( *cert );
 		wssOpts->pass_len = cert.length();
 	}
@@ -1478,17 +1477,17 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		wssOpts->deflate = false;
 	}
 	else
-		wssOpts->deflate = (opts->Get( optName )->ToBoolean()->Value());
+		wssOpts->deflate = (opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value());
 	if( !opts->Has( optName = strings->deflateAllowString->Get( isolate ) ) ) {
 		wssOpts->deflate_allow = false;
 	}
 	else {
-		wssOpts->deflate_allow = (opts->Get( optName )->ToBoolean()->Value());
+		wssOpts->deflate_allow = (opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value());
 		//lprintf( "deflate allow:%d", wssOpts->deflate_allow );
 	}
 
 	if( opts->Has( optName = strings->maskingString->Get( isolate ) ) ) {
-		wssOpts->apply_masking = opts->Get( optName )->ToBoolean()->Value();
+		wssOpts->apply_masking = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 	}
 	else
 		wssOpts->apply_masking = false;
@@ -1511,16 +1510,16 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 		wssOpts.port = 0;
 		wssOpts.address = NULL;
 		if( args[argOfs]->IsString() ) {
-			String::Utf8Value url( USE_ISOLATE( isolate ) args[argOfs]->ToString() );
+			String::Utf8Value url( USE_ISOLATE( isolate ) args[argOfs]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			wssOpts.url = StrDup( *url );
 			argOfs++;
 		}
 		if( args[argOfs]->IsNumber() ) {
-			wssOpts.port = (int)args[0]->IntegerValue();
+			wssOpts.port = (int)args[0]->IntegerValue(isolate->GetCurrentContext()).ToChecked();
 			argOfs++;
 		}
 		if( args[argOfs]->IsObject() ) {
-			Local<Object> opts = args[0]->ToObject();
+			Local<Object> opts = args[0]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 			ParseWssOptions( &wssOpts, isolate, opts );
 		}
 
@@ -1579,7 +1578,7 @@ void wssObject::on( const FunctionCallbackInfo<Value>& args ) {
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
 	if( args.Length() == 2 ) {
 		Isolate* isolate = args.GetIsolate();
-		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString() );
+		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		if( StrCmp( *event, "request" ) == 0 ) {
 			if( cb->IsFunction() )
@@ -1671,7 +1670,7 @@ void wssObject::accept( const FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	if( args.Length() > 0 ) {
-		String::Utf8Value protocol( USE_ISOLATE( isolate ) args[0]->ToString() );
+		String::Utf8Value protocol( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		obj->eventMessage->protocol = StrDup( *protocol );
 	}
 	obj->eventMessage->accepted = 1;
@@ -1752,7 +1751,7 @@ void wssiObject::on( const FunctionCallbackInfo<Value>& args){
 
 	if( args.Length() == 2 ) {
 		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
-		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString() );
+		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		if(  StrCmp( *event, "message" ) == 0 ) {
 			obj->messageCallback.Reset( isolate, cb);
@@ -1807,7 +1806,7 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
 	}
 	else if( args[0]->IsString() ) {
-		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString() );
+		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		WebSocketSendText( obj->pc, *buf, buf.length() );
 	}
 	else {
@@ -1930,36 +1929,36 @@ void parseWscOptions( struct wscOptions *wscOpts, Isolate *isolate, Local<Object
 
 	if( opts->Has( optName = strings->caString->Get( isolate ) ) ) {
 		wscOpts->ssl = 1;
-		String::Utf8Value rootCa( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+		String::Utf8Value rootCa( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		wscOpts->root_cert = StrDup( *rootCa );
 	}
 
 	if( opts->Has( optName = strings->keyString->Get( isolate ) ) ) {
 		wscOpts->ssl = 1;
-		String::Utf8Value rootCa( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+		String::Utf8Value rootCa( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		wscOpts->key = StrDup( *rootCa );
 		wscOpts->key_len = rootCa.length();
 	}
 
 	if( opts->Has( optName = strings->passString->Get( isolate ) ) ) {
 		wscOpts->ssl = 1;
-		String::Utf8Value rootCa( USE_ISOLATE( isolate ) opts->Get( optName )->ToString() );
+		String::Utf8Value rootCa( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		wscOpts->pass = StrDup( *rootCa );
 				wscOpts->pass_len = rootCa.length();
 	}
 
 	if( opts->Has( optName = strings->deflateString->Get( isolate ) ) ) {
-		wscOpts->deflate = opts->Get( optName )->ToBoolean()->Value();
+		wscOpts->deflate = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 	}
 	else
 		wscOpts->deflate = false;
 	if( opts->Has( optName = strings->deflateAllowString->Get( isolate ) ) ) {
-		wscOpts->deflate_allow = opts->Get( optName )->ToBoolean()->Value();
+		wscOpts->deflate_allow = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 	}
 	else
 		wscOpts->deflate_allow = false;
 	if( opts->Has( optName = strings->maskingString->Get( isolate ) ) ) {
-		wscOpts->apply_masking = opts->Get( optName )->ToBoolean()->Value();
+		wscOpts->apply_masking = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 	}
 	else
 		wscOpts->apply_masking = true;
@@ -1977,7 +1976,7 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 		bool checkArg2;
 		// Invoked as constructor: `new MyObject(...)`
 		struct wscOptions wscOpts;
-		String::Utf8Value url( USE_ISOLATE( isolate ) args[0]->ToString() );
+		String::Utf8Value url( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		String::Utf8Value *protocol = NULL;
 		Local<Object> opts;
 		opts.Clear();
@@ -1991,22 +1990,22 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 
 		if( args[1]->IsString() ) {
 			checkArg2 = true;
-			protocol = new String::Utf8Value( USE_ISOLATE( isolate ) args[1]->ToString() );
+			protocol = new String::Utf8Value( USE_ISOLATE( isolate ) args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		}
 		else if( args[1]->IsArray() ) {
 			checkArg2 = true;
-			protocol = new String::Utf8Value( USE_ISOLATE( isolate ) args[1]->ToString() );
+			protocol = new String::Utf8Value( USE_ISOLATE( isolate ) args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		}
 		else if( args[1]->IsObject() ) {
 			checkArg2 = false;
-			parseWscOptions( &wscOpts, isolate, args[1]->ToObject() );
+			parseWscOptions( &wscOpts, isolate, args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked() );
 		}
 		else
 			checkArg2 = false;
 
 		if( checkArg2 ) {
 			if( args[2]->IsObject() ) {
-				opts = args[2]->ToObject();
+				opts = args[2]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 				parseWscOptions( &wscOpts, isolate, opts );
 			}
 		}
@@ -2120,7 +2119,7 @@ void wscObject::on( const FunctionCallbackInfo<Value>& args){
 	if( args.Length() == 2 ) {
 		Isolate* isolate = args.GetIsolate();
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString() );
+		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		Local<Function> cb = Handle<Function>::Cast( args[1] );
 		if( StrCmp( *event, "open" ) == 0 ){
 			if( obj->readyState == OPEN ) {
@@ -2155,7 +2154,7 @@ void wscObject::close( const FunctionCallbackInfo<Value>& args ) {
 			int code = args[0]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 			if( code == 1000 || (code >= 3000 && code <= 4999) ) {
 				if( args.Length() > 1 ) {
-					String::Utf8Value reason( USE_ISOLATE( isolate ) args[1]->ToString() );
+					String::Utf8Value reason( USE_ISOLATE( isolate ) args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					if( reason.length() > 123 ) {
 						isolate->ThrowException( Exception::Error(
 							String::NewFromUtf8( isolate, TranslateText( "SyntaxError (text reason too long)" ) ) ) );
@@ -2197,7 +2196,7 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
 	}
 	else if( args[0]->IsString() ) {
-		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString() );
+		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		WebSocketSendText( obj->pc, *buf, buf.length() );
 	}
 	else {
@@ -2277,7 +2276,7 @@ void httpRequestObject::wait( const FunctionCallbackInfo<Value>& args ) {
 }
 
 void httpRequestObject::on( const FunctionCallbackInfo<Value>& args ) {
-	String::Utf8Value eventName( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString() );
+	String::Utf8Value eventName( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
 	httpRequestObject *http = ObjectWrap::Unwrap<httpRequestObject>( args.This() );
 
 	Local<Function> cb = Local<Function>::Cast( args[1] );
@@ -2301,7 +2300,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	httpRequest->ssl = secure;
 
 	// incoming message events; aborted, close, readableStream (close, data, end, error, readable)
-	Local<Object> options = args[0]->ToObject();
+	Local<Object> options = args[0]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 	Local<String> optName;
 	optionStrings *strings = getStrings( isolate );
 
@@ -2328,7 +2327,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	}
 
 	if( options->Has( optName = strings->rejectUnauthorizedString->Get( isolate ) ) ) {
-		httpRequest->rejestUnauthorized = options->Get( optName )->ToBoolean()->Value();
+		httpRequest->rejestUnauthorized = options->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 	}
 
 	if( options->Has( optName = strings->pathString->Get( isolate ) ) ) {
@@ -2346,13 +2345,21 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		PTEXT address = VarTextPeek( pvtAddress );
 		PTEXT url = SegCreateFromText( httpRequest->path );
 
-		HTTPState state;
-		//lprintf( "request: %s  %s", GetText( address ), GetText( url ) );
-		if( httpRequest->ssl )
-			state = GetHttpsQuery( address, url, httpRequest->ca );
-		else
-			state = GetHttpQuery( address, url );
-
+		HTTPState state = NULL;
+		int retries;
+		for( retries = 0; !state && retries < 3; retries++ ) {
+			//lprintf( "request: %s  %s", GetText( address ), GetText( url ) );
+			if( httpRequest->ssl )
+				state = GetHttpsQuery( address, url, httpRequest->ca );
+			else
+				state = GetHttpQuery( address, url );
+		}
+		if( !state ) {
+			result->Set( String::NewFromUtf8( isolate, "error" ),
+				state ? String::NewFromUtf8( isolate, "No Content" ) : String::NewFromUtf8( isolate, "Connect Error" ) );
+			args.GetReturnValue().Set( result );
+			return;
+		}
 		PTEXT content = GetHttpContent(state);
 		if( state && content )
 		{

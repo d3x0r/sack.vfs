@@ -17,6 +17,7 @@
            "src/network_module.cc",
            "src/task_module.cc",
            "src/config_module.cc",
+           "src/objStore_module.cc",
           ],
 	'defines': [ "BUILDING_NODE_EXTENSION","BUILD_NODE_ADDON",
           'TARGETNAME="sack_vfs.node"',
@@ -61,7 +62,7 @@
 	}],
 	['OS=="mac"', {
             'defines': [
-              '__LINUX__','__MAC__', '__NO_ODBC__',"__NO_OPTIONS__"
+              '__LINUX__','__MAC__', '__NO_ODBC__',"__NO_OPTIONS__",'_DARWIN_C_SOURCE'
             ],
             'xcode_settings': {
                 'OTHER_CFLAGS': [

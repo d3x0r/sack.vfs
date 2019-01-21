@@ -165,7 +165,7 @@ sack.JSOX.begin = function(cb) {
 
 var arrayToJSOX;
 
-var _objectStorage = sack.objectStorage;
+var _objectStorage = sack.ObjectStorage;
 
 function objectStorageContainer(o,sign) {
 	if( !this instanceof objectStorageContainer ) return new objectStorageContainer(o,sign);
@@ -185,11 +185,11 @@ function objectStorageContainer(o,sign) {
 	//console.log( "Container:", this );
 }
 
-sack.objectStorage.prototype.defineClasss = function(a,b) {
+sack.ObjectStorage.prototype.defineClasss = function(a,b) {
 	this.stringifier.defineClass(a,b);
 }
 
-sack.objectStorage.prototype.put = function( obj,sign ) {
+sack.ObjectStorage.prototype.put = function( obj,sign ) {
 	
 	var container = this.stored.get( obj );
 	var storage;
@@ -224,7 +224,7 @@ sack.objectStorage.prototype.put = function( obj,sign ) {
 }
 
 /*
-sack.objectStorage.prototype.update( objId, obj ) {
+sack.ObjectStorage.prototype.update( objId, obj ) {
 	
 	var container = new objectStorageContainer(sack.JSOX.stringify(obj),sign);
 	this.stored.set( obj, container.id );
@@ -234,7 +234,7 @@ sack.objectStorage.prototype.update( objId, obj ) {
 
 */
 
-sack.objectStorage.prototype.get = function( key ) {
+sack.ObjectStorage.prototype.get = function( key ) {
 	//this.parser.
 	var resolve;
 	var reject;
@@ -357,7 +357,7 @@ sack.objectStorage.prototype.get = function( key ) {
 
 
 
-sack.objectStorage = function (...args) {
+sack.ObjectStorage = function (...args) {
 	var mapping = false;
 	var newStorage = new _objectStorage(...args);
 	newStorage.cached = new Map();

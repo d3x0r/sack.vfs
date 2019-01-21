@@ -23,6 +23,23 @@ Local<String> localString( Isolate *isolate, const char *data, int len ) {
 	return arrayBuffer;
 }
 
+Local<String> localStringExternal( Isolate *isolate, const char *data, int len, const char *real_root ) {
+	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
+	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
+	Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
+	static const char *prior_root;
+	if( prior_root != real_root )
+	{
+		prior_root = real_root;
+		PARRAY_BUFFER_HOLDER holder = GetHolder();
+		holder->s.Reset( isolate, arrayBuffer );
+		holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+		Hold( (char*)real_root );
+		holder->buffer = (void*)real_root;
+	}
+	return arrayBuffer;
+}
+
 
 
 static void promiseResolveCallback( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -83,12 +100,12 @@ static void vfs_u8xor(const v8::FunctionCallbackInfo<Value>& args ){
 	int argc = args.Length();
 	if( argc > 0 ) {
 		String::Utf8Value xor1( USE_ISOLATE( isolate ) args[0] );
-		Local<Object> key = args[1]->ToObject();
+		Local<Object> key = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 		//Handle<Object> 
 		Local<String> tmp;
 		Local<Value> keyValue = key->Get( String::NewFromUtf8( isolate, "key" ) );
 		Local<Value> stepValue = key->Get( tmp = String::NewFromUtf8( isolate, "step" ) );
-		int step = (int)stepValue->IntegerValue();
+		int step = (int)stepValue->IntegerValue( isolate->GetCurrentContext() ).FromMaybe(0);
 		String::Utf8Value xor2( USE_ISOLATE( isolate ) keyValue );
 		//lprintf( "is buffer overlapped? %s %s %d", *xor1, *xor2, step );
 		char *out = u8xor( *xor1, (size_t)xor1.length(), *xor2, (size_t)xor2.length(), &step );
@@ -163,6 +180,7 @@ void VolumeObject::Init( Handle<Object> exports ) {
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "File", FileObject::openFile );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "ObjectStorage", vfsObjectStorage );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "dir", getDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "exists", fileExists );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "read", fileRead );
@@ -254,6 +272,69 @@ void logBinary( char *x, int n )
 }
 #endif
 
+void VolumeObject::vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
+
+	char *mount_name;
+	char *filename = (char*)"default.os";
+	LOGICAL defaultFilename = TRUE;
+	char *key = NULL;
+	char *key2 = NULL;
+	int argc = args.Length();
+
+	int arg = 0;
+	if( args[0]->IsString() ) {
+
+		//TooObject( isolate.getCurrentContext().FromMaybe( Local<Object>() )
+		String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		mount_name = StrDup( *fName );
+	}
+	else {
+		mount_name = SRG_ID_Generator();
+	}
+	if( argc > 1 ) {
+		if( args[arg]->IsString() ) {
+			String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+			defaultFilename = FALSE;
+			filename = StrDup( *fName );
+		}
+		else
+			filename = NULL;
+	}
+	else {
+		defaultFilename = FALSE;
+		filename = mount_name;
+		mount_name = SRG_ID_Generator();
+	}
+	//if( args[argc
+	if( args[arg]->IsNumber() ) {
+		//version = (uintptr_t)args[arg++]->ToNumber( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
+		arg++;
+	}
+	if( argc > arg ) {
+		if( !args[arg]->IsNull() && !args[arg]->IsUndefined() ) {
+			String::Utf8Value k( USE_ISOLATE( isolate ) args[arg] );
+			key = StrDup( *k );
+		}
+		arg++;
+	}
+	if( argc > arg ) {
+		if( !args[arg]->IsNull() && !args[arg]->IsUndefined() ) {
+			String::Utf8Value k( USE_ISOLATE( isolate ) args[arg] );
+			key2 = StrDup( *k );
+		}
+		arg++;
+	}
+
+
+	ObjectStorageObject *oso = ObjectStorageObject::openInVFS( isolate, vol->vol, mount_name, filename, key, key2 );
+	if( oso ) {
+		// uhmm this needs 'this' to know what to return as...
+	}
+
+}
+
 
 void VolumeObject::volDecrypt( const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
@@ -270,9 +351,9 @@ void VolumeObject::volRekey( const v8::FunctionCallbackInfo<Value>& args ){
 	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
 	sack_vfs_decrypt_volume( vol->vol );
 	if( argc > 0 ) {
-		key1 = new String::Utf8Value( USE_ISOLATE( isolate ) args[0]->ToString() );
+		key1 = new String::Utf8Value( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		if( argc > 1 )
-			key2 = new String::Utf8Value( USE_ISOLATE( isolate ) args[1]->ToString() );
+			key2 = new String::Utf8Value( USE_ISOLATE( isolate ) args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		else
 			key2 = NULL;
 		sack_vfs_encrypt_volume( vol->vol, 0, *key1[0], *key2[0] );
@@ -318,7 +399,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 		else {
 
-			VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( (argc > 1)?args[1]->ToObject():args.Holder() );
+			VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( (argc > 1)?args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked():args.Holder() );
 			if( !vol->mountName )
 			{
 				isolate->ThrowException( Exception::Error(
@@ -342,7 +423,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-  		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( (argc > 1)?args[1]->ToObject():args.Holder() );
+  		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( (argc > 1)?args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked():args.Holder() );
   		if( !vol->mountName )
   		{
   			isolate->ThrowException( Exception::Error(
@@ -790,7 +871,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		}
 		LOGICAL overlong = FALSE;
 		if( args.Length() > 2 ) {
-			if( args[2]->ToBoolean()->Value() )
+			if( args[2]->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value() )
 				overlong = TRUE;
 		}
 		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
@@ -940,9 +1021,9 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
 		struct find_cursor *fi;
 		if( args.Length() > 0 ) {
-			String::Utf8Value path( USE_ISOLATE( isolate )args[0]->ToString() );
+			String::Utf8Value path( USE_ISOLATE( isolate )args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			if( args.Length() > 1 ) {
-				String::Utf8Value mask( USE_ISOLATE( isolate )args[1]->ToString() );
+				String::Utf8Value mask( USE_ISOLATE( isolate )args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 				fi = vol->fsInt->find_create_cursor( (uintptr_t)vol->vol, *path, *mask );
 			}
 			else
@@ -989,16 +1070,17 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				int arg = 0;
 				//if( argc > 0 ) {
 				if( args[0]->IsString() ) {
-					String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString() );
+					String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					mount_name = StrDup( *fName );
 				}
 				else  {
 					mount_name = SRG_ID_Generator();
+					arg++;
 				}
 				//}
 				if( argc > 1 ) {
 					if( args[arg]->IsString() ) {
-						String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString() );
+						String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 						defaultFilename = FALSE;
 						filename = StrDup( *fName );
 					}
@@ -1012,7 +1094,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				}
 				//if( args[argc
 				if( args[arg]->IsNumber() ) {
-					version = (uintptr_t)args[arg++]->ToNumber(isolate)->Value();
+					version = (uintptr_t)args[arg++]->ToNumber(isolate->GetCurrentContext()).ToLocalChecked()->Value();
 				}
 				if( argc > arg ) {
 					String::Utf8Value k( USE_ISOLATE( isolate ) args[arg] );
@@ -1066,7 +1148,7 @@ void FileObject::Emitter(const v8::FunctionCallbackInfo<Value>& args)
 	//HandleScope scope;
 	Handle<Value> argv[2] = {
 		v8::String::NewFromUtf8( isolate, "ping"), // event name
-		args[0]->ToString()  // argument
+		args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  // argument
 	};
 
 	//node::MakeCallback(isolate, args.This(), "emit", 2, argv);
@@ -1177,13 +1259,13 @@ void FileObject::readLine(const v8::FunctionCallbackInfo<Value>& args) {
 
 
 void FileObject::writeFile(const v8::FunctionCallbackInfo<Value>& args) {
-	//Isolate* isolate = Isolate::GetCurrent();
+	Isolate* isolate = Isolate::GetCurrent();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 
 	//SACK_VFS_PROC size_t CPROC sack_vfs_write( struct sack_vfs_file *file, char * data, size_t length );
 	if( args.Length() == 1 ) {
 		if( args[0]->IsString() ) {
-			String::Utf8Value data( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString() );
+			String::Utf8Value data( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			sack_vfs_write( file->file, *data, data.length() );
 		} else if( args[0]->IsArrayBuffer() ) {
 			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
@@ -1213,7 +1295,7 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 	}
 	if( args.Length() > 0 ) {
 		if( args[0]->IsString() ) {
-			String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString() );
+			String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			size_t datalen = data.length();
 			char *databuf = *data;
 			size_t check;
@@ -1351,8 +1433,8 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 				obj = new FileObject( vol, *fName, isolate, args.Holder() );
 			}
 			else {
-				vol = ObjectWrap::Unwrap<VolumeObject>( args[1]->ToObject() );
-				obj = new FileObject( vol, *fName, isolate, args[1]->ToObject() );
+				vol = ObjectWrap::Unwrap<VolumeObject>( args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked() );
+				obj = new FileObject( vol, *fName, isolate, args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked() );
 				if( vol->volNative ) {
 					if( !obj->file ) {
 						isolate->ThrowException( Exception::Error(

@@ -72,7 +72,7 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 
-	String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString() );
+	String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 	int result;
 	//Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 	Local<Context> context = isolate->GetCurrentContext();
@@ -211,14 +211,14 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 					Local<Object> refObj = revive->rootObject;
 					DATA_FORALL( val->contains, idx, struct jsox_value_container *, pathVal ) {
 						if( pathVal->value_type == JSOX_VALUE_NUMBER ) {
-							refObj = refObj->Get( revive->context, (uint32_t)pathVal->result_n ).ToLocalChecked()->ToObject();
+							refObj = refObj->Get( revive->context, (uint32_t)pathVal->result_n ).ToLocalChecked()->ToObject( revive->isolate->GetCurrentContext() ).ToLocalChecked();
 						}
 						else if( pathVal->value_type == JSOX_VALUE_STRING ) {
 							refObj = refObj->Get( revive->context
 								, String::NewFromUtf8( revive->isolate
 									, pathVal->string
 									, NewStringType::kNormal
-									, (int)pathVal->stringLen ).ToLocalChecked() ).ToLocalChecked()->ToObject();
+									, (int)pathVal->stringLen ).ToLocalChecked() ).ToLocalChecked()->ToObject( revive->isolate->GetCurrentContext() ).ToLocalChecked();
 						}
 						//lprintf( "%d %s", pathVal->value_type, pathVal->string );
 					}

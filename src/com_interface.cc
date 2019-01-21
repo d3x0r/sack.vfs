@@ -98,7 +98,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			char *portName;
 			int argc = args.Length();
 			if( argc > 0 ) {
-				String::Utf8Value fName( USE_ISOLATE( isolate ) args[0]->ToString() );
+				String::Utf8Value fName( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 				portName = StrDup( *fName );
 			} else {
 				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must specify port name to open." ) ) );
@@ -185,7 +185,7 @@ void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	//assert(args[i]->IsFloat32Array());
 	if (args[0]->IsString()) {
-		String::Utf8Value u8str( USE_ISOLATE( isolate ) args[0]->ToString());
+		String::Utf8Value u8str( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked());
 		SackWriteComm(com->handle, *u8str, u8str.length());
 
 	}
