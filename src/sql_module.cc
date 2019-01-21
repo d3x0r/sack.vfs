@@ -448,7 +448,6 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 		PDATALIST pdlRecord = NULL;
 		INDEX idx;
 		int items;
-		struct json_value_container * val;
 		struct json_value_container * jsval;
 
 		if( !SQLRecordQuery_js( sql->odbc, GetText(statement), GetTextSize(statement), &pdlRecord, pdlParams DBG_SRC ) ) {
@@ -460,8 +459,8 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 			return;
 		}
 
-		DATA_FORALL( pdlRecord, idx, struct json_value_container *, val ) {
-			if( val->value_type == VALUE_UNDEFINED ) break;
+		DATA_FORALL( pdlRecord, idx, struct json_value_container *, jsval ) {
+			if( jsval->value_type == VALUE_UNDEFINED ) break;
 		}
 		items = (int)idx;
 
@@ -496,12 +495,12 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 
-			DATA_FORALL( pdlRecord, idx, struct json_value_container *, val ) {
+			DATA_FORALL( pdlRecord, idx, struct json_value_container *, jsval ) {
 				int m;
-				if( val->value_type == VALUE_UNDEFINED ) break;
+				if( jsval->value_type == VALUE_UNDEFINED ) break;
 
 				for( m = 0; m < usedFields; m++ ) {
-					if( StrCaseCmp( fields[m].name, val->name ) == 0 ) {
+					if( StrCaseCmp( fields[m].name, jsval->name ) == 0 ) {
 						colMap[idx].col = m;
 						colMap[idx].depth = fields[m].used;
 						if( colMap[idx].depth > maxDepth )
@@ -546,7 +545,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 					} else
 						colMap[idx].t = tables;
 					fields[usedFields].first = (int)idx;
-					fields[usedFields].name = val->name;// sql->fields[idx];
+					fields[usedFields].name = jsval->name;// sql->fields[idx];
 					fields[usedFields].used = 1;
 					usedFields++;
 				}
