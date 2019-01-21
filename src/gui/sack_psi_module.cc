@@ -974,7 +974,7 @@ ControlObject::ControlObject( const char *title, int x, int y, int w, int h, int
 	frame = over;
 	psiLocal.pendingCreate = this;
 	control = ::CreateFrame( title, x, y, w, h, border, over ? over->control : (PSI_CONTROL)NULL );
-	SetCommonUserData( control, (uintptr_t)this );
+	SetControlUserData( control, (uintptr_t)this );
 	psiLocal.pendingCreate = NULL;
 }
 
@@ -1459,7 +1459,7 @@ void ControlObject::get( const FunctionCallbackInfo<Value>& args ) {
 }
 
 static void OnMoveCommon( CONTROL_FRAME_NAME )( PSI_CONTROL pc, LOGICAL startOrMoved ) {
-	ControlObject *control = (ControlObject *)GetCommonUserData( pc );
+	ControlObject *control = (ControlObject *)GetControlUserData( pc );
 	if( control ) {
 		int32_t x, y;
 		GetFramePosition( pc, &x, &y );
@@ -1469,7 +1469,7 @@ static void OnMoveCommon( CONTROL_FRAME_NAME )( PSI_CONTROL pc, LOGICAL startOrM
 }
 
 static void OnSizeCommon( CONTROL_FRAME_NAME )(PSI_CONTROL pc, LOGICAL startOrMoved) {
-	ControlObject *control = (ControlObject *)GetCommonUserData( pc );
+	ControlObject *control = (ControlObject *)GetControlUserData( pc );
 	if( control ) {
 		uint32_t w, h;
 		GetFrameSize( pc, &w, &h );
@@ -1540,7 +1540,7 @@ void ControlObject::load( const FunctionCallbackInfo<Value>& args ) {
 	PSI_CONTROL pc = LoadXMLFrame( *name );
 	Local<Object> blah = NewWrappedControl( args.GetIsolate(), pc );
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( blah );
-	SetCommonUserData( pc, (uintptr_t)me );
+	SetControlUserData( pc, (uintptr_t)me );
 	SetCommonButtons( pc, &me->done, &me->okay );
 
 	args.GetReturnValue().Set( blah );
