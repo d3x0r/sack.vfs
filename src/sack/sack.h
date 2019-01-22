@@ -6397,7 +6397,7 @@ inline void operator delete (void * p)
 // this is a method replacement to use PIPEs instead of SEMAPHORES
 // replacement code only affects linux.
 #if defined( __QNX__ ) || defined( __MAC__) || defined( __LINUX__ )
-#  if defined( __ANDROID__ )
+#  if defined( __ANDROID__ ) || defined( EMSCRIPTEN )
 // android > 21 can use pthread_mutex_timedop
 #    define USE_PIPE_SEMS
 #  else
@@ -9205,10 +9205,10 @@ PSSQL_PROC( int, SQLRecordQueryEx )( PODBC odbc
 			 for each result in this list until VALUE_UNDEFINED is used.
 		.name is the field name (constant)
 		.string is the text, value_type is the value type (so numbers can stay numbers)
-	pdlParams : parameters to bind to the query.
+	pdlParams : parameters to bind to the query.  (struct json_value_container types)
    Example
    See SQLRecordQueryf, but omit the database parameter.         */
-int SQLRecordQuery_js( PODBC odbc
+PSSQL_PROC( int, SQLRecordQuery_js )( PODBC odbc
 	, CTEXTSTR query
 	, size_t queryLen
 	, PDATALIST *pdlResults
