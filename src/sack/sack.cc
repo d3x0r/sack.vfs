@@ -11819,6 +11819,8 @@ static LOGICAL ExpandVolume( struct volume *vol ) {
 			if( new_disk )
  // zero size result?, but with memory
 				created = 1;
+			else
+				vol->dwSize = 0;
 		}
 	}
 	if( oldsize ) CloseSpace( vol->diskReal );
@@ -11937,16 +11939,16 @@ static BLOCKINDEX GetFreeBlock( struct volume *vol, int init )
 	if( vol->pdlFreeBlocks->Cnt ) {
 		BLOCKINDEX newblock = ((BLOCKINDEX*)GetDataItem( &vol->pdlFreeBlocks, vol->pdlFreeBlocks->Cnt - 1 ))[0];
 		check_val = 0;
-		b = (unsigned int)(newblock / BLOCKS_PER_SECTOR);
-		n = newblock % BLOCKS_PER_SECTOR;
+		b = (unsigned int)(newblock / BLOCKS_PER_BAT);
+		n = newblock % BLOCKS_PER_BAT;
 		vol->pdlFreeBlocks->Cnt--;
 	}
 	else {
 		check_val = EOBBLOCK;
-		b = (unsigned int)(vol->lastBatBlock / BLOCKS_PER_SECTOR);
-		n = vol->lastBatBlock % BLOCKS_PER_SECTOR;
+		b = (unsigned int)(vol->lastBatBlock / BLOCKS_PER_BAT);
+		n = vol->lastBatBlock % BLOCKS_PER_BAT;
 	}
-	//lprintf( "check, start, b, n %d %d %d %d", (int)check_val, (int) vol->lastBatBlock, (int)b, (int)n );
+	LoG( "(should be 0) check, start, b, n %d %d %d %d", (int)check_val, (int) vol->lastBatBlock, (int)b, (int)n );
 	current_BAT = TSEEK( BLOCKINDEX*, vol, b*BLOCKS_PER_SECTOR*BLOCK_SIZE, cache ) + n;
 	blockKey = ((BLOCKINDEX*)vol->usekey[cache]) + n;
 	if( !current_BAT ) return 0;
@@ -11958,10 +11960,11 @@ static BLOCKINDEX GetFreeBlock( struct volume *vol, int init )
 		}
 		else {
 			cache = BC( BAT );
+			LoG( "Expanding disk Here, get next block block.");
 			current_BAT = TSEEK( BLOCKINDEX*, vol, (b + 1) * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
 			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
 			current_BAT[0] = EOBBLOCK ^ blockKey[0];
-			vol->lastBatBlock = (b + 1) * BLOCKS_PER_SECTOR;
+			vol->lastBatBlock = (b + 1) * BLOCKS_PER_BAT;
 			//lprintf( "Set last block....%d", (int)vol->lastBatBlock );
 		}
 	}
@@ -11997,7 +12000,7 @@ static BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int in
 	}
 	check_val ^= ((BLOCKINDEX*)vol->usekey[cache])[block & (BLOCKS_PER_BAT-1)];
 	if( check_val == EOBBLOCK ) {
-		lprintf( "the file itself should never get a EOBBLOCK in it." );
+		lprintf( "the file itself should never get a EOBBLOCK in it. %d  %d", (int)block, (int)sector );
 		(*(int*)0) = 0;
 		// the file itself should never get a EOBBLOCK in it.
 		//(this_BAT[block & (BLOCKS_PER_BAT-1)]) = EOFBLOCK^((BLOCKINDEX*)vol->usekey[BC(BAT)])[block & (BLOCKS_PER_BAT-1)];
@@ -12508,7 +12511,7 @@ struct sack_vfs_file * CPROC sack_vfs_openfile( struct volume *vol, const char *
 	file->fpi = 0;
 	file->delete_on_close = 0;
 	file->_first_block = file->block = file->entry->first_block ^ file->dirent_key.first_block;
-	LoG( "file block is %d", (int)file->block );
+	LoG( "open file start file block is %d", (int)file->block );
 	file->blockChain = NULL;
 	file->blockChainAvail = 0;
 	file->blockChainLength = 0;
@@ -12544,17 +12547,18 @@ size_t CPROC sack_vfs_seek( struct sack_vfs_file *file, size_t pos, int whence )
 	if( (file->fpi >> BLOCK_SIZE_BITS) < file->blockChainLength ) {
 		enum block_cache_entries cache = BC( FILE );
 		file->block = file->blockChain[file->fpi >> BLOCK_SIZE_BITS];
+		LoG( "(seek)File block set to %d from block chain", (int)file->block );
 #ifdef _DEBUG
 		if( !file->block )DebugBreak();
 #endif
-		LoG( "file block is %d", (int)file->block );
+		//LoG( "file block is %d", (int)file->block );
 		vfs_BSEEK( file->vol, file->block, &cache );
 		file->vol->lock = 0;
 		return (size_t)file->fpi;
 	}
 	else {
-		LoG( "NEed more blocks after end of file...." );
 		file->block = b = file->blockChain[file->blockChainLength - 1];
+		LoG( "NEed more blocks after end of file.... %d", file->block );
 		old_fpi = ( file->blockChainLength - 1 ) * BLOCK_SIZE;
 	}
 	{
@@ -12597,8 +12601,10 @@ static void MaskBlock( struct volume *vol, uint8_t* usekey, uint8_t* block, BLOC
 	usekey += ofs;
 	if( vol->key )
 		for( n = 0; n < length; n++ ) (*block++) = (*data++) ^ (*usekey++);
-	else
-		memcpy( block, data, length );
+	else {
+		for( n = 0; n < length; n++, block++, data++ ) block[0] = data[0];
+		//memcpy( block, data, length );
+	}
 }
 size_t CPROC sack_vfs_write( struct sack_vfs_file *file, const char * data, size_t length ) {
 	size_t written = 0;
@@ -12616,6 +12622,8 @@ size_t CPROC sack_vfs_write( struct sack_vfs_file *file, const char * data, size
 			if( file->fpi > ( file->entry->filesize ^ file->dirent_key.filesize ) )
 				file->entry->filesize = file->fpi ^ file->dirent_key.filesize;
 			file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
+ // in case the block needs to be allocated/expanded.
+			block = (uint8_t*)vfs_BSEEK( file->vol, file->block, &cache );
 			LoG( "file block is %d", (int)file->block );
 			SetBlockChain( file, file->fpi, file->block );
 			length -= BLOCK_SIZE - ofs;
@@ -12640,6 +12648,9 @@ size_t CPROC sack_vfs_write( struct sack_vfs_file *file, const char * data, size
 			written += BLOCK_SIZE;
 			file->fpi += BLOCK_SIZE;
 			file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
+			LoG( "File block was %d", file->block );
+ // in case the block needs to be allocated/expanded.
+			block = (uint8_t*)vfs_BSEEK( file->vol, file->block, &cache );
 #ifdef _DEBUG
 			if( !file->block ) DebugBreak();
 #endif
@@ -12647,7 +12658,7 @@ size_t CPROC sack_vfs_write( struct sack_vfs_file *file, const char * data, size
 				SetBlockChain( file, file->fpi, file->block );
 				file->entry->filesize = file->fpi ^ file->dirent_key.filesize;
 			}
-			LoG( "file block is %d", (int)file->block );
+			LoG( "(write,block) file block is %d", (int)file->block );
 			length -= BLOCK_SIZE;
 		} else {
 			MaskBlock( file->vol, file->vol->usekey[cache], block, 0, 0, data, length );
@@ -12683,6 +12694,8 @@ size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t leng
 			length -= BLOCK_SIZE - ofs;
 			file->fpi += BLOCK_SIZE - ofs;
 			file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
+ // in case the block needs to be allocated/expanded.
+			block = (uint8_t*)vfs_BSEEK( file->vol, file->block, &cache );
 			LoG( "file block is %d", (int)file->block );
 			SetBlockChain( file, file->fpi, file->block );
 		} else {
@@ -12703,6 +12716,8 @@ size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t leng
 			length -= BLOCK_SIZE;
 			file->fpi += BLOCK_SIZE;
 			file->block = vfs_GetNextBlock( file->vol, file->block, FALSE, TRUE );
+ // in case the block needs to be allocated/expanded.
+			block = (uint8_t*)vfs_BSEEK( file->vol, file->block, &cache );
 			LoG( "file block is %d", (int)file->block );
 			SetBlockChain( file, file->fpi, file->block );
 		} else {
@@ -12739,8 +12754,7 @@ static void sack_vfs_unlink_file_entry( struct volume *vol, struct directory_ent
 			enum block_cache_entries cache = BC(BAT);
 			BLOCKINDEX *this_BAT = TSEEK( BLOCKINDEX*, vol, ( ( block >> BLOCK_SHIFT ) * ( BLOCKS_PER_SECTOR*BLOCK_SIZE) ), cache );
 			BLOCKINDEX _thiskey = ( vol->key )?((BLOCKINDEX*)vol->usekey[cache])[_block & (BLOCKS_PER_BAT-1)]:0;
-			BLOCKINDEX b = BLOCK_SIZE + (block >> BLOCK_SHIFT) * (BLOCKS_PER_SECTOR*BLOCK_SIZE) + (block & (BLOCKS_PER_BAT - 1)) * BLOCK_SIZE;
-			uint8_t* blockData = (uint8_t*)(((uintptr_t)vol->disk) + b);
+			uint8_t* blockData = (uint8_t*)vfs_BSEEK( vol, block, &cache );
 			//LoG( "Clearing file datablock...%p", (uintptr_t)blockData - (uintptr_t)vol->disk );
 			memset( blockData, 0, BLOCK_SIZE );
 			block = vfs_GetNextBlock( vol, block, FALSE, FALSE );
@@ -15925,14 +15939,14 @@ static BLOCKINDEX _os_GetFreeBlock_( struct volume *vol, int init DBG_PASS )
 	if( vol->pdlFreeBlocks->Cnt ) {
 		BLOCKINDEX newblock = ((BLOCKINDEX*)GetDataItem( &vol->pdlFreeBlocks, vol->pdlFreeBlocks->Cnt - 1 ))[0];
 		check_val = 0;
-		b = (unsigned int)(newblock / BLOCKS_PER_SECTOR);
-		n = newblock % BLOCKS_PER_SECTOR;
+		b = (unsigned int)(newblock / BLOCKS_PER_BAT);
+		n = newblock % BLOCKS_PER_BAT;
 		vol->pdlFreeBlocks->Cnt--;
 	}
 	else {
 		check_val = EOBBLOCK;
-		b = (unsigned int)(vol->lastBatBlock / BLOCKS_PER_SECTOR);
-		n = vol->lastBatBlock % BLOCKS_PER_SECTOR;
+		b = (unsigned int)(vol->lastBatBlock / BLOCKS_PER_BAT);
+		n = vol->lastBatBlock % BLOCKS_PER_BAT;
 	}
 	//lprintf( "check, start, b, n %d %d %d %d", (int)check_val, (int) vol->lastBatBlock, (int)b, (int)n );
 	current_BAT = TSEEK( BLOCKINDEX*, vol, b*BLOCKS_PER_SECTOR*BLOCK_SIZE, cache ) + n;
@@ -15949,7 +15963,7 @@ static BLOCKINDEX _os_GetFreeBlock_( struct volume *vol, int init DBG_PASS )
 			current_BAT = TSEEK( BLOCKINDEX*, vol, (b + 1) * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
 			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
 			current_BAT[0] = EOBBLOCK ^ blockKey[0];
-			vol->lastBatBlock = (b + 1) * BLOCKS_PER_SECTOR;
+			vol->lastBatBlock = (b + 1) * BLOCKS_PER_BAT;
 			//lprintf( "Set last block....%d", (int)vol->lastBatBlock );
 		}
 		SETFLAG( vol->dirty, cache );
@@ -16436,7 +16450,12 @@ void getTimeEntry( struct sack_vfs_os_file_timeline *time, struct volume *vol ) 
 	//uintptr_t vfs_os_FSEEK( struct volume *vol, BLOCKINDEX firstblock, FPI offset, enum block_cache_entries *cache_index ) {
 	struct storageTimeline *timeline = (struct storageTimeline *)vfs_os_BSEEK( vol, curBlock = FIRST_TIMELINE_BLOCK, &cache );
 	struct storageTimeline *timelineKey = (struct storageTimeline *)(vol->usekey[cache]);
-	FPI next = offsetof( struct storageTimeline, entries[ ( timeline->header.timeline_length ^ timelineKey->header.timeline_length) ] );
+	FPI next =
+#ifdef __GNUC__
+		0;
+#else
+		offsetof( struct storageTimeline, entries[ ( timeline->header.timeline_length ^ timelineKey->header.timeline_length) ] );
+#endif
 	struct storageTimelineNode *timelineNode;
 	struct storageTimelineNode *timelineNodeKey;
 	struct storageTimelineNode *timelineLastNode;
@@ -16472,7 +16491,11 @@ void getTimeEntry( struct sack_vfs_os_file_timeline *time, struct volume *vol ) 
 						time->this_fpi = curBlock * BLOCK_SIZE;
 					}
 					else {
+#ifdef __GNUC__
+						time->this_fpi = 0;
+#else
 						time->this_fpi = curBlock * BLOCK_SIZE + offsetof( struct storageTimeline, entries[lastEntryIndex + 1] );
+#endif
 					}
 				}
 				else {
@@ -16482,7 +16505,11 @@ void getTimeEntry( struct sack_vfs_os_file_timeline *time, struct volume *vol ) 
 						time->this_fpi = curBlock * BLOCK_SIZE;
 					}
 					else {
+#ifdef __GNUC__
+						time->this_fpi = 0;
+#else
 						time->this_fpi = curBlock * BLOCK_SIZE + offsetof( struct storageTimelineBlock, entries[lastEntryIndex + 1] );
+#endif
 					}
 				}
 				timelineNextNode = (struct storageTimelineNode*) vfs_os_DSEEK( vol, time->this_fpi, &cache_new, (POINTER*)&timelineNextNodeKey );
@@ -96757,7 +96784,7 @@ void CloseDatabaseEx( PODBC odbc, LOGICAL ReleaseConnection )
 		WakeThread( odbc->auto_checkpoint_thread );
 		Relinquish();
 	}
-	while( odbc->auto_commit_thread )
+	if( odbc->auto_commit_thread )
 	{
 		SQLCommit( odbc );
 		WakeThread( odbc->auto_commit_thread );
@@ -96882,8 +96909,9 @@ retry:
 #endif
 		if( rc3 )
 		{
+			char *realSql = sqlite3_expanded_sql( collection->stmt );
 			vtprintf( collection->pvt_errorinfo, "Result of prepare failed? %s at char %" _size_f "[%" _string_f "] in [%" _string_f "]"
-			       , sqlite3_errmsg(odbc->db), tail - GetText(cmd), tail, GetText(cmd) );
+			       , sqlite3_errmsg(odbc->db), tail - GetText(cmd), tail, realSql );
 			if( EnsureLogOpen(odbc ) )
 			{
 				sack_fprintf( g.pSQLLog, WIDE("#SQLITE ERROR:%") _string_f WIDE("\n"), GetText( VarTextPeek( collection->pvt_errorinfo ) ) );
@@ -98298,6 +98326,7 @@ int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t que
 	{
 		DebugBreak();
 	}
+	lprintf( "DING %p", pdlParams );
 	if( !IsSQLOpen( odbc ) )
 	{
 		return FALSE;
@@ -98382,6 +98411,17 @@ int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t que
 		if( rc3 )
 		{
 			const char *tmp;
+			if( rc3 == SQLITE_CORRUPT ) {
+				if( odbc->pCorruptionHandler ) {
+					odbc->pCorruptionHandler( odbc->psvCorruptionHandler, odbc );
+				}
+				GenerateResponce( collection, WM_SQL_RESULT_ERROR );
+				if( odbc->flags.bThreadProtect ) {
+					odbc->nProtect--;
+					LeaveCriticalSec( &odbc->cs );
+				}
+				return FALSE;
+			}
 			if( rc3 == SQLITE_BUSY )
 			{
 				lprintf( WIDE("wait for lock...") );
@@ -98394,7 +98434,7 @@ int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t que
 			// this will have to have a Char based version
 			if( strnicmp( tmp, "no such table", 13 ) == 0 )
 				vtprintf( collection->pvt_errorinfo, WIDE( "(S0002)" ) );
-			vtprintf( collection->pvt_errorinfo, WIDE( "Result of prepare failed? %s at-or near char %")_size_f WIDE("[%") _cstring_f WIDE("] in [%") _string_f WIDE("]" ), tmp, tail - query, tail, query );
+			vtprintf( collection->pvt_errorinfo, WIDE( "Result of prepare failed? (%d) %s at-or near char %")_size_f WIDE("[%") _cstring_f WIDE("] in [%") _string_f WIDE("]" ), rc3, tmp, tail - query, tail, query );
 			if( EnsureLogOpen(odbc ) )
 			{
 				sack_fprintf( g.pSQLLog, WIDE( "#SQLITE ERROR:%s\n" ), GetText( VarTextPeek( collection->pvt_errorinfo ) ) );
@@ -98404,8 +98444,6 @@ int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t que
 		} else {
 			if( pdlParams ) {
 				__DoSQLiteBinding( collection->stmt, pdlParams );
-				//char *realSql = sqlite3_expanded_sql( collection->stmt );
-				//lprintf( "DO:%s", realSql );
 			}
 			if( odbc->flags.bAutoCheckpoint && !sqlite3_stmt_readonly( collection->stmt ) )
 				startAutoCheckpoint( odbc );
