@@ -22,6 +22,77 @@ public:
 	SRGObject();
 
 private:
+
+
+	static void idGenerator( const v8::FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		if( args.Length() ) {
+			int version = -1;
+			if( args[0]->IsString() ) {
+				char *r;
+				struct random_context *ctx;
+				if( args.Length() > 1 && args[1]->IsNumber() )
+					version = args[1]->ToInt32( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked()->Uint32Value();
+				switch( version ) {
+				case 0:
+					ctx = SRG_CreateEntropy( NULL, 0 );
+					break;
+				case 1:
+					ctx = SRG_CreateEntropy2( NULL, 0 );
+					break;
+				case 2:
+					ctx = SRG_CreateEntropy2_256( NULL, 0 );
+					break;
+				case 3:
+					ctx = SRG_CreateEntropy3( NULL, 0 );
+					break;
+				default:
+				case 4:
+					ctx = SRG_CreateEntropy4( NULL, 0 );
+					break;
+				}
+				String::Utf8Value val( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+
+				SRG_FeedEntropy( ctx, (uint8_t*)*val, val.length() );
+				uint32_t buf[256/32];
+				SRG_GetEntropyBuffer( ctx, buf, 256 );
+				size_t outlen;
+				r = EncodeBase64Ex( (uint8_t*)buf, (16 + 16), &outlen, (const char *)1 );
+				SRG_DestroyEntropy( &ctx );
+				args.GetReturnValue().Set( localString( isolate, r, outlen ) );
+			}
+			else
+			{
+				if( args[0]->IsNumber() )
+					version = args[0]->ToInt32(args.GetIsolate()->GetCurrentContext()).ToLocalChecked()->Uint32Value();
+
+				char *r;
+				switch( version ) {
+				case 0:
+					r = SRG_ID_Generator();
+					break;
+				case 1:
+					r = SRG_ID_Generator2();
+					break;
+				case 2:
+					r = SRG_ID_Generator_256();
+					break;
+				case 3:
+					r = SRG_ID_Generator3();
+					break;
+				default:
+				case 4:
+					r = SRG_ID_Generator4();
+					break;
+				}
+				args.GetReturnValue().Set( localString( isolate, r, strlen(r) ) );
+			}
+		} else {
+			char *r = SRG_ID_Generator();
+			args.GetReturnValue().Set( localString( isolate, r, strlen( r ) ) );
+		}
+	}
+
 	static void getSeed( uintptr_t psv, POINTER *salt, size_t *salt_size ) {
 		SRGObject* obj = (SRGObject*)psv;
 		if( obj->seedCallback ) {
@@ -723,6 +794,7 @@ void SRGObject::Init( Isolate *isolate, Handle<Object> exports )
 	SRGObject::constructor.Reset( isolate, f );
 
 	SET_READONLY( exports, "SaltyRNG", f );
+	SET_READONLY_METHOD( f, "id", SRGObject::idGenerator );
 	SET_READONLY_METHOD( f, "sign", SRGObject::sign );
 	SET_READONLY_METHOD( f, "setSigningThreads", SRGObject::setThraads );
 	SET_READONLY_METHOD( f, "verify", SRGObject::verify );
