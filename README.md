@@ -698,7 +698,18 @@ Salty Random Generator
 | sign | ( [pad1 [, pad2],] string | get a signing identifier for string |
 | setSigningThreads | ( n ) | Set the number of threads to sign with to n |
 | verify | ( buffer, key ) | returns true/false if key is a signing key of buffer |
+| id | ( [source [, version]] ) | Version indicates which entropy generator to use internally |
 
+The `id()` function takes an optional parameter that is an integer.
+
+| id version | use generator |
+|---|---|
+| 0 | sha1 |
+| 1 | sha2 |
+| 2 | sha2_256 |
+| 3 | sha3 |
+| 4 | K12 |
+|default| K12 |
 
 ```
   // some examples
@@ -709,6 +720,13 @@ Salty Random Generator
   var unsigned_byte = SRG.getBits( 8 );
   var someValue = SRG.getBits( 13, true );  // get 13 bits of randomness, sign extended.
   var buffer = SRG.getBuffer( 1234 ); // get 155 bytes of random data (last byte only has 2 bits )
+
+  // these return base64 encoded bytes.
+ var randomId     = SRG.id();  // default generator
+ var randomId_v4  = SRG.id(4);  // use version 4 hashing
+ var regenId      = SRG.id("Hash This ID");  // default hash generator (NEEDS TESTING!)
+ var regenId_v4   = SRG.id("Hash This ID", 4); // regenerate, using hash 4
+
 ```
 
 ## WebSocket Module
