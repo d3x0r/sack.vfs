@@ -9,7 +9,7 @@ struct optionStrings {
 	Eternal<String> *storedString;
 	Eternal<String> *failedString;
 	Eternal<String> *signedString;
-	Eternal<String> *String;
+	Eternal<String> *aString;
 };
 
 
@@ -206,8 +206,8 @@ static void idGenerator( const v8::FunctionCallbackInfo<Value>& args ) {
 
 static uintptr_t CPROC DoPutObject( PTHREAD thread ) {
 	struct objectStorageOptions *options = (struct objectStorageOptions *)GetThreadParam( thread );
+	char *storeId;
 	if( options->objectHash ) {
-		char *storeId;
 		if( options->sealant ) {
 			struct random_context *ctx = SRG_CreateEntropy4( NULL, 0 );
 			SRG_FeedEntropy( ctx, (uint8_t*)options->sealant, options->sealantLen );
@@ -229,7 +229,20 @@ static uintptr_t CPROC DoPutObject( PTHREAD thread ) {
 		}
 	}
 	else {
+		if( options->sealant ) {
+			struct random_context *ctx = SRG_CreateEntropy4( NULL, 0 );
+			SRG_FeedEntropy( ctx, (uint8_t*)options->data, options->dataLen );
+			SRG_FeedEntropy( ctx, (uint8_t*)options->sealant, options->sealantLen );
+			uint32_t buf[256 / 32];
+			SRG_GetEntropyBuffer( ctx, buf, 256 );
+			size_t outlen;
+			storeId = EncodeBase64Ex( (uint8_t*)buf, (16 + 16), &outlen, (const char *)1 );
+			SRG_DestroyEntropy( &ctx );
+		}
+		else {
+			storeId = SRG_ID_Generator4();
 
+		}
 	}
 	return 0;
 }
@@ -269,7 +282,7 @@ void ObjectStorageObject::putObject( const v8::FunctionCallbackInfo<Value>& args
 		osoOpts.cbFailed = opts->Get( optName ).As<Function>();
 	}
 
-	ThreadTo( )
+	ThreadTo( DoPutObject, (uintptr_t)osoOpts );
 
 }
 
