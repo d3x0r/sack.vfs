@@ -63,6 +63,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		DEFSTRING( failed );
 		DEFSTRING( signed );
 	}
+	return check;
 }
 
 static void objStoreEventHandler( uv_async_t* handle ) {
@@ -90,7 +91,7 @@ static void objStoreEventHandler( uv_async_t* handle ) {
 
 }
 
-static void postEvent( ObjectStorageObject *_this, enum objectStorageEvent evt, ... ) {
+static void postEvent( ObjectStorageObject *_this, enum objectStorageEvents evt, ... ) {
 	//= (udpObject*)psv;
 	struct ObjectStorageEvent *pevt = GetFromSet( OBJECT_STORAGE_EVENT, &osl.osEvents );
 	(*pevt).op = OSEV_CLOSE;
@@ -282,7 +283,7 @@ void ObjectStorageObject::putObject( const v8::FunctionCallbackInfo<Value>& args
 		osoOpts.cbFailed = opts->Get( optName ).As<Function>();
 	}
 
-	ThreadTo( DoPutObject, (uintptr_t)osoOpts );
+	ThreadTo( DoPutObject, (uintptr_t)&osoOpts );
 
 }
 
