@@ -1,10 +1,25 @@
 #include "global.h"
 
 
+enum objectStorageEvents {
+	OSEV_CLOSE,
+	OSEV_STORED,
+};
+struct ObjectStorageEvent {
+	enum objectStorageEvents op;
+};
+
+typedef struct ObjectStorageEvent OBJECT_STORAGE_EVENT;
+typedef struct ObjectStorageEvent *POBJECT_STORAGE_EVENT;
+#define MAXOBJECT_STORAGE_EVENTSPERSET 128
+DeclareSet( OBJECT_STORAGE_EVENT );
 
 static struct objStoreLocal {
 	PLIST open;
+	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	POBJECT_STORAGE_EVENTSET osEvents;
 } osl;
+
 
 Persistent<Function> ObjectStorageObject::constructor;
 
@@ -16,7 +31,53 @@ ATEXIT( closeVolumes ) {
 	}
 }
 
+static void objStoreEventHandler( uv_async_t* handle ) {
+	// Called by UV in main thread after our worker thread calls uv_async_send()
+	//    I.e. it's safe to callback to the CB we defined in node!
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	ObjectStorageObject* obj = (ObjectStorageObject*)handle->data;
+	//udpEvent *eventMessage;
+	struct ObjectStorageEvent *event;
+	HandleScope scope( isolate );
+
+	while( event = (struct ObjectStorageEvent*)DequeLink( &obj->plqEvents ) ) {
+
+		switch( event->op ) {
+		case OSEV_STORED:
+			// post that this object has beens tored
+			// and give back the appropriate things.
+			break;
+		case OSEV_CLOSE:
+			uv_close( (uv_handle_t*)&obj->async, NULL );
+			break;
+		}
+		DeleteFromSet( OBJECT_STORAGE_EVENT, osl.osEvents, event );
+	}
+
+}
+
+static void postEvent( ObjectStorageObject *_this, enum objectStorageEvent evt, ... ) {
+	//= (udpObject*)psv;
+	struct ObjectStorageEvent *pevt = GetFromSet( OBJECT_STORAGE_EVENT, &osl.osEvents );
+	(*pevt).op = OSEV_CLOSE;
+	//(*pevt).buf = NewArray( uint8_t*, buflen );
+	//lprintf( "Send buffer %p", (*pevt).buf );
+	//memcpy( (POINTER)(*pevt).buf, buffer, buflen );
+	//(*pevt).buflen = buflen;
+	//(*pevt)._this = _this;
+	//(*pevt).from = DuplicateAddress( from );
+	EnqueLink( &_this->plqEvents, pevt );
+
+	uv_async_send( &_this->async );
+
+}
+
+
 void ObjectStorageObject::Init( Isolate *isolate, Handle<Object> exports ) {
+
+	//if( !l.loop )
+	//	l.loop = uv_default_loop();
+
 	Local<FunctionTemplate> clsTemplate;
 	clsTemplate = FunctionTemplate::New( isolate, New );
 	clsTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.objectStorage" ) );

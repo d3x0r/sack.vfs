@@ -59,7 +59,7 @@ private:
 				size_t outlen;
 				r = EncodeBase64Ex( (uint8_t*)buf, (16 + 16), &outlen, (const char *)1 );
 				SRG_DestroyEntropy( &ctx );
-				args.GetReturnValue().Set( localString( isolate, r, outlen ) );
+				args.GetReturnValue().Set( localString( isolate, r, (int)outlen ) );
 			}
 			else
 			{
@@ -85,11 +85,11 @@ private:
 					r = SRG_ID_Generator4();
 					break;
 				}
-				args.GetReturnValue().Set( localString( isolate, r, strlen(r) ) );
+				args.GetReturnValue().Set( localString( isolate, r, (int)strlen(r) ) );
 			}
 		} else {
 			char *r = SRG_ID_Generator();
-			args.GetReturnValue().Set( localString( isolate, r, strlen( r ) ) );
+			args.GetReturnValue().Set( localString( isolate, r, (int)strlen( r ) ) );
 		}
 	}
 
@@ -416,7 +416,6 @@ private:
 				size_t len;
 				uint8_t outbuf[32];
 				uint8_t *bytes;
-				char *actual_id;
 				int passed_as;
 				struct signature s;
 				params->id = SRG_ID_Generator_256();
