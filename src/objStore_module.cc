@@ -119,7 +119,7 @@ void ObjectStorageObject::Init( Isolate *isolate, Handle<Object> exports ) {
 
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "read", ObjectStorageObject::fileReadJSOX );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "write", ObjectStorageObject::fileWrite );
-	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "store", ObjectStorageObject::fileStore );
+	//NODE_SET_PROTOTYPE_METHOD( clsTemplate, "store", ObjectStorageObject::fileStore );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "put", ObjectStorageObject::putObject );
 
 	Local<Function> VolFunc = clsTemplate->GetFunction();
