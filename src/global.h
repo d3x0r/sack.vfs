@@ -125,6 +125,8 @@ public:
 
 class ObjectStorageObject : public node::ObjectWrap {
 public:
+	uv_async_t async;
+	PLINKQUEUE plqEvents;
 	struct objStore::volume *vol;
 	bool volNative;
 	char *mountName;

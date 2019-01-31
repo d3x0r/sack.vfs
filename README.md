@@ -227,6 +227,7 @@ Frame constructor requires a title.  If x, y are not specified, (0, 0) is used, 
 | close | () | Destroy/close a frame/control. | 
 | color | ... | accessor container for all colors of this control (and all child controls |
 | ... colors | 
+| id | ( [source [, version]] ) | Version indicates which entropy generator to use internally |
 
 | Control Methods | arguments | description |
 |----|----|----|
