@@ -30,10 +30,16 @@ CMake-js is required to build the GUI; to pull the full external sources.
     * (sql.h uuid/uuid.h(probably already available, fs2util) )
  *  (?)emerge unixodbc
 
+ODBC can be optioned out leaving only SQLite interface; or both may be optioend out; uuid is only required because of ODBC or Sqlite support inclusion.  Which can then be 0 dependancies.
+
 #### Mac
 
   *  (ODBC might be optioned out; just uses sqlite typically)
-  *  brew (brew install unixODBC)
+  *  brew (brew install unixODBC), if ODBC is desired.
+
+ODBC can be optioned out leaving only SQLite interface; or both may be optioend out; uuid is only required because of ODBC or Sqlite support inclusion.  
+A third party UUID library is used (? or were there BSD builtins that got used, probably this).
+
 
 #### Windows
 	none
@@ -213,7 +219,7 @@ Frame constructor requires a title.  If x, y are not specified, (0, 0) is used, 
 | Frame Methods | arguments | description |
 |----|----|----|
 | Frame | ( title, x, y, width, height ) | create a new frame over the existing frame.  This is a modal operation... that the existing frame will not get events until this frame is closed. |
-| Control | ( controlType, x, y, width, height ) | Create a control within the frame, the controlType is a string specifying the type of the control to be created.  Control types are available in an array as `sack.control.types`. |
+| Control | ( controlType, x, y, width, height ) | Create a control within the frame, the controlType is a string specifying the type of the control to be created.  Control types are available in an array as `[sack.control.types](#sack.control.types))`. |
 | show | () | show the Frame.  Frame is hidden allowing creating controls efficiently before showing the completed dialog. |
 | hide | () | hide the frame.  Does not close the frame, just removes it from being displayed. |
 | reveal | () | restore a frame.  (may be same as show()?) |
@@ -249,6 +255,30 @@ Frame constructor requires a title.  If x, y are not specified, (0, 0) is used, 
 | position | accessor | gets an object {x:#, y:#} which has the current x and y position of the control.  Passing a similar object will set the position of a control. |
 | layout | accessor |  gets an object {x:#, y:#, width:#, height:#} which has the current x and y position of the control and also size of the control.  Passing a similar object will set the position of a control and also size of the control. |
 | text | accessor | sets/gets the caption/text string of a control.  All controls have this, but not all controls show this. |
+
+## sack.control.types
+
+| Control Name | (args?| Description |
+|----|----|---|
+| Frame|  | This is a top-level container frame primarily.  This cn be used as a container/group box within frames, but is probably best not to do this. |
+|  Undefined| | No Control; Place holder, certain error conditions result in the control being this type (as if there is no properly registered type |
+|  SubFrame|  | This is a container of other controls.  THis can be given border Attributes, (Caption?) |
+|  TextControl|  | Static text line.  Transparent background, text control with no border. |
+|  Button|  | A button.  It has a click event.  It has text.  It has colors and a border style. Automatic tabsltop, can be triggered with keyboard input (space bar). |
+ | CustomDrawnButton | | A button.  It clicks.  It allows applicaation to draw custom content in the button; it forwards the draw event to a user callback |
+ | ImageButton|  | A button.  It clicks.  This has an image that fills the button; it has multiple image states for up/down (?) |
+ | CheckButton|  | A button; but shows as each click toggles up/down; and shows as a check mark.  Can be styled to show as pressed/depressed state instead.  Can be assigned to a group which turns it into a radio button; single selection of a group of checkboxes. |
+ | EditControl|  | A bordered text input field.  User input goes here. |
+ | Slider|  | A control that shows a range-bar, with a slider knob to select within the range of values.  (for example, a range 0-100, with a slider that allows the user to select that the value) |
+ | ListBox| | A borered area that shows a list of items.  Items are text strings shown to the user; items may be given an applicaation draw routine.  Items have a 'level' indiciator which changes the list behavior to be a tree control, with branches and open knobs.  Also includes a scroll bar control that it uses internally |
+ | ScrollBar|  | This is a different sort of slider.  This has a range (0-100) and a span (15) that is the number of items the scroll tab covers, proprotionate to the overall range of values.  Buttons on the endge allow +/- increments of 1.  Clicking on the 'bar' on either side of the thumb moves by 1 page (1 span). |
+ | Gridbox|  | Incomplete(?)  Oritingal implementer decided gainst actual implementation?  Maybe it was hindered because the gridbox should support binding to sql queries, and allow interactive editing too? |
+ | Console|  | This is a simple terminal-emulator type control.  It accepts either line-mode user input (with a separate command entry line from the stream), or an inline line-mode user input, which automatically updats appending the output to ehe end of other output as data is received into the consol buffer.  Support like printf() output formatting (or just send it some stirng from JS I suppose).  Event input for user input.  (Supports viable width fonts?)
+ | SheetControl|  | top-Tabbed control which container SubFrames that have other controls.  Manged a tabbed-form control, showing just one tab at a time; supprotort custom styling of the top tabs with images/fonts...  |
+ | Combo Box| | A basic auto-expanding listbox single-selection control.  A list of items is loaded into the control, and a currently selected item.  The user can click a drop-arrow to show the list of other inputs, updaring the selected value |
+ | Basic Clock Widget| | A clock; It ticks.  It shows time.  It has a toggle to take a skin and show  graphic analog clock.
+ | PSI Console| | ? Duplicatin of Console? |
+
 
 ## Frame and Control Color names
 
