@@ -27,6 +27,7 @@ static struct psiLocal {
 	PLIST controls;
 	LOGICAL internalCreate;
 	IS_EVENTSET event_pool;
+	int bindingDataId;
 } psiLocal;
 
 Persistent<FunctionTemplate> ControlObject::frameTemplate;
@@ -544,6 +545,7 @@ void DeleteControlColors( Isolate *isolate, Local<Object> control, ControlObject
 }
 
 void ControlObject::Init( Handle<Object> _exports ) {
+	psiLocal.bindingDataId = PSI_AddBindingData( "Node" );
 
 		Isolate* isolate = Isolate::GetCurrent();
 		Local<FunctionTemplate> psiTemplate;
@@ -961,7 +963,7 @@ void ControlObject::setControlColor2( const FunctionCallbackInfo<Value>& args ) 
 
 
 ControlObject::ControlObject( ControlObject *over, const char *type, const char *title, int x, int y, int w, int h ) {
-	memcpy( this, &_blankObject, sizeof( *this ) );
+	registration = NULL;
 	image = NULL;
 	frame = over;
 	psiLocal.pendingCreate = this;
@@ -973,17 +975,17 @@ ControlObject::ControlObject( ControlObject *over, const char *type, const char 
 }
 
 ControlObject::ControlObject( const char *title, int x, int y, int w, int h, int border, ControlObject *over ) {
-	memcpy( this, &_blankObject, sizeof( *this ) );
+	registration = NULL;
 	image = NULL;
 	frame = over;
 	psiLocal.pendingCreate = this;
 	control = ::CreateFrame( title, x, y, w, h, border, over ? over->control : (PSI_CONTROL)NULL );
-	SetControlUserData( control, (uintptr_t)this );
+	PSI_SetBindingData( control, psiLocal.bindingDataId, (uintptr_t)this );
 	psiLocal.pendingCreate = NULL;
 }
 
 ControlObject::ControlObject( const char *type, ControlObject *parent, int32_t x, int32_t y, uint32_t w, uint32_t h ) {
-	memcpy( this, &_blankObject, sizeof( *this ) );
+	registration = NULL;
 	image = NULL;
 	psiLocal.pendingCreate = this;
 	control = ::MakeNamedControl( parent->control, type, x, y, w, h, -1 );
@@ -995,7 +997,8 @@ ControlObject::~ControlObject() {
 
 }
 ControlObject::ControlObject( PSI_CONTROL control ) {
-	memcpy( this, &_blankObject, sizeof( *this ) );
+	//memcpy( this, &_blankObject, sizeof( *this ) );
+	registration = NULL;
 	image = NULL;
 	frame = NULL;
 	this->control = control;
@@ -1463,7 +1466,7 @@ void ControlObject::get( const FunctionCallbackInfo<Value>& args ) {
 }
 
 static void OnMoveCommon( CONTROL_FRAME_NAME )( PSI_CONTROL pc, LOGICAL startOrMoved ) {
-	ControlObject *control = (ControlObject *)GetControlUserData( pc );
+	ControlObject *control = (ControlObject *)PSI_GetBindingData( pc, psiLocal.bindingDataId );
 	if( control ) {
 		int32_t x, y;
 		GetFramePosition( pc, &x, &y );
@@ -1473,7 +1476,7 @@ static void OnMoveCommon( CONTROL_FRAME_NAME )( PSI_CONTROL pc, LOGICAL startOrM
 }
 
 static void OnSizeCommon( CONTROL_FRAME_NAME )(PSI_CONTROL pc, LOGICAL startOrMoved) {
-	ControlObject *control = (ControlObject *)GetControlUserData( pc );
+	ControlObject *control = (ControlObject *)PSI_GetBindingData( pc, psiLocal.bindingDataId );
 	if( control ) {
 		uint32_t w, h;
 		GetFrameSize( pc, &w, &h );
@@ -1544,7 +1547,7 @@ void ControlObject::load( const FunctionCallbackInfo<Value>& args ) {
 	PSI_CONTROL pc = LoadXMLFrame( *name );
 	Local<Object> blah = NewWrappedControl( args.GetIsolate(), pc );
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( blah );
-	SetControlUserData( pc, (uintptr_t)me );
+	PSI_SetBindingData( pc, psiLocal.bindingDataId, (uintptr_t)me );
 	SetCommonButtons( pc, &me->done, &me->okay );
 
 	args.GetReturnValue().Set( blah );
@@ -2084,7 +2087,7 @@ void RegistrationObject::setCreate( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	RegistrationObject *obj = ObjectWrap::Unwrap<RegistrationObject>( args.This() );
 	TEXTCHAR buf[256];
-	lprintf( "Define Create Control %s", obj->r.name );
+	//lprintf( "Define Create Control %s", obj->r.name );
 	snprintf( buf, 256, "psi/control/%s/rtti", obj->r.name );
 	SimpleRegisterMethod( buf,  onCreate
 							  , "int", "init", "(PSI_CONTROL)" );
@@ -2106,7 +2109,7 @@ void RegistrationObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
 	RegistrationObject *obj = ObjectWrap::Unwrap<RegistrationObject>( args.This() );
 
 	TEXTCHAR buf[256];
-	lprintf( "Define Create Control %s", obj->r.name );
+	//lprintf( "Define Control Draw %s", obj->r.name );
 	snprintf( buf, 256, "psi/control/%s/rtti", obj->r.name );
 	SimpleRegisterMethod( buf,  onDraw
 							  , "int", "draw", "(PSI_CONTROL)" );
@@ -2131,7 +2134,7 @@ void RegistrationObject::setMouse( const FunctionCallbackInfo<Value>& args ) {
 	RegistrationObject *obj = ObjectWrap::Unwrap<RegistrationObject>( args.This() );
 
 	TEXTCHAR buf[256];
-	lprintf( "Define Create Control %s", obj->r.name );
+	//lprintf( "Define Control Mouse %s", obj->r.name );
 	snprintf( buf, 256, "psi/control/%s/rtti", obj->r.name );
 	SimpleRegisterMethod( buf, cbMouse
 							  , "int", "mouse", "(PSI_CONTROL,int32_t,int32_t,uint32_t)" );
@@ -2162,7 +2165,7 @@ static int onTouch( PSI_CONTROL pc, PINPUT_POINT pPoints, int nPoints ) {
 }
 
 void RegistrationObject::InitRegistration( Isolate *isolate, struct registrationOpts *opts ) {
-	memcpy( this, &_blankRegistration, sizeof( *this ) );
+	//memcpy( this, &_blankRegistration, sizeof( *this ) );
 	//MemSet( &r, 0, sizeof( r ) );
 	r.name = opts->name;
 #define setMethod( a, b, c )  if( !opts->a.IsEmpty() ) { \
