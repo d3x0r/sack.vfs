@@ -22,6 +22,7 @@ static struct psiLocal {
 	ControlObject *pendingCreate;
 	Local<Object> newControl;
 	RegistrationObject *pendingRegistration;
+	int eventLoopEnables;
 	LOGICAL eventLoopRegistered;
 	PLIST controls;
 	LOGICAL internalCreate;
@@ -279,6 +280,7 @@ void enableEventLoop( void ) {
 		MemSet( &psiLocal.async, 0, sizeof( &psiLocal.async ) );
 		uv_async_init( uv_default_loop(), &psiLocal.async, asyncmsg );
 	}
+	psiLocal.eventLoopEnables++;
 }
 
 
@@ -350,8 +352,10 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum eventTyp
 
 void disableEventLoop( void ) {
 	if( psiLocal.eventLoopRegistered ) {
-		psiLocal.eventLoopRegistered = FALSE;
-		MakePSIEvent( NULL, false, Event_Control_Close_Loop );
+		if( !(--psiLocal.eventLoopEnables) ) {
+			psiLocal.eventLoopRegistered = FALSE;
+			MakePSIEvent( NULL, false, Event_Control_Close_Loop );
+		}
 	}
 }
 
