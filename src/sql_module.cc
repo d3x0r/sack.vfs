@@ -1567,6 +1567,11 @@ static uintptr_t RunEditor( PTHREAD thread ) {
 void editOptions( const v8::FunctionCallbackInfo<Value>& args ){
 	int (*EditOptions)( PODBC odbc, PSI_CONTROL parent, LOGICAL wait );
 	extern void enableEventLoop( void );
+#ifdef WIN32
+	LoadFunction( "bag.psi.dll", NULL );
+#else
+	LoadFunction( "libbag.psi.so", NULL );
+#endif
 	EditOptions = (int(*)( PODBC, PSI_CONTROL,LOGICAL))LoadFunction( "EditOptions.plugin", "EditOptionsEx" );
 	if( EditOptions ) {
 		enableEventLoop();
