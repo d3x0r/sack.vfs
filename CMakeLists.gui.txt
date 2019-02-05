@@ -5,7 +5,6 @@ cmake_minimum_required(VERSION 3.0)
 project (sack_gui)
 
 
-#include_directories( "../node_modules/nan" )
 
 ADD_DEFINITIONS( -DBUILD_NODE_ADDON )
 
