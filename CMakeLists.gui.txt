@@ -120,7 +120,8 @@ set( GUI_SOURCES src/gui/sack_psi_module.cc
 
 source_group( "Source Files\\GUI" FILES ${GUI_SOURCES} ) #REGULAR_EXPRESSION  src/gui/.*)
 
-add_library(${PROJECT_NAME} SHARED
+set( PROJECT sack_vfs )
+add_library(${PROJECT} SHARED
 	src/vfs_module.cc
 	src/thread_module.cc
 	src/sql_module.cc
@@ -137,14 +138,14 @@ add_library(${PROJECT_NAME} SHARED
         )
 
 
-set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
+set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
 
 if( CMAKE_COMPILER_IS_GNUCC )
-   set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_FLAGS "-Wno-unused-result")
+   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result")
 endif( CMAKE_COMPILER_IS_GNUCC )
 
-set_target_properties(${PROJECT_NAME} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT_NAME}.node\";${MOREDEFS}" )
-add_dependencies( ${PROJECT_NAME} sack intershell )
+set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
+add_dependencies( ${PROJECT} sack intershell )
 
 if( UNIX )
 	set( VFSLIB :sack_vfs.pp.module )
@@ -154,25 +155,25 @@ if( UNIX )
 else( UNIX )
 	set( VFSLIB sack_vfs.pp.module )
 endif( UNIX )
-target_link_libraries(${PROJECT_NAME} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE_JS_LIB} )
+target_link_libraries(${PROJECT} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE_JS_LIB} )
 
 
-  add_custom_command( TARGET ${PROJECT_NAME} POST_BUILD
+  add_custom_command( TARGET ${PROJECT} POST_BUILD
 			#COMMAND cmake -E echo ${AMALG_COMMAND}
    			COMMAND ${CMAKE_COMMAND} -E echo Updating deps....
    			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/bin ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
    			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/resources ${CMAKE_BINARY_DIR}/resources
 			${EXTRACOPY}
-                   DEPENDS ${PROJECT_NAME}
+                   DEPENDS ${PROJECT}
   )
 
 
 if( WIN32 )
-   target_link_libraries(${PROJECT_NAME} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll )
+   target_link_libraries(${PROJECT} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll )
 endif( WIN32 )
 
 if( UNIX )
-   target_link_libraries( ${PROJECT_NAME} uuid )
+   target_link_libraries( ${PROJECT} uuid )
 endif( UNIX )
 
 endif( EXISTS ${CMAKE_BINARY_DIR}/sack-src/src/sack/src/InterShell.stable )
