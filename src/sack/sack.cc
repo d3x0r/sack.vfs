@@ -8732,10 +8732,8 @@ SRG_EXPORT void SRG_SaveState( struct random_context *ctx, POINTER *external_buf
 // internally seeded by clocks
 // Are thread safe; current thread pool is 32 before having to wait
 //
-// return a unique ID using SHA1
-SRG_EXPORT char * SRG_ID_Generator( void );
 // return a unique ID using SHA2_512
-SRG_EXPORT char * SRG_ID_Generator2( void );
+SRG_EXPORT char * SRG_ID_Generator( void );
 // return a unique ID using SHA2_256
 SRG_EXPORT char *SRG_ID_Generator_256( void );
 // return a unique ID using SHA3-keccak-512
@@ -9081,7 +9079,7 @@ namespace objStore {
 //     char result[44];
 //     sack_vfs_os_ioctl_store_rw_object( vol, data, sizeof( data ), result, 44 );
 // }
-#define sack_vfs_os_ioctl_store_rw_object( vol, obj,objlen, result, resultlen )                                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, FALSE, FALSE, obj, objlen, NULL, 0, result, resultlen )
+#define sack_vfs_os_ioctl_store_rw_object( vol, obj,objlen, result, resultlen )                                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, FALSE, FALSE, obj, objlen, NULL, 0, NULL, 0, result, resultlen )
 // re-write an object with new content using old ID.
 // returns TRUE/FALSE. true if the patch already exists, or was successfully written.
 // {
@@ -9101,7 +9099,7 @@ namespace objStore {
 //     char result[44];
 //     sack_vfs_os_ioctl_store_crypt_object( vol, data, sizeof( data ), seal, sizeof( seal ), result, 44 );
 // }
-#define sack_vfs_os_ioctl_store_crypt_owned_object( vol, obj,objlen, seal,seallen, result, resultlen )                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, TRUE,TRUE,  obj, objlen, seal, seallen, result, resultlen )
+#define sack_vfs_os_ioctl_store_crypt_owned_object( vol, obj,objlen, seal,seallen, readkey,readkeylen, result, resultlen )                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, TRUE,TRUE,  obj, objlen, NULL, 0, seal, seallen, readkey,readkeylen, result, resultlen )
 // store data to a new sealed block.  Also encrypt the data
 // returns TRUE/FALSE. true if the object already exists, or was successfully written.
 // {
@@ -9110,7 +9108,7 @@ namespace objStore {
 //     char result[44];
 //     sack_vfs_os_ioctl_store_crypt_object( vol, data, sizeof( data ), seal, sizeof( seal ), result, 44 );
 // }
-#define sack_vfs_os_ioctl_store_crypt_sealed_object( vol, obj,objlen, seal,seallen, result, resultlen )                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, TRUE,FALSE,  obj, objlen, seal, seallen, result, resultlen )
+#define sack_vfs_os_ioctl_store_crypt_sealed_object( vol, obj,objlen, seal,seallen, readkey,readkeylen, result, resultlen )                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, TRUE,FALSE,  obj, objlen, NULL, 0, seal, seallen, readkey,readkeylen, result, resultlen )
 // store patch to an existing sealed block.  (Writes never change existing data), also encrypt the data
 // returns TRUE/FALSE. true if the patch already exists, or was successfully written.
 // {
@@ -9120,7 +9118,7 @@ namespace objStore {
 //     char result[44];
 //     sack_vfs_os_ioctl_patch_crypt_object( vol, oldResult, sizeof( oldResult )-1, data, sizeof( data ), seal, sizeof( seal ), result, 44 );
 // }
-#define sack_vfs_os_ioctl_patch_crypt_owned_object( vol, objId,objIdLen, obj,objlen, seal,seallen, result, resultlen ) sack_fs_ioctl( vol, SOSFSSIO_PATCH_OBJECT, TRUE, TRUE, objId, objIdLen, authId, authIdLen, obj, objlen, seal, seallen, result, resultlen )
+#define sack_vfs_os_ioctl_patch_crypt_owned_object( vol, objId,objIdLen, obj,objlen, seal,seallen, readkey,readkeylen, result, resultlen ) sack_fs_ioctl( vol, SOSFSSIO_PATCH_OBJECT, TRUE, TRUE, objId, objIdLen, authId, authIdLen, obj, objlen, seal, seallen, readkey,readkeylen, result, resultlen )
 // store patch to an existing sealed block.  (Writes never change existing data), also encrypt the data
 // returns TRUE/FALSE. true if the patch already exists, or was successfully written.
 // {
@@ -9139,7 +9137,7 @@ namespace objStore {
 //     char result[44];
 //     sack_vfs_os_ioctl_store_owned_object( vol, data, sizeof( data ), seal, sizeof( seal ), result, 44 );
 // }
-#define sack_vfs_os_ioctl_store_owned_object( vol, obj,objlen, seal,seallen, result, resultlen )                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, FALSE, TRUE, obj, objlen, seal, seallen, result, resultlen )
+#define sack_vfs_os_ioctl_store_owned_object( vol, obj,objlen, seal,seallen, result, resultlen )                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, FALSE, TRUE, obj, objlen, NULL, 0, seal, seallen, NULL, 0, result, resultlen )
 // store data to a new sealed block.  Data is publically readable.
 // returns TRUE/FALSE. true if the object already exists, or was successfully written.
 // {
@@ -9148,7 +9146,7 @@ namespace objStore {
 //     char result[44];
 //     sack_vfs_os_ioctl_store_sealed_object( vol, data, sizeof( data ), seal, sizeof( seal ), result, 44 );
 // }
-#define sack_vfs_os_ioctl_store_sealed_object( vol, obj,objlen, seal,seallen, result, resultlen )                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, FALSE, FALSE, obj, objlen, seal, seallen, result, resultlen )
+#define sack_vfs_os_ioctl_store_sealed_object( vol, obj,objlen, seal,seallen, result, resultlen )                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, FALSE, FALSE, obj, objlen, NULL, 0, seal, seallen, NULL, 0, result, resultlen )
 // store patch to an existing sealed block.  (Writes never change existing data).  Data is publically readable.
 // returns TRUE/FALSE. true if the patch already exists, or was successfully written.
 // {
@@ -11094,6 +11092,12 @@ SACK_VFS_NAMESPACE
 #else
 #define LoG( a,... )
 #endif
+//#define DEBUG_BAT_UPDATES
+#ifdef DEBUG_BAT_UPDATES
+#define LoGB( a,... ) lprintf( a,##__VA_ARGS__ )
+#else
+#define LoGB( a,... )
+#endif
 #define MMAP_BASED_VFS
 /**************
   VFS_VERSION
@@ -11624,33 +11628,111 @@ static LOGICAL ValidateBAT( struct volume *vol ) {
 	BLOCKINDEX slab = vol->dwSize / ( BLOCK_SIZE );
 	BLOCKINDEX last_block = ( slab * BLOCKS_PER_BAT ) / BLOCKS_PER_SECTOR;
 	BLOCKINDEX n;
-	if( vol->key ) {
-		for( n = first_slab; n < slab; n += BLOCKS_PER_SECTOR  ) {
+	int sector;
+	FLAGSETTYPE *usedSectors;
+	if( vol->dwSize & 0xfFF ) {
+		lprintf( "Volume is setup to fail with an odd number of bytes total : %d %08x %08x", (int)(vol->dwSize & 0xFFF), vol->dwSize, vol->dwSize );
+	}
+	size_t size;
+	usedSectors = NewArray( FLAGSETTYPE, size= (2+(vol->dwSize / 4096)/(CHAR_BIT*sizeof(FLAGSETTYPE) )) );
+	MemSet( usedSectors, 0, size * sizeof( FLAGSETTYPE ) );
+	//if( vol->key )
+	{
+		for( sector = 0, n = first_slab; n < slab; n += BLOCKS_PER_SECTOR, sector++ ) {
 			size_t m;
 			BLOCKINDEX *BAT;
 			BLOCKINDEX *blockKey;
-			BAT = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE);
-			blockKey = ((BLOCKINDEX*)vol->usekey[BC(BAT)]);
+			BLOCKINDEX *BAT_;
+			BLOCKINDEX *blockKey_;
+			BLOCKINDEX *checkBAT;
+			BLOCKINDEX *checkBlockKey;
+			BAT_      = BAT      = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE);
 			UpdateSegmentKey( vol, BC(BAT), n + 1 );
+			// have to update the key first... it might not be pointing at the right thing.
+			blockKey_ = blockKey = ((BLOCKINDEX*)vol->usekey[BC( BAT )]);
 			for( m = 0; m < BLOCKS_PER_BAT; m++ )
 			{
 				BLOCKINDEX block = BAT[0] ^ blockKey[0];
 				BAT++; blockKey++;
-				if( block == EOFBLOCK ) continue;
 				if( block == EOBBLOCK ) {
-					vol->lastBatBlock = n+m;
+					vol->lastBatBlock = n + m;
 					break;
 				}
+				if( block )
+					if( !TESTFLAG( usedSectors, (sector*BLOCKS_PER_BAT) + m ) ) {
+						if( block == EOFBLOCK )
+							SETFLAG( usedSectors, (sector*BLOCKS_PER_BAT) + m );
+						else {
+							int chainLen = 0;
+							enum block_cache_entries cache = BC( FILE );
+							BLOCKINDEX nextBlock = block;
+							BLOCKINDEX nextBlock_;
+							SETFLAG( usedSectors, (sector*BLOCKS_PER_BAT) + m );
+							while( nextBlock != EOFBLOCK ) {
+								int b;
+								int nn;
+								if( nextBlock == EOBBLOCK ) {
+									lprintf( "File chains hould not have EOB block in it." );
+									DebugBreak();
+								}
+								if( !nextBlock ) {
+									lprintf( "Empty space should never be in a file chain." );
+									DebugBreak();
+								}
+								b = nextBlock / (BLOCKS_PER_BAT);
+								nn = nextBlock & (BLOCKS_PER_BAT - 1);
+								if( !TESTFLAG( usedSectors, (b*BLOCKS_PER_BAT) + nn ) ) {
+									nextBlock_ = nextBlock;
+									SETFLAG( usedSectors, (b*BLOCKS_PER_BAT) + nn );
+									if( b != sector ) {
+										checkBAT = (BLOCKINDEX*)(((uint8_t*)vol->disk) + (b)* BLOCKS_PER_SECTOR*BLOCK_SIZE);
+										checkBlockKey = ((BLOCKINDEX*)vol->usekey[BC( DATAKEY )]);
+										UpdateSegmentKey( vol, BC( DATAKEY ), ((b)* BLOCKS_PER_SECTOR) + 1 );
+										nextBlock = checkBAT[nn] ^ checkBlockKey[nn];
+									}
+									else {
+										nextBlock = BAT_[nn] ^ blockKey_[nn];
+									}
+									if( !nextBlock ) {
+										lprintf( "FELL OFF OF FILE CHAIN INTO EMPTY SPACE (0)!" );
+										LogBinary( usedSectors, size * sizeof( FLAGSETTYPE ) );
+										DebugBreak();
+									}
+								}
+								else {
+									if( nextBlock < ((sector*BLOCKS_PER_BAT) + m) ) {
+										// this is actually ok... we just iterated over the tail part of the file.
+										break;
+									}
+									BAT[-1] = EOFBLOCK ^ blockKey[-1];
+									//return FALSE;
+									lprintf( "THIS IS BAD - cross-linked files; or otherwise %d  %d", (int)nextBlock, (int)nextBlock_ );
+									LogBinary( usedSectors, size * sizeof( FLAGSETTYPE ) );
+									DebugBreak();
+								}
+								chainLen++;
+							}
+						}
+					}
+					else {
+						// block was already found in a previous file chain.
+					}
+				if( block == EOFBLOCK ) continue;
 				if( block >= last_block ) return FALSE;
 				if( block == 0 ) {
  // use as a temp variable....
-					vol->lastBatBlock = n + m;
+					vol->lastBatBlock = (sector*BLOCKS_PER_BAT) + m;
+					LoGB( "SET LAST BLOCK AVAIL: %d", (int)vol->lastBatBlock );
 					AddDataItem( &vol->pdlFreeBlocks, &vol->lastBatBlock );
 				}
 			}
 			if( m < BLOCKS_PER_BAT ) break;
 		}
-	} else {
+	}
+#if 0
+	// complexity of the above code shouldn't HAVE To be replicated
+	// keyless disk works the same way.
+	else {
 		for( n = first_slab; n < slab; n += BLOCKS_PER_SECTOR  ) {
 			size_t m;
 			BLOCKINDEX *BAT = (BLOCKINDEX*)(((uint8_t*)vol->disk) + n * BLOCK_SIZE);
@@ -11671,6 +11753,8 @@ static LOGICAL ValidateBAT( struct volume *vol ) {
 			if( m < BLOCKS_PER_BAT ) break;
 		}
 	}
+#endif
+	Release( usedSectors );
 	if( !ScanDirectory( vol, NULL, NULL, 0 ) ) return FALSE;
 	return TRUE;
 }
@@ -11771,6 +11855,20 @@ static LOGICAL ExpandVolume( struct volume *vol ) {
 		}
 		new_disk = (struct disk*)OpenSpaceExx( NULL, vol->volname, 0, &vol->dwSize, &created );
 		if( new_disk && vol->dwSize ) {
+			if( vol->dwSize & BLOCK_MASK ) {
+				size_t oldSize = vol->dwSize;
+				lprintf( "DISK IS A BAD SIZE... trying to fix!" );
+				Release( new_disk );
+				vol->dwSize = (vol->dwSize + BLOCK_SIZE) & ~BLOCK_MASK;
+				new_disk = (struct disk*)OpenSpaceExx( NULL, vol->volname, 0, &vol->dwSize, &created );
+				if( !(vol->dwSize & BLOCK_MASK) ) {
+					MemSet( ((uint8_t*)new_disk) + oldSize, 0, vol->dwSize - oldSize );
+					lprintf( "DISK SHOULD BE OK now" );
+				}
+				else {
+					DebugBreak();
+				}
+			}
 			CloseSpace( vol->diskReal );
 			vol->diskReal = new_disk;
 #ifdef WIN32
@@ -11938,6 +12036,7 @@ static BLOCKINDEX GetFreeBlock( struct volume *vol, int init )
 	BLOCKINDEX check_val;
 	if( vol->pdlFreeBlocks->Cnt ) {
 		BLOCKINDEX newblock = ((BLOCKINDEX*)GetDataItem( &vol->pdlFreeBlocks, vol->pdlFreeBlocks->Cnt - 1 ))[0];
+		LoGB( "Got free block from existin tracked blocks:%d", newblock );
 		check_val = 0;
 		b = (unsigned int)(newblock / BLOCKS_PER_BAT);
 		n = newblock % BLOCKS_PER_BAT;
@@ -11953,9 +12052,11 @@ static BLOCKINDEX GetFreeBlock( struct volume *vol, int init )
 	blockKey = ((BLOCKINDEX*)vol->usekey[cache]) + n;
 	if( !current_BAT ) return 0;
 	current_BAT[0] = EOFBLOCK ^ blockKey[0];
+	LoGB( "Write to BAT: EOF at %d  %d", (int)n, b * BLOCKS_PER_BAT + n );
 	if( (check_val == EOBBLOCK) ) {
 		if( n < (BLOCKS_PER_BAT - 1) ) {
 			current_BAT[1] = EOBBLOCK ^ blockKey[1];
+			LoGB( "Write to BAT: EOB at %d  %d", (int)n+1, b * BLOCKS_PER_BAT + n + 1 );
 			vol->lastBatBlock++;
 		}
 		else {
@@ -11964,6 +12065,7 @@ static BLOCKINDEX GetFreeBlock( struct volume *vol, int init )
 			current_BAT = TSEEK( BLOCKINDEX*, vol, (b + 1) * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
 			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
 			current_BAT[0] = EOBBLOCK ^ blockKey[0];
+			LoGB( "Write to BAT: EOF at %d  %d", (int)0, (b+1) * BLOCKS_PER_BAT );
 			vol->lastBatBlock = (b + 1) * BLOCKS_PER_BAT;
 			//lprintf( "Set last block....%d", (int)vol->lastBatBlock );
 		}
@@ -12020,6 +12122,7 @@ static BLOCKINDEX vfs_GetNextBlock( struct volume *vol, BLOCKINDEX block, int in
 #endif
 			// segment could already be set from the GetFreeBlock...
 			this_BAT[block & (BLOCKS_PER_BAT-1)] = check_val ^ key;
+			LoGB( "Write to BAT: Chain %d at %d  %d", check_val, (int)(block&(BLOCKS_PER_BAT-1)), block );
 		}
 	}
 	return check_val;
@@ -12296,7 +12399,6 @@ LOGICAL sack_vfs_encrypt_volume( struct volume *vol, uintptr_t version, CTEXTSTR
 			BLOCKINDEX *block;
 			block = TSEEK( BLOCKINDEX*, vol, n * (BLOCKS_PER_SECTOR*BLOCK_SIZE), cache );
 			blockKey = ((BLOCKINDEX*)vol->usekey[cache]);
-			//vol->segment[BC(BAT)] = n + 1;
 			for( m = 0; m < BLOCKS_PER_BAT; m++ ) {
 				if( block[0] == EOBBLOCK ) done = TRUE;
 				else if( block[0] ) mask_block( vol, (n*BLOCKS_PER_BAT) + m );
@@ -12610,7 +12712,7 @@ size_t CPROC sack_vfs_write( struct sack_vfs_file *file, const char * data, size
 	size_t written = 0;
 	size_t ofs = file->fpi & BLOCK_MASK;
 	while( LockedExchange( &file->vol->lock, 1 ) ) Relinquish();
-	LoG( "Write to file %p %" _size_f "  @%" _size_f, file, length, ofs );
+	LoG( "Write to file %p %" _size_f "  @%" _size_f, file, length, file->fpi );
 	if( ofs ) {
 		enum block_cache_entries cache = BC(FILE);
 		uint8_t* block = (uint8_t*)vfs_BSEEK( file->vol, file->block, &cache );
@@ -12736,7 +12838,7 @@ static void sack_vfs_unlink_file_entry( struct volume *vol, struct directory_ent
 	struct sack_vfs_file *file;
 	INDEX idx;
 	LIST_FORALL( vol->files, idx, struct sack_vfs_file *, file ) {
-		if( file->_first_block == entry->first_block ) {
+		if( file->_first_block == ( entry->first_block ^ entkey->first_block ) ) {
 			file_found = file;
 			file->delete_on_close = TRUE;
 		}
@@ -12759,6 +12861,7 @@ static void sack_vfs_unlink_file_entry( struct volume *vol, struct directory_ent
 			memset( blockData, 0, BLOCK_SIZE );
 			block = vfs_GetNextBlock( vol, block, FALSE, FALSE );
 			this_BAT[_block & (BLOCKS_PER_BAT-1)] = _thiskey;
+			LoGB( "Write to BAT: 0 at %d  %d  (STORE FREE too)", (int)(_block&(BLOCKS_PER_BAT - 1)), _block );
 			AddDataItem( &vol->pdlFreeBlocks, &_block );
 			_block = block;
 		} while( block != EOFBLOCK );
@@ -17878,10 +17981,16 @@ uintptr_t CPROC sack_vfs_system_ioctl( uintptr_t psvInstance, uintptr_t opCode, 
 		LOGICAL owner = va_arg( args, LOGICAL );
 		char *objBuf = va_arg( args, char * );
 		size_t objBufLen = va_arg( args, size_t );
+  // provided for re-write; provided also for private named objects
+		char *objIdBuf = va_arg( args, char * );
+		size_t objIdBufLen = va_arg( args, size_t );
+  // user provided sealant if any
 		char *sealBuf = va_arg( args, char * );
 		size_t sealBufLen = va_arg( args, size_t );
+  // encryption key
 		char *keyBuf = va_arg( args, char * );
 		size_t keyBufLen = va_arg( args, size_t );
+  // output buffer
 		char *idBuf = va_arg( args, char * );
 		size_t idBufLen = va_arg( args, size_t );
 		while( 1 ) {
@@ -18638,7 +18747,7 @@ SACK_DEADSTART_NAMESPACE_END
  *
  */
 //#define SUPPORT_LOG_ALLOCATE
-#define DEFAULT_OUTPUT_STDERR
+//#define DEFAULT_OUTPUT_STDERR
 #define COMPUTE_CPU_FREQUENCY
 #define NO_UNICODE_C
 //#undef UNICODE
@@ -19366,7 +19475,6 @@ void ConvertTickToTime( int64_t tick, PSACK_TIME st ) {
 	// Note: some broken versions only have 8 trailing zero's, the correct epoch has 9 trailing zero's
 	// This magic number is the number of 100 nanosecond intervals since January 1, 1601 (UTC)
 	// until 00:00:00 January 1, 1970
-	uint64_t result;
 	SYSTEMTIME  system_time;
 	FILETIME    file_time;
 	file_time.dwLowDateTime = tick & 0xFFFFFFFF;
@@ -21165,7 +21273,7 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 						library = library->next;
 					}
 				}
-				//if( library )
+				if( library )
 				{
 					char *dupname;
 					char *path;
@@ -21175,6 +21283,8 @@ static void CPROC SetupSystemServices( POINTER mem, uintptr_t size )
 						path[0] = 0;
 					(*init_l).library_path = dupname;
 				}
+            else
+					(*init_l).library_path = ".";
 			}
 			setenv( WIDE("MY_LOAD_PATH"), (*init_l).load_path, TRUE );
 			//strcpy( pMyPath, buf );
@@ -29361,6 +29471,8 @@ typedef void (CPROC*GeneralCallback)( uintptr_t psvUser
 typedef void (CPROC*RenderReadCallback)(uintptr_t psvUser, PRENDERER pRenderer, TEXTSTR buffer, INDEX len );
 // called before redraw callback to update the background on the scene...
 typedef void (CPROC*_3DUpdateCallback)( uintptr_t psvUser );
+// callback type for clipborad event reception.
+typedef void (CPROC*ClipboardCallback)(uintptr_t psvUser);
 //----------------------------------------------------------
 //   Mouse Button definitions
 //----------------------------------------------------------
@@ -30430,6 +30542,8 @@ struct render_interface_tag
 	RENDER_PROC_PTR( LOGICAL, IsDisplayRedrawForced )( PRENDERER renderer );
  // only valid during a headless display event....
 	RENDER_PROC_PTR( void, ReplyCloseDisplay )( void );
+		/* Clipboard Callback */
+	RENDER_PROC_PTR( void, SetClipboardEventCallback )(PRENDERER pRenderer, ClipboardCallback callback, uintptr_t psv);
 };
 #ifdef DEFINE_DEFAULT_RENDER_INTERFACE
 #define USE_RENDER_INTERFACE GetDisplayInterface()
@@ -30542,6 +30656,7 @@ typedef int check_this_variable;
 #define SetDisplayNoMouse      REND_PROC_ALIAS(SetDisplayNoMouse )
 #define SetTouchHandler        REND_PROC_ALIAS(SetTouchHandler)
 #define ReplyCloseDisplay      if(USE_RENDER_INTERFACE) if((USE_RENDER_INTERFACE)->_ReplyCloseDisplay) (USE_RENDER_INTERFACE)->_ReplyCloseDisplay
+#define SetClipboardEventCallback   REND_PROC_ALIAS( SetClipboardEventCallback )
 #define SetDisplayFullScreen    REND_PROC_ALIAS_VOID( SetDisplayFullScreen )
 #define SuspendSystemSleep      REND_PROC_ALIAS_VOID( SuspendSystemSleep )
 #define RenderIsInstanced()       ((USE_RENDER_INTERFACE)?((USE_RENDER_INTERFACE)->_RenderIsInstanced)?(USE_RENDER_INTERFACE)->_RenderIsInstanced():0:0)
@@ -71375,9 +71490,14 @@ PCLIENT CPPOpenTCPListenerAddrExx( SOCKADDR *pAddr
 	{
 		int t = TRUE;
 		setsockopt( pListen->Socket, SOL_SOCKET, SO_REUSEADDR, &t, 4 );
-		t = TRUE;
 		fcntl( pListen->Socket, F_SETFL, O_NONBLOCK );
 	}
+#  ifdef SO_REUSEPORT
+	{
+		int t = TRUE;
+		setsockopt( pListen->Socket, SOL_SOCKET, SO_REUSEPORT, &t, 4 );
+	}
+#  endif
 #endif
 #ifndef _WIN32
 	if( pAddr->sa_family==AF_UNIX )
@@ -75524,6 +75644,7 @@ void SRG_XSWS_encryptData( uint8_t *objBuf, size_t objBufLen
 	, uint8_t **outBuf, size_t *outBufLen
 ) {
 	struct random_context *signEntropy = (struct random_context *)DequeLink( &crypt_local.plqCrypters );
+	size_t b;
 	if( !signEntropy )
 		signEntropy = SRG_CreateEntropy4( NULL, (uintptr_t)0 );
 	SRG_ResetEntropy( signEntropy );
@@ -75544,7 +75665,7 @@ void SRG_XSWS_encryptData( uint8_t *objBuf, size_t objBufLen
   // copy contents for in-place encrypt.
 	memcpy( outBuf[0], objBuf, objBufLen );
 	((uint8_t*)(outBuf[0] + (*outBufLen) - 1))[0] = (uint8_t)(*outBufLen - objBufLen);
-	for( size_t b = 0; b < (*outBufLen); b += 4096 ) {
+	for( b = 0; b < (*outBufLen); b += 4096 ) {
 		size_t bs = (*outBufLen) - b;
 		if( bs > 4096 )
 			encryptBlock( bytKey, outBuf[0] + b, 4096, bufKey );
@@ -75591,6 +75712,7 @@ void SRG_XSWS_decryptData( uint8_t *objBuf, size_t objBufLen
 	, uint8_t **outBuf, size_t *outBufLen
 ) {
 	struct random_context *signEntropy = (struct random_context *)DequeLink( &crypt_local.plqCrypters );
+	size_t b;
 	if( !signEntropy )
 		signEntropy = SRG_CreateEntropy4( NULL, (uintptr_t)0 );
 	SRG_ResetEntropy( signEntropy );
@@ -75600,7 +75722,7 @@ void SRG_XSWS_decryptData( uint8_t *objBuf, size_t objBufLen
 	SRG_GetEntropyBuffer( signEntropy, (uint32_t*)bufKey, RNGHASH );
 	struct byte_shuffle_key *bytKey = BlockShuffle_ByteShuffler( signEntropy );
 	outBuf[0] = NewArray( uint8_t, (*outBufLen) = objBufLen );
-	for( size_t b = 0; b < objBufLen; b += 4096 ) {
+	for( b = 0; b < objBufLen; b += 4096 ) {
 		size_t bs = objBufLen - b;
 		if( bs > 4096 )
 			decryptBlock( bytKey, objBuf + b, 4096, outBuf[0] + b, bufKey, 0 );
@@ -76024,7 +76146,8 @@ struct byte_shuffle_key *BlockShuffle_ByteShuffler( struct random_context *ctx )
 			uint8_t *check = maps[1 - srcMap];
 			int n;
 			for( n = 0; n < 256; n++ ) {
-				for( int m = 0; m < 256; m++ ) {
+				int m;
+				for( m = 0; m < 256; m++ ) {
 					if( m == n ) continue;
 					if( check[n] == check[m] ) {
 						lprintf( "Index %d matches %d  %d", n, m, check[n] );
@@ -76078,6 +76201,7 @@ struct byte_shuffle_key *BlockShuffle_ByteShufflerSE( struct random_context *ctx
 		struct halfDeck left, right;
 		int s;
 		int useCards;
+		int outCard;
 		left.starts[0] = leftStacks[leftOrders[halves[n][0]][0]][0];
 		left.lens[0] = leftStacks[leftOrders[halves[n][0]][0]][1];
 		left.starts[1] = leftStacks[leftOrders[halves[n][0]][1]][0];
@@ -76102,9 +76226,10 @@ struct byte_shuffle_key *BlockShuffle_ByteShufflerSE( struct random_context *ctx
 		readRMap = maps[srcMap] + right.from;
 		writeMap = maps[1 - srcMap];
 		s = 0;
-		for( int outCard = 0; outCard < 256; ) {
+		for( outCard = 0; outCard < 256; ) {
+			int c;
 			useCards = stacks[s];
-			for( int c = 0; c < useCards; c++ ) {
+			for( c = 0; c < useCards; c++ ) {
 				if( lrStart ) {
 					(writeMap++)[0] = (readLMap++)[0];
 					outCard++;
@@ -76182,8 +76307,9 @@ struct byte_shuffle_key *BlockShuffle_ByteShufflerSE( struct random_context *ctx
 	{
 		uint8_t *check = maps[1 - srcMap];
 		int n;
+		int m;
 		for( n = 0; n < 256; n++ ) {
-			for( int m = 0; m < 256; m++ ) {
+			for( m = 0; m < 256; m++ ) {
 				if( m == n ) continue;
 				if( check[n] == check[m] ) {
 					lprintf( "Index %d matches %d  %d", n, m, check[n] );
@@ -78814,7 +78940,7 @@ int KangarooTwelve_Update(KangarooTwelve_Instance *ktInstance, const unsigned ch
         return 1;
     if ( ktInstance->blockNumber == 0 ) {
         /* First block, absorb in final node */
-        unsigned int len = (inLen < (chunkSize - ktInstance->queueAbsorbedLen)) ? inLen : (chunkSize - ktInstance->queueAbsorbedLen);
+        unsigned int len = (unsigned int)((inLen < (chunkSize - ktInstance->queueAbsorbedLen)) ? inLen : (chunkSize - ktInstance->queueAbsorbedLen));
         if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, input, len) != 0)
             return 1;
         input += len;
@@ -78832,7 +78958,7 @@ int KangarooTwelve_Update(KangarooTwelve_Instance *ktInstance, const unsigned ch
     }
     else if ( ktInstance->queueAbsorbedLen != 0 ) {
         /* There is data in the queue, absorb further in queue until block complete */
-        unsigned int len = (inLen < (chunkSize - ktInstance->queueAbsorbedLen)) ? inLen : (chunkSize - ktInstance->queueAbsorbedLen);
+        unsigned int len = (unsigned int)((inLen < (chunkSize - ktInstance->queueAbsorbedLen)) ? inLen : (chunkSize - ktInstance->queueAbsorbedLen));
         if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->queueNode, input, len) != 0)
             return 1;
         input += len;
@@ -78872,7 +78998,7 @@ int KangarooTwelve_Update(KangarooTwelve_Instance *ktInstance, const unsigned ch
     #endif
     #endif
     while ( inLen > 0 ) {
-        unsigned int len = (inLen < chunkSize) ? inLen : chunkSize;
+        unsigned int len = (unsigned int)((inLen < chunkSize) ? inLen : chunkSize);
         if (KeccakWidth1600_12rounds_SpongeInitialize(&ktInstance->queueNode, rate, capacity) != 0)
             return 1;
         if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->queueNode, input, len) != 0)
@@ -98326,7 +98452,6 @@ int __DoSQLQueryExx( PODBC odbc, PCOLLECT collection, CTEXTSTR query, size_t que
 	{
 		DebugBreak();
 	}
-	lprintf( "DING %p", pdlParams );
 	if( !IsSQLOpen( odbc ) )
 	{
 		return FALSE;
@@ -103443,8 +103568,25 @@ void OpenWriterEx( POPTION_TREE option DBG_PASS )
 #endif
 		option->odbc_writer = ConnectToDatabaseExx( option->odbc?option->odbc->info.pDSN:sg.Primary.info.pDSN, FALSE DBG_RELAY );
 		SQLCommand( option->odbc_writer, "pragma foreign_keys=on" );
-      /*
+		/*
 		SQLCommand( option->odbc_writer, "pragma integrity_check" );
+		{
+			CTEXTSTR *result = NULL;
+			SQLRecordQuery( option->odbc_writer, "select * from sqlite_master", NULL, &result, NULL );
+			while( result ) {
+				FetchSQLRecord( option->odbc_writer, &result );
+			}
+		}
+		{
+			CTEXTSTR *result = NULL;
+			SQLRecordQuery( option->odbc_writer, "select option4_values.option_id as ov,option4_map.option_id as om from option4_values left outer join option4_map USING(option_id) where option4_map.option_id=NULL", NULL, &result, NULL );
+			while( result ) {
+				lprintf( "Got Row: %s %s", result[0], result[1] );
+				FetchSQLRecord( option->odbc_writer, &result );
+			}
+		}
+		*/
+		/*
 		{
 			CTEXTSTR res = NULL;
 			for( SQLQuery( option->odbc_writer, "select * from option4_name where name = 'system Settings'", &res );
