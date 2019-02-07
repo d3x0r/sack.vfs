@@ -24,28 +24,34 @@ function initRoot( cb ) {
 	var storeRoot;
 
 
-	store.get( `${orgRoot}.${serviceRoot}` ).then( function (node){
-		// this is the managmeent container of node.  
-		root = node;
-	} ).catch( ()=>{
-		var keyInfo = {
-			 password : sack.generate(),
-		}
-		if( vfs.exists( "keyinfo" ) )
-			vfs.readJSOX( "keyInfo", (ki)=>keyInfo = ki );
-		else	
-			vfs.write( "keyInfo", sack.JSOX.stringify( keyInfo ) );
-
-		var myhashWrite = sack.regenerator(keyInfo.password+"write");
-		var myhashRead  = sack.regenerator(keyInfo.password+"read");
-
-		store.put( root, {
-			objectHash:`${orgRoot}.${serviceRoot}`,
-			sealant: myhash,
-			//readKey: myhashRead,
-			stored(id){ root.keyFile = this; root.key = id; },
-			failed() { },
-		} );
+	store.get( `${orgRoot}.${serviceRoot}`, {
+		then(node){
+			// this is the managmeent container of node.  
+			root = node;
+		},
+		catch() {
+			var keyInfo = {
+				 password : sack.generate(),
+			}
+			if( vfs.exists( "keyinfo" ) )
+				vfs.readJSOX( "keyInfo", (ki)=>keyInfo = ki );
+			else	
+				vfs.write( "keyInfo", sack.JSOX.stringify( keyInfo ) );
+		        
+			var myhashWrite = sack.SaltyRNG.id(keyInfo.password+"write", 4);
+			var myhashRead  = sack.SaltyRNG.id(keyInfo.password+"read", 4);
+			
+			store.put( sack.JSOX.stringify(root), {
+				objectHash:`${orgRoot}.${serviceRoot}`,
+				sealant: myhash,
+				//readKey: myhashRead,
+				stored(id){ root.keyFile = this; root.key = id; },
+				failed() { 
+					 console.log( "Failed to store root into object storage." );
+				},
+				
+			} );
+		}	
 	} );
 
 
@@ -57,6 +63,7 @@ function initRoot( cb ) {
 }
 
 if( !vfs.exists( "root" ) ) {
+	console.log( "virtual disk does not yet have 'root'" );
 	initRoot();
 } else
 	vfs.readJSOX( "root", (newRoot)=>{
@@ -64,11 +71,13 @@ if( !vfs.exists( "root" ) ) {
 		if( !rootKey ) {
 			initRoot();
 		} else {
-			store.map( rootKey ).then( (obj)=>{
-				root = obj; 
-				console.log( "new root:", sack.JSOX.stringify(root,null,3) );
-				addMoreNodes();
-			} );
+			store.map( rootKey, {
+				then(obj){
+					root = obj; 
+					console.log( "new root:", sack.JSOX.stringify(root,null,3) );
+					addMoreNodes();
+				} 
+			});
 			//console.log( "did get? " );
 		}
 		console.log( "Root Key:" , rootKey );
@@ -90,7 +99,7 @@ function addMoreNodes() {
 	root.signed.push( obj = { hello:"world", root:root} );
 	
 	store.put( obj, { 
-		signed(id){
+		stored(id){
 			console.log( "GOT storage ID:", id );
 		},
 		failed() {
