@@ -134,7 +134,7 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 void VolumeObject::doInit( Handle<Object> exports ) 
 {
 	InvokeDeadstart();
-
+	
 	node::AtExit( moduleExit );
 
 	//SetAllocateLogging( TRUE );
@@ -335,7 +335,7 @@ void VolumeObject::vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args
 	}
 
 
-	ObjectStorageObject *oso = ObjectStorageObject::openInVFS( isolate, vol->vol, mount_name, filename, key, key2 );
+	ObjectStorageObject *oso = ObjectStorageObject::openInVFS( isolate, mount_name, filename, key, key2 );
 	if( oso ) {
 		// uhmm this needs 'this' to know what to return as...
 	}

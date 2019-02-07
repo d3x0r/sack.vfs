@@ -37,16 +37,13 @@ private:
 					ctx = SRG_CreateEntropy( NULL, 0 );
 					break;
 				case 1:
-					ctx = SRG_CreateEntropy2( NULL, 0 );
-					break;
-				case 2:
 					ctx = SRG_CreateEntropy2_256( NULL, 0 );
 					break;
-				case 3:
+				case 2:
 					ctx = SRG_CreateEntropy3( NULL, 0 );
 					break;
 				default:
-				case 4:
+				case 3:
 					ctx = SRG_CreateEntropy4( NULL, 0 );
 					break;
 				}
@@ -74,13 +71,10 @@ private:
 					r = SRG_ID_Generator_256();
 					break;
 				case 2:
-					r = SRG_ID_Generator_256();
-					break;
-				case 3:
 					r = SRG_ID_Generator3();
 					break;
 				default:
-				case 4:
+				case 3:
 					r = SRG_ID_Generator4();
 					break;
 				}
