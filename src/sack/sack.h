@@ -1830,6 +1830,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE         EmptyList      ( PLIST *pList );
    gave up doing this sort of thing afterwards after realizing
    the methods of a library and these static methods for a class
    aren't much different.                                        */
+#  if defined( INCLUDE_SAMPLE_CPLUSPLUS_WRAPPERS )
 typedef class iList
 {
 public:
@@ -1844,6 +1845,7 @@ public:
 	inline POINTER next( void ) { POINTER p; for( idx++;list && (( p = GetLink( &list, idx ) )==0) && idx < list->Cnt; )idx++; return p; }
 	inline POINTER get(INDEX index) { return GetLink( &list, index ); }
 } *piList;
+#  endif
 #endif
 // address of the thing...
 typedef uintptr_t (CPROC *ForProc)( uintptr_t user, INDEX idx, POINTER *item );
@@ -3985,8 +3987,8 @@ TYPELIB_PROC  char * TYPELIB_CALLTYPE  b64xor( const char *a, const char *b );
 // extended command entry stuff... handles editing buffers with insert/overwrite/copy/paste/etc...
 typedef struct user_input_buffer_tag {
 	// -------------------- custom cmd buffer extension
-  // position counter for pulling history
-	INDEX nHistory;
+  // position counter for pulling history; negative indexes are recalled commands.
+	int nHistory;
   // a link queue which contains the prior lines of text entered for commands.
 	PLINKQUEUE InputHistory;
  // set to TRUE when nHistory has wrapped...
@@ -6005,11 +6007,11 @@ MEM_PROC  uint64_t MEM_API  LockedExchange64 ( volatile uint64_t* p, uint64_t va
 /* A multi-processor safe increment of a variable.
    Parameters
    p :  pointer to a 32 bit value to increment.    */
-MEM_PROC  uint32_t MEM_API  LockedIncrement ( uint32_t* p );
+MEM_PROC  uint32_t MEM_API  LockedIncrement ( volatile uint32_t* p );
 /* Does a multi-processor safe decrement on a variable.
    Parameters
    p :  pointer to a 32 bit value to decrement.         */
-MEM_PROC  uint32_t MEM_API  LockedDecrement ( uint32_t* p );
+MEM_PROC  uint32_t MEM_API  LockedDecrement ( volatile uint32_t* p );
 #ifdef __cplusplus
 // like also __if_assembly__
 //extern "C" {
@@ -7935,6 +7937,7 @@ NETWORK_PROC( LOGICAL, DoPingEx )( CTEXTSTR pstrHost,
 //----- WHOIS.C -----
 NETWORK_PROC( LOGICAL, DoWhois )( CTEXTSTR pHost, CTEXTSTR pServer, PVARTEXT pvtResult );
 #ifdef __cplusplus
+#  if defined( INCLUDE_SAMPLE_CPLUSPLUS_WRAPPERS )
 typedef class network *PNETWORK;
 /* <combine sack::network::network>
    \ \                              */
@@ -8066,6 +8069,7 @@ public:
 	      return 0;
 	}
 }NETWORK;
+#  endif
 #endif
 SACK_NETWORK_NAMESPACE_END
 #ifdef __cplusplus

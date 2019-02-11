@@ -76,7 +76,7 @@ set( INCLUDES
 	-I${SACK_BASE}/include
 	-I${SACK_BASE}/src/contrib/sha1lib
 	-I${SACK_BASE}/src/contrib/K12/lib
-	-I${SACK_BASE}/src/contrib/sqlite/3.23.0-MySqlite
+	-I${SACK_BASE}/src/contrib/sqlite/3.27.1-TableAlias
  )
 
 FILE( WRITE ${CMAKE_BINARY_DIR}/config.ppc "/*CMake Option defined*/\n" )
@@ -239,7 +239,7 @@ endif( NEED_UUID )
 SET( BUILD_AMALGAM on )
 
 set( C_SOURCES
-        ${SACK_BASE}/src/contrib/sqlite/3.23.0-MySqlite/sqlite3.c
+        ${SACK_BASE}/src/contrib/sqlite/3.27.1-TableAlias/sqlite3.c
 )
 add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
 			COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/src/sack

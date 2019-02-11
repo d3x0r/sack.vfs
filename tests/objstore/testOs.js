@@ -2,6 +2,8 @@
 const orgRoot = "org.example.domain"
 const serviceRoot = "data";
 
+const appIdentifier = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
 
 
 var sack = require( "../.." );
@@ -23,27 +25,30 @@ function initRoot( cb ) {
 
 	var storeRoot;
 
+	var keyInfo = {
+		 password : sack.generate(),
+	}
+	var myhashWrite = sack.SaltyRNG.id(keyInfo.password+"write", 4);
+	var myhashRead  = sack.SaltyRNG.id(keyInfo.password+"read", 4);
 
 	store.get( `${orgRoot}.${serviceRoot}`, {
+		objectHash : `${orgRoot}.${serviceRoot}`,
+		sealant : appIdentifier,
+		readKey : null,
 		then(node){
 			// this is the managmeent container of node.  
 			root = node;
 		},
 		catch() {
-			var keyInfo = {
-				 password : sack.generate(),
-			}
 			if( vfs.exists( "keyinfo" ) )
 				vfs.readJSOX( "keyInfo", (ki)=>keyInfo = ki );
 			else	
 				vfs.write( "keyInfo", sack.JSOX.stringify( keyInfo ) );
 		        
-			var myhashWrite = sack.SaltyRNG.id(keyInfo.password+"write", 4);
-			var myhashRead  = sack.SaltyRNG.id(keyInfo.password+"read", 4);
 			
 			store.put( sack.JSOX.stringify(root), {
 				objectHash:`${orgRoot}.${serviceRoot}`,
-				sealant: myhash,
+				sealant: myhashWrite,
 				//readKey: myhashRead,
 				stored(id){ root.keyFile = this; root.key = id; },
 				failed() { 

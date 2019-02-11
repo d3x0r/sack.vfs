@@ -417,11 +417,8 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 			SqlObject* obj;
 			char dbName[256];
-         if( vol->mountName )
-				snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
-         else
-				snprintf( dbName, 256, "%s", (*fName) );
-			obj = new SqlObject( dbName );
+ 			snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
+ 			obj = new SqlObject( dbName );
 			SqlObject::doWrap( obj, args.This() );
 
 			args.GetReturnValue().Set( args.This() );
