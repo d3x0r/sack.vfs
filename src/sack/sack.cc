@@ -69018,7 +69018,7 @@ void AddThreadEvent( PCLIENT pc, int broadcast )
 			if( globalNetworkData.flags.bLogNotices )
 				lprintf( "Creating a new thread...." );
 #endif
-			AddLink( &globalNetworkData.pThreads, ThreadTo( NetworkThreadProc, (uintptr_t)peer ) );
+			AddLink( (PLIST*)&globalNetworkData.pThreads, ThreadTo( NetworkThreadProc, (uintptr_t)peer ) );
 			globalNetworkData.nPeers++;
 			while( !peer->child_peer )
 				Relinquish();
