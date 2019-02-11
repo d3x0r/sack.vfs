@@ -299,7 +299,7 @@ static uintptr_t CPROC DoPutObject( PTHREAD thread ) {
 void ObjectStorageObject::putObject( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate *isolate = args.GetIsolate();
 	struct optionStrings *strings = getStrings( isolate );
-	String::Utf8Value data( args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	String::Utf8Value data( USE_ISOLATE(isolate) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 	Local<Object> opts = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 	Local<String> optName;
 	
@@ -358,7 +358,7 @@ static uintptr_t CPROC DoGetObject( PTHREAD thread ) {
 void ObjectStorageObject::getObject( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate *isolate = args.GetIsolate();
 	struct optionStrings *strings = getStrings( isolate );
-	String::Utf8Value data( args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	String::Utf8Value data( USE_ISOLATE(isolate) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 	Local<Object> opts = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 	Local<String> optName;
 
