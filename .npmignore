@@ -2,6 +2,7 @@
 .npmignore
 *~
 build
+build-*
 tests
 xx
 zz
