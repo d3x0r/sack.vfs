@@ -33,7 +33,7 @@ function initRoot( cb ) {
 
 	store.get( `${orgRoot}.${serviceRoot}`, {
 		objectHash : `${orgRoot}.${serviceRoot}`,
-		sealant : appIdentifier,
+		sealant : myhashWrite,
 		readKey : null,
 		then(node){
 			// this is the managmeent container of node.  

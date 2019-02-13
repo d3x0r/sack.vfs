@@ -52635,19 +52635,21 @@ void ProcessURL_CGI( struct HttpState *pHttpState, PTEXT params )
 //int ProcessHttp( struct HttpState *pHttpState )
 int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
 {
-	lockHttp( pHttpState );
 	if( pHttpState->final )
 	{
-		GatherHttpData( pHttpState );
-		unlockHttp( pHttpState );
+		//GatherHttpData( pHttpState );
+		//unlockHttp( pHttpState );
+		/*
 		if( pHttpState->flags.success && !pHttpState->returned_status ) {
 			pHttpState->returned_status = 1;
 			return pHttpState->numeric_code;
 		}
+		*/
 		return HTTP_STATE_RESULT_NOTHING;
 	}
 	else
 	{
+		lockHttp( pHttpState );
 //, pStart;
 		PTEXT pCurrent;
 		PTEXT pLine = NULL;
@@ -53078,7 +53080,8 @@ LOGICAL AddHttpData( struct HttpState *pHttpState, POINTER buffer, size_t size )
 	}
 	else
 	{
-		VarTextAddData( pHttpState->pvt_collector, (CTEXTSTR)buffer, size );
+		if( size )
+			VarTextAddData( pHttpState->pvt_collector, (CTEXTSTR)buffer, size );
 		return TRUE;
 	}
 }
