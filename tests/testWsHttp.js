@@ -9,7 +9,6 @@ console.log( "serving on " + serverOpts.port );
 
 
 server.onrequest( function( req, res ) {
-
 	var ip = ( req.headers && req.headers['x-forwarded-for'] ) ||
 		 req.connection.remoteAddress ||
 		 req.socket.remoteAddress ||
