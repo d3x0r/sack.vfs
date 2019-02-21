@@ -7,12 +7,11 @@ JSON/JSON6 (stream)parser,
 JSOX (streaming) parser, 
 COM/serial port access, Sqlite interface, an option/configuration database built on Sqlite.
 WebSocket/HTTP/HTTPS network library.  UDP sockets.
-Vulkan API to be added eventually... 
 Windows specific registry access for application settings. 
 
 ## Requirements
 
-  ODBC and uuid support.
+  ODBC and uuid support. (can be disabled)
 
 #### Various Linux
 
@@ -35,8 +34,8 @@ Windows specific registry access for application settings.
 # Usage
 
 ```
-var vfs = require( 'sack.vfs' );
-var volume = vfs.Volume( "MountName", "fileName.vfs" );
+var sack = require( 'sack.vfs' );
+var volume = sack.Volume( "MountName", "fileName.vfs" );
 var file = volume.File( "filename" );
 var fileString = file.read();
 var fileOut = volume.File( "filename.out" );
@@ -72,7 +71,8 @@ vfs = {
         Sqlite has methods available on it to access native program options.
         Sqlite.op( opName, defaultValue ) - read/write default option database option.
         Sqlite.so( opName, newValue ) - write new value to default option database.
-    Volume(mountName,fileName,version,a,b) - a virtual disk partition that holds files.
+    ObjectStore( fileName [, version] ) - open a JS object storage database. 
+    Volume([mountName,]fileName[,version]) - a virtual disk partition that holds files.
           mountName - the mount name used to mount to volume as a filesystem; it may be referenced 
                 later in the string passed to Sqlite.  It may be `null` if it is anonymous mount.
           if no parameters are passed, a Volume object representing the native filesystem is returned.
@@ -223,7 +223,10 @@ const objectStorage = sack.objectStorage( 'filename.data' );
 ## Sqlite Interface
 
   (result from vfs.Sqlite("dbName.db") or vfs.Volume().Sqlite("dbName.db"))
-  Sqlite command only processes one command at a time.  If a multiple command separated with ';' or '\0' is issued, only the first command will be done.  This makes most destructive SQL injection impossible other than to make a query generally fail; unless the substitution is the first command word.  If they are able to otherwise inject into a delete/drop command Still no joy;  Generally these are done during initialization with well formed things though...
+  Sqlite command only processes one command at a time.  If a multiple command separated with ';' or '\0' is issued, only the first command will be done.  
+  This makes most destructive SQL injection impossible other than to make a query generally fail.
+  If they are able to otherwise inject into a delete/drop command Still no joy;  
+  Generally these are done during initialization with well formed things though...
 
 Sqlite() will create a in memory database<br>
 Sqlite( &lt;String&gt; ) will user the string to specify a filename.  Sqlite URI decoding is enabled.  `":memory:"` will also result in a memory only database.
@@ -272,7 +275,7 @@ There are methods on the Sqlite() function call...
 | procedure | (name, callback(...args) | Add a user defined function to the current sql connection.  'name' is the name of the function.  Callback is called whenever the function is used in SQL statement given to sqlite.  Return value is given as result of function.   **ODBC CONNECTION UNDEFINED RESULT** |
 | aggregate | ( name, stepCallback(...args), finalCallback() ) | Define an aggregate function called 'name' and when used, each row stepped is passed to the step callback, when the grouping issues a final, invoke the final callback.  Final result is given as the final value.  **ODBC CONNECTION UNDEFINED RESULT** |
 | onCorruption | ( callback ) | callback will be called if a database corruption has been found (Sqlite) |
-
+|   |  |  |
 | log | accessor | set to false to disable logging on this specific connection (always returns false) |
 |   |  |  |
 | GUI Functions |  | Added when compiled with full SACK library |
@@ -325,7 +328,9 @@ db.aggregate( "MyAggregate", (...args)=>{ console.log( "Use Args:", args ); }, (
 
 ```
 
-db.do returns a result set (if any).  It will be an array of objects.  Objects will have fields named that are the names from the sqlite query.  If the name is the same as another, the columns are amalgamated into another array....
+db.do returns a result set (if any).  It will be an array of objects.  Objects will have fields named that are the names from the sqlite query.  
+If the name is the same as another, the columns are amalgamated into another array... Data is transported similar to JSON, with 'null', Strings,
+Numbers, and ArrayBuffer depending on the column data type.  An Integer number is used if it is an integer source type.
 
 ```
 db data...
@@ -676,14 +681,16 @@ Salty Random Generator
      no parameters results with a generator with no initial seed, and no callback<BR>
      Results with a random_generator object.
      
-     
-    - seed( toString ) : set the next seed to be used; any value passed is converted to a string.
-    - reset() : reset the generator to base state.
-    - getBits( [bitCount [, signed]] ) : if no parameters are passed, a 32 bit signed integer is returned.  If bitCount 
-       is passed, it must be less than 32 bits.  If signed is not passed or is false, the resulting value is the specified
-       number of bits as an unsigned integer, otherwise the top bit is sign extended, and a signed integer results.
-    - getBuffer( bits ) : returns an ArrayBuffer that is the specified number of bits long, rounded up to the next complete
-       byte count.
+| SaltyRNG Instance Methods | Args | Description |
+|-----|-----|-----|
+| seed |( toString ) : set the next seed to be used; any value passed is converted to a string.|
+| reset|() : reset the generator to base state.|
+| getBits|( [bitCount [, signed]] ) : if no parameters are passed, a 32 bit signed integer is returned.  If bitCount    is passed, it must be less than 32 bits.  If signed is not passed or is false, the resulting value is the specified       number of bits as an unsigned integer, otherwise the top bit is sign extended, and a signed integer results. |
+| getBuffer|( bits ) : returns an ArrayBuffer that is the specified number of bits long, rounded up to the next complete byte count.|
+| setVersion| () | Sets Sign/Verify generator to SHA3.  (needs additional options someday) |
+| sign | ( [pad1 [, pad2],] string | get a signing identifier for string |
+| setSigningThreads | ( n ) | Set the number of threads to sign with to n |
+| verify | ( buffer, key ) | returns true/false if key is a signing key of buffer |
     
 
 | SaltRNG Methods | Args | Description |
@@ -691,7 +698,18 @@ Salty Random Generator
 | sign | ( [pad1 [, pad2],] string | get a signing identifier for string |
 | setSigningThreads | ( n ) | Set the number of threads to sign with to n |
 | verify | ( buffer, key ) | returns true/false if key is a signing key of buffer |
+| id | ( [source [, version]] ) | Version indicates which entropy generator to use internally |
 
+The `id()` function takes an optional parameter that is an integer.
+
+| id version | use generator |
+|---|---|
+| 0 | sha1 |
+| 1 | sha2 |
+| 2 | sha2_256 |
+| 3 | sha3 |
+| 4 | K12 |
+|default| K12 |
 
 ```
   // some examples
@@ -702,6 +720,13 @@ Salty Random Generator
   var unsigned_byte = SRG.getBits( 8 );
   var someValue = SRG.getBits( 13, true );  // get 13 bits of randomness, sign extended.
   var buffer = SRG.getBuffer( 1234 ); // get 155 bytes of random data (last byte only has 2 bits )
+
+  // these return base64 encoded bytes.
+ var randomId     = SRG.id();  // default generator
+ var randomId_v4  = SRG.id(4);  // use version 4 hashing
+ var regenId      = SRG.id("Hash This ID");  // default hash generator (NEEDS TESTING!)
+ var regenId_v4   = SRG.id("Hash This ID", 4); // regenerate, using hash 4
+
 ```
 
 ## WebSocket Module
@@ -1159,6 +1184,9 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.146
+   - SACK Update; add XSWS 
+   - Fixed stall issue with http server and lots of requests in series from browser.
 - 0.9.145 
    - Add 'mv', 'rename' methods to Volume() instance.  
    - Split locks on ssl read/write.  
@@ -1168,6 +1196,11 @@ setTimeout( ()=>{ }, 5000 );
    - Add Object Storage Module.
    - Added support for paramter binding in Sqlite.
    - Improve data marshalling for Sqlite to JS and vice versa.
+   - Network improvement for send and close edge conditions.
+   - Implement parameter binding for sqlite and ODBC (less tested).
+   - Fixed spurious HTTP request failures when the connection closed with writes pending.
+   - Improves SRG module; allow configuring SRG instance with a specific entropy generator.
+   - Fixed task output stall.
 - 0.9.144 - Fix websocket receiving packets with multiple frames.
 - 0.9.143 - Improve task interface.  Simplify com data buffer; it's now only valid during receive callback. Improve websocket server handling http requests; add a event callback when socket closes, after server HTTP to distinguish between incomplete(TLS error) connections. Sync SACK updates: improve SQL parsing/table-index generation, library load path for current and name as passed, event for http close, some protection against dereferencing null parameters.
 - 0.9.142 - Fix node-gyp for windows build.

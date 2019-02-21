@@ -1,10 +1,65 @@
 #include "global.h"
+using namespace sack::SACK_VFS::objStore;
+
+struct optionStrings {
+	Isolate *isolate;
+
+	Eternal<String> *objectHashString;
+	Eternal<String> *sealantString;
+	Eternal<String> *storedString;
+	Eternal<String> *failedString;
+	Eternal<String> *signedString;
+	Eternal<String> *readKeyString;
+	Eternal<String> *thenString;
+	Eternal<String> *catchString;
+	Eternal<String> *aString;
+};
 
 
+enum objectStorageEvents {
+	OSEV_CLOSE,
+	OSEV_STORED,
+	OSEV_SUCCESS,
+	OSEV_FAIL,
+};
+struct ObjectStorageEvent {
+	enum objectStorageEvents op;
+	struct objectStorageOptions *storageOpts;
+};
+
+
+struct objectStorageOptions {
+	ObjectStorageObject *vol;
+	int set;
+	char *sealant;
+	size_t sealantLen;
+	char *data;
+	size_t dataLen;
+	char *objectHash;
+	size_t objectHashLen;
+	char *readKey;
+	size_t readKeyLen;
+	char result[64];//
+	Persistent<Function> cbStored;
+	Persistent<Function> cbFailed;
+	objectStorageOptions() : cbStored( ), cbFailed( ) {
+
+	}
+};
+
+
+typedef struct ObjectStorageEvent OBJECT_STORAGE_EVENT;
+typedef struct ObjectStorageEvent *POBJECT_STORAGE_EVENT;
+#define MAXOBJECT_STORAGE_EVENTSPERSET 128
+DeclareSet( OBJECT_STORAGE_EVENT );
 
 static struct objStoreLocal {
 	PLIST open;
+	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	POBJECT_STORAGE_EVENTSET osEvents;
+	PLIST strings;
 } osl;
+
 
 Persistent<Function> ObjectStorageObject::constructor;
 
@@ -16,19 +71,102 @@ ATEXIT( closeVolumes ) {
 	}
 }
 
+
+static struct optionStrings *getStrings( Isolate *isolate ) {
+	INDEX idx;
+	struct optionStrings * check;
+	LIST_FORALL( osl.strings, idx, struct optionStrings *, check ) {
+		if( check->isolate == isolate )
+			break;
+	}
+	if( !check ) {
+		check = NewArray( struct optionStrings, 1 );
+		AddLink( &osl.strings, check );
+		check->isolate = isolate;
+#define DEFSTRING(s) check->s##String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, #s ) )
+		DEFSTRING( objectHash );
+		DEFSTRING( sealant );
+		DEFSTRING( stored );
+		DEFSTRING( failed );
+		DEFSTRING( signed );
+		DEFSTRING( readKey );
+	}
+	return check;
+}
+
+static void objStoreEventHandler( uv_async_t* handle ) {
+	// Called by UV in main thread after our worker thread calls uv_async_send()
+	//    I.e. it's safe to callback to the CB we defined in node!
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	ObjectStorageObject* obj = (ObjectStorageObject*)handle->data;
+	//udpEvent *eventMessage;
+	struct ObjectStorageEvent *event;
+	HandleScope scope( isolate );
+
+	while( event = (struct ObjectStorageEvent*)DequeLink( &obj->plqEvents ) ) {
+
+		switch( event->op ) {
+		case OSEV_STORED:
+			// post that this object has beens tored
+			// and give back the appropriate things.
+			break;
+		case OSEV_CLOSE:
+			uv_close( (uv_handle_t*)&obj->async, NULL );
+			break;
+		}
+		DeleteFromSet( OBJECT_STORAGE_EVENT, osl.osEvents, event );
+	}
+
+}
+
+static void postEvent( ObjectStorageObject *_this, enum objectStorageEvents evt, ... ) {
+	//= (udpObject*)psv;
+	va_list args;
+	va_start( args, evt );
+	struct ObjectStorageEvent *pevt = GetFromSet( OBJECT_STORAGE_EVENT, &osl.osEvents );
+	(*pevt).op = OSEV_CLOSE;
+	switch( evt ) {
+	case OSEV_SUCCESS:
+		pevt->storageOpts = va_arg( args, struct objectStorageOptions * );
+		break;
+	case OSEV_FAIL:
+		pevt->storageOpts = va_arg( args, struct objectStorageOptions * );
+		break;
+
+	default:
+	case OSEV_CLOSE:
+		/* no additional parameters */
+		break;
+	}
+	//(*pevt).buf = NewArray( uint8_t*, buflen );
+	//lprintf( "Send buffer %p", (*pevt).buf );
+	//memcpy( (POINTER)(*pevt).buf, buffer, buflen );
+	//(*pevt).buflen = buflen;
+	//(*pevt)._this = _this;
+	//(*pevt).from = DuplicateAddress( from );
+	EnqueLink( &_this->plqEvents, pevt );
+
+	uv_async_send( &_this->async );
+}
+
+
 void ObjectStorageObject::Init( Isolate *isolate, Handle<Object> exports ) {
+
+	//if( !l.loop )
+	//	l.loop = uv_default_loop();
+
 	Local<FunctionTemplate> clsTemplate;
 	clsTemplate = FunctionTemplate::New( isolate, New );
-	clsTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.objectStorage" ) );
+	clsTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.ObjectStorage" ) );
 	clsTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "read", ObjectStorageObject::fileReadJSOX );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "write", ObjectStorageObject::fileWrite );
-	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "store", ObjectStorageObject::fileStore );
+	//NODE_SET_PROTOTYPE_METHOD( clsTemplate, "store", ObjectStorageObject::fileStore );
+	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "put", ObjectStorageObject::putObject );
+	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "get", ObjectStorageObject::getObject );
 
 	Local<Function> VolFunc = clsTemplate->GetFunction();
-	//SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
-
 
 	constructor.Reset( isolate, clsTemplate->GetFunction() );
 	exports->Set( String::NewFromUtf8( isolate, "ObjectStorage" ),
@@ -75,6 +213,197 @@ ObjectStorageObject::ObjectStorageObject( const char *mount, const char *filenam
 			fsMount = NULL;
 	}
 }
+
+#if 0
+static void idGenerator( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() ) {
+		int version = -1;
+		if( args[0]->IsString() ) {
+			char *r;
+			struct random_context *ctx = SRG_CreateEntropy4( NULL, 0 );
+
+			SRG_FeedEntropy( ctx, (uint8_t*)*val, val.length() );
+			uint32_t buf[256 / 32];
+			SRG_GetEntropyBuffer( ctx, buf, 256 );
+			size_t outlen;
+			r = EncodeBase64Ex( (uint8_t*)buf, (16 + 16), &outlen, (const char *)1 );
+			SRG_DestroyEntropy( &ctx );
+			args.GetReturnValue().Set( localString( isolate, r, (int)outlen ) );
+		}
+	}
+}
+
+#endif
+
+static uintptr_t CPROC DoPutObject( PTHREAD thread ) {
+	struct objectStorageOptions osoOpts;
+	struct objectStorageOptions **ppOptions = (struct objectStorageOptions **)GetThreadParam( thread );
+	char *storeId;
+	(*ppOptions) = &osoOpts;
+	while( !osoOpts.set )
+		Relinquish();
+
+
+	// a specific name is passed...
+	//    the name is hashed with sealant and that is the resulting ID.
+	//    if no sealant, 
+	if( osoOpts.objectHash ) {
+		if( osoOpts.sealant ) {
+			struct random_context *ctx = SRG_CreateEntropy4( NULL, 0 );
+			SRG_FeedEntropy( ctx, (uint8_t*)osoOpts.objectHash, osoOpts.objectHashLen );
+			SRG_FeedEntropy( ctx, (uint8_t*)osoOpts.sealant, osoOpts.sealantLen );
+			uint32_t buf[256 / 32];
+			SRG_GetEntropyBuffer( ctx, buf, 256 );
+			size_t outlen;
+			storeId = EncodeBase64Ex( (uint8_t*)buf, (16 + 16), &outlen, (const char *)1 );
+			SRG_DestroyEntropy( &ctx );
+		}
+		else {
+			struct random_context *ctx = SRG_CreateEntropy4( NULL, 0 );
+			SRG_FeedEntropy( ctx, (uint8_t*)osoOpts.objectHash, osoOpts.objectHashLen );
+			uint32_t buf[256 / 32];
+			SRG_GetEntropyBuffer( ctx, buf, 256 );
+			size_t outlen;
+			storeId = EncodeBase64Ex( (uint8_t*)buf, (16 + 16), &outlen, (const char *)1 );
+			SRG_DestroyEntropy( &ctx );
+		}
+	}
+	else {
+		if( osoOpts.data ) {
+			// no specfic has, this has to do a signing process...
+			if( osoOpts.sealant ) {
+				storeId = NULL;
+				if( osoOpts.readKey )
+					sack_vfs_os_ioctl_store_crypt_sealed_object( osoOpts.vol->fsMount
+						, osoOpts.data, osoOpts.dataLen
+						, osoOpts.sealant, osoOpts.sealantLen
+						, osoOpts.readKey, osoOpts.readKeyLen
+						, osoOpts.result, sizeof( osoOpts.result ) );
+				else
+					sack_vfs_os_ioctl_store_sealed_object( osoOpts.vol->fsMount
+						, osoOpts.data, osoOpts.dataLen
+						, osoOpts.sealant, osoOpts.sealantLen
+						, osoOpts.result, sizeof( osoOpts.result ) );
+			}
+			else {
+				sack_vfs_os_ioctl_store_rw_object( osoOpts.vol->fsMount
+					, osoOpts.data, osoOpts.dataLen
+					, osoOpts.result, sizeof( osoOpts.result ) );
+			}
+		}
+	}
+	return 0;
+}
+
+void ObjectStorageObject::putObject( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate *isolate = args.GetIsolate();
+	struct optionStrings *strings = getStrings( isolate );
+	String::Utf8Value data( USE_ISOLATE(isolate) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	Local<Object> opts = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
+	Local<String> optName;
+	
+	struct objectStorageOptions *osoOpts = NULL;
+	ThreadTo( DoPutObject, (uintptr_t)osoOpts );
+	while( !osoOpts )
+		Relinquish();
+
+	//memset( &osoOpts, 0, sizeof( osoOpts ) );
+	osoOpts->vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
+
+	osoOpts->data = StrDup( *data );
+	osoOpts->dataLen = data.length();
+	
+	if( opts->Has( optName = strings->objectHashString->Get( isolate ) ) ) {
+		String::Utf8Value strval( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		osoOpts->objectHash = StrDup( *strval );
+		osoOpts->objectHashLen = strval.length();
+	}
+	if( opts->Has( optName = strings->readKeyString->Get( isolate ) ) ) {
+		String::Utf8Value strval( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		osoOpts->readKey = StrDup( *strval );
+		osoOpts->readKeyLen = strval.length();
+	}
+
+	if( opts->Has( optName = strings->sealantString->Get( isolate ) ) ) {
+		String::Utf8Value strval( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		osoOpts->sealant = StrDup( *strval );
+		osoOpts->sealantLen = strval.length();
+	}
+
+	if( opts->Has( optName = strings->storedString->Get( isolate ) ) ) {
+		osoOpts->cbStored.Reset( isolate, opts->Get( optName ).As<Function>() );
+	}
+
+	if( opts->Has( optName = strings->failedString->Get( isolate ) ) ) {
+		osoOpts->cbFailed.Reset( isolate, opts->Get( optName ).As<Function>() );
+	}
+
+	osoOpts->set = 1;
+	
+}
+
+
+static uintptr_t CPROC DoGetObject( PTHREAD thread ) {
+	struct objectStorageOptions osoOpts;
+	struct objectStorageOptions **ppOptions = (struct objectStorageOptions **)GetThreadParam( thread );
+	char *storeId;
+	(*ppOptions) = &osoOpts;
+	while( !osoOpts.set )
+		Relinquish();
+
+	return 0;
+}
+
+void ObjectStorageObject::getObject( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate *isolate = args.GetIsolate();
+	struct optionStrings *strings = getStrings( isolate );
+	String::Utf8Value data( USE_ISOLATE(isolate) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	Local<Object> opts = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
+	Local<String> optName;
+
+	struct objectStorageOptions *osoOpts = NULL;
+	ThreadTo( DoGetObject, (uintptr_t)osoOpts );
+	while( !osoOpts )
+		Relinquish();
+
+	//memset( &osoOpts, 0, sizeof( osoOpts ) );
+	osoOpts->vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
+
+	osoOpts->data = StrDup( *data );
+	osoOpts->dataLen = data.length();
+
+	if( opts->Has( optName = strings->objectHashString->Get( isolate ) ) ) {
+		String::Utf8Value strval( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		osoOpts->objectHash = StrDup( *strval );
+		osoOpts->objectHashLen = strval.length();
+	}
+	if( opts->Has( optName = strings->readKeyString->Get( isolate ) ) ) {
+		String::Utf8Value strval( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		osoOpts->readKey = StrDup( *strval );
+		osoOpts->readKeyLen = strval.length();
+	}
+
+	if( opts->Has( optName = strings->sealantString->Get( isolate ) ) ) {
+		String::Utf8Value strval( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		osoOpts->sealant = StrDup( *strval );
+		osoOpts->sealantLen = strval.length();
+	}
+
+	if( opts->Has( optName = strings->thenString->Get( isolate ) ) ) {
+		osoOpts->cbStored.Reset( isolate, opts->Get( optName ).As<Function>() );
+	}
+
+	if( opts->Has( optName = strings->catchString->Get( isolate ) ) ) {
+		osoOpts->cbFailed.Reset( isolate, opts->Get( optName ).As<Function>() );
+	}
+
+	osoOpts->set = 1;
+
+}
+
+
+
 
 void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -164,10 +493,6 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			args.GetReturnValue().Set( mo.ToLocalChecked() );
 		delete[] argv;
 	}
-}
-
-void ObjectStorageObject::fileStore( const v8::FunctionCallbackInfo<Value>& args ) {
-
 }
 
 void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -320,7 +645,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 
 }
 
-ObjectStorageObject*  ObjectStorageObject::openInVFS( Isolate *isolate, struct volume *vol, const char *mount, const char *name, const char *key1, const char *key2 ) {
+ObjectStorageObject*  ObjectStorageObject::openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 ) {
 
 	// Invoked as constructor: `new MyObject(...)`
 	ObjectStorageObject* obj = new ObjectStorageObject( mount, name, 0, key1, key2 );

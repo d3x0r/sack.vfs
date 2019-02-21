@@ -22,6 +22,70 @@ public:
 	SRGObject();
 
 private:
+
+	static void idGenerator( const v8::FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		if( args.Length() ) {
+			int version = -1;
+			if( args[0]->IsString() ) {
+				char *r;
+				struct random_context *ctx;
+				if( args.Length() > 1 && args[1]->IsNumber() )
+					version = args[1]->IntegerValue( args.GetIsolate()->GetCurrentContext() ).FromMaybe(0);
+				switch( version ) {
+				case 0:
+					ctx = SRG_CreateEntropy( NULL, 0 );
+					break;
+				case 1:
+					ctx = SRG_CreateEntropy2_256( NULL, 0 );
+					break;
+				case 2:
+					ctx = SRG_CreateEntropy3( NULL, 0 );
+					break;
+				default:
+				case 3:
+					ctx = SRG_CreateEntropy4( NULL, 0 );
+					break;
+				}
+				String::Utf8Value val( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+
+				SRG_FeedEntropy( ctx, (uint8_t*)*val, val.length() );
+				uint32_t buf[256/32];
+				SRG_GetEntropyBuffer( ctx, buf, 256 );
+				size_t outlen;
+				r = EncodeBase64Ex( (uint8_t*)buf, (16 + 16), &outlen, (const char *)1 );
+				SRG_DestroyEntropy( &ctx );
+				args.GetReturnValue().Set( localString( isolate, r, (int)outlen ) );
+			}
+			else
+			{
+				if( args[0]->IsNumber() )
+					version = args[0]->IntegerValue( args.GetIsolate()->GetCurrentContext() ).FromMaybe( 0 );
+
+				char *r;
+				switch( version ) {
+				case 0:
+					r = SRG_ID_Generator();
+					break;
+				case 1:
+					r = SRG_ID_Generator_256();
+					break;
+				case 2:
+					r = SRG_ID_Generator3();
+					break;
+				default:
+				case 3:
+					r = SRG_ID_Generator4();
+					break;
+				}
+				args.GetReturnValue().Set( localString( isolate, r, (int)strlen(r) ) );
+			}
+		} else {
+			char *r = SRG_ID_Generator();
+			args.GetReturnValue().Set( localString( isolate, r, (int)strlen( r ) ) );
+		}
+	}
+
 	static void getSeed( uintptr_t psv, POINTER *salt, size_t *salt_size ) {
 		SRGObject* obj = (SRGObject*)psv;
 		if( obj->seedCallback ) {
@@ -116,7 +180,7 @@ private:
 			int32_t bits = args[0]->Int32Value( obj->isolate->GetCurrentContext() ).FromMaybe( 0 );
 			bool sign = false;
 			if( args.Length() > 1 )
-				sign = args[0]->BooleanValue( obj->isolate->GetCurrentContext() ).ToChecked();
+				sign = args[0]->BooleanValue( obj->isolate->GetCurrentContext() ).FromMaybe(0);
 			r = SRG_GetEntropy( obj->entropy, bits, sign );
 		}
 		args.GetReturnValue().Set( Integer::New( obj->isolate, r ) );
@@ -128,7 +192,7 @@ private:
 			obj->isolate->ThrowException( Exception::Error( String::NewFromUtf8( obj->isolate, "required parameter missing, count of bits" ) ) );
 		}
 		else {
-			int32_t bits = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).ToChecked();
+			int32_t bits = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe(0);
 			uint32_t *buffer = NewArray( uint32_t, (bits +31)/ 32 );
 			SRG_GetEntropyBuffer( obj->entropy, buffer, bits );
 
@@ -321,8 +385,8 @@ private:
 		PTHREAD main;
 		struct random_context *signEntropy;
 		POINTER state; // this thread's entropy working state
-		char *salt;  // this thread's salt.
-		int saltLen;
+		//char *salt;  // this thread's salt.
+		//int saltLen;
 #ifdef DEBUG_SIGNING
 		int tries;
 #endif
@@ -341,7 +405,6 @@ private:
 		struct signParams *params = (struct signParams *)GetThreadParam( thread );
 
 		do {
-			SRG_RestoreState( params->signEntropy, params->state );
 			{
 				size_t len;
 				uint8_t outbuf[32];
@@ -350,8 +413,15 @@ private:
 				struct signature s;
 				params->id = SRG_ID_Generator_256();
 				bytes = DecodeBase64Ex( params->id, 44, &len, (const char*)1 );
-				SRG_FeedEntropy( params->signEntropy, bytes, len );
+				SRG_ResetEntropy( params->signEntropy );
+				SRG_FeedEntropy( params->signEntropy, bytes, 32 );
 				SRG_GetEntropyBuffer( params->signEntropy, (uint32_t*)outbuf, 256 );
+				Release( params->id );
+				params->id = EncodeBase64Ex( outbuf, 32, &len, (const char*)1 );
+				SRG_RestoreState( params->signEntropy, params->state );
+				SRG_FeedEntropy( params->signEntropy, outbuf, 32 );
+				SRG_GetEntropyBuffer( params->signEntropy, (uint32_t*)outbuf, 256 );
+
 #ifdef DEBUG_SIGNING
 				params->tries++;
 #endif
@@ -379,12 +449,6 @@ private:
 		return 0;
 	}
 
-	static void addSigningSalt( uintptr_t psv, POINTER *salt, size_t *saltLen ) {
-		struct signParams *params = (struct signParams *)psv;
-		salt[0] = params->salt;
-		saltLen[0] = params->saltLen;
-	}
-
 	static void sign( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -402,11 +466,11 @@ private:
 		while( argn < args.Length() ) {
 			if( args[argn]->IsNumber() ) {
 				if( n ) {
-					pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+					pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).FromMaybe(0);
 				}
 				else {
 					n = 1;
-					pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+					pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).FromMaybe(0);
 				}
 			}
 			argn++;
@@ -425,9 +489,9 @@ private:
 			SRG_ResetEntropy( threadParams[n].signEntropy );
 			SRG_FeedEntropy( threadParams[n].signEntropy, (const uint8_t*)*buf, buf.length() );
 			threadParams[n].state = NULL;
-			SRG_SaveState( threadParams[n].signEntropy, &threadParams[n].state );
-			threadParams[n].salt = SRG_ID_Generator_256(); // give the thread a starting point
-			threadParams[n].saltLen = (int)strlen( threadParams[n].salt );
+			SRG_SaveState( threadParams[n].signEntropy, &threadParams[n].state, NULL );
+			//threadParams[n].salt = SRG_ID_Generator_256(); // give the thread a starting point
+			//threadParams[n].saltLen = (int)strlen( threadParams[n].salt );
 			threadParams[n].pad1 = pad1;
 			threadParams[n].pad2 = pad2;
 			threadParams[n].ended = 0;
@@ -437,39 +501,11 @@ private:
 			threadParams[n].done = &done;
 			ThreadTo( signWork, (uintptr_t)(threadParams +n) );
 		}
-
-		while( !done ) {
-			WakeableSleep( 500 );
-		}
-		for( n = 0; n < threads; n++ ) {
-			while( !threadParams[n].ended ) Relinquish();
-#ifdef DEBUG_SIGNING
-			tries += threadParams[n].tries;
-#endif
-		}
-		for( n = 0; n < threads; n++ ) {
-			if( threadParams[n].id ) {
-				if( found ) {
-				}
-				else {
-#ifdef DEBUG_SIGNING
-					lprintf( " %d  %s \n", tries, threadParams[n].id );
-#endif
-					args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), threadParams[n].id ) );
-				}
-				Release( threadParams[n].id );
-				found++;
-			}
-			threadParams[n].id = NULL;
-			Release( threadParams[n].salt );
-			Release( threadParams[n].state );
-		}
-
 	}
 
 	static void setThraads( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( args.Length() )
-			signingThreads = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).ToChecked();
+			signingThreads = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe(0);
 	}
 
 
@@ -487,10 +523,10 @@ private:
 			while( argn < args.Length() ) {
 				if( args[argn]->IsNumber() ) {
 					if( n ) {
-						pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+						pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).FromMaybe(0);
 					} else {
 						n = 1;
-						pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+						pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).FromMaybe(0);
 					}
 				}
 				argn++;
@@ -532,6 +568,93 @@ private:
 		}
 	}
 
+	static char* srg_sign_work( signParams threadParams[32], int *done, const uint8_t *buf, size_t bufLen, int pad1, int pad2 )
+	{
+		int n;
+		//static signParams threadParams[32];
+		for( n = 0; n < signingThreads; n++ ) {
+			threadParams[n].main = MakeThread();
+			if( !threadParams[n].signEntropy )
+				threadParams[n].signEntropy = SRG_CreateEntropy4( NULL, 0 );
+
+			SRG_ResetEntropy( threadParams[n].signEntropy );
+			SRG_FeedEntropy( threadParams[n].signEntropy, buf, bufLen );
+			threadParams[n].state = NULL;
+			SRG_SaveState( threadParams[n].signEntropy, &threadParams[n].state, NULL );
+			//threadParams[n].salt = SRG_ID_Generator_256(); // give the thread a starting point
+			//threadParams[n].saltLen = (int)strlen( threadParams[n].salt );
+			threadParams[n].pad1 = pad1;
+			threadParams[n].pad2 = pad2;
+			threadParams[n].ended = 0;
+#ifdef DEBUG_SIGNING
+			threadParams[n].tries = 0;
+#endif
+			threadParams[n].done = done;
+			ThreadTo( signWork, (uintptr_t)(threadParams + n) );
+		}
+
+		while( !done ) {
+			WakeableSleep( 500 );
+		}
+		for( n = 0; n < signingThreads; n++ ) {
+			while( !threadParams[n].ended ) Relinquish();
+#ifdef DEBUG_SIGNING
+			tries += threadParams[n].tries;
+#endif
+		}
+		int found = 0;
+		for( n = 0; n < signingThreads; n++ ) {
+			if( threadParams[n].id ) {
+				if( found ) {
+				}
+				else {
+#ifdef DEBUG_SIGNING
+					lprintf( " %d  %s \n", tries, threadParams[n].id );
+#endif
+					//args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), threadParams[n].id ) );
+					//threadParams[n].id
+				}
+				Release( threadParams[n].id );
+				found++;
+			}
+			threadParams[n].id = NULL;
+		}
+		return "";
+	}
+
+	static char * wait_for_signing( signParams threadParams[32], int *done ) {
+		char *result;
+		int n;
+		while( !(*done) ) {
+			WakeableSleep( 500 );
+		}
+		for( n = 0; n < signingThreads; n++ ) {
+			while( !threadParams[n].ended ) Relinquish();
+#ifdef DEBUG_SIGNING
+			tries += threadParams[n].tries;
+#endif
+		}
+		int found = 0;
+		for( n = 0; n < signingThreads; n++ ) {
+			while( !threadParams[n].ended )
+				Relinquish();
+			if( threadParams[n].id ) {
+				if( found ) {
+					Release( threadParams[n].id );
+				}
+				else {
+#ifdef DEBUG_SIGNING
+					lprintf( " %d  %s \n", tries, threadParams[n].id );
+#endif
+					result = threadParams[n].id;
+				}
+				found++;
+			}
+			threadParams[n].id = NULL;
+		}
+		return result;
+	}
+
 
 	static void srg_sign( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
@@ -551,41 +674,21 @@ private:
 		while( argn < args.Length() ) {
 			if( args[argn]->IsNumber() ) {
 				if( n ) {
-					pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+					pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).FromMaybe(0);
 				}
 				else {
 					n = 1;
-					pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+					pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).FromMaybe(0);
 				}
 			}
 			argn++;
 		}
 
+		srg_sign_work( threadParams, &done, (const uint8_t*)*buf, buf.length(), pad1, pad2 );
 #ifdef DEBUG_SIGNING
 		lprintf( "RESET ENTROPY TO START" );
 		LogBinary( (const uint8_t*)*buf, buf.length() );
 #endif
-
-		for( n = 0; n < threads; n++ ) {
-			threadParams[n].main = MakeThread();
-			if( !threadParams[n].signEntropy )
-				threadParams[n].signEntropy = srg->MakeEntropy( NULL, 0 );
-
-			SRG_ResetEntropy( threadParams[n].signEntropy );
-			SRG_FeedEntropy( threadParams[n].signEntropy, (const uint8_t*)*buf, buf.length() );
-			threadParams[n].state = NULL;
-			SRG_SaveState( threadParams[n].signEntropy, &threadParams[n].state );
-			threadParams[n].salt = SRG_ID_Generator_256(); // give the thread a starting point
-			threadParams[n].saltLen = (int)strlen( threadParams[n].salt );
-			threadParams[n].pad1 = pad1;
-			threadParams[n].pad2 = pad2;
-			threadParams[n].ended = 0;
-#ifdef DEBUG_SIGNING
-			threadParams[n].tries = 0;
-#endif
-			threadParams[n].done = &done;
-			ThreadTo( signWork, (uintptr_t)(threadParams + n) );
-		}
 
 		while( !done ) {
 			WakeableSleep( 500 );
@@ -610,16 +713,13 @@ private:
 				found++;
 			}
 			threadParams[n].id = NULL;
-			Release( threadParams[n].salt );
-			Release( threadParams[n].state );
 		}
-
 	}
 
 	static void srg_setThraads( const v8::FunctionCallbackInfo<Value>& args ) {
 		SRGObject *srg = ObjectWrap::Unwrap<SRGObject>( args.This() );
 		if( args.Length() )
-			srg->SigningThreads = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).ToChecked();
+			srg->SigningThreads = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe(0);
 	}
 
 
@@ -638,11 +738,11 @@ private:
 			while( argn < args.Length() ) {
 				if( args[argn]->IsNumber() ) {
 					if( n ) {
-						pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+						pad2 = args[argn]->Int32Value( isolate->GetCurrentContext() ).FromMaybe(0);
 					}
 					else {
 						n = 1;
-						pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).ToChecked();
+						pad1 = args[argn]->Int32Value( isolate->GetCurrentContext() ).FromMaybe(0);
 					}
 				}
 				argn++;
@@ -658,13 +758,20 @@ private:
 				uint8_t *bytes;
 				id = *hash;
 				bytes = DecodeBase64Ex( id, 44, &len, (const char*)1 );
+				SRG_ResetEntropy( signEntropy );
+				SRG_FeedEntropy( signEntropy, bytes, len );
+				SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
+
+				SRG_ResetEntropy( signEntropy );
+				SRG_FeedEntropy( signEntropy, (const uint8_t*)*buf, buf.length() );
+
 #ifdef DEBUG_SIGNING
 				lprintf( "FEED INIT %s", id );
 				LogBinary( (*buf), buf.length() );
 				lprintf( "FEED" );
 				LogBinary( bytes, len );
 #endif
-				SRG_FeedEntropy( signEntropy, bytes, len );
+				SRG_FeedEntropy( signEntropy, outbuf, 32 );
 				Release( bytes );
 				SRG_GetEntropyBuffer( signEntropy, (uint32_t*)outbuf, 256 );
 #ifdef DEBUG_SIGNING
@@ -683,7 +790,6 @@ private:
 			EnqueLink( &srg->SigningEntropies, signEntropy );
 		}
 	}
-
 };
 
 int SRGObject::signingThreads = 1;
@@ -717,6 +823,7 @@ void SRGObject::Init( Isolate *isolate, Handle<Object> exports )
 	SRGObject::constructor.Reset( isolate, f );
 
 	SET_READONLY( exports, "SaltyRNG", f );
+	SET_READONLY_METHOD( f, "id", SRGObject::idGenerator );
 	SET_READONLY_METHOD( f, "sign", SRGObject::sign );
 	SET_READONLY_METHOD( f, "setSigningThreads", SRGObject::setThraads );
 	SET_READONLY_METHOD( f, "verify", SRGObject::verify );

@@ -2,7 +2,9 @@
 .npmignore
 *~
 build
+build-*
 tests
 xx
 zz
 .vscode
+*.tgz

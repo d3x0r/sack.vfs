@@ -571,23 +571,27 @@ static Local<Object> makeRequest( Isolate *isolate, struct optionStrings *string
 	struct HttpState *pHttpState = GetWebSocketHttpState( pc );
 	if( pHttpState ) {
 		struct cgiParams cgi;
+		PTEXT content;
 		cgi.isolate = isolate;
 		cgi.cgi = Object::New( isolate );
 		ProcessCGIFields( pHttpState, cgiParamSave, (uintptr_t)&cgi );
 
 		req->Set( strings->CGIString->Get( isolate ), cgi.cgi );
+		if (content = GetHttpContent(pHttpState))
+			req->Set(strings->contentString->Get(isolate), String::NewFromUtf8(isolate, GetText(content)));
+		else
+			req->Set(strings->contentString->Get(isolate), Null(isolate));
+		if (!GetText(GetHttpRequest(pHttpState))) {
+			lprintf("lost request url");
+		}
+		else
+		req->Set(strings->urlString->Get(isolate)
+			, String::NewFromUtf8(isolate
+				, GetText(GetHttpRequest(pHttpState))));
+		//ResetHttpContent(pc, pHttpState);
 	}
 	req->Set( strings->connectionString->Get( isolate ), socket = makeSocket( isolate, pc ) );
 	req->Set( strings->headerString->Get( isolate ), socket->Get( strings->headerString->Get( isolate ) ) );
-	if( GetHttpContent( pHttpState ) )
-		req->Set( strings->contentString->Get( isolate ), String::NewFromUtf8( isolate, GetText( GetHttpContent( pHttpState ) ) ) );
-	else
-		req->Set( strings->contentString->Get( isolate ), Null(isolate) );
-	if( !GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) )
-		DebugBreak();
-	req->Set( strings->urlString->Get( isolate )
-		, String::NewFromUtf8( isolate
-			, GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) ) );
 	return req;
 }
 
@@ -646,6 +650,8 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				struct optionStrings *strings = getStrings( isolate );
 				Local<Object> socket;
 				wssiObject *wssiInternal = wssiObject::Unwrap<wssiObject>( wssi );
+				if( !eventMessage->pc )
+					lprintf( "FATALITY - ACCEPT EVENT IS SETTING SOCKET TO NULL." );
 				wssiInternal->pc = eventMessage->pc;
 				wssiInternal->server = myself;
 				AddLink( &myself->opening, wssiInternal );
@@ -1043,7 +1049,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	wssiObject *wssi = (wssiObject*)psv;
 	if( wssi ) {
 		struct wssiEvent *pevt = GetWssiEvent();
-		//lprintf( "Server Websocket closed; post to javascript %p  %p", pc, wssi );
+		lprintf( "Server Websocket closed; post to javascript %p  %p", pc, wssi );
 		(*pevt).eventType = WS_EVENT_CLOSE;
 		(*pevt)._this = wssi;
 		wssi->pc = NULL;
@@ -1131,6 +1137,7 @@ static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char *proto
 	struct wssEvent evt;
 	evt.protocol = protocols;
 	evt.resource = resource;
+	if( !pc ) lprintf( "FATALITY - ACCEPT EVENT RECEVIED ON A NON SOCKET!?" );
 	evt.pc = pc;
 	evt.accepted = 0;
 	evt.eventType = WS_EVENT_ACCEPT;
@@ -1266,9 +1273,45 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		struct HttpState *pHttpState = GetWebSocketHttpState( obj->pc );
 		if( include_close ) {
 			RemoveClientEx( obj->pc, 0, 1 );
-		} else {
-			//lprintf( "End a request..." );
-			EndHttp( pHttpState );
+		}
+		else {
+			if (pHttpState) {
+				int result;
+				EndHttp(pHttpState);
+				while ((result = ProcessHttp(obj->pc, pHttpState)))
+				{
+					int status;
+					//lprintf("result = %d  %zd", result, HTTP_STATE_RESULT_CONTENT == result);
+					switch (result)
+					{
+					case HTTP_STATE_RESULT_CONTENT:
+
+						struct wssEvent *pevt = GetWssEvent();
+						//lprintf( "posting request event to JS" );
+						(*pevt).eventType = WS_EVENT_REQUEST;
+						//(*pevt).waiter = MakeThread();
+						(*pevt).pc = obj->pc;
+						(*pevt)._this = obj->wss;
+						EnqueLink(&obj->wss->eventQueue, pevt);
+						uv_async_send(&obj->wss->async);
+
+						/*
+						status = InvokeMethod(pc, server, pHttpState);
+						if (status
+							&& ((pHttpState->response_version == 9)
+								|| (pHttpState->response_version == 100 && !pHttpState->flags.keep_alive)
+								|| (pHttpState->response_version == 101 && pHttpState->flags.close))) {
+							RemoveClientEx(pc, 0, 1);
+							return;
+						}
+						else
+						*/
+						//EndHttp(pHttpState);
+						break;
+					}
+				}
+
+			}
 		}
 	}
 
@@ -1325,10 +1368,13 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 		//lprintf( "posting request event to JS" );
 		SetWebSocketHttpCloseCallback( pc, webSockHttpClose );
 		(*pevt).eventType = WS_EVENT_REQUEST;
+		//(*pevt).waiter = MakeThread();
 		(*pevt). pc = pc;
 		(*pevt)._this = wss;
 		EnqueLink( &wss->eventQueue, pevt );
 		uv_async_send( &wss->async );
+		//while (!(*pevt).done) WakeableSleep(SLEEP_FOREVER);
+		//lprintf("queued and evented  request event to JS");
 	} else {
 		RemoveClient( pc );
 	}
@@ -1515,7 +1561,7 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 			argOfs++;
 		}
 		if( args[argOfs]->IsNumber() ) {
-			wssOpts.port = (int)args[0]->IntegerValue(isolate->GetCurrentContext()).ToChecked();
+			wssOpts.port = (int)args[0]->IntegerValue(isolate->GetCurrentContext()).FromMaybe(0);
 			argOfs++;
 		}
 		if( args[argOfs]->IsObject() ) {
@@ -1852,6 +1898,7 @@ static uintptr_t webSockClientOpen( PCLIENT pc, uintptr_t psv ) {
 static void webSockClientClosed( PCLIENT pc, uintptr_t psv, int code, const char *reason )
 {
 	wscObject *wsc = (wscObject*)psv;
+	wsc->readyState = CLOSED;
 	struct wscEvent *pevt = GetWscEvent();
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wsc;
@@ -2229,9 +2276,8 @@ void wscObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 }
 
 
-httpRequestObject::httpRequestObject() {
+httpRequestObject::httpRequestObject():_this() {
 	pc = NULL;
-	memset( &_this, 0, sizeof( _this ) );
 	ssl = false;
 	port = 0;
 	hostname = NULL;

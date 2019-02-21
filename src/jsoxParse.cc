@@ -165,7 +165,9 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 		break;
 	default:
 		if( val->value_type >= JSOX_VALUE_TYPED_ARRAY && val->value_type <= JSOX_VALUE_TYPED_ARRAY_MAX ) {
-			Local<ArrayBuffer> ab = ArrayBuffer::New( revive->isolate, val->string, val->stringLen, ArrayBufferCreationMode::kExternalized );
+			Local<ArrayBuffer> ab;
+			if( val->value_type < JSOX_VALUE_TYPED_ARRAY_MAX )
+				ab = ArrayBuffer::New( revive->isolate, val->string, val->stringLen, ArrayBufferCreationMode::kExternalized );
 			switch( val->value_type - JSOX_VALUE_TYPED_ARRAY ) {
 			case 0:
 				result = ab;
@@ -214,11 +216,15 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 							refObj = refObj->Get( revive->context, (uint32_t)pathVal->result_n ).ToLocalChecked()->ToObject( revive->isolate->GetCurrentContext() ).ToLocalChecked();
 						}
 						else if( pathVal->value_type == JSOX_VALUE_STRING ) {
-							refObj = refObj->Get( revive->context
+							Local<Value> val = refObj->Get( revive->context
 								, String::NewFromUtf8( revive->isolate
 									, pathVal->string
 									, NewStringType::kNormal
-									, (int)pathVal->stringLen ).ToLocalChecked() ).ToLocalChecked()->ToObject( revive->isolate->GetCurrentContext() ).ToLocalChecked();
+									, (int)pathVal->stringLen ).ToLocalChecked() ).ToLocalChecked();
+							if( val->IsObject() )
+								refObj = val->ToObject( revive->isolate->GetCurrentContext() ).ToLocalChecked();
+							else
+								return val;
 						}
 						//lprintf( "%d %s", pathVal->value_type, pathVal->string );
 					}
