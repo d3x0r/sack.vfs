@@ -9,10 +9,9 @@ static struct local {
 
 Persistent<Function> ComObject::constructor;
 
-ComObject::ComObject( char *name ) {
-	memset( &this->jsObject, 0, sizeof( this->jsObject ) );
+ComObject::ComObject( char *name ) : jsObject() {
 	this->readQueue = CreateLinkQueue();
-   	this->name = name;
+	this->name = name;
 	handle = SackOpenComm( name, 0, 0 );
 }
 
