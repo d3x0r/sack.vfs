@@ -446,7 +446,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 		PDATALIST pdlRecord = NULL;
-		INDEX idx;
+		INDEX idx = 0;
 		int items;
 		struct json_value_container * jsval;
 
