@@ -13,7 +13,9 @@ Persistent<Function> FileObject::constructor;
 Persistent<FunctionTemplate> FileObject::tpl;
 
 Local<String> localString( Isolate *isolate, const char *data, int len ) {
-	return String::NewFromUtf8( isolate, data, NewStringType::kNormal, len).ToLocalChecked();
+	Local<String> retval = String::NewFromUtf8( isolate, data, NewStringType::kNormal, len).ToLocalChecked();
+	Release( (POINTER)data );
+	return retval;
 	/*
 	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
 	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
