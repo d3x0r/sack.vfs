@@ -13,6 +13,8 @@ Persistent<Function> FileObject::constructor;
 Persistent<FunctionTemplate> FileObject::tpl;
 
 Local<String> localString( Isolate *isolate, const char *data, int len ) {
+	return String::NewFromUtf8( isolate, data, NewStringType::kNormal, len).ToLocalChecked();
+	/*
 	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
 	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
 	Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
@@ -21,9 +23,12 @@ Local<String> localString( Isolate *isolate, const char *data, int len ) {
 	holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 	holder->buffer = (void*)data;
 	return arrayBuffer;
+	*/
 }
 
 Local<String> localStringExternal( Isolate *isolate, const char *data, int len, const char *real_root ) {
+	return String::NewFromUtf8( isolate, data, NewStringType::kNormal, len).ToLocalChecked();
+	/*
 	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
 	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
 	Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
@@ -38,6 +43,7 @@ Local<String> localStringExternal( Isolate *isolate, const char *data, int len, 
 		holder->buffer = (void*)real_root;
 	}
 	return arrayBuffer;
+	*/
 }
 
 
