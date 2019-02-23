@@ -1187,6 +1187,7 @@ setTimeout( ()=>{ }, 5000 );
 - 0.9.146
    - SACK Update; add XSWS 
    - Fixed stall issue with http server and lots of requests in series from browser.
+   - Fixed http server issue getting data while processing another header.
 - 0.9.145 
    - Add 'mv', 'rename' methods to Volume() instance.  
    - Split locks on ssl read/write.  

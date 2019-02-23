@@ -6408,12 +6408,15 @@ inline void operator delete (void * p)
 // this is a method replacement to use PIPEs instead of SEMAPHORES
 // replacement code only affects linux.
 #if defined( __QNX__ ) || defined( __MAC__) || defined( __LINUX__ )
-#  if defined( __ANDROID__ ) || defined( EMSCRIPTEN )
+#  if defined( __ANDROID__ ) || defined( EMSCRIPTEN ) || defined( __MAC__ )
 // android > 21 can use pthread_mutex_timedop
 #    define USE_PIPE_SEMS
 #  else
+//   Default behavior is to use pthread_mutex_timedlock for wakeable sleeps.
 // no semtimedop; no semctl, etc
 //#    include <sys/sem.h>
+//originally used semctl; but that consumes system resources that are not
+//cleaned up when the process exits.
 #endif
 #endif
 #ifdef USE_PIPE_SEMS
@@ -52635,21 +52638,33 @@ void ProcessURL_CGI( struct HttpState *pHttpState, PTEXT params )
 //int ProcessHttp( struct HttpState *pHttpState )
 int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
 {
+	lockHttp( pHttpState );
 	if( pHttpState->final )
 	{
-		//GatherHttpData( pHttpState );
-		//unlockHttp( pHttpState );
-		/*
-		if( pHttpState->flags.success && !pHttpState->returned_status ) {
-			pHttpState->returned_status = 1;
-			return pHttpState->numeric_code;
+		if( pHttpState->response_version ) {
+			GatherHttpData( pHttpState );
+			unlockHttp( pHttpState );
+			if( pHttpState->flags.success && !pHttpState->returned_status ) {
+				pHttpState->returned_status = 1;
+				return pHttpState->numeric_code;
+			}
+		} else {
+			if( pHttpState->content_length ) {
+				GatherHttpData( pHttpState );
+				unlockHttp( pHttpState );
+				if( ( ( GetTextSize( pHttpState->partial ) >= pHttpState->content_length )
+					  ||( GetTextSize( pHttpState->content ) >= pHttpState->content_length ) )
+				  ) {
+					// prorbably a POST with a body?
+					// had to gather the body...
+					return HTTP_STATE_RESULT_CONTENT;
+				}
+			}
 		}
-		*/
 		return HTTP_STATE_RESULT_NOTHING;
 	}
 	else
 	{
-		lockHttp( pHttpState );
 //, pStart;
 		PTEXT pCurrent;
 		PTEXT pLine = NULL;
@@ -52669,7 +52684,7 @@ int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
 		len = 0;
 		// we always start without having a line yet, because all input is already merged
 		{
-			//lprintf( "%s", GetText( pCurrent ) );
+			//lprintf( "process HTTP: %s %d", GetText( pCurrent ), pHttpState->bLine );
 			size = GetTextSize( pCurrent );
 			c = GetText( pCurrent );
 			if( pHttpState->bLine < 4 )
@@ -52747,6 +52762,7 @@ int ProcessHttp( PCLIENT pc, struct HttpState *pHttpState )
 							}
 							else
 							{
+                        //lprintf( "Parsing http state content for something.." );
 								pLine = SegCreate( pos - start - pHttpState->bLine );
 								MemCpy( line = GetText( pLine ), c + start, (pos - start - pHttpState->bLine)*sizeof(TEXTCHAR));
 								line[pos-start- pHttpState->bLine] = 0;
@@ -52904,7 +52920,7 @@ SegSplit( &pCurrent, start );
 				{
 					// down convert from int64_t
 					pHttpState->content_length = (int)IntCreateFromSeg( field->value );
-					//lprintf( "content lenght: %d", pHttpState->content_length );
+					//lprintf( "content length: %d", pHttpState->content_length );
 				}
 				else if( TextLike( field->name, WIDE( "upgrade" ) ) )
 				{
@@ -52978,6 +52994,7 @@ LOGICAL AddHttpData( struct HttpState *pHttpState, POINTER buffer, size_t size )
 	{
 		const uint8_t* buf = (const uint8_t*)buffer;
 		size_t ofs = 0;
+      //lprintf( "Add Chunk HTTP Data:%d", size );
 		while( ofs < size )
 		{
 			switch( pHttpState->read_chunk_state )
@@ -53088,6 +53105,7 @@ LOGICAL AddHttpData( struct HttpState *pHttpState, POINTER buffer, size_t size )
 	}
 	else
 	{
+		//lprintf( "Add HTTP Data:%d", size );
 		if( size )
 			VarTextAddData( pHttpState->pvt_collector, (CTEXTSTR)buffer, size );
 		unlockHttp( pHttpState );
@@ -53104,6 +53122,7 @@ struct HttpState *CreateHttpState( void )
 }
 void EndHttp( struct HttpState *pHttpState )
 {
+	//lprintf( "Ending HTTP %p", pHttpState );
 	lockHttp( pHttpState );
 	pHttpState->bLine = 0;
 	pHttpState->final = 0;
@@ -70921,13 +70940,13 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 	if( !lpClient ) return;
 	if( !( lpClient->dwFlags & CF_UDP )
 		&& ( lpClient->dwFlags & ( CF_CONNECTED ) ) ) {
-		//lprintf( "TRIGGER SHUTDOWN WRITES" );
 		shutdown( lpClient->Socket, SHUT_WR );
 	} else
 	{
 		int n = 0;
 		// UDP still needs to be done this way...
-		//
+				//
+		//lprintf( "This will end up resetting the socket?" );
 		EnterCriticalSec( &globalNetworkData.csNetwork );
 		InternalRemoveClientExx( lpClient, bBlockNotify, bLinger DBG_RELAY );
 		if( NetworkLock( lpClient, 0 ) && ((n=1),NetworkLock( lpClient, 1 )) ) {
@@ -99214,10 +99233,10 @@ static void __DoODBCBinding( HSTMT hstmt, PDATALIST pdlItems ) {
 			}
 			break;
 		case VALUE_TYPED_ARRAY:
-			rc = sqlite3_bind_blob( db, useIndex, val->string, val->stringLen, NULL );
+			//rc = sqlite3_bind_blob( db, useIndex, val->string, val->stringLen, NULL );
 			break;
 		case VALUE_STRING:
-			rc = sqlite3_bind_text( db, useIndex, val->string, val->stringLen, NULL );
+			//rc = sqlite3_bind_text( db, useIndex, val->string, val->stringLen, NULL );
 				rc = SQLBindParamter( hstmt
   // parameter number
 										  , useIndex

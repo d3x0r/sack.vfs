@@ -6399,12 +6399,15 @@ inline void operator delete (void * p)
 // this is a method replacement to use PIPEs instead of SEMAPHORES
 // replacement code only affects linux.
 #if defined( __QNX__ ) || defined( __MAC__) || defined( __LINUX__ )
-#  if defined( __ANDROID__ ) || defined( EMSCRIPTEN )
+#  if defined( __ANDROID__ ) || defined( EMSCRIPTEN ) || defined( __MAC__ )
 // android > 21 can use pthread_mutex_timedop
 #    define USE_PIPE_SEMS
 #  else
+//   Default behavior is to use pthread_mutex_timedlock for wakeable sleeps.
 // no semtimedop; no semctl, etc
 //#    include <sys/sem.h>
+//originally used semctl; but that consumes system resources that are not
+//cleaned up when the process exits.
 #endif
 #endif
 #ifdef USE_PIPE_SEMS
