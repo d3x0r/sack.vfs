@@ -161,7 +161,7 @@ public:
 
 	static void fileWrite( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileStore( const v8::FunctionCallbackInfo<Value>& args );
-	static ObjectStorageObject* openInVFS( Isolate *isolate, struct volume *vol, const char *mount, const char *name, const char *key1, const char *key2 );
+	static ObjectStorageObject* openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 );
 	~ObjectStorageObject();
 };
 

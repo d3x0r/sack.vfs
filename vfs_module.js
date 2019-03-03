@@ -24,3 +24,8 @@ require( "./object-storage.js" )(sack);
 //vfs.
 module.exports=exports=sack;
 
+
+if (process._tickDomainCallback || process._tickCallback)
+    sack.Thread(process._tickDomainCallback || process._tickCallback);
+
+

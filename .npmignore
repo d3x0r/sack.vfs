@@ -3,8 +3,10 @@
 *.tgz
 *~
 build
+build-*
 tests
 src/sack
 xx
 zz
 .vscode
+*.tgz

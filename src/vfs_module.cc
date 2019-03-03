@@ -13,6 +13,10 @@ Persistent<Function> FileObject::constructor;
 Persistent<FunctionTemplate> FileObject::tpl;
 
 Local<String> localString( Isolate *isolate, const char *data, int len ) {
+	Local<String> retval = String::NewFromUtf8( isolate, data, NewStringType::kNormal, len).ToLocalChecked();
+	Release( (POINTER)data );
+	return retval;
+	/*
 	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
 	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
 	Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
@@ -21,9 +25,12 @@ Local<String> localString( Isolate *isolate, const char *data, int len ) {
 	holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 	holder->buffer = (void*)data;
 	return arrayBuffer;
+	*/
 }
 
 Local<String> localStringExternal( Isolate *isolate, const char *data, int len, const char *real_root ) {
+	return String::NewFromUtf8( isolate, data, NewStringType::kNormal, len).ToLocalChecked();
+	/*
 	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
 	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
 	Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
@@ -38,6 +45,7 @@ Local<String> localStringExternal( Isolate *isolate, const char *data, int len, 
 		holder->buffer = (void*)real_root;
 	}
 	return arrayBuffer;
+	*/
 }
 
 
@@ -134,7 +142,7 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 void VolumeObject::doInit( Handle<Object> exports ) 
 {
 	InvokeDeadstart();
-
+	
 	node::AtExit( moduleExit );
 
 	//SetAllocateLogging( TRUE );
@@ -335,7 +343,7 @@ void VolumeObject::vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args
 	}
 
 
-	ObjectStorageObject *oso = ObjectStorageObject::openInVFS( isolate, vol->vol, mount_name, filename, key, key2 );
+	ObjectStorageObject *oso = ObjectStorageObject::openInVFS( isolate, mount_name, filename, key, key2 );
 	if( oso ) {
 		// uhmm this needs 'this' to know what to return as...
 	}
@@ -417,11 +425,8 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 			SqlObject* obj;
 			char dbName[256];
-         if( vol->mountName )
-				snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
-         else
-				snprintf( dbName, 256, "%s", (*fName) );
-			obj = new SqlObject( dbName );
+ 			snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
+ 			obj = new SqlObject( dbName );
 			SqlObject::doWrap( obj, args.This() );
 
 			args.GetReturnValue().Set( args.This() );

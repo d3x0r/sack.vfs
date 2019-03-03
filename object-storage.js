@@ -1,24 +1,21 @@
 
 module.exports = function(sack) {
 
+
 sack.SaltyRNG.setSigningThreads( require( "os" ).cpus().length );
 
-
-//sack.Sqlite.op( "SACK/Summoner/Auto register with summoner?", 0 );
-//sack.Sqlite.so( "SACK/Summoner/Auto register with summoner?", 1 );
-//sack.loadComplete();
-if (process._tickDomainCallback || process._tickCallback)
-    sack.Thread(process._tickDomainCallback || process._tickCallback);
+// save original object.
+const _objectStorage = sack.ObjectStorage;
 
 
-var _objectStorage = sack.ObjectStorage;
-
+// associates object data with storage data for later put(obj) to re-use the same informations.
 function objectStorageContainer(o,sign) {
 	if( !this instanceof objectStorageContainer ) return new objectStorageContainer(o,sign);
+
 	this.data = {	
-			nonce : sign?sack.SaltyRNG.sign( sack.JSOX.stringify(o), 3, 3 ):null,
-			data : o
-		}
+		nonce : sign?sack.SaltyRNG.sign( sack.JSOX.stringify(o), 3, 3 ):null,
+		data : o
+	}
 	if( sign ) {
 		var v = sack.SaltyRNG.verify( sack.JSOX.stringify(o), this.data.nonce, 3, 3 );
 		//console.log( "TEST:", v );
@@ -31,11 +28,17 @@ function objectStorageContainer(o,sign) {
 	//console.log( "Container:", this );
 }
 
+// define a class... to be handled by stringification
 sack.ObjectStorage.prototype.defineClasss = function(a,b) {
 	this.stringifier.defineClass(a,b);
 }
 
-sack.ObjectStorage.prototype.put = function( obj,sign ) {
+sack.ObjectStorage.prototype.scan = function( from ) {
+	var fromTime = ( from.getTime() * 256 );
+	//this.loadSince( fromTime ); 
+}
+
+sack.ObjectStorage.prototype.put = function( obj, options ) {
 	
 	var container = this.stored.get( obj );
 	var storage;
@@ -52,21 +55,24 @@ sack.ObjectStorage.prototype.put = function( obj,sign ) {
 			throw new Error( "record is signed" );
 		}
 	}
-	container = new objectStorageContainer(obj,sign);
 
-	//console.log( "saving stored container.id", obj, container.id );
-
-	this.stored.delete( obj );
-	//this.stored.set( obj, container.id );
-	this.cached.set( container.id, container.data.data );
-	this.cachedContainer.set( container.id, container );
-	
-	storage = this.stringifier.stringify( container );
-
-	//console.log( "Create file:", container.id );
-	this.write( container.id, storage );
-	//console.log( "OUTPUT:", storage );
-	return container.id;
+	{
+		container = new objectStorageContainer(obj,options);
+	        
+		//console.log( "saving stored container.id", obj, container.id );
+	        
+		this.stored.delete( obj );
+		//this.stored.set( obj, container.id );
+		this.cached.set( container.id, container.data.data );
+		this.cachedContainer.set( container.id, container );
+		
+		storage = this.stringifier.stringify( container );
+	        
+		//console.log( "Create file:", container.id );
+		this.write( container.id, storage );
+		//console.log( "OUTPUT:", storage );
+		return container.id;
+	}
 }
 
 /*
@@ -80,7 +86,7 @@ sack.ObjectStorage.prototype.update( objId, obj ) {
 
 */
 
-sack.ObjectStorage.prototype.get = function( key ) {
+sack.ObjectStorage.prototype.get = function( opts ) {
 	//this.parser.
 	var resolve;
 	var reject;
@@ -117,7 +123,8 @@ sack.ObjectStorage.prototype.get = function( key ) {
 		}
 	};
 
-	this.decoding.push( key );
+
+	this.decoding.push( opts );
 	function decodeStoredObjectKeyImmediate(objId,ref){
 		//console.log( "Revive:", objId, ref, this.mapping, this.decoding );
 		if( this.decoding.find( pending=>pending===objId ) ) {
@@ -169,32 +176,34 @@ sack.ObjectStorage.prototype.get = function( key ) {
 		}
 	};
 
-	console.log( "Read Key:", key );
+	console.log( "Read Key:", opts );
+	var os = this;
 	var p = new Promise( function(res,rej) {
 		resolve = res;  reject = rej;
-	} );
-	//console.log( "Read does exist..." );
-	this.read( key, parser, (obj)=>{
-		// with a new parser, only a partial decode before revive again...
-				var found;
-
-				do {
-					var found = this.pending.findIndex( pending=>pending.id === key );
-					if( found >= 0 ) {
-						this.pending[found].ref.o[this.pending[found].ref.f] = obj.data.data;
-						this.pending.splice( found, 1 );
-					}
-				} while( found >= 0 );
-
-		if( obj ){
-			Object.setPrototypeOf( obj, objectStorageContainer.prototype );
-			//console.log( "GOTzz:", obj );
-			this.stored.set( obj.data.data, obj.id );
-			this.cachedContainer.set( obj.id, obj ); 
-			
-			resolve(obj.data.data);
-		}else
-			reject();
+		//console.log( "Read does exist..." );
+		os.read( key
+			, parser, (obj)=>{
+			// with a new parser, only a partial decode before revive again...
+					var found;
+	        
+					do {
+						var found = os.pending.findIndex( pending=>pending.id === key );
+						if( found >= 0 ) {
+							os.pending[found].ref.o[this.pending[found].ref.f] = obj.data.data;
+							os.pending.splice( found, 1 );
+						}
+					} while( found >= 0 );
+	        
+			if( obj ){
+				Object.setPrototypeOf( obj, objectStorageContainer.prototype );
+				//console.log( "GOTzz:", obj );
+				os.stored.set( obj.data.data, obj.id );
+				os.cachedContainer.set( obj.id, obj ); 
+				
+				resolve(obj.data.data);
+			}else
+				reject();
+		} );
 	} );
 
 
@@ -208,7 +217,7 @@ sack.ObjectStorage = function (...args) {
 	var newStorage = new _objectStorage(...args);
 	newStorage.cached = new Map();
 	newStorage.cachedContainer = new Map();
-	newStorage.stored = new WeakMap();
+	newStorage.stored = new WeakMap(); // objects which have alredy been through put()/get()
 	newStorage.decoding = [];
 	newStorage.pending = [];
 

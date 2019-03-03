@@ -31,22 +31,19 @@ private:
 				char *r;
 				struct random_context *ctx;
 				if( args.Length() > 1 && args[1]->IsNumber() )
-					version = args[1]->ToInt32( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked()->Uint32Value();
+					version = args[1]->IntegerValue( args.GetIsolate()->GetCurrentContext() ).FromMaybe(0);
 				switch( version ) {
 				case 0:
 					ctx = SRG_CreateEntropy( NULL, 0 );
 					break;
 				case 1:
-					ctx = SRG_CreateEntropy2( NULL, 0 );
-					break;
-				case 2:
 					ctx = SRG_CreateEntropy2_256( NULL, 0 );
 					break;
-				case 3:
+				case 2:
 					ctx = SRG_CreateEntropy3( NULL, 0 );
 					break;
 				default:
-				case 4:
+				case 3:
 					ctx = SRG_CreateEntropy4( NULL, 0 );
 					break;
 				}
@@ -63,7 +60,7 @@ private:
 			else
 			{
 				if( args[0]->IsNumber() )
-					version = args[0]->ToInt32(args.GetIsolate()->GetCurrentContext()).ToLocalChecked()->Uint32Value();
+					version = args[0]->IntegerValue( args.GetIsolate()->GetCurrentContext() ).FromMaybe( 0 );
 
 				char *r;
 				switch( version ) {
@@ -74,13 +71,10 @@ private:
 					r = SRG_ID_Generator_256();
 					break;
 				case 2:
-					r = SRG_ID_Generator_256();
-					break;
-				case 3:
 					r = SRG_ID_Generator3();
 					break;
 				default:
-				case 4:
+				case 3:
 					r = SRG_ID_Generator4();
 					break;
 				}

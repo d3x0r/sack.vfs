@@ -563,7 +563,7 @@ static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 	return result;
 }
 
-static Local<Object> makeRequest( Isolate *isolate, struct optionStrings *strings, PCLIENT pc ) {
+static Local<Value> makeRequest( Isolate *isolate, struct optionStrings *strings, PCLIENT pc ) {
 	// .url
 	// .socket
 	Local<Object> req = Object::New( isolate );
@@ -571,23 +571,28 @@ static Local<Object> makeRequest( Isolate *isolate, struct optionStrings *string
 	struct HttpState *pHttpState = GetWebSocketHttpState( pc );
 	if( pHttpState ) {
 		struct cgiParams cgi;
+		PTEXT content;
 		cgi.isolate = isolate;
 		cgi.cgi = Object::New( isolate );
 		ProcessCGIFields( pHttpState, cgiParamSave, (uintptr_t)&cgi );
 
 		req->Set( strings->CGIString->Get( isolate ), cgi.cgi );
+		if (content = GetHttpContent(pHttpState))
+			req->Set(strings->contentString->Get(isolate), String::NewFromUtf8(isolate, GetText(content)));
+		else
+			req->Set(strings->contentString->Get(isolate), Null(isolate));
+		if (!GetText(GetHttpRequest(pHttpState))) {
+			//lprintf("lost request url");
+			return Null( isolate );
+		}
+		else
+			req->Set(strings->urlString->Get(isolate)
+				, String::NewFromUtf8(isolate
+					, GetText(GetHttpRequest(pHttpState))));
+		//ResetHttpContent(pc, pHttpState);
 	}
 	req->Set( strings->connectionString->Get( isolate ), socket = makeSocket( isolate, pc ) );
 	req->Set( strings->headerString->Get( isolate ), socket->Get( strings->headerString->Get( isolate ) ) );
-	if( GetHttpContent( pHttpState ) )
-		req->Set( strings->contentString->Get( isolate ), String::NewFromUtf8( isolate, GetText( GetHttpContent( pHttpState ) ) ) );
-	else
-		req->Set( strings->contentString->Get( isolate ), Null(isolate) );
-	if( !GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) )
-		DebugBreak();
-	req->Set( strings->urlString->Get( isolate )
-		, String::NewFromUtf8( isolate
-			, GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) ) );
 	return req;
 }
 
@@ -603,6 +608,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 		while( eventMessage = (struct wssEvent *)DequeLink( &myself->eventQueue ) ) {
 			Local<Value> argv[3];
 			handled++;
+			//lprintf( "handling an event from somewhere %p  %s", GetWebSocketHttpState( eventMessage->pc ), GetText( GetHttpRequest( GetWebSocketHttpState( eventMessage->pc ) ) ) );
 			myself->eventMessage = eventMessage;
 			if( eventMessage->eventType == WS_EVENT_REQUEST ) {
 				if( !myself->requestCallback.IsEmpty() ) {
@@ -627,9 +633,13 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					//lprintf( "requests %p is %d", myself->requests, myself->requests->Cnt );
 					//lprintf( "New request..." );
 					argv[0] = makeRequest( isolate, strings, eventMessage->pc );
-					argv[1] = http;
-					Local<Function> cb = Local<Function>::New( isolate, myself->requestCallback );
-					cb->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
+					if( !argv[0]->IsNull() ) {
+						argv[1] = http;
+						Local<Function> cb = Local<Function>::New( isolate, myself->requestCallback );
+						cb->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
+					}
+					//else
+					//	lprintf( "This request was a false alarm, and was empty." );
 				}
 			}
 			else if( eventMessage->eventType == WS_EVENT_ACCEPT ) {
@@ -696,7 +706,8 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 
 			myself->eventMessage = NULL;
 			eventMessage->done = TRUE;
-			WakeThread( eventMessage->waiter );
+			if( eventMessage->waiter )
+				WakeThread( eventMessage->waiter );
 		}
 		myself->last_count_handled = handled;
 	}
@@ -1028,7 +1039,7 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 
 static void webSockServerCloseEvent( wssObject *wss ) {
 	struct wssEvent *pevt = GetWssEvent();
-	lprintf( "Server Websocket closed; post to javascript %p", wss );
+	//lprintf( "Server Websocket closed; post to javascript %p", wss );
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wss;
 	wss->closing = 1;
@@ -1045,7 +1056,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	wssiObject *wssi = (wssiObject*)psv;
 	if( wssi ) {
 		struct wssiEvent *pevt = GetWssiEvent();
-		lprintf( "Server Websocket closed; post to javascript %p  %p", pc, wssi );
+		//lprintf( "Server Websocket closed; post to javascript %p  %p", pc, wssi );
 		(*pevt).eventType = WS_EVENT_CLOSE;
 		(*pevt)._this = wssi;
 		wssi->pc = NULL;
@@ -1268,10 +1279,34 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 	{
 		struct HttpState *pHttpState = GetWebSocketHttpState( obj->pc );
 		if( include_close ) {
+			lprintf( "Close is included... is this a reset close?" );
 			RemoveClientEx( obj->pc, 0, 1 );
-		} else {
-			//lprintf( "End a request..." );
-			EndHttp( pHttpState );
+		}
+		else {
+			if (pHttpState) {
+				int result;
+				EndHttp(pHttpState);
+				while ((result = ProcessHttp(obj->pc, pHttpState)))
+				{
+					int status;
+					//lprintf("result = %d  %zd", result, HTTP_STATE_RESULT_CONTENT == result);
+					switch (result)
+					{
+					case HTTP_STATE_RESULT_CONTENT:
+
+						struct wssEvent *pevt = GetWssEvent();
+						//lprintf( "A posting request event to JS %p %s", obj->pc, GetText( GetHttpRequest( pHttpState ) ) );
+						(*pevt).eventType = WS_EVENT_REQUEST;
+						//(*pevt).waiter = MakeThread();
+						(*pevt).pc = obj->pc;
+						(*pevt)._this = obj->wss;
+						EnqueLink(&obj->wss->eventQueue, pevt);
+						uv_async_send(&obj->wss->async);
+						break;
+					}
+				}
+
+			}
 		}
 	}
 
@@ -1325,13 +1360,16 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 	wssObject *wss = (wssObject*)psv;
 	if( !wss->requestCallback.IsEmpty() ) {
 		struct wssEvent *pevt = GetWssEvent();
-		//lprintf( "posting request event to JS" );
+		//lprintf( "posting request event to JS  %s", GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) );
 		SetWebSocketHttpCloseCallback( pc, webSockHttpClose );
 		(*pevt).eventType = WS_EVENT_REQUEST;
+		//(*pevt).waiter = MakeThread();
 		(*pevt). pc = pc;
 		(*pevt)._this = wss;
 		EnqueLink( &wss->eventQueue, pevt );
 		uv_async_send( &wss->async );
+		//while (!(*pevt).done) WakeableSleep(SLEEP_FOREVER);
+		//lprintf("queued and evented  request event to JS");
 	} else {
 		RemoveClient( pc );
 	}
