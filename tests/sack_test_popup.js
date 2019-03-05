@@ -10,8 +10,8 @@ b.on( "click", function() {
 b.text = "Quit...";
 f.show();
 
-var P = sack.Popup;
-var p = sack.Popup();
+var P = sack.PSI.Popup;
+var p = sack.PSI.Popup();
 
 var b = p.add( P.itemType.string,  "Button", ()=>console.log( "button selected" ) );
 
@@ -26,7 +26,7 @@ var c = [
 	p.add( P.itemType.string,  "Button 5", ()=>console.log( "button5 selected" ) ),
 	p.add( P.itemType.string,  "Button 6", ()=>console.log( "button6 selected" ) ),
 	p.add( P.itemType.string,  "Button 7", ()=>console.log( "button7 selected" ) ),
-	p.add( P.itemType.popup,  "Button 8", sack.Popup() ),
+	p.add( P.itemType.popup,  "Button 8", sack.PSI.Popup() ),
  ]
 setTimeout( ()=>{p.track(f)}, 1000 );
 //p.track();

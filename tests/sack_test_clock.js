@@ -13,7 +13,9 @@ b.text = "Quit...";
 
 var x = sack.Image.Color( {r:50,g:50,b:255,a:255} );
 
-var clock = f.Control( "Basic Clock Widget", 0, 40, 500, 500 );
+var clockDig = f.Control( "Basic Clock Widget", 0, 40, 300, 50 );
+
+var clock = f.Control( "Basic Clock Widget", 0, 90, 500, 500 );
 clock.analog();
 
 f.show();
