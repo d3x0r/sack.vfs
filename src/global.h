@@ -74,6 +74,9 @@ void InitUDPSocket( Isolate *isolate, Handle<Object> exports );
 void InitTask( Isolate *isolate, Handle<Object> exports );
 void KeyHidObjectInit( Isolate *isolate, Handle<Object> exports );
 
+void textObjectInit( Isolate *isolate, Handle<Object> _exports );
+	PTEXT isTextObject( Isolate *isolate, Local<Value> object );
+
 #define ReadOnlyProperty (PropertyAttribute)((int)PropertyAttribute::ReadOnly | PropertyAttribute::DontDelete)
 
 
