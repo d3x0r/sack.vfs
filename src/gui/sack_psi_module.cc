@@ -1083,6 +1083,11 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 
 	} else if( StrCmp( type, "PSI Console" ) == 0 ) {
 		c->Set( String::NewFromUtf8( isolate, "write" ), Function::New( isolate, ControlObject::writeConsole ) );
+		c->Set( String::NewFromUtf8( isolate, "send" ), Function::New( isolate, ControlObject::writeConsole ) );
+		c->SetAccessorProperty( String::NewFromUtf8( isolate, "echo" )
+			, Function::New( isolate, ControlObject::getConsoleEcho )
+			, Function::New( isolate, ControlObject::setConsoleEcho )
+			, DontDelete );
 		c->Set( String::NewFromUtf8( isolate, "oninput" ), Function::New( isolate, ControlObject::setConsoleRead ) );
 	} else if( StrCmp( type, NORMAL_BUTTON_NAME ) == 0 ) {
 		int ID = GetControlID( obj->control );
@@ -1135,11 +1140,8 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 			, Function::New( isolate, ControlObject::setProgressBarTextEnable )
 			, Function::New( isolate, ControlObject::setProgressBarTextEnable )
 			, DontDelete );
-
-
 	} else if( StrCmp( type, "Basic Clock Widget" ) == 0 ) {
 		c->Set( String::NewFromUtf8( isolate, "analog" ), Function::New( isolate, ControlObject::makeAnalog ) );
-
 	}
 }
 
@@ -1171,7 +1173,44 @@ void ControlObject::writeConsole( const FunctionCallbackInfo<Value>& args) {
 	ControlObject *c = ObjectWrap::Unwrap<ControlObject>( args.This() );
 	if( args.Length() > 0 )
 	{
+		if( args[0]->IsObject() ) 			{
+			PTEXT text = isTextObject( args.GetIsolate(), args[0] );
+			if( text ) {
+				PSIConsoleDirectOutput( c->control, text );
+				return;
+			}
+		}
 			String::Utf8Value fName( args[0]->ToString() );
+#if 0
+			PTEXT segment;
+			segment = SegCreateFromText( "Test Color Output?" );
+			segment->format.flags.foreground = 15;
+			segment->flags |= TF_NORETURN;
+			segment->format.flags.prior_foreground = 0;
+			PSIConsoleDirectOutput( c->control, segment );
+
+			segment = SegCreateFromText( "Test Color Output?" );
+			segment->format.flags.foreground = 1;
+			segment->flags |= TF_NORETURN;
+			segment->format.flags.prior_foreground = 0;
+			PSIConsoleDirectOutput( c->control, segment );
+
+			segment = SegCreateFromText( "Test Color Output?" );
+			segment->format.flags.foreground = 2;
+			segment->format.flags.prior_foreground = 0;
+			PSIConsoleDirectOutput( c->control, segment );
+
+			segment = SegCreateFromText( "Test Color Output?" );
+			segment->format.flags.foreground = 5;
+			segment->format.flags.prior_foreground = 0;
+			PSIConsoleDirectOutput( c->control, segment );
+
+			segment = SegCreate(0);
+			segment->flags |= TF_NORETURN;
+			segment->format.flags.prior_background = 0;
+			segment->format.flags.default_foreground = 1;
+			PSIConsoleDirectOutput( c->control, segment );
+#endif
 			pcprintf( c->control, "%s", (const char*)*fName );
 	}
 }
@@ -1382,6 +1421,16 @@ void ControlObject::createFrame( const FunctionCallbackInfo<Value>& args ) {
 void ControlObject::redraw( const FunctionCallbackInfo<Value>& args ) {
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
 	SmudgeCommon( me->control );
+}
+
+void ControlObject::getConsoleEcho( const FunctionCallbackInfo<Value>& args ) {
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	Isolate *isolate = args.GetIsolate();
+	args.GetReturnValue().Set( PSIConsoleGetLocalEcho( me->control ) ? True( isolate ) : False( isolate ) );
+}
+void ControlObject::setConsoleEcho( const FunctionCallbackInfo<Value>& args ) {
+	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	PSIConsoleSetLocalEcho( me->control, args[0]->BooleanValue() );
 }
 
 
@@ -1961,7 +2010,7 @@ static int CPROC onCreate( PSI_CONTROL pc ) {
 	RegistrationObject *registration = findRegistration( name );
 	if( !psiLocal.pendingCreate ) {
 		psiLocal.pendingRegistration = registration;
-		int result = MakePSIEvent( NULL, true, Event_Control_Create, pc );
+		int result = (int)MakePSIEvent( NULL, true, Event_Control_Create, pc );
 		psiLocal.pendingRegistration = NULL;
 		return result;
 	}
@@ -2101,7 +2150,7 @@ static int CPROC onDraw( PSI_CONTROL pc ) {
 	RegistrationObject *obj = findRegistration( name );
 	ControlObject **me = ControlData( ControlObject **, pc );
 
-	return MakePSIEvent( me[0], true, Event_Control_Draw, obj, me );
+	return (int)MakePSIEvent( me[0], true, Event_Control_Draw, obj, me );
 }
 
 void RegistrationObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
@@ -2126,7 +2175,7 @@ static int CPROC cbMouse( PSI_CONTROL pc, int32_t x, int32_t y, uint32_t b ) {
 	RegistrationObject *obj = findRegistration( name );
 	ControlObject **me = ControlData( ControlObject **, pc );
 
-	return MakePSIEvent( me[0], true, Event_Control_Mouse, x, y, b );
+	return (int)MakePSIEvent( me[0], true, Event_Control_Mouse, x, y, b );
 }
 
 void RegistrationObject::setMouse( const FunctionCallbackInfo<Value>& args ) {
@@ -2150,7 +2199,7 @@ static int CPROC cbKey( PSI_CONTROL pc, uint32_t key ) {
 	RegistrationObject *obj = findRegistration( name );
 	ControlObject **me = ControlData( ControlObject **, pc );
 
-	return MakePSIEvent( me[0], true, Event_Control_Key, key );
+	return (int)MakePSIEvent( me[0], true, Event_Control_Key, key );
 }
 
 void RegistrationObject::setKey( const FunctionCallbackInfo<Value>& args ) {

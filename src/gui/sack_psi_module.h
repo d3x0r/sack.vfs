@@ -288,6 +288,8 @@ public:
 #define cbFrameEventAbort customEvents[2]
 
 
+	static void getConsoleEcho( const FunctionCallbackInfo<Value>&  args );
+	static void setConsoleEcho( const FunctionCallbackInfo<Value>&  args );
 	static void getPassword( const FunctionCallbackInfo<Value>&  args );
 	static void setPassword( const FunctionCallbackInfo<Value>&  args );
 
