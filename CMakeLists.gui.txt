@@ -123,6 +123,7 @@ source_group( "Source Files\\GUI" FILES ${GUI_SOURCES} ) #REGULAR_EXPRESSION  sr
 set( PROJECT sack_vfs )
 add_library(${PROJECT} SHARED
 	src/vfs_module.cc
+	src/objStore_module.cc
 	src/thread_module.cc
 	src/sql_module.cc
 	src/com_interface.cc
@@ -133,6 +134,7 @@ add_library(${PROJECT} SHARED
 	src/websocket_module.cc
 	src/network_module.cc
 	src/task_module.cc
+	src/text_object.cc
 	${MORE_MODULE_SOURCES}
 	${GUI_SOURCES}	
         )
