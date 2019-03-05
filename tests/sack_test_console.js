@@ -44,20 +44,22 @@ customText.noReturn = true;
 customText.foreground = 3;
 con.write( customText );
 
+
+
 var resetText = new sack.Text();
 resetText.foreground = true;
 resetText.background = true;
 resetText.noReturn = true;
 con.write( resetText );
 
-con.write( "Just some default text" );
-con.write( "Each write is a new line..." );
-con.write( "Because that's how logging works" );
-var customText = new sack.Text();
-customText.text = "Hello, World";
-customText.noReturn = true;
-customText.foreground = 3;
 con.write( customText );
+con.write( resetText );
+
+//con.write( "Just some default text" );
+//con.write( "Each write is a new line..." );
+//con.write( "Because that's how logging works" );
+
+//con.write( customText );
 
 f.show();
 
