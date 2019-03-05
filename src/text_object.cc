@@ -7,13 +7,13 @@ static Persistent<Function> constructor;
 class textWrapper : public node::ObjectWrap {
 public:
 	PTEXT segment;
-	Persistent<Object> state;
+	//Persistent<Object> state;
 	textWrapper() : ObjectWrap() {
 		segment = NULL;
 	}
 	void textWrapSelf( Isolate* isolate, textWrapper *_this, Local<Object> into ) {
 		_this->Wrap( into );
-		_this->state.Reset( isolate, into );
+		//_this->state.Reset( isolate, into );
 	}
 };
 
