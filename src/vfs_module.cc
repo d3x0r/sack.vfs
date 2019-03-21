@@ -141,8 +141,10 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void VolumeObject::doInit( Handle<Object> exports ) 
 {
+	fprintf( stderr, "VFS Init.\n" ); fflush( stderr );
 	InvokeDeadstart();
-	
+	fprintf( stderr, "VFS Init dd.\n" ); fflush( stderr );
+
 	node::AtExit( moduleExit );
 
 	//SetAllocateLogging( TRUE );

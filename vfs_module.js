@@ -1,5 +1,7 @@
 "use strict";
 
+
+
 var sack;
 try{
   sack = require( "./build/RelWithDebInfo/sack_vfs.node" );
@@ -18,6 +20,15 @@ try{
     }
   }
 }
+console.log( "pass?" );
+
+   var appcom = require( "./build/RelWithDebInfo/app_com_module.node" );
+
+
+function receive(msg){
+	
+}
+appcom.eQubeAppCom( receive );
 
 require( "./sack-jsox.js" )(sack);
 require( "./object-storage.js" )(sack);

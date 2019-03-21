@@ -347,7 +347,7 @@ void ObjectStorageObject::putObject( const v8::FunctionCallbackInfo<Value>& args
 static uintptr_t CPROC DoGetObject( PTHREAD thread ) {
 	struct objectStorageOptions osoOpts;
 	struct objectStorageOptions **ppOptions = (struct objectStorageOptions **)GetThreadParam( thread );
-	char *storeId;
+	//char *storeId;
 	(*ppOptions) = &osoOpts;
 	while( !osoOpts.set )
 		Relinquish();

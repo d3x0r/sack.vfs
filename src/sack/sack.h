@@ -3566,8 +3566,23 @@ TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  FlattenLine ( PTEXT pLine );
 /* Create a highest precision signed integer from a PTEXT. */
 TYPELIB_PROC  int64_t TYPELIB_CALLTYPE  IntCreateFromSeg( PTEXT pText );
 /* Converts a text to the longest precision signed integer
-   value.                                                  */
+   value.
+     allows +/- leadin ([-*]|[+*])*
+     supports 0x### (hex), 0b#### (binary), 0o#### (octal), 0### (octal)
+	 decimal 1-9[0-9]*
+	 buggy implementation supports +/- inline continue number and are either ignored(+)
+	 or changes the overall sign of the number(-).  A Decimal definatly ends the number.
+	 And octal/binary digits aren't checked for range, so 8/9 will over-flow in octal,
+	 and 2-9 overflow to upper bits in octal...
+	    0b901090 // would be like   0b 10100110    0b1001 +  010 + 1001<<3 + 0
+   */
 TYPELIB_PROC  int64_t TYPELIB_CALLTYPE  IntCreateFromText( CTEXTSTR p );
+/* Converts a text to the longest precision signed integer
+   value.  Does the work of IntCreateFromText.
+   IntCreateFromTextRef updates the pointer passed by reference so
+   the pointer ends at the first character after the returned number.
+   */
+TYPELIB_PROC  int64_t TYPELIB_CALLTYPE  IntCreateFromTextRef( CTEXTSTR *p_ );
 /* Create a high precision floating point value from PTEXT
    segment.                                                */
 TYPELIB_PROC  double TYPELIB_CALLTYPE  FloatCreateFromSeg( PTEXT pText );
@@ -4742,7 +4757,7 @@ SYSLOG_PROC  CTEXTSTR SYSLOG_API  GetPackedTime ( void );
 // The effect of the low [7/]8 bits being the time zone is that within the same millisecond
 // UTC +0 sorts first, followed by +1, +2, ... etc until -14, -13, -12,... -1
 // the low [7/]8 bits are the signed timezone
-// (timezone could have been either be hr*100 + min (ISO TZ format)
+// (timezone could have been either be hr*60 + min (ISO TZ format)
 // or in minutes (hr*60+mn) this would only take 7 bits
 // one would think 8 bit shifts would be slightly more efficient than 7 bits.
 // and sign extension for 8 bits already exists.
@@ -4752,9 +4767,10 @@ SYSLOG_PROC  CTEXTSTR SYSLOG_API  GetPackedTime ( void );
 //     still keeping 8 bits for shifting, so the effective range is only -56 to 48 of -128 to 127
 // struct time_of_day {
 //    uint64_t epoch_milliseconds : 56;
-//    int64_t timezone : 8; divided by 15... hours * 100 / 15
+//    int64_t timezone : 8; divided by 15... hours * 60 / 15
 // }
 SYSLOG_PROC  int64_t SYSLOG_API GetTimeOfDay( void );
+// binary little endian order; somewhat
 typedef struct sack_expanded_time_tag
 {
 	uint16_t ms;
@@ -9208,7 +9224,7 @@ PSSQL_PROC( int, SQLRecordQueryEx )( PODBC odbc
    odbc :     connection to do the query on.
    query :    query to execute.
    queryLength : actual length of the query (allows embedded NUL characters)
-   PDATALIST* :  pointer to datalist pointer which will contain struct json_val_containers.
+   PDATALIST* :  pointer to datalist pointer which will contain struct jsox_value_container.
 			 for each result in this list until VALUE_UNDEFINED is used.
 		.name is the field name (constant)
 		.string is the text, value_type is the value type (so numbers can stay numbers)
@@ -10786,6 +10802,8 @@ PROCREG_PROC( int, LoadTree )( void );
    DropInterface( p );
    </code>                                                     */
 PROCREG_PROC( void, DropInterface )( CTEXTSTR pServiceName, POINTER interface_x );
+PROCREG_PROC( POINTER, GetInterface_v4 )( CTEXTSTR pServiceName, LOGICAL ReadConfig, int quietFail DBG_PASS );
+#define GetInterfaceV4( a, b )  GetInterface_v4( a, FALSE, b DBG_SRC )
 /* \Returns the pointer to a registered interface. This is
    typically a structure that contains pointer to functions. Takes
    a text string to an interface. Interfaces are registered at a
@@ -11353,6 +11371,8 @@ struct file_system_interface {
 	LOGICAL (CPROC *rename )( uintptr_t psvInstance, const char *original_name, const char *new_name );
 	uintptr_t (CPROC *ioctl)( uintptr_t psvInstance, uintptr_t opCode, va_list args );
 	uintptr_t (CPROC *fs_ioctl)(uintptr_t psvInstance, uintptr_t opCode, va_list args);
+	uint64_t( CPROC *find_get_ctime )(struct find_cursor *cursor);
+	uint64_t( CPROC *find_get_wtime )(struct find_cursor *cursor);
 };
 /* \ \
    Parameters
@@ -11386,17 +11406,19 @@ FILESYS_PROC  int FILESYS_API  CompareMask ( CTEXTSTR mask, CTEXTSTR name, int k
 FILESYS_PROC  int FILESYS_API  ScanFilesEx ( CTEXTSTR base
            , CTEXTSTR mask
            , void **pInfo
-           , void CPROC Process( uintptr_t psvUser, CTEXTSTR name, int flags )
-           , int flags
+           , void CPROC Process( uintptr_t psvUser, CTEXTSTR name, enum ScanFileProcessFlags flags )
+           , enum ScanFileFlags flags
 		   , uintptr_t psvUser, LOGICAL begin_sub_path, struct file_system_mounted_interface *mount );
 FILESYS_PROC  int FILESYS_API  ScanFiles ( CTEXTSTR base
            , CTEXTSTR mask
            , void **pInfo
-           , void CPROC Process( uintptr_t psvUser, CTEXTSTR name, int flags )
-           , int flags
+           , void CPROC Process( uintptr_t psvUser, CTEXTSTR name, enum ScanFileProcessFlags flags )
+           , enum ScanFileFlags flags
            , uintptr_t psvUser );
 FILESYS_PROC  void FILESYS_API  ScanDrives ( void (CPROC *Process)(uintptr_t user, CTEXTSTR letter, int flags)
 										  , uintptr_t user );
+// pass the pointer (pInfo) from aobve; get find_cursor.
+FILESYS_PROC struct find_cursor * FILESYS_API GetScanFileCursor( void *pInfo );
 // result is length of name filled into pResult if pResult == NULL && nResult = 0
 // the result will the be length of the name matching the file.
 FILESYS_PROC  int FILESYS_API  GetMatchingFileName ( CTEXTSTR filemask, int flags, TEXTSTR pResult, int nResult );
@@ -11737,6 +11759,8 @@ SACK_VFS_PROC int CPROC sack_vfs_find_next( struct find_info *info );
 SACK_VFS_PROC char * CPROC sack_vfs_find_get_name( struct find_info *info );
 // get file information for the file at the current cursor position...
 SACK_VFS_PROC size_t CPROC sack_vfs_find_get_size( struct find_info *info );
+SACK_VFS_PROC uint64_t CPROC sack_vfs_find_get_ctime( struct find_info *info );
+SACK_VFS_PROC uint64_t CPROC sack_vfs_find_get_wtime( struct find_info *info );
 #ifdef __cplusplus
 namespace fs {
 #endif
@@ -11854,7 +11878,7 @@ namespace objStore {
 //     char result[44];
 //     sack_vfs_os_ioctl_store_rw_object( vol, data, sizeof( data ), result, 44 );
 // }
-#define sack_vfs_os_ioctl_store_rw_object( vol, obj,objlen, result, resultlen )                                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, FALSE, FALSE, obj, objlen, NULL, 0, NULL, 0, result, resultlen )
+#define sack_vfs_os_ioctl_store_rw_object( vol, obj,objlen, result, resultlen )                                 sack_fs_ioctl( vol, SOSFSSIO_STORE_OBJECT, FALSE, obj, objlen, NULL, 0, NULL, 0, NULL, 0, result, resultlen )
 // re-write an object with new content using old ID.
 // returns TRUE/FALSE. true if the patch already exists, or was successfully written.
 // {
@@ -11863,7 +11887,7 @@ namespace objStore {
 //     char result[44];
 //     sack_vfs_os_ioctl_patch_rw_object( vol, oldResult, sizeof( oldReult-1 ), data, sizeof( data ), result, 44 );
 // }
-#define sack_vfs_os_ioctl_patch_rw_object( vol, objId,objIdLen, obj,objlen )                                     sack_fs_ioctl( vol, SOSFSSIO_PATCH_OBJECT, FALSE, FALSE, objId, objIdLen, NULL, 0, obj, objlen, NULL, 0, NULL, 0 )
+#define sack_vfs_os_ioctl_patch_rw_object( vol, objId,objIdLen, obj,objlen )                                     sack_fs_ioctl( vol, SOSFSSIO_PATCH_OBJECT, FALSE, objId, objIdLen, NULL, 0, obj, objlen, NULL, 0, NULL, 0 )
 // sealed store and patch
 // store a unencrypted, sealed object using specified sealant
 // store data to a new sealed block.  Also encrypt the data
@@ -12045,6 +12069,8 @@ SACK_VFS_PROC size_t CPROC sack_vfs_os_find_get_size( struct find_info *info );
 #define sack_vfs_find_next  sack_vfs_fs_find_next
 #define sack_vfs_find_get_name  sack_vfs_fs_find_get_name
 #define sack_vfs_find_get_size  sack_vfs_fs_find_get_size
+#define sack_vfs_find_get_cdate  sack_vfs_fs_find_get_cdate
+#define sack_vfs_find_get_wdate  sack_vfs_fs_find_get_wdate
 #endif
 #if defined USE_VFS_OS_INTERFACE
 #define sack_vfs_load_volume  sack_vfs_os_load_volume
@@ -12073,6 +12099,8 @@ SACK_VFS_PROC size_t CPROC sack_vfs_os_find_get_size( struct find_info *info );
 #define sack_vfs_find_next  sack_vfs_os_find_next
 #define sack_vfs_find_get_name  sack_vfs_os_find_get_name
 #define sack_vfs_find_get_size  sack_vfs_os_find_get_size
+#define sack_vfs_find_get_cdate  sack_vfs_os_find_get_cdate
+#define sack_vfs_find_get_wdate  sack_vfs_os_find_get_wdate
 #endif
 SACK_VFS_NAMESPACE_END
 #if defined( __cplusplus ) && !defined( SACK_VFS_SOURCE )
@@ -12660,6 +12688,39 @@ JSOX_PARSER_PROC( void, jsox_dispose_message )(PDATALIST *msg_data);
 JSOX_PARSER_PROC( struct jsox_parse_state *, jsox_get_messge_parser )(void);
 JSOX_PARSER_PROC( char *, jsox_escape_string_length )(const char *string, size_t len, size_t *outlen);
 JSOX_PARSER_PROC( char *, jsox_escape_string )(const char *string);
+/*
+	jsox_get_pared_value()
+	takes a parsed message data list as a parameer, and a path.
+	A message may have been parsed into multiple parts.  This
+	early version will return just the first value in the datalist.
+	If there is an optional `path` specified, then that is used to
+	step through the JSOX parsed structure to get deeper values.
+	Path is specified as a list of fieldnames and array index numbers.
+	optional separator characters may be used between members '.', ' ', '/' and '\'.
+	Separator characters may be repeated or mixed with other seaprators and are all
+	considered a single separation.
+	optional bracket characters around an array index may be used     [0]    is often as good as 0.
+	Some example paths
+		messages[0]from
+		messages.0.from
+		messages [0] from
+		messages [0] lines[0]
+	{ messages : [ // array of messages
+	    { from : "someone", lines: [ "lines","of","message"] }
+	  ]
+	}
+	jsox_get_parsed_value() returns a value from a PDATALIST
+	jsox_get_parsed_object_value() and jsox_get_parsed_array_value() :  returns a value from a value member.
+*/
+JSOX_PARSER_PROC( struct jsox_value_container *, jsox_get_parsed_value )(PDATALIST pdlMessage, const char *path
+	, void( *callback )(uintptr_t psv, struct jsox_value_container *val), uintptr_t psv
+	);
+JSOX_PARSER_PROC( struct jsox_value_container *, jsox_get_parsed_object_value )(struct jsox_value_container *pdlMessage, const char *path
+	, void( *callback )(uintptr_t psv, struct jsox_value_container *val), uintptr_t psv
+	);
+JSOX_PARSER_PROC( struct jsox_value_container *, jsox_get_parsed_array_value )(struct jsox_value_container * pdlMessage, const char *path
+	, void( *callback )(uintptr_t psv, struct jsox_value_container *val), uintptr_t psv
+	);
 #ifdef __cplusplus
 } } SACK_NAMESPACE_END
 using namespace sack::network::jsox;
@@ -13750,7 +13811,7 @@ SRG_EXPORT size_t SRG_AES_encrypt( uint8_t *plaintext, size_t plaintext_len, uin
 // pointers refrenced passed to outBuf and outBufLen are filled in with the result
 // Will automatically add 4 bytes and pad up to 8
 SRG_EXPORT void SRG_XSWS_encryptData( uint8_t *objBuf, size_t objBufLen
-	, uint64_t tick, uint8_t *keyBuf, size_t keyBufLen
+	, uint64_t tick, const uint8_t *keyBuf, size_t keyBufLen
 	, uint8_t **outBuf, size_t *outBufLen
 );
 // xor-sub-wipe-sub decryption.
@@ -13758,7 +13819,7 @@ SRG_EXPORT void SRG_XSWS_encryptData( uint8_t *objBuf, size_t objBufLen
 // pointers refrenced passed to outBuf and outBufLen are filled in with the result
 //
 SRG_EXPORT void SRG_XSWS_decryptData( uint8_t *objBuf, size_t objBufLen
-	, uint64_t tick, uint8_t *keyBuf, size_t keyBufLen
+	, uint64_t tick, const uint8_t *keyBuf, size_t keyBufLen
 	, uint8_t **outBuf, size_t *outBufLen
 );
 //--------------------------------------------------------------

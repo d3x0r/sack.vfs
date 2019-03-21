@@ -1288,7 +1288,6 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 				EndHttp(pHttpState);
 				while ((result = ProcessHttp(obj->pc, pHttpState)))
 				{
-					int status;
 					//lprintf("result = %d  %zd", result, HTTP_STATE_RESULT_CONTENT == result);
 					switch (result)
 					{
