@@ -142,7 +142,7 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 void VolumeObject::doInit( Handle<Object> exports ) 
 {
 	InvokeDeadstart();
-	
+
 	node::AtExit( moduleExit );
 
 	//SetAllocateLogging( TRUE );
