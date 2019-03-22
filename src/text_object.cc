@@ -11,6 +11,9 @@ public:
 	textWrapper() : ObjectWrap() {
 		segment = NULL;
 	}
+	~textWrapper() {
+		LineRelease( segment );
+	}
 	void textWrapSelf( Isolate* isolate, textWrapper *_this, Local<Object> into ) {
 		_this->Wrap( into );
 		//_this->state.Reset( isolate, into );

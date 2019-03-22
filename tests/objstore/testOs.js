@@ -1,6 +1,7 @@
 
 const orgRoot = "org.example.domain"
 const serviceRoot = "data";
+const dbRoot = "users";
 
 const appIdentifier = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
@@ -15,26 +16,20 @@ var vfs = sack.Volume( "cmount", "container.vfs" );
 var store = sack.ObjectStorage( "cmount@storage.os" );
 
 
-var rootKey;
+var userIndex = store.CreateIndex( [ "firstName", "lastName", "birthday"  ] );
+var itemIndex = store.CreateIndex( [ "itemName", "relavance", "added" ] );
 
-var root = { key : null, keyFile : null };
+var userdb = {
+	users : userIndex
+}
 
 
+var store.get(  { //`${orgRoot}.${serviceRoot}`, 
+		objectHash : `${orgRoot}.${serviceRoot}.${dbRoot}`,
 
-function initRoot( cb ) {
-
-	var storeRoot;
-
-	var keyInfo = {
-		 password : sack.generate(),
-	}
-	var myhashWrite = sack.SaltyRNG.id(keyInfo.password+"write", 4);
-	var myhashRead  = sack.SaltyRNG.id(keyInfo.password+"read", 4);
-
-	store.get( `${orgRoot}.${serviceRoot}`, {
-		objectHash : `${orgRoot}.${serviceRoot}`,
-		sealant : myhashWrite,
+		sealant : null,
 		readKey : null,
+
 		then(node){
 			// this is the managmeent container of node.  
 			root = node;
@@ -43,14 +38,96 @@ function initRoot( cb ) {
 			if( vfs.exists( "keyinfo" ) )
 				vfs.readJSOX( "keyInfo", (ki)=>keyInfo = ki );
 			else	
-				vfs.write( "keyInfo", sack.JSOX.stringify( keyInfo ) );
-		        
+				vfs.write( "keyInfo", sack.JSOX.stringify( keyInfo ) );		        
 			
-			store.put( sack.JSOX.stringify(root), {
+			store.put( userIndex, {
+				objectHash:`${orgRoot}.${serviceRoot}.${dbRoot}`,
+				sealant: myhashWrite,
+				//readKey: myhashRead,
+				stored(id){ 
+					
+					rootState.keyFile = this; 
+					root.key = id; 
+					this.put();
+				},
+				failed() { 
+					 console.log( "Failed to store root into object storage." );
+				},
+				
+			} );
+		}
+	}
+);
+
+
+function getSomeUsers( f, l, n, gotUsers ){
+	userIndex.get( { where: { firstName: f, lastName : l },
+			 orderBy: null,
+			 limit : n,
+			then(users) {
+			},
+			catch( err) {
+			}
+	               } );
+}
+
+function getSomeUsers2( f, l, n, gotUsers ){
+	userIndex.map( { where: { firstName: f, lastName : l },
+			 orderBy: null,
+			 limit : n,
+	               } );
+
+}
+
+function storeUser( user ){
+	userIndex.put( user );
+}
+
+
+
+/////var userInfo = store.CreateFactory( [ "firstName", "lastName", "birthday" ] );
+
+var rootKey;
+
+var root = { key : null };
+var rootState = { keyFile : null };
+
+
+
+function initRoot( cb ) {
+
+	var storeRoot;
+
+	var keyInfo = {
+		 password : appIdentifier,
+	}
+	var myhashWrite = sack.SaltyRNG.id(keyInfo.password+"write", 4);
+	var myhashRead  = sack.SaltyRNG.id(keyInfo.password+"read", 4);
+	
+
+	store.get( { //`${orgRoot}.${serviceRoot}`, 
+		objectHash : `${orgRoot}.${serviceRoot}`,
+		sealant : myhashWrite,
+		//readKey : null,
+		then(node){
+			// this is the managmeent container of node.  
+			root = node;
+		},
+		catch() {
+			if( vfs.exists( "keyinfo" ) )
+				vfs.readJSOX( "keyInfo", (ki)=>keyInfo = ki );
+			else	
+				vfs.write( "keyInfo", sack.JSOX.stringify( keyInfo ) );		        
+			
+			store.put( root, {
 				objectHash:`${orgRoot}.${serviceRoot}`,
 				sealant: myhashWrite,
 				//readKey: myhashRead,
-				stored(id){ root.keyFile = this; root.key = id; },
+				stored(id){ 
+					rootState.keyFile = this; 
+					root.key = id; 
+					this.put();
+				},
 				failed() { 
 					 console.log( "Failed to store root into object storage." );
 				},

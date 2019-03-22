@@ -254,7 +254,6 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t v
 		fsMount = sack_get_mounted_filesystem( mount );
 		fsInt = sack_get_mounted_filesystem_interface( fsMount );
 		vol = (struct volume*)sack_get_mounted_filesystem_instance( fsMount );
-
 		//lprintf( "open native mount" );
 	} else {
 		//lprintf( "volume: %s %p %p", filename, key, key2 );

@@ -21,6 +21,7 @@ const _DEBUG_STRINGIFY = false;
 var toProtoTypes = new WeakMap();
 var toObjectTypes = new Map();
 var fromProtoTypes = new Map();
+var commonClasses = [];
 
 {
 	// hook module native code to JS interface.
@@ -105,6 +106,39 @@ var fromProtoTypes = new Map();
 	    , cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 
+	toProtoTypes.set( Symbol.prototype, { external:true, name:"sym"
+	    , cb:function() { return '"'+this.description+'"' }
+	} );
+	toProtoTypes.set( Map.prototype, mapToJSOX = { external:true, name:"map"
+	    , cb:null
+	} );
+	fromProtoTypes.set( "map", (val,a,b)=>{
+		console.log( "Reverse map function:", val, "(", a,")", b)
+
+	} );
+
+
+	toProtoTypes.set( Array.prototype, arrayToJSOX = { external:false, name:Array.prototype.constructor.name
+	    , cb: null		    
+	} );
+}
+
+sack.JSOX.defineClass = function( name, obj ) {
+			var cls; 
+			commonClasses.push( cls = { name : name
+			       , tag:Object.keys(obj).toString()
+			       , proto : Object.getPrototypeOf(obj)
+			       , fields : Object.keys(obj) } );
+			for(var n = 1; n < cls.fields.length; n++) {
+				if( cls.fields[n] < cls.fields[n-1] ) {
+					let tmp = cls.fields[n-1];
+					cls.fields[n-1] = cls.fields[n];
+					cls.fields[n] = tmp;
+					if( n > 1 )
+						n-=2;
+				}
+			}
+			if( cls.proto === Object.getPrototypeOf( {} ) ) cls.proto = null;
 }
 
 sack.JSOX.registerToJSOX = function( name, prototype, f ) {
@@ -149,6 +183,7 @@ sack.JSOX.begin = function(cb) {
 }
 
 var arrayToJSOX;
+var mapToJSOX;
 
 const keywords = {	["true"]:true,["false"]:false,["null"]:null,["NaN"]:NaN,["Infinity"]:Infinity,["undefined"]:undefined }
 
@@ -162,11 +197,8 @@ sack.JSOX.stringifier = function() {
 	var objectToJSOX = null;
 	var localToProtoTypes = new WeakMap();
 	var localToObjectTypes = new Map();
-
-	if( !toProtoTypes.get( Array.prototype ) )
-		toProtoTypes.set( Array.prototype, arrayToJSOX = { external:false, name:Array.prototype.constructor.name
-		    , cb: null		    
-		} );
+	var stringifying = []; // things that have been stringified through external toJSOX; allows second pass to skip this toJSOX pass and encode 'normally'
+	var ignoreNonEnumerable = false;
 
 	return {
 		defineClass(name,obj) { 
@@ -203,6 +235,8 @@ sack.JSOX.stringifier = function() {
 				localToObjectTypes.set( key, { external:true, name:name, cb:f } );
 			}
 		},
+		get ignoreNonEnumerable() { return ignoreNonEnumerable; },
+		set ignoreNonEnumerable(val) { ignoreNonEnumerable = val; },
 	}
 
 	function getReference( here ) {
@@ -226,13 +260,22 @@ sack.JSOX.stringifier = function() {
 			if( cls.proto && cls.proto === prt ) return true;
 		} );
 		if( cls ) return cls;
+		cls = commonClasses.find( cls=>{
+			if( cls.proto && cls.proto === prt ) return true;
+		} );
+		if( cls ) return cls;
 
 		if( useK )  {
 			useK = useK.map( v=>{ if( typeof v === "string" ) return v; else return undefined; } );
 			k = useK.toString();
 		} else
 			k = Object.keys(o).toString();
+
 		cls = classes.find( cls=>{
+			if( cls.tag === k ) return true;
+		} );
+		return cls;
+		cls = commonClasses.find( cls=>{
 			if( cls.tag === k ) return true;
 		} );
 		return cls;
@@ -242,7 +285,7 @@ sack.JSOX.stringifier = function() {
 	function stringify( object, replacer, space ) {
 		if( object === undefined ) return "undefined";
 		if( object === null ) return;
-
+		var firstRun = true;
 		var gap;
 		var indent;
 		var meta;
@@ -283,30 +326,12 @@ sack.JSOX.stringifier = function() {
 
 		return str( "", {"":object} );
 
-		function getIdentifier(s) {
-			if( !isNaN( s ) ) {
-				return ["'",s.toString(),"'"].join();
-			}
-			/*
-			var n;
-			for( n = 0; n < s.length; n++ ) {
-				let cInt = s.codePointAt(n);
-				if( cInt >= 0x10000 ) { n++; }
-				if( nonIdent[(cInt/(24*16))|0] && nonIdent[(cInt/(24*16))|0][(( cInt % (24*16) )/24)|0] & ( 1 << (cInt%24)) ) 
-					break;
-			}
-			*/
-			// should check also for if any non ident in string...
-			return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
-				|| /((\n|\r|\t)|s|S|[ \{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + sack.JSOX.escape(s) +useQuote):s )
-		}
 
 
 
 
 		// from https://github.com/douglascrockford/JSON-js/blob/master/json2.js#L181
 		function str(key, holder) {
-
 			function doArrayToJSOX() {
 				var v;
 				var partialClass = null;
@@ -340,8 +365,47 @@ sack.JSOX.stringifier = function() {
 					return v;
 				}
 			} 
-			arrayToJSOX.cb = doArrayToJSOX;
 
+			function getIdentifier(s) {
+				if( !isNaN( s ) ) {
+					return ["'",s.toString(),"'"].join();
+				}
+				/*
+				var n;
+				for( n = 0; n < s.length; n++ ) {
+					let cInt = s.codePointAt(n);
+					if( cInt >= 0x10000 ) { n++; }
+					if( nonIdent[(cInt/(24*16))|0] && nonIdent[(cInt/(24*16))|0][(( cInt % (24*16) )/24)|0] & ( 1 << (cInt%24)) ) 
+						break;
+				}
+				*/
+				// should check also for if any non ident in string...
+				return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
+					|| /((\n|\r|\t)|s|S|[ \{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + sack.JSOX.escape(s) +useQuote):s )
+			}
+			
+			function mapToObject(){
+				var tmp = {tmp:null};
+				var out = '{'
+				var first = true;
+				//console.log( "CONVERT:", map);
+				for (var [key, value] of this) {
+					//console.log( "er...", key, value )
+					tmp.tmp = value;
+					out += getIdentifier(key) +':' + str("tmp", tmp) + (first?"":",");
+					first = false;
+				}
+				out += '}';
+				//console.log( "out is:", out );
+				return out;
+			}
+			
+			if( firstRun ) {
+				arrayToJSOX.cb = doArrayToJSOX;
+				mapToJSOX.cb = mapToObject;
+				firstRun = false;
+			}
+			
 		// Produce a string from holder[key].
 
 			var i;          // The loop counter.
@@ -363,7 +427,8 @@ sack.JSOX.stringifier = function() {
 				|| toObjectTypes.get( Object.keys( value ).toString() ) 
 				|| null )
 
-				//console.log( "PROTOTYPE:", Object.getPrototypeOf( value ) )
+				//console.log( "VALUE:", value );
+				//if( value !== null && value !== undefined ) console.log( "PROTOTYPE:", Object.getPrototypeOf( value ) )
 				//console.log( "PROTOTYPE:", toProtoTypes.get(Object.getPrototypeOf( value )) )
 			_DEBUG_STRINGIFY && console.log( "TEST()", value, protoConverter, objectConverter );
 
@@ -377,22 +442,25 @@ sack.JSOX.stringifier = function() {
 			    && value !== null
 			    && typeof toJSOX === "function"
 			) {
-				gap += indent;
-				if( typeof value === "object" ) {
-					v = getReference( value );
-					if( v ) return "ref"+v;
-				}
+				if( !stringifying.find( val=>val===value ) ) {
+					gap += indent;
+					if( typeof value === "object" ) {
+						v = getReference( value );
+						if( v ) return "ref"+v;
+					}
+					stringifying.push( value );
+					let newValue = toJSOX.apply(value);
+					stringifying.pop();
+					if( newValue === value ) {
+						protoConverter = null;
+					}
+					if(_DEBUG_STRINGIFY ) { 
+						console.log( "translated ", newValue, value );
+					}
+					value = newValue;
 
-				let newValue = toJSOX.apply(value);
-				if( newValue === value ) {
-					protoConverter = null;
+					gap = mind;
 				}
-				if(_DEBUG_STRINGIFY ) { 
-					console.log( "translated ", newValue, value );
-				}
-				value = newValue;
-
-				gap = mind;
 			} else 
 				if( typeof value === "object" ) {
 					v = getReference( value );
@@ -411,8 +479,10 @@ sack.JSOX.stringifier = function() {
 			case "number": 
 				{
 					let c = '';
-					if( key==="" )
-						c = classes.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
+					if( key==="" ) {
+						c = classes.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"")
+						    || commonClasses.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
+					}
 					if( protoConverter && protoConverter.external ) 
 						return c + protoConverter.name + value;
 					if( objectConverter && objectConverter.external ) 
@@ -443,7 +513,7 @@ sack.JSOX.stringifier = function() {
 				}
 
 				// Make an array to hold the partial results of stringifying this object value.
-
+			
 				gap += indent;
 				partialClass = null;
 				partial = [];
@@ -478,6 +548,13 @@ sack.JSOX.stringifier = function() {
 					partialClass = matchObject( value );
 					var keys = [];
 					for (k in value) {
+						if( ignoreNonEnumerable )
+							if( !Object.prototype.propertyIsEnumerable.call( value, k ) ){
+								console.log( "skipping non-enuerable?", k );
+								continue;
+							}
+
+						// sort properties into keys.
 						if (Object.prototype.hasOwnProperty.call(value, k)) {
 							var n;
 							for( n = 0; n < keys.length; n++ ) 
@@ -518,7 +595,8 @@ sack.JSOX.stringifier = function() {
 				{
 				let c;
 				if( key==="" )
-					c = classes.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
+					c = classes.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"")
+					    || commonClasses.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
 				else
 					c = '';
 				if( protoConverter && protoConverter.external ) 

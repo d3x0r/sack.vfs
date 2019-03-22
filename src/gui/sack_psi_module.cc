@@ -1176,47 +1176,18 @@ void ControlObject::writeConsole( const FunctionCallbackInfo<Value>& args) {
 		if( args[0]->IsObject() ) 			{
 			PTEXT text = isTextObject( args.GetIsolate(), args[0] );
 			if( text ) {
-				PSIConsoleDirectOutput( c->control, text );
+				PSIConsoleDirectOutput( c->control, SegDuplicate( text ) );
 				return;
 			}
 		}
-			String::Utf8Value fName( args[0]->ToString() );
-#if 0
-			PTEXT segment;
-			segment = SegCreateFromText( "Test Color Output?" );
-			segment->format.flags.foreground = 15;
-			segment->flags |= TF_NORETURN;
-			segment->format.flags.prior_foreground = 0;
-			PSIConsoleDirectOutput( c->control, segment );
-
-			segment = SegCreateFromText( "Test Color Output?" );
-			segment->format.flags.foreground = 1;
-			segment->flags |= TF_NORETURN;
-			segment->format.flags.prior_foreground = 0;
-			PSIConsoleDirectOutput( c->control, segment );
-
-			segment = SegCreateFromText( "Test Color Output?" );
-			segment->format.flags.foreground = 2;
-			segment->format.flags.prior_foreground = 0;
-			PSIConsoleDirectOutput( c->control, segment );
-
-			segment = SegCreateFromText( "Test Color Output?" );
-			segment->format.flags.foreground = 5;
-			segment->format.flags.prior_foreground = 0;
-			PSIConsoleDirectOutput( c->control, segment );
-
-			segment = SegCreate(0);
-			segment->flags |= TF_NORETURN;
-			segment->format.flags.prior_background = 0;
-			segment->format.flags.default_foreground = 1;
-			PSIConsoleDirectOutput( c->control, segment );
-#endif
-			pcprintf( c->control, "%s", (const char*)*fName );
+		String::Utf8Value fName( args[0]->ToString() );
+		pcprintf( c->control, "%s", (const char*)*fName );
 	}
 }
 
 static void consoleInputEvent( uintptr_t arg, PTEXT text ) {
-	MakePSIEvent( (ControlObject*)arg, true, Event_Control_ConsoleInput, text );
+	MakePSIEvent( (ControlObject*)arg, true, Event_Control_ConsoleInput, text=BuildLine(text) );
+	LineRelease( text );
 }
 
 void ControlObject::setConsoleRead( const FunctionCallbackInfo<Value>& args ) {
