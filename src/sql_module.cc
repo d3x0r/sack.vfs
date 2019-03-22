@@ -267,16 +267,16 @@ void SqlStmtObject::Set( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	int col = args[0]->ToInt32(isolate->GetCurrentContext()).ToLocalChecked()->Value();
-	struct json_value_container val;
+	struct jsox_value_container val;
 	memset( &val, 0, sizeof( val ) );
 	int arg = 1;
 	if( args[arg]->IsInt32() ) {
-		val.value_type = VALUE_NUMBER;
+		val.value_type = JSOX_VALUE_NUMBER;
 		val.result_n = args[arg]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		val.float_result = 0;
 		SetDataItem( &stmt->values, col, &val );
 	} else if( args[arg]->IsNumber() ) {
-		val.value_type = VALUE_NUMBER;
+		val.value_type = JSOX_VALUE_NUMBER;
 		val.result_d = args[arg]->NumberValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		val.float_result = 0;
 		SetDataItem( &stmt->values, col, &val );
@@ -287,7 +287,7 @@ void SqlStmtObject::Set( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 static void PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg, String::Utf8Value *name ) {
-	struct json_value_container val;
+	struct jsox_value_container val;
 	if( name ) {
 		val.name = DupCStrLen( *name[0], val.nameLen = name[0].length() );
 	}
@@ -296,29 +296,29 @@ static void PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg,
 		val.nameLen = 0;
 	}
 	if( arg->IsNull() ) {
-		val.value_type = VALUE_NULL;
+		val.value_type = JSOX_VALUE_NULL;
 		AddDataItem( pdlParams, &val );
 	}
 	else if( arg->IsString() ) {
 		String::Utf8Value text( USE_ISOLATE( isolate ) arg->ToString(isolate->GetCurrentContext()).ToLocalChecked() );
-		val.value_type = VALUE_STRING;
+		val.value_type = JSOX_VALUE_STRING;
 		val.string = DupCStrLen( *text, val.stringLen = text.length() );
 		AddDataItem( pdlParams, &val );
 	}
 	else if( arg->IsInt32() ) {
-		val.value_type = VALUE_NUMBER;
+		val.value_type = JSOX_VALUE_NUMBER;
 		val.result_n = arg->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		val.float_result = 0;
 		AddDataItem( pdlParams, &val );
 	}
 	else if( arg->IsBoolean() ) {
-		val.value_type = VALUE_NUMBER;
+		val.value_type = JSOX_VALUE_NUMBER;
 		val.result_n = arg->BooleanValue( isolate->GetCurrentContext() ).FromMaybe(false);
 		val.float_result = 0;
 		AddDataItem( pdlParams, &val );
 	}
 	else if( arg->IsNumber() ) {
-		val.value_type = VALUE_NUMBER;
+		val.value_type = JSOX_VALUE_NUMBER;
 		val.result_d = arg->NumberValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		val.float_result = 1;
 		AddDataItem( pdlParams, &val );
@@ -327,7 +327,7 @@ static void PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg,
 		Local<ArrayBuffer> myarr = arg.As<ArrayBuffer>();
 		val.string = (char*)myarr->GetContents().Data();
 		val.stringLen = myarr->ByteLength();
-		val.value_type = VALUE_TYPED_ARRAY;
+		val.value_type = JSOX_VALUE_TYPED_ARRAY;
 		AddDataItem( pdlParams, &val );
 	}
 	else if( arg->IsUint8Array() ) {
@@ -335,7 +335,7 @@ static void PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg,
 		Local<ArrayBuffer> buffer = _myarr->Buffer();
 		val.string = (char*)buffer->GetContents().Data();
 		val.stringLen = buffer->ByteLength();
-		val.value_type = VALUE_TYPED_ARRAY;
+		val.value_type = JSOX_VALUE_TYPED_ARRAY;
 		AddDataItem( pdlParams, &val );
 	}
 	else if( arg->IsTypedArray() ) {
@@ -343,7 +343,7 @@ static void PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg,
 		Local<ArrayBuffer> buffer = _myarr->Buffer();
 		val.string = (char*)buffer->GetContents().Data();
 		val.stringLen = buffer->ByteLength();
-		val.value_type = VALUE_TYPED_ARRAY;
+		val.value_type = JSOX_VALUE_TYPED_ARRAY;
 		AddDataItem( pdlParams, &val );
 	}
 	else {
@@ -373,14 +373,14 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 		int arg = 1;
 		LOGICAL isFormatString;
 		PVARTEXT pvtStmt = VarTextCreate();
-		struct json_value_container val;
+		struct jsox_value_container val;
 		memset( &val, 0, sizeof( val ) );
 		if( StrChr( *sqlStmt, ':' )
 			|| StrChr( *sqlStmt, '@' )
 			|| StrChr( *sqlStmt, '$' ) ) {
 			if( args[1]->IsObject() ) {
 				arg = 2;
-				pdlParams = CreateDataList( sizeof( struct json_value_container ) );
+				pdlParams = CreateDataList( sizeof( struct jsox_value_container ) );
 				Local<Object> params = Local<Object>::Cast( args[1] );
 				Local<Array> paramNames = params->GetOwnPropertyNames();
 				for( uint32_t p = 0; p < paramNames->Length(); p++ ) {
@@ -408,13 +408,13 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 
 		if( !pdlParams )
-			pdlParams = CreateDataList( sizeof( struct json_value_container ) );
+			pdlParams = CreateDataList( sizeof( struct jsox_value_container ) );
 		if( !isFormatString ) {
 			for( ; arg < args.Length(); arg++ ) {
 				if( args[arg]->IsString() ) {
 					String::Utf8Value text( USE_ISOLATE(isolate) args[arg]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					if( arg & 1 ) { // every odd parameter is inserted
-						val.value_type = VALUE_STRING;
+						val.value_type = JSOX_VALUE_STRING;
 						val.string = DupCStrLen( *text, text.length() );
 						AddDataItem( &pdlParams, &val );
 						VarTextAddCharacter( pvtStmt, '?' );
@@ -448,7 +448,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 		PDATALIST pdlRecord = NULL;
 		INDEX idx = 0;
 		int items;
-		struct json_value_container * jsval;
+		struct jsox_value_container * jsval;
 
 		if( !SQLRecordQuery_js( sql->odbc, GetText(statement), GetTextSize(statement), &pdlRecord, pdlParams DBG_SRC ) ) {
 			const char *error;
@@ -459,8 +459,8 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 			return;
 		}
 
-		DATA_FORALL( pdlRecord, idx, struct json_value_container *, jsval ) {
-			if( jsval->value_type == VALUE_UNDEFINED ) break;
+		DATA_FORALL( pdlRecord, idx, struct jsox_value_container *, jsval ) {
+			if( jsval->value_type == JSOX_VALUE_UNDEFINED ) break;
 		}
 		items = (int)idx;
 
@@ -495,9 +495,9 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 
-			DATA_FORALL( pdlRecord, idx, struct json_value_container *, jsval ) {
+			DATA_FORALL( pdlRecord, idx, struct jsox_value_container *, jsval ) {
 				int m;
-				if( jsval->value_type == VALUE_UNDEFINED ) break;
+				if( jsval->value_type == JSOX_VALUE_UNDEFINED ) break;
 
 				for( m = 0; m < usedFields; m++ ) {
 					if( StrCaseCmp( fields[m].name, jsval->name ) == 0 ) {
@@ -580,8 +580,8 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 						for( int n = 0; n < usedTables; n++ )
 							tables[n].container = record;
 
-					DATA_FORALL( pdlRecord, idx, struct json_value_container *, jsval ) {
-						if( jsval->value_type == VALUE_UNDEFINED ) break;
+					DATA_FORALL( pdlRecord, idx, struct jsox_value_container *, jsval ) {
+						if( jsval->value_type == JSOX_VALUE_UNDEFINED ) break;
 
 						Local<Object> container = colMap[idx].t->container;
 						if( fields[colMap[idx].col].used > 1 ) {
@@ -599,10 +599,28 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 						default:
 							lprintf( "Unhandled value result type:%d", jsval->value_type );
 							break;
-						case VALUE_NULL:
+						case JSOX_VALUE_DATE:
+							{
+								Local<Script> script;
+								char buf[64];
+								snprintf( buf, 64, "new Date('%s')", jsval->string );
+								script = Script::Compile( isolate->GetCurrentContext()
+									, String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
+									, new ScriptOrigin( String::NewFromUtf8( isolate, "DateFormatter"
+										, NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
+								val = script->Run( isolate->GetCurrentContext() ).ToLocalChecked();
+							}
+							break;
+						case JSOX_VALUE_TRUE:
+							val = True( isolate );
+							break;
+						case JSOX_VALUE_FALSE:
+							val = False( isolate );
+							break;
+						case JSOX_VALUE_NULL:
 							val = Null( isolate );
 							break;
-						case VALUE_NUMBER:
+						case JSOX_VALUE_NUMBER:
 							if( jsval->float_result ) {
 								val = Number::New( isolate, jsval->result_d );
 							}
@@ -610,13 +628,13 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 								val = Number::New( isolate, (double)jsval->result_n );
 							}
 							break;
-						case VALUE_STRING:
+						case JSOX_VALUE_STRING:
 							if( !jsval->string )
 								val = Null( isolate );
 							else
 								val = localString( isolate, (char*)Hold(jsval->string), (int)jsval->stringLen );
 							break;
-						case VALUE_TYPED_ARRAY:
+						case JSOX_VALUE_TYPED_ARRAY:
 							//lprintf( "Should result with a binary thing" );
 
 							Local<ArrayBuffer> ab =
