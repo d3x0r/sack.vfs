@@ -510,9 +510,9 @@ Added support 'reviver' parameter.
      - parse( string [,reviver] )
      - begin( callback )
          - write( data )
-         - registerToJSOX(typeName,prototype,cb) - if an object that is an instance of prototype, the object is passed to the callback, and the resulting string used for output.
          - registerFromJSOX(typeName,fromCb) - if an object of the specified name is encountered, the related object/array/string is passed to the callback, and the result is used as the revived object.
      - stringifier() - create a reusable stringifier which can be used for custom types
+         - registerToJSOX(typeName,prototype,cb) - if an object that is an instance of prototype, the object is passed to the callback, and the resulting string used for output.
          - stringify(value[,replacer[,space]] ) - stringify using this stringifier.
          - setQuote( quote ) - specifies the perfered quoting to use (instead of default double-quote (") )
          - defineClass( name, object ) - registers a typed object for output; first object defintion is output which contains the failes, and later, typed objects are just their values.  Uses prototype of the object, unless it is the same as Object, or uses the fields of the object to compare that the object is of the same type.
