@@ -88,7 +88,7 @@ var commonClasses = [];
 	toProtoTypes.set( Uint32Array.prototype, { external:true, name:"u32"
 	    , cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
-	toProtoTypes.set( Uint32Array.prototype, { external:true, name:"s32"
+	toProtoTypes.set( Int32Array.prototype, { external:true, name:"s32"
 	    , cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	if( typeof Uint64Array != "undefined" )
@@ -142,14 +142,15 @@ sack.JSOX.defineClass = function( name, obj ) {
 }
 
 sack.JSOX.registerToJSOX = function( name, prototype, f ) {
-	if( prototype.prototype && prototype.prototype !== Object.prototype ) {
+	_DEBUG_STRINGIFY && console.log( "Register prototype:", prototype, prototype.prototype );
+	if( !prototype.prototype || prototype.prototype !== Object.prototype ) {
 		if( toProtoTypes.get(prototype) ) throw new Error( "Existing toJSOX has been registered for prototype" );
-		console.log( "PUSH PROTOTYPE" );
+		_DEBUG_STRINGIFY && console.log( "PUSH PROTOTYPE" );
 		toProtoTypes.set( prototype, { external:true, name:name||f.constructor.name, cb:f } );
 	} else {
 		var key = Object.keys( prototype ).toString();
 		if( toObjectTypes.get(key) ) throw new Error( "Existing toJSOX has been registered for object type" );
-		//console.log( "TEST SET OBJECT TYPE:", key );
+		_DEBUG_STRINGIFY && console.log( "TEST SET OBJECT TYPE:", key );
 		toObjectTypes.set( key, { external:true, name:name, cb:f } );
 	}
 }
@@ -370,15 +371,6 @@ sack.JSOX.stringifier = function() {
 				if( !isNaN( s ) ) {
 					return ["'",s.toString(),"'"].join();
 				}
-				/*
-				var n;
-				for( n = 0; n < s.length; n++ ) {
-					let cInt = s.codePointAt(n);
-					if( cInt >= 0x10000 ) { n++; }
-					if( nonIdent[(cInt/(24*16))|0] && nonIdent[(cInt/(24*16))|0][(( cInt % (24*16) )/24)|0] & ( 1 << (cInt%24)) ) 
-						break;
-				}
-				*/
 				// should check also for if any non ident in string...
 				return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
 					|| /((\n|\r|\t)|s|S|[ \{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + sack.JSOX.escape(s) +useQuote):s )
@@ -392,7 +384,7 @@ sack.JSOX.stringifier = function() {
 				for (var [key, value] of this) {
 					//console.log( "er...", key, value )
 					tmp.tmp = value;
-					out += getIdentifier(key) +':' + str("tmp", tmp) + (first?"":",");
+					out += (first?"":",") + getIdentifier(key) +':' + str("tmp", tmp);
 					first = false;
 				}
 				out += '}';
