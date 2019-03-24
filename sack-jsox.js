@@ -112,9 +112,10 @@ var commonClasses = [];
 	toProtoTypes.set( Map.prototype, mapToJSOX = { external:true, name:"map"
 	    , cb:null
 	} );
-	fromProtoTypes.set( "map", (val,a,b)=>{
-		console.log( "Reverse map function:", val, "(", a,")", b)
-
+	fromProtoTypes.set( "map", function (){
+		var newMap = new Map();
+		for( var key in this ) newMap.set( key, this[key] );
+		return newMap;
 	} );
 
 
@@ -373,7 +374,7 @@ sack.JSOX.stringifier = function() {
 				}
 				// should check also for if any non ident in string...
 				return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
-					|| /((\n|\r|\t)|s|S|[ \{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + sack.JSOX.escape(s) +useQuote):s )
+					|| /((\n|\r|\t)|[ \{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + sack.JSOX.escape(s) +useQuote):s )
 			}
 			
 			function mapToObject(){
@@ -600,7 +601,7 @@ sack.JSOX.stringifier = function() {
 				var ident = null;
 				if( partialClass )
 					ident = ( ( partialClass.name in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===partialClass.name )*/
-						|| /((\n|\r|\t)|s|S|[ \{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( partialClass.name ) )?(useQuote + sack.JSOX.escape(partialClass.name) +useQuote):partialClass.name );
+						|| /((\n|\r|\t)|[ \{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( partialClass.name ) )?(useQuote + sack.JSOX.escape(partialClass.name) +useQuote):partialClass.name );
 				v = c +
 					( partial.length === 0
 					? "{}"
