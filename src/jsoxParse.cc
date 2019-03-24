@@ -298,7 +298,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 					else
 						SET_READONLY( ref, "f", name );
 					Local<Value> args[] = { result, ref };
-					result = cb->Call( revive->_this, 2, args ).As<Object>();
+					result = cb->Call( result, 2, args ).As<Object>();
 				}
 			}
 		}
@@ -335,12 +335,28 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 		//result = BigInt::New( revive->isolate, 0 );
 		break;
 	case JSOX_VALUE_DATE:
-		char buf[64];
-		snprintf( buf, 64, "new Date('%s')", val->string );
-		script = Script::Compile( revive->context
-			, String::NewFromUtf8( revive->isolate, buf, NewStringType::kNormal ).ToLocalChecked()
-			, new ScriptOrigin( String::NewFromUtf8( revive->isolate, "DateFormatter", NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
-		result = script->Run( revive->context ).ToLocalChecked();
+		{
+			static Persistent<Function> dateCons;
+			if( dateCons.IsEmpty() ) {
+				Local<Date> tmp = Local<Date>::Cast( Date::New( revive->context, 0 ).ToLocalChecked() );
+				Local<Function> cons = Local<Function>::Cast(
+					tmp->Get( revive->context, String::NewFromUtf8( revive->isolate, "constructor", NewStringType::kNormal ).ToLocalChecked() ).ToLocalChecked()
+				);
+				dateCons.Reset( revive->isolate, cons );
+			}
+
+			static const int argc = 1;
+			Local<Value> argv[argc] = { String::NewFromUtf8( revive->isolate, val->string, NewStringType::kNormal ).ToLocalChecked() };
+			result = dateCons.Get( revive->isolate )->NewInstance( revive->context, argc, argv ).ToLocalChecked();
+#if USE_OLD_METHOD
+			char buf[64];
+			snprintf( buf, 64, "new Date('%s')", val->string );
+			script = Script::Compile( revive->context
+				, String::NewFromUtf8( revive->isolate, buf, NewStringType::kNormal ).ToLocalChecked()
+				, new ScriptOrigin( String::NewFromUtf8( revive->isolate, "DateFormatter", NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
+			result = script->Run( revive->context ).ToLocalChecked();
+#endif
+		}
 		//result = Date::New( revive->isolate, 0 );
 		break;
 	}
