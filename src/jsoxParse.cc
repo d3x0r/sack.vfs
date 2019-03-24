@@ -515,8 +515,48 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 
 	struct jsox_value_container *val = (struct jsox_value_container *)GetDataItem( &msg, 0 );
 	if( val && val->contains ) {
-		if( val->value_type == JSOX_VALUE_OBJECT )
-			o = Object::New( revive->isolate );
+		if( val->value_type == JSOX_VALUE_OBJECT ) {
+			if( val->className ) {
+				MaybeLocal<Value> valmethod;
+				Local<Function> cb;
+
+				o = Object::New( revive->isolate );
+				buildObject( val->contains, o, revive );
+
+				if( revive->parser && !revive->parser->promiseFromPrototypeMap.IsEmpty() )
+					valmethod = revive->parser->promiseFromPrototypeMap.Get( revive->isolate )->
+					Get( revive->context
+						, String::NewFromUtf8( revive->isolate, val->className )
+					);
+				if( !valmethod.IsEmpty() ) {
+					struct PromiseWrapper *pw = makePromise( revive->context, revive->isolate );
+					Local<Value> args[] = { pw->resolve.Get( revive->isolate ), pw->reject.Get( revive->isolate ) };
+					cb = valmethod.ToLocalChecked().As<Function>();
+					return cb->Call( o, 2, args ).As<Object>();
+				}
+				else {
+					valmethod = fromPrototypeMap.Get( revive->isolate )->
+						Get( revive->context
+							, String::NewFromUtf8( revive->isolate, val->className )
+						);
+
+					if( !valmethod.IsEmpty() )
+						cb = valmethod.ToLocalChecked().As<Function>();
+					else {
+						valmethod = revive->parser->fromPrototypeMap.Get( revive->isolate )->
+							Get( revive->context
+								, String::NewFromUtf8( revive->isolate, val->className )
+							);
+						if( !valmethod.IsEmpty() )
+							cb = valmethod.ToLocalChecked().As<Function>();
+					}
+					if( cb->IsFunction() )
+						return cb->Call( o, 0, NULL );
+				}
+			}
+			else
+				o = Object::New( revive->isolate );
+		}
 		else if( val->value_type == JSOX_VALUE_ARRAY )
 			o = Array::New( revive->isolate );
 		else
