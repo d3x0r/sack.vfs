@@ -7,17 +7,17 @@ function Node() {
 
 JSOX.registerToFrom( "exref", Node.prototype
 	, function() {
-		console.log( "encode object from Array:[%s]", JSON.stringify(this) );
+		console.log( "encode object from Object: %s", JSON.stringify(this) );
 		return '\"abc1234=\"';
         }
 	, function() {
-		console.log( "Resuurect from Array:[%s]", this );
+		console.log( "Resuurect from Array: %s", this );
 		return this;
 	} );
 
 JSOX.registerToFrom( "exref2", {ID:undefined}
 	, function() {
-		console.log( "encode extref2 from Array:[%s]", JSON.stringify(this) );
+		console.log( "encode extref2 from Array: %s", JSON.stringify(this) );
 		return '\"azz5534=\"';
         }
 	, function() {
