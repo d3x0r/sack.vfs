@@ -101,12 +101,12 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 				Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 				MaybeLocal<Value> cbResult = cb->Call( global, 1, argv );
 				if( cbResult.IsEmpty() ) {
-					cbResult = cb->Call( global, 0, NULL );
-					// should at least have 'undefined'....
 					lprintf( "Callback failed." );
+					r.dateCons.Reset();
 					return;
 				}
 			}
+			r.dateCons.Reset();
 		}
 		jsox_dispose_message( &elements );
 		if( result < 2 )
@@ -349,18 +349,18 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 		break;
 	case JSOX_VALUE_DATE:
 		{
-			static Persistent<Function> dateCons;
-			if( dateCons.IsEmpty() ) {
+			//static Persistent<Function> dateCons;
+			if( revive->dateCons.IsEmpty() ) {
 				Local<Date> tmp = Local<Date>::Cast( Date::New( revive->context, 0 ).ToLocalChecked() );
 				Local<Function> cons = Local<Function>::Cast(
 					tmp->Get( revive->context, String::NewFromUtf8( revive->isolate, "constructor", NewStringType::kNormal ).ToLocalChecked() ).ToLocalChecked()
 				);
-				dateCons.Reset( revive->isolate, cons );
+				revive->dateCons.Reset( revive->isolate, cons );
 			}
 
 			static const int argc = 1;
 			Local<Value> argv[argc] = { String::NewFromUtf8( revive->isolate, val->string, NewStringType::kNormal ).ToLocalChecked() };
-			result = dateCons.Get( revive->isolate )->NewInstance( revive->context, argc, argv ).ToLocalChecked();
+			result = revive->dateCons.Get( revive->isolate )->NewInstance( revive->context, argc, argv ).ToLocalChecked();
 #if USE_OLD_METHOD
 			char buf[64];
 			snprintf( buf, 64, "new Date('%s')", val->string );
@@ -706,6 +706,7 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 		else {
 			r.isolate->ThrowException( Exception::TypeError(
 				String::NewFromUtf8( r.isolate, TranslateText( "Reviver parameter is not a function." ) ) ) );
+			r.dateCons.Reset();
 			return;
 		}
 	}
@@ -716,6 +717,7 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 	r.context = r.isolate->GetCurrentContext();
 
 	args.GetReturnValue().Set( ParseJSOX( msg, tmp.length(), &r ) );
+	r.dateCons.Reset();
 
 }
 
