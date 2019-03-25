@@ -1184,6 +1184,8 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.147 
+   - fixed some issues with JSOX.
 - 0.9.146
    - SACK Update; add XSWS 
    - Fixed stall issue with http server and lots of requests in series from browser.
