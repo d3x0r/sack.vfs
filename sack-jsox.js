@@ -600,8 +600,7 @@ sack.JSOX.stringifier = function() {
 
 				var ident = null;
 				if( partialClass )
-					ident = ( ( partialClass.name in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===partialClass.name )*/
-						|| /((\n|\r|\t)|[ \{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( partialClass.name ) )?(useQuote + sack.JSOX.escape(partialClass.name) +useQuote):partialClass.name );
+					ident = getIdentifier( partialClass.name );
 				v = c +
 					( partial.length === 0
 					? "{}"
