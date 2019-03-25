@@ -153,8 +153,22 @@ private:
 	}
 	static void setVersion( const v8::FunctionCallbackInfo<Value>& args ) {
 		SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
-		lprintf( "Make will be 3?" );
-		obj->MakeEntropy = SRG_CreateEntropy3;
+		if( args.Length() > 0 ) {
+			int64_t version = args[0]->IntegerValue();
+			//lprintf( "Make will be %d?", version );
+			if( version == 0 )
+				obj->MakeEntropy = SRG_CreateEntropy;
+			if( version == 1 )
+				obj->MakeEntropy = SRG_CreateEntropy2_256;
+			if( version == 2 )
+				obj->MakeEntropy = SRG_CreateEntropy3;
+			if( version == 3 )
+				obj->MakeEntropy = SRG_CreateEntropy4;
+
+			SRGObject *srg = ObjectWrap::Unwrap<SRGObject>( args.This() );
+			srg->entropy = obj->MakeEntropy( SRGObject::getSeed, (uintptr_t)srg );
+
+		}
 	}
 	static void reset( const v8::FunctionCallbackInfo<Value>& args ) {
 		SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
@@ -852,6 +866,6 @@ SRGObject::SRGObject( const char *seed, size_t seedLen ) {
 	this->seedBuf = StrDup( seed );
 	this->seedLen = seedLen;
 	this->seedCallback = NULL;
-	this->entropy = SRG_CreateEntropy2( SRGObject::getSeed, (uintptr_t) this );
+	this->entropy = SRG_CreateEntropy2_256( SRGObject::getSeed, (uintptr_t) this );
 }
 
