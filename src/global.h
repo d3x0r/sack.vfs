@@ -424,6 +424,11 @@ struct reviver_data {
 Local<Value> convertMessageToJS( PDATALIST msg_data, struct reviver_data *reviver );
 Local<Value> convertMessageToJS2( PDATALIST msg_data, struct reviver_data *reviver );
 
+struct prototypeHolder {
+	Persistent<Value> *cls;
+	TEXTSTR className;
+};
+
 class JSOXObject : public node::ObjectWrap {
 public:
 	struct jsox_parse_state *state;
@@ -431,7 +436,7 @@ public:
 	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
 	Persistent<Map> fromPrototypeMap;
 	Persistent<Map> promiseFromPrototypeMap;
-
+	PLIST prototypes; // revivde prototypes by class
 public:
 
 	static void Init( Handle<Object> exports );
