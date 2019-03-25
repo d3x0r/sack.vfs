@@ -418,6 +418,8 @@ public:
 };
 
 struct reviver_data {
+	Persistent<Function> dateCons;
+
 	Isolate *isolate;
 	Local<Context> context;
 	LOGICAL revive;
