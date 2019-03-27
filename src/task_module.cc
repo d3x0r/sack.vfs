@@ -54,9 +54,7 @@ TaskObject::TaskObject():_this(), endCallback(), inputCallback()
     ended = false;
     exitCode = 0;
     killAtExit = false;
-    buffer = NULL;
-    size = 0;
-    waiter = NULL;
+	output = CreateLinkQueue();
     
 	//this[0] = _blankTask;
 }
@@ -101,35 +99,41 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 		// these is a chance output will still come in?
 		uv_close( (uv_handle_t*)&task->async, NULL );
 	}
-	if( task->buffer ) {
-		Local<Value> argv[1];
-		Local<ArrayBuffer> ab;
-		if( task->binary ) {
-			ab = ArrayBuffer::New( isolate, (void*)task->buffer, task->size );
-			argv[0] = ab;
-			task->inputCallback.Get( isolate )->Call( task->_this.Get( isolate ), 1, argv );
-		}
-		else {
-			MaybeLocal<String> buf = localString( isolate, (const char*)task->buffer, (int)task->size );
-			argv[0] = buf.ToLocalChecked();
-			task->inputCallback.Get( isolate )->Call( task->_this.Get( isolate ), 1, argv );
+	{
+		struct taskObjectOutputItem *output;
+		while( output = (struct taskObjectOutputItem *)DequeLink( &task->output ) ) {
+			Local<Value> argv[1];
+			Local<ArrayBuffer> ab;
+			if( task->binary ) {
+				ab = ArrayBuffer::New( isolate, (void*)output->buffer, output->size );
+				argv[0] = ab;
+				task->inputCallback.Get( isolate )->Call( task->_this.Get( isolate ), 1, argv );
+			}
+			else {
+				MaybeLocal<String> buf = localString( isolate, (const char*)output->buffer, (int)output->size );
+				argv[0] = buf.ToLocalChecked();
+				task->inputCallback.Get( isolate )->Call( task->_this.Get( isolate ), 1, argv );
+			}
+			Release( output );
+			//task->buffer = NULL;
 		}
 
-		task->buffer = NULL;
 	}
-	if( task->waiter ) {
-		WakeThread( task->waiter );
-	}
+	//if( task->waiter ) {
+	//	WakeThread( task->waiter );
+	//}
 }
 
 static void CPROC getTaskInput( uintptr_t psvTask, PTASK_INFO pTask, CTEXTSTR buffer, size_t size ) {
 	TaskObject *task = (TaskObject*)psvTask;
 	//if( !task->inputCallback.IsEmpty() ) 
 	{
-		task->buffer = NewArray( char, size );
-		memcpy( (char*)task->buffer, buffer, size );
-		task->size = size;
-		task->waiter = MakeThread();
+		struct taskObjectOutputItem *output = NewPlus( struct taskObjectOutputItem, size );
+		//task->buffer = NewArray( char, size );
+		memcpy( (char*)output->buffer, buffer, size );
+		output->size = size;
+		//output->waiter = MakeThread();
+		EnqueLink( &task->output, output );
 		uv_async_send( &task->async );
 		//while( task->buffer ) {
 		//	WakeableSleep( 200 );
@@ -142,7 +146,7 @@ static void CPROC getTaskEnd( uintptr_t psvTask, PTASK_INFO task_ended ) {
 	TaskObject *task = (TaskObject*)psvTask;
 	task->ending = true;
 	task->exitCode = GetTaskExitCode( task_ended );
-	task->waiter = NULL;
+	//task->waiter = NULL;
 	task->task = NULL;
 	//closes async
 	uv_async_send( &task->async );

@@ -1,4 +1,10 @@
 
+struct taskObjectOutputItem {
+	size_t size;
+	PTHREAD waiter;  // used to hold the buffer until received by script
+	TEXTCHAR buffer[1];
+
+};
 
 
 class TaskObject : public node::ObjectWrap {
@@ -15,9 +21,7 @@ public:
 	uint32_t exitCode;
 	bool killAtExit;
 
-	CTEXTSTR buffer;
-	size_t size;
-	PTHREAD waiter;  // used to hold the buffer until received by script
+	PLINKQUEUE output;
 
 	TaskObject( );
 	~TaskObject();
