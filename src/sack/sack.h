@@ -11421,7 +11421,7 @@ FILESYS_PROC  void FILESYS_API  ScanDrives ( void (CPROC *Process)(uintptr_t use
 FILESYS_PROC struct find_cursor * FILESYS_API GetScanFileCursor( void *pInfo );
 // result is length of name filled into pResult if pResult == NULL && nResult = 0
 // the result will the be length of the name matching the file.
-FILESYS_PROC  int FILESYS_API  GetMatchingFileName ( CTEXTSTR filemask, int flags, TEXTSTR pResult, int nResult );
+FILESYS_PROC  int FILESYS_API  GetMatchingFileName ( CTEXTSTR filemask, enum ScanFileFlags flags, TEXTSTR pResult, int nResult );
 // searches a path for the last '/' or '\'
 FILESYS_PROC  CTEXTSTR FILESYS_API  pathrchr ( CTEXTSTR path );
 #ifdef __cplusplus
@@ -11756,11 +11756,11 @@ SACK_VFS_PROC int CPROC sack_vfs_find_close( struct find_info *info );
 // move to the next entry returns 0 if no entry.
 SACK_VFS_PROC int CPROC sack_vfs_find_next( struct find_info *info );
 // get file information for the file at the current cursor position...
-SACK_VFS_PROC char * CPROC sack_vfs_find_get_name( struct find_info *info );
+SACK_VFS_PROC char * CPROC sack_vfs_find_get_name( struct find_cursor *info );
 // get file information for the file at the current cursor position...
-SACK_VFS_PROC size_t CPROC sack_vfs_find_get_size( struct find_info *info );
-SACK_VFS_PROC uint64_t CPROC sack_vfs_find_get_ctime( struct find_info *info );
-SACK_VFS_PROC uint64_t CPROC sack_vfs_find_get_wtime( struct find_info *info );
+SACK_VFS_PROC size_t CPROC sack_vfs_find_get_size( struct find_cursor *info );
+SACK_VFS_PROC uint64_t CPROC sack_vfs_find_get_ctime( struct find_cursor *info );
+SACK_VFS_PROC uint64_t CPROC sack_vfs_find_get_wtime( struct find_cursor *info );
 #ifdef __cplusplus
 namespace fs {
 #endif
