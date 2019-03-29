@@ -1186,6 +1186,10 @@ setTimeout( ()=>{ }, 5000 );
 ## Changelog
 - 0.9.147 
    - fixed some issues with JSOX.
+   - Fixed occasional event loss for SSL connections.
+   - Improved ODBC Data marshalling ability.
+   - Fix lost task output from task module tasks.
+   - Added Text() type.  Which is the internal rich text segment tracking.  (for output to GUI console) 
 - 0.9.146
    - SACK Update; add XSWS 
    - Fixed stall issue with http server and lots of requests in series from browser.
