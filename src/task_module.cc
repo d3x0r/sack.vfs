@@ -110,11 +110,10 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 				task->inputCallback.Get( isolate )->Call( task->_this.Get( isolate ), 1, argv );
 			}
 			else {
-				MaybeLocal<String> buf = localString( isolate, (const char*)output->buffer, (int)output->size );
+				MaybeLocal<String> buf = localStringExternal( isolate, (const char*)output->buffer, (int)output->size, (const char*)output );
 				argv[0] = buf.ToLocalChecked();
 				task->inputCallback.Get( isolate )->Call( task->_this.Get( isolate ), 1, argv );
 			}
-			Release( output );
 			//task->buffer = NULL;
 		}
 
