@@ -611,6 +611,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 			//lprintf( "handling an event from somewhere %p  %s", GetWebSocketHttpState( eventMessage->pc ), GetText( GetHttpRequest( GetWebSocketHttpState( eventMessage->pc ) ) ) );
 			myself->eventMessage = eventMessage;
 			if( eventMessage->eventType == WS_EVENT_REQUEST ) {
+				//lprintf( "Comes in directly as a request; don't even get accept..." );
 				if( !myself->requestCallback.IsEmpty() ) {
 					Local<Function> cons = Local<Function>::New( isolate, httpObject::constructor );
 					MaybeLocal<Object> _http = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
@@ -643,6 +644,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				}
 			}
 			else if( eventMessage->eventType == WS_EVENT_ACCEPT ) {
+				//lprintf( "Dispatch open event because connect." );
 
 				Local<Function> cons = Local<Function>::New( isolate, wssiObject::constructor );
 				MaybeLocal<Object> _wssi = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
@@ -754,6 +756,7 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 					else {
 						MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 						argv[0] = buf.ToLocalChecked();
+						//lprintf( "Message:', %s", eventMessage->buf );
 						myself->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
 					}
 					Deallocate( POINTER, eventMessage->buf );
@@ -1027,6 +1030,7 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 			Deallocate( const char *, wssi->protocolResponse );
 			wssi->protocolResponse = NULL;
 		}
+		//lprintf( "send open event to JS" );
 		(*pevt).eventType = WS_EVENT_OPEN;
 		(*pevt)._this = wssi;
 		EnqueLink( &wssi->eventQueue, pevt );
@@ -1147,6 +1151,7 @@ static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char *proto
 	if( !pc ) lprintf( "FATALITY - ACCEPT EVENT RECEVIED ON A NON SOCKET!?" );
 	evt.pc = pc;
 	evt.accepted = 0;
+	//lprintf( "Websocket accepted... (blocks until handled.)" );
 	evt.eventType = WS_EVENT_ACCEPT;
 	evt.done = FALSE;
 	evt.waiter = MakeThread();
@@ -1156,6 +1161,7 @@ static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char *proto
 
 	while( !evt.done )
 		Wait();
+	//lprintf( "handled... accept next?" );
 	if( evt.protocol != protocols )
 		evt.result->protocolResponse = evt.protocol;
 	(*protocolReply) = (char*)evt.protocol;
@@ -1279,12 +1285,13 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 	{
 		struct HttpState *pHttpState = GetWebSocketHttpState( obj->pc );
 		if( include_close ) {
-			lprintf( "Close is included... is this a reset close?" );
+			//lprintf( "Close is included... is this a reset close?" );
 			RemoveClientEx( obj->pc, 0, 1 );
 		}
 		else {
 			if (pHttpState) {
 				int result;
+				//lprintf( "ending http on %p", obj->pc );
 				EndHttp(pHttpState);
 				while ((result = ProcessHttp(obj->pc, pHttpState)))
 				{
@@ -1304,7 +1311,10 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 						break;
 					}
 				}
-
+				
+			}
+			else {
+				lprintf( "LOST HTTP STATE" );
 			}
 		}
 	}
@@ -1416,7 +1426,7 @@ wssObject::wssObject( struct wssOptions *opts ) {
 		SetSocketReusePort( pc, TRUE );
 		SetSocketReuseAddress( pc, TRUE );
 		uv_async_init( l.loop, &async, wssAsyncMsg );
-		event_waker = ThreadTo( catchLostEvents, (uintptr_t)this );
+		//event_waker = ThreadTo( catchLostEvents, (uintptr_t)this );
 		async.data = this;
 
 		SetWebSocketHttpCallback( pc, webSockHttpRequest );
@@ -1882,6 +1892,7 @@ static uintptr_t webSockClientOpen( PCLIENT pc, uintptr_t psv ) {
 	wscObject *wsc = (wscObject*)psv;
 	wsc->readyState = OPEN;
 	struct wscEvent *pevt = GetWscEvent();
+	//lprintf( "send open event to JS(2)" );
 	(*pevt).eventType = WS_EVENT_OPEN;
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
@@ -1955,9 +1966,9 @@ wscObject::wscObject( wscOptions *opts ) {
 }
 
 wscObject::~wscObject() {
-	lprintf( "Destruct wscObject" );
+	//lprintf( "Destruct wscObject" );
 	if( !closed ) {
-		lprintf( "destruct, try to generate WebSockClose" );
+		//lprintf( "destruct, try to generate WebSockClose" );
 		RemoveClient( pc );
 	}
 	DeleteLinkQueue( &eventQueue );
@@ -2223,6 +2234,7 @@ void wscObject::close( const FunctionCallbackInfo<Value>& args ) {
 void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+	//lprintf( "Send From JS" );
 	if( !obj->pc ) {
 		isolate->ThrowException( Exception::Error(
 			String::NewFromUtf8( isolate, TranslateText( "Connection is already closed." ) ) ) );
