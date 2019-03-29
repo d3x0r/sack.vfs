@@ -1,5 +1,5 @@
 #if defined( _MSC_VER )
-#  pragma warning( disable: 4251 )
+#  pragma warning( disable: 4251 4275 )
 #endif
 
 #include <node.h>
@@ -9,7 +9,7 @@
 #include <uv.h>
 
 #if defined( _MSC_VER )
-#  pragma warning( default: 4251 )
+#  pragma warning( default: 4251 4275 )
 #endif
 
 #define V8_AT_LEAST(major, minor) (V8_MAJOR_VERSION > major || (V8_MAJOR_VERSION == major && V8_MINOR_VERSION >= minor))

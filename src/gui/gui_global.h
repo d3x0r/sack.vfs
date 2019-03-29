@@ -1,8 +1,16 @@
+#if defined( _MSC_VER )
+#  pragma warning( disable: 4251 )
+#endif
 
 #include <node.h>
 #include <node_object_wrap.h>
 #include <v8.h>
 #include <uv.h>
+
+#if defined( _MSC_VER )
+#  pragma warning( default: 4251 )
+#endif
+
 //#include <nan.h>
 //#include <varargs.h>
 #include <stdarg.h>
