@@ -55,6 +55,11 @@ server.onrequest( function( req, res ) {
 	//ws.clientAddress = ip;
 
 	//console.log( "Received request:", req );
+	if( req.url.startsWith( "/cgi" ) ) {
+		// req.CGI will be an object with the fields of the CGI parameters.
+		// with name:value.  All values are passed as strings.
+		// req.CGI =  { cgi:"paramseters are here" } 
+	}
 	if( req.url === "/" ) req.url = "/index.html";
 	var filePath = "." + unescape(req.url);
 	var extname = path.extname(filePath);

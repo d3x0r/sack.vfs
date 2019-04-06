@@ -53,24 +53,23 @@ server.onrequest( function( req, res ) {
 	}
 } );
 
-server.onaccept( function ( protocols, resource ) {
-	console.log( "Connection received with : ", protocols, " path:", resource );
+server.onaccept( function ( ws ) {
+//	console.log( "Connection received with : ", ws.protocols, " path:", resource );
         if( process.argv[2] == "1" )
 		this.reject();
         else
 		this.accept();
-		//this.accept( protocols );
 } );
 
 server.onconnect( function (ws) {
 	//console.log( "Connect:", ws );
 
 	ws.onmessage( function( msg ) {
-        	console.log( "Received data:", msg );
+        	//console.log( "Received data:", msg );
                 ws.send( msg );
 		//ws.close();
         } );
 	ws.onclose( function() {
-        	console.log( "Remote closed" );
+        	//console.log( "Remote closed" );
         } );
 } );
