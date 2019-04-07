@@ -1922,10 +1922,11 @@ static uintptr_t TrackPopupThread( PTHREAD thread ) {
 	PopupObject *popup = (PopupObject *)GetThreadParam( thread );
 	uintptr_t result = TrackPopup( popup->popup, popup->parent->control );
 	{
-		DWORD dwError = GetLastError();
+		uint32_t dwError = GetLastError();
 		if( dwError )
 			lprintf( "Track Popup Error?%d", dwError );	
 	}
+#ifdef _WIN32
 	INDEX idx;
 	MenuItemObject *mio;
 	MSG msg;
@@ -1937,6 +1938,7 @@ static uintptr_t TrackPopupThread( PTHREAD thread ) {
 		}
 	}
 	disableEventLoop();
+#endif
 	return 0;
 }
 
