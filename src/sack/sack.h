@@ -432,6 +432,9 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #include <wchar.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifndef _WIN32
+#  include <syscall.h>
+#endif
 #ifndef MY_TYPES_INCLUDED
 #define MY_TYPES_INCLUDED
 // include this before anything else
@@ -1387,7 +1390,7 @@ typedef uint64_t THREAD_ID;
 #    ifdef __ANDROID__
 #      define GetMyThreadID()  (( ((uint64_t)getpid()) << 32 ) | ( (uint64_t)(gettid()) ) )
 #    else
-#      define GetMyThreadID()  (( ((uint64_t)getpid()) << 32 ) | ( (uint64_t)(pthread_self()) ) )
+#      define GetMyThreadID()  (( ((uint64_t)getpid()) << 32 ) | ( (uint64_t)(syscall(SYS_gettid)) ) )
 #    endif
 #  else
 #    define GetMyThreadID()  (( ((uint64_t)getppid()) << 32 ) | ( (uint64_t)(getpid()|0x40000000)) )
@@ -7256,6 +7259,22 @@ typedef void (CPROC*cppCloseCallback)(uintptr_t);
 typedef void (CPROC*cppWriteComplete)(uintptr_t );
 typedef void (CPROC*cppNotifyCallback)(uintptr_t, PCLIENT newClient);
 typedef void (CPROC*cppConnectCallback)(uintptr_t, int);
+enum SackNetworkErrorIdentifier {
+	SACK_NETWORK_ERROR_,
+ // error during control information exchange over TLS
+	SACK_NETWORK_ERROR_SSL_HANDSHAKE,
+ // error after first packet.
+	SACK_NETWORK_ERROR_SSL_HANDSHAKE_2,
+ // error verifying validity of certificate chain from server.
+	SACK_NETWORK_ERROR_SSL_CERTCHAIN_FAIL,
+ // other ssl error
+	SACK_NETWORK_ERROR_SSL_FAIL,
+ //
+	SACK_NETWORK_ERROR_HTTP_CHUNK,
+ // command parsing resulted in invalid command.  (HTTPS request to HTTP)
+	SACK_NETWORK_ERROR_HTTP_UNSUPPORTED,
+};
+typedef void (CPROC*cErrorCallback)(uintptr_t psvError, PCLIENT pc, enum SackNetworkErrorIdentifier error, ... );
 NETWORK_PROC( void, SetNetworkWriteComplete )( PCLIENT, cWriteComplete );
 #ifdef __cplusplus
 /* <combine sack::network::SetNetworkWriteComplete@PCLIENT@cWriteComplete>
@@ -7283,6 +7302,21 @@ NETWORK_PROC( void, SetCPPNetworkCloseCallback )( PCLIENT, cppCloseCallback, uin
 /* <combine sack::network::SetNetworkCloseCallback@PCLIENT@cCloseCallback>
    \ \                                                                     */
 #define SetCloseCallback SetNetworkCloseCallback
+/* Sets an error event callback which is triggered during low level (SSL)
+   operations.  Error code passed to callback will give more information.
+   Parameters
+   pc :              socket to set event handler on
+   callback :        Address of error handling callback.
+   psvUser :         data passed to callback for application purposes.
+*/
+NETWORK_PROC( void, SetNetworkErrorCallback )(PCLIENT pc, cErrorCallback callback, uintptr_t psvUser );
+/*
+   Trigger error callback with specified error code (meta code like http.c can trigger this(?))
+   Parameters
+   pc :              socket to set event handler on
+   code :        Address of error handling callback.
+ */
+NETWORK_PROC( void, TriggerNetworkErrorCallback )(PCLIENT pc, enum SackNetworkErrorIdentifier error );
  // wwords is BYTES and wClients=16 is defaulted to 16
 #ifdef __LINUX__
 NETWORK_PROC( LOGICAL, NetworkWait )(POINTER unused,uint32_t wClients,int wUserData);
@@ -7308,8 +7342,11 @@ NETWORK_PROC( SOCKADDR *, CreateAddress_hton )( uint32_t dwIP,uint16_t nHisPort)
 #ifndef WIN32
 NETWORK_PROC( SOCKADDR *, CreateUnixAddress )( CTEXTSTR path );
 #endif
+/* obsolete */
 NETWORK_PROC( SOCKADDR *, CreateAddress )( uint32_t dwIP,uint16_t nHisPort);
+/* obsolete */
 NETWORK_PROC( SOCKADDR *, SetAddressPort )( SOCKADDR *pAddr, uint16_t nDefaultPort );
+/* obsolete */
 NETWORK_PROC( SOCKADDR *, SetNonDefaultPort )( SOCKADDR *pAddr, uint16_t nDefaultPort );
 /*
  * this is the preferred method to create an address
@@ -7365,8 +7402,6 @@ NETWORK_PROC( LOGICAL, IsAddressV6 )( SOCKADDR *addr );
  // return a copy of this address...
 NETWORK_PROC( SOCKADDR *, DuplicateAddressEx )( SOCKADDR *pAddr DBG_PASS );
 #define DuplicateAddress(a) DuplicateAddressEx( a DBG_SRC )
-NETWORK_PROC( void, SackNetwork_SetSocketSecure )( PCLIENT lpClient );
-NETWORK_PROC( void, SackNetwork_AllowSecurityDowngrade )( PCLIENT lpClient );
 /* Transmission Control Protocol connection methods. This
    controls opening sockets that are based on TCP.        */
 _TCP_NAMESPACE
@@ -7713,11 +7748,11 @@ NETWORK_PROC( LOGICAL, doTCPWriteExx )( PCLIENT lpClient
 #define SendTCPLong(c,b,l) doTCPWriteExx(c,b,l, TRUE, FALSE DBG_SRC)
 _TCP_NAMESPACE_END
 NETWORK_PROC( void, SetNetworkLong )(PCLIENT lpClient,int nLong,uintptr_t dwValue);
-NETWORK_PROC( void, SetNetworkInt )(PCLIENT lpClient,int nLong, int value);
+NETWORK_PROC( uintptr_t, GetNetworkLong )(PCLIENT lpClient, int nLong);
 /* Obsolete. See SetNetworkLong. */
+NETWORK_PROC( void, SetNetworkInt )(PCLIENT lpClient,int nLong, int value);
+NETWORK_PROC( int, GetNetworkInt )(PCLIENT lpClient, int nLong);
 NETWORK_PROC( void, SetNetworkWord )(PCLIENT lpClient,int nLong,uint16_t wValue);
-NETWORK_PROC( uintptr_t, GetNetworkLong )(PCLIENT lpClient,int nLong);
-NETWORK_PROC( int, GetNetworkInt )(PCLIENT lpClient,int nLong);
 NETWORK_PROC( uint16_t, GetNetworkWord )(PCLIENT lpClient,int nLong);
 /* Symbols which may be passed to GetNetworkLong to get internal
    parts of the client.                                          */
@@ -7758,6 +7793,14 @@ NETWORK_PROC( LOGICAL, ssl_BeginServer )( PCLIENT pc, CPOINTER cert, size_t cert
 NETWORK_PROC( LOGICAL, ssl_GetPrivateKey )(PCLIENT pc, POINTER *keydata, size_t *keysize);
 NETWORK_PROC( LOGICAL, ssl_IsClientSecure )(PCLIENT pc);
 NETWORK_PROC( void, ssl_SetIgnoreVerification )(PCLIENT pc);
+// during ssl error callback, this can be used to revert (server) sockets to
+// non SSL.
+// a CLient socket will have already sent SSL Data on the socket, and it would
+// be unclean to try to change protocol.
+// the Server, however, fails the handshake on the first receive, and previously
+// just closed, but new error handling allows fallback to HTTP in order to send
+// a redirect to the HTTPS address proper.
+NETWORK_PROC( void, ssl_EndSecure )(PCLIENT pc, POINTER buffer, size_t buflen );
 /* use this to send on SSL Connection instead of SendTCP. */
 NETWORK_PROC( LOGICAL, ssl_Send )( PCLIENT pc, CPOINTER buffer, size_t length );
 /* User Datagram Packet connection methods. This controls
@@ -11826,17 +11869,17 @@ namespace fs {
 	SACK_VFS_PROC LOGICAL CPROC sack_vfs_fs_rename( uintptr_t psvInstance, const char *original, const char *newname );
 	// -----------  directory interface commands. ----------------------
 	// returns find_info which is then used in subsequent commands.
-	SACK_VFS_PROC struct find_info * CPROC sack_vfs_fs_find_create_cursor( uintptr_t psvInst, const char *base, const char *mask );
+	SACK_VFS_PROC struct find_cursor * CPROC sack_vfs_fs_find_create_cursor( uintptr_t psvInst, const char *base, const char *mask );
 	// reset find_info to the first directory entry.  returns 0 if no entry.
-	SACK_VFS_PROC int CPROC sack_vfs_fs_find_first( struct find_info *info );
+	SACK_VFS_PROC int CPROC sack_vfs_fs_find_first( struct find_cursor *info );
 	// closes a find cursor; returns 0.
-	SACK_VFS_PROC int CPROC sack_vfs_fs_find_close( struct find_info *info );
+	SACK_VFS_PROC int CPROC sack_vfs_fs_find_close( struct find_cursor *info );
 	// move to the next entry returns 0 if no entry.
-	SACK_VFS_PROC int CPROC sack_vfs_fs_find_next( struct find_info *info );
+	SACK_VFS_PROC int CPROC sack_vfs_fs_find_next( struct find_cursor *info );
 	// get file information for the file at the current cursor position...
-	SACK_VFS_PROC char * CPROC sack_vfs_fs_find_get_name( struct find_info *info );
+	SACK_VFS_PROC char * CPROC sack_vfs_fs_find_get_name( struct find_cursor *info );
 	// get file information for the file at the current cursor position...
-	SACK_VFS_PROC size_t CPROC sack_vfs_fs_find_get_size( struct find_info *info );
+	SACK_VFS_PROC size_t CPROC sack_vfs_fs_find_get_size( struct find_cursor *info );
 #ifdef __cplusplus
 }
 #endif
@@ -12790,7 +12833,7 @@ enum ProcessHttpResult{
 HTTP_EXPORT
  /* Creates an empty http state, the next operation should be
    AddHttpData.                                              */
-HTTPState  HTTPAPI CreateHttpState( void );
+HTTPState  HTTPAPI CreateHttpState( PCLIENT *pc );
 HTTP_EXPORT
  /* Destroys a http state, releasing all resources associated
    with it.                                                  */
