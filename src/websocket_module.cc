@@ -414,6 +414,7 @@ public:
 	static void getOnOpen( const v8::FunctionCallbackInfo<Value>& args );
 	static void write( const v8::FunctionCallbackInfo<Value>& args );
 	static void getReadyState( const FunctionCallbackInfo<Value>& args );
+	static void ping( const v8::FunctionCallbackInfo<Value>& args );
 
 	~wscObject();
 };
@@ -449,6 +450,7 @@ public:
 	static void onmessage( const v8::FunctionCallbackInfo<Value>& args );
 	static void onclose( const v8::FunctionCallbackInfo<Value>& args );
 	static void getReadyState( const FunctionCallbackInfo<Value>& args );
+	static void ping( const v8::FunctionCallbackInfo<Value>& args );
 
 	~wssiObject();
 };
@@ -986,6 +988,7 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "close", wscObject::close );
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "send", wscObject::write );
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "on", wscObject::on );
+		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "ping", wscObject::ping );
 		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "readyState" )
 			, FunctionTemplate::New( isolate, wscObject::getReadyState )
 			, Local<FunctionTemplate>() );
@@ -1017,6 +1020,7 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "send", wssiObject::write );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "close", wssiObject::close );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "on", wssiObject::on );
+		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "ping", wssiObject::ping );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "onmessage", wssiObject::onmessage );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "onclose", wssiObject::onclose );
 		wssiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "readyState" )
@@ -1872,6 +1876,11 @@ void wssiObject::New( const FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+void wssiObject::ping( const v8::FunctionCallbackInfo<Value>& args ) {
+  	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
+	WebSocketPing( obj->pc, 0 );
+}
+
 void wssiObject::on( const FunctionCallbackInfo<Value>& args){
 	Isolate* isolate = args.GetIsolate();
 
@@ -2242,6 +2251,10 @@ void wscObject::getOnError( const FunctionCallbackInfo<Value>& args ) {
 	args.GetReturnValue().Set( obj->errorCallback.Get( isolate ) );
 }
 
+void wscObject::ping( const v8::FunctionCallbackInfo<Value>& args ) {
+  	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+	WebSocketPing( obj->pc, 0 );
+}
 
 void wscObject::on( const FunctionCallbackInfo<Value>& args){
 	if( args.Length() == 2 ) {

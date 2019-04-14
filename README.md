@@ -776,12 +776,14 @@ Client Methods
 
    | method | purpose |
    | -- | -- |
+   | ping() | Generate a websocket ping.  /* no response/event? */ |
    | close() | call this to end a connection |
    | send(message) | call this to send data to a connection, argument should either be a String or an ArrayBuffer.
-   | onOpen | sets the callback to be called when the connection opens. |
-   | onMessage | set the callback to be called when a message is received, it gets a single parameter, the message recieved. The data is either a string or an ArrayBuffer type | 
-   | onClose | sets the callback to be called when the connection is closed from the other side first |
-   | onError | sets the callback to be called on an error (no supported errors at this time) |
+   | onopen | sets the callback to be called when the connection opens. |
+   | onmessage | set the callback to be called when a message is received, it gets a single parameter, the message recieved. The data is either a string or an ArrayBuffer type | 
+   | occlose | sets the callback to be called when the connection is closed from the other side first |
+   | onerror | sets the callback to be called on an error (no supported errors at this time) |
+   | onerrorlow | sets the callback to be called on a low level error event.  (SSL negotation failed), callback gets (error,connection,buffer), and maybe used to check the buffer, disable SSL, and possibly serve a redirect. |
    | on  | sets event callbacks by name.  First parameter is the event name, the second is the callback |
 
 
@@ -797,6 +799,7 @@ Server events
   | accept |  optional callback, if it is configured on a server, it is called before connect, and is passed (new_websocket_connection).  Should call server.accept( protocol ), or server.reject() during this callback.  |
   | connect(depr.) | callback receives new connection from a client.  The new client object has a 'connection' object which provides information about the connection. |
   | request | callback is in a new object that is an httpObject; triggered when a non-upgrade request is received. |
+  | lowError | callback is passed a closed socket object with remote and local addresses. |
   | error | callback is passed a closed socket object with remote and local addresses. |
 
 
@@ -820,14 +823,15 @@ Server Methods
 
   | Server Methods |   |
   |---|---|
-  | close | close server socket. |
-  | on | setup events ( connect, accept, request, error ), callback |
-  | onconnect | pass callback for when a WebSocket connection is initiated; allows inspecting protocols/resource requested to accept or reject. |
-  | onaccept | pass callback for when socket is accepted, and is completely open.... setup event handlers on passed socket |
-  | onrequest |pass callback for HTTP request (GET/POST/...).   |
-  | onerror | pass callback for error event.  callback is passed a closed socket object with remote and local addresses (see connection object below) |
-  | accept | Call this to accept a socket, pass protocols to accept with(?) |
-  | reject | Call this in onconnect to abort accepting the websocket. |
+  | close() | close server socket. |
+  | on(eventName,cb) | setup events ( connect, accept, request, error ), callback |
+  | onconnect(cb) | pass callback for when a WebSocket connection is initiated; allows inspecting protocols/resource requested to accept or reject. |
+  | onaccept(cb) | pass callback for when socket is accepted, and is completely open.... setup event handlers on passed socket |
+  | onrequest(cb) |pass callback for HTTP request (GET/POST/...).   |
+  | onerror(cb) | pass callback for error event.  callback is passed a closed socket object with remote and local addresses (see connection object below) |
+  | accept() | Call this to accept a socket, pass protocols to accept with(?).  Only valid within "accept" event. |
+  | reject() | Call this in onconnect to abort accepting the websocket.  Only valid within "accept" event. |
+  | disableSSL() | closes the SSL layer on the socket and resumes native TCP connection; is called on the server socket during "lowerror" event.  Uses the socket that triggered the event as the one to disable.  (The Websocket Server Client is not yet created). |
 
 
 Server Client Methods
@@ -835,8 +839,12 @@ Server Client Methods
   
   | Method |  Description |
   |----|----|
+  | ping() | Generate a websocket ping.  /* no response/event? */ |
+  | onmessage | set the callback to be called when a message is received, it gets a single parameter, the message recieved. The data is either a string or an ArrayBuffer type | 
   | send | send data on the connection.  Message parameter can either be an ArrayBuffer or a String. (to be implemented; typedarraybuffer) |
+  | disableSSL | closes the SSL layer on the socket and resumes native TCP connection. |
   | close | closes the connection |
+  | on | event handler for specified type `on(eventName, callback)` | 
 
 Http Request/Server Client fields
 
@@ -847,6 +855,14 @@ Http Request/Server Client fields
   | headers | headers from the http request |
   | CGI | Parsed CGI Parameters from URL |
   | content | if the message was a POST, content will be non-null |
+
+Server Client Events
+
+  | Event Name | Event Description |
+  |---|---|
+  |message | callback receives a message argument, its type is either a string or an ArrayBufer |
+  |error | unused (probably).  Caches websocket protocol errors. |
+  |close | callback is called when the server closes the connection |
 
 
 Http Response methods
@@ -1184,6 +1200,9 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.150
+   - Updated documentation to cover lowerror event and disableSSL.
+   - Added ping() method call on sockets accepted by a server and sockets connected to a server.
 - 0.9.148
    - Fixed lost event during SSL handshake.
    - Fixed linux network write lock issue.
