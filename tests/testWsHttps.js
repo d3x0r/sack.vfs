@@ -42,17 +42,34 @@ var server = sack.WebSocket.Server( serverOpts = { port: Number(process.argv[2])
 
 console.log( "serving on", serverOpts.port );
 
+server.onerrorlow( function( error, socket ) {
+	if( error === 1 ) {
+        	//this.redirect = true;
+	        this.disableSSL();
+        }
+	console.log( "Low Error:", this, error, socket );
+} )
+
 server.onerror( function( failedConnection ) {
 	console.log( "Failed SSL ConnectioN:", failedConnection );
         // ( failedConnection.remoteFamily, failedConnection.remoteAddress );
 } );
 
 server.onrequest( function( req, res ) {
+       	//console.log( "Received request:", res, req );
 	var ip = ( req.headers && req.headers['x-forwarded-for'] ) ||
 		 req.connection.remoteAddress ||
 		 req.socket.remoteAddress ||
 		 req.connection.socket.remoteAddress;
 	//ws.clientAddress = ip;
+        
+        if( req.redirect ) {
+	        //console.log( "THIS SHOULD write back a 301..." );
+		res.writeHead( 301, { 'Content-Type': 'text/html'
+                	, 'Location':'https://' + req.headers.Host + req.url }); 
+		res.end( "<HTML><HEAD><TITLE>301 HTTPS Redirect</TITLE></HEAD><BODY>This site is only accessable with HTTPS.</BODY></HTML>");
+        	return;
+        }
 
 	//console.log( "Received request:", req );
 	if( req.url.startsWith( "/cgi" ) ) {
@@ -93,7 +110,7 @@ server.onrequest( function( req, res ) {
 	} else {
 		console.log( "Failed request: ", req );
 		res.writeHead( 404 );
-		res.end( "<HTML><HEAD>404</HEAD><BODY>404</BODY></HTML>");
+		res.end( "<HTML><HEAD><TITLE>404</TITLE></HEAD><BODY>404</BODY></HTML>");
 	}
 } );
 

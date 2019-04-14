@@ -1184,6 +1184,10 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.148
+   - Fixed lost event during SSL handshake.
+   - Fixed linux network write lock issue.
+   - Fix static initializing SQL.
 - 0.9.147 
    - fixed some issues with JSOX.
    - Fixed occasional event loss for SSL connections.
