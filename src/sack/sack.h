@@ -1400,8 +1400,8 @@ typedef uint64_t THREAD_ID;
 #    else
 #      define GetMyThreadID()  (( ((uint64_t)getppid()) << 32 ) | ( (uint64_t)(getpid()|0x40000000)) )
 #    endif
-#      define _GetMyThreadID GetMyThreadID
 #  endif
+#  define _GetMyThreadID GetMyThreadID
 #endif
 //---------------------- Declare Link; 'single and a half'ly-linked lists -----------------------
 // Thse macros are for linking and unlininking things in a linked list.
