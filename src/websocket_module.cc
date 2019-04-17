@@ -1479,14 +1479,16 @@ wssObject::wssObject( struct wssOptions *opts ) {
 	closed = 0;
 	NetworkWait( NULL, 256, 2 );  // 1GB memory
 
-	pc = WebSocketCreate( opts->url, webSockServerOpen, webSockServerEvent, webSockServerClosed, webSockServerError, (uintptr_t)this );
+	async.data = this;
+	uv_async_init( l.loop, &async, wssAsyncMsg );
+
+	pc = WebSocketCreate_v2( opts->url, webSockServerOpen, webSockServerEvent, webSockServerClosed, webSockServerError, (uintptr_t)this, WEBSOCK_SERVER_OPTION_WAIT );
 	if( pc ) {
+		eventQueue = CreateLinkQueue();
 		SetNetworkErrorCallback( pc, webSockServerLowError, (uintptr_t)this );
 		SetSocketReusePort( pc, TRUE );
 		SetSocketReuseAddress( pc, TRUE );
-		uv_async_init( l.loop, &async, wssAsyncMsg );
 		//event_waker = ThreadTo( catchLostEvents, (uintptr_t)this );
-		async.data = this;
 
 		SetWebSocketHttpCallback( pc, webSockHttpRequest );
 
@@ -1507,8 +1509,8 @@ wssObject::wssObject( struct wssOptions *opts ) {
 				, opts->pass, opts->pass_len );
 		}
 		SetWebSocketAcceptCallback( pc, webSockServerAccept );
-		eventQueue = CreateLinkQueue();
 		readyState = LISTENING;
+		SetNetworkListenerReady( pc );
 	} else {
 
 	}
