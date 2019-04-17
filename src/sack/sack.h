@@ -7373,9 +7373,11 @@ NETWORK_PROC( PCLIENT, CPPOpenTCPListenerAddrExx )( SOCKADDR *, cppNotifyCallbac
    with a NULL pointer and 0 size, before the connect complete.   */
 NETWORK_PROC( PCLIENT, OpenTCPListenerAddrExx )( SOCKADDR *, cNotifyCallback NotifyCallback DBG_PASS );
 #define OpenTCPListenerAddrEx(sa,ca) OpenTCPListenerAddrExx( sa, ca DBG_SRC )
+NETWORK_PROC( PCLIENT, OpenTCPListenerAddr_v2d )(SOCKADDR *, cNotifyCallback NotifyCallback, LOGICAL ready DBG_PASS);
+#define OpenTCPListenerAddr_v2(sa,ca,ready) OpenTCPListenerAddr_v2d( sa, ca,ready DBG_SRC )
 /* <combine sack::network::tcp::OpenTCPListenerAddrEx@SOCKADDR *@cNotifyCallback>
    \ \                                                                            */
-#define OpenTCPListenerAddr( pAddr ) OpenTCPListenerAddrEx( paddr, NULL );
+#define OpenTCPListenerAddr( pAddr ) OpenTCPListenerAddrExxx( paddr, NULL, FALSE DBG_SRC );
 #ifdef __cplusplus
 /* <combine sack::network::tcp::OpenTCPListenerEx@uint16_t@cNotifyCallback>
    \ \                                                                 */
@@ -7384,11 +7386,27 @@ NETWORK_PROC( PCLIENT, CPPOpenTCPListenerExx )( uint16_t wPort, cppNotifyCallbac
 #endif
 /* <combine sack::network::tcp::OpenTCPListenerAddrEx@SOCKADDR *@cNotifyCallback>
    \ \                                                                            */
+NETWORK_PROC( PCLIENT, OpenTCPListener_v2d )(uint16_t wPort, cNotifyCallback NotifyCallback, LOGICAL waitForReady DBG_PASS);
+#define OpenTCPListener_v2(a,b) OpenTCPListener_v2d(a,b,FALSE DBG_SRC )
+NETWORK_PROC( PCLIENT, CPPOpenTCPListenerAddr_v2d )(SOCKADDR *pAddr
+	, cppNotifyCallback NotifyCallback
+	, uintptr_t psvConnect
+	, LOGICAL waitForReady
+	DBG_PASS);
+#define CPPOpenTCPListenerAddr_v2(a,b,c,d)  CPPOpenTCPListenerAddr_v2d(a,b,c,d DBG_SRC )
+/* <combine sack::network::tcp::OpenTCPListenerAddrEx@SOCKADDR *@cNotifyCallback>
+   \ \                                                                            */
 NETWORK_PROC( PCLIENT, OpenTCPListenerExx )( uint16_t wPort, cNotifyCallback NotifyCallback DBG_PASS );
 #define OpenTCPListenerEx(a,b) OpenTCPListenerExx(a,b DBG_SRC )
 /* <combine sack::network::tcp::OpenTCPListenerEx@uint16_t@cNotifyCallback>
    \ \                                                                 */
 #define OpenTCPListener( wPort )    OpenTCPListenerEx( wPort, NULL )
+/*
+  When opening a tcp listener socket, the socket ends up 'ready' and
+  able to send events before the application may be finished.
+  Adding an option to
+ */
+NETWORK_PROC( void, SetNetworkListenerReady )( PCLIENT pListen );
 /* <combine sack::network::tcp::OpenTCPListener>
    \ \                                           */
 #define OpenTCPServer OpenTCPListener
@@ -13060,6 +13078,15 @@ HTML5_WEBSOCKET_NAMESPACE
 #endif
 // need some sort of other methods to work with an HTML5WebSocket...
 // server side.
+HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketCreate_v2 )(CTEXTSTR hosturl
+	, web_socket_opened on_open
+	, web_socket_event on_event
+	, web_socket_closed on_closed
+	, web_socket_error on_error
+	, uintptr_t psv
+	, int webSocketOptions
+);
+#define WEBSOCK_SERVER_OPTION_WAIT 1
 	HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketCreate )( CTEXTSTR server_url
 																	, web_socket_opened on_open
 																	, web_socket_event on_event
