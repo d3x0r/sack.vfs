@@ -109,6 +109,7 @@ SET( EXTRA_HEADERS
 	${SACK_BASE}/include/salty_generator.h
         ${SACK_BASE}/include/sackcomm.h
 	${SACK_BASE}/include/translation.h
+        ${SACK_BASE}/include/construct.h
 )
 
 SET( EXTRA_SOURCES
