@@ -1200,10 +1200,11 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
-- 0.9.150
+- 0.9.149
+   - Fixed getting events from listening sockets before being fully setup.
+- 0.9.148
    - Updated documentation to cover lowerror event and disableSSL.
    - Added ping() method call on sockets accepted by a server and sockets connected to a server.
-- 0.9.148
    - Fixed lost event during SSL handshake.
    - Fixed linux network write lock issue.
    - Fix static initializing SQL.
