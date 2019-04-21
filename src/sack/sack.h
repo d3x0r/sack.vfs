@@ -3492,7 +3492,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  SegReleaseEx( PTEXT seg DBG_PASS );
    DBG_PASS :  \file and line debugging information               */
 TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegConcatEx   (PTEXT output,PTEXT input,int32_t offset,size_t length DBG_PASS);
 /* <combine sack::containers::text::SegConcatEx@PTEXT@PTEXT@int32_t@size_t length>
-   looks like it takes a peice of one segment and appends it to
+   looks like it takes a piece of one segment and appends it to
    another....
    Needs More research to document correctly and exemplify.                     */
 #define SegConcat(out,in,ofs,len) SegConcatEx(out,in,ofs,len DBG_SRC)
@@ -11434,7 +11434,7 @@ FILESYS_PROC  CTEXTSTR FILESYS_API  pathchr ( CTEXTSTR path );
 // returns pointer passed (if it worked?)
 FILESYS_PROC  TEXTSTR FILESYS_API  GetCurrentPath ( TEXTSTR path, int buffer_len );
 FILESYS_PROC  int FILESYS_API  SetCurrentPath ( CTEXTSTR path );
-/* Creates a directory. If parent peices of the directory do not
+/* Creates a directory. If parent pieces of the directory do not
    exist, those parts are created also.
    Example
    <code lang="c#">
@@ -13157,7 +13157,7 @@ USE_HTML5_WEBSOCKET_NAMESPACE
    are not exactly the same. If the OpenGL driver is specified
    as the output device, the entire code would need to be
    rebuilt for specifying colors correctly for opengl. While
-   otherwise they are both 32 bits, and peices work, they get
+   otherwise they are both 32 bits, and pieces work, they get
    very ugly colors output.
    See Also
    <link Colors>                                                */
