@@ -831,7 +831,7 @@ Server Methods
   | onerror(cb) | pass callback for error event.  callback is passed a closed socket object with remote and local addresses (see connection object below) |
   | accept() | Call this to accept a socket, pass protocols to accept with(?).  Only valid within "accept" event. |
   | reject() | Call this in onconnect to abort accepting the websocket.  Only valid within "accept" event. |
-  | disableSSL() | closes the SSL layer on the socket and resumes native TCP connection; is called on the server socket during "lowerror" event.  Uses the socket that triggered the event as the one to disable.  (The Websocket Server Client is not yet created). |
+  | disableSSL() | closes the SSL layer on the socket and resumes native TCP connection; is only valid during "lowerror" event type (6).  Uses the socket that triggered the event as the one to disable.  (The Websocket Server Client is not yet created). |
 
 
 Server Client Methods
@@ -1173,7 +1173,7 @@ to interact with the process.
 | end | callback() | This callback will be triggered when the task exits. |
 | impersonate | bool | (Needs work;updated compatibility... this is for a service to launch a task as a user which is now impossible(?)) |
 | hidden | bool | set windows UI flags such that the next process is created with a hidden window.  Default: false |
-| firstArgIsArg | bool | Specified if the first argument in the array or string is the first argument or is the program name.  If it is the first argument set true.  Default: true |
+| firstArgIsArg | bool | Specified if the first argument in the array or string is the first argument or is the program name.  If it the first element is the program name, set to false.  If it is the first argument set true.  Default: true |
 | newGroup | bool | create task as a new task group instead of a child of this group.  Default: false|
 | newConsole | bool | create a new console for the new task; instead of ineriting the existing console, default false |
 | suspend | bool | create task suspended.  Default: false |
@@ -1200,6 +1200,9 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.150
+   - Fix regression handline NUL inline in JSOX parser (re fix partial codepoints received across buffer bounds)
+   - Fix releasing the buffer too soon on HTTP fallback from HTTPS.
 - 0.9.149
    - Fixed getting events from listening sockets before being fully setup.
 - 0.9.148
