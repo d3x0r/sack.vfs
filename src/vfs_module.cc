@@ -724,8 +724,12 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			if( file ) {
 				size_t len = sack_vfs_size( file );
 				uint8_t *buf = NewArray( uint8_t, len );
-				sack_vfs_read( file, (char*)buf, len );
-
+				size_t actual = sack_vfs_read( file, (char*)buf, len );
+				if( actual < len ) {
+					isolate->ThrowException( Exception::TypeError(
+						String::NewFromUtf8( isolate, TranslateText( "Short read; incomplete data." ) ) ) );
+					return;
+				}
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
 				PARRAY_BUFFER_HOLDER holder = GetHolder();
 				holder->o.Reset( isolate, arrayBuffer );
