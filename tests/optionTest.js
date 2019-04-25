@@ -24,7 +24,7 @@ function dumptree(opt, name){
 	if( name === "." ) return;
 	var leader = "";
 	for( var n = 0; n < level;n++ ) leader += "   ";
-	console.log( leader + "option:", name, "=", opt.value );
+	console.log( leader + "", name, "=", opt.value );
         level++;
         opt.eo( dumptree );
         level--;
