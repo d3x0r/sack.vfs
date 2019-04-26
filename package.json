@@ -1,11 +1,12 @@
 {
-  "name": "sack.vfs",
-  "version": "0.9.150",
-  "description": "Node.js VFS Addon",
+  "name": "sack-gui",
+  "version": "0.9.123",
   "repository": {
       "type": "git",
-      "url": "https://github.com/d3x0r/sack.vfs"
+      "url": "https://github.com/d3x0r/sack.vfs/",
+      "branch": "sack-gui"
   },
+  "description": "Node.js GUI Addon",
   "main": "vfs_module.js",
   "private": false,
   "preferGlobal": false,
@@ -15,15 +16,15 @@
     "vfs",
     "JSON",
     "JSON6",
-    "COM Port",
-    "serial",
-    "serial port",
-    "filesystem",
-    "fs",
-    "io",
-    "files",
-    "crypto",
-    "hashed",
+    "GUI",
+    "Images",
+    "jpeg",
+    "png",
+    "jpg",
+    "opengl",
+    "vulkan",
+    "windows",
+    "controls",
     "memory mapped",
     "encrypt",
     "decrypt",
@@ -36,7 +37,7 @@
   "_dependencies": ["cmake-js"],
   "scripts": {
     "test": "node tests/vfsTest.js",
-    "install": "node-gyp configure build",
+    "install": "npm run build-gui",
     "build-gui": "npm run build-gui-config && npm run build-gui-run1 && npm run build-gui-config && npm run build-gui-run2",
     "build-gui-config": "cmake-js --CDMAKE_GUI=1 --CDCMAKE_BUILD_TYPE=Release configure",
     "build-gui-run1": "cmake-js build",
@@ -46,7 +47,12 @@
     "build-gui-debug-run1": "cmake-js build -D",
     "build-gui-debug-run2": "cmake-js build -D",
 
-    "build-vfs": "npm run build-vfs-config && npm run build-vfs-run1",
+    "build-gui-reldeb": "npm run build-gui-reldeb-config && npm run build-gui-reldeb-run1 && npm run build-gui-reldeb-config && npm run build-gui-reldeb-run2",
+    "build-gui-reldeb-config": "cmake-js --CDMAKE_GUI=1 --CDCMAKE_BUILD_TYPE=RelWithDebINfo -D configure",
+    "build-gui-reldeb-run1": "cmake-js build -D --CDCMAKE_BUILD_TYPE=RelWithDebINfo",
+    "build-gui-reldeb-run2": "cmake-js build -D --CDCMAKE_BUILD_TYPE=RelWithDebINfo",
+
+    "build-vfs": "npm run build-vfs-config && npm run build-vfs-run1 && npm run build-vfs-config && npm run build-vfs-run2",
     "build-vfs-config": "cmake-js --CDMAKE_GUI=0 --CDCMAKE_BUILD_TYPE=Release configure",
     "build-vfs-run1": "cmake-js build",
 
@@ -58,6 +64,6 @@
     "build-vfs-reldeb-config": "cmake-js --CDMAKE_GUI=0 --CDCMAKE_BUILD_TYPE=RelWithDebInfo configure",
     "build-vfs-reldeb-run1": "cmake-js build --CDCMAKE_BUILD_TYPE=RelWithDebInfo",
 
-    "build": "node-gyp configure build"
+    "build": "npm run build-gui"
   }
 }
