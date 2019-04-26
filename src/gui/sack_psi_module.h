@@ -161,6 +161,9 @@ public:
 
 	static void wrapSelf( Isolate* isolate, ListboxItemObject *_this, Local<Object> into );
 
+	static void getText( const FunctionCallbackInfo<Value>&  args );
+	static void setText( const FunctionCallbackInfo<Value>& args );
+	static Persistent<FunctionTemplate> listItemTemplate;
 };
 
 class MenuItemObject : public node::ObjectWrap {

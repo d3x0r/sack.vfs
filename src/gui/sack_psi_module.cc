@@ -7,11 +7,6 @@
 
 static RegistrationObject *findRegistration( CTEXTSTR name );
 
-static RegistrationObject _blankRegistration;
-static ControlObject _blankObject;
-static ListboxItemObject _blankListbox;
-static MenuItemObject _blankMenuItem;
-static PopupObject _blankPopup;
 static VoidObject _blankVoid;
 
 static struct psiLocal {
@@ -32,6 +27,7 @@ static struct psiLocal {
 
 Persistent<FunctionTemplate> ControlObject::frameTemplate;
 Persistent<FunctionTemplate> ControlObject::controlTemplate;
+Persistent<FunctionTemplate> ListboxItemObject::listItemTemplate;
 Persistent<Function> ControlObject::constructor;
 Persistent<Function> ControlObject::constructor2;
 Persistent<Function> ControlObject::registrationConstructor;
@@ -228,7 +224,7 @@ static void asyncmsg( uv_async_t* handle ) {
 				cb = Local<Function>::New( isolate, evt->control->cbSizeEvent );
 				Local<Value> argv[3] = { Number::New(isolate, evt->data.size.w )
 					, Number::New( isolate, evt->data.size.h )
-					, Boolean::New( isolate, evt->data.move.start ) };
+					, Boolean::New( isolate, (bool)evt->data.move.start ) };
 				r = cb->Call( evt->control->state.Get( isolate ), 2, argv );
 				break;
 			}
@@ -236,7 +232,7 @@ static void asyncmsg( uv_async_t* handle ) {
 				cb = Local<Function>::New( isolate, evt->control->cbMoveEvent );
 				Local<Value> argv[3] = { Number::New( isolate, evt->data.move.x )
 					, Number::New( isolate, evt->data.move.y )
-					, Boolean::New( isolate, evt->data.move.start ) };
+					, Boolean::New( isolate, (bool)evt->data.move.start ) };
 				r = cb->Call( evt->control->state.Get( isolate ), 2, argv );
 				break;
 			}
@@ -360,9 +356,7 @@ void disableEventLoop( void ) {
 	}
 }
 
-
 VoidObject::VoidObject( uintptr_t data ) {
-	memcpy( this, &_blankVoid, sizeof( *this ) );
 	this->data = data;
 }
 void VoidObject::Init( Isolate *isolate ) {
@@ -612,7 +606,15 @@ void ControlObject::Init( Handle<Object> _exports ) {
 		listItemTemplate = FunctionTemplate::New( isolate, ListboxItemObject::New );
 		listItemTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.PSI.Listbox.Item" ) );
 		listItemTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 internal field for wrap
+		
+		listItemTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "text" )
+			, FunctionTemplate::New( isolate, ListboxItemObject::getText )
+			, FunctionTemplate::New( isolate, ListboxItemObject::setText )
+			, DontDelete );
+		
+		// constructor reset must be applied AFTER PrototypeTemplate() has been filled in.
 		ListboxItemObject::constructor.Reset( isolate, listItemTemplate->GetFunction() );
+		//ListboxItemObject::listItemTemplate.Reset( isolate, listItemTemplate );
 
 		// Prepare constructor template
 		menuItemTemplate = FunctionTemplate::New( isolate, MenuItemObject::New );
@@ -819,8 +821,6 @@ void ControlObject::Init( Handle<Object> _exports ) {
 			, FunctionTemplate::New( isolate, ControlObject::setCoordinate, Integer::New( isolate, 12 ) )
 			, DontDelete );
 
-		//psiTemplate2->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "text" )
-		//	, ControlObject::getControlText, ControlObject::setControlText );
 		psiTemplate2->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "text" )
 			, FunctionTemplate::New( isolate, ControlObject::getControlText )
 			, FunctionTemplate::New( isolate, ControlObject::setControlText )
@@ -843,9 +843,11 @@ void ControlObject::Init( Handle<Object> _exports ) {
 		SET_READONLY( popupObject, "itemType", itemTypes );
 		//SET_READONLY_METHOD( popupObject, "add", PopupObject::addPopupItem );
 
+		// constructor reset must be applied AFTER PrototypeTemplate() has been filled in.
 		constructor.Reset( isolate, psiTemplate->GetFunction() );
 		SET_READONLY( exports, "Frame",	psiTemplate->GetFunction() );
 
+		// constructor reset must be applied AFTER PrototypeTemplate() has been filled in.
 		constructor2.Reset( isolate, psiTemplate2->GetFunction() );
 		//exports->Set( String::NewFromUtf8( isolate, "Control" ),
 		//				 psiTemplate2->GetFunction() );
@@ -1708,18 +1710,21 @@ void ControlObject::setListboxTabs( const FunctionCallbackInfo<Value>&  args ) {
 //InsertListItem
 void ControlObject::addListboxItem( const FunctionCallbackInfo<Value>&  args ) {
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
-	String::Utf8Value text( args[0]->ToString() );
-
-	Isolate* isolate = args.GetIsolate();
-	Local<Function> cons = Local<Function>::New( isolate, ListboxItemObject::constructor );
-	Local<Object> lio = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
-	ListboxItemObject *pli = ObjectWrap::Unwrap<ListboxItemObject>( lio );
-
-	pli->pli = AddListItem( me->control, *text );
-	SetItemData( pli->pli, (uintptr_t)pli );
-	pli->control = me;
-	args.GetReturnValue().Set( lio );
-
+	if( args.Length() > 0 ) {
+		String::Utf8Value text( args[0]->ToString() );
+		int level = 0;
+		Isolate* isolate = args.GetIsolate();
+		Local<Function> cons = Local<Function>::New( isolate, ListboxItemObject::constructor );
+		Local<Object> lio = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
+		ListboxItemObject *pli = ObjectWrap::Unwrap<ListboxItemObject>( lio );
+		if( args.Length() > 1 ) {
+			level = (int)args[1]->IntegerValue();
+		}
+		pli->pli = AddListItemEx( me->control, level, *text );
+		SetItemData( pli->pli, (uintptr_t)pli );
+		pli->control = me;
+		args.GetReturnValue().Set( lio );
+	}
 }
 
 
@@ -1788,7 +1793,8 @@ void ListboxItemObject::removeListboxItem( const FunctionCallbackInfo<Value>&  a
 }
 
 ListboxItemObject::ListboxItemObject() {
-	memcpy( this, &_blankListbox, sizeof( *this ) );
+	this->control = NULL;
+	this->pli = NULL;
 }
 ListboxItemObject::~ListboxItemObject() {
 
@@ -1814,6 +1820,21 @@ void ListboxItemObject::New( const FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+void ListboxItemObject::getText( const FunctionCallbackInfo<Value>&  args ) {
+	Isolate* isolate = args.GetIsolate();
+	ListboxItemObject *me = ObjectWrap::Unwrap<ListboxItemObject>( args.This() );
+	static char buf[1024];
+	GetItemText( me->pli, 1024, buf );
+	//GetControlText( me->control, buf, 1024 );
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, buf ) );
+}
+void ListboxItemObject::setText( const FunctionCallbackInfo<Value>& args ) {
+	String::Utf8Value text( args[0] );
+	ListboxItemObject *me = ObjectWrap::Unwrap<ListboxItemObject>( args.This() );
+	SetItemText( me->pli, *text );
+}
+
+
 //-------------------------------------------------------
 // MENU ITEMS 
 //-----------------------------------------------------------
@@ -1824,7 +1845,9 @@ void MenuItemObject::removeItem( const FunctionCallbackInfo<Value>&  args ) {
 }
 
 MenuItemObject::MenuItemObject() {
-	memcpy( this, &_blankMenuItem, sizeof( *this ) );
+	pmi = NULL;
+	popup = NULL;
+	uid = 0;
 }
 MenuItemObject::~MenuItemObject() {
 
@@ -1854,7 +1877,10 @@ void MenuItemObject::New( const FunctionCallbackInfo<Value>& args ) {
 //-------------------------------------------------------
 
 PopupObject::PopupObject() {
-	memcpy( this, &_blankPopup, sizeof( *this ) );
+	this->popup = NULL;
+	this->parent = NULL;
+	this->itemId = 0;
+	this->menuItems = NULL;
 }
 PopupObject::~PopupObject() {
 
