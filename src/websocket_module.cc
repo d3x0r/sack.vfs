@@ -294,6 +294,7 @@ public:
 	struct wssEvent *eventMessage;
 	bool ssl;
 	enum wsReadyStates readyState;
+	bool immediateEvent;
 public:
 
 	wssObject( struct wssOptions *opts );
@@ -1081,7 +1082,11 @@ static void webSockServerCloseEvent( wssObject *wss ) {
 	(*pevt)._this = wss;
 	wss->closing = 1;
 	EnqueLink( &wss->eventQueue, pevt );
-	uv_async_send( &wss->async );
+	if( (*pevt).waiter == l.jsThread ) {
+		wssAsyncMsg( &wss->async );
+	}
+	else
+		uv_async_send( &wss->async );
 	while( wss->event_waker ) {
 		WakeThread( wss->event_waker );
 		Relinquish();
@@ -1134,7 +1139,11 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 			(*pevt).pc = pc;
 			(*pevt)._this = wss;
 			EnqueLink( &wss->eventQueue, pevt );
-			uv_async_send( &wss->async );
+			if( (*pevt).waiter == l.jsThread ) {
+				wssAsyncMsg( &wss->async );
+			}
+			else
+				uv_async_send( &wss->async );
 
 			while( !(*pevt).done )
 				Wait();
@@ -1190,7 +1199,11 @@ static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char *proto
 	evt.waiter = MakeThread();
 	evt._this = wss;
 	EnqueLink( &wss->eventQueue, &evt );
-	uv_async_send( &wss->async );
+	if( evt.waiter == l.jsThread ) {
+		wssAsyncMsg( &wss->async );
+	}
+	else
+		uv_async_send( &wss->async );
 
 	while( !evt.done )
 		Wait();
@@ -1341,7 +1354,10 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 						(*pevt)._this = obj->wss;
 						obj->ssl = ssl_IsClientSecure( obj->pc );
 						EnqueLink(&obj->wss->eventQueue, pevt);
-						uv_async_send(&obj->wss->async);
+						if( (*pevt).waiter == l.jsThread ) {
+							wssAsyncMsg( &obj->wss->async );
+						} else
+							uv_async_send(&obj->wss->async);
 						break;
 					}
 				}
@@ -1387,7 +1403,6 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 	(*pevt).pc = pc;
 	(*pevt).waiter = MakeThread();
 	EnqueLink( &wss->eventQueue, pevt );
-	uv_async_send( &wss->async );
 	if( (*pevt).waiter == l.jsThread ) {
 		wssAsyncMsg( &wss->async );
 	}
