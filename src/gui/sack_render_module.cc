@@ -131,7 +131,7 @@ RenderObject::~RenderObject() {
 		Isolate* isolate = args.GetIsolate();
 		if( args.IsConstructCall() && ( args.This()->InternalFieldCount() == 1)  ) {
 
-			char *title = "Node Application";
+			char *title = NULL;
 			int x = 0, y = 0, w = 1024, h = 768, border = 0;
 			Local<Object> parent_object;
 			RenderObject *parent = NULL;
@@ -163,7 +163,7 @@ RenderObject::~RenderObject() {
 				}
 			}
 			// Invoked as constructor: `new MyObject(...)`
-			RenderObject* obj = new RenderObject( title, x, y, w, h, parent );
+			RenderObject* obj = new RenderObject( title?title:"Node Application", x, y, w, h, parent );
 
 			MemSet( &obj->async, 0, sizeof( obj->async ) );
 			uv_async_init( uv_default_loop(), &obj->async, asyncmsg );
@@ -172,8 +172,8 @@ RenderObject::~RenderObject() {
 
 			obj->Wrap( args.This() );
 			args.GetReturnValue().Set( args.This() );
-
-			Deallocate( char*, title );
+         if( title )
+				Deallocate( char*, title );
 		}
 		else {
 			// Invoked as plain function `MyObject(...)`, turn into construct call.

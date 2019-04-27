@@ -1018,8 +1018,7 @@ void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
 			return;
 		}
 
-		char *title = "Node Application";
-		char *tmpTitle = NULL;
+		char *title = NULL;
 		int x = 0, y = 0, w = 1024, h = 768, border = 0;
 		int arg_ofs = 0;
 		ControlObject *parent = NULL;
@@ -1027,7 +1026,7 @@ void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
 		int argc = args.Length();
 		if( argc > 0 ) {
 			String::Utf8Value fName( args[0]->ToString() );
-			tmpTitle = title = StrDup( *fName );
+			title = StrDup( *fName );
 			arg_ofs++;
 		}
 		else {
@@ -1059,10 +1058,10 @@ void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
 		*/
 		// Invoked as constructor: `new MyObject(...)`
 		
-		ControlObject* obj = new ControlObject( title, x, y, w, h, border, NULL );
+		ControlObject* obj = new ControlObject( title?title:"Node Application", x, y, w, h, border, NULL );
 		ControlObject::wrapSelf( isolate, obj, args.This() );
 		args.GetReturnValue().Set( args.This() );
-		if( tmpTitle )
+		if( title )
 			Deallocate( char*, title );
 	}
 	else {
@@ -1342,7 +1341,7 @@ void ControlObject::createFrame( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.IsConstructCall() ) {
 
-		char *title = "Node Application";
+		char *title = NULL;
 		int x = 0, y = 0, w = 1024, h = 768, border = 0;
 		ControlObject *parent = NULL;
 
@@ -1372,11 +1371,11 @@ void ControlObject::createFrame( const FunctionCallbackInfo<Value>& args ) {
 			}
        */
 		// Invoked as constructor: `new MyObject(...)`
-		ControlObject* obj = new ControlObject( title, x, y, w, h, border, NULL );
+		ControlObject* obj = new ControlObject( title?title:"Node Application", x, y, w, h, border, NULL );
 		ControlObject::wrapSelf( isolate, obj, args.This() );
 		args.GetReturnValue().Set( args.This() );
-
-		Deallocate( char*, title );
+      if( title )
+			Deallocate( char*, title );
 	}
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
@@ -1913,7 +1912,7 @@ void PopupObject::addPopupItem( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 )
 	{
 		Local<Function> cons = Local<Function>::New( isolate, MenuItemObject::constructor );
-		Local<Object> menuItemObject = cons->NewInstance( isolate->GetCurrentContext(), NULL, 0 ).ToLocalChecked();
+		Local<Object> menuItemObject = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 		MenuItemObject *mio = ObjectWrap::Unwrap<MenuItemObject>( menuItemObject );
 
 		PopupObject *popup = ObjectWrap::Unwrap<PopupObject>( args.This() );

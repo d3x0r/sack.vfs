@@ -582,7 +582,7 @@ private:
 		}
 	}
 
-	static char* srg_sign_work( signParams threadParams[32], int *done, const uint8_t *buf, size_t bufLen, int pad1, int pad2 )
+	static void srg_sign_work( signParams threadParams[32], int *done, const uint8_t *buf, size_t bufLen, int pad1, int pad2 )
 	{
 		int n;
 		//static signParams threadParams[32];
@@ -633,7 +633,7 @@ private:
 			}
 			threadParams[n].id = NULL;
 		}
-		return "";
+		return;
 	}
 
 	static char * wait_for_signing( signParams threadParams[32], int *done ) {

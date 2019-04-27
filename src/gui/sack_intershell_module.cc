@@ -957,6 +957,8 @@ static void defineMouseControl( char *name ) {
 
 static LOGICAL cbQueryShowControl( uintptr_t psvInit) {
 	is_control *c = (is_control *)psvInit;
+   lprintf( "Need to pass query to JS" );
+   return TRUE;
 }
 
 static void defineOnQueryShowControl( char *name ) {
