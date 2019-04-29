@@ -1,0 +1,30 @@
+
+
+{
+	image:"windowFrame-LightWoodFilled.png",
+        width: 52,
+        height: 52,
+        anchors : 0,
+        definesColors : false,
+}
+
+
+/*
+// one of each of these may be or'ed together.
+sack.PSI.control.borderAnchor.topMin
+sack.PSI.control.borderAnchor.topCenter
+sack.PSI.control.borderAnchor.topMax
+
+sack.PSI.control.borderAnchor.bottomMin
+sack.PSI.control.borderAnchor.bottomCenter
+sack.PSI.control.borderAnchor.bttomMax
+
+sack.PSI.control.borderAnchor.leftMin
+sack.PSI.control.borderAnchor.leftCenter
+sack.PSI.control.borderAnchor.leftMax
+
+sack.PSI.control.borderAnchor.rightMin
+sack.PSI.control.borderAnchor.rightCenter
+sack.PSI.control.borderAnchor.rightMax
+
+*/
