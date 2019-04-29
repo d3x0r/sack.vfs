@@ -1925,17 +1925,17 @@ void  vtLogBinary( PVARTEXT pvt, uint8_t* buffer, size_t size  )
 	{
 		size_t x;
 		for( x = 0; x<nOut && x<16; x++ )
-			vtprintf( pvt, WIDE( "%02X " ), (unsigned char)data[x] );
+			vtprintf( pvt, "%02X ", (unsigned char)data[x] );
 		// space fill last partial buffer
 		for( ; x < 16; x++ )
-			vtprintf( pvt, WIDE( "   " ) );
+			vtprintf( pvt, "   " );
 
 		for( x = 0; x<nOut && x<16; x++ )
 		{
 			if( data[x] >= 32 && data[x] < 127 )
-				vtprintf( pvt, WIDE( "%c" ), (unsigned char)data[x] );
+				vtprintf( pvt, "%c", (unsigned char)data[x] );
 			else
-				vtprintf( pvt, WIDE( "." ) );
+				vtprintf( pvt, "." );
 		}
 		vtprintf( pvt, "\n" );
 		data += x;

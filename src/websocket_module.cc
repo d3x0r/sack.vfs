@@ -1252,7 +1252,7 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 	HTTPState http = GetWebSocketHttpState( obj->pc );
 	if( http ) {
 		int vers = GetHttpVersion( http );
-		vtprintf( obj->pvtResult, WIDE( "HTTP/%d.%d %d %s\r\n" ), vers / 100, vers % 100, status, "OK" );
+		vtprintf( obj->pvtResult, "HTTP/%d.%d %d %s\r\n", vers / 100, vers % 100, status, "OK" );
 
 		if( args.Length() > 1 ) {
 			headers = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
@@ -1264,7 +1264,7 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 				Local<Value> val = headers->Get( key );
 				String::Utf8Value keyname( USE_ISOLATE( isolate ) key );
 				String::Utf8Value keyval( USE_ISOLATE( isolate ) val );
-				vtprintf( obj->pvtResult, WIDE( "%s:%s\r\n" ), *keyname, *keyval );
+				vtprintf( obj->pvtResult, "%s:%s\r\n", *keyname, *keyval );
 			}
 		}
 	}
@@ -1293,7 +1293,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( args[0]->IsString() ) {
 			String::Utf8Value body( USE_ISOLATE( isolate ) args[0] );
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", body.length() );
-			vtprintf( obj->pvtResult, WIDE( "\r\n" ) );
+			vtprintf( obj->pvtResult, "\r\n" );
 
 			vtprintf( obj->pvtResult, "%*.*s", body.length(), body.length(), *body );
 		}
@@ -1301,13 +1301,13 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			Local<Uint8Array> body = args[0].As<Uint8Array>();
 			Local<ArrayBuffer> bodybuf = body->Buffer();
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", body->ByteLength() );
-			vtprintf( obj->pvtResult, WIDE( "\r\n" ) );
+			vtprintf( obj->pvtResult, "\r\n" );
 			VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
 		}
 		else if( args[0]->IsArrayBuffer() ) {
 			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", ab->ByteLength() );
-			vtprintf( obj->pvtResult, WIDE( "\r\n" ) );
+			vtprintf( obj->pvtResult, "\r\n" );
 			VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
 		} else if( args[0]->IsObject() ) {
 			Local<FunctionTemplate> wrapper_tpl = FileObject::tpl.Get( isolate );
@@ -1319,7 +1319,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 	}
 	else
-		vtprintf( obj->pvtResult, WIDE( "\r\n" ) );
+		vtprintf( obj->pvtResult, "\r\n" );
 
 	if( doSend ) {
 		PTEXT buffer = VarTextPeek( obj->pvtResult );

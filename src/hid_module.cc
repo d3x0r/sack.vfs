@@ -225,7 +225,7 @@ int MakeProxyWindow( void )
 		wc.lpszClassName = "sack.vfs.raw.input.receiver.class";
 		aClass = RegisterClass( &wc );
 		if( !aClass ) {
-			MessageBox( NULL, WIDE( "Failed to register class to handle SQL Proxy messagses." ), WIDE( "INIT FAILURE" ), MB_OK );
+			MessageBox( NULL, "Failed to register class to handle SQL Proxy messagses.", "INIT FAILURE", MB_OK );
 			return FALSE;
 		}
 	}
@@ -243,8 +243,8 @@ int MakeProxyWindow( void )
 		GetModuleHandle( NULL ),
 		(void*)1 );
 	if( !hidg.hWnd ) {
-		Log( WIDE( "Failed to create window!?!?!?!" ) );
-		MessageBox( NULL, WIDE( "Failed to create window to handle raw input Messages" ), WIDE( "INIT FAILURE" ), MB_OK );
+		Log( "Failed to create window!?!?!?!" );
+		MessageBox( NULL, "Failed to create window to handle raw input Messages", "INIT FAILURE", MB_OK );
 		return FALSE;
 	}
 	return TRUE;
