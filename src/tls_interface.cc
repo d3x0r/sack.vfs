@@ -463,7 +463,7 @@ void MakeCert(  struct info_params *params )
 					X509_add1_ext_i2d( x509, NID_basic_constraints, &bc, 1, X509V3_ADD_DEFAULT );
 				}
 				{
-					lprintf( "SIGNING ON ROOT CERT" );
+					//lprintf( "SIGNING ON ROOT CERT" );
 					int _usage = KU_CRL_SIGN | KU_KEY_CERT_SIGN | KU_DIGITAL_SIGNATURE;
 					ASN1_INTEGER *usage = ASN1_INTEGER_new();
 					ASN1_INTEGER_set( usage, _usage );
