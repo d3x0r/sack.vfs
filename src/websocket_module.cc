@@ -1087,10 +1087,10 @@ static void webSockServerCloseEvent( wssObject *wss ) {
 	}
 	else
 		uv_async_send( &wss->async );
-	while( wss->event_waker ) {
-		WakeThread( wss->event_waker );
-		Relinquish();
-	}
+	//while( wss->event_waker ) {
+	//	WakeThread( wss->event_waker );
+	//	Relinquish();
+	//}
 }
 
 static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char *reason )
