@@ -41,6 +41,15 @@ server.onrequest( function( req, res ) {
 		  case '.wav':
 			  contentType = 'audio/wav';
 			  break;
+                case '.crt':
+                        contentType = 'application/x-x509-ca-cert';
+                        break;
+                case '.pem':
+                        contentType = 'application/x-pem-file';
+                        break;
+                  case '.wasm': case '.asm':
+                  	contentType = 'application/wasm';
+                        break;
 	}
 	if( disk.exists( filePath ) ) {
 		res.writeHead(200, { 'Content-Type': contentType });
