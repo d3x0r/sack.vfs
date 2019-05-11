@@ -31,9 +31,9 @@ consoleSize = con.size;
 
 
 con.oninput( function( string ) {
-	string = string.slice( 0, string.length-1 );
-	console.log( "Event string:", string );
-	con.write( string );
+	var lstring = string.slice( 0, string.length-1 );
+	console.log( "Event string:", lstring );
+	con.write( "\n" + string );
 } );
 
 con.write( "Enter any text to have it echoed..." );
