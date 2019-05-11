@@ -463,7 +463,7 @@ void MakeCert(  struct info_params *params )
 					X509_add1_ext_i2d( x509, NID_basic_constraints, &bc, 1, X509V3_ADD_DEFAULT );
 				}
 				{
-					lprintf( "SIGNING ON ROOT CERT" );
+					//lprintf( "SIGNING ON ROOT CERT" );
 					int _usage = KU_CRL_SIGN | KU_KEY_CERT_SIGN | KU_DIGITAL_SIGNATURE;
 					ASN1_INTEGER *usage = ASN1_INTEGER_new();
 					ASN1_INTEGER_set( usage, _usage );
@@ -1925,17 +1925,17 @@ void  vtLogBinary( PVARTEXT pvt, uint8_t* buffer, size_t size  )
 	{
 		size_t x;
 		for( x = 0; x<nOut && x<16; x++ )
-			vtprintf( pvt, WIDE( "%02X " ), (unsigned char)data[x] );
+			vtprintf( pvt, "%02X ", (unsigned char)data[x] );
 		// space fill last partial buffer
 		for( ; x < 16; x++ )
-			vtprintf( pvt, WIDE( "   " ) );
+			vtprintf( pvt, "   " );
 
 		for( x = 0; x<nOut && x<16; x++ )
 		{
 			if( data[x] >= 32 && data[x] < 127 )
-				vtprintf( pvt, WIDE( "%c" ), (unsigned char)data[x] );
+				vtprintf( pvt, "%c", (unsigned char)data[x] );
 			else
-				vtprintf( pvt, WIDE( "." ) );
+				vtprintf( pvt, "." );
 		}
 		vtprintf( pvt, "\n" );
 		data += x;

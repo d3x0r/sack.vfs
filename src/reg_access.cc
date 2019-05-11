@@ -93,14 +93,14 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 			DWORD dwDisposition;
 			dwStatus = RegCreateKeyEx( hive,
 													  end, 0
-													 , WIDE("")
+													 , ""
 													 , REG_OPTION_NON_VOLATILE
 													 , KEY_ALL_ACCESS
 													 , NULL
 													 , &hTemp
 													 , &dwDisposition);
 					if( dwDisposition == REG_OPENED_EXISTING_KEY )
-						lprintf( WIDE("Failed to open, then could open???") );
+						lprintf( "Failed to open, then could open???" );
 					if( dwStatus ) {	// ERROR_SUCCESS == 0
 
 						isolate->ThrowException( Exception::Error(
@@ -223,14 +223,14 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 			DWORD dwDisposition;
 			dwStatus = RegCreateKeyEx( hive,
 													  end, 0
-													 , WIDE("")
+													 , ""
 													 , REG_OPTION_NON_VOLATILE
 													 , KEY_ALL_ACCESS
 													 , NULL
 													 , &hTemp
 													 , &dwDisposition);
 					if( dwDisposition == REG_OPENED_EXISTING_KEY )
-						lprintf( WIDE("Failed to open, then could open???") );
+						lprintf( "Failed to open, then could open???" );
 					if( dwStatus ) {	// ERROR_SUCCESS == 0
 
 						isolate->ThrowException( Exception::Error(

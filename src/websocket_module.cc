@@ -114,6 +114,7 @@ struct optionStrings {
 	Eternal<String> *pathString;
 	Eternal<String> *methodString;
 	Eternal<String> *redirectString;
+	Eternal<String> *keepAliveString;
 };
 
 static PLIST strings;
@@ -146,6 +147,7 @@ struct wscOptions {
 	bool deflate;
 	bool deflate_allow;
 	bool apply_masking;
+	bool keep_alive;
 };
 
 struct pendingSend {
@@ -266,6 +268,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->methodString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "method" ) );
 		check->redirectString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "redirect" ) );
 		check->rejectUnauthorizedString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "rejectUnauthorized" ) );
+		check->keepAliveString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "keepAlive" ) );
 	}
 	return check;
 }
@@ -1087,10 +1090,12 @@ static void webSockServerCloseEvent( wssObject *wss ) {
 	}
 	else
 		uv_async_send( &wss->async );
+	/*
 	while( wss->event_waker ) {
 		WakeThread( wss->event_waker );
 		Relinquish();
 	}
+	*/
 }
 
 static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char *reason )
@@ -1252,7 +1257,7 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 	HTTPState http = GetWebSocketHttpState( obj->pc );
 	if( http ) {
 		int vers = GetHttpVersion( http );
-		vtprintf( obj->pvtResult, WIDE( "HTTP/%d.%d %d %s\r\n" ), vers / 100, vers % 100, status, "OK" );
+		vtprintf( obj->pvtResult, "HTTP/%d.%d %d %s\r\n", vers / 100, vers % 100, status, "OK" );
 
 		if( args.Length() > 1 ) {
 			headers = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
@@ -1264,7 +1269,7 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 				Local<Value> val = headers->Get( key );
 				String::Utf8Value keyname( USE_ISOLATE( isolate ) key );
 				String::Utf8Value keyval( USE_ISOLATE( isolate ) val );
-				vtprintf( obj->pvtResult, WIDE( "%s:%s\r\n" ), *keyname, *keyval );
+				vtprintf( obj->pvtResult, "%s:%s\r\n", *keyname, *keyval );
 			}
 		}
 	}
@@ -1293,7 +1298,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( args[0]->IsString() ) {
 			String::Utf8Value body( USE_ISOLATE( isolate ) args[0] );
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", body.length() );
-			vtprintf( obj->pvtResult, WIDE( "\r\n" ) );
+			vtprintf( obj->pvtResult, "\r\n" );
 
 			vtprintf( obj->pvtResult, "%*.*s", body.length(), body.length(), *body );
 		}
@@ -1301,13 +1306,13 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			Local<Uint8Array> body = args[0].As<Uint8Array>();
 			Local<ArrayBuffer> bodybuf = body->Buffer();
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", body->ByteLength() );
-			vtprintf( obj->pvtResult, WIDE( "\r\n" ) );
+			vtprintf( obj->pvtResult, "\r\n" );
 			VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
 		}
 		else if( args[0]->IsArrayBuffer() ) {
 			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", ab->ByteLength() );
-			vtprintf( obj->pvtResult, WIDE( "\r\n" ) );
+			vtprintf( obj->pvtResult, "\r\n" );
 			VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
 		} else if( args[0]->IsObject() ) {
 			Local<FunctionTemplate> wrapper_tpl = FileObject::tpl.Get( isolate );
@@ -1319,7 +1324,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 	}
 	else
-		vtprintf( obj->pvtResult, WIDE( "\r\n" ) );
+		vtprintf( obj->pvtResult, "\r\n" );
 
 	if( doSend ) {
 		PTEXT buffer = VarTextPeek( obj->pvtResult );
@@ -2052,6 +2057,7 @@ wscObject::wscObject( wscOptions *opts ) {
 		, webSockClientOpen
 		, webSockClientEvent, webSockClientClosed, webSockClientError, (uintptr_t)this, opts->protocol );
 	if( pc ) {
+		SetClientKeepAlive( pc, opts->keep_alive);
 		if( opts->deflate )
 			SetWebSocketDeflate( pc, WEBSOCK_DEFLATE_ENABLE );
 		if( !opts->apply_masking )
@@ -2116,6 +2122,12 @@ void parseWscOptions( struct wscOptions *wscOpts, Isolate *isolate, Local<Object
 	}
 	else
 		wscOpts->apply_masking = true;
+
+	if( opts->Has( optName = strings->keepAliveString->Get( isolate ) ) ) {
+		wscOpts->keep_alive = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
+	}
+	else
+		wscOpts->keep_alive = false;
 }
 
 void wscObject::New(const FunctionCallbackInfo<Value>& args){
