@@ -1102,20 +1102,6 @@ typedef volatile uintptr_t        *PVPTRSZVAL;
 typedef size_t         INDEX;
 /* An index which is not valid; equates to 0xFFFFFFFFUL or negative one cast as an INDEX... ((INDEX)-1). */
 #define INVALID_INDEX ((INDEX)-1)
-#ifdef __CYGWIN__
-typedef unsigned short wchar_t;
-#endif
-// may consider changing this to uint16_t* for unicode...
-typedef wchar_t X_16;
-/* This is a pointer to wchar_t. A 16 bit value that is
-   character data, and is not signed or unsigned.       */
-typedef wchar_t *PX_16;
-//#define WIDE(s)   s
-//#define _WIDE(s)  s
-//#define cWIDE(s)   s
-/* Modified WIDE wrapper that actually forces non-unicode
-   string.                                                */
-//#define _cWIDE(s)  s
 // constant text string content
 typedef const char     *CTEXTSTR;
 /* A non constant array of TEXTCHAR. A pointer to TEXTCHAR. A
@@ -1426,7 +1412,7 @@ typedef uint64_t THREAD_ID;
 //      'someNode' is removed from its existing list, and added to the 'rootUsed' list.
 //
 // For Declaring the link structure members for lists
-#define DeclareLink( type )  type *next;type **me
+#define DeclareLink( type )  type *next; type **me
 /* Link a new node into the list.
    Example
    struct mynode
@@ -1538,11 +1524,11 @@ typedef uint64_t THREAD_ID;
    n :  the count of masks to fit.       */
 #define MASKSETSIZE(t,n) (MASKTYPE_INDEX(t,(n+1)))
 // declare a set of flags...
-#define MASK_TOP_MASK_VAL(length,val) ((val)&( (0xFFFFFFFFUL) >> (32-(length)) ))
+#define MASK_TOP_MASK_VAL(length,val) ((val)&( ((MASKSET_READTYPE)-1) >> ((sizeof(MASKSET_READTYPE) * CHAR_BIT)-(length)) ))
 /* the mask in the dword resulting from shift-right.   (gets a mask of X bits in length) */
-#define MASK_TOP_MASK(length) ( (0xFFFFFFFFUL) >> (32-(length)) )
+#define MASK_TOP_MASK(length) ( ((MASKSET_READTYPE)-1) >> ((sizeof(MASKSET_READTYPE) * CHAR_BIT)-(length)) )
 /* the mast in the dword shifted to the left to overlap the field in the word */
-#define MASK_MASK(n,length)   (MASK_TOP_MASK(length) << (((n)*(length))&0x7) )
+#define MASK_MASK(n,length)   (MASK_TOP_MASK(length) << (((n)*(length)) & (sizeof(MASKSET_READTYPE) - 1) ) )
 // masks value with the mask size, then applies that mask back to the correct word indexing
 #define MASK_MASK_VAL(n,length,val)   (MASK_TOP_MASK_VAL(length,val) << (((n)*(length))&0x7) )
 /* declare a mask set.
@@ -1566,7 +1552,7 @@ typedef uint64_t THREAD_ID;
 /* This type stores data, it has a self-contained length in
    bytes of the data stored.  Length is in characters       */
 _CONTAINER_NAMESPACE
-/* This is a slab array of pointers, each pointer may be
+/* LIST is a slab array of pointers, each pointer may be
    assigned to point to any user data.
    Remarks
    When the list is filled to the capacity of Cnt elements, the
@@ -11278,9 +11264,9 @@ struct file_system_interface {
                                                  //file *
 	int (CPROC *_close)(void *);
                     //file *, buffer, length (to read)
-	size_t (CPROC *_read)(void *,char *, size_t);
+	size_t (CPROC *_read)(void *,void *, size_t);
                     //file *, buffer, length (to write)
-	size_t (CPROC *_write)(void*,const char *, size_t);
+	size_t (CPROC *_write)(void*,const void *, size_t);
 	size_t (CPROC *seek)( void *, size_t, int whence);
 	void  (CPROC *truncate)( void *);
 	int (CPROC *_unlink)( uintptr_t psvInstance, const char *);
@@ -11667,9 +11653,9 @@ SACK_VFS_PROC size_t CPROC sack_vfs_size( struct sack_vfs_file *file );
 // set the current File Position Index (FPI).
 SACK_VFS_PROC size_t CPROC sack_vfs_seek( struct sack_vfs_file *file, size_t pos, int whence );
 // write starting at the current FPI.
-SACK_VFS_PROC size_t CPROC sack_vfs_write( struct sack_vfs_file *file, const char * data, size_t length );
+SACK_VFS_PROC size_t CPROC sack_vfs_write( struct sack_vfs_file *file, const void * data, size_t length );
 // read starting at the current FPI.
-SACK_VFS_PROC size_t CPROC sack_vfs_read( struct sack_vfs_file *file, char * data, size_t length );
+SACK_VFS_PROC size_t CPROC sack_vfs_read( struct sack_vfs_file *file, void * data, size_t length );
 // sets the file length to the current FPI.
 SACK_VFS_PROC size_t CPROC sack_vfs_truncate( struct sack_vfs_file *file );
 // psv should be struct volume *vol;
@@ -11745,9 +11731,9 @@ namespace fs {
 	// set the current File Position Index (FPI).
 	SACK_VFS_PROC size_t CPROC sack_vfs_fs_seek( struct sack_vfs_file *file, size_t pos, int whence );
 	// write starting at the current FPI.
-	SACK_VFS_PROC size_t CPROC sack_vfs_fs_write( struct sack_vfs_file *file, const char * data, size_t length );
+	SACK_VFS_PROC size_t CPROC sack_vfs_fs_write( struct sack_vfs_file *file, const void * data, size_t length );
 	// read starting at the current FPI.
-	SACK_VFS_PROC size_t CPROC sack_vfs_fs_read( struct sack_vfs_file *file, char * data, size_t length );
+	SACK_VFS_PROC size_t CPROC sack_vfs_fs_read( struct sack_vfs_file *file, void * data, size_t length );
 	// sets the file length to the current FPI.
 	SACK_VFS_PROC size_t CPROC sack_vfs_fs_truncate( struct sack_vfs_file *file );
 	// psv should be struct volume *vol;
@@ -11947,9 +11933,9 @@ SACK_VFS_PROC size_t CPROC sack_vfs_os_size( struct sack_vfs_file *file );
 // set the current File Position Index (FPI).
 SACK_VFS_PROC size_t CPROC sack_vfs_os_seek( struct sack_vfs_file *file, size_t pos, int whence );
 // write starting at the current FPI.
-SACK_VFS_PROC size_t CPROC sack_vfs_os_write( struct sack_vfs_file *file, const char * data, size_t length );
+SACK_VFS_PROC size_t CPROC sack_vfs_os_write( struct sack_vfs_file *file, const void * data, size_t length );
 // read starting at the current FPI.
-SACK_VFS_PROC size_t CPROC sack_vfs_os_read( struct sack_vfs_file *file, char * data, size_t length );
+SACK_VFS_PROC size_t CPROC sack_vfs_os_read( struct sack_vfs_file *file, void * data, size_t length );
 // sets the file length to the current FPI.
 SACK_VFS_PROC size_t CPROC sack_vfs_os_truncate( struct sack_vfs_file *file );
 // psv should be struct volume *vol;
