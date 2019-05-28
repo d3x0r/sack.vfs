@@ -1,6 +1,50 @@
 #include "global.h"
 using namespace sack::SACK_VFS::objStore;
 
+class ObjectStorageObject : public node::ObjectWrap {
+public:
+	uv_async_t async;
+	PLINKQUEUE plqEvents;
+	struct objStore::volume *vol;
+	bool volNative;
+	char *mountName;
+	char *fileName;
+	struct file_system_interface *fsInt;
+	struct file_system_mounted_interface* fsMount;
+	static v8::Persistent<v8::Function> constructor;
+
+public:
+
+	static void Init( Isolate *isolate, Handle<Object> exports );
+	ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
+
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+
+	// get object pass object ID
+	static void getObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// get object and all recursive objects associated from here (for 1 level?)
+	static void mapObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// pass object, result with object ID.
+	static void putObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// pass object ID, get back a ObjectStorageFileObject ( support seek/read/write? )
+	static void openObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// utility to remove the key so it can be diagnosed.
+	static void volDecrypt( const v8::FunctionCallbackInfo<Value>& args );
+
+	static void fileReadJSOX( const v8::FunctionCallbackInfo<Value>& args );
+
+	static void fileWrite( const v8::FunctionCallbackInfo<Value>& args );
+	static void fileStore( const v8::FunctionCallbackInfo<Value>& args );
+	static void createIndex( const v8::FunctionCallbackInfo<Value>& args );
+	static ObjectStorageObject* openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 );
+	~ObjectStorageObject();
+};
+
+
 struct optionStrings {
 	Isolate *isolate;
 
@@ -13,6 +57,9 @@ struct optionStrings {
 	Eternal<String> *thenString;
 	Eternal<String> *catchString;
 	Eternal<String> *aString;
+	Eternal<String> *dataString;
+	Eternal<String> *nameString;
+	Eternal<String> *optsString;
 };
 
 
@@ -90,6 +137,9 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		DEFSTRING( failed );
 		DEFSTRING( signed );
 		DEFSTRING( readKey );
+		DEFSTRING( data );
+		DEFSTRING( name );
+		DEFSTRING( opts );
 	}
 	return check;
 }
@@ -162,6 +212,7 @@ void ObjectStorageObject::Init( Isolate *isolate, Handle<Object> exports ) {
 
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "read", ObjectStorageObject::fileReadJSOX );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "write", ObjectStorageObject::fileWrite );
+	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "createIndex", ObjectStorageObject::createIndex );
 	//NODE_SET_PROTOTYPE_METHOD( clsTemplate, "store", ObjectStorageObject::fileStore );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "put", ObjectStorageObject::putObject );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "get", ObjectStorageObject::getObject );
@@ -495,6 +546,38 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+void ObjectStorageObject::createIndex( const v8::FunctionCallbackInfo<Value>& args ) {
+
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() < 2 ) {
+		isolate->ThrowException( Exception::TypeError(
+			String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and key to define" ) ) ) );
+		return;
+	}
+
+	ObjectStorageObject *vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
+	lprintf( "And here we get to actually " );
+
+
+	String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
+	struct objStore::sack_vfs_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
+	if( file ) {
+		Local<Object> indexDef = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
+		struct optionStrings *strings = getStrings( isolate );
+		Local<String> optName;
+
+		Local<Object> theArray = indexDef->Get( optName = strings->dataString->Get(isolate) ).As<Object>();
+		Local<String> name = indexDef->Get( optName = strings->nameString->Get( isolate ) ).As<String>();
+		Local<Object> opts = indexDef->Get( optName = strings->optsString->Get( isolate ) ).As<Object>();
+
+		String::Utf8Value fieldName( name );
+		objStore::sack_vfs_os_file_ioctl( file, SOSFSFIO_CREATE_INDEX, *fieldName, fieldName.length() );
+		//objStore::sack_vfs_os_write( file, *data, data.length() );
+		objStore::sack_vfs_os_close( file );
+		//sack_vfs_os_polish_volume( vol->vol );
+	}
+}
+
 void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() < 2 ) {
@@ -511,6 +594,7 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 			String::Utf8Value data( USE_ISOLATE( isolate ) args[1] );
 			objStore::sack_vfs_os_write( file, *data, data.length() );
 			objStore::sack_vfs_os_close( file );
+			sack_vfs_os_polish_volume( vol->vol );
 		}
 	}
 }
@@ -645,7 +729,9 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 
 }
 
-ObjectStorageObject*  ObjectStorageObject::openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 ) {
+ObjectStorageObject*  openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 ) {
+
+//ObjectStorageObject*  ObjectStorageObject::openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 ) {
 
 	// Invoked as constructor: `new MyObject(...)`
 	ObjectStorageObject* obj = new ObjectStorageObject( mount, name, 0, key1, key2 );
