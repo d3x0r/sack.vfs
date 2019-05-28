@@ -11,7 +11,10 @@ const _objectStorage = sack.ObjectStorage;
 // associates object data with storage data for later put(obj) to re-use the same informations.
 function objectStorageContainer(o,sign) {
 	if( !this instanceof objectStorageContainer ) return new objectStorageContainer(o,sign);
-
+	this.def = {
+		indexes : [],
+		dirty : false,
+	}
 	this.data = {	
 		nonce : sign?sack.SaltyRNG.sign( sack.JSOX.stringify(o), 3, 3 ):null,
 		data : o
@@ -28,6 +31,58 @@ function objectStorageContainer(o,sign) {
 	//console.log( "Container:", this );
 }
 
+objectStorageContainer.prototype.createIndex = function( storage, fieldName, opts ) {
+	if( !fieldName ) throw new Error( "Must specify an object field to index" );
+
+	var path;
+	if( !fieldName.isArray() ) {
+		if( typeof(fieldName) != "String") throw new Error( "Index field name must be a string, or an array." );
+		path = fieldName.split('.' );	
+	}else		
+		path = fieldName;	
+	
+	const indexList = this.def.indexes;
+
+	var referringObject = null;
+
+	var end = path.reduce( (acc,val)=>{ 
+		referringObject = acc;
+		if( acc ) {
+			let tmp = acc[val];
+			if( tmp === undefined )
+				if( val < (path.length-1) ) { // automatically build object path
+					if( typeof(path[val+1]) === "String" )
+						acc[val] = tmp = {};
+					else
+						acc[val] = tmp = [];
+				}
+			acc = tmp;
+		}
+		return acc;
+
+	}, this.data.data );
+	if( end ) {
+		if( !end.isArray() ){
+			throw new Error( "Indexes can only be applied to arrays.");
+		}
+	}else if( referringObject ){
+		// automatically assign a value
+		end = referringObject[path[path.length-1]] = [];
+	}else {
+		throw new Error( "Path to index could not be found")
+	}
+
+
+	var index = {
+		data : end,
+		name : fieldName,
+		opts : opts,
+	};
+
+	const storageIndex = storage.createIndex( this.id, index );
+	indexList.push( index );
+}
+
 // define a class... to be handled by stringification
 sack.ObjectStorage.prototype.defineClasss = function(a,b) {
 	this.stringifier.defineClass(a,b);
@@ -38,41 +93,106 @@ sack.ObjectStorage.prototype.scan = function( from ) {
 	//this.loadSince( fromTime ); 
 }
 
-sack.ObjectStorage.prototype.put = function( obj, options ) {
-	
-	var container = this.stored.get( obj );
+sack.ObjectStorage.prototype.getContainer = function( obj, options ) {
+	var container = this_.stored.get( obj );
 	var storage;
-	//console.log( "Put found object?", container, obj );
 	if( container ) {
-		if( !container.nonce ) {
-			container = this.cachedContainer.get( container ); 
-			//console.log( "Container:", container );
-			storage = this.stringifier.stringify( container );
-			//console.log( "Update to:", container.id, storage );
-			this.write( container.id, storage );
-			return container.id;
-		} else { 
-			throw new Error( "record is signed" );
-		}
+		container = this_.cachedContainer.get( container ); 
+		return container;
 	}
 
-	{
-		container = new objectStorageContainer(obj,options);
-	        
-		//console.log( "saving stored container.id", obj, container.id );
-	        
-		this.stored.delete( obj );
-		//this.stored.set( obj, container.id );
-		this.cached.set( container.id, container.data.data );
-		this.cachedContainer.set( container.id, container );
+	container = new objectStorageContainer(obj,options);
+	this_.stored.set( obj, container.id );
+	this_.cached.set( container.id, container.data.data );
+	this_.cachedContainer.set( container.id, container );
+}
+
+sack.ObjectStorage.prototype.createIndex = function( id, index ){
+
+}
+
+sack.ObjectStorage.prototype.index = function( obj, fieldName, opts ) {
+	var this_ = this;
+	return new Promise( function(res,rej){
+
+		var container = this_.stored.get( obj );
 		
-		storage = this.stringifier.stringify( container );
-	        
-		//console.log( "Create file:", container.id );
-		this.write( container.id, storage );
+		console.log( "Put found object?", container, obj, options );
+		if( container ) {
+			container = this_.cachedContainer.get( container ); 
+			if( container.data.nonce ) { 
+				rej( new Error( "Sealed records cannot be modified" ) );
+			}
+		}
+		else
+		{
+			container = new objectStorageContainer(obj,options);
+				
+			//console.log( "saving stored container.id", obj, container.id );
+				
+			//this.stored.delete( obj );
+			this_.stored.set( obj, container.id );
+			this_.cached.set( container.id, container.data.data );
+			this_.cachedContainer.set( container.id, container );
+			
+		}
+
+		container.createIndex( this_, fieldName, opts );
+
 		//console.log( "OUTPUT:", storage );
-		return container.id;
-	}
+		res();
+
+	})
+
+}
+
+sack.ObjectStorage.prototype.put = function( obj, options ) {
+	var this_ = this;
+	return new Promise( function(res,rej){
+
+		var container = this_.stored.get( obj );
+		
+		console.log( "Put found object?", container, obj, options );
+		if( container ) {
+			container = this_.cachedContainer.get( container ); 
+			if( !container.data.nonce ) {
+				// make sure every item that is in an index
+				// has been written... 
+				this_.def.indexes.forEach( index=>{
+					index.data.forEach( (item)=>{
+						this_.put( item );
+					});
+				})
+
+
+				//console.log( "Container:", container );
+				storage = this_.stringifier.stringify( container );
+				//console.log( "Update to:", container.id, storage );
+				this_.write( container.id, storage );
+				return container.id;
+			} else { 
+				throw new Error( "record is signed" );
+			}
+		}
+
+		{
+			container = new objectStorageContainer(obj,options);
+				
+			//console.log( "saving stored container.id", obj, container.id );
+				
+			//this.stored.delete( obj );
+			this_.stored.set( obj, container.id );
+			this_.cached.set( container.id, container.data.data );
+			this_.cachedContainer.set( container.id, container );
+			
+			storage = this_.stringifier.stringify( container );
+				
+			//console.log( "Create file:", container.id );
+			this_.write( container.id, storage );
+			//console.log( "OUTPUT:", storage );
+			res(  container.id );
+		}
+	})
 }
 
 /*
@@ -176,12 +296,12 @@ sack.ObjectStorage.prototype.get = function( opts ) {
 		}
 	};
 
-	console.log( "Read Key:", opts );
+	//console.log( "(get)Read Key:", opts );
 	var os = this;
 	var p = new Promise( function(res,rej) {
 		resolve = res;  reject = rej;
-		//console.log( "Read does exist..." );
-		os.read( key
+		
+		os.read( opts
 			, parser, (obj)=>{
 			// with a new parser, only a partial decode before revive again...
 					var found;
@@ -199,10 +319,12 @@ sack.ObjectStorage.prototype.get = function( opts ) {
 				//console.log( "GOTzz:", obj );
 				os.stored.set( obj.data.data, obj.id );
 				os.cachedContainer.set( obj.id, obj ); 
-				
+				//console.log( "and resolve")
 				resolve(obj.data.data);
-			}else
+			}else {
+				console.log( "rejext, no data.");
 				reject();
+			}
 		} );
 	} );
 
