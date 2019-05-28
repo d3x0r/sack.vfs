@@ -169,6 +169,7 @@ struct wssEvent {
 			int error;
 			const char *buffer;
 			size_t buflen;
+			int fallback_ssl;
 		} error;
 	}data;
 	PLIST send;
@@ -640,6 +641,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					else
 						argv[2] = Null( isolate );
 					myself->errorLowCallback.Get( isolate )->Call( myself->_this.Get( isolate ), 3, argv );
+
 				}
 			}
 			else if( eventMessage->eventType == WS_EVENT_REQUEST ) {
@@ -1452,6 +1454,7 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkEr
 	case SACK_NETWORK_ERROR_SSL_HANDSHAKE:
 		(*pevt).data.error.buffer = va_arg( args, const char * );
 		(*pevt).data.error.buflen = va_arg( args, size_t );
+		(*pevt).data.error.fallback_ssl = 0; // make sure this is cleared.
 		break;
 	}
 	(*pevt).pc = pc;
@@ -1461,6 +1464,11 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkEr
 	uv_async_send( &wss->async );
 	while( !(*pevt).done )
 		WakeableSleep( 1000 );
+
+	if( (*pevt).data.error.fallback_ssl )
+		ssl_EndSecure( pc, (POINTER)(*pevt).data.error.buffer, (*pevt).data.error.buflen );
+
+	DropWssEvent( pevt );
 }
 
 static uintptr_t catchLostEvents( PTHREAD thread ) {
@@ -1699,7 +1707,9 @@ void wssObject::disableSSL( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
 	if( obj->eventMessage && obj->eventMessage->eventType == WS_EVENT_LOW_ERROR ) {
-		ssl_EndSecure( obj->eventMessage->pc, (POINTER)obj->eventMessage->data.error.buffer, obj->eventMessage->data.error.buflen );
+		// delay until we return to the thread that dispatched this error.
+		obj->eventMessage->data.error.fallback_ssl = 1;
+		//ssl_EndSecure( obj->eventMessage->pc, (POINTER)obj->eventMessage->data.error.buffer, obj->eventMessage->data.error.buflen );
 	}
 }
 

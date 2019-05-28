@@ -158,7 +158,7 @@ void VolumeObject::doInit( Handle<Object> exports )
 	Local<FunctionTemplate> volumeTemplate;
 	ThreadObject::Init( exports );
 	FileObject::Init();
-	SqlObject::Init( exports );
+	SqlObjectInit( exports );
 	ComObject::Init( exports );
 	InitJSOX( isolate, exports );
 	InitJSON( isolate, exports );
@@ -343,7 +343,7 @@ void VolumeObject::vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args
 	}
 
 
-	ObjectStorageObject *oso = ObjectStorageObject::openInVFS( isolate, mount_name, filename, key, key2 );
+	class ObjectStorageObject *oso = openInVFS( isolate, mount_name, filename, key, key2 );
 	if( oso ) {
 		// uhmm this needs 'this' to know what to return as...
 	}
@@ -423,11 +423,9 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 				
 			}
 			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
-			SqlObject* obj;
 			char dbName[256];
  			snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
- 			obj = new SqlObject( dbName );
-			SqlObject::doWrap( obj, args.This() );
+			createSqlObject( dbName, args.This() );
 
 			args.GetReturnValue().Set( args.This() );
 		}
@@ -449,11 +447,8 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
   		snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
   		argv[0] = String::NewFromUtf8( isolate, dbName );
 		argv[1] = args.Holder();
-
-		Local<Function> cons = Local<Function>::New( isolate, SqlObject::constructor );
-		MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
-		if( !mo.IsEmpty() )
-			args.GetReturnValue().Set( mo.ToLocalChecked() );
+		
+		args.GetReturnValue().Set( newSqlObject( isolate, argc, argv ) );
 		delete[] argv;
 	}
 }

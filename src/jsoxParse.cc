@@ -213,13 +213,23 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 				break;
 			case 12:// "ref"
 				//lprintf( "THIS should have a container? %p", val->contains );
+#ifdef DEBUG_REFERENCE_FOLLOW
+				lprintf( "Resolving a ref...." );
+#endif
 				{
 					struct jsox_value_container *pathVal;
 					INDEX idx;
 					Local<Object> refObj = revive->rootObject;
 					DATA_FORALL( val->contains, idx, struct jsox_value_container *, pathVal ) {
+#ifdef DEBUG_REFERENCE_FOLLOW
+						lprintf( "get reference:%s", pathVal->string );
+#endif
 						if( pathVal->value_type == JSOX_VALUE_NUMBER ) {
 							Local<Value> arraymember = refObj->Get( revive->context, (uint32_t)pathVal->result_n ).ToLocalChecked();
+							String::Utf8Value tmp( USE_ISOLATE( revive->isolate )   arraymember->ToString() );
+#ifdef DEBUG_REFERENCE_FOLLOW
+							lprintf( "Array member is : %s", *tmp );
+#endif
 							MaybeLocal<Object> maybeRefObj = arraymember->ToObject( revive->isolate->GetCurrentContext() );
 							if( maybeRefObj.IsEmpty() ) {
 								lprintf( "Referenced array member is not an object!. " );
@@ -417,12 +427,17 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 	int index = 0;
 	DATA_FORALL( msg_data, idx, struct jsox_value_container*, val )
 	{
-		//lprintf( "value name is : %d %s", val->value_type, val->name ? val->name : "(NULL)" );
+#ifdef DEBUG_REFERENCE_FOLLOW
+		lprintf( "value name is : %d %s", val->value_type, val->name ? val->name : "(NULL)" );
+#endif
 		switch( val->value_type ) {
 		default:
 			if( val->name ) {
 				stringKey = String::NewFromUtf8( revive->isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked();
 				revive->value = stringKey;
+#ifdef DEBUG_REFERENCE_FOLLOW
+				lprintf( "set value to fieldname: %s", val->name );
+#endif
 				o->CreateDataProperty( revive->context, stringKey
 						, makeValue( val, revive, o, 0, stringKey ) );
 			}
@@ -431,6 +446,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 					revive->revive = FALSE;
 				if( revive->revive )
 					revive->value = Integer::New( revive->isolate, index );
+				//lprintf( "set value to index: %d", index );
 				o->Set( index, thisVal = makeValue( val, revive, o, index, Null(revive->isolate).As<String>() ) );
 				index++;
 				if( val->value_type == JSOX_VALUE_EMPTY )
@@ -440,6 +456,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 			break;
 		case JSOX_VALUE_ARRAY:
 			if( val->name ) {
+				//lprintf( "set value to fieldname: %s", val->name );
 				o->CreateDataProperty( revive->context,
 					stringKey = String::NewFromUtf8( revive->isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked()
 					, sub_o = Array::New( revive->isolate ) );
@@ -448,6 +465,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 			else {
 				if( revive->revive )
 					thisKey = Integer::New( revive->isolate, index );
+				//lprintf( "set value to index: %d", index );
 				o->Set( index++, sub_o = Array::New( revive->isolate ) );
 			}
 			buildObject( val->contains, sub_o, revive );
@@ -504,6 +522,8 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 			else {
 				if( revive->revive )
 					thisKey = Integer::New( revive->isolate, index );
+				//lprintf( "set value to index: %d", index );
+
 				o->Set( index++, sub_o );
 			}
 
