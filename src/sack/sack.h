@@ -608,7 +608,7 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #    define LITERAL_LIB_IMPORT_METHOD __declspec(dllimport)
 #  else
 // MRT:  This is needed.  Need to see what may be defined wrong and fix it.
-#    if defined( __LINUX__ ) || defined( __STATIC__ )
+#    if defined( __LINUX__ ) || defined( __STATIC__ ) || defined( __ANDROID__ )
 #      define EXPORT_METHOD
 #      define IMPORT_METHOD extern
 #      define LITERAL_LIB_EXPORT_METHOD
@@ -1351,7 +1351,11 @@ typedef uint64_t THREAD_ID;
 #      ifdef __ANDROID__
 #        define GetMyThreadID()  (( ((uint64_t)getpid()) << 32 ) | ( (uint64_t)(gettid()) ) )
 #      else
-#        define GetMyThreadID()  (( ((uint64_t)getpid()) << 32 ) | ( (uint64_t)(syscall(SYS_gettid)) ) )
+#        if defined( __EMSCRIPTEN__ )
+#          define GetMyThreadID()  ( (uint64_t)(pthread_self()) )
+#        else
+#          define GetMyThreadID()  (( ((uint64_t)getpid()) << 32 ) | ( (uint64_t)(syscall(SYS_gettid)) ) )
+#        endif
 #      endif
 #    else
 #      define GetMyThreadID()  (( ((uint64_t)getppid()) << 32 ) | ( (uint64_t)(getpid()|0x40000000)) )
@@ -6841,46 +6845,16 @@ using namespace sack::timers;
 #else
 #endif
 #  ifdef _MSC_VER
-#    define SUFFER_WITH_NO_SNPRINTF
-#    ifndef SUFFER_WITH_NO_SNPRINTF
-#      define vnsprintf protable_vsnprintf
-//   this one gives deprication warnings
-//   #    define vsnprintf _vsnprintf
-//   this one doesn't work to measure strings
-//   #    define vsnprintf(buf,len,format,args) _vsnprintf_s(buf,len,(len)/sizeof(TEXTCHAR),format,args)
-//   this one doesn't macro well, and doesnt' measure strings
-//  (SUCCEEDED(StringCbVPrintf( buf, len, format, args ))?StrLen(buf):-1)
-#      define snprintf portable_snprintf
-//   this one gives deprication warnings
-//   #    define snprintf _snprintf
-//   this one doesn't work to measure strings
-//   #    define snprintf(buf,len,format,...) _snprintf_s(buf,len,(len)/sizeof(TEXTCHAR),format,##__VA_ARGS__)
-//   this one doesn't macro well, and doesnt' measure strings
-//   (SUCCEEDED(StringCbPrintf( buf, len, format,##__VA_ARGS__ ))?StrLen(buf):-1)
-// make sure this is off, cause we really don't, and have to include the following
-#      undef HAVE_SNPRINTF
- // define this anyhow so we can avoid name collisions
-#      define PREFER_PORTABLE_SNPRINTF
-#      ifdef SACK_CORE_BUILD
-#        include <../src/snprintf_2.2/snprintf.h>
-#      else
-#        include <snprintf-2.2/snprintf.h>
- // SACK_CORE_BUILD
-#      endif
- // SUFFER_WITH_WARNININGS
+#    define snprintf _snprintf
+#    define vsnprintf _vsnprintf
+#    if defined( _UNICODE )
+#      define tnprintf _snwprintf
+#      define vtnprintf _vsnwprintf
 #    else
-#      define snprintf _snprintf
-#      define vsnprintf _vsnprintf
-#      if defined( _UNICODE )
-#        define tnprintf _snwprintf
-#        define vtnprintf _vsnwprintf
-#      else
-#        define tnprintf _snprintf
-#        define vtnprintf _vsnprintf
-#      endif
-#    define snwprintf _snwprintf
-// suffer_with_warnings
+#      define tnprintf _snprintf
+#      define vtnprintf _vsnprintf
 #    endif
+#    define snwprintf _snwprintf
 #    if defined( _UNICODE ) && !defined( NO_UNICODE_C )
 #    define tscanf swscanf_s
 #    else
@@ -9522,7 +9496,7 @@ struct guid_binary {
 };
 // snprintf( buf, 256, guid_format, guid_param_pass(&guid_binary) )
 // snprintf( buf, 256, guid_format, guid_param_pass(binary_buffer_result) )
-#define guid_format "%08"_32fx "-%04"_16fx "-%04"_16fx "-%04"_16fx "-%012"_64fx
+#define guid_format "%08" _32fx "-%04" _16fx "-%04" _16fx "-%04" _16fx "-%012" _64fx
 #define guid_param_pass(n) ((struct guid_binary*)(n))->u.d.l1,((struct guid_binary*)(n))->u.d.w1,((struct guid_binary*)(n))->u.d.w2,((struct guid_binary*)(n))->u.d.w3,((struct guid_binary*)(n))->u.d.ll1
 /* some internal stub-proxy linkage for generating remote
    responders..
@@ -9539,9 +9513,9 @@ typedef struct responce_tag
 		BIT_FIELD bFields : 1;
 	} flags;
 	PVARTEXT result_single_line;
-   int nLines;
+	int nLines;
 	CTEXTSTR *pLines;
-   CTEXTSTR *pFields;
+	CTEXTSTR *pFields;
 } SQL_RESPONCE, *PSQL_RESPONCE;
 /* *WORK IN PROGRESS* function call signature for callback method passed to
    RegisterResponceHandler.                              */
@@ -11771,6 +11745,16 @@ namespace objStore {
  // set key required to read this record.
 		SOSFSFIO_PROVIDE_READKEY,
 		//SFSIO_GET_OBJECT_ID, // get the resulting storage ID.  (Move ID creation into low level driver)
+ // creates an index for this record.
+		SOSFSFIO_CREATE_INDEX,
+ // remove an index (by name)
+		SOSFSFIO_DESTROY_INDEX,
+		SOSFSFIO_ADD_INDEX_ITEM,
+		SOSFSFIO_REMOVE_INDEX_ITEM,
+		SOSFSFIO_ADD_REFERENCE,
+		SOSFSFIO_REMOVE_REFERENCE,
+		SOSFSFIO_ADD_REFERENCE_BY,
+		SOSFSFIO_REMOVE_REFERENCE_BY,
 	};
 	enum sack_object_store_file_system_system_ioctl_ops {
  // get the resulting storage ID.  (Move ID creation into low level driver)
@@ -11883,6 +11867,7 @@ namespace objStore {
 //     sack_vfs_os_ioctl_patch_object( vol, oldResult, sizeof( oldResult )-1, data, sizeof( data ), seal, sizeof( seal ), result, 44 );
 // }
 #define sack_vfs_os_ioctl_patch_sealed_object( vol, objId,objIdLen, obj,objlen, seal,seallen, result, resultlen ) sack_fs_ioctl( vol, SOSFSSIO_PATCH_OBJECT, FALSE, FALSE, objId, objIdLen, authId, authIdLen, obj, objlen, seal, seallen, result, resultlen )
+#define sack_vfs_os_ioctl_create_index( file, indexName ) sack_vfs_os_fs_ioctl( file, SOSFSFIO_CREATE_INDEX, indexName )
 	struct volume;
 	struct sack_vfs_file;
 	struct find_info;
@@ -11892,6 +11877,11 @@ namespace objStore {
 // returns NULL if failure.  (permission denied to the file, or invalid filename passed, could be out of space... )
 // same as load_cyrypt_volume with userkey and devkey NULL.
 SACK_VFS_PROC struct volume * CPROC sack_vfs_os_load_volume( CTEXTSTR filepath );
+/*
+    polish volume cleans up some of the dirty sectors.  It starts a background thread that
+	waits a short time of no dirty updates.
+ */
+SACK_VFS_PROC void CPROC sack_vfs_os_polish_volume( struct volume* vol );
 // open a volume at the specified pathname.  Use the specified keys to encrypt it.
 // if the volume does not exist, will create it.
 // if the volume does exist, a quick validity check is made on it, and then the result is opened
@@ -11919,11 +11909,15 @@ SACK_VFS_PROC const char *    CPROC sack_vfs_os_get_signature( struct volume *vo
 // computes the distance, uses that to generate a signature
 // returns BLOCK_SIZE length signature; recommend using at least 128 bits of it.
 SACK_VFS_PROC const uint8_t * CPROC sack_vfs_os_get_signature2( POINTER disk, POINTER diskReal );
+// extra file system operations, not in the normal API definition set.
+SACK_VFS_PROC uintptr_t CPROC sack_vfs_os_system_ioctl( struct volume* psvInstance, uintptr_t opCode, ... );
 // ---------- Operations on files in volumes ------------------
 // open a file, creates if does not exist.
 SACK_VFS_PROC struct sack_vfs_file * CPROC sack_vfs_os_openfile( struct volume *vol, CTEXTSTR filename );
 // check if a file exists (if it does not exist, and you don't want it created, can use this and not openfile)
 SACK_VFS_PROC int CPROC sack_vfs_os_exists( struct volume *vol, const char * file );
+// extra operations, not in the normal API definition set.
+SACK_VFS_PROC uintptr_t CPROC sack_vfs_os_file_ioctl( struct sack_vfs_file *file, uintptr_t opCode, ... );
 // close a file.
 SACK_VFS_PROC int CPROC sack_vfs_os_close( struct sack_vfs_file *file );
 // get the current File Position Index (FPI).
@@ -12504,7 +12498,6 @@ parse_message
  ***************************************************************/
 #ifndef JSOX_PARSER_HEADER_INCLUDED
 #define JSOX_PARSER_HEADER_INCLUDED
-#define JSON_EMITTER_HEADER_INCLUDED
 // include types to get namespace, and, well PDATALIST types
 #ifdef __cplusplus
 SACK_NAMESPACE namespace network {
