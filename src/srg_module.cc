@@ -37,6 +37,7 @@ private:
 					ctx = SRG_CreateEntropy( NULL, 0 );
 					break;
 				case 1:
+
 					ctx = SRG_CreateEntropy2_256( NULL, 0 );
 					break;
 				case 2:
@@ -49,12 +50,18 @@ private:
 				}
 				String::Utf8Value val( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 
-				SRG_FeedEntropy( ctx, (uint8_t*)*val, val.length() );
-				uint32_t buf[256/32];
+				/* Regenerator version 0 */
+				uint32_t buf[256 / 32];
+				SRG_FeedEntropy( ctx, (uint8_t*)"\0\0\0\0", 4 );
+				SRG_StepEntropy( ctx );
+				SRG_FeedEntropy( ctx, (uint8_t*)* val, val.length() );
+				SRG_StepEntropy( ctx );
 				SRG_GetEntropyBuffer( ctx, buf, 256 );
+
 				size_t outlen;
-				r = EncodeBase64Ex( (uint8_t*)buf, (16 + 16), &outlen, (const char *)1 );
+				r = EncodeBase64Ex( (uint8_t*)buf, (16 + 16), &outlen, (const char*)1 );
 				SRG_DestroyEntropy( &ctx );
+
 				args.GetReturnValue().Set( localString( isolate, r, (int)outlen ) );
 			}
 			else
@@ -582,7 +589,7 @@ private:
 		}
 	}
 
-	static char* srg_sign_work( signParams threadParams[32], int *done, const uint8_t *buf, size_t bufLen, int pad1, int pad2 )
+	static void srg_sign_work( signParams threadParams[32], int *done, const uint8_t *buf, size_t bufLen, int pad1, int pad2 )
 	{
 		int n;
 		//static signParams threadParams[32];
@@ -633,7 +640,7 @@ private:
 			}
 			threadParams[n].id = NULL;
 		}
-		return "";
+		return;
 	}
 
 	static char * wait_for_signing( signParams threadParams[32], int *done ) {
