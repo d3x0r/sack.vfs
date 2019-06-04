@@ -556,10 +556,10 @@ void ControlObject::Init( Handle<Object> _exports ) {
 		VoidObject::Init( isolate );
 		VulkanObject::Init( isolate, _exports );
 
-		SimpleRegisterMethod( WIDE( "psi/control/rtti/extra init" )
-			, CustomDefaultInit, WIDE( "int" ), WIDE( "sack-gui init" ), WIDE( "(PCOMMON)" ) );
-		SimpleRegisterMethod( WIDE( "psi/control/rtti/extra destroy" )
-			, CustomDefaultDestroy, WIDE( "int" ), WIDE( "sack-gui destroy" ), WIDE( "(PCOMMON)" ) );
+		SimpleRegisterMethod( "psi/control/rtti/extra init"
+			, CustomDefaultInit, "int", "sack-gui init", "(PCOMMON)" );
+		SimpleRegisterMethod( "psi/control/rtti/extra destroy"
+			, CustomDefaultDestroy, "int", "sack-gui destroy", "(PCOMMON)" );
 
 		SetControlImageInterface( g.pii );
 		SetControlInterface( g.pdi );
@@ -1418,29 +1418,29 @@ void ControlObject::focus( const FunctionCallbackInfo<Value>& args ) {
 	SetCommonFocus( me->control );
 }
 
-static uintptr_t waitDialog( PTHREAD thread ) {
-	ControlObject *waiter = (ControlObject*)GetThreadParam( thread );
-	CommonWait( waiter->control );
-	if( waiter->done ) {
-		if( waiter->okay ) {
+static void dialogEvent( uintptr_t psv, PSI_CONTROL pc, int done, int okay ) {
+	ControlObject* waiter = (ControlObject*)psv;
+	if( done ) {
+		if( okay ) {
 			if( !waiter->cbFrameEventOkay.IsEmpty() )
 				MakePSIEvent( waiter, true, Event_Frame_Ok );
-		} else {
+		}
+		else {
 			if( !waiter->cbFrameEventCancel.IsEmpty() )
 				MakePSIEvent( waiter, true, Event_Frame_Cancel );
 		}
-	} else {
-		if( waiter->okay ) {
+	}
+	else {
+		if( okay ) {
 			MakePSIEvent( waiter, true, Event_Frame_Ok );
-		} else {
+		}
+		else {
 			if( !waiter->cbFrameEventAbort.IsEmpty() )
 				MakePSIEvent( waiter, true, Event_Frame_Abort );
 			else if( !waiter->cbFrameEventCancel.IsEmpty() )
 				MakePSIEvent( waiter, true, Event_Frame_Cancel );
 		}
 	}
-	waiter->waiter = NULL;
-	return 0;
 }
 
 void ControlObject::show( const FunctionCallbackInfo<Value>& args ) {
@@ -1448,7 +1448,7 @@ void ControlObject::show( const FunctionCallbackInfo<Value>& args ) {
 	DisplayFrame( me->control );
 	me->okay = 0;
 	me->done = 0;
-	me->waiter = ThreadTo( waitDialog, (uintptr_t)me );
+	PSI_HandleStatusEvent( me->control, dialogEvent, (uintptr_t)me );
 }
 
 void ControlObject::close( const FunctionCallbackInfo<Value>& args ) {
