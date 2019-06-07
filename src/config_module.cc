@@ -85,7 +85,7 @@ static uintptr_t CPROC handler( uintptr_t psv, uintptr_t psvRule, arg_list args 
 			{
 				char *arg;
 				arg = my_va_arg( args, char * );
-				argv[n] = String::NewFromUtf8( config->isolate, arg );
+				argv[n] = String::NewFromUtf8( config->isolate, arg, v8::NewStringType::kNormal ).ToLocalChecked();
 			}
 			break;
 	case CONFIG_ARG_INT64:
@@ -226,11 +226,11 @@ void ConfigObject::Write( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void ConfigScriptInit( Local<Object> exports ) {
 	Isolate* isolate = Isolate::GetCurrent();
-
+	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> configTemplate;
 
 	configTemplate = FunctionTemplate::New( isolate, ConfigObject::New );
-	configTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Config" ) );
+	configTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Config", v8::NewStringType::kNormal ).ToLocalChecked() );
 	configTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 
 	NODE_SET_PROTOTYPE_METHOD( configTemplate, "add", ConfigObject::Add );
@@ -249,8 +249,7 @@ void ConfigScriptInit( Local<Object> exports ) {
 	SET_READONLY_METHOD(configfunc, "color", configColor );
 	SET_READONLY_METHOD(configfunc, "encode", configEncode );
 	SET_READONLY_METHOD(configfunc, "decode", configDecode );
-
-	exports->Set( String::NewFromUtf8( isolate, "Config" ), configfunc );
+	SET( exports, "Config", configfunc );
 
 }
 

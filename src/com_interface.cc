@@ -25,10 +25,11 @@ ComObject::~ComObject() {
 
 void ComObject::Init( Local<Object> exports ) {
 		Isolate* isolate = Isolate::GetCurrent();
+		Local<Context> context = isolate->GetCurrentContext();
 		Local<FunctionTemplate> comTemplate;
 
 		comTemplate = FunctionTemplate::New( isolate, New );
-		comTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.ComPort" ) );
+		comTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.ComPort", v8::NewStringType::kNormal ).ToLocalChecked() );
 		comTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 		// Prototype
@@ -38,8 +39,7 @@ void ComObject::Init( Local<Object> exports ) {
 
 
 		constructor.Reset( isolate, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-		exports->Set( String::NewFromUtf8( isolate, "ComPort" ),
-			comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		SET( exports, "ComPort", comTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 }
 
 
@@ -97,10 +97,10 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			char *portName;
 			int argc = args.Length();
 			if( argc > 0 ) {
-				String::Utf8Value fName( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+				String::Utf8Value fName( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 				portName = StrDup( *fName );
 			} else {
-				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must specify port name to open." ) ) );
+				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must specify port name to open.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 				return;
 			}
 			// Invoked as constructor: `new MyObject(...)`
@@ -109,7 +109,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			{
 				char msg[256];
 				snprintf( msg, 256, "Failed to open %s", obj->name );
-				isolate->ThrowException( Exception::Error( String::NewFromUtf8(isolate, msg) ) );
+				isolate->ThrowException( Exception::Error( String::NewFromUtf8(isolate, msg, v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			}
 			else {
 				//lprintf( "empty async...." );
@@ -159,7 +159,7 @@ void ComObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc < 1 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must pass callback to onRead handler" ) ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must pass callback to onRead handler", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 
@@ -176,7 +176,7 @@ void ComObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 	int argc = args.Length();
 	if( argc < 1 ) {
-		//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "required parameter missing" ) ) );
+		//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "required parameter missing", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 	Isolate* isolate = args.GetIsolate();
@@ -184,7 +184,7 @@ void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	//assert(args[i]->IsFloat32Array());
 	if (args[0]->IsString()) {
-		String::Utf8Value u8str( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked());
+		String::Utf8Value u8str( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked());
 		SackWriteComm(com->handle, *u8str, u8str.length());
 
 	}

@@ -1200,6 +1200,8 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.154
+   - Continutined applying deprecation fixes; republished as 154
 - 0.9.153
    - Republish 0.9.152 with ignored source
 - 0.9.152

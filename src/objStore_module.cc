@@ -130,7 +130,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check = NewArray( struct optionStrings, 1 );
 		AddLink( &osl.strings, check );
 		check->isolate = isolate;
-#define DEFSTRING(s) check->s##String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, #s ) )
+#define DEFSTRING(s) check->s##String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, #s, v8::NewStringType::kNormal ).ToLocalChecked() )
 		DEFSTRING( objectHash );
 		DEFSTRING( sealant );
 		DEFSTRING( stored );
@@ -204,10 +204,11 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 
 	//if( !l.loop )
 	//	l.loop = uv_default_loop();
+	Local<Context> context = isolate->GetCurrentContext();
 
 	Local<FunctionTemplate> clsTemplate;
 	clsTemplate = FunctionTemplate::New( isolate, New );
-	clsTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.ObjectStorage" ) );
+	clsTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.ObjectStorage", v8::NewStringType::kNormal ).ToLocalChecked() );
 	clsTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "read", ObjectStorageObject::fileReadJSOX );
@@ -220,8 +221,8 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 	Local<Function> VolFunc = clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
 	constructor.Reset( isolate, clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-	exports->Set( String::NewFromUtf8( isolate, "ObjectStorage" ),
-					 clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	SET( exports, "ObjectStorage"
+		, clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
 }
 
@@ -367,28 +368,28 @@ void ObjectStorageObject::putObject( const v8::FunctionCallbackInfo<Value>& args
 	osoOpts->dataLen = data.length();
 	
 	if( opts->Has( context, optName = strings->objectHashString->Get( isolate ) ).ToChecked() ) {
-		String::Utf8Value strval( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value strval( isolate,  GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		osoOpts->objectHash = StrDup( *strval );
 		osoOpts->objectHashLen = strval.length();
 	}
 	if( opts->Has( context, optName = strings->readKeyString->Get( isolate ) ).ToChecked() ) {
-		String::Utf8Value strval( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value strval( isolate, GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		osoOpts->readKey = StrDup( *strval );
 		osoOpts->readKeyLen = strval.length();
 	}
 
 	if( opts->Has( context, optName = strings->sealantString->Get( isolate ) ).ToChecked() ) {
-		String::Utf8Value strval( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value strval( isolate,  GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		osoOpts->sealant = StrDup( *strval );
 		osoOpts->sealantLen = strval.length();
 	}
 
 	if( opts->Has( context, optName = strings->storedString->Get( isolate ) ).ToChecked() ) {
-		osoOpts->cbStored.Reset( isolate, opts->Get( optName ).As<Function>() );
+		osoOpts->cbStored.Reset( isolate, GETV( opts, optName ).As<Function>() );
 	}
 
 	if( opts->Has( context, optName = strings->failedString->Get( isolate ) ).ToChecked() ) {
-		osoOpts->cbFailed.Reset( isolate, opts->Get( optName ).As<Function>() );
+		osoOpts->cbFailed.Reset( isolate, GETV( opts, optName ).As<Function>() );
 	}
 
 	osoOpts->set = 1;
@@ -427,28 +428,28 @@ void ObjectStorageObject::getObject( const v8::FunctionCallbackInfo<Value>& args
 	osoOpts->dataLen = data.length();
 
 	if( opts->Has( context, optName = strings->objectHashString->Get( isolate ) ).ToChecked() ) {
-		String::Utf8Value strval( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value strval( isolate,  GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		osoOpts->objectHash = StrDup( *strval );
 		osoOpts->objectHashLen = strval.length();
 	}
 	if( opts->Has( context, optName = strings->readKeyString->Get( isolate ) ).ToChecked() ) {
-		String::Utf8Value strval( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value strval( isolate,  GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		osoOpts->readKey = StrDup( *strval );
 		osoOpts->readKeyLen = strval.length();
 	}
 
 	if( opts->Has( context, optName = strings->sealantString->Get( isolate ) ).ToChecked() ) {
-		String::Utf8Value strval( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value strval( isolate,  GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		osoOpts->sealant = StrDup( *strval );
 		osoOpts->sealantLen = strval.length();
 	}
 
 	if( opts->Has( context, optName = strings->thenString->Get( isolate ) ).ToChecked() ) {
-		osoOpts->cbStored.Reset( isolate, opts->Get( optName ).As<Function>() );
+		osoOpts->cbStored.Reset( isolate, GETV( opts, optName ).As<Function>() );
 	}
 
 	if( opts->Has( context, optName = strings->catchString->Get( isolate ) ).ToChecked() ) {
-		osoOpts->cbFailed.Reset( isolate, opts->Get( optName ).As<Function>() );
+		osoOpts->cbFailed.Reset( isolate, GETV( opts, optName ).As<Function>() );
 	}
 
 	osoOpts->set = 1;
@@ -478,7 +479,7 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( args[0]->IsString() ) {
 
 				//TooObject( isolate.getCurrentContext().FromMaybe( Local<Object>() )
-				String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+				String::Utf8Value fName( isolate,  args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 				mount_name = StrDup( *fName );
 			}
 			else {
@@ -486,7 +487,7 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 			if( argc > 1 ) {
 				if( args[arg]->IsString() ) {
-					String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+					String::Utf8Value fName( isolate,  args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					defaultFilename = FALSE;
 					filename = StrDup( *fName );
 				}
@@ -504,14 +505,14 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 			if( argc > arg ) {
 				if( !args[arg]->IsNull() && !args[arg]->IsUndefined() ) {
-					String::Utf8Value k( USE_ISOLATE( isolate ) args[arg] );
+					String::Utf8Value k( isolate,  args[arg] );
 					key = StrDup( *k );
 				}
 				arg++;
 			}
 			if( argc > arg ) {
 				if( !args[arg]->IsNull() && !args[arg]->IsUndefined() ) {
-					String::Utf8Value k( USE_ISOLATE( isolate ) args[arg] );
+					String::Utf8Value k( isolate,  args[arg] );
 					key2 = StrDup( *k );
 				}
 				arg++;
@@ -520,7 +521,7 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			ObjectStorageObject* obj = new ObjectStorageObject( mount_name, filename, version, key, key2 );
 			if( !obj->vol ) {
 				isolate->ThrowException( Exception::Error(
-					String::NewFromUtf8( isolate, TranslateText( "Volume failed to open." ) ) ) );
+					String::NewFromUtf8( isolate, TranslateText( "Volume failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			}
 			else {
 				obj->Wrap( args.This() );
@@ -551,9 +552,10 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 void ObjectStorageObject::createIndex( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	if( args.Length() < 2 ) {
 		isolate->ThrowException( Exception::TypeError(
-			String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and key to define" ) ) ) );
+			String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and key to define" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 
@@ -561,18 +563,18 @@ void ObjectStorageObject::createIndex( const v8::FunctionCallbackInfo<Value>& ar
 	lprintf( "And here we get to actually " );
 
 
-	String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
+	String::Utf8Value fName( isolate,  args[0] );
 	struct objStore::sack_vfs_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
 	if( file ) {
 		Local<Object> indexDef = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 		struct optionStrings *strings = getStrings( isolate );
 		Local<String> optName;
 
-		Local<Object> theArray = indexDef->Get( optName = strings->dataString->Get(isolate) ).As<Object>();
-		Local<String> name = indexDef->Get( optName = strings->nameString->Get( isolate ) ).As<String>();
-		Local<Object> opts = indexDef->Get( optName = strings->optsString->Get( isolate ) ).As<Object>();
+		Local<Object> theArray = GETV( indexDef, optName = strings->dataString->Get(isolate) ).As<Object>();
+		Local<String> name = GETV( indexDef, optName = strings->nameString->Get( isolate ) ).As<String>();
+		Local<Object> opts = GETV( indexDef, optName = strings->optsString->Get( isolate ) ).As<Object>();
 
-		String::Utf8Value fieldName( USE_ISOLATE( isolate ) name );
+		String::Utf8Value fieldName( isolate,  name );
 		objStore::sack_vfs_os_file_ioctl( file, SOSFSFIO_CREATE_INDEX, *fieldName, fieldName.length() );
 		//objStore::sack_vfs_os_write( file, *data, data.length() );
 		objStore::sack_vfs_os_close( file );
@@ -584,16 +586,16 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() < 2 ) {
 		isolate->ThrowException( Exception::TypeError(
-			String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data to write" ) ) ) );
+			String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data to write" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 	ObjectStorageObject *vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
-	String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
+	String::Utf8Value fName( isolate,  args[0] );
 	//lprintf( "OPEN FILE:%s", *fName );
 	if( vol->volNative ) {
 		struct objStore::sack_vfs_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
 		if( file ) {
-			String::Utf8Value data( USE_ISOLATE( isolate ) args[1] );
+			String::Utf8Value data( isolate,  args[1] );
 			objStore::sack_vfs_os_write( file, *data, data.length() );
 			objStore::sack_vfs_os_close( file );
 			sack_vfs_os_polish_volume( vol->vol );
@@ -611,11 +613,11 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 
 	if( args.Length() < 2 ) {
 		isolate->ThrowException( Exception::TypeError(
-			String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data callback" ) ) ) );
+			String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data callback" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 	Local<Function> cb;
-	String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
+	String::Utf8Value fName( isolate,  args[0] );
 	int arg = 1;
 	while( arg < args.Length() ) {
 		if( args[arg]->IsFunction() ) {
@@ -739,7 +741,7 @@ ObjectStorageObject*  openInVFS( Isolate *isolate, const char *mount, const char
 	ObjectStorageObject* obj = new ObjectStorageObject( mount, name, 0, key1, key2 );
 	if( !obj->vol ) {
 		isolate->ThrowException( Exception::Error(
-			String::NewFromUtf8( isolate, TranslateText( "Volume failed to open." ) ) ) );
+			String::NewFromUtf8( isolate, TranslateText( "Volume failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		delete obj;
 		obj = NULL;
 	}

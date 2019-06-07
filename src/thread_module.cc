@@ -6,19 +6,19 @@
 
 void ThreadObject::Init( Local<Object> exports ) {
 	Isolate* isolate = Isolate::GetCurrent();
-
+	Local<Context> context = isolate->GetCurrentContext();
 	NODE_SET_METHOD(exports, "Δ", relinquish );
 	NODE_SET_METHOD(exports, "Λ", wake );
 	Local<FunctionTemplate> threadTemplate;
 	// Prepare constructor template
 	threadTemplate = FunctionTemplate::New( isolate, New );
-	threadTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.Thread" ) );
+	threadTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.Thread", v8::NewStringType::kNormal ).ToLocalChecked() );
 	threadTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 
 	// Prototype
 
 	constructor.Reset( isolate, threadTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-	exports->Set( String::NewFromUtf8( isolate, "Thread" ),
+	SET( exports, "Thread",
 		threadTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 }
 
