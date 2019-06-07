@@ -17,9 +17,9 @@ void ThreadObject::Init( Handle<Object> exports ) {
 
 	// Prototype
 
-	constructor.Reset( isolate, threadTemplate->GetFunction() );
+	constructor.Reset( isolate, threadTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	exports->Set( String::NewFromUtf8( isolate, "Thread" ),
-		threadTemplate->GetFunction() );
+		threadTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 }
 
 //-----------------------------------------------------------
@@ -57,7 +57,7 @@ void ThreadObject::relinquish( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Function>cb = Local<Function>::New( isolate, idleProc );
-	MaybeLocal<Value> r = cb->Call(Null(isolate), 0, NULL );
+	MaybeLocal<Value> r = cb->Call( isolate->GetCurrentContext(), Null(isolate), 0, NULL );
 	if( r.IsEmpty() ) {
 		// this should never happen... and I don't really care if there was an exception....
 	}

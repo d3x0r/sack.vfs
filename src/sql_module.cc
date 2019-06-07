@@ -154,7 +154,7 @@ void SqlObjectInit( Handle<Object> exports ) {
 	sqlStmtTemplate = FunctionTemplate::New( isolate, SqlStmtObject::New );
 	sqlStmtTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Sqlite.statement" ) );
 	sqlStmtTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
-	SqlStmtObject::constructor.Reset( isolate, sqlStmtTemplate->GetFunction() );
+	SqlStmtObject::constructor.Reset( isolate, sqlStmtTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "do", SqlObject::query );
@@ -200,9 +200,9 @@ void SqlObjectInit( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "setOption", SqlObject::setOption );
 	//NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "makeTable", makeTable );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "makeTable", SqlObject::makeTable );
-	SqlObject::constructor.Reset( isolate, sqlTemplate->GetFunction() );
+	SqlObject::constructor.Reset( isolate, sqlTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
-	Local<Object> sqlfunc = sqlTemplate->GetFunction();
+	Local<Object> sqlfunc = sqlTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
 	SET_READONLY_METHOD(sqlfunc, "eo", SqlObject::enumOptionNodesInternal );
 	SET_READONLY_METHOD(sqlfunc, "op", SqlObject::optionInternal );
@@ -499,7 +499,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 				arg = 2;
 				pdlParams = CreateDataList( sizeof( struct jsox_value_container ) );
 				Local<Object> params = Local<Object>::Cast( args[1] );
-				Local<Array> paramNames = params->GetOwnPropertyNames();
+				Local<Array> paramNames = params->GetOwnPropertyNames(isolate->GetCurrentContext()).ToLocalChecked();
 				for( uint32_t p = 0; p < paramNames->Length(); p++ ) {
 					Local<Value> valName = paramNames->Get( p );
 					Local<Value> value = params->Get( valName );
@@ -892,7 +892,7 @@ void OptionTreeObject::Init(  ) {
 	//NODE_SET_PROTOTYPE_METHOD( optionTemplate, "ro", readOptionNode );
 	//NODE_SET_PROTOTYPE_METHOD( optionTemplate, "wo", writeOptionNode );
 
-	constructor.Reset( isolate, optionTemplate->GetFunction() );
+	constructor.Reset( isolate, optionTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 }
 
 
@@ -1032,7 +1032,7 @@ int CPROC invokeCallback( uintptr_t psv, CTEXTSTR name, POPTION_TREE_NODE ID, in
 	argv[0] = o;
 	argv[1] = String::NewFromUtf8( args->isolate, name );
 
-	MaybeLocal<Value> r = args->cb->Call(Null(args->isolate), 2, argv );
+	MaybeLocal<Value> r = args->cb->Call(args->isolate->GetCurrentContext(), Null(args->isolate), 2, argv );
 	if( r.IsEmpty() )
 		return 0;
 	return 1;
@@ -1399,7 +1399,7 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 		args = NULL;
 	}
 	Local<Function> cb = Local<Function>::New( userData->isolate, userData->cb );
-	Local<Value> str = cb->Call( userData->sql->handle(), argc, args );
+	Local<Value> str = cb->Call( userData->isolate->GetCurrentContext(), userData->sql->handle(), argc, args ).ToLocalChecked();
 	String::Utf8Value result( USE_ISOLATE( userData->isolate ) str->ToString( userData->isolate->GetCurrentContext() ).ToLocalChecked() );
 	int type;
 	if( ( ( type = 1 ), str->IsArrayBuffer() ) || ( ( type = 2 ), str->IsUint8Array() ) ) {
@@ -1555,7 +1555,7 @@ void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3_value*
 		args = NULL;
 	}
 	Local<Function> cb = Local<Function>::New( userData->isolate, userData->cb );
-	cb->Call( userData->sql->handle(), argc, args );
+	cb->Call( userData->isolate->GetCurrentContext(), userData->sql->handle(), argc, args );
 	if( argc > 0 ) {
 		delete[] args;
 	}
@@ -1650,7 +1650,7 @@ static void handleCorruption( uintptr_t psv, PODBC odbc ) {
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	SqlObject *sql = (SqlObject*)psv;
 	Local<Function> cb = Local<Function>::New( isolate, sql->onCorruption.Get( isolate ) );
-	cb->Call( sql->_this.Get( isolate ), 0, 0 );
+	cb->Call( isolate->GetCurrentContext(), sql->_this.Get( isolate ), 0, 0 );
 }
 
 

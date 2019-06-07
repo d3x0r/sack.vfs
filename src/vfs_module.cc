@@ -206,8 +206,10 @@ void VolumeObject::doInit( Handle<Object> exports )
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mv", renameFile );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "rename", renameFile );
 
-	Local<Function> VolFunc = volumeTemplate->GetFunction();
+	Local<Function> VolFunc = volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
+(exports)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "memDump")
+	, v8::Function::New( isolate->GetCurrentContext(), dumpMem ) .ToLocalChecked(), ReadOnlyProperty );
 
 	SET_READONLY_METHOD( exports, "memDump", dumpMem );
 	SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
@@ -227,9 +229,9 @@ void VolumeObject::doInit( Handle<Object> exports )
 	SET_READONLY_METHOD( fileObject, "delete", fileDelete );
 	SET_READONLY_METHOD( fileObject, "unlink", fileDelete );
 	SET_READONLY_METHOD( fileObject, "rm", fileDelete );
-	constructor.Reset( isolate, volumeTemplate->GetFunction() );
+	constructor.Reset( isolate, volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	exports->Set( String::NewFromUtf8( isolate, "Volume" ),
-		volumeTemplate->GetFunction() );
+		volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	SET_READONLY_METHOD( exports, "loadComplete", loadComplete );
 	//NODE_SET_METHOD( exports, "InitFS", InitFS );
 }
@@ -517,7 +519,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 						r.context = isolate->GetCurrentContext();
 						Local<Value> val = convertMessageToJS( data, &r );
 						{
-							MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
+							MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, &val );
 							if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
 								json_dispose_message( &data );
 								json_parse_dispose_state( &parser );
@@ -559,7 +561,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 							r.context = isolate->GetCurrentContext();
 							Local<Value> val = convertMessageToJS( data, &r );
 							{
-								MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
+								MaybeLocal<Value> result = cb->Call( r.context, r.context->Global(), 1, &val );
 								if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
 									json_dispose_message( &data );
 									json_parse_dispose_state( &parser );
@@ -615,7 +617,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 						r.context = isolate->GetCurrentContext();
 						Local<Value> val = convertMessageToJS2( data, &r );
 						{
-							MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
+							MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, &val );
 							if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
 								jsox_dispose_message( &data );
 								jsox_parse_dispose_state( &parser );
@@ -658,7 +660,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 							r.context = isolate->GetCurrentContext();
 							Local<Value> val = convertMessageToJS2( data, &r );
 							{
-								MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
+								MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, &val );
 								if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
 									jsox_dispose_message( &data );
 									jsox_parse_dispose_state( &parser );
@@ -777,9 +779,9 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		size_t len = 0;
 		POINTER data = OpenSpace( NULL, *fName, &len );
 		if( data && len ) {
-			ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
+			//ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
 
-			MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
+			MaybeLocal<String> _arrayBuffer = String::NewFromUtf8( isolate, (char*)data, NewStringType::kNormal, (int)len );
 			Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->s.Reset( isolate, arrayBuffer );
@@ -811,7 +813,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		HandleScope scope( isolate );
 		{
 			Local<Function> cb = myself->f->Get( isolate );
-			cb->Call( myself->_this.Get( isolate ), 0, NULL );
+			cb->Call( isolate->GetCurrentContext(), myself->_this.Get( isolate ), 0, NULL );
 			uv_close( (uv_handle_t*)&myself->async, NULL );
 		}
 		Release( myself );
@@ -1421,9 +1423,9 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		//NODE_SET_PROTOTYPE_METHOD( fileTemplate, "isPaused", openFile );
 
-		constructor.Reset( isolate, fileTemplate->GetFunction() );
+		constructor.Reset( isolate, fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 		//exports->Set( String::NewFromUtf8( isolate, "File" ),
-		//	fileTemplate->GetFunction() );
+		//	fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 
 	void FileObject::openFile( const v8::FunctionCallbackInfo<Value>& args ) {

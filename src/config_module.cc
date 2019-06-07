@@ -141,7 +141,7 @@ static uintptr_t CPROC handler( uintptr_t psv, uintptr_t psvRule, arg_list args 
 		}
 	}
 	Local<Function> cb = rule->handler.Get( config->isolate );
-	Local<Value> result = cb->Call( ( (Value*)psv )->ToObject( config->isolate->GetCurrentContext() ).ToLocalChecked(), argc, argv );
+	Local<Value> result = cb->Call( config->isolate->GetCurrentContext(), ( (Value*)psv )->ToObject( config->isolate->GetCurrentContext() ).ToLocalChecked(), argc, argv ).ToLocalChecked();
 	config->lastResult = (uintptr_t)*result;
 	result.Clear();
 	return config->lastResult;
@@ -242,7 +242,7 @@ void ConfigScriptInit( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( configTemplate, "begin", ConfigObject::Begin );
 	NODE_SET_PROTOTYPE_METHOD( configTemplate, "end", ConfigObject::End );
 
-	Local<Object> configfunc = configTemplate->GetFunction();
+	Local<Object> configfunc = configTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
 	SET_READONLY_METHOD(configfunc, "expand", configExpand );
 	SET_READONLY_METHOD(configfunc, "strip", configStrip );

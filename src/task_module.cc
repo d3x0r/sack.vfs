@@ -80,20 +80,21 @@ void InitTask( Isolate *isolate, Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "terminate", TaskObject::Terminate );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "isRunning", TaskObject::isRunning );
 	taskTemplate->ReadOnlyPrototype();
-	TaskObject::constructor.Reset( isolate, taskTemplate->GetFunction() );
+	TaskObject::constructor.Reset( isolate, taskTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	Local<Function> taskF;
-	SET_READONLY( exports, "Task", taskF = taskTemplate->GetFunction() );
+	SET_READONLY( exports, "Task", taskF = taskTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	SET_READONLY_METHOD( taskF, "loadLibrary", TaskObject::loadLibrary );
 }
 
 static void taskAsyncMsg( uv_async_t* handle ) {
 	TaskObject *task = (TaskObject*)handle->data;
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	Local<Context> context = isolate->GetCurrentContext();
 	HandleScope scope( isolate );
 
 	if( task->ending ) {
 		if( !task->endCallback.IsEmpty() )
-			task->endCallback.Get( isolate )->Call( task->_this.Get( isolate ), 0, NULL );
+			task->endCallback.Get( isolate )->Call( context, task->_this.Get( isolate ), 0, NULL );
 		task->ending = FALSE;
 		task->ended = TRUE;
 		// these is a chance output will still come in?
@@ -107,12 +108,12 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 			if( task->binary ) {
 				ab = ArrayBuffer::New( isolate, (void*)output->buffer, output->size );
 				argv[0] = ab;
-				task->inputCallback.Get( isolate )->Call( task->_this.Get( isolate ), 1, argv );
+				task->inputCallback.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
 			}
 			else {
 				MaybeLocal<String> buf = localStringExternal( isolate, (const char*)output->buffer, (int)output->size, (const char*)output );
 				argv[0] = buf.ToLocalChecked();
-				task->inputCallback.Get( isolate )->Call( task->_this.Get( isolate ), 1, argv );
+				task->inputCallback.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
 			}
 			//task->buffer = NULL;
 		}
@@ -153,6 +154,7 @@ static void CPROC getTaskEnd( uintptr_t psvTask, PTASK_INFO task_ended ) {
 
 void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	if( argc == 0 ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must specify url and optionally protocols or options for client." ) ) );
@@ -194,14 +196,14 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			char **argArray;
 			int nArg;
 
-			if( opts->Has( optName = strings->binString->Get( isolate ) ) ) {
+			if( opts->Has( context, optName = strings->binString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
 				if( opts->Get( optName )->IsString() )
 					bin = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			} else {
 				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "required option 'bin' missing." ) ) );			
 			}
-			if( opts->Has( optName = strings->argString->Get( isolate ) ) ) {
+			if( opts->Has( context, optName = strings->argString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
 				if( opts->Get( optName )->IsString() ) {
 					char **args2;
@@ -227,12 +229,12 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 					argArray[n] = NULL;
 				}
 			}
-			if( opts->Has( optName = strings->workString->Get( isolate ) ) ) {
+			if( opts->Has( context, optName = strings->workString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
 				if( opts->Get( optName )->IsString() )
 					work = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			}
-			if( opts->Has( optName = strings->envString->Get( isolate ) ) ) {
+			if( opts->Has( context, optName = strings->envString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
 				lprintf( "env params not supported(yet)" );
 				/*
@@ -241,23 +243,23 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				}
 				*/
 			}
-			if( opts->Has( optName = strings->binaryString->Get( isolate ) ) ) {
+			if( opts->Has( context, optName = strings->binaryString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
 				if( opts->Get( optName )->IsBoolean() ) {
 					newTask->binary = opts->Get( optName )->BooleanValue( isolate->GetCurrentContext() ).FromMaybe(0);
 				}
 			}
-			if( opts->Has( optName = strings->inputString->Get( isolate ) ) ) {
+			if( opts->Has( context, optName = strings->inputString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
 				if( opts->Get( optName )->IsFunction() ) {
 					newTask->inputCallback.Reset( isolate, Handle<Function>::Cast( opts->Get( optName ) ) );
 					input = true;
 				}
 			}
-			if( opts->Has( optName = strings->firstArgIsArgString->Get( isolate ) ) ) {
+			if( opts->Has( context, optName = strings->firstArgIsArgString->Get( isolate ) ).ToChecked() ) {
 				firstArgIsArg = opts->Get( optName )->BooleanValue( isolate->GetCurrentContext() ).FromMaybe(0);
 			}
-			if( opts->Has( optName = strings->endString->Get( isolate ) ) ) {
+			if( opts->Has( context, optName = strings->endString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
 				if( opts->Get( optName )->IsFunction() ) {
 					newTask->endCallback.Reset( isolate, Handle<Function>::Cast( opts->Get( optName ) ) );

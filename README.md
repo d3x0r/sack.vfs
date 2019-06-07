@@ -525,7 +525,7 @@ Added support 'reviver' parameter.
 |JSOX Methods | parameters | Description |
 |-----|-----|-----|
 |parse| (string [,reviver]) | supports all of the JSOX features listed above, as well as the native [`reviver` argument][json-parse]. |
-|stringify | ( value[,replacer[,space]] ) | converts object to JSOX.  [stringify][json-stringify] |
+|stringify | ( value[,replacer[,space]] ) | converts object to JSOX.  [stringify][jsox-stringify] |
 |stringifier | () | Gets a utility object that can stringify.  The object can have classes defined on it for stringification |
 |escape | ( string ) | substitutes ", \, ', and \` with backslashed sequences. (prevent 'JSON injection') |
 |begin| (cb [,reviver] ) | create a JSOX stream processor.  cb is called with (value) for each value decoded from input given with write().  Optional reviver is called with each object before being passed to callback. |
@@ -1200,6 +1200,8 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.151
+   - Update to Node 12 (Requires usage of context, and MaybeLocal types)
 - 0.9.150
    - Fix regression handline NUL inline in JSOX parser (re fix partial codepoints received across buffer bounds)
    - Fix releasing the buffer too soon on HTTP fallback from HTTPS.

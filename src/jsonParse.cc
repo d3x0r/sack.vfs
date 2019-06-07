@@ -65,9 +65,9 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write );
 
-		parseObject::constructor.Reset( isolate, parseTemplate->GetFunction() );
+		parseObject::constructor.Reset( isolate, parseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 
-		SET_READONLY( o, "begin", parseTemplate->GetFunction() );
+		SET_READONLY( o, "begin", parseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	}
 
 	Local<Object> o2 = Object::New( isolate );
@@ -84,9 +84,9 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write6 );
 
-		parseObject::constructor6.Reset( isolate, parseTemplate->GetFunction() );
+		parseObject::constructor6.Reset( isolate, parseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 
-		SET_READONLY( o2, "begin", parseTemplate->GetFunction() );
+		SET_READONLY( o2, "begin", parseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	}
 
 	Local<Object> o3 = Object::New( isolate );
@@ -103,9 +103,9 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write6v );
 
-		parseObject::constructor6v.Reset( isolate, parseTemplate->GetFunction() );
+		parseObject::constructor6v.Reset( isolate, parseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
-		SET_READONLY( o2, "begin", parseTemplate->GetFunction() );
+		SET_READONLY( o2, "begin", parseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 }
 
@@ -149,7 +149,7 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 			argv[0] = convertMessageToJS( elements, &r );
 			Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 			{
-				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+				MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, argv );
 				if( result.IsEmpty() ) // if an exception occurred stop, and return it.
 					return;
 			}
@@ -232,7 +232,7 @@ void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 			argv[0] = convertMessageToJS( elements, &r );
 			Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 			{
-				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+				MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, argv );
 				if( result.IsEmpty() ) // if an exception occurred stop, and return it.
 					return;
 			}
@@ -313,7 +313,7 @@ void parseObject::write6v( const v8::FunctionCallbackInfo<Value>& args ) {
 			argv[0] = convertMessageToJS( elements, &r );
 			Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 			{
-				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+				MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, argv );
 				if( result.IsEmpty() ) // if an exception occurred stop, and return it.
 					return;
 			}
@@ -423,7 +423,7 @@ static inline Local<Value> makeValue( struct json_value_container *val, struct r
 	}
 	if( revive->revive ) {
 		Local<Value> args[2] = { revive->value, result };
-		Local<Value> r = revive->reviver->Call( revive->_this, 2, args );
+		Local<Value> r = revive->reviver->Call( revive->context, revive->_this, 2, args ).ToLocalChecked();
 	}
 	return result;
 }
@@ -474,7 +474,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 			buildObject( val->contains, sub_o, revive );
 			if( revive->revive ) {
 				Local<Value> args[2] = { thisKey, sub_o };
-				revive->reviver->Call( revive->_this, 2, args );
+				revive->reviver->Call( revive->context, revive->_this, 2, args );
 			}
 			break;
 		case VALUE_OBJECT:
@@ -493,7 +493,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 			buildObject( val->contains, sub_o, revive );
 			if( revive->revive ) {
 				Local<Value> args[2] = { thisKey, sub_o };
-				revive->reviver->Call( revive->_this, 2, args );
+				revive->reviver->Call( revive->context, revive->_this, 2, args );
 			}
 			break;
 		}

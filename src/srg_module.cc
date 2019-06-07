@@ -101,7 +101,7 @@ private:
 			Local<Value> argv[] = { ui };
 			{
 				// if the callback exceptions, this will blindly continue to generate random entropy....
-				MaybeLocal<Value> result = cb->Call( obj->isolate->GetCurrentContext()->Global(), 1, argv );
+				MaybeLocal<Value> result = cb->Call( obj->isolate->GetCurrentContext(), obj->isolate->GetCurrentContext()->Global(), 1, argv );
 				if( result.IsEmpty() )
 					return;
 			}
@@ -161,7 +161,7 @@ private:
 	static void setVersion( const v8::FunctionCallbackInfo<Value>& args ) {
 		SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
 		if( args.Length() > 0 ) {
-			int64_t version = args[0]->IntegerValue();
+			int64_t version = args[0]->IntegerValue(args.GetIsolate()->GetCurrentContext()).ToChecked();
 			//lprintf( "Make will be %d?", version );
 			if( version == 0 )
 				obj->MakeEntropy = SRG_CreateEntropy;
@@ -840,7 +840,7 @@ void SRGObject::Init( Isolate *isolate, Handle<Object> exports )
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "sign", SRGObject::srg_sign );
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "setSigningThreads", SRGObject::srg_setThraads );
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "verify", SRGObject::srg_verify );
-	Local<Function> f = srgTemplate->GetFunction();
+	Local<Function> f = srgTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 	SRGObject::constructor.Reset( isolate, f );
 
 	SET_READONLY( exports, "SaltyRNG", f );

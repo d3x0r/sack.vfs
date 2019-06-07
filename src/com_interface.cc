@@ -37,9 +37,9 @@ void ComObject::Init( Handle<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "close", closeCom );
 
 
-		constructor.Reset( isolate, comTemplate->GetFunction() );
+		constructor.Reset( isolate, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 		exports->Set( String::NewFromUtf8( isolate, "ComPort" ),
-			comTemplate->GetFunction() );
+			comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 }
 
 
@@ -78,7 +78,7 @@ static void asyncmsg( uv_async_t* handle ) {
 			//lprintf( "callback ... %p", myself );
 			// using obj->jsThis  fails. here...
 			{
-				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 1, argv );
 				if( result.IsEmpty() ) {
 					Deallocate( struct msgbuf *, msg );
 					return;
