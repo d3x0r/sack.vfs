@@ -102,7 +102,9 @@ foreach( DEF ${DEFINITIONS} )
 ENDFOREACH()
 
 
-include_directories(${CMAKE_JS_INC} ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/include/SACK )
+include_directories(${CMAKE_JS_INC} )
+include_directories(${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/include/SACK )
+include_directories(${CMAKE_BINARY_DIR}/intershell-${CMAKE_BUILD_TYPE}/include/SACK )
 
 if( WIN32 )
 	set( MORE_MODULE_SOURCES 
