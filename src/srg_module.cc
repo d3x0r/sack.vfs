@@ -95,6 +95,8 @@ private:
 
 	static void getSeed( uintptr_t psv, POINTER *salt, size_t *salt_size ) {
 		SRGObject* obj = (SRGObject*)psv;
+		Isolate* isolate = obj->isolate;
+		Local<Context> context = isolate->GetCurrentContext();
 		if( obj->seedCallback ) {
 			Local<Function> cb = Local<Function>::New( obj->isolate, obj->seedCallback[0] );
 			Local<Array> ui = Array::New( obj->isolate );
@@ -106,7 +108,7 @@ private:
 					return;
 			}
 			for( uint32_t n = 0; n < ui->Length(); n++ ) {
-				Local<Value> elem = ui->Get( n );
+				Local<Value> elem = GETN( ui, n );
 				String::Utf8Value val( USE_ISOLATE( obj->isolate ) elem->ToString(obj->isolate->GetCurrentContext() ).ToLocalChecked()  );
 				obj->seedBuf = (char*)Reallocate( obj->seedBuf, obj->seedLen + val.length() );
 				memcpy( obj->seedBuf + obj->seedLen, (*val), val.length() );
@@ -201,7 +203,7 @@ private:
 			int32_t bits = args[0]->Int32Value( obj->isolate->GetCurrentContext() ).FromMaybe( 0 );
 			bool sign = false;
 			if( args.Length() > 1 )
-				sign = args[0]->BooleanValue( obj->isolate->GetCurrentContext() ).FromMaybe(0);
+				sign = args[0]->TOBOOL( obj->isolate );
 			r = SRG_GetEntropy( obj->entropy, bits, sign );
 		}
 		args.GetReturnValue().Set( Integer::New( obj->isolate, r ) );
@@ -210,7 +212,7 @@ private:
 		SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
 		obj->isolate = args.GetIsolate();
 		if( !args.Length() ) {
-			obj->isolate->ThrowException( Exception::Error( String::NewFromUtf8( obj->isolate, "required parameter missing, count of bits" ) ) );
+			obj->isolate->ThrowException( Exception::Error( String::NewFromUtf8( obj->isolate, "required parameter missing, count of bits", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		}
 		else {
 			int32_t bits = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe(0);
@@ -532,6 +534,7 @@ private:
 
 	static void verify( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
+		Local<Context> context = isolate->GetCurrentContext();
 		if( args.Length() > 1 ) {
 			String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			String::Utf8Value hash( USE_ISOLATE( isolate ) args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -579,10 +582,10 @@ private:
 				Local<Object> result = Object::New( isolate );
 				struct signature s;
 				signCheck( outbuf, pad1, pad2, &s );
-				result->Set( String::NewFromUtf8( isolate, (const char*)"classifier" ), Number::New( args.GetIsolate(), s.classifier ) );
-				result->Set( String::NewFromUtf8( isolate, (const char*)"extent" ), Number::New( args.GetIsolate(), s.extent ) );
+				SET( result, "classifier", Number::New( args.GetIsolate(), s.classifier ) );
+				SET( result, (const char*)"extent", Number::New( args.GetIsolate(), s.extent ) );
 				char *rid = EncodeBase64Ex( outbuf, 256 / 8, &len, (const char *)1 );
-				result->Set( String::NewFromUtf8( isolate, (const char*)"key" ), localString( isolate, rid, (int)(len -1)) );
+				SET( result, (const char*)"key", localString( isolate, rid, (int)(len -1)) );
 				args.GetReturnValue().Set( result );
 			}
 			EnqueLink( &signingEntropies, signEntropy );
@@ -728,7 +731,7 @@ private:
 #ifdef DEBUG_SIGNING
 					lprintf( " %d  %s \n", tries, threadParams[n].id );
 #endif
-					args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), threadParams[n].id ) );
+					args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), threadParams[n].id, v8::NewStringType::kNormal ).ToLocalChecked() );
 				}
 				Release( threadParams[n].id );
 				found++;
@@ -746,6 +749,7 @@ private:
 
 	static void srg_verify( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
+		Local<Context> context = isolate->GetCurrentContext();
 		SRGObject *srg = ObjectWrap::Unwrap<SRGObject>( args.This() );
 		if( args.Length() > 1 ) {
 			String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -802,10 +806,10 @@ private:
 				Local<Object> result = Object::New( isolate );
 				struct signature s;
 				signCheck( outbuf, pad1, pad2, &s );
-				result->Set( String::NewFromUtf8( isolate, (const char*)"classifier" ), Number::New( args.GetIsolate(), s.classifier ) );
-				result->Set( String::NewFromUtf8( isolate, (const char*)"extent" ), Number::New( args.GetIsolate(), s.extent ) );
+				SET( result, "classifier", Integer::New( isolate, s.classifier ) );
+				SET( result, "extent", Integer::New( isolate, s.extent ) );
 				char *rid = EncodeBase64Ex( outbuf, 256 / 8, &len, (const char *)1 );
-				result->Set( String::NewFromUtf8( isolate, (const char*)"key" ), localString( isolate, rid, (int)(len - 1) ) );
+				SET( result, "key", localString( isolate, rid, (int)(len - 1) ) );
 				args.GetReturnValue().Set( result );
 			}
 			EnqueLink( &srg->SigningEntropies, signEntropy );
@@ -830,7 +834,7 @@ void SRGObject::Init( Isolate *isolate, Local<Object> exports )
 	InitBitCountLookupTables();
 	Local<FunctionTemplate> srgTemplate;
 	srgTemplate = FunctionTemplate::New( isolate, New );
-	srgTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.srg" ) );
+	srgTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.srg", v8::NewStringType::kNormal ).ToLocalChecked() );
 	srgTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "seed", SRGObject::seed );
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "reset", SRGObject::reset );

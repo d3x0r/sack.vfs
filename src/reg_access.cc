@@ -6,14 +6,15 @@
 
 void RegObject::Init( Local<Object> exports ) {
 	Isolate* isolate = Isolate::GetCurrent();
+	Local<Context> context = isolate->GetCurrentContext();
 	Local<Object> regInterface = Object::New( isolate );
 
-	// regInterface->Set( String::NewFromUtf8( isolate, "get" ),
+	// regInterface->Set( String::NewFromUtf8( isolate, "get", v8::NewStringType::kNormal ).ToLocalChecked(),
 
 	NODE_SET_METHOD( regInterface, "get", getRegItem );
 	NODE_SET_METHOD( regInterface, "set", setRegItem );
 
-	exports->Set( String::NewFromUtf8( isolate, "registry" ), regInterface );
+	SET( exports, "registry", regInterface );
 
 }
 
@@ -34,11 +35,11 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 	int argc = args.Length();
 	if( argc == 0 ) {
 		isolate->ThrowException( Exception::Error(
-		    String::NewFromUtf8( isolate, "required parameter, regPath, is missing." ) ) );
+		    String::NewFromUtf8( isolate, "required parameter, regPath, is missing.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 
-	String::Utf8Value string1( USE_ISOLATE( isolate ) args[0] );
+	String::Utf8Value string1( isolate,  args[0] );
 	char *key1 = StrDup( *string1 );
 	char *keyTmp = key1;
 	while( keyTmp[0] ) { if( keyTmp[0] == '/' ) keyTmp[0] = '\\'; keyTmp++; }
@@ -48,7 +49,7 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 		HKEY hive;
 		if( !(end = (char*)pathchr( start )) && argc < 2 ) {
 			isolate->ThrowException( Exception::Error(
-																	String::NewFromUtf8( isolate, "required parameter, regKey, is missing." ) ) );
+												String::NewFromUtf8( isolate, "required parameter, regKey, is missing.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			Deallocate( char*, key1 );
 			return;
 		}
@@ -59,7 +60,7 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 		if( !keyStart ) {
 
 			isolate->ThrowException( Exception::Error(
-																	String::NewFromUtf8( isolate, "required parameter, regKey, is missing." ) ) );
+																	String::NewFromUtf8( isolate, "required parameter, regKey, is missing.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			Deallocate( char*, key1 );
 			return;
 
@@ -69,7 +70,7 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 
 		hive = resolveHive( start );
 		if( !hive ) {
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Unknown root hive specified" ) ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Unknown root hive specified", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			Deallocate( char*, key1 );
 			return;
 		}
@@ -104,7 +105,7 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 					if( dwStatus ) {	// ERROR_SUCCESS == 0
 
 						isolate->ThrowException( Exception::Error(
-																				String::NewFromUtf8( isolate, "Logic error" ) ) );
+																				String::NewFromUtf8( isolate, "Logic error", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 						Deallocate( char*, key1 );
 						return;
 					}
@@ -131,11 +132,11 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 				{
 					char expand[1024];
 					ExpandEnvironmentStrings( pValue, expand, 1024 );
-					args.GetReturnValue().Set( String::NewFromUtf8( isolate, expand ) );
+					args.GetReturnValue().Set( String::NewFromUtf8( isolate, expand, v8::NewStringType::kNormal ).ToLocalChecked() );
 				}
 				break;
 			case REG_SZ:
-				args.GetReturnValue().Set( String::NewFromUtf8( isolate, pValue ) );
+				args.GetReturnValue().Set( String::NewFromUtf8( isolate, pValue, v8::NewStringType::kNormal ).ToLocalChecked() );
 				break;
 
 			case REG_DWORD_BIG_ENDIAN: {
@@ -159,7 +160,7 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 			break;
 			default:
 				isolate->ThrowException( Exception::Error(
-																		String::NewFromUtf8( isolate, "unsupported value type from registry." ) ) );
+						String::NewFromUtf8( isolate, "unsupported value type from registry.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			}
 		}
 	}
@@ -170,11 +171,11 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 	int argc = args.Length();
 	if( argc == 0 ) {
 		isolate->ThrowException( Exception::Error(
-																String::NewFromUtf8( isolate, "required parameter, regPath, is missing." ) ) );
+					String::NewFromUtf8( isolate, "required parameter, regPath, is missing.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 
-	String::Utf8Value string1( USE_ISOLATE( isolate ) args[0] );
+	String::Utf8Value string1( isolate,  args[0] );
 	char *key1 = StrDup( *string1 );
 	char *keyTmp = key1;
 	while( keyTmp[0] ) { if( keyTmp[0] == '/' ) keyTmp[0] = '\\'; keyTmp++; }
@@ -184,7 +185,7 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 		HKEY hive;
 		if( !(end = (char*)pathchr( start )) && argc < 2 ) {
 			isolate->ThrowException( Exception::Error(
-																	String::NewFromUtf8( isolate, "required parameter, regKey, is missing." ) ) );
+						String::NewFromUtf8( isolate, "required parameter, regKey, is missing.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			Deallocate( char*, key1 );
 			return;
 
@@ -196,7 +197,7 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 		if( !keyStart ) {
 
 			isolate->ThrowException( Exception::Error(
-																	String::NewFromUtf8( isolate, "required parameter, regKey, is missing." ) ) );
+					String::NewFromUtf8( isolate, "required parameter, regKey, is missing.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			Deallocate( char*, key1 );
 			return;
 
@@ -206,7 +207,7 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 
 		hive = resolveHive( start );
 		if( !hive ) {
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Unknown root hive specified" ) ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Unknown root hive specified", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			Deallocate( char*, key1 );
 			return;
 		}
@@ -234,7 +235,7 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 					if( dwStatus ) {	// ERROR_SUCCESS == 0
 
 						isolate->ThrowException( Exception::Error(
-																				String::NewFromUtf8( isolate, "Logic error" ) ) );
+																				String::NewFromUtf8( isolate, "Logic error", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 						Deallocate( char*, key1 );
 						return;
 					}
@@ -249,7 +250,7 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 			lprintf( "stauts of update is %d", dwStatus );
 
 		} else if( args[1]->IsString() ) {
-			String::Utf8Value val( USE_ISOLATE( isolate ) args[1] );
+			String::Utf8Value val( isolate,  args[1] );
 			dwStatus = RegSetValueEx(hTemp, keyStart, 0
 										  , REG_SZ
 										  , (const BYTE *)*val, (DWORD)StrLen( *val ) );
@@ -258,7 +259,7 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 
 		} else {
 			isolate->ThrowException( Exception::Error(
-																	String::NewFromUtf8( isolate, "Don't know how to handle value passed." ) ) );
+																	String::NewFromUtf8( isolate, "Don't know how to handle value passed.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			RegCloseKey( hTemp );
 			Deallocate( char*, key1 );
 			return;

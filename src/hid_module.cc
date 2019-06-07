@@ -484,10 +484,11 @@ KeyHidObject::~KeyHidObject() {
 
 
 void KeyHidObject::Init( Isolate *isolate, Local<Object> exports ) {
+	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> comTemplate;
 
 	comTemplate = FunctionTemplate::New( isolate, New );
-	comTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.KeyHidEvents" ) );
+	comTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.KeyHidEvents", v8::NewStringType::kNormal ).ToLocalChecked() );
 	comTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 																 // Prototype
@@ -495,8 +496,8 @@ void KeyHidObject::Init( Isolate *isolate, Local<Object> exports ) {
 
 
 	constructor.Reset( isolate, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-	exports->Set( String::NewFromUtf8( isolate, "Keyboard" ),
-		comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	SET( exports, "Keyboard"
+		, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 }
 
 void KeyHidObjectInit( Isolate *isolate, Local<Object> exports ) {
@@ -527,17 +528,17 @@ void asyncmsg( uv_async_t* handle ) {
 			LIST_FORALL( hidg.inputs, idx, struct input_data *, indev ) {
 				if( indev->hDevice == msg->event.header.hDevice ) {
 					if( indev->name ) {
-						indev->v8name.Set( isolate, String::NewFromUtf8( isolate, indev->name ) );
+						indev->v8name.Set( isolate, String::NewFromUtf8( isolate, indev->name, v8::NewStringType::kNormal ).ToLocalChecked() );
 						Release( indev->name );
 						indev->name = NULL;
 					}
 					break;
 				}
 			}
-			eventObj->Set( String::NewFromUtf8( isolate, "down" ), (msg->event.data.keyboard.Flags&RI_KEY_BREAK)?True(isolate):False(isolate) );
-			eventObj->Set( String::NewFromUtf8( isolate, "char" ), String::NewFromTwoByte( isolate, (const uint16_t*)&msg->ch, NewStringType::kNormal, 1 ).ToLocalChecked() );
-			eventObj->Set( String::NewFromUtf8( isolate, "id" ), Number::New( isolate,(double)idx ) );
-			eventObj->Set( String::NewFromUtf8( isolate, "device" ), indev->v8name.Get(isolate) );
+			SET( eventObj, "down", (msg->event.data.keyboard.Flags&RI_KEY_BREAK)?True(isolate):False(isolate) );
+			SET( eventObj, "char", String::NewFromTwoByte( isolate, (const uint16_t*)&msg->ch, NewStringType::kNormal, 1 ).ToLocalChecked() );
+			SET( eventObj, "id", Number::New( isolate,(double)idx ) );
+			SET( eventObj, "device", indev->v8name.Get(isolate) );
 
 
 			Local<Value> argv[] = { eventObj };
@@ -597,7 +598,7 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc < 1 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must pass callback to onRead handler" ) ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must pass callback to onRead handler", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 
