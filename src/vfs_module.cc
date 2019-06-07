@@ -107,7 +107,7 @@ static void vfs_u8xor(const v8::FunctionCallbackInfo<Value>& args ){
 	if( argc > 0 ) {
 		String::Utf8Value xor1( USE_ISOLATE( isolate ) args[0] );
 		Local<Object> key = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
-		//Handle<Object> 
+		//Local<Object> 
 		Local<String> tmp;
 		Local<Value> keyValue = key->Get( String::NewFromUtf8( isolate, "key" ) );
 		Local<Value> stepValue = key->Get( tmp = String::NewFromUtf8( isolate, "step" ) );
@@ -139,7 +139,7 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 
-void VolumeObject::doInit( Handle<Object> exports ) 
+void VolumeObject::doInit( Local<Object> exports )
 {
 	InvokeDeadstart();
 
@@ -158,7 +158,7 @@ void VolumeObject::doInit( Handle<Object> exports )
 	Local<FunctionTemplate> volumeTemplate;
 	ThreadObject::Init( exports );
 	FileObject::Init();
-	SqlObject::Init( exports );
+	SqlObjectInit( exports );
 	ComObject::Init( exports );
 	InitJSOX( isolate, exports );
 	InitJSON( isolate, exports );
@@ -206,8 +206,10 @@ void VolumeObject::doInit( Handle<Object> exports )
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mv", renameFile );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "rename", renameFile );
 
-	Local<Function> VolFunc = volumeTemplate->GetFunction();
+	Local<Function> VolFunc = volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
+(exports)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "memDump")
+	, v8::Function::New( isolate->GetCurrentContext(), dumpMem ) .ToLocalChecked(), ReadOnlyProperty );
 
 	SET_READONLY_METHOD( exports, "memDump", dumpMem );
 	SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
@@ -227,9 +229,9 @@ void VolumeObject::doInit( Handle<Object> exports )
 	SET_READONLY_METHOD( fileObject, "delete", fileDelete );
 	SET_READONLY_METHOD( fileObject, "unlink", fileDelete );
 	SET_READONLY_METHOD( fileObject, "rm", fileDelete );
-	constructor.Reset( isolate, volumeTemplate->GetFunction() );
+	constructor.Reset( isolate, volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	exports->Set( String::NewFromUtf8( isolate, "Volume" ),
-		volumeTemplate->GetFunction() );
+		volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	SET_READONLY_METHOD( exports, "loadComplete", loadComplete );
 	//NODE_SET_METHOD( exports, "InitFS", InitFS );
 }
@@ -238,7 +240,7 @@ void VolumeObject::Init( Local<Object> exports, Local<Value> val, void* p )  {
 	doInit( exports );	
 }
 
-void VolumeObject::Init( Handle<Object> exports )  {
+void VolumeObject::Init( Local<Object> exports )  {
 	doInit( exports );
 }
 
@@ -343,7 +345,7 @@ void VolumeObject::vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args
 	}
 
 
-	ObjectStorageObject *oso = ObjectStorageObject::openInVFS( isolate, mount_name, filename, key, key2 );
+	class ObjectStorageObject *oso = openInVFS( isolate, mount_name, filename, key, key2 );
 	if( oso ) {
 		// uhmm this needs 'this' to know what to return as...
 	}
@@ -423,11 +425,9 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 				
 			}
 			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
-			SqlObject* obj;
 			char dbName[256];
  			snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
- 			obj = new SqlObject( dbName );
-			SqlObject::doWrap( obj, args.This() );
+			createSqlObject( dbName, args.This() );
 
 			args.GetReturnValue().Set( args.This() );
 		}
@@ -449,11 +449,8 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
   		snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
   		argv[0] = String::NewFromUtf8( isolate, dbName );
 		argv[1] = args.Holder();
-
-		Local<Function> cons = Local<Function>::New( isolate, SqlObject::constructor );
-		MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
-		if( !mo.IsEmpty() )
-			args.GetReturnValue().Set( mo.ToLocalChecked() );
+		
+		args.GetReturnValue().Set( newSqlObject( isolate, argc, argv ) );
 		delete[] argv;
 	}
 }
@@ -495,7 +492,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data callback" ) ) ) );
 			return;
 		}
-		Local<Function> cb = Handle<Function>::Cast( args[1] );
+		Local<Function> cb = Local<Function>::Cast( args[1] );
 		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 
 		if( vol->volNative ) {
@@ -522,7 +519,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 						r.context = isolate->GetCurrentContext();
 						Local<Value> val = convertMessageToJS( data, &r );
 						{
-							MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
+							MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, &val );
 							if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
 								json_dispose_message( &data );
 								json_parse_dispose_state( &parser );
@@ -564,7 +561,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 							r.context = isolate->GetCurrentContext();
 							Local<Value> val = convertMessageToJS( data, &r );
 							{
-								MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
+								MaybeLocal<Value> result = cb->Call( r.context, r.context->Global(), 1, &val );
 								if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
 									json_dispose_message( &data );
 									json_parse_dispose_state( &parser );
@@ -593,7 +590,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data callback" ) ) ) );
 			return;
 		}
-		Local<Function> cb = Handle<Function>::Cast( args[1] );
+		Local<Function> cb = Local<Function>::Cast( args[1] );
 		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 
 		if( vol->volNative ) {
@@ -620,7 +617,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 						r.context = isolate->GetCurrentContext();
 						Local<Value> val = convertMessageToJS2( data, &r );
 						{
-							MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
+							MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, &val );
 							if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
 								jsox_dispose_message( &data );
 								jsox_parse_dispose_state( &parser );
@@ -663,7 +660,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 							r.context = isolate->GetCurrentContext();
 							Local<Value> val = convertMessageToJS2( data, &r );
 							{
-								MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, &val );
+								MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, &val );
 								if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
 									jsox_dispose_message( &data );
 									jsox_parse_dispose_state( &parser );
@@ -782,9 +779,9 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		size_t len = 0;
 		POINTER data = OpenSpace( NULL, *fName, &len );
 		if( data && len ) {
-			ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
+			//ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
 
-			MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
+			MaybeLocal<String> _arrayBuffer = String::NewFromUtf8( isolate, (char*)data, NewStringType::kNormal, (int)len );
 			Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->s.Reset( isolate, arrayBuffer );
@@ -816,7 +813,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		HandleScope scope( isolate );
 		{
 			Local<Function> cb = myself->f->Get( isolate );
-			cb->Call( myself->_this.Get( isolate ), 0, NULL );
+			cb->Call( isolate->GetCurrentContext(), myself->_this.Get( isolate ), 0, NULL );
 			uv_close( (uv_handle_t*)&myself->async, NULL );
 		}
 		Release( myself );
@@ -864,7 +861,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				pargs->f = new Persistent<Function>();
 				pargs->memory = (uint8_t*)data;
 				pargs->len = len;
-				pargs->f->Reset( isolate, Handle<Function>::Cast( args[1] ) );
+				pargs->f->Reset( isolate, Local<Function>::Cast( args[1] ) );
 				pargs->_this.Reset( isolate, args.This() );
 				uv_async_init( uv_default_loop(), &pargs->async, preloadCallback );
 				pargs->async.data = pargs;
@@ -1162,7 +1159,7 @@ void FileObject::Emitter(const v8::FunctionCallbackInfo<Value>& args)
 {
 	Isolate* isolate = Isolate::GetCurrent();
 	//HandleScope scope;
-	Handle<Value> argv[2] = {
+	Local<Value> argv[2] = {
 		v8::String::NewFromUtf8( isolate, "ping"), // event name
 		args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  // argument
 	};
@@ -1426,9 +1423,9 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		//NODE_SET_PROTOTYPE_METHOD( fileTemplate, "isPaused", openFile );
 
-		constructor.Reset( isolate, fileTemplate->GetFunction() );
+		constructor.Reset( isolate, fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 		//exports->Set( String::NewFromUtf8( isolate, "File" ),
-		//	fileTemplate->GetFunction() );
+		//	fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 
 	void FileObject::openFile( const v8::FunctionCallbackInfo<Value>& args ) {

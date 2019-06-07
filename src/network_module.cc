@@ -222,7 +222,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 	}
 	return check;
 }
-void InitUDPSocket( Isolate *isolate, Handle<Object> exports ) {
+void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 	if( !l.loop )
 		l.loop = uv_default_loop();
 
@@ -240,9 +240,9 @@ void InitUDPSocket( Isolate *isolate, Handle<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( udpTemplate, "setBroadcast", udpObject::setBroadcast );
 		udpTemplate->ReadOnlyPrototype();
 
-		udpObject::constructor.Reset( isolate, udpTemplate->GetFunction() );
+		udpObject::constructor.Reset( isolate, udpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
-		SET_READONLY( oNet, "UDP", udpTemplate->GetFunction() );
+		SET_READONLY( oNet, "UDP", udpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 	{
 		Local<FunctionTemplate> addrTemplate;
@@ -253,9 +253,9 @@ void InitUDPSocket( Isolate *isolate, Handle<Object> exports ) {
 		//NODE_SET_PROTOTYPE_METHOD( addrTemplate, "toString", addrObject::toString );
 		addrTemplate->ReadOnlyPrototype();
 
-		addrObject::constructor.Reset( isolate, addrTemplate->GetFunction() );
+		addrObject::constructor.Reset( isolate, addrTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
-		SET_READONLY( oNet, "Address", addrTemplate->GetFunction() );
+		SET_READONLY( oNet, "Address", addrTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 }
 
@@ -267,6 +267,7 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	Local<Context> context = isolate->GetCurrentContext();
 	udpObject* obj = (udpObject*)handle->data;
 	udpEvent *eventMessage;
 	HandleScope scope( isolate );
@@ -288,13 +289,13 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 					holder->buffer = (void*)eventMessage->buf;
 
 					argv[0] = ab;
-					obj->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
+					obj->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
 				else {
 					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 					//lprintf( "built string from %p", eventMessage->buf );
 					argv[0] = buf.ToLocalChecked();
-					obj->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
+					obj->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
 					Deallocate( CPOINTER, eventMessage->buf );
 				}
 				ReleaseAddress( eventMessage->from );
@@ -302,7 +303,7 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 			case UDP_EVENT_CLOSE:
 				cb = Local<Function>::New( isolate, obj->closeCallback );
 				if( !cb.IsEmpty() )
-					cb->Call( eventMessage->_this->_this.Get( isolate ), 0, argv );
+					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
 				uv_close( (uv_handle_t*)&obj->async, NULL );
 				DeleteLinkQueue( &obj->eventQueue );
 				break;
@@ -379,6 +380,7 @@ udpObject::~udpObject() {
 
 void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	if( argc == 0 ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Must specify either type or options for server." ) ) ) );
@@ -406,14 +408,14 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 			Local<String> optName;
 			struct optionStrings *strings = getStrings( isolate );
 			// ---- get port
-			if( !opts->Has( optName = strings->portString->Get( isolate ) ) ) {
+			if( !opts->Has( context, optName = strings->portString->Get( isolate ) ).ToChecked() ) {
 				udpOpts.port = 0;
 			}
 			else {
 				udpOpts.port = (int)opts->Get( optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 			}
 			// ---- get family
-			if( opts->Has( optName = strings->familyString->Get( isolate ) ) ) {
+			if( opts->Has( context, optName = strings->familyString->Get( isolate ) ).ToChecked() ) {
 				String::Utf8Value family( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 				udpOpts.v6 = (StrCmp( *family, "IPv6" ) == 0);
 				if( udpOpts.addressDefault ) {
@@ -425,7 +427,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 				}
 			}
 			// ---- get address
-			if( !opts->Has( optName = strings->addressString->Get( isolate ) ) ) {
+			if( !opts->Has( context, optName = strings->addressString->Get( isolate ) ).ToChecked() ) {
 				udpOpts.addressDefault = true;
 				if( udpOpts.v6 )
 					udpOpts.address = StrDup( "[::]" );
@@ -436,36 +438,36 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 				udpOpts.address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked()) );
 			}
 			// ---- get to port
-			if( opts->Has( optName = strings->toPortString->Get( isolate ) ) ) {
+			if( opts->Has( context, optName = strings->toPortString->Get( isolate ) ).ToChecked() ) {
 				udpOpts.toPort = (int)opts->Get( optName )->ToInteger(isolate->GetCurrentContext()).ToLocalChecked()->Value();
 			}
 			else
 				udpOpts.toPort = 0;
 			// ---- get toAddress
-			if( opts->Has( optName = strings->addressString->Get( isolate ) ) ) {
+			if( opts->Has( context, optName = strings->addressString->Get( isolate ) ).ToChecked() ) {
 				udpOpts.toAddress = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
 			}
 			else
 				udpOpts.toAddress = NULL;
 			// ---- get broadcast
-			if( opts->Has( optName = strings->broadcastString->Get( isolate ) ) ) {
+			if( opts->Has( context, optName = strings->broadcastString->Get( isolate ) ).ToChecked() ) {
 				udpOpts.broadcast = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 			}
 			// ---- get message callback
-			if( opts->Has( optName = strings->messageString->Get( isolate ) ) ) {
-				udpOpts.messageCallback.Reset( isolate, Handle<Function>::Cast( opts->Get( optName ) ) );
+			if( opts->Has( context, optName = strings->messageString->Get( isolate ) ).ToChecked() ) {
+				udpOpts.messageCallback.Reset( isolate, Local<Function>::Cast( opts->Get( optName ) ) );
 			}
 			// ---- get read strings setting
-			if( opts->Has( optName = strings->readStringsString->Get( isolate ) ) ) {
+			if( opts->Has( context, optName = strings->readStringsString->Get( isolate ) ).ToChecked() ) {
 				udpOpts.readStrings = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 			}
 			// ---- get reuse address
-			if( opts->Has( optName = strings->reuseAddrString->Get( isolate ) ) ) {
+			if( opts->Has( context, optName = strings->reuseAddrString->Get( isolate ) ).ToChecked() ) {
 				udpOpts.reuseAddr = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 			}
 			else udpOpts.reuseAddr = false;
 			// ---- get reuse port
-			if( opts->Has( optName = strings->reusePortString->Get( isolate ) ) ) {
+			if( opts->Has( context, optName = strings->reusePortString->Get( isolate ) ).ToChecked() ) {
 				udpOpts.reusePort = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 			}
 			else udpOpts.reusePort = false;
@@ -473,7 +475,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		}
 
 		if( args.Length() >= argBase && args[argBase]->IsFunction() ) {
-			Handle<Function> arg0 = Handle<Function>::Cast( args[argBase] );
+			Local<Function> arg0 = Local<Function>::Cast( args[argBase] );
 			udpOpts.messageCallback.Reset( isolate, arg0 );
 		}
 
@@ -515,7 +517,7 @@ void udpObject::on( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() == 2 ) {
 		Isolate* isolate = args.GetIsolate();
 		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		Local<Function> cb = Handle<Function>::Cast( args[1] );
+		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if( StrCmp( *event, "error" ) == 0 ) {
 			// not sure how to get this... so many errors so few callbacks
 		}

@@ -21,7 +21,7 @@ public:
 
 public:
 
-	static void Init( Isolate *isolate, Handle<Object> exports );
+	static void Init( Isolate *isolate, Local<Object> exports );
 	KeyHidObject(  );
 
 private:
@@ -483,7 +483,7 @@ KeyHidObject::~KeyHidObject() {
 }
 
 
-void KeyHidObject::Init( Isolate *isolate, Handle<Object> exports ) {
+void KeyHidObject::Init( Isolate *isolate, Local<Object> exports ) {
 	Local<FunctionTemplate> comTemplate;
 
 	comTemplate = FunctionTemplate::New( isolate, New );
@@ -494,12 +494,12 @@ void KeyHidObject::Init( Isolate *isolate, Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( comTemplate, "onKey", onRead );
 
 
-	constructor.Reset( isolate, comTemplate->GetFunction() );
+	constructor.Reset( isolate, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	exports->Set( String::NewFromUtf8( isolate, "Keyboard" ),
-		comTemplate->GetFunction() );
+		comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 }
 
-void KeyHidObjectInit( Isolate *isolate, Handle<Object> exports ) {
+void KeyHidObjectInit( Isolate *isolate, Local<Object> exports ) {
 	KeyHidObject::Init( isolate, exports );
 
 }
@@ -513,6 +513,7 @@ void asyncmsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	Local<Context> context = isolate->GetCurrentContext();
 
 	KeyHidObject* myself = (KeyHidObject*)handle->data;
 
@@ -542,7 +543,7 @@ void asyncmsg( uv_async_t* handle ) {
 			Local<Value> argv[] = { eventObj };
 			Local<Function> cb = Local<Function>::New( isolate, myself->readCallback[0] );
 			{
-				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+				MaybeLocal<Value> result = cb->Call( context, isolate->GetCurrentContext()->Global(), 1, argv );
 				if( result.IsEmpty() ) {
 					Deallocate( struct msgbuf *, msg );
 					return;
@@ -602,7 +603,7 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	KeyHidObject *com = ObjectWrap::Unwrap<KeyHidObject>( args.This() );
 
-	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+	Local<Function> arg0 = Local<Function>::Cast( args[0] );
 	com->readCallback = new Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 );
 }
 

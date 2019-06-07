@@ -14,17 +14,10 @@ var vfs = sack.Volume( "cmount", "container.vfs" );
 //console.log( "sack:", sack );
 
 var store = sack.ObjectStorage( "cmount@storage.os" );
+console.log( "Store:", store );
 
 
-var userIndex = store.CreateIndex( [ "firstName", "lastName", "birthday"  ] );
-var itemIndex = store.CreateIndex( [ "itemName", "relavance", "added" ] );
-
-var userdb = {
-	users : userIndex
-}
-
-
-var store.get(  { //`${orgRoot}.${serviceRoot}`, 
+store.get(  { //`${orgRoot}.${serviceRoot}`, 
 		objectHash : `${orgRoot}.${serviceRoot}.${dbRoot}`,
 
 		sealant : null,
@@ -32,6 +25,7 @@ var store.get(  { //`${orgRoot}.${serviceRoot}`,
 
 		then(node){
 			// this is the managmeent container of node.  
+			console.log( "Recovered root somehow:", node );
 			root = node;
 		},
 		catch() {
@@ -39,7 +33,8 @@ var store.get(  { //`${orgRoot}.${serviceRoot}`,
 				vfs.readJSOX( "keyInfo", (ki)=>keyInfo = ki );
 			else	
 				vfs.write( "keyInfo", sack.JSOX.stringify( keyInfo ) );		        
-			
+			console.log( "catch, put record so we can get its object identifier.");
+
 			store.put( userIndex, {
 				objectHash:`${orgRoot}.${serviceRoot}.${dbRoot}`,
 				sealant: myhashWrite,
@@ -141,6 +136,7 @@ function initRoot( cb ) {
 	root.signed = [];
 
 	vfs.write( "root", sack.JSOX.stringify( root ) );
+        
 	addMoreNodes();
 }
 
@@ -182,7 +178,7 @@ function addMoreNodes() {
 	
 	store.put( obj, { 
 		stored(id){
-			console.log( "GOT storage ID:", id );
+			console.log( "(from store)GOT storage ID:", id );
 		},
 		failed() {
 			
@@ -193,3 +189,11 @@ function addMoreNodes() {
 	store.put( root );
 
 }
+
+
+
+//store.get( 
+var userdb = {
+	users : null //userIndex
+};
+

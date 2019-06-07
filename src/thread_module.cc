@@ -4,7 +4,7 @@
 //-----------------------------------------------------------
 
 
-void ThreadObject::Init( Handle<Object> exports ) {
+void ThreadObject::Init( Local<Object> exports ) {
 	Isolate* isolate = Isolate::GetCurrent();
 
 	NODE_SET_METHOD(exports, "Δ", relinquish );
@@ -17,9 +17,9 @@ void ThreadObject::Init( Handle<Object> exports ) {
 
 	// Prototype
 
-	constructor.Reset( isolate, threadTemplate->GetFunction() );
+	constructor.Reset( isolate, threadTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	exports->Set( String::NewFromUtf8( isolate, "Thread" ),
-		threadTemplate->GetFunction() );
+		threadTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 }
 
 //-----------------------------------------------------------
@@ -29,7 +29,7 @@ void ThreadObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() ) {
 		if( idleProc.IsEmpty() && args[0]->IsFunction() ) {
-			Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+			Local<Function> arg0 = Local<Function>::Cast( args[0] );
 			idleProc.Reset( isolate, arg0 );
 		}
 	}
@@ -57,7 +57,7 @@ void ThreadObject::relinquish( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	Local<Function>cb = Local<Function>::New( isolate, idleProc );
-	MaybeLocal<Value> r = cb->Call(Null(isolate), 0, NULL );
+	MaybeLocal<Value> r = cb->Call( isolate->GetCurrentContext(), Null(isolate), 0, NULL );
 	if( r.IsEmpty() ) {
 		// this should never happen... and I don't really care if there was an exception....
 	}

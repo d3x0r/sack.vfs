@@ -23,7 +23,7 @@ ComObject::~ComObject() {
 }
 
 
-void ComObject::Init( Handle<Object> exports ) {
+void ComObject::Init( Local<Object> exports ) {
 		Isolate* isolate = Isolate::GetCurrent();
 		Local<FunctionTemplate> comTemplate;
 
@@ -37,9 +37,9 @@ void ComObject::Init( Handle<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "close", closeCom );
 
 
-		constructor.Reset( isolate, comTemplate->GetFunction() );
+		constructor.Reset( isolate, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 		exports->Set( String::NewFromUtf8( isolate, "ComPort" ),
-			comTemplate->GetFunction() );
+			comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 }
 
 
@@ -78,7 +78,7 @@ static void asyncmsg( uv_async_t* handle ) {
 			//lprintf( "callback ... %p", myself );
 			// using obj->jsThis  fails. here...
 			{
-				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 1, argv );
 				if( result.IsEmpty() ) {
 					Deallocate( struct msgbuf *, msg );
 					return;
@@ -169,7 +169,7 @@ void ComObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 		SackSetReadCallback( com->handle, dispatchRead, (uintptr_t)com );
 	}
 
-	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+	Local<Function> arg0 = Local<Function>::Cast( args[0] );
 	com->readCallback = new Persistent<Function,CopyablePersistentTraits<Function>>(isolate,arg0);
 }
 

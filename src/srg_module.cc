@@ -16,7 +16,7 @@ public:
 	PLINKQUEUE SigningEntropies = NULL;
 public:
 
-	static void Init( Isolate *isolate, Handle<Object> exports );
+	static void Init( Isolate *isolate, Local<Object> exports );
 	SRGObject( Persistent<Function, CopyablePersistentTraits<Function>> *callback );
 	SRGObject( const char *seed, size_t seedLen );
 	SRGObject();
@@ -37,6 +37,7 @@ private:
 					ctx = SRG_CreateEntropy( NULL, 0 );
 					break;
 				case 1:
+
 					ctx = SRG_CreateEntropy2_256( NULL, 0 );
 					break;
 				case 2:
@@ -49,12 +50,18 @@ private:
 				}
 				String::Utf8Value val( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 
-				SRG_FeedEntropy( ctx, (uint8_t*)*val, val.length() );
-				uint32_t buf[256/32];
+				/* Regenerator version 0 */
+				uint32_t buf[256 / 32];
+				SRG_FeedEntropy( ctx, (uint8_t*)"\0\0\0\0", 4 );
+				SRG_StepEntropy( ctx );
+				SRG_FeedEntropy( ctx, (uint8_t*)* val, val.length() );
+				SRG_StepEntropy( ctx );
 				SRG_GetEntropyBuffer( ctx, buf, 256 );
+
 				size_t outlen;
-				r = EncodeBase64Ex( (uint8_t*)buf, (16 + 16), &outlen, (const char *)1 );
+				r = EncodeBase64Ex( (uint8_t*)buf, (16 + 16), &outlen, (const char*)1 );
 				SRG_DestroyEntropy( &ctx );
+
 				args.GetReturnValue().Set( localString( isolate, r, (int)outlen ) );
 			}
 			else
@@ -94,7 +101,7 @@ private:
 			Local<Value> argv[] = { ui };
 			{
 				// if the callback exceptions, this will blindly continue to generate random entropy....
-				MaybeLocal<Value> result = cb->Call( obj->isolate->GetCurrentContext()->Global(), 1, argv );
+				MaybeLocal<Value> result = cb->Call( obj->isolate->GetCurrentContext(), obj->isolate->GetCurrentContext()->Global(), 1, argv );
 				if( result.IsEmpty() )
 					return;
 			}
@@ -122,7 +129,7 @@ private:
 			int argc = args.Length();
 			if( argc > 0 ) {
 				if( args[0]->IsFunction() ) {
-					Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+					Local<Function> arg0 = Local<Function>::Cast( args[0] );
 					obj = new SRGObject( new Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 ) );
 				}
 				else {
@@ -154,7 +161,7 @@ private:
 	static void setVersion( const v8::FunctionCallbackInfo<Value>& args ) {
 		SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
 		if( args.Length() > 0 ) {
-			int64_t version = args[0]->IntegerValue();
+			int64_t version = args[0]->IntegerValue(args.GetIsolate()->GetCurrentContext()).ToChecked();
 			//lprintf( "Make will be %d?", version );
 			if( version == 0 )
 				obj->MakeEntropy = SRG_CreateEntropy;
@@ -814,11 +821,11 @@ PLINKQUEUE SRGObject::signingEntropies;
 v8::Persistent<v8::Function> SRGObject::constructor;
 
 
-void InitSRG( Isolate *isolate, Handle<Object> exports ) {
+void InitSRG( Isolate *isolate, Local<Object> exports ) {
 	SRGObject::Init( isolate, exports );
 }
 
-void SRGObject::Init( Isolate *isolate, Handle<Object> exports )
+void SRGObject::Init( Isolate *isolate, Local<Object> exports )
 {
 	InitBitCountLookupTables();
 	Local<FunctionTemplate> srgTemplate;
@@ -833,7 +840,7 @@ void SRGObject::Init( Isolate *isolate, Handle<Object> exports )
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "sign", SRGObject::srg_sign );
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "setSigningThreads", SRGObject::srg_setThraads );
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "verify", SRGObject::srg_verify );
-	Local<Function> f = srgTemplate->GetFunction();
+	Local<Function> f = srgTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 	SRGObject::constructor.Reset( isolate, f );
 
 	SET_READONLY( exports, "SaltyRNG", f );

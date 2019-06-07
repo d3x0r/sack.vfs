@@ -169,6 +169,7 @@ struct wssEvent {
 			int error;
 			const char *buffer;
 			size_t buflen;
+			int fallback_ssl;
 		} error;
 	}data;
 	PLIST send;
@@ -619,6 +620,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	Local<Context> context = isolate->GetCurrentContext();
 	wssObject* myself = (wssObject*)handle->data;
 	int handled = 0;
 	HandleScope scope(isolate);
@@ -639,7 +641,8 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 							eventMessage->data.error.buflen );
 					else
 						argv[2] = Null( isolate );
-					myself->errorLowCallback.Get( isolate )->Call( myself->_this.Get( isolate ), 3, argv );
+					myself->errorLowCallback.Get( isolate )->Call( context, myself->_this.Get( isolate ), 3, argv );
+
 				}
 			}
 			else if( eventMessage->eventType == WS_EVENT_REQUEST ) {
@@ -670,7 +673,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					if( !argv[0]->IsNull() ) {
 						argv[1] = http;
 						Local<Function> cb = Local<Function>::New( isolate, myself->requestCallback );
-						cb->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
+						cb->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
 					}
 					//else
 					//	lprintf( "This request was a false alarm, and was empty." );
@@ -707,7 +710,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 
 				if( !myself->acceptCallback.IsEmpty() ) {
 					Local<Function> cb = myself->acceptCallback.Get( isolate );
-					cb->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
+					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
 				}
 				else
 					eventMessage->data.request.accepted = 1;
@@ -718,7 +721,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				if( !myself->errorCloseCallback.IsEmpty() ) {
 					Local<Function> cb = myself->errorCloseCallback.Get( isolate );
 					argv[0] = closingSock;
-					cb->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
+					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
 				}
 
 				//myself->readyState = CLOSED;
@@ -732,7 +735,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				uv_close( (uv_handle_t*)&myself->async, uv_closed_wss );
 				if( !myself->closeCallback.IsEmpty() ) {
 					Local<Function> cb = myself->closeCallback.Get( isolate );
-					cb->Call( eventMessage->_this->_this.Get( isolate ), 0, NULL );
+					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 0, NULL );
 				}
 				DropWssEvent( eventMessage );
 				DeleteLinkQueue( &myself->eventQueue );
@@ -755,7 +758,7 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 	wssiObject* myself = (wssiObject*)handle->data;
 
 	HandleScope scope(isolate);
-
+	Local<Context> context = isolate->GetCurrentContext();
 	{
 		struct wssiEvent *eventMessage;
 		while( eventMessage = (struct wssiEvent *)DequeLink( &myself->eventQueue ) ) {
@@ -766,7 +769,7 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 				if( !myself->server->openCallback.IsEmpty() ) {
 					Local<Function> cb = Local<Function>::New( isolate, myself->server->openCallback );
 					argv[0] = myself->_this.Get( isolate );
-					cb->Call( myself->_this.Get( isolate ), 1, argv );
+					cb->Call( context, myself->_this.Get( isolate ), 1, argv );
 				}
 				break;
 			case WS_EVENT_READ:
@@ -784,20 +787,20 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 						holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 						holder->buffer = eventMessage->buf;
 
-						myself->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
+						myself->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
 					}
 					else {
 						MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 						argv[0] = buf.ToLocalChecked();
 						//lprintf( "Message:', %s", eventMessage->buf );
-						myself->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
+						myself->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
 					}
 					Deallocate( POINTER, eventMessage->buf );
 				}
 				break;
 			case WS_EVENT_CLOSE:
 				if( !myself->closeCallback.IsEmpty() ) {
-					myself->closeCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 0, argv );
+					myself->closeCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
 				}
 				uv_close( (uv_handle_t*)&myself->async, uv_closed_wssi );
 				DropWssiEvent( eventMessage );
@@ -807,7 +810,7 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 				continue;
 				break;
 			case WS_EVENT_ERROR:
-				myself->errorCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 0, argv );
+				myself->errorCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
 				break;
 			}
 			DropWssiEvent( eventMessage );
@@ -823,6 +826,7 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 	wscObject* wsc = (wscObject*)handle->data;
 	wscEvent *eventMessage;
 	HandleScope scope(isolate);
+	Local<Context> context = isolate->GetCurrentContext();
 
 	{
 		Local<Value> argv[2];
@@ -836,7 +840,7 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 					struct optionStrings *strings;
 					strings = getStrings( isolate );
 					wsc->_this.Get( isolate )->Set( strings->connectionString->Get( isolate ), makeSocket( isolate, wsc->pc ) );
-					cb->Call( eventMessage->_this->_this.Get( isolate ), 0, argv );
+					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
 				}
 				break;
 			case WS_EVENT_READ:
@@ -853,12 +857,12 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 					holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 					holder->buffer = eventMessage->buf;
 
-					wsc->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
+					wsc->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
 				}
 				else {
 					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 					argv[0] = buf.ToLocalChecked();
-					wsc->messageCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 1, argv );
+					wsc->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
 				}
 				Deallocate( POINTER, eventMessage->buf );
 				break;
@@ -872,13 +876,13 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 					}
 					else
 						argv[1] = Undefined( isolate );
-					wsc->errorCallback.Get( isolate )->Call( eventMessage->_this->_this.Get( isolate ), 2, argv );
+					wsc->errorCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
 				break;
 			case WS_EVENT_CLOSE:
 				cb = Local<Function>::New( isolate, wsc->closeCallback );
 				if( !cb.IsEmpty() )
-					cb->Call( eventMessage->_this->_this.Get( isolate ), 0, argv );
+					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
 				uv_close( (uv_handle_t*)&wsc->async, uv_closed_wsc );
 				DeleteLinkQueue( &wsc->eventQueue );
 				wsc->readyState = CLOSED;
@@ -891,8 +895,8 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 
 int accepted = 0;
 
-void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
-
+void InitWebSocket( Isolate *isolate, Local<Object> exports ){
+	Local<Context> context = isolate->GetCurrentContext();
 	if( !l.loop )
 		l.loop = uv_default_loop();
 	l.jsThread = MakeThread();
@@ -921,10 +925,10 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( httpTemplate, "end", httpObject::end );
 		httpTemplate->ReadOnlyPrototype();
 
-		httpObject::constructor.Reset( isolate, httpTemplate->GetFunction() );
+		httpObject::constructor.Reset( isolate, httpTemplate->GetFunction(context).ToLocalChecked() );
 
 		// this is not exposed as a class that javascript can create.
-		//SET_READONLY( o, "R", wscTemplate->GetFunction() );
+		//SET_READONLY( o, "R", wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 	{
 		Local<FunctionTemplate> httpRequestTemplate;
@@ -934,7 +938,7 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( httpRequestTemplate, "on", httpRequestObject::on );
 		NODE_SET_PROTOTYPE_METHOD( httpRequestTemplate, "wait", httpRequestObject::wait );
 		httpRequestTemplate->ReadOnlyPrototype();
-		httpRequestObject::constructor.Reset( isolate, httpRequestTemplate->GetFunction() );
+		httpRequestObject::constructor.Reset( isolate, httpRequestTemplate->GetFunction(context).ToLocalChecked() );
 
 		Local<Object> oHttps = Object::New( isolate );
 		SET_READONLY( exports, "HTTPS", oHttps );
@@ -945,7 +949,7 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		SET_READONLY_METHOD( oHttp, "get", httpRequestObject::get );
 
 		// this is not exposed as a class that javascript can create.
-		//SET_READONLY( o, "R", wscTemplate->GetFunction() );
+		//SET_READONLY( o, "R", wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 	{
 		Local<FunctionTemplate> wssTemplate;
@@ -978,10 +982,10 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onmessage", wsObject::on );
 		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "on", wsObject::on );
 
-		wssObject::constructor.Reset( isolate, wssTemplate->GetFunction() );
+		wssObject::constructor.Reset( isolate, wssTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 		wssObject::tpl.Reset( isolate, wssTemplate );
 
-		SET_READONLY( o, "Server", wssTemplate->GetFunction() );
+		SET_READONLY( o, "Server", wssTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 
 	{
@@ -1010,10 +1014,10 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 		);
 		wscTemplate->ReadOnlyPrototype();
 
-		wscObject::constructor.Reset( isolate, wscTemplate->GetFunction() );
+		wscObject::constructor.Reset( isolate, wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 		wscObject::tpl.Reset( isolate, wscTemplate );
 
-		SET_READONLY( o, "Client", wscTemplate->GetFunction() );
+		SET_READONLY( o, "Client", wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 
 	{
@@ -1032,9 +1036,9 @@ void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
 			, Local<FunctionTemplate>() );
 		wssiTemplate->ReadOnlyPrototype();
 
-		wssiObject::constructor.Reset( isolate, wssiTemplate->GetFunction() );
+		wssiObject::constructor.Reset( isolate, wssiTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 		wssiObject::tpl.Reset( isolate, wssiTemplate );
-		//SET_READONLY( o, "Client", wscTemplate->GetFunction() );
+		//SET_READONLY( o, "Client", wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 }
 
@@ -1159,7 +1163,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 				Local<Function> cb = wss->errorCloseCallback.Get( isolate );
 				Local<Value> argv[1];
 				argv[0] = closingSock;
-				cb->Call( wss->_this.Get( isolate ), 1, argv );
+				cb->Call( isolate->GetCurrentContext(), wss->_this.Get( isolate ), 1, argv );
 			}
 			DropWssEvent( pevt );
 		}
@@ -1261,7 +1265,7 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		if( args.Length() > 1 ) {
 			headers = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
-			Local<Array> keys = headers->GetPropertyNames();
+			Local<Array> keys = headers->GetPropertyNames( isolate->GetCurrentContext() ).ToLocalChecked();
 			int len = keys->Length();
 			int i;
 			for( i = 0; i < len; i++ ) {
@@ -1452,6 +1456,7 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkEr
 	case SACK_NETWORK_ERROR_SSL_HANDSHAKE:
 		(*pevt).data.error.buffer = va_arg( args, const char * );
 		(*pevt).data.error.buflen = va_arg( args, size_t );
+		(*pevt).data.error.fallback_ssl = 0; // make sure this is cleared.
 		break;
 	}
 	(*pevt).pc = pc;
@@ -1461,6 +1466,11 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkEr
 	uv_async_send( &wss->async );
 	while( !(*pevt).done )
 		WakeableSleep( 1000 );
+
+	if( (*pevt).data.error.fallback_ssl )
+		ssl_EndSecure( pc, (POINTER)(*pevt).data.error.buffer, (*pevt).data.error.buflen );
+
+	DropWssEvent( pevt );
 }
 
 static uintptr_t catchLostEvents( PTHREAD thread ) {
@@ -1550,24 +1560,25 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 	struct optionStrings *strings = getStrings( isolate );
 	wssOpts->cert_chain = NULL;
 	wssOpts->cert_chain_len = 0;
+	Local<Context> context = isolate->GetCurrentContext();
 
-	if( opts->Has( optName = strings->addressString->Get( isolate ) ) ) {
+	if( opts->Has( context, optName = strings->addressString->Get( isolate ) ).ToChecked() ) {
 		String::Utf8Value address( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		wssOpts->address = StrDup( *address );
 	}
 
-	if( !opts->Has( optName = strings->portString->Get( isolate ) ) ) {
+	if( !opts->Has( context, optName = strings->portString->Get( isolate ) ).ToChecked() ) {
 		wssOpts->port = 8080;
 	}
 	else {
 		wssOpts->port = (int)opts->Get( optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 	}
-	if( opts->Has( optName = strings->certString->Get( isolate ) ) ) {
+	if( opts->Has( context, optName = strings->certString->Get( isolate ) ).ToChecked() ) {
 		String::Utf8Value cert( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		wssOpts->cert_chain = StrDup( *cert );
 		wssOpts->cert_chain_len = cert.length();
 	}
-	if( opts->Has( optName = strings->caString->Get( isolate ) ) ) {
+	if( opts->Has( context, optName = strings->caString->Get( isolate ) ).ToChecked() ) {
 		String::Utf8Value ca( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		if( wssOpts->cert_chain ) {
 			wssOpts->cert_chain = (char*)Reallocate( wssOpts->cert_chain, wssOpts->cert_chain_len + ca.length() + 1 );
@@ -1579,7 +1590,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		}
 	}
 
-	if( !opts->Has( optName = strings->keyString->Get( isolate ) ) ) {
+	if( !opts->Has( context, optName = strings->keyString->Get( isolate ) ).ToChecked() ) {
 		wssOpts->key = NULL;
 		wssOpts->key_len = 0;
 	}
@@ -1588,7 +1599,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		wssOpts->key = StrDup( *cert );
 		wssOpts->key_len = cert.length();
 	}
-	if( !opts->Has( optName = strings->passString->Get( isolate ) ) ) {
+	if( !opts->Has( context, optName = strings->passString->Get( isolate ) ).ToChecked() ) {
 		wssOpts->pass = NULL;
 		wssOpts->pass_len = 0;
 	}
@@ -1604,12 +1615,12 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 	else
 		wssOpts->ssl = 0;
 
-	if( !opts->Has( optName = strings->deflateString->Get( isolate ) ) ) {
+	if( !opts->Has( context, optName = strings->deflateString->Get( isolate ) ).ToChecked() ) {
 		wssOpts->deflate = false;
 	}
 	else
 		wssOpts->deflate = (opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value());
-	if( !opts->Has( optName = strings->deflateAllowString->Get( isolate ) ) ) {
+	if( !opts->Has( context, optName = strings->deflateAllowString->Get( isolate ) ).ToChecked() ) {
 		wssOpts->deflate_allow = false;
 	}
 	else {
@@ -1617,7 +1628,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		//lprintf( "deflate allow:%d", wssOpts->deflate_allow );
 	}
 
-	if( opts->Has( optName = strings->maskingString->Get( isolate ) ) ) {
+	if( opts->Has( context, optName = strings->maskingString->Get( isolate ) ).ToChecked() ) {
 		wssOpts->apply_masking = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 	}
 	else
@@ -1673,7 +1684,7 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 			return;
 		}
 		if( args.Length() > 1 && args[1]->IsFunction() ) {
-			Handle<Function> arg0 = Handle<Function>::Cast( args[1] );
+			Local<Function> arg0 = Local<Function>::Cast( args[1] );
 			obj->openCallback.Reset( isolate, arg0 );
 		}
 		obj->_this.Reset( isolate, _this );
@@ -1699,7 +1710,9 @@ void wssObject::disableSSL( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
 	if( obj->eventMessage && obj->eventMessage->eventType == WS_EVENT_LOW_ERROR ) {
-		ssl_EndSecure( obj->eventMessage->pc, (POINTER)obj->eventMessage->data.error.buffer, obj->eventMessage->data.error.buflen );
+		// delay until we return to the thread that dispatched this error.
+		obj->eventMessage->data.error.fallback_ssl = 1;
+		//ssl_EndSecure( obj->eventMessage->pc, (POINTER)obj->eventMessage->data.error.buffer, obj->eventMessage->data.error.buflen );
 	}
 }
 
@@ -1718,7 +1731,7 @@ void wssObject::on( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() == 2 ) {
 		Isolate* isolate = args.GetIsolate();
 		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		Local<Function> cb = Handle<Function>::Cast( args[1] );
+		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if( !cb->IsFunction() ) {
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
 			return;
@@ -1749,7 +1762,7 @@ void wssObject::onConnect( const FunctionCallbackInfo<Value>& args ) {
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
-			obj->openCallback.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+			obj->openCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
 		else
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
 	}
@@ -1760,7 +1773,7 @@ void wssObject::onAccept( const FunctionCallbackInfo<Value>& args ) {
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
-			obj->acceptCallback.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+			obj->acceptCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
 		else
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
 	}
@@ -1771,7 +1784,7 @@ void wssObject::onRequest( const FunctionCallbackInfo<Value>& args ) {
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
-			obj->requestCallback.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+			obj->requestCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
 		else
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
 	}
@@ -1782,7 +1795,7 @@ void wssObject::onError( const FunctionCallbackInfo<Value>& args ) {
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
-			obj->errorCloseCallback.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+			obj->errorCloseCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
 		else
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
 	}
@@ -1793,7 +1806,7 @@ void wssObject::onErrorLow( const FunctionCallbackInfo<Value>& args ) {
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
-			obj->errorLowCallback.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+			obj->errorLowCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
 		else
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
 	}
@@ -1809,7 +1822,7 @@ void wssObject::onClose( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.Length() > 0 ) {
 		wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
-		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		Local<Function> cb = Local<Function>::Cast( args[0] );
 		obj->closeCallback.Reset( isolate, cb );
 	}
 }
@@ -1909,7 +1922,7 @@ void wssiObject::on( const FunctionCallbackInfo<Value>& args){
 	if( args.Length() == 2 ) {
 		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		Local<Function> cb = Handle<Function>::Cast( args[1] );
+		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if(  StrCmp( *event, "message" ) == 0 ) {
 			obj->messageCallback.Reset( isolate, cb);
 		} else if(  StrCmp( *event, "error" ) == 0 ) {
@@ -1925,7 +1938,7 @@ void wssiObject::onmessage( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.Length() > 0 ) {
 		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
-		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		Local<Function> cb = Local<Function>::Cast( args[0] );
 		obj->messageCallback.Reset( isolate, cb );
 	}
 }
@@ -1935,7 +1948,7 @@ void wssiObject::onclose( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.Length() > 0 ) {
 		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
-		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		Local<Function> cb = Local<Function>::Cast( args[0] );
 		obj->closeCallback.Reset( isolate, cb );
 	}
 }
@@ -2085,46 +2098,52 @@ wscObject::~wscObject() {
 
 void parseWscOptions( struct wscOptions *wscOpts, Isolate *isolate, Local<Object> opts ) {
 	struct optionStrings *strings = getStrings( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
 	Local<String> optName;
 
-	if( opts->Has( optName = strings->caString->Get( isolate ) ) ) {
+	if( opts->Has( context, optName = strings->caString->Get( isolate ) ).ToChecked() ) {
 		wscOpts->ssl = 1;
-		String::Utf8Value rootCa( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		wscOpts->root_cert = StrDup( *rootCa );
+		Local<Value> opt = opts->Get( optName );
+		if( opt->IsString() ){
+			String::Utf8Value rootCa( USE_ISOLATE( isolate ) opt->ToString( context ).ToLocalChecked() );
+			wscOpts->root_cert = StrDup( *rootCa );
+		}
+		else
+         wscOpts->root_cert = NULL;
 	}
 
-	if( opts->Has( optName = strings->keyString->Get( isolate ) ) ) {
+	if( opts->Has( context, optName = strings->keyString->Get( isolate ) ).ToChecked() ) {
 		wscOpts->ssl = 1;
-		String::Utf8Value rootCa( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value rootCa( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( context ).ToLocalChecked() );
 		wscOpts->key = StrDup( *rootCa );
 		wscOpts->key_len = rootCa.length();
 	}
 
-	if( opts->Has( optName = strings->passString->Get( isolate ) ) ) {
+	if( opts->Has( context, optName = strings->passString->Get( isolate ) ).ToChecked() ) {
 		wscOpts->ssl = 1;
-		String::Utf8Value rootCa( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value rootCa( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( context ).ToLocalChecked() );
 		wscOpts->pass = StrDup( *rootCa );
 				wscOpts->pass_len = rootCa.length();
 	}
 
-	if( opts->Has( optName = strings->deflateString->Get( isolate ) ) ) {
-		wscOpts->deflate = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
+	if( opts->Has( context, optName = strings->deflateString->Get( isolate ) ).ToChecked() ) {
+		wscOpts->deflate = opts->Get( optName )->ToBoolean( context ).ToLocalChecked()->Value();
 	}
 	else
 		wscOpts->deflate = false;
-	if( opts->Has( optName = strings->deflateAllowString->Get( isolate ) ) ) {
-		wscOpts->deflate_allow = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
+	if( opts->Has( context, optName = strings->deflateAllowString->Get( isolate ) ).ToChecked() ) {
+		wscOpts->deflate_allow = opts->Get( optName )->ToBoolean( context ).ToLocalChecked()->Value();
 	}
 	else
 		wscOpts->deflate_allow = false;
-	if( opts->Has( optName = strings->maskingString->Get( isolate ) ) ) {
-		wscOpts->apply_masking = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
+	if( opts->Has( context, optName = strings->maskingString->Get( isolate ) ).ToChecked() ) {
+		wscOpts->apply_masking = opts->Get( optName )->ToBoolean( context ).ToLocalChecked()->Value();
 	}
 	else
 		wscOpts->apply_masking = true;
 
-	if( opts->Has( optName = strings->keepAliveString->Get( isolate ) ) ) {
-		wscOpts->keep_alive = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
+	if( opts->Has( context, optName = strings->keepAliveString->Get( isolate ) ).ToChecked() ) {
+		wscOpts->keep_alive = opts->Get( optName )->ToBoolean( context ).ToLocalChecked()->Value();
 	}
 	else
 		wscOpts->keep_alive = false;
@@ -2220,7 +2239,7 @@ void wscObject::onOpen( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		Local<Function> cb = Local<Function>::Cast( args[0] );
 		obj->openCallback.Reset( isolate, cb );
 	}
 }
@@ -2230,7 +2249,7 @@ void wscObject::onMessage( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		Local<Function> cb = Local<Function>::Cast( args[0] );
 		obj->messageCallback.Reset( isolate, cb );
 	}
 }
@@ -2240,7 +2259,7 @@ void wscObject::onClose( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		Local<Function> cb = Local<Function>::Cast( args[0] );
 		obj->closeCallback.Reset( isolate, cb );
 	}
 }
@@ -2250,7 +2269,7 @@ void wscObject::onError( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		Local<Function> cb = Local<Function>::Cast( args[0] );
 		obj->errorCallback.Reset( isolate, cb );
 	}
 }
@@ -2290,10 +2309,10 @@ void wscObject::on( const FunctionCallbackInfo<Value>& args){
 		Isolate* isolate = args.GetIsolate();
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		Local<Function> cb = Handle<Function>::Cast( args[1] );
+		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if( StrCmp( *event, "open" ) == 0 ){
 			if( obj->readyState == OPEN ) {
-				cb->Call( obj->_this.Get( isolate ), 0, NULL );
+				cb->Call( isolate->GetCurrentContext(), obj->_this.Get( isolate ), 0, NULL );
 			}
 			else {
 				obj->openCallback.Reset( isolate, cb );
@@ -2460,7 +2479,7 @@ void httpRequestObject::on( const FunctionCallbackInfo<Value>& args ) {
 
 void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, bool secure ) {
 	Isolate* isolate = args.GetIsolate();
-
+	Local<Context> context = isolate->GetCurrentContext();
 	httpRequestObject *httpRequest = new httpRequestObject();
 
 	if( secure )
@@ -2474,33 +2493,33 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	Local<String> optName;
 	optionStrings *strings = getStrings( isolate );
 
-	if( options->Has( optName = strings->hostnameString->Get( isolate ) ) ) {
+	if( options->Has( context, optName = strings->hostnameString->Get( isolate ) ).ToChecked() ) {
 		String::Utf8Value value( USE_ISOLATE( isolate ) options->Get( optName ) );
 		httpRequest->hostname = StrDup( *value );
 	}
 
-	if( options->Has( optName = strings->portString->Get( isolate ) ) ) {
+	if( options->Has( context, optName = strings->portString->Get( isolate ) ).ToChecked() ) {
 		int32_t x = options->Get( optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		httpRequest->port = x;
 	}
 
-	if( options->Has( optName = strings->methodString->Get( isolate ) ) ) {
+	if( options->Has( context, optName = strings->methodString->Get( isolate ) ).ToChecked() ) {
 		String::Utf8Value value( USE_ISOLATE( isolate ) options->Get( optName ) );
 		httpRequest->method = StrDup( *value );
 	}
 
-	if( secure && options->Has( optName = strings->caString->Get( isolate ) ) ) {
+	if( secure && options->Has( context, optName = strings->caString->Get( isolate ) ).ToChecked() ) {
 		if( options->Get( optName )->IsString() ) {
 			String::Utf8Value value( USE_ISOLATE( isolate ) options->Get( optName ) );
 			httpRequest->ca = StrDup( *value );
 		}
 	}
 
-	if( options->Has( optName = strings->rejectUnauthorizedString->Get( isolate ) ) ) {
+	if( options->Has( context, optName = strings->rejectUnauthorizedString->Get( isolate ) ).ToChecked() ) {
 		httpRequest->rejestUnauthorized = options->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 	}
 
-	if( options->Has( optName = strings->pathString->Get( isolate ) ) ) {
+	if( options->Has( context, optName = strings->pathString->Get( isolate ) ).ToChecked() ) {
 		String::Utf8Value value( USE_ISOLATE( isolate ) options->Get( optName ) );
 		httpRequest->path = StrDup( *value );
 	}

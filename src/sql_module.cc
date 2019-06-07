@@ -5,6 +5,108 @@
 void editOptions( const v8::FunctionCallbackInfo<Value>& args );
 #endif
 
+struct SqlObjectUserFunction {
+	class SqlObject *sql;
+	Persistent<Function> cb;
+	Persistent<Function> cb2;
+	Isolate *isolate;
+	SqlObjectUserFunction() : cb(), cb2() {}
+};
+
+class SqlStmtObject : public node::ObjectWrap {
+public:
+	static v8::Persistent<v8::Function> constructor;
+	class SqlObject *sql;
+	PDATALIST values;
+	SqlStmtObject() {
+		values = NULL;
+	}
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	static void Set( const v8::FunctionCallbackInfo<Value>& args );
+};
+
+class SqlObject : public node::ObjectWrap {
+public:
+	PODBC odbc;
+	int optionInitialized;
+	static v8::Persistent<v8::Function> constructor;
+	//int columns;
+	//CTEXTSTR *result;
+	//size_t *resultLens;
+	//CTEXTSTR *fields;
+	v8::Persistent<v8::Function> onCorruption;
+	Persistent<Object> _this;
+	//Persistent<Object> volume;
+public:
+	PTHREAD thread;
+	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	PLIST userFunctions;
+	PLINKQUEUE messages;
+
+	//static void Init( Local<Object> exports );
+	SqlObject( const char *dsn );
+
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	static void query( const v8::FunctionCallbackInfo<Value>& args );
+	static void escape( const v8::FunctionCallbackInfo<Value>& args );
+	static void unescape( const v8::FunctionCallbackInfo<Value>& args );
+	static void option( const v8::FunctionCallbackInfo<Value>& args );
+	static void setOption( const v8::FunctionCallbackInfo<Value>& args );
+	static void optionInternal( const v8::FunctionCallbackInfo<Value>& args );
+	static void setOptionInternal( const v8::FunctionCallbackInfo<Value>& args );
+	static void makeTable( const v8::FunctionCallbackInfo<Value>& args );
+	static void closeDb( const v8::FunctionCallbackInfo<Value>& args );
+	static void commit( const v8::FunctionCallbackInfo<Value>& args );
+	static void transact( const v8::FunctionCallbackInfo<Value>& args );
+	static void autoTransact( const v8::FunctionCallbackInfo<Value>& args );
+	static void userFunction( const v8::FunctionCallbackInfo<Value>& args );
+	static void userProcedure( const v8::FunctionCallbackInfo<Value>& args );
+	static void aggregateFunction( const v8::FunctionCallbackInfo<Value>& args );
+	static void setOnCorruption( const v8::FunctionCallbackInfo<Value>& args );
+
+	static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args );
+	static void enumOptionNodesInternal( const v8::FunctionCallbackInfo<Value>& args );
+	static void findOptionNode( const v8::FunctionCallbackInfo<Value>& args );
+	static void getOptionNode( const v8::FunctionCallbackInfo<Value>& args );
+	static void error( const v8::FunctionCallbackInfo<Value>& args );
+
+	static void getLogging( const v8::FunctionCallbackInfo<Value>& args );
+	static void setLogging( const v8::FunctionCallbackInfo<Value>& args );
+
+
+	static void doWrap( SqlObject *sql, Local<Object> o );
+
+	~SqlObject();
+};
+
+
+class OptionTreeObject : public node::ObjectWrap {
+public:
+	POPTION_TREE_NODE node;
+	PODBC odbc;
+	static v8::Persistent<v8::Function> constructor;
+
+public:
+
+	static void Init();
+	OptionTreeObject();
+
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+
+	static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args );
+	static void findOptionNode( const v8::FunctionCallbackInfo<Value>& args );
+	static void getOptionNode( const v8::FunctionCallbackInfo<Value>& args );
+	static void writeOptionNode( v8::Local<v8::String> field,
+		v8::Local<v8::Value> val,
+		const PropertyCallbackInfo<void>&info );
+	static void readOptionNode( v8::Local<v8::String> field,
+		const PropertyCallbackInfo<v8::Value>& info );
+
+	~OptionTreeObject();
+};
+
+
+
 struct userMessage{
 	int mode;
 	struct sqlite3_context*onwhat;
@@ -17,18 +119,33 @@ struct userMessage{
 Persistent<Function> SqlStmtObject::constructor;
 Persistent<Function> SqlObject::constructor;
 
+void createSqlObject( const char *name, Local<Object> into ) {
+	class SqlObject* obj;
+	obj = new SqlObject( name );
+	SqlObject::doWrap( obj, into );
+
+}
+
+Local<Value> newSqlObject(Isolate *isolate, int argc, Local<Value> *argv ) {
+	Local<Function> cons = Local<Function>::New( isolate, SqlObject::constructor );
+	MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
+	if( !mo.IsEmpty() )
+		return mo.ToLocalChecked();
+	return Null( isolate );
+}
+
 //-----------------------------------------------------------
 //   SQL Object
 //-----------------------------------------------------------
 
-void SqlObject::Init( Handle<Object> exports ) {
+void SqlObjectInit( Local<Object> exports ) {
 	OptionTreeObject::Init(); // SqlObject attached this
 
 	Isolate* isolate = Isolate::GetCurrent();
 
 	Local<FunctionTemplate> sqlTemplate;
 	// Prepare constructor template
-	sqlTemplate = FunctionTemplate::New( isolate, New );
+	sqlTemplate = FunctionTemplate::New( isolate, SqlObject::New );
 	sqlTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Sqlite" ) );
 	sqlTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 
@@ -37,31 +154,31 @@ void SqlObject::Init( Handle<Object> exports ) {
 	sqlStmtTemplate = FunctionTemplate::New( isolate, SqlStmtObject::New );
 	sqlStmtTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Sqlite.statement" ) );
 	sqlStmtTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
-	SqlStmtObject::constructor.Reset( isolate, sqlStmtTemplate->GetFunction() );
+	SqlStmtObject::constructor.Reset( isolate, sqlStmtTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
 	// Prototype
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "do", query );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "escape", escape );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "unescape", unescape );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "encode", escape );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "decode", unescape );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "end", closeDb );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "close", closeDb );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "transaction", transact );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "commit", commit );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "autoTransact", autoTransact );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "procedure", userProcedure );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "function", userFunction );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "aggregate", aggregateFunction );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "onCorruption", setOnCorruption );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "do", SqlObject::query );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "escape", SqlObject::escape );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "unescape", SqlObject::unescape );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "encode", SqlObject::escape );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "decode", SqlObject::unescape );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "end", SqlObject::closeDb );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "close", SqlObject::closeDb );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "transaction", SqlObject::transact );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "commit", SqlObject::commit );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "autoTransact", SqlObject::autoTransact );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "procedure", SqlObject::userProcedure );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "function", SqlObject::userFunction );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "aggregate", SqlObject::aggregateFunction );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "onCorruption", SqlObject::setOnCorruption );
 
 
 	// read a portion of the tree (passed to a callback)
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "eo", enumOptionNodes );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "eo", SqlObject::enumOptionNodes );
 	// get without create
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "fo", findOptionNode );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "fo", SqlObject::findOptionNode );
 	// get the node.
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "go", getOptionNode );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "go", SqlObject::getOptionNode );
 
 	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "error" )
 			, FunctionTemplate::New( isolate, SqlObject::error )
@@ -76,20 +193,20 @@ void SqlObject::Init( Handle<Object> exports ) {
 	//NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "ro", readOptionNode );
 
 
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "op", option );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "getOption", option );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "op", SqlObject::option );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "getOption", SqlObject::option );
 	//NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "so", setOption );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "so", setOption );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "setOption", setOption );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "so", SqlObject::setOption );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "setOption", SqlObject::setOption );
 	//NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "makeTable", makeTable );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "makeTable", makeTable );
-	constructor.Reset( isolate, sqlTemplate->GetFunction() );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "makeTable", SqlObject::makeTable );
+	SqlObject::constructor.Reset( isolate, sqlTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
-	Local<Object> sqlfunc = sqlTemplate->GetFunction();
+	Local<Object> sqlfunc = sqlTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
-	SET_READONLY_METHOD(sqlfunc, "eo", enumOptionNodesInternal );
-	SET_READONLY_METHOD(sqlfunc, "op", optionInternal );
-	SET_READONLY_METHOD(sqlfunc, "so", setOptionInternal );
+	SET_READONLY_METHOD(sqlfunc, "eo", SqlObject::enumOptionNodesInternal );
+	SET_READONLY_METHOD(sqlfunc, "op", SqlObject::optionInternal );
+	SET_READONLY_METHOD(sqlfunc, "so", SqlObject::setOptionInternal );
 #ifdef INCLUDE_GUI
 	SET_READONLY_METHOD(sqlfunc, "optionEditor", editOptions );
 #endif
@@ -382,7 +499,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 				arg = 2;
 				pdlParams = CreateDataList( sizeof( struct jsox_value_container ) );
 				Local<Object> params = Local<Object>::Cast( args[1] );
-				Local<Array> paramNames = params->GetOwnPropertyNames();
+				Local<Array> paramNames = params->GetOwnPropertyNames(isolate->GetCurrentContext()).ToLocalChecked();
 				for( uint32_t p = 0; p < paramNames->Length(); p++ ) {
 					Local<Value> valName = paramNames->Get( p );
 					Local<Value> value = params->Get( valName );
@@ -775,7 +892,7 @@ void OptionTreeObject::Init(  ) {
 	//NODE_SET_PROTOTYPE_METHOD( optionTemplate, "ro", readOptionNode );
 	//NODE_SET_PROTOTYPE_METHOD( optionTemplate, "wo", writeOptionNode );
 
-	constructor.Reset( isolate, optionTemplate->GetFunction() );
+	constructor.Reset( isolate, optionTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 }
 
 
@@ -915,7 +1032,7 @@ int CPROC invokeCallback( uintptr_t psv, CTEXTSTR name, POPTION_TREE_NODE ID, in
 	argv[0] = o;
 	argv[1] = String::NewFromUtf8( args->isolate, name );
 
-	MaybeLocal<Value> r = args->cb->Call(Null(args->isolate), 2, argv );
+	MaybeLocal<Value> r = args->cb->Call(args->isolate->GetCurrentContext(), Null(args->isolate), 2, argv );
 	if( r.IsEmpty() )
 		return 0;
 	return 1;
@@ -945,7 +1062,7 @@ static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args, SqlObj
 		callbackArgs.odbc = GetOptionODBC( GetDefaultOptionDatabaseDSN() );
 		dropODBC = TRUE;
 	}
-	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+	Local<Function> arg0 = Local<Function>::Cast( args[0] );
 	Local<Function> cb( arg0 );
 
 	callbackArgs.cb = Local<Function>::New( isolate, cb );
@@ -975,7 +1092,7 @@ void OptionTreeObject::enumOptionNodes( const v8::FunctionCallbackInfo<Value>& a
 
 	Isolate* isolate = args.GetIsolate();
 	OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( args.This() );
-	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+	Local<Function> arg0 = Local<Function>::Cast( args[0] );
 	Local<Function> cb( arg0 );
 
 	callbackArgs.odbc = oto->odbc;
@@ -1282,7 +1399,7 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 		args = NULL;
 	}
 	Local<Function> cb = Local<Function>::New( userData->isolate, userData->cb );
-	Local<Value> str = cb->Call( userData->sql->handle(), argc, args );
+	Local<Value> str = cb->Call( userData->isolate->GetCurrentContext(), userData->sql->handle(), argc, args ).ToLocalChecked();
 	String::Utf8Value result( USE_ISOLATE( userData->isolate ) str->ToString( userData->isolate->GetCurrentContext() ).ToLocalChecked() );
 	int type;
 	if( ( ( type = 1 ), str->IsArrayBuffer() ) || ( ( type = 2 ), str->IsUint8Array() ) ) {
@@ -1339,7 +1456,7 @@ void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
 		String::Utf8Value name( USE_ISOLATE( isolate ) args[0] );
 		struct SqlObjectUserFunction *userData = new SqlObjectUserFunction();
 		userData->isolate = isolate;
-		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
+		userData->cb.Reset( isolate, Local<Function>::Cast( args[1] ) );
 		userData->sql = sql;
 		PSSQL_AddSqliteFunction( sql->odbc, *name, callUserFunction, destroyUserData, -1, userData );
 	}
@@ -1359,7 +1476,7 @@ void SqlObject::userProcedure( const v8::FunctionCallbackInfo<Value>& args ) {
 		String::Utf8Value name( USE_ISOLATE( isolate ) args[0] );
 		struct SqlObjectUserFunction *userData = new SqlObjectUserFunction();
 		userData->isolate = isolate;
-		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
+		userData->cb.Reset( isolate, Local<Function>::Cast( args[1] ) );
 		userData->sql = sql;
 		PSSQL_AddSqliteProcedure( sql->odbc, *name, callUserFunction, destroyUserData, -1, userData );
 	}
@@ -1438,7 +1555,7 @@ void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3_value*
 		args = NULL;
 	}
 	Local<Function> cb = Local<Function>::New( userData->isolate, userData->cb );
-	cb->Call( userData->sql->handle(), argc, args );
+	cb->Call( userData->isolate->GetCurrentContext(), userData->sql->handle(), argc, args );
 	if( argc > 0 ) {
 		delete[] args;
 	}
@@ -1533,7 +1650,7 @@ static void handleCorruption( uintptr_t psv, PODBC odbc ) {
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	SqlObject *sql = (SqlObject*)psv;
 	Local<Function> cb = Local<Function>::New( isolate, sql->onCorruption.Get( isolate ) );
-	cb->Call( sql->_this.Get( isolate ), 0, 0 );
+	cb->Call( isolate->GetCurrentContext(), sql->_this.Get( isolate ), 0, 0 );
 }
 
 
@@ -1541,7 +1658,7 @@ void SqlObject::setOnCorruption( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	int argc = args.Length();
-	sql->onCorruption.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+	sql->onCorruption.Reset( isolate, Local<Function>::Cast( args[0] ) );
 	SetSQLCorruptionHandler( sql->odbc, handleCorruption, (uintptr_t)sql );
 
 }
@@ -1555,8 +1672,8 @@ void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args )
 		String::Utf8Value name( USE_ISOLATE( isolate ) args[0] );
 		struct SqlObjectUserFunction *userData = new SqlObjectUserFunction();
 		userData->isolate = isolate;
-		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
-		userData->cb2.Reset( isolate, Handle<Function>::Cast( args[2] ) );
+		userData->cb.Reset( isolate, Local<Function>::Cast( args[1] ) );
+		userData->cb2.Reset( isolate, Local<Function>::Cast( args[2] ) );
 		userData->sql = sql;
 		PSSQL_AddSqliteAggregate( sql->odbc, *name, callAggStep, callAggFinal, destroyUserData, -1, userData );
 

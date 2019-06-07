@@ -73,18 +73,19 @@ using namespace v8;
 //fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekSet" ), Integer::New( isolate, SEEK_SET ), ReadOnlyProperty );
 
 #define SET_READONLY( object, name, data ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name), data, ReadOnlyProperty )
-#define SET_READONLY_METHOD( object, name, method ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name), v8::Function::New(isolate, method ), ReadOnlyProperty )
+#define SET_READONLY_METHOD( object, name, method ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name), v8::Function::New(isolate->GetCurrentContext(), method ).ToLocalChecked(), ReadOnlyProperty )
 
-void InitJSOX( Isolate *isolate, Handle<Object> exports );
-void InitJSON( Isolate *isolate, Handle<Object> exports );
-void InitSRG( Isolate *isolate, Handle<Object> exports );
-void InitWebSocket( Isolate *isolate, Handle<Object> exports );
-void InitUDPSocket( Isolate *isolate, Handle<Object> exports );
-void InitTask( Isolate *isolate, Handle<Object> exports );
-void KeyHidObjectInit( Isolate *isolate, Handle<Object> exports );
+void InitJSOX( Isolate *isolate, Local<Object> exports );
+void InitJSON( Isolate *isolate, Local<Object> exports );
+void InitSRG( Isolate *isolate, Local<Object> exports );
+void InitWebSocket( Isolate *isolate, Local<Object> exports );
+void InitUDPSocket( Isolate *isolate, Local<Object> exports );
+void InitTask( Isolate *isolate, Local<Object> exports );
+void KeyHidObjectInit( Isolate *isolate, Local<Object> exports );
 
-void textObjectInit( Isolate *isolate, Handle<Object> _exports );
+void textObjectInit( Isolate *isolate, Local<Object> _exports );
 	PTEXT isTextObject( Isolate *isolate, Local<Value> object );
+
 
 #define ReadOnlyProperty (PropertyAttribute)((int)PropertyAttribute::ReadOnly | PropertyAttribute::DontDelete)
 
@@ -108,8 +109,8 @@ public:
 
 public:
 
-	static void doInit( Handle<Object> exports );
-	static void Init( Handle<Object> exports );
+	static void doInit( Local<Object> exports );
+	static void Init( Local<Object> exports );
 	static void Init( Local<Object> exports, Local<Value> val, void* p );
 	VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
 
@@ -135,48 +136,6 @@ public:
 };
 
 
-class ObjectStorageObject : public node::ObjectWrap {
-public:
-	uv_async_t async;
-	PLINKQUEUE plqEvents;
-	struct objStore::volume *vol;
-	bool volNative;
-	char *mountName;
-	char *fileName;
-	struct file_system_interface *fsInt;
-	struct file_system_mounted_interface* fsMount;
-	static v8::Persistent<v8::Function> constructor;
-
-public:
-
-	static void Init( Isolate *isolate, Handle<Object> exports );
-	ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
-
-	static void New( const v8::FunctionCallbackInfo<Value>& args );
-
-	// get object pass object ID
-	static void getObject( const v8::FunctionCallbackInfo<Value>& args );
-
-	// get object and all recursive objects associated from here (for 1 level?)
-	static void mapObject( const v8::FunctionCallbackInfo<Value>& args );
-
-	// pass object, result with object ID.
-	static void putObject( const v8::FunctionCallbackInfo<Value>& args );
-
-	// pass object ID, get back a ObjectStorageFileObject ( support seek/read/write? )
-	static void openObject( const v8::FunctionCallbackInfo<Value>& args );
-
-	// utility to remove the key so it can be diagnosed.
-	static void volDecrypt( const v8::FunctionCallbackInfo<Value>& args );
-
-	static void fileReadJSOX( const v8::FunctionCallbackInfo<Value>& args );
-
-	static void fileWrite( const v8::FunctionCallbackInfo<Value>& args );
-	static void fileStore( const v8::FunctionCallbackInfo<Value>& args );
-	static ObjectStorageObject* openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 );
-	~ObjectStorageObject();
-};
-
 
 class ThreadObject : public node::ObjectWrap {
 public:
@@ -184,7 +143,7 @@ public:
    	static Persistent<Function> idleProc;
 public:
 
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 	ThreadObject();
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
@@ -227,107 +186,6 @@ public:
 	~FileObject();
 };
 
-struct SqlObjectUserFunction {
-	class SqlObject *sql;
-	Persistent<Function> cb;
-	Persistent<Function> cb2;
-	Isolate *isolate;
-	SqlObjectUserFunction() : cb(), cb2() {}
-};
-
-class SqlStmtObject : public node::ObjectWrap {
-public:
-	static v8::Persistent<v8::Function> constructor;
-	class SqlObject *sql;
-	PDATALIST values;
-	SqlStmtObject() {
-		values = NULL;
-	}
-	static void New( const v8::FunctionCallbackInfo<Value>& args );
-	static void Set( const v8::FunctionCallbackInfo<Value>& args );
-};
-
-class SqlObject : public node::ObjectWrap {
-public:
-	PODBC odbc;
-	int optionInitialized;
-	static v8::Persistent<v8::Function> constructor;
-	//int columns;
-	//CTEXTSTR *result;
-	//size_t *resultLens;
-	//CTEXTSTR *fields;
-	v8::Persistent<v8::Function> onCorruption;
-	Persistent<Object> _this;
-	//Persistent<Object> volume;
-public:
-	PTHREAD thread;
-	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
-	PLIST userFunctions;
-	PLINKQUEUE messages;
-
-	static void Init( Handle<Object> exports );
-	SqlObject( const char *dsn );
-
-	static void New( const v8::FunctionCallbackInfo<Value>& args );
-	static void query( const v8::FunctionCallbackInfo<Value>& args );
-	static void escape( const v8::FunctionCallbackInfo<Value>& args );
-	static void unescape( const v8::FunctionCallbackInfo<Value>& args );
-	static void option( const v8::FunctionCallbackInfo<Value>& args );
-	static void setOption( const v8::FunctionCallbackInfo<Value>& args );
-	static void optionInternal( const v8::FunctionCallbackInfo<Value>& args );
-	static void setOptionInternal( const v8::FunctionCallbackInfo<Value>& args );
-	static void makeTable( const v8::FunctionCallbackInfo<Value>& args );
-	static void closeDb( const v8::FunctionCallbackInfo<Value>& args );
-	static void commit( const v8::FunctionCallbackInfo<Value>& args );
-	static void transact( const v8::FunctionCallbackInfo<Value>& args );
-	static void autoTransact( const v8::FunctionCallbackInfo<Value>& args );
-	static void userFunction( const v8::FunctionCallbackInfo<Value>& args );
-	static void userProcedure( const v8::FunctionCallbackInfo<Value>& args );
-	static void aggregateFunction( const v8::FunctionCallbackInfo<Value>& args );
-	static void setOnCorruption( const v8::FunctionCallbackInfo<Value>& args );
-
-	static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args );
-	static void enumOptionNodesInternal( const v8::FunctionCallbackInfo<Value>& args );
-	static void findOptionNode( const v8::FunctionCallbackInfo<Value>& args );
-	static void getOptionNode( const v8::FunctionCallbackInfo<Value>& args );
-	static void error( const v8::FunctionCallbackInfo<Value>& args );
-
-	static void getLogging( const v8::FunctionCallbackInfo<Value>& args );
-	static void setLogging( const v8::FunctionCallbackInfo<Value>& args );
-
-
-	static void doWrap( SqlObject *sql, Local<Object> o ); 
-
-	~SqlObject();
-};
-
-
-class OptionTreeObject : public node::ObjectWrap {
-public:
-	POPTION_TREE_NODE node;
-	PODBC odbc;
-	static v8::Persistent<v8::Function> constructor;
-	
-public:
-
-	static void Init( );
-	OptionTreeObject(  );
-
-	static void New( const v8::FunctionCallbackInfo<Value>& args );
-
-	static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args );
-	static void findOptionNode( const v8::FunctionCallbackInfo<Value>& args );
-	static void getOptionNode( const v8::FunctionCallbackInfo<Value>& args );
-	static void writeOptionNode( v8::Local<v8::String> field,
-		v8::Local<v8::Value> val,
-		const PropertyCallbackInfo<void>&info );
-	static void readOptionNode( v8::Local<v8::String> field,
-		const PropertyCallbackInfo<v8::Value>& info );
-
-	~OptionTreeObject();
-};
-
-
 
 
 class ComObject : public node::ObjectWrap {
@@ -342,7 +200,7 @@ public:
 	
 public:
 
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 	ComObject( char *name );
 
 private:
@@ -358,7 +216,7 @@ private:
 
 class RegObject : public node::ObjectWrap {
 public:
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 
 private:
 	static void getRegItem( const v8::FunctionCallbackInfo<Value>& args );
@@ -378,7 +236,7 @@ public:
 	
 public:
 
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 	WebSockClientObject();
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
@@ -399,7 +257,7 @@ public:
 
 public:
 
-	static void Init( Isolate *isolate, Handle<Object> exports );
+	static void Init( Isolate *isolate, Local<Object> exports );
 	TLSObject( );
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
@@ -425,10 +283,10 @@ struct reviver_data {
 	Local<Context> context;
 	LOGICAL revive;
 	//int index;
-	Handle<Value> value;
-	Handle<Object> _this;
-	Handle<Function> reviver;
-	Handle<Object> rootObject;
+	Local<Value> value;
+	Local<Object> _this;
+	Local<Function> reviver;
+	Local<Object> rootObject;
 	class JSOXObject *parser;
 };
 
@@ -450,7 +308,7 @@ public:
 	PLIST prototypes; // revivde prototypes by class
 public:
 
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 	JSOXObject();
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
@@ -477,9 +335,16 @@ Local<String> localString( Isolate *isolate, const char *data, int len );
 Local<String> localStringExternal( Isolate *isolate, const char *data, int len, const char *real_root );
 
 void InitFS( const v8::FunctionCallbackInfo<Value>& args );
-void ConfigScriptInit( Handle<Object> exports );
+void ConfigScriptInit( Local<Object> exports );
 
-void ObjectStorageInit( Isolate *isoalte, Handle<Object> exports );
+void ObjectStorageInit( Isolate *isoalte, Local<Object> exports );
+
+
+void SqlObjectInit( Local<Object> exports );
+void createSqlObject( const char *name, Local<Object> into );
+Local<Value> newSqlObject( Isolate *isolate, int argc, Local<Value> *argv );
+
+class ObjectStorageObject*  openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 );
 
 #ifndef VFS_MAIN_SOURCE
 extern

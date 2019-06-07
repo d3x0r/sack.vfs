@@ -33,7 +33,7 @@ public:
 
 public:
 
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 	parseObject();
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
@@ -50,7 +50,7 @@ Persistent<Function> parseObject::constructor;
 Persistent<Function> parseObject::constructor6;
 Persistent<Function> parseObject::constructor6v;
 
-void InitJSON( Isolate *isolate, Handle<Object> exports ){
+void InitJSON( Isolate *isolate, Local<Object> exports ){
 	Local<Object> o = Object::New( isolate );
 	SET_READONLY_METHOD( o, "parse", parseJSON );
 	NODE_SET_METHOD( o, "stringify", makeJSON );
@@ -65,9 +65,9 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write );
 
-		parseObject::constructor.Reset( isolate, parseTemplate->GetFunction() );
+		parseObject::constructor.Reset( isolate, parseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 
-		SET_READONLY( o, "begin", parseTemplate->GetFunction() );
+		SET_READONLY( o, "begin", parseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	}
 
 	Local<Object> o2 = Object::New( isolate );
@@ -84,9 +84,9 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write6 );
 
-		parseObject::constructor6.Reset( isolate, parseTemplate->GetFunction() );
+		parseObject::constructor6.Reset( isolate, parseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 
-		SET_READONLY( o2, "begin", parseTemplate->GetFunction() );
+		SET_READONLY( o2, "begin", parseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	}
 
 	Local<Object> o3 = Object::New( isolate );
@@ -103,9 +103,9 @@ void InitJSON( Isolate *isolate, Handle<Object> exports ){
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write6v );
 
-		parseObject::constructor6v.Reset( isolate, parseTemplate->GetFunction() );
+		parseObject::constructor6v.Reset( isolate, parseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
-		SET_READONLY( o2, "begin", parseTemplate->GetFunction() );
+		SET_READONLY( o2, "begin", parseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 }
 
@@ -149,7 +149,7 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 			argv[0] = convertMessageToJS( elements, &r );
 			Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 			{
-				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+				MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, argv );
 				if( result.IsEmpty() ) // if an exception occurred stop, and return it.
 					return;
 			}
@@ -182,7 +182,7 @@ void parseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
 		parseObject* obj = new parseObject();
-		Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+		Local<Function> arg0 = Local<Function>::Cast( args[0] );
 		Persistent<Function> cb( isolate, arg0 );
 		obj->readCallback = cb;
 
@@ -232,7 +232,7 @@ void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 			argv[0] = convertMessageToJS( elements, &r );
 			Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 			{
-				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+				MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, argv );
 				if( result.IsEmpty() ) // if an exception occurred stop, and return it.
 					return;
 			}
@@ -265,7 +265,7 @@ void parseObject::New6( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
 		parseObject* obj = new parseObject();
-		Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+		Local<Function> arg0 = Local<Function>::Cast( args[0] );
 		Persistent<Function> cb( isolate, arg0 );
 		obj->readCallback = cb;
 
@@ -313,7 +313,7 @@ void parseObject::write6v( const v8::FunctionCallbackInfo<Value>& args ) {
 			argv[0] = convertMessageToJS( elements, &r );
 			Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 			{
-				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+				MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, argv );
 				if( result.IsEmpty() ) // if an exception occurred stop, and return it.
 					return;
 			}
@@ -347,7 +347,7 @@ void parseObject::New6v( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
 		parseObject* obj = new parseObject();
-		Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+		Local<Function> arg0 = Local<Function>::Cast( args[0] );
 		Persistent<Function> cb( isolate, arg0 );
 		obj->readCallback = cb;
 
@@ -423,7 +423,7 @@ static inline Local<Value> makeValue( struct json_value_container *val, struct r
 	}
 	if( revive->revive ) {
 		Local<Value> args[2] = { revive->value, result };
-		Local<Value> r = revive->reviver->Call( revive->_this, 2, args );
+		Local<Value> r = revive->reviver->Call( revive->context, revive->_this, 2, args ).ToLocalChecked();
 	}
 	return result;
 }
@@ -474,7 +474,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 			buildObject( val->contains, sub_o, revive );
 			if( revive->revive ) {
 				Local<Value> args[2] = { thisKey, sub_o };
-				revive->reviver->Call( revive->_this, 2, args );
+				revive->reviver->Call( revive->context, revive->_this, 2, args );
 			}
 			break;
 		case VALUE_OBJECT:
@@ -493,7 +493,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 			buildObject( val->contains, sub_o, revive );
 			if( revive->revive ) {
 				Local<Value> args[2] = { thisKey, sub_o };
-				revive->reviver->Call( revive->_this, 2, args );
+				revive->reviver->Call( revive->context, revive->_this, 2, args );
 			}
 			break;
 		}
@@ -554,13 +554,13 @@ void parseJSON( const v8::FunctionCallbackInfo<Value>& args )
 	r.isolate = Isolate::GetCurrent();
 	String::Utf8Value tmp( USE_ISOLATE(r.isolate) args[0] );
 	msg = *tmp;
-	Handle<Function> reviver;
+	Local<Function> reviver;
 
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
 			r._this = args.Holder();
 			r.value = String::NewFromUtf8( r.isolate, "" );
-			r.reviver = Handle<Function>::Cast( args[1] );
+			r.reviver = Local<Function>::Cast( args[1] );
 			r.revive = TRUE;
 		}
 		else {
@@ -655,14 +655,14 @@ void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
 	}
 	const char *msg;
 	String::Utf8Value tmp( USE_ISOLATE( r.isolate ) args[0] );
-	Handle<Function> reviver;
+	Local<Function> reviver;
 	msg = *tmp;
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
 			r._this = args.Holder();
 			r.value = String::NewFromUtf8( r.isolate, "" );
 			r.revive = TRUE;
-			r.reviver = Handle<Function>::Cast( args[1] );
+			r.reviver = Local<Function>::Cast( args[1] );
 		}
 		else {
 			r.isolate->ThrowException( Exception::TypeError(
@@ -742,14 +742,14 @@ void parseJSON6v( const v8::FunctionCallbackInfo<Value>& args )
 	}
 	const char *msg;
 	String::Utf8Value tmp( USE_ISOLATE( r.isolate ) args[0] );
-	Handle<Function> reviver;
+	Local<Function> reviver;
 	msg = *tmp;
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
 			r._this = args.Holder();
 			r.value = String::NewFromUtf8( r.isolate, "" );
 			r.revive = TRUE;
-			r.reviver = Handle<Function>::Cast( args[1] );
+			r.reviver = Local<Function>::Cast( args[1] );
 		}
 		else {
 			r.isolate->ThrowException( Exception::TypeError(

@@ -141,7 +141,7 @@ static uintptr_t CPROC handler( uintptr_t psv, uintptr_t psvRule, arg_list args 
 		}
 	}
 	Local<Function> cb = rule->handler.Get( config->isolate );
-	Local<Value> result = cb->Call( ( (Value*)psv )->ToObject( config->isolate->GetCurrentContext() ).ToLocalChecked(), argc, argv );
+	Local<Value> result = cb->Call( config->isolate->GetCurrentContext(), ( (Value*)psv )->ToObject( config->isolate->GetCurrentContext() ).ToLocalChecked(), argc, argv ).ToLocalChecked();
 	config->lastResult = (uintptr_t)*result;
 	result.Clear();
 	return config->lastResult;
@@ -150,7 +150,7 @@ static uintptr_t CPROC handler( uintptr_t psv, uintptr_t psvRule, arg_list args 
 void ConfigObject::Add( const v8::FunctionCallbackInfo<Value>& args ) {
 	ConfigObject *config = ObjectWrap::Unwrap<ConfigObject>( args.This() );
 	struct CurrentRule *rule = new CurrentRule();
-	rule->handler.Reset( args.GetIsolate(), Handle<Function>::Cast( args[1] ) );
+	rule->handler.Reset( args.GetIsolate(), Local<Function>::Cast( args[1] ) );
 	AddLink( &config->handlers, rule );
 	String::Utf8Value format( USE_ISOLATE( args.GetIsolate() ) args[0] );
 	AddConfigurationExx( config->pch, *format, handler, (uintptr_t)rule DBG_SRC );
@@ -224,7 +224,7 @@ void ConfigObject::Write( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 
-void ConfigScriptInit( Handle<Object> exports ) {
+void ConfigScriptInit( Local<Object> exports ) {
 	Isolate* isolate = Isolate::GetCurrent();
 
 	Local<FunctionTemplate> configTemplate;
@@ -242,7 +242,7 @@ void ConfigScriptInit( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( configTemplate, "begin", ConfigObject::Begin );
 	NODE_SET_PROTOTYPE_METHOD( configTemplate, "end", ConfigObject::End );
 
-	Local<Object> configfunc = configTemplate->GetFunction();
+	Local<Object> configfunc = configTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
 	SET_READONLY_METHOD(configfunc, "expand", configExpand );
 	SET_READONLY_METHOD(configfunc, "strip", configStrip );
