@@ -167,5 +167,5 @@ struct global {
 } g;
 
 void InitInterfaces( int opengl, int vulkan );
-int MakeEvent( uv_async_t *async, PLINKQUEUE *queue, enum eventType type, ... );
+uintptr_t MakeEvent( uv_async_t *async, PLINKQUEUE *queue, enum eventType type, ... );
 

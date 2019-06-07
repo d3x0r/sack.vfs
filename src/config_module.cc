@@ -1,6 +1,8 @@
 
 #include "global.h"
 
+#include <configscript.h>
+
 struct currentState {
 	Persistent<Function> done;
 	Persistent<Function> unhandled;

@@ -54,10 +54,11 @@ static void getTextNoReturn( const FunctionCallbackInfo<Value>& args ) {
 }
 
 static void setTextNoReturn( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
 	if( !me->segment )
 		me->segment = SegCreate( 0 );
-	if( args[0]->BooleanValue() )
+	if( args[0]->TOBOOL(isolate) )
 		me->segment->flags |= TF_NORETURN;
 	else
 		me->segment->flags &= ~TF_NORETURN;
@@ -75,10 +76,11 @@ static void getTextParens( const FunctionCallbackInfo<Value>& args ) {
 }
 
 static void setTextParens( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
 	if( !me->segment )
 		me->segment = SegCreate( 0 );
-	if( args[0]->BooleanValue() )
+	if( args[0]->TOBOOL(isolate) )
 		me->segment->flags |= TF_PAREN;
 	else
 		me->segment->flags &= ~TF_PAREN;
@@ -94,10 +96,11 @@ static void getTextQuoted( const FunctionCallbackInfo<Value>& args ) {
 }
 
 static void setTextQuoted( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
 	if( !me->segment )
 		me->segment = SegCreate( 0 );
-	if( args[0]->BooleanValue() )
+	if( args[0]->TOBOOL(isolate) )
 		me->segment->flags |= TF_QUOTE;
 	else
 		me->segment->flags &= ~TF_QUOTE;
@@ -114,10 +117,11 @@ static void getTextSQuoted( const FunctionCallbackInfo<Value>& args ) {
 }
 
 static void setTextSQuoted( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
 	if( !me->segment )
 		me->segment = SegCreate( 0 );
-	if( args[0]->BooleanValue() )
+	if( args[0]->TOBOOL(isolate) )
 		me->segment->flags |= TF_SQUOTE;
 	else
 		me->segment->flags &= ~TF_SQUOTE;
@@ -138,11 +142,13 @@ static void getTextFore( const FunctionCallbackInfo<Value>& args ) {
 }
 
 static void setTextFore( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context>context = isolate->GetCurrentContext();
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
 	if( !me->segment )
 		me->segment = SegCreate( 0 );
 	if( args[0]->IsBoolean() ) {
-		if( args[0]->BooleanValue() ) {
+		if( args[0]->TOBOOL(isolate) ) {
 			me->segment->format.flags.default_foreground = 1;
 			me->segment->format.flags.prior_foreground = 0;
 		}
@@ -154,7 +160,7 @@ static void setTextFore( const FunctionCallbackInfo<Value>& args ) {
 	else if( args[0]->IsNumber() ) {
 		me->segment->format.flags.default_foreground = 0;
 		me->segment->format.flags.prior_foreground = 0;
-		me->segment->format.flags.foreground = args[0]->NumberValue();
+		me->segment->format.flags.foreground = args[0]->IntegerValue(context).ToChecked();
 	}
 }
 
@@ -176,10 +182,12 @@ static void getTextBack( const FunctionCallbackInfo<Value>& args ) {
 
 static void setTextBack( const FunctionCallbackInfo<Value>& args ) {
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
+	Isolate* isolate = args.GetIsolate();
+	Local<Context>context = isolate->GetCurrentContext();
 	if( !me->segment )
 		me->segment = SegCreate( 0 );
 	if( args[0]->IsBoolean() ) {
-		if( args[0]->BooleanValue() ) {
+		if( args[0]->TOBOOL(isolate) ) {
 			me->segment->format.flags.default_background = 1;
 			me->segment->format.flags.prior_background = 0;
 		}
@@ -191,7 +199,7 @@ static void setTextBack( const FunctionCallbackInfo<Value>& args ) {
 	else if( args[0]->IsNumber() ) {
 		me->segment->format.flags.default_background = 0;
 		me->segment->format.flags.prior_background = 0;
-		me->segment->format.flags.background = args[0]->NumberValue();
+		me->segment->format.flags.background = args[0]->IntegerValue(context).ToChecked();
 	}
 }
 
@@ -207,9 +215,10 @@ static void getTextBraced( const FunctionCallbackInfo<Value>& args ) {
 
 static void setTextBraced( const FunctionCallbackInfo<Value>& args ) {
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
+	Isolate* isolate = args.GetIsolate();
 	if( !me->segment )
 		me->segment = SegCreate( 0 );
-	if( args[0]->BooleanValue() )
+	if( args[0]->TOBOOL(isolate) )
 		me->segment->flags |= TF_BRACE;
 	else
 		me->segment->flags &= ~TF_BRACE;
@@ -227,9 +236,10 @@ static void getTextBracketed( const FunctionCallbackInfo<Value>& args ) {
 
 static void setTextBracketed( const FunctionCallbackInfo<Value>& args ) {
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
+	Isolate* isolate = args.GetIsolate();
 	if( !me->segment )
 		me->segment = SegCreate( 0 );
-	if( args[0]->BooleanValue() )
+	if( args[0]->TOBOOL(isolate) )
 		me->segment->flags |= TF_BRACKET;
 	else
 		me->segment->flags &= ~TF_BRACKET;
@@ -240,14 +250,16 @@ static void getText( const FunctionCallbackInfo<Value>& args ) {
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
 	Isolate *isolate = args.GetIsolate();
 	if( me->segment ) {
-		args.GetReturnValue().Set( String::NewFromUtf8( isolate, GetText( me->segment ), NewStringType::kNormal, GetTextSize( me->segment ) ).ToLocalChecked() );
+		args.GetReturnValue().Set( String::NewFromUtf8( isolate, GetText( me->segment ), NewStringType::kNormal, (int)GetTextSize( me->segment ) ).ToLocalChecked() );
 	}
 	args.GetReturnValue().Set( Null( isolate ) );
 }
 
 static void setText( const FunctionCallbackInfo<Value>& args ) {
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
-	String::Utf8Value text( args[0]->ToString() );
+	Isolate* isolate = args.GetIsolate();
+	Local<Context>context = isolate->GetCurrentContext();
+	String::Utf8Value text( isolate, args[0] );
 
 	if( !me->segment )
 		me->segment = SegCreateFromCharLen( *text, text.length() );
@@ -263,10 +275,11 @@ static void setText( const FunctionCallbackInfo<Value>& args ) {
 }
 
 PTEXT isTextObject( Isolate *isolate, Local<Value> object ) {
+	Local<Context> context = isolate->GetCurrentContext();
 	if( object->IsObject() ) {
 		Local<FunctionTemplate> tpl = pTextTemplate.Get( isolate );
 		Local<Object> locObj;
-		if( tpl->HasInstance( locObj = object->ToObject() ) ) {
+		if( tpl->HasInstance( locObj = object->ToObject(context).ToLocalChecked() ) ) {
 			textWrapper *me = textWrapper::Unwrap<textWrapper>( locObj );
 			if( me )
 				return me->segment;
@@ -277,6 +290,7 @@ PTEXT isTextObject( Isolate *isolate, Local<Value> object ) {
 
 void textObjectInit( Isolate *isolate, Handle<Object> exports ) {
 	Local<FunctionTemplate> textTemplate;
+	Local<Context> context = isolate->GetCurrentContext();
 
 	textTemplate = FunctionTemplate::New( isolate, newText );
 	pTextTemplate.Reset( isolate, textTemplate );
@@ -331,6 +345,6 @@ void textObjectInit( Isolate *isolate, Handle<Object> exports ) {
 		, FunctionTemplate::New( isolate, setText )
 		, DontDelete );
 
-	constructor.Reset( isolate, textTemplate->GetFunction() );
-	SET_READONLY( exports, "Text", textTemplate->GetFunction() );
+	constructor.Reset( isolate, textTemplate->GetFunction(context).ToLocalChecked() );
+	SET_READONLY( exports, "Text", textTemplate->GetFunction(context).ToLocalChecked() );
 }

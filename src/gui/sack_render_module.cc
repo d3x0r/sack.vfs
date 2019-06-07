@@ -42,7 +42,8 @@ static void asyncmsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	
+	Local<Context> context = isolate->GetCurrentContext();
+
 	RenderObject* myself = (RenderObject*)handle->data;
 
 	HandleScope scope(isolate);
@@ -66,12 +67,12 @@ static void asyncmsg( uv_async_t* handle ) {
 				cb = Local<Function>::New( isolate, myself->cbDraw );
 				break;
 			}
-			Local<Value> r = cb->Call( isolate->GetCurrentContext()->Global(), 1, argv );
+			Local<Value> r = cb->Call( context, isolate->GetCurrentContext()->Global(), 1, argv ).ToLocalChecked();
 			if( evt->waiter ) {
 				if( r.IsEmpty() )
 					evt->success = true;
 				else
-					evt->success = (int)r->NumberValue();
+					evt->success = (int)r->IntegerValue(context).ToChecked();
 				evt->flags.complete = TRUE;
 				WakeThread( evt->waiter );
 			}
@@ -88,6 +89,7 @@ void RenderObject::Init( Handle<Object> exports ) {
 		//extern void Syslog
 	}
 		Isolate* isolate = Isolate::GetCurrent();
+		Local<Context> context = isolate->GetCurrentContext();
 		Local<FunctionTemplate> renderTemplate;
 
 		// Prepare constructor template
@@ -109,12 +111,13 @@ void RenderObject::Init( Handle<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "close", RenderObject::close );
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "on", RenderObject::on );
 
-		Local<Function> renderFunc = renderTemplate->GetFunction();
+		Local<Function> renderFunc = renderTemplate->GetFunction(context).ToLocalChecked();
 		SET_READONLY_METHOD( renderFunc, "is3D", RenderObject::is3D );
 
-		constructor.Reset( isolate, renderTemplate->GetFunction() );
-		SET_READONLY( exports, "Renderer", renderTemplate->GetFunction() );
-		SET_READONLY( renderTemplate->GetFunction(), "getDisplay", Function::New( isolate, RenderObject::getDisplay ) );
+		constructor.Reset( isolate, renderTemplate->GetFunction(context).ToLocalChecked() );
+		SET_READONLY( exports, "Renderer", renderTemplate->GetFunction(context).ToLocalChecked() );
+		SET_READONLY( renderTemplate->GetFunction(context).ToLocalChecked(), "getDisplay"
+				, Function::New( context, RenderObject::getDisplay ).ToLocalChecked() );
 	}
 
 RenderObject::RenderObject( const char *title, int x, int y, int w, int h, RenderObject *over )  {
@@ -129,6 +132,7 @@ RenderObject::~RenderObject() {
 
 	void RenderObject::New( const FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
+		Local<Context> context = isolate->GetCurrentContext();
 		if( args.IsConstructCall() && ( args.This()->InternalFieldCount() == 1)  ) {
 
 			char *title = NULL;
@@ -138,27 +142,27 @@ RenderObject::~RenderObject() {
 
 			int argc = args.Length();
 			if( argc > 0 ) {
-				String::Utf8Value fName( args[0]->ToString() );
+				String::Utf8Value fName( isolate, args[0] );
 				title = StrDup( *fName );
 			}
 			if( argc > 1 ) {
-				x = (int)args[1]->NumberValue();
+				x = (int)args[1]->IntegerValue(context).ToChecked();
 			}
 			if( argc > 2 ) {
-				y = (int)args[2]->NumberValue();
+				y = (int)args[2]->IntegerValue(context).ToChecked();
 			}
 			if( argc > 3 ) {
-				w = (int)args[3]->NumberValue();
+				w = (int)args[3]->IntegerValue(context).ToChecked();
 			}
 			if( argc > 4 ) {
-				h = (int)args[4]->NumberValue();
+				h = (int)args[4]->IntegerValue(context).ToChecked();
 			}
 			if( argc > 5 ) {
 				if( args[5]->IsNull() ) {
 					parent = NULL;
 				}
 				else {
-					parent_object = args[5]->ToObject();
+					parent_object = args[5]->ToObject(context).ToLocalChecked();
 					parent = ObjectWrap::Unwrap<RenderObject>( parent_object );
 				}
 			}
@@ -224,14 +228,15 @@ void RenderObject::redraw( const FunctionCallbackInfo<Value>& args ) {
 
 void RenderObject::update( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	int argc = args.Length();
 	if( argc > 3 ) {
 		int x, y, w, h;
-		x = (int)args[0]->NumberValue();
-		y = (int)args[1]->NumberValue();
-		w = (int)args[2]->NumberValue();
-		h = (int)args[3]->NumberValue();
+		x = (int)args[0]->IntegerValue(context).ToChecked();
+		y = (int)args[1]->IntegerValue(context).ToChecked();
+		w = (int)args[2]->IntegerValue(context).ToChecked();
+		h = (int)args[3]->IntegerValue(context).ToChecked();
 		UpdateDisplayPortion( r->r, x,y,w,h );
 	}
 	else  {
@@ -241,6 +246,7 @@ void RenderObject::update( const FunctionCallbackInfo<Value>& args ) {
 
 void RenderObject::getDisplay( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	Local<Object> result = Object::New( isolate );
 	int32_t x = 0, y = 0;
 	uint32_t w, h;
@@ -252,7 +258,7 @@ void RenderObject::getDisplay( const FunctionCallbackInfo<Value>& args ) {
 		result->Set( String::NewFromUtf8( isolate, "height" ), Integer::New( isolate, h ) );
 	}
 	else {
-		GetDisplaySizeEx( (int)args[0]->IntegerValue(), &x, &y, &w, &h );
+		GetDisplaySizeEx( (int)args[0]->IntegerValue(context).ToChecked(), &x, &y, &w, &h );
 		{
 			result->Set( String::NewFromUtf8( isolate, "x" ), Integer::New( isolate, x ) );
 			result->Set( String::NewFromUtf8( isolate, "y" ), Integer::New( isolate, y ) );
@@ -319,7 +325,7 @@ void RenderObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
 static int CPROC doKey( uintptr_t psv, uint32_t key ) {
 	RenderObject *r = (RenderObject *)psv;
 	if( !r->closed )
-		return MakeEvent( &r->async, &r->receive_queue, Event_Render_Key, key );
+		return (int)MakeEvent( &r->async, &r->receive_queue, Event_Render_Key, key );
 	return 0;
 }
 
@@ -348,7 +354,7 @@ void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
 	}
 	Handle<Function> arg1 = Handle<Function>::Cast( args[1] );
 
-	String::Utf8Value fName( args[0]->ToString() );
+	String::Utf8Value fName( isolate, args[0] );
 	if( StrCmp( *fName, "draw" ) == 0 ) {
 		Persistent<Function> cb( isolate, arg1 );
 		SetRedrawHandler( r->r, doRedraw, (uintptr_t)r );
@@ -366,7 +372,7 @@ void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
-int MakeEvent( uv_async_t *async, PLINKQUEUE *queue, enum eventType type, ... ) {
+uintptr_t MakeEvent( uv_async_t *async, PLINKQUEUE *queue, enum eventType type, ... ) {
 	event e;
 	va_list args;
 	va_start( args, type );

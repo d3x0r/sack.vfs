@@ -92,6 +92,7 @@ static void initOptions( void ) {
 
 
 void VulkanObject::Init( Isolate* isolate, Handle<Object> exports ) {
+	Local<Context> context = isolate->GetCurrentContext();
 
 	Local<FunctionTemplate> vulkanTemplate;
 
@@ -99,12 +100,12 @@ void VulkanObject::Init( Isolate* isolate, Handle<Object> exports ) {
 	vulkanTemplate = FunctionTemplate::New( isolate, New );
 	vulkanTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Vulkan" ) );
 	vulkanTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); /* one internal for wrap */
-	constructor.Reset( isolate, vulkanTemplate->GetFunction() );
+	constructor.Reset( isolate, vulkanTemplate->GetFunction(context).ToLocalChecked() );
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( vulkanTemplate, "frameBuffer", getFrameBuffer );
 
-	SET_READONLY( exports, "Vulkan", vulkanTemplate->GetFunction() );
+	SET_READONLY( exports, "Vulkan", vulkanTemplate->GetFunction(context).ToLocalChecked() );
 
 	//SET_READONLY( vulkanTemplate->GetFunction(), "getDisplay", Function::New( isolate, RenderObject::getDisplay ) );
 }
