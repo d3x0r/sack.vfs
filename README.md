@@ -1200,6 +1200,9 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.155 (in progress)
+   - removed node 7 travis integration; `#  - "7" (doesn't have Utf8Value with isolate, 12 doesn't have Utf8Value without isolate())`
+   - 
 - 0.9.154
    - Continutined applying deprecation fixes; republished as 154
 - 0.9.153

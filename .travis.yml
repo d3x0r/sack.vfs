@@ -5,7 +5,7 @@ node_js:
   - "10"
   - "9"
   - "8"
-  - "7"
+#  - "7" (doesn't have Utf8Value with isolate, 12 doesn't have Utf8Value without isolate())
 #  - "6"
 #  - "5"
 #  - "4"
