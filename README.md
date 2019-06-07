@@ -1200,8 +1200,14 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
-- 0.9.151
+- 0.9.152
    - Update to Node 12 (Requires usage of context, and MaybeLocal types)
+   - Fixed id regnerator to match JS version in more cases.
+   - Use pthread_mutex for waits.
+   - Improve static global usage so no external memory allocation gets used. (/tmp/.shared*)
+   - Removed now unused signal handler registrations.
+- 0.9.151
+   - SKipped due to error in tagging.
 - 0.9.150
    - Fix regression handline NUL inline in JSOX parser (re fix partial codepoints received across buffer bounds)
    - Fix releasing the buffer too soon on HTTP fallback from HTTPS.
