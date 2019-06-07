@@ -33,7 +33,7 @@ public:
 
 public:
 
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 	parseObject();
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
@@ -50,7 +50,7 @@ Persistent<Function> parseObject::constructor;
 Persistent<Function> parseObject::constructor6;
 Persistent<Function> parseObject::constructor6v;
 
-void InitJSON( Isolate *isolate, Handle<Object> exports ){
+void InitJSON( Isolate *isolate, Local<Object> exports ){
 	Local<Object> o = Object::New( isolate );
 	SET_READONLY_METHOD( o, "parse", parseJSON );
 	NODE_SET_METHOD( o, "stringify", makeJSON );
@@ -182,7 +182,7 @@ void parseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
 		parseObject* obj = new parseObject();
-		Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+		Local<Function> arg0 = Local<Function>::Cast( args[0] );
 		Persistent<Function> cb( isolate, arg0 );
 		obj->readCallback = cb;
 
@@ -265,7 +265,7 @@ void parseObject::New6( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
 		parseObject* obj = new parseObject();
-		Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+		Local<Function> arg0 = Local<Function>::Cast( args[0] );
 		Persistent<Function> cb( isolate, arg0 );
 		obj->readCallback = cb;
 
@@ -347,7 +347,7 @@ void parseObject::New6v( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
 		parseObject* obj = new parseObject();
-		Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+		Local<Function> arg0 = Local<Function>::Cast( args[0] );
 		Persistent<Function> cb( isolate, arg0 );
 		obj->readCallback = cb;
 
@@ -554,13 +554,13 @@ void parseJSON( const v8::FunctionCallbackInfo<Value>& args )
 	r.isolate = Isolate::GetCurrent();
 	String::Utf8Value tmp( USE_ISOLATE(r.isolate) args[0] );
 	msg = *tmp;
-	Handle<Function> reviver;
+	Local<Function> reviver;
 
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
 			r._this = args.Holder();
 			r.value = String::NewFromUtf8( r.isolate, "" );
-			r.reviver = Handle<Function>::Cast( args[1] );
+			r.reviver = Local<Function>::Cast( args[1] );
 			r.revive = TRUE;
 		}
 		else {
@@ -655,14 +655,14 @@ void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
 	}
 	const char *msg;
 	String::Utf8Value tmp( USE_ISOLATE( r.isolate ) args[0] );
-	Handle<Function> reviver;
+	Local<Function> reviver;
 	msg = *tmp;
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
 			r._this = args.Holder();
 			r.value = String::NewFromUtf8( r.isolate, "" );
 			r.revive = TRUE;
-			r.reviver = Handle<Function>::Cast( args[1] );
+			r.reviver = Local<Function>::Cast( args[1] );
 		}
 		else {
 			r.isolate->ThrowException( Exception::TypeError(
@@ -742,14 +742,14 @@ void parseJSON6v( const v8::FunctionCallbackInfo<Value>& args )
 	}
 	const char *msg;
 	String::Utf8Value tmp( USE_ISOLATE( r.isolate ) args[0] );
-	Handle<Function> reviver;
+	Local<Function> reviver;
 	msg = *tmp;
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
 			r._this = args.Holder();
 			r.value = String::NewFromUtf8( r.isolate, "" );
 			r.revive = TRUE;
-			r.reviver = Handle<Function>::Cast( args[1] );
+			r.reviver = Local<Function>::Cast( args[1] );
 		}
 		else {
 			r.isolate->ThrowException( Exception::TypeError(

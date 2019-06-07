@@ -107,7 +107,7 @@ static void vfs_u8xor(const v8::FunctionCallbackInfo<Value>& args ){
 	if( argc > 0 ) {
 		String::Utf8Value xor1( USE_ISOLATE( isolate ) args[0] );
 		Local<Object> key = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
-		//Handle<Object> 
+		//Local<Object> 
 		Local<String> tmp;
 		Local<Value> keyValue = key->Get( String::NewFromUtf8( isolate, "key" ) );
 		Local<Value> stepValue = key->Get( tmp = String::NewFromUtf8( isolate, "step" ) );
@@ -139,7 +139,7 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 
-void VolumeObject::doInit( Handle<Object> exports ) 
+void VolumeObject::doInit( Local<Object> exports )
 {
 	InvokeDeadstart();
 
@@ -240,7 +240,7 @@ void VolumeObject::Init( Local<Object> exports, Local<Value> val, void* p )  {
 	doInit( exports );	
 }
 
-void VolumeObject::Init( Handle<Object> exports )  {
+void VolumeObject::Init( Local<Object> exports )  {
 	doInit( exports );
 }
 
@@ -492,7 +492,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data callback" ) ) ) );
 			return;
 		}
-		Local<Function> cb = Handle<Function>::Cast( args[1] );
+		Local<Function> cb = Local<Function>::Cast( args[1] );
 		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 
 		if( vol->volNative ) {
@@ -590,7 +590,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data callback" ) ) ) );
 			return;
 		}
-		Local<Function> cb = Handle<Function>::Cast( args[1] );
+		Local<Function> cb = Local<Function>::Cast( args[1] );
 		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 
 		if( vol->volNative ) {
@@ -861,7 +861,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				pargs->f = new Persistent<Function>();
 				pargs->memory = (uint8_t*)data;
 				pargs->len = len;
-				pargs->f->Reset( isolate, Handle<Function>::Cast( args[1] ) );
+				pargs->f->Reset( isolate, Local<Function>::Cast( args[1] ) );
 				pargs->_this.Reset( isolate, args.This() );
 				uv_async_init( uv_default_loop(), &pargs->async, preloadCallback );
 				pargs->async.data = pargs;
@@ -1159,7 +1159,7 @@ void FileObject::Emitter(const v8::FunctionCallbackInfo<Value>& args)
 {
 	Isolate* isolate = Isolate::GetCurrent();
 	//HandleScope scope;
-	Handle<Value> argv[2] = {
+	Local<Value> argv[2] = {
 		v8::String::NewFromUtf8( isolate, "ping"), // event name
 		args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  // argument
 	};

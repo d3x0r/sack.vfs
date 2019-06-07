@@ -222,7 +222,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 	}
 	return check;
 }
-void InitUDPSocket( Isolate *isolate, Handle<Object> exports ) {
+void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 	if( !l.loop )
 		l.loop = uv_default_loop();
 
@@ -455,7 +455,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 			}
 			// ---- get message callback
 			if( opts->Has( context, optName = strings->messageString->Get( isolate ) ).ToChecked() ) {
-				udpOpts.messageCallback.Reset( isolate, Handle<Function>::Cast( opts->Get( optName ) ) );
+				udpOpts.messageCallback.Reset( isolate, Local<Function>::Cast( opts->Get( optName ) ) );
 			}
 			// ---- get read strings setting
 			if( opts->Has( context, optName = strings->readStringsString->Get( isolate ) ).ToChecked() ) {
@@ -475,7 +475,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		}
 
 		if( args.Length() >= argBase && args[argBase]->IsFunction() ) {
-			Handle<Function> arg0 = Handle<Function>::Cast( args[argBase] );
+			Local<Function> arg0 = Local<Function>::Cast( args[argBase] );
 			udpOpts.messageCallback.Reset( isolate, arg0 );
 		}
 
@@ -517,7 +517,7 @@ void udpObject::on( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() == 2 ) {
 		Isolate* isolate = args.GetIsolate();
 		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		Local<Function> cb = Handle<Function>::Cast( args[1] );
+		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if( StrCmp( *event, "error" ) == 0 ) {
 			// not sure how to get this... so many errors so few callbacks
 		}

@@ -15,7 +15,7 @@ public:
 
 public:
 
-	static void Init( Isolate *isolate, Handle<Object> exports );
+	static void Init( Isolate *isolate, Local<Object> exports );
 	ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
@@ -200,7 +200,7 @@ static void postEvent( ObjectStorageObject *_this, enum objectStorageEvents evt,
 }
 
 
-void ObjectStorageObject::Init( Isolate *isolate, Handle<Object> exports ) {
+void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 
 	//if( !l.loop )
 	//	l.loop = uv_default_loop();
@@ -572,7 +572,7 @@ void ObjectStorageObject::createIndex( const v8::FunctionCallbackInfo<Value>& ar
 		Local<String> name = indexDef->Get( optName = strings->nameString->Get( isolate ) ).As<String>();
 		Local<Object> opts = indexDef->Get( optName = strings->optsString->Get( isolate ) ).As<Object>();
 
-		String::Utf8Value fieldName( isolate, name );
+		String::Utf8Value fieldName( USE_ISOLATE( isolate ) name );
 		objStore::sack_vfs_os_file_ioctl( file, SOSFSFIO_CREATE_INDEX, *fieldName, fieldName.length() );
 		//objStore::sack_vfs_os_write( file, *data, data.length() );
 		objStore::sack_vfs_os_close( file );
@@ -619,7 +619,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 	int arg = 1;
 	while( arg < args.Length() ) {
 		if( args[arg]->IsFunction() ) {
-			cb = Handle<Function>::Cast( args[arg] );
+			cb = Local<Function>::Cast( args[arg] );
 			arg++;
 		}
 		else if( args[arg]->IsObject() ) {
@@ -747,6 +747,6 @@ ObjectStorageObject*  openInVFS( Isolate *isolate, const char *mount, const char
 
 }
 
-void ObjectStorageInit( Isolate *isolate, Handle<Object> exports ) {
+void ObjectStorageInit( Isolate *isolate, Local<Object> exports ) {
 	ObjectStorageObject::Init( isolate, exports );
 }

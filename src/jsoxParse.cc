@@ -19,7 +19,7 @@ static void showTimings( const v8::FunctionCallbackInfo<Value>& args );
 static Persistent<Map> fromPrototypeMap;
 Persistent<Function> JSOXObject::constructor;
 
-void InitJSOX( Isolate *isolate, Handle<Object> exports ){
+void InitJSOX( Isolate *isolate, Local<Object> exports ){
 
 	Local<Object> o2 = Object::New( isolate );
 	SET_READONLY_METHOD( o2, "parse", parseJSOX );
@@ -137,7 +137,7 @@ void JSOXObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
 		JSOXObject* obj = new JSOXObject();
-		Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+		Local<Function> arg0 = Local<Function>::Cast( args[0] );
 		obj->readCallback.Reset( isolate, arg0 );
 
 		obj->Wrap( args.This() );
@@ -714,7 +714,7 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 	}
 	const char *msg;
 	String::Utf8Value tmp( USE_ISOLATE( r.isolate ) args[0] );
-	Handle<Function> reviver;
+	Local<Function> reviver;
 	msg = *tmp;
 	r.parser = NULL;
 	if( args.Length() > 1 ) {
@@ -722,7 +722,7 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 			r._this = args.Holder();
 			r.value = String::NewFromUtf8( r.isolate, "" );
 			r.revive = TRUE;
-			r.reviver = Handle<Function>::Cast( args[1] );
+			r.reviver = Local<Function>::Cast( args[1] );
 		}
 		else {
 			r.isolate->ThrowException( Exception::TypeError(

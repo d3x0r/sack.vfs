@@ -161,7 +161,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 	return check;
 }
 
-void TLSObject::Init( Isolate *isolate, Handle<Object> exports )
+void TLSObject::Init( Isolate *isolate, Local<Object> exports )
 {
 	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> tlsTemplate;

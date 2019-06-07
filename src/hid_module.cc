@@ -21,7 +21,7 @@ public:
 
 public:
 
-	static void Init( Isolate *isolate, Handle<Object> exports );
+	static void Init( Isolate *isolate, Local<Object> exports );
 	KeyHidObject(  );
 
 private:
@@ -483,7 +483,7 @@ KeyHidObject::~KeyHidObject() {
 }
 
 
-void KeyHidObject::Init( Isolate *isolate, Handle<Object> exports ) {
+void KeyHidObject::Init( Isolate *isolate, Local<Object> exports ) {
 	Local<FunctionTemplate> comTemplate;
 
 	comTemplate = FunctionTemplate::New( isolate, New );
@@ -499,7 +499,7 @@ void KeyHidObject::Init( Isolate *isolate, Handle<Object> exports ) {
 		comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 }
 
-void KeyHidObjectInit( Isolate *isolate, Handle<Object> exports ) {
+void KeyHidObjectInit( Isolate *isolate, Local<Object> exports ) {
 	KeyHidObject::Init( isolate, exports );
 
 }
@@ -603,7 +603,7 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	KeyHidObject *com = ObjectWrap::Unwrap<KeyHidObject>( args.This() );
 
-	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+	Local<Function> arg0 = Local<Function>::Cast( args[0] );
 	com->readCallback = new Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 );
 }
 

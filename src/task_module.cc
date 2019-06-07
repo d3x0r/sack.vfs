@@ -66,7 +66,7 @@ TaskObject::~TaskObject() {
 	}
 }
 
-void InitTask( Isolate *isolate, Handle<Object> exports ) {
+void InitTask( Isolate *isolate, Local<Object> exports ) {
 	if( !l.loop )
 		l.loop = uv_default_loop();
 
@@ -252,7 +252,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( context, optName = strings->inputString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
 				if( opts->Get( optName )->IsFunction() ) {
-					newTask->inputCallback.Reset( isolate, Handle<Function>::Cast( opts->Get( optName ) ) );
+					newTask->inputCallback.Reset( isolate, Local<Function>::Cast( opts->Get( optName ) ) );
 					input = true;
 				}
 			}
@@ -262,7 +262,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( context, optName = strings->endString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
 				if( opts->Get( optName )->IsFunction() ) {
-					newTask->endCallback.Reset( isolate, Handle<Function>::Cast( opts->Get( optName ) ) );
+					newTask->endCallback.Reset( isolate, Local<Function>::Cast( opts->Get( optName ) ) );
 					end = true;
 				}
 			}

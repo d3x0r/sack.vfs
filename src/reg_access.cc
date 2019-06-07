@@ -4,7 +4,7 @@
 
 //Persistent<Function> RegObject::constructor;
 
-void RegObject::Init( Handle<Object> exports ) {
+void RegObject::Init( Local<Object> exports ) {
 	Isolate* isolate = Isolate::GetCurrent();
 	Local<Object> regInterface = Object::New( isolate );
 

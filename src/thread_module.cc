@@ -4,7 +4,7 @@
 //-----------------------------------------------------------
 
 
-void ThreadObject::Init( Handle<Object> exports ) {
+void ThreadObject::Init( Local<Object> exports ) {
 	Isolate* isolate = Isolate::GetCurrent();
 
 	NODE_SET_METHOD(exports, "Δ", relinquish );
@@ -29,7 +29,7 @@ void ThreadObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() ) {
 		if( idleProc.IsEmpty() && args[0]->IsFunction() ) {
-			Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+			Local<Function> arg0 = Local<Function>::Cast( args[0] );
 			idleProc.Reset( isolate, arg0 );
 		}
 	}

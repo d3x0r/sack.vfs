@@ -75,15 +75,15 @@ using namespace v8;
 #define SET_READONLY( object, name, data ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name), data, ReadOnlyProperty )
 #define SET_READONLY_METHOD( object, name, method ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name), v8::Function::New(isolate->GetCurrentContext(), method ).ToLocalChecked(), ReadOnlyProperty )
 
-void InitJSOX( Isolate *isolate, Handle<Object> exports );
-void InitJSON( Isolate *isolate, Handle<Object> exports );
-void InitSRG( Isolate *isolate, Handle<Object> exports );
-void InitWebSocket( Isolate *isolate, Handle<Object> exports );
-void InitUDPSocket( Isolate *isolate, Handle<Object> exports );
-void InitTask( Isolate *isolate, Handle<Object> exports );
-void KeyHidObjectInit( Isolate *isolate, Handle<Object> exports );
+void InitJSOX( Isolate *isolate, Local<Object> exports );
+void InitJSON( Isolate *isolate, Local<Object> exports );
+void InitSRG( Isolate *isolate, Local<Object> exports );
+void InitWebSocket( Isolate *isolate, Local<Object> exports );
+void InitUDPSocket( Isolate *isolate, Local<Object> exports );
+void InitTask( Isolate *isolate, Local<Object> exports );
+void KeyHidObjectInit( Isolate *isolate, Local<Object> exports );
 
-void textObjectInit( Isolate *isolate, Handle<Object> _exports );
+void textObjectInit( Isolate *isolate, Local<Object> _exports );
 	PTEXT isTextObject( Isolate *isolate, Local<Value> object );
 
 
@@ -109,8 +109,8 @@ public:
 
 public:
 
-	static void doInit( Handle<Object> exports );
-	static void Init( Handle<Object> exports );
+	static void doInit( Local<Object> exports );
+	static void Init( Local<Object> exports );
 	static void Init( Local<Object> exports, Local<Value> val, void* p );
 	VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
 
@@ -143,7 +143,7 @@ public:
    	static Persistent<Function> idleProc;
 public:
 
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 	ThreadObject();
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
@@ -200,7 +200,7 @@ public:
 	
 public:
 
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 	ComObject( char *name );
 
 private:
@@ -216,7 +216,7 @@ private:
 
 class RegObject : public node::ObjectWrap {
 public:
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 
 private:
 	static void getRegItem( const v8::FunctionCallbackInfo<Value>& args );
@@ -236,7 +236,7 @@ public:
 	
 public:
 
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 	WebSockClientObject();
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
@@ -257,7 +257,7 @@ public:
 
 public:
 
-	static void Init( Isolate *isolate, Handle<Object> exports );
+	static void Init( Isolate *isolate, Local<Object> exports );
 	TLSObject( );
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
@@ -283,10 +283,10 @@ struct reviver_data {
 	Local<Context> context;
 	LOGICAL revive;
 	//int index;
-	Handle<Value> value;
-	Handle<Object> _this;
-	Handle<Function> reviver;
-	Handle<Object> rootObject;
+	Local<Value> value;
+	Local<Object> _this;
+	Local<Function> reviver;
+	Local<Object> rootObject;
 	class JSOXObject *parser;
 };
 
@@ -308,7 +308,7 @@ public:
 	PLIST prototypes; // revivde prototypes by class
 public:
 
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 	JSOXObject();
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
@@ -335,12 +335,12 @@ Local<String> localString( Isolate *isolate, const char *data, int len );
 Local<String> localStringExternal( Isolate *isolate, const char *data, int len, const char *real_root );
 
 void InitFS( const v8::FunctionCallbackInfo<Value>& args );
-void ConfigScriptInit( Handle<Object> exports );
+void ConfigScriptInit( Local<Object> exports );
 
-void ObjectStorageInit( Isolate *isoalte, Handle<Object> exports );
+void ObjectStorageInit( Isolate *isoalte, Local<Object> exports );
 
 
-void SqlObjectInit( Handle<Object> exports );
+void SqlObjectInit( Local<Object> exports );
 void createSqlObject( const char *name, Local<Object> into );
 Local<Value> newSqlObject( Isolate *isolate, int argc, Local<Value> *argv );
 

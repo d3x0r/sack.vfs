@@ -150,7 +150,7 @@ static uintptr_t CPROC handler( uintptr_t psv, uintptr_t psvRule, arg_list args 
 void ConfigObject::Add( const v8::FunctionCallbackInfo<Value>& args ) {
 	ConfigObject *config = ObjectWrap::Unwrap<ConfigObject>( args.This() );
 	struct CurrentRule *rule = new CurrentRule();
-	rule->handler.Reset( args.GetIsolate(), Handle<Function>::Cast( args[1] ) );
+	rule->handler.Reset( args.GetIsolate(), Local<Function>::Cast( args[1] ) );
 	AddLink( &config->handlers, rule );
 	String::Utf8Value format( USE_ISOLATE( args.GetIsolate() ) args[0] );
 	AddConfigurationExx( config->pch, *format, handler, (uintptr_t)rule DBG_SRC );
@@ -224,7 +224,7 @@ void ConfigObject::Write( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 
-void ConfigScriptInit( Handle<Object> exports ) {
+void ConfigScriptInit( Local<Object> exports ) {
 	Isolate* isolate = Isolate::GetCurrent();
 
 	Local<FunctionTemplate> configTemplate;

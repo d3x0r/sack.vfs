@@ -16,7 +16,7 @@ public:
 	PLINKQUEUE SigningEntropies = NULL;
 public:
 
-	static void Init( Isolate *isolate, Handle<Object> exports );
+	static void Init( Isolate *isolate, Local<Object> exports );
 	SRGObject( Persistent<Function, CopyablePersistentTraits<Function>> *callback );
 	SRGObject( const char *seed, size_t seedLen );
 	SRGObject();
@@ -129,7 +129,7 @@ private:
 			int argc = args.Length();
 			if( argc > 0 ) {
 				if( args[0]->IsFunction() ) {
-					Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+					Local<Function> arg0 = Local<Function>::Cast( args[0] );
 					obj = new SRGObject( new Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 ) );
 				}
 				else {
@@ -821,11 +821,11 @@ PLINKQUEUE SRGObject::signingEntropies;
 v8::Persistent<v8::Function> SRGObject::constructor;
 
 
-void InitSRG( Isolate *isolate, Handle<Object> exports ) {
+void InitSRG( Isolate *isolate, Local<Object> exports ) {
 	SRGObject::Init( isolate, exports );
 }
 
-void SRGObject::Init( Isolate *isolate, Handle<Object> exports )
+void SRGObject::Init( Isolate *isolate, Local<Object> exports )
 {
 	InitBitCountLookupTables();
 	Local<FunctionTemplate> srgTemplate;

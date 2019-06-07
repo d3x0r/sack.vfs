@@ -23,7 +23,7 @@ ComObject::~ComObject() {
 }
 
 
-void ComObject::Init( Handle<Object> exports ) {
+void ComObject::Init( Local<Object> exports ) {
 		Isolate* isolate = Isolate::GetCurrent();
 		Local<FunctionTemplate> comTemplate;
 
@@ -169,7 +169,7 @@ void ComObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 		SackSetReadCallback( com->handle, dispatchRead, (uintptr_t)com );
 	}
 
-	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+	Local<Function> arg0 = Local<Function>::Cast( args[0] );
 	com->readCallback = new Persistent<Function,CopyablePersistentTraits<Function>>(isolate,arg0);
 }
 

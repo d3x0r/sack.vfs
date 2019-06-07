@@ -43,7 +43,7 @@ public:
 	PLIST userFunctions;
 	PLINKQUEUE messages;
 
-	//static void Init( Handle<Object> exports );
+	//static void Init( Local<Object> exports );
 	SqlObject( const char *dsn );
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
@@ -138,7 +138,7 @@ Local<Value> newSqlObject(Isolate *isolate, int argc, Local<Value> *argv ) {
 //   SQL Object
 //-----------------------------------------------------------
 
-void SqlObjectInit( Handle<Object> exports ) {
+void SqlObjectInit( Local<Object> exports ) {
 	OptionTreeObject::Init(); // SqlObject attached this
 
 	Isolate* isolate = Isolate::GetCurrent();
@@ -1062,7 +1062,7 @@ static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args, SqlObj
 		callbackArgs.odbc = GetOptionODBC( GetDefaultOptionDatabaseDSN() );
 		dropODBC = TRUE;
 	}
-	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+	Local<Function> arg0 = Local<Function>::Cast( args[0] );
 	Local<Function> cb( arg0 );
 
 	callbackArgs.cb = Local<Function>::New( isolate, cb );
@@ -1092,7 +1092,7 @@ void OptionTreeObject::enumOptionNodes( const v8::FunctionCallbackInfo<Value>& a
 
 	Isolate* isolate = args.GetIsolate();
 	OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( args.This() );
-	Handle<Function> arg0 = Handle<Function>::Cast( args[0] );
+	Local<Function> arg0 = Local<Function>::Cast( args[0] );
 	Local<Function> cb( arg0 );
 
 	callbackArgs.odbc = oto->odbc;
@@ -1456,7 +1456,7 @@ void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
 		String::Utf8Value name( USE_ISOLATE( isolate ) args[0] );
 		struct SqlObjectUserFunction *userData = new SqlObjectUserFunction();
 		userData->isolate = isolate;
-		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
+		userData->cb.Reset( isolate, Local<Function>::Cast( args[1] ) );
 		userData->sql = sql;
 		PSSQL_AddSqliteFunction( sql->odbc, *name, callUserFunction, destroyUserData, -1, userData );
 	}
@@ -1476,7 +1476,7 @@ void SqlObject::userProcedure( const v8::FunctionCallbackInfo<Value>& args ) {
 		String::Utf8Value name( USE_ISOLATE( isolate ) args[0] );
 		struct SqlObjectUserFunction *userData = new SqlObjectUserFunction();
 		userData->isolate = isolate;
-		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
+		userData->cb.Reset( isolate, Local<Function>::Cast( args[1] ) );
 		userData->sql = sql;
 		PSSQL_AddSqliteProcedure( sql->odbc, *name, callUserFunction, destroyUserData, -1, userData );
 	}
@@ -1658,7 +1658,7 @@ void SqlObject::setOnCorruption( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	int argc = args.Length();
-	sql->onCorruption.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+	sql->onCorruption.Reset( isolate, Local<Function>::Cast( args[0] ) );
 	SetSQLCorruptionHandler( sql->odbc, handleCorruption, (uintptr_t)sql );
 
 }
@@ -1672,8 +1672,8 @@ void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args )
 		String::Utf8Value name( USE_ISOLATE( isolate ) args[0] );
 		struct SqlObjectUserFunction *userData = new SqlObjectUserFunction();
 		userData->isolate = isolate;
-		userData->cb.Reset( isolate, Handle<Function>::Cast( args[1] ) );
-		userData->cb2.Reset( isolate, Handle<Function>::Cast( args[2] ) );
+		userData->cb.Reset( isolate, Local<Function>::Cast( args[1] ) );
+		userData->cb2.Reset( isolate, Local<Function>::Cast( args[2] ) );
 		userData->sql = sql;
 		PSSQL_AddSqliteAggregate( sql->odbc, *name, callAggStep, callAggFinal, destroyUserData, -1, userData );
 

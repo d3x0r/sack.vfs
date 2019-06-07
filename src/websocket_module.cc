@@ -895,7 +895,7 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 
 int accepted = 0;
 
-void InitWebSocket( Isolate *isolate, Handle<Object> exports ){
+void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 	Local<Context> context = isolate->GetCurrentContext();
 	if( !l.loop )
 		l.loop = uv_default_loop();
@@ -1684,7 +1684,7 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 			return;
 		}
 		if( args.Length() > 1 && args[1]->IsFunction() ) {
-			Handle<Function> arg0 = Handle<Function>::Cast( args[1] );
+			Local<Function> arg0 = Local<Function>::Cast( args[1] );
 			obj->openCallback.Reset( isolate, arg0 );
 		}
 		obj->_this.Reset( isolate, _this );
@@ -1731,7 +1731,7 @@ void wssObject::on( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() == 2 ) {
 		Isolate* isolate = args.GetIsolate();
 		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		Local<Function> cb = Handle<Function>::Cast( args[1] );
+		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if( !cb->IsFunction() ) {
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
 			return;
@@ -1762,7 +1762,7 @@ void wssObject::onConnect( const FunctionCallbackInfo<Value>& args ) {
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
-			obj->openCallback.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+			obj->openCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
 		else
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
 	}
@@ -1773,7 +1773,7 @@ void wssObject::onAccept( const FunctionCallbackInfo<Value>& args ) {
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
-			obj->acceptCallback.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+			obj->acceptCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
 		else
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
 	}
@@ -1784,7 +1784,7 @@ void wssObject::onRequest( const FunctionCallbackInfo<Value>& args ) {
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
-			obj->requestCallback.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+			obj->requestCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
 		else
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
 	}
@@ -1795,7 +1795,7 @@ void wssObject::onError( const FunctionCallbackInfo<Value>& args ) {
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
-			obj->errorCloseCallback.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+			obj->errorCloseCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
 		else
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
 	}
@@ -1806,7 +1806,7 @@ void wssObject::onErrorLow( const FunctionCallbackInfo<Value>& args ) {
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
-			obj->errorLowCallback.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+			obj->errorLowCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
 		else
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function" ) ) );
 	}
@@ -1822,7 +1822,7 @@ void wssObject::onClose( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.Length() > 0 ) {
 		wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
-		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		Local<Function> cb = Local<Function>::Cast( args[0] );
 		obj->closeCallback.Reset( isolate, cb );
 	}
 }
@@ -1922,7 +1922,7 @@ void wssiObject::on( const FunctionCallbackInfo<Value>& args){
 	if( args.Length() == 2 ) {
 		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		Local<Function> cb = Handle<Function>::Cast( args[1] );
+		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if(  StrCmp( *event, "message" ) == 0 ) {
 			obj->messageCallback.Reset( isolate, cb);
 		} else if(  StrCmp( *event, "error" ) == 0 ) {
@@ -1938,7 +1938,7 @@ void wssiObject::onmessage( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.Length() > 0 ) {
 		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
-		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		Local<Function> cb = Local<Function>::Cast( args[0] );
 		obj->messageCallback.Reset( isolate, cb );
 	}
 }
@@ -1948,7 +1948,7 @@ void wssiObject::onclose( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.Length() > 0 ) {
 		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
-		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		Local<Function> cb = Local<Function>::Cast( args[0] );
 		obj->closeCallback.Reset( isolate, cb );
 	}
 }
@@ -2239,7 +2239,7 @@ void wscObject::onOpen( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		Local<Function> cb = Local<Function>::Cast( args[0] );
 		obj->openCallback.Reset( isolate, cb );
 	}
 }
@@ -2249,7 +2249,7 @@ void wscObject::onMessage( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		Local<Function> cb = Local<Function>::Cast( args[0] );
 		obj->messageCallback.Reset( isolate, cb );
 	}
 }
@@ -2259,7 +2259,7 @@ void wscObject::onClose( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		Local<Function> cb = Local<Function>::Cast( args[0] );
 		obj->closeCallback.Reset( isolate, cb );
 	}
 }
@@ -2269,7 +2269,7 @@ void wscObject::onError( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-		Local<Function> cb = Handle<Function>::Cast( args[0] );
+		Local<Function> cb = Local<Function>::Cast( args[0] );
 		obj->errorCallback.Reset( isolate, cb );
 	}
 }
@@ -2309,7 +2309,7 @@ void wscObject::on( const FunctionCallbackInfo<Value>& args){
 		Isolate* isolate = args.GetIsolate();
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		Local<Function> cb = Handle<Function>::Cast( args[1] );
+		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if( StrCmp( *event, "open" ) == 0 ){
 			if( obj->readyState == OPEN ) {
 				cb->Call( isolate->GetCurrentContext(), obj->_this.Get( isolate ), 0, NULL );
