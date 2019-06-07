@@ -246,7 +246,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( context, optName = strings->binaryString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
 				if( GETV( opts, optName )->IsBoolean() ) {
-					newTask->binary = GETV( opts, optName )->BooleanValue( isolate );
+					newTask->binary = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
 			if( opts->Has( context, optName = strings->inputString->Get( isolate ) ).ToChecked() ) {
@@ -257,7 +257,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				}
 			}
 			if( opts->Has( context, optName = strings->firstArgIsArgString->Get( isolate ) ).ToChecked() ) {
-				firstArgIsArg = GETV( opts, optName )->BooleanValue( isolate );
+				firstArgIsArg = GETV( opts, optName )->TOBOOL( isolate );
 			}
 			if( opts->Has( context, optName = strings->endString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;

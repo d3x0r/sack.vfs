@@ -65,6 +65,11 @@
 #  define USE_ISOLATE_VOID(i)
 #endif
 
+#if NODE_MAJOR_VERSION >= 13
+#  define TOBOOL(i) BooleanValue( i )
+#else
+#  define TOBOOL(i) BooleanValue( i->GetCurrentContext() ).FromMaybe(false)
+#endif
 
 using namespace v8;
 

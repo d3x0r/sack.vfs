@@ -203,7 +203,7 @@ private:
 			int32_t bits = args[0]->Int32Value( obj->isolate->GetCurrentContext() ).FromMaybe( 0 );
 			bool sign = false;
 			if( args.Length() > 1 )
-				sign = args[0]->BooleanValue( obj->isolate );
+				sign = args[0]->TOBOOL( obj->isolate );
 			r = SRG_GetEntropy( obj->entropy, bits, sign );
 		}
 		args.GetReturnValue().Set( Integer::New( obj->isolate, r ) );

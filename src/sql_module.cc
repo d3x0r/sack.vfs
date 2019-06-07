@@ -325,7 +325,7 @@ void SqlObject::autoTransact( const v8::FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = args.GetIsolate()->GetCurrentContext();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	SetSQLAutoTransact( sql->odbc, args[0]->BooleanValue(args.GetIsolate()) );
+	SetSQLAutoTransact( sql->odbc, args[0]->TOBOOL(args.GetIsolate()) );
 }
 //-----------------------------------------------------------
 void SqlObject::transact( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -430,7 +430,7 @@ static void PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg,
 	}
 	else if( arg->IsBoolean() ) {
 		val.value_type = JSOX_VALUE_NUMBER;
-		val.result_n = arg->BooleanValue( isolate );
+		val.result_n = arg->TOBOOL( isolate );
 		val.float_result = 0;
 		AddDataItem( pdlParams, &val );
 	}
@@ -1629,7 +1629,7 @@ void SqlObject::setLogging( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	if( args.Length() ) {
-		bool b( args[0]->BooleanValue( isolate ) );
+		bool b( args[0]->TOBOOL( isolate ) );
 		if( b )
 			SetSQLLoggingDisable( sql->odbc, FALSE );
 		else
