@@ -1,7 +1,7 @@
 {
   "targets": [
     {
-      "target_name": "sack_vfs",
+      "target_name": "sack_gui",
       'win_delay_load_hook': 'false',      
       "sources": [ "src/vfs_module.cc",
            "src/sack/sack.cc",

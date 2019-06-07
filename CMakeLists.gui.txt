@@ -119,7 +119,7 @@ set( GUI_SOURCES src/gui/sack_psi_module.cc
 
 source_group( "Source Files\\GUI" FILES ${GUI_SOURCES} ) #REGULAR_EXPRESSION  src/gui/.*)
 
-set( PROJECT sack_vfs )
+set( PROJECT sack_gui )
 add_library(${PROJECT} SHARED
 	src/vfs_module.cc
 	src/objStore_module.cc
@@ -132,6 +132,7 @@ add_library(${PROJECT} SHARED
 	src/srg_module.cc
 	src/websocket_module.cc
 	src/network_module.cc
+	src/config_module.cc
 	src/task_module.cc
 	src/text_object.cc
 	${MORE_MODULE_SOURCES}
