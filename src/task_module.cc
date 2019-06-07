@@ -34,14 +34,14 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check = NewArray( struct optionStrings, 1 );
 		AddLink( &strings, check );
 		check->isolate = isolate;
-		check->workString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "work" ) );
-		check->binString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "bin" ) );
-		check->argString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "args" ) );
-		check->envString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "env" ) );
-		check->binaryString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "binary" ) );
-		check->inputString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "input" ) );
-		check->endString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "end" ) );
-		check->firstArgIsArgString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "firstArgIsArg" ) );
+		check->workString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "work", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->binString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "bin", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->argString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "args", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->envString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "env", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->binaryString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "binary", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->inputString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "input", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->endString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "end", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->firstArgIsArgString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "firstArgIsArg", v8::NewStringType::kNormal ).ToLocalChecked() );
 	}
 	return check;
 }
@@ -72,7 +72,7 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 
 	Local<FunctionTemplate> taskTemplate;
 	taskTemplate = FunctionTemplate::New( isolate, TaskObject::New );
-	taskTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.task" ) );
+	taskTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.task", v8::NewStringType::kNormal ).ToLocalChecked() );
 	taskTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "write", TaskObject::Write );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "send", TaskObject::Write );
@@ -157,7 +157,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must specify url and optionally protocols or options for client." ) ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must specify url and optionally protocols or options for client.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 
@@ -172,7 +172,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 		catch( const char *ex1 ) {
 			isolate->ThrowException( Exception::Error(
-				String::NewFromUtf8( isolate, TranslateText( ex1 ) ) ) );
+				String::NewFromUtf8( isolate, TranslateText( ex1 ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		}
 
 
@@ -198,16 +198,16 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 			if( opts->Has( context, optName = strings->binString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
-				if( opts->Get( optName )->IsString() )
-					bin = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+				if( GETV( opts, optName )->IsString() )
+					bin = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			} else {
-				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "required option 'bin' missing." ) ) );			
+				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "required option 'bin' missing.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			}
 			if( opts->Has( context, optName = strings->argString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
-				if( opts->Get( optName )->IsString() ) {
+				if( GETV( opts, optName )->IsString() ) {
 					char **args2;
-					args = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+					args = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					ParseIntoArgs( *args[0], &nArg, &argArray );
 
 					args2 = NewArray( char*, nArg + 1 );
@@ -218,51 +218,51 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 					args2[n] = NULL;
 					Release( argArray );
 					argArray = args2;
-				} else if( opts->Get( optName )->IsArray() ) {
+				} else if( GETV( opts, optName )->IsArray() ) {
 					uint32_t n;
-					Local<Array> arr = Local<Array>::Cast( opts->Get( optName ) );
+					Local<Array> arr = Local<Array>::Cast( GETV( opts, optName ) );
 
 					argArray = NewArray( char *, arr->Length() + 1 );
 					for( n = 0; n < arr->Length(); n++ ) {
-						argArray[n] = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) arr->Get( n )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
+						argArray[n] = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) GETN( arr, n )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
 					}
 					argArray[n] = NULL;
 				}
 			}
 			if( opts->Has( context, optName = strings->workString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
-				if( opts->Get( optName )->IsString() )
-					work = new String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+				if( GETV( opts, optName )->IsString() )
+					work = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			}
 			if( opts->Has( context, optName = strings->envString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
 				lprintf( "env params not supported(yet)" );
 				/*
-				if( opts->Get( optName )->IsString() ) {
-					args = new String::Utf8Value( opts->Get( optName )->ToString() );
+				if( GETV( opts, optName )->IsString() ) {
+					args = new String::Utf8Value( GETV( opts, optName )->ToString() );
 				}
 				*/
 			}
 			if( opts->Has( context, optName = strings->binaryString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
-				if( opts->Get( optName )->IsBoolean() ) {
-					newTask->binary = opts->Get( optName )->BooleanValue( isolate->GetCurrentContext() ).FromMaybe(0);
+				if( GETV( opts, optName )->IsBoolean() ) {
+					newTask->binary = GETV( opts, optName )->BooleanValue( isolate );
 				}
 			}
 			if( opts->Has( context, optName = strings->inputString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
-				if( opts->Get( optName )->IsFunction() ) {
-					newTask->inputCallback.Reset( isolate, Local<Function>::Cast( opts->Get( optName ) ) );
+				if( GETV( opts, optName )->IsFunction() ) {
+					newTask->inputCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
 					input = true;
 				}
 			}
 			if( opts->Has( context, optName = strings->firstArgIsArgString->Get( isolate ) ).ToChecked() ) {
-				firstArgIsArg = opts->Get( optName )->BooleanValue( isolate->GetCurrentContext() ).FromMaybe(0);
+				firstArgIsArg = GETV( opts, optName )->BooleanValue( isolate );
 			}
 			if( opts->Has( context, optName = strings->endString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
-				if( opts->Get( optName )->IsFunction() ) {
-					newTask->endCallback.Reset( isolate, Local<Function>::Cast( opts->Get( optName ) ) );
+				if( GETV( opts, optName )->IsFunction() ) {
+					newTask->endCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
 					end = true;
 				}
 			}

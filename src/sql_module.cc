@@ -142,17 +142,17 @@ void SqlObjectInit( Local<Object> exports ) {
 	OptionTreeObject::Init(); // SqlObject attached this
 
 	Isolate* isolate = Isolate::GetCurrent();
-
+	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> sqlTemplate;
 	// Prepare constructor template
 	sqlTemplate = FunctionTemplate::New( isolate, SqlObject::New );
-	sqlTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Sqlite" ) );
+	sqlTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Sqlite", v8::NewStringType::kNormal ).ToLocalChecked() );
 	sqlTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 
 	Local<FunctionTemplate> sqlStmtTemplate;
 	// Prepare constructor template
 	sqlStmtTemplate = FunctionTemplate::New( isolate, SqlStmtObject::New );
-	sqlStmtTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Sqlite.statement" ) );
+	sqlStmtTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Sqlite.statement", v8::NewStringType::kNormal ).ToLocalChecked() );
 	sqlStmtTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 	SqlStmtObject::constructor.Reset( isolate, sqlStmtTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
@@ -180,10 +180,10 @@ void SqlObjectInit( Local<Object> exports ) {
 	// get the node.
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "go", SqlObject::getOptionNode );
 
-	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "error" )
+	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "error", v8::NewStringType::kNormal ).ToLocalChecked()
 			, FunctionTemplate::New( isolate, SqlObject::error )
 			, Local<FunctionTemplate>() );
-	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "log" )
+	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "log", v8::NewStringType::kNormal ).ToLocalChecked()
 		, FunctionTemplate::New( isolate, SqlObject::getLogging )
 		, FunctionTemplate::New( isolate, SqlObject::setLogging ) );
 
@@ -211,8 +211,7 @@ void SqlObjectInit( Local<Object> exports ) {
 	SET_READONLY_METHOD(sqlfunc, "optionEditor", editOptions );
 #endif
 
-	exports->Set( String::NewFromUtf8( isolate, "Sqlite" ),
-		sqlfunc );
+	SET( exports, "Sqlite", sqlfunc );
 }
 
 //-----------------------------------------------------------
@@ -323,9 +322,10 @@ void SqlObject::closeDb( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void SqlObject::autoTransact( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
+	Local<Context> context = args.GetIsolate()->GetCurrentContext();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	SetSQLAutoTransact( sql->odbc, args[0]->BooleanValue(args.GetIsolate()->GetCurrentContext()).FromMaybe(0) );
+	SetSQLAutoTransact( sql->odbc, args[0]->BooleanValue(args.GetIsolate()) );
 }
 //-----------------------------------------------------------
 void SqlObject::transact( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -380,7 +380,7 @@ void SqlStmtObject::Set( const v8::FunctionCallbackInfo<Value>& args ) {
 	SqlStmtObject *stmt = ObjectWrap::Unwrap<SqlStmtObject>( args.This() );
 	if( args.Length() < 2 ) {
 		isolate->ThrowException( Exception::Error(
-			String::NewFromUtf8( isolate, TranslateText( "Required parameters (column, new value) are missing." ) ) ) );
+			String::NewFromUtf8( isolate, TranslateText( "Required parameters (column, new value) are missing." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 	int col = args[0]->ToInt32(isolate->GetCurrentContext()).ToLocalChecked()->Value();
@@ -430,7 +430,7 @@ static void PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg,
 	}
 	else if( arg->IsBoolean() ) {
 		val.value_type = JSOX_VALUE_NUMBER;
-		val.result_n = arg->BooleanValue( isolate->GetCurrentContext() ).FromMaybe(false);
+		val.result_n = arg->BooleanValue( isolate );
 		val.float_result = 0;
 		AddDataItem( pdlParams, &val );
 	}
@@ -471,9 +471,10 @@ static void PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg,
 
 void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	if( args.Length() == 0 ) {
 		isolate->ThrowException( Exception::Error(
-			String::NewFromUtf8( isolate, TranslateText( "Required parameter, SQL query, is missing.") ) ) );
+			String::NewFromUtf8( isolate, TranslateText( "Required parameter, SQL query, is missing."), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 	String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
@@ -501,15 +502,15 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 				Local<Object> params = Local<Object>::Cast( args[1] );
 				Local<Array> paramNames = params->GetOwnPropertyNames(isolate->GetCurrentContext()).ToLocalChecked();
 				for( uint32_t p = 0; p < paramNames->Length(); p++ ) {
-					Local<Value> valName = paramNames->Get( p );
-					Local<Value> value = params->Get( valName );
+					Local<Value> valName = GETN( paramNames, p );
+					Local<Value> value = GETV( params, valName );
 					String::Utf8Value name( USE_ISOLATE( isolate ) valName->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					PushValue( isolate, &pdlParams, value, &name );
 				}
 			}
 			else {
 				isolate->ThrowException( Exception::Error(
-					String::NewFromUtf8( isolate, TranslateText( "Required parameter 2, Named Paramter Object, is missing." ) ) ) );
+					String::NewFromUtf8( isolate, TranslateText( "Required parameter 2, Named Paramter Object, is missing." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 				return;
 			}
 			isFormatString = TRUE;
@@ -571,7 +572,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 			const char *error;
 			FetchSQLError( sql->odbc, &error );
 			isolate->ThrowException( Exception::Error(
-				String::NewFromUtf8( isolate, error ) ) );
+				String::NewFromUtf8( isolate, error, v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			DeleteDataList( &pdlParams );
 			return;
 		}
@@ -674,7 +675,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							PVARTEXT pvtSafe = VarTextCreate();
 							vtprintf( pvtSafe, "%s : %s", TranslateText( "Column name overlaps table alias" ), tables[t].alias );
 							isolate->ThrowException( Exception::Error(
-								String::NewFromUtf8( isolate, GetText( VarTextPeek( pvtSafe ) ) ) ) );
+								String::NewFromUtf8( isolate, GetText( VarTextPeek( pvtSafe ) ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 							VarTextDestroy( &pvtSafe );
 							DeleteDataList( &pdlParams );
 							return;
@@ -691,7 +692,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 					if( usedTables > 1 && maxDepth > 1 )
 						for( int n = 1; n < usedTables; n++ ) {
 							tables[n].container = Object::New( isolate );
-							record->Set( String::NewFromUtf8( isolate, tables[n].alias ), tables[n].container );
+							SET( record, tables[n].alias, tables[n].container );
 						}
 					else
 						for( int n = 0; n < usedTables; n++ )
@@ -706,7 +707,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 								if( !jsval->name )
 									lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
 								else
-									record->Set( String::NewFromUtf8( isolate, jsval->name )
+									SET( record, jsval->name
 									           , fields[colMap[idx].col].array = Array::New( isolate )
 									           );
 							}
@@ -771,22 +772,21 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							if( !jsval->name )
 								lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
 							else
-								container->Set( String::NewFromUtf8( isolate, jsval->name ), val );
+								SET( container, jsval->name, val );
 						}
 						else if( usedTables > 1 || ( fields[colMap[idx].col].used > 1 ) ) {
 							if( fields[colMap[idx].col].used > 1 ) {
 								if( !jsval->name )
 									lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
 								else
-									colMap[idx].t->container->Set( String::NewFromUtf8( isolate, jsval->name ), val );
+									SET( colMap[idx].t->container, jsval->name, val );
 								if( colMap[idx].alias )
-									fields[colMap[idx].col].array->Set( String::NewFromUtf8( isolate, colMap[idx].alias ), val );
-								fields[colMap[idx].col].array->Set( colMap[idx].depth, val );
+									SET( fields[colMap[idx].col].array, colMap[idx].alias, val );
+								SETN( fields[colMap[idx].col].array, colMap[idx].depth, val );
 							}
 						}
-
 					}
-					records->Set( row++, record );
+					SETN( records, row++, record );
 				} while( FetchSQLRecordJS( sql->odbc, &pdlRecord ) );
 			}
 			Deallocate( struct fieldTypes*, fields );
@@ -876,7 +876,7 @@ void OptionTreeObject::Init(  ) {
 	Local<FunctionTemplate> optionTemplate;
 	// Prepare constructor template
 	optionTemplate = FunctionTemplate::New( isolate, New );
-	optionTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.option.node" ) );
+	optionTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.option.node", v8::NewStringType::kNormal ).ToLocalChecked() );
 	optionTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	// Prototype
@@ -885,7 +885,7 @@ void OptionTreeObject::Init(  ) {
 	NODE_SET_PROTOTYPE_METHOD( optionTemplate, "go", getOptionNode );
 	Local<Template> proto = optionTemplate->InstanceTemplate();
 
-	proto->SetNativeDataProperty( String::NewFromUtf8( isolate, "value" )
+	proto->SetNativeDataProperty( String::NewFromUtf8( isolate, "value", v8::NewStringType::kNormal ).ToLocalChecked()
 			, readOptionNode
 			, writeOptionNode );
 
@@ -1030,7 +1030,7 @@ int CPROC invokeCallback( uintptr_t psv, CTEXTSTR name, POPTION_TREE_NODE ID, in
 	oto->node = ID;
 
 	argv[0] = o;
-	argv[1] = String::NewFromUtf8( args->isolate, name );
+	argv[1] = String::NewFromUtf8( args->isolate, name, v8::NewStringType::kNormal ).ToLocalChecked();
 
 	MaybeLocal<Value> r = args->cb->Call(args->isolate->GetCurrentContext(), Null(args->isolate), 2, argv );
 	if( r.IsEmpty() )
@@ -1110,7 +1110,7 @@ void OptionTreeObject::readOptionNode( v8::Local<v8::String> field,
 	int res = (int)GetOptionStringValueEx( oto->odbc, oto->node, &buffer, &buflen DBG_SRC );
 	if( !buffer || res < 0 )
 		return;
-	info.GetReturnValue().Set( String::NewFromUtf8( info.GetIsolate(), buffer ) );
+	info.GetReturnValue().Set( String::NewFromUtf8( info.GetIsolate(), buffer, v8::NewStringType::kNormal ).ToLocalChecked() );
 }
 
 void OptionTreeObject::writeOptionNode( v8::Local<v8::String> field,
@@ -1178,7 +1178,7 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 		DBG_SRC
 		);
 
-	Local<String> returnval = String::NewFromUtf8( isolate, readbuf );
+	Local<String> returnval = String::NewFromUtf8( isolate, readbuf, v8::NewStringType::kNormal ).ToLocalChecked();
 	args.GetReturnValue().Set( returnval );
 
 	Deallocate( char*, optname );
@@ -1257,7 +1257,7 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 			, defaultVal
 		);
 
-	Local<String> returnval = String::NewFromUtf8( isolate, readbuf );
+	Local<String> returnval = String::NewFromUtf8( isolate, readbuf, v8::NewStringType::kNormal ).ToLocalChecked();
 	args.GetReturnValue().Set( returnval );
 
 	Deallocate( char*, optname );
@@ -1629,8 +1629,8 @@ void SqlObject::setLogging( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	if( args.Length() ) {
-		Local<Boolean> b( args[0]->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked() );
-		if( b->Value () )
+		bool b( args[0]->BooleanValue( isolate ) );
+		if( b )
 			SetSQLLoggingDisable( sql->odbc, FALSE );
 		else
 			SetSQLLoggingDisable( sql->odbc, TRUE );
@@ -1685,7 +1685,7 @@ void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args )
 	}
 	else {
 		isolate->ThrowException( Exception::Error(
-			String::NewFromUtf8( isolate, TranslateText( "Aggregate requires 3 parameters (name,stepCallback(...args), finalCallback())") ) ) );
+			String::NewFromUtf8( isolate, TranslateText( "Aggregate requires 3 parameters (name,stepCallback(...args), finalCallback())"), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 	}
 }
 

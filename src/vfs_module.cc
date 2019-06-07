@@ -95,7 +95,7 @@ static void vfs_b64xor(const v8::FunctionCallbackInfo<Value>& args ){
 		String::Utf8Value xor2( USE_ISOLATE( isolate ) args[1] );
 		//lprintf( "is buffer overlapped? %s %s", *xor1, *xor2 );
 		char *r = b64xor( *xor1, *xor2 );
-		MaybeLocal<String> retval = String::NewFromUtf8( isolate, r );
+		MaybeLocal<String> retval = String::NewFromUtf8( isolate, r, v8::NewStringType::kNormal ).ToLocalChecked();
 		args.GetReturnValue().Set( retval.ToLocalChecked() );
 		Deallocate( char*, r );
 	}
@@ -103,20 +103,22 @@ static void vfs_b64xor(const v8::FunctionCallbackInfo<Value>& args ){
 
 static void vfs_u8xor(const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	if( argc > 0 ) {
 		String::Utf8Value xor1( USE_ISOLATE( isolate ) args[0] );
 		Local<Object> key = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 		//Local<Object> 
 		Local<String> tmp;
-		Local<Value> keyValue = key->Get( String::NewFromUtf8( isolate, "key" ) );
-		Local<Value> stepValue = key->Get( tmp = String::NewFromUtf8( isolate, "step" ) );
+		Local<Value> keyValue = GET(key, "key" );
+		Local<Value> stepValue = GET(key, "step");
 		int step = (int)stepValue->IntegerValue( isolate->GetCurrentContext() ).FromMaybe(0);
 		String::Utf8Value xor2( USE_ISOLATE( isolate ) keyValue );
 		//lprintf( "is buffer overlapped? %s %s %d", *xor1, *xor2, step );
 		char *out = u8xor( *xor1, (size_t)xor1.length(), *xor2, (size_t)xor2.length(), &step );
 		//lprintf( "encoded1:%s %d", out, step );
-		key->Set( tmp, Integer::New( isolate, step ) );
+		SET( key, "step", stepValue );
+
 		//lprintf( "length: %d %d", xor1.length(), StrLen( *xor1 ) );
 		args.GetReturnValue().Set( String::NewFromUtf8( isolate, out, NewStringType::kNormal, (int)xor1.length() ).ToLocalChecked() );
 		Deallocate( char*, out );
@@ -125,7 +127,7 @@ static void vfs_u8xor(const v8::FunctionCallbackInfo<Value>& args ){
 static void idGenerator(const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	char *r = SRG_ID_Generator();
-	args.GetReturnValue().Set( String::NewFromUtf8( isolate, r ) );
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, r, v8::NewStringType::kNormal ).ToLocalChecked() );
 	Deallocate( char*, r );
 }
 
@@ -155,6 +157,7 @@ void VolumeObject::doInit( Local<Object> exports )
 	//lprintf( "Stdout Logging Enabled." );
 
 	Isolate* isolate = Isolate::GetCurrent();
+	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> volumeTemplate;
 	ThreadObject::Init( exports );
 	FileObject::Init();
@@ -184,7 +187,7 @@ void VolumeObject::doInit( Local<Object> exports )
 
 	// Prepare constructor template
 	volumeTemplate = FunctionTemplate::New( isolate, New );
-	volumeTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Volume" ) );
+	volumeTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Volume", v8::NewStringType::kNormal ).ToLocalChecked() );
 	volumeTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	// Prototype
@@ -208,8 +211,8 @@ void VolumeObject::doInit( Local<Object> exports )
 
 	Local<Function> VolFunc = volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
-(exports)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "memDump")
-	, v8::Function::New( isolate->GetCurrentContext(), dumpMem ) .ToLocalChecked(), ReadOnlyProperty );
+	(exports)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "memDump", v8::NewStringType::kNormal ).ToLocalChecked()
+		, v8::Function::New( isolate->GetCurrentContext(), dumpMem ) .ToLocalChecked(), ReadOnlyProperty );
 
 	SET_READONLY_METHOD( exports, "memDump", dumpMem );
 	SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
@@ -230,8 +233,8 @@ void VolumeObject::doInit( Local<Object> exports )
 	SET_READONLY_METHOD( fileObject, "unlink", fileDelete );
 	SET_READONLY_METHOD( fileObject, "rm", fileDelete );
 	constructor.Reset( isolate, volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-	exports->Set( String::NewFromUtf8( isolate, "Volume" ),
-		volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	SET( exports, "Volume", volumeTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
+
 	SET_READONLY_METHOD( exports, "loadComplete", loadComplete );
 	//NODE_SET_METHOD( exports, "InitFS", InitFS );
 }
@@ -411,7 +414,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 		if( argc == 0 ) {
 			isolate->ThrowException( Exception::Error(
-					String::NewFromUtf8( isolate, TranslateText( "Required filename missing." ) ) ) );
+					String::NewFromUtf8( isolate, TranslateText( "Required filename missing." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			return;
 		}
 		else {
@@ -420,7 +423,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( !vol->mountName )
 			{
 				isolate->ThrowException( Exception::Error(
-						String::NewFromUtf8( isolate, TranslateText( "Volume is not mounted; cannot be used to open Sqlite database." ) ) ) );
+						String::NewFromUtf8( isolate, TranslateText( "Volume is not mounted; cannot be used to open Sqlite database." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 				return;
 				
 			}
@@ -439,7 +442,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
   		if( !vol->mountName )
   		{
   			isolate->ThrowException( Exception::Error(
-  					String::NewFromUtf8( isolate, TranslateText( "Volume is not mounted; cannot be used to open Sqlite database." ) ) ) );
+  					String::NewFromUtf8( isolate, TranslateText( "Volume is not mounted; cannot be used to open Sqlite database." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
   			return;
   		}
 		int argc = args.Length();
@@ -447,7 +450,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 		char dbName[256];
 		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
   		snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
-  		argv[0] = String::NewFromUtf8( isolate, dbName );
+  		argv[0] = String::NewFromUtf8( isolate, dbName, v8::NewStringType::kNormal ).ToLocalChecked();
 		argv[1] = args.Holder();
 		
 		args.GetReturnValue().Set( newSqlObject( isolate, argc, argv ) );
@@ -489,7 +492,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		if( args.Length() < 2 ) {
 			isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data callback" ) ) ) );
+				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data callback" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			return;
 		}
 		Local<Function> cb = Local<Function>::Cast( args[1] );
@@ -587,7 +590,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		if( args.Length() < 2 ) {
 			isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data callback" ) ) ) );
+				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data callback" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			return;
 		}
 		Local<Function> cb = Local<Function>::Cast( args[1] );
@@ -706,7 +709,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 		if( args.Length() < 1 ) {
 			isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open" ) ) ) );
+				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			return;
 		}
 
@@ -724,7 +727,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				size_t actual = sack_vfs_read( file, (char*)buf, len );
 				if( actual < len ) {
 					isolate->ThrowException( Exception::TypeError(
-						String::NewFromUtf8( isolate, TranslateText( "Short read; incomplete data." ) ) ) );
+						String::NewFromUtf8( isolate, TranslateText( "Short read; incomplete data." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 					return;
 				}
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
@@ -771,7 +774,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 		if( args.Length() < 1 ) {
 			isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open" ) ) ) );
+				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			return;
 		}
 
@@ -781,7 +784,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		if( data && len ) {
 			//ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
 
-			MaybeLocal<String> _arrayBuffer = String::NewFromUtf8( isolate, (char*)data, NewStringType::kNormal, (int)len );
+			MaybeLocal<String> _arrayBuffer = String::NewFromUtf8( isolate, (char*)data, v8::NewStringType::kNormal, (int)len ).ToLocalChecked();
 			Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->s.Reset( isolate, arrayBuffer );
@@ -792,7 +795,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 		} else {
 			isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( isolate, TranslateText( "Failed to open file" ) ) ) );
+				String::NewFromUtf8( isolate, TranslateText( "Failed to open file" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		}
 	}
 
@@ -839,7 +842,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 		if( args.Length() < 1 ) {
 			isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open" ) ) ) );
+				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			return;
 		}
 
@@ -869,7 +872,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			}
 		} else {
 			isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( isolate, TranslateText( "Failed to open file" ) ) ) );
+				String::NewFromUtf8( isolate, TranslateText( "Failed to open file" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		}
 	}
 
@@ -879,12 +882,12 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 		if( args.Length() < 2 ) {
 			isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data to write" ) ) ) );
+				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data to write" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			return;
 		}
 		LOGICAL overlong = FALSE;
 		if( args.Length() > 2 ) {
-			if( args[2]->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value() )
+			if( args[2]->ToBoolean( isolate )->Value() )
 				overlong = TRUE;
 		}
 		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
@@ -981,7 +984,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			Deallocate( char*, f );
 		} else {
 			isolate->ThrowException( Exception::Error(
-						String::NewFromUtf8( isolate, TranslateText( "Data to write is not an ArrayBuffer or String." ) ) ) );
+						String::NewFromUtf8( isolate, TranslateText( "Data to write is not an ArrayBuffer or String." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 
 		}
 	}
@@ -1031,6 +1034,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 	void VolumeObject::getDirectory( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
+		Local<Context> context = isolate->GetCurrentContext();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
 		struct find_cursor *fi;
 		if( args.Length() > 0 ) {
@@ -1051,14 +1055,14 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			char *name = vol->fsInt->find_get_name( fi );
 			size_t length = vol->fsInt->find_get_size( fi );
 			Local<Object> entry = Object::New( isolate );
-			entry->Set( String::NewFromUtf8( isolate, "name" ), String::NewFromUtf8( isolate, name ) );
+			SET( entry, "name", String::NewFromUtf8( isolate, name, v8::NewStringType::kNormal ).ToLocalChecked() );
 			if( length == ((size_t)-1) )
-				entry->Set( String::NewFromUtf8( isolate, "folder" ), True(isolate) );
+				SET( entry, "folder", True(isolate) );
 			else {
-				entry->Set( String::NewFromUtf8( isolate, "folder" ), False(isolate) );
-				entry->Set( String::NewFromUtf8( isolate, "length" ), Number::New( isolate, (double)length ) );
+				SET( entry, "folder", False( isolate ) );
+				SET( entry, "length", Number::New( isolate, (double)length ) );
 			}
-			result->Set( n++, entry );
+			SETN( result, n++, entry );
 		} 
 		vol->fsInt->find_close( fi );
 		args.GetReturnValue().Set( result );
@@ -1125,7 +1129,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				VolumeObject* obj = new VolumeObject( mount_name, filename, version, key, key2 );
 				if( !obj->vol ) {
 					isolate->ThrowException( Exception::Error(
-						String::NewFromUtf8( isolate, TranslateText( "Volume failed to open." ) ) ) );
+						String::NewFromUtf8( isolate, TranslateText( "Volume failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 
 				} else {
 					obj->Wrap( args.This() );
@@ -1160,7 +1164,7 @@ void FileObject::Emitter(const v8::FunctionCallbackInfo<Value>& args)
 	Isolate* isolate = Isolate::GetCurrent();
 	//HandleScope scope;
 	Local<Value> argv[2] = {
-		v8::String::NewFromUtf8( isolate, "ping"), // event name
+		v8::String::NewFromUtf8( isolate, "ping", v8::NewStringType::kNormal ).ToLocalChecked(), // event name
 		args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  // argument
 	};
 
@@ -1212,7 +1216,7 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 		}
 		else {
 			isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( isolate, TranslateText( "Too many parameters passed to read. ([length [,offset]])" ) ) ) );
+				String::NewFromUtf8( isolate, TranslateText( "Too many parameters passed to read. ([length [,offset]])" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			return;
 		}
 		if( length > file->size ) {
@@ -1254,7 +1258,7 @@ void FileObject::readLine(const v8::FunctionCallbackInfo<Value>& args) {
 			}
 		}
 		{
-			MaybeLocal<String> result = String::NewFromUtf8( isolate, file->buf, NewStringType::kNormal, (int)strlen( file->buf ) );
+			MaybeLocal<String> result = String::NewFromUtf8( isolate, file->buf, v8::NewStringType::kNormal, (int)strlen( file->buf ) ).ToLocalChecked();
 			args.GetReturnValue().Set( result.ToLocalChecked() );
 		}
 		//Local<String> result = String::NewFromUtf8( isolate, buf );
@@ -1266,7 +1270,7 @@ void FileObject::readLine(const v8::FunctionCallbackInfo<Value>& args) {
 	else {
 		// get length
 		isolate->ThrowException( Exception::TypeError(
-			String::NewFromUtf8( isolate, TranslateText( "Too many parameters passed to readLine. ([offset])" ) ) ) );
+			String::NewFromUtf8( isolate, TranslateText( "Too many parameters passed to readLine. ([offset])" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 	}
 }
 
@@ -1297,7 +1301,7 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 	//SACK_VFS_PROC size_t CPROC sack_vfs_write( struct sack_vfs_file *file, char * data, size_t length );
 	if( args.Length() > 2 ) {
 		isolate->ThrowException( Exception::TypeError(
-			String::NewFromUtf8( isolate, TranslateText( "Too many parameters passed to writeLine.  ( buffer, [,offset])" ) ) ) );
+			String::NewFromUtf8( isolate, TranslateText( "Too many parameters passed to writeLine.  ( buffer, [,offset])" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 	size_t offset = 0;
@@ -1397,7 +1401,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		fileTemplate = FunctionTemplate::New( isolate, openFile );
 		FileObject::tpl.Reset( isolate, fileTemplate );
 
-		fileTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.File" ) );
+		fileTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.File", v8::NewStringType::kNormal ).ToLocalChecked() );
 		fileTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 		// Prototype
@@ -1424,7 +1428,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		//NODE_SET_PROTOTYPE_METHOD( fileTemplate, "isPaused", openFile );
 
 		constructor.Reset( isolate, fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-		//exports->Set( String::NewFromUtf8( isolate, "File" ),
+		//exports->Set( String::NewFromUtf8( isolate, "File", v8::NewStringType::kNormal ).ToLocalChecked(),
 		//	fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 
@@ -1432,7 +1436,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		if( args.Length() < 1 ) {
 			isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open" ) ) ) );
+				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			return;
 		}
 		VolumeObject* vol;
@@ -1451,7 +1455,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 				if( vol->volNative ) {
 					if( !obj->file ) {
 						isolate->ThrowException( Exception::Error(
-							String::NewFromUtf8( isolate, TranslateText( "Failed to open file." ) ) ) );
+							String::NewFromUtf8( isolate, TranslateText( "Failed to open file." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 						delete obj;
 						return;
 					}
@@ -1459,7 +1463,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 				}else
 					if( !obj->cfile ) {
 						isolate->ThrowException( Exception::Error(
-							String::NewFromUtf8( isolate, TranslateText( "Failed to open file." ) ) ) );
+							String::NewFromUtf8( isolate, TranslateText( "Failed to open file." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 						delete obj;
 						return;
 					}

@@ -20,6 +20,7 @@ static Persistent<Map> fromPrototypeMap;
 Persistent<Function> JSOXObject::constructor;
 
 void InitJSOX( Isolate *isolate, Local<Object> exports ){
+	Local<Context> context = isolate->GetCurrentContext();
 
 	Local<Object> o2 = Object::New( isolate );
 	SET_READONLY_METHOD( o2, "parse", parseJSOX );
@@ -32,7 +33,7 @@ void InitJSOX( Isolate *isolate, Local<Object> exports ){
 	{
 		Local<FunctionTemplate> parseTemplate;
 		parseTemplate = FunctionTemplate::New( isolate, JSOXObject::New );
-		parseTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.jsox_parser" ) );
+		parseTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.jsox_parser", v8::NewStringType::kNormal ).ToLocalChecked() );
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", JSOXObject::write );
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "setFromPrototypeMap", JSOXObject::setFromPrototypeMap );
@@ -41,7 +42,7 @@ void InitJSOX( Isolate *isolate, Local<Object> exports ){
 		JSOXObject::constructor.Reset( isolate, parseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
 		//SET_READONLY( o2, "begin", parseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-		o2->Set( String::NewFromUtf8( isolate, "begin"), parseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		SET( o2, "begin", parseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 
 }
@@ -69,11 +70,11 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	JSOXObject *parser = ObjectWrap::Unwrap<JSOXObject>( args.Holder() );
 	int argc = args.Length();
 	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Missing data parameter." ) ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Missing data parameter.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 
-	String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	String::Utf8Value data( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 	int result;
 	//Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 	Local<Context> context = isolate->GetCurrentContext();
@@ -115,10 +116,10 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( result < 0 ) {
 		PTEXT error = jsox_parse_get_error( parser->state );
 		if( error ) {
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ) ) ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			LineRelease( error );
 		} else
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "No Error Text" STRSYM(__LINE__)) ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "No Error Text" STRSYM(__LINE__), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		jsox_parse_clear_state( parser->state );
 		return;
 	}
@@ -130,7 +131,7 @@ void JSOXObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must callback to read into." ) ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must callback to read into.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 
@@ -227,7 +228,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 #endif
 						if( pathVal->value_type == JSOX_VALUE_NUMBER ) {
 							Local<Value> arraymember = refObj->Get( revive->context, (uint32_t)pathVal->result_n ).ToLocalChecked();
-							String::Utf8Value tmp( USE_ISOLATE( revive->isolate )   arraymember->ToString(revive->isolate) );
+							String::Utf8Value tmp( USE_ISOLATE( revive->isolate )   arraymember->ToString(revive->context).ToLocalChecked() );
 #ifdef DEBUG_REFERENCE_FOLLOW
 							lprintf( "Array member is : %s", *tmp );
 #endif
@@ -283,7 +284,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 			if( revive->parser && !revive->parser->promiseFromPrototypeMap.IsEmpty() ) {
 				valmethod = revive->parser->promiseFromPrototypeMap.Get( revive->isolate )->
 					Get( revive->context
-						, String::NewFromUtf8( revive->isolate, val->className )
+						, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal ).ToLocalChecked()
 					);
 				if( !valmethod.IsEmpty() && !valmethod.ToLocalChecked()->IsUndefined() ) {
 					struct PromiseWrapper *pw = makePromise( revive->context, revive->isolate );
@@ -299,7 +300,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 				if( revive->parser && !revive->parser->fromPrototypeMap.IsEmpty() ) {
 					valmethod = revive->parser->fromPrototypeMap.Get( revive->isolate )->
 						Get( revive->context
-							, String::NewFromUtf8( revive->isolate, val->className )
+							, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal ).ToLocalChecked()
 						);
 					if( !valmethod.IsEmpty() && !valmethod.ToLocalChecked()->IsUndefined() )
 						cb = valmethod.ToLocalChecked().As<Function>();
@@ -307,7 +308,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 				if( valmethod.IsEmpty() || (valmethod.ToLocalChecked()->IsUndefined()) ) {
 					valmethod = fromPrototypeMap.Get( revive->isolate )->
 						Get( revive->context
-							, String::NewFromUtf8( revive->isolate, val->className )
+							, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal ).ToLocalChecked()
 						);
 					if( !valmethod.IsEmpty() && !valmethod.ToLocalChecked()->IsUndefined() )
 						cb = valmethod.ToLocalChecked().As<Function>();
@@ -418,6 +419,8 @@ Local<Object> getObject( struct reviver_data *revive, struct jsox_value_containe
 }
 
 static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive ) {
+	Isolate* isolate = revive->isolate;
+	Local<Context> context = revive->context;
 	Local<Value> thisVal;
 	Local<String> stringKey;
 	Local<Value> thisKey;
@@ -448,7 +451,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				if( revive->revive )
 					revive->value = Integer::New( revive->isolate, index );
 				//lprintf( "set value to index: %d", index );
-				o->Set( index, thisVal = makeValue( val, revive, o, index, Null(revive->isolate).As<String>() ) );
+				SETN( o, index, thisVal = makeValue( val, revive, o, index, Null(revive->isolate).As<String>() ) );
 				index++;
 				if( val->value_type == JSOX_VALUE_EMPTY )
 					o->Delete( revive->context, index - 1 );
@@ -467,7 +470,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				if( revive->revive )
 					thisKey = Integer::New( revive->isolate, index );
 				//lprintf( "set value to index: %d", index );
-				o->Set( index++, sub_o = Array::New( revive->isolate ) );
+				SETN( o, index++, sub_o = Array::New( revive->isolate ) );
 			}
 			buildObject( val->contains, sub_o, revive );
 			if( val->className ) {
@@ -476,7 +479,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				if( revive->parser && !revive->parser->promiseFromPrototypeMap.IsEmpty() )
 					valmethod = revive->parser->promiseFromPrototypeMap.Get( revive->isolate )->
 						Get( revive->context
-							, String::NewFromUtf8( revive->isolate, val->className )
+							, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal ).ToLocalChecked()
 						);
 				if( !valmethod.IsEmpty() ) {
 					struct PromiseWrapper *pw = makePromise( revive->context, revive->isolate );
@@ -488,7 +491,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 					if( revive->parser && !revive->parser->fromPrototypeMap.IsEmpty() ) {
 						valmethod = revive->parser->fromPrototypeMap.Get( revive->isolate )->
 							Get( revive->context
-								, String::NewFromUtf8( revive->isolate, val->className )
+								, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal ).ToLocalChecked()
 							);
 						if( !valmethod.IsEmpty() && !(valmethod.ToLocalChecked()->IsUndefined()) )
 							cb = valmethod.ToLocalChecked().As<Function>();
@@ -496,7 +499,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 					if( valmethod.IsEmpty() || (valmethod.ToLocalChecked()->IsUndefined()) ) {
 						valmethod = fromPrototypeMap.Get( revive->isolate )->
 							Get( revive->context
-								, String::NewFromUtf8( revive->isolate, val->className )
+								, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal ).ToLocalChecked()
 							);
 						if( !valmethod.IsEmpty() && !(valmethod.ToLocalChecked()->IsUndefined()) )
 							cb = valmethod.ToLocalChecked().As<Function>();
@@ -525,7 +528,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 					thisKey = Integer::New( revive->isolate, index );
 				//lprintf( "set value to index: %d", index );
 
-				o->Set( index++, sub_o );
+				SETN( o, index++, sub_o );
 			}
 
 			buildObject( val->contains, sub_o, revive );
@@ -536,7 +539,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				if( revive->parser && !revive->parser->promiseFromPrototypeMap.IsEmpty() )
 					valmethod = revive->parser->promiseFromPrototypeMap.Get( revive->isolate )->
 						Get( revive->context
-							, String::NewFromUtf8( revive->isolate, val->className )
+							, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal ).ToLocalChecked()
 						);
 				if( !valmethod.IsEmpty() && !( valmethod.ToLocalChecked()->IsUndefined() ) ) {
 					struct PromiseWrapper *pw = makePromise( revive->context, revive->isolate );
@@ -548,7 +551,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 					if( revive->parser && !revive->parser->fromPrototypeMap.IsEmpty() ) {
 						valmethod = revive->parser->fromPrototypeMap.Get( revive->isolate )->
 							Get( revive->context
-								, String::NewFromUtf8( revive->isolate, val->className )
+								, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal ).ToLocalChecked()
 							);
 						if( !valmethod.IsEmpty() && !(valmethod.ToLocalChecked()->IsUndefined()) )
 							cb = valmethod.ToLocalChecked().As<Function>();
@@ -556,7 +559,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 					if( valmethod.IsEmpty() || (valmethod.ToLocalChecked()->IsUndefined()) ) {
 						valmethod = fromPrototypeMap.Get( revive->isolate )->
 							Get( revive->context
-								, String::NewFromUtf8( revive->isolate, val->className )
+								, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal ).ToLocalChecked()
 							);
 						if( !valmethod.IsEmpty() && !(valmethod.ToLocalChecked()->IsUndefined()) )
 							cb = valmethod.ToLocalChecked().As<Function>();
@@ -594,7 +597,7 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 			if( revive->parser && !revive->parser->promiseFromPrototypeMap.IsEmpty() )
 				valmethod = revive->parser->promiseFromPrototypeMap.Get( revive->isolate )->
 					Get( revive->context
-						, String::NewFromUtf8( revive->isolate, val->className )
+						, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal ).ToLocalChecked()
 					);
 			if( !valmethod.IsEmpty() && !(valmethod.ToLocalChecked()->IsUndefined()) ) {
 				struct PromiseWrapper *pw = makePromise( revive->context, revive->isolate );
@@ -606,7 +609,7 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 				if( revive->parser && !revive->parser->fromPrototypeMap.IsEmpty() ) {
 					valmethod = revive->parser->fromPrototypeMap.Get( revive->isolate )->
 						Get( revive->context
-							, String::NewFromUtf8( revive->isolate, val->className )
+							, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal ).ToLocalChecked()
 						);
 					if( !valmethod.IsEmpty() && !(valmethod.ToLocalChecked()->IsUndefined()) )
 						cb = valmethod.ToLocalChecked().As<Function>();
@@ -614,7 +617,7 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 				if( valmethod.IsEmpty() || (valmethod.ToLocalChecked()->IsUndefined()) ) {
 					valmethod = fromPrototypeMap.Get( revive->isolate )->
 						Get( revive->context
-							, String::NewFromUtf8( revive->isolate, val->className )
+							, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal ).ToLocalChecked()
 						);
 					if( !valmethod.IsEmpty() && !(valmethod.ToLocalChecked()->IsUndefined()) )
 						cb = valmethod.ToLocalChecked().As<Function>();
@@ -659,11 +662,11 @@ void escapeJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = Isolate::GetCurrent();
 	if( args.Length() == 0 ) {
 		isolate->ThrowException( Exception::TypeError(
-			String::NewFromUtf8( isolate, TranslateText( "Missing parameter, string to escape" ) ) ) );
+			String::NewFromUtf8( isolate, TranslateText( "Missing parameter, string to escape" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 	char *msg;
-	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
+	String::Utf8Value tmp( isolate,  args[0] );
 	size_t outlen;
 	msg = jsox_escape_string_length( *tmp, tmp.length(), &outlen );
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, msg, NewStringType::kNormal, (int)outlen ).ToLocalChecked() );
@@ -679,9 +682,9 @@ Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviver_data
 		//lprintf( "Failed to parse data..." );
 		PTEXT error = jsox_parse_get_error( NULL );
 		if( error )
-			revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate, GetText( error ) ) ) );
+			revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		else
-			revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate, "No Error Text" STRSYM(__LINE__) ) ) );
+			revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate, "No Error Text" STRSYM(__LINE__), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		LineRelease( error );
 		return Undefined(revive->isolate);
 	}
@@ -709,7 +712,7 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 	r.isolate = Isolate::GetCurrent();
 	if( args.Length() == 0 ) {
 		r.isolate->ThrowException( Exception::TypeError(
-			String::NewFromUtf8( r.isolate, TranslateText( "Missing parameter, data to parse" ) ) ) );
+			String::NewFromUtf8( r.isolate, TranslateText( "Missing parameter, data to parse" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 	const char *msg;
@@ -720,13 +723,13 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
 			r._this = args.Holder();
-			r.value = String::NewFromUtf8( r.isolate, "" );
+			r.value = String::NewFromUtf8( r.isolate, "", v8::NewStringType::kNormal ).ToLocalChecked();
 			r.revive = TRUE;
 			r.reviver = Local<Function>::Cast( args[1] );
 		}
 		else {
 			r.isolate->ThrowException( Exception::TypeError(
-				String::NewFromUtf8( r.isolate, TranslateText( "Reviver parameter is not a function." ) ) ) );
+				String::NewFromUtf8( r.isolate, TranslateText( "Reviver parameter is not a function." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			r.dateCons.Reset();
 			return;
 		}
@@ -744,7 +747,7 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 
 
 void makeJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
-	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), "undefined :) Stringify is not completed" ) );
+	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), "undefined :) Stringify is not completed", v8::NewStringType::kNormal ).ToLocalChecked() );
 }
 
 void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {

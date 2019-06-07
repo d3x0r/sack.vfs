@@ -72,8 +72,17 @@ using namespace v8;
 
 //fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekSet" ), Integer::New( isolate, SEEK_SET ), ReadOnlyProperty );
 
-#define SET_READONLY( object, name, data ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name), data, ReadOnlyProperty )
-#define SET_READONLY_METHOD( object, name, method ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name), v8::Function::New(isolate->GetCurrentContext(), method ).ToLocalChecked(), ReadOnlyProperty )
+#define SET_READONLY( object, name, data ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name, v8::NewStringType::kNormal ).ToLocalChecked(), data, ReadOnlyProperty )
+#define SET_READONLY_METHOD( object, name, method ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name, v8::NewStringType::kNormal ).ToLocalChecked(), v8::Function::New(isolate->GetCurrentContext(), method ).ToLocalChecked(), ReadOnlyProperty )
+
+#define GET(o,key)  (o)->Get( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked() ).ToLocalChecked()
+#define GETV(o,key)  (o)->Get( context, key ).ToLocalChecked()
+#define GETN(o,key)  (o)->Get( context, Integer::New( isolate, (key) ) ).ToLocalChecked()
+#define SETV(o,key,val)  (o)->Set( context, key, val )
+#define SET(o,key,val)  (o)->Set( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked(), val )
+#define SETT(o,key,val)  (o)->Set( context, String::NewFromUtf8( isolate, GetText(key), v8::NewStringType::kNormal, (int)GetTextSize( key ) ).ToLocalChecked(), val )
+#define SETN(o,key,val)  (o)->Set( context, Integer::New( isolate, key ), val )
+
 
 void InitJSOX( Isolate *isolate, Local<Object> exports );
 void InitJSON( Isolate *isolate, Local<Object> exports );

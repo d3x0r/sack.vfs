@@ -280,53 +280,53 @@ void textObjectInit( Isolate *isolate, Handle<Object> exports ) {
 
 	textTemplate = FunctionTemplate::New( isolate, newText );
 	pTextTemplate.Reset( isolate, textTemplate );
-	textTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Text" ) );
+	textTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Text", v8::NewStringType::kNormal ).ToLocalChecked() );
 	textTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 internal field for wrap
 
-	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "foreground" )
+	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "foreground", v8::NewStringType::kNormal ).ToLocalChecked()
 		, FunctionTemplate::New( isolate, getTextFore )
 		, FunctionTemplate::New( isolate, setTextFore )
 		, DontDelete );
-	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "background" )
+	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "background", v8::NewStringType::kNormal ).ToLocalChecked()
 		, FunctionTemplate::New( isolate, getTextBack )
 		, FunctionTemplate::New( isolate, setTextBack )
 		, DontDelete );
 
-	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "noReturn" )
+	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "noReturn", v8::NewStringType::kNormal ).ToLocalChecked()
 		, FunctionTemplate::New( isolate, getTextNoReturn )
 		, FunctionTemplate::New( isolate, setTextNoReturn )
 		, DontDelete );
 
-	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "x" )
+	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "x", v8::NewStringType::kNormal ).ToLocalChecked()
 		, FunctionTemplate::New( isolate, getTextParens )
 		, FunctionTemplate::New( isolate, setTextParens )
 		, DontDelete );
-	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "y" )
+	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "y", v8::NewStringType::kNormal ).ToLocalChecked()
 		, FunctionTemplate::New( isolate, getTextParens )
 		, FunctionTemplate::New( isolate, setTextParens )
 		, DontDelete );
 
-	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "parenthesis" )
+	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "parenthesis", v8::NewStringType::kNormal ).ToLocalChecked()
 		, FunctionTemplate::New( isolate, getTextParens )
 		, FunctionTemplate::New( isolate, setTextParens )
 		, DontDelete );
-	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "quoted" )
+	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "quoted", v8::NewStringType::kNormal ).ToLocalChecked()
 		, FunctionTemplate::New( isolate, getTextQuoted )
 		, FunctionTemplate::New( isolate, setTextQuoted )
 		, DontDelete );
-	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "singleQuoted" )
+	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "singleQuoted", v8::NewStringType::kNormal ).ToLocalChecked()
 		, FunctionTemplate::New( isolate, getTextSQuoted )
 		, FunctionTemplate::New( isolate, setTextSQuoted )
 		, DontDelete );
-	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "braced" )
+	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "braced", v8::NewStringType::kNormal ).ToLocalChecked()
 		, FunctionTemplate::New( isolate, getTextBraced )
 		, FunctionTemplate::New( isolate, setTextBraced )
 		, DontDelete );
-	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "bracketed" )
+	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "bracketed", v8::NewStringType::kNormal ).ToLocalChecked()
 		, FunctionTemplate::New( isolate, getTextBracketed )
 		, FunctionTemplate::New( isolate, setTextBracketed )
 		, DontDelete );
-	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "text" )
+	textTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "text", v8::NewStringType::kNormal ).ToLocalChecked()
 		, FunctionTemplate::New( isolate, getText )
 		, FunctionTemplate::New( isolate, setText )
 		, DontDelete );

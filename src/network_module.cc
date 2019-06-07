@@ -166,12 +166,12 @@ static addrObject *getAddress( Isolate *isolate, char *addr, int port ) {
 		AddBinaryNode( l.addressesBySA, obj, (uintptr_t)obj->addr );
 		AddBinaryNode( l.addresses, obj, (uintptr_t)&obj->key );
 		if( obj->addr )
-			SET_READONLY( o, "family", String::NewFromUtf8( isolate, obj->addr->sa_family == AF_INET ? "IPv4" : obj->addr->sa_family == AF_INET6 ? "IPv6" : "unknown" ) );
+			SET_READONLY( o, "family", String::NewFromUtf8( isolate, obj->addr->sa_family == AF_INET ? "IPv4" : obj->addr->sa_family == AF_INET6 ? "IPv6" : "unknown", v8::NewStringType::kNormal ).ToLocalChecked() );
 		else
 			SET_READONLY( o, "family", Undefined(isolate) );
-		SET_READONLY( o, "address", String::NewFromUtf8( isolate, addr ) );
+		SET_READONLY( o, "address", String::NewFromUtf8( isolate, addr, v8::NewStringType::kNormal ).ToLocalChecked() );
 		if( obj->addr )
-			SET_READONLY( o, "IP", String::NewFromUtf8( isolate, GetAddrString( obj->addr ) ) );
+			SET_READONLY( o, "IP", String::NewFromUtf8( isolate, GetAddrString( obj->addr ), v8::NewStringType::kNormal ).ToLocalChecked() );
 		else
 			SET_READONLY( o, "IP", Undefined( isolate ) );
 		SET_READONLY( o, "port", Number::New( isolate, realPort ) );
@@ -206,19 +206,19 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check = NewArray( struct optionStrings, 1 );
 		AddLink( &l.strings, check );
 		check->isolate = isolate;
-		check->portString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "port" ) );
-		check->addressString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "address" ) );
-		check->broadcastString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "broadcast" ) );
-		check->messageString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "message" ) );
-		check->closeString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "close" ) );
-		check->familyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "family" ) );
-		check->v4String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "IPv4" ) );
-		check->v6String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "IPv6" ) );
-		check->toPortString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "toPort" ) );
-		check->toAddressString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "toAddress" ) );
-		check->readStringsString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "readStrings" ) );
-		check->reusePortString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "reusePort" ) );
-		check->reuseAddrString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "reuseAddress" ) );
+		check->portString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "port", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->addressString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "address", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->broadcastString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "broadcast", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->messageString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "message", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->closeString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "close", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->familyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "family", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->v4String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "IPv4", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->v6String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "IPv6", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->toPortString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "toPort", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->toAddressString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "toAddress", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->readStringsString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "readStrings", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->reusePortString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "reusePort", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->reuseAddrString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "reuseAddress", v8::NewStringType::kNormal ).ToLocalChecked() );
 	}
 	return check;
 }
@@ -232,7 +232,7 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 	{
 		Local<FunctionTemplate> udpTemplate;
 		udpTemplate = FunctionTemplate::New( isolate, udpObject::New );
-		udpTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.dgram.socket" ) );
+		udpTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.dgram.socket", v8::NewStringType::kNormal ).ToLocalChecked() );
 		udpTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( udpTemplate, "close", udpObject::close );
 		NODE_SET_PROTOTYPE_METHOD( udpTemplate, "on", udpObject::on );
@@ -248,7 +248,7 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 		Local<FunctionTemplate> addrTemplate;
 		addrTemplate = FunctionTemplate::New( isolate, addrObject::New );
 		addrObject::tpl.Reset( isolate, addrTemplate );
-		addrTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.network.address" ) );
+		addrTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.network.address", v8::NewStringType::kNormal ).ToLocalChecked() );
 		addrTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		//NODE_SET_PROTOTYPE_METHOD( addrTemplate, "toString", addrObject::toString );
 		addrTemplate->ReadOnlyPrototype();
@@ -383,7 +383,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Must specify either type or options for server." ) ) ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Must specify either type or options for server." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 
@@ -399,7 +399,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		udpOpts.messageCallback.Empty();
 
 		if( args[argBase]->IsString() ) {
-			udpOpts.address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) args[argBase]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
+			udpOpts.address = StrDup( *String::Utf8Value( isolate,  args[argBase]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
 			argBase++;
 		}
 		if( ( args.Length() >= argBase ) && args[argBase]->IsObject() ) {
@@ -412,11 +412,11 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 				udpOpts.port = 0;
 			}
 			else {
-				udpOpts.port = (int)opts->Get( optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
+				udpOpts.port = (int)GETV( opts, optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 			}
 			// ---- get family
 			if( opts->Has( context, optName = strings->familyString->Get( isolate ) ).ToChecked() ) {
-				String::Utf8Value family( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+				String::Utf8Value family( isolate,  GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 				udpOpts.v6 = (StrCmp( *family, "IPv6" ) == 0);
 				if( udpOpts.addressDefault ) {
 					Deallocate( char *, udpOpts.address );
@@ -435,40 +435,40 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 					udpOpts.address = StrDup( "0.0.0.0" );
 			}
 			else {
-				udpOpts.address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked()) );
+				udpOpts.address = StrDup( *String::Utf8Value( isolate,  GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked()) );
 			}
 			// ---- get to port
 			if( opts->Has( context, optName = strings->toPortString->Get( isolate ) ).ToChecked() ) {
-				udpOpts.toPort = (int)opts->Get( optName )->ToInteger(isolate->GetCurrentContext()).ToLocalChecked()->Value();
+				udpOpts.toPort = (int)GETV( opts, optName )->ToInteger(isolate->GetCurrentContext()).ToLocalChecked()->Value();
 			}
 			else
 				udpOpts.toPort = 0;
 			// ---- get toAddress
 			if( opts->Has( context, optName = strings->addressString->Get( isolate ) ).ToChecked() ) {
-				udpOpts.toAddress = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) opts->Get( optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
+				udpOpts.toAddress = StrDup( *String::Utf8Value( isolate,  GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
 			}
 			else
 				udpOpts.toAddress = NULL;
 			// ---- get broadcast
 			if( opts->Has( context, optName = strings->broadcastString->Get( isolate ) ).ToChecked() ) {
-				udpOpts.broadcast = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
+				udpOpts.broadcast = GETV( opts, optName )->ToBoolean( isolate )->Value();
 			}
 			// ---- get message callback
 			if( opts->Has( context, optName = strings->messageString->Get( isolate ) ).ToChecked() ) {
-				udpOpts.messageCallback.Reset( isolate, Local<Function>::Cast( opts->Get( optName ) ) );
+				udpOpts.messageCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
 			}
 			// ---- get read strings setting
 			if( opts->Has( context, optName = strings->readStringsString->Get( isolate ) ).ToChecked() ) {
-				udpOpts.readStrings = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
+				udpOpts.readStrings = GETV( opts, optName )->ToBoolean( isolate )->Value();
 			}
 			// ---- get reuse address
 			if( opts->Has( context, optName = strings->reuseAddrString->Get( isolate ) ).ToChecked() ) {
-				udpOpts.reuseAddr = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
+				udpOpts.reuseAddr = GETV( opts, optName )->ToBoolean( isolate )->Value();
 			}
 			else udpOpts.reuseAddr = false;
 			// ---- get reuse port
 			if( opts->Has( context, optName = strings->reusePortString->Get( isolate ) ).ToChecked() ) {
-				udpOpts.reusePort = opts->Get( optName )->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
+				udpOpts.reusePort = GETV( opts, optName )->ToBoolean( isolate )->Value();
 			}
 			else udpOpts.reusePort = false;
 			argBase++;
@@ -504,11 +504,11 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 void udpObject::setBroadcast( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( !args.Length() ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Missing boolean in call to setBroadcast." ) ) ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Missing boolean in call to setBroadcast." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 	udpObject *obj = ObjectWrap::Unwrap<udpObject>( args.This() );
-	UDPEnableBroadcast( obj->pc, args[0]->ToBoolean( isolate->GetCurrentContext() ).ToLocalChecked()->Value() );
+	UDPEnableBroadcast( obj->pc, args[0]->ToBoolean( isolate )->Value() );
 }
 
 void udpObject::on( const FunctionCallbackInfo<Value>& args ) {
@@ -516,7 +516,7 @@ void udpObject::on( const FunctionCallbackInfo<Value>& args ) {
 	udpObject *obj = ObjectWrap::Unwrap<udpObject>( args.Holder() );
 	if( args.Length() == 2 ) {
 		Isolate* isolate = args.GetIsolate();
-		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value event( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if( StrCmp( *event, "error" ) == 0 ) {
 			// not sure how to get this... so many errors so few callbacks
@@ -543,7 +543,7 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	udpObject *obj = ObjectWrap::Unwrap<udpObject>( args.This() );
 	if( !obj->pc ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Socket is not open." ) ) ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Socket is not open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 	SOCKADDR *dest = NULL;
@@ -556,7 +556,7 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 				dest = obj->addr;
 		}
 		else {
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Address argument is not a sack.core.Network.Address" ) ) ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Address argument is not a sack.core.Network.Address" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			return;
 		}
 	}
@@ -565,7 +565,7 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 		SendUDPEx( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
 	}
 	else if( args[0]->IsString() ) {
-		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value buf( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		SendUDPEx( obj->pc, *buf, buf.length(), dest );
 	}
 	else {
@@ -599,9 +599,9 @@ addrObject *addrObject::internalNew( Isolate *isolate, SOCKADDR *sa ) {
 	addr->key.port = port;
 	addr->key.addr = (char*)GetAddrName( sa );
 	addr->addr = DuplicateAddress( sa );
-	SET_READONLY( _addr, "family", String::NewFromUtf8( isolate, sa->sa_family == AF_INET ? "IPv4" :sa->sa_family == AF_INET6 ? "IPv6" : "unknown" ) );
-	SET_READONLY( _addr, "address", String::NewFromUtf8( isolate, addr->key.addr ) );
-	SET_READONLY( _addr, "IP", String::NewFromUtf8( isolate, GetAddrString( addr->addr ) ) );
+	SET_READONLY( _addr, "family", String::NewFromUtf8( isolate, sa->sa_family == AF_INET ? "IPv4" :sa->sa_family == AF_INET6 ? "IPv6" : "unknown", v8::NewStringType::kNormal ).ToLocalChecked() );
+	SET_READONLY( _addr, "address", String::NewFromUtf8( isolate, addr->key.addr, v8::NewStringType::kNormal ).ToLocalChecked() );
+	SET_READONLY( _addr, "IP", String::NewFromUtf8( isolate, GetAddrString( addr->addr ), v8::NewStringType::kNormal ).ToLocalChecked() );
 	SET_READONLY( _addr, "port", Number::New( isolate, port ) );
 	return addr;
 }
@@ -631,7 +631,7 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 			args.GetReturnValue().Set( _this );
 			return;
 		}
-		address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) args[argBase]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
+		address = StrDup( *String::Utf8Value( isolate,  args[argBase]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
 		argBase++;
 
 		if( (args.Length() >= argBase) && args[argBase]->IsNumber() ) {
@@ -646,13 +646,13 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 		uint16_t realPort;
 		GetAddressParts( obj->addr, NULL, &realPort );
 		if( obj->addr ) {
-			SET_READONLY( _this, "family", String::NewFromUtf8( isolate, obj->addr->sa_family == AF_INET ? "IPv4" : obj->addr->sa_family == AF_INET6 ? "IPv6" : "unknown" ) );
+			SET_READONLY( _this, "family", String::NewFromUtf8( isolate, obj->addr->sa_family == AF_INET ? "IPv4" : obj->addr->sa_family == AF_INET6 ? "IPv6" : "unknown", v8::NewStringType::kNormal ).ToLocalChecked() );
 		}
 		else
 			SET_READONLY( _this, "family", Undefined( isolate ) );
-		SET_READONLY( _this, "address", String::NewFromUtf8( isolate, address ) );
+		SET_READONLY( _this, "address", String::NewFromUtf8( isolate, address, v8::NewStringType::kNormal ).ToLocalChecked() );
 		if( obj->addr )
-			SET_READONLY( _this, "IP", String::NewFromUtf8( isolate, GetAddrString( obj->addr ) ) );
+			SET_READONLY( _this, "IP", String::NewFromUtf8( isolate, GetAddrString( obj->addr ), v8::NewStringType::kNormal ).ToLocalChecked() );
 		else
 			SET_READONLY( _this, "IP", Undefined(isolate) );
 		SET_READONLY( _this, "port", Number::New( isolate, realPort ) );
@@ -664,7 +664,7 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		if( argc == 0 ) {
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Must specify address string to create an address." ) ) ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Must specify address string to create an address." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			return;
 		}
 
@@ -679,7 +679,7 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 			obj->Wrap( _this );
 			return;
 		}
-		address = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) args[argBase]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
+		address = StrDup( *String::Utf8Value( isolate,  args[argBase]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
 		argBase++;
 
 		if( (args.Length() >= argBase) && args[argBase]->IsNumber() ) {
