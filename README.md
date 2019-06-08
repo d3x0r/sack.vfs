@@ -71,7 +71,7 @@ vfs = {
         Sqlite has methods available on it to access native program options.
         Sqlite.op( opName, defaultValue ) - read/write default option database option.
         Sqlite.so( opName, newValue ) - write new value to default option database.
-    ObjectStore( fileName [, version] ) - open a JS object storage database. 
+    ObjectStorage( fileName [, version] ) - open a JS object storage database. 
     Volume([mountName,]fileName[,version]) - a virtual disk partition that holds files.
           mountName - the mount name used to mount to volume as a filesystem; it may be referenced 
                 later in the string passed to Sqlite.  It may be `null` if it is anonymous mount.
@@ -910,7 +910,7 @@ Address string can contain an optional port notation after a colon(':')
 ```
 var sack = require( "sack.vfs" );
 var response = sack.HTTP.get( { hostname: "example.com", port: 80, method : "get", 
-var response2 = sack.HTTPS.get( { ca:<extra root cert(s)>, rejectUnauthorized:true/false, path:"/index.html" } );
+var response2 = sack.HTTPS.get( { ca:&lt;extra root cert(s)&gt;, rejectUnauthorized:true/false, path:"/index.html" } );
 ```
 
 | HTTP(S) get option | Description |
