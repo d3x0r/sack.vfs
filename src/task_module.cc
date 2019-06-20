@@ -89,8 +89,8 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 static void taskAsyncMsg( uv_async_t* handle ) {
 	TaskObject *task = (TaskObject*)handle->data;
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	Local<Context> context = isolate->GetCurrentContext();
 	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
 
 	if( task->ending ) {
 		if( !task->endCallback.IsEmpty() )
