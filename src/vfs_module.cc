@@ -195,6 +195,7 @@ void VolumeObject::doInit( Local<Object> exports )
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "ObjectStorage", vfsObjectStorage );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "dir", getDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "exists", fileExists );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "isDir", isDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "read", fileRead );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "readJSON", fileReadJSON );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "readJSOX", fileReadJSOX );
@@ -402,6 +403,25 @@ void VolumeObject::makeDirectory( const v8::FunctionCallbackInfo<Value>& args ){
 				// no directory support; noop.
 			} else {
 				MakePath( *fName );
+			}
+		}
+	}
+}
+
+
+void VolumeObject::isDirectory( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	if( argc > 0 ) {
+		VolumeObject* vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		if( vol ) {
+			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
+			if( vol->volNative ) {
+				// no directory support; noop.
+				args.GetReturnValue().Set( False(isolate) );
+			}
+			else {
+				args.GetReturnValue().Set( Boolean::New( isolate,  IsPath( *fName ) ) );
 			}
 		}
 	}
