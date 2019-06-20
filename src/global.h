@@ -113,7 +113,7 @@ struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate );
 
 class VolumeObject : public node::ObjectWrap {
 public:
-	struct volume *vol;
+	struct sack_vfs_volume *vol;
 	bool volNative;
 	char *mountName;
 	char *fileName;
@@ -173,7 +173,7 @@ class FileObject : public node::ObjectWrap {
 	VolumeObject *vol;
 	struct sack_vfs_file *file;
 	FILE *cfile;
-	//Local<Object> volume;
+	//Local<Object> sack_vfs_volume;
 	PLIST buffers; // because these are passed as physical data buffers, don't release them willy-nilly
 	char* buf;
 	size_t size;

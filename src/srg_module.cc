@@ -97,6 +97,11 @@ private:
 		SRGObject* obj = (SRGObject*)psv;
 		Isolate* isolate = obj->isolate;
 		Local<Context> context = isolate->GetCurrentContext();
+		if( obj->seedBuf ) {
+			Deallocate( char *, obj->seedBuf );
+			obj->seedBuf = NULL;
+			obj->seedLen = 0;
+		}
 		if( obj->seedCallback ) {
 			Local<Function> cb = Local<Function>::New( obj->isolate, obj->seedCallback[0] );
 			Local<Array> ui = Array::New( obj->isolate );
@@ -117,13 +122,11 @@ private:
 		if( obj->seedBuf ) {
 			salt[0] = (POINTER)obj->seedBuf;
 			salt_size[0] = obj->seedLen;
-			Deallocate( char *, obj->seedBuf );
-			obj->seedBuf = NULL;
-			obj->seedLen = 0;
 		}
 		else
 			salt_size[0] = 0;
 	}
+	
 	static void New( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		if( args.IsConstructCall() ) {

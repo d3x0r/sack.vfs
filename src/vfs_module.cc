@@ -258,7 +258,7 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t v
 		volNative = false;
 		fsMount = sack_get_mounted_filesystem( mount );
 		fsInt = sack_get_mounted_filesystem_interface( fsMount );
-		vol = (struct volume*)sack_get_mounted_filesystem_instance( fsMount );
+		vol = (struct sack_vfs_volume*)sack_get_mounted_filesystem_instance( fsMount );
 		//lprintf( "open native mount" );
 	} else {
 		//lprintf( "volume: %s %p %p", filename, key, key2 );
@@ -1360,7 +1360,7 @@ void FileObject::truncateFile(const v8::FunctionCallbackInfo<Value>& args) {
 
 void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 	Local<Context> context = Isolate::GetCurrent()->GetCurrentContext();
-	size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
+	//size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	if( args.Length() == 1 && args[0]->IsNumber() ) {
 		size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
@@ -1384,7 +1384,6 @@ void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate *isolate = Isolate::GetCurrent();
 	Local<Context> context = isolate->GetCurrentContext();
-	size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	if( file->vol->volNative )
 		args.GetReturnValue().Set( Number::New( isolate, (double)sack_vfs_tell( file->file ) ) );
