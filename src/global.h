@@ -35,6 +35,7 @@
 #include <html5.websocket.client.h>
 #include <http.h>
 #include <construct.h>
+#include <configscript.h>
 #else
 #include "sack/sack.h"
 #endif

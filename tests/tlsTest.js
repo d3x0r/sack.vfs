@@ -1,6 +1,8 @@
 
-const vfs = require( ".." );
+require( ".." )((vfs)=>{
 //vfs.TLS.seed( )
+
+
 
 var key = vfs.TLS.genkey( 1024, "password" );
 var cert = vfs.TLS.gencert( { country:"US", state:"NV", locality:"Las Vegas", org:"Freedom Collective", unit:"IT", name:"Root Cert", serial: 1001, key:key, expire: 7, password:"password" } );
@@ -28,3 +30,5 @@ console.log( cert );
 
 if( vfs.TLS.validate( {cert:signedCert3, chain:signedCert2+cert} ) )
 	console.log( "Chain is valid." );
+
+});
