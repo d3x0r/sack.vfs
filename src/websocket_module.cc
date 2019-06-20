@@ -624,10 +624,10 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope(isolate);
 	Local<Context> context = isolate->GetCurrentContext();
 	wssObject* myself = (wssObject*)handle->data;
 	int handled = 0;
-	HandleScope scope(isolate);
 	{
 		struct wssEvent *eventMessage;
 		while( eventMessage = (struct wssEvent *)DequeLink( &myself->eventQueue ) ) {
@@ -759,9 +759,9 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope(isolate);
 	wssiObject* myself = (wssiObject*)handle->data;
 
-	HandleScope scope(isolate);
 	Local<Context> context = isolate->GetCurrentContext();
 	{
 		struct wssiEvent *eventMessage;
@@ -827,9 +827,9 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope(isolate);
 	wscObject* wsc = (wscObject*)handle->data;
 	wscEvent *eventMessage;
-	HandleScope scope(isolate);
 	Local<Context> context = isolate->GetCurrentContext();
 
 	{

@@ -811,9 +811,9 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 	static void preloadCallback( uv_async_t* handle ) {
 		v8::Isolate* isolate = v8::Isolate::GetCurrent();
+		HandleScope scope( isolate );
 		struct preloadArgs* myself = (struct preloadArgs*)handle->data;
 
-		HandleScope scope( isolate );
 		{
 			Local<Function> cb = myself->f->Get( isolate );
 			cb->Call( isolate->GetCurrentContext(), myself->_this.Get( isolate ), 0, NULL );
