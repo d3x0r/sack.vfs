@@ -1710,7 +1710,9 @@ void editOptions( const v8::FunctionCallbackInfo<Value>& args ){
 	EditOptions = (int(*)( PODBC, PSI_CONTROL,LOGICAL))LoadFunction( "EditOptions.plugin", "EditOptionsEx" );
 	if( EditOptions ) {
 		enableEventLoop();
-		ThreadTo( RunEditor, (uintptr_t)EditOptions );
+		//PSI_HandleStatusEvent( control, dialogEvent, (uintptr_t)me );
+
+		EditOptions( NULL, NULL, 0 );
 	} else
 		lprintf( "Failed to load editor..." );
 }

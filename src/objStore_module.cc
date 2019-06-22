@@ -5,7 +5,7 @@ class ObjectStorageObject : public node::ObjectWrap {
 public:
 	uv_async_t async;
 	PLINKQUEUE plqEvents;
-	struct objStore::volume *vol;
+	struct objStore::sack_vfs_os_volume *vol;
 	bool volNative;
 	char *mountName;
 	char *fileName;
@@ -112,8 +112,8 @@ Persistent<Function> ObjectStorageObject::constructor;
 
 ATEXIT( closeVolumes ) {
 	INDEX idx;
-	struct objStore::volume* vol;
-	LIST_FORALL( osl.open, idx, struct objStore::volume*, vol ) {
+	struct objStore::sack_vfs_os_volume* vol;
+	LIST_FORALL( osl.open, idx, struct objStore::sack_vfs_os_volume*, vol ) {
 		sack_vfs_os_unload_volume( vol );
 	}
 }
@@ -247,12 +247,12 @@ ObjectStorageObject::ObjectStorageObject( const char *mount, const char *filenam
 		volNative = false;
 		fsMount = sack_get_mounted_filesystem( mount );
 		fsInt = sack_get_mounted_filesystem_interface( fsMount );
-		vol = (struct objStore::volume*)sack_get_mounted_filesystem_instance( fsMount );
+		vol = (struct objStore::sack_vfs_os_volume*)sack_get_mounted_filesystem_instance( fsMount );
 
 		//lprintf( "open native mount" );
 	}
 	else {
-		//lprintf( "volume: %s %p %p", filename, key, key2 );
+		//lprintf( "sack_vfs_os_volume: %s %p %p", filename, key, key2 );
 		fileName = StrDup( filename );
 		volNative = true;
 		vol = objStore::sack_vfs_os_load_crypt_volume( filename, version, key, key2 );
@@ -564,7 +564,7 @@ void ObjectStorageObject::createIndex( const v8::FunctionCallbackInfo<Value>& ar
 
 
 	String::Utf8Value fName( isolate,  args[0] );
-	struct objStore::sack_vfs_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
+	struct objStore::sack_vfs_os_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
 	if( file ) {
 		Local<Object> indexDef = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 		struct optionStrings *strings = getStrings( isolate );
@@ -593,7 +593,7 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 	String::Utf8Value fName( isolate,  args[0] );
 	//lprintf( "OPEN FILE:%s", *fName );
 	if( vol->volNative ) {
-		struct objStore::sack_vfs_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
+		struct objStore::sack_vfs_os_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
 		if( file ) {
 			String::Utf8Value data( isolate,  args[1] );
 			objStore::sack_vfs_os_write( file, *data, data.length() );
@@ -641,7 +641,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 		if( !objStore::sack_vfs_os_exists( vol->vol, (*fName) ) ) return;
 
 		lprintf( "OPEN FILE:%s", *fName );
-		struct objStore::sack_vfs_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
+		struct objStore::sack_vfs_os_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
 		if( file ) {
 			char *buf = NewArray( char, 4096 );
 			size_t len = objStore::sack_vfs_os_size( file );

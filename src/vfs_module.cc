@@ -195,6 +195,7 @@ void VolumeObject::doInit( Local<Object> exports )
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "ObjectStorage", vfsObjectStorage );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "dir", getDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "exists", fileExists );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "isDir", isDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "read", fileRead );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "readJSON", fileReadJSON );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "readJSOX", fileReadJSOX );
@@ -258,7 +259,7 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t v
 		volNative = false;
 		fsMount = sack_get_mounted_filesystem( mount );
 		fsInt = sack_get_mounted_filesystem_interface( fsMount );
-		vol = (struct volume*)sack_get_mounted_filesystem_instance( fsMount );
+		vol = (struct sack_vfs_volume*)sack_get_mounted_filesystem_instance( fsMount );
 		//lprintf( "open native mount" );
 	} else {
 		//lprintf( "volume: %s %p %p", filename, key, key2 );
@@ -402,6 +403,25 @@ void VolumeObject::makeDirectory( const v8::FunctionCallbackInfo<Value>& args ){
 				// no directory support; noop.
 			} else {
 				MakePath( *fName );
+			}
+		}
+	}
+}
+
+
+void VolumeObject::isDirectory( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	if( argc > 0 ) {
+		VolumeObject* vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		if( vol ) {
+			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
+			if( vol->volNative ) {
+				// no directory support; noop.
+				args.GetReturnValue().Set( False(isolate) );
+			}
+			else {
+				args.GetReturnValue().Set( Boolean::New( isolate,  IsPath( *fName ) ) );
 			}
 		}
 	}
@@ -811,9 +831,9 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 	static void preloadCallback( uv_async_t* handle ) {
 		v8::Isolate* isolate = v8::Isolate::GetCurrent();
+		HandleScope scope( isolate );
 		struct preloadArgs* myself = (struct preloadArgs*)handle->data;
 
-		HandleScope scope( isolate );
 		{
 			Local<Function> cb = myself->f->Get( isolate );
 			cb->Call( isolate->GetCurrentContext(), myself->_this.Get( isolate ), 0, NULL );
@@ -1360,7 +1380,7 @@ void FileObject::truncateFile(const v8::FunctionCallbackInfo<Value>& args) {
 
 void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 	Local<Context> context = Isolate::GetCurrent()->GetCurrentContext();
-	size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
+	//size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	if( args.Length() == 1 && args[0]->IsNumber() ) {
 		size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
@@ -1384,7 +1404,6 @@ void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate *isolate = Isolate::GetCurrent();
 	Local<Context> context = isolate->GetCurrentContext();
-	size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	if( file->vol->volNative )
 		args.GetReturnValue().Set( Number::New( isolate, (double)sack_vfs_tell( file->file ) ) );

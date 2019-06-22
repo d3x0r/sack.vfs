@@ -35,6 +35,7 @@
 #include <html5.websocket.client.h>
 #include <http.h>
 #include <construct.h>
+#include <configscript.h>
 #else
 #include "sack/sack.h"
 #endif
@@ -113,7 +114,7 @@ struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate );
 
 class VolumeObject : public node::ObjectWrap {
 public:
-	struct volume *vol;
+	struct sack_vfs_volume *vol;
 	bool volNative;
 	char *mountName;
 	char *fileName;
@@ -141,6 +142,7 @@ public:
 	static void openVolDb( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileVolDelete( const v8::FunctionCallbackInfo<Value>& args );
 	static void makeDirectory( const v8::FunctionCallbackInfo<Value>& args );
+	static void isDirectory( const v8::FunctionCallbackInfo<Value>& args );
 	static void mkdir( const v8::FunctionCallbackInfo<Value>& args );
 	static void volRekey( const v8::FunctionCallbackInfo<Value>& args );
 	static void renameFile( const v8::FunctionCallbackInfo<Value>& args );
@@ -173,7 +175,7 @@ class FileObject : public node::ObjectWrap {
 	VolumeObject *vol;
 	struct sack_vfs_file *file;
 	FILE *cfile;
-	//Local<Object> volume;
+	//Local<Object> sack_vfs_volume;
 	PLIST buffers; // because these are passed as physical data buffers, don't release them willy-nilly
 	char* buf;
 	size_t size;

@@ -267,10 +267,10 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
 	udpObject* obj = (udpObject*)handle->data;
 	udpEvent *eventMessage;
-	HandleScope scope( isolate );
 
 	{
 		Local<Value> argv[2];
