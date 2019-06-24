@@ -633,15 +633,6 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #    endif
 #  endif
 #endif
-#ifdef __EMSCRIPTEN__
-#include <emscripten.h>
-#include <emscripten/emscripten.h>
-// Emscripten exports just need to be not optimized out.
-#  undef  EXPORT_METHOD
-#  define EXPORT_METHOD                EMSCRIPTEN_KEEPALIVE
-#  undef  LITERAL_LIB_EXPORT_METHOD
-#  define LITERAL_LIB_EXPORT_METHOD    EMSCRIPTEN_KEEPALIVE
-#endif
 // used when the keword specifying a structure is packed
 // needs to prefix the struct keyword.
 #define PREFIX_PACKED
@@ -7650,9 +7641,14 @@ NETWORK_PROC( void, RemoveClientExx )(PCLIENT lpClient, LOGICAL bBlockNofity, LO
 /* Begin an SSL Connection.  This ends up replacing ReadComplete callback with an inbetween layer*/
 NETWORK_PROC( LOGICAL, ssl_BeginClientSession )( PCLIENT pc, CPOINTER keypair, size_t keylen, CPOINTER keypass, size_t keypasslen, CPOINTER rootCert, size_t rootCertLen );
 NETWORK_PROC( LOGICAL, ssl_BeginServer )( PCLIENT pc, CPOINTER cert, size_t certlen, CPOINTER keypair, size_t keylen, CPOINTER keypass, size_t keypasslen);
+NETWORK_PROC( LOGICAL, ssl_BeginServer_v2 )( PCLIENT pc, CPOINTER cert, size_t certlen
+	, CPOINTER keypair, size_t keylen
+	, CPOINTER keypass, size_t keypasslen
+	, char* hosts );
 NETWORK_PROC( LOGICAL, ssl_GetPrivateKey )(PCLIENT pc, POINTER *keydata, size_t *keysize);
 NETWORK_PROC( LOGICAL, ssl_IsClientSecure )(PCLIENT pc);
 NETWORK_PROC( void, ssl_SetIgnoreVerification )(PCLIENT pc);
+NETWORK_PROC( CTEXTSTR, ssl_GetRequestedHostName )(PCLIENT pc);
 // during ssl error callback, this can be used to revert (server) sockets to
 // non SSL.
 // a CLient socket will have already sent SSL Data on the socket, and it would
