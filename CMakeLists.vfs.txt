@@ -325,7 +325,7 @@ set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c PROP
 
 set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
 if( CMAKE_COMPILER_IS_GNUCC )
-   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result")
+   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member")
 endif( CMAKE_COMPILER_IS_GNUCC )
 set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
 target_link_libraries(${PROJECT} ${CMAKE_JS_LIB})
