@@ -38,7 +38,18 @@ var cert = sack.TLS.signreq( {
 //---------------------------------------------
 
 var serverOpts;
-var server = sack.WebSocket.Server( serverOpts = { port: Number(process.argv[2])||8085, cert : cert+signer+certRoot, key: keys[2], passphrase:"password" } )
+var server = sack.WebSocket.Server( serverOpts = { 
+			port: Number(process.argv[2])||8085, 
+			cert : cert+signer+certRoot, 
+			key: keys[2], 
+			passphrase:"password",
+			hosts : [ {
+				host : ["localhost","127.0.0.1"].join("~"),
+				cert : cert + signer+certRoot,
+				key: keys[2], 
+				passphrase:"password",	
+			} ]
+		 } )
 
 console.log( "serving on", serverOpts.port );
 
