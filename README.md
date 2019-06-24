@@ -818,7 +818,15 @@ Server Options
   | cert | &lt;string&gt;; uses PEM certificate as server certificate chain to send to client. |
   | key  | &lt;string&gt;; uses PEM private key specified for encryption; used by clients to authenticate cerficates  |
   | passphrase | &lt;string&gt;; uses passphrase for key provided |
-
+  | hosts | &lt;array of hosts&gt;; (Server Host Option below) |
+  
+  | Server Host Option |  |
+  |----|----|
+  | host | &lt;string&gt; or &ltarray of strings&gt;; host name this certificate applies to |
+  | cert | &lt;string&gt;; uses PEM certificate as server certificate chain to send to client. |
+  | key  | &lt;string&gt;; uses PEM private key specified for encryption; used by clients to authenticate cerficates  |
+  | passphrase | &lt;string&gt;; uses passphrase for key provided |
+  
 Server Methods
 
   | Server Methods |   |
