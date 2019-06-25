@@ -1611,11 +1611,12 @@ static void ParseWssHostOption( struct optionStrings *strings
 		newOpt->cert_chain = StrDup( *cert );
 		newOpt->cert_chain_len = cert.length();
 	}
+
 	if( hostOpt->Has( context, optName = strings->caString->Get( isolate ) ).ToChecked() ) {
 		String::Utf8Value ca( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		if( wssOpts->cert_chain ) {
-			newOpt->cert_chain = (char*)Reallocate( wssOpts->cert_chain, wssOpts->cert_chain_len + ca.length() + 1 );
-			strcpy( newOpt->cert_chain + wssOpts->cert_chain_len, *ca );
+		if( newOpt->cert_chain ) {
+			newOpt->cert_chain = (char*)Reallocate( newOpt->cert_chain, newOpt->cert_chain_len + ca.length() + 1 );
+			strcpy( newOpt->cert_chain + newOpt->cert_chain_len, *ca );
 			newOpt->cert_chain_len += ca.length();
 		}
 		else {
