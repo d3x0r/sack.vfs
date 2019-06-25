@@ -633,6 +633,15 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #    endif
 #  endif
 #endif
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/emscripten.h>
+// Emscripten exports just need to be not optimized out.
+#  undef  EXPORT_METHOD
+#  define EXPORT_METHOD                EMSCRIPTEN_KEEPALIVE
+#  undef  LITERAL_LIB_EXPORT_METHOD
+#  define LITERAL_LIB_EXPORT_METHOD    EMSCRIPTEN_KEEPALIVE
+#endif
 // used when the keword specifying a structure is packed
 // needs to prefix the struct keyword.
 #define PREFIX_PACKED
