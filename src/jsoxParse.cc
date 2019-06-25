@@ -3,7 +3,7 @@
 #include <math.h>
 
 static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive );
-static Local<Value> makeValue( struct jsox_value_container *val, struct reviver_data *revive, Local<Object> container, int index, Local<String> name );
+static Local<Value> makeValue( struct jsox_value_container *val, struct reviver_data *revive, Local<Object> container, int index, Local<Value> name );
 
 static struct timings {
 	uint64_t start;
@@ -163,7 +163,7 @@ void JSOXObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 #define MODE NewStringType::kNormal
 //#define MODE NewStringType::kInternalized
 
-static inline Local<Value> makeValue( struct jsox_value_container *val, struct reviver_data *revive, Local<Object> container, int index, Local<String> name ) {
+static inline Local<Value> makeValue( struct jsox_value_container *val, struct reviver_data *revive, Local<Object> container, int index, Local<Value> name ) {
 
 	Local<Value> result;
 	Local<Script> script;
@@ -451,7 +451,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				if( revive->revive )
 					revive->value = Integer::New( revive->isolate, index );
 				//lprintf( "set value to index: %d", index );
-				SETN( o, index, thisVal = makeValue( val, revive, o, index, Null(revive->isolate).As<String>() ) );
+				SETN( o, index, thisVal = makeValue( val, revive, o, index, Null(isolate).As<Value>() ) );
 				index++;
 				if( val->value_type == JSOX_VALUE_EMPTY )
 					o->Delete( revive->context, index - 1 );
