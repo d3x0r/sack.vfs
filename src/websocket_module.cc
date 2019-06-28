@@ -1730,11 +1730,14 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		wssOpts->apply_masking = false;
 
 	if( opts->Has( context, optName = strings->hostsString->Get( isolate ) ).ToChecked() ) {
+		Local<Value> val = GETV( opts, optName );
+		if( val->IsArray() ) {
 		Local<Array> hosts = GETV( opts, optName ).As<Array>();
 		int o;
 		for( o = 0; o < hosts->Length(); o++ ) {
 			Local<Object> host = GETV( hosts, o ).As<Object>();
 			ParseWssHostOption( strings, wssOpts, isolate, host );
+		}
 		}
 	}
 
