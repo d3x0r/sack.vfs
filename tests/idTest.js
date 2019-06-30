@@ -6,6 +6,12 @@ for( var n = 0; n < 10; n++ )
 	ids[n] = vfs.id();
 console.log( "Some IDs:", ids );
 
+//console.log( "PASWORD:", vfs.SaltyRNG.id( "password", 0 ) );
+//console.log( "PASWORD:", vfs.SaltyRNG.id( "password", 1 ) );
+//console.log( "PASWORD:", vfs.SaltyRNG.id( "password", 2 ) );
+//console.log( "PASWORD:", vfs.SaltyRNG.id( "password", 3 ) );
+//console.log( "PASWORD:", vfs.SaltyRNG.id( "password", 4 ) );
+
 var now = Date.now();
 var n = 0;
 const length = 3000;
