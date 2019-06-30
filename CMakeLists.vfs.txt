@@ -159,6 +159,8 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/netlib/html5.websocket/json/json_emitter.c
 	${SACK_BASE}/src/netlib/html5.websocket/json/vesl_parser.c
 	${SACK_BASE}/src/netlib/network.c
+	${SACK_BASE}/src/netlib/network_all.c
+	${SACK_BASE}/src/netlib/network_addresses.c
 	${SACK_BASE}/src/netlib/tcpnetwork.c
 	${SACK_BASE}/src/netlib/udpnetwork.c
         ${SACK_BASE}/src/netlib/net_winsock2.c
@@ -319,13 +321,12 @@ add_library(${PROJECT} SHARED
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
         )
 
-#	COMPILE_FLAGS "-Wno-cast-function-type"
 set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c PROPERTIES 
 	COMPILE_DEFINITIONS "SQLITE_ENABLE_LOCKING_STYLE=0;SQLITE_THREADSAFE=0;SQLITE_OMIT_UTF16;SQLITE_ENABLE_COLUMN_METADATA;SQLITE_ENABLE_STAT4" )
 
 set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
 if( CMAKE_COMPILER_IS_GNUCC )
-   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result")
+   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-std=c++11 -Wno-unused-result -Wno-address-of-packed-member")
 endif( CMAKE_COMPILER_IS_GNUCC )
 set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
 target_link_libraries(${PROJECT} ${CMAKE_JS_LIB})

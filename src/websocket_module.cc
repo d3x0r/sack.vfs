@@ -110,6 +110,8 @@ struct optionStrings {
 	Eternal<String> *readyStateString;
 	Eternal<String> *bufferedAmountString;
 	Eternal<String> *hostnameString;
+	Eternal<String>* hostsString;
+	Eternal<String>* hostString;
 	Eternal<String> *rejectUnauthorizedString;
 	Eternal<String> *pathString;
 	Eternal<String> *methodString;
@@ -118,6 +120,17 @@ struct optionStrings {
 };
 
 static PLIST strings;
+
+struct wssHostOption {
+	char* host;
+	int hostlen;
+	char* cert_chain;
+	int cert_chain_len;
+	char* key;
+	int key_len;
+	char* pass;
+	int pass_len;
+};
 
 struct wssOptions {
 	char *url;
@@ -133,6 +146,7 @@ struct wssOptions {
 	bool deflate;
 	bool deflate_allow;
 	bool apply_masking;
+	PLIST hostList;
 };
 
 struct wscOptions {
@@ -265,6 +279,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->bufferedAmountString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "bufferedAmount", v8::NewStringType::kNormal ).ToLocalChecked() );
 
 		check->hostnameString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "hostname", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->hostString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "host", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->hostsString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "hosts", v8::NewStringType::kNormal ).ToLocalChecked() );
 		check->pathString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "path", v8::NewStringType::kNormal ).ToLocalChecked() );
 		check->methodString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "method", v8::NewStringType::kNormal ).ToLocalChecked() );
 		check->redirectString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "redirect", v8::NewStringType::kNormal ).ToLocalChecked() );
@@ -569,6 +585,11 @@ static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 	}
 	optionStrings *strings = getStrings( isolate );
 	SETV( result, strings->headerString->Get( isolate ), arr );
+	CTEXTSTR host = ssl_GetRequestedHostName( pc );
+	if( host )
+		SETV( result, strings->hostnameString->Get( isolate ), String::NewFromUtf8( isolate, host, v8::NewStringType::kNormal ).ToLocalChecked() );
+	else
+		SETV( result, strings->hostnameString->Get( isolate ), Null( isolate ) );
 	if( remoteAddress )
 	SETV( result, strings->remoteFamilyString->Get( isolate )
 			, (remoteAddress->sa_family == AF_INET) ? strings->v4String->Get( isolate ) :
@@ -599,7 +620,7 @@ static Local<Value> makeRequest( Isolate *isolate, struct optionStrings *strings
 		cgi.isolate = isolate;
 		cgi.cgi = Object::New( isolate );
 		ProcessCGIFields( pHttpState, cgiParamSave, (uintptr_t)&cgi );
-		SETV( req, strings->redirectString->Get( isolate ), sslRedirect?True( isolate ):False(isolate) );		
+		SETV( req, strings->redirectString->Get( isolate ), sslRedirect?True( isolate ):False(isolate) );
 		SETV( req, strings->CGIString->Get( isolate ), cgi.cgi );
 		if (content = GetHttpContent(pHttpState))
 			SETV( req, strings->contentString->Get(isolate), String::NewFromUtf8(isolate, GetText(content), v8::NewStringType::kNormal).ToLocalChecked());
@@ -1538,10 +1559,23 @@ wssObject::wssObject( struct wssOptions *opts ) {
 		if( opts->apply_masking )
 			SetWebSocketMasking( pc, 1 );
 		if( opts->ssl ) {
-			ssl_BeginServer( pc
-				, opts->cert_chain, opts->cert_chain_len
-				, opts->key, opts->key_len
-				, opts->pass, opts->pass_len );
+			INDEX idx;
+			struct wssHostOption* opt;
+			if( opts->cert_chain ) {
+				ssl_BeginServer( pc
+					, opts->cert_chain, opts->cert_chain_len
+					, opts->key, opts->key_len
+					, opts->pass, opts->pass_len );
+			}
+			LIST_FORALL( opts->hostList, idx, struct wssHostOption*, opt ) {
+				if( opt )
+				ssl_BeginServer_v2( pc
+					, opt->cert_chain, opt->cert_chain_len
+					, opt->key, opt->key_len
+					, opt->pass, opt->pass_len
+					, opt->host
+				);
+			}
 		}
 		SetWebSocketAcceptCallback( pc, webSockServerAccept );
 		readyState = LISTENING;
@@ -1559,13 +1593,69 @@ wssObject::~wssObject() {
 	DeleteLinkQueue( &eventQueue );
 }
 
+static void ParseWssHostOption( struct optionStrings *strings
+		, struct wssOptions* wssOpts
+		, Isolate* isolate, Local<Object> hostOpt ) {
+	Local<Context> context = isolate->GetCurrentContext();
+	Local<String> optName;
+	struct wssHostOption* newOpt = NewArray( struct wssHostOption, 1 );
+
+	if( hostOpt->Has( context, optName = strings->hostString->Get( isolate ) ).ToChecked() ) {
+		String::Utf8Value address( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		newOpt->host = StrDup( *address );
+		newOpt->hostlen = address.length();
+	}
+
+	if( hostOpt->Has( context, optName = strings->certString->Get( isolate ) ).ToChecked() ) {
+		String::Utf8Value cert( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		newOpt->cert_chain = StrDup( *cert );
+		newOpt->cert_chain_len = cert.length();
+	}
+
+	if( hostOpt->Has( context, optName = strings->caString->Get( isolate ) ).ToChecked() ) {
+		String::Utf8Value ca( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		if( newOpt->cert_chain ) {
+			newOpt->cert_chain = (char*)Reallocate( newOpt->cert_chain, newOpt->cert_chain_len + ca.length() + 1 );
+			strcpy( newOpt->cert_chain + newOpt->cert_chain_len, *ca );
+			newOpt->cert_chain_len += ca.length();
+		}
+		else {
+			newOpt->cert_chain = StrDup( *ca );
+			newOpt->cert_chain_len = ca.length();
+		}
+	}
+
+	if( !hostOpt->Has( context, optName = strings->keyString->Get( isolate ) ).ToChecked() ) {
+		newOpt->key = NULL;
+		newOpt->key_len = 0;
+	}
+	else {
+		String::Utf8Value cert( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		newOpt->key = StrDup( *cert );
+		newOpt->key_len = cert.length();
+	}
+
+	if( !hostOpt->Has( context, optName = strings->passString->Get( isolate ) ).ToChecked() ) {
+		newOpt->pass = NULL;
+		newOpt->pass_len = 0;
+	}
+	else {
+		String::Utf8Value cert( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		newOpt->pass = StrDup( *cert );
+		newOpt->pass_len = cert.length();
+	}
+
+	AddLink( &wssOpts->hostList, newOpt );
+
+}
+
 static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local<Object> opts ) {
+	Local<Context> context = isolate->GetCurrentContext();
 
 	Local<String> optName;
 	struct optionStrings *strings = getStrings( isolate );
 	wssOpts->cert_chain = NULL;
 	wssOpts->cert_chain_len = 0;
-	Local<Context> context = isolate->GetCurrentContext();
 
 	if( opts->Has( context, optName = strings->addressString->Get( isolate ) ).ToChecked() ) {
 		String::Utf8Value address( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -1639,6 +1729,19 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 	else
 		wssOpts->apply_masking = false;
 
+	if( opts->Has( context, optName = strings->hostsString->Get( isolate ) ).ToChecked() ) {
+		Local<Value> val = GETV( opts, optName );
+		if( val->IsArray() ) {
+		Local<Array> hosts = GETV( opts, optName ).As<Array>();
+		int o;
+		for( o = 0; o < hosts->Length(); o++ ) {
+			Local<Object> host = GETV( hosts, o ).As<Object>();
+			ParseWssHostOption( strings, wssOpts, isolate, host );
+		}
+		}
+	}
+
+
 }
 
 void wssObject::New(const FunctionCallbackInfo<Value>& args){
@@ -1653,6 +1756,7 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 		// Invoked as constructor: `new MyObject(...)`
 		struct wssOptions wssOpts;
 		int argOfs = 0;
+		wssOpts.hostList = NULL;
 		wssOpts.url = NULL;
 		wssOpts.port = 0;
 		wssOpts.address = NULL;
