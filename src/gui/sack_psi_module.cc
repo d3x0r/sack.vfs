@@ -1128,6 +1128,7 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 	} else if( StrCmp( type, LISTBOX_CONTROL_NAME ) == 0 ) {
 		SET( c, "setTabs", Function::New( context, ControlObject::setListboxTabs ).ToLocalChecked() );
 		SET( c, "addItem", Function::New( context, ControlObject::addListboxItem ).ToLocalChecked() );
+		SET( c, "reset", Function::New( context, ControlObject::resetListbox ).ToLocalChecked() );
 		c->SetAccessorProperty( String::NewFromUtf8( isolate, "header" )
 			, Function::New( context, ControlObject::getListboxHeader ).ToLocalChecked()
 			, Function::New( context, ControlObject::setListboxHeader ).ToLocalChecked()
@@ -1746,7 +1747,16 @@ void ControlObject::setListboxTabs( const FunctionCallbackInfo<Value>&  args ) {
 		Deallocate( int*, vals );
 	}
 }
-//InsertListItem
+
+
+void ControlObject::resetListbox( const FunctionCallbackInfo<Value>& args ) {
+	//Isolate* isolate = args.GetIsolate();
+	//Local<Context>context = isolate->GetCurrentContext();
+	ControlObject* me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	ResetList( me->control );
+}
+
+	//InsertListItem
 void ControlObject::addListboxItem( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context>context = isolate->GetCurrentContext();

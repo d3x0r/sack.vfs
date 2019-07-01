@@ -117,8 +117,7 @@ static void vfs_u8xor(const v8::FunctionCallbackInfo<Value>& args ){
 		//lprintf( "is buffer overlapped? %s %s %d", *xor1, *xor2, step );
 		char *out = u8xor( *xor1, (size_t)xor1.length(), *xor2, (size_t)xor2.length(), &step );
 		//lprintf( "encoded1:%s %d", out, step );
-		SET( key, "step", stepValue );
-
+		SET( key, "step", Number::New( isolate, step ) );
 		//lprintf( "length: %d %d", xor1.length(), StrLen( *xor1 ) );
 		args.GetReturnValue().Set( String::NewFromUtf8( isolate, out, NewStringType::kNormal, (int)xor1.length() ).ToLocalChecked() );
 		Deallocate( char*, out );

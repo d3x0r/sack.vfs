@@ -276,6 +276,7 @@ public:
 
 	static void setListboxTabs( const FunctionCallbackInfo<Value>& args );
 	static void addListboxItem( const FunctionCallbackInfo<Value>&  args );
+	static void resetListbox( const FunctionCallbackInfo<Value>& args );
 	static void getListboxHeader( const FunctionCallbackInfo<Value>&  args );
 	static void setListboxHeader( const FunctionCallbackInfo<Value>&  args );
 	static void setListboxHScroll( const FunctionCallbackInfo<Value>&  args );
