@@ -181,7 +181,7 @@ void VolumeObject::doInit( Local<Object> exports )
 #ifdef WIN32
 	RegObject::Init( exports );
 	KeyHidObjectInit( isolate, exports );
-
+	SoundInit( isolate, exports );
 #endif
 	TLSObject::Init( isolate, exports );
 
