@@ -2080,6 +2080,10 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 		Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
 		Local<ArrayBuffer> ab = ta->Buffer();
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+	} else if( args[0]->IsUint8Array() ) {
+		Local<Uint8Array> body = args[0].As<Uint8Array>();
+		Local<ArrayBuffer> ab = body->Buffer();
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
 	} else if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
