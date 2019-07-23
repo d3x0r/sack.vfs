@@ -170,6 +170,7 @@ void VolumeObject::doInit( Local<Object> exports )
 	InitUDPSocket( isolate, exports );
 	InitTask( isolate, exports );
 	ObjectStorageInit( isolate, exports );
+	fileMonitorInit( isolate, exports );
 #ifdef INCLUDE_GUI
 	textObjectInit( isolate, exports );
 	ImageObject::Init( exports );
