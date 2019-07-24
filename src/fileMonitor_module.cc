@@ -2,7 +2,7 @@
 #include "global.h"
 
 
-static Persistent<Function> constructor;
+static Persistent<Function> monitorConstructor;
 
 enum eventType {
 	FileMonitor_Event_Change,
@@ -36,7 +36,6 @@ public:
 	PMONITOR monitor;
 
 	~monitorWrapper() {
-
 		DeleteList( &trackers );
 		EndMonitor( this->monitor );
 	}
@@ -87,19 +86,21 @@ static int invokeEvent( uintptr_t psv
 	, uint64_t time
 	, LOGICAL bCreated, LOGICAL bDirectory
 	, LOGICAL bDeleted ) {
-	changeTracker *tracker = (changeTracker*)psv;
-	struct changeEvent *event = NewArray( struct changeEvent, 1 );
-	event->event = FileMonitor_Event_Change;
-	event->file.path = StrDup( path );
-	event->file.size = size;
-	event->file.time = time;
-	event->file.bCreated = bCreated;
-	event->file.bDirectory = bDirectory;
-	event->file.bDeleted = bDeleted;
+	// path is NULL at end of changes.
+	if( path ) {
+		changeTracker* tracker = (changeTracker*)psv;
+		struct changeEvent* event = NewArray( struct changeEvent, 1 );
+		event->event = FileMonitor_Event_Change;
+		event->file.path = StrDup( path );
+		event->file.size = size;
+		event->file.time = time;
+		event->file.bCreated = bCreated;
+		event->file.bDirectory = bDirectory;
+		event->file.bDeleted = bDeleted;
 
-	EnqueLink( &tracker->events, event );
-	uv_async_send( &tracker->async );
-
+		EnqueLink( &tracker->events, event );
+		uv_async_send( &tracker->async );
+	}
 	return 1; // dispatch next
 }
 
@@ -141,14 +142,15 @@ static void makeNewMonitor( const FunctionCallbackInfo<Value>& args ) {
 		if( args.Length() > 1 ) {
 			defaultDelay = args[1]->NumberValue();
 		}
+		printf( "CONSTRUCT CALL...\n" );
 		monitorWrapper* obj = newMonitor( *path, defaultDelay );
 		obj->monitorWrapSelf( isolate, obj, args.This() );
-		args.GetReturnValue().Set( args.This() );
+		//args.GetReturnValue().Set( args.This() );
 
 	}
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		Local<Function> cons = Local<Function>::New( isolate, monitorConstructor );
 		Local<Value> *passArgs = new Local<Value>[args.Length()];
 		int n;
 		for( n = 0; n < args.Length(); n++ )
@@ -167,9 +169,9 @@ void fileMonitorInit( Isolate* isolate, Handle<Object> exports ) {
 	monitorTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 internal field for wrap
 
 
-	constructor.Reset( isolate, monitorTemplate->GetFunction() );
 	NODE_SET_PROTOTYPE_METHOD( monitorTemplate, "addFilter", addMonitorFilter );
-	//NODE_SET_PROTOTYPE_METHOD( srgTemplate, "addObserver", addMonitorObserver );
+	//NODE_SET_PROTOTYPE_METHOD( monitorTemplate, "addObserver", addMonitorObserver );
+	monitorConstructor.Reset( isolate, monitorTemplate->GetFunction() );
 	SET_READONLY( exports, "FileMonitor", monitorTemplate->GetFunction() );
 
 }
