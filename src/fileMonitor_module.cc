@@ -13,7 +13,7 @@ enum eventType {
 struct changeEvent {
 	enum eventType event;
 	struct fileEvent {
-		CTEXTSTR path; 
+		TEXTSTR path; 
 		uint64_t size; 
 		uint64_t time; 
 		LOGICAL bCreated; 
