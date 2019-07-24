@@ -85,6 +85,7 @@ vfs = {
             if loaded callback is specified, a thread is created that touches every page in the file, when it's done
             the callback is called with no parameters.
     File - some native filsystem utility methods(?)
+    FileMonitor - receive event notifications when files change
     SaltyRNG(feed salt callback) - creates a random number generator
     TLS - namespace for utilities to generate certificates/keys
         genkey( length [,password]) - Generates a keypair
@@ -157,7 +158,9 @@ Volume = {
 
 ```
 ### File Interface opened within a Volume
+
  (result from vfs.Volume().File())
+
 ```
 File instance methods (prototype methods)
 File = {
@@ -181,6 +184,21 @@ File Constants
     SeekEnd - used in seek methods; value SEEK_END(2)
 
 ```
+
+
+### File Monitor module
+
+```
+
+var sack = require( "." );
+var monitor = sack.FileMonitor( <pathname>, idleDelay );
+monitor.addFilter( "*.jpg", /* imageChanged */ (info)=>{
+	// info.path, info.size, info.date, info.directory, info.created, info.deleted
+} );
+
+```
+
+
 
 ## Object Storage
 
@@ -1210,7 +1228,7 @@ setTimeout( ()=>{ }, 5000 );
 ## Changelog
 - 0.9.155 (in progress)
    - removed node 7 travis integration; `#  - "7" (doesn't have Utf8Value with isolate, 12 doesn't have Utf8Value without isolate())`
-   - 
+   - added FileMonitor interface to get event changes when files change on the disk.   
 - 0.9.154
    - Continutined applying deprecation fixes; republished as 154
 - 0.9.153
