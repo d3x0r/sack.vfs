@@ -34,6 +34,10 @@ class monitorWrapper : public node::ObjectWrap {
 public:
 	PLIST trackers;
 	PMONITOR monitor;
+	Persistent<Object> jsObject;
+
+	monitorWrapper() : jsObject() {
+	}
 
 	~monitorWrapper() {
 		DeleteList( &trackers );
@@ -42,7 +46,7 @@ public:
 
 	void monitorWrapSelf( Isolate* isolate, monitorWrapper* _this, Local<Object> into ) {
 		_this->Wrap( into );
-		//_this->state.Reset( isolate, into );
+		_this->jsObject.Reset( isolate, into );
 	}
 
 };
