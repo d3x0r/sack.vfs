@@ -36,8 +36,8 @@ public:
 	PMONITOR monitor;
 	Persistent<Object> jsObject;
 
-	monitorWrapper() : jsObject() {
-	}
+	//monitorWrapper() : jsObject() {
+	//}
 
 	~monitorWrapper() {
 		DeleteList( &trackers );
@@ -72,7 +72,6 @@ static void monitorAsyncMsg( uv_async_t* handle ) {
 			SET( o, "deleted", event->file.bDeleted?True(isolate):False(isolate) );
 			argv[0] = o;
 			changes->cb.Get( isolate )->Call( context, Null(isolate), 1, argv );
-			Deallocate( char *, event->file.path );
 			break;
 		case FileMonitor_Event_Close:
 			DeleteLinkQueue( &changes->events );
