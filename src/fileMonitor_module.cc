@@ -164,7 +164,7 @@ static void makeNewMonitor( const FunctionCallbackInfo<Value>& args ) {
 }
 
 
-void fileMonitorInit( Isolate* isolate, Handle<Object> exports ) {
+void fileMonitorInit( Isolate* isolate, Local<Object> exports ) {
 	Local<FunctionTemplate> monitorTemplate;
 
 	monitorTemplate = FunctionTemplate::New( isolate, makeNewMonitor );
