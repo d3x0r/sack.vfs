@@ -148,8 +148,8 @@ void VolumeObject::doInit( Local<Object> exports )
 	node::AtExit( moduleExit );
 
 	//SetAllocateLogging( TRUE );
-	SetManualAllocateCheck( TRUE );
-	SetAllocateDebug( TRUE );
+	//SetManualAllocateCheck( TRUE );
+	//SetAllocateDebug( TRUE );
 	SetSystemLog( SYSLOG_FILE, stdout );
 
 	//LoadTranslationDataEx( "^/strings.dat" );
