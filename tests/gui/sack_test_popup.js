@@ -1,5 +1,7 @@
 
-var sack = require( ".." );
+var sack = require( "../.." );
+
+console.log( "Test context-menu popups; tracks popup after 1 second" );
 
 var f = sack.PSI.Frame( "test", -1, -1, 600, 600 );
 var b = f.Control( "Button", "Test", 10, 10, 100, 20 );

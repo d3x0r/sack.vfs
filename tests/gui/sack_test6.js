@@ -1,5 +1,7 @@
 
-var sack = require( ".." );
+var sack = require( "../.." );
+
+console.log( "Dupolicate of test 5?" );
 
 var background = sack.Image( "the rror.jpg" );
 

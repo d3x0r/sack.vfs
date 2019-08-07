@@ -1,5 +1,5 @@
 
-var sack = require( ".." );
+var sack = require( "../.." );
 
 sack.Sqlite.optionEditor();
 

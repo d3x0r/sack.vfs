@@ -1,5 +1,5 @@
 
-var sack = require( ".." );
+var sack = require( "../.." );
 
 var f = sack.PSI.Frame( "test", -1, -1, 600, 600 );
 

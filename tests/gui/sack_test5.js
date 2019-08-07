@@ -1,5 +1,7 @@
 
-var sack = require( ".." );
+var sack = require( "../.." );
+
+console.log( "creates a custom control with mouse events to draw an image into; loads intershell canvas" );
 
 var background = sack.Image( "the rror.jpg" );
 

@@ -1,6 +1,7 @@
 
-var sack = require( ".." );
+var sack = require( "../.." );
 
+console.log( "Create a image renderer, add mouse event handling to click and drag the image drawn" );
 console.log( "got", sack, Object.keys( sack.Image.colors ));
 
 var _b = 0;

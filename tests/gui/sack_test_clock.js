@@ -1,5 +1,5 @@
 
-var sack = require( ".." );
+var sack = require( "../.." );
 
 sack.Sqlite.so( "SACK/PSI/Clock Control/Default to high resolution time?", 0 );
 

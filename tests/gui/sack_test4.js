@@ -1,5 +1,7 @@
 
-var sack = require( ".." );
+var sack = require( "../.." );
+
+console.log( "Create a custom control to draw the image into" );
 
 var _b = 0;
 var x_click = 0;
