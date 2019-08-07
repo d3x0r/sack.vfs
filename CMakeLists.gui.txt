@@ -109,7 +109,9 @@ include_directories(${CMAKE_BINARY_DIR}/intershell-${CMAKE_BUILD_TYPE}/include/S
 if( WIN32 )
 	set( MORE_MODULE_SOURCES 
 		src/hid_module.cc
-		src/reg_access.cc )
+		src/reg_access.cc
+		src/playSound_module.cc
+		)
 endif( WIN32 )
 
 set( GUI_SOURCES src/gui/sack_psi_module.cc
