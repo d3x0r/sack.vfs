@@ -102,6 +102,7 @@ SET( EXTRA_HEADERS
         ${SACK_BASE}/include/sqlgetoption.h
         ${SACK_BASE}/include/idle.h
         ${SACK_BASE}/include/filesys.h
+        ${SACK_BASE}/include/filemon.h
         ${SACK_BASE}/include/sack_vfs.h
         ${SACK_BASE}/include/json_emitter.h
         ${SACK_BASE}/include/vesl_emitter.h
@@ -140,6 +141,9 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/filesyslib/filescan.c
 	${SACK_BASE}/src/filesyslib/pathops.c
 	${SACK_BASE}/src/filesyslib/filesys_local.h
+	${SACK_BASE}/src/filesyslib/filemon/allfiles.c
+	${SACK_BASE}/src/filesyslib/filemon/linuxfiles.c
+	${SACK_BASE}/src/filesyslib/filemon/windowsfiles.c
 	${SACK_BASE}/src/typelib/typecode.c
 	${SACK_BASE}/src/typelib/text.c
 	${SACK_BASE}/src/typelib/binarylist.c
@@ -297,6 +301,7 @@ include_directories(${CMAKE_JS_INC} ${INCLUDES} src/sack )
 if( WIN32 )
 	set( MORE_MODULE_SOURCES src/reg_access.cc
 		src/hid_module.cc
+		src/playSound_module.cc
 #		src/fixup_windows_executable.cc
 		)
 endif( WIN32 )
@@ -316,6 +321,7 @@ add_library(${PROJECT} SHARED
 	src/network_module.cc
 	src/config_module.cc
 	src/task_module.cc
+	src/fileMonitor_module.cc
 	${MORE_MODULE_SOURCES}
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
@@ -323,6 +329,8 @@ add_library(${PROJECT} SHARED
 
 set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c PROPERTIES 
 	COMPILE_DEFINITIONS "SQLITE_ENABLE_LOCKING_STYLE=0;SQLITE_THREADSAFE=0;SQLITE_OMIT_UTF16;SQLITE_ENABLE_COLUMN_METADATA;SQLITE_ENABLE_STAT4" )
+set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc PROPERTIES 
+	COMPILE_DEFINITIONS "USE_SACK_CUSTOM_MEMORY_ALLOCATION" )
 
 set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
 if( CMAKE_COMPILER_IS_GNUCC )

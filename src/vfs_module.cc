@@ -147,8 +147,8 @@ void VolumeObject::doInit( Local<Object> exports )
 	node::AtExit( moduleExit );
 
 	//SetAllocateLogging( TRUE );
-	SetManualAllocateCheck( TRUE );
-	SetAllocateDebug( TRUE );
+	//SetManualAllocateCheck( TRUE );
+	//SetAllocateDebug( TRUE );
 	SetSystemLog( SYSLOG_FILE, stdout );
 
 	//LoadTranslationDataEx( "^/strings.dat" );
@@ -169,6 +169,7 @@ void VolumeObject::doInit( Local<Object> exports )
 	InitUDPSocket( isolate, exports );
 	InitTask( isolate, exports );
 	ObjectStorageInit( isolate, exports );
+	fileMonitorInit( isolate, exports );
 #ifdef INCLUDE_GUI
 	textObjectInit( isolate, exports );
 	ImageObject::Init( exports );

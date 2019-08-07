@@ -98,6 +98,7 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports );
 void InitTask( Isolate *isolate, Local<Object> exports );
 void KeyHidObjectInit( Isolate *isolate, Local<Object> exports );
 void SoundInit( Isolate* isolate, Local<Object> exports );
+void fileMonitorInit( Isolate* isolate, Local<Object> exports );
 
 void textObjectInit( Isolate *isolate, Local<Object> _exports );
 	PTEXT isTextObject( Isolate *isolate, Local<Value> object );
