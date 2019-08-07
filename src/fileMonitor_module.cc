@@ -145,7 +145,6 @@ static void makeNewMonitor( const FunctionCallbackInfo<Value>& args ) {
 		if( args.Length() > 1 ) {
 			defaultDelay = args[1]->NumberValue(isolate->GetCurrentContext()).FromMaybe(0);
 		}
-		printf( "CONSTRUCT CALL...\n" );
 		monitorWrapper* obj = newMonitor( *path, defaultDelay );
 		obj->monitorWrapSelf( isolate, obj, args.This() );
 		//args.GetReturnValue().Set( args.This() );
