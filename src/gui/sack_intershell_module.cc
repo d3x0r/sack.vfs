@@ -77,7 +77,7 @@ Persistent<Function> InterShellObject::customControlInstanceConstructor;
 //-----------------------------------------------------------
 //   InterShell Object
 //-----------------------------------------------------------
-int MakeISEvent( uv_async_t *async, PLINKQUEUE *queue, enum eventType type, ... );
+int MakeISEvent( uv_async_t *async, PLINKQUEUE *queue, enum GUI_eventType type, ... );
 
 static void defineCreateButton( char *name );
 static void defineCreateControl( char *name );
@@ -1036,7 +1036,7 @@ static void defineButtonPress( char *name ) {
 }
 
 
-int MakeISEvent( uv_async_t *async, PLINKQUEUE *queue, enum eventType type, ... ) {
+int MakeISEvent( uv_async_t *async, PLINKQUEUE *queue, enum GUI_eventType type, ... ) {
 	event *e = GetFromSet( IS_EVENT, &isLocal.events );
 	va_list args;
 	va_start( args, type );

@@ -4,14 +4,14 @@
 
 static Persistent<Function> monitorConstructor;
 
-enum eventType {
+enum fm_eventType {
 	FileMonitor_Event_Change,
 	FileMonitor_Event_Close,
 
 };
 
 struct changeEvent {
-	enum eventType event;
+	enum fm_eventType event;
 	struct fileEvent {
 		TEXTSTR path; 
 		uint64_t size; 
@@ -65,7 +65,7 @@ static void monitorAsyncMsg( uv_async_t* handle ) {
 
 			o = Object::New( isolate );
 			SET( o, "path", localString( isolate, event->file.path, StrLen( event->file.path ) ) );
-			SET( o, "size", Number::New( isolate, event->file.size ) );
+			SET( o, "size", Number::New( isolate, (double)event->file.size ) );
 			//SET( o, "time", Date( event->file.time ) );
 			SET( o, "created", event->file.bCreated?True(isolate):False(isolate) );
 			SET( o, "directory", event->file.bDirectory?True(isolate):False(isolate) );

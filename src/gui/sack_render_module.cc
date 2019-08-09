@@ -372,7 +372,7 @@ void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
-uintptr_t MakeEvent( uv_async_t *async, PLINKQUEUE *queue, enum eventType type, ... ) {
+uintptr_t MakeEvent( uv_async_t *async, PLINKQUEUE *queue, enum GUI_eventType type, ... ) {
 	event e;
 	va_list args;
 	va_start( args, type );

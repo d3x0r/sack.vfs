@@ -147,6 +147,7 @@ public:
 class ListboxItemObject : public node::ObjectWrap {
 public:
 	PLISTITEM pli;
+	int itemLevel;
 	class ControlObject *control;
 	Persistent<Object> _this;
 	static v8::Persistent<v8::Function> constructor;   // listbox item
@@ -161,8 +162,17 @@ public:
 
 	static void wrapSelf( Isolate* isolate, ListboxItemObject *_this, Local<Object> into );
 
+	static void addItem( const FunctionCallbackInfo<Value>& args );
+	static void insertItem( const FunctionCallbackInfo<Value>& args );
+	static void emptyBranch( const FunctionCallbackInfo<Value>& args );
+	// on
+	static void setEvents( const FunctionCallbackInfo<Value>& args );
+	// accessors
 	static void getText( const FunctionCallbackInfo<Value>&  args );
 	static void setText( const FunctionCallbackInfo<Value>& args );
+	static void getOpen( const FunctionCallbackInfo<Value>& args );
+	static void setOpen( const FunctionCallbackInfo<Value>& args );
+	Persistent<Function, CopyablePersistentTraits<Function>> cbOpened; // event callback        ()  // return true/false to allow creation
 	static Persistent<FunctionTemplate> listItemTemplate;
 };
 
@@ -201,6 +211,9 @@ public:
 
 	Persistent<Object> state;
 	ImageObject *image;
+	struct controlObjectFlags {
+		unsigned tree : 1; // track state of listbox is tree-list
+	} flags;
 public:
 
 	static void Init( Handle<Object> exports );
@@ -273,6 +286,8 @@ public:
 	// a chunk of events that are general place holders for events from controls
 	Persistent<Function, CopyablePersistentTraits<Function>> customEvents[5];  // event for button control callback (psi/console.h)
 
+	static void getListboxIsTree( const FunctionCallbackInfo<Value>& args );
+	static void setListboxIsTree( const FunctionCallbackInfo<Value> & args );
 
 	static void setListboxTabs( const FunctionCallbackInfo<Value>& args );
 	static void addListboxItem( const FunctionCallbackInfo<Value>&  args );

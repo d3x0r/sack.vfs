@@ -36,6 +36,7 @@
 #include <http.h>
 #include <construct.h>
 #include <configscript.h>
+#include <filemon.h>
 #else
 #include "sack/sack.h"
 #endif
