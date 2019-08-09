@@ -7,4 +7,5 @@ db.function( "generate", ()=>{
 		return ("adsf" );
 	} );
 
-console.log( db.do( "select generate(), generate" ) );
+console.log( db.do( "select generate()" ) );
+db.close();
