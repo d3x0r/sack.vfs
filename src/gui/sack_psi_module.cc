@@ -255,8 +255,13 @@ static void asyncmsg( uv_async_t* handle ) {
 					r = cb->Call( context, lio->_this.Get( isolate ), 0, NULL ).ToLocalChecked();
 				}
 				break;
+			case Event_Listbox_Item_Opened:
+				ListboxItemObject* lio;lio = (ListboxItemObject*)evt->data.listbox.pli;
+				cb = Local<Function>::New( isolate, lio->cbOpened );
+				r = cb->Call( context, lio->_this.Get( isolate ), 0, NULL ).ToLocalChecked();
+				break;
 			case Event_Menu_Item_Selected:
-				MenuItemObject *mio = (MenuItemObject *)evt->data.popup.pmi;
+				MenuItemObject* mio; mio = (MenuItemObject*)evt->data.popup.pmi;
 				cb = Local<Function>::New( isolate, mio->cbSelected );
 				r = cb->Call( context, mio->_this.Get(isolate), 0, NULL ).ToLocalChecked();
 				break;
@@ -282,7 +287,7 @@ void enableEventLoop( void ) {
 }
 
 
-static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum eventType type, ... ) {
+static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_eventType type, ... ) {
 	event *pe;
 #define e (*pe)
 	va_list args;
@@ -315,6 +320,7 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum eventTyp
 		break;
 	case Event_Listbox_Selected:
 	case Event_Listbox_DoubleClick:
+	case Event_Listbox_Item_Opened:
 		e.data.listbox.pli = va_arg( args, uintptr_t );
 		break;
 	case Event_Menu_Item_Selected:
@@ -614,11 +620,19 @@ void ControlObject::Init( Handle<Object> _exports ) {
 		listItemTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.PSI.Listbox.Item" ) );
 		listItemTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 internal field for wrap
 		
+		NODE_SET_PROTOTYPE_METHOD( listItemTemplate, "insertItem", ListboxItemObject::insertItem );
+		NODE_SET_PROTOTYPE_METHOD( listItemTemplate, "addItem", ListboxItemObject::addItem );
+		NODE_SET_PROTOTYPE_METHOD( listItemTemplate, "empty", ListboxItemObject::emptyBranch );
+		NODE_SET_PROTOTYPE_METHOD( listItemTemplate, "on", ListboxItemObject::setEvents );
 		listItemTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "text" )
 			, FunctionTemplate::New( isolate, ListboxItemObject::getText )
 			, FunctionTemplate::New( isolate, ListboxItemObject::setText )
 			, DontDelete );
-		
+		listItemTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "open" )
+			, FunctionTemplate::New( isolate, ListboxItemObject::getOpen )
+			, FunctionTemplate::New( isolate, ListboxItemObject::setOpen )
+			, DontDelete );
+
 		// constructor reset must be applied AFTER PrototypeTemplate() has been filled in.
 		ListboxItemObject::constructor.Reset( isolate, listItemTemplate->GetFunction(context).ToLocalChecked() );
 		//ListboxItemObject::listItemTemplate.Reset( isolate, listItemTemplate );
@@ -979,6 +993,7 @@ ControlObject::ControlObject( ControlObject *over, const char *type, const char 
 	registration = NULL;
 	image = NULL;
 	frame = over;
+	flags.tree = 0;
 	psiLocal.pendingCreate = this;
 	if( !title )
 		control = MakeNamedControl( over->control, type, x, y, w, h, 0 );
@@ -991,6 +1006,7 @@ ControlObject::ControlObject( const char *title, int x, int y, int w, int h, int
 	registration = NULL;
 	image = NULL;
 	frame = over;
+	flags.tree = 0;
 	psiLocal.pendingCreate = this;
 	control = ::CreateFrame( title, x, y, w, h, border, over ? over->control : (PSI_CONTROL)NULL );
 	PSI_SetBindingData( control, psiLocal.bindingDataId, (uintptr_t)this );
@@ -1000,6 +1016,7 @@ ControlObject::ControlObject( const char *title, int x, int y, int w, int h, int
 ControlObject::ControlObject( const char *type, ControlObject *parent, int32_t x, int32_t y, uint32_t w, uint32_t h ) {
 	registration = NULL;
 	image = NULL;
+	flags.tree = 0;
 	psiLocal.pendingCreate = this;
 	control = ::MakeNamedControl( parent->control, type, x, y, w, h, -1 );
 	psiLocal.pendingCreate = NULL;
@@ -1014,6 +1031,7 @@ ControlObject::ControlObject( PSI_CONTROL control ) {
 	registration = NULL;
 	image = NULL;
 	frame = NULL;
+	flags.tree = 0;
 	this->control = control;
 }
 
@@ -1089,6 +1107,20 @@ void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+void onItemOpened( uintptr_t psv, PSI_CONTROL pc, PLISTITEM pli, LOGICAL bOpened ) {
+	ControlObject* obj = (ControlObject*)psv;
+	if( obj->flags.tree ) {
+		ListboxItemObject* lio = (ListboxItemObject*)GetItemData( pli );
+		// if there's no event handler, don't do anything.
+		if( !lio->cbOpened.IsEmpty() ) {
+			MakePSIEvent( NULL, true, Event_Listbox_Item_Opened, lio );
+
+		}
+	}
+	//	SetListItemOpenHandler( obj->control, onItemOpened, (uintptr_t)obj );
+}
+
+
 static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObject *obj ) {
 	Local<Context>context = isolate->GetCurrentContext();
 	CTEXTSTR type = GetControlTypeName( obj->control );
@@ -1126,6 +1158,11 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 			, DontDelete );
 
 	} else if( StrCmp( type, LISTBOX_CONTROL_NAME ) == 0 ) {
+		SetListItemOpenHandler( obj->control, onItemOpened, (uintptr_t)obj );
+		c->SetAccessorProperty( String::NewFromUtf8( isolate, "tree" )
+			, Function::New( context, ControlObject::getListboxIsTree ).ToLocalChecked()
+			, Function::New( context, ControlObject::setListboxIsTree ).ToLocalChecked()
+			, DontDelete );
 		SET( c, "setTabs", Function::New( context, ControlObject::setListboxTabs ).ToLocalChecked() );
 		SET( c, "addItem", Function::New( context, ControlObject::addListboxItem ).ToLocalChecked() );
 		SET( c, "reset", Function::New( context, ControlObject::resetListbox ).ToLocalChecked() );
@@ -1133,6 +1170,7 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 			, Function::New( context, ControlObject::getListboxHeader ).ToLocalChecked()
 			, Function::New( context, ControlObject::setListboxHeader ).ToLocalChecked()
 			, DontDelete );
+		SET( c, "setHeader", Function::New( context, ControlObject::setListboxHeader ).ToLocalChecked() );
 		SET( c, "measure", Function::New( context, ControlObject::measureListItem ).ToLocalChecked() );
 		SET( c, "hScroll", Function::New( context, ControlObject::setListboxHScroll ).ToLocalChecked() );
 		SET( c, "removeItem", Function::New( context, ListboxItemObject::removeListboxItem ).ToLocalChecked() );
@@ -1738,12 +1776,18 @@ void ControlObject::setListboxTabs( const FunctionCallbackInfo<Value>&  args ) {
 	if( args.Length() && args[0]->IsArray() ) {
 		Local<Array> list = Handle<Array>::Cast( args[0] );
 		int n;
+		int level = 0;
 		int l = list->Length();
 		int *vals = NewArray( int, l );
 		for( n = 0; n < l; n++ ) {
 			vals[n] = (int)list->Get( n )->IntegerValue(context).ToChecked();
 		}
-		SetListBoxTabStops( me->control, l, vals );
+		if( args.Length() > 1 ) {
+			if( args[1]->IsNumber() )
+				level = (int)args[1]->IntegerValue( context ).ToChecked();
+
+		}
+		SetListBoxTabStopsEx( me->control, level, l, vals );
 		Deallocate( int*, vals );
 	}
 }
@@ -1768,9 +1812,15 @@ void ControlObject::addListboxItem( const FunctionCallbackInfo<Value>&  args ) {
 		Local<Function> cons = Local<Function>::New( isolate, ListboxItemObject::constructor );
 		Local<Object> lio = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 		ListboxItemObject *pli = ObjectWrap::Unwrap<ListboxItemObject>( lio );
-		if( args.Length() > 1 ) {
-			level = (int)args[1]->IntegerValue(context).ToChecked();
+		if( args.Length() > 1 && me->flags.tree ) {
+			if( args[1]->IsObject() ) {
+
+			}
+			else if( args[1]->IsNumber() )
+				pli->itemLevel = level = (int)args[1]->IntegerValue( context ).ToChecked();
 		}
+		else
+			pli->itemLevel = 0;
 		pli->pli = AddListItemEx( me->control, level, *text );
 		SetItemData( pli->pli, (uintptr_t)pli );
 		pli->control = me;
@@ -1802,11 +1852,15 @@ void ControlObject::getListboxHeader( const FunctionCallbackInfo<Value>&  args )
 }
 
 void ControlObject::setListboxHeader( const FunctionCallbackInfo<Value>&  args ) {
+	Isolate* isolate = args.GetIsolate();
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
 	String::Utf8Value text( args.GetIsolate(), args[0] );
-
-	Isolate* isolate = args.GetIsolate();
-	SetListboxHeader( me->control, *text );
+	int level = 0;
+	if( args.Length() > 1 ) {
+		if( me->flags.tree )
+			level = (int)args[1]->ToInteger( isolate )->Value();
+	}
+	SetListboxHeaderEx( me->control, *text, level );
 }
 
 static void DoubleClickHandler( uintptr_t psvUser, PSI_CONTROL pc, PLISTITEM hli ){
@@ -1834,6 +1888,16 @@ void ControlObject::setListboxOnSelect( const FunctionCallbackInfo<Value>&  args
 	SetSelChangeHandler( me->control, SelChangeHandler, (uintptr_t)me );
 }
 
+void ControlObject::getListboxIsTree( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ControlObject* me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	args.GetReturnValue().Set( me->flags.tree?True(isolate):False(isolate) );
+}
+void ControlObject::setListboxIsTree( const FunctionCallbackInfo<Value>& args ) {
+	ControlObject* me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	SetListboxIsTree( me->control, me->flags.tree = args[0]->BooleanValue( args.GetIsolate()->GetCurrentContext() ).ToChecked() );
+}
+
 
 
 void ListboxItemObject::removeListboxItem( const FunctionCallbackInfo<Value>&  args ) {
@@ -1850,6 +1914,9 @@ ListboxItemObject::ListboxItemObject() {
 	this->pli = NULL;
 }
 ListboxItemObject::~ListboxItemObject() {
+	if( !cbOpened.IsEmpty() ) // release the callback attached to item.
+		cbOpened.Reset();
+
 
 }
 
@@ -1873,6 +1940,81 @@ void ListboxItemObject::New( const FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+void ListboxItemObject::insertItem( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ListboxItemObject* me = ObjectWrap::Unwrap<ListboxItemObject>( args.This() );
+
+	Local<Context>context = isolate->GetCurrentContext();
+	ControlObject* list = me->control;
+	if( args.Length() > 0 ) {
+		String::Utf8Value text( isolate, args[0] );
+		int level = 0;
+		Isolate* isolate = args.GetIsolate();
+		Local<Function> cons = Local<Function>::New( isolate, ListboxItemObject::constructor );
+		Local<Object> lio = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
+		ListboxItemObject* pli = ObjectWrap::Unwrap<ListboxItemObject>( lio );
+		pli->itemLevel = level = me->itemLevel + 1;
+		if( args.Length() > 1 ) {
+			if( args[1]->IsObject() ) {
+
+			}
+			else if( args[1]->IsNumber() )
+				pli->itemLevel = level = (int)args[1]->IntegerValue( context ).ToChecked();
+		}
+		pli->pli = InsertListItemEx( me->control->control, me->pli, level, *text );
+		pli->control = list;
+		SetItemData( pli->pli, (uintptr_t)pli );
+		args.GetReturnValue().Set( lio );
+	}
+}
+
+void DeleteSubItem( uintptr_t psv, PSI_CONTROL pc, PLISTITEM pli ) {
+	ListboxItemObject* me = (ListboxItemObject*)GetItemData( pli );
+	DeleteListItem( me->control->control, me->pli );
+	me->_this.Reset();
+}
+
+void ListboxItemObject::emptyBranch( const FunctionCallbackInfo<Value>& args ) {
+	ListboxItemObject* me = ObjectWrap::Unwrap<ListboxItemObject>( args.This() );
+	EnumListItems( me->control->control, me->pli, DeleteSubItem, 0 );
+}
+
+void ListboxItemObject::addItem( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ListboxItemObject* me = ObjectWrap::Unwrap<ListboxItemObject>( args.This() );
+
+	Local<Context>context = isolate->GetCurrentContext();
+	ControlObject* list = me->control;
+	if( args.Length() > 0 ) {
+		String::Utf8Value text( isolate, args[0] );
+		int level = 0;
+		Isolate* isolate = args.GetIsolate();
+		Local<Function> cons = Local<Function>::New( isolate, ListboxItemObject::constructor );
+		Local<Object> lio = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
+		ListboxItemObject* pli = ObjectWrap::Unwrap<ListboxItemObject>( lio );
+		pli->itemLevel = level = me->itemLevel + 1;
+		if( args.Length() > 1 ) {
+			if( args[1]->IsObject() ) {
+
+			}else if( args[1]->IsNumber() )
+				pli->itemLevel = level = (int)args[1]->IntegerValue( context ).ToChecked();
+		}
+		pli->pli = AddAfterListItemEx( me->control->control, me->pli, level, *text );
+		pli->control = list;
+		SetItemData( pli->pli, (uintptr_t)pli );
+		args.GetReturnValue().Set( lio );
+	}
+
+}
+void ListboxItemObject::setEvents( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	String::Utf8Value text( isolate, args[0] );
+	ListboxItemObject* me = ObjectWrap::Unwrap<ListboxItemObject>( args.This() );
+	if( StrCmp( *text, "open" ) == 0 ) {
+		me->cbOpened.Reset( isolate, Handle<Function>::Cast( args[1] ) );
+	}
+}
+
 void ListboxItemObject::getText( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	ListboxItemObject *me = ObjectWrap::Unwrap<ListboxItemObject>( args.This() );
@@ -1885,6 +2027,18 @@ void ListboxItemObject::setText( const FunctionCallbackInfo<Value>& args ) {
 	String::Utf8Value text( args.GetIsolate(), args[0] );
 	ListboxItemObject *me = ObjectWrap::Unwrap<ListboxItemObject>( args.This() );
 	SetItemText( me->pli, *text );
+}
+
+void ListboxItemObject::getOpen( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ListboxItemObject* me = ObjectWrap::Unwrap<ListboxItemObject>( args.This() );
+	args.GetReturnValue().Set( False(isolate) );
+}
+void ListboxItemObject::setOpen( const FunctionCallbackInfo<Value>& args ) {
+	bool open = args[0]->BooleanValue( args.GetIsolate() );
+	ListboxItemObject* me = ObjectWrap::Unwrap<ListboxItemObject>( args.This() );
+	//me->open = open;
+	OpenListItem( me->pli, open );
 }
 
 
