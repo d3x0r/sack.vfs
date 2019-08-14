@@ -114,7 +114,7 @@ static void addMonitorFilter( const v8::FunctionCallbackInfo<Value>& args ) {
 	Local<Function> cb = Local<Function>::Cast( args[1] );
 
 	changeTracker *tracker = new changeTracker();
-	String::Utf8Value mask( args[0]->ToString() );
+	String::Utf8Value mask( USE_ISOLATE(isolate) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 
 	tracker->cb.Reset( isolate, cb );
 
@@ -141,9 +141,9 @@ static void makeNewMonitor( const FunctionCallbackInfo<Value>& args ) {
 	Isolate *isolate = args.GetIsolate();
 	if( args.IsConstructCall() ) {
 		int defaultDelay = 0;
-		String::Utf8Value path( args[0]->ToString() );
+		String::Utf8Value path( USE_ISOLATE(isolate) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		if( args.Length() > 1 ) {
-			defaultDelay = args[1]->NumberValue();
+			defaultDelay = args[1]->NumberValue(isolate->GetCurrentContext()).FromMaybe(0);
 		}
 		printf( "CONSTRUCT CALL...\n" );
 		monitorWrapper* obj = newMonitor( *path, defaultDelay );
@@ -174,8 +174,8 @@ void fileMonitorInit( Isolate* isolate, Local<Object> exports ) {
 
 	NODE_SET_PROTOTYPE_METHOD( monitorTemplate, "addFilter", addMonitorFilter );
 	//NODE_SET_PROTOTYPE_METHOD( monitorTemplate, "addObserver", addMonitorObserver );
-	monitorConstructor.Reset( isolate, monitorTemplate->GetFunction() );
-	SET_READONLY( exports, "FileMonitor", monitorTemplate->GetFunction() );
+	monitorConstructor.Reset( isolate, monitorTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked()  );
+	SET_READONLY( exports, "FileMonitor", monitorTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked()  );
 
 }
 
