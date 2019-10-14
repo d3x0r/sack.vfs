@@ -3752,6 +3752,8 @@ TYPELIB_PROC size_t TYPELIB_CALLTYPE GetDisplayableCharacterCount( const char *s
 TYPELIB_PROC CTEXTSTR TYPELIB_CALLTYPE GetDisplayableCharactersAtCount( const char *string, size_t character_index );
 TYPELIB_PROC size_t TYPELIB_CALLTYPE  GetDisplayableCharacterBytes( const char *string, size_t character_count );
 /* You Must Deallocate the result */
+TYPELIB_PROC char * TYPELIB_CALLTYPE WcharConvert_v2 ( const wchar_t *wch, size_t len, size_t *outlen DBG_PASS );
+/* You Must Deallocate the result */
 TYPELIB_PROC  char * TYPELIB_CALLTYPE  WcharConvertExx ( const wchar_t *wch, size_t len DBG_PASS );
 /* You Must Deallocate the result */
 TYPELIB_PROC  char * TYPELIB_CALLTYPE  WcharConvertEx ( const wchar_t *wch DBG_PASS );
@@ -12814,14 +12816,14 @@ enum ProcessHttpResult{
 	HTTP_STATE_RESOURCE_NOT_FOUND=404,
    HTTP_STATE_BAD_REQUEST=400,
 };
-HTTP_EXPORT
- /* Creates an empty http state, the next operation should be
+/* Creates an empty http state, the next operation should be
    AddHttpData.                                              */
-HTTPState  HTTPAPI CreateHttpState( PCLIENT *pc );
-HTTP_EXPORT
- /* Destroys a http state, releasing all resources associated
+HTTP_EXPORT HTTPState  HTTPAPI CreateHttpState( PCLIENT *pc );
+/*Get the http state associated with a network client */
+HTTP_EXPORT HTTPState HTTPAPI GetHttpState( PCLIENT pc );
+/* Destroys a http state, releasing all resources associated
    with it.                                                  */
-void HTTPAPI DestroyHttpState( HTTPState pHttpState );
+HTTP_EXPORT void HTTPAPI DestroyHttpState( HTTPState pHttpState );
 HTTP_EXPORT
  /* Add another bit of data to the block. After adding data,
    ProcessHttp should be called to see if the data has completed
