@@ -65,7 +65,7 @@ static void monitorAsyncMsg( uv_async_t* handle ) {
 
 			o = Object::New( isolate );
 			SET( o, "path", localString( isolate, event->file.path, StrLen( event->file.path ) ) );
-			SET( o, "size", Number::New( isolate, event->file.size ) );
+			SET( o, "size", Number::New( isolate, (double)event->file.size ) );
 			//SET( o, "time", Date( event->file.time ) );
 			SET( o, "created", event->file.bCreated?True(isolate):False(isolate) );
 			SET( o, "directory", event->file.bDirectory?True(isolate):False(isolate) );
@@ -143,7 +143,7 @@ static void makeNewMonitor( const FunctionCallbackInfo<Value>& args ) {
 		int defaultDelay = 0;
 		String::Utf8Value path( USE_ISOLATE(isolate) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		if( args.Length() > 1 ) {
-			defaultDelay = args[1]->NumberValue(isolate->GetCurrentContext()).FromMaybe(0);
+			defaultDelay = (int)args[1]->NumberValue(isolate->GetCurrentContext()).FromMaybe(0);
 		}
 		monitorWrapper* obj = newMonitor( *path, defaultDelay );
 		obj->monitorWrapSelf( isolate, obj, args.This() );
