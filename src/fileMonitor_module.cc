@@ -64,7 +64,7 @@ static void monitorAsyncMsg( uv_async_t* handle ) {
 		case FileMonitor_Event_Change:
 
 			o = Object::New( isolate );
-			SET( o, "path", localString( isolate, event->file.path, StrLen( event->file.path ) ) );
+			SET( o, "path", localString( isolate, event->file.path, (int)StrLen( event->file.path ) ) );
 			SET( o, "size", Number::New( isolate, (double)event->file.size ) );
 			//SET( o, "time", Date( event->file.time ) );
 			SET( o, "created", event->file.bCreated?True(isolate):False(isolate) );
