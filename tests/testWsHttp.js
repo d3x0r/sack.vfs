@@ -15,7 +15,7 @@ server.onrequest( function( req, res ) {
 		 req.connection.socket.remoteAddress;
 	//ws.clientAddress = ip;
 
-	//console.log( "Received request:", req );
+	console.log( "Received request:", req );
 	if( req.url === "/" ) req.url = "/index.html";
 	var filePath = "." + unescape(req.url);
 	var extname = path.extname(filePath);
