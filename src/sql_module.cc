@@ -464,7 +464,12 @@ static void PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg,
 		AddDataItem( pdlParams, &val );
 	}
 	else {
-		lprintf( "Unsupported TYPE" );
+		String::Utf8Value text( USE_ISOLATE( isolate ) arg->ToString(isolate->GetCurrentContext()).ToLocalChecked() );
+		val.value_type = JSOX_VALUE_STRING;
+		val.string = DupCStrLen( *text, val.stringLen = text.length() );
+		//AddDataItem( pdlParams, &val );
+	    
+		lprintf( "Unsupported TYPE %s", *text );
 	}
 
 }

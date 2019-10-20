@@ -18,6 +18,7 @@
            "src/task_module.cc",
            "src/config_module.cc",
            "src/objStore_module.cc",
+           "src/fileMonitor_module.cc",
           ],
 	'defines': [ "BUILDING_NODE_EXTENSION","BUILD_NODE_ADDON",
           'TARGETNAME="sack_vfs.node"'
@@ -117,7 +118,8 @@
               # windows-only; exclude on other platforms.
               'src/hid_module.cc',
               'src/reg_access.cc',
-            ],
+              "src/playSound_module.cc",
+             ],
   	        'libraries':[ 'winmm', 'ws2_32', 'iphlpapi', 'rpcrt4', 'odbc32', 'crypt32', 'cryptui' ]
           }, { # OS != "win",
             'defines': [

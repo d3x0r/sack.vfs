@@ -117,6 +117,7 @@ struct optionStrings {
 	Eternal<String> *methodString;
 	Eternal<String> *redirectString;
 	Eternal<String> *keepAliveString;
+	Eternal<String> *versionString;
 };
 
 static PLIST strings;
@@ -286,6 +287,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->redirectString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "redirect", v8::NewStringType::kNormal ).ToLocalChecked() );
 		check->rejectUnauthorizedString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "rejectUnauthorized", v8::NewStringType::kNormal ).ToLocalChecked() );
 		check->keepAliveString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "keepAlive", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->versionString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "version", v8::NewStringType::kNormal ).ToLocalChecked() );
 	}
 	return check;
 }
@@ -590,6 +592,7 @@ static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 		SETV( result, strings->hostnameString->Get( isolate ), String::NewFromUtf8( isolate, host, v8::NewStringType::kNormal ).ToLocalChecked() );
 	else
 		SETV( result, strings->hostnameString->Get( isolate ), Null( isolate ) );
+
 	if( remoteAddress )
 	SETV( result, strings->remoteFamilyString->Get( isolate )
 			, (remoteAddress->sa_family == AF_INET) ? strings->v4String->Get( isolate ) :
@@ -622,6 +625,7 @@ static Local<Value> makeRequest( Isolate *isolate, struct optionStrings *strings
 		ProcessCGIFields( pHttpState, cgiParamSave, (uintptr_t)&cgi );
 		SETV( req, strings->redirectString->Get( isolate ), sslRedirect?True( isolate ):False(isolate) );
 		SETV( req, strings->CGIString->Get( isolate ), cgi.cgi );
+		SETV( req, strings->versionString->Get( isolate ), Integer::New( isolate, GetHttpVersion( GetWebSocketHttpState( pc ) ) ) );
 		if (content = GetHttpContent(pHttpState))
 			SETV( req, strings->contentString->Get(isolate), String::NewFromUtf8(isolate, GetText(content), v8::NewStringType::kNormal).ToLocalChecked());
 		else

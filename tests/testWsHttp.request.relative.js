@@ -1,12 +1,16 @@
 
 
 var sack = require( ".." );
+sack.Sqlite.so( "SACK/Network/Log Network Notifications", 1 );
 const path = require( "path" );
 var serverOpts;
+try {
 var server = sack.WebSocket.Server( serverOpts = { port: Number(process.argv[2])||8080 } )
+} catch(err){}
 var disk = sack.Volume();
 console.log( "serving on " + serverOpts.port );
 
+if( server ) {
 
 server.onrequest( function( req, res ) {
 	var ip = ( req.headers && req.headers['x-forwarded-for'] ) ||
@@ -82,3 +86,55 @@ server.onconnect( function (ws) {
         	//console.log( "Remote closed" );
         } );
 } );
+
+}
+
+if( !server ) {
+var http = sack.HTTP;
+
+		var opts = {  hostname:  //'216.58.192.142',
+                			 'localhost',
+					  port : serverOpts.port,
+					  method : "GET",
+					  ca : null,
+					  rejectUnauthorized: true,
+					  path : "../../relative/path"
+                                          //, agent : false
+					};
+		
+		var res = http.get( opts ); // this is blocking.  The server part cannot get the event.
+		console.log( "Result:", res );
+                if( res.error ) {
+                	// error
+                }
+                else
+		{
+			const statusCode = res.statusCode;
+			const contentType = res.headers['content-type'] || res.headers['Content-Type'];
+			let error;
+                        console.log( "http get response happened...", contentType );
+			if (statusCode !== 200) {
+				error = new Error(`Request Failed.\n` +
+						`Status Code: ${statusCode}` + JSON.stringify( opts ) );
+			} else if (/^text\/javascript/.test(contentType)) {
+				evalCode = true;
+			} else if (/^application\/javascript/.test(contentType)) {
+				evalCode = true;
+			} else if (/^application\/json/.test(contentType)) {
+				evalJson = true;
+			}
+			else {
+				error = new Error(`Invalid content-type.\n` +
+								`Expected application/json or application/javascript but received ${contentType}`);
+        
+			}
+			if (error) {
+				console.log(error.message);
+				// consume response data to free up memory
+				//return;
+			}
+        
+		};
+		
+console.log( "completed" );
+}
