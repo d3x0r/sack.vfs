@@ -318,6 +318,16 @@ void SqlObject::closeDb( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	CloseDatabase( sql->odbc );
+	if( sql->thread ) {
+		struct userMessage msg;
+		msg.mode = 0;
+		msg.onwhat = NULL;
+		msg.done = 0;
+		msg.waiter = MakeThread();
+		EnqueLink( &sql->messages, &msg );
+		uv_async_send( &sql->async );
+	}
+
 }
 
 void SqlObject::autoTransact( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -1317,6 +1327,7 @@ static void sqlUserAsyncMsg( uv_async_t* handle ) {
 			callAggStep( msg->onwhat, msg->argc, msg->argv );
 		else if( msg->mode == 3 ) {
 			callAggFinal( msg->onwhat );
+			myself->thread = NULL;
 			uv_close( (uv_handle_t*)&myself->async, NULL );
 		}
 	} else {
@@ -1444,7 +1455,7 @@ static void destroyUserData( void *vpUserData ) {
 	struct SqlObjectUserFunction *userData = (struct SqlObjectUserFunction *)vpUserData;
 	userData->cb.Reset();
 	userData->cb2.Reset();
-	Release( userData );
+	delete userData;
 }
 
 void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
