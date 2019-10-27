@@ -1,6 +1,5 @@
-<control border="4400" caption="console.frame" edit="0" position="0,0" size="420,249" type="Frame">
-<control position="199,30" size="190,85" type="Basic Clock Widget"></control>
-<control caption="Account" position="19,14" size="131,43" type="TextControl"></control>
-<control caption="Password" position="19,35" size="113,63" type="TextControl"></control>
-
-<control IDName="core/Button/BTN_OKAY" PrivateData="#00000000" caption="Button" position="32,26" size="117,36" type="Button"></control></control>
+<control border="4400" caption="console.frame" edit="0" position="0,0" size="420,248" type="Frame">
+<control position="154,11" size="190,85" type="Basic Clock Widget"></control>
+<control caption="Account" position="20,14" size="129,10" type="TextControl"></control>
+<control caption="Password" position="22,85" size="109,12" type="TextControl"></control>
+<control IDName="core/Button/BTN_OKAY" PrivateData="#00000000" caption="Button" position="147,66" size="64,19" type="Button"></control></control>
