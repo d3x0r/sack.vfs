@@ -39,11 +39,7 @@ static struct sytrayLocal {
 
 } systrayLocal;
 
-SYSTRAY_PROC void SetIconDoubleClick( void (*DoubleClick)(void) );
-
-SYSTRAY_PROC void TerminateIcon( void );
-SYSTRAY_PROC void AddSystrayMenuFunction( CTEXTSTR text, void (CPROC* function)(void) );
-SYSTRAY_PROC void AddSystrayMenuFunction_v2( CTEXTSTR text, void (CPROC* function)(uintptr_t), uintptr_t );
+static uintptr_t MakeSystrayEvent( enum systrayEvents type, ... );
 
 
 static void asyncmsg( uv_async_t* handle ) {
@@ -57,19 +53,19 @@ static void asyncmsg( uv_async_t* handle ) {
 			if( !systrayLocal.doubleClick.IsEmpty() ) {
 				Local<Function> f = systrayLocal.doubleClick.Get( isolate );
 				f->Call( context, context->Global(), 0, NULL );
-
 			}
 			break;
 		case Event_Systray_MenuFunction:
 			class callbackWrapper* cb = (class callbackWrapper*)evt->param;
-			Local<Function> f = cb->f.Get( isolate );
+			Local<Function> f = cb->cb.Get( isolate );
 			f->Call( context, context->Global(), 0, NULL );
 			break;
 		}
 	}
+	DeleteFromSet( SS_EVENT, &systrayLocal.event_pool, evt );
 }
 
-void enableEventLoop( void ) {
+static void enableEventLoop( void ) {
 	if( !systrayLocal.eventLoopRegistered ) {
 		systrayLocal.eventLoopRegistered = TRUE;
 		MemSet( &systrayLocal.async, 0, sizeof( &systrayLocal.async ) );
@@ -78,7 +74,7 @@ void enableEventLoop( void ) {
 	systrayLocal.eventLoopEnables++;
 }
 
-void disableEventLoop( void ) {
+static void disableEventLoop( void ) {
 	if( systrayLocal.eventLoopRegistered ) {
 		if( !(--systrayLocal.eventLoopEnables) ) {
 			systrayLocal.eventLoopRegistered = FALSE;
@@ -107,7 +103,8 @@ static uintptr_t MakeSystrayEvent( enum systrayEvents type, ... ) {
 		break;
 	}
 	EnqueLink( &systrayLocal.events, pe );
-
+	uv_async_send( &systrayLocal.async );
+	return 0;
 }
 
 
@@ -126,14 +123,13 @@ void setSystrayIcon( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		if( args.Length() > 1 ) {
 			Local<Function> cb = Local<Function>::Cast( args[1] );
-			class callbackWrapper* wrapper = new class callbackWrapper;
-			wrapper->cb.Reset( isolate, cb );
-
+			systrayLocal.doubleClick.Reset( isolate, cb );
 		}
 		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 		if( systrayLocal.set )
 			ChangeIcon( *fName );
 		else {
+			enableEventLoop();
 			RegisterIcon( *fName );
 			SetIconDoubleClick( doubleClickCallback );
 		}
@@ -149,7 +145,7 @@ void setSystrayIconMenu( const v8::FunctionCallbackInfo<Value>& args ) {
 		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 		class callbackWrapper* wrapper = new class callbackWrapper;
 		wrapper->cb.Reset( isolate, cb );
-		AddSystrayMenuFunction_v2( *fName, menuCallback, (uintptr_t)wrapper )
+		AddSystrayMenuFunction_v2( *fName, menuCallback, (uintptr_t)wrapper );
 	}
 }
 

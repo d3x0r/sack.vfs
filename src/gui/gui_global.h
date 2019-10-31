@@ -129,6 +129,7 @@ struct event {
 		}console;
 		struct {
 			uintptr_t pli;
+			LOGICAL opened;
 		}listbox;
 		struct {
 			uintptr_t pmi;
@@ -171,3 +172,4 @@ struct global {
 void InitInterfaces( int opengl, int vulkan );
 uintptr_t MakeEvent( uv_async_t *async, PLINKQUEUE *queue, enum GUI_eventType type, ... );
 
+void InitSystray( Isolate* isolate, Handle<Object> _exports );

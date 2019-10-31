@@ -226,11 +226,13 @@ public:
 	static void wrapSelf( Isolate* isolate, ControlObject *_this, Local<Object> into );
 	static void releaseSelf( ControlObject *_this );
 
+
 	static void New( const FunctionCallbackInfo<Value>& args );
 	static void NewControl( const FunctionCallbackInfo<Value>& args );
 	static Local<Object> NewWrappedControl( Isolate* isolate, PSI_CONTROL pc );
 	static void createFrame( const FunctionCallbackInfo<Value>& args );
 	static void createControl( const FunctionCallbackInfo<Value>& args );
+	static void getRenderer( const FunctionCallbackInfo<Value>& args );
 
 	static void registerControl( const FunctionCallbackInfo<Value>& args );
 
@@ -257,26 +259,29 @@ public:
 	static void getFrameBorder( const FunctionCallbackInfo<Value>& args );
 	static void setFrameBorder( const FunctionCallbackInfo<Value>& args );
 
+	static void getControlColor( const FunctionCallbackInfo<Value>& args );
+	static void setControlColor( const FunctionCallbackInfo<Value>& args );
+	static void getControlColor2( const FunctionCallbackInfo<Value>& args );
+	static void setControlColor2( const FunctionCallbackInfo<Value>& args );
+
+	static void getControlText( const FunctionCallbackInfo<Value>& args );
+	static void setControlText( const FunctionCallbackInfo<Value>& args );
+	static void getCoordinate( const FunctionCallbackInfo<Value>& args );
+	static void setCoordinate( const FunctionCallbackInfo<Value>& args );
+
+	// progress bar methods
 	static void setProgressBarRange( const FunctionCallbackInfo<Value>& args );
 	static void setProgressBarProgress( const FunctionCallbackInfo<Value>& args );
 	static void setProgressBarColors( const FunctionCallbackInfo<Value>& args );
 	static void setProgressBarTextEnable( const FunctionCallbackInfo<Value>& args );
 
+	// console methods
 	static void writeConsole( const FunctionCallbackInfo<Value>& args );
 	static void setConsoleRead( const FunctionCallbackInfo<Value>& args );
 
+	// button methods
 	static void setButtonClick( const FunctionCallbackInfo<Value>& args );
 	static void setButtonEvent( const FunctionCallbackInfo<Value>& args );
-
-	static void getControlColor( const FunctionCallbackInfo<Value>& args );
-	static void setControlColor( const FunctionCallbackInfo<Value>&  args );
-	static void getControlColor2( const FunctionCallbackInfo<Value>& args );
-	static void setControlColor2( const FunctionCallbackInfo<Value>&  args );
-
-	static void getControlText( const FunctionCallbackInfo<Value>&  args );
-	static void setControlText( const FunctionCallbackInfo<Value>&  args );
-	static void getCoordinate( const FunctionCallbackInfo<Value>&  args );
-	static void setCoordinate( const FunctionCallbackInfo<Value>&  args );
 
 	// clock control extension
 	static void makeAnalog( const FunctionCallbackInfo<Value>& args );
@@ -296,6 +301,7 @@ public:
 	static void setListboxHeader( const FunctionCallbackInfo<Value>&  args );
 	static void setListboxHScroll( const FunctionCallbackInfo<Value>&  args );
 	static void measureListItem( const FunctionCallbackInfo<Value>&  args );
+	static void listboxDisableUpdate( const FunctionCallbackInfo<Value>& args );
 
 	static void setListboxOnDouble( const FunctionCallbackInfo<Value>&  args );
 	static void setListboxOnSelect( const FunctionCallbackInfo<Value>&  args );

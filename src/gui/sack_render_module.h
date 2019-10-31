@@ -15,8 +15,12 @@ public:
 
 	static void Init( Handle<Object> exports );
 	RenderObject( const char *caption, int w, int h, int x, int y, RenderObject *parent );
+	void setRenderer( PRENDERER r );
 
 	static void New( const FunctionCallbackInfo<Value>& args );
+
+	static void getCoordinate( const FunctionCallbackInfo<Value>& args );
+	static void setCoordinate( const FunctionCallbackInfo<Value>& args );
 
 	static void show( const FunctionCallbackInfo<Value>& args );
 

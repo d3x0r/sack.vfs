@@ -115,6 +115,7 @@ if( WIN32 )
 endif( WIN32 )
 
 set( GUI_SOURCES src/gui/sack_psi_module.cc
+    src/gui/sack_systray.cc
 	src/gui/sack_image_module.cc
 	src/gui/sack_render_module.cc
 	src/gui/sack_intershell_module.cc 

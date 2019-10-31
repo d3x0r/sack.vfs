@@ -4,6 +4,75 @@
 
 Persistent<Function> RenderObject::constructor;
 
+
+struct optionStrings {
+	Isolate* isolate;
+
+	Eternal<String>* nameString;
+	Eternal<String>* widthString;
+	Eternal<String>* heightString;
+	Eternal<String>* borderString;
+	Eternal<String>* createString;
+	Eternal<String>* drawString;
+	Eternal<String>* mouseString;
+	Eternal<String>* keyString;
+	Eternal<String>* destroyString;
+	Eternal<String>* xString;
+	Eternal<String>* yString;
+	Eternal<String>* wString;
+	Eternal<String>* hString;
+	Eternal<String>* sizeString;
+	Eternal<String>* posString;
+	Eternal<String>* layoutString;
+	Eternal<String>* indexString;
+	Eternal<String>* objectString;
+	Eternal<String>* imageString;
+	Eternal<String>* anchorsString;
+	Eternal<String>* definesColorsString;
+};
+
+
+static struct optionStrings* getStrings( Isolate* isolate ) {
+	static PLIST strings;
+	INDEX idx;
+	struct optionStrings* check;
+	LIST_FORALL( strings, idx, struct optionStrings*, check ) {
+		if( check->isolate == isolate )
+			break;
+	}
+	if( !check ) {
+		check = NewArray( struct optionStrings, 1 );
+		check->isolate = isolate;
+#define makeString(a,b) check->a##String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, b ) );
+		check->nameString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "name" ) );
+		check->widthString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "width" ) );
+		check->heightString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "height" ) );
+		check->borderString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "border" ) );
+		check->createString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "create" ) );
+		check->mouseString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "mouse" ) );
+		check->drawString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "draw" ) );
+		check->keyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "key" ) );
+		check->destroyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "destroy" ) );
+		makeString( x, "x" );
+		makeString( y, "y" );
+		makeString( w, "width" );
+		makeString( h, "height" );
+		makeString( pos, "position" );
+		makeString( size, "size" );
+		makeString( layout, "layout" );
+		makeString( index, "index" );
+		makeString( object, "object" );
+		makeString( image, "image" );
+		makeString( anchors, "anchors" );
+		makeString( definesColors, "definesColors" );
+
+		//check->String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "" ) );
+		AddLink( &strings, check );
+	}
+	return check;
+}
+
+
 static Local<Value> ProcessEvent( Isolate* isolate, struct event *evt, RenderObject *r ) {
 	//Local<Object> object = Object::New( isolate );
 	Local<Object> object;
@@ -111,6 +180,20 @@ void RenderObject::Init( Handle<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "close", RenderObject::close );
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "on", RenderObject::on );
 
+		renderTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "size" )
+			, FunctionTemplate::New( isolate, RenderObject::getCoordinate, Integer::New( isolate, 12 ) )
+			, FunctionTemplate::New( isolate, RenderObject::setCoordinate, Integer::New( isolate, 11 ) )
+			, DontDelete );
+		renderTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "position" )
+			, FunctionTemplate::New( isolate, RenderObject::getCoordinate, Integer::New( isolate, 12 ) )
+			, FunctionTemplate::New( isolate, RenderObject::setCoordinate, Integer::New( isolate, 10 ) )
+			, DontDelete );
+		renderTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "layout" )
+			, FunctionTemplate::New( isolate, RenderObject::getCoordinate, Integer::New( isolate, 12 ) )
+			, FunctionTemplate::New( isolate, RenderObject::setCoordinate, Integer::New( isolate, 12 ) )
+			, DontDelete );
+
+
 		Local<Function> renderFunc = renderTemplate->GetFunction(context).ToLocalChecked();
 		SET_READONLY_METHOD( renderFunc, "is3D", RenderObject::is3D );
 
@@ -121,10 +204,17 @@ void RenderObject::Init( Handle<Object> exports ) {
 	}
 
 RenderObject::RenderObject( const char *title, int x, int y, int w, int h, RenderObject *over )  {
-	r = OpenDisplayAboveSizedAt( 0, w, h, x, y, over?over->r:NULL );
+	if( title )
+		r = OpenDisplayAboveSizedAt( 0, w, h, x, y, over ? over->r : NULL );
+	else
+		r = NULL;
 	receive_queue = NULL;
 	drawn = 0;
 	closed = 0;
+}
+
+void RenderObject::setRenderer(PRENDERER r) {
+
 }
 
 RenderObject::~RenderObject() {
@@ -200,6 +290,70 @@ void RenderObject::is3D( const FunctionCallbackInfo<Value>& args ) {
 	else
 		args.GetReturnValue().Set( False( args.GetIsolate() ));
 }
+
+
+void RenderObject::getCoordinate( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context>context = isolate->GetCurrentContext();
+	RenderObject* me = ObjectWrap::Unwrap<RenderObject>( args.This() );
+	int coord = (int)args.Data()->IntegerValue( context ).ToChecked();
+	Local<Object> o = Object::New( isolate );
+	struct optionStrings* strings = getStrings( isolate );
+	int32_t x, y;
+	uint32_t w, h;
+	GetDisplayPosition( me->r, &x, &y, &w, &h );
+	switch( coord ) {
+	case 10:
+		o->Set( strings->xString->Get( isolate ), Integer::New( isolate, x ) );
+		o->Set( strings->yString->Get( isolate ), Integer::New( isolate, y ) );
+		break;
+	case 11:
+		o->Set( strings->wString->Get( isolate ), Integer::New( isolate, w ) );
+		o->Set( strings->hString->Get( isolate ), Integer::New( isolate, h ) );
+		break;
+	case 12:
+		o->Set( strings->xString->Get( isolate ), Integer::New( isolate, x ) );
+		o->Set( strings->yString->Get( isolate ), Integer::New( isolate, y ) );
+		o->Set( strings->wString->Get( isolate ), Integer::New( isolate, w ) );
+		o->Set( strings->hString->Get( isolate ), Integer::New( isolate, h ) );
+		break;
+	}
+	args.GetReturnValue().Set( o );
+}
+
+void RenderObject::setCoordinate( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context>context = isolate->GetCurrentContext();
+	RenderObject* me = ObjectWrap::Unwrap<RenderObject>( args.This() );
+	int coord = (int)args.Data()->IntegerValue( context ).ToChecked();
+	Local<Object> o = args[0]->ToObject( context ).ToLocalChecked();
+	if( !o.IsEmpty() ) {
+		struct optionStrings* strings = getStrings( isolate );
+		int32_t x, y;
+		uint32_t w, h;
+		switch( coord ) {
+		case 10:
+			x = (int32_t)o->Get( strings->xString->Get( isolate ) )->IntegerValue( context ).ToChecked();
+			y = (int32_t)o->Get( strings->yString->Get( isolate ) )->IntegerValue( context ).ToChecked();
+			MoveDisplay( me->r, x, y );
+			break;
+		case 11:
+			w = (uint32_t)o->Get( strings->wString->Get( isolate ) )->IntegerValue( context ).ToChecked();
+			h = (uint32_t)o->Get( strings->hString->Get( isolate ) )->IntegerValue( context ).ToChecked();
+			SizeDisplay( me->r, w, h );
+			break;
+		case 12:
+			x = (int32_t)o->Get( strings->xString->Get( isolate ) )->IntegerValue( context ).ToChecked();
+			y = (int32_t)o->Get( strings->yString->Get( isolate ) )->IntegerValue( context ).ToChecked();
+			w = (uint32_t)o->Get( strings->wString->Get( isolate ) )->IntegerValue( context ).ToChecked();
+			h = (uint32_t)o->Get( strings->hString->Get( isolate ) )->IntegerValue( context ).ToChecked();
+			MoveSizeDisplay( me->r, x, y, w, h );
+			break;
+		}
+	}
+
+}
+
 
 
 void RenderObject::close( const FunctionCallbackInfo<Value>& args ) {

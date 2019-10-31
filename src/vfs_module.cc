@@ -176,6 +176,7 @@ void VolumeObject::doInit( Local<Object> exports )
 	RenderObject::Init( exports );
 	ControlObject::Init( exports );
 	InterShellObject::Init( exports );
+	InitSystray( isolate, exports );
 #endif
 
 #ifdef WIN32

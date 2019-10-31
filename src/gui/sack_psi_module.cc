@@ -112,35 +112,30 @@ static void asyncmsg( uv_async_t* handle ) {
 	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
 
-	RenderObject* myself = (RenderObject*)handle->data;
-
 	//lprintf( "async message notice. %p", myself );
 	{
 		struct event *evt;
 
 		while( evt = (struct event *)DequeLink( &psiLocal.events ) ) {
-
-			//Local<Value> object = ProcessEvent( isolate, evt, myself );
-			//Local<Value> argv[] = { Local<Object>::New( isolate, evt->data.control.control->state ) };
 			Local<Function> cb;
 			Local<Value> r;
 			switch( evt->type ){
 			case Event_Frame_Ok:
 			{
 				cb = Local<Function>::New( isolate, evt->control->cbFrameEventOkay );
-				cb->Call( context, evt->control->state.Get( isolate ), 0, NULL ).ToLocalChecked();
+				cb->Call( context, evt->control->state.Get( isolate ), 0, NULL );
 				break;
 			}
 			case Event_Frame_Cancel:
 			{
 				cb = Local<Function>::New( isolate, evt->control->cbFrameEventCancel );
-				cb->Call( context, evt->control->state.Get( isolate ), 0, NULL ).ToLocalChecked();
+				cb->Call( context, evt->control->state.Get( isolate ), 0, NULL );
 				break;
 			}
 			case Event_Frame_Abort:
 			{
 				cb = Local<Function>::New( isolate, evt->control->cbFrameEventAbort );
-				cb->Call( context, evt->control->state.Get( isolate ), 0, NULL ).ToLocalChecked();
+				cb->Call( context, evt->control->state.Get( isolate ), 0, NULL );
 				break;
 			}
 			case Event_Control_Create:
@@ -184,13 +179,15 @@ static void asyncmsg( uv_async_t* handle ) {
 					if( !evt->control->image ) {
 						evt->control->image = ImageObject::MakeNewImage( isolate, GetControlSurface( evt->control->control ), TRUE );
 					}
-					Local<Value> argv[1] = { evt->control->image->_this.Get( isolate ) };
-					cb = Local<Function>::New( isolate, evt->control->registration->cbDrawEvent );
-					r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
-					if( !r.IsEmpty() )
-						evt->success = (int)r->IntegerValue(context).ToChecked();
-					else
-						evt->success = 1;
+					{
+						Local<Value> argv[1] = { evt->control->image->_this.Get( isolate ) };
+						cb = Local<Function>::New( isolate, evt->control->registration->cbDrawEvent );
+						r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
+						if( !r.IsEmpty() )
+							evt->success = (int)r->IntegerValue( context ).ToChecked();
+						else
+							evt->success = 1;
+					}	
 				}
 				else evt->success = 0;
 				break;
@@ -201,13 +198,15 @@ static void asyncmsg( uv_async_t* handle ) {
 				jsEvent->Set( String::NewFromUtf8( isolate, "x" ), Integer::New( isolate, evt->data.mouse.x ) );
 				jsEvent->Set( String::NewFromUtf8( isolate, "y" ), Integer::New( isolate, evt->data.mouse.y ) );
 				jsEvent->Set( String::NewFromUtf8( isolate, "b" ), Integer::New( isolate, evt->data.mouse.b ) );
-				Local<Value> argv[1] = {jsEvent };
-				cb = Local<Function>::New( isolate, evt->control->registration->cbMouseEvent );
-				r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
-				if( !r.IsEmpty() )
-					evt->success = (int)r->IntegerValue(context).ToChecked();
-				else
-					evt->success = 1;
+				{
+					Local<Value> argv[1] = { jsEvent };
+					cb = Local<Function>::New( isolate, evt->control->registration->cbMouseEvent );
+					r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
+					if( !r.IsEmpty() )
+						evt->success = (int)r->IntegerValue( context ).ToChecked();
+					else
+						evt->success = 1;
+				}
 				break;
 			}
 			case Event_Control_ButtonClick:
@@ -258,7 +257,11 @@ static void asyncmsg( uv_async_t* handle ) {
 			case Event_Listbox_Item_Opened:
 				ListboxItemObject* lio;lio = (ListboxItemObject*)evt->data.listbox.pli;
 				cb = Local<Function>::New( isolate, lio->cbOpened );
-				r = cb->Call( context, lio->_this.Get( isolate ), 0, NULL ).ToLocalChecked();
+				{
+					Local<Value> argv[1] = { evt->data.listbox.opened ? True( isolate ) : False( isolate ) };
+
+					r = cb->Call( context, lio->_this.Get( isolate ), 1, argv ).ToLocalChecked();
+				}
 				break;
 			case Event_Menu_Item_Selected:
 				MenuItemObject* mio; mio = (MenuItemObject*)evt->data.popup.pmi;
@@ -320,8 +323,11 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 		break;
 	case Event_Listbox_Selected:
 	case Event_Listbox_DoubleClick:
+		e.data.listbox.pli = va_arg( args, uintptr_t );
+		break;
 	case Event_Listbox_Item_Opened:
 		e.data.listbox.pli = va_arg( args, uintptr_t );
+		e.data.listbox.opened = va_arg( args, LOGICAL );
 		break;
 	case Event_Menu_Item_Selected:
 		e.data.popup.pmi = va_arg( args, uintptr_t );
@@ -796,6 +802,11 @@ void ControlObject::Init( Handle<Object> _exports ) {
 			, FunctionTemplate::New( isolate, ControlObject::setCoordinate, Integer::New( isolate, 12 ) )
 			, DontDelete );
 
+		psiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "renderer" )
+			, FunctionTemplate::New( isolate, ControlObject::getRenderer, Integer::New( isolate, 12 ) )
+			, FunctionTemplate::New( isolate, ControlObject::setCoordinate, Integer::New( isolate, 12 ) )
+			, DontDelete );
+
 
 		Local<Function> frameConstructor = psiTemplate->GetFunction(context).ToLocalChecked();
 		SET_READONLY_METHOD( frameConstructor, "Border", newBorder );
@@ -1113,7 +1124,7 @@ void onItemOpened( uintptr_t psv, PSI_CONTROL pc, PLISTITEM pli, LOGICAL bOpened
 		ListboxItemObject* lio = (ListboxItemObject*)GetItemData( pli );
 		// if there's no event handler, don't do anything.
 		if( !lio->cbOpened.IsEmpty() ) {
-			MakePSIEvent( NULL, true, Event_Listbox_Item_Opened, lio );
+			MakePSIEvent( NULL, true, Event_Listbox_Item_Opened, lio, bOpened );
 
 		}
 	}
@@ -1166,6 +1177,7 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 		SET( c, "setTabs", Function::New( context, ControlObject::setListboxTabs ).ToLocalChecked() );
 		SET( c, "addItem", Function::New( context, ControlObject::addListboxItem ).ToLocalChecked() );
 		SET( c, "reset", Function::New( context, ControlObject::resetListbox ).ToLocalChecked() );
+		SET( c, "disableUpdate", Function::New( context, ControlObject::listboxDisableUpdate ).ToLocalChecked() );
 		c->SetAccessorProperty( String::NewFromUtf8( isolate, "header" )
 			, Function::New( context, ControlObject::getListboxHeader ).ToLocalChecked()
 			, Function::New( context, ControlObject::setListboxHeader ).ToLocalChecked()
@@ -1673,7 +1685,18 @@ void ControlObject::setControlText( const FunctionCallbackInfo<Value>& args ) {
 	SetControlText( me->control, *text );
 }
 
+void ControlObject::getRenderer( const FunctionCallbackInfo<Value>& args ) {
+	ControlObject* me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	PRENDERER r = GetFrameRenderer( me->control );
 
+	Isolate* isolate = args.GetIsolate();
+	Local<Function> cons = Local<Function>::New( isolate, RenderObject::constructor );
+	Local<Object> obj;
+	args.GetReturnValue().Set( obj =cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ) .ToLocalChecked() );
+	RenderObject* p = RenderObject::Unwrap< RenderObject>( obj );
+	p->setRenderer( r );
+
+}
 void ControlObject::getCoordinate( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context>context = isolate->GetCurrentContext();
@@ -1798,6 +1821,13 @@ void ControlObject::resetListbox( const FunctionCallbackInfo<Value>& args ) {
 	//Local<Context>context = isolate->GetCurrentContext();
 	ControlObject* me = ObjectWrap::Unwrap<ControlObject>( args.This() );
 	ResetList( me->control );
+}
+
+
+void ControlObject::listboxDisableUpdate( const FunctionCallbackInfo<Value>& args ) {
+	ControlObject* me = ObjectWrap::Unwrap<ControlObject>( args.This() );
+	DisableUpdateListBox( me->control, args[0]->BooleanValue(args.GetIsolate())  );
+
 }
 
 	//InsertListItem

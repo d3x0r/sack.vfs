@@ -497,10 +497,30 @@ Mostly unimplemented, more of a place holder than functional.
 | setTitle | Set text shown on button |
 
 
+# Systray Interface
+
+This small module interfaces with the windows system tray, and allows the application
+to specify the icon to use, a double click handler, and addition items which appear on the
+right-click context menu.
+
+```
+var sack = require( 'sack-gui');
+sack.Systray.set( "iconName.ico", ()=>{ /* optional callback for double-click */ } );
+sack.Systray.on( "New Menu Item", ()=>{ /* invoked when menu item is clicked */ } )
+sack.Systray.on( "Text on menu", ()=>{ /* invoked when this menu item is clicked */ } )
+```
+
+| Systray Methods | Parameters | Description |
+| set | Icon String [, function] |  Requires a icon name to use.  Function is optional.  Only the first call to set sets the function... additional calls only change the icon |
+| on | Menu Text String, Function | Add menu text to the menu as a new item.  Calls the funciton specified when the menu item is clicked |
+
 
 ---
 
 ## Changelog
+- 0.9.124
+   - add systray support.
+   (changelog lost?)
 - 0.9.123 
    - Sync VFS. 
    - Fixed some GUI issues.
