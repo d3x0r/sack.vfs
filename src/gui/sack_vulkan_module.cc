@@ -98,7 +98,7 @@ void VulkanObject::Init( Isolate* isolate, Handle<Object> exports ) {
 
 	// Prepare constructor template
 	vulkanTemplate = FunctionTemplate::New( isolate, New );
-	vulkanTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Vulkan" ) );
+	vulkanTemplate->SetClassName( localStringExternal( isolate, "sack.Vulkan" ) );
 	vulkanTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); /* one internal for wrap */
 	constructor.Reset( isolate, vulkanTemplate->GetFunction(context).ToLocalChecked() );
 

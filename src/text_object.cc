@@ -56,7 +56,6 @@ static void getTextNoReturn( const FunctionCallbackInfo<Value>& args ) {
 static void setTextNoReturn( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
-	Isolate *isolate = args.GetIsolate();
 	if( !me->segment )
 		me->segment = SegCreate( 0 );
 	if( args[0]->TOBOOL(isolate) )
@@ -79,7 +78,6 @@ static void getTextParens( const FunctionCallbackInfo<Value>& args ) {
 static void setTextParens( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
-	Isolate *isolate = args.GetIsolate();
 	if( !me->segment )
 		me->segment = SegCreate( 0 );
 	if( args[0]->TOBOOL(isolate) )
@@ -88,8 +86,8 @@ static void setTextParens( const FunctionCallbackInfo<Value>& args ) {
 		me->segment->flags &= ~TF_PAREN;
 }
 static void getTextQuoted( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
-	Isolate *isolate = args.GetIsolate();
 	if( me->segment ) {
 		if( me->segment->flags & TF_QUOTE )
 			args.GetReturnValue().Set( True( isolate ) );
@@ -100,7 +98,6 @@ static void getTextQuoted( const FunctionCallbackInfo<Value>& args ) {
 static void setTextQuoted( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
-	Isolate *isolate = args.GetIsolate();
 	if( !me->segment )
 		me->segment = SegCreate( 0 );
 	if( args[0]->TOBOOL(isolate) )
@@ -110,8 +107,8 @@ static void setTextQuoted( const FunctionCallbackInfo<Value>& args ) {
 }
 
 static void getTextSQuoted( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
-	Isolate *isolate = args.GetIsolate();
 	if( me->segment ) {
 		if( me->segment->flags & TF_SQUOTE )
 			args.GetReturnValue().Set( True( isolate ) );
@@ -122,7 +119,6 @@ static void getTextSQuoted( const FunctionCallbackInfo<Value>& args ) {
 static void setTextSQuoted( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
-	Isolate *isolate = args.GetIsolate();
 	if( !me->segment )
 		me->segment = SegCreate( 0 );
 	if( args[0]->TOBOOL(isolate) )
@@ -132,8 +128,8 @@ static void setTextSQuoted( const FunctionCallbackInfo<Value>& args ) {
 }
 
 static void getTextFore( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
-	Isolate *isolate = args.GetIsolate();
 	if( me->segment ) {
 		if( me->segment->format.flags.prior_foreground ) {
 			args.GetReturnValue().Set( False( isolate ) );
@@ -149,7 +145,6 @@ static void setTextFore( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context>context = isolate->GetCurrentContext();
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
-	Isolate *isolate = args.GetIsolate();
 	if( !me->segment )
 		me->segment = SegCreate( 0 );
 	if( args[0]->IsBoolean() ) {

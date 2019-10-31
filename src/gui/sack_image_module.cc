@@ -107,7 +107,7 @@ static uintptr_t fontPickThread( PTHREAD thread ) {
 static void pickFont( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	priorThis.Reset( isolate, args.This() );
-	fontResult.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+	fontResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
 	ThreadTo( fontPickThread, 0 );
 }
 
@@ -125,12 +125,12 @@ static uintptr_t colorPickThread( PTHREAD thread ) {
 static void pickColor( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	priorThis.Reset( isolate, args.This() );
-	imageResult.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+	imageResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
 	ThreadTo( colorPickThread, 0 );
 }
 
 
-void ImageObject::Init( Handle<Object> exports ) {
+void ImageObject::Init( Local<Object> exports ) {
 	InitInterfaces( SACK_GetProfileInt( NULL, "SACK/Video Render/Use OpenGL 2", 0 )
 					, SACK_GetProfileInt( NULL, "SACK/Video Render/Use Vulkan", 0 ) );
 
@@ -140,7 +140,7 @@ void ImageObject::Init( Handle<Object> exports ) {
 
 	// Prepare constructor template
 	imageTemplate = FunctionTemplate::New( isolate, New );
-	imageTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Image" ) );
+	imageTemplate->SetClassName( localStringExternal( isolate, "sack.Image" ) );
 	imageTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	// Prototype
@@ -157,19 +157,19 @@ void ImageObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImageOver", ImageObject::putImageOver );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "imageSurface", ImageObject::imageData );
 
-	imageTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "png" )
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "png" )
 		, FunctionTemplate::New( isolate, ImageObject::getPng )
 		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly|DontDelete) );
-	imageTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "jpg" )
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "jpg" )
 		, FunctionTemplate::New( isolate, ImageObject::getJpeg )
 		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly | DontDelete) );
-	imageTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "jpgQuality" )
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "jpgQuality" )
 		, FunctionTemplate::New( isolate, ImageObject::getJpegQuality )
 		, FunctionTemplate::New( isolate, ImageObject::setJpegQuality ), DontDelete );
-	imageTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "width" )
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "width" )
 		, FunctionTemplate::New( isolate, ImageObject::getWidth )
 		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly | DontDelete) );
-	imageTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "height" )
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "height" )
 		, FunctionTemplate::New( isolate, ImageObject::getHeight )
 		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly | DontDelete) );
 
@@ -179,7 +179,7 @@ void ImageObject::Init( Handle<Object> exports ) {
 
 	Local<FunctionTemplate> fontTemplate;
 	fontTemplate = FunctionTemplate::New( isolate, FontObject::New );
-	fontTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Image.Font" ) );
+	fontTemplate->SetClassName( localStringExternal( isolate, "sack.Image.Font" ) );
 	fontTemplate->InstanceTemplate()->SetInternalFieldCount( 4+1 );
 
 	// Prototype
@@ -192,18 +192,18 @@ void ImageObject::Init( Handle<Object> exports ) {
 
 	// Prepare constructor template
 	colorTemplate = FunctionTemplate::New( isolate, ColorObject::New );
-	colorTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Image.Color" ) );
+	colorTemplate->SetClassName( localStringExternal( isolate, "sack.Image.Color" ) );
 	colorTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	NODE_SET_PROTOTYPE_METHOD( colorTemplate, "toString", ColorObject::toString );
 #define SetAccessor(b,c,d) SetAccessorProperty( b, FunctionTemplate::New( isolate, c ), FunctionTemplate::New( isolate, d ), DontDelete )
-	colorTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "r" )
+	colorTemplate->PrototypeTemplate()->SetAccessor( localStringExternal( isolate, "r" )
 		, ColorObject::getRed, ColorObject::setRed );
-	colorTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "g" )
+	colorTemplate->PrototypeTemplate()->SetAccessor( localStringExternal( isolate, "g" )
 		, ColorObject::getGreen, ColorObject::setGreen );
-	colorTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "b" )
+	colorTemplate->PrototypeTemplate()->SetAccessor( localStringExternal( isolate, "b" )
 		, ColorObject::getBlue, ColorObject::setBlue );
-	colorTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "a" )
+	colorTemplate->PrototypeTemplate()->SetAccessor( localStringExternal( isolate, "a" )
 		, ColorObject::getAlpha, ColorObject::setAlpha );
 	ColorObject::tpl.Reset( isolate, colorTemplate );
 	ColorObject::constructor.Reset( isolate, colorTemplate->GetFunction(context).ToLocalChecked() );
@@ -744,7 +744,7 @@ void ImageObject::putImage( const FunctionCallbackInfo<Value>& args ) {
 	else {
 		x = 0;
 		y = 0;
-		//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameters for position missing." ) ) );
+		//isolate->ThrowException( Exception::Error( localStringExternal( isolate, "Required parameters for position missing." ) ) );
 		//return;
 	}
 	if( argc > 3 ) {
@@ -754,7 +754,7 @@ void ImageObject::putImage( const FunctionCallbackInfo<Value>& args ) {
 			yAt = (int)args[4]->NumberValue(context).ToChecked();
 		}
 		else {
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameters for position missing." ) ) );
+			isolate->ThrowException( Exception::Error( localStringExternal( isolate, "Required parameters for position missing." ) ) );
 			return;
 		}
 		if( argc > 5 ) {
@@ -999,7 +999,7 @@ void ColorObject::toString( const FunctionCallbackInfo<Value>& args ) {
 	char buf[128];
 	snprintf( buf, 128, "{r:%d,g:%d,b:%d,a:%d}", RedVal( co->color ), GreenVal( co->color ), BlueVal( co->color ), AlphaVal( co->color ) );
 	
-	args.GetReturnValue().Set( String::NewFromUtf8( isolate, buf ) );
+	args.GetReturnValue().Set( localStringExternal( isolate, buf ) );
 }
 
 void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
@@ -1013,10 +1013,10 @@ void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
 		if( argc == 1 ) {
 			if( args[0]->IsObject() ) {
 				Local<Object> o = args[0]->ToObject( context).ToLocalChecked();
-				r = (int)o->Get( String::NewFromUtf8( isolate, "r" ) )->NumberValue(context).ToChecked();
-				grn = (int)o->Get( String::NewFromUtf8( isolate, "g" ) )->NumberValue(context).ToChecked();
-				b = (int)o->Get( String::NewFromUtf8( isolate, "b" ) )->NumberValue(context).ToChecked();
-				a = (int)o->Get( String::NewFromUtf8( isolate, "a" ) )->NumberValue(context).ToChecked();
+				r = (int)o->Get( context, localStringExternal( isolate, "r" ) ).ToLocalChecked()->NumberValue(context).ToChecked();
+				grn = (int)o->Get( context, localStringExternal( isolate, "g" ) ).ToLocalChecked()->NumberValue(context).ToChecked();
+				b = (int)o->Get( context, localStringExternal( isolate, "b" ) ).ToLocalChecked()->NumberValue(context).ToChecked();
+				a = (int)o->Get( context, localStringExternal( isolate, "a" ) ).ToLocalChecked()->NumberValue(context).ToChecked();
 				obj = new ColorObject( r,grn,b,a );
 
 			}
