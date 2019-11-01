@@ -159,7 +159,7 @@ static void setTextFore( const FunctionCallbackInfo<Value>& args ) {
 	else if( args[0]->IsNumber() ) {
 		me->segment->format.flags.default_foreground = 0;
 		me->segment->format.flags.prior_foreground = 0;
-		me->segment->format.flags.foreground = args[0]->NumberValue();
+		me->segment->format.flags.foreground = (BIT_FIELD)args[0]->NumberValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
 	}
 }
 
@@ -197,7 +197,7 @@ static void setTextBack( const FunctionCallbackInfo<Value>& args ) {
 	else if( args[0]->IsNumber() ) {
 		me->segment->format.flags.default_background = 0;
 		me->segment->format.flags.prior_background = 0;
-		me->segment->format.flags.background = args[0]->NumberValue();
+		me->segment->format.flags.background = (BIT_FIELD)args[0]->NumberValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
 	}
 }
 
@@ -248,14 +248,15 @@ static void getText( const FunctionCallbackInfo<Value>& args ) {
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
 	Isolate *isolate = args.GetIsolate();
 	if( me->segment ) {
-		args.GetReturnValue().Set( String::NewFromUtf8( isolate, GetText( me->segment ), NewStringType::kNormal, GetTextSize( me->segment ) ).ToLocalChecked() );
+		args.GetReturnValue().Set( String::NewFromUtf8( isolate, GetText( me->segment ), NewStringType::kNormal, (int)GetTextSize( me->segment ) ).ToLocalChecked() );
 	}
 	args.GetReturnValue().Set( Null( isolate ) );
 }
 
 static void setText( const FunctionCallbackInfo<Value>& args ) {
 	textWrapper *me = textWrapper::Unwrap<textWrapper>( args.This() );
-	String::Utf8Value text( args[0]->ToString() );
+	Isolate *isolate = args.GetIsolate();
+	String::Utf8Value text( USE_ISOLATE( isolate ) args[0]->ToString(isolate->GetCurrentContext()).ToLocalChecked() );
 
 	if( !me->segment )
 		me->segment = SegCreateFromCharLen( *text, text.length() );
@@ -274,7 +275,7 @@ PTEXT isTextObject( Isolate *isolate, Local<Value> object ) {
 	if( object->IsObject() ) {
 		Local<FunctionTemplate> tpl = pTextTemplate.Get( isolate );
 		Local<Object> locObj;
-		if( tpl->HasInstance( locObj = object->ToObject() ) ) {
+		if( tpl->HasInstance( locObj = object->ToObject(isolate->GetCurrentContext()).ToLocalChecked() ) ) {
 			textWrapper *me = textWrapper::Unwrap<textWrapper>( locObj );
 			if( me )
 				return me->segment;
@@ -283,7 +284,7 @@ PTEXT isTextObject( Isolate *isolate, Local<Value> object ) {
 	return NULL;
 }
 
-void textObjectInit( Isolate *isolate, Handle<Object> exports ) {
+void textObjectInit( Isolate *isolate, Local<Object> exports ) {
 	Local<FunctionTemplate> textTemplate;
 
 	textTemplate = FunctionTemplate::New( isolate, newText );
@@ -339,6 +340,6 @@ void textObjectInit( Isolate *isolate, Handle<Object> exports ) {
 		, FunctionTemplate::New( isolate, setText )
 		, DontDelete );
 
-	constructor.Reset( isolate, textTemplate->GetFunction() );
-	SET_READONLY( exports, "Text", textTemplate->GetFunction() );
+	constructor.Reset( isolate, textTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	SET_READONLY( exports, "Text", textTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 }

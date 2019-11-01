@@ -322,6 +322,8 @@ add_library(${PROJECT} SHARED
 	src/config_module.cc
 	src/task_module.cc
 	src/fileMonitor_module.cc
+	src/system_module.cc
+	src/text_object.cc
 	${MORE_MODULE_SOURCES}
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
