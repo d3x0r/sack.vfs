@@ -193,7 +193,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 			newTask->killAtExit = true;
 
-			char **argArray;
+			char **argArray = NULL;
 			int nArg;
 
 			if( opts->Has( context, optName = strings->binString->Get( isolate ) ).ToChecked() ) {
