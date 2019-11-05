@@ -170,8 +170,8 @@ void VolumeObject::doInit( Local<Object> exports )
 	InitTask( isolate, exports );
 	ObjectStorageInit( isolate, exports );
 	fileMonitorInit( isolate, exports );
-#ifdef INCLUDE_GUI
 	textObjectInit( isolate, exports );
+#ifdef INCLUDE_GUI
 	ImageObject::Init( exports );
 	RenderObject::Init( exports );
 	ControlObject::Init( exports );
