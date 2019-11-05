@@ -36,6 +36,7 @@
 #include <http.h>
 #include <construct.h>
 #include <configscript.h>
+#include <filemon.h>
 #else
 #include "sack/sack.h"
 #endif
@@ -350,8 +351,8 @@ typedef struct arrayBufferHolder ARRAY_BUFFER_HOLDER, *PARRAY_BUFFER_HOLDER;
 DeclareSet( ARRAY_BUFFER_HOLDER );
 
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info );
-Local<String> localString( Isolate *isolate, const char *data, int len );
-Local<String> localStringExternal( Isolate *isolate, const char *data, int len, const char *real_root );
+Local<String> localString( Isolate *isolate, const char *data, int len = -1 );
+Local<String> localStringExternal( Isolate *isolate, const char *data, int len = -1, const char *real_root = NULL );
 
 void InitFS( const v8::FunctionCallbackInfo<Value>& args );
 void ConfigScriptInit( Local<Object> exports );
