@@ -14,7 +14,7 @@ public:
 	int jpegQuality;
 public:
 
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 	ImageObject( int w, int h, int x, int y, ImageObject *parent );
 	ImageObject( const char *filename );
 	ImageObject( Image image );
@@ -58,7 +58,7 @@ public:
 
 	static v8::Persistent<v8::Function> constructor;
 
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 	FontObject( const char *filename, int w, int h, int flags );
 	FontObject();
 
@@ -83,7 +83,7 @@ public:
 
 public:
 
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 	ColorObject( int r, int g, int b, int a );
 	ColorObject( CDATA rgba );
 	ColorObject();

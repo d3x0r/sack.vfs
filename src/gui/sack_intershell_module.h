@@ -48,7 +48,7 @@ public:
 
 public:
 
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 	InterShellObject( char *name, LOGICAL bControl );
 	InterShellObject( );
 	~InterShellObject();

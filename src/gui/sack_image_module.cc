@@ -64,6 +64,7 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	Local<Context> context = isolate->GetCurrentContext();
 	HandleScope scope( isolate );
 	//lprintf( "async message notice. %p", myself );
 	if( !imageResult.IsEmpty() )
@@ -71,7 +72,7 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 		Local<Function> cb = Local<Function>::New( isolate, imageResult );
 		Local<Object> _this = priorThis.Get( isolate );
 		Local<Value> argv[1] = { ColorObject::makeColor( isolate, imageLocal.color ) };
-		cb->Call( _this, 1, argv );
+		cb->Call( context, _this, 1, argv );
 		uv_close( (uv_handle_t*)&imageLocal.colorAsync, NULL );
 		imageResult.Reset();
 	}
@@ -85,7 +86,7 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 		fo->font = imageLocal.fontResult;
 
 		Local<Value> argv[1] = { result };
-		cb->Call( result, 1, argv );
+		cb->Call( context, result, 1, argv );
 
 		uv_close( (uv_handle_t*)&imageLocal.fontAsync, NULL );
 		fontResult.Reset();
@@ -106,7 +107,7 @@ static uintptr_t fontPickThread( PTHREAD thread ) {
 static void pickFont( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	priorThis.Reset( isolate, args.This() );
-	fontResult.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+	fontResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
 	ThreadTo( fontPickThread, 0 );
 }
 
@@ -124,21 +125,22 @@ static uintptr_t colorPickThread( PTHREAD thread ) {
 static void pickColor( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	priorThis.Reset( isolate, args.This() );
-	imageResult.Reset( isolate, Handle<Function>::Cast( args[0] ) );
+	imageResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
 	ThreadTo( colorPickThread, 0 );
 }
 
 
-void ImageObject::Init( Handle<Object> exports ) {
+void ImageObject::Init( Local<Object> exports ) {
 	InitInterfaces( SACK_GetProfileInt( NULL, "SACK/Video Render/Use OpenGL 2", 0 )
 					, SACK_GetProfileInt( NULL, "SACK/Video Render/Use Vulkan", 0 ) );
 
 	Isolate* isolate = Isolate::GetCurrent();
+	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> imageTemplate;
 
 	// Prepare constructor template
 	imageTemplate = FunctionTemplate::New( isolate, New );
-	imageTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Image" ) );
+	imageTemplate->SetClassName( localStringExternal( isolate, "sack.Image" ) );
 	imageTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	// Prototype
@@ -155,61 +157,61 @@ void ImageObject::Init( Handle<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImageOver", ImageObject::putImageOver );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "imageSurface", ImageObject::imageData );
 
-	imageTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "png" )
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "png" )
 		, FunctionTemplate::New( isolate, ImageObject::getPng )
 		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly|DontDelete) );
-	imageTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "jpg" )
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "jpg" )
 		, FunctionTemplate::New( isolate, ImageObject::getJpeg )
 		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly | DontDelete) );
-	imageTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "jpgQuality" )
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "jpgQuality" )
 		, FunctionTemplate::New( isolate, ImageObject::getJpegQuality )
 		, FunctionTemplate::New( isolate, ImageObject::setJpegQuality ), DontDelete );
-	imageTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "width" )
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "width" )
 		, FunctionTemplate::New( isolate, ImageObject::getWidth )
 		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly | DontDelete) );
-	imageTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "height" )
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "height" )
 		, FunctionTemplate::New( isolate, ImageObject::getHeight )
 		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly | DontDelete) );
 
 	ImageObject::tpl.Reset( isolate, imageTemplate );
-	ImageObject::constructor.Reset( isolate, imageTemplate->GetFunction() );
-	SET_READONLY( exports, "Image", imageTemplate->GetFunction() );
+	ImageObject::constructor.Reset( isolate, imageTemplate->GetFunction(context).ToLocalChecked() );
+	SET_READONLY( exports, "Image", imageTemplate->GetFunction( context ).ToLocalChecked() );
 
 	Local<FunctionTemplate> fontTemplate;
 	fontTemplate = FunctionTemplate::New( isolate, FontObject::New );
-	fontTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Image.Font" ) );
+	fontTemplate->SetClassName( localStringExternal( isolate, "sack.Image.Font" ) );
 	fontTemplate->InstanceTemplate()->SetInternalFieldCount( 4+1 );
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( fontTemplate, "measure", FontObject::measure );
 	NODE_SET_PROTOTYPE_METHOD( fontTemplate, "save", FontObject::save );
 
-	SET_READONLY_METHOD( fontTemplate->GetFunction(), "load", FontObject::load );
+	SET_READONLY_METHOD( fontTemplate->GetFunction(context).ToLocalChecked(), "load", FontObject::load );
 
 	Local<FunctionTemplate> colorTemplate;
 
 	// Prepare constructor template
 	colorTemplate = FunctionTemplate::New( isolate, ColorObject::New );
-	colorTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Image.Color" ) );
+	colorTemplate->SetClassName( localStringExternal( isolate, "sack.Image.Color" ) );
 	colorTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	NODE_SET_PROTOTYPE_METHOD( colorTemplate, "toString", ColorObject::toString );
 #define SetAccessor(b,c,d) SetAccessorProperty( b, FunctionTemplate::New( isolate, c ), FunctionTemplate::New( isolate, d ), DontDelete )
-	colorTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "r" )
+	colorTemplate->PrototypeTemplate()->SetAccessor( localStringExternal( isolate, "r" )
 		, ColorObject::getRed, ColorObject::setRed );
-	colorTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "g" )
+	colorTemplate->PrototypeTemplate()->SetAccessor( localStringExternal( isolate, "g" )
 		, ColorObject::getGreen, ColorObject::setGreen );
-	colorTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "b" )
+	colorTemplate->PrototypeTemplate()->SetAccessor( localStringExternal( isolate, "b" )
 		, ColorObject::getBlue, ColorObject::setBlue );
-	colorTemplate->PrototypeTemplate()->SetAccessor( String::NewFromUtf8( isolate, "a" )
+	colorTemplate->PrototypeTemplate()->SetAccessor( localStringExternal( isolate, "a" )
 		, ColorObject::getAlpha, ColorObject::setAlpha );
 	ColorObject::tpl.Reset( isolate, colorTemplate );
-	ColorObject::constructor.Reset( isolate, colorTemplate->GetFunction() );
+	ColorObject::constructor.Reset( isolate, colorTemplate->GetFunction(context).ToLocalChecked() );
 
 
-	FontObject::constructor.Reset( isolate, fontTemplate->GetFunction() );
-	SET_READONLY( imageTemplate->GetFunction(), "Font", fontTemplate->GetFunction() );
-	SET_READONLY_METHOD( fontTemplate->GetFunction(), "dialog", pickFont );
+	FontObject::constructor.Reset( isolate, fontTemplate->GetFunction(context).ToLocalChecked() );
+	SET_READONLY( imageTemplate->GetFunction(context).ToLocalChecked(), "Font", fontTemplate->GetFunction(context).ToLocalChecked() );
+	SET_READONLY_METHOD( fontTemplate->GetFunction(context).ToLocalChecked(), "dialog", pickFont );
 
 	Local<Object> colors = Object::New( isolate );
 	if( g.pii ) {
@@ -235,10 +237,10 @@ void ImageObject::Init( Handle<Object> exports ) {
 		SET_READONLY( colors, "niceOrange", makeColor( isolate, BASE_COLOR_NICE_ORANGE ) );
 		SET_READONLY( colors, "purple", makeColor( isolate, BASE_COLOR_PURPLE ) );
 	}
-	Local<Function> i = imageTemplate->GetFunction();
+	Local<Function> i = imageTemplate->GetFunction(context).ToLocalChecked();
 	SET_READONLY( i, "colors", colors );
-	SET_READONLY( i, "Color", colorTemplate->GetFunction() );
-	SET_READONLY_METHOD( colorTemplate->GetFunction(), "dialog", pickColor );
+	SET_READONLY( i, "Color", colorTemplate->GetFunction(context).ToLocalChecked() );
+	SET_READONLY_METHOD( colorTemplate->GetFunction(context).ToLocalChecked(), "dialog", pickColor );
 
 }
 void ImageObject::getPng( const FunctionCallbackInfo<Value>& args ) {
@@ -293,7 +295,7 @@ void ImageObject::getJpegQuality( const FunctionCallbackInfo<Value>&  args ) {
 void ImageObject::setJpegQuality( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
-	obj->jpegQuality = (int)args[0]->IntegerValue();
+	obj->jpegQuality = (int)args[0]->IntegerValue(isolate->GetCurrentContext()).ToChecked();
 }
 
 void ImageObject::getWidth( const FunctionCallbackInfo<Value>&  args ) {
@@ -351,6 +353,7 @@ ImageObject::~ImageObject(void) {
 
 void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	if( args.IsConstructCall() ) {
 
 		int x = 0, y = 0, w = 1024, h = 768;
@@ -373,25 +376,25 @@ void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 				Local<ArrayBuffer> myarr = args[0].As<ArrayBuffer>();
 				obj = new ImageObject( (uint8_t*)myarr->GetContents().Data(), myarr->ByteLength() );
 			} else if( args[0]->IsNumber() )
-				w = (int)args[0]->NumberValue();
+				w = (int)args[0]->NumberValue(context).ToChecked();
 			else {
-				String::Utf8Value fName( args[0]->ToString() );
+				String::Utf8Value fName( isolate, args[0]->ToString(context).ToLocalChecked() );
 				filename = StrDup( *fName );
 			}
 		}
 		if( !filename && !obj ) {
 			if( argc > 1 ) {
-				h = (int)args[1]->NumberValue();
+				h = (int)args[1]->NumberValue(context).ToChecked();
 			}
 			if( argc > 2 ) {
-				parentImage = args[2]->ToObject();
+				parentImage = args[2]->ToObject( context).ToLocalChecked();
 				parent = ObjectWrap::Unwrap<ImageObject>( parentImage );
 			}
 			if( argc > 3 ) {
-				x = (int)args[3]->NumberValue();
+				x = (int)args[3]->NumberValue(context).ToChecked();
 			}
 			if( argc > 4 ) {
-				y = (int)args[4]->NumberValue();
+				y = (int)args[4]->NumberValue(context).ToChecked();
 			}
 		}
 		// Invoked as constructor: `new MyObject(...)`
@@ -421,6 +424,7 @@ void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 void ImageObject::NewSubImage( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	if( args.IsConstructCall() ) {
 
 		int x = 0, y = 0, w = 1024, h = 768;
@@ -430,20 +434,20 @@ void ImageObject::NewSubImage( const FunctionCallbackInfo<Value>& args ) {
 		int arg_ofs = 0;
 		if( argc > 0 ) {
 			if( args[0]->IsObject() ) {
-				ImageObject *parent = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject() );
+				ImageObject *parent = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject( context).ToLocalChecked() );
 				arg_ofs = 1;
 			}
 		if( (argc+arg_ofs) > 0 )
-			x = (int)args[0+arg_ofs]->NumberValue();
+			x = (int)args[0+arg_ofs]->NumberValue(context).ToChecked();
 		}
 		if( (argc + arg_ofs) > 1 ) {
-			y = (int)args[1 + arg_ofs]->NumberValue();
+			y = (int)args[1 + arg_ofs]->NumberValue(context).ToChecked();
 		}
 		if( (argc + arg_ofs) > 2 ) {
-			w = (int)args[2 + arg_ofs]->NumberValue();
+			w = (int)args[2 + arg_ofs]->NumberValue(context).ToChecked();
 		}
 		if( (argc + arg_ofs) > 3 ) {
-			h = (int)args[3 + arg_ofs]->NumberValue();
+			h = (int)args[3 + arg_ofs]->NumberValue(context).ToChecked();
 		}
 
 		// Invoked as constructor: `new MyObject(...)`
@@ -500,24 +504,26 @@ ImageObject * ImageObject::MakeNewImage( Isolate*isolate, Image image, LOGICAL e
 
 void ImageObject::reset( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	args[3]->ToObject();
+	Local<Context> context = isolate->GetCurrentContext();
+	args[3]->ToObject( context).ToLocalChecked();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	ClearImage( io->image );
 }
 
 void ImageObject::fill( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int argc = args.Length();
 	int x, y, w, h, c = BASE_COLOR_BLACK;
 	if( argc == 1 ) {
 		if( args[0]->IsObject() ) {
-			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[0]->ToObject() );
+			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[0]->ToObject( context).ToLocalChecked() );
 			c = co->color;
 		} else if( args[0]->IsUint32() )
-			c = (int)args[0]->Uint32Value();
+			c = (int)args[0]->Uint32Value(context).ToChecked();
 		else if( args[0]->IsNumber() )
-			c = (int)args[0]->NumberValue();
+			c = (int)args[0]->NumberValue(context).ToChecked();
 		else
 			c = 0;
 		x = 0;
@@ -526,25 +532,25 @@ void ImageObject::fill( const FunctionCallbackInfo<Value>& args ) {
 		h = io->image->height;
 	} else {
 		if( argc > 0 ) {
-			x = (int)args[0]->NumberValue();
+			x = (int)args[0]->NumberValue(context).ToChecked();
 		}
 		if( argc > 1 ) {
-			y = (int)args[1]->NumberValue();
+			y = (int)args[1]->NumberValue(context).ToChecked();
 		}
 		if( argc > 2 ) {
-			w = (int)args[2]->NumberValue();
+			w = (int)args[2]->NumberValue(context).ToChecked();
 		}
 		if( argc > 3 ) {
-			h = (int)args[3]->NumberValue();
+			h = (int)args[3]->NumberValue(context).ToChecked();
 		}
 		if( argc > 4 ) {
 			if( args[4]->IsObject() ) {
-				ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject() );
+				ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject( context).ToLocalChecked() );
 				c = co->color;
 			} else if( args[4]->IsUint32() )
-				c = (int)args[4]->Uint32Value();
+				c = (int)args[4]->Uint32Value(context).ToChecked();
 			else if( args[4]->IsNumber() )
-				c = (int)args[4]->NumberValue();
+				c = (int)args[4]->NumberValue(context).ToChecked();
 			else
 				c = 0;
 		}
@@ -554,107 +560,111 @@ void ImageObject::fill( const FunctionCallbackInfo<Value>& args ) {
 
 void ImageObject::fillOver( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int x, y, w, h, c;
 	if( argc > 0 ) {
-		x = (int)args[0]->NumberValue();
+		x = (int)args[0]->NumberValue(context).ToChecked();
 	}
 	if( argc > 1 ) {
-		y = (int)args[1]->NumberValue();
+		y = (int)args[1]->NumberValue(context).ToChecked();
 	}
 	if( argc > 2 ) {
-		w = (int)args[2]->NumberValue();
+		w = (int)args[2]->NumberValue(context).ToChecked();
 	}
 	if( argc > 3 ) {
-		h = (int)args[3]->NumberValue();
+		h = (int)args[3]->NumberValue(context).ToChecked();
 	}
 	if( argc > 4 ) {
 		if( args[4]->IsObject() ) {
-			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject() );
+			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject( context).ToLocalChecked() );
 			c = co->color;
 		}
 		else if( args[4]->IsUint32() )
-			c = (int)args[4]->Uint32Value();
-		c = (int)args[4]->NumberValue();
+			c = (int)args[4]->Uint32Value(context).ToChecked();
+		c = (int)args[4]->NumberValue(context).ToChecked();
 	}
 	BlatColorAlpha( io->image, x, y, w, h, c );
 }
 
 void ImageObject::plot( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int x, y, c;
 	if( argc > 0 ) {
-		x = (int)args[0]->NumberValue();
+		x = (int)args[0]->NumberValue(context).ToChecked();
 	}
 	if( argc > 1 ) {
-		y = (int)args[1]->NumberValue();
+		y = (int)args[1]->NumberValue(context).ToChecked();
 	}
 	if( argc > 2 ) {
 		if( args[2]->IsObject() ) {
-			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[2]->ToObject() );
+			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[2]->ToObject( context).ToLocalChecked() );
 			c = co->color;
 		}
 		else if( args[2]->IsUint32() )
-			c = (int)args[2]->Uint32Value();
+			c = (int)args[2]->Uint32Value(context).ToChecked();
 		else
-			c = (int)args[2]->NumberValue();
+			c = (int)args[2]->NumberValue(context).ToChecked();
 	}
 	g.pii->_plot( io->image, x, y, c );
 }
 
 void ImageObject::plotOver( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int x, y, c;
 	if( argc > 0 ) {
-		x = (int)args[0]->NumberValue();
+		x = (int)args[0]->NumberValue(context).ToChecked();
 	}
 	if( argc > 1 ) {
-		y = (int)args[1]->NumberValue();
+		y = (int)args[1]->NumberValue(context).ToChecked();
 	}
 	if( argc > 2 ) {
 		if( args[2]->IsObject() ) {
-			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[2]->ToObject() );
+			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[2]->ToObject( context).ToLocalChecked() );
 			c = co->color;
 		}
 		else if( args[2]->IsUint32() )
-			c = (int)args[2]->Uint32Value();
+			c = (int)args[2]->Uint32Value(context).ToChecked();
 		else
-			c = (int)args[2]->NumberValue();
+			c = (int)args[2]->NumberValue(context).ToChecked();
 	}
 	plotalpha( io->image, x, y, c );
 }
 
 void ImageObject::line( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int x, y, xTo, yTo, c;
 	if( argc > 0 ) {
-		x = (int)args[0]->NumberValue();
+		x = (int)args[0]->NumberValue(context).ToChecked();
 	}
 	if( argc > 1 ) {
-		y = (int)args[1]->NumberValue();
+		y = (int)args[1]->NumberValue(context).ToChecked();
 	}
 	if( argc > 2 ) {
-		xTo = (int)args[2]->NumberValue();
+		xTo = (int)args[2]->NumberValue(context).ToChecked();
 	}
 	if( argc > 3 ) {
-		yTo = (int)args[3]->NumberValue();
+		yTo = (int)args[3]->NumberValue(context).ToChecked();
 	}
 	if( argc > 4 ) {
 		if( args[2]->IsObject() ) {
-			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject() );
+			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject( context).ToLocalChecked() );
 			c = co->color;
 		}
 		else if( args[2]->IsUint32() )
-			c = (int)args[4]->Uint32Value();
+			c = (int)args[4]->Uint32Value(context).ToChecked();
 		else
-			c = (int)args[4]->NumberValue();
+			c = (int)args[4]->NumberValue(context).ToChecked();
 	}
 	if( x == xTo )
 		do_vline( io->image, x, y, yTo, c );
@@ -666,30 +676,31 @@ void ImageObject::line( const FunctionCallbackInfo<Value>& args ) {
 
 void ImageObject::lineOver( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int argc = args.Length();
 	int x, y, xTo, yTo, c;
 	if( argc > 0 ) {
-		x = (int)args[0]->NumberValue();
+		x = (int)args[0]->NumberValue(context).ToChecked();
 	}
 	if( argc > 1 ) {
-		y = (int)args[1]->NumberValue();
+		y = (int)args[1]->NumberValue(context).ToChecked();
 	}
 	if( argc > 2 ) {
-		xTo = (int)args[2]->NumberValue();
+		xTo = (int)args[2]->NumberValue(context).ToChecked();
 	}
 	if( argc > 3 ) {
-		yTo = (int)args[3]->NumberValue();
+		yTo = (int)args[3]->NumberValue(context).ToChecked();
 	}
 	if( argc > 4 ) {
 		if( args[4]->IsObject() ) {
-			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject() );
+			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject( context).ToLocalChecked() );
 			c = co->color;
 		}
 		else if( args[2]->IsUint32() )
-			c = (int)args[4]->Uint32Value();
+			c = (int)args[4]->Uint32Value(context).ToChecked();
 		else
-			c = (int)args[4]->NumberValue();
+			c = (int)args[4]->NumberValue(context).ToChecked();
 	}
 	if( x == xTo )
 		do_vlineAlpha( io->image, x, y, yTo, c );
@@ -705,13 +716,14 @@ void ImageObject::lineOver( const FunctionCallbackInfo<Value>& args ) {
 // w, h} input
 void ImageObject::putImage( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int argc = args.Length();
 	ImageObject *ii;// = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int x = 0, y= 0, xAt, yAt;
 	int w, h;
 	if( argc > 0 ) {
-		ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject() );
+		ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject( context).ToLocalChecked() );
 		if( !ii || !ii->image ) {
 			lprintf( "Bad First paraemter, must be an image to put?" );
 			return;
@@ -726,29 +738,29 @@ void ImageObject::putImage( const FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	if( argc > 2 ) {
-		x = (int)args[1]->NumberValue();
-		y = (int)args[2]->NumberValue();
+		x = (int)args[1]->NumberValue(context).ToChecked();
+		y = (int)args[2]->NumberValue(context).ToChecked();
 	}
 	else {
 		x = 0;
 		y = 0;
-		//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameters for position missing." ) ) );
+		//isolate->ThrowException( Exception::Error( localStringExternal( isolate, "Required parameters for position missing." ) ) );
 		//return;
 	}
 	if( argc > 3 ) {
-		xAt = (int)args[3]->NumberValue();
+		xAt = (int)args[3]->NumberValue(context).ToChecked();
 
 		if( argc > 4 ) {
-			yAt = (int)args[4]->NumberValue();
+			yAt = (int)args[4]->NumberValue(context).ToChecked();
 		}
 		else {
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameters for position missing." ) ) );
+			isolate->ThrowException( Exception::Error( localStringExternal( isolate, "Required parameters for position missing." ) ) );
 			return;
 		}
 		if( argc > 5 ) {
-			w = (int)args[5]->NumberValue();
+			w = (int)args[5]->NumberValue(context).ToChecked();
 			if( argc > 6 ) {
-				h = (int)args[6]->NumberValue();
+				h = (int)args[6]->NumberValue(context).ToChecked();
 			}
 			if( argc > 7 ) {
 				int ow, oh;
@@ -758,11 +770,11 @@ void ImageObject::putImage( const FunctionCallbackInfo<Value>& args ) {
 				xAt = w;
 				yAt = h;
 				if( argc > 7 ) {
-					w = (int)args[7]->NumberValue();
+					w = (int)args[7]->NumberValue(context).ToChecked();
 					if( w < 0 ) w = ii->image->width;
 				}
 				if( argc > 8 ) {
-					h = (int)args[8]->NumberValue();
+					h = (int)args[8]->NumberValue(context).ToChecked();
 					if( h < 0 ) h = ii->image->height;
 				}
 				if( ow && oh && w && h )
@@ -783,27 +795,28 @@ void ImageObject::putImage( const FunctionCallbackInfo<Value>& args ) {
 
 void ImageObject::putImageOver( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	ImageObject *ii;// = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int argc = args.Length();
 	int x, y, xTo, yTo, c;
 	if( argc > 0 ) {
-		ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject() );
+		ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject( context).ToLocalChecked() );
 	}
 	if( argc > 1 ) {
-		x = (int)args[1]->NumberValue();
+		x = (int)args[1]->NumberValue(context).ToChecked();
 	}
 	if( argc > 2 ) {
-		y = (int)args[2]->NumberValue();
+		y = (int)args[2]->NumberValue(context).ToChecked();
 	}
 	if( argc > 2 ) {
-		xTo = (int)args[2]->NumberValue();
+		xTo = (int)args[2]->NumberValue(context).ToChecked();
 
 		if( argc > 3 ) {
-			yTo = (int)args[3]->NumberValue();
+			yTo = (int)args[3]->NumberValue(context).ToChecked();
 		}
 		if( argc > 4 ) {
-			c = (int)args[4]->NumberValue();
+			c = (int)args[4]->NumberValue(context).ToChecked();
 		}
 		else {
 		}
@@ -843,6 +856,7 @@ FontObject::FontObject(  ) {
 
 void FontObject::New( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	if( args.IsConstructCall() ) {
 
 		int w = 24, h = 24;
@@ -854,7 +868,7 @@ void FontObject::New( const FunctionCallbackInfo<Value>& args ) {
 		int argc = args.Length();
 
 		if( argc > 0 ) {
-			String::Utf8Value fName( args[0]->ToString() );
+			String::Utf8Value fName( isolate, args[0]->ToString(context).ToLocalChecked() );
 			filename = StrDup( *fName );
 		} else {
 			FontObject* obj;
@@ -865,13 +879,13 @@ void FontObject::New( const FunctionCallbackInfo<Value>& args ) {
 		}
 
 		if( argc > 1 ) {
-			w = (int)args[1]->NumberValue();
+			w = (int)args[1]->NumberValue(context).ToChecked();
 		}
 		if( argc > 2 ) {
-			h = (int)args[2]->NumberValue();
+			h = (int)args[2]->NumberValue(context).ToChecked();
 		}
 		if( argc >3 ) {
-			flags = (int)args[3]->NumberValue();
+			flags = (int)args[3]->NumberValue(context).ToChecked();
 		}
 		else
 			flags = 3;
@@ -907,8 +921,9 @@ void FontObject::measure( const FunctionCallbackInfo<Value>& args ) {
 
 void FontObject::save( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	FontObject *fo = ObjectWrap::Unwrap<FontObject>( args.This() );
-	String::Utf8Value fName( args[0]->ToString() );
+	String::Utf8Value fName( isolate, args[0]->ToString(context).ToLocalChecked() );
 	size_t dataLen;
 	POINTER data;
 	GetFontRenderData( fo->font, &data, &dataLen );
@@ -921,7 +936,8 @@ void FontObject::save( const FunctionCallbackInfo<Value>& args ) {
 
 void FontObject::load( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	String::Utf8Value fName( args[0]->ToString() );
+	Local<Context> context = isolate->GetCurrentContext();
+	String::Utf8Value fName( isolate, args[0]->ToString(context).ToLocalChecked() );
 	int argc = args.Length();
 
 	size_t dataLen;
@@ -983,11 +999,12 @@ void ColorObject::toString( const FunctionCallbackInfo<Value>& args ) {
 	char buf[128];
 	snprintf( buf, 128, "{r:%d,g:%d,b:%d,a:%d}", RedVal( co->color ), GreenVal( co->color ), BlueVal( co->color ), AlphaVal( co->color ) );
 	
-	args.GetReturnValue().Set( String::NewFromUtf8( isolate, buf ) );
+	args.GetReturnValue().Set( localStringExternal( isolate, buf ) );
 }
 
 void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	if( args.IsConstructCall() ) {
 		int r, grn, b, a;
 		int argc = args.Length();
@@ -995,20 +1012,20 @@ void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
 		ColorObject* obj;
 		if( argc == 1 ) {
 			if( args[0]->IsObject() ) {
-				Local<Object> o = args[0]->ToObject();
-				r = (int)o->Get( String::NewFromUtf8( isolate, "r" ) )->NumberValue();
-				grn = (int)o->Get( String::NewFromUtf8( isolate, "g" ) )->NumberValue();
-				b = (int)o->Get( String::NewFromUtf8( isolate, "b" ) )->NumberValue();
-				a = (int)o->Get( String::NewFromUtf8( isolate, "a" ) )->NumberValue();
+				Local<Object> o = args[0]->ToObject( context).ToLocalChecked();
+				r = (int)o->Get( context, localStringExternal( isolate, "r" ) ).ToLocalChecked()->NumberValue(context).ToChecked();
+				grn = (int)o->Get( context, localStringExternal( isolate, "g" ) ).ToLocalChecked()->NumberValue(context).ToChecked();
+				b = (int)o->Get( context, localStringExternal( isolate, "b" ) ).ToLocalChecked()->NumberValue(context).ToChecked();
+				a = (int)o->Get( context, localStringExternal( isolate, "a" ) ).ToLocalChecked()->NumberValue(context).ToChecked();
 				obj = new ColorObject( r,grn,b,a );
 
 			}
 			else if( args[0]->IsUint32() ) {
-				r = (int)args[0]->Uint32Value();
+				r = (int)args[0]->Uint32Value(context).ToChecked();
 				obj = new ColorObject( r );
 			}
 			else if( args[0]->IsNumber() ) {
-				r = (int)args[0]->NumberValue();
+				r = (int)args[0]->NumberValue(context).ToChecked();
 				obj = new ColorObject( SetAlpha( r, 255 ) );
 			}
 			else if( args[0]->IsString() ) {
@@ -1018,10 +1035,10 @@ void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 		}
 		else if( argc == 4 ) {
-			r = (int)args[0]->NumberValue();
-			grn = (int)args[1]->NumberValue();
-			b = (int)args[2]->NumberValue();
-			a = (int)args[3]->NumberValue();
+			r = (int)args[0]->NumberValue(context).ToChecked();
+			grn = (int)args[1]->NumberValue(context).ToChecked();
+			b = (int)args[2]->NumberValue(context).ToChecked();
+			a = (int)args[3]->NumberValue(context).ToChecked();
 			obj = new ColorObject( r, grn, b, a );
 		}
 		else {
@@ -1061,6 +1078,7 @@ void ColorObject::getGreen( const FunctionCallbackInfo<Value>&  args ) {
 }
 void ColorObject::getBlue( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	if( ColorObject::tpl.Get( isolate )->HasInstance( args.This() ) ) {
 		ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
 		args.GetReturnValue().Set( Integer::New( isolate, BlueVal( co->color ) ) );
@@ -1068,6 +1086,7 @@ void ColorObject::getBlue( const FunctionCallbackInfo<Value>&  args ) {
 }
 void ColorObject::getAlpha( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	if( ColorObject::tpl.Get( isolate )->HasInstance( args.This() ) ) {
 		ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
 		args.GetReturnValue().Set( Integer::New( isolate, AlphaVal( co->color ) ) );
@@ -1075,8 +1094,9 @@ void ColorObject::getAlpha( const FunctionCallbackInfo<Value>& args ) {
 }
 void ColorObject::setRed( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
-	double val = args[0]->NumberValue();
+	double val = args[0]->NumberValue(context).ToChecked();
 	if( val < 0 ) val = 0;
 	else if( val > 255 ) val = 255;
 	if( val > 0 && val < 1.0 ) val = 255 * val;
@@ -1084,8 +1104,9 @@ void ColorObject::setRed( const FunctionCallbackInfo<Value>&  args ) {
 }
 void ColorObject::setGreen( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
-	double val = args[0]->NumberValue();
+	double val = args[0]->NumberValue(context).ToChecked();
 	if( val < 0 ) val = 0;
 	else if( val > 255 ) val = 255;
 	if( val > 0 && val < 1.0 ) val = 255 * val;
@@ -1093,8 +1114,9 @@ void ColorObject::setGreen( const FunctionCallbackInfo<Value>&  args ) {
 }
 void ColorObject::setBlue( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
-	double val = args[0]->NumberValue();
+	double val = args[0]->NumberValue(context).ToChecked();
 	if( val < 0 ) val = 0;
 	else if( val > 255 ) val = 255;
 	if( val > 0 && val < 1.0 ) val = 255 * val;
@@ -1102,8 +1124,9 @@ void ColorObject::setBlue( const FunctionCallbackInfo<Value>&  args ) {
 }
 void ColorObject::setAlpha( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
-	double val = args[0]->NumberValue();
+	double val = args[0]->NumberValue(context).ToChecked();
 	if( val < 0 ) val = 0;
 	else if( val > 255 ) val = 255;
 	if( val > 0 && val < 1.0 ) val = 255 * val;

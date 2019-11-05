@@ -147,6 +147,7 @@ public:
 class ListboxItemObject : public node::ObjectWrap {
 public:
 	PLISTITEM pli;
+	int itemLevel;
 	class ControlObject *control;
 	Persistent<Object> _this;
 	static v8::Persistent<v8::Function> constructor;   // listbox item
@@ -161,6 +162,18 @@ public:
 
 	static void wrapSelf( Isolate* isolate, ListboxItemObject *_this, Local<Object> into );
 
+	static void addItem( const FunctionCallbackInfo<Value>& args );
+	static void insertItem( const FunctionCallbackInfo<Value>& args );
+	static void emptyBranch( const FunctionCallbackInfo<Value>& args );
+	// on
+	static void setEvents( const FunctionCallbackInfo<Value>& args );
+	// accessors
+	static void getText( const FunctionCallbackInfo<Value>&  args );
+	static void setText( const FunctionCallbackInfo<Value>& args );
+	static void getOpen( const FunctionCallbackInfo<Value>& args );
+	static void setOpen( const FunctionCallbackInfo<Value>& args );
+	Persistent<Function, CopyablePersistentTraits<Function>> cbOpened; // event callback        ()  // return true/false to allow creation
+	static Persistent<FunctionTemplate> listItemTemplate;
 };
 
 class MenuItemObject : public node::ObjectWrap {
@@ -198,9 +211,12 @@ public:
 
 	Persistent<Object> state;
 	ImageObject *image;
+	struct controlObjectFlags {
+		unsigned tree : 1; // track state of listbox is tree-list
+	} flags;
 public:
 
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 	ControlObject( const char *caption, int w, int h, int x, int y, int borderFlags, ControlObject *parent );
 	ControlObject( ControlObject *parent, const char *caption, const char *title, int w, int h, int x, int y );
 	ControlObject( const char *type, ControlObject *parent, int32_t x, int32_t y, uint32_t w, uint32_t h );
@@ -210,11 +226,13 @@ public:
 	static void wrapSelf( Isolate* isolate, ControlObject *_this, Local<Object> into );
 	static void releaseSelf( ControlObject *_this );
 
+
 	static void New( const FunctionCallbackInfo<Value>& args );
 	static void NewControl( const FunctionCallbackInfo<Value>& args );
 	static Local<Object> NewWrappedControl( Isolate* isolate, PSI_CONTROL pc );
 	static void createFrame( const FunctionCallbackInfo<Value>& args );
 	static void createControl( const FunctionCallbackInfo<Value>& args );
+	static void getRenderer( const FunctionCallbackInfo<Value>& args );
 
 	static void registerControl( const FunctionCallbackInfo<Value>& args );
 
@@ -241,26 +259,29 @@ public:
 	static void getFrameBorder( const FunctionCallbackInfo<Value>& args );
 	static void setFrameBorder( const FunctionCallbackInfo<Value>& args );
 
+	static void getControlColor( const FunctionCallbackInfo<Value>& args );
+	static void setControlColor( const FunctionCallbackInfo<Value>& args );
+	static void getControlColor2( const FunctionCallbackInfo<Value>& args );
+	static void setControlColor2( const FunctionCallbackInfo<Value>& args );
+
+	static void getControlText( const FunctionCallbackInfo<Value>& args );
+	static void setControlText( const FunctionCallbackInfo<Value>& args );
+	static void getCoordinate( const FunctionCallbackInfo<Value>& args );
+	static void setCoordinate( const FunctionCallbackInfo<Value>& args );
+
+	// progress bar methods
 	static void setProgressBarRange( const FunctionCallbackInfo<Value>& args );
 	static void setProgressBarProgress( const FunctionCallbackInfo<Value>& args );
 	static void setProgressBarColors( const FunctionCallbackInfo<Value>& args );
 	static void setProgressBarTextEnable( const FunctionCallbackInfo<Value>& args );
 
+	// console methods
 	static void writeConsole( const FunctionCallbackInfo<Value>& args );
 	static void setConsoleRead( const FunctionCallbackInfo<Value>& args );
 
+	// button methods
 	static void setButtonClick( const FunctionCallbackInfo<Value>& args );
 	static void setButtonEvent( const FunctionCallbackInfo<Value>& args );
-
-	static void getControlColor( const FunctionCallbackInfo<Value>& args );
-	static void setControlColor( const FunctionCallbackInfo<Value>&  args );
-	static void getControlColor2( const FunctionCallbackInfo<Value>& args );
-	static void setControlColor2( const FunctionCallbackInfo<Value>&  args );
-
-	static void getControlText( const FunctionCallbackInfo<Value>&  args );
-	static void setControlText( const FunctionCallbackInfo<Value>&  args );
-	static void getCoordinate( const FunctionCallbackInfo<Value>&  args );
-	static void setCoordinate( const FunctionCallbackInfo<Value>&  args );
 
 	// clock control extension
 	static void makeAnalog( const FunctionCallbackInfo<Value>& args );
@@ -270,13 +291,17 @@ public:
 	// a chunk of events that are general place holders for events from controls
 	Persistent<Function, CopyablePersistentTraits<Function>> customEvents[5];  // event for button control callback (psi/console.h)
 
+	static void getListboxIsTree( const FunctionCallbackInfo<Value>& args );
+	static void setListboxIsTree( const FunctionCallbackInfo<Value> & args );
 
 	static void setListboxTabs( const FunctionCallbackInfo<Value>& args );
 	static void addListboxItem( const FunctionCallbackInfo<Value>&  args );
+	static void resetListbox( const FunctionCallbackInfo<Value>& args );
 	static void getListboxHeader( const FunctionCallbackInfo<Value>&  args );
 	static void setListboxHeader( const FunctionCallbackInfo<Value>&  args );
 	static void setListboxHScroll( const FunctionCallbackInfo<Value>&  args );
 	static void measureListItem( const FunctionCallbackInfo<Value>&  args );
+	static void listboxDisableUpdate( const FunctionCallbackInfo<Value>& args );
 
 	static void setListboxOnDouble( const FunctionCallbackInfo<Value>&  args );
 	static void setListboxOnSelect( const FunctionCallbackInfo<Value>&  args );

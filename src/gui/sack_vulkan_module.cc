@@ -16,21 +16,21 @@ static void initOptions( void ) {
 	SACK_GetProfileInt( NULL, "SACK/Video Render/Number of Displays", 0/*l.flags.bView360*/ ? 6 : 1 );
 	SACK_GetProfileInt( NULL, "SACK/Video Render/Force Aspect 1.0", ( 1/*nDisplays*/ == 1 ) ? 0 : 1 );
 
-	//tnprintf( tmp, sizeof( tmp ), WIDE( "SACK/Video Render/Display %d/Display is topmost" ), n + 1 );
-	tnprintf( tmp, sizeof( tmp ), WIDE( "SACK/Video Render/Display %d/Display is topmost" ), 1 );
+	//tnprintf( tmp, sizeof( tmp ), "SACK/Video Render/Display %d/Display is topmost", n + 1 );
+	tnprintf( tmp, sizeof( tmp ), "SACK/Video Render/Display %d/Display is topmost", 1 );
 	SACK_GetProfileInt( NULL, tmp, 0 );
 
-	tnprintf( tmp, sizeof( tmp ), WIDE( "SACK/Video Render/Display %d/Use Custom Position" ), n + 1 );
-	SACK_GetProfileInt( GetProgramName(), tmp, 0/*l.flags.bView360*/ ? 1 : 0 );
+	tnprintf( tmp, sizeof( tmp ), "SACK/Video Render/Display %d/Use Custom Position", n + 1 );
+	SACK_GetProfileInt( NULL, tmp, 0/*l.flags.bView360*/ ? 1 : 0 );
 
-	tnprintf( tmp, sizeof( tmp ), WIDE( "SACK/Video Render/Display %d/Use Display" ), n + 1 );
+	tnprintf( tmp, sizeof( tmp ), "SACK/Video Render/Display %d/Use Display", n + 1 );
 	SACK_GetProfileInt( NULL, tmp, 1/*nDisplays*/>1 ? n + 1 : 0 );
 
-	tnprintf( tmp, sizeof( tmp ), WIDE( "SACK/Video Render/Display %d/Camera Type" ), n + 1 );
+	tnprintf( tmp, sizeof( tmp ), "SACK/Video Render/Display %d/Camera Type", n + 1 );
 	SACK_GetProfileInt( NULL, tmp, ( 1/*nDisplays*/ == 6 ) ? n : 2 );
 
 	/*
-				tnprintf( tmp, sizeof( tmp ), WIDE( "SACK/Video Render/Display %d/Position/x" ), n + 1 );
+				tnprintf( tmp, sizeof( tmp ), "SACK/Video Render/Display %d/Position/x", n + 1 );
 				camera->x = SACK_GetProfileIntEx( GetProgramName(), tmp, (
 					nDisplays == 4
 					? n == 0 ? 0 : n == 1 ? 400 : n == 2 ? 0 : n == 3 ? 400 : 0
@@ -39,7 +39,7 @@ static void initOptions( void ) {
 					: nDisplays == 1
 					? 0
 					: 0 ), TRUE );
-				tnprintf( tmp, sizeof( tmp ), WIDE( "SACK/Video Render/Display %d/Position/y" ), n + 1 );
+				tnprintf( tmp, sizeof( tmp ), "SACK/Video Render/Display %d/Position/y", n + 1 );
 				camera->y = SACK_GetProfileIntEx( GetProgramName(), tmp, (
 					nDisplays == 4
 					? n == 0 ? 0 : n == 1 ? 0 : n == 2 ? 300 : n == 3 ? 300 : 0
@@ -48,7 +48,7 @@ static void initOptions( void ) {
 					: nDisplays == 1
 					? 0
 					: 0 ), TRUE );
-				tnprintf( tmp, sizeof( tmp ), WIDE( "SACK/Video Render/Display %d/Position/width" ), n + 1 );
+				tnprintf( tmp, sizeof( tmp ), "SACK/Video Render/Display %d/Position/width", n + 1 );
 				camera->w = SACK_GetProfileIntEx( GetProgramName(), tmp, (
 					nDisplays == 4
 					? 400
@@ -57,7 +57,7 @@ static void initOptions( void ) {
 					: nDisplays == 1
 					? 800
 					: 0 ), TRUE );
-				tnprintf( tmp, sizeof( tmp ), WIDE( "SACK/Video Render/Display %d/Position/height" ), n + 1 );
+				tnprintf( tmp, sizeof( tmp ), "SACK/Video Render/Display %d/Position/height", n + 1 );
 				camera->h = SACK_GetProfileIntEx( GetProgramName(), tmp, (
 					nDisplays == 4
 					? 300
@@ -80,31 +80,32 @@ static void initOptions( void ) {
 				*/
 
 	/*
-		l.flags.bLogMessageDispatch = SACK_GetOptionIntEx( option, GetProgramName(), WIDE( "SACK/Video Render/log message dispatch" ), 0, TRUE );
-		l.flags.bLogFocus = SACK_GetOptionIntEx( option, GetProgramName(), WIDE( "SACK/Video Render/log focus event" ), 0, TRUE );
-		l.flags.bLogKeyEvent = SACK_GetOptionIntEx( option, GetProgramName(), WIDE( "SACK/Video Render/log key event" ), 0, TRUE );
-		l.flags.bLogMouseEvent = SACK_GetOptionIntEx( option, GetProgramName(), WIDE( "SACK/Video Render/log mouse event" ), 0, TRUE );
-		l.flags.bLayeredWindowDefault = SACK_GetOptionIntEx( option, GetProgramName(), WIDE( "SACK/Video Render/Default windows are layered" ), LAYERED_DEFAULT, TRUE ) ? TRUE : FALSE;
-		l.flags.bLogWrites = SACK_GetOptionIntEx( option, GetProgramName(), WIDE( "SACK/Video Render/Log Video Output" ), 0, TRUE );
+		l.flags.bLogMessageDispatch = SACK_GetOptionIntEx( option, GetProgramName(), "SACK/Video Render/log message dispatch", 0, TRUE );
+		l.flags.bLogFocus = SACK_GetOptionIntEx( option, GetProgramName(), "SACK/Video Render/log focus event", 0, TRUE );
+		l.flags.bLogKeyEvent = SACK_GetOptionIntEx( option, GetProgramName(), "SACK/Video Render/log key event", 0, TRUE );
+		l.flags.bLogMouseEvent = SACK_GetOptionIntEx( option, GetProgramName(), "SACK/Video Render/log mouse event", 0, TRUE );
+		l.flags.bLayeredWindowDefault = SACK_GetOptionIntEx( option, GetProgramName(), "SACK/Video Render/Default windows are layered", LAYERED_DEFAULT, TRUE ) ? TRUE : FALSE;
+		l.flags.bLogWrites = SACK_GetOptionIntEx( option, GetProgramName(), "SACK/Video Render/Log Video Output", 0, TRUE );
      */
 }
 
 
 
-void VulkanObject::Init( Isolate* isolate, Handle<Object> exports ) {
+void VulkanObject::Init( Isolate* isolate, Local<Object> exports ) {
+	Local<Context> context = isolate->GetCurrentContext();
 
 	Local<FunctionTemplate> vulkanTemplate;
 
 	// Prepare constructor template
 	vulkanTemplate = FunctionTemplate::New( isolate, New );
-	vulkanTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Vulkan" ) );
+	vulkanTemplate->SetClassName( localStringExternal( isolate, "sack.Vulkan" ) );
 	vulkanTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); /* one internal for wrap */
-	constructor.Reset( isolate, vulkanTemplate->GetFunction() );
+	constructor.Reset( isolate, vulkanTemplate->GetFunction(context).ToLocalChecked() );
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( vulkanTemplate, "frameBuffer", getFrameBuffer );
 
-	SET_READONLY( exports, "Vulkan", vulkanTemplate->GetFunction() );
+	SET_READONLY( exports, "Vulkan", vulkanTemplate->GetFunction(context).ToLocalChecked() );
 
 	//SET_READONLY( vulkanTemplate->GetFunction(), "getDisplay", Function::New( isolate, RenderObject::getDisplay ) );
 }

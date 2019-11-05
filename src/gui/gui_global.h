@@ -48,7 +48,7 @@ using namespace v8;
 #include "sack_vulkan_module.h"
 
 
-enum eventType {
+enum GUI_eventType {
 	Event_Init,
 	Event_Mouse,
 	Event_Render_Mouse,
@@ -92,12 +92,14 @@ enum eventType {
 	/* listbox Events */
 	Event_Listbox_Selected,
 	Event_Listbox_DoubleClick,
+	/* listbox item Events */
+	Event_Listbox_Item_Opened,
 	/* menu events */
 	Event_Menu_Item_Selected,
 };
 
 struct event {
-	eventType type;
+	GUI_eventType type;
 	union {
 		PSI_CONTROL pc;
 		struct {
@@ -127,6 +129,7 @@ struct event {
 		}console;
 		struct {
 			uintptr_t pli;
+			LOGICAL opened;
 		}listbox;
 		struct {
 			uintptr_t pmi;
@@ -167,5 +170,6 @@ struct global {
 } g;
 
 void InitInterfaces( int opengl, int vulkan );
-int MakeEvent( uv_async_t *async, PLINKQUEUE *queue, enum eventType type, ... );
+uintptr_t MakeEvent( uv_async_t *async, PLINKQUEUE *queue, enum GUI_eventType type, ... );
 
+void InitSystray( Isolate* isolate, Local<Object> _exports );
