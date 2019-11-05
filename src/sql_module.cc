@@ -319,13 +319,11 @@ void SqlObject::closeDb( const v8::FunctionCallbackInfo<Value>& args ) {
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	CloseDatabase( sql->odbc );
 	if( sql->thread ) {
-		struct userMessage msg;
-		msg.mode = 0;
-		msg.onwhat = NULL;
+		static struct userMessage msg;
 		msg.done = 0;
-		msg.waiter = MakeThread();
 		EnqueLink( &sql->messages, &msg );
 		uv_async_send( &sql->async );
+		// cant' wait here.
 	}
 
 }
@@ -1731,9 +1729,7 @@ void editOptions( const v8::FunctionCallbackInfo<Value>& args ){
 	EditOptions = (int(*)( PODBC, PSI_CONTROL,LOGICAL))LoadFunction( "EditOptions.plugin", "EditOptionsEx" );
 	if( EditOptions ) {
 		enableEventLoop();
-		//PSI_HandleStatusEvent( control, dialogEvent, (uintptr_t)me );
-
-		EditOptions( NULL, NULL, 0 );
+		ThreadTo( RunEditor, (uintptr_t)EditOptions );
 	} else
 		lprintf( "Failed to load editor..." );
 }
