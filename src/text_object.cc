@@ -288,7 +288,7 @@ PTEXT isTextObject( Isolate *isolate, Local<Value> object ) {
 	return NULL;
 }
 
-void textObjectInit( Isolate *isolate, Handle<Object> exports ) {
+void textObjectInit( Isolate *isolate, Local<Object> exports ) {
 	Local<FunctionTemplate> textTemplate;
 	Local<Context> context = isolate->GetCurrentContext();
 

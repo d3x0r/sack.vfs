@@ -91,7 +91,7 @@ static void initOptions( void ) {
 
 
 
-void VulkanObject::Init( Isolate* isolate, Handle<Object> exports ) {
+void VulkanObject::Init( Isolate* isolate, Local<Object> exports ) {
 	Local<Context> context = isolate->GetCurrentContext();
 
 	Local<FunctionTemplate> vulkanTemplate;

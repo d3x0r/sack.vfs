@@ -2,7 +2,6 @@
 
 #include "../global.h"
 
-#include <systray.h>
 
 class callbackWrapper {
 public:
@@ -149,7 +148,7 @@ void setSystrayIconMenu( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
-void InitSystray( Isolate* isolate, Handle<Object> _exports ) {
+void InitSystray( Isolate* isolate, Local<Object> _exports ) {
 	Local<Context> context = isolate->GetCurrentContext();
 
 	Local<Object> systrayObject = Object::New( isolate );

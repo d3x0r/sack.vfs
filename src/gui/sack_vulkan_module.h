@@ -15,7 +15,7 @@ public:
 
 public:
 
-	static void Init( Isolate* isolate, Handle<Object> exports );
+	static void Init( Isolate* isolate, Local<Object> exports );
 	VulkanObject();
 
 	static void New( const FunctionCallbackInfo<Value>& args );

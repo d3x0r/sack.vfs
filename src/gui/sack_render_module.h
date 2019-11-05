@@ -13,7 +13,7 @@ public:
 
 public:
 
-	static void Init( Handle<Object> exports );
+	static void Init( Local<Object> exports );
 	RenderObject( const char *caption, int w, int h, int x, int y, RenderObject *parent );
 	void setRenderer( PRENDERER r );
 

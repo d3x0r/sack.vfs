@@ -65,7 +65,7 @@ static void monitorAsyncMsg( uv_async_t* handle ) {
 
 			o = Object::New( isolate );
 			SET( o, "size", Number::New( isolate, (double)event->file.size ) );
-			SET( o, "path", localString( isolate, event->file.path, StrLen( event->file.path ) ) );
+			SET( o, "path", localString( isolate, event->file.path, (int)StrLen( event->file.path ) ) );
 			//SET( o, "time", Date( event->file.time ) );
 			SET( o, "created", event->file.bCreated?True(isolate):False(isolate) );
 			SET( o, "directory", event->file.bDirectory?True(isolate):False(isolate) );
