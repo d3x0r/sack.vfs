@@ -374,6 +374,7 @@ sack.JSOX.stringifier = function() {
 				}
 				// should check also for if any non ident in string...
 				return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
+					|| /([0-9\-])/.test(s[0])
 					|| /((\n|\r|\t)|[ \{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + sack.JSOX.escape(s) +useQuote):s )
 			}
 			
