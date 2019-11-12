@@ -2,7 +2,6 @@
 
 module.exports = function(sack) {
 
-
 sack.JSON6.stringify = JSON.stringify;
 sack.JSON.stringify = JSON.stringify;
 
@@ -374,6 +373,7 @@ sack.JSOX.stringifier = function() {
 				}
 				// should check also for if any non ident in string...
 				return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
+					|| /([0-9\-])/.test(s[0])
 					|| /((\n|\r|\t)|[ \{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + sack.JSOX.escape(s) +useQuote):s )
 			}
 			
@@ -385,7 +385,10 @@ sack.JSOX.stringifier = function() {
 				for (var [key, value] of this) {
 					//console.log( "er...", key, value )
 					tmp.tmp = value;
+					let thisNodeNameIndex = path.length;
+					path[thisNodeNameIndex] = key;
 					out += (first?"":",") + getIdentifier(key) +':' + str("tmp", tmp);
+					path.length = thisNodeNameIndex;
 					first = false;
 				}
 				out += '}';
@@ -524,12 +527,13 @@ sack.JSOX.stringifier = function() {
 							if (v) {
 								if( partialClass ) {
 									partial.push(v);
-							} else
+								} else  {
 									partial.push(getIdentifier(k) + (
 										(gap)
 											? ": "
 											: ":"
 									) + v);
+								}
 							}
 						}
 					}
@@ -569,12 +573,13 @@ sack.JSOX.stringifier = function() {
 							if (v) {
 								if( partialClass ) {
 									partial.push(v);
-								} else
+								} else {
 									partial.push(getIdentifier(k)+ (
 										(gap)
 											? ": "
 											: ":"
 									) + v);
+								}
 							}
 						}
 					}
