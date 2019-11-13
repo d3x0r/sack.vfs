@@ -411,7 +411,7 @@ void SqlStmtObject::Set( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
-static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg, String::Utf8Value *name ) {
+static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg, String::Utf8Value *name, uint32_t p ) {
 	struct jsox_value_container val;
 	if( name ) {
 		val.name = DupCStrLen( *name[0], val.nameLen = name[0].length() );
@@ -477,7 +477,7 @@ static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> a
 		val.string = DupCStrLen( *text, val.stringLen = text.length() );
 		//AddDataItem( pdlParams, &val );
 	    
-		lprintf( "Unsupported TYPE %s", *text );
+		lprintf( "Unsupported TYPE parameter %d %s", p+1, *text );
 		return FALSE;
 	}
 	return TRUE;
@@ -519,7 +519,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 					Local<Value> valName = GETN( paramNames, p );
 					Local<Value> value = GETV( params, valName );
 					String::Utf8Value name( USE_ISOLATE( isolate ) valName->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-					if( !PushValue( isolate, &pdlParams, value, &name ) ) {
+					if( !PushValue( isolate, &pdlParams, value, &name, p ) ) {
 						lprintf( "bad value in SQL:%s", *sqlStmt );
 					}
 				}
@@ -559,7 +559,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 					}
 				}
 				else {
-					if( !PushValue( isolate, &pdlParams, args[arg], NULL ) )
+					if( !PushValue( isolate, &pdlParams, args[arg], NULL, arg ) )
 						lprintf( "bad value in format parameter string:%s", *sqlStmt );
 					VarTextAddCharacter( pvtStmt, '?' );
 				}
@@ -571,7 +571,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 			String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
 			statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
 			for( ; arg < args.Length(); arg++ ) {
-				if( !PushValue( isolate, &pdlParams, args[arg], NULL ) )
+				if( !PushValue( isolate, &pdlParams, args[arg], NULL, 0 ) )
 					lprintf( "Bad value is sql statement:%s", *sqlStmt );
 			}
 		}
