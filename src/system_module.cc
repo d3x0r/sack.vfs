@@ -6,8 +6,8 @@ static void openMemory( const v8::FunctionCallbackInfo<Value>& args ) {
   Isolate* isolate = args.GetIsolate();
   int hasWhat = args.Length() > 0;
   int hasWhere = args.Length() > 1;
-  String::Utf8Value what( args.GetIsolate(), hasWhat ? args[0] : Null( isolate ) );
-  String::Utf8Value where( args.GetIsolate(), hasWhere ? args[1] : Null( isolate ) );
+  String::Utf8Value what( args.GetIsolate(), hasWhat ? args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  : Null( isolate )->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  );
+  String::Utf8Value where( args.GetIsolate(), hasWhere ? args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  : Null( isolate )->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  );
   size_t size = 0;
   POINTER p = OpenSpace( hasWhat ? *what : NULL, hasWhere ? *where : NULL, &size );
   if( p ) {
@@ -28,8 +28,8 @@ static void createMemory( const v8::FunctionCallbackInfo<Value>& args ) {
   Isolate* isolate = args.GetIsolate();
   int hasWhat = args.Length() > 0;
   int hasWhere = args.Length() > 1;
-  String::Utf8Value what( args.GetIsolate(), hasWhat?args[0]:Null(isolate) );
-  String::Utf8Value where( args.GetIsolate(), hasWhere? args[1] : Null( isolate ) );
+  String::Utf8Value what( args.GetIsolate(), hasWhat?args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() :Null(isolate)->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  );
+  String::Utf8Value where( args.GetIsolate(), hasWhere? args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  : Null( isolate )->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  );
   size_t size = args.Length() > 2 ? args[2]->ToInt32( isolate->GetCurrentContext() ).ToLocalChecked()->Value():0;
   POINTER p = size?OpenSpace( hasWhat ? *what : NULL, hasWhere ? *where : NULL, &size ):NULL;
   if( p ) {
@@ -48,7 +48,7 @@ static void createMemory( const v8::FunctionCallbackInfo<Value>& args ) {
 static void dumpNames( const v8::FunctionCallbackInfo<Value>& args ) {
   int hasWhat = args.Length() > 0;
   Isolate* isolate = args.GetIsolate();
-  String::Utf8Value what( args.GetIsolate(), hasWhat ? args[0] : Null( isolate ) );
+  String::Utf8Value what( args.GetIsolate(), hasWhat ? args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  : Null( isolate )->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  );
   if( hasWhat )
     DumpRegisteredNamesFrom( (PCLASSROOT)*what );
   else
