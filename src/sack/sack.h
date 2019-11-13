@@ -12688,6 +12688,7 @@ struct jsox_value_container {
 	PDATALIST *_contains;
   // if VALUE_OBJECT or VALUE_TYPED_ARRAY; this may be non NULL indicating what the class name is.
 	char *className;
+	size_t classNameLen;
 };
 // allocates a JSOX parsing context and is prepared to begin parsing data.
 JSOX_PARSER_PROC( struct jsox_parse_state *, jsox_begin_parse )(void);
