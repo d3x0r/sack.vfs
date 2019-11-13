@@ -125,8 +125,19 @@ var commonClasses = [];
 
 sack.JSOX.defineClass = function( name, obj ) {
 			var cls; 
+			var denormKeys = Object.keys(obj);
+			for( var i = 1; i < denormKeys.length; i++ ) {
+				var a, b;
+				if( ( a = denormKeys[i-1] ) > ( b = denormKeys[i] ) ) {
+					denormKeys[i-1] = b;
+					denormKeys[i] = a;
+					if( i ) i-=2; // go back 2, this might need to go further pack.
+					else i--; // only 1 to check.
+				}
+			}
+
 			commonClasses.push( cls = { name : name
-			       , tag:Object.keys(obj).toString()
+			       , tag:denormKeys.toString()
 			       , proto : Object.getPrototypeOf(obj)
 			       , fields : Object.keys(obj) } );
 			for(var n = 1; n < cls.fields.length; n++) {
@@ -268,14 +279,26 @@ sack.JSOX.stringifier = function() {
 
 		if( useK )  {
 			useK = useK.map( v=>{ if( typeof v === "string" ) return v; else return undefined; } );
+			console.log( "using useK?", useK );
 			k = useK.toString();
-		} else
-			k = Object.keys(o).toString();
-
+		} else {
+			var denormKeys = Object.keys(o);
+			for( var i = 1; i < denormKeys.length; i++ ) {
+				var a, b;
+				if( ( a = denormKeys[i-1] ) > ( b = denormKeys[i] ) ) {
+					denormKeys[i-1] = b;
+					denormKeys[i] = a;
+					if( i ) i-=2; // go back 2, this might need to go further pack.
+					else i--; // only 1 to check.
+				}
+			}
+			k = denormKeys.toString();
+		}
+		//console.log( 'match object:', classes.length>0?classes[0].tag:"none", k );
 		cls = classes.find( cls=>{
 			if( cls.tag === k ) return true;
 		} );
-		return cls;
+		if( cls ) return cls;
 		cls = commonClasses.find( cls=>{
 			if( cls.tag === k ) return true;
 		} );
