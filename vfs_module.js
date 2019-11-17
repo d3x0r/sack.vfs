@@ -1,6 +1,11 @@
 "use strict";
 
 var sack;
+try {
+	sack = require('sack' );
+} catch( err ) {
+}
+if( !sack )
 try{
   sack = require( "./build/RelWithDebInfo/sack_vfs.node" );
 } catch(err1) {
