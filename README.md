@@ -1227,6 +1227,7 @@ setTimeout( ()=>{ }, 5000 );
 
 ## Changelog
 - 0.9.155 (in progress)
+   - normalize JSOX class defintiion keys for later comparison to objects.
    - removed node 7 travis integration; `#  - "7" (doesn't have Utf8Value with isolate, 12 doesn't have Utf8Value without isolate())`
    - added FileMonitor interface to get event changes when files change on the disk.   
    - fixed some issues with JSOX parsing ( tagged class in tagged class in map )
