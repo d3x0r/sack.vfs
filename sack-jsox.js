@@ -140,7 +140,7 @@ sack.JSOX.defineClass = function( name, obj ) {
 					else i--; // only 1 to check.
 				}
 			}
-
+			console.log( "normalized:", denormKeys );
 			commonClasses.push( cls = { name : name
 			       , tag:denormKeys.toString()
 			       , proto : Object.getPrototypeOf(obj)
@@ -220,8 +220,18 @@ sack.JSOX.stringifier = function() {
 	return {
 		defineClass(name,obj) { 
 			var cls; 
+			var denormKeys = Object.keys(obj);
+			for( var i = 1; i < denormKeys.length; i++ ) {
+				var a, b;
+				if( ( a = denormKeys[i-1] ) > ( b = denormKeys[i] ) ) {
+					denormKeys[i-1] = b;
+					denormKeys[i] = a;
+					if( i ) i-=2; // go back 2, this might need to go further pack.
+					else i--; // only 1 to check.
+				}
+			}
 			classes.push( cls = { name : name
-			       , tag:Object.keys(obj).toString()
+			       , tag:denormKeys.toString()
 			       , proto : Object.getPrototypeOf(obj)
 			       , fields : Object.keys(obj) } );
 			for(var n = 1; n < cls.fields.length; n++) {
@@ -281,32 +291,31 @@ sack.JSOX.stringifier = function() {
 			if( cls.proto && cls.proto === prt ) return true;
 		} );
 		if( cls ) return cls;
-
-		if( useK )  {
-			useK = useK.map( v=>{ if( typeof v === "string" ) return v; else return undefined; } );
-			console.log( "using useK?", useK );
-			k = useK.toString();
-		} else {
-			var denormKeys = Object.keys(o);
-			for( var i = 1; i < denormKeys.length; i++ ) {
-				var a, b;
-				if( ( a = denormKeys[i-1] ) > ( b = denormKeys[i] ) ) {
-					denormKeys[i-1] = b;
-					denormKeys[i] = a;
-					if( i ) i-=2; // go back 2, this might need to go further pack.
-					else i--; // only 1 to check.
+		if( classes.length || commonClasses.length ) {
+			if( useK )  {
+				useK = useK.map( v=>{ if( typeof v === "string" ) return v; else return undefined; } );
+				k = useK.toString();
+			} else {
+				var denormKeys = Object.keys(o);
+				for( var i = 1; i < denormKeys.length; i++ ) {
+					var a, b;
+					if( ( a = denormKeys[i-1] ) > ( b = denormKeys[i] ) ) {
+						denormKeys[i-1] = b;
+						denormKeys[i] = a;
+						if( i ) i-=2; // go back 2, this might need to go further pack.
+						else i--; // only 1 to check.
+					}
 				}
+				k = denormKeys.toString();
 			}
-			k = denormKeys.toString();
+			cls = classes.find( cls=>{
+				if( cls.tag === k ) return true;
+			} );
+			if( !cls )
+				cls = commonClasses.find( cls=>{
+					if( cls.tag === k ) return true;
+				} );
 		}
-		//console.log( 'match object:', classes.length>0?classes[0].tag:"none", k );
-		cls = classes.find( cls=>{
-			if( cls.tag === k ) return true;
-		} );
-		if( cls ) return cls;
-		cls = commonClasses.find( cls=>{
-			if( cls.tag === k ) return true;
-		} );
 		return cls;
 	}
 
