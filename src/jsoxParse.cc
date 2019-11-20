@@ -16,8 +16,7 @@ static void parseJSOX( const v8::FunctionCallbackInfo<Value>& args );
 static void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args );
 static void showTimings( const v8::FunctionCallbackInfo<Value>& args );
 
-static Persistent<Map> fromPrototypeMap;
-Persistent<Function> JSOXObject::constructor;
+//Persistent<Function> JSOXObject::constructor;
 
 void InitJSOX( Isolate *isolate, Local<Object> exports ){
 	Local<Context> context = isolate->GetCurrentContext();
@@ -39,7 +38,8 @@ void InitJSOX( Isolate *isolate, Local<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "setFromPrototypeMap", JSOXObject::setFromPrototypeMap );
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "setPromiseFromPrototypeMap", JSOXObject::setPromiseFromPrototypeMap );
 
-		JSOXObject::constructor.Reset( isolate, parseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		class constructorSet *c = getConstructors( isolate );
+		c->jsoxConstructor.Reset( isolate, parseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
 		//SET_READONLY( o2, "begin", parseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 		SET( o2, "begin", parseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
@@ -151,7 +151,8 @@ void JSOXObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->jsoxConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete[] argv;
 	}
@@ -167,6 +168,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 
 	Local<Value> result;
 	Local<Script> script;
+	class constructorSet *c = getConstructors( revive->isolate );
 	switch( val->value_type ) {
 	case JSOX_VALUE_UNDEFINED:
 		result = Undefined( revive->isolate );
@@ -316,7 +318,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 						cb = valmethod.ToLocalChecked().As<Function>();
 				}
 				if( valmethod.IsEmpty() || (valmethod.ToLocalChecked()->IsUndefined()) ) {
-					valmethod = fromPrototypeMap.Get( revive->isolate )->
+					valmethod = c->fromPrototypeMap.Get( revive->isolate )->
 						Get( revive->context
 							, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal, val->classNameLen ).ToLocalChecked()
 						);
@@ -510,7 +512,8 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 							cb = valmethod.ToLocalChecked().As<Function>();
 					}
 					if( valmethod.IsEmpty() || (valmethod.ToLocalChecked()->IsUndefined()) ) {
-						valmethod = fromPrototypeMap.Get( revive->isolate )->
+						class constructorSet *c = getConstructors( revive->isolate );
+						valmethod = c->fromPrototypeMap.Get( revive->isolate )->
 							Get( revive->context
 								, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal, val->classNameLen ).ToLocalChecked()
 							);
@@ -570,7 +573,8 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 							cb = valmethod.ToLocalChecked().As<Function>();
 					}
 					if( valmethod.IsEmpty() || (valmethod.ToLocalChecked()->IsUndefined()) ) {
-						valmethod = fromPrototypeMap.Get( revive->isolate )->
+						class constructorSet *c = getConstructors( revive->isolate );
+						valmethod = c->fromPrototypeMap.Get( revive->isolate )->
 							Get( revive->context
 								, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal, val->classNameLen ).ToLocalChecked()
 							);
@@ -637,7 +641,8 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 						cb = valmethod.ToLocalChecked().As<Function>();
 				}
 				if( valmethod.IsEmpty() || (valmethod.ToLocalChecked()->IsUndefined()) ) {
-					valmethod = fromPrototypeMap.Get( revive->isolate )->
+					class constructorSet *c = getConstructors( revive->isolate );
+					valmethod = c->fromPrototypeMap.Get( revive->isolate )->
 						Get( revive->context
 							, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal, val->classNameLen ).ToLocalChecked()
 						);
@@ -773,7 +778,8 @@ void makeJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {
-	fromPrototypeMap.Reset( args.GetIsolate(), args[0].As<Map>() );
+	class constructorSet *c = getConstructors( args.GetIsolate() );
+	c->fromPrototypeMap.Reset( args.GetIsolate(), args[0].As<Map>() );
 }
 
 void JSOXObject::setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {

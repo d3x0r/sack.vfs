@@ -3,11 +3,9 @@
 
 static struct local {
 	int data;
-	uv_loop_t* loop;
 
 } l;
 
-Persistent<Function> ComObject::constructor;
 
 ComObject::ComObject( char *name ) : jsObject() {
 	this->readQueue = CreateLinkQueue();
@@ -38,7 +36,8 @@ void ComObject::Init( Local<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "close", closeCom );
 
 
-		constructor.Reset( isolate, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		class constructorSet *c = getConstructors( isolate );
+		c->comConstructor.Reset( isolate, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 		SET( exports, "ComPort", comTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 }
 
@@ -93,6 +92,7 @@ static void asyncmsg( uv_async_t* handle ) {
 
 void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
+		class constructorSet *c = getConstructors( isolate );
 		if( args.IsConstructCall() ) {
 			char *portName;
 			int argc = args.Length();
@@ -115,9 +115,8 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				//lprintf( "empty async...." );
 				//MemSet( &obj->async, 0, sizeof( obj->async ) );
 				//Environment* env = Environment::GetCurrent(args);
-				if( !l.loop )
-					l.loop = uv_default_loop();
-				uv_async_init( l.loop, &obj->async, asyncmsg );
+				if( !c->loop ) c->loop = uv_default_loop();
+				uv_async_init( c->loop, &obj->async, asyncmsg );
 				obj->async.data = obj;
 				obj->jsObject.Reset( isolate, args.This() );
 				obj->Wrap( args.This() );
@@ -132,7 +131,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			for( int n = 0; n < argc; n++ )
 				argv[n] = args[n];
 
-			Local<Function> cons = Local<Function>::New( isolate, constructor );
+			Local<Function> cons = Local<Function>::New( isolate, c->comConstructor );
 			MaybeLocal<Object> newInst = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
 			if( !newInst.IsEmpty() )
 				args.GetReturnValue().Set( newInst.ToLocalChecked() );

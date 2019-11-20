@@ -26,9 +26,6 @@ class parseObject : public node::ObjectWrap {
 	struct json_parse_state *state;
 	struct vesl_parse_state *vstate;
 public:
-	static Persistent<Function> constructor;
-	static Persistent<Function> constructor6;
-	static Persistent<Function> constructor6v;
 	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
 
 public:
@@ -46,10 +43,6 @@ public:
 	~parseObject();
 };
 
-Persistent<Function> parseObject::constructor;
-Persistent<Function> parseObject::constructor6;
-Persistent<Function> parseObject::constructor6v;
-
 void InitJSON( Isolate *isolate, Local<Object> exports ){
 	Local<Object> o = Object::New( isolate );
 	SET_READONLY_METHOD( o, "parse", parseJSON );
@@ -57,6 +50,7 @@ void InitJSON( Isolate *isolate, Local<Object> exports ){
 	NODE_SET_METHOD( o, "escape", escapeJSON );
 	//NODE_SET_METHOD( o, "timing", showTimings );
 	SET_READONLY( exports, "JSON", o );
+	class constructorSet *c = getConstructors(isolate); 
 
 	{
 		Local<FunctionTemplate> parseTemplate;
@@ -65,7 +59,7 @@ void InitJSON( Isolate *isolate, Local<Object> exports ){
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write );
 
-		parseObject::constructor.Reset( isolate, parseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
+		c->parseConstructor.Reset( isolate, parseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 
 		SET_READONLY( o, "begin", parseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	}
@@ -84,7 +78,7 @@ void InitJSON( Isolate *isolate, Local<Object> exports ){
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write6 );
 
-		parseObject::constructor6.Reset( isolate, parseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
+		c->parseConstructor6.Reset( isolate, parseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 
 		SET_READONLY( o2, "begin", parseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	}
@@ -103,7 +97,7 @@ void InitJSON( Isolate *isolate, Local<Object> exports ){
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write6v );
 
-		parseObject::constructor6v.Reset( isolate, parseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		c->parseConstructor6v.Reset( isolate, parseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
 		SET_READONLY( o2, "begin", parseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
@@ -196,7 +190,8 @@ void parseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet *c = getConstructors(isolate); 
+		Local<Function> cons = Local<Function>::New( isolate, c->parseConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete[] argv;
 	}
@@ -279,7 +274,8 @@ void parseObject::New6( const v8::FunctionCallbackInfo<Value>& args ) {
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor6 );
+		class constructorSet *c = getConstructors(isolate); 
+		Local<Function> cons = Local<Function>::New( isolate, c->parseConstructor6 );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete[] argv;
 	}
@@ -360,7 +356,8 @@ void parseObject::New6v( const v8::FunctionCallbackInfo<Value>& args ) {
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor6v );
+		class constructorSet *c = getConstructors(isolate); 
+		Local<Function> cons = Local<Function>::New( isolate, c->parseConstructor6v );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete[] argv;
 	}

@@ -15,7 +15,7 @@ struct SqlObjectUserFunction {
 
 class SqlStmtObject : public node::ObjectWrap {
 public:
-	static v8::Persistent<v8::Function> constructor;
+//	static v8::Persistent<v8::Function> constructor;
 	class SqlObject *sql;
 	PDATALIST values;
 	SqlStmtObject() {
@@ -29,7 +29,7 @@ class SqlObject : public node::ObjectWrap {
 public:
 	PODBC odbc;
 	int optionInitialized;
-	static v8::Persistent<v8::Function> constructor;
+	//static v8::Persistent<v8::Function> constructor;
 	//int columns;
 	//CTEXTSTR *result;
 	//size_t *resultLens;
@@ -84,7 +84,7 @@ class OptionTreeObject : public node::ObjectWrap {
 public:
 	POPTION_TREE_NODE node;
 	PODBC odbc;
-	static v8::Persistent<v8::Function> constructor;
+	//static v8::Persistent<v8::Function> constructor;
 
 public:
 
@@ -116,8 +116,6 @@ struct userMessage{
 	PTHREAD waiter;
 };
 
-Persistent<Function> SqlStmtObject::constructor;
-Persistent<Function> SqlObject::constructor;
 
 void createSqlObject( const char *name, Local<Object> into ) {
 	class SqlObject* obj;
@@ -127,7 +125,8 @@ void createSqlObject( const char *name, Local<Object> into ) {
 }
 
 Local<Value> newSqlObject(Isolate *isolate, int argc, Local<Value> *argv ) {
-	Local<Function> cons = Local<Function>::New( isolate, SqlObject::constructor );
+	class constructorSet *c = getConstructors( isolate );
+	Local<Function> cons = Local<Function>::New( isolate, c->sqlConstructor );
 	MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
 	if( !mo.IsEmpty() )
 		return mo.ToLocalChecked();
@@ -142,6 +141,7 @@ void SqlObjectInit( Local<Object> exports ) {
 	OptionTreeObject::Init(); // SqlObject attached this
 
 	Isolate* isolate = Isolate::GetCurrent();
+	class constructorSet *c = getConstructors( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> sqlTemplate;
 	// Prepare constructor template
@@ -154,7 +154,7 @@ void SqlObjectInit( Local<Object> exports ) {
 	sqlStmtTemplate = FunctionTemplate::New( isolate, SqlStmtObject::New );
 	sqlStmtTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Sqlite.statement", v8::NewStringType::kNormal ).ToLocalChecked() );
 	sqlStmtTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
-	SqlStmtObject::constructor.Reset( isolate, sqlStmtTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	c->sqlStmtConstructor.Reset( isolate, sqlStmtTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "do", SqlObject::query );
@@ -200,7 +200,7 @@ void SqlObjectInit( Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "setOption", SqlObject::setOption );
 	//NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "makeTable", makeTable );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "makeTable", SqlObject::makeTable );
-	SqlObject::constructor.Reset( isolate, sqlTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	c->sqlConstructor.Reset( isolate, sqlTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
 	Local<Object> sqlfunc = sqlTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
@@ -237,7 +237,8 @@ void SqlObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		Local<Value> argv[1];
 		if( args.Length() > 0 )
 			argv[0] = args[0];
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->sqlConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), args.Length(), argv ).ToLocalChecked() );
 	}
 }
@@ -862,7 +863,6 @@ SqlObject::~SqlObject() {
 
 //-----------------------------------------------------------
 
-Persistent<Function> OptionTreeObject::constructor;
 OptionTreeObject::OptionTreeObject()  {
 }
 
@@ -882,7 +882,8 @@ void OptionTreeObject::New(const v8::FunctionCallbackInfo<Value>& args) {
 		args.GetReturnValue().Set(args.This());
 	} else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-		Local<Function> cons = Local<Function>::New(isolate, constructor);
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New(isolate, c->otoConstructor);
 		args.GetReturnValue().Set(cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked());
 	}
 }
@@ -910,7 +911,8 @@ void OptionTreeObject::Init(  ) {
 	//NODE_SET_PROTOTYPE_METHOD( optionTemplate, "ro", readOptionNode );
 	//NODE_SET_PROTOTYPE_METHOD( optionTemplate, "wo", writeOptionNode );
 
-	constructor.Reset( isolate, optionTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	class constructorSet *c = getConstructors( isolate );
+	c->otoConstructor.Reset( isolate, optionTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 }
 
 
@@ -932,7 +934,8 @@ void SqlObject::getOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 	char *optionPath = StrDup( *tmp );
 
-	Local<Function> cons = Local<Function>::New( isolate, OptionTreeObject::constructor );
+	class constructorSet *c = getConstructors( isolate );
+	Local<Function> cons = Local<Function>::New( isolate, c->otoConstructor );
 	MaybeLocal<Object> o = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL );
 	args.GetReturnValue().Set( o.ToLocalChecked() );
 
@@ -957,7 +960,8 @@ void OptionTreeObject::getOptionNode( const v8::FunctionCallbackInfo<Value>& arg
 	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 	char *optionPath = StrDup( *tmp );
 
-	Local<Function> cons = Local<Function>::New( isolate, constructor );
+	class constructorSet *c = getConstructors( isolate );
+	Local<Function> cons = Local<Function>::New( isolate, c->otoConstructor );
 	Local<Object> o;
 	//lprintf( "objecttreeobject constructor..." );
 	args.GetReturnValue().Set( o = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
@@ -988,7 +992,8 @@ void SqlObject::findOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 	POPTION_TREE_NODE newNode = GetOptionIndexExx( sqlParent->odbc, NULL, optionPath, NULL, NULL, NULL, FALSE, TRUE DBG_SRC );
 
 	if( newNode ) {
-		Local<Function> cons = Local<Function>::New( isolate, OptionTreeObject::constructor );
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->otoConstructor );
 		Local<Object> o;
 		args.GetReturnValue().Set( o = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 
@@ -1017,7 +1022,8 @@ void OptionTreeObject::findOptionNode( const v8::FunctionCallbackInfo<Value>& ar
 	char *optionPath = StrDup( *tmp );
 	newOption = GetOptionIndexExx( parent->odbc, parent->node, optionPath, NULL, NULL, NULL, FALSE, TRUE DBG_SRC );
 	if( newOption ) {
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->otoConstructor );
 		Local<Object> o;
 		args.GetReturnValue().Set( o = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 
@@ -1039,7 +1045,8 @@ int CPROC invokeCallback( uintptr_t psv, CTEXTSTR name, POPTION_TREE_NODE ID, in
 	struct enumArgs *args = (struct enumArgs*)psv;
 	Local<Value> argv[2];
 
-	Local<Function> cons = OptionTreeObject::constructor.Get( args->isolate );
+	class constructorSet *c = getConstructors( args->isolate );
+	Local<Function> cons = c->otoConstructor.Get( args->isolate );
 	Local<Object> o;
 	o = cons->NewInstance( args->isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 

@@ -6,11 +6,23 @@ static void fileDelete( const v8::FunctionCallbackInfo<Value>& args );
 
 static struct vfs_local {
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	PLIST constructors;
 } vl;
 
-Persistent<Function> VolumeObject::constructor;
-Persistent<Function> FileObject::constructor;
-Persistent<FunctionTemplate> FileObject::tpl;
+class constructorSet * getConstructors( Isolate *isolate ){
+	INDEX idx;
+	class constructorSet *c;
+	LIST_FORALL( vl.constructors, idx, class constructorSet *, c ){
+		if( c->isolate == isolate ) {
+			return c;
+		}
+	}
+	c = new constructorSet();
+	c->isolate = isolate;
+	c->loop = NULL; // one-time thread initializer for com? // uv_default_loop();
+	AddLink( &vl.constructors, c );
+	return c;
+}
 
 Local<String> localString( Isolate *isolate, const char *data, int len ) {
 	Local<String> retval = String::NewFromUtf8( isolate, data, NewStringType::kNormal, len).ToLocalChecked();
@@ -148,21 +160,29 @@ static void CleanupThreadResources( void* arg_ ) {
 
 void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 {
-	InvokeDeadstart();
+	static int runOnce = 1;
+	Isolate* isolate = Isolate::GetCurrent();
+	if( runOnce ) {
+		InvokeDeadstart();
 
-	node::AtExit( moduleExit );
+		node::AtExit( moduleExit );
 
-	//SetAllocateLogging( TRUE );
-	//SetManualAllocateCheck( TRUE );
-	//SetAllocateDebug( TRUE );
-	SetSystemLog( SYSLOG_FILE, stdout );
+		//SetAllocateLogging( TRUE );
+		//SetManualAllocateCheck( TRUE );
+		//SetAllocateDebug( TRUE );
+		lprintf( "Do Init in modules (shouldn't do some of this)");
+		SetSystemLog( SYSLOG_FILE, stdout );
 
-	//LoadTranslationDataEx( "^/strings.dat" );
-	LoadTranslationDataEx( "@/../../strings.json" );
+		//LoadTranslationDataEx( "^/strings.dat" );
+		LoadTranslationDataEx( "@/../../strings.json" );
+		runOnce = 0;
+
+		node::AddEnvironmentCleanupHook( isolate, CleanupThreadResources, NULL );
+	}
+	else
+		lprintf( "Init Exports for this new object?");
 	//lprintf( "Stdout Logging Enabled." );
 
-	Isolate* isolate = Isolate::GetCurrent();
-	node::AddEnvironmentCleanupHook( isolate, CleanupThreadResources, NULL );
 
 	Local<FunctionTemplate> volumeTemplate;
 	ThreadObject::Init( exports );
@@ -242,7 +262,8 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	SET_READONLY_METHOD( fileObject, "delete", fileDelete );
 	SET_READONLY_METHOD( fileObject, "unlink", fileDelete );
 	SET_READONLY_METHOD( fileObject, "rm", fileDelete );
-	constructor.Reset( isolate, volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	struct constructorSet *c = getConstructors( isolate );
+	c->volConstructor.Reset( isolate, volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	SET( exports, "Volume", volumeTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 
 	SET_READONLY_METHOD( exports, "loadComplete", loadComplete );
@@ -1101,6 +1122,10 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 	void VolumeObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
+		Local<Context> context = isolate->GetCurrentContext();
+		Locker locker(isolate);
+		v8::Isolate::Scope isolateScope(isolate);
+
 		if( args.IsConstructCall() ) {
 			char *mount_name;
 			char *filename = (char*)"default.vfs";
@@ -1118,7 +1143,9 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				int arg = 0;
 				//if( argc > 0 ) {
 				if( args[0]->IsString() ) {
-					String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+					lprintf( "THIS IS doing utf8value - what handle?");
+					String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( context ).ToLocalChecked() );
+					lprintf( "------ Didn't get here --------------" );
 					mount_name = StrDup( *fName );
 				}
 				else  {
@@ -1128,7 +1155,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				//}
 				if( argc > 1 ) {
 					if( args[arg]->IsString() ) {
-						String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+						String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( context ).ToLocalChecked() );
 						defaultFilename = FALSE;
 						filename = StrDup( *fName );
 					}
@@ -1142,7 +1169,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				}
 				//if( args[argc
 				if( args[arg]->IsNumber() ) {
-					version = (uintptr_t)args[arg++]->ToNumber(isolate->GetCurrentContext()).ToLocalChecked()->Value();
+					version = (uintptr_t)args[arg++]->ToNumber(context).ToLocalChecked()->Value();
 				}
 				if( argc > arg ) {
 					String::Utf8Value k( USE_ISOLATE( isolate ) args[arg] );
@@ -1181,8 +1208,10 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			for( int n = 0; n < argc; n++ )
 				argv[n] = args[n];
 
-			Local<Function> cons = Local<Function>::New( isolate, constructor );
-			MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
+			struct constructorSet *c = getConstructors( isolate );
+			Local<Function> cons = Local<Function>::New( isolate, c->volConstructor );
+			//lprintf( "Making a new instance?" );
+			MaybeLocal<Object> mo = cons->NewInstance( context, argc, argv );
 			if( !mo.IsEmpty() )
 				args.GetReturnValue().Set( mo.ToLocalChecked() );
 			delete[] argv;
@@ -1429,7 +1458,8 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		Local<FunctionTemplate> fileTemplate;
 		// Prepare constructor template
 		fileTemplate = FunctionTemplate::New( isolate, openFile );
-		FileObject::tpl.Reset( isolate, fileTemplate );
+		struct constructorSet *c = getConstructors( isolate );
+		c->fileTpl.Reset( isolate, fileTemplate );
 
 		fileTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.File", v8::NewStringType::kNormal ).ToLocalChecked() );
 		fileTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
@@ -1457,7 +1487,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		//NODE_SET_PROTOTYPE_METHOD( fileTemplate, "isPaused", openFile );
 
-		constructor.Reset( isolate, fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		c->fileConstructor.Reset( isolate, fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 		//exports->Set( String::NewFromUtf8( isolate, "File", v8::NewStringType::kNormal ).ToLocalChecked(),
 		//	fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
@@ -1504,7 +1534,8 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		else {
 			const int argc = 2;
 			Local<Value> argv[argc] = { args[0], args.Holder() };
-			Local<Function> cons = Local<Function>::New( isolate, constructor );
+			struct constructorSet *c = getConstructors( isolate );
+			Local<Function> cons = Local<Function>::New( isolate, c->fileConstructor );
 			MaybeLocal<Object> file = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
 			if( !file.IsEmpty() )
 				args.GetReturnValue().Set( file.ToLocalChecked() );

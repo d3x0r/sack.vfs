@@ -41,8 +41,6 @@ struct addrFinder {
 
 class addrObject : public node::ObjectWrap {
 public:
-	static Persistent<Function> constructor;
-	static Persistent<FunctionTemplate> tpl;
 	struct addrFinder key;
 	SOCKADDR *addr;
 	Persistent<Object> _this;
@@ -70,7 +68,7 @@ public:
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE eventQueue;
 	bool readStrings;  // return a string instead of a buffer
-	static Persistent<Function> constructor;
+//	static Persistent<Function> constructor;
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
 	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback;
 	struct udpEvent *eventMessage;
@@ -103,10 +101,6 @@ struct udpEvent {
 typedef struct udpEvent UDP_EVENT;
 #define MAXUDP_EVENTSPERSET 128
 DeclareSet( UDP_EVENT );
-
-Persistent<Function> udpObject::constructor;
-Persistent<Function> addrObject::constructor;
-Persistent<FunctionTemplate> addrObject::tpl;
 
 static struct local {
 	int data;
@@ -228,7 +222,7 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 
 	Local<Object> oNet = Object::New( isolate );
 	SET_READONLY( exports, "Network", oNet );
-
+	class constructorSet *c = getConstructors(isolate); 
 	{
 		Local<FunctionTemplate> udpTemplate;
 		udpTemplate = FunctionTemplate::New( isolate, udpObject::New );
@@ -240,20 +234,20 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( udpTemplate, "setBroadcast", udpObject::setBroadcast );
 		udpTemplate->ReadOnlyPrototype();
 
-		udpObject::constructor.Reset( isolate, udpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		c->udpConstructor.Reset( isolate, udpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
 		SET_READONLY( oNet, "UDP", udpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 	{
 		Local<FunctionTemplate> addrTemplate;
 		addrTemplate = FunctionTemplate::New( isolate, addrObject::New );
-		addrObject::tpl.Reset( isolate, addrTemplate );
+		c->addrTpl.Reset( isolate, addrTemplate );
 		addrTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.network.address", v8::NewStringType::kNormal ).ToLocalChecked() );
 		addrTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		//NODE_SET_PROTOTYPE_METHOD( addrTemplate, "toString", addrObject::toString );
 		addrTemplate->ReadOnlyPrototype();
 
-		addrObject::constructor.Reset( isolate, addrTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		c->addrConstructor.Reset( isolate, addrTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
 		SET_READONLY( oNet, "Address", addrTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
@@ -495,7 +489,8 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet *c = getConstructors(isolate);
+		Local<Function> cons = Local<Function>::New( isolate, c->udpConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete[] argv;
 	}
@@ -548,7 +543,8 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 	}
 	SOCKADDR *dest = NULL;
 	if( args.Length() > 1 ) {
-		Local<FunctionTemplate> tpl = addrObject::tpl.Get( isolate );
+		class constructorSet *c = getConstructors( isolate );
+		Local<FunctionTemplate> tpl = c->addrTpl.Get( isolate );
 		Local<Object> argObj = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 		if( !argObj.IsEmpty() && tpl->HasInstance( argObj ) ) {
 			addrObject *obj = ObjectWrap::Unwrap<addrObject>( args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -589,7 +585,8 @@ addrObject::~addrObject() {
 }
 
 addrObject *addrObject::internalNew( Isolate *isolate, SOCKADDR *sa ) {
-	Local<Function> cons = Local<Function>::New( isolate, addrObject::constructor );
+		class constructorSet *c = getConstructors(isolate);
+	Local<Function> cons = Local<Function>::New( isolate, c->addrConstructor );
 	Local<Value> args[1];
 	MaybeLocal<Object> __addr = cons->NewInstance( isolate->GetCurrentContext(), 0, args );
 	Local<Object> _addr = __addr.ToLocalChecked();
@@ -607,7 +604,8 @@ addrObject *addrObject::internalNew( Isolate *isolate, SOCKADDR *sa ) {
 }
 
 addrObject *addrObject::internalNew( Isolate *isolate, Local<Object> *_this ) {
-	Local<Function> cons = Local<Function>::New( isolate, addrObject::constructor );
+	class constructorSet *c = getConstructors(isolate);
+	Local<Function> cons = Local<Function>::New( isolate, c->addrConstructor );
 	Local<Value> args[1];
 	MaybeLocal<Object> _addr = cons->NewInstance( isolate->GetCurrentContext(), 0, args );
 	_this[0] = _addr.ToLocalChecked();
