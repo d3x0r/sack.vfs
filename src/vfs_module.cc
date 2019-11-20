@@ -141,7 +141,7 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 
-void VolumeObject::doInit( Local<Object> exports )
+void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 {
 	InvokeDeadstart();
 
@@ -157,7 +157,6 @@ void VolumeObject::doInit( Local<Object> exports )
 	//lprintf( "Stdout Logging Enabled." );
 
 	Isolate* isolate = Isolate::GetCurrent();
-	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> volumeTemplate;
 	ThreadObject::Init( exports );
 	FileObject::Init();
@@ -244,11 +243,13 @@ void VolumeObject::doInit( Local<Object> exports )
 }
 
 void VolumeObject::Init( Local<Object> exports, Local<Value> val, void* p )  {
-	doInit( exports );	
+	Isolate* isolate = Isolate::GetCurrent();
+	Local<Context> context = isolate->GetCurrentContext();
+	doInit( context, exports );	
 }
 
-void VolumeObject::Init( Local<Object> exports )  {
-	doInit( exports );
+void VolumeObject::Init( Local<Context> context, Local<Object> exports )  {
+	doInit( context, exports );
 }
 
 VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 )  {
@@ -310,7 +311,7 @@ void VolumeObject::vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args
 	int arg = 0;
 	if( args[0]->IsString() ) {
 
-		//TooObject( isolate.getCurrentContext().FromMaybe( Local<Object>() )
+		//TooObject( isolate.GetCurrentContext().FromMaybe( Local<Object>() )
 		String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		mount_name = StrDup( *fName );
 	}
@@ -1545,7 +1546,12 @@ FileObject::~FileObject() {
 
 
 //-----------------------------------------------------------
-
-
-NODE_MODULE( vfs_module, VolumeObject::Init)
+//https://nodejs.org/docs/latest-v10.x/api/addons.html#addons_context_aware_addons
+NODE_MODULE_INIT( /*Local<Object> exports,
+	Local<Value>Module,
+	Local<Context> context*/ ) {
+		printf( "called?\n");
+	VolumeObject::Init(context,exports);		
+}
+//NODE_MODULE( vfs_module, VolumeObject::Init)
 
