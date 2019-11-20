@@ -139,7 +139,12 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 	DebugDumpMem( );
 }
 
-
+static void CleanupThreadResources( void* arg_ ) {
+	struct someParam { int a; }*arg = (struct someParam*) arg_;
+	//lprintf( "Which things belonged to this thread?, is it isolate?" );
+	// objects are weak referenced where appropriate anyway so things should cleanup
+	// already without additional help.
+}
 
 void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 {
@@ -157,6 +162,8 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	//lprintf( "Stdout Logging Enabled." );
 
 	Isolate* isolate = Isolate::GetCurrent();
+	node::AddEnvironmentCleanupHook( isolate, CleanupThreadResources, NULL );
+
 	Local<FunctionTemplate> volumeTemplate;
 	ThreadObject::Init( exports );
 	FileObject::Init();
@@ -1550,7 +1557,7 @@ FileObject::~FileObject() {
 NODE_MODULE_INIT( /*Local<Object> exports,
 	Local<Value>Module,
 	Local<Context> context*/ ) {
-		printf( "called?\n");
+	//printf( "called?\n");
 	VolumeObject::Init(context,exports);		
 }
 //NODE_MODULE( vfs_module, VolumeObject::Init)
