@@ -561,12 +561,11 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		// Invoked as constructor: `new MyObject(...)`
 		KeyHidObject* obj = new KeyHidObject( );
 		{
-			if( !hidg.loop )
-				hidg.loop = uv_default_loop();
 
 			MemSet( &obj->async, 0, sizeof( obj->async ) );
 
-			uv_async_init( hidg.loop, &obj->async, asyncmsg );
+			class constructorSet *c = getConstructors( isolate );
+			uv_async_init( c->loop, &obj->async, asyncmsg );
 			obj->async.data = obj;
 
 			obj->Wrap( args.This() );

@@ -115,7 +115,6 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				//lprintf( "empty async...." );
 				//MemSet( &obj->async, 0, sizeof( obj->async ) );
 				//Environment* env = Environment::GetCurrent(args);
-				if( !c->loop ) c->loop = uv_default_loop();
 				uv_async_init( c->loop, &obj->async, asyncmsg );
 				obj->async.data = obj;
 				obj->jsObject.Reset( isolate, args.This() );

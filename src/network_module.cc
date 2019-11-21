@@ -21,6 +21,7 @@ struct optionStrings {
 };
 
 struct udpOptions {
+	Isolate *isolate;
 	int port;
 	char *address;
 	bool reuseAddr;
@@ -104,7 +105,6 @@ DeclareSet( UDP_EVENT );
 
 static struct local {
 	int data;
-	uv_loop_t* loop;
 	PLIST strings;
 	PUDP_EVENTSET udpEvents;
 	BinaryTree::PTREEROOT addresses;
@@ -217,8 +217,6 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 	return check;
 }
 void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
-	if( !l.loop )
-		l.loop = uv_default_loop();
 
 	Local<Object> oNet = Object::New( isolate );
 	SET_READONLY( exports, "Network", oNet );
@@ -359,7 +357,8 @@ udpObject::udpObject( struct udpOptions *opts ) {
 		eventQueue = CreateLinkQueue();
 		//lprintf( "Init async handle. (wss)" );
 		async.data = this;
-		uv_async_init( l.loop, &async, udpAsyncMsg );
+		class constructorSet *c = getConstructors( opts->isolate );
+		uv_async_init( c->loop, &async, udpAsyncMsg );
 		doUDPRead( pc, (POINTER)buffer, 4096 );
 		if( !opts->messageCallback.IsEmpty() )
 			this->messageCallback = opts->messageCallback;
@@ -385,6 +384,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		// Invoked as constructor: `new MyObject(...)`
 		struct udpOptions udpOpts;
 		int argBase = 0;
+		udpOpts.isolate= isolate;
 		udpOpts.readStrings = false;
 		udpOpts.address = NULL;
 		udpOpts.port = 0;

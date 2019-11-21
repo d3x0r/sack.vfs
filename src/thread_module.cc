@@ -64,24 +64,26 @@ void ThreadObject::relinquish( const v8::FunctionCallbackInfo<Value>& args ) {
 	// r was always undefined.... so inner must wake.
 	//String::Utf8Value fName( r->ToString() );
 	//lprintf( "tick callback resulted %s", (char*)*fName);
+	class constructorSet *c = getConstructors( isolate );
 	if( !cbWoke )
-		if( uv_run( uv_default_loop(), UV_RUN_NOWAIT ) )
-			uv_run( uv_default_loop(), UV_RUN_ONCE);
+		if( uv_run( c->loop, UV_RUN_NOWAIT ) )
+			uv_run( c->loop, UV_RUN_ONCE);
 	cbWoke = false;
 	/*
+	class constructorSet *c = getConstructors( isolate );
 	if( delay ) {
 
 		lprintf( "short sleep", delay, delay );
 		WakeableSleep( 20 );
 		lprintf( "short wake", delay, delay );
 		cb->Call(Null(isolate), 0, NULL );
-		uv_run( uv_default_loop(), UV_RUN_DEFAULT);
+		uv_run( c->loop, UV_RUN_DEFAULT);
 	
 		lprintf( "sleep for %08x, %d", delay, delay );
 		WakeableSleep( delay );
 	}
 	cb->Call(Null(isolate), 0, NULL );
-	uv_run( uv_default_loop(), UV_RUN_DEFAULT);
+	uv_run( c->loop, UV_RUN_DEFAULT);
 	*/
 }
 

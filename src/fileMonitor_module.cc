@@ -119,7 +119,8 @@ static void addMonitorFilter( const v8::FunctionCallbackInfo<Value>& args ) {
 	tracker->cb.Reset( isolate, cb );
 
 	AddLink( &me->trackers, tracker );
-	uv_async_init( uv_default_loop(), &tracker->async, monitorAsyncMsg );
+	class constructorSet *c = getConstructors( isolate );
+	uv_async_init( c->loop, &tracker->async, monitorAsyncMsg );
  	tracker->async.data = tracker;
 
 	//AddFileChangeCallback( me->monitor, mask, callback,

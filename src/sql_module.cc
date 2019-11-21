@@ -1474,7 +1474,8 @@ void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
 	int argc = args.Length();
 	if( !sql->thread ) {
 		sql->thread = MakeThread();
-		uv_async_init( uv_default_loop(), &sql->async, sqlUserAsyncMsg );
+		class constructorSet *c = getConstructors( isolate );
+		uv_async_init( c->loop, &sql->async, sqlUserAsyncMsg );
 		sql->async.data = sql;
 	}
 
@@ -1494,7 +1495,8 @@ void SqlObject::userProcedure( const v8::FunctionCallbackInfo<Value>& args ) {
 	int argc = args.Length();
 	if( !sql->thread ) {
 		sql->thread = MakeThread();
-		uv_async_init( uv_default_loop(), &sql->async, sqlUserAsyncMsg );
+		class constructorSet *c = getConstructors( isolate );
+		uv_async_init( c->loop, &sql->async, sqlUserAsyncMsg );
 		sql->async.data = sql;
 	}
 
@@ -1705,7 +1707,8 @@ void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args )
 
 		if( !sql->thread ) {
 			sql->thread = MakeThread();
-			uv_async_init( uv_default_loop(), &sql->async, sqlUserAsyncMsg );
+			class constructorSet *c = getConstructors( isolate );
+			uv_async_init( c->loop, &sql->async, sqlUserAsyncMsg );
 			sql->async.data = sql;
 		}
 	}

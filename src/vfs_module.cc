@@ -918,7 +918,8 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				pargs->len = len;
 				pargs->f->Reset( isolate, Local<Function>::Cast( args[1] ) );
 				pargs->_this.Reset( isolate, args.This() );
-				uv_async_init( uv_default_loop(), &pargs->async, preloadCallback );
+				struct constructorSet *c = getConstructors( isolate );
+				uv_async_init( c->loop, &pargs->async, preloadCallback );
 				pargs->async.data = pargs;
 				ThreadTo( preloadFile, (uintptr_t)pargs );
 			}

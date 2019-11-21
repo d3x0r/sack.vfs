@@ -16,7 +16,6 @@ struct optionStrings {
 
 
 static struct local {
-	uv_loop_t* loop;
 	PLIST tasks;
 } l;
 
@@ -67,8 +66,6 @@ TaskObject::~TaskObject() {
 }
 
 void InitTask( Isolate *isolate, Local<Object> exports ) {
-	if( !l.loop )
-		l.loop = uv_default_loop();
 
 	Local<FunctionTemplate> taskTemplate;
 	taskTemplate = FunctionTemplate::New( isolate, TaskObject::New );
@@ -268,7 +265,8 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 
 			if( input || end ) {
-				uv_async_init( l.loop, &newTask->async, taskAsyncMsg );
+				class constructorSet *c = getConstructors( isolate );
+				uv_async_init( c->loop, &newTask->async, taskAsyncMsg );
 				newTask->async.data = newTask;
 			}
 			/*
