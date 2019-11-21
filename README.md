@@ -1226,7 +1226,7 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
-- 0.9.156(inprogress)
+- 0.9.156
    - missed getFullYear->getUTCFullYear update.
 - 0.9.155
    - normalize JSOX class defintiion keys for later comparison to objects.
