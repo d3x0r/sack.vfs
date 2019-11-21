@@ -6,6 +6,7 @@
       "type": "git",
       "url": "https://github.com/d3x0r/sack.vfs"
   },
+  "publishConfig": { "registry": "https://npm.pkg.github.com/" },
   "main": "vfs_module.js",
   "private": false,
   "preferGlobal": false,

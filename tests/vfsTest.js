@@ -1,6 +1,6 @@
 
 function test () {
-var vfs = require( ".." )( (vfs)=>{
+var vfs = require( ".." ); ( (vfs)=>{
 //console.log( "keys: ", Object.keys( vfs ) );
 var more = require( "./testaux.js" );
 
@@ -63,7 +63,7 @@ file = null;
 //setTimeout( ()=>{ file2 = null; global.gc(); console.log( "ticked" );}, 500 );
 //setTimeout( ()=>{ global.gc();  console.log( "ticked" );}, 1000 );
 //setTimeout( ()=>{ global.gc();  console.log( "ticked" );}, 1500 );
-});
+})(vfs);
 
  }
 
