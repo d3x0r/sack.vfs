@@ -43,7 +43,7 @@ var commonClasses = [];
 					var norm = Math.floor(Math.abs(num));
 					return (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
 				};
-			return this.getFullYear() +
+			return this.getUTCFullYear() +
 				'-' + pad(this.getUTCMonth() + 1) +
 				'-' + pad(this.getUTCDate()) +
 				'T' + pad(this.getUTCHours()) +
