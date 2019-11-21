@@ -151,12 +151,18 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 	DebugDumpMem( );
 }
 
+#if ( NODE_MAJOR_VERSION > 9 )
 static void CleanupThreadResources( void* arg_ ) {
-	struct someParam { int a; }*arg = (struct someParam*) arg_;
+	Isolate *isolate = (Isolate*)arg_;
+	class constructorSet *c = getConstructors( isolate );
+	delete c;
+   DeleteLink( &vl.constructors, c );
 	//lprintf( "Which things belonged to this thread?, is it isolate?" );
 	// objects are weak referenced where appropriate anyway so things should cleanup
 	// already without additional help.
+
 }
+#endif
 
 void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 {
@@ -176,8 +182,9 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 		//LoadTranslationDataEx( "^/strings.dat" );
 		LoadTranslationDataEx( "@/../../strings.json" );
 		runOnce = 0;
-
-		node::AddEnvironmentCleanupHook( isolate, CleanupThreadResources, NULL );
+#if ( NODE_MAJOR_VERSION > 9 )
+		node::AddEnvironmentCleanupHook( isolate, CleanupThreadResources, isolate );
+#endif
 	}
 	else
 		lprintf( "Init Exports for this new object?");
@@ -262,7 +269,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	SET_READONLY_METHOD( fileObject, "delete", fileDelete );
 	SET_READONLY_METHOD( fileObject, "unlink", fileDelete );
 	SET_READONLY_METHOD( fileObject, "rm", fileDelete );
-	struct constructorSet *c = getConstructors( isolate );
+	class constructorSet *c = getConstructors( isolate );
 	c->volConstructor.Reset( isolate, volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	SET( exports, "Volume", volumeTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 
@@ -918,7 +925,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				pargs->len = len;
 				pargs->f->Reset( isolate, Local<Function>::Cast( args[1] ) );
 				pargs->_this.Reset( isolate, args.This() );
-				struct constructorSet *c = getConstructors( isolate );
+				class constructorSet *c = getConstructors( isolate );
 				uv_async_init( c->loop, &pargs->async, preloadCallback );
 				pargs->async.data = pargs;
 				ThreadTo( preloadFile, (uintptr_t)pargs );
@@ -1207,7 +1214,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			for( int n = 0; n < argc; n++ )
 				argv[n] = args[n];
 
-			struct constructorSet *c = getConstructors( isolate );
+			class constructorSet *c = getConstructors( isolate );
 			Local<Function> cons = Local<Function>::New( isolate, c->volConstructor );
 			//lprintf( "Making a new instance?" );
 			MaybeLocal<Object> mo = cons->NewInstance( context, argc, argv );
@@ -1457,7 +1464,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		Local<FunctionTemplate> fileTemplate;
 		// Prepare constructor template
 		fileTemplate = FunctionTemplate::New( isolate, openFile );
-		struct constructorSet *c = getConstructors( isolate );
+		class constructorSet *c = getConstructors( isolate );
 		c->fileTpl.Reset( isolate, fileTemplate );
 
 		fileTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.File", v8::NewStringType::kNormal ).ToLocalChecked() );
@@ -1533,7 +1540,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		else {
 			const int argc = 2;
 			Local<Value> argv[argc] = { args[0], args.Holder() };
-			struct constructorSet *c = getConstructors( isolate );
+			class constructorSet *c = getConstructors( isolate );
 			Local<Function> cons = Local<Function>::New( isolate, c->fileConstructor );
 			MaybeLocal<Object> file = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
 			if( !file.IsEmpty() )
@@ -1581,7 +1588,7 @@ FileObject::~FileObject() {
 	volume.Reset();
 }
 
-
+#if ( NODE_MAJOR_VERSION > 9 )
 //-----------------------------------------------------------
 //https://nodejs.org/docs/latest-v10.x/api/addons.html#addons_context_aware_addons
 NODE_MODULE_INIT( /*Local<Object> exports,
@@ -1591,5 +1598,7 @@ NODE_MODULE_INIT( /*Local<Object> exports,
 	//printf( "called?\n");
 	VolumeObject::Init(context,exports);		
 }
-//NODE_MODULE( vfs_module, VolumeObject::Init)
+#else
+NODE_MODULE( vfs_module, VolumeObject::Init)
+#endif
 
