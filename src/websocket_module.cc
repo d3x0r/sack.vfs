@@ -226,7 +226,7 @@ DeclareSet( WSC_EVENT );
 
 static struct local {
 	int data;
-	uv_loop_t* loop;
+	//uv_loop_t* loop;
 	int waiting;
 	PTHREAD jsThread;
 	CRITICALSECTION csWssEvents;
@@ -317,6 +317,7 @@ public:
 	bool ssl;
 	enum wsReadyStates readyState;
 	bool immediateEvent;
+	Isolate *isolate;
 public:
 
 	wssObject( struct wssOptions *opts );
@@ -390,6 +391,7 @@ public:
 	PVARTEXT pvtResult;
 	bool ssl;
 	wssObject* wss;
+	Isolate *isolate;
 public:
 
 	httpObject();
@@ -412,6 +414,7 @@ public:
 	//wscEvent *eventMessage;
 	LOGICAL closed;
 	enum wsReadyStates readyState;
+	Isolate *isolate;
 public:
 	//static Persistent<Function> constructor;
 	//static Persistent<FunctionTemplate> tpl;
@@ -453,7 +456,8 @@ public:
 	LOGICAL closed;
 	const char *protocolResponse;
 	enum wsReadyStates readyState;
-wssObject *server;
+	Isolate *isolate;
+	wssObject *server;
 public:
 	//static Persistent<Function> constructor;
 	//static Persistent<FunctionTemplate> tpl;
@@ -640,11 +644,11 @@ static Local<Value> makeRequest( Isolate *isolate, struct optionStrings *strings
 static void wssAsyncMsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	v8::Locker l(isolate);
+	wssObject* myself = (wssObject*)handle->data;
+	v8::Isolate* isolate = myself->isolate;//v8::Isolate::GetCurrent();
+	//v8::Locker l(isolate);
 	HandleScope scope(isolate);
 	Local<Context> context = isolate->GetCurrentContext();
-	wssObject* myself = (wssObject*)handle->data;
 	int handled = 0;
 	{
 		struct wssEvent *eventMessage;
@@ -920,8 +924,7 @@ int accepted = 0;
 
 void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 	Local<Context> context = isolate->GetCurrentContext();
-	if( !l.loop )
-		l.loop = uv_default_loop();
+
 	l.jsThread = MakeThread();
 	//NetworkWait( NULL, 2000000, 16 );  // 1GB memory
 	InitializeCriticalSec( &l.csWssEvents );
@@ -1535,9 +1538,6 @@ wssObject::wssObject( struct wssOptions *opts ) {
 	closed = 0;
 	NetworkWait( NULL, 256, 2 );  // 1GB memory
 
-	async.data = this;
-	uv_async_init( l.loop, &async, wssAsyncMsg );
-
 	pc = WebSocketCreate_v2( opts->url, webSockServerOpen, webSockServerEvent, webSockServerClosed, webSockServerError, (uintptr_t)this, WEBSOCK_SERVER_OPTION_WAIT );
 	if( pc ) {
 		eventQueue = CreateLinkQueue();
@@ -1776,6 +1776,11 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 
 		Local<Object> _this = args.This();
 		wssObject* obj = new wssObject( &wssOpts );
+		class constructorSet *c = getConstructors(isolate);
+		uv_async_init( c->loop, &obj->async, wssAsyncMsg );
+		obj->async.data = obj;
+
+		obj->isolate = isolate;
 		obj->ssl = wssOpts.ssl;
 		if( wssOpts.cert_chain )
 			Deallocate( char *, wssOpts.cert_chain );
@@ -1992,8 +1997,6 @@ wssiObject::wssiObject( ) {
 	protocolResponse = NULL;
 	this->closed = 0;
 
-	uv_async_init( l.loop, &async, wssiAsyncMsg );
-	async.data = this;
 }
 
 wssiObject::~wssiObject() {
@@ -2008,6 +2011,10 @@ void wssiObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.IsConstructCall() ) {
 		wssiObject *obj = new wssiObject();
+		obj->isolate = isolate;
+		class constructorSet *c = getConstructors(isolate);
+		uv_async_init( c->loop, &obj->async, wssiAsyncMsg );
+		obj->async.data = obj;
 		obj->_this.Reset( isolate, args.This() );
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
@@ -2179,8 +2186,6 @@ wscObject::wscObject( wscOptions *opts ) {
 	closed = 0;
 	//lprintf( "Init async handle. (wsc) %p", &async );
 	NetworkWait( NULL, 256, 2 );  // 1GB memory
-	uv_async_init( l.loop, &async, wscAsyncMsg );
-	async.data = this;
 
 	pc = WebSocketOpen( opts->url, WS_DELAY_OPEN
 		, webSockClientOpen
@@ -2321,6 +2326,11 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 		wscObject* obj;
 		try {
 			obj = new wscObject( &wscOpts );
+			obj->isolate = isolate;
+			class constructorSet *c = getConstructors(isolate);
+			uv_async_init( c->loop, &obj->async, wscAsyncMsg );
+			obj->async.data = obj;
+
 			obj->_this.Reset( isolate, _this );
 			obj->Wrap( _this );
 		}

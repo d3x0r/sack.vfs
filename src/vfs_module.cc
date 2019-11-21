@@ -19,7 +19,7 @@ class constructorSet * getConstructors( Isolate *isolate ){
 	}
 	c = new constructorSet();
 	c->isolate = isolate;
-	c->loop = NULL; // one-time thread initializer for com? // uv_default_loop();
+	c->loop = node::GetCurrentEventLoop( isolate ); // one-time thread initializer for com? // uv_default_loop();
 	AddLink( &vl.constructors, c );
 	return c;
 }
@@ -1123,8 +1123,6 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 	void VolumeObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		Local<Context> context = isolate->GetCurrentContext();
-		Locker locker(isolate);
-		v8::Isolate::Scope isolateScope(isolate);
 
 		if( args.IsConstructCall() ) {
 			char *mount_name;
@@ -1588,6 +1586,7 @@ FileObject::~FileObject() {
 NODE_MODULE_INIT( /*Local<Object> exports,
 	Local<Value>Module,
 	Local<Context> context*/ ) {
+		
 	//printf( "called?\n");
 	VolumeObject::Init(context,exports);		
 }
