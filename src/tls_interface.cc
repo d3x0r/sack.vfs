@@ -57,7 +57,7 @@ const int kExp = RSA_F4;
   nsSslServerName
 */
 
-Persistent<Function> TLSObject::constructor;
+//Persistent<Function> TLSObject::constructor;
 
 struct optionStrings {
 	Isolate *isolate;
@@ -284,11 +284,11 @@ void TLSObject::New( const v8::FunctionCallbackInfo<Value>& args  ) {
 	} else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
 		Local<Value> *argv = new Local<Value>[0];
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
-		MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
-		if( !mo.IsEmpty() )
-			args.GetReturnValue().Set( mo.ToLocalChecked() );
-		delete[] argv;
+		//Local<Function> cons = Local<Function>::New( isolate, constructor );
+		//MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
+		//if( !mo.IsEmpty() )
+		//	args.GetReturnValue().Set( mo.ToLocalChecked() );
+		//delete[] argv;
 	}
 }
 

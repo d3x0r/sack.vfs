@@ -16,8 +16,8 @@ void ThreadObject::Init( Local<Object> exports ) {
 	threadTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 
 	// Prototype
-
-	constructor.Reset( isolate, threadTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	class constructorSet *c = getConstructors( isolate );
+	c->threadConstructor.Reset( isolate, threadTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	SET( exports, "Thread",
 		threadTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 }
@@ -87,7 +87,7 @@ void ThreadObject::relinquish( const v8::FunctionCallbackInfo<Value>& args ) {
 
 //-----------------------------------------------------------
 
-Persistent<Function> ThreadObject::constructor;
+//Persistent<Function> ThreadObject::constructor;
 ThreadObject::ThreadObject( )
 {
 }

@@ -305,8 +305,8 @@ public:
 	PLIST opening;
 	PLIST requests;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
-	static Persistent<Function> constructor;
-	static Persistent<FunctionTemplate> tpl;
+	//static Persistent<Function> constructor;
+	//static Persistent<FunctionTemplate> tpl;
 	Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> acceptCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> requestCallback; //
@@ -343,7 +343,7 @@ public:
 class httpRequestObject : public node::ObjectWrap {
 public:
 	PCLIENT pc;
-	static Persistent<Function> constructor;
+	//static Persistent<Function> constructor;
 	Persistent<Object> _this;
 	//PVARTEXT pvtResult;
 	bool ssl;
@@ -386,7 +386,7 @@ public:
 class httpObject : public node::ObjectWrap {
 public:
 	PCLIENT pc;
-	static Persistent<Function> constructor;
+	//static Persistent<Function> constructor;
 	PVARTEXT pvtResult;
 	bool ssl;
 	wssObject* wss;
@@ -413,8 +413,8 @@ public:
 	LOGICAL closed;
 	enum wsReadyStates readyState;
 public:
-	static Persistent<Function> constructor;
-	static Persistent<FunctionTemplate> tpl;
+	//static Persistent<Function> constructor;
+	//static Persistent<FunctionTemplate> tpl;
 	Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
@@ -455,8 +455,8 @@ public:
 	enum wsReadyStates readyState;
 wssObject *server;
 public:
-	static Persistent<Function> constructor;
-	static Persistent<FunctionTemplate> tpl;
+	//static Persistent<Function> constructor;
+	//static Persistent<FunctionTemplate> tpl;
 	//Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
@@ -478,14 +478,6 @@ public:
 	~wssiObject();
 };
 
-Persistent<Function> httpObject::constructor;
-Persistent<Function> httpRequestObject::constructor;
-Persistent<Function> wssObject::constructor;
-Persistent<Function> wssiObject::constructor;
-Persistent<Function> wscObject::constructor;
-Persistent<FunctionTemplate> wssObject::tpl;
-Persistent<FunctionTemplate> wssiObject::tpl;
-Persistent<FunctionTemplate> wscObject::tpl;
 
 static WSS_EVENT *GetWssEvent() {
 	EnterCriticalSec( &l.csWssEvents );
@@ -649,6 +641,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	v8::Locker l(isolate);
 	HandleScope scope(isolate);
 	Local<Context> context = isolate->GetCurrentContext();
 	wssObject* myself = (wssObject*)handle->data;
@@ -677,7 +670,8 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 			else if( eventMessage->eventType == WS_EVENT_REQUEST ) {
 				//lprintf( "Comes in directly as a request; don't even get accept..." );
 				if( !myself->requestCallback.IsEmpty() ) {
-					Local<Function> cons = Local<Function>::New( isolate, httpObject::constructor );
+					class constructorSet *c = getConstructors( isolate );
+					Local<Function> cons = Local<Function>::New( isolate, c->httpConstructor );
 					MaybeLocal<Object> _http = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
 					if( _http.IsEmpty() ) {
 						isolate->ThrowException( Exception::Error(
@@ -710,8 +704,8 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 			}
 			else if( eventMessage->eventType == WS_EVENT_ACCEPT ) {
 				//lprintf( "Dispatch open event because connect." );
-
-				Local<Function> cons = Local<Function>::New( isolate, wssiObject::constructor );
+				class constructorSet *c = getConstructors( isolate );
+				Local<Function> cons = Local<Function>::New( isolate, c->wssiConstructor );
 				MaybeLocal<Object> _wssi = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
 				if( _wssi.IsEmpty() ) {
 					isolate->ThrowException( Exception::Error(
@@ -945,6 +939,7 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 	SET_READONLY( o, "readyStates", wsWebStatesObject );
 
 	SET_READONLY( exports, "WebSocket", o );
+	class constructorSet *c = getConstructors( isolate );
 	{
 		Local<FunctionTemplate> httpTemplate;
 		httpTemplate = FunctionTemplate::New( isolate, httpObject::New );
@@ -954,7 +949,7 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( httpTemplate, "end", httpObject::end );
 		httpTemplate->ReadOnlyPrototype();
 
-		httpObject::constructor.Reset( isolate, httpTemplate->GetFunction(context).ToLocalChecked() );
+		c->httpConstructor.Reset( isolate, httpTemplate->GetFunction(context).ToLocalChecked() );
 
 		// this is not exposed as a class that javascript can create.
 		//SET_READONLY( o, "R", wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
@@ -967,7 +962,7 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( httpRequestTemplate, "on", httpRequestObject::on );
 		NODE_SET_PROTOTYPE_METHOD( httpRequestTemplate, "wait", httpRequestObject::wait );
 		httpRequestTemplate->ReadOnlyPrototype();
-		httpRequestObject::constructor.Reset( isolate, httpRequestTemplate->GetFunction(context).ToLocalChecked() );
+		c->httpReqConstructor.Reset( isolate, httpRequestTemplate->GetFunction(context).ToLocalChecked() );
 
 		Local<Object> oHttps = Object::New( isolate );
 		SET_READONLY( exports, "HTTPS", oHttps );
@@ -1011,8 +1006,8 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onmessage", wsObject::on );
 		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "on", wsObject::on );
 
-		wssObject::constructor.Reset( isolate, wssTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-		wssObject::tpl.Reset( isolate, wssTemplate );
+		c->wssConstructor.Reset( isolate, wssTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		c->wssTpl.Reset( isolate, wssTemplate );
 
 		SET_READONLY( o, "Server", wssTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
@@ -1043,8 +1038,8 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		);
 		wscTemplate->ReadOnlyPrototype();
 
-		wscObject::constructor.Reset( isolate, wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-		wscObject::tpl.Reset( isolate, wscTemplate );
+		c->wscConstructor.Reset( isolate, wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		c->wscTpl.Reset( isolate, wscTemplate );
 
 		SET_READONLY( o, "Client", wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
@@ -1065,8 +1060,8 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 			, Local<FunctionTemplate>() );
 		wssiTemplate->ReadOnlyPrototype();
 
-		wssiObject::constructor.Reset( isolate, wssiTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-		wssiObject::tpl.Reset( isolate, wssiTemplate );
+		c->wssiConstructor.Reset( isolate, wssiTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		c->wssiTpl.Reset( isolate, wssiTemplate );
 		//SET_READONLY( o, "Client", wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 }
@@ -1349,7 +1344,8 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			vtprintf( obj->pvtResult, "\r\n" );
 			VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
 		} else if( args[0]->IsObject() ) {
-			Local<FunctionTemplate> wrapper_tpl = FileObject::tpl.Get( isolate );
+			class constructorSet *c = getConstructors( isolate );
+			Local<FunctionTemplate> wrapper_tpl = c->fileTpl.Get( isolate );
 			if( (wrapper_tpl->HasInstance( args[0] )) ) {
 				FileObject *file = FileObject::Unwrap<FileObject>( args[0]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked() );
 				lprintf( "Incomplete; streaming file content to socket...." );
@@ -1810,8 +1806,9 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 		Local<Value> *argv = new Local<Value>[argc];
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
+		class constructorSet *c = getConstructors( isolate );
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		Local<Function> cons = Local<Function>::New( isolate, c->wssConstructor );
 		MaybeLocal<Object> result = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
 		delete[] argv;
 		if( !result.IsEmpty() )
@@ -1972,7 +1969,8 @@ void wssObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 	Local<Object> h = args.Holder();
 	Local<Object> t = args.This();
 	//if( wssObject::tpl. )
-	Local<FunctionTemplate> wrapper_tpl = wssObject::tpl.Get( isolate );
+	class constructorSet *c = getConstructors( isolate );
+	Local<FunctionTemplate> wrapper_tpl = c->wssTpl.Get( isolate );
 	int ht = wrapper_tpl->HasInstance( h );
 	int tt = wrapper_tpl->HasInstance( t );
 	wssObject *obj;
@@ -2017,8 +2015,8 @@ void wssiObject::New( const FunctionCallbackInfo<Value>& args ) {
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
 		Local<Value> *argv = new Local<Value>[args.Length()];
-
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->wssiConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), 0, argv ).ToLocalChecked() );
 		delete[] argv;
 	}
@@ -2109,7 +2107,8 @@ void wssiObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 	Local<Object> h = args.Holder();
 	Local<Object> t = args.This();
 	//if( wssObject::tpl. )
-	Local<FunctionTemplate> wrapper_tpl = wssiObject::tpl.Get( isolate );
+		class constructorSet *c = getConstructors( isolate );
+	Local<FunctionTemplate> wrapper_tpl = c->wssiTpl.Get( isolate );
 	int ht = wrapper_tpl->HasInstance( h );
 	int tt = wrapper_tpl->HasInstance( t );
 	wssiObject *obj;
@@ -2346,7 +2345,8 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->wscConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete[] argv;
 	}
@@ -2521,7 +2521,8 @@ void wscObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 	Local<Object> h = args.Holder();
 	Local<Object> t = args.This();
 	//if( wssObject::tpl. )
-	Local<FunctionTemplate> wrapper_tpl = wscObject::tpl.Get( isolate );
+		class constructorSet *c = getConstructors( isolate );
+	Local<FunctionTemplate> wrapper_tpl = wscTpl.Get( isolate );
 	int ht = wrapper_tpl->HasInstance( h );
 	int tt = wrapper_tpl->HasInstance( t );
 	wscObject *obj;
@@ -2569,7 +2570,8 @@ void httpRequestObject::New( const FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->httpReqConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 	}
 

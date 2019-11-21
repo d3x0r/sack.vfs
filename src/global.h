@@ -108,6 +108,55 @@ void SystemInit( Isolate* isolate, Local<Object> exports );
 
 #define ReadOnlyProperty (PropertyAttribute)((int)PropertyAttribute::ReadOnly | PropertyAttribute::DontDelete)
 
+class constructorSet {
+	public:
+	Isolate *isolate;
+	uv_loop_t* loop;
+
+	// constructor
+	Persistent<Function> volConstructor;
+	Persistent<Function> fileConstructor;
+	Persistent<FunctionTemplate> fileTpl;
+
+	Persistent<Function> threadConstructor;
+	Persistent<Function> comConstructor;
+	Persistent<Function> wscConstructor;
+	Persistent<FunctionTemplate> wscTpl;
+
+	Persistent<Function> wssConstructor;
+	Persistent<FunctionTemplate> wssTpl;
+	Persistent<Function> wssiConstructor;
+	Persistent<FunctionTemplate> wssiTpl;
+	Persistent<Function> httpReqConstructor;
+	Persistent<Function> httpConstructor;
+
+	Persistent<Function> tlsConstructor;
+	Persistent<Function> jsoxConstructor;
+
+	Persistent<Function> parseConstructor;
+	Persistent<Function> parseConstructor6;
+	Persistent<Function> parseConstructor6v;
+
+	v8::Persistent<v8::Function> sqlConstructor;
+	v8::Persistent<v8::Function> sqlStmtConstructor;
+	v8::Persistent<v8::Function> otoConstructor;
+
+
+	//Persistent<Function> jsonConstructor;
+	Persistent<FunctionTemplate> pTextTemplate;
+	Persistent<Function> textConstructor;
+	
+	Persistent<Function> addrConstructor;
+	Persistent<FunctionTemplate> addrTpl;
+	Persistent<Function> udpConstructor;
+	//Persistent<Function> tcpConstructor;
+
+	Persistent<Map> fromPrototypeMap;
+
+};
+class constructorSet * getConstructors( Isolate *isolate );
+
+
 
 struct PromiseWrapper {
 	Persistent<Promise::Resolver> resolver;
@@ -124,7 +173,6 @@ public:
 	char *fileName;
 	struct file_system_interface *fsInt;
 	struct file_system_mounted_interface* fsMount;
-	static v8::Persistent<v8::Function> constructor;
 
 public:
 
@@ -159,7 +207,6 @@ public:
 
 class ThreadObject : public node::ObjectWrap {
 public:
-	static v8::Persistent<v8::Function> constructor;
    	static Persistent<Function> idleProc;
 public:
 
@@ -185,8 +232,6 @@ class FileObject : public node::ObjectWrap {
 	size_t size;
 	Persistent<Object> volume;
 public:
-	static v8::Persistent<v8::Function> constructor;
-	static Persistent<FunctionTemplate> tpl;
 	static void Init(  );
 
 	static void openFile( const v8::FunctionCallbackInfo<Value>& args );
@@ -212,7 +257,7 @@ class ComObject : public node::ObjectWrap {
 public:
 	int handle;
 	char *name;
-	static Persistent<Function> constructor;
+	//static Persistent<Function> constructor;
 
 	Persistent<Function, CopyablePersistentTraits<Function>> *readCallback; //
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
@@ -246,7 +291,7 @@ private:
 
 class WebSockClientObject : public node::ObjectWrap {
 public:
-	static Persistent<Function> constructor;
+	//static Persistent<Function> constructor;
 
 	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
@@ -273,7 +318,7 @@ public:
 class TLSObject : public node::ObjectWrap {
 
 public:
-	static v8::Persistent<v8::Function> constructor;
+	//static v8::Persistent<v8::Function> constructor;
 
 public:
 
@@ -321,7 +366,7 @@ struct prototypeHolder {
 class JSOXObject : public node::ObjectWrap {
 public:
 	struct jsox_parse_state *state;
-	static Persistent<Function> constructor;
+	//static Persistent<Function> constructor;
 	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
 	Persistent<Map> fromPrototypeMap;
 	Persistent<Map> promiseFromPrototypeMap;
