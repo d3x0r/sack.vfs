@@ -1231,9 +1231,12 @@ setTimeout( ()=>{ }, 5000 );
    - removed node 7 travis integration; `#  - "7" (doesn't have Utf8Value with isolate, 12 doesn't have Utf8Value without isolate())`
    - added FileMonitor interface to get event changes when files change on the disk.   
    - fixed some issues with JSOX parsing ( tagged class in tagged class in map )
-   - fix time precision in JSOX stringification.
+   - fix time precision in JSOX stringification (add ms), and was encoding Localtime but claiming UTC.
+   - fix error in salty random generator partial bit streams.
+   - Implement worker_threads support better; remove static global persistent things.
+   - Updated parsers so '\xa0' is the same as '\x20'.  Most parsers are for human-readable code; JSOX, TextParse, BurstExx.
 - 0.9.154
-   - Continutined applying deprecation fixes; republished as 154
+   - Continued applying deprecation fixes; republished as 154
 - 0.9.153
    - Republish 0.9.152 with ignored source
 - 0.9.152
