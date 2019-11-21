@@ -1,6 +1,7 @@
 language: node_js
 node_js:
   - "node"
+  - "12"
   - "11"
   - "10"
 #  - "9" (doesn't have NODE_MODULE_INIT’, AddEnvironmentCleanupHook ); also lacks TLS 1.3
