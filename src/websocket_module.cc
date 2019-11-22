@@ -646,7 +646,6 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 	//    I.e. it's safe to callback to the CB we defined in node!
 	wssObject* myself = (wssObject*)handle->data;
 	v8::Isolate* isolate = myself->isolate;//v8::Isolate::GetCurrent();
-	//v8::Locker l(isolate);
 	HandleScope scope(isolate);
 	Local<Context> context = isolate->GetCurrentContext();
 	int handled = 0;

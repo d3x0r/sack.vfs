@@ -1149,9 +1149,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				int arg = 0;
 				//if( argc > 0 ) {
 				if( args[0]->IsString() ) {
-					lprintf( "THIS IS doing utf8value - what handle?");
 					String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( context ).ToLocalChecked() );
-					lprintf( "------ Didn't get here --------------" );
 					mount_name = StrDup( *fName );
 				}
 				else  {
