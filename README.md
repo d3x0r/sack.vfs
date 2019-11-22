@@ -1226,6 +1226,8 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.158
+   - add test for typed array revival; fix typed array revival (JSOX).
 - 0.9.157 
    - revert UTC change.
 - 0.9.156
