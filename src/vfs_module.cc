@@ -186,8 +186,8 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 		node::AddEnvironmentCleanupHook( isolate, CleanupThreadResources, isolate );
 #endif
 	}
-	else
-		lprintf( "Init Exports for this new object?");
+	//else
+		//lprintf( "Init Exports for this new object?");
 	//lprintf( "Stdout Logging Enabled." );
 
 
