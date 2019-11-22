@@ -176,7 +176,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 		//SetAllocateLogging( TRUE );
 		//SetManualAllocateCheck( TRUE );
 		//SetAllocateDebug( TRUE );
-		lprintf( "Do Init in modules (shouldn't do some of this)");
+		//lprintf( "Do Init in modules (shouldn't do some of this)");
 		SetSystemLog( SYSLOG_FILE, stdout );
 
 		//LoadTranslationDataEx( "^/strings.dat" );
