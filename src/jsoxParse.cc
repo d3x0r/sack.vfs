@@ -192,28 +192,28 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 				result = Int8Array::New( ab, 0, val->stringLen );
 				break;
 			case 4:// "u16"
-				result = Uint16Array::New( ab, 0, val->stringLen );
+				result = Uint16Array::New( ab, 0, val->stringLen/2 );
 				break;
 			case 5:// "s16"
-				result = Int16Array::New( ab, 0, val->stringLen );
+				result = Int16Array::New( ab, 0, val->stringLen / 2 );
 				break;
 			case 6:// "u32"
-				result = Uint32Array::New( ab, 0, val->stringLen );
+				result = Uint32Array::New( ab, 0, val->stringLen/4 );
 				break;
 			case 7:// "s32"
-				result = Int32Array::New( ab, 0, val->stringLen );
+				result = Int32Array::New( ab, 0, val->stringLen / 4 );
 				break;
 			//case 8:// "u64"
-			//	result = Uint64Array::New( ab, 0, val->stringLen );
+			//	result = Uint64Array::New( ab, 0, val->stringLen/ 8 );
 			//	break;
 			//case 9:// "s64"
-			//	result = Int64Array::New( ab, 0, val->stringLen );
+			//	result = Int64Array::New( ab, 0, val->stringLen/ 8 );
 			//	break;
 			case 10:// "f32"
-				result = Float32Array::New( ab, 0, val->stringLen );
+				result = Float32Array::New( ab, 0, val->stringLen / 4 );
 				break;
 			case 11:// "f64"
-				result = Float64Array::New( ab, 0, val->stringLen );
+				result = Float64Array::New( ab, 0, val->stringLen/ 8 );
 				break;
 			case 12:// "ref"
 				//lprintf( "THIS should have a container? %p", val->contains );
