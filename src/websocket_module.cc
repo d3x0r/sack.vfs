@@ -224,6 +224,18 @@ typedef struct wscEvent WSC_EVENT;
 #define MAXWSC_EVENTSPERSET 128
 DeclareSet( WSC_EVENT );
 
+struct socketTransport {
+	PCLIENT pc;
+	String::Utf8Value *s;
+};
+
+struct socketUnloadStation {
+	String::Utf8Value* s;  // destination address
+	uv_async_t clientSocketPoster;
+	uv_loop_t  *targetThread;
+	Persistent<Function> cb; // callback to invoke 
+};
+
 static struct local {
 	int data;
 	//uv_loop_t* loop;
@@ -235,6 +247,8 @@ static struct local {
 	PWSSI_EVENTSET wssiEvents;
 	CRITICALSECTION csWscEvents;
 	PWSC_EVENTSET wscEvents;
+	PLIST transport;
+	PLIST transportDestinations;
 } l;
 
 
@@ -457,7 +471,7 @@ public:
 	const char *protocolResponse;
 	enum wsReadyStates readyState;
 	Isolate *isolate;
-	wssObject *server;
+	wssObject *server; // send open event to this object.
 public:
 	//static Persistent<Function> constructor;
 	//static Persistent<FunctionTemplate> tpl;
@@ -482,6 +496,7 @@ public:
 	~wssiObject();
 };
 
+//------------------------------------ Event Helpers ---------------------------------------
 
 static WSS_EVENT *GetWssEvent() {
 	EnterCriticalSec( &l.csWssEvents );
@@ -919,7 +934,79 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 	}
 }
 
-int accepted = 0;
+
+static void postClientSocket( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wssiObject* obj = wssObject::Unwrap<wssiObject>( args[0].As<Object>() );
+	struct socketTransport* st = new struct socketTransport();
+	String::Utf8Value s( isolate, args[0]->ToString( isolate ) );
+	st->pc = obj->pc;
+	AddLink( &l.transport, st );
+
+	{
+		struct socketUnloadStation* station;
+		INDEX idx;
+		LIST_FORALL( l.transportDestinations, idx, struct socketUnloadStation*, station ) {
+			if( memcmp( *station->s[0], *s, s->length() ) == 0 ) {
+				uv_async_send( &station->clientSocketPoster );
+				break;
+			}
+		}
+		if( !station ) {
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Failed to find target accepting thread", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		}
+	}
+}
+
+static void handlePostedClient( uv_async_t* async ) {
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	struct socketUnloadStation* unload = ( struct socketUnloadStation* )async->data;
+	Local<Function> f = unload->cb.Get( isolate );
+	INDEX idx;
+	struct socketTransport* trans;
+	LIST_FORALL( l.transport, idx, struct socketTransport*, trans ) {
+
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->wssiConstructor );
+		Local<Object> newThreadSocket = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
+
+
+		Local<Value> args[] = { localStringExternal( isolate, **( trans->s ), trans->s->length() ), newThreadSocket };
+		wssiObject* obj = wssiObject::Unwrap<wssiObject>( newThreadSocket );
+		obj->pc = trans->pc;
+		/* 
+			connectionString, headerString, urlString are all missing
+		*/
+
+		Local<Value> result = f->Call( context, , 1, args ).ToLocalChecked();
+		if( result->ToBoolean( context ).FromMaybe( False( isolate ) )->Value() ) {
+			DeleteLink( &l.transportDestinations, unload );
+			uv_close( (uv_handle_t*)async, NULL );
+			SetLink( &l.transport, 0, NULL );
+			delete unload->s;
+			delete unload;
+			break;
+		}
+	}
+}
+
+static void setClientSocketHandler( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	class constructorSet* c = getConstructors( isolate );
+	String::Utf8Value unique( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+
+	Local<Function> f = args[1].As<Function>();
+	struct socketUnloadStation* unloader = new struct socketUnloadStation();
+	unloader->s = new String::Utf8Value( isolate, args[0]->ToString( isolate ) );
+	unloader->cb.Reset( isolate, f );
+	unloader->targetThread = c->loop;
+	unloader->clientSocketPoster.data = &unloader;
+	uv_async_init( unloader->targetThread, &unloader->clientSocketPoster, handlePostedClient );
+
+	AddLink( &l.transportDestinations, unloader );
+}
 
 void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 	Local<Context> context = isolate->GetCurrentContext();
@@ -976,6 +1063,12 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 
 		// this is not exposed as a class that javascript can create.
 		//SET_READONLY( o, "R", wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	}
+	{
+		Local<Object> threadObject = Object::New( isolate );
+		SET_READONLY_METHOD( threadObject, "post", postClientSocket );
+		SET_READONLY_METHOD( threadObject, "accept", setClientSocketHandler );
+		SET_READONLY( o, "Thread", threadObject );
 	}
 	{
 		Local<FunctionTemplate> wssTemplate;
@@ -1732,7 +1825,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		Local<Value> val = GETV( opts, optName );
 		if( val->IsArray() ) {
 		Local<Array> hosts = GETV( opts, optName ).As<Array>();
-		int o;
+		uint32_t o;
 		for( o = 0; o < hosts->Length(); o++ ) {
 			Local<Object> host = GETV( hosts, o ).As<Object>();
 			ParseWssHostOption( strings, wssOpts, isolate, host );

@@ -98,6 +98,9 @@ vfs = {
     WebSocket - Websocket interface
         Client( ... ) - create a websocket client
         Server( ... ) - create a websocket server        
+        Thread - Helper functions to transport accepted clients to other threads.
+            post( accepted_socket, unique_destination_string ) - posts a socket to another thread
+            accept( unique_destination_string, ( newSocket )=>{} ) - receives posted accepted sockets
     HTTP - HTTP Request Method
         get( {options} ) - synchronous http request
     HTTPS - HTTPS Request Method
@@ -765,6 +768,8 @@ server.onAccept( callback );
 
 ```
 
+### Websocket Client Interface
+
 Client constructor parameters
   - URL - the URL to connect to
   - protocol - the protocol for this connection.  Accepts either a string or an array of strings to send as protocols.
@@ -804,6 +809,8 @@ Client Methods
    | onerrorlow | sets the callback to be called on a low level error event.  (SSL negotation failed), callback gets (error,connection,buffer), and maybe used to check the buffer, disable SSL, and possibly serve a redirect. |
    | on  | sets event callbacks by name.  First parameter is the event name, the second is the callback |
 
+
+### Websocket Server Interface
 
 Server Constructor Parameters
   - (optional) URL - a URL formatted string specifying server address and optional port.
@@ -871,6 +878,8 @@ Server Client Methods
   | disableSSL | closes the SSL layer on the socket and resumes native TCP connection. |
   | close | closes the connection |
   | on | event handler for specified type `on(eventName, callback)` | 
+
+### HTTP Request Object Description
 
 Http Request/Server Client fields
 
@@ -956,6 +965,42 @@ Results with an object with the following fields....
 | statusCode | number indiciating the response code form the server |
 | status | text status from server |
 | headers | array of header from response (should really be an object, indexes are field names with field values specified) |
+
+### Websocket Thread Support
+
+This is support to be able to send accepted clients to other 'worker_threads' threads in Node.
+Sockets which have been accepted can be moved; there's no reason to move the listener thread...
+and client connections should be made on the intended thread, so there's no support to move those either.
+This is only for threads accepted by a server, which may fork a thread, and hand off said socket to the 
+specified target thread.  The handoff takes a unique string which should identify the target thread; although,
+a pool of threads all using the same identifier may each receive one socket.  Once the accept event is fired,
+it is cleared, and the thread will have to re-post a listener to accept another socket.
+
+```
+// rough example, not sure about the onaccept interface
+
+var wss = sack.Websocket.Server( "::0" );
+wss.onaccept( (wsc)=>{
+	/// wsc  = websocket client
+	sack.Websocket.Thread.post( "destination", wsc );
+} );
+
+// --------------------------------
+// and then destination
+
+sack.Websocket.Thread.accept( "destination", (socket)=>{
+	// receve a posted socket
+} );
+```
+
+
+
+```
+        Thread - Helper functions to transport accepted clients to other threads.
+            post( accepted_socket, unique_destination_string ) - posts a socket to another thread
+            accept( unique_destination_string, ( newSocket )=>{} ) - receives posted accepted sockets
+```
+
 
 
 ## UDP Socket Object (Network.UDP)

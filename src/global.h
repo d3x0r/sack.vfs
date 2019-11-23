@@ -153,6 +153,9 @@ class constructorSet {
 
 	Persistent<Map> fromPrototypeMap;
 
+	uv_async_t clientSocketPoster;
+	//Persistent<Function> onCientPost;
+
 };
 class constructorSet * getConstructors( Isolate *isolate );
 
