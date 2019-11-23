@@ -230,6 +230,7 @@ struct socketTransport {
 };
 
 struct socketUnloadStation {
+	Persistent<Object> this_;
 	String::Utf8Value* s;  // destination address
 	uv_async_t clientSocketPoster;
 	uv_loop_t  *targetThread;
@@ -947,7 +948,7 @@ static void postClientSocket( const v8::FunctionCallbackInfo<Value>& args ) {
 		struct socketUnloadStation* station;
 		INDEX idx;
 		LIST_FORALL( l.transportDestinations, idx, struct socketUnloadStation*, station ) {
-			if( memcmp( *station->s[0], *s, s->length() ) == 0 ) {
+			if( memcmp( *station->s[0], *s, s.length() ) == 0 ) {
 				uv_async_send( &station->clientSocketPoster );
 				break;
 			}
@@ -980,8 +981,10 @@ static void handlePostedClient( uv_async_t* async ) {
 			connectionString, headerString, urlString are all missing
 		*/
 
-		Local<Value> result = f->Call( context, , 1, args ).ToLocalChecked();
+		Local<Value> result = f->Call( context, unload->this_.Get(isolate), 2, args ).ToLocalChecked();
 		if( result->ToBoolean( context ).FromMaybe( False( isolate ) )->Value() ) {
+			unload->cb.Reset();
+			unload->this_.Reset();
 			DeleteLink( &l.transportDestinations, unload );
 			uv_close( (uv_handle_t*)async, NULL );
 			SetLink( &l.transport, 0, NULL );
@@ -999,6 +1002,7 @@ static void setClientSocketHandler( const v8::FunctionCallbackInfo<Value>& args 
 
 	Local<Function> f = args[1].As<Function>();
 	struct socketUnloadStation* unloader = new struct socketUnloadStation();
+	unloader->this_.Reset( isolate, args.This() );
 	unloader->s = new String::Utf8Value( isolate, args[0]->ToString( isolate ) );
 	unloader->cb.Reset( isolate, f );
 	unloader->targetThread = c->loop;
