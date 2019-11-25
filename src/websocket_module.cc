@@ -475,6 +475,7 @@ public:
 	class wssObject *server; // send open event to this object.
 	WSS_EVENT* acceptEventMessage;
 	Persistent<Promise> acceptPromise;
+	LOGICAL blockReturn;
 public:
 	//static Persistent<Function> constructor;
 	//static Persistent<FunctionTemplate> tpl;
@@ -778,10 +779,9 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				if( !eventMessage->pc )
 					lprintf( "FATALITY - ACCEPT EVENT IS SETTING SOCKET TO NULL." );
 				wssiInternal->pc = eventMessage->pc;
-				wssiInternal->wssiRef = new wssiObjectReference();
-				wssiInternal->wssiRef->wssi = wssiInternal;
 				wssiInternal->server = myself;
 				AddLink( &myself->opening, wssiInternal );
+				eventMessage->result = wssiInternal;
 
 				SETV( wssi, strings->connectionString->Get(isolate), socket = makeSocket( isolate, eventMessage->pc ) );
 				SETV( wssi, strings->headerString->Get( isolate ), GETV( socket, strings->headerString->Get( isolate ) ) );
@@ -790,10 +790,15 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 						, GetText( GetHttpRequest( GetWebSocketHttpState( wssiInternal->pc ) ) ), v8::NewStringType::kNormal ).ToLocalChecked() );
 
 				argv[0] = wssi;
+				wssiInternal->acceptEventMessage = eventMessage;
 
 				if( !myself->acceptCallback.IsEmpty() ) {
 					Local<Function> cb = myself->acceptCallback.Get( isolate );
 					MaybeLocal<Value> result = cb->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+					if( wssiInternal->blockReturn ) {
+						continue;
+					}
+#if 0
 					if( !result.IsEmpty() ) {
 						Local<Value> ret = result.ToLocalChecked();
 						Local<Promise> retPro = ret.As<Promise>();
@@ -801,17 +806,19 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 							Promise::PromiseState s = retPro->State();
 							if( s == Promise::PromiseState::kPending ) {
 								lprintf( "Register thren/cancel callbacks on pending..." );
-								wssiInternal->acceptEventMessage = eventMessage;
-								wssiInternal->acceptPromise.Reset( isolate, retPro );
-								Local<Function> promiseResolved = v8::Function::New( isolate->GetCurrentContext(), acceptResolved, wssi ).ToLocalChecked();
-								Local<Function> promiseRejected = v8::Function::New( isolate->GetCurrentContext(), acceptRejected, wssi ).ToLocalChecked();
+								//wssiInternal->acceptEventMessage = eventMessage;
+								//wssiInternal->acceptPromise.Reset( isolate, retPro );
+								//Local<Function> promiseResolved = v8::Function::New( isolate->GetCurrentContext(), acceptResolved, wssi ).ToLocalChecked();
+								//Local<Function> promiseRejected = v8::Function::New( isolate->GetCurrentContext(), acceptRejected, wssi ).ToLocalChecked();
 								//promiseRejected->
 								//Then (Local< Context > context, Local< Function > on_fulfilled, Local< Function > on_rejected)
-								MaybeLocal<Promise> retval = retPro->Then( context, promiseResolved, promiseRejected );
+								//MaybeLocal<Promise> retval = retPro->Then( context, promiseResolved, promiseRejected );
 								continue;
 							}
 							else if( s == Promise::PromiseState::kFulfilled ) {
-								lprintf( "Is already fulfulled, no problem..." );
+								Local<Value> e = retPro->Result();
+								String::Utf8Value s( isolate, e->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+								lprintf( "Is already fulfulled, no problem... %s", *s );
 							}
 							else if( s == Promise::PromiseState::kRejected ) {
 								Local<Value> e = retPro->Result();
@@ -825,10 +832,10 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 							continue;
 						}
 					}
+#endif
 				}
 				else
 					eventMessage->data.request.accepted = 1;
-				eventMessage->result = wssiInternal;
 			}
 			else if( eventMessage->eventType == WS_EVENT_ERROR_CLOSE ) {
 				Local<Object> closingSock = makeSocket( isolate, eventMessage->pc );
@@ -1064,6 +1071,28 @@ static void postClientSocketObject( const v8::FunctionCallbackInfo<Value>& args 
 }
 
 
+static void blockClientSOcketAccept( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wssiObject* obj = wssObject::Unwrap<wssiObject>( args.This() );
+	if( obj ) {
+		if( obj ) {
+			obj->blockReturn = TRUE;
+		}
+	}
+}
+
+static void resumeClientSOcketAccept( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wssiObject* obj = wssObject::Unwrap<wssiObject>( args.This() );
+	if( obj ) {
+		obj->acceptEventMessage->data.request.accepted = 1;
+		obj->acceptEventMessage->done = TRUE;
+		if( obj->acceptEventMessage->waiter )
+			WakeThread( obj->acceptEventMessage->waiter );
+	}
+}
+
+
 static void handlePostedClient( uv_async_t* async ) {
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	HandleScope scope( isolate );
@@ -1083,6 +1112,12 @@ static void handlePostedClient( uv_async_t* async ) {
 
 		Local<Value> args[] = { localStringExternal( isolate, **( unload->s ), unload->s->length() ), newThreadSocket };
 		wssiObject* obj = wssiObject::Unwrap<wssiObject>( newThreadSocket );
+		obj->acceptEventMessage = trans->wssi->acceptEventMessage;
+		trans->wssi->acceptEventMessage = NULL;
+		obj->server = trans->wssi->server;
+		obj->protocolResponse = trans->wssi->protocolResponse;
+		trans->wssi->protocolResponse = NULL;
+		obj->pc = trans->wssi->pc;
 		delete obj->wssiRef;
 		obj->wssiRef = trans->wssi->wssiRef;
 		obj->wssiRef->wssi = obj; // update reference to be this JS object.
@@ -1090,18 +1125,18 @@ static void handlePostedClient( uv_async_t* async ) {
 			connectionString, headerString, urlString are all missing
 		*/
 
-		lprintf( "calling callback to accept this socket.." );
+		//lprintf( "calling callback to accept this socket.." );
 		MaybeLocal<Value> ml_result = f->Call( context, unload->this_.Get(isolate), 2, args );
 		if( !ml_result.IsEmpty() ) {
 			Local<Value> result = ml_result.ToLocalChecked();
 			if( result->TOBOOL(isolate) ) {
 			}
 		}
-		lprintf( "Cleanup this event.." );
+			//lprintf( "Cleanup this event.." );
 			unload->cb.Reset();
 			unload->this_.Reset();
 			DeleteLink( &l.transportDestinations, unload );
-			lprintf( " Closing 1 handle.");
+			//lprintf( " Closing 1 handle.");
 			uv_unref( (uv_handle_t*)async );
 			SetLink( &unload->transport, 0, NULL );
 			delete unload->s;
@@ -1123,7 +1158,7 @@ static void setClientSocketHandler( const v8::FunctionCallbackInfo<Value>& args 
 	unloader->targetThread = c->loop;
 	unloader->clientSocketPoster.data = unloader;
 	unloader->transport = NULL;
-	lprintf( "New async evnet handler for this unloader");
+	//lprintf( "New async evnet handler for this unloader");
 	uv_async_init( unloader->targetThread, &unloader->clientSocketPoster, handlePostedClient );
 
 	AddLink( &l.transportDestinations, unloader );
@@ -1266,6 +1301,8 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		wssiTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.ws.connection", v8::NewStringType::kNormal ).ToLocalChecked() );
 		wssiTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "post", postClientSocketObject );
+		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "block", blockClientSOcketAccept );
+		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "resume", resumeClientSOcketAccept );
 
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "send", wssiObject::write );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "close", wssiObject::close );
@@ -1464,7 +1501,6 @@ static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char *proto
 
 	while( !evt.done )
 		Wait();
-	//lprintf( "handled... accept next?" );
 	if( evt.data.request.protocol != protocols )
 		evt.result->protocolResponse = evt.data.request.protocol;
 	(*protocolReply) = (char*)evt.data.request.protocol;
@@ -2217,6 +2253,7 @@ wssiObject::wssiObject( ) {
 	readyState = wsReadyStates::OPEN;
 	protocolResponse = NULL;
 	this->closed = 0;
+	this->blockReturn = 0;
 
 }
 
@@ -2236,6 +2273,7 @@ void wssiObject::New( const FunctionCallbackInfo<Value>& args ) {
 		class constructorSet *c = getConstructors(isolate);
 		uv_async_init( c->loop, &obj->async, wssiAsyncMsg );
 		obj->wssiRef = new wssiObjectReference();
+		obj->wssiRef->wssi = obj;
 		obj->async.data = obj;
 		obj->_this.Reset( isolate, args.This() );
 		obj->Wrap( args.This() );
