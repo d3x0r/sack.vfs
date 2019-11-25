@@ -872,6 +872,7 @@ Server Client Methods
   
   | Method |  Description |
   |----|----|
+  | post(target) | send this socket to another thread; best when applied during accept event handler(on accept) |
   | ping() | Generate a websocket ping.  /* no response/event? */ |
   | onmessage | set the callback to be called when a message is received, it gets a single parameter, the message recieved. The data is either a string or an ArrayBuffer type | 
   | send | send data on the connection.  Message parameter can either be an ArrayBuffer or a String. (to be implemented; typedarraybuffer) |
@@ -982,7 +983,8 @@ it is cleared, and the thread will have to re-post a listener to accept another 
 var wss = sack.Websocket.Server( "::0" );
 wss.onaccept( (wsc)=>{
 	/// wsc  = websocket client
-	sack.Websocket.Thread.post( "destination", wsc );
+	// sack.Websocket.Thread.post( "destination", wsc );
+        wsc.post( "destination" );
 } );
 
 // --------------------------------
