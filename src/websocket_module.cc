@@ -798,13 +798,27 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 						Local<Value> ret = result.ToLocalChecked();
 						Local<Promise> retPro = ret.As<Promise>();
 						if( !retPro.IsEmpty() ){
-							wssiInternal->acceptEventMessage = eventMessage;
-							wssiInternal->acceptPromise.Reset( isolate, retPro );
-							Local<Function> promiseResolved = v8::Function::New(isolate->GetCurrentContext(), acceptResolved, wssi ).ToLocalChecked();
-							Local<Function> promiseRejected = v8::Function::New(isolate->GetCurrentContext(), acceptRejected, wssi ).ToLocalChecked();
-
-							//Then (Local< Context > context, Local< Function > on_fulfilled, Local< Function > on_rejected)
-							MaybeLocal<Promise> retval = retPro->Then( context, promiseResolved, promiseRejected );
+							Promise::PromiseState s = retPro->State();
+							if( s == Promise::PromiseState::kPending ) {
+								lprintf( "Register thren/cancel callbacks on pending..." );
+								wssiInternal->acceptEventMessage = eventMessage;
+								wssiInternal->acceptPromise.Reset( isolate, retPro );
+								Local<Function> promiseResolved = v8::Function::New( isolate->GetCurrentContext(), acceptResolved, wssi ).ToLocalChecked();
+								Local<Function> promiseRejected = v8::Function::New( isolate->GetCurrentContext(), acceptRejected, wssi ).ToLocalChecked();
+								//promiseRejected->
+								//Then (Local< Context > context, Local< Function > on_fulfilled, Local< Function > on_rejected)
+								MaybeLocal<Promise> retval = retPro->Then( context, promiseResolved, promiseRejected );
+								continue;
+							}
+							else if( s == Promise::PromiseState::kFulfilled ) {
+								lprintf( "Is already fulfulled, no problem..." );
+							}
+							else if( s == Promise::PromiseState::kRejected ) {
+								Local<Value> e = retPro->Result();
+								String::Utf8Value s( isolate, e->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+								lprintf( "Bad news, it's rejected, but... ok. %s", *s );
+								//break;
+							}
 							//  TypeError: Method Promise.prototype.then called on incompatible receiver undefined at then (<anonymous>)
 
 							// don't set done, keep blocking the acceptor...
