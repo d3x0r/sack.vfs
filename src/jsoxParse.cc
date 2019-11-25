@@ -703,11 +703,15 @@ void escapeJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
 
 Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviver_data *revive ) {
 	PDATALIST parsed = NULL;
-        //logTick(2);
-	if( !jsox_parse_message( (char*)utf8String, len, &parsed ) ) {
+
+	struct jsox_parse_state *state = jsox_begin_parse();
+	//static struct jsox_parse_state *_state;
+	int result = jsox_parse_add_data( state, utf8String, len );
+	//if( jxpsd._state ) jsox_parse_dispose_state( &jxpsd._state );
+	if( result <= 0 ) {
 		//PTEXT error = jsox_parse_get_error( parser->state );
 		//lprintf( "Failed to parse data..." );
-		PTEXT error = jsox_parse_get_error( NULL );
+		PTEXT error = jsox_parse_get_error( state );
 		if( error )
 			revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		else
@@ -715,11 +719,13 @@ Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviver_data
 		LineRelease( error );
 		return Undefined(revive->isolate);
 	}
+
 	if( parsed && parsed->Cnt > 1 ) {
 		lprintf( "Multiple values would result, invalid parse." );
 		return Undefined(revive->isolate);
 		// outside should always be a single value
 	}
+	parsed = jsox_parse_get_data( state ); // resulting message is removed from the parser.
 	revive->parser = new JSOXObject();
         //logTick(3);
 	Local<Value> value = convertMessageToJS2( parsed, revive );
@@ -727,7 +733,8 @@ Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviver_data
 	delete revive->parser;
 
 	jsox_dispose_message( &parsed );
-        //logTick(5);
+	jsox_parse_dispose_state( &state ); // this is fairly cheap...
+    //logTick(5);
 
 	return value;
 }
