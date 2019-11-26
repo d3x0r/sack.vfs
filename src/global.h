@@ -154,6 +154,8 @@ class constructorSet {
 	Persistent<Map> fromPrototypeMap;
 
 	uv_async_t clientSocketPoster;
+	Persistent<Function> promiseThen;
+	Persistent<Function> promiseCatch;
 	//Persistent<Function> onCientPost;
 
 };

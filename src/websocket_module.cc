@@ -226,6 +226,8 @@ DeclareSet( WSC_EVENT );
 
 struct socketTransport {
 	class wssiObject *wssi;
+	WSS_EVENT* acceptEventMessage;
+	const char *protocolResponse;
 };
 
 struct socketUnloadStation {
@@ -465,7 +467,6 @@ public:
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Object> _this;
 	PLINKQUEUE eventQueue;
-	//struct wssiEvent *eventMessage;
 	PCLIENT pc;
 	LOGICAL closed;
 	const char *protocolResponse;
@@ -670,31 +671,40 @@ static void acceptResolved(const v8::FunctionCallbackInfo<Value>& args ) {
 	v8::Isolate* isolate = args.GetIsolate();
 	Local<Object> wssi = args.Data().As<Object>();
 	wssiObject *wssiInternal = wssiObject::Unwrap<wssiObject>( wssi );
+
 	struct wssEvent *eventMessage = wssiInternal->acceptEventMessage;
 
-	lprintf( "Accept called on promise...");
-	eventMessage->done = TRUE;
-	eventMessage->data.request.accepted = 1;
-	eventMessage->result = wssiInternal;
-	args.GetReturnValue().Set( wssiInternal->acceptPromise.Get(isolate) );
-	wssiInternal->acceptPromise.Reset();
-	if( eventMessage->waiter )
-		WakeThread( eventMessage->waiter );
+	//lprintf( "Resolve called on promise...");
+	if( eventMessage ) {
+		wssiInternal->acceptEventMessage = NULL;
+		eventMessage->done = TRUE;
+		eventMessage->data.request.accepted = 1;
+		eventMessage->result = wssiInternal;
+		args.GetReturnValue().Set( wssiInternal->acceptPromise.Get(isolate) );
+		wssiInternal->acceptPromise.Reset();
+		if( eventMessage->waiter )
+			WakeThread( eventMessage->waiter );
+	}
 }
 
 static void acceptRejected(const v8::FunctionCallbackInfo<Value>& args ) {
 	v8::Isolate* isolate = args.GetIsolate();
 	Local<Object> wssi = args.Data().As<Object>();
-	lprintf( "Reject called on promise...");
 	wssiObject *wssiInternal = wssiObject::Unwrap<wssiObject>( wssi );
-	struct wssEvent *eventMessage = wssiInternal->acceptEventMessage;
-	eventMessage->done = TRUE;
-	eventMessage->data.request.accepted = 0;
-	args.GetReturnValue().Set( wssiInternal->acceptPromise.Get(isolate) );
-	wssiInternal->acceptPromise.Reset();
 
-	if( eventMessage->waiter )
-		WakeThread( eventMessage->waiter );
+	struct wssEvent *eventMessage = wssiInternal->acceptEventMessage;
+
+	//lprintf( "Reject called on promise...");
+	if( eventMessage ) { // this is released on post...
+		wssiInternal->acceptEventMessage = NULL;
+		eventMessage->done = TRUE;
+		eventMessage->data.request.accepted = 0;
+		args.GetReturnValue().Set( wssiInternal->acceptPromise.Get(isolate) );
+		wssiInternal->acceptPromise.Reset();
+
+		if( eventMessage->waiter )
+			WakeThread( eventMessage->waiter );
+	}
 }
 
 static void wssAsyncMsg( uv_async_t* handle ) {
@@ -704,6 +714,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 	v8::Isolate* isolate = myself->isolate;//v8::Isolate::GetCurrent();
 	HandleScope scope(isolate);
 	Local<Context> context = isolate->GetCurrentContext();
+	struct constructorSet *c = getConstructors( isolate);
 	int handled = 0;
 	{
 		struct wssEvent *eventMessage;
@@ -798,18 +809,34 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					if( wssiInternal->blockReturn ) {
 						continue;
 					}
-#if 0
+//#if 0
 					if( !result.IsEmpty() ) {
 						Local<Value> ret = result.ToLocalChecked();
 						Local<Promise> retPro = ret.As<Promise>();
 						if( !retPro.IsEmpty() ){
 							Promise::PromiseState s = retPro->State();
 							if( s == Promise::PromiseState::kPending ) {
+								if( c->promiseThen.IsEmpty()){
+									Local<Function> cons = Local<Function>::Cast(
+										retPro->Get( context, String::NewFromUtf8( isolate, "then", NewStringType::kNormal ).ToLocalChecked() ).ToLocalChecked());
+									c->promiseThen.Reset( isolate, cons );
+								}
+								if( c->promiseCatch.IsEmpty()){
+									Local<Function> cons = Local<Function>::Cast(
+										retPro->Get( context, String::NewFromUtf8( isolate, "catch", NewStringType::kNormal ).ToLocalChecked() ).ToLocalChecked());
+									c->promiseCatch.Reset( isolate, cons );
+
+								}
 								lprintf( "Register thren/cancel callbacks on pending..." );
-								//wssiInternal->acceptEventMessage = eventMessage;
+								Local<Function> promiseResolved = v8::Function::New( isolate->GetCurrentContext(), acceptResolved, wssi ).ToLocalChecked();
+								Local<Function> promiseRejected = v8::Function::New( isolate->GetCurrentContext(), acceptRejected, wssi ).ToLocalChecked();
+
+								Local<Value> argv[1] = { promiseResolved };
+								Local<Value> result = c->promiseThen.Get( isolate )->Call( context, retPro, 1, argv ).ToLocalChecked();
+								argv[0] = { promiseRejected };
+								result = c->promiseCatch.Get( isolate )->Call( context, retPro, 1, argv ).ToLocalChecked();
+
 								//wssiInternal->acceptPromise.Reset( isolate, retPro );
-								//Local<Function> promiseResolved = v8::Function::New( isolate->GetCurrentContext(), acceptResolved, wssi ).ToLocalChecked();
-								//Local<Function> promiseRejected = v8::Function::New( isolate->GetCurrentContext(), acceptRejected, wssi ).ToLocalChecked();
 								//promiseRejected->
 								//Then (Local< Context > context, Local< Function > on_fulfilled, Local< Function > on_rejected)
 								//MaybeLocal<Promise> retval = retPro->Then( context, promiseResolved, promiseRejected );
@@ -832,7 +859,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 							continue;
 						}
 					}
-#endif
+//#endif
 				}
 				else
 					eventMessage->data.request.accepted = 1;
@@ -1017,23 +1044,32 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 
 
 
-static void PostClientSocket( Isolate *isolate, String::Utf8Value *name, wssiObject* obj ) {
-	struct socketTransport* st = new struct socketTransport();
-	st->wssi = obj;
+static LOGICAL PostClientSocket( Isolate *isolate, String::Utf8Value *name, wssiObject* obj ) {
+	struct socketTransport* trans = new struct socketTransport();
+	trans->wssi = obj;
+	trans->acceptEventMessage = obj->acceptEventMessage;
+
+	obj->blockReturn = TRUE;
+	obj->acceptEventMessage = NULL;
+	trans->protocolResponse = obj->protocolResponse;
+	obj->protocolResponse = NULL;
 	{
 		struct socketUnloadStation* station;
 		INDEX idx;
 		LIST_FORALL( l.transportDestinations, idx, struct socketUnloadStation*, station ) {
 			if( memcmp( *station->s[0], *(name[0]), (name[0]).length() ) == 0 ) {
-				AddLink( &station->transport, st );
+				AddLink( &station->transport, trans );
 				uv_async_send( &station->clientSocketPoster );
+
 				break;
 			}
 		}
 		if( !station ) {
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Failed to find target accepting thread", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			return FALSE;
+			//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Failed to find target accepting thread", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		}
 	}
+	return TRUE;
 }
 
 static void postClientSocket( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -1045,7 +1081,11 @@ static void postClientSocket( const v8::FunctionCallbackInfo<Value>& args ) {
 	wssiObject* obj = wssObject::Unwrap<wssiObject>( args[1].As<Object>() );
 	if( obj ){
 		String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		PostClientSocket( isolate, &s, obj );
+		if( PostClientSocket( isolate, &s, obj ) ) 
+			args.GetReturnValue().Set( True(isolate) );
+		else
+			args.GetReturnValue().Set( False(isolate) );
+		
 	}
 	else {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Second paramter is not an accepted socket", v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -1063,7 +1103,10 @@ static void postClientSocketObject( const v8::FunctionCallbackInfo<Value>& args 
 	wssiObject* obj = wssObject::Unwrap<wssiObject>( args.This() );
 	if( obj ){
 		String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		PostClientSocket( isolate, &s, obj );
+		if( PostClientSocket( isolate, &s, obj ) ) 
+			args.GetReturnValue().Set( True(isolate) );
+		else
+			args.GetReturnValue().Set( False(isolate) );
 	}
 	else {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Object is not an accepted socket", v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -1071,20 +1114,18 @@ static void postClientSocketObject( const v8::FunctionCallbackInfo<Value>& args 
 }
 
 
-static void blockClientSOcketAccept( const v8::FunctionCallbackInfo<Value>& args ) {
+static void blockClientSocketAccept( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wssiObject* obj = wssObject::Unwrap<wssiObject>( args.This() );
 	if( obj ) {
-		if( obj ) {
-			obj->blockReturn = TRUE;
-		}
+		obj->blockReturn = TRUE;
 	}
 }
 
-static void resumeClientSOcketAccept( const v8::FunctionCallbackInfo<Value>& args ) {
+static void resumeClientSocketAccept( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wssiObject* obj = wssObject::Unwrap<wssiObject>( args.This() );
-	if( obj ) {
+	if( obj && obj->acceptEventMessage ) {
 		obj->acceptEventMessage->data.request.accepted = 1;
 		obj->acceptEventMessage->done = TRUE;
 		if( obj->acceptEventMessage->waiter )
@@ -1112,11 +1153,11 @@ static void handlePostedClient( uv_async_t* async ) {
 
 		Local<Value> args[] = { localStringExternal( isolate, **( unload->s ), unload->s->length() ), newThreadSocket };
 		wssiObject* obj = wssiObject::Unwrap<wssiObject>( newThreadSocket );
-		obj->acceptEventMessage = trans->wssi->acceptEventMessage;
-		trans->wssi->acceptEventMessage = NULL;
+		obj->acceptEventMessage = trans->acceptEventMessage;
+		//trans->wssi->acceptEventMessage = NULL;
 		obj->server = trans->wssi->server;
-		obj->protocolResponse = trans->wssi->protocolResponse;
-		trans->wssi->protocolResponse = NULL;
+		obj->protocolResponse = trans->protocolResponse;
+		//trans->wssi->protocolResponse = NULL;
 		obj->pc = trans->wssi->pc;
 		delete obj->wssiRef;
 		obj->wssiRef = trans->wssi->wssiRef;
@@ -1136,8 +1177,7 @@ static void handlePostedClient( uv_async_t* async ) {
 			unload->cb.Reset();
 			unload->this_.Reset();
 			DeleteLink( &l.transportDestinations, unload );
-			//lprintf( " Closing 1 handle.");
-			uv_unref( (uv_handle_t*)async );
+			uv_close( (uv_handle_t*)async, NULL );
 			SetLink( &unload->transport, 0, NULL );
 			delete unload->s;
 			delete unload;
@@ -1158,7 +1198,8 @@ static void setClientSocketHandler( const v8::FunctionCallbackInfo<Value>& args 
 	unloader->targetThread = c->loop;
 	unloader->clientSocketPoster.data = unloader;
 	unloader->transport = NULL;
-	//lprintf( "New async evnet handler for this unloader");
+	lprintf( "New async event handler for this unloader%p", &unloader->clientSocketPoster );
+
 	uv_async_init( unloader->targetThread, &unloader->clientSocketPoster, handlePostedClient );
 
 	AddLink( &l.transportDestinations, unloader );
@@ -1301,8 +1342,8 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		wssiTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.ws.connection", v8::NewStringType::kNormal ).ToLocalChecked() );
 		wssiTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "post", postClientSocketObject );
-		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "block", blockClientSOcketAccept );
-		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "resume", resumeClientSOcketAccept );
+		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "block", blockClientSocketAccept );
+		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "resume", resumeClientSocketAccept );
 
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "send", wssiObject::write );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "close", wssiObject::close );
