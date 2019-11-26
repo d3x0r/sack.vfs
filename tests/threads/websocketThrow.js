@@ -7,10 +7,15 @@ var thread = new wt.Worker( "./websocketListenThread.js", { stdout:true} )
 thread.stdout.pipe( process.stdout );
 
 
-server.open( {port:9912}, (ws)=>{
+server.open( {port:9912}, async (ws)=>{
 	console.log( "Accepted a connection?" ); 
-	
-	ws.post( "Accept A Socket" );
+	return new Promise( (res)=>{
+		setTimeout( ()=>{
+			res(true);
+		}, 1000 );
+	}).then( ()=>{
+		ws.post( "Accept A Socket" )
+	} );
 } )
 
 
