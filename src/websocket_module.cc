@@ -812,8 +812,9 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 //#if 0
 					if( !result.IsEmpty() ) {
 						Local<Value> ret = result.ToLocalChecked();
-						Local<Promise> retPro = ret.As<Promise>();
-						if( ret->IsPromise() && !retPro.IsEmpty() ){
+						if( ret->IsPromise() ) { 
+							Local<Promise> retPro = ret.As<Promise>();
+							if(  !retPro.IsEmpty() ){
 							Promise::PromiseState s = retPro->State();
 							if( s == Promise::PromiseState::kPending ) {
 								if( c->promiseThen.IsEmpty()){
@@ -857,6 +858,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 
 							// don't set done, keep blocking the acceptor...
 							continue;
+							}
 						}
 					}
 //#endif
