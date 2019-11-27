@@ -714,7 +714,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 	v8::Isolate* isolate = myself->isolate;//v8::Isolate::GetCurrent();
 	HandleScope scope(isolate);
 	Local<Context> context = isolate->GetCurrentContext();
-	struct constructorSet *c = getConstructors( isolate);
+	class constructorSet *c = getConstructors( isolate);
 	int handled = 0;
 	{
 		struct wssEvent *eventMessage;

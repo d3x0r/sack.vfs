@@ -153,10 +153,10 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 
 #if ( NODE_MAJOR_VERSION > 9 )
 static void CleanupThreadResources( void* arg_ ) {
-	Isolate *isolate = (Isolate*)arg_;
-	class constructorSet *c = getConstructors( isolate );
+	class constructorSet *c = (class constructorSet*)arg_;
+	
 	delete c;
-   DeleteLink( &vl.constructors, c );
+	DeleteLink( &vl.constructors, c );
 	//lprintf( "Which things belonged to this thread?, is it isolate?" );
 	// objects are weak referenced where appropriate anyway so things should cleanup
 	// already without additional help.
@@ -182,16 +182,24 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 		//LoadTranslationDataEx( "^/strings.dat" );
 		LoadTranslationDataEx( "@/../../strings.json" );
 		runOnce = 0;
-#if ( NODE_MAJOR_VERSION > 9 )
-		node::AddEnvironmentCleanupHook( isolate, CleanupThreadResources, isolate );
-#endif
 	}
 	//else
 		//lprintf( "Init Exports for this new object?");
 	//lprintf( "Stdout Logging Enabled." );
-
-
+	/*
+	{
+		PTEXT textOutput ;
+		textOutput = TextParse( SegCreateFromText( "GET /url/url.nme.text.xxx" ), NULL, NULL, 1, 1, NULL, 0 );
+		 GetFieldsInSQLEx( "create table groupBytes (user_id char, \tgroup_id char(20), \tsent int,\tsent_to int,\treceived int, \tindex userBytes(user_id), \tlogged_from DATETIME, \tlogged DATETIME DEFAULT CURRENT_TIMESTAMP,   )", FALSE DBG_SRC );
+	}
+	*/
 	Local<FunctionTemplate> volumeTemplate;
+
+	class constructorSet* c = getConstructors( isolate );
+#if ( NODE_MAJOR_VERSION > 9 )
+	node::AddEnvironmentCleanupHook( isolate, CleanupThreadResources, c );
+#endif
+
 	ThreadObject::Init( exports );
 	FileObject::Init();
 	SqlObjectInit( exports );
@@ -269,11 +277,10 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	SET_READONLY_METHOD( fileObject, "delete", fileDelete );
 	SET_READONLY_METHOD( fileObject, "unlink", fileDelete );
 	SET_READONLY_METHOD( fileObject, "rm", fileDelete );
-	class constructorSet *c = getConstructors( isolate );
-	c->volConstructor.Reset( isolate, volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	SET( exports, "Volume", volumeTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 
 	SET_READONLY_METHOD( exports, "loadComplete", loadComplete );
+	c->volConstructor.Reset( isolate, volumeTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	//NODE_SET_METHOD( exports, "InitFS", InitFS );
 }
 
