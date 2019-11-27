@@ -171,8 +171,9 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	if( runOnce ) {
 		InvokeDeadstart();
 
+#if ( NODE_MAJOR_VERSION <= 9 )
 		node::AtExit( moduleExit );
-
+#endif
 		//SetAllocateLogging( TRUE );
 		//SetManualAllocateCheck( TRUE );
 		//SetAllocateDebug( TRUE );
