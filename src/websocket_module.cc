@@ -813,7 +813,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					if( !result.IsEmpty() ) {
 						Local<Value> ret = result.ToLocalChecked();
 						Local<Promise> retPro = ret.As<Promise>();
-						if( !retPro.IsEmpty() ){
+						if( ret->IsPromise() && !retPro.IsEmpty() ){
 							Promise::PromiseState s = retPro->State();
 							if( s == Promise::PromiseState::kPending ) {
 								if( c->promiseThen.IsEmpty()){
@@ -2295,7 +2295,7 @@ wssiObject::wssiObject( ) {
 	protocolResponse = NULL;
 	this->closed = 0;
 	this->blockReturn = 0;
-
+	this->acceptEventMessage = NULL;
 }
 
 wssiObject::~wssiObject() {
