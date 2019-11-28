@@ -477,6 +477,7 @@ public:
 	WSS_EVENT* acceptEventMessage;
 	Persistent<Promise> acceptPromise;
 	LOGICAL blockReturn;
+	LOGICAL thrown; // prevent event to server connect callback, event becomes post to thread
 public:
 	//static Persistent<Function> constructor;
 	//static Persistent<FunctionTemplate> tpl;
@@ -916,7 +917,7 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 			Local<ArrayBuffer> ab;
 			switch( eventMessage->eventType ) {
 			case WS_EVENT_OPEN:
-				if( !myself->server->openCallback.IsEmpty() ) {
+				if( !myself->thrown && !myself->server->openCallback.IsEmpty() ) {
 					Local<Function> cb = Local<Function>::New( isolate, myself->server->openCallback );
 					argv[0] = myself->_this.Get( isolate );
 					cb->Call( context, myself->_this.Get( isolate ), 1, argv );
@@ -1156,17 +1157,28 @@ static void handlePostedClient( uv_async_t* async ) {
 		Local<Value> args[] = { localStringExternal( isolate, **( unload->s ), unload->s->length() ), newThreadSocket };
 		wssiObject* obj = wssiObject::Unwrap<wssiObject>( newThreadSocket );
 		obj->acceptEventMessage = trans->acceptEventMessage;
-		//trans->wssi->acceptEventMessage = NULL;
 		obj->server = trans->wssi->server;
+		{
+			INDEX idx2 = FindLink( &obj->server->opening, trans->wssi );
+			SetLink( &obj->server->opening, idx2, obj );
+		}
 		obj->protocolResponse = trans->protocolResponse;
-		//trans->wssi->protocolResponse = NULL;
 		obj->pc = trans->wssi->pc;
+		obj->thrown = TRUE;
 		delete obj->wssiRef;
 		obj->wssiRef = trans->wssi->wssiRef;
 		obj->wssiRef->wssi = obj; // update reference to be this JS object.
 		/* 
 			connectionString, headerString, urlString are all missing
 		*/
+		struct optionStrings *strings;
+		strings = getStrings( isolate );
+		Local<Object> socket;
+		SETV( newThreadSocket, strings->connectionString->Get(isolate), socket = makeSocket( isolate, obj->pc ) );
+		SETV( newThreadSocket, strings->headerString->Get( isolate ), GETV( socket, strings->headerString->Get( isolate ) ) );
+		SETV( newThreadSocket, strings->urlString->Get( isolate )
+			, String::NewFromUtf8( isolate
+				, GetText( GetHttpRequest( GetWebSocketHttpState( obj->pc ) ) ), v8::NewStringType::kNormal ).ToLocalChecked() );
 
 		//lprintf( "calling callback to accept this socket.." );
 		MaybeLocal<Value> ml_result = f->Call( context, unload->this_.Get(isolate), 2, args );
@@ -1200,7 +1212,7 @@ static void setClientSocketHandler( const v8::FunctionCallbackInfo<Value>& args 
 	unloader->targetThread = c->loop;
 	unloader->clientSocketPoster.data = unloader;
 	unloader->transport = NULL;
-	lprintf( "New async event handler for this unloader%p", &unloader->clientSocketPoster );
+	//lprintf( "New async event handler for this unloader%p", &unloader->clientSocketPoster );
 
 	uv_async_init( unloader->targetThread, &unloader->clientSocketPoster, handlePostedClient );
 
@@ -1393,7 +1405,6 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 			Deallocate( const char *, wssi->protocolResponse );
 			wssi->protocolResponse = NULL;
 		}
-		//lprintf( "send open event to JS" );
 		(*pevt).eventType = WS_EVENT_OPEN;
 		(*pevt)._this = wssi;
 		EnqueLink( &wssi->eventQueue, pevt );
@@ -2296,6 +2307,7 @@ wssiObject::wssiObject( ) {
 	readyState = wsReadyStates::OPEN;
 	protocolResponse = NULL;
 	this->closed = 0;
+	this->thrown = FALSE;
 	this->blockReturn = 0;
 	this->acceptEventMessage = NULL;
 }
