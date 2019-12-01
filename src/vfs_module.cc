@@ -267,7 +267,6 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 
 	(exports)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "memDump", v8::NewStringType::kNormal ).ToLocalChecked()
 		, v8::Function::New( isolate->GetCurrentContext(), dumpMem ) .ToLocalChecked(), ReadOnlyProperty );
-
 	SET_READONLY_METHOD( exports, "log", logString );
 	SET_READONLY_METHOD( exports, "memDump", dumpMem );
 	SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
@@ -1395,14 +1394,6 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 		if( args[0]->IsString() ) {
 			String::Utf8Value data( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			size_t datalen = data.length();
-			char *databuf = *data;
-			size_t check;
-			for( check = 0; check < datalen; check++ )
-				if( !databuf[check] ) {
-					lprintf( "Embedded NUL is unconverted." );
-					// need to convert nul to \xc0\x80
-					break;
-				}
 			if( file->vol->volNative ) {
 				if( setOffset )
 					sack_vfs_seek( file->file, offset, SEEK_SET );
