@@ -161,6 +161,9 @@ class constructorSet {
 	uv_async_t clientSocketPoster;
 	Persistent<Function> promiseThen;
 	Persistent<Function> promiseCatch;
+
+	v8::Persistent<v8::Function> SRGObject_constructor;
+
 	//Persistent<Function> onCientPost;
 #ifdef INCLUDE_GUI
 	Persistent<Function> ImageObject_constructor;
