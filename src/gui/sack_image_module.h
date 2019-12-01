@@ -7,8 +7,8 @@ public:
 	ImageObject *container;
 	Image image; // this control
 	LOGICAL external;
-	static v8::Persistent<v8::Function> constructor;
-	static Persistent<FunctionTemplate> tpl;
+	//static v8::Persistent<v8::Function> constructor;
+	//static Persistent<FunctionTemplate> tpl;
 
 	Persistent<Object> _this;
 	int jpegQuality;
@@ -56,7 +56,7 @@ public:
 	//FontObject *container;
 	SFTFont font; // this control
 
-	static v8::Persistent<v8::Function> constructor;
+	//static v8::Persistent<v8::Function> constructor;
 
 	static void Init( Local<Object> exports );
 	FontObject( const char *filename, int w, int h, int flags );
@@ -78,8 +78,8 @@ class ColorObject : public node::ObjectWrap {
 public:
 	CDATA color;
 
-	static v8::Persistent<v8::Function> constructor;
-	static v8::Persistent<v8::FunctionTemplate> tpl;
+	//static v8::Persistent<v8::Function> constructor;
+	//static v8::Persistent<v8::FunctionTemplate> tpl;
 
 public:
 

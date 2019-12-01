@@ -144,7 +144,10 @@ static void idGenerator(const v8::FunctionCallbackInfo<Value>& args ){
 }
 
 static void loadComplete( const v8::FunctionCallbackInfo<Value>& args ) {
+#  if !defined( NODE_WANT_INTERNALS )
+	// static amalgamates omit message server stuff
 	LoadComplete();
+#endif
 }
 
 static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -164,6 +167,12 @@ static void CleanupThreadResources( void* arg_ ) {
 }
 #endif
 
+static void logString( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	lprintf( "%s", *s );
+}
+
 void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 {
 	static int runOnce = 1;
@@ -171,9 +180,6 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	if( runOnce ) {
 		InvokeDeadstart();
 
-#if ( NODE_MAJOR_VERSION <= 9 )
-		node::AtExit( moduleExit );
-#endif
 		//SetAllocateLogging( TRUE );
 		//SetManualAllocateCheck( TRUE );
 		//SetAllocateDebug( TRUE );
@@ -199,6 +205,8 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	class constructorSet* c = getConstructors( isolate );
 #if ( NODE_MAJOR_VERSION > 9 )
 	node::AddEnvironmentCleanupHook( isolate, CleanupThreadResources, c );
+#else
+	node::AtExit( moduleExit );
 #endif
 
 	ThreadObject::Init( exports );
@@ -260,6 +268,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	(exports)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "memDump", v8::NewStringType::kNormal ).ToLocalChecked()
 		, v8::Function::New( isolate->GetCurrentContext(), dumpMem ) .ToLocalChecked(), ReadOnlyProperty );
 
+	SET_READONLY_METHOD( exports, "log", logString );
 	SET_READONLY_METHOD( exports, "memDump", dumpMem );
 	SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
 	//SET_READONLY_METHOD( VolFunc, "rekey", volRekey );
@@ -1597,14 +1606,23 @@ FileObject::~FileObject() {
 #if ( NODE_MAJOR_VERSION > 9 )
 //-----------------------------------------------------------
 //https://nodejs.org/docs/latest-v10.x/api/addons.html#addons_context_aware_addons
-NODE_MODULE_INIT( /*Local<Object> exports,
-	Local<Value>Module,
-	Local<Context> context*/ ) {
+#  if !defined( NODE_WANT_INTERNALS )
+	NODE_MODULE_INIT( /*Local<Object> exports,
+		Local<Value>Module,
+		Local<Context> context*/ ) {
 		
-	//printf( "called?\n");
-	VolumeObject::Init(context,exports);		
-}
+		//printf( "called?\n");
+		VolumeObject::Init(context,exports);		
+	}
+#  else
+	static void internalReg( Local<Object> exports,
+		Local<Value>Module,
+		Local<Context> context ) {
+		VolumeObject::Init( context, exports );
+	}
+	NODE_MODULE_CONTEXT_AWARE_INTERNAL( sack, internalReg );
+#  endif
 #else
-NODE_MODULE( vfs_module, VolumeObject::Init)
+	NODE_MODULE( vfs_module, VolumeObject::Init)
 #endif
 

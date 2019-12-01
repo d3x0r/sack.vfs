@@ -1719,18 +1719,23 @@ void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args )
 }
 
 #ifdef INCLUDE_GUI
+struct threadParam {
+	int( *editor )( PODBC, PSI_CONTROL, LOGICAL );
+	class constructorSet* c;
+};
 static uintptr_t RunEditor( PTHREAD thread ) {
+	struct threadParam* tp = ( struct threadParam* )GetThreadParam( thread );
 	int (*EditOptions)( PODBC odbc, PSI_CONTROL parent, LOGICAL wait );
-	extern void disableEventLoop( void );
-	EditOptions = (int(*)(PODBC,PSI_CONTROL,LOGICAL))GetThreadParam( thread );
+	extern void disableEventLoop( class constructorSet *c );
+	EditOptions = tp->editor;
 	EditOptions( NULL, NULL, TRUE );
-	disableEventLoop();
+	disableEventLoop( tp->c );
 	return 0;
 }
 
 void editOptions( const v8::FunctionCallbackInfo<Value>& args ){
 	int (*EditOptions)( PODBC odbc, PSI_CONTROL parent, LOGICAL wait );
-	extern void enableEventLoop( void );
+	extern void enableEventLoop( class constructorSet *c );
 #ifdef WIN32
 	LoadFunction( "bag.psi.dll", NULL );
 #else
@@ -1738,7 +1743,7 @@ void editOptions( const v8::FunctionCallbackInfo<Value>& args ){
 #endif
 	EditOptions = (int(*)( PODBC, PSI_CONTROL,LOGICAL))LoadFunction( "EditOptions.plugin", "EditOptionsEx" );
 	if( EditOptions ) {
-		enableEventLoop();
+		enableEventLoop( getConstructors( args.GetIsolate() ) );
 		ThreadTo( RunEditor, (uintptr_t)EditOptions );
 	} else
 		lprintf( "Failed to load editor..." );

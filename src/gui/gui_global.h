@@ -19,6 +19,9 @@
 #define NO_FILEOP_ALIAS
 #endif
 
+#define USE_RENDER_INTERFACE g.pdi
+#define USE_IMAGE_INTERFACE g.pii
+#ifdef SACK_CORE
 #include <stdhdrs.h>
 #include <filesys.h>
 #include <sack_vfs.h>
@@ -26,12 +29,16 @@
 #include <deadstart.h>
 #include <translation.h>
 
-#define USE_RENDER_INTERFACE g.pdi
-#define USE_IMAGE_INTERFACE g.pii
 #include <image.h>
 #include <render.h>
 #include <render3d.h>
 #include <psi.h>
+#else
+#include "../../../deps/sack/sack.h"
+#include "../../../deps/sack/sack_psi.h"
+#include "../../../deps/sack/sack_imglib.h"
+#include "../../../deps/sack/sack_vidlib.h"
+#endif
 
 
 #undef New
@@ -132,7 +139,7 @@ struct event {
 			LOGICAL opened;
 		}listbox;
 		struct {
-			uintptr_t pmi;
+			MenuItemObject* pmi;
 		} popup;
 		struct {
 			is_control *control;

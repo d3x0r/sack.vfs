@@ -47,8 +47,8 @@ class VoidObject : public node::ObjectWrap {
 public:
 	uintptr_t data;
 	Persistent<Object> _this;
-	static v8::Persistent<v8::Function> constructor;   // generic void constructor
-	static v8::Persistent<v8::Function> constructor2;   // object color interface accessors
+	//static v8::Persistent<v8::Function> constructor;   // generic void constructor
+	//static v8::Persistent<v8::Function> constructor2;   // object color interface accessors
 	VoidObject( uintptr_t data = 0 ); // inits to 0; if the value passed is 0
 
 	static void Init( Isolate *isolate );
@@ -127,8 +127,8 @@ public:
 	PMENU popup;
 	class ControlObject *parent;
 	Persistent<Object> _this;
-
-	static v8::Persistent<v8::Function> constructor;   // Popup
+	class constructorSet* isolateCons;
+	//static v8::Persistent<v8::Function> constructor;   // Popup
 	uint32_t itemId;
 	PLIST menuItems;
 public:
@@ -150,7 +150,7 @@ public:
 	int itemLevel;
 	class ControlObject *control;
 	Persistent<Object> _this;
-	static v8::Persistent<v8::Function> constructor;   // listbox item
+	//static v8::Persistent<v8::Function> constructor;   // listbox item
 
 	ListboxItemObject();
 	~ListboxItemObject();
@@ -173,7 +173,7 @@ public:
 	static void getOpen( const FunctionCallbackInfo<Value>& args );
 	static void setOpen( const FunctionCallbackInfo<Value>& args );
 	Persistent<Function, CopyablePersistentTraits<Function>> cbOpened; // event callback        ()  // return true/false to allow creation
-	static Persistent<FunctionTemplate> listItemTemplate;
+	//static Persistent<FunctionTemplate> listItemTemplate;
 };
 
 class MenuItemObject : public node::ObjectWrap {
@@ -182,7 +182,7 @@ public:
 	PopupObject *popup;
 	uintptr_t uid;
 	Persistent<Object> _this;
-	static v8::Persistent<v8::Function> constructor;   // menu itme
+	//class constructorSet* isolateCons;
 	MenuItemObject();
 	~MenuItemObject();
 
@@ -198,16 +198,17 @@ public:
 class ControlObject : public node::ObjectWrap {
 
 public:
+	class constructorSet* isolateCons;
 	ControlObject *frame;
 	int done;
 	int okay;
 	PSI_CONTROL control; // this control
 	PTHREAD waiter;
-	static v8::Persistent<v8::Function> constructor;   // Frame
-	static v8::Persistent<v8::Function> constructor2;  // Control
-	static v8::Persistent<v8::Function> registrationConstructor;  // Registration
-	static v8::Persistent<v8::FunctionTemplate> controlTemplate;
-	static v8::Persistent<v8::FunctionTemplate> frameTemplate;
+	//static v8::Persistent<v8::Function> constructor;   // Frame
+	//static v8::Persistent<v8::Function> constructor2;  // Control
+	//static v8::Persistent<v8::Function> registrationConstructor;  // Registration
+	//static v8::Persistent<v8::FunctionTemplate> controlTemplate;
+	//static v8::Persistent<v8::FunctionTemplate> frameTemplate;
 
 	Persistent<Object> state;
 	ImageObject *image;

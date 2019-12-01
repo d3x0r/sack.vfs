@@ -3,6 +3,7 @@
 
 
 void InitInterfaces( int opengl, int vulkan ) {
+#if 0
 	if( !g.pii ) {
 		if( vulkan ) {
 #ifdef _WIN32
@@ -30,13 +31,12 @@ void InitInterfaces( int opengl, int vulkan ) {
 			RegisterClassAlias( "system/interfaces/sack.image", "system/interfaces/image" );
 		}
 
-		g.pii = GetImageInterface();
-		g.pdi = GetDisplayInterface();
 	} else {
 	}
-
+#endif
 }
 
+/*
 Persistent<Function> ImageObject::constructor;
 Persistent<FunctionTemplate> ImageObject::tpl;
 Persistent<Function> FontObject::constructor;
@@ -45,6 +45,7 @@ Persistent<FunctionTemplate> ColorObject::tpl;
 Persistent<Function> fontResult;
 Persistent<Function> imageResult;
 Persistent<Object> priorThis;
+*/
 
 static struct imageLocal {
 	CDATA color;
@@ -53,9 +54,10 @@ static struct imageLocal {
 	SFTFont fontResult;
 }imageLocal;
 
-static Local<Object> makeColor( Isolate *isolate, CDATA c ) {
-	Local<Value> argv[1] = { Uint32::New( isolate, c ) };
-	Local<Function> cons = Local<Function>::New( isolate, ColorObject::constructor );
+static Local<Object> makeColor( Isolate *isolate, CDATA color ) {
+	Local<Value> argv[1] = { Uint32::New( isolate, color ) };
+	class constructorSet* c = getConstructors( isolate );
+	Local<Function> cons = Local<Function>::New( isolate, c->ColorObject_constructor );
 	Local<Object> cObject = cons->NewInstance( isolate->GetCurrentContext(), 1, argv ).ToLocalChecked();
 	return cObject;
 }
@@ -67,19 +69,19 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	HandleScope scope( isolate );
 	//lprintf( "async message notice. %p", myself );
-	if( !imageResult.IsEmpty() )
+	class constructorSet* c = getConstructors( isolate );
+	if( !c->imageResult.IsEmpty() )
 	{
-		Local<Function> cb = Local<Function>::New( isolate, imageResult );
-		Local<Object> _this = priorThis.Get( isolate );
+		Local<Function> cb = Local<Function>::New( isolate, c->imageResult );
+		Local<Object> _this = c->priorThis.Get( isolate );
 		Local<Value> argv[1] = { ColorObject::makeColor( isolate, imageLocal.color ) };
 		cb->Call( context, _this, 1, argv );
 		uv_close( (uv_handle_t*)&imageLocal.colorAsync, NULL );
-		imageResult.Reset();
+		c->imageResult.Reset();
 	}
-	if( !fontResult.IsEmpty() ) {
-		Local<Function> cb = Local<Function>::New( isolate, fontResult );
-
-		Local<Function> cons = Local<Function>::New( isolate, FontObject::constructor );
+	if( !c->fontResult.IsEmpty() ) {
+		Local<Function> cb = Local<Function>::New( isolate, c->fontResult );
+		Local<Function> cons = Local<Function>::New( isolate, c->FontObject_constructor );
 		Local<Object> result = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 		FontObject *fo = FontObject::Unwrap<FontObject>( result );
 		FRACTION one = { 1,1 };
@@ -89,8 +91,7 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 		cb->Call( context, result, 1, argv );
 
 		uv_close( (uv_handle_t*)&imageLocal.fontAsync, NULL );
-		fontResult.Reset();
-
+		c->fontResult.Reset();
 	}
 	//lprintf( "done calling message notice." );
 }
@@ -106,8 +107,9 @@ static uintptr_t fontPickThread( PTHREAD thread ) {
 
 static void pickFont( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-	priorThis.Reset( isolate, args.This() );
-	fontResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
+  class constructorSet* c = getConstructors( isolate );
+  c->priorThis.Reset( isolate, args.This() );
+	c->fontResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
 	ThreadTo( fontPickThread, 0 );
 }
 
@@ -124,8 +126,9 @@ static uintptr_t colorPickThread( PTHREAD thread ) {
 
 static void pickColor( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-	priorThis.Reset( isolate, args.This() );
-	imageResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
+  class constructorSet* c = getConstructors( isolate );
+  c->priorThis.Reset( isolate, args.This() );
+	c->imageResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
 	ThreadTo( colorPickThread, 0 );
 }
 
@@ -133,9 +136,9 @@ static void pickColor( const FunctionCallbackInfo<Value>&  args ) {
 void ImageObject::Init( Local<Object> exports ) {
 	InitInterfaces( SACK_GetProfileInt( NULL, "SACK/Video Render/Use OpenGL 2", 0 )
 					, SACK_GetProfileInt( NULL, "SACK/Video Render/Use Vulkan", 0 ) );
-
 	Isolate* isolate = Isolate::GetCurrent();
-	Local<Context> context = isolate->GetCurrentContext();
+  class constructorSet* c = getConstructors( isolate );
+  Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> imageTemplate;
 
 	// Prepare constructor template
@@ -173,8 +176,8 @@ void ImageObject::Init( Local<Object> exports ) {
 		, FunctionTemplate::New( isolate, ImageObject::getHeight )
 		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly | DontDelete) );
 
-	ImageObject::tpl.Reset( isolate, imageTemplate );
-	ImageObject::constructor.Reset( isolate, imageTemplate->GetFunction(context).ToLocalChecked() );
+	c->ImageObject_tpl.Reset( isolate, imageTemplate );
+  c->ImageObject_constructor.Reset( isolate, imageTemplate->GetFunction(context).ToLocalChecked() );
 	SET_READONLY( exports, "Image", imageTemplate->GetFunction( context ).ToLocalChecked() );
 
 	Local<FunctionTemplate> fontTemplate;
@@ -205,11 +208,11 @@ void ImageObject::Init( Local<Object> exports ) {
 		, ColorObject::getBlue, ColorObject::setBlue );
 	colorTemplate->PrototypeTemplate()->SetAccessor( localStringExternal( isolate, "a" )
 		, ColorObject::getAlpha, ColorObject::setAlpha );
-	ColorObject::tpl.Reset( isolate, colorTemplate );
-	ColorObject::constructor.Reset( isolate, colorTemplate->GetFunction(context).ToLocalChecked() );
+  c->ColorObject_tpl.Reset( isolate, colorTemplate );
+	c->ColorObject_constructor.Reset( isolate, colorTemplate->GetFunction(context).ToLocalChecked() );
 
 
-	FontObject::constructor.Reset( isolate, fontTemplate->GetFunction(context).ToLocalChecked() );
+  c->FontObject_constructor.Reset( isolate, fontTemplate->GetFunction(context).ToLocalChecked() );
 	SET_READONLY( imageTemplate->GetFunction(context).ToLocalChecked(), "Font", fontTemplate->GetFunction(context).ToLocalChecked() );
 	SET_READONLY_METHOD( fontTemplate->GetFunction(context).ToLocalChecked(), "dialog", pickFont );
 
@@ -245,7 +248,8 @@ void ImageObject::Init( Local<Object> exports ) {
 }
 void ImageObject::getPng( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	Local<FunctionTemplate> tpl = ImageObject::tpl.Get( isolate );
+  class constructorSet* c = getConstructors( isolate );
+  Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
 	if( tpl->HasInstance( args.This() ) ) {
 		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
 		uint8_t *buf;
@@ -264,7 +268,8 @@ void ImageObject::getPng( const FunctionCallbackInfo<Value>& args ) {
 }
 void ImageObject::getJpeg( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-	Local<FunctionTemplate> tpl = ImageObject::tpl.Get( isolate );
+  class constructorSet* c = getConstructors( isolate );
+  Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
 	if( tpl->HasInstance( args.This() ) ) {
 
 		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
@@ -285,7 +290,8 @@ void ImageObject::getJpeg( const FunctionCallbackInfo<Value>&  args ) {
 
 void ImageObject::getJpegQuality( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-	Local<FunctionTemplate> tpl = ImageObject::tpl.Get( isolate );
+  class constructorSet* c = getConstructors( isolate );
+  Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
 	if( tpl->HasInstance( args.This() ) ) {
 		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
 		args.GetReturnValue().Set( Integer::New( isolate, obj->jpegQuality ) );
@@ -300,7 +306,8 @@ void ImageObject::setJpegQuality( const FunctionCallbackInfo<Value>&  args ) {
 
 void ImageObject::getWidth( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-	Local<FunctionTemplate> tpl = ImageObject::tpl.Get( isolate );
+  class constructorSet* c = getConstructors( isolate );
+  Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
 	if( tpl->HasInstance( args.This() ) ) {
 		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
 		if( obj->image )
@@ -309,7 +316,8 @@ void ImageObject::getWidth( const FunctionCallbackInfo<Value>&  args ) {
 }
 void ImageObject::getHeight( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-	Local<FunctionTemplate> tpl = ImageObject::tpl.Get( isolate );
+  class constructorSet* c = getConstructors( isolate );
+  Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
 	if( tpl->HasInstance( args.This() ) ) {
 		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
 		if( obj->image )
@@ -354,6 +362,7 @@ ImageObject::~ImageObject(void) {
 void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
+  class constructorSet* c = getConstructors( isolate );
 	if( args.IsConstructCall() ) {
 
 		int x = 0, y = 0, w = 1024, h = 768;
@@ -416,7 +425,7 @@ void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		Local<Function> cons = Local<Function>::New( isolate, c->ImageObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
@@ -466,7 +475,8 @@ void ImageObject::NewSubImage( const FunctionCallbackInfo<Value>& args ) {
 			argv[n+1] = args[n];
 		argv[0] = args.Holder();
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+    class constructorSet* c = getConstructors( isolate );
+    Local<Function> cons = Local<Function>::New( isolate, c->ImageObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
@@ -479,7 +489,8 @@ Local<Object> ImageObject::NewImage( Isolate*isolate, Image image, LOGICAL exter
 
 	int argc = 0;
 	Local<Value> *argv = new Local<Value>[argc];
-	Local<Function> cons = Local<Function>::New( isolate, constructor );
+  class constructorSet* c = getConstructors( isolate );
+  Local<Function> cons = Local<Function>::New( isolate, c->ImageObject_constructor );
 	Local<Object> lo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked();
 	obj = ObjectWrap::Unwrap<ImageObject>( lo );
 	obj->image = image;
@@ -493,7 +504,8 @@ ImageObject * ImageObject::MakeNewImage( Isolate*isolate, Image image, LOGICAL e
 
 	int argc = 0;
 	Local<Value> *argv = new Local<Value>[argc];
-	Local<Function> cons = Local<Function>::New( isolate, constructor );
+  class constructorSet* c = getConstructors( isolate );
+  Local<Function> cons = Local<Function>::New( isolate, c->ImageObject_constructor );
 	Local<Object> lo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked();
 	obj = ObjectWrap::Unwrap<ImageObject>( lo );
 	obj->image = image;
@@ -906,7 +918,8 @@ void FontObject::New( const FunctionCallbackInfo<Value>& args ) {
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->FontObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
@@ -950,7 +963,8 @@ void FontObject::load( const FunctionCallbackInfo<Value>& args ) {
 		sack_fclose( out );
 	}
 
-	Local<Function> cons = Local<Function>::New( isolate, constructor );
+	class constructorSet* c = getConstructors( isolate );
+	Local<Function> cons = Local<Function>::New( isolate, c->FontObject_constructor );
 	Local<Object> result;
 	args.GetReturnValue().Set( result = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 
@@ -976,7 +990,8 @@ ColorObject::ColorObject( CDATA r ) {
 }
 
 bool ColorObject::isColor( Isolate *isolate, Local<Object> object ) {
-	Local<FunctionTemplate> colorTpl = tpl.Get( isolate );
+	class constructorSet* c = getConstructors( isolate );
+	Local<FunctionTemplate> colorTpl = c->ColorObject_tpl.Get( isolate );
 	return colorTpl->HasInstance( object );
 }
 
@@ -986,7 +1001,8 @@ CDATA ColorObject::getColor( Local<Object> object ) {
 }
 
 Local<Object> ColorObject::makeColor( Isolate *isolate, CDATA rgba ) {
-	Local<Function> cons = Local<Function>::New( isolate, constructor );
+	class constructorSet* c = getConstructors( isolate );
+	Local<Function> cons = Local<Function>::New( isolate, c->ColorObject_constructor );
 	Local<Object> _color = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( _color );
 	co->color = rgba;
@@ -1055,7 +1071,8 @@ void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->ColorObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
@@ -1064,14 +1081,16 @@ void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 void ColorObject::getRed( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	if( ColorObject::tpl.Get( isolate )->HasInstance( args.This() ) ) {
+	class constructorSet* c = getConstructors( isolate );
+	if( c->ColorObject_tpl.Get( isolate )->HasInstance( args.This() ) ) {
 		ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
 		args.GetReturnValue().Set( Integer::New( isolate, RedVal( co->color ) ) );
 	}
 }
 void ColorObject::getGreen( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-	if( ColorObject::tpl.Get( isolate )->HasInstance( args.This() ) ) {
+	class constructorSet* c = getConstructors( isolate );
+	if( c->ColorObject_tpl.Get( isolate )->HasInstance( args.This() ) ) {
 		ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
 		args.GetReturnValue().Set( Integer::New( isolate, GreenVal( co->color ) ) );
 	}
@@ -1079,15 +1098,17 @@ void ColorObject::getGreen( const FunctionCallbackInfo<Value>&  args ) {
 void ColorObject::getBlue( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
-	if( ColorObject::tpl.Get( isolate )->HasInstance( args.This() ) ) {
+	class constructorSet* c = getConstructors( isolate );
+	if( c->ColorObject_tpl.Get( isolate )->HasInstance( args.This() ) ) {
 		ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
 		args.GetReturnValue().Set( Integer::New( isolate, BlueVal( co->color ) ) );
 	}
 }
 void ColorObject::getAlpha( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	class constructorSet* c = getConstructors( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
-	if( ColorObject::tpl.Get( isolate )->HasInstance( args.This() ) ) {
+	if( c->ColorObject_tpl.Get( isolate )->HasInstance( args.This() ) ) {
 		ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
 		args.GetReturnValue().Set( Integer::New( isolate, AlphaVal( co->color ) ) );
 	}

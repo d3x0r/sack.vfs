@@ -38,7 +38,11 @@
 #include <configscript.h>
 #include <filemon.h>
 #else
-#include "sack/sack.h"
+#  if defined( NODE_WANT_INTERNALS )
+#    include "../../../deps/sack/sack.h"
+#  else
+#    include "sack/sack.h"
+#  endif
 #endif
 
 #undef New
@@ -113,6 +117,8 @@ class constructorSet {
 	Isolate *isolate;
 	uv_loop_t* loop;
 
+	Persistent<Function> ThreadObject_idleProc;
+
 	// constructor
 	Persistent<Function> volConstructor;
 	Persistent<Function> fileConstructor;
@@ -141,7 +147,6 @@ class constructorSet {
 	v8::Persistent<v8::Function> sqlStmtConstructor;
 	v8::Persistent<v8::Function> otoConstructor;
 
-
 	//Persistent<Function> jsonConstructor;
 	Persistent<FunctionTemplate> pTextTemplate;
 	Persistent<Function> textConstructor;
@@ -157,7 +162,49 @@ class constructorSet {
 	Persistent<Function> promiseThen;
 	Persistent<Function> promiseCatch;
 	//Persistent<Function> onCientPost;
+#ifdef INCLUDE_GUI
+	Persistent<Function> ImageObject_constructor;
+	Persistent<FunctionTemplate> ImageObject_tpl;
+	Persistent<Function> FontObject_constructor;
+	Persistent<Function> ColorObject_constructor;
+	Persistent<FunctionTemplate> ColorObject_tpl;
+	Persistent<Function> fontResult;
+	Persistent<Function> imageResult;
+	Persistent<Object>   priorThis;
 
+	Persistent<Object> canvasObject;
+
+	v8::Persistent<v8::Function> InterShellObject_buttonConstructor;
+	v8::Persistent<v8::Function> InterShellObject_buttonInstanceConstructor;
+	v8::Persistent<v8::Function> InterShellObject_controlConstructor;
+	v8::Persistent<v8::Function> InterShellObject_controlInstanceConstructor;
+	v8::Persistent<v8::Function> InterShellObject_customControlConstructor;
+	v8::Persistent<v8::Function> InterShellObject_customControlInstanceConstructor;
+	v8::Persistent<v8::Function> InterShellObject_intershellConstructor;
+	v8::Persistent<v8::Function> InterShellObject_configConstructor;
+
+	int eventLoopEnables = 0;
+	LOGICAL eventLoopRegistered = FALSE;
+	uv_async_t psiLocal_async;
+	v8::Persistent<v8::Function> ControlObject_constructor;   // Frame
+	v8::Persistent<v8::Function> ControlObject_constructor2;  // Control
+	v8::Persistent<v8::Function> ControlObject_registrationConstructor;  // Registration
+	v8::Persistent<v8::FunctionTemplate> ControlObject_controlTemplate;
+	v8::Persistent<v8::FunctionTemplate> ControlObject_frameTemplate;
+	v8::Persistent<v8::FunctionTemplate> ControlObject_listItemTemplate;
+
+	Persistent<Function> PopupObject_constructor;
+	Persistent<Function> ListboxItemObject_constructor;
+	Persistent<Function> MenuItemObject_constructor;
+
+	v8::Persistent<v8::Function> VoidObject_constructor;   // generic void constructor
+	v8::Persistent<v8::Function> VoidObject_constructor2;   // object color interface accessors
+
+	v8::Persistent<v8::Function> RenderObject_constructor;
+	v8::Persistent<v8::Function> RenderObject_constructor2;
+
+	v8::Persistent<v8::Function> VulkanObject_constructor;
+#endif
 };
 class constructorSet * getConstructors( Isolate *isolate );
 
