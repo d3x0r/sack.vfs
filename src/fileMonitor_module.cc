@@ -81,6 +81,11 @@ static void monitorAsyncMsg( uv_async_t* handle ) {
 		}
 		Release( event );
 	}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 
 }
 

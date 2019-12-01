@@ -162,7 +162,7 @@ static void asyncmsg( uv_async_t* handle ) {
 				is->psvControl.Reset( isolate, inst );
 				//defineOnQueryControl( is->type->name );
 				getCanvas( isolate, is->button );
-		    SET( inst, "parent", Local<Object>::New( isolate, c->canvasObject ) );
+				SET( inst, "parent", Local<Object>::New( isolate, c->canvasObject ) );
 				SET( inst, "x" , Number::New( isolate, evt->data.createCustomControl.x ) );
 				SET( inst, "y" , Number::New( isolate, evt->data.createCustomControl.y ) );
 				SET( inst, "w" , Number::New( isolate, evt->data.createCustomControl.w ) );
@@ -251,6 +251,11 @@ static void asyncmsg( uv_async_t* handle ) {
 		}
 	}
 	//lprintf( "done calling message notice." );
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 }
 
 static void onSave( const FunctionCallbackInfo<Value>& args ) {
@@ -615,7 +620,7 @@ void InterShellObject::NewApplication( const FunctionCallbackInfo<Value>& args )
 			obj->async.data = obj;
 
 			isLocal.core = obj;
-		  c->canvasObject.Reset( isolate, args.This() );
+			c->canvasObject.Reset( isolate, args.This() );
 
 			obj->self.Reset( isolate, args.This() );
 			obj->Wrap( args.This() );

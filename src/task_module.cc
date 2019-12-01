@@ -116,9 +116,11 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 		}
 
 	}
-	//if( task->waiter ) {
-	//	WakeThread( task->waiter );
-	//}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 }
 
 static void CPROC getTaskInput( uintptr_t psvTask, PTASK_INFO pTask, CTEXTSTR buffer, size_t size ) {

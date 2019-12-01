@@ -88,6 +88,11 @@ static void asyncmsg( uv_async_t* handle ) {
 		}
 	}
 	//lprintf( "done calling message notice." );
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 }
 
 void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {

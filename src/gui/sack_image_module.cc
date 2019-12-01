@@ -93,6 +93,11 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 		uv_close( (uv_handle_t*)&imageLocal.fontAsync, NULL );
 		c->fontResult.Reset();
 	}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 	//lprintf( "done calling message notice." );
 }
 
@@ -107,8 +112,8 @@ static uintptr_t fontPickThread( PTHREAD thread ) {
 
 static void pickFont( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-  class constructorSet* c = getConstructors( isolate );
-  c->priorThis.Reset( isolate, args.This() );
+	lass constructorSet* c = getConstructors( isolate );
+	c->priorThis.Reset( isolate, args.This() );
 	c->fontResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
 	ThreadTo( fontPickThread, 0 );
 }
@@ -120,14 +125,13 @@ static uintptr_t colorPickThread( PTHREAD thread ) {
 	PickColor( &color, 0, NULL );
 	imageLocal.color = color;
 	uv_async_send( &imageLocal.colorAsync );
-
 	return 0;
 }
 
 static void pickColor( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-  class constructorSet* c = getConstructors( isolate );
-  c->priorThis.Reset( isolate, args.This() );
+	class constructorSet* c = getConstructors( isolate );
+	c->priorThis.Reset( isolate, args.This() );
 	c->imageResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
 	ThreadTo( colorPickThread, 0 );
 }
@@ -137,8 +141,8 @@ void ImageObject::Init( Local<Object> exports ) {
 	InitInterfaces( SACK_GetProfileInt( NULL, "SACK/Video Render/Use OpenGL 2", 0 )
 					, SACK_GetProfileInt( NULL, "SACK/Video Render/Use Vulkan", 0 ) );
 	Isolate* isolate = Isolate::GetCurrent();
-  class constructorSet* c = getConstructors( isolate );
-  Local<Context> context = isolate->GetCurrentContext();
+	class constructorSet* c = getConstructors( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> imageTemplate;
 
 	// Prepare constructor template
@@ -177,7 +181,7 @@ void ImageObject::Init( Local<Object> exports ) {
 		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly | DontDelete) );
 
 	c->ImageObject_tpl.Reset( isolate, imageTemplate );
-  c->ImageObject_constructor.Reset( isolate, imageTemplate->GetFunction(context).ToLocalChecked() );
+	c->ImageObject_constructor.Reset( isolate, imageTemplate->GetFunction(context).ToLocalChecked() );
 	SET_READONLY( exports, "Image", imageTemplate->GetFunction( context ).ToLocalChecked() );
 
 	Local<FunctionTemplate> fontTemplate;
@@ -208,11 +212,11 @@ void ImageObject::Init( Local<Object> exports ) {
 		, ColorObject::getBlue, ColorObject::setBlue );
 	colorTemplate->PrototypeTemplate()->SetAccessor( localStringExternal( isolate, "a" )
 		, ColorObject::getAlpha, ColorObject::setAlpha );
-  c->ColorObject_tpl.Reset( isolate, colorTemplate );
+	c->ColorObject_tpl.Reset( isolate, colorTemplate );
 	c->ColorObject_constructor.Reset( isolate, colorTemplate->GetFunction(context).ToLocalChecked() );
 
 
-  c->FontObject_constructor.Reset( isolate, fontTemplate->GetFunction(context).ToLocalChecked() );
+	c->FontObject_constructor.Reset( isolate, fontTemplate->GetFunction(context).ToLocalChecked() );
 	SET_READONLY( imageTemplate->GetFunction(context).ToLocalChecked(), "Font", fontTemplate->GetFunction(context).ToLocalChecked() );
 	SET_READONLY_METHOD( fontTemplate->GetFunction(context).ToLocalChecked(), "dialog", pickFont );
 
@@ -248,8 +252,8 @@ void ImageObject::Init( Local<Object> exports ) {
 }
 void ImageObject::getPng( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-  class constructorSet* c = getConstructors( isolate );
-  Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
+	class constructorSet* c = getConstructors( isolate );
+	Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
 	if( tpl->HasInstance( args.This() ) ) {
 		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
 		uint8_t *buf;
@@ -268,8 +272,8 @@ void ImageObject::getPng( const FunctionCallbackInfo<Value>& args ) {
 }
 void ImageObject::getJpeg( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-  class constructorSet* c = getConstructors( isolate );
-  Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
+	class constructorSet* c = getConstructors( isolate );
+	Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
 	if( tpl->HasInstance( args.This() ) ) {
 
 		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );

@@ -269,6 +269,11 @@ static void asyncmsg( uv_async_t* handle ) {
 			DeleteFromSet( IS_EVENT, &psiLocal.event_pool, evt );
 		}
 	}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 	//lprintf( "done calling message notice." );
 }
 

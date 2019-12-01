@@ -9935,10 +9935,10 @@ DEADSTART_PROC  void DEADSTART_CALLTYPE  DispelDeadstart ( void );
    </code>
    See Also
    <link sack::app::deadstart, deadstart Namespace>                         */
-#define PRIORITY_PRELOAD(name,priority) static void CPROC name(void);    static class pastejunk(schedule_,name) {        public:pastejunk(schedule_,name)() {	    RegisterPriorityStartupProc( name,TOSTR(name),priority,(void*)this DBG_SRC);	  }	  } pastejunk(do_schedule_,name);	     static void name(void)
+#define PRIORITY_PRELOAD(name,priority) static void CPROC name(void);	 namespace { static class pastejunk(schedule_,name) {        public:pastejunk(schedule_,name)() {	    RegisterPriorityStartupProc( name,TOSTR(name),priority,(void*)this DBG_SRC);	  }	  } pastejunk(do_schedule_,name);   }	  static void name(void)
 /* This is used once in deadstart_prog.c which is used to invoke
    startups when the program finishes loading.                   */
-#define MAGIC_PRIORITY_PRELOAD(name,priority) static void CPROC name(void);    static class pastejunk(schedule_,name) {	     public:pastejunk(schedule_,name)() {	  name();	    }	  } pastejunk(do_schedul_,name);	     static void name(void)
+#define MAGIC_PRIORITY_PRELOAD(name,priority) static void CPROC name(void);	 namespace { static class pastejunk(schedule_,name) {	     public:pastejunk(schedule_,name)() {	  name();	    }	  } pastejunk(do_schedul_,name);   }	  static void name(void)
 /* A macro to define some code to run during program shutdown. An
    additional priority may be specified if the order matters. Higher
    numbers are called first.
@@ -13573,7 +13573,7 @@ struct va_args_tag {
 #define init_args(name) name.argCount = 0; name.argsize = 0; name.args = NULL;
   // 32 bits.
 #define ARG_STACK_SIZE 4
-#define PushArgument( argset, argType, type, arg )	                                 ((argset.args = (arg_list*)Preallocate( argset.args		                        , argset.argsize += ((sizeof( enum configArgType )				                 + sizeof( type )				                                   + (ARG_STACK_SIZE-1) )&-ARG_STACK_SIZE) ) )	        ?(argset.argCount++)	                                                        ,((*(enum configArgType*)(argset.args))=(argType))	                         ,(*(type*)(((uintptr_t)argset.args)+sizeof(enum configArgType)) = (arg))	   ,0	                                                                        :0)
+#define PushArgument( argset, argType, type, arg )	                                 ((argset.args = (arg_list*)Preallocate( argset.args		                        , argset.argsize += ((sizeof( enum configArgType )				                 + sizeof( type )				                                   + (ARG_STACK_SIZE-1) )&-ARG_STACK_SIZE) ) )	        ?(argset.argCount++)	                                                        ,((*(enum configArgType*)(argset.args))=(argType))	                         ,(*(type*)((((uintptr_t)argset.args)+sizeof(enum configArgType)+ (ARG_STACK_SIZE-1) )&-ARG_STACK_SIZE) = (arg))	   ,0	                                                                        :0)
 #define PopArguments( argset ) { Release( argset.args ); argset.args=NULL; }
 #define pass_args(argset) (( (argset).tmp_args = (argset).args )	                        ,(*(arg_list*)(&argset.tmp_args)))
 /*

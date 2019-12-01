@@ -895,6 +895,11 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			uv_close( (uv_handle_t*)&myself->async, NULL );
 		}
 		Release( myself );
+		{
+			class constructorSet* c = getConstructors( isolate );
+			Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+			cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		}
 	}
 
 	static uintptr_t preloadFile( PTHREAD thread ) {

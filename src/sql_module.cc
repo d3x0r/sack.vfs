@@ -1330,6 +1330,8 @@ static void callAggFinal( struct sqlite3_context*onwhat );
 static void sqlUserAsyncMsg( uv_async_t* handle ) {
 	SqlObject* myself = (SqlObject*)handle->data;
 	struct userMessage *msg = (struct userMessage*)DequeLink( &myself->messages );
+	struct SqlObjectUserFunction* userData = ( struct SqlObjectUserFunction* )PSSQL_GetSqliteFunctionData( msg->onwhat );
+	Isolate* isolate = userData->isolate;
 	if( msg->onwhat ) {
 		if( msg->mode == 1 )
 			callUserFunction( msg->onwhat, msg->argc, msg->argv );
@@ -1346,6 +1348,11 @@ static void sqlUserAsyncMsg( uv_async_t* handle ) {
 	}	
 	msg->done = 1;
 	WakeThread( msg->waiter );
+	{
+		class constructorSet* c = getConstructors( userData->isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 }
 
 static void releaseBuffer( void *buffer ) {

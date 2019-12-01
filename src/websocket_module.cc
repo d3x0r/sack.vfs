@@ -971,6 +971,11 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 		}
 		myself->last_count_handled = handled;
 	}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 }
 
 static void wscAsyncMsg( uv_async_t* handle ) {
@@ -1044,6 +1049,11 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 			}
 			DropWscEvent( eventMessage );
 		}
+	}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
 }
 

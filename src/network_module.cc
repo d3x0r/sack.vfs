@@ -303,6 +303,11 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 			DeleteFromSet( UDP_EVENT, l.udpEvents, eventMessage );
 		}
 	}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 }
 
 

@@ -74,7 +74,7 @@ static struct optionStrings* getStrings( Isolate* isolate ) {
 static Local<Value> ProcessEvent( Isolate* isolate, struct event *evt, RenderObject *r ) {
 	//Local<Object> object = Object::New( isolate );
 	Local<Object> object;
-  Local<Context> context = isolate->GetCurrentContext();
+	Local<Context> context = isolate->GetCurrentContext();
 
 
 	switch( evt->type ) {
@@ -145,6 +145,11 @@ static void asyncmsg( uv_async_t* handle ) {
 				WakeThread( evt->waiter );
 			}
 		}
+	}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
 	//lprintf( "done calling message notice." );
 }
@@ -266,7 +271,7 @@ RenderObject::~RenderObject() {
 
 			obj->Wrap( args.This() );
 			args.GetReturnValue().Set( args.This() );
-         if( title )
+			if( title )
 				Deallocate( char*, title );
 		}
 		else {
@@ -276,8 +281,8 @@ RenderObject::~RenderObject() {
 			for( int n = 0; n < argc; n++ )
 				argv[n] = args[n];
 
-      class constructorSet* c = getConstructors( isolate );
-      Local<Function> cons = Local<Function>::New( isolate, c->RenderObject_constructor );
+			class constructorSet* c = getConstructors( isolate );
+			Local<Function> cons = Local<Function>::New( isolate, c->RenderObject_constructor );
 			args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 			delete argv;
 		}
