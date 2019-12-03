@@ -120,6 +120,13 @@ vfs = {
         write() - send something to a task.
         send() - send something to a task.
         terminate() - terminate created task.
+    log(string) - log a string.
+    memDump() - log memory stats (track module memory leaks)
+    mkdir() - make a directory in the current path; handles recursive directory creation.
+    u8xor(s,k) - utility function to apply a string mask.
+    b64xor(s,k) - utility function to just xor a value into a base64 string without expanding the values.
+    id() - generate a unique ID.
+    
 }	
 ```
 
@@ -138,7 +145,7 @@ Two addditional strings may be applied to encrypt the volume using those two key
 The following methods exist on the resulting object.
 
 ```
-Volume = {
+Volume() = {
     File(filename) - open a file (returns a new object)
             (filename) 
                 the file to open in the volume.
@@ -157,6 +164,11 @@ Volume = {
                 path to create- will created missing parent path parts too.
     rekey(version,a,b) - set key for a volume.
 }
+
+Volume  // function has these methods.
+    readAsString( filename ) - read a local system file as a string; used to quick-read for require( "*.[jsox/json6]")
+    mapFile( filename ) - return an ArrayBuffer that is the memory mapped file on the disk.
+
 
 
 ```
@@ -721,6 +733,8 @@ Salty Random Generator
 | verify | ( buffer, key ) | returns true/false if key is a signing key of buffer |
 | id | ( [source [, version]] ) | Version indicates which entropy generator to use internally |
 
+### id function
+
 The `id()` function takes an optional parameter that is an integer.
 
 | id version | use generator |
@@ -1273,6 +1287,10 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.160
+   - Improve worker_thread support (missed some other static constructors)
+   - Added .log() to allow log output outside of any JS.
+   - Fix event dispatches to callbacks that create promises that need to resolve.
 - 0.9.159
    - Implement websocket thread interface to post accepted sockets to other threads.
 - 0.9.158
