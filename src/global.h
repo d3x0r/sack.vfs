@@ -163,7 +163,10 @@ class constructorSet {
 	Persistent<Function> promiseCatch;
 
 	v8::Persistent<v8::Function> SRGObject_constructor;
-
+	v8::Persistent<v8::Function> TaskObject_constructor;
+	v8::Persistent<v8::Function> ObjectStorageObject_constructor;
+	v8::Persistent<v8::Function> monitorConstructor;
+	v8::Persistent<v8::Function> KeyHidObject_constructor;
 	//Persistent<Function> onCientPost;
 #ifdef INCLUDE_GUI
 	Persistent<Function> ImageObject_constructor;

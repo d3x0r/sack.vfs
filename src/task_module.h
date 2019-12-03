@@ -9,7 +9,6 @@ struct taskObjectOutputItem {
 
 class TaskObject : public node::ObjectWrap {
 public:
-	static v8::Persistent<v8::Function> constructor;
 	PTASK_INFO task;
 	Persistent<Object> _this;
 	Persistent<Function, CopyablePersistentTraits<Function>> endCallback; //

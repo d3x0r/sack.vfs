@@ -11,8 +11,7 @@ public:
 	char *fileName;
 	struct file_system_interface *fsInt;
 	struct file_system_mounted_interface* fsMount;
-	static v8::Persistent<v8::Function> constructor;
-
+	
 public:
 
 	static void Init( Isolate *isolate, Local<Object> exports );
@@ -107,8 +106,6 @@ static struct objStoreLocal {
 	PLIST strings;
 } osl;
 
-
-Persistent<Function> ObjectStorageObject::constructor;
 
 ATEXIT( closeVolumes ) {
 	INDEX idx;
@@ -220,7 +217,8 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 
 	Local<Function> VolFunc = clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
-	constructor.Reset( isolate, clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	class constructorSet* c = getConstructors( isolate );
+	c->ObjectStorageObject_constructor.Reset( isolate, clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	SET( exports, "ObjectStorage"
 		, clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
@@ -541,7 +539,8 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->ObjectStorageObject_constructor );
 		MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
 		if( !mo.IsEmpty() )
 			args.GetReturnValue().Set( mo.ToLocalChecked() );
