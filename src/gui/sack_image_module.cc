@@ -112,7 +112,7 @@ static uintptr_t fontPickThread( PTHREAD thread ) {
 
 static void pickFont( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-	lass constructorSet* c = getConstructors( isolate );
+	class constructorSet* c = getConstructors( isolate );
 	c->priorThis.Reset( isolate, args.This() );
 	c->fontResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
 	ThreadTo( fontPickThread, 0 );

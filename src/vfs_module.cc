@@ -1,4 +1,8 @@
 #define VFS_MAIN_SOURCE 
+
+#if defined( NODE_WANT_INTERNALS )
+#  include "../../node_binding.h"
+#endif
 #include "global.h"
 
 

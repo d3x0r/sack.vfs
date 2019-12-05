@@ -1,3 +1,4 @@
+#if WIN32
 
 #include "global.h"
 
@@ -608,3 +609,4 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 
+#endif

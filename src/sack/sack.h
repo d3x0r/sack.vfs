@@ -274,13 +274,24 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #endif
 #if !defined( __NO_THREAD_LOCAL__ ) && ( defined( _MSC_VER ) || defined( __WATCOMC__ ) )
 #  define HAS_TLS 1
-#  define DeclareThreadLocal static __declspec(thread)
-#  define DeclareThreadVar __declspec(thread)
+#  ifdef __cplusplus
+#    define DeclareThreadLocal thread_local
+#    define DeclareThreadVar  thread_local
+#  else
+#    define DeclareThreadLocal static __declspec(thread)
+#    define DeclareThreadVar __declspec(thread)
+#  endif
 #elif !defined( __NO_THREAD_LOCAL__ ) && ( defined( __GNUC__ ) )
-#  define HAS_TLS 1
-#  define DeclareThreadLocal static __thread
-#  define DeclareThreadVar __thread
+#    define HAS_TLS 1
+#    ifdef __cplusplus
+#      define DeclareThreadLocal thread_local
+#      define DeclareThreadVar thread_local
+#    else
+#    define DeclareThreadLocal static __thread
+#    define DeclareThreadVar __thread
+#  endif
 #else
+// if no HAS_TLS
 #  define DeclareThreadLocal static
 #  define DeclareThreadVar
 #endif
@@ -6453,6 +6464,14 @@ typedef uintptr_t (CPROC*ThreadStartProc)( PTHREAD );
 /* Function signature for a thread entry point passed to
    ThreadToSimple.                                             */
 typedef uintptr_t (*ThreadSimpleStartProc)( POINTER );
+/*
+  OnThreadCreate allows registering a procedure to run
+  when a thread is created.  (Or an existing thread becomes
+  tracked within this library, via MakeThread() ).
+  It is called once per thread, for each thread created
+  after registering the callback.
+*/
+TIMER_PROC( void, OnThreadCreate )( void ( *v )( void ) );
 /* Create a separate thread that starts in the routine
    specified. The uintptr_t value (something that might be a
    pointer), is passed in the PTHREAD structure. (See
@@ -11291,6 +11310,8 @@ struct file_system_interface {
 	uintptr_t (CPROC *fs_ioctl)(uintptr_t psvInstance, uintptr_t opCode, va_list args);
 	uint64_t( CPROC *find_get_ctime )(struct find_cursor *cursor);
 	uint64_t( CPROC *find_get_wtime )(struct find_cursor *cursor);
+	int ( CPROC* _mkdir )( uintptr_t psvInstance, const char* );
+	int ( CPROC* _rmdir )( uintptr_t psvInstance, const char* );
 };
 /* \ \
    Parameters
@@ -11528,6 +11549,7 @@ FILESYS_PROC int FILESYS_API sack_fputs( const char *format, FILE *file );
 FILESYS_PROC  int FILESYS_API  sack_unlinkEx ( INDEX group, CTEXTSTR filename, struct file_system_mounted_interface *mount );
 FILESYS_PROC  int FILESYS_API  sack_unlink ( INDEX group, CTEXTSTR filename );
 FILESYS_PROC  int FILESYS_API  sack_rmdir( INDEX group, CTEXTSTR filename );
+FILESYS_PROC  int FILESYS_API  sack_mkdir( INDEX group, CTEXTSTR filename );
 FILESYS_PROC  int FILESYS_API  sack_renameEx ( CTEXTSTR file_source, CTEXTSTR new_name, struct file_system_mounted_interface *mount );
 FILESYS_PROC  int FILESYS_API  sack_rename ( CTEXTSTR file_source, CTEXTSTR new_name );
 FILESYS_PROC  void FILESYS_API sack_set_common_data_application( CTEXTSTR name );
@@ -11559,6 +11581,8 @@ FILESYS_PROC  uintptr_t FILESYS_API  sack_fs_ioctl( struct file_system_mounted_i
 # define _lcreat(a,b) sack_creat(0,a,b)
 # define remove(a)   sack_unlink(0,a)
 # define unlink(a)   sack_unlink(0,a)
+# define rmdir(a)   sack_rmdir(0,a)
+# define mkdir(a)   sack_mkdir(0,a)
 #endif
 #endif
  //NO_FILEOP_ALIAS

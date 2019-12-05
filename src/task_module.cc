@@ -166,14 +166,14 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		AddLink( &l.tasks, newTask );
 
 		Local<Object> _this = args.This();
-		try {
+		//try {
 			newTask->_this.Reset( isolate, _this );
 			newTask->Wrap( _this );
-		}
-		catch( const char *ex1 ) {
-			isolate->ThrowException( Exception::Error(
-				String::NewFromUtf8( isolate, TranslateText( ex1 ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
-		}
+		//}
+		//catch( const char *ex1 ) {
+		//	isolate->ThrowException( Exception::Error(
+		//		String::NewFromUtf8( isolate, TranslateText( ex1 ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		//}
 
 
 		{
