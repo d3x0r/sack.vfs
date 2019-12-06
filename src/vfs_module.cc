@@ -155,7 +155,24 @@ static void loadComplete( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 static void volumeRemount( const v8::FunctionCallbackInfo<Value>& args ) {
+	VolumeObject *vol = VolumeObject::Unwrap<VolumeObject>( args.This() );
+   Isolate *isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	if( !vol )
+		return;
+	int argc = args.Length();
+	if( argc > 0 ) {
+		String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		if( argc > 1 ) {
+			int num1 = (int)args[1]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
+			sack_remount_filesystem( *s, vol->fsMount, num1, TRUE );
 
+		} else {
+			sack_remount_filesystem( *s, vol->fsMount, 0, TRUE );
+		}
+	} else {
+		sack_remount_filesystem( NULL, vol->fsMount, 0, TRUE );
+	}
 }
 
 static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -171,14 +188,13 @@ static void CleanupThreadResources( void* arg_ ) {
 	//lprintf( "Which things belonged to this thread?, is it isolate?" );
 	// objects are weak referenced where appropriate anyway so things should cleanup
 	// already without additional help.
-
 }
 #endif
 
 static void logString( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-	lprintf( "%s", *s );
+	_xlprintf(LOG_NOISE, "JS", 1 )( "%s", *s );
 }
 
 void VolumeObject::doInit( Local<Context> context, Local<Object> exports )

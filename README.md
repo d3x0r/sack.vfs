@@ -110,16 +110,8 @@ vfs = {
         UDP( ... ) - UDP Socket to send/received datagrams.
     Config - Process configuration files; also streaming text parsing
         (methods)[#Config_Methods]
-    // windows only
-    registry - an interface to windows registry options
-    	set( path, value ) - set a new value in the registry
-        get( path )  - get a value from the registry.
-    Task(options) - an interface for createing and monitoring tasks.
-        Task constructor takes an option object.
-        end() - cause a task to exit..
-        write() - send something to a task.
-        send() - send something to a task.
-        terminate() - terminate created task.
+    ComPort - (see below)
+    
     log(string) - log a string.
     memDump() - log memory stats (track module memory leaks)
     mkdir() - make a directory in the current path; handles recursive directory creation.
@@ -127,6 +119,27 @@ vfs = {
     b64xor(s,k) - utility function to just xor a value into a base64 string without expanding the values.
     id() - generate a unique ID.
     loadComplete() - Indicate to SACK system that this is completed loading (task summoner support;linux;deprecated)
+
+    System - Namespace for SACK system interface routines (The above methods should be moved into this namespace)
+	createMemory(name,byte size) - creates a named memory region; memory regions by name are shared on the system.
+	openMemory(name) - opens an existing names region; returns an ArrayBuffer which can be mapped to a typed array by application.
+	enableThreadFileSystem() - enables mounting file systems specifically for this thread
+        allowSpawn() - returns task allowed state
+        disallowSpawn() - disble task spawns for this thread
+	dumpRegisteredNames() - dumps internal procedure/interface registry
+        
+    Task(options) - an interface for createing and monitoring tasks.
+        Task constructor takes an option object.
+        end() - cause a task to exit..
+        write() - send something to a task.
+        send() - send something to a task.
+        terminate() - terminate created task.
+    // windows only
+    registry - an interface to windows registry options
+    	set( path, value ) - set a new value in the registry
+        get( path )  - get a value from the registry.
+    hid - raw keyboard interface, allows identification of different physical keyboard devices.
+    
 }	
 ```
 
@@ -155,7 +168,7 @@ Volume() = {
     readJSON(fileName, callback) - read a file from a volume; calls callback with each object decoded from the file interpreted as JSON (unimplemented)
     readJSON6(fileName, callback) - read a file from a volume; calls callback with each object decoded from the file interpreted as JSON6.
     readJSOX(fileName, callback) - read a file from a volume; calls callback with each object decoded from the file interpreted as JSOX.
-    write(fileName,arrayBuffer/string) - writes a string or arraybuffer to a file. 
+    write(fileName,arrayBuffer/string) - writes a string or arraybuffer(or typed array) to a file. 
     Sqlite(database) - an interface to sqlite database in this volume.
     rm(file),delete(file),unlink(file) - delete a file.
     mv(file,new_filename),rename(file,new_filename) - rename a file. (mostly limited to same physical device)
@@ -1305,6 +1318,9 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 0.9.161
+   - Added thread local storage
+   - Added control flag to disallow per-thread spawn permission.
 - 0.9.160
    - Improve worker_thread support (missed some other static constructors)
    - Added .log() to allow log output outside of any JS.
