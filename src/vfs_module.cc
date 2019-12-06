@@ -154,6 +154,10 @@ static void loadComplete( const v8::FunctionCallbackInfo<Value>& args ) {
 #endif
 }
 
+static void volumeRemount( const v8::FunctionCallbackInfo<Value>& args ) {
+
+}
+
 static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 	DebugDumpMem( );
 }
@@ -266,6 +270,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "decrypt", volDecrypt );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mv", renameFile );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "rename", renameFile );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mount", volumeRemount );
 
 	Local<Function> VolFunc = volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
@@ -307,13 +312,14 @@ void VolumeObject::Init( Local<Context> context, Local<Object> exports )  {
 	doInit( context, exports );
 }
 
-VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 )  {
+VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, int priority )  {
 	mountName = (char *)mount;
+	this->priority = priority;
 	if( !mount && !filename ) {
 		volNative = false;
-		fsInt = sack_get_filesystem_interface( "native" );
 		//lprintf( "open native mount" );
 		fsMount = sack_get_default_mount();
+		fsInt = sack_get_mounted_filesystem_interface( fsMount );
 	} else if( mount && !filename ) {
 		volNative = false;
 		fsMount = sack_get_mounted_filesystem( mount );
@@ -328,7 +334,7 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t v
 		//lprintf( "VOL: %p for %s %d %p %p", vol, filename, version, key, key2 );
 		if( vol )
 			fsMount = sack_mount_filesystem( mount, fsInt = sack_get_filesystem_interface( SACK_VFS_FILESYSTEM_NAME )
-					, 2000, (uintptr_t)vol, TRUE );
+					, priority, (uintptr_t)vol, TRUE );
 		else
 			fsMount = NULL;
 	}
@@ -1164,9 +1170,10 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			char *key = NULL;
 			char *key2 = NULL;
 			uintptr_t version = 0;
+			uint32_t priority = 0;
 			int argc = args.Length();
 			if( argc == 0 ) {
-				VolumeObject* obj = new VolumeObject( NULL, NULL, 0, NULL, NULL );
+				VolumeObject* obj = new VolumeObject( NULL, NULL, 0, NULL, NULL, 0 );
 				obj->Wrap( args.This() );
 				args.GetReturnValue().Set( args.This() );
 			}
@@ -1200,6 +1207,10 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				if( args[arg]->IsNumber() ) {
 					version = (uintptr_t)args[arg++]->ToNumber(context).ToLocalChecked()->Value();
 				}
+				if( args[arg]->IsNumber() ) {
+					priority = (uint32_t)args[arg++]->ToNumber( context ).ToLocalChecked()->Value();
+				}
+
 				if( argc > arg ) {
 					String::Utf8Value k( USE_ISOLATE( isolate ) args[arg] );
 					if( !args[arg]->IsNull() && !args[arg]->IsUndefined() )
@@ -1213,7 +1224,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 					arg++;
 				}
 				// Invoked as constructor: `new MyObject(...)`
-				VolumeObject* obj = new VolumeObject( mount_name, filename, version, key, key2 );
+				VolumeObject* obj = new VolumeObject( mount_name, filename, version, key, key2, priority );
 				if( !obj->vol ) {
 					isolate->ThrowException( Exception::Error(
 						String::NewFromUtf8( isolate, TranslateText( "Volume failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );

@@ -126,7 +126,7 @@ vfs = {
     u8xor(s,k) - utility function to apply a string mask.
     b64xor(s,k) - utility function to just xor a value into a base64 string without expanding the values.
     id() - generate a unique ID.
-    
+    loadComplete() - Indicate to SACK system that this is completed loading (task summoner support;linux;deprecated)
 }	
 ```
 
@@ -200,8 +200,23 @@ File Constants
 
 ```
 
+### System interface module
+
+Interface to the SACK System Library.  This provides some views into internal information, and methods specific to the SACK system abstraction.
+
+| Method Name | paramters | Description |
+|----|----|----|
+|dumpRegisteredNames  | ()  | Diagnostic. Dump internal registered names to stdout. | 
+|createMemory|  (name, size) |  create a named memory region which can be opend by other thread/processes |
+|openMemory| ( name) | Open an existing memory region.  Will return null if the region does not already exist. |
+|allowSpawn|  ()  | Return the status of whether spawning processes is allowed or not. |
+|disallowSpawn|  ()  | Disable spawning processes. |
+|enableThreadFileSystem|  () | Enable thread-local filesystem on this thread.  No filesystems will bemounted after this call |
+
 
 ### File Monitor module
+
+This provides an interface to receive notifications when files are created, modified or deleted.
 
 ```
 
@@ -209,6 +224,9 @@ var sack = require( "." );
 var monitor = sack.FileMonitor( <pathname>, idleDelay );
 monitor.addFilter( "*.jpg", /* imageChanged */ (info)=>{
 	// info.path, info.size, info.date, info.directory, info.created, info.deleted
+	// if !created and !deleted, is just a change.
+	// the first time a file is seen it will be sent as 'created' even if it existed
+	// previously (?).
 } );
 
 ```

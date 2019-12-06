@@ -185,14 +185,7 @@ static void postEvent( ObjectStorageObject *_this, enum objectStorageEvents evt,
 		/* no additional parameters */
 		break;
 	}
-	//(*pevt).buf = NewArray( uint8_t*, buflen );
-	//lprintf( "Send buffer %p", (*pevt).buf );
-	//memcpy( (POINTER)(*pevt).buf, buffer, buflen );
-	//(*pevt).buflen = buflen;
-	//(*pevt)._this = _this;
-	//(*pevt).from = DuplicateAddress( from );
 	EnqueLink( &_this->plqEvents, pevt );
-
 	uv_async_send( &_this->async );
 }
 
@@ -264,27 +257,6 @@ ObjectStorageObject::ObjectStorageObject( const char *mount, const char *filenam
 	}
 }
 
-#if 0
-static void idGenerator( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	if( args.Length() ) {
-		int version = -1;
-		if( args[0]->IsString() ) {
-			char *r;
-			struct random_context *ctx = SRG_CreateEntropy4( NULL, 0 );
-
-			SRG_FeedEntropy( ctx, (uint8_t*)*val, val.length() );
-			uint32_t buf[256 / 32];
-			SRG_GetEntropyBuffer( ctx, buf, 256 );
-			size_t outlen;
-			r = EncodeBase64Ex( (uint8_t*)buf, (16 + 16), &outlen, (const char *)1 );
-			SRG_DestroyEntropy( &ctx );
-			args.GetReturnValue().Set( localString( isolate, r, (int)outlen ) );
-		}
-	}
-}
-
-#endif
 
 static uintptr_t CPROC DoPutObject( PTHREAD thread ) {
 	struct objectStorageOptions osoOpts;
