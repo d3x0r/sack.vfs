@@ -132,7 +132,6 @@
 #    include <shlobj.h>
 #  endif
 #  if _MSC_VER > 1500
-#    define mkdir _mkdir
 #    define fileno _fileno
 #    define stricmp _stricmp
 #    define strdup _strdup
@@ -12033,10 +12032,10 @@ namespace objStore {
 // if the volume does exist, a quick validity check is made on it, and then the result is opened
 // returns NULL if failure.  (permission denied to the file, or invalid filename passed, could be out of space... )
 // same as load_cyrypt_volume with userkey and devkey NULL.
-SACK_VFS_PROC struct sack_vfs_os_volume * CPROC sack_vfs_os_load_volume( CTEXTSTR filepath );
+SACK_VFS_PROC struct sack_vfs_os_volume * CPROC sack_vfs_os_load_volume( CTEXTSTR filepath, struct file_system_mounted_interface* mount );
 /*
     polish volume cleans up some of the dirty sectors.  It starts a background thread that
-	waits a short time of no dirty updates.
+	waits a short time of no dirty updates. (flush, but polish <-> dirty )
  */
 SACK_VFS_PROC void CPROC sack_vfs_os_polish_volume( struct sack_vfs_os_volume* vol );
 // open a volume at the specified pathname.  Use the specified keys to encrypt it.
@@ -12044,7 +12043,7 @@ SACK_VFS_PROC void CPROC sack_vfs_os_polish_volume( struct sack_vfs_os_volume* v
 // if the volume does exist, a quick validity check is made on it, and then the result is opened
 // returns NULL if failure.  (permission denied to the file, or invalid filename passed, could be out of space... )
 // if the keys are NULL same as load_volume.
-SACK_VFS_PROC struct sack_vfs_os_volume * CPROC sack_vfs_os_load_crypt_volume( CTEXTSTR filepath, uintptr_t version, CTEXTSTR userkey, CTEXTSTR devkey );
+SACK_VFS_PROC struct sack_vfs_os_volume * CPROC sack_vfs_os_load_crypt_volume( CTEXTSTR filepath, uintptr_t version, CTEXTSTR userkey, CTEXTSTR devkey, struct file_system_mounted_interface* mount );
 // pass some memory and a memory length of the memory to use as a volume.
 // if userkey and/or devkey are not NULL the memory is assume to be encrypted with those keys.
 // the space is opened as readonly; write accesses/expanding operations will fail.
@@ -12145,8 +12144,8 @@ SACK_VFS_PROC size_t CPROC sack_vfs_os_find_get_size( struct sack_vfs_os_find_in
 #if defined USE_VFS_OS_INTERFACE
 #define sack_vfs_volume sack_vfs_os_volume
 #define sack_vfs_file sack_vfs_os_file
-#define sack_vfs_load_volume  sack_vfs_os_load_volume
-#define sack_vfs_load_crypt_volume  sack_vfs_os_load_crypt_volume
+#define sack_vfs_load_volume(a)  sack_vfs_os_load_volume(a,NULL)
+#define sack_vfs_load_crypt_volume(a,b,c,d)  sack_vfs_os_load_crypt_volume(a,b,c,d,NULL)
 #define sack_vfs_use_crypt_volume  sack_vfs_os_use_crypt_volume
 #define sack_vfs_unload_volume  sack_vfs_os_unload_volume
 #define sack_vfs_shrink_volume  sack_vfs_os_shrink_volume

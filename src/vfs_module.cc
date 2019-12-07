@@ -221,7 +221,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	{
 		PTEXT textOutput ;
 		textOutput = TextParse( SegCreateFromText( "GET /url/url.nme.text.xxx" ), NULL, NULL, 1, 1, NULL, 0 );
-		 GetFieldsInSQLEx( "create table groupBytes (user_id char, \tgroup_id char(20), \tsent int,\tsent_to int,\treceived int, \tindex userBytes(user_id), \tlogged_from DATETIME, \tlogged DATETIME DEFAULT CURRENT_TIMESTAMP,   )", FALSE DBG_SRC );
+		GetFieldsInSQLEx( "create table groupBytes (user_id char, \tgroup_id char(20), \tsent int,\tsent_to int,\treceived int, \tindex userBytes(user_id), \tlogged_from DATETIME, \tlogged DATETIME DEFAULT CURRENT_TIMESTAMP,   )", FALSE DBG_SRC );
 	}
 	*/
 	Local<FunctionTemplate> volumeTemplate;
@@ -378,63 +378,12 @@ void VolumeObject::vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args
 	Isolate* isolate = args.GetIsolate();
 	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
 
-	char *mount_name;
-	char *filename = (char*)"default.os";
-	LOGICAL defaultFilename = TRUE;
-	char *key = NULL;
-	char *key2 = NULL;
-	int argc = args.Length();
+	class constructorSet* c = getConstructors( isolate );
+	Local<Function> cons = Local<Function>::New( isolate, c->ObjectStorageObject_constructor );
+	Local<Value> argv[] = { args.This(), args[0], args[1], args[2], args[3] };
+	MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), args.Length()+1, argv );
 
-	int arg = 0;
-	if( args[0]->IsString() ) {
-
-		//TooObject( isolate.GetCurrentContext().FromMaybe( Local<Object>() )
-		String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		mount_name = StrDup( *fName );
-	}
-	else {
-		mount_name = SRG_ID_Generator();
-	}
-	if( argc > 1 ) {
-		if( args[arg]->IsString() ) {
-			String::Utf8Value fName( USE_ISOLATE( isolate ) args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-			defaultFilename = FALSE;
-			filename = StrDup( *fName );
-		}
-		else
-			filename = NULL;
-	}
-	else {
-		defaultFilename = FALSE;
-		filename = mount_name;
-		mount_name = SRG_ID_Generator();
-	}
-	//if( args[argc
-	if( args[arg]->IsNumber() ) {
-		//version = (uintptr_t)args[arg++]->ToNumber( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
-		arg++;
-	}
-	if( argc > arg ) {
-		if( !args[arg]->IsNull() && !args[arg]->IsUndefined() ) {
-			String::Utf8Value k( USE_ISOLATE( isolate ) args[arg] );
-			key = StrDup( *k );
-		}
-		arg++;
-	}
-	if( argc > arg ) {
-		if( !args[arg]->IsNull() && !args[arg]->IsUndefined() ) {
-			String::Utf8Value k( USE_ISOLATE( isolate ) args[arg] );
-			key2 = StrDup( *k );
-		}
-		arg++;
-	}
-
-
-	class ObjectStorageObject *oso = openInVFS( isolate, mount_name, filename, key, key2 );
-	if( oso ) {
-		// uhmm this needs 'this' to know what to return as...
-	}
-
+	args.GetReturnValue().Set( mo.ToLocalChecked() );
 }
 
 

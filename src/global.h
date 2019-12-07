@@ -469,6 +469,8 @@ void createSqlObject( const char *name, Local<Object> into );
 Local<Value> newSqlObject( Isolate *isolate, int argc, Local<Value> *argv );
 
 class ObjectStorageObject*  openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 );
+Local<Object> WrapObjectStorage( Isolate* isolate, class ObjectStorageObject* oso );
+
 
 #ifndef VFS_MAIN_SOURCE
 extern

@@ -15,7 +15,7 @@ public:
 public:
 
 	static void Init( Isolate *isolate, Local<Object> exports );
-	ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
+	ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, struct file_system_mounted_interface* useMount );
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -39,9 +39,21 @@ public:
 	static void fileWrite( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileStore( const v8::FunctionCallbackInfo<Value>& args );
 	static void createIndex( const v8::FunctionCallbackInfo<Value>& args );
-	static ObjectStorageObject* openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 );
+	static ObjectStorageObject* openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2, struct file_system_mounted_interface* useMount );
+
+	Local<Object> WrapObjectStorage( Isolate* isolate ) {
+		Local<Object> o = Object::New( isolate );
+		this->Wrap( o );
+		return o;
+	}
+
 	~ObjectStorageObject();
 };
+
+
+Local<Object> WrapObjectStorage( Isolate* isolate, class ObjectStorageObject* oso ) {
+	return oso->WrapObjectStorage( isolate );
+}
 
 
 struct optionStrings {
@@ -202,7 +214,7 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 	clsTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "read", ObjectStorageObject::fileReadJSOX );
-	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "write", ObjectStorageObject::fileWrite );
+	//NODE_SET_PROTOTYPE_METHOD( clsTemplate, "write", ObjectStorageObject::fileWrite );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "createIndex", ObjectStorageObject::createIndex );
 	//NODE_SET_PROTOTYPE_METHOD( clsTemplate, "store", ObjectStorageObject::fileStore );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "put", ObjectStorageObject::putObject );
@@ -229,7 +241,8 @@ ObjectStorageObject::~ObjectStorageObject() {
 	}
 }
 
-ObjectStorageObject::ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 ) {
+ObjectStorageObject::ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key
+	, const char *key2, struct file_system_mounted_interface*useMount ) {
 	mountName = (char *)mount;
 	if( !mount && !filename ) {
 		// no native storage.
@@ -246,7 +259,7 @@ ObjectStorageObject::ObjectStorageObject( const char *mount, const char *filenam
 		//lprintf( "sack_vfs_os_volume: %s %p %p", filename, key, key2 );
 		fileName = StrDup( filename );
 		volNative = true;
-		vol = objStore::sack_vfs_os_load_crypt_volume( filename, version, key, key2 );
+		vol = objStore::sack_vfs_os_load_crypt_volume( filename, version, key, key2, useMount );
 		AddLink( &osl.open, vol );
 		//lprintf( "VOL: %p for %s %d %p %p", vol, filename, version, key, key2 );
 		if( vol )
@@ -438,15 +451,21 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		char *key = NULL;
 		char *key2 = NULL;
 		uintptr_t version = 0;
+		VolumeObject* vol = NULL;
+		int arg = 0;
 		int argc = args.Length();
-		if( argc == 0 ) {
-			ObjectStorageObject* obj = new ObjectStorageObject( NULL, NULL, 0, NULL, NULL );
+		if( args[0]->IsObject() ) {
+			vol = ObjectWrap::Unwrap<VolumeObject>( args[0].As<Object>() );
+			arg++;
+		}
+		if( argc == arg ) {
+			ObjectStorageObject* obj = new ObjectStorageObject( NULL, NULL, 0, NULL, NULL, NULL );
 			obj->Wrap( args.This() );
 			args.GetReturnValue().Set( args.This() );
 		}
 		else {
-			int arg = 0;
-			if( args[0]->IsString() ) {
+			//int arg = 0;
+			if( args[arg]->IsString() ) {
 
 				//TooObject( isolate.getCurrentContext().FromMaybe( Local<Object>() )
 				String::Utf8Value fName( isolate,  args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -455,7 +474,7 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			else {
 				mount_name = SRG_ID_Generator();
 			}
-			if( argc > 1 ) {
+			if( argc > (arg) ) {
 				if( args[arg]->IsString() ) {
 					String::Utf8Value fName( isolate,  args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					defaultFilename = FALSE;
@@ -488,7 +507,7 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				arg++;
 			}
 			// Invoked as constructor: `new MyObject(...)`
-			ObjectStorageObject* obj = new ObjectStorageObject( mount_name, filename, version, key, key2 );
+			ObjectStorageObject* obj = new ObjectStorageObject( mount_name, filename, version, key, key2, vol->fsMount );
 			if( !obj->vol ) {
 				isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText( "Volume failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -704,12 +723,12 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 
 }
 
-ObjectStorageObject*  openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 ) {
+ObjectStorageObject*  openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2, struct file_system_mounted_interface* useMount ) {
 
 //ObjectStorageObject*  ObjectStorageObject::openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 ) {
 
 	// Invoked as constructor: `new MyObject(...)`
-	ObjectStorageObject* obj = new ObjectStorageObject( mount, name, 0, key1, key2 );
+	ObjectStorageObject* obj = new ObjectStorageObject( mount, name, 0, key1, key2, useMount );
 	if( !obj->vol ) {
 		isolate->ThrowException( Exception::Error(
 			String::NewFromUtf8( isolate, TranslateText( "Volume failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );

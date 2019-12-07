@@ -1757,12 +1757,11 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 				//return;
 			}
 		}
-
 		if( requested )
 			return;
 	}
 
-	lprintf( "(close before accept)Illegal connection" );
+	//lprintf( "(close before accept)Illegal connection" );
 
 	struct wssEvent *pevt = GetWssEvent();
 	(*pevt).eventType = WS_EVENT_ERROR_CLOSE;
@@ -1774,7 +1773,6 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 		wssAsyncMsg( &wss->async );
 	}
 	else {
-		lprintf( "Send close Request" );
 		uv_async_send( &wss->async );
 		while( (*pevt).done )
 			Wait();
@@ -1793,7 +1791,6 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 		(*pevt). pc = pc;
 		(*pevt)._this = wss;
 		EnqueLink( &wss->eventQueue, pevt );
-		lprintf( "Send request Request" );
 		uv_async_send( &wss->async );
 		//while (!(*pevt).done) WakeableSleep(SLEEP_FOREVER);
 		//lprintf("queued and evented  request event to JS");
@@ -1823,7 +1820,6 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkEr
 	(*pevt)._this = wss;
 	(*pevt).waiter = MakeThread();
 	EnqueLink( &wss->eventQueue, pevt );
-	lprintf( "Send fail " );
 	uv_async_send( &wss->async );
 	while( !(*pevt).done )
 		WakeableSleep( 1000 );
