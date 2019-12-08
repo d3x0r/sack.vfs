@@ -156,7 +156,7 @@ static void loadComplete( const v8::FunctionCallbackInfo<Value>& args ) {
 
 static void volumeRemount( const v8::FunctionCallbackInfo<Value>& args ) {
 	VolumeObject *vol = VolumeObject::Unwrap<VolumeObject>( args.This() );
-   Isolate *isolate = args.GetIsolate();
+	Isolate *isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
 	if( !vol )
 		return;
@@ -338,12 +338,17 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t v
 	this->priority = priority;
 	if( !mount && !filename ) {
 		volNative = false;
-		//lprintf( "open native mount" );
 		fsMount = sack_get_default_mount();
+		if( !fsMount ) {
+			return;
+		}
 		fsInt = sack_get_mounted_filesystem_interface( fsMount );
 	} else if( mount && !filename ) {
 		volNative = false;
 		fsMount = sack_get_mounted_filesystem( mount );
+		if( !fsMount ) {
+			return;
+		}
 		fsInt = sack_get_mounted_filesystem_interface( fsMount );
 		vol = (struct sack_vfs_volume*)sack_get_mounted_filesystem_instance( fsMount );
 		//lprintf( "open native mount" );
@@ -1107,7 +1112,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			else
 				fi = vol->fsInt->find_create_cursor( (uintptr_t)vol->vol, *path, "*" );
 		}
-      else
+		else
 			fi = vol->fsInt->find_create_cursor( (uintptr_t)vol->vol, ".", "*" );
 		Local<Array> result = Array::New( isolate );
 		int found;
@@ -1144,6 +1149,11 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			int argc = args.Length();
 			if( argc == 0 ) {
 				VolumeObject* obj = new VolumeObject( NULL, NULL, 0, NULL, NULL, 0 );
+				if( !obj->fsMount ) {
+					isolate->ThrowException( Exception::Error(
+						String::NewFromUtf8( isolate, TranslateText( "Failed to load default mount." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+					delete obj;
+				}
 				obj->Wrap( args.This() );
 				args.GetReturnValue().Set( args.This() );
 			}
