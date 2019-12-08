@@ -593,8 +593,8 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 		default:
 			if( !revive->fieldCb.IsEmpty() ) {
 				if( val->name ) {
-					Local<Value> args[] = { String::NewFromUtf8( revive->isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked()
-						, makeValue( val, revive, o, 0, stringKey ) };
+					stringKey = String::NewFromUtf8( revive->isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked();
+					Local<Value> args[] = { stringKey, makeValue( val, revive, o, 0, stringKey ) };
 					// use the custom reviver to assign the field.
 					revive->fieldCb->Call( revive->context, o, 2, args );
 				}
