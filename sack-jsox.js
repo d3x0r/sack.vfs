@@ -7,13 +7,13 @@ sack.JSON.stringify = JSON.stringify;
 
 var disk = sack.Volume();
 require.extensions['.json6'] = function (module, filename) {
-    var content = disk.read(filename).toString();
-    module.exports = sack.JSON6.parse(content);
+	var content = disk.read(filename).toString();
+	module.exports = sack.JSON6.parse(content);
 };
 
 require.extensions['.jsox'] = function (module, filename) {
-    var content = disk.read(filename).toString();
-    module.exports = sack.JSOX.parse(content);
+	var content = disk.read(filename).toString();
+	module.exports = sack.JSOX.parse(content);
 };
 
 const _DEBUG_STRINGIFY = false;
@@ -61,71 +61,71 @@ var commonClasses = [];
 			return (isFinite(this))
 				? String(this)
 				: (this<0)?"-Infinity":"Infinity";
-	    }
+		}
 	} );
 	toProtoTypes.set( String.prototype, { external:false
-	    , name : "String"
-	    , cb:function(){ return '"' + sack.JSOX.escape(this_value.apply(this)) + '"' } } );
+	                                    , name : "String"
+	                                    , cb:function(){ return '"' + sack.JSOX.escape(this_value.apply(this)) + '"' } } );
 	if( typeof BigInt === "function" )
 		toProtoTypes.set( BigInt.prototype
-		     , { external:false, name:"BigInt", cb:function() { return this + 'n' } } );
+		                , { external:false, name:"BigInt", cb:function() { return this + 'n' } } );
 
 	toProtoTypes.set( ArrayBuffer.prototype, { external:true, name:"ab"
-	    , cb:function() { return "["+base64ArrayBuffer(this)+"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this)+"]" }
 	} );
 
 	toProtoTypes.set( Uint8Array.prototype, { external:true, name:"u8"
-	    , cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	toProtoTypes.set( Uint8ClampedArray.prototype, { external:true, name:"uc8"
-	    , cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	toProtoTypes.set( Int8Array.prototype, { external:true, name:"s8"
-	    , cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	toProtoTypes.set( Uint16Array.prototype, { external:true, name:"u16"
-	    , cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	toProtoTypes.set( Int16Array.prototype, { external:true, name:"s16"
-	    , cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	toProtoTypes.set( Uint32Array.prototype, { external:true, name:"u32"
-	    , cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	toProtoTypes.set( Int32Array.prototype, { external:true, name:"s32"
-	    , cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
-	if( typeof Uint64Array != "undefined" )
+	if( typeof Uint64Array !== "undefined" )
 		toProtoTypes.set( Uint64Array.prototype, { external:true, name:"u64"
-		    , cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+			, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 		} );
-	if( typeof Int64Array != "undefined" )
+	if( typeof Int64Array !== "undefined" )
 		toProtoTypes.set( Int64Array.prototype, { external:true, name:"s64"
-		    , cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+			, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 		} );
 	toProtoTypes.set( Float32Array.prototype, { external:true, name:"f32"
-	    , cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	toProtoTypes.set( Float64Array.prototype, { external:true, name:"f64"
-	    , cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 
 	toProtoTypes.set( Symbol.prototype, { external:true, name:"sym"
-	    , cb:function() { return '"'+this.description+'"' }
+		, cb:function() { return '"'+this.description+'"' }
 	} );
 	toProtoTypes.set( Map.prototype, mapToJSOX = { external:true, name:"map"
-	    , cb:null
+		, cb:null
 	} );
-	fromProtoTypes.set( "map", { protoDef:Map.prototype, cb:function (field,val){
+		fromProtoTypes.set("map", {
+			protoCon: Map.prototype.constructor, cb:function(field, val) {
+				if (!field) return this;
+				console.log("Got map callback to use set on 'this':", this);
 		this.set( field,val );
-		//var newMap = new Map();
-		//for( var key in this ) newMap.set( key, this[key] );
-		//return newMap;
 	} } );
 
 
 	toProtoTypes.set( Array.prototype, arrayToJSOX = { external:false, name:Array.prototype.constructor.name
-	    , cb: null		    
+		, cb: null
 	} );
 }
 
@@ -143,9 +143,9 @@ sack.JSOX.defineClass = function( name, obj ) {
 			}
 			console.log( "normalized:", denormKeys );
 			commonClasses.push( cls = { name : name
-			       , tag:denormKeys.toString()
-			       , proto : Object.getPrototypeOf(obj)
-			       , fields : Object.keys(obj) } );
+				   , tag:denormKeys.toString()
+				   , proto : Object.getPrototypeOf(obj)
+				   , fields : Object.keys(obj) } );
 			for(var n = 1; n < cls.fields.length; n++) {
 				if( cls.fields[n] < cls.fields[n-1] ) {
 					let tmp = cls.fields[n-1];
@@ -171,27 +171,25 @@ sack.JSOX.registerToJSOX = function( name, prototype, f ) {
 		toObjectTypes.set( key, { external:true, name:name, cb:f } );
 	}
 }
-sack.JSOX.registerFromJSOX = function( prototypeName, o, f ) {
-	console.log( "Registration:", prototypeName );
+sack.JSOX.registerFromJSOX = function (prototypeName, o, f) {
+	throw new Error("registerFromJSOX  was deprecated, please update to use 'fromJSOX'");
+}
+
+sack.JSOX.fromJSOX = function( prototypeName, o, f ) {
+	//console.log( "Registration:", prototypeName, o );
 	if( fromProtoTypes.get(prototypeName) ) throw new Error( "Existing fromJSOX has been registered for prototype" );
-	if( "function" === typeof o ) {
-		console.trace( "Please update usage of registration... proto and function")
-		f = o
-		o = Object.getPrototypeOf( {} );
-	} 
-	if( !f ) {
-		console.trace( "(missing f) Please update usage of registration... proto and function")
-	}
-	if( !("constructor" in o )) {
+	if( o && !("constructor" in o )) {
 		throw new Error( "Please pass a proper prototype...." );
 	}
-console.log( "Setting thing as an object..." );
-	fromProtoTypes.set( prototypeName, {protoDef:o.constructor, cb:f} );
+	console.log("XX:", o && o.constructor);
+	var z;
+	fromProtoTypes.set(prototypeName, z = { protoCon: o && o.constructor, cb: f });
+	console.log("zz:", z);
 }
 sack.JSOX.registerToFrom = function( prototypeName, prototype, to, from ) {
 	//console.log( "INPUT:", prototype );
 	sack.JSOX.registerToJSOX( prototypeName, prototype, to );
-	sack.JSOX.registerFromJSOX( prototypeName, prototype, from );
+	sack.JSOX.fromJSOX( prototypeName, prototype, from );
 }
 
 var JSOXBegin = sack.JSOX.begin;
@@ -202,7 +200,10 @@ sack.JSOX.begin = function(cb) {
 	var localPromiseFromProtoTypes = new Map();;
 	parser.setFromPrototypeMap( localFromProtoTypes );
 	parser.setPromiseFromPrototypeMap( localPromiseFromProtoTypes );
-	parser.registerFromJSOX = function( prototypeName, o, f ) {
+	parser.registerFromJSOX = function (prototypeName, o, f) {
+		throw new Error("registerFromJSOX  was deprecated, please update to use 'fromJSOX'");
+	}
+	parser.fromJSOX = function( prototypeName, o, f ) {
 		if( localFromProtoTypes.get(prototypeName) ) throw new Error( "Existing fromJSOX has been registered for prototype" );
 		if( "function" === typeof o ) {
 			console.trace( "Please update usage of registration... proto and function")
@@ -212,7 +213,9 @@ sack.JSOX.begin = function(cb) {
 		if( !f ) {
 			console.trace( "(missing f) Please update usage of registration... proto and function")
 		}
-		localFromProtoTypes.set( prototypeName, { protoDef:o, cb:f } );
+		if (!("constructor" in o))
+			throw new Error("Please pass a prototype like object...");
+		localFromProtoTypes.set( prototypeName, { protoCon:o, cb:f } );
 	}
 	parser.registerPromiseFromJSOX = function( prototypeName, o, f ) {
 		if( localPromiseFromProtoTypes.get(prototypeName) ) throw new Error( "Existing fromJSOX has been registered for prototype" );
@@ -261,9 +264,9 @@ sack.JSOX.stringifier = function() {
 				}
 			}
 			classes.push( cls = { name : name
-			       , tag:denormKeys.toString()
-			       , proto : Object.getPrototypeOf(obj)
-			       , fields : Object.keys(obj) } );
+				   , tag:denormKeys.toString()
+				   , proto : Object.getPrototypeOf(obj)
+				   , fields : Object.keys(obj) } );
 			for(var n = 1; n < cls.fields.length; n++) {
 				if( cls.fields[n] < cls.fields[n-1] ) {
 					let tmp = cls.fields[n-1];
@@ -497,8 +500,8 @@ sack.JSOX.stringifier = function() {
 			_DEBUG_STRINGIFY && console.log( "TEST()", value, protoConverter, objectConverter );
 
 			var toJSOX = ( protoConverter && protoConverter.cb ) 
-			          || ( objectConverter && objectConverter.cb )
-        		          || ( isObject && objectToJSOX );
+			             || ( objectConverter && objectConverter.cb )
+			             || ( isObject && objectToJSOX );
 			// If the value has a toJSOX method, call it to obtain a replacement value.
 			_DEBUG_STRINGIFY && console.log( "type:", typeof value, protoConverter, !!toJSOX, path, isObject );
 
@@ -626,7 +629,7 @@ sack.JSOX.stringifier = function() {
 									keys.splice(n,0,k );
 									break;
 								}
-							if( n == keys.length )
+							if( n === keys.length )
 								keys.push(k);
 						}
 					}
@@ -738,7 +741,7 @@ sack.JSOX.stringifier = function() {
 			// Set the 4 least significant bits to zero
 			b = (chunk & 3)   << 4 // 3   = 2^2 - 1
 			base64 += encodings[a] + encodings[b] + '=='
-		} else if (byteRemainder == 2) {
+		} else if (byteRemainder === 2) {
 			chunk = (bytes[mainLength] << 8) | bytes[mainLength + 1]
 			a = (chunk & 64512) >> 10 // 64512 = (2^6 - 1) << 10
 			b = (chunk & 1008)  >>  4 // 1008  = (2^6 - 1) << 4
