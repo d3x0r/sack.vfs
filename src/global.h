@@ -116,7 +116,7 @@ class constructorSet {
 	public:
 	Isolate *isolate;
 	uv_loop_t* loop;
-
+	Persistent<Function> dateCons; // Date constructor
 	Persistent<Function> ThreadObject_idleProc;
 
 	// constructor
@@ -401,8 +401,8 @@ public:
 };
 
 struct reviver_data {
-	Persistent<Function> dateCons;
-
+	//Persistent<Function> dateCons;
+	Local<Function> fieldCb;
 	Isolate *isolate;
 	Local<Context> context;
 	LOGICAL revive;
