@@ -143,12 +143,14 @@
 extern "C"
 #endif
 __declspec(dllimport) DWORD WINAPI timeGetTime(void);
-#  if defined( NEED_SHLAPI )
-#    include <shlwapi.h>
-#    include <shellapi.h>
-#  endif
-#  ifdef NEED_V4W
-#    include <vfw.h>
+#  ifdef WIN32
+#    if defined( NEED_SHLAPI )
+#      include <shlwapi.h>
+#      include <shellapi.h>
+#    endif
+#    ifdef NEED_V4W
+#      include <vfw.h>
+#    endif
 #  endif
 #  if defined( HAVE_ENVIRONMENT )
 #    define getenv(name)       OSALOT_GetEnvironmentVariable(name)

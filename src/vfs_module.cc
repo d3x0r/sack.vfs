@@ -194,7 +194,12 @@ static void CleanupThreadResources( void* arg_ ) {
 static void logString( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-	_xlprintf(LOG_NOISE, "JS", 1 )( "%s", *s );
+#ifdef _DEBUG
+	_xlprintf(LOG_NOISE, "JS", 1 )
+#else
+	_xlprintf(LOG_NOISE )
+#endif
+		( "%s", *s );
 }
 
 void VolumeObject::doInit( Local<Context> context, Local<Object> exports )

@@ -116,11 +116,12 @@ var commonClasses = [];
 	toProtoTypes.set( Map.prototype, mapToJSOX = { external:true, name:"map"
 	    , cb:null
 	} );
-	fromProtoTypes.set( "map", function (){
-		var newMap = new Map();
-		for( var key in this ) newMap.set( key, this[key] );
-		return newMap;
-	} );
+	fromProtoTypes.set( "map", { protoDef:Map.prototype, cb:function (field,val){
+		this.set( field,val );
+		//var newMap = new Map();
+		//for( var key in this ) newMap.set( key, this[key] );
+		//return newMap;
+	} } );
 
 
 	toProtoTypes.set( Array.prototype, arrayToJSOX = { external:false, name:Array.prototype.constructor.name
@@ -170,14 +171,27 @@ sack.JSOX.registerToJSOX = function( name, prototype, f ) {
 		toObjectTypes.set( key, { external:true, name:name, cb:f } );
 	}
 }
-sack.JSOX.registerFromJSOX = function( prototypeName, f ) {
+sack.JSOX.registerFromJSOX = function( prototypeName, o, f ) {
+	console.log( "Registration:", prototypeName );
 	if( fromProtoTypes.get(prototypeName) ) throw new Error( "Existing fromJSOX has been registered for prototype" );
-	fromProtoTypes.set( prototypeName, f );
+	if( "function" === typeof o ) {
+		console.trace( "Please update usage of registration... proto and function")
+		f = o
+		o = Object.getPrototypeOf( {} );
+	} 
+	if( !f ) {
+		console.trace( "(missing f) Please update usage of registration... proto and function")
+	}
+	if( !("constructor" in o )) {
+		throw new Error( "Please pass a proper prototype...." );
+	}
+console.log( "Setting thing as an object..." );
+	fromProtoTypes.set( prototypeName, {protoDef:o.constructor, cb:f} );
 }
 sack.JSOX.registerToFrom = function( prototypeName, prototype, to, from ) {
 	//console.log( "INPUT:", prototype );
 	sack.JSOX.registerToJSOX( prototypeName, prototype, to );
-	sack.JSOX.registerFromJSOX( prototypeName, from );
+	sack.JSOX.registerFromJSOX( prototypeName, prototype, from );
 }
 
 var JSOXBegin = sack.JSOX.begin;
@@ -188,13 +202,29 @@ sack.JSOX.begin = function(cb) {
 	var localPromiseFromProtoTypes = new Map();;
 	parser.setFromPrototypeMap( localFromProtoTypes );
 	parser.setPromiseFromPrototypeMap( localPromiseFromProtoTypes );
-	parser.registerFromJSOX = function( prototypeName, f ) {
+	parser.registerFromJSOX = function( prototypeName, o, f ) {
 		if( localFromProtoTypes.get(prototypeName) ) throw new Error( "Existing fromJSOX has been registered for prototype" );
-		localFromProtoTypes.set( prototypeName, f );
+		if( "function" === typeof o ) {
+			console.trace( "Please update usage of registration... proto and function")
+			f = o
+			o = Object.getPrototypeOf( {} );
+		} 
+		if( !f ) {
+			console.trace( "(missing f) Please update usage of registration... proto and function")
+		}
+		localFromProtoTypes.set( prototypeName, { protoDef:o, cb:f } );
 	}
-	parser.registerPromiseFromJSOX = function( prototypeName, f ) {
+	parser.registerPromiseFromJSOX = function( prototypeName, o, f ) {
 		if( localPromiseFromProtoTypes.get(prototypeName) ) throw new Error( "Existing fromJSOX has been registered for prototype" );
-		localPromiseFromProtoTypes.set( prototypeName, f );
+		if( "function" === typeof o ) {
+			console.trace( "Please update usage of registration... proto and function")
+			f = o
+			o = Object.getPrototypeOf( {} );
+		} 
+		if( !f ) {
+			console.trace( "(missing f) Please update usage of registration... proto and function")
+		}
+		localPromiseFromProtoTypes.set( prototypeName, o, f );
 	}
 	return parser;
 }
@@ -291,6 +321,7 @@ sack.JSOX.stringifier = function() {
 			if( cls.proto && cls.proto === prt ) return true;
 		} );
 		if( cls ) return cls;
+
 		if( classes.length || commonClasses.length ) {
 			if( useK )  {
 				useK = useK.map( v=>{ if( typeof v === "string" ) return v; else return undefined; } );
@@ -564,13 +595,12 @@ sack.JSOX.stringifier = function() {
 							if (v) {
 								if( partialClass ) {
 									partial.push(v);
-								} else  {
+							} else
 									partial.push(getIdentifier(k) + (
 										(gap)
 											? ": "
 											: ":"
 									) + v);
-								}
 							}
 						}
 					}
@@ -610,13 +640,12 @@ sack.JSOX.stringifier = function() {
 							if (v) {
 								if( partialClass ) {
 									partial.push(v);
-								} else {
+								} else
 									partial.push(getIdentifier(k)+ (
 										(gap)
 											? ": "
 											: ":"
 									) + v);
-								}
 							}
 						}
 					}

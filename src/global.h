@@ -89,10 +89,10 @@ using namespace v8;
 #define GET(o,key)  (o)->Get( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked() ).ToLocalChecked()
 #define GETV(o,key)  (o)->Get( context, key ).ToLocalChecked()
 #define GETN(o,key)  (o)->Get( context, Integer::New( isolate, (key) ) ).ToLocalChecked()
-#define SETV(o,key,val)  (o)->Set( context, key, val )
-#define SET(o,key,val)  (o)->Set( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked(), val )
-#define SETT(o,key,val)  (o)->Set( context, String::NewFromUtf8( isolate, GetText(key), v8::NewStringType::kNormal, (int)GetTextSize( key ) ).ToLocalChecked(), val )
-#define SETN(o,key,val)  (o)->Set( context, Integer::New( isolate, key ), val )
+#define SETV(o,key,val)  (void)(o)->Set( context, key, val )
+#define SET(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked(), val )
+#define SETT(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, GetText(key), v8::NewStringType::kNormal, (int)GetTextSize( key ) ).ToLocalChecked(), val )
+#define SETN(o,key,val)  (void)(o)->Set( context, Integer::New( isolate, key ), val )
 
 
 void InitJSOX( Isolate *isolate, Local<Object> exports );

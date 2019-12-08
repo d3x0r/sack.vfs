@@ -294,6 +294,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 			MaybeLocal<Value> valmethod;
 			Local<Function> cb;
 			if( revive->parser && !revive->parser->promiseFromPrototypeMap.IsEmpty() ) {
+				
 				valmethod = revive->parser->promiseFromPrototypeMap.Get( revive->isolate )->
 					Get( revive->context
 						, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked()
@@ -458,7 +459,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				lprintf( "set value to fieldname: %s", val->name );
 #endif
 				o->CreateDataProperty( revive->context, stringKey
-						, makeValue( val, revive, o, 0, stringKey ) );
+					, makeValue( val, revive, o, 0, stringKey ) );
 			}
 			else {
 				if( val->value_type == JSOX_VALUE_EMPTY )
@@ -531,73 +532,106 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 			}
 			break;
 		case JSOX_VALUE_OBJECT:
-
-			sub_o = getObject( revive, val );
-
-			if( val->name ) {
-				stringKey = String::NewFromUtf8( revive->isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked();
-				o->CreateDataProperty( revive->context, stringKey, sub_o );
-				thisKey = stringKey;
-			}
-			else {
-				if( revive->revive )
-					thisKey = Integer::New( revive->isolate, index );
-				//lprintf( "set value to index: %d", index );
-
-				SETN( o, (currentIndex = index++), sub_o );
-			}
-
-			buildObject( val->contains, sub_o, revive );
-			if( val->className ) {
-				MaybeLocal<Value> valmethod;
+			{
 				Local<Function> cb;
-				
-				if( revive->parser && !revive->parser->promiseFromPrototypeMap.IsEmpty() )
-					valmethod = revive->parser->promiseFromPrototypeMap.Get( revive->isolate )->
-						Get( revive->context
-							, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked()
-						);
-				if( !valmethod.IsEmpty() && !( valmethod.ToLocalChecked()->IsUndefined() ) ) {
-					struct PromiseWrapper *pw = makePromise( revive->context, revive->isolate );
-					Local<Value> args[] = { pw->resolve.Get( revive->isolate ), pw->reject.Get( revive->isolate) };
-					cb = valmethod.ToLocalChecked().As<Function>();
-					sub_o = cb->Call( revive->context, sub_o, 2, args ).ToLocalChecked().As<Object>();
-				} 
-				else {
-					if( revive->parser && !revive->parser->fromPrototypeMap.IsEmpty() ) {
-						valmethod = revive->parser->fromPrototypeMap.Get( revive->isolate )->
-							Get( revive->context
-								, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked()
-							);
-						if( !valmethod.IsEmpty() && !(valmethod.ToLocalChecked()->IsUndefined()) )
-							cb = valmethod.ToLocalChecked().As<Function>();
+				sub_o = getObject( revive, val );
+
+				if( val->className ) {
+					MaybeLocal<Value> mprotoDef;
+					Local<Object> protoDef;
+					MaybeLocal<Value> valmethod;
+					Local<String> className = String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked();
+					/*
+					if( revive->parser && !revive->parser->promiseFromPrototypeMap.IsEmpty() )
+						mprotoDef = revive->parser->promiseFromPrototypeMap.Get( revive->isolate )->Get( revive->context, className );
+					if( !mprotoDef->IsEmpty() ) {
+						protoDef = mprotoDef->ToLocalChecked();
+
+						struct PromiseWrapper *pw = makePromise( revive->context, revive->isolate );
+						Local<Value> args[] = { pw->resolve.Get( revive->isolate ), pw->reject.Get( revive->isolate) };
+						sub_o = cb->Call( revive->context, sub_o, 2, args ).ToLocalChecked().As<Object>();
+
+						Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoDef", v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked() )->ToLocalChecked();
+						Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked() )->ToLocalChecked();
+						cb = f.As<Function>();
+						Local<Object> po = p.As<Object>();
+						sub_o->SetPrototype( revive->context, po );
 					}
-					if( valmethod.IsEmpty() || (valmethod.ToLocalChecked()->IsUndefined()) ) {
+					*/
+					if( mprotoDef.IsEmpty() && revive->parser && !revive->parser->fromPrototypeMap.IsEmpty() ) {
+						mprotoDef = revive->parser->fromPrototypeMap.Get( revive->isolate )->Get( revive->context, className );
+						if( !mprotoDef.IsEmpty() ) {
+							lprintf( "found registered proto...");
+							if( ! mprotoDef.ToLocalChecked()->IsObject() ){
+								lprintf( "Expected prototype definition object... failed.");
+								return;
+							}
+							protoDef = mprotoDef.ToLocalChecked().As<Object>();
+							Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoDef", v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked() ).ToLocalChecked();
+							Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked() ).ToLocalChecked();
+							if( f->IsFunction() )
+								cb = f.As<Function>();
+							if( p->IsObject() ) {
+								Local<Object> po = p.As<Object>();
+								sub_o->SetPrototype( revive->context, po );
+							}
+						}
+					}
+					if( mprotoDef.IsEmpty() || (mprotoDef.ToLocalChecked()->IsUndefined()) ) {
 						class constructorSet *c = getConstructors( revive->isolate );
-						valmethod = c->fromPrototypeMap.Get( revive->isolate )->
-							Get( revive->context
-								, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked()
-							);
-						if( !valmethod.IsEmpty() && !(valmethod.ToLocalChecked()->IsUndefined()) )
-							cb = valmethod.ToLocalChecked().As<Function>();
+						mprotoDef = c->fromPrototypeMap.Get( revive->isolate )-> Get( revive->context, className );
+						if( !mprotoDef.IsEmpty() ) {
+							lprintf( "found registered proto...");
+							if( ! mprotoDef.ToLocalChecked()->IsObject() ){
+								lprintf( "Expected prototype definition object... failed.");
+								return;
+							}
+							protoDef = mprotoDef.ToLocalChecked().As<Object>();
+							Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoDef", v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked() ).ToLocalChecked();
+							Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked() ).ToLocalChecked();
+							if( f->IsFunction() )
+								cb = f.As<Function>();
+							if( p->IsObject() ) {
+								Local<Object> po = p.As<Object>();
+								sub_o->SetPrototype( revive->context, po );
+							}
+						}
 					}
+				}
+
+
+				if( val->name ) {
+					stringKey = String::NewFromUtf8( revive->isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked();
+					o->CreateDataProperty( revive->context, stringKey, sub_o );
+					thisKey = stringKey;
+				}
+				else {
+					if( revive->revive )
+						thisKey = Integer::New( revive->isolate, index );
+					//lprintf( "set value to index: %d", index );
+
+					SETN( o, (currentIndex = index++), sub_o );
+				}
+
+				buildObject( val->contains, sub_o, revive );
+
+				if( val->className ) {
 					if( !cb.IsEmpty() && cb->IsFunction() )
 						sub_o = cb->Call( revive->context, sub_o, 0, NULL ).ToLocalChecked().As<Object>();
 				}
-			}
-			if( revive->revive ) {
-				Local<Value> args[2] = { thisKey, sub_o };
-				revive->reviver->Call( revive->context, revive->_this, 2, args );
-			}
+				if( revive->revive ) {
+					Local<Value> args[2] = { thisKey, sub_o };
+					revive->reviver->Call( revive->context, revive->_this, 2, args );
+				}
 
-			if( val->name ) {
-				SETV( o, thisKey, sub_o );
-				//o->CreateDataProperty( revive->context, thisKey, sub_o );
+				if( val->name ) {
+					SETV( o, thisKey, sub_o );
+					//o->CreateDataProperty( revive->context, thisKey, sub_o );
+				}
+				else {
+					SETN( o, currentIndex, sub_o );
+				}
 			}
-			else {
-				SETN( o, currentIndex, sub_o );
-			}
-
 			break;
 		}
 	}
@@ -792,10 +826,10 @@ void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {
 void JSOXObject::setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	JSOXObject *parser = ObjectWrap::Unwrap<JSOXObject>( args.Holder() );
-	parser->fromPrototypeMap.Reset( args.GetIsolate(), args[0].As<Map>() );
+	parser->fromPrototypeMap.Reset( isolate, args[0].As<Map>() );
 }
 void JSOXObject::setPromiseFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	JSOXObject *parser = ObjectWrap::Unwrap<JSOXObject>( args.Holder() );
-	parser->promiseFromPrototypeMap.Reset( args.GetIsolate(), args[0].As<Map>() );
+	parser->promiseFromPrototypeMap.Reset( isolate, args[0].As<Map>() );
 }
