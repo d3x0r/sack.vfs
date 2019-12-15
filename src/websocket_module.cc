@@ -2473,7 +2473,7 @@ static uintptr_t webSockClientOpen( PCLIENT pc, uintptr_t psv ) {
 	EnqueLink( &wsc->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
 	lprintf( "Send Open Request" );
-#endifs
+#endif
 	uv_async_send( &wsc->async );
 	return psv;
 }
