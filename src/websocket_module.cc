@@ -2471,7 +2471,9 @@ static uintptr_t webSockClientOpen( PCLIENT pc, uintptr_t psv ) {
 	(*pevt).eventType = WS_EVENT_OPEN;
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
 	lprintf( "Send Open Request" );
+#endifs
 	uv_async_send( &wsc->async );
 	return psv;
 }
