@@ -2484,7 +2484,9 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
 	lprintf( "Send Close Request" );
+#endif
 	uv_async_send( &wsc->async );
 	wsc->pc = NULL;
 }
@@ -2497,7 +2499,9 @@ static void webSockClientError( PCLIENT pc, uintptr_t psv, int error ) {
 	(*pevt)._this = wsc;
 	(*pevt).code = error;
 	EnqueLink( &wsc->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
 	lprintf( "Send Error Request" );
+#endif
 	uv_async_send( &wsc->async );
 }
 
@@ -2512,7 +2516,9 @@ static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTE
 	(*pevt).binary = type;
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
 	lprintf( "Send Client Read Request" );
+#endif
 	uv_async_send( &wsc->async );
 }
 
