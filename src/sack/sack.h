@@ -143,12 +143,14 @@
 extern "C"
 #endif
 __declspec(dllimport) DWORD WINAPI timeGetTime(void);
-#  if defined( NEED_SHLAPI )
-#    include <shlwapi.h>
-#    include <shellapi.h>
-#  endif
-#  ifdef NEED_V4W
-#    include <vfw.h>
+#  ifdef WIN32
+#    if defined( NEED_SHLAPI )
+#      include <shlwapi.h>
+#      include <shellapi.h>
+#    endif
+#    ifdef NEED_V4W
+#      include <vfw.h>
+#    endif
 #  endif
 #  if defined( HAVE_ENVIRONMENT )
 #    define getenv(name)       OSALOT_GetEnvironmentVariable(name)
@@ -11563,7 +11565,9 @@ FILESYS_PROC int FILESYS_API sack_fprintf( FILE *file, const char *format, ... )
 FILESYS_PROC int FILESYS_API sack_fputs( const char *format, FILE *file );
 FILESYS_PROC  int FILESYS_API  sack_unlinkEx ( INDEX group, CTEXTSTR filename, struct file_system_mounted_interface *mount );
 FILESYS_PROC  int FILESYS_API  sack_unlink ( INDEX group, CTEXTSTR filename );
+FILESYS_PROC  int FILESYS_API  sack_rmdirEx( INDEX group, CTEXTSTR filename, struct file_system_mounted_interface* mount );
 FILESYS_PROC  int FILESYS_API  sack_rmdir( INDEX group, CTEXTSTR filename );
+FILESYS_PROC  int FILESYS_API  sack_mkdirEx( INDEX group, CTEXTSTR filename, struct file_system_mounted_interface* mount );
 FILESYS_PROC  int FILESYS_API  sack_mkdir( INDEX group, CTEXTSTR filename );
 FILESYS_PROC  int FILESYS_API  sack_renameEx ( CTEXTSTR file_source, CTEXTSTR new_name, struct file_system_mounted_interface *mount );
 FILESYS_PROC  int FILESYS_API  sack_rename ( CTEXTSTR file_source, CTEXTSTR new_name );
