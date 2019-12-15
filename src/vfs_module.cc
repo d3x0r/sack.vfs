@@ -428,7 +428,7 @@ void VolumeObject::mkdir( const v8::FunctionCallbackInfo<Value>& args ){
 	int argc = args.Length();
 	if( argc > 0 ) {
   		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
-  		MakePath( *fName );
+		sack_mkdir( 0, *fName );
 	}
 }
 
@@ -441,8 +441,10 @@ void VolumeObject::makeDirectory( const v8::FunctionCallbackInfo<Value>& args ){
 			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 			if( vol->volNative ) {
 				// no directory support; noop.
+				if( vol->fsInt->_mkdir )
+					vol->fsInt->_mkdir( sack_get_mounted_filesystem_instance( vol->fsMount ), *fName );
 			} else {
-				MakePath( *fName );
+				sack_mkdirEx( 0, *fName, vol->fsMount );
 			}
 		}
 	}
@@ -461,7 +463,7 @@ void VolumeObject::isDirectory( const v8::FunctionCallbackInfo<Value>& args ) {
 				args.GetReturnValue().Set( False(isolate) );
 			}
 			else {
-				args.GetReturnValue().Set( Boolean::New( isolate,  IsPath( *fName ) ) );
+				args.GetReturnValue().Set( Boolean::New( isolate, sack_isPathEx( *fName, vol->fsMount ) ) );
 			}
 		}
 	}
@@ -1153,6 +1155,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 					isolate->ThrowException( Exception::Error(
 						String::NewFromUtf8( isolate, TranslateText( "Failed to load default mount." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 					delete obj;
+					return;
 				}
 				obj->Wrap( args.This() );
 				args.GetReturnValue().Set( args.This() );

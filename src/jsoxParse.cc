@@ -457,11 +457,6 @@ Local<Object> getObject( struct reviver_data *revive, struct jsox_value_containe
 					protoDef = mprotoDef.ToLocalChecked().As<Object>();
 					Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoCon", v8::NewStringType::kNormal, (int)8 ).ToLocalChecked() ).ToLocalChecked();
 					Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)2 ).ToLocalChecked() ).ToLocalChecked();
-					{
-						String::Utf8Value db1( revive->isolate, p->ToString( revive->isolate ) );
-						String::Utf8Value db2( revive->isolate, f->ToString( revive->isolate ) );
-						lprintf( "WHAT? %s %s", *db1, *db2 );
-					}
 					if( f->IsFunction() )
 						revive->fieldCb = f.As<Function>();
 					else
