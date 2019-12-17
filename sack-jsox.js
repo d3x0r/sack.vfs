@@ -5,6 +5,7 @@ module.exports = function(sack) {
 sack.JSON6.stringify = JSON.stringify;
 sack.JSON.stringify = JSON.stringify;
 
+try {
 var disk = sack.Volume();
 require.extensions['.json6'] = function (module, filename) {
 	var content = disk.read(filename).toString();
@@ -15,7 +16,9 @@ require.extensions['.jsox'] = function (module, filename) {
 	var content = disk.read(filename).toString();
 	module.exports = sack.JSOX.parse(content);
 };
-
+} catch(err) {
+	console.log( "JSOX Module could not register require support..." );
+}
 const _DEBUG_STRINGIFY = false;
 var toProtoTypes = new WeakMap();
 var toObjectTypes = new Map();
@@ -116,11 +119,10 @@ var commonClasses = [];
 	toProtoTypes.set( Map.prototype, mapToJSOX = { external:true, name:"map"
 		, cb:null
 	} );
-		fromProtoTypes.set("map", {
-			protoCon: Map.prototype.constructor, cb:function(field, val) {
-				if (!field) return this;
-				console.log("Got map callback to use set on 'this':", this);
-		this.set( field,val );
+	fromProtoTypes.set("map", {
+		protoCon: Map.prototype.constructor, cb:function(field, val) {
+			if (!field) return this;
+			this.set( field,val );
 	} } );
 
 
@@ -205,29 +207,13 @@ sack.JSOX.begin = function(cb) {
 	}
 	parser.fromJSOX = function( prototypeName, o, f ) {
 		if( localFromProtoTypes.get(prototypeName) ) throw new Error( "Existing fromJSOX has been registered for prototype" );
-		if( "function" === typeof o ) {
-			console.trace( "Please update usage of registration... proto and function")
-			f = o
-			o = Object.getPrototypeOf( {} );
-		} 
-		if( !f ) {
-			console.trace( "(missing f) Please update usage of registration... proto and function")
-		}
+       	
 		if (!("constructor" in o))
 			throw new Error("Please pass a prototype like object...");
-		localFromProtoTypes.set( prototypeName, { protoCon:o, cb:f } );
+		localFromProtoTypes.set( prototypeName, { protoCon:o.constructor, cb:f } );
 	}
 	parser.registerPromiseFromJSOX = function( prototypeName, o, f ) {
-		if( localPromiseFromProtoTypes.get(prototypeName) ) throw new Error( "Existing fromJSOX has been registered for prototype" );
-		if( "function" === typeof o ) {
-			console.trace( "Please update usage of registration... proto and function")
-			f = o
-			o = Object.getPrototypeOf( {} );
-		} 
-		if( !f ) {
-			console.trace( "(missing f) Please update usage of registration... proto and function")
-		}
-		localPromiseFromProtoTypes.set( prototypeName, o, f );
+		throw new Error( "Deprecated 'registerPromiseFromJSOX', pluse use fromJSOX has been registered for prototype" );
 	}
 	return parser;
 }
