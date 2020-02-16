@@ -89,10 +89,10 @@ using namespace v8;
 #define GET(o,key)  (o)->Get( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked() ).ToLocalChecked()
 #define GETV(o,key)  (o)->Get( context, key ).ToLocalChecked()
 #define GETN(o,key)  (o)->Get( context, Integer::New( isolate, (key) ) ).ToLocalChecked()
-#define SETV(o,key,val)  (o)->Set( context, key, val )
-#define SET(o,key,val)  (o)->Set( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked(), val )
-#define SETT(o,key,val)  (o)->Set( context, String::NewFromUtf8( isolate, GetText(key), v8::NewStringType::kNormal, (int)GetTextSize( key ) ).ToLocalChecked(), val )
-#define SETN(o,key,val)  (o)->Set( context, Integer::New( isolate, key ), val )
+#define SETV(o,key,val)  (void)(o)->Set( context, key, val )
+#define SET(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked(), val )
+#define SETT(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, GetText(key), v8::NewStringType::kNormal, (int)GetTextSize( key ) ).ToLocalChecked(), val )
+#define SETN(o,key,val)  (void)(o)->Set( context, Integer::New( isolate, key ), val )
 
 
 void InitJSOX( Isolate *isolate, Local<Object> exports );
@@ -116,7 +116,7 @@ class constructorSet {
 	public:
 	Isolate *isolate;
 	uv_loop_t* loop;
-
+	Persistent<Function> dateCons; // Date constructor
 	Persistent<Function> ThreadObject_idleProc;
 
 	// constructor
@@ -229,6 +229,7 @@ public:
 	bool volNative;
 	char *mountName;
 	char *fileName;
+	int priority;
 	struct file_system_interface *fsInt;
 	struct file_system_mounted_interface* fsMount;
 
@@ -237,7 +238,7 @@ public:
 	static void doInit( Local<Context> context, Local<Object> exports );
 	static void Init( Local<Context> context, Local<Object> exports );
 	static void Init( Local<Object> exports, Local<Value> val, void* p );
-	VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
+	VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, int priority = 2000 );
 
 	static void vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args );
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
@@ -400,8 +401,8 @@ public:
 };
 
 struct reviver_data {
-	Persistent<Function> dateCons;
-
+	//Persistent<Function> dateCons;
+	Local<Function> fieldCb;
 	Isolate *isolate;
 	Local<Context> context;
 	LOGICAL revive;
@@ -468,6 +469,8 @@ void createSqlObject( const char *name, Local<Object> into );
 Local<Value> newSqlObject( Isolate *isolate, int argc, Local<Value> *argv );
 
 class ObjectStorageObject*  openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 );
+Local<Object> WrapObjectStorage( Isolate* isolate, class ObjectStorageObject* oso );
+
 
 #ifndef VFS_MAIN_SOURCE
 extern

@@ -9,6 +9,7 @@ var serverOpts = opts || {port:Number(process.argv[2])||8080} ;
 var server = sack.WebSocket.Server( serverOpts )
 var disk = sack.Volume();
 console.log( "serving on " + serverOpts.port );
+console.log( "with:", disk.dir() );
 
 
 server.onrequest( function( req, res ) {
@@ -18,7 +19,7 @@ server.onrequest( function( req, res ) {
 		 req.connection.socket.remoteAddress;
 	//ws.clientAddress = ip;
 
-	console.log( "Received request:", req );
+	//console.log( "Received request:", req );
 	if( req.url === "/" ) req.url = "/index.html";
 	var filePath = "." + unescape(req.url);
 	var extname = path.extname(filePath);

@@ -1,4 +1,4 @@
-
+#if WIN32
 
 #include "global.h"
 
@@ -18,6 +18,7 @@ void RegObject::Init( Local<Object> exports ) {
 
 }
 
+#ifdef WIN32
 static HKEY resolveHive( char *name ) {
 	if( StrCaseCmp( name, "HKCU" ) == 0 || StrCaseCmp( name, "HKEY_CURRENT_USER" ) == 0 ) {
 		return HKEY_CURRENT_USER;
@@ -27,7 +28,7 @@ static HKEY resolveHive( char *name ) {
 	}
    return (HKEY)0;
 }
-
+#endif
 
 
 void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
@@ -68,14 +69,16 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 		keyStart[0] = 0;
 		keyStart++;
 
+#ifdef WIN32
 		hive = resolveHive( start );
+#endif
 		if( !hive ) {
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Unknown root hive specified", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			Deallocate( char*, key1 );
 			return;
 		}
 
-		DWORD dwStatus;
+		uint32_t dwStatus;
 		HKEY hTemp;
 		start = end+1;
 
@@ -90,6 +93,7 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 			// on read don't create missing paths.
 			// return 'undefined'
 			return;
+#ifdef WIN32
 
 			DWORD dwDisposition;
 			dwStatus = RegCreateKeyEx( hive,
@@ -109,6 +113,7 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 						Deallocate( char*, key1 );
 						return;
 					}
+#endif
 		}
 		char pValue[512];
 		DWORD dwRetType, dwBufSize = 512;
@@ -117,13 +122,14 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 		//lprintf( "First enum is : %08x  %s", (int)x, pValue );
 		//dwBufSize = 512;
 
+#ifdef WIN32
 		dwStatus = RegQueryValueEx(hTemp, keyStart, 0                    	
 										  , &dwRetType
 										, (PBYTE)pValue
 										  , &dwBufSize );
 
 		RegCloseKey( hTemp );
-
+#endif
 		bool swap;
 		if( dwStatus == ERROR_SUCCESS )
 		{
@@ -205,7 +211,9 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 		keyStart[0] = 0;
 		keyStart++;
 
+#ifdef WIN32
 		hive = resolveHive( start );
+#endif
 		if( !hive ) {
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Unknown root hive specified", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			Deallocate( char*, key1 );
@@ -222,6 +230,7 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 		if( dwStatus == ERROR_FILE_NOT_FOUND )
 		{
 			DWORD dwDisposition;
+#ifdef WIN32
 			dwStatus = RegCreateKeyEx( hive,
 													  end, 0
 													 , ""
@@ -239,28 +248,35 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 						Deallocate( char*, key1 );
 						return;
 					}
+#endif
 		}
 
 		if( args[1]->IsNumber() ) {
 			double v = args[1]->NumberValue(isolate->GetCurrentContext()).FromMaybe(0);
 			DWORD dw = (DWORD)v;
+#ifdef WIN32
 			dwStatus = RegSetValueEx(hTemp, keyStart, 0
 										  , REG_DWORD
 										  , (const BYTE *)&dw, 4 );
+#endif
 			lprintf( "stauts of update is %d", dwStatus );
 
 		} else if( args[1]->IsString() ) {
 			String::Utf8Value val( isolate,  args[1] );
+#ifdef WIN32
 			dwStatus = RegSetValueEx(hTemp, keyStart, 0
 										  , REG_SZ
 										  , (const BYTE *)*val, (DWORD)StrLen( *val ) );
+#endif
 			if( dwStatus )
 				lprintf( "Failed to set registry? %d %p %s", dwStatus, hTemp, keyStart );
 
 		} else {
 			isolate->ThrowException( Exception::Error(
 																	String::NewFromUtf8( isolate, "Don't know how to handle value passed.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+#ifdef WIN32
 			RegCloseKey( hTemp );
+#endif
 			Deallocate( char*, key1 );
 			return;
 		}
@@ -270,3 +286,4 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+#endif

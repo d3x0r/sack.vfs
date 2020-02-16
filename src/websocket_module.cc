@@ -1757,12 +1757,11 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 				//return;
 			}
 		}
-
 		if( requested )
 			return;
 	}
 
-	lprintf( "(close before accept)Illegal connection" );
+	//lprintf( "(close before accept)Illegal connection" );
 
 	struct wssEvent *pevt = GetWssEvent();
 	(*pevt).eventType = WS_EVENT_ERROR_CLOSE;
@@ -1774,7 +1773,6 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 		wssAsyncMsg( &wss->async );
 	}
 	else {
-		lprintf( "Send close Request" );
 		uv_async_send( &wss->async );
 		while( (*pevt).done )
 			Wait();
@@ -1793,7 +1791,6 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 		(*pevt). pc = pc;
 		(*pevt)._this = wss;
 		EnqueLink( &wss->eventQueue, pevt );
-		lprintf( "Send request Request" );
 		uv_async_send( &wss->async );
 		//while (!(*pevt).done) WakeableSleep(SLEEP_FOREVER);
 		//lprintf("queued and evented  request event to JS");
@@ -1823,7 +1820,6 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkEr
 	(*pevt)._this = wss;
 	(*pevt).waiter = MakeThread();
 	EnqueLink( &wss->eventQueue, pevt );
-	lprintf( "Send fail " );
 	uv_async_send( &wss->async );
 	while( !(*pevt).done )
 		WakeableSleep( 1000 );
@@ -2475,7 +2471,9 @@ static uintptr_t webSockClientOpen( PCLIENT pc, uintptr_t psv ) {
 	(*pevt).eventType = WS_EVENT_OPEN;
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
 	lprintf( "Send Open Request" );
+#endif
 	uv_async_send( &wsc->async );
 	return psv;
 }
@@ -2488,7 +2486,9 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
 	lprintf( "Send Close Request" );
+#endif
 	uv_async_send( &wsc->async );
 	wsc->pc = NULL;
 }
@@ -2501,7 +2501,9 @@ static void webSockClientError( PCLIENT pc, uintptr_t psv, int error ) {
 	(*pevt)._this = wsc;
 	(*pevt).code = error;
 	EnqueLink( &wsc->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
 	lprintf( "Send Error Request" );
+#endif
 	uv_async_send( &wsc->async );
 }
 
@@ -2516,7 +2518,9 @@ static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTE
 	(*pevt).binary = type;
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
 	lprintf( "Send Client Read Request" );
+#endif
 	uv_async_send( &wsc->async );
 }
 
@@ -2539,7 +2543,8 @@ wscObject::wscObject( wscOptions *opts ) {
 		if( opts->ssl ) {
 			if( !ssl_BeginClientSession( pc, opts->key, opts->key_len, opts->pass, opts->pass_len
 				, opts->root_cert, opts->root_cert ? strlen( opts->root_cert ) : 0 ) ) {
-				throw "Error initializing SSL connection (bad key or passphrase?)";
+				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Error initializing SSL connection (bad key or passphrase?)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+				//throw "Error initializing SSL connection (bad key or passphrase?)";
 			}
 		}
 		WebSocketConnect( pc );
@@ -2664,7 +2669,7 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 
 		Local<Object> _this = args.This();
 		wscObject* obj;
-		try {
+		//try {
 			obj = new wscObject( &wscOpts );
 			obj->isolate = isolate;
 			class constructorSet *c = getConstructors(isolate);
@@ -2673,11 +2678,11 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 
 			obj->_this.Reset( isolate, _this );
 			obj->Wrap( _this );
-		}
-		catch( const char *ex1 ) {
-			isolate->ThrowException( Exception::Error(
-				String::NewFromUtf8( isolate, TranslateText( ex1 ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
-		}
+		//}
+		//catch( const char *ex1 ) {
+		//	isolate->ThrowException( Exception::Error(
+		//		String::NewFromUtf8( isolate, TranslateText( ex1 ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		//}
 		if( wscOpts.root_cert )
 			Deallocate( char *, wscOpts.root_cert );
 		if( wscOpts.key )

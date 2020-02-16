@@ -5,7 +5,9 @@
 static void playMedia( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		String::Utf8Value sound( args.GetIsolate(), args[0] );
+#if WIN32
 		PlaySound( *sound, NULL, SND_ASYNC| SND_SYSTEM );
+#endif
 	}
 }
 
