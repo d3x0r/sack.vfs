@@ -534,11 +534,12 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 		//LogBinary( input, len );
 		while( index < len ) {
 			rune = GetUtfCharIndexed( input, &index, len );
-			//lprintf( "rune:%d at %d of %d   to %d", rune, (int)index, (int)len, (int)out_index );
-			if( rune != INVALID_RUNE )
-				out_index += ConvertToUTF8( output+out_index, rune );
-			else
-				out_index += ConvertToUTF8( output+out_index, 0xFFFD );
+			if( rune != RUNE_AFTER_END )
+				//lprintf( "rune:%d at %d of %d   to %d", rune, (int)index, (int)len, (int)out_index );
+				if( rune != BADUTF8 )
+					out_index += ConvertToUTF8( output+out_index, rune );
+				else
+					out_index += ConvertToUTF8( output+out_index, 0xFFFD );			
 			//lprintf( "new index:%d", (int)out_index );
 		}
 		//LogBinary( output, out_index );
