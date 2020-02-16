@@ -253,7 +253,7 @@ ObjectStorageObject::ObjectStorageObject( const char *mount, const char *filenam
 		//lprintf( "sack_vfs_os_volume: %s %p %p", filename, key, key2 );
 		fileName = StrDup( filename );
 		volNative = true;
-		vol = objStore::sack_vfs_os_load_crypt_volume( filename, version, key, key2 );
+		vol = objStore::sack_vfs_os_load_crypt_volume( filename, version, key, key2, NULL );
 		AddLink( &osl.open, vol );
 		//lprintf( "VOL: %p for %s %d %p %p", vol, filename, version, key, key2 );
 		if( vol )
