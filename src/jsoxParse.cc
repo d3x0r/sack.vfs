@@ -875,9 +875,21 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 		return;
 	}
 	const char *msg;
-	String::Utf8Value tmp( USE_ISOLATE( r.isolate ) args[0] );
+	String::Utf8Value *tmp;
 	Local<Function> reviver;
-	msg = *tmp;
+	Local<ArrayBuffer> ab;
+	size_t len;
+	if( args[0]->IsArrayBuffer() ) {
+		tmp = NULL;
+		ab = Local<ArrayBuffer>::Cast( args[0] );
+		msg = (const char*)ab->GetContents().Data();
+		len = ab->ByteLength();
+	}
+	else {
+		tmp = new String::Utf8Value( USE_ISOLATE( r.isolate ) args[0] );
+		len = tmp[0].length();
+		msg = *tmp[0];
+	}
 	r.parser = NULL;
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
@@ -898,7 +910,9 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
         //logTick(1);
 	r.context = r.isolate->GetCurrentContext();
 
-	args.GetReturnValue().Set( ParseJSOX( msg, tmp.length(), &r ) );
+	args.GetReturnValue().Set( ParseJSOX( msg, len, &r ) );
+	if( tmp )
+		delete tmp;
 
 }
 
