@@ -210,7 +210,7 @@ sack.JSOX.begin = function(cb) {
        	
 		if (!("constructor" in o))
 			throw new Error("Please pass a prototype like object...");
-		localFromProtoTypes.set( prototypeName, { protoCon:o.constructor, cb:f } );
+		localFromProtoTypes.set( prototypeName, { protoCon:o.prototype.constructor, cb:f } );
 	}
 	parser.registerPromiseFromJSOX = function( prototypeName, o, f ) {
 		throw new Error( "Deprecated 'registerPromiseFromJSOX', pluse use fromJSOX has been registered for prototype" );
@@ -222,7 +222,7 @@ var arrayToJSOX;
 var mapToJSOX;
 
 const keywords = {	["true"]:true,["false"]:false,["null"]:null,["NaN"]:NaN,["Infinity"]:Infinity,["undefined"]:undefined }
-
+var id = 1;
 sack.JSOX.stringifier = function() {
 	var classes = [];
 	var useQuote = '"';
@@ -232,6 +232,7 @@ sack.JSOX.stringifier = function() {
 	var encoding = [];
 	var objectToJSOX = null;
 	var localToProtoTypes = new WeakMap();
+	localToProtoTypes.id = id++;
 	var localToObjectTypes = new Map();
 	var stringifying = []; // things that have been stringified through external toJSOX; allows second pass to skip this toJSOX pass and encode 'normally'
 	var ignoreNonEnumerable = false;
@@ -274,8 +275,11 @@ sack.JSOX.stringifier = function() {
 		registerToJSOX( name, prototype, f ) {
 			if( prototype.prototype && prototype.prototype !== Object.prototype ) {
 				if( localToProtoTypes.get(prototype) ) throw new Error( "Existing toJSOX has been registered for prototype" );
-				localToProtoTypes.set( prototype, { external:true, name:name||f.constructor.name, cb:f } );
+				_DEBUG_STRINGIFY && console.log( "Adding prototype to  local objects:", prototype, localToProtoTypes );
+				localToProtoTypes.set( prototype.prototype, { external:true, name:name||f.constructor.name, cb:f } );
+				_DEBUG_STRINGIFY && console.log( "Can we get it back?", localToProtoTypes.get( prototype.prototype ) );
 			} else {
+				_DEBUG_STRINGIFY && console.log( "This is set by key?!" );
 				var key = Object.keys( prototype ).toString();
 				if( localToObjectTypes.get(key) ) throw new Error( "Existing toJSOX has been registered for object type" );
 				localToObjectTypes.set( key, { external:true, name:name, cb:f } );
@@ -471,6 +475,11 @@ sack.JSOX.stringifier = function() {
 			let thisNodeNameIndex = path.length;
 			var value = holder[key];
 			let isObject = (typeof value === "object");
+
+			_DEBUG_STRINGIFY 
+				&& console.log( "Prototype lists:", localToProtoTypes.length, value && localToProtoTypes.get( Object.getPrototypeOf( value ) )
+					, value && Object.getPrototypeOf( value ), value && value.constructor.name
+					, localToProtoTypes, toProtoTypes );
 			var protoConverter = (value !== undefined && value !== null) 
 				&& ( localToProtoTypes.get( Object.getPrototypeOf( value ) ) 
 				|| toProtoTypes.get( Object.getPrototypeOf( value ) ) 
@@ -505,7 +514,8 @@ sack.JSOX.stringifier = function() {
 					let newValue = toJSOX.apply(value);
 					stringifying.pop();
 					if( newValue === value ) {
-						protoConverter = null;
+						//console.log( "no conversion was done..." );
+						//protoConverter = null;
 					}
 					if(_DEBUG_STRINGIFY ) { 
 						console.log( "translated ", newValue, value );
@@ -519,6 +529,7 @@ sack.JSOX.stringifier = function() {
 					v = getReference( value );
 				}
 
+			_DEBUG_STRINGIFY && console.log( "Protoconverter leftover: ", protoConverter );
 			// If we were called with a replacer function, then call the replacer to
 			// obtain a replacement value.
 
@@ -574,6 +585,7 @@ sack.JSOX.stringifier = function() {
 				// If the replacer is an array, use it to select the members to be stringified.
 				if (rep && typeof rep === "object") {
 					length = rep.length;
+					_DEBUG_STRINGIFY && console.log( "Working through replacer" );
 					partialClass = matchObject( value, rep );
 					for (i = 0; i < length; i += 1) {
 						if (typeof rep[i] === "string") {
@@ -600,10 +612,12 @@ sack.JSOX.stringifier = function() {
 					// Otherwise, iterate through all of the keys in the object.
 					partialClass = matchObject( value );
 					var keys = [];
+					_DEBUG_STRINGIFY && console.log( "is something in something?", k, value );
 					for (k in value) {
+						_DEBUG_STRINGIFY && console.log( "Ya..." );
 						if( ignoreNonEnumerable )
 							if( !Object.prototype.propertyIsEnumerable.call( value, k ) ){
-								console.log( "skipping non-enuerable?", k );
+								_DEBUG_STRINGIFY && console.log( "skipping non-enuerable?", k );
 								continue;
 							}
 
@@ -619,6 +633,7 @@ sack.JSOX.stringifier = function() {
 								keys.push(k);
 						}
 					}
+					_DEBUG_STRINGIFY && console.log( "Expanding object keys:", keys );
 					for(n = 0; n < keys.length; n++) {
 						k = keys[n];
 						if (Object.prototype.hasOwnProperty.call(value, k)) {
@@ -644,7 +659,7 @@ sack.JSOX.stringifier = function() {
 
 				// Join all of the member texts together, separated with commas,
 				// and wrap them in braces.
-				_DEBUG_STRINGIFY && console.log( "partial:", partial )
+				_DEBUG_STRINGIFY && console.log( "partial:", partial, protoConverter )
 				{
 				let c;
 				if( key==="" )
@@ -670,6 +685,7 @@ sack.JSOX.stringifier = function() {
 					);
 				}
 				gap = mind;
+				_DEBUG_STRINGIFY && console.log(" Resulting phrase from this part is:", v );
 				return v;
 			}
 		}
