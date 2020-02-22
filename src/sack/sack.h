@@ -15,6 +15,12 @@
 #ifndef STANDARD_HEADERS_INCLUDED
 /* multiple inclusion protection symbol */
 #define STANDARD_HEADERS_INCLUDED
+#if _POSIX_C_SOURCE < 200112L
+#  ifdef _POSIX_C_SOURCE
+#    undef _POSIX_C_SOURCE
+#  endif
+#  define _POSIX_C_SOURCE 200112L
+#endif
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -136,6 +142,10 @@
 #    define stricmp _stricmp
 #    define strdup _strdup
 #  endif
+#ifdef WANT_MMSYSTEM
+#  include <mmsystem.h>
+#endif
+#if USE_NATIVE_TIME_GET_TIME
 //#  include <windowsx.h>
 // we like timeGetTime() instead of GetTickCount()
 //#  include <mmsystem.h>
@@ -143,6 +153,7 @@
 extern "C"
 #endif
 __declspec(dllimport) DWORD WINAPI timeGetTime(void);
+#endif
 #  ifdef WIN32
 #    if defined( NEED_SHLAPI )
 #      include <shlwapi.h>
@@ -173,11 +184,13 @@ __declspec(dllimport) DWORD WINAPI timeGetTime(void);
 #  endif
  // ifdef unix/linux
 #else
+#  ifndef _GNU_SOURCE
+#    define _GNU_SOURCE
+#  endif
 #  include <pthread.h>
 #  include <sched.h>
 #  include <unistd.h>
 #  include <sys/time.h>
-#  include <errno.h>
 #  if defined( __ARM__ )
 #    define DebugBreak()
 #  else
@@ -212,6 +225,7 @@ extern __sighandler_t bsd_signal(int, __sighandler_t);
 #  define GetCurrentThreadId() ((uint32_t)getpid())
   // end if( !__LINUX__ )
 #endif
+#include <errno.h>
 #ifndef NEED_MIN_MAX
 #  ifndef NO_MIN_MAX_MACROS
 #    define NO_MIN_MAX_MACROS
@@ -276,7 +290,7 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #if !defined( __NO_THREAD_LOCAL__ ) && ( defined( _MSC_VER ) || defined( __WATCOMC__ ) )
 #  define HAS_TLS 1
 #  ifdef __cplusplus
-#    define DeclareThreadLocal thread_local
+#    define DeclareThreadLocal static thread_local
 #    define DeclareThreadVar  thread_local
 #  else
 #    define DeclareThreadLocal static __declspec(thread)
@@ -285,7 +299,7 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #elif !defined( __NO_THREAD_LOCAL__ ) && ( defined( __GNUC__ ) )
 #    define HAS_TLS 1
 #    ifdef __cplusplus
-#      define DeclareThreadLocal thread_local
+#      define DeclareThreadLocal static thread_local
 #      define DeclareThreadVar thread_local
 #    else
 #    define DeclareThreadLocal static __thread
@@ -314,16 +328,11 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 //#ifndef TARGETNAME
 //#  define TARGETNAME "sack_bag.dll"  //$(TargetFileName)
 //#endif
-#    ifndef __cplusplus_cli
-// cli mode, we use this directly, and build the exports in sack_bag.dll directly
-#    else
-#      define LIBRARY_DEADSTART
-#    endif
-#define MD5_SOURCE
-#define USE_SACK_FILE_IO
+#    define MD5_SOURCE
+#    define USE_SACK_FILE_IO
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define MEM_LIBRARY_SOURCE
+#    define MEM_LIBRARY_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
 #define SYSLOG_SOURCE
@@ -368,70 +377,60 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #define SHA1_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define CONSTRUCT_SOURCE
+#    define CONSTRUCT_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define PROCREG_SOURCE
+#    define PROCREG_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define SQLPROXY_LIBRARY_SOURCE
+#    define SQLPROXY_LIBRARY_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define TYPELIB_SOURCE
+#      define TYPELIB_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define JSON_EMITTER_SOURCE
+#      define JSON_EMITTER_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define SERVICE_SOURCE
-#  ifndef __NO_SQL__
-#    ifndef __NO_OPTIONS__
+#    define SERVICE_SOURCE
+#    ifndef __NO_SQL__
+#      ifndef __NO_OPTIONS__
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.    and not NO_SQL and not NO_OPTIONS   */
-#      define SQLGETOPTION_SOURCE
+#        define SQLGETOPTION_SOURCE
+#      endif
 #    endif
-#  endif
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define PSI_SOURCE
-#  ifdef _MSC_VER
-#    ifndef JPEG_SOURCE
-//wouldn't matter... the external things wouldn't need to define this
-//#error projects were not generated with CMAKE, and JPEG_SORUCE needs to be defined
-#    endif
-//#define JPEG_SOURCE
-//#define __PNG_LIBRARY_SOURCE__
-//#define FT2_BUILD_LIBRARY   // freetype is internal
-//#define FREETYPE_SOURCE		// build Dll Export
-#  endif
+#    define PSI_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define MNG_BUILD_DLL
+#    define MNG_BUILD_DLL
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define BAGIMAGE_EXPORTS
+#    define BAGIMAGE_EXPORTS
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
  individual library module once upon a time.           */
-#ifndef IMAGE_LIBRARY_SOURCE
-#  define IMAGE_LIBRARY_SOURCE
-#endif
+#    ifndef IMAGE_LIBRARY_SOURCE
+#      define IMAGE_LIBRARY_SOURCE
+#    endif
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define SYSTRAY_LIBRARAY
+#    define SYSTRAY_LIBRARAY
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define SOURCE_PSI2
+#    define SOURCE_PSI2
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define VIDEO_LIBRARY_SOURCE
+#    define VIDEO_LIBRARY_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
 	/* define RENDER SOURCE when building monolithic. */
-#     ifndef RENDER_LIBRARY_SOURCE
-#       define RENDER_LIBRARY_SOURCE
-#     endif
+#    ifndef RENDER_LIBRARY_SOURCE
+#      define RENDER_LIBRARY_SOURCE
+#    endif
 // define a type that is a public name struct type...
 // good thing that typedef and struct were split
 // during the process of port to /clr option.
@@ -448,9 +447,8 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #include <sys/types.h>
 #include <sys/stat.h>
 #if !defined( _WIN32 ) && !defined( __MAC__ )
-#  include <syscall.h>
-#elif defined( __MAC__ )
 #  include <sys/syscall.h>
+#elif defined( __MAC__ )
 #endif
 #ifndef MY_TYPES_INCLUDED
 #  define MY_TYPES_INCLUDED
@@ -472,11 +470,6 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #    include <dlfcn.h>
 #  endif
 #  if defined( _MSC_VER )
-// disable pointer conversion warnings - wish I could disable this
-// according to types...
-//#pragma warning( disable:4312; disable:4311 )
-// disable deprication warnings of snprintf, et al.
-//#pragma warning( disable:4996 )
 #    define EMPTY_STRUCT struct { char nothing[]; }
 #  endif
 #  if defined( __WATCOMC__ )
@@ -1144,8 +1137,11 @@ typedef char            TEXTCHAR;
 /* a character rune.  Strings should be interpreted as UTF-8 or 16 depending on UNICODE compile option.
    GetUtfChar() from strings.  */
 typedef uint32_t             TEXTRUNE;
-/* Used to handle returned values that are invalid runes; past end or beginning of string for instance */
-#define INVALID_RUNE  0x80000000
+/* Used to handle returned values that are past end or beginning of string for instance */
+#define RUNE_AFTER_END     0x8000000
+#define RUNE_BEFORE_START  0x8000001
+/* Used to handle returned values that are invalid utf8 encodings. */
+#define BADUTF8            0xFFFD
 //typedef enum { FALSE, TRUE } LOGICAL; // smallest information
 #ifndef FALSE
 #define FALSE 0
@@ -5171,7 +5167,7 @@ SYSTEM_PROC( void, OSALOT_PrependEnvironmentVariable )(CTEXTSTR name, CTEXTSTR v
  * Otherwise, the command line needs to have the program name, and arguments passed in the string
  * the parameter to winmain has the program name skipped
  */
-SYSTEM_PROC( void, ParseIntoArgs )( TEXTCHAR *lpCmdLine, int *pArgc, TEXTCHAR ***pArgv );
+SYSTEM_PROC( void, ParseIntoArgs )( TEXTCHAR const *lpCmdLine, int *pArgc, TEXTCHAR ***pArgv );
 #define UnloadFunction(p) UnloadFunctionEx(p DBG_SRC )
 /*
    Check if task spawning is allowed...
@@ -5324,7 +5320,6 @@ typedef struct win_sockaddr_in SOCKADDR_IN;
 #else
 //#include "loadsock.h"
 #endif
-//#include <stdlib.h>
 #ifdef __CYGWIN__
  // provided by -lgcc
 // lots of things end up including 'setjmp.h' which lacks sigset_t defined here.
@@ -6678,7 +6673,8 @@ TIMER_PROC( LOGICAL, EnterCriticalSecEx )( PCRITICALSECTION pcs DBG_PASS );
 TIMER_PROC( LOGICAL, LeaveCriticalSecEx )( PCRITICALSECTION pcs DBG_PASS );
 /* Does nothing. There are no extra resources required for
    critical sections, and the memory is allocated by the
-   application.
+	application; native windows criticalsections allocate an
+   external object; this should be called typically.
    Parameters
    pcs :  pointer to critical section to do nothing with.  */
 TIMER_PROC( void, DeleteCriticalSec )( PCRITICALSECTION pcs );
@@ -6794,6 +6790,32 @@ using namespace sack::timers;
 #    define EndSaneWinMain() } }
 #  endif
 #endif
+/**
+ * https://stackoverflow.com/questions/3585583/convert-unix-linux-time-to-windows-filetime
+ * number of seconds from 1 Jan. 1601 00:00 to 1 Jan 1970 00:00 UTC
+ * subtract from FILETIME to get timespec
+ * add to timespec to get FILETIME ticks.
+ * * 1000000000
+ */
+#define EPOCH_DIFF 11644473600ULL
+#define EPOCH_DIFF_MS 11644473600000ULL
+#define EPOCH_DIFF_NS 11644473600000000000ULL
+#ifdef WIN32
+DeclareThreadLocal FILETIME ft;
+// we want this as fast as possible, so inline always.
+#define timeGetTime64ns( ) ( GetSystemTimeAsFileTime( &ft ),((uint64_t*)&ft)[0]*100-EPOCH_DIFF_NS )
+#define timeGetTime64( ) ( GetSystemTimeAsFileTime( &ft ),((uint64_t*)&ft)[0]/10000-EPOCH_DIFF_MS )
+#define timeGetTime() (uint32_t)(timeGetTime64())
+#else
+DeclareThreadLocal struct timespec global_static_time_ts;
+#define timeGetTime64ns( ) ( clock_gettime(CLOCK_REALTIME, &global_static_time_ts), (uint64_t)global_static_time_ts.tv_sec*(uint64_t)1000000000 + (uint64_t)global_static_time_ts.tv_nsec )
+#define timeGetTime64( ) ( clock_gettime(CLOCK_REALTIME, &global_static_time_ts), (uint64_t)global_static_time_ts.tv_sec*(uint64_t)1000 + (uint64_t)global_static_time_ts.tv_nsec/1000000 )
+#define timeGetTime() (uint32_t)(timeGetTime64())
+#endif
+#define tickToTimeSpec(ts,tick) (((ts).tv_sec = (tick) / 1000ULL),((ts).tv_nsec=((tick)%1000ULL)*1000000ULL))
+#define tickToFileTime(ft,tick) ((((ft).highPart).tv_sec = ((tick*10000)+EPOCH_DIFF_MS)>>32 ),(((ft).lowPart)=((tick*10000)+EPOCH_DIFF_MS) & 0XFFFFFFFF ))
+#define tickNsToTimeSpec(ts,tick) (((ts).tv_sec = (tick) / 1000000000ULL),((ts).tv_nsec=(tick)%1000000000ULL))
+#define tickNsToFileTime(ft,tick) ((((ft).highPart).tv_sec = ((tick)+EPOCH_DIFF_NS)>>32 ),(((ft).lowPart)=((tick)+EPOCH_DIFF_NS) & 0XFFFFFFFF ))
 //  these are rude defines overloading otherwise very practical types
 // but - they have to be dispatched after all standard headers.
 #ifndef FINAL_TYPES
@@ -9792,14 +9814,20 @@ SACK_NAMESPACE
    external things linking here are _import.               */
 #    define DEADSTART_PROC IMPORT_METHOD
 #  endif
+     // 28 (thread ID for critical sections used to allocate memory)
+#define TIMER_MODULE_PRELOAD_PRIORITY  (CONFIG_SCRIPT_PRELOAD_PRIORITY-3)
+     // 30 specify where to load external resources from... like the option database
+#define VIRTUAL_FILESYSTEM_PRELOAD_PRIORITY (CONFIG_SCRIPT_PRELOAD_PRIORITY-1)
    /* this is just a global space initializer (shared, named
       region, allows static link plugins to share information)
       Allocates its shared memory global region, so if this library
       is built statically and referenced in multiple plugins
       ConfigScript can share the same symbol tables. This also
-      provides sharing between C++ and C.                           */
+		provides sharing between C++ and C.                           */
+         // 31
 #define CONFIG_SCRIPT_PRELOAD_PRIORITY    (SQL_PRELOAD_PRIORITY-3)
-   // this is just a global space initializer (shared, named region, allows static link plugins to share information)
+			// this is just a global space initializer (shared, named region, allows static link plugins to share information)
+         // 34
 #define SQL_PRELOAD_PRIORITY    (SYSLOG_PRELOAD_PRIORITY-1)
 /* Level at which logging is initialized. Nothing under this
    should be doing logging, if it does, the behavior is not as
@@ -10118,7 +10146,7 @@ struct rt_init
 #else
 #  define HIDDEN_VISIBILITY  __attribute__((visibility("hidden")))
 #endif
-#define PRIORITY_PRELOAD(name,pr) static void name(void);	         RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)	         __attribute__((section(DEADSTART_SECTION))) __attribute__((used)) HIDDEN_VISIBILITY	 ={0,0,pr INIT_PADDING	                                           ,__LINE__,name	                                                 PASS_FILENAME	                                                 ,TOSTR(name)	                                                   JUNKINIT(name)};	                                               static void name(void) __attribute__((used)) HIDDEN_VISIBILITY;	 void name(void)
+#define PRIORITY_PRELOAD(name,pr) static void name(void);	         RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)	         __attribute__((section(DEADSTART_SECTION))) __attribute__((used))	  ={0,0,pr INIT_PADDING	                                           ,__LINE__,name	                                                 PASS_FILENAME	                                                 ,TOSTR(name)	                                                   JUNKINIT(name)};	                                               static void name(void) __attribute__((used));	 void name(void)
 #endif
 typedef void(*atexit_priority_proc)(void (*)(void),CTEXTSTR,int DBG_PASS);
 #define PRIORITY_ATEXIT(name,priority) static void name(void);           static void pastejunk(atexit,name)(void) __attribute__((constructor));   void pastejunk(atexit,name)(void)                                        {	                                                                        RegisterPriorityShutdownProc(name,TOSTR(name),priority,NULL DBG_SRC); }                                                                        void name(void)
@@ -11300,6 +11328,10 @@ struct file_system_interface {
 	uint64_t( CPROC *find_get_wtime )(struct find_cursor *cursor);
 	int ( CPROC* _mkdir )( uintptr_t psvInstance, const char* );
 	int ( CPROC* _rmdir )( uintptr_t psvInstance, const char* );
+                //file *
+    int (CPROC* _lock)(void*);
+              //file *
+    int (CPROC* _unlock)(void*);
 };
 /* \ \
    Parameters
@@ -11575,6 +11607,8 @@ FILESYS_PROC  void FILESYS_API sack_set_common_data_application( CTEXTSTR name )
 FILESYS_PROC  void FILESYS_API sack_set_common_data_producer( CTEXTSTR name );
 FILESYS_PROC  uintptr_t FILESYS_API  sack_ioctl( FILE *file, uintptr_t opCode, ... );
 FILESYS_PROC  uintptr_t FILESYS_API  sack_fs_ioctl( struct file_system_mounted_interface *mount, uintptr_t opCode, ... );
+FILESYS_PROC int FILESYS_API sack_flock( FILE* file );
+FILESYS_PROC int FILESYS_API sack_funlock( FILE* file );
 #ifndef NO_FILEOP_ALIAS
 #  ifndef NO_OPEN_MACRO
 # define open(a,...) sack_iopen(0,a,##__VA_ARGS__)
@@ -12042,6 +12076,7 @@ SACK_VFS_PROC struct sack_vfs_os_volume * CPROC sack_vfs_os_load_volume( CTEXTST
 	waits a short time of no dirty updates. (flush, but polish <-> dirty )
  */
 SACK_VFS_PROC void CPROC sack_vfs_os_polish_volume( struct sack_vfs_os_volume* vol );
+SACK_VFS_PROC void CPROC sack_vfs_os_flush_volume( struct sack_vfs_os_volume* vol, LOGICAL unload );
 // open a volume at the specified pathname.  Use the specified keys to encrypt it.
 // if the volume does not exist, will create it.
 // if the volume does exist, a quick validity check is made on it, and then the result is opened
