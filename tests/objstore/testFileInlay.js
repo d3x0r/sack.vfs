@@ -26,8 +26,8 @@ const waiters = [];
 
 function loadConfig() {
 return new Promise( (res,rej)=>{
-	store.getDirectory().then( directory=>{
-		storage.rootDirectory = directory;
+	store.getRoot().then( directory=>{
+		// store.root is also set at this time.
 		function setConfig(data){
 			storage.config = sack.JSOX.parse( data );
 
@@ -41,10 +41,12 @@ return new Promise( (res,rej)=>{
 			console.log( "And finally config:", storage.config );
 			res();
 		}
-		storage.configFile = directory.open( "config.jsox" );
-		storage.configFile.read().then( setConfig ).catch( ()=>{
-			saveConfig().then( ()=>{
-				storage.configFile.read().then( setConfig );
+		directory.open( "config.jsox" ).then( f=>{
+			storage.configFile = f;
+			storage.configFile.read().then( setConfig ).catch( ()=>{
+				saveConfig().then( ()=>{
+					storage.configFile.read().then( setConfig );
+				} );
 			} );
 		} );
 	} );
