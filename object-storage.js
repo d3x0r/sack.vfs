@@ -95,6 +95,7 @@ sack.ObjectStorage = function (...args) {
 	newStorage.pending = [];
 	newStorage.setupStringifier = setupStringifier;
 	newStorage.stringifier = sack.JSOX.stringifier();
+	newStorage.root = null;
 	function objectToJSOX(){
 		
 		//console.log( "THIS GOT CALLED?", this );
@@ -420,12 +421,11 @@ _objectStorage.prototype._get = function( opts ) {
 	var os = this;
 	var p = new Promise( function(res,rej) {
 		resolve = res;  reject = rej;
-		console.log( "doing read?", opts );
+		//console.log( "doing read?", opts );
 		os.read( opts.id
 			, parser, (obj)=>{
 			// with a new parser, only a partial decode before revive again...
 					var found;
-	        			console.log( "Reader callback", obj );
 					do {
 						var found = os.pending.findIndex( pending=>pending.id === key );
 						if( found >= 0 ) {
@@ -447,8 +447,6 @@ _objectStorage.prototype._get = function( opts ) {
 			}
 		} );
 	} );
-
-	console.log( "returning promise." );
 	return p;
 }
 
@@ -456,15 +454,19 @@ _objectStorage.prototype._get = function( opts ) {
 function fileEntry( d ) {
 	this.name = null;
 	this.id = sack.id(); // object identifier of this.
-	this.isFolder = false;
-	this.readOnly = false;
-	this.files = [];
-	this.size = 0;
+	this.contents = null;
 	this.created = new Date();
 	this.updated = new Date();
-	this.readkey = null;
+
+	//this.readOnly = false;
+	//this.size = 0;
+	//this.readkey = null;
 	if( d )
 		Object.defineProperty( this, "directory", {value:d} );
+}
+
+fileEntry.prototype.getLength = function() {
+	return this.data.length;
 }
 
 fileEntry.prototype.read = function( from, len ) {
@@ -487,7 +489,7 @@ fileEntry.prototype.read = function( from, len ) {
 
 fileEntry.prototype.write = function( o, at, len ) {
 	if( !("number"===typeof(len))) {
-		if( !("number"===typeof(from))) {
+		if( "number"===typeof(at) ) {
 			len = at;
 			at = 0;
 		} else  {
@@ -495,13 +497,16 @@ fileEntry.prototype.write = function( o, at, len ) {
 			at = 0;
 		}
 	}
-	return Promise.resolve( this.directory.volume.writeRaw( this.id, o ) );
+	return Promise.resolve( this.directory.volume.writeRaw( this.id, o, at, len ) );
 }
 
-function fileDirectory( v ) {
+function fileDirectory( v, id ) {
 	this.files = [];
 	if( v )
 		Object.defineProperty( this, "volume", {value:v} );
+	//console.log( "This already has an ID?", this );
+	Object.defineProperty( this, "id", { value:id || sack.id() } );
+
 }
 
 
@@ -521,10 +526,22 @@ fileDirectory.prototype.create = function( fileName ) {
 	}
 }
 
-fileDirectory.prototype.open = function( fileName ) {
+fileEntry.prototype.open = async function( ) {
+	if( this.root ) return file.root;
+	if( this.contents ) {
+		return this.directory.volume._get( {id:file.contents, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
+			.then( async (dir)=>{  
+				Object.defineProperty( file, "root", {value:dir} );
+				return dir; 
+			} );
+	}  
+	return this.directory.folder( file.name );
+}
+
+fileDirectory.prototype.open = async function( fileName ) {
 	var file = this.files.find( (f)=>(f.name == fileName ) );
-	if( file ) {
-	}else {
+	const _this = this;
+	if( !file ) {
 		file = new fileEntry( this );
 		file.name = fileName;
 		this.files.push(file);
@@ -538,25 +555,91 @@ function encodeDirectory(){
 	console.log( "Encode called with:", this );
 }
 
+function splitPath( path ) {
+	return path.split( /[\\\/]/ );
+}
+
 fileDirectory.prototype.store = function() {
 	console.log( "Write directory:", this );
-	return this.volume.put( this, { id:"?", extraEncoders:[ { tag: "d", p:fileDirectory, f:null} 
+	return this.volume.put( this, { id:this.id, extraEncoders:[ { tag: "d", p:fileDirectory, f:null} 
 					, { tag: "f", p:fileEntry, f:null} ] } );
 }
 
-function saveDirectory( d ) {
-	
+
+fileDirectory.prototype.has = async function( fileName ) {
+	var parts = splitPath( fileName );
+	var part;
+	var pathIndex = 0;
+	var dir = this;
+	async function getOnePath() {
+		if( pathIndex >= path.length ) return true;
+		if( !dir ) return false;
+
+		part = path[pathIndex++];
+		var file = dir.files.find( (f)=>( f.name == part ) );
+		if( !file ) return false;
+		if( file.root ) dir = file.root;
+		else {
+			if( file.contents ) {
+				return  dir.volume._get( {id:file.contents, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
+					.then( async (readdir)=>{  
+						Object.defineProperty( file, "root", {value:readdir} );
+						dir = readdir;
+						return getOnePath(); 
+					});
+			}
+			else
+				dir = null;
+		}
+		return getOnePath();
+	}
+	return getOnePath();
 }
 
-//defineProperty
-var loadingDir = null;
-function decodeDirectory(objId,ref){
-	console.log( "Revive:", objId, ref, this.mapping, this.decoding );
-	if( this.decoding.find( pending=>pending===objId ) ) {
-			
-	}
-	return ref;
-}
+fileDirectory.prototype.folder = function( fileName ) {
+	const _this = this;
+	return new Promise( (res,rej)=>{
+		var path = splitPath( fileName );
+		var pathIndex = 0;
+		var here = _this;
+		function getOnePath() {
+			let part = path[pathIndex++];
+			var file = here.files.find( (f)=>(f.name == part ) );
+			if( file ) {
+				if( file.contents ) {
+					_this.volume._get( {id:file.contents, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
+						.then( (dir)=>{ 
+							if( pathIndex < path.length ) {
+								here = dir;
+								return getOnePath();
+							}
+							else
+								res( dir );
+						} );
+				} else
+					return Promise.reject( "Folder not found" );
+			}else {
+				file = new fileEntry( this );
+				file.name = fileName;
+				file.contents = sack.id();
+				var newDir = new fileDirectory( _this.volume, file.contents );
+				Object.defineProperty( file, "root", {value:newDir} );
+				_this.files.push(file);
+				_this.changed = true;
+				newDir.store().then( ()=>{
+					_this.store().then( ()=>{ 
+						if( pathIndex < path.length ) {
+							here = file.root;
+							return getOnePath();
+						}
+						res( file.root ); 
+					} );
+				} );
+			}
+		}
+		getOnePath();
+	} );
+} 
 
 
 function fixDirRef(dir) {
@@ -565,21 +648,36 @@ function fixDirRef(dir) {
 	} );
 }
 
-_objectStorage.prototype.getDirectory = function() {
-	var result = new fileDirectory( this );
-	loadingDir = result;
-	return new Promise( (resolve,reject)=>{
-		this._get( { id:"?", extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } ).catch( ()=>{
-			result.store()
-				.then( function(){resolve(result)} )
-				.catch( reject );
-			//resolve( result );
-		} ).then( (dir)=>{
-			if( !dir ) dir = result;
-			fixDirRef(dir);
-			Object.defineProperty( dir, "volume", {value:this} );
-			resolve(dir) 
+
+var loading = null;
+_objectStorage.prototype.getRoot = function() {
+	if( this.root ) return Promise.resolve(this.root);
+	if( loading ) {
+		return new Promise( (res,rej)=>{
+			loading.push(  {res:res, rej:rej} );
 		} );
+	}
+	var result = new fileDirectory( this, "?" );
+	var this_ = this;
+	loading = [];
+	return new Promise( (resolve,reject)=>{
+		this._get( { id:result.id, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
+			.catch( ()=>{
+				result.store()
+					.then( function(){resolve(result)} )
+					.catch( reject );
+				//resolve( result );
+			} )
+			.then( (dir)=>{
+				console.log( "get root directory got:", dir );
+				if( !dir ) dir = result;
+				fixDirRef(dir);
+				Object.defineProperty( dir, "volume", {value:this} );
+				resolve(dir) 
+				loading && loading.forEach((l)=>l.res(dir));
+				Object.defineProperty( this_, "root", {value:dir} );
+				loading.length = 0;
+			} );
 	} );	
 }
 
