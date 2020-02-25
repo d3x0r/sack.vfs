@@ -55,6 +55,7 @@ return new Promise( (res,rej)=>{
 }
 
 async function saveConfig() {
+	console.log( "Storage.config:", storage.config );
 	return storage.configFile.write( sack.JSOX.stringify( storage.config ) );
 }
 
