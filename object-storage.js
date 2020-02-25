@@ -16,17 +16,17 @@ function objectStorageContainer(o,opts) {
 		dirty : false,
 	}
 	this.data = {	
-		nonce : opts.sign?sack.SaltyRNG.sign( sack.JSOX.stringify(o), 3, 3 ):null,
+		nonce : opts?opts.sign?sack.SaltyRNG.sign( sack.JSOX.stringify(o), 3, 3 ):null:null,
 		data : o
 	}
-	if( opts.sign ) {
+	if( opts && opts.sign ) {
 		var v = sack.SaltyRNG.verify( sack.JSOX.stringify(o), this.data.nonce, 3, 3 );
 		//console.log( "TEST:", v );
 		this.id = v.key;
 		v.key = this.data.nonce;
 		this.data.nonce = v;
 	} else {
-		this.id = opts.id || sack.id();
+		this.id = ( opts && opts.id ) || sack.id();
 	}
 	//console.log( "Container:", this );
 }
@@ -96,14 +96,14 @@ sack.ObjectStorage = function (...args) {
 	newStorage.setupStringifier = setupStringifier;
 	newStorage.stringifier = sack.JSOX.stringifier();
 	newStorage.root = null;
-	function objectToJSOX(){
+	function objectToJSOX( stringifier ){
 		
 		//console.log( "THIS GOT CALLED?", this );
 		var exist = newStorage.stored.get( this );
 		//console.log( "THIS GOT CALLED? RECOVERED:", exist );
 		if( exist ) {
 			var obj = newStorage.cachedContainer.get( exist );
-			if( newStorage.stringifier.isEncoding( obj ) ) return this;
+			if( stringifier.isEncoding( obj ) ) return this;
 			return '~os"'+exist+'"';
 		} else {			
 			if( this instanceof objectStorageContainer ) {
@@ -269,10 +269,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 			storage = stringifier.stringify( obj );
 			this_.writeRaw( opts.id, storage );
 			res( opts.id );
-		}
-
-		if( !opts.id )
-		{
+		} else if( !opts.id ) {
 			container = new objectStorageContainer(obj,opts);
 				
 			//console.log( "saving stored container.id", obj, container.id );
@@ -319,7 +316,7 @@ _objectStorage.prototype.update( objId, obj ) {
 */
 
 
-_objectStorage.prototype._get = function( opts ) {
+_objectStorage.prototype.get = function( opts ) {
 	//this.parser.
 	var resolve;
 	var reject;
@@ -334,7 +331,7 @@ _objectStorage.prototype._get = function( opts ) {
 
 
 	var parser = sack.JSOX.begin( parserObject );
-	parser.fromJSOX( "~os", objectStorageContainer );
+	parser.fromJSOX( "~os", objectStorageContainer ); // I don't know ahead of time which this is.
 	if( opts.extraDecoders ) {
 		opts.extraDecoders.forEach( f=>parser.fromJSOX( f.tag, f.p, f.f ) );
 		console.log( "Something... " );
@@ -417,7 +414,7 @@ _objectStorage.prototype._get = function( opts ) {
 		}
 	};
 
-	//console.log( "(get)Read Key:", opts );
+	console.log( "(get)Read Key:", opts );
 	var os = this;
 	var p = new Promise( function(res,rej) {
 		resolve = res;  reject = rej;
@@ -453,7 +450,7 @@ _objectStorage.prototype._get = function( opts ) {
 
 function fileEntry( d ) {
 	this.name = null;
-	this.id = sack.id(); // object identifier of this.
+	this.id = null; // object identifier of this.
 	this.contents = null;
 	this.created = new Date();
 	this.updated = new Date();
@@ -461,8 +458,10 @@ function fileEntry( d ) {
 	//this.readOnly = false;
 	//this.size = 0;
 	//this.readkey = null;
-	if( d )
-		Object.defineProperty( this, "directory", {value:d} );
+	if( d ) {
+		console.log( "file entry created with a directory" );
+		Object.defineProperty( this, "folder", {value:d} );
+	}
 }
 
 fileEntry.prototype.getLength = function() {
@@ -472,32 +471,39 @@ fileEntry.prototype.getLength = function() {
 fileEntry.prototype.read = function( from, len ) {
 	return new Promise( (res,rej)=>{
 		if( this.isFolder ) {
-			this.directory.volume._get( { id:this.id, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
+			this.folder.volume.get( { id:this.id, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
 				.catch( rej )
 				.then( (dir)=>{
-					fixDirRef(dir);
+					console.log( "Read directory, set folder property..." );
+					for( var file of dir.files )  Object.defineProperty( file, "folder", {value:dir} );
 					res(dir) 
 				} );
 		
 		} else {
-			
-			this.directory.volume.readRaw( this.id, r=>r?res(r):rej() );
+			if( this.id )
+				this.folder.volume.readRaw( this.id, r=>r?res(r):rej() );
+			rej(); // no data
 		}
 	} );
 
 }
 
 fileEntry.prototype.write = function( o, at, len ) {
+	if( "string" !== typeof o )
+		console.trace( "Write should be a string or buffer:", o );
 	if( !("number"===typeof(len))) {
 		if( "number"===typeof(at) ) {
 			len = at;
 			at = 0;
-		} else  {
-			len = o.length;
-			at = 0;
+		} else  {			
+			len = undefined;
+			at = undefined;
 		}
 	}
-	return Promise.resolve( this.directory.volume.writeRaw( this.id, o, at, len ) );
+	if( this.id )
+		return Promise.resolve( this.folder.volume.writeRaw( this.id, o, at, len ) );
+	else
+		return this.folder.volume.put( o, {id:null} ).then( id=>(this.id=id) )
 }
 
 function fileDirectory( v, id ) {
@@ -505,7 +511,8 @@ function fileDirectory( v, id ) {
 	if( v )
 		Object.defineProperty( this, "volume", {value:v} );
 	//console.log( "This already has an ID?", this );
-	Object.defineProperty( this, "id", { value:id || sack.id() } );
+	if( id )
+		Object.defineProperty( this, "id", { value:id } );
 
 }
 
@@ -529,13 +536,13 @@ fileDirectory.prototype.create = function( fileName ) {
 fileEntry.prototype.open = async function( ) {
 	if( this.root ) return file.root;
 	if( this.contents ) {
-		return this.directory.volume._get( {id:file.contents, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
+		return this.folder.volume.get( {id:file.contents, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
 			.then( async (dir)=>{  
 				Object.defineProperty( file, "root", {value:dir} );
 				return dir; 
 			} );
 	}  
-	return this.directory.folder( file.name );
+	return this.folder.folder( file.name );
 }
 
 fileDirectory.prototype.open = async function( fileName ) {
@@ -581,7 +588,7 @@ fileDirectory.prototype.has = async function( fileName ) {
 		if( file.root ) dir = file.root;
 		else {
 			if( file.contents ) {
-				return  dir.volume._get( {id:file.contents, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
+				return  dir.volume.get( {id:file.contents, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
 					.then( async (readdir)=>{  
 						Object.defineProperty( file, "root", {value:readdir} );
 						dir = readdir;
@@ -607,7 +614,7 @@ fileDirectory.prototype.folder = function( fileName ) {
 			var file = here.files.find( (f)=>(f.name == part ) );
 			if( file ) {
 				if( file.contents ) {
-					_this.volume._get( {id:file.contents, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
+					_this.volume.get( {id:file.contents, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
 						.then( (dir)=>{ 
 							if( pathIndex < path.length ) {
 								here = dir;
@@ -621,12 +628,13 @@ fileDirectory.prototype.folder = function( fileName ) {
 			}else {
 				file = new fileEntry( this );
 				file.name = fileName;
-				file.contents = sack.id();
 				var newDir = new fileDirectory( _this.volume, file.contents );
 				Object.defineProperty( file, "root", {value:newDir} );
 				_this.files.push(file);
 				_this.changed = true;
-				newDir.store().then( ()=>{
+				newDir.store().then( (id)=>{
+					 console.log( "making a new directory, setting ID ", id );
+					file.contents = id;
 					_this.store().then( ()=>{ 
 						if( pathIndex < path.length ) {
 							here = file.root;
@@ -642,16 +650,10 @@ fileDirectory.prototype.folder = function( fileName ) {
 } 
 
 
-function fixDirRef(dir) {
-	dir.files.forEach( file=>{
-		Object.defineProperty( file, "directory", {value:dir} );
-	} );
-}
-
 
 var loading = null;
-_objectStorage.prototype.getRoot = function() {
-	if( this.root ) return Promise.resolve(this.root);
+_objectStorage.prototype.getRoot = async function() {
+	if( this.root ) return this.root;
 	if( loading ) {
 		return new Promise( (res,rej)=>{
 			loading.push(  {res:res, rej:rej} );
@@ -661,22 +663,29 @@ _objectStorage.prototype.getRoot = function() {
 	var this_ = this;
 	loading = [];
 	return new Promise( (resolve,reject)=>{
-		this._get( { id:result.id, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
+		this_.get( { id:result.id, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
 			.catch( ()=>{
-				result.store()
-					.then( function(){resolve(result)} )
+				return result.store()
+					.then( function(id){
+						console.log( "!!! THIS SHOULD HAVE ID:", id );
+						Object.defineProperty( result, "id", { value:id } );
+						resolve(result)
+					} )
 					.catch( reject );
 				//resolve( result );
 			} )
 			.then( (dir)=>{
-				console.log( "get root directory got:", dir );
+				console.log( "get root directory got:", dir, "(WILL DEFINE FOLDER)" );
 				if( !dir ) dir = result;
-				fixDirRef(dir);
-				Object.defineProperty( dir, "volume", {value:this} );
-				resolve(dir) 
-				loading && loading.forEach((l)=>l.res(dir));
-				Object.defineProperty( this_, "root", {value:dir} );
-				loading.length = 0;
+				// foreach file, set file.folder
+				else for( var file of dir.files ) Object.defineProperty( file, "folder", {value:dir} );
+				this_.root = dir;
+				Object.defineProperty( dir, "volume", {value:this_} );
+
+				resolve(dir)  // first come, first resolved
+				// notify anyone else that was asking for this... 
+				if( loading && loading.length ) for( var l of loading ) l.res(dir);
+				loading = null; // dont' need this anymore.
 			} );
 	} );	
 }
