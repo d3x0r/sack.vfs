@@ -270,7 +270,7 @@ sack.JSOX.stringifier = function() {
 			/*console.log( "is object encoding?", o, encoding ); */
 			return !!encoding.find( (eo,i)=>eo===o && i < (encoding.length-1) )
 		},
-		stringify(o,r,s) { return stringify(o,r,s) },
+		stringify(o,r,s) { return stringify(this, o,r,s) },
 		setQuote(q) { useQuote = q; },
 		registerToJSOX( name, prototype, f ) {
 			if( prototype.prototype && prototype.prototype !== Object.prototype ) {
@@ -344,9 +344,9 @@ sack.JSOX.stringifier = function() {
 	}
 
 
-	function stringify( object, replacer, space ) {
+	function stringify( stringifier, object, replacer, space ) {
 		if( object === undefined ) return "undefined";
-		if( object === null ) return;
+		if( object === null ) return "null";
 		var firstRun = true;
 		var gap;
 		var indent;
@@ -504,6 +504,7 @@ sack.JSOX.stringifier = function() {
 			    && value !== null
 			    && typeof toJSOX === "function"
 			) {
+				// is encoding?
 				if( !stringifying.find( val=>val===value ) ) {
 					gap += indent;
 					if( typeof value === "object" ) {
@@ -511,8 +512,10 @@ sack.JSOX.stringifier = function() {
 						if( v ) return "ref"+v;
 					}
 					stringifying.push( value );
-					let newValue = toJSOX.apply(value);
+					encoding[thisNodeNameIndex] = value;
+					let newValue = toJSOX.apply(value, [stringifier]);
 					stringifying.pop();
+					encoding.splice( thisNodeNameIndex, 1 );
 					if( newValue === value ) {
 						//console.log( "no conversion was done..." );
 						//protoConverter = null;
@@ -591,6 +594,7 @@ sack.JSOX.stringifier = function() {
 						if (typeof rep[i] === "string") {
 							k = rep[i];
 							path[thisNodeNameIndex] = k;
+							encoding[thisNodeNameIndex] = value;
 							v = str(k, value);
 
 							if (v) {
