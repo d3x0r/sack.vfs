@@ -22,11 +22,13 @@ function objectStorageContainer(o,opts) {
 	if( opts && opts.sign ) {
 		var v = sack.SaltyRNG.verify( sack.JSOX.stringify(o), this.data.nonce, 3, 3 );
 		//console.log( "TEST:", v );
-		this.id = v.key;
+		Object.defineProperty( this, "id", { value:v.key } );
 		v.key = this.data.nonce;
 		this.data.nonce = v;
 	} else {
-		this.id = ( opts && opts.id ) || sack.id();
+		if( opts && opts.id ) {
+			Object.defineProperty( this, "id", { value:opts.id } );
+		}
 	}
 	//console.log( "Container:", this );
 }
@@ -163,7 +165,7 @@ _objectStorage.prototype.getContainer = function( obj, options ) {
 		container = this_.cachedContainer.get( container ); 
 		return container;
 	}
-
+	console.log( "Getting a new container..." );
 	container = new objectStorageContainer(obj,options);
 	this_.stored.set( obj, container.id );
 	this_.cached.set( container.id, container.data.data );
@@ -190,6 +192,7 @@ _objectStorage.prototype.index = function( obj, fieldName, opts ) {
 		else
 		{
 			if( !opts.id ) {
+				console.log( "Create index, creating new container" );
 				container = new objectStorageContainer(obj,options);
 				
 				//console.log( "saving stored container.id", obj, container.id );
@@ -221,7 +224,6 @@ _objectStorage.prototype.put = function( obj, opts ) {
 		if( container ) {
 			container = this_.cachedContainer.get( container ); 
 			
-			
 			if( !container.data.nonce ) {
 				// make sure every item that is in an index
 				// has been written... 
@@ -234,7 +236,6 @@ _objectStorage.prototype.put = function( obj, opts ) {
 
 
 				var stringifier;
-				console.log( "Doesn't this have .." );
 				if( opts.extraEncoders ) {
 					stringifier = sack.JSOX.stringifier(); 
 					this_.setupStringifier( stringifier );
@@ -253,7 +254,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 			}
 		}
 		
-		if( opts.id ) {
+		if( opts && opts.id ) {
 			var stringifier;
 			if( opts.extraEncoders ) {
 				stringifier = sack.JSOX.stringifier(); 
@@ -269,7 +270,10 @@ _objectStorage.prototype.put = function( obj, opts ) {
 			storage = stringifier.stringify( obj );
 			this_.writeRaw( opts.id, storage );
 			res( opts.id );
-		} else if( !opts.id ) {
+		} else if( !opts || !opts.id ) {
+			console.log( "New bare object, create a container...", opts );
+                        if( !opts ) opts = { id : sack.id() }
+                        else opts.id = sack.id();
 			container = new objectStorageContainer(obj,opts);
 				
 			//console.log( "saving stored container.id", obj, container.id );
@@ -284,21 +288,16 @@ _objectStorage.prototype.put = function( obj, opts ) {
 				stringifier = sack.JSOX.stringifier(); 
 				this_.setupStringifier( stringifier );
 				opts.extraEncoders.forEach( f=>{
-					console.log( "Register toJSOX:", f );
 					stringifier.registerToJSOX( f.tag, f.p, f.f ) 
 				});
-				console.log( "Something... " );
 			}else {
 				stringifier = this_.stringifier;
 			}
 
 			
 			storage = stringifier.stringify( container );
-				
-			console.log( "Create file:", container.id, storage );
 			this_.writeRaw( container.id, storage );
 			//console.log( "OUTPUT:", storage );
-			console.log( "Resolve with ID that this is complete?" );
 			res(  container.id );
 		}
 	})
@@ -329,12 +328,23 @@ _objectStorage.prototype.get = function( opts ) {
 	function parserObject( obj ) {
 	}
 
+	function reviveContainer( field, val ) {
+		if( !field ) {
+			Object.defineProperty( this, "id", { value:opts.id } );		
+			return this;
+		} 
+		else {
+			this[field] = val;
+			// this is a sub-field of this object to revive...
+			//console.log( "Field:", field, " is data?", val)
+		}
+	}
+
 
 	var parser = sack.JSOX.begin( parserObject );
-	parser.fromJSOX( "~os", objectStorageContainer ); // I don't know ahead of time which this is.
+	parser.fromJSOX( "~os", objectStorageContainer, reviveContainer ); // I don't know ahead of time which this is.
 	if( opts.extraDecoders ) {
 		opts.extraDecoders.forEach( f=>parser.fromJSOX( f.tag, f.p, f.f ) );
-		console.log( "Something... " );
 	}
 
 	function decodeStoredObjectKey(objId,res,rej){
@@ -364,7 +374,8 @@ _objectStorage.prototype.get = function( opts ) {
 
 	this.decoding.push( opts );
 	function decodeStoredObjectKeyImmediate(objId,ref){
-		//console.log( "Revive:", objId, ref, this.mapping, this.decoding );
+		console.log( "Revive:", objId, ref, this.mapping, this.decoding );
+
 		if( this.decoding.find( pending=>pending===objId ) ) {
 			//console.log( "Push a pending resolution for:",  {id:objId, ref: ref } );
 			this.pending.push( {id:objId, ref: ref } );
@@ -378,7 +389,7 @@ _objectStorage.prototype.get = function( opts ) {
 
 				var parser = sack.JSOX.begin( parserObject );
 				parser.fromJSOX( "~os", objectStorageContainer, decodeStoredObjectKeyImmediate );
-				console.log( "Something.22.. ",objId );
+				//console.log( "Something.22.. ",objId );
 				this.read( objId, parser, (obj)=>{
 					//console.log( "Immediate result" );
 					// with a new parser, only a partial decode before revive again...
@@ -414,25 +425,25 @@ _objectStorage.prototype.get = function( opts ) {
 		}
 	};
 
-	console.log( "(get)Read Key:", opts );
+	//console.log( "(get)Read Key:", opts );
 	var os = this;
 	var p = new Promise( function(res,rej) {
 		resolve = res;  reject = rej;
-		//console.log( "doing read?", opts );
+		//console.log( "doing read? (decodes json using a parser...", opts, parser );
 		os.read( opts.id
 			, parser, (obj)=>{
 			// with a new parser, only a partial decode before revive again...
-					var found;
-					do {
-						var found = os.pending.findIndex( pending=>pending.id === key );
-						if( found >= 0 ) {
-							os.pending[found].ref.o[this.pending[found].ref.f] = obj.data.data;
-							os.pending.splice( found, 1 );
-						}
-					} while( found >= 0 );
+				var found;
+				do {
+					var found = os.pending.findIndex( pending=>pending.id === key );
+					if( found >= 0 ) {
+						os.pending[found].ref.o[this.pending[found].ref.f] = obj.data.data;
+						os.pending.splice( found, 1 );
+					}
+				} while( found >= 0 );
 	        	
 			if( obj && ( obj instanceof objectStorageContainer ) ){
-				//console.log( "GOTzz:", obj );
+				//console.log( "GOTzz:", obj, obj.id );
 				os.stored.set( obj.data.data, obj.id );
 				os.cachedContainer.set( obj.id, obj ); 
 				//console.log( "and resolve")
@@ -455,13 +466,7 @@ function fileEntry( d ) {
 	this.created = new Date();
 	this.updated = new Date();
 
-	//this.readOnly = false;
-	//this.size = 0;
-	//this.readkey = null;
-	if( d ) {
-		console.log( "file entry created with a directory" );
-		Object.defineProperty( this, "folder", {value:d} );
-	}
+	if( d ) Object.defineProperty( this, "folder", {value:d} );
 }
 
 fileEntry.prototype.getLength = function() {
@@ -470,6 +475,7 @@ fileEntry.prototype.getLength = function() {
 
 fileEntry.prototype.read = function( from, len ) {
 	return new Promise( (res,rej)=>{
+		//console.log( "reading:", this );
 		if( this.isFolder ) {
 			this.folder.volume.get( { id:this.id, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
 				.catch( rej )
@@ -481,16 +487,29 @@ fileEntry.prototype.read = function( from, len ) {
 		
 		} else {
 			if( this.id )
-				this.folder.volume.readRaw( this.id, r=>r?res(r):rej() );
+				return this.folder.volume.get( {id:this.id} ).then( res ).catch( rej );
+			console.log( "Rejecting, no ID, (no data)", this );
 			rej(); // no data
 		}
 	} );
 
 }
 
-fileEntry.prototype.write = function( o, at, len ) {
-	if( "string" !== typeof o )
-		console.trace( "Write should be a string or buffer:", o );
+fileEntry.prototype.write = function( o ) {
+	if( "string" === typeof o ) {
+		//console.log( "direct write of string data:", o );
+		this.folder.volume.writeRaw( this.id, o );
+		return Promise.resolve( this.id );
+		
+	} else if( o instanceof ArrayBuffer ) {
+		console.log( "Write raw buffer" );
+		this.folder.volume.writeRaw( this.id, o );
+		return Promise.resolve( this.id );
+	
+	} else if( "object" === typeof o ) 
+		;//console.log( "expected encode of object:", o );
+
+/*
 	if( !("number"===typeof(len))) {
 		if( "number"===typeof(at) ) {
 			len = at;
@@ -500,19 +519,27 @@ fileEntry.prototype.write = function( o, at, len ) {
 			at = undefined;
 		}
 	}
+*/
 	if( this.id )
-		return Promise.resolve( this.folder.volume.writeRaw( this.id, o, at, len ) );
+		return this.folder.volume.put( o, this );
 	else
-		return this.folder.volume.put( o, {id:null} ).then( id=>(this.id=id) )
+		return this.folder.volume.put( o, this )
+			.then( id=>{
+				console.log( "Re-setting id?", this, id );
+				this.id=id;
+				this.folder.store();
+				return id; } )
 }
+
+
 
 function fileDirectory( v, id ) {
 	this.files = [];
-	if( v )
-		Object.defineProperty( this, "volume", {value:v} );
+	// cache chanes instead of flushing every time?
+	//Object.defineProperty( this, "changed", {value:false, writable:true} );
+	if( v ) Object.defineProperty( this, "volume", {value:v} );
 	//console.log( "This already has an ID?", this );
-	if( id )
-		Object.defineProperty( this, "id", { value:id } );
+	if( id ) Object.defineProperty( this, "id", { value:id } );
 
 }
 
@@ -529,12 +556,12 @@ fileDirectory.prototype.create = function( fileName ) {
 		file = new fileEntry( this );
 		file.name = fileName;
 		this.files.push(file);
-		this.changed = true;
+		//this.changed = true;
 	}
 }
 
-fileEntry.prototype.open = async function( ) {
-	if( this.root ) return file.root;
+fileEntry.prototype.open = async function( fileName ) {
+	if( this.root ) return file.root.open( fileName );
 	if( this.contents ) {
 		return this.folder.volume.get( {id:file.contents, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
 			.then( async (dir)=>{  
@@ -542,7 +569,7 @@ fileEntry.prototype.open = async function( ) {
 				return dir; 
 			} );
 	}  
-	return this.folder.folder( file.name );
+	return this.folder.open( file.name );
 }
 
 fileDirectory.prototype.open = async function( fileName ) {
@@ -552,22 +579,17 @@ fileDirectory.prototype.open = async function( fileName ) {
 		file = new fileEntry( this );
 		file.name = fileName;
 		this.files.push(file);
-		this.changed = true;
 		this.store();
 	}
 	return file;
 }
 
-function encodeDirectory(){
-	console.log( "Encode called with:", this );
-}
 
 function splitPath( path ) {
 	return path.split( /[\\\/]/ );
 }
 
 fileDirectory.prototype.store = function() {
-	console.log( "Write directory:", this );
 	return this.volume.put( this, { id:this.id, extraEncoders:[ { tag: "d", p:fileDirectory, f:null} 
 					, { tag: "f", p:fileEntry, f:null} ] } );
 }
@@ -627,13 +649,11 @@ fileDirectory.prototype.folder = function( fileName ) {
 					return Promise.reject( "Folder not found" );
 			}else {
 				file = new fileEntry( this );
-				file.name = fileName;
+				file.name = part;
 				var newDir = new fileDirectory( _this.volume, file.contents );
 				Object.defineProperty( file, "root", {value:newDir} );
 				_this.files.push(file);
-				_this.changed = true;
 				newDir.store().then( (id)=>{
-					 console.log( "making a new directory, setting ID ", id );
 					file.contents = id;
 					_this.store().then( ()=>{ 
 						if( pathIndex < path.length ) {
@@ -667,20 +687,23 @@ _objectStorage.prototype.getRoot = async function() {
 			.catch( ()=>{
 				return result.store()
 					.then( function(id){
-						console.log( "!!! THIS SHOULD HAVE ID:", id );
+						//console.log( "1) Assigning ID to directory", id );
 						Object.defineProperty( result, "id", { value:id } );
 						resolve(result)
 					} )
 					.catch( reject );
-				//resolve( result );
-			} )
+				} )
 			.then( (dir)=>{
-				console.log( "get root directory got:", dir, "(WILL DEFINE FOLDER)" );
+				//console.log( "get root directory got:", dir, "(WILL DEFINE FOLDER)" );
 				if( !dir ) dir = result;
+
 				// foreach file, set file.folder
 				else for( var file of dir.files ) Object.defineProperty( file, "folder", {value:dir} );
-				this_.root = dir;
+				//console.log( "2) Assigning ID to directory(sub)", result.id );
+				Object.defineProperty( dir, "id", { value:result.id } );
 				Object.defineProperty( dir, "volume", {value:this_} );
+				this_.root = dir;
+				
 
 				resolve(dir)  // first come, first resolved
 				// notify anyone else that was asking for this... 
