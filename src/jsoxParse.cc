@@ -769,11 +769,11 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 		else if( val->value_type == JSOX_VALUE_ARRAY )
 			o = Array::New( revive->isolate );
 		revive->rootObject = o;
+		buildObject( val->contains, o, revive );
 		if( val->className ) {
 			MaybeLocal<Value> valmethod;
 			Local<Function> cb;
 
-			buildObject( val->contains, o, revive );
 
 			// although at this time, this layer should always be empty(?)
 			// this is the call, 1 time after an object completes, with NULL arguments
@@ -783,7 +783,6 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 			}
 			return o;
 		}
-		buildObject( val->contains, o, revive );
 		return o.As<Value>();
 	}
 	if( val )
