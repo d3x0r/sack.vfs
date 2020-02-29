@@ -474,6 +474,8 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				mount_name = StrDup( *fName );
 			}
 			else {
+				if( argc > arg )
+					arg++; // assume null mount name
 				mount_name = SRG_ID_Generator();
 			}
 			if( argc > (arg) ) {
