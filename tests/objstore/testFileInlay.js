@@ -15,6 +15,7 @@ const vfs = sack.Volume( "cmount", "container.vfs" );
 //console.log( "sack:", sack );
 
 const store = sack.ObjectStorage( vfs, "storage.os" );
+
 // consts...
 const storage = {
 	rootDirectory : null,
