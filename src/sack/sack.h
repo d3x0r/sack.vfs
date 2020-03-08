@@ -1564,15 +1564,18 @@ typedef uint64_t THREAD_ID;
 	uint8_t maskVariableName[ (32*5 +(CHAR_BIT-1))/CHAR_BIT ];  //data array used for storage.
    const int askVariableName_mask_size = 5;  // used aautomatically by macros
 */
-#define MASKSET(v,n,r)  MASKSETTYPE  (v)[(((n)*(r))+MASK_MAX_ROUND())/MASKTYPEBITS(MASKSETTYPE)]; const int v##_mask_size = r;
+#define MASKSET(v,n,r)  MASKSETTYPE  (v)[(((n)*(r))+MASK_MAX_ROUND())/MASKTYPEBITS(MASKSETTYPE)]; const int v##_mask_size = r
+#define MASKSET_(v,n,r)  MASKSETTYPE  (v)[(((n)*(r))+MASK_MAX_ROUND())/MASKTYPEBITS(MASKSETTYPE)]
 /* set a field index to a value
     SETMASK( askVariableName, 3, 13 );  // set set member 3 to the value '13'
  */
 #define SETMASK(v,n,val)    (((MASKSET_READTYPE*)((v)+((n)*(v##_mask_size))/MASKTYPEBITS((v)[0])))[0] =    ( ((MASKSET_READTYPE*)((v)+((n)*(v##_mask_size))/MASKTYPEBITS(uint8_t)))[0]                                  & (~(MASK_MASK(n,v##_mask_size))) )	                                                                           | MASK_MASK_VAL(n,v##_mask_size,val) )
+#define SETMASK_(v,v2,n,val)    (((MASKSET_READTYPE*)((v)+((n)*(v2##_mask_size))/MASKTYPEBITS((v)[0])))[0] =    ( ((MASKSET_READTYPE*)((v)+((n)*(v2##_mask_size))/MASKTYPEBITS(uint8_t)))[0]                                  & (~(MASK_MASK(n,v2##_mask_size))) )	                                                                           | MASK_MASK_VAL(n,v2##_mask_size,val) )
 /* get the value of a field
      GETMASK( maskVariableName, 3 );   // returns '13' given the SETMASK() example code.
  */
 #define GETMASK(v,n)  ( ( ((MASKSET_READTYPE*)((v)+((n)*(v##_mask_size))/MASKTYPEBITS((v)[0])))[0]         & MASK_MASK(n,v##_mask_size) )	                                                                           >> (((n)*(v##_mask_size))&0x7))
+#define GETMASK_(v,v2,n)  ( ( ((MASKSET_READTYPE*)((v)+((n)*(v2##_mask_size))/MASKTYPEBITS((v)[0])))[0]         & MASK_MASK(n,v2##_mask_size) )	                                                                           >> (((n)*(v2##_mask_size))&0x7))
 /* This type stores data, it has a self-contained length in
    bytes of the data stored.  Length is in characters       */
 _CONTAINER_NAMESPACE
@@ -4680,7 +4683,8 @@ SYSLOG_PROC  CTEXTSTR SYSLOG_API  GetPackedTime ( void );
 //    uint64_t epoch_milliseconds : 56;
 //    int64_t timezone : 8; divided by 15... hours * 60 / 15
 // }
-SYSLOG_PROC  int64_t SYSLOG_API GetTimeOfDay( void );
+// returns the nanosecond of the day (since UNIX Epoch) and timezone/15
+SYSLOG_PROC  int64_t SYSLOG_API GetTimeOfDay( uint64_t* tick, int8_t* ptz );
 // binary little endian order; somewhat
 typedef struct sack_expanded_time_tag
 {
@@ -11952,6 +11956,8 @@ namespace objStore {
 		SOSFSFIO_REMOVE_REFERENCE,
 		SOSFSFIO_ADD_REFERENCE_BY,
 		SOSFSFIO_REMOVE_REFERENCE_BY,
+ // set file preferred block size intead of automatic
+		SOSFSFIO_SET_BLOCKSIZE,
 	};
 	enum sack_object_store_file_system_system_ioctl_ops {
  // get the resulting storage ID.  (Move ID creation into low level driver)
@@ -12213,10 +12219,10 @@ SACK_VFS_PROC size_t CPROC sack_vfs_os_find_get_size( struct sack_vfs_os_find_in
 #define sack_vfs_find_get_wdate  sack_vfs_os_find_get_wdate
 #endif
 SACK_VFS_NAMESPACE_END
-#if defined( __cplusplus ) && !defined( SACK_VFS_SOURCE )
+#if defined( __cplusplus )
 using namespace sack::SACK_VFS;
-//using namespace sack::SACK_VFS::fs;
-//using namespace sack::SACK_VFS::objStore;
+using namespace sack::SACK_VFS::fs;
+using namespace sack::SACK_VFS::objStore;
 #endif
 #endif
 #ifndef JSON_EMITTER_HEADER_INCLUDED
