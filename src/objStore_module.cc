@@ -21,12 +21,15 @@ public:
 
 	// get object pass object ID
 	static void getObject( const v8::FunctionCallbackInfo<Value>& args );
-
+	
 	// get object and all recursive objects associated from here (for 1 level?)
 	static void mapObject( const v8::FunctionCallbackInfo<Value>& args );
 
-	// pass object, result with object ID.
+	// pass object, parser, result with object ID.
 	static void putObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// pass ID to remove from storage
+	static void removeObject( const v8::FunctionCallbackInfo<Value>& args );
 
 	// pass object ID, get back a ObjectStorageFileObject ( support seek/read/write? )
 	static void openObject( const v8::FunctionCallbackInfo<Value>& args );
@@ -221,6 +224,7 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 	//NODE_SET_PROTOTYPE_METHOD( clsTemplate, "store", ObjectStorageObject::fileStore );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "put", ObjectStorageObject::putObject );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "get", ObjectStorageObject::getObject );
+	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "delete", ObjectStorageObject::removeObject );
 
 	Local<Function> VolFunc = clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
@@ -331,6 +335,26 @@ static uintptr_t CPROC DoPutObject( PTHREAD thread ) {
 		}
 	}
 	return 0;
+}
+
+
+
+void ObjectStorageObject::removeObject( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	//Local<Function> cb;
+	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
+	if( args[0]->IsString() ) {
+		String::Utf8Value fName( isolate, args[0] );
+		//lprintf( "OPEN FILE:%s", *fName );
+		sack_vfs_os_unlink_file( vol->vol, *fName );// , fName.length() );
+		//sack_vfs_os_flush_volume( vol->vol, FALSE );
+		sack_vfs_os_polish_volume( vol->vol );
+	}
+	else if( args[0]->IsObject() ) {
+
+	}
+
 }
 
 void ObjectStorageObject::putObject( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -517,7 +541,7 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				arg++;
 			}
 			// Invoked as constructor: `new MyObject(...)`
-			ObjectStorageObject* obj = new ObjectStorageObject( mount_name, filename, version, key, key2, vol->fsMount );
+			ObjectStorageObject* obj = new ObjectStorageObject( mount_name, filename, version, key, key2, vol?vol->fsMount:NULL );
 			if( !obj->vol ) {
 				isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText( "Volume failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -609,11 +633,12 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 
 		if( file ) {
 			String::Utf8Value data( isolate,  args[1] );
+			lprintf( "Write to %s\nWrite Data%s", ( *fName ), *data );
 			objStore::sack_vfs_os_write( file, *data, data.length() );
 			objStore::sack_vfs_os_truncate( file );
 			objStore::sack_vfs_os_close( file );
-			//sack_vfs_os_polish_volume( vol->vol );
-			sack_vfs_os_flush_volume( vol->vol, FALSE );
+			sack_vfs_os_polish_volume( vol->vol );
+			//sack_vfs_os_flush_volume( vol->vol, FALSE );
 			if( !cb.IsEmpty() ) {
 				cb->Call( isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 0, NULL );
 			}

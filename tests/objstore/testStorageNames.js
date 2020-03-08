@@ -9,6 +9,8 @@ var object = {
         get date() { return new Date()  }
 };
 
-store.put( object ).then( (id)=>{
-	store.delete( id );
-} );
+for( var n = 0; n < 5; n++ )
+	store.put( Object.assign({},object) ).then( (id)=>{
+		console.log( "ID:", id );
+		setTimeout( ()=>{ store.delete( id ); }, 1000 );
+	} );

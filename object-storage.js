@@ -214,13 +214,27 @@ _objectStorage.prototype.index = function( obj, fieldName, opts ) {
 
 }
 
+_objectStorage.prototype.remove = function( opts ) {
+	if( "string" === typeof opts )  {
+		var container = this.cached.get( opts );
+		if( !container ) throw new Error( "This is not a tracked object." ); 
+		this.delete( opts );
+	}
+	else if( "object" === typeof opts )  {
+		var container = this.stored.get( opts );
+		if( !container ) throw new Error( "This is not a tracked object." ); 
+		this.delete( container);
+	}
+}
+
+// this hides the original 'put' 
 _objectStorage.prototype.put = function( obj, opts ) {
 	var this_ = this;
 	return new Promise( function(res,rej){
 
 		var container = this_.stored.get( obj );
 		
-		//console.log( "Put found object?", container, obj, opts );
+		console.log( "Put found object?", container, obj, opts );
 		if( container ) {
 			container = this_.cachedContainer.get( container ); 
 			
@@ -236,7 +250,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 
 
 				var stringifier;
-				if( opts.extraEncoders ) {
+				if( opts && opts.extraEncoders ) {
 					stringifier = sack.JSOX.stringifier(); 
 					this_.setupStringifier( stringifier );
 					opts.extraEncoders.forEach( f=>{
@@ -247,6 +261,10 @@ _objectStorage.prototype.put = function( obj, opts ) {
 				}
 
 				storage = stringifier.stringify( container );
+				if( !container.id || container.id === "null" ) {
+					console.trace( "0) Container has no ID or is nUll", container );
+				}
+			console.trace( "WRite:", storage );
 				this_.writeRaw( container.id, storage );
 				return container.id;
 			} else { 
@@ -268,6 +286,10 @@ _objectStorage.prototype.put = function( obj, opts ) {
 
 			
 			storage = stringifier.stringify( obj );
+			if( !opts.id || opts.id === "null" ) {
+				console.trace( "Container has no ID or is nUll", container );
+			}
+			console.trace( "WRite:", opts, storage );
 			this_.writeRaw( opts.id, storage );
 			res( opts.id );
 		} else if( !opts || !opts.id ) {
@@ -296,6 +318,10 @@ _objectStorage.prototype.put = function( obj, opts ) {
 
 			
 			storage = stringifier.stringify( container );
+			if( !container.id || container.id === "null" ) {
+				console.trace( "Container has no ID or is nUll", container );
+			}
+			console.trace( container, storage );
 			this_.writeRaw( container.id, storage );
 			//console.log( "OUTPUT:", storage );
 			res(  container.id );
@@ -346,6 +372,7 @@ _objectStorage.prototype.get = function( opts ) {
 	if( opts.extraDecoders ) {
 		opts.extraDecoders.forEach( f=>parser.fromJSOX( f.tag, f.p, f.f ) );
 	}
+	console.log( "Created a parser for revival..." );
 
 	function decodeStoredObjectKey(objId,res,rej){
 		console.log( "Promised Reviver:", objId, this.mapping );
@@ -394,6 +421,8 @@ _objectStorage.prototype.get = function( opts ) {
 					//console.log( "Immediate result" );
 					// with a new parser, only a partial decode before revive again...
 					if( obj ){
+                                        	Object.defineProperty( this, "id", { value:objId.key } );
+
 						Object.setPrototypeOf( obj, objectStorageContainer.prototype );
 						exist = obj.data.data;
 
@@ -429,10 +458,11 @@ _objectStorage.prototype.get = function( opts ) {
 	var os = this;
 	var p = new Promise( function(res,rej) {
 		resolve = res;  reject = rej;
-		//console.log( "doing read? (decodes json using a parser...", opts, parser );
+		console.log( "doing read? (decodes json using a parser...", opts, parser );
 		os.read( opts.id
 			, parser, (obj)=>{
-			// with a new parser, only a partial decode before revive again...
+				// with a new parser, only a partial decode before revive again...
+				console.log( "Read resulted with an object:", obj );
 				var found;
 				do {
 					var found = os.pending.findIndex( pending=>pending.id === key );
@@ -444,6 +474,7 @@ _objectStorage.prototype.get = function( opts ) {
 	        	
 			if( obj && ( obj instanceof objectStorageContainer ) ){
 				//console.log( "GOTzz:", obj, obj.id );
+				Object.defineProperty( obj, "id", { value:opts.id } );
 				os.stored.set( obj.data.data, obj.id );
 				os.cachedContainer.set( obj.id, obj ); 
 				//console.log( "and resolve")
@@ -683,6 +714,7 @@ _objectStorage.prototype.getRoot = async function() {
 	var this_ = this;
 	loading = [];
 	return new Promise( (resolve,reject)=>{
+		console.log( "Getting root directory.." );
 		this_.get( { id:result.id, extraDecoders:[ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] } )
 			.catch( ()=>{
 				return result.store()
@@ -694,11 +726,12 @@ _objectStorage.prototype.getRoot = async function() {
 					.catch( reject );
 				} )
 			.then( (dir)=>{
-				//console.log( "get root directory got:", dir, "(WILL DEFINE FOLDER)" );
-				if( !dir ) dir = result;
+				console.log( "get root directory got:", dir, "(WILL DEFINE FOLDER)" );
+				if( !dir ) dir = result; 
 
 				// foreach file, set file.folder
 				else for( var file of dir.files ) Object.defineProperty( file, "folder", {value:dir} );
+
 				//console.log( "2) Assigning ID to directory(sub)", result.id );
 				Object.defineProperty( dir, "id", { value:result.id } );
 				Object.defineProperty( dir, "volume", {value:this_} );
