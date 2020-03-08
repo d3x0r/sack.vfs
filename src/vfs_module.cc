@@ -185,6 +185,8 @@ static void CleanupThreadResources( void* arg_ ) {
 	
 	delete c;
 	DeleteLink( &vl.constructors, c );
+	if( !GetLinkCount( vl.constructors ) )
+		moduleExit( NULL );
 	//lprintf( "Which things belonged to this thread?, is it isolate?" );
 	// objects are weak referenced where appropriate anyway so things should cleanup
 	// already without additional help.
