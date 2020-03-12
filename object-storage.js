@@ -1,6 +1,7 @@
 
 module.exports = function(sack) {
 
+const _debug = false;
 
 sack.SaltyRNG.setSigningThreads( require( "os" ).cpus().length );
 
@@ -234,7 +235,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 
 		var container = this_.stored.get( obj );
 		
-		console.log( "Put found object?", container, obj, opts );
+		_debug && console.log( "Put found object?", container, obj, opts );
 		if( container ) {
 			container = this_.cachedContainer.get( container ); 
 			
@@ -293,7 +294,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 			this_.writeRaw( opts.id, storage );
 			res( opts.id );
 		} else if( !opts || !opts.id ) {
-			console.log( "New bare object, create a container...", opts );
+			_debug && console.log( "New bare object, create a container...", opts );
                         if( !opts ) opts = { id : sack.id() }
                         else opts.id = sack.id();
 			container = new objectStorageContainer(obj,opts);
@@ -321,7 +322,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 			if( !container.id || container.id === "null" ) {
 				console.trace( "Container has no ID or is nUll", container );
 			}
-			console.trace( container, storage );
+			_debug && console.trace( "Outut container to storage... ", container, storage );
 			this_.writeRaw( container.id, storage );
 			//console.log( "OUTPUT:", storage );
 			res(  container.id );
