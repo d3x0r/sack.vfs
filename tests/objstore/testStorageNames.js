@@ -15,8 +15,9 @@ console.log( "input?", process.argv );
 if( nMax === NaN || !nMax ) nMax = 5;
 for( var n = 0; n < nMax; n++ )
 	store.put( Object.assign({},object) ).then( (id)=>{
-		if( !ids.length )
-			setTimeout( ()=>{ ids.sort( (a,b)=>a<b ); ids.forEach( id=>store.delete( id ) ); }, 1000 );
 		ids.push(id);
-		console.log( "ID:", id );
+		if( ids.length  === nMax ) {
+			setTimeout( ()=>{ ids.sort( (a,b)=>((a<b)?-1:1) ).forEach( id=>store.delete( id ) ); }, 1000 );
+		}
+		//console.log( "ID:", id );
 	} );
