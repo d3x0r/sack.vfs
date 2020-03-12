@@ -633,7 +633,7 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 
 		if( file ) {
 			String::Utf8Value data( isolate,  args[1] );
-			lprintf( "Write to %s\nWrite Data%s", ( *fName ), *data );
+			//lprintf( "Write to %s\nWrite Data%s", ( *fName ), *data );
 			objStore::sack_vfs_os_write( file, *data, data.length() );
 			objStore::sack_vfs_os_truncate( file );
 			objStore::sack_vfs_os_close( file );
