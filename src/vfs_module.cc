@@ -5,6 +5,7 @@
 #endif
 #include "global.h"
 
+PLIST VolumeObject::volumes = NULL;
 
 static void fileDelete( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -182,8 +183,17 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 #if ( NODE_MAJOR_VERSION > 9 )
 static void CleanupThreadResources( void* arg_ ) {
 	class constructorSet *c = (class constructorSet*)arg_;
-	
+	//lprintf( "Shutdown called" );
 	delete c;
+
+	{
+		VolumeObject* vol;
+		INDEX idx;
+		LIST_FORALL( VolumeObject::volumes, idx, VolumeObject*, vol ) {
+			vol->cleanupHappened = TRUE;
+		}
+	}
+
 	DeleteLink( &vl.constructors, c );
 	if( !GetLinkCount( vl.constructors ) )
 		moduleExit( NULL );
@@ -336,6 +346,7 @@ void VolumeObject::Init( Local<Context> context, Local<Object> exports )  {
 }
 
 VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, int priority )  {
+	cleanupHappened = FALSE;
 	mountName = (char *)mount;
 	this->priority = priority;
 	if( !mount && !filename ) {
@@ -366,6 +377,7 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t v
 		else
 			fsMount = NULL;
 	}
+	AddLink( &VolumeObject::volumes, this );
 }
 
 
@@ -1580,12 +1592,17 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 VolumeObject::~VolumeObject() {
+	//lprintf( "Garbage collected Volume" );
 	if( volNative ) {
-		Deallocate( char*, mountName );
-		Deallocate( char*, fileName );
-		//printf( "Volume object evaporated.\n" );
-		sack_unmount_filesystem( fsMount );
-		sack_vfs_unload_volume( vol );
+		if( !cleanupHappened ) {
+			Deallocate( char*, mountName );
+			Deallocate( char*, fileName );
+			//printf( "Volume object evaporated.\n" );
+			sack_unmount_filesystem( fsMount );
+			sack_vfs_unload_volume( vol );
+		} else {
+			DeleteLink( &volumes, this );
+		}
 	}
 }
 

@@ -232,6 +232,8 @@ public:
 	int priority;
 	struct file_system_interface *fsInt;
 	struct file_system_mounted_interface* fsMount;
+	static PLIST volumes;
+	LOGICAL cleanupHappened;
 
 public:
 
