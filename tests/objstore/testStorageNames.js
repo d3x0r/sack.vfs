@@ -1,12 +1,18 @@
 
 const sack = require( "../.." );
 
-//sack.Volume().unlink( "container.vfs" );
-//const vol = sack.Volume( "container.vfs" );
-//const store = sack.ObjectStorage( vol, "storage.os" );
+function f1() {
+	sack.Volume().unlink( "container.vfs" );
+	const vol = sack.Volume( "container.vfs" );
+	return sack.ObjectStorage( vol, "storage.os" );
+}
+function f2() {
+//	sack.Volume().unlink( "storage.os" );
+	return sack.ObjectStorage( "storage.os" );
+}
 
-sack.Volume().unlink( "storage.os" );
-const store = sack.ObjectStorage( "storage.os" );
+const store = f2(); 
+
 
 var object = { 
 	data: "This object contains data.",
