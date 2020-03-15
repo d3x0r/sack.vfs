@@ -1,7 +1,11 @@
 
 const sack = require( "../.." );
-sack.Volume().unlink( "storage.os" );
 
+//sack.Volume().unlink( "container.vfs" );
+//const vol = sack.Volume( "container.vfs" );
+//const store = sack.ObjectStorage( vol, "storage.os" );
+
+sack.Volume().unlink( "storage.os" );
 const store = sack.ObjectStorage( "storage.os" );
 
 var object = { 
