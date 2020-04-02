@@ -1321,6 +1321,10 @@ setTimeout( ()=>{ }, 5000 );
 - 0.9.161
    - Added thread local storage
    - Added control flag to disallow per-thread spawn permission.
+   - Improved object storage system; implemented rollback journal.
+   - Shutdown stability issues; new worker-thread support shutdown invokes a library shutdown, and weak references can still fire their callbacks.
+   - control-c shutdown is done in an external thread, which inadvertantly self triggers thread reference creation while locking.
+   - JSOX object revival improvements in the C library side/C++ object creation side.
 - 0.9.160
    - Improve worker_thread support (missed some other static constructors)
    - Added .log() to allow log output outside of any JS.
