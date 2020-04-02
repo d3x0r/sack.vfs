@@ -143,7 +143,7 @@ sack.JSOX.defineClass = function( name, obj ) {
 					else i--; // only 1 to check.
 				}
 			}
-			console.log( "normalized:", denormKeys );
+			//console.log( "normalized:", denormKeys );
 			commonClasses.push( cls = { name : name
 				   , tag:denormKeys.toString()
 				   , proto : Object.getPrototypeOf(obj)
@@ -671,6 +671,7 @@ sack.JSOX.stringifier = function() {
 					    || commonClasses.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
 				else
 					c = '';
+				//console.log( "output:", key, c, partialClass  );
 				if( protoConverter && protoConverter.external ) 
 					if( key==="" ) 
 						c = c + protoConverter.name;

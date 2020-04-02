@@ -2,6 +2,8 @@
 #include "global.h"
 #include <math.h>
 
+//#define DEBUG_REFERENCE_FOLLOW
+
 static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive );
 static Local<Value> makeValue( struct jsox_value_container *val, struct reviver_data *revive, Local<Object> container, int index, Local<Value> name );
 
@@ -236,17 +238,23 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 #endif
 						
 						if( pathVal->value_type == JSOX_VALUE_NUMBER ) {
-							Local<Value> arraymember = refObj->Get( revive->context, (uint32_t)pathVal->result_n ).ToLocalChecked();
-							String::Utf8Value tmp( USE_ISOLATE( revive->isolate )   arraymember->ToString(revive->context).ToLocalChecked() );
+							MaybeLocal<Value> mbArrayMember = refObj->Get( revive->context, (uint32_t)pathVal->result_n );
+							if( !mbArrayMember.IsEmpty() ) {
+								Local<Value> arraymember = mbArrayMember.ToLocalChecked();
 #ifdef DEBUG_REFERENCE_FOLLOW
-							lprintf( "Array member is : %s", *tmp );
+								MaybeLocal<String> mbString = arraymember->ToString(revive->context);
+								if( !mbString.IsEmpty() ) {
+									String::Utf8Value tmp( USE_ISOLATE( revive->isolate ) mbString.ToLocalChecked() );
+									lprintf( "Array member is : %s", *tmp );
+								}
 #endif
-							MaybeLocal<Object> maybeRefObj = arraymember->ToObject( revive->isolate->GetCurrentContext() );
-							if( maybeRefObj.IsEmpty() ) {
-								lprintf( "Referenced array member is not an object!. " );
-								DebugBreak();
+								MaybeLocal<Object> maybeRefObj = arraymember->ToObject( revive->isolate->GetCurrentContext() );
+								if( maybeRefObj.IsEmpty() ) {
+									lprintf( "Referenced array member is not an object!. " );
+									DebugBreak();
+								}
+								refObj = maybeRefObj.ToLocalChecked();
 							}
-							refObj = maybeRefObj.ToLocalChecked();
 						}
 						else if( pathVal->value_type == JSOX_VALUE_STRING ) {
 							Local<Value> val;
@@ -624,23 +632,34 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 					                      , sub_o };
 					// use the custom reviver to assign the field.
 					cb->Call( revive->context, o, 2, args );
+#ifdef DEBUG_REFERENCE_FOLLOW
+					lprintf( "called callback to set array value %.*s", val->nameLen, val->name );
+#endif
 				} else {
 					Local<Value> args[] = { Number::New( isolate, index++ ), sub_o };
 					// use the custom reviver to assign the field.
 					cb->Call( revive->context, o, 2, args );
+#ifdef DEBUG_REFERENCE_FOLLOW
+					lprintf( "called callback to set array value %d", index-1 );
+#endif
 				}
 			}
-			else
-				if( val->name ) {
-					//lprintf( "set value to fieldname: %s", val->name );
-					o->CreateDataProperty( revive->context,
-						stringKey = String::NewFromUtf8( revive->isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked()
-						, sub_o );
+			else if( val->name ) {
+				//lprintf( "set value to fieldname: %s", val->name );
+				o->CreateDataProperty( revive->context,
+					stringKey = String::NewFromUtf8( revive->isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked()
+					, sub_o );
+#ifdef DEBUG_REFERENCE_FOLLOW
+				lprintf( "set array value %.*s", val->nameLen, val->name );
+#endif
 				thisKey = stringKey;
 			}
 			else {
 				if( revive->revive )
 					thisKey = Integer::New( revive->isolate, index );
+#ifdef DEBUG_REFERENCE_FOLLOW
+				lprintf( "set array value %d", index );
+#endif
 				//lprintf( "set value to index: %d", index );
 				SETN( o, index++, sub_o );
 			}
@@ -696,23 +715,33 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 							, sub_o };
 						// use the custom reviver to assign the field.
 						cb->Call( revive->context, o, 2, args );
+#ifdef DEBUG_REFERENCE_FOLLOW
+						lprintf( "called callback to set object value %.*s", val->nameLen, val->name );
+#endif
 					}
 					else {
 						Local<Value> args[] = { Number::New( isolate, index++ ), sub_o };
 						// use the custom reviver to assign the field.
 						cb->Call( revive->context, o, 2, args );
+#ifdef DEBUG_REFERENCE_FOLLOW
+						lprintf( "called callback to set object value %d", index-1);
+#endif
 					}
 				}
 				else if( val->name ) {
 					stringKey = String::NewFromUtf8( revive->isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked();
+#ifdef DEBUG_REFERENCE_FOLLOW
+					lprintf( "Set object value %.*s:", val->nameLen, val->name );
+#endif
 					o->CreateDataProperty( revive->context, stringKey, sub_o );
 					thisKey = stringKey;
 				}
 				else {
 					if( revive->revive )
 						thisKey = Integer::New( revive->isolate, index );
-					//lprintf( "set value to index: %d", index );
-
+#ifdef DEBUG_REFERENCE_FOLLOW
+					lprintf( "set value to index: %d", index );
+#endif
 					SETN( o, (currentIndex = index++), sub_o );
 				}
 
