@@ -1365,10 +1365,9 @@ typedef uint64_t THREAD_ID;
 // it's a safer solution anyhow...
 #  ifdef __MAC__
 #    ifndef SYS_thread_selfid
-#      define GetMyThreadID()  (( ((uint64_t)getpid()) << 32 ) | ( (uint64_t)( gettid() ) ) )
-#    else
-#      define GetMyThreadID()  (( ((uint64_t)getpid()) << 32 ) | ( (uint64_t)( syscall(SYS_thread_selfid) ) ) )
+#      define SYS_thread_selfid                 372
 #    endif
+#    define GetMyThreadID()  (( ((uint64_t)getpid()) << 32 ) | ( (uint64_t)( syscall(SYS_thread_selfid) ) ) )
 #  else
 #    ifndef GETPID_RETURNS_PPID
 #      define GETPID_RETURNS_PPID
