@@ -421,7 +421,7 @@ public:
 
 // web sock client Object
 class wscObject : public node::ObjectWrap {
-	char *serverUrl;
+
 public:
 	PCLIENT pc;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
