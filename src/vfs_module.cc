@@ -1381,13 +1381,19 @@ void FileObject::writeFile(const v8::FunctionCallbackInfo<Value>& args) {
 	if( args.Length() == 1 ) {
 		if( args[0]->IsString() ) {
 			String::Utf8Value data( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-			sack_vfs_write( file->file, *data, data.length() );
+			if( file->vol->volNative )
+				sack_vfs_write( file->file, *data, data.length() );
+			else
+				sack_fwrite( *data, data.length(), 1, file->cfile );
 		} else if( args[0]->IsArrayBuffer() ) {
 			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
 			ArrayBuffer::Contents contents = ab->GetContents();
 			//file->buf = (char*)contents.Data();
 			//file->size = contents.ByteLength();
-			sack_vfs_write( file->file, (char*)contents.Data(), contents.ByteLength() );
+			if( file->vol->volNative )
+				sack_vfs_write( file->file, (char*)contents.Data(), contents.ByteLength() );
+			else
+				sack_fwrite( contents.Data(), contents.ByteLength(), 1, file->cfile );
 		}
 	}
 }
