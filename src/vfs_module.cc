@@ -6,6 +6,22 @@
 #include "global.h"
 
 PLIST VolumeObject::volumes = NULL;
+PLIST VolumeObject::transportDestinations = NULL;
+
+
+struct volumeTransport {
+	class VolumeObject *wssi;
+};
+
+struct volumeUnloadStation {
+	Persistent<Object> this_;
+	String::Utf8Value* s;  // destination address
+	uv_async_t poster;
+	uv_loop_t  *targetThread;
+	Persistent<Function> cb; // callback to invoke 
+	PLIST transport;
+};
+
 
 static void fileDelete( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -214,6 +230,9 @@ static void logString( const v8::FunctionCallbackInfo<Value>& args ) {
 		( "%s", *s );
 }
 
+static void postVolume( const v8::FunctionCallbackInfo<Value>& args );
+static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args );
+
 void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 {
 	static int runOnce = 1;
@@ -284,6 +303,8 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	volumeTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Volume", v8::NewStringType::kNormal ).ToLocalChecked() );
 	volumeTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
+
+
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "File", FileObject::openFile );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "ObjectStorage", vfsObjectStorage );
@@ -294,6 +315,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "readJSON", fileReadJSON );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "readJSOX", fileReadJSOX );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "write", fileWrite );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "flush", flush );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mkdir", makeDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "Sqlite", openVolDb );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "delete", fileVolDelete );
@@ -329,6 +351,12 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	SET_READONLY_METHOD( fileObject, "unlink", fileDelete );
 	SET_READONLY_METHOD( fileObject, "rm", fileDelete );
 	SET( exports, "Volume", volumeTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
+	{
+		Local<Object> threadObject = Object::New( isolate );
+		SET_READONLY_METHOD( threadObject, "post", postVolume );
+		SET_READONLY_METHOD( threadObject, "accept", setClientVolumeHandler );
+		SET_READONLY( VolFunc, "Thread", threadObject );
+	}
 
 	SET_READONLY_METHOD( exports, "loadComplete", loadComplete );
 	c->volConstructor.Reset( isolate, volumeTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -379,7 +407,6 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t v
 	}
 	AddLink( &VolumeObject::volumes, this );
 }
-
 
 #if 0
 void logBinary( char *x, int n )
@@ -464,6 +491,15 @@ void VolumeObject::makeDirectory( const v8::FunctionCallbackInfo<Value>& args ){
 	}
 }
 
+
+void VolumeObject::flush( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+	if( vol ) {
+		// this is a noop.  mmap is assumed commited if the memory is written to; and the process exists and closes the handles.
+	}
+
+}
 
 void VolumeObject::isDirectory( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -1167,10 +1203,10 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			if( argc == 0 ) {
 				VolumeObject* obj = new VolumeObject( NULL, NULL, 0, NULL, NULL, 0 );
 				if( !obj->fsMount ) {
-					isolate->ThrowException( Exception::Error(
-						String::NewFromUtf8( isolate, TranslateText( "Failed to load default mount." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
-					delete obj;
-					return;
+					//isolate->ThrowException( Exception::Error(
+					//	String::NewFromUtf8( isolate, TranslateText( "Failed to load default mount." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+					//delete obj;
+					//return;
 				}
 				obj->Wrap( args.This() );
 				args.GetReturnValue().Set( args.This() );
@@ -1255,6 +1291,149 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			delete[] argv;
 		}
 	}
+
+
+static LOGICAL PostVolume( Isolate *isolate, String::Utf8Value *name, VolumeObject* obj ) {
+	struct volumeTransport* trans = new struct volumeTransport();
+	trans->wssi = obj;
+
+	{
+		struct volumeUnloadStation* station;
+		INDEX idx;
+		LIST_FORALL( VolumeObject::transportDestinations, idx, struct volumeUnloadStation*, station ) {
+			if( memcmp( *station->s[0], *(name[0]), (name[0]).length() ) == 0 ) {
+				AddLink( &station->transport, trans );
+				//lprintf( "Send Post Request %p", station->poster );
+				uv_async_send( &station->poster );
+				break;
+			}
+		}
+		if( !station ) {
+			return FALSE;
+			//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Failed to find target accepting thread", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		}
+	}
+	return TRUE;
+}
+
+static void postVolume( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() < 2 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameter missing: (unique,socket)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+	VolumeObject* obj = VolumeObject::Unwrap<VolumeObject>( args[1].As<Object>() );
+	if( obj ){
+		String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		if( PostVolume( isolate, &s, obj ) ) 
+			args.GetReturnValue().Set( True(isolate) );
+		else
+			args.GetReturnValue().Set( False(isolate) );
+		
+	}
+	else {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Second parameter is not an accepted socket", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+	}
+}
+
+
+
+static void postVolumeObject( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() < 1 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameter missing: (unique)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+	
+	VolumeObject* obj = VolumeObject::Unwrap<VolumeObject>( args.This() );
+	if( obj ){
+		String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		if( PostVolume( isolate, &s, obj ) ) 
+			args.GetReturnValue().Set( True(isolate) );
+		else
+			args.GetReturnValue().Set( False(isolate) );
+	}
+	else {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Object is not an accepted socket", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+	}
+}
+
+
+static void finishPostClose( uv_handle_t *async ) {
+	struct volumeUnloadStation* unload = ( struct volumeUnloadStation* )async->data;
+	delete unload->s;
+	delete unload;
+}
+
+static void handlePostedVolume( uv_async_t* async ) {
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	struct volumeUnloadStation* unload = ( struct volumeUnloadStation* )async->data;
+	Local<Function> f = unload->cb.Get( isolate );
+	INDEX idx;
+	struct volumeTransport* trans;
+	LIST_FORALL( unload->transport, idx, struct volumeTransport*, trans ) {
+
+		class constructorSet* c = getConstructors( isolate );
+
+		Local<Function> cons = Local<Function>::New( isolate, c->volConstructor );
+		Local<Object> newThreadObject = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
+
+		Local<Value> args[] = { localStringExternal( isolate, **( unload->s ), unload->s->length() ), newThreadObject };
+		VolumeObject* obj = VolumeObject::Unwrap<VolumeObject>( newThreadObject );
+
+		obj->vol = trans->wssi->vol;
+		obj->volNative = trans->wssi->volNative;
+		obj->mountName = trans->wssi->mountName;
+		obj->fileName = trans->wssi->fileName;
+		obj->priority = trans->wssi->priority;
+		obj->fsInt = trans->wssi->fsInt;
+		obj->fsMount = trans->wssi->fsMount;
+		obj->thrown = trans->wssi->thrown = TRUE;
+
+		// just clearing this prevents deallocation of other members
+		trans->wssi->volNative = NULL;
+
+
+		MaybeLocal<Value> ml_result = f->Call( context, unload->this_.Get(isolate), 2, args );
+		if( !ml_result.IsEmpty() ) {
+			Local<Value> result = ml_result.ToLocalChecked();
+			if( result->TOBOOL(isolate) ) {
+			}
+		}
+		//lprintf( "Cleanup this event.." );
+		unload->cb.Reset();
+		unload->this_.Reset();
+		DeleteLink( &VolumeObject::transportDestinations, unload );
+		SetLink( &unload->transport, 0, NULL );
+		uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
+		break;
+	}
+}
+
+static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	class constructorSet* c = getConstructors( isolate );
+	String::Utf8Value unique( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+
+	Local<Function> f = args[1].As<Function>();
+	struct volumeUnloadStation* unloader = new struct volumeUnloadStation();
+	unloader->this_.Reset( isolate, args.This() );
+	unloader->s = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	unloader->cb.Reset( isolate, f );
+	unloader->targetThread = c->loop;
+	unloader->poster.data = unloader;
+	unloader->transport = NULL;
+	//lprintf( "New async event handler for this unloader%p", &unloader->clientSocketPoster );
+
+	uv_async_init( unloader->targetThread, &unloader->poster, handlePostedVolume );
+
+	AddLink( &VolumeObject::transportDestinations, unloader );
+}
+
+
+
 
 
 void FileObject::Emitter(const v8::FunctionCallbackInfo<Value>& args)
@@ -1600,16 +1779,16 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 VolumeObject::~VolumeObject() {
 	//lprintf( "Garbage collected Volume" );
 	if( volNative ) {
+		// if not - this thread/process has shudown			
 		if( !cleanupHappened ) {
 			Deallocate( char*, mountName );
 			Deallocate( char*, fileName );
 			//printf( "Volume object evaporated.\n" );
 			sack_unmount_filesystem( fsMount );
 			sack_vfs_unload_volume( vol );
-		} else {
-			DeleteLink( &volumes, this );
-		}
+		} 
 	}
+	DeleteLink( &volumes, this );
 }
 
 FileObject::~FileObject() {

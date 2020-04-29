@@ -234,6 +234,8 @@ public:
 	struct file_system_mounted_interface* fsMount;
 	static PLIST volumes;
 	LOGICAL cleanupHappened;
+	static PLIST transportDestinations;
+	LOGICAL thrown;
 
 public:
 
@@ -241,7 +243,6 @@ public:
 	static void Init( Local<Context> context, Local<Object> exports );
 	static void Init( Local<Object> exports, Local<Value> val, void* p );
 	VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, int priority = 2000 );
-
 	static void vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args );
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void getDirectory( const v8::FunctionCallbackInfo<Value>& args );
@@ -260,6 +261,7 @@ public:
 	static void volRekey( const v8::FunctionCallbackInfo<Value>& args );
 	static void renameFile( const v8::FunctionCallbackInfo<Value>& args );
 	static void volDecrypt( const v8::FunctionCallbackInfo<Value>& args );
+	static void flush( const v8::FunctionCallbackInfo<Value>& args );
 
 	~VolumeObject();
 };
