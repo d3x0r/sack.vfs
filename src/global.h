@@ -150,7 +150,7 @@ class constructorSet {
 	//Persistent<Function> jsonConstructor;
 	Persistent<FunctionTemplate> pTextTemplate;
 	Persistent<Function> textConstructor;
-	
+
 	Persistent<Function> addrConstructor;
 	Persistent<FunctionTemplate> addrTpl;
 	Persistent<Function> udpConstructor;
@@ -325,7 +325,7 @@ public:
 	Persistent<Function, CopyablePersistentTraits<Function>> *readCallback; //
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE readQueue;
-	
+
 public:
 
 	static void Init( Local<Object> exports );
@@ -361,7 +361,7 @@ public:
 	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE readQueue;
-	
+
 public:
 
 	static void Init( Local<Object> exports );
