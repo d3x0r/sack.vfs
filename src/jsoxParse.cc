@@ -108,7 +108,7 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 			r.parser = parser;
 			argv[0] = convertMessageToJS2( elements, &r );
 			{
-				
+
 				Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 				MaybeLocal<Value> cbResult = cb->Call( context, global, 1, argv );
 				if( cbResult.IsEmpty() ) {
@@ -236,7 +236,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 #ifdef DEBUG_REFERENCE_FOLLOW
 						lprintf( "get reference:%s", pathVal->string );
 #endif
-						
+
 						if( pathVal->value_type == JSOX_VALUE_NUMBER ) {
 							MaybeLocal<Value> mbArrayMember = refObj->Get( revive->context, (uint32_t)pathVal->result_n );
 							if( !mbArrayMember.IsEmpty() ) {
@@ -306,51 +306,67 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 		result = String::NewFromUtf8( revive->isolate, val->string, MODE, (int)val->stringLen ).ToLocalChecked();
 		if( val->className ) {
 			MaybeLocal<Value> valmethod;
+			Local<Function> protoCon;
 			Local<Function> cb;
+			Local<String> className = String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked();
+			//lprintf( "This should be where the reviver gets invoked? %.*s %.*s %.*s", val->nameLen, val->name, val->classNameLen, val->className, val->stringLen, val->string );
+
 			if( revive->parser && !revive->parser->promiseFromPrototypeMap.IsEmpty() ) {
-				
 				valmethod = revive->parser->promiseFromPrototypeMap.Get( revive->isolate )->
-					Get( revive->context
-						, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked()
-					);
+					Get( revive->context, className );
+					//lprintf( "method1? %d", valmethod.IsEmpty());
 				if( !valmethod.IsEmpty() && !valmethod.ToLocalChecked()->IsUndefined() ) {
 					struct PromiseWrapper *pw = makePromise( revive->context, revive->isolate );
 					Local<Value> args[] = { result, pw->resolve.Get( revive->isolate ), pw->reject.Get( revive->isolate ) };
 					cb = valmethod.ToLocalChecked().As<Function>();
+					//lprintf( "passing a promise...");
 					result = cb->Call( revive->context, revive->_this, 3, args ).ToLocalChecked();
 					if( result.IsEmpty() ) {
 						return Null( revive->isolate );
 					}
 				}
+				//lprintf( "Maybe it wasn't found? %d", valmethod.IsEmpty() );
 			}
-			else {
-				if( revive->parser && !revive->parser->fromPrototypeMap.IsEmpty() ) {
-					valmethod = revive->parser->fromPrototypeMap.Get( revive->isolate )->
-						Get( revive->context
-							, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked()
-						);
-					if( !valmethod.IsEmpty() && !valmethod.ToLocalChecked()->IsUndefined() )
-						cb = valmethod.ToLocalChecked().As<Function>();
+			{
+				if( revive->parser && ( valmethod.IsEmpty() || (valmethod.ToLocalChecked()->IsUndefined()) ) && !revive->parser->fromPrototypeMap.IsEmpty() ) {
+					//lprintf( "method2?");
+					valmethod = revive->parser->fromPrototypeMap.Get( revive->isolate )->Get( revive->context, className );
+					if( !valmethod.IsEmpty() && !valmethod.ToLocalChecked()->IsUndefined() ){
+						Local<Object> protoDef;
+						protoDef = valmethod.ToLocalChecked().As<Object>();
+						//lprintf( "valMethod is an object though...");
+						Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoCon", v8::NewStringType::kNormal, (int)8 ).ToLocalChecked() ).ToLocalChecked();
+						Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)2 ).ToLocalChecked() ).ToLocalChecked();
+						protoCon = p.As<Function>();
+						cb = f.As<Function>();
+						//cb = valmethod.ToLocalChecked().As<Function>();
+					}
 				}
 				if( valmethod.IsEmpty() || (valmethod.ToLocalChecked()->IsUndefined()) ) {
-					valmethod = c->fromPrototypeMap.Get( revive->isolate )->
-						Get( revive->context
-							, String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked()
-						);
-					if( !valmethod.IsEmpty() && !valmethod.ToLocalChecked()->IsUndefined() )
-						cb = valmethod.ToLocalChecked().As<Function>();
+					valmethod = c->fromPrototypeMap.Get( revive->isolate )->Get( revive->context, className );
+					//lprintf( "method3? %d %d", valmethod.IsEmpty(), valmethod.ToLocalChecked()->IsUndefined()  );
+					if( !valmethod.IsEmpty() && !valmethod.ToLocalChecked()->IsUndefined() ){
+						Local<Object> protoDef;
+						protoDef = valmethod.ToLocalChecked().As<Object>();
+						//lprintf( "valMethod is an object though...");
+						Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoCon", v8::NewStringType::kNormal, (int)8 ).ToLocalChecked() ).ToLocalChecked();
+						Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)2 ).ToLocalChecked() ).ToLocalChecked();
+						protoCon = p.As<Function>();
+						cb = f.As<Function>();
+					}
+				}
+				if( !protoCon.IsEmpty() && protoCon->IsFunction() ) {
+					//lprintf( "method4 constructor passresing associatiated string?");
+					Local<Value> args[] = { result };
+					MaybeLocal<Object> mo = protoCon.As<Function>()->NewInstance( revive->context, 1, args );
+					if( !mo.IsEmpty() )
+						result = mo.ToLocalChecked();
 				}
 
+				// this is done when this returns.
 				if( !cb.IsEmpty() && cb->IsFunction() ) {
-					Isolate *isolate = revive->isolate;
-					Local<Object> ref = Object::New( revive->isolate );
-					SET_READONLY( ref, "o", container );
-					if( name->IsNull() )
-						SET_READONLY( ref, "f", Number::New( isolate, index ) );
-					else
-						SET_READONLY( ref, "f", name );
-					Local<Value> args[] = { result, ref };
-					result = cb->Call( revive->context, result, 2, args ).ToLocalChecked();
+					//lprintf( "method4?");
+					result = cb->Call( revive->context, result, 0, NULL ).ToLocalChecked();
 				}
 			}
 		}
@@ -434,22 +450,22 @@ Local<Object> getObject( struct reviver_data *revive, struct jsox_value_containe
 			if( !mprotoDef.IsEmpty() && !mprotoDef.ToLocalChecked()->IsUndefined() ) {
 				if( !mprotoDef.ToLocalChecked()->IsObject() ) {
 					String::Utf8Value data( revive->isolate, mprotoDef.ToLocalChecked()->ToString( revive->isolate->GetCurrentContext() ).ToLocalChecked() );
-
 					lprintf( "Expected prototype definition object... failed. %s", *data );
-					
 				}
 				else {
 					protoDef = mprotoDef.ToLocalChecked().As<Object>();
 					Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoCon", v8::NewStringType::kNormal, (int)8 ).ToLocalChecked() ).ToLocalChecked();
 					Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)2 ).ToLocalChecked() ).ToLocalChecked();
-					if( f->IsFunction() )
+					if( !f.IsEmpty() && f->IsFunction() ) {
 						revive->fieldCb = f.As<Function>();
-					else
-						revive->fieldCb.Clear();
+					}
 					if( p->IsFunction() ) {
 						MaybeLocal<Object> mo = p.As<Function>()->NewInstance( revive->context, 0, NULL );
-						if( !mo.IsEmpty() )
+						if( !mo.IsEmpty() ) {
 							sub_o = mo.ToLocalChecked();
+							//lprintf( "Return constructed object...");
+						}
+						//else lprintf( "constructor might have failed.");
 					}
 				}
 			}
@@ -465,9 +481,9 @@ Local<Object> getObject( struct reviver_data *revive, struct jsox_value_containe
 					protoDef = mprotoDef.ToLocalChecked().As<Object>();
 					Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoCon", v8::NewStringType::kNormal, (int)8 ).ToLocalChecked() ).ToLocalChecked();
 					Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)2 ).ToLocalChecked() ).ToLocalChecked();
-					if( f->IsFunction() )
+					if( f->IsFunction() ) {
 						revive->fieldCb = f.As<Function>();
-					else
+					} else
 						revive->fieldCb.Clear();
 					if( p->IsFunction() ) {
 						MaybeLocal<Object> mo = p.As<Function>()->NewInstance( revive->context, 0, NULL );
@@ -512,10 +528,12 @@ static Local<Object> getArray( struct reviver_data* revive, struct jsox_value_co
 	if( val->className ) {
 		MaybeLocal<Value> mprotoDef;
 		Local<Object> protoDef;
+		//lprintf( "value has a classname: %.*s", val->classNameLen, val->className );
 		Local<String> className = String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked();
 
 		if( mprotoDef.IsEmpty() && revive->parser && !revive->parser->fromPrototypeMap.IsEmpty() ) {
 			mprotoDef = revive->parser->fromPrototypeMap.Get( revive->isolate )->Get( revive->context, className );
+			//lprintf( "protodef1?");
 			if( !mprotoDef.IsEmpty() && !mprotoDef.ToLocalChecked()->IsUndefined() ) {
 				if( !mprotoDef.ToLocalChecked()->IsObject() ) {
 					String::Utf8Value data( revive->isolate, mprotoDef.ToLocalChecked()->ToString( revive->isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -525,11 +543,13 @@ static Local<Object> getArray( struct reviver_data* revive, struct jsox_value_co
 					protoDef = mprotoDef.ToLocalChecked().As<Object>();
 					Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoCon", v8::NewStringType::kNormal, (int)8 ).ToLocalChecked() ).ToLocalChecked();
 					Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)2 ).ToLocalChecked() ).ToLocalChecked();
-					if( f->IsFunction() )
+					if( f->IsFunction() ) {
+						//lprintf( "Set protocon callback as field callback" );
 						revive->fieldCb = f.As<Function>();
-					else
+					} else
 						revive->fieldCb.Clear();
 					if( p->IsFunction() ) {
+						//lprintf( "Create a new instance of the thing...null, null");
 						MaybeLocal<Object> mo = p.As<Function>()->NewInstance( revive->context, 0, NULL );
 						if( !mo.IsEmpty() )
 							sub_o = mo.ToLocalChecked();
@@ -548,9 +568,10 @@ static Local<Object> getArray( struct reviver_data* revive, struct jsox_value_co
 					protoDef = mprotoDef.ToLocalChecked().As<Object>();
 					Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoCon", v8::NewStringType::kNormal, (int)8 ).ToLocalChecked() ).ToLocalChecked();
 					Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)2 ).ToLocalChecked() ).ToLocalChecked();
-					if( f->IsFunction() )
+					if( f->IsFunction() ) {
+						//lprintf( "Set protocon callback as field callback" );
 						revive->fieldCb = f.As<Function>();
-					else
+					} else
 						revive->fieldCb.Clear();
 					if( p->IsFunction() ) {
 						MaybeLocal<Object> mo = p.As<Function>()->NewInstance( revive->context, 0, NULL );
@@ -672,7 +693,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 			if( !revive->fieldCb.IsEmpty() && revive->fieldCb->IsFunction() ) {
 				sub_o = revive->fieldCb->Call( revive->context, sub_o, 0, NULL ).ToLocalChecked().As<Object>();
 			}
-
+			//lprintf( "Set fieldCb to Cb: %d", cb.IsEmpty() );
 			revive->fieldCb = cb;
 
 			if( revive->revive ) {
@@ -746,7 +767,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				}
 
 				buildObject( val->contains, sub_o, revive );
-				
+
 				sub_o_orig = sub_o;
 				// this is the call, 1 time after an object completes, with NULL arguments
 				// this allows a flush/entire substituion of the 'this' object.
@@ -754,6 +775,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 					sub_o = revive->fieldCb->Call( revive->context, sub_o, 0, NULL ).ToLocalChecked().As<Object>();
 				}
 
+				//lprintf( "Set protocon callback as field cb" );
 				revive->fieldCb = cb; // restore fieldCb for remainder of this object's fields.
 
 				if( revive->revive ) {
@@ -810,6 +832,7 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 			if( !revive->fieldCb.IsEmpty() && revive->fieldCb->IsFunction() ) {
 				return o = revive->fieldCb->Call( revive->context, o, 0, NULL ).ToLocalChecked().As<Object>();
 			}
+			//else lprintf( "no field callback on this type..." );
 			return o;
 		}
 		return o.As<Value>();
@@ -951,6 +974,7 @@ void makeJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {
 	class constructorSet *c = getConstructors( args.GetIsolate() );
+	//lprintf( "Setting protomap from external...");
 	c->fromPrototypeMap.Reset( args.GetIsolate(), args[0].As<Map>() );
 }
 
