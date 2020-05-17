@@ -33,7 +33,7 @@ Windows specific registry access for application settings.
 
 # Usage
 
-```
+```js
 var sack = require( 'sack.vfs' );
 var volume = sack.Volume( "MountName", "fileName.vfs" );
 var file = volume.File( "filename" );
@@ -46,7 +46,7 @@ fileOut.write( fileString );
 ## Objects
 This is the object returned from require( 'sack.vfs' );
 
-```
+```js
 vfs = {
     ComPort(comport) - access to com ports.
     JSOX - A jsox (JavaScript Object eXchange) parser. (JSON5/6 input compatible)
@@ -157,7 +157,7 @@ Two addditional strings may be applied to encrypt the volume using those two key
 
 The following methods exist on the resulting object.
 
-```
+```js
 Volume() = {
     File(filename) - open a file (returns a new object)
             (filename) 
@@ -189,7 +189,7 @@ Volume  // function has these methods.
 
  (result from vfs.Volume().File())
 
-```
+```js
 File instance methods (prototype methods)
 File = {
     read(size[, position]) - read from the file; return an ArrayBuffer with a toString method to interpret it as utf8.  Optional parameter
@@ -231,7 +231,7 @@ Interface to the SACK System Library.  This provides some views into internal in
 
 This provides an interface to receive notifications when files are created, modified or deleted.
 
-```
+```js
 
 var sack = require( "." );
 var monitor = sack.FileMonitor( <pathname>, idleDelay );
@@ -262,7 +262,7 @@ records which have a nonce cannot be re-written.  other objects can be updated w
 Oh - (one last note) Added sort to JSOX encoding so objects are always encoded in the same order ( as according to JS `if( stringA > stringB )`
 
 
-```
+```js
 
 const sack = require( "sack.vfs" );
 const objectStorage = sack.objectStorage( 'filename.data' );
@@ -309,7 +309,7 @@ There are methods on the Sqlite() function call...
 
 #### Sqlite Instance Methods 
 
-```
+```js
   var sack = require( 'sack.vfs' );
   var sqlite = sack.Sqlite( "test.db" );
   var vfsSqlite = sack.Volume( "sql Volume", "data.vfs" ).Sqlite( "test.db" );
@@ -347,7 +347,7 @@ There are methods on the Sqlite() function call...
 
 
 example sql command?
-```
+```js
     var results = sqlite.do("select * from table");  // do a sql command, if command doesn't generate data result will be true instead of an array
 
     sqlite.function( "test", (val)=>val*3 );
@@ -379,7 +379,7 @@ example sql command?
 
 ### Sqlite Usage
 
-```
+```js
 var dbName = "filename.db";
 var db = vfs.Sqlite( dbName );
 rows = db.do( "select * from sqlite_master" );
@@ -396,7 +396,7 @@ db.do returns a result set (if any).  It will be an array of objects.  Objects w
 If the name is the same as another, the columns are amalgamated into another array... Data is transported similar to JSON, with 'null', Strings,
 Numbers, and ArrayBuffer depending on the column data type.  An Integer number is used if it is an integer source type.
 
-```
+```js
 db data...
 
 table fruits  
@@ -456,7 +456,7 @@ select fruit.name as fruit,color.name as color from fruit join fruit_color on fr
 
 ```
 
-```
+```js
  console.log( db.do( 'SELECT * from fruits join fruit_color join color' );
 ```
 
@@ -464,7 +464,7 @@ select fruit.name as fruit,color.name as color from fruit join fruit_color on fr
 I don't know; maybe it's smart enough if it's the same value it doesn't exapnd it to an array.  That was what one MS SQL driver gave me back when I did a join with a ```*```... the joined column's values were put into an array instead of a simple ID... 
 That's why the names from the seaprate tables get put into the same value as an array... If the query were more like
 
-```
+```js
 SELECT fruits.fruit_id fruit_id,fruits.name fruit,color.name color,color.color_id color_id from fruits join fruit_color join color
 
 
@@ -504,7 +504,7 @@ give tmp option a value.
 
 
 This is diagnostic output in optionTest.js source... it outputs values and tests defaults and when the program restarts it may have new values in some of the keys; tests persistence of the keys (aka can it write the sqlite database)
-```
+```js
 console.log( "Initial.. no defaults...", ( tmp2 = root.go( "a" ).go( "b3" ).go( "c2" ) ).value );
 console.log( "option value is : ", tmp.value, tmp, Object.keys(tmp) );
 
@@ -534,7 +534,7 @@ function dumptree(opt, name){
 
 
 This dumps the option tables internally option4_map, option4_name, option4_value I think are the tables it uses... there is option4_blob which should store ArrayBuffer types... (provide concat operations/block update internal for retry recovery?)
-```
+```js
 function tick() {
         console.log( "dump tables: \n"
                 , db.do( "select * from option4_map" ) 
@@ -653,7 +653,7 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
 
 ### Interface
 
-```
+```js
   TLS={
      genkey( length [,password]) - Generates a keypair, returns PEM string.  Requires length parameter, allows optional password to be specified.
      pubkey( {options} ) - gets public key of a keypair or certificate
@@ -700,7 +700,7 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
 | password | if required for key |
 
 
-```
+```js
 // some examples of subject options
 TLS.genreq( { subject : { IP: "127.0.0.1" } } );
 TLS.genreq( { subject : { IP: ["127.0.0.1","192.168.1.1"] } } );
@@ -777,7 +777,7 @@ The `id()` function takes an optional parameter that is an integer.
 | 4 | K12 |
 |default| K12 |
 
-```
+```js
   // some examples
   var vfs = require( "sack.vfs" );
   var SRG = vfs.SaltyRG( salt=&gt;salt.push( new Date() ) )// callback is passed an array to add salt to.
@@ -797,7 +797,7 @@ The `id()` function takes an optional parameter that is an integer.
 
 ## WebSocket Module
 
-```
+```js
 var sack = require( "sack.vfs" );
 var client = new sack.WebSocket.Client( &lt;url&gt; [, &lt;protocol(s)&gt;] [,option object] );
 client.on( &lt;event&gt;, &lt;callback&gt; );
@@ -968,7 +968,7 @@ WebSocket connection Object
   | headers | &lt;Object&gt; field names are the names of the fields in the request header; values are the values of the fields.<BR> Client side connections may not have headers present.  |
 
 ## Network Address Object (Network.Address)
-```
+```js
 var sack = require( 'sack.vfs' );
 var address = sack.Network.Address( address string [, port] );
 
@@ -988,7 +988,7 @@ Address string can contain an optional port notation after a colon(':')
 
 ## HTTP Request Interface ( HTTP/HTTPS )
 
-```
+```js
 var sack = require( "sack.vfs" );
 var response = sack.HTTP.get( { hostname: "example.com", port: 80, method : "get", 
 var response2 = sack.HTTPS.get( { ca:&lt;extra root cert(s)&gt;, rejectUnauthorized:true/false, path:"/index.html" } );
@@ -1022,7 +1022,7 @@ specified target thread.  The handoff takes a unique string which should identif
 a pool of threads all using the same identifier may each receive one socket.  Once the accept event is fired,
 it is cleared, and the thread will have to re-post a listener to accept another socket.
 
-```
+```js
 // rough example, not sure about the onaccept interface
 
 var wss = sack.Websocket.Server( "::0" );
@@ -1042,7 +1042,7 @@ sack.Websocket.Thread.accept( "destination", (socket)=>{
 
 
 
-```
+```js
         Thread - Helper functions to transport accepted clients to other threads.
             post( accepted_socket, unique_destination_string ) - posts a socket to another thread
             accept( unique_destination_string, ( newSocket )=>{} ) - receives posted accepted sockets
@@ -1052,7 +1052,7 @@ sack.Websocket.Thread.accept( "destination", (socket)=>{
 
 ## UDP Socket Object (Network.UDP)
 
-```
+```js
 var sack = require( 'sack.vfs' );
 var udp  = sack.Network.UDP( "localhost:5555", (msg,rinfo)=>{ console.log( "got message:", msg ) } );
 var udp2 = sack.Network.UDP( {port:5556, address:"localhost", toAddress:"localhost:5555" }, (msg,rinfo)=>{ console.log( "got message:", msg ) } );
@@ -1136,7 +1136,7 @@ registry = {
      get( regPath );
 }
 
-```
+```js
 var reg = vfs.registry.set( "HKCU/something", value );
 var val = vfs.registry.get( "HKCU/something" );
 ```
@@ -1144,7 +1144,7 @@ var val = vfs.registry.get( "HKCU/something" );
 ### COM Ports
    (result from vfs.ComPort() )
  
-```
+```js
 ComObject = { 
      onRead( callback ) - sets a callback to be called with a uint8Array parameter when data arrives on the port.
      write( uint8Array ) - write buffer specfied to com port; only accepts uint8array.
@@ -1173,7 +1173,7 @@ COM port settings are kept in the default option database under
 also be used to process streaming text input and responding with triggers based on configuration.
 Things like a log analyzer can be created using this interface.
 
-```
+```js
 var sack = require( "sack.vfs" );
 var processor = sack.Config();
 processor.add( "some line with %i words", (n) => console.log( "found line param:", n ); );
@@ -1297,7 +1297,7 @@ to interact with the process.
 | suspend | bool | create task suspended.  Default: false |
 
 
-```
+```js
 var sack = require( "sack.vfs");
 
 // don't redirect/capture input/output
