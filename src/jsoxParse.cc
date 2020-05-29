@@ -184,6 +184,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 	default:
 		if( val->value_type >= JSOX_VALUE_TYPED_ARRAY && val->value_type <= JSOX_VALUE_TYPED_ARRAY_MAX ) {
 			Local<ArrayBuffer> ab;
+			//lprintf( "Typed array makeValue...%d", val->value_type - JSOX_VALUE_TYPED_ARRAY );
 			if( val->value_type < JSOX_VALUE_TYPED_ARRAY_MAX )
 				ab = ArrayBuffer::New( revive->isolate, val->string, val->stringLen, ArrayBufferCreationMode::kExternalized );
 			switch( val->value_type - JSOX_VALUE_TYPED_ARRAY ) {
@@ -302,8 +303,14 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 	case JSOX_VALUE_EMPTY:
 		result = Undefined(revive->isolate);
 		break;
+	case JSOX_VALUE_ARRAY:
+		result = Array::New( revive->isolate );
+		//lprintf( "Just an array... (unless it has a class name)");
+		//break;
+		if(0) {
 	case JSOX_VALUE_STRING:
-		result = String::NewFromUtf8( revive->isolate, val->string, MODE, (int)val->stringLen ).ToLocalChecked();
+			result = String::NewFromUtf8( revive->isolate, val->string, MODE, (int)val->stringLen ).ToLocalChecked();
+		}
 		if( val->className ) {
 			MaybeLocal<Value> valmethod;
 			Local<Function> protoCon;
@@ -376,9 +383,6 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 			result = Number::New( revive->isolate, val->result_d );
 		else
 			result = Number::New( revive->isolate, (double)val->result_n );
-		break;
-	case JSOX_VALUE_ARRAY:
-		result = Array::New( revive->isolate );
 		break;
 	case JSOX_VALUE_OBJECT:
 		if( val->className ) {
