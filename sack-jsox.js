@@ -223,6 +223,7 @@ var mapToJSOX;
 
 const keywords = {	["true"]:true,["false"]:false,["null"]:null,["NaN"]:NaN,["Infinity"]:Infinity,["undefined"]:undefined }
 var id = 1;
+sack.JSOX.stringifierActive = null;
 sack.JSOX.stringifier = function() {
 	var classes = [];
 	var useQuote = '"';
@@ -278,6 +279,11 @@ sack.JSOX.stringifier = function() {
 			//console.log( "is object encoding?", encoding.length, o, encoding );
 			return !!encoding.find( (eo,i)=>eo===o && i < (encoding.length-1) )
 		},
+		encodeObject(o) {
+			if( objectToJSOX ) 
+				return objectToJSOX.apply(o, [this]);
+			return o;
+		},
 		stringify(o,r,s) { return stringify(this, o,r,s) },
 		setQuote(q) { useQuote = q; },
 		registerToJSOX( name, prototype, f ) {
@@ -293,6 +299,7 @@ sack.JSOX.stringifier = function() {
 				localToObjectTypes.set( key, { external:true, name:name, cb:f } );
 			}
 		},
+		getReference: getReference,
 		get ignoreNonEnumerable() { return ignoreNonEnumerable; },
 		set ignoreNonEnumerable(val) { ignoreNonEnumerable = val; },
 	}
@@ -305,7 +312,7 @@ sack.JSOX.stringifier = function() {
 			fieldMap.set( here, sack.JSON.stringify(path) );
 			return undefined;
 		}
-		return field;
+		return 'ref'+field;
 	}
 
 
@@ -366,6 +373,12 @@ sack.JSOX.stringifier = function() {
 		const repType = typeof replacer;
 		gap = "";
 		indent = "";
+		const stringifier_ = sack.JSOX.stringifierActive;
+		sack.JSOX.stringifierActive = stringifier;
+		if( "object" === typeof object && stringifier_ ) {
+			var ref = stringifier_.getReference( object );
+			if( ref ) return ref;
+		}
 
 		// If the space parameter is a number, make an indent string containing that
 		// many spaces.
@@ -394,7 +407,9 @@ sack.JSOX.stringifier = function() {
 		path = [];
 		fieldMap = new WeakMap();
 
-		return str( "", {"":object} );
+		const r  = str( "", {"":object} );
+		sack.JSOX.stringifierActive = stringifier_;
+		return r;
 
 
 
@@ -518,7 +533,7 @@ sack.JSOX.stringifier = function() {
 					gap += indent;
 					if( typeof value === "object" ) {
 						v = getReference( value );
-						if( v ) return "ref"+v;
+						if( v ) return v;
 					}
 					stringifying.push( value );
 					//console.log( "add encoding item", thisNodeNameIndex, encoding.length);
