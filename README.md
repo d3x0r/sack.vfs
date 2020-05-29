@@ -181,7 +181,10 @@ Volume() = {
 Volume  // function has these methods.
     readAsString( filename ) - read a local system file as a string; used to quick-read for require( "*.[jsox/json6]")
     mapFile( filename ) - return an ArrayBuffer that is the memory mapped file on the disk.
-
+    Thread : {
+        post( uniqueId, Volume ) - post a volume to a thread by a unique identifier.
+        accept( uniqueId, cb(volume) ) - registers a callback which is called with a volume thrown from some other thread.
+    }
 
 
 ```
@@ -269,6 +272,15 @@ const objectStorage = sack.objectStorage( 'filename.data' );
 
 ```
 
+```
+sack.ObjectStorage.
+    Thread : {
+        post( uniqueId, Volume ) - post a volume to a thread by a unique identifier.
+        accept( uniqueId, cb(volume) ) - registers a callback which is called with a volume thrown from some other thread.
+    }
+```
+
+
 | Object Storage constructor arguments | Description  |
 |----|----|
 | filename | Filename to use for object storage database.  If the filename includes '@' the part before the '@' is treated as a mount name; ie. 'vfsMount@object.store'.
@@ -276,13 +288,28 @@ const objectStorage = sack.objectStorage( 'filename.data' );
 
 | Object methods | Return | Arguments | Description |
 |----------|------------|-------------|----|
+| getRoot | promise | Promise resolves with root directory |
 | put | unique ID | ( object \[, sign\] ) | Stores or updates an object into storage.  If the object was not previously stored or loaded, a unique ID for the object is returned. |
 | get | promise |  ( id ) | Returns a promise; success is passed the object loaded from storage.  Loads an object using the specified ID. |
 | map | promise |  ( id ) | Same as get, but also loads any objects of specified ID. |
 | -- | | | |
 | delete |  | (id/object) | remove object from storage... (danging references in other stored records?) |
  
+|Object Storage Directory Methods | Return | arguments | Description |
+|----|----|----|---|
+| create | FileEntry | (filename) | creates a new file, ready to be written into |
+| open | FileEntry | ( filename ) | opens a file relative to the current root |
+| folder | FileDirectory | ( pathname ) | gets a path within the current path |
+| store | none | () | saves any changes |
+| has | Boolean | ( pathanem ) | returns true/false indicating whether this directory contains the specified pathname |
 
+
+|Object Storage File Methods | Return | arguments | Description |
+|----|----|----|---|
+| open | FileDirectory | ( pathane ) | opens a file within this file as a folder |
+| getLength | Number | () | returns the current length of this file |
+| read | Promise | ( [pos,] length) | Takes optional parameters (length), or (position, length); returns a promise that resolves with an ArrayBuffer |
+| write | Promise | ( ArrayBuffer | String ) | Write this array buffer or string to the file.  Promise resolves with the id of the object written. |
 
 ## Sqlite Interface
 
@@ -1026,10 +1053,13 @@ it is cleared, and the thread will have to re-post a listener to accept another 
 // rough example, not sure about the onaccept interface
 
 var wss = sack.Websocket.Server( "::0" );
-wss.onaccept( (wsc)=>{
-	/// wsc  = websocket client
-	// sack.Websocket.Thread.post( "destination", wsc );
-        wsc.post( "destination" );
+wss.onaccept( (wsc)=>{ // wsc  = websocket client
+	
+    // This is another method - post the client to the specified destination.
+	  // sack.Websocket.Thread.post( "destination", wsc );
+
+    // tell the client to post itself to the destination.
+    wsc.post( "destination" );
 } );
 
 // --------------------------------
@@ -1038,6 +1068,7 @@ wss.onaccept( (wsc)=>{
 sack.Websocket.Thread.accept( "destination", (socket)=>{
 	// receve a posted socket
 } );
+
 ```
 
 

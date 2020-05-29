@@ -55,11 +55,11 @@ var commonClasses = [];
 				'.' + pad3(this.getMilliseconds()) +
 				dif + pad(tzo / 60) +
 				':' + pad(tzo % 60);
-		} 
+		}
 	} );
 	toProtoTypes.set( Boolean.prototype, { external:false, name:"Boolean", cb:this_value  } );
 	toProtoTypes.set( Number.prototype, { external:false, name:"Number"
-	    , cb:function(){ 
+	    , cb:function(){
 			if( isNaN(this) )  return "NaN";
 			return (isFinite(this))
 				? String(this)
@@ -132,7 +132,7 @@ var commonClasses = [];
 }
 
 sack.JSOX.defineClass = function( name, obj ) {
-			var cls; 
+			var cls;
 			var denormKeys = Object.keys(obj);
 			for( var i = 1; i < denormKeys.length; i++ ) {
 				var a, b;
@@ -165,7 +165,7 @@ sack.JSOX.registerToJSOX = function( name, prototype, f ) {
 	if( !prototype.prototype || prototype.prototype !== Object.prototype ) {
 		if( toProtoTypes.get(prototype) ) throw new Error( "Existing toJSOX has been registered for prototype" );
 		_DEBUG_STRINGIFY && console.log( "PUSH PROTOTYPE" );
-		toProtoTypes.set( prototype, { external:true, name:name||f.constructor.name, cb:f } );
+		toProtoTypes.set( prototype, { external:true, name:name||f.prototype.constructor.name, cb:f } );
 	} else {
 		var key = Object.keys( prototype ).toString();
 		if( toObjectTypes.get(key) ) throw new Error( "Existing toJSOX has been registered for object type" );
@@ -185,7 +185,7 @@ sack.JSOX.fromJSOX = function( prototypeName, o, f ) {
 	}
 	console.log("XX:", o && o.constructor);
 	var z;
-	fromProtoTypes.set(prototypeName, z = { protoCon: o && o.constructor, cb: f });
+	fromProtoTypes.set(prototypeName, z = { protoCon: o && o.prototype.constructor, cb: f });
 	console.log("zz:", z);
 }
 sack.JSOX.registerToFrom = function( prototypeName, prototype, to, from ) {
@@ -207,10 +207,10 @@ sack.JSOX.begin = function(cb) {
 	}
 	parser.fromJSOX = function( prototypeName, o, f ) {
 		if( localFromProtoTypes.get(prototypeName) ) throw new Error( "Existing fromJSOX has been registered for prototype" );
-       	
-		if (!("constructor" in o))
+
+		if(o && !("constructor" in o))
 			throw new Error("Please pass a prototype like object...");
-		localFromProtoTypes.set( prototypeName, { protoCon:o.prototype.constructor, cb:f } );
+		localFromProtoTypes.set( prototypeName, { protoCon:o && o.prototype.constructor, cb:f } );
 	}
 	parser.registerPromiseFromJSOX = function( prototypeName, o, f ) {
 		throw new Error( "Deprecated 'registerPromiseFromJSOX', pluse use fromJSOX has been registered for prototype" );
@@ -230,6 +230,14 @@ sack.JSOX.stringifier = function() {
 	var fieldMap = new WeakMap();
 	var path = [];
 	var encoding = [];
+	var encodingList = {
+		splice() {
+
+		},
+		set(n,val) {
+
+		},
+	}
 	var objectToJSOX = null;
 	var localToProtoTypes = new WeakMap();
 	localToProtoTypes.id = id++;
@@ -238,8 +246,8 @@ sack.JSOX.stringifier = function() {
 	var ignoreNonEnumerable = false;
 
 	return {
-		defineClass(name,obj) { 
-			var cls; 
+		defineClass(name,obj) {
+			var cls;
 			var denormKeys = Object.keys(obj);
 			for( var i = 1; i < denormKeys.length; i++ ) {
 				var a, b;
@@ -266,8 +274,8 @@ sack.JSOX.stringifier = function() {
 			if( cls.proto === Object.getPrototypeOf( {} ) ) cls.proto = null;
 		},
 		setDefaultObjectToJSOX( cb ) { objectToJSOX = cb },
-		isEncoding(o) { 
-			/*console.log( "is object encoding?", o, encoding ); */
+		isEncoding(o) {
+			//console.log( "is object encoding?", encoding.length, o, encoding );
 			return !!encoding.find( (eo,i)=>eo===o && i < (encoding.length-1) )
 		},
 		stringify(o,r,s) { return stringify(this, o,r,s) },
@@ -275,8 +283,8 @@ sack.JSOX.stringifier = function() {
 		registerToJSOX( name, prototype, f ) {
 			if( prototype.prototype && prototype.prototype !== Object.prototype ) {
 				if( localToProtoTypes.get(prototype) ) throw new Error( "Existing toJSOX has been registered for prototype" );
-				_DEBUG_STRINGIFY && console.log( "Adding prototype to  local objects:", prototype, localToProtoTypes );
-				localToProtoTypes.set( prototype.prototype, { external:true, name:name||f.constructor.name, cb:f } );
+				_DEBUG_STRINGIFY && console.log( "Adding prototype to  local objects:", name, prototype.prototype, localToProtoTypes );
+				localToProtoTypes.set( prototype.prototype, { external:true, name:(name===undefined)?undefined:name?name:f.prototype.constructor.name, cb:f } );
 				_DEBUG_STRINGIFY && console.log( "Can we get it back?", localToProtoTypes.get( prototype.prototype ) );
 			} else {
 				_DEBUG_STRINGIFY && console.log( "This is set by key?!" );
@@ -402,16 +410,17 @@ sack.JSOX.stringifier = function() {
 				{
 					// The value is an array. Stringify every element. Use null as a placeholder
 					// for non-JSOX values.
-			
+
 					for (let i = 0; i < this.length; i += 1) {
 						path[thisNodeNameIndex] = i;
 						partial[i] = str(i, this) || "null";
 					}
 					path.splice( thisNodeNameIndex, 1 );
+					//console.log( "remove encoding item", thisNodeNameIndex, encoding.length);
 					encoding.splice( thisNodeNameIndex, 1 );
 										// Join all of the elements together, separated with commas, and wrap them in
 					// brackets.
-			
+
 					v = ( partial.length === 0
 						? "[]"
 						: gap
@@ -426,7 +435,7 @@ sack.JSOX.stringifier = function() {
 							: "[" + partial.join(",") + "]" );
 					return v;
 				}
-			} 
+			}
 
 			function getIdentifier(s) {
 				if( !isNaN( s ) ) {
@@ -437,7 +446,7 @@ sack.JSOX.stringifier = function() {
 					|| /([0-9\-])/.test(s[0])
 					|| /((\n|\r|\t)|[ \{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + sack.JSOX.escape(s) +useQuote):s )
 			}
-			
+
 			function mapToObject(){
 				var tmp = {tmp:null};
 				var out = '{'
@@ -456,13 +465,13 @@ sack.JSOX.stringifier = function() {
 				//console.log( "out is:", out );
 				return out;
 			}
-			
+
 			if( firstRun ) {
 				arrayToJSOX.cb = doArrayToJSOX;
 				mapToJSOX.cb = mapToObject;
 				firstRun = false;
 			}
-			
+
 		// Produce a string from holder[key].
 
 			var i;          // The loop counter.
@@ -476,17 +485,17 @@ sack.JSOX.stringifier = function() {
 			var value = holder[key];
 			let isObject = (typeof value === "object");
 
-			_DEBUG_STRINGIFY 
+			_DEBUG_STRINGIFY
 				&& console.log( "Prototype lists:", localToProtoTypes.length, value && localToProtoTypes.get( Object.getPrototypeOf( value ) )
 					, value && Object.getPrototypeOf( value ), value && value.constructor.name
 					, localToProtoTypes, toProtoTypes );
-			var protoConverter = (value !== undefined && value !== null) 
-				&& ( localToProtoTypes.get( Object.getPrototypeOf( value ) ) 
-				|| toProtoTypes.get( Object.getPrototypeOf( value ) ) 
+			var protoConverter = (value !== undefined && value !== null)
+				&& ( localToProtoTypes.get( Object.getPrototypeOf( value ) )
+				|| toProtoTypes.get( Object.getPrototypeOf( value ) )
 				|| null )
-			var objectConverter = !protoConverter && (value !== undefined && value !== null) 
-				&& ( localToObjectTypes.get( Object.keys( value ).toString() ) 
-				|| toObjectTypes.get( Object.keys( value ).toString() ) 
+			var objectConverter = !protoConverter && (value !== undefined && value !== null)
+				&& ( localToObjectTypes.get( Object.keys( value ).toString() )
+				|| toObjectTypes.get( Object.keys( value ).toString() )
 				|| null )
 
 				//console.log( "VALUE:", value );
@@ -494,7 +503,7 @@ sack.JSOX.stringifier = function() {
 				//console.log( "PROTOTYPE:", toProtoTypes.get(Object.getPrototypeOf( value )) )
 			_DEBUG_STRINGIFY && console.log( "TEST()", value, protoConverter, objectConverter );
 
-			var toJSOX = ( protoConverter && protoConverter.cb ) 
+			var toJSOX = ( protoConverter && protoConverter.cb )
 			             || ( objectConverter && objectConverter.cb )
 			             || ( isObject && objectToJSOX );
 			// If the value has a toJSOX method, call it to obtain a replacement value.
@@ -512,22 +521,24 @@ sack.JSOX.stringifier = function() {
 						if( v ) return "ref"+v;
 					}
 					stringifying.push( value );
+					//console.log( "add encoding item", thisNodeNameIndex, encoding.length);
 					encoding[thisNodeNameIndex] = value;
 					let newValue = toJSOX.apply(value, [stringifier]);
 					stringifying.pop();
+					//console.log( "remove encoding item", thisNodeNameIndex, encoding.length);
 					encoding.splice( thisNodeNameIndex, 1 );
 					if( newValue === value ) {
 						//console.log( "no conversion was done..." );
 						//protoConverter = null;
 					}
-					if(_DEBUG_STRINGIFY ) { 
+					if(_DEBUG_STRINGIFY ) {
 						console.log( "translated ", newValue, value );
 					}
 					value = newValue;
 
 					gap = mind;
 				}
-			} else 
+			} else
 				if( typeof value === "object" ) {
 					v = getReference( value );
 				}
@@ -543,16 +554,16 @@ sack.JSOX.stringifier = function() {
 			// What happens next depends on the value's type.
 			switch (typeof value) {
 			case "string":
-			case "number": 
+			case "number":
 				{
 					let c = '';
 					if( key==="" ) {
 						c = classes.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"")
 						    || commonClasses.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
 					}
-					if( protoConverter && protoConverter.external ) 
+					if( protoConverter && protoConverter.external && protoConverter.proto === Object.getPrototypeOf(value) && protoConverter.name )
 						return c + protoConverter.name + value;
-					if( objectConverter && objectConverter.external ) 
+					if( objectConverter && objectConverter.external )
 						return c + objectConverter.name + value;
 					return c + value;//useQuote+JSOX.escape( value )+useQuote;
 				}
@@ -580,7 +591,7 @@ sack.JSOX.stringifier = function() {
 				}
 
 				// Make an array to hold the partial results of stringifying this object value.
-			
+
 				gap += indent;
 				partialClass = null;
 				partial = [];
@@ -594,6 +605,7 @@ sack.JSOX.stringifier = function() {
 						if (typeof rep[i] === "string") {
 							k = rep[i];
 							path[thisNodeNameIndex] = k;
+							//console.log( "set encoding item", thisNodeNameIndex, encoding.length);
 							encoding[thisNodeNameIndex] = value;
 							v = str(k, value);
 
@@ -610,6 +622,7 @@ sack.JSOX.stringifier = function() {
 						}
 					}
 					path.splice( thisNodeNameIndex, 1 );
+					//console.log( "remove encoding item", thisNodeNameIndex, encoding.length);
 					encoding.splice( thisNodeNameIndex, 1 );
 				} else {
 
@@ -628,8 +641,8 @@ sack.JSOX.stringifier = function() {
 						// sort properties into keys.
 						if (Object.prototype.hasOwnProperty.call(value, k)) {
 							var n;
-							for( n = 0; n < keys.length; n++ ) 
-								if( keys[n] > k ) {	
+							for( n = 0; n < keys.length; n++ )
+								if( keys[n] > k ) {
 									keys.splice(n,0,k );
 									break;
 								}
@@ -658,6 +671,7 @@ sack.JSOX.stringifier = function() {
 						}
 					}
 					path.splice( thisNodeNameIndex, 1 );
+					//console.log( "remove encoding item", thisNodeNameIndex, encoding.length);
 					encoding.splice( thisNodeNameIndex, 1 );
 				}
 
@@ -672,8 +686,8 @@ sack.JSOX.stringifier = function() {
 				else
 					c = '';
 				//console.log( "output:", key, c, partialClass  );
-				if( protoConverter && protoConverter.external ) 
-					if( key==="" ) 
+				if( protoConverter && protoConverter.external )
+					if( key==="" )
 						c = c + protoConverter.name;
 					else
 						c = c + '"' + protoConverter.name + '"';
@@ -697,8 +711,8 @@ sack.JSOX.stringifier = function() {
 
 	}
 
-	
-	
+
+
 }
 
 	// Converts an ArrayBuffer directly to base64, without any intermediate 'convert to string then
@@ -707,21 +721,21 @@ sack.JSOX.stringifier = function() {
 	// doesn't have to be reversable....
 	const encodings = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 	const decodings = { '=':-1 };
-	
+
 	for( var x = 0; x < 256; x++ ) {
 		if( x < 64 ) {
 			decodings[encodings[x]] = x;
 		}
 	}
-	
+
 	function base64ArrayBuffer(arrayBuffer) {
 		var base64    = ''
-	
+
 		var bytes	 = new Uint8Array(arrayBuffer)
 		var byteLength    = bytes.byteLength
 		var byteRemainder = byteLength % 3
 		var mainLength    = byteLength - byteRemainder
-	
+
 		var a, b, c, d
 		var chunk
 		//throw "who's using this?"
@@ -730,17 +744,17 @@ sack.JSOX.stringifier = function() {
 		for (var i = 0; i < mainLength; i = i + 3) {
 			// Combine the three bytes into a single integer
 			chunk = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2]
-	
+
 			// Use bitmasks to extract 6-bit segments from the triplet
 			a = (chunk & 16515072) >> 18 // 16515072 = (2^6 - 1) << 18
 			b = (chunk & 258048)   >> 12 // 258048   = (2^6 - 1) << 12
 			c = (chunk & 4032)     >>  6 // 4032     = (2^6 - 1) << 6
 			d = chunk & 63               // 63       = 2^6 - 1
-	
+
 			// Convert the raw binary segments to the appropriate ASCII encoding
 			base64 += encodings[a] + encodings[b] + encodings[c] + encodings[d]
 		}
-	
+
 		// Deal with the remaining bytes and padding
 		if (byteRemainder == 1) {
 			chunk = bytes[mainLength]
@@ -759,10 +773,10 @@ sack.JSOX.stringifier = function() {
 		//console.log( "dup?", base64)
 		return base64
 	}
-	
-	
+
+
 	function DecodeBase64( buf )
-	{	
+	{
 		//console.log( "length:", buf.length, (((buf.length+3)/4)|0), (buf[buf.length-1]==='='?1:0), (buf[buf.length-2]==='='?1:0) )
 		var ab = new ArrayBuffer( (3*(((buf.length+3)>>2)|0)) - ((buf[buf.length-1]==='='?1:0) + (buf[buf.length-2]==='='?1:0)) );
 		//console.log( "LENGHT:", (3*(((buf.length+3)/4)|0)) - ((buf[buf.length-1]==='='?1:0) + (buf[buf.length-2]==='='?1:0)) );
@@ -776,7 +790,7 @@ sack.JSOX.stringifier = function() {
 				var index1 = decodings[buf[n*4+1]];
 				var index2 = decodings[buf[n*4+2]];
 				var index3 = decodings[buf[n*4+3]];
-				
+
 				out[n*3+0] = (( index0 ) << 2 | ( index1 ) >> 4);
 				if( index2 >= 0 )
 					out[n*3+1] = (( index1 ) << 4 | ( ( ( index2 ) >> 2 ) & 0x0f ));
@@ -786,14 +800,14 @@ sack.JSOX.stringifier = function() {
 		}
 		return ab;
 	}
-	
-	
+
+
 sack.JSOX.stringify = function( object, replacer, space ) {
 	var stringifier = sack.JSOX.stringifier();
 	return stringifier.stringify( object, replacer, space );
 }
 
-const nonIdent = 
+const nonIdent =
 [ [ 0,264,[ 0xffd9ff,0xff6aff,0x1fc00,0x380000,0x0,0xfffff8,0xffffff,0x7fffff,0x800000,0x0,0x80 ] ],
 ]/*
 [ 384,768,[ 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x3c00,0xe0fffc,0xffffaf ] ],
