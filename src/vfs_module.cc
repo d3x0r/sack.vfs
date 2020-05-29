@@ -249,6 +249,8 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 		//LoadTranslationDataEx( "^/strings.dat" );
 		LoadTranslationDataEx( "@/../../strings.json" );
 		runOnce = 0;
+	}else {
+		GetThisThreadID();
 	}
 	//else
 		//lprintf( "Init Exports for this new object?");
