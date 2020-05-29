@@ -69,6 +69,13 @@ function objectStorageContainer(o,opts) {
 	//console.log( "Container:", this );
 }
 
+objectStorageContainer.prototype.getStore = function() {
+	return store;
+}
+objectStorageContainer.getStore = function() {
+	return store;
+}
+
 objectStorageContainer.prototype.map = async function( opts ) {
 	const pending = this.dangling;
 	if( pending && pending.length )  {
@@ -177,8 +184,10 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 			//console.log( "Object stored independantly... RECOVERED:", exist, obj.encoding );
 			if( obj.encoding )
 				return this;
-			else
+			else {
+				//console.log( "Why is this an ~or and not ~os?");
 				return '~or"'+exist+'"';
+			}
 		} else {
 			if( this instanceof objectStorageContainer ) {
 				//console.log( "THIS SHOULD ALREADY BE IN THE STORAGE!", this, newStorage.stored.get( this.data ) );
@@ -198,6 +207,7 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 	function setupStringifier( stringifier ) {
 		stringifier.setDefaultObjectToJSOX( objectToJSOX );
 		stringifier.registerToJSOX( "~os", objectStorageContainer, objectToJSOX );
+		stringifier.store = newStorage;
 		for( let f of newStorage.encoders )
 			stringifier.registerToJSOX( f.tag, f.p, f.f ) ;
 
@@ -331,6 +341,7 @@ _objectStorage.prototype.addDecoders = function(encoderList) {
 // this hides the original 'put'
 _objectStorage.prototype.put = function( obj, opts ) {
 	const this_ = this;
+
 	return new Promise( function(res,rej){
 
 		var container = this_.stored.get( obj );
@@ -466,21 +477,25 @@ _objectStorage.prototype.get = function( opts ) {
 	var reviving = null;
 	var pendingRef = null;
 	function objectStorageContainerRef(s) {
-		console.log( "Container ref:", s );
+		//console.log( "Container ref:", s );
 		//pendingRef = this;
 		try {
-	this.d = {id:s,p:null,res:null,rej:null,i:this,o:null,f:null};
-	this.d.p = new Promise( (res,rej)=>{
-		this.d.res = res;
-		this.d.rej = rej;
-	})
-		dangling.push( this );
-		objectRefs++;
+			const existing = os.cachedContainer.get(s);
+			this.d = {id:s,p:null,res:null,rej:null,i:this,o:null,f:null};
+			if( !existing ) {
+				this.d.p = new Promise( (res,rej)=>{
+					this.d.res = res;
+					this.d.rej = rej;
+				})
+				dangling.push( this );
+				objectRefs++;
+			} else
+				this.d.p = Promise.resolve( existing.data );
 		} catch(err) { console.log( "Init failed:", err)}
 	}
 
 	function reviveContainer( field, val ) {
-		console.trace( "Revival of a container's field:", this, field, val );
+		//console.trace( "Revival of a container's field:", this, field, val );
 		if( !field ) {
 			// finished.
 			if( objectRefs ) {
@@ -514,7 +529,7 @@ _objectStorage.prototype.get = function( opts ) {
 	}
 
 	function reviveContainerRef( field, val ) {
-		console.trace( "Revival of a container reference:", this, field, val );
+		//console.trace( "Revival of a container reference:", this, field, val );
 		if( !field ) {
 			// finished.
 			return this.d.p;
@@ -529,7 +544,7 @@ _objectStorage.prototype.get = function( opts ) {
 	var parser = sack.JSOX.begin( parserObject );
 	parser.fromJSOX( "~os", this.objectStorageContainer, reviveContainer ); // I don't know ahead of time which this is.
 	parser.fromJSOX( "~or", objectStorageContainerRef, reviveContainerRef ); // I don't know ahead of time which this is.
-	console.log( "this has no decoders? ", this );
+	//console.log( "this has no decoders? ", this );
 	if( this.decoders )
 		this.decoders.forEach( f=>parser.fromJSOX( f.tag, f.p, f.f ) );
 	// allow extra to override default.
@@ -545,6 +560,7 @@ _objectStorage.prototype.get = function( opts ) {
 	var p = new Promise( function(res,rej) {
 		resolve = res;  reject = rej;
 		//console.log( "doing read? (decodes json using a parser...", opts, parser, os );
+		try {
 		os.read( opts.id
 			, parser, (obj)=>{
 				// with a new parser, only a partial decode before revive again...
@@ -569,6 +585,9 @@ _objectStorage.prototype.get = function( opts ) {
 				res(obj)
 			}
 		} );
+		}catch(err) {
+			rej(err);
+		}
 	} );
 	return p;
 }
@@ -625,7 +644,7 @@ fileEntry.prototype.write = function( o ) {
 		return Promise.resolve( this.id );
 
 	} else if( o instanceof ArrayBuffer ) {
-		console.log( "Write raw buffer" );
+		//console.log( "Write raw buffer" );
 		this.folder.volume.writeRaw( this.id, o );
 		return Promise.resolve( this.id );
 
