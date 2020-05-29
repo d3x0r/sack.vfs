@@ -636,13 +636,24 @@ var object2 = vfs.JSON6.parse(string [, reviver]);
 
 ```
 
+### Active Stringifier 
+
+```
+sack.JSOX.stringifierActive = <stringifier that is currently being run>
+```
+
 ### Stringifier reference
 
 |Stringifier method | parameters | Description |
 |-------|------|-----|
+|encodeObject | (o) | Call the default object to JSOX method (if there is one); this allows specific types to be resolved as lower level objects |
+|getReference | (object or array) | Returns a string reference path for the object (if there is one) |
 |stringify | (value[,replacer[,space]] ) | converts object to JSOX attempting to match objects to classes defined in stringifier.  [stringify][json-stringify] |
+|setDefaultObjectToJSOX| (cb) | sets the function to call when an otherwise unknown object class is encoded |
+|isEncoding | (object) | returns whether the current object is being encoded
 |setQuote | ( quote ) | the argument passed is used as the default quote for strings and identifiers as required. |
 |defineClass | ( name, object ) | Defines a class using name 'name' and the fields in 'object'.  This allows defining for some pre-existing object; it also uses the prototype to test (if not Object), otherwise it matches based on they Object.keys() array. |
+| ignoreNonEnumerable | setter/getter | allows controlling whether to include fields that have been marked non-enumerable |
 
 
 
