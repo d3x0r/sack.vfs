@@ -817,9 +817,11 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 
 		if( file ) {
 			String::Utf8Value data( isolate,  args[1] );
-			//lprintf( "Write to %s\nWrite Data%s", ( *fName ), *data );
+			//char *tmp;
+			//lprintf( "Write %d to %s\nWrite Data %s", data.length(), ( *fName ), tmp = jsox_escape_string_length( *data, data.length(), NULL ) );
+			//Release( tmp );
+			objStore::sack_vfs_os_truncate( file ); // allow new content to allocate in large blocks?
 			objStore::sack_vfs_os_write( file, *data, data.length() );
-			objStore::sack_vfs_os_truncate( file );
 			objStore::sack_vfs_os_close( file );
 			sack_vfs_os_polish_volume( vol->vol );
 			//sack_vfs_os_flush_volume( vol->vol, FALSE );
@@ -1011,6 +1013,14 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					jsox_dispose_message( &data );
 					if( result == 1 )
 						break;
+				}
+				if( result < 0 ) {
+					PTEXT error = jsox_parse_get_error( parser );
+					if( error )
+						isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+					else
+						isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "No Error Text" STRSYM(__LINE__), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+					LineRelease( error );
 				}
 			}
 			Deallocate( char *, buf );
