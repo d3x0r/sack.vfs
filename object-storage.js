@@ -510,10 +510,10 @@ _objectStorage.prototype.get = function( opts ) {
 			{
 				const this_ = this;
 				// new value isn't anything special; just set the value.
-				console.log( "This sort of thing... val is just a thing - like a key part identifier...; but that should have been a container.");
+				//console.log( "This sort of thing... val is just a thing - like a key part identifier...; but that should have been a container.");
 				if( val instanceof Promise ) {
 					val.then( (val)=>{
-						console.log( "And then later, the object's value is correct?", val,  this_);
+						//console.log( "And then later, the object's value is correct?", val,  this_);
 						this_.data[field] = val;
 					})
 					return val;
@@ -579,7 +579,6 @@ _objectStorage.prototype.get = function( opts ) {
 				Object.defineProperty( obj, "id", { value:opts.id } );
 				os.stored.set( obj.data, obj.id );
 				os.cachedContainer.set( obj.id, obj );
-				console.log( "and resolve container content")
 				res(obj.data);
 			} else {
 				res(obj)
@@ -596,8 +595,6 @@ _objectStorage.prototype.get = function( opts ) {
 
 
 function fileEntry( d ) {
-	console.log( "New file Entry... ");
-
 	this.name = null;
 	this.id = null; // object identifier of this.
 	this.contents = null;
@@ -686,11 +683,9 @@ function fileDirectory( v, id ) {
 	this.files = [];
 	// cache chanes instead of flushing every time?
 	//Object.defineProperty( this, "changed", {value:false, writable:true} );
-	console.trace( "New file Directory... ");
 	try {
-	if( v ) Object.defineProperty( this, "volume", {value:v} );
-	//console.log( "This already has an ID?", this );
-	if( id ) Object.defineProperty( this, "id", { value:id } );
+		if( v ) Object.defineProperty( this, "volume", {value:v} );
+		if( id ) Object.defineProperty( this, "id", { value:id } );
 	} catch(err) { console.log( "error:", err);}
 }
 
