@@ -1,5 +1,6 @@
 #if defined( _MSC_VER )
-#  pragma warning( disable: 4251 4275 )
+#  pragma warning( disable: 4251 4275 26495)
+// C26495 - uninitialized member; yes; It will be.
 #endif
 
 #include <node.h>
@@ -458,6 +459,7 @@ typedef struct arrayBufferHolder ARRAY_BUFFER_HOLDER, *PARRAY_BUFFER_HOLDER;
 #define MAXARRAY_BUFFER_HOLDERSPERSET 512
 DeclareSet( ARRAY_BUFFER_HOLDER );
 
+void releaseBufferBackingStore( void* data, size_t length, void* deleter_data );
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info );
 Local<String> localString( Isolate *isolate, const char *data, int len = -1 );
 Local<String> localStringExternal( Isolate *isolate, const char *data, int len = -1, const char *real_root = NULL );

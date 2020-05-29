@@ -730,19 +730,23 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 				}
 				break;
 			case WS_EVENT_READ:
-				size_t length;
 				if( !myself->messageCallback.IsEmpty() ) {
 					if( eventMessage->binary ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+						ab = ArrayBuffer::New( isolate, bs );
+#else
 						ab =
 							ArrayBuffer::New( isolate,
 							(void*)eventMessage->buf,
 								length = eventMessage->buflen );
-						argv[0] = ab;
 
 						PARRAY_BUFFER_HOLDER holder = GetHolder();
 						holder->o.Reset( isolate, ab );
 						holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 						holder->buffer = eventMessage->buf;
+#endif
+						argv[0] = ab;
 
 						myself->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
 					}
@@ -800,11 +804,18 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				if( !myself->errorLowCallback.IsEmpty() ) {
 					argv[0] = Integer::New( isolate, eventMessage->data.error.error );
 					argv[1] = makeSocket( isolate, eventMessage->pc );
+					if( eventMessage->data.error.buffer ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (void*)eventMessage->data.error.buffer,
+							eventMessage->data.error.buflen, releaseBufferBackingStore, NULL );
+						argv[2] = ArrayBuffer::New( isolate, bs );
+#else
 					if( eventMessage->data.error.buffer )
 						argv[2] = ArrayBuffer::New( isolate,
 						(void*)eventMessage->data.error.buffer,
 							eventMessage->data.error.buflen );
-					else
+#endif
+					} else
 						argv[2] = Null( isolate );
 					myself->errorLowCallback.Get( isolate )->Call( context, myself->_this.Get( isolate ), 3, argv );
 
@@ -1003,19 +1014,22 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 				}
 				break;
 			case WS_EVENT_READ:
-				size_t length;
 				if( eventMessage->binary ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+					ab = ArrayBuffer::New( isolate,bs );
+#else
 					ab =
 						ArrayBuffer::New( isolate,
 						(void*)eventMessage->buf,
-							length = eventMessage->buflen );
-					argv[0] = ab;
+							eventMessage->buflen );
 
 					PARRAY_BUFFER_HOLDER holder = GetHolder();
 					holder->o.Reset( isolate, ab );
 					holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 					holder->buffer = eventMessage->buf;
-
+#endif
+					argv[0] = ab;
 					wsc->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
 				}
 				else {
@@ -1667,13 +1681,21 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			Local<ArrayBuffer> bodybuf = body->Buffer();
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", body->ByteLength() );
 			vtprintf( obj->pvtResult, "\r\n" );
+#if ( NODE_MAJOR_VERSION >= 14 )
+			VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetBackingStore()->Data(), bodybuf->ByteLength() );
+#else
 			VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
+#endif
 		}
 		else if( args[0]->IsArrayBuffer() ) {
 			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", ab->ByteLength() );
 			vtprintf( obj->pvtResult, "\r\n" );
+#if ( NODE_MAJOR_VERSION >= 14 )
+			VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 			VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 		} else if( args[0]->IsObject() ) {
 			class constructorSet *c = getConstructors( isolate );
 			Local<FunctionTemplate> wrapper_tpl = c->fileTpl.Get( isolate );
@@ -2420,14 +2442,26 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 	if( args[0]->IsTypedArray() ) {
 		Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
 		Local<ArrayBuffer> ab = ta->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 	} else if( args[0]->IsUint8Array() ) {
 		Local<Uint8Array> body = args[0].As<Uint8Array>();
 		Local<ArrayBuffer> ab = body->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 	} else if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 	}
 	else if( args[0]->IsString() ) {
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -2853,10 +2887,18 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 	if( args[0]->IsTypedArray() ) {
 		Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
 		Local<ArrayBuffer> ab = ta->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 	} else if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 	}
 	else if( args[0]->IsString() ) {
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );

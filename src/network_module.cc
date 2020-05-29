@@ -273,13 +273,16 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 			case UDP_EVENT_READ:
 				argv[1] = ::getAddressBySA( isolate, eventMessage->from );
 				if( !obj->readStrings ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+					ab = ArrayBuffer::New( isolate, bs );
+#else
 					ab = ArrayBuffer::New( isolate, (POINTER)eventMessage->buf, eventMessage->buflen );
-
 					PARRAY_BUFFER_HOLDER holder = GetHolder();
 					holder->o.Reset( isolate, ab );
 					holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 					holder->buffer = (void*)eventMessage->buf;
-
+#endif
 					argv[0] = ab;
 					obj->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
@@ -563,7 +566,11 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 	}
 	if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+		SendUDPEx( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength(), dest );
+#else
 		SendUDPEx( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
+#endif
 	}
 	else if( args[0]->IsString() ) {
 		String::Utf8Value buf( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );

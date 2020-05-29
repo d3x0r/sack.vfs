@@ -185,8 +185,15 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 		if( val->value_type >= JSOX_VALUE_TYPED_ARRAY && val->value_type <= JSOX_VALUE_TYPED_ARRAY_MAX ) {
 			Local<ArrayBuffer> ab;
 			//lprintf( "Typed array makeValue...%d", val->value_type - JSOX_VALUE_TYPED_ARRAY );
-			if( val->value_type < JSOX_VALUE_TYPED_ARRAY_MAX )
+			if( val->value_type < JSOX_VALUE_TYPED_ARRAY_MAX ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( revive->isolate, val->stringLen );
+				memcpy( bs->Data(), val->string, val->stringLen );
+				ab = ArrayBuffer::New( revive->isolate, bs );
+#else
 				ab = ArrayBuffer::New( revive->isolate, val->string, val->stringLen, ArrayBufferCreationMode::kExternalized );
+#endif
+			}
 			switch( val->value_type - JSOX_VALUE_TYPED_ARRAY ) {
 			case 0:
 				result = ab;
@@ -937,7 +944,11 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 	if( args[0]->IsArrayBuffer() ) {
 		tmp = NULL;
 		ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+		msg = (const char*)ab->GetBackingStore()->Data();
+#else
 		msg = (const char*)ab->GetContents().Data();
+#endif
 		len = ab->ByteLength();
 	}
 	else {
