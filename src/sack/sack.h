@@ -10156,7 +10156,7 @@ struct rt_init
 #ifdef __MANUAL_PRELOAD__
 #define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)		__attribute__((section(DEADSTART_SECTION))) __attribute__((used))	 =	 {0,0,pr INIT_PADDING, __LINE__, name PASS_FILENAME	, TOSTR(name) JUNKINIT(name)} ;	 void name(void);	 void pastejunk(registerStartup,name)(void) __attribute__((constructor));	 void pastejunk(registerStartup,name)(void) {	 RegisterPriorityStartupProc(name,TOSTR(name),pr,NULL DBG_SRC); }	 void name(void)
 #else
-#if defined( _WIN32 ) && defined( __GNUC__ )
+#if defined( _WIN32 ) || defined( __GNUC__ )
 #  define HIDDEN_VISIBILITY
 #else
 #  define HIDDEN_VISIBILITY  __attribute__((visibility("hidden")))
