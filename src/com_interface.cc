@@ -60,15 +60,16 @@ static void asyncmsg( uv_async_t* handle ) {
 		struct msgbuf *msg;
 		while( msg = (struct msgbuf *)DequeLink( &myself->readQueue ) ) {
 			size_t length;
+#if ( NODE_MAJOR_VERSION >= 14 )
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( msg->buf, length=msg->buflen, releaseBufferBackingStore, NULL );
+			Local<ArrayBuffer> ab = ArrayBuffer::New( isolate, bs );
+#else
 			Local<ArrayBuffer> ab =
 				ArrayBuffer::New( isolate,
 											  msg->buf,
 											  length = msg->buflen );
 
-			//PARRAY_BUFFER_HOLDER holder = GetHolder();
-			//holder->o.Reset( isolate, ab );
-			//holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-			//holder->buffer = msg->buf;
+#endif
 
 			Local<Uint8Array> ui = Uint8Array::New( ab, 0, length );
 
@@ -193,8 +194,13 @@ void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else if (args[0]->IsUint8Array()) {
 		Local<Uint8Array> myarr = args[0].As<Uint8Array>();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		std::shared_ptr<BackingStore> ab_c = myarr->Buffer()->GetBackingStore();
+		char *buf = static_cast<char*>(ab_c->Data()) + myarr->ByteOffset();
+#else
 		ArrayBuffer::Contents ab_c = myarr->Buffer()->GetContents();
 		char *buf = static_cast<char*>(ab_c.Data()) + myarr->ByteOffset();
+#endif
 		//LogBinary( buf, myarr->Length() );
 		SackWriteComm( com->handle, buf, (int)myarr->Length() );
 	}

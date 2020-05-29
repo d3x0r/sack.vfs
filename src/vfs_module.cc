@@ -200,8 +200,6 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 static void CleanupThreadResources( void* arg_ ) {
 	class constructorSet *c = (class constructorSet*)arg_;
 	//lprintf( "Shutdown called" );
-	delete c;
-
 	{
 		VolumeObject* vol;
 		INDEX idx;
@@ -211,6 +209,7 @@ static void CleanupThreadResources( void* arg_ ) {
 	}
 
 	DeleteLink( &vl.constructors, c );
+	delete c;
 	if( !GetLinkCount( vl.constructors ) )
 		moduleExit( NULL );
 	//lprintf( "Which things belonged to this thread?, is it isolate?" );
@@ -460,7 +459,7 @@ void VolumeObject::volRekey( const v8::FunctionCallbackInfo<Value>& args ){
 			key2 = new String::Utf8Value( USE_ISOLATE( isolate ) args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		else
 			key2 = NULL;
-		sack_vfs_encrypt_volume( vol->vol, 0, *key1[0], *key2[0] );
+		sack_vfs_encrypt_volume( vol->vol, 0, *key1[0], key2?*key2[0]:NULL );
 		delete key1;
 		if( key2 ) delete key2;
 	}
@@ -579,7 +578,11 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 	char *output = NewArray( char, ab->ByteLength() );
 	int out_index = 0;
 	{
+#if ( NODE_MAJOR_VERSION >= 14 )
+		const char *input = (const char*)ab->GetBackingStore()->Data();
+#else
 		const char *input = (const char*)ab->GetContents().Data();
+#endif
 		size_t index = 0;
 		TEXTRUNE rune;
 		size_t len = ab->ByteLength();
@@ -798,6 +801,12 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 	}
 
+void releaseBufferBackingStore( void* data, size_t length, void* deleter_data ) {
+	(void)length;
+	(void)deleter_data;;
+	Deallocate( void*, data );
+}
+
 
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 	PARRAY_BUFFER_HOLDER holder = info.GetParameter();
@@ -845,11 +854,16 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 						String::NewFromUtf8( isolate, TranslateText( "Short read; incomplete data." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 					return;
 				}
+#if ( NODE_MAJOR_VERSION >= 14 )
+				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
+				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs);
+#else
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
 				PARRAY_BUFFER_HOLDER holder = GetHolder();
 				holder->o.Reset( isolate, arrayBuffer );
 				holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 				holder->buffer = buf;
+#endif
 
 				NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
 				args.GetReturnValue().Set( arrayBuffer );
@@ -867,12 +881,17 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 					uint8_t *buf = NewArray( uint8_t, len );
 					len = sack_fread( buf, len, 1, file );
 
+#if ( NODE_MAJOR_VERSION >= 14 )
+					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
+					Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
+
+#else
 					Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
 					PARRAY_BUFFER_HOLDER holder = GetHolder();
 					holder->o.Reset( isolate, arrayBuffer );
 					holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 					holder->buffer = buf;
-					
+#endif
 					NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
 					args.GetReturnValue().Set( arrayBuffer );
 				}
@@ -970,12 +989,17 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		size_t len = 0;
 		POINTER data = OpenSpace( NULL, *fName, &len );
 		if( data && len ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( data, len, releaseBufferBackingStore, NULL );
+			MaybeLocal<ArrayBuffer> _arrayBuffer = ArrayBuffer::New( isolate, bs );
+#else
 			MaybeLocal<ArrayBuffer> _arrayBuffer = ArrayBuffer::New( isolate, data, len );
-			Local<ArrayBuffer> arrayBuffer = _arrayBuffer.ToLocalChecked();
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->ab.Reset( isolate, arrayBuffer );
 			holder->ab.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 			holder->buffer = data;
+#endif
+			Local<ArrayBuffer> arrayBuffer = _arrayBuffer.ToLocalChecked();
 
 			args.GetReturnValue().Set( arrayBuffer );
 			if( args.Length() > 1 && args[1]->IsFunction() ) {
@@ -1018,12 +1042,20 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			size_t length;
 			if( type == 1 ) {
 				Local<ArrayBuffer> myarr = args[1].As<ArrayBuffer>();
+#if ( NODE_MAJOR_VERSION >= 14 )
+				buf = (uint8_t*)myarr->GetBackingStore()->Data();
+#else
 				buf = (uint8_t*)myarr->GetContents().Data();
+#endif
 				length = myarr->ByteLength();
 			} else if( type == 2 ) {
 				Local<Uint8Array> _myarr = args[1].As<Uint8Array>();
 				Local<ArrayBuffer> buffer = _myarr->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+				buf = (uint8_t*)buffer->GetBackingStore()->Data();
+#else
 				buf = (uint8_t*)buffer->GetContents().Data();
+#endif
 				length = buffer->ByteLength();
 			}
 
@@ -1468,11 +1500,16 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 			}
 		}
 		{
+#if ( NODE_MAJOR_VERSION >= 14 )
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( file->buf, file->size, releaseBufferBackingStore, NULL );
+			Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
+#else
 			Local<Object> arrayBuffer = ArrayBuffer::New( isolate, file->buf, file->size );
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->o.Reset( isolate, arrayBuffer );
 			holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 			holder->buffer = file->buf;
+#endif
 
 			NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
 			args.GetReturnValue().Set( arrayBuffer );
@@ -1568,6 +1605,13 @@ void FileObject::writeFile(const v8::FunctionCallbackInfo<Value>& args) {
 				sack_fwrite( *data, data.length(), 1, file->cfile );
 		} else if( args[0]->IsArrayBuffer() ) {
 			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+			std::shared_ptr<BackingStore> contents = ab->GetBackingStore();
+			if( file->vol->volNative )
+				sack_vfs_write( file->file, (char*)contents->Data(), contents->ByteLength() );
+			else
+				sack_fwrite( contents->Data(), contents->ByteLength(), 1, file->cfile );
+#else
 			ArrayBuffer::Contents contents = ab->GetContents();
 			//file->buf = (char*)contents.Data();
 			//file->size = contents.ByteLength();
@@ -1575,6 +1619,7 @@ void FileObject::writeFile(const v8::FunctionCallbackInfo<Value>& args) {
 				sack_vfs_write( file->file, (char*)contents.Data(), contents.ByteLength() );
 			else
 				sack_fwrite( contents.Data(), contents.ByteLength(), 1, file->cfile );
+#endif
 		}
 	}
 }
@@ -1613,6 +1658,14 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 			}
 		} else if( args[0]->IsArrayBuffer() ) {
 			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+			std::shared_ptr<BackingStore> contents = ab->GetBackingStore();
+			lprintf( "Really should complain about binary data being passed to writeLine." );
+			if( file->vol->volNative )
+				sack_vfs_write( file->file, (char*)contents->Data(), contents->ByteLength() );
+			else
+				sack_fwrite( contents->Data(), contents->ByteLength(), 1, file->cfile );
+#else
 			ArrayBuffer::Contents contents = ab->GetContents();
 			//file->buf = (char*)contents.Data();
 			//file->size = contents.ByteLength();
@@ -1621,6 +1674,7 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 				sack_vfs_write( file->file, (char*)contents.Data(), contents.ByteLength() );
 			else
 				sack_fwrite( contents.Data(), contents.ByteLength(), 1, file->cfile );
+#endif
 		}
 	}
 

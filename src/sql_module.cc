@@ -451,7 +451,11 @@ static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> a
 	}
 	else if( arg->IsArrayBuffer() ) {
 		Local<ArrayBuffer> myarr = arg.As<ArrayBuffer>();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		val.string = (char*)myarr->GetBackingStore()->Data();
+#else
 		val.string = (char*)myarr->GetContents().Data();
+#endif
 		val.stringLen = myarr->ByteLength();
 		val.value_type = JSOX_VALUE_TYPED_ARRAY;
 		AddDataItem( pdlParams, &val );
@@ -459,7 +463,11 @@ static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> a
 	else if( arg->IsUint8Array() ) {
 		Local<Uint8Array> _myarr = arg.As<Uint8Array>();
 		Local<ArrayBuffer> buffer = _myarr->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		val.string = (char*)buffer->GetBackingStore()->Data();
+#else
 		val.string = (char*)buffer->GetContents().Data();
+#endif
 		val.stringLen = buffer->ByteLength();
 		val.value_type = JSOX_VALUE_TYPED_ARRAY;
 		AddDataItem( pdlParams, &val );
@@ -467,7 +475,11 @@ static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> a
 	else if( arg->IsTypedArray() ) {
 		Local<TypedArray> _myarr = arg.As<TypedArray>();
 		Local<ArrayBuffer> buffer = _myarr->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		val.string = (char*)buffer->GetBackingStore()->Data();
+#else
 		val.string = (char*)buffer->GetContents().Data();
+#endif
 		val.stringLen = buffer->ByteLength();
 		val.value_type = JSOX_VALUE_TYPED_ARRAY;
 		AddDataItem( pdlParams, &val );
@@ -493,7 +505,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
-	PTEXT statement;
+	PTEXT statement= NULL;
 	PDATALIST pdlParams = NULL;
 
 	if( args.Length() == 1 ) {
@@ -774,6 +786,13 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 						case JSOX_VALUE_TYPED_ARRAY:
 							//lprintf( "Should result with a binary thing" );
 
+#if ( NODE_MAJOR_VERSION >= 14 )
+							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( Hold( jsval->string ), jsval->stringLen, releaseBufferBackingStore, NULL );
+							Local<Object> ab = ArrayBuffer::New( isolate, bs );
+							//Local<ArrayBuffer> ab =
+							//	ArrayBuffer::New( isolate, (char*)Hold( jsval->string ), jsval->stringLen );
+
+#else
 							Local<ArrayBuffer> ab =
 								ArrayBuffer::New( isolate, (char*)Hold( jsval->string ), jsval->stringLen );
 
@@ -782,6 +801,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 							holder->buffer = jsval->string;
 							jsval->string = NULL; // steal this buffer, don't let DB release it.
+#endif
 
 							val = ab;
 							break;
@@ -1412,11 +1432,17 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 				PSSQL_GetSqliteValueBlob( argv[n], &data, &len );
 				_data = NewArray( char, len );
 				memcpy( _data, data, len );
+
+#if ( NODE_MAJOR_VERSION >= 14 )
+				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( _data, len, releaseBufferBackingStore, NULL );
+				Local<Object> arrayBuffer = ArrayBuffer::New( userData->isolate, bs );
+#else
 				Local<Object> arrayBuffer = ArrayBuffer::New( userData->isolate, _data, len );
 				PARRAY_BUFFER_HOLDER holder = GetHolder();
 				holder->o.Reset( userData->isolate, arrayBuffer );
 				holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 				holder->buffer = _data;
+#endif
 				break;
 			}
 			case 5:
@@ -1440,12 +1466,20 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 		size_t length;
 		if( type == 1 ) {
 			Local<ArrayBuffer> myarr = str.As<ArrayBuffer>();
+#if ( NODE_MAJOR_VERSION >= 14 )
+			buf = (uint8_t*)myarr->GetBackingStore()->Data();
+#else
 			buf = (uint8_t*)myarr->GetContents().Data();
+#endif
 			length = myarr->ByteLength();
 		} else if( type == 2 ) {
 			Local<Uint8Array> _myarr = str.As<Uint8Array>();
 			Local<ArrayBuffer> buffer = _myarr->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+			buf = (uint8_t*)buffer->GetBackingStore()->Data();
+#else
 			buf = (uint8_t*)buffer->GetContents().Data();
+#endif
 			length = buffer->ByteLength();
 		}
 		if( buf )
@@ -1570,11 +1604,16 @@ void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3_value*
 				PSSQL_GetSqliteValueBlob( argv[n], &data, &len );
 				_data = NewArray( char, len );
 				memcpy( _data, data, len );
+#if ( NODE_MAJOR_VERSION >= 14 )
+				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( _data, len, releaseBufferBackingStore, NULL );
+				Local<Object> arrayBuffer = ArrayBuffer::New( userData->isolate, bs );
+#else
 				Local<Object> arrayBuffer = ArrayBuffer::New( userData->isolate, _data, len );
 				PARRAY_BUFFER_HOLDER holder = GetHolder();
 				holder->o.Reset( userData->isolate, arrayBuffer );
 				holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 				holder->buffer = _data;
+#endif
 				break;
 			}
 			case 5:
@@ -1632,12 +1671,20 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 		size_t length;
 		if( type == 1 ) {
 			Local<ArrayBuffer> myarr = str.As<ArrayBuffer>();
+#if ( NODE_MAJOR_VERSION >= 14 )
+			buf = (uint8_t*)myarr->GetBackingStore()->Data();
+#else
 			buf = (uint8_t*)myarr->GetContents().Data();
+#endif
 			length = myarr->ByteLength();
 		} else if( type == 2 ) {
 			Local<Uint8Array> _myarr = str.As<Uint8Array>();
 			Local<ArrayBuffer> buffer = _myarr->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+			buf = (uint8_t*)buffer->GetBackingStore()->Data();
+#else
 			buf = (uint8_t*)buffer->GetContents().Data();
+#endif
 			length = buffer->ByteLength();
 		}
 		if( buf )

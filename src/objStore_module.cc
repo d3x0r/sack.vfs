@@ -550,7 +550,7 @@ void ObjectStorageObject::putObject( const v8::FunctionCallbackInfo<Value>& args
 	Local<String> optName;
 
 	struct objectStorageOptions *osoOpts = NULL;
-	ThreadTo( DoPutObject, (uintptr_t)osoOpts );
+	ThreadTo( DoPutObject, (uintptr_t)&osoOpts );
 	while( !osoOpts )
 		Relinquish();
 
@@ -885,11 +885,8 @@ void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args 
 
 			objStore::sack_vfs_os_close( file );
 			if( !cb.IsEmpty() ) {
-				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
-				PARRAY_BUFFER_HOLDER holder = GetHolder();
-				holder->o.Reset( isolate, arrayBuffer );
-				holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-				holder->buffer = buf;
+				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
+				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
 
 				Local<Value> args[1];
 				args[0] = arrayBuffer;
@@ -914,11 +911,8 @@ void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args 
 
 			if( !cb.IsEmpty() ) {
 
-				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
-				PARRAY_BUFFER_HOLDER holder = GetHolder();
-				holder->o.Reset( isolate, arrayBuffer );
-				holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-				holder->buffer = buf;
+				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
+				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
 
 				Local<Value> args[1];
 				args[0] = arrayBuffer;

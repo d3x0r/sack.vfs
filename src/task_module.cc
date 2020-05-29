@@ -104,7 +104,13 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 			Local<Value> argv[1];
 			Local<ArrayBuffer> ab;
 			if( task->binary ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( isolate, output->size );
+				memcpy( bs->Data(), output->buffer, output->size );
+				ab = ArrayBuffer::New( isolate, bs );
+#else
 				ab = ArrayBuffer::New( isolate, (void*)output->buffer, output->size );
+#endif
 				argv[0] = ab;
 				task->inputCallback.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
 			}
@@ -356,5 +362,5 @@ void TaskObject::isRunning( const v8::FunctionCallbackInfo<Value>& args ) {
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
 	if( task && task->task )
 		args.GetReturnValue().Set( (!task->ended) ? True( isolate ) : False( isolate ) );
-	args.GetReturnValue().Set( (!task->ended) ? True( isolate ) : False( isolate ) );
+	args.GetReturnValue().Set( False( isolate ) );
 }

@@ -222,11 +222,17 @@ private:
 			uint32_t *buffer = NewArray( uint32_t, (bits +31)/ 32 );
 			SRG_GetEntropyBuffer( obj->entropy, buffer, bits );
 
+#if ( NODE_MAJOR_VERSION >= 14 )
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buffer,
+				(bits+7)/8, releaseBufferBackingStore, NULL );
+			Local<Object> arrayBuffer = ArrayBuffer::New( obj->isolate, bs );
+#else
 			Local<Object> arrayBuffer = ArrayBuffer::New( obj->isolate, buffer, (bits+7)/8 );
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->o.Reset( obj->isolate, arrayBuffer );
 			holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 			holder->buffer = buffer;
+#endif
 
 			args.GetReturnValue().Set( arrayBuffer );
 		}
@@ -679,6 +685,7 @@ private:
 			}
 			threadParams[n].id = NULL;
 		}
+		// this will always be set; a thread will have ended with an id set.
 		return result;
 	}
 
