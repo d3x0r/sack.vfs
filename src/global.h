@@ -432,6 +432,7 @@ public:
 	struct jsox_parse_state *state;
 	//static Persistent<Function> constructor;
 	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
+	Persistent<Function, CopyablePersistentTraits<Function>> reviver; // on begin() save reviver function here
 	Persistent<Map> fromPrototypeMap;
 	Persistent<Map> promiseFromPrototypeMap;
 	PLIST prototypes; // revivde prototypes by class
