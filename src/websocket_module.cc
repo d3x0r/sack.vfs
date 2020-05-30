@@ -737,9 +737,9 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 						ab = ArrayBuffer::New( isolate, bs );
 #else
 						ab =
-							ArrayBuffer::New( isolate,
-							(void*)eventMessage->buf,
-								length = eventMessage->buflen );
+							ArrayBuffer::New( isolate
+								, (void*)eventMessage->buf
+								, eventMessage->buflen );
 
 						PARRAY_BUFFER_HOLDER holder = GetHolder();
 						holder->o.Reset( isolate, ab );

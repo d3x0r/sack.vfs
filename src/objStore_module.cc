@@ -885,9 +885,16 @@ void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args 
 
 			objStore::sack_vfs_os_close( file );
 			if( !cb.IsEmpty() ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
 				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
-
+#else
+				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
+				PARRAY_BUFFER_HOLDER holder = GetHolder();
+				holder->o.Reset( isolate, arrayBuffer );
+				holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+				holder->buffer = buf;
+#endif
 				Local<Value> args[1];
 				args[0] = arrayBuffer;
 				cb->Call( isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 1, args );
@@ -911,8 +918,16 @@ void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args 
 
 			if( !cb.IsEmpty() ) {
 
+#if ( NODE_MAJOR_VERSION >= 14 )
 				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
+#else
+				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
+				PARRAY_BUFFER_HOLDER holder = GetHolder();
+				holder->o.Reset( isolate, arrayBuffer );
+				holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+				holder->buffer = buf;
+#endif
 
 				Local<Value> args[1];
 				args[0] = arrayBuffer;

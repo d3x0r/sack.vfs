@@ -992,14 +992,15 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
 			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( data, len, releaseBufferBackingStore, NULL );
 			MaybeLocal<ArrayBuffer> _arrayBuffer = ArrayBuffer::New( isolate, bs );
+			Local<ArrayBuffer> arrayBuffer = _arrayBuffer.ToLocalChecked();
 #else
 			MaybeLocal<ArrayBuffer> _arrayBuffer = ArrayBuffer::New( isolate, data, len );
+			Local<ArrayBuffer> arrayBuffer = _arrayBuffer.ToLocalChecked();
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->ab.Reset( isolate, arrayBuffer );
 			holder->ab.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 			holder->buffer = data;
 #endif
-			Local<ArrayBuffer> arrayBuffer = _arrayBuffer.ToLocalChecked();
 
 			args.GetReturnValue().Set( arrayBuffer );
 			if( args.Length() > 1 && args[1]->IsFunction() ) {
