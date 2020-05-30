@@ -74,43 +74,43 @@ var commonClasses = [];
 		                , { external:false, name:"BigInt", cb:function() { return this + 'n' } } );
 
 	toProtoTypes.set( ArrayBuffer.prototype, { external:true, name:"ab"
-		, cb:function() { return "["+base64ArrayBuffer(this)+"]" }
+		, cb:function() { return "ab["+base64ArrayBuffer(this)+"]" }
 	} );
 
 	toProtoTypes.set( Uint8Array.prototype, { external:true, name:"u8"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "u8["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	toProtoTypes.set( Uint8ClampedArray.prototype, { external:true, name:"uc8"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "uc8["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	toProtoTypes.set( Int8Array.prototype, { external:true, name:"s8"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "s8["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	toProtoTypes.set( Uint16Array.prototype, { external:true, name:"u16"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "u16["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	toProtoTypes.set( Int16Array.prototype, { external:true, name:"s16"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "s16["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	toProtoTypes.set( Uint32Array.prototype, { external:true, name:"u32"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "u32["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	toProtoTypes.set( Int32Array.prototype, { external:true, name:"s32"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "s32["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	if( typeof Uint64Array !== "undefined" )
 		toProtoTypes.set( Uint64Array.prototype, { external:true, name:"u64"
-			, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+			, cb:function() { return "u64["+base64ArrayBuffer(this.buffer)+"]" }
 		} );
 	if( typeof Int64Array !== "undefined" )
 		toProtoTypes.set( Int64Array.prototype, { external:true, name:"s64"
-			, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+			, cb:function() { return "s64["+base64ArrayBuffer(this.buffer)+"]" }
 		} );
 	toProtoTypes.set( Float32Array.prototype, { external:true, name:"f32"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "f32["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	toProtoTypes.set( Float64Array.prototype, { external:true, name:"f64"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "f64["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 
 	toProtoTypes.set( Symbol.prototype, { external:true, name:"sym"
@@ -196,8 +196,8 @@ sack.JSOX.registerToFrom = function( prototypeName, prototype, to, from ) {
 
 var JSOXBegin = sack.JSOX.begin;
 
-sack.JSOX.begin = function(cb) {
-	var parser = JSOXBegin( cb );
+sack.JSOX.begin = function(cb, reviver) {
+	var parser = JSOXBegin( cb, reviver );
 	var localFromProtoTypes = new Map();;
 	var localPromiseFromProtoTypes = new Map();;
 	parser.setFromPrototypeMap( localFromProtoTypes );
@@ -459,7 +459,7 @@ sack.JSOX.stringifier = function() {
 				// should check also for if any non ident in string...
 				return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
 					|| /([0-9\-])/.test(s[0])
-					|| /((\n|\r|\t)|[ \{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + sack.JSOX.escape(s) +useQuote):s )
+					|| /((\n|\r|\t)|[ \#\{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + sack.JSOX.escape(s) +useQuote):s )
 			}
 
 			function mapToObject(){
