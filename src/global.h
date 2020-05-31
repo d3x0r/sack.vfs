@@ -1,5 +1,6 @@
 #if defined( _MSC_VER )
-#  pragma warning( disable: 4251 4275 )
+#  pragma warning( disable: 4251 4275 26495)
+// C26495 - uninitialized member; yes; It will be.
 #endif
 
 #include <node.h>
@@ -38,7 +39,11 @@
 #include <configscript.h>
 #include <filemon.h>
 #else
-#include "sack/sack.h"
+#  if defined( NODE_WANT_INTERNALS )
+#    include "../../../deps/sack/sack.h"
+#  else
+#    include "sack/sack.h"
+#  endif
 #endif
 
 #undef New
@@ -85,10 +90,10 @@ using namespace v8;
 #define GET(o,key)  (o)->Get( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked() ).ToLocalChecked()
 #define GETV(o,key)  (o)->Get( context, key ).ToLocalChecked()
 #define GETN(o,key)  (o)->Get( context, Integer::New( isolate, (key) ) ).ToLocalChecked()
-#define SETV(o,key,val)  (o)->Set( context, key, val )
-#define SET(o,key,val)  (o)->Set( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked(), val )
-#define SETT(o,key,val)  (o)->Set( context, String::NewFromUtf8( isolate, GetText(key), v8::NewStringType::kNormal, (int)GetTextSize( key ) ).ToLocalChecked(), val )
-#define SETN(o,key,val)  (o)->Set( context, Integer::New( isolate, key ), val )
+#define SETV(o,key,val)  (void)(o)->Set( context, key, val )
+#define SET(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked(), val )
+#define SETT(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, GetText(key), v8::NewStringType::kNormal, (int)GetTextSize( key ) ).ToLocalChecked(), val )
+#define SETN(o,key,val)  (void)(o)->Set( context, Integer::New( isolate, key ), val )
 
 
 void InitJSOX( Isolate *isolate, Local<Object> exports );
@@ -108,6 +113,109 @@ void SystemInit( Isolate* isolate, Local<Object> exports );
 
 #define ReadOnlyProperty (PropertyAttribute)((int)PropertyAttribute::ReadOnly | PropertyAttribute::DontDelete)
 
+class constructorSet {
+	public:
+	Isolate *isolate;
+	uv_loop_t* loop;
+	Persistent<Function> dateCons; // Date constructor
+	Persistent<Function> ThreadObject_idleProc;
+
+	// constructor
+	Persistent<Function> volConstructor;
+	Persistent<Function> fileConstructor;
+	Persistent<FunctionTemplate> fileTpl;
+
+	Persistent<Function> threadConstructor;
+	Persistent<Function> comConstructor;
+	Persistent<Function> wscConstructor;
+	Persistent<FunctionTemplate> wscTpl;
+
+	Persistent<Function> wssConstructor;
+	Persistent<FunctionTemplate> wssTpl;
+	Persistent<Function> wssiConstructor;
+	Persistent<FunctionTemplate> wssiTpl;
+	Persistent<Function> httpReqConstructor;
+	Persistent<Function> httpConstructor;
+
+	Persistent<Function> tlsConstructor;
+	Persistent<Function> jsoxConstructor;
+
+	Persistent<Function> parseConstructor;
+	Persistent<Function> parseConstructor6;
+	Persistent<Function> parseConstructor6v;
+
+	v8::Persistent<v8::Function> sqlConstructor;
+	v8::Persistent<v8::Function> sqlStmtConstructor;
+	v8::Persistent<v8::Function> otoConstructor;
+
+	//Persistent<Function> jsonConstructor;
+	Persistent<FunctionTemplate> pTextTemplate;
+	Persistent<Function> textConstructor;
+
+	Persistent<Function> addrConstructor;
+	Persistent<FunctionTemplate> addrTpl;
+	Persistent<Function> udpConstructor;
+	//Persistent<Function> tcpConstructor;
+
+	Persistent<Map> fromPrototypeMap;
+
+	uv_async_t clientSocketPoster;
+	Persistent<Function> promiseThen;
+	Persistent<Function> promiseCatch;
+
+	v8::Persistent<v8::Function> SRGObject_constructor;
+	v8::Persistent<v8::Function> TaskObject_constructor;
+	v8::Persistent<v8::Function> ObjectStorageObject_constructor;
+	v8::Persistent<v8::Function> monitorConstructor;
+	v8::Persistent<v8::Function> KeyHidObject_constructor;
+	//Persistent<Function> onCientPost;
+#ifdef INCLUDE_GUI
+	Persistent<Function> ImageObject_constructor;
+	Persistent<FunctionTemplate> ImageObject_tpl;
+	Persistent<Function> FontObject_constructor;
+	Persistent<Function> ColorObject_constructor;
+	Persistent<FunctionTemplate> ColorObject_tpl;
+	Persistent<Function> fontResult;
+	Persistent<Function> imageResult;
+	Persistent<Object>   priorThis;
+
+	Persistent<Object> canvasObject;
+
+	v8::Persistent<v8::Function> InterShellObject_buttonConstructor;
+	v8::Persistent<v8::Function> InterShellObject_buttonInstanceConstructor;
+	v8::Persistent<v8::Function> InterShellObject_controlConstructor;
+	v8::Persistent<v8::Function> InterShellObject_controlInstanceConstructor;
+	v8::Persistent<v8::Function> InterShellObject_customControlConstructor;
+	v8::Persistent<v8::Function> InterShellObject_customControlInstanceConstructor;
+	v8::Persistent<v8::Function> InterShellObject_intershellConstructor;
+	v8::Persistent<v8::Function> InterShellObject_configConstructor;
+
+	int eventLoopEnables = 0;
+	LOGICAL eventLoopRegistered = FALSE;
+	uv_async_t psiLocal_async;
+	v8::Persistent<v8::Function> ControlObject_constructor;   // Frame
+	v8::Persistent<v8::Function> ControlObject_constructor2;  // Control
+	v8::Persistent<v8::Function> ControlObject_registrationConstructor;  // Registration
+	v8::Persistent<v8::FunctionTemplate> ControlObject_controlTemplate;
+	v8::Persistent<v8::FunctionTemplate> ControlObject_frameTemplate;
+	v8::Persistent<v8::FunctionTemplate> ControlObject_listItemTemplate;
+
+	Persistent<Function> PopupObject_constructor;
+	Persistent<Function> ListboxItemObject_constructor;
+	Persistent<Function> MenuItemObject_constructor;
+
+	v8::Persistent<v8::Function> VoidObject_constructor;   // generic void constructor
+	v8::Persistent<v8::Function> VoidObject_constructor2;   // object color interface accessors
+
+	v8::Persistent<v8::Function> RenderObject_constructor;
+	v8::Persistent<v8::Function> RenderObject_constructor2;
+
+	v8::Persistent<v8::Function> VulkanObject_constructor;
+#endif
+};
+class constructorSet * getConstructors( Isolate *isolate );
+
+
 
 struct PromiseWrapper {
 	Persistent<Promise::Resolver> resolver;
@@ -122,17 +230,20 @@ public:
 	bool volNative;
 	char *mountName;
 	char *fileName;
+	int priority;
 	struct file_system_interface *fsInt;
 	struct file_system_mounted_interface* fsMount;
-	static v8::Persistent<v8::Function> constructor;
+	static PLIST volumes;
+	LOGICAL cleanupHappened;
+	static PLIST transportDestinations;
+	LOGICAL thrown;
 
 public:
 
-	static void doInit( Local<Object> exports );
-	static void Init( Local<Object> exports );
+	static void doInit( Local<Context> context, Local<Object> exports );
+	static void Init( Local<Context> context, Local<Object> exports );
 	static void Init( Local<Object> exports, Local<Value> val, void* p );
-	VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
-
+	VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, int priority = 2000 );
 	static void vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args );
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void getDirectory( const v8::FunctionCallbackInfo<Value>& args );
@@ -151,6 +262,7 @@ public:
 	static void volRekey( const v8::FunctionCallbackInfo<Value>& args );
 	static void renameFile( const v8::FunctionCallbackInfo<Value>& args );
 	static void volDecrypt( const v8::FunctionCallbackInfo<Value>& args );
+	static void flush( const v8::FunctionCallbackInfo<Value>& args );
 
 	~VolumeObject();
 };
@@ -159,7 +271,6 @@ public:
 
 class ThreadObject : public node::ObjectWrap {
 public:
-	static v8::Persistent<v8::Function> constructor;
    	static Persistent<Function> idleProc;
 public:
 
@@ -185,8 +296,6 @@ class FileObject : public node::ObjectWrap {
 	size_t size;
 	Persistent<Object> volume;
 public:
-	static v8::Persistent<v8::Function> constructor;
-	static Persistent<FunctionTemplate> tpl;
 	static void Init(  );
 
 	static void openFile( const v8::FunctionCallbackInfo<Value>& args );
@@ -212,12 +321,12 @@ class ComObject : public node::ObjectWrap {
 public:
 	int handle;
 	char *name;
-	static Persistent<Function> constructor;
+	//static Persistent<Function> constructor;
 
 	Persistent<Function, CopyablePersistentTraits<Function>> *readCallback; //
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE readQueue;
-	
+
 public:
 
 	static void Init( Local<Object> exports );
@@ -246,14 +355,14 @@ private:
 
 class WebSockClientObject : public node::ObjectWrap {
 public:
-	static Persistent<Function> constructor;
+	//static Persistent<Function> constructor;
 
 	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE readQueue;
-	
+
 public:
 
 	static void Init( Local<Object> exports );
@@ -273,7 +382,7 @@ public:
 class TLSObject : public node::ObjectWrap {
 
 public:
-	static v8::Persistent<v8::Function> constructor;
+	//static v8::Persistent<v8::Function> constructor;
 
 public:
 
@@ -297,8 +406,8 @@ public:
 };
 
 struct reviver_data {
-	Persistent<Function> dateCons;
-
+	//Persistent<Function> dateCons;
+	Local<Function> fieldCb;
 	Isolate *isolate;
 	Local<Context> context;
 	LOGICAL revive;
@@ -321,8 +430,9 @@ struct prototypeHolder {
 class JSOXObject : public node::ObjectWrap {
 public:
 	struct jsox_parse_state *state;
-	static Persistent<Function> constructor;
+	//static Persistent<Function> constructor;
 	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
+	Persistent<Function, CopyablePersistentTraits<Function>> reviver; // on begin() save reviver function here
 	Persistent<Map> fromPrototypeMap;
 	Persistent<Map> promiseFromPrototypeMap;
 	PLIST prototypes; // revivde prototypes by class
@@ -333,6 +443,7 @@ public:
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void write( const v8::FunctionCallbackInfo<Value>& args );
+	static void reset( const v8::FunctionCallbackInfo<Value>& args );
 	static void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args );
 	static void setPromiseFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -350,6 +461,7 @@ typedef struct arrayBufferHolder ARRAY_BUFFER_HOLDER, *PARRAY_BUFFER_HOLDER;
 #define MAXARRAY_BUFFER_HOLDERSPERSET 512
 DeclareSet( ARRAY_BUFFER_HOLDER );
 
+void releaseBufferBackingStore( void* data, size_t length, void* deleter_data );
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info );
 Local<String> localString( Isolate *isolate, const char *data, int len = -1 );
 Local<String> localStringExternal( Isolate *isolate, const char *data, int len = -1, const char *real_root = NULL );
@@ -365,6 +477,8 @@ void createSqlObject( const char *name, Local<Object> into );
 Local<Value> newSqlObject( Isolate *isolate, int argc, Local<Value> *argv );
 
 class ObjectStorageObject*  openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 );
+Local<Object> WrapObjectStorage( Isolate* isolate, class ObjectStorageObject* oso );
+
 
 #ifndef VFS_MAIN_SOURCE
 extern

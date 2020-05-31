@@ -1,8 +1,6 @@
 #include "global.h"
 
 
-static Persistent<FunctionTemplate> pTextTemplate;
-static Persistent<Function> constructor;
 
 class textWrapper : public node::ObjectWrap {
 public:
@@ -32,7 +30,8 @@ static void newText( const FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->textConstructor );
 		Local<Value> *passArgs = new Local<Value>[args.Length()];
 		int n;
 		for( n = 0; n < args.Length(); n++ )
@@ -273,7 +272,8 @@ static void setText( const FunctionCallbackInfo<Value>& args ) {
 
 PTEXT isTextObject( Isolate *isolate, Local<Value> object ) {
 	if( object->IsObject() ) {
-		Local<FunctionTemplate> tpl = pTextTemplate.Get( isolate );
+		class constructorSet *c = getConstructors( isolate );
+		Local<FunctionTemplate> tpl = c->pTextTemplate.Get( isolate );
 		Local<Object> locObj;
 		if( tpl->HasInstance( locObj = object->ToObject(isolate->GetCurrentContext()).ToLocalChecked() ) ) {
 			textWrapper *me = textWrapper::Unwrap<textWrapper>( locObj );
@@ -286,9 +286,10 @@ PTEXT isTextObject( Isolate *isolate, Local<Value> object ) {
 
 void textObjectInit( Isolate *isolate, Local<Object> exports ) {
 	Local<FunctionTemplate> textTemplate;
+	class constructorSet *c = getConstructors( isolate );
 
 	textTemplate = FunctionTemplate::New( isolate, newText );
-	pTextTemplate.Reset( isolate, textTemplate );
+	c->pTextTemplate.Reset( isolate, textTemplate );
 	textTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Text", v8::NewStringType::kNormal ).ToLocalChecked() );
 	textTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 internal field for wrap
 
@@ -340,6 +341,6 @@ void textObjectInit( Isolate *isolate, Local<Object> exports ) {
 		, FunctionTemplate::New( isolate, setText )
 		, DontDelete );
 
-	constructor.Reset( isolate, textTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	c->textConstructor.Reset( isolate, textTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	SET_READONLY( exports, "Text", textTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 }

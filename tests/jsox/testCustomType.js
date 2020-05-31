@@ -1,4 +1,4 @@
-var sack= require( "../.." );
+var JSOX= require( "../.." ).JSOX;
 
 function Color() {
 	this.r = 100;
@@ -13,13 +13,13 @@ Color.prototype.toJSOX = function() {
 }
 
 Color.prototype.fromJSOX = function() {
-	return new Color();
+	return new Color( this.substr(1,2), this.substr(3,2), this.substr(5,2), this.substr(7.2) );
 }
 
 
-sack.JSOX.registerToFrom( "color", Color.prototype, Color.prototype.toJSOX, Color.prototype.fromJSOX );
+JSOX.registerToFrom( "color", Color.prototype, Color.prototype.toJSOX, Color.prototype.fromJSOX );
 
 var c = new Color();
 
-console.log( "Color:", sack.JSOX.stringify( c ) );
-console.log( "Color:", sack.JSOX.parse(sack.JSOX.stringify( c )) );
+console.log( "Color:", JSOX.stringify( c ) );
+console.log( "Color:", JSOX.parse(JSOX.stringify( c )) );

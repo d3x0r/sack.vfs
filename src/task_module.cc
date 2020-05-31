@@ -16,11 +16,10 @@ struct optionStrings {
 
 
 static struct local {
-	uv_loop_t* loop;
 	PLIST tasks;
 } l;
 
-v8::Persistent<v8::Function> TaskObject::constructor;
+//v8::Persistent<v8::Function> TaskObject::constructor;
 
 static struct optionStrings *getStrings( Isolate *isolate ) {
 	static PLIST strings;
@@ -67,8 +66,6 @@ TaskObject::~TaskObject() {
 }
 
 void InitTask( Isolate *isolate, Local<Object> exports ) {
-	if( !l.loop )
-		l.loop = uv_default_loop();
 
 	Local<FunctionTemplate> taskTemplate;
 	taskTemplate = FunctionTemplate::New( isolate, TaskObject::New );
@@ -80,7 +77,8 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "terminate", TaskObject::Terminate );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "isRunning", TaskObject::isRunning );
 	taskTemplate->ReadOnlyPrototype();
-	TaskObject::constructor.Reset( isolate, taskTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	class constructorSet* c = getConstructors( isolate );
+	c->TaskObject_constructor.Reset( isolate, taskTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	Local<Function> taskF;
 	SET_READONLY( exports, "Task", taskF = taskTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	SET_READONLY_METHOD( taskF, "loadLibrary", TaskObject::loadLibrary );
@@ -106,7 +104,13 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 			Local<Value> argv[1];
 			Local<ArrayBuffer> ab;
 			if( task->binary ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( isolate, output->size );
+				memcpy( bs->Data(), output->buffer, output->size );
+				ab = ArrayBuffer::New( isolate, bs );
+#else
 				ab = ArrayBuffer::New( isolate, (void*)output->buffer, output->size );
+#endif
 				argv[0] = ab;
 				task->inputCallback.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
 			}
@@ -119,9 +123,11 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 		}
 
 	}
-	//if( task->waiter ) {
-	//	WakeThread( task->waiter );
-	//}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 }
 
 static void CPROC getTaskInput( uintptr_t psvTask, PTASK_INFO pTask, CTEXTSTR buffer, size_t size ) {
@@ -166,14 +172,14 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		AddLink( &l.tasks, newTask );
 
 		Local<Object> _this = args.This();
-		try {
+		//try {
 			newTask->_this.Reset( isolate, _this );
 			newTask->Wrap( _this );
-		}
-		catch( const char *ex1 ) {
-			isolate->ThrowException( Exception::Error(
-				String::NewFromUtf8( isolate, TranslateText( ex1 ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
-		}
+		//}
+		//catch( const char *ex1 ) {
+		//	isolate->ThrowException( Exception::Error(
+		//		String::NewFromUtf8( isolate, TranslateText( ex1 ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		//}
 
 
 		{
@@ -268,7 +274,8 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 
 			if( input || end ) {
-				uv_async_init( l.loop, &newTask->async, taskAsyncMsg );
+				class constructorSet *c = getConstructors( isolate );
+				uv_async_init( c->loop, &newTask->async, taskAsyncMsg );
 				newTask->async.data = newTask;
 			}
 			/*
@@ -304,7 +311,8 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->TaskObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete[] argv;
 	}
@@ -354,5 +362,5 @@ void TaskObject::isRunning( const v8::FunctionCallbackInfo<Value>& args ) {
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
 	if( task && task->task )
 		args.GetReturnValue().Set( (!task->ended) ? True( isolate ) : False( isolate ) );
-	args.GetReturnValue().Set( (!task->ended) ? True( isolate ) : False( isolate ) );
+	args.GetReturnValue().Set( False( isolate ) );
 }

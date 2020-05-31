@@ -3,11 +3,9 @@
 
 static struct local {
 	int data;
-	uv_loop_t* loop;
 
 } l;
 
-Persistent<Function> ComObject::constructor;
 
 ComObject::ComObject( char *name ) : jsObject() {
 	this->readQueue = CreateLinkQueue();
@@ -38,7 +36,8 @@ void ComObject::Init( Local<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "close", closeCom );
 
 
-		constructor.Reset( isolate, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		class constructorSet *c = getConstructors( isolate );
+		c->comConstructor.Reset( isolate, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 		SET( exports, "ComPort", comTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 }
 
@@ -61,15 +60,16 @@ static void asyncmsg( uv_async_t* handle ) {
 		struct msgbuf *msg;
 		while( msg = (struct msgbuf *)DequeLink( &myself->readQueue ) ) {
 			size_t length;
+#if ( NODE_MAJOR_VERSION >= 14 )
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( msg->buf, length=msg->buflen, releaseBufferBackingStore, NULL );
+			Local<ArrayBuffer> ab = ArrayBuffer::New( isolate, bs );
+#else
 			Local<ArrayBuffer> ab =
 				ArrayBuffer::New( isolate,
 											  msg->buf,
 											  length = msg->buflen );
 
-			//PARRAY_BUFFER_HOLDER holder = GetHolder();
-			//holder->o.Reset( isolate, ab );
-			//holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-			//holder->buffer = msg->buf;
+#endif
 
 			Local<Uint8Array> ui = Uint8Array::New( ab, 0, length );
 
@@ -89,10 +89,16 @@ static void asyncmsg( uv_async_t* handle ) {
 		}
 	}
 	//lprintf( "done calling message notice." );
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 }
 
 void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
+		class constructorSet *c = getConstructors( isolate );
 		if( args.IsConstructCall() ) {
 			char *portName;
 			int argc = args.Length();
@@ -115,9 +121,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				//lprintf( "empty async...." );
 				//MemSet( &obj->async, 0, sizeof( obj->async ) );
 				//Environment* env = Environment::GetCurrent(args);
-				if( !l.loop )
-					l.loop = uv_default_loop();
-				uv_async_init( l.loop, &obj->async, asyncmsg );
+				uv_async_init( c->loop, &obj->async, asyncmsg );
 				obj->async.data = obj;
 				obj->jsObject.Reset( isolate, args.This() );
 				obj->Wrap( args.This() );
@@ -132,7 +136,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			for( int n = 0; n < argc; n++ )
 				argv[n] = args[n];
 
-			Local<Function> cons = Local<Function>::New( isolate, constructor );
+			Local<Function> cons = Local<Function>::New( isolate, c->comConstructor );
 			MaybeLocal<Object> newInst = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
 			if( !newInst.IsEmpty() )
 				args.GetReturnValue().Set( newInst.ToLocalChecked() );
@@ -190,8 +194,13 @@ void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else if (args[0]->IsUint8Array()) {
 		Local<Uint8Array> myarr = args[0].As<Uint8Array>();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		std::shared_ptr<BackingStore> ab_c = myarr->Buffer()->GetBackingStore();
+		char *buf = static_cast<char*>(ab_c->Data()) + myarr->ByteOffset();
+#else
 		ArrayBuffer::Contents ab_c = myarr->Buffer()->GetContents();
 		char *buf = static_cast<char*>(ab_c.Data()) + myarr->ByteOffset();
+#endif
 		//LogBinary( buf, myarr->Length() );
 		SackWriteComm( com->handle, buf, (int)myarr->Length() );
 	}

@@ -21,6 +21,7 @@ struct optionStrings {
 };
 
 struct udpOptions {
+	Isolate *isolate;
 	int port;
 	char *address;
 	bool reuseAddr;
@@ -41,8 +42,6 @@ struct addrFinder {
 
 class addrObject : public node::ObjectWrap {
 public:
-	static Persistent<Function> constructor;
-	static Persistent<FunctionTemplate> tpl;
 	struct addrFinder key;
 	SOCKADDR *addr;
 	Persistent<Object> _this;
@@ -70,7 +69,7 @@ public:
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE eventQueue;
 	bool readStrings;  // return a string instead of a buffer
-	static Persistent<Function> constructor;
+//	static Persistent<Function> constructor;
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
 	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback;
 	struct udpEvent *eventMessage;
@@ -104,13 +103,8 @@ typedef struct udpEvent UDP_EVENT;
 #define MAXUDP_EVENTSPERSET 128
 DeclareSet( UDP_EVENT );
 
-Persistent<Function> udpObject::constructor;
-Persistent<Function> addrObject::constructor;
-Persistent<FunctionTemplate> addrObject::tpl;
-
 static struct local {
 	int data;
-	uv_loop_t* loop;
 	PLIST strings;
 	PUDP_EVENTSET udpEvents;
 	BinaryTree::PTREEROOT addresses;
@@ -223,12 +217,10 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 	return check;
 }
 void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
-	if( !l.loop )
-		l.loop = uv_default_loop();
 
 	Local<Object> oNet = Object::New( isolate );
 	SET_READONLY( exports, "Network", oNet );
-
+	class constructorSet *c = getConstructors(isolate); 
 	{
 		Local<FunctionTemplate> udpTemplate;
 		udpTemplate = FunctionTemplate::New( isolate, udpObject::New );
@@ -240,20 +232,20 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( udpTemplate, "setBroadcast", udpObject::setBroadcast );
 		udpTemplate->ReadOnlyPrototype();
 
-		udpObject::constructor.Reset( isolate, udpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		c->udpConstructor.Reset( isolate, udpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
 		SET_READONLY( oNet, "UDP", udpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 	{
 		Local<FunctionTemplate> addrTemplate;
 		addrTemplate = FunctionTemplate::New( isolate, addrObject::New );
-		addrObject::tpl.Reset( isolate, addrTemplate );
+		c->addrTpl.Reset( isolate, addrTemplate );
 		addrTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.network.address", v8::NewStringType::kNormal ).ToLocalChecked() );
 		addrTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		//NODE_SET_PROTOTYPE_METHOD( addrTemplate, "toString", addrObject::toString );
 		addrTemplate->ReadOnlyPrototype();
 
-		addrObject::constructor.Reset( isolate, addrTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		c->addrConstructor.Reset( isolate, addrTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
 		SET_READONLY( oNet, "Address", addrTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
@@ -281,13 +273,16 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 			case UDP_EVENT_READ:
 				argv[1] = ::getAddressBySA( isolate, eventMessage->from );
 				if( !obj->readStrings ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+					ab = ArrayBuffer::New( isolate, bs );
+#else
 					ab = ArrayBuffer::New( isolate, (POINTER)eventMessage->buf, eventMessage->buflen );
-
 					PARRAY_BUFFER_HOLDER holder = GetHolder();
 					holder->o.Reset( isolate, ab );
 					holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 					holder->buffer = (void*)eventMessage->buf;
-
+#endif
 					argv[0] = ab;
 					obj->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
@@ -310,6 +305,11 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 			}
 			DeleteFromSet( UDP_EVENT, l.udpEvents, eventMessage );
 		}
+	}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
 }
 
@@ -365,7 +365,8 @@ udpObject::udpObject( struct udpOptions *opts ) {
 		eventQueue = CreateLinkQueue();
 		//lprintf( "Init async handle. (wss)" );
 		async.data = this;
-		uv_async_init( l.loop, &async, udpAsyncMsg );
+		class constructorSet *c = getConstructors( opts->isolate );
+		uv_async_init( c->loop, &async, udpAsyncMsg );
 		doUDPRead( pc, (POINTER)buffer, 4096 );
 		if( !opts->messageCallback.IsEmpty() )
 			this->messageCallback = opts->messageCallback;
@@ -391,6 +392,7 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		// Invoked as constructor: `new MyObject(...)`
 		struct udpOptions udpOpts;
 		int argBase = 0;
+		udpOpts.isolate= isolate;
 		udpOpts.readStrings = false;
 		udpOpts.address = NULL;
 		udpOpts.port = 0;
@@ -495,7 +497,8 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet *c = getConstructors(isolate);
+		Local<Function> cons = Local<Function>::New( isolate, c->udpConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete[] argv;
 	}
@@ -548,7 +551,8 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 	}
 	SOCKADDR *dest = NULL;
 	if( args.Length() > 1 ) {
-		Local<FunctionTemplate> tpl = addrObject::tpl.Get( isolate );
+		class constructorSet *c = getConstructors( isolate );
+		Local<FunctionTemplate> tpl = c->addrTpl.Get( isolate );
 		Local<Object> argObj = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 		if( !argObj.IsEmpty() && tpl->HasInstance( argObj ) ) {
 			addrObject *obj = ObjectWrap::Unwrap<addrObject>( args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -562,7 +566,11 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 	}
 	if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+		SendUDPEx( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength(), dest );
+#else
 		SendUDPEx( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
+#endif
 	}
 	else if( args[0]->IsString() ) {
 		String::Utf8Value buf( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -589,7 +597,8 @@ addrObject::~addrObject() {
 }
 
 addrObject *addrObject::internalNew( Isolate *isolate, SOCKADDR *sa ) {
-	Local<Function> cons = Local<Function>::New( isolate, addrObject::constructor );
+		class constructorSet *c = getConstructors(isolate);
+	Local<Function> cons = Local<Function>::New( isolate, c->addrConstructor );
 	Local<Value> args[1];
 	MaybeLocal<Object> __addr = cons->NewInstance( isolate->GetCurrentContext(), 0, args );
 	Local<Object> _addr = __addr.ToLocalChecked();
@@ -607,7 +616,8 @@ addrObject *addrObject::internalNew( Isolate *isolate, SOCKADDR *sa ) {
 }
 
 addrObject *addrObject::internalNew( Isolate *isolate, Local<Object> *_this ) {
-	Local<Function> cons = Local<Function>::New( isolate, addrObject::constructor );
+	class constructorSet *c = getConstructors(isolate);
+	Local<Function> cons = Local<Function>::New( isolate, c->addrConstructor );
 	Local<Value> args[1];
 	MaybeLocal<Object> _addr = cons->NewInstance( isolate->GetCurrentContext(), 0, args );
 	_this[0] = _addr.ToLocalChecked();

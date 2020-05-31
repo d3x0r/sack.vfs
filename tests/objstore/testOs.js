@@ -21,14 +21,12 @@ store.get(  { //`${orgRoot}.${serviceRoot}`,
 		objectHash : `${orgRoot}.${serviceRoot}.${dbRoot}`,
 
 		sealant : null,
-		readKey : null,
-
-		then(node){
+		readKey : null, } ) .then((node)=>{
 			// this is the managmeent container of node.  
 			console.log( "Recovered root somehow:", node );
 			root = node;
-		},
-		catch() {
+		})
+		.catch( ()=>{
 			if( vfs.exists( "keyinfo" ) )
 				vfs.readJSOX( "keyInfo", (ki)=>keyInfo = ki );
 			else	
@@ -50,9 +48,8 @@ store.get(  { //`${orgRoot}.${serviceRoot}`,
 				},
 				
 			} );
-		}
-	}
-);
+		} )
+	
 
 
 function getSomeUsers( f, l, n, gotUsers ){

@@ -81,6 +81,11 @@ static void monitorAsyncMsg( uv_async_t* handle ) {
 		}
 		Release( event );
 	}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 
 }
 
@@ -119,7 +124,8 @@ static void addMonitorFilter( const v8::FunctionCallbackInfo<Value>& args ) {
 	tracker->cb.Reset( isolate, cb );
 
 	AddLink( &me->trackers, tracker );
-	uv_async_init( uv_default_loop(), &tracker->async, monitorAsyncMsg );
+	class constructorSet *c = getConstructors( isolate );
+	uv_async_init( c->loop, &tracker->async, monitorAsyncMsg );
  	tracker->async.data = tracker;
 
 	//AddFileChangeCallback( me->monitor, mask, callback,
@@ -158,7 +164,7 @@ static void makeNewMonitor( const FunctionCallbackInfo<Value>& args ) {
 		for( n = 0; n < args.Length(); n++ )
 			passArgs[n] = args[n];
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), n, passArgs ).ToLocalChecked() );
-		delete passArgs;
+		delete[] passArgs;
 	}
 }
 

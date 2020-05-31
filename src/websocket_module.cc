@@ -224,9 +224,24 @@ typedef struct wscEvent WSC_EVENT;
 #define MAXWSC_EVENTSPERSET 128
 DeclareSet( WSC_EVENT );
 
+struct socketTransport {
+	class wssiObject *wssi;
+	WSS_EVENT* acceptEventMessage;
+	const char *protocolResponse;
+};
+
+struct socketUnloadStation {
+	Persistent<Object> this_;
+	String::Utf8Value* s;  // destination address
+	uv_async_t clientSocketPoster;
+	uv_loop_t  *targetThread;
+	Persistent<Function> cb; // callback to invoke 
+	PLIST transport;
+};
+
 static struct local {
 	int data;
-	uv_loop_t* loop;
+	//uv_loop_t* loop;
 	int waiting;
 	PTHREAD jsThread;
 	CRITICALSECTION csWssEvents;
@@ -235,6 +250,7 @@ static struct local {
 	PWSSI_EVENTSET wssiEvents;
 	CRITICALSECTION csWscEvents;
 	PWSC_EVENTSET wscEvents;
+	PLIST transportDestinations;
 } l;
 
 
@@ -305,8 +321,8 @@ public:
 	PLIST opening;
 	PLIST requests;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
-	static Persistent<Function> constructor;
-	static Persistent<FunctionTemplate> tpl;
+	//static Persistent<Function> constructor;
+	//static Persistent<FunctionTemplate> tpl;
 	Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> acceptCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> requestCallback; //
@@ -317,6 +333,7 @@ public:
 	bool ssl;
 	enum wsReadyStates readyState;
 	bool immediateEvent;
+	Isolate *isolate;
 public:
 
 	wssObject( struct wssOptions *opts );
@@ -343,7 +360,7 @@ public:
 class httpRequestObject : public node::ObjectWrap {
 public:
 	PCLIENT pc;
-	static Persistent<Function> constructor;
+	//static Persistent<Function> constructor;
 	Persistent<Object> _this;
 	//PVARTEXT pvtResult;
 	bool ssl;
@@ -386,10 +403,11 @@ public:
 class httpObject : public node::ObjectWrap {
 public:
 	PCLIENT pc;
-	static Persistent<Function> constructor;
+	//static Persistent<Function> constructor;
 	PVARTEXT pvtResult;
 	bool ssl;
 	wssObject* wss;
+	Isolate *isolate;
 public:
 
 	httpObject();
@@ -403,7 +421,7 @@ public:
 
 // web sock client Object
 class wscObject : public node::ObjectWrap {
-	char *serverUrl;
+
 public:
 	PCLIENT pc;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
@@ -412,9 +430,10 @@ public:
 	//wscEvent *eventMessage;
 	LOGICAL closed;
 	enum wsReadyStates readyState;
+	Isolate *isolate;
 public:
-	static Persistent<Function> constructor;
-	static Persistent<FunctionTemplate> tpl;
+	//static Persistent<Function> constructor;
+	//static Persistent<FunctionTemplate> tpl;
 	Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
@@ -448,15 +467,20 @@ public:
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Object> _this;
 	PLINKQUEUE eventQueue;
-	//struct wssiEvent *eventMessage;
 	PCLIENT pc;
 	LOGICAL closed;
 	const char *protocolResponse;
 	enum wsReadyStates readyState;
-wssObject *server;
+	Isolate *isolate;
+	class wssiObjectReference *wssiRef;
+	class wssObject *server; // send open event to this object.
+	WSS_EVENT* acceptEventMessage;
+	Persistent<Promise> acceptPromise;
+	LOGICAL blockReturn;
+	LOGICAL thrown; // prevent event to server connect callback, event becomes post to thread
 public:
-	static Persistent<Function> constructor;
-	static Persistent<FunctionTemplate> tpl;
+	//static Persistent<Function> constructor;
+	//static Persistent<FunctionTemplate> tpl;
 	//Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
@@ -478,14 +502,12 @@ public:
 	~wssiObject();
 };
 
-Persistent<Function> httpObject::constructor;
-Persistent<Function> httpRequestObject::constructor;
-Persistent<Function> wssObject::constructor;
-Persistent<Function> wssiObject::constructor;
-Persistent<Function> wscObject::constructor;
-Persistent<FunctionTemplate> wssObject::tpl;
-Persistent<FunctionTemplate> wssiObject::tpl;
-Persistent<FunctionTemplate> wscObject::tpl;
+class wssiObjectReference {
+public:
+	class wssiObject *wssi;
+};
+
+//------------------------------------ Event Helpers ---------------------------------------
 
 static WSS_EVENT *GetWssEvent() {
 	EnterCriticalSec( &l.csWssEvents );
@@ -645,13 +667,131 @@ static Local<Value> makeRequest( Isolate *isolate, struct optionStrings *strings
 	return req;
 }
 
-static void wssAsyncMsg( uv_async_t* handle ) {
+
+static void acceptResolved(const v8::FunctionCallbackInfo<Value>& args ) {
+	v8::Isolate* isolate = args.GetIsolate();
+	Local<Object> wssi = args.Data().As<Object>();
+	wssiObject *wssiInternal = wssiObject::Unwrap<wssiObject>( wssi );
+
+	struct wssEvent *eventMessage = wssiInternal->acceptEventMessage;
+
+	//lprintf( "Resolve called on promise...");
+	if( eventMessage ) {
+		wssiInternal->acceptEventMessage = NULL;
+		eventMessage->done = TRUE;
+		eventMessage->data.request.accepted = 1;
+		eventMessage->result = wssiInternal;
+		args.GetReturnValue().Set( wssiInternal->acceptPromise.Get(isolate) );
+		wssiInternal->acceptPromise.Reset();
+		if( eventMessage->waiter )
+			WakeThread( eventMessage->waiter );
+	}
+}
+
+static void acceptRejected(const v8::FunctionCallbackInfo<Value>& args ) {
+	v8::Isolate* isolate = args.GetIsolate();
+	Local<Object> wssi = args.Data().As<Object>();
+	wssiObject *wssiInternal = wssiObject::Unwrap<wssiObject>( wssi );
+
+	struct wssEvent *eventMessage = wssiInternal->acceptEventMessage;
+
+	//lprintf( "Reject called on promise...");
+	if( eventMessage ) { // this is released on post...
+		wssiInternal->acceptEventMessage = NULL;
+		eventMessage->done = TRUE;
+		eventMessage->data.request.accepted = 0;
+		args.GetReturnValue().Set( wssiInternal->acceptPromise.Get(isolate) );
+		wssiInternal->acceptPromise.Reset();
+
+		if( eventMessage->waiter )
+			WakeThread( eventMessage->waiter );
+	}
+}
+
+static void wssiAsyncMsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	wssiObject* myself = (wssiObject*)handle->data;
+
+	Local<Context> context = isolate->GetCurrentContext();
+	{
+		struct wssiEvent* eventMessage;
+		while( eventMessage = ( struct wssiEvent* )DequeLink( &myself->eventQueue ) ) {
+			Local<Value> argv[1];
+			Local<ArrayBuffer> ab;
+			switch( eventMessage->eventType ) {
+			case WS_EVENT_OPEN:
+				if( !myself->thrown && !myself->server->openCallback.IsEmpty() ) {
+					Local<Function> cb = Local<Function>::New( isolate, myself->server->openCallback );
+					argv[0] = myself->_this.Get( isolate );
+					cb->Call( context, myself->_this.Get( isolate ), 1, argv );
+				}
+				break;
+			case WS_EVENT_READ:
+				if( !myself->messageCallback.IsEmpty() ) {
+					if( eventMessage->binary ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+						ab = ArrayBuffer::New( isolate, bs );
+#else
+						ab =
+							ArrayBuffer::New( isolate
+								, (void*)eventMessage->buf
+								, eventMessage->buflen );
+
+						PARRAY_BUFFER_HOLDER holder = GetHolder();
+						holder->o.Reset( isolate, ab );
+						holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+						holder->buffer = eventMessage->buf;
+#endif
+						argv[0] = ab;
+
+						myself->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+					}
+					else {
+						MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
+						argv[0] = buf.ToLocalChecked();
+						//lprintf( "Message:', %s", eventMessage->buf );
+						myself->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+					}
+					Deallocate( POINTER, eventMessage->buf );
+				}
+				break;
+			case WS_EVENT_CLOSE:
+				if( !myself->closeCallback.IsEmpty() ) {
+					myself->closeCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+				}
+				uv_close( (uv_handle_t*)&myself->async, uv_closed_wssi );
+				DropWssiEvent( eventMessage );
+				DeleteLinkQueue( &myself->eventQueue );
+				myself->closed = 1;
+				myself->readyState = CLOSED;
+				continue;
+				break;
+			case WS_EVENT_ERROR:
+				myself->errorCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+				break;
+			}
+			DropWssiEvent( eventMessage );
+		}
+	}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
+}
+
+static void wssAsyncMsg( uv_async_t* handle ) {
+	// Called by UV in main thread after our worker thread calls uv_async_send()
+	//    I.e. it's safe to callback to the CB we defined in node!
+	wssObject* myself = (wssObject*)handle->data;
+	v8::Isolate* isolate = myself->isolate;//v8::Isolate::GetCurrent();
 	HandleScope scope(isolate);
 	Local<Context> context = isolate->GetCurrentContext();
-	wssObject* myself = (wssObject*)handle->data;
+	class constructorSet *c = getConstructors( isolate);
 	int handled = 0;
 	{
 		struct wssEvent *eventMessage;
@@ -664,11 +804,18 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				if( !myself->errorLowCallback.IsEmpty() ) {
 					argv[0] = Integer::New( isolate, eventMessage->data.error.error );
 					argv[1] = makeSocket( isolate, eventMessage->pc );
+					if( eventMessage->data.error.buffer ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (void*)eventMessage->data.error.buffer,
+							eventMessage->data.error.buflen, releaseBufferBackingStore, NULL );
+						argv[2] = ArrayBuffer::New( isolate, bs );
+#else
 					if( eventMessage->data.error.buffer )
 						argv[2] = ArrayBuffer::New( isolate,
 						(void*)eventMessage->data.error.buffer,
 							eventMessage->data.error.buflen );
-					else
+#endif
+					} else
 						argv[2] = Null( isolate );
 					myself->errorLowCallback.Get( isolate )->Call( context, myself->_this.Get( isolate ), 3, argv );
 
@@ -677,7 +824,8 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 			else if( eventMessage->eventType == WS_EVENT_REQUEST ) {
 				//lprintf( "Comes in directly as a request; don't even get accept..." );
 				if( !myself->requestCallback.IsEmpty() ) {
-					Local<Function> cons = Local<Function>::New( isolate, httpObject::constructor );
+					class constructorSet *c = getConstructors( isolate );
+					Local<Function> cons = Local<Function>::New( isolate, c->httpConstructor );
 					MaybeLocal<Object> _http = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
 					if( _http.IsEmpty() ) {
 						isolate->ThrowException( Exception::Error(
@@ -710,8 +858,8 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 			}
 			else if( eventMessage->eventType == WS_EVENT_ACCEPT ) {
 				//lprintf( "Dispatch open event because connect." );
-
-				Local<Function> cons = Local<Function>::New( isolate, wssiObject::constructor );
+				class constructorSet *c = getConstructors( isolate );
+				Local<Function> cons = Local<Function>::New( isolate, c->wssiConstructor );
 				MaybeLocal<Object> _wssi = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
 				if( _wssi.IsEmpty() ) {
 					isolate->ThrowException( Exception::Error(
@@ -728,6 +876,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				wssiInternal->pc = eventMessage->pc;
 				wssiInternal->server = myself;
 				AddLink( &myself->opening, wssiInternal );
+				eventMessage->result = wssiInternal;
 
 				SETV( wssi, strings->connectionString->Get(isolate), socket = makeSocket( isolate, eventMessage->pc ) );
 				SETV( wssi, strings->headerString->Get( isolate ), GETV( socket, strings->headerString->Get( isolate ) ) );
@@ -736,14 +885,69 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 						, GetText( GetHttpRequest( GetWebSocketHttpState( wssiInternal->pc ) ) ), v8::NewStringType::kNormal ).ToLocalChecked() );
 
 				argv[0] = wssi;
+				wssiInternal->acceptEventMessage = eventMessage;
 
 				if( !myself->acceptCallback.IsEmpty() ) {
 					Local<Function> cb = myself->acceptCallback.Get( isolate );
-					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+					MaybeLocal<Value> result = cb->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+					if( wssiInternal->blockReturn ) {
+						continue;
+					}
+					if( !result.IsEmpty() ) {
+						Local<Value> ret = result.ToLocalChecked();
+						if( ret->IsPromise() ) { 
+							Local<Promise> retPro = ret.As<Promise>();
+							if(  !retPro.IsEmpty() ){
+								Promise::PromiseState s = retPro->State();
+								if( s == Promise::PromiseState::kPending ) {
+									if( c->promiseThen.IsEmpty()){
+										Local<Function> cons = Local<Function>::Cast(
+											retPro->Get( context, String::NewFromUtf8( isolate, "then", NewStringType::kNormal ).ToLocalChecked() ).ToLocalChecked());
+										c->promiseThen.Reset( isolate, cons );
+									}
+									if( c->promiseCatch.IsEmpty()){
+										Local<Function> cons = Local<Function>::Cast(
+											retPro->Get( context, String::NewFromUtf8( isolate, "catch", NewStringType::kNormal ).ToLocalChecked() ).ToLocalChecked());
+										c->promiseCatch.Reset( isolate, cons );
+
+									}
+									//lprintf( "Register thren/cancel callbacks on pending..." );
+									Local<Function> promiseResolved = v8::Function::New( isolate->GetCurrentContext(), acceptResolved, wssi ).ToLocalChecked();
+									Local<Function> promiseRejected = v8::Function::New( isolate->GetCurrentContext(), acceptRejected, wssi ).ToLocalChecked();
+
+									Local<Value> argv[1] = { promiseResolved };
+									Local<Value> result = c->promiseThen.Get( isolate )->Call( context, retPro, 1, argv ).ToLocalChecked();
+									argv[0] = { promiseRejected };
+									result = c->promiseCatch.Get( isolate )->Call( context, retPro, 1, argv ).ToLocalChecked();
+
+									//wssiInternal->acceptPromise.Reset( isolate, retPro );
+									//promiseRejected->
+									//Then (Local< Context > context, Local< Function > on_fulfilled, Local< Function > on_rejected)
+									//MaybeLocal<Promise> retval = retPro->Then( context, promiseResolved, promiseRejected );
+									continue;
+								}
+								else if( s == Promise::PromiseState::kFulfilled ) {
+									Local<Value> e = retPro->Result();
+									String::Utf8Value s( isolate, e->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+									lprintf( "Is already fulfulled, no problem... %s", *s );
+								}
+								else if( s == Promise::PromiseState::kRejected ) {
+									Local<Value> e = retPro->Result();
+									String::Utf8Value s( isolate, e->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+									lprintf( "Bad news, it's rejected, but... ok. %s", *s );
+									//break;
+								}
+								//  TypeError: Method Promise.prototype.then called on incompatible receiver undefined at then (<anonymous>)
+								// don't set done, keep blocking the acceptor...
+								continue;
+							}
+						}
+
+					}
+					uv_async_init( c->loop, &wssiInternal->async, wssiAsyncMsg );
 				}
 				else
 					eventMessage->data.request.accepted = 1;
-				eventMessage->result = wssiInternal;
 			}
 			else if( eventMessage->eventType == WS_EVENT_ERROR_CLOSE ) {
 				Local<Object> closingSock = makeSocket( isolate, eventMessage->pc );
@@ -778,74 +982,11 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 		}
 		myself->last_count_handled = handled;
 	}
-}
-
-static void wssiAsyncMsg( uv_async_t* handle ) {
-	// Called by UV in main thread after our worker thread calls uv_async_send()
-	//    I.e. it's safe to callback to the CB we defined in node!
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope(isolate);
-	wssiObject* myself = (wssiObject*)handle->data;
-
-	Local<Context> context = isolate->GetCurrentContext();
 	{
-		struct wssiEvent *eventMessage;
-		while( eventMessage = (struct wssiEvent *)DequeLink( &myself->eventQueue ) ) {
-			Local<Value> argv[1];
-			Local<ArrayBuffer> ab;
-			switch( eventMessage->eventType ) {
-			case WS_EVENT_OPEN:
-				if( !myself->server->openCallback.IsEmpty() ) {
-					Local<Function> cb = Local<Function>::New( isolate, myself->server->openCallback );
-					argv[0] = myself->_this.Get( isolate );
-					cb->Call( context, myself->_this.Get( isolate ), 1, argv );
-				}
-				break;
-			case WS_EVENT_READ:
-				size_t length;
-				if( !myself->messageCallback.IsEmpty() ) {
-					if( eventMessage->binary ) {
-						ab =
-							ArrayBuffer::New( isolate,
-												  (void*)eventMessage->buf,
-												  length = eventMessage->buflen );
-						argv[0] = ab;
-
-						PARRAY_BUFFER_HOLDER holder = GetHolder();
-						holder->o.Reset( isolate, ab );
-						holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-						holder->buffer = eventMessage->buf;
-
-						myself->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
-					}
-					else {
-						MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
-						argv[0] = buf.ToLocalChecked();
-						//lprintf( "Message:', %s", eventMessage->buf );
-						myself->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
-					}
-					Deallocate( POINTER, eventMessage->buf );
-				}
-				break;
-			case WS_EVENT_CLOSE:
-				if( !myself->closeCallback.IsEmpty() ) {
-					myself->closeCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
-				}
-				uv_close( (uv_handle_t*)&myself->async, uv_closed_wssi );
-				DropWssiEvent( eventMessage );
-				DeleteLinkQueue( &myself->eventQueue );
-				myself->closed = 1;
-				myself->readyState = CLOSED;
-				continue;
-				break;
-			case WS_EVENT_ERROR:
-				myself->errorCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
-				break;
-			}
-			DropWssiEvent( eventMessage );
-		}
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
-	//lprintf( "done calling message notice." );
 }
 
 static void wscAsyncMsg( uv_async_t* handle ) {
@@ -873,19 +1014,22 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 				}
 				break;
 			case WS_EVENT_READ:
-				size_t length;
 				if( eventMessage->binary ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+					ab = ArrayBuffer::New( isolate,bs );
+#else
 					ab =
 						ArrayBuffer::New( isolate,
 						(void*)eventMessage->buf,
-							length = eventMessage->buflen );
-					argv[0] = ab;
+							eventMessage->buflen );
 
 					PARRAY_BUFFER_HOLDER holder = GetHolder();
 					holder->o.Reset( isolate, ab );
 					holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 					holder->buffer = eventMessage->buf;
-
+#endif
+					argv[0] = ab;
 					wsc->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
 				}
 				else {
@@ -920,14 +1064,193 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 			DropWscEvent( eventMessage );
 		}
 	}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 }
 
-int accepted = 0;
+
+
+
+static LOGICAL PostClientSocket( Isolate *isolate, String::Utf8Value *name, wssiObject* obj ) {
+	struct socketTransport* trans = new struct socketTransport();
+	trans->wssi = obj;
+	trans->acceptEventMessage = obj->acceptEventMessage;
+
+	obj->blockReturn = TRUE;
+	obj->acceptEventMessage = NULL;
+	trans->protocolResponse = obj->protocolResponse;
+	obj->protocolResponse = NULL;
+	{
+		struct socketUnloadStation* station;
+		INDEX idx;
+		LIST_FORALL( l.transportDestinations, idx, struct socketUnloadStation*, station ) {
+			if( memcmp( *station->s[0], *(name[0]), (name[0]).length() ) == 0 ) {
+				AddLink( &station->transport, trans );
+				//lprintf( "Send Post Request %p", station->clientSocketPoster );
+				uv_async_send( &station->clientSocketPoster );
+
+				break;
+			}
+		}
+		if( !station ) {
+			return FALSE;
+			//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Failed to find target accepting thread", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		}
+	}
+	return TRUE;
+}
+
+static void postClientSocket( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() < 2 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameter missing: (unique,socket)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+	wssiObject* obj = wssObject::Unwrap<wssiObject>( args[1].As<Object>() );
+	if( obj ){
+		String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		if( PostClientSocket( isolate, &s, obj ) ) 
+			args.GetReturnValue().Set( True(isolate) );
+		else
+			args.GetReturnValue().Set( False(isolate) );
+		
+	}
+	else {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Second paramter is not an accepted socket", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+	}
+}
+
+
+
+static void postClientSocketObject( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() < 1 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameter missing: (unique)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+	wssiObject* obj = wssObject::Unwrap<wssiObject>( args.This() );
+	if( obj ){
+		String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		if( PostClientSocket( isolate, &s, obj ) ) 
+			args.GetReturnValue().Set( True(isolate) );
+		else
+			args.GetReturnValue().Set( False(isolate) );
+	}
+	else {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Object is not an accepted socket", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+	}
+}
+
+
+static void blockClientSocketAccept( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wssiObject* obj = wssObject::Unwrap<wssiObject>( args.This() );
+	if( obj ) {
+		obj->blockReturn = TRUE;
+	}
+}
+
+static void resumeClientSocketAccept( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wssiObject* obj = wssObject::Unwrap<wssiObject>( args.This() );
+	if( obj && obj->acceptEventMessage ) {
+		obj->acceptEventMessage->data.request.accepted = 1;
+		obj->acceptEventMessage->done = TRUE;
+		if( obj->acceptEventMessage->waiter )
+			WakeThread( obj->acceptEventMessage->waiter );
+	}
+}
+
+static void finishPostClose( uv_handle_t *async ) {
+	struct socketUnloadStation* unload = ( struct socketUnloadStation* )async->data;
+	delete unload->s;
+	delete unload;
+}
+
+static void handlePostedClient( uv_async_t* async ) {
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	struct socketUnloadStation* unload = ( struct socketUnloadStation* )async->data;
+	Local<Function> f = unload->cb.Get( isolate );
+	INDEX idx;
+	struct socketTransport* trans;
+	LIST_FORALL( unload->transport, idx, struct socketTransport*, trans ) {
+
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->wssiConstructor );
+
+		Local<Object> newThreadSocket = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
+
+		Local<Value> args[] = { localStringExternal( isolate, **( unload->s ), unload->s->length() ), newThreadSocket };
+		wssiObject* obj = wssiObject::Unwrap<wssiObject>( newThreadSocket );
+		obj->acceptEventMessage = trans->acceptEventMessage;
+		obj->server = trans->wssi->server;
+		uv_async_init( c->loop, &obj->async, wssiAsyncMsg );
+		{
+			INDEX idx2 = FindLink( &obj->server->opening, trans->wssi );
+			SetLink( &obj->server->opening, idx2, obj );
+		}
+		obj->protocolResponse = trans->protocolResponse;
+		obj->pc = trans->wssi->pc;
+		obj->thrown = TRUE;
+		delete obj->wssiRef;
+		obj->wssiRef = trans->wssi->wssiRef;
+		obj->wssiRef->wssi = obj; // update reference to be this JS object.
+		/* 
+			connectionString, headerString, urlString are all missing
+		*/
+		struct optionStrings *strings;
+		strings = getStrings( isolate );
+		Local<Object> socket;
+		SETV( newThreadSocket, strings->connectionString->Get(isolate), socket = makeSocket( isolate, obj->pc ) );
+		SETV( newThreadSocket, strings->headerString->Get( isolate ), GETV( socket, strings->headerString->Get( isolate ) ) );
+		SETV( newThreadSocket, strings->urlString->Get( isolate )
+			, String::NewFromUtf8( isolate
+				, GetText( GetHttpRequest( GetWebSocketHttpState( obj->pc ) ) ), v8::NewStringType::kNormal ).ToLocalChecked() );
+
+		MaybeLocal<Value> ml_result = f->Call( context, unload->this_.Get(isolate), 2, args );
+		if( !ml_result.IsEmpty() ) {
+			Local<Value> result = ml_result.ToLocalChecked();
+			if( result->TOBOOL(isolate) ) {
+			}
+		}
+		//lprintf( "Cleanup this event.." );
+		unload->cb.Reset();
+		unload->this_.Reset();
+		DeleteLink( &l.transportDestinations, unload );
+		SetLink( &unload->transport, 0, NULL );
+		uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
+		break;
+	}
+}
+
+static void setClientSocketHandler( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	class constructorSet* c = getConstructors( isolate );
+	String::Utf8Value unique( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+
+	Local<Function> f = args[1].As<Function>();
+	struct socketUnloadStation* unloader = new struct socketUnloadStation();
+	unloader->this_.Reset( isolate, args.This() );
+	unloader->s = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	unloader->cb.Reset( isolate, f );
+	unloader->targetThread = c->loop;
+	unloader->clientSocketPoster.data = unloader;
+	unloader->transport = NULL;
+	//lprintf( "New async event handler for this unloader%p", &unloader->clientSocketPoster );
+
+	uv_async_init( unloader->targetThread, &unloader->clientSocketPoster, handlePostedClient );
+
+	AddLink( &l.transportDestinations, unloader );
+}
 
 void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 	Local<Context> context = isolate->GetCurrentContext();
-	if( !l.loop )
-		l.loop = uv_default_loop();
+
 	l.jsThread = MakeThread();
 	//NetworkWait( NULL, 2000000, 16 );  // 1GB memory
 	InitializeCriticalSec( &l.csWssEvents );
@@ -945,6 +1268,7 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 	SET_READONLY( o, "readyStates", wsWebStatesObject );
 
 	SET_READONLY( exports, "WebSocket", o );
+	class constructorSet *c = getConstructors( isolate );
 	{
 		Local<FunctionTemplate> httpTemplate;
 		httpTemplate = FunctionTemplate::New( isolate, httpObject::New );
@@ -954,7 +1278,7 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( httpTemplate, "end", httpObject::end );
 		httpTemplate->ReadOnlyPrototype();
 
-		httpObject::constructor.Reset( isolate, httpTemplate->GetFunction(context).ToLocalChecked() );
+		c->httpConstructor.Reset( isolate, httpTemplate->GetFunction(context).ToLocalChecked() );
 
 		// this is not exposed as a class that javascript can create.
 		//SET_READONLY( o, "R", wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
@@ -967,7 +1291,7 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( httpRequestTemplate, "on", httpRequestObject::on );
 		NODE_SET_PROTOTYPE_METHOD( httpRequestTemplate, "wait", httpRequestObject::wait );
 		httpRequestTemplate->ReadOnlyPrototype();
-		httpRequestObject::constructor.Reset( isolate, httpRequestTemplate->GetFunction(context).ToLocalChecked() );
+		c->httpReqConstructor.Reset( isolate, httpRequestTemplate->GetFunction(context).ToLocalChecked() );
 
 		Local<Object> oHttps = Object::New( isolate );
 		SET_READONLY( exports, "HTTPS", oHttps );
@@ -979,6 +1303,12 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 
 		// this is not exposed as a class that javascript can create.
 		//SET_READONLY( o, "R", wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	}
+	{
+		Local<Object> threadObject = Object::New( isolate );
+		SET_READONLY_METHOD( threadObject, "post", postClientSocket );
+		SET_READONLY_METHOD( threadObject, "accept", setClientSocketHandler );
+		SET_READONLY( o, "Thread", threadObject );
 	}
 	{
 		Local<FunctionTemplate> wssTemplate;
@@ -1011,8 +1341,8 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onmessage", wsObject::on );
 		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "on", wsObject::on );
 
-		wssObject::constructor.Reset( isolate, wssTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-		wssObject::tpl.Reset( isolate, wssTemplate );
+		c->wssConstructor.Reset( isolate, wssTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		c->wssTpl.Reset( isolate, wssTemplate );
 
 		SET_READONLY( o, "Server", wssTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
@@ -1043,8 +1373,8 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		);
 		wscTemplate->ReadOnlyPrototype();
 
-		wscObject::constructor.Reset( isolate, wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-		wscObject::tpl.Reset( isolate, wscTemplate );
+		c->wscConstructor.Reset( isolate, wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		c->wscTpl.Reset( isolate, wscTemplate );
 
 		SET_READONLY( o, "Client", wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
@@ -1054,6 +1384,10 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		wssiTemplate = FunctionTemplate::New( isolate, wssiObject::New );
 		wssiTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.ws.connection", v8::NewStringType::kNormal ).ToLocalChecked() );
 		wssiTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
+		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "post", postClientSocketObject );
+		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "block", blockClientSocketAccept );
+		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "resume", resumeClientSocketAccept );
+
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "send", wssiObject::write );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "close", wssiObject::close );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "on", wssiObject::on );
@@ -1065,8 +1399,8 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 			, Local<FunctionTemplate>() );
 		wssiTemplate->ReadOnlyPrototype();
 
-		wssiObject::constructor.Reset( isolate, wssiTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-		wssiObject::tpl.Reset( isolate, wssiTemplate );
+		c->wssiConstructor.Reset( isolate, wssiTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		c->wssiTpl.Reset( isolate, wssiTemplate );
 		//SET_READONLY( o, "Client", wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 }
@@ -1094,21 +1428,25 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 			break;
 		}
 	}
-	if( wssi ) {
+	if( wssi && !wssi->thrown ) {
 		struct wssiEvent *pevt = GetWssiEvent();
 		if( wssi->protocolResponse ) {
 			Deallocate( const char *, wssi->protocolResponse );
 			wssi->protocolResponse = NULL;
 		}
-		//lprintf( "send open event to JS" );
+		//lprintf( "Send open event?" );
 		(*pevt).eventType = WS_EVENT_OPEN;
 		(*pevt)._this = wssi;
 		EnqueLink( &wssi->eventQueue, pevt );
+		//lprintf( "Send Event:%p", &wss->async );
 		uv_async_send( &wssi->async );
-		return (uintptr_t)wssi;
+		// can't change this result later, so need to send 
+		// it as a refernence, in case the JS object changes
+		return (uintptr_t)wssi->wssiRef;
 	}
-	lprintf( "FAILED TO HAVE WSSI to open." );
-	return 0;
+	if( !wssi )
+		lprintf( "FAILED TO HAVE WSSI to open." );
+	return (uintptr_t)wssi->wssiRef;
 }
 
 static void webSockServerCloseEvent( wssObject *wss ) {
@@ -1133,7 +1471,8 @@ static void webSockServerCloseEvent( wssObject *wss ) {
 
 static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char *reason )
 {
-	wssiObject *wssi = (wssiObject*)psv;
+	class wssiObjectReference *wssiRef = (class wssiObjectReference*)psv;
+	class wssiObject *wssi = wssiRef->wssi;
 	if( wssi ) {
 		struct wssiEvent *pevt = GetWssiEvent();
 		//lprintf( "Server Websocket closed; post to javascript %p  %p", pc, wssi );
@@ -1166,7 +1505,6 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 			if( requested ) 
 				return;
 		}
-		lprintf( "(close before accept)Illegal connection" );
 		//DumpAddr( "IP", ip );
 		struct wssEvent *pevt = GetWssEvent();
 		if( ( (*pevt).waiter = MakeThread() ) != l.jsThread )  {
@@ -1200,7 +1538,8 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 }
 
 static void webSockServerError( PCLIENT pc, uintptr_t psv, int error ){
-	wssiObject *wssi = (wssiObject*)psv;
+	class wssiObjectReference *wssiRef = (class wssiObjectReference*)psv;
+	class wssiObject *wssi = wssiRef->wssi;
 	struct wssiEvent *pevt = GetWssiEvent();
 	(*pevt).eventType = WS_EVENT_ERROR;
 	(*pevt)._this = wssi;
@@ -1210,7 +1549,8 @@ static void webSockServerError( PCLIENT pc, uintptr_t psv, int error ){
 
 static void webSockServerEvent( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOINTER buffer, size_t msglen ){
 	//lprintf( "Received:%p %d", buffer, binary );
-	wssiObject *wssi = (wssiObject*)psv;
+	class wssiObjectReference *wssiRef = (class wssiObjectReference*)psv;
+	class wssiObject *wssi = wssiRef->wssi;
 	struct wssiEvent *pevt = GetWssiEvent();
 	(*pevt).eventType = WS_EVENT_READ;
 	(*pevt)._this = wssi;
@@ -1229,6 +1569,7 @@ static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char *proto
 	evt.data.request.protocol = protocols;
 	evt.data.request.resource = resource;
 	if( !pc ) lprintf( "FATALITY - ACCEPT EVENT RECEVIED ON A NON SOCKET!?" );
+
 	evt.pc = pc;
 	evt.data.request.accepted = 0;
 	//lprintf( "Websocket accepted... (blocks until handled.)" );
@@ -1245,7 +1586,6 @@ static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char *proto
 
 	while( !evt.done )
 		Wait();
-	//lprintf( "handled... accept next?" );
 	if( evt.data.request.protocol != protocols )
 		evt.result->protocolResponse = evt.data.request.protocol;
 	(*protocolReply) = (char*)evt.data.request.protocol;
@@ -1341,15 +1681,24 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			Local<ArrayBuffer> bodybuf = body->Buffer();
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", body->ByteLength() );
 			vtprintf( obj->pvtResult, "\r\n" );
+#if ( NODE_MAJOR_VERSION >= 14 )
+			VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetBackingStore()->Data(), bodybuf->ByteLength() );
+#else
 			VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
+#endif
 		}
 		else if( args[0]->IsArrayBuffer() ) {
 			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", ab->ByteLength() );
 			vtprintf( obj->pvtResult, "\r\n" );
+#if ( NODE_MAJOR_VERSION >= 14 )
+			VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 			VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 		} else if( args[0]->IsObject() ) {
-			Local<FunctionTemplate> wrapper_tpl = FileObject::tpl.Get( isolate );
+			class constructorSet *c = getConstructors( isolate );
+			Local<FunctionTemplate> wrapper_tpl = c->fileTpl.Get( isolate );
 			if( (wrapper_tpl->HasInstance( args[0] )) ) {
 				FileObject *file = FileObject::Unwrap<FileObject>( args[0]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked() );
 				lprintf( "Incomplete; streaming file content to socket...." );
@@ -1393,6 +1742,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 						(*pevt)._this = obj->wss;
 						obj->ssl = ssl_IsClientSecure( obj->pc );
 						EnqueLink(&obj->wss->eventQueue, pevt);
+						//lprintf( "Send Request" );
 						if( (*pevt).waiter == l.jsThread ) {
 							wssAsyncMsg( &obj->wss->async );
 						} else
@@ -1429,12 +1779,11 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 				//return;
 			}
 		}
-
 		if( requested )
 			return;
 	}
 
-	lprintf( "(close before accept)Illegal connection" );
+	//lprintf( "(close before accept)Illegal connection" );
 
 	struct wssEvent *pevt = GetWssEvent();
 	(*pevt).eventType = WS_EVENT_ERROR_CLOSE;
@@ -1538,9 +1887,6 @@ wssObject::wssObject( struct wssOptions *opts ) {
 	}
 	closed = 0;
 	NetworkWait( NULL, 256, 2 );  // 1GB memory
-
-	async.data = this;
-	uv_async_init( l.loop, &async, wssAsyncMsg );
 
 	pc = WebSocketCreate_v2( opts->url, webSockServerOpen, webSockServerEvent, webSockServerClosed, webSockServerError, (uintptr_t)this, WEBSOCK_SERVER_OPTION_WAIT );
 	if( pc ) {
@@ -1718,17 +2064,17 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		wssOpts->deflate = false;
 	}
 	else
-		wssOpts->deflate = (GETV( opts, optName )->ToBoolean( isolate )->Value());
+		wssOpts->deflate = (GETV( opts, optName )->TOBOOL( isolate ));
 	if( !opts->Has( context, optName = strings->deflateAllowString->Get( isolate ) ).ToChecked() ) {
 		wssOpts->deflate_allow = false;
 	}
 	else {
-		wssOpts->deflate_allow = (GETV( opts, optName )->ToBoolean( isolate )->Value());
+		wssOpts->deflate_allow = (GETV( opts, optName )->TOBOOL( isolate ));
 		//lprintf( "deflate allow:%d", wssOpts->deflate_allow );
 	}
 
 	if( opts->Has( context, optName = strings->maskingString->Get( isolate ) ).ToChecked() ) {
-		wssOpts->apply_masking = GETV( opts, optName )->ToBoolean( isolate )->Value();
+		wssOpts->apply_masking = GETV( opts, optName )->TOBOOL( isolate );
 	}
 	else
 		wssOpts->apply_masking = false;
@@ -1737,7 +2083,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		Local<Value> val = GETV( opts, optName );
 		if( val->IsArray() ) {
 		Local<Array> hosts = GETV( opts, optName ).As<Array>();
-		int o;
+		uint32_t o;
 		for( o = 0; o < hosts->Length(); o++ ) {
 			Local<Object> host = GETV( hosts, o ).As<Object>();
 			ParseWssHostOption( strings, wssOpts, isolate, host );
@@ -1780,6 +2126,11 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 
 		Local<Object> _this = args.This();
 		wssObject* obj = new wssObject( &wssOpts );
+		class constructorSet *c = getConstructors(isolate);
+		uv_async_init( c->loop, &obj->async, wssAsyncMsg );
+		obj->async.data = obj;
+
+		obj->isolate = isolate;
 		obj->ssl = wssOpts.ssl;
 		if( wssOpts.cert_chain )
 			Deallocate( char *, wssOpts.cert_chain );
@@ -1810,8 +2161,9 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 		Local<Value> *argv = new Local<Value>[argc];
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
+		class constructorSet *c = getConstructors( isolate );
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		Local<Function> cons = Local<Function>::New( isolate, c->wssConstructor );
 		MaybeLocal<Object> result = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
 		delete[] argv;
 		if( !result.IsEmpty() )
@@ -1972,7 +2324,8 @@ void wssObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 	Local<Object> h = args.Holder();
 	Local<Object> t = args.This();
 	//if( wssObject::tpl. )
-	Local<FunctionTemplate> wrapper_tpl = wssObject::tpl.Get( isolate );
+	class constructorSet *c = getConstructors( isolate );
+	Local<FunctionTemplate> wrapper_tpl = c->wssTpl.Get( isolate );
 	int ht = wrapper_tpl->HasInstance( h );
 	int tt = wrapper_tpl->HasInstance( t );
 	wssObject *obj;
@@ -1993,9 +2346,9 @@ wssiObject::wssiObject( ) {
 	readyState = wsReadyStates::OPEN;
 	protocolResponse = NULL;
 	this->closed = 0;
-
-	uv_async_init( l.loop, &async, wssiAsyncMsg );
-	async.data = this;
+	this->thrown = FALSE;
+	this->blockReturn = 0;
+	this->acceptEventMessage = NULL;
 }
 
 wssiObject::~wssiObject() {
@@ -2010,6 +2363,12 @@ void wssiObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.IsConstructCall() ) {
 		wssiObject *obj = new wssiObject();
+		obj->isolate = isolate;
+		class constructorSet *c = getConstructors(isolate);
+		//uv_async_init( c->loop, &obj->async, wssiAsyncMsg );
+		obj->wssiRef = new wssiObjectReference();
+		obj->wssiRef->wssi = obj;
+		obj->async.data = obj;
 		obj->_this.Reset( isolate, args.This() );
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
@@ -2017,15 +2376,15 @@ void wssiObject::New( const FunctionCallbackInfo<Value>& args ) {
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
 		Local<Value> *argv = new Local<Value>[args.Length()];
-
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->wssiConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), 0, argv ).ToLocalChecked() );
 		delete[] argv;
 	}
 }
 
 void wssiObject::ping( const v8::FunctionCallbackInfo<Value>& args ) {
-  	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
+	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 	WebSocketPing( obj->pc, 0 );
 }
 
@@ -2083,14 +2442,26 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 	if( args[0]->IsTypedArray() ) {
 		Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
 		Local<ArrayBuffer> ab = ta->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 	} else if( args[0]->IsUint8Array() ) {
 		Local<Uint8Array> body = args[0].As<Uint8Array>();
 		Local<ArrayBuffer> ab = body->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 	} else if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 	}
 	else if( args[0]->IsString() ) {
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -2109,7 +2480,8 @@ void wssiObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 	Local<Object> h = args.Holder();
 	Local<Object> t = args.This();
 	//if( wssObject::tpl. )
-	Local<FunctionTemplate> wrapper_tpl = wssiObject::tpl.Get( isolate );
+		class constructorSet *c = getConstructors( isolate );
+	Local<FunctionTemplate> wrapper_tpl = c->wssiTpl.Get( isolate );
 	int ht = wrapper_tpl->HasInstance( h );
 	int tt = wrapper_tpl->HasInstance( t );
 	wssiObject *obj;
@@ -2133,6 +2505,9 @@ static uintptr_t webSockClientOpen( PCLIENT pc, uintptr_t psv ) {
 	(*pevt).eventType = WS_EVENT_OPEN;
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
+	lprintf( "Send Open Request" );
+#endif
 	uv_async_send( &wsc->async );
 	return psv;
 }
@@ -2145,6 +2520,9 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
+	lprintf( "Send Close Request" );
+#endif
 	uv_async_send( &wsc->async );
 	wsc->pc = NULL;
 }
@@ -2157,6 +2535,9 @@ static void webSockClientError( PCLIENT pc, uintptr_t psv, int error ) {
 	(*pevt)._this = wsc;
 	(*pevt).code = error;
 	EnqueLink( &wsc->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
+	lprintf( "Send Error Request" );
+#endif
 	uv_async_send( &wsc->async );
 }
 
@@ -2171,6 +2552,9 @@ static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTE
 	(*pevt).binary = type;
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
+	lprintf( "Send Client Read Request" );
+#endif
 	uv_async_send( &wsc->async );
 }
 
@@ -2180,8 +2564,6 @@ wscObject::wscObject( wscOptions *opts ) {
 	closed = 0;
 	//lprintf( "Init async handle. (wsc) %p", &async );
 	NetworkWait( NULL, 256, 2 );  // 1GB memory
-	uv_async_init( l.loop, &async, wscAsyncMsg );
-	async.data = this;
 
 	pc = WebSocketOpen( opts->url, WS_DELAY_OPEN
 		, webSockClientOpen
@@ -2195,7 +2577,8 @@ wscObject::wscObject( wscOptions *opts ) {
 		if( opts->ssl ) {
 			if( !ssl_BeginClientSession( pc, opts->key, opts->key_len, opts->pass, opts->pass_len
 				, opts->root_cert, opts->root_cert ? strlen( opts->root_cert ) : 0 ) ) {
-				throw "Error initializing SSL connection (bad key or passphrase?)";
+				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Error initializing SSL connection (bad key or passphrase?)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+				//throw "Error initializing SSL connection (bad key or passphrase?)";
 			}
 		}
 		WebSocketConnect( pc );
@@ -2226,7 +2609,7 @@ void parseWscOptions( struct wscOptions *wscOpts, Isolate *isolate, Local<Object
 			wscOpts->root_cert = StrDup( *rootCa );
 		}
 		else
-         wscOpts->root_cert = NULL;
+			wscOpts->root_cert = NULL;
 	}
 
 	if( opts->Has( context, optName = strings->keyString->Get( isolate ) ).ToChecked() ) {
@@ -2320,15 +2703,20 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 
 		Local<Object> _this = args.This();
 		wscObject* obj;
-		try {
+		//try {
 			obj = new wscObject( &wscOpts );
+			obj->isolate = isolate;
+			class constructorSet *c = getConstructors(isolate);
+			uv_async_init( c->loop, &obj->async, wscAsyncMsg );
+			obj->async.data = obj;
+
 			obj->_this.Reset( isolate, _this );
 			obj->Wrap( _this );
-		}
-		catch( const char *ex1 ) {
-			isolate->ThrowException( Exception::Error(
-				String::NewFromUtf8( isolate, TranslateText( ex1 ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
-		}
+		//}
+		//catch( const char *ex1 ) {
+		//	isolate->ThrowException( Exception::Error(
+		//		String::NewFromUtf8( isolate, TranslateText( ex1 ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		//}
 		if( wscOpts.root_cert )
 			Deallocate( char *, wscOpts.root_cert );
 		if( wscOpts.key )
@@ -2346,7 +2734,8 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->wscConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete[] argv;
 	}
@@ -2418,7 +2807,7 @@ void wscObject::getOnError( const FunctionCallbackInfo<Value>& args ) {
 }
 
 void wscObject::ping( const v8::FunctionCallbackInfo<Value>& args ) {
-  	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 	WebSocketPing( obj->pc, 0 );
 }
 
@@ -2498,10 +2887,18 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 	if( args[0]->IsTypedArray() ) {
 		Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
 		Local<ArrayBuffer> ab = ta->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 	} else if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 	}
 	else if( args[0]->IsString() ) {
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -2521,7 +2918,8 @@ void wscObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 	Local<Object> h = args.Holder();
 	Local<Object> t = args.This();
 	//if( wssObject::tpl. )
-	Local<FunctionTemplate> wrapper_tpl = wscObject::tpl.Get( isolate );
+		class constructorSet *c = getConstructors( isolate );
+	Local<FunctionTemplate> wrapper_tpl = wscTpl.Get( isolate );
 	int ht = wrapper_tpl->HasInstance( h );
 	int tt = wrapper_tpl->HasInstance( t );
 	wscObject *obj;
@@ -2569,7 +2967,8 @@ void httpRequestObject::New( const FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->httpReqConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 	}
 

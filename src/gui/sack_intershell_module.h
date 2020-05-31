@@ -20,14 +20,14 @@ public:
 
 class InterShellObject : public node::ObjectWrap {
 public:
-	static v8::Persistent<v8::Function> buttonConstructor;
-	static v8::Persistent<v8::Function> buttonInstanceConstructor;
-	static v8::Persistent<v8::Function> controlConstructor;
-	static v8::Persistent<v8::Function> controlInstanceConstructor;
-	static v8::Persistent<v8::Function> customControlConstructor;
-	static v8::Persistent<v8::Function> customControlInstanceConstructor;
-	static v8::Persistent<v8::Function> intershellConstructor;
-	static v8::Persistent<v8::Function> configConstructor;
+	//static v8::Persistent<v8::Function> buttonConstructor;
+	//static v8::Persistent<v8::Function> buttonInstanceConstructor;
+	//static v8::Persistent<v8::Function> controlConstructor;
+	//static v8::Persistent<v8::Function> controlInstanceConstructor;
+	//static v8::Persistent<v8::Function> customControlConstructor;
+	//static v8::Persistent<v8::Function> customControlInstanceConstructor;
+	//static v8::Persistent<v8::Function> intershellConstructor;
+	//static v8::Persistent<v8::Function> configConstructor;
 
 	char *name;
 	PLINKQUEUE events;

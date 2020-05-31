@@ -1,9 +1,13 @@
 
 #include "../global.h"
 
+#ifdef SACK_CORE_BUILD
 #include <psi.h>
 #include <psi/console.h>
 #include <psi/clock.h>
+#else
+//#include <sack_psi.h>
+#endif
 
 static RegistrationObject *findRegistration( CTEXTSTR name );
 
@@ -11,31 +15,19 @@ static VoidObject _blankVoid;
 
 static struct psiLocal {
 	PLIST registrations;
-	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	//uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE events;
 	PTHREAD nodeThread;
 	ControlObject *pendingCreate;
 	Local<Object> newControl;
 	RegistrationObject *pendingRegistration;
-	int eventLoopEnables;
-	LOGICAL eventLoopRegistered;
 	PLIST controls;
 	LOGICAL internalCreate;
 	IS_EVENTSET event_pool;
 	int bindingDataId;
+	int first_initialized;
 } psiLocal;
 
-Persistent<FunctionTemplate> ControlObject::frameTemplate;
-Persistent<FunctionTemplate> ControlObject::controlTemplate;
-Persistent<FunctionTemplate> ListboxItemObject::listItemTemplate;
-Persistent<Function> ControlObject::constructor;
-Persistent<Function> ControlObject::constructor2;
-Persistent<Function> ControlObject::registrationConstructor;
-Persistent<Function> PopupObject::constructor;
-Persistent<Function> ListboxItemObject::constructor;
-Persistent<Function> MenuItemObject::constructor;
-Persistent<Function> VoidObject::constructor;
-Persistent<Function> VoidObject::constructor2;
 
 struct optionStrings {
 	Isolate *isolate;
@@ -111,6 +103,7 @@ static void asyncmsg( uv_async_t* handle ) {
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
+	class constructorSet* c = getConstructors( isolate );
 
 	//lprintf( "async message notice. %p", myself );
 	{
@@ -156,7 +149,7 @@ static void asyncmsg( uv_async_t* handle ) {
 					
 					Local<Value> retval = cb->Call( context, object, 0, NULL ).ToLocalChecked();
 
-					evt->success = retval->ToInt32( USE_ISOLATE_VOID( isolate ) )->Value();
+					evt->success = retval->ToInt32( context ).ToLocalChecked()->Value();
 				}
 				else {
 					Local<Object> object = ControlObject::NewWrappedControl( isolate, evt->data.pc );
@@ -195,9 +188,9 @@ static void asyncmsg( uv_async_t* handle ) {
 			case Event_Control_Mouse: {
 				//evt->data.controlMouse.target
 				Local<Object> jsEvent = Object::New( isolate );
-				jsEvent->Set( localStringExternal( isolate, "x" ), Integer::New( isolate, evt->data.mouse.x ) );
-				jsEvent->Set( localStringExternal( isolate, "y" ), Integer::New( isolate, evt->data.mouse.y ) );
-				jsEvent->Set( localStringExternal( isolate, "b" ), Integer::New( isolate, evt->data.mouse.b ) );
+				jsEvent->Set( context, localStringExternal( isolate, "x" ), Integer::New( isolate, evt->data.mouse.x ) );
+				jsEvent->Set( context, localStringExternal( isolate, "y" ), Integer::New( isolate, evt->data.mouse.y ) );
+				jsEvent->Set( context, localStringExternal( isolate, "b" ), Integer::New( isolate, evt->data.mouse.b ) );
 				{
 					Local<Value> argv[1] = { jsEvent };
 					cb = Local<Function>::New( isolate, evt->control->registration->cbMouseEvent );
@@ -216,7 +209,7 @@ static void asyncmsg( uv_async_t* handle ) {
 				break;
 			case Event_Control_ConsoleInput: {
 				cb = Local<Function>::New( isolate, evt->control->customEvents[0] );
-				Local<Value> argv[1] = { String::NewFromUtf8( isolate, GetText( evt->data.console.text ) ) };
+				Local<Value> argv[1] = { localStringExternal( isolate, GetText( evt->data.console.text ) ) };
 				r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
 				break;
 			}
@@ -237,11 +230,11 @@ static void asyncmsg( uv_async_t* handle ) {
 				break;
 			}
 			case Event_Control_Close_Loop:
-				uv_close( (uv_handle_t*)&psiLocal.async, NULL );
+				uv_close( (uv_handle_t*)&c->psiLocal_async, NULL );
 				break;
 			case Event_Listbox_Selected:
 				cb = Local<Function>::New( isolate, evt->control->listboxOnSelect );
-				//Local<Value> argv[1] = { String::NewFromUtf8( isolate, GetText( evt->data.console.text ) ) };
+				//Local<Value> argv[1] = { localStringExternal( isolate, GetText( evt->data.console.text ) ) };
 				{
 					ListboxItemObject *lio = (ListboxItemObject *)evt->data.listbox.pli;
 					r = cb->Call( context, lio->_this.Get(isolate), 0, NULL ).ToLocalChecked();
@@ -276,17 +269,22 @@ static void asyncmsg( uv_async_t* handle ) {
 			DeleteFromSet( IS_EVENT, &psiLocal.event_pool, evt );
 		}
 	}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 	//lprintf( "done calling message notice." );
 }
 
 
-void enableEventLoop( void ) {
-	if( !psiLocal.eventLoopRegistered ) {
-		psiLocal.eventLoopRegistered = TRUE;
-		MemSet( &psiLocal.async, 0, sizeof( &psiLocal.async ) );
-		uv_async_init( uv_default_loop(), &psiLocal.async, asyncmsg );
+void enableEventLoop( class constructorSet *c ) {
+	if( !c->eventLoopRegistered ) {
+		c->eventLoopRegistered = TRUE;
+		MemSet( &c->psiLocal_async, 0, sizeof( &c->psiLocal_async ) );
+		uv_async_init( c->loop, &c->psiLocal_async, asyncmsg );
 	}
-	psiLocal.eventLoopEnables++;
+	c->eventLoopEnables++;
 }
 
 
@@ -295,8 +293,8 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 #define e (*pe)
 	va_list args;
 	va_start( args, type );
-	if( type != Event_Control_Close_Loop )
-		enableEventLoop();
+	if( type != Event_Control_Close_Loop && control )
+		enableEventLoop( control->isolateCons );
 	pe = GetFromSet( IS_EVENT, &psiLocal.event_pool );
 	e.type = type;
 	e.control = control;
@@ -330,7 +328,7 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 		e.data.listbox.opened = va_arg( args, LOGICAL );
 		break;
 	case Event_Menu_Item_Selected:
-		e.data.popup.pmi = va_arg( args, uintptr_t );
+		e.data.popup.pmi = va_arg( args, MenuItemObject * );
 		break;
 	case Event_Control_Move:
 		if( control->cbMoveEvent.IsEmpty() )
@@ -348,11 +346,14 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 		break;
 	}
 
-	e.waiter = MakeThread();
+	if( block )
+		e.waiter = MakeThread();
+	else
+		e.waiter = NULL;
 	e.flags.complete = 0; 
 	e.success = 0;
 	EnqueLink( &psiLocal.events, &e );
-	uv_async_send( &psiLocal.async );
+	uv_async_send( &control->isolateCons->psiLocal_async );
 	if( block )
 		while( !e.flags.complete ) WakeableSleep( 1000 );
 
@@ -360,10 +361,10 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 #undef e
 }
 
-void disableEventLoop( void ) {
-	if( psiLocal.eventLoopRegistered ) {
-		if( !(--psiLocal.eventLoopEnables) ) {
-			psiLocal.eventLoopRegistered = FALSE;
+void disableEventLoop( class constructorSet *c ) {
+	if( c->eventLoopRegistered ) {
+		if( !(--c->eventLoopEnables) ) {
+			c->eventLoopRegistered = FALSE;
 			MakePSIEvent( NULL, false, Event_Control_Close_Loop );
 		}
 	}
@@ -375,10 +376,11 @@ VoidObject::VoidObject( uintptr_t data ) {
 void VoidObject::Init( Isolate *isolate ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> voidTemplate;
+	class constructorSet* c = getConstructors( isolate );
 	voidTemplate = FunctionTemplate::New( isolate, New );
-	voidTemplate->SetClassName( String::NewFromUtf8( isolate, "void*" ) );
+	voidTemplate->SetClassName( localStringExternal( isolate, "void*" ) );
 	voidTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 internal field for wrap
-	constructor.Reset( isolate, voidTemplate->GetFunction(context).ToLocalChecked() );
+	c->VoidObject_constructor.Reset( isolate, voidTemplate->GetFunction(context).ToLocalChecked() );
 }
 void VoidObject::New( const FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
@@ -406,7 +408,8 @@ static void newBorder( const FunctionCallbackInfo<Value>& args ) {
 		Local<Object> config = Local<Object>::Cast( args[0] );
 		Isolate* isolate = args.GetIsolate();
 		Local<Context> context = isolate->GetCurrentContext();
-		Local<Function> cons = Local<Function>::New( isolate, VoidObject::constructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->VoidObject_constructor );
 		Local<Object> borderObj = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 		VoidObject *v = VoidObject::Unwrap<VoidObject>( borderObj );
 		Image image;
@@ -445,7 +448,8 @@ static int CPROC CustomDefaultInit( PSI_CONTROL pc ) {
 	if( psiLocal.pendingCreate ) return 1; // internal create in progress... it will result with its own object later.
 	Isolate* isolate = Isolate::GetCurrent();
 	if( !isolate ) {
-		MakePSIEvent( NULL, false, Event_Control_Create, pc );
+		// this must block until completion
+		MakePSIEvent( NULL, true, Event_Control_Create, pc );
 	} else {
 		Local<Object> object = ControlObject::NewWrappedControl( isolate, pc );
 		ControlObject *control = ControlObject::Unwrap<ControlObject>( object );
@@ -476,19 +480,19 @@ static int CPROC CustomDefaultDestroy( PSI_CONTROL pc ) {
 
 void SetupControlColors( Isolate *isolate, Local<Object> object ) {
 	Local<Object> controlColors = Object::New( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
 	struct optionStrings *strings = getStrings( isolate );
 
 #define setupAccessor( name, define ) {   \
 	Local<Object> arg = Object::New( isolate );\
-	arg->Set( strings->indexString->Get( isolate ), Integer::New( isolate, define ) );\
-	arg->Set( strings->objectString->Get( isolate ), object );\
-	controlColors->SetAccessorProperty( String::NewFromUtf8( isolate, name, v8::NewStringType::kNormal ).ToLocalChecked()\
+	arg->Set( context, strings->indexString->Get( isolate ), Integer::New( isolate, define ) );\
+	arg->Set( context, strings->objectString->Get( isolate ), object );\
+	controlColors->SetAccessorProperty( localStringExternal( isolate, name )\
 		, Function::New( isolate->GetCurrentContext(), ControlObject::getControlColor, arg ).ToLocalChecked() \
 		, Function::New( isolate->GetCurrentContext(), ControlObject::setControlColor, arg ).ToLocalChecked() \
 		, DontDelete );   \
 	}
-
-	//controlColors->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, name ), data, ReadOnlyProperty )
+	//controlColors->DefineOwnProperty( isolate->GetCurrentContext(), localStringExternal( isolate, name ), data, ReadOnlyProperty )
 	setupAccessor( "highlight", HIGHLIGHT );
 	setupAccessor( "normal" , NORMAL);
 	setupAccessor( "shade" , SHADE);
@@ -514,13 +518,13 @@ void MakeControlColors( Isolate *isolate, Local<FunctionTemplate> tpl ) {
 	//Local<Object> controlColors = Object::New( isolate );
 	//struct optionStrings *strings = getStrings( isolate );
 
-#define makeAccessor(a,b,c,d,e) a->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, b ) \
+#define makeAccessor(a,b,c,d,e) a->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, b ) \
 		, FunctionTemplate::New( isolate, c, Integer::New( isolate, e ) ) \
 			, FunctionTemplate::New( isolate, d, Integer::New( isolate, e ) ) \
 			, DontDelete )
 #define makeColorAccessor(a,b,c) makeAccessor( a, b, ControlObject::getControlColor2, ControlObject::setControlColor2, c )
 
-	//controlColors->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, name ), data, ReadOnlyProperty )
+	//controlColors->DefineOwnProperty( isolate->GetCurrentContext(), localStringExternal( isolate, name ), data, ReadOnlyProperty )
 	makeColorAccessor( tpl, "highlight", HIGHLIGHT );
 	makeColorAccessor( tpl, "normal", NORMAL );
 	makeColorAccessor( tpl, "shade", SHADE );
@@ -539,18 +543,19 @@ void MakeControlColors( Isolate *isolate, Local<FunctionTemplate> tpl ) {
 #undef makeAccessor
 }
 
-void AddControlColors( Isolate *isolate, Local<Object> control, ControlObject *c ) {
+void AddControlColors( Isolate *isolate, Local<Object> control, ControlObject *color ) {
 
-	Local<Function> cons = Local<Function>::New( isolate, VoidObject::constructor2 );
+	class constructorSet* c = getConstructors( isolate );
+	Local<Function> cons = Local<Function>::New( isolate, c->VoidObject_constructor2 );
 	Local<Object> colors = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 	VoidObject *v = VoidObject::Unwrap<VoidObject>( colors );
-	v->data = (uintptr_t)c;
+	v->data = (uintptr_t)color;
 	SET_READONLY( control, "color", colors );
 }
 
 void DeleteControlColors( Isolate *isolate, Local<Object> control, ControlObject *c ) {
 	Local<Context> context = isolate->GetCurrentContext();
-	Local<Object> colors = control->Get( context, String::NewFromUtf8( isolate, "color" ) ).ToLocalChecked()->ToObject(context).ToLocalChecked();
+	Local<Object> colors = control->Get( context, localStringExternal( isolate, "color" ) ).ToLocalChecked()->ToObject(context).ToLocalChecked();
 
 	VoidObject *v = VoidObject::Unwrap<VoidObject>( colors );
 	VoidObject::releaseSelf( v );
@@ -560,6 +565,7 @@ void ControlObject::Init( Local<Object> _exports ) {
 	psiLocal.bindingDataId = PSI_AddBindingData( "Node" );
 
 		Isolate* isolate = Isolate::GetCurrent();
+		class constructorSet* c = getConstructors( isolate );
 		Local<Context>context = isolate->GetCurrentContext();
 		Local<FunctionTemplate> psiTemplate;
 		Local<FunctionTemplate> psiTemplate2;
@@ -573,20 +579,25 @@ void ControlObject::Init( Local<Object> _exports ) {
 		Local<Object> exports = Object::New( isolate );
 
 		VoidObject::Init( isolate );
-		VulkanObject::Init( isolate, _exports );
+		//VulkanObject::Init( isolate, _exports );
 
 		SimpleRegisterMethod( "psi/control/rtti/extra init"
 			, CustomDefaultInit, "int", "sack-gui init", "(PCOMMON)" );
 		SimpleRegisterMethod( "psi/control/rtti/extra destroy"
 			, CustomDefaultDestroy, "int", "sack-gui destroy", "(PCOMMON)" );
 
+		// get the current interfaces, and set PSI to them.
+		// (this will be delayed until require())
+			// and is generally redundant.
+		g.pii = GetImageInterface();
+		g.pdi = GetDisplayInterface();
 		SetControlImageInterface( g.pii );
 		SetControlInterface( g.pdi );
 
-		_exports->Set( localStringExternal( isolate, "PSI" ), exports );
+		_exports->Set( context, localStringExternal( isolate, "PSI" ), exports );
 		// Prepare constructor template
 		psiTemplate = FunctionTemplate::New( isolate, New );
-		frameTemplate.Reset( isolate, psiTemplate );
+		c->ControlObject_frameTemplate.Reset( isolate, psiTemplate );
 		psiTemplate->SetClassName( localStringExternal( isolate, "sack.PSI.Frame" ) );
 		psiTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 internal field for wrap
 
@@ -595,12 +606,12 @@ void ControlObject::Init( Local<Object> _exports ) {
 		colorTemplate->SetClassName( localStringExternal( isolate, "sack.PSI.Frame.Colors" ) );
 		colorTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 internal field for wrap
 		MakeControlColors( isolate, colorTemplate );
-		VoidObject::constructor2.Reset( isolate, colorTemplate->GetFunction(context).ToLocalChecked() );
+		c->VoidObject_constructor2.Reset( isolate, colorTemplate->GetFunction(context).ToLocalChecked() );
 
 
 				// Prepare constructor template
 		psiTemplate2 = FunctionTemplate::New( isolate, NewControl );
-		controlTemplate.Reset( isolate, psiTemplate2 );
+		c->ControlObject_controlTemplate.Reset( isolate, psiTemplate2 );
 		psiTemplate2->SetClassName( localStringExternal( isolate, "sack.PSI.Control" ) );
 		psiTemplate2->InstanceTemplate()->SetInternalFieldCount( 1 );// 1 internal field for wrap
 
@@ -640,14 +651,14 @@ void ControlObject::Init( Local<Object> _exports ) {
 			, DontDelete );
 
 		// constructor reset must be applied AFTER PrototypeTemplate() has been filled in.
-		ListboxItemObject::constructor.Reset( isolate, listItemTemplate->GetFunction(context).ToLocalChecked() );
+		c->ListboxItemObject_constructor.Reset( isolate, listItemTemplate->GetFunction(context).ToLocalChecked() );
 		//ListboxItemObject::listItemTemplate.Reset( isolate, listItemTemplate );
 
 		// Prepare constructor template
 		menuItemTemplate = FunctionTemplate::New( isolate, MenuItemObject::New );
 		menuItemTemplate->SetClassName( localStringExternal( isolate, "sack.PSI.Menu.Item" ) );
 		menuItemTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 internal field for wrap
-		MenuItemObject::constructor.Reset( isolate, menuItemTemplate->GetFunction(context).ToLocalChecked() );
+		c->MenuItemObject_constructor.Reset( isolate, menuItemTemplate->GetFunction(context).ToLocalChecked() );
 
 		Local<Object> buttonEnum = Object::New( isolate );
 		SET_READONLY( buttonEnum, "left", Integer::New( isolate, 1 ) );
@@ -710,24 +721,24 @@ void ControlObject::Init( Local<Object> _exports ) {
 		SET_READONLY( controlObject, "borderAnchor", borderAnchorEnum );
 
 		Local<Array> controlTypes = Array::New( isolate );
-		controlTypes->Set( 0, localStringExternal( isolate, "Frame" ) );
-		controlTypes->Set( 1, localStringExternal( isolate, "Undefined" ) );
-		controlTypes->Set( 2, localStringExternal( isolate, "SubFrame" ) );
-		controlTypes->Set( 3, localStringExternal( isolate, "TextControl" ) );
-		controlTypes->Set( 4, localStringExternal( isolate, "Button" ) );
-		controlTypes->Set( 5, localStringExternal( isolate, "CustomDrawnButton" ) );
-		controlTypes->Set( 6, localStringExternal( isolate, "ImageButton" ) );
-		controlTypes->Set( 7, localStringExternal( isolate, "CheckButton" ) );
-		controlTypes->Set( 8, localStringExternal( isolate, "EditControl" ) );
-		controlTypes->Set( 9, localStringExternal( isolate, "Slider" ) );
-		controlTypes->Set( 10, localStringExternal( isolate, "ListBox" ) );
-		controlTypes->Set( 11, localStringExternal( isolate, "ScrollBar" ) );
-		controlTypes->Set( 12, localStringExternal( isolate, "Gridbox" ) );
-		controlTypes->Set( 13, localStringExternal( isolate, "Console" ) );
-		controlTypes->Set( 14, localStringExternal( isolate, "SheetControl" ) );
-		controlTypes->Set( 15, localStringExternal( isolate, "Combo Box" ) );
-		controlTypes->Set( 16, localStringExternal( isolate, "Basic Clock Widget" ) );
-		controlTypes->Set( 17, localStringExternal( isolate, "PSI Console" ) );
+		controlTypes->Set( context, 0, localStringExternal( isolate, "Frame" ) );
+		controlTypes->Set( context, 1, localStringExternal( isolate, "Undefined" ) );
+		controlTypes->Set( context, 2, localStringExternal( isolate, "SubFrame" ) );
+		controlTypes->Set( context, 3, localStringExternal( isolate, "TextControl" ) );
+		controlTypes->Set( context, 4, localStringExternal( isolate, "Button" ) );
+		controlTypes->Set( context, 5, localStringExternal( isolate, "CustomDrawnButton" ) );
+		controlTypes->Set( context, 6, localStringExternal( isolate, "ImageButton" ) );
+		controlTypes->Set( context, 7, localStringExternal( isolate, "CheckButton" ) );
+		controlTypes->Set( context, 8, localStringExternal( isolate, "EditControl" ) );
+		controlTypes->Set( context, 9, localStringExternal( isolate, "Slider" ) );
+		controlTypes->Set( context, 10, localStringExternal( isolate, "ListBox" ) );
+		controlTypes->Set( context, 11, localStringExternal( isolate, "ScrollBar" ) );
+		controlTypes->Set( context, 12, localStringExternal( isolate, "Gridbox" ) );
+		controlTypes->Set( context, 13, localStringExternal( isolate, "Console" ) );
+		controlTypes->Set( context, 14, localStringExternal( isolate, "SheetControl" ) );
+		controlTypes->Set( context, 15, localStringExternal( isolate, "Combo Box" ) );
+		controlTypes->Set( context, 16, localStringExternal( isolate, "Basic Clock Widget" ) );
+		controlTypes->Set( context, 17, localStringExternal( isolate, "PSI Console" ) );
 
 		SET_READONLY( controlObject, "types", controlTypes );
 
@@ -862,7 +873,7 @@ void ControlObject::Init( Local<Object> _exports ) {
 		NODE_SET_PROTOTYPE_METHOD( psiTemplatePopups, "Item", PopupObject::addPopupItem );
 		NODE_SET_PROTOTYPE_METHOD( psiTemplatePopups, "track", PopupObject::trackPopup );
 		Local<Function> popupObject = psiTemplatePopups->GetFunction(context).ToLocalChecked();
-		PopupObject::constructor.Reset( isolate, popupObject );
+		c->PopupObject_constructor.Reset( isolate, popupObject );
 		SET_READONLY( exports, "Popup", popupObject );
 		Local<Object> itemTypes = Object::New( isolate );
 		SET_READONLY( itemTypes, "string", Integer::New( isolate, MF_STRING ) );
@@ -876,15 +887,15 @@ void ControlObject::Init( Local<Object> _exports ) {
 		//SET_READONLY_METHOD( popupObject, "add", PopupObject::addPopupItem );
 
 		// constructor reset must be applied AFTER PrototypeTemplate() has been filled in.
-		constructor.Reset( isolate, psiTemplate->GetFunction(context).ToLocalChecked() );
+		c->ControlObject_constructor.Reset( isolate, psiTemplate->GetFunction(context).ToLocalChecked() );
 		SET_READONLY( exports, "Frame",	psiTemplate->GetFunction(context).ToLocalChecked() );
 
 		// constructor reset must be applied AFTER PrototypeTemplate() has been filled in.
-		constructor2.Reset( isolate, psiTemplate2->GetFunction(context).ToLocalChecked() );
+		c->ControlObject_constructor2.Reset( isolate, psiTemplate2->GetFunction(context).ToLocalChecked() );
 		//exports->Set( localStringExternal( isolate, "Control" ),
 		//				 psiTemplate2->GetFunction(context).ToLocalChecked() );
 
-		registrationConstructor.Reset( isolate, regTemplate->GetFunction(context).ToLocalChecked() );
+		c->ControlObject_registrationConstructor.Reset( isolate, regTemplate->GetFunction(context).ToLocalChecked() );
 		SET_READONLY( exports, "Registration", regTemplate->GetFunction(context).ToLocalChecked() );
 }
 
@@ -906,14 +917,16 @@ void ControlObject::getControlColor( const FunctionCallbackInfo<Value>& args ) {
 		object = args.This();
 	}
 	args.Data()->IntegerValue(context).ToChecked();
-	Local<FunctionTemplate> controlTpl = controlTemplate.Get( isolate );
+	class constructorSet* c = getConstructors( isolate );
+	Local<FunctionTemplate> controlTpl = c->ControlObject_controlTemplate.Get( isolate );
 	if( controlTpl->HasInstance( object ) ) {
 
 		ControlObject *c = ObjectWrap::Unwrap<ControlObject>( object );
 		args.GetReturnValue().Set( ColorObject::makeColor( isolate, GetControlColor( c->control, colorIndex ) ) );
 	}
 	else {
-		Local<FunctionTemplate> controlTpl = frameTemplate.Get( isolate );
+		class constructorSet* c = getConstructors( isolate );
+		Local<FunctionTemplate> controlTpl = c->ControlObject_frameTemplate.Get( isolate );
 		if( controlTpl->HasInstance( object ) ) {
 
 			ControlObject *c = ObjectWrap::Unwrap<ControlObject>( object );
@@ -952,13 +965,15 @@ void ControlObject::setControlColor( const FunctionCallbackInfo<Value>& args ) {
 		newColor = (uint32_t)args[0]->NumberValue(context).ToChecked();
 	}
 
-	Local<FunctionTemplate> controlTpl = controlTemplate.Get( isolate );
+  class constructorSet* c = getConstructors( isolate );
+  Local<FunctionTemplate> controlTpl = c->ControlObject_controlTemplate.Get( isolate );
 	if( controlTpl->HasInstance( object ) ) {
 		ControlObject *c = ObjectWrap::Unwrap<ControlObject>( object );
 		SetControlColor( c->control, colorIndex, newColor );
 	}
 	else {
-		controlTpl = frameTemplate.Get( isolate );
+		class constructorSet* c = getConstructors( isolate );
+		controlTpl = c->ControlObject_frameTemplate.Get( isolate );
 		if( controlTpl->HasInstance( object ) ) {
 			ControlObject *c = ObjectWrap::Unwrap<ControlObject>( object );
 			SetControlColor( c->control, colorIndex, newColor );
@@ -1050,12 +1065,12 @@ ControlObject::ControlObject( PSI_CONTROL control ) {
 void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context>context = isolate->GetCurrentContext();
-	enableEventLoop();
 	if( args.IsConstructCall() ) {
 		if( args.Length() == 0 ) {
 			ControlObject* obj = new ControlObject();
 			ControlObject::wrapSelf( isolate, obj, args.This() );
 			args.GetReturnValue().Set( args.This() );
+			enableEventLoop( obj->isolateCons );
 			return;
 		}
 
@@ -1112,7 +1127,8 @@ void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->ControlObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
@@ -1214,23 +1230,26 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 
 Local<Object> ControlObject::NewWrappedControl( Isolate* isolate, PSI_CONTROL pc ) {
 	// Invoked as plain function `MyObject(...)`, turn into construct call.
-	ControlObject *control;
+	ControlObject* control;
 	INDEX idx;
-	LIST_FORALL( psiLocal.controls, idx, ControlObject *, control ) {
+	LIST_FORALL( psiLocal.controls, idx, ControlObject*, control ) {
 		if( control->control == pc ) {
 			return control->state.Get( isolate );
 		}
 	}
 
 	CTEXTSTR type = GetControlTypeName( pc );
+	class constructorSet* c = getConstructors( isolate );
 
-	Local<Function> cons = Local<Function>::New( isolate, StrCmp( type, "Frame" ) == 0 ?constructor : constructor2 );
-	Local<Object> c = cons->NewInstance( isolate->GetCurrentContext(), 0, 0 ).ToLocalChecked();
-	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( c );
-	me->control = pc;
-	if( pc )
-		ProvideKnownCallbacks( isolate, c, me );
-	return c;
+	Local<Function> cons = Local<Function>::New( isolate, StrCmp( type, "Frame" ) == 0 ? c->ControlObject_constructor : c->ControlObject_constructor2 );
+	{
+		Local<Object> c = cons->NewInstance( isolate->GetCurrentContext(), 0, 0 ).ToLocalChecked();
+		ControlObject* me = ObjectWrap::Unwrap<ControlObject>( c );
+		me->control = pc;
+		if( pc )
+			ProvideKnownCallbacks( isolate, c, me );
+		return c;
+	}
 }
 
 
@@ -1334,7 +1353,8 @@ void ControlObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 	ControlObject *parent = NULL;
 
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor2 );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->ControlObject_constructor2 );
 		Local<Object> newControl = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 		ControlObject *container = ObjectWrap::Unwrap<ControlObject>( args.Holder() );
 
@@ -1433,16 +1453,16 @@ void ControlObject::createFrame( const FunctionCallbackInfo<Value>& args ) {
 		if( argc > 5 ) {
 			border = (int)args[5]->NumberValue(context).ToChecked();
 		}
-     /*
+		 /*
 		if( argc > 6 ) {
 			parent = (int)args[5]->NumberValue(context).ToChecked();
 			}
-       */
+			 */
 		// Invoked as constructor: `new MyObject(...)`
 		ControlObject* obj = new ControlObject( title?title:"Node Application", x, y, w, h, border, NULL );
 		ControlObject::wrapSelf( isolate, obj, args.This() );
 		args.GetReturnValue().Set( args.This() );
-      if( title )
+			if( title )
 			Deallocate( char*, title );
 	}
 	else {
@@ -1451,8 +1471,9 @@ void ControlObject::createFrame( const FunctionCallbackInfo<Value>& args ) {
 		Local<Value> *argv = new Local<Value>[argc];
 		for( int n = 0; n < argc; n++ )
 		argv[n] = args[n];
+		class constructorSet* c = getConstructors( isolate );
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor2 );
+		Local<Function> cons = Local<Function>::New( isolate, c->ControlObject_constructor2 );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
@@ -1658,6 +1679,7 @@ void ControlObject::wrapSelf( Isolate* isolate, ControlObject *_this, Local<Obje
 	_this->Wrap( into );
 	_this->state.Reset( isolate, into );
 	//SetupControlColors( isolate, into );
+	_this->isolateCons = getConstructors( isolate );
 	AddControlColors( isolate, into, _this );
 	if( _this->control )
 		ProvideKnownCallbacks( isolate, into, _this );
@@ -1690,7 +1712,8 @@ void ControlObject::getRenderer( const FunctionCallbackInfo<Value>& args ) {
 	PRENDERER r = GetFrameRenderer( me->control );
 
 	Isolate* isolate = args.GetIsolate();
-	Local<Function> cons = Local<Function>::New( isolate, RenderObject::constructor );
+	class constructorSet* c = getConstructors( isolate );
+	Local<Function> cons = Local<Function>::New( isolate, c->RenderObject_constructor );
 	Local<Object> obj;
 	args.GetReturnValue().Set( obj =cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ) .ToLocalChecked() );
 	RenderObject* p = RenderObject::Unwrap< RenderObject>( obj );
@@ -1710,18 +1733,18 @@ void ControlObject::getCoordinate( const FunctionCallbackInfo<Value>&  args ) {
 	GetFrameSize( me->control, &w, &h );
 	switch( coord ) {
 	case 10:
-		o->Set( strings->xString->Get( isolate ), Integer::New( isolate, x ) );
-		o->Set( strings->yString->Get( isolate ), Integer::New( isolate, y ) );
+		o->Set( context, strings->xString->Get( isolate ), Integer::New( isolate, x ) );
+		o->Set( context, strings->yString->Get( isolate ), Integer::New( isolate, y ) );
 		break;
 	case 11:
-		o->Set( strings->wString->Get( isolate ), Integer::New( isolate, w ) );
-		o->Set( strings->hString->Get( isolate ), Integer::New( isolate, h ) );
+		o->Set( context, strings->wString->Get( isolate ), Integer::New( isolate, w ) );
+		o->Set( context, strings->hString->Get( isolate ), Integer::New( isolate, h ) );
 		break;
 	case 12:
-		o->Set( strings->xString->Get( isolate ), Integer::New( isolate, x ) );
-		o->Set( strings->yString->Get( isolate ), Integer::New( isolate, y ) );
-		o->Set( strings->wString->Get( isolate ), Integer::New( isolate, w ) );
-		o->Set( strings->hString->Get( isolate ), Integer::New( isolate, h ) );
+		o->Set( context, strings->xString->Get( isolate ), Integer::New( isolate, x ) );
+		o->Set( context, strings->yString->Get( isolate ), Integer::New( isolate, y ) );
+		o->Set( context, strings->wString->Get( isolate ), Integer::New( isolate, w ) );
+		o->Set( context, strings->hString->Get( isolate ), Integer::New( isolate, h ) );
 		break;
 	}
 	args.GetReturnValue().Set( o );
@@ -1803,7 +1826,7 @@ void ControlObject::setListboxTabs( const FunctionCallbackInfo<Value>&  args ) {
 		int l = list->Length();
 		int *vals = NewArray( int, l );
 		for( n = 0; n < l; n++ ) {
-			vals[n] = (int)list->Get( context, n ).ToLocalChecked()->IntegerValue(context).ToChecked();
+			vals[n] = (int)list->Get( context,( n )).ToLocalChecked()->IntegerValue(context).ToChecked();
 		}
 		if( args.Length() > 1 ) {
 			if( args[1]->IsNumber() )
@@ -1839,7 +1862,8 @@ void ControlObject::addListboxItem( const FunctionCallbackInfo<Value>&  args ) {
 		String::Utf8Value text( isolate, args[0] );
 		int level = 0;
 		Isolate* isolate = args.GetIsolate();
-		Local<Function> cons = Local<Function>::New( isolate, ListboxItemObject::constructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->ListboxItemObject_constructor );
 		Local<Object> lio = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 		ListboxItemObject *pli = ObjectWrap::Unwrap<ListboxItemObject>( lio );
 		if( args.Length() > 1 && me->flags.tree ) {
@@ -1883,12 +1907,13 @@ void ControlObject::getListboxHeader( const FunctionCallbackInfo<Value>&  args )
 
 void ControlObject::setListboxHeader( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	ControlObject *me = ObjectWrap::Unwrap<ControlObject>( args.This() );
 	String::Utf8Value text( args.GetIsolate(), args[0] );
 	int level = 0;
 	if( args.Length() > 1 ) {
 		if( me->flags.tree )
-			level = (int)args[1]->ToInteger( isolate )->Value();
+			level = (int)args[1]->ToInteger( context ).ToLocalChecked()->Value();
 	}
 	SetListboxHeaderEx( me->control, *text, level );
 }
@@ -1925,7 +1950,7 @@ void ControlObject::getListboxIsTree( const FunctionCallbackInfo<Value>& args ) 
 }
 void ControlObject::setListboxIsTree( const FunctionCallbackInfo<Value>& args ) {
 	ControlObject* me = ObjectWrap::Unwrap<ControlObject>( args.This() );
-	SetListboxIsTree( me->control, me->flags.tree = args[0]->BooleanValue( args.GetIsolate()->GetCurrentContext() ).ToChecked() );
+	SetListboxIsTree( me->control, me->flags.tree = args[0]->BooleanValue( args.GetIsolate() ) );
 }
 
 
@@ -1965,7 +1990,8 @@ void ListboxItemObject::New( const FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->ListboxItemObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 	}
 }
@@ -1980,7 +2006,8 @@ void ListboxItemObject::insertItem( const FunctionCallbackInfo<Value>& args ) {
 		String::Utf8Value text( isolate, args[0] );
 		int level = 0;
 		Isolate* isolate = args.GetIsolate();
-		Local<Function> cons = Local<Function>::New( isolate, ListboxItemObject::constructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->ListboxItemObject_constructor );
 		Local<Object> lio = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 		ListboxItemObject* pli = ObjectWrap::Unwrap<ListboxItemObject>( lio );
 		pli->itemLevel = level = me->itemLevel + 1;
@@ -2019,7 +2046,8 @@ void ListboxItemObject::addItem( const FunctionCallbackInfo<Value>& args ) {
 		String::Utf8Value text( isolate, args[0] );
 		int level = 0;
 		Isolate* isolate = args.GetIsolate();
-		Local<Function> cons = Local<Function>::New( isolate, ListboxItemObject::constructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->ListboxItemObject_constructor );
 		Local<Object> lio = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 		ListboxItemObject* pli = ObjectWrap::Unwrap<ListboxItemObject>( lio );
 		pli->itemLevel = level = me->itemLevel + 1;
@@ -2092,7 +2120,7 @@ MenuItemObject::~MenuItemObject() {
 
 void MenuItemObject::wrapSelf( Isolate* isolate, MenuItemObject *_this, Local<Object> into ) {
 	_this->Wrap( into );
-	_this->_this.Reset( isolate, into );	
+	_this->_this.Reset( isolate, into );
 }
 
 void MenuItemObject::New( const FunctionCallbackInfo<Value>& args ) {
@@ -2105,7 +2133,8 @@ void MenuItemObject::New( const FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->MenuItemObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 	}
 }
@@ -2126,21 +2155,23 @@ PopupObject::~PopupObject() {
 void PopupObject::wrapSelf( Isolate* isolate, PopupObject *_this, Local<Object> into ) {
 	_this->Wrap( into );
 	_this->_this.Reset( isolate, into );	
+	_this->isolateCons = getConstructors( isolate );
 }
 
 void PopupObject::NewPopup( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	enableEventLoop();
+	class constructorSet* c = getConstructors( isolate );
 	if( args.IsConstructCall() ) {
 
 		PopupObject* obj = new PopupObject( );
 		PopupObject::wrapSelf( isolate, obj, args.This() );
 		obj->popup = CreatePopup();
+		obj->isolateCons = c;
 		args.GetReturnValue().Set( args.This() );
 	}
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		Local<Function> cons = Local<Function>::New( isolate, c->PopupObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 	}
 }
@@ -2150,7 +2181,8 @@ void PopupObject::addPopupItem( const FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	if( args.Length() > 0 )
 	{
-		Local<Function> cons = Local<Function>::New( isolate, MenuItemObject::constructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->MenuItemObject_constructor );
 		Local<Object> menuItemObject = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 		MenuItemObject *mio = ObjectWrap::Unwrap<MenuItemObject>( menuItemObject );
 
@@ -2201,7 +2233,7 @@ static uintptr_t TrackPopupThread( PTHREAD thread ) {
 				MakePSIEvent( NULL, true, Event_Menu_Item_Selected, mio );
 		}
 	}
-	disableEventLoop();
+	disableEventLoop( popup->isolateCons );
 #endif
 	return 0;
 }
@@ -2210,7 +2242,8 @@ void PopupObject::trackPopup( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = Isolate::GetCurrent();
 	Local<Context> context = isolate->GetCurrentContext();
 	PopupObject *popup = ObjectWrap::Unwrap<PopupObject>( args.This() );
-	enableEventLoop();
+	popup->isolateCons = getConstructors( isolate );
+	enableEventLoop( popup->isolateCons );
 	if( args.Length() > 0 ) {
 		ControlObject *object = ObjectWrap::Unwrap<ControlObject>( args[0]->ToObject(context).ToLocalChecked() );
 		popup->parent = object;
@@ -2241,7 +2274,7 @@ static int CPROC onLoad( PSI_CONTROL pc, PTEXT params ) {
 	Local<Function> cb = Local<Function>::New( isolate, registration->cbLoadEvent );
 	Local<Value> retval = cb->Call( context, psiLocal.newControl, 0, NULL ).ToLocalChecked();
 
-	return retval->ToInt32(USE_ISOLATE_VOID(isolate))->Value();
+	return retval->ToInt32(context).ToLocalChecked()->Value();
 }
 
 static int CPROC onCreate( PSI_CONTROL pc ) {
@@ -2267,7 +2300,7 @@ static int CPROC onCreate( PSI_CONTROL pc ) {
 
 		Local<Value> retval = cb->Call( context, psiLocal.newControl, 0, NULL ).ToLocalChecked();
 
-		return retval->ToInt32( USE_ISOLATE_VOID( isolate ) )->Value();
+		return retval->ToInt32( context ).ToLocalChecked()->Value();
 	}
 
 }
@@ -2353,7 +2386,8 @@ void RegistrationObject::NewRegistration( const FunctionCallbackInfo<Value>& arg
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, ControlObject::registrationConstructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->ControlObject_registrationConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete argv;
 	}
@@ -2381,7 +2415,7 @@ void RegistrationObject::setCreate( const FunctionCallbackInfo<Value>& args ) {
 	//lprintf( "Define Create Control %s", obj->r.name );
 	snprintf( buf, 256, "psi/control/%s/rtti", obj->r.name );
 	SimpleRegisterMethod( buf,  onCreate
-							  , "int", "init", "(PSI_CONTROL)" );
+								, "int", "init", "(PSI_CONTROL)" );
 	obj->cbInitEvent.Reset( isolate, Local<Function>::Cast( args[0] ) );
 }
 
@@ -2403,7 +2437,7 @@ void RegistrationObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
 	//lprintf( "Define Control Draw %s", obj->r.name );
 	snprintf( buf, 256, "psi/control/%s/rtti", obj->r.name );
 	SimpleRegisterMethod( buf,  onDraw
-							  , "int", "draw", "(PSI_CONTROL)" );
+								, "int", "draw", "(PSI_CONTROL)" );
 
 	obj->cbDrawEvent.Reset( isolate, Local<Function>::Cast( args[0] ) );
 
@@ -2428,7 +2462,7 @@ void RegistrationObject::setMouse( const FunctionCallbackInfo<Value>& args ) {
 	//lprintf( "Define Control Mouse %s", obj->r.name );
 	snprintf( buf, 256, "psi/control/%s/rtti", obj->r.name );
 	SimpleRegisterMethod( buf, cbMouse
-							  , "int", "mouse", "(PSI_CONTROL,int32_t,int32_t,uint32_t)" );
+								, "int", "mouse", "(PSI_CONTROL,int32_t,int32_t,uint32_t)" );
 
 	obj->cbMouseEvent.Reset( isolate, Local<Function>::Cast( args[0] ) );
 
