@@ -8,7 +8,7 @@ const parse = JSOX.parse;
 describe('Stream testing', function () {
 	it('Receives various values via `write`', function () {
 		let results = [];
-		const parser = JSON6.begin(function (obj) {
+		const parser = JSOX.begin(function (obj) {
 			//console.log( "Got value:", typeof obj, ":", obj );
 			results.push(obj);
 		});
@@ -101,7 +101,9 @@ describe('Stream testing', function () {
 		} catch( err ){
 			// Ignore
 		}
-		parser.write( '} 0 ' );
+		expect( function() {
+			parser.write( '} 0 ' );
+		}).to.throw( Error );
 		parser.reset( );
 		parser.write( '"OK"' );
 	});

@@ -71,15 +71,11 @@ describe('String escapes', function () {
 		});
 
 		it('should consume carriage return escape at end of string', function () {
-			const o = JSON6.parse( '"\\\r"' );
-			console.log( "o is", o, typeof o );
-			expect(o).to.equal('');
+			expect(JSON6.parse( '"\\\r"' )).to.equal('');
 		});
 
 		it('should recover character after carriage return escape at end of string', function () {
-			const o = JSON6.parse( '"\\\rA"' );
-			console.log( "o is", o, typeof o );
-			expect(o).to.equal('A');
+			expect(JSON6.parse( '"\\\rA"' )).to.equal('A');
 		});
 	});
 });

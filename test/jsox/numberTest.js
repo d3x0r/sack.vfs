@@ -6,40 +6,40 @@ const parse = JSON.parse;
 describe('Numbers', function () {
 	it('Decimal', function () {
 		const n = .123;
-		console.log( "typeof( n ) =", typeof n, n );
+		//console.log( "typeof( n ) =", typeof n, n );
 
 
 		const result = JSON.parse( '.123' );
-		console.log( "typeof( result ) =", typeof result, result );
+		//console.log( "typeof( result ) =", typeof result, result );
 
 		expect(result).to.equal(n);
 	});
 	it('Positive decimal', function () {
 		const n = +.123;
-		console.log( "typeof( n ) =", typeof n, n );
+		//console.log( "typeof( n ) =", typeof n, n );
 
 		const result = JSON.parse( '+.123' );
-		console.log( "typeof( result ) =", typeof result, result );
+		//console.log( "typeof( result ) =", typeof result, result );
 
 		expect(result).to.equal(n);
 	});
 
 	it('Negative decimal', function () {
 		const n = -.123;
-		console.log( "typeof( n ) =", typeof n, n );
+		//console.log( "typeof( n ) =", typeof n, n );
 
 		const result = JSON.parse( '-.123' );
-		console.log( "typeof( result ) =", typeof result, result );
+		//console.log( "typeof( result ) =", typeof result, result );
 
 		expect(result).to.equal(n);
 	});
 
 	it('Decimal with scientific notation', function () {
 		const n = .123e3;
-		console.log( "typeof( n ) =", typeof n, n );
+		//console.log( "typeof( n ) =", typeof n, n );
 
 		const result = JSON.parse( '.123e3' );
-		console.log( "typeof( result ) =", typeof result, result );
+		//console.log( "typeof( result ) =", typeof result, result );
 
 		expect(result).to.equal(n);
 	});

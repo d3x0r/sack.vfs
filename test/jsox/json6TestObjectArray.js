@@ -28,12 +28,17 @@ describe('Objects and arrays', function () {
 			true, false, -NaN, NaN, -Infinity, Infinity, undefined
 		]);
 	});
+
+	// JSON6 will return g:undefined
+	// Because of the potential for class and reviver routines to return undefined
+	// really meaning 'forget this' undefined is filtered at this time.
+
 	it('Object with various types', function () {
 		const d = '{a: true, b: false, c: -NaN, d: NaN, e: -Infinity, f: Infinity, g: undefined, h: null}';
 		const result = JSON6.parse( d );
 		console.log( result );
 		expect(result).to.deep.equal({
-			a: true, b: false, c: -NaN, d: NaN, e: -Infinity, f: Infinity, g: undefined, h: null
+			a: true, b: false, c: -NaN, d: NaN, e: -Infinity, f: Infinity, h: null
 		});
 	});
 	it('Array with empty object', function () {

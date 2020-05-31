@@ -14,7 +14,7 @@ describe('Streaming', function () {
 	it('Streams various objects', function () {
 		const results = [];
 		const parser = JSON6.begin(function (val) {
-			console.log( "Got Object:", val );
+			//console.log( "Got Object:", val );
 			results.push(val);
 		});
 
@@ -49,7 +49,7 @@ describe('Streaming', function () {
 	it('handles incomplete string key in chunks', function () {
 		const results = [];
 		const parser = JSON6.begin(function (val) {
-			console.log( "Got Object:", val );
+			//console.log( "Got Object:", val );
 			results.push(val);
 		});
 
