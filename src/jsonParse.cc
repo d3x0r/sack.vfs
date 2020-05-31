@@ -35,10 +35,13 @@ public:
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void write( const v8::FunctionCallbackInfo<Value>& args );
+	static void reset( const v8::FunctionCallbackInfo<Value>& args );
 	static void New6( const v8::FunctionCallbackInfo<Value>& args );
 	static void write6( const v8::FunctionCallbackInfo<Value>& args );
+	static void reset6( const v8::FunctionCallbackInfo<Value>& args );
 	static void New6v( const v8::FunctionCallbackInfo<Value>& args );
 	static void write6v( const v8::FunctionCallbackInfo<Value>& args );
+	static void reset6v( const v8::FunctionCallbackInfo<Value>& args );
 
 	~parseObject();
 };
@@ -58,6 +61,7 @@ void InitJSON( Isolate *isolate, Local<Object> exports ){
 		parseTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.json6_parser", v8::NewStringType::kNormal ).ToLocalChecked() );
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write );
+		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "reset", parseObject::reset );
 
 		c->parseConstructor.Reset( isolate, parseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 
@@ -77,6 +81,7 @@ void InitJSON( Isolate *isolate, Local<Object> exports ){
 		parseTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.json6_parser", v8::NewStringType::kNormal ).ToLocalChecked() );
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write6 );
+		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "reset", parseObject::reset6 );
 
 		c->parseConstructor6.Reset( isolate, parseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 
@@ -96,6 +101,7 @@ void InitJSON( Isolate *isolate, Local<Object> exports ){
 		parseTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.vesl_parser", v8::NewStringType::kNormal ).ToLocalChecked() );
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write6v );
+		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "reset", parseObject::reset6v );
 
 		c->parseConstructor6v.Reset( isolate, parseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
@@ -112,6 +118,12 @@ parseObject::~parseObject() {
 }
 
 #define logTick(n) do { uint64_t tick = GetCPUTick(); if( n >= 0 ) timings.deltas[n] += tick-timings.start; timings.start = tick; } while(0)
+
+void parseObject::reset( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	parseObject* parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
+	json_parse_clear_state( parser->state );
+}
 
 void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -199,6 +211,12 @@ void parseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 
+void parseObject::reset6( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	parseObject* parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
+	json_parse_clear_state( parser->state );
+}
+
 
 void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 	Isolate* isolate = args.GetIsolate();
@@ -282,18 +300,21 @@ void parseObject::New6( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 
+void parseObject::reset6v( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	parseObject* parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
+	vesl_parse_clear_state( parser->vstate );
+}
+
+
 void parseObject::write6v( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	parseObject *parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
 	int argc = args.Length();
-	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Missing data parameter.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
-		return;
-	}
-
-	String::Utf8Value data( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	
+	String::Utf8Value data( isolate,  (argc==0)?Undefined(isolate):(args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ));
 	int result;
-	for( result = vesl_parse_add_data( parser->vstate, *data, data.length() );
+	for( result = vesl_parse_add_data( parser->vstate, (argc==0)?NULL:*data, ( argc == 0 ) ? 0 : data.length() );
 		result > 0;
 		result = vesl_parse_add_data( parser->vstate, NULL, 0 )
 		) {
@@ -328,7 +349,6 @@ void parseObject::write6v( const v8::FunctionCallbackInfo<Value>& args ) {
 		json_parse_clear_state( parser->state );
 		return;
 	}
-
 }
 
 
