@@ -443,6 +443,7 @@ public:
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void write( const v8::FunctionCallbackInfo<Value>& args );
+	static void reset( const v8::FunctionCallbackInfo<Value>& args );
 	static void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args );
 	static void setPromiseFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args );
 
