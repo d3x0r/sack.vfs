@@ -37,6 +37,7 @@ void InitJSOX( Isolate *isolate, Local<Object> exports ){
 		parseTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.jsox_parser", v8::NewStringType::kNormal ).ToLocalChecked() );
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", JSOXObject::write );
+		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "reset", JSOXObject::reset );
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "setFromPrototypeMap", JSOXObject::setFromPrototypeMap );
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "setPromiseFromPrototypeMap", JSOXObject::setPromiseFromPrototypeMap );
 
@@ -77,21 +78,22 @@ const char* ToCString( const v8::String::Utf8Value& value ) {
 	return *value ? *value : "<string conversion failed>";
 }
 
+void JSOXObject::reset( const v8::FunctionCallbackInfo<Value>& args ) {
+	JSOXObject* parser = ObjectWrap::Unwrap<JSOXObject>( args.Holder() );
+	jsox_parse_clear_state( parser->state );
+}
+
 void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	JSOXObject *parser = ObjectWrap::Unwrap<JSOXObject>( args.Holder() );
 	int argc = args.Length();
-	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Missing data parameter.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
-		return;
-	}
 
-	String::Utf8Value data( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	String::Utf8Value data( isolate, ( argc == 0 ) ? Undefined(isolate) : (args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked()) );
 	int result;
 	//Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 	Local<Context> context = isolate->GetCurrentContext();
 	Local<Value> global = context->Global();
-	for( result = jsox_parse_add_data( parser->state, *data, data.length() );
+	for( result = jsox_parse_add_data( parser->state, (argc>0)?*data:NULL, (argc>0)?data.length():0 );
 		result > 0;
 		result = jsox_parse_add_data( parser->state, NULL, 0 )
 		) {
@@ -437,7 +439,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 			static const int argc = 1;
 			Local<Value> argv[argc] = { String::NewFromUtf8( revive->isolate, val->string, NewStringType::kNormal, (int)val->stringLen ).ToLocalChecked() };
 			Local<Object> tmpResult = c->dateCons.Get( revive->isolate )->NewInstance( revive->context, argc, argv ).ToLocalChecked();
-			MaybeLocal<Value> valid = tmpResult->Get( revive->context, String::NewFromUtf8( revive->isolate, "getTime" ) );
+			MaybeLocal<Value> valid = tmpResult->Get( revive->context, String::NewFromUtf8( revive->isolate, "getTime", NewStringType::kNormal, 7 ).ToLocalChecked() );
 			if( !valid.IsEmpty() ) {
 				Local<Function> getTime = valid.ToLocalChecked().As<Function>();
 				MaybeLocal<Value> timeVal = getTime->Call( revive->context, tmpResult, 0, NULL );
@@ -928,16 +930,24 @@ Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviver_data
 	if( !result )
 		result = jsox_parse_add_data( state, NULL, 0 ); // expecting only a single object; go ahead and flush.
 	//if( jxpsd._state ) jsox_parse_dispose_state( &jxpsd._state );
-	if( result <= 0 ) { // 0 is 'no completed object.  1 is 'completed and no further' 2 is 'completed, and there's still data left.'
+	if( result <= 0 || result > 1 ) { // 0 is 'no completed object.  1 is 'completed and no further' 2 is 'completed, and there's still data left.'
 		//PTEXT error = jsox_parse_get_error( parser->state );
 		//lprintf( "Failed to parse data..." );
-		PTEXT error = jsox_parse_get_error( state );
-		if( error )
-			revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
-		else
-			revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate, "Pending value could not complete", v8::NewStringType::kNormal ).ToLocalChecked() ) );
-		LineRelease( error );
-		return Undefined(revive->isolate);
+		do {
+			PTEXT error = jsox_parse_get_error( state );
+			if( error )
+				revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			else {
+				if( result > 1 ) {
+					lprintf( "WARNING: Extra data after JSOX message; Single message parse expects a closed, complete message." );
+					break; // goto return anyway.
+				}
+				else
+					revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate, result > 1 ? "Extra data after message" : "Pending value could not complete", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			}
+			LineRelease( error );
+			return Undefined( revive->isolate );
+		} while( 0 );
 	}
 
 	if( parsed && parsed->Cnt > 1 ) {
