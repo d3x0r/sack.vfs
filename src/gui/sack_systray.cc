@@ -62,6 +62,11 @@ static void asyncmsg( uv_async_t* handle ) {
 		}
 	}
 	DeleteFromSet( SS_EVENT, &systrayLocal.event_pool, evt );
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 }
 
 static void enableEventLoop( void ) {

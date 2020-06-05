@@ -19,6 +19,8 @@
            "src/config_module.cc",
            "src/objStore_module.cc",
            "src/fileMonitor_module.cc",
+           "src/system_module.cc",
+           "src/text_object.cc",
           ],
 	'defines': [ "BUILDING_NODE_EXTENSION","BUILD_NODE_ADDON",
           'TARGETNAME="sack_vfs.node"'

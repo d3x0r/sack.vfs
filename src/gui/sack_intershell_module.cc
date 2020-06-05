@@ -2,8 +2,8 @@
 #define DEFINES_INTERSHELL_INTERFACE
 
 #include "../global.h"
-#include <InterShell/intershell_registry.h>
-#include <InterShell/intershell_export.h>
+#include "InterShell/intershell_registry.h"
+#include "InterShell/intershell_export.h"
 
 //#include 
 
@@ -60,19 +60,10 @@ static struct isLocal {
 	InterShellObject *core;
 	PLIST parents;
 	PSI_CONTROL canvas;
-	Persistent<Object> canvasObject;
 	PSI_CONTROL creating_parent;
 	PIS_EVENTSET events;
 }isLocal;
 
-Persistent<Function> InterShellObject::configConstructor;
-Persistent<Function> InterShellObject::intershellConstructor;
-Persistent<Function> InterShellObject::buttonConstructor;
-Persistent<Function> InterShellObject::buttonInstanceConstructor;
-Persistent<Function> InterShellObject::controlConstructor;
-Persistent<Function> InterShellObject::controlInstanceConstructor;
-Persistent<Function> InterShellObject::customControlConstructor;
-Persistent<Function> InterShellObject::customControlInstanceConstructor;
 
 //-----------------------------------------------------------
 //   InterShell Object
@@ -99,10 +90,11 @@ static InterShellObject *findControlType( CTEXTSTR type ) {
 
 static PSI_CONTROL getCanvas( Isolate *isolate, PMENU_BUTTON button ) {
 	if( !isLocal.canvas ) {
+		class constructorSet* c = getConstructors( isolate );
 		isLocal.canvas = InterShell_GetButtonCanvas( button );
 		if( isLocal.creating_parent != isLocal.canvas )
 			DebugBreak();
-		isLocal.canvasObject.Reset( isolate, ControlObject::NewWrappedControl( isolate, isLocal.canvas ) );
+		c->canvasObject.Reset( isolate, ControlObject::NewWrappedControl( isolate, isLocal.canvas ) );
 		//AddLink( &isLocal.parents, )
 	}
 	return isLocal.canvas;
@@ -113,6 +105,7 @@ static void asyncmsg( uv_async_t* handle ) {
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	Local<Context> context = isolate->GetCurrentContext();
+	class constructorSet* c = getConstructors( isolate );
 	HandleScope scope( isolate );
 	//lprintf( "async message notice. %p", myself );
 	{
@@ -127,8 +120,8 @@ static void asyncmsg( uv_async_t* handle ) {
 			Local<Function> cb;
 			switch( evt->type ) {
 			case Event_Intershell_Quit:
-				extern void disableEventLoop( void );
-				disableEventLoop();
+				extern void disableEventLoop( class constructorSet *c );
+				disableEventLoop( c );
 				uv_close( (uv_handle_t*)&isLocal.core->async, NULL );
 				DeleteFromSet( IS_EVENT, isLocal.events, evt );
 				return;
@@ -138,8 +131,8 @@ static void asyncmsg( uv_async_t* handle ) {
 					///object = Local<Object>::New( isolate, myself->surface );
 					Local<Function> cons = Local<Function>::New( isolate
 							, is->isButton
-							  ? InterShellObject::buttonInstanceConstructor 
-							  : InterShellObject::controlInstanceConstructor
+								? c->InterShellObject_buttonInstanceConstructor 
+								: c->InterShellObject_controlInstanceConstructor
 						);
 					Local<Object> inst = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 					is->psvControl.Reset( isolate, inst );
@@ -162,14 +155,14 @@ static void asyncmsg( uv_async_t* handle ) {
 			{
 				///object = Local<Object>::New( isolate, myself->surface );
 				Local<Function> cons = Local<Function>::New( isolate
-					, InterShellObject::customControlInstanceConstructor
+					, c->InterShellObject_customControlInstanceConstructor
 				);
 
 				Local<Object> inst = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 				is->psvControl.Reset( isolate, inst );
 				//defineOnQueryControl( is->type->name );
 				getCanvas( isolate, is->button );
-				SET( inst, "parent", Local<Object>::New( isolate, isLocal.canvasObject ) );
+				SET( inst, "parent", Local<Object>::New( isolate, c->canvasObject ) );
 				SET( inst, "x" , Number::New( isolate, evt->data.createCustomControl.x ) );
 				SET( inst, "y" , Number::New( isolate, evt->data.createCustomControl.y ) );
 				SET( inst, "w" , Number::New( isolate, evt->data.createCustomControl.w ) );
@@ -216,9 +209,9 @@ static void asyncmsg( uv_async_t* handle ) {
 					} else
 						object = Local<Object>::New( isolate, mo );
 
-					object->Set( localStringExternal( isolate, "x" ), Number::New( isolate, evt->data.mouse.x ) );
-					object->Set( localStringExternal( isolate, "y" ), Number::New( isolate, evt->data.mouse.y ) );
-					object->Set( localStringExternal( isolate, "b" ), Number::New( isolate, evt->data.mouse.b ) );
+					object->Set( context, localStringExternal( isolate, "x" ), Number::New( isolate, evt->data.mouse.x ) );
+					object->Set( context, localStringExternal( isolate, "y" ), Number::New( isolate, evt->data.mouse.y ) );
+					object->Set( context, localStringExternal( isolate, "b" ), Number::New( isolate, evt->data.mouse.b ) );
 					{
 						Local<Value> _argv[] = { is->psvData.Get( isolate ), object };
 						argv = _argv;
@@ -258,6 +251,11 @@ static void asyncmsg( uv_async_t* handle ) {
 		}
 	}
 	//lprintf( "done calling message notice." );
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 }
 
 static void onSave( const FunctionCallbackInfo<Value>& args ) {
@@ -387,6 +385,7 @@ void InterShellObject::Init( Local<Object> exports ) {
 	}
 	Isolate* isolate = Isolate::GetCurrent();
 	Local<Context> context = isolate->GetCurrentContext();
+	class constructorSet* c = getConstructors( isolate );
 	//Local<Object> intershellObject;
 
 	//--------------------------------------------
@@ -401,7 +400,7 @@ void InterShellObject::Init( Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( intershellTemplate, "setLoad", onLoad );
 	NODE_SET_PROTOTYPE_METHOD( intershellTemplate, "start", start );
 
-	intershellConstructor.Reset( isolate, intershellTemplate->GetFunction(context).ToLocalChecked() );
+	c->InterShellObject_intershellConstructor.Reset( isolate, intershellTemplate->GetFunction(context).ToLocalChecked() );
 
 	//Local<Function> cons = Local<Function>::New( isolate, intershellConstructor );
 	//intershellObject = cons->NewInstance( 0, NULL );
@@ -425,7 +424,7 @@ void InterShellObject::Init( Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( configTemplate, "addMethod", addConfigMethod );
 	//NODE_SET_PROTOTYPE_METHOD( configTemplate, "process", processConfigFile );
 
-	configConstructor.Reset( isolate, configTemplate->GetFunction(context).ToLocalChecked() );
+	c->InterShellObject_configConstructor.Reset( isolate, configTemplate->GetFunction(context).ToLocalChecked() );
 	SET_READONLY( exports, "Configuration", configTemplate->GetFunction(context).ToLocalChecked() );
 
 	//isLocal.canvasObject.Reset( isolate, configObject );
@@ -445,7 +444,7 @@ void InterShellObject::Init( Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( buttonTemplate, "setLoad", onLoadButton );
 
 
-	buttonConstructor.Reset( isolate, buttonTemplate->GetFunction(context).ToLocalChecked() );
+	c->InterShellObject_buttonConstructor.Reset( isolate, buttonTemplate->GetFunction(context).ToLocalChecked() );
 	SET_READONLY( intershellTemplate->GetFunction(context).ToLocalChecked(), "Button", buttonTemplate->GetFunction(context).ToLocalChecked() );
 
 	//--------------------------------------------
@@ -462,7 +461,7 @@ void InterShellObject::Init( Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( buttonInstanceTemplate, "setBackground", setBackground );
 	NODE_SET_PROTOTYPE_METHOD( buttonInstanceTemplate, "setSecondary", setSecondary );
 
-	buttonInstanceConstructor.Reset( isolate, buttonInstanceTemplate->GetFunction(context).ToLocalChecked() );
+	c->InterShellObject_buttonInstanceConstructor.Reset( isolate, buttonInstanceTemplate->GetFunction(context).ToLocalChecked() );
 
 	//--------------------------------------------
 	Local<FunctionTemplate> controlTemplate;
@@ -472,7 +471,7 @@ void InterShellObject::Init( Local<Object> exports ) {
 	controlTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // needs to be 1 for wrap
 
 	 // Prototype
-	controlConstructor.Reset( isolate, controlTemplate->GetFunction(context).ToLocalChecked() );
+	c->InterShellObject_controlConstructor.Reset( isolate, controlTemplate->GetFunction(context).ToLocalChecked() );
 
 	SET_READONLY( intershellTemplate->GetFunction(context).ToLocalChecked(), "Control", controlTemplate->GetFunction(context).ToLocalChecked() );
 
@@ -486,7 +485,7 @@ void InterShellObject::Init( Local<Object> exports ) {
 																			 // Prototype
 	NODE_SET_PROTOTYPE_METHOD( controlInstanceTemplate, "setTitle", onCreateControl );
 
-	controlInstanceConstructor.Reset( isolate, controlInstanceTemplate->GetFunction(context).ToLocalChecked() );
+	c->InterShellObject_controlInstanceConstructor.Reset( isolate, controlInstanceTemplate->GetFunction(context).ToLocalChecked() );
 
 
 	//--------------------------------------------
@@ -496,13 +495,13 @@ void InterShellObject::Init( Local<Object> exports ) {
 	customControlTemplate->SetClassName( localStringExternal( isolate, "sack.InterShell.CustomControl" ) );
 	customControlTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // needs to be 1 for wrap
 
-																		   // Prototype
+																			 // Prototype
 	NODE_SET_PROTOTYPE_METHOD( customControlTemplate, "setCreate", onCreateCustomControl );
 	//NODE_SET_PROTOTYPE_METHOD( buttonTemplate, "onMouse", query );
 	NODE_SET_PROTOTYPE_METHOD( customControlTemplate, "setSave", onSaveControl );
 	NODE_SET_PROTOTYPE_METHOD( customControlTemplate, "setLoad", onLoadControl );
 
-	customControlConstructor.Reset( isolate, customControlTemplate->GetFunction(context).ToLocalChecked() );
+	c->InterShellObject_customControlConstructor.Reset( isolate, customControlTemplate->GetFunction(context).ToLocalChecked() );
 
 	SET_READONLY( intershellTemplate->GetFunction(context).ToLocalChecked(), "Custom", customControlTemplate->GetFunction(context).ToLocalChecked() );
 
@@ -513,13 +512,13 @@ void InterShellObject::Init( Local<Object> exports ) {
 	customControlInstanceTemplate->SetClassName( localStringExternal( isolate, "sack.InterShell.CustomControl.instance" ) );
 	customControlInstanceTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // needs to be 1 for wrap
 
-																		   // Prototype
+																			 // Prototype
 	NODE_SET_PROTOTYPE_METHOD( customControlInstanceTemplate, "setCreate", onCreateCustomControl );
 	//NODE_SET_PROTOTYPE_METHOD( buttonTemplate, "onMouse", query );
 	NODE_SET_PROTOTYPE_METHOD( customControlInstanceTemplate, "setSave", onSaveControl );
 	NODE_SET_PROTOTYPE_METHOD( customControlInstanceTemplate, "setLoad", onLoadControl );
 
-	customControlInstanceConstructor.Reset( isolate, customControlInstanceTemplate->GetFunction(context).ToLocalChecked() );
+	c->InterShellObject_customControlInstanceConstructor.Reset( isolate, customControlInstanceTemplate->GetFunction(context).ToLocalChecked() );
 
 	//--------------------------------------------
 
@@ -564,7 +563,8 @@ void InterShellObject::NewButton( const FunctionCallbackInfo<Value>& args ) {
 	} else {
 		const int argc = 2;
 		Local<Value> argv[argc] = { args[0], args.Holder() };
-		Local<Function> cons = Local<Function>::New( isolate, buttonConstructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->InterShellObject_buttonConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 	}
 }
@@ -591,7 +591,8 @@ void InterShellObject::NewConfiguration( const FunctionCallbackInfo<Value>& args
 		const int argc = args.Length();
 		Local<Value> *argv = new Local<Value>[argc];// = { args[0], args.Holder() };
 		for( int n = 0; n < argc; n++ ) argv[n] = args[n];
-		Local<Function> cons = Local<Function>::New( isolate, controlConstructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->InterShellObject_controlConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 	}
 }
@@ -599,6 +600,7 @@ void InterShellObject::NewConfiguration( const FunctionCallbackInfo<Value>& args
 void InterShellObject::NewApplication( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
+	class constructorSet* c = getConstructors( isolate );
 	if( args.IsConstructCall() ) {
 		if( !InterShell ) {
 			LoadFunction( "bag.psi.dll", NULL );
@@ -618,14 +620,14 @@ void InterShellObject::NewApplication( const FunctionCallbackInfo<Value>& args )
 			obj->async.data = obj;
 
 			isLocal.core = obj;
-			isLocal.canvasObject.Reset( isolate, args.This() );
+			c->canvasObject.Reset( isolate, args.This() );
 
 			obj->self.Reset( isolate, args.This() );
 			obj->Wrap( args.This() );
 			args.GetReturnValue().Set( args.This() );
 		}
 		else {
-			args.GetReturnValue().Set( isLocal.canvasObject.Get( isolate ) );
+			args.GetReturnValue().Set( c->canvasObject.Get( isolate ) );
 
 		}
 	}
@@ -633,7 +635,7 @@ void InterShellObject::NewApplication( const FunctionCallbackInfo<Value>& args )
 		const int argc = args.Length();
 		Local<Value> *argv = new Local<Value>[argc];// = { args[0], args.Holder() };
 		for( int n = 0; n < argc; n++ ) argv[n] = args[n];
-		Local<Function> cons = Local<Function>::New( isolate, intershellConstructor );
+		Local<Function> cons = Local<Function>::New( isolate, c->InterShellObject_intershellConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete[] argv;
 	}
@@ -697,7 +699,8 @@ void InterShellObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 	else {
 		const int argc = 2;
 		Local<Value> argv[argc] = { args[0], args.Holder() };
-		Local<Function> cons = Local<Function>::New( isolate, controlConstructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->InterShellObject_controlConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 	}
 }
@@ -722,7 +725,8 @@ void InterShellObject::NewCustomControl( const FunctionCallbackInfo<Value>& args
 	else {
 		const int argc = 2;
 		Local<Value> argv[argc] = { args[0], args.Holder() };
-		Local<Function> cons = Local<Function>::New( isolate, customControlConstructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->InterShellObject_customControlConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 	}
 }
@@ -933,7 +937,7 @@ static void defineCreateControl( char *name ) {
 	//lprintf( "Define Create Control %s", name );
 	snprintf( buf, 256, "intershell/control/%s", name );
 	SimpleRegisterMethod( buf, cbCreateControl
-							  , "uintptr_t", "control_create", "(PSI_CONTROL,int32_t,int32_t,uint32_t,uint32_t)" );
+								, "uintptr_t", "control_create", "(PSI_CONTROL,int32_t,int32_t,uint32_t,uint32_t)" );
 }
 
 static void cbDestroyControl( uintptr_t psvControl ) {
@@ -967,8 +971,8 @@ static void defineMouseControl( char *name ) {
 
 static LOGICAL cbQueryShowControl( uintptr_t psvInit) {
 	is_control *c = (is_control *)psvInit;
-   lprintf( "Need to pass query to JS" );
-   return TRUE;
+	 lprintf( "Need to pass query to JS" );
+	 return TRUE;
 }
 
 static void defineOnQueryShowControl( char *name ) {
@@ -1017,7 +1021,7 @@ static void defineCreateButton( char *name ) {
 	lprintf( "Define Create Button %s", name );
 	snprintf( buf, 256, "intershell/control/%s", name );
 	SimpleRegisterMethod( buf, cbCreateButton
-							  , "uintptr_t", "button_create", "(PMENU_BUTTON)" );
+								, "uintptr_t", "button_create", "(PMENU_BUTTON)" );
 }
 
 static void cbButtonClick( uintptr_t self ) {
@@ -1027,12 +1031,12 @@ static void cbButtonClick( uintptr_t self ) {
 
 static void defineButtonPress( char *name ) {
 //#define OnKeyPressEvent(name)  \
-//	  DefineRegistryMethod(WIDE( "sack/widgets" ),KeyPressHandler,WIDE( "keypad" ),WIDE( "press handler/" )name, WIDE( "on_keypress_event" ),void,(uintptr_t))
+//		DefineRegistryMethod(WIDE( "sack/widgets" ),KeyPressHandler,WIDE( "keypad" ),WIDE( "press handler/" )name, WIDE( "on_keypress_event" ),void,(uintptr_t))
 
 	TEXTCHAR buf[256];
 	snprintf( buf, 256, "sack/widgets/keypad/press handler/%s", name );
 	SimpleRegisterMethod( buf, cbButtonClick
-							  , "void", "on_keypress_event", "(uintptr_t)" );
+								, "void", "on_keypress_event", "(uintptr_t)" );
 }
 
 

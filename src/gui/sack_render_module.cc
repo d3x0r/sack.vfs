@@ -2,8 +2,6 @@
 #include "../global.h"
 
 
-Persistent<Function> RenderObject::constructor;
-
 
 struct optionStrings {
 	Isolate* isolate;
@@ -76,6 +74,7 @@ static struct optionStrings* getStrings( Isolate* isolate ) {
 static Local<Value> ProcessEvent( Isolate* isolate, struct event *evt, RenderObject *r ) {
 	//Local<Object> object = Object::New( isolate );
 	Local<Object> object;
+	Local<Context> context = isolate->GetCurrentContext();
 
 
 	switch( evt->type ) {
@@ -89,9 +88,9 @@ static Local<Value> ProcessEvent( Isolate* isolate, struct event *evt, RenderObj
 			else
 				object = Local<Object>::New( isolate, mo );
 
-			object->Set( localStringExternal( isolate, "x" ), Number::New( isolate, evt->data.mouse.x ) );
-			object->Set( localStringExternal( isolate, "y" ), Number::New( isolate, evt->data.mouse.y ) );
-			object->Set( localStringExternal( isolate, "b" ), Number::New( isolate, evt->data.mouse.b ) );
+			object->Set( context, localStringExternal( isolate, "x" ), Number::New( isolate, evt->data.mouse.x ) );
+			object->Set( context, localStringExternal( isolate, "y" ), Number::New( isolate, evt->data.mouse.y ) );
+			object->Set( context, localStringExternal( isolate, "b" ), Number::New( isolate, evt->data.mouse.b ) );
 		}
 		break;
 	case Event_Render_Draw:
@@ -147,6 +146,11 @@ static void asyncmsg( uv_async_t* handle ) {
 			}
 		}
 	}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 	//lprintf( "done calling message notice." );
 }
 
@@ -197,7 +201,8 @@ void RenderObject::Init( Local<Object> exports ) {
 		Local<Function> renderFunc = renderTemplate->GetFunction(context).ToLocalChecked();
 		SET_READONLY_METHOD( renderFunc, "is3D", RenderObject::is3D );
 
-		constructor.Reset( isolate, renderTemplate->GetFunction(context).ToLocalChecked() );
+    class constructorSet* c = getConstructors( isolate );
+    c->RenderObject_constructor.Reset( isolate, renderTemplate->GetFunction(context).ToLocalChecked() );
 		SET_READONLY( exports, "Renderer", renderTemplate->GetFunction(context).ToLocalChecked() );
 		SET_READONLY( renderTemplate->GetFunction(context).ToLocalChecked(), "getDisplay"
 				, Function::New( context, RenderObject::getDisplay ).ToLocalChecked() );
@@ -266,7 +271,7 @@ RenderObject::~RenderObject() {
 
 			obj->Wrap( args.This() );
 			args.GetReturnValue().Set( args.This() );
-         if( title )
+			if( title )
 				Deallocate( char*, title );
 		}
 		else {
@@ -276,7 +281,8 @@ RenderObject::~RenderObject() {
 			for( int n = 0; n < argc; n++ )
 				argv[n] = args[n];
 
-			Local<Function> cons = Local<Function>::New( isolate, constructor );
+			class constructorSet* c = getConstructors( isolate );
+			Local<Function> cons = Local<Function>::New( isolate, c->RenderObject_constructor );
 			args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 			delete argv;
 		}
@@ -304,18 +310,18 @@ void RenderObject::getCoordinate( const FunctionCallbackInfo<Value>& args ) {
 	GetDisplayPosition( me->r, &x, &y, &w, &h );
 	switch( coord ) {
 	case 10:
-		o->Set( strings->xString->Get( isolate ), Integer::New( isolate, x ) );
-		o->Set( strings->yString->Get( isolate ), Integer::New( isolate, y ) );
+		o->Set( context, strings->xString->Get( isolate ), Integer::New( isolate, x ) );
+		o->Set( context, strings->yString->Get( isolate ), Integer::New( isolate, y ) );
 		break;
 	case 11:
-		o->Set( strings->wString->Get( isolate ), Integer::New( isolate, w ) );
-		o->Set( strings->hString->Get( isolate ), Integer::New( isolate, h ) );
+		o->Set( context, strings->wString->Get( isolate ), Integer::New( isolate, w ) );
+		o->Set( context, strings->hString->Get( isolate ), Integer::New( isolate, h ) );
 		break;
 	case 12:
-		o->Set( strings->xString->Get( isolate ), Integer::New( isolate, x ) );
-		o->Set( strings->yString->Get( isolate ), Integer::New( isolate, y ) );
-		o->Set( strings->wString->Get( isolate ), Integer::New( isolate, w ) );
-		o->Set( strings->hString->Get( isolate ), Integer::New( isolate, h ) );
+		o->Set( context, strings->xString->Get( isolate ), Integer::New( isolate, x ) );
+		o->Set( context, strings->yString->Get( isolate ), Integer::New( isolate, y ) );
+		o->Set( context, strings->wString->Get( isolate ), Integer::New( isolate, w ) );
+		o->Set( context, strings->hString->Get( isolate ), Integer::New( isolate, h ) );
 		break;
 	}
 	args.GetReturnValue().Set( o );
@@ -406,18 +412,18 @@ void RenderObject::getDisplay( const FunctionCallbackInfo<Value>& args ) {
 	uint32_t w, h;
 	if( args.Length() < 1 ) {
 		GetDisplaySizeEx( 0, &x, &y, &w, &h );
-		result->Set( localStringExternal( isolate, "x" ), Integer::New( isolate, x ) );
-		result->Set( localStringExternal( isolate, "y" ), Integer::New( isolate, y ) );
-		result->Set( localStringExternal( isolate, "width" ), Integer::New( isolate, w ) );
-		result->Set( localStringExternal( isolate, "height" ), Integer::New( isolate, h ) );
+		result->Set( context, localStringExternal( isolate, "x" ), Integer::New( isolate, x ) );
+		result->Set( context, localStringExternal( isolate, "y" ), Integer::New( isolate, y ) );
+		result->Set( context, localStringExternal( isolate, "width" ), Integer::New( isolate, w ) );
+		result->Set( context, localStringExternal( isolate, "height" ), Integer::New( isolate, h ) );
 	}
 	else {
 		GetDisplaySizeEx( (int)args[0]->IntegerValue(context).ToChecked(), &x, &y, &w, &h );
 		{
-			result->Set( localStringExternal( isolate, "x" ), Integer::New( isolate, x ) );
-			result->Set( localStringExternal( isolate, "y" ), Integer::New( isolate, y ) );
-			result->Set( localStringExternal( isolate, "width" ), Integer::New( isolate, w ) );
-			result->Set( localStringExternal( isolate, "height" ), Integer::New( isolate, h ) );
+			result->Set( context, localStringExternal( isolate, "x" ), Integer::New( isolate, x ) );
+			result->Set( context, localStringExternal( isolate, "y" ), Integer::New( isolate, y ) );
+			result->Set( context, localStringExternal( isolate, "width" ), Integer::New( isolate, w ) );
+			result->Set( context, localStringExternal( isolate, "height" ), Integer::New( isolate, h ) );
 		}
 	}
 	args.GetReturnValue().Set( result );

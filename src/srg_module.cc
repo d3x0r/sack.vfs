@@ -8,7 +8,7 @@ public:
 	char *seedBuf;
 	size_t seedLen;
 	struct random_context *entropy;
-	static v8::Persistent<v8::Function> constructor;
+	//static v8::Persistent<v8::Function> constructor;
 	Persistent<Function, CopyablePersistentTraits<Function>> *seedCallback;
 	Isolate *isolate;
 	Persistent<Array> seedArray;
@@ -157,8 +157,8 @@ private:
 			Local<Value> *argv = new Local<Value>[argc];
 			for( int n = 0; n < argc; n++ )
 				argv[n] = args[n];
-
-			Local<Function> cons = Local<Function>::New( isolate, constructor );
+			class constructorSet* c = getConstructors( isolate );
+			Local<Function> cons = Local<Function>::New( isolate, c->SRGObject_constructor );
 			args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 			delete[] argv;
 		}
@@ -222,11 +222,17 @@ private:
 			uint32_t *buffer = NewArray( uint32_t, (bits +31)/ 32 );
 			SRG_GetEntropyBuffer( obj->entropy, buffer, bits );
 
+#if ( NODE_MAJOR_VERSION >= 14 )
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buffer,
+				(bits+7)/8, releaseBufferBackingStore, NULL );
+			Local<Object> arrayBuffer = ArrayBuffer::New( obj->isolate, bs );
+#else
 			Local<Object> arrayBuffer = ArrayBuffer::New( obj->isolate, buffer, (bits+7)/8 );
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->o.Reset( obj->isolate, arrayBuffer );
 			holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 			holder->buffer = buffer;
+#endif
 
 			args.GetReturnValue().Set( arrayBuffer );
 		}
@@ -679,6 +685,7 @@ private:
 			}
 			threadParams[n].id = NULL;
 		}
+		// this will always be set; a thread will have ended with an id set.
 		return result;
 	}
 
@@ -825,7 +832,6 @@ struct random_context *(*SRGObject::makeEntropy)(void( *getsalt )(uintptr_t, POI
 
 struct SRGObject::bit_count_entry SRGObject::bit_counts[256];
 PLINKQUEUE SRGObject::signingEntropies;
-v8::Persistent<v8::Function> SRGObject::constructor;
 
 
 void InitSRG( Isolate *isolate, Local<Object> exports ) {
@@ -836,6 +842,7 @@ void SRGObject::Init( Isolate *isolate, Local<Object> exports )
 {
 	InitBitCountLookupTables();
 	Local<FunctionTemplate> srgTemplate;
+	class constructorSet* c = getConstructors( isolate );
 	srgTemplate = FunctionTemplate::New( isolate, New );
 	srgTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.srg", v8::NewStringType::kNormal ).ToLocalChecked() );
 	srgTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
@@ -848,7 +855,7 @@ void SRGObject::Init( Isolate *isolate, Local<Object> exports )
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "setSigningThreads", SRGObject::srg_setThraads );
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "verify", SRGObject::srg_verify );
 	Local<Function> f = srgTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
-	SRGObject::constructor.Reset( isolate, f );
+	c->SRGObject_constructor.Reset( isolate, f );
 
 	SET_READONLY( exports, "SaltyRNG", f );
 	SET_READONLY_METHOD( f, "id", SRGObject::idGenerator );

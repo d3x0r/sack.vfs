@@ -8,8 +8,6 @@ public:
 	int closed;
 	Persistent<Object> surface; // used to pass to draw callback
 
-	static v8::Persistent<v8::Function> constructor;
-	static v8::Persistent<v8::Function> constructor2;
 
 public:
 

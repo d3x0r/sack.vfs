@@ -1,3 +1,4 @@
+#if WIN32
 
 #include "global.h"
 
@@ -13,7 +14,6 @@ class KeyHidObject : public node::ObjectWrap {
 public:
 	int handle;
 	char *name;
-	static Persistent<Function> constructor;
 
 	Persistent<Function, CopyablePersistentTraits<Function>> *readCallback; //
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
@@ -438,7 +438,7 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 		}
 	}
 	//SendMessage( hidg.hWnd, WM_HOOK2, 0, 0 );
-	LoG( "LL keyhook for key... %08x  %d %d %x", wParam, kbhook->scanCode, kbhook->vkCode, kbhook->flags );
+	//LoG( "LL keyhook for key... %08x  %d %d %x", wParam, kbhook->scanCode, kbhook->vkCode, kbhook->flags );
 	MSG msg;
 	while( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) ) { DispatchMessage( &msg );  lprintf( "had LL message..." ); }
 	return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
@@ -454,7 +454,7 @@ uintptr_t InputThread( PTHREAD thread )
 	//lprintf( "%p", xx );
 	hidg.hookHandleLL = SetWindowsHookEx( WH_KEYBOARD_LL, (HOOKPROC)KeyboardProcLL, xx, 0 );
 	hidg.hookHandle = SetWindowsHookEx( WH_KEYBOARD, KeyboardProc, xx, 0 );
-	lprintf( "hook:%p %d", hidg.hookHandle, GetLastError() );
+	//lprintf( "hook:%p %d", hidg.hookHandle, GetLastError() );
 	hidg.nWriteTimeout = 150; // at 9600 == 144 characters
 	if( MakeProxyWindow() ) {
 		MSG msg;
@@ -467,7 +467,6 @@ uintptr_t InputThread( PTHREAD thread )
 }
 
 
-Persistent<Function> KeyHidObject::constructor;
 static void asyncmsg( uv_async_t* handle );
 
 KeyHidObject::KeyHidObject(  ) {
@@ -494,8 +493,9 @@ void KeyHidObject::Init( Isolate *isolate, Local<Object> exports ) {
 																 // Prototype
 	NODE_SET_PROTOTYPE_METHOD( comTemplate, "onKey", onRead );
 
+	class constructorSet* c = getConstructors( isolate );
 
-	constructor.Reset( isolate, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	c->KeyHidObject_constructor.Reset( isolate, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	SET( exports, "Keyboard"
 		, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 }
@@ -561,12 +561,11 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		// Invoked as constructor: `new MyObject(...)`
 		KeyHidObject* obj = new KeyHidObject( );
 		{
-			if( !hidg.loop )
-				hidg.loop = uv_default_loop();
 
 			MemSet( &obj->async, 0, sizeof( obj->async ) );
 
-			uv_async_init( hidg.loop, &obj->async, asyncmsg );
+			class constructorSet *c = getConstructors( isolate );
+			uv_async_init( c->loop, &obj->async, asyncmsg );
 			obj->async.data = obj;
 
 			obj->Wrap( args.This() );
@@ -576,7 +575,8 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->KeyHidObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), NULL, 0 ).ToLocalChecked() );
 	}
 }
@@ -609,3 +609,4 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 
+#endif

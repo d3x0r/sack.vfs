@@ -2,10 +2,14 @@
 
 var sack = require( ".." );
 const path = require( "path" );
-var serverOpts;
-var server = sack.WebSocket.Server( serverOpts = { port: Number(process.argv[2])||8080 } )
+
+function openServer( opts, cb )
+{
+var serverOpts = opts || {port:Number(process.argv[2])||8080} ;
+var server = sack.WebSocket.Server( serverOpts )
 var disk = sack.Volume();
 console.log( "serving on " + serverOpts.port );
+console.log( "with:", disk.dir() );
 
 
 server.onrequest( function( req, res ) {
@@ -15,7 +19,7 @@ server.onrequest( function( req, res ) {
 		 req.connection.socket.remoteAddress;
 	//ws.clientAddress = ip;
 
-	console.log( "Received request:", req );
+	//console.log( "Received request:", req );
 	if( req.url === "/" ) req.url = "/index.html";
 	var filePath = "." + unescape(req.url);
 	var extname = path.extname(filePath);
@@ -63,6 +67,7 @@ server.onrequest( function( req, res ) {
 } );
 
 server.onaccept( function ( ws ) {
+	if( cb ) return cb(ws)
 //	console.log( "Connection received with : ", ws.protocols, " path:", resource );
         if( process.argv[2] == "1" )
 		this.reject();
@@ -72,7 +77,6 @@ server.onaccept( function ( ws ) {
 
 server.onconnect( function (ws) {
 	//console.log( "Connect:", ws );
-
 	ws.onmessage( function( msg ) {
         	//console.log( "Received data:", msg );
                 ws.send( msg );
@@ -82,3 +86,11 @@ server.onconnect( function (ws) {
         	//console.log( "Remote closed" );
         } );
 } );
+
+}
+
+console.log( "Export open?!" );
+exports.open = openServer;
+
+if( !module.parent )
+	openServer();

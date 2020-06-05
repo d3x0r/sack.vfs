@@ -25,6 +25,7 @@ static void playMedia( const v8::FunctionCallbackInfo<Value>& args ) {
 		ffmpeg_PlayFile( file );
 		ffmpeg_UnloadFile( file );
 		//PlaySound( *sound, NULL, SND_ASYNC );
+#endif
 	}
 }
 

@@ -11,12 +11,12 @@ public:
 	char *fileName;
 	struct file_system_interface *fsInt;
 	struct file_system_mounted_interface* fsMount;
-	static v8::Persistent<v8::Function> constructor;
+	LOGICAL thrown;
 
 public:
 
 	static void Init( Isolate *isolate, Local<Object> exports );
-	ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 );
+	ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, struct file_system_mounted_interface* useMount );
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -26,8 +26,11 @@ public:
 	// get object and all recursive objects associated from here (for 1 level?)
 	static void mapObject( const v8::FunctionCallbackInfo<Value>& args );
 
-	// pass object, result with object ID.
+	// pass object, parser, result with object ID.
 	static void putObject( const v8::FunctionCallbackInfo<Value>& args );
+
+	// pass ID to remove from storage
+	static void removeObject( const v8::FunctionCallbackInfo<Value>& args );
 
 	// pass object ID, get back a ObjectStorageFileObject ( support seek/read/write? )
 	static void openObject( const v8::FunctionCallbackInfo<Value>& args );
@@ -36,13 +39,27 @@ public:
 	static void volDecrypt( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void fileReadJSOX( const v8::FunctionCallbackInfo<Value>& args );
+	static void fileRead( const v8::FunctionCallbackInfo<Value>& args );
+	static void flush( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void fileWrite( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileStore( const v8::FunctionCallbackInfo<Value>& args );
 	static void createIndex( const v8::FunctionCallbackInfo<Value>& args );
-	static ObjectStorageObject* openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 );
+	static ObjectStorageObject* openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2, struct file_system_mounted_interface* useMount );
+
+	Local<Object> WrapObjectStorage( Isolate* isolate ) {
+		Local<Object> o = Object::New( isolate );
+		this->Wrap( o );
+		return o;
+	}
+
 	~ObjectStorageObject();
 };
+
+
+Local<Object> WrapObjectStorage( Isolate* isolate, class ObjectStorageObject* oso ) {
+	return oso->WrapObjectStorage( isolate );
+}
 
 
 struct optionStrings {
@@ -100,15 +117,28 @@ typedef struct ObjectStorageEvent *POBJECT_STORAGE_EVENT;
 #define MAXOBJECT_STORAGE_EVENTSPERSET 128
 DeclareSet( OBJECT_STORAGE_EVENT );
 
+struct objectStorageTransport {
+	class ObjectStorageObject *oso;
+};
+
+struct objectStorageUnloadStation {
+	Persistent<Object> this_;
+	String::Utf8Value* s;  // destination address
+	uv_async_t poster;
+	uv_loop_t  *targetThread;
+	Persistent<Function> cb; // callback to invoke
+	PLIST transport;
+};
+
+
 static struct objStoreLocal {
 	PLIST open;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	POBJECT_STORAGE_EVENTSET osEvents;
 	PLIST strings;
+	PLIST transportDestinations;
 } osl;
 
-
-Persistent<Function> ObjectStorageObject::constructor;
 
 ATEXIT( closeVolumes ) {
 	INDEX idx;
@@ -188,16 +218,157 @@ static void postEvent( ObjectStorageObject *_this, enum objectStorageEvents evt,
 		/* no additional parameters */
 		break;
 	}
-	//(*pevt).buf = NewArray( uint8_t*, buflen );
-	//lprintf( "Send buffer %p", (*pevt).buf );
-	//memcpy( (POINTER)(*pevt).buf, buffer, buflen );
-	//(*pevt).buflen = buflen;
-	//(*pevt)._this = _this;
-	//(*pevt).from = DuplicateAddress( from );
 	EnqueLink( &_this->plqEvents, pevt );
-
 	uv_async_send( &_this->async );
 }
+
+
+
+static LOGICAL PostObjectStorage( Isolate *isolate, String::Utf8Value *name, ObjectStorageObject* obj ) {
+	struct objectStorageTransport* trans = new struct objectStorageTransport();
+	trans->oso = obj;
+
+	{
+		struct objectStorageUnloadStation* station;
+		INDEX idx;
+		LIST_FORALL( osl.transportDestinations, idx, struct objectStorageUnloadStation*, station ) {
+			if( memcmp( *station->s[0], *(name[0]), (name[0]).length() ) == 0 ) {
+				AddLink( &station->transport, trans );
+				//lprintf( "Send Post Request %p", station->poster );
+				uv_async_send( &station->poster );
+				break;
+			}
+		}
+		if( !station ) {
+			return FALSE;
+			//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Failed to find target accepting thread", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		}
+	}
+	return TRUE;
+}
+
+static void postObjectStorage( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() < 2 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameter missing: (unique,socket)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+	ObjectStorageObject* obj = ObjectStorageObject::Unwrap<ObjectStorageObject>( args[1].As<Object>() );
+	if( obj ){
+		String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		if( PostObjectStorage( isolate, &s, obj ) )
+			args.GetReturnValue().Set( True(isolate) );
+		else
+			args.GetReturnValue().Set( False(isolate) );
+
+	}
+	else {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Second paramter is not an accepted socket", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+	}
+}
+
+
+
+static void postObjectStorageObject( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() < 1 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameter missing: (unique)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+
+	ObjectStorageObject* obj = ObjectStorageObject::Unwrap<ObjectStorageObject>( args.This() );
+	if( obj ){
+		String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		if( PostObjectStorage( isolate, &s, obj ) )
+			args.GetReturnValue().Set( True(isolate) );
+		else
+			args.GetReturnValue().Set( False(isolate) );
+	}
+	else {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Object is not an accepted socket", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+	}
+}
+
+
+static void finishPostClose( uv_handle_t *async ) {
+	struct objectStorageUnloadStation* unload = ( struct objectStorageUnloadStation* )async->data;
+	delete unload->s;
+	delete unload;
+}
+
+static void handlePostedObjectStorage( uv_async_t* async ) {
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	class constructorSet* c = getConstructors( isolate );
+	struct objectStorageUnloadStation* unload = ( struct objectStorageUnloadStation* )async->data;
+	Local<Function> f = unload->cb.Get( isolate );
+	INDEX idx;
+	struct objectStorageTransport* trans;
+	LIST_FORALL( unload->transport, idx, struct objectStorageTransport*, trans ) {
+
+
+		Local<Function> cons = Local<Function>::New( isolate, c->ObjectStorageObject_constructor );
+		Local<Object> newThreadObject = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
+
+		Local<Value> args[] = { localStringExternal( isolate, **( unload->s ), unload->s->length() ), newThreadObject };
+		ObjectStorageObject* obj = ObjectStorageObject::Unwrap<ObjectStorageObject>( newThreadObject );
+
+		obj->vol = trans->oso->vol;
+		obj->volNative = trans->oso->volNative;
+		obj->mountName = trans->oso->mountName;
+		obj->fileName = trans->oso->fileName;
+		obj->fsInt = trans->oso->fsInt;
+		obj->fsMount = trans->oso->fsMount;
+		obj->thrown = trans->oso->thrown = TRUE;
+
+	//lprintf( "having copied all the data to the new one, erase the old one. %p %p", trans->oso, obj );
+	trans->oso->vol = NULL;
+	trans->oso->volNative = NULL;
+	trans->oso->mountName = NULL;
+	trans->oso->fileName = NULL;
+	trans->oso->fsInt = NULL;
+	trans->oso->fsMount = NULL;
+
+
+
+		MaybeLocal<Value> ml_result = f->Call( context, unload->this_.Get(isolate), 2, args );
+		if( !ml_result.IsEmpty() ) {
+			Local<Value> result = ml_result.ToLocalChecked();
+			if( result->TOBOOL(isolate) ) {
+			}
+		}
+		//lprintf( "Cleanup this event.." );
+		unload->cb.Reset();
+		unload->this_.Reset();
+		DeleteLink( &osl.transportDestinations, unload );
+		SetLink( &unload->transport, 0, NULL );
+		uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
+		break;
+	}
+}
+
+static void setClientObjectStorageHandler( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	class constructorSet* c = getConstructors( isolate );
+	String::Utf8Value unique( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+
+	Local<Function> f = args[1].As<Function>();
+	struct objectStorageUnloadStation* unloader = new struct objectStorageUnloadStation();
+	unloader->this_.Reset( isolate, args.This() );
+	unloader->s = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	unloader->cb.Reset( isolate, f );
+	unloader->targetThread = c->loop;
+	unloader->poster.data = unloader;
+	unloader->transport = NULL;
+	//lprintf( "New async event handler for this unloader%p", &unloader->clientSocketPoster );
+
+	uv_async_init( unloader->targetThread, &unloader->poster, handlePostedObjectStorage );
+
+	AddLink( &osl.transportDestinations, unloader );
+}
+
+
 
 
 void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
@@ -212,15 +383,28 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 	clsTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "read", ObjectStorageObject::fileReadJSOX );
-	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "write", ObjectStorageObject::fileWrite );
+	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "readRaw", ObjectStorageObject::fileRead );
+	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "writeRaw", ObjectStorageObject::fileWrite );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "createIndex", ObjectStorageObject::createIndex );
 	//NODE_SET_PROTOTYPE_METHOD( clsTemplate, "store", ObjectStorageObject::fileStore );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "put", ObjectStorageObject::putObject );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "get", ObjectStorageObject::getObject );
+	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "delete", ObjectStorageObject::removeObject );
+	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "flush", ObjectStorageObject::flush );
 
 	Local<Function> VolFunc = clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
-	constructor.Reset( isolate, clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	class constructorSet* c = getConstructors( isolate );
+	Local<Function> objectStoreFunc = clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
+	c->ObjectStorageObject_constructor.Reset( isolate, objectStoreFunc );
+
+	{
+		Local<Object> threadObject = Object::New( isolate );
+		SET_READONLY_METHOD( threadObject, "post", postObjectStorage );
+		SET_READONLY_METHOD( threadObject, "accept", setClientObjectStorageHandler );
+		SET_READONLY( objectStoreFunc, "Thread", threadObject );
+	}
+
 	SET( exports, "ObjectStorage"
 		, clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
@@ -228,17 +412,18 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 
 
 ObjectStorageObject::~ObjectStorageObject() {
+	lprintf( "ObjectStorage object evaporated. %p", this );
 	if( volNative ) {
 		Deallocate( char*, mountName );
 		Deallocate( char*, fileName );
-		//printf( "Volume object evaporated.\n" );
 		sack_unmount_filesystem( fsMount );
 		objStore::sack_vfs_os_unload_volume( vol );
 		DeleteLink( &osl.open, vol );
 	}
 }
 
-ObjectStorageObject::ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2 ) {
+ObjectStorageObject::ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key
+	, const char *key2, struct file_system_mounted_interface*useMount ) {
 	mountName = (char *)mount;
 	if( !mount && !filename ) {
 		// no native storage.
@@ -255,7 +440,7 @@ ObjectStorageObject::ObjectStorageObject( const char *mount, const char *filenam
 		//lprintf( "sack_vfs_os_volume: %s %p %p", filename, key, key2 );
 		fileName = StrDup( filename );
 		volNative = true;
-		vol = objStore::sack_vfs_os_load_crypt_volume( filename, version, key, key2 );
+		vol = objStore::sack_vfs_os_load_crypt_volume( filename, version, key, key2, useMount );
 		AddLink( &osl.open, vol );
 		//lprintf( "VOL: %p for %s %d %p %p", vol, filename, version, key, key2 );
 		if( vol )
@@ -266,27 +451,6 @@ ObjectStorageObject::ObjectStorageObject( const char *mount, const char *filenam
 	}
 }
 
-#if 0
-static void idGenerator( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	if( args.Length() ) {
-		int version = -1;
-		if( args[0]->IsString() ) {
-			char *r;
-			struct random_context *ctx = SRG_CreateEntropy4( NULL, 0 );
-
-			SRG_FeedEntropy( ctx, (uint8_t*)*val, val.length() );
-			uint32_t buf[256 / 32];
-			SRG_GetEntropyBuffer( ctx, buf, 256 );
-			size_t outlen;
-			r = EncodeBase64Ex( (uint8_t*)buf, (16 + 16), &outlen, (const char *)1 );
-			SRG_DestroyEntropy( &ctx );
-			args.GetReturnValue().Set( localString( isolate, r, (int)outlen ) );
-		}
-	}
-}
-
-#endif
 
 static uintptr_t CPROC DoPutObject( PTHREAD thread ) {
 	struct objectStorageOptions osoOpts;
@@ -299,7 +463,7 @@ static uintptr_t CPROC DoPutObject( PTHREAD thread ) {
 
 	// a specific name is passed...
 	//    the name is hashed with sealant and that is the resulting ID.
-	//    if no sealant, 
+	//    if no sealant,
 	if( osoOpts.objectHash ) {
 		if( osoOpts.sealant ) {
 			struct random_context *ctx = SRG_CreateEntropy4( NULL, 0 );
@@ -348,6 +512,35 @@ static uintptr_t CPROC DoPutObject( PTHREAD thread ) {
 	return 0;
 }
 
+void ObjectStorageObject::flush( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	//Local<Function> cb;
+	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
+	// And unload?
+	sack_vfs_os_flush_volume( vol->vol, FALSE );
+
+}
+
+
+void ObjectStorageObject::removeObject( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	//Local<Function> cb;
+	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
+	if( args[0]->IsString() ) {
+		String::Utf8Value fName( isolate, args[0] );
+		//lprintf( "OPEN FILE:%s", *fName );
+		sack_vfs_os_unlink_file( vol->vol, *fName );// , fName.length() );
+		//sack_vfs_os_flush_volume( vol->vol, FALSE );
+		sack_vfs_os_polish_volume( vol->vol );
+	}
+	else if( args[0]->IsObject() ) {
+
+	}
+
+}
+
 void ObjectStorageObject::putObject( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate *isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
@@ -355,9 +548,9 @@ void ObjectStorageObject::putObject( const v8::FunctionCallbackInfo<Value>& args
 	String::Utf8Value data( USE_ISOLATE(isolate) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 	Local<Object> opts = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 	Local<String> optName;
-	
+
 	struct objectStorageOptions *osoOpts = NULL;
-	ThreadTo( DoPutObject, (uintptr_t)osoOpts );
+	ThreadTo( DoPutObject, (uintptr_t)&osoOpts );
 	while( !osoOpts )
 		Relinquish();
 
@@ -366,7 +559,7 @@ void ObjectStorageObject::putObject( const v8::FunctionCallbackInfo<Value>& args
 
 	osoOpts->data = StrDup( *data );
 	osoOpts->dataLen = data.length();
-	
+
 	if( opts->Has( context, optName = strings->objectHashString->Get( isolate ) ).ToChecked() ) {
 		String::Utf8Value strval( isolate,  GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		osoOpts->objectHash = StrDup( *strval );
@@ -393,7 +586,7 @@ void ObjectStorageObject::putObject( const v8::FunctionCallbackInfo<Value>& args
 	}
 
 	osoOpts->set = 1;
-	
+
 }
 
 
@@ -468,24 +661,32 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		char *key = NULL;
 		char *key2 = NULL;
 		uintptr_t version = 0;
+		VolumeObject* vol = NULL;
+		int arg = 0;
 		int argc = args.Length();
-		if( argc == 0 ) {
-			ObjectStorageObject* obj = new ObjectStorageObject( NULL, NULL, 0, NULL, NULL );
+		if( argc > 0 && args[0]->IsObject() ) {
+			vol = ObjectWrap::Unwrap<VolumeObject>( args[0].As<Object>() );
+			arg++;
+		}
+		if( argc == arg ) {
+			ObjectStorageObject* obj = new ObjectStorageObject( NULL, NULL, 0, NULL, NULL, NULL );
 			obj->Wrap( args.This() );
 			args.GetReturnValue().Set( args.This() );
 		}
 		else {
-			int arg = 0;
-			if( args[0]->IsString() ) {
+			//int arg = 0;
+			if( args[arg]->IsString() ) {
 
 				//TooObject( isolate.getCurrentContext().FromMaybe( Local<Object>() )
 				String::Utf8Value fName( isolate,  args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 				mount_name = StrDup( *fName );
 			}
 			else {
+				if( argc > arg )
+					arg++; // assume null mount name
 				mount_name = SRG_ID_Generator();
 			}
-			if( argc > 1 ) {
+			if( argc > (arg) ) {
 				if( args[arg]->IsString() ) {
 					String::Utf8Value fName( isolate,  args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					defaultFilename = FALSE;
@@ -496,6 +697,12 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 			else {
 				defaultFilename = FALSE;
+				{
+					char* sep;
+					if( sep = strchr( mount_name, '@' ) ) {
+						lprintf( "find mount name to get volume..." );
+					}
+				}
 				filename = mount_name;
 				mount_name = SRG_ID_Generator();
 			}
@@ -518,10 +725,10 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				arg++;
 			}
 			// Invoked as constructor: `new MyObject(...)`
-			ObjectStorageObject* obj = new ObjectStorageObject( mount_name, filename, version, key, key2 );
+			ObjectStorageObject* obj = new ObjectStorageObject( mount_name, filename, version, key, key2, vol?vol->fsMount:NULL );
 			if( !obj->vol ) {
 				isolate->ThrowException( Exception::Error(
-					String::NewFromUtf8( isolate, TranslateText( "Volume failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+					String::NewFromUtf8( isolate, TranslateText( "ObjectStorage failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			}
 			else {
 				obj->Wrap( args.This() );
@@ -541,7 +748,8 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		for( int n = 0; n < argc; n++ )
 			argv[n] = args[n];
 
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->ObjectStorageObject_constructor );
 		MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
 		if( !mo.IsEmpty() )
 			args.GetReturnValue().Set( mo.ToLocalChecked() );
@@ -589,20 +797,150 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 			String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data to write" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
+	Local<Function> cb;
 	ObjectStorageObject *vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
 	String::Utf8Value fName( isolate,  args[0] );
 	//lprintf( "OPEN FILE:%s", *fName );
+	int arg = 2;
+	while( arg < args.Length() ) {
+		if( args[arg]->IsFunction() ) {
+			cb = Local<Function>::Cast( args[arg] );
+			arg++;
+		}
+		else
+			arg++;
+	}
+
 	if( vol->volNative ) {
 		struct objStore::sack_vfs_os_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
+		// is  binary thing... or is a string buffer... or...
+
 		if( file ) {
 			String::Utf8Value data( isolate,  args[1] );
+			//char *tmp;
+			//lprintf( "Write %d to %s\nWrite Data %s", data.length(), ( *fName ), tmp = jsox_escape_string_length( *data, data.length(), NULL ) );
+			//Release( tmp );
+			objStore::sack_vfs_os_truncate( file ); // allow new content to allocate in large blocks?
 			objStore::sack_vfs_os_write( file, *data, data.length() );
 			objStore::sack_vfs_os_close( file );
 			sack_vfs_os_polish_volume( vol->vol );
+			//sack_vfs_os_flush_volume( vol->vol, FALSE );
+			if( !cb.IsEmpty() ) {
+				cb->Call( isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 0, NULL );
+			}
+
 		}
 	}
 }
 
+
+void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
+	struct jsox_parse_state* parser = NULL;
+	LOGICAL tempParser = FALSE;
+	JSOXObject* parserObject = NULL;
+
+	if( args.Length() < 2 ) {
+		isolate->ThrowException( Exception::TypeError(
+			String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data callback" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+	Local<Function> cb;
+	String::Utf8Value fName( isolate, args[0] );
+	int arg = 1;
+	while( arg < args.Length() ) {
+		if( args[arg]->IsFunction() ) {
+			cb = Local<Function>::Cast( args[arg] );
+			arg++;
+		}
+		else if( args[arg]->IsObject() ) {
+			Local<Object> useParser = args[arg]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
+			parserObject = ObjectWrap::Unwrap<JSOXObject>( useParser );
+			parser = parserObject->state;
+			arg++;
+		}
+	}
+
+	if( vol->volNative ) {
+		if( !objStore::sack_vfs_os_exists( vol->vol, ( *fName ) ) ) {
+			if( !cb.IsEmpty() ) {
+				cb->Call( isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 0, NULL );
+			}
+			return;
+		}
+
+		//lprintf( "OPEN FILE:%s", *fName );
+		struct objStore::sack_vfs_os_file* file = objStore::sack_vfs_os_openfile( vol->vol, ( *fName ) );
+		if( file ) {
+			size_t len = objStore::sack_vfs_os_size( file );
+			size_t read = 0;
+			size_t newRead;
+			char* buf = NewArray( char, len );
+
+			// CAN open directories; and they have 7ffffffff sizes.
+			while( ( read < len ) && ( newRead = objStore::sack_vfs_os_read( file, buf, len ) ) ) {
+				read += newRead;
+			}
+
+			objStore::sack_vfs_os_close( file );
+			if( !cb.IsEmpty() ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
+				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
+#else
+				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
+				PARRAY_BUFFER_HOLDER holder = GetHolder();
+				holder->o.Reset( isolate, arrayBuffer );
+				holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+				holder->buffer = buf;
+#endif
+				Local<Value> args[1];
+				args[0] = arrayBuffer;
+				cb->Call( isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 1, args );
+			}
+
+		}
+
+	}
+	else {
+		FILE* file = sack_fopenEx( 0, ( *fName ), "rb", vol->fsMount );
+		if( file ) {
+			size_t len = sack_fsize( file );
+			char* buf = NewArray( char, len );
+			size_t read = 0;
+			size_t newRead;
+			// CAN open directories; and they have 7ffffffff sizes.
+			while( ( read < len ) && ( newRead = sack_fread( buf, len, 1, file ) ) ) {
+				read += newRead;
+			}
+			sack_fclose( file );
+
+			if( !cb.IsEmpty() ) {
+
+#if ( NODE_MAJOR_VERSION >= 14 )
+				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
+				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
+#else
+				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
+				PARRAY_BUFFER_HOLDER holder = GetHolder();
+				holder->o.Reset( isolate, arrayBuffer );
+				holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+				holder->buffer = buf;
+#endif
+
+				Local<Value> args[1];
+				args[0] = arrayBuffer;
+				cb->Call( isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 1, args );
+			}
+		}
+	}
+
+	if( tempParser )
+		jsox_parse_dispose_state( &parser );
+
+
+}
 
 void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -638,9 +976,15 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 	}
 
 	if( vol->volNative ) {
-		if( !objStore::sack_vfs_os_exists( vol->vol, (*fName) ) ) return;
+		if( !objStore::sack_vfs_os_exists( vol->vol, ( *fName ) ) ) {
+			//lprintf( "object is not found: %s", *fName );
+			if( !cb.IsEmpty() ) {
+				cb->Call( isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 0, NULL );
+			}
+			return;
+		}
 
-		lprintf( "OPEN FILE:%s", *fName );
+		//lprintf( "OPEN FILE:%s", *fName );
 		struct objStore::sack_vfs_os_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
 		if( file ) {
 			char *buf = NewArray( char, 4096 );
@@ -652,7 +996,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			while( (read < len) && (newRead = objStore::sack_vfs_os_read( file, buf, 4096 )) ) {
 				read += newRead;
 				int result;
-				//lprintf( "Parse file: %s", buf, newRead );
+				//lprintf( "Parse file: %.*s", newRead, buf );
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
 					result = jsox_parse_add_data( parser, NULL, 0 ) ) {
@@ -665,10 +1009,12 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					r.isolate = isolate;
 					r.context = isolate->GetCurrentContext();
 					r.parser = parserObject;
+					parserObject->currentReviver = &r;
 					Local<Value> val = convertMessageToJS2( data, &r );
 					{
-						MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, &val );
-						if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
+						Local<Value> argv[1] = { val };
+						MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, argv );
+						if( result.IsEmpty() ) { // if an exception occurred stop, and return it.
 							jsox_dispose_message( &data );
 							jsox_parse_dispose_state( &parser );
 							return;
@@ -677,6 +1023,14 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					jsox_dispose_message( &data );
 					if( result == 1 )
 						break;
+				}
+				if( result < 0 ) {
+					PTEXT error = jsox_parse_get_error( parser );
+					if( error )
+						isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+					else
+						isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "No Error Text" STRSYM(__LINE__), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+					LineRelease( error );
 				}
 			}
 			Deallocate( char *, buf );
@@ -696,7 +1050,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			while( (read < len) && (newRead = sack_fread( buf, 4096, 1, file )) ) {
 				read += newRead;
 				int result;
-				//lprintf( "Parse file:", buf );
+				//lprintf( "Parse file: %.*s", newRead, buf );
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
 					result = jsox_parse_add_data( parser, NULL, 0 ) ) {
@@ -710,7 +1064,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 						Local<Value> val = convertMessageToJS2( data, &r );
 						{
 							MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, &val );
-							if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
+							if( result.IsEmpty() ) { // if an exception occurred stop, and return it.
 								jsox_dispose_message( &data );
 								jsox_parse_dispose_state( &parser );
 								return;
@@ -733,15 +1087,15 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 
 }
 
-ObjectStorageObject*  openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 ) {
+ObjectStorageObject*  openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2, struct file_system_mounted_interface* useMount ) {
 
 //ObjectStorageObject*  ObjectStorageObject::openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 ) {
 
 	// Invoked as constructor: `new MyObject(...)`
-	ObjectStorageObject* obj = new ObjectStorageObject( mount, name, 0, key1, key2 );
+	ObjectStorageObject* obj = new ObjectStorageObject( mount, name, 0, key1, key2, useMount );
 	if( !obj->vol ) {
 		isolate->ThrowException( Exception::Error(
-			String::NewFromUtf8( isolate, TranslateText( "Volume failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			String::NewFromUtf8( isolate, TranslateText( "ObjectStorage failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		delete obj;
 		obj = NULL;
 	}
