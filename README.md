@@ -311,6 +311,12 @@ sack.ObjectStorage.
 | read | Promise | ( [pos,] length) | Takes optional parameters (length), or (position, length); returns a promise that resolves with an ArrayBuffer |
 | write | Promise | ( ArrayBuffer | String ) | Write this array buffer or string to the file.  Promise resolves with the id of the object written. |
 
+```
+storage.getRoot().then( root=>root.open("filename").catch( ()=>root.create( "filename" ) ).then( (file)=>file.read().then( data=>{
+   console.log( "File Data:", data );
+} ) ) )
+```
+
 ## Sqlite Interface
 
   (result from vfs.Sqlite("dbName.db") or vfs.Volume().Sqlite("dbName.db"))
