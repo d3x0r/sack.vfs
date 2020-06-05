@@ -25,6 +25,7 @@
 #include <pssql.h>
 #include <deadstart.h>
 #include <translation.h>
+#include <systray.h>
 
 #define USE_RENDER_INTERFACE g.pdi
 #define USE_IMAGE_INTERFACE g.pii
