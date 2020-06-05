@@ -140,6 +140,7 @@ add_library(${PROJECT} SHARED
 	src/network_module.cc
 	src/config_module.cc
 	src/task_module.cc
+    src/system_module.cc
 	src/text_object.cc
 	${MORE_MODULE_SOURCES}
 	${GUI_SOURCES}	
