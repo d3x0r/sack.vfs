@@ -1,7 +1,7 @@
 
 #include "../global.h"
 
-#ifdef SACK_CORE_BUILD
+#ifndef SACK_CORE_BUILD
 #include <psi.h>
 #include <psi/console.h>
 #include <psi/clock.h>
