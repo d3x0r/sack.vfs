@@ -1009,6 +1009,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					r.isolate = isolate;
 					r.context = isolate->GetCurrentContext();
 					r.parser = parserObject;
+					parserObject->currentReviver = &r;
 					Local<Value> val = convertMessageToJS2( data, &r );
 					{
 						Local<Value> argv[1] = { val };

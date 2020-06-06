@@ -35,40 +35,7 @@
     "sack"
   ],
   "_dependencies": ["cmake-js"],
-    "devDependencies": {
-        "@babel/preset-env": "latest",
-        "@rollup/plugin-babel": "latest",
-        "@rollup/plugin-commonjs": "latest",
-        "@rollup/plugin-node-resolve": "^7",
-        "@rollup/plugin-strip": "latest",
-        "acorn": "latest",
-        "chai": "latest",
-        "core-js": "latest",
-        "eslint": "latest",
-        "husky": "latest",
-        "lint-staged": "latest",
-        "mocha": "latest",
-        "nyc": "latest",
-        "rollup": "latest",
-        "rollup-plugin-terser": "latest"
-    },
-    "nyc": {
-        "statements": 100,
-        "branches": 100,
-        "functions": 100,
-        "lines": 100,
-        "ignore-class-method": [
-            "log"
-        ],
-        "reporter": [
-            "lcov",
-            "text"
-        ]
-    },
   "scripts": {
-        "mocha-lite": "mocha --require test/bootstrap/node test/json6 test/jsox",
-        "mocha": "mocha --require test/bootstrap/node --recursive",
-    "test": "node tests/vfsTest.js",
     "test": "node tests/vfsTest.js",
     "install": "npm run build-gui",
     "build-gui": "npm run build-gui-config && npm run build-gui-run1 && npm run build-gui-config && npm run build-gui-run2",

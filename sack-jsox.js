@@ -6,16 +6,16 @@ sack.JSON6.stringify = JSON.stringify;
 sack.JSON.stringify = JSON.stringify;
 
 try {
-var disk = sack.Volume();
-require.extensions['.json6'] = function (module, filename) {
-	var content = disk.read(filename).toString();
-	module.exports = sack.JSON6.parse(content);
-};
+	var disk = sack.Volume();
+	require.extensions['.json6'] = function (module, filename) {
+		var content = disk.read(filename).toString();
+		module.exports = sack.JSON6.parse(content);
+	};
 
-require.extensions['.jsox'] = function (module, filename) {
-	var content = disk.read(filename).toString();
-	module.exports = sack.JSOX.parse(content);
-};
+	require.extensions['.jsox'] = function (module, filename) {
+		var content = disk.read(filename).toString();
+		module.exports = sack.JSOX.parse(content);
+	};
 } catch(err) {
 	console.log( "JSOX Module could not register require support..." );
 }
@@ -29,7 +29,6 @@ var commonClasses = [];
 	// hook module native code to JS interface.
 	sack.JSOX.setFromPrototypeMap( fromProtoTypes );
 	toProtoTypes.set( Object.prototype, { external:false, name:Object.prototype.constructor.name, cb:null } );
-
 
 	function this_value() {_DEBUG_STRINGIFY&&console.log( "this:", this, "valueof:", this&&this.valueOf() ); return this&&this.valueOf(); }
 	// function https://stackoverflow.com/a/17415677/4619267
@@ -74,43 +73,43 @@ var commonClasses = [];
 		                , { external:false, name:"BigInt", cb:function() { return this + 'n' } } );
 
 	toProtoTypes.set( ArrayBuffer.prototype, { external:true, name:"ab"
-		, cb:function() { return "ab["+base64ArrayBuffer(this)+"]" }
+		, cb:function() { return "ab[\""+base64ArrayBuffer(this)+"\"]" }
 	} );
 
 	toProtoTypes.set( Uint8Array.prototype, { external:true, name:"u8"
-		, cb:function() { return "u8["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "u8[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 	toProtoTypes.set( Uint8ClampedArray.prototype, { external:true, name:"uc8"
-		, cb:function() { return "uc8["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "uc8[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 	toProtoTypes.set( Int8Array.prototype, { external:true, name:"s8"
-		, cb:function() { return "s8["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "s8[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 	toProtoTypes.set( Uint16Array.prototype, { external:true, name:"u16"
-		, cb:function() { return "u16["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "u16[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 	toProtoTypes.set( Int16Array.prototype, { external:true, name:"s16"
-		, cb:function() { return "s16["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "s16[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 	toProtoTypes.set( Uint32Array.prototype, { external:true, name:"u32"
-		, cb:function() { return "u32["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "u32[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 	toProtoTypes.set( Int32Array.prototype, { external:true, name:"s32"
-		, cb:function() { return "s32["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "s32[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 	if( typeof Uint64Array !== "undefined" )
 		toProtoTypes.set( Uint64Array.prototype, { external:true, name:"u64"
-			, cb:function() { return "u64["+base64ArrayBuffer(this.buffer)+"]" }
+			, cb:function() { return "u64[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 		} );
 	if( typeof Int64Array !== "undefined" )
 		toProtoTypes.set( Int64Array.prototype, { external:true, name:"s64"
-			, cb:function() { return "s64["+base64ArrayBuffer(this.buffer)+"]" }
+			, cb:function() { return "s64[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 		} );
 	toProtoTypes.set( Float32Array.prototype, { external:true, name:"f32"
-		, cb:function() { return "f32["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "f32[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 	toProtoTypes.set( Float64Array.prototype, { external:true, name:"f64"
-		, cb:function() { return "f64["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "f64[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 
 	toProtoTypes.set( Symbol.prototype, { external:true, name:"sym"
@@ -315,6 +314,15 @@ sack.JSOX.stringifier = function() {
 		return 'ref'+field;
 	}
 
+	function getIdentifier(s) {
+		if( !isNaN( s ) ) {
+			return ["'",s.toString(),"'"].join();
+		}
+		// should check also for if any non ident in string...
+		return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
+			|| /([0-9\-])/.test(s[0])
+			|| /((\n|\r|\t)|[ \#\{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + sack.JSOX.escape(s) +useQuote):s )
+	}
 
 
 	function matchObject(o,useK) {
@@ -417,6 +425,7 @@ sack.JSOX.stringifier = function() {
 
 		// from https://github.com/douglascrockford/JSON-js/blob/master/json2.js#L181
 		function str(key, holder) {
+			//console.log( "Encode object:", holder[key], "field:", key );
 			function doArrayToJSOX() {
 				var v;
 				var partialClass = null;
@@ -450,16 +459,6 @@ sack.JSOX.stringifier = function() {
 							: "[" + partial.join(",") + "]" );
 					return v;
 				}
-			}
-
-			function getIdentifier(s) {
-				if( !isNaN( s ) ) {
-					return ["'",s.toString(),"'"].join();
-				}
-				// should check also for if any non ident in string...
-				return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
-					|| /([0-9\-])/.test(s[0])
-					|| /((\n|\r|\t)|[ \#\{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + sack.JSOX.escape(s) +useQuote):s )
 			}
 
 			function mapToObject(){
@@ -499,6 +498,7 @@ sack.JSOX.stringifier = function() {
 			let thisNodeNameIndex = path.length;
 			var value = holder[key];
 			let isObject = (typeof value === "object");
+			if( "string" === typeof value ) value = getIdentifier( value );
 
 			_DEBUG_STRINGIFY
 				&& console.log( "Prototype lists:", localToProtoTypes.length, value && localToProtoTypes.get( Object.getPrototypeOf( value ) )
@@ -518,14 +518,31 @@ sack.JSOX.stringifier = function() {
 				//console.log( "PROTOTYPE:", toProtoTypes.get(Object.getPrototypeOf( value )) )
 			_DEBUG_STRINGIFY && console.log( "TEST()", value, protoConverter, objectConverter );
 
+			if( isObject && ( value !== null ) ) {
+				if( objectToJSOX ){
+					if( !stringifying.find( val=>val===value ) ) {
+						stringifying.push( value );
+						encoding[thisNodeNameIndex] = value;
+						value = objectToJSOX.apply(value, [stringifier]);
+						stringifying.pop();
+						encoding.splice( thisNodeNameIndex, 1 );
+						isObject = (typeof value === "object");
+					}
+					//console.log( "Value convereted to:", key, value );
+				}
+				
+			}
+
 			var toJSOX = ( protoConverter && protoConverter.cb )
 			             || ( objectConverter && objectConverter.cb )
-			             || ( isObject && objectToJSOX );
+						 //|| ( isObject && objectToJSOX )
+						 ;
 			// If the value has a toJSOX method, call it to obtain a replacement value.
 			_DEBUG_STRINGIFY && console.log( "type:", typeof value, protoConverter, !!toJSOX, path, isObject );
 
 			if( value !== undefined
-			    && value !== null
+				&& value !== null
+				&& typeof value === "object"
 			    && typeof toJSOX === "function"
 			) {
 				// is encoding?
@@ -536,20 +553,10 @@ sack.JSOX.stringifier = function() {
 						if( v ) return v;
 					}
 					stringifying.push( value );
-					//console.log( "add encoding item", thisNodeNameIndex, encoding.length);
 					encoding[thisNodeNameIndex] = value;
-					let newValue = toJSOX.apply(value, [stringifier]);
+					value = toJSOX.apply(value, [stringifier]);
 					stringifying.pop();
-					//console.log( "remove encoding item", thisNodeNameIndex, encoding.length);
 					encoding.splice( thisNodeNameIndex, 1 );
-					if( newValue === value ) {
-						//console.log( "no conversion was done..." );
-						//protoConverter = null;
-					}
-					if(_DEBUG_STRINGIFY ) {
-						console.log( "translated ", newValue, value );
-					}
-					value = newValue;
 
 					gap = mind;
 				}
@@ -572,6 +579,7 @@ sack.JSOX.stringifier = function() {
 			case "number":
 				{
 					let c = '';
+					//console.log( "outputting string result:", value, c );
 					if( key==="" ) {
 						c = classes.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"")
 						    || commonClasses.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
@@ -702,10 +710,7 @@ sack.JSOX.stringifier = function() {
 					c = '';
 				//console.log( "output:", key, c, partialClass  );
 				if( protoConverter && protoConverter.external )
-					if( key==="" )
-						c = c + protoConverter.name;
-					else
-						c = c + '"' + protoConverter.name + '"';
+					c = c + getIdentifier( protoConverter.name );
 
 				var ident = null;
 				if( partialClass )

@@ -139,6 +139,7 @@ class constructorSet {
 
 	Persistent<Function> tlsConstructor;
 	Persistent<Function> jsoxConstructor;
+	Persistent<Function> jsoxRefConstructor;
 
 	Persistent<Function> parseConstructor;
 	Persistent<Function> parseConstructor6;
@@ -409,6 +410,8 @@ struct reviver_data {
 	//Persistent<Function> dateCons;
 	Local<Function> fieldCb;
 	Isolate *isolate;
+	Local <Object> refObject; // JSOX.Ref
+	Local<Value> fieldName;
 	Local<Context> context;
 	LOGICAL revive;
 	//int index;
@@ -436,6 +439,7 @@ public:
 	Persistent<Map> fromPrototypeMap;
 	Persistent<Map> promiseFromPrototypeMap;
 	PLIST prototypes; // revivde prototypes by class
+	struct reviver_data* currentReviver;
 public:
 
 	static void Init( Local<Object> exports );
@@ -444,6 +448,8 @@ public:
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void write( const v8::FunctionCallbackInfo<Value>& args );
 	static void reset( const v8::FunctionCallbackInfo<Value>& args );
+	static void getCurrentRef( const v8::FunctionCallbackInfo<Value>& args );
+
 	static void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args );
 	static void setPromiseFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args );
 
