@@ -146,7 +146,9 @@ void JSOXObject::getCurrentRef( const v8::FunctionCallbackInfo<Value>& args ) {
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->jsoxRefConstructor );
 		Local<Value> args_[2] = { parser->currentReviver->refObject, parser->currentReviver->fieldName };
-		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), 2, args_ ).ToLocalChecked() );
+		MaybeLocal<Object> newRef = cons->NewInstance( isolate->GetCurrentContext(), 2, args_ );
+		if( !newRef.IsEmpty() )
+			args.GetReturnValue().Set( newRef.ToLocalChecked() );
 	}
 
 }
@@ -696,8 +698,8 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 		}
 		break;
 	}
-	if( revive->revive && !revive->value.IsEmpty() ) {
-		Local<Value> args[2] = { revive->value, result };
+	if( revive->revive && !revive->fieldName.IsEmpty() ) {
+		Local<Value> args[2] = { revive->fieldName, result };
 		MaybeLocal<Value> r = revive->reviver->Call( revive->context, revive->_this, 2, args );
 		if( !r.IsEmpty() )
 			result = r.ToLocalChecked();
@@ -707,7 +709,6 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive ) {
 	Isolate* isolate = revive->isolate;
 	Local<Context> context = revive->context;
-	Local<Value> thisVal;
 	Local<String> stringKey;
 	Local<Value> thisKey;
 	struct jsox_value_container *val;
@@ -740,21 +741,13 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				Local<Value> args[] = { revive->fieldName, makeValue( val, revive ) };
 				// use the custom reviver to assign the field.
 				revive->fieldCb->Call( revive->context, o, 2, args );
-			} else if( val->name ) {
-				stringKey = String::NewFromUtf8( revive->isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked();
-				revive->value = stringKey;
+			} else {
+				Local<Value> tmp = makeValue( val, revive );
 #ifdef DEBUG_REFERENCE_FOLLOW
 				lprintf( "set value to fieldname: %s", val->name );
 #endif
-				Local<Value> tmp = makeValue( val, revive );
 				if( !tmp->IsUndefined() )
-					o->CreateDataProperty( revive->context, stringKey, tmp );
-			}
-			else {
-				if( revive->revive )
-					revive->value = Integer::New( revive->isolate, currentIndex );
-				//lprintf( "set value to index: %d", currentIndex );
-				SETN( o, currentIndex, thisVal = makeValue( val, revive ) );
+					o->Set( revive->context, revive->fieldName, tmp );
 			}
 			break;
 		case JSOX_VALUE_ARRAY:
@@ -884,7 +877,9 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 	Local<Value> v;// = Object::New( revive->isolate );
 
 	struct jsox_value_container *val = (struct jsox_value_container *)GetDataItem( &msg, 0 );
+	revive->fieldName = String::NewFromUtf8( revive->isolate, "", v8::NewStringType::kNormal ).ToLocalChecked();
 	if( val && val->contains ) {
+
 		Local<Value> root = makeValue( val, revive );
 		o = root.As<Object>();
 
@@ -983,9 +978,13 @@ Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviver_data
 	parsed = jsox_parse_get_data( state ); // resulting message is removed from the parser.
 	revive->parser = new JSOXObject();
         //logTick(3);
-	revive->parser->currentReviver = revive;
-	Local<Value> value = convertMessageToJS2( parsed, revive );
-	revive->parser->currentReviver = NULL;
+	Local<Value> value;
+	{
+		struct reviver_data* priorRevive = revive;
+		revive->parser->currentReviver = revive;
+		value = convertMessageToJS2( parsed, revive );
+		revive->parser->currentReviver = priorRevive;
+	}
 	//logTick(4);
 	delete revive->parser;
 
@@ -1030,7 +1029,6 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
 			r._this = args.Holder();
-			r.value = String::NewFromUtf8( r.isolate, "", v8::NewStringType::kNormal ).ToLocalChecked();
 			r.revive = TRUE;
 			r.reviver = Local<Function>::Cast( args[1] );
 		}

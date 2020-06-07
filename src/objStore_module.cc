@@ -1003,23 +1003,26 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					//Local<Object> obj = Object::New( isolate );
 					PDATALIST data;
 					data = jsox_parse_get_data( parser );
-					struct reviver_data r;
+					struct reviver_data r,*r_;
 					r.revive = FALSE;
 					r._this = args.This();
 					r.isolate = isolate;
 					r.context = isolate->GetCurrentContext();
 					r.parser = parserObject;
+					r_ = parserObject->currentReviver;
 					parserObject->currentReviver = &r;
 					Local<Value> val = convertMessageToJS2( data, &r );
 					{
 						Local<Value> argv[1] = { val };
 						MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, argv );
 						if( result.IsEmpty() ) { // if an exception occurred stop, and return it.
+							parserObject->currentReviver = r_;
 							jsox_dispose_message( &data );
 							jsox_parse_dispose_state( &parser );
 							return;
 						}
 					}
+					parserObject->currentReviver = r_;
 					jsox_dispose_message( &data );
 					if( result == 1 )
 						break;
@@ -1057,19 +1060,23 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					PDATALIST data;
 					data = jsox_parse_get_data( parser );
 					if( data->Cnt ) {
-						struct reviver_data r;
+						struct reviver_data r, *r_;
 						r.revive = FALSE;
 						r.isolate = isolate;
 						r.context = isolate->GetCurrentContext();
+						r_ = parserObject->currentReviver;
+						parserObject->currentReviver = &r;
 						Local<Value> val = convertMessageToJS2( data, &r );
 						{
 							MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, &val );
 							if( result.IsEmpty() ) { // if an exception occurred stop, and return it.
+								parserObject->currentReviver = r_;
 								jsox_dispose_message( &data );
 								jsox_parse_dispose_state( &parser );
 								return;
 							}
 						}
+						parserObject->currentReviver = r_;
 					}
 					jsox_dispose_message( &data );
 					if( result == 1 )
