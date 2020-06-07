@@ -156,12 +156,13 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	JSOXObject *parser = ObjectWrap::Unwrap<JSOXObject>( args.Holder() );
 	int argc = args.Length();
 
-	String::Utf8Value data( isolate, ( argc == 0 ) ? Undefined(isolate) : (args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked()) );
+	String::Utf8Value *data_;
+	if( argc > 0 ) data_ = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) ;
 	int result;
 	//Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 	Local<Context> context = isolate->GetCurrentContext();
 	Local<Value> global = context->Global();
-	for( result = jsox_parse_add_data( parser->state, (argc>0)?*data:NULL, (argc>0)?data.length():0 );
+	for( result = jsox_parse_add_data( parser->state, (argc>0)?*data_[0]:NULL, (argc>0)?data_[0].length():0 );
 		result > 0;
 		result = jsox_parse_add_data( parser->state, NULL, 0 )
 		) {
@@ -201,6 +202,7 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 				MaybeLocal<Value> cbResult = cb->Call( context, global, 1, argv );
 				if( cbResult.IsEmpty() ) {
 					lprintf( "Callback failed." );
+					delete data_;
 					return;
 				}
 			}
@@ -209,6 +211,7 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( result < 2 )
 			break;
 	}
+	delete data_;
 	if( result < 0 ) {
 		PTEXT error = jsox_parse_get_error( parser->state );
 		if( error ) {
