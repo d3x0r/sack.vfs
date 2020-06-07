@@ -9,7 +9,7 @@ struct sound_cache_entry {
 
 static struct sound_static_data {
 	PLIST sounds;
-};
+} ssd;
 
 // ffmpeg_UnloadFile
 

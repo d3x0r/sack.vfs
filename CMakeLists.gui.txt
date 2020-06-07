@@ -15,6 +15,9 @@ else( NOT WIN32 )
 endif( NOT WIN32 )
 
 if( CMAKE_SIZEOF_VOID_P EQUAL 8 )
+	if( UNIX )
+		set( LIB_SUFFIX 64 )
+	endif( UNIX )
     SET( __64__ 1 )
     ADD_DEFINITIONS( -D__64__ )
 endif( CMAKE_SIZEOF_VOID_P EQUAL 8 )
@@ -72,6 +75,7 @@ ExternalProject_Add( sack
 		-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
 		-DINCLUDE_EXTRAS=1 -DINCLUDE_VULKAN=0
 )
+
 if( EXISTS ${CMAKE_BINARY_DIR}/sack-src/src/sack/src/InterShell.stable )
 
 ExternalProject_Add( intershell
@@ -86,9 +90,6 @@ ExternalProject_Add( intershell
 
 )
 
-if( UNIX AND __64__ )
-    set( LIB_SUFFIX 64 )
-endif( UNIX AND __64__ )
 LINK_DIRECTORIES( ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/lib${LIB_SUFFIX} )
 
 
@@ -126,20 +127,22 @@ source_group( "Source Files\\GUI" FILES ${GUI_SOURCES} ) #REGULAR_EXPRESSION  sr
 
 set( PROJECT sack_gui )
 add_library(${PROJECT} SHARED
-	src/vfs_module.cc
-	src/fileMonitor_module.cc
-	src/objStore_module.cc
-	src/thread_module.cc
-	src/sql_module.cc
 	src/com_interface.cc
+	src/fileMonitor_module.cc
 	src/jsonParse.cc
 	src/jsoxParse.cc
-	src/tls_interface.cc
-	src/srg_module.cc
-	src/websocket_module.cc
+	src/playSound_module.cc 
 	src/network_module.cc
-	src/config_module.cc
+	src/objStore_module.cc
+	src/sql_module.cc
+	src/srg_module.cc
+	src/system_module.cc
 	src/task_module.cc
+	src/text_object.cc
+	src/thread_module.cc
+	src/tls_interface.cc
+	src/websocket_module.cc
+	src/vfs_module.cc
     src/system_module.cc
 	src/text_object.cc
 	${MORE_MODULE_SOURCES}
@@ -164,8 +167,8 @@ if( UNIX )
 else( UNIX )
 	set( VFSLIB sack_vfs.pp.module )
 endif( UNIX )
-target_link_libraries(${PROJECT} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE_JS_LIB} )
 
+target_link_libraries(${PROJECT} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE_JS_LIB} )
 
   add_custom_command( TARGET ${PROJECT} POST_BUILD
 			#COMMAND cmake -E echo ${AMALG_COMMAND}
