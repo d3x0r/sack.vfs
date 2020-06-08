@@ -312,9 +312,11 @@ void parseObject::write6v( const v8::FunctionCallbackInfo<Value>& args ) {
 	parseObject *parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
 	int argc = args.Length();
 	
-	String::Utf8Value data( isolate,  (argc==0)?Undefined(isolate):(args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ));
+	String::Utf8Value *data_;
+	if( argc > 0 )
+		data_ = new String::Utf8Value( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 	int result;
-	for( result = vesl_parse_add_data( parser->vstate, (argc==0)?NULL:*data, ( argc == 0 ) ? 0 : data.length() );
+	for( result = vesl_parse_add_data( parser->vstate, (argc==0)?NULL:*data_[0], ( argc == 0 ) ? 0 : data_[0].length() );
 		result > 0;
 		result = vesl_parse_add_data( parser->vstate, NULL, 0 )
 		) {
@@ -331,14 +333,17 @@ void parseObject::write6v( const v8::FunctionCallbackInfo<Value>& args ) {
 			Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 			{
 				MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, argv );
-				if( result.IsEmpty() ) // if an exception occurred stop, and return it.
+				if( result.IsEmpty() ) { // if an exception occurred stop, and return it.
+					delete data_;
 					return;
+				}
 			}
 			json_dispose_message( &elements );
 		}
 		if( result < 2 )
 			break;
 	}
+	delete data_;
 	if( result < 0 ) {
 		PTEXT error = json_parse_get_error( parser->state );
 		if( error ) {
