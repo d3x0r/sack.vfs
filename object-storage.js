@@ -539,12 +539,17 @@ _objectStorage.prototype.get = function( opts ) {
 				this.d.p = new Promise( (res,rej)=>{
 					this.d.res = res;
 					this.d.rej = rej;
-				}).then( (obj)=>(here.o[here.f] = obj) );
-			} else
+				}).then( (obj)=>{
+					console.log( "(DOES THIS HAPPEN?)OBJ REPLACE OBJECT WITH:", here, obj )
+					return (here.o[here.f] = obj) 
+				});
+			} else {
 				this.d.p = Promise.resolve( existing.data );  // this will still have to be swapped.
+
+			}
 			dangling.push( this );
 			objectRefs++;
-	} catch(err) { console.log( "Init failed:", err)}
+		} catch(err) { console.log( "Init failed:", err)}
 	}
 
 	function reviveContainer( field, val ) {
@@ -565,12 +570,13 @@ _objectStorage.prototype.get = function( opts ) {
 				// new value isn't anything special; just set the value.
 				//console.log( "This sort of thing... val is just a thing - like a key part identifier...; but that should have been a container.");
 				if( val instanceof Promise ) {
+					console.log( "Value is a promise, and needs resolution.")
 					var dangle = dangling.find( d=>d.d.p===val );
 					if( dangle )
 						dangle.d.n = field;
 					this_.data[field] = val
 					return val.then( (val)=>{
-						console.log( "THIS SHOULD BE WHAT REPLACES THE VALUE" );
+						console.log( "(DOESN'T HAPPEN NOW?) THIS SHOULD BE WHAT REPLACES THE VALUE", field, val );
 						this_.data[field] = val 
 					});
 				}
@@ -593,6 +599,7 @@ _objectStorage.prototype.get = function( opts ) {
 		else {
 			// this is a sub-field of this object to revive...
 			//console.log( "Field:", field, " is data?", val)
+			return this[field] = val;
 		}
 	}
 
