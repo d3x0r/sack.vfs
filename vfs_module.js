@@ -2,9 +2,8 @@
 
 var sack;
 try {
-	sack = require( "sack" );
-}catch(err) {
-	//console.log( "in a perfect world, this would never happen" );
+	sack = require('sack' );
+} catch( err ) {
 }
 if( !sack )
 try{
