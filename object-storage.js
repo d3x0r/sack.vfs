@@ -119,16 +119,13 @@ objectStorageContainer.prototype.map = async function( opts ) {
 			}
 			function loadPending(load) {
 				waiting++;
-				console.log("Fixing up promised field:", load);
-				newStorage.get({ id: load.d.id }).then((obj) => {
-					console.log("stroage.get resulted object, call load resolve... ", load, obj );
+				newStorage.get( {id:load.d.id}).then( (obj)=>{
 					load.d.res(obj); // result with real value.
 					const exist = newStorage.stored.get( obj );
 					const objc = newStorage.cachedContainer.get( exist );
 					// resolving this promis on load.d will set this.
 					//load.d.r.o[load.d.r.f] = obj;
-					if (opts && opts.depth) {
-						console.log("depth says to keep going?", opts);
+					if( opts && opts.depth ) {
 						objc.map( {depth:opts.depth-1} ).then( (objc)=>{
 							waiting--;
 							if( !waiting ) {
@@ -136,7 +133,6 @@ objectStorageContainer.prototype.map = async function( opts ) {
 								res( rootMap.data );
 							}
 						});
-						console.log("and so there shouldn't be anything left.");
 					} else {
 						waiting--;
 						if( !waiting ) {
@@ -505,9 +501,9 @@ _objectStorage.prototype.update( objId, obj ) {
 
 */
 
+const updatedPrototypes = new WeakMap();
 
 var currentReadId ;
-const pendingGets = [];
 
 _objectStorage.prototype.get = function( opts ) {
 	//this.parser.
@@ -523,17 +519,7 @@ _objectStorage.prototype.get = function( opts ) {
 		console.trace( "Must specify options ", opts);
 		return null;
 	}
-	//console.trace("Recover object:", opts);
-	{
-		const found = os.cachedContainer.get(opts.id);
-		// already have this loaded, no need to re-load it.
-		if (found) return Promise.resolve(found.data);
-	}
-	if (pendingGets.find(l => l.id === opts.id)) {
-		console.log("ALREADY LOADING... going to have to stack against the preivous promise...");
-		throw new Error( "DIE2")
-	}
-	pendingGets.push(opts);
+
 	if( !this.parser ){
 		this.parser = sack.JSOX.begin();
 		this.parser.fromJSOX( "~os", this.objectStorageContainer, reviveContainer ); // I don't know ahead of time which this is.
@@ -548,31 +534,22 @@ _objectStorage.prototype.get = function( opts ) {
 			const existing = os.cachedContainer.get(s);
 			const here = os.getCurrentParseRef();
 			//console.log( "Conainer ref, this will resolve in-place")
-			this.d = {id:s,p:null,res:null,rej:null,h:here};
-			if (!existing) {
-				console.log("Have to wait for it to load...");
-				this.d.p = new Promise((res, rej) => {
+			this.d = {id:s,p:null,res:null,rej:null};
+			if( !existing ) {
+				this.d.p = new Promise( (res,rej)=>{
 					this.d.res = res;
 					this.d.rej = rej;
-				}).then((obj) => {
-					console.log("Updating field in-place:", here.f);
-					return (here.o[here.f] = obj);
+				}).then( (obj)=>{
+					console.log( "(DOES THIS HAPPEN?)OBJ REPLACE OBJECT WITH:", here, obj )
+					return (here.o[here.f] = obj) 
 				});
-				dangling.push(this);
 			} else {
-				this.d.p = Promise.resolve(existing.data);  // this will still have to be swapped.
-				console.log("field is already resolvable... subst:", here.f );
-				here.o[here.f] = existing.data;
-				this.d.res = (data) => {
-					if (data !== existing.data) {
-						console.log("We resolved here with existing data:", existing.data, "instead of ", data);
-						throw new Error("DIE");
-					}
-					console.log( "Load resolve here?")
-				}
+				this.d.p = Promise.resolve( existing.data );  // this will still have to be swapped.
+
 			}
+			dangling.push( this );
 			objectRefs++;
-	} catch(err) { console.log( "Init failed:", err)}
+		} catch(err) { console.log( "Init failed:", err)}
 	}
 
 	function reviveContainer( field, val ) {
@@ -592,14 +569,14 @@ _objectStorage.prototype.get = function( opts ) {
 				const this_ = this;
 				// new value isn't anything special; just set the value.
 				//console.log( "This sort of thing... val is just a thing - like a key part identifier...; but that should have been a container.");
-				if (val instanceof Promise) {
-					console.log("!!!!!!!!!!!! IS THIS NEEDED !!!!!!!!!!!!");
+				if( val instanceof Promise ) {
+					console.log( "Value is a promise, and needs resolution.")
 					var dangle = dangling.find( d=>d.d.p===val );
 					if( dangle )
 						dangle.d.n = field;
 					this_.data[field] = val
 					return val.then( (val)=>{
-						console.log( "THIS SHOULD BE WHAT REPLACES THE VALUE" );
+						console.log( "(DOESN'T HAPPEN NOW?) THIS SHOULD BE WHAT REPLACES THE VALUE", field, val );
 						this_.data[field] = val 
 					});
 				}
@@ -622,6 +599,7 @@ _objectStorage.prototype.get = function( opts ) {
 		else {
 			// this is a sub-field of this object to revive...
 			//console.log( "Field:", field, " is data?", val)
+			return this[field] = val;
 		}
 	}
 
@@ -680,13 +658,7 @@ _objectStorage.prototype.get = function( opts ) {
 				currentReadId = priorReadId;
 			rej(err);
 		}
-	});
-
-	{
-		const pend = pendingGets.findIndex(l => l.id === opts.id);
-		if (pend >= 0)
-			pendingGets.splice(pend, 1);
-	}
+	} );
 	return p;
 }
 
