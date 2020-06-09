@@ -230,14 +230,6 @@ sack.JSOX.stringifier = function() {
 	var fieldMap = new WeakMap();
 	var path = [];
 	var encoding = [];
-	var encodingList = {
-		splice() {
-
-		},
-		set(n,val) {
-
-		},
-	}
 	var objectToJSOX = null;
 	var localToProtoTypes = new WeakMap();
 	localToProtoTypes.id = id++;
@@ -283,7 +275,7 @@ sack.JSOX.stringifier = function() {
 				return objectToJSOX.apply(o, [this]);
 			return o;
 		},
-		stringify(o,r,s) { return stringify(this, o,r,s) },
+		stringify(o,r,s,as) { return stringify(this, o,r,s,as) },
 		setQuote(q) { useQuote = q; },
 		registerToJSOX( name, prototype, f ) {
 			if( prototype.prototype && prototype.prototype !== Object.prototype ) {
@@ -306,7 +298,8 @@ sack.JSOX.stringifier = function() {
 	function getReference( here ) {
 		if( here === null ) return undefined;
 		var field = fieldMap.get( here );
-		_DEBUG_STRINGIFY && console.log( "path:", sack.JSON.stringify(path), field );
+		//_DEBUG_STRINGIFY && 
+		console.log( "get reference path:", sack.JSON.stringify(path), field );
 		if( !field ) {
 			fieldMap.set( here, sack.JSON.stringify(path) );
 			return undefined;
@@ -367,13 +360,12 @@ sack.JSOX.stringifier = function() {
 	}
 
 
-	function stringify( stringifier, object, replacer, space ) {
+	function stringify( stringifier, object, replacer, space, asField ) {
 		if( object === undefined ) return "undefined";
 		if( object === null ) return "null";
 		var firstRun = true;
 		var gap;
 		var indent;
-		var meta;
 		var rep;
 
 		var i;
@@ -383,14 +375,25 @@ sack.JSOX.stringifier = function() {
 		indent = "";
 		const stringifier_ = sack.JSOX.stringifierActive;
 		sack.JSOX.stringifierActive = stringifier;
+
+		const pathBase = path.length;
+		if( !asField ) {
+			asField = "";
+		}else {
+			path.push( asField );
+			encoding[pathBase] = object;
+		}
+
 		if( "object" === typeof object && stringifier_ ) {
 			var ref = stringifier_.getReference( object );
-			if( ref ) return ref;
+			if( ref ) {
+				if( !(path.length = encoding.length = pathBase ) ) fieldMap = new WeakMap();
+				return ref;
+			}else if( asField ) fieldMap.delete(object)
 		}
 
 		// If the space parameter is a number, make an indent string containing that
 		// many spaces.
-
 		if (spaceType === "number") {
 			for (i = 0; i < space; i += 1) {
 				indent += " ";
@@ -403,7 +406,6 @@ sack.JSOX.stringifier = function() {
 
 		// If there is a replacer, it must be a function or an array.
 		// Otherwise, throw an error.
-
 		rep = replacer;
 		if( replacer && repType !== "function"
 		    && ( repType !== "object"
@@ -411,12 +413,15 @@ sack.JSOX.stringifier = function() {
 		   )) {
 			throw new Error("JSOX.stringify");
 		}
-
-		path = [];
-		fieldMap = new WeakMap();
-
-		const r  = str( "", {"":object} );
+		
+		const r  = str( asField, {[asField]:object} );
 		sack.JSOX.stringifierActive = stringifier_;
+		if( !(path.length = encoding.length = pathBase ) ){
+			console.log( "Reset stringifier maps (end of stuff)")
+			 fieldMap = new WeakMap();
+		}else{
+			console.log( "Stringifier is still in a stack?", path);
+		}
 		return r;
 
 
@@ -428,21 +433,19 @@ sack.JSOX.stringifier = function() {
 			//console.log( "Encode object:", holder[key], "field:", key );
 			function doArrayToJSOX() {
 				var v;
-				var partialClass = null;
 				var partial = [];
-				let thisNodeNameIndex = path.length;
+				const thisNodeNameIndex = path.length;
 				{
 					// The value is an array. Stringify every element. Use null as a placeholder
 					// for non-JSOX values.
-
 					for (let i = 0; i < this.length; i += 1) {
 						path[thisNodeNameIndex] = i;
 						partial[i] = str(i, this) || "null";
 					}
-					path.splice( thisNodeNameIndex, 1 );
+					path.length = thisNodeNameIndex;
 					//console.log( "remove encoding item", thisNodeNameIndex, encoding.length);
-					encoding.splice( thisNodeNameIndex, 1 );
-										// Join all of the elements together, separated with commas, and wrap them in
+					encoding.length = thisNodeNameIndex;
+					// Join all of the elements together, separated with commas, and wrap them in
 					// brackets.
 
 					v = ( partial.length === 0
@@ -469,7 +472,7 @@ sack.JSOX.stringifier = function() {
 				for (var [key, value] of this) {
 					//console.log( "er...", key, value )
 					tmp.tmp = value;
-					let thisNodeNameIndex = path.length;
+					const thisNodeNameIndex = path.length;
 					path[thisNodeNameIndex] = key;
 					out += (first?"":",") + getIdentifier(key) +':' + str("tmp", tmp);
 					path.length = thisNodeNameIndex;
@@ -495,7 +498,7 @@ sack.JSOX.stringifier = function() {
 			var mind = gap;
 			var partialClass;
 			var partial;
-			let thisNodeNameIndex = path.length;
+			const thisNodeNameIndex = path.length;
 			var value = holder[key];
 			let isObject = (typeof value === "object");
 			if( "string" === typeof value ) value = getIdentifier( value );
@@ -525,7 +528,7 @@ sack.JSOX.stringifier = function() {
 						encoding[thisNodeNameIndex] = value;
 						value = objectToJSOX.apply(value, [stringifier]);
 						stringifying.pop();
-						encoding.splice( thisNodeNameIndex, 1 );
+						encoding.length = thisNodeNameIndex;
 						isObject = (typeof value === "object");
 					}
 					//console.log( "Value convereted to:", key, value );
@@ -556,7 +559,7 @@ sack.JSOX.stringifier = function() {
 					encoding[thisNodeNameIndex] = value;
 					value = toJSOX.apply(value, [stringifier]);
 					stringifying.pop();
-					encoding.splice( thisNodeNameIndex, 1 );
+					encoding.length = thisNodeNameIndex;
 
 					gap = mind;
 				}
@@ -644,9 +647,9 @@ sack.JSOX.stringifier = function() {
 							}
 						}
 					}
-					path.splice( thisNodeNameIndex, 1 );
+					path.length = thisNodeNameIndex;
 					//console.log( "remove encoding item", thisNodeNameIndex, encoding.length);
-					encoding.splice( thisNodeNameIndex, 1 );
+					encoding.length = thisNodeNameIndex;
 				} else {
 
 					// Otherwise, iterate through all of the keys in the object.
@@ -693,9 +696,9 @@ sack.JSOX.stringifier = function() {
 							}
 						}
 					}
-					path.splice( thisNodeNameIndex, 1 );
+					path.length = thisNodeNameIndex;
 					//console.log( "remove encoding item", thisNodeNameIndex, encoding.length);
-					encoding.splice( thisNodeNameIndex, 1 );
+					encoding.length = thisNodeNameIndex;
 				}
 
 				// Join all of the member texts together, separated with commas,
