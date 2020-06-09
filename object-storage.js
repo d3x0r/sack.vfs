@@ -681,7 +681,7 @@ _objectStorage.prototype.get = function( opts ) {
 
 		const priorReadId = currentReadId;
 		try {
-			console.trace( "LOADING : ", opts.id );
+			//console.log( "LOADING : ", opts.id );
 			os.read( currentReadId = opts.id
 				, parser, (obj)=>{
 					// with a new parser, only a partial decode before revive again...
