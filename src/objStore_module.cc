@@ -353,11 +353,11 @@ static void setClientObjectStorageHandler( const v8::FunctionCallbackInfo<Value>
 	class constructorSet* c = getConstructors( isolate );
 	String::Utf8Value unique( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 
-	Local<Function> f = args[1].As<Function>();
 	struct objectStorageUnloadStation* unloader = new struct objectStorageUnloadStation();
 	unloader->this_.Reset( isolate, args.This() );
 	unloader->s = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-	unloader->cb.Reset( isolate, f );
+	if( args[1]->IsFunction() )
+		unloader->cb.Reset( isolate, args[1].As<Function>() );
 	unloader->targetThread = c->loop;
 	unloader->poster.data = unloader;
 	unloader->transport = NULL;

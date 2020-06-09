@@ -38,7 +38,7 @@ public:
 		if( args.IsConstructCall() ) {
 			// Invoked as constructor: `new MyObject(...)`
 			JSOXRefObject* obj = new JSOXRefObject();
-			Local<Function> arg0 = Local<Function>::Cast( args[0] );
+
 			if( args.Length() > 1 && !args[1]->IsUndefined() ) {
 				SET_READONLY( args.This(), "o", args[0] );
 				SET_READONLY( args.This(), "f", args[1] );
@@ -239,8 +239,9 @@ void JSOXObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
 		JSOXObject* obj = new JSOXObject();
-		Local<Function> arg0 = Local<Function>::Cast( args[0] );
-		obj->readCallback.Reset( isolate, arg0 );
+		if( args[0]->IsFunction() ) {
+			obj->readCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
+		}
 		if( args.Length() > 1 && !args[1]->IsUndefined() ) {
 			Local<Function> arg1 = Local<Function>::Cast( args[1] );
 			obj->reviver.Reset( isolate, arg1 );
@@ -257,7 +258,9 @@ void JSOXObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		class constructorSet *c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->jsoxConstructor );
-		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
+		MaybeLocal<Object> resObj = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
+		if(!resObj.IsEmpty() )
+			args.GetReturnValue().Set( resObj.ToLocalChecked() );
 		delete[] argv;
 	}
 
@@ -648,7 +651,9 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 				// this is done when this returns.
 				if( !cb.IsEmpty() && cb->IsFunction() ) {
 					//lprintf( "method4?");
-					result = cb->Call( revive->context, result, 0, NULL ).ToLocalChecked();
+					MaybeLocal<Value> mv = cb->Call( revive->context, result, 0, NULL );
+					if( !mv.IsEmpty() )
+						result = mv.ToLocalChecked();
 				}
 			}
 		}
@@ -760,7 +765,17 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				Local<Value> args[] = { revive->fieldName
 					                    , sub_o };
 				// use the custom reviver to assign the field.
-				sub_o = cb->Call( revive->context, o, 2, args ).ToLocalChecked().As<Object>();
+				MaybeLocal<Value> newObj = cb->Call( revive->context, o, 2, args );
+				if( !newObj.IsEmpty() ) {
+					Local<Value> zObj = newObj.ToLocalChecked();
+					if( zObj->IsObject() )
+						sub_o = zObj.As<Object>();
+				}
+				else {
+					isolate->ThrowException( Exception::Error(
+						localString( isolate, TranslateText( "Already pending exception?" ) ) ) );
+				}
+
 #ifdef DEBUG_REFERENCE_FOLLOW
 				lprintf( "called callback to set array value %.*s", val->nameLen, val->name );
 #endif
