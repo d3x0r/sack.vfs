@@ -362,5 +362,6 @@ void TaskObject::isRunning( const v8::FunctionCallbackInfo<Value>& args ) {
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
 	if( task && task->task )
 		args.GetReturnValue().Set( (!task->ended) ? True( isolate ) : False( isolate ) );
-	args.GetReturnValue().Set( False( isolate ) );
+	else
+		args.GetReturnValue().Set( False( isolate ) );
 }
