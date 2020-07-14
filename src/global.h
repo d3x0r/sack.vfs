@@ -116,7 +116,6 @@ void SystemInit( Isolate* isolate, Local<Object> exports );
 class constructorSet {
 	public:
 	Isolate *isolate;
-	uv_loop_t* loop;
 	Persistent<Function> dateCons; // Date constructor
 	Persistent<Function> ThreadObject_idleProc;
 
@@ -170,10 +169,17 @@ class constructorSet {
 	v8::Persistent<v8::Function> monitorConstructor;
 	v8::Persistent<v8::Function> KeyHidObject_constructor;
 	//Persistent<Function> onCientPost;
+	uv_loop_t* loop;
 #ifdef INCLUDE_GUI
+	uv_async_t psiLocal_async;
+	int eventLoopEnables = 0;
+	LOGICAL eventLoopRegistered = FALSE;
+
 	Persistent<Function> ImageObject_constructor;
 	Persistent<FunctionTemplate> ImageObject_tpl;
+	uv_async_t fontAsync; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Function> FontObject_constructor;
+	uv_async_t colorAsync; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Function> ColorObject_constructor;
 	Persistent<FunctionTemplate> ColorObject_tpl;
 	Persistent<Function> fontResult;
@@ -191,9 +197,6 @@ class constructorSet {
 	v8::Persistent<v8::Function> InterShellObject_intershellConstructor;
 	v8::Persistent<v8::Function> InterShellObject_configConstructor;
 
-	int eventLoopEnables = 0;
-	LOGICAL eventLoopRegistered = FALSE;
-	uv_async_t psiLocal_async;
 	v8::Persistent<v8::Function> ControlObject_constructor;   // Frame
 	v8::Persistent<v8::Function> ControlObject_constructor2;  // Control
 	v8::Persistent<v8::Function> ControlObject_registrationConstructor;  // Registration

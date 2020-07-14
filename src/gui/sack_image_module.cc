@@ -49,8 +49,6 @@ Persistent<Object> priorThis;
 
 static struct imageLocal {
 	CDATA color;
-	uv_async_t colorAsync; // keep this instance around for as long as we might need to do the periodic callback
-	uv_async_t fontAsync; // keep this instance around for as long as we might need to do the periodic callback
 	SFTFont fontResult;
 }imageLocal;
 
@@ -66,8 +64,8 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	Local<Context> context = isolate->GetCurrentContext();
 	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
 	//lprintf( "async message notice. %p", myself );
 	class constructorSet* c = getConstructors( isolate );
 	if( !c->imageResult.IsEmpty() )
@@ -76,7 +74,7 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 		Local<Object> _this = c->priorThis.Get( isolate );
 		Local<Value> argv[1] = { ColorObject::makeColor( isolate, imageLocal.color ) };
 		cb->Call( context, _this, 1, argv );
-		uv_close( (uv_handle_t*)&imageLocal.colorAsync, NULL );
+		uv_close( (uv_handle_t*)&c->colorAsync, NULL );
 		c->imageResult.Reset();
 	}
 	if( !c->fontResult.IsEmpty() ) {
@@ -90,7 +88,7 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 		Local<Value> argv[1] = { result };
 		cb->Call( context, result, 1, argv );
 
-		uv_close( (uv_handle_t*)&imageLocal.fontAsync, NULL );
+		uv_close( (uv_handle_t*)&c->fontAsync, NULL );
 		c->fontResult.Reset();
 	}
 	{
@@ -103,28 +101,30 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 
 
 static uintptr_t fontPickThread( PTHREAD thread ) {
-	MemSet( &imageLocal.fontAsync, 0, sizeof( &imageLocal.fontAsync ) );
-	uv_async_init( uv_default_loop(), &imageLocal.fontAsync, imageAsyncmsg );
+	class constructorSet* c = (class constructorSet*)GetThreadParam( thread );
+	uv_async_init( uv_default_loop(), &c->fontAsync, imageAsyncmsg );
 	imageLocal.fontResult = PickFont( 0, 0, NULL, NULL, NULL );
-	uv_async_send( &imageLocal.fontAsync );
+	uv_async_send( &c->fontAsync );
 	return 0;
 }
 
 static void pickFont( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
 	class constructorSet* c = getConstructors( isolate );
+	extern void psiSetExtraInitConstructors( class constructorSet* c );
+	psiSetExtraInitConstructors( c );
 	c->priorThis.Reset( isolate, args.This() );
 	c->fontResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
-	ThreadTo( fontPickThread, 0 );
+	ThreadTo( fontPickThread, (uintptr_t)c );
 }
 
 static uintptr_t colorPickThread( PTHREAD thread ) {
-	MemSet( &imageLocal.colorAsync, 0, sizeof( &imageLocal.colorAsync ) );
-	uv_async_init( uv_default_loop(), &imageLocal.colorAsync, imageAsyncmsg );
+	class constructorSet* c = (class constructorSet*)GetThreadParam( thread );
+	uv_async_init( uv_default_loop(), &c->colorAsync, imageAsyncmsg );
 	CDATA color;
 	PickColor( &color, 0, NULL );
 	imageLocal.color = color;
-	uv_async_send( &imageLocal.colorAsync );
+	uv_async_send( &c->colorAsync );
 	return 0;
 }
 

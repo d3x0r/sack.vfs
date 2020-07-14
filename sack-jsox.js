@@ -308,9 +308,10 @@ sack.JSOX.stringifier = function() {
 	}
 
 	function getIdentifier(s) {
-		if( !isNaN( s ) ) {
+		if( "number" === typeof s && !isNaN( s ) ) {
 			return ["'",s.toString(),"'"].join();
 		}
+		if( !s.length ) return useQuote+useQuote;
 		// should check also for if any non ident in string...
 		return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
 			|| /([0-9\-])/.test(s[0])
