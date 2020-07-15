@@ -991,7 +991,36 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			size_t len = objStore::sack_vfs_os_size( file );
 			size_t read = 0;
 			size_t newRead;
+			size_t timeCount;
+			uint64_t *timeArray;
 
+			objStore::sack_vfs_os_get_times( file, &timeArray, &timeCount );
+			Local<Array> arr = Array::New( isolate, timeCount );
+			for( int n = 0; n < timeCount; n++ ) {
+				//arr->Set( n, Date::New( isolate, timeArray[n] / 1000000000.0 ) );
+				{
+					SACK_TIME st;
+					ConvertTickToTime( timeArray[n], &st );
+					Local<Script> script;
+					char buf[64];
+					int tz;
+					int negTz = 0;
+					if( st.zhr < 0 ) {
+						tz = -st.zhr;
+						negTz = 1;
+					}
+					else
+						tz = st.zhr;
+
+					snprintf( buf, 64, "new Date('%04d-%02d-%02dT%02d:%02d:%02d.%03d%c%02d:%02d')", st.yr, st.mo, st.dy, st.hr, st.mn, st.sc, st.ms, negTz?'-':'+', tz, st.zmn );
+					script = Script::Compile( isolate->GetCurrentContext()
+						, String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
+						, new ScriptOrigin( String::NewFromUtf8( isolate, "DateFormatter"
+							, NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
+					arr->Set( n, script->Run( isolate->GetCurrentContext() ).ToLocalChecked() );
+				}
+
+			}
 			// CAN open directories; and they have 7ffffffff sizes.
 			while( (read < len) && (newRead = objStore::sack_vfs_os_read( file, buf, 4096 )) ) {
 				read += newRead;
@@ -1012,8 +1041,8 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					parserObject->currentReviver = &r;
 					Local<Value> val = convertMessageToJS2( data, &r );
 					{
-						Local<Value> argv[1] = { val };
-						MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, argv );
+						Local<Value> argv[2] = { val, arr };
+						MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 2, argv );
 						if( result.IsEmpty() ) { // if an exception occurred stop, and return it.
 							jsox_dispose_message( &data );
 							jsox_parse_dispose_state( &parser );

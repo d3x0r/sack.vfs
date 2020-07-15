@@ -509,7 +509,7 @@ _objectStorage.prototype.get = function( opts ) {
 	//this.parser.
 	var resolve;
 	var reject;
-	var os = this;
+	const os = this;
 
 	if( "string" === typeof opts ) {
 		opts = { id:opts
@@ -622,16 +622,16 @@ _objectStorage.prototype.get = function( opts ) {
 	this.decoding.push( opts );
 	this.currentParser = parser;
 	//console.log( "(get)Read Key:", os );
-	var p = new Promise( function(res,rej) {
+	const p = new Promise( function(res,rej) {
 		resolve = res;  reject = rej;
 		//console.log( "doing read? (decodes json using a parser...", opts, parser, os );
 
 		const priorReadId = currentReadId;
 		try {
 			os.read( currentReadId = opts.id
-				, parser, (obj)=>{
+				, parser, (obj,times)=>{
 					// with a new parser, only a partial decode before revive again...
-					//console.log( "Read resulted with an object:", obj );
+					console.log( "Read resulted with an object:", obj, times );
 					var found;
 					do {
 						var found = os.pending.findIndex( pending=>{ console.log( "what is in pending?", pending ); return pending.id === key } );
