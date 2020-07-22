@@ -1,11 +1,3 @@
-console.log( "Untested... shell to test" );
-
-const orgRoot = "org.example.domain"
-const serviceRoot = "data";
-const dbRoot = "users";
-
-const appIdentifier = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-
 
 
 const sack = require( "../.." );
@@ -22,8 +14,8 @@ const storage = {
 	config : {defaults:false},
 	configFile : null,
 };
-const waiters = [];
-const waiters2 = [];
+const waiters = [];  // loadConfig wait list
+const waiters2 = []; // getConfig promise() result holders
 
 
 function loadConfig() {
@@ -75,16 +67,16 @@ function getConfig() {
 	if( storage.configFile )
 		return Promise.resolve( storage.config );
 
-return new Promise( (res,rej)=>{
-	waiters2.push( res );
+	return new Promise( (res,rej)=>{
+		waiters2.push( res );
 
-	if( waiters2.length == 1 )	
-		loadConfig().then( ()=>{
-			Object.freeze( storage );
-			waiters2.forEach( w=>w( storage.config ) );
-			waiters2.length = 0;
-		} )
-} );
+		if( waiters2.length == 1 )	
+			loadConfig().then( ()=>{
+				Object.freeze( storage );
+				waiters2.forEach( w=>w( storage.config ) );
+				waiters2.length = 0;
+			} )
+	} );
 }
 
 getConfig().then( (config)=>{

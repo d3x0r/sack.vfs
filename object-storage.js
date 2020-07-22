@@ -16,6 +16,7 @@ var preloadStorage = null;
 // manufacture a JS interface to _objectStorage.
 sack.ObjectStorage = function (...args) {
 
+	const newStorage = preloadStorage || new _objectStorage(...args);
 
 // associates object data with storage data for later put(obj) to re-use the same informations.
 function objectStorageContainer(o,opts) {
@@ -225,7 +226,6 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 
 
 	var mapping = false;
-	var newStorage = preloadStorage || new _objectStorage(...args);
 	preloadStorage = null;
 	newStorage.objectStorageContainer = objectStorageContainer;
 	newStorage.cached = new Map();
@@ -532,7 +532,7 @@ _objectStorage.prototype.get = function( opts ) {
 	//this.parser.
 	var resolve;
 	var reject;
-	var os = this;
+	const os = this;
 
 	if( "string" === typeof opts ) {
 		opts = { id:opts
@@ -675,7 +675,7 @@ _objectStorage.prototype.get = function( opts ) {
 	this.decoding.push( opts );
 	this.currentParser = parser;
 	//console.log( "(get)Read Key:", os );
-	var p = new Promise( function(res,rej) {
+	const p = new Promise( function(res,rej) {
 		resolve = res;  reject = rej;
 		//console.log( "doing read? (decodes json using a parser...", opts, parser, os );
 
@@ -683,9 +683,9 @@ _objectStorage.prototype.get = function( opts ) {
 		try {
 			//console.log( "LOADING : ", opts.id );
 			os.read( currentReadId = opts.id
-				, parser, (obj)=>{
+				, parser, (obj,times)=>{
 					// with a new parser, only a partial decode before revive again...
-					//console.log( "Read resulted with an object:", obj );
+					console.log( "Read resulted with an object:", obj, times );
 					let deleteId = -1;
 					const extraResolutions = [];
 					for( let n = 0; n < os.decoding.length; n++ ) {
