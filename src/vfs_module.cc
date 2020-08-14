@@ -804,6 +804,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 void releaseBufferBackingStore( void* data, size_t length, void* deleter_data ) {
 	(void)length;
 	(void)deleter_data;;
+	MakeThread();
 	Deallocate( void*, data );
 }
 
