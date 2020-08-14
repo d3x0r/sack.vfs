@@ -1017,7 +1017,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 						, String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
 						, new ScriptOrigin( String::NewFromUtf8( isolate, "DateFormatter"
 							, NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
-					arr->Set( n, script->Run( isolate->GetCurrentContext() ).ToLocalChecked() );
+					arr->Set( isolate->GetCurrentContext(), n, script->Run( isolate->GetCurrentContext() ).ToLocalChecked() );
 				}
 
 			}
