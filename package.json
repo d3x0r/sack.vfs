@@ -7,7 +7,13 @@
       "branch": "sack-gui"
   },
   "description": "Node.js GUI Addon",
-  "main": "vfs_module.js",
+  "main": "vfs_module.cjs",
+  "module": "vfs_module.mjs",
+  "type":"commonjs",
+  "exports": {
+    "import": "./vfs_module.mjs",
+    "require": "./vfs_module.cjs"
+  },
   "private": false,
   "preferGlobal": false,
   "license": "LGPL",
