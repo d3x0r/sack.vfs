@@ -24,8 +24,8 @@ try{
   }
 }
 
-require( "./sack-jsox.js" )(sack);
-require( "./object-storage.js" )(sack);
+require( "./sack-jsox.cjs" )(sack);
+require( "./object-storage.cjs" )(sack);
 //vfs.
 module.exports=exports=sack;
 
