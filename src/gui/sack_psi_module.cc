@@ -1,7 +1,7 @@
 
 #include "../global.h"
 
-#ifdef SACK_CORE_BUILD
+#ifndef SACK_CORE_BUILD
 #include <psi.h>
 #include <psi/console.h>
 #include <psi/clock.h>
@@ -26,8 +26,14 @@ static struct psiLocal {
 	IS_EVENTSET event_pool;
 	int bindingDataId;
 	int first_initialized;
+	class constructorSet* c; // some constructor set...
+
 } psiLocal;
 
+
+void psiSetExtraInitConstructors( class constructorSet* c ) {
+	psiLocal.c = c;
+}
 
 struct optionStrings {
 	Isolate *isolate;
@@ -353,7 +359,11 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 	e.flags.complete = 0; 
 	e.success = 0;
 	EnqueLink( &psiLocal.events, &e );
-	uv_async_send( &control->isolateCons->psiLocal_async );
+	if( control )
+		uv_async_send( &control->isolateCons->psiLocal_async );
+	else {
+		uv_async_send( &psiLocal.c->psiLocal_async );
+	}
 	if( block )
 		while( !e.flags.complete ) WakeableSleep( 1000 );
 
@@ -564,8 +574,11 @@ void DeleteControlColors( Isolate *isolate, Local<Object> control, ControlObject
 void ControlObject::Init( Local<Object> _exports ) {
 	psiLocal.bindingDataId = PSI_AddBindingData( "Node" );
 
+
 		Isolate* isolate = Isolate::GetCurrent();
 		class constructorSet* c = getConstructors( isolate );
+		uv_async_init( c->loop, &c->psiLocal_async, asyncmsg );
+
 		Local<Context>context = isolate->GetCurrentContext();
 		Local<FunctionTemplate> psiTemplate;
 		Local<FunctionTemplate> psiTemplate2;

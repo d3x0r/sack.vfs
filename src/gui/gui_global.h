@@ -28,6 +28,7 @@
 #include <pssql.h>
 #include <deadstart.h>
 #include <translation.h>
+#include <systray.h>
 
 #include <image.h>
 #include <render.h>

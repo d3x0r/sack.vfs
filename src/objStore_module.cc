@@ -353,11 +353,11 @@ static void setClientObjectStorageHandler( const v8::FunctionCallbackInfo<Value>
 	class constructorSet* c = getConstructors( isolate );
 	String::Utf8Value unique( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 
-	Local<Function> f = args[1].As<Function>();
 	struct objectStorageUnloadStation* unloader = new struct objectStorageUnloadStation();
 	unloader->this_.Reset( isolate, args.This() );
 	unloader->s = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-	unloader->cb.Reset( isolate, f );
+	if( args[1]->IsFunction() )
+		unloader->cb.Reset( isolate, args[1].As<Function>() );
 	unloader->targetThread = c->loop;
 	unloader->poster.data = unloader;
 	unloader->transport = NULL;
@@ -1032,23 +1032,26 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					//Local<Object> obj = Object::New( isolate );
 					PDATALIST data;
 					data = jsox_parse_get_data( parser );
-					struct reviver_data r;
+					struct reviver_data r,*r_;
 					r.revive = FALSE;
 					r._this = args.This();
 					r.isolate = isolate;
 					r.context = isolate->GetCurrentContext();
 					r.parser = parserObject;
+					r_ = parserObject->currentReviver;
 					parserObject->currentReviver = &r;
 					Local<Value> val = convertMessageToJS2( data, &r );
 					{
 						Local<Value> argv[2] = { val, arr };
 						MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 2, argv );
 						if( result.IsEmpty() ) { // if an exception occurred stop, and return it.
+							parserObject->currentReviver = r_;
 							jsox_dispose_message( &data );
 							jsox_parse_dispose_state( &parser );
 							return;
 						}
 					}
+					parserObject->currentReviver = r_;
 					jsox_dispose_message( &data );
 					if( result == 1 )
 						break;
@@ -1086,19 +1089,23 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					PDATALIST data;
 					data = jsox_parse_get_data( parser );
 					if( data->Cnt ) {
-						struct reviver_data r;
+						struct reviver_data r, *r_;
 						r.revive = FALSE;
 						r.isolate = isolate;
 						r.context = isolate->GetCurrentContext();
+						r_ = parserObject->currentReviver;
+						parserObject->currentReviver = &r;
 						Local<Value> val = convertMessageToJS2( data, &r );
 						{
 							MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, &val );
 							if( result.IsEmpty() ) { // if an exception occurred stop, and return it.
+								parserObject->currentReviver = r_;
 								jsox_dispose_message( &data );
 								jsox_parse_dispose_state( &parser );
 								return;
 							}
 						}
+						parserObject->currentReviver = r_;
 					}
 					jsox_dispose_message( &data );
 					if( result == 1 )
