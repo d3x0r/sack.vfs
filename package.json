@@ -1,12 +1,18 @@
 {
   "name": "sack.vfs",
-  "version": "0.9.161",
+  "version": "1.0.1001",
   "description": "Node.js VFS Addon",
   "repository": {
       "type": "git",
       "url": "https://github.com/d3x0r/sack.vfs"
   },
-  "main": "vfs_module.js",
+  "main": "vfs_module.cjs",
+  "module": "vfs_module.mjs",
+  "type":"commonjs",
+  "exports": {
+    "import": "./vfs_module.mjs",
+    "require": "./vfs_module.cjs"
+  },
   "private": false,
   "preferGlobal": false,
   "license": "LGPL",

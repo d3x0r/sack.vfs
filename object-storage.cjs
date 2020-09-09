@@ -16,6 +16,7 @@ var preloadStorage = null;
 // manufacture a JS interface to _objectStorage.
 sack.ObjectStorage = function (...args) {
 
+	const newStorage = preloadStorage || new _objectStorage(...args);
 
 // associates object data with storage data for later put(obj) to re-use the same informations.
 function objectStorageContainer(o,opts) {
@@ -66,10 +67,10 @@ function objectStorageContainer(o,opts) {
 }
 
 objectStorageContainer.prototype.getStore = function() {
-	return store;
+	return newStorage;
 }
 objectStorageContainer.getStore = function() {
-	return store;
+	return newStorage;
 }
 
 objectStorageContainer.prototype.map = async function( opts ) {
@@ -113,14 +114,37 @@ objectStorageContainer.prototype.map = async function( opts ) {
 			}
 			else{  // load everything that's pending on this object.
 				for( let load of pending ) {
+					{
+						const existing = newStorage.cachedContainer.get( load.d.id );
+						if( existing ) {
+							if( load.d.res ) load.d.res( existing.data );
+							else {load.d.p.then( o2=>{
+								if( existing.data!==o2) 
+									throw new Error( "resolved and loaded object mismatch");
+									return o2
+								})
+								return load.d.p;
+							}
+						}
+					}
 					loadPending(load);
 				}
 				pending.length = 0;
 			}
+			if( !waiting ){
+				console.log( "Nothing scheduled to really wait, go ahead and resolve");
+				res( rootMap.data );
+			}
+
 			function loadPending(load) {
 				waiting++;
 				newStorage.get( {id:load.d.id}).then( (obj)=>{
-					load.d.res(obj); // result with real value.
+					if( load.d.res )
+						load.d.res(obj); // result with real value.
+					else {
+						load.d.p.then( o2=>{if( obj!==o2) throw new Error( "resolved and loaded object mismatch");return o2})
+						return load.d.p;
+					}
 					const exist = newStorage.stored.get( obj );
 					const objc = newStorage.cachedContainer.get( exist );
 					// resolving this promis on load.d will set this.
@@ -202,7 +226,6 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 
 
 	var mapping = false;
-	var newStorage = preloadStorage || new _objectStorage(...args);
 	preloadStorage = null;
 	newStorage.objectStorageContainer = objectStorageContainer;
 	newStorage.cached = new Map();
@@ -519,6 +542,27 @@ _objectStorage.prototype.get = function( opts ) {
 		console.trace( "Must specify options ", opts);
 		return null;
 	}
+	{
+		const priorLoad = os.cachedContainer.get( opts.id );
+		if( priorLoad ) return Promise.resolve( priorLoad.data );
+	}
+
+	const priorDecode = this.decoding.find( d=>d.id === opts.id );
+	if( priorDecode ){
+		return new Promise( (res,rej)=>{
+			priorDecode.res = res;
+			priorDecode.rej = rej;
+		}).then( (obj)=>{
+			let deleteId = -1;
+			for( let n = 0; n < this.decoding.length; n++ ) {
+				if( decode === opts ){
+					deleteId = n;
+					break;
+				}
+			}
+			if( deleteId >= 0 )  this.decoding.splice( deleteId, 1 );
+		})
+	}
 
 	if( !this.parser ){
 		this.parser = sack.JSOX.begin();
@@ -545,7 +589,6 @@ _objectStorage.prototype.get = function( opts ) {
 				});
 			} else {
 				this.d.p = Promise.resolve( existing.data );  // this will still have to be swapped.
-
 			}
 			dangling.push( this );
 			objectRefs++;
@@ -557,6 +600,7 @@ _objectStorage.prototype.get = function( opts ) {
 		if( !field ) {
 			// finished.
 			if( objectRefs ) {
+				
 				Object.defineProperty( this, "dangling", { value:dangling } );
 				dangling = [];
 				objectRefs = 0;
@@ -593,6 +637,15 @@ _objectStorage.prototype.get = function( opts ) {
 	function reviveContainerRef( field, val ) {
 		//console.trace( "Revival of a container reference:", this, field, val );
 		if( !field ) {
+			const existing = os.cachedContainer.get( this.d.id );
+			if( existing ){
+				// even better, don't even store the reference, return the real
+				console.log( "So, just return with the real object to assign. (and remove fom dangling)");
+				const id = dangling.find( d=>d.d === this.d );
+				objectRefs--;
+				if( id >= 0 ) dangling.slice( id, 1 );
+				return existing.data;
+			} 
 			// finished.
 			return this.d.p;
 		}
@@ -628,15 +681,28 @@ _objectStorage.prototype.get = function( opts ) {
 
 		const priorReadId = currentReadId;
 		try {
+			//console.log( "LOADING : ", opts.id );
 			os.read( currentReadId = opts.id
 				, parser, (obj,times)=>{
 					// with a new parser, only a partial decode before revive again...
 					console.log( "Read resulted with an object:", obj, times );
+					let deleteId = -1;
+					const extraResolutions = [];
+					for( let n = 0; n < os.decoding.length; n++ ) {
+						const decode = os.decoding[n];
+						if( decode === opts )
+							deleteId = n;
+						else if( decode.id === opts.id ) {
+							decode.res( obj );
+						}
+					}
+					if( deleteId >= 0 )  os.decoding.splice( deleteId, 1 );
+
 					var found;
 					do {
 						var found = os.pending.findIndex( pending=>{ console.log( "what is in pending?", pending ); return pending.id === key } );
 						if( found >= 0 ) {
-							os.pending[found].ref.o[this.pending[found].ref.f] = obj.data;
+							os.pending[found].ref.o[os.pending[found].ref.f] = obj.data;
 							os.pending.splice( found, 1 );
 						}
 					} while( found >= 0 );
@@ -648,9 +714,11 @@ _objectStorage.prototype.get = function( opts ) {
 					os.stored.set( obj.data, obj.id );
 					os.cachedContainer.set( obj.id, obj );
 					currentReadId = priorReadId;
+					for( let res in extraResolutions ) res.res(obj.data);
 					res(obj.data);
 				} else {
 					currentReadId = priorReadId;
+					for( let res in extraResolutions ) res.res(obj);
 					res(obj)
 				}
 			} );
