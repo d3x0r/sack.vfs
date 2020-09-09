@@ -667,7 +667,7 @@ _objectStorage.prototype.get = function( opts ) {
 			this.decoders.forEach( f=>parser.fromJSOX( f.tag, f.p, f.f ) );
 		// allow extra to override default.
 		if( opts && opts.extraDecoders && opts.extraDecoders.length ) {
-			opts.extraDetraceers.forEach( f=>parser.fromJSOX( f.tag, f.p, f.f ) );
+			opts.extraDecoders.forEach( f=>parser.fromJSOX( f.tag, f.p, f.f ) );
 		}
 		//console.log( "Created a parser for revival..." );
 	}
