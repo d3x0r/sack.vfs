@@ -38,7 +38,7 @@ public:
 		if( args.IsConstructCall() ) {
 			// Invoked as constructor: `new MyObject(...)`
 			JSOXRefObject* obj = new JSOXRefObject();
-			Local<Function> arg0 = Local<Function>::Cast( args[0] );
+
 			if( args.Length() > 1 && !args[1]->IsUndefined() ) {
 				SET_READONLY( args.This(), "o", args[0] );
 				SET_READONLY( args.This(), "f", args[1] );
@@ -146,7 +146,9 @@ void JSOXObject::getCurrentRef( const v8::FunctionCallbackInfo<Value>& args ) {
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->jsoxRefConstructor );
 		Local<Value> args_[2] = { parser->currentReviver->refObject, parser->currentReviver->fieldName };
-		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), 2, args_ ).ToLocalChecked() );
+		MaybeLocal<Object> newRef = cons->NewInstance( isolate->GetCurrentContext(), 2, args_ );
+		if( !newRef.IsEmpty() )
+			args.GetReturnValue().Set( newRef.ToLocalChecked() );
 	}
 
 }
@@ -237,8 +239,9 @@ void JSOXObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
 		JSOXObject* obj = new JSOXObject();
-		Local<Function> arg0 = Local<Function>::Cast( args[0] );
-		obj->readCallback.Reset( isolate, arg0 );
+		if( args[0]->IsFunction() ) {
+			obj->readCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
+		}
 		if( args.Length() > 1 && !args[1]->IsUndefined() ) {
 			Local<Function> arg1 = Local<Function>::Cast( args[1] );
 			obj->reviver.Reset( isolate, arg1 );
@@ -255,7 +258,9 @@ void JSOXObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		class constructorSet *c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->jsoxConstructor );
-		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
+		MaybeLocal<Object> resObj = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
+		if(!resObj.IsEmpty() )
+			args.GetReturnValue().Set( resObj.ToLocalChecked() );
 		delete[] argv;
 	}
 
@@ -646,7 +651,9 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 				// this is done when this returns.
 				if( !cb.IsEmpty() && cb->IsFunction() ) {
 					//lprintf( "method4?");
-					result = cb->Call( revive->context, result, 0, NULL ).ToLocalChecked();
+					MaybeLocal<Value> mv = cb->Call( revive->context, result, 0, NULL );
+					if( !mv.IsEmpty() )
+						result = mv.ToLocalChecked();
 				}
 			}
 		}
@@ -699,8 +706,8 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 		}
 		break;
 	}
-	if( revive->revive && !revive->value.IsEmpty() ) {
-		Local<Value> args[2] = { revive->value, result };
+	if( revive->revive && !revive->fieldName.IsEmpty() ) {
+		Local<Value> args[2] = { revive->fieldName, result };
 		MaybeLocal<Value> r = revive->reviver->Call( revive->context, revive->_this, 2, args );
 		if( !r.IsEmpty() )
 			result = r.ToLocalChecked();
@@ -710,7 +717,6 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive ) {
 	Isolate* isolate = revive->isolate;
 	Local<Context> context = revive->context;
-	Local<Value> thisVal;
 	Local<String> stringKey;
 	Local<Value> thisKey;
 	struct jsox_value_container *val;
@@ -743,21 +749,13 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				Local<Value> args[] = { revive->fieldName, makeValue( val, revive ) };
 				// use the custom reviver to assign the field.
 				revive->fieldCb->Call( revive->context, o, 2, args );
-			} else if( val->name ) {
-				stringKey = String::NewFromUtf8( revive->isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked();
-				revive->value = stringKey;
+			} else {
+				Local<Value> tmp = makeValue( val, revive );
 #ifdef DEBUG_REFERENCE_FOLLOW
 				lprintf( "set value to fieldname: %s", val->name );
 #endif
-				Local<Value> tmp = makeValue( val, revive );
 				if( !tmp->IsUndefined() )
-					o->CreateDataProperty( revive->context, stringKey, tmp );
-			}
-			else {
-				if( revive->revive )
-					revive->value = Integer::New( revive->isolate, currentIndex );
-				//lprintf( "set value to index: %d", currentIndex );
-				SETN( o, currentIndex, thisVal = makeValue( val, revive ) );
+					o->Set( revive->context, revive->fieldName, tmp );
 			}
 			break;
 		case JSOX_VALUE_ARRAY:
@@ -767,7 +765,17 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				Local<Value> args[] = { revive->fieldName
 					                    , sub_o };
 				// use the custom reviver to assign the field.
-				sub_o = cb->Call( revive->context, o, 2, args ).ToLocalChecked().As<Object>();
+				MaybeLocal<Value> newObj = cb->Call( revive->context, o, 2, args );
+				if( !newObj.IsEmpty() ) {
+					Local<Value> zObj = newObj.ToLocalChecked();
+					if( zObj->IsObject() )
+						sub_o = zObj.As<Object>();
+				}
+				else {
+					isolate->ThrowException( Exception::Error(
+						localString( isolate, TranslateText( "Already pending exception?" ) ) ) );
+				}
+
 #ifdef DEBUG_REFERENCE_FOLLOW
 				lprintf( "called callback to set array value %.*s", val->nameLen, val->name );
 #endif
@@ -887,7 +895,9 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 	Local<Value> v;// = Object::New( revive->isolate );
 
 	struct jsox_value_container *val = (struct jsox_value_container *)GetDataItem( &msg, 0 );
+	revive->fieldName = String::NewFromUtf8( revive->isolate, "", v8::NewStringType::kNormal ).ToLocalChecked();
 	if( val && val->contains ) {
+
 		Local<Value> root = makeValue( val, revive );
 		o = root.As<Object>();
 
@@ -967,7 +977,7 @@ Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviver_data
 				revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			else {
 				if( result > 1 ) {
-					//lprintf( "WARNING: Extra data after JSOX message; Single message parse expects a closed, complete message." );
+					lprintf( "WARNING: Extra data after JSOX message; Single message parse expects a closed, complete message." );
 					break; // goto return anyway.
 				}
 				else
@@ -986,9 +996,13 @@ Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviver_data
 	parsed = jsox_parse_get_data( state ); // resulting message is removed from the parser.
 	revive->parser = new JSOXObject();
         //logTick(3);
-	revive->parser->currentReviver = revive;
-	Local<Value> value = convertMessageToJS2( parsed, revive );
-	revive->parser->currentReviver = NULL;
+	Local<Value> value;
+	{
+		struct reviver_data* priorRevive = revive;
+		revive->parser->currentReviver = revive;
+		value = convertMessageToJS2( parsed, revive );
+		revive->parser->currentReviver = priorRevive;
+	}
 	//logTick(4);
 	delete revive->parser;
 
@@ -1033,7 +1047,6 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
 			r._this = args.Holder();
-			r.value = String::NewFromUtf8( r.isolate, "", v8::NewStringType::kNormal ).ToLocalChecked();
 			r.revive = TRUE;
 			r.reviver = Local<Function>::Cast( args[1] );
 		}
