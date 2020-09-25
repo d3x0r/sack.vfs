@@ -845,15 +845,15 @@ The `id()` function takes an optional parameter that is an integer.
 var sack = require( "sack.vfs" );
 var client = new sack.WebSocket.Client( &lt;url&gt; [, &lt;protocol(s)&gt;] [,option object] );
 client.on( &lt;event&gt;, &lt;callback&gt; );
-client.onOpen( callback );
-client.onMessage( callback );
-client.onError( callback );
-client.onClose( callback );
+client.onopen( callback );
+client.onmessage( callback );
+client.onerror( callback );
+client.onclose( callback );
 
 var server = new sack.WebSocket.Server( { &lt;options&gt; } );
 server.on( &lt;event&gt;, &lt;callback&gt; );
-server.onConnect( callback );
-server.onAccept( callback );
+server.onconnect( callback );
+server.onaccept( callback );
 
 ```
 

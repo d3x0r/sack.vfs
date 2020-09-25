@@ -1,5 +1,11 @@
 
-module.exports = function(sack) {
+module.exports = {
+	ObjectStorage : ObjectStorage
+
+}
+
+
+const sack = require( "./vfs_module.cjs" );
 const _debug = false;
 
 sack.SaltyRNG.setSigningThreads( require( "os" ).cpus().length );
@@ -13,10 +19,11 @@ var dangling = [];
 var objectRefs = 0;
 var currentContainer = null;
 var preloadStorage = null;
+let remote = null;
 // manufacture a JS interface to _objectStorage.
-sack.ObjectStorage = function (...args) {
+ObjectStorage = async function (...args) {
 
-	const newStorage = preloadStorage || new _objectStorage(...args);
+	const newStorage = await connect( remote );
 
 // associates object data with storage data for later put(obj) to re-use the same informations.
 function objectStorageContainer(o,opts) {
@@ -240,6 +247,7 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 	newStorage.root = null; // this gets filled when the root file system is enabled.
 	newStorage.encoders = [];
 	newStorage.decoders = [];
+	newStorage.remotes = [];
 
 
 	function objectToJSOX( stringifier ){
@@ -292,34 +300,62 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 		return newStorage.cachedContainer.get( rootId ).map( opts );
 	}
 
-	newStorage.handleMessage = handleMessage
+        newStorage.connect = connect
+        newStorage.handleMessage = handleMessage
 
 	return newStorage;
+	//Object.assign( newStorage
 
+	const unique;
+        const requests = new Map();
+        function connect(addr) {
+            const remote = { ws:addr,
+            	get(opts){
+                	return new Promise( (res,rej)=>{
+	                    	const msg = {op:"get", id:unique++, opts:opts, res:res,rej:rej };
+				addr.send( msg );
+				requests.set( msg.id, msg );
+                       	}
+                },
+            	put(obj, opts){
+                	return new Promise( (res,rej)=>{
+	                    	const msg = {op:"put", id:unique++, obj:obj, opts:opts, res:res,rej:rej };
+				addr.send( msg );
+				requests.set( msg.id, msg );
+                       	}
+                },
+                handleMessage : handleMessage
+            }
+            newStorage.remotes.push( remote );
+            return remote;
 
-        function handleMessage( ws, msg ) {
-           if( msg.op === "get" ) {
-               newStorage.readRaw( currentReadId = opts.id
-				, (data)=>{
-	               	    ws.send( newStorage.stringifier.stringify( { op:"get", id:msg.id, data:data } ) );
-			} )
-	       return true;
-           }
-           if( msg.op === "put" ) {
-               // want to get back a file ID if possible...
-               // and/or use the data for encoding/salting/etc... which can determine the result ID.
-               newStorage.put( msg.opts.id, msg.data, (result)=>{
-			ws.send( newStorage.stringifier.stringify( { op:"getack", id:msg.id, data:data } ) );
-            	} ).catch( err=>{
-            		ws.send( newStorage.stringifier.stringify( { op:"geterr", id:msg.id, err:err } ) );
-            	} );
-               return true;
-               }
-           return false;
-	}
+	        function handleMessage( msg ) {
+	        	if( msg.op === "getack" ) {
+        	            	const req = requests.get( msg.id );
+                	        if( req ) req.res( msg.data );
+	                    }
+        	        if( msg.op === "geterr" ) {
+                	    	const req = requests.get( msg.id );
+	                        if( req ) req.rej( msg.err );
+        	            }
+	        	if( msg.op === "putack" ) {
+        	            	const req = requests.get( msg.id );
+                	        if( req ) req.res( msg.result );
+	                    }
+        	        if( msg.op === "puterr" ) {
+                	    	const req = requests.get( msg.id );
+	                        if( req ) req.rej( msg.err );
+        	            }
+        	}
+
+       	}
+
 
 }
-sack.ObjectStorage.Thread = {
+
+
+
+ObjectStorage.Thread = {
 	post: _objectStorage.Thread.post,
 	accept(cb) {
 		 _objectStorage.Thread.accept((a,b)=>{
@@ -329,17 +365,7 @@ sack.ObjectStorage.Thread = {
 	}
 }
 
-// define a class... to be handled by stringification
-_objectStorage.prototype.defineClasss = function(a,b) {
-	this.stringifier.defineClass(a,b);
-}
-
-_objectStorage.prototype.scan = function( from ) {
-	var fromTime = ( from.getTime() * 256 );
-	//this.loadSince( fromTime );
-}
-
-_objectStorage.prototype.getContainer = function( obj, options ) {
+ObjectStorage.prototype.getContainer = function( obj, options ) {
 	var container = this_.stored.get( obj );
 	var storage;
 	if( container ) {
@@ -390,7 +416,7 @@ _objectStorage.prototype.index = function( obj, fieldName, opts ) {
 
 }
 
-_objectStorage.prototype.remove = function( opts ) {
+ObjectStorage.prototype.remove = function( opts ) {
 	if( "string" === typeof opts )  {
 		var container = this.cached.get( opts );
 		if( !container ) throw new Error( "This is not a tracked object." );
@@ -402,7 +428,7 @@ _objectStorage.prototype.remove = function( opts ) {
 		this.delete( container);
 	}
 }
-_objectStorage.prototype.addEncoders = function(encoderList) {
+ObjectStorage.prototype.addEncoders = function(encoderList) {
 	const this_ = this;
 	encoderList.forEach( f=>{
 		this_.encoders.push(f);
@@ -410,7 +436,7 @@ _objectStorage.prototype.addEncoders = function(encoderList) {
 	});
 
 }
-_objectStorage.prototype.addDecoders = function(encoderList) {
+ObjectStorage.prototype.addDecoders = function(encoderList) {
 	const this_ = this;
 	encoderList.forEach( f=>{
 		this_.decoders.push(f);
@@ -420,7 +446,7 @@ _objectStorage.prototype.addDecoders = function(encoderList) {
 
 }
 
-_objectStorage.prototype.getCurrentParseRef = function() {
+ObjectStorage.prototype.getCurrentParseRef = function() {
 	if( this.currentParser ){
 		return this.currentParser.getCurrentRef();
 	}
@@ -428,7 +454,7 @@ _objectStorage.prototype.getCurrentParseRef = function() {
 }
 
 // this hides the original 'put'
-_objectStorage.prototype.put = function( obj, opts ) {
+ObjectStorage.prototype.put = function( obj, opts ) {
 	const this_ = this;
     if( currentContainer && currentContainer.data === this ) return Promise.resolve( currentContainer.id );
 
@@ -468,8 +494,13 @@ _objectStorage.prototype.put = function( obj, opts ) {
 					console.trace( "0) Container has no ID or is nUll", container );
 				}
 				_debug && console.trace( "WRite:", container, storage );
-				this_.writeRaw( container.id, storage );
-				return res( container.id );
+	                    	for( var remote of this_.remotes ) {
+        	                    remote.put( container.id, storage ).then( res ).catch( rej );
+                                    res = null;
+                                    rej = null;
+        	                }
+				//this_.writeRaw( container.id, storage );
+				//return res( container.id );
 			} else {
 				throw new Error( "record is signed, cannot put" );
 			}
@@ -493,8 +524,13 @@ _objectStorage.prototype.put = function( obj, opts ) {
 				console.trace( "Container has no ID or is nUll", container );
 			}
 			_debug && console.trace( "WRite:", opts, storage );
-			this_.writeRaw( opts.id, storage );
-			res( opts.id );
+	                for( var remote of this_.remotes ) {
+        	            remote.put( opts.id, storage ).then( res ).catch( rej );
+                            res = null;
+                            rej = null;
+        	        }
+			//this_.writeRaw( opts.id, storage );
+			//res( opts.id );
 		} else if( !opts || !opts.id ) {
 			_debug && console.log( "New bare object, create a container...", opts );
                         if( !opts ) opts = { id : sack.id() }
@@ -529,16 +565,21 @@ _objectStorage.prototype.put = function( obj, opts ) {
 			}
 			_debug && console.trace( "Outut container to storage... ", container, storage );
 			try {
-			this_.writeRaw( container.id, storage );
+		                for( var remote of this_.remotes ) {
+        		            remote.put( container.id, storage ).then( res ).catch( rej );
+                	            res = null;
+                        	    rej = null;
+	        	        }
+			//this_.writeRaw( container.id, storage );
 			}catch(err) { console.log( "WRITE RAW?", this_ )}
 			//console.log( "OUTPUT:", storage );
-			res(  container.id );
+			//res(  container.id );
 		}
 	})
 }
 
 /*
-_objectStorage.prototype.update( objId, obj ) {
+ObjectStorage.prototype.update( objId, obj ) {
 
 	var container = new this.objectStorageContainer(sack.JSOX.stringify(obj),sign);
 	this.stored.set( obj, container.id );
@@ -552,7 +593,7 @@ const updatedPrototypes = new WeakMap();
 
 var currentReadId ;
 
-_objectStorage.prototype.get = function( opts ) {
+ObjectStorage.prototype.get = function( opts ) {
 	//this.parser.
 	var resolve;
 	var reject;
@@ -705,9 +746,17 @@ _objectStorage.prototype.get = function( opts ) {
 
 		const priorReadId = currentReadId;
 		try {
-			//console.log( "LOADING : ", opts.id );
-			os.read( currentReadId = opts.id
-				, parser, (obj,times)=>{
+			console.log( "LOADING : ", opts.id );
+                    	for( var remote of this.remotes ) {
+                            remote.get( parser, opts ).then( (obj)=>{
+                                resultCallback( obj );
+                            } ).catch( err=>{
+				resultCallback( null );
+			    } ;
+                        }
+			//os.read( currentReadId = opts.id
+			//	, parser
+                        function resultCallback(obj,times){
 					// with a new parser, only a partial decode before revive again...
 					console.log( "Read resulted with an object:", obj, times );
 					let deleteId = -1;
@@ -798,15 +847,31 @@ fileEntry.prototype.read = function( from, len ) {
 fileEntry.prototype.write = function( o ) {
 	if( this.id )
 		try {
+			let first = null;
 			if( "string" === typeof o ) {
 				//console.log( "direct write of string data:", o );
-				this.folder.volume.writeRaw( this.id, o );
-				return Promise.resolve( this.id );
+		                for( var remote of this.folder.volume.remotes ) {
+        		            let newsend = remote.put( this.id, o ).then( res ).catch( rej );
+                                    if( !first ) first = newsend;
+                	            res = null;
+                        	    rej = null;
+	        	        }
+
+				//this.folder.volume.writeRaw( this.id, o );
+				//return Promise.resolve( this.id );
+                                return first;
 
 			} else if( o instanceof ArrayBuffer ) {
 				//console.log( "Write raw buffer" );
-				this.folder.volume.writeRaw( this.id, o );
-				return Promise.resolve( this.id );
+		                for( var remote of this.folder.volume.remotes ) {
+        		            let newsend = remote.put( this.id, o ).then( res ).catch( rej );
+                                    if( !first ) first = newsend;
+                	            res = null;
+                        	    rej = null;
+	        	        }
+				//this.folder.volume.writeRaw( this.id, o );
+				//return Promise.resolve( this.id );
+                                return first;
 
 			} else if( "object" === typeof o )
 				;//console.log( "expected encode of object:", o );
@@ -980,7 +1045,7 @@ fileDirectory.prototype.folder = function( fileName ) {
 
 
 var loading = null;
-_objectStorage.prototype.getRoot = async function() {
+ObjectStorage.prototype.getRoot = async function() {
 	if( this.root ) return this.root;
 	if( loading ) {
 		return new Promise( (res,rej)=>{
@@ -1030,5 +1095,6 @@ _objectStorage.prototype.getRoot = async function() {
 	} );
 }
 
-}
+
+
 
