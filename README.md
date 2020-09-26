@@ -288,7 +288,7 @@ sack.ObjectStorage.
 
 | Object methods | Return | Arguments | Description |
 |----------|------------|-------------|----|
-| getRoot | promise | Promise resolves with root directory |
+| getRoot | promise | () | Promise resolves with root directory |
 | put | unique ID | ( object \[, sign\] ) | Stores or updates an object into storage.  If the object was not previously stored or loaded, a unique ID for the object is returned. |
 | get | promise |  ( id ) | Returns a promise; success is passed the object loaded from storage.  Loads an object using the specified ID. |
 | map | promise |  ( id ) | Same as get, but also loads any objects of specified ID. |
