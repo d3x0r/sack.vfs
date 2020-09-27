@@ -977,7 +977,7 @@ Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviver_data
 				revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			else {
 				if( result > 1 ) {
-					lprintf( "WARNING: Extra data after JSOX message; Single message parse expects a closed, complete message." );
+					//lprintf( "WARNING: Extra data after JSOX message; Single message parse expects a closed, complete message." );
 					break; // goto return anyway.
 				}
 				else
