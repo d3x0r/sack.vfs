@@ -12,6 +12,9 @@
 #  undef _XOPEN_SOURCE
 #  define _XOPEN_SOURCE 500
 #endif
+#  ifndef _GNU_SOURCE
+#    define _GNU_SOURCE
+#  endif
 #ifndef STANDARD_HEADERS_INCLUDED
 /* multiple inclusion protection symbol */
 #define STANDARD_HEADERS_INCLUDED
@@ -142,18 +145,18 @@
 #    define stricmp _stricmp
 #    define strdup _strdup
 #  endif
-#ifdef WANT_MMSYSTEM
-#  include <mmsystem.h>
-#endif
-#if USE_NATIVE_TIME_GET_TIME
+#  ifdef WANT_MMSYSTEM
+#    include <mmsystem.h>
+#  endif
+#  if USE_NATIVE_TIME_GET_TIME
 //#  include <windowsx.h>
 // we like timeGetTime() instead of GetTickCount()
 //#  include <mmsystem.h>
-#ifdef __cplusplus
+#    ifdef __cplusplus
 extern "C"
-#endif
+#    endif
 __declspec(dllimport) DWORD WINAPI timeGetTime(void);
-#endif
+#  endif
 #  ifdef WIN32
 #    if defined( NEED_SHLAPI )
 #      include <shlwapi.h>
@@ -184,9 +187,6 @@ __declspec(dllimport) DWORD WINAPI timeGetTime(void);
 #  endif
  // ifdef unix/linux
 #else
-#  ifndef _GNU_SOURCE
-#    define _GNU_SOURCE
-#  endif
 #  include <pthread.h>
 #  include <sched.h>
 #  include <unistd.h>
