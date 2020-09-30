@@ -5,6 +5,7 @@
 build
 build-*
 tests
+test
 xx
 zz
 .vscode
