@@ -110,12 +110,9 @@ static void asyncmsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
-
 	RenderObject* myself = (RenderObject*)handle->data;
-
-	HandleScope scope(isolate);
-	//lprintf( "async message notice. %p", myself );
 	{
 		struct event *evt;
 

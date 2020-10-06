@@ -456,10 +456,13 @@ static void newBorder( const FunctionCallbackInfo<Value>& args ) {
 
 static int CPROC CustomDefaultInit( PSI_CONTROL pc ) {
 	if( psiLocal.pendingCreate ) return 1; // internal create in progress... it will result with its own object later.
-	Isolate* isolate = Isolate::GetCurrent();
+	class constructorSet* c = getConstructorsByThread();
+
+	Isolate* isolate = c?c->isolate:NULL;
 	if( !isolate ) {
 		// this must block until completion
-		MakePSIEvent( NULL, true, Event_Control_Create, pc );
+		if( psiLocal.c )
+			MakePSIEvent( NULL, true, Event_Control_Create, pc );
 	} else {
 		Local<Object> object = ControlObject::NewWrappedControl( isolate, pc );
 		ControlObject *control = ControlObject::Unwrap<ControlObject>( object );
@@ -476,7 +479,8 @@ static int CPROC CustomDefaultDestroy( PSI_CONTROL pc ) {
 		if( control->control == pc ) {
 			SetLink( &psiLocal.controls, idx, NULL );
 			//DeleteControlColors( control->state.Get() );
-			Isolate* isolate = Isolate::GetCurrent();
+			class constructorSet* c = getConstructorsByThread();
+			Isolate* isolate = c?c->isolate:NULL;
 			if( isolate )
 				ControlObject::releaseSelf( control );
 			else
@@ -577,7 +581,7 @@ void ControlObject::Init( Local<Object> _exports ) {
 
 		Isolate* isolate = Isolate::GetCurrent();
 		class constructorSet* c = getConstructors( isolate );
-		uv_async_init( c->loop, &c->psiLocal_async, asyncmsg );
+		//uv_async_init( c->loop, &c->psiLocal_async, asyncmsg );
 
 		Local<Context>context = isolate->GetCurrentContext();
 		Local<FunctionTemplate> psiTemplate;

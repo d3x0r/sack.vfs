@@ -39,10 +39,23 @@ class constructorSet * getConstructors( Isolate *isolate ){
 		}
 	}
 	c = new constructorSet();
+	c->thread = MakeThread();
 	c->isolate = isolate;
 	c->loop = node::GetCurrentEventLoop( isolate ); // one-time thread initializer for com? // uv_default_loop();
 	AddLink( &vl.constructors, c );
 	return c;
+}
+
+class constructorSet* getConstructorsByThread( void ) {
+	PTHREAD thread = MakeThread();
+	INDEX idx;
+	class constructorSet* c;
+	LIST_FORALL( vl.constructors, idx, class constructorSet*, c ) {
+		if( c->thread == thread ) {
+			return c;
+		}
+	}
+	return NULL;
 }
 
 Local<String> localString( Isolate *isolate, const char *data, int len ) {

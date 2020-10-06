@@ -116,6 +116,7 @@ void SystemInit( Isolate* isolate, Local<Object> exports );
 class constructorSet {
 	public:
 	Isolate *isolate;
+	PTHREAD thread;
 	Persistent<Function> dateCons; // Date constructor
 	Persistent<Function> ThreadObject_idleProc;
 
@@ -218,6 +219,7 @@ class constructorSet {
 #endif
 };
 class constructorSet * getConstructors( Isolate *isolate );
+class constructorSet* getConstructorsByThread( void );
 
 
 
