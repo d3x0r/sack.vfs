@@ -5,6 +5,7 @@ cmake_minimum_required(VERSION 3.0)
 project (sack_gui)
 
 
+include( GNUInstallDirs )
 
 ADD_DEFINITIONS( -DBUILD_NODE_ADDON )
 
@@ -15,9 +16,6 @@ else( NOT WIN32 )
 endif( NOT WIN32 )
 
 if( CMAKE_SIZEOF_VOID_P EQUAL 8 )
-	if( UNIX )
-		set( LIB_SUFFIX 64 )
-	endif( UNIX )
     SET( __64__ 1 )
     ADD_DEFINITIONS( -D__64__ )
 endif( CMAKE_SIZEOF_VOID_P EQUAL 8 )
@@ -90,7 +88,7 @@ ExternalProject_Add( intershell
 
 )
 
-LINK_DIRECTORIES( ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/lib${LIB_SUFFIX} )
+LINK_DIRECTORIES( ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/${CMAKE_INSTALL_LIBDIR} )
 
 
 set( DEFINITIONS   USE_SQLITE USE_SQLITE_INTERFACE NO_FILEOP_ALIAS NO_OPEN_MACRO
@@ -162,7 +160,7 @@ add_dependencies( ${PROJECT} sack intershell )
 if( UNIX )
 	set( VFSLIB :sack_vfs.pp.module )
 	set( EXTRACOPY 
-   			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/lib${LIB_SUFFIX} ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
+   			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/${CMAKE_INSTALL_LIBDIR} ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
 	)
 else( UNIX )
 	set( VFSLIB sack_vfs.pp.module )
