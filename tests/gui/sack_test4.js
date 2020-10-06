@@ -14,7 +14,7 @@ var scale = 1.0;
 
 var f = sack.PSI.Frame( "test", -1, -1, 600, 600 );
 
-var background = sack.Image( "the rror.jpg" );
+var background = sack.Image( "images/stop_button.png" );
 
 var b = f.Control( "Button", "Test", 10, 10, 100, 20 );
 
@@ -81,3 +81,4 @@ process.on('SIGINT', function (){
   console.log('Goodbye!');
   f.close();
 });
+

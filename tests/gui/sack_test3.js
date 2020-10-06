@@ -23,7 +23,7 @@ for( var n = 1; n < 8; n++ ) {
 }
 var r = sack.Renderer( "test", 0, 0, display.width, display.height );
 console.log( "created renderer?", r, Object.keys( Object.getPrototypeOf(r)) );
-var background = sack.Image( "the rror.jpg" );
+var background = sack.Image( "images/stop_button.png" );
 r.on( "draw", ( image )=>{	
 	//console.log( "It wanted a draw...", 100+y_del, image, Object.keys(Object.getPrototypeOf(image)) ) 
 	if( _x_del )
