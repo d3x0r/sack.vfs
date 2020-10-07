@@ -103,6 +103,171 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 }
 
 
+
+
+static void dispatchEvent( 	v8::Isolate* isolate
+		, Local<Context> context
+		, class constructorSet* c
+		, struct event *evt )
+{
+	Local<Function> cb;
+	Local<Value> r;
+	switch( evt->type ){
+	case Event_Frame_Ok:
+	{
+		cb = Local<Function>::New( isolate, evt->control->cbFrameEventOkay );
+		cb->Call( context, evt->control->state.Get( isolate ), 0, NULL );
+		break;
+	}
+	case Event_Frame_Cancel:
+	{
+		cb = Local<Function>::New( isolate, evt->control->cbFrameEventCancel );
+		cb->Call( context, evt->control->state.Get( isolate ), 0, NULL );
+		break;
+	}
+	case Event_Frame_Abort:
+	{
+		cb = Local<Function>::New( isolate, evt->control->cbFrameEventAbort );
+		cb->Call( context, evt->control->state.Get( isolate ), 0, NULL );
+		break;
+	}
+	case Event_Control_Create:
+	{
+		Isolate* isolate = Isolate::GetCurrent();
+		if( psiLocal.pendingRegistration ) {
+
+			Local<Object> object = ControlObject::NewWrappedControl( isolate, evt->data.pc );
+			ControlObject *control = ControlObject::Unwrap<ControlObject>( object );
+			control->registration = psiLocal.pendingRegistration;
+			ControlObject **me = ControlData( ControlObject **, evt->data.pc );
+			if( me )
+				me[0] = control;
+
+			Local<Function> cb = Local<Function>::New( isolate, psiLocal.pendingRegistration->cbInitEvent );
+			// controls get wrapped sooner... 
+			// ControlObject::wrapSelf( isolate, me[0], psiLocal.newControl );
+			
+			Local<Value> retval = cb->Call( context, object, 0, NULL ).ToLocalChecked();
+
+			evt->success = retval->ToInt32( context ).ToLocalChecked()->Value();
+		}
+		else {
+			Local<Object> object = ControlObject::NewWrappedControl( isolate, evt->data.pc );
+			ControlObject *control = ControlObject::Unwrap<ControlObject>( object );
+			if( control->registration ) {
+				Local<Function> cb = Local<Function>::New( isolate, control->registration->cbInitEvent );
+				Local<Value> retval = cb->Call( context, psiLocal.newControl, 0, NULL ).ToLocalChecked();
+			}
+			AddLink( &psiLocal.controls, control );
+			evt->control = control;
+		}
+
+	}
+		break;
+	case Event_Control_Destroy:
+		ControlObject::releaseSelf( evt->control );
+		break;
+	case Event_Control_Draw: {
+		if( evt->control ) {
+			if( !evt->control->image ) {
+				evt->control->image = ImageObject::MakeNewImage( isolate, GetControlSurface( evt->control->control ), TRUE );
+			}
+			{
+				Local<Value> argv[1] = { evt->control->image->_this.Get( isolate ) };
+				cb = Local<Function>::New( isolate, evt->control->registration->cbDrawEvent );
+				r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
+				if( !r.IsEmpty() )
+					evt->success = (int)r->IntegerValue( context ).ToChecked();
+				else
+					evt->success = 1;
+			}	
+		}
+		else evt->success = 0;
+		break;
+	}
+	case Event_Control_Mouse: {
+		//evt->data.controlMouse.target
+		Local<Object> jsEvent = Object::New( isolate );
+		jsEvent->Set( context, localStringExternal( isolate, "x" ), Integer::New( isolate, evt->data.mouse.x ) );
+		jsEvent->Set( context, localStringExternal( isolate, "y" ), Integer::New( isolate, evt->data.mouse.y ) );
+		jsEvent->Set( context, localStringExternal( isolate, "b" ), Integer::New( isolate, evt->data.mouse.b ) );
+		{
+			Local<Value> argv[1] = { jsEvent };
+			cb = Local<Function>::New( isolate, evt->control->registration->cbMouseEvent );
+			r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
+			if( !r.IsEmpty() )
+				evt->success = (int)r->IntegerValue( context ).ToChecked();
+			else
+				evt->success = 1;
+		}
+		break;
+	}
+	case Event_Control_ButtonClick:
+		cb = Local<Function>::New( isolate, evt->control->customEvents[0] );
+		r = cb->Call( context, evt->control->state.Get( isolate ), 0, NULL ).ToLocalChecked();
+
+		break;
+	case Event_Control_ConsoleInput: {
+		cb = Local<Function>::New( isolate, evt->control->customEvents[0] );
+		Local<Value> argv[1] = { localStringExternal( isolate, GetText( evt->data.console.text ) ) };
+		r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
+		break;
+	}
+	case Event_Control_Resize: {
+		cb = Local<Function>::New( isolate, evt->control->cbSizeEvent );
+		Local<Value> argv[3] = { Number::New(isolate, evt->data.size.w )
+			, Number::New( isolate, evt->data.size.h )
+			, Boolean::New( isolate, (bool)evt->data.move.start ) };
+		r = cb->Call( context, evt->control->state.Get( isolate ), 2, argv ).ToLocalChecked();
+		break;
+	}
+	case Event_Control_Move: {
+		cb = Local<Function>::New( isolate, evt->control->cbMoveEvent );
+		Local<Value> argv[3] = { Number::New( isolate, evt->data.move.x )
+			, Number::New( isolate, evt->data.move.y )
+			, Boolean::New( isolate, (bool)evt->data.move.start ) };
+		r = cb->Call( context, evt->control->state.Get( isolate ), 2, argv ).ToLocalChecked();
+		break;
+	}
+	case Event_Control_Close_Loop:
+		uv_close( (uv_handle_t*)&c->psiLocal_async, NULL );
+		break;
+	case Event_Listbox_Selected:
+		cb = Local<Function>::New( isolate, evt->control->listboxOnSelect );
+		//Local<Value> argv[1] = { localStringExternal( isolate, GetText( evt->data.console.text ) ) };
+		{
+			ListboxItemObject *lio = (ListboxItemObject *)evt->data.listbox.pli;
+			r = cb->Call( context, lio->_this.Get(isolate), 0, NULL ).ToLocalChecked();
+		}
+		break;
+	case Event_Listbox_DoubleClick:
+		cb = Local<Function>::New( isolate, evt->control->listboxOnDouble );
+		{
+			ListboxItemObject *lio = (ListboxItemObject *)evt->data.listbox.pli;
+			r = cb->Call( context, lio->_this.Get( isolate ), 0, NULL ).ToLocalChecked();
+		}
+		break;
+	case Event_Listbox_Item_Opened:
+		ListboxItemObject* lio;lio = (ListboxItemObject*)evt->data.listbox.pli;
+		cb = Local<Function>::New( isolate, lio->cbOpened );
+		{
+			Local<Value> argv[1] = { evt->data.listbox.opened ? True( isolate ) : False( isolate ) };
+
+			r = cb->Call( context, lio->_this.Get( isolate ), 1, argv ).ToLocalChecked();
+		}
+		break;
+	case Event_Menu_Item_Selected:
+		MenuItemObject* mio; mio = (MenuItemObject*)evt->data.popup.pmi;
+		cb = Local<Function>::New( isolate, mio->cbSelected );
+		r = cb->Call( context, mio->_this.Get(isolate), 0, NULL ).ToLocalChecked();
+		break;
+	}
+	if( evt->waiter ) {
+		evt->flags.complete = TRUE;
+		WakeThread( evt->waiter );
+	}
+}
+
 static void asyncmsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
@@ -114,168 +279,10 @@ static void asyncmsg( uv_async_t* handle ) {
 	//lprintf( "async message notice. %p", myself );
 	{
 		struct event *evt;
-
-		while( evt = (struct event *)DequeLink( &psiLocal.events ) ) {
-			Local<Function> cb;
-			Local<Value> r;
-			switch( evt->type ){
-			case Event_Frame_Ok:
-			{
-				cb = Local<Function>::New( isolate, evt->control->cbFrameEventOkay );
-				cb->Call( context, evt->control->state.Get( isolate ), 0, NULL );
-				break;
-			}
-			case Event_Frame_Cancel:
-			{
-				cb = Local<Function>::New( isolate, evt->control->cbFrameEventCancel );
-				cb->Call( context, evt->control->state.Get( isolate ), 0, NULL );
-				break;
-			}
-			case Event_Frame_Abort:
-			{
-				cb = Local<Function>::New( isolate, evt->control->cbFrameEventAbort );
-				cb->Call( context, evt->control->state.Get( isolate ), 0, NULL );
-				break;
-			}
-			case Event_Control_Create:
-			{
-				Isolate* isolate = Isolate::GetCurrent();
-				if( psiLocal.pendingRegistration ) {
-
-					Local<Object> object = ControlObject::NewWrappedControl( isolate, evt->data.pc );
-					ControlObject *control = ControlObject::Unwrap<ControlObject>( object );
-					control->registration = psiLocal.pendingRegistration;
-					ControlObject **me = ControlData( ControlObject **, evt->data.pc );
-					if( me )
-						me[0] = control;
-
-					Local<Function> cb = Local<Function>::New( isolate, psiLocal.pendingRegistration->cbInitEvent );
-					// controls get wrapped sooner... 
-					// ControlObject::wrapSelf( isolate, me[0], psiLocal.newControl );
-					
-					Local<Value> retval = cb->Call( context, object, 0, NULL ).ToLocalChecked();
-
-					evt->success = retval->ToInt32( context ).ToLocalChecked()->Value();
-				}
-				else {
-					Local<Object> object = ControlObject::NewWrappedControl( isolate, evt->data.pc );
-					ControlObject *control = ControlObject::Unwrap<ControlObject>( object );
-					if( control->registration ) {
-						Local<Function> cb = Local<Function>::New( isolate, control->registration->cbInitEvent );
-						Local<Value> retval = cb->Call( context, psiLocal.newControl, 0, NULL ).ToLocalChecked();
-					}
-					AddLink( &psiLocal.controls, control );
-					evt->control = control;
-				}
-
-			}
-				break;
-			case Event_Control_Destroy:
-				ControlObject::releaseSelf( evt->control );
-				break;
-			case Event_Control_Draw: {
-				if( evt->control ) {
-					if( !evt->control->image ) {
-						evt->control->image = ImageObject::MakeNewImage( isolate, GetControlSurface( evt->control->control ), TRUE );
-					}
-					{
-						Local<Value> argv[1] = { evt->control->image->_this.Get( isolate ) };
-						cb = Local<Function>::New( isolate, evt->control->registration->cbDrawEvent );
-						r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
-						if( !r.IsEmpty() )
-							evt->success = (int)r->IntegerValue( context ).ToChecked();
-						else
-							evt->success = 1;
-					}	
-				}
-				else evt->success = 0;
-				break;
-			}
-			case Event_Control_Mouse: {
-				//evt->data.controlMouse.target
-				Local<Object> jsEvent = Object::New( isolate );
-				jsEvent->Set( context, localStringExternal( isolate, "x" ), Integer::New( isolate, evt->data.mouse.x ) );
-				jsEvent->Set( context, localStringExternal( isolate, "y" ), Integer::New( isolate, evt->data.mouse.y ) );
-				jsEvent->Set( context, localStringExternal( isolate, "b" ), Integer::New( isolate, evt->data.mouse.b ) );
-				{
-					Local<Value> argv[1] = { jsEvent };
-					cb = Local<Function>::New( isolate, evt->control->registration->cbMouseEvent );
-					r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
-					if( !r.IsEmpty() )
-						evt->success = (int)r->IntegerValue( context ).ToChecked();
-					else
-						evt->success = 1;
-				}
-				break;
-			}
-			case Event_Control_ButtonClick:
-				cb = Local<Function>::New( isolate, evt->control->customEvents[0] );
-				r = cb->Call( context, evt->control->state.Get( isolate ), 0, NULL ).ToLocalChecked();
-
-				break;
-			case Event_Control_ConsoleInput: {
-				cb = Local<Function>::New( isolate, evt->control->customEvents[0] );
-				Local<Value> argv[1] = { localStringExternal( isolate, GetText( evt->data.console.text ) ) };
-				r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
-				break;
-			}
-			case Event_Control_Resize: {
-				cb = Local<Function>::New( isolate, evt->control->cbSizeEvent );
-				Local<Value> argv[3] = { Number::New(isolate, evt->data.size.w )
-					, Number::New( isolate, evt->data.size.h )
-					, Boolean::New( isolate, (bool)evt->data.move.start ) };
-				r = cb->Call( context, evt->control->state.Get( isolate ), 2, argv ).ToLocalChecked();
-				break;
-			}
-			case Event_Control_Move: {
-				cb = Local<Function>::New( isolate, evt->control->cbMoveEvent );
-				Local<Value> argv[3] = { Number::New( isolate, evt->data.move.x )
-					, Number::New( isolate, evt->data.move.y )
-					, Boolean::New( isolate, (bool)evt->data.move.start ) };
-				r = cb->Call( context, evt->control->state.Get( isolate ), 2, argv ).ToLocalChecked();
-				break;
-			}
-			case Event_Control_Close_Loop:
-				uv_close( (uv_handle_t*)&c->psiLocal_async, NULL );
-				break;
-			case Event_Listbox_Selected:
-				cb = Local<Function>::New( isolate, evt->control->listboxOnSelect );
-				//Local<Value> argv[1] = { localStringExternal( isolate, GetText( evt->data.console.text ) ) };
-				{
-					ListboxItemObject *lio = (ListboxItemObject *)evt->data.listbox.pli;
-					r = cb->Call( context, lio->_this.Get(isolate), 0, NULL ).ToLocalChecked();
-				}
-				break;
-			case Event_Listbox_DoubleClick:
-				cb = Local<Function>::New( isolate, evt->control->listboxOnDouble );
-				{
-					ListboxItemObject *lio = (ListboxItemObject *)evt->data.listbox.pli;
-					r = cb->Call( context, lio->_this.Get( isolate ), 0, NULL ).ToLocalChecked();
-				}
-				break;
-			case Event_Listbox_Item_Opened:
-				ListboxItemObject* lio;lio = (ListboxItemObject*)evt->data.listbox.pli;
-				cb = Local<Function>::New( isolate, lio->cbOpened );
-				{
-					Local<Value> argv[1] = { evt->data.listbox.opened ? True( isolate ) : False( isolate ) };
-
-					r = cb->Call( context, lio->_this.Get( isolate ), 1, argv ).ToLocalChecked();
-				}
-				break;
-			case Event_Menu_Item_Selected:
-				MenuItemObject* mio; mio = (MenuItemObject*)evt->data.popup.pmi;
-				cb = Local<Function>::New( isolate, mio->cbSelected );
-				r = cb->Call( context, mio->_this.Get(isolate), 0, NULL ).ToLocalChecked();
-				break;
-			}
-			if( evt->waiter ) {
-				evt->flags.complete = TRUE;
-				WakeThread( evt->waiter );
-			}
+		while( evt = (struct event *)DequeLink( &psiLocal.events ) ) 	{
+			dispatchEvent( isolate, context, c, evt ); 
 			DeleteFromSet( IS_EVENT, &psiLocal.event_pool, evt );
 		}
-	}
-	{
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
@@ -358,11 +365,18 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 		e.waiter = NULL;
 	e.flags.complete = 0; 
 	e.success = 0;
-	EnqueLink( &psiLocal.events, &e );
-	if( control )
-		uv_async_send( &control->isolateCons->psiLocal_async );
-	else {
-		uv_async_send( &psiLocal.c->psiLocal_async );
+	class constructorSet *c = e.waiter? getConstructorsByThread():NULL;
+	if( c )
+	{
+		dispatchEvent( c->isolate, c->isolate->GetCurrentContext(), c, pe ); 
+		DeleteFromSet( IS_EVENT, &psiLocal.event_pool, pe );
+	} else {
+		EnqueLink( &psiLocal.events, &e );
+		if( control )
+			uv_async_send( &control->isolateCons->psiLocal_async );
+		else {
+			uv_async_send( &psiLocal.c->psiLocal_async );
+		}
 	}
 	if( block )
 		while( !e.flags.complete ) WakeableSleep( 1000 );
