@@ -207,7 +207,7 @@ void RenderObject::Init( Local<Object> exports ) {
 
 RenderObject::RenderObject( const char *title, int x, int y, int w, int h, RenderObject *over )  {
 	if( title )
-		r = OpenDisplayAboveSizedAt( 0, w, h, x, y, over ? over->r : NULL );
+		r = OpenDisplayAboveSizedAt( DISPLAY_ATTRIBUTE_LAYERED, w, h, x, y, over ? over->r : NULL );
 	else
 		r = NULL;
 	receive_queue = NULL;
@@ -573,7 +573,7 @@ uintptr_t MakeEvent( RenderObject *r, enum GUI_eventType type, ... ) {
 	EnqueLink( queue, &e );
 	uv_async_send( &r->async );
 
-	while( !e.flags.complete ) WakeableSleep( 1000 );
+	while( !e.flags.complete ) IdleFor( 1000 );
 
 	return e.success;
 }

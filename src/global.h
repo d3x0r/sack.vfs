@@ -19,7 +19,7 @@
 #ifdef SACK_CORE
 #include <stdhdrs.h>
 #include <network.h>
-//#include <idle.h>
+#include <idle.h>
 #include <pssql.h>
 #include <sack_vfs.h>
 #include <salty_generator.h>

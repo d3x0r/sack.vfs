@@ -815,7 +815,7 @@ void ImageObject::putImageOver( const FunctionCallbackInfo<Value>& args ) {
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	ImageObject *ii;// = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int argc = args.Length();
-	int x, y, xTo, yTo, c;
+	int x = 0, y = 0, xTo, yTo, c;
 	if( argc > 0 ) {
 		ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject( context).ToLocalChecked() );
 	}
