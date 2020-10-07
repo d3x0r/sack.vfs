@@ -47,6 +47,7 @@ console.log( n, "in", del, " ", 16*n/del, " in 16ms(60fps)" );
 	_x_del = x_del;
 	_y_del = y_del;
 	_scale = scale;
+	r.update();
 } );
 
 r.on( "mouse", ( event )=>{	
