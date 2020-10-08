@@ -42,7 +42,7 @@ r.on( "draw", ( image )=>{
 		}
 	}
 	var del = Date.now() - now;
-console.log( n, "in", del, " ", 16*n/del, " in 16ms(60fps)" );
+	console.log( n, "in", del, " ", 16*n/del, " in 16ms(60fps)" );
 	//r.update( 0+x_del, 100+y_del, 100 * scale, 100 * scale );
 	_x_del = x_del;
 	_y_del = y_del;
