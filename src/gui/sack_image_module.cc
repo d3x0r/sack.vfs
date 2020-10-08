@@ -103,6 +103,7 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 static uintptr_t fontPickThread( PTHREAD thread ) {
 	class constructorSet* c = (class constructorSet*)GetThreadParam( thread );
 	uv_async_init( uv_default_loop(), &c->fontAsync, imageAsyncmsg );
+	enableEventLoop( c );
 	imageLocal.fontResult = PickFont( 0, 0, NULL, NULL, NULL );
 	uv_async_send( &c->fontAsync );
 	return 0;
@@ -133,7 +134,7 @@ static void pickColor( const FunctionCallbackInfo<Value>&  args ) {
 	class constructorSet* c = getConstructors( isolate );
 	c->priorThis.Reset( isolate, args.This() );
 	c->imageResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
-	ThreadTo( colorPickThread, 0 );
+	ThreadTo( colorPickThread, (uintptr_t)c );
 }
 
 

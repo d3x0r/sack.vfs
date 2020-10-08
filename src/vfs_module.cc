@@ -129,6 +129,8 @@ struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate ) {
 
 static void moduleExit( void *arg ) {
 	//SaveTranslationDataEx( "^/strings.dat" );
+	vfs_global_data.shutdown = 1;
+
 	SaveTranslationDataEx( "@/../../strings.json" );
 	InvokeExits();
 }

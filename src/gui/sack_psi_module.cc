@@ -133,6 +133,8 @@ static void dispatchEvent( 	v8::Isolate* isolate
 	}
 	case Event_Control_Create:
 	{
+		if( vfs_global_data.shutdown )
+			break;
 		Isolate* isolate = Isolate::GetCurrent();
 		if( psiLocal.pendingRegistration ) {
 
@@ -285,7 +287,8 @@ static void asyncmsg( uv_async_t* handle ) {
 		}
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		if(! cb.IsEmpty() )
+			cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
 	//lprintf( "done calling message notice." );
 }
@@ -356,6 +359,7 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 		e.data.size.w = va_arg( args, uint32_t );
 		e.data.size.h = va_arg( args, uint32_t );
 		e.data.size.start = va_arg( args, LOGICAL );
+		lprintf( "size:%d %d", e.data.size.w, e.data.size.h);
 		break;
 	}
 
@@ -1623,6 +1627,7 @@ static void OnSizeCommon( CONTROL_FRAME_NAME )(PSI_CONTROL pc, LOGICAL startOrMo
 	if( control ) {
 		uint32_t w, h;
 		GetFrameSize( pc, &w, &h );
+		lprintf( "Console frame size:%d %d", w, h );
 		MakePSIEvent( control, false, Event_Control_Resize, w, h, startOrMoved );
 	}
 }
@@ -2264,8 +2269,8 @@ static uintptr_t TrackPopupThread( PTHREAD thread ) {
 				MakePSIEvent( NULL, true, Event_Menu_Item_Selected, mio );
 		}
 	}
-	disableEventLoop( popup->isolateCons );
 #endif
+	disableEventLoop( popup->isolateCons );
 	return 0;
 }
 

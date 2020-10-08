@@ -496,6 +496,7 @@ extern
 #endif
 struct vfs_global_data {
 	ARRAY_BUFFER_HOLDERSET *holders;
+	int shutdown;
 } vfs_global_data;
 
 #define GetHolder() GetFromSet( ARRAY_BUFFER_HOLDER, &vfs_global_data.holders )
