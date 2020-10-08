@@ -434,12 +434,7 @@ void RenderObject::show( const FunctionCallbackInfo<Value>& args ) {
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	// UpdateDisplay deadlocks; so use this method instead....
 	// this means the display is not nessecarily shown when this returns, but will be.
-	r->updated = 0;
 	RestoreDisplay( r->r );
-	if( !r->updated ) {
-		UpdateDisplayPortion( r->r, 0, 0, 0, 0 );			
-	}
-
 }
 
 void RenderObject::hide( const FunctionCallbackInfo<Value>& args ) {
@@ -456,6 +451,7 @@ void RenderObject::reveal( const FunctionCallbackInfo<Value>& args ) {
 
 static uintptr_t CPROC doMouse( uintptr_t psv, int32_t x, int32_t y, uint32_t b ) {
 	RenderObject *r = (RenderObject *)psv;
+	//lprintf( "Mouse:%d,%d,%d", x, y, b );
 	if( !r->closed )
 		return MakeEvent( r, Event_Render_Mouse, x, y, b );
 	return 0;
@@ -544,7 +540,7 @@ void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
 	else if( StrCmp( *fName, "key" ) == 0 ) {
 		Persistent<Function> cb( isolate, arg1 );
 		SetKeyboardHandler( r->r, doKey, (uintptr_t)r );
-		r->cbMouse = cb;
+		r->cbKey = cb;
 	}
 }
 
