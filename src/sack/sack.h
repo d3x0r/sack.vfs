@@ -13923,8 +13923,10 @@ SRG_EXPORT char * SRG_ID_Generator( void );
 SRG_EXPORT char *SRG_ID_Generator_256( void );
 // return a unique ID using SHA3-keccak-512
 SRG_EXPORT char *SRG_ID_Generator3( void );
-// return a unique ID using SHA3-K12-512
+// return a unique ID using K12-32768
 SRG_EXPORT char *SRG_ID_Generator4( void );
+// return a short unique ID using K12-32768
+SRG_EXPORT char *SRG_ID_ShortGenerator4( void );
 //------------------------------------------------------------------------
 //   crypt_util.c extra simple routines - kinda like 'passwd'
 //

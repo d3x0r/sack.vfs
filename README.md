@@ -117,7 +117,8 @@ vfs = {
     mkdir() - make a directory in the current path; handles recursive directory creation.
     u8xor(s,k) - utility function to apply a string mask.
     b64xor(s,k) - utility function to just xor a value into a base64 string without expanding the values.
-    id() - generate a unique ID.
+    id() - generate a unique ID (256 bits, 32 bytes, 44chars, trailing '=').
+    Id() - generate a short unique ID (12 bytes, 16chars).
     loadComplete() - Indicate to SACK system that this is completed loading (task summoner support;linux;deprecated)
 
     System - Namespace for SACK system interface routines (The above methods should be moved into this namespace)

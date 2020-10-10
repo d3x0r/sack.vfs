@@ -6,6 +6,10 @@ for( var n = 0; n < 10; n++ )
 	ids[n] = vfs.id();
 console.log( "Some IDs:", ids );
 
+console.log( "ShortID:", vfs.Id());
+console.log( "ShortID:", vfs.Id());
+console.log( "ShortID:", vfs.Id());
+
 var now = Date.now();
 var n = 0;
 const length = 3000;

@@ -163,6 +163,12 @@ static void idGenerator(const v8::FunctionCallbackInfo<Value>& args ){
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, r, v8::NewStringType::kNormal ).ToLocalChecked() );
 	Deallocate( char*, r );
 }
+static void idShortGenerator(const v8::FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	char *r = SRG_ID_ShortGenerator4();
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, r, v8::NewStringType::kNormal ).ToLocalChecked() );
+	Deallocate( char*, r );
+}
 
 static void loadComplete( const v8::FunctionCallbackInfo<Value>& args ) {
 #  if !defined( NODE_WANT_INTERNALS )
@@ -337,8 +343,10 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
 	//SET_READONLY_METHOD( VolFunc, "rekey", volRekey );
 	SET_READONLY_METHOD( exports, "u8xor", vfs_u8xor );
-	SET_READONLY_METHOD( exports, "b64xor", vfs_b64xor );
+        SET_READONLY_METHOD( exports, "b64xor", vfs_b64xor );
+        // this is an export under SaltyRNG
 	SET_READONLY_METHOD( exports, "id", idGenerator );
+	SET_READONLY_METHOD( exports, "Id", idShortGenerator );
 	SET_READONLY_METHOD( VolFunc, "readAsString", fileReadString );
 	SET_READONLY_METHOD( VolFunc, "mapFile", fileReadMemory );
 

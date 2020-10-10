@@ -1,19 +1,9 @@
 
-module.exports = {
-	ObjectStorage : ObjectStorage
 
-}
-
-
-const sack = require( "./vfs_module.cjs" );
 const _debug = false;
 
-sack.SaltyRNG.setSigningThreads( require( "os" ).cpus().length );
-
 // save original object.
-const _objectStorage = sack.ObjectStorage;
-const fillerObject = {};
-Object.freeze( fillerObject );
+// const _objectStorage = sack.ObjectStorage;
 
 var dangling = [];
 var objectRefs = 0;
@@ -21,10 +11,10 @@ var currentContainer = null;
 var preloadStorage = null;
 let remote = null;
 // manufacture a JS interface to _objectStorage.
-ObjectStorage = async function (...args) {
+ObjectStorage = function (...args) {
 
 	const newStorage = await connect( remote );
-
+	this.ws = null;
 // associates object data with storage data for later put(obj) to re-use the same informations.
 function objectStorageContainer(o,opts) {
 	if( !this instanceof objectStorageContainer ) return new newStorage.objectStorageContainer(o,opts);
@@ -1096,5 +1086,31 @@ ObjectStorage.prototype.getRoot = async function() {
 }
 
 
+function handleMessage( msg_ ) {
+	const msg = JSOX.parse( msg_ );
+        const storage = this;
+        if( msg.op === "connected" ) {
+        }else if( msg.op === "got" ) {
 
+        }else if( msg.op === "pull" ) {
+        }
+}
+
+
+
+ObjectStorage.prototype.connect = function( ws ) {
+	this.ws = ws;
+        this.ws.send( {op:"connect"} );
+        this.onmessage( this.handleMessage.bind( this ) );
+}
+
+ObjectStorage.connect = function(remote) {
+	if( "string" === typeof remote ) {
+        	// open by remote address...
+            	// dont' ever do this...
+        }else {
+                const storage = new ObjectStorage();
+                storage.connect( remote );
+        }
+}
 
