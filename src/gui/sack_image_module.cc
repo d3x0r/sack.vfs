@@ -103,6 +103,7 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 static uintptr_t fontPickThread( PTHREAD thread ) {
 	class constructorSet* c = (class constructorSet*)GetThreadParam( thread );
 	uv_async_init( uv_default_loop(), &c->fontAsync, imageAsyncmsg );
+	enableEventLoop( c );
 	imageLocal.fontResult = PickFont( 0, 0, NULL, NULL, NULL );
 	uv_async_send( &c->fontAsync );
 	return 0;
@@ -133,7 +134,7 @@ static void pickColor( const FunctionCallbackInfo<Value>&  args ) {
 	class constructorSet* c = getConstructors( isolate );
 	c->priorThis.Reset( isolate, args.This() );
 	c->imageResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
-	ThreadTo( colorPickThread, 0 );
+	ThreadTo( colorPickThread, (uintptr_t)c );
 }
 
 
@@ -673,11 +674,11 @@ void ImageObject::line( const FunctionCallbackInfo<Value>& args ) {
 		yTo = (int)args[3]->NumberValue(context).ToChecked();
 	}
 	if( argc > 4 ) {
-		if( args[2]->IsObject() ) {
+		if( args[4]->IsObject() ) {
 			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject( context).ToLocalChecked() );
 			c = co->color;
 		}
-		else if( args[2]->IsUint32() )
+		else if( args[4]->IsUint32() )
 			c = (int)args[4]->Uint32Value(context).ToChecked();
 		else
 			c = (int)args[4]->NumberValue(context).ToChecked();
@@ -713,7 +714,7 @@ void ImageObject::lineOver( const FunctionCallbackInfo<Value>& args ) {
 			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[4]->ToObject( context).ToLocalChecked() );
 			c = co->color;
 		}
-		else if( args[2]->IsUint32() )
+		else if( args[4]->IsUint32() )
 			c = (int)args[4]->Uint32Value(context).ToChecked();
 		else
 			c = (int)args[4]->NumberValue(context).ToChecked();
@@ -815,7 +816,7 @@ void ImageObject::putImageOver( const FunctionCallbackInfo<Value>& args ) {
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	ImageObject *ii;// = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int argc = args.Length();
-	int x, y, xTo, yTo, c;
+	int x = 0, y = 0, xTo, yTo, c;
 	if( argc > 0 ) {
 		ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject( context).ToLocalChecked() );
 	}
@@ -1018,7 +1019,6 @@ void ColorObject::toString( const FunctionCallbackInfo<Value>& args ) {
 	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
 	char buf[128];
 	snprintf( buf, 128, "{r:%d,g:%d,b:%d,a:%d}", RedVal( co->color ), GreenVal( co->color ), BlueVal( co->color ), AlphaVal( co->color ) );
-	
 	args.GetReturnValue().Set( localStringExternal( isolate, buf ) );
 }
 
@@ -1125,7 +1125,7 @@ void ColorObject::setRed( const FunctionCallbackInfo<Value>&  args ) {
 	if( val < 0 ) val = 0;
 	else if( val > 255 ) val = 255;
 	if( val > 0 && val < 1.0 ) val = 255 * val;
-	SetRedValue( co->color, (COLOR_CHANNEL)val );
+	co->color = SetRedValue( co->color, (COLOR_CHANNEL)val );
 }
 void ColorObject::setGreen( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -1135,7 +1135,7 @@ void ColorObject::setGreen( const FunctionCallbackInfo<Value>&  args ) {
 	if( val < 0 ) val = 0;
 	else if( val > 255 ) val = 255;
 	if( val > 0 && val < 1.0 ) val = 255 * val;
-	SetGreenValue( co->color, (COLOR_CHANNEL)val );
+	co->color = SetGreenValue( co->color, (COLOR_CHANNEL)val );
 }
 void ColorObject::setBlue( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -1145,7 +1145,7 @@ void ColorObject::setBlue( const FunctionCallbackInfo<Value>&  args ) {
 	if( val < 0 ) val = 0;
 	else if( val > 255 ) val = 255;
 	if( val > 0 && val < 1.0 ) val = 255 * val;
-	SetBlueValue( co->color, (COLOR_CHANNEL)val );
+	co->color = SetBlueValue( co->color, (COLOR_CHANNEL)val );
 }
 void ColorObject::setAlpha( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -1154,6 +1154,6 @@ void ColorObject::setAlpha( const FunctionCallbackInfo<Value>&  args ) {
 	double val = args[0]->NumberValue(context).ToChecked();
 	if( val < 0 ) val = 0;
 	else if( val > 255 ) val = 255;
-	if( val > 0 && val < 1.0 ) val = 255 * val;
-	SetAlphaValue( co->color, (COLOR_CHANNEL)val );
+	if( val > 0 && val <= 1.0 ) val = 255 * val;
+	co->color = SetAlphaValue( co->color, (COLOR_CHANNEL)val );
 }
