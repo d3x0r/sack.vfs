@@ -7,7 +7,6 @@ sack.SaltyRNG.setSigningThreads( require( "os" ).cpus().length );
 // save original object.
 const _objectStorage = sack.ObjectStorage;
 const nativeVol = sack.Volume();
-console.log( "READ:", __dirname );
 const remoteExtensions = nativeVol.read( __dirname+"/object-storage-remote.js" ).toString();
 const jsonRemoteExtensions = JSON.stringify( remoteExtensions );
 
@@ -300,32 +299,35 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 	return newStorage;
 
 
-        function handleMessage( ws, msg ) {
-            if( msg.op === "connect" ) {
-                ws.send( `{op:connected,code:${jsonRemoteExtensions}}` );
-	        return true;
-           }
-           if( msg.op === "get" ) {
-               newStorage.readRaw( currentReadId = opts.id
+	function handleMessage( ws, msg ) {
+		if( msg.op === "connect" ) {
+			ws.send( `{op:connected,code:${jsonRemoteExtensions}}` );
+		return true;
+		}
+		if( msg.op === "get" ) {
+			newStorage.readRaw( currentReadId = msg.opts.id
 				, (data)=>{
-	               	    ws.send( newStorage.stringifier.stringify( { op:"get", id:msg.id, data:data } ) );
+					console.log( "Read ID:", msg.opts.id, data );
+					ws.send( newStorage.stringifier.stringify( { op:"get", id:msg.id, data:data } ) );
 			} )
-	       return true;
-           }
-           if( msg.op === "put" ) {
-               // want to get back a file ID if possible...
-               // and/or use the data for encoding/salting/etc... which can determine the result ID.
-               newStorage.put( msg.opts.id, msg.data, (result)=>{
-			ws.send( newStorage.stringifier.stringify( { op:"getack", id:msg.id, data:data } ) );
-            	} ).catch( err=>{
-            		ws.send( newStorage.stringifier.stringify( { op:"geterr", id:msg.id, err:err } ) );
-            	} );
-               return true;
-               }
-           return false;
+			return true;
+		}
+		if( msg.op === "put" ) {
+			// want to get back a file ID if possible...
+			// and/or use the data for encoding/salting/etc... which can determine the result ID.
+			//console.log( "PUT THIGN:", msg );
+			newStorage.writeRaw( msg.opts.id, msg.data);
+			ws.send( newStorage.stringifier.stringify( { op:"put", id:msg.id } ) );
+			return true;
+		}
+		return false;
 	}
 
 }
+sack.ObjectStorage.getRemoteFragment = function() {
+	return remoteExtensions;
+}
+
 sack.ObjectStorage.Thread = {
 	post: _objectStorage.Thread.post,
 	accept(cb) {

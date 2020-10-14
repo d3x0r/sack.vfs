@@ -1,225 +1,216 @@
 
-
-const _debug = false;
-
-// save original object.
-// const _objectStorage = sack.ObjectStorage;
+const _debug_osr = true;
 
 var dangling = [];
 var objectRefs = 0;
 var currentContainer = null;
 var preloadStorage = null;
 let remote = null;
-// manufacture a JS interface to _objectStorage.
-ObjectStorage = function (...args) {
+let sack = null;
+this.ObjectStorage = ObjectStorage;
 
-	const newStorage = await connect( remote );
-	this.ws = null;
-// associates object data with storage data for later put(obj) to re-use the same informations.
-function objectStorageContainer(o,opts) {
-	if( !this instanceof objectStorageContainer ) return new newStorage.objectStorageContainer(o,opts);
+//this.storage = new ObjectStorage();
 
-	//console.trace( "Something creating a new container..", o, opts );
-	try {
-	if( "string" === typeof o ){
-		// still, if the proir didn't resolve, need to resolve this..
-		let existing = store.cachedContainer.get( o );
-		o = existing.data;
-		if( existing.resolve )
-		return ;
-	}
-	//this.def = {
-	//	indexes : [],
-	//	dirty : false,
-	//}
-	var resolve = o && !opts;
-	this.data = o || {}; // reviving we get null opts.
-	if( !o && opts && opts.ref ) {
-		console.trace( "ref loading is deprecated.");
-		//resolve = opts.ref;
-	}
-    currentContainer = this;
-	Object.defineProperty( this, "encoding", { writable:true, value:false } );
-/*
-	this.data = {
-		//nonce : opts?opts.sign?sack.SaltyRNG.sign( sack.JSOX.stringify(o), 3, 3 ):null:null,
-		data : o
-	}
-*/
-	if( opts && opts.sign ) {
-		var v = sack.SaltyRNG.verify( sack.JSOX.stringify(o), this.data.nonce, 3, 3 );
-		//console.log( "TEST:", v );
-		Object.defineProperty( this, "id", { value:v.key } );
-		v.key = this.data.nonce;
-		this.data.nonce = v;
-	} else {
-		if( opts && opts.id ) {
-			Object.defineProperty( this, "id", { value:opts.id } );
+function ObjectStorage( sack_, ws ) {
+	sack = sack_;
+	this.ws = ws;
+	//console.log( "Initialize as object storage?", this );
+	//const newStorage = await connect( remote );
+	const newStorage = this;
+
+	// associates object data with storage data for later put(obj) to re-use the same informations.
+	function objectStorageContainer(o,opts) {
+		if( !this instanceof objectStorageContainer ) return new newStorage.objectStorageContainer(o,opts);
+
+		//console.trace( "Something creating a new container..", o, opts );
+		try {
+		if( "string" === typeof o ){
+			// still, if the proir didn't resolve, need to resolve this..
+			let existing = newStorage.cachedContainer.get( o );
+			if( existing ) {
+				o = existing.data;
+				if( existing.resolve )
+					return ;
+			}
 		}
-	}
-	}catch(err) {
-		console.log( "Uncaught exception:", err );
-	}
-	//console.log( "Container:", this );
-}
 
-objectStorageContainer.prototype.getStore = function() {
-	return newStorage;
-}
-objectStorageContainer.getStore = function() {
-	return newStorage;
-}
+		var resolve = o && !opts;
+		this.data = o || {}; // reviving we get null opts.
+		if( !o && opts && opts.ref ) {
+			console.trace( "ref loading is deprecated.");
+			//resolve = opts.ref;
+		}
+		currentContainer = this;
+		Object.defineProperty( this, "encoding", { writable:true, value:false } );
+	/*
+		this.data = {
+			//nonce : opts?opts.sign?sack.SaltyRNG.sign( sack.JSOX.stringify(o), 3, 3 ):null:null,
+			data : o
+		}
+	*/
+		if( opts && opts.sign ) {
+			var v = sack.SaltyRNG.verify( sack.JSOX.stringify(o), this.data.nonce, 3, 3 );
+			//console.log( "TEST:", v );
+			Object.defineProperty( this, "id", { value:v.key } );
+			v.key = this.data.nonce;
+			this.data.nonce = v;
+		} else {
+			if( opts && opts.id ) {
+				Object.defineProperty( this, "id", { value:opts.id } );
+			}
+		}
+		}catch(err) {
+			console.log( "Uncaught exception:", err );
+		}
+		//console.log( "Container:", this );
+	}
 
-objectStorageContainer.prototype.map = async function( opts ) {
-	const pending = this.dangling;
-	if( pending && pending.length )  {
-		opts = opts || { depth:0, paths:[] };
-		const rootMap = this;
-		return new Promise( (res,rej)=>{
-			let waiting = 0;
-			if( ( "paths" in opts ) &&  opts.paths.length ){
-				let nPath = 0;
-				const handled = [];
-				while(nPath < opts.paths.length ){
-					var path = opts.paths[nPath++];
-					var obj = this.data;
-					for( var step of path ){
-						if( obj )
-							obj = obj[step];
-						else 
-							break;
-					}
-					if( obj ) {
-						for( let load of pending ){
-							if( load.d.p === obj ){
-								//console.log( "This should get marked resolved maybe?")
-								handled.push( load );
-								loadPending( load );
-								obj = null;
+	objectStorageContainer.prototype.getStore = function() {
+		return newStorage;
+	}
+	objectStorageContainer.getStore = function() {
+		return newStorage;
+	}
+
+	objectStorageContainer.prototype.map = async function( opts ) {
+		const pending = this.dangling;
+		if( pending && pending.length )  {
+			opts = opts || { depth:0, paths:[] };
+			const rootMap = this;
+			return new Promise( (res,rej)=>{
+				let waiting = 0;
+				if( ( "paths" in opts ) &&  opts.paths.length ){
+					let nPath = 0;
+					const handled = [];
+					while(nPath < opts.paths.length ){
+						var path = opts.paths[nPath++];
+						var obj = this.data;
+						for( var step of path ){
+							if( obj )
+								obj = obj[step];
+							else 
 								break;
-							}
 						}
-						if( obj ) console.log( "Failed to find promise?");
-					}
-					else console.log( "Failed to find path in object:", this.data, path );
-					for( let h of handled ) {
-						var idx = pending.findIndex( p=>p===h );
-						if( idx >= 0 ) pending.splice( idx, 1 );
-						else console.log( "resolved load was not found???" );
-					}
-				}
-			}
-			else{  // load everything that's pending on this object.
-				for( let load of pending ) {
-					{
-						const existing = newStorage.cachedContainer.get( load.d.id );
-						if( existing ) {
-							if( load.d.res ) load.d.res( existing.data );
-							else {load.d.p.then( o2=>{
-								if( existing.data!==o2) 
-									throw new Error( "resolved and loaded object mismatch");
-									return o2
-								})
-								return load.d.p;
+						if( obj ) {
+							for( let load of pending ){
+								if( load.d.p === obj ){
+									//console.log( "This should get marked resolved maybe?")
+									handled.push( load );
+									loadPending( load );
+									obj = null;
+									break;
+								}
 							}
+							if( obj ) console.log( "Failed to find promise?");
+						}
+						else console.log( "Failed to find path in object:", this.data, path );
+						for( let h of handled ) {
+							var idx = pending.findIndex( p=>p===h );
+							if( idx >= 0 ) pending.splice( idx, 1 );
+							else console.log( "resolved load was not found???" );
 						}
 					}
-					loadPending(load);
 				}
-				pending.length = 0;
-			}
-			if( !waiting ){
-				console.log( "Nothing scheduled to really wait, go ahead and resolve");
-				res( rootMap.data );
-			}
+				else{  // load everything that's pending on this object.
+					for( let load of pending ) {
+						{
+							const existing = newStorage.cachedContainer.get( load.d.id );
+							if( existing ) {
+								if( load.d.res ) load.d.res( existing.data );
+								else {load.d.p.then( o2=>{
+									if( existing.data!==o2) 
+										throw new Error( "resolved and loaded object mismatch");
+										return o2
+									})
+									return load.d.p;
+								}
+							}
+						}
+						loadPending(load);
+					}
+					pending.length = 0;
+				}
+				if( !waiting ){
+					console.log( "Nothing scheduled to really wait, go ahead and resolve");
+					res( rootMap.data );
+				}
 
-			function loadPending(load) {
-				waiting++;
-				newStorage.get( {id:load.d.id}).then( (obj)=>{
-					if( load.d.res )
-						load.d.res(obj); // result with real value.
-					else {
-						load.d.p.then( o2=>{if( obj!==o2) throw new Error( "resolved and loaded object mismatch");return o2})
-						return load.d.p;
-					}
-					const exist = newStorage.stored.get( obj );
-					const objc = newStorage.cachedContainer.get( exist );
-					// resolving this promis on load.d will set this.
-					//load.d.r.o[load.d.r.f] = obj;
-					if( opts && opts.depth ) {
-						objc.map( {depth:opts.depth-1} ).then( (objc)=>{
+				function loadPending(load) {
+					waiting++;
+					newStorage.get( {id:load.d.id}).then( (obj)=>{
+						if( load.d.res )
+							load.d.res(obj); // result with real value.
+						else {
+							load.d.p.then( o2=>{if( obj!==o2) throw new Error( "resolved and loaded object mismatch");return o2})
+							return load.d.p;
+						}
+						const exist = newStorage.stored.get( obj );
+						const objc = newStorage.cachedContainer.get( exist );
+						// resolving this promis on load.d will set this.
+						//load.d.r.o[load.d.r.f] = obj;
+						if( opts && opts.depth ) {
+							objc.map( {depth:opts.depth-1} ).then( (objc)=>{
+								waiting--;
+								if( !waiting ) {
+									//console.log( "1map is resolving with : ", a, rootMap.data );
+									res( rootMap.data );
+								}
+							});
+						} else {
 							waiting--;
 							if( !waiting ) {
-								//console.log( "1map is resolving with : ", a, rootMap.data );
+								//console.log( "2map is resolving with : ", rootMap.data );
 								res( rootMap.data );
 							}
-						});
-					} else {
-						waiting--;
-						if( !waiting ) {
-							//console.log( "2map is resolving with : ", rootMap.data );
-							res( rootMap.data );
 						}
-					}
-				})
-			}
-		})
-	}
-	console.log( "Nothing dangling found on object");
-	return this.data; // this function is async, just return.
-}
-
-objectStorageContainer.prototype.createIndex = function( storage, fieldName, opts ) {
-	if( !fieldName ) throw new Error( "Must specify an object field to index" );
-
-	var path;
-	if( !fieldName.isArray() ) {
-		if( typeof(fieldName) != "String") throw new Error( "Index field name must be a string, or an array." );
-		path = fieldName.split('.' );
-	}else
-		path = fieldName;
-
-	const indexList = this.def.indexes;
-
-	var referringObject = null;
-
-	var end = path.reduce( (acc,val)=>{
-		referringObject = acc;
-		if( acc ) {
-			let tmp = acc[val];
-			if( tmp === undefined )
-				if( val < (path.length-1) ) { // automatically build object path
-					if( typeof(path[val+1]) === "String" )
-						acc[val] = tmp = {};
-					else
-						acc[val] = tmp = [];
+					})
 				}
-			acc = tmp;
+			})
 		}
-		return acc;
-
-	}, this.data );
-	if( end ) {
-		if( !end.isArray() ){
-			throw new Error( "Indexes can only be applied to arrays.");
-		}
-	}else if( referringObject ){
-		// automatically assign a value
-		end = referringObject[path[path.length-1]] = [];
-	}else {
-		throw new Error( "Path to index could not be found")
+		console.log( "Nothing dangling found on object");
+		return this.data; // this function is async, just return.
 	}
 
+	objectStorageContainer.prototype.createIndex = function( storage, fieldName, opts ) {
+		if( !fieldName ) throw new Error( "Must specify an object field to index" );
 
-	var index = {
-		data : end,
-		name : fieldName,
-		opts : opts,
-	};
+		var path;
+		if( !fieldName.isArray() ) {
+			if( typeof(fieldName) != "String") throw new Error( "Index field name must be a string, or an array." );
+			path = fieldName.split('.' );
+		}else
+			path = fieldName;
 
-	const storageIndex = storage.createIndex( this.id, index );
-	indexList.push( index );
-}
+		var referringObject = null;
+
+		var end = path.reduce( (acc,val)=>{
+			referringObject = acc;
+			if( acc ) {
+				let tmp = acc[val];
+				if( tmp === undefined )
+					if( val < (path.length-1) ) { // automatically build object path
+						if( typeof(path[val+1]) === "String" )
+							acc[val] = tmp = {};
+						else
+							acc[val] = tmp = [];
+					}
+				acc = tmp;
+			}
+			return acc;
+
+		}, this.data );
+		if( end ) {
+			if( !end.isArray() ){
+				throw new Error( "Indexes can only be applied to arrays.");
+			}
+		}else if( referringObject ){
+			// automatically assign a value
+			end = referringObject[path[path.length-1]] = [];
+		}else {
+			throw new Error( "Path to index could not be found")
+		}
+
+	}
 
 
 	var mapping = false;
@@ -237,7 +228,7 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 	newStorage.root = null; // this gets filled when the root file system is enabled.
 	newStorage.encoders = [];
 	newStorage.decoders = [];
-	newStorage.remotes = [];
+	newStorage.remotes = [newStorage];
 
 
 	function objectToJSOX( stringifier ){
@@ -290,70 +281,50 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 		return newStorage.cachedContainer.get( rootId ).map( opts );
 	}
 
-        newStorage.connect = connect
-        newStorage.handleMessage = handleMessage
+    newStorage.handleMessage = handleMessage
+
+	const remote = { ws:ws,
+		get(opts){
+			return new Promise( (res,rej)=>{
+				const msg = {op:"get", id:unique++, opts:opts, res:res,rej:rej };
+						ws.send( msg );
+						requests.set( msg.id, msg );
+					} )
+		},
+		put(obj, opts){
+			return new Promise( (res,rej)=>{
+					const msg = {op:"put", id:unique++, obj:obj, opts:opts, res:res,rej:rej };
+		addr.send( msg );
+		requests.set( msg.id, msg );
+					} )
+		},
+		handleMessage : handleMessage
+	}
+
+
+	function handleMessage( msg ) {
+		if( msg.op === "getack" ) {
+					const req = requests.get( msg.id );
+					if( req ) req.res( msg.data );
+				}
+			if( msg.op === "geterr" ) {
+					const req = requests.get( msg.id );
+					if( req ) req.rej( msg.err );
+				}
+		if( msg.op === "putack" ) {
+					const req = requests.get( msg.id );
+					if( req ) req.res( msg.result );
+				}
+			if( msg.op === "puterr" ) {
+					const req = requests.get( msg.id );
+					if( req ) req.rej( msg.err );
+				}
+	}
 
 	return newStorage;
-	//Object.assign( newStorage
-
-	const unique;
-        const requests = new Map();
-        function connect(addr) {
-            const remote = { ws:addr,
-            	get(opts){
-                	return new Promise( (res,rej)=>{
-	                    	const msg = {op:"get", id:unique++, opts:opts, res:res,rej:rej };
-				addr.send( msg );
-				requests.set( msg.id, msg );
-                       	}
-                },
-            	put(obj, opts){
-                	return new Promise( (res,rej)=>{
-	                    	const msg = {op:"put", id:unique++, obj:obj, opts:opts, res:res,rej:rej };
-				addr.send( msg );
-				requests.set( msg.id, msg );
-                       	}
-                },
-                handleMessage : handleMessage
-            }
-            newStorage.remotes.push( remote );
-            return remote;
-
-	        function handleMessage( msg ) {
-	        	if( msg.op === "getack" ) {
-        	            	const req = requests.get( msg.id );
-                	        if( req ) req.res( msg.data );
-	                    }
-        	        if( msg.op === "geterr" ) {
-                	    	const req = requests.get( msg.id );
-	                        if( req ) req.rej( msg.err );
-        	            }
-	        	if( msg.op === "putack" ) {
-        	            	const req = requests.get( msg.id );
-                	        if( req ) req.res( msg.result );
-	                    }
-        	        if( msg.op === "puterr" ) {
-                	    	const req = requests.get( msg.id );
-	                        if( req ) req.rej( msg.err );
-        	            }
-        	}
-
-       	}
-
-
 }
 
 
-
-ObjectStorage.Thread = {
-	post: _objectStorage.Thread.post,
-	accept(cb) {
-		 _objectStorage.Thread.accept((a,b)=>{
-			preloadStorage = b;
-			cb(a, sack.ObjectStorage(b) );
-		 });
-	}
-}
 
 ObjectStorage.prototype.getContainer = function( obj, options ) {
 	var container = this_.stored.get( obj );
@@ -367,43 +338,6 @@ ObjectStorage.prototype.getContainer = function( obj, options ) {
 	this_.stored.set( obj, container.id );
 	this_.cached.set( container.id, container.data );
 	this_.cachedContainer.set( container.id, container );
-}
-
-_objectStorage.prototype.createIndex = function( id, index ){
-
-}
-
-_objectStorage.prototype.index = function( obj, fieldName, opts ) {
-	var this_ = this;
-	return new Promise( function(res,rej){
-
-		var container = this_.stored.get( obj );
-
-		//console.log( "Put found object?", container, obj, options );
-		if( container ) {
-			container = this_.cachedContainer.get( container );
-			if( container.data.nonce ) {
-				rej( new Error( "Sealed records cannot be modified" ) );
-			}
-		}
-		else
-		{
-			if( !opts.id ) {
-				console.log( "Create index, creating new container", container.id );
-				container = new this.objectStorageContainer(obj,options);
-
-				//console.log( "saving stored container.id", obj, container.id );
-
-				//this.stored.delete( obj );
-				this_.stored.set( obj, container.id );
-				this_.cached.set( container.id, container.data );
-				this_.cachedContainer.set( container.id, container );
-			}
-		}
-		container.createIndex( this_, fieldName, opts );
-		res();
-	})
-
 }
 
 ObjectStorage.prototype.remove = function( opts ) {
@@ -452,20 +386,13 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 
 		var container = this_.stored.get( obj );
 
-		_debug && console.log( "Put found object?", container, obj, opts );
+		_debug_osr && console.log( "Put found object?", container, obj, opts );
 		if( container ) {
 			container = this_.cachedContainer.get( container );
 
 			if( !container.data.nonce ) {
 				// make sure every item that is in an index
 				// has been written...
-				if( this_.def )
-					this_.def.indexes.forEach( index=>{
-						index.data.forEach( (item)=>{
-							this_.put( item );
-						});
-					})
-
 
 				var stringifier;
 				if( opts && opts.extraEncoders ) {
@@ -483,12 +410,12 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 				if( !container.id || container.id === "null" ) {
 					console.trace( "0) Container has no ID or is nUll", container );
 				}
-				_debug && console.trace( "WRite:", container, storage );
-	                    	for( var remote of this_.remotes ) {
-        	                    remote.put( container.id, storage ).then( res ).catch( rej );
-                                    res = null;
-                                    rej = null;
-        	                }
+				_debug_osr && console.log( "WRite:", container, storage );
+				for( var remote of this_.remotes ) {
+					remote.ws.put( container.id, storage ).then( res ).catch( rej );
+					res = null;
+					rej = null;
+				}
 				//this_.writeRaw( container.id, storage );
 				//return res( container.id );
 			} else {
@@ -513,16 +440,16 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 			if( !opts.id || opts.id === "null" ) {
 				console.trace( "Container has no ID or is nUll", container );
 			}
-			_debug && console.trace( "WRite:", opts, storage );
+			_debug_osr && console.trace( "WRite:", opts, storage );
 	                for( var remote of this_.remotes ) {
-        	            remote.put( opts.id, storage ).then( res ).catch( rej );
+        	            remote.ws.put( opts.id, storage ).then( res ).catch( rej );
                             res = null;
                             rej = null;
         	        }
 			//this_.writeRaw( opts.id, storage );
 			//res( opts.id );
 		} else if( !opts || !opts.id ) {
-			_debug && console.log( "New bare object, create a container...", opts );
+			_debug_osr && console.log( "New bare object, create a container...", opts );
                         if( !opts ) opts = { id : sack.id() }
 						else opts.id = sack.id();
 
@@ -553,15 +480,17 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 			if( !container.id || container.id === "null" ) {
 				console.trace( "Container has no ID or is nUll", container );
 			}
-			_debug && console.trace( "Outut container to storage... ", container, storage );
+			_debug_osr && console.trace( "Outut container to storage... ", container, storage );
 			try {
 		                for( var remote of this_.remotes ) {
-        		            remote.put( container.id, storage ).then( res ).catch( rej );
+        		            remote.ws.put( container.id, storage ).then( res ).catch( rej );
                 	            res = null;
                         	    rej = null;
 	        	        }
 			//this_.writeRaw( container.id, storage );
-			}catch(err) { console.log( "WRITE RAW?", this_ )}
+			}catch(err) { 
+				console.log( "error WRITE RAW?", this_ )
+			}
 			//console.log( "OUTPUT:", storage );
 			//res(  container.id );
 		}
@@ -582,6 +511,7 @@ ObjectStorage.prototype.update( objId, obj ) {
 const updatedPrototypes = new WeakMap();
 
 var currentReadId ;
+const ackObjects = [];
 
 ObjectStorage.prototype.get = function( opts ) {
 	//this.parser.
@@ -620,11 +550,22 @@ ObjectStorage.prototype.get = function( opts ) {
 	}
 
 	if( !this.parser ){
-		this.parser = sack.JSOX.begin();
+		this.parser = sack.JSOX.begin(reviveObject);
 		this.parser.fromJSOX( "~os", this.objectStorageContainer, reviveContainer ); // I don't know ahead of time which this is.
 		this.parser.fromJSOX( "~or", objectStorageContainerRef, reviveContainerRef ); // I don't know ahead of time which this is.
 		for( let f of this.decoders )
 			this.parser.fromJSOX( f.tag, f.p, f.f );
+	}
+
+
+	function reviveObject(o ) {
+		// this callback updates from time to time so....
+		console.log( "Resolved buffer (pending):", ackObjects.length );
+		const ackObject = ackObjects.shift();
+		if( ackObject ) {
+			ackObject.cb(o);
+			ackObject.res( o );
+		}
 	}
 
 	function objectStorageContainerRef( s ) {
@@ -714,7 +655,7 @@ ObjectStorage.prototype.get = function( opts ) {
 
 	let parser = this.parser;
 	if( opts.extraDecoders ) {
-		parser = sack.JSOX.begin(  );
+		parser = sack.JSOX.begin(reviveObject  );
 		parser.fromJSOX( "~os", this.objectStorageContainer, reviveContainer ); // I don't know ahead of time which this is.
 		parser.fromJSOX( "~or", objectStorageContainerRef, reviveContainerRef ); // I don't know ahead of time which this is.
 		//console.log( "this has no decoders? ", this );
@@ -736,39 +677,48 @@ ObjectStorage.prototype.get = function( opts ) {
 
 		const priorReadId = currentReadId;
 		try {
-			console.log( "LOADING : ", opts.id );
-                    	for( var remote of this.remotes ) {
-                            remote.get( parser, opts ).then( (obj)=>{
-                                resultCallback( obj );
-                            } ).catch( err=>{
-				resultCallback( null );
-			    } ;
-                        }
+			if( !opts.id ) {
+				console.trace( "NO ID PASSED TO LOAD", opts );
+			}
+			//console.log( "LOADING : ", opts.id );
+			for( var remote of os.remotes ) {
+				remote.ws.get( opts ).then( (obj)=>{
+					//console.log( "parser?", parser );
+					const p = new Promise( (res,rej)=>{
+						ackObjects.push( {res:res,rej:rej,cb:resultCallback } );
+					});
+					parser.write( obj );
+					return p
+				} ).catch( err=>{
+					console.log( "remote 'get' Error:", err );
+					resultCallback( null );
+				} );
+			}
 			//os.read( currentReadId = opts.id
 			//	, parser
-                        function resultCallback(obj,times){
-					// with a new parser, only a partial decode before revive again...
-					console.log( "Read resulted with an object:", obj, times );
-					let deleteId = -1;
-					const extraResolutions = [];
-					for( let n = 0; n < os.decoding.length; n++ ) {
-						const decode = os.decoding[n];
-						if( decode === opts )
-							deleteId = n;
-						else if( decode.id === opts.id ) {
-							decode.res( obj );
-						}
+			function resultCallback(obj,times){
+				// with a new parser, only a partial decode before revive again...
+				//console.log( "Read resulted with an object:", obj, times );
+				let deleteId = -1;
+				const extraResolutions = [];
+				for( let n = 0; n < os.decoding.length; n++ ) {
+					const decode = os.decoding[n];
+					if( decode === opts )
+						deleteId = n;
+					else if( decode.id === opts.id ) {
+						decode.res( obj );
 					}
-					if( deleteId >= 0 )  os.decoding.splice( deleteId, 1 );
+				}
+				if( deleteId >= 0 )  os.decoding.splice( deleteId, 1 );
 
-					var found;
-					do {
-						var found = os.pending.findIndex( pending=>{ console.log( "what is in pending?", pending ); return pending.id === key } );
-						if( found >= 0 ) {
-							os.pending[found].ref.o[os.pending[found].ref.f] = obj.data;
-							os.pending.splice( found, 1 );
-						}
-					} while( found >= 0 );
+				var found;
+				do {
+					var found = os.pending.findIndex( pending=>{ console.log( "what is in pending?", pending ); return pending.id === key } );
+					if( found >= 0 ) {
+						os.pending[found].ref.o[os.pending[found].ref.f] = obj.data;
+						os.pending.splice( found, 1 );
+					}
+				} while( found >= 0 );
 
 				if( obj && ( obj instanceof os.objectStorageContainer ) ){
 					//console.log( "GOTzz:", obj, obj.id, obj.data );
@@ -780,11 +730,12 @@ ObjectStorage.prototype.get = function( opts ) {
 					for( let res in extraResolutions ) res.res(obj.data);
 					res(obj.data);
 				} else {
+					//console.log( "Result object", obj );
 					currentReadId = priorReadId;
 					for( let res in extraResolutions ) res.res(obj);
 					res(obj)
 				}
-			} );
+			}
 		}catch(err) {
 				currentReadId = priorReadId;
 			rej(err);
@@ -825,6 +776,8 @@ fileEntry.prototype.read = function( from, len ) {
 				} );
 
 		} else {
+			console.log( "folder volume:", this_.folder.volume );
+			debugger;
 			if( this_.id )
 				return this_.folder.volume.get( {id:this_.id} ).then( res ).catch( rej );
 			//console.log( "Rejecting, no ID, (no data)", this_ );
@@ -841,7 +794,7 @@ fileEntry.prototype.write = function( o ) {
 			if( "string" === typeof o ) {
 				//console.log( "direct write of string data:", o );
 		                for( var remote of this.folder.volume.remotes ) {
-        		            let newsend = remote.put( this.id, o ).then( res ).catch( rej );
+        		            let newsend = remote.ws.put( this.id, o ).then( res ).catch( rej );
                                     if( !first ) first = newsend;
                 	            res = null;
                         	    rej = null;
@@ -854,7 +807,7 @@ fileEntry.prototype.write = function( o ) {
 			} else if( o instanceof ArrayBuffer ) {
 				//console.log( "Write raw buffer" );
 		                for( var remote of this.folder.volume.remotes ) {
-        		            let newsend = remote.put( this.id, o ).then( res ).catch( rej );
+        		            let newsend = remote.ws.put( this.id, o ).then( res ).catch( rej );
                                     if( !first ) first = newsend;
                 	            res = null;
                         	    rej = null;
@@ -1038,10 +991,12 @@ var loading = null;
 ObjectStorage.prototype.getRoot = async function() {
 	if( this.root ) return this.root;
 	if( loading ) {
+		console.log( "Still loading?" );
 		return new Promise( (res,rej)=>{
 			loading.push(  {res:res, rej:rej} );
 		} );
 	}
+
 	this.addEncoders( [ { tag: "d", p:fileDirectory, f:null}, { tag: "f", p:fileEntry, f:null} ] );
 	this.addDecoders( [ {tag: "d", p:fileDirectory }, {tag: "f", p:fileEntry } ] )
 	var result = new fileDirectory( this, "?" );
@@ -1049,11 +1004,12 @@ ObjectStorage.prototype.getRoot = async function() {
 	loading = [];
 	//console.trace( "Who gets this promise for getting root?");
 	return new Promise( (resolve,reject)=>{
-		//console.log( "Getting root directory.." );
+	
+		console.log( "Getting root directory..", this_.ws, this_.ws.get );
 		return this_.get( { id:result.id } )
 			.catch( reject )
 			.then( (dir)=>{
-				//console.log( "get root directory got:", dir, "(WILL DEFINE FOLDER)" );
+				console.log( "get root directory got:", dir, "(WILL DEFINE FOLDER)" );
 				if( !dir ) {
 					result.store()
 						.then( function(id){
@@ -1098,19 +1054,7 @@ function handleMessage( msg_ ) {
 
 
 
-ObjectStorage.prototype.connect = function( ws ) {
-	this.ws = ws;
-        this.ws.send( {op:"connect"} );
-        this.onmessage( this.handleMessage.bind( this ) );
-}
-
 ObjectStorage.connect = function(remote) {
-	if( "string" === typeof remote ) {
-        	// open by remote address...
-            	// dont' ever do this...
-        }else {
-                const storage = new ObjectStorage();
-                storage.connect( remote );
-        }
+	return new ObjectStorage( remote )
 }
 
