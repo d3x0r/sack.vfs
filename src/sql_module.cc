@@ -1784,21 +1784,24 @@ static uintptr_t RunEditor( PTHREAD thread ) {
 	EditOptions = tp->editor;
 	EditOptions( NULL, NULL, TRUE );
 	disableEventLoop( tp->c );
+	Release( tp );
 	return 0;
 }
 
 void editOptions( const v8::FunctionCallbackInfo<Value>& args ){
-	int (*EditOptions)( PODBC odbc, PSI_CONTROL parent, LOGICAL wait );
+	struct threadParam* tp = new(struct threadParam );
+	//int (*EditOptions)( PODBC odbc, PSI_CONTROL parent, LOGICAL wait );
 	extern void enableEventLoop( class constructorSet *c );
 #ifdef WIN32
 	LoadFunction( "bag.psi.dll", NULL );
 #else
 	LoadFunction( "libbag.psi.so", NULL );
 #endif
-	EditOptions = (int(*)( PODBC, PSI_CONTROL,LOGICAL))LoadFunction( "EditOptions.plugin", "EditOptionsEx" );
-	if( EditOptions ) {
-		enableEventLoop( getConstructors( args.GetIsolate() ) );
-		ThreadTo( RunEditor, (uintptr_t)EditOptions );
+	tp->c = getConstructors( args.GetIsolate() );
+	tp->editor = (int(*)( PODBC, PSI_CONTROL,LOGICAL))LoadFunction( "EditOptions.plugin", "EditOptionsEx" );
+	if( tp->editor ) {
+		//enableEventLoop( getConstructors( args.GetIsolate() ) );
+		ThreadTo( RunEditor, (uintptr_t)tp );
 	} else
 		lprintf( "Failed to load editor..." );
 }
