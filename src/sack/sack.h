@@ -2008,8 +2008,7 @@ TYPELIB_PROC  POINTER TYPELIB_CALLTYPE    SetDataItemEx ( PDATALIST *ppdl, INDEX
 TYPELIB_PROC  POINTER TYPELIB_CALLTYPE    SetDataItemEx ( PDATALIST *ppdl, INDEX idx, POINTER data DBG_PASS );
 /* \Returns a pointer to the data at a specified index.
    Parameters
-   \ \
-   ppdl :  address of a PDATALIST
+   \    ppdl :  address of a PDATALIST
    idx :   index of element to get                      */
 TYPELIB_PROC  POINTER TYPELIB_CALLTYPE    GetDataItem ( PDATALIST *ppdl, INDEX idx );
 /* Removes a data element from the list (moves all other
@@ -2326,17 +2325,24 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE         EmptyDataQueue ( PDATAQUEUE *pplq );
  * reallocated and moved.
  */
 TYPELIB_PROC  LOGICAL TYPELIB_CALLTYPE  PeekDataQueueEx    ( PDATAQUEUE *pplq, POINTER ResultBuffer, INDEX idx );
-/* <combine sack::containers::data_queue::PeekDataQueueEx@PDATAQUEUE *@POINTER@INDEX>
-   \ \                                                                                */
 #define PeekDataQueueEx( q, type, result, idx ) PeekDataQueueEx( q, (POINTER)result, idx )
 /*
  * Result buffer is filled with the last element, and the result is true, otherwise the return
  * value is FALSE, and the data was not filled in.
  */
 TYPELIB_PROC  LOGICAL TYPELIB_CALLTYPE  PeekDataQueue    ( PDATAQUEUE *pplq, POINTER ResultBuffer );
-/* <combine sack::containers::data_queue::PeekDataQueue@PDATAQUEUE *@POINTER>
-   \ \                                                                        */
-#define PeekDataQueue( q, type, result ) PeekDataQueue( q, (POINTER)result )
+#define PeekDataQueue( q, type, result ) PeekDataQueueEx( q, type, result, 0 )
+/*
+ * gets the address a PDATAQUEUE element at index
+ * result buffer is a pointer to the type of structure expected to be
+ * stored within this.  Index from 0 to N indexes from first ( to be dequeued )
+ * to last item in queue.
+ */
+TYPELIB_PROC POINTER TYPELIB_CALLTYPE  PeekDataInQueueEx    ( PDATAQUEUE *pplq, INDEX idx );
+/*
+ * Results with the first item in the queue, else NULL.
+ */
+TYPELIB_PROC POINTER TYPELIB_CALLTYPE  PeekDataInQueue    ( PDATAQUEUE *pplq );
 /* <combine sack::containers::data_queue::CreateDataQueueEx@INDEX size>
    \ \                                                                  */
 #define     CreateDataQueue(size)     CreateDataQueueEx( size DBG_SRC )
@@ -2542,8 +2548,7 @@ _SETS_NAMESPACE
    array that maps usage of the set, and for the set size of
    elements.
    Remarks
-   \ \
-   Summary
+   \    Summary
    Generic sets are good for tracking lots of tiny structures.
    They track slabs of X structures at a time. They allocate a
    slab of X structures with an array of X bits indicating
@@ -2616,8 +2621,7 @@ typedef struct genericset_tag {
 	uint32_t bUsed[1];
 	                   // bits begins the aligned pointer pool.
 } GENERICSET, *PGENERICSET;
-/* \ \
-   Parameters
+/* \    Parameters
    pSet :      pointer to a generic set
    nMember :   index of the member
    setsize :   number of elements in each block
@@ -2628,13 +2632,11 @@ TYPELIB_PROC  POINTER  TYPELIB_CALLTYPE GetFromSetEx( GENERICSET **pSet, int set
    \ \                                                                             */
 #define GetFromSeta(ps, ss, us, max) GetFromSetPoolEx( NULL, 0, 0, 0, (ps), (ss), (us), (max) DBG_SRC )
 /* <combine sack::containers::sets::GetFromSetEx@GENERICSET **@int@int@int maxcnt>
-   \ \
-   Parameters
+   \    Parameters
    name :  name of type the set contains.
    pSet :  pointer to a set to get an element from.                                */
 #define GetFromSet( name, pset ) (name*)GetFromSeta( (GENERICSET**)(pset), sizeof( name##SET ), sizeof( name ), MAX##name##SPERSET )
-/* \ \
-   Parameters
+/* \    Parameters
    pSet :      pointer to a generic set
    nMember :   index of the member
    setsize :   number of elements in each block
@@ -2650,8 +2652,7 @@ TYPELIB_PROC  PGENERICSET  TYPELIB_CALLTYPE GetFromSetPoolEx( GENERICSET **pSetS
 /* <combine sack::containers::sets::GetFromSetPoolEx@GENERICSET **@int@int@int@GENERICSET **@int@int@int maxcnt>
    \ \                                                                                                           */
 #define GetFromSetPool( name, pool, pset ) (name*)GetFromSetPoola( (GENERICSET**)(pool)	    , sizeof( name##SETSET ), sizeof( name##SET ), MAX##name##SETSPERSET	, (GENERICSET**)(pset), sizeof( name##SET ), sizeof( name ), MAX##name##SPERSET )
-/* \ \
-   Parameters
+/* \    Parameters
    pSet :      pointer to a generic set
    nMember :   index of the member
    setsize :   number of elements in each block
@@ -2664,8 +2665,7 @@ TYPELIB_PROC  POINTER  TYPELIB_CALLTYPE GetSetMemberEx( GENERICSET **pSet, INDEX
 /* <combine sack::containers::sets::GetSetMemberEx@GENERICSET **@INDEX@int@int@int maxcnt>
    \ \                                                                                     */
 #define GetSetMember( name, pset, member ) ((name*)GetSetMembera( (GENERICSET**)(pset), (member), sizeof( name##SET ), sizeof( name ), MAX##name##SPERSET ))
-/* \ \
-   Parameters
+/* \    Parameters
    pSet :      pointer to a generic set
    nMember :   index of the member
    setsize :   number of elements in each block
@@ -2692,8 +2692,7 @@ TYPELIB_PROC  INDEX TYPELIB_CALLTYPE  GetMemberIndex(GENERICSET **set, POINTER u
 /* <combine sack::containers::sets::GetMemberIndex>
    \ \                                              */
 #define GetIndexFromSet( name, pset ) GetMemberIndex( name, pset, GetFromSet( name, pset ) )
-/* \ \
-   Parameters
+/* \    Parameters
    pSet :      pointer to a generic set
    nMember :   index of the member
    setsize :   number of elements in each block
@@ -2773,8 +2772,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  DeleteSet( GENERICSET **ppSet );
    ForAllinSet Callback - callback fucntion used with
    ForAllInSet                                        */
 typedef uintptr_t (CPROC *FAISCallback)(void*,uintptr_t);
-/* \ \
-   Parameters
+/* \    Parameters
    pSet :      poiner to a set
    unitsize :  size of elements in the array
    max :       count of elements per set block
@@ -3280,8 +3278,7 @@ TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateEx( size_t nSize DBG_PASS );
    PTEXT text = SegCreate( 10 );
    </code>                                                     */
 #define SegCreate(s) SegCreateEx(s DBG_SRC)
-/* \ \
-   See Also
+/* \    See Also
    <link DBG_PASS>
    <link SegCreateFromText> */
 TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateFromTextEx( CTEXTSTR text DBG_PASS );
@@ -3291,13 +3288,11 @@ TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateFromTextEx( CTEXTSTR text DBG_PAS
    PTEXT line = SegCreateFromText( "Around the world in a day." );
    </code>                                                         */
 #define SegCreateFromText(t) SegCreateFromTextEx(t DBG_SRC)
-/* \ \
-   See Also
+/* \    See Also
    <link DBG_PASS>
    <link SegCreateFromChar> */
 TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateFromCharLenEx( const char *text, size_t len DBG_PASS );
-/* \ \
-   See Also
+/* \    See Also
    <link DBG_PASS>
    <link SegCreateFromChar> */
 TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateFromCharEx( const char *text DBG_PASS );
@@ -3307,18 +3302,15 @@ TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateFromCharEx( const char *text DBG_
    PTEXT line = SegCreateFromChar( "Around the world in a day." );
    </code>                                                         */
 #define SegCreateFromChar(t) SegCreateFromCharEx(t DBG_SRC)
-/* \ \
-   See Also
+/* \    See Also
    <link DBG_PASS>
    <link SegCreateFromChar> */
 #define SegCreateFromCharLen(t,len) SegCreateFromCharLenEx((t),(len) DBG_SRC)
-/* \ \
-   See Also
+/* \    See Also
    <link DBG_PASS>
    <link SegCreateFromWide> */
 TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateFromWideLenEx( const wchar_t *text, size_t len DBG_PASS );
-/* \ \
-   See Also
+/* \    See Also
    <link DBG_PASS>
    <link SegCreateFromWide> */
 TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateFromWideEx( const wchar_t *text DBG_PASS );
@@ -3328,13 +3320,11 @@ TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateFromWideEx( const wchar_t *text D
    PTEXT line = SegCreateFromWideLen( L"Around the world in a day.", 26 );
    </code>                                                         */
 #define SegCreateFromWideLen(t,len) SegCreateFromWideLenEx((t),(len) DBG_SRC)
-/* \ \
-   See Also
+/* \    See Also
    <link DBG_PASS>
    <link SegCreateFromWide> */
 #define SegCreateFromWide(t) SegCreateFromWideEx(t DBG_SRC)
-/* \ \
-   See Also
+/* \    See Also
    <link DBG_PASS>
    <link SegCreateIndirect> */
 TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateIndirectEx( PTEXT pText DBG_PASS );
@@ -3353,8 +3343,7 @@ TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateIndirectEx( PTEXT pText DBG_PASS 
    length buffer for a TEXT segment.
                                                                                   */
 #define SegCreateIndirect(t) SegCreateIndirectEx(t DBG_SRC)
-/* \ \
-   See Also
+/* \    See Also
    <link DBG_PASS>
    <link SegDuplicate> */
 TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegDuplicateEx( PTEXT pText DBG_PASS);
@@ -3372,16 +3361,14 @@ TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  LineDuplicateEx( PTEXT pText DBG_PASS );
 /* <combine sack::containers::text::LineDuplicateEx@PTEXT pText>
    \ \                                                           */
 #define LineDuplicate(pt) LineDuplicateEx(pt DBG_SRC )
-/* \ \
-   See Also
+/* \    See Also
    <link DBG_PASS>
    <link TextDuplicate> */
 TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  TextDuplicateEx( PTEXT pText, int bSingle DBG_PASS );
 /* Duplicate the whole string of text to another string with
    exactly the same content.                                 */
 #define TextDuplicate(pt,s) TextDuplicateEx(pt,s DBG_SRC )
-/* \ \
-   See Also
+/* \    See Also
    <link DBG_PASS>
    <link SegCreateFromInt> */
 TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateFromIntEx( int value DBG_PASS );
@@ -3397,8 +3384,7 @@ TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateFromIntEx( int value DBG_PASS );
 TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateFrom_64Ex( int64_t value DBG_PASS );
 /* Create a text segment from a uint64_t bit value. (long long int) */
 #define SegCreateFrom_64(v) SegCreateFrom_64Ex( v DBG_SRC )
-/* \ \
-   See Also
+/* \    See Also
    <link DBG_PASS>
    <link SegCreateFromFloat> */
 TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateFromFloatEx( float value DBG_PASS );
@@ -3447,7 +3433,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE   LineReleaseEx (PTEXT line DBG_PASS );
    Any segment in the line may be passed, the first segment is
    found, and then all segments in the line are deleted.       */
 #define LineRelease(l) LineReleaseEx(l DBG_SRC )
-/* \ \
+/* \
    <b>See Also</b>
    <link DBG_PASS>
    <link SegRelease> */
@@ -3526,15 +3512,13 @@ TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegGrab     (PTEXT segment);
    Returns
    \Returns the '_this' that was substituted.                     */
 TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegSubst    ( PTEXT _this, PTEXT that );
-/* \ \
-   See Also
+/* \    See Also
    <link DBG_PASS>
    <link SegSplit> */
 TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegSplitEx( PTEXT *pLine, INDEX nPos DBG_PASS);
 /* Split a PTEXT segment.
    Example
-   \ \
-   <code lang="c++">
+   \    <code lang="c++">
    PTEXT result = SegSplit( &amp;old_string, 5 );
    </code>
    Returns
@@ -3644,8 +3628,7 @@ TYPELIB_PROC  INDEX TYPELIB_CALLTYPE  LineLengthExx( PTEXT pt, LOGICAL bSingle,P
 /* <combine sack::containers::text::LineLengthExEx@PTEXT@LOGICAL@int@PTEXT>
    \ \                                                                      */
 #define LineLengthExx(pt,single,eol) LineLengthExEx( pt,single,8,eol)
-/* \ \
-   Parameters
+/* \    Parameters
    Text segment :  PTEXT line or segment to get the length of
    single :        boolean, if set then only a single segment is
                    measured, otherwise all segments from this to
@@ -3692,8 +3675,7 @@ TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  BuildLineExx( PTEXT pt, LOGICAL bSingle, P
    \ \                                                                          */
 #define BuildLineEx(from,single) BuildLineExEx( from,single,8,NULL DBG_SRC )
 /* <combine sack::containers::text::BuildLineExEx@PTEXT@LOGICAL@int@PTEXT pEOL>
-   \ \
-    Flattens all segments in a line to a single segment result.
+   \     Flattens all segments in a line to a single segment result.
 */
 #define BuildLine(from) BuildLineExEx( from, FALSE,8,NULL DBG_SRC )
 //
@@ -3876,8 +3858,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextEmptyEx( PVARTEXT pvt DBG_PASS);
 #define VarTextEmpty(pvt) VarTextEmptyEx( (pvt) DBG_SRC )
 /* Add a single character to a vartext collector.
    Note
-   \ \
-   Parameters
+   \    Parameters
    pvt :       PVARTEXT to add character to
    c :         character to add
    DBG_PASS :  optional debug information         */
@@ -4201,8 +4182,7 @@ TYPELIB_PROC  PTREEROOT TYPELIB_CALLTYPE  CreateBinaryTreeExtended( uint32_t fla
    PTREEROOT tree = CreateBinaryTree();
    </code>                                                      */
 #define CreateBinaryTree() CreateBinaryTreeEx( NULL, NULL )
-/* \ \
-   Example
+/* \    Example
    <code lang="c++">
    PTREEROOT tree = CreateBinaryTree();
    DestroyBinaryTree( tree );
@@ -4210,8 +4190,7 @@ TYPELIB_PROC  PTREEROOT TYPELIB_CALLTYPE  CreateBinaryTreeExtended( uint32_t fla
    </code>                              */
 TYPELIB_PROC  void TYPELIB_CALLTYPE  DestroyBinaryTree( PTREEROOT root );
 /* Drops all the nodes in a tree so it becomes empty...
-   \ \
-   Example
+   \    Example
    <code lang="c++">
    PTREEROOT tree = CreateBinaryTree();
    ResetBinaryTree( tree );
@@ -4230,8 +4209,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  ResetBinaryTree( PTREEROOT root );
    BalanceBinaryTree( tree );
    </code>                                                        */
 TYPELIB_PROC  void TYPELIB_CALLTYPE  BalanceBinaryTree( PTREEROOT root );
-/* \ \
-   See Also
+/* \    See Also
    <link AddBinaryNode>
    <link DBG_PASS>
                         */
@@ -4374,8 +4352,7 @@ TYPELIB_PROC  CPOINTER TYPELIB_CALLTYPE  GetParentNode( PTREEROOT root );
    Binary Trees have a 'current' cursor. These operations may be
    used to browse the tree.
    Example
-   \ \
-   <code>
+   \    <code>
    // this assumes you have a tree, and it's fairly populated, then this demonstrates
    // all steps of browsing.
    POINTER my_data;
