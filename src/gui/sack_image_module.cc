@@ -1018,10 +1018,7 @@ void ColorObject::toString( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
 	char buf[128];
-		lprintf( "ALPHA:%08x", co->color );
-
 	snprintf( buf, 128, "{r:%d,g:%d,b:%d,a:%d}", RedVal( co->color ), GreenVal( co->color ), BlueVal( co->color ), AlphaVal( co->color ) );
-	
 	args.GetReturnValue().Set( localStringExternal( isolate, buf ) );
 }
 
@@ -1067,7 +1064,6 @@ void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
 		else {
 			obj = new ColorObject();
 		}
-		lprintf( "Returning a new color");
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
 
