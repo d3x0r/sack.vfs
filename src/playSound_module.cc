@@ -1,10 +1,14 @@
 
 #include "global.h"
-#include <ffmpeg_interface.h>
+#if defined( SACK_CORE ) && defined( SACK_GUI )
+#  include <ffmpeg_interface.h>
+#endif
 
 struct sound_cache_entry {
 	TEXTSTR name;
+#if defined( SACK_CORE ) && defined( SACK_GUI )
 	struct ffmpeg_file* file;
+#endif
 };
 
 static struct sound_static_data {
