@@ -830,6 +830,8 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 			}
 
 		}
+	} else {
+		lprintf( "Write to native volume not supported?" );
 	}
 }
 

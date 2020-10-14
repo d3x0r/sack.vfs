@@ -29,7 +29,7 @@ require( "./object-storage.cjs" )(sack);
 //vfs.
 module.exports=exports=sack;
 
-
+// needed to dispatch promise resolutions that have been created in callbacks.
 if (process._tickDomainCallback || process._tickCallback)
     sack.Thread(process._tickDomainCallback || process._tickCallback);
 
