@@ -830,18 +830,15 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 			}
 
 		}
-	} else {
-		lprintf( "Write to native volume not supported?" );
-	}
+        } else {
+            lprintf( "Write to native volume not supported?" );
+        }
 }
 
 
 void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
-	struct jsox_parse_state* parser = NULL;
-	LOGICAL tempParser = FALSE;
-	JSOXObject* parserObject = NULL;
 
 	if( args.Length() < 2 ) {
 		isolate->ThrowException( Exception::TypeError(
@@ -857,9 +854,6 @@ void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args 
 			arg++;
 		}
 		else if( args[arg]->IsObject() ) {
-			Local<Object> useParser = args[arg]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
-			parserObject = ObjectWrap::Unwrap<JSOXObject>( useParser );
-			parser = parserObject->state;
 			arg++;
 		}
 	}
@@ -938,8 +932,6 @@ void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args 
 		}
 	}
 
-	if( tempParser )
-		jsox_parse_dispose_state( &parser );
 
 
 }
