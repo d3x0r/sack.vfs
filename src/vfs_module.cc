@@ -39,10 +39,23 @@ class constructorSet * getConstructors( Isolate *isolate ){
 		}
 	}
 	c = new constructorSet();
+	c->thread = MakeThread();
 	c->isolate = isolate;
 	c->loop = node::GetCurrentEventLoop( isolate ); // one-time thread initializer for com? // uv_default_loop();
 	AddLink( &vl.constructors, c );
 	return c;
+}
+
+class constructorSet* getConstructorsByThread( void ) {
+	PTHREAD thread = MakeThread();
+	INDEX idx;
+	class constructorSet* c;
+	LIST_FORALL( vl.constructors, idx, class constructorSet*, c ) {
+		if( c->thread == thread ) {
+			return c;
+		}
+	}
+	return NULL;
 }
 
 Local<String> localString( Isolate *isolate, const char *data, int len ) {
@@ -116,6 +129,8 @@ struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate ) {
 
 static void moduleExit( void *arg ) {
 	//SaveTranslationDataEx( "^/strings.dat" );
+	vfs_global_data.shutdown = 1;
+
 	SaveTranslationDataEx( "@/../../strings.json" );
 	InvokeExits();
 }
@@ -160,6 +175,12 @@ static void vfs_u8xor(const v8::FunctionCallbackInfo<Value>& args ){
 static void idGenerator(const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	char *r = SRG_ID_Generator();
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, r, v8::NewStringType::kNormal ).ToLocalChecked() );
+	Deallocate( char*, r );
+}
+static void idShortGenerator(const v8::FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	char *r = SRG_ID_ShortGenerator4();
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, r, v8::NewStringType::kNormal ).ToLocalChecked() );
 	Deallocate( char*, r );
 }
@@ -338,7 +359,9 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	//SET_READONLY_METHOD( VolFunc, "rekey", volRekey );
 	SET_READONLY_METHOD( exports, "u8xor", vfs_u8xor );
 	SET_READONLY_METHOD( exports, "b64xor", vfs_b64xor );
+	// this is an export under SaltyRNG
 	SET_READONLY_METHOD( exports, "id", idGenerator );
+	SET_READONLY_METHOD( exports, "Id", idShortGenerator );
 	SET_READONLY_METHOD( VolFunc, "readAsString", fileReadString );
 	SET_READONLY_METHOD( VolFunc, "mapFile", fileReadMemory );
 

@@ -6,13 +6,16 @@ sack.SaltyRNG.setSigningThreads( require( "os" ).cpus().length );
 
 // save original object.
 const _objectStorage = sack.ObjectStorage;
-const fillerObject = {};
-Object.freeze( fillerObject );
+const nativeVol = sack.Volume();
+const remoteExtensions = nativeVol.read( __dirname+"/object-storage-remote.js" ).toString();
+const jsonRemoteExtensions = JSON.stringify( remoteExtensions );
+
 
 var dangling = [];
 var objectRefs = 0;
 var currentContainer = null;
-var preloadStorage = null;
+var preloadStorage = null; // storage thrown from main thread
+
 // manufacture a JS interface to _objectStorage.
 sack.ObjectStorage = function (...args) {
 
@@ -21,7 +24,6 @@ sack.ObjectStorage = function (...args) {
 // associates object data with storage data for later put(obj) to re-use the same informations.
 function objectStorageContainer(o,opts) {
 	if( !this instanceof objectStorageContainer ) return new newStorage.objectStorageContainer(o,opts);
-
 	//console.trace( "Something creating a new container..", o, opts );
 	try {
 	if( "string" === typeof o ){
@@ -41,7 +43,7 @@ function objectStorageContainer(o,opts) {
 		console.trace( "ref loading is deprecated.");
 		//resolve = opts.ref;
 	}
-    currentContainer = this;
+    	currentContainer = this;
 	Object.defineProperty( this, "encoding", { writable:true, value:false } );
 /*
 	this.data = {
@@ -74,7 +76,7 @@ objectStorageContainer.getStore = function() {
 }
 
 objectStorageContainer.prototype.map = async function( opts ) {
-	const pending = this.dangling;
+	const pending = this.dangling; /* this is a property set dynamically */
 	if( pending && pending.length )  {
 		opts = opts || { depth:0, paths:[] };
 		const rootMap = this;
@@ -297,32 +299,40 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 	return newStorage;
 
 
-        function handleMessage( ws, msg ) {
-           if( msg.op === "get" ) {
-               newStorage.readRaw( currentReadId = opts.id
+	function handleMessage( ws, msg ) {
+		if( msg.op === "connect" ) {
+			ws.send( `{op:connected,code:${jsonRemoteExtensions}}` );
+		return true;
+		}
+		if( msg.op === "get" ) {
+			newStorage.readRaw( currentReadId = msg.opts.id
 				, (data)=>{
-	               	    ws.send( newStorage.stringifier.stringify( { op:"get", id:msg.id, data:data } ) );
+					console.log( "Read ID:", msg.opts.id, data );
+					ws.send( newStorage.stringifier.stringify( { op:"get", id:msg.id, data:data } ) );
 			} )
-	       return true;
-           }
-           if( msg.op === "put" ) {
-               // want to get back a file ID if possible...
-               // and/or use the data for encoding/salting/etc... which can determine the result ID.
-               newStorage.put( msg.opts.id, msg.data, (result)=>{
-			ws.send( newStorage.stringifier.stringify( { op:"getack", id:msg.id, data:data } ) );
-            	} ).catch( err=>{
-            		ws.send( newStorage.stringifier.stringify( { op:"geterr", id:msg.id, err:err } ) );
-            	} );
-               return true;
-               }
-           return false;
+			return true;
+		}
+		if( msg.op === "put" ) {
+			// want to get back a file ID if possible...
+			// and/or use the data for encoding/salting/etc... which can determine the result ID.
+			//console.log( "PUT THIGN:", msg );
+			newStorage.writeRaw( msg.opts.id, msg.data);
+			ws.send( newStorage.stringifier.stringify( { op:"put", id:msg.id } ) );
+			return true;
+		}
+		return false;
 	}
 
 }
+sack.ObjectStorage.getRemoteFragment = function() {
+	return remoteExtensions;
+}
+
 sack.ObjectStorage.Thread = {
 	post: _objectStorage.Thread.post,
 	accept(cb) {
 		 _objectStorage.Thread.accept((a,b)=>{
+			// posted from core thread ( worker can't access disk itself? )
 			preloadStorage = b;
 			cb(a, sack.ObjectStorage(b) );
 		 });
@@ -430,7 +440,8 @@ _objectStorage.prototype.getCurrentParseRef = function() {
 // this hides the original 'put'
 _objectStorage.prototype.put = function( obj, opts ) {
 	const this_ = this;
-    if( currentContainer && currentContainer.data === this ) return Promise.resolve( currentContainer.id );
+	if( currentContainer && currentContainer.data === this )
+        	return Promise.resolve( currentContainer.id );
 
 	return new Promise( function(res,rej){
 
@@ -624,8 +635,9 @@ _objectStorage.prototype.get = function( opts ) {
 		if( !field ) {
 			// finished.
 			if( objectRefs ) {
-				
+				/* sets dangling property on container */
 				Object.defineProperty( this, "dangling", { value:dangling } );
+                                // resets to store new objects for next load.
 				dangling = [];
 				objectRefs = 0;
 			}
@@ -1029,6 +1041,7 @@ _objectStorage.prototype.getRoot = async function() {
 			} );
 	} );
 }
+
 
 }
 

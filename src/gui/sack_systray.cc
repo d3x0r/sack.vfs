@@ -93,7 +93,7 @@ static uintptr_t MakeSystrayEvent( enum systrayEvents type, ... ) {
 #define e (*pe)
 	va_list args;
 	va_start( args, type );
-	if( type != Event_Control_Close_Loop )
+	if( type != Event_Systray_Close_Loop )
 		enableEventLoop();
 	pe = GetFromSet( SS_EVENT, &systrayLocal.event_pool );
 	e.type = type;

@@ -110,12 +110,9 @@ static void asyncmsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
-
 	RenderObject* myself = (RenderObject*)handle->data;
-
-	HandleScope scope(isolate);
-	//lprintf( "async message notice. %p", myself );
 	{
 		struct event *evt;
 
@@ -210,11 +207,10 @@ void RenderObject::Init( Local<Object> exports ) {
 
 RenderObject::RenderObject( const char *title, int x, int y, int w, int h, RenderObject *over )  {
 	if( title )
-		r = OpenDisplayAboveSizedAt( 0, w, h, x, y, over ? over->r : NULL );
+		r = OpenDisplayAboveSizedAt( DISPLAY_ATTRIBUTE_LAYERED, w, h, x, y, over ? over->r : NULL );
 	else
 		r = NULL;
 	receive_queue = NULL;
-	drawn = 0;
 	closed = 0;
 }
 
@@ -263,9 +259,11 @@ RenderObject::~RenderObject() {
 			}
 			// Invoked as constructor: `new MyObject(...)`
 			RenderObject* obj = new RenderObject( title?title:"Node Application", x, y, w, h, parent );
-
+			obj->this_.Reset( isolate, args.This() );
 			MemSet( &obj->async, 0, sizeof( obj->async ) );
 			uv_async_init( uv_default_loop(), &obj->async, asyncmsg );
+			obj->isolate = isolate;
+			obj->eventThread = MakeThread();
 
 			obj->async.data = obj;
 
@@ -398,9 +396,11 @@ void RenderObject::update( const FunctionCallbackInfo<Value>& args ) {
 		w = (int)args[2]->IntegerValue(context).ToChecked();
 		h = (int)args[3]->IntegerValue(context).ToChecked();
 		UpdateDisplayPortion( r->r, x,y,w,h );
+		r->updated = 1;
 	}
 	else  {
 		UpdateDisplayPortion( r->r, 0, 0, 0, 0 );
+		r->updated = 1;
 	}
 }
 
@@ -451,8 +451,9 @@ void RenderObject::reveal( const FunctionCallbackInfo<Value>& args ) {
 
 static uintptr_t CPROC doMouse( uintptr_t psv, int32_t x, int32_t y, uint32_t b ) {
 	RenderObject *r = (RenderObject *)psv;
+	//lprintf( "Mouse:%d,%d,%d", x, y, b );
 	if( !r->closed )
-		return MakeEvent( &r->async, &r->receive_queue, Event_Render_Mouse, x, y, b );
+		return MakeEvent( r, Event_Render_Mouse, x, y, b );
 	return 0;
 }
 
@@ -467,8 +468,19 @@ void RenderObject::setMouse( const FunctionCallbackInfo<Value>& args ) {
 
 static void CPROC doRedraw( uintptr_t psv, PRENDERER out ) {
 	RenderObject *r = (RenderObject *)psv;
+	PTHREAD waiter = MakeThread();
+	// sometimes the redraw event can happen on the same thread.
 	if( !r->closed )
-		MakeEvent( &r->async, &r->receive_queue, Event_Render_Draw );
+		if( waiter == r->eventThread ){
+			if( r->surface.IsEmpty() )
+				r->surface.Reset( r->isolate, ImageObject::NewImage( r->isolate, GetDisplayImage( r->r ), TRUE ) );
+			Local<Value> argv[] = { Local<Object>::New( r->isolate, r->surface ) };
+			Local<Function> cb;
+			cb = Local<Function>::New( r->isolate, r->cbDraw );
+			cb->Call( r->isolate->GetCurrentContext(), Local<Object>::New( r->isolate, r->this_ ), 1, argv );
+		}
+		else
+			MakeEvent( r, Event_Render_Draw );
 }
 
 void RenderObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
@@ -485,7 +497,7 @@ void RenderObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
 static int CPROC doKey( uintptr_t psv, uint32_t key ) {
 	RenderObject *r = (RenderObject *)psv;
 	if( !r->closed )
-		return (int)MakeEvent( &r->async, &r->receive_queue, Event_Render_Key, key );
+		return (int)MakeEvent( r, Event_Render_Key, key );
 	return 0;
 }
 
@@ -528,15 +540,17 @@ void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
 	else if( StrCmp( *fName, "key" ) == 0 ) {
 		Persistent<Function> cb( isolate, arg1 );
 		SetKeyboardHandler( r->r, doKey, (uintptr_t)r );
-		r->cbMouse = cb;
+		r->cbKey = cb;
 	}
 }
 
-uintptr_t MakeEvent( uv_async_t *async, PLINKQUEUE *queue, enum GUI_eventType type, ... ) {
+uintptr_t MakeEvent( RenderObject *r, enum GUI_eventType type, ... ) {
 	event e;
+	PLINKQUEUE *queue = &r->receive_queue;
 	va_list args;
 	va_start( args, type );
 	e.type = type;
+	e.waiter = MakeThread();
 	switch( type ) {
 	case Event_Render_Mouse:
 		e.data.mouse.x = va_arg( args, int32_t );
@@ -550,13 +564,12 @@ uintptr_t MakeEvent( uv_async_t *async, PLINKQUEUE *queue, enum GUI_eventType ty
 		break;
 	}
 
-	e.waiter = MakeThread();
 	e.flags.complete = 0; 
 	e.success = 0;
 	EnqueLink( queue, &e );
-	uv_async_send( async );
+	uv_async_send( &r->async );
 
-	while( !e.flags.complete ) WakeableSleep( 1000 );
+	while( !e.flags.complete ) IdleFor( 1000 );
 
 	return e.success;
 }

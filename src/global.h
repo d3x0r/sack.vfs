@@ -19,7 +19,7 @@
 #ifdef SACK_CORE
 #include <stdhdrs.h>
 #include <network.h>
-//#include <idle.h>
+#include <idle.h>
 #include <pssql.h>
 #include <sack_vfs.h>
 #include <salty_generator.h>
@@ -116,6 +116,7 @@ void SystemInit( Isolate* isolate, Local<Object> exports );
 class constructorSet {
 	public:
 	Isolate *isolate;
+	PTHREAD thread;
 	Persistent<Function> dateCons; // Date constructor
 	Persistent<Function> ThreadObject_idleProc;
 
@@ -218,6 +219,7 @@ class constructorSet {
 #endif
 };
 class constructorSet * getConstructors( Isolate *isolate );
+class constructorSet* getConstructorsByThread( void );
 
 
 
@@ -494,6 +496,7 @@ extern
 #endif
 struct vfs_global_data {
 	ARRAY_BUFFER_HOLDERSET *holders;
+	int shutdown;
 } vfs_global_data;
 
 #define GetHolder() GetFromSet( ARRAY_BUFFER_HOLDER, &vfs_global_data.holders )
