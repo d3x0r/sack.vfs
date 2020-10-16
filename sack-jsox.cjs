@@ -182,10 +182,8 @@ sack.JSOX.fromJSOX = function( prototypeName, o, f ) {
 	if( o && !("constructor" in o )) {
 		throw new Error( "Please pass a proper prototype...." );
 	}
-	console.log("XX:", o && o.constructor);
 	var z;
 	fromProtoTypes.set(prototypeName, z = { protoCon: o && o.prototype.constructor, cb: f });
-	console.log("zz:", z);
 }
 sack.JSOX.registerToFrom = function( prototypeName, prototype, to, from ) {
 	//console.log( "INPUT:", prototype );
@@ -415,13 +413,11 @@ sack.JSOX.stringifier = function() {
 		}
 		
 		const r  = str( asField, {[asField]:object} );
-		console.log( "STR RESULT:", r );
 		sack.JSOX.stringifierActive = stringifier_;
 		if( !(path.length = encoding.length = pathBase ) ){
-			console.log( "Reset stringifier maps (end of stuff)")
-			 fieldMap = new WeakMap();
+			fieldMap = new WeakMap();
 		}else{
-			console.log( "Stringifier is still in a stack?", path);
+			//console.log( "Stringifier is still in a stack?", path);
 		}
 		return r;
 
@@ -443,7 +439,6 @@ sack.JSOX.stringifier = function() {
 						path[thisNodeNameIndex] = i;
 						partial[i] = str(i, this) || "null";
 					}
-					console.log( "something:", partial );
 					path.length = thisNodeNameIndex;
 					//console.log( "remove encoding item", thisNodeNameIndex, encoding.length);
 					encoding.length = thisNodeNameIndex;
@@ -477,12 +472,10 @@ sack.JSOX.stringifier = function() {
 					const thisNodeNameIndex = path.length;
 					path[thisNodeNameIndex] = key;
 					out += (first?"":",") + getIdentifier(key) +':' + str("tmp", tmp);
-					console.log( "got from str:", out );
 					path.length = thisNodeNameIndex;
 					first = false;
 				}
 				out += '}';
-				console.log( "out is:", out );
 				return out;
 			}
 
@@ -503,10 +496,8 @@ sack.JSOX.stringifier = function() {
 			var partial;
 			const thisNodeNameIndex = path.length;
 			var value = holder[key];
-                        console.log( "VALUE STARTS:", key, holder[key] );
-			let isObject = (typeof value === "object");
+                        let isObject = (typeof value === "object");
 			if( "string" === typeof value ) value = getIdentifier( value );
-			console.log( "something", value );
 			_DEBUG_STRINGIFY
 				&& console.log( "Prototype lists:", localToProtoTypes.length, value && localToProtoTypes.get( Object.getPrototypeOf( value ) )
 					, value && Object.getPrototypeOf( value ), value && value.constructor.name
@@ -518,9 +509,8 @@ sack.JSOX.stringifier = function() {
 						stringifying.push( value );
 						encoding[thisNodeNameIndex] = value;
 						value = objectToJSOX.apply(value, [stringifier]);
-
-						console.log( "Converted by object lookup -it's now a different type"
-							, protoConverter, objectConverter );
+						//console.log( "Converted by object lookup -it's now a different type"
+						//	, protoConverter, objectConverter );
 						isObject = ( typeof value === "object" );
 						stringifying.pop();
 						encoding.length = thisNodeNameIndex;
@@ -540,11 +530,7 @@ sack.JSOX.stringifier = function() {
 				|| toObjectTypes.get( Object.keys( value ).toString() )
 				|| null )
 
-				//console.log( "VALUE:", value );
-				//if( value !== null && value !== undefined ) console.log( "PROTOTYPE:", Object.getPrototypeOf( value ) )
-				//console.log( "PROTOTYPE:", toProtoTypes.get(Object.getPrototypeOf( value )) )
 			_DEBUG_STRINGIFY && console.log( "TEST()", value, protoConverter, objectConverter );
-
 
 			var toJSOX = ( protoConverter && protoConverter.cb )
 			             || ( objectConverter && objectConverter.cb )
@@ -603,7 +589,6 @@ sack.JSOX.stringifier = function() {
 					}
 					if( objectConverter && objectConverter.external ) 
 						return c + objectConverter.name + value;
-					console.trace( "String result:", c, " + ", value);
 					return c + value;//useQuote+JSOX.escape( value )+useQuote;
 				}
 			case "boolean":
@@ -738,8 +723,7 @@ sack.JSOX.stringifier = function() {
 					);
 				}
 				gap = mind;
-				//_DEBUG_STRINGIFY && 
-					console.log(" Resulting phrase from this part is:", v );
+				_DEBUG_STRINGIFY && console.log(" Resulting phrase from this part is:", v );
 				return v;
 			}
 		}
