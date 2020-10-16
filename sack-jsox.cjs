@@ -131,32 +131,32 @@ var commonClasses = [];
 }
 
 sack.JSOX.defineClass = function( name, obj ) {
-			var cls;
-			var denormKeys = Object.keys(obj);
-			for( var i = 1; i < denormKeys.length; i++ ) {
-				var a, b;
-				if( ( a = denormKeys[i-1] ) > ( b = denormKeys[i] ) ) {
-					denormKeys[i-1] = b;
-					denormKeys[i] = a;
-					if( i ) i-=2; // go back 2, this might need to go further pack.
-					else i--; // only 1 to check.
-				}
-			}
-			//console.log( "normalized:", denormKeys );
-			commonClasses.push( cls = { name : name
-				   , tag:denormKeys.toString()
-				   , proto : Object.getPrototypeOf(obj)
-				   , fields : Object.keys(obj) } );
-			for(var n = 1; n < cls.fields.length; n++) {
-				if( cls.fields[n] < cls.fields[n-1] ) {
-					let tmp = cls.fields[n-1];
-					cls.fields[n-1] = cls.fields[n];
-					cls.fields[n] = tmp;
-					if( n > 1 )
-						n-=2;
-				}
-			}
-			if( cls.proto === Object.getPrototypeOf( {} ) ) cls.proto = null;
+	var cls;
+	var denormKeys = Object.keys(obj);
+	for( var i = 1; i < denormKeys.length; i++ ) {
+		var a, b;
+		if( ( a = denormKeys[i-1] ) > ( b = denormKeys[i] ) ) {
+			denormKeys[i-1] = b;
+			denormKeys[i] = a;
+			if( i ) i-=2; // go back 2, this might need to go further pack.
+			else i--; // only 1 to check.
+		}
+	}
+	//console.log( "normalized:", denormKeys );
+	commonClasses.push( cls = { name : name
+		   , tag:denormKeys.toString()
+		   , proto : Object.getPrototypeOf(obj)
+		   , fields : Object.keys(obj) } );
+	for(var n = 1; n < cls.fields.length; n++) {
+		if( cls.fields[n] < cls.fields[n-1] ) {
+			let tmp = cls.fields[n-1];
+			cls.fields[n-1] = cls.fields[n];
+			cls.fields[n] = tmp;
+			if( n > 1 )
+				n-=2;
+		}
+	}
+	if( cls.proto === Object.getPrototypeOf( {} ) ) cls.proto = null;
 }
 
 sack.JSOX.registerToJSOX = function( name, prototype, f ) {
@@ -232,7 +232,7 @@ sack.JSOX.stringifier = function() {
 	var localToProtoTypes = new WeakMap();
 	localToProtoTypes.id = id++;
 	var localToObjectTypes = new Map();
-	var stringifying = []; // things that have been stringified through external toJSOX; allows second pass to skip this toJSOX pass and encode 'normally'
+	const stringifying = []; // things that have been stringified through external toJSOX; allows second pass to skip this toJSOX pass and encode 'normally'
 	var ignoreNonEnumerable = false;
 
 	return {
@@ -415,7 +415,7 @@ sack.JSOX.stringifier = function() {
 		const r  = str( asField, {[asField]:object} );
 		sack.JSOX.stringifierActive = stringifier_;
 		if( !(path.length = encoding.length = pathBase ) ){
-			fieldMap = new WeakMap();
+			fieldMap.clear();
 		}else{
 			//console.log( "Stringifier is still in a stack?", path);
 		}
