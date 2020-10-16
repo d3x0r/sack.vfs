@@ -172,6 +172,7 @@ sack.JSOX.registerToJSOX = function( name, prototype, f ) {
 		toObjectTypes.set( key, { external:true, name:name, cb:f } );
 	}
 }
+sack.JSOX.toJSOX = sack.JSOX.registerToJSOX;
 sack.JSOX.registerFromJSOX = function (prototypeName, o, f) {
 	throw new Error("registerFromJSOX  was deprecated, please update to use 'fromJSOX'");
 }
@@ -188,6 +189,10 @@ sack.JSOX.fromJSOX = function( prototypeName, o, f ) {
 sack.JSOX.registerToFrom = function( prototypeName, prototype, to, from ) {
 	//console.log( "INPUT:", prototype );
 	sack.JSOX.registerToJSOX( prototypeName, prototype, to );
+	sack.JSOX.fromJSOX( prototypeName, prototype, from );
+}
+sack.JSOX.addType = function( prototypeName, prototype, to, from ) {
+	sack.JSOX.toJSOX( prototypeName, prototype, to );
 	sack.JSOX.fromJSOX( prototypeName, prototype, from );
 }
 
@@ -415,7 +420,7 @@ sack.JSOX.stringifier = function() {
 		const r  = str( asField, {[asField]:object} );
 		sack.JSOX.stringifierActive = stringifier_;
 		if( !(path.length = encoding.length = pathBase ) ){
-			fieldMap.clear();
+			fieldMap = new WeakMap();
 		}else{
 			//console.log( "Stringifier is still in a stack?", path);
 		}
