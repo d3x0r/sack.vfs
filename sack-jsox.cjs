@@ -585,7 +585,8 @@ sack.JSOX.stringifier = function() {
 						c = classes.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"")
 						    || commonClasses.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
 					}
-					if( protoConverter && protoConverter.external && protoConverter.proto === Object.getPrototypeOf(value) && protoConverter.name )
+					if( protoConverter && protoConverter.external )
+						//  && protoConverter.proto === Object.getPrototypeOf(value) && protoConverter.name
 						return c + protoConverter.name + value;
 					if( objectConverter && objectConverter.external )
 						return c + objectConverter.name + value;
