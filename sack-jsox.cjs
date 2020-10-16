@@ -415,6 +415,7 @@ sack.JSOX.stringifier = function() {
 		}
 		
 		const r  = str( asField, {[asField]:object} );
+		console.log( "STR RESULT:", r );
 		sack.JSOX.stringifierActive = stringifier_;
 		if( !(path.length = encoding.length = pathBase ) ){
 			console.log( "Reset stringifier maps (end of stuff)")
@@ -442,6 +443,7 @@ sack.JSOX.stringifier = function() {
 						path[thisNodeNameIndex] = i;
 						partial[i] = str(i, this) || "null";
 					}
+					console.log( "something:", partial );
 					path.length = thisNodeNameIndex;
 					//console.log( "remove encoding item", thisNodeNameIndex, encoding.length);
 					encoding.length = thisNodeNameIndex;
@@ -475,11 +477,12 @@ sack.JSOX.stringifier = function() {
 					const thisNodeNameIndex = path.length;
 					path[thisNodeNameIndex] = key;
 					out += (first?"":",") + getIdentifier(key) +':' + str("tmp", tmp);
+					console.log( "got from str:", out );
 					path.length = thisNodeNameIndex;
 					first = false;
 				}
 				out += '}';
-				//console.log( "out is:", out );
+				console.log( "out is:", out );
 				return out;
 			}
 
@@ -500,13 +503,34 @@ sack.JSOX.stringifier = function() {
 			var partial;
 			const thisNodeNameIndex = path.length;
 			var value = holder[key];
+                        console.log( "VALUE STARTS:", key, holder[key] );
 			let isObject = (typeof value === "object");
 			if( "string" === typeof value ) value = getIdentifier( value );
-
+			console.log( "something", value );
 			_DEBUG_STRINGIFY
 				&& console.log( "Prototype lists:", localToProtoTypes.length, value && localToProtoTypes.get( Object.getPrototypeOf( value ) )
 					, value && Object.getPrototypeOf( value ), value && value.constructor.name
 					, localToProtoTypes, toProtoTypes );
+
+			if( isObject && ( value !== null ) ) {
+				if( objectToJSOX ){
+					if( !stringifying.find( val=>val===value ) ) {
+						stringifying.push( value );
+						encoding[thisNodeNameIndex] = value;
+						value = objectToJSOX.apply(value, [stringifier]);
+
+						console.log( "Converted by object lookup -it's now a different type"
+							, protoConverter, objectConverter );
+						isObject = ( typeof value === "object" );
+						stringifying.pop();
+						encoding.length = thisNodeNameIndex;
+						isObject = (typeof value === "object");
+					}
+					//console.log( "Value convereted to:", key, value );
+				}
+				
+			}
+
 			var protoConverter = (value !== undefined && value !== null)
 				&& ( localToProtoTypes.get( Object.getPrototypeOf( value ) )
 				|| toProtoTypes.get( Object.getPrototypeOf( value ) )
@@ -521,20 +545,6 @@ sack.JSOX.stringifier = function() {
 				//console.log( "PROTOTYPE:", toProtoTypes.get(Object.getPrototypeOf( value )) )
 			_DEBUG_STRINGIFY && console.log( "TEST()", value, protoConverter, objectConverter );
 
-			if( isObject && ( value !== null ) ) {
-				if( objectToJSOX ){
-					if( !stringifying.find( val=>val===value ) ) {
-						stringifying.push( value );
-						encoding[thisNodeNameIndex] = value;
-						value = objectToJSOX.apply(value, [stringifier]);
-						stringifying.pop();
-						encoding.length = thisNodeNameIndex;
-						isObject = (typeof value === "object");
-					}
-					//console.log( "Value convereted to:", key, value );
-				}
-				
-			}
 
 			var toJSOX = ( protoConverter && protoConverter.cb )
 			             || ( objectConverter && objectConverter.cb )
@@ -587,11 +597,13 @@ sack.JSOX.stringifier = function() {
 						c = classes.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"")
 						    || commonClasses.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
 					}
-					if( protoConverter && protoConverter.external )
+					if( protoConverter && protoConverter.external ){
 						//  && protoConverter.proto === Object.getPrototypeOf(value) && protoConverter.name
 						return c + protoConverter.name + value;
-					if( objectConverter && objectConverter.external )
+					}
+					if( objectConverter && objectConverter.external ) 
 						return c + objectConverter.name + value;
+					console.trace( "String result:", c, " + ", value);
 					return c + value;//useQuote+JSOX.escape( value )+useQuote;
 				}
 			case "boolean":
@@ -635,7 +647,6 @@ sack.JSOX.stringifier = function() {
 							//console.log( "set encoding item", thisNodeNameIndex, encoding.length);
 							encoding[thisNodeNameIndex] = value;
 							v = str(k, value);
-
 							if (v) {
 								if( partialClass ) {
 									partial.push(v);
@@ -684,7 +695,6 @@ sack.JSOX.stringifier = function() {
 							path[thisNodeNameIndex] = k;
 							encoding[thisNodeNameIndex] = value;
 							v = str(k, value);
-
 							if (v) {
 								if( partialClass ) {
 									partial.push(v);
@@ -712,9 +722,9 @@ sack.JSOX.stringifier = function() {
 					    || commonClasses.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
 				else
 					c = '';
-				//console.log( "output:", key, c, partialClass  );
-				if( protoConverter && protoConverter.external )
+				if( protoConverter && protoConverter.external ) {
 					c = c + getIdentifier( protoConverter.name );
+				}
 
 				var ident = null;
 				if( partialClass )
@@ -728,7 +738,8 @@ sack.JSOX.stringifier = function() {
 					);
 				}
 				gap = mind;
-				_DEBUG_STRINGIFY && console.log(" Resulting phrase from this part is:", v );
+				//_DEBUG_STRINGIFY && 
+					console.log(" Resulting phrase from this part is:", v );
 				return v;
 			}
 		}
