@@ -166,7 +166,7 @@ sack.JSOX.registerToJSOX = function( name, prototype, f ) {
 	if( !prototype.prototype || prototype.prototype !== Object.prototype ) {
 		if( toProtoTypes.get(prototype) ) throw new Error( "Existing toJSOX has been registered for prototype" );
 		_DEBUG_STRINGIFY && console.log( "PUSH PROTOTYPE" );
-		toProtoTypes.set( prototype, { external:true, name:name||f.prototype.constructor.name, cb:f } );
+		toProtoTypes.set( prototype, { external:true, name:(name===undefined)?f.prototype.constructor.name:name, cb:f } );
 	} else {
 		var key = Object.keys( prototype ).toString();
 		if( toObjectTypes.get(key) ) throw new Error( "Existing toJSOX has been registered for object type" );
@@ -286,7 +286,8 @@ sack.JSOX.stringifier = function() {
 			if( prototype.prototype && prototype.prototype !== Object.prototype ) {
 				if( localToProtoTypes.get(prototype) ) throw new Error( "Existing toJSOX has been registered for prototype" );
 				_DEBUG_STRINGIFY && console.log( "Adding prototype to  local objects:", name, prototype.prototype, localToProtoTypes );
-				localToProtoTypes.set( prototype.prototype, { external:true, name:(name===undefined)?undefined:name?name:f.prototype.constructor.name, cb:f } );
+				const newThing = { external:true, name:(name===undefined)?f.prototype.constructor.name:name, cb:f };
+				localToProtoTypes.set( prototype.prototype, newThing );
 				_DEBUG_STRINGIFY && console.log( "Can we get it back?", localToProtoTypes.get( prototype.prototype ) );
 			} else {
 				_DEBUG_STRINGIFY && console.log( "This is set by key?!" );
