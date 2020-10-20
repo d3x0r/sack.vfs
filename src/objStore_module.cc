@@ -999,7 +999,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			uint64_t *timeArray;
 
 			objStore::sack_vfs_os_get_times( file, &timeArray, &timeCount );
-			Local<Array> arr = Array::New( isolate, timeCount );
+			Local<Array> arr = Array::New( isolate, (int)timeCount );
 			for( int n = 0; n < timeCount; n++ ) {
 				//arr->Set( n, Date::New( isolate, timeArray[n] / 1000000000.0 ) );
 				{

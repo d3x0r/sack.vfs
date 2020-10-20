@@ -1,6 +1,7 @@
 
 module.exports = function(sack) {
 const _debug = false;
+const _debug_dangling = false;
 const _debug_output = _debug || false;
 const _debug_object_convert = _debug || false;
 
@@ -146,7 +147,8 @@ objectStorageContainer.prototype.map = async function( opts ) {
 					//console.log( "something:", load );
 					loadPending(load);
 				}
-				dangling.length = 0;
+				// wait until the promise resolves to delete this
+				//dangling.length = 0;
 			}
 			if( !waiting ){
 				console.log( "Nothing scheduled to really wait, go ahead and resolve");
@@ -186,7 +188,7 @@ objectStorageContainer.prototype.map = async function( opts ) {
 			}
 		})
 	}
-	console.log( "Nothing dangling found on object");
+	_debug_dangling && console.log( "Nothing dangling found on object");
 	return this.data; // this function is async, just return.
 }
 
@@ -650,7 +652,7 @@ _objectStorage.prototype.get = function( opts ) {
 	}
 
 	function objectStorageContainerRef( s ) {
-		//console.log( "Container ref:", s );
+		_debug_dangling && console.log( "Container ref:", s );
 		try {
 			const existing = os.cachedContainer.get(s);
 			const here = os.getCurrentParseRef();
@@ -658,30 +660,43 @@ _objectStorage.prototype.get = function( opts ) {
 			//console.log( "Conainer ref, this will resolve in-place")
 			this.d = {id:s,p:null,res:null,rej:null,refobj:null, reffield:null};
 			if( !existing ) {
-				this.d.p = new Promise( (res,rej)=>{
-					console.log( "setting up pending promise to resolve:", s );
+				_debug_dangling && console.log( "PUSHING DANGLING REFERNCE", this );
+				const requests = allDangling.get( this.d.id ) || [];
+				if( !requests.length ) allDangling.set( this.d.id, requests );
+				const p = this.d.p = new Promise( (res,rej)=>{
+					_debug_dangling && console.log( "setting up pending promise to resolve:", s );
 					this.d.res = res;
 					this.d.rej = rej;
 				}).then( (obj)=>{
-					console.log( "(DOES THIS HAPPEN?)OBJ REPLACE OBJECT WITH:", here, obj )
+					_debug_dangling && console.log( "(DOES THIS HAPPEN?)OBJ REPLACE OBJECT WITH:", here, obj, thisDangling, s )
 					const dr = thisDangling.findIndex( d=> d.d.id === s );
 					if( dr >= 0 ) thisDangling.splice( dr, 1 );
 					else console.log( "FAILED TO FIND DANGLING REFERENCE" );
+
+					const dp = requests.findIndex( d=> d.d.p ===  p );
+					if( dp >= 0 ) {
+						requests.splice( dr, 1 );
+						if( !requests.length ) {
+							_debug_dangling && console.log( "This object fully resolved." );
+							allDangling.delete( s );
+						}
+					}
+			
+					else console.log( "FAILED TO FIND ALLDANGLING REFERENCE" );
+
 					return (here.o[here.f] = obj) 
-				}).catch( ()=>{
-					console.log( "CATCH UNCAUGHT PLEASE DO asdf");
+				}).catch( (err)=>{
+					console.log( "CATCH UNCAUGHT PLEASE DO", err);
 				});
+
+				requests.push( this );
+				dangling.push( this );
+				objectRefs++;
+
 			} else {
+				_debug_dangling && console.log( "NOT DANGLING; existing object already exists... " );
 				this.d.p = Promise.resolve( existing.data );  // this will still have to be swapped.
 			}
-			console.log( "PUSHING DANGLING REFERNCE", this );
-			const requests = allDangling.get( this.d.id );
-			if( requests )
-				requests.push( this );
-			else
-				allDangling.set( this.d.id, [this] );
-			dangling.push( this );
-			objectRefs++;
 		} catch(err) { console.log( "Init failed:", err)}
 	}
 
@@ -691,7 +706,7 @@ _objectStorage.prototype.get = function( opts ) {
 			// finished.
 			if( objectRefs ) {
 				/* sets dangling property on container */
-				console.log( "Collapse dangling", dangling );
+				_debug_dangling && console.log( "Collapse dangling", dangling );
 				if( !this.dangling )
 					Object.defineProperty( this, "dangling", { value:dangling } );
 				else{
@@ -704,19 +719,16 @@ _objectStorage.prototype.get = function( opts ) {
 			}
 			Object.defineProperty( this, "id", { value:currentReadId } );
 
-			console.log( "Revive container final pass... does this resolve?", this ); 
 			const request = allDangling.get( currentReadId );
-			if( request )
+			//console.log( "Revive container final pass... does this resolve?", this, request, allDangling, currentReadId ); 
+			if( request ) {
 				for( let load of request ) {
 					load = load.d;
-					console.log( "Checking dangling:", load, currentReadId )
-					if( load.id === currentReadId ){
-						console.log( "Resolve pending promise.", load);
-						load.res( this.data );
-						break;
-					}
+					//console.log( "Checking dangling:", load, currentReadId )
+					//console.log( "Resolve pending promise.", load);
+					load.res( this.data );
 				}
-			allDangling.delete( currentReadId );
+			}
 			return this;
 		}
 		else {
@@ -725,13 +737,13 @@ _objectStorage.prototype.get = function( opts ) {
 				// new value isn't anything special; just set the value.
 				//console.log( "This sort of thing... val is just a thing - like a key part identifier...; but that should have been a container.");
 				if( val instanceof Promise ) {
-					console.log( "Value is a promise, and needs resolution.")
+					_debug_dangling && console.log( "Value is a promise, and needs resolution.")
 					var dangle = dangling.find( d=>d.d.p===val );
 					if( dangle )
 						dangle.d.n = field;
 					this_.data[field] = val
 					return val.then( (val)=>{
-						console.log( "(DOESN'T HAPPEN NOW?) THIS SHOULD BE WHAT REPLACES THE VALUE", field, val );
+						_debug_dangling && console.log( "(DOESN'T HAPPEN NOW?) THIS SHOULD BE WHAT REPLACES THE VALUE", field, val );
 						this_.data[field] = val 
 					});
 				}
@@ -759,17 +771,17 @@ _objectStorage.prototype.get = function( opts ) {
 				return existing.data;
 			} 
 			/*
-			console.log( "...", pending );
+			_debug_dangling && console.log( "...", pending );
 			if( pending ) {
 				for( let load of pending ) {
-					console.log( "Checking pending:", load )
+					_debug_dangling && console.log( "Checking pending:", load )
 					if( load.d.id === this.d )
 					{
-						console.log( "found pending outstanding to resolve pending..." );
+						_debug_dangling && console.log( "found pending outstanding to resolve pending..." );
 						continue;
 						const existing = newStorage.cachedContainer.get( load.d.id );
 						if( existing ) {
-							console.log( "Found it as existing, resolve it?", existing.data );
+							_debug_dangling && console.log( "Found it as existing, resolve it?", existing.data );
 							if( load.d.res ) load.d.res( existing.data );
 							else {load.d.p.then( o2=>{
 								if( existing.data!==o2) 
@@ -801,7 +813,7 @@ _objectStorage.prototype.get = function( opts ) {
 	let parser = this.parser;
 	if( opts.extraDecoders ) {
 		parser = sack.JSOX.begin(  );
-		console.log( "Adding ~os handler");
+		//console.log( "Adding ~os handler");
 		parser.fromJSOX( "~os", this.objectStorageContainer, reviveContainer ); // I don't know ahead of time which this is.
 		parser.fromJSOX( "~or", objectStorageContainerRef, reviveContainerRef ); // I don't know ahead of time which this is.
 		//console.log( "this has no decoders? ", this );
