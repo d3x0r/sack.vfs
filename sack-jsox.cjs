@@ -20,6 +20,7 @@ try {
 	console.log( "JSOX Module could not register require support..." );
 }
 const _DEBUG_STRINGIFY = false;
+const DEBUG_STRINGIFY_OUTPUT = _DEBUG_STRINGIFY|| false;
 var toProtoTypes = new WeakMap();
 var toObjectTypes = new Map();
 var fromProtoTypes = new Map();
@@ -33,7 +34,7 @@ var commonClasses = [];
 	function this_value() {_DEBUG_STRINGIFY&&console.log( "this:", this, "valueof:", this&&this.valueOf() ); return this&&this.valueOf(); }
 	// function https://stackoverflow.com/a/17415677/4619267
 	toProtoTypes.set( Date.prototype, { external:false,
-		name : "Date",
+		name : null, // this doesn't get a tag name, it returns a literal.
 		cb : function () {
 			var tzo = -this.getTimezoneOffset(),
 				dif = tzo >= 0 ? '+' : '-',
@@ -56,8 +57,8 @@ var commonClasses = [];
 				':' + pad(tzo % 60);
 		}
 	} );
-	toProtoTypes.set( Boolean.prototype, { external:false, name:"Boolean", cb:this_value  } );
-	toProtoTypes.set( Number.prototype, { external:false, name:"Number"
+	toProtoTypes.set( Boolean.prototype, { external:false, name:null, cb:this_value  } );
+	toProtoTypes.set( Number.prototype, { external:false, name:null
 	    , cb:function(){
 			if( isNaN(this) )  return "NaN";
 			return (isFinite(this))
@@ -66,11 +67,11 @@ var commonClasses = [];
 		}
 	} );
 	toProtoTypes.set( String.prototype, { external:false
-	                                    , name : "String"
+	                                    , name : null
 	                                    , cb:function(){ return '"' + sack.JSOX.escape(this_value.apply(this)) + '"' } } );
 	if( typeof BigInt === "function" )
 		toProtoTypes.set( BigInt.prototype
-		                , { external:false, name:"BigInt", cb:function() { return this + 'n' } } );
+		                , { external:false, name:null, cb:function() { return this + 'n' } } );
 
 	toProtoTypes.set( ArrayBuffer.prototype, { external:true, name:"ab"
 		, cb:function() { return "ab[\""+base64ArrayBuffer(this)+"\"]" }
@@ -120,6 +121,7 @@ var commonClasses = [];
 	} );
 	fromProtoTypes.set("map", {
 		protoCon: Map.prototype.constructor, cb:function(field, val) {
+			console.log( "MAP VALUE:", field, val );
 			if (!field) return this;
 			this.set( field,val );
 	} } );
@@ -164,7 +166,7 @@ sack.JSOX.registerToJSOX = function( name, prototype, f ) {
 	if( !prototype.prototype || prototype.prototype !== Object.prototype ) {
 		if( toProtoTypes.get(prototype) ) throw new Error( "Existing toJSOX has been registered for prototype" );
 		_DEBUG_STRINGIFY && console.log( "PUSH PROTOTYPE" );
-		toProtoTypes.set( prototype, { external:true, name:name||f.prototype.constructor.name, cb:f } );
+		toProtoTypes.set( prototype, { external:true, name:(name===undefined)?f.prototype.constructor.name:name, cb:f } );
 	} else {
 		var key = Object.keys( prototype ).toString();
 		if( toObjectTypes.get(key) ) throw new Error( "Existing toJSOX has been registered for object type" );
@@ -284,7 +286,8 @@ sack.JSOX.stringifier = function() {
 			if( prototype.prototype && prototype.prototype !== Object.prototype ) {
 				if( localToProtoTypes.get(prototype) ) throw new Error( "Existing toJSOX has been registered for prototype" );
 				_DEBUG_STRINGIFY && console.log( "Adding prototype to  local objects:", name, prototype.prototype, localToProtoTypes );
-				localToProtoTypes.set( prototype.prototype, { external:true, name:(name===undefined)?undefined:name?name:f.prototype.constructor.name, cb:f } );
+				const newThing = { external:true, name:(name===undefined)?f.prototype.constructor.name:name, cb:f };
+				localToProtoTypes.set( prototype.prototype, newThing );
 				_DEBUG_STRINGIFY && console.log( "Can we get it back?", localToProtoTypes.get( prototype.prototype ) );
 			} else {
 				_DEBUG_STRINGIFY && console.log( "This is set by key?!" );
@@ -424,6 +427,7 @@ sack.JSOX.stringifier = function() {
 		}else{
 			//console.log( "Stringifier is still in a stack?", path);
 		}
+		DEBUG_STRINGIFY_OUTPUT && console.trace( "Stringify Result:", r );
 		return r;
 
 
@@ -472,6 +476,7 @@ sack.JSOX.stringifier = function() {
 				var first = true;
 				//console.log( "CONVERT:", map);
 				for (var [key, value] of this) {
+					//if( "function" === typeof value ) continue;
 					//console.log( "er...", key, value )
 					tmp.tmp = value;
 					const thisNodeNameIndex = path.length;
@@ -501,7 +506,7 @@ sack.JSOX.stringifier = function() {
 			var partial;
 			const thisNodeNameIndex = path.length;
 			var value = holder[key];
-                        let isObject = (typeof value === "object");
+			let isObject = (typeof value === "object");
 			if( "string" === typeof value ) value = getIdentifier( value );
 			_DEBUG_STRINGIFY
 				&& console.log( "Prototype lists:", localToProtoTypes.length, value && localToProtoTypes.get( Object.getPrototypeOf( value ) )
@@ -514,16 +519,17 @@ sack.JSOX.stringifier = function() {
 						stringifying.push( value );
 						encoding[thisNodeNameIndex] = value;
 						value = objectToJSOX.apply(value, [stringifier]);
-						//console.log( "Converted by object lookup -it's now a different type"
-						//	, protoConverter, objectConverter );
-						isObject = ( typeof value === "object" );
+						if( value !== encoding[thisNodeNameIndex] )
+						console.log( "Converted by object lookup -it's now a different type"
+							, Object.getPrototypeOf(encoding[thisNodeNameIndex])
+							, Object.getPrototypeOf(value )
+							, protoConverter, objectConverter );
 						stringifying.pop();
 						encoding.length = thisNodeNameIndex;
 						isObject = (typeof value === "object");
 					}
 					//console.log( "Value convereted to:", key, value );
-				}
-				
+				}				
 			}
 
 			var protoConverter = (value !== undefined && value !== null)
@@ -558,8 +564,24 @@ sack.JSOX.stringifier = function() {
 					}
 					stringifying.push( value );
 					encoding[thisNodeNameIndex] = value;
+					//console.log( "Value not converted?", value );
 					value = toJSOX.apply(value, [stringifier]);
 					stringifying.pop();
+					//console.log( "Value not converted?", value );
+					if( protoConverter && protoConverter.name ) {
+						// stringify may return a unquoted string
+						// which needs an extra space betwen its tag and value.
+						if( "string" === typeof value 
+							&& value[0] !== '"'
+							&& value[0] !== '\'' 
+							&& value[0] !== '`' 
+							&& value[0] !== '[' 
+							&& value[0] !== '{' 
+							){
+							value = ' ' + value;
+						}
+					}
+					//console.log( "Value converted:", value );
 					encoding.length = thisNodeNameIndex;
 
 					gap = mind;
