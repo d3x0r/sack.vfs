@@ -131,32 +131,32 @@ var commonClasses = [];
 }
 
 sack.JSOX.defineClass = function( name, obj ) {
-			var cls;
-			var denormKeys = Object.keys(obj);
-			for( var i = 1; i < denormKeys.length; i++ ) {
-				var a, b;
-				if( ( a = denormKeys[i-1] ) > ( b = denormKeys[i] ) ) {
-					denormKeys[i-1] = b;
-					denormKeys[i] = a;
-					if( i ) i-=2; // go back 2, this might need to go further pack.
-					else i--; // only 1 to check.
-				}
-			}
-			//console.log( "normalized:", denormKeys );
-			commonClasses.push( cls = { name : name
-				   , tag:denormKeys.toString()
-				   , proto : Object.getPrototypeOf(obj)
-				   , fields : Object.keys(obj) } );
-			for(var n = 1; n < cls.fields.length; n++) {
-				if( cls.fields[n] < cls.fields[n-1] ) {
-					let tmp = cls.fields[n-1];
-					cls.fields[n-1] = cls.fields[n];
-					cls.fields[n] = tmp;
-					if( n > 1 )
-						n-=2;
-				}
-			}
-			if( cls.proto === Object.getPrototypeOf( {} ) ) cls.proto = null;
+	var cls;
+	var denormKeys = Object.keys(obj);
+	for( var i = 1; i < denormKeys.length; i++ ) {
+		var a, b;
+		if( ( a = denormKeys[i-1] ) > ( b = denormKeys[i] ) ) {
+			denormKeys[i-1] = b;
+			denormKeys[i] = a;
+			if( i ) i-=2; // go back 2, this might need to go further pack.
+			else i--; // only 1 to check.
+		}
+	}
+	//console.log( "normalized:", denormKeys );
+	commonClasses.push( cls = { name : name
+		   , tag:denormKeys.toString()
+		   , proto : Object.getPrototypeOf(obj)
+		   , fields : Object.keys(obj) } );
+	for(var n = 1; n < cls.fields.length; n++) {
+		if( cls.fields[n] < cls.fields[n-1] ) {
+			let tmp = cls.fields[n-1];
+			cls.fields[n-1] = cls.fields[n];
+			cls.fields[n] = tmp;
+			if( n > 1 )
+				n-=2;
+		}
+	}
+	if( cls.proto === Object.getPrototypeOf( {} ) ) cls.proto = null;
 }
 
 sack.JSOX.registerToJSOX = function( name, prototype, f ) {
@@ -172,6 +172,7 @@ sack.JSOX.registerToJSOX = function( name, prototype, f ) {
 		toObjectTypes.set( key, { external:true, name:name, cb:f } );
 	}
 }
+sack.JSOX.toJSOX = sack.JSOX.registerToJSOX;
 sack.JSOX.registerFromJSOX = function (prototypeName, o, f) {
 	throw new Error("registerFromJSOX  was deprecated, please update to use 'fromJSOX'");
 }
@@ -182,14 +183,16 @@ sack.JSOX.fromJSOX = function( prototypeName, o, f ) {
 	if( o && !("constructor" in o )) {
 		throw new Error( "Please pass a proper prototype...." );
 	}
-	console.log("XX:", o && o.constructor);
 	var z;
 	fromProtoTypes.set(prototypeName, z = { protoCon: o && o.prototype.constructor, cb: f });
-	console.log("zz:", z);
 }
 sack.JSOX.registerToFrom = function( prototypeName, prototype, to, from ) {
 	//console.log( "INPUT:", prototype );
 	sack.JSOX.registerToJSOX( prototypeName, prototype, to );
+	sack.JSOX.fromJSOX( prototypeName, prototype, from );
+}
+sack.JSOX.addType = function( prototypeName, prototype, to, from ) {
+	sack.JSOX.toJSOX( prototypeName, prototype, to );
 	sack.JSOX.fromJSOX( prototypeName, prototype, from );
 }
 
@@ -234,7 +237,7 @@ sack.JSOX.stringifier = function() {
 	var localToProtoTypes = new WeakMap();
 	localToProtoTypes.id = id++;
 	var localToObjectTypes = new Map();
-	var stringifying = []; // things that have been stringified through external toJSOX; allows second pass to skip this toJSOX pass and encode 'normally'
+	const stringifying = []; // things that have been stringified through external toJSOX; allows second pass to skip this toJSOX pass and encode 'normally'
 	var ignoreNonEnumerable = false;
 
 	return {
@@ -417,10 +420,9 @@ sack.JSOX.stringifier = function() {
 		const r  = str( asField, {[asField]:object} );
 		sack.JSOX.stringifierActive = stringifier_;
 		if( !(path.length = encoding.length = pathBase ) ){
-			console.log( "Reset stringifier maps (end of stuff)")
-			 fieldMap = new WeakMap();
+			fieldMap = new WeakMap();
 		}else{
-			console.log( "Stringifier is still in a stack?", path);
+			//console.log( "Stringifier is still in a stack?", path);
 		}
 		return r;
 
@@ -479,7 +481,6 @@ sack.JSOX.stringifier = function() {
 					first = false;
 				}
 				out += '}';
-				//console.log( "out is:", out );
 				return out;
 			}
 
@@ -500,13 +501,31 @@ sack.JSOX.stringifier = function() {
 			var partial;
 			const thisNodeNameIndex = path.length;
 			var value = holder[key];
-			let isObject = (typeof value === "object");
+                        let isObject = (typeof value === "object");
 			if( "string" === typeof value ) value = getIdentifier( value );
-
 			_DEBUG_STRINGIFY
 				&& console.log( "Prototype lists:", localToProtoTypes.length, value && localToProtoTypes.get( Object.getPrototypeOf( value ) )
 					, value && Object.getPrototypeOf( value ), value && value.constructor.name
 					, localToProtoTypes, toProtoTypes );
+
+			if( isObject && ( value !== null ) ) {
+				if( objectToJSOX ){
+					if( !stringifying.find( val=>val===value ) ) {
+						stringifying.push( value );
+						encoding[thisNodeNameIndex] = value;
+						value = objectToJSOX.apply(value, [stringifier]);
+						//console.log( "Converted by object lookup -it's now a different type"
+						//	, protoConverter, objectConverter );
+						isObject = ( typeof value === "object" );
+						stringifying.pop();
+						encoding.length = thisNodeNameIndex;
+						isObject = (typeof value === "object");
+					}
+					//console.log( "Value convereted to:", key, value );
+				}
+				
+			}
+
 			var protoConverter = (value !== undefined && value !== null)
 				&& ( localToProtoTypes.get( Object.getPrototypeOf( value ) )
 				|| toProtoTypes.get( Object.getPrototypeOf( value ) )
@@ -516,25 +535,7 @@ sack.JSOX.stringifier = function() {
 				|| toObjectTypes.get( Object.keys( value ).toString() )
 				|| null )
 
-				//console.log( "VALUE:", value );
-				//if( value !== null && value !== undefined ) console.log( "PROTOTYPE:", Object.getPrototypeOf( value ) )
-				//console.log( "PROTOTYPE:", toProtoTypes.get(Object.getPrototypeOf( value )) )
 			_DEBUG_STRINGIFY && console.log( "TEST()", value, protoConverter, objectConverter );
-
-			if( isObject && ( value !== null ) ) {
-				if( objectToJSOX ){
-					if( !stringifying.find( val=>val===value ) ) {
-						stringifying.push( value );
-						encoding[thisNodeNameIndex] = value;
-						value = objectToJSOX.apply(value, [stringifier]);
-						stringifying.pop();
-						encoding.length = thisNodeNameIndex;
-						isObject = (typeof value === "object");
-					}
-					//console.log( "Value convereted to:", key, value );
-				}
-				
-			}
 
 			var toJSOX = ( protoConverter && protoConverter.cb )
 			             || ( objectConverter && objectConverter.cb )
@@ -587,9 +588,11 @@ sack.JSOX.stringifier = function() {
 						c = classes.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"")
 						    || commonClasses.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
 					}
-					if( protoConverter && protoConverter.external && protoConverter.proto === Object.getPrototypeOf(value) && protoConverter.name )
+					if( protoConverter && protoConverter.external ){
+						//  && protoConverter.proto === Object.getPrototypeOf(value) && protoConverter.name
 						return c + protoConverter.name + value;
-					if( objectConverter && objectConverter.external )
+					}
+					if( objectConverter && objectConverter.external ) 
 						return c + objectConverter.name + value;
 					return c + value;//useQuote+JSOX.escape( value )+useQuote;
 				}
@@ -634,7 +637,6 @@ sack.JSOX.stringifier = function() {
 							//console.log( "set encoding item", thisNodeNameIndex, encoding.length);
 							encoding[thisNodeNameIndex] = value;
 							v = str(k, value);
-
 							if (v) {
 								if( partialClass ) {
 									partial.push(v);
@@ -683,7 +685,6 @@ sack.JSOX.stringifier = function() {
 							path[thisNodeNameIndex] = k;
 							encoding[thisNodeNameIndex] = value;
 							v = str(k, value);
-
 							if (v) {
 								if( partialClass ) {
 									partial.push(v);
@@ -711,9 +712,9 @@ sack.JSOX.stringifier = function() {
 					    || commonClasses.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
 				else
 					c = '';
-				//console.log( "output:", key, c, partialClass  );
-				if( protoConverter && protoConverter.external )
+				if( protoConverter && protoConverter.external ) {
 					c = c + getIdentifier( protoConverter.name );
+				}
 
 				var ident = null;
 				if( partialClass )
