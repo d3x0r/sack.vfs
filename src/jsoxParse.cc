@@ -601,11 +601,9 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 					Get( revive->context, className );
 					//lprintf( "method1? %d", valmethod.IsEmpty());
 				if( !valmethod.IsEmpty() && !valmethod.ToLocalChecked()->IsUndefined() ) {
-					struct PromiseWrapper *pw = makePromise( revive->context, revive->isolate );
-					Local<Value> args[] = { result, pw->resolve.Get( revive->isolate ), pw->reject.Get( revive->isolate ) };
+					Local<Value> args[] = { result };
 					cb = valmethod.ToLocalChecked().As<Function>();
-					//lprintf( "passing a promise...");
-					result = cb->Call( revive->context, revive->_this, 3, args ).ToLocalChecked();
+					result = cb->Call( revive->context, revive->_this, 1, args ).ToLocalChecked();
 					if( result.IsEmpty() ) {
 						return Null( revive->isolate );
 					}
@@ -906,7 +904,6 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 		if( val->className ) {
 			MaybeLocal<Value> valmethod;
 			Local<Function> cb;
-
 
 			// although at this time, this layer should always be empty(?)
 			// this is the call, 1 time after an object completes, with NULL arguments

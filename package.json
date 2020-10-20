@@ -11,6 +11,7 @@
   "module": "vfs_module.mjs",
   "type":"commonjs",
   "exports": {
+    "sack": "./vfs_module.mjs",
     "import": "./vfs_module.mjs",
     "require": "./vfs_module.cjs"
   },

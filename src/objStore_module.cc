@@ -196,6 +196,11 @@ static void objStoreEventHandler( uv_async_t* handle ) {
 		}
 		DeleteFromSet( OBJECT_STORAGE_EVENT, osl.osEvents, event );
 	}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
 
 }
 
@@ -345,6 +350,11 @@ static void handlePostedObjectStorage( uv_async_t* async ) {
 		SetLink( &unload->transport, 0, NULL );
 		uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
 		break;
+	}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
 }
 
