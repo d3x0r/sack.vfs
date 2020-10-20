@@ -10,7 +10,10 @@ sack.SaltyRNG.setSigningThreads( require( "os" ).cpus().length );
 // save original object.
 const _objectStorage = sack.ObjectStorage;
 const nativeVol = sack.Volume();
-const remoteExtensions = nativeVol.read( __dirname+"/object-storage-remote.js" ).toString();
+const remoteExtensionsSrc = nativeVol.read( __dirname+"/object-storage-remote.js" );
+if( !remoteExtensionsSrc )
+	console.log( "Remote Extension Loading Failed....:", __dirname,  __dirname+"/object-storage-remote.js" );
+const remoteExtensions = remoteExtensionsSrc?remoteExtensionsSrc.toString():"// No COde Found";
 const jsonRemoteExtensions = JSON.stringify( remoteExtensions );
 
 
