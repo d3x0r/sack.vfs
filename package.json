@@ -10,6 +10,7 @@
   "module": "vfs_module.mjs",
   "type":"commonjs",
   "exports": {
+    "index": "./vfs_module.mjs",
     "sack": "./vfs_module.mjs",
     "import": "./vfs_module.mjs",
     "require": "./vfs_module.cjs"
