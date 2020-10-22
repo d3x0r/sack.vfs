@@ -519,11 +519,13 @@ sack.JSOX.stringifier = function() {
 						stringifying.push( value );
 						encoding[thisNodeNameIndex] = value;
 						value = objectToJSOX.apply(value, [stringifier]);
+						/*
 						if( value !== encoding[thisNodeNameIndex] )
-						console.log( "Converted by object lookup -it's now a different type"
-							, Object.getPrototypeOf(encoding[thisNodeNameIndex])
-							, Object.getPrototypeOf(value )
-							, protoConverter, objectConverter );
+							console.log( "Converted by object lookup -it's now a different type"
+								, Object.getPrototypeOf(encoding[thisNodeNameIndex])
+								, Object.getPrototypeOf(value )
+								, protoConverter, objectConverter );
+						*/
 						stringifying.pop();
 						encoding.length = thisNodeNameIndex;
 						isObject = (typeof value === "object");
@@ -700,7 +702,7 @@ sack.JSOX.stringifier = function() {
 								keys.push(k);
 						}
 					}
-					_DEBUG_STRINGIFY && console.log( "Expanding object keys:", keys );
+					_DEBUG_STRINGIFY && console.log( "Expanding object keys:", v, keys );
 					for(n = 0; n < keys.length; n++) {
 						k = keys[n];
 						if (Object.prototype.hasOwnProperty.call(value, k)) {
