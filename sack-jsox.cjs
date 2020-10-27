@@ -190,7 +190,7 @@ sack.JSOX.fromJSOX = function( prototypeName, o, f ) {
 	}
 	var z;
 	fromProtoTypes.set(prototypeName, z = { protoCon: o && o.prototype.constructor, cb: f });
-        console.log( "registered", z );
+        //console.log( "registered", z );
 }
 sack.JSOX.registerToFrom = function( prototypeName, prototype, to, from ) {
 	//console.log( "INPUT:", prototype );
