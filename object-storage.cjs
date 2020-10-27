@@ -4,6 +4,7 @@ const _debug = false;
 const _debug_dangling = false;
 const _debug_output = _debug || false;
 const _debug_object_convert = _debug || false;
+//const util = require( "util" );
 
 sack.SaltyRNG.setSigningThreads( require( "os" ).cpus().length );
 
@@ -654,7 +655,8 @@ _objectStorage.prototype.get = function( opts ) {
 	}
 
 	function objectStorageContainerRef( s ) {
-		_debug_dangling && console.log( "Container ref:", s );
+		_debug_dangling &&
+                	console.trace( "Container ref:", s );
 		try {
 			const existing = os.cachedContainer.get(s);
 			const here = os.getCurrentParseRef();
@@ -703,7 +705,10 @@ _objectStorage.prototype.get = function( opts ) {
 	}
 
 	function reviveContainer( field, val ) {
+		//const msg = util.format("Revival of a container's field:", this, field, val, new Error() );
+		//sack.log( msg );
 		//console.trace( "Revival of a container's field:", this, field, val );
+
 		if( !field ) {
 			// finished.
 			if( objectRefs ) {
@@ -734,12 +739,12 @@ _objectStorage.prototype.get = function( opts ) {
 			return this;
 		}
 		else {
-			{
 				const this_ = this;
 				// new value isn't anything special; just set the value.
 				//console.log( "This sort of thing... val is just a thing - like a key part identifier...; but that should have been a container.");
 				if( val instanceof Promise ) {
-					_debug_dangling && console.log( "Value is a promise, and needs resolution.")
+					//_debug_dangling &&
+                                        console.log( "Value is a promise, and needs resolution.")
 					var dangle = dangling.find( d=>d.d.p===val );
 					if( dangle )
 						dangle.d.n = field;
@@ -751,11 +756,17 @@ _objectStorage.prototype.get = function( opts ) {
 				}
 				// a custom type might want something else...
 				if( field === "data" )
-					return this.data = val;
-				return this.data[field] = val;
-			}
+				{
+                                        //console.log( "Resulting with val; but have set this?" );
+					this.data = val;
+					return undefined;
+				}
+				this.data[field] = val;
+                                return undefined;
+
 			// this is a sub-field of this object to revive...
 			//console.log( "Field:", field, " is data?", val)
+
 		}
 	}
 
@@ -799,15 +810,13 @@ _objectStorage.prototype.get = function( opts ) {
 				pending.length = 0;
 			}
 			*/
-			//console.log( "..." );
-			//console.log( "asdfsdf", this);
 			// finished.
+                        //console.log( "Result with a promise..." );
 			return this.d.p;
 		}
 		else {
-			// this is a sub-field of this object to revive...
-			//console.log( "Field:", field, " is data?", val)
-			return this[field] = val;
+                    //console.log( "this should have just gotten set directly?" );
+                    return val;
 		}
 	}
 
@@ -837,7 +846,7 @@ _objectStorage.prototype.get = function( opts ) {
 
 		const priorReadId = currentReadId;
 		try {
-			//console.log( "LOADING : ", opts.id );
+			//console.log( "LOADING : ", opts.id, parser.localFromProtoTypes );
 			os.read( currentReadId = opts.id
 				, parser, (obj,times)=>{
 					// with a new parser, only a partial decode before revive again...
