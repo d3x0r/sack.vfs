@@ -22,9 +22,11 @@ try {
 const _DEBUG_STRINGIFY = false;
 const DEBUG_STRINGIFY_OUTPUT = _DEBUG_STRINGIFY|| false;
 var toProtoTypes = new WeakMap();
-var toObjectTypes = new Map();
-var fromProtoTypes = new Map();
+const toObjectTypes = new Map();
+const fromProtoTypes = new Map();
 var commonClasses = [];
+
+sack.JSOX.fromProtoType = fromProtoTypes;
 
 {
 	// hook module native code to JS interface.
@@ -74,43 +76,43 @@ var commonClasses = [];
 		                , { external:false, name:null, cb:function() { return this + 'n' } } );
 
 	toProtoTypes.set( ArrayBuffer.prototype, { external:true, name:"ab"
-		, cb:function() { return "ab[\""+base64ArrayBuffer(this)+"\"]" }
+		, cb:function() { return "[\""+base64ArrayBuffer(this)+"\"]" }
 	} );
 
 	toProtoTypes.set( Uint8Array.prototype, { external:true, name:"u8"
-		, cb:function() { return "u8[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 	toProtoTypes.set( Uint8ClampedArray.prototype, { external:true, name:"uc8"
-		, cb:function() { return "uc8[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 	toProtoTypes.set( Int8Array.prototype, { external:true, name:"s8"
-		, cb:function() { return "s8[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 	toProtoTypes.set( Uint16Array.prototype, { external:true, name:"u16"
-		, cb:function() { return "u16[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 	toProtoTypes.set( Int16Array.prototype, { external:true, name:"s16"
-		, cb:function() { return "s16[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 	toProtoTypes.set( Uint32Array.prototype, { external:true, name:"u32"
-		, cb:function() { return "u32[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 	toProtoTypes.set( Int32Array.prototype, { external:true, name:"s32"
-		, cb:function() { return "s32[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 	if( typeof Uint64Array !== "undefined" )
 		toProtoTypes.set( Uint64Array.prototype, { external:true, name:"u64"
-			, cb:function() { return "u64[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+			, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 		} );
 	if( typeof Int64Array !== "undefined" )
 		toProtoTypes.set( Int64Array.prototype, { external:true, name:"s64"
-			, cb:function() { return "s64[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+			, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 		} );
 	toProtoTypes.set( Float32Array.prototype, { external:true, name:"f32"
-		, cb:function() { return "f32[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 	toProtoTypes.set( Float64Array.prototype, { external:true, name:"f64"
-		, cb:function() { return "f64[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
 	} );
 
 	toProtoTypes.set( Symbol.prototype, { external:true, name:"sym"
@@ -162,11 +164,12 @@ sack.JSOX.defineClass = function( name, obj ) {
 }
 
 sack.JSOX.registerToJSOX = function( name, prototype, f ) {
-	_DEBUG_STRINGIFY && console.log( "Register prototype:", prototype, prototype.prototype );
+	_DEBUG_STRINGIFY &&
+	        console.log( "Register prototype:", prototype, prototype.prototype );
 	if( !prototype.prototype || prototype.prototype !== Object.prototype ) {
-		if( toProtoTypes.get(prototype) ) throw new Error( "Existing toJSOX has been registered for prototype" );
+		if( toProtoTypes.get(prototype.prototype) ) throw new Error( "Existing toJSOX has been registered for prototype" );
 		_DEBUG_STRINGIFY && console.log( "PUSH PROTOTYPE" );
-		toProtoTypes.set( prototype, { external:true, name:(name===undefined)?f.prototype.constructor.name:name, cb:f } );
+		toProtoTypes.set( prototype.prototype, { external:true, name:(name===undefined)?f.prototype.constructor.name:name, cb:f } );
 	} else {
 		var key = Object.keys( prototype ).toString();
 		if( toObjectTypes.get(key) ) throw new Error( "Existing toJSOX has been registered for object type" );
@@ -187,6 +190,7 @@ sack.JSOX.fromJSOX = function( prototypeName, o, f ) {
 	}
 	var z;
 	fromProtoTypes.set(prototypeName, z = { protoCon: o && o.prototype.constructor, cb: f });
+        console.log( "registered", z );
 }
 sack.JSOX.registerToFrom = function( prototypeName, prototype, to, from ) {
 	//console.log( "INPUT:", prototype );
@@ -204,6 +208,7 @@ sack.JSOX.begin = function(cb, reviver) {
 	var parser = JSOXBegin( cb, reviver );
 	var localFromProtoTypes = new Map();;
 	var localPromiseFromProtoTypes = new Map();;
+        parser.localFromProtoTypes = localFromProtoTypes;
 	parser.setFromPrototypeMap( localFromProtoTypes );
 	parser.setPromiseFromPrototypeMap( localPromiseFromProtoTypes );
 	parser.registerFromJSOX = function (prototypeName, o, f) {
@@ -543,14 +548,16 @@ sack.JSOX.stringifier = function() {
 				|| toObjectTypes.get( Object.keys( value ).toString() )
 				|| null )
 
-			_DEBUG_STRINGIFY && console.log( "TEST()", value, protoConverter, objectConverter );
+			_DEBUG_STRINGIFY &&
+                            console.log( "TEST()", value, protoConverter, objectConverter );
 
 			var toJSOX = ( protoConverter && protoConverter.cb )
 			             || ( objectConverter && objectConverter.cb )
 						 //|| ( isObject && objectToJSOX )
 						 ;
 			// If the value has a toJSOX method, call it to obtain a replacement value.
-			_DEBUG_STRINGIFY && console.log( "type:", typeof value, protoConverter, !!toJSOX, path, isObject );
+			_DEBUG_STRINGIFY &&
+                            console.log( "type:", typeof value, protoConverter, !!toJSOX, path, isObject );
 
 			if( value !== undefined
 				&& value !== null
