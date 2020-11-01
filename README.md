@@ -615,8 +615,8 @@ Added support 'reviver' parameter.
          - setQuote( quote ) - specifies the perfered quoting to use (instead of default double-quote (") )
          - defineClass( name, object ) - registers a typed object for output; first object defintion is output which contains the failes, and later, typed objects are just their values.  Uses prototype of the object, unless it is the same as Object, or uses the fields of the object to compare that the object is of the same type.
      - stringify(object,replacer,pretty) - stringify an object; same API as JSON.
-     - registerToJSOX(typeName,prototype,cb) - if an object that is an instance of prototype, the object is passed to the callback, and the resulting string used for output.
-     - registerFromJSOX(typeName,fromCb) - if an object of the specified name is encountered, the related object/array/string is passed to the callback, and the result is used as the revived object.
+     - toJSOX(typeName,type,cb) - if an object that is an instance of prototype, the object is passed to the callback, and the resulting string used for output.  cb(stringify)
+     - fromJSOX(typeName,type,fromCb) - (fromCb(val,field); undefinedat end ) if an object of the specified name is encountered, the related object/array/string is passed to the callback, and the result is used as the revived object.
      - registerToFrom(name,prototype,toCb, fromCb) - register both ToJSOX and FromJSOX handlers.
 
 
