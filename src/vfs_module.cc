@@ -1905,4 +1905,12 @@ FileObject::~FileObject() {
 #else
 	NODE_MODULE( vfs_module, VolumeObject::Init)
 #endif
+		extern "C" {
+		PUBLIC( void, deno_plugin_init )( void ) {
+			lprintf( "Welcome in the deno land  !" );
+		}
 
+		PUBLIC( void, dino )( void ) {
+			lprintf( "[OK]" );
+		}
+	}
