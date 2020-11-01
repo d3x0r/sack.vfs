@@ -193,7 +193,9 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
 				AddLink( &hidg.inputs, indev );
 			}
 		}
-		dispatchKey( (uintptr_t)hidg.eventHandler, input, keyChar, 0 );
+		if( hidg.eventHandler )
+			dispatchKey( (uintptr_t)hidg.eventHandler
+				, input, keyChar, 0 );
 		//if(0)
 		LoG( "Got: %c(%d) %p %d %d %d %d %d %d %d ", keyChar,keyChar
 			, input->header.hDevice
@@ -479,6 +481,7 @@ KeyHidObject::KeyHidObject(  ) {
 }
 
 KeyHidObject::~KeyHidObject() {
+	hidg.eventHandler = NULL; // no longer have a handler.
 }
 
 
