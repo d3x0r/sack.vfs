@@ -1367,6 +1367,12 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 1.0.1004
+   - fixed keyboard input; object GC caused fault.
+   - fixed JSOX parsing and stringification issues; Emit `string string` not `stringstring` if the tag and string are both unquoted; fix object revival issues.
+- 1.0.1001-1.0.1003
+   - first 1.0 version.
+   - Fixes for JSOX; improved object storage; updated GUI interface code.
 - 0.9.161
    - Added thread local storage
    - Added control flag to disallow per-thread spawn permission.

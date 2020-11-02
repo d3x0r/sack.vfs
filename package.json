@@ -1,6 +1,6 @@
 {
   "name": "sack.vfs",
-  "version": "1.0.1003",
+  "version": "1.0.1004",
   "description": "Node.js VFS Addon",
   "repository": {
       "type": "git",
