@@ -1,32 +1,62 @@
 "use strict";
+const util = require('util');
 
-var sack;
+var sack, errN = [];
 try {
 	sack = require('sack' );
 } catch( err ) {
+	errN.push(err);
 }
+
 if( !sack )
-try{
-  sack = require( "./build/RelWithDebInfo/sack_gui.node" );
-} catch(err1) {
-  try {
-    //console.log( err1 );
-    sack = require( "./build/Debug/sack_gui.node" );
-  } catch( err2 ){
+  if( process.platform === win32 ) {
     try {
-      //console.log( err2 );
-      sack = require( "./build/Release/sack_gui.node" );
-    } catch( err3 ){
-      console.log( err1 )
-      console.log( err2 )
-      console.log( err3 )
+      if( process.config.target_defaults.default_configuration === 'Debug' )
+        sack = require( "./build/Debug/sack_gui.node" );
+    } catch( err ){
+      errN.push(err);
+    }	
+
+    if( process.config.target_defaults.default_configuration === 'Release' ) {
+      try {
+          sack = require( "./build/RelWithDebInfo/sack_gui.node" );
+      } catch( err ){
+        errN.push(err);
+      }
+      try {
+          sack = require( "./build/Release/sack_gui.node" );
+      } catch( err ){
+        errN.push(err);
+      }
     }
   }
+} else {
+  if( !sack )
+    try {
+        sack = require( "./build/RelWithDebInfo/sack_gui.node" );
+    } catch( err ){
+      errN.push(err);
+    }
+  if( !sack )
+    try {
+      sack = require( "./build/Debug/sack_gui.node" );
+    } catch( err ){
+      errN.push(err);
+    }
+  if( !sack )
+    try {
+        sack = require( "./build/Release/sack_gui.node" );
+    } catch( err ){
+      errN.push(err);
+    }
 }
+
+if( !sack )
+  throw new Error( util.format( "Failed to match configuration:", process.config.target_defaults.default_configuration, "\n", errN.join(',') ) );
 
 require( "./sack-jsox.cjs" )(sack);
 require( "./object-storage.cjs" )(sack);
-//vfs.
+
 module.exports=exports=sack;
 
 // needed to dispatch promise resolutions that have been created in callbacks.

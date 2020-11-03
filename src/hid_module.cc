@@ -15,6 +15,7 @@ public:
 	int handle;
 	char *name;
 
+	Persistent<Object> this_;
 	Persistent<Function, CopyablePersistentTraits<Function>> *readCallback; //
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE readQueue;
@@ -193,7 +194,9 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
 				AddLink( &hidg.inputs, indev );
 			}
 		}
-		dispatchKey( (uintptr_t)hidg.eventHandler, input, keyChar, 0 );
+		if( hidg.eventHandler )
+			dispatchKey( (uintptr_t)hidg.eventHandler
+				, input, keyChar, 0 );
 		//if(0)
 		LoG( "Got: %c(%d) %p %d %d %d %d %d %d %d ", keyChar,keyChar
 			, input->header.hDevice
@@ -479,6 +482,7 @@ KeyHidObject::KeyHidObject(  ) {
 }
 
 KeyHidObject::~KeyHidObject() {
+	hidg.eventHandler = NULL; // no longer have a handler.
 }
 
 
@@ -514,11 +518,11 @@ void asyncmsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
 
 	KeyHidObject* myself = (KeyHidObject*)handle->data;
 
-	HandleScope scope( isolate );
 	{
 		struct msgbuf *msg;
 		while( msg = (struct msgbuf *)DequeLink( &myself->readQueue ) ) {
@@ -569,6 +573,7 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			obj->async.data = obj;
 
 			obj->Wrap( args.This() );
+			obj->this_.Reset( isolate, args.This() );
 			args.GetReturnValue().Set( args.This() );
 		}
 
@@ -598,14 +603,24 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc < 1 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must pass callback to onRead handler", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must pass callback(or null) to onRead handler", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 
 	KeyHidObject *com = ObjectWrap::Unwrap<KeyHidObject>( args.This() );
-
-	Local<Function> arg0 = Local<Function>::Cast( args[0] );
-	com->readCallback = new Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 );
+	if( args[0]->IsNull() ) {
+		if( com->readCallback ) {
+			com->readCallback = NULL;
+			com->this_.Reset(); // release 'this' object.
+		}
+	}
+	else if( args[0]->IsFunction() ) {
+		Local<Function> arg0 = Local<Function>::Cast( args[0] );
+		com->readCallback = new Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 );
+	}
+	else {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Unhandled parameter value to keyboard reader.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+	}
 }
 
 

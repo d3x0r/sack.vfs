@@ -4,7 +4,6 @@ cmake_minimum_required(VERSION 3.0)
 
 project (sack_gui)
 
-
 include( GNUInstallDirs )
 
 ADD_DEFINITIONS( -DBUILD_NODE_ADDON )
@@ -73,7 +72,6 @@ ExternalProject_Add( sack
 		-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
 		-DINCLUDE_EXTRAS=1 -DINCLUDE_VULKAN=0
 )
-
 if( EXISTS ${CMAKE_BINARY_DIR}/sack-src/src/sack/src/InterShell.stable )
 
 ExternalProject_Add( intershell
@@ -81,7 +79,7 @@ ExternalProject_Add( intershell
 	DEPENDS sack
 	SOURCE_DIR ${CMAKE_BINARY_DIR}/sack-src/src/sack/src/InterShell.stable
 	INSTALL_DIR ${CMAKE_BINARY_DIR}/intershell-${CMAKE_BUILD_TYPE}
-	CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/intershell-${CMAKE_BUILD_TYPE}
+	CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}
 		-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
 		-DSACK_SDK_ROOT_PATH=${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}
 		-DBUILD_INTO_SACK_INSTALL=1
