@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.0)
 
 project (sack_gui)
 
-
+include( GNUInstallDirs )
 
 ADD_DEFINITIONS( -DBUILD_NODE_ADDON )
 
@@ -86,10 +86,7 @@ ExternalProject_Add( intershell
 
 )
 
-if( UNIX AND __64__ )
-    set( LIB_SUFFIX 64 )
-endif( UNIX AND __64__ )
-LINK_DIRECTORIES( ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/lib${LIB_SUFFIX} )
+LINK_DIRECTORIES( ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/${CMAKE_INSTALL_LIBDIR} )
 
 
 set( DEFINITIONS   USE_SQLITE USE_SQLITE_INTERFACE NO_FILEOP_ALIAS NO_OPEN_MACRO
@@ -102,15 +99,20 @@ foreach( DEF ${DEFINITIONS} )
 ENDFOREACH()
 
 
-include_directories(${CMAKE_JS_INC} ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/include/SACK )
+include_directories(${CMAKE_JS_INC} )
+include_directories(${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/include/SACK )
+include_directories(${CMAKE_BINARY_DIR}/intershell-${CMAKE_BUILD_TYPE}/include/SACK )
 
 if( WIN32 )
 	set( MORE_MODULE_SOURCES 
 		src/hid_module.cc
-		src/reg_access.cc )
+		src/reg_access.cc 
+		src/playSound_module.cc
+		)
 endif( WIN32 )
 
 set( GUI_SOURCES src/gui/sack_psi_module.cc
+	src/gui/sack_systray.cc
 	src/gui/sack_image_module.cc
 	src/gui/sack_render_module.cc
 	src/gui/sack_intershell_module.cc 
@@ -119,20 +121,25 @@ set( GUI_SOURCES src/gui/sack_psi_module.cc
 
 source_group( "Source Files\\GUI" FILES ${GUI_SOURCES} ) #REGULAR_EXPRESSION  src/gui/.*)
 
-set( PROJECT sack_vfs )
+set( PROJECT sack_gui )
 add_library(${PROJECT} SHARED
-	src/vfs_module.cc
-	src/objStore_module.cc
-	src/thread_module.cc
-	src/sql_module.cc
 	src/com_interface.cc
+	src/fileMonitor_module.cc
 	src/jsonParse.cc
 	src/jsoxParse.cc
-	src/tls_interface.cc
-	src/srg_module.cc
-	src/websocket_module.cc
+	src/playSound_module.cc 
 	src/network_module.cc
+	src/objStore_module.cc
+	src/sql_module.cc
+	src/srg_module.cc
+	src/system_module.cc
 	src/task_module.cc
+	src/text_object.cc
+	src/thread_module.cc
+	src/tls_interface.cc
+	src/websocket_module.cc
+	src/vfs_module.cc
+	src/system_module.cc
 	src/text_object.cc
 	${MORE_MODULE_SOURCES}
 	${GUI_SOURCES}	
@@ -151,13 +158,13 @@ add_dependencies( ${PROJECT} sack intershell )
 if( UNIX )
 	set( VFSLIB :sack_vfs.pp.module )
 	set( EXTRACOPY 
-   			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/lib${LIB_SUFFIX} ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
+   			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/${CMAKE_INSTALL_LIBDIR} ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
 	)
 else( UNIX )
 	set( VFSLIB sack_vfs.pp.module )
 endif( UNIX )
-target_link_libraries(${PROJECT} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE_JS_LIB} )
 
+target_link_libraries(${PROJECT} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE_JS_LIB} )
 
   add_custom_command( TARGET ${PROJECT} POST_BUILD
 			#COMMAND cmake -E echo ${AMALG_COMMAND}
