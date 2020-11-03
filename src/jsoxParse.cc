@@ -374,9 +374,9 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 static Local<Object> getArray( struct reviver_data* revive, struct jsox_value_container* val ) {
 	Local<Object> sub_o;
 #ifdef DEBUG_SET_FIELDCB
-        lprintf( "Clear Field CB Here... what about where we came from?" );
+	lprintf( "Clear Field CB Here... what about where we came from?" );
 #endif
-        revive->fieldCb.Clear();
+	revive->fieldCb.Clear();
 	if( val->className ) {
 		MaybeLocal<Value> mprotoDef;
 		Local<Object> protoDef;
@@ -395,9 +395,9 @@ static Local<Object> getArray( struct reviver_data* revive, struct jsox_value_co
 					protoDef = mprotoDef.ToLocalChecked().As<Object>();
 					Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoCon", v8::NewStringType::kNormal, (int)8 ).ToLocalChecked() ).ToLocalChecked();
 					Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)2 ).ToLocalChecked() ).ToLocalChecked();
-                                        if( f->IsFunction() ) {
+					if( f->IsFunction() ) {
 #ifdef DEBUG_SET_FIELDCB
-                                            lprintf( "Set protocon callback as field callback" );
+						lprintf( "Set protocon callback as field callback" );
 #endif
 						revive->fieldCb = f.As<Function>();
 					}
@@ -425,7 +425,7 @@ static Local<Object> getArray( struct reviver_data* revive, struct jsox_value_co
 					Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)2 ).ToLocalChecked() ).ToLocalChecked();
 					if( f->IsFunction() ) {
 #ifdef DEBUG_SET_FIELDCB
-                                            lprintf( "Set protocon callback as field callback" );
+						lprintf( "Set protocon callback as field callback" );
 #endif
 						revive->fieldCb = f.As<Function>();
 					}
@@ -820,7 +820,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 #endif
 			if( !cb.IsEmpty() ) {
 				Local<Value> args[] = { revive->fieldName, makeValue( val, revive ) };
-                                // use the custom reviver to assign the field.
+				// use the custom reviver to assign the field.
 #ifdef DEBUG_REVIVAL_CALLBACKS
 				lprintf( "Call reviver here with something...%d", val->value_type );
 #endif
@@ -1162,8 +1162,8 @@ Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviver_data
 
 	jsox_dispose_message( &parsed );
 	jsox_parse_dispose_state( &state ); // this is fairly cheap...
-    //logTick(5);
-    //lprintf( "RETURN REAL VALUE? %d %d", value.IsEmpty(), value.IsEmpty()?0:value->IsObject() );
+	//logTick(5);
+	//lprintf( "RETURN REAL VALUE? %d %d", value.IsEmpty(), value.IsEmpty()?0:value->IsObject() );
 	return value;
 }
 
@@ -1180,7 +1180,7 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 	const char *msg;
 	String::Utf8Value *tmp;
 	Local<Function> reviver;
-        Local<ArrayBuffer> ab;
+	Local<ArrayBuffer> ab;
 	size_t len;
 	if( args[0]->IsArrayBuffer() ) {
 		tmp = NULL;
