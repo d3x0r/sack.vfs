@@ -4,7 +4,6 @@ const _debug = false;
 const _debug_dangling = false;
 const _debug_output = _debug || false;
 const _debug_object_convert = _debug || false;
-//const util = require( "util" );
 
 sack.SaltyRNG.setSigningThreads( require( "os" ).cpus().length );
 
@@ -12,7 +11,6 @@ sack.SaltyRNG.setSigningThreads( require( "os" ).cpus().length );
 const _objectStorage = sack.ObjectStorage;
 const nativeVol = sack.Volume();
 const remoteExtensionsSrc = nativeVol.read( __dirname+"/object-storage-remote.js" );
-console.log( "GOT:", __dirname )
 const remoteExtensions = remoteExtensionsSrc?remoteExtensionsSrc.toString():"// No COde Found";
 const jsonRemoteExtensions = JSON.stringify( remoteExtensions );
 
