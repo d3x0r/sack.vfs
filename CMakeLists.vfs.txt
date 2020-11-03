@@ -223,28 +223,29 @@ if( __ANDROID__ )
 	)
 endif( __ANDROID__ )
 
-set( NEED_UUID OFF )
+set( NEED_UUID ON )
 
 set( UUID_SOURCES
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_md5.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_sha1.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_dce.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_mac.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_prng.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_str.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_time.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_ui128.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_ui64.c
+  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_amalg.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_md5.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_sha1.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_dce.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_mac.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_prng.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_str.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_time.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_ui128.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_ui64.c
 )
 
-if( NEED_UUID )
+#if( NEED_UUID )
   set( EXTRA_SOURCES ${EXTRA_SOURCES} ${UUID_SOURCES} )
-  if( MAKING_SACK_CORE )
-    add_definitions( -D__INTERNAL_UUID__ )
-  endif( MAKING_SACK_CORE )
-  add_definitions( -DUUID_SOURCE )
-endif( NEED_UUID )
+  #if( MAKING_SACK_CORE )
+  #  add_definitions( -D__INTERNAL_UUID__ )
+  #endif( MAKING_SACK_CORE )
+  #add_definitions( -DUUID_SOURCE )
+#endif( NEED_UUID )
 
 
 
@@ -333,6 +334,12 @@ set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c PROP
 	COMPILE_DEFINITIONS "SQLITE_ENABLE_LOCKING_STYLE=0;SQLITE_THREADSAFE=0;SQLITE_OMIT_UTF16;SQLITE_ENABLE_COLUMN_METADATA;SQLITE_ENABLE_STAT4" )
 set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc PROPERTIES 
 	COMPILE_DEFINITIONS "USE_SACK_CUSTOM_MEMORY_ALLOCATION" )
+
+if( UNIX )
+  add_definitions( -D__INTERNAL_UUID__ )
+  add_definitions( -DUUID_SOURCE )
+  add_definitions( -D__NO_ODBC__ )	
+endif( UNIX )
 
 set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
 if( CMAKE_COMPILER_IS_GNUCC )
