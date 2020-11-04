@@ -9,7 +9,7 @@ try {
 }
 
 if( !sack )
-  if( process.platform === win32 ) {
+  if( process.platform === 'win32' ) {
     try {
       if( process.config.target_defaults.default_configuration === 'Debug' )
         sack = require( "./build/Debug/sack_vfs.node" );
