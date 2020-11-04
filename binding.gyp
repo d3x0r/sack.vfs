@@ -47,7 +47,7 @@
             'include_dirs': [
               'include/linux',
             ],
-            'libraries':[ '-luuid' ]
+            'libraries':[ ]
           }],
 	['node_shared_openssl=="false"', {
 	      'include_dirs': [
