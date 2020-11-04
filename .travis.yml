@@ -1,6 +1,8 @@
 language: node_js
 node_js:
   - "node"
+  - "14"
+  - "13"
   - "12"
   - "11"
   - "10"
@@ -11,14 +13,27 @@ node_js:
 #  - "5"
 #  - "4"
 
-os:
-  - linux
-  - osx
+matrix:
+  include:
+    - os : windows
+    - os : linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-6
+            - uuid-dev
+    - os : mac
+#os:
+#  - windows
+#  - linux
+#  - osx
 
-compiler:
-  - gcc
+#compiler:
+#  - gcc
 
-env:
+#env:
 
 #if: NOT branch = master
 #if: NOT tag =~ ^[0-9]*.[0-9]*.[0-9]*
@@ -27,13 +42,6 @@ branches:
   only:
     - /^[0-9]+\.[0-9]+.[0-9]+/
 
-addons:
-  apt:
-    sources:
-      - ubuntu-toolchain-r-test
-    packages:
-      - g++-6
-      - uuid-dev
 
 notifications:
   webhooks:
