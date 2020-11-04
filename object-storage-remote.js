@@ -377,6 +377,23 @@ ObjectStorage.prototype.getCurrentParseRef = function() {
 	return null;
 }
 
+OjectStorage.prototype.stringify = function( obj ) {
+	const containerId = this.stored.get( obj );
+	if( containerId ) {
+		const container = this.cachedContainer.get( containerId );
+		const stringifier = this.stringifier;
+		if( container ) {
+			container.encoding = true;
+			const storage = stringifier.stringify( container );
+			container.encoding = false;
+			return storage;
+		}
+	}
+	return stringifier.stringify( container );
+	
+	
+}
+
 // this hides the original 'put'
 ObjectStorage.prototype.put = function( obj, opts ) {
 	const this_ = this;

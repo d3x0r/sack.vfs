@@ -264,6 +264,10 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 
 
 	function objectToJSOX( stringifier ){
+		if( this instanceof Promise ) {
+
+			console.log( "This is still a pending object reference(?)", this );
+		}
 		//  see if we alread stored this... (or are currently storing this.) (back references container)
 		_debug_object_convert && console.trace( "THIS GOT CALLED?", this, Object.getPrototypeOf( this ) );
 		var exist = newStorage.stored.get( this );
@@ -472,6 +476,23 @@ _objectStorage.prototype.getCurrentParseRef = function() {
 		return this.currentParser.getCurrentRef();
 	}
 	return null;
+}
+
+_objectStorage.prototype.stringify = function( obj ) {
+	const containerId = this.stored.get( obj );
+	if( containerId ) {
+		const container = this.cachedContainer.get( containerId );
+		const stringifier = this.stringifier;
+		if( container ) {
+			container.encoding = true;
+			const storage = stringifier.stringify( container );
+			container.encoding = false;
+			return storage;
+		}
+	}
+	return stringifier.stringify( container );
+	
+	
 }
 
 // this hides the original 'put'
