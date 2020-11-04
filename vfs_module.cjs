@@ -29,27 +29,26 @@ if( !sack )
         errN.push(err);
       }
     }
+  } else {
+    if( !sack )
+      try {
+          sack = require( "./build/RelWithDebInfo/sack_vfs.node" );
+      } catch( err ){
+        errN.push(err);
+      }
+    if( !sack )
+      try {
+        sack = require( "./build/Debug/sack_vfs.node" );
+      } catch( err ){
+        errN.push(err);
+      }
+    if( !sack )
+      try {
+          sack = require( "./build/Release/sack_vfs.node" );
+      } catch( err ){
+        errN.push(err);
+      }
   }
-} else {
-  if( !sack )
-    try {
-        sack = require( "./build/RelWithDebInfo/sack_vfs.node" );
-    } catch( err ){
-      errN.push(err);
-    }
-  if( !sack )
-    try {
-      sack = require( "./build/Debug/sack_vfs.node" );
-    } catch( err ){
-      errN.push(err);
-    }
-  if( !sack )
-    try {
-        sack = require( "./build/Release/sack_vfs.node" );
-    } catch( err ){
-      errN.push(err);
-    }
-}
 
 if( !sack )
   throw new Error( util.format( "Failed to match configuration:", process.config.target_defaults.default_configuration, "\n", errN.join(',') ) );
