@@ -296,7 +296,7 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #    define DeclareThreadLocal static __declspec(thread)
 #    define DeclareThreadVar __declspec(thread)
 #  endif
-#elif !defined( __NO_THREAD_LOCAL__ ) && ( defined( __GNUC__ ) )
+#elif !defined( __NO_THREAD_LOCAL__ ) && ( defined( __GNUC__ ) || defined( __MAC__ ) )
 #    define HAS_TLS 1
 #    ifdef __cplusplus
 #      define DeclareThreadLocal static thread_local
@@ -1364,10 +1364,8 @@ typedef uint64_t THREAD_ID;
 // this is now always the case
 // it's a safer solution anyhow...
 #  ifdef __MAC__
-#    ifndef SYS_thread_selfid
-#      define SYS_thread_selfid                 372
-#    endif
-#    define GetMyThreadID()  (( ((uint64_t)getpid()) << 32 ) | ( (uint64_t)( syscall(SYS_thread_selfid) ) ) )
+     DeclareThreadLocal uint64_t tmpThreadid;
+#    define GetMyThreadID()  ((pthread_threadid_np(NULL, &tmpThreadid)),tmpThreadid)
 #  else
 #    ifndef GETPID_RETURNS_PPID
 #      define GETPID_RETURNS_PPID
