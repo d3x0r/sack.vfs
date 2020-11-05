@@ -67,7 +67,7 @@
 	}],
 	['OS=="mac"', {
             'defines': [
-              '__LINUX__','__MAC__', '__NO_ODBC__',"__NO_OPTIONS__",'_DARWIN_C_SOURCE','__INTERNAL_UUID__'
+              '__LINUX__','__MAC__', '__NO_ODBC__',"__NO_OPTIONS__",'_DARWIN_C_SOURCE'
             ],
             'xcode_settings': {
                 'OTHER_CFLAGS': [
