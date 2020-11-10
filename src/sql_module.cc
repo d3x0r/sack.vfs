@@ -642,8 +642,6 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 			tables[usedTables].alias = NULL;
 			usedTables++;
 
-
-
 			DATA_FORALL( pdlRecord, idx, struct jsox_value_container *, jsval ) {
 				int m;
 				if( jsval->value_type == JSOX_VALUE_UNDEFINED ) break;
@@ -677,7 +675,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 					colMap[idx].depth = 0;
 					colMap[idx].table = PSSQL_GetColumnTableName( sql->odbc, (int)idx );
 					colMap[idx].alias = PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx );
-					if( colMap[idx].table && colMap[idx].alias ) {
+					if( colMap[idx].table && colMap[idx].alias && colMap[idx].table[0] && colMap[idx].alias[0] ) {
 						int table;
 						for( table = 0; table < usedTables; table++ ) {
 							if( StrCmp( tables[table].alias, colMap[idx].alias ) == 0 ) {
