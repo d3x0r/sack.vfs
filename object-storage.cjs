@@ -502,8 +502,8 @@ _objectStorage.prototype.stringify = function( obj ) {
 _objectStorage.prototype.put = function( obj, opts ) {
 	const this_ = this;
 	if( currentContainer && currentContainer.data === this ) {
-			saveObject( null, null );
-			_debug && console.log( "Returning same id; queued save to background...")
+		saveObject( null, null );
+		_debug && console.log( "Returning same id; queued save to background...")
         	return Promise.resolve( currentContainer.id );
 	}else {
 
@@ -513,22 +513,31 @@ _objectStorage.prototype.put = function( obj, opts ) {
 	});
 
 	function saveObject(res,rej) {
-            if( "string" === typeof obj && opts.id ) {
-                console.log( "SAVING A STRING OBJECT" );
-		// this isn't cached on this side.
-                // we don't know the real object.
+
+		if( "string" === typeof obj && opts.id ) {
+	                console.log( "SAVING A STRING OBJECT" );
+			// this isn't cached on this side.
+        	        // we don't know the real object.
 			this_.writeRaw( opts.id, obj );
 			return res?res( opts.id ):null;
                 }
 		var container = this_.stored.get( obj );
-
+		if( !container && opts && opts.id ) {
+                	const oldObj = this_.cached.get( opts.id );
+                        if( oldObj )
+	                        container = this_.stored.get( oldObj );
+               	}
 		_debug && console.log( "Put found object?", container, obj, opts );
 		if( container ) {
 			container = this_.cachedContainer.get( container );
-
+			if( obj !== object.data.data ) {
+                            	console.log( "Overwrite old data with new?", object.data.data, obj );
+                                object.data.data = obj;
+                       	}
 			if( !container.data.nonce ) {
 				// make sure every item that is in an index
 				// has been written...
+                            	
 				if( this_.def )
 					this_.def.indexes.forEach( index=>{
 						index.data.forEach( (item)=>{
@@ -1035,7 +1044,6 @@ fileDirectory.prototype.find = function( file ) {
 }
 
 fileDirectory.prototype.create = async function( fileName ) {
-
 	var file = this.files.find( (f)=>(f.name == fileName ) );
 	if( file ) {
 		console.log( "File already exists, not creating." );
@@ -1047,6 +1055,7 @@ fileDirectory.prototype.create = async function( fileName ) {
 		this.store();
 		return file;
 		//this.changed = true;
+                return file;
 	}
 }
 
@@ -1066,6 +1075,7 @@ fileDirectory.prototype.open = async function( fileName ) {
 	var file = this.files.find( (f)=>(f.name == fileName ) );
 	const _this = this;
 	if( !file ) {
+            	throw new Error( "File not found" );
 		file = new fileEntry( this );
 		file.name = fileName;
 		this.files.push(file);

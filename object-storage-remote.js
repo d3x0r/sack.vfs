@@ -454,9 +454,20 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 
 		var container = this_.stored.get( obj );
 
+		if( !container && opts && opts.id ) {
+                	const oldObj = this_.cached.get( opts.id );
+                        if( oldObj )
+	                        container = this_.stored.get( oldObj );
+                        console.log( "new object, old ID, ..." );
+               	}
+
 		_debug_osr && console.log( "Server Put found object?", container, obj, opts );
 		if( container ) {
 			container = this_.cachedContainer.get( container );
+			if( obj !== container.data.data ) {
+                            	console.log( "Overwrite old data with new?", object.data.data, obj );
+                                object.data.data = obj;
+                       	}
 
 			if( !container.data.nonce ) {
 				// make sure every item that is in an index
