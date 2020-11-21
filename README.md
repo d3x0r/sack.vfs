@@ -290,11 +290,26 @@ sack.ObjectStorage.
 | Object methods | Return | Arguments | Description |
 |----------|------------|-------------|----|
 | getRoot | promise | () | Promise resolves with root directory |
-| put | unique ID | ( object \[, sign\] ) | Stores or updates an object into storage.  If the object was not previously stored or loaded, a unique ID for the object is returned. |
-| get | promise |  ( id ) | Returns a promise; success is passed the object loaded from storage.  Loads an object using the specified ID. |
+| put | unique ID | ( object \[, options\] ) | Stores or updates an object into storage.  If the object was not previously stored or loaded, a unique ID for the object is returned, otherwise the existing ID results.  The second parameter is an optional option object, see options below. |
+| get | promise |  ( [string] or [Option object] ) | Returns a promise; success is passed the object loaded from storage.  Loads an object using the specified ID. |
 | map | promise |  ( id ) | Same as get, but also loads any objects of specified ID. |
 | -- | | | |
 | delete |  | (id/object) | remove object from storage... (danging references in other stored records?) |
+
+
+| Object get Options names | type | Description |
+|-----|-----|-----|
+| id | string | use this id for the object storage target |
+| extraDecoders | [ { tag:"tag", p:Type } ] | An array of optional object decoder(parse) types to use when getting objects. |
+
+
+| Object put Options names | type | Description |
+|-----|-----|-----|
+| id | string | use this id for the object storage target |
+| extraEncoders | [ { tag:"tag", p:Type } ] | An array of optional object encoder(stringify) types to use when putting objects. |
+
+
+
  
 |Object Storage Directory Methods | Return | arguments | Description |
 |----|----|----|---|
@@ -335,7 +350,7 @@ There are methods on the Sqlite() function call...
 |---|---|----|
 | eo | (callback) | Enumerate Options.  Each option node in global database is passed to callback (see Option Nodes below) |
 | go | ( &lt;String&gt; [,&lt;String&gt; [,&lt;String&gt;]] ) | Get Option.  First string is section, second optional string is option name, final string is default value of option.  Option name may be concated to section ( "section/option", "default" ) === ("section", "option", "default" ) |
-| so | ( &lt;String&gt; [,&lt;String&gt; [,&lt;String&gt;]] ) | Set Option.  First string is section, second optional string is option name, final string is default value of option.  Option name may be concated to section ( "section/option", "new Value" ) === ("section", "option", "new Value" ) 
+| so | ( &lt;String&gt; [,&lt;String&gt; [,&lt;String&gt;]] ) | Set Option.  First string is section, second optional string is option name, final string is default value of option.  Option name may be concated to section ( "section/option", "new Value" ) === ("section", "option", "new Value" ).  Low level options may be set with ("comports.ini", "COM PORTS/"+port, value) |
 |   |  |  |
 | GUI Functions |  | Added when compiled with full SACK library |
 | optionEditor | ()  | Open gui option editor for global options |
