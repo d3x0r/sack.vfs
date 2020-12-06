@@ -615,19 +615,22 @@ void ControlObject::Init( Local<Object> _exports ) {
 
 		VoidObject::Init( isolate );
 		//VulkanObject::Init( isolate, _exports );
+		if (!g.pii) {
+			// use loading image interface as one-shot init toggle...
+			// this ends up logging an error because it was previosly initialized
+			SimpleRegisterMethod("psi/control/rtti/extra init"
+				, CustomDefaultInit, "int", "sack-gui init", "(PCOMMON)");
+			SimpleRegisterMethod("psi/control/rtti/extra destroy"
+				, CustomDefaultDestroy, "int", "sack-gui destroy", "(PCOMMON)");
 
-		SimpleRegisterMethod( "psi/control/rtti/extra init"
-			, CustomDefaultInit, "int", "sack-gui init", "(PCOMMON)" );
-		SimpleRegisterMethod( "psi/control/rtti/extra destroy"
-			, CustomDefaultDestroy, "int", "sack-gui destroy", "(PCOMMON)" );
-
-		// get the current interfaces, and set PSI to them.
-		// (this will be delayed until require())
-			// and is generally redundant.
-		g.pii = GetImageInterface();
-		g.pdi = GetDisplayInterface();
-		SetControlImageInterface( g.pii );
-		SetControlInterface( g.pdi );
+			// get the current interfaces, and set PSI to them.
+			// (this will be delayed until require())
+				// and is generally redundant.
+			g.pii = GetImageInterface();
+			g.pdi = GetDisplayInterface();
+			SetControlImageInterface(g.pii);
+			SetControlInterface(g.pdi);
+		}
 
 		_exports->Set( context, localStringExternal( isolate, "PSI" ), exports );
 		// Prepare constructor template
