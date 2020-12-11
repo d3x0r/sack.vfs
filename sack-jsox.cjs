@@ -41,7 +41,7 @@ function pushToProto(p,a) {
 initPrototypes();
 function initPrototypes()
 {
-    	console.log( "Doing setup of classes:", toProtoTypes.get( Object.getPrototypeOf( [] ) ) );
+    	//console.log( "Doing setup of classes:", toProtoTypes.get( Object.getPrototypeOf( [] ) ) );
 	// hook module native code to JS interface.
 	sack.JSOX.setFromPrototypeMap( fromProtoTypes );
 	pushToProto( Object.prototype, { external:false, name:Object.prototype.constructor.name, cb:null } );
