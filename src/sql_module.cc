@@ -1193,8 +1193,14 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 		optname = defaultVal;
 		defaultVal = StrDup( *tmp );
 	}
-	else
-		optname = NULL;
+	else {
+		if ((sect && sect[0] == '/')) {
+		}
+		else {
+			optname = sect;
+			sect = NULL;
+		}
+	}
 
 	TEXTCHAR readbuf[1024];
 	PODBC use_odbc = NULL;
@@ -1287,22 +1293,44 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 		use_odbc = sql->odbc;
 	}
 	if( ( sect && sect[0] == '/' ) ) {
-			SACK_WritePrivateOptionStringEx( use_odbc
+		SACK_GetPrivateProfileStringExxx(use_odbc
 			, NULL
 			, optname
 			, defaultVal
-			, sect, FALSE );
-	} 
-	else
-		SACK_WriteOptionString( use_odbc
+			, readbuf
+			, 1024
+			, sect
+			, TRUE
+			DBG_SRC
+		);
+
+		if (strcmp(readbuf, defaultVal)) {
+			SACK_WritePrivateOptionStringEx(use_odbc
+				, NULL
+				, optname
+				, defaultVal
+				, sect, FALSE);
+		}
+	}
+	else {
+		SACK_GetPrivateProfileStringExxx(use_odbc
 			, sect
 			, optname
 			, defaultVal
+			, readbuf
+			, 1024
+			, NULL
+			, TRUE
+			DBG_SRC
 		);
-
-	Local<String> returnval = String::NewFromUtf8( isolate, readbuf, v8::NewStringType::kNormal ).ToLocalChecked();
-	args.GetReturnValue().Set( returnval );
-
+		if (strcmp(readbuf, defaultVal)) {
+			SACK_WriteOptionString(use_odbc
+				, sect
+				, optname
+				, defaultVal
+			);
+		}
+	}
 	Deallocate( char*, optname );
 	Deallocate( char*, sect );
 	Deallocate( char*, defaultVal );
