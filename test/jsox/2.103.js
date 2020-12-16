@@ -31,13 +31,14 @@ describe('Added in 1.2.103', function () {
                 JSOX.fromJSOX( "O", O, fromJSOX );
                 const object = JSOX.parse( content );
 
-		console.log( "Process:\n", processed.join("\n") );
+		//console.log( "Process:\n", processed.join("\n") );
                                 
 		expect( processed.join("\n") ).to.equal( `Constructed O
 a,123
 b,345
 c,[]
 Final revive` );
+		expect( object ).to.deep.equal( { a:123,b:345,c:[5,6,7] } );
 
 	} );
         
