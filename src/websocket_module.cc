@@ -2385,7 +2385,9 @@ void wssiObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 void wssiObject::ping( const v8::FunctionCallbackInfo<Value>& args ) {
 	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
-	WebSocketPing( obj->pc, 0 );
+	if (obj->pc) {
+		WebSocketPing(obj->pc, 0);
+	}
 }
 
 void wssiObject::on( const FunctionCallbackInfo<Value>& args){
