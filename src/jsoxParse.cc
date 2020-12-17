@@ -162,6 +162,7 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	String::Utf8Value *data_;
 	if( argc > 0 ) data_ = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) ;
+	else data_ = NULL;
 	int result;
 	//Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 	Local<Context> context = isolate->GetCurrentContext();
