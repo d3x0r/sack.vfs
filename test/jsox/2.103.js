@@ -10,10 +10,11 @@ describe('Added in 1.2.103', function () {
         
         	const content = 'O{a:123,b:345,c:[5,6,7]}'
                 const processed = [];
+		const array = [];
                 class O {
                 	a = 0;
                         b = 0;
-                        c = [];
+                        c = array;
                         constructor() {
                         	processed.push( "Constructed O" );
                         }
@@ -21,9 +22,13 @@ describe('Added in 1.2.103', function () {
                 function fromJSOX( field, val ) {
 			if( field ) {
 	                	processed.push( [field, JSON.stringify(val)].join() );
-				return val;
+				if( field === "c" ) 
+					return this.c;
+				else
+					return val;
 			} else {
 	                	processed.push( "Final revive" );
+				this.c.push(8);
 				return this;
 			}
 
@@ -38,7 +43,7 @@ a,123
 b,345
 c,[]
 Final revive` );
-		expect( object ).to.deep.equal( { a:123,b:345,c:[5,6,7] } );
+		expect( object ).to.deep.equal( { a:123,b:345,c:[5,6,7,8] } );
 
 	} );
         

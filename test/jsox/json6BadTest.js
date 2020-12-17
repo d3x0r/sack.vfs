@@ -6,19 +6,18 @@ let o;
 
 describe('Bad tests', function () {
 
-	it('space error "tr "', function () {
+	it('unqouted partial keyword "tr "', function () {
 		o = parse( "tr " );
 		expect(o).to.equal("tr");
 	} );
 
-	it('space error "[tr ]"', function () {
+	it('unqouted partial keyword "[tr ]"', function () {
 		o = parse( "[tr ]" );
 		expect(o).to.deep.equal(["tr"]);
 	} );
 		
-	it('space error "{a:tr }"', function () {
+	it('unqouted partial keyword "{a:tr }"', function () {
 			o = parse( "{a:tr }" );
-			console.log( "got back:", o );
 		expect(o).to.deep.equal({a:"tr"});
 	} );
 
@@ -26,28 +25,24 @@ describe('Bad tests', function () {
 	it('Unquoted space in identifier', function () {
 		expect(function () {
 			o = parse( "{ a b:1 }" );
-			console.log( "got back:", o );
 		}).to.throw(Error);
 	});
 
 	it('Missing colon array?', function () {
 		expect(function () {
 			o = parse( "{ a[3], b:1 }" );
-			console.log( "got back:", o );
 		}).to.throw(Error);
 	});
 
 	it('Missing colon object?', function () {
 		expect(function () {
 			o = parse( "{ a{c:3}, b:1 }" );
-			console.log( "got back:", o );
 		}).to.throw(Error);
 	});
 
 	it('String unquoted?', function () {
 		expect(function () {
 			o = parse( "{ a  : no quote }" );
-			console.log( "got back:", o );
 		}).to.throw(Error);
 	});
 
@@ -97,21 +92,18 @@ describe('Bad tests', function () {
 	it('object close after object field and : ', function () {
 		expect(function () {
 			o = parse( "{a:}" );
-			console.log( "got back:", o );
 		}).to.throw(Error);
 	});
 
 	it('bad hex escape : ', function () {
 		expect(function () {
 			o = parse( "'\\x1Z'" );
-			console.log( "got back:", o );
 		}).to.throw(Error);
 	});
 
 	it('bad unicode escape : ', function () {
 		expect(function () {
 			o = parse( "'\\u01Zz'" );
-			console.log( "got back:", o );
 		}).to.throw(Error);
 	});
 
