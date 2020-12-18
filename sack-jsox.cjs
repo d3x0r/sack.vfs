@@ -136,11 +136,9 @@ function initPrototypes()
 	} );
 	fromProtoTypes.set("map", {
 		protoCon: Map.prototype.constructor, cb:function(field, val) {
-			console.log( "MAP VALUE:", field, val );
 			if (!field) return this;
 			this.set( field,val );
 	} } );
-
 	
 	pushToProto( Array.prototype, arrayToJSOX = { external:false, name:Array.prototype.constructor.name
 		, cb: null
@@ -310,16 +308,16 @@ sack.JSOX.stringifier = function() {
 		},
 		stringify(o,r,s,as) { return stringify(this, o,r,s,as) },
 		setQuote(q) { useQuote = q; },
-		registerToJSOX( name, prototype, f ) {
-			if( prototype.prototype && prototype.prototype !== Object.prototype ) {
-				if( localToProtoTypes.get(prototype) ) throw new Error( "Existing toJSOX has been registered for prototype" );
-				_DEBUG_STRINGIFY && console.log( "Adding prototype to  local objects:", name, prototype.prototype, localToProtoTypes );
+		toJSOX( name,proto,f) { return this.registerToJSOX( name,proto,f) },
+		registerToJSOX( name, ptype, f ) {
+			if( ptype.prototype && ptype.prototype !== Object.prototype ) {
+				if( localToProtoTypes.get(ptype) ) throw new Error( "Existing toJSOX has been registered for prototype" );
+				_DEBUG_STRINGIFY && console.log( "Adding prototype to  local objects:", name, ptype.prototype, localToProtoTypes );
 				const newThing = { external:true, name:(name===undefined)?f.prototype.constructor.name:name, cb:f };
-				localToProtoTypes.set( prototype.prototype, newThing );
-				_DEBUG_STRINGIFY && console.log( "Can we get it back?", localToProtoTypes.get( prototype.prototype ) );
+				localToProtoTypes.set( ptype.prototype, newThing );
 			} else {
 				_DEBUG_STRINGIFY && console.log( "This is set by key?!" );
-				var key = Object.keys( prototype ).toString();
+				var key = Object.keys( ptype ).toString();
 				if( localToObjectTypes.get(key) ) throw new Error( "Existing toJSOX has been registered for object type" );
 				localToObjectTypes.set( key, { external:true, name:name, cb:f } );
 			}
@@ -570,7 +568,6 @@ sack.JSOX.stringifier = function() {
 					//console.log( "Value convereted to:", key, value );
 				}				
 			}
-
 			var protoConverter = (value !== undefined && value !== null)
 				&& ( localToProtoTypes.get( Object.getPrototypeOf( value ) )
 				|| toProtoTypes.get( Object.getPrototypeOf( value ) )
@@ -581,16 +578,14 @@ sack.JSOX.stringifier = function() {
 				|| toObjectTypes.get( Object.keys( value ).toString() )
 				|| null )
 
-			_DEBUG_STRINGIFY &&
-                            console.log( "TEST()", value, protoConverter, objectConverter );
+			//_DEBUG_STRINGIFY && console.log( "TEST1()", value, protoConverter, objectConverter, localToProtoTypes );
 
 			var toJSOX = ( protoConverter && protoConverter.cb )
 			             || ( objectConverter && objectConverter.cb )
 						 //|| ( isObject && objectToJSOX )
 						 ;
 			// If the value has a toJSOX method, call it to obtain a replacement value.
-			_DEBUG_STRINGIFY &&
-                            console.log( "type:", typeof value, protoConverter, !!toJSOX, path, isObject );
+			//_DEBUG_STRINGIFY && console.log( "type:", typeof value, protoConverter, !!toJSOX, path, isObject );
 
 			if( value !== undefined
 				&& value !== null
@@ -774,6 +769,7 @@ sack.JSOX.stringifier = function() {
 					    || commonClasses.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
 				else
 					c = '';
+
 				if( protoConverter && protoConverter.external ) {
 					c = c + getIdentifier( protoConverter.name );
 				}
