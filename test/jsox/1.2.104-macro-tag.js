@@ -27,7 +27,7 @@ describe('Added in 1.2.104 Macro Tags', function () {
 	} );
 
 	it( 'handles macro tags (with space)', function() {
-		//console.log( "This is a false success..." );
+		console.log( "This is a false success..." );
                 const object = JSOX.parse( "vec {x,y} [vec{0,0}, vec{1,1}]" );
                 //console.log( "object is:", object);//[{0,0},{1,1}]
                 expect(object).to.deep.equal( [{x:0,y:0},{x:1,y:1}] );
