@@ -86,46 +86,46 @@ function initPrototypes()
 	                                    , cb:function(){ return '"' + sack.JSOX.escape(this_value.apply(this)) + '"' } } );
 	if( typeof BigInt === "function" )
 		pushToProto( BigInt.prototype
-		                , { external:false, name:null, cb:function() { return this + 'n' } } );
+		                , { external:false, name:null, cb:function() { console.log( "BIGINT TOSTR"); return this + 'n' } } );
 
 	pushToProto( ArrayBuffer.prototype, { external:true, name:"ab"
-		, cb:function() { return "[\""+base64ArrayBuffer(this)+"\"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this)+"]" }
 	} );
 
 	pushToProto( Uint8Array.prototype, { external:true, name:"u8"
-		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	pushToProto( Uint8ClampedArray.prototype, { external:true, name:"uc8"
-		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	pushToProto( Int8Array.prototype, { external:true, name:"s8"
-		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	pushToProto( Uint16Array.prototype, { external:true, name:"u16"
-		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	pushToProto( Int16Array.prototype, { external:true, name:"s16"
-		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	pushToProto( Uint32Array.prototype, { external:true, name:"u32"
-		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	pushToProto( Int32Array.prototype, { external:true, name:"s32"
-		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	if( typeof Uint64Array !== "undefined" )
 		pushToProto( Uint64Array.prototype, { external:true, name:"u64"
-			, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+			, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 		} );
 	if( typeof Int64Array !== "undefined" )
 		pushToProto( Int64Array.prototype, { external:true, name:"s64"
-			, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+			, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 		} );
 	pushToProto( Float32Array.prototype, { external:true, name:"f32"
-		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 	pushToProto( Float64Array.prototype, { external:true, name:"f64"
-		, cb:function() { return "[\""+base64ArrayBuffer(this.buffer)+"\"]" }
+		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
 	} );
 
 	pushToProto( Symbol.prototype, { external:true, name:"sym"
@@ -453,6 +453,7 @@ sack.JSOX.stringifier = function() {
 		
 		const r  = str( asField, {[asField]:object} );
 		sack.JSOX.stringifierActive = stringifier_;
+		commonClasses.length = 0;
 		if( !(path.length = encoding.length = pathBase ) ){
 			fieldMap = new WeakMap();
 		}else{
@@ -542,7 +543,7 @@ sack.JSOX.stringifier = function() {
 			_DEBUG_STRINGIFY &&
 				console.log( "Prototype lists:", localToProtoTypes.length, value && localToProtoTypes.get( Object.getPrototypeOf( value ) )
 					, value && Object.getPrototypeOf( value ), value && value.constructor.name
-					, localToProtoTypes, toProtoTypes );
+					);
 
 			if( isObject && ( value !== null ) ) {
 				if( objectToJSOX ){
@@ -636,6 +637,9 @@ sack.JSOX.stringifier = function() {
 
 			// What happens next depends on the value's type.
 			switch (typeof value) {
+			case "bigint":
+				return value + 'n';
+				break;
 			case "string":
 			case "number":
 				{
