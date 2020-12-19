@@ -87,7 +87,7 @@ describe('JSON streaming', function () {
 		parser.write( "[\n   null,\n   null\n]" );
 
 		parser.write( '"Hello ' );   // a broken simple value string, results as 'Hello World!'
-		parser.write( 'World!"' );
+		parser.write( 'World!" ' );
 		parser.write( '{ first: 1,' );   // a broken structure
 		parser.write( ' second : 2 }' );
 		parser.write( '[1234,12');  // a broken array across a value
