@@ -2,12 +2,23 @@
 
 [![Join the chat at https://gitter.im/sack-vfs/Lobby](https://badges.gitter.im/sack-vfs/Lobby.svg)](https://gitter.im/sack-vfs/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)[![Build Status](https://travis-ci.org/d3x0r/sack.vfs.svg?branch=master)](https://travis-ci.org/d3x0r/sack.vfs)
 
-Node addon for a custom virtual file system interface.  
-JSON/JSON6 (stream)parser, 
-JSOX (streaming) parser, 
-COM/serial port access, Sqlite interface, an option/configuration database built on Sqlite.
-WebSocket/HTTP/HTTPS network library.  UDP sockets.
-Windows specific registry access for application settings. 
+- WebSocket/HTTP/HTTPS network library.  UDP sockets (`http`,`UDP` replacment).
+- JSON/[JSON6](https://github.com/d3x0r/JSON6) (stream)parser,
+- [JSOX](https://github.com/d3x0r/JSOX) (streaming) parser,
+- Node addon for a custom virtual and physical file system interface (fs replacement).
+- USB keyboard raw input (windows)
+- Graph Database and Object Storage.
+- Primitive Natural Language tokenizer, and attributed text type.
+- OpenSSL/LibreSSL Certificate Generation (https, wss).
+- Salty Random Generator - procedural random content generator.
+- Simple Play a Sound. (windows, but can port to openAl and cross platform)
+- Process control; launch and control tasks launched.
+- Sqlite/ODBC database driver; minimal SQL interface, `open` and `do`.
+- Option/Configuration Database support using sqlite/odbc interface; stores in a heirarchy of options per program and global.
+- Monitor filesystem for changes to files (caching server update).
+- Configuration file parser/log analyzer based on word token matches.
+- opt-out per-worker access to tasks and filesystem access.
+
 
 ## Requirements
 
@@ -33,7 +44,7 @@ Windows specific registry access for application settings.
 
 # Usage
 
-```js
+``` js
 var sack = require( 'sack.vfs' );
 var volume = sack.Volume( "MountName", "fileName.vfs" );
 var file = volume.File( "filename" );
@@ -46,10 +57,10 @@ fileOut.write( fileString );
 ## Objects
 This is the object returned from require( 'sack.vfs' );
 
-```js
+```
 vfs = {
     ComPort(comport) - access to com ports.
-    JSOX - A jsox (JavaScript Object eXchange) parser. (JSON5/6 input compatible)
+     - A jsox (JavaScript Object eXchange) parser. (JSON5/6 input compatible)
         parse(string) - result with a V8 object created from the json string.  
         begin( cb ) - begin parsing JSOX stream; callback is called as each value is completed.
         stringifier() - create a reusable stringifier which can be used for custom types
@@ -158,7 +169,7 @@ Two addditional strings may be applied to encrypt the volume using those two key
 
 The following methods exist on the resulting object.
 
-```js
+``` js
 Volume() = {
     File(filename) - open a file (returns a new object)
             (filename) 
@@ -193,7 +204,7 @@ Volume  // function has these methods.
 
  (result from vfs.Volume().File())
 
-```js
+``` js
 File instance methods (prototype methods)
 File = {
     read(size[, position]) - read from the file; return an ArrayBuffer with a toString method to interpret it as utf8.  Optional parameter
@@ -235,7 +246,7 @@ Interface to the SACK System Library.  This provides some views into internal in
 
 This provides an interface to receive notifications when files are created, modified or deleted.
 
-```js
+``` js
 
 var sack = require( "." );
 var monitor = sack.FileMonitor( <pathname>, idleDelay );
@@ -256,7 +267,7 @@ monitor.addFilter( "*.jpg", /* imageChanged */ (info)=>{
 Object storage interface is a hybrid combination of virtual file system and JSOX for object encoding.
 
 
-So I made that JSOX thing; 
+After making [JSOX](https://github.com/d3x0r/JSOX),
 I forked my VFS from a while ago and changed the directory structure so it's a combined radix/remainder of name structure; so as a directory block fills with strings, it finds common ones, and updates a byte-character reference for all the files that start with that... 
 I had wanted to do it somewhat more specifically to use 4096 hash which is 2 base64 characters \(except the ==\/\\0 \) at the end... but that ends up being like 16k block minimum; so I revised it to just use 256 entries (based on bytes of the filename).   It has some limitations, like \0 terminates a string; so index 0 will NEVER be used... and actually most control characters aren't in text filenames so hash entries 0-31 and (other than unicode) 127-250/ and definatly 250-255 are unused because those are never bytes in utf8 (using a string 'string' access for file content); but.  It works... generating random hashes `ba63,ab3j,b532` etc eventually overlaps in groups... anyway it's overall O(1) lookup; although that breaks into 10 hash hops (which is 10 pages of memory), plus 1 page for the name fragments.... ) and then each block has 254 'directory entires' (or 53 something 64 bit), which the directory is kept in-order always, so can do a binary search which is 8 string comparisons.... so a total of 10 cache loops, and 8 string comparisons worst case.  (This is in a single C file that compiles on any system with a C library or C++ if you prefer that.)  It can be compiled using emscripten which is about 120k minmum and about 300k total (gzips smaller).  The file system IO for emcc is IndexedDb (but I think I learned that here)....
 So then I don't really want a 'file' access to the storage; although it has it, so it could be possible to update segments of blobs, I really intend it to store JS objects... which are stored as a whole and read as a whole (they are encoded to the disk in a container object and JSOX encoded once).  The Object Storage put and get use extended JSOX parser and stringifer that registers a handler for ~os as in `~os"abuasdfu31=="` (object storage identifier).  When it finds one of those, it knows it's a reference to another file in storage.  
@@ -266,7 +277,7 @@ records which have a nonce cannot be re-written.  other objects can be updated w
 Oh - (one last note) Added sort to JSOX encoding so objects are always encoded in the same order ( as according to JS `if( stringA > stringB )`
 
 
-```js
+``` js
 
 const sack = require( "sack.vfs" );
 const objectStorage = sack.objectStorage( 'filename.data' );
@@ -358,7 +369,7 @@ There are methods on the Sqlite() function call...
 
 #### Sqlite Instance Methods 
 
-```js
+``` js
   var sack = require( 'sack.vfs' );
   var sqlite = sack.Sqlite( "test.db" );
   var vfsSqlite = sack.Volume( "sql Volume", "data.vfs" ).Sqlite( "test.db" );
@@ -396,7 +407,7 @@ There are methods on the Sqlite() function call...
 
 
 example sql command?
-```js
+``` js
     var results = sqlite.do("select * from table");  // do a sql command, if command doesn't generate data result will be true instead of an array
 
     sqlite.function( "test", (val)=>val*3 );
@@ -428,7 +439,7 @@ example sql command?
 
 ### Sqlite Usage
 
-```js
+``` js
 var dbName = "filename.db";
 var db = vfs.Sqlite( dbName );
 rows = db.do( "select * from sqlite_master" );
@@ -445,7 +456,7 @@ db.do returns a result set (if any).  It will be an array of objects.  Objects w
 If the name is the same as another, the columns are amalgamated into another array... Data is transported similar to JSON, with 'null', Strings,
 Numbers, and ArrayBuffer depending on the column data type.  An Integer number is used if it is an integer source type.
 
-```js
+``` js
 db data...
 
 table fruits  
@@ -505,7 +516,7 @@ select fruit.name as fruit,color.name as color from fruit join fruit_color on fr
 
 ```
 
-```js
+``` js
  console.log( db.do( 'SELECT * from fruits join fruit_color join color' );
 ```
 
@@ -513,7 +524,7 @@ select fruit.name as fruit,color.name as color from fruit join fruit_color on fr
 I don't know; maybe it's smart enough if it's the same value it doesn't exapnd it to an array.  That was what one MS SQL driver gave me back when I did a join with a ```*```... the joined column's values were put into an array instead of a simple ID... 
 That's why the names from the seaprate tables get put into the same value as an array... If the query were more like
 
-```js
+``` js
 SELECT fruits.fruit_id fruit_id,fruits.name fruit,color.name color,color.color_id color_id from fruits join fruit_color join color
 
 
@@ -553,7 +564,7 @@ give tmp option a value.
 
 
 This is diagnostic output in optionTest.js source... it outputs values and tests defaults and when the program restarts it may have new values in some of the keys; tests persistence of the keys (aka can it write the sqlite database)
-```js
+``` js
 console.log( "Initial.. no defaults...", ( tmp2 = root.go( "a" ).go( "b3" ).go( "c2" ) ).value );
 console.log( "option value is : ", tmp.value, tmp, Object.keys(tmp) );
 
@@ -583,7 +594,7 @@ function dumptree(opt, name){
 
 
 This dumps the option tables internally option4_map, option4_name, option4_value I think are the tables it uses... there is option4_blob which should store ArrayBuffer types... (provide concat operations/block update internal for retry recovery?)
-```js
+``` js
 function tick() {
         console.log( "dump tables: \n"
                 , db.do( "select * from option4_map" ) 
@@ -613,26 +624,26 @@ Added support 'reviver' parameter.
 
   - JSON
      - parse( string [,reviver] )
-     - begin( callback )
+     - begin( callback [,reviver] )
          - write( data )
   - JSON6
      - parse( string [,reviver] )
-     - begin( callback )
+     - begin( callback [,reviver] )
          - write( data )
   - JSOX
      - parse( string [,reviver] )
-     - begin( callback )
+     - begin( callback [,reviver] )
          - write( data )
-         - registerFromJSOX(typeName,fromCb) - if an object of the specified name is encountered, the related object/array/string is passed to the callback, and the result is used as the revived object.
+         - fromJSOX(typeName,prototype,fromCb) - if an object of the specified name is encountered, the related object/array/string is passed to the callback, and the result is used as the revived object.
      - stringifier() - create a reusable stringifier which can be used for custom types
-         - registerToJSOX(typeName,prototype,cb) - if an object that is an instance of prototype, the object is passed to the callback, and the resulting string used for output.
+         - toJSOX(typeName,prototype,cb) - if an object that is an instance of prototype, the object is passed to the callback, and the resulting string used for output.
          - stringify(value[,replacer[,space]] ) - stringify using this stringifier.
          - setQuote( quote ) - specifies the perfered quoting to use (instead of default double-quote (") )
          - defineClass( name, object ) - registers a typed object for output; first object defintion is output which contains the failes, and later, typed objects are just their values.  Uses prototype of the object, unless it is the same as Object, or uses the fields of the object to compare that the object is of the same type.
      - stringify(object,replacer,pretty) - stringify an object; same API as JSON.
-     - toJSOX(typeName,type,cb) - if an object that is an instance of prototype, the object is passed to the callback, and the resulting string used for output.  cb(stringify)
-     - fromJSOX(typeName,type,fromCb) - (fromCb(val,field); undefinedat end ) if an object of the specified name is encountered, the related object/array/string is passed to the callback, and the result is used as the revived object.
-     - registerToFrom(name,prototype,toCb, fromCb) - register both ToJSOX and FromJSOX handlers.
+     - toJSOX(typeName,userType,cb) - if an object that is an instance of prototype, the object is passed to the callback, and the resulting string used for output.  cb(stringify)
+     - fromJSOX(typeName,userType,fromCb) - (fromCb(val,field); undefinedat end ) if an object of the specified name is encountered, the related object/array/string is passed to the callback, and the result is used as the revived object.
+     - addType( name,userType,toCb, fromCb) - register both ToJSOX and FromJSOX handlers.
 
 
 |JSOX Methods | parameters | Description |
@@ -642,23 +653,30 @@ Added support 'reviver' parameter.
 |stringifier | () | Gets a utility object that can stringify.  The object can have classes defined on it for stringification |
 |escape | ( string ) | substitutes ", \, ', and \` with backslashed sequences. (prevent 'JSON injection') |
 |begin| (cb [,reviver] ) | create a JSOX stream processor.  cb is called with (value) for each value decoded from input given with write().  Optional reviver is called with each object before being passed to callback. |
-|registerToJSOX  | (name,prototype,toCb) | For each object that matches the prototype, the name is used to prefix the type; and the cb is called to get toJSOX |
-|registerFromJSOX| (name,fromCb) | fromCb is called whenever the type 'name' is revived.  The type of object following the name is passd as 'this'. |
-|registerToFrom  | (name,prototype,toCb, fromCb) | register both to and from for the same name |
+|toJSOX  | (name,userType,toCb) | For each object that matches the prototype, the name is used to prefix the type; and the cb is called to get toJSOX |
+|fromJSOX| (name,userType,fromCb) | fromCb is called whenever the type 'name' is revived.  The type of object following the name is passd as 'this'. |
+|addType | (name,userType,toCb, fromCb) | register both to and from for the same name |
 
 
 Reviver callback parameter is not provided for streaming callback.
 
 ``` javascript
-var vfs = require( "sack.vfs" );
+import {sack} from sack.vfs;
+//var vfs = require( "sack.vfs" );
 
-var object = vfs.JSON.parse(string [, reviver]);
+//var object = vfs.JSON.parse(string [, reviver]);
 
-var object2 = vfs.JSON6.parse(string [, reviver]);
+var object2 = sack.JSON6.parse(string [, reviver]);
+
+const object3 = sack.JSOX.parse(string [, reviver]);
 
 ```
 
 ### Active Stringifier 
+
+
+The stringifier is passed as a paramter to the toJSOX callback, which is where the active Stringifier was used.
+JSOX JS version does not support this interface.
 
 ```
 sack.JSOX.stringifierActive = <stringifier that is currently being run>
@@ -675,11 +693,11 @@ sack.JSOX.stringifierActive = <stringifier that is currently being run>
 |isEncoding | (object) | returns whether the current object is being encoded
 |setQuote | ( quote ) | the argument passed is used as the default quote for strings and identifiers as required. |
 |defineClass | ( name, object ) | Defines a class using name 'name' and the fields in 'object'.  This allows defining for some pre-existing object; it also uses the prototype to test (if not Object), otherwise it matches based on they Object.keys() array. |
-| ignoreNonEnumerable | setter/getter | allows controlling whether to include fields that have been marked non-enumerable |
+|ignoreNonEnumerable | setter/getter | allows controlling whether to include fields that have been marked non-enumerable |
 
 
 
-### Streaming JSON Parsing
+### Streaming JSON/JSOX Parsing
 
   - begin(cb)  returns a parser object, pass a callback which receives objects as they are recognized in the stream.
     - parser.write( data )  Write data to the parser to parse into resulting objects.
@@ -690,16 +708,16 @@ be just part of a number, and more of the number might be added in the next writ
 whitespace character after the number, the number will be sent to the callback registered in the begin.
 
 ``` javascript
-var vfs = require( "sack.vfs" );
+import {sack} from "sack.vfs";
 
-var parser = vfs.JSON6.begin( objectCallback );
+var parser = sack.JSON6.begin( objectCallback );
 parser.write( "123 " );
 function objectCallback( o ) {
     console.write( "Received parsed object:", typeof o, o );
 }
 
 // another example.
-var streamExample = vfs.JSON6.begin( (o)=> { console.log( "received value:", o ) };
+var streamExample = sack.JSON6.begin( (o)=> { console.log( "received value:", o ) };
 streamExample.write( "123\n" );   // generate a single event with number '123'
 streamExample.write( '"A string"' );    // generate another event with the string
 streamExample.write( '{a : 1} { b : 2}{c:3}' );   // generates 3 callback events, 1 for each object
@@ -713,7 +731,7 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
 
 ### Interface
 
-```js
+``` js
   TLS={
      genkey( length [,password]) - Generates a keypair, returns PEM string.  Requires length parameter, allows optional password to be specified.
      pubkey( {options} ) - gets public key of a keypair or certificate
@@ -760,7 +778,7 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
 | password | if required for key |
 
 
-```js
+``` js
 // some examples of subject options
 TLS.genreq( { subject : { IP: "127.0.0.1" } } );
 TLS.genreq( { subject : { IP: ["127.0.0.1","192.168.1.1"] } } );
@@ -837,10 +855,10 @@ The `id()` function takes an optional parameter that is an integer.
 | 4 | K12 |
 |default| K12 |
 
-```js
+``` js
   // some examples
-  var vfs = require( "sack.vfs" );
-  var SRG = vfs.SaltyRG( salt=&gt;salt.push( new Date() ) )// callback is passed an array to add salt to.
+  import {sack} from "sack.vfs";
+  var SRG = sack.SaltyRG( salt=&gt;salt.push( new Date() ) )// callback is passed an array to add salt to.
   
   var signed_byte = SRG.getBits( 8, true );
   var unsigned_byte = SRG.getBits( 8 );
@@ -857,7 +875,7 @@ The `id()` function takes an optional parameter that is an integer.
 
 ## WebSocket Module
 
-```js
+``` js
 var sack = require( "sack.vfs" );
 var client = new sack.WebSocket.Client( &lt;url&gt; [, &lt;protocol(s)&gt;] [,option object] );
 client.on( &lt;event&gt;, &lt;callback&gt; );
@@ -1028,7 +1046,7 @@ WebSocket connection Object
   | headers | &lt;Object&gt; field names are the names of the fields in the request header; values are the values of the fields.<BR> Client side connections may not have headers present.  |
 
 ## Network Address Object (Network.Address)
-```js
+``` js
 var sack = require( 'sack.vfs' );
 var address = sack.Network.Address( address string [, port] );
 
@@ -1048,7 +1066,7 @@ Address string can contain an optional port notation after a colon(':')
 
 ## HTTP Request Interface ( HTTP/HTTPS )
 
-```js
+``` js
 var sack = require( "sack.vfs" );
 var response = sack.HTTP.get( { hostname: "example.com", port: 80, method : "get", 
 var response2 = sack.HTTPS.get( { ca:&lt;extra root cert(s)&gt;, rejectUnauthorized:true/false, path:"/index.html" } );
@@ -1082,7 +1100,7 @@ specified target thread.  The handoff takes a unique string which should identif
 a pool of threads all using the same identifier may each receive one socket.  Once the accept event is fired,
 it is cleared, and the thread will have to re-post a listener to accept another socket.
 
-```js
+``` js
 // rough example, not sure about the onaccept interface
 
 var wss = sack.Websocket.Server( "::0" );
@@ -1106,7 +1124,7 @@ sack.Websocket.Thread.accept( "destination", (socket)=>{
 
 
 
-```js
+``` js
         Thread - Helper functions to transport accepted clients to other threads.
             post( accepted_socket, unique_destination_string ) - posts a socket to another thread
             accept( unique_destination_string, ( newSocket )=>{} ) - receives posted accepted sockets
@@ -1116,7 +1134,7 @@ sack.Websocket.Thread.accept( "destination", (socket)=>{
 
 ## UDP Socket Object (Network.UDP)
 
-```js
+``` js
 var sack = require( 'sack.vfs' );
 var udp  = sack.Network.UDP( "localhost:5555", (msg,rinfo)=>{ console.log( "got message:", msg ) } );
 var udp2 = sack.Network.UDP( {port:5556, address:"localhost", toAddress:"localhost:5555" }, (msg,rinfo)=>{ console.log( "got message:", msg ) } );
@@ -1200,7 +1218,7 @@ registry = {
      get( regPath );
 }
 
-```js
+``` js
 var reg = vfs.registry.set( "HKCU/something", value );
 var val = vfs.registry.get( "HKCU/something" );
 ```
@@ -1208,7 +1226,7 @@ var val = vfs.registry.get( "HKCU/something" );
 ### COM Ports
    (result from vfs.ComPort() )
  
-```js
+``` js
 ComObject = { 
      onRead( callback ) - sets a callback to be called with a uint8Array parameter when data arrives on the port.
      write( uint8Array ) - write buffer specfied to com port; only accepts uint8array.
@@ -1237,7 +1255,7 @@ COM port settings are kept in the default option database under
 also be used to process streaming text input and responding with triggers based on configuration.
 Things like a log analyzer can be created using this interface.
 
-```js
+``` js
 var sack = require( "sack.vfs" );
 var processor = sack.Config();
 processor.add( "some line with %i words", (n) => console.log( "found line param:", n ); );
@@ -1361,7 +1379,7 @@ to interact with the process.
 | suspend | bool | create task suspended.  Default: false |
 
 
-```js
+``` js
 var sack = require( "sack.vfs");
 
 // don't redirect/capture input/output
@@ -1382,6 +1400,10 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 1.0.1005
+   - fixed several issues reviving custom data types with references and replacement operations.
+   - Added newer tests from [JSOX](https://github.com/d3x0r/JSOX).
+   - 
 - 1.0.1004
    - fixed keyboard input; object GC caused fault.
    - fixed JSOX parsing and stringification issues; Emit `string string` not `stringstring` if the tag and string are both unquoted; fix object revival issues.
