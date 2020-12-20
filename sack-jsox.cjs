@@ -419,13 +419,13 @@ sack.JSOX.stringifier = function() {
 
 		if( "object" === typeof object && stringifier_ ) {
 			var ref = stringifier_.getReference( object );
-                        console.log("This added object as ref", ref );
+                        //console.log("This added object as ref", ref, object );
 			if( ref ) {
 				if( !(path.length = encoding.length = pathBase ) ) fieldMap = new WeakMap();
 				return ref;
 			}else { //if( asField )
-                            fieldMap.delete(object)
-                                console.log( "Deleting object reference from fieldMap" );
+				fieldMap.delete(object)
+				//console.log( "Deleting object reference from fieldMap" );
                         }
 		}
 
@@ -467,7 +467,9 @@ sack.JSOX.stringifier = function() {
 
 
 		// from https://github.com/douglascrockford/JSON-js/blob/master/json2.js#L181
+		// (highly modified since then)
 		function str(key, holder) {
+			//console.trace( "-------------------------------------- STR -----------------------", key, holder );
 			//console.log( "Encode object:", holder[key], "field:", key );
 			function doArrayToJSOX() {
 				var v;
@@ -602,7 +604,7 @@ sack.JSOX.stringifier = function() {
 					}
 					stringifying.push( value );
 					encoding[thisNodeNameIndex] = value;
-					value = toJSOX.apply(value, [stringifier]);
+					value = toJSOX.call(value, stringifier);
 					stringifying.pop();
 					if( protoConverter && protoConverter.name ) {
 						// stringify may return a unquoted string
@@ -621,6 +623,8 @@ sack.JSOX.stringifier = function() {
 					encoding.length = thisNodeNameIndex;
 
 					gap = mind;
+				} else {
+					v = getReference( value );
 				}
 			} else
 				if( typeof value === "object" ) {
@@ -671,7 +675,7 @@ sack.JSOX.stringifier = function() {
 
 			case "object":
 
-				_DEBUG_STRINGIFY && console.log( "ENTERING OBJECT EMISSION WITH:", v );
+				_DEBUG_STRINGIFY && console.log( "ENTERING OBJECT EMISSION WITH:", v, value );
 				if( v ) return v;
 
 				// Due to a specification blunder in ECMAScript, typeof null is "object",
@@ -720,7 +724,7 @@ sack.JSOX.stringifier = function() {
 					var keys = [];
 					_DEBUG_STRINGIFY && console.log( "is something in something?", k, value );
 					for (k in value) {
-						_DEBUG_STRINGIFY && console.log( "Ya..." );
+						_DEBUG_STRINGIFY && console.log( "Ya...", k );
 						if( ignoreNonEnumerable )
 							if( !Object.prototype.propertyIsEnumerable.call( value, k ) ){
 								_DEBUG_STRINGIFY && console.log( "skipping non-enuerable?", k );
@@ -740,8 +744,7 @@ sack.JSOX.stringifier = function() {
 						}
 					}
 					_DEBUG_STRINGIFY && console.log( "Expanding object keys:", v, keys );
-					for(n = 0; n < keys.length; n++) {
-						k = keys[n];
+					for(let k of keys ) {
 						if (Object.prototype.hasOwnProperty.call(value, k)) {
 							path[thisNodeNameIndex] = k;
 							encoding[thisNodeNameIndex] = value;
