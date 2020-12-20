@@ -22,7 +22,21 @@
 
 ## Requirements
 
-  ODBC and uuid support. (can be disabled)
+### All Systems
+  * Node, NPM.
+  * `npm install -g node-gyp`
+  * a working build environment
+     * (win32) `npm install -g windows-build-tools` - if these are not initially installed, it will require a system restart, without any visible notice; but the install will not complete until restarted.
+     * ninja, gcc 
+  * (opt) `npm install -g cmake-js` and `cmake`.
+
+
+### ODBC and uuid support. (can be disabled)
+
+ODBC connectivity is provided as an alternative to the sqlite interface, providing connectivity
+with all existing databases.  It is not required; Sqlite itself is not 'required' but special steps
+have to be taken to disable it.  When enabled, the [SACK](https://github.com/d3x0r/sack) library uses
+it to configure some runtime options.  Options may be controlled by an 'interface.conf' configuration file.
 
 #### Various Linux
 
@@ -40,7 +54,8 @@
   *  brew (brew install unixODBC)
 
 #### Windows
-	none
+
+  * None additional
 
 # Usage
 
@@ -50,6 +65,17 @@ var volume = sack.Volume( "MountName", "fileName.vfs" );
 var file = volume.File( "filename" );
 var fileString = file.read();
 var fileOut = volume.File( "filename.out" );
+fileOut.write( fileString );
+
+```
+
+``` mjs
+import {sack} from "sack.vfs";
+const volume = sack.Volume( "MountName", "fileName.vfs" );
+const file = volume.File( "filename" );
+const fileArrayBuffer = file.read(); 
+const fileString = fileArrayBuffer.toString(); // added method that is utf8 conversion.
+const fileOut = volume.File( "filename.out" );
 fileOut.write( fileString );
 
 ```
