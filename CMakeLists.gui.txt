@@ -112,7 +112,7 @@ if( WIN32 )
 endif( WIN32 )
 
 set( GUI_SOURCES src/gui/sack_psi_module.cc
-    src/gui/sack_systray.cc
+	src/gui/sack_systray.cc
 	src/gui/sack_image_module.cc
 	src/gui/sack_render_module.cc
 	src/gui/sack_intershell_module.cc 
@@ -139,7 +139,7 @@ add_library(${PROJECT} SHARED
 	src/tls_interface.cc
 	src/websocket_module.cc
 	src/vfs_module.cc
-    src/system_module.cc
+	src/system_module.cc
 	src/text_object.cc
 	${MORE_MODULE_SOURCES}
 	${GUI_SOURCES}	
