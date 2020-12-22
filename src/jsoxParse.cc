@@ -162,6 +162,7 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	String::Utf8Value *data_;
 	if( argc > 0 ) data_ = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) ;
+	else data_ = NULL;
 	int result;
 	//Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 	Local<Context> context = isolate->GetCurrentContext();
@@ -460,7 +461,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 	Local<Object> sub_o;
 	class constructorSet *c = getConstructors( revive->isolate );
 	//lprintf( "Saving the callback... did it get cleared?" );
-	//lprintf( "handling:%.*s %.*s", val->nameLen, val->name, val->stringLen, val->string );
+	//lprintf("handling:%.*s %.*s", val->nameLen, val->name, val->stringLen, val->string);
 	switch( val->value_type ) {
 	case JSOX_VALUE_UNDEFINED:
 		result = Undefined( revive->isolate );
@@ -842,10 +843,9 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 #if defined( DEBUG_REFERENCE_FOLLOW ) || defined( DEBUG_REVIVAL_CALLBACKS )
 				lprintf( "set value to fieldname: %.*s", val->nameLen, val->name );
 #endif
-				if( !tmp->IsUndefined() ) {
+				if( val->value_type == JSOX_VALUE_UNDEFINED || !tmp->IsUndefined() ) {
 					o->Set( revive->context, revive->fieldName, tmp );
-				}else
-					lprintf( "No, not setting that value; it must have been handled?" );
+				}
 			}
 			break;
 		case JSOX_VALUE_ARRAY:
@@ -1035,7 +1035,10 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 #ifdef DEBUG_REVIVAL_CALLBACKS
 		lprintf( "makeValue3" );
 #endif
+		LOGICAL wantRevive = revive->revive;
+		revive->revive = FALSE;
 		Local<Value> root = makeValue( val, revive );
+		revive->revive = wantRevive;
 		o = root.As<Object>();
 
 		revive->rootObject = o;

@@ -117,6 +117,7 @@ private:
 				String::Utf8Value val( USE_ISOLATE( obj->isolate ) elem->ToString(obj->isolate->GetCurrentContext() ).ToLocalChecked()  );
 				obj->seedBuf = (char*)Reallocate( obj->seedBuf, obj->seedLen + val.length() );
 				memcpy( obj->seedBuf + obj->seedLen, (*val), val.length() );
+				obj->seedLen += val.length();
 			}
 		}
 		if( obj->seedBuf ) {

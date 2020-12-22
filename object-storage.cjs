@@ -33,10 +33,12 @@ function objectStorageContainer(o,opts) {
 	try {
 	if( "string" === typeof o ){
 		// still, if the proir didn't resolve, need to resolve this..
-		let existing = store.cachedContainer.get( o );
-		o = existing.data;
-		if( existing.resolve )
-		return ;
+		let existing = newStorage.cachedContainer.get( o );
+		if( existing ) {
+			o = existing.data;
+			if( existing.resolve )
+				return;
+		}
 	}
 	//this.def = {
 	//	indexes : [],
@@ -264,6 +266,10 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 
 
 	function objectToJSOX( stringifier ){
+		if( this instanceof Promise ) {
+
+			console.log( "This is still a pending object reference(?)", this );
+		}
 		//  see if we alread stored this... (or are currently storing this.) (back references container)
 		_debug_object_convert && console.trace( "THIS GOT CALLED?", this, Object.getPrototypeOf( this ) );
 		var exist = newStorage.stored.get( this );
@@ -337,6 +343,7 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 
 
 	function handleMessage( ws, msg ) {
+            console.log( "Storage Remote Message:", msg );
 		if( msg.op === "connect" ) {
 			ws.send( `{op:connected,code:${jsonRemoteExtensions}}` );
 		return true;
@@ -345,7 +352,7 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 			newStorage.readRaw( currentReadId = msg.opts.id
 				, (data)=>{
 					//console.log( "Read ID:", msg.opts.id, data );
-					ws.send( newStorage.stringifier.stringify( { op:"get", id:msg.id, data:data } ) );
+				   ws.send( newStorage.stringifier.stringify( { op:"GET", id:msg.id, data:data } ) );
 			} )
 			return true;
 		}
@@ -353,8 +360,8 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 			// want to get back a file ID if possible...
 			// and/or use the data for encoding/salting/etc... which can determine the result ID.
 			//console.log( "PUT THIGN:", msg );
-			newStorage.writeRaw( msg.opts.id, msg.data);
-			ws.send( newStorage.stringifier.stringify( { op:"put", id:msg.id } ) );
+			newStorage.writeRaw( msg.rid, msg.data);
+			ws.send( { op:"PUT", id:msg.id, r:msg.rid } );
 			return true;
 		}
 		return false;
@@ -474,6 +481,23 @@ _objectStorage.prototype.getCurrentParseRef = function() {
 	return null;
 }
 
+_objectStorage.prototype.stringify = function( obj ) {
+	const containerId = this.stored.get( obj );
+	if( containerId ) {
+		const container = this.cachedContainer.get( containerId );
+		const stringifier = this.stringifier;
+		if( container ) {
+			container.encoding = true;
+			const storage = stringifier.stringify( container );
+			container.encoding = false;
+			return storage;
+		}
+	}
+	return stringifier.stringify( container );
+	
+	
+}
+
 // this hides the original 'put'
 _objectStorage.prototype.put = function( obj, opts ) {
 	const this_ = this;
@@ -489,6 +513,13 @@ _objectStorage.prototype.put = function( obj, opts ) {
 	});
 
 	function saveObject(res,rej) {
+            if( "string" === typeof obj && opts.id ) {
+                console.log( "SAVING A STRING OBJECT" );
+		// this isn't cached on this side.
+                // we don't know the real object.
+			this_.writeRaw( opts.id, obj );
+			return res?res( opts.id ):null;
+                }
 		var container = this_.stored.get( obj );
 
 		_debug && console.log( "Put found object?", container, obj, opts );
@@ -553,38 +584,44 @@ _objectStorage.prototype.put = function( obj, opts ) {
 		} else if( !opts || !opts.id ) {
 			_debug && console.log( "New bare object, create a container...", opts );
                         if( !opts ) opts = { id : sack.id() }
-						else opts.id = sack.id();
-
-			container = new this_.objectStorageContainer(obj,opts);
-			//console.log( "New container looks like... ", container.id, container );
-
-			//console.log( "saving stored container.id", obj, container.id );
-
-			//this.stored.delete( obj );
-			this_.stored.set( obj, container.id );
-			this_.cached.set( container.id, container.data );
-			this_.cachedContainer.set( container.id, container );
-
-			var stringifier;
-			if( opts.extraEncoders ) {
-				stringifier = sack.JSOX.stringifier();
-				this_.setupStringifier( stringifier );
-				opts.extraEncoders.forEach( f=>{
-					stringifier.registerToJSOX( f.tag, f.p, f.f )
-				});
-			}else {
-				stringifier = this_.stringifier;
+                        else opts.id = sack.id();
+                        if( "object" === typeof obj ) {
+				container = new this_.objectStorageContainer(obj,opts);
+				//console.log( "New container looks like... ", container.id, container );
+				
+				console.log( "saving stored container.id", typeof obj, obj, container.id );
+			        
+				//this.stored.delete( obj );
+				this_.stored.set( obj, container.id );
+				this_.cached.set( container.id, container.data );
+				this_.cachedContainer.set( container.id, container );
+			        
+				var stringifier;
+				if( opts.extraEncoders ) {
+					stringifier = sack.JSOX.stringifier();
+					this_.setupStringifier( stringifier );
+					opts.extraEncoders.forEach( f=>{
+						stringifier.registerToJSOX( f.tag, f.p, f.f )
+					});
+				}else {
+					stringifier = this_.stringifier;
+				}
+			        
+				container.encoding = true;
+				storage = stringifier.stringify( container );
+				container.encoding = false;
+			} else {
+				container = new this_.objectStorageContainer(obj,opts);
+				storage = obj;
 			}
-
-			container.encoding = true;
-			storage = stringifier.stringify( container );
-			container.encoding = false;
 			if( !container.id || container.id === "null" ) {
 				console.trace( "Container has no ID or is nUll", container );
 			}
 			_debug && console.trace( "Outut container to storage... ", container, storage );
 			try {
-			this_.writeRaw( container.id, storage );
+				this_.writeRaw( container.id, storage );
+				this_.cached.set( container.id, container.data );
+				this_.cachedContainer.set( container.id, container );
 			}catch(err) { console.log( "WRITE RAW?", this_ )}
 			//console.log( "OUTPUT:", storage );
 			res && res(  container.id );
@@ -806,6 +843,7 @@ _objectStorage.prototype.get = function( opts ) {
 			}
 			*/
 			// finished.
+                        //console.log( "Result with a promise..." );
 			return this.d.p;
 		}
 		else {
@@ -992,14 +1030,18 @@ fileDirectory.prototype.find = function( file ) {
 
 }
 
-fileDirectory.prototype.create = function( fileName ) {
+fileDirectory.prototype.create = async function( fileName ) {
+
 	var file = this.files.find( (f)=>(f.name == fileName ) );
 	if( file ) {
-		return null;
+		console.log( "File already exists, not creating." );
+		return null; // can't creeate already exists.
 	} else {
 		file = new fileEntry( this );
 		file.name = fileName;
 		this.files.push(file);
+		this.store();
+		return file;
 		//this.changed = true;
 	}
 }
@@ -1044,10 +1086,10 @@ fileDirectory.prototype.has = async function( fileName ) {
 	var pathIndex = 0;
 	var dir = this;
 	async function getOnePath() {
-		if( pathIndex >= path.length ) return true;
+		if( pathIndex >= parts.length ) return true;
 		if( !dir ) return false;
 
-		part = path[pathIndex++];
+		part = parts[pathIndex++];
 		var file = dir.files.find( (f)=>( f.name == part ) );
 		if( !file ) return false;
 		if( file.root ) dir = file.root;

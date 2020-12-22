@@ -5,23 +5,38 @@ var dangling = [];
 var objectRefs = 0;
 var currentContainer = null;
 var preloadStorage = null;
-let remote = null;
+//let remote = null;
 let sack = null;
+let unique = 0;
+
+const _debug_stringify = false;
+
+try {
+	JSOX.updateContext();
+}catch(err) {
+	console.log( "Let me guess.... no update?", err );
+}
+
 this.ObjectStorage = ObjectStorage;
 
 //this.storage = new ObjectStorage();
+const decoder = new TextDecoder();
 
 function ObjectStorage( sack_, ws ) {
 	sack = sack_;
 	this.ws = ws;
+        ws.storage = this;
 	//console.log( "Initialize as object storage?", this );
 	//const newStorage = await connect( remote );
 	const newStorage = this;
+        const requests = new Map();
 
 	// associates object data with storage data for later put(obj) to re-use the same informations.
 	function objectStorageContainer(o,opts) {
-		if( !this instanceof objectStorageContainer ) return new newStorage.objectStorageContainer(o,opts);
-
+		if( !( this instanceof objectStorageContainer
+                      ||  Object.getPrototypeOf( this ).constructor.name === "objectStorageContainer" )
+                  ) return new newStorage.objectStorageContainer(o,opts);
+                console.log( "making a new storage container:-----------------------------------------------------", o );
 		//console.trace( "Something creating a new container..", o, opts );
 		try {
 		if( "string" === typeof o ){
@@ -56,7 +71,9 @@ function ObjectStorage( sack_, ws ) {
 			this.data.nonce = v;
 		} else {
 			if( opts && opts.id ) {
+                            console.log( "SOMETHING", opts );
 				Object.defineProperty( this, "id", { value:opts.id } );
+                                console.log( "Conditioning THis with a ID:", opts.id, this.id );
 			}
 		}
 		}catch(err) {
@@ -245,16 +262,20 @@ function ObjectStorage( sack_, ws ) {
 				return '~or"'+exist+'"';
 			}
 		} else {
-			if( this instanceof objectStorageContainer ) {
+			if( this instanceof objectStorageContainer
+                            || Object.getPrototypeOf( this ).constructor.name === "objectStorageContainer"
+                          ) {
 				//console.log( "THIS SHOULD ALREADY BE IN THE STORAGE!", this, newStorage.stored.get( this.data ) );
+                            console.log( "Storing object:", this.data, this.id );
 				newStorage.stored.set( this.data, this.id ); // maybe update the ID though.
-				return {data:this.data};
+				//return thsi{data:this.data};
 			}
 		}
 		//console.log( "not a container...");
 		return this;
 	}
 	function setupStringifier( stringifier ) {
+            	_debug_stringify && console.log( "Stringifier SETUP - add ~os" );
 		stringifier.setDefaultObjectToJSOX( objectToJSOX );
 		stringifier.registerToJSOX( "~os", objectStorageContainer, objectToJSOX );
 		stringifier.store = newStorage;
@@ -275,50 +296,76 @@ function ObjectStorage( sack_, ws ) {
 		//this.parser.
 		if( !opts ) opts = defaultOpts;
 		//if( opts && opts.depth === 0 ) return;
-		//console.log( "External API invoked map...");
+		console.log( "External API invoked map...", o, newStorage.stored );
 		const rootId = newStorage.stored.get( o );
 		if( !rootId ) { console.log( "Object was not stored, cannot map" ); return Promise.resolve( o ); }
 		return newStorage.cachedContainer.get( rootId ).map( opts );
 	}
 
     newStorage.handleMessage = handleMessage
-
-	const remote = { ws:ws,
+	newStorage. remote = {
 		get(opts){
+                    //console.log( "this get?" );
 			return new Promise( (res,rej)=>{
 				const msg = {op:"get", id:unique++, opts:opts, res:res,rej:rej };
-						ws.send( msg );
-						requests.set( msg.id, msg );
-					} )
+				ws.send( msg );
+				requests.set( msg.id, msg );
+			} )
 		},
-		put(obj, opts){
-			return new Promise( (res,rej)=>{
-					const msg = {op:"put", id:unique++, obj:obj, opts:opts, res:res,rej:rej };
-		addr.send( msg );
-		requests.set( msg.id, msg );
-					} )
+		put(obj, rid,res,rej){
+			const msg = {op:"put", id:unique++, data:obj, rid:rid, res:res,rej:rej };
+			ws.send( msg );
+			requests.set( msg.id, msg );
 		},
 		handleMessage : handleMessage
 	}
 
-
+	
 	function handleMessage( msg ) {
-		if( msg.op === "getack" ) {
+            console.log( "Storage Remote Handler:", msg );
+            try {
+		if( msg.op === "GET" ) {
 					const req = requests.get( msg.id );
-					if( req ) req.res( msg.data );
+                                        requests.delete(msg.id);
+                                        //console.log( "Found request?", req );
+			const data = (msg.data && ( msg.data instanceof ArrayBuffer
+                                      || Object.getPrototypeOf( msg.data ).constructor.name === "ArrayBuffer"
+
+                                     ))?decoder.decode( msg.data )
+                                            : msg.data;
+                        		//if(
+                        		console.log( "Resolving request?", req, data );
+					if( req ) req.res( data );
+                                        return true;
 				}
-			if( msg.op === "geterr" ) {
+			if( msg.op === "Get" ) {
 					const req = requests.get( msg.id );
+                                        requests.delete(msg.id);
 					if( req ) req.rej( msg.err );
+                                        return true;
 				}
-		if( msg.op === "putack" ) {
+		if( msg.op === "PUT" ) {
 					const req = requests.get( msg.id );
-					if( req ) req.res( msg.result );
+                                        requests.delete(msg.id);
+					if( req ) {
+                                            console.log( "Something",req );
+                                            req.res( msg.r );
+                                        }
+                                        return true;
 				}
-			if( msg.op === "puterr" ) {
+			if( msg.op === "Put" ) {
 					const req = requests.get( msg.id );
-					if( req ) req.rej( msg.err );
+                                        requests.delete(msg.id);
+					if( req ) {
+                                            console.log( "Req:", req );
+                                            req.rej( msg.err );
+                                        }
+                                        return true;
 				}
+                }catch(err){
+	                console.log( "something message error:", err );
+                }
+                return false;
 	}
 
 	return newStorage;
@@ -333,11 +380,15 @@ ObjectStorage.prototype.getContainer = function( obj, options ) {
 		container = this_.cachedContainer.get( container );
 		return container;
 	}
-	//console.log( "Getting a new container...", container.id );
-	container = new objectStorageContainer(obj,options);
-	this_.stored.set( obj, container.id );
-	this_.cached.set( container.id, container.data );
-	this_.cachedContainer.set( container.id, container );
+        if( !options.exist ) {
+		//console.log( "Getting a new container...", container.id );
+		container = new objectStorageContainer(obj,options);
+                console.log( "Manufacture new container.", object, container.id );
+		this_.stored.set( obj, container.id );
+		this_.cached.set( container.id, container.data );
+		this_.cachedContainer.set( container.id, container );
+        	return container;
+        }
 }
 
 ObjectStorage.prototype.remove = function( opts ) {
@@ -377,6 +428,23 @@ ObjectStorage.prototype.getCurrentParseRef = function() {
 	return null;
 }
 
+ObjectStorage.prototype.stringify = function( obj ) {
+	const containerId = this.stored.get( obj );
+	if( containerId ) {
+		const container = this.cachedContainer.get( containerId );
+		const stringifier = this.stringifier;
+		if( container ) {
+			container.encoding = true;
+			const storage = stringifier.stringify( container );
+			container.encoding = false;
+			return storage;
+		}
+	}
+	return stringifier.stringify( container );
+	
+	
+}
+
 // this hides the original 'put'
 ObjectStorage.prototype.put = function( obj, opts ) {
 	const this_ = this;
@@ -386,7 +454,7 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 
 		var container = this_.stored.get( obj );
 
-		_debug_osr && console.log( "Put found object?", container, obj, opts );
+		_debug_osr && console.log( "Server Put found object?", container, obj, opts );
 		if( container ) {
 			container = this_.cachedContainer.get( container );
 
@@ -396,23 +464,26 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 
 				var stringifier;
 				if( opts && opts.extraEncoders ) {
+                                    	_debug_stringify && console.log( "New stringifier because of optional encoders" );
 					stringifier = sack.JSOX.stringifier();
 					this_.setupStringifier( stringifier );
 					opts.extraEncoders.forEach( f=>{
 						stringifier.registerToJSOX( f.tag, f.p, f.f )
 					});
 				}else {
+                                    	_debug_stringify && console.log( "use stroage stringifier" );
 					stringifier = this_.stringifier;
 				}
 				container.encoding = true;
 				storage = stringifier.stringify( container );
+                                _debug_stringify && console.log( "Stringified container into:", storage, container );
 				container.encoding = false;
 				if( !container.id || container.id === "null" ) {
 					console.trace( "0) Container has no ID or is nUll", container );
 				}
 				_debug_osr && console.log( "WRite:", container, storage );
 				for( var remote of this_.remotes ) {
-					remote.ws.put( container.id, storage ).then( res ).catch( rej );
+					remote.remote.put( storage, container.id, res, rej );
 					res = null;
 					rej = null;
 				}
@@ -437,12 +508,15 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 
 			// raw object; no encoding to set.
 			storage = stringifier.stringify( obj );
+                        _debug_stringify && console.log( "Stringified object into ", storage, obj );
 			if( !opts.id || opts.id === "null" ) {
 				console.trace( "Container has no ID or is nUll", container );
 			}
 			_debug_osr && console.trace( "WRite:", opts, storage );
 	                for( var remote of this_.remotes ) {
-        	            remote.ws.put( opts.id, storage ).then( res ).catch( rej );
+                           try {
+        	            remote.remote.put( storage, opts.id, res, rej )
+                            }catch(err){console.log( "ERR:",err)}
                             res = null;
                             rej = null;
         	        }
@@ -459,23 +533,27 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 			//console.log( "saving stored container.id", obj, container.id );
 
 			//this.stored.delete( obj );
+                        console.log( "Created new container for object(2)", obj );
 			this_.stored.set( obj, container.id );
 			this_.cached.set( container.id, container.data );
 			this_.cachedContainer.set( container.id, container );
 
 			var stringifier;
 			if( opts.extraEncoders ) {
+                            	_debug_stringify && console.log( "Need a custom stringifier because of options" );
 				stringifier = sack.JSOX.stringifier();
 				this_.setupStringifier( stringifier );
 				opts.extraEncoders.forEach( f=>{
 					stringifier.registerToJSOX( f.tag, f.p, f.f )
 				});
 			}else {
+                            	_debug_stringify && console.log( "Using this_ stringifier" );
 				stringifier = this_.stringifier;
 			}
 
 			container.encoding = true;
 			storage = stringifier.stringify( container );
+                        _debug_stringify && console.log( "Sringified container(2) into", storage, container );
 			container.encoding = false;
 			if( !container.id || container.id === "null" ) {
 				console.trace( "Container has no ID or is nUll", container );
@@ -483,7 +561,7 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 			_debug_osr && console.trace( "Outut container to storage... ", container, storage );
 			try {
 		                for( var remote of this_.remotes ) {
-        		            remote.ws.put( container.id, storage ).then( res ).catch( rej );
+        		            remote.remote.put( storage, container.id, res, rej );
                 	            res = null;
                         	    rej = null;
 	        	        }
@@ -518,7 +596,7 @@ ObjectStorage.prototype.get = function( opts ) {
 	var resolve;
 	var reject;
 	const os = this;
-
+	_debug_stringify && console.log( "This is the big get... ");
 	if( "string" === typeof opts ) {
 		opts = { id:opts
 		       , extraDecoders : null };
@@ -560,11 +638,16 @@ ObjectStorage.prototype.get = function( opts ) {
 
 	function reviveObject(o ) {
 		// this callback updates from time to time so....
-		console.log( "Resolved buffer (pending):", ackObjects.length );
+            	// this is JSOX parse callback, called every time there is a object revived.
+                // this will be the next object to satisfy ack.
+
+		_debug_stringify && console.log( "Resolved buffer (pending):", ackObjects.length, o );
+
 		const ackObject = ackObjects.shift();
 		if( ackObject ) {
-			ackObject.cb(o);
-			ackObject.res( o );
+                    	//console.log( "ACK:", ackObject );
+			ackObject.cb(o,ackObject.id); // this is internal callback
+			ackObject.res( o ); // this is final return to waiter.
 		}
 	}
 
@@ -601,6 +684,7 @@ ObjectStorage.prototype.get = function( opts ) {
 				dangling = [];
 				objectRefs = 0;
 			}
+                        console.log( "CURRENT READID:",currentReadId );
 			Object.defineProperty( this, "id", { value:currentReadId } );
 			return this;
 		}
@@ -609,7 +693,10 @@ ObjectStorage.prototype.get = function( opts ) {
 				const this_ = this;
 				// new value isn't anything special; just set the value.
 				//console.log( "This sort of thing... val is just a thing - like a key part identifier...; but that should have been a container.");
-				if( val instanceof Promise ) {
+				if( val instanceof Promise
+                                    || Object.getPrototypeOf( val ).constructor.name === "Promise"
+
+                                  ) {
 					console.log( "Value is a promise, and needs resolution.")
 					var dangle = dangling.find( d=>d.d.p===val );
 					if( dangle )
@@ -682,23 +769,24 @@ ObjectStorage.prototype.get = function( opts ) {
 			}
 			//console.log( "LOADING : ", opts.id );
 			for( var remote of os.remotes ) {
-				remote.ws.get( opts ).then( (obj)=>{
-					//console.log( "parser?", parser );
+                        	console.log( "So for some remote... use ws.get" );
+				remote.remote.get( opts ).then( (obj)=>{
 					const p = new Promise( (res,rej)=>{
-						ackObjects.push( {res:res,rej:rej,cb:resultCallback } );
+						ackObjects.push( {res:res,rej:rej,cb:resultCallback,id:opts.id } );
 					});
+					currentReadId = opts.id;
 					parser.write( obj );
 					return p
-				} ).catch( err=>{
+			        } ).catch( err=>{
 					console.log( "remote 'get' Error:", err );
 					resultCallback( null );
 				} );
 			}
 			//os.read( currentReadId = opts.id
 			//	, parser
-			function resultCallback(obj,times){
+			function resultCallback(obj,id){
 				// with a new parser, only a partial decode before revive again...
-				//console.log( "Read resulted with an object:", obj, times );
+				//console.log( "Read resulted with an object:", obj );
 				let deleteId = -1;
 				const extraResolutions = [];
 				for( let n = 0; n < os.decoding.length; n++ ) {
@@ -719,17 +807,22 @@ ObjectStorage.prototype.get = function( opts ) {
 						os.pending.splice( found, 1 );
 					}
 				} while( found >= 0 );
-
 				if( obj && ( obj instanceof os.objectStorageContainer ) ){
+                                    	//console.log( "Is a container...", currentReadId, obj.id, id );
 					//console.log( "GOTzz:", obj, obj.id, obj.data );
 					if( !("id" in obj ))
-						Object.defineProperty( obj, "id", { value:currentReadId } );
+						Object.defineProperty( obj, "id", { value:id } );
+                                        else if( "undefined" === typeof obj.id )
+					     throw new Error( "Object has no identity" );//Object.defineProperty( obj, "id", { value:id } );
+
+                                        //console.log( "Setting stored object:", obj.data , id, obj.id );
 					os.stored.set( obj.data, obj.id );
 					os.cachedContainer.set( obj.id, obj );
-					currentReadId = priorReadId;
+					//currentReadId = priorReadId;
 					for( let res in extraResolutions ) res.res(obj.data);
 					res(obj.data);
 				} else {
+                                    	//console.log( "Isn't a container..." );
 					//console.log( "Result object", obj );
 					currentReadId = priorReadId;
 					for( let res in extraResolutions ) res.res(obj);
@@ -776,8 +869,8 @@ fileEntry.prototype.read = function( from, len ) {
 				} );
 
 		} else {
-			console.log( "folder volume:", this_.folder.volume );
-			debugger;
+			//console.log( "folder volume:", this_.folder.volume );
+			//debugger;
 			if( this_.id )
 				return this_.folder.volume.get( {id:this_.id} ).then( res ).catch( rej );
 			//console.log( "Rejecting, no ID, (no data)", this_ );
@@ -794,7 +887,7 @@ fileEntry.prototype.write = function( o ) {
 			if( "string" === typeof o ) {
 				//console.log( "direct write of string data:", o );
 		                for( var remote of this.folder.volume.remotes ) {
-        		            let newsend = remote.ws.put( this.id, o ).then( res ).catch( rej );
+        		            let newsend = remote.remote.put( o, this.id, res, rej );
                                     if( !first ) first = newsend;
                 	            res = null;
                         	    rej = null;
@@ -804,10 +897,11 @@ fileEntry.prototype.write = function( o ) {
 				//return Promise.resolve( this.id );
                                 return first;
 
-			} else if( o instanceof ArrayBuffer ) {
+			} else if( o instanceof ArrayBuffer
+                                 || Object.getPrototypeOf(o).constructor.name === "ArrayBuffer" ) {
 				//console.log( "Write raw buffer" );
 		                for( var remote of this.folder.volume.remotes ) {
-        		            let newsend = remote.ws.put( this.id, o ).then( res ).catch( rej );
+        		            let newsend = remote.remote.put(  o, this.id,res, rej );
                                     if( !first ) first = newsend;
                 	            res = null;
                         	    rej = null;
@@ -991,7 +1085,7 @@ var loading = null;
 ObjectStorage.prototype.getRoot = async function() {
 	if( this.root ) return this.root;
 	if( loading ) {
-		console.log( "Still loading?" );
+		//console.log( "Still loading?" );
 		return new Promise( (res,rej)=>{
 			loading.push(  {res:res, rej:rej} );
 		} );
@@ -1005,11 +1099,11 @@ ObjectStorage.prototype.getRoot = async function() {
 	//console.trace( "Who gets this promise for getting root?");
 	return new Promise( (resolve,reject)=>{
 	
-		console.log( "Getting root directory..", this_.ws, this_.ws.get );
+		//console.log( "Getting root directory..", this_.ws, this_.ws.get );
 		return this_.get( { id:result.id } )
 			.catch( reject )
 			.then( (dir)=>{
-				console.log( "get root directory got:", dir, "(WILL DEFINE FOLDER)" );
+				//console.log( "get root directory got:", dir, "(WILL DEFINE FOLDER)" );
 				if( !dir ) {
 					result.store()
 						.then( function(id){

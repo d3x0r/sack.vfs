@@ -5,6 +5,7 @@ const JSON6 = SACK.JSOX;
 const JSON = SACK.JSOX;
 const parse = JSOX.parse;
 
+
 describe('Objects and arrays', function () {
 	it('Simple array with number', function () {
 		const result = JSON6.parse( "[1234]" );
@@ -25,7 +26,7 @@ describe('Objects and arrays', function () {
 		const result = JSON6.parse( d );
 		console.log( result );
 		expect(result).to.deep.equal([
-			true, false, -NaN, NaN, -Infinity, Infinity, undefined
+			true, false, NaN, NaN, -Infinity, Infinity, undefined
 		]);
 	});
 
@@ -38,7 +39,7 @@ describe('Objects and arrays', function () {
 		const result = JSON6.parse( d );
 		console.log( result );
 		expect(result).to.deep.equal({
-			a: true, b: false, c: -NaN, d: NaN, e: -Infinity, f: Infinity, h: null
+			a: true, b: false, c: -NaN, d: NaN, e: -Infinity, f: Infinity, g:undefined, h: null
 		});
 	});
 	it('Array with empty object', function () {
