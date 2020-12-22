@@ -16,8 +16,6 @@ r.setDraw( ( image )=>{
 	}
 	console.log( "Drew?" );
         image.drawImageOver( background );
-	r.update();
-	
 } );
 
 r.show();

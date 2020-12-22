@@ -25,11 +25,11 @@ var r = sack.Renderer( "test", 0, 0, display.width, display.height );
 console.log( "created renderer?", r, Object.keys( Object.getPrototypeOf(r)) );
 var background = sack.Image( "images/stop_button.png" );
 r.on( "draw", ( image )=>{	
-	//console.log( "It wanted a draw...", 100+y_del, image, Object.keys(Object.getPrototypeOf(image)) ) 
+	//console.log( "It wanted a draw...", _x_del, y_del, image, Object.keys(Object.getPrototypeOf(image)) ) 
 	if( _x_del )
 	        image.fill( 0+_x_del, 100+_y_del, 100 * _scale, 100 * _scale, sack.Image.colors.purple );
 	
-	//console.log( "draw del is: ", x_del, y_del );
+	console.log( "draw del is: ", x_del, y_del );
         image.drawImage( background, 0+x_del, 100+y_del, 100 * scale, 100 * scale );
         image.drawImage( background, 0+x_del, 100+y_del, 100 * scale, 100 * scale, 0, 0, 50, 50 );
 	{
@@ -47,7 +47,6 @@ r.on( "draw", ( image )=>{
 	_x_del = x_del;
 	_y_del = y_del;
 	_scale = scale;
-	r.update();
 } );
 
 r.on( "mouse", ( event )=>{	
@@ -63,11 +62,12 @@ r.on( "mouse", ( event )=>{
 			x_click = event.x;
 			y_click = event.y;
 		} else { 
+			console.log( "Moving:", event );
 			x_del += ( event.x - _x );
 			y_del += ( event.y - _y );
 			r.redraw();
 		}
-		//console.log( "maus Del is: ", x_del, y_del );
+		console.log( "maus Del is: ", x_del, y_del );
 		_x = event.x;
 		_y = event.y;
 	}

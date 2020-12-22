@@ -8,8 +8,8 @@ try {
 	errN.push(err);
 }
 
-if( !sack ){
-  if( process.platform === "win32" ) {
+if( !sack )
+  if( process.platform === 'win32' ) {
     try {
       if( process.config.target_defaults.default_configuration === 'Debug' )
         sack = require( "./build/Debug/sack_gui.node" );
@@ -32,43 +32,23 @@ if( !sack ){
   } else {
     if( !sack )
       try {
-          sack = require( "./build/RelWithDebInfo/sack_vfs.node" );
+          sack = require( "./build/RelWithDebInfo/sack_gui.node" );
       } catch( err ){
         errN.push(err);
       }
     if( !sack )
       try {
-        sack = require( "./build/Debug/sack_vfs.node" );
+        sack = require( "./build/Debug/sack_gui.node" );
       } catch( err ){
         errN.push(err);
       }
     if( !sack )
       try {
-          sack = require( "./build/Release/sack_vfs.node" );
+          sack = require( "./build/Release/sack_gui.node" );
       } catch( err ){
         errN.push(err);
       }
   }
-} else {
-  if( !sack )
-    try {
-        sack = require( "./build/RelWithDebInfo/sack_gui.node" );
-    } catch( err ){
-      errN.push(err);
-    }
-  if( !sack )
-    try {
-      sack = require( "./build/Debug/sack_gui.node" );
-    } catch( err ){
-      errN.push(err);
-    }
-  if( !sack )
-    try {
-        sack = require( "./build/Release/sack_gui.node" );
-    } catch( err ){
-      errN.push(err);
-    }
-}
 
 if( !sack )
   throw new Error( util.format( "Failed to match configuration:", process.config.target_defaults.default_configuration, "\n", errN.join(',') ) );
