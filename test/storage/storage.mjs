@@ -24,7 +24,12 @@ db.init().then( ()=>{
       ((n)=>{
 			db.root.create( "TestFile" + n ).then( (file)=>{
 							//console.log( "write:", n );
-   	             	return file.write( "Test Content:" + n );
+   	             	return file.write( "Test Content:" + n ).then( ()=>{
+						if( n === 999 ) {
+							const now = Date.now();
+							console.log( "Done:", now - start );
+						}	
+							} );
       	          } ).catch( (err)=>{
          	       	console.log( 'file name exists already?' );
 	           	    } );
