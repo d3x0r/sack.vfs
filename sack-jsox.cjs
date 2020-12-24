@@ -38,6 +38,21 @@ function pushToProto(p,a) {
     toProtoTypes.set( p, a );
 }
 
+function escape(string) {
+	//return string.replace( "\\", "\\\\" ).replace( '\"', "\\\"" ).replace( "\'", "\\\'" );
+	var n;
+	var output = '';
+	if( !string ) return string;
+	//console.log( "escape:", string );
+	for( n = 0; n < string.length; n++ ) {
+		if( ( string[n] == '"' ) || ( string[n] == '\\' ) || ( string[n] == '`' )|| ( string[n] == '\'' )) {
+			output += '\\';
+		}
+		output += string[n];
+	}
+	return output;
+}
+
 initPrototypes();
 function initPrototypes()
 {
@@ -83,7 +98,7 @@ function initPrototypes()
 	} );
 	pushToProto( String.prototype, { external:false
 	                                    , name : null
-	                                    , cb:function(){ return '"' + sack.JSOX.escape(this_value.apply(this)) + '"' } } );
+	                                    , cb:function(){ return '"' + escape(this_value.apply(this)) + '"' } } );
 	if( typeof BigInt === "function" )
 		pushToProto( BigInt.prototype
 		                , { external:false, name:null, cb:function() { console.log( "BIGINT TOSTR"); return this + 'n' } } );
@@ -346,7 +361,7 @@ sack.JSOX.stringifier = function() {
 		// should check also for if any non ident in string...
 		return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
 			|| /([0-9\-])/.test(s[0])
-			|| /((\n|\r|\t)|[ \#\{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + sack.JSOX.escape(s) +useQuote):s )
+			|| /((\n|\r|\t)|[ \#\{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + escape(s) +useQuote):s )
 	}
 
 
