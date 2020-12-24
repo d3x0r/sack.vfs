@@ -229,7 +229,7 @@ sack.JSOX.begin = function(cb, reviver) {
 	var parser = JSOXBegin( cb, reviver );
 	var localFromProtoTypes = new Map();;
 	var localPromiseFromProtoTypes = new Map();;
-        parser.localFromProtoTypes = localFromProtoTypes;
+	parser.localFromProtoTypes = localFromProtoTypes;
 	parser.setFromPrototypeMap( localFromProtoTypes );
 	parser.setPromiseFromPrototypeMap( localPromiseFromProtoTypes );
 	parser.registerFromJSOX = function (prototypeName, o, f) {
