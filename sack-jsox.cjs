@@ -19,6 +19,7 @@ try {
 } catch(err) {
 	console.log( "JSOX Module could not register require support..." );
 }
+const _DEBUG_STRINGIFY_TIMING = true;
 const _DEBUG_STRINGIFY = false;
 const DEBUG_STRINGIFY_OUTPUT = _DEBUG_STRINGIFY|| false;
 var toProtoTypesByName = new Map();
@@ -269,6 +270,11 @@ var mapToJSOX;
 const keywords = {	["true"]:true,["false"]:false,["null"]:null,["NaN"]:NaN,["Infinity"]:Infinity,["undefined"]:undefined }
 var id = 1;
 sack.JSOX.stringifierActive = null;
+let timeIn = 0;
+let timeOut = 0;
+let lastTick = Date.now();
+let lastLog = Date.now();
+
 sack.JSOX.stringifier = function() {
 	var classes = [];
 	var useQuote = '"';
@@ -414,7 +420,12 @@ sack.JSOX.stringifier = function() {
 		var gap;
 		var indent;
 		var rep;
-
+		if( _DEBUG_STRINGIFY_TIMING ) {
+			let now = Date.now();
+			timeOut += now - lastTick;
+			lastTick = now;
+		}
+	
 		var i;
 		const spaceType = typeof space;
 		const repType = typeof replacer;
@@ -475,6 +486,15 @@ sack.JSOX.stringifier = function() {
 			//console.log( "Stringifier is still in a stack?", path);
 		}
 		DEBUG_STRINGIFY_OUTPUT && console.trace( "Stringify Result:", r );
+      if(_DEBUG_STRINGIFY_TIMING) {
+			let now = Date.now();
+			timeIn += now - lastTick;
+			lastTick = now;
+			if( now - lastLog > 250 ) {
+				console.log( "stringify profile:", timeIn, timeOut );
+				lastLog = now;
+			}
+		}
 		return r;
 
 
