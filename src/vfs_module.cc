@@ -128,6 +128,7 @@ struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate ) {
 }
 
 static void moduleExit( void *arg ) {
+	//DebugDumpMem();
 	//SaveTranslationDataEx( "^/strings.dat" );
 	vfs_global_data.shutdown = 1;
 
@@ -262,7 +263,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 
 		//SetAllocateLogging( TRUE );
 		//SetManualAllocateCheck( TRUE );
-		//SetAllocateDebug( TRUE );
+		//SetAllocateDebug( FALSE );
 		//lprintf( "Do Init in modules (shouldn't do some of this)");
 		SetSystemLog( SYSLOG_FILE, stdout );
 

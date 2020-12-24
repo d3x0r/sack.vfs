@@ -1038,7 +1038,37 @@ function splitPath( path ) {
 	return path.split( /[\\\/]/ );
 }
 
-fileDirectory.prototype.store = function() {
+const pendingStore = [];
+let lastStore = 0;
+
+function checkPendingStore() {
+	if( lastStore ) {
+		const now = Date.now();
+		if( (now-lastStore) > 500 ){
+			console.log( "Actually writing directories" );
+			for( let p of pendingStore ) {
+				p.volume.put( p, { id:p.id } );
+			}
+			pendingStore.length = 0;
+			lastStore = 0;
+		}
+	}
+	if( pendingStore.length ) {
+		setTimeout( checkPendingStore, 250 );
+	}
+}
+
+const storedPromise = Promise.resolve(undefined);
+fileDirectory.prototype.store = function(force) {
+	if( !force ) {
+		if( !pendingStore.find( p=>p===this)) 
+			pendingStore.push( this );
+		if( !lastStore ) {
+			checkPendingStore();
+		}
+		lastStore = Date.now();
+		return storedPromise;
+	}
 	return this.volume.put( this, { id:this.id } );
 }
 
@@ -1179,7 +1209,7 @@ _objectStorage.prototype.getRoot = async function() {
 			.then( (dir)=>{
 				//console.log( "get root directory got:", dir, "(WILL DEFINE FOLDER)" );
 				if( !dir ) {
-					result.store()
+					result.store(true)
 						.then( function(id){
 							//console.log( "1) Assigning ID to directory", id );
 							Object.defineProperty( result, "id", { value:id } );
