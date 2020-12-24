@@ -306,7 +306,7 @@ Oh - (one last note) Added sort to JSOX encoding so objects are always encoded i
 ``` js
 
 const sack = require( "sack.vfs" );
-const objectStorage = sack.objectStorage( 'filename.data' );
+const objectStorage = sack.ObjectStorage( 'filename.data' );
 
 ```
 
@@ -335,11 +335,12 @@ sack.ObjectStorage.
  
 |Object Storage Directory Methods | Return | arguments | Description |
 |----|----|----|---|
-| create | FileEntry | (filename) | creates a new file, ready to be written into |
-| open | FileEntry | ( filename ) | opens a file relative to the current root |
-| folder | FileDirectory | ( pathname ) | gets a path within the current path |
-| store | none | () | saves any changes |
-| has | Boolean | ( pathanem ) | returns true/false indicating whether this directory contains the specified pathname |
+| create | FileEntry | (filename) | creates a new file, ready to be written into. |
+| open | FileEntry | ( filename ) | opens a file relative to the current root. |
+| folder | FileDirectory | ( pathname ) | gets a path within the current path. |
+| store | none | () | saves any changes. |
+| has | Boolean | ( pathanem ) | returns true/false indicating whether this directory contains the specified pathname. |
+| remove | Promise | ( filename ) | delete specified file from the file directory. |
 
 
 |Object Storage File Methods | Return | arguments | Description |
@@ -1426,10 +1427,12 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 1.0.1006
+   - added remove() method for object storage directories.
+   - getRemoteFragment() get code fragment for this API to connect a remote.
 - 1.0.1005
    - fixed several issues reviving custom data types with references and replacement operations.
    - Added newer tests from [JSOX](https://github.com/d3x0r/JSOX).
-   - 
 - 1.0.1004
    - fixed keyboard input; object GC caused fault.
    - fixed JSOX parsing and stringification issues; Emit `string string` not `stringstring` if the tag and string are both unquoted; fix object revival issues.
