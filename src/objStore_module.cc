@@ -1,6 +1,8 @@
 #include "global.h"
 using namespace sack::SACK_VFS::objStore;
 
+//#define LOG_DISK_TIME
+
 class ObjectStorageObject : public node::ObjectWrap {
 public:
 	uv_async_t async;
@@ -800,6 +802,12 @@ void ObjectStorageObject::createIndex( const v8::FunctionCallbackInfo<Value>& ar
 	}
 }
 
+#ifdef LOG_DISK_TIME
+static uint64_t writeTotal = 0;
+static uint64_t otherTotal = 0;
+static uint64_t lastTick;
+#endif
+
 void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() < 2 ) {
@@ -810,7 +818,15 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 	Local<Function> cb;
 	ObjectStorageObject *vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
 	String::Utf8Value fName( isolate,  args[0] );
-	//lprintf( "OPEN FILE:%s", *fName );
+#ifdef LOG_DISK_TIME
+	{
+		uint64_t sTick = GetTickCount64();
+		if( lastTick )
+			otherTotal += (sTick - lastTick);
+		lastTick = sTick;
+	}
+	//lprintf( "OPEN FILE:%s %lld %lld", *fName, writeTotal, otherTotal );
+#endif
 	int arg = 2;
 	while( arg < args.Length() ) {
 		if( args[arg]->IsFunction() ) {
@@ -840,9 +856,16 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 			}
 
 		}
-        } else {
-            lprintf( "Write to native volume not supported?" );
-        }
+	} else {
+		lprintf( "Write to native volume not supported?" );
+	}
+#ifdef LOG_DISK_TIME
+	{
+		uint64_t thisTick = GetTickCount64();
+		writeTotal += (thisTick - lastTick);
+		lastTick = thisTick;
+	}
+#endif
 }
 
 
