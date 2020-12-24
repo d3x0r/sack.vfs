@@ -19,7 +19,7 @@ try {
 } catch(err) {
 	console.log( "JSOX Module could not register require support..." );
 }
-const _DEBUG_STRINGIFY_TIMING = true;
+const _DEBUG_STRINGIFY_TIMING = false;
 const _DEBUG_STRINGIFY = false;
 const DEBUG_STRINGIFY_OUTPUT = _DEBUG_STRINGIFY|| false;
 var toProtoTypesByName = new Map();
