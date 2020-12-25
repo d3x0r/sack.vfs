@@ -590,7 +590,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 				container = new this_.objectStorageContainer(obj,opts);
 				//console.log( "New container looks like... ", container.id, container );
 				
-				console.log( "saving stored container.id", typeof obj, obj, container.id );
+				//console.log( "saving stored container.id", typeof obj, obj, container.id );
 			        
 				//this.stored.delete( obj );
 				this_.stored.set( obj, container.id );
@@ -1044,8 +1044,7 @@ let lastStore = 0;
 function checkPendingStore() {
 	if( lastStore ) {
 		const now = Date.now();
-		if( (now-lastStore) > 500 ){
-			console.log( "Actually writing directories" );
+		if( (now-lastStore) > 100 ){
 			for( let p of pendingStore ) {
 				p.volume.put( p, { id:p.id } );
 			}
@@ -1054,7 +1053,7 @@ function checkPendingStore() {
 		}
 	}
 	if( pendingStore.length ) {
-		setTimeout( checkPendingStore, 250 );
+		setTimeout( checkPendingStore, 50 );
 	}
 }
 
