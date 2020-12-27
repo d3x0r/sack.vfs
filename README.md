@@ -1427,9 +1427,12 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
+- 1.0.1007(in progress)
 - 1.0.1006
    - added remove() method for object storage directories.
    - getRemoteFragment() get code fragment for this API to connect a remote.
+   - Added idle flush for object storage directory updates.
+   - Removed noisy debug logging.
 - 1.0.1005
    - fixed several issues reviving custom data types with references and replacement operations.
    - Added newer tests from [JSOX](https://github.com/d3x0r/JSOX).
