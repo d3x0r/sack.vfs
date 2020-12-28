@@ -24,6 +24,7 @@ const decoder = new TextDecoder();
 
 function ObjectStorage( sack_, ws ) {
 	const sack = sack_;
+        this.sack = sack_;
 	this.ws = ws;
    ws.storage = this;
 	//console.log( "Initialize as object storage?", this );
@@ -59,12 +60,12 @@ function ObjectStorage( sack_, ws ) {
 		Object.defineProperty( this, "encoding", { writable:true, value:false } );
 	/*
 		this.data = {
-			//nonce : opts?opts.sign?sack.SaltyRNG.sign( sack.JSOX.stringify(o), 3, 3 ):null:null,
+			//nonce : opts?opts.sign?sack.SaltyRNG.sign( JSOX.stringify(o), 3, 3 ):null:null,
 			data : o
 		}
 	*/
 		if( opts && opts.sign ) {
-			var v = sack.SaltyRNG.verify( sack.JSOX.stringify(o), this.data.nonce, 3, 3 );
+			var v = this_.sack.SaltyRNG.verify( JSOX.stringify(o), this.data.nonce, 3, 3 );
 			//console.log( "TEST:", v );
 			Object.defineProperty( this, "id", { value:v.key } );
 			v.key = this.data.nonce;
@@ -239,7 +240,7 @@ function ObjectStorage( sack_, ws ) {
 	newStorage.decoding = [];
 	newStorage.pending = [];
 	newStorage.setupStringifier = setupStringifier;
-	newStorage.stringifier = sack.JSOX.stringifier();
+	newStorage.stringifier = JSOX.stringifier();
 	newStorage.parser = null; // this will be filled when .get() is called.
 	newStorage.currentParser = null;
 	newStorage.root = null; // this gets filled when the root file system is enabled.
@@ -476,7 +477,7 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 				var stringifier;
 				if( opts && opts.extraEncoders ) {
                                     	_debug_stringify && console.log( "New stringifier because of optional encoders" );
-					stringifier = sack.JSOX.stringifier();
+					stringifier = JSOX.stringifier();
 					this_.setupStringifier( stringifier );
 					opts.extraEncoders.forEach( f=>{
 						stringifier.registerToJSOX( f.tag, f.p, f.f )
@@ -508,7 +509,7 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 		if( opts && opts.id ) {
 			var stringifier;
 			if( opts.extraEncoders ) {
-				stringifier = sack.JSOX.stringifier();
+				stringifier = JSOX.stringifier();
 				this_.setupStringifier( stringifier );
 				opts.extraEncoders.forEach( f=>{
 					stringifier.registerToJSOX( f.tag, f.p, f.f )
@@ -535,8 +536,8 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 			//res( opts.id );
 		} else if( !opts || !opts.id ) {
 			_debug_osr && console.log( "New bare object, create a container...", opts );
-                        if( !opts ) opts = { id : sack.id() }
-						else opts.id = sack.id();
+                        if( !opts ) opts = { id : this_.sack.id() }
+						else opts.id = this_.sack.id();
 
 			container = new this_.objectStorageContainer(obj,opts);
 			//console.log( "New container looks like... ", container.id, container );
@@ -552,7 +553,7 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 			var stringifier;
 			if( opts.extraEncoders ) {
                             	_debug_stringify && console.log( "Need a custom stringifier because of options" );
-				stringifier = sack.JSOX.stringifier();
+				stringifier = JSOX.stringifier();
 				this_.setupStringifier( stringifier );
 				opts.extraEncoders.forEach( f=>{
 					stringifier.registerToJSOX( f.tag, f.p, f.f )
@@ -589,7 +590,7 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 /*
 ObjectStorage.prototype.update( objId, obj ) {
 
-	var container = new this.objectStorageContainer(sack.JSOX.stringify(obj),sign);
+	var container = new this.objectStorageContainer(JSOX.stringify(obj),sign);
 	this.stored.set( obj, container.id );
 	this.cached.set( container.id, container );
 	return container.id;
@@ -639,7 +640,7 @@ ObjectStorage.prototype.get = function( opts ) {
 	}
 
 	if( !this.parser ){
-		this.parser = sack.JSOX.begin(reviveObject);
+		this.parser = JSOX.begin(reviveObject);
 		this.parser.fromJSOX( "~os", this.objectStorageContainer, reviveContainer ); // I don't know ahead of time which this is.
 		this.parser.fromJSOX( "~or", objectStorageContainerRef, reviveContainerRef ); // I don't know ahead of time which this is.
 		for( let f of this.decoders )
@@ -753,7 +754,7 @@ ObjectStorage.prototype.get = function( opts ) {
 
 	let parser = this.parser;
 	if( opts.extraDecoders ) {
-		parser = sack.JSOX.begin(reviveObject  );
+		parser = JSOX.begin(reviveObject  );
 		parser.fromJSOX( "~os", this.objectStorageContainer, reviveContainer ); // I don't know ahead of time which this is.
 		parser.fromJSOX( "~or", objectStorageContainerRef, reviveContainerRef ); // I don't know ahead of time which this is.
 		//console.log( "this has no decoders? ", this );
