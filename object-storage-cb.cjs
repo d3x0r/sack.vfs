@@ -88,31 +88,6 @@ objectStorageContainerSync.getStore = function() {
 	return newStorage;
 }
 
-class MyPromise {
-	#resolve = [];
-	#reject = [];
-
-	constructor(cb) {
-		cb( this.resolve.bind(this), this.reject.bind(this) );
-	}
-	resolve(thing) {
-		for( let res in this.#resolve ) {
-			thing = res( thing );
-		}	
-	}
-	reject(reason) {
-		for( let rej in this.#reject ) {
-			rej( reason );
-		}
-	}
-	then(cb) {
-		resolve.push(cb);
-	}
-	catch(cb) {
-		reject.push(cb);
-	}
-}
-
 objectStorageContainerSync.prototype.map = function( opts ) {
 	const dangling = this.dangling; /* this is a property set dynamically */
 	if( dangling && dangling.length )  {
