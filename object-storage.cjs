@@ -520,7 +520,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
         	        // we don't know the real object.
 			this_.writeRaw( opts.id, obj );
 			return res?res( opts.id ):null;
-                }
+		}
 		var container = this_.stored.get( obj );
 		if( !container && opts && opts.id ) {
                 	const oldObj = this_.cached.get( opts.id );
@@ -598,7 +598,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 				container = new this_.objectStorageContainer(obj,opts);
 				//console.log( "New container looks like... ", container.id, container );
 				
-				console.log( "saving stored container.id", typeof obj, obj, container.id );
+				//console.log( "saving stored container.id", typeof obj, obj, container.id );
 			        
 				//this.stored.delete( obj );
 				this_.stored.set( obj, container.id );
@@ -699,8 +699,7 @@ _objectStorage.prototype.get = function( opts ) {
 	}
 
 	function objectStorageContainerRef( s ) {
-		_debug_dangling &&
-                	console.trace( "Container ref:", s );
+		_debug_dangling && console.trace( "Container ref:", s );
 		try {
 			const existing = os.cachedContainer.get(s);
 			const here = os.getCurrentParseRef();
@@ -749,10 +748,6 @@ _objectStorage.prototype.get = function( opts ) {
 	}
 
 	function reviveContainer( field, val ) {
-		//const msg = util.format("Revival of a container's field:", this, field, val, new Error() );
-		//sack.log( msg );
-		//console.trace( "Revival of a container's field:", this, field, val );
-
 		if( !field ) {
 			// finished.
 			if( objectRefs ) {
@@ -787,8 +782,7 @@ _objectStorage.prototype.get = function( opts ) {
 				// new value isn't anything special; just set the value.
 				//console.log( "This sort of thing... val is just a thing - like a key part identifier...; but that should have been a container.");
 				if( val instanceof Promise ) {
-					//_debug_dangling &&
-                                        console.log( "Value is a promise, and needs resolution.")
+					//_debug_dangling && console.log( "Value is a promise, and needs resolution.")
 					var dangle = dangling.find( d=>d.d.p===val );
 					if( dangle )
 						dangle.d.n = field;
@@ -801,16 +795,11 @@ _objectStorage.prototype.get = function( opts ) {
 				// a custom type might want something else...
 				if( field === "data" )
 				{
-                                        //console.log( "Resulting with val; but have set this?" );
 					this.data = val;
 					return undefined;
 				}
 				this.data[field] = val;
-                                return undefined;
-
-			// this is a sub-field of this object to revive...
-			//console.log( "Field:", field, " is data?", val)
-
+				return undefined;
 		}
 	}
 
@@ -827,40 +816,10 @@ _objectStorage.prototype.get = function( opts ) {
 				if( id >= 0 ) dangling.slice( id, 1 );
 				return existing.data;
 			} 
-			/*
-			_debug_dangling && console.log( "...", pending );
-			if( pending ) {
-				for( let load of pending ) {
-					_debug_dangling && console.log( "Checking pending:", load )
-					if( load.d.id === this.d )
-					{
-						_debug_dangling && console.log( "found pending outstanding to resolve pending..." );
-						continue;
-						const existing = newStorage.cachedContainer.get( load.d.id );
-						if( existing ) {
-							_debug_dangling && console.log( "Found it as existing, resolve it?", existing.data );
-							if( load.d.res ) load.d.res( existing.data );
-							else {load.d.p.then( o2=>{
-								if( existing.data!==o2) 
-									throw new Error( "resolved and loaded object mismatch");
-									return o2
-								})
-								return load.d.p;
-							}
-						}
-					}
-					//loadPending(load);
-				}
-				pending.length = 0;
-			}
-			*/
-			// finished.
-                        //console.log( "Result with a promise..." );
 			return this.d.p;
 		}
 		else {
-                    //console.log( "this should have just gotten set directly?" );
-                    return val;
+			return val;
 		}
 	}
 
@@ -978,7 +937,6 @@ fileEntry.prototype.read = function( from, len ) {
 			res( undefined ) // no data
 		}
 	} );
-
 }
 
 fileEntry.prototype.write = function( o ) {
@@ -1089,10 +1047,78 @@ function splitPath( path ) {
 	return path.split( /[\\\/]/ );
 }
 
-fileDirectory.prototype.store = function() {
+const pendingStore = [];
+let lastStore = 0;
+
+function checkPendingStore() {
+	if( lastStore ) {
+		const now = Date.now();
+		if( (now-lastStore) > 100 ){
+			for( let p of pendingStore ) {
+				p.volume.put( p, { id:p.id } );
+			}
+			pendingStore.length = 0;
+			lastStore = 0;
+		}
+	}
+	if( pendingStore.length ) {
+		setTimeout( checkPendingStore, 50 );
+	}
+}
+
+const storedPromise = Promise.resolve(undefined);
+fileDirectory.prototype.store = function(force) {
+	if( !force ) {
+		if( !pendingStore.find( p=>p===this)) 
+			pendingStore.push( this );
+		if( !lastStore ) {
+			checkPendingStore();
+		}
+		lastStore = Date.now();
+		return storedPromise;
+	}
 	return this.volume.put( this, { id:this.id } );
 }
 
+fileDirectory.prototype.remove = function( fileName ) {
+	var parts = splitPath( fileName );
+	var part;
+	var pathIndex = 0;
+	var dir = this;
+	async function getOnePath() {
+		if( pathIndex >= parts.length ) return false;
+		if( !dir ) return false;
+
+		part = parts[pathIndex++];
+		const fileId = dir.files.findIndex( (f)=>( f.name == part ) );
+		if( fileId >= 0 && pathIndex >= parts.length ) {
+			const file = dir.files[fileId];
+			dir.volume.remove( file.id );
+			dir.files.splice( fileId, 1 );
+			//if( !dir.files.length ) {
+			//	dir.volume.remove( dir.id );
+			//}
+			return true;
+		}
+
+		if( file.root ) dir = file.root;
+		else {
+			if( file.contents ) {
+				return  dir.volume.get( {id:file.contents } )
+					.then( async (readdir)=>{
+						Object.defineProperty( file, "root", {value:readdir} );
+						dir = readdir;
+						return getOnePath();
+					});
+			}
+			else
+				dir = null;
+		}
+		return getOnePath();
+	}
+	return getOnePath();
+
+}
 
 fileDirectory.prototype.has = async function( fileName ) {
 	var parts = splitPath( fileName );
@@ -1191,7 +1217,7 @@ _objectStorage.prototype.getRoot = async function() {
 			.then( (dir)=>{
 				//console.log( "get root directory got:", dir, "(WILL DEFINE FOLDER)" );
 				if( !dir ) {
-					result.store()
+					result.store(true)
 						.then( function(id){
 							//console.log( "1) Assigning ID to directory", id );
 							Object.defineProperty( result, "id", { value:id } );

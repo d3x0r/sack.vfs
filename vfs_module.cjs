@@ -55,6 +55,7 @@ if( !sack )
 
 require( "./sack-jsox.cjs" )(sack);
 require( "./object-storage.cjs" )(sack);
+require( "./object-storage-cb.cjs" )(sack);
 
 module.exports=exports=sack;
 

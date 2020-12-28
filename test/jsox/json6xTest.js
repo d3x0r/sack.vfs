@@ -307,9 +307,9 @@ describe('Parsing with reviver', function () {
 			a: {b: {c: {d: 123}, e:456}, f:789}, g: 987
 		});
 		expect(results).to.deep.equal([
-			["",{
+			/*["",{
 			a: {b: {c: {d: 123}, e:456}, f:789}, g: 987
-		}],
+		}],       */
 			['d', 123],
 			['c', {d: 123}],
 			['e', 456],
@@ -339,13 +339,13 @@ describe('Parsing with reviver', function () {
 		});
 
 		expect(results).to.deep.equal([
-			['', {
+			/*['', {
 				a: {
 					b: {
 						c: 5
 					}
 				}
-			}],
+			}],*/
 			['c', 5],
 			['b', {
 				c: 5

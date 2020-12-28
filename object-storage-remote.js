@@ -23,9 +23,9 @@ this.ObjectStorage = ObjectStorage;
 const decoder = new TextDecoder();
 
 function ObjectStorage( sack_, ws ) {
-	sack = sack_;
+	const sack = sack_;
 	this.ws = ws;
-        ws.storage = this;
+   ws.storage = this;
 	//console.log( "Initialize as object storage?", this );
 	//const newStorage = await connect( remote );
 	const newStorage = this;

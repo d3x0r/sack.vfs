@@ -1299,7 +1299,7 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 			, defaultVal
 			, readbuf
 			, 1024
-			, NULL
+			, sect
 			, TRUE
 			DBG_SRC
 		);
