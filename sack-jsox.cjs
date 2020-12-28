@@ -843,8 +843,8 @@ sack.JSOX.stringifier = function() {
 	// use window.btoa' step. According to my tests, this appears to be a faster approach:
 	// http://jsperf.com/encoding-xhr-image-data/5
 	// doesn't have to be reversable....
-	const encodings = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-	const decodings = { '=':-1 };
+	const encodings = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$_'
+	const decodings = { '=':-1, '+':62, '/':63, '.':62, ',':63 };
 
 	for( var x = 0; x < 256; x++ ) {
 		if( x < 64 ) {
