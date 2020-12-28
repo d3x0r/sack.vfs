@@ -558,11 +558,17 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 								val = mapGetter->Call( revive->context, refObj, 1, args ).ToLocalChecked();
 							}
 							else {
-								val = refObj->Get( revive->context
-									, String::NewFromUtf8( revive->isolate
-										, pathVal->string
-										, NewStringType::kNormal
-										, (int)pathVal->stringLen ).ToLocalChecked() ).ToLocalChecked();
+								Local<String> pathval = String::NewFromUtf8(revive->isolate
+									, pathVal->string
+									, NewStringType::kNormal
+									, (int)pathVal->stringLen).ToLocalChecked();
+								if( refObj->Has(revive->context, pathval).ToChecked() )
+									val = refObj->Get( revive->context, pathval).ToLocalChecked();
+								else {
+									revive->isolate->ThrowException(Exception::TypeError(
+										String::NewFromUtf8(revive->isolate, TranslateText("bad path specified with reference"), v8::NewStringType::kNormal).ToLocalChecked()));
+									return Undefined(revive->isolate);
+								}
 							}
 							if( val->IsObject() )
 								refObj = val->ToObject( revive->isolate->GetCurrentContext() ).ToLocalChecked();
