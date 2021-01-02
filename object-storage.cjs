@@ -1033,7 +1033,7 @@ fileDirectory.prototype.open = async function( fileName ) {
 	var file = this.files.find( (f)=>(f.name == fileName ) );
 	const _this = this;
 	if( !file ) {
-            	throw new Error( "File not found" );
+            	throw new Error( "File not found" + fileName );
 		file = new fileEntry( this );
 		file.name = fileName;
 		this.files.push(file);
