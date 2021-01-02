@@ -843,9 +843,9 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 
 		if( file ) {
 			String::Utf8Value data( isolate,  args[1] );
-			//char *tmp;
-			//lprintf( "Write %d to %s\nWrite Data %s", data.length(), ( *fName ), tmp = jsox_escape_string_length( *data, data.length(), NULL ) );
-			//Release( tmp );
+			char *tmp;
+			lprintf( "Write %d to %s\nWrite Data %s", data.length(), ( *fName ), tmp = jsox_escape_string_length( *data, data.length(), NULL ) );
+			Release( tmp );
 			objStore::sack_vfs_os_truncate( file ); // allow new content to allocate in large blocks?
 			objStore::sack_vfs_os_write( file, *data, data.length() );
 			objStore::sack_vfs_os_close( file );
@@ -1052,7 +1052,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			while( (read < len) && (newRead = objStore::sack_vfs_os_read( file, buf, 4096 )) ) {
 				read += newRead;
 				int result;
-				//lprintf( "Parse file: %.*s", newRead, buf );
+				lprintf( "Parse file: %.*s", newRead, buf );
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
 					result = jsox_parse_add_data( parser, NULL, 0 ) ) {
@@ -1065,6 +1065,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					r.isolate = isolate;
 					r.context = isolate->GetCurrentContext();
 					r.parser = parserObject;
+					r.failed = FALSE;
 					r_ = parserObject->currentReviver;
 					parserObject->currentReviver = &r;
 					Local<Value> val = convertMessageToJS2( data, &r );
@@ -1109,7 +1110,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			while( (read < len) && (newRead = sack_fread( buf, 4096, 1, file )) ) {
 				read += newRead;
 				int result;
-				//lprintf( "Parse file: %.*s", newRead, buf );
+				lprintf( "Parse file: %.*s", newRead, buf );
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
 					result = jsox_parse_add_data( parser, NULL, 0 ) ) {
@@ -1120,6 +1121,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 						r.revive = FALSE;
 						r.isolate = isolate;
 						r.context = isolate->GetCurrentContext();
+						r.failed = FALSE;
 						r_ = parserObject->currentReviver;
 						parserObject->currentReviver = &r;
 						Local<Value> val = convertMessageToJS2( data, &r );

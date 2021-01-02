@@ -425,6 +425,7 @@ struct reviver_data {
 	Local<Function> reviver;
 	Local<Object> rootObject;
 	class JSOXObject *parser;
+	LOGICAL failed;
 };
 
 Local<Value> convertMessageToJS( PDATALIST msg_data, struct reviver_data *reviver );
