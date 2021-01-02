@@ -2,6 +2,8 @@
 using namespace sack::SACK_VFS::objStore;
 
 //#define LOG_DISK_TIME
+//#define DEBUG_LOG_PARSING
+//#define DEBUG_LOG_OUTPUT
 
 class ObjectStorageObject : public node::ObjectWrap {
 public:
@@ -844,7 +846,9 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 		if( file ) {
 			String::Utf8Value data( isolate,  args[1] );
 			char *tmp;
+#ifdef DEBUG_LOG_OUTPUT
 			lprintf( "Write %d to %s\nWrite Data %s", data.length(), ( *fName ), tmp = jsox_escape_string_length( *data, data.length(), NULL ) );
+#endif
 			Release( tmp );
 			objStore::sack_vfs_os_truncate( file ); // allow new content to allocate in large blocks?
 			objStore::sack_vfs_os_write( file, *data, data.length() );
@@ -1052,7 +1056,9 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			while( (read < len) && (newRead = objStore::sack_vfs_os_read( file, buf, 4096 )) ) {
 				read += newRead;
 				int result;
+#ifdef DEBUG_LOG_PARSING
 				lprintf( "Parse file: %.*s", newRead, buf );
+#endif
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
 					result = jsox_parse_add_data( parser, NULL, 0 ) ) {
@@ -1110,7 +1116,9 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			while( (read < len) && (newRead = sack_fread( buf, 4096, 1, file )) ) {
 				read += newRead;
 				int result;
+#ifdef DEBUG_LOG_PARSING
 				lprintf( "Parse file: %.*s", newRead, buf );
+#endif
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
 					result = jsox_parse_add_data( parser, NULL, 0 ) ) {
