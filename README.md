@@ -1442,7 +1442,14 @@ setTimeout( ()=>{ }, 5000 );
 ---
 
 ## Changelog
-- 1.0.1007(in progress)
+- 1.0.1009(in progress)
+- 1.0.1008
+   - Object filesystem reprocessed journal; flush journal root block when cleaned.
+   - Handle exceptions thrown by callbacks provided to JSOX parser better.
+   - Fix a potential segfault while parsing invalid data.
+- 1.0.1007
+   - CRITICAL - fix reversion failure in base64 and interpreting JSOX unquoted typed-array values.
+   - fix reversion at quote after string before ':' in JSOX.
 - 1.0.1006
    - added remove() method for object storage directories.
    - getRemoteFragment() get code fragment for this API to connect a remote.
