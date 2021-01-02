@@ -1,6 +1,6 @@
 # sack.vfs
 
-[![Join the chat at https://gitter.im/sack-vfs/Lobby](https://badges.gitter.im/sack-vfs/Lobby.svg)](https://gitter.im/sack-vfs/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)[![Build Status](https://travis-ci.org/d3x0r/sack.vfs.svg?branch=master)](https://travis-ci.org/d3x0r/sack.vfs)
+[![Join the chat at https://gitter.im/sack-vfs/Lobby](https://badges.gitter.im/sack-vfs/Lobby.svg)](https://gitter.im/sack-vfs/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)[![Build Status](https://travis-ci.com/d3x0r/sack.vfs.svg?branch=master)](https://travis-ci.com/d3x0r/sack.vfs)
 
 - WebSocket/HTTP/HTTPS network library.  UDP sockets (`http`,`UDP` replacment).
 - JSON/[JSON6](https://github.com/d3x0r/JSON6) (stream)parser,
@@ -1447,6 +1447,7 @@ setTimeout( ()=>{ }, 5000 );
    - Object filesystem reprocessed journal; flush journal root block when cleaned.
    - Handle exceptions thrown by callbacks provided to JSOX parser better.
    - Fix a potential segfault while parsing invalid data.
+   - update links to travis-ci.com instead of travis-ci.org.
 - 1.0.1007
    - CRITICAL - fix reversion failure in base64 and interpreting JSOX unquoted typed-array values.
    - fix reversion at quote after string before ':' in JSOX.
