@@ -1438,11 +1438,34 @@ setTimeout( ()=>{ }, 5000 );
 
 ```
 
+## Node JS Loader Support
+
+Node loader hooks for [`.json6`](https://github.com/d3x0r/json6) and [`.jsox`](https://github.com/d3x0r/JSOX) file types.
+This loader does an indirect include of `sack.vfs` and sets `globalThis.sack` with the result; and then also assigns 
+`globalThis.JSOX` and `globalThis.JSON6`.  
+
+The loader hooks are loaded with the option
+
+```
+    --experimental-loader=node_modules/sack.vfs/import.mjs
+```
+
+Previously support for `.json6` and `.jsox` were only provided for `require()`.
+
+Loading either JS version of [JSON6](https://github.com/d3x0r/json6) or [JSOX](https://github.com/d3x0r/jsox) should be done after this, allowing them to replace the globalThis versions.
+The sack.vfs version is still avaialble via `sack.JSOX` or `sack.JSON6`.  
+
+Performance-wise the JS versions have advantages if the information to parse is sourced in JS, while the SACK versions
+can operate directly on the array buffers loaded from SACK Volumes and files.  Which limits the copy one side; otherwise
+there's a conversion to string from binary and a copy of that string from JS to C potentially.
+
 
 ---
 
 ## Changelog
 - 1.0.1009(in progress)
+   - Added node support for `--experimental-loader=node_modules/sack.vfs/import.mjs`.
+   - Removed noisy debug(?)
 - 1.0.1008
    - Object filesystem reprocessed journal; flush journal root block when cleaned.
    - Handle exceptions thrown by callbacks provided to JSOX parser better.

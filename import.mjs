@@ -36,7 +36,6 @@ export async function getSource(urlin, context, defaultGetSource) {
 	  	const { format } = context;
 		const file = url.fileURLToPath(urlin);
 		const result = fs.readFileSync(file).toString("utf8");
-                console.log( "Test:", result );
    	 return {
    	   source: result,
 	    };
@@ -96,8 +95,9 @@ export function getGlobalPreloadCode() {
   return `\
 const { createRequire } = getBuiltin('module');
 const requireJSOX = createRequire('${escape(url.fileURLToPath( import.meta.url ))}');
-globalThis.JSOX = requireJSOX( "sack.vfs" ).JSOX;
-globalThis.JSON6 = requireJSOX( "sack.vfs" ).JSON6;
+globalThis.sack = requireJSOX( "sack.vfs" );
+globalThis.JSOX = globalThis.sack.JSOX;
+globalThis.JSON6 = globalThis.sack.JSON6;
 `;
 
 }
