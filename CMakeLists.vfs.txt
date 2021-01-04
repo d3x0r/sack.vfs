@@ -56,7 +56,7 @@ endif( ${CMAKE_BUILD_TYPE} MATCHES "[dD][eE][bB][uU][gG]"
 if( WIN32 )
 	set( SACK_BASE M:/sack )
 else( WIN32 )
-	set( SACK_BASE ${CMAKE_SOURCE_DIR}/../sack )
+	set( SACK_BASE ${CMAKE_SOURCE_DIR}/../../sack )
 endif( WIN32 )
 
 # __NO_OPTIONS__ __NO_INTERFACE_SUPPORT__ __NO_ODBC__

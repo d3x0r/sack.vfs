@@ -530,9 +530,9 @@ _objectStorage.prototype.put = function( obj, opts ) {
 		_debug && console.log( "Put found object?", container, obj, opts );
 		if( container ) {
 			container = this_.cachedContainer.get( container );
-			if( obj !== object.data.data ) {
-                            	console.log( "Overwrite old data with new?", object.data.data, obj );
-                                object.data.data = obj;
+			if( obj !== container.data ) {
+				//console.log( "Overwrite old data with new?", container.data, obj );
+                                container.data = obj;
                        	}
 			if( !container.data.nonce ) {
 				// make sure every item that is in an index
