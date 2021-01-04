@@ -75,8 +75,8 @@
     ]
   },
   "scripts": {
-    "mocha-lite": "mocha --require test/bootstrap/node test/json6 test/jsox",
-    "mocha": "mocha --require test/bootstrap/node --recursive",
+    "mocha-lite": "mocha --experimental-loader=./import.mjs --require test/bootstrap/node test/json6 test/jsox",
+    "mocha": "mocha --experimental-loader=./import.mjs --require test/bootstrap/node --recursive",
     "test": "node tests/vfsTest.js",
     "install": "node-gyp configure build",
     "build-gui": "npm run build-gui-config && npm run build-gui-run1 && npm run build-gui-config && npm run build-gui-run2",
