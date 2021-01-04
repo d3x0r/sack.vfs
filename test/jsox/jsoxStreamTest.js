@@ -2,7 +2,6 @@
 const sack = require( "../.." );
 const JSOX = sack.JSOX;
 
-
 /*
 process.on("beforeExit", ()=>{ console.log( "EXITING" ) } );
 process.on("uncaughtException",(a,b)=>{
@@ -16,7 +15,6 @@ function expect(a) { if( "function" === typeof a ) { try { threw = null; a(); } 
 					 return ({ to: {deep:{  equal(a) { } }
 				  , throw(a) {console.log( "Success:error?", threw ) } } }); }
 */
-
 
 describe('Stream testing', function () {
 	it('Receives various values via `write`', function () {
@@ -93,7 +91,6 @@ describe('Stream testing', function () {
 			parser.write();
 		}).to.throw( Error );
 		parser.reset();
-
 		parser.write( '{a:"String');
 		parser.write( 'split Buffer"}' );
 
