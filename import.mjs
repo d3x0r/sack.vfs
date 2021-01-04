@@ -95,9 +95,9 @@ export function getGlobalPreloadCode() {
   return `\
 const { createRequire } = getBuiltin('module');
 const requireJSOX = createRequire('${escape(url.fileURLToPath( import.meta.url ))}');
-globalThis.sack = requireJSOX( "sack.vfs" );
-globalThis.JSOX = globalThis.sack.JSOX;
-globalThis.JSON6 = globalThis.sack.JSON6;
+globalThis.SACK = requireJSOX( "sack.vfs" );
+globalThis.JSOX = globalThis.SACK.JSOX;
+globalThis.JSON6 = globalThis.SACK.JSON6;
 `;
 
 }

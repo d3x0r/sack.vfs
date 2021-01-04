@@ -1441,7 +1441,7 @@ setTimeout( ()=>{ }, 5000 );
 ## Node JS Loader Support
 
 Node loader hooks for [`.json6`](https://github.com/d3x0r/json6) and [`.jsox`](https://github.com/d3x0r/JSOX) file types.
-This loader does an indirect include of `sack.vfs` and sets `globalThis.sack` with the result; and then also assigns 
+This loader does an import of `sack.vfs` and sets `globalThis.SACK` with the result; and then also assigns 
 `globalThis.JSOX` and `globalThis.JSON6`.  
 
 The loader hooks are loaded with the option
