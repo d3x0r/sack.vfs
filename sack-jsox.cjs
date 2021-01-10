@@ -106,43 +106,43 @@ function initPrototypes()
 		                , { external:false, name:null, cb:function() { console.log( "BIGINT TOSTR"); return this + 'n' } } );
 
 	pushToProto( ArrayBuffer.prototype, { external:true, name:"ab"
-		, cb:function() { return "["+base64ArrayBuffer(this)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this))+"]" }
 	} );
 
 	pushToProto( Uint8Array.prototype, { external:true, name:"u8"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Uint8ClampedArray.prototype, { external:true, name:"uc8"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Int8Array.prototype, { external:true, name:"s8"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Uint16Array.prototype, { external:true, name:"u16"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Int16Array.prototype, { external:true, name:"s16"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Uint32Array.prototype, { external:true, name:"u32"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Int32Array.prototype, { external:true, name:"s32"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	if( typeof Uint64Array !== "undefined" )
 		pushToProto( Uint64Array.prototype, { external:true, name:"u64"
-			, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+			, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 		} );
 	if( typeof Int64Array !== "undefined" )
 		pushToProto( Int64Array.prototype, { external:true, name:"s64"
-			, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+			, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 		} );
 	pushToProto( Float32Array.prototype, { external:true, name:"f32"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Float64Array.prototype, { external:true, name:"f64"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 
 	pushToProto( Symbol.prototype, { external:true, name:"sym"
