@@ -942,7 +942,6 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 								continue;
 							}
 						}
-
 					}
 					uv_async_init( c->loop, &wssiInternal->async, wssiAsyncMsg );
 				}
@@ -1075,19 +1074,23 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 
 
 static LOGICAL PostClientSocket( Isolate *isolate, String::Utf8Value *name, wssiObject* obj ) {
-	struct socketTransport* trans = new struct socketTransport();
-	trans->wssi = obj;
-	trans->acceptEventMessage = obj->acceptEventMessage;
-
-	obj->blockReturn = TRUE;
-	obj->acceptEventMessage = NULL;
-	trans->protocolResponse = obj->protocolResponse;
-	obj->protocolResponse = NULL;
+	if( !obj->acceptEventMessage ) {
+		lprintf( "Don't double post a socket." );
+		return TRUE; // success though.
+	}
 	{
 		struct socketUnloadStation* station;
 		INDEX idx;
 		LIST_FORALL( l.transportDestinations, idx, struct socketUnloadStation*, station ) {
 			if( memcmp( *station->s[0], *(name[0]), (name[0]).length() ) == 0 ) {
+				struct socketTransport* trans = new struct socketTransport();
+				trans->wssi = obj;
+				trans->acceptEventMessage = obj->acceptEventMessage;
+
+				obj->blockReturn = TRUE;
+				obj->acceptEventMessage = NULL;
+				trans->protocolResponse = obj->protocolResponse;
+				obj->protocolResponse = NULL;
 				AddLink( &station->transport, trans );
 				//lprintf( "Send Post Request %p", station->clientSocketPoster );
 				uv_async_send( &station->clientSocketPoster );
@@ -1446,6 +1449,7 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 	}
 	if( !wssi )
 		lprintf( "FAILED TO HAVE WSSI to open." );
+	wssi->readyState = wsReadyStates::OPEN;
 	return (uintptr_t)wssi->wssiRef;
 }
 
@@ -2343,7 +2347,7 @@ void wssObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 
 wssiObject::wssiObject( ) {
 	eventQueue = CreateLinkQueue();
-	readyState = wsReadyStates::OPEN;
+	readyState = wsReadyStates::CONNECTING;
 	protocolResponse = NULL;
 	this->closed = 0;
 	this->thrown = FALSE;
@@ -2441,6 +2445,9 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Connection has already been closed.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
+	while( obj->readyState == wsReadyStates::CONNECTING )
+		Relinquish();
+
 	if( args[0]->IsTypedArray() ) {
 		Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
 		Local<ArrayBuffer> ab = ta->Buffer();
