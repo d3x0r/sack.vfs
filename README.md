@@ -1463,7 +1463,12 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.0.1009(in progress)
+- 1.0.1011(in progress)
+- 1.0.1010(in progress)
+   - fix base64 typed array encoding (regression in 1009).
+   - forgive double-posting a websocket socket.
+   - lock first websocket send until header can be sent.
+- 1.0.1009
    - Added node support for `--experimental-loader=node_modules/sack.vfs/import.mjs`.
    - Removed noisy debug(?)
 - 1.0.1008
