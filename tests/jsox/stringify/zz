@@ -1,0 +1,53 @@
+Prototype lists: undefined undefined Map {} Map WeakMap { <items unknown>, id: 1 } WeakMap { <items unknown> }
+TEST() Map(1) { 'asdf' => { obj1: 0 } } { external: true, name: 'map', cb: [Function: mapToObject] } false
+type: object { external: true, name: 'map', cb: [Function: mapToObject] } true [] true
+path: [] undefined
+Prototype lists: undefined undefined {} Object WeakMap { <items unknown>, id: 1 } WeakMap { <items unknown> }
+TEST() { obj1: 0 } { external: false, name: 'Object', cb: null } false
+type: object { external: false, name: 'Object', cb: null } false [ 'asdf' ] true
+path: ["asdf"] undefined
+Protoconverter leftover:  { external: false, name: 'Object', cb: null }
+ENTERING OBJECT EMISSION WITH: undefined
+is something in something? undefined { obj1: 0 }
+Ya...
+Expanding object keys: [ 'obj1' ]
+Prototype lists: undefined 0 0 0 WeakMap { <items unknown>, id: 1 } WeakMap { <items unknown> }
+TEST() 0 { external: false, name: 'Number', cb: [Function: cb] } false
+type: number { external: false, name: 'Number', cb: [Function: cb] } true [ 'asdf', 'obj1' ] false
+Protoconverter leftover:  { external: false, name: 'Number', cb: [Function: cb] }
+partial: [ 'obj1:0' ] { external: false, name: 'Object', cb: null }
+ Resulting phrase from this part is: {obj1:0}
+Protoconverter leftover:  { external: true, name: 'map', cb: [Function: mapToObject] }
+map only {asdf:{obj1:0}}
+Prototype lists: undefined undefined {} Object WeakMap { <items unknown>, id: 2 } WeakMap { <items unknown> }
+TEST() { keys: Map(1) { 'asdf' => { obj1: 0 } } } { external: false, name: 'Object', cb: null } false
+type: object { external: false, name: 'Object', cb: null } false [] true
+path: [] undefined
+Protoconverter leftover:  { external: false, name: 'Object', cb: null }
+ENTERING OBJECT EMISSION WITH: undefined
+is something in something? undefined { keys: Map(1) { 'asdf' => { obj1: 0 } } }
+Ya...
+Expanding object keys: [ 'keys' ]
+Prototype lists: undefined undefined Map {} Map WeakMap { <items unknown>, id: 2 } WeakMap { <items unknown> }
+TEST() Map(1) { 'asdf' => { obj1: 0 } } { external: true, name: 'map', cb: [Function: mapToObject] } false
+type: object { external: true, name: 'map', cb: [Function: mapToObject] } true [ 'keys' ] true
+path: ["keys"] undefined
+Prototype lists: undefined undefined {} Object WeakMap { <items unknown>, id: 2 } WeakMap { <items unknown> }
+TEST() { obj1: 0 } { external: false, name: 'Object', cb: null } false
+type: object { external: false, name: 'Object', cb: null } false [ 'keys', 'asdf' ] true
+path: ["keys","asdf"] undefined
+Protoconverter leftover:  { external: false, name: 'Object', cb: null }
+ENTERING OBJECT EMISSION WITH: undefined
+is something in something? undefined { obj1: 0 }
+Ya...
+Expanding object keys: [ 'obj1' ]
+Prototype lists: undefined 0 0 0 WeakMap { <items unknown>, id: 2 } WeakMap { <items unknown> }
+TEST() 0 { external: false, name: 'Number', cb: [Function: cb] } false
+type: number { external: false, name: 'Number', cb: [Function: cb] } true [ 'keys', 'asdf', 'obj1' ] false
+Protoconverter leftover:  { external: false, name: 'Number', cb: [Function: cb] }
+partial: [ 'obj1:0' ] { external: false, name: 'Object', cb: null }
+ Resulting phrase from this part is: {obj1:0}
+Protoconverter leftover:  { external: true, name: 'map', cb: [Function: mapToObject] }
+partial: [ 'keys:{asdf:{obj1:0}}' ] { external: false, name: 'Object', cb: null }
+ Resulting phrase from this part is: {keys:{asdf:{obj1:0}}}
+object {keys:{asdf:{obj1:0}}}
