@@ -104,6 +104,13 @@ function initPrototypes()
 	if( typeof BigInt === "function" )
 		pushToProto( BigInt.prototype
 		                , { external:false, name:null, cb:function() { console.log( "BIGINT TOSTR"); return this + 'n' } } );
+	const useQuote = '"';
+	function getIdentifier(s) {
+		if( !s.length ) return useQuote+useQuote;
+		// should check also for if any non ident in string...
+		return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
+			|| /([0-9\-])/.test(s[0]) ) ?(useQuote + escape(s) +useQuote):s )
+	}
 
 	pushToProto( ArrayBuffer.prototype, { external:true, name:"ab"
 		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this))+"]" }
