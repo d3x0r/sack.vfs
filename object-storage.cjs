@@ -4,6 +4,7 @@ const _debug = false;
 const _debug_dangling = false;
 const _debug_output = _debug || false;
 const _debug_object_convert = _debug || false;
+const _debug_ll = false; // remote receive message logging.
 
 sack.SaltyRNG.setSigningThreads( require( "os" ).cpus().length );
 
@@ -343,7 +344,8 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 
 
 	function handleMessage( ws, msg ) {
-            console.log( "Storage Remote Message:", msg );
+            _debug_ll && console.log( "Storage Remote Message:", msg );
+            try {
 		if( msg.op === "connect" ) {
 			ws.send( `{op:connected,code:${jsonRemoteExtensions}}` );
 		return true;
@@ -351,19 +353,21 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 		if( msg.op === "get" ) {
 			newStorage.readRaw( currentReadId = msg.opts.id
 				, (data)=>{
-					//console.log( "Read ID:", msg.opts.id, data );
-				   ws.send( newStorage.stringifier.stringify( { op:"GET", id:msg.id, data:data } ) );
+                                    const msgout = newStorage.stringifier.stringify( { op:"GET", id:msg.id, data:data } );
+				   //console.log( "Read ID:", msg.opts.id, typeof data, msgout );
+				   ws.send( msgout );
 			} )
 			return true;
 		}
 		if( msg.op === "put" ) {
 			// want to get back a file ID if possible...
 			// and/or use the data for encoding/salting/etc... which can determine the result ID.
-			//console.log( "PUT THIGN:", msg );
+			//console.log( "PUT THIGN:", msg.id );
 			newStorage.writeRaw( msg.rid, msg.data);
 			ws.send( { op:"PUT", id:msg.id, r:msg.rid } );
 			return true;
 		}
+                }catch(err) { console.log( "Failed?", err ) }
 		return false;
 	}
 
@@ -1033,7 +1037,7 @@ fileDirectory.prototype.open = async function( fileName ) {
 	var file = this.files.find( (f)=>(f.name == fileName ) );
 	const _this = this;
 	if( !file ) {
-            	throw new Error( "File not found" );
+            	throw new Error( "File not found" + fileName );
 		file = new fileEntry( this );
 		file.name = fileName;
 		this.files.push(file);

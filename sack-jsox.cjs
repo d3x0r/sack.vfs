@@ -19,6 +19,7 @@ try {
 } catch(err) {
 	console.log( "JSOX Module could not register require support..." );
 }
+
 const _DEBUG_STRINGIFY_TIMING = false;
 const _DEBUG_STRINGIFY = false;
 const DEBUG_STRINGIFY_OUTPUT = _DEBUG_STRINGIFY|| false;
@@ -103,45 +104,52 @@ function initPrototypes()
 	if( typeof BigInt === "function" )
 		pushToProto( BigInt.prototype
 		                , { external:false, name:null, cb:function() { console.log( "BIGINT TOSTR"); return this + 'n' } } );
+	const useQuote = '"';
+	function getIdentifier(s) {
+		if( !s.length ) return useQuote+useQuote;
+		// should check also for if any non ident in string...
+		return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
+			|| /([0-9\-])/.test(s[0]) ) ?(useQuote + escape(s) +useQuote):s )
+	}
 
 	pushToProto( ArrayBuffer.prototype, { external:true, name:"ab"
-		, cb:function() { return "["+base64ArrayBuffer(this)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this))+"]" }
 	} );
 
 	pushToProto( Uint8Array.prototype, { external:true, name:"u8"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Uint8ClampedArray.prototype, { external:true, name:"uc8"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Int8Array.prototype, { external:true, name:"s8"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Uint16Array.prototype, { external:true, name:"u16"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Int16Array.prototype, { external:true, name:"s16"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Uint32Array.prototype, { external:true, name:"u32"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Int32Array.prototype, { external:true, name:"s32"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	if( typeof Uint64Array !== "undefined" )
 		pushToProto( Uint64Array.prototype, { external:true, name:"u64"
-			, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+			, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 		} );
 	if( typeof Int64Array !== "undefined" )
 		pushToProto( Int64Array.prototype, { external:true, name:"s64"
-			, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+			, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 		} );
 	pushToProto( Float32Array.prototype, { external:true, name:"f32"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Float64Array.prototype, { external:true, name:"f64"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 
 	pushToProto( Symbol.prototype, { external:true, name:"sym"
@@ -252,11 +260,12 @@ sack.JSOX.begin = function(cb, reviver) {
 		throw new Error("registerFromJSOX  was deprecated, please update to use 'fromJSOX'");
 	}
 	parser.fromJSOX = function( prototypeName, o, f ) {
-		if( localFromProtoTypes.get(prototypeName) ) throw new Error( "Existing fromJSOX has been registered for prototype" );
+                const existed = !! localFromProtoTypes.get(prototypeName);
 
 		if(o && !("constructor" in o))
 			throw new Error("Please pass a prototype like object...");
 		localFromProtoTypes.set( prototypeName, { protoCon:o && o.prototype.constructor, cb:f } );
+                return existed;
 	}
 	parser.registerPromiseFromJSOX = function( prototypeName, o, f ) {
 		throw new Error( "Deprecated 'registerPromiseFromJSOX', pluse use fromJSOX has been registered for prototype" );

@@ -1,1 +1,1 @@
-mocha --require ../bootstrap/node %*
+mocha --experimental-loader=../../import.mjs --require ../bootstrap/node %*
