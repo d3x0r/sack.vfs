@@ -1463,8 +1463,10 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.0.1011(in progress)
-- 1.0.1010(in progress)
+- 1.0.1012(in progress)
+- 1.0.1011
+	- Websocket server connection instances didn't complete opening correctly (regression in 1.0.1010). 
+- 1.0.1010
    - fix base64 typed array encoding (regression in 1009).
    - forgive double-posting a websocket socket.
    - lock first websocket send until header can be sent.
