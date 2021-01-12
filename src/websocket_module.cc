@@ -1441,7 +1441,8 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 		(*pevt).eventType = WS_EVENT_OPEN;
 		(*pevt)._this = wssi;
 		EnqueLink( &wssi->eventQueue, pevt );
-		//lprintf( "Send Event:%p", &wss->async );
+                //lprintf( "Send Event:%p", &wss->async );
+                wssi->readyState = wsReadyStates::OPEN;
 		uv_async_send( &wssi->async );
 		// can't change this result later, so need to send 
 		// it as a refernence, in case the JS object changes
