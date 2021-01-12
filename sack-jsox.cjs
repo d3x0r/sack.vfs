@@ -260,11 +260,12 @@ sack.JSOX.begin = function(cb, reviver) {
 		throw new Error("registerFromJSOX  was deprecated, please update to use 'fromJSOX'");
 	}
 	parser.fromJSOX = function( prototypeName, o, f ) {
-		if( localFromProtoTypes.get(prototypeName) ) throw new Error( "Existing fromJSOX has been registered for prototype" );
+                const existed = !! localFromProtoTypes.get(prototypeName);
 
 		if(o && !("constructor" in o))
 			throw new Error("Please pass a prototype like object...");
 		localFromProtoTypes.set( prototypeName, { protoCon:o && o.prototype.constructor, cb:f } );
+                return existed;
 	}
 	parser.registerPromiseFromJSOX = function( prototypeName, o, f ) {
 		throw new Error( "Deprecated 'registerPromiseFromJSOX', pluse use fromJSOX has been registered for prototype" );
