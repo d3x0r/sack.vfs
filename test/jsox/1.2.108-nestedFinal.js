@@ -21,8 +21,6 @@ function expect(a) { if( "function" === typeof a ) { try { threw = null; a(); } 
 
 describe('Added in 1.2.108', function () {
 
-
-
 	it( 'Performs operations in the right order', function() {
 			JSOX.reset();
         
