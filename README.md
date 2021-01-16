@@ -1463,7 +1463,11 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.0.1012(in progress)
+- 1.0.1013(in progress)
+- 1.0.1012
+   - Fix small leak closing com ports.
+   - Fix order object fields are revived; assign object after it has been built; use internal context stack for references.
+   - Fix failure to send final revive for an object containing an array.
 - 1.0.1011
 	- Websocket server connection instances didn't complete opening correctly (regression in 1.0.1010). 
 - 1.0.1010
