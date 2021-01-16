@@ -210,7 +210,6 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 
 			}
 			{
-
 				Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 				MaybeLocal<Value> cbResult = cb->Call( context, global, 1, argv );
 				if( cbResult.IsEmpty() ) {
@@ -318,7 +317,9 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 					Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoCon", v8::NewStringType::kNormal, (int)8 ).ToLocalChecked() ).ToLocalChecked();
 					Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)2 ).ToLocalChecked() ).ToLocalChecked();
 					if( !f.IsEmpty() && f->IsFunction() ) {
+#ifdef DEBUG_SET_FIELDCB
 						lprintf( "Setting fieldCB" );
+#endif
 						revive->fieldCb = f.As<Function>();
 					}
 					if( p->IsFunction() ) {
@@ -1110,6 +1111,8 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 					}
 					PushLink( &revive->reviveStack, member );
 				}
+				Local<Function> finalCb = revive->fieldCb;
+
 				if( sub_v->IsObject() )
 					buildObject( val->contains, sub_v.As<Object>(), revive );
 				else
@@ -1150,9 +1153,9 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				sub_o_orig = sub_v;
 				// this is the call, 1 time after an object completes, with NULL arguments
 				// this allows a flush/entire substituion of the 'this' object.
-				if(!revive->fieldCb.IsEmpty() )  {
+				if(!finalCb.IsEmpty() )  {
 					//lprintf( "Revive with empty parameters here" );
-					MaybeLocal<Value> r = revive->fieldCb->Call(revive->context, sub_v, 0, NULL);
+					MaybeLocal<Value> r = finalCb->Call(revive->context, sub_v, 0, NULL);
 					if (!r.IsEmpty()) {
 						sub_v = r.ToLocalChecked();
 					}
