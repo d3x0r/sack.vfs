@@ -6,6 +6,12 @@ static struct local {
 
 } l;
 
+struct msgbuf {
+	int closeEvent;
+	size_t buflen;
+	uint8_t buf[1];
+};
+
 
 ComObject::ComObject( char *name ) : jsObject() {
 	this->readQueue = CreateLinkQueue();
@@ -14,7 +20,6 @@ ComObject::ComObject( char *name ) : jsObject() {
 }
 
 ComObject::~ComObject() {
-	lprintf( "Garbage collected" );
 	if( handle >=0 )
 		SackCloseComm( handle );
   	Deallocate( char*, name );
@@ -42,11 +47,6 @@ void ComObject::Init( Local<Object> exports ) {
 }
 
 
-struct msgbuf {
-	size_t buflen;
-	uint8_t buf[1];
-};
-
 void dont_releaseBufferBackingStore(void* data, size_t length, void* deleter_data) {
 	(void)length;
 	(void)deleter_data;;
@@ -64,6 +64,12 @@ static void asyncmsg( uv_async_t* handle ) {
 		struct msgbuf *msg;
 		while( msg = (struct msgbuf *)DequeLink( &myself->readQueue ) ) {
 			size_t length;
+			if( msg->closeEvent ) {
+				myself->jsObject.Reset();
+				Release( msg );
+				uv_close( (uv_handle_t*)&myself->async, NULL ); // have to hold onto the handle until it's freed.
+				return;
+			}
 #if ( NODE_MAJOR_VERSION >= 14 )
 			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( msg->buf, length=msg->buflen, dont_releaseBufferBackingStore, NULL );
 			Local<ArrayBuffer> ab = ArrayBuffer::New( isolate, bs );
@@ -153,6 +159,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 static void CPROC dispatchRead( uintptr_t psv, int nCommId, POINTER buffer, int len ) {
 	struct msgbuf *msgbuf = NewPlus( struct msgbuf, len );
 	//lprintf( "got read: %p %d", buffer, len );
+	msgbuf->closeEvent = 0;
 	MemCpy( msgbuf->buf, buffer, len );
 	msgbuf->buflen = len;
 	ComObject *com = (ComObject*)psv;
@@ -223,7 +230,16 @@ void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 void ComObject::closeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 	
 	ComObject *com = ObjectWrap::Unwrap<ComObject>( args.This() );
-	com->jsObject.Reset();
-	SackCloseComm( com->handle );
+	if( com->handle >= 0 )
+		SackCloseComm( com->handle );
 	com->handle = -1;
+
+	{
+		//lprintf( "Garbage collected" );
+		struct msgbuf* msgbuf = NewPlus( struct msgbuf, 0 );
+		msgbuf->closeEvent = 1;
+		EnqueLink( &com->readQueue, msgbuf );
+		uv_async_send( &com->async );
+	}
+
 }
