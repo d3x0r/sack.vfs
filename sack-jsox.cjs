@@ -23,14 +23,16 @@ try {
 const _DEBUG_STRINGIFY_TIMING = false;
 const _DEBUG_STRINGIFY = false;
 const DEBUG_STRINGIFY_OUTPUT = _DEBUG_STRINGIFY|| false;
-var toProtoTypesByName = new Map();
-var toProtoTypes = new WeakMap();
-var toProtoTypeRegistrations = []; // external registrations may need to be updated too....
-const toObjectTypes = new Map();
-const fromProtoTypes = new Map();
-var commonClasses = [];
+let toProtoTypesByName = new Map();
+let toProtoTypes = new WeakMap();
+let toProtoTypeRegistrations = []; // external registrations may need to be updated too....
+let toObjectTypes = new Map();
+let fromProtoTypes = new Map();
+let commonClasses = [];
 
 sack.JSOX.fromProtoType = fromProtoTypes;
+
+sack.JSOX.reset = initPrototypes;
 
 function pushToProto(p,a) {
     if( !toProtoTypesByName.get( p.constructor.name ) )
@@ -42,8 +44,8 @@ function pushToProto(p,a) {
 
 function escape(string) {
 	//return string.replace( "\\", "\\\\" ).replace( '\"', "\\\"" ).replace( "\'", "\\\'" );
-	var n;
-	var output = '';
+	let n;
+	let output = '';
 	if( !string ) return string;
 	//console.log( "escape:", string );
 	for( n = 0; n < string.length; n++ ) {
@@ -60,6 +62,15 @@ function initPrototypes()
 {
     	//console.log( "Doing setup of classes:", toProtoTypes.get( Object.getPrototypeOf( [] ) ) );
 	// hook module native code to JS interface.
+
+
+	toProtoTypesByName = new Map();
+	toProtoTypes = new WeakMap();
+	toProtoTypeRegistrations = []; // external registrations may need to be updated too....
+	toObjectTypes = new Map();
+	fromProtoTypes = new Map();
+	commonClasses = [];
+
 	sack.JSOX.setFromPrototypeMap( fromProtoTypes );
 	pushToProto( Object.prototype, { external:false, name:Object.prototype.constructor.name, cb:null } );
 
