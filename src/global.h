@@ -337,9 +337,9 @@ public:
 
 	static void Init( Local<Object> exports );
 	ComObject( char *name );
+	Persistent<Object> jsObject;
 
 private:
-	Persistent<Object> jsObject;
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
@@ -411,6 +411,15 @@ public:
 	~TLSObject();
 };
 
+struct reviveStackMember {
+	LOGICAL isArray;
+	int index;
+	Local<Value> fieldName;
+	Local<Value> object;
+	char* name;
+	size_t nameLen;
+};
+
 struct reviver_data {
 	//Persistent<Function> dateCons;
 	Local<Function> fieldCb;
@@ -426,6 +435,11 @@ struct reviver_data {
 	Local<Object> rootObject;
 	class JSOXObject *parser;
 	LOGICAL failed;
+	PLINKSTACK reviveStack;
+
+	~reviver_data() {
+		DeleteLinkStack( &this->reviveStack );
+	}
 };
 
 Local<Value> convertMessageToJS( PDATALIST msg_data, struct reviver_data *reviver );
