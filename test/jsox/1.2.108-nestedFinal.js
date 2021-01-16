@@ -1,7 +1,6 @@
 'use strict';
 const SACK=require("../.." );
 const JSOX = SACK.JSOX;
-
 /*
 process.on("beforeExit", ()=>{ console.log( "EXITING" ) } );
 process.on("uncaughtException",(a,b)=>{
@@ -23,6 +22,7 @@ describe('Added in 1.2.108', function () {
 
 
 	it( 'handles per field', function() {
+		JSOX.reset();
         
         	const content = 'O{sub:s{inner:"VALUE"},a:123,b:345,c:[5,6,7]}'
                 const processed = [];
@@ -88,7 +88,7 @@ console.log( "update?", val );
 Constructed O
 Constructed subO
 inner,VALUE,"VALUE"
-sub final revive
+Sub Final revive
 sub,{"inner":"VALUE"},{"inner":"VALUE"}
 a,123,123
 b,345,345
