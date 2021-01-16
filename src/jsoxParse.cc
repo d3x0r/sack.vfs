@@ -1026,7 +1026,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				}
 				sub_o_orig = sub_v;
 			}
-			delete (struct reviveStackElement*)PopLink( &revive->reviveStack );
+			delete (struct reviveStackMember*)PopLink( &revive->reviveStack );
 
 			// this is the call, 1 time after an object completes, with NULL arguments
 			// this allows a flush/entire substituion of the 'this' object.
@@ -1117,7 +1117,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 					buildObject( val->contains, sub_v.As<Object>(), revive );
 				else
 					lprintf( "Failed to build sub object, current value is not an object" ); // should not happen.
-				delete (struct reviveStackElement*)PopLink( &revive->reviveStack );
+				delete (struct reviveStackMember*)PopLink( &revive->reviveStack );
 #if 0
 				// this uses old callback instead of new one.
 				if( !cb.IsEmpty() ) {
