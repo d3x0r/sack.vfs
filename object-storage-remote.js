@@ -11,7 +11,9 @@ let unique = 0;
 const _debug_ll = false; // /low level message receive
 const _debug_put = false;
 const _debug_get = false;
+const _debug_get_ll = false; // after read before parse
 const _debug_stringify = false;
+const _debug_danging = false;
 const _debug_map = false; // reloading related object debugging
 
 let util; import( "util" ).then( u=>{ util = u
@@ -85,9 +87,9 @@ function ObjectStorage( sack_, ws ) {
 				this.data.nonce = v;
 			} else {
 				if( opts && opts.id ) {
-                                	console.log( "SOMETHING", opts );
+                                	_debug_get && console.log( "SOMETHING", opts );
 					Object.defineProperty( this, "id", { value:opts.id } );
-                                        console.log( "Conditioning THis with a ID:", opts.id, this.id );
+                                        _debug_get && console.log( "Conditioning THis with a ID:", opts.id, this.id );
 				}
 			}
 			}catch(err) {
@@ -106,6 +108,7 @@ function ObjectStorage( sack_, ws ) {
 
 	objectStorageContainer.prototype.map = async function( opts ) {
 		const pending = this.dangling;
+                _debug_get && console.log( "pending:", this, this.pending );
 		if( pending && pending.length )  {
 			opts = opts || { depth:0, paths:[] };
 			const rootMap = this;
@@ -343,6 +346,7 @@ function ObjectStorage( sack_, ws ) {
 					const req = requests.get( msg.id );
                                         requests.delete(msg.id);
                                         //console.log( "Found request?", req );
+                                        _debug_get && console.log( "result:", msg );
 			const data = (msg.data && ( msg.data instanceof ArrayBuffer
                                       || Object.getPrototypeOf( msg.data ).constructor.name === "ArrayBuffer"
 
@@ -357,7 +361,7 @@ function ObjectStorage( sack_, ws ) {
 			if( msg.op === "Get" ) {
 					const req = requests.get( msg.id );
                                         requests.delete(msg.id);
-                                        console.log( "Rejecting get reply..", msg.err );
+                                        _debug_get && console.log( "Rejecting get reply..", msg.err );
 					if( req ) req.rej( msg.err );
                                         return true;
 				}
@@ -622,8 +626,6 @@ const ackObjects = [];
 
 ObjectStorage.prototype.get = function( opts ) {
 	//this.parser.
-	var resolve;
-	var reject;
 	const os = this;
         const extraDecoders = opts && opts.extraDecoders || null;
 	_debug_stringify && console.log( "This is the big get... ");
@@ -671,7 +673,7 @@ ObjectStorage.prototype.get = function( opts ) {
             	// this is JSOX parse callback, called every time there is a object revived.
                 // this will be the next object to satisfy ack.
 
-		_debug_stringify && console.log( "Resolved buffer (pending):", ackObjects.length, o );
+		_debug_get_ll && console.log( "Resolved buffer (pending):", ackObjects.length, o, o.dangling );
 
 		const ackObject = ackObjects.shift();
 		if( ackObject ) {
@@ -682,7 +684,7 @@ ObjectStorage.prototype.get = function( opts ) {
 	}
 
 	function objectStorageContainerRef( s ) {
-		//console.trace( "Container ref:", s );
+		_debug_get && console.log( "Container ref:", s );
 		try {
 			const existing = os.cachedContainer.get(s);
 			const here = os.getCurrentParseRef();
@@ -700,6 +702,7 @@ ObjectStorage.prototype.get = function( opts ) {
 				this.d.p = Promise.resolve( existing.data );  // this will still have to be swapped.
 			}
 			dangling.push( this );
+                        _debug_get && console.log( "adding a dangling object...", dangling );
 			objectRefs++;
 		} catch(err) { console.log( "Init failed:", err)}
 	}
@@ -708,8 +711,8 @@ ObjectStorage.prototype.get = function( opts ) {
 		//console.trace( "Revival of a container's field:", this, field, val );
 		if( !field ) {
 			// finished.
+                    	_debug_get && console.log( "Final container revive:", objectRefs, this.id );
 			if( objectRefs ) {
-				
 				Object.defineProperty( this, "dangling", { value:dangling } );
 				dangling = [];
 				objectRefs = 0;
@@ -760,7 +763,8 @@ ObjectStorage.prototype.get = function( opts ) {
 				return existing.data;
 			} 
 			// finished.
-			return this.d.p;
+                        _debug_get && console.log( "This promise is hung, this reference has..." );
+			return this.d.p; // set actual field to the promise
 		}
 		else {
 			// this is a sub-field of this object to revive...
@@ -790,7 +794,6 @@ ObjectStorage.prototype.get = function( opts ) {
 	this.currentParser = parser;
 	//console.log( "(get)Read Key:", os );
 	const p = new Promise( function(res,rej) {
-		resolve = res;  reject = rej;
 		//console.log( "doing read? (decodes json using a parser...", opts, parser, os );
 
 		const priorReadId = currentReadId;
@@ -806,6 +809,8 @@ ObjectStorage.prototype.get = function( opts ) {
 						ackObjects.push( {res:res,rej:rej,cb:resultCallback,id:opts.id } );
 					});
 					currentReadId = opts.id;
+                                        //_debug_get_ll &&
+                                        console.log( "RELOAD:", obj );
 					parser.write( obj );
 					return p
 			        } ).catch( err=>{
@@ -851,12 +856,14 @@ ObjectStorage.prototype.get = function( opts ) {
 					os.cachedContainer.set( obj.id, obj );
 					//currentReadId = priorReadId;
 					for( let res in extraResolutions ) res.res(obj.data);
+                                        _debug_get_ll && console.log( "calling resolve.1" );
 					res(obj.data);
 				} else {
                                     	//console.log( "Isn't a container..." );
 					//console.log( "Result object", obj );
 					currentReadId = priorReadId;
 					for( let res in extraResolutions ) res.res(obj);
+                                        _debug_get_ll && console.log( "calling resolve." );
 					res(obj)
 				}
 			}
