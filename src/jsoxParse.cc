@@ -1337,17 +1337,12 @@ static Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviv
 		// outside should always be a single value
 	}
 	parsed = jsox_parse_get_data( state ); // resulting message is removed from the parser.
-	revive->parser = new JSOXObject();
 	//logTick(3);
 	Local<Value> value;
-	{
-		struct reviver_data* priorRevive = revive;
-		revive->parser->currentReviver = revive;
-		value = convertMessageToJS2( parsed, revive );
-		revive->parser->currentReviver = priorRevive;
-	}
+
+	revive->parser->currentReviver = revive;
+	value = convertMessageToJS2( parsed, revive );
 	//logTick(4);
-	delete revive->parser;
 
 	jsox_dispose_message( &parsed );
 	//logTick(5);
@@ -1405,10 +1400,10 @@ void JSOXObject::parse( const v8::FunctionCallbackInfo<Value>& args ){
 
         //logTick(1);
 	r.context = r.isolate->GetCurrentContext();
-	struct jsox_parse_state *state = jsox_begin_parse();
-
+	r.parser = ObjectWrap::Unwrap<JSOXObject>( args.Holder() );
+	struct jsox_parse_state *state = r.parser->state;
 	args.GetReturnValue().Set( ParseJSOX( msg, len, &r, state ) );
-	jsox_parse_dispose_state( &state ); // this is fairly cheap...
+
 	if( tmp )
 		delete tmp;
 	
@@ -1448,7 +1443,7 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 		len = tmp[0].length();
 		msg = *tmp[0];
 	}
-	r.parser = NULL;
+	r.parser = new JSOXObject();
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
 			r._this = args.Holder();
@@ -1465,15 +1460,15 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 	else
 		r.revive = FALSE;
 
-        //logTick(1);
+	//logTick(1);
 	r.context = r.isolate->GetCurrentContext();
 
-	struct jsox_parse_state *state = jsox_begin_parse();
+	struct jsox_parse_state *state = r.parser->state;
 	args.GetReturnValue().Set( ParseJSOX( msg, len, &r, state ) );
-	jsox_parse_dispose_state( &state ); // this is fairly cheap...
+	//jsox_parse_dispose_state( &state ); // this is fairly cheap...
 	if( tmp )
 		delete tmp;
-
+	delete r.parser;
 }
 
 
