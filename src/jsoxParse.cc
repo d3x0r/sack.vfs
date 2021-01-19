@@ -83,6 +83,7 @@ void InitJSOX( Isolate *isolate, Local<Object> exports ){
 		parseTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.jsox_parser", v8::NewStringType::kNormal ).ToLocalChecked() );
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", JSOXObject::write );
+		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "parse", JSOXObject::parse );
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "reset", JSOXObject::reset );
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "getCurrentRef", JSOXObject::getCurrentRef );
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "setFromPrototypeMap", JSOXObject::setFromPrototypeMap );
@@ -1298,9 +1299,8 @@ void escapeJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 
-Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviver_data *revive ) {
+static Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviver_data *revive, struct jsox_parse_state *state ) {
 	PDATALIST parsed = NULL;
-	struct jsox_parse_state *state = jsox_begin_parse();
 #ifdef DEBUG_INPUT
 	lprintf("Parse:%.*s", len, utf8String );
 #endif
@@ -1350,11 +1350,71 @@ Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviver_data
 	delete revive->parser;
 
 	jsox_dispose_message( &parsed );
-	jsox_parse_dispose_state( &state ); // this is fairly cheap...
 	//logTick(5);
 	//lprintf( "RETURN REAL VALUE? %d %d", value.IsEmpty(), value.IsEmpty()?0:value->IsObject() );
 	return value;
 }
+
+void JSOXObject::parse( const v8::FunctionCallbackInfo<Value>& args ){
+	//logTick(0);
+	struct reviver_data r;
+	r.isolate = Isolate::GetCurrent();
+	r.reviveStack = NULL;
+	r.failed = FALSE;
+	if( args.Length() == 0 ) {
+		r.isolate->ThrowException( Exception::TypeError(
+			String::NewFromUtf8( r.isolate, TranslateText( "Missing parameter, data to parse" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+	const char *msg;
+	String::Utf8Value *tmp;
+	Local<Function> reviver;
+	Local<ArrayBuffer> ab;
+	size_t len;
+	if( args[0]->IsArrayBuffer() ) {
+		tmp = NULL;
+		ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+		msg = (const char*)ab->GetBackingStore()->Data();
+#else
+		msg = (const char*)ab->GetContents().Data();
+#endif
+		len = ab->ByteLength();
+	}
+	else {
+		tmp = new String::Utf8Value( USE_ISOLATE( r.isolate ) args[0] );
+		len = tmp[0].length();
+		msg = *tmp[0];
+	}
+	r.parser = NULL;
+	if( args.Length() > 1 ) {
+		if( args[1]->IsFunction() ) {
+			r._this = args.Holder();
+			r.revive = TRUE;
+			r.reviver = Local<Function>::Cast( args[1] );
+		}
+		else {
+			r.isolate->ThrowException( Exception::TypeError(
+				String::NewFromUtf8( r.isolate, TranslateText( "Reviver parameter is not a function." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			r.failed = TRUE;
+			return;
+		}
+	}
+	else
+		r.revive = FALSE;
+
+        //logTick(1);
+	r.context = r.isolate->GetCurrentContext();
+	struct jsox_parse_state *state = jsox_begin_parse();
+
+	args.GetReturnValue().Set( ParseJSOX( msg, len, &r, state ) );
+	jsox_parse_dispose_state( &state ); // this is fairly cheap...
+	if( tmp )
+		delete tmp;
+	
+}
+
+
 
 void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 {
@@ -1408,7 +1468,9 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
         //logTick(1);
 	r.context = r.isolate->GetCurrentContext();
 
-	args.GetReturnValue().Set( ParseJSOX( msg, len, &r ) );
+	struct jsox_parse_state *state = jsox_begin_parse();
+	args.GetReturnValue().Set( ParseJSOX( msg, len, &r, state ) );
+	jsox_parse_dispose_state( &state ); // this is fairly cheap...
 	if( tmp )
 		delete tmp;
 
