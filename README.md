@@ -82,9 +82,14 @@ import {SACK} from "sack.vfs";
         begin( cb ) - begin parsing JSOX stream; callback is called as each value is completed.
         stringifier() - create a reusable stringifier which can be used for custom types
         stringify(object,replacer,pretty) - stringify an object; same API as JSON.
-    JSON6 - A json parser. (JSON5 input compatible)
+    JSOX - A jsox parser. (JSON5 input compatible)
         parse(string) - result with a V8 object created from the json string.  
+        begin( cb ) - begin parsing JSOX stream; callback is called as each value is completed.
+        stringify(obj [,stringifer [,formatter])
+    JSON6 - A json6 parser. (JSON5 input compatible)
+        parse(string [,reviver]) - result with a V8 object created from the json string.  
         begin( cb ) - begin parsing JSON6 stream; callback is called as each value is completed.
+        stringify(obj [,stringifer [,formatter])
     JSON - A json parser.
         parse(string) - result with a V8 object created from the json string.  
         begin( cb ) - begin parsing JSON stream; callback is called as each value is completed.
@@ -217,6 +222,7 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ## Changelog
 - 1.0.1013(in progress)
    - Split README.md into multiple files, so each section can be expanded.
+   - add parse() command to JSOX parser instances.
 - 1.0.1012
    - Fix small leak closing com ports.
    - Fix order object fields are revived; assign object after it has been built; use internal context stack for references.
