@@ -467,6 +467,7 @@ public:
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void write( const v8::FunctionCallbackInfo<Value>& args );
+	static void parse( const v8::FunctionCallbackInfo<Value>& args );
 	static void reset( const v8::FunctionCallbackInfo<Value>& args );
 	static void getCurrentRef( const v8::FunctionCallbackInfo<Value>& args );
 
