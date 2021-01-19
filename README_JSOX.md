@@ -29,7 +29,9 @@ Added support 'reviver' parameter.
   - JSOX
      - parse( string [,reviver] )
      - begin( callback [,reviver] )
-         - write( data )
+         - write( data ) - post data to parse, array buffer(utf8) or string allowed throws on error.  Is synchronous with callback.
+         - reset( ) - if an error happened during a write, this resets the error state to allow more data.
+         - parse() - if no callback is specified, parse can be used to get one-shot messages.
          - fromJSOX(typeName,prototype,fromCb) - if an object of the specified name is encountered, the related object/array/string is passed to the callback, and the result is used as the revived object.
      - stringifier() - create a reusable stringifier which can be used for custom types
          - toJSOX(typeName,prototype,cb) - if an object that is an instance of prototype, the object is passed to the callback, and the resulting string used for output.
