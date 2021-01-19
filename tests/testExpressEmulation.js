@@ -42,34 +42,39 @@ function ExpressX() {
 	                        req_maps.push( { expr:a, cb:b } );
                 },
                 handle( req, res) {
-                	console.log( "Look for request:", req, res );
-                        const parts = req.url.split("?");
-                        const url = unescape(parts[0]);
-                        const filepath = path.dirname(url)+path.basename(url)+path.extname(url);
-                        const name = path.basename(url);
-                        const type = path.extname(url);
+						//console.log( "Look for request:", req, res );
+						const parts = req.url.split("?");
+						const url = unescape(parts[0]);
+						const filepath = path.dirname(url)+path.basename(url)+path.extname(url);
+						const name = path.basename(url);
+						const type = path.extname(url);
                         
-                        console.log( "Think parts is:", filepath, name, type, parts[1] );
-                        let cb;
-                	if( cb = pre_mappings.get( filepath ) ) {
-                        	cb( req, res, ()=>{
-                                	console.log( "Go to next global... TODO" );
-                                } );
-                                
-                        }
-                        for( let map of req_maps ) {
-                        	if( map.expr.match( filepath ) ) {
-                                	
-                                }
-                        }
-		console.log( "mappings:", mappings );
+						//console.log( "Think parts is:", filepath, name, type, parts[1] );
+						let cb;
+						let ranOne = false;
+						if( cb = pre_mappings.get( filepath ) ) {
+							let runNext = false;
+							ranOne = true;
+							cb( req, res, ()=>{ runNext = true; } );
+							if( !runNext ) break;
+						}
+						for( let map of req_maps ) {
+							if( map.expr.match( filepath ) ) {
+								let runNext = false;
+								ranOne = true;
+								map.cb( req, res, ()=>(runNext = true) );
+								if( !runNext ) break;
+							}
+						}
+
+						//console.log( "mappings:", mappings );
                 	if( cb = mappings.get( filepath ) ) {
-						console.log( "got cb?" );
-                        	cb( req, res );
-                                return true;
-                        }
-                        return false;
-                }
+								console.log( "got cb?" );
+								ranOne = true;
+                       	cb( req, res, ()=>{} );
+						}
+						return ranOne;
+				}
         }
 }
 
