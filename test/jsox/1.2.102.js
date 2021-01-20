@@ -40,9 +40,9 @@ describe('Added in 1.2.102', function () {
 		const o = {op:"move", walls: [w1,w2,w3,w4] }
 		const str = JSOX.stringify( o );
 
-console.log( "RESULT:",str );
+		//console.log( "RESULT:",str );
 		const obj = JSOX.parse( str );
-console.log( "RESULT:", obj );
+		//console.log( "RESULT:", obj );
 		if( obj.walls[0].start === obj.walls[1] &&
 		   obj.walls[0].end === obj.walls[2] &&
 		  obj.walls[3].start === obj.walls[1] &&
