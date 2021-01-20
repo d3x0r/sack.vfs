@@ -166,6 +166,17 @@ function initPrototypes()
 	pushToProto( Symbol.prototype, { external:true, name:"sym"
 		, cb:function() { return '"'+this.description+'"' }
 	} );
+
+	pushToProto( RegExp.prototype, { external:true, name:"Ρεχ"
+	    , cb:function(o,stringifier){
+			return "'"+escape(this.source)+"'";
+		}
+	} );
+	fromProtoTypes.set( "Ρεχ", { protoCon:RegExp, cb:function (field,val){
+		return new RegExp( this );
+	} } );
+
+
 	pushToProto( Map.prototype, mapToJSOX = { external:true, name:"map"
 		, cb:null
 	} );
