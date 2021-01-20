@@ -223,6 +223,7 @@ there's a conversion to string from binary and a copy of that string from JS to 
 - 1.0.1013(in progress)
    - Split README.md into multiple files, so each section can be expanded.
    - add parse() command to JSOX parser instances.
+   - add JSOX automatic encoding for `RegExp`.
 - 1.0.1012
    - Fix small leak closing com ports.
    - Fix order object fields are revived; assign object after it has been built; use internal context stack for references.
