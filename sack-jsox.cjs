@@ -167,12 +167,12 @@ function initPrototypes()
 		, cb:function() { return '"'+this.description+'"' }
 	} );
 
-	pushToProto( RegExp.prototype, { external:true, name:"Ρεχ"
+	pushToProto( RegExp.prototype, { external:true, name:"regex"
 	    , cb:function(o,stringifier){
 			return "'"+escape(this.source)+"'";
 		}
 	} );
-	fromProtoTypes.set( "Ρεχ", { protoCon:RegExp, cb:function (field,val){
+	fromProtoTypes.set( "regex", { protoCon:RegExp, cb:function (field,val){
 		return new RegExp( this );
 	} } );
 
