@@ -179,13 +179,13 @@ import {SACK} from "sack.vfs";
 
 ## Interfaces
 
- - [Volume](README_Volume.md)
- - [SQLite](README_Sqlite.md)
- - [Object Storage](README_ObjectStorage.md)
- - [JSON/JSON6/JSOX](README_JSOX.md)
- - [Websocket Server](README_WSS.md)
+ - [Volume](README_Volume.md#volume-interface)
+ - [SQLite](README_Sqlite.md#sqlite-interface)
+ - [Object Storage](README_ObjectStorage.md#object-storage)
+ - [JSON/JSON6/JSOX](README_JSOX.md#jsox-and-json-json6----json-and-json6-compatible-processor)
+ - [Websocket Server](README_WSS.md#websocket-server-interface)
     - [HTTP Server](README_WSS.md#HTTP-Fallback)
- - [Websocket Client](README_WSC.md)
+ - [Websocket Client](README_WSC.md#http-request-interface--httphttps-)
  - [HTTP Requests](README_HTTP.md)
  - [UDP](README_UDP.md) - Low level system UDP sockets; TCP could be available, but HTTP and Websocket suffice.
  - [TLS](README_Misc.md)

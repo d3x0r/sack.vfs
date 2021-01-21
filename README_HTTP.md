@@ -4,8 +4,8 @@
 
 ``` js
 var sack = require( "sack.vfs" );
-var response = sack.HTTP.get( { hostname: "example.com", port: 80, method : "get", 
-var response2 = sack.HTTPS.get( { ca:&lt;extra root cert(s)&gt;, rejectUnauthorized:true/false, path:"/index.html" } );
+var response = sack.HTTP.get( { hostname: "example.com", port: 80, method : "get", path : "/" } );
+var response2 = sack.HTTPS.get( { ca:&lt;extra cert(s)&gt;, path:"/index.html" } );
 ```
 
 | HTTP(S) get option | Description |

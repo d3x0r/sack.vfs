@@ -69,6 +69,10 @@ Server Client Methods
   | close | closes the connection |
   | on | event handler for specified type `on(eventName, callback)` | 
 
+## HTTP Fallback
+
+Providing a `onrequest` callback to the server, will allow the server to handle HTTP(S) request events.
+The request is given a `req`uest and a `res`ponse object which are used to serve the HTTP(S) request.
 
 ### Websocket Node Worker-Thread Support
 
