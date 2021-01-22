@@ -184,10 +184,10 @@ import {SACK} from "sack.vfs";
  - [Object Storage](README_ObjectStorage.md#object-storage)
  - [JSON/JSON6/JSOX](README_JSOX.md#jsox-and-json-json6----json-and-json6-compatible-processor)
  - [Websocket Server](README_WSS.md#websocket-server-interface)
-    - [HTTP Server](README_WSS.md#HTTP-Fallback)
+    - [HTTP Server](README_WSS.md#http-fallback)
  - [Websocket Client](README_WSC.md#http-request-interface--httphttps-)
  - [HTTP Requests](README_HTTP.md)
- - [UDP](README_UDP.md) - Low level system UDP sockets; TCP could be available, but HTTP and Websocket suffice.
+ - [UDP](README_UDP.md##udp-socket-object-networkudp) - Low level system UDP sockets; TCP could be available, but HTTP and Websocket suffice.
  - [TLS](README_Misc.md)
  - [ComPort](README_Misc.md)
  - [File Changes](README_Misc.md)
