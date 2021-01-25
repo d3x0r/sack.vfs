@@ -11,7 +11,7 @@ function makeUsers() {
 		unique.store().then( (userKeyId)=>{
 			
 		} );
- 		const user = unique.create( i, "User "+i, '' + i + "@email.com", Math.random()*1<<54 );
+ 		const user = unique.create( i, "User "+i, '' + i + "@email.com", Math.random()*(1<<54) );
 		user.store().then( ()=>{
 		} );
 	}

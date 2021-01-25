@@ -11,9 +11,9 @@ function makeUsers() {
 		unique.store().then( (userKeyId)=>{
 			
 		} );
- 		const user = unique.create( i, "User "+i, '' + i + "@email.com", Math.random()*1<<54 );
-		user.store().then( ()=>{
-		} );
+ 		const user = unique.create( i, "User "+i, '' + i + "@email.com", Math.random()*(1<<54) );
+		
+		user.store();
 	}
 
 }
@@ -27,7 +27,7 @@ function getUsers() {
 
 	console.log( "Try to get:", 835 );
 	User.get( 835 ).then( (user)=>{
-		console.log( "Got 1523:", user );
+		console.log( "Got 835:", user );
 	} );
 }
 console.log( "Go:", go );

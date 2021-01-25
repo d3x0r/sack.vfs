@@ -1,4 +1,6 @@
 
+const _debug_lookup = false;
+
 const BloomNHash_StorageTag = "?bh"
 const BloomNHash_BlockStorageTag = "?hb"
 const _debug_reload = false;
@@ -1271,45 +1273,45 @@ let getting = false;
 BloomNHash.prototype.get = function( key ) {
 	//console.log( "... right? Get key?", key );
 	if( getting ) {
-            console.log( "Getting is still set, delay." );
+		_debug_lookup && console.log( "Getting is still set, delay." );
 		const g = { t:this, key:key, res:null, rej:null };
 		gets.push( g );
 		return new Promise( (res,rej)=>((g.res=res),(g.rej=rej)) );
 	}
         //console.log( "Root?", this );
 	if( !this.root ) {
-            console.log( "No objects in hash; return 'undefined'" );
-            return Promise.resolve( undefined );
-        }
+		console.log( "No objects in hash; return 'undefined'" );
+		return Promise.resolve( undefined );
+	}
 	getting = true;
 	const result = {};
 	//console.trace( "Get:", this, key );
-        const self = this;
+	const self = this;
 	const doit = function (thing){// thisless
             //console.log( "Self Root:", this, thing, self, self.root );
-            if( self.root instanceof Promise ) {
-                	console.log( "Root is still mapping?" );
-                	return self.root.then((root)=>{
-			    root.lookupFlowerHashEntry( key, result ).then( (obj)=>{
-			console.log( "Lookup finally resulted, and set getting = false..." );
-			getting = false;
-			if( gets.length ) {
-				const g = gets.shift();
-				console.log( "doing an existing get:", g );
-				g.t.get( g.key ).then( g.res ).catch( g.rej );
-			}
-			return obj;
-		} );    
-			} );
+	if( self.root instanceof Promise ) {
+		console.log( "Root is still mapping?" );
+		return self.root.then((root)=>{
+			root.lookupFlowerHashEntry( key, result ).then( (obj)=>{
+				_debug_lookup && console.log( "Lookup finally resulted, and set getting = false..." );
+				getting = false;
+				if( gets.length ) {
+					const g = gets.shift();
+					_debug_lookup && console.log( "doing an existing get(1):", g );
+					g.t.get( g.key ).then( g.res ).catch( g.rej );
+				}
+				return obj;
+			} );    
+		} );
 
-            }
-            //console.log( "THIS:", key );
+	}
+
 		return self.root.lookupFlowerHashEntry( key, result ).then( (obj)=>{
-			console.log( "(2)Lookup finally resulted, and set getting = false..." );
+			_debug_lookup && console.log( "(2)Lookup finally resulted, and set getting = false..." );
 			getting = false;
 			if( gets.length ) {
 				const g = gets.shift();
-				console.log( "doing an existing get:", g );
+				_debug_lookup && console.log( "doing an existing get(2):", g );
 				g.t.get( g.key ).then( g.res ).catch( g.rej );
 			}
 			return obj;
