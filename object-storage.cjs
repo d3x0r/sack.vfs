@@ -398,17 +398,17 @@ _objectStorage.prototype.scan = function( from ) {
 }
 
 _objectStorage.prototype.getContainer = function( obj, options ) {
-	var container = this_.stored.get( obj );
+	var container = this.stored.get( obj );
 	var storage;
 	if( container ) {
 		container = this_.cachedContainer.get( container );
 		return container;
 	}
 	//console.log( "Getting a new container...", container.id );
-	container = new objectStorageContainer(obj,options);
-	this_.stored.set( obj, container.id );
-	this_.cached.set( container.id, container.data );
-	this_.cachedContainer.set( container.id, container );
+	container = new this.objectStorageContainer(obj,options);
+	this.stored.set( obj, container.id );
+	this.cached.set( container.id, container.data );
+	this.cachedContainer.set( container.id, container );
 }
 
 _objectStorage.prototype.createIndex = function( id, index ){
@@ -935,9 +935,11 @@ fileEntry.prototype.read = function( from, len ) {
 				} );
 
 		} else {
+			//console.log( "Reading ...", this_.id );
 			if( this_.id )
 				return this_.folder.volume.get( {id:this_.id} ).then( res ).catch( rej );
 			//console.log( "Rejecting, no ID, (no data)", this_ );
+			//console.log( "no file data in it?" );
 			res( undefined ) // no data
 		}
 	} );
@@ -1036,14 +1038,11 @@ fileEntry.prototype.open = async function( fileName ) {
 fileDirectory.prototype.open = async function( fileName ) {
 	var file = this.files.find( (f)=>(f.name == fileName ) );
 	const _this = this;
+	//console.log( "OPEN?", file );
 	if( !file ) {
-            	throw new Error( "File not found" + fileName );
-		file = new fileEntry( this );
-		file.name = fileName;
-		this.files.push(file);
-		this.store();
+      return Promise.reject( new Error( "File not found" + fileName ) );
 	}
-	return file;
+	return Promise.resolve( file );
 }
 
 
