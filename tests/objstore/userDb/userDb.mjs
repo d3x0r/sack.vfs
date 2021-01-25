@@ -83,10 +83,12 @@ class StoredObject {
 			return storage.put( this, {id:this.#id} ).then( (id)=>{
 				if( !this.#id ) this.#id = id;
 				else if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
+				return this;
 			} );
 		} else {
 			return storage.put( this, {id:this.#id} ).then( (id)=>{
 				if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
+				return this;
 			} );
 		}
 	}		
@@ -97,6 +99,7 @@ class StoredObject {
 class UniqueIdentifier extends StoredObject {
 	key = null;
 	constructor() {
+		super();
 	}
 	create( account,user,email,pass ){
 		const newUser = new User();
@@ -118,6 +121,14 @@ class User  extends StoredObject{
 	devices = [];
 	
 	constructor() {
+		super();
+	}
+	store() {
+		return super.store().then( (id)=>{
+			l.account.set( this.account, this );
+			l.email.set( this.email, this );
+			return this;
+		} );
 	}
 }
 
@@ -143,6 +154,7 @@ class Device  extends StoredObject{
 	key = null;
 	active = false;
 	constructor() {
+		super();
 	}
 }
 

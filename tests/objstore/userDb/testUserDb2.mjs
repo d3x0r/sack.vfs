@@ -1,23 +1,5 @@
 
-import {sack} from "../../../vfs_module.mjs"
-import {User,Device,UniqueIdentifier,go} from "./userDb.mjs"
-
-
-function makeUsers() {
-	for( let i = 0; i < 10000; i++ ) {
-		const unique = new UniqueIdentifier();
-		unique.key = sack.Id();
-		console.log( "user:", i );
-		unique.store().then( (userKeyId)=>{
-			
-		} );
- 		const user = unique.create( i, "User "+i, '' + i + "@email.com", Math.random()*(1<<54) );
-		
-		user.store();
-	}
-
-}
-
+import {User,go} from "./userDb.mjs"
 
 function getUsers() {
 	console.log( "Try to get:", 1523 );
@@ -30,7 +12,9 @@ function getUsers() {
 		console.log( "Got 835:", user );
 	} );
 }
-console.log( "Go:", go );
+
+//console.log( "Go:", go );
+// go is a promise that resolves when userdb is initialized
 go.then( ()=>{
 	console.log( "waited until initialized..." );
 	getUsers();
