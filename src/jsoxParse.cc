@@ -1191,13 +1191,13 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				}
 				if( revive->failed )
 					return;
-
-				if( val->name ) {
-					SETV( o, revive->fieldName, sub_v );
-				}
-				else {
-					SETN( o, currentIndex, sub_v );
-				}
+				if( !sub_v->IsUndefined() )
+					if( val->name ) {
+						SETV( o, revive->fieldName, sub_v );
+					}
+					else {
+						SETN( o, currentIndex, sub_v );
+					}
 			}
 			break;
 		}
