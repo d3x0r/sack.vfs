@@ -116,6 +116,8 @@ function lookupFlowerHashEntry( hash, key, result ) {
 		result.hash = null;
 		return; // only look for things, not nothing.
 	}
+	if( "number" === typeof key ) 
+		key = '' + key;
 	// provide 'goto top' by 'continue'; otherwise returns.
 	do {
 		// look in the binary tree of keys in this block.
@@ -133,7 +135,7 @@ function lookupFlowerHashEntry( hash, key, result ) {
 				result.entryMask = curMask;
 				result.hash = hash;
 				if( hash.entries[curName] instanceof Promise ) {
-					return root.storage_.map( hash, { depth:0, paths:[ ["entries", curName] ] } ).then( (hash)=>{
+					return root.storage_.map( hash, { depth:-1, paths:[ ["entries", curName] ] } ).then( (hash)=>{
 						return lookupFlowerHashEntry( hash, key, result );
 					} );
 				}
