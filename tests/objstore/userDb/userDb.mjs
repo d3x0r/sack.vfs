@@ -72,10 +72,30 @@ storage.getRoot().then( (root)=>{
 	} );
 } );
 
-class UniqueIdentifier {
-	key = null;
+class StoredObject {
 	#id = null;
 	get id() { return this.#id } ;
+	store() {
+		if( !this.#id ) {
+			// might have been reloaded...
+			const container = storage.getContainer( this );
+			if( container ) this.#id = container.id;
+			return storage.put( this, {id:this.#id} ).then( (id)=>{
+				if( !this.#id ) this.#id = id;
+				else if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
+			} );
+		} else {
+			return storage.put( this, {id:this.#id} ).then( (id)=>{
+				if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
+			} );
+		}
+	}		
+
+}
+
+
+class UniqueIdentifier extends StoredObject {
+	key = null;
 	constructor() {
 	}
 	create( account,user,email,pass ){
@@ -87,57 +107,18 @@ class UniqueIdentifier {
 		newUser.unique = this;
 		return newUser;
 	}
-	store() {
-		if( !this.#id ) {
-			// might have been reloaded...
-			const container = storage.getContainer( this );
-			if( container ) this.#id = container.id;
-			return storage.put( this, {id:this.#id} ).then( (id)=>{
-				if( !this.#id ) this.#id = id;
-				else if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
-			} );
-		} else {
-			return storage.put( this, {id:this.#id} ).then( (id)=>{
-				if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
-			} );
-		}
-	}
 }
 
-class User {
+class User  extends StoredObject{
 	unique = null;
 	account = null;
 	name = null;
 	email = null;
 	password = null;
 	devices = [];
-	#id = null;
 	
 	constructor() {
 	}
-	store() {
-		if( !this.#id ) {
-			// might have been reloaded...
-			const container = storage.getContainer( this );
-			if( container ) this.#id = container.id;
-			return storage.put( this, {id:this.#id} ).then( (id)=>{
-				if( !this.#id ) this.#id = id;
-				else if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
-				l.account.set( this.account, this );
-				l.email.set( this.email, this );
-			} );
-		} else {
-			return storage.put( this, {id:this.#id} ).then( (id)=>{
-				if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
-				l.account.set( this.account, this );
-				l.email.set( this.email, this );
-			} );
-		}
-
-
-	}
-	//create( account,user,email,pass ) {
-	//}
 }
 
 User.get = function( account ) {
@@ -158,28 +139,11 @@ User.getEmail = function( email ) {
 	return l.email.get( email );
 }
 
-class Device {
+class Device  extends StoredObject{
 	key = null;
 	active = false;
-	#id = null;
-	get id() { return this.#id } ;
 	constructor() {
 	}
-	store() {
-		if( !this.#id ) {
-			// might have been reloaded...
-			const container = storage.getContainer( this );
-			if( container ) this.#id = container.id;
-			return storage.put( this, {id:this.#id} ).then( (id)=>{
-				if( !this.#id ) this.#id = id;
-				else if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
-			} );
-		} else {
-			return storage.put( this, {id:this.#id} ).then( (id)=>{
-				if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
-			} );
-		}
-	}		
 }
 
 
