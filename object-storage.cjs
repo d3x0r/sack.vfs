@@ -5,7 +5,7 @@ const _debug_dangling = false;
 const _debug_output = _debug || false;
 const _debug_object_convert = _debug || false;
 const _debug_ll = false; // remote receive message logging.
-
+const _debug_map = false;
 sack.SaltyRNG.setSigningThreads( require( "os" ).cpus().length );
 
 // save original object.
@@ -90,7 +90,7 @@ objectStorageContainer.prototype.map = async function( opts ) {
 		const rootMap = this;
 		return new Promise( (res,rej)=>{
 			let waiting = 0;
-			console.trace( "Map Object called... ", dangling)
+			_debug_map && console.trace( "Map Object called... ", dangling)
 
 			if( ( "paths" in opts ) &&  opts.paths.length ){
 				let nPath = 0;
@@ -127,7 +127,7 @@ objectStorageContainer.prototype.map = async function( opts ) {
 			else{  // load everything that's pending on this object.
 				for( let load of dangling ) {
 					{
-						console.log( "Checking pending..." );
+						//console.log( "Checking pending..." );
 						const existing = newStorage.cachedContainer.get( load.d.id );
 						if( existing ) {
 							console.log( "Found it as existing, resolve it?", existing.data, load.d );
@@ -722,7 +722,7 @@ _objectStorage.prototype.get = function( opts ) {
 					_debug_dangling && console.log( "(DOES THIS HAPPEN?)OBJ REPLACE OBJECT WITH:", here, obj, thisDangling, s )
 					const dr = thisDangling.findIndex( d=> d.d.id === s );
 					if( dr >= 0 ) thisDangling.splice( dr, 1 );
-					else console.log( "FAILED TO FIND DANGLING REFERENCE" );
+					else _debug_dangling && console.log( "FAILED TO FIND DANGLING REFERENCE 1" );
 
 					const dp = requests.findIndex( d=> d.d.p ===  p );
 					if( dp >= 0 ) {
@@ -733,7 +733,7 @@ _objectStorage.prototype.get = function( opts ) {
 						}
 					}
 			
-					else console.log( "FAILED TO FIND ALLDANGLING REFERENCE" );
+					else console.log( "FAILED TO FIND ALLDANGLING REFERENCE 2" );
 
 					return (here.o[here.f] = obj) 
 				}).catch( (err)=>{
