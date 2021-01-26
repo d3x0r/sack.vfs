@@ -125,10 +125,18 @@ class User  extends StoredObject{
 	}
 	store() {
 		return super.store().then( (id)=>{
+			//console.log( "l.account is broken?", l.account.root );
 			l.account.set( this.account, this );
 			l.email.set( this.email, this );
 			return this;
 		} );
+	}
+	addDevice( id, active ) {
+		const device = new Device();
+		device.key = id;
+		device.active = active;
+		return device.store().then( ()=>
+			this.devices.push(device ) );
 	}
 }
 

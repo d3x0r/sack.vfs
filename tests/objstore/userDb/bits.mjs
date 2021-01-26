@@ -39,14 +39,16 @@ function bitReader( bits ) {
 			this.storage_ = storage;
 		},
 		encode( stringifier ){
-			return `btr{e:${stringifier.stringify(this.entropy)},a:${this.available},u:${this.used}}`;
+			return `{e:${stringifier.stringify(this.entropy)},a:${this.available},u:${this.used}}`;
 		},
-		decode(a,b){
-			console.log( "GOT:", a, b );
-			const reader = bitReader( a.e );
-			reader.available = a.a;
-			reader.used = a.u;
-			return reader;
+		decode(field,val){
+			//console.log( "Double decode?", field, val );
+			if( field === "e" ) this.entropy = val;
+			if( field === "a" ) this.available = val;
+			if( field === "u" ) this.used = val;
+			if( field )
+				return val;
+			return this;
 		},
 		get(N) {
 			const bit = this.entropy[N>>3] & ( 1 << (N&7)) ;
@@ -166,9 +168,7 @@ function encode( a ){
 	return this.encode(a);
 }
 function decode(field,val){
-	if( field === "a" ) this.available = val;
-	if( field === "u" ) this.used = val;
-	return this;
+	return this.decode( field, val )
 }
 
 

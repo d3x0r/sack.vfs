@@ -1,19 +1,23 @@
+const from = Number( process.argv[2] ) || 1
 
+console.log( "Making from;", from );
 import {sack} from "../../../vfs_module.mjs"
 import {User,Device,UniqueIdentifier,go} from "./userDb.mjs"
 
 
 function makeUsers() {
 	const wait = [];
-	for( let i = 1; i < 10000; i++ ) {
+	for( let i = 1; i < 100; i++ ) {
 		const unique = new UniqueIdentifier();
 		unique.key = sack.Id();
 		//console.log( "user:", i );
 		wait.push( unique.store().then( ((i)=> ()=>{
 	 			const user = unique.create( i, "User "+i, '' + i + "@email.com", Math.random()*(1<<54) );
-				//console.log( "storing user", i );
-				return user.store();
-			} )(i) ) );
+				return user.addDevice( sack.Id(), true ).then( ()=>{
+					//console.log( "storing user", i );
+					return user.store();
+				} );
+			} )(i+from) ) );
 	}
 	return Promise.all( wait );
 }	

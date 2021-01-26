@@ -1,5 +1,6 @@
 
 const _debug_lookup = false;
+const _debug_root = false;
 
 const BloomNHash_StorageTag = "?bh"
 const BloomNHash_BlockStorageTag = "?hb"
@@ -864,7 +865,7 @@ try {
 			if( 0 ) next = convertFlowerHashBlock( hash );
 			else {
 				next = ( hash.nextBlock[key.codePointAt(0) & HASH_MASK] = new hashBlock( hash ) );
-				console.log( "Update, because we added a child hash." );
+				_debug_set && console.log( "Update, because we added a child hash." );
 				if( root.storage_ ) {
 					root.storage_.put( hash );
 				}
@@ -1330,6 +1331,12 @@ BloomNHash.prototype.get = function( key ) {
 const inserts = [];
 let inserting = false;
 BloomNHash.prototype.set = function( key, val ) {
+	if( this.root instanceof Promise ) {
+		return blockStorage.map( this, {depth:0,} ).then( ()=>{
+			return this.set( key, val );
+		}  );
+	}
+
 	if( inserting ) {
 		let i;
 		inserts.push( i = {t:this, key:key,val:val,res:null,rej:null } );
@@ -1340,7 +1347,8 @@ BloomNHash.prototype.set = function( key, val ) {
 	const result = {};
 
 	if( !this.root ) new this.hashBlock(null);
-	//console.log( "This.root SHOULD be set...", this.root );
+
+	_debug_root && console.log( "This.root SHOULD be set...", this.root );
 	return this.root.insertFlowerHashEntry( key, result ).then( (res)=>{
 		//console.log( "SET ENTRY:", result.entryIndex, val );
         	result.hash.entries[result.entryIndex] = val;
