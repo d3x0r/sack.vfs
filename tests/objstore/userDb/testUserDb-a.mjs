@@ -1,4 +1,5 @@
 const from = Number( process.argv[2] ) || 1
+const count = Number( process.argv[3] ) || 100
 
 console.log( "Making from;", from );
 import {sack} from "../../../vfs_module.mjs"
@@ -7,7 +8,7 @@ import {User,Device,UniqueIdentifier,go} from "./userDb.mjs"
 
 function makeUsers() {
 	const wait = [];
-	for( let i = 1; i < 100; i++ ) {
+	for( let i = 1; i < count; i++ ) {
 		const unique = new UniqueIdentifier();
 		unique.key = sack.Id();
 		//console.log( "user:", i );
