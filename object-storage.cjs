@@ -31,8 +31,8 @@ sack.ObjectStorage = function (...args) {
 function objectStorageContainer(o,opts) {
 	if( !this instanceof objectStorageContainer ) return new newStorage.objectStorageContainer(o,opts);
 	_debug_object_convert && console.trace( "Something creating a new container..", o, opts );
-	try {
 	if( "string" === typeof o ){
+		if( !o ) throw new Error( "Blank string lookup" );
 		// still, if the proir didn't resolve, need to resolve this..
 		let existing = newStorage.cachedContainer.get( o );
 		if( existing ) {
@@ -41,24 +41,15 @@ function objectStorageContainer(o,opts) {
 				return;
 		}
 	}
-	//this.def = {
-	//	indexes : [],
-	//	dirty : false,
-	//}
-	var resolve = o && !opts;
-	this.data = o || {}; // reviving we get null opts.
-	if( !o && opts && opts.ref ) {
-		console.trace( "ref loading is deprecated.");
-		//resolve = opts.ref;
+	if( o ) {
+		this.data = o; // reviving we get null opts.
+	} else {
+		this.data = "pending reference"; // reviving we get null opts.
 	}
-   	currentContainer = this;
+
+	currentContainer = this;
 	Object.defineProperty( this, "encoding", { writable:true, value:false } );
-/*
-	this.data = {
-		//nonce : opts?opts.sign?sack.SaltyRNG.sign( sack.JSOX.stringify(o), 3, 3 ):null:null,
-		data : o
-	}
-*/
+
 	if( opts && opts.sign ) {
 		var v = sack.SaltyRNG.verify( sack.JSOX.stringify(o), this.data.nonce, 3, 3 );
 		//console.log( "TEST:", v );
@@ -70,10 +61,6 @@ function objectStorageContainer(o,opts) {
 			Object.defineProperty( this, "id", { value:opts.id } );
 		}
 	}
-	}catch(err) {
-		console.log( "Uncaught exception:", err );
-	}
-	//console.log( "Container:", this );
 }
 
 objectStorageContainer.prototype.getStore = function() {
@@ -130,7 +117,7 @@ objectStorageContainer.prototype.map = async function( opts ) {
 						//console.log( "Checking pending..." );
 						const existing = newStorage.cachedContainer.get( load.d.id );
 						if( existing ) {
-							console.log( "Found it as existing, resolve it?", existing.data, load.d );
+							//console.log( "Found it as existing, resolve it?", existing.data, load.d );
 							continue;
 							/*
 							if( load.d.res ) load.d.res( existing.data );
@@ -155,7 +142,7 @@ objectStorageContainer.prototype.map = async function( opts ) {
 				//dangling.length = 0;
 			}
 			if( !waiting ){
-				console.log( "Nothing scheduled to really wait, go ahead and resolve");
+				//console.log( "Nothing scheduled to really wait, go ahead and resolve");
 				res( rootMap.data );
 			}
 
@@ -196,6 +183,7 @@ objectStorageContainer.prototype.map = async function( opts ) {
 	return this.data; // this function is async, just return.
 }
 
+/*
 objectStorageContainer.prototype.createIndex = function( storage, fieldName, opts ) {
 	if( !fieldName ) throw new Error( "Must specify an object field to index" );
 
@@ -247,7 +235,7 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 	const storageIndex = storage.createIndex( this.id, index );
 	indexList.push( index );
 }
-
+*/
 
 	var mapping = false;
 	preloadStorage = null;
@@ -265,23 +253,72 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 	newStorage.encoders = [];
 	newStorage.decoders = [];
 
+	const fullObjectMaps = new WeakMap();
+	
+	let rootContainer = false;
+	let rootObjectSet = false;
+	let rootObject = null;
+	let rootObjectContainer = null;
+	let mapFullObject = false;
+
+	function getObjectMap() {
+		return {
+			members:new WeakMap(),
+			
+		}
+	}
 
 	function objectToJSOX( stringifier ){
+		_debug_object_convert && console.log( "Convert Any Object to JSOX:", !!rootObject, typeof this, this );
+		if( rootContainer ) {
+			rootContainer = false;
+			rootObject = this.data;
+			rootObjectContainer = this;
+			fullObjectMaps.set( rootObjectContainer, this.id );
+		}else {
+			if( rootObjectSet ) {
+				rootObject = this;
+				rootObjectContainer = this;
+				fullObjectMaps.set( rootObjectContainer, "RootID?" );
+			}
+			//else
+			//	console.log( "Sub Object of something...", this !== rootObjectContainer );
+		}
+		if( mapFullObject ) 
+			if( this !== rootObjectContainer ) {
+				const curMap = fullObjectMaps.get( rootObjectContainer );
+				const ref = stringifier.getReference( this );
+				console.log( "(full map)saving internal reference:", ref, this );
+				fullObjectMaps.set( this, ref );
+			}
+		const isRoot = (rootObjectContainer === this);
+		
 		if( this instanceof Promise ) {
-
-			console.log( "This is still a pending object reference(?)", this );
+			_debug_object_convert && console.log( "This is still a pending object reference(?)", this );
 		}
 		//  see if we alread stored this... (or are currently storing this.) (back references container)
-		_debug_object_convert && console.trace( "THIS GOT CALLED?", this, Object.getPrototypeOf( this ) );
 		var exist = newStorage.stored.get( this );
+		_debug_object_convert && console.log( "THIS GOT CALLED?", this, Object.getPrototypeOf( this ), exist );
 		if( exist ) {
+			if( exist[0] == '~' ) {
+				return exist;
+			} 
 			var obj = newStorage.cachedContainer.get( exist );
-			_debug_object_convert && console.log( "Object stored independantly... RECOVERED:", exist, obj.encoding );
+			_debug_object_convert && console.log( "Object stored independantly... RECOVERED:", exist, obj&&obj.encoding );
+			_debug_object_convert && console.log( "existing reference...", exist );
 			if( obj.encoding ) 
 				return this;
 			else {
 				//console.log( "Why is this an ~or and not ~os?");
 				return '~or"'+exist+'"';
+			}
+		}
+		else {
+			exist = fullObjectMaps.get( this );
+			if( exist ) {
+				console.log( "Deep remote reference." );
+			} else {
+				 _debug_object_convert && console.log( "not a stored object, encode itself." );
 			}
 		}
 		return this;
@@ -353,7 +390,7 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
 		if( msg.op === "get" ) {
 			newStorage.readRaw( currentReadId = msg.opts.id
 				, (data)=>{
-                                    const msgout = newStorage.stringifier.stringify( { op:"GET", id:msg.id, data:data } );
+					const msgout = newStorage.stringifier.stringify( { op:"GET", id:msg.id, data:data } );
 				   //console.log( "Read ID:", msg.opts.id, typeof data, msgout );
 				   ws.send( msgout );
 			} )
@@ -370,8 +407,9 @@ objectStorageContainer.prototype.createIndex = function( storage, fieldName, opt
                 }catch(err) { console.log( "Failed?", err ) }
 		return false;
 	}
+} // closes module.exports
 
-}
+
 sack.ObjectStorage.getRemoteFragment = function() {
 	return remoteExtensions;
 }
@@ -497,7 +535,9 @@ _objectStorage.prototype.stringify = function( obj ) {
 			return storage;
 		}
 	}
-	return stringifier.stringify( container );
+	const output = stringifier.stringify( container );
+	console.log( "stringify default:", output, container ) ;
+	return output;
 	
 	
 }
@@ -527,17 +567,17 @@ _objectStorage.prototype.put = function( obj, opts ) {
 		}
 		var container = this_.stored.get( obj );
 		if( !container && opts && opts.id ) {
-                	const oldObj = this_.cached.get( opts.id );
-                        if( oldObj )
-	                        container = this_.stored.get( oldObj );
-               	}
+			const oldObj = this_.cached.get( opts.id );
+			if( oldObj )
+				container = this_.stored.get( oldObj );
+		}
 		_debug && console.log( "Put found object?", container, obj, opts );
 		if( container ) {
 			container = this_.cachedContainer.get( container );
 			if( obj !== container.data ) {
 				//console.log( "Overwrite old data with new?", container.data, obj );
-                                container.data = obj;
-                       	}
+				container.data = obj;
+			}
 			if( !container.data.nonce ) {
 				// make sure every item that is in an index
 				// has been written...
@@ -561,6 +601,8 @@ _objectStorage.prototype.put = function( obj, opts ) {
 					stringifier = this_.stringifier;
 				}
 				container.encoding = true;
+
+				rootContainer = true;
 				storage = stringifier.stringify( container );
 				container.encoding = false;
 				if( !container.id || container.id === "null" ) {
@@ -587,6 +629,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 			}
 
 			// raw object; no encoding to set.
+			rootObjectSet = true;
 			storage = stringifier.stringify( obj );
 			if( !opts.id || opts.id === "null" ) {
 				console.trace( "Container has no ID or is nUll", container );
@@ -595,6 +638,9 @@ _objectStorage.prototype.put = function( obj, opts ) {
 			this_.writeRaw( opts.id, storage );
 			res && res( opts.id );
 		} else if( !opts || !opts.id ) {
+			if( opts && opts.mapObject ) {
+				
+			}
 			_debug && console.log( "New bare object, create a container...", opts );
                         if( !opts ) opts = { id : sack.id() }
                         else opts.id = sack.id();
@@ -621,6 +667,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 				}
 			        
 				container.encoding = true;
+				rootContainer = true;
 				storage = stringifier.stringify( container );
 				container.encoding = false;
 			} else {
@@ -630,7 +677,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 			if( !container.id || container.id === "null" ) {
 				console.trace( "Container has no ID or is nUll", container );
 			}
-			_debug && console.trace( "Outut container to storage... ", container, storage );
+			_debug_output && console.trace( "Outut container to storage... ", container, storage );
 			try {
 				this_.writeRaw( container.id, storage );
 				this_.cached.set( container.id, container.data );
@@ -739,7 +786,7 @@ _objectStorage.prototype.get = function( opts ) {
 				}).catch( (err)=>{
 					console.log( "CATCH UNCAUGHT PLEASE DO", err);
 				});
-
+				os.stored.set( this.d.p, '~or"'+s+'"' );
 				requests.push( this );
 				dangling.push( this );
 				objectRefs++;
