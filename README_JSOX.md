@@ -93,6 +93,14 @@ sack.JSOX.stringifierActive = <stringifier that is currently being run>
 |defineClass | ( name, object ) | Defines a class using name 'name' and the fields in 'object'.  This allows defining for some pre-existing object; it also uses the prototype to test (if not Object), otherwise it matches based on they Object.keys() array. |
 |ignoreNonEnumerable | setter/getter | allows controlling whether to include fields that have been marked non-enumerable |
 
+|Parser Methods | parameters | Description |
+|-----|-----|-----|
+|write | (buffer) | add data to the parser stream |
+|reset| () | When an error is thrown from parsing a stream, the parser must be reset using `reset()`, otherwise it will continue throwing an error. |
+|parse | (buffer) | use a parser instance to parse a single message |
+|currentRef | () | Returns an object containing `{o:, f:}` where `o` is the object containing the field being revived, and `f` is the name of the field being revive; together this pair makes a reference to a value.  |
+|fromJSOX| (name,Function/Class,fromCb) | fromCb is called whenever the type 'name' is revived.  The type of object following the name is passd as 'this'. Will throw an exception if duplicate set happens. |
+
 
 
 ### Streaming JSON/JSOX Parsing
