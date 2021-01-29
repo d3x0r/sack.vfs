@@ -1,6 +1,7 @@
 
 const _debug_lookup = false;
 const _debug_root = false;
+const _debug_set = false;
 
 const BloomNHash_StorageTag = "?bh"
 const BloomNHash_BlockStorageTag = "?hb"
@@ -43,6 +44,9 @@ function BloomNHash( ) {
 	function hashBlock( parent ){
 		var n;
 		_debug_reload && console.log( "New Hash block - should get a ROOT ------------ " );
+		// hide these from being written.
+		Object.defineProperty(this, "timer", { enumerable: false, writable: true, configurable: true, value: null });
+		Object.defineProperty(this, "coalescedWrites", { enumerable: false, writable: true, configurable: false, value: [] });
 		this.nextBlock = [];
 		this.entries = [];
 		this.keys = [];
@@ -62,8 +66,8 @@ function BloomNHash( ) {
 		this.getStorage = function() {
 			return root.storage_;
 		}
-	        if( !root.root ) {
-                	_debug_reload && console.log( "Root root:", root, root.root, this );
+	      if( !root.root ) {
+				_debug_reload && console.log( "Root root:", root, root.root, this );
 			root.root = this;
 			root.storage_.put( root );
 		}
@@ -91,7 +95,35 @@ function BloomNHash( ) {
 		return DeleteFlowerHashEntry( this, key );
 	}
 	hashBlock.prototype.store = function() {
-		return root.storage_.put( this );
+		const wait = new Promise( (res,rej)=>{
+			this.coalescedWrites.push( {res:res,rej:rej} );
+		} )
+
+		if( !this.timer ) {
+			this.timer = setTimeout( doStore.bind(this), 10 );
+		}	else {
+			clearTimeout( this.timer );
+			this.timer = setTimeout( doStore.bind(this), 10 );
+		}
+		return wait;
+
+		function doStore() {
+			this.timer = null;
+			console.log( "do actual storage...", this);
+			return root.storage_.put( this ).then( (obj)=>{
+				for( let res of this.coalescedWrites ) {
+					res.res( obj );// probably didn't care about this result.
+				}
+				this.coalescedWrites.length = 0;
+				return obj;
+			} ).catch( (obj)=>{
+				for( let res of this.coalescedWrites ) {
+					console.log( "obj:", res );
+					res.rej( obj );// probably didn't care about this result.
+				}
+				this.coalescedWrites.length = 0;
+			} );
+		}
 	}
 
 	return;
@@ -901,7 +933,7 @@ function insertFlowerHashEntry( hash
 				next = ( hash.nextBlock[key.codePointAt(0) & HASH_MASK] = new hashBlock( hash ) );
 				_debug_set && console.log( "Update, because we added a child hash." );
 				if( root.storage_ ) {
-					root.storage_.put( hash );
+					hash.store();
 				}
 			}
 		}
@@ -1325,26 +1357,30 @@ BloomNHash.prototype.get = function( key ) {
 				_debug_lookup && console.log( "Lookup finally resulted, and set getting = false...(and do gets)", gets, obj );
 				getting = false;
 				if( gets.length ) {
-					getone( gets );
+					const g = gets;
 					gets = [];
-				}
-				function getone(gets_)
-				{
-					const g = gets_.shift();
-					_debug_lookup && console.log( "doing an existing get(1):", g );
-					return g.t.get( g.key ).then( (obj)=>{
-							console.log( "doing a get something", g, obj );
-							if( gets_.length ) getone( gets_ )
-							if( gets.length ) {
-								getone( gets );
-								gets = [];
-							}
-							return g.res( obj ) 
-						}).catch( g.rej );
+					return getone( g ).then( ()=>obj );
 				}
 				return obj;
 			} );    
 		} );
+	}
+
+	function getone(gets_)
+	{
+		const g = gets_.shift();
+		_debug_lookup && console.log( "doing an existing get(1):", g );
+		return g.t.get( g.key ).then( (obj)=>{
+				_debug_lookup && console.log( "doing a get something", g, obj );
+				if( gets_.length ) return getone( gets_ )
+				if( gets.length ) {
+					const g = gets;
+					gets = [];
+					return getone(g).then( ()=>obj);
+				}
+				g.res( obj ) 
+				return obj;
+			}).catch( g.rej );
 	}
 
 		return self.root.lookupFlowerHashEntry( key, result ).then( (obj)=>{
@@ -1354,22 +1390,6 @@ BloomNHash.prototype.get = function( key ) {
 				const g = gets;
 				gets = [];
 				return getone(g).then( ()=>obj );
-			}
-			function getone(gets_)
-			{
-				const g = gets_.shift();
-				_debug_lookup && console.log( "doing an existing get(2):", g );
-				return g.t.get( g.key ).then( (obj)=>{
-						_debug_lookup && console.log( "doing a get something 2", g, obj );
-						g.res( obj );
-						if( gets_.length ) return getone(gets_).then( ()=>obj);
-						else if( gets.length ) {
-							const g = gets;
-							gets = [];
-							return getone(g).then( ()=>obj);
-						}
-						return obj;
-					} ).catch( g.rej );
 			}
 			return obj;
 		} );
@@ -1409,7 +1429,7 @@ BloomNHash.prototype.set = function( key, val ) {
 		//console.log( "SET ENTRY:", result.entryIndex, val );
         	result.hash.entries[result.entryIndex] = val;
 		if( this.storage_ ) {
-			this.storage_.put( result.hash );
+			result.hash.store();
 		}
 		inserting = false;
 		if( inserts.length ) {
