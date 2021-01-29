@@ -85,7 +85,7 @@ void InitJSOX( Isolate *isolate, Local<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", JSOXObject::write );
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "parse", JSOXObject::parse );
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "reset", JSOXObject::reset );
-		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "getCurrentRef", JSOXObject::getCurrentRef );
+		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "currentRef", JSOXObject::getCurrentRef );
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "setFromPrototypeMap", JSOXObject::setFromPrototypeMap );
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "setPromiseFromPrototypeMap", JSOXObject::setPromiseFromPrototypeMap );
 
@@ -772,14 +772,15 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 								lprintf( "method4a?");
 #endif
 								Local<Value> args[] = { Undefined(revive->isolate), resultTmp };
-
 								MaybeLocal<Value> mv = cb->Call( revive->context, resultTmp, 0, NULL );
 								if( !mv.IsEmpty() )
 									result = mv.ToLocalChecked();
 								else
 									result = resultTmp;
-							}else
+							} else {
+								lprintf( "created container reference... resulting without reviver" );
 								result = resultTmp;
+							}
 							LogObject( result );
 
 						}
