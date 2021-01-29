@@ -179,19 +179,20 @@ import {SACK} from "sack.vfs";
 
 ## Interfaces
 
- - [Volume](README_Volume.md#volume-interface)
- - [SQLite](README_Sqlite.md#sqlite-interface)
- - [Object Storage](README_ObjectStorage.md#object-storage)
- - [JSON/JSON6/JSOX](README_JSOX.md#jsox-and-json-json6----json-and-json6-compatible-processor)
- - [Websocket Server](README_WSS.md#websocket-server-interface)
-    - [HTTP Server](README_WSS.md#http-fallback)
- - [Websocket Client](README_WSC.md#http-request-interface--httphttps-)
- - [HTTP Requests](README_HTTP.md)
- - [UDP](README_UDP.md##udp-socket-object-networkudp) - Low level system UDP sockets; TCP could be available, but HTTP and Websocket suffice.
- - [TLS](README_Misc.md)
- - [ComPort](README_Misc.md)
- - [File Changes](README_Misc.md)
- - [Misc...](README_Misc.md)
+
+ - [Volume](https://github.com/d3x0r/sack.vfs/blob/master/README_Volume.md#volume-interface)
+ - [SQLite](https://github.com/d3x0r/sack.vfs/blob/master/README_Sqlite.md#sqlite-interface)
+ - [Object Storage](https://github.com/d3x0r/sack.vfs/blob/master/README_ObjectStorage.md#object-storage)
+ - [JSON/JSON6/JSOX](https://github.com/d3x0r/sack.vfs/blob/master/README_JSOX.md#jsox-and-json-json6----json-and-json6-compatible-processor)
+ - [Websocket Server](https://github.com/d3x0r/sack.vfs/blob/master/README_WSS.md#websocket-server-interface)
+    - [HTTP Server](https://github.com/d3x0r/sack.vfs/blob/master/README_WSS.md#http-fallback)
+ - [Websocket Client](https://github.com/d3x0r/sack.vfs/blob/master/README_WSC.md#http-request-interface--httphttps-)
+ - [HTTP Requests](https://github.com/d3x0r/sack.vfs/blob/master/README_HTTP.md)
+ - [UDP](https://github.com/d3x0r/sack.vfs/blob/master/README_UDP.md##udp-socket-object-networkudp) - Low level system UDP sockets; TCP could be available, but HTTP and Websocket suffice.
+ - [TLS](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md)
+ - [ComPort](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md)
+ - [File Changes](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md)
+ - [Misc...](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md)
 
 
 
