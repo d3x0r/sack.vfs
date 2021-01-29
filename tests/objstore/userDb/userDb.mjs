@@ -124,10 +124,9 @@ class User  extends StoredObject{
 		super();
 	}
 	store() {
-		return super.store().then( (id)=>{
-			//console.log( "l.account is broken?", l.account.root );
-			l.account.set( this.account, this );
-			l.email.set( this.email, this );
+		return super.store().then( async (id)=>{
+			await l.account.set( this.account, this );
+			await l.email.set( this.email, this );
 			return this;
 		} );
 	}

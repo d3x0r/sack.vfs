@@ -12,7 +12,6 @@ const HASH_MASK = (1<<HASH_MASK_BITS)-1;
 const ROOT_ENTRY_MASK = ( 1 << (KEY_DATA_ENTRIES_BITS-1) );
 const ROOT_ENTRY_INDEX = ROOT_ENTRY_MASK-1;
 
-
 const FLOWER_HASH_DEBUG_MOVES = false;
 const FLOWER_TICK_PERF_COUNTERS = false
 const HASH_DEBUG_BLOCK_DUMP_INCLUDED = true;
@@ -114,13 +113,14 @@ function linearToTreeIndex( f_ )
 
 // returns pointr to user data value
 function lookupFlowerHashEntry( hash, key, result ) {
-
+	_debug_lookup && console.log( "Actually doing lookup; otherwise how did it resolve already?" );
+	if( "number" === typeof key ) 
+		key = '' + key;
 	if( !key ) {
+		console.log( "null key:", key );
 		result.hash = null;
 		return; // only look for things, not nothing.
 	}
-	if( "number" === typeof key ) 
-		key = '' + key;
 	// provide 'goto top' by 'continue'; otherwise returns.
 	do {
 		// look in the binary tree of keys in this block.
@@ -138,9 +138,11 @@ function lookupFlowerHashEntry( hash, key, result ) {
 				result.entryMask = curMask;
 				result.hash = hash;
 				if( hash.entries[curName] instanceof Promise ) {
-					return root.storage_.map( hash, { depth:-1, paths:[ ["entries", curName] ] } ).then( (hash)=>{
-						return lookupFlowerHashEntry( hash, key, result );
+					const result = root.storage_.map( hash, { depth:-1, paths:[ ["entries", curName] ] } ).then( (hash)=>{
+						_debug_lookup && console.log( "This should be the value in the entry...", key );
+						return hash.entries[curName];//lookupFlowerHashEntry( hash, key, result );
 					} );
+					return result;
 				}
 				return Promise.resolve( hash.entries[curName] );
 			}
@@ -148,6 +150,7 @@ function lookupFlowerHashEntry( hash, key, result ) {
 			if( d > 0 ) curName |= curMask;
 			curMask >>= 1;
 		}
+		_debug_lookup && console.log( "failed to find in hash...", key );
 		{
 			const hid = key.codePointAt(0) & HASH_MASK;
 			// follow converted hash blocks...
@@ -155,9 +158,11 @@ function lookupFlowerHashEntry( hash, key, result ) {
 			if( nextblock ) {			
 				if( hash.parent ) key = key.substr(1);
 				if( nextblock instanceof Promise ) {
-					return root.storage_.map( hash, {depth:0, paths: [["nextBlock", hid]] } ).then( (hash)=>{
+					console.log( "next block is a promise we need to load" );
+					const result = root.storage_.map( hash, {depth:0, paths: [["nextBlock", hid]] } ).then( (hash)=>{
 						return lookupFlowerHashEntry( hash.nextBlock[hid], key, result );
 					} );
+					return result;
 				} 
 				hash = nextblock;
 				continue;
@@ -388,7 +393,13 @@ function validateBlock( hash ) {
 
 function moveOneEntry( hash,  from,  to,  update ) {
 	hash.keys[to] = hash.keys[from];
-	hash.entries[to] = hash.entries[from];
+	const e = hash.entries[to] = hash.entries[from];
+	if( e instanceof Promise ) {
+		const cr = hash.getStorage().getContainerRef( e );
+		//console.log( "Care must be taken...", cr, to, from );
+		if( cr )
+			cr.d.r.f = to;
+	}
 	if( update )
 		if( to < from ) {
 			upLeftSideTree( hash, to, 1 << getLevel( to ) );
@@ -402,15 +413,39 @@ function moveTwoEntries( hash,  from,  to,  update ) {
 	const to_ = to;
 	if( from > to ) {
 		hash.keys[to] = hash.keys[from];
-		hash.entries[to++] = hash.entries[from++];
+		const e = hash.entries[to++] = hash.entries[from++];
+		if( e instanceof Promise ) {
+			const cr = hash.getStorage().getContainerRef( e );
+			//console.log( "2Care must be taken...", cr, to );
+			if( cr )
+				cr.d.r.f = to_;
+		}
 		hash.keys[to] = hash.keys[from];
 		hash.entries[to] = hash.entries[from];
+		if( e instanceof Promise ) {
+			const cr = hash.getStorage().getContainerRef( e );
+			//console.log( "3Care must be taken...", cr, to );
+			if( cr )
+				cr.d.r.f = to;
+		}
 	}
 	else {
 		hash.keys[++to] = hash.keys[++from];
 		hash.entries[to--] = hash.entries[from--];
+		if( e instanceof Promise ) {
+			const cr = hash.getStorage().getContainerRef( e );
+			//console.log( "4Care must be taken...", cr, to+1 );
+			if( cr )
+				cr.d.r.f = to_;
+		}
 		hash.keys[to] = hash.keys[from];
 		hash.entries[to] = hash.entries[from];
+		if( e instanceof Promise ) {
+			const cr = hash.getStorage().getContainerRef( e );
+			//console.log( "5Care must be taken...", cr, to );
+			if( cr )
+				cr.d.r.f = to;
+		}
 	}
 	if( update )
 		if( to < from ) {
@@ -1268,18 +1303,16 @@ function dumpBlock( hash ) {
 
 }
 
-const gets = [];
+let gets = [];
 let getting = false;
 
 BloomNHash.prototype.get = function( key ) {
-	//console.log( "... right? Get key?", key );
 	if( getting ) {
 		_debug_lookup && console.log( "Getting is still set, delay." );
 		const g = { t:this, key:key, res:null, rej:null };
 		gets.push( g );
 		return new Promise( (res,rej)=>((g.res=res),(g.rej=rej)) );
 	}
-        //console.log( "Root?", this );
 	if( !this.root ) {
 		console.log( "No objects in hash; return 'undefined'" );
 		return Promise.resolve( undefined );
@@ -1289,31 +1322,59 @@ BloomNHash.prototype.get = function( key ) {
 	//console.trace( "Get:", this, key );
 	const self = this;
 	const doit = function (thing){// thisless
-            //console.log( "Self Root:", this, thing, self, self.root );
+	//console.log( "Self Root:", this, thing, self, self.root );
 	if( self.root instanceof Promise ) {
-		console.log( "Root is still mapping?" );
+		_debug_lookup && console.log( "Root is still mapping?" );
 		return self.root.then((root)=>{
 			root.lookupFlowerHashEntry( key, result ).then( (obj)=>{
-				_debug_lookup && console.log( "Lookup finally resulted, and set getting = false..." );
+				_debug_lookup && console.log( "Lookup finally resulted, and set getting = false...(and do gets)", gets, obj );
 				getting = false;
 				if( gets.length ) {
-					const g = gets.shift();
+					getone( gets );
+					gets = [];
+				}
+				function getone(gets_)
+				{
+					const g = gets_.shift();
 					_debug_lookup && console.log( "doing an existing get(1):", g );
-					g.t.get( g.key ).then( g.res ).catch( g.rej );
+					return g.t.get( g.key ).then( (obj)=>{
+							console.log( "doing a get something", g, obj );
+							if( gets_.length ) getone( gets_ )
+							if( gets.length ) {
+								getone( gets );
+								gets = [];
+							}
+							return g.res( obj ) 
+						}).catch( g.rej );
 				}
 				return obj;
 			} );    
 		} );
-
 	}
 
 		return self.root.lookupFlowerHashEntry( key, result ).then( (obj)=>{
-			_debug_lookup && console.log( "(2)Lookup finally resulted, and set getting = false..." );
+			_debug_lookup && console.log( "(2)Lookup finally resulted, and set getting = false...", obj );
 			getting = false;
 			if( gets.length ) {
-				const g = gets.shift();
+				const g = gets;
+				gets = [];
+				return getone(g).then( ()=>obj );
+			}
+			function getone(gets_)
+			{
+				const g = gets_.shift();
 				_debug_lookup && console.log( "doing an existing get(2):", g );
-				g.t.get( g.key ).then( g.res ).catch( g.rej );
+				return g.t.get( g.key ).then( (obj)=>{
+						_debug_lookup && console.log( "doing a get something 2", g, obj );
+						g.res( obj );
+						if( gets_.length ) return getone(gets_).then( ()=>obj);
+						else if( gets.length ) {
+							const g = gets;
+							gets = [];
+							return getone(g).then( ()=>obj);
+						}
+						return obj;
+					} ).catch( g.rej );
 			}
 			return obj;
 		} );
@@ -1332,9 +1393,9 @@ const inserts = [];
 let inserting = false;
 BloomNHash.prototype.set = function( key, val ) {
 	if( this.root instanceof Promise ) {
-		return blockStorage.map( this, {depth:0,} ).then( ()=>{
+		return blockStorage.map( this, {depth:0,} ).then( (realroot)=>{
 			return this.set( key, val );
-		}  );
+		} );
 	}
 
 	if( inserting ) {
