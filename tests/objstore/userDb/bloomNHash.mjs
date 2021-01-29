@@ -34,7 +34,7 @@ let blockStorage = null;
 
 function BloomNHash( ) {
 	if( !(this instanceof BloomNHash) ) return new BloomNHash();
-        _debug_reload && console.log( "CREATE NEW BLOOM -------------------------------------------__" );
+	_debug_reload && console.log( "CREATE NEW BLOOM -------------------------------------------__" );
 	const root = this;
 	this.storage_ = null;
 	this.root = null;//new hashBlock();
@@ -42,7 +42,7 @@ function BloomNHash( ) {
 
 	function hashBlock( parent ){
 		var n;
-                _debug_reload && console.log( "New Hash block - should get a ROOT ------------ " );
+		_debug_reload && console.log( "New Hash block - should get a ROOT ------------ " );
 		this.nextBlock = [];
 		this.entries = [];
 		this.keys = [];
@@ -894,7 +894,6 @@ function insertFlowerHashEntry( hash
 				return Promise.resolve( result );
 			}
 		}
-try {
 		const hid = key.codePointAt(0) & HASH_MASK;
 		if( !( next = hash.nextBlock[hid] ) ) {
 			if( 0 ) next = convertFlowerHashBlock( hash );
@@ -914,9 +913,6 @@ try {
 		hash = next;
 		entryIndex = ROOT_ENTRY_INDEX;
 		entryMask = ROOT_ENTRY_MASK;
-}catch(err) {
-	console.log( "Err:", err, "FOR KEY:", key );
-}
 	}
 }
 
@@ -1289,12 +1285,11 @@ function dumpBlock_( hash, opt ) {
 		}
 	}
 
-
-	//for( n = 0; n < ( HASH_MASK + 1 ); n++ ) {
+//	for( n = 0; n < ( HASH_MASK + 1 ); n++ ) {
 //		if( hash.nextBlock[n] ) dumpBlock_( hash.nextBlock[n], opt+1 );
 //	}
 
-}
+} // -------------- end of BlooMNHash
 
 function dumpBlock( hash ) {
 	dumpBlock_( hash, 1 );
