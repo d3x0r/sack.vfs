@@ -188,7 +188,7 @@ function lookupFlowerHashEntry( hash, key, result ) {
 			if( nextblock ) {			
 				if( hash.parent ) key = key.substr(1);
 				if( nextblock instanceof Promise ) {
-					console.log( "next block is a promise we need to load" );
+					_debug_lookup && console.log( "next block is a promise we need to load" );
 					const result = root.storage_.map( hash, {depth:0, paths: [["nextBlock", hid]] } ).then( (hash)=>{
 						return lookupFlowerHashEntry( hash.nextBlock[hid], key, result );
 					} );
