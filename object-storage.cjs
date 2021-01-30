@@ -862,7 +862,7 @@ _objectStorage.prototype.get = function( opts ) {
 		if( !field ) {
 			const existing = os.cachedContainer.get( this.d.id );
 			if( existing ){
-				console.log( "duplicate reference... return the existing promise(but this is still used later)", existing, this.d.id);
+				//console.log( "duplicate reference... return the existing promise(but this is still used later)", existing, this.d.id);
 				// even better, don't even store the reference, return the real
 				//console.log( "So, just return with the real object to assign. (and remove fom dangling)");
 				const id = dangling.find( d=>d.d === this.d );
