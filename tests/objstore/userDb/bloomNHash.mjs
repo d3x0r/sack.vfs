@@ -109,7 +109,6 @@ function BloomNHash( ) {
 
 		function doStore() {
 			this.timer = null;
-			console.log( "do actual storage...", this);
 			return root.storage_.put( this ).then( (obj)=>{
 				for( let res of this.coalescedWrites ) {
 					res.res( obj );// probably didn't care about this result.
@@ -118,7 +117,6 @@ function BloomNHash( ) {
 				return obj;
 			} ).catch( (obj)=>{
 				for( let res of this.coalescedWrites ) {
-					console.log( "obj:", res );
 					res.rej( obj );// probably didn't care about this result.
 				}
 				this.coalescedWrites.length = 0;
