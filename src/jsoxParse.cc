@@ -2,7 +2,7 @@
 #include "global.h"
 #include <math.h>
 
-#define DEBUG_INPUT
+//#define DEBUG_INPUT
 //#define DEBUG_REVIVAL_CALLBACKS
 //#define DEBUG_REFERENCE_FOLLOW
 //#define DEBUG_SET_FIELDCB
