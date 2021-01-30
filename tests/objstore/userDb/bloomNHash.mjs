@@ -109,7 +109,6 @@ function BloomNHash( ) {
 
 		function doStore() {
 			this.timer = null;
-			console.log( "do actual storage...", this);
 			return root.storage_.put( this ).then( (obj)=>{
 				for( let res of this.coalescedWrites ) {
 					res.res( obj );// probably didn't care about this result.
@@ -118,7 +117,6 @@ function BloomNHash( ) {
 				return obj;
 			} ).catch( (obj)=>{
 				for( let res of this.coalescedWrites ) {
-					console.log( "obj:", res );
 					res.rej( obj );// probably didn't care about this result.
 				}
 				this.coalescedWrites.length = 0;
@@ -190,7 +188,7 @@ function lookupFlowerHashEntry( hash, key, result ) {
 			if( nextblock ) {			
 				if( hash.parent ) key = key.substr(1);
 				if( nextblock instanceof Promise ) {
-					console.log( "next block is a promise we need to load" );
+					_debug_lookup && console.log( "next block is a promise we need to load" );
 					const result = root.storage_.map( hash, {depth:0, paths: [["nextBlock", hid]] } ).then( (hash)=>{
 						return lookupFlowerHashEntry( hash.nextBlock[hid], key, result );
 					} );
