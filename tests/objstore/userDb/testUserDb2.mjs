@@ -7,6 +7,11 @@ function getUsers() {
 		console.log( "Got 1523:", user );
 	} );
 
+	console.log( "Try to get:", 3 );
+	User.get( 3 ).then( (user)=>{
+		console.log( "Got 3:", user );
+	} );
+
 	console.log( "Try to get:", 835 );
 	User.get( 835 ).then( (user)=>{
 		console.log( "Got 835:", user );
