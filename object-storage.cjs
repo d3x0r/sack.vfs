@@ -79,7 +79,7 @@ objectStorageContainer.prototype.map = async function( opts ) {
 		_debug_replace && console.log( "doing a map on a thing... amybe this trace?", this.id );
 		return new Promise( (res,rej)=>{
 			const waiting = [];
-			_debug_map && console.log( "Map Object called... ", dangling)
+			_debug_map && console.log( "Map Object called... dangling:", dangling.length)
 
 			if( ( "paths" in opts ) &&  opts.paths.length ){
 				let nPath = 0;
@@ -205,13 +205,14 @@ objectStorageContainer.prototype.map = async function( opts ) {
 							_debug_replace && console.log( "mapped sub-object resultinged...", objc );
 							load.d.waiting--;
 							if( !load.d.waiting ) {
-								_debug_dangling && console.log( "1map is resolving with : ", objc, rootMap.data );
+								_debug_dangling && console.log( "1map is resolving with : ", objc, load.d.rootMap.data );
 								_debug_replace && console.log( "Resolving map request...", load.d.rootMap.data );
 							}else console.log( "waiting for something..." );
 						});
 					} else {
 						_debug_replace && console.log( "waiting for something, not resolving" );
 					}
+					return obj;
 				})
 			}
 
@@ -752,7 +753,7 @@ _objectStorage.prototype.get = function( opts ) {
 	}
 
 	function objectStorageContainerRef( s ) {
-		_debug_dangling && console.trace( "Container ref:", s );
+		_debug_dangling && console.log( "Container ref:", s );
 		try {
 			const existing = os.cachedContainer.get(s);
 			const here = os.getCurrentParseRef();
@@ -769,7 +770,7 @@ _objectStorage.prototype.get = function( opts ) {
 					this.d.res = res;
 					this.d.rej = rej;
 				}).then( (obj)=>{
-					_debug_dangling && console.log( "replace value at reference with real value:", here, obj, thisDangling, s )
+					_debug_dangling && console.log( "replace value at reference with real value:", here, obj, thisDangling.length, s )
 
 					//const dr = thisDangling.findIndex( d=> d.d.id === s );
 					//if( dr >= 0 ) thisDangling.splice( dr, 1 );
@@ -806,7 +807,7 @@ _objectStorage.prototype.get = function( opts ) {
 			// finished.
 			if( objectRefs ) {
 				/* sets dangling property on container */
-				_debug_dangling && console.log( "Collapse dangling", dangling );
+				_debug_dangling && console.log( "Collapse dangling:", dangling.length );
 				if( !this.dangling )
 					Object.defineProperty( this, "dangling", { value:dangling } );
 				else{
