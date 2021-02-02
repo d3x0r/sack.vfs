@@ -28,6 +28,7 @@ const JSOX = sack.JSOX;
 console.log( "test" );
 BloomNHash.hook( storage );
 
+
 storage.getRoot().then( (root)=>{
 	root.open( "config.jsox" ).then( (file)=>{
 		return file.read().then( (obj)=>{
@@ -165,5 +166,8 @@ class Device  extends StoredObject{
 	}
 }
 
+
+storage.addEncoders( [ { tag:"~U", p:User, f: null },  { tag:"~D", p:Device, f: null },  { tag:"~I", p:UniqueIdentifier, f: null } ] );
+storage.addDecoders( [ { tag:"~U", p:User, f: null },  { tag:"~D", p:Device, f: null },  { tag:"~I", p:UniqueIdentifier, f: null } ] );
 
 export {User,Device,UniqueIdentifier,initializing as go} ;
