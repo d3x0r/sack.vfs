@@ -3,12 +3,19 @@
 import {sack} from "../../../vfs_module.mjs"
 import {BloomNHash} from "./bloomNHash.mjs"
 
-const l = {
-	ids : {
+const configObject = {
 		accountId : null,
 		emailId : null,
-		reconnectId : null
-	},
+		reconnectId : null,
+		lastUser : 0,
+		commit() {
+			if( l.configCommit ) l.configCommit();
+		},
+	}
+
+const l = {
+	configCommit : null,
+	ids : configObject,
 	account   : null,
 	email     : null,
 	reconnect : null
@@ -35,6 +42,9 @@ storage.getRoot().then( (root)=>{
 			console.log( "GOT:", obj );
 			Object.assign( l.ids, obj );
 		
+						l.configCommit = ()=>{
+							file.write( l.ids );
+						};
       return storage.get( l.ids.emailId ).then( hash=>{
 			l.email = hash;
 
@@ -43,7 +53,7 @@ storage.getRoot().then( (root)=>{
 
 		      return storage.get( l.ids.reconnectId ).then( hash=>{
 					l.reconnect = hash;
-				console.log( "GO (reload)" );
+					console.log( "GO (reload)" );
 					initResolve();
 				} );
 			} );
@@ -64,8 +74,11 @@ storage.getRoot().then( (root)=>{
 					return l.reconnect.store().then((id)=>{
 						l.ids.reconnectId = id;
 						file.write( l.ids );
+						l.configCommit = ()=>{
+							file.write( l.ids );
+						};
 						initResolve();
-				console.log( "GO (init)" );
+						console.log( "GO (init)" );
 					} );
 				} );
 			} );
@@ -170,4 +183,5 @@ class Device  extends StoredObject{
 storage.addEncoders( [ { tag:"~U", p:User, f: null },  { tag:"~D", p:Device, f: null },  { tag:"~I", p:UniqueIdentifier, f: null } ] );
 storage.addDecoders( [ { tag:"~U", p:User, f: null },  { tag:"~D", p:Device, f: null },  { tag:"~I", p:UniqueIdentifier, f: null } ] );
 
+export {configObject as config};
 export {User,Device,UniqueIdentifier,initializing as go} ;
