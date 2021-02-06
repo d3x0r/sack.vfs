@@ -11,7 +11,8 @@ async function makeUsers() {
 	for( let i = config.lastUser+1; i < config.lastUser+count; i++ ) {
 		const unique = new UniqueIdentifier();
 		unique.key = sack.Id();
-		console.log( "user:", i );
+		if( i && i % ( count / 10 ) === 0 )
+			console.log( "user:", i );
 		await unique.store().then( ((i)=> ()=>{
 	 			const user = unique.create( i, "User "+i, '' + i + "@email.com", Math.random()*(1<<54) );
 				return user.addDevice( sack.Id(), true ).then( ()=>{
@@ -26,7 +27,6 @@ async function makeUsers() {
 
 
 function getUsers() {
-	console.log( "Getting..." );
 	User.get( 3 ).then( (user)=>{
 		console.log( "Got 3 :", user );
 	} );

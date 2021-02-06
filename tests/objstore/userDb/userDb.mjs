@@ -29,7 +29,8 @@ let initializing = new Promise( (res,rej)=>{
 	inited = true;
 } );
 
-
+//const volume = sack.Volume( "storage", "data.vol" );
+//const storage = sack.ObjectStorage( "storage@data.os" );
 const storage = sack.ObjectStorage( "data.os" );
 const JSOX = sack.JSOX;
 console.log( "test" );
