@@ -32,57 +32,40 @@ let initializing = new Promise( (res,rej)=>{
 //const volume = sack.Volume( "storage", "data.vol" );
 //const storage = sack.ObjectStorage( "storage@data.os" );
 const storage = sack.ObjectStorage( "data.os" );
-const JSOX = sack.JSOX;
-console.log( "test" );
+
 BloomNHash.hook( storage );
 
 
 storage.getRoot().then( (root)=>{
 	root.open( "config.jsox" ).then( (file)=>{
-		return file.read().then( (obj)=>{
-			console.log( "GOT:", obj );
+		return file.read().then( async (obj)=>{
 			Object.assign( l.ids, obj );
-		
-						l.configCommit = ()=>{
-							file.write( l.ids );
-						};
-      return storage.get( l.ids.emailId ).then( hash=>{
-			l.email = hash;
 
-	      return storage.get( l.ids.accountId ).then( hash=>{
-				l.account = hash;
+			l.email     = await storage.get( l.ids.emailId );
+			l.account   = await storage.get( l.ids.accountId );
+			l.reconnect = await storage.get( l.ids.reconnectId );
 
-		      return storage.get( l.ids.reconnectId ).then( hash=>{
-					l.reconnect = hash;
-					console.log( "GO (reload)" );
-					initResolve();
-				} );
-			} );
-		} );
+			l.configCommit = ()=>{
+				file.write( l.ids );
+			};
+			initResolve();
 		} );
 	} ).catch( (err)=>{
-		console.log( "Err:", err );
-		root.create( "config.jsox" ).then( (file)=>{
-			console.log("create file:", file );
-			l.account = new BloomNHash();
-			l.email = new BloomNHash();
+		root.create( "config.jsox" ).then( async (file)=>{
+			l.account   = new BloomNHash();
+			l.email     = new BloomNHash();
 			l.reconnect = new BloomNHash();
 
-			l.account.store().then((id)=>{
-				l.ids.accountId = id;
-				return l.email.store().then((id)=>{
-					l.ids.emailId = id;
-					return l.reconnect.store().then((id)=>{
-						l.ids.reconnectId = id;
-						file.write( l.ids );
-						l.configCommit = ()=>{
-							file.write( l.ids );
-						};
-						initResolve();
-						console.log( "GO (init)" );
-					} );
-				} );
-			} );
+			l.ids.accountId   = await l.account.store();
+			l.ids.emailId     = await l.email.store();
+			l.ids.reconnectId = await l.reconnect.store();
+
+			file.write( l.ids );
+
+			l.configCommit = ()=>{
+				file.write( l.ids );
+			};
+			initResolve();
 		} );
 	} );
 } );
