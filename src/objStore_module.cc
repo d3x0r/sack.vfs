@@ -710,15 +710,17 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 					filename = NULL;
 			}
 			else {
-				defaultFilename = FALSE;
-				{
-					char* sep;
-					if( sep = strchr( mount_name, '@' ) ) {
-						lprintf( "find mount name to get volume..." );
-					}
+				char* sep;
+				if( sep = strchr( mount_name, '@' ) ) {
+					lprintf( "find mount name to get volume..." );
+					sep[0] = 0;
+					filename = sep + 1;
 				}
-				filename = mount_name;
-				mount_name = SRG_ID_Generator();
+				else {
+					defaultFilename = FALSE;
+					filename = mount_name;
+					mount_name = SRG_ID_Generator();
+				}
 			}
 			//if( args[argc
 			if( args[arg]->IsNumber() ) {
@@ -739,7 +741,12 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				arg++;
 			}
 			// Invoked as constructor: `new MyObject(...)`
-			ObjectStorageObject* obj = new ObjectStorageObject( mount_name, filename, version, key, key2, vol?vol->fsMount:NULL );
+			ObjectStorageObject* obj = new ObjectStorageObject( mount_name, filename, version, key, key2
+					, vol
+							?vol->fsMount
+							:mount_name
+								? sack_get_mounted_filesystem(mount_name)
+								:NULL );
 			if( !obj->vol ) {
 				isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText( "ObjectStorage failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -751,6 +758,7 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			//Deallocate( char*, mount_name );
 			if( !defaultFilename )
 				Deallocate( char*, filename );
+			else if( mount_name ) Deallocate( char*, mount_name );
 			Deallocate( char*, key );
 			Deallocate( char*, key2 );
 		}
