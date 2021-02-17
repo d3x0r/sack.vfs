@@ -516,7 +516,7 @@ sack.JSOX.stringifier = function() {
 		}else{
 			//console.log( "Stringifier is still in a stack?", path);
 		}
-		DEBUG_STRINGIFY_OUTPUT && console.trace( "Stringify Result:", r );
+		DEBUG_STRINGIFY_OUTPUT && console.log( "Stringify Result:", r );
       if(_DEBUG_STRINGIFY_TIMING) {
 			let now = Date.now();
 			timeIn += now - lastTick;
