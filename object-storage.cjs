@@ -1,3 +1,4 @@
+
 module.exports = function(sack) {
 const _debug = false;
 const _debug_dangling = false;
@@ -80,7 +81,7 @@ objectStorageContainer.prototype.map = async function( opts ) {
 		return new Promise( (res,rej)=>{
 			const waiting = [];
 			_debug_map && console.log( "Map Object called... dangling:", dangling.length)
-
+			
 			if( ( "paths" in opts ) &&  opts.paths.length ){
 				let nPath = 0;
 				const handled = [];
@@ -182,6 +183,7 @@ objectStorageContainer.prototype.map = async function( opts ) {
 
 
 			function loadPending(load, opts) {
+				//console.log( "doing real get, which results with ANOTHER promise", load );
 				return newStorage.get( {id:load.d.id}).then( (obj)=>{
 					//console.log( "Storage requested:", load.d.id );
 					if( load.d.res ) {
@@ -212,7 +214,10 @@ objectStorageContainer.prototype.map = async function( opts ) {
 					} else {
 						_debug_replace && console.log( "waiting for something, not resolving" );
 					}
+					//console.log( "This is just an object - from a then callback" );
 					return obj;
+				}).catch( (err)=>{
+					console.log( "Error:", err );
 				})
 			}
 
@@ -357,10 +362,11 @@ objectStorageContainer.prototype.map = async function( opts ) {
 		//if( opts && opts.depth === 0 ) return;
 		//console.log( "External API invoked map...");
 		const rootId = newStorage.stored.get( o );
-		if( !rootId ) { console.log( "Object was not stored, cannot map" ); return Promise.resolve( o ); }
+		if( !rootId ) { console.trace( "Object was not stored, cannot map", o ); return Promise.resolve( o ); }
 		if( rootId[0] === '~' ) {
-			//console.log( "this is mapping a directly referenced field; which means we have to resolve this at least." );
+			//console.log( "this is mapping a directly referenced field; which means we have to resolve this at least.", rootId );
 			const loading = newStorage.storedIn.get( o );
+			//console.log( "Get result:", loading );
 			return loadPending( loading );
 		}
 		//console.trace( "cached container on root ID check", rootId );
@@ -368,8 +374,9 @@ objectStorageContainer.prototype.map = async function( opts ) {
 		return newStorage.cachedContainer.get( rootId ).map( opts );
 	}
 
-	newStorage.handleMessage = handleMessage
-
+	newStorage.handleMessage = handleMessage;
+	newStorage.StoredObject = StoredObject;
+	
 	return newStorage;
 
 
@@ -402,6 +409,8 @@ objectStorageContainer.prototype.map = async function( opts ) {
 	}
 } // closes module.exports
 
+
+sack.ObjectStorage.StoredObject = StoredObject
 
 sack.ObjectStorage.getRemoteFragment = function() {
 	return remoteExtensions;
@@ -447,6 +456,7 @@ _objectStorage.prototype.getContainer = function( obj, options ) {
 	}
 	//console.log( "Getting a new container...", container.id );
 	container = new this.objectStorageContainer(obj,options);
+	//console.log( " *** SETTING ID HERE", container.id);
 	this.stored.set( obj, container.id );
 	this.cached.set( container.id, container.data );
 	this.cachedContainer.set( container.id, container );
@@ -478,6 +488,7 @@ _objectStorage.prototype.index = function( obj, fieldName, opts ) {
 				//console.log( "saving stored container.id", obj, container.id );
 
 				//this.stored.delete( obj );
+				//console.log( " *** SETTING ID HERE", container.id);
 				this_.stored.set( obj, container.id );
 				this_.cached.set( container.id, container.data );
 				this_.cachedContainer.set( container.id, container );
@@ -504,7 +515,8 @@ _objectStorage.prototype.remove = function( opts ) {
 _objectStorage.prototype.addEncoders = function(encoderList) {
 	const this_ = this;
 	encoderList.forEach( f=>{
-		this_.encoders.push(f);
+		this_.encoders.push( f );
+		//console.log( "encoders:", encoderList );
 		this_.stringifier.registerToJSOX( f.tag, f.p, f.f ) ;
 	});
 
@@ -512,7 +524,24 @@ _objectStorage.prototype.addEncoders = function(encoderList) {
 _objectStorage.prototype.addDecoders = function(encoderList) {
 	const this_ = this;
 	encoderList.forEach( f=>{
-		this_.decoders.push(f);
+		function redirect(f) {
+			return function redirect(field,val) {
+				if(f ) {
+					if( !field ) { 
+						return f.call( this, field, this_ ); 
+					} else return f.call(this,field,val ) 
+				}else {
+					if( !field ) {
+						if( this instanceof StoredObject ){
+							this.loaded( this_, currentReadId );
+						}
+						return this;
+					} else return val;
+				}
+			}
+		}
+		f.f = redirect(f.f);
+		this_.decoders.push( f );
 		if( this.parser )
 			this.parser.fromJSOX( f.tag, f.p, f.f );
 	});
@@ -654,6 +683,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 				//console.log( "saving stored container.id", typeof obj, obj, container.id );
 			        
 				//this.stored.delete( obj );
+				//console.log( " *** SETTING ID HERE", container.id);
 				this_.stored.set( obj, container.id );
 				this_.cached.set( container.id, container.data );
 				this_.cachedContainer.set( container.id, container );
@@ -723,24 +753,14 @@ _objectStorage.prototype.get = function( opts ) {
 	}
 	{
 		const priorLoad = os.cachedContainer.get( opts.id );
+		//console.log( "already found?", priorLoad );
 		if( priorLoad ) return Promise.resolve( priorLoad.data );
 	}
-
-	const priorDecode = this.decoding.find( d=>d.id === opts.id );
+	//console.trace( "TEST going to get:", opts )
+	const priorDecode = this.decoding.find( d=>d.opts.id === opts.id );
 	if( priorDecode ){
-		return new Promise( (res,rej)=>{
-			priorDecode.res = res;
-			priorDecode.rej = rej;
-		}).then( (obj)=>{
-			let deleteId = -1;
-			for( let n = 0; n < this.decoding.length; n++ ) {
-				if( decode === opts ){
-					deleteId = n;
-					break;
-				}
-			}
-			if( deleteId >= 0 )  this.decoding.splice( deleteId, 1 );
-		})
+		//console.trace( "already decoding...(use same promised result) things?", priorDecode );
+		return priorDecode.p;
 	}
 
 	if( !this.parser ){
@@ -790,6 +810,7 @@ _objectStorage.prototype.get = function( opts ) {
 					console.log( "CATCH UNCAUGHT PLEASE DO", err);
 				});
 				os.storedIn.set( this.d.p, this );
+				//console.log( " *** SETTING ID HERE", s);
 				os.stored.set( this.d.p, '~or"'+s+'"' );
 				requests.push( this );
 				dangling.push( this );
@@ -872,6 +893,7 @@ _objectStorage.prototype.get = function( opts ) {
 				//console.log( "this is the real value anyway1...", existing.data );
 				return existing.data;
 			} 
+			os.stored.set( this.d.p, '~or"'+this.d.id+'"' );
 			//console.log( "this is the real value anyway2...", this.d.p );
 			return this.d.p;
 		}
@@ -897,32 +919,33 @@ _objectStorage.prototype.get = function( opts ) {
 		}
 		//console.log( "Created a parser for revival..." );
 	}
-
-	this.decoding.push( opts );
 	this.currentParser = parser;
-	//console.log( "(get)Read Key:", os );
+	//console.log( "(get)Read Key:", opts.id );
 	const p = new Promise( function(res,rej) {
 		resolve = res;  reject = rej;
-		//console.log( "doing read? (decodes json using a parser...", opts, parser, os );
 
 		const priorReadId = currentReadId;
 		try {
-			//console.log( "LOADING : ", opts.id, parser.localFromProtoTypes );
 			os.read( currentReadId = opts.id
 				, parser, (obj,times)=>{
 					// with a new parser, only a partial decode before revive again...
-					_debug && console.log( "Read resulted with an object:", obj, times );
+						_debug && console.log( "Read resulted with an object:", obj, times );
 					let deleteId = -1;
 					const extraResolutions = [];
 					for( let n = 0; n < os.decoding.length; n++ ) {
 						const decode = os.decoding[n];
-						if( decode === opts )
+						//console.log( "pending decode?", decode )
+						if( decode.opts === opts )
 							deleteId = n;
 						else if( decode.id === opts.id ) {
+							console.log( "pending decode?");
 							decode.res( obj );
 						}
 					}
-					if( deleteId >= 0 )  os.decoding.splice( deleteId, 1 );
+					if( deleteId >= 0 )  {
+						console.log( "Something else is alwso waiting for this result...", os.decoding, deleteId);
+						os.decoding.splice( deleteId, 1 );
+					}
 
 					var found;
 					do {
@@ -937,6 +960,8 @@ _objectStorage.prototype.get = function( opts ) {
 					//console.log( "GOTzz:", obj, obj.id, obj.data );
 					if( !("id" in obj ))
 						Object.defineProperty( obj, "id", { value:currentReadId } );
+					
+					//console.log( " *** SETTING ID HERE");
 					os.stored.set( obj.data, obj.id );
 					os.cachedContainer.set( obj.id, obj );
 					currentReadId = priorReadId;
@@ -945,7 +970,7 @@ _objectStorage.prototype.get = function( opts ) {
 				} else {
 					currentReadId = priorReadId;
 					for( let res in extraResolutions ) res.res(obj);
-					//console.log( "RESOLVE WITH OBJECT NEED DATA?", ( obj instanceof os.objectStorageContainer ) );
+					console.log( "RESOLVE WITH OBJECT NEED DATA?", ( obj instanceof os.objectStorageContainer ) );
 					resolve(obj)
 				}
 			} );
@@ -954,6 +979,9 @@ _objectStorage.prototype.get = function( opts ) {
 			rej(err);
 		}
 	} );
+	//console.log( "PUSHING THING TO LOAD LATER (decoding)?", opts );
+	// p should be already resolved?
+	this.decoding.push( { p:p, opts:opts } );
 	return p;
 }
 
@@ -1309,4 +1337,56 @@ _objectStorage.prototype.getRoot = async function() {
 
 
 }
+
+
+
+//import {sack} from "../../../vfs_module.mjs"
+//import {BloomNHash} from "./bloomNHash.mjs"
+
+
+class StoredObject {
+	#id = null;
+	#storage = null;
+	get id() { 
+		return this.#id;
+	} 
+	async store(opts) {
+		if( !this.#id ) {
+			// might have been reloaded...
+			const container = this.#storage.getContainer( this );
+			if( container ) this.#id = container.id;
+						opts = opts || {id:this.#id};
+						//console.trace( "Store is not a object??", opts );
+                        opts.id = opts.id || this.#id;
+			const id = await this.#storage.put( this, opts );
+			if( !this.#id ) this.#id = id;
+			else if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
+			return id;
+		} else {
+            opts = opts || {id:this.#id};
+            opts.id = opts.id || this.#id;
+			const id = await this.#storage.put( this, opts );
+			if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
+			return id;
+		}
+	}
+	hook( storage ) {
+		if( storage instanceof StoredObject ) {
+			this.#storage = storage.#storage;
+		}else
+			this.#storage = storage;
+	}
+
+	loaded( storage,id ) {
+		this.#storage = storage;
+		this.#id = id;
+	}
+    constructor( storage ) {
+		if( storage ) this.#storage = storage;
+	}
+	get storage() {
+		return this.#storage;
+	}
+}
+
 
