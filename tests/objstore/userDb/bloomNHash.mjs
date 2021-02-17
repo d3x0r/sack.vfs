@@ -29,7 +29,6 @@ const pft = (!FLOWER_TICK_PERF_COUNTERS)?{
 
 import util from "util";
 import {bitReader} from "./bits.mjs";
-//import {bitReader} from "./bits.mjs";
 //export {BloomNHash}
 let nextStorage = null;
 let blockStorage = null;
@@ -48,6 +47,7 @@ function BloomNHash( ) {
 		// hide these from being written.
 		Object.defineProperty(this, "timer", { enumerable: false, writable: true, configurable: true, value: null });
 		Object.defineProperty(this, "coalescedWrites", { enumerable: false, writable: true, configurable: false, value: [] });
+		Object.defineProperty(this, "pendingWrite", { enumerable: false, writable: true, configurable: false, value:null });
 		this.nextBlock = [];
 		this.entries = [];
 		this.keys = [];
@@ -62,18 +62,22 @@ function BloomNHash( ) {
 			this.keys.push(null);
 		}
 		this.used = bitReader( KEY_DATA_ENTRIES>>1 );
+		//console.log( "ROOT:", root.storage_ );
+		this.used.hook( root.storage_ );
 		this.getStorage = function() { return root.storage_ }
-		if( "undefined" != typeof parent && root.storage_ ) {
+		if( "undefined" !== typeof parent && root.storage_ ) {
 			// only if created with a 'parent' - not when revived...
 			root.storage_.put( this );  // establish as a stored object.
 		}
 
+		/*
 		if( !root.root ) {
 			//_debug_reload && console.log( "Root root:", root, root.root, this );
 			//console.log( "--------- SETTING ROOT AND STORING" );
 			root.root = this;
 			root.storage_.put( root );
 		}
+		*/
 	}
 	if( blockStorage || nextStorage ) {
 		if( !this.storage_ ) {
@@ -98,31 +102,37 @@ function BloomNHash( ) {
 		return DeleteFlowerHashEntry( this, key );
 	}
 	hashBlock.prototype.store = function() {
-		const wait = new Promise( (res,rej)=>{
+		const this_ = this;
+		let wait = null;
+		if( this.pendingWrite ) 
+			wait = this.pendingWrite;
+		else this.pendingWrite = wait = new Promise( (res,rej)=>{			
 			this.coalescedWrites.push( {res:res,rej:rej} );
 		} )
 
 		if( !this.timer ) {
-			this.timer = setTimeout( doStore.bind(this), 10 );
+			this.timer = setTimeout( doStore, 10 );
 		}	else {
 			clearTimeout( this.timer );
-			this.timer = setTimeout( doStore.bind(this), 10 );
+			this.timer = setTimeout( doStore, 10 );
 		}
 		return wait;
 
 		function doStore() {
-			this.timer = null;
-			return root.storage_.put( this ).then( (obj)=>{
-				for( let res of this.coalescedWrites ) {
+			this_.timer = null;
+			return root.storage_.put( this_ ).then( (obj)=>{
+				this_.pendingWrite = null;
+				for( let res of this_.coalescedWrites ) {
 					res.res( obj );// probably didn't care about this result.
 				}
-				this.coalescedWrites.length = 0;
+				this_.coalescedWrites.length = 0;
 				return obj;
 			} ).catch( (obj)=>{
-				for( let res of this.coalescedWrites ) {
+				for( let res of this_.coalescedWrites ) {
 					res.rej( obj );// probably didn't care about this result.
 				}
-				this.coalescedWrites.length = 0;
+				this_.coalescedWrites.length = 0;
+				return obj;
 			} );
 		}
 	}
@@ -542,7 +552,7 @@ function insertFlowerHashEntry( hash
 		//		dump = 1;
 		}
 	}
-
+try {
 	while( 1 ) {
 		let d_ = 1;
 		let d = 1;
@@ -917,7 +927,7 @@ function insertFlowerHashEntry( hash
 				//console.log( "B Store at %d  %s", entryIndex, toBinary( entryIndex ) );
 				if( !( entryIndex & 1 ) ) { // filled a leaf.... 
 					if( ( entryMask == 1 && ( entryIndex ^ 2 ) >= KEY_DATA_ENTRIES ) || hash.keys[entryIndex ^ ( entryMask << 1 )] ) { // if other leaf is also used
-						console.log( "Filled a leaf, update fullnesss ( but this is the other side of the tree, and, should already be full" );
+						_debug_set && console.log( "Filled a leaf, update fullnesss ( but this is the other side of the tree, and, should already be full" );
 						updateFullness( hash, entryIndex, entryMask );
 					}
 				}
@@ -948,12 +958,21 @@ function insertFlowerHashEntry( hash
 		if( hash.parent )
 			key = key.substr(1);
 		if( next instanceof Promise ) {
-			return root.storage_.map( hash, {depth:0, paths:[["nextBlock",hid]] } ).then( ()=>insertFlowerHashEntry( hash.nextBlock[hid], key, result ) );
+			return root.storage_.map( next, {depth:0 } ).then( (obj)=>{
+				//console.log( "got back object:", obj === hash.nextBlock[hid] );
+				const reslt = insertFlowerHashEntry( hash.nextBlock[hid], key, result ) ;
+				//console.log( "so much ugly", reslt );
+				return insertFlowerHashEntry( hash.nextBlock[hid], key, result ) 
+			} );
 		}
 		hash = next;
 		entryIndex = ROOT_ENTRY_INDEX;
 		entryMask = ROOT_ENTRY_MASK;
 	}
+}catch(err) {
+	console.log( "Fault in adding hash entry:", err );
+}
+	console.log( "Fall off end without a promised result?")
 }
 
 // pull one of the nodes below me into this spot.
@@ -1421,39 +1440,43 @@ BloomNHash.prototype.get = function( key ) {
 
 const inserts = [];
 let inserting = false;
-BloomNHash.prototype.set = function( key, val ) {
+BloomNHash.prototype.set = async function( key, val ) {
 	if( this.root instanceof Promise ) {
-		return blockStorage.map( this, {depth:0,} ).then( (realroot)=>{
-			return this.set( key, val );
-		} );
+		//console.log( "This root has to load still..." );
+		await blockStorage.map( this.root, {depth:0} )
 	}
-
+	//console.log( "inserting is global?", inserting, this.root );
 	if( inserting ) {
 		let i;
 		inserts.push( i = {t:this, key:key,val:val,res:null,rej:null } );
-		return new Promise( (res,rej)=>((i.res=res),(i.rej=rej)));
+		await new Promise( (res,rej)=>((i.res=res),(i.rej=rej)));
 	}
 	inserting = true;
 	if( "number" === typeof key ) key = '' + key;
 	const result = {};
 
-	if( !this.root ) new this.hashBlock(null);
+	if( !this.root ) {
+		this.root = new this.hashBlock(null);
+		this.store();
+		//this.storage_.put( this.root );
+	}
 
 	_debug_root && console.log( "This.root SHOULD be set...", this.root );
-	return this.root.insertFlowerHashEntry( key, result ).then( (res)=>{
-		//console.log( "SET ENTRY:", result.entryIndex, val );
-        	result.hash.entries[result.entryIndex] = val;
-		if( this.storage_ ) {
-			result.hash.store();
-		}
-		inserting = false;
-		if( inserts.length ) {
-			// begin a new insert.
-			const i = inserts.shift();				
-			i.t.set( i.key, i.val ).then( i.res ).catch( i.rej );
-		}
-		return val;
-	} );
+	await this.root.insertFlowerHashEntry( key, result )
+
+	//console.log( "SET ENTRY:", result.entryIndex, val );
+	result.hash.entries[result.entryIndex] = val;
+	if( this.storage_ ) {
+		result.hash.store();
+	}
+	inserting = false;
+	if( inserts.length ) {
+		// begin a new insert.
+		const i = inserts.shift();
+		i.res(); // let another insert go...
+		//i.t.set( i.key, i.val ).then( i.res ).catch( i.rej );
+	}
+	return val;
 }
 
 BloomNHash.prototype.delete = function( key ) {
@@ -1461,24 +1484,46 @@ BloomNHash.prototype.delete = function( key ) {
 	return this.root.DeleteFlowerHashEntry( this.root, key, val );
 }
 
+BloomNHash.prototype.fromString = function(field,val){
+	if( !field ) {
+		this.storage_ = val;
+		return this;
+	}else return val;
+}
 
 function encodeHash( stringifier ){
 	return `{root:${stringifier.stringify(this.root)}}`;
 }
 
-BloomNHash.hook = function(storage ) {
-	nextStorage = storage;
-	storage.addEncoders( [ { tag:BloomNHash_StorageTag, p:BloomNHash, f:encodeHash } ] );
-	storage.addDecoders( [ { tag:BloomNHash_StorageTag, p:BloomNHash, f:null } ] );
-	bitReader.hook( storage );
+function decodeHash( field, val ) {
+	return this.fromString(field,val);
 }
 
+const storages = [];
+
+BloomNHash.hook = async function(storage ) {
+	nextStorage = storage;
+	if( !storages.find( s=>s===storage ) ) {
+		storage.addEncoders( [ { tag:BloomNHash_StorageTag, p:BloomNHash, f:encodeHash } ] );
+		storage.addDecoders( [ { tag:BloomNHash_StorageTag, p:BloomNHash, f:decodeHash } ] );
+		storages.push( storage );
+	}
+}
+
+
+BloomNHash.prototype.hook = function( storage ) {
+	this.storage_ = storage;
+	if( !storages.find( s=>s===storage ) ) {
+		storage.addEncoders( [ { tag:BloomNHash_StorageTag, p:BloomNHash, f:encodeHash } ] );
+		storage.addDecoders( [ { tag:BloomNHash_StorageTag, p:BloomNHash, f:decodeHash } ] );
+		storages.push( storage );
+	}
+}
 
 BloomNHash.prototype.store = function( ) {
 	//storage.addEncoders( [ { tag:".hb", p:this.hashBlock, f:null } ] );
 	//storage.addDecoders( [ { tag:".hb", p:this.hashBlock, f:null } ] );
 	//this.storage_ = storage;
-	//bitReader.hook( storage );
 	//console.log( "Putting the hash..." );
 	if( this.storage_ )
 		return this.storage_.put( this ); // establish this as an object

@@ -1,97 +1,21 @@
 
 
-import {sack} from "../../../vfs_module.mjs"
 import {BloomNHash} from "./bloomNHash.mjs"
+import {StoredObject} from "./commonDb.mjs"
 
 const configObject = {
 		accountId : null,
 		emailId : null,
 		reconnectId : null,
-		lastUser : 0,
-		commit() {
-			if( l.configCommit ) l.configCommit();
-		},
 	}
 
 const l = {
-	configCommit : null,
 	ids : configObject,
 	account   : null,
 	email     : null,
 	reconnect : null
 };
 
-let inited = false;
-let initResolve = null;
-let initializing = new Promise( (res,rej)=>{
-	initResolve = res;
-} ).then( ()=>{
-	inited = true;
-} );
-
-//const volume = sack.Volume( "storage", "data.vol" );
-//const storage = sack.ObjectStorage( "storage@data.os" );
-const storage = sack.ObjectStorage( "data.os" );
-
-BloomNHash.hook( storage );
-
-
-storage.getRoot().then( (root)=>{
-	root.open( "config.jsox" ).then( (file)=>{
-		return file.read().then( async (obj)=>{
-			Object.assign( l.ids, obj );
-
-			l.email     = await storage.get( l.ids.emailId );
-			l.account   = await storage.get( l.ids.accountId );
-			l.reconnect = await storage.get( l.ids.reconnectId );
-
-			l.configCommit = ()=>{
-				file.write( l.ids );
-			};
-			initResolve();
-		} );
-	} ).catch( (err)=>{
-		root.create( "config.jsox" ).then( async (file)=>{
-			l.account   = new BloomNHash();
-			l.email     = new BloomNHash();
-			l.reconnect = new BloomNHash();
-
-			l.ids.accountId   = await l.account.store();
-			l.ids.emailId     = await l.email.store();
-			l.ids.reconnectId = await l.reconnect.store();
-
-			file.write( l.ids );
-
-			l.configCommit = ()=>{
-				file.write( l.ids );
-			};
-			initResolve();
-		} );
-	} );
-} );
-
-class StoredObject {
-	#id = null;
-	get id() { return this.#id } ;
-	store() {
-		if( !this.#id ) {
-			// might have been reloaded...
-			const container = storage.getContainer( this );
-			if( container ) this.#id = container.id;
-			return storage.put( this, {id:this.#id} ).then( (id)=>{
-				if( !this.#id ) this.#id = id;
-				else if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
-				return this;
-			} );
-		} else {
-			return storage.put( this, {id:this.#id} ).then( (id)=>{
-				if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
-				return this;
-			} );
-		}
-	}		
-
-}
 
 
 class UniqueIdentifier extends StoredObject {
@@ -101,8 +25,9 @@ class UniqueIdentifier extends StoredObject {
 	}
 	create( account,user,email,pass ){
 		const newUser = new User();
+		newUser.hook( this );
 		newUser.account = account;
-		newUser.user = user;
+		newUser.name = user;
 		newUser.email = email;
 		newUser.pass = pass;
 		newUser.unique = this;
@@ -115,21 +40,25 @@ class User  extends StoredObject{
 	account = null;
 	name = null;
 	email = null;
-	password = null;
+	pass = null;
 	devices = [];
 	
 	constructor() {
 		super();
 	}
 	store() {
-		return super.store().then( async (id)=>{
+		return super.store().then( async (id)=>{	
+			//console.log( "what about?", id, l );
 			await l.account.set( this.account, this );
+			//console.log( "Account was set" );
 			await l.email.set( this.email, this );
+			//console.log( "email was indexed" );
 			return this;
 		} );
 	}
 	addDevice( id, active ) {
 		const device = new Device();
+		device.hook( this )
 		device.key = id;
 		device.active = active;
 		return device.store().then( ()=>
@@ -138,11 +67,7 @@ class User  extends StoredObject{
 }
 
 User.get = function( account ) {
-	if( !inited ) {
-		return initializing.then( ()=>{
-			return l.account.get( account );
-		} );
-	}
+	//console.log( "l?", l );
 	return l.account.get( account );
 }
 
@@ -163,9 +88,61 @@ class Device  extends StoredObject{
 	}
 }
 
+let getUser = null;
+let getIdentifier = null;
 
-storage.addEncoders( [ { tag:"~U", p:User, f: null },  { tag:"~D", p:Device, f: null },  { tag:"~I", p:UniqueIdentifier, f: null } ] );
-storage.addDecoders( [ { tag:"~U", p:User, f: null },  { tag:"~D", p:Device, f: null },  { tag:"~I", p:UniqueIdentifier, f: null } ] );
+const UserDb = {
+	async hook( storage ) {
+		BloomNHash.hook( storage );
+		storage.addEncoders( [ { tag:"~U", p:User, f: null },  { tag:"~D", p:Device, f: null },  { tag:"~I", p:UniqueIdentifier, f: null } ] );
+		storage.addDecoders( [ { tag:"~U", p:User, f: null },  { tag:"~D", p:Device, f: null },  { tag:"~I", p:UniqueIdentifier, f: null } ] );
 
+		getUser = (id)=>{
+			return User.get( id );
+		};
+		getIdentifier = ()=>{
+			const unique = new UniqueIdentifier();
+			unique.hook( storage );
+			return unique;
+		}
+		const root = await storage.getRoot();
+		try {
+			const file = await root.open( "userdb.config.jsox" )
+		
+				const obj = await file.read()
+				Object.assign( l.ids, obj );
+				l.email     = await storage.get( l.ids.emailId );
+				l.account   = await storage.get( l.ids.accountId );
+				l.reconnect = await storage.get( l.ids.reconnectId );
+			} catch( err){
+				console.log( "User Db Config ERR:", err );
+				const file = await root.create( "userdb.config.jsox" );
+				
+					l.account   = new BloomNHash();
+					l.account.hook( storage );
+					l.email     = new BloomNHash();
+					l.email.hook( storage );
+					l.reconnect = new BloomNHash();
+					l.reconnect.hook( storage );
+
+					l.ids.accountId   = await l.account.store();
+					l.ids.emailId     = await l.email.store();
+					l.ids.reconnectId = await l.reconnect.store();
+
+					file.write( l.ids );
+			} 
+	},
+	getUser(args){
+		return getUser(args);
+	},
+	User:User,
+	getIdentifier() {
+		return getIdentifier();
+	},
+	Device:Device,
+	UniqueIdentifier:UniqueIdentifier,
+}
+
+Object.freeze( UserDb );
 export {configObject as config};
-export {User,Device,UniqueIdentifier,initializing as go} ;
+export { UserDb } ;

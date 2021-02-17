@@ -1,4 +1,5 @@
 
+const storages = [];
 
 function bitReader( bits ) {
 	if( !(this instanceof bitReader) ) return new bitReader( bits );
@@ -17,37 +18,42 @@ function bitReader( bits ) {
 	function MY_GET_MASK(v, n, mask_size) {
 		return (v[(n) >> 3] & MY_MASK_MASK(n, mask_size)) >>> (((n)) & 0x7)
 	}
-
 	var bitReader_ = {
 		entropy: bits,  // the variable that is 'read'
-		available: 0,
-		used: 0,
+
+		//available: 0,
+		//used: 0,
 		//total_bits : 0, // this is more of a benchmark feature
 		storage_ : null,
 
 		reset() {
 			//this.entropy = 
-			this.available = 0;
-			this.used = 0;
-			this.total_bits = 0;
+			//this.available = 0;
+			//this.used = 0;
+			//this.total_bits = 0;
 		},
 
 
 		hook( storage ) {
-			storage.addEncoders( [ { tag:"btr", p:null, f:this.encode.bind(this) } ] );
-			storage.addDecoders( [ { tag:"btr", p:null, f:this.decode } ] );
+			if( !storages.find( s=>s===storage ) ) {
+				storage.addEncoders( [ { tag:"btr", p:bitReader, f:this.encode } ] );
+				storage.addDecoders( [ { tag:"btr", p:bitReader, f:this.decode } ] );
+				storages.push( storage );
+			}
 			this.storage_ = storage;
 		},
 		encode( stringifier ){
-			return `{e:${stringifier.stringify(this.entropy)},a:${this.available},u:${this.used}}`;
+			return `{e:${stringifier.stringify(this.entropy)}}`;
 		},
 		decode(field,val){
-			//console.log( "Double decode?", field, val );
 			if( field === "e" ) this.entropy = val;
-			if( field === "a" ) this.available = val;
-			if( field === "u" ) this.used = val;
+			//if( field === "a" ) this.available = val;
+			//if( field === "u" ) this.used = val;
 			if( field )
-				return val;
+				return undefined;
+			else {
+				this.storage_ = val;
+			}
 			return this;
 		},
 		get(N) {
@@ -89,6 +95,7 @@ function bitReader( bits ) {
 				return arr[0];
 			}
 		},
+		/*
 		getBuffer(start,bits) {
 			let _bits = bits;
 			let resultIndex = 0;
@@ -158,23 +165,10 @@ function bitReader( bits ) {
 				return resultBuffer;
 			}
 		}
+		*/
 	}
 
 	Object.assign( this, bitReader_ );
-}
-
-
-function encode( a ){
-	return this.encode(a);
-}
-function decode(field,val){
-	return this.decode( field, val )
-}
-
-
-bitReader.hook = function(storage ) {
-	storage.addEncoders( [ { tag:"btr", p:bitReader, f:encode } ] );
-	storage.addDecoders( [ { tag:"btr", p:bitReader, f:decode } ] );
 }
 
 //module.exports = exports = bitReader;
