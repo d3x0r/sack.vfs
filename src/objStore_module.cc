@@ -2,6 +2,7 @@
 using namespace sack::SACK_VFS::objStore;
 
 //#define LOG_DISK_TIME
+
 //#define DEBUG_LOG_PARSING
 //#define DEBUG_LOG_OUTPUT
 
@@ -517,9 +518,18 @@ static uintptr_t CPROC DoPutObject( PTHREAD thread ) {
 						, osoOpts.result, sizeof( osoOpts.result ) );
 			}
 			else {
-				sack_vfs_os_ioctl_store_rw_object( osoOpts.vol->fsMount
-					, osoOpts.data, osoOpts.dataLen
-					, osoOpts.result, sizeof( osoOpts.result ) );
+				if( osoOpts.readKey ) {
+					lprintf( "Readkey is set on write?" );
+
+					sack_vfs_os_ioctl_store_crypt_owned_object( osoOpts.vol->fsMount
+						, osoOpts.data, osoOpts.dataLen
+						, NULL, 0 
+						, osoOpts.readKey, osoOpts.readKeyLen
+						, osoOpts.result, sizeof( osoOpts.result ) );
+				} else
+					sack_vfs_os_ioctl_store_rw_object( osoOpts.vol->fsMount
+						, osoOpts.data, osoOpts.dataLen
+						, osoOpts.result, sizeof( osoOpts.result ) );
 			}
 		}
 	}
@@ -855,7 +865,7 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 			String::Utf8Value data( isolate,  args[1] );
 #ifdef DEBUG_LOG_OUTPUT
 			char* tmp;
-			lprintf( "Write %d to %s\nWrite Data %s", data.length(), ( *fName ), tmp = jsox_escape_string_length( *data, data.length(), NULL ) );
+			lprintf( "Write %d to %s\nWrite Data %s\n", data.length(), ( *fName ), tmp = jsox_escape_string_length( *data, data.length(), NULL ) );
 			Release( tmp );
 #endif
 			objStore::sack_vfs_os_truncate( file ); // allow new content to allocate in large blocks?
@@ -1031,6 +1041,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			size_t read = 0;
 			size_t newRead;
 			size_t timeCount;
+			LOGICAL resulted = FALSE;
 			uint64_t *timeArray;
 
 			objStore::sack_vfs_os_get_times( file, &timeArray, &timeCount );
@@ -1065,7 +1076,8 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 				read += newRead;
 				int result;
 #ifdef DEBUG_LOG_PARSING
-				lprintf( "Parse file: %.*s", newRead, buf );
+				lprintf( "B Parse file: %d %.*s\n", newRead, newRead, buf );
+				fflush( stdout );
 #endif
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
@@ -1083,6 +1095,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					r.reviveStack = NULL;
 					r_ = parserObject->currentReviver;
 					parserObject->currentReviver = &r;
+					resulted = TRUE;
 					Local<Value> val = convertMessageToJS2( data, &r );
 					{
 						Local<Value> argv[2] = { val, arr };
@@ -1108,6 +1121,10 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					LineRelease( error );
 				}
 			}
+			if( !resulted ) {
+				//lprintf( "Disk data is short." );
+				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Disk Data is an incomplete object.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			}
 			Deallocate( char *, buf );
 			objStore::sack_vfs_os_close( file );
 		}
@@ -1126,7 +1143,8 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 				read += newRead;
 				int result;
 #ifdef DEBUG_LOG_PARSING
-				lprintf( "Parse file: %.*s", newRead, buf );
+				lprintf( "A Parse file: %d %.*s\n", newRead, newRead, buf );
+				fflush( stdout );
 #endif
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
