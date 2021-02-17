@@ -1077,7 +1077,6 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 				int result;
 #ifdef DEBUG_LOG_PARSING
 				lprintf( "B Parse file: %d %.*s\n", newRead, newRead, buf );
-				fflush( stdout );
 #endif
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
@@ -1144,7 +1143,6 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 				int result;
 #ifdef DEBUG_LOG_PARSING
 				lprintf( "A Parse file: %d %.*s\n", newRead, newRead, buf );
-				fflush( stdout );
 #endif
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
