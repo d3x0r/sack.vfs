@@ -55,8 +55,17 @@ sack.ObjectStorage.
 | Object put Options names | type | Description |
 |-----|-----|-----|
 | id | string | use this id for the object storage target |
+| sign | bool | whether this record should be digitally signed; makes record readonly |
+| key | string | (todo) use to make record readable only with specified key. |
 | extraEncoders | [ { tag:"tag", p:Type } ] | An array of optional object encoder(stringify) types to use when putting objects. |
 
+
+| Object put Options names | type | Description |
+|-----|-----|-----|
+| signed | string | this data should be signed with a permanent id; record becomes readonly. |
+| readKey | string | data to prevent foreign read |
+| sealant | string | data to encode object id |
+| objectHash | string | something |
 
 
  
