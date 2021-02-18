@@ -1,8 +1,10 @@
-import {StoredObject} from "../commonDb.mjs"
+import {sack} from "sack.vfs"
+const StoredObject = sack.ObjectStorage.StoredObject;
+//import {StoredObject} from "../commonDb.mjs"
 
 const SlabArray_StorageTag = "?sa"
 const SlabArrayElement_StorageTag = "?ae"
-const elementSize = 2048;
+const elementSize = 200;
 let storage = null;
 
 const storages = [];
@@ -28,18 +30,30 @@ class SlabArrayElement extends StoredObject {
 
 	push(object, intoCb) {
 		if( this.depth > 0 ) {
+			const lastBlock = this.elements && this.elements[this.elements.length-1];
+			if( lastBlock instanceof Promise ) {
+				lastBlock.then( ()=>{
+					//console.log( "Array element resolved this is now:", this );
+					return this.push( object, intoCb );
+				})
+				return this.storage.map(lastBlock) ;
+			}
+
 			// the last element has a free spot?
+			//console.log( "this.elements is?", this.depth, this.elements.length, this.elements[this.elements.length-1].elements.length );
 			if( !this.elements.length
-				|| ( elements[this.elements.length-1].length >= elementSize ) ) {
+				|| ( lastBlock.elements.length >= elementSize ) ) {
+				
 				const newSlab = new SlabArrayElement(this.storage);
-				newSlab.parent = this;
 				newSlab.depth = this.depth-1;
+				newSlab.parent = this;
 				this.elements.push( newSlab );
 				this.store(); // parent 
 				return newSlab.push( object, intoCb );  // push into real new slab.
 			}
-			else 
-				return elements[this.elements.length-1].push( object, intoCb );
+			else {
+				return lastBlock.push( object, intoCb );
+			}
 		} else {
 			if( this.elements.length >= elementSize  ) {
 				if( !this.parent ) {
@@ -47,6 +61,7 @@ class SlabArrayElement extends StoredObject {
 					parent.depth = this.depth+1;
 					parent.elements.push( this );
 					this.parent = parent;
+					//console.log( "New block data...", parent, "which should be the new root" );
 					intoCb( parent );
 					return parent.push( object, intoCb );
 				}else {
@@ -102,21 +117,28 @@ class SlabArray extends StoredObject {
 		return undefined;
 	}
 	push(object) {
+		const this_ = this;
 		if( this.elements instanceof Promise ) {
 			return this.storage.map( this.elements ).then( (elements)=>{
 				return elements.push( object, newBlock );
 			});
 		} else {
+			//console.log( "Do I not have elements at all?", this.elements );
 			if( !this.elements ) {
 				( this.elements = new SlabArrayElement( this.storage ) ).push( object, newBlock );
 				this.store();
 			}
+
 			return this.elements.push( object, newBlock );
 		}
 
 		function newBlock(newRoot){
-			this.elements = newRoot;
-			this.store();
+			if( !newRoot ){ console.trace( "Failure");
+				throw new Error( "Please do not set NO root?");
+			}
+			//console.log( "new root?", newRoot );
+			this_.elements = newRoot;
+			this_.store();
 		}
 	}
 	store( opts ) {

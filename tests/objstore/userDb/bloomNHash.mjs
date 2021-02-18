@@ -31,9 +31,11 @@ import util from "util";
 import {bitReader} from "./bits.mjs";
 //export {BloomNHash}
 let nextStorage = null;
-let blockStorage = null;
+let blockStorage = null; // this should be the general public storage?  (can fallback to internal reference now?)
 
-function BloomNHash( ) {
+function BloomNHash( storage ) {
+	if( storage && !nextStorage )
+		nextStorage = storage;
 	if( !(this instanceof BloomNHash) ) return new BloomNHash();
 	_debug_reload && console.log( "CREATE NEW BLOOM -------------------------------------------__" );
 	const root = this;
@@ -1441,11 +1443,12 @@ BloomNHash.prototype.get = function( key ) {
 const inserts = [];
 let inserting = false;
 BloomNHash.prototype.set = async function( key, val ) {
+
 	if( this.root instanceof Promise ) {
 		//console.log( "This root has to load still..." );
 		await blockStorage.map( this.root, {depth:0} )
 	}
-	//console.log( "inserting is global?", inserting, this.root );
+	//console.log( "inserting is global?", inserting );
 	if( inserting ) {
 		let i;
 		inserts.push( i = {t:this, key:key,val:val,res:null,rej:null } );
@@ -1462,13 +1465,15 @@ BloomNHash.prototype.set = async function( key, val ) {
 	}
 
 	_debug_root && console.log( "This.root SHOULD be set...", this.root );
+
 	await this.root.insertFlowerHashEntry( key, result )
 
-	//console.log( "SET ENTRY:", result.entryIndex, val );
+	//console.log( "SET ENTRY:", key, val );
 	result.hash.entries[result.entryIndex] = val;
 	if( this.storage_ ) {
+		//console.log( "Save the hash I updated" );
 		result.hash.store();
-	}
+	}else console.log( "!!!!Not storign value:", key, val );
 	inserting = false;
 	if( inserts.length ) {
 		// begin a new insert.

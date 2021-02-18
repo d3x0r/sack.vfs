@@ -1,8 +1,9 @@
 
 
+import {sack} from "sack.vfs"
+const StoredObject = sack.ObjectStorage.StoredObject;
+//import {StoredObject} from "../commonDb.mjs"
 
-
-import {StoredObject} from "../commonDb.mjs"
 import { SlabArray } from "./SlabArray.mjs";
 import {BloomNHash} from "../bloomNHash.mjs"
 
@@ -85,6 +86,7 @@ const AccountDb = {
 			const accounts = [new Account(storage_)];
 			accounts[0].store();
 			l.accounts.push( accounts[0] );
+			//console.log( "Setting user Id to accounts, which should save");
 			l.userMap.set( userId, accounts );
 			return accounts[0]
 		}
@@ -111,9 +113,9 @@ const AccountDb = {
 				} );
 			} ).catch( (err)=>{
 				root.create( "accounts.config.jsox" ).then( async (file)=>{
-				l.accounts = new SlabArray( );
+				l.accounts = new SlabArray( storage );
 				l.accounts.hook( storage );
-				l.userMap = new BloomNHash( );
+				l.userMap = new BloomNHash( storage );
 				l.userMap.hook( storage );
 					l.ids.accountsId   = await l.accounts.store();
 					l.ids.userMapId   = await l.userMap.store();
