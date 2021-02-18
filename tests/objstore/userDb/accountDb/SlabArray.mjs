@@ -30,28 +30,34 @@ class SlabArrayElement extends StoredObject {
 
 	push(object, intoCb) {
 		if( this.depth > 0 ) {
+			// parent nodes - only contains other arrays - which may be delay loaded as promised content.
 			const lastBlock = this.elements && this.elements[this.elements.length-1];
 			if( lastBlock instanceof Promise ) {
 				lastBlock.then( ()=>{
 					//console.log( "Array element resolved this is now:", this );
 					return this.push( object, intoCb );
 				})
-				return this.storage.map(lastBlock) ;
+				this.storage.map(lastBlock);
+				return  object; // it will get pushed...
 			}
 
 			// the last element has a free spot?
 			//console.log( "this.elements is?", this.depth, this.elements.length, this.elements[this.elements.length-1].elements.length );
 			if( !this.elements.length
 				|| ( lastBlock.elements.length >= elementSize ) ) {
-				
+				if( this.elements.length ){
+					if( lastBlock.push( object, intoCb ) ){
+						return object;	
+					}
+					// else, that block is actually full, and still truly need a new block
+				}
 				const newSlab = new SlabArrayElement(this.storage);
 				newSlab.depth = this.depth-1;
 				newSlab.parent = this;
 				this.elements.push( newSlab );
 				this.store(); // parent 
 				return newSlab.push( object, intoCb );  // push into real new slab.
-			}
-			else {
+			} else {
 				return lastBlock.push( object, intoCb );
 			}
 		} else {
@@ -62,11 +68,13 @@ class SlabArrayElement extends StoredObject {
 					parent.elements.push( this );
 					this.parent = parent;
 					//console.log( "New block data...", parent, "which should be the new root" );
+					// new parent generation root.
 					intoCb( parent );
 					return parent.push( object, intoCb );
 				}else {
 					// this could infinitely recurse if there's bad counts.
-					return this.parent.push( object, intoCb );
+					return null;
+					//return this.parent.push( object, intoCb );
 				}
 			} else {
 				this.elements.push( object );

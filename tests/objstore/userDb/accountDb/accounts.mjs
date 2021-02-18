@@ -92,7 +92,7 @@ const AccountDb = {
 		}
 	},
 	async hook( storage ) {
-		console.log( "setting hook storage accounts:", storage );
+		//console.log( "setting hook storage accounts:", storage );
 		storage_ = storage;
 		BloomNHash.hook( storage );
 		SlabArray.hook( storage );

@@ -1370,7 +1370,7 @@ BloomNHash.prototype.get = function( key ) {
 		return new Promise( (res,rej)=>((g.res=res),(g.rej=rej)) );
 	}
 	if( !this.root ) {
-		console.log( "No objects in hash; return 'undefined'" );
+		//console.log( "No objects in hash; return 'undefined'" );
 		return Promise.resolve( undefined );
 	}
 	getting = true;
@@ -1433,7 +1433,7 @@ BloomNHash.prototype.get = function( key ) {
 	if( Object.getPrototypeOf( this.root ).constructor.name === "Promise"
         	|| this.root instanceof Promise ) {
 		// reload this.root 
-             //console.log( "Mapping thing...", this.hashBlock );
+		//console.log( "Mapping thing...", this.hashBlock );
 		return this.storage_.map( this, { depth:0 } ).then( doit );
 
 	}

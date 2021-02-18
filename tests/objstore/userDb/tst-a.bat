@@ -1,5 +1,4 @@
-copy data.good.before data.good.before.before
-copy data.os data.good.before
+
 del err.5
 rename err.4 err.5
 rename err.3 err.4
