@@ -3,6 +3,7 @@ using namespace sack::SACK_VFS::objStore;
 
 //#define LOG_DISK_TIME
 
+// these use 'printf()' now, because lprintf has safety buffers limited at 4096
 //#define DEBUG_LOG_PARSING
 //#define DEBUG_LOG_OUTPUT
 
@@ -865,7 +866,7 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 			String::Utf8Value data( isolate,  args[1] );
 #ifdef DEBUG_LOG_OUTPUT
 			char* tmp;
-			lprintf( "Write %d to %s\nWrite Data %s\n", data.length(), ( *fName ), tmp = jsox_escape_string_length( *data, data.length(), NULL ) );
+			printf( "Write %d to %s\nWrite Data %s\n", data.length(), ( *fName ), tmp = jsox_escape_string_length( *data, data.length(), NULL ) );
 			Release( tmp );
 #endif
 			objStore::sack_vfs_os_truncate( file ); // allow new content to allocate in large blocks?
@@ -1076,7 +1077,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 				read += newRead;
 				int result;
 #ifdef DEBUG_LOG_PARSING
-				lprintf( "B Parse file: %d %.*s\n", newRead, newRead, buf );
+				printf( "B Parse file: %d %.*s\n", newRead, newRead, buf );
 #endif
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
@@ -1142,7 +1143,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 				read += newRead;
 				int result;
 #ifdef DEBUG_LOG_PARSING
-				lprintf( "A Parse file: %d %.*s\n", newRead, newRead, buf );
+				printf( "A Parse file: %d %.*s\n", newRead, newRead, buf );
 #endif
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
