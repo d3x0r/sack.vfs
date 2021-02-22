@@ -20,5 +20,5 @@ import {sack} from "sack.vfs"
 ## Tutorial Topics
 
  - [Sqlite](tutorial-sqlite.md)
- - [Websockets](tutorial-network.md 
+ - [Websockets](tutorial-network.md)
  
