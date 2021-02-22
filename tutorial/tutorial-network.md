@@ -219,7 +219,7 @@ also requests multiple protocols.
 
 ``` js
 		const urlProtocol = (location.protocol === "https:" ? "wss://" : "ws://";
-		let ws = new WebSocket(urlProtocol + myLocation.host + "/appServer", ["Game Protocol","chat protcool"]);
+		let ws = new WebSocket(urlProtocol + location.host + "/appServer", ["Game Protocol","chat protcool"]);
 ```
 
 And then just like the server, register `onmessage` and `onclose` events.  
