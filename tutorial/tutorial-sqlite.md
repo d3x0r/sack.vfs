@@ -31,7 +31,6 @@ table in the database, and will add additional columns that do not already exist
 db.makeTable( "create table something( a int, b int ) " );
 ```
 
-## Handling Errors
 
 
 
@@ -110,8 +109,18 @@ Usually a query will result with an array of objects which represent the row dat
 		} 
 ```
 
-Multiple  strings, without any parameter specifications will be concatenated with appopriate escapes
+### Naive parameter concatenization
+
+Multiple strings, without any parameter specifications will be concatenated with appopriate escapes.
 
 ```
     sqlite.do( "select * from users where name=","userName","and password=", passHash );
 ```
+
+
+
+## Handling Errors
+
+Db.do will throw an exception if there is an error, the error message will in the exception.
+
+`makeTable()` results with true/false whether the table was created or matches the definition, or was not created.
