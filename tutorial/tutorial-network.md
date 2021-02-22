@@ -64,7 +64,8 @@ objects as strings, so we can simply use JSON to encode some message objects.
 A message primarily needs an operation to do, so we can abbreviate this to `op`
 
 
-``` js
+```
+ js
 const msg = { op : 'login' }
 
 ws.send( JSON.stringify( msg ) );
@@ -195,4 +196,65 @@ function handleRequest( req, res )
 
 
 
+
+# Webpage Client
+
+Open a websocket on a web page....
+
+`WebSocket()` takes 3 parameters, the URL to connect to, the protocol(s) to request, and connection options.
+
+Known options include
+   - perMessageDeflate : true/false; whether messages sent are gzipped automatically or not.
+
+
+```
+		ws = new WebSocket( "ws://test.com:1234/resource"
+			, "My Protocol"
+			, null /* options */
+		);
+```
+
+
+And then just like the server, register `onmessage` and `onclose` events.  
+
+The `onopen` event gets no parameters, but allows for connection initialization or sending initial requests...
+
+
+```
+	ws.onopen = function() {
+	}
+```
+
+The on message callback gets a single parameter which is an Event.  `evt.data` is the message content.
+
+```
+	ws.onmessage = function (evt) {
+		var msg = JSON.parse( evt.data );
+		if( !msg ) return;
+		if( msg.op === "login" ) {
+			checkLogin( msg.user, msg.pass );
+		}
+	}
+```
+
+
+`onclose`... when the connection closes it might be useful to release resources tracked for the connection.
+
+```
+   ws.onclose = function( code, reason ) {
+		// code is a numeric code about why the connection closed
+		// reason is a string regarding the code; or is a string interpretation of the code
+	}
+```
+
+
+`onerror`... When there is a failure in the connection the error event will be triggerd, followed by a close event.
+The error event is usually meaningless; and does not catch things like certificate failure; which is only logged to the console.
+It receives a standard browser event object.
+
+```
+   ws.onerror = function( evt ) {
+		// on error gets a Event object...
+	}
+```
 
