@@ -23,6 +23,8 @@ handler will accept all protocols requested by the client, and then the connect 
 // register optional accept callback, default all sockets will be accepted..
 server.onaccept( function ( ws ) {
 	//the protocol and URL that was requested is available on the ws object.
+        const resource = ws.url;
+        const protocols = conn.headers['Sec-WebSocket-Protocol'];
 //	console.log( "Connection received with : ", ws.protocols, " path:", resource );
 
         if( /* some condition to accept or reject the request * ) 
