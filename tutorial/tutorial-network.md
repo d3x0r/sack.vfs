@@ -214,6 +214,13 @@ Known options include
 		);
 ```
 
+The `location` paramter in the browse might be used to construct the websocket URL in a general way.  This example
+also requests multiple protocols.
+
+``` js
+		const urlProtocol = (location.protocol === "https:" ? "wss://" : "ws://";
+		let ws = new WebSocket(urlProtocol + myLocation.host + "/appServer", ["Game Protocol","chat protcool"]);
+```
 
 And then just like the server, register `onmessage` and `onclose` events.  
 
