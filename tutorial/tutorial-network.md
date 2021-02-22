@@ -54,6 +54,59 @@ server.onconnect( function (ws) {
 
 ```
 
+## Great, But what do I send()?
+
+The send of a websocket allows sending either a types array or a string.  Fortunatly JSON is a good representation for 
+objects as strings, so we can simply use JSON to encode some message objects.
+
+A message primarily needs an operation to do, so we can abbreviate this to `op`
+
+
+``` js
+const msg = { op : 'login' }
+
+ws.send( JSON.stringify( msg ) );
+
+```
+
+
+Of course you might want to include some additional parameters...
+
+
+
+``` js
+const msg = { op : 'login' 
+            , user: 'username'
+	         , pass: 'password'
+}
+
+ws.send( JSON.stringify( msg ) );
+
+```
+
+
+## And what about the read event?
+
+Whenever a completed packet is received, it is dispatched to the `'message'` event on the socket.
+The 'this' context is set to the websocket object when the event is emitted.
+
+```
+ws.on('message', handleMessage );
+
+function handleMessage( txtMsg ) {
+	const msg = JSON.parse( txtMsg );
+	
+	if( msg.op === "login" ) {
+		handleLogin( this, msg.user, msg.pass );
+	}
+}
+
+function handleLogin( ws, user, pass ) {
+	// do something with the user and password and get a result
+	ws.send( `{"op":"loginOkay"}` );
+}
+
+```
 
 
 ## HTTP Request Handling
@@ -137,5 +190,7 @@ function handleRequest( req, res )
 } );
 
 ```
+
+
 
 
