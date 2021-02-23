@@ -338,8 +338,31 @@ console.table( db.do( "select fruit.name,color.name from fruit join fruit_color 
 │    2    │ { name: 'banana' } │ { name: 'yellow' } │ [ 'banana', 'yellow', fruit: 'banana', color: 'yellow' ] │
 └─────────┴────────────────────┴────────────────────┴──────────────────────────────────────────────────────────┘
 */
+```
+
+### sqlite3_column_table_alias (custom patch)
+
+Sqlite custom patch notes... in the case that you apply aliases, this version of sqlite will result with the specified alias name, rather than the table name; in case you want to migrate new tables
+to old code.
 
 ```
+console.table( db.do( "select fruit.name,color.name from fruit as f \
+       join fruit_color fc on fruit_color.fruit_id=fruit.fruit_id \
+       join color c on fruit_color.color_id=color.color_id" ) );
+
+/*
+┌─────────┬────────────────────┬────────────────────┬──────────────────────────────────────────────────┐
+│ (index) │         f          │         c          │                       name                       │
+├─────────┼────────────────────┼────────────────────┼──────────────────────────────────────────────────┤
+│    0    │ { name: 'apple' }  │  { name: 'red' }   │     [ 'apple', 'red', f: 'apple', c: 'red' ]     │
+│    1    │ { name: 'orange' } │ { name: 'orange' } │ [ 'orange', 'orange', f: 'orange', c: 'orange' ] │
+│    2    │ { name: 'banana' } │ { name: 'yellow' } │ [ 'banana', 'yellow', f: 'banana', c: 'yellow' ] │
+└─────────┴────────────────────┴────────────────────┴──────────────────────────────────────────────────┘
+*/
+
+```
+
+
 
 ### Why doesn't this work?
 
