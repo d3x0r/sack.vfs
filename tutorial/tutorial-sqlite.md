@@ -249,3 +249,93 @@ Example Usage:
 ```
 	console.log( db.do( "select agg(val) from table1" ) );
 ```
+
+
+
+## Overlapped name behavior
+
+Sometimes, during the course of database design you want to standarize on field name like 'id' and 'name' and so you get the same name all over the place.  Getting the result of these names
+when a query returns 'name' from multiple tables, the result record is different.
+
+Example:
+
+```
+// create some tables
+db.makeTable( "create table fruit ( fruit_id,name)" );
+db.makeTable( "create table color ( color_id,name)" );
+db.makeTable( "create table fruit_color ( fruit_id,color_id )" );
+
+// make some data
+db.do( "insert into fruit (fruit_id,name) values (1,'apple'),(2,'orange'),(3,'banana')" );
+db.do( "insert into color (color_id,name) values (1,'red'),(2,'orange'),(3,'yellow')" );
+db.do( "insert into fruit_color (fruit_id,color_id) values (1,1),(2,2),(3,3)" );
+
+
+
+
+```
+try {
+   console.table( db.do( `select fruit.name as c,fruit.*,c.* from fruit join fruit_color USING(fruit_id) join color as c USING(color_id)`) );
+   console.log( db.do( `select fruit.name as c,fruit.*,c.* from fruit join fruit_color USING(fruit_id) join color as c USING(color_id)`) );
+
+
+} catch(err) {
+// expected error... "Column name overlaps table alias : c"
+	console.log( "Expected to error, error is:", err );
+}
+```
+
+
+This select returns an object that on field `name`, it contains an array of values for each table.  It also contains the named tables and the associated.
+
+It also has references from the tables... `fruit_color` and `fruit` become field names, which contain the column names and the related values.
+
+
+```
+console.table( db.do( "select 1,1,* from fruit join fruit_color on fruit_color.fruit_id=fruit.fruit_id join color USING(color_id)" ) );
+
+/*
+  {
+    '1': 1,
+    fruit: { fruit_id: 1, name: 'apple' },
+    fruit_color: { fruit_id: 1, color_id: 1 },
+    color: { name: 'red' },
+    fruit_id: [ 1, 1, fruit: 1, fruit_color: 1 ],
+    name: [ 'apple', 'red', fruit: 'apple', color: 'red' ]
+  },
+  {
+    '1': 1,
+    fruit: { fruit_id: 2, name: 'orange' },
+    fruit_color: { fruit_id: 2, color_id: 2 },
+    color: { name: 'orange' },
+    fruit_id: [ 2, 2, fruit: 2, fruit_color: 2 ],
+    name: [ 'orange', 'orange', fruit: 'orange', color: 'orange' ]
+  },
+  {
+    '1': 1,
+    fruit: { fruit_id: 3, name: 'banana' },
+    fruit_color: { fruit_id: 3, color_id: 3 },
+    color: { name: 'yellow' },
+    fruit_id: [ 3, 3, fruit: 3, fruit_color: 3 ],
+    name: [ 'banana', 'yellow', fruit: 'banana', color: 'yellow' ]
+  }
+]
+*/
+```
+
+Another Example
+
+```
+console.table( db.do( "select fruit.name,color.name from fruit join fruit_color on fruit_color.fruit_id=fruit.fruit_id join color on fruit_color.color_id=color.color_id" ) );
+
+/*
+┌─────────┬────────────────────┬────────────────────┬──────────────────────────────────────────────────────────┐
+│ (index) │       fruit        │       color        │                           name                           │
+├─────────┼────────────────────┼────────────────────┼──────────────────────────────────────────────────────────┤
+│    0    │ { name: 'apple' }  │  { name: 'red' }   │     [ 'apple', 'red', fruit: 'apple', color: 'red' ]     │
+│    1    │ { name: 'orange' } │ { name: 'orange' } │ [ 'orange', 'orange', fruit: 'orange', color: 'orange' ] │
+│    2    │ { name: 'banana' } │ { name: 'yellow' } │ [ 'banana', 'yellow', fruit: 'banana', color: 'yellow' ] │
+└─────────┴────────────────────┴────────────────────┴──────────────────────────────────────────────────────────┘
+*/
+
+```
