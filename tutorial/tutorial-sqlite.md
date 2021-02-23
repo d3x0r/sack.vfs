@@ -364,12 +364,11 @@ console.table( db.do( "select fruit.name,color.name from fruit as f \
 
 
 
-### Why doesn't this work?
+### Should this work better?
 
-The Sqlite parser fails on this with an overlap of colume and talbe name...  Though syntactically you can't specify just a `table` in any clause, everything
-is by `column`, or by `table.column` which itself isn't `column.column` ever either... so there should never be a time that 'c' or 'c' would fill the same position.
+ATM this fails - the talbe and column names are overlapped, and because of the above mapping, column.table and table.column are the same value, but table and column can't both have the same name.
 
-Maybe it's a failure to lookahead that the failure is before it gets to '.' in the parsing state?
+Preferably, to match SQL query behavior, it should prefer the column, and not define table:{ columns } type objects, but only column: {tables...}.
 
 ```
 try {
