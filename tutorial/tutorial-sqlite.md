@@ -269,7 +269,7 @@ db.makeTable( "create table fruit_color ( fruit_id,color_id )" );
 db.do( "insert into fruit (fruit_id,name) values (1,'apple'),(2,'orange'),(3,'banana')" );
 db.do( "insert into color (color_id,name) values (1,'red'),(2,'orange'),(3,'yellow')" );
 db.do( "insert into fruit_color (fruit_id,color_id) values (1,1),(2,2),(3,3)" );
-
+```
 
 
 
