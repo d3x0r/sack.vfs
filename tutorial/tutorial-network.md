@@ -1,6 +1,16 @@
 
 # Websockets
 
+- [Websockets](#websockets)
+  * [Create a server](#create-a-server)
+  * [Great, But what do I send()?](#great--but-what-do-i-send---)
+  * [And what about the read event?](#and-what-about-the-read-event-)
+  * [HTTP Request Handling](#http-request-handling)
+- [Webpage Client](#webpage-client)
+
+<small><i><a href='http://ecotrust-canada.github.io/markdown-toc/'>Table of contents generated with markdown-toc</a></i></small>
+
+
 ## Create a server
 
 The server is created with an option object, it's best to create this as a variable

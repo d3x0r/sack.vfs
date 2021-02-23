@@ -3,6 +3,34 @@
 
 This executes a single command at a time; subsequent commands when multiple commands in the same command will be ignored. 
 
+  * [Open a database](#open-a-database)
+  * [Do a command](#do-a-command)
+  * [Create a table](#create-a-table)
+  * [Parameterize Commands](#parameterize-commands)
+    + [Init...](#init)
+    + [Setup...](#setup)
+    + [Anonymous, ordered parameters](#anonymous--ordered-parameters)
+    + [Anonymous, numbered parameters](#anonymous--numbered-parameters)
+    + [Named parameters](#named-parameters)
+    + [Named and anonymous parameters](#named-and-anonymous-parameters)
+    + [Processing results](#processing-results)
+    + [Naive parameter concatenization](#naive-parameter-concatenization)
+  * [Results of a `do()` command](#results-of-a--do----command)
+    + [SELECT](#select)
+    + [All Others](#all-others)
+  * [Handling Errors](#handling-errors)
+- [Advanced Features](#advanced-features)
+  * [UUID Type Keys](#uuid-type-keys)
+  * [User Functions](#user-functions)
+    + [Deterministic Computational Functions](#deterministic-computational-functions)
+    + [Non-Deterministic fucntions](#non-deterministic-fucntions)
+    + [User function Usage](#user-function-usage)
+    + [Custom aggregate functions](#custom-aggregate-functions)
+  * [Overlapped name behavior](#overlapped-name-behavior)
+    + [sqlite3_column_table_alias (custom patch)](#sqlite3-column-table-alias--custom-patch-)
+    + [Should this work better?](#should-this-work-better-)
+
+
 ## Open a database
 
 ```
