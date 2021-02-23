@@ -273,18 +273,6 @@ db.do( "insert into fruit_color (fruit_id,color_id) values (1,1),(2,2),(3,3)" );
 
 
 
-```
-try {
-   console.table( db.do( `select fruit.name as c,fruit.*,c.* from fruit join fruit_color USING(fruit_id) join color as c USING(color_id)`) );
-   console.log( db.do( `select fruit.name as c,fruit.*,c.* from fruit join fruit_color USING(fruit_id) join color as c USING(color_id)`) );
-
-
-} catch(err) {
-// expected error... "Column name overlaps table alias : c"
-	console.log( "Expected to error, error is:", err );
-}
-```
-
 
 This select returns an object that on field `name`, it contains an array of values for each table.  It also contains the named tables and the associated.
 
@@ -292,7 +280,9 @@ It also has references from the tables... `fruit_color` and `fruit` become field
 
 
 ```
-console.table( db.do( "select 1,1,* from fruit join fruit_color on fruit_color.fruit_id=fruit.fruit_id join color USING(color_id)" ) );
+console.table( db.do( "select 1,1,* from fruit \
+		join fruit_color on fruit_color.fruit_id=fruit.fruit_id \
+		join color USING(color_id)" ) );
 
 /*
   {
@@ -339,3 +329,23 @@ console.table( db.do( "select fruit.name,color.name from fruit join fruit_color 
 */
 
 ```
+
+### Why doesn't this work?
+
+The Sqlite parser fails on this with an overlap of colume and talbe name...  Though syntactically you can't specify just a `table` in any clause, everything
+is by `column`, or by `table.column` which itself isn't `column.column` ever either... so there should never be a time that 'c' or 'c' would fill the same position.
+
+Maybe it's a failure to lookahead that the failure is before it gets to '.' in the parsing state?
+
+```
+try {
+   console.table( db.do( `select fruit.name as c,fruit.*,c.* from fruit join fruit_color USING(fruit_id) join color as c USING(color_id)`) );
+   console.log( db.do( `select fruit.name as c,fruit.*,c.* from fruit join fruit_color USING(fruit_id) join color as c USING(color_id)`) );
+
+
+} catch(err) {
+   // expected error... "Column name overlaps table alias : c"
+	console.log( "Expected to error, error is:", err );
+}
+```
+
