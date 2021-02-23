@@ -8,7 +8,6 @@
   * [HTTP Request Handling](#http-request-handling)
 - [Webpage Client](#webpage-client)
 
-<small><i><a href='http://ecotrust-canada.github.io/markdown-toc/'>Table of contents generated with markdown-toc</a></i></small>
 
 
 ## Create a server
