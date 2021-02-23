@@ -117,10 +117,135 @@ Multiple strings, without any parameter specifications will be concatenated with
     sqlite.do( "select * from users where name=","userName","and password=", passHash );
 ```
 
+## Results of a `do()` command
+
+### SELECT
+
+Select statements return an array of rows if the query is valid.  If the result had no data, the array is empty.  If 
+the query fails, it throws an exception.
+
+
+### All Others
+
+the return is `undefined`.
+
 
 
 ## Handling Errors
 
-Db.do will throw an exception if there is an error, the error message will in the exception.
+Db.do will throw an exception if there is an error, the error message will in the exception. 
 
-`makeTable()` results with true/false whether the table was created or matches the definition, or was not created.
+`makeTable()` results with true/false whether the table was created or matches the definition, or was not created. The 
+error message of the database object (`db` as referenced in these tutorials) has an `error` getter which returns the last
+error on the connection.  If an exception is thrown, the exception contains this error instead of the error field.
+
+
+# Advanced Features
+
+
+## UUID Type Keys
+
+Using random ID (UUID, or similar) for primary keys can be useful.  SACK has a [Salty Random Number](tutorial_srg.md) generator
+which can be used to generate cryptographically secure random numbers. 
+
+A couple utility are exposed directly on sack `id()` and `Id()`.
+
+```
+
+const hashId = sack.id();
+const shortHashId = sack.Id();
+console.log( hashId, shortHashId );
+
+// example output
+// FrGfVvZZROu4YI$dq6oshLUflsq1V7Byn2lsgAVChYM= SgOiKedJ7APh8Wfw
+
+```
+
+
+`Id()` is 12 base64 digits, and is 96 bits long (slightly shorter than a UUID). 
+
+`id()` is 44 base64 digits, and is 256 bits long (double the size of a UUID).   A UUID proper is 36 characters.
+
+
+## User Functions
+
+New functions may be registerd when using SQlite databae.  ODBC Connections do not support user defined functions.
+
+### Deterministic Computational Functions
+
+`db.function( name, callback)` defines a new function of the specified name which may be used later in a SQL query.
+The function in SQL may be passed parameters, these parameters will be forwarded to the user defined function.
+Value type is determined by the type of the result the function returns (such as: number, string, null,... ).
+
+SQLite will cache the result of functions for specified inputs, so the function is only called when a new value
+needs to be computed.
+
+
+``` js
+
+	//db.function( "func", (...params)=>{ return JSON.stringify( params) } );
+
+
+	db.function( "func", sqlFunction );
+
+	function sqlFunction( ...params ) {
+		return JSON.stringify( params)
+	}
+
+```
+
+
+Example usage:
+  will result with the arguments passed as a JSON string.
+
+```
+	console.log( db.do( "select func(field,val,123,4.55) from table1" ) );
+```
+
+
+### Non-Deterministic fucntions
+
+`db.procedure( name, callback)` defines a function the same as the aobve `function()` but the result is non-deterministic
+and the function will always be called with new input data.
+
+```
+db.procedure( "dFunc", (c)=>`F(${c})` );
+db.procedure( "hash", (c)=>`hash(${c})` );
+var key = 1234;
+db.function( "getID", ()=>{ return "" + (key++); } );
+```
+
+### User function Usage
+
+User functions can be used as the default value for a table, or used in Insert select, update, delete statments.  (Experiemntally was trying to auto assign a hash ID much like auto_increment).
+
+```
+db.makeTable( "create table tableA ( \
+		pk char default (getID(34)) PRIMARY KEY, \
+		dataA )" ) ) 
+
+db.makeTable( "create table tableF( \
+     a char, \
+     b char \
+     default(hash(random())) ); -- no error, but wouldn't be 'constant' either..." );
+```
+
+### Custom aggregate functions
+
+
+New methods to aggregate values like sum(x) may be defined.
+
+```
+
+db.aggregate( "agg"
+      , (...params)=>{console.log( "step:", params ) }
+      , ()=>{ console.log( "final"  ); return "abc" } );
+
+```
+
+
+Example Usage:	
+
+```
+	console.log( db.do( "select agg(val) from table1" ) );
+```
