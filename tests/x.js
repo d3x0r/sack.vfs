@@ -1,7 +1,7 @@
 
-var vfs = require( ".." );
-var vol = vfs.Volume( null, "test.vfs", "key1", "key2" );
+var sack = require( ".." );
 
-console.log( "Directory:", vol.dir() );
-var xx = vol.read( "xx" );
-console.log("got xx?:", xx );
+const hashId = sack.id();
+const shortHashId = sack.Id();
+console.log( hashId, shortHashId );
+

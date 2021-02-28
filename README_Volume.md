@@ -73,7 +73,7 @@ File = {
     - delete(file)
     - unlink(file) - delete in the native filesystem; file may have to be closed before delete can work.
 
-###File Constants
+### File Constants
 
     SeekSet - used in seek methods; value SEEK_SET(0)
     SeekCurrent - used in seek methods; value SEEK_CUR(1)

@@ -64,7 +64,7 @@ async function makeUsers() {
 			await unique.store();
 
 			config.lastUser++;
- 			const user = unique.create( i, "User "+i, '' + i + "@email.com", Math.random()*(1<<54) );
+ 			const user = unique.addUser( i, "User "+i, '' + i + "@email.com", Math.random()*(1<<54) );
 			//console.log( "Created user" );
 			await user.addDevice( sack.Id(), true )
 			//console.log( "created device" );

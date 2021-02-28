@@ -21,4 +21,5 @@ import {sack} from "sack.vfs"
 
  - [Sqlite](tutorial-sqlite.md)
  - [Websockets](tutorial-network.md)
+ - [Object Storage](tutorial-objectStoragem.md)
  

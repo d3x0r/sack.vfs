@@ -2,20 +2,28 @@
 
 import {BloomNHash} from "./bloomNHash.mjs"
 import {sack} from "sack.vfs"
+import {SlabArray}  from "./accountDb/SlabArray.mjs"
+
 const StoredObject = sack.ObjectStorage.StoredObject;
 //import {StoredObject} from "../commonDb.mjs"
 
 const configObject = {
-		accountId : null,
-		emailId : null,
-		reconnectId : null,
-	}
+	accountId : null,
+	emailId : null,
+	reconnectId : null,
+	actAs : null,
+	actIn : null,
+	actBy : null,
+};
 
 const l = {
 	ids : configObject,
 	account   : null,
 	email     : null,
-	reconnect : null
+	reconnect : null,
+	actAs : null, // relates user ids that user can act As (inhertis rights of act-as )
+	actIn : null, // relates user ids that user belong to (inherit all rights of in)
+	actBy : null, // relates user ids that a user can be enacted by
 };
 
 
@@ -25,7 +33,7 @@ class UniqueIdentifier extends StoredObject {
 	constructor() {
 		super();
 	}
-	create( account,user,email,pass ){
+	addUser( account,user,email,pass ){
 		const newUser = new User();
 		newUser.hook( this );
 		newUser.account = account;
@@ -82,6 +90,9 @@ User.getEmail = function( email ) {
 	return l.email.get( email );
 }
 
+
+
+
 class Device  extends StoredObject{
 	key = null;
 	active = false;
@@ -92,6 +103,41 @@ class Device  extends StoredObject{
 
 let getUser = null;
 let getIdentifier = null;
+
+async function userActsAs( user, act ) {
+	const active = l.actAs.get( user );
+	if( active ) {
+		active.push( act );
+	}else {
+		const array = new SlabArray(l.actAs.storage);
+		array.push( active );
+		l.actAs.set( user, array )
+	}
+	
+	const users = l.actBy.get( act );
+	if(users )
+		users.push( user );
+	else {
+		const array = new SlabArray(l.actAs.storage);
+		array.push( user );
+		l.actBy.set( act, array )
+	}
+
+}
+
+async function userActsIn( user, group ) {
+	const active = l.actIn.get( group );
+	if( active ) {
+		active.push( group );
+	}else {
+		const array = new SlabArray(l.actAs.storage);
+		array.push( user );
+		l.actIn.set( user, [ group ] )
+	}
+
+	// members?
+
+}
 
 const UserDb = {
 	async hook( storage ) {

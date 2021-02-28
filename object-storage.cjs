@@ -957,7 +957,7 @@ _objectStorage.prototype.get = function( opts ) {
 					} while( found >= 0 );
 
 				if( obj && ( obj instanceof os.objectStorageContainer ) ){
-					//console.log( "GOTzz:", obj, obj.id, obj.data );
+					console.log( "GOTzz:", obj, obj.id, obj.data );
 					if( !("id" in obj ))
 						Object.defineProperty( obj, "id", { value:currentReadId } );
 					
@@ -970,7 +970,7 @@ _objectStorage.prototype.get = function( opts ) {
 				} else {
 					currentReadId = priorReadId;
 					for( let res in extraResolutions ) res.res(obj);
-					console.log( "RESOLVE WITH OBJECT NEED DATA?", ( obj instanceof os.objectStorageContainer ) );
+					//console.log( "RESOLVE WITH OBJECT NEED DATA?", ( obj instanceof os.objectStorageContainer ) );
 					resolve(obj)
 				}
 			} );

@@ -12,7 +12,7 @@ async function makeUsers() {
 		unique.key = sack.Id();
 		//console.log( "user:", i );
 		await unique.store().then( ((i)=> ()=>{
-	 			const user = unique.create( i, "User "+i, '' + i + "@email.com", Math.random()*(1<<54) );
+	 			const user = unique.addUser( i, "User "+i, '' + i + "@email.com", Math.random()*(1<<54) );
 				return user.addDevice( sack.Id(), true ).then( ()=>{
 					//console.log( "storing user", i );
 					return user.store();
