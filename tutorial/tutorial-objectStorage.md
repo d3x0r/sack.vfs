@@ -18,6 +18,25 @@ An application's configuration state can be created like this...
 
 ``` js
 
+const config = {
+	accountId : null,
+	emailId : null,
+}
+
+
+async function loadStorage() {
+	const oldConfig = await storage.get( {id: "myConfig" } );
+	if( !oldConfig ) {
+		storage.put( config, "myConfig" );
+	}
+}
+
+
+```
+
+
+``` js
+
 const configValues = {
 	accountId : null,
 	emailId : null,
