@@ -1,7 +1,8 @@
 
+import {sack} from "sack.vfs"
 
 import {BloomNHash} from "./bloomNHash.mjs"
-import {sack} from "sack.vfs"
+
 const StoredObject = sack.ObjectStorage.StoredObject;
 //import {StoredObject} from "../commonDb.mjs"
 
