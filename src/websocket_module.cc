@@ -852,7 +852,6 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 						Local<Function> cb = Local<Function>::New( isolate, myself->requestCallback );
 						cb->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
 						// and then even after this returns, the write might be pending...
-						ClearNetWork( eventMessage->pc, (uintptr_t)myself );
 					}
 					//else
 					//	lprintf( "This request was a false alarm, and was empty." );
@@ -1723,6 +1722,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		else
 			SendTCP( obj->pc, GetText( buffer ), GetTextSize( buffer ) );
 	}
+	ClearNetWork( obj->pc, (uintptr_t)obj->wss );
 	{
 		struct HttpState *pHttpState = GetWebSocketHttpState( obj->pc );
 		if( include_close ) {
