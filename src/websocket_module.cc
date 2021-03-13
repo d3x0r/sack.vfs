@@ -851,6 +851,8 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 						argv[1] = http;
 						Local<Function> cb = Local<Function>::New( isolate, myself->requestCallback );
 						cb->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
+						// and then even after this returns, the write might be pending...
+						ClearNetWork( eventMessage->pc, (uintptr_t)myself );
 					}
 					//else
 					//	lprintf( "This request was a false alarm, and was empty." );
@@ -1810,6 +1812,7 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 	wssObject *wss = (wssObject*)psv;
 	if( !wss->requestCallback.IsEmpty() ) {
+		AddNetWork( pc, psv );
 		struct wssEvent *pevt = GetWssEvent();
 		//lprintf( "posting request event to JS  %s", GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) );
 		SetWebSocketHttpCloseCallback( pc, webSockHttpClose );
@@ -2009,6 +2012,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 
 	Local<String> optName;
 	struct optionStrings *strings = getStrings( isolate );
+	MemSet( wssOpts, 0, sizeof( *wssOpts ) );
 	wssOpts->cert_chain = NULL;
 	wssOpts->cert_chain_len = 0;
 
@@ -2110,11 +2114,9 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
 		struct wssOptions wssOpts;
+		MemSet( &wssOpts, 0, sizeof( wssOpts ) );
+
 		int argOfs = 0;
-		wssOpts.hostList = NULL;
-		wssOpts.url = NULL;
-		wssOpts.port = 0;
-		wssOpts.address = NULL;
 		if( args[argOfs]->IsString() ) {
 			String::Utf8Value url( USE_ISOLATE( isolate ) args[argOfs]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			wssOpts.url = StrDup( *url );
