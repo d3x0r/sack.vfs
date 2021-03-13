@@ -149,6 +149,8 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 		val = (struct json_value_container *)GetDataItem( &elements, 0 );
 		if( val ) {
 			struct reviver_data r;
+			r.reviveStack = NULL;
+			r.parser = NULL;
 			r.revive = FALSE;
 			r.isolate = isolate;
 			r.context = r.isolate->GetCurrentContext();
@@ -239,6 +241,8 @@ void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 		if( val ) {
 			Local<Value> argv[1];
 			struct reviver_data r;
+			r.reviveStack = NULL;
+			r.parser = NULL;
 			r.revive = FALSE;
 			r.isolate = isolate;
 			r.context = isolate->GetCurrentContext();
@@ -326,6 +330,8 @@ void parseObject::write6v( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( val ) {
 			Local<Value> argv[1];
 			struct reviver_data r;
+			r.reviveStack = NULL;
+			r.parser = NULL;
 			r.revive = FALSE;
 			r.isolate = isolate;
 			r.context = isolate->GetCurrentContext();
@@ -579,6 +585,8 @@ void parseJSON( const v8::FunctionCallbackInfo<Value>& args )
 	String::Utf8Value tmp( USE_ISOLATE(r.isolate) args[0] );
 	msg = *tmp;
 	Local<Function> reviver;
+	r.reviveStack = NULL;
+	r.parser = NULL;
 
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
@@ -671,6 +679,8 @@ void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
 {
 	//logTick(0);
 	struct reviver_data r;
+	r.reviveStack = NULL;
+	r.parser = NULL;
 	r.isolate = Isolate::GetCurrent();
 	if( args.Length() == 0 ) {
 		r.isolate->ThrowException( Exception::TypeError(
@@ -759,6 +769,8 @@ void parseJSON6v( const v8::FunctionCallbackInfo<Value>& args )
 	//logTick(0);
 	struct reviver_data r;
 	r.isolate = Isolate::GetCurrent();
+	r.reviveStack = NULL;
+	r.parser = NULL;
 	if( args.Length() == 0 ) {
 		r.isolate->ThrowException( Exception::TypeError(
 			String::NewFromUtf8( r.isolate, TranslateText( "Missing parameter, data to parse" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
