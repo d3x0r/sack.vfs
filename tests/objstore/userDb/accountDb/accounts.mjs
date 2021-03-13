@@ -1,9 +1,7 @@
+import {sack} from "sack.vfs";
+const StoredObject = sack.ObjectStorage.StoredObject;//import {StoredObject}
 
-
-import {sack} from "sack.vfs"
-const StoredObject = sack.ObjectStorage.StoredObject;
 //import {StoredObject} from "../commonDb.mjs"
-
 import { SlabArray } from "./SlabArray.mjs";
 import {BloomNHash} from "../bloomNHash.mjs"
 
