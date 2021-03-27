@@ -41,9 +41,6 @@
     "database",
     "sack"
   ],
-  "_dependencies": [
-    "cmake-js"
-  ],
   "devDependencies": {
     "@babel/preset-env": "latest",
     "@rollup/plugin-babel": "latest",
@@ -60,6 +57,7 @@
     "nyc": "latest",
     "rollup": "latest",
     "rollup-plugin-terser": "latest"
+    "cmake-js": "latest"
   },
   "nyc": {
     "statements": 100,
@@ -96,6 +94,6 @@
     "build-vfs-reldeb": "npm run build-vfs-reldeb-config && npm run build-vfs-reldeb-run1",
     "build-vfs-reldeb-config": "cmake-js --CDMAKE_GUI=0 --CDCMAKE_BUILD_TYPE=RelWithDebInfo configure",
     "build-vfs-reldeb-run1": "cmake-js build --CDCMAKE_BUILD_TYPE=RelWithDebInfo",
-    "build": "node-gyp configure build"
+    "build": "cmake-js configure build"
   }
 }
