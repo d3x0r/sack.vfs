@@ -67,6 +67,8 @@ set( DEFINITIONS   __STATIC__ __STATIC_GLOBALS__
 		SUPPORT_LOG_ALLOCATE  # lower level output; fputs
 		__DISABLE_UDP_SYSLOG__  # there's no options to enable this so just don't include it.
 		__DISABLE_SYSLOGD_SYSLOG__  # there's no options to enable this so just don't include it.
+                __NO_GUI__  # there are some dependancies that can be skipped
+                __NO_MSGSVR__ # this is deprecated, but still has some hooks if not disabled.
                  )
 
 set( MOREDEFS  "DEFAULT_OUTPUT_STDERR=1" )
@@ -124,11 +126,16 @@ SET( EXTRA_SOURCES
 
 	${SACK_BASE}/src/deadstart/deadstart_core.c
 	${SACK_BASE}/src/sysloglib/syslog.c
+
+   ${SACK_BASE}/include/colordef.h
+   ${SACK_BASE}/include/fractions.h
+
 	${SACK_BASE}/src/systemlib/system.c
 	${SACK_BASE}/src/systemlib/spawntask.c
 	${SACK_BASE}/src/systemlib/args.c
 	${SACK_BASE}/src/systemlib/oswin.c
 	${SACK_BASE}/src/systemlib/taskinfo.h
+
 	${SACK_BASE}/src/timerlib/timers.c
 	${SACK_BASE}/src/idlelib/idle.c
 	${SACK_BASE}/src/procreglib/names.c
@@ -200,7 +207,7 @@ SET( EXTRA_SOURCES
 )
 
 # android has to force this off....
-if( ON )
+if( OFF )
 set( EXTRA_SOURCES ${EXTRA_SOURCES} 
 		#${SACK_BASE}/src/msgsvr/client/global.h
 		${SACK_BASE}/src/typelib/msgqueue.c
@@ -213,7 +220,7 @@ set( EXTRA_SOURCES ${EXTRA_SOURCES}
 		${SACK_BASE}/src/msgsvr/client/client_service.c 
 		${SACK_BASE}/src/msgsvr/summoner/construct.c
 )
-endif( ON )
+endif( OFF )
 
 if( __ANDROID__ )
 	set( EXTRA_SOURCES ${EXTRA_SOURCES} 
@@ -261,6 +268,15 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
                                    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
 )
+
+        set( LIBRESSL_VERSION 3.2.1 )
+	set( LIBRESSL_SKIP_INSTALL ON )
+	set( LIBRESSL_APPS OFF )
+	set( LIBRESSL_TESTS OFF )
+	add_subdirectory( src/sack/libressl/${LIBRESSL_VERSION} )
+        include_directories( src/sack/libressl/${LIBRESSL_VERSION}/include )
+        set( SSL_LIBS ssl tls crypto )
+
 
 if( WIN32 )
 	set( PPCTOOL c:/tools/ppc.exe )
@@ -345,7 +361,7 @@ if( CMAKE_COMPILER_IS_GNUCC )
    set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-std=c++11 -Wno-unused-result -Wno-address-of-packed-member")
 endif( CMAKE_COMPILER_IS_GNUCC )
 set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
-target_link_libraries(${PROJECT} ${CMAKE_JS_LIB})
+target_link_libraries(${PROJECT} ${SSL_LIBS} ${CMAKE_JS_LIB} )
 if( WIN32 )
    target_link_libraries(${PROJECT} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll crypt32 cryptui )
 endif( WIN32 )
