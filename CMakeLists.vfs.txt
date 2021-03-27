@@ -350,6 +350,8 @@ set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c PROP
 set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc PROPERTIES 
 	COMPILE_DEFINITIONS "USE_SACK_CUSTOM_MEMORY_ALLOCATION" )
 
+add_definitions( -D__NO_MSGSVR__ )
+
 if( UNIX )
   add_definitions( -D__INTERNAL_UUID__ )
   add_definitions( -DUUID_SOURCE )
