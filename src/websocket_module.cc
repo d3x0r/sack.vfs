@@ -367,6 +367,8 @@ public:
 	int port;
 	char *hostname;
 	char *method;
+	char* content;
+	PLIST headers;
 	char *ca;
 	char *path;
 	bool rejestUnauthorized;
@@ -3032,9 +3034,19 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		httpRequest->port = x;
 	}
 
+	if (options->Has(context, optName = strings->headerString->Get(isolate)).ToChecked()) {
+
+		//int32_t x = GETV(options, optName)->Int32Value(isolate->GetCurrentContext()).FromMaybe(0);
+		//httpRequest->port = x;
+	}
+
 	if( options->Has( context, optName = strings->methodString->Get( isolate ) ).ToChecked() ) {
 		String::Utf8Value value( USE_ISOLATE( isolate ) GETV( options, optName ) );
 		httpRequest->method = StrDup( *value );
+	}
+	if (options->Has(context, optName = strings->methodString->Get(isolate)).ToChecked()) {
+		String::Utf8Value value(USE_ISOLATE(isolate) GETV(options, optName));
+		httpRequest->content = StrDup(*value);
 	}
 
 	if( secure && options->Has( context, optName = strings->caString->Get( isolate ) ).ToChecked() ) {
