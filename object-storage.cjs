@@ -1343,7 +1343,7 @@ _objectStorage.prototype.getRoot = async function() {
 //import {sack} from "../../../vfs_module.mjs"
 //import {BloomNHash} from "./bloomNHash.mjs"
 
-/*
+
 class StoredObject {
 	#id = null;
 	#storage = null;
@@ -1388,5 +1388,5 @@ class StoredObject {
 		return this.#storage;
 	}
 }
-*/
+
 
