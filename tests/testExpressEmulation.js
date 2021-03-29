@@ -56,7 +56,7 @@ function ExpressX() {
 							let runNext = false;
 							ranOne = true;
 							cb( req, res, ()=>{ runNext = true; } );
-							if( !runNext ) break;
+							//if( !runNext ) break;
 						}
 						for( let map of req_maps ) {
 							if( map.expr.match( filepath ) ) {
