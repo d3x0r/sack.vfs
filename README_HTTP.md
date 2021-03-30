@@ -17,6 +17,7 @@ var response2 = sack.HTTPS.get( { ca:&lt;extra cert(s)&gt;, path:"/index.html" }
 | rejectUnauthorized | (HTTPS only) whether to accept unvalidated HTTPS certificates; true/false |
 | ca | (HTTPS) Additional certificate authorities to validate connection with |
 
+
 Results with an object with the following fields....
 
 | HTTP Response field | Description |

@@ -1347,6 +1347,7 @@ _objectStorage.prototype.getRoot = async function() {
 class StoredObject {
 	#id = null;
 	#storage = null;
+    	#storages = [];
 	get id() { 
 		return this.#id;
 	} 
@@ -1371,6 +1372,7 @@ class StoredObject {
 		}
 	}
 	hook( storage ) {
+		this.#storages.push( storage );
 		if( storage instanceof StoredObject ) {
 			this.#storage = storage.#storage;
 		}else
@@ -1381,7 +1383,7 @@ class StoredObject {
 		this.#storage = storage;
 		this.#id = id;
 	}
-    constructor( storage ) {
+	constructor( storage ) {
 		if( storage ) this.#storage = storage;
 	}
 	get storage() {
