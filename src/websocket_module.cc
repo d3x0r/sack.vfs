@@ -75,6 +75,7 @@ enum wsEvents {
 	WS_EVENT_REQUEST,// websocket non-upgrade request
 	WS_EVENT_ERROR_CLOSE, // illegal server connection
 	WS_EVENT_LOW_ERROR,
+	WS_EVENT_RELEASE_BUFFER,
 };
 
 struct optionStrings {
@@ -175,6 +176,7 @@ struct wssEvent {
 	enum wsEvents eventType;
 	class wssObject *_this;
 	union {
+		struct pendingWrite* write;
 		struct {
 			int accepted;
 			const char *protocol;
@@ -239,6 +241,12 @@ struct socketUnloadStation {
 	PLIST transport;
 };
 
+struct pendingWrite {
+	Persistent<ArrayBuffer> buffer;
+	CPOINTER data;
+	wssObject* wss;
+};
+
 static struct local {
 	int data;
 	//uv_loop_t* loop;
@@ -251,6 +259,7 @@ static struct local {
 	CRITICALSECTION csWscEvents;
 	PWSC_EVENTSET wscEvents;
 	PLIST transportDestinations;
+	PLIST pendingWrites;
 } l;
 
 
@@ -367,7 +376,8 @@ public:
 	int port;
 	char *hostname;
 	char *method;
-	char* content;
+	const char* content;
+	size_t contentLen;
 	PLIST headers;
 	char *ca;
 	char *path;
@@ -822,8 +832,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					myself->errorLowCallback.Get( isolate )->Call( context, myself->_this.Get( isolate ), 3, argv );
 
 				}
-			}
-			else if( eventMessage->eventType == WS_EVENT_REQUEST ) {
+			} else if( eventMessage->eventType == WS_EVENT_REQUEST ) {
 				//lprintf( "Comes in directly as a request; don't even get accept..." );
 				if( !myself->requestCallback.IsEmpty() ) {
 					class constructorSet *c = getConstructors( isolate );
@@ -858,8 +867,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					//else
 					//	lprintf( "This request was a false alarm, and was empty." );
 				}
-			}
-			else if( eventMessage->eventType == WS_EVENT_ACCEPT ) {
+			} else if( eventMessage->eventType == WS_EVENT_ACCEPT ) {
 				//lprintf( "Dispatch open event because connect." );
 				class constructorSet *c = getConstructors( isolate );
 				Local<Function> cons = Local<Function>::New( isolate, c->wssiConstructor );
@@ -950,8 +958,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				}
 				else
 					eventMessage->data.request.accepted = 1;
-			}
-			else if( eventMessage->eventType == WS_EVENT_ERROR_CLOSE ) {
+			} else if( eventMessage->eventType == WS_EVENT_ERROR_CLOSE ) {
 				Local<Object> closingSock = makeSocket( isolate, eventMessage->pc );
 				if( !myself->errorCloseCallback.IsEmpty() ) {
 					Local<Function> cb = myself->errorCloseCallback.Get( isolate );
@@ -964,8 +971,10 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				DropWssEvent( eventMessage );
 				//DeleteLinkQueue( &myself->eventQueue );
 				//return;
-			}
-			else if( eventMessage->eventType == WS_EVENT_CLOSE ) {
+			} else if( eventMessage->eventType == WS_EVENT_RELEASE_BUFFER ) {
+				// allow buffer to get freed through GC system.
+				eventMessage->data.write->buffer.Reset();
+			} else if( eventMessage->eventType == WS_EVENT_CLOSE ) {
 				myself->readyState = CLOSED;
 				uv_close( (uv_handle_t*)&myself->async, uv_closed_wss );
 				if( !myself->closeCallback.IsEmpty() ) {
@@ -1661,6 +1670,8 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	bool doSend = true;
 	httpObject* obj = Unwrap<httpObject>( args.This() );
+	char* content = NULL;
+	size_t contentLen = 0;
 	int include_close = 1;
 	{
 		PLIST headers = GetWebSocketHeaders( obj->pc );
@@ -1681,7 +1692,6 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			String::Utf8Value body( USE_ISOLATE( isolate ) args[0] );
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", body.length() );
 			vtprintf( obj->pvtResult, "\r\n" );
-
 			vtprintf( obj->pvtResult, "%*.*s", body.length(), body.length(), *body );
 		}
 		else if( args[0]->IsUint8Array() ) {
@@ -1690,20 +1700,42 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", body->ByteLength() );
 			vtprintf( obj->pvtResult, "\r\n" );
 #if ( NODE_MAJOR_VERSION >= 14 )
-			VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetBackingStore()->Data(), bodybuf->ByteLength() );
+			content = (char*)bodybuf->GetBackingStore()->Data();
+			contentLen = bodybuf->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetBackingStore()->Data(), bodybuf->ByteLength() );
 #else
-			VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
+			content = bodybuf->GetContents()->Data();
+			contentLen = bodybuf->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
 #endif
+			{
+				struct pendingWrite* write = new struct pendingWrite();
+				write->wss = obj->wss;
+				write->buffer.Reset( isolate, bodybuf );
+				write->data = content;
+				AddLink( &l.pendingWrites, write );
+			}
 		}
 		else if( args[0]->IsArrayBuffer() ) {
 			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", ab->ByteLength() );
 			vtprintf( obj->pvtResult, "\r\n" );
 #if ( NODE_MAJOR_VERSION >= 14 )
-			VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetBackingStore()->Data(), ab->ByteLength() );
+			content = (char*)ab->GetBackingStore()->Data();
+			contentLen = ab->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetBackingStore()->Data(), ab->ByteLength() );
 #else
+			content = ab->GetContents()->Data();
+			contentLen = ab->ByteLength();
 			VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
 #endif
+			{
+				struct pendingWrite* write = new struct pendingWrite();
+				write->wss = obj->wss;
+				write->buffer.Reset( isolate, ab );
+				write->data = content;
+				AddLink( &l.pendingWrites, write );
+			}
 		} else if( args[0]->IsObject() ) {
 			class constructorSet *c = getConstructors( isolate );
 			Local<FunctionTemplate> wrapper_tpl = c->fileTpl.Get( isolate );
@@ -1719,10 +1751,18 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	if( doSend ) {
 		PTEXT buffer = VarTextPeek( obj->pvtResult );
-		if( obj->ssl )
+		if( obj->ssl ) {
 			ssl_Send( obj->pc, GetText( buffer ), GetTextSize( buffer ) );
-		else
+			if( content && contentLen ) {
+				ssl_Send( obj->pc, content, contentLen );
+			}
+		} else {
 			SendTCP( obj->pc, GetText( buffer ), GetTextSize( buffer ) );
+			if( content && contentLen ) {
+				// allow network layer to keep this content buffer
+				SendTCPLong( obj->pc, content, contentLen );
+			}
+		}
 	}
 	ClearNetWork( obj->pc, (uintptr_t)obj->wss );
 	{
@@ -1811,6 +1851,30 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 
 }
 
+static void webSocketWriteComplete( PCLIENT pc, CPOINTER buffer, size_t len ) {
+	if( buffer ) {
+		INDEX idx;
+		struct pendingWrite* write;
+		LIST_FORALL( l.pendingWrites, idx, struct pendingWrite*, write ) {
+			if( write->data == buffer ) {
+				// needs to be posted as an event
+				struct wssEvent* pevt = GetWssEvent();
+				//lprintf( "posting request event to JS  %s", GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) );
+				SetWebSocketHttpCloseCallback( pc, webSockHttpClose );
+				SetNetworkWriteComplete( pc, webSocketWriteComplete );
+				pevt->eventType = WS_EVENT_RELEASE_BUFFER;
+				pevt->data.write = write;
+				EnqueLink( &write->wss->eventQueue, pevt );
+				uv_async_send( &write->wss->async );
+				SetLink( &l.pendingWrites, idx, NULL );
+				break;
+			}	
+		}
+
+		Release( (POINTER)buffer );
+	}
+}
+
 static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 	wssObject *wss = (wssObject*)psv;
 	if( !wss->requestCallback.IsEmpty() ) {
@@ -1818,6 +1882,7 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 		struct wssEvent *pevt = GetWssEvent();
 		//lprintf( "posting request event to JS  %s", GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) );
 		SetWebSocketHttpCloseCallback( pc, webSockHttpClose );
+		SetNetworkWriteComplete( pc, webSocketWriteComplete );
 		(*pevt).eventType = WS_EVENT_REQUEST;
 		//(*pevt).waiter = MakeThread();
 		(*pevt). pc = pc;
@@ -3044,9 +3109,22 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		String::Utf8Value value( USE_ISOLATE( isolate ) GETV( options, optName ) );
 		httpRequest->method = StrDup( *value );
 	}
-	if (options->Has(context, optName = strings->methodString->Get(isolate)).ToChecked()) {
-		String::Utf8Value value(USE_ISOLATE(isolate) GETV(options, optName));
-		httpRequest->content = StrDup(*value);
+
+	if (options->Has(context, optName = strings->contentString->Get(isolate)).ToChecked()) {
+		Local<Value> content = GETV( options, optName );
+		if( content->IsArrayBuffer() ) {
+			//String::Utf8Value value(USE_ISOLATE(isolate) GETV(options, optName));
+			//httpRequest->content = StrDup( *value );
+			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+			httpRequest->content = (char*)ab->GetBackingStore()->Data();
+			httpRequest->contentLen = ab->GetBackingStore()->ByteLength();
+
+		} else {
+			String::Utf8Value value(USE_ISOLATE(isolate) GETV(options, optName));
+			httpRequest->content = StrDup( *value );
+			httpRequest->contentLen = value.length();
+
+		}
 	}
 
 	if( secure && options->Has( context, optName = strings->caString->Get( isolate ) ).ToChecked() ) {

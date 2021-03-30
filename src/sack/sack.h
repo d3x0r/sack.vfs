@@ -7114,13 +7114,13 @@ NETWORK_PROC( void, NetworkUnlockEx )( PCLIENT pc, int readWrite DBG_PASS );
 typedef void (CPROC*cReadComplete)(PCLIENT, POINTER, size_t );
 typedef void (CPROC*cReadCompleteEx)(PCLIENT, POINTER, size_t, SOCKADDR * );
 typedef void (CPROC*cCloseCallback)(PCLIENT);
-typedef void (CPROC*cWriteComplete)(PCLIENT );
+typedef void (CPROC*cWriteComplete)(PCLIENT, CPOINTER buffer, size_t len );
 typedef void (CPROC*cNotifyCallback)(PCLIENT server, PCLIENT newClient);
 typedef void (CPROC*cConnectCallback)(PCLIENT, int);
 typedef void (CPROC*cppReadComplete)(uintptr_t, POINTER, size_t );
 typedef void (CPROC*cppReadCompleteEx)(uintptr_t,POINTER, size_t, SOCKADDR * );
 typedef void (CPROC*cppCloseCallback)(uintptr_t);
-typedef void (CPROC*cppWriteComplete)(uintptr_t );
+typedef void (CPROC*cppWriteComplete)(uintptr_t, CPOINTER buffer, size_t len );
 typedef void (CPROC*cppNotifyCallback)(uintptr_t, PCLIENT newClient);
 typedef void (CPROC*cppConnectCallback)(uintptr_t, int);
 enum SackNetworkErrorIdentifier {
@@ -12892,6 +12892,16 @@ struct HttpField {
 	PTEXT name;
 	PTEXT value;
 };
+struct HTTPRequestHeader {
+	char* field;
+	char* value;
+};
+struct HTTPRequestOptions {
+	char* method;
+	PLIST headers;
+	PTEXT content;
+	char* agent;
+};
 typedef struct HttpState *HTTPState;
 enum ProcessHttpResult{
 	HTTP_STATE_RESULT_NOTHING = 0,
@@ -13018,6 +13028,8 @@ HTTP_EXPORT PTEXT HTTPAPI PostHttp( PTEXT site, PTEXT resource, PTEXT content );
 HTTP_EXPORT PTEXT HTTPAPI GetHttp( PTEXT site, PTEXT resource, LOGICAL secure );
 /* results with just the content of the message; no access to other information avaialble */
 HTTP_EXPORT PTEXT HTTPAPI GetHttps( PTEXT address, PTEXT url, const char *certChain );
+/* results with the http state of the message response; Allows getting other detailed information about the result */
+HTTP_EXPORT HTTPState HTTPAPI GetHttpsQueryEx( PTEXT address, PTEXT url, const char* certChain, struct HTTPRequestOptions* options );
 /* results with the http state of the message response; Allows getting other detailed information about the result */
 HTTP_EXPORT HTTPState  HTTPAPI PostHttpQuery( PTEXT site, PTEXT resource, PTEXT content );
 /* results with the http state of the message response; Allows getting other detailed information about the result */
