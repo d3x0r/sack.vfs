@@ -375,10 +375,10 @@ public:
 	bool ssl;
 	int port;
 	char *hostname;
-	char *method;
+	char *method = "GET";
 	const char* content;
 	size_t contentLen;
-	PLIST headers;
+	PLIST headers = NULL;
 	char *ca;
 	char *path;
 	bool rejestUnauthorized;
@@ -391,6 +391,8 @@ public:
 	PTHREAD waiter;
 
 	PTEXT result;
+	// if set, will be called when content buffer has been sent.
+	//void ( *writeComplete )(void );
 public:
 
 	httpRequestObject();
@@ -420,6 +422,7 @@ public:
 	bool ssl;
 	wssObject* wss;
 	Isolate *isolate;
+	bool headWritten = false;
 public:
 
 	httpObject();
@@ -1648,6 +1651,7 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 	HTTPState http = GetWebSocketHttpState( obj->pc );
 	if( http ) {
 		int vers = GetHttpVersion( http );
+		obj->headWritten = true;
 		vtprintf( obj->pvtResult, "HTTP/%d.%d %d %s\r\n", vers / 100, vers % 100, status, "OK" );
 
 		if( args.Length() > 1 ) {
@@ -1744,6 +1748,11 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 				lprintf( "Incomplete; streaming file content to socket...." );
 				doSend = false;
 			}
+		} else if( args[0]->IsNumber() ){
+			if( !obj->headWritten ) 
+				writeHead( args );
+
+			vtprintf( obj->pvtResult, "\r\n" );
 		}
 	}
 	else
@@ -1771,7 +1780,8 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			//lprintf( "Close is included... is this a reset close?" );
 			RemoveClientEx( obj->pc, 0, 1 );
 		}
-		else {
+		//else {
+
 			if (pHttpState) {
 				int result;
 				//lprintf( "ending http on %p", obj->pc );
@@ -1799,11 +1809,6 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 						break;
 					}
 				}
-				
-			}
-			else {
-				lprintf( "LOST HTTP STATE" );
-			}
 		}
 	}
 
@@ -1870,8 +1875,6 @@ static void webSocketWriteComplete( PCLIENT pc, CPOINTER buffer, size_t len ) {
 				break;
 			}	
 		}
-
-		Release( (POINTER)buffer );
 	}
 }
 
@@ -3073,6 +3076,28 @@ void httpRequestObject::on( const FunctionCallbackInfo<Value>& args ) {
 }
 
 
+
+static void 	readHeaders( Isolate *isolate, Local<Context> context, httpRequestObject* httpRequest, Local<Object> headers ) {
+	Local<Array> props = headers->GetPropertyNames( context ).ToLocalChecked();
+	for( int p = 0; p < props->Length(); p++ ) {
+		Local<Value> name = props->Get( context, p ).ToLocalChecked();
+		Local<Value> value = headers->Get( context, name ).ToLocalChecked();
+		String::Utf8Value localName( isolate,  name );
+		String::Utf8Value localValue( isolate, value );
+		const size_t len = localName.length() + localValue.length() + 2;
+		TEXTCHAR* field = NewArray( TEXTCHAR, len );
+		// HTTP header requirements dictate NO control characters are meant to be sent.
+		snprintf( field, len, "%s:%s", *localName, *localValue );
+		AddLink( &httpRequest->headers, field );
+	}
+}
+
+
+static void requestLongBufferWrite( uintptr_t userData ) {
+	//httpRequestObject* httpRequest = (httpRequestObject*)userData;
+
+}
+
 void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, bool secure ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
@@ -3098,11 +3123,9 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		int32_t x = GETV( options, optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		httpRequest->port = x;
 	}
-
 	if (options->Has(context, optName = strings->headerString->Get(isolate)).ToChecked()) {
-
-		//int32_t x = GETV(options, optName)->Int32Value(isolate->GetCurrentContext()).FromMaybe(0);
-		//httpRequest->port = x;
+		Local<Object> headers = GETV( options, optName ).As<Object>();
+		readHeaders( isolate, context, httpRequest, headers );
 	}
 
 	if( options->Has( context, optName = strings->methodString->Get( isolate ) ).ToChecked() ) {
@@ -3113,17 +3136,17 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	if (options->Has(context, optName = strings->contentString->Get(isolate)).ToChecked()) {
 		Local<Value> content = GETV( options, optName );
 		if( content->IsArrayBuffer() ) {
-			//String::Utf8Value value(USE_ISOLATE(isolate) GETV(options, optName));
-			//httpRequest->content = StrDup( *value );
+			// zero copy method... content 
 			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
 			httpRequest->content = (char*)ab->GetBackingStore()->Data();
 			httpRequest->contentLen = ab->GetBackingStore()->ByteLength();
 
 		} else {
+			// converted from JS widechar to utf8... (transform+copy)
 			String::Utf8Value value(USE_ISOLATE(isolate) GETV(options, optName));
+			// this is a tempary value, that we'll need to keep a copy of... (copy 2, copy 3 to nework)
 			httpRequest->content = StrDup( *value );
 			httpRequest->contentLen = value.length();
-
 		}
 	}
 
@@ -3157,10 +3180,21 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		int retries;
 		for( retries = 0; !state && retries < 3; retries++ ) {
 			//lprintf( "request: %s  %s", GetText( address ), GetText( url ) );
-			if( httpRequest->ssl )
-				state = GetHttpsQuery( address, url, httpRequest->ca );
-			else
-				state = GetHttpQuery( address, url );
+			struct HTTPRequestOptions opts = {};
+			opts.ssl = httpRequest->ssl;
+			opts.headers = httpRequest->headers;
+			opts.certChain = httpRequest->ca;
+			opts.method =  httpRequest->method;
+			//opts.agent = httpRequest->agent;
+			opts.contentLen = httpRequest->contentLen;
+			opts.content = httpRequest->content;
+
+			opts.writeComplete = requestLongBufferWrite;
+			opts.userData = (uintptr_t)httpRequest;
+
+			//if( httpRequest->ssl )
+			state = GetHttpsQueryEx( address, url, httpRequest->ca, &opts );
+
 		}
 		if( !state ) {
 			SET( result, "error",
@@ -3169,14 +3203,18 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 			return;
 		}
 		PTEXT content = GetHttpContent(state);
-		if( state && content )
+		if( state && GetHttpResponseCode( state ) )
 		{
-			SET( result, "content"
-				, String::NewFromUtf8( isolate, GetText( content ), v8::NewStringType::kNormal ).ToLocalChecked() );
+			if( content ) {
+				SET( result, "content"
+					, String::NewFromUtf8( isolate, GetText( content ), v8::NewStringType::kNormal ).ToLocalChecked() );
+			}
 			SET( result, "statusCode"
 				, Integer::New( isolate, GetHttpResponseCode( state ) ) );
+			const char* textCode = GetHttpResponseStatus( state );
+			
 			SET( result, "status"
-				, String::NewFromUtf8( isolate, GetText( GetHttpResponce( state ) ), v8::NewStringType::kNormal ).ToLocalChecked() );
+				, String::NewFromUtf8( isolate, textCode?textCode:"NO RESPONSE", v8::NewStringType::kNormal ).ToLocalChecked() );
 			Local<Array> arr = Array::New( isolate );
 			PLIST headers = GetHttpHeaderFields( state );
 			INDEX idx;
