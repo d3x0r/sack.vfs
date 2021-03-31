@@ -12897,10 +12897,23 @@ struct HTTPRequestHeader {
 	char* value;
 };
 struct HTTPRequestOptions {
+  // deafult GET
 	char* method;
+ // list of TEXTCAHR*
 	PLIST headers;
-	PTEXT content;
+  // content to send with request, if any
+	CPOINTER content;
+// lengt of content to send with request
+	size_t contentLen;
+ // set to true to request over SSL;
+	LOGICAL ssl;
+ //optionally this can be used to specify the certain, if not set, uses parameter, which will otherwise be NULL.
+	const char* certChain;
+	// specify the agent field, default to SACK(System)
 	char* agent;
+	// if set, will be called when content buffer has been sent.
+	void ( *writeComplete )( uintptr_t userData );
+	uintptr_t userData;
 };
 typedef struct HttpState *HTTPState;
 enum ProcessHttpResult{
@@ -12947,7 +12960,7 @@ HTTP_EXPORT int HTTPAPI ProcessHttp( PCLIENT pc, HTTPState pHttpState );
 HTTP_EXPORT
  /* Gets the specific result code at the header of the packet -
    http 2.0 OK sort of thing.                                  */
-PTEXT HTTPAPI GetHttpResponce( HTTPState pHttpState );
+PTEXT HTTPAPI GetHttpResponse( HTTPState pHttpState );
 /* Get the method of the request in ht e http state.
 */
 HTTP_EXPORT PTEXT HTTPAPI GetHttpMethod( struct HttpState *pHttpState );
@@ -13038,6 +13051,8 @@ HTTP_EXPORT HTTPState  HTTPAPI GetHttpQuery( PTEXT site, PTEXT resource );
 HTTP_EXPORT HTTPState HTTPAPI GetHttpsQuery( PTEXT site, PTEXT resource, const char *certChain );
 /* return the numeric response code of a http reply. */
 HTTP_EXPORT int HTTPAPI GetHttpResponseCode( HTTPState pHttpState );
+/* return the text response code of an http reply */
+HTTP_EXPORT const char* HTTPAPI GetHttpResponseStatus( HTTPState pHttpState );
 #define CreateHttpServer(interface_address,site,psv) CreateHttpServerEx( interface_address,NULL,site,NULL,psv )
 #define CreateHttpServer2(interface_address,site,default_handler,psv) CreateHttpServerEx( interface_address,NULL,site,default_handler,psv )
 // receives events for either GET if aspecific OnHttpRequest has not been defined for the specific resource
