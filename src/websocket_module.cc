@@ -3065,12 +3065,18 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 
 		HTTPState state = NULL;
 		int retries;
+		struct HTTPRequestOptions defaultOpts = {
+			httpRequest->method,
+			NULL,
+			NULL,
+		};
+
 		for( retries = 0; !state && retries < 3; retries++ ) {
 			//lprintf( "request: %s  %s", GetText( address ), GetText( url ) );
 			if( httpRequest->ssl )
-				state = GetHttpsQuery( address, url, httpRequest->ca );
+				state = GetHttpsQueryEx( address, url, httpRequest->ca, &defaultOpts );
 			else
-				state = GetHttpQuery( address, url );
+				state = GetHttpsQueryEx( address, url, NULL, &defaultOpts );
 		}
 		if( !state ) {
 			SET( result, "error",
@@ -3086,7 +3092,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 			SET( result, "statusCode"
 				, Integer::New( isolate, GetHttpResponseCode( state ) ) );
 			SET( result, "status"
-				, String::NewFromUtf8( isolate, GetText( GetHttpResponce( state ) ), v8::NewStringType::kNormal ).ToLocalChecked() );
+				, String::NewFromUtf8( isolate, GetText( GetHttpResponse( state ) ), v8::NewStringType::kNormal ).ToLocalChecked() );
 			Local<Array> arr = Array::New( isolate );
 			PLIST headers = GetHttpHeaderFields( state );
 			INDEX idx;
