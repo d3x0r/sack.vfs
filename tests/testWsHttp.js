@@ -28,6 +28,8 @@ server.onrequest( function( req, res ) {
 	switch (extname) {
 		  case '.js':
 		  case '.mjs':
+                  case '.js.gz':
+                  case '.gz':
 			  contentType = 'text/javascript';
 			  break;
 		  case '.css':
