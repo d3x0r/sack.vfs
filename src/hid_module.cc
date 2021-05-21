@@ -16,10 +16,10 @@ public:
 	char *name;
 
 	Persistent<Object> this_;
-	Persistent<Function, CopyablePersistentTraits<Function>> *readCallback; //
+	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE readQueue;
-
+	LOGICAL blocking = FALSE;
 public:
 
 	static void Init( Isolate *isolate, Local<Object> exports );
@@ -28,6 +28,7 @@ public:
 private:
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 
+	static void lock( const v8::FunctionCallbackInfo<Value>& args );
 	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
 	static void writeCom( const v8::FunctionCallbackInfo<Value>& args );
 	static void closeCom( const v8::FunctionCallbackInfo<Value>& args );
@@ -52,6 +53,7 @@ typedef struct global_tag
 	HHOOK hookHandle;
 	HHOOK hookHandleLL;
 	int skipEvent;
+	LOGICAL blocking;
 } GLOBAL;
 
 static GLOBAL hidg;
@@ -190,7 +192,8 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
 					indev->name,
 					&uSize
 				);
-				lprintf( "New Device: %s", indev->name );
+				if(0)
+					lprintf( "New Device: %s", indev->name );
 				AddLink( &hidg.inputs, indev );
 			}
 		}
@@ -298,6 +301,7 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 			return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
 		}
 	}
+	/*
 	if( kbhook->vkCode == 'P' ) {
 		for( n = 0; n < 10; n++ ) {
 			if( !States[n].state ) {
@@ -432,13 +436,14 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 			}
 		}
 	}
-	if( n < 10 ) {
+	*/
+	if(	hidg.blocking ) {
 		hidg.skipEvent = 1;
 		if( 0 ) {
 			LoG( "Drop key." );
 			lastDownSkip++;
-			return 1;
 		}
+		return 1;
 	}
 	//SendMessage( hidg.hWnd, WM_HOOK2, 0, 0 );
 	//LoG( "LL keyhook for key... %08x  %d %d %x", wParam, kbhook->scanCode, kbhook->vkCode, kbhook->flags );
@@ -496,6 +501,7 @@ void KeyHidObject::Init( Isolate *isolate, Local<Object> exports ) {
 
 																 // Prototype
 	NODE_SET_PROTOTYPE_METHOD( comTemplate, "onKey", onRead );
+	NODE_SET_PROTOTYPE_METHOD( comTemplate, "lock", lock );
 
 	class constructorSet* c = getConstructors( isolate );
 
@@ -546,12 +552,14 @@ void asyncmsg( uv_async_t* handle ) {
 
 
 			Local<Value> argv[] = { eventObj };
-			Local<Function> cb = Local<Function>::New( isolate, myself->readCallback[0] );
-			{
-				MaybeLocal<Value> result = cb->Call( context, isolate->GetCurrentContext()->Global(), 1, argv );
-				if( result.IsEmpty() ) {
-					Deallocate( struct msgbuf *, msg );
-					return;
+			if( !myself->readCallback.IsEmpty() ) {
+				Local<Function> cb = Local<Function>::New( isolate, myself->readCallback );
+				{
+					MaybeLocal<Value> result = cb->Call( context, isolate->GetCurrentContext()->Global(), 1, argv );
+					if( result.IsEmpty() ) {
+						Deallocate( struct msgbuf*, msg );
+						return;
+					}
 				}
 			}
 			Deallocate( struct msgbuf *, msg );
@@ -598,6 +606,20 @@ void CPROC dispatchKey( uintptr_t psv, RAWINPUT *event, WCHAR ch, int len ) {
 	uv_async_send( &com->async );
 }
 
+void KeyHidObject::lock( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	KeyHidObject* com = ObjectWrap::Unwrap<KeyHidObject>( args.This() );
+	int argc = args.Length();
+	if( argc ) {
+		if( args[0].As<Boolean>()->IsTrue() ) {
+			hidg.blocking = TRUE;
+		}
+		else
+			hidg.blocking = FALSE;
+	}
+	else
+		hidg.blocking = !hidg.blocking;
+}
 
 void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -609,14 +631,12 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	KeyHidObject *com = ObjectWrap::Unwrap<KeyHidObject>( args.This() );
 	if( args[0]->IsNull() ) {
-		if( com->readCallback ) {
-			com->readCallback = NULL;
-			com->this_.Reset(); // release 'this' object.
-		}
+		com->readCallback.Reset();
+		com->this_.Reset();
 	}
 	else if( args[0]->IsFunction() ) {
 		Local<Function> arg0 = Local<Function>::Cast( args[0] );
-		com->readCallback = new Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 );
+		com->readCallback = Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 );
 	}
 	else {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Unhandled parameter value to keyboard reader.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
