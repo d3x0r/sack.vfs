@@ -189,7 +189,9 @@ static void idShortGenerator(const v8::FunctionCallbackInfo<Value>& args ){
 static void loadComplete( const v8::FunctionCallbackInfo<Value>& args ) {
 #  if !defined( NODE_WANT_INTERNALS )
 	// static amalgamates omit message server stuff
-	LoadComplete();
+#ifndef __NO_MSGSVR__
+	//LoadComplete();
+#endif
 #endif
 }
 
