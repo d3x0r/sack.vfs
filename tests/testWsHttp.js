@@ -26,10 +26,12 @@ server.onrequest( function( req, res ) {
 	var contentType = 'text/html';
 	console.log( ":", extname, filePath )
 	switch (extname) {
-		  case '.js':
-		  case '.mjs':
-			  contentType = 'text/javascript';
-			  break;
+		case '.js':
+		case '.mjs':
+		case '.js.gz':
+		case '.gz':
+			contentType = 'text/javascript';
+			break;
 		  case '.css':
 			  contentType = 'text/css';
 			  break;
