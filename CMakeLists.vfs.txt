@@ -200,20 +200,22 @@ SET( EXTRA_SOURCES
 )
 
 # android has to force this off....
-if( ON )
-set( EXTRA_SOURCES ${EXTRA_SOURCES} 
-		#${SACK_BASE}/src/msgsvr/client/global.h
-		${SACK_BASE}/src/typelib/msgqueue.c
-		${SACK_BASE}/src/msgsvr/client/client_common.c
-		${SACK_BASE}/src/msgsvr/client/client_client.c
-		${SACK_BASE}/src/msgsvr/client/client_events.c
-		${SACK_BASE}/src/msgsvr/client/client_input.c
-		${SACK_BASE}/src/msgsvr/client/client_local.c
-		${SACK_BASE}/src/msgsvr/client/client_output.c
-		${SACK_BASE}/src/msgsvr/client/client_service.c 
-		${SACK_BASE}/src/msgsvr/summoner/construct.c
-)
-endif( ON )
+# Message service support - SYSV Message Queue IPC.  
+# Unused; network websocket connectivity suffices.
+#if( ON )
+#set( EXTRA_SOURCES ${EXTRA_SOURCES} 
+#		#${SACK_BASE}/src/msgsvr/client/global.h
+#		${SACK_BASE}/src/typelib/msgqueue.c
+#		${SACK_BASE}/src/msgsvr/client/client_common.c
+#		${SACK_BASE}/src/msgsvr/client/client_client.c
+#		${SACK_BASE}/src/msgsvr/client/client_events.c
+#		${SACK_BASE}/src/msgsvr/client/client_input.c
+#		${SACK_BASE}/src/msgsvr/client/client_local.c
+#		${SACK_BASE}/src/msgsvr/client/client_output.c
+#		${SACK_BASE}/src/msgsvr/client/client_service.c 
+#		${SACK_BASE}/src/msgsvr/summoner/construct.c
+#)
+#endif( ON )
 
 if( __ANDROID__ )
 	set( EXTRA_SOURCES ${EXTRA_SOURCES} 
