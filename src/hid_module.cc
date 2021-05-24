@@ -136,7 +136,7 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
 		//SetTimer( hWnd, 100, 1000, NULL );
 		return TRUE;
 	case WM_HOOK2:
-		lprintf( "HOOK2 MSG" );
+		//lprintf( "HOOK2 MSG" );
 		return TRUE;;;;;;
 	case WM_INPUT:
 		if( GetRawInputData( (HRAWINPUT)lParam,
@@ -192,15 +192,17 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
 					indev->name,
 					&uSize
 				);
-				if(0)
-					lprintf( "New Device: %s", indev->name );
+				//if(0)
+
+				lprintf( "New Device: %s", indev->name );
 				AddLink( &hidg.inputs, indev );
 			}
 		}
 		if( hidg.eventHandler )
 			dispatchKey( (uintptr_t)hidg.eventHandler
 				, input, keyChar, 0 );
-		//if(0)
+
+		if(0)
 		LoG( "Got: %c(%d) %p %d %d %d %d %d %d %d ", keyChar,keyChar
 			, input->header.hDevice
 			, input->header.wParam
@@ -301,142 +303,7 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 			return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
 		}
 	}
-	/*
-	if( kbhook->vkCode == 'P' ) {
-		for( n = 0; n < 10; n++ ) {
-			if( !States[n].state ) {
-				States[n].events[States[n].state].type = INPUT_KEYBOARD;
-				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
-				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
-				States[n].events[States[n].state].ki.time = kbhook->time;
-				States[n].events[States[n].state].ki.wScan = (WORD)kbhook->scanCode;
-				States[n].events[States[n].state].ki.wVk = (WORD)kbhook->vkCode;
 
-				States[n].tick = GetTickCount();
-				LoG( "P KEY set state in %d", n );
-				States[n].state = 1;
-				break;
-			}
-		}
-	}
-	else if( kbhook->vkCode >= '0' && kbhook->vkCode <= '9' ) {
-		for( n = 0; n < 10; n++ ) {
-			if( States[n].state == 1 ) {
-				States[n].events[States[n].state].type = INPUT_KEYBOARD;
-				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
-				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
-				States[n].events[States[n].state].ki.time = kbhook->time;
-				States[n].events[States[n].state].ki.wScan = (WORD)kbhook->scanCode;
-				States[n].events[States[n].state].ki.wVk = (WORD)kbhook->vkCode;
-
-				States[n].tick = GetTickCount();
-				LoG( "# KEY set state in %d", n );
-				States[n].state = 2;
-				break;
-			}
-			if( States[n].state == 2 ) {
-				States[n].events[States[n].state].type = INPUT_KEYBOARD;
-				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
-				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
-				States[n].events[States[n].state].ki.time = kbhook->time;
-				States[n].events[States[n].state].ki.wScan = (WORD)kbhook->scanCode;
-				States[n].events[States[n].state].ki.wVk = (WORD)kbhook->vkCode;
-
-				States[n].tick = GetTickCount();
-				LoG( "# KEY set state in %d", n );
-				States[n].state = 3;
-				break;
-			}
-			if( States[n].state == 4 ) {
-				States[n].events[States[n].state].type = INPUT_KEYBOARD;
-				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
-				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
-				States[n].events[States[n].state].ki.time = kbhook->time;
-				States[n].events[States[n].state].ki.wScan = (WORD)kbhook->scanCode;
-				States[n].events[States[n].state].ki.wVk = (WORD)kbhook->vkCode;
-
-				States[n].tick = GetTickCount();
-				LoG( "# KEY set state in %d", n );
-				States[n].state = 5;
-				break;
-			}
-			if( States[n].state == 5 ) {
-				States[n].events[States[n].state].type = INPUT_KEYBOARD;
-				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
-				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
-				States[n].events[States[n].state].ki.time = kbhook->time;
-				States[n].events[States[n].state].ki.wScan = (WORD)kbhook->scanCode;
-				States[n].events[States[n].state].ki.wVk = (WORD)kbhook->vkCode;
-
-				States[n].tick = GetTickCount();
-				LoG( "# KEY set state in %d", n );
-				States[n].state = 6;
-				break;
-			}
-		}
-	}
-	else if( kbhook->vkCode == VK_RETURN ) {
-		for( n = 0; n < 10; n++ ) {
-			if( States[n].state == 6 ) {
-				States[n].events[States[n].state].type = INPUT_KEYBOARD;
-				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
-				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
-				States[n].events[States[n].state].ki.time = kbhook->time;
-				States[n].events[States[n].state].ki.wScan = (WORD)kbhook->scanCode;
-				States[n].events[States[n].state].ki.wVk = (WORD)kbhook->vkCode;
-
-				States[n].tick = GetTickCount();
-				LoG( "\r KEY set state in %d", n );
-				States[n].state = 0;
-				break;
-			}
-		}
-	}
-	else if( kbhook->vkCode == 'T' ) {
-		for( n = 0; n < 10; n++ ) {
-			if( States[n].state  == 3) {
-				States[n].events[States[n].state].type = INPUT_KEYBOARD;
-				States[n].events[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
-				States[n].events[States[n].state].ki.dwFlags = kbhook->flags;
-				States[n].events[States[n].state].ki.time = kbhook->time;
-				States[n].events[States[n].state].ki.wScan = (WORD)kbhook->scanCode;
-				States[n].events[States[n].state].ki.wVk = (WORD)kbhook->vkCode;
-
-				States[n].tick = GetTickCount();
-				LoG( "T KEY set state in %d", n );
-				States[n].state = 4;
-				break;
-			}
-		}
-	}
-	else {
-		for( n = 0; n < 10; n++ ) {
-			if( States[n].state ) {
-				LoG( "pending state...%d", n );
-				if( (GetTickCount() - States[n].tick) > 250 ) {
-					int e;
-					LoG( "Expired %d", States[n].state );
-					for( e = 0; e < States[n].state; e++ ) {
-						LoG( "Call next with what would have been?" );
-						//RawInput()
-						resending = 1;
-						States[n].events[e].ki.time = GetTickCount();
-						SendInput( 1, States[n].events + e, sizeof( INPUT ) );
-						States[n].eventsUp[e].ki.time = GetTickCount();
-						SendInput( 1, States[n].eventsUp + e, sizeof( INPUT ) );
-						resending = 0;
-						//CallNextHookEx( hidg.hookHandleLL, States[n].pending[e].code, States[n].pending[e].wParam, (LPARAM)&States[n].pending[e].lParam );
-					}
-					LoG( "State has been pending for tooo long. %d", n );
-					States[n].state = 0;
-				}
-				else {
-					LoG( "state pending, mismatch key; flush state?" );
-				}
-			}
-		}
-	}
-	*/
 	if(	hidg.blocking ) {
 		hidg.skipEvent = 1;
 		if( 0 ) {
@@ -525,7 +392,7 @@ struct msgbuf {
 static void uv_closed( uv_handle_t* handle ) {
     KeyHidObject* myself = (KeyHidObject*)handle->data;
 
-    myself->readComplete.Reset();
+    myself->readCallback.Reset();
     myself->this_.Reset();
 }
 
@@ -540,11 +407,11 @@ void asyncmsg( uv_async_t* handle ) {
 
 	{
 		struct msgbuf *msg;
-                while( msg = (struct msgbuf *)DequeLink( &myself->readQueue ) ) {
-                    if( msg->close ) {
-                        uv_close( (uv_handle_t*)&myself->async, uv_closed );
-                        break;
-                    }
+        while( msg = (struct msgbuf *)DequeLink( &myself->readQueue ) ) {
+            if( msg->close ) {
+                uv_close( (uv_handle_t*)&myself->async, uv_closed );
+                break;
+            }
 
 			Local<Object> eventObj = Object::New( isolate );
 			struct input_data *indev;
@@ -587,7 +454,6 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		// Invoked as constructor: `new MyObject(...)`
 		KeyHidObject* obj = new KeyHidObject( );
 		{
-
 			MemSet( &obj->async, 0, sizeof( obj->async ) );
 
 			class constructorSet *c = getConstructors( isolate );
@@ -598,7 +464,6 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			obj->this_.Reset( isolate, args.This() );
 			args.GetReturnValue().Set( args.This() );
 		}
-
 	}
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
@@ -612,7 +477,7 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void CPROC dispatchKey( uintptr_t psv, RAWINPUT *event, WCHAR ch, int len ) {
     struct msgbuf *msgbuf = NewPlus( struct msgbuf, len );
-    msgbuf->closed = FALSE;
+    msgbuf->close = FALSE;
     msgbuf->event = event[0];
     msgbuf->ch = ch;
 
@@ -648,13 +513,15 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
         if( args[0]->IsNull() ) {
             if( argc > 1 ) {
                 if( args[1]->IsTrue() ) {
-                    struct msgbuf *msgbuf = NewPlus( struct msgbuf, len );
-                    msgbuf->closed = TRUE;
+                    struct msgbuf *msgbuf = NewPlus( struct msgbuf, 1 );
+                    msgbuf->close = TRUE;
                     EnqueLink( &com->readQueue, msgbuf );
                     uv_async_send( &com->async );
-                }
+					return;
+                } 
             }
-	}
+			com->readCallback.Reset();
+		}
 	else if( args[0]->IsFunction() ) {
 		Local<Function> arg0 = Local<Function>::Cast( args[0] );
 		com->readCallback = Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 );
