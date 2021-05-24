@@ -73,6 +73,7 @@ enum wsEvents {
 	WS_EVENT_READ,   // onMessage callback (wssi,wsc)
 	WS_EVENT_ERROR,  // error event (unused)  (wssi,wss,wsc)
 	WS_EVENT_REQUEST,// websocket non-upgrade request
+	WS_EVENT_RESPONSE,// websocket non-upgrade request
 	WS_EVENT_ERROR_CLOSE, // illegal server connection
 	WS_EVENT_LOW_ERROR,
 	WS_EVENT_RELEASE_BUFFER,
@@ -119,6 +120,7 @@ struct optionStrings {
 	Eternal<String> *redirectString;
 	Eternal<String> *keepAliveString;
 	Eternal<String> *versionString;
+	Eternal<String> *onReplyString;
 };
 
 static PLIST strings;
@@ -226,6 +228,16 @@ typedef struct wscEvent WSC_EVENT;
 #define MAXWSC_EVENTSPERSET 128
 DeclareSet( WSC_EVENT );
 
+struct httpRequestEvent {
+	enum wsEvents eventType;
+    class httpRequestObject *_this;
+	HTTPState state;
+};
+typedef struct httpRequestEvent HTTP_REQUEST_EVENT;
+#define MAXHTTP_REQUEST_EVENTSPERSET 128
+DeclareSet( HTTP_REQUEST_EVENT );
+
+
 struct socketTransport {
 	class wssiObject *wssi;
 	WSS_EVENT* acceptEventMessage;
@@ -252,13 +264,17 @@ static struct local {
 	//uv_loop_t* loop;
 	int waiting;
 	PTHREAD jsThread;
-	CRITICALSECTION csWssEvents;
-	PWSS_EVENTSET wssEvents;
-	CRITICALSECTION csWssiEvents;
-	PWSSI_EVENTSET wssiEvents;
-	CRITICALSECTION csWscEvents;
-	PWSC_EVENTSET wscEvents;
-	PLIST transportDestinations;
+        CRITICALSECTION csWssEvents;
+        PWSS_EVENTSET wssEvents;
+        CRITICALSECTION csWssiEvents;
+        PWSSI_EVENTSET wssiEvents;
+        CRITICALSECTION csWscEvents;
+        PWSC_EVENTSET wscEvents;
+
+        CRITICALSECTION csHttpRequestEvents;
+        PHTTP_REQUEST_EVENTSET httpRequestEvents;
+
+        PLIST transportDestinations;
 	PLIST pendingWrites;
 } l;
 
@@ -313,6 +329,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->rejectUnauthorizedString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "rejectUnauthorized", v8::NewStringType::kNormal ).ToLocalChecked() );
 		check->keepAliveString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "keepAlive", v8::NewStringType::kNormal ).ToLocalChecked() );
 		check->versionString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "version", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->onReplyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "onReply", v8::NewStringType::kNormal ).ToLocalChecked() );
+		
 	}
 	return check;
 }
@@ -371,6 +389,7 @@ public:
 	PCLIENT pc;
 	//static Persistent<Function> constructor;
 	Persistent<Object> _this;
+	struct HTTPRequestOptions* opts;
 	//PVARTEXT pvtResult;
 	bool ssl;
 	int port;
@@ -381,6 +400,7 @@ public:
 	PLIST headers = NULL;
 	char *ca;
 	char *path;
+
 	bool rejestUnauthorized;
 
 	bool firstDispatchDone;
@@ -404,10 +424,13 @@ public:
 	static void gets( const v8::FunctionCallbackInfo<Value>& args );
 	static void getRequest( const v8::FunctionCallbackInfo<Value>& args, bool secure );
 
+
+	Persistent<Object> resultObject;
 	Persistent<Function, CopyablePersistentTraits<Function>> resultCallback;
 	Persistent<Function, CopyablePersistentTraits<Function>> cbError;
 
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	PLINKQUEUE eventQueue;
 
 	~httpRequestObject();
 };
@@ -548,6 +571,14 @@ static WSC_EVENT *GetWscEvent() {
 	return evt;
 }
 
+static HTTP_REQUEST_EVENT *GetHttpRequestEvent() {
+	EnterCriticalSec( &l.csHttpRequestEvents );
+	HTTP_REQUEST_EVENT *evt = GetFromSet( HTTP_REQUEST_EVENT, &l.httpRequestEvents );
+	memset( evt, 0, sizeof( HTTP_REQUEST_EVENT ) );
+	LeaveCriticalSec( &l.csHttpRequestEvents );
+	return evt;
+}
+
 static void DropWssEvent( WSS_EVENT *evt ) {
 	EnterCriticalSec( &l.csWssEvents );
 	DeleteFromSet( WSS_EVENT, l.wssEvents, evt );
@@ -565,6 +596,13 @@ static void DropWscEvent( WSC_EVENT *evt ) {
 	DeleteFromSet( WSC_EVENT, l.wscEvents, evt );
 	LeaveCriticalSec( &l.csWscEvents );
 }
+
+static void DropHttpRequestEvent( HTTP_REQUEST_EVENT *evt ) {
+	EnterCriticalSec( &l.csHttpRequestEvents );
+	DeleteFromSet( HTTP_REQUEST_EVENT, l.httpRequestEvents, evt );
+	LeaveCriticalSec( &l.csHttpRequestEvents );
+}
+
 
 static void uv_closed_wssi( uv_handle_t* handle ) {
 	wssiObject* myself = (wssiObject*)handle->data;
@@ -723,6 +761,112 @@ static void acceptRejected(const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+static void uv_closed_httpRequest( uv_handle_t* handle ) {
+	wssiObject* myself = (wssiObject*)handle->data;
+
+        myself->_this.Reset();
+}
+
+static void httpRequestAsyncMsg( uv_async_t* handle ) {
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    HandleScope scope( isolate );
+    httpRequestObject* myself = (httpRequestObject*)handle->data;
+    struct HTTPRequestOptions *opts = myself->opts;
+
+    //httpRequestObject
+
+    Local<Context> context = isolate->GetCurrentContext();
+	{
+		struct httpRequestEvent* eventMessage;
+		while( eventMessage = (struct httpRequestEvent*)DequeLink( &myself->eventQueue ) ) {
+			Local<Value> argv[1];
+			Local<ArrayBuffer> ab;
+			switch( eventMessage->eventType ) {
+
+			case WS_EVENT_RESPONSE:
+			{
+				HTTPState state;
+				Local<Function> cb;
+
+				Local<Object> result; result = Object::New( isolate );
+
+				state = eventMessage->state;
+				{
+					HTTPRequestOptions* opts; opts = myself->opts;
+					char* header;
+					INDEX idx;
+					// cleanup what we allocated.
+					LIST_FORALL( opts->headers, idx, char*, header )
+						Release( header );
+					DeleteList( &opts->headers );
+				}
+				if( !state ) {
+					SET( result, "error",
+						state ? String::NewFromUtf8( isolate, "No Content", v8::NewStringType::kNormal ).ToLocalChecked() : String::NewFromUtf8( isolate, "Connect Error", v8::NewStringType::kNormal ).ToLocalChecked() );
+
+					cb = Local<Function>::New( isolate, myself->resultCallback );
+					argv[0] = result;
+					cb->Call( context, myself->_this.Get( isolate ), 1, argv );
+
+					//args.GetReturnValue().Set( result );
+
+					break;
+				}
+				PTEXT content; content = GetHttpContent( state );
+				if( state && GetHttpResponseCode( state ) ) {
+					if( content ) {
+						SET( result, "content"
+							, String::NewFromUtf8( isolate, GetText( content ), v8::NewStringType::kNormal ).ToLocalChecked() );
+					}
+					SET( result, "statusCode"
+						, Integer::New( isolate, GetHttpResponseCode( state ) ) );
+					const char* textCode = GetHttpResponseStatus( state );
+
+					SET( result, "status"
+						, String::NewFromUtf8( isolate, textCode ? textCode : "NO RESPONSE", v8::NewStringType::kNormal ).ToLocalChecked() );
+					Local<Array> arr = Array::New( isolate );
+					PLIST headers = GetHttpHeaderFields( state );
+					INDEX idx;
+					struct HttpField* header;
+					//headers
+					LIST_FORALL( headers, idx, struct HttpField*, header ) {
+						SET( arr, (const char*)GetText( header->name )
+							, String::NewFromUtf8( isolate, (const char*)GetText( header->value )
+								, NewStringType::kNormal, (int)GetTextSize( header->value ) ).ToLocalChecked() );
+					}
+					SET( result, "headers", arr );
+
+					DestroyHttpState( state );
+				} else {
+					SET( result, "error",
+						state ? String::NewFromUtf8( isolate, "No Content", v8::NewStringType::kNormal ).ToLocalChecked()
+						: String::NewFromUtf8( isolate, "Connect Error", v8::NewStringType::kNormal ).ToLocalChecked() );
+
+				}
+
+				LineRelease( opts->url );
+				if( myself->resultCallback.IsEmpty() ) {
+					cb = Local<Function>::New( isolate, myself->resultCallback );
+					argv[0] = result;
+					cb->Call( context, myself->_this.Get( isolate ), 1, argv );
+				}  else {
+
+					myself->resultObject.Reset( isolate, result );
+					myself->finished = true;
+					WakeThread( myself->waiter );
+				}
+				break;
+			}
+			case WS_EVENT_CLOSE:
+				uv_close( (uv_handle_t*)&myself->async, uv_closed_wssi );
+				DropHttpRequestEvent( eventMessage );
+				DeleteLinkQueue( &myself->eventQueue );
+				break;
+			}
+		}
+	}
+}
+
 static void wssiAsyncMsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
@@ -832,9 +976,10 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 #endif
 					} else
 						argv[2] = Null( isolate );
-					myself->errorLowCallback.Get( isolate )->Call( context, myself->_this.Get( isolate ), 3, argv );
+						myself->errorLowCallback.Get( isolate )->Call( context, myself->_this.Get( isolate ), 3, argv );
 
-				}
+                 }
+
 			} else if( eventMessage->eventType == WS_EVENT_REQUEST ) {
 				//lprintf( "Comes in directly as a request; don't even get accept..." );
 				if( !myself->requestCallback.IsEmpty() ) {
@@ -3036,6 +3181,14 @@ httpRequestObject::httpRequestObject():_this() {
 
 httpRequestObject::~httpRequestObject() {
 
+    	struct httpRequestEvent *pevt = GetHttpRequestEvent();
+	//lprintf( "Server Websocket closed; post to javascript %p", wss );
+	(*pevt).eventType = WS_EVENT_CLOSE;
+        (*pevt)._this = this;
+
+	//->closing = 1;
+	EnqueLink( &this->eventQueue, pevt );
+	uv_async_send( &this->async );
 }
 
 void httpRequestObject::New( const FunctionCallbackInfo<Value>& args ) {
@@ -3044,7 +3197,11 @@ void httpRequestObject::New( const FunctionCallbackInfo<Value>& args ) {
 		httpRequestObject *request = new httpRequestObject();
 		Local<Object> _this = args.This();
 		request->_this.Reset( isolate, _this );
-		request->Wrap( _this );
+                request->Wrap( _this );
+
+                class constructorSet* c = getConstructors( isolate );
+		uv_async_init( c->loop, &request->async, httpRequestAsyncMsg );
+
 		args.GetReturnValue().Set( _this );
 	}
 	else {
@@ -3079,7 +3236,7 @@ void httpRequestObject::on( const FunctionCallbackInfo<Value>& args ) {
 
 static void 	readHeaders( Isolate *isolate, Local<Context> context, httpRequestObject* httpRequest, Local<Object> headers ) {
 	Local<Array> props = headers->GetPropertyNames( context ).ToLocalChecked();
-	for( int p = 0; p < props->Length(); p++ ) {
+	for( uint32_t p = 0; p < props->Length(); p++ ) {
 		Local<Value> name = props->Get( context, p ).ToLocalChecked();
 		Local<Value> value = headers->Get( context, name ).ToLocalChecked();
 		String::Utf8Value localName( isolate,  name );
@@ -3096,6 +3253,37 @@ static void 	readHeaders( Isolate *isolate, Local<Context> context, httpRequestO
 static void requestLongBufferWrite( uintptr_t userData ) {
 	//httpRequestObject* httpRequest = (httpRequestObject*)userData;
 
+}
+
+static uintptr_t DoRequest( PTHREAD thread ) {
+    uintptr_t psv = GetThreadParam( thread );
+    httpRequestObject *req = (httpRequestObject *)psv;
+    //struct HTTPRequestOptions *opts = (struct HTTPRequestOptions*)psv;
+    HTTPState state = NULL;
+    int retries;
+
+    for( retries = 0; !state && retries < 3; retries++ ) {
+    	//lprintf( "request: %s  %s", GetText( address ), GetText( url ) );
+
+    	//if( httpRequest->ssl )
+    	state = GetHttpsQueryEx( req->opts->address, req->opts->url, req->opts->certChain, req->opts );
+
+    }
+
+    struct httpRequestEvent *pevt = GetHttpRequestEvent();
+	//lprintf( "posting request event to JS  %s", GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) );
+	SetWebSocketHttpCloseCallback( req->pc, webSockHttpClose );
+	SetNetworkWriteComplete( req->pc, webSocketWriteComplete );
+	(*pevt).eventType = WS_EVENT_RESPONSE;
+	//(*pevt).waiter = MakeThread();
+	(*pevt)._this = req;
+	( *pevt ).state = state;
+	EnqueLink( &req->eventQueue, pevt );
+	uv_async_send( &req->async );
+
+
+
+    return 0;
 }
 
 void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, bool secure ) {
@@ -3148,7 +3336,10 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 			httpRequest->content = StrDup( *value );
 			httpRequest->contentLen = value.length();
 		}
-	}
+        } else {
+            httpRequest->content = NULL;
+            httpRequest->contentLen = 0;
+        }
 
 	if( secure && options->Has( context, optName = strings->caString->Get( isolate ) ).ToChecked() ) {
 		if( GETV( options, optName )->IsString() ) {
@@ -3165,94 +3356,49 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		String::Utf8Value value( USE_ISOLATE( isolate ) GETV( options, optName ) );
 		httpRequest->path = StrDup( *value );
 	}
+	if( options->Has( context, optName = strings->onReplyString->Get( isolate ) ).ToChecked() ) {
+		httpRequest->resultCallback.Reset( isolate, GETV( options, optName ).As<Function>());
+	}
 
-	Local<Object> result = Object::New( isolate );
-	NetworkWait( NULL, 256, 2 );  // 1GB memory
+	NetworkWait( NULL, 256, 2 );
 
 	{
 		PVARTEXT pvtAddress = VarTextCreate();
 		vtprintf( pvtAddress, "%s:%d", httpRequest->hostname, httpRequest->port );
 
-		PTEXT address = VarTextPeek( pvtAddress );
+		PTEXT address = VarTextGet( pvtAddress );
 		PTEXT url = SegCreateFromText( httpRequest->path );
 
 		HTTPState state = NULL;
-		int retries;
 
-		struct HTTPRequestOptions opts = {};
-		opts.ssl = httpRequest->ssl;
-		opts.headers = httpRequest->headers;
-		opts.certChain = httpRequest->ca;
-		opts.method = httpRequest->method;
-		//opts.agent = httpRequest->agent;
-		opts.contentLen = httpRequest->contentLen;
-		opts.content = httpRequest->content;
+        struct HTTPRequestOptions *opts = NewPlus( struct HTTPRequestOptions, 0 );
+		httpRequest->opts = opts;
+        opts->url = url;
+        opts->address = address;
+		opts->ssl = httpRequest->ssl;
+		opts->headers = httpRequest->headers;
+		opts->certChain = httpRequest->ca;
+		opts->method = httpRequest->method;
+		//opts->agent = httpRequest->agent;
+		opts->contentLen = httpRequest->contentLen;
+		opts->content = httpRequest->content;
 
-		opts.writeComplete = requestLongBufferWrite;
-		opts.userData = (uintptr_t)httpRequest;
+		opts->writeComplete = requestLongBufferWrite;
+		opts->userData = (uintptr_t)httpRequest;
 
-		for( retries = 0; !state && retries < 3; retries++ ) {
-			//lprintf( "request: %s  %s", GetText( address ), GetText( url ) );
-
-			//if( httpRequest->ssl )
-			state = GetHttpsQueryEx( address, url, httpRequest->ca, &opts );
-
-		}
-		{
-			char* header;
-			INDEX idx;
-			// cleanup what we allocated.
-			LIST_FORALL( opts.headers, idx, char*, header )
-				Release( header );
-			DeleteList( &opts.headers );
-		}
-		if( !state ) {
-			SET( result, "error",
-				state ? String::NewFromUtf8( isolate, "No Content", v8::NewStringType::kNormal ).ToLocalChecked() : String::NewFromUtf8( isolate, "Connect Error", v8::NewStringType::kNormal ).ToLocalChecked() );
-			args.GetReturnValue().Set( result );
-			return;
-		}
-		PTEXT content = GetHttpContent(state);
-		if( state && GetHttpResponseCode( state ) )
-		{
-			if( content ) {
-				SET( result, "content"
-					, String::NewFromUtf8( isolate, GetText( content ), v8::NewStringType::kNormal ).ToLocalChecked() );
-			}
-			SET( result, "statusCode"
-				, Integer::New( isolate, GetHttpResponseCode( state ) ) );
-			const char* textCode = GetHttpResponseStatus( state );
-			
-			SET( result, "status"
-				, String::NewFromUtf8( isolate, textCode?textCode:"NO RESPONSE", v8::NewStringType::kNormal ).ToLocalChecked() );
-			Local<Array> arr = Array::New( isolate );
-			PLIST headers = GetHttpHeaderFields( state );
-			INDEX idx;
-			struct HttpField *header;
-			//headers
-			LIST_FORALL( headers, idx, struct HttpField *, header ) {
-				SET( arr, (const char*)GetText( header->name )
-					, String::NewFromUtf8( isolate, (const char*)GetText( header->value )
-						, NewStringType::kNormal, (int)GetTextSize( header->value ) ).ToLocalChecked() );
-			}
-			SET( result, "headers", arr );
-
-			DestroyHttpState( state );
-		}
-		else
-		{
-			SET( result, "error",
-				state?String::NewFromUtf8( isolate, "No Content", v8::NewStringType::kNormal ).ToLocalChecked() 
-					:String::NewFromUtf8( isolate, "Connect Error", v8::NewStringType::kNormal ).ToLocalChecked() );
-
-		}
-
+        ThreadTo( DoRequest, (uintptr_t)&opts );
 		VarTextDestroy( &pvtAddress );
-		LineRelease( url );
 	}
 
+	if( httpRequest->resultCallback.IsEmpty() ) {
+		httpRequest->waiter = MakeThread();
+		while( !httpRequest->finished )
+			WakeableSleep( 1000 );
+		args.GetReturnValue().Set( httpRequest->resultObject.Get( isolate ) );
 
-	args.GetReturnValue().Set( result );
+		httpRequest->resultObject.Reset();
+	} 
+
 }
 
 void httpRequestObject::get( const FunctionCallbackInfo<Value>& args ) {

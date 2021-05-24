@@ -12897,6 +12897,8 @@ struct HTTPRequestHeader {
 	char* value;
 };
 struct HTTPRequestOptions {
+    PTEXT url;
+    PTEXT address;
   // deafult GET
 	char* method;
  // list of TEXTCAHR*
