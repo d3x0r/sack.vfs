@@ -487,7 +487,8 @@ KeyHidObject::KeyHidObject(  ) {
 }
 
 KeyHidObject::~KeyHidObject() {
-	hidg.eventHandler = NULL; // no longer have a handler.
+    hidg.eventHandler = NULL; // no longer have a handler.
+
 }
 
 
@@ -516,9 +517,17 @@ void KeyHidObjectInit( Isolate *isolate, Local<Object> exports ) {
 }
 
 struct msgbuf {
+    LOGICAL close;
 	RAWINPUT event;
 	WCHAR ch;
 };
+
+static void uv_closed( uv_handle_t* handle ) {
+    KeyHidObject* myself = (KeyHidObject*)handle->data;
+
+    myself->readComplete.Reset();
+    myself->this_.Reset();
+}
 
 void asyncmsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
@@ -531,7 +540,12 @@ void asyncmsg( uv_async_t* handle ) {
 
 	{
 		struct msgbuf *msg;
-		while( msg = (struct msgbuf *)DequeLink( &myself->readQueue ) ) {
+                while( msg = (struct msgbuf *)DequeLink( &myself->readQueue ) ) {
+                    if( msg->close ) {
+                        uv_close( (uv_handle_t*)&myself->async, uv_closed );
+                        break;
+                    }
+
 			Local<Object> eventObj = Object::New( isolate );
 			struct input_data *indev;
 			INDEX idx;
@@ -597,13 +611,14 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 void CPROC dispatchKey( uintptr_t psv, RAWINPUT *event, WCHAR ch, int len ) {
-	struct msgbuf *msgbuf = NewPlus( struct msgbuf, len );
-	msgbuf->event = event[0];
-	msgbuf->ch = ch;
+    struct msgbuf *msgbuf = NewPlus( struct msgbuf, len );
+    msgbuf->closed = FALSE;
+    msgbuf->event = event[0];
+    msgbuf->ch = ch;
 
-	KeyHidObject *com = (KeyHidObject*)psv;
-	EnqueLink( &com->readQueue, msgbuf );
-	uv_async_send( &com->async );
+    KeyHidObject *com = (KeyHidObject*)psv;
+    EnqueLink( &com->readQueue, msgbuf );
+    uv_async_send( &com->async );
 }
 
 void KeyHidObject::lock( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -630,9 +645,15 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 
 	KeyHidObject *com = ObjectWrap::Unwrap<KeyHidObject>( args.This() );
-	if( args[0]->IsNull() ) {
-		com->readCallback.Reset();
-		com->this_.Reset();
+        if( args[0]->IsNull() ) {
+            if( argc > 1 ) {
+                if( args[1]->IsTrue() ) {
+                    struct msgbuf *msgbuf = NewPlus( struct msgbuf, len );
+                    msgbuf->closed = TRUE;
+                    EnqueLink( &com->readQueue, msgbuf );
+                    uv_async_send( &com->async );
+                }
+            }
 	}
 	else if( args[0]->IsFunction() ) {
 		Local<Function> arg0 = Local<Function>::Cast( args[0] );
