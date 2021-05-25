@@ -174,28 +174,42 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
 				if( indev->hDevice == input->header.hDevice )
 					break;
 			}
-			if( !indev ) {
-				UINT uSize;
-				indev = NewArray( struct input_data, 1 );
-				memset( indev, 0, sizeof( *indev ) );
+			if (!indev) {
+				indev = NewArray(struct input_data, 1);
+				memset(indev, 0, sizeof(*indev));
 				indev->hDevice = input->header.hDevice;
-				GetRawInputDeviceInfo(
-					input->header.hDevice,
-					RIDI_DEVICENAME,
-					NULL,
-					&uSize
-				);
-				indev->name = NewArray( char, uSize );
-				GetRawInputDeviceInfo(
-					input->header.hDevice,
-					RIDI_DEVICENAME,
-					indev->name,
-					&uSize
-				);
-				//if(0)
+				if (!input->header.hDevice) {
+					indev->name = StrDup( "Stdin" );
 
-				lprintf( "New Device: %s", indev->name );
-				AddLink( &hidg.inputs, indev );
+				}
+				else {
+					UINT uSize;
+					UINT x = GetRawInputDeviceInfo(
+						input->header.hDevice,
+						RIDI_DEVICENAME,
+						NULL,
+						&uSize
+					);
+					DWORD dwError = GetLastError();
+					if (dwError == ERROR_INVALID_HANDLE)
+					{
+						lprintf("result: %d %d %p", x, GetLastError(), input->header.hDevice);
+						//	ERROR_SUCCESS
+					}
+					else {
+						indev->name = NewArray(char, uSize);
+						GetRawInputDeviceInfo(
+							input->header.hDevice,
+							RIDI_DEVICENAME,
+							indev->name,
+							&uSize
+						);
+						//if(0)
+
+					}
+				}
+				//lprintf("New Device: %s", indev->name);
+				AddLink(&hidg.inputs, indev);
 			}
 		}
 		if( hidg.eventHandler )
