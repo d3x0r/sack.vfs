@@ -763,9 +763,10 @@ static void acceptRejected(const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 static void uv_closed_httpRequest( uv_handle_t* handle ) {
-	wssiObject* myself = (wssiObject*)handle->data;
+	httpRequestObject* myself = (httpRequestObject*)handle->data;
 
-        myself->_this.Reset();
+	myself->_this.Reset();
+	delete myself;
 }
 
 static void httpRequestAsyncMsg( uv_async_t* handle ) {
@@ -773,8 +774,6 @@ static void httpRequestAsyncMsg( uv_async_t* handle ) {
     HandleScope scope( isolate );
     httpRequestObject* myself = (httpRequestObject*)handle->data;
     struct HTTPRequestOptions *opts = myself->opts;
-
-    //httpRequestObject
 
     Local<Context> context = isolate->GetCurrentContext();
 	{
@@ -846,23 +845,16 @@ static void httpRequestAsyncMsg( uv_async_t* handle ) {
 				}
 
 				LineRelease( opts->url );
-				if( myself->resultCallback.IsEmpty() ) {
-					cb = Local<Function>::New( isolate, myself->resultCallback );
-					argv[0] = result;
-					cb->Call( context, myself->_this.Get( isolate ), 1, argv );
-				}  else {
+				cb = Local<Function>::New( isolate, myself->resultCallback );
+				argv[0] = result;
+				cb->Call( context, Undefined(isolate), 1, argv );
+				Deallocate( HTTPRequestOptions*, myself->opts);
 
-					myself->resultObject.Reset( isolate, result );
-					myself->finished = true;
-					WakeThread( myself->waiter );
-				}
+				DeleteLinkQueue(&myself->eventQueue);
+				uv_close( (uv_handle_t*)&myself->async, uv_closed_httpRequest );
+				DropHttpRequestEvent( eventMessage );
 				break;
 			}
-			case WS_EVENT_CLOSE:
-				uv_close( (uv_handle_t*)&myself->async, uv_closed_wssi );
-				DropHttpRequestEvent( eventMessage );
-				DeleteLinkQueue( &myself->eventQueue );
-				break;
 			}
 		}
 	}
@@ -3183,15 +3175,7 @@ httpRequestObject::httpRequestObject():_this() {
 }
 
 httpRequestObject::~httpRequestObject() {
-
-    	struct httpRequestEvent *pevt = GetHttpRequestEvent();
-	//lprintf( "Server Websocket closed; post to javascript %p", wss );
-	(*pevt).eventType = WS_EVENT_CLOSE;
-        (*pevt)._this = this;
-
-	//->closing = 1;
-	EnqueLink( &this->eventQueue, pevt );
-	uv_async_send( &this->async );
+	
 }
 
 void httpRequestObject::New( const FunctionCallbackInfo<Value>& args ) {
@@ -3291,8 +3275,6 @@ static uintptr_t DoRequest( PTHREAD thread ) {
 		WakeThread(req->waiter);
 	}
 
-
-
     return 0;
 }
 
@@ -3372,11 +3354,10 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 
 	NetworkWait( NULL, 256, 2 );
 
-	{
+	if (!httpRequest->resultCallback.IsEmpty()) {
 		class constructorSet* c = getConstructors(isolate);
 		uv_async_init(c->loop, &httpRequest->async, httpRequestAsyncMsg);
 		httpRequest->async.data = httpRequest;
-
 	}
 	{
 		PVARTEXT pvtAddress = VarTextCreate();
@@ -3408,15 +3389,14 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	}
 
 	if (httpRequest->resultCallback.IsEmpty()) {
+		// if no callback, block until response is 'finished'
 		httpRequest->waiter = MakeThread();
 		while (!httpRequest->finished)
 			WakeableSleep(1000);
 
 		{
-			Local<Function> cb;
 			HTTPState state = httpRequest->state;
 			Local<Object> result; result = Object::New(isolate);
-			Local<Value> argv[1];
 
 			{
 				HTTPRequestOptions* opts; opts = httpRequest->opts;
@@ -3430,14 +3410,6 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 			if (!state) {
 				SET(result, "error",
 					state ? String::NewFromUtf8(isolate, "No Content", v8::NewStringType::kNormal).ToLocalChecked() : String::NewFromUtf8(isolate, "Connect Error", v8::NewStringType::kNormal).ToLocalChecked());
-
-				cb = Local<Function>::New(isolate, httpRequest->resultCallback);
-				argv[0] = result;
-				cb->Call(context, httpRequest->_this.Get(isolate), 1, argv);
-
-				//args.GetReturnValue().Set( result );
-
-				///break;
 			}
 			PTEXT content; content = GetHttpContent(state);
 			if (state && GetHttpResponseCode(state)) {
@@ -3471,18 +3443,10 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 					: String::NewFromUtf8(isolate, "Connect Error", v8::NewStringType::kNormal).ToLocalChecked());
 
 			}
-
-			//LineRelease(opts->url);
-			//break;
 			args.GetReturnValue().Set(result);
 		}
 		httpRequest->resultObject.Reset();
 	}
-	//else 
-
-
-		//args.GetReturnValue().Set(httpRequest->resultObject.Get(isolate));
-
 	
 
 }
