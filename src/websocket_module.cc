@@ -411,6 +411,7 @@ public:
 	PTHREAD waiter;
 
 	PTEXT result;
+	HTTPState state;
 	// if set, will be called when content buffer has been sent.
 	//void ( *writeComplete )(void );
 public:
@@ -3177,6 +3178,8 @@ httpRequestObject::httpRequestObject():_this() {
 	finished = false;
 	waiter = NULL;
 	result = NULL;
+	eventQueue = NULL;
+
 }
 
 httpRequestObject::~httpRequestObject() {
@@ -3272,14 +3275,21 @@ static uintptr_t DoRequest( PTHREAD thread ) {
 
     struct httpRequestEvent *pevt = GetHttpRequestEvent();
 	//lprintf( "posting request event to JS  %s", GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) );
-	SetWebSocketHttpCloseCallback( req->pc, webSockHttpClose );
-	SetNetworkWriteComplete( req->pc, webSocketWriteComplete );
-	(*pevt).eventType = WS_EVENT_RESPONSE;
-	//(*pevt).waiter = MakeThread();
-	(*pevt)._this = req;
-	( *pevt ).state = state;
-	EnqueLink( &req->eventQueue, pevt );
-	uv_async_send( &req->async );
+//	SetWebSocketHttpCloseCallback( req->pc, webSockHttpClose );
+//	SetNetworkWriteComplete( req->pc, webSocketWriteComplete );
+	if (!req->resultCallback.IsEmpty()) {
+		(*pevt).eventType = WS_EVENT_RESPONSE;
+		//(*pevt).waiter = MakeThread();
+		(*pevt)._this = req;
+		(*pevt).state = state;
+		EnqueLink(&req->eventQueue, pevt);
+		uv_async_send(&req->async);
+	}
+	else {
+		req->state = state;
+		req->finished = true;
+		WakeThread(req->waiter);
+	}
 
 
 
@@ -3363,6 +3373,12 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	NetworkWait( NULL, 256, 2 );
 
 	{
+		class constructorSet* c = getConstructors(isolate);
+		uv_async_init(c->loop, &httpRequest->async, httpRequestAsyncMsg);
+		httpRequest->async.data = httpRequest;
+
+	}
+	{
 		PVARTEXT pvtAddress = VarTextCreate();
 		vtprintf( pvtAddress, "%s:%d", httpRequest->hostname, httpRequest->port );
 
@@ -3372,6 +3388,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		HTTPState state = NULL;
 
         struct HTTPRequestOptions *opts = NewPlus( struct HTTPRequestOptions, 0 );
+		MemSet(opts, 0, sizeof(*opts ) );
 		httpRequest->opts = opts;
         opts->url = url;
         opts->address = address;
@@ -3386,18 +3403,87 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		opts->writeComplete = requestLongBufferWrite;
 		opts->userData = (uintptr_t)httpRequest;
 
-        ThreadTo( DoRequest, (uintptr_t)&opts );
+        ThreadTo( DoRequest, (uintptr_t)httpRequest );
 		VarTextDestroy( &pvtAddress );
 	}
 
-	if( httpRequest->resultCallback.IsEmpty() ) {
+	if (httpRequest->resultCallback.IsEmpty()) {
 		httpRequest->waiter = MakeThread();
-		while( !httpRequest->finished )
-			WakeableSleep( 1000 );
-		args.GetReturnValue().Set( httpRequest->resultObject.Get( isolate ) );
+		while (!httpRequest->finished)
+			WakeableSleep(1000);
 
+		{
+			Local<Function> cb;
+			HTTPState state = httpRequest->state;
+			Local<Object> result; result = Object::New(isolate);
+			Local<Value> argv[1];
+
+			{
+				HTTPRequestOptions* opts; opts = httpRequest->opts;
+				char* header;
+				INDEX idx;
+				// cleanup what we allocated.
+				LIST_FORALL(opts->headers, idx, char*, header)
+					Release(header);
+				DeleteList(&opts->headers);
+			}
+			if (!state) {
+				SET(result, "error",
+					state ? String::NewFromUtf8(isolate, "No Content", v8::NewStringType::kNormal).ToLocalChecked() : String::NewFromUtf8(isolate, "Connect Error", v8::NewStringType::kNormal).ToLocalChecked());
+
+				cb = Local<Function>::New(isolate, httpRequest->resultCallback);
+				argv[0] = result;
+				cb->Call(context, httpRequest->_this.Get(isolate), 1, argv);
+
+				//args.GetReturnValue().Set( result );
+
+				///break;
+			}
+			PTEXT content; content = GetHttpContent(state);
+			if (state && GetHttpResponseCode(state)) {
+				if (content) {
+					SET(result, "content"
+						, String::NewFromUtf8(isolate, GetText(content), v8::NewStringType::kNormal).ToLocalChecked());
+				}
+				SET(result, "statusCode"
+					, Integer::New(isolate, GetHttpResponseCode(state)));
+				const char* textCode = GetHttpResponseStatus(state);
+
+				SET(result, "status"
+					, String::NewFromUtf8(isolate, textCode ? textCode : "NO RESPONSE", v8::NewStringType::kNormal).ToLocalChecked());
+				Local<Array> arr = Array::New(isolate);
+				PLIST headers = GetHttpHeaderFields(state);
+				INDEX idx;
+				struct HttpField* header;
+				//headers
+				LIST_FORALL(headers, idx, struct HttpField*, header) {
+					SET(arr, (const char*)GetText(header->name)
+						, String::NewFromUtf8(isolate, (const char*)GetText(header->value)
+							, NewStringType::kNormal, (int)GetTextSize(header->value)).ToLocalChecked());
+				}
+				SET(result, "headers", arr);
+
+				DestroyHttpState(state);
+			}
+			else {
+				SET(result, "error",
+					state ? String::NewFromUtf8(isolate, "No Content", v8::NewStringType::kNormal).ToLocalChecked()
+					: String::NewFromUtf8(isolate, "Connect Error", v8::NewStringType::kNormal).ToLocalChecked());
+
+			}
+
+			//LineRelease(opts->url);
+			//break;
+			args.GetReturnValue().Set(result);
+		}
 		httpRequest->resultObject.Reset();
-	} 
+	}
+	//else 
+
+
+		//args.GetReturnValue().Set(httpRequest->resultObject.Get(isolate));
+
+	
 
 }
 
