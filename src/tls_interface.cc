@@ -1456,7 +1456,7 @@ static void DumpCert( X509 *x509 ) {
 	long serial;
 	serial = ASN1_INTEGER_get( val );
 
-	lprintf( "serial : %d", serial );
+	lprintf( "serial : %ld", serial );
 
 	lprintf( "Subject Identity -------------- " );
 	{
@@ -1531,7 +1531,7 @@ static void DumpCert( X509 *x509 ) {
 			ASN1_STRING *v = (ASN1_STRING *)X509V3_EXT_d2i( ext );
 			int nid = OBJ_obj2nid( o );
 			//V_ASN1_OCTET_STRING
-			lprintf( "extension: %d %d  %s  %s  %d", X509_EXTENSION_get_critical( ext )>0 ? "critical" : "",
+			lprintf( "extension: %s %d  %s  %s  %d", X509_EXTENSION_get_critical( ext )>0 ? "critical" : "",
 			//lprintf( "extension: %d %d  %s  %s  %d", ext->critical>0 ? "critical" : "",
 				nid, OBJ_nid2ln( nid ), OBJ_nid2sn( nid ), v->type );
 			if( nid == NID_authority_key_identifier ) {
@@ -1551,7 +1551,7 @@ static void DumpCert( X509 *x509 ) {
 			else if( nid == NID_basic_constraints ) {
 				BASIC_CONSTRAINTS *bc = (BASIC_CONSTRAINTS *)v;
 				long pathlen = bc->pathlen ? ASN1_INTEGER_get( bc->pathlen ) : 0;
-				lprintf( "Basic Constraint: CA? %d   %s%d", bc->ca, bc->pathlen ? "pathlen:" : "ignore:", pathlen );
+				lprintf( "Basic Constraint: CA? %d   %s %ld", bc->ca, bc->pathlen ? "pathlen:" : "ignore:", pathlen );
 				//X509_get_ext_d2i( x, NID_subject_key_identifier, NULL, NULL );
 				//X509V3_get_d2i( x->cert_info->extensions, nid, crit, idx );
 				// 0x55,0x1D,0x13

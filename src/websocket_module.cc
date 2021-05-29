@@ -1867,7 +1867,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			contentLen = ab->ByteLength();
 			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetBackingStore()->Data(), ab->ByteLength() );
 #else
-			content = ab->GetContents().Data();
+			content = (char*)ab->GetContents().Data();
 			contentLen = ab->ByteLength();
 			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
 #endif
