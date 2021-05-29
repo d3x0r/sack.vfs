@@ -1846,7 +1846,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			contentLen = bodybuf->ByteLength();
 			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetBackingStore()->Data(), bodybuf->ByteLength() );
 #else
-			content = bodybuf->GetContents().Data();
+			content = (char*)bodybuf->GetContents().Data();
 			contentLen = bodybuf->ByteLength();
 			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
 #endif
@@ -1867,9 +1867,9 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			contentLen = ab->ByteLength();
 			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetBackingStore()->Data(), ab->ByteLength() );
 #else
-			content = ab->GetContents()->Data();
+			content = ab->GetContents().Data();
 			contentLen = ab->ByteLength();
-			VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
 #endif
 			{
 				struct pendingWrite* write = new struct pendingWrite();
