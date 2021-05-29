@@ -12897,10 +12897,12 @@ struct HTTPRequestHeader {
 	char* value;
 };
 struct HTTPRequestOptions {
-    PTEXT url;
-    PTEXT address;
   // deafult GET
 	char* method;
+     // path part of the request
+	PTEXT url;
+ // address part of request (ip:port)
+	PTEXT address;
  // list of TEXTCAHR*
 	PLIST headers;
   // content to send with request, if any
