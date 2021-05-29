@@ -1542,7 +1542,7 @@ static void DumpCert( X509 *x509 ) {
 				ASN1_INTEGER *ser = akid->serial;
 				LogBinary( key->data, key->length );
 				long val = ASN1_INTEGER_get( ser );
-				lprintf( "Serial is:%d", val );
+				lprintf( "Serial is:%ld", val );
 			}
 			else if( nid == NID_subject_key_identifier ) {
 				ASN1_OCTET_STRING *skid = (ASN1_OCTET_STRING *)v;
