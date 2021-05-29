@@ -339,7 +339,7 @@ set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc PROPER
 if( UNIX )
   add_definitions( -D__INTERNAL_UUID__ )
   add_definitions( -DUUID_SOURCE )
-  add_definitions( -D__NO_ODBC__ )	
+  #add_definitions( -D__NO_ODBC__ )	
 endif( UNIX )
 
 set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")

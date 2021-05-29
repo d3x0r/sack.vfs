@@ -3,7 +3,8 @@ const util = require('util');
 
 var sack, errN = [];
 try {
-	sack = require('sack' );
+	//sack = require('sack' );
+	//console.log( "Got sack loaded?" );
 } catch( err ) {
 	errN.push(err);
 }
