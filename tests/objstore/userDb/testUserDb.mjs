@@ -1,7 +1,9 @@
 
 import {sack} from "../../../vfs_module.mjs"
-import {User,Device,UniqueIdentifier,go} from "./userDb.mjs"
+import {UserDb,User,Device,UniqueIdentifier,go} from "./userDb.mjs"
 
+const storage = sack.ObjectStorage( "data.os" );
+UserDb.hook( storage );
 
 function makeUsers() {
 	const wait = [];

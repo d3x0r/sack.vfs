@@ -7,6 +7,15 @@ import {SlabArray}  from "./accountDb/SlabArray.mjs"
 const StoredObject = sack.ObjectStorage.StoredObject;
 //import {StoredObject} from "../commonDb.mjs"
 
+
+let inited = false;
+let initResolve = null;
+let initializing = new Promise( (res,rej)=>{
+	initResolve = res;
+} ).then( ()=>{
+	inited = true;
+} );
+
 const configObject = {
 	accountId : null,
 	emailId : null,
@@ -24,14 +33,15 @@ const l = {
 	actAs : null, // relates user ids that user can act As (inhertis rights of act-as )
 	actIn : null, // relates user ids that user belong to (inherit all rights of in)
 	actBy : null, // relates user ids that a user can be enacted by
+        storage : null,
 };
 
 
 
-class UniqueIdentifier extends StoredObject {
+export class UniqueIdentifier extends StoredObject {
 	key = null;
 	constructor() {
-		super();
+		super(l.storage);
 	}
 	addUser( account,user,email,pass ){
 		const newUser = new User();
@@ -45,7 +55,7 @@ class UniqueIdentifier extends StoredObject {
 	}
 }
 
-class User  extends StoredObject{
+export class User  extends StoredObject{
 	unique = null;
 	account = null;
 	name = null;
@@ -54,7 +64,7 @@ class User  extends StoredObject{
 	devices = [];
 	
 	constructor() {
-		super();
+		super(l.storage);
 	}
 	store() {
 		return super.store().then( async (id)=>{	
@@ -93,11 +103,11 @@ User.getEmail = function( email ) {
 
 
 
-class Device  extends StoredObject{
+export class Device  extends StoredObject{
 	key = null;
 	active = false;
 	constructor() {
-		super();
+		super(l.storage);
 	}
 }
 
@@ -141,6 +151,7 @@ async function userActsIn( user, group ) {
 
 const UserDb = {
 	async hook( storage ) {
+            	l.storage = storage;
 		BloomNHash.hook( storage );
 		storage.addEncoders( [ { tag:"~U", p:User, f: null },  { tag:"~D", p:Device, f: null },  { tag:"~I", p:UniqueIdentifier, f: null } ] );
 		storage.addDecoders( [ { tag:"~U", p:User, f: null },  { tag:"~D", p:Device, f: null },  { tag:"~I", p:UniqueIdentifier, f: null } ] );
@@ -166,19 +177,21 @@ const UserDb = {
 				console.log( "User Db Config ERR:", err );
 				const file = await root.create( "userdb.config.jsox" );
 				
-					l.account   = new BloomNHash();
-					l.account.hook( storage );
-					l.email     = new BloomNHash();
-					l.email.hook( storage );
-					l.reconnect = new BloomNHash();
-					l.reconnect.hook( storage );
+				l.account   = new BloomNHash();
+				l.account.hook( storage );
+				l.email     = new BloomNHash();
+				l.email.hook( storage );
+				l.reconnect = new BloomNHash();
+				l.reconnect.hook( storage );
 
-					l.ids.accountId   = await l.account.store();
-					l.ids.emailId     = await l.email.store();
-					l.ids.reconnectId = await l.reconnect.store();
+				l.ids.accountId   = await l.account.store();
+				l.ids.emailId     = await l.email.store();
+				l.ids.reconnectId = await l.reconnect.store();
 
-					file.write( l.ids );
-			} 
+				file.write( l.ids );
+			}
+                	if( initResolve )
+	                	initResolve();
 	},
 	getUser(args){
 		return getUser(args);
@@ -193,4 +206,4 @@ const UserDb = {
 
 Object.freeze( UserDb );
 export {configObject as config};
-export { UserDb } ;
+export { UserDb, initializing as go } ;
