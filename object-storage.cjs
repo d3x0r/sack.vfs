@@ -1381,7 +1381,9 @@ class StoredObject {
 		this.#storage = storage;
 		this.#id = id;
 	}
-    constructor( storage ) {
+	constructor( storage ) {
+        	if( !storage )
+	        	console.trace( "should have storage on create..", storage );
 		if( storage ) this.#storage = storage;
 	}
 	get storage() {
