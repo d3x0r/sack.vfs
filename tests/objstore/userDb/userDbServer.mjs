@@ -1,14 +1,19 @@
 
 
-const from = Number( process.argv[2] ) || 1
-const count = Number( process.argv[3] ) || 100
+const from =  1
+const count =  100
 
 console.log( "Making from;", from );
 import {sack} from "../../../vfs_module.mjs"
+const JSOX = sack.JSOX;
 import {UserDb,User,Device,UniqueIdentifier,go} from "./userDb.mjs"
 
 const storage = sack.ObjectStorage( "data.os" );
 UserDb.hook( storage );
+
+const methods = sack.Volume().read( "tests/objstore/userDb/userDbMethods.js" ).toString();
+const methodMsg = JSON.stringify( {op:"addMethod", code:methods} );
+
 
 async function makeUsers() {
 	for( let i = 1; i < count; i++ ) {
@@ -74,7 +79,22 @@ server.onrequest( function( req, res ) {
 	//ws.clientAddress = ip;
 
 	//console.log( "Received request:", req );
-	if( req.url === "/" ) req.url = "/index.html";
+        // only redirect to something else.
+
+        const parts = req.url.split( '/' );
+        if( parts < 2 ) {
+	        res.writeHead( 301, { Location:"/node_modules/@d3x0r/popups/example/index-login.html#ws" } );
+        	res.end();
+	        return;
+        }
+        if( parts[0] === "node_modules" ) {
+            if( parts[1] !== "@d3x0r" ) {
+            	res.writeHead( 404 );
+                res.end( "<html><head><title>404</title></head><body>Resource not found</body></html>" );
+                return;
+            }
+        }
+        //    req.url = "/index.html";
 
         	// "node_modules/@d3x0r/popups/example/login.html"
 
@@ -133,13 +153,64 @@ server.onaccept( function ( ws ) {
     //this.accept();
 } );
 
+function setKey( f, ws, val ) {
+    if( !f || f === "undefined") {
+        f = sack.Id();
+        console.log( 'sending new id', f );
+        ws.send( `{"op":"set","value":"${val}","key":${JSON.stringify(f)}}` );
+    }
+    return f;
+}
+
 server.onconnect( function (ws) {
-	//console.log( "Connect:", ws );
+	console.log( "Connect:", ws );
 	ws.onmessage( function( msg_ ) {
+
             	const msg = JSOX.parse( msg_ );
+                console.log( 'message:', msg );
+                if( msg.op === "hello" ) {
+			ws.send( methodMsg );
+
+                }
+                if( msg.op === "newClient" ){
+                    ws.thisClient = new UniqueIdentifier();
+                    ws.thisClient.key = setKey( null, ws, "clientId" );
+                    UserDb.addIdentifier( ws.thisClient );
+                }
+
                 if( msg.op === "login" ){
+                    	
+			msg.clientId = setKey( msg.clientId,ws,"clientId" )
+			msg.deviceId = setKey( msg.deviceId,ws,"deviceId" );
+                        //msg.account = ;
 
+                        ws.send( JSON.stringify( { op:"login", success: true } ));
 
+                }
+                if( msg.op === "guest" ){
+			msg.clientId = setKey( msg.clientId,ws,"clientId" )
+			msg.deviceId = setKey( msg.deviceId,ws,"deviceId")
+			msg.account = sack.Id();
+			if( msg.clientId ) {
+                        }
+			if( msg.deviceId ) {
+                        }
+			if( msg.deviceId ) {
+                        }
+                        ws.send( JSON.stringify( { op:"login", success: true } ));
+
+                }
+
+                if( msg.op === "Login" ){
+			//msg.clientId = setKey( msg.clientId,ws,"clientId" )
+			//msg.deviceId = setKey( msg.deviceId,ws,"deviceId")
+			if( msg.clientId ) {
+                        }
+			if( msg.deviceId ) {
+                        }
+			if( msg.seskey ) {
+                        }
+                        ws.send( JSON.stringify( { op:"login", success: true } ));
 
                 }
 
@@ -147,7 +218,7 @@ server.onconnect( function (ws) {
 			const unique = msg.clientId;//new UniqueIdentifier();
 			//unique.key = sack.Id();
 			//console.log( "user:", i );
-
+			
 			unique.store().then( ((i)=> ()=>{
 	 			const user = unique.addUser( i, "User "+i, '' + i + "@email.com", Math.random()*(1<<54) );
 				return user.addDevice( sack.Id(), true ).then( ()=>{

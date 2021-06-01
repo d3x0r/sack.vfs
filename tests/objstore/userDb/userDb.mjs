@@ -20,6 +20,7 @@ const configObject = {
 	accountId : null,
 	emailId : null,
 	reconnectId : null,
+	clientId : null,
 	actAs : null,
 	actIn : null,
 	actBy : null,
@@ -30,6 +31,7 @@ const l = {
 	account   : null,
 	email     : null,
 	reconnect : null,
+        clients : null,
 	actAs : null, // relates user ids that user can act As (inhertis rights of act-as )
 	actIn : null, // relates user ids that user belong to (inherit all rights of in)
 	actBy : null, // relates user ids that a user can be enacted by
@@ -161,6 +163,7 @@ const UserDb = {
 		};
 		getIdentifier = ()=>{
 			const unique = new UniqueIdentifier();
+                        unique.key = sack.Id();
 			unique.hook( storage );
 			return unique;
 		}
@@ -170,6 +173,7 @@ const UserDb = {
 		
 				const obj = await file.read()
 				Object.assign( l.ids, obj );
+				l.clients   = await storage.get( l.ids.clientId );
 				l.email     = await storage.get( l.ids.emailId );
 				l.account   = await storage.get( l.ids.accountId );
 				l.reconnect = await storage.get( l.ids.reconnectId );
@@ -177,6 +181,8 @@ const UserDb = {
 				console.log( "User Db Config ERR:", err );
 				const file = await root.create( "userdb.config.jsox" );
 				
+				l.clients   = new BloomNHash();
+				l.clients.hook( storage );
 				l.account   = new BloomNHash();
 				l.account.hook( storage );
 				l.email     = new BloomNHash();
@@ -184,6 +190,7 @@ const UserDb = {
 				l.reconnect = new BloomNHash();
 				l.reconnect.hook( storage );
 
+				l.ids.clientId    = await l.clients.store();
 				l.ids.accountId   = await l.account.store();
 				l.ids.emailId     = await l.email.store();
 				l.ids.reconnectId = await l.reconnect.store();
@@ -200,6 +207,10 @@ const UserDb = {
 	getIdentifier() {
 		return getIdentifier();
 	},
+        async addIdentifier( i ) {
+            	const id = await i.store()
+        	return l.clients.set( i.key, id );
+        },
 	Device:Device,
 	UniqueIdentifier:UniqueIdentifier,
 }
