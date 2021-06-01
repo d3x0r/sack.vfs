@@ -1066,8 +1066,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					snprintf( buf, 64, "new Date('%04d-%02d-%02dT%02d:%02d:%02d.%03d%c%02d:%02d')", st.yr, st.mo, st.dy, st.hr, st.mn, st.sc, st.ms, negTz?'-':'+', tz, st.zmn );
 					script = Script::Compile( isolate->GetCurrentContext()
 						, String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
-						, new ScriptOrigin( String::NewFromUtf8( isolate, "DateFormatter"
-							, NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
+						, new ScriptOrigin( isolate, String::NewFromUtf8( isolate, "DateFormatter", NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
 					arr->Set( isolate->GetCurrentContext(), n, script->Run( isolate->GetCurrentContext() ).ToLocalChecked() );
 				}
 
