@@ -2,14 +2,14 @@
 var sack = require( '..' );
 var http = sack.HTTP;
 
-		for( var i = 0; i < 10000; i++ ) {
+		for( var i = 0; i < 1; i++ ) {
 		var opts = {  hostname:  //'216.58.192.142',
                 			 '23.239.16.116',
-					  //port : 443,
-					  method : "GET",
+					  port : 80,
+					  method : "POST",
 					  ca : null,
 					  rejectUnauthorized: true,
-					  path : "/"
+					  path : "/loginSomething"
                                           //, agent : false
 					};
 		var res = http.get( opts );

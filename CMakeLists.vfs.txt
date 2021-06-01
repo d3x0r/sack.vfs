@@ -200,20 +200,22 @@ SET( EXTRA_SOURCES
 )
 
 # android has to force this off....
-if( ON )
-set( EXTRA_SOURCES ${EXTRA_SOURCES} 
-		#${SACK_BASE}/src/msgsvr/client/global.h
-		${SACK_BASE}/src/typelib/msgqueue.c
-		${SACK_BASE}/src/msgsvr/client/client_common.c
-		${SACK_BASE}/src/msgsvr/client/client_client.c
-		${SACK_BASE}/src/msgsvr/client/client_events.c
-		${SACK_BASE}/src/msgsvr/client/client_input.c
-		${SACK_BASE}/src/msgsvr/client/client_local.c
-		${SACK_BASE}/src/msgsvr/client/client_output.c
-		${SACK_BASE}/src/msgsvr/client/client_service.c 
-		${SACK_BASE}/src/msgsvr/summoner/construct.c
-)
-endif( ON )
+# Message service support - SYSV Message Queue IPC.  
+# Unused; network websocket connectivity suffices.
+#if( ON )
+#set( EXTRA_SOURCES ${EXTRA_SOURCES} 
+#		#${SACK_BASE}/src/msgsvr/client/global.h
+#		${SACK_BASE}/src/typelib/msgqueue.c
+#		${SACK_BASE}/src/msgsvr/client/client_common.c
+#		${SACK_BASE}/src/msgsvr/client/client_client.c
+#		${SACK_BASE}/src/msgsvr/client/client_events.c
+#		${SACK_BASE}/src/msgsvr/client/client_input.c
+#		${SACK_BASE}/src/msgsvr/client/client_local.c
+#		${SACK_BASE}/src/msgsvr/client/client_output.c
+#		${SACK_BASE}/src/msgsvr/client/client_service.c 
+#		${SACK_BASE}/src/msgsvr/summoner/construct.c
+#)
+#endif( ON )
 
 if( __ANDROID__ )
 	set( EXTRA_SOURCES ${EXTRA_SOURCES} 
@@ -337,7 +339,7 @@ set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc PROPER
 if( UNIX )
   add_definitions( -D__INTERNAL_UUID__ )
   add_definitions( -DUUID_SOURCE )
-  add_definitions( -D__NO_ODBC__ )	
+  #add_definitions( -D__NO_ODBC__ )	
 endif( UNIX )
 
 set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")

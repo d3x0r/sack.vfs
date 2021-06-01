@@ -415,7 +415,7 @@ sack.ObjectStorage.StoredObject = StoredObject
 sack.ObjectStorage.getRemoteFragment = function() {
 	return remoteExtensions;
 }
-
+console.log( "GOT:", _objectStorage, _objectStorage.Thread );
 sack.ObjectStorage.Thread = {
 	post: _objectStorage.Thread.post,
 	accept(cb) {

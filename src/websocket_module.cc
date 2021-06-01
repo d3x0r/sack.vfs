@@ -1846,7 +1846,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			contentLen = bodybuf->ByteLength();
 			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetBackingStore()->Data(), bodybuf->ByteLength() );
 #else
-			content = bodybuf->GetContents()->Data();
+			content = (char*)bodybuf->GetContents().Data();
 			contentLen = bodybuf->ByteLength();
 			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
 #endif
@@ -1867,9 +1867,9 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			contentLen = ab->ByteLength();
 			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetBackingStore()->Data(), ab->ByteLength() );
 #else
-			content = ab->GetContents()->Data();
+			content = (char*)ab->GetContents().Data();
 			contentLen = ab->ByteLength();
-			VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
 #endif
 			{
 				struct pendingWrite* write = new struct pendingWrite();
@@ -3318,8 +3318,14 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		if( content->IsArrayBuffer() ) {
 			// zero copy method... content 
 			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+
+#if ( NODE_MAJOR_VERSION >= 14 )
 			httpRequest->content = (char*)ab->GetBackingStore()->Data();
 			httpRequest->contentLen = ab->GetBackingStore()->ByteLength();
+#else
+			httpRequest->content = (char*)ab->GetContents().Data();
+			httpRequest->contentLen = ab->ByteLength();
+#endif
 
 		} else {
 			// converted from JS widechar to utf8... (transform+copy)
