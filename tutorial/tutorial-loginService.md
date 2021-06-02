@@ -19,6 +19,11 @@ cd sack.vfs
 npm install .
 npm run login-server
 ```
+Opens a server by default on port 8089.
+
+## Test 1 
+
+Connect with a browser(chrome) to `http://localhost:8089/` [URL](http://localhost:8089/).  It will redirect to `node_modules/@d3x0r/popups/example/index-login.html#ws`.
 
 
 ## ...
@@ -32,7 +37,7 @@ The login server expects `node_modules/@d3x0r` modules to be installed; hence th
 ``` js
 
 import {popups} from "popups"
-import {connection} from "/node_modules/@d3x0r/popups/example/webSocketClient.js"
+import {connection,openSocket} from "/node_modules/@d3x0r/popups/example/webSocketClient.js"
 
 connection.loginForm = loginForm = {
      connect() {
@@ -51,6 +56,37 @@ const loginForm = popups.makeLoginForm( ()=>{
 } );
 
 
+openSocket( "localhost:8089" ); // connect to server; default address is location.origin.
 
 ```
+
+
+Opens a server by default on port 8089.
+
+
+### Internals
+
+| Source | Description |
+|---|----|
+| tests\objstore\userDb\userDbServer.mjs  | This is the script that gets run with `npm run login-server`; as `node tests/objstore/userDb/userDbServer.mjs`. |
+| tests\objstore\userDb\userDb.mjs | provides database classes that interface between storage and application code |
+
+| tests\objstore\userDb\userDbMethods.js  | This is the internals of an ` async function( JSON ) { /*this fragment goes here*/ } ` which is executed with the client websocket as the 'this'.  The socket is mutated with functions to interface with user database across socket. |
+
+### Db Methods
+
+The current method fragment requests a unique client ID from the login server; which is saved in `localStorage( 'clientId' );`
+
+| Provided Method | args | Description |
+|-----|----|-----|
+| doLogin | (user,password) | send a login request for the provided username and password; function hashes the password before being sent. |
+| doCreate | ( display,user,password,email) | Send a create account for the provided information. |
+| doGuest | (display) | Create a temporary account which only provides a display name, and fills in random identifiers for the rest. |
+
+
+This is used by the `node_modules/@d3x0r/popups/` `example/webSocketClient.mjs` to handle messages incoming from the server.
+
+| Internal Methods | Description |
+|-----|-----|
+| processMessage(ws,msg) | process an incoming message; the message is expected to be an object, and the websocket the request came in on. Routine can optionally return true to prevent default handling.  Default handling updates the popup form. |
 
