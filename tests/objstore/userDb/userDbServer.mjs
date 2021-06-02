@@ -200,9 +200,10 @@ async function doLogin( ws, msg ){
 
 	const user = await UserDb.getUser( msg.account );
 
-	if( user.unique !== isClient ) {
+	if( user && user.unique !== isClient ) {
 		// save meta relation that these clients used the same localStorage
 		// reset client Id to this User.
+console.log( "User Doing Login:", user, user.unique );
 		sendKey( ws, "clientId", user.unique.key );
 		// force deviceId to null?
 		msg.deviceId = null; // force generate new device for reversion
@@ -235,31 +236,44 @@ async function doLogin( ws, msg ){
 
 async function doCreate( ws, msg ) {
 	const unique = await UserDb.getIdentifier( msg.clientId );//new UniqueIdentifier();
-	//console.log( "unique:", unique, msg  );
+	console.log( "unique:", unique, msg  );
 	if( !unique ) {                              
 		ws.send( JSON.stringify( { op:"create", success: false, ban: true } ) );
 		return;
 	}
 
-	const user = await unique.addUser( msg.user, msg.account, msg.email, msg.password );
-	const dev = await user.addDevice( sack.Id(), true );
-	user.store();
-	ws.send( JSON.stringify( {op:"create", success:true, deviceId:dev.key } ) );
+	const oldUser = await UserDb.User.get( msg.account );
+	console.log( "oldUser:", oldUser );
+	if( oldUser ) {
+		ws.send( JSON.stringify( { op:"create", success: false, account:true } ) );
+		return;
+	}
+	const oldUser2 = await UserDb.User.getEmail( msg.email );
+	console.log( "oldUser:", oldUser2 );
+	if( oldUser2 ) {                 
+		ws.send( JSON.stringify( { op:"create", success: false, email:true } ) );
+		return;
+	}
 
+	const user = await unique.addUser( msg.user, msg.account, msg.email, msg.password );
+	console.log( "user created:", user );
+	ws.state.user= user;
+	// ask the client for a device id
+	ws.send( JSON.stringify( {op:"create", success:false, device:true } ) );
 }
 
 async function addDevice(ws,msg) {
-	const login = ws.state.login;
-	if( login ) {	
+	const user = ws.state.user;
+	if( user ) {	
 		console.log( "Can add device to user..." )
-		const dev = await ws.state.user.addDevice( msg.deviceId, ws.state.user.devices.length < 10?true:false );
+		const dev = await user.addDevice( msg.deviceId, ws.state.user.devices.length < 10?true:false );
 		//console.log( "dev:", dev );
 		if( !dev.active ) {
 			ws.send( JSON.stringify( {op:"login", success:false, inactive:true } ) );
 			return;
 		}
 		ws.send( JSON.stringify( { op:"login", success: true } ));
-		ws.state.login = null;
+		ws.state.user = null;
 	} else {
 		console.log( "Bannable failure." );
 		// out of sequence - there should be a pending login in need of a device ID.
@@ -273,12 +287,22 @@ function LoginState(ws) {
 	this.ws = ws;
 	this.client = null;
 	this.login = null;
+	this.create = null;
 	this.user = null;
+}
+
+async function newClient(ws,msg) {
+	ws.state.client = await UserDb.getIdentifier();
+	sendKey( ws, "clientId", ws.state.client.key );
+	UserDb.addIdentifier( ws.state.client );
+	l.newClients.push( { state:ws.state } );
 }
 
 
 server.onconnect( function (ws) {
 	//console.log( "Connect:", ws );
+	const protocol = ws.headers["Sec-WebSocket-Protocol"];
+	console.log( "protocol:", protocol )
 	ws.state = new LoginState( ws );
 	
 	
@@ -291,10 +315,7 @@ server.onconnect( function (ws) {
                 if( msg.op === "hello" ) {
 			//ws.send( methodMsg );
                 } else if( msg.op === "newClient" ){
-                    ws.state.client = UserDb.getIdentifier();
-		    sendKey( ws, "clientId", ws.state.client.key );
-                    UserDb.addIdentifier( ws.thisClient );
-			l.newClients.push( { client:ws.state } );
+			newClient( ws, msg );
                 } else if( msg.op === "login" ){
 			doLogin( ws, msg );
                 } else if( msg.op === "device" ){

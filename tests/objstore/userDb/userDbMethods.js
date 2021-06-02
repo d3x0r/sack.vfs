@@ -4,6 +4,8 @@ console.log( "Extend this websocket:", this );
 
 const SaltyRNGModule = await Import( "/node_modules/@d3x0r/srg/salty_random_generator.js" );
 const SaltyRNG = SaltyRNGModule.SaltyRNG;
+ws.SaltyRNG = SaltyRNG;
+
 const clientKey = localStorage.getItem( "clientId" );
 if( !clientKey ) {
     	ws.send( `{op:newClient}` );
@@ -24,7 +26,7 @@ ws.doCreate = function( display, user, pass, email ) {
     //ws.send(
 	pass = SaltyRNG.id(pass);
     ws.send( `{op:"create",account:${JSON.stringify(user)},password:${JSON.stringify(pass)}
-            		,user:${JSON.stringify(display)}
+            		,user:${JSON.stringify(display)},email:${JSON.stringify(email)}
         		,clientId:${JSON.stringify(localStorage.getItem("clientId"))}
                         ,deviceId:${JSON.stringify(localStorage.getItem("deviceId"))} }` );
 }
@@ -52,6 +54,12 @@ ws.processMessage = function( ws, msg ) {
 			//Alert( "Bannable Offense" );
 			localStorage.removeItem( "clientId" ); // reset this
 			ws.close();
+		} else if( msg.device ) {
+			//temporary failure, this device was unidentified, or someone elses
+			const newId = SaltyRNG.Id();
+			localStorage.setItem( "deviceId", newId );
+			ws.send( JSON.stringify( {op:"device", deviceId:newId } ) );
+			return true;
 		} else
 			;//Alert( "Login Failed..." );		
                 
@@ -64,6 +72,12 @@ ws.processMessage = function( ws, msg ) {
 			//Alert( "Bannable Offense" );
 			localStorage.removeItem( "clientId" ); // reset this
 			ws.close();
+		} else if( msg.device ) {
+			//temporary failure, this device was unidentified, or someone elses
+			const newId = SaltyRNG.Id();
+			localStorage.setItem( "deviceId", newId );
+			ws.send( JSON.stringify( {op:"device", deviceId:newId } ) );
+			return true;
 		} else
 			;//Alert( "Login Failed..." );		
                 

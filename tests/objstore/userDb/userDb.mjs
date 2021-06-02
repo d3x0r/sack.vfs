@@ -46,7 +46,7 @@ export class UniqueIdentifier extends StoredObject {
 	constructor() {
 		super(l.storage);
 	}
-	addUser( account,user,email,pass ){
+	addUser( user,account,email,pass ){
 		const newUser = new User();
 		newUser.hook( this );
 		newUser.account = account;
@@ -73,6 +73,7 @@ export class User  extends StoredObject{
 	store() {
 		return super.store().then( async (id)=>{	
 			//console.log( "what about?", id, l );
+			console.log( "Setting account to:", this.account, this );
 			await l.account.set( this.account, this );
 			//console.log( "Account was set" );
 			await l.email.set( this.email, this );
@@ -86,7 +87,7 @@ export class User  extends StoredObject{
 		device.key = id;
 		device.active = active;
 		return device.store().then( ()=>
-			(this.devices.push(device ),device) );
+			(this.devices.push(device ),this.store(),device) );
 	}
 	async getDevice( id ) {
 		return new Promise( (res,rej)=>{
@@ -125,16 +126,13 @@ export class User  extends StoredObject{
 }
 
 User.get = function( account ) {
-	//console.log( "l?", l );
+	console.log( "l?", l.account, account );
 	return l.account.get( account );
 }
 
 User.getEmail = function( email ) {
-	if( !inited ) {
-		return initializing.then( ()=>{
-			return l.email.get( email );
-		} );
-	}
+	if( email && email === "" ) return null; // all NULL email addresses are allowed.
+	//console.log( "l?", l.email, email );
 	return l.email.get( email );
 }
 
@@ -243,17 +241,12 @@ const UserDb = {
 	},
 	User:User,
 	async getIdentifier( i ) {
-		if( i ) {
-			const id = await l.clients.get( i );
-			console.log( "get result:", id, i );
-			return id;
-		}
+		if( i ) return await l.clients.get( i );
 		return getIdentifier();
 	},
         async addIdentifier( i ) {
-            	const id = await i.store()
-		console.log( "Saving key:" );
-        	return l.clients.set( i.key, i );
+		
+            	return l.clients.set( i.key, i );
         },
 	Device:Device,
 	UniqueIdentifier:UniqueIdentifier,
