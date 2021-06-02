@@ -69,7 +69,6 @@ openSocket( "localhost:8089" ); // connect to server; default address is locatio
 |---|----|
 | tests\objstore\userDb\userDbServer.mjs  | This is the script that gets run with `npm run login-server`; as `node tests/objstore/userDb/userDbServer.mjs`. |
 | tests\objstore\userDb\userDb.mjs | provides database classes that interface between storage and application code |
-
 | tests\objstore\userDb\userDbMethods.js  | This is the internals of an ` async function( JSON ) { /*this fragment goes here*/ } ` which is executed with the client websocket as the 'this'.  The socket is mutated with functions to interface with user database across socket. |
 
 ### Db Methods
