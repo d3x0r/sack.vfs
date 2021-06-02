@@ -1235,11 +1235,14 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		for( found = vol->fsInt->find_first( fi ); found; found = vol->fsInt->find_next( fi ) ) {
 			char *name = vol->fsInt->find_get_name( fi );
 			size_t length = vol->fsInt->find_get_size( fi );
+			bool isDir = vol->fsInt->find_is_directory( fi );
 			Local<Object> entry = Object::New( isolate );
 			SET( entry, "name", String::NewFromUtf8( isolate, name, v8::NewStringType::kNormal ).ToLocalChecked() );
-			if( length == ((size_t)-1) )
+			if( isDir ) {
+				// some file systems, directories might have length of file content
 				SET( entry, "folder", True(isolate) );
-			else {
+				SET( entry, "length", Number::New( isolate, (double)length ) );
+			} else {
 				SET( entry, "folder", False( isolate ) );
 				SET( entry, "length", Number::New( isolate, (double)length ) );
 			}
