@@ -61,8 +61,7 @@ openSocket( "localhost:8089" ); // connect to server; default address is locatio
 ```
 
 
-Opens a server by default on port 8089.
-
+---
 
 ### Internals
 
@@ -80,7 +79,7 @@ The current method fragment requests a unique client ID from the login server; w
 | Provided Method | args | Description |
 |-----|----|-----|
 | doLogin | (user,password) | send a login request for the provided username and password; function hashes the password before being sent. |
-| doCreate | ( display,user,password,email) | Send a create account for the provided information. |
+| doCreate | (display,user,password,email) | Send a create account for the provided information. Username is used to login, while display is what is shown to others.  Related services will get a unique userID and the display name when requested. |
 | doGuest | (display) | Create a temporary account which only provides a display name, and fills in random identifiers for the rest. |
 
 
