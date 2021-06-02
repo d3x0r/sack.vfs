@@ -67,9 +67,9 @@ openSocket( "localhost:8089" ); // connect to server; default address is locatio
 
 | Source | Description |
 |---|----|
-| tests\objstore\userDb\userDbServer.mjs  | This is the script that gets run with `npm run login-server`; as `node tests/objstore/userDb/userDbServer.mjs`. |
-| tests\objstore\userDb\userDb.mjs | provides database classes that interface between storage and application code |
-| tests\objstore\userDb\userDbMethods.js  | This is the internals of an ` async function( JSON ) { /*this fragment goes here*/ } ` which is executed with the client websocket as the 'this'.  The socket is mutated with functions to interface with user database across socket. |
+| `tests/objstore/userDb/userDbServer.mjs`  | This is the script that gets run with `npm run login-server`; as `node tests/objstore/userDb/userDbServer.mjs`. |
+| `tests/objstore/userDb/userDb.mjs` | provides database classes that interface between storage and application code |
+| `tests/objstore/userDb/userDbMethods.js`  | This is the internals of an ` async function( JSON ) { /*this fragment goes here*/ } ` which is executed with the client websocket as the 'this'.  The socket is mutated with functions to interface with user database across socket. |
 
 ### Db Methods
 
@@ -87,4 +87,14 @@ This is used by the `node_modules/@d3x0r/popups/` `example/webSocketClient.mjs` 
 | Internal Methods | Description |
 |-----|-----|
 | processMessage(ws,msg) | process an incoming message; the message is expected to be an object, and the websocket the request came in on. Routine can optionally return true to prevent default handling.  Default handling updates the popup form. |
+
+
+
+### Popups
+
+| Source | Description |
+|---|----|
+| `node_modules/@d3x0r/popups/popups.mjs` | This is the JS code library to create DOM elements, giving them a desktop application feel. |
+| `node_modules/@d3x0r/popups/example/loginForm.html` | This is a HTML fragment that is loaded into the login form. |
+| `node_modules/@d3x0r/popups/example/webSocketClient.js` | This provides the bindings betweenJS and the loginForm.HTML by, searching by ID within each form. |
 
