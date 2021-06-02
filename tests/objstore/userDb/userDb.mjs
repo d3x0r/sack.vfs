@@ -42,6 +42,7 @@ const l = {
 
 export class UniqueIdentifier extends StoredObject {
 	key = null;
+	created = new Date();
 	constructor() {
 		super(l.storage);
 	}
@@ -64,6 +65,7 @@ export class User  extends StoredObject{
 	email = null;
 	pass = null;
 	devices = [];
+	created = new Date();
 	
 	constructor() {
 		super(l.storage);
@@ -84,7 +86,41 @@ export class User  extends StoredObject{
 		device.key = id;
 		device.active = active;
 		return device.store().then( ()=>
-			this.devices.push(device ) );
+			(this.devices.push(device ),device) );
+	}
+	async getDevice( id ) {
+		return new Promise( (res,rej)=>{
+			console.log( "Returned a promise..." );	
+			let results = 0;
+			for( let device of this.devices ) {
+				if( device instanceof Promise ) {
+				console.log( "device needs to be loaded..." );
+					results++;
+					device.then( (dev)=>{
+						if( results >= 0 ) {
+							if( dev.key === id ){
+								device.accessed = new Date();
+								device.store();
+								res( device );
+								if( results > 1 )
+									results = -1; 
+								return;
+							}
+							results--;
+							if( results === 0 ) {
+								//console.log( "nothing more to load..." );
+								res( null );
+							}
+						}
+					} );
+					this.storage.map( device );
+				}
+				else 
+					if( device.key === id ) return device;
+			}
+			return null;
+		});
+		//return null;
 	}
 }
 
@@ -108,6 +144,8 @@ User.getEmail = function( email ) {
 export class Device  extends StoredObject{
 	key = null;
 	active = false;
+	added = new Date();
+	accessed = new Date();
 	constructor() {
 		super(l.storage);
 	}
@@ -204,12 +242,18 @@ const UserDb = {
 		return getUser(args);
 	},
 	User:User,
-	getIdentifier() {
+	async getIdentifier( i ) {
+		if( i ) {
+			const id = await l.clients.get( i );
+			console.log( "get result:", id, i );
+			return id;
+		}
 		return getIdentifier();
 	},
         async addIdentifier( i ) {
             	const id = await i.store()
-        	return l.clients.set( i.key, id );
+		console.log( "Saving key:" );
+        	return l.clients.set( i.key, i );
         },
 	Device:Device,
 	UniqueIdentifier:UniqueIdentifier,

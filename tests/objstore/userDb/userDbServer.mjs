@@ -1,9 +1,6 @@
 
 
-const from =  1
-const count =  100
 
-console.log( "Making from;", from );
 import {sack} from "../../../vfs_module.mjs"
 const JSOX = sack.JSOX;
 import {UserDb,User,Device,UniqueIdentifier,go} from "./userDb.mjs"
@@ -13,6 +10,10 @@ UserDb.hook( storage );
 
 const methods = sack.Volume().read( "tests/objstore/userDb/userDbMethods.js" ).toString();
 const methodMsg = JSON.stringify( {op:"addMethod", code:methods} );
+
+const l = {
+	newClients : [],
+}
 
 
 async function makeUsers() {
@@ -44,13 +45,13 @@ function getUsers() {
 	} );
 }
 
-console.log( "Go:", go );
 go.then( ()=>{
 	console.log( "waited until initialized..." );
 
         openServer( { port : 8089
                 } );
 
+	if(0)
 	makeUsers().then( ()=>{			
 		// after creating all users, get some users
 		getUsers();
@@ -82,13 +83,13 @@ server.onrequest( function( req, res ) {
         // only redirect to something else.
 
         const parts = req.url.split( '/' );
-        if( parts < 2 ) {
+        if( parts.length < 3 ) {
 	        res.writeHead( 301, { Location:"/node_modules/@d3x0r/popups/example/index-login.html#ws" } );
         	res.end();
 	        return;
         }
-        if( parts[0] === "node_modules" ) {
-            if( parts[1] !== "@d3x0r" ) {
+        if( parts[1] === "node_modules" ) {
+            if( parts[2] !== "@d3x0r" ) {
             	res.writeHead( 404 );
                 res.end( "<html><head><title>404</title></head><body>Resource not found</body></html>" );
                 return;
@@ -162,74 +163,151 @@ function setKey( f, ws, val ) {
     return f;
 }
 
+function sendKey( ws, val, f ) {
+    ws.send( `{"op":"set","value":"${val}","key":${JSON.stringify(f)}}` );
+}
+
+
+async function guestLogin( ws, msg ){
+
+	const isClient = await UserDb.getIdentifier( msg.clientId );
+	if( !isClient ) {
+		ws.send( JSON.stringify( { op:"login", success: false, ban: true } ) );
+		return;
+	}
+	
+	msg.deviceId = setKey( msg.deviceId,ws,"deviceId" );
+
+	const user = await UserDb.getUser( msg.account );
+	console.log( "user:", user );
+	if( user && user.pass === msg.password ) {
+                  ws.send( JSON.stringify( { op:"login", success: true } ));
+	}
+	console.log( "sending false" );
+        ws.send( JSON.stringify( { op:"login", success: false } ));
+}
+
+async function doLogin( ws, msg ){
+
+	const isClient = await UserDb.getIdentifier( msg.clientId );
+	if( !isClient ) {
+		ws.send( JSON.stringify( { op:"login", success: false, ban: true } ) );
+		return;
+	}
+	console.log( "login:", msg );
+	console.log( "cilent:", isClient );
+	
+
+	const user = await UserDb.getUser( msg.account );
+
+	if( user.unique !== isClient ) {
+		// save meta relation that these clients used the same localStorage
+		// reset client Id to this User.
+		sendKey( ws, "clientId", user.unique.key );
+		// force deviceId to null?
+		msg.deviceId = null; // force generate new device for reversion
+	}
+
+	//console.log( "user:", user );
+	if( !user || user.pass !== msg.password ) {
+		ws.send( JSON.stringify( { op:"login", success: false } ) );
+		return;
+	}
+	
+	ws.state.user = user;
+	ws.state.login = msg;
+	const dev = await user.getDevice( msg.deviceId );
+	//console.log( "dev:", dev );
+	if( !dev ) {
+		// console.log( "Device failure of login" );
+		ws.state.login = msg;
+		// ask the device to add a device.
+		ws.send( JSON.stringify( {op:"login", success:false, device:true } ) );
+		return;
+	}
+	if( !dev.active ) {
+		ws.send( JSON.stringify( {op:"login", success:false, inactive:true } ) );
+		return;
+	}
+	//console.log( "sending false" );
+	ws.send( JSON.stringify( { op:"login", success: true } ));
+}
+
+async function doCreate( ws, msg ) {
+	const unique = await UserDb.getIdentifier( msg.clientId );//new UniqueIdentifier();
+	//console.log( "unique:", unique, msg  );
+	if( !unique ) {                              
+		ws.send( JSON.stringify( { op:"create", success: false, ban: true } ) );
+		return;
+	}
+
+	const user = await unique.addUser( msg.user, msg.account, msg.email, msg.password );
+	const dev = await user.addDevice( sack.Id(), true );
+	user.store();
+	ws.send( JSON.stringify( {op:"create", success:true, deviceId:dev.key } ) );
+
+}
+
+async function addDevice(ws,msg) {
+	const login = ws.state.login;
+	if( login ) {	
+		console.log( "Can add device to user..." )
+		const dev = await ws.state.user.addDevice( msg.deviceId, ws.state.user.devices.length < 10?true:false );
+		//console.log( "dev:", dev );
+		if( !dev.active ) {
+			ws.send( JSON.stringify( {op:"login", success:false, inactive:true } ) );
+			return;
+		}
+		ws.send( JSON.stringify( { op:"login", success: true } ));
+		ws.state.login = null;
+	} else {
+		console.log( "Bannable failure." );
+		// out of sequence - there should be a pending login in need of a device ID.
+		ws.send( JSON.stringify( { op:"login", success: false, ban: true } ) );
+	}
+	
+}
+
+
+function LoginState(ws) {
+	this.ws = ws;
+	this.client = null;
+	this.login = null;
+	this.user = null;
+}
+
+
 server.onconnect( function (ws) {
-	console.log( "Connect:", ws );
+	//console.log( "Connect:", ws );
+	ws.state = new LoginState( ws );
+	
+	
+	ws.send( methodMsg );
+
 	ws.onmessage( function( msg_ ) {
 
             	const msg = JSOX.parse( msg_ );
                 console.log( 'message:', msg );
                 if( msg.op === "hello" ) {
-			ws.send( methodMsg );
-
-                }
-                if( msg.op === "newClient" ){
-                    ws.thisClient = new UniqueIdentifier();
-                    ws.thisClient.key = setKey( null, ws, "clientId" );
+			//ws.send( methodMsg );
+                } else if( msg.op === "newClient" ){
+                    ws.state.client = UserDb.getIdentifier();
+		    sendKey( ws, "clientId", ws.state.client.key );
                     UserDb.addIdentifier( ws.thisClient );
-                }
-
-                if( msg.op === "login" ){
-                    	
-			msg.clientId = setKey( msg.clientId,ws,"clientId" )
-			msg.deviceId = setKey( msg.deviceId,ws,"deviceId" );
-                        //msg.account = ;
-
+			l.newClients.push( { client:ws.state } );
+                } else if( msg.op === "login" ){
+			doLogin( ws, msg );
+                } else if( msg.op === "device" ){
+			addDevice( ws, msg );
+                } else if( msg.op === "guest" ){
+			guestLogin( ws, msg );
+                } else if( msg.op === "Login" ){
                         ws.send( JSON.stringify( { op:"login", success: true } ));
-
-                }
-                if( msg.op === "guest" ){
-			msg.clientId = setKey( msg.clientId,ws,"clientId" )
-			msg.deviceId = setKey( msg.deviceId,ws,"deviceId")
-			msg.account = sack.Id();
-			if( msg.clientId ) {
-                        }
-			if( msg.deviceId ) {
-                        }
-			if( msg.deviceId ) {
-                        }
-                        ws.send( JSON.stringify( { op:"login", success: true } ));
-
-                }
-
-                if( msg.op === "Login" ){
-			//msg.clientId = setKey( msg.clientId,ws,"clientId" )
-			//msg.deviceId = setKey( msg.deviceId,ws,"deviceId")
-			if( msg.clientId ) {
-                        }
-			if( msg.deviceId ) {
-                        }
-			if( msg.seskey ) {
-                        }
-                        ws.send( JSON.stringify( { op:"login", success: true } ));
-
-                }
-
-                if( msg.op === "create" ){
-			const unique = msg.clientId;//new UniqueIdentifier();
-			//unique.key = sack.Id();
-			//console.log( "user:", i );
-			
-			unique.store().then( ((i)=> ()=>{
-	 			const user = unique.addUser( i, "User "+i, '' + i + "@email.com", Math.random()*(1<<54) );
-				return user.addDevice( sack.Id(), true ).then( ()=>{
-					//console.log( "storing user", i );
-					return user.store();
-				} );
-			} )(i+from) ).then( ()=>{
-                                ws.send( JSOX.stringify( { op:"created", id:"success"  } ) );
-                        } );;
-
-                }
+                } else if( msg.op === "create" ){
+			doCreate( ws, msg );
+                } else {
+			console.log( "Unhandled message:", msg );
+		}
         	//console.log( "Received data:", msg );
 		//ws.close();
         } );

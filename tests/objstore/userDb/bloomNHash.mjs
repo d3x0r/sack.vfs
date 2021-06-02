@@ -164,7 +164,7 @@ function lookupFlowerHashEntry( hash, key, result ) {
 	if( !key ) {
 		console.log( "null key:", key );
 		result.hash = null;
-		return; // only look for things, not nothing.
+		return Promise.resolve(null); // only look for things, not nothing.
 	}
 	// provide 'goto top' by 'continue'; otherwise returns.
 	do {
