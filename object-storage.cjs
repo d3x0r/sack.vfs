@@ -415,7 +415,7 @@ sack.ObjectStorage.StoredObject = StoredObject
 sack.ObjectStorage.getRemoteFragment = function() {
 	return remoteExtensions;
 }
-console.log( "GOT:", _objectStorage, _objectStorage.Thread );
+
 sack.ObjectStorage.Thread = {
 	post: _objectStorage.Thread.post,
 	accept(cb) {
@@ -957,7 +957,7 @@ _objectStorage.prototype.get = function( opts ) {
 					} while( found >= 0 );
 
 				if( obj && ( obj instanceof os.objectStorageContainer ) ){
-					console.log( "GOTzz:", obj, obj.id, obj.data );
+					//console.log( "GOTzz:", obj, obj.id, obj.data );
 					if( !("id" in obj ))
 						Object.defineProperty( obj, "id", { value:currentReadId } );
 					
