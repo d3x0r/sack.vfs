@@ -1,14 +1,20 @@
 
+console.log( "meta?", import.meta );
 
+const colons = import.meta.url.split(':');
+const where = colons===1?colons[1].substr(1):colons[2];
+const nearIdx = where.lastIndexOf( "/" );
+const nearPath = where.substr(0, nearIdx+1 );
 
-import {sack} from "../../../vfs_module.mjs"
+console.log( "missed?", nearIdx, where, nearPath );
+import {sack} from "sack.vfs"
 const JSOX = sack.JSOX;
 import {UserDb,User,Device,UniqueIdentifier,go} from "./userDb.mjs"
 
 const storage = sack.ObjectStorage( "data.os" );
 UserDb.hook( storage );
 
-const methods = sack.Volume().read( "tests/objstore/userDb/userDbMethods.js" ).toString();
+const methods = sack.Volume().read( nearPath+"userDbMethods.js" ).toString();
 const methodMsg = JSON.stringify( {op:"addMethod", code:methods} );
 
 const l = {
@@ -69,7 +75,7 @@ var serverOpts = opts || {port:Number(process.argv[2])||8080} ;
 var server = sack.WebSocket.Server( serverOpts )
 var disk = sack.Volume();
 console.log( "serving on " + serverOpts.port );
-console.log( "with:", disk.dir() );
+console.table( disk.dir() );
 
 
 server.onrequest( function( req, res ) {
