@@ -15,6 +15,15 @@ export default [
         plugins: [
         ],
     },
+    {
+        input: 'swc.js',
+        output: {
+            file: '../swc.mjs',
+            format: 'esm',
+        },
+        plugins: [
+        ],
+    },
     // ES6 Modules Minified
     {
         input: 'sw.js',
