@@ -48,6 +48,7 @@
     "@babel/preset-env": "latest",
     "@d3x0r/popups": "git://github.com/d3x0r/popups",
     "@d3x0r/srg": "git://github.com/d3x0r/srg",
+    "@d3x0r/bloomnhash": "git://github.com/d3x0r/BloomNHash",
     "@rollup/plugin-babel": "latest",
     "@rollup/plugin-commonjs": "latest",
     "@rollup/plugin-node-resolve": "latest",
