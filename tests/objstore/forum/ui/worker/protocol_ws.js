@@ -2,10 +2,12 @@
 "use strict";
 const _debug = false;
 
-import {JSOX} from "../../../node_modules/jsox/lib/jsox.mjs"
-import {regenerator,generator,short_generator} from "./id_generator.js"
+import {JSOX} from "../../../../../node_modules/jsox/lib/jsox.mjs"
+import {SaltyRNG} from "../../../../../node_modules/@d3x0r/srg/salty_random_generator.js"
+const regenerator = SaltyRNG.Id;
+const generator = SaltyRNG.Id;
+const short_generator = generator;
 
-const idGen = { generator:generator,regenerator:regenerator }
 const JSON = JSOX;
 
 const connections = new Map();

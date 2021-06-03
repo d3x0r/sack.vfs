@@ -9,8 +9,8 @@ const l_sw = {
 import{makeProtocol}  from "./protocol_ws.js"
 
 // init this as a remote client.
-import "../../../Sentience/sandboxInit2.mjs"
-import {prerun} from "../../../Sentience/sandboxPrerun2.mjs"
+//import "../../../Sentience/sandboxInit2.mjs"
+//import {prerun} from "../../../Sentience/sandboxPrerun2.mjs"
 
 
 self.addEventListener( "activate", activation );
@@ -132,16 +132,7 @@ function getClient( event, asClient ) {
 }
 
 
-const mimeTypes = {
-	/*js: */['text/javascript']:true,
-        /*mjs:*/['text/javascript']:true,
-        /*css:*/['text/css']:true,
-        /*html:*/['text/html']:true,
-        /*jpg:*/['image/jpeg']:false,
-        /*png:*/['image/png']:false,
-        /*wav:*/['audio/wav']:false,
-        
-}
+
 const decoder = new TextDecoder();
 
 function handleFetch( event ) {
