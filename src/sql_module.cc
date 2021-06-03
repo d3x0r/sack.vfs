@@ -753,8 +753,12 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 								snprintf( buf, 64, "new Date('%s')", jsval->string );
 								script = Script::Compile( isolate->GetCurrentContext()
 									, String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
+#if ( NODE_MAJOR_VERSION >= 16 )
 									, new ScriptOrigin( isolate, String::NewFromUtf8( isolate, "DateFormatter"
-										, NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
+#else
+									, new ScriptOrigin( String::NewFromUtf8( isolate, "DateFormatter"
+#endif
+									, NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
 								val = script->Run( isolate->GetCurrentContext() ).ToLocalChecked();
 							}
 							break;
