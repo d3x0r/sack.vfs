@@ -16,6 +16,8 @@ UserDb.hook( storage );
 
 const methods = sack.Volume().read( nearPath+"userDbMethods.js" ).toString();
 const methodMsg = JSON.stringify( {op:"addMethod", code:methods} );
+const serviceLoginScript = sack.Volume().read( nearPath+"serviceLogin.mjs" ).toString();
+//const methodMsg = JSON.stringify( {op:"addMethod", code:methods} );
 
 const l = {
 	newClients : [],
@@ -90,8 +92,22 @@ server.onrequest( function( req, res ) {
 
         const parts = req.url.split( '/' );
         if( parts.length < 3 ) {
+            	if( parts[1] === "serviceLogin.mjs" || parts[1] === "serviceLogin.js" ) {
+                    res.writeHead( 200 );
+                    const allowService = {
+                                        serviceId : sack.Id(),
+                        	};
+
+                    const content = [ 'const serviceId="'+ allowService.serviceId + '";\n'
+                                     ,serviceLoginScript];
+                	res.end( content.join('') );
+
+                        console.log( "Service login script." );
+                        return;
+                }
 	        res.writeHead( 301, { Location:"/node_modules/@d3x0r/popups/example/index-login.html#ws" } );
         	res.end();
+                console.log( "redirect to long path" );
 	        return;
         }
         if( parts[1] === "node_modules" ) {
@@ -154,6 +170,8 @@ server.onrequest( function( req, res ) {
 
 server.onaccept( function ( ws ) {
     if( ws.headers["Sec-WebSocket-Protocol"] === "login" )
+        return this.accept();
+    if( ws.headers["Sec-WebSocket-Protocol"] === "userDatabaseClient" )
         return this.accept();
 
     this.reject();
@@ -310,8 +328,8 @@ server.onconnect( function (ws) {
 	const protocol = ws.headers["Sec-WebSocket-Protocol"];
 	console.log( "protocol:", protocol )
 	ws.state = new LoginState( ws );
-	
-	
+
+	console.log( "send greeting message, setitng up events" );
 	ws.send( methodMsg );
 
 	ws.onmessage( function( msg_ ) {
@@ -338,6 +356,7 @@ server.onconnect( function (ws) {
         	//console.log( "Received data:", msg );
 		//ws.close();
         } );
+
 	ws.onclose( function() {
         	//console.log( "Remote closed" );
         } );
