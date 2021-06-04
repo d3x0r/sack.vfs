@@ -16,7 +16,12 @@ UserDb.hook( storage );
 
 const methods = sack.Volume().read( nearPath+"userDbMethods.js" ).toString();
 const methodMsg = JSON.stringify( {op:"addMethod", code:methods} );
+
+const serviceMethods = sack.Volume().read( nearPath+"serviceDbMethods.js" ).toString();
+const serviceMethodMsg = JSON.stringify( {op:"addMethod", code:serviceMethods} );
+
 const serviceLoginScript = sack.Volume().read( nearPath+"serviceLogin.mjs" ).toString();
+
 //const methodMsg = JSON.stringify( {op:"addMethod", code:methods} );
 
 const l = {
@@ -328,9 +333,13 @@ server.onconnect( function (ws) {
 	const protocol = ws.headers["Sec-WebSocket-Protocol"];
 	console.log( "protocol:", protocol )
 	ws.state = new LoginState( ws );
-
-	console.log( "send greeting message, setitng up events" );
-	ws.send( methodMsg );
+	if( protocol === "userDatabaseClient" ) {
+		//console.log( "send greeting message, setitng up events" );
+		ws.send( serviceMethodMsg );
+        }else if( protocol === "login" ){
+		//console.log( "send greeting message, setting up events" );
+		ws.send( methodMsg );
+        }
 
 	ws.onmessage( function( msg_ ) {
 

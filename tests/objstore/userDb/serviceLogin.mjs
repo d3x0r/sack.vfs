@@ -1,9 +1,11 @@
 
 const sack = (await Import( "sack.vfs" )).sack;
 
-open( { protocol: "userDatabaseClient"
-      , server : "ws://localhost:8089/"
-    } );
+const AsyncFunction = Object.getPrototypeOf( async function() {} ).constructor;
+
+//open( { protocol: "userDatabaseClient"
+//      , server : "ws://localhost:8089/"
+//    } );
 
 function open( opts ) {
     	const protocol = opts?.protocol || "protocol";
@@ -12,15 +14,23 @@ function open( opts ) {
 	var client = sack.WebSocket.Client( server, protocol, { perMessageDeflate: false } );
         console.log( "client result:", client );
 	
-	client.onmessage = function( msg ) {
-	        	console.log( "message Received:", msg );
-                	//this.close();
-        };
-	client.onopen = function ()  {
+	client.onopen = function (ws)  {
 		console.log( "Connected", serviceId );
 		console.log( "ws: ", this );
-		this.on( "message", function( msg ) {
-	        	console.log( "message Received:", msg );
+		this.on( "message", ( msg_ )=> {
+			const msg = sack.JSOX.parse( msg_ );
+                        if( msg.op === "addMethod" ) {
+				try {
+				    	// why is this not in a module?
+					var f = new AsyncFunction( "Import", msg.code );
+					const p = f.call( this, Import );
+			       } catch( err ) {
+					console.log( "Function compilation error:", err,"\n", msg.code );
+			       }
+                        }
+                        else {
+		        	console.log( "unknown message Received:", msg );
+                        }
                 	//this.close();
         	} );
 		this.on( "close", function( msg ) {
@@ -48,6 +58,14 @@ function handleMessage( ws, msg ) {
 	}
 }
 
+const UserDb = {
+    open(prod,app,opts) {
+    	const realOpts = Object.assign( {}, opts );
+        realOpts.protocol= "userDatabaseClient";
+ 	realOpts.server = "ws://localhost:8089/";
+	return open(realOpts);
+    }
+}
 
 // return
-return "this usually isn't legal?";
+return UserDb;//"this usually isn't legal?";
