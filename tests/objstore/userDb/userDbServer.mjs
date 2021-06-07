@@ -1,12 +1,11 @@
 
-console.log( "meta?", import.meta );
+//console.log( "meta?", import.meta );
 
 const colons = import.meta.url.split(':');
-const where = colons===1?colons[1].substr(1):colons[2];
+const where = colons.length===2?colons[1].substr(1):colons[2];
 const nearIdx = where.lastIndexOf( "/" );
 const nearPath = where.substr(0, nearIdx+1 );
 
-console.log( "missed?", nearIdx, where, nearPath );
 import {sack} from "sack.vfs"
 const JSOX = sack.JSOX;
 import {UserDb,User,Device,UniqueIdentifier,go} from "./userDb.mjs"
@@ -59,16 +58,10 @@ function getUsers() {
 }
 
 go.then( ()=>{
-	console.log( "waited until initialized..." );
 
         openServer( { port : 8089
                 } );
 
-	if(0)
-	makeUsers().then( ()=>{			
-		// after creating all users, get some users
-		getUsers();
-	} );
 } );
 
 

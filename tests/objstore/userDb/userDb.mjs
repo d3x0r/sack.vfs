@@ -91,11 +91,10 @@ export class User  extends StoredObject{
 	}
 	async getDevice( id ) {
 		return new Promise( (res,rej)=>{
-			console.log( "Returned a promise..." );	
 			let results = 0;
 			for( let device of this.devices ) {
 				if( device instanceof Promise ) {
-				console.log( "device needs to be loaded..." );
+					//console.log( "device needs to be loaded..." );
 					results++;
 					device.then( (dev)=>{
 						if( results >= 0 ) {
@@ -116,12 +115,16 @@ export class User  extends StoredObject{
 					} );
 					this.storage.map( device );
 				}
-				else 
-					if( device.key === id ) return device;
+				else  {
+					if( device.key === id ) {
+						results = -1; // make sure nothing else checks.
+						res( device );
+                                                return;
+                                        }
+                                }
 			}
-			return null;
+                        if( results === 0 ) res( null );
 		});
-		//return null;
 	}
 }
 
