@@ -21,10 +21,12 @@ const serviceMethodMsg = JSON.stringify( {op:"addMethod", code:serviceMethods} )
 
 const serviceLoginScript = sack.Volume().read( nearPath+"serviceLogin.mjs" ).toString();
 
+import {UserDbRemote} from "./serviceLogin.mjs";
 //const methodMsg = JSON.stringify( {op:"addMethod", code:methods} );
 
 const l = {
 	newClients : [],
+	services : new Map(),
 }
 
 
@@ -71,12 +73,22 @@ import path from "path";
 
 function openServer( opts, cb )
 {
-var serverOpts = opts || {port:Number(process.argv[2])||8080} ;
-var server = sack.WebSocket.Server( serverOpts )
-var disk = sack.Volume();
-console.log( "serving on " + serverOpts.port );
-console.table( disk.dir() );
+	const serverOpts = opts || {port:Number(process.argv[2])||8080} ;
+	const server = sack.WebSocket.Server( serverOpts )
+	const disk = sack.Volume();
+	console.log( "serving on " + serverOpts.port, server );
 
+	UserDbRemote.open( { server:"ws://localhost:"+serverOpts.port } );
+
+	//console.table( disk.dir() );
+
+
+class ServiceConnection {
+	serviceId = sack.Id();
+	ws = null;
+	constructor() {
+	}
+}
 
 server.onrequest( function( req, res ) {
 	var ip = ( req.headers && req.headers['x-forwarded-for'] ) ||
@@ -91,11 +103,9 @@ server.onrequest( function( req, res ) {
         const parts = req.url.split( '/' );
         if( parts.length < 3 ) {
             	if( parts[1] === "serviceLogin.mjs" || parts[1] === "serviceLogin.js" ) {
-                    res.writeHead( 200 );
-                    const allowService = {
-                                        serviceId : sack.Id(),
-                        	};
-
+                    res.writeHead( 200, { 'Content-Type': "text/javascript" } );
+                    const allowService = new ServiceConnection();
+				l.services.set( allowService.serviceId, allowService );
                     const content = [ 'const serviceId="'+ allowService.serviceId + '";\n'
                                      ,serviceLoginScript];
                 	res.end( content.join('') );
@@ -114,12 +124,17 @@ server.onrequest( function( req, res ) {
                 res.end( "<html><head><title>404</title></head><body>Resource not found</body></html>" );
                 return;
             }
-        }
+		parts[0] = nearPath+"../../..";
+        } else {
+		parts[0] = nearPath.substr(0,nearPath.length-1);
+	}
+	
+	if( parts[parts.length-1] == "" ) parts[parts.length-1] = "index.html";
         //    req.url = "/index.html";
 
         	// "node_modules/@d3x0r/popups/example/login.html"
 
-	var filePath = "." + unescape(req.url);
+	var filePath =  unescape(parts.join("/"));
 	var extname = path.extname(filePath);
 	var contentType = 'text/html';
 	console.log( ":", extname, filePath )
@@ -167,14 +182,29 @@ server.onrequest( function( req, res ) {
 } );
 
 server.onaccept( function ( ws ) {
+	console.log( "accept?", ws );
     if( ws.headers["Sec-WebSocket-Protocol"] === "login" )
         return this.accept();
-    if( ws.headers["Sec-WebSocket-Protocol"] === "userDatabaseClient" )
-        return this.accept();
+    if( ws.headers["Sec-WebSocket-Protocol"] === "userDatabaseClient" ) {
+	const parts = ws.url.split( "?" );
+	if( parts.length > 1 ) {
+		const sid = parts[parts.length-1];
+		const service = l.services.get(sid);
+		if( service ) {
+		        return this.accept();
+		} // otherwise it's an invalid connection... 		
+	}
+	else
+	        return this.accept();
+    }
 
     this.reject();
     //this.accept();
 } );
+
+
+
+
 
 function setKey( f, ws, val ) {
     if( !f || f === "undefined") {
@@ -321,6 +351,18 @@ async function newClient(ws,msg) {
 }
 
 
+function handleServiceMsg( ws, msg ){
+	// msg.org is 'org.jsox' from the client
+	// sid is the last SID we assigned.
+	if( msg.sid ) {
+		UserDb.getService( msg.org );
+	} else {
+		// waiting to be allowed...
+	}
+}
+function handleBadgeDef( ws, msg ){
+}
+
 server.onconnect( function (ws) {
 	//console.log( "Connect:", ws );
 	const protocol = ws.headers["Sec-WebSocket-Protocol"];
@@ -328,14 +370,29 @@ server.onconnect( function (ws) {
 	ws.state = new LoginState( ws );
 	if( protocol === "userDatabaseClient" ) {
 		//console.log( "send greeting message, setitng up events" );
+		
+		ws.onmessage( handleService );
+		console.log( "sending service fragment" );
 		ws.send( serviceMethodMsg );
         }else if( protocol === "login" ){
 		//console.log( "send greeting message, setting up events" );
+		ws.onmessage( handleClient );
 		ws.send( methodMsg );
         }
 
-	ws.onmessage( function( msg_ ) {
+	function handleService( msg_ ) {
+            	const msg = JSOX.parse( msg_ );
+                console.log( 'userLocal message:', msg );
+                if( msg.op === "register" ) {
+			handleServiceMsg( ws, msg );
+			//ws.send( methodMsg );
+		} else if( msg.op === "badge" ) {
+			handleBadgeDef( ws, msg );
+			//ws.send( methodMsg );
+		}		
+	}
 
+	function handleClient( msg_ ) {
             	const msg = JSOX.parse( msg_ );
                 console.log( 'message:', msg );
                 if( msg.op === "hello" ) {
@@ -357,7 +414,7 @@ server.onconnect( function (ws) {
 		}
         	//console.log( "Received data:", msg );
 		//ws.close();
-        } );
+        };
 
 	ws.onclose( function() {
         	//console.log( "Remote closed" );

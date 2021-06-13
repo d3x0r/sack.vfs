@@ -21,6 +21,7 @@ const configObject = {
 	emailId : null,
 	reconnectId : null,
 	clientId : null,
+	orgId : null,
 	actAs : null,
 	actIn : null,
 	actBy : null,
@@ -32,6 +33,7 @@ const l = {
 	email     : null,
 	reconnect : null,
         clients : null,
+        orgs : null,
 	actAs : null, // relates user ids that user can act As (inhertis rights of act-as )
 	actIn : null, // relates user ids that user belong to (inherit all rights of in)
 	actBy : null, // relates user ids that a user can be enacted by
@@ -58,17 +60,194 @@ export class UniqueIdentifier extends StoredObject {
 	}
 }
 
+export class Sash extends StoredObject{
+	org = null;
+	name = null;  // name of the sash
+	badges = []; // this sash has these badges.
+	constructor( ) {
+		super( l.storage );
+	}
+	set( org, name ) {
+		this.org = org;
+		this.name = name;
+		return this.store();
+	}
+}
+
+export class SashAlias extends StoredObject{
+	name = null;  // name of the sash
+	sash = null;
+	constructor( name, sash ) {
+		super( l.storage );
+		this.name = name;
+		this.sash = sash;
+	}	
+}
+
+export class Badge  extends StoredObject{
+	badgeId = null;
+	name = null;  // token name
+	description = null; // be nice to include a description?
+	constructor() {
+		super( l.storage );
+	}	
+	
+}
+
+
+export class Organization  extends StoredObject{
+	orgId = null;
+	name = null;
+	createdBy = null;
+	members = new SlabArray( l.storage );
+	domains = [];
+	constructor() {
+		super( l.storage );
+	}
+
+	async store() {
+		await super.store();
+		await l.orgs.set( this.name, this ); 
+		//for( n = 0; 
+	}
+
+	// get a badge for this org.
+	// users have sashes with badges 
+	//  after getting a badge, then user's active sash should be used.
+	// 
+	async getBadge( name, forUser ) {
+		const badge = this.badges.find( badge=>badge.name===name );	
+		if( !badge ) {
+			
+		}
+	}
+
+	async getDomain( name, forUser ) {
+		const domain = this.domains.find( domain=>domain.name===name );	
+		if( !domain ) {
+			const newDomain = new Domain( this, name, forUser );
+			this.domains.push( newDomain );
+
+			this.store();
+			UserDb.on( "newDomain", newDomain );
+			return newDomain;
+		} else {
+			return domain;
+		}
+	}
+
+}
+
+Organization.get = async function ( name, forClient ) {
+	const org = await l.orgs.get( name );
+	if( !org ) {
+		const org = new Organization( name );
+		//forClient.
+
+		UserDb.on( "newOrg", this );
+	} else {
+		for( let n = 0; n < org.length; n++ ) {
+			
+		}
+	}
+}
+
+
+
+export class Domain  extends StoredObject{
+	domainId = null;
+	org = null;
+	name = null;
+	createdBy = null;
+	members = new SlabArray( l.storage );
+	badges = []; // badges that this org has created.
+	servicess = []; // services this domain has available.
+	constructor( org, name, forUser ) {
+		super( l.storage );
+		this.domainId = sack.Id();
+		this.org = org;
+		this.name = name;
+		this.createdBy = forUser;
+	}
+
+	async store() {
+		await super.store();
+		await l.orgs.set( this.name, this ); 
+		//for( n = 0; 
+	}
+
+	// get a badge for this org.
+	// users have sashes with badges 
+	//  after getting a badge, then user's active sash should be used.
+	// 
+	async getBadge( name, forUser ) {
+		const badge = this.badges.find( badge=>badge.name===name );	
+		if( !badge ) {
+			
+		}
+	}
+
+
+	async getService( name, forUser ) {
+		const srvc = this.srevices.find( srvc=>srvc.name===name );	
+		if( !srvc ) {
+			const newSrvc = new Service( this, name, forUser );
+			UserDb.on( "newService", newSrvc );
+		}
+				
+	}
+}
+
+Domain.get = async function( name, forClient ) {
+}
+
+
+export class Service  extends StoredObject{
+	orgId = null;
+	name = null;
+	createdBy = null;
+	members = new SlabArray( l.storage );
+	badges = []; // badges that this org has created.
+	instances = []; // badges that this org has created.
+	constructor() {
+		super( l.storage );
+	}
+
+	async store() {
+		await super.store();
+		await l.orgs.set( this.name, this ); 
+		//for( n = 0; 
+	}
+
+	// get a badge for this org.
+	// users have sashes with badges 
+	//  after getting a badge, then user's active sash should be used.
+	// 
+	async getBadge( name, forUser ) {
+		const badge = this.badges.find( badge=>badge.name===name );	
+		if( !badge ) {
+			
+		}
+	}
+}
+
+
+
+
 export class User  extends StoredObject{
+	userId = null; 
 	unique = null;
 	account = null;
 	name = null;
 	email = null;
 	pass = null;
 	devices = [];
+	sashes = []; 
 	created = new Date();
 	
 	constructor() {
 		super(l.storage);
+		this.userId = sack.Id();
 	}
 	store() {
 		return super.store().then( async (id)=>{	
@@ -125,6 +304,16 @@ export class User  extends StoredObject{
 			}
                         if( results === 0 ) res( null );
 		});
+	}
+	async getSash( org ) {
+		const found = [];
+		this.sashes.forEach( sash=>{
+			if( sash.org===org )
+				found.push(sash);
+		} );
+		if( found.length ) {
+			// ask user to select a sash to wear.
+		}
 	}
 }
 
@@ -190,6 +379,8 @@ async function userActsIn( user, group ) {
 
 }
 
+const eventMap = {};
+
 const UserDb = {
 	async hook( storage ) {
             	l.storage = storage;
@@ -239,6 +430,19 @@ const UserDb = {
                 	if( initResolve )
 	                	initResolve();
 	},
+	on( event, data ) {
+		if( "function" === typeof data ) {
+			const a = eventMap[event];
+			if( !a ) a = eventMap[event] = [];
+			a.push( data );
+		} else {
+			const a = eventMap[event];
+			if( a ) for( let f of a ) f( data );
+		}
+	},
+	off( event, f ) {
+		console.log( "disabling events not enabled" );
+	},
 	getUser(args){
 		return getUser(args);
 	},
@@ -251,8 +455,21 @@ const UserDb = {
 		
             	return l.clients.set( i.key, i );
         },
+        async getOrg( i ) {
+		
+            	return l.clients.set( i.key, i );
+        },
 	Device:Device,
 	UniqueIdentifier:UniqueIdentifier,
+	addService( org ) {
+		const oldOrg = l.orgs.get
+		const newOrg = new Organization();
+	},
+
+	getBadge( org ) {
+		
+	},
+
 }
 
 Object.freeze( UserDb );
