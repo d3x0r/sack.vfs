@@ -3417,37 +3417,38 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 				SET(result, "error",
 					state ? String::NewFromUtf8(isolate, "No Content", v8::NewStringType::kNormal).ToLocalChecked() : String::NewFromUtf8(isolate, "Connect Error", v8::NewStringType::kNormal).ToLocalChecked());
 			}
-			PTEXT content; content = GetHttpContent(state);
-			if (state && GetHttpResponseCode(state)) {
-				if (content) {
-					SET(result, "content"
-						, String::NewFromUtf8(isolate, GetText(content), v8::NewStringType::kNormal).ToLocalChecked());
-				}
-				SET(result, "statusCode"
-					, Integer::New(isolate, GetHttpResponseCode(state)));
-				const char* textCode = GetHttpResponseStatus(state);
-
-				SET(result, "status"
-					, String::NewFromUtf8(isolate, textCode ? textCode : "NO RESPONSE", v8::NewStringType::kNormal).ToLocalChecked());
-				Local<Array> arr = Array::New(isolate);
-				PLIST headers = GetHttpHeaderFields(state);
-				INDEX idx;
-				struct HttpField* header;
-				//headers
-				LIST_FORALL(headers, idx, struct HttpField*, header) {
-					SET(arr, (const char*)GetText(header->name)
-						, String::NewFromUtf8(isolate, (const char*)GetText(header->value)
-							, NewStringType::kNormal, (int)GetTextSize(header->value)).ToLocalChecked());
-				}
-				SET(result, "headers", arr);
-
-				DestroyHttpState(state);
-			}
 			else {
-				SET(result, "error",
-					state ? String::NewFromUtf8(isolate, "No Content", v8::NewStringType::kNormal).ToLocalChecked()
-					: String::NewFromUtf8(isolate, "Connect Error", v8::NewStringType::kNormal).ToLocalChecked());
+				PTEXT content; content = GetHttpContent( state );
+				if( state && GetHttpResponseCode( state ) ) {
+					if( content ) {
+						SET( result, "content"
+							, String::NewFromUtf8( isolate, GetText( content ), v8::NewStringType::kNormal ).ToLocalChecked() );
+					}
+					SET( result, "statusCode"
+						, Integer::New( isolate, GetHttpResponseCode( state ) ) );
+					const char* textCode = GetHttpResponseStatus( state );
 
+					SET( result, "status"
+						, String::NewFromUtf8( isolate, textCode ? textCode : "NO RESPONSE", v8::NewStringType::kNormal ).ToLocalChecked() );
+					Local<Array> arr = Array::New( isolate );
+					PLIST headers = GetHttpHeaderFields( state );
+					INDEX idx;
+					struct HttpField* header;
+					//headers
+					LIST_FORALL( headers, idx, struct HttpField*, header ) {
+						SET( arr, (const char*)GetText( header->name )
+							, String::NewFromUtf8( isolate, (const char*)GetText( header->value )
+								, NewStringType::kNormal, (int)GetTextSize( header->value ) ).ToLocalChecked() );
+					}
+					SET( result, "headers", arr );
+
+					DestroyHttpState( state );
+				} 				else {
+					SET( result, "error",
+						state ? String::NewFromUtf8( isolate, "No Content", v8::NewStringType::kNormal ).ToLocalChecked()
+						: String::NewFromUtf8( isolate, "Connect Error", v8::NewStringType::kNormal ).ToLocalChecked() );
+
+				}
 			}
 			args.GetReturnValue().Set(result);
 		}
