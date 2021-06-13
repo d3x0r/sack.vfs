@@ -3419,7 +3419,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 			}
 			else {
 				PTEXT content; content = GetHttpContent( state );
-				if( state && GetHttpResponseCode( state ) ) {
+				if( GetHttpResponseCode( state ) ) {
 					if( content ) {
 						SET( result, "content"
 							, String::NewFromUtf8( isolate, GetText( content ), v8::NewStringType::kNormal ).ToLocalChecked() );
@@ -3435,20 +3435,16 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 					INDEX idx;
 					struct HttpField* header;
 					//headers
-				LIST_FORALL(headers, idx, struct HttpField*, header) {
-					SETT(arr, header->name
-						, String::NewFromUtf8(isolate, (const char*)GetText(header->value)
-							, NewStringType::kNormal, (int)GetTextSize(header->value)).ToLocalChecked());
+					LIST_FORALL(headers, idx, struct HttpField*, header) {
+						SETT(arr, header->name
+							, String::NewFromUtf8(isolate, (const char*)GetText(header->value)
+								, NewStringType::kNormal, (int)GetTextSize(header->value)).ToLocalChecked());
 					}
 					SET( result, "headers", arr );
-
-					DestroyHttpState( state );
-				} 				else {
-					SET( result, "error",
-						state ? String::NewFromUtf8( isolate, "No Content", v8::NewStringType::kNormal ).ToLocalChecked()
-						: String::NewFromUtf8( isolate, "Connect Error", v8::NewStringType::kNormal ).ToLocalChecked() );
-
+				} else {
+					SET( result, "error", String::NewFromUtf8Literal( isolate, "Bad Parsing State" ) );
 				}
+				DestroyHttpState( state );
 			}
 			args.GetReturnValue().Set(result);
 		}
