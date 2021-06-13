@@ -87,7 +87,7 @@ void SystemInit( Isolate* isolate, Local<Object> exports )
   Local<Context> context = isolate->GetCurrentContext();
   Local<Object> systemInterface = Object::New( isolate );
 
-  //regInterface->Set( String::NewFromUtf8( isolate, "get", v8::NewStringType::kNormal ).ToLocalChecked(),
+  //regInterface->Set( String::NewFromUtf8Literal( isolate, "get" ),
 
   NODE_SET_METHOD( systemInterface, "enableThreadFileSystem", enableThreadFS );
   NODE_SET_METHOD( systemInterface, "allowSpawn", allowSpawn );

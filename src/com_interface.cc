@@ -32,7 +32,7 @@ void ComObject::Init( Local<Object> exports ) {
 		Local<FunctionTemplate> comTemplate;
 
 		comTemplate = FunctionTemplate::New( isolate, New );
-		comTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.ComPort", v8::NewStringType::kNormal ).ToLocalChecked() );
+		comTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.ComPort" ) );
 		comTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 		// Prototype
@@ -116,7 +116,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				String::Utf8Value fName( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 				portName = StrDup( *fName );
 			} else {
-				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must specify port name to open.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+				isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must specify port name to open." ) ) );
 				return;
 			}
 			// Invoked as constructor: `new MyObject(...)`
@@ -174,7 +174,7 @@ void ComObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc < 1 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must pass callback to onRead handler", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must pass callback to onRead handler" ) ) );
 		return;
 	}
 
@@ -191,7 +191,7 @@ void ComObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 	int argc = args.Length();
 	if( argc < 1 ) {
-		//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "required parameter missing", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		//isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "required parameter missing" ) ) );
 		return;
 	}
 	Isolate* isolate = args.GetIsolate();
