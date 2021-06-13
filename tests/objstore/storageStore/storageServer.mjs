@@ -27,8 +27,9 @@ class Connection {
 		ws.on("message", msg_=>{
 			const msg = JSOX.parse( msg_ );
 			try {
-				if( !storage.handleMessage( ws, msg ) )
+				if( !storage.handleMessage( ws, msg ) ) {
 					this[msg.op](ws,msg);
+				}
 			} catch(err) {
 				console.log( "protocol error:", err );
 			}
