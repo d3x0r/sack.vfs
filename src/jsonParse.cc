@@ -58,7 +58,7 @@ void InitJSON( Isolate *isolate, Local<Object> exports ){
 	{
 		Local<FunctionTemplate> parseTemplate;
 		parseTemplate = FunctionTemplate::New( isolate, parseObject::New );
-		parseTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.json6_parser", v8::NewStringType::kNormal ).ToLocalChecked() );
+		parseTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.json6_parser" ) );
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write );
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "reset", parseObject::reset );
@@ -78,7 +78,7 @@ void InitJSON( Isolate *isolate, Local<Object> exports ){
 	{
 		Local<FunctionTemplate> parseTemplate;
 		parseTemplate = FunctionTemplate::New( isolate, parseObject::New6 );
-		parseTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.json6_parser", v8::NewStringType::kNormal ).ToLocalChecked() );
+		parseTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.json6_parser" ) );
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write6 );
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "reset", parseObject::reset6 );
@@ -98,7 +98,7 @@ void InitJSON( Isolate *isolate, Local<Object> exports ){
 	{
 		Local<FunctionTemplate> parseTemplate;
 		parseTemplate = FunctionTemplate::New( isolate, parseObject::New6v );
-		parseTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.vesl_parser", v8::NewStringType::kNormal ).ToLocalChecked() );
+		parseTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.vesl_parser" ) );
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", parseObject::write6v );
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "reset", parseObject::reset6v );
@@ -130,7 +130,7 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	parseObject *parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
 	int argc = args.Length();
 	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Missing data parameter.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Missing data parameter." ) ) );
 		return;
 	}
 
@@ -183,7 +183,7 @@ void parseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must callback to read into.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must callback to read into." ) ) );
 		return;
 	}
 
@@ -225,7 +225,7 @@ void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 	parseObject *parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
 	int argc = args.Length();
 	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Missing data parameter.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Missing data parameter." ) ) );
 		return;
 	}
 
@@ -275,7 +275,7 @@ void parseObject::New6( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must callback function to get values.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must callback function to get values." ) ) );
 		return;
 	}
 
@@ -367,7 +367,7 @@ void parseObject::New6v( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must callback function to get values.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must callback function to get values." ) ) );
 		return;
 	}
 
@@ -562,7 +562,7 @@ Local<Value> ParseJSON(  const char *utf8String, size_t len, struct reviver_data
 		if( error )
 			revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		else
-			revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate, "JSON Error not posted.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( revive->isolate, "JSON Error not posted." ) ) );
 		LineRelease( error );
 		return Undefined( revive->isolate );
 	}
@@ -591,7 +591,7 @@ void parseJSON( const v8::FunctionCallbackInfo<Value>& args )
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
 			r._this = args.Holder();
-			r.value = String::NewFromUtf8( r.isolate, "", v8::NewStringType::kNormal ).ToLocalChecked();
+			r.value = String::NewFromUtf8Literal( r.isolate, "" );
 			r.reviver = Local<Function>::Cast( args[1] );
 			r.revive = TRUE;
 		}
@@ -610,7 +610,7 @@ void parseJSON( const v8::FunctionCallbackInfo<Value>& args )
 
 
 void makeJSON( const v8::FunctionCallbackInfo<Value>& args ) {
-	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), "undefined :) Stringify is not completed", v8::NewStringType::kNormal ).ToLocalChecked() );
+	args.GetReturnValue().Set( String::NewFromUtf8Literal( args.GetIsolate(), "undefined :) Stringify is not completed" ) );
 }
 
 void showTimings( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -694,7 +694,7 @@ void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
 			r._this = args.Holder();
-			r.value = String::NewFromUtf8( r.isolate, "", v8::NewStringType::kNormal ).ToLocalChecked();
+			r.value = String::NewFromUtf8Literal( r.isolate, "" );
 			r.revive = TRUE;
 			r.reviver = Local<Function>::Cast( args[1] );
 		}
@@ -716,7 +716,7 @@ void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
 
 
 void makeJSON6( const v8::FunctionCallbackInfo<Value>& args ) {
-	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), "undefined :) Stringify is not completed", v8::NewStringType::kNormal ).ToLocalChecked() );
+	args.GetReturnValue().Set( String::NewFromUtf8Literal( args.GetIsolate(), "undefined :) Stringify is not completed" ) );
 }
 
 
@@ -783,7 +783,7 @@ void parseJSON6v( const v8::FunctionCallbackInfo<Value>& args )
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
 			r._this = args.Holder();
-			r.value = String::NewFromUtf8( r.isolate, "", v8::NewStringType::kNormal ).ToLocalChecked();
+			r.value = String::NewFromUtf8Literal( r.isolate, "" );
 			r.revive = TRUE;
 			r.reviver = Local<Function>::Cast( args[1] );
 		}
