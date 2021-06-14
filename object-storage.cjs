@@ -50,7 +50,6 @@ function objectStorageContainer(o,opts) {
 
 	currentContainer = this;
 	Object.defineProperty( this, "encoding", { writable:true, value:false } );
-
 	if( opts && opts.sign ) {
 		var v = sack.SaltyRNG.verify( sack.JSOX.stringify(o), this.data.nonce, 3, 3 );
 		//console.log( "TEST:", v );
@@ -60,7 +59,7 @@ function objectStorageContainer(o,opts) {
 	} else {
 		if( opts && opts.id ) {
 			Object.defineProperty( this, "id", { value:opts.id } );
-		}
+		}		
 	}
 }
 
@@ -454,12 +453,18 @@ _objectStorage.prototype.getContainer = function( obj, options ) {
 		container = this.cachedContainer.get( container );
 		return container;
 	}
-	//console.log( "Getting a new container...", container.id );
+	//console.trace( "Getting a new container...", options );
 	container = new this.objectStorageContainer(obj,options);
 	//console.log( " *** SETTING ID HERE", container.id);
-	this.stored.set( obj, container.id );
-	this.cached.set( container.id, container.data );
-	this.cachedContainer.set( container.id, container );
+	//if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
+	if( container.id ) {
+		this.stored.set( obj, container.id );
+		this.cached.set( container.id, container.data );
+		this.cachedContainer.set( container.id, container );
+	}else {
+		// should fix 'undefined' as a index in stored
+		//console.log( "Storage still has to come from real storage operation... not setting cached ID");
+	}
 }
 
 _objectStorage.prototype.createIndex = function( id, index ){
@@ -490,6 +495,7 @@ _objectStorage.prototype.index = function( obj, fieldName, opts ) {
 				//this.stored.delete( obj );
 				//console.log( " *** SETTING ID HERE", container.id);
 				this_.stored.set( obj, container.id );
+				if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
 				this_.cached.set( container.id, container.data );
 				this_.cachedContainer.set( container.id, container );
 			}
@@ -667,6 +673,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 				console.trace( "Container has no ID or is nUll", container );
 			}
 			_debug_output && console.trace( "WRite:", opts, storage );
+			console.log( "Storing with an ID already?", obj, opts );
 			this_.writeRaw( opts.id, storage );
 			res && res( opts.id );
 		} else if( !opts || !opts.id ) {
@@ -676,6 +683,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 			_debug && console.log( "New bare object, create a container...", opts );
                         if( !opts ) opts = { id : sack.id() }
                         else opts.id = sack.id();
+                        //console.log( "Storage ID is picked here:", opts );
                         if( "object" === typeof obj ) {
 				container = new this_.objectStorageContainer(obj,opts);
 				//console.log( "New container looks like... ", container.id, container );
@@ -685,6 +693,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 				//this.stored.delete( obj );
 				//console.log( " *** SETTING ID HERE", container.id);
 				this_.stored.set( obj, container.id );
+				if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
 				this_.cached.set( container.id, container.data );
 				this_.cachedContainer.set( container.id, container );
 			        
@@ -713,6 +722,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 			_debug_output && console.trace( "Outut container to storage... ", container, storage );
 			try {
 				this_.writeRaw( container.id, storage );
+				if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
 				this_.cached.set( container.id, container.data );
 				this_.cachedContainer.set( container.id, container );
 			}catch(err) { console.log( "WRITE RAW?", this_ )}
@@ -759,7 +769,8 @@ _objectStorage.prototype.get = function( opts ) {
 	//console.trace( "TEST going to get:", opts )
 	const priorDecode = this.decoding.find( d=>d.opts.id === opts.id );
 	if( priorDecode ){
-		//console.trace( "already decoding...(use same promised result) things?", priorDecode );
+		
+		console.trace( "already decoding...(use same promised result) things?", priorDecode );
 		return priorDecode.p;
 	}
 
@@ -839,6 +850,7 @@ _objectStorage.prototype.get = function( opts ) {
 				dangling = [];
 				objectRefs = 0;
 			}
+
 			Object.defineProperty( this, "id", { value:currentReadId } );
 
 			const request = allDangling.get( currentReadId );
@@ -934,22 +946,23 @@ _objectStorage.prototype.get = function( opts ) {
 					const extraResolutions = [];
 					for( let n = 0; n < os.decoding.length; n++ ) {
 						const decode = os.decoding[n];
-						//console.log( "pending decode?", decode )
+						//console.log( "pending decode?", decode, opts, decode.opts === opts )
 						if( decode.opts === opts )
 							deleteId = n;
-						else if( decode.id === opts.id ) {
-							console.log( "pending decode?");
+						else if( decode.opts.id === opts.id ) {
+							console.log( "pending decode resolve?");
 							decode.res( obj );
 						}
 					}
+					
 					if( deleteId >= 0 )  {
 						console.log( "Something else is alwso waiting for this result...", os.decoding, deleteId);
 						os.decoding.splice( deleteId, 1 );
 					}
-
+					
 					var found;
 					do {
-						var found = os.pending.findIndex( pending=>{ console.log( "what is in pending?", pending ); return pending.id === key } );
+						var found = os.pending.findIndex( pending=>{ console.log( "what is in pending?", key, opts.id, pending ); return pending.id === opts.id } );
 						if( found >= 0 ) {
 							os.pending[found].ref.o[os.pending[found].ref.f] = obj.data;
 							os.pending.splice( found, 1 );
@@ -975,13 +988,23 @@ _objectStorage.prototype.get = function( opts ) {
 				}
 			} );
 		}catch(err) {
-				currentReadId = priorReadId;
+			//console.log( "ERROR:", err );
+			currentReadId = priorReadId;
 			rej(err);
 		}
 	} );
 	//console.log( "PUSHING THING TO LOAD LATER (decoding)?", opts );
-	// p should be already resolved?
+
 	this.decoding.push( { p:p, opts:opts } );
+	p.then( (r)=>{
+		//console.log( "Removing decoding object with then...");
+		const doneDecoding = os.decoding.findIndex( d=>d.opts === opts );
+		//console.log( "decode should already be resolved:", doneDecoding, os.decoding, opts, r );
+
+		if( doneDecoding >=0 ) os.decoding.splice( doneDecoding, 1 );
+		else console.log( "Failed to find decoding object?" );
+		return r;
+	} );
 	return p;
 }
 
@@ -1086,7 +1109,8 @@ function fileDirectory( v, id ) {
 
 
 fileDirectory.prototype.find = function( file ) {
-
+	return !!this.files.find( (f)=>(f.name == file ) );
+	
 }
 
 fileDirectory.prototype.create = async function( fileName ) {
@@ -1122,7 +1146,7 @@ fileDirectory.prototype.open = async function( fileName ) {
 	const _this = this;
 	//console.log( "OPEN?", file );
 	if( !file ) {
-      return Promise.reject( new Error( "File not found" + fileName ) );
+      return Promise.reject( new Error( "File not found:" + fileName ) );
 	}
 	return Promise.resolve( file );
 }
@@ -1355,16 +1379,16 @@ class StoredObject {
 			// might have been reloaded...
 			const container = this.#storage.getContainer( this );
 			if( container ) this.#id = container.id;
-						opts = opts || {id:this.#id};
-						//console.trace( "Store is not a object??", opts );
-                        opts.id = opts.id || this.#id;
+			opts = opts || {id:this.#id};
+			//console.trace( "Store is not a object??", opts );
+			opts.id = opts.id || this.#id;
 			const id = await this.#storage.put( this, opts );
 			if( !this.#id ) this.#id = id;
 			else if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
 			return id;
 		} else {
-            opts = opts || {id:this.#id};
-            opts.id = opts.id || this.#id;
+			opts = opts || {id:this.#id};
+			opts.id = opts.id || this.#id;
 			const id = await this.#storage.put( this, opts );
 			if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
 			return id;
