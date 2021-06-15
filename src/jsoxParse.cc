@@ -306,6 +306,7 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 			sub_o->SetPrototype( revive->context, po );
 		}
 		*/
+		//lprintf( "lookup up classname:%.*s", val->classNameLen, val->className );
 		if( mprotoDef.IsEmpty() && revive->parser && !revive->parser->fromPrototypeMap.IsEmpty() ) {
 			mprotoDef = revive->parser->fromPrototypeMap.Get( revive->isolate )->Get( revive->context, className );
 			if( !mprotoDef.IsEmpty() && !mprotoDef.ToLocalChecked()->IsUndefined() ) {
@@ -960,7 +961,11 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 			} else {
 				Local<Value> tmp = makeValue( val, revive );
 #if defined( DEBUG_REFERENCE_FOLLOW ) || defined( DEBUG_REVIVAL_CALLBACKS )
-				lprintf( "set value to fieldname: %.*s", val->nameLen, val->name );
+				if( val->name )
+					lprintf( "set value to fieldname: %.*s", val->nameLen, val->name );
+				else
+					lprintf( "set value to index: %d", currentIndex );
+				
 #endif
 				if( val->value_type == JSOX_VALUE_UNDEFINED || !tmp->IsUndefined() ) {
 					o->Set( revive->context, revive->fieldName, tmp );
