@@ -13,17 +13,14 @@ function open( opts ) {
 	const server = opts.server;
         console.log( "connect with is:", server, protocol );
 	var client = sack.WebSocket.Client( server, protocol, { perMessageDeflate: false } );
-        console.log( "client result:", client );
-	
+        
 	client.on("open", function (ws)  {
 		console.log( "Connected (service identification in process; consult config .jsox files)" );
-		console.log( "ws: ", this );
-		this.on( "message", ( msg_ )=> {
+		//console.log( "ws: ", this ); //  ws is also this
+		this.onmessage = ( msg_ )=> {
 			const msg = sack.JSOX.parse( msg_ );
                         if( msg.op === "addMethod" ) {
 				try {
-				    	// why is this not in a module?
-					console.log( "Running code fragment" );
 					var f = new AsyncFunction( "Import", msg.code );
 					const p = f.call( this, (m)=>import(m) );
 			       } catch( err ) {
@@ -34,7 +31,7 @@ function open( opts ) {
 		        	console.log( "unknown message Received:", msg );
                         }
                 	//this.close();
-        	} );
+        	};
 		this.on( "close", function( msg ) {
         		console.log( "opened connection closed" );
         	        //setTimeout( ()=> {console.log( "waited" )}, 3000 )

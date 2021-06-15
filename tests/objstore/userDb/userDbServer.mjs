@@ -6,6 +6,8 @@ const where = colons.length===2?colons[1].substr(1):colons[2];
 const nearIdx = where.lastIndexOf( "/" );
 const nearPath = where.substr(0, nearIdx+1 );
 
+
+import path from "path";
 import {sack} from "sack.vfs"
 const JSOX = sack.JSOX;
 import {UserDb,User,Device,UniqueIdentifier,go} from "./userDb.mjs"
@@ -29,47 +31,12 @@ const l = {
 	services : new Map(),
 }
 
-
-async function makeUsers() {
-	for( let i = 1; i < count; i++ ) {
-		const unique = new UniqueIdentifier();
-		unique.key = sack.Id();
-		//console.log( "user:", i );
-		await unique.store().then( ((i)=> ()=>{
-	 			const user = unique.addUser( i, "User "+i, '' + i + "@email.com", Math.random()*(1<<54) );
-				return user.addDevice( sack.Id(), true ).then( ()=>{
-					//console.log( "storing user", i );
-					return user.store();
-				} );
-			} )(i+from) );
-	}
-}	
-
-
-function getUsers() {
-	console.log( "Getting..." );
-	User.get( 3 ).then( (user)=>{
-		console.log( "Got 3 :", user );
-	} );
-	User.get( 203 ).then( (user)=>{
-		console.log( "Got 203:", user );
-	} );
-	User.get( 835 ).then( (user)=>{
-		console.log( "Got 835:", user );
-	} );
-}
-
+// go is from userDb; waits for database to be ready.
 go.then( ()=>{
-
         openServer( { port : 8089
                 } );
-
 } );
 
-
-
-
-import path from "path";
 
 function openServer( opts, cb )
 {
@@ -119,7 +86,7 @@ server.onrequest( function( req, res ) {
 	        return;
         }
         if( parts[1] === "node_modules" ) {
-            if( parts[2] !== "@d3x0r" ) {
+            if( parts[2] !== "@d3x0r" && parts[2] !== "jsox" ) {
             	res.writeHead( 404 );
                 res.end( "<html><head><title>404</title></head><body>Resource not found</body></html>" );
                 return;
@@ -182,7 +149,7 @@ server.onrequest( function( req, res ) {
 } );
 
 server.onaccept( function ( ws ) {
-	console.log( "accept?", ws );
+	//console.log( "accept?", ws );
     if( ws.headers["Sec-WebSocket-Protocol"] === "login" )
         return this.accept();
     if( ws.headers["Sec-WebSocket-Protocol"] === "userDatabaseClient" ) {
@@ -223,42 +190,45 @@ function sendKey( ws, val, f ) {
 async function guestLogin( ws, msg ){
 
 	const isClient = await UserDb.getIdentifier( msg.clientId );
+	
 	if( !isClient ) {
-		ws.send( JSON.stringify( { op:"login", success: false, ban: true } ) );
-		return;
+		//ws.send( JSON.stringify( { op:"login", success: false, ban: true } ) );
+		//return;
 	}
 	
-	msg.deviceId = setKey( msg.deviceId,ws,"deviceId" );
+	//msg.deviceId = setKey( msg.deviceId,ws,"deviceId" );
 
 	const user = await UserDb.getUser( msg.account );
 	console.log( "user:", user );
 	if( user && user.pass === msg.password ) {
                   ws.send( JSON.stringify( { op:"login", success: true } ));
 	}
-	console.log( "sending false" );
-        ws.send( JSON.stringify( { op:"login", success: false } ));
+	//console.log( "sending false" );
+	console.log( "guest password failure" );
+    ws.send( JSON.stringify( { op:"login", success: false } ));
 }
 
 async function doLogin( ws, msg ){
 
 	const isClient = await UserDb.getIdentifier( msg.clientId );
+	// just need SOME clientID.
 	if( !isClient ) {
 		ws.send( JSON.stringify( { op:"login", success: false, ban: true } ) );
 		return;
 	}
-	console.log( "login:", msg );
-	console.log( "cilent:", isClient );
+	//console.log( "login:", msg );
+	//console.log( "client:", isClient );
 	
 
 	const user = await UserDb.getUser( msg.account );
-
+	
 	if( user && user.unique !== isClient ) {
 		// save meta relation that these clients used the same localStorage
 		// reset client Id to this User.
-console.log( "User Doing Login:", user, user.unique );
+		console.log( "User Doing Login with another client:", user, user.unique );
 		sendKey( ws, "clientId", user.unique.key );
 		// force deviceId to null?
-		msg.deviceId = null; // force generate new device for reversion
+		//msg.deviceId = null; // force generate new device for reversion
 	}
 
 	//console.log( "user:", user );
@@ -270,9 +240,7 @@ console.log( "User Doing Login:", user, user.unique );
 	ws.state.user = user;
 	ws.state.login = msg;
 	const dev = await user.getDevice( msg.deviceId );
-	//console.log( "dev:", dev );
 	if( !dev ) {
-		// console.log( "Device failure of login" );
 		ws.state.login = msg;
 		// ask the device to add a device.
 		ws.send( JSON.stringify( {op:"login", success:false, device:true } ) );
@@ -317,7 +285,6 @@ async function doCreate( ws, msg ) {
 async function addDevice(ws,msg) {
 	const user = ws.state.user;
 	if( user ) {	
-		console.log( "Can add device to user..." )
 		const dev = await user.addDevice( msg.deviceId, ws.state.user.devices.length < 10?true:false );
 		//console.log( "dev:", dev );
 		if( !dev.active ) {
@@ -351,16 +318,41 @@ async function newClient(ws,msg) {
 }
 
 
-function handleServiceMsg( ws, msg ){
+async function handleServiceMsg( ws, msg ){
 	// msg.org is 'org.jsox' from the client
 	// sid is the last SID we assigned.
 	if( msg.sid ) {
 		UserDb.getService( msg.org );
 	} else {
+		const svc = await  UserDb.getService( msg.svc ).then( (s)=>{
+			ws.send( JSOX.stringify( { op:"registered" }) )
+			return s;
+		} );
+		if( svc ) {
+			// register service finally gets a result... and sends my response.
+			ws.send( JSOX.stringify( { op:"register", sid: svc.sid } ) );
+		}else {
+			console.log( "service will always exist or this wouldn't run.");
+		}
+		
 		// waiting to be allowed...
 	}
 }
 function handleBadgeDef( ws, msg ){
+}
+
+async function getService( ws, msg ) {
+	// domain, service
+	console.log( "Calling requestservice" );
+	const svc = await UserDb.requestService( msg.domain, msg.service, ws.state.user );
+	if( !svc ) {
+		ws.send( JSOX.stringify( {op:"service", ok:false } ) );
+	}else {
+		//svc.request
+		console.log( "got service...", svc );
+		//ws.send( JSOX.stringify( {op:"service", ok:true, svc: svc } ) );
+
+	}
 }
 
 server.onconnect( function (ws) {
@@ -393,25 +385,33 @@ server.onconnect( function (ws) {
 	}
 
 	function handleClient( msg_ ) {
-            	const msg = JSOX.parse( msg_ );
-                console.log( 'message:', msg );
-                if( msg.op === "hello" ) {
-			//ws.send( methodMsg );
-                } else if( msg.op === "newClient" ){
+		const msg = JSOX.parse( msg_ );
+		console.log( 'message:', msg );
+try {
+		if( msg.op === "hello" ) {
+	//ws.send( methodMsg );
+		} else if( msg.op === "newClient" ){
 			newClient( ws, msg );
-                } else if( msg.op === "login" ){
+		} else if( msg.op === "request" ){
+			getService( ws, msg );
+		} else if( msg.op === "login" ){
 			doLogin( ws, msg );
-                } else if( msg.op === "device" ){
+		} else if( msg.op === "device" ){
 			addDevice( ws, msg );
-                } else if( msg.op === "guest" ){
+		} else if( msg.op === "guest" ){
 			guestLogin( ws, msg );
-                } else if( msg.op === "Login" ){
-                        ws.send( JSON.stringify( { op:"login", success: true } ));
-                } else if( msg.op === "create" ){
+		} else if( msg.op === "service" ){
+			getService( ws, msg );
+		} else if( msg.op === "Login" ){
+			ws.send( JSON.stringify( { op:"login", success: true } ));
+		} else if( msg.op === "create" ){
 			doCreate( ws, msg );
-                } else {
+		} else {
 			console.log( "Unhandled message:", msg );
 		}
+} catch(err) {
+	console.log( "Something bad happened processing a message:", err );
+}
         	//console.log( "Received data:", msg );
 		//ws.close();
         };

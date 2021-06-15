@@ -5,5 +5,7 @@
 	org : "Freedom Collective",
 	domain : "d3x0r.org",
 	service : "login",
-        description: "User Login Service",
+        description : "User Login Service",
 }
+
+

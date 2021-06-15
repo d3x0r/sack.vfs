@@ -6,10 +6,10 @@ const sackModule = await Import( "sack.vfs" );
 const sack = sackModule.sack;
 const JSOX = sack.JSOX;
 const disk = sack.Volume();
+// my path is poorly defined here...
 const srvc = disk.exists( "service.jsox" ) && sack.JSOX.parse( sack.Volume.readAsString( "service.jsox" ) );
-console.log( "doesn't exist", disk.dir() );
-const badges = srvc && disk.exists( "badges.jsox" ) && sack.JSOX.parse( sack.Volume.readAsString( "badges.jsox" ) );
-const mySID = badges && disk.exists( "mySid.jsox" ) && sack.Volume.readAsString( "mySid.jsox" );
+if( srvc ) srvc.badges = srvc && disk.exists( "badges.jsox" ) && sack.JSOX.parse( sack.Volume.readAsString( "badges.jsox" ) );
+const mySID = srvc.badges && disk.exists( "mySid.jsox" ) && sack.Volume.readAsString( "mySid.jsox" );
 if( badges ) {
 	
 }
@@ -41,10 +41,6 @@ if( !clientKey ) {
 
 ws.addService = function( prod,app,interface ) {
 		
-}
-ws.doCreate = function( display, user, pass, email ) {
-}
-ws.doGuest = function( user ) {
 }
 
 
@@ -92,10 +88,9 @@ ws.processMessage = function( ws, msg ) {
 if( srvc instanceof Array ) {
 	// this might be an option; but then there would have to be multiple badge files; or badges with orgs
 	//org.forEach( registerOrg );
-} else registerService( srvc );
+} else registerService( srvc, badges );
 
 function registerService( srvc ) {
-
 	ws.send( JSOX.stringify( { op:"register", sid:mySID, svc:srvc } ) );	
 
 }
