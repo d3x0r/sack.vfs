@@ -576,6 +576,10 @@ sack.JSOX.stringifier = function() {
 				var first = true;
 				//console.log( "CONVERT:", map);
 				for (var [key, value] of this) {
+					if( key === undefined ) {
+						console.log( "Found a key 'undefined' in this?", this );
+						continue;
+					}
 					//if( "function" === typeof value ) continue;
 					//console.log( "er...", key, value )
 					tmp.tmp = value;
