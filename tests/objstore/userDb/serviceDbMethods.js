@@ -10,14 +10,11 @@ const disk = sack.Volume();
 const srvc = disk.exists( "service.jsox" ) && sack.JSOX.parse( sack.Volume.readAsString( "service.jsox" ) );
 if( srvc ) srvc.badges = srvc && disk.exists( "badges.jsox" ) && sack.JSOX.parse( sack.Volume.readAsString( "badges.jsox" ) );
 const mySID = srvc.badges && disk.exists( "mySid.jsox" ) && sack.Volume.readAsString( "mySid.jsox" );
-if( badges ) {
-	
-}
 
 if( !srvc ) {
 	console.log( "Service definition not found..." );
 }
-else if( !badges ) {
+else if( !srvc.badges ) {
 	console.log( "Badge definition not found for oranization..." );
 }
 //const SaltyRNGModule = await Import( "/javascript/d3x0r/srg/salty_random_generator.js" );
@@ -60,8 +57,8 @@ function resolveBadge( msg ) {
 function registered( ws,msg ) {
 	if( msg.ok ) {
 		// srvc result ok?
-		for( let badgeName in badges ) {
-			const badge = badges[badgeName];
+		for( let badgeName in srvc.badges ) {
+			const badge = srvc.badges[badgeName];
 			ws.send( {op:"defineBadge", badgeName:badgeName, badge:badge } );
 		
 			new Promise( (res,rej)=>{
@@ -88,7 +85,7 @@ ws.processMessage = function( ws, msg ) {
 if( srvc instanceof Array ) {
 	// this might be an option; but then there would have to be multiple badge files; or badges with orgs
 	//org.forEach( registerOrg );
-} else registerService( srvc, badges );
+} else registerService( srvc );
 
 function registerService( srvc ) {
 	ws.send( JSOX.stringify( { op:"register", sid:mySID, svc:srvc } ) );	
