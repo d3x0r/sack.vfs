@@ -1,4 +1,7 @@
 
+//import {popups,AlertForm} from "../popups.mjs"
+//const JSOX = JSON;
+
 import {popups,AlertForm} from "/node_modules/@d3x0r/popups/popups.mjs"
 import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
 
@@ -218,9 +221,21 @@ function processMessage( msg ) {
 		}
 		
 	}
-	else if( msg.op === "set" ) {
-	    	localStorage.setItem( msg.value, msg.key );
+	else if( msg.op === "pickSash" ) {
+		// this is actually a client event.
+		pickSash( ws, msg.choices );
 	}
+}
+
+async function 	pickSash( ws, choices ){
+	if( l.loginForm && l.loginForm.pickSash ) {
+		const choice = await l.loginForm.pickSash( msg.choices );
+		if( choice )
+			ws.send( {op:"pickSash", ok:true, sash : choice } );
+		else
+			ws.send( {op:"pickSash", ok:false, sash : "User Declined Choice." } );
+	}
+	ws.send( {op:"pickSash", ok:false, sash : "Choice not possible." } );
 }
 
 function openSocket( addr ) {
@@ -228,30 +243,28 @@ function openSocket( addr ) {
 
 	const  proto = location.protocol==="http:"?"ws:":"wss:";
 
-  var ws = new WebSocket(proto+"//"+addr+"/", "login");
-			console.log( "websocket:", ws, proto+"//"+location.host+"/" );
-  ws.onopen = function() {
-    // Web Socket is connected. You can send data by send() method.
-    //ws.send("message to send"); 
-	l.ws = ws;
-	ws.send( '{ op: "hello" }' );
-	console.log( "Success on socket open." );
-  };
-  ws.onmessage = function (evt) { 
-  	const msg_ = JSOX.parse( evt.data );
-	if( !ws.processMessage || !ws.processMessage( ws, msg_ ) )
-		processMessage( msg_ );
-  };
-  ws.onclose = function() { 
-	l.ws = null;
-	if( l.loginForm )
-	       l.loginForm.disconnect();
-	setTimeout( openSocket, 5000 ); // 5 second delay.
-  	// websocket is closed. 
-  };
+	var ws = new WebSocket(proto+"//"+addr+"/", "login");
+	
+
+	console.log( "websocket:", ws, proto+"//"+location.host+"/" );
+	ws.onopen = function() {
+		l.ws = ws;
+		ws.send( '{ op: "hello" }' );
+	};
+	ws.onmessage = function (evt) { 
+  	  	const msg_ = JSOX.parse( evt.data );
+		if( !ws.processMessage || !ws.processMessage( ws, msg_ ) )
+			processMessage( msg_ );
+	};
+	ws.onclose = function() { 
+		l.ws = null;
+		if( l.loginForm && l.loginForm.disconnect )
+		       l.loginForm.disconnect();
+		setTimeout( openSocket, 5000 ); // 5 second delay.
+  	  	// websocket is closed. 
+	};
 
 }
-
 
 
 export {l as connection,openSocket};
