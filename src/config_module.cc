@@ -230,7 +230,7 @@ void ConfigScriptInit( Local<Object> exports ) {
 	Local<FunctionTemplate> configTemplate;
 
 	configTemplate = FunctionTemplate::New( isolate, ConfigObject::New );
-	configTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.Config", v8::NewStringType::kNormal ).ToLocalChecked() );
+	configTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.Config" ) );
 	configTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 
 	NODE_SET_PROTOTYPE_METHOD( configTemplate, "add", ConfigObject::Add );

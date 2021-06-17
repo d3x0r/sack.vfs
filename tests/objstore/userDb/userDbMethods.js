@@ -11,6 +11,9 @@ if( !clientKey ) {
     	ws.send( `{op:newClient}` );
 }
 
+const l = {
+	pending:[]
+}
 
 console.log( "localStorage?", localStorage);
 
@@ -37,6 +40,11 @@ ws.doGuest = function( user ) {
                         ,deviceId:${JSON.stringify(localStorage.getItem("deviceId"))} }` );
 }
 
+ws.getService = function( domain, service ) {
+    //ws.send(
+    ws.send( `{op:"service",domain:${JSON.stringify(domain)},service:${JSON.stringify(service)}}`);
+}
+
 
 const sesKey = localStorage.getItem( "seskey" );
 if( sesKey ) {
@@ -44,6 +52,30 @@ if( sesKey ) {
         		,clientId:${JSON.stringify(localStorage.getItem("clientId"))}
                         ,deviceId:${JSON.stringify(localStorage.getItem("deviceId"))} }` );
 
+}
+
+ws.request = function( domain, service ) {
+	const pend = {op:"request", id: SaltyRNG.Id(), p:null,domain:domain, service:service, res:null,rej:null };
+	ws.send( `{op:"request",id:'${pend.id}',domain:${JSON.stringify(domain)},service:${JSON.stringify(service)}}`);
+	pend.p = new Promise( (res,rej)=>{
+		pend.res = res; pend.rej=rej;
+	}).then( (msg)=>{
+		const idx = l.pending.findIndex( p=>p === pend );
+		if( idx >= 0 ) l.pending.splic(idx,1 );
+		else console.log( "Failed to find pending request." );
+		if( msg.redirect ) {
+			var ws = new WebSocket( msg.redirect, msg.protocol );
+			ws.onopen = function() {
+				// Web Socket is connected. You can send data by send() method.
+				//ws.send("message to send"); 
+				ws.send( msg.key );
+			}
+			return ws;
+		}
+		throw new Error( ws.error );
+	} )
+	l.pending.push( pend );
+	return pend.p;
 }
 
 ws.processMessage = function( ws, msg ) {
@@ -85,5 +117,12 @@ ws.processMessage = function( ws, msg ) {
         else if( msg.op === "set" ) {
             	localStorage.setItem( msg.value, msg.key );
         }
+		else if( msg.op === "request" ) {
+			for( let pend of l.pending ) {
+				if( pend.id === msg.id ) {
+					pend.res( msg );
+				}
+			}
+		}
 
 }

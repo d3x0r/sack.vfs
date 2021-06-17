@@ -33,14 +33,14 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check = NewArray( struct optionStrings, 1 );
 		AddLink( &strings, check );
 		check->isolate = isolate;
-		check->workString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "work", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->binString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "bin", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->argString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "args", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->envString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "env", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->binaryString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "binary", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->inputString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "input", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->endString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "end", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->firstArgIsArgString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "firstArgIsArg", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->workString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "work" ) );
+		check->binString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "bin" ) );
+		check->argString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "args" ) );
+		check->envString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "env" ) );
+		check->binaryString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "binary" ) );
+		check->inputString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "input" ) );
+		check->endString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "end" ) );
+		check->firstArgIsArgString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "firstArgIsArg" ) );
 	}
 	return check;
 }
@@ -69,7 +69,7 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 
 	Local<FunctionTemplate> taskTemplate;
 	taskTemplate = FunctionTemplate::New( isolate, TaskObject::New );
-	taskTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.task", v8::NewStringType::kNormal ).ToLocalChecked() );
+	taskTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.task" ) );
 	taskTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "write", TaskObject::Write );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "send", TaskObject::Write );
@@ -163,7 +163,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must specify url and optionally protocols or options for client.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must specify url and optionally protocols or options for client." ) ) );
 		return;
 	}
 
@@ -207,7 +207,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				if( GETV( opts, optName )->IsString() )
 					bin = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			} else {
-				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "required option 'bin' missing.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+				isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "required option 'bin' missing." ) ) );
 			}
 			if( opts->Has( context, optName = strings->argString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;

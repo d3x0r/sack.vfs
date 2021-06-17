@@ -1,5 +1,6 @@
 
-const sack = (await Import( "sack.vfs" )).sack;
+import {sack} from "sack.vfs";
+//const sack = (await Import( "sack.vfs" )).sack;
 
 const AsyncFunction = Object.getPrototypeOf( async function() {} ).constructor;
 
@@ -12,18 +13,16 @@ function open( opts ) {
 	const server = opts.server;
         console.log( "connect with is:", server, protocol );
 	var client = sack.WebSocket.Client( server, protocol, { perMessageDeflate: false } );
-        console.log( "client result:", client );
-	
-	client.onopen = function (ws)  {
-		console.log( "Connected", serviceId );
-		console.log( "ws: ", this );
-		this.on( "message", ( msg_ )=> {
+        
+	client.on("open", function (ws)  {
+		console.log( "Connected (service identification in process; consult config .jsox files)" );
+		//console.log( "ws: ", this ); //  ws is also this
+		this.onmessage = ( msg_ )=> {
 			const msg = sack.JSOX.parse( msg_ );
                         if( msg.op === "addMethod" ) {
 				try {
-				    	// why is this not in a module?
 					var f = new AsyncFunction( "Import", msg.code );
-					const p = f.call( this, Import );
+					const p = f.call( this, (m)=>import(m) );
 			       } catch( err ) {
 					console.log( "Function compilation error:", err,"\n", msg.code );
 			       }
@@ -32,7 +31,7 @@ function open( opts ) {
 		        	console.log( "unknown message Received:", msg );
                         }
                 	//this.close();
-        	} );
+        	};
 		this.on( "close", function( msg ) {
         		console.log( "opened connection closed" );
         	        //setTimeout( ()=> {console.log( "waited" )}, 3000 )
@@ -41,7 +40,7 @@ function open( opts ) {
 		//client.send( msg );
 	       	//client.send( msgtext );
                 //client.send( "." );
-	} ;
+	} );
 
 	client.on( "close", function( msg ) {
       		console.log( "unopened connection closed" );
@@ -58,14 +57,14 @@ function handleMessage( ws, msg ) {
 	}
 }
 
-const UserDb = {
-    open(prod,app,opts) {
+export const UserDbRemote = {
+    open(opts) {
     	const realOpts = Object.assign( {}, opts );
         realOpts.protocol= "userDatabaseClient";
- 	realOpts.server = "ws://localhost:8089/";
+ 	realOpts.server = opts.server || "ws://localhost:8089/";	
 	return open(realOpts);
     }
 }
 
 // return
-return UserDb;//"this usually isn't legal?";
+// return UserDbRemote;//"this usually isn't legal?";

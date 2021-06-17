@@ -378,7 +378,7 @@ void KeyHidObject::Init( Isolate *isolate, Local<Object> exports ) {
 	Local<FunctionTemplate> comTemplate;
 
 	comTemplate = FunctionTemplate::New( isolate, New );
-	comTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.KeyHidEvents", v8::NewStringType::kNormal ).ToLocalChecked() );
+	comTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.KeyHidEvents" ) );
 	comTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 																 // Prototype
@@ -519,7 +519,7 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc < 1 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must pass callback(or null) to onRead handler", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must pass callback(or null) to onRead handler" ) ) );
 		return;
 	}
 
@@ -541,7 +541,7 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 		com->readCallback = Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 );
 	}
 	else {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Unhandled parameter value to keyboard reader.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Unhandled parameter value to keyboard reader." ) ) );
 	}
 }
 

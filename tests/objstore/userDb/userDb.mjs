@@ -1,6 +1,6 @@
 
 import {sack} from "sack.vfs"
-
+const JSOX=sack.JSOX;
 import {BloomNHash} from "../../../node_modules/@d3x0r/bloomnhash/bloomNHash.mjs"
 import {SlabArray}  from "./accountDb/SlabArray.mjs"
 
@@ -21,6 +21,8 @@ const configObject = {
 	emailId : null,
 	reconnectId : null,
 	clientId : null,
+	orgId : null,
+	domainId : null,
 	actAs : null,
 	actIn : null,
 	actBy : null,
@@ -31,13 +33,19 @@ const l = {
 	account   : null,
 	email     : null,
 	reconnect : null,
-        clients : null,
+	clients : null,
+	orgs : null,
+	domains : null,
 	actAs : null, // relates user ids that user can act As (inhertis rights of act-as )
 	actIn : null, // relates user ids that user belong to (inherit all rights of in)
 	actBy : null, // relates user ids that a user can be enacted by
-        storage : null,
+	storage : null,
+
+	registrations : [], // these are for orgs that do not exist yet... waiting for someone to ask for it.
 };
 
+
+// - - -  - - - - - - - -  -- - - - - - - ---  -- - - - - - - - - - -  -- - - - - -- -
 
 
 export class UniqueIdentifier extends StoredObject {
@@ -58,22 +66,314 @@ export class UniqueIdentifier extends StoredObject {
 	}
 }
 
+// - - -  - - - - - - - -  -- - - - - - - ---  -- - - - - - - - - - -  -- - - - - -- -
+
+export class Sash extends StoredObject{
+	org = null;
+	name = null;  // name of the sash
+	badges = []; // this sash has these badges.
+	constructor( ) {
+		super( l.storage );
+	}
+	set( org, name ) {
+		this.org = org;
+		this.name = name;
+		return this.store();
+	}
+}
+
+export class SashAlias extends StoredObject{
+	name = null;  // name of the sash
+	sash = null;
+	constructor( name, sash ) {
+		super( l.storage );
+		this.name = name;
+		this.sash = sash;
+	}	
+}
+
+// - - -  - - - - - - - -  -- - - - - - - ---  -- - - - - - - - - - -  -- - - - - -- -
+
+export class Badge  extends StoredObject{
+	badgeId = null;
+	name = null;  // token name
+	description = null; // be nice to include a description?
+	constructor() {
+		super( l.storage );
+	}	
+	set( name,desc) {
+		this.badgeId = sack.Id();
+		this.name = name;
+		this.description = desc;
+		this.store();
+		return this;
+	}
+}
+
+// - - -  - - - - - - - -  -- - - - - - - ---  -- - - - - - - - - - -  -- - - - - -- -
+
+
+class StoredOrganization{
+	orgId = null;
+	name = null;
+	createdBy = null;
+	domains = [];
+	org = new Organization();
+	constructor() {
+
+	}
+}
+
+function orgFromJSOX(field,val) {
+	if( !field ) return this.org;
+	return this.org[field] = val;
+}
+
+export class Organization  extends StoredObject{
+	orgId = null;
+	name = null;
+	createdBy = null;
+	domains = [];
+	#registrations = [];
+	//members = new SlabArray( l.storage );
+	constructor() {
+		super( l.storage );
+	}
+
+	async store() {
+		await super.store();
+		await l.orgs.set( this.name, this ); 
+		//for( n = 0; 
+	}
+
+	// get a badge for this org.
+	// users have sashes with badges 
+	//  after getting a badge, then user's active sash should be used.
+	// 
+	async getBadge( name, forUser ) {
+		const badge = this.badges.find( badge=>badge.name===name );	
+		if( !badge ) {
+			
+		}
+	}
+
+	async addDomain( msg ){
+		const reg = { p:null, res:null,rej:null,msg:msg };
+		reg.p = new Promise( (res,rej)=>{
+			reg.res = res; reg.rej=rej;
+		} );
+		this.#registrations.push( reg );
+		return reg.p;
+	}
+	async getDomain( name, forUser ) {
+		const domain = this.domains.find( domain=>domain.name===name );	
+		if( !domain ) {
+			const newDomain = new Domain( this, name, forUser );
+			this.domains.push( newDomain );
+
+			this.store();
+			UserDb.on( "newDomain", newDomain );
+			return newDomain;
+		} else {
+			return domain;
+		}
+	}
+
+}
+
+Organization.get = async function ( name, forClient ) {
+	const org = l.orgs.get( name );
+	if( !org && forClient ){
+		const org = await Organization.new( name, forClient );
+		return org;
+	}
+	return org;
+}
+
+
+
+Organization.new = async function ( name, forUser ) {
+	if( !(forUser instanceof User ) ) throw new Error( "Required object User incorrect.");
+	console.log( "Creating new" );
+	const org = new Organization();
+	org.name = name;
+	org.createdBy = forUser;
+	org.orgId = sack.Id();
+	return org.store().then( (id)=>org );
+}
+
+
+// - - -  - - - - - - - -  -- - - - - - - ---  -- - - - - - - - - - -  -- - - - - -- -
+
+class StoredDomain{
+	domain = new Domain();
+}
+
+function domainFromJSOX(field,val) {
+	if( !field ) return this.domain;
+	// possible redirection of arrays and members...
+	return this.domain[field] = val;
+}
+
+
+export class Domain  extends StoredObject{
+	domainId = null;
+	org = null;
+	name = null;
+	createdBy = null;
+	//members = new SlabArray( l.storage );
+	badges = []; // badges that this org has created.
+	services = []; // services this domain has available.
+	#registrations = [];
+	constructor( org, name, forUser ) {
+		super( l.storage );
+		this.domainId = sack.Id();
+		this.org = org;
+		this.name = name;
+		this.createdBy = forUser;
+	}
+
+	async store() {
+		await super.store();
+		await l.orgs.set( this.name, this ); 
+	}
+
+	// get a badge for this org.
+	// users have sashes with badges 
+	//  after getting a badge, then user's active sash should be used.
+	// 
+	async getBadge( name, forUser ) {
+		const badge = this.badges.find( badge=>badge.name===name );	
+		if( !badge ) {
+			
+		}
+	}
+
+	async addService( msg ){
+		const reg = { p:null, res:null,rej:null,msg:msg };
+		reg.p = new Promise( (res,rej)=>{
+			reg.res = res; reg.rej=rej;
+		} );
+		this.#registrations.push( reg );
+		return reg.p;
+	}
+
+	async getService( name, forUser ) {
+		const srvc = this.services.find( srvc=>srvc.name===name );	
+		if( !srvc ) {
+			const newSrvc = new Service( this, name, forUser );
+			UserDb.on( "newService", newSrvc );
+			return newSrvc;
+		}
+		return srvc;				
+	}
+}
+
+Domain.get = async function( name, forClient ) {
+}
+
+// - - -  - - - - - - - -  -- - - - - - - ---  -- - - - - - - - - - -  -- - - - - -- -
+
+class StoredService{
+	srvc = new Service();
+}
+
+function serviceFromJSOX(field,val) {
+	if( !field ) return this.srvc;
+	// possible redirection of arrays and members...
+	this.srvc[field] = val;
+	return undefined;
+}
+
+
+class ServiceConnection {
+	ws = null;
+	service = null;
+	constructor( ws, service ) {
+		this.ws = ws;
+		this.service = service;
+	}
+
+	request( forUser ) {
+		this.ws.send( JSOX.stringify( {op:"expect", user:u8xor(forUser.clientId,svcId )}))
+	}
+}
+
+export class Service  extends StoredObject{
+	svcId = null;
+	name = null;
+	createdBy = null;
+	//members = new SlabArray( l.storage );
+	badges = []; // badges that this org has created.
+	#instances = []; // actively tracked services... 
+	constructor() {
+		super( l.storage );
+	}
+	set( domain, name, forUser ) {
+		this.domain = domain;
+		this.createdBy = forUser;
+		this.name = name;
+		this.serviceId = sack.Id();
+	}
+	async store() {
+		await super.store();
+		await l.orgs.set( this.name, this ); 
+		//for( n = 0; 
+	}
+
+	// get a badge for this org.
+	// users have sashes with badges 
+	//  after getting a badge, then user's active sash should be used.
+	// 
+	async getBadge( name, forUser ) {
+		const badge = this.badges.find( badge=>badge.name===name );	
+		if( !badge ) {
+			
+		}
+	}
+
+	async authorize( forUser ) {
+		const i = Math.floor(Math.random()*this.#instances.length);
+		if( i || this.#instances.length > i ) {
+			const inst = this.#instances[i];
+			//inst.
+		}
+	}
+
+	async makeBadges( badges, forUser ) {
+		forUser.getSash( this.domain.org.name );
+		for( let badgs of badges ) {
+			const newBadge = new Badge();
+			newBadge.set( badge.name, badge.description )
+			this.badges.push( badge );
+
+		}
+	}
+
+}
+
+
+
+
 export class User  extends StoredObject{
+	userId = null; 
 	unique = null;
 	account = null;
 	name = null;
 	email = null;
 	pass = null;
 	devices = [];
+	sashes = []; 
 	created = new Date();
 	
 	constructor() {
 		super(l.storage);
+		this.userId = sack.Id();
 	}
 	store() {
 		return super.store().then( async (id)=>{	
 			//console.log( "what about?", id, l );
-			console.log( "Setting account to:", this.account, this );
+			//console.log( "Setting account to:", this.account, this );
 			await l.account.set( this.account, this );
 			//console.log( "Account was set" );
 			await l.email.set( this.email, this );
@@ -92,6 +392,7 @@ export class User  extends StoredObject{
 	async getDevice( id ) {
 		return new Promise( (res,rej)=>{
 			let results = 0;
+			//console.trace( "Trying to find:", id, "in", this.devices );
 			for( let device of this.devices ) {
 				if( device instanceof Promise ) {
 					//console.log( "device needs to be loaded..." );
@@ -118,18 +419,33 @@ export class User  extends StoredObject{
 				else  {
 					if( device.key === id ) {
 						results = -1; // make sure nothing else checks.
+						device.access = new Date();
+						device.store();
 						res( device );
-                                                return;
-                                        }
-                                }
+						return;
+					}
+				}
 			}
                         if( results === 0 ) res( null );
 		});
 	}
+	async getSash( org ) {
+		const found = [];
+		this.sashes.forEach( sash=>{
+			if( sash.org===org )
+				found.push(sash);
+		} );
+		if( found.length ) {
+			// ask user to select a sash to wear.
+		}
+	}
 }
 
 User.get = function( account ) {
-	console.log( "l?", l.account, account );
+	if( !account ) {
+		return Promise.resolve(null);//throw new Error( "Account must be specified");
+	}
+	console.log( "l?", JSOX.stringify(l.account,null,"\t"), account );
 	return l.account.get( account );
 }
 
@@ -140,7 +456,7 @@ User.getEmail = function( email ) {
 }
 
 
-
+// - - -  - - - - - - - -  -- - - - - - - ---  -- - - - - - - - - - -  -- - - - - -- -
 
 export class Device  extends StoredObject{
 	key = null;
@@ -186,64 +502,109 @@ async function userActsIn( user, group ) {
 		l.actIn.set( user, [ group ] )
 	}
 
-	// members?
 
 }
+
+// - - -  - - - - - - - -  -- - - - - - - ---  -- - - - - - - - - - -  -- - - - - -- -
+
+
+const eventMap = {};
 
 const UserDb = {
 	async hook( storage ) {
             	l.storage = storage;
 		BloomNHash.hook( storage );
-		storage.addEncoders( [ { tag:"~U", p:User, f: null },  { tag:"~D", p:Device, f: null },  { tag:"~I", p:UniqueIdentifier, f: null } ] );
-		storage.addDecoders( [ { tag:"~U", p:User, f: null },  { tag:"~D", p:Device, f: null },  { tag:"~I", p:UniqueIdentifier, f: null } ] );
+		
+		//jsox.fromJSOX( "~T", TextureMsg, buildTexturefromJSOX );
+		
+		storage.addEncoders( [ { tag:"~U", p:User, f: null }
+			,  { tag:"~D", p:Device, f: null }
+			,  { tag:"~I", p:UniqueIdentifier, f: null } 
+			, { tag:"~O", p:Organization, f: null }
+			, { tag:"~Dm", p:Domain, f: null }
+			, { tag:"~Svc", p:Service, f: null }
+		] );
+		storage.addDecoders( [ { tag:"~U", p:User, f: null }
+			,  { tag:"~D", p:Device, f: null }
+			,  { tag:"~I", p:UniqueIdentifier, f: null } 
+			, { tag:"~O", p:StoredOrganization, f: orgFromJSOX }
+			, { tag:"~Dm", p:StoredDomain, f: domainFromJSOX }
+			, { tag:"~Svc", p:StoredService, f: serviceFromJSOX }
+	 		] );
 
 		getUser = (id)=>{
 			return User.get( id );
 		};
 		getIdentifier = ()=>{
 			const unique = new UniqueIdentifier();
-                        unique.key = sack.Id();
+			unique.key = sack.Id();
 			unique.hook( storage );
 			return unique;
 		}
 		const root = await storage.getRoot();
-		try {
+		if( root.find( "userdb.config.jsox" ) ) {
+			//console.log( "Test:", root.exists( "userdb.config.jsox" ) );
 			const file = await root.open( "userdb.config.jsox" )
-		
-				const obj = await file.read()
-				Object.assign( l.ids, obj );
-				l.clients   = await storage.get( l.ids.clientId );
-				l.email     = await storage.get( l.ids.emailId );
-				l.account   = await storage.get( l.ids.accountId );
-				l.reconnect = await storage.get( l.ids.reconnectId );
-			} catch( err){
-				console.log( "User Db Config ERR:", err );
-				const file = await root.create( "userdb.config.jsox" );
-				
-				l.clients   = new BloomNHash();
-				l.clients.hook( storage );
-				l.account   = new BloomNHash();
-				l.account.hook( storage );
-				l.email     = new BloomNHash();
-				l.email.hook( storage );
-				l.reconnect = new BloomNHash();
-				l.reconnect.hook( storage );
+			const obj = await file.read()
+			Object.assign( l.ids, obj );
+                        
+			l.clients   = await storage.get( l.ids.clientId );
+			l.email     = await storage.get( l.ids.emailId );
+			l.account   = await storage.get( l.ids.accountId );
+			l.reconnect = await storage.get( l.ids.reconnectId );
 
-				l.ids.clientId    = await l.clients.store();
-				l.ids.accountId   = await l.account.store();
-				l.ids.emailId     = await l.email.store();
-				l.ids.reconnectId = await l.reconnect.store();
+			l.orgs      = await storage.get( l.ids.orgId );
+			l.domains   = await storage.get( l.ids.domainId );
 
-				file.write( l.ids );
-			}
+		} else {
+			//console.log( "User Db Config ERR:", err );
+			const file = await root.create( "userdb.config.jsox" );
+			
+			l.clients   = new BloomNHash();
+			l.clients.hook( storage );
+			l.account   = new BloomNHash();
+			l.account.hook( storage );
+			l.email     = new BloomNHash();
+			l.email.hook( storage );
+			l.reconnect = new BloomNHash();
+			l.reconnect.hook( storage );
+
+			l.domains = new BloomNHash();
+			l.domains.hook( storage );
+			l.orgs    = new BloomNHash();
+			l.orgs.hook( storage );
+
+			l.ids.clientId    = await l.clients.store();
+			l.ids.accountId   = await l.account.store();
+			l.ids.emailId     = await l.email.store();
+			l.ids.reconnectId = await l.reconnect.store();
+			l.ids.orgId       = await l.orgs.store();
+			l.ids.domainId    = await l.domains.store();
+			//console.log( "Write?", l.ids );
+			file.write( l.ids );
+		}
                 	if( initResolve )
 	                	initResolve();
+	},
+	on( event, data ) {
+		if( "function" === typeof data ) {
+			let a = eventMap[event];
+			if( !a ) a = eventMap[event] = [];
+			a.push( data );
+		} else {
+			const a = eventMap[event];
+			if( a ) for( let f of a ) f( data );
+		}
+	},
+	off( event, f ) {
+		console.log( "disabling events not enabled" );
 	},
 	getUser(args){
 		return getUser(args);
 	},
 	User:User,
 	async getIdentifier( i ) {
+		console.log( "clients get:", i);
 		if( i ) return await l.clients.get( i );
 		return getIdentifier();
 	},
@@ -251,8 +612,63 @@ const UserDb = {
 		
             	return l.clients.set( i.key, i );
         },
+        async getOrg( i ) {
+		
+            	return l.clients.set( i.key, i );
+        },
 	Device:Device,
 	UniqueIdentifier:UniqueIdentifier,
+
+	// register a service... this essentially blocs 
+	async getService( service ) {
+		const org = await Organization.get( service.org );
+		if( !org ) {
+			const reg = { p:null, res:null,rej:null,msg:service };
+			reg.p = new Promise( (res,rej)=>{
+				reg.res = res; reg.rej=rej;
+			} );
+			console.log( "Adding pending registration ", reg)
+			l.registrations.push( reg );
+			return reg.p;
+		}
+		const dmn = await org.getDomain( service.domain );
+		if( !dmn ) {
+			return org.addDomain( service.service );;
+		}
+		const oldService = await dmn.getService( service.service );
+		if( !oldService ) {
+			return dmn.addService( service.service );
+		}
+		return oldService;
+	},
+	async requestService( domain, service, forUser ) {
+		const oldDomain = await l.domains.get( domain );
+		if( !oldDomain ) {
+			console.log( "Registrations?", l.registrations );
+			for( let regPending of l.registrations ) {
+				const reg = regPending.msg;
+				if( reg.domain === domain ) {
+					if( reg.service === service ) {
+						// this service needs to be created now...
+						console.log( "Found a registration for a domain....", reg )
+						const org = ( await Organization.get( reg.org, forUser ) ) || ( await Organization.new( reg.org, forUser ) );	
+						console.log( "Got org:", org );
+						const dmn = await org.getDomain( domain, forUser );
+						console.log( "Got domain:", dmn );
+						const svc = await dmn.getService( service, forUser );
+
+						const badges = await svc.makeBadges( service.badges, forUser );
+						
+						
+						console.log( 'authorize...', svc );
+						// radio the service ahead of time, allowing the service to setup for the user
+						// gets back a connection token and address...
+						const redirect = svc.authorize( forUser );
+					}
+				}
+			}
+		}
+	}
 }
 
 Object.freeze( UserDb );

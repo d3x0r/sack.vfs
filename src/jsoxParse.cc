@@ -34,7 +34,7 @@ public:
 		Local<Context> context = isolate->GetCurrentContext();
 		int argc = args.Length();
 		if( argc == 0 ) {
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must callback to read into.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must callback to read into." ) ) );
 			return;
 		}
 
@@ -80,7 +80,7 @@ void InitJSOX( Isolate *isolate, Local<Object> exports ){
 	{
 		Local<FunctionTemplate> parseTemplate;
 		parseTemplate = FunctionTemplate::New( isolate, JSOXObject::New );
-		parseTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.jsox_parser", v8::NewStringType::kNormal ).ToLocalChecked() );
+		parseTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.jsox_parser" ) );
 		parseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "write", JSOXObject::write );
 		NODE_SET_PROTOTYPE_METHOD( parseTemplate, "parse", JSOXObject::parse );
@@ -105,7 +105,7 @@ void InitJSOX( Isolate *isolate, Local<Object> exports ){
 
 		Local<FunctionTemplate> refTemplate;
 		refTemplate = FunctionTemplate::New( isolate, JSOXRefObject::New );
-		refTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.jsox_object_ref", v8::NewStringType::kNormal ).ToLocalChecked() );
+		refTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.jsox_object_ref" ) );
 		refTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 
 		SET( o2, "Ref", refTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -204,7 +204,7 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 			argv[0] = convertMessageToJS2( elements, &r );
 			parser->currentReviver = NULL;
 			if( r.revive ) {
-				Local<Value> args[2] = { String::NewFromUtf8( r.isolate, "", v8::NewStringType::kNormal ).ToLocalChecked() , argv[0] };
+				Local<Value> args[2] = { String::NewFromUtf8Literal( r.isolate, "" ) , argv[0] };
 				MaybeLocal<Value> res = r.reviver->Call( r.context, r._this, 2, args );
 				if( !res.IsEmpty() )
 					argv[0] = res.ToLocalChecked();
@@ -243,7 +243,7 @@ void JSOXObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must callback to read into.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must callback to read into." ) ) );
 		return;
 	}
 
@@ -306,6 +306,7 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 			sub_o->SetPrototype( revive->context, po );
 		}
 		*/
+		//lprintf( "lookup up classname:%.*s", val->classNameLen, val->className );
 		if( mprotoDef.IsEmpty() && revive->parser && !revive->parser->fromPrototypeMap.IsEmpty() ) {
 			mprotoDef = revive->parser->fromPrototypeMap.Get( revive->isolate )->Get( revive->context, className );
 			if( !mprotoDef.IsEmpty() && !mprotoDef.ToLocalChecked()->IsUndefined() ) {
@@ -960,7 +961,11 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 			} else {
 				Local<Value> tmp = makeValue( val, revive );
 #if defined( DEBUG_REFERENCE_FOLLOW ) || defined( DEBUG_REVIVAL_CALLBACKS )
-				lprintf( "set value to fieldname: %.*s", val->nameLen, val->name );
+				if( val->name )
+					lprintf( "set value to fieldname: %.*s", val->nameLen, val->name );
+				else
+					lprintf( "set value to index: %d", currentIndex );
+				
 #endif
 				if( val->value_type == JSOX_VALUE_UNDEFINED || !tmp->IsUndefined() ) {
 					o->Set( revive->context, revive->fieldName, tmp );
@@ -1217,7 +1222,7 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 	Local<Value> v;// = Object::New( revive->isolate );
 
 	struct jsox_value_container *val = (struct jsox_value_container *)GetDataItem( &msg, 0 );
-	revive->fieldName = String::NewFromUtf8( revive->isolate, "", v8::NewStringType::kNormal ).ToLocalChecked();
+	revive->fieldName = String::NewFromUtf8Literal( revive->isolate, "" );
 	if( val && val->contains ) {
 #ifdef DEBUG_REVIVAL_CALLBACKS
 		lprintf( "makeValue3" );
@@ -1478,7 +1483,7 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 
 
 void makeJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
-	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), "undefined :) Stringify is not completed", v8::NewStringType::kNormal ).ToLocalChecked() );
+	args.GetReturnValue().Set( String::NewFromUtf8Literal( args.GetIsolate(), "undefined :) Stringify is not completed" ) );
 }
 
 void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {

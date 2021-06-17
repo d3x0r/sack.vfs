@@ -2,9 +2,33 @@
 const ws = this;
 console.log( "Extend this websocket:", this );
 
-const SaltyRNGModule = await Import( "/javascript/d3x0r/srg/salty_random_generator.js" );
-const SaltyRNG = SaltyRNGModule.SaltyRNG;
-ws.SaltyRNG = SaltyRNG;
+const sackModule = await Import( "sack.vfs" );
+const sack = sackModule.sack;
+const JSOX = sack.JSOX;
+const disk = sack.Volume();
+// my path is poorly defined here...
+const srvc = disk.exists( "service.jsox" ) && sack.JSOX.parse( sack.Volume.readAsString( "service.jsox" ) );
+if( srvc ) srvc.badges = srvc && disk.exists( "badges.jsox" ) && sack.JSOX.parse( sack.Volume.readAsString( "badges.jsox" ) );
+const mySID = srvc.badges && disk.exists( "mySid.jsox" ) && sack.Volume.readAsString( "mySid.jsox" );
+if( badges ) {
+	
+}
+
+if( !srvc ) {
+	console.log( "Service definition not found..." );
+}
+else if( !badges ) {
+	console.log( "Badge definition not found for oranization..." );
+}
+//const SaltyRNGModule = await Import( "/javascript/d3x0r/srg/salty_random_generator.js" );
+const SaltyRNG = sack.SaltyRNG;
+
+const l = {
+	badges : [],
+
+};
+
+//ws.SaltyRNG = SaltyRNG;
 
 /*
 const clientKey = localStorage.getItem( "clientId" );
@@ -18,50 +42,56 @@ if( !clientKey ) {
 ws.addService = function( prod,app,interface ) {
 		
 }
-ws.doCreate = function( display, user, pass, email ) {
-}
-ws.doGuest = function( user ) {
+
+
+function resolveBadge( msg ) {
+	if( msg.ok ) {
+		for( let badgeName of badges ) {
+			if( badgeName === msg.badgeName ) {
+				badges[badgeName].promise.res( msg.badge );
+			}
+		}
+	} else {
+		// badge failed creation.
+		console.log( "Server failed to create badge" );
+	}
 }
 
+function registered( ws,msg ) {
+	if( msg.ok ) {
+		// srvc result ok?
+		for( let badgeName in badges ) {
+			const badge = badges[badgeName];
+			ws.send( {op:"defineBadge", badgeName:badgeName, badge:badge } );
+		
+			new Promise( (res,rej)=>{
+				badge.promise = { name:badgeName, res:res, rej:rej };
+			} );
+		}
+		console.log( "This requires writable storage..." );
+		disk.write( "mySid.jsox", msg.sid );
+	} else {
+		console.log( "Failed to register Self" );
+	}
+}
 
 ws.processMessage = function( ws, msg ) {
-	if( msg.op === "login" ) {
-		if( msg.success )
-			;//Alert(" Login Success" );
-		else if( msg.ban ) {
-			//Alert( "Bannable Offense" );
-			localStorage.removeItem( "clientId" ); // reset this
-			ws.close();
-		} else if( msg.device ) {
-			//temporary failure, this device was unidentified, or someone elses
-			const newId = SaltyRNG.Id();
-			localStorage.setItem( "deviceId", newId );
-			ws.send( JSON.stringify( {op:"device", deviceId:newId } ) );
-			return true;
-		} else
-			;//Alert( "Login Failed..." );		
-                
-        }
-	else if( msg.op === "create" ) {
-		if( msg.success ) {
-			;//Alert(" Login Success" );
-                        localStorage.setItem( "deviceId", msg.deviceId );
-		} else if( msg.ban )  {
-			//Alert( "Bannable Offense" );
-			localStorage.removeItem( "clientId" ); // reset this
-			ws.close();
-		} else if( msg.device ) {
-			//temporary failure, this device was unidentified, or someone elses
-			const newId = SaltyRNG.Id();
-			localStorage.setItem( "deviceId", newId );
-			ws.send( JSON.stringify( {op:"device", deviceId:newId } ) );
-			return true;
-		} else
-			;//Alert( "Login Failed..." );		
-                
-        }
-        else if( msg.op === "set" ) {
-            	localStorage.setItem( msg.value, msg.key );
-        }
+	if( msg.op === "register" ) {
+		registered( ws, msg );
+	} else if( msg.op === "badge" ) {
+		resolveBadge( ws, msg );
+	} else {
+		console.log( "Unhandled message from login server:", msg );
+	}
+}
+
+if( srvc instanceof Array ) {
+	// this might be an option; but then there would have to be multiple badge files; or badges with orgs
+	//org.forEach( registerOrg );
+} else registerService( srvc, badges );
+
+function registerService( srvc ) {
+	ws.send( JSOX.stringify( { op:"register", sid:mySID, svc:srvc } ) );	
 
 }
+

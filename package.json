@@ -46,6 +46,7 @@
   ],
   "devDependencies": {
     "@babel/preset-env": "latest",
+    "JSOX": "git://github.com/d3x0r/jsox",
     "@d3x0r/popups": "git://github.com/d3x0r/popups",
     "@d3x0r/srg": "git://github.com/d3x0r/srg",
     "@d3x0r/bloomnhash": "git://github.com/d3x0r/bloomnhash-js",
@@ -83,6 +84,10 @@
     "test": "node tests/vfsTest.js",
     "install": "node-gyp configure build",
     "login-server": "node tests/objstore/userDb/userDbServer.mjs",
+    "forum-server": "node tests/objstore/forum/forumServer.mjs",
+    "storage-server": "node tests/objstore/storageServer/forumServer.mjs",
+    "storage-proxy": "node tests/objstore/storageProxy/forumServer.mjs",
+    "POS-server": "node tests/objstore/POS/POS-Server.mjs",
     "build-gui": "npm run build-gui-config && npm run build-gui-run1 && npm run build-gui-config && npm run build-gui-run2",
     "build-gui-config": "cmake-js --CDMAKE_GUI=1 --CDCMAKE_BUILD_TYPE=Release configure",
     "build-gui-run1": "cmake-js build",

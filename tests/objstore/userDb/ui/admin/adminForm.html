@@ -1,0 +1,26 @@
+<div>
+
+
+<p>current username: <span id="username"> </span>
+<p>Sashes:<UL>
+	<li><span id="sashName"> admin </span> </li>
+	</ul>
+
+<select>
+<option> option1 </option>
+<option> option1 </option>
+</select>	
+
+<p>update Password: <span> <button>ClickMe</button></span>
+
+</div>
+
+   	
+<script type="module">
+// this script can be found... by rootId
+const rootNode = document.getElementById( rootId ).parentNode;
+
+import {AdminContent} from "./adminForm.js";
+new AdminContent( rootNode );
+
+</script>

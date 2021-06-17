@@ -252,7 +252,7 @@ static LOGICAL PostObjectStorage( Isolate *isolate, String::Utf8Value *name, Obj
 		}
 		if( !station ) {
 			return FALSE;
-			//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Failed to find target accepting thread", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			//isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Failed to find target accepting thread" ) ) );
 		}
 	}
 	return TRUE;
@@ -261,7 +261,7 @@ static LOGICAL PostObjectStorage( Isolate *isolate, String::Utf8Value *name, Obj
 static void postObjectStorage( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() < 2 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameter missing: (unique,socket)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Required parameter missing: (unique,socket)" ) ) );
 		return;
 	}
 	ObjectStorageObject* obj = ObjectStorageObject::Unwrap<ObjectStorageObject>( args[1].As<Object>() );
@@ -274,7 +274,7 @@ static void postObjectStorage( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	}
 	else {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Second paramter is not an accepted socket", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Second paramter is not an accepted socket" ) ) );
 	}
 }
 
@@ -283,7 +283,7 @@ static void postObjectStorage( const v8::FunctionCallbackInfo<Value>& args ) {
 static void postObjectStorageObject( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() < 1 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameter missing: (unique)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Required parameter missing: (unique)" ) ) );
 		return;
 	}
 
@@ -296,7 +296,7 @@ static void postObjectStorageObject( const v8::FunctionCallbackInfo<Value>& args
 			args.GetReturnValue().Set( False(isolate) );
 	}
 	else {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Object is not an accepted socket", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Object is not an accepted socket" ) ) );
 	}
 }
 
@@ -395,7 +395,7 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 
 	Local<FunctionTemplate> clsTemplate;
 	clsTemplate = FunctionTemplate::New( isolate, New );
-	clsTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.ObjectStorage", v8::NewStringType::kNormal ).ToLocalChecked() );
+	clsTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.ObjectStorage" ) );
 	clsTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "read", ObjectStorageObject::fileReadJSOX );
@@ -1126,7 +1126,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			}
 			if( !resulted ) {
 				//lprintf( "Disk data is short." );
-				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Disk Data is an incomplete object.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+				isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Disk Data is an incomplete object." ) ) );
 			}
 			Deallocate( char *, buf );
 			objStore::sack_vfs_os_close( file );
