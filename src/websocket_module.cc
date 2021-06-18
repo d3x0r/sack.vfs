@@ -477,10 +477,10 @@ public:
 	//Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
 	//Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
 	//Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
-	PLIST openCallbacks;
-	PLIST messageCallbacks;
-	PLIST closeCallbacks;
-	PLIST errorCallbacks;
+	PLIST openCallbacks = NULL;
+	PLIST messageCallbacks = NULL;
+	PLIST closeCallbacks = NULL;
+	PLIST errorCallbacks = NULL;
 
 public:
 
@@ -534,9 +534,9 @@ public:
 	//Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
 	//Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
 
-	PLIST messageCallbacks;
-	PLIST closeCallbacks;
-	PLIST errorCallbacks;
+	PLIST messageCallbacks = NULL;
+	PLIST closeCallbacks = NULL;
+	PLIST errorCallbacks = NULL;
 
 public:
 
