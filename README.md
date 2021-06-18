@@ -227,6 +227,7 @@ there's a conversion to string from binary and a copy of that string from JS to 
    - add JSOX automatic encoding for `RegExp` as 'regex'.
    - handle badly formatted JSOX better; partial evaluations left states set that affected future valid expressions.
    - Fix setting 'undefined' results to fields.  (should be ignored)
+   - fix onmessage, onopen, onclose, onerror websocket methods to be getter/setters, not function call based. (sorry; nearly warrants 1.1; though, it's also just broken so.).
 - 1.0.1012
    - Fix small leak closing com ports.
    - Fix order object fields are revived; assign object after it has been built; use internal context stack for references.
