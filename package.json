@@ -42,19 +42,20 @@
     "sack"
   ],
   "_dependencies": [
-    "cmake-js"
   ],
   "devDependencies": {
-    "@babel/preset-env": "latest",
-    "JSOX": "git://github.com/d3x0r/jsox",
+    "cmake-js",
+    "@d3x0r/bloomnhash": "git://github.com/d3x0r/bloomnhash-js",
+    "@d3x0r/object-storage": "git://github.com/d3x0r/Objectstorage",
     "@d3x0r/popups": "git://github.com/d3x0r/popups",
     "@d3x0r/slab-array": "git://github.com/d3x0r/SlabArray",
     "@d3x0r/srg": "git://github.com/d3x0r/srg",
-    "@d3x0r/bloomnhash": "git://github.com/d3x0r/bloomnhash-js",
+    "@babel/preset-env": "latest",
     "@rollup/plugin-babel": "latest",
     "@rollup/plugin-commonjs": "latest",
-    "@rollup/plugin-node-resolve": "latest",
+    "@rollup/plugin-node-resolve": "^13.0.0",
     "@rollup/plugin-strip": "latest",
+    "JSOX": "git://github.com/d3x0r/jsox",
     "acorn": "latest",
     "chai": "latest",
     "core-js": "latest",
