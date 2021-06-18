@@ -9,7 +9,7 @@ const disk = sack.Volume();
 // my path is poorly defined here...
 const srvc = disk.exists( "service.jsox" ) && sack.JSOX.parse( sack.Volume.readAsString( "service.jsox" ) );
 if( srvc ) srvc.badges = srvc && disk.exists( "badges.jsox" ) && sack.JSOX.parse( sack.Volume.readAsString( "badges.jsox" ) );
-const mySID = srvc.badges && disk.exists( "mySid.jsox" ) && sack.Volume.readAsString( "mySid.jsox" );
+let mySID = srvc.badges && disk.exists( "mySid.jsox" ) && sack.Volume.readAsString( "mySid.jsox" );
 
 if( !srvc ) {
 	console.log( "Service definition not found..." );
@@ -43,9 +43,9 @@ ws.addService = function( prod,app,interface ) {
 
 function resolveBadge( msg ) {
 	if( msg.ok ) {
-		for( let badgeName of badges ) {
+		for( let badgeName of srvc.badges ) {
 			if( badgeName === msg.badgeName ) {
-				badges[badgeName].promise.res( msg.badge );
+				srvc.badges[badgeName].promise.res( msg.badge );
 			}
 		}
 	} else {
@@ -57,16 +57,9 @@ function resolveBadge( msg ) {
 function registered( ws,msg ) {
 	if( msg.ok ) {
 		// srvc result ok?
-		for( let badgeName in srvc.badges ) {
-			const badge = srvc.badges[badgeName];
-			ws.send( {op:"defineBadge", badgeName:badgeName, badge:badge } );
-		
-			new Promise( (res,rej)=>{
-				badge.promise = { name:badgeName, res:res, rej:rej };
-			} );
-		}
-		console.log( "This requires writable storage..." );
+		mySID = msg.sid;
 		disk.write( "mySid.jsox", msg.sid );
+		
 	} else {
 		console.log( "Failed to register Self" );
 	}
@@ -85,10 +78,12 @@ ws.processMessage = function( ws, msg ) {
 if( srvc instanceof Array ) {
 	// this might be an option; but then there would have to be multiple badge files; or badges with orgs
 	//org.forEach( registerOrg );
-} else registerService( srvc );
+} else registerService( srvc, srvc.badges );
 
 function registerService( srvc ) {
 	ws.send( JSOX.stringify( { op:"register", sid:mySID, svc:srvc } ) );	
 
 }
 
+ws.onclose() {
+}

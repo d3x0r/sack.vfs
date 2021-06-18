@@ -4,12 +4,15 @@ console.log( "Extend this websocket:", this );
 
 const SaltyRNGModule = await Import( "/node_modules/@d3x0r/srg/salty_random_generator.js" );
 const SaltyRNG = SaltyRNGModule.SaltyRNG;
-ws.SaltyRNG = SaltyRNG;
+//ws.SaltyRNG = SaltyRNG;
+
 
 const clientKey = localStorage.getItem( "clientId" );
 if( !clientKey ) {
     	ws.send( `{op:newClient}` );
 }
+
+
 
 const l = {
 	pending:[]
@@ -116,13 +119,18 @@ ws.processMessage = function( ws, msg ) {
         }
         else if( msg.op === "set" ) {
             	localStorage.setItem( msg.value, msg.key );
+		return true; // client doesn't care.
         }
-		else if( msg.op === "request" ) {
-			for( let pend of l.pending ) {
-				if( pend.id === msg.id ) {
-					pend.res( msg );
-				}
+	else if( msg.op === "pickSash" ) {
+		// this is actually a client event.
+
+	}
+	else if( msg.op === "request" ) {
+		for( let pend of l.pending ) {
+			if( pend.id === msg.id ) {
+				pend.res( msg );
 			}
 		}
+	}
 
 }

@@ -29,6 +29,7 @@ import {UserDbRemote} from "./serviceLogin.mjs";
 const l = {
 	newClients : [],
 	services : new Map(),
+	states : [],
 }
 
 // go is from userDb; waits for database to be ready.
@@ -37,6 +38,22 @@ go.then( ()=>{
                 } );
 } );
 
+
+UserDb.on( "pickSash", (user, choices)=>{
+	for( let state of l.states ) {
+		if( state.user === user
+		  && !state.connected 
+		  && !state.picking ) {
+			state.picking = true;
+			const p = { p:null, res:null, rej:null};
+			p.p = new Promise( (res,rej)=>{ p.res = res; p.rej= rej } );
+			state.waits.pickSash = p;
+			state.ws.send( JSOX.stringify( { op:"pickSash", choices: choices } ) );
+			return p.p;
+		}
+	}
+	throw new Error( "How are you picking a sash for a user that's not connected?" );
+} );
 
 function openServer( opts, cb )
 {
@@ -292,7 +309,6 @@ async function addDevice(ws,msg) {
 			return;
 		}
 		ws.send( JSON.stringify( { op:"login", success: true } ));
-		ws.state.user = null;
 	} else {
 		console.log( "Bannable failure." );
 		// out of sequence - there should be a pending login in need of a device ID.
@@ -308,6 +324,12 @@ function LoginState(ws) {
 	this.login = null;
 	this.create = null;
 	this.user = null;
+	this.connected = false;
+	this.picking = false;
+	this.waits = {
+		pickSash : null,  // 
+	}
+	l.states.push( this );
 }
 
 async function newClient(ws,msg) {
@@ -322,15 +344,17 @@ async function handleServiceMsg( ws, msg ){
 	// msg.org is 'org.jsox' from the client
 	// sid is the last SID we assigned.
 	if( msg.sid ) {
-		UserDb.getService( msg.org );
+		//const srvc = await UserDb.getService( msg.svc );
+		
 	} else {
 		const svc = await  UserDb.getService( msg.svc ).then( (s)=>{
-			ws.send( JSOX.stringify( { op:"registered" }) )
+			//ws.send( JSOX.stringify( { op:"registered" }) )
 			return s;
 		} );
 		if( svc ) {
 			// register service finally gets a result... and sends my response.
-			ws.send( JSOX.stringify( { op:"register", sid: svc.sid } ) );
+			console.log( "Service resulted, and is an instance?", svc );
+			ws.send( JSOX.stringify( { op:"register", ok:true, sid: svc.sid } ) );
 		}else {
 			console.log( "service will always exist or this wouldn't run.");
 		}
@@ -343,7 +367,7 @@ function handleBadgeDef( ws, msg ){
 
 async function getService( ws, msg ) {
 	// domain, service
-	console.log( "Calling requestservice" );
+	console.log( "Calling requestservice", ws.state );
 	const svc = await UserDb.requestService( msg.domain, msg.service, ws.state.user );
 	if( !svc ) {
 		ws.send( JSOX.stringify( {op:"service", ok:false } ) );
@@ -355,6 +379,11 @@ async function getService( ws, msg ) {
 	}
 }
 
+function pickedSash(ws,msg ) {
+	if( msg.ok )  state.waits.pickSash.res( msg.sash );
+	else          state.waits.pickSash.rej( msg.sash );
+}
+
 server.onconnect( function (ws) {
 	//console.log( "Connect:", ws );
 	const protocol = ws.headers["Sec-WebSocket-Protocol"];
@@ -363,12 +392,12 @@ server.onconnect( function (ws) {
 	if( protocol === "userDatabaseClient" ) {
 		//console.log( "send greeting message, setitng up events" );
 		
-		ws.onmessage( handleService );
+		ws.onmessage = handleService;
 		console.log( "sending service fragment" );
 		ws.send( serviceMethodMsg );
         }else if( protocol === "login" ){
 		//console.log( "send greeting message, setting up events" );
-		ws.onmessage( handleClient );
+		ws.onmessage = handleClient;
 		ws.send( methodMsg );
         }
 
@@ -406,6 +435,8 @@ try {
 			ws.send( JSON.stringify( { op:"login", success: true } ));
 		} else if( msg.op === "create" ){
 			doCreate( ws, msg );
+		} else if( msg.op === "pickSash" ){
+			pickedSash( ws, msg );
 		} else {
 			console.log( "Unhandled message:", msg );
 		}
@@ -416,9 +447,15 @@ try {
 		//ws.close();
         };
 
-	ws.onclose( function() {
+	ws.onclose = function() {
         	//console.log( "Remote closed" );
-        } );
+		for( let s = 0; s < l.states.length; s++ ) {
+			const st = l.states[s];
+			if( st.ws === ws ) {
+				l.states.splice( s, 1 );
+			}
+		}
+        };
 } );
 
 }

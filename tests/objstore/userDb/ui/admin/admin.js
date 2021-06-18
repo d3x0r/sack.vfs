@@ -44,7 +44,10 @@ export class Admin extends Popup {
 			//this.show();
 			this.load();
 
-		} , {useForm:"/ui/login/loginForm.html", wsLoginClient:connection} );
+		} , { useForm:"/ui/login/loginForm.html"
+		    , useSashForm:"/ui/login/pickSashForm.html"
+		    , sashScript : "/ui/login/pickSashForm.js"
+		    , wsLoginClient:connection} );
 
 		
 

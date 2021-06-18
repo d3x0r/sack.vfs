@@ -55,17 +55,20 @@ const l = {
 		form1.addEventListener( "submit", (evt)=>{
 			evt.preventDefault();
 			doUserLogin();
+			return false;
 			//console.log( "Form1 submit key?" );
 		})		
-		form2.addEventListener( "submit", ()=>{
+		form2.addEventListener( "submit", (evt)=>{
 			evt.preventDefault();
 			doUserLogin();
+			return false;
 			//console.log( "Form2 submit key?" );
 		})		
-		form3.addEventListener( "submit", ()=>{
+		form3.addEventListener( "submit", (evt)=>{
 
 			evt.preventDefault();
 			doUserLogin();
+			return false;
 			//console.log( "Form3 submit key?" );
 		})		
 		const doGuestLogin = ()=>{
@@ -141,7 +144,6 @@ const l = {
 			}
 			else {
 			    	if(createMode ) {
-					debugger;
 					if( passField2.value === passField22.value )
 						l.ws.doCreate( nameField2.value, userField2.value, passField2.value, emailField2.value );
 					else {

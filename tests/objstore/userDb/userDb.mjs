@@ -1,6 +1,8 @@
 
 import {sack} from "sack.vfs"
 const JSOX=sack.JSOX;
+const stringifier = JSOX.stringifier();
+
 import {BloomNHash} from "../../../node_modules/@d3x0r/bloomnhash/bloomNHash.mjs"
 import {SlabArray}  from "./accountDb/SlabArray.mjs"
 
@@ -69,16 +71,40 @@ export class UniqueIdentifier extends StoredObject {
 // - - -  - - - - - - - -  -- - - - - - - ---  -- - - - - - - - - - -  -- - - - - -- -
 
 export class Sash extends StoredObject{
-	org = null;
+	#service = null;
 	name = null;  // name of the sash
+	master = false;
 	badges = []; // this sash has these badges.
 	constructor( ) {
 		super( l.storage );
 	}
-	set( org, name ) {
-		this.org = org;
-		this.name = name;
-		return this.store();
+	get service() {
+		return this.#service;
+	}
+	set( service, name, master ) {
+		this.#service = service;
+		if( name ){
+			if( master ) this.master = master;
+			this.name = name;
+			this.store();
+		}else {
+			this.badges.forEach( badge=>badge.set( service ) );
+		}
+		return this;
+	}
+	clone( sash ) {
+		console.log( "This?", this, this.badges )
+		this.badges.forEach( (b)=>sash.badges.push(b) );
+		return this;
+	}
+	addBadge( badge ) {
+		this.badges.push( badge );
+	}
+	getPerms() {
+		const p = {};
+		for( let b of this.badgees )
+			p[b.tag] = true;
+		return p;
 	}
 }
 
@@ -95,17 +121,34 @@ export class SashAlias extends StoredObject{
 // - - -  - - - - - - - -  -- - - - - - - ---  -- - - - - - - - - - -  -- - - - - -- -
 
 export class Badge  extends StoredObject{
-	badgeId = null;
+	tag = null;   // what the program calls it
 	name = null;  // token name
 	description = null; // be nice to include a description?
+	#service = null;
 	constructor() {
 		super( l.storage );
-	}	
-	set( name,desc) {
-		this.badgeId = sack.Id();
-		this.name = name;
-		this.description = desc;
-		this.store();
+	}
+	get service() {
+		return this.#service;
+	}
+	get domain() {
+		return this.service.domain;
+	}
+	get label() {
+		return this.service.name + "@" + this.service.domain.name;
+	}
+	get fullName() {
+		return this.name + " for " + this.service.name + " in " + this.service.domain.name + " of " + this.service.domain.org.name;
+	}
+	set( service, tag, name, desc) {
+		this.#service = service;
+		if( name ) {
+			//this.badgeId = sack.Id();
+			this.tag = tag;
+			this.name = name;
+			this.description = desc;
+			this.store();
+		}
 		return this;
 	}
 }
@@ -125,7 +168,10 @@ class StoredOrganization{
 }
 
 function orgFromJSOX(field,val) {
-	if( !field ) return this.org;
+	if( !field ) {
+		this.org.domains.forEach( domain=>domain.set( this ) );
+		return this.org;
+	}
 	return this.org[field] = val;
 }
 
@@ -168,9 +214,11 @@ export class Organization  extends StoredObject{
 	async getDomain( name, forUser ) {
 		const domain = this.domains.find( domain=>domain.name===name );	
 		if( !domain ) {
-			const newDomain = new Domain( this, name, forUser );
+			console.log( "Creating domain" );
+			const newDomain = new Domain().set( this, name, forUser );
+			console.log( "psh" );
 			this.domains.push( newDomain );
-
+			console.log( "store domain" );
 			this.store();
 			UserDb.on( "newDomain", newDomain );
 			return newDomain;
@@ -193,7 +241,7 @@ Organization.get = async function ( name, forClient ) {
 
 
 Organization.new = async function ( name, forUser ) {
-	if( !(forUser instanceof User ) ) throw new Error( "Required object User incorrect.");
+	if( !(forUser instanceof User ) ) throw new Error( "Required object User incorrect." + JSOX.strinigfy(forUser ) );
 	console.log( "Creating new" );
 	const org = new Organization();
 	org.name = name;
@@ -210,7 +258,10 @@ class StoredDomain{
 }
 
 function domainFromJSOX(field,val) {
-	if( !field ) return this.domain;
+	if( !field ) {
+		this.services.forEach( service=>service.set( this ) );
+		return this.domain;
+	}
 	// possible redirection of arrays and members...
 	return this.domain[field] = val;
 }
@@ -218,21 +269,27 @@ function domainFromJSOX(field,val) {
 
 export class Domain  extends StoredObject{
 	domainId = null;
-	org = null;
+	#org = null;
 	name = null;
 	createdBy = null;
-	//members = new SlabArray( l.storage );
-	badges = []; // badges that this org has created.
 	services = []; // services this domain has available.
 	#registrations = [];
-	constructor( org, name, forUser ) {
+	constructor( ) {
 		super( l.storage );
-		this.domainId = sack.Id();
-		this.org = org;
-		this.name = name;
-		this.createdBy = forUser;
 	}
 
+	set( org, name, forUser ) {
+		this.#org = org;
+		if( name ) {
+			this.domainId = sack.Id();
+			this.name = name;
+			this.createdBy = forUser;
+		}
+		return this;
+	}
+	get org() {
+		return this.#org;
+	}
 	async store() {
 		await super.store();
 		await l.orgs.set( this.name, this ); 
@@ -259,11 +316,31 @@ export class Domain  extends StoredObject{
 	}
 
 	async getService( name, forUser ) {
-		const srvc = this.services.find( srvc=>srvc.name===name );	
+		let promises = [];
+		let foundSrvc = null;
+		const srvc = this.services.find( async (srvc,idx)=>{
+			if( srvc instanceof Promise ) {
+				promises.push( srvc );
+				srvc = await l.storage.map( srvc );
+				console.log( "does map result with the service?", srvc );
+				//srvc = this.services[idx];
+				if( srvc.name === name ) {
+					foundSrvc = srvc;
+				}
+				return false;
+			}
+			return( srvc.name===name );
+		} );
+		console.log( "blah?", srvc );
 		if( !srvc ) {
-			const newSrvc = new Service( this, name, forUser );
-			UserDb.on( "newService", newSrvc );
-			return newSrvc;
+			if( !promises.length) {
+				const newSrvc = new Service().set( this, name, forUser );
+				UserDb.on( "newService", newSrvc );
+				this.services.push( newSrvc );
+				this.store();
+				return newSrvc;
+			}
+			return Promise.all( promises ).then( ()=>foundSrvc );
 		}
 		return srvc;				
 	}
@@ -279,12 +356,40 @@ class StoredService{
 }
 
 function serviceFromJSOX(field,val) {
-	if( !field ) return this.srvc;
+	if( !field ) {
+		this.srvc.masterSash.set( this );
+		this.srvc.defaultSash.set( this );
+		return this.srvc;
+	}
 	// possible redirection of arrays and members...
 	this.srvc[field] = val;
 	return undefined;
 }
 
+class ServiceInstance {
+	sid = null;
+	#service = null;
+	constructor() {
+
+	}
+	get service() {
+		return this.#service;
+	}
+	set service( s ) {
+		if( s ) {
+			if( !this.#service ) 
+				this.#service = s;
+			else {
+				throw new Error( "Service is already connected" );
+			}
+		}else
+			this.#service = s;
+	}
+	set(  ){
+		this.sid = sack.Id();
+	}
+
+}
 
 class ServiceConnection {
 	ws = null;
@@ -304,23 +409,33 @@ export class Service  extends StoredObject{
 	name = null;
 	createdBy = null;
 	//members = new SlabArray( l.storage );
-	badges = []; // badges that this org has created.
+	masterSash = null;
+	defaultSash = null;//new Sash();
+	instances = []; // allocated service identifiers
+	#domain = null;
 	#instances = []; // actively tracked services... 
 	constructor() {
 		super( l.storage );
 	}
 	set( domain, name, forUser ) {
-		this.domain = domain;
-		this.createdBy = forUser;
-		this.name = name;
-		this.serviceId = sack.Id();
+		this.#domain = domain;
+		if( name ) {			
+			this.masterSash = new Sash().set( this, "Master:" +name+"@"+domain.name, true );
+			this.defaultSash = new Sash().set( this, "Default:" +name+"@"+domain.name );
+			this.createdBy = forUser;
+			this.name = name;
+			this.serviceId = sack.Id();
+		}
+		return this;
 	}
 	async store() {
 		await super.store();
 		await l.orgs.set( this.name, this ); 
 		//for( n = 0; 
 	}
-
+	get domain() {
+		return this.#domain;
+	}
 	// get a badge for this org.
 	// users have sashes with badges 
 	//  after getting a badge, then user's active sash should be used.
@@ -340,16 +455,57 @@ export class Service  extends StoredObject{
 		}
 	}
 
-	async makeBadges( badges, forUser ) {
-		forUser.getSash( this.domain.org.name );
-		for( let badgs of badges ) {
-			const newBadge = new Badge();
-			newBadge.set( badge.name, badge.description )
-			this.badges.push( badge );
-
+	getInstance( sid ) {
+		for( let inst of this.instances ) {
+			if( inst.side === sid ) {
+				if( !inst.connected )
+				return inst;
+			}
 		}
+		const inst = {
+			sid : sack.Id(),
+		}
+		service.store();
 	}
 
+	addInstance() {
+		const inst = new ServiceInstance();
+		inst.sid = sack.Id();
+		this.instances.push( inst );
+		this.store();
+		return inst.sid;
+	}
+
+	async makeBadges( badges, forUser ) {
+		if( this.masterSash.badges.length ){
+			const sash = this.masterSash;//await forUser.getSash( this.#domain.org.name );
+			let adds = 0;
+			for( let badge in badges ) {
+				if( !sash.getBadge( badge ) ) {
+					const badgeData = badges[badge];
+					adds++;
+					const newBadge = new Badge().set( this, badge, badgeData.name, badgeData.description );
+					sash.addBadge( newBadge );
+				}
+			}
+
+			if( adds ) sash.store();
+			
+		}else {
+			const sash = this.masterSash;//await forUser.getSash( this.#domain.org.name );
+			for( let badge in badges ) {
+				const badgeData = badges[badge];
+				const newBadge = new Badge().set( this, badge, badgeData.name, badgeData.description );
+				sash.addBadge( newBadge );
+			}
+			const userSash = sash.clone( new Sash() );
+
+			forUser.addSash( userSash );
+
+			sash.store();
+			userSash.store();
+		}
+	}
 }
 
 
@@ -429,15 +585,34 @@ export class User  extends StoredObject{
                         if( results === 0 ) res( null );
 		});
 	}
-	async getSash( org ) {
+	addSash( sash ) {
+		console.log( "Add sash to user:", this, sash );
+		this.sashes.push( sash );
+		this.store();
+	}
+
+	async getSash( domain ) {
+		const badges = {};
 		const found = [];
 		this.sashes.forEach( sash=>{
-			if( sash.org===org )
+			
+			if( sash.for( domain ) )
 				found.push(sash);
 		} );
-		if( found.length ) {
-			// ask user to select a sash to wear.
+		let sash = null;
+		if( !found.length ) {
+			
 		}
+		if( found.length > 1 ) {
+			// ask user to select a sash to wear.
+			sash = await UserDb.on( "pickSash", this, found );
+			
+		}else sash = found[0];
+
+		for( let badges of sash.badges ) {
+			badges[badge.name] = true;
+		} 
+		return badges;
 	}
 }
 
@@ -507,30 +682,39 @@ async function userActsIn( user, group ) {
 
 // - - -  - - - - - - - -  -- - - - - - - ---  -- - - - - - - - - - -  -- - - - - -- -
 
+const encoders = [ 
+	  { tag:  "~U", p:User, f: null }
+	, { tag:  "~D", p:Device, f: null }
+	, { tag:  "~I", p:UniqueIdentifier, f: null } 
+	, { tag:  "~O", p:Organization, f: null }
+	, { tag: "~Dm", p:Domain, f: null }
+	, { tag:"~Svc", p:Service, f: null }
+	, { tag:"~SvI", p:ServiceInstance, f:null }
+	, { tag:"~Ssh", p:Sash, f:null  }
+	, { tag:  "~B", p:Badge, f:null  }
+];
 
 const eventMap = {};
 
 const UserDb = {
 	async hook( storage ) {
-            	l.storage = storage;
+        l.storage = storage;
 		BloomNHash.hook( storage );
 		
 		//jsox.fromJSOX( "~T", TextureMsg, buildTexturefromJSOX );
-		
-		storage.addEncoders( [ { tag:"~U", p:User, f: null }
-			,  { tag:"~D", p:Device, f: null }
-			,  { tag:"~I", p:UniqueIdentifier, f: null } 
-			, { tag:"~O", p:Organization, f: null }
-			, { tag:"~Dm", p:Domain, f: null }
-			, { tag:"~Svc", p:Service, f: null }
-		] );
+		encoders.forEach( e=>stringifier.toJSOX( e.tag, e.p, e.f ) );
+
+		storage.addEncoders( encoders );
 		storage.addDecoders( [ { tag:"~U", p:User, f: null }
-			,  { tag:"~D", p:Device, f: null }
-			,  { tag:"~I", p:UniqueIdentifier, f: null } 
-			, { tag:"~O", p:StoredOrganization, f: orgFromJSOX }
-			, { tag:"~Dm", p:StoredDomain, f: domainFromJSOX }
+			, { tag:  "~D", p:Device, f: null }
+			, { tag:  "~I", p:UniqueIdentifier, f: null } 
+			, { tag:  "~O", p:StoredOrganization, f: orgFromJSOX }
+			, { tag: "~Dm", p:StoredDomain, f: domainFromJSOX }
 			, { tag:"~Svc", p:StoredService, f: serviceFromJSOX }
-	 		] );
+			, { tag:"~SvI", p:ServiceInstance, f:null }
+			, { tag:"~Ssh", p:Sash, f:null  }
+			, { tag:  "~B", p:Badge, f:null  }
+	 	] );
 
 		getUser = (id)=>{
 			return User.get( id );
@@ -599,6 +783,11 @@ const UserDb = {
 	off( event, f ) {
 		console.log( "disabling events not enabled" );
 	},
+	get stringifier() {
+		const stringifier = JSOX.stringifier();
+		encoders.forEach( e=>stringifier.toJSOX( e.tag, e.p, e.f ) );
+		return stringifier;
+	},
 	getUser(args){
 		return getUser(args);
 	},
@@ -645,28 +834,34 @@ const UserDb = {
 		const oldDomain = await l.domains.get( domain );
 		if( !oldDomain ) {
 			console.log( "Registrations?", l.registrations );
-			for( let regPending of l.registrations ) {
+			for( let r = 0; r < l.registrations.length; r++ ) {
+				const regPending = l.registrations[r];
 				const reg = regPending.msg;
 				if( reg.domain === domain ) {
 					if( reg.service === service ) {
 						// this service needs to be created now...
-						console.log( "Found a registration for a domain....", reg )
+						//console.log( "Found a registration for a domain....", reg, forUser );
 						const org = ( await Organization.get( reg.org, forUser ) ) || ( await Organization.new( reg.org, forUser ) );	
-						console.log( "Got org:", org );
-						const dmn = await org.getDomain( domain, forUser );
-						console.log( "Got domain:", dmn );
-						const svc = await dmn.getService( service, forUser );
+						//console.log( "Got org:", org );
+						const dmn = await org.getDomain( reg.domain, forUser );
+						//console.log( "Got domain:", dmn );
+						const svc = await dmn.getService( reg.service, forUser );
+						//console.log( "Got service:", svc );
+						const badges = await svc.makeBadges( reg.badges, forUser );
 
-						const badges = await svc.makeBadges( service.badges, forUser );
-						
-						
-						console.log( 'authorize...', svc );
+						// resolve the registration
+						regPending.res( svc.addInstance() );
+						l.registrations.splice( r, 1 );
+
+						console.log( 'authorize...', svc, stringifier.stringify( org ) );
 						// radio the service ahead of time, allowing the service to setup for the user
 						// gets back a connection token and address...
 						const redirect = svc.authorize( forUser );
 					}
 				}
 			}
+		} else {
+			const service = await oldDomain.getService( service, forUser );
 		}
 	}
 }
