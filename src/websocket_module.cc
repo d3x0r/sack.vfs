@@ -473,10 +473,14 @@ public:
 public:
 	//static Persistent<Function> constructor;
 	//static Persistent<FunctionTemplate> tpl;
-	Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
+	//Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
+	//Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
+	//Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
+	//Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
+	PLIST openCallbacks;
+	PLIST messageCallbacks;
+	PLIST closeCallbacks;
+	PLIST errorCallbacks;
 
 public:
 
@@ -500,6 +504,11 @@ public:
 	~wscObject();
 };
 
+class callbackFunction {
+public:
+	Persistent<Function, CopyablePersistentTraits<Function>> callback; //
+};
+
 // web sock server instance Object  (a connection from a remote)
 class wssiObject : public node::ObjectWrap {
 public:
@@ -520,10 +529,14 @@ public:
 public:
 	//static Persistent<Function> constructor;
 	//static Persistent<FunctionTemplate> tpl;
-	//Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
+	////Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
+	//Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
+	//Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
+	//Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
+
+	PLIST messageCallbacks;
+	PLIST closeCallbacks;
+	PLIST errorCallbacks;
 
 public:
 
@@ -607,10 +620,12 @@ static void DropHttpRequestEvent( HTTP_REQUEST_EVENT *evt ) {
 
 static void uv_closed_wssi( uv_handle_t* handle ) {
 	wssiObject* myself = (wssiObject*)handle->data;
-	myself->closeCallback.Reset();
 	//myself->openCallback.Reset();
-	myself->messageCallback.Reset();
-	myself->errorCallback.Reset();
+	INDEX idx;
+	callbackFunction* c;
+	LIST_FORALL( myself->messageCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
+	LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
+	LIST_FORALL( myself->errorCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
 	myself->_this.Reset();
 }
 static void uv_closed_wss( uv_handle_t* handle ) {
@@ -623,10 +638,12 @@ static void uv_closed_wss( uv_handle_t* handle ) {
 }
 static void uv_closed_wsc( uv_handle_t* handle ) {
 	wscObject* myself = (wscObject*)handle->data;
-	myself->closeCallback.Reset();
-	myself->openCallback.Reset();
-	myself->messageCallback.Reset();
-	myself->errorCallback.Reset();
+	INDEX idx;
+	callbackFunction* c;
+	LIST_FORALL( myself->messageCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
+	LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
+	LIST_FORALL( myself->errorCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
+	LIST_FORALL( myself->openCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
 	myself->_this.Reset();
 }
 
@@ -870,6 +887,8 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	{
 		struct wssiEvent* eventMessage;
+		INDEX idx;
+		callbackFunction* callback;
 		while( eventMessage = ( struct wssiEvent* )DequeLink( &myself->eventQueue ) ) {
 			Local<Value> argv[1];
 			Local<ArrayBuffer> ab;
@@ -882,7 +901,8 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 				}
 				break;
 			case WS_EVENT_READ:
-				if( !myself->messageCallback.IsEmpty() ) {
+				LIST_FORALL( myself->messageCallbacks, idx, callbackFunction*, callback ) {
+					//if( !myself->messageCallback.IsEmpty() ) {
 					if( eventMessage->binary ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
 						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
@@ -900,20 +920,20 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 #endif
 						argv[0] = ab;
 
-						myself->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
 					}
 					else {
 						MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 						argv[0] = buf.ToLocalChecked();
 						//lprintf( "Message:', %s", eventMessage->buf );
-						myself->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
 					}
 					Deallocate( POINTER, eventMessage->buf );
 				}
 				break;
 			case WS_EVENT_CLOSE:
-				if( !myself->closeCallback.IsEmpty() ) {
-					myself->closeCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+				LIST_FORALL( myself->messageCallbacks, idx, callbackFunction*, callback ) {
+					callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
 				}
 				uv_close( (uv_handle_t*)&myself->async, uv_closed_wssi );
 				DropWssiEvent( eventMessage );
@@ -923,7 +943,9 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 				continue;
 				break;
 			case WS_EVENT_ERROR:
-				myself->errorCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+				LIST_FORALL( myself->errorCallbacks, idx, callbackFunction*, callback ) {
+					callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+				}
 				break;
 			}
 			DropWssiEvent( eventMessage );
@@ -1157,12 +1179,18 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 			Local<ArrayBuffer> ab;
 			switch( eventMessage->eventType ) {
 			case WS_EVENT_OPEN:
-				cb = Local<Function>::New( isolate, wsc->openCallback );
-				if( !cb.IsEmpty() ) {
+				//cb = Local<Function>::New( isolate, wsc->openCallback );
+				//if( !cb.IsEmpty() ) 
+				{
 					struct optionStrings *strings;
 					strings = getStrings( isolate );
 					SETV( wsc->_this.Get( isolate ), strings->connectionString->Get( isolate ), makeSocket( isolate, wsc->pc ) );
-					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+
+					INDEX idx;
+					callbackFunction* callback;
+					LIST_FORALL( wsc->openCallbacks, idx, callbackFunction*, callback ) {
+						callback->callback.Get(isolate)->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+					}
 				}
 				break;
 			case WS_EVENT_READ:
@@ -1182,12 +1210,18 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 					holder->buffer = eventMessage->buf;
 #endif
 					argv[0] = ab;
-					wsc->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+					INDEX idx; callbackFunction* callback;
+					LIST_FORALL( wsc->messageCallbacks, idx, callbackFunction*, callback ) {
+						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+					}
 				}
 				else {
 					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 					argv[0] = buf.ToLocalChecked();
-					wsc->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+					INDEX idx; callbackFunction* callback;
+					LIST_FORALL( wsc->messageCallbacks, idx, callbackFunction*, callback ) {
+						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+					}
 				}
 				Deallocate( POINTER, eventMessage->buf );
 				break;
@@ -1201,13 +1235,17 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 					}
 					else
 						argv[1] = Undefined( isolate );
-					wsc->errorCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
+					INDEX idx; callbackFunction* callback;
+					LIST_FORALL( wsc->errorCallbacks, idx, callbackFunction*, callback ) {
+						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
+					}
 				}
 				break;
 			case WS_EVENT_CLOSE:
-				cb = Local<Function>::New( isolate, wsc->closeCallback );
-				if( !cb.IsEmpty() )
-					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+				INDEX idx; callbackFunction* callback;
+				LIST_FORALL( wsc->closeCallbacks, idx, callbackFunction*, callback ) {
+					callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+				}
 				uv_close( (uv_handle_t*)&wsc->async, uv_closed_wsc );
 				DeleteLinkQueue( &wsc->eventQueue );
 				wsc->readyState = CLOSED;
@@ -1548,8 +1586,16 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "close", wssiObject::close );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "on", wssiObject::on );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "ping", wssiObject::ping );
-		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "onmessage", wssiObject::onmessage );
-		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "onclose", wssiObject::onclose );
+		wssiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onmessage" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssiObject::onmessage )
+			);
+		//NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "onmessage", wssiObject::onmessage );
+		wssiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onclose" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssiObject::onclose )
+			);
+		//NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "onclose", wssiObject::onclose );
 		wssiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "readyState" )
 			, FunctionTemplate::New( isolate, wssiObject::getReadyState )
 			, Local<FunctionTemplate>() );
@@ -2571,6 +2617,10 @@ wssiObject::~wssiObject() {
 		lprintf( "destruct, try to generate WebSockClose" );
 		RemoveClient( pc );
 	}
+	//all member would have been reset... in the event close
+	DeleteList( &closeCallbacks );
+	DeleteList( &messageCallbacks );
+	DeleteList( &errorCallbacks );
 }
 
 void wssiObject::New( const FunctionCallbackInfo<Value>& args ) {
@@ -2613,11 +2663,17 @@ void wssiObject::on( const FunctionCallbackInfo<Value>& args){
 		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if(  StrCmp( *event, "message" ) == 0 ) {
-			obj->messageCallback.Reset( isolate, cb);
+			callbackFunction* c = new callbackFunction();
+			c->callback.Reset( isolate, cb );
+			AddLink( &obj->messageCallbacks, c );
 		} else if(  StrCmp( *event, "error" ) == 0 ) {
-			obj->errorCallback.Reset(isolate,cb);
+			callbackFunction* c = new callbackFunction();
+			c->callback.Reset( isolate, cb );
+			AddLink( &obj->errorCallbacks, c );
 		} else if(  StrCmp( *event, "close" ) == 0 ){
-			obj->closeCallback.Reset(isolate,cb);
+			callbackFunction* c = new callbackFunction();
+			c->callback.Reset( isolate, cb );
+			AddLink( &obj->closeCallbacks, c );
 		}
 	}
 }
@@ -2628,7 +2684,9 @@ void wssiObject::onmessage( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 		Local<Function> cb = Local<Function>::Cast( args[0] );
-		obj->messageCallback.Reset( isolate, cb );
+		callbackFunction* c = new callbackFunction();
+		c->callback.Reset( isolate, cb );
+		AddLink( &obj->messageCallbacks, c );
 	}
 }
 
@@ -2638,7 +2696,9 @@ void wssiObject::onclose( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 		Local<Function> cb = Local<Function>::Cast( args[0] );
-		obj->closeCallback.Reset( isolate, cb );
+		callbackFunction* c = new callbackFunction();
+		c->callback.Reset( isolate, cb );
+		AddLink( &obj->closeCallbacks, c );
 	}
 }
 
@@ -2812,6 +2872,11 @@ wscObject::~wscObject() {
 		//lprintf( "destruct, try to generate WebSockClose" );
 		RemoveClient( pc );
 	}
+	//all member would have been reset... in the event close
+	DeleteList( &openCallbacks );
+	DeleteList( &closeCallbacks );
+	DeleteList( &messageCallbacks );
+	DeleteList( &errorCallbacks );
 	DeleteLinkQueue( &eventQueue );
 }
 
@@ -2967,7 +3032,9 @@ void wscObject::onOpen( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 		Local<Function> cb = Local<Function>::Cast( args[0] );
-		obj->openCallback.Reset( isolate, cb );
+		callbackFunction* c = new callbackFunction();
+		c->callback.Reset( isolate, cb );
+		AddLink( &obj->openCallbacks, c );
 	}
 }
 
@@ -2977,7 +3044,10 @@ void wscObject::onMessage( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 		Local<Function> cb = Local<Function>::Cast( args[0] );
-		obj->messageCallback.Reset( isolate, cb );
+
+		callbackFunction* c = new callbackFunction();
+		c->callback.Reset( isolate, cb );
+		AddLink( &obj->messageCallbacks, c );
 	}
 }
 
@@ -2987,7 +3057,9 @@ void wscObject::onClose( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 		Local<Function> cb = Local<Function>::Cast( args[0] );
-		obj->closeCallback.Reset( isolate, cb );
+		callbackFunction* c = new callbackFunction();
+		c->callback.Reset( isolate, cb );
+		AddLink( &obj->closeCallbacks, c );
 	}
 }
 
@@ -2997,7 +3069,9 @@ void wscObject::onError( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 		Local<Function> cb = Local<Function>::Cast( args[0] );
-		obj->errorCallback.Reset( isolate, cb );
+		callbackFunction* c = new callbackFunction();
+		c->callback.Reset( isolate, cb );
+		AddLink( &obj->errorCallbacks, c );
 	}
 }
 
@@ -3005,25 +3079,25 @@ void wscObject::onError( const FunctionCallbackInfo<Value>& args ) {
 void wscObject::getOnOpen( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-	args.GetReturnValue().Set( obj->openCallback.Get( isolate ) );
+	//args.GetReturnValue().Set( obj->openCallback.Get( isolate ) );
 }
 
 void wscObject::getOnMessage( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-	args.GetReturnValue().Set( obj->messageCallback.Get( isolate ) );
+	//args.GetReturnValue().Set( obj->messageCallback.Get( isolate ) );
 }
 
 void wscObject::getOnClose( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-	args.GetReturnValue().Set( obj->closeCallback.Get( isolate ) );
+	//args.GetReturnValue().Set( obj->closeCallback.Get( isolate ) );
 }
 
 void wscObject::getOnError( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-	args.GetReturnValue().Set( obj->errorCallback.Get( isolate ) );
+	//args.GetReturnValue().Set( obj->errorCallback.Get( isolate ) );
 }
 
 void wscObject::ping( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -3042,14 +3116,22 @@ void wscObject::on( const FunctionCallbackInfo<Value>& args){
 				cb->Call( isolate->GetCurrentContext(), obj->_this.Get( isolate ), 0, NULL );
 			}
 			else {
-				obj->openCallback.Reset( isolate, cb );
+				callbackFunction* c = new callbackFunction();
+				c->callback.Reset( isolate, cb );
+				AddLink( &obj->openCallbacks, c );
 			}
 		} else if(  StrCmp( *event, "message" ) == 0 ) {
-			obj->messageCallback.Reset(isolate,cb);
+			callbackFunction* c = new callbackFunction();
+			c->callback.Reset( isolate, cb );
+			AddLink( &obj->messageCallbacks, c );
 		} else if(  StrCmp( *event, "error" ) == 0 ) {
-			obj->errorCallback.Reset(isolate,cb);
+			callbackFunction* c = new callbackFunction();
+			c->callback.Reset( isolate, cb );
+			AddLink( &obj->errorCallbacks, c );
 		} else if(  StrCmp( *event, "close" ) == 0 ) {
-			obj->closeCallback.Reset(isolate,cb);
+			callbackFunction* c = new callbackFunction();
+			c->callback.Reset( isolate, cb );
+			AddLink( &obj->closeCallbacks, c );
 		} else
 			isolate->ThrowException( Exception::Error(
 				String::NewFromUtf8( isolate, TranslateText( "Event name specified is not supported or known." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
