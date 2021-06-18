@@ -79,14 +79,14 @@ server.onaccept( function ( ws ) {
 
 server.onconnect( function (ws) {
 	//console.log( "Connect:", ws );
-	ws.onmessage( function( msg ) {
+	ws.onmessage = function( msg ) {
         	//console.log( "Received data:", msg );
                 ws.send( msg );
 		//ws.close();
-        } );
-	ws.onclose( function() {
+        };
+	ws.onclose = function() {
         	//console.log( "Remote closed" );
-        } );
+        };
 } );
 
 }
