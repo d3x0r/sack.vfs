@@ -1512,16 +1512,36 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "close", wssObject::close );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "disableSSL", wssObject::disableSSL );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "on", wssObject::on );
-		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onconnect", wssObject::onConnect );
-		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onaccept", wssObject::onAccept );
-		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onrequest", wssObject::onRequest );
+
+		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onconnect", wssObject::onConnect );
+		wssTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onconnect" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssObject::onConnect )
+		);
+		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onaccept", wssObject::onAccept );
+		wssTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onaccept" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssObject::onAccept )
+		);
+		wssTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onrequest" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssObject::onRequest )
+		);
+		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onclose", wssObject::onClose );
 		wssTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onclose" )
 			, FunctionTemplate::New( isolate, wssObject::getOnClose )
 			, FunctionTemplate::New( isolate, wssObject::onClose )
 		);
-		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onclose", wssObject::onClose );
-		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onerror", wssObject::onError );
-		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onerrorlow", wssObject::onErrorLow );
+		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onerror", wssObject::onError );
+		wssTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onerror" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssObject::onError )
+		);
+		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onerrorlow", wssObject::onErrorLow );
+		wssTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onerrorlow" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssObject::onErrorLow )
+		);
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "accept", wssObject::accept );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "reject", wssObject::reject );
 
