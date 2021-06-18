@@ -5,6 +5,9 @@
 import {popups,AlertForm} from "/node_modules/@d3x0r/popups/popups.mjs"
 import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
 
+import {workerInterface} from "./swc.js"
+workerInterface.initWorker();
+
 let isGuestLogin = false;
 let createMode = false;
 
@@ -241,13 +244,17 @@ async function 	pickSash( ws, choices ){
 }
 
 function openSocket( addr ) {
+
 	addr = addr || location.host
 
 	const  proto = location.protocol==="http:"?"ws:":"wss:";
+        workerInterface.connect( proto+"//"+addr+"/", "login", (msg)=>{
+		console.log( "connect got:", msg );
+	} );
 
+/*		
 	var ws = new WebSocket(proto+"//"+addr+"/", "login");
 	
-
 	console.log( "websocket:", ws, proto+"//"+location.host+"/" );
 	ws.onopen = function() {
 		l.ws = ws;
@@ -265,7 +272,7 @@ function openSocket( addr ) {
 		setTimeout( openSocket, 5000 ); // 5 second delay.
   	  	// websocket is closed. 
 	};
-
+*/
 }
 
 
