@@ -59,15 +59,23 @@ function registered( ws,msg ) {
 		// srvc result ok?
 		mySID = msg.sid;
 		disk.write( "mySid.jsox", msg.sid );
+
 		
 	} else {
 		console.log( "Failed to register Self" );
 	}
 }
 
+function acceptUser( ws, msg ) {
+	
+}
+
 ws.processMessage = function( ws, msg ) {
+	console.trace( "handle message:", ws, msg );
 	if( msg.op === "register" ) {
 		registered( ws, msg );
+	} else if( msg.op === "authorize" ) {
+		acceptUser( ws, msg );
 	} else if( msg.op === "badge" ) {
 		resolveBadge( ws, msg );
 	} else {
@@ -78,12 +86,16 @@ ws.processMessage = function( ws, msg ) {
 if( srvc instanceof Array ) {
 	// this might be an option; but then there would have to be multiple badge files; or badges with orgs
 	//org.forEach( registerOrg );
-} else registerService( srvc, srvc.badges );
+} else 
+	registerService( srvc, srvc.badges );
 
 function registerService( srvc ) {
 	ws.send( JSOX.stringify( { op:"register", sid:mySID, svc:srvc } ) );	
-
+	const p = {p:null,res:null,rej:null};
+	p.p = new Promise((res,rej)=>{p.res=res;p.rej=rej});
+	return p.p;
 }
 
-ws.onclose() {
+ws.onclose= function() {
+	// Add a second close handler for this.
 }

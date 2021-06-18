@@ -9,9 +9,9 @@ const AsyncFunction = Object.getPrototypeOf( async function() {} ).constructor;
 //    } );
 
 function open( opts ) {
-    	const protocol = opts?.protocol || "protocol";
+	const protocol = opts?.protocol || "protocol";
 	const server = opts.server;
-        console.log( "connect with is:", server, protocol );
+	console.log( "connect with is:", server, protocol );
 	var client = sack.WebSocket.Client( server, protocol, { perMessageDeflate: false } );
         
 	client.on("open", function (ws)  {
@@ -19,19 +19,26 @@ function open( opts ) {
 		//console.log( "ws: ", this ); //  ws is also this
 		this.onmessage = ( msg_ )=> {
 			const msg = sack.JSOX.parse( msg_ );
-                        if( msg.op === "addMethod" ) {
+			if( msg.op === "addMethod" ) {
 				try {
 					var f = new AsyncFunction( "Import", msg.code );
 					const p = f.call( this, (m)=>import(m) );
-			       } catch( err ) {
+				} catch( err ) {
 					console.log( "Function compilation error:", err,"\n", msg.code );
-			       }
-                        }
-                        else {
-		        	console.log( "unknown message Received:", msg );
-                        }
-                	//this.close();
-        	};
+				}
+			}
+			else {
+				if( this.processMessage && !this.processMessage( msg )  ){
+					if( msg.op === "authorize" ) {
+						// expect a connection from a user.
+						opts.authorize( msg.user );
+					}
+					else {
+						console.log( "unknown message Received:", msg );
+					}
+				}
+			}
+       	};
 		this.on( "close", function( msg ) {
         		console.log( "opened connection closed" );
         	        //setTimeout( ()=> {console.log( "waited" )}, 3000 )

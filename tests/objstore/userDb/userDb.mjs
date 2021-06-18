@@ -102,7 +102,9 @@ export class Sash extends StoredObject{
 	}
 	getPerms() {
 		const p = {};
-		for( let b of this.badgees )
+		for( let b of this.service.masterSash.badges )
+			p[b.tag] = false;
+		for( let b of this.badges )
 			p[b.tag] = true;
 		return p;
 	}
@@ -359,6 +361,13 @@ function serviceFromJSOX(field,val) {
 	if( !field ) {
 		this.srvc.masterSash.set( this );
 		this.srvc.defaultSash.set( this );
+		for( let sid of this.instances ) {
+			// rebuild service instances.
+			const inst = new ServiceInstance();
+			inst.sid = sid;
+			inst.service = this;
+			this.addInstance_( inst );
+		}
 		return this.srvc;
 	}
 	// possible redirection of arrays and members...
@@ -369,6 +378,8 @@ function serviceFromJSOX(field,val) {
 class ServiceInstance {
 	sid = null;
 	#service = null;
+	//#connections = [];
+	#ws = null;  // one connection per instance
 	constructor() {
 
 	}
@@ -388,7 +399,13 @@ class ServiceInstance {
 	set(  ){
 		this.sid = sack.Id();
 	}
-
+	connect( ws ) {
+		if( !this.#ws ) {
+			return false;
+		}
+		this.#ws = ws;
+		return;
+	}
 }
 
 class ServiceConnection {
@@ -417,6 +434,7 @@ export class Service  extends StoredObject{
 	constructor() {
 		super( l.storage );
 	}
+	
 	set( domain, name, forUser ) {
 		this.#domain = domain;
 		if( name ) {			
@@ -456,24 +474,30 @@ export class Service  extends StoredObject{
 	}
 
 	getInstance( sid ) {
-		for( let inst of this.instances ) {
-			if( inst.side === sid ) {
-				if( !inst.connected )
-				return inst;
+		if( !sid ) {
+
+		} else {
+			for( let inst of this.instances ) {
+				if( inst.side === sid ) {
+					if( !inst.connected )
+						return inst;
+				}
 			}
 		}
-		const inst = {
-			sid : sack.Id(),
-		}
-		service.store();
 	}
 
 	addInstance() {
-		const inst = new ServiceInstance();
+		const inst = new ServiceInstance( );
 		inst.sid = sack.Id();
-		this.instances.push( inst );
+		inst.service = this;
+		this.instances.push( inst.sid );
+		this.#instances.push( inst );
 		this.store();
-		return inst.sid;
+		return inst;
+	}
+
+	addInstance_( inst ) {
+		this.#instances.push( inst );
 	}
 
 	async makeBadges( badges, forUser ) {
@@ -832,7 +856,9 @@ const UserDb = {
 	},
 	async requestService( domain, service, forUser ) {
 		const oldDomain = await l.domains.get( domain );
-		if( !oldDomain ) {
+		const oldService = await oldDomain?.getService( service, forUser );
+
+		if( !oldDomain || !oldService ) {
 			console.log( "Registrations?", l.registrations );
 			for( let r = 0; r < l.registrations.length; r++ ) {
 				const regPending = l.registrations[r];
@@ -856,13 +882,13 @@ const UserDb = {
 						console.log( 'authorize...', svc, stringifier.stringify( org ) );
 						// radio the service ahead of time, allowing the service to setup for the user
 						// gets back a connection token and address...
-						const redirect = svc.authorize( forUser );
+						//const redirect = svc.authorize( forUser );
+						return svc;
 					}
 				}
 			}
-		} else {
-			const service = await oldDomain.getService( service, forUser );
-		}
+		} 
+		return oldService;
 	}
 }
 

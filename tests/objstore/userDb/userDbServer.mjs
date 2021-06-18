@@ -30,6 +30,7 @@ const l = {
 	newClients : [],
 	services : new Map(),
 	states : [],
+	expect : new Map(),
 }
 
 // go is from userDb; waits for database to be ready.
@@ -62,7 +63,11 @@ function openServer( opts, cb )
 	const disk = sack.Volume();
 	console.log( "serving on " + serverOpts.port, server );
 
-	UserDbRemote.open( { server:"ws://localhost:"+serverOpts.port } );
+	UserDbRemote.open( { server:"ws://localhost:"+serverOpts.port
+			, authorize( user ) {
+				l.expect.set( user.userId, user );
+			}
+	} );
 
 	//console.table( disk.dir() );
 
@@ -74,7 +79,7 @@ class ServiceConnection {
 	}
 }
 
-server.onrequest( function( req, res ) {
+server.onrequest = function( req, res ) {
 	var ip = ( req.headers && req.headers['x-forwarded-for'] ) ||
 		 req.connection.remoteAddress ||
 		 req.socket.remoteAddress ||
@@ -163,9 +168,9 @@ server.onrequest( function( req, res ) {
 		res.writeHead( 404 );
 		res.end( "<HTML><HEAD>404</HEAD><BODY>404</BODY></HTML>");
 	}
-} );
+} ;
 
-server.onaccept( function ( ws ) {
+server.onaccept = function ( ws ) {
 	//console.log( "accept?", ws );
     if( ws.headers["Sec-WebSocket-Protocol"] === "login" )
         return this.accept();
@@ -184,7 +189,7 @@ server.onaccept( function ( ws ) {
 
     this.reject();
     //this.accept();
-} );
+};
 
 
 
@@ -369,14 +374,13 @@ async function getService( ws, msg ) {
 	// domain, service
 	console.log( "Calling requestservice", ws.state );
 	const svc = await UserDb.requestService( msg.domain, msg.service, ws.state.user );
-	if( !svc ) {
-		ws.send( JSOX.stringify( {op:"service", ok:false } ) );
-	}else {
-		//svc.request
-		console.log( "got service...", svc );
-		//ws.send( JSOX.stringify( {op:"service", ok:true, svc: svc } ) );
+	const svcInst = svc.getInstance();
+	if( svcInt ) {
 
+		svcInst.authorize( ws, ws.state.user );
 	}
+	else	
+		ws.send( JSOX.stringify( {op:"service", ok:false } ) );
 }
 
 function pickedSash(ws,msg ) {
@@ -384,9 +388,10 @@ function pickedSash(ws,msg ) {
 	else          state.waits.pickSash.rej( msg.sash );
 }
 
-server.onconnect( function (ws) {
+server.onconnect = function (ws) {
 	//console.log( "Connect:", ws );
 	const protocol = ws.headers["Sec-WebSocket-Protocol"];
+	let user = null;
 	console.log( "protocol:", protocol )
 	ws.state = new LoginState( ws );
 	if( protocol === "userDatabaseClient" ) {
@@ -395,16 +400,45 @@ server.onconnect( function (ws) {
 		ws.onmessage = handleService;
 		console.log( "sending service fragment" );
 		ws.send( serviceMethodMsg );
-        }else if( protocol === "login" ){
+	} else if( protocol === "admin" ){
+		ws.onmessage = handleAdmin;		
+	} else if( protocol === "login" ){
 		//console.log( "send greeting message, setting up events" );
 		ws.onmessage = handleClient;
 		ws.send( methodMsg );
-        }
+	}
+
+	function handleAdmin( msg_ ) {
+		if( !user ) {
+			user = l.expect.get( msg_ );
+			if( !user ) {
+				ws.send( JSOX.stringify( {op:"badIdentification"}));
+				ws.close( );
+				return;
+			}else
+				l.expect.delete( msg_ );
+		}else {
+			if( !user ) {
+				ws.send( JSOX.stringify( {op:"badIdentification"}));
+				ws.close( );
+				return;
+			}
+			const msg = JSOX.parse( msg_ );
+			if( msg.op === "" ){
+				if( !user.badges.edit ) {
+
+				}else {
+
+				}
+			}
+		}
+	}
+
 
 	function handleService( msg_ ) {
-            	const msg = JSOX.parse( msg_ );
+		const msg = JSOX.parse( msg_ );
                 console.log( 'userLocal message:', msg );
-                if( msg.op === "register" ) {
+              if( msg.op === "register" ) {
 			handleServiceMsg( ws, msg );
 			//ws.send( methodMsg );
 		} else if( msg.op === "badge" ) {
@@ -455,8 +489,8 @@ try {
 				l.states.splice( s, 1 );
 			}
 		}
-        };
-} );
+    };
+};
 
 }
 
