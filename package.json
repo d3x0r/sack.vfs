@@ -44,7 +44,7 @@
   "_dependencies": [
   ],
   "devDependencies": {
-    "cmake-js",
+    "cmake-js" : "latest",
     "@d3x0r/bloomnhash": "git://github.com/d3x0r/bloomnhash-js",
     "@d3x0r/object-storage": "git://github.com/d3x0r/Objectstorage",
     "@d3x0r/popups": "git://github.com/d3x0r/popups",
