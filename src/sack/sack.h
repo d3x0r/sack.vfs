@@ -12898,7 +12898,7 @@ struct HTTPRequestHeader {
 };
 struct HTTPRequestOptions {
   // deafult GET
-	char* method;
+	const char* method;
      // path part of the request
 	PTEXT url;
  // address part of request (ip:port)
@@ -12914,7 +12914,7 @@ struct HTTPRequestOptions {
  //optionally this can be used to specify the certain, if not set, uses parameter, which will otherwise be NULL.
 	const char* certChain;
 	// specify the agent field, default to SACK(System)
-	char* agent;
+	const char* agent;
 	// if set, will be called when content buffer has been sent.
 	void ( *writeComplete )( uintptr_t userData );
 	uintptr_t userData;
