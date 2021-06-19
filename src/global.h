@@ -97,6 +97,12 @@ using namespace v8;
 #define SETN(o,key,val)  (void)(o)->Set( context, Integer::New( isolate, key ), val )
 
 
+#if ( NODE_MAJOR_VERSION <= 13 )
+#define NewFromUtf8Literal(a,b)  NewFromUtf8(a,b, v8::NewStringType::kNormal ).ToLocalChecked()
+#endif
+
+
+
 void InitJSOX( Isolate *isolate, Local<Object> exports );
 void InitJSON( Isolate *isolate, Local<Object> exports );
 void InitSRG( Isolate *isolate, Local<Object> exports );
