@@ -394,7 +394,7 @@ public:
 	bool ssl;
 	int port;
 	char *hostname;
-	char *method = "GET";
+	const char *method = "GET";
 	const char* content;
 	size_t contentLen;
 	PLIST headers = NULL;
