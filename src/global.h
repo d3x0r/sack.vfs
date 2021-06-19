@@ -98,7 +98,7 @@ using namespace v8;
 
 
 #if ( NODE_MAJOR_VERSION <= 13 )
-#define NewFromUtf8Literal(a,b)  NewFromUtf8(a,b, v8::NewStringType::kNormal ).ToLocalChecked()
+#define NewFromUtf8Literal(a,b,...)  NewFromUtf8(a,b, v8::NewStringType::kNormal ).ToLocalChecked()
 #endif
 
 
