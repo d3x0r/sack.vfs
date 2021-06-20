@@ -12,6 +12,34 @@ struct msgbuf {
 	uint8_t buf[1];
 };
 
+class ComObject : public node::ObjectWrap {
+public:
+	int handle;
+	char* name;
+	//static Persistent<Function> constructor;
+	bool rts = 1;
+	Persistent<Function, CopyablePersistentTraits<Function>>* readCallback; //
+	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	PLINKQUEUE readQueue;
+
+public:
+
+	static void Init( Local<Object> exports );
+	ComObject( char* name );
+	Persistent<Object> jsObject;
+
+private:
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+
+	static void getRTS( const v8::FunctionCallbackInfo<Value>& args );
+	static void setRTS( const v8::FunctionCallbackInfo<Value>& args );
+	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
+	static void writeCom( const v8::FunctionCallbackInfo<Value>& args );
+	static void closeCom( const v8::FunctionCallbackInfo<Value>& args );
+	~ComObject();
+};
+
+
 
 ComObject::ComObject( char *name ) : jsObject() {
 	this->readQueue = CreateLinkQueue();
@@ -25,6 +53,9 @@ ComObject::~ComObject() {
   	Deallocate( char*, name );
 }
 
+void ComObjectInit( Local<Object> exports ) {
+	ComObject::Init( exports );
+}
 
 void ComObject::Init( Local<Object> exports ) {
 		Isolate* isolate = Isolate::GetCurrent();
@@ -40,12 +71,31 @@ void ComObject::Init( Local<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "write", writeCom );
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "close", closeCom );
 
+		comTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "rts" )
+			, FunctionTemplate::New( isolate, ComObject::getRTS )
+			, FunctionTemplate::New( isolate, ComObject::setRTS )
+		);
+
 
 		class constructorSet *c = getConstructors( isolate );
 		c->comConstructor.Reset( isolate, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 		SET( exports, "ComPort", comTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 }
 
+
+void ComObject::getRTS( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
+	args.GetReturnValue().Set( Boolean::New( args.GetIsolate(), (int)obj->rts ) );
+
+}
+void ComObject::setRTS( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() > 0 ) {
+		ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
+		SetCommRTS( obj->rts = obj->handle, args[0].As<Boolean>()->BooleanValue( isolate ) );
+	}
+}
 
 void dont_releaseBufferBackingStore(void* data, size_t length, void* deleter_data) {
 	(void)length;
