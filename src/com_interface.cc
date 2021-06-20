@@ -93,7 +93,7 @@ void ComObject::setRTS( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() > 0 ) {
 		ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
-		SetCommRTS( obj->rts = obj->handle, args[0].As<Boolean>()->BooleanValue( isolate ) );
+		SetCommRTS( obj->handle, obj->rts = args[0].As<Boolean>()->BooleanValue( isolate ) );
 	}
 }
 
