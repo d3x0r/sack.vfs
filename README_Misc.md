@@ -239,6 +239,7 @@ var val = vfs.registry.get( "HKCU/something" );
 ComObject = { 
      onRead( callback ) - sets a callback to be called with a uint8Array parameter when data arrives on the port.
      write( uint8Array ) - write buffer specfied to com port; only accepts uint8array.
+     rts = true/false - set rts flag.
      close() - close the com port.
 }
 
