@@ -297,7 +297,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	ThreadObject::Init( exports );
 	FileObject::Init();
 	SqlObjectInit( exports );
-	ComObject::Init( exports );
+	ComObjectInit( exports );
 	InitJSOX( isolate, exports );
 	InitJSON( isolate, exports );
 	InitSRG( isolate, exports );
