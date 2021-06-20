@@ -330,31 +330,7 @@ public:
 
 
 
-class ComObject : public node::ObjectWrap {
-public:
-	int handle;
-	char *name;
-	//static Persistent<Function> constructor;
-
-	Persistent<Function, CopyablePersistentTraits<Function>> *readCallback; //
-	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
-	PLINKQUEUE readQueue;
-
-public:
-
-	static void Init( Local<Object> exports );
-	ComObject( char *name );
-	Persistent<Object> jsObject;
-
-private:
-	static void New( const v8::FunctionCallbackInfo<Value>& args );
-
-	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
-	static void writeCom( const v8::FunctionCallbackInfo<Value>& args );
-	static void closeCom( const v8::FunctionCallbackInfo<Value>& args );
-	~ComObject();
-};
-
+extern void ComObjectInit( Local<Object> exports );
 
 class RegObject : public node::ObjectWrap {
 public:
