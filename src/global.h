@@ -462,7 +462,7 @@ public:
 
 
 struct arrayBufferHolder {
-	void *buffer;
+	const void *buffer;
 	Persistent<Object> o;
 	Persistent<String> s;
 	Persistent<ArrayBuffer> ab;
