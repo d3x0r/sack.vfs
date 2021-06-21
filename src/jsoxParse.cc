@@ -1332,7 +1332,7 @@ static Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviv
 					break; // goto return anyway.
 				}
 				else {
-					revive->isolate->ThrowException(Exception::Error(String::NewFromUtf8(revive->isolate, result > 1 ? "Extra data after message" : "Pending value could not complete").ToLocalChecked() ));
+					revive->isolate->ThrowException(Exception::Error(String::NewFromUtf8(revive->isolate, result > 1 ? "Extra data after message" : "Pending value could not complete", v8::NewStringType::kNormal ).ToLocalChecked() ));
 					revive->failed = TRUE;
 				}
 			}
