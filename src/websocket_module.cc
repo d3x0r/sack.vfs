@@ -932,8 +932,16 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 				}
 				break;
 			case WS_EVENT_CLOSE:
-				LIST_FORALL( myself->messageCallbacks, idx, callbackFunction*, callback ) {
-					callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+				argv[0] = Integer::New( isolate, eventMessage->code );
+				if( eventMessage->buf ) {
+					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
+					argv[1] = buf.ToLocalChecked();
+					Deallocate( POINTER, eventMessage->buf );
+				}
+				else
+					argv[1] = Undefined( isolate );
+				LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, callback ) {
+					callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
 				uv_close( (uv_handle_t*)&myself->async, uv_closed_wssi );
 				DropWssiEvent( eventMessage );
@@ -1227,6 +1235,14 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 				break;
 			case WS_EVENT_ERROR:
 				{
+					INDEX idx; callbackFunction* callback;
+					LIST_FORALL( wsc->errorCallbacks, idx, callbackFunction*, callback ) {
+						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+					}
+				}
+				break;
+			case WS_EVENT_CLOSE:
+				{
 					argv[0] = Integer::New( isolate, eventMessage->code );
 					if( eventMessage->buf ) {
 						MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
@@ -1236,19 +1252,13 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 					else
 						argv[1] = Undefined( isolate );
 					INDEX idx; callbackFunction* callback;
-					LIST_FORALL( wsc->errorCallbacks, idx, callbackFunction*, callback ) {
+					LIST_FORALL( wsc->closeCallbacks, idx, callbackFunction*, callback ) {
 						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
 					}
+					uv_close( (uv_handle_t*)&wsc->async, uv_closed_wsc );
+					DeleteLinkQueue( &wsc->eventQueue );
+					wsc->readyState = CLOSED;
 				}
-				break;
-			case WS_EVENT_CLOSE:
-				INDEX idx; callbackFunction* callback;
-				LIST_FORALL( wsc->closeCallbacks, idx, callbackFunction*, callback ) {
-					callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
-				}
-				uv_close( (uv_handle_t*)&wsc->async, uv_closed_wsc );
-				DeleteLinkQueue( &wsc->eventQueue );
-				wsc->readyState = CLOSED;
 				break;
 			}
 			DropWscEvent( eventMessage );

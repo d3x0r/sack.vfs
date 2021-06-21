@@ -1067,9 +1067,9 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					script = Script::Compile( isolate->GetCurrentContext()
 						, String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
 #if ( NODE_MAJOR_VERSION >= 16 )
-						, new ScriptOrigin( isolate, String::NewFromUtf8( isolate, "DateFormatter", NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
+						, new ScriptOrigin( isolate, String::NewFromUtf8Literal( isolate, "DateFormatter" ) ) ).ToLocalChecked();
 #else						
-						, new ScriptOrigin( String::NewFromUtf8( isolate, "DateFormatter", NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
+						, new ScriptOrigin( String::NewFromUtf8Literal( isolate, "DateFormatter" ) ) ).ToLocalChecked();
 #endif						
 					arr->Set( isolate->GetCurrentContext(), n, script->Run( isolate->GetCurrentContext() ).ToLocalChecked() );
 				}
@@ -1120,7 +1120,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					if( error )
 						isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 					else
-						isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "No Error Text" STRSYM(__LINE__), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+						isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "No Error Text" STRSYM(__LINE__) ) ) );
 					LineRelease( error );
 				}
 			}

@@ -95,7 +95,7 @@ void InitJSOX( Isolate *isolate, Local<Object> exports ){
 		if( c->dateCons.IsEmpty() ) {
 			Local<Date> tmp = Local<Date>::Cast( Date::New( context, 0 ).ToLocalChecked() );
 			Local<Function> cons = Local<Function>::Cast(
-				tmp->Get( context, String::NewFromUtf8( isolate, "constructor", NewStringType::kNormal ).ToLocalChecked() ).ToLocalChecked()
+				tmp->Get( context, String::NewFromUtf8Literal( isolate, "constructor" ) ).ToLocalChecked()
 			);
 			c->dateCons.Reset( isolate, cons );
 		}
@@ -316,8 +316,8 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 				}
 				else {
 					protoDef = mprotoDef.ToLocalChecked().As<Object>();
-					Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoCon", v8::NewStringType::kNormal, (int)8 ).ToLocalChecked() ).ToLocalChecked();
-					Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)2 ).ToLocalChecked() ).ToLocalChecked();
+					Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8Literal( revive->isolate, "protoCon" ) ).ToLocalChecked();
+					Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8Literal( revive->isolate, "cb" ) ).ToLocalChecked();
 					if( !f.IsEmpty() && f->IsFunction() ) {
 #ifdef DEBUG_SET_FIELDCB
 						lprintf( "Setting fieldCB" );
@@ -346,8 +346,8 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 				}
 				else {
 					protoDef = mprotoDef.ToLocalChecked().As<Object>();
-					Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoCon", v8::NewStringType::kNormal, (int)8 ).ToLocalChecked() ).ToLocalChecked();
-					Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)2 ).ToLocalChecked() ).ToLocalChecked();
+					Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8Literal( revive->isolate, "protoCon" ) ).ToLocalChecked();
+					Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8Literal( revive->isolate, "cb") ).ToLocalChecked();
 					if( f->IsFunction() ) {
 						revive->fieldCb = f.As<Function>();
 					}
@@ -412,8 +412,8 @@ static Local<Value> getArray( struct reviver_data* revive, struct jsox_value_con
 				}
 				else {
 					protoDef = mprotoDef.ToLocalChecked().As<Object>();
-					Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoCon", v8::NewStringType::kNormal, (int)8 ).ToLocalChecked() ).ToLocalChecked();
-					Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)2 ).ToLocalChecked() ).ToLocalChecked();
+					Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8Literal( revive->isolate, "protoCon" ) ).ToLocalChecked();
+					Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8Literal( revive->isolate, "cb" ) ).ToLocalChecked();
 					if( f->IsFunction() ) {
 #ifdef DEBUG_SET_FIELDCB
 						lprintf( "Set protocon callback as field callback" );
@@ -442,8 +442,8 @@ static Local<Value> getArray( struct reviver_data* revive, struct jsox_value_con
 				}
 				else {
 					protoDef = mprotoDef.ToLocalChecked().As<Object>();
-					Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoCon", v8::NewStringType::kNormal, (int)8 ).ToLocalChecked() ).ToLocalChecked();
-					Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)2 ).ToLocalChecked() ).ToLocalChecked();
+					Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8Literal( revive->isolate, "protoCon" ) ).ToLocalChecked();
+					Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8Literal( revive->isolate, "cb" ) ).ToLocalChecked();
 					if( f->IsFunction() ) {
 #ifdef DEBUG_SET_FIELDCB
 						lprintf( "Set protocon callback as field callback" );
@@ -727,8 +727,8 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 						Local<Object> protoDef;
 						protoDef = valmethod.ToLocalChecked().As<Object>();
 						//lprintf( "valMethod is an object though...");
-						Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoCon", v8::NewStringType::kNormal, (int)8 ).ToLocalChecked() ).ToLocalChecked();
-						Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)2 ).ToLocalChecked() ).ToLocalChecked();
+						Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8Literal( revive->isolate, "protoCon" ) ).ToLocalChecked();
+						Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8Literal( revive->isolate, "cb" ) ).ToLocalChecked();
 						protoCon = p.As<Function>();
 						cb = f.As<Function>();
 						//cb = valmethod.ToLocalChecked().As<Function>();
@@ -747,8 +747,8 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 						Local<Object> protoDef;
 						protoDef = valmethod.ToLocalChecked().As<Object>();
 						//lprintf( "valMethod is an object though...");
-						Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "protoCon", v8::NewStringType::kNormal, (int)8 ).ToLocalChecked() ).ToLocalChecked();
-						Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8( revive->isolate, "cb", v8::NewStringType::kNormal, (int)2 ).ToLocalChecked() ).ToLocalChecked();
+						Local<Value> p = protoDef->Get( revive->context, String::NewFromUtf8Literal( revive->isolate, "protoCon" ) ).ToLocalChecked();
+						Local<Value> f = protoDef->Get( revive->context, String::NewFromUtf8Literal( revive->isolate, "cb" ) ).ToLocalChecked();
 						protoCon = p.As<Function>();
 						cb = f.As<Function>();
 					}
@@ -849,9 +849,9 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 	case JSOX_VALUE_BIGINT:
 		script = Script::Compile( revive->context, String::NewFromUtf8( revive->isolate, val->string, NewStringType::kNormal, (int)val->stringLen ).ToLocalChecked()
 #if ( NODE_MAJOR_VERSION >= 16 )
-			, new ScriptOrigin( revive->isolate, String::NewFromUtf8( revive->isolate, "BigIntFormatter", NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
+			, new ScriptOrigin( revive->isolate, String::NewFromUtf8Literal( revive->isolate, "BigIntFormatter" ) ) ).ToLocalChecked();
 #else
-			, new ScriptOrigin( String::NewFromUtf8( revive->isolate, "BigIntFormatter", NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
+			, new ScriptOrigin( String::NewFromUtf8Literal( revive->isolate, "BigIntFormatter" ) ) ).ToLocalChecked();
 #endif			
 		result = script->Run( revive->context ).ToLocalChecked();
 		//result = BigInt::New( revive->isolate, 0 );
@@ -862,7 +862,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 			static const int argc = 1;
 			Local<Value> argv[argc] = { String::NewFromUtf8( revive->isolate, val->string, NewStringType::kNormal, (int)val->stringLen ).ToLocalChecked() };
 			Local<Object> tmpResult = c->dateCons.Get( revive->isolate )->NewInstance( revive->context, argc, argv ).ToLocalChecked();
-			MaybeLocal<Value> valid = tmpResult->Get( revive->context, String::NewFromUtf8( revive->isolate, "getTime", NewStringType::kNormal, 7 ).ToLocalChecked() );
+			MaybeLocal<Value> valid = tmpResult->Get( revive->context, String::NewFromUtf8Literal( revive->isolate, "getTime" ) );
 			if( !valid.IsEmpty() ) {
 				Local<Function> getTime = valid.ToLocalChecked().As<Function>();
 				MaybeLocal<Value> timeVal = getTime->Call( revive->context, tmpResult, 0, NULL );
@@ -1332,7 +1332,7 @@ static Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviv
 					break; // goto return anyway.
 				}
 				else {
-					revive->isolate->ThrowException(Exception::Error(String::NewFromUtf8(revive->isolate, result > 1 ? "Extra data after message" : "Pending value could not complete", v8::NewStringType::kNormal).ToLocalChecked()));
+					revive->isolate->ThrowException(Exception::Error(String::NewFromUtf8(revive->isolate, result > 1 ? "Extra data after message" : "Pending value could not complete").ToLocalChecked() ));
 					revive->failed = TRUE;
 				}
 			}
