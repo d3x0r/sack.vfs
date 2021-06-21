@@ -206,7 +206,9 @@ struct wssiEvent {
 	class wssiObject *_this;
 	//PLIST send;
 	//LOGICAL send_close; // need reason.
-	POINTER buf;
+	int code;
+
+	CPOINTER buf;
 	size_t buflen;
 	LOGICAL binary;
 	//PTHREAD waiter;
@@ -219,7 +221,7 @@ DeclareSet( WSSI_EVENT );
 struct wscEvent {
 	enum wsEvents eventType;
 	class wscObject *_this;
-	POINTER buf;
+	CPOINTER buf;
 	int code;
 	size_t buflen;
 	LOGICAL binary;
@@ -230,7 +232,7 @@ DeclareSet( WSC_EVENT );
 
 struct httpRequestEvent {
 	enum wsEvents eventType;
-    class httpRequestObject *_this;
+	class httpRequestObject *_this;
 	HTTPState state;
 };
 typedef struct httpRequestEvent HTTP_REQUEST_EVENT;
@@ -890,7 +892,7 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 		INDEX idx;
 		callbackFunction* callback;
 		while( eventMessage = ( struct wssiEvent* )DequeLink( &myself->eventQueue ) ) {
-			Local<Value> argv[1];
+			Local<Value> argv[2];
 			Local<ArrayBuffer> ab;
 			switch( eventMessage->eventType ) {
 			case WS_EVENT_OPEN:
@@ -928,7 +930,7 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 						//lprintf( "Message:', %s", eventMessage->buf );
 						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
 					}
-					Deallocate( POINTER, eventMessage->buf );
+					Deallocate( CPOINTER, eventMessage->buf );
 				}
 				break;
 			case WS_EVENT_CLOSE:
@@ -936,7 +938,7 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 				if( eventMessage->buf ) {
 					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 					argv[1] = buf.ToLocalChecked();
-					Deallocate( POINTER, eventMessage->buf );
+					Deallocate( CPOINTER, eventMessage->buf );
 				}
 				else
 					argv[1] = Undefined( isolate );
@@ -1231,7 +1233,7 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
 					}
 				}
-				Deallocate( POINTER, eventMessage->buf );
+				Deallocate( CPOINTER, eventMessage->buf );
 				break;
 			case WS_EVENT_ERROR:
 				{
@@ -1247,7 +1249,7 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 					if( eventMessage->buf ) {
 						MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 						argv[1] = buf.ToLocalChecked();
-						Deallocate( POINTER, eventMessage->buf );
+						Deallocate( CPOINTER, eventMessage->buf );
 					}
 					else
 						argv[1] = Undefined( isolate );
@@ -1712,6 +1714,9 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		//lprintf( "Server Websocket closed; post to javascript %p  %p", pc, wssi );
 		(*pevt).eventType = WS_EVENT_CLOSE;
 		(*pevt)._this = wssi;
+		(*pevt).code = code;
+		(*pevt).buf = reason;
+		(*pevt).buflen = strlen( reason );
 		wssi->pc = NULL;
 		EnqueLink( &wssi->eventQueue, pevt );
 		uv_async_send( &wssi->async );
@@ -1790,7 +1795,7 @@ static void webSockServerEvent( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOIN
 	(*pevt)._this = wssi;
 	(*pevt).binary = binary;
 	(*pevt).buf = NewArray( uint8_t, msglen );
-	memcpy( (*pevt).buf, buffer, msglen );
+	memcpy( (char*)(*pevt).buf, buffer, msglen );
 	(*pevt).buflen = msglen;
 	EnqueLink( &wssi->eventQueue, pevt );
 	uv_async_send( &wssi->async );
@@ -2829,6 +2834,9 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	struct wscEvent *pevt = GetWscEvent();
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wsc;
+	(*pevt).code = code;
+	(*pevt).buf = reason;
+	(*pevt).buflen = strlen( reason );
 	EnqueLink( &wsc->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
 	lprintf( "Send Close Request" );
@@ -2857,7 +2865,7 @@ static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTE
 	struct wscEvent *pevt = GetWscEvent();
 	(*pevt).eventType = WS_EVENT_READ;
 	(*pevt).buf = NewArray( uint8_t, msglen );
-	memcpy( (*pevt).buf, buffer, msglen );
+	memcpy( (char*)(*pevt).buf, buffer, msglen );
 	(*pevt).buflen = msglen;
 	(*pevt).binary = type;
 	(*pevt)._this = wsc;
