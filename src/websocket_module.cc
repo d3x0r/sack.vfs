@@ -1715,7 +1715,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		(*pevt).eventType = WS_EVENT_CLOSE;
 		(*pevt)._this = wssi;
 		(*pevt).code = code;
-		(*pevt).buf = reason;
+		(*pevt).buf = StrDup(reason);
 		(*pevt).buflen = strlen( reason );
 		wssi->pc = NULL;
 		EnqueLink( &wssi->eventQueue, pevt );
@@ -2835,7 +2835,7 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wsc;
 	(*pevt).code = code;
-	(*pevt).buf = reason;
+	(*pevt).buf = StrDup(reason);
 	(*pevt).buflen = strlen( reason );
 	EnqueLink( &wsc->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
