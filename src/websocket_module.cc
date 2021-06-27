@@ -1910,7 +1910,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( !include_close )
 			vtprintf( obj->pvtResult, "Connection: keep-alive\r\n" );
 	}
-	if( args.Length() > 0 ) {
+	if( args.Length() > 0 && !args[0]->IsNull() ) {
 		if( args[0]->IsString() ) {
 			String::Utf8Value body( USE_ISOLATE( isolate ) args[0] );
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", body.length() );
