@@ -6,7 +6,7 @@ if( process.argv.length < 2 ) {
 	process.exit(0);
 }
 
-if( !process.env.SACK_LOADED ) {
+if( !process.env.SELF_LOADED ) {
 
 	const opts = { 
 		work : process.cwd(),
@@ -14,7 +14,7 @@ if( !process.env.SACK_LOADED ) {
                 args:[ "--experimental-loader=../../../import.mjs" ,...(process.argv.slice(2))],
                 //firstArgIsArg:true, // default true
                 env:{
-                	SACK_LOADED:"Yup",
+                	SELF_LOADED:"Yup",
                 }, // extra environment.
                 //binary:false, // default false
 		        

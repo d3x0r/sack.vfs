@@ -12,22 +12,26 @@ import path from "path";
 import {sack} from "sack.vfs"
 
 
-const withLoader = process.env.SACK_LOADED;
+const withLoader = true;//process.env.SELF_LOADED;
 // make sure we load the import script
+if(0)
 	if( !withLoader ) {        
 		new sack.Task( { 
 			work : process.cwd(),
                         bin:process.argv[0],
                         args:[ "--experimental-loader=../../../import.mjs" ,...(process.argv.slice(1))],
                         env:{
-                        	SACK_LOADED:"Yup",
+                        	SELF_LOADED:"Yup",
                         }, // extra environment.
 			input( buffer ) {
 				console.log( buffer.substr(0,buffer.length-1) );
 			},
 			newGroup : false,
 			newConsole : false,
-			end() { console.log( "ended.." ); return process.exit() },
+			end() { 
+				//console.log( "ended.." );
+				return process.exit() 
+			},
 		} );
 	}
 
@@ -91,9 +95,10 @@ const resourcePerms = {
 if( withLoader ) go.then( ()=>{
         openServer( { port : 8089
                 } );
+	//setTimeout( ()=>{console.log( "inner exit" );process.exit(0);}, 3000 );
+
 } );
 else {
-	//console.log( "do nothing...(waiting to log sub-task output)" );
 	function doNothing() { setTimeout( doNothing, 10000000 ); } doNothing();
 }
 
@@ -146,7 +151,7 @@ function openServer( opts, cb )
 		if( parts.length < 3 ) {
 				if( parts[1] === "serviceLogin.mjs" || parts[1] === "serviceLogin.js" ) {
                                 	res.code = 200;
-                                        res.header["Content-Type"] = "text/javascript";
+                                        res.headers["Content-Type"] = "text/javascript";
 					const allowService = new ServiceConnection();
 					l.services.set( allowService.serviceId, allowService );
 					const content = [ 'const serviceId="'+ allowService.serviceId + '";\n'
@@ -200,7 +205,7 @@ function openServer( opts, cb )
 		const extname = extensions[extensions.length-1];
 
 		console.log( ":", extname, filePath )
-		res.header["Content-Type"] = mimeTypes[extname];
+		res.headers["Content-Type"] = mimeTypes[extname];
 		if( disk.exists( filePath ) ) {
 			console.log( "Read:", req_url, "as", filePath  );
 			res.code = 200; 

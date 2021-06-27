@@ -1,2 +1,4 @@
-node run.mjs userDbServer.mjs >zz 2>&1
+: --inspect-brk
+node  --experimental-loader=../../../import.mjs userDbServer.mjs >zz 2>&1
+:node run.mjs userDbServer.mjs >zz 2>&1
 
