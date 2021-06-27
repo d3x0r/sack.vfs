@@ -250,7 +250,10 @@ function openSocket( addr ) {
 	const  proto = location.protocol==="http:"?"ws:":"wss:";
         workerInterface.connect( proto+"//"+addr+"/", "login", (msg)=>{
 		console.log( "connect got:", msg );
+		l.ws = msg;
+		//l.ws.send( '{ op: "hello" }' );
 	} );
+
 
 /*		
 	var ws = new WebSocket(proto+"//"+addr+"/", "login");

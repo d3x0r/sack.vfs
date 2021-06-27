@@ -67,7 +67,7 @@ function handleServiceMessage(e,msg) {
 		protocol_.connectionId = newSock.id;
 		_debug && console.log( "SETTING PROTOCOL(SR): ", newSock.id );
 				        		
-		newSock.ws = openSocket( msg.service, 2, (msg,ws)=>{
+		newSock.ws = openSocket( msg.service, (msg,ws)=>{
 				if( msg.op === "status" ) { 
 					// op.status
 					if( ws ){
@@ -101,7 +101,7 @@ function handleServiceMessage(e,msg) {
 const protocol = {
     localStorage: localStorage,
 	connect : connect,
-	login : login,
+	//login : login,
 	connectTo : connectTo,
 	handleServiceMessage : handleServiceMessage,
 	serviceLocal : null,
@@ -153,7 +153,7 @@ var connectEventHandler;
 function connect(addr,proto, cb) {
 	_debug && console.log( "calling connect?" );
 	connectEventHandler = cb;
-	return openSocket( proto, 0, cb, null, addr );
+	return openSocket( proto, cb, null, addr );
 }
 
 
@@ -167,7 +167,7 @@ function makeSocket( ) {
 }
 
 
-function openSocket( protocol, cb, peer ) {
+function openSocket( protocol, cb, conId, peer ) {
 	let redirected = false;
 	//var https_redirect = null;
 	let connected = false;
@@ -183,7 +183,7 @@ function openSocket( protocol, cb, peer ) {
 		ws.id = protocol_.connectionId;
 		protocol_.connectionId = null;
 
-		cb( { op:"opening", ws:ws } );
+		cb( { op:"opening", ws:ws.id } );
 	} catch( err ) {
 		console.log( "CONNECTION ERROR?", err );
 		return null;
@@ -227,7 +227,7 @@ function openSocket( protocol, cb, peer ) {
 		if( !connectTimer ) {
 			_debug && console.log( "reconnect from start timeout" );
 			connectTimer = setTimeout( ()=>{connectTimer = null; 
-				openSocket( proto, 0, connectEventHandler, null, peer )}, 5000 );
+				openSocket( proto, connectEventHandler, null, peer )}, 5000 );
 		}
         	// websocket is closed.
 	};
@@ -242,9 +242,11 @@ function abortLogin( ) {
 }
 
 function connectTo( addr, service, sid, cb ) {
-	openSocket( service, 3, cb, sid, addr );
+	openSocket( service, cb, sid, addr );
 }
 
+
+return protocol;
 
 }
 

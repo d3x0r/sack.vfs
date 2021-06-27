@@ -6,6 +6,7 @@ const short_generator = SaltyRNG.id;
 import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
 
 const idGen = { generator:generator,regenerator:regenerator }
+const AsyncFunction = Object.getPrototypeOf( async function() {} ).constructor;
 
 const workerInterface = {
 	connect: connect,
@@ -65,22 +66,17 @@ navigator.serviceWorker.register('../swbundle.js', { scope: '/ui/' }).then(funct
 	function tick() {
 		console.log( "tick waiting for service...", l.worker );
             	if( !l.worker ) {
-	  	      l.worker = l.reg.active;
+			l.worker = l.reg.active;
 			if( l.worker ) {
 				console.log( "Sending hello." );
-				l.worker.postMessage( {op:"Hello" } );
-                	
-				if( l.connects.length ) {
-					for( let msg of l.connects ) 
-						l.worker.postMessage( msg );
-				}
+				l.worker.postMessage( {op:"Hello" } );                	
 			} else {
 				setTimeout( tick, 100 );
 			}
                 }
-				if( l.worker && l.connects.length ) 
-					for( let msg of l.connects ) 
-						l.worker.postMessage( { op:msg.op, protocol:msg.protocol, address:msg.address} );
+		if( l.worker && l.connects.length ) 
+			for( let msg of l.connects ) 
+				l.worker.postMessage( msg.msg );
 	}
 	tick();
     }, function(err) {
@@ -96,8 +92,10 @@ navigator.serviceWorker.ready.then( registration => {
 		//console.log( "got registration ready", registration );
 		if( l.worker )
 			l.worker.postMessage( {op:"Hello" } );
-		if( l.connect )
-			l.worker.postMessage( {op:"connect" } );
+		if( l.connect ) {
+			console.log( "!! This connect is redundant??" );
+			//l.worker.postMessage( {op:"connect" } );
+		}
         }
   });
 
@@ -134,16 +132,27 @@ function makeSocket( sockid, from ) {
 			l.worker.postMessage( {op:"send", id:socket.socket, msg:a } );
 		},
 		handleMessage(msg ) {
-			console.log( "this message", msg ) ;
+			if( "string" === typeof msg ) {
+				msg = JSOX.parse( msg ) ;
+			}
+			console.log( "this message", typeof msg, msg.op, msg ) ;
 			if( msg.op === "addMethod" ) {
                                 try {
-					const f = new Function( "JSON", "config", "localStorage", "idGen", msg.code );
-					f.call( socket, JSOX, config, localStorage_, idGen );
+					const f = new AsyncFunction( "JSON", "config", "localStorage", "idGen", "Import", msg.code );
+					f.call( socket, JSOX, config, localStorage_, idGen, (n)=>import(n) ).then( ()=>{
+						console.log( "completed..." );
+						//socket.on("connect", socket );
+						const pending = l.connects.shift();
+						console.log( "Pending is:", pending );
+						pending.cb( this );
+						//sock.cb = pending.cb;
+
+					} );
 		                
 					if( "setEventCallback" in socket )
 						socket.setEventCallback( socket.on.bind( socket, "event" ) );
 					
-					socket.on( "connect", socket );
+					//socket.on( "connect", socket );
 				} catch( err ) {
 					console.log( "Function compilation error:", err,"\n", msg.code );
 				}		
@@ -209,7 +218,9 @@ function handleMessage( event ) {
 			if( sockfrom ) {
 				sock.cb = sockfrom.cb
 			} else {
-				sock.cb = ( l.connects.shift() ).cb;
+				//const pending = l.connects.shift();
+				//console.log( "Pending is:", pending );
+				//sock.cb = pending.cb;
 			}
 			l.sockets.set( msg.id, sock );
 		} else if( msg.op === "get" ) {
@@ -225,11 +236,15 @@ function handleMessage( event ) {
 
 function connect( address, protocol, cb ) {
 	console.log( "Connect:", l.worker );
-	if( !l.worker ) 
+	if( !l.worker )  {
 		// queue for when the worker really exists.
-		l.connects.push( {op:"connect", cb:cb, protocol:protocol, address:address } );
-	else
+		l.connects.push( { cb: cb, msg: {op:"connect", protocol:protocol, address:address } } );
+		console.log( "pushed connection to pending connect..." );
+	} else {
+		console.log( "able to go now..." );
 		l.worker.postMessage( {op:"connect", protocol:protocol, address:address } ); 	
+		l.connects.push( { cb: cb } );
+	}
 	console.log( "Connect called...", l.connects );
 }
 
