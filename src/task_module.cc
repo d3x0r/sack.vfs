@@ -395,7 +395,6 @@ ATEXIT( terminateStartedTasks ) {
 	TaskObject *task;
 	INDEX idx;
 	LIST_FORALL( l.tasks, idx, TaskObject *, task ) {
-		lprintf( "Task should have a task! %p %p ", task, task->task );
 		if( task->killAtExit && ! task->ended && task->task )
 			StopProgram( task->task );
 	}
