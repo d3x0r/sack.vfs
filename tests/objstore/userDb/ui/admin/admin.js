@@ -9,28 +9,11 @@ const l = {
 	ws :null,
 }
 
-async function newLogin( opts ) {
-    // opts.clientId = user ID
-    // opts.name = display name
-    // (other options)
-
-    let user = await UserDb.get( opts.clientId );
-    if( !user ) {
-        user = await UserDb.create( opts.clientId, opts.name );
-    }
-    if( user )
-	    return true;
-    if( user.banned ) return false;
-    return false;
-}
-
-
 
 
 export class Admin extends Popup {
 	constructor( parent ) {
 		super( "User Database Administration", parent );
-		popups.fillFromURL( this, "/ui/admin/adminForm.html" );
 		this.hide();
 		openSocket();
 		
@@ -40,10 +23,12 @@ export class Admin extends Popup {
 			//debugger;
 			login.hide();
 			const ws = l.ws = await connection.request( "d3x0r.org", "login" );
-			ws.onmessage = handleMessage;
-			ws.onclose = handleClose;
-			//this.show();
-			this.load();
+			if( ws ) {
+				ws.onmessage = handleMessage;
+				ws.onclose = handleClose;
+				//this.show();
+				this.load();
+			}
 
 		} , { useForm:"/ui/login/loginForm.html"
 		    , useSashForm:"/ui/login/pickSashForm.html"
@@ -58,12 +43,13 @@ export class Admin extends Popup {
 		}
 		function handleClose( code, reason ) {
 			l.ws = null;
-			loginForm.show
+			loginForm.show();
 		}
 	}
 
 
 	load() {
+		popups.fillFromURL( this, "/ui/admin/adminForm.html" );
 		this.show();
 		
 	}

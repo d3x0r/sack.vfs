@@ -1,4 +1,7 @@
 
+import {Popup,popups} from "/node_modules/@d3x0r/popups/popups.mjs"
+
+
 export class AdminContent {
 
 

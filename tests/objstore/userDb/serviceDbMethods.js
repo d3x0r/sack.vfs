@@ -1,7 +1,9 @@
+const _debug_location = false;
 
 const ws = this;
 console.log( "Extend this websocket:", this );
 
+const os = await Import( "os" );
 const sackModule = await Import( "sack.vfs" );
 const sack = sackModule.sack;
 const JSOX = sack.JSOX;
@@ -25,34 +27,26 @@ const l = {
 
 };
 
-//ws.SaltyRNG = SaltyRNG;
-
-/*
-const clientKey = localStorage.getItem( "clientId" );
-if( !clientKey ) {
-    	ws.send( `{op:newClient}` );
+const config = {
+       	interfaces: []  // who I am...
+       	, internal_interfaces: []  // who I am...
+	, addresses: []  // who I am...
+	, internal_addresses: []  // who I am...
+	, run: {
+		 hostname: os.hostname()
+		, defaults: { useIPv6 : false, include_localhost : false, dedupInterfaces: false }
+	},
 }
-*/
 
-//console.log( "localStorage?", localStorage);
+const loc = getLocation();
+
+
+
 
 ws.addService = function( prod,app,interface ) {
 		
 }
 
-
-function resolveBadge( msg ) {
-	if( msg.ok ) {
-		for( let badgeName of srvc.badges ) {
-			if( badgeName === msg.badgeName ) {
-				srvc.badges[badgeName].promise.res( msg.badge );
-			}
-		}
-	} else {
-		// badge failed creation.
-		console.log( "Server failed to create badge" );
-	}
-}
 
 function registered( ws,msg ) {
 	if( msg.ok ) {
@@ -74,10 +68,12 @@ ws.processMessage = function( ws, msg ) {
 	console.trace( "handle message:", ws, msg );
 	if( msg.op === "register" ) {
 		registered( ws, msg );
+		return true;
 	} else if( msg.op === "authorize" ) {
-		acceptUser( ws, msg );
-	} else if( msg.op === "badge" ) {
-		resolveBadge( ws, msg );
+		// this has to be handled outside of this code
+		// otherwise need to register event handler
+		// on( "authorize", msg.user );		
+		//acceptUser( ws, msg );
 	} else {
 		console.log( "Unhandled message from login server:", msg );
 	}
@@ -90,7 +86,7 @@ if( srvc instanceof Array ) {
 	registerService( srvc, srvc.badges );
 
 function registerService( srvc ) {
-	ws.send( JSOX.stringify( { op:"register", sid:mySID, svc:srvc } ) );	
+	ws.send( JSOX.stringify( { op:"register", sid:mySID, svc:srvc, loc:loc, addr:config.addresses, iaddr:config.internal_addresses } ) );	
 	const p = {p:null,res:null,rej:null};
 	p.p = new Promise((res,rej)=>{p.res=res;p.rej=rej});
 	return p.p;
@@ -99,3 +95,161 @@ function registerService( srvc ) {
 ws.onclose= function() {
 	// Add a second close handler for this.
 }
+
+
+
+
+
+
+//--------------------------------------------------
+
+
+function getLocation() {
+	const here = { 
+		dir : process.cwd(),
+		name : os.hostname(),
+		macs : []
+	};
+	let i = os.networkInterfaces();
+	const i2 = [];
+
+	// sort interfaces by mac address
+	for( var int in i ) {
+        	var placed = false;
+        	for( var int2 in i2 ) {
+                	//2console.log( "is ", i2[int2][0].mac, " < ", i[int][0].mac );
+                	if( i2[int2][0].mac > i[int][0].mac ) {
+            			//console.log( "unshifted?" );
+                                i2.splice( int2, 0, i[int] );
+                                placed = true;
+                                break;
+                        }
+                }
+                if( !placed )
+                	i2.push( i[int] );
+        }
+        i = i2;
+        //console.log( "Should be sorted here.", i2 );
+        config.internal_addresses = [];
+        config.addresses = [];
+	for( var int of i ) { 
+		let added; added = 0; 
+		let isLocal = false;
+		const skipped = [];
+		int.forEach( checkAddr );
+		function checkAddr(i) {
+			//console.log( "i:", i );
+			if( i.family == "IPv6" ) {
+				_debug_location && console.log( "check ipv6 interface:", i );
+				if( i.address.startsWith( 'fe80' ) )
+					;	
+				else if( 
+				    i.address.startsWith( 'dc00' )
+					 ) {
+					//console.log( "Applying this interface as address...", i );
+					if( !isLocal )  {
+						skipped.push( i );
+					} else {
+						//console.log( "So it's already known local... so... mark firewall target" );
+						config.addresses.push( i );
+						config.internal_addresses.push( i );
+					}
+								
+					
+				}
+				else if( i.address === "::1"   // do allow ip6 localhost
+					) {
+					//if( !config.run.defaults.include_localhost ) return;
+					// allow localhost as either a external or internal....
+					if( !isLocal ) 
+						skipped.push( i );
+					else {
+						config.addresses.push( i );
+						config.internal_addresses.push( i );
+					}
+				}
+				//config.interfaces.push( i );
+				else if( true /*config.run.defaults.useIPv6*/ )
+					if( !i.cidr.endsWith( "/128" ) )
+					if( !isAddrLocal( i.address ) ) {
+						_debug_location && console.log( "public ipvt?", i.address );
+						config.addresses.push( i );
+						config.interfaces.push( i );
+						//console.log( "is external v6", config.addresses );
+					} else {
+						if( !isLocal ) {
+							_debug_location && console.log( "is local v6", i.address );
+							config.internal_addresses.push( i );
+							config.internal_interfaces.push( i );
+						}
+					}
+				added |= 2;
+			} else {
+				_debug_location && console.log( "v4:", i.address );
+				if( i.address === "127.0.0.1" ) {
+					//if( !config.run.defaults.include_localhost )
+					return;
+				}
+				else 
+					if( !isAddrLocal( i.address ) ) {
+						_debug_location && console.log( "is NOT local:", isLocal );
+						config.addresses.push( i );
+						config.interfaces.push( i );
+					} else {
+						isLocal = true;
+						_debug_location && console.log( "is local:", isLocal );
+						config.internal_addresses.push( i );
+						config.internal_interfaces.push( i );
+					}
+				added |= 1;
+			}
+
+			//added = true;
+			//here += i.mac
+		} 
+
+		if( isLocal ) {
+			_debug_location && console.log( "Redo some skipped ones", skipped.length );
+			skipped.forEach( checkAddr );
+		}
+		if( added & 3 ) 
+			if( !here.macs.find( m=>(m===int[0].mac) ) )
+				here.macs.push( int[0].mac )
+	}
+	// move localhost address last.
+	if( config.internal_addresses[0].address == "::1" ) {
+		var save = config.internal_addresses[0];
+		config.internal_addresses.splice( 0, 1 );
+		config.internal_addresses.push( save );
+	}
+	console.log( "Usable addresses:", config.addresses, "internal:", config.internal_addresses, "here:", here, "JSOX(here):", JSOX.stringify( here ) );
+	//here = "/home/chatment/kcore00:00:00:00:00:000c:c4:7a:7f:93:500c:c4:7a:7f:93:500c:c4:7a:7f:93:510c:c4:7a:7f:93:51";
+	//console.log( "here is:", here,  idGen.regenerator( here ) );
+	return sack.id( JSOX.stringify( here ) );
+	
+
+	function isAddrLocal(address) {
+		//console.log( "Test address:", address );
+		if( address.startsWith( "::ffff:" ) ) { // ::ffff:192.168.173.13
+			address = address.substr( 7 );
+		}
+                if( address.startsWith( "::" ) && address.includes( "." ) ) {
+                	address = address.substr( 2 );
+                }
+		if( address.startsWith( "192.168" )
+			|| ["172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.",
+		        "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31."].find( prefix=>address.startsWith( prefix ) )
+			||address.startsWith( "10." ) )
+			return true;
+		if( address.startsWith( 'fe80' ) )
+			return true;
+		if( address === "::1" ) 
+			return true;
+		return false;
+	}
+
+
+}
+
+
+

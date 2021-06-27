@@ -184,7 +184,6 @@ function openSocket( protocol, cb, peer ) {
 		protocol_.connectionId = null;
 
 		cb( { op:"opening", ws:ws } );
-	}
 	} catch( err ) {
 		console.log( "CONNECTION ERROR?", err );
 		return null;
@@ -195,14 +194,16 @@ function openSocket( protocol, cb, peer ) {
 		cb( { op:"open", status: "Opened...." }, ws);
 	};
 	ws.onmessage = function handleSockMessage(evt) {
-		var msg = JSOX.parse( evt.data ); // kinda hate double-parsing this... 
-
-		if( msg.op === 'GET' ) {
-			if( protocol_.resourceReply )
-				protocol_.resourceReply( client, msg );
-			return;
-		}
-		send( {op:'a', id:ws.id, msg:evt.data } ); // just forward this.
+		const msg_ = evt.data;
+		if( msg_[0] === '\0' ) {
+			var msg = JSOX.parse( msg_.substr(1) ); // kinda hate double-parsing this... 
+			if( msg.op === 'GET' ) {
+				if( protocol_.resourceReply )
+					protocol_.resourceReply( client, msg );
+				return;
+			}
+		} else
+			send( {op:'a', id:ws.id, msg:msg_ } ); // just forward this.
 	};
 	ws.onclose = doClose;
 	function doClose(status) {
@@ -244,4 +245,8 @@ function connectTo( addr, service, sid, cb ) {
 	openSocket( service, 3, cb, sid, addr );
 }
 
+
+}
+
 //export {protocol}
+
