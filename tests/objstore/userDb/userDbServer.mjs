@@ -6,10 +6,31 @@ const colons = import.meta.url.split(':');
 const where = colons.length===2?colons[1].substr(1):colons[2];
 const nearIdx = where.lastIndexOf( "/" );
 const nearPath = where.substr(0, nearIdx+1 );
-
+//console.log( "environment:", process.env );
 
 import path from "path";
 import {sack} from "sack.vfs"
+
+
+const withLoader = process.env.SACK_LOADED;
+// make sure we load the import script
+	if( !withLoader ) {        
+		new sack.Task( { 
+			work : process.cwd(),
+                        bin:process.argv[0],
+                        args:[ "--experimental-loader=../../../import.mjs" ,...(process.argv.slice(1))],
+                        env:{
+                        	SACK_LOADED:"Yup",
+                        }, // extra environment.
+			input( buffer ) {
+				console.log( buffer.substr(0,buffer.length-1) );
+			},
+			newGroup : false,
+			newConsole : false,
+			end() { console.log( "ended.." ); return process.exit() },
+		} );
+	}
+
 const JSOX = sack.JSOX;
 import {UserDb,User,Device,UniqueIdentifier,go} from "./userDb.mjs"
 
@@ -67,10 +88,14 @@ const resourcePerms = {
 
 
 // go is from userDb; waits for database to be ready.
-go.then( ()=>{
+if( withLoader ) go.then( ()=>{
         openServer( { port : 8089
                 } );
 } );
+else {
+	//console.log( "do nothing...(waiting to log sub-task output)" );
+	function doNothing() { setTimeout( doNothing, 10000000 ); } doNothing();
+}
 
 
 UserDb.on( "pickSash", (user, choices)=>{
