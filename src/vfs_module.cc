@@ -850,7 +850,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		holder->ab.ClearWeak();
 		holder->ab.Reset();
 	}
-	Deallocate( void*, holder->buffer );
+	Deallocate( const void*, holder->buffer );
 	DropHolder( holder );
 }
 

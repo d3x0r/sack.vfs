@@ -10,8 +10,11 @@ struct optionStrings {
 	Eternal<String> *envString;
 	Eternal<String> *binaryString;
 	Eternal<String> *inputString;
+	Eternal<String>* inputString2;
 	Eternal<String> *endString;
 	Eternal<String> *firstArgIsArgString;
+	Eternal<String>* groupString;
+	Eternal<String>* consoleString;
 };
 
 
@@ -39,13 +42,16 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->envString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "env" ) );
 		check->binaryString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "binary" ) );
 		check->inputString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "input" ) );
+		check->groupString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "newGroup" ) );
+		check->consoleString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "newConsole" ) );
+		check->inputString2 = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "errorInput" ) );
 		check->endString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "end" ) );
 		check->firstArgIsArgString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "firstArgIsArg" ) );
 	}
 	return check;
 }
 
-TaskObject::TaskObject():_this(), endCallback(), inputCallback() 
+TaskObject::TaskObject():_this(), endCallback(), inputCallback(), inputCallback2()
 {
     task = NULL;
     binary = false;
@@ -54,12 +60,15 @@ TaskObject::TaskObject():_this(), endCallback(), inputCallback()
     exitCode = 0;
     killAtExit = false;
 	output = CreateLinkQueue();
-    
+	output2 = CreateLinkQueue();
+
 	//this[0] = _blankTask;
 }
 
 TaskObject::~TaskObject() {
 	DeleteLink( &l.tasks, this );
+	DeleteLinkQueue( &output );
+	DeleteLinkQueue( &output2 );
 	if( task && !ended ) {
 		StopProgram( task );
 	}
@@ -100,7 +109,10 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 	}
 	{
 		struct taskObjectOutputItem *output;
-		while( output = (struct taskObjectOutputItem *)DequeLink( &task->output ) ) {
+		struct taskObjectOutputItem* output2 = NULL;
+		while( ( output = (struct taskObjectOutputItem *)DequeLink( &task->output ) )
+			|| ( output2 = (struct taskObjectOutputItem*)DequeLink( &task->output2 ) )
+			) {
 			Local<Value> argv[1];
 			Local<ArrayBuffer> ab;
 			if( task->binary ) {
@@ -112,12 +124,18 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 				ab = ArrayBuffer::New( isolate, (void*)output->buffer, output->size );
 #endif
 				argv[0] = ab;
-				task->inputCallback.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
+				if( output2 )
+					task->inputCallback2.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
+				else
+					task->inputCallback.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
 			}
 			else {
 				MaybeLocal<String> buf = localStringExternal( isolate, (const char*)output->buffer, (int)output->size, (const char*)output );
 				argv[0] = buf.ToLocalChecked();
-				task->inputCallback.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
+				if( output2 )
+					task->inputCallback2.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
+				else
+					task->inputCallback.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
 			}
 			//task->buffer = NULL;
 		}
@@ -132,31 +150,59 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 
 static void CPROC getTaskInput( uintptr_t psvTask, PTASK_INFO pTask, CTEXTSTR buffer, size_t size ) {
 	TaskObject *task = (TaskObject*)psvTask;
-	//if( !task->inputCallback.IsEmpty() ) 
 	{
 		struct taskObjectOutputItem *output = NewPlus( struct taskObjectOutputItem, size );
-		//task->buffer = NewArray( char, size );
 		memcpy( (char*)output->buffer, buffer, size );
 		output->size = size;
-		//output->waiter = MakeThread();
 		EnqueLink( &task->output, output );
 		uv_async_send( &task->async );
-		//while( task->buffer ) {
-		//	WakeableSleep( 200 );
-		//}
 	}
 
 }
+
+static void CPROC getTaskInput2( uintptr_t psvTask, PTASK_INFO pTask, CTEXTSTR buffer, size_t size ) {
+	TaskObject* task = (TaskObject*)psvTask;
+	{
+		struct taskObjectOutputItem* output = NewPlus( struct taskObjectOutputItem, size );
+		memcpy( (char*)output->buffer, buffer, size );
+		output->size = size;
+		EnqueLink( &task->output2, output );
+		uv_async_send( &task->async );
+	}
+
+}
+
 
 static void CPROC getTaskEnd( uintptr_t psvTask, PTASK_INFO task_ended ) {
 	TaskObject *task = (TaskObject*)psvTask;
 	task->ending = true;
 	task->exitCode = GetTaskExitCode( task_ended );
 	//task->waiter = NULL;
+	lprintf( "Task ended..." );
 	task->task = NULL;
 	//closes async
 	uv_async_send( &task->async );
 }
+
+static void 	readEnv( Isolate* isolate, Local<Context> context, Local<Object> headers, PLIST *env ) {
+	Local<Array> props = headers->GetPropertyNames( context ).ToLocalChecked();
+	for( uint32_t p = 0; p < props->Length(); p++ ) {
+		Local<Value> name = props->Get( context, p ).ToLocalChecked();
+		Local<Value> value = headers->Get( context, name ).ToLocalChecked();
+		String::Utf8Value localName( isolate, name );
+		String::Utf8Value localValue( isolate, value );
+		const int nameLen = localName.length();
+		const size_t len = nameLen + localValue.length() + 2;
+		struct environmentValue* val = NewArray( struct environmentValue, 1 );
+		val->field = NewArray( TEXTCHAR, len );
+		StrCpy( val->field, *localName );
+		val->value = val->field + nameLen + 1;
+		StrCpy( val->value, *localValue );
+
+		AddLink( env, val );
+	}
+}
+
 
 void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -191,6 +237,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			String::Utf8Value *work = NULL;
 			bool end = false;
 			bool input = false;
+			bool input2 = false;
 			bool hidden = false;
 			bool firstArgIsArg = true;
 			bool newGroup = false;
@@ -200,7 +247,19 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			newTask->killAtExit = true;
 
 			char **argArray = NULL;
+			PLIST envList = NULL;
 			int nArg;
+
+			if( opts->Has( context, optName = strings->groupString->Get( isolate ) ).ToChecked() ) {
+				if( GETV( opts, optName )->IsBoolean() ) {
+					newGroup = GETV( opts, optName )->TOBOOL( isolate );
+				}
+			}
+			if( opts->Has( context, optName = strings->consoleString->Get( isolate ) ).ToChecked() ) {
+				if( GETV( opts, optName )->IsBoolean() ) {
+					newConsole = GETV( opts, optName )->TOBOOL( isolate );
+				}
+			}
 
 			if( opts->Has( context, optName = strings->binString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
@@ -242,7 +301,9 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 			if( opts->Has( context, optName = strings->envString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
-				lprintf( "env params not supported(yet)" );
+				Local<Object> env = GETV( opts, optName ).As<Object>();
+				readEnv( isolate, context, env, &envList );
+				//lprintf( "env params not supported(yet)" );
 				/*
 				if( GETV( opts, optName )->IsString() ) {
 					args = new String::Utf8Value( GETV( opts, optName )->ToString() );
@@ -260,6 +321,13 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				if( GETV( opts, optName )->IsFunction() ) {
 					newTask->inputCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
 					input = true;
+				}
+			}
+			if( opts->Has( context, optName = strings->inputString2->Get( isolate ) ).ToChecked() ) {
+				Local<Value> val;
+				if( GETV( opts, optName )->IsFunction() ) {
+					newTask->inputCallback2.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
+					input2 = true;
 				}
 			}
 			if( opts->Has( context, optName = strings->firstArgIsArgString->Get( isolate ) ).ToChecked() ) {
@@ -288,7 +356,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 #define LPP_OPTION_SUSPEND              32
 			*/
 
-			newTask->task = LaunchPeerProgramExx( bin?*bin[0]:NULL
+			newTask->task = LaunchPeerProgram_v2( bin?*bin[0]:NULL
 				, work?*work[0]:NULL
 				, argArray
 				, ( firstArgIsArg? LPP_OPTION_FIRST_ARG_IS_ARG:0 )
@@ -297,8 +365,11 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				| (newConsole ? LPP_OPTION_NEW_CONSOLE : 0)
 				| (suspend? LPP_OPTION_SUSPEND : 0)
 				, input ? getTaskInput : NULL
+				, input2 ? getTaskInput2 : NULL
 				, (end||input) ? getTaskEnd : NULL
-				, (uintptr_t)newTask DBG_SRC );
+				, (uintptr_t)newTask 
+				, envList
+				DBG_SRC );
 
 		}
 
@@ -324,7 +395,8 @@ ATEXIT( terminateStartedTasks ) {
 	TaskObject *task;
 	INDEX idx;
 	LIST_FORALL( l.tasks, idx, TaskObject *, task ) {
-		if( task->killAtExit && ! task->ended )
+		lprintf( "Task should have a task! %p %p ", task, task->task );
+		if( task->killAtExit && ! task->ended && task->task )
 			StopProgram( task->task );
 	}
 }

@@ -5049,11 +5049,24 @@ typedef void (CPROC*TaskOutput)(uintptr_t, PTASK_INFO task, CTEXTSTR buffer, siz
 #define LPP_OPTION_NEW_CONSOLE          16
 #define LPP_OPTION_SUSPEND              32
 #define LPP_OPTION_ELEVATE              64
+struct environmentValue {
+	char* field;
+	char* value;
+};
 SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramExx )( CTEXTSTR program, CTEXTSTR path, PCTEXTSTR args
                                                , int flags
                                                , TaskOutput OutputHandler
                                                , TaskEnd EndNotice
                                                , uintptr_t psv
+                                                DBG_PASS
+                                               );
+SYSTEM_PROC( PTASK_INFO, LaunchPeerProgram_v2 )( CTEXTSTR program, CTEXTSTR path, PCTEXTSTR args
+                                               , int flags
+                                               , TaskOutput OutputHandler
+                                               , TaskOutput OutputHandler2
+                                               , TaskEnd EndNotice
+                                               , uintptr_t psv
+                                               , PLIST envStrings
                                                 DBG_PASS
                                                );
 SYSTEM_PROC( PTASK_INFO, LaunchProgramEx )( CTEXTSTR program, CTEXTSTR path, PCTEXTSTR args, TaskEnd EndNotice, uintptr_t psv );
