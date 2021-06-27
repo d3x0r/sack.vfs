@@ -3,6 +3,10 @@ const _debug_location = false;
 const ws = this;
 console.log( "Extend this websocket:", this );
 
+
+  //const sack = (await Import( "sack.vfs" )).sack;
+const serviceConfig = (await Import("./config.jsox")).default;
+
 const os = await Import( "os" );
 const sackModule = await Import( "sack.vfs" );
 const sack = sackModule.sack;
@@ -86,7 +90,8 @@ if( srvc instanceof Array ) {
 	registerService( srvc, srvc.badges );
 
 function registerService( srvc ) {
-	ws.send( JSOX.stringify( { op:"register", sid:mySID, svc:srvc, loc:loc, addr:config.addresses, iaddr:config.internal_addresses } ) );	
+console.log( "Blah:", serviceConfig, serviceConfig.publicAddresses );
+	ws.send( JSOX.stringify( { op:"register", sid:mySID, svc:srvc, loc:loc, addr:config.addresses, iaddr:config.internal_addresses, public:serviceConfig.publicAddresses } ) );
 	const p = {p:null,res:null,rej:null};
 	p.p = new Promise((res,rej)=>{p.res=res;p.rej=rej});
 	return p.p;

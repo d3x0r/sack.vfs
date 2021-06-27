@@ -1,6 +1,5 @@
 
 import {sack} from "sack.vfs";
-//const sack = (await Import( "sack.vfs" )).sack;
 
 const AsyncFunction = Object.getPrototypeOf( async function() {} ).constructor;
 
