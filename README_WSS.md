@@ -47,10 +47,10 @@ Server Methods
   |---|---|
   | close() | close server socket. |
   | on(eventName,cb) | setup events ( connect, accept, request, error ), callback |
-  | onconnect(cb) | pass callback for when a WebSocket connection is initiated; allows inspecting protocols/resource requested to accept or reject. |
-  | onaccept(cb) | pass callback for when socket is accepted, and is completely open.... setup event handlers on passed socket |
-  | onrequest(cb) |pass callback for HTTP request (GET/POST/...).   |
-  | onerror(cb) | pass callback for error event.  callback is passed a closed socket object with remote and local addresses (see connection object below) |
+  | onconnect | set to callback for when a WebSocket connection is initiated; allows inspecting protocols/resource requested to accept or reject. |
+  | onaccept | set to callback for when socket is accepted, and is completely open.... setup event handlers on passed socket |
+  | onrequest |set to callback for HTTP request (GET/POST/...).   |
+  | onerror | set to callback for error event.  callback is passed a closed socket object with remote and local addresses (see connection object below) |
   | accept() | Call this to accept a socket, pass protocols to accept with(?).  Only valid within "accept" event. |
   | reject() | Call this in onconnect to abort accepting the websocket.  Only valid within "accept" event. |
   | disableSSL() | closes the SSL layer on the socket and resumes native TCP connection; is only valid during "lowerror" event type (6).  Uses the socket that triggered the event as the one to disable.  (The Websocket Server Client is not yet created). |
