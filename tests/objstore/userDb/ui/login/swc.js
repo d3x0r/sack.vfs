@@ -110,7 +110,11 @@ function makeSocket( sockid, from ) {
 		setUiLoader() {
 			workerInterface.setUiLoader( socket );
 		},
-		from:from,
+		from:from, // track redirect for reconnect?
+		close() {
+			console.log( "CLose socket from client side..." );
+			l.worker.postMessage( {op:"close", is:socket.socket } );
+		},
 		cb : null,
                 events_ : [],
 		newSocket(addr) {
@@ -131,7 +135,8 @@ function makeSocket( sockid, from ) {
 			//console.log( "Send something?",a );
 			l.worker.postMessage( {op:"send", id:socket.socket, msg:a } );
 		},
-		handleMessage(msg ) {
+		handleMessage : null,
+		handleMessageInternal(msg ) {
 			if( "string" === typeof msg ) {
 				msg = JSOX.parse( msg ) ;
 			}
@@ -145,7 +150,7 @@ function makeSocket( sockid, from ) {
 						const pending = l.connects.shift();
 						console.log( "Pending is:", pending );
 						pending.cb( this );
-						//sock.cb = pending.cb;
+						socket.handleMessage = pending.cb;
 
 					} );
 		                
@@ -193,12 +198,26 @@ function handleMessage( event ) {
 	if( msg.op === "a" ) {		
 		const sock = l.sockets.get( msg.id );
 		if( sock ) {
-			if( msg.msg.op === "connected" ) {
+			sock.handleMessage( msg.msg );
+		}
+	} else if( msg.op === "b" ) {		
+		const sock = l.sockets.get( msg.id );
+		if( sock ) {
+			console.log( "socket state change message:", msg.msg );
+			//sock.handleMessage( msg.msg );
+			//console.log( "worker Event", msg );
+			const imsg = msg.msg;
+			if( imsg.op === "status" ) {
 				if( sock.cb )
-					sock.cb( true, sock );
-				else console.log( "Lost status callback for socket?" );
-			} else {
-				sock.handleMessage( msg.msg );
+				    sock.cb( imsg.status );
+				else
+                                    console.log( "Socket doesn't have a event cb? Status:", imsg.status );
+			} else if( imsg.op === "opening" ) {
+				sock.cb( true, sock );
+				console.log( "onopen event?" );
+			} else if( imsg.op === "disconnect" ) {
+        		        l.sockets.delete( imsg.id );
+                                sock.on("disconnect");
 			}
 		}
 	} else {
@@ -208,19 +227,18 @@ function handleMessage( event ) {
 		} else if( msg.op === "setItem" ) {
 			localStorage_.setItem( msg.key, msg.val );
 		} else if( msg.op === "connecting" ) {
+			let connect;
 			if( l.opens.length ) {
 				const sock = makeSocket( msg.id );
 				l.sockets.set( msg.id, sock );
 				return l.opens.shift()(sock);
+			} else if( l.connects.length ) {
+				connect = l.connects.shift();
 			}
-			const sockfrom = l.sockets.get( msg.from );
 			const sock = makeSocket(msg.id,msg.from );
-			if( sockfrom ) {
-				sock.cb = sockfrom.cb
-			} else {
-				//const pending = l.connects.shift();
-				//console.log( "Pending is:", pending );
-				//sock.cb = pending.cb;
+			if( connect ) {
+				sock.handleMessage = connect.onMsg;
+				sock.cb = connect.cb
 			}
 			l.sockets.set( msg.id, sock );
 		} else if( msg.op === "get" ) {
@@ -234,16 +252,16 @@ function handleMessage( event ) {
 	}
 }
 
-function connect( address, protocol, cb ) {
+function connect( address, protocol, cb, onMsg ) {
 	console.log( "Connect:", l.worker );
 	if( !l.worker )  {
 		// queue for when the worker really exists.
-		l.connects.push( { cb: cb, msg: {op:"connect", protocol:protocol, address:address } } );
+		l.connects.push( { cb: cb, onMsg:onMsg, msg: {op:"connect", protocol:protocol, address:address } } );
 		console.log( "pushed connection to pending connect..." );
 	} else {
 		console.log( "able to go now..." );
 		l.worker.postMessage( {op:"connect", protocol:protocol, address:address } ); 	
-		l.connects.push( { cb: cb } );
+		l.connects.push( { cb: cb, onMsg:onMsg, msg:null } );
 	}
 	console.log( "Connect called...", l.connects );
 }

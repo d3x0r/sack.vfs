@@ -68,11 +68,24 @@ function acceptUser( ws, msg ) {
 	
 }
 
-ws.processMessage = function( ws, msg ) {
+const events = {};
+
+ws.on = function( evt, d ) {
+	if( "function" === typeof d ) {
+        	if( evt in events ) events[evt].push( d );
+                else events[evt] = [d];
+        } else {
+        	if( evt in events ) for( let cb of events[evt] ) cb( d );
+        }
+}
+
+ws.processMessage = function( msg ) {
 	console.trace( "handle message:", ws, msg );
 	if( msg.op === "register" ) {
 		registered( ws, msg );
 		return true;
+	} else if( msg.op === "expect" ) {
+        	ws.on( "expect", msg );
 	} else if( msg.op === "authorize" ) {
 		// this has to be handled outside of this code
 		// otherwise need to register event handler

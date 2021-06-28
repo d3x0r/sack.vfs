@@ -13,12 +13,9 @@ if( !clientKey ) {
 }
 
 
-
 const l = {
 	pending:[]
 }
-
-console.log( "localStorage?", localStorage);
 
 ws.doLogin = function( user, pass ) {
     //ws.send(
@@ -64,7 +61,7 @@ ws.request = function( domain, service ) {
 		pend.res = res; pend.rej=rej;
 	}).then( (msg)=>{
 		const idx = l.pending.findIndex( p=>p === pend );
-		if( idx >= 0 ) l.pending.splic(idx,1 );
+		if( idx >= 0 ) l.pending.splice(idx,1 );
 		else console.log( "Failed to find pending request." );
 		if( msg.redirect ) {
 			var ws = new WebSocket( msg.redirect, msg.protocol );
@@ -82,6 +79,7 @@ ws.request = function( domain, service ) {
 }
 
 ws.processMessage = function( ws, msg ) {
+	console.log( "socket gets a turn?", msg );
 	if( msg.op === "login" ) {
 		if( msg.success )
 			;//Alert(" Login Success" );
@@ -123,7 +121,6 @@ ws.processMessage = function( ws, msg ) {
         }
 	else if( msg.op === "pickSash" ) {
 		// this is actually a client event.
-
 	}
 	else if( msg.op === "request" ) {
 		for( let pend of l.pending ) {

@@ -181,7 +181,10 @@ function Alert( s ) {
 } 
 
 
-function processMessage( msg ) {
+function processMessage( msg_ ) {
+	const msg = JSOX.parse( msg_ );
+	if( l.ws.processMessage && l.ws.processMessage( l.ws, msg ) ) return;
+
 	if( msg.op === "addMethod" ) {
 		try {
 		    	// why is this not in a module?
@@ -248,11 +251,15 @@ function openSocket( addr ) {
 	addr = addr || location.host
 
 	const  proto = location.protocol==="http:"?"ws:":"wss:";
-        workerInterface.connect( proto+"//"+addr+"/", "login", (msg)=>{
-		console.log( "connect got:", msg );
-		l.ws = msg;
-		//l.ws.send( '{ op: "hello" }' );
-	} );
+        workerInterface.connect( proto+"//"+addr+"/", "login", (statusmsg, msg)=>{
+		if( statusmsg === true ) {
+			l.ws = msg;
+			//console.log( "is websocket?", msg );
+
+		}else {
+			console.log( "connect got:", statusmsg );
+		}
+	}, processMessage );
 
 
 /*		

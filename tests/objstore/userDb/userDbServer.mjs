@@ -50,6 +50,7 @@ const serviceMethodMsg = JSON.stringify( {op:"addMethod", code:serviceMethods} )
 const serviceLoginScript = sack.Volume().read( nearPath+"serviceLogin.mjs" ).toString();
 
 import {UserDbRemote} from "./serviceLogin.mjs";
+//import {UserDbServer} from "./userDbLoginService.mjs";
 //const methodMsg = JSON.stringify( {op:"addMethod", code:methods} );
 
 
@@ -93,10 +94,7 @@ const resourcePerms = {
 
 // go is from userDb; waits for database to be ready.
 if( withLoader ) go.then( ()=>{
-        openServer( { port : 8089
-                } );
-	//setTimeout( ()=>{console.log( "inner exit" );process.exit(0);}, 3000 );
-
+        openServer( { port : 8089 } );
 } );
 else {
 	function doNothing() { setTimeout( doNothing, 10000000 ); } doNothing();
@@ -126,11 +124,7 @@ function openServer( opts, cb )
 	const disk = sack.Volume();
 	console.log( "serving on " + serverOpts.port, server );
 
-	UserDbRemote.open( { server:"ws://localhost:"+serverOpts.port
-			, authorize( user ) {
-				l.expect.set( user.userId, user );
-			}
-	} );
+	UserDbRemote.open( { server:"ws://localhost:"+serverOpts.port } );
 
 	//console.table( disk.dir() );
 
@@ -336,26 +330,26 @@ function openServer( opts, cb )
 	}
 
 	async function doCreate( ws, msg ) {
+		debugger;
 		const validEMail = await checkEmail( ws.email );
 		if( !validEMail ) {
 			ws.send( JSON.stringify( { op:"create", success: false, email:true } ) );
 			return;
 		}
 		const unique = await UserDb.getIdentifier( msg.clientId );//new UniqueIdentifier();
-		console.log( "unique:", unique, msg  );
+		//console.log( "unique:", unique, msg  );
 		if( !unique ) {                              
+			//console.log( "Resulting with a reset of client ID." );
 			ws.send( JSON.stringify( { op:"create", success: false, ban: true } ) );
 			return;
 		}
 
 		const oldUser = await UserDb.User.get( msg.account );
-		console.log( "oldUser:", oldUser );
 		if( oldUser ) {
 			ws.send( JSON.stringify( { op:"create", success: false, account:true } ) );
 			return;
 		}
 		const oldUser2 = await UserDb.User.getEmail( msg.email );
-		console.log( "oldUser:", oldUser2 );
 		if( oldUser2 ) {                 
 			ws.send( JSON.stringify( { op:"create", success: false, email:true } ) );
 			return;
@@ -419,6 +413,8 @@ function openServer( opts, cb )
 			
 		} else {
 			const svc = await  UserDb.getService( msg.svc ).then( (s)=>{
+				console.log( "Ahh Hah, finall, having registered my service, I connect this socket", s, ws );
+				s.connect( ws );
 				//ws.send( JSOX.stringify( { op:"registered" }) )
 				return s;
 			} );
@@ -438,15 +434,14 @@ function openServer( opts, cb )
 
 	async function getService( ws, msg ) {
 		// domain, service
-		console.log( "Calling requestservice", ws.state );
+		//console.log( "Calling requestservice", ws.state );
 		const svc = await UserDb.requestService( msg.domain, msg.service, ws.state.user );
-		const svcInst = svc.getInstance();
-		if( svcInt ) {
-
-			svcInst.authorize( ws, ws.state.user );
+		if( svc ) {
+			//console.log( "Service result:", svc, "for", msg );
+			svc.authorize( ws.state.user );
+		} else {
+			ws.send( JSOX.stringify( {op:"service", ok:false, probe:true } ) );
 		}
-		else	
-			ws.send( JSOX.stringify( {op:"service", ok:false } ) );
 	}
 
 	function pickedSash(ws,msg ) {
@@ -524,6 +519,11 @@ function openServer( opts, cb )
 			}
 		}
 
+		function doAuthorize( msg ) {
+			// msg.addr
+			// msg.key
+			
+		}
 
 		function handleService( msg_ ) {
 			const msg = JSOX.parse( msg_ );
@@ -534,10 +534,14 @@ function openServer( opts, cb )
 			} else if( msg.op === "expect" ) {
 				// user connection expected on this connection...
 				console.log( "Authorize sent - now e need to send back UID and IP")
-			} else if( msg.op === "badge" ) {
-				handleBadgeDef( ws, msg );
-				//ws.send( methodMsg );
-			}		
+				const id = sack.Id();
+				l.expect.set( id, msg );
+				
+				ws.send( JSOX.stringify( { op:"authorize", id:msg.id, addr:addr, key:id } ) );
+
+			} else {
+				console.log( "unhandled client admin/profile message:", msg_ );
+			}
 		}
 
 		function handleClient( msg_ ) {
@@ -558,6 +562,8 @@ function openServer( opts, cb )
 					guestLogin( ws, msg );
 				} else if( msg.op === "service" ){
 					getService( ws, msg );
+				} else if( msg.op === "authorize" ){
+					doAuthorize( ws, msg );
 				} else if( msg.op === "Login" ){
 					ws.send( JSON.stringify( { op:"login", success: true } ));
 				} else if( msg.op === "create" ){
@@ -616,6 +622,7 @@ const allowedChars2 = ' .(),:;<>@[]' ; // \ and " can be quoted too; but handled
 // this needs to handle just IP addresses also.
 
 function validateEmail( email, cb ) {
+	if( !email ) return cb( false );
 	function lookupDomain( domain, cb ) {
 		DNS.lookup( domain, (err,address,family)=>{
 			_debug && console.log( "test domain:",domain, err);

@@ -106,7 +106,7 @@ function getClient( event, asClient ) {
 	self.clients.get(clientId).then( (client)=>{
 		//console.log( "Clients resolve finally resulted??" );
 		if( !client ) {
-                    lprintf( "Client is not found... not a valid channel." );
+                    console.log( "Client is not found... not a valid channel.", clientId, self.clients );
                     return null;
                 }
 		newClient.client = client;
@@ -233,7 +233,7 @@ function handleMessage( event ) {
                         // real client.
                         req.p.res( response );
 		} else {
-			console.log( "Failed to find the requested request" );
+			console.log( "Failed to find the requested request" + event.data );
 		}
 	}else if( msg.op === "getItem" ) {
 		// reply from getItem localStorage.

@@ -108,6 +108,10 @@ export class Sash extends StoredObject{
 			p[b.tag] = true;
 		return p;
 	}
+        for( domain ) {
+        	// // test sash.for( domain ) true....
+        	return ( this.#service.domain === domain );
+        }
 }
 
 export class SashAlias extends StoredObject{
@@ -399,10 +403,12 @@ class ServiceInstance {
 	set(  ){
 		this.sid = sack.Id();
 	}
+	send(msg) {
+		if( "string" !== typeof msg ) msg = JSOX.stringify( msg );
+		this.#ws.send(msg);
+	}
 	connect( ws ) {
-		if( !this.#ws ) {
-			return false;
-		}
+		//console.log( "Setting websocket:", ws );
 		this.#ws = ws;
 		return;
 	}
@@ -469,13 +475,22 @@ export class Service  extends StoredObject{
 		const i = Math.floor(Math.random()*this.#instances.length);
 		if( i || this.#instances.length > i ) {
 			const inst = this.#instances[i];
+			console.log( "inst:", inst );
+			console.log( "have to send something to a instance ...., to get it to accept, and get user info" );
+			const permissions = await forUser.getSash( this.domain );
+			console.log( "permissions:", permissions );
+
+			const msg = { op:"expect", name:forUser.name, sash:permissions, UID: sack.id(forUser.userId+"@"+this.domain) };
+			inst.send( msg );
+
 			//inst.
 		}
 	}
 
 	getInstance( sid ) {
+		console.log( "Getting instance:", sid );
 		if( !sid ) {
-
+			console.log( "Probably returned nothing?" );
 		} else {
 			for( let inst of this.instances ) {
 				if( inst.side === sid ) {
@@ -633,8 +648,8 @@ export class User  extends StoredObject{
 			
 		}else sash = found[0];
 
-		for( let badges of sash.badges ) {
-			badges[badge.name] = true;
+		for( let badge of sash.badges ) {
+			badges[badge.tag] = true;
 		} 
 		return badges;
 	}
@@ -644,7 +659,7 @@ User.get = function( account ) {
 	if( !account ) {
 		return Promise.resolve(null);//throw new Error( "Account must be specified");
 	}
-	console.log( "l?", JSOX.stringify(l.account,null,"\t"), account );
+	//console.log( "l?", JSOX.stringify(l.account,null,"\t"), account );
 	return l.account.get( account );
 }
 
@@ -840,7 +855,7 @@ const UserDb = {
 			reg.p = new Promise( (res,rej)=>{
 				reg.res = res; reg.rej=rej;
 			} );
-			console.log( "Adding pending registration ", reg)
+			//console.log( "Adding pending registration ", reg)
 			l.registrations.push( reg );
 			return reg.p;
 		}
@@ -850,6 +865,7 @@ const UserDb = {
 		}
 		const oldService = await dmn.getService( service.service );
 		if( !oldService ) {
+			// this returns a service instance....
 			return dmn.addService( service.service );
 		}
 		return oldService;
@@ -887,6 +903,8 @@ const UserDb = {
 					}
 				}
 			}
+			console.log( "Failed to find service...", domain, service );
+			return undefined;
 		} 
 		return oldService;
 	}

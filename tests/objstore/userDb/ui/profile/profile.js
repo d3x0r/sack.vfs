@@ -23,11 +23,10 @@ export class Profile extends Popup {
 			//console.log( "login form event" );
 			//debugger;
 			login.hide();
-			const ws = l.ws = await connection.request( "d3x0r.org", "profile" );
+			const ws = l.ws = await connection.request( "d3x0r.org", "login" );
 			if( ws ) {
 				ws.onmessage = handleMessage;
 				ws.onclose = handleClose;
-				//this.show();
 				this.load();
 			}
 

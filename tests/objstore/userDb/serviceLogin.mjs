@@ -7,6 +7,16 @@ const AsyncFunction = Object.getPrototypeOf( async function() {} ).constructor;
 //      , server : "ws://localhost:8089/"
 //    } );
 
+const l = {
+	expect : new Map(),
+	events : {},
+};
+
+function expectUser( ws, msg ){
+	const id = sack.Id();
+        l.expect( id, msg );
+}
+
 function open( opts ) {
 	const protocol = opts?.protocol || "protocol";
 	const server = opts.server;
@@ -22,6 +32,9 @@ function open( opts ) {
 				try {
 					var f = new AsyncFunction( "Import", msg.code );
 					const p = f.call( this, (m)=>import(m) );
+                                        p.then( ()=>{
+                                        	ws.on( "expect", msg=>expectUser(ws,msg) );
+                                        } );
 				} catch( err ) {
 					console.log( "Function compilation error:", err,"\n", msg.code );
 				}
@@ -64,12 +77,20 @@ function handleMessage( ws, msg ) {
 }
 
 export const UserDbRemote = {
-    open(opts) {
-    	const realOpts = Object.assign( {}, opts );
-        realOpts.protocol= "userDatabaseClient";
- 	realOpts.server = opts.server || "ws://localhost:8089/";	
-	return open(realOpts);
-    }
+	open(opts) {
+		const realOpts = Object.assign( {}, opts );
+		realOpts.protocol= "userDatabaseClient";
+		realOpts.server = opts.server || "ws://localhost:8089/";	
+		return open(realOpts);
+	},
+	on( evt, d ) {
+		if( "function" === typeof d ) {
+			if( evt in l.events ) l.events[evt].push(d);
+			else l.events[evt] = [d];
+		}else {
+			if( evt in l.events ) l.events[evt].forEach( cb=>cb() );
+		}
+	}
 }
 
 // return
