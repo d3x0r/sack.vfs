@@ -1972,6 +1972,9 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 				writeHead( args );
 
 			vtprintf( obj->pvtResult, "\r\n" );
+		} else {
+			lprintf( "Unhandled argument type passed to http response.end(); just ending head" );
+			vtprintf( obj->pvtResult, "\r\n" );
 		}
 	}
 	else
