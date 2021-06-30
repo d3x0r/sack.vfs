@@ -13,6 +13,7 @@ public:
 	Persistent<Object> _this;
 	Persistent<Function, CopyablePersistentTraits<Function>> endCallback; //
 	Persistent<Function, CopyablePersistentTraits<Function>> inputCallback; //
+	Persistent<Function, CopyablePersistentTraits<Function>> inputCallback2; //
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	bool binary;
 	bool ending;
@@ -21,6 +22,7 @@ public:
 	bool killAtExit;
 
 	PLINKQUEUE output;
+	PLINKQUEUE output2;
 
 	TaskObject( );
 	~TaskObject();

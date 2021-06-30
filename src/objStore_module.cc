@@ -1,6 +1,12 @@
 #include "global.h"
 using namespace sack::SACK_VFS::objStore;
 
+//#define LOG_DISK_TIME
+
+// these use 'printf()' now, because lprintf has safety buffers limited at 4096
+//#define DEBUG_LOG_PARSING
+//#define DEBUG_LOG_OUTPUT
+
 class ObjectStorageObject : public node::ObjectWrap {
 public:
 	uv_async_t async;
@@ -246,7 +252,7 @@ static LOGICAL PostObjectStorage( Isolate *isolate, String::Utf8Value *name, Obj
 		}
 		if( !station ) {
 			return FALSE;
-			//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Failed to find target accepting thread", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			//isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Failed to find target accepting thread" ) ) );
 		}
 	}
 	return TRUE;
@@ -255,7 +261,7 @@ static LOGICAL PostObjectStorage( Isolate *isolate, String::Utf8Value *name, Obj
 static void postObjectStorage( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() < 2 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameter missing: (unique,socket)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Required parameter missing: (unique,socket)" ) ) );
 		return;
 	}
 	ObjectStorageObject* obj = ObjectStorageObject::Unwrap<ObjectStorageObject>( args[1].As<Object>() );
@@ -268,7 +274,7 @@ static void postObjectStorage( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	}
 	else {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Second paramter is not an accepted socket", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Second paramter is not an accepted socket" ) ) );
 	}
 }
 
@@ -277,7 +283,7 @@ static void postObjectStorage( const v8::FunctionCallbackInfo<Value>& args ) {
 static void postObjectStorageObject( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() < 1 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameter missing: (unique)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Required parameter missing: (unique)" ) ) );
 		return;
 	}
 
@@ -290,7 +296,7 @@ static void postObjectStorageObject( const v8::FunctionCallbackInfo<Value>& args
 			args.GetReturnValue().Set( False(isolate) );
 	}
 	else {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Object is not an accepted socket", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Object is not an accepted socket" ) ) );
 	}
 }
 
@@ -389,7 +395,7 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 
 	Local<FunctionTemplate> clsTemplate;
 	clsTemplate = FunctionTemplate::New( isolate, New );
-	clsTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.ObjectStorage", v8::NewStringType::kNormal ).ToLocalChecked() );
+	clsTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.ObjectStorage" ) );
 	clsTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "read", ObjectStorageObject::fileReadJSOX );
@@ -513,9 +519,18 @@ static uintptr_t CPROC DoPutObject( PTHREAD thread ) {
 						, osoOpts.result, sizeof( osoOpts.result ) );
 			}
 			else {
-				sack_vfs_os_ioctl_store_rw_object( osoOpts.vol->fsMount
-					, osoOpts.data, osoOpts.dataLen
-					, osoOpts.result, sizeof( osoOpts.result ) );
+				if( osoOpts.readKey ) {
+					lprintf( "Readkey is set on write?" );
+
+					sack_vfs_os_ioctl_store_crypt_owned_object( osoOpts.vol->fsMount
+						, osoOpts.data, osoOpts.dataLen
+						, NULL, 0 
+						, osoOpts.readKey, osoOpts.readKeyLen
+						, osoOpts.result, sizeof( osoOpts.result ) );
+				} else
+					sack_vfs_os_ioctl_store_rw_object( osoOpts.vol->fsMount
+						, osoOpts.data, osoOpts.dataLen
+						, osoOpts.result, sizeof( osoOpts.result ) );
 			}
 		}
 	}
@@ -706,15 +721,17 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 					filename = NULL;
 			}
 			else {
-				defaultFilename = FALSE;
-				{
-					char* sep;
-					if( sep = strchr( mount_name, '@' ) ) {
-						lprintf( "find mount name to get volume..." );
-					}
+				char* sep;
+				if( sep = strchr( mount_name, '@' ) ) {
+					lprintf( "find mount name to get volume..." );
+					sep[0] = 0;
+					filename = sep + 1;
 				}
-				filename = mount_name;
-				mount_name = SRG_ID_Generator();
+				else {
+					defaultFilename = FALSE;
+					filename = mount_name;
+					mount_name = SRG_ID_Generator();
+				}
 			}
 			//if( args[argc
 			if( args[arg]->IsNumber() ) {
@@ -735,7 +752,12 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				arg++;
 			}
 			// Invoked as constructor: `new MyObject(...)`
-			ObjectStorageObject* obj = new ObjectStorageObject( mount_name, filename, version, key, key2, vol?vol->fsMount:NULL );
+			ObjectStorageObject* obj = new ObjectStorageObject( mount_name, filename, version, key, key2
+					, vol
+							?vol->fsMount
+							:mount_name
+								? sack_get_mounted_filesystem(mount_name)
+								:NULL );
 			if( !obj->vol ) {
 				isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText( "ObjectStorage failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -747,6 +769,7 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			//Deallocate( char*, mount_name );
 			if( !defaultFilename )
 				Deallocate( char*, filename );
+			else if( mount_name ) Deallocate( char*, mount_name );
 			Deallocate( char*, key );
 			Deallocate( char*, key2 );
 		}
@@ -800,6 +823,12 @@ void ObjectStorageObject::createIndex( const v8::FunctionCallbackInfo<Value>& ar
 	}
 }
 
+#ifdef LOG_DISK_TIME
+static uint64_t writeTotal = 0;
+static uint64_t otherTotal = 0;
+static uint64_t lastTick;
+#endif
+
 void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() < 2 ) {
@@ -810,7 +839,15 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 	Local<Function> cb;
 	ObjectStorageObject *vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
 	String::Utf8Value fName( isolate,  args[0] );
-	//lprintf( "OPEN FILE:%s", *fName );
+#ifdef LOG_DISK_TIME
+	{
+		uint64_t sTick = GetTickCount64();
+		if( lastTick )
+			otherTotal += (sTick - lastTick);
+		lastTick = sTick;
+	}
+	//lprintf( "OPEN FILE:%s %lld %lld", *fName, writeTotal, otherTotal );
+#endif
 	int arg = 2;
 	while( arg < args.Length() ) {
 		if( args[arg]->IsFunction() ) {
@@ -827,9 +864,11 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 
 		if( file ) {
 			String::Utf8Value data( isolate,  args[1] );
-			//char *tmp;
-			//lprintf( "Write %d to %s\nWrite Data %s", data.length(), ( *fName ), tmp = jsox_escape_string_length( *data, data.length(), NULL ) );
-			//Release( tmp );
+#ifdef DEBUG_LOG_OUTPUT
+			char* tmp;
+			printf( "Write %d to %s\nWrite Data %s\n", data.length(), ( *fName ), tmp = jsox_escape_string_length( *data, data.length(), NULL ) );
+			Release( tmp );
+#endif
 			objStore::sack_vfs_os_truncate( file ); // allow new content to allocate in large blocks?
 			objStore::sack_vfs_os_write( file, *data, data.length() );
 			objStore::sack_vfs_os_close( file );
@@ -840,9 +879,16 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 			}
 
 		}
-        } else {
-            lprintf( "Write to native volume not supported?" );
-        }
+	} else {
+		lprintf( "Write to native volume not supported?" );
+	}
+#ifdef LOG_DISK_TIME
+	{
+		uint64_t thisTick = GetTickCount64();
+		writeTotal += (thisTick - lastTick);
+		lastTick = thisTick;
+	}
+#endif
 }
 
 
@@ -996,6 +1042,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			size_t read = 0;
 			size_t newRead;
 			size_t timeCount;
+			LOGICAL resulted = FALSE;
 			uint64_t *timeArray;
 
 			objStore::sack_vfs_os_get_times( file, &timeArray, &timeCount );
@@ -1019,8 +1066,11 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					snprintf( buf, 64, "new Date('%04d-%02d-%02dT%02d:%02d:%02d.%03d%c%02d:%02d')", st.yr, st.mo, st.dy, st.hr, st.mn, st.sc, st.ms, negTz?'-':'+', tz, st.zmn );
 					script = Script::Compile( isolate->GetCurrentContext()
 						, String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
-						, new ScriptOrigin( String::NewFromUtf8( isolate, "DateFormatter"
-							, NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
+#if ( NODE_MAJOR_VERSION >= 16 )
+						, new ScriptOrigin( isolate, String::NewFromUtf8Literal( isolate, "DateFormatter" ) ) ).ToLocalChecked();
+#else						
+						, new ScriptOrigin( String::NewFromUtf8Literal( isolate, "DateFormatter" ) ) ).ToLocalChecked();
+#endif						
 					arr->Set( isolate->GetCurrentContext(), n, script->Run( isolate->GetCurrentContext() ).ToLocalChecked() );
 				}
 
@@ -1029,7 +1079,9 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			while( (read < len) && (newRead = objStore::sack_vfs_os_read( file, buf, 4096 )) ) {
 				read += newRead;
 				int result;
-				//lprintf( "Parse file: %.*s", newRead, buf );
+#ifdef DEBUG_LOG_PARSING
+				printf( "B Parse file: %d %.*s\n", newRead, newRead, buf );
+#endif
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
 					result = jsox_parse_add_data( parser, NULL, 0 ) ) {
@@ -1042,8 +1094,11 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					r.isolate = isolate;
 					r.context = isolate->GetCurrentContext();
 					r.parser = parserObject;
+					r.failed = FALSE;
+					r.reviveStack = NULL;
 					r_ = parserObject->currentReviver;
 					parserObject->currentReviver = &r;
+					resulted = TRUE;
 					Local<Value> val = convertMessageToJS2( data, &r );
 					{
 						Local<Value> argv[2] = { val, arr };
@@ -1065,9 +1120,13 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 					if( error )
 						isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 					else
-						isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "No Error Text" STRSYM(__LINE__), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+						isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "No Error Text" STRSYM(__LINE__) ) ) );
 					LineRelease( error );
 				}
+			}
+			if( !resulted ) {
+				//lprintf( "Disk data is short." );
+				isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Disk Data is an incomplete object." ) ) );
 			}
 			Deallocate( char *, buf );
 			objStore::sack_vfs_os_close( file );
@@ -1086,7 +1145,9 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			while( (read < len) && (newRead = sack_fread( buf, 4096, 1, file )) ) {
 				read += newRead;
 				int result;
-				//lprintf( "Parse file: %.*s", newRead, buf );
+#ifdef DEBUG_LOG_PARSING
+				printf( "A Parse file: %d %.*s\n", newRead, newRead, buf );
+#endif
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
 					result = jsox_parse_add_data( parser, NULL, 0 ) ) {
@@ -1097,6 +1158,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 						r.revive = FALSE;
 						r.isolate = isolate;
 						r.context = isolate->GetCurrentContext();
+						r.failed = FALSE;
 						r_ = parserObject->currentReviver;
 						parserObject->currentReviver = &r;
 						Local<Value> val = convertMessageToJS2( data, &r );

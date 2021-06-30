@@ -128,6 +128,7 @@ struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate ) {
 }
 
 static void moduleExit( void *arg ) {
+	//DebugDumpMem();
 	//SaveTranslationDataEx( "^/strings.dat" );
 	vfs_global_data.shutdown = 1;
 
@@ -188,7 +189,9 @@ static void idShortGenerator(const v8::FunctionCallbackInfo<Value>& args ){
 static void loadComplete( const v8::FunctionCallbackInfo<Value>& args ) {
 #  if !defined( NODE_WANT_INTERNALS )
 	// static amalgamates omit message server stuff
-	LoadComplete();
+#ifndef __NO_MSGSVR__
+	//LoadComplete();
+#endif
 #endif
 }
 
@@ -262,7 +265,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 
 		//SetAllocateLogging( TRUE );
 		//SetManualAllocateCheck( TRUE );
-		//SetAllocateDebug( TRUE );
+		//SetAllocateDebug( FALSE );
 		//lprintf( "Do Init in modules (shouldn't do some of this)");
 		SetSystemLog( SYSLOG_FILE, stdout );
 
@@ -294,7 +297,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	ThreadObject::Init( exports );
 	FileObject::Init();
 	SqlObjectInit( exports );
-	ComObject::Init( exports );
+	ComObjectInit( exports );
 	InitJSOX( isolate, exports );
 	InitJSON( isolate, exports );
 	InitSRG( isolate, exports );
@@ -322,7 +325,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 
 	// Prepare constructor template
 	volumeTemplate = FunctionTemplate::New( isolate, New );
-	volumeTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Volume", v8::NewStringType::kNormal ).ToLocalChecked() );
+	volumeTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.Volume" ) );
 	volumeTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 
@@ -351,7 +354,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 
 	Local<Function> VolFunc = volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
-	(exports)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "memDump", v8::NewStringType::kNormal ).ToLocalChecked()
+	(exports)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8Literal(isolate, "memDump" )
 		, v8::Function::New( isolate->GetCurrentContext(), dumpMem ) .ToLocalChecked(), ReadOnlyProperty );
 	SET_READONLY_METHOD( exports, "log", logString );
 	SET_READONLY_METHOD( exports, "memDump", dumpMem );
@@ -847,7 +850,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		holder->ab.ClearWeak();
 		holder->ab.Reset();
 	}
-	Deallocate( void*, holder->buffer );
+	Deallocate( const void*, holder->buffer );
 	DropHolder( holder );
 }
 
@@ -1232,11 +1235,14 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		for( found = vol->fsInt->find_first( fi ); found; found = vol->fsInt->find_next( fi ) ) {
 			char *name = vol->fsInt->find_get_name( fi );
 			size_t length = vol->fsInt->find_get_size( fi );
+			bool isDir = vol->fsInt->find_is_directory( fi );
 			Local<Object> entry = Object::New( isolate );
 			SET( entry, "name", String::NewFromUtf8( isolate, name, v8::NewStringType::kNormal ).ToLocalChecked() );
-			if( length == ((size_t)-1) )
+			if( isDir ) {
+				// some file systems, directories might have length of file content
 				SET( entry, "folder", True(isolate) );
-			else {
+				SET( entry, "length", Number::New( isolate, (double)length ) );
+			} else {
 				SET( entry, "folder", False( isolate ) );
 				SET( entry, "length", Number::New( isolate, (double)length ) );
 			}
@@ -1369,7 +1375,7 @@ static LOGICAL PostVolume( Isolate *isolate, String::Utf8Value *name, VolumeObje
 		}
 		if( !station ) {
 			return FALSE;
-			//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Failed to find target accepting thread", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			//isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Failed to find target accepting thread" ) ) );
 		}
 	}
 	return TRUE;
@@ -1378,7 +1384,7 @@ static LOGICAL PostVolume( Isolate *isolate, String::Utf8Value *name, VolumeObje
 static void postVolume( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() < 2 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameter missing: (unique,socket)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Required parameter missing: (unique,socket)" ) ) );
 		return;
 	}
 	VolumeObject* obj = VolumeObject::Unwrap<VolumeObject>( args[1].As<Object>() );
@@ -1391,7 +1397,7 @@ static void postVolume( const v8::FunctionCallbackInfo<Value>& args ) {
 		
 	}
 	else {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Second parameter is not an accepted socket", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Second parameter is not an accepted socket" ) ) );
 	}
 }
 
@@ -1400,7 +1406,7 @@ static void postVolume( const v8::FunctionCallbackInfo<Value>& args ) {
 static void postVolumeObject( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() < 1 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameter missing: (unique)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Required parameter missing: (unique)" ) ) );
 		return;
 	}
 	
@@ -1413,7 +1419,7 @@ static void postVolumeObject( const v8::FunctionCallbackInfo<Value>& args ) {
 			args.GetReturnValue().Set( False(isolate) );
 	}
 	else {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Object is not an accepted socket", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Object is not an accepted socket" ) ) );
 	}
 }
 
@@ -1500,7 +1506,7 @@ void FileObject::Emitter(const v8::FunctionCallbackInfo<Value>& args)
 	Isolate* isolate = Isolate::GetCurrent();
 	//HandleScope scope;
 	Local<Value> argv[2] = {
-		v8::String::NewFromUtf8( isolate, "ping", v8::NewStringType::kNormal ).ToLocalChecked(), // event name
+		v8::String::NewFromUtf8Literal( isolate, "ping" ), // event name
 		args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  // argument
 	};
 
@@ -1757,7 +1763,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		class constructorSet *c = getConstructors( isolate );
 		c->fileTpl.Reset( isolate, fileTemplate );
 
-		fileTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.File", v8::NewStringType::kNormal ).ToLocalChecked() );
+		fileTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.File" ) );
 		fileTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 		// Prototype
@@ -1784,7 +1790,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		//NODE_SET_PROTOTYPE_METHOD( fileTemplate, "isPaused", openFile );
 
 		c->fileConstructor.Reset( isolate, fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-		//exports->Set( String::NewFromUtf8( isolate, "File", v8::NewStringType::kNormal ).ToLocalChecked(),
+		//exports->Set( String::NewFromUtf8Literal( isolate, "File" ),
 		//	fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 

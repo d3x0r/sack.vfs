@@ -146,13 +146,13 @@ void SqlObjectInit( Local<Object> exports ) {
 	Local<FunctionTemplate> sqlTemplate;
 	// Prepare constructor template
 	sqlTemplate = FunctionTemplate::New( isolate, SqlObject::New );
-	sqlTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Sqlite", v8::NewStringType::kNormal ).ToLocalChecked() );
+	sqlTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.Sqlite" ) );
 	sqlTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 
 	Local<FunctionTemplate> sqlStmtTemplate;
 	// Prepare constructor template
 	sqlStmtTemplate = FunctionTemplate::New( isolate, SqlStmtObject::New );
-	sqlStmtTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Sqlite.statement", v8::NewStringType::kNormal ).ToLocalChecked() );
+	sqlStmtTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.Sqlite.statement" ) );
 	sqlStmtTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 	c->sqlStmtConstructor.Reset( isolate, sqlStmtTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
@@ -180,10 +180,10 @@ void SqlObjectInit( Local<Object> exports ) {
 	// get the node.
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "go", SqlObject::getOptionNode );
 
-	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "error", v8::NewStringType::kNormal ).ToLocalChecked()
+	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "error" )
 			, FunctionTemplate::New( isolate, SqlObject::error )
 			, Local<FunctionTemplate>() );
-	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "log", v8::NewStringType::kNormal ).ToLocalChecked()
+	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "log" )
 		, FunctionTemplate::New( isolate, SqlObject::getLogging )
 		, FunctionTemplate::New( isolate, SqlObject::setLogging ) );
 
@@ -721,7 +721,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 					if( usedTables > 1 && maxDepth > 1 )
 						for( int n = 1; n < usedTables; n++ ) {
 							tables[n].container = Object::New( isolate );
-							SET( record, tables[n].alias, tables[n].container );
+							SETVAR( record, tables[n].alias, tables[n].container );
 						}
 					else
 						for( int n = 0; n < usedTables; n++ )
@@ -736,7 +736,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 								if( !jsval->name )
 									lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
 								else
-									SET( record, jsval->name
+									SETVAR( record, jsval->name
 									           , fields[colMap[idx].col].array = Array::New( isolate )
 									           );
 							}
@@ -753,8 +753,12 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 								snprintf( buf, 64, "new Date('%s')", jsval->string );
 								script = Script::Compile( isolate->GetCurrentContext()
 									, String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
+#if ( NODE_MAJOR_VERSION >= 16 )
+									, new ScriptOrigin( isolate, String::NewFromUtf8( isolate, "DateFormatter"
+#else
 									, new ScriptOrigin( String::NewFromUtf8( isolate, "DateFormatter"
-										, NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
+#endif
+									, NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
 								val = script->Run( isolate->GetCurrentContext() ).ToLocalChecked();
 							}
 							break;
@@ -809,16 +813,16 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							if( !jsval->name )
 								lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
 							else
-								SET( container, jsval->name, val );
+								SETVAR( container, jsval->name, val );
 						}
 						else if( usedTables > 1 || ( fields[colMap[idx].col].used > 1 ) ) {
 							if( fields[colMap[idx].col].used > 1 ) {
 								if( !jsval->name )
 									lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
 								else
-									SET( colMap[idx].t->container, jsval->name, val );
+									SETVAR( colMap[idx].t->container, jsval->name, val );
 								if( colMap[idx].alias )
-									SET( fields[colMap[idx].col].array, colMap[idx].alias, val );
+									SETVAR( fields[colMap[idx].col].array, colMap[idx].alias, val );
 								SETN( fields[colMap[idx].col].array, colMap[idx].depth, val );
 							}
 						}
@@ -913,7 +917,7 @@ void OptionTreeObject::Init(  ) {
 	Local<FunctionTemplate> optionTemplate;
 	// Prepare constructor template
 	optionTemplate = FunctionTemplate::New( isolate, New );
-	optionTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.option.node", v8::NewStringType::kNormal ).ToLocalChecked() );
+	optionTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.option.node" ) );
 	optionTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	// Prototype
@@ -922,7 +926,7 @@ void OptionTreeObject::Init(  ) {
 	NODE_SET_PROTOTYPE_METHOD( optionTemplate, "go", getOptionNode );
 	Local<Template> proto = optionTemplate->InstanceTemplate();
 
-	proto->SetNativeDataProperty( String::NewFromUtf8( isolate, "value", v8::NewStringType::kNormal ).ToLocalChecked()
+	proto->SetNativeDataProperty( String::NewFromUtf8Literal( isolate, "value" )
 			, readOptionNode
 			, writeOptionNode );
 

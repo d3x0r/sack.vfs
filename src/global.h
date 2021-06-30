@@ -82,18 +82,25 @@ using namespace v8;
 
 #include "task_module.h"
 
-//fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekSet" ), Integer::New( isolate, SEEK_SET ), ReadOnlyProperty );
+//fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8Literal( isolate, "SeekSet" ), Integer::New( isolate, SEEK_SET ), ReadOnlyProperty );
 
-#define SET_READONLY( object, name, data ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name, v8::NewStringType::kNormal ).ToLocalChecked(), data, ReadOnlyProperty )
-#define SET_READONLY_METHOD( object, name, method ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name, v8::NewStringType::kNormal ).ToLocalChecked(), v8::Function::New(isolate->GetCurrentContext(), method ).ToLocalChecked(), ReadOnlyProperty )
+#define SET_READONLY( object, name, data ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8Literal(isolate, name, v8::NewStringType::kNormal ), data, ReadOnlyProperty )
+#define SET_READONLY_METHOD( object, name, method ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8Literal(isolate, name, v8::NewStringType::kNormal ), v8::Function::New(isolate->GetCurrentContext(), method ).ToLocalChecked(), ReadOnlyProperty )
 
-#define GET(o,key)  (o)->Get( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked() ).ToLocalChecked()
+#define GET(o,key)  (o)->Get( context, String::NewFromUtf8Literal( isolate, (key), v8::NewStringType::kNormal ) ).ToLocalChecked()
 #define GETV(o,key)  (o)->Get( context, key ).ToLocalChecked()
 #define GETN(o,key)  (o)->Get( context, Integer::New( isolate, (key) ) ).ToLocalChecked()
 #define SETV(o,key,val)  (void)(o)->Set( context, key, val )
-#define SET(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked(), val )
+#define SET(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8Literal( isolate, (key) ), val )
+#define SETVAR(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked(), val )
 #define SETT(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, GetText(key), v8::NewStringType::kNormal, (int)GetTextSize( key ) ).ToLocalChecked(), val )
 #define SETN(o,key,val)  (void)(o)->Set( context, Integer::New( isolate, key ), val )
+
+
+#if ( NODE_MAJOR_VERSION <= 13 )
+#define NewFromUtf8Literal(a,b,...)  NewFromUtf8(a,b, v8::NewStringType::kNormal ).ToLocalChecked()
+#endif
+
 
 
 void InitJSOX( Isolate *isolate, Local<Object> exports );
@@ -323,31 +330,7 @@ public:
 
 
 
-class ComObject : public node::ObjectWrap {
-public:
-	int handle;
-	char *name;
-	//static Persistent<Function> constructor;
-
-	Persistent<Function, CopyablePersistentTraits<Function>> *readCallback; //
-	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
-	PLINKQUEUE readQueue;
-
-public:
-
-	static void Init( Local<Object> exports );
-	ComObject( char *name );
-
-private:
-	Persistent<Object> jsObject;
-	static void New( const v8::FunctionCallbackInfo<Value>& args );
-
-	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
-	static void writeCom( const v8::FunctionCallbackInfo<Value>& args );
-	static void closeCom( const v8::FunctionCallbackInfo<Value>& args );
-	~ComObject();
-};
-
+extern void ComObjectInit( Local<Object> exports );
 
 class RegObject : public node::ObjectWrap {
 public:
@@ -411,6 +394,15 @@ public:
 	~TLSObject();
 };
 
+struct reviveStackMember {
+	LOGICAL isArray;
+	int index;
+	Local<Value> fieldName;
+	Local<Value> object;
+	char* name;
+	size_t nameLen;
+};
+
 struct reviver_data {
 	//Persistent<Function> dateCons;
 	Local<Function> fieldCb;
@@ -425,6 +417,12 @@ struct reviver_data {
 	Local<Function> reviver;
 	Local<Object> rootObject;
 	class JSOXObject *parser;
+	LOGICAL failed;
+	PLINKSTACK reviveStack;
+
+	~reviver_data() {
+		DeleteLinkStack( &this->reviveStack );
+	}
 };
 
 Local<Value> convertMessageToJS( PDATALIST msg_data, struct reviver_data *reviver );
@@ -452,6 +450,7 @@ public:
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void write( const v8::FunctionCallbackInfo<Value>& args );
+	static void parse( const v8::FunctionCallbackInfo<Value>& args );
 	static void reset( const v8::FunctionCallbackInfo<Value>& args );
 	static void getCurrentRef( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -463,7 +462,7 @@ public:
 
 
 struct arrayBufferHolder {
-	void *buffer;
+	const void *buffer;
 	Persistent<Object> o;
 	Persistent<String> s;
 	Persistent<ArrayBuffer> ab;
