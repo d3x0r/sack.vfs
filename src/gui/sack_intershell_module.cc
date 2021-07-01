@@ -603,8 +603,13 @@ void InterShellObject::NewApplication( const FunctionCallbackInfo<Value>& args )
 	class constructorSet* c = getConstructors( isolate );
 	if( args.IsConstructCall() ) {
 		if( !InterShell ) {
+#ifdef __LINUX__
+			LoadFunction( "libbag.psi.so", NULL );
+			LoadFunction( "libsack_widgets.so", NULL );
+#else
 			LoadFunction( "bag.psi.dll", NULL );
 			LoadFunction( "sack_widgets.dll", NULL );
+#endif
 			LoadFunction( "InterShell.core", NULL );
 		}
 		if( !isLocal.core ) {
