@@ -201,7 +201,7 @@ function processMessage( msg_ ) {
 		if( msg.success ) {
 			Alert(" Login Success" );
 			if( l.loginForm && l.loginForm.login )
-				l.loginForm.login();
+				l.loginForm.login(true);
 		} else if( msg.ban ) {
 			Alert( "Bannable Offense" );
 		} else if( msg.device ) {
@@ -211,6 +211,15 @@ function processMessage( msg_ ) {
 			l.ws.send( JSOX.stringify( {op:"device", deviceId:newId } ) );
 		} else
 			Alert( "Login Failed..." );		
+		
+	}
+	else if( msg.op === "guest" ) {
+		if( msg.success ) {
+			Alert(" Login Success" );
+			if( l.loginForm && l.loginForm.login )
+				l.loginForm.login(false);
+		} else
+			Alert( "Login Failed..." );
 		
 	}
 	else if( msg.op === "create" ) {
@@ -246,13 +255,14 @@ async function 	pickSash( ws, choices ){
 	ws.send( {op:"pickSash", ok:false, sash : "Choice not possible." } );
 }
 
-function openSocket( addr ) {
+function openSocket( addr, cb, protocol ) {
 
 	addr = addr || location.host
 
 	const  proto = location.protocol==="http:"?"ws:":"wss:";
-        workerInterface.connect( proto+"//"+addr+"/", "login", (statusmsg, msg)=>{
+        workerInterface.connect( proto+"//"+addr+"/", protocol|| "login", (statusmsg, msg)=>{
 		if( statusmsg === true ) {
+			cb(msg);
 			l.ws = msg;
 			//console.log( "is websocket?", msg );
 
@@ -261,7 +271,7 @@ function openSocket( addr ) {
 		}
 	}, processMessage );
 
-
+	
 /*		
 	var ws = new WebSocket(proto+"//"+addr+"/", "login");
 	
@@ -286,6 +296,6 @@ function openSocket( addr ) {
 }
 
 
-export {l as connection,openSocket};
+export {l as connection,Alert,openSocket};
 
 

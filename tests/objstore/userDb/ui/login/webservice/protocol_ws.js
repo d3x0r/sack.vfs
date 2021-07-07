@@ -61,7 +61,7 @@ function makeProtocol( client ) {
 					if( msg.op === "status" ) { 
 						// op.status
 						if( ws ){
-				                        send( {op:'a',id:ws.id,msg:msg} )
+				                        send( {op:'b',id:ws.id,msg:msg} )
 							//send( {op:'a',id:ws.id,msg:msg} );
                                                 }
 						return;

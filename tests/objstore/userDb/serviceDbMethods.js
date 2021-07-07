@@ -91,6 +91,7 @@ ws.processMessage = function( msg ) {
 		// otherwise need to register event handler
 		// on( "authorize", msg.user );		
 		//acceptUser( ws, msg );
+		console.log( "This seems to be inverted.." );
 	} else {
 		console.log( "Unhandled message from login server:", msg );
 	}

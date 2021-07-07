@@ -60,19 +60,11 @@ ws.request = function( domain, service ) {
 	pend.p = new Promise( (res,rej)=>{
 		pend.res = res; pend.rej=rej;
 	}).then( (msg)=>{
+		console.log(" Service should have addr...", msg );
 		const idx = l.pending.findIndex( p=>p === pend );
 		if( idx >= 0 ) l.pending.splice(idx,1 );
 		else console.log( "Failed to find pending request." );
-		if( msg.redirect ) {
-			var ws = new WebSocket( msg.redirect, msg.protocol );
-			ws.onopen = function() {
-				// Web Socket is connected. You can send data by send() method.
-				//ws.send("message to send"); 
-				ws.send( msg.key );
-			}
-			return ws;
-		}
-		throw new Error( ws.error );
+		return msg;
 	} )
 	l.pending.push( pend );
 	return pend.p;
@@ -100,7 +92,7 @@ ws.processMessage = function( ws, msg ) {
 	else if( msg.op === "create" ) {
 		if( msg.success ) {
 			;//Alert(" Login Success" );
-                        localStorage.setItem( "deviceId", msg.deviceId );
+         localStorage.setItem( "deviceId", msg.deviceId );
 		} else if( msg.ban )  {
 			//Alert( "Bannable Offense" );
 			localStorage.removeItem( "clientId" ); // reset this
@@ -119,13 +111,24 @@ ws.processMessage = function( ws, msg ) {
             	localStorage.setItem( msg.value, msg.key );
 		return true; // client doesn't care.
         }
+	else if( msg.op === "guest" ) {
+		if( msg.success ) {
+			;//Alert(" Login Success" );
+		} else
+			;//Alert( "Login Failed..." );		
+                
+        }
+        else if( msg.op === "set" ) {
+            	localStorage.setItem( msg.value, msg.key );
+					return true; // client doesn't care.
+        }
 	else if( msg.op === "pickSash" ) {
 		// this is actually a client event.
 	}
 	else if( msg.op === "request" ) {
 		for( let pend of l.pending ) {
 			if( pend.id === msg.id ) {
-				pend.res( msg );
+				pend.res( msg.svc );
 			}
 		}
 	}

@@ -1,5 +1,6 @@
 
 import {sack} from "sack.vfs";
+import {default as config} from "./config.jsox";
 
 const AsyncFunction = Object.getPrototypeOf( async function() {} ).constructor;
 
@@ -14,7 +15,8 @@ const l = {
 
 function expectUser( ws, msg ){
 	const id = sack.Id();
-        l.expect( id, msg );
+   l.expect.set( id, msg );
+	ws.send( JSOX.stringify( {op:"expect", rid:msg.id, id:id, addr:config.publicAddress } ) );
 }
 
 function open( opts ) {
@@ -32,9 +34,9 @@ function open( opts ) {
 				try {
 					var f = new AsyncFunction( "Import", msg.code );
 					const p = f.call( this, (m)=>import(m) );
-                                        p.then( ()=>{
-                                        	ws.on( "expect", msg=>expectUser(ws,msg) );
-                                        } );
+					p.then( ()=>{
+						this.on( "expect", msg=>expectUser(this,msg) );
+					} );
 				} catch( err ) {
 					console.log( "Function compilation error:", err,"\n", msg.code );
 				}
@@ -81,6 +83,9 @@ export const UserDbRemote = {
 		const realOpts = Object.assign( {}, opts );
 		realOpts.protocol= "userDatabaseClient";
 		realOpts.server = opts.server || "ws://localhost:8089/";	
+		realOpts.authorize = (a)=>{
+			console.log( "authorize argument:", a );
+		}
 		return open(realOpts);
 	},
 	on( evt, d ) {

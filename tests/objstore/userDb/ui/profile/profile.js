@@ -3,7 +3,8 @@
 
 import {Popup,popups} from "/node_modules/@d3x0r/popups/popups.mjs"
 import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
-import {connection,openSocket} from "../login/webSocketClient.js"
+
+import {connection,openSocket,Alert} from "../login/webSocketClient.js"
 
 const l = {
 	login : null, // login form
@@ -13,21 +14,35 @@ const l = {
 
 
 export class Profile extends Popup {
+	#sock = null
 	constructor( parent ) {
 		super( "User Profile Manager", parent );
 		this.hide();
-		openSocket();
+		// this will ahve to be re-opened...
+		openSocket(null,(sock)=>{
+			this.#sock = sock;
+			this.#sock.on( "disconnect", ()=>{
+				console.log( "disconnect for login socket... probably OK... but will need it next time. ");
+			} );
+		} ); // trigger client begin connection... 
 		
-		const login = l.login = popups.makeLoginForm( async ()=>{
-		
+		const login = l.login = popups.makeLoginForm( async (guest)=>{
+			console.log( "paraeter is guest?:", guest );
 			//console.log( "login form event" );
 			//debugger;
 			login.hide();
-			const ws = l.ws = await connection.request( "d3x0r.org", "login" );
-			if( ws ) {
-				ws.onmessage = handleMessage;
-				ws.onclose = handleClose;
-				this.load();
+			const info = await connection.request( "d3x0r.org", "login" );
+			
+			console.log( "service information:", info );
+			if( info ) {
+				openSocket( info.addr, (ws)=>{
+					ws.onmessage = handleMessage;
+					ws.onclose = handleClose;
+					this.load();					
+				}, "profile" );
+			} else {
+				Alert( "Profile service failed to be found" );
+				login.show();
 			}
 
 		} , { useForm:"/ui/login/loginForm.html"
@@ -39,16 +54,17 @@ export class Profile extends Popup {
 
 		function handleMessage( msg_ ) {
 			const msg = JSOX.parse( msg_ );
-
+			console.log( "Really this should be some sort of internal handler?" );
 		}
 		function handleClose( code, reason ) {
-			l.ws = null;
-			loginForm.show();
+			console.log( "profile service disconnected..." );
+			l.ws = null; // service connection... 
+			login.show();
 		}
 	}
 
 
-	load() {
+	load( something ) {
 		popups.fillFromURL( this, "./profileForm.html" );
 		this.show();
 		

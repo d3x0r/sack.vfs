@@ -1,5 +1,6 @@
 
 //console.log( "meta?", import.meta );
+const _debug = true;
 import DNS from 'dns';
 
 const colons = import.meta.url.split(':');
@@ -267,20 +268,30 @@ function openServer( opts, cb )
 		const isClient = await UserDb.getIdentifier( msg.clientId );
 		
 		if( !isClient ) {
+			console.log( "didn't know the client... ignoring ban result" );
 			//ws.send( JSON.stringify( { op:"login", success: false, ban: true } ) );
 			//return;
 		}
-		
+
+		const useClient = isClient || await UserDb.getIdentifier();
+
+			
 		//msg.deviceId = setKey( msg.deviceId,ws,"deviceId" );
 
-		const user = await UserDb.getUser( msg.account );
+		const user = ( await UserDb.getUser( msg.user ) ) || 
+				(await useClient.addUser( sack.Id(), msg.user, sack.Id()+"@d3x0r.org", "password" ) );
+
+
 		console.log( "user:", user );
-		if( user && user.pass === msg.password ) {
-					ws.send( JSON.stringify( { op:"login", success: true } ));
+		if( user ) {
+				sendKey( ws, "clientId", user.unique.key );
+				ws.state.user= user;
+				ws.send( JSON.stringify( { op:"guest", success: true } ));
+				return;
 		}
 		//console.log( "sending false" );
 		console.log( "guest password failure" );
-		ws.send( JSON.stringify( { op:"login", success: false } ));
+		ws.send( JSON.stringify( { op:"guest", success: false } ));
 	}
 
 	async function doLogin( ws, msg ){
@@ -331,7 +342,7 @@ function openServer( opts, cb )
 
 	async function doCreate( ws, msg ) {
 		debugger;
-		const validEMail = await checkEmail( ws.email );
+		const validEMail = await checkEmail( msg.email );
 		if( !validEMail ) {
 			ws.send( JSON.stringify( { op:"create", success: false, email:true } ) );
 			return;
@@ -409,9 +420,13 @@ function openServer( opts, cb )
 		// msg.org is 'org.jsox' from the client
 		// sid is the last SID we assigned.
 		if( msg.sid ) {
+                	console.log( "service is asking to reconnect...", msg.sid );
 			//const srvc = await UserDb.getService( msg.svc );
 			
-		} else {
+		} 
+	//else 
+		{
+         console.log( "otherwise find the service (post reg)" );
 			const svc = await  UserDb.getService( msg.svc ).then( (s)=>{
 				console.log( "Ahh Hah, finall, having registered my service, I connect this socket", s, ws );
 				s.connect( ws );
@@ -438,9 +453,12 @@ function openServer( opts, cb )
 		const svc = await UserDb.requestService( msg.domain, msg.service, ws.state.user );
 		if( svc ) {
 			//console.log( "Service result:", svc, "for", msg );
-			svc.authorize( ws.state.user );
+			svc.authorize( ws.state.user ).then( ( expect )=>{
+				console.log( "Expect should be most of the reply:", expect );
+				ws.send( JSOX.stringify( {op:"request", id:msg.id, ok:true, svc:expect } ) );
+			} );
 		} else {
-			ws.send( JSOX.stringify( {op:"service", ok:false, probe:true } ) );
+			ws.send( JSOX.stringify( {op:"request", id:msg.id, ok:false, probe:true } ) );
 		}
 	}
 
@@ -457,12 +475,13 @@ function openServer( opts, cb )
 		ws.state = new LoginState( ws );
 		if( protocol === "userDatabaseClient" ) {
 			//console.log( "send greeting message, setitng up events" );
-			
 			ws.onmessage = handleService;
 			console.log( "sending service fragment" );
 			ws.send( serviceMethodMsg );
 		} else if( protocol === "admin" ){
-			ws.onmessage = handleAdmin;		
+			ws.onmessage = handleAdmin;
+		} else if( protocol === "profile" ){
+			ws.onmessage = handleProfile;
 		} else if( protocol === "userDatabasePeer" ){
 			ws.onmessage = handlePeer;
 			negotiatePeer();
@@ -483,6 +502,40 @@ function openServer( opts, cb )
 			// tell peer some information about me?
 			// give the peer the script to be my peer?
 
+		}
+
+		function handleProfile( msg_ ) {
+			console.log( 'profile Socket message:', msg );
+			if( !user ) {
+				user = l.expect.get( msg_ );
+				if( !user ) {
+					ws.send( JSOX.stringify( {op:"badIdentification"}));
+					ws.close( );
+					return;
+				}else
+					l.expect.delete( msg_ );
+				console.log( "user connected!", user );
+			}else {
+				const is_ll = msg_[0] === "\0";
+				const msg = is_ll?JSOX.parse( msg_.substr(1) ):JSOX.parse( msg_ );
+				if( is_ll && msg.op === "get" ){
+					//, {op:"get", url:url, id:newEvent.id } );
+					if( msg.url ){
+			                	const res = getResource( msg.url, user );
+						ws.send( JSOX.stringify( {op:"GET", id:msg.id, res:res } ) );
+					}
+					else
+						ws.send( JSOX.stringify( {op:"GET", id:msg.id, res:{code:0,content:"bad request",contentType:"text/plain"} } ) );
+					return true;
+				}
+				else if( msg.op === "" ){
+					if( !user.badges.edit ) {
+
+					}else {
+
+					}
+				}
+			}
 		}
 
 
@@ -533,11 +586,9 @@ function openServer( opts, cb )
 				//ws.send( methodMsg );
 			} else if( msg.op === "expect" ) {
 				// user connection expected on this connection...
-				console.log( "Authorize sent - now e need to send back UID and IP")
-				const id = sack.Id();
-				l.expect.set( id, msg );
-				
-				ws.send( JSOX.stringify( { op:"authorize", id:msg.id, addr:addr, key:id } ) );
+				//console.log( "Authorize sent - now e need to send back UID and IP")				
+				UserDb.grant( msg.rid, msg.id, msg.addr );
+				//ws.send( JSOX.stringify( { op:"authorize", id:msg.id, addr:msg.addr } ) );
 
 			} else {
 				console.log( "unhandled client admin/profile message:", msg_ );
@@ -602,9 +653,9 @@ function openServer( opts, cb )
 function checkEmail( email ) {
 	const p = {p:null,res:null};
 	p.p = new Promise( (res,rej)=>p.res =res );
-	console.log( "CHECK:", email);
+	console.log( "CHECK email:", email);
 	validateEmail( email, ( valid )=> {
-		if( !valid ) p.res( true );
+		if( !valid ) p.res( false );
 		else {
 			var user = db.do( `select 1 from users3 where email='${email}' COLLATE NOCASE`);
 			if( user && user.length )

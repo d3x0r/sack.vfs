@@ -216,8 +216,8 @@ function handleMessage( event ) {
 				sock.cb( true, sock );
 				console.log( "onopen event?" );
 			} else if( imsg.op === "disconnect" ) {
-        		        l.sockets.delete( imsg.id );
-                                sock.on("disconnect");
+				l.sockets.delete( imsg.id );
+				sock.on("disconnect");
 			}
 		}
 	} else {

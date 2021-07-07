@@ -42,7 +42,7 @@ const l = {
 	actIn : null, // relates user ids that user belong to (inherit all rights of in)
 	actBy : null, // relates user ids that a user can be enacted by
 	storage : null,
-
+	authorizing : new Map(),
 	registrations : [], // these are for orgs that do not exist yet... waiting for someone to ask for it.
 };
 
@@ -214,6 +214,7 @@ export class Organization  extends StoredObject{
 		reg.p = new Promise( (res,rej)=>{
 			reg.res = res; reg.rej=rej;
 		} );
+		console.log( "Adding domain to Org private", reg );
 		this.#registrations.push( reg );
 		return reg.p;
 	}
@@ -253,7 +254,8 @@ Organization.new = async function ( name, forUser ) {
 	org.name = name;
 	org.createdBy = forUser;
 	org.orgId = sack.Id();
-	return org.store().then( (id)=>org );
+	const result = org.store().then( (id)=>org );
+	return result
 }
 
 
@@ -298,7 +300,7 @@ export class Domain  extends StoredObject{
 	}
 	async store() {
 		await super.store();
-		await l.orgs.set( this.name, this ); 
+		await l.domains.set( this.name, this ); 
 	}
 
 	// get a badge for this org.
@@ -454,7 +456,8 @@ export class Service  extends StoredObject{
 	}
 	async store() {
 		await super.store();
-		await l.orgs.set( this.name, this ); 
+		// already tracked in a domain.
+		//await l.services.set( this.name, this ); 
 		//for( n = 0; 
 	}
 	get domain() {
@@ -480,10 +483,14 @@ export class Service  extends StoredObject{
 			const permissions = await forUser.getSash( this.domain );
 			console.log( "permissions:", permissions );
 
-			const msg = { op:"expect", name:forUser.name, sash:permissions, UID: sack.id(forUser.userId+"@"+this.domain) };
+				const id = sack.Id();
+			
+			const msg = { op:"expect", id:id, name:forUser.name, sash:permissions, UID: sack.id(forUser.userId+"@"+this.domain) };
 			inst.send( msg );
-
-			//inst.
+			
+			return new Promise( (res,rej)=>{
+				l.authorizing.set( id, {res:res,rej:rej} );
+			} );
 		}
 	}
 
@@ -855,13 +862,14 @@ const UserDb = {
 			reg.p = new Promise( (res,rej)=>{
 				reg.res = res; reg.rej=rej;
 			} );
-			//console.log( "Adding pending registration ", reg)
+			console.log( "Adding pending registration ", reg)
 			l.registrations.push( reg );
 			return reg.p;
 		}
 		const dmn = await org.getDomain( service.domain );
 		if( !dmn ) {
-			return org.addDomain( service.service );;
+			console.log( "Add domain, should result with adding domain..." );
+			return org.addDomain( service.domain );;
 		}
 		const oldService = await dmn.getService( service.service );
 		if( !oldService ) {
@@ -907,7 +915,18 @@ const UserDb = {
 			return undefined;
 		} 
 		return oldService;
+	},
+
+	async grant( id, key, addr ) {
+			const auth = l.authorizing.get( id );
+		if( auth ) {
+			auth.res( {key:key,addr:addr} );
+		} else {
+			console.log( "Why is somoene granting authorization that wasn't requested?", id, key, addr );
+		}
 	}
+
+
 }
 
 Object.freeze( UserDb );
