@@ -4,6 +4,8 @@
 *~
 build
 build-*
+build.log
+err
 tests
 test
 xx
