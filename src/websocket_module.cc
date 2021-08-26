@@ -2006,7 +2006,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 
 			if (pHttpState) {
 				int result;
-				//lprintf( "ending http on %p", obj->pc );
+				//lprintf( "ending http on %p, checking for more data", obj->pc );
 				EndHttp(pHttpState);
 				while ((result = ProcessHttp(obj->pc, pHttpState)))
 				{
