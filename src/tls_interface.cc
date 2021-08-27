@@ -137,25 +137,25 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 	if( !check ) {
 		check = NewArray( struct optionStrings, 1 );
 		check->isolate = isolate;
-		check->keyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "key", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->certString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "cert", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->passString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "password", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->serialString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "serial", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->orgString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "org", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->unitString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "unit", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->locString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "locality", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->countryString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "country", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->stateString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "state", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->commonString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "name", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->pubkeyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "pubkey", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->issuerString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "issuer", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->expireString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "expire", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->requestString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "request", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->signerString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "signer", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->subjectString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "subject", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->DNSString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "DNS", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->IPString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "IP", v8::NewStringType::kNormal ).ToLocalChecked() );
-		//check->String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->keyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "key" ) );
+		check->certString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "cert" ) );
+		check->passString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "password" ) );
+		check->serialString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "serial" ) );
+		check->orgString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "org" ) );
+		check->unitString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "unit" ) );
+		check->locString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "locality" ) );
+		check->countryString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "country" ) );
+		check->stateString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "state" ) );
+		check->commonString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "name" ) );
+		check->pubkeyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "pubkey" ) );
+		check->issuerString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "issuer" ) );
+		check->expireString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "expire" ) );
+		check->requestString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "request" ) );
+		check->signerString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "signer" ) );
+		check->subjectString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "subject" ) );
+		check->DNSString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "DNS" ) );
+		check->IPString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "IP" ) );
+		//check->String = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "" ) );
 		AddLink( &strings, check );
 	}
 	return check;
@@ -170,7 +170,7 @@ OpenSSL_add_all_algorithms();
 ERR_load_crypto_strings();
 
 	tlsTemplate = FunctionTemplate::New( isolate, New );
-	tlsTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Volume", v8::NewStringType::kNormal ).ToLocalChecked() );
+	tlsTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.Volume" ) );
 	tlsTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	// Prototype
@@ -587,7 +587,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 	params.key = *_key;
 	params.keylen = _key.length();
 
-	Local<String> pubkeyString = strings->pubkeyString->Get( isolate );// String::NewFromUtf8( isolate, "pubkey", v8::NewStringType::kNormal ).ToLocalChecked();
+	Local<String> pubkeyString = strings->pubkeyString->Get( isolate );// String::NewFromUtf8Literal( isolate, "pubkey" );
 	String::Utf8Value *_pubkey = NULL;
 
 	if( opts->Has( context, pubkeyString ).ToChecked() ) {
@@ -600,7 +600,7 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.pubkey = NULL;
 
 
-	Local<String> serialString = strings->serialString->Get( isolate );// String::NewFromUtf8( isolate, "serial", v8::NewStringType::kNormal ).ToLocalChecked();
+	Local<String> serialString = strings->serialString->Get( isolate );// String::NewFromUtf8Literal( isolate, "serial" );
 	if( !opts->Has( context, serialString ).ToChecked() ) {
 		isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText("Missing required option 'serial'."), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -1281,7 +1281,7 @@ void TLSObject::signReq( const v8::FunctionCallbackInfo<Value>& args ) {
 		params.subjectlen = _subject[0].length();
 	}
 
-	Local<String> pubkeyString = strings->pubkeyString->Get( isolate );// String::NewFromUtf8( isolate, "pubkey", v8::NewStringType::kNormal ).ToLocalChecked();
+	Local<String> pubkeyString = strings->pubkeyString->Get( isolate );// String::NewFromUtf8Literal( isolate, "pubkey" );
 	String::Utf8Value *_pubkey = NULL;
 
 	if( opts->Has( context, pubkeyString ).ToChecked() ) {
@@ -1456,7 +1456,7 @@ static void DumpCert( X509 *x509 ) {
 	long serial;
 	serial = ASN1_INTEGER_get( val );
 
-	lprintf( "serial : %d", serial );
+	lprintf( "serial : %ld", serial );
 
 	lprintf( "Subject Identity -------------- " );
 	{
@@ -1531,7 +1531,7 @@ static void DumpCert( X509 *x509 ) {
 			ASN1_STRING *v = (ASN1_STRING *)X509V3_EXT_d2i( ext );
 			int nid = OBJ_obj2nid( o );
 			//V_ASN1_OCTET_STRING
-			lprintf( "extension: %d %d  %s  %s  %d", X509_EXTENSION_get_critical( ext )>0 ? "critical" : "",
+			lprintf( "extension: %s %d  %s  %s  %d", X509_EXTENSION_get_critical( ext )>0 ? "critical" : "",
 			//lprintf( "extension: %d %d  %s  %s  %d", ext->critical>0 ? "critical" : "",
 				nid, OBJ_nid2ln( nid ), OBJ_nid2sn( nid ), v->type );
 			if( nid == NID_authority_key_identifier ) {
@@ -1542,7 +1542,7 @@ static void DumpCert( X509 *x509 ) {
 				ASN1_INTEGER *ser = akid->serial;
 				LogBinary( key->data, key->length );
 				long val = ASN1_INTEGER_get( ser );
-				lprintf( "Serial is:%d", val );
+				lprintf( "Serial is:%ld", val );
 			}
 			else if( nid == NID_subject_key_identifier ) {
 				ASN1_OCTET_STRING *skid = (ASN1_OCTET_STRING *)v;
@@ -1551,7 +1551,7 @@ static void DumpCert( X509 *x509 ) {
 			else if( nid == NID_basic_constraints ) {
 				BASIC_CONSTRAINTS *bc = (BASIC_CONSTRAINTS *)v;
 				long pathlen = bc->pathlen ? ASN1_INTEGER_get( bc->pathlen ) : 0;
-				lprintf( "Basic Constraint: CA? %d   %s%d", bc->ca, bc->pathlen ? "pathlen:" : "ignore:", pathlen );
+				lprintf( "Basic Constraint: CA? %d   %s %ld", bc->ca, bc->pathlen ? "pathlen:" : "ignore:", pathlen );
 				//X509_get_ext_d2i( x, NID_subject_key_identifier, NULL, NULL );
 				//X509V3_get_d2i( x->cert_info->extensions, nid, crit, idx );
 				// 0x55,0x1D,0x13
@@ -1772,8 +1772,8 @@ void TLSObject::validate( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	Local<Object> opts = args[0]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked() ;
 
-	Local<String> certString = String::NewFromUtf8( isolate, "cert", v8::NewStringType::kNormal ).ToLocalChecked();
-	Local<String> chainString = String::NewFromUtf8( isolate, "chain", v8::NewStringType::kNormal ).ToLocalChecked();
+	Local<String> certString = String::NewFromUtf8Literal( isolate, "cert" );
+	Local<String> chainString = String::NewFromUtf8Literal( isolate, "chain" );
 
 	String::Utf8Value *_key;
 	if( !opts->Has( context, certString ).ToChecked() ) {

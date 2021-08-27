@@ -1,0 +1,11 @@
+// This file describes the organization and application
+// names are used to register services provided with login.
+
+{
+	org : "Freedom Collective",
+	domain : "d3x0r.org",
+	service : "login",
+	description : "User Login Service",
+}
+
+

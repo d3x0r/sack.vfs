@@ -1,0 +1,313 @@
+
+
+  JSON6.escape
+    √ Escapes
+    √ Handles empty string
+
+  Bad tests
+    √ space error "tr "
+    √ space error "[tr ]"
+got back: { a: 'tr' }
+    √ space error "{a:tr }"
+    √ Unquoted space in identifier
+    √ Missing colon array?
+    √ Missing colon object?
+    √ String unquoted?
+    √ Throws with colon in array
+    √ Throws with comma outside objects
+    √ Throws with curly bracket outside objects
+    √ comma after object field and : 
+    √ object close after object field and : 
+    √ bad hex escape : 
+    √ bad unicode escape : 
+    √ throws with quoted field name after no comma : 
+    √ throws with unquoted field name after no comma: 
+
+  Stream testing
+4 objects...
+got 4 objects?
+02:24:49.445|1428000060C8~sack.cc(68978):Unhandled value type preceeding object open: 5 ��������������ݷ�ɻ�G
+    √ Receives various values via `write`
+
+  JSON6 test object 2
+{
+  '@std/esm': true,
+  author: 'John-David Dalton <john.david.dalton@gmail.com>',
+  description: 'Enable ES modules in Node today!',
+  devDependencies: {
+    '@babel/core': '^7.0.0-beta.34',
+    '@babel/plugin-proposal-class-properties': '^7.0.0-beta.34',
+    '@babel/plugin-transform-block-scoping': '^7.0.0-beta.34',
+    '@babel/preset-env': '^7.0.0-beta.34',
+    '@babel/register': '^7.0.0-beta.34',
+    acorn: '^5.2.1',
+    ava: '^0.24.0',
+    'babel-eslint': '^8.0.3',
+    'babel-loader': '^8.0.0-beta.0',
+    'babel-plugin-transform-for-of-as-array': '^1.0.4',
+    download: '^6.2.5',
+    eslint: '^4.12.0',
+    'eslint-plugin-import': '^2.7.0',
+    'eslint-plugin-node': '^5.2.0',
+    execa: '^0.8.0',
+    'fs-extra': '^4.0.3',
+    globby: '^7.1.1',
+    husky: '^0.14.3',
+    jest: '^21.2.1',
+    'json-6': '^0.1.120',
+    minizlib: '^1.0.4',
+    mocha: '^4.0.1',
+    'mock-stdio': '^1.0.0',
+    nop: '^1.0.0',
+    nyc: '^11.3.0',
+    'optimize-js-plugin': '0.0.4',
+    'optional-dev-dependency': '^2.0.1',
+    pify: '^3.0.0',
+    pm2: '^2.8.0',
+    semver: '^5.4.1',
+    trash: '^4.2.1',
+    typescript: '^2.6.1',
+    'uglify-es': '^3.2.1',
+    'uglifyjs-webpack-plugin': '^1.1.1',
+    webpack: '^3.10.0',
+    'webpack-bundle-analyzer': '^2.8.3',
+    'webpack-common-shake': '^1.5.3',
+    yargs: '^10.0.3'
+  },
+  engines: { node: '>=4' },
+  files: [ 'index.js', 'esm.js.gz' ],
+  keywords: 'commonjs, ecmascript, export, import, modules, node, require',
+  license: 'MIT',
+  main: 'index.js',
+  name: '@std/esm',
+  optionalDevDependencies: { 'node-zopfli': '^2.0.2' },
+  private: true,
+  repository: 'standard-things/esm',
+  scripts: {
+    build: 'node script/build.js',
+    'build:prod': 'npm run build -- --prod',
+    clean: 'node script/clean.js',
+    lint: "eslint \\'**/*.{js,mjs}\\' --fix --quiet",
+    'prebuild:prod': 'optional-dev-dependency',
+    precommit: 'npm run lint',
+    prelint: 'npm run pretest',
+    prepub: 'npm run test:prod',
+    pretest: 'npm run build -- --test',
+    'pretest:prod': 'npm run build:prod -- --test',
+    pub: 'node script/publish.js',
+    test: 'node script/test.js',
+    'test:prod': 'node script/test.js --prod'
+  },
+  version: '0.18.0'
+}
+    √ Parses (`package.json`) object
+
+  Objects and arrays
+    √ Simple array with number
+    √ Simple nested array with number
+[ { a: '', b: '' }, { a: '', b: '' } ]
+    √ Array of objects
+[ true, false, NaN, NaN, -Infinity, Infinity, undefined ]
+    √ Array with various types
+{
+  a: true,
+  b: false,
+  c: NaN,
+  d: NaN,
+  e: -Infinity,
+  f: Infinity,
+  h: null
+}
+    √ Object with various types
+[ {} ]
+    √ Array with empty object
+[ { a: '', b: '' }, [ 1, 2 ], { a: '', b: '' } ]
+    √ Array of objects and array
+{
+  a: { a: '', b: '' },
+  b: [ { d: '', e: '' }, { f: '', g: '' } ],
+  c: { a: '', b: '' }
+}
+    √ Object with child objects and arrays
+
+  Basic parsing
+    Whitespace
+      √ accepts space before colon
+      √ accepts space before colon
+    Numbers
+      √ Simple decimal
+02:24:49.452|1428000060C8~jsoxparse.cc(942):WARNING: Extra data after JSOX message; Single message parse expects a closed, complete message.
+      √ Decimal with bad character
+      √ Decimal with separators
+      √ Leading plain zero octals treated as decimals
+      √ Ignores treating plain zero octals as decimals
+      √ Octal specified octals
+      √ Octal specified octals (capital)
+      √ Hexadecimal
+      √ Hexadecimal (capital)
+      √ Binary
+      √ Binary (capital)
+    Special numbers
+      √ NaN
+      √ -NaN
+      √ Infinity
+      √ -Infinity
+    Strings
+      √ String as number
+      √ String with non-BMP characters
+      √ String standard whitespace escape characters
+      √ String standard whitespace escape characters
+      √ String standard whitespace escape characters
+    Comments
+      √ Should throw with invalid comment
+      √ Should throw with incomplete comment (single slash)
+      √ Should throw with incomplete comment (closing asterisk)
+      √ Should not err (will warn) with comment begun at end
+02:24:49.457|1428000060C8~jsoxparse.cc(942):WARNING: Extra data after JSOX message; Single message parse expects a closed, complete message.
+      √ Should not err (will warn) with comment begun at end
+      √ Should throw with incomplete comment with 2 asterisks
+      √ Should throw with incomplete comment with 3 asterisks
+      √ Should handle comment
+    Other
+      √ null
+      √ null as `null`
+      √ true
+      √ false
+      √ undefined
+    Objects
+      √ Handles trailing commas
+      Keys
+        √ Double-quoted key
+        √ empty object
+        √ Back-tick quoted key
+        √ Carriage return within key
+        √ Newline within key
+        √ Should throw with extra single quotes within key
+      Key values
+        √ Decimal key value
+        √ ES6 template key value
+        √ Double-quoted key value
+        √ Single-quoted key value (with newline)
+        √ Single-quoted key value (with trailing backslash and newline)
+        √ Single-quoted key value with backslash, carriage return, and newline
+        √ Single-quoted key value with backslash and line separator
+        √ Single-quoted key value with backslash and paragraph separator
+        √ Unquoted keyword (true)
+        √ Unquoted keyword (null)
+        √ Handles trailing commas
+    Arrays
+      √ Simple array
+
+  Parsing with reviver
+    √ With simple reviver
+    √ Reviver which deletes
+
+  Basic parsing
+    Dates
+      √ converts to same date
+      √ converts from the same date
+      √ converts to and from the same date
+    BigInt
+      √ converts to same
+      √ converts from the same
+      √ converts to and from the same
+    array Buffer
+      √ converts to same
+      √ converts from the same
+      √ converts to and from the same
+    references
+      √ converts to same
+      √ converts from the same
+      √ converts to and from the same
+
+  Numbers
+    √ Decimal
+    √ Positive decimal
+    √ Negative decimal
+    √ Decimal with scientific notation
+    √ Decimal with bad scientific notation (throws)
+typeof( n ) = number 123
+typeof( result ) = number 123
+    √ Decimal with positive scientific notation
+typeof( n ) = number 0.000123
+typeof( result ) = number 0.000123
+    √ Decimal with negative scientific notation
+typeof( n ) = number 291
+typeof( result ) = number 291
+    √ Hexadecimal
+
+  Streaming
+    √ Streams various objects
+    √ Converts non-string to string and attempts to process
+    √ handles incomplete string key in chunks
+    √ Supports reviver
+
+  String escapes
+    Octal escapes
+      √ Does not parses string octal escape
+      √ Does not parse string octal escape followed by character
+    Unicode escape
+      √ Throws with bad Unicode escape
+    Unicode wide escapes
+      √ Parses Unicode wide escape (lower-case)
+      √ Parses Unicode wide escape (upper-case)
+      √ Throws with bad Unicode wide escape (upper-case)
+      √ Throws with incomplete Unicode wide escape (upper-case)
+    String hex escapes
+      √ Parses string hex
+      √ Throws with bad hex escape
+    Single escapes
+      √ \b
+      √ \f
+      √ Should throw with string closing without successor to backslash
+      √ should consume carriage return escape at end of string
+      √ should recover character after carriage return escape at end of string
+
+  Single JSON6
+02:24:49.475|1428000060C8~jsoxparse.cc(942):WARNING: Extra data after JSOX message; Single message parse expects a closed, complete message.
+    √ Single JSON6
+
+  Carriage return escape
+    √ drops
+
+  Unicode escape
+    √ escapes unicode whitespace
+    √ escapes unicode whitespace
+
+  Incomplete String Escape tests
+    √ Parses string octal escape followed by character
+
+  JSON streaming
+    √ Parses multiple and split strings
+
+  JSON decoding
+MNOP= MNOP
+    √ Unicode escapes
+
+  Object keys
+    Erring
+      √ Unencapsulated hyphenated key with space
+      √ Unencapsulated hyphenated key with spaces
+      √ Unencapsulated key with nested array
+      √ Unencapsulated key with opening array bracket
+      √ Unencapsulated key with closing array bracket
+      √ Unencapsulated key with opening array bracket and space
+      √ Unencapsulated key with closing array bracket and space
+      √ Key with quote not at beginning
+    Functional
+result: { 'my  -  key': 3 }
+      √ Parses encapsulated key
+result: { 'my  -  key': 3 }
+      √ Parses encapsulated key with carriage return
+result: { 'my-key\\m&m+*|': 3 }
+      √ Parses key with special characters but no spaces
+result: { 'my-key': 3 }
+      √ Parses key with special characters and comment
+result: { 'my-key': 3 }
+      √ Parses key with special characters and multi-line comment
+result: { A: 3 }
+      √ Parses key with ZWNBS (ignoring it)
+
+
+  143 passing (57ms)
+

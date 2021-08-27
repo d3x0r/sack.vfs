@@ -1,12 +1,20 @@
 {
   "name": "sack.vfs",
-  "version": "0.9.161",
+  "version": "1.1.1",
   "description": "Node.js VFS Addon",
   "repository": {
-      "type": "git",
-      "url": "https://github.com/d3x0r/sack.vfs"
+    "type": "git",
+    "url": "https://github.com/d3x0r/sack.vfs"
   },
-  "main": "vfs_module.js",
+  "main": "vfs_module.cjs",
+  "module": "vfs_module.mjs",
+  "type": "commonjs",
+  "exports": {
+    "index": "./vfs_module.mjs",
+    "sack": "./vfs_module.mjs",
+    "import": "./vfs_module.mjs",
+    "require": "./vfs_module.cjs"
+  },
   "private": false,
   "preferGlobal": false,
   "license": "LGPL",
@@ -33,10 +41,54 @@
     "database",
     "sack"
   ],
-  "_dependencies": ["cmake-js"],
+  "_dependencies": [],
+  "devDependencies": {
+    "cmake-js": "latest",
+    "@d3x0r/bloomnhash": "git://github.com/d3x0r/bloomnhash-js",
+    "@d3x0r/object-storage": "git://github.com/d3x0r/Objectstorage",
+    "@d3x0r/popups": "git://github.com/d3x0r/popups",
+    "@d3x0r/slab-array": "git://github.com/d3x0r/SlabArray",
+    "@d3x0r/srg": "git://github.com/d3x0r/srg",
+    "@babel/preset-env": "latest",
+    "@rollup/plugin-babel": "latest",
+    "@rollup/plugin-commonjs": "latest",
+    "@rollup/plugin-node-resolve": "^13.0.0",
+    "@rollup/plugin-strip": "latest",
+    "JSOX": "git://github.com/d3x0r/jsox",
+    "acorn": "latest",
+    "chai": "latest",
+    "core-js": "latest",
+    "eslint": "latest",
+    "husky": "latest",
+    "lint-staged": "latest",
+    "mocha": "latest",
+    "nyc": "latest",
+    "rollup": "latest",
+    "rollup-plugin-terser": "latest"
+  },
+  "nyc": {
+    "statements": 100,
+    "branches": 100,
+    "functions": 100,
+    "lines": 100,
+    "ignore-class-method": [
+      "log"
+    ],
+    "reporter": [
+      "lcov",
+      "text"
+    ]
+  },
   "scripts": {
+    "mocha-lite": "mocha --experimental-loader=./import.mjs --require test/bootstrap/node test/json6 test/jsox",
+    "mocha": "mocha --experimental-loader=./import.mjs --require test/bootstrap/node --recursive",
     "test": "node tests/vfsTest.js",
     "install": "node-gyp configure build",
+    "login-server": "cd tests/objstore/userDb && node userDbServer.mjs",
+    "forum-server": "node tests/objstore/forum/forumServer.mjs",
+    "storage-server": "node tests/objstore/storageServer/forumServer.mjs",
+    "storage-proxy": "node tests/objstore/storageProxy/forumServer.mjs",
+    "POS-server": "node tests/objstore/POS/POS-Server.mjs",
     "build-gui": "npm run build-gui-config && npm run build-gui-run1 && npm run build-gui-config && npm run build-gui-run2",
     "build-gui-config": "cmake-js --CDMAKE_GUI=1 --CDCMAKE_BUILD_TYPE=Release configure",
     "build-gui-run1": "cmake-js build",
@@ -45,19 +97,15 @@
     "build-gui-debug-config": "cmake-js --CDMAKE_GUI=1 --CDCMAKE_BUILD_TYPE=Debug -D configure",
     "build-gui-debug-run1": "cmake-js build -D",
     "build-gui-debug-run2": "cmake-js build -D",
-
     "build-vfs": "npm run build-vfs-config && npm run build-vfs-run1",
     "build-vfs-config": "cmake-js --CDMAKE_GUI=0 --CDCMAKE_BUILD_TYPE=Release configure",
     "build-vfs-run1": "cmake-js build",
-
     "build-vfs-debug": "npm run build-vfs-debug-config && npm run build-vfs-debug-run1",
     "build-vfs-debug-config": "cmake-js --CDMAKE_GUI=0 --CDCMAKE_BUILD_TYPE=Debug -D configure",
     "build-vfs-debug-run1": "cmake-js build -D",
-
     "build-vfs-reldeb": "npm run build-vfs-reldeb-config && npm run build-vfs-reldeb-run1",
     "build-vfs-reldeb-config": "cmake-js --CDMAKE_GUI=0 --CDCMAKE_BUILD_TYPE=RelWithDebInfo configure",
     "build-vfs-reldeb-run1": "cmake-js build --CDCMAKE_BUILD_TYPE=RelWithDebInfo",
-
     "build": "node-gyp configure build"
   }
 }

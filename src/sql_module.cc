@@ -146,13 +146,13 @@ void SqlObjectInit( Local<Object> exports ) {
 	Local<FunctionTemplate> sqlTemplate;
 	// Prepare constructor template
 	sqlTemplate = FunctionTemplate::New( isolate, SqlObject::New );
-	sqlTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Sqlite", v8::NewStringType::kNormal ).ToLocalChecked() );
+	sqlTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.Sqlite" ) );
 	sqlTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 
 	Local<FunctionTemplate> sqlStmtTemplate;
 	// Prepare constructor template
 	sqlStmtTemplate = FunctionTemplate::New( isolate, SqlStmtObject::New );
-	sqlStmtTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Sqlite.statement", v8::NewStringType::kNormal ).ToLocalChecked() );
+	sqlStmtTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.Sqlite.statement" ) );
 	sqlStmtTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 	c->sqlStmtConstructor.Reset( isolate, sqlStmtTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
@@ -180,10 +180,10 @@ void SqlObjectInit( Local<Object> exports ) {
 	// get the node.
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "go", SqlObject::getOptionNode );
 
-	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "error", v8::NewStringType::kNormal ).ToLocalChecked()
+	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "error" )
 			, FunctionTemplate::New( isolate, SqlObject::error )
 			, Local<FunctionTemplate>() );
-	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "log", v8::NewStringType::kNormal ).ToLocalChecked()
+	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "log" )
 		, FunctionTemplate::New( isolate, SqlObject::getLogging )
 		, FunctionTemplate::New( isolate, SqlObject::setLogging ) );
 
@@ -451,7 +451,11 @@ static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> a
 	}
 	else if( arg->IsArrayBuffer() ) {
 		Local<ArrayBuffer> myarr = arg.As<ArrayBuffer>();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		val.string = (char*)myarr->GetBackingStore()->Data();
+#else
 		val.string = (char*)myarr->GetContents().Data();
+#endif
 		val.stringLen = myarr->ByteLength();
 		val.value_type = JSOX_VALUE_TYPED_ARRAY;
 		AddDataItem( pdlParams, &val );
@@ -459,7 +463,11 @@ static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> a
 	else if( arg->IsUint8Array() ) {
 		Local<Uint8Array> _myarr = arg.As<Uint8Array>();
 		Local<ArrayBuffer> buffer = _myarr->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		val.string = (char*)buffer->GetBackingStore()->Data();
+#else
 		val.string = (char*)buffer->GetContents().Data();
+#endif
 		val.stringLen = buffer->ByteLength();
 		val.value_type = JSOX_VALUE_TYPED_ARRAY;
 		AddDataItem( pdlParams, &val );
@@ -467,7 +475,11 @@ static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> a
 	else if( arg->IsTypedArray() ) {
 		Local<TypedArray> _myarr = arg.As<TypedArray>();
 		Local<ArrayBuffer> buffer = _myarr->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		val.string = (char*)buffer->GetBackingStore()->Data();
+#else
 		val.string = (char*)buffer->GetContents().Data();
+#endif
 		val.stringLen = buffer->ByteLength();
 		val.value_type = JSOX_VALUE_TYPED_ARRAY;
 		AddDataItem( pdlParams, &val );
@@ -493,7 +505,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
-	PTEXT statement;
+	PTEXT statement= NULL;
 	PDATALIST pdlParams = NULL;
 
 	if( args.Length() == 1 ) {
@@ -630,8 +642,6 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 			tables[usedTables].alias = NULL;
 			usedTables++;
 
-
-
 			DATA_FORALL( pdlRecord, idx, struct jsox_value_container *, jsval ) {
 				int m;
 				if( jsval->value_type == JSOX_VALUE_UNDEFINED ) break;
@@ -665,7 +675,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 					colMap[idx].depth = 0;
 					colMap[idx].table = PSSQL_GetColumnTableName( sql->odbc, (int)idx );
 					colMap[idx].alias = PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx );
-					if( colMap[idx].table && colMap[idx].alias ) {
+					if( colMap[idx].table && colMap[idx].alias && colMap[idx].table[0] && colMap[idx].alias[0] ) {
 						int table;
 						for( table = 0; table < usedTables; table++ ) {
 							if( StrCmp( tables[table].alias, colMap[idx].alias ) == 0 ) {
@@ -711,7 +721,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 					if( usedTables > 1 && maxDepth > 1 )
 						for( int n = 1; n < usedTables; n++ ) {
 							tables[n].container = Object::New( isolate );
-							SET( record, tables[n].alias, tables[n].container );
+							SETVAR( record, tables[n].alias, tables[n].container );
 						}
 					else
 						for( int n = 0; n < usedTables; n++ )
@@ -726,7 +736,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 								if( !jsval->name )
 									lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
 								else
-									SET( record, jsval->name
+									SETVAR( record, jsval->name
 									           , fields[colMap[idx].col].array = Array::New( isolate )
 									           );
 							}
@@ -743,8 +753,12 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 								snprintf( buf, 64, "new Date('%s')", jsval->string );
 								script = Script::Compile( isolate->GetCurrentContext()
 									, String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
+#if ( NODE_MAJOR_VERSION >= 16 )
+									, new ScriptOrigin( isolate, String::NewFromUtf8( isolate, "DateFormatter"
+#else
 									, new ScriptOrigin( String::NewFromUtf8( isolate, "DateFormatter"
-										, NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
+#endif
+									, NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
 								val = script->Run( isolate->GetCurrentContext() ).ToLocalChecked();
 							}
 							break;
@@ -774,6 +788,13 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 						case JSOX_VALUE_TYPED_ARRAY:
 							//lprintf( "Should result with a binary thing" );
 
+#if ( NODE_MAJOR_VERSION >= 14 )
+							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( Hold( jsval->string ), jsval->stringLen, releaseBufferBackingStore, NULL );
+							Local<Object> ab = ArrayBuffer::New( isolate, bs );
+							//Local<ArrayBuffer> ab =
+							//	ArrayBuffer::New( isolate, (char*)Hold( jsval->string ), jsval->stringLen );
+
+#else
 							Local<ArrayBuffer> ab =
 								ArrayBuffer::New( isolate, (char*)Hold( jsval->string ), jsval->stringLen );
 
@@ -782,6 +803,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 							holder->buffer = jsval->string;
 							jsval->string = NULL; // steal this buffer, don't let DB release it.
+#endif
 
 							val = ab;
 							break;
@@ -791,16 +813,16 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							if( !jsval->name )
 								lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
 							else
-								SET( container, jsval->name, val );
+								SETVAR( container, jsval->name, val );
 						}
 						else if( usedTables > 1 || ( fields[colMap[idx].col].used > 1 ) ) {
 							if( fields[colMap[idx].col].used > 1 ) {
 								if( !jsval->name )
 									lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
 								else
-									SET( colMap[idx].t->container, jsval->name, val );
+									SETVAR( colMap[idx].t->container, jsval->name, val );
 								if( colMap[idx].alias )
-									SET( fields[colMap[idx].col].array, colMap[idx].alias, val );
+									SETVAR( fields[colMap[idx].col].array, colMap[idx].alias, val );
 								SETN( fields[colMap[idx].col].array, colMap[idx].depth, val );
 							}
 						}
@@ -895,7 +917,7 @@ void OptionTreeObject::Init(  ) {
 	Local<FunctionTemplate> optionTemplate;
 	// Prepare constructor template
 	optionTemplate = FunctionTemplate::New( isolate, New );
-	optionTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.option.node", v8::NewStringType::kNormal ).ToLocalChecked() );
+	optionTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.option.node" ) );
 	optionTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	// Prototype
@@ -904,7 +926,7 @@ void OptionTreeObject::Init(  ) {
 	NODE_SET_PROTOTYPE_METHOD( optionTemplate, "go", getOptionNode );
 	Local<Template> proto = optionTemplate->InstanceTemplate();
 
-	proto->SetNativeDataProperty( String::NewFromUtf8( isolate, "value", v8::NewStringType::kNormal ).ToLocalChecked()
+	proto->SetNativeDataProperty( String::NewFromUtf8Literal( isolate, "value" )
 			, readOptionNode
 			, writeOptionNode );
 
@@ -1175,8 +1197,14 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 		optname = defaultVal;
 		defaultVal = StrDup( *tmp );
 	}
-	else
-		optname = NULL;
+	else {
+		if ((sect && sect[0] == '/')) {
+		}
+		else {
+			optname = sect;
+			sect = NULL;
+		}
+	}
 
 	TEXTCHAR readbuf[1024];
 	PODBC use_odbc = NULL;
@@ -1269,22 +1297,44 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 		use_odbc = sql->odbc;
 	}
 	if( ( sect && sect[0] == '/' ) ) {
-			SACK_WritePrivateOptionStringEx( use_odbc
+		SACK_GetPrivateProfileStringExxx(use_odbc
 			, NULL
 			, optname
 			, defaultVal
-			, sect, FALSE );
-	} 
-	else
-		SACK_WriteOptionString( use_odbc
+			, readbuf
+			, 1024
+			, sect
+			, TRUE
+			DBG_SRC
+		);
+
+		if (strcmp(readbuf, defaultVal)) {
+			SACK_WritePrivateOptionStringEx(use_odbc
+				, NULL
+				, optname
+				, defaultVal
+				, sect, FALSE);
+		}
+	}
+	else {
+		SACK_GetPrivateProfileStringExxx(use_odbc
 			, sect
 			, optname
 			, defaultVal
+			, readbuf
+			, 1024
+			, NULL
+			, TRUE
+			DBG_SRC
 		);
-
-	Local<String> returnval = String::NewFromUtf8( isolate, readbuf, v8::NewStringType::kNormal ).ToLocalChecked();
-	args.GetReturnValue().Set( returnval );
-
+		if (strcmp(readbuf, defaultVal)) {
+			SACK_WriteOptionString(use_odbc
+				, sect
+				, optname
+				, defaultVal
+			);
+		}
+	}
 	Deallocate( char*, optname );
 	Deallocate( char*, sect );
 	Deallocate( char*, defaultVal );
@@ -1412,11 +1462,17 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 				PSSQL_GetSqliteValueBlob( argv[n], &data, &len );
 				_data = NewArray( char, len );
 				memcpy( _data, data, len );
+
+#if ( NODE_MAJOR_VERSION >= 14 )
+				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( _data, len, releaseBufferBackingStore, NULL );
+				Local<Object> arrayBuffer = ArrayBuffer::New( userData->isolate, bs );
+#else
 				Local<Object> arrayBuffer = ArrayBuffer::New( userData->isolate, _data, len );
 				PARRAY_BUFFER_HOLDER holder = GetHolder();
 				holder->o.Reset( userData->isolate, arrayBuffer );
 				holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 				holder->buffer = _data;
+#endif
 				break;
 			}
 			case 5:
@@ -1440,12 +1496,20 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 		size_t length;
 		if( type == 1 ) {
 			Local<ArrayBuffer> myarr = str.As<ArrayBuffer>();
+#if ( NODE_MAJOR_VERSION >= 14 )
+			buf = (uint8_t*)myarr->GetBackingStore()->Data();
+#else
 			buf = (uint8_t*)myarr->GetContents().Data();
+#endif
 			length = myarr->ByteLength();
 		} else if( type == 2 ) {
 			Local<Uint8Array> _myarr = str.As<Uint8Array>();
 			Local<ArrayBuffer> buffer = _myarr->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+			buf = (uint8_t*)buffer->GetBackingStore()->Data();
+#else
 			buf = (uint8_t*)buffer->GetContents().Data();
+#endif
 			length = buffer->ByteLength();
 		}
 		if( buf )
@@ -1570,11 +1634,16 @@ void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3_value*
 				PSSQL_GetSqliteValueBlob( argv[n], &data, &len );
 				_data = NewArray( char, len );
 				memcpy( _data, data, len );
+#if ( NODE_MAJOR_VERSION >= 14 )
+				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( _data, len, releaseBufferBackingStore, NULL );
+				Local<Object> arrayBuffer = ArrayBuffer::New( userData->isolate, bs );
+#else
 				Local<Object> arrayBuffer = ArrayBuffer::New( userData->isolate, _data, len );
 				PARRAY_BUFFER_HOLDER holder = GetHolder();
 				holder->o.Reset( userData->isolate, arrayBuffer );
 				holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 				holder->buffer = _data;
+#endif
 				break;
 			}
 			case 5:
@@ -1632,12 +1701,20 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 		size_t length;
 		if( type == 1 ) {
 			Local<ArrayBuffer> myarr = str.As<ArrayBuffer>();
+#if ( NODE_MAJOR_VERSION >= 14 )
+			buf = (uint8_t*)myarr->GetBackingStore()->Data();
+#else
 			buf = (uint8_t*)myarr->GetContents().Data();
+#endif
 			length = myarr->ByteLength();
 		} else if( type == 2 ) {
 			Local<Uint8Array> _myarr = str.As<Uint8Array>();
 			Local<ArrayBuffer> buffer = _myarr->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+			buf = (uint8_t*)buffer->GetBackingStore()->Data();
+#else
 			buf = (uint8_t*)buffer->GetContents().Data();
+#endif
 			length = buffer->ByteLength();
 		}
 		if( buf )
@@ -1737,21 +1814,24 @@ static uintptr_t RunEditor( PTHREAD thread ) {
 	EditOptions = tp->editor;
 	EditOptions( NULL, NULL, TRUE );
 	disableEventLoop( tp->c );
+	Release( tp );
 	return 0;
 }
 
 void editOptions( const v8::FunctionCallbackInfo<Value>& args ){
-	int (*EditOptions)( PODBC odbc, PSI_CONTROL parent, LOGICAL wait );
+	struct threadParam* tp = new(struct threadParam );
+	//int (*EditOptions)( PODBC odbc, PSI_CONTROL parent, LOGICAL wait );
 	extern void enableEventLoop( class constructorSet *c );
 #ifdef WIN32
 	LoadFunction( "bag.psi.dll", NULL );
 #else
 	LoadFunction( "libbag.psi.so", NULL );
 #endif
-	EditOptions = (int(*)( PODBC, PSI_CONTROL,LOGICAL))LoadFunction( "EditOptions.plugin", "EditOptionsEx" );
-	if( EditOptions ) {
-		enableEventLoop( getConstructors( args.GetIsolate() ) );
-		ThreadTo( RunEditor, (uintptr_t)EditOptions );
+	tp->c = getConstructors( args.GetIsolate() );
+	tp->editor = (int(*)( PODBC, PSI_CONTROL,LOGICAL))LoadFunction( "EditOptions.plugin", "EditOptionsEx" );
+	if( tp->editor ) {
+		//enableEventLoop( getConstructors( args.GetIsolate() ) );
+		ThreadTo( RunEditor, (uintptr_t)tp );
 	} else
 		lprintf( "Failed to load editor..." );
 }

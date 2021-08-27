@@ -12,7 +12,7 @@ void ThreadObject::Init( Local<Object> exports ) {
 	Local<FunctionTemplate> threadTemplate;
 	// Prepare constructor template
 	threadTemplate = FunctionTemplate::New( isolate, New );
-	threadTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.Thread", v8::NewStringType::kNormal ).ToLocalChecked() );
+	threadTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.Thread" ) );
 	threadTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 
 	// Prototype

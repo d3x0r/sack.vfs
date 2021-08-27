@@ -1,5 +1,6 @@
 #if defined( _MSC_VER )
-#  pragma warning( disable: 4251 4275 )
+#  pragma warning( disable: 4251 4275 26495)
+// C26495 - uninitialized member; yes; It will be.
 #endif
 
 #include <node.h>
@@ -18,7 +19,7 @@
 #ifdef SACK_CORE
 #include <stdhdrs.h>
 #include <network.h>
-//#include <idle.h>
+#include <idle.h>
 #include <pssql.h>
 #include <sack_vfs.h>
 #include <salty_generator.h>
@@ -81,18 +82,25 @@ using namespace v8;
 
 #include "task_module.h"
 
-//fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8( isolate, "SeekSet" ), Integer::New( isolate, SEEK_SET ), ReadOnlyProperty );
+//fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8Literal( isolate, "SeekSet" ), Integer::New( isolate, SEEK_SET ), ReadOnlyProperty );
 
-#define SET_READONLY( object, name, data ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name, v8::NewStringType::kNormal ).ToLocalChecked(), data, ReadOnlyProperty )
-#define SET_READONLY_METHOD( object, name, method ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, name, v8::NewStringType::kNormal ).ToLocalChecked(), v8::Function::New(isolate->GetCurrentContext(), method ).ToLocalChecked(), ReadOnlyProperty )
+#define SET_READONLY( object, name, data ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8Literal(isolate, name, v8::NewStringType::kNormal ), data, ReadOnlyProperty )
+#define SET_READONLY_METHOD( object, name, method ) (object)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8Literal(isolate, name, v8::NewStringType::kNormal ), v8::Function::New(isolate->GetCurrentContext(), method ).ToLocalChecked(), ReadOnlyProperty )
 
-#define GET(o,key)  (o)->Get( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked() ).ToLocalChecked()
+#define GET(o,key)  (o)->Get( context, String::NewFromUtf8Literal( isolate, (key), v8::NewStringType::kNormal ) ).ToLocalChecked()
 #define GETV(o,key)  (o)->Get( context, key ).ToLocalChecked()
 #define GETN(o,key)  (o)->Get( context, Integer::New( isolate, (key) ) ).ToLocalChecked()
 #define SETV(o,key,val)  (void)(o)->Set( context, key, val )
-#define SET(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked(), val )
+#define SET(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8Literal( isolate, (key) ), val )
+#define SETVAR(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked(), val )
 #define SETT(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, GetText(key), v8::NewStringType::kNormal, (int)GetTextSize( key ) ).ToLocalChecked(), val )
 #define SETN(o,key,val)  (void)(o)->Set( context, Integer::New( isolate, key ), val )
+
+
+#if ( NODE_MAJOR_VERSION <= 13 )
+#define NewFromUtf8Literal(a,b,...)  NewFromUtf8(a,b, v8::NewStringType::kNormal ).ToLocalChecked()
+#endif
+
 
 
 void InitJSOX( Isolate *isolate, Local<Object> exports );
@@ -115,7 +123,7 @@ void SystemInit( Isolate* isolate, Local<Object> exports );
 class constructorSet {
 	public:
 	Isolate *isolate;
-	uv_loop_t* loop;
+	PTHREAD thread;
 	Persistent<Function> dateCons; // Date constructor
 	Persistent<Function> ThreadObject_idleProc;
 
@@ -138,6 +146,7 @@ class constructorSet {
 
 	Persistent<Function> tlsConstructor;
 	Persistent<Function> jsoxConstructor;
+	Persistent<Function> jsoxRefConstructor;
 
 	Persistent<Function> parseConstructor;
 	Persistent<Function> parseConstructor6;
@@ -150,7 +159,7 @@ class constructorSet {
 	//Persistent<Function> jsonConstructor;
 	Persistent<FunctionTemplate> pTextTemplate;
 	Persistent<Function> textConstructor;
-	
+
 	Persistent<Function> addrConstructor;
 	Persistent<FunctionTemplate> addrTpl;
 	Persistent<Function> udpConstructor;
@@ -168,10 +177,17 @@ class constructorSet {
 	v8::Persistent<v8::Function> monitorConstructor;
 	v8::Persistent<v8::Function> KeyHidObject_constructor;
 	//Persistent<Function> onCientPost;
+	uv_loop_t* loop;
 #ifdef INCLUDE_GUI
+	uv_async_t psiLocal_async;
+	int eventLoopEnables = 0;
+	LOGICAL eventLoopRegistered = FALSE;
+
 	Persistent<Function> ImageObject_constructor;
 	Persistent<FunctionTemplate> ImageObject_tpl;
+	uv_async_t fontAsync; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Function> FontObject_constructor;
+	uv_async_t colorAsync; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Function> ColorObject_constructor;
 	Persistent<FunctionTemplate> ColorObject_tpl;
 	Persistent<Function> fontResult;
@@ -189,9 +205,6 @@ class constructorSet {
 	v8::Persistent<v8::Function> InterShellObject_intershellConstructor;
 	v8::Persistent<v8::Function> InterShellObject_configConstructor;
 
-	int eventLoopEnables = 0;
-	LOGICAL eventLoopRegistered = FALSE;
-	uv_async_t psiLocal_async;
 	v8::Persistent<v8::Function> ControlObject_constructor;   // Frame
 	v8::Persistent<v8::Function> ControlObject_constructor2;  // Control
 	v8::Persistent<v8::Function> ControlObject_registrationConstructor;  // Registration
@@ -213,6 +226,7 @@ class constructorSet {
 #endif
 };
 class constructorSet * getConstructors( Isolate *isolate );
+class constructorSet* getConstructorsByThread( void );
 
 
 
@@ -234,6 +248,8 @@ public:
 	struct file_system_mounted_interface* fsMount;
 	static PLIST volumes;
 	LOGICAL cleanupHappened;
+	static PLIST transportDestinations;
+	LOGICAL thrown;
 
 public:
 
@@ -241,7 +257,6 @@ public:
 	static void Init( Local<Context> context, Local<Object> exports );
 	static void Init( Local<Object> exports, Local<Value> val, void* p );
 	VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, int priority = 2000 );
-
 	static void vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args );
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void getDirectory( const v8::FunctionCallbackInfo<Value>& args );
@@ -260,6 +275,7 @@ public:
 	static void volRekey( const v8::FunctionCallbackInfo<Value>& args );
 	static void renameFile( const v8::FunctionCallbackInfo<Value>& args );
 	static void volDecrypt( const v8::FunctionCallbackInfo<Value>& args );
+	static void flush( const v8::FunctionCallbackInfo<Value>& args );
 
 	~VolumeObject();
 };
@@ -314,31 +330,7 @@ public:
 
 
 
-class ComObject : public node::ObjectWrap {
-public:
-	int handle;
-	char *name;
-	//static Persistent<Function> constructor;
-
-	Persistent<Function, CopyablePersistentTraits<Function>> *readCallback; //
-	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
-	PLINKQUEUE readQueue;
-	
-public:
-
-	static void Init( Local<Object> exports );
-	ComObject( char *name );
-
-private:
-	Persistent<Object> jsObject;
-	static void New( const v8::FunctionCallbackInfo<Value>& args );
-
-	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
-	static void writeCom( const v8::FunctionCallbackInfo<Value>& args );
-	static void closeCom( const v8::FunctionCallbackInfo<Value>& args );
-	~ComObject();
-};
-
+extern void ComObjectInit( Local<Object> exports );
 
 class RegObject : public node::ObjectWrap {
 public:
@@ -359,7 +351,7 @@ public:
 	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE readQueue;
-	
+
 public:
 
 	static void Init( Local<Object> exports );
@@ -402,10 +394,21 @@ public:
 	~TLSObject();
 };
 
+struct reviveStackMember {
+	LOGICAL isArray;
+	int index;
+	Local<Value> fieldName;
+	Local<Value> object;
+	char* name;
+	size_t nameLen;
+};
+
 struct reviver_data {
 	//Persistent<Function> dateCons;
 	Local<Function> fieldCb;
 	Isolate *isolate;
+	Local <Object> refObject; // JSOX.Ref
+	Local<Value> fieldName;
 	Local<Context> context;
 	LOGICAL revive;
 	//int index;
@@ -414,6 +417,12 @@ struct reviver_data {
 	Local<Function> reviver;
 	Local<Object> rootObject;
 	class JSOXObject *parser;
+	LOGICAL failed;
+	PLINKSTACK reviveStack;
+
+	~reviver_data() {
+		DeleteLinkStack( &this->reviveStack );
+	}
 };
 
 Local<Value> convertMessageToJS( PDATALIST msg_data, struct reviver_data *reviver );
@@ -429,9 +438,11 @@ public:
 	struct jsox_parse_state *state;
 	//static Persistent<Function> constructor;
 	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
+	Persistent<Function, CopyablePersistentTraits<Function>> reviver; // on begin() save reviver function here
 	Persistent<Map> fromPrototypeMap;
 	Persistent<Map> promiseFromPrototypeMap;
 	PLIST prototypes; // revivde prototypes by class
+	struct reviver_data* currentReviver;
 public:
 
 	static void Init( Local<Object> exports );
@@ -439,6 +450,10 @@ public:
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void write( const v8::FunctionCallbackInfo<Value>& args );
+	static void parse( const v8::FunctionCallbackInfo<Value>& args );
+	static void reset( const v8::FunctionCallbackInfo<Value>& args );
+	static void getCurrentRef( const v8::FunctionCallbackInfo<Value>& args );
+
 	static void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args );
 	static void setPromiseFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -447,7 +462,7 @@ public:
 
 
 struct arrayBufferHolder {
-	void *buffer;
+	const void *buffer;
 	Persistent<Object> o;
 	Persistent<String> s;
 	Persistent<ArrayBuffer> ab;
@@ -456,6 +471,7 @@ typedef struct arrayBufferHolder ARRAY_BUFFER_HOLDER, *PARRAY_BUFFER_HOLDER;
 #define MAXARRAY_BUFFER_HOLDERSPERSET 512
 DeclareSet( ARRAY_BUFFER_HOLDER );
 
+void releaseBufferBackingStore( void* data, size_t length, void* deleter_data );
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info );
 Local<String> localString( Isolate *isolate, const char *data, int len = -1 );
 Local<String> localStringExternal( Isolate *isolate, const char *data, int len = -1, const char *real_root = NULL );
@@ -479,6 +495,7 @@ extern
 #endif
 struct vfs_global_data {
 	ARRAY_BUFFER_HOLDERSET *holders;
+	int shutdown;
 } vfs_global_data;
 
 #define GetHolder() GetFromSet( ARRAY_BUFFER_HOLDER, &vfs_global_data.holders )

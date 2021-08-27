@@ -117,6 +117,7 @@ private:
 				String::Utf8Value val( USE_ISOLATE( obj->isolate ) elem->ToString(obj->isolate->GetCurrentContext() ).ToLocalChecked()  );
 				obj->seedBuf = (char*)Reallocate( obj->seedBuf, obj->seedLen + val.length() );
 				memcpy( obj->seedBuf + obj->seedLen, (*val), val.length() );
+				obj->seedLen += val.length();
 			}
 		}
 		if( obj->seedBuf ) {
@@ -215,18 +216,24 @@ private:
 		SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
 		obj->isolate = args.GetIsolate();
 		if( !args.Length() ) {
-			obj->isolate->ThrowException( Exception::Error( String::NewFromUtf8( obj->isolate, "required parameter missing, count of bits", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			obj->isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( obj->isolate, "required parameter missing, count of bits" ) ) );
 		}
 		else {
 			int32_t bits = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe(0);
 			uint32_t *buffer = NewArray( uint32_t, (bits +31)/ 32 );
 			SRG_GetEntropyBuffer( obj->entropy, buffer, bits );
 
+#if ( NODE_MAJOR_VERSION >= 14 )
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buffer,
+				(bits+7)/8, releaseBufferBackingStore, NULL );
+			Local<Object> arrayBuffer = ArrayBuffer::New( obj->isolate, bs );
+#else
 			Local<Object> arrayBuffer = ArrayBuffer::New( obj->isolate, buffer, (bits+7)/8 );
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->o.Reset( obj->isolate, arrayBuffer );
 			holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 			holder->buffer = buffer;
+#endif
 
 			args.GetReturnValue().Set( arrayBuffer );
 		}
@@ -586,9 +593,9 @@ private:
 				struct signature s;
 				signCheck( outbuf, pad1, pad2, &s );
 				SET( result, "classifier", Number::New( args.GetIsolate(), s.classifier ) );
-				SET( result, (const char*)"extent", Number::New( args.GetIsolate(), s.extent ) );
+				SET( result, "extent", Number::New( args.GetIsolate(), s.extent ) );
 				char *rid = EncodeBase64Ex( outbuf, 256 / 8, &len, (const char *)1 );
-				SET( result, (const char*)"key", localString( isolate, rid, (int)(len -1)) );
+				SET( result, "key", localString( isolate, rid, (int)(len -1)) );
 				args.GetReturnValue().Set( result );
 			}
 			EnqueLink( &signingEntropies, signEntropy );
@@ -679,6 +686,7 @@ private:
 			}
 			threadParams[n].id = NULL;
 		}
+		// this will always be set; a thread will have ended with an id set.
 		return result;
 	}
 
@@ -837,7 +845,7 @@ void SRGObject::Init( Isolate *isolate, Local<Object> exports )
 	Local<FunctionTemplate> srgTemplate;
 	class constructorSet* c = getConstructors( isolate );
 	srgTemplate = FunctionTemplate::New( isolate, New );
-	srgTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.srg", v8::NewStringType::kNormal ).ToLocalChecked() );
+	srgTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.srg" ) );
 	srgTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "seed", SRGObject::seed );
 	NODE_SET_PROTOTYPE_METHOD( srgTemplate, "reset", SRGObject::reset );

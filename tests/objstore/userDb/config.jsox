@@ -1,0 +1,6 @@
+{
+	publicAddresses: ["192.168.173.13:8089"], // available addresses to connect to or 
+	publicAddress: "192.168.173.13:8089",
+        
+}
+

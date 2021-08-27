@@ -28,6 +28,7 @@
 #include <pssql.h>
 #include <deadstart.h>
 #include <translation.h>
+#include <systray.h>
 
 #include <image.h>
 #include <render.h>
@@ -177,6 +178,7 @@ struct global {
 } g;
 
 void InitInterfaces( int opengl, int vulkan );
-uintptr_t MakeEvent( uv_async_t *async, PLINKQUEUE *queue, enum GUI_eventType type, ... );
+uintptr_t MakeEvent( RenderObject*r, enum GUI_eventType type, ... );
 
 void InitSystray( Isolate* isolate, Local<Object> _exports );
+void enableEventLoop( class constructorSet *c ); // PSI control events.

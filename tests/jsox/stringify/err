@@ -1,0 +1,2 @@
+map only map{asdf:{obj1:0},mapsub:map{}}
+object {keys:map{asdf:{obj1:0},mapsub:map{}}}

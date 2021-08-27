@@ -1,0 +1,12 @@
+
+{
+	edit : { name: "Edit Permissions",
+        		description: "Ability to view organizational permissions"
+        	},
+	ban : { name: "Ban User",
+        		description: "Set status on user accounts for banning"
+        	},
+	token : { name: "Ban User",
+        		description: "Set status on user accounts for banning"
+        	},
+}

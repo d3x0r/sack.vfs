@@ -4,10 +4,12 @@ class RenderObject : public node::ObjectWrap{
 
 public:
 	PRENDERER r; // this control
-	int drawn; 
+	PTHREAD  eventThread;
+	//int drawn; 
+	int updated;
 	int closed;
 	Persistent<Object> surface; // used to pass to draw callback
-
+	Persistent<Object> this_;
 
 public:
 
@@ -48,6 +50,7 @@ public:
 
 
 	PLINKQUEUE receive_queue;
+	Isolate* isolate;
 
 
 };

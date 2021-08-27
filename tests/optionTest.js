@@ -19,6 +19,7 @@ console.log( "after setting value..",  tmp2.value );
 console.log( "after setting value..", ( tmp2 = root.go( "a" ).go( "b3" ).go( "c2" ) ).value );
 //setTimeout( ()=>{console.log( "Wait a second to flush?") }, 1000 );
 
+
 var level =0;
 function dumptree(opt, name){
 	if( name === "." ) return;
@@ -33,6 +34,7 @@ db.eo( dumptree )
 
 console.log( "global option database ---------------" );
 level =0;
+vfs.Sqlite.op( "/comports.ini", "default value overrid", "9600" );
 vfs.Sqlite.eo( dumptree )
 
 

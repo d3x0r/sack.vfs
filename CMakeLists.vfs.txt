@@ -76,7 +76,6 @@ if( APPLE )
 endif( APPLE )
 
 if( EXISTS ${SACK_BASE} )
-
 set( INCLUDES
 	-I${SACK_BASE}/include
 	-I${SACK_BASE}/src/contrib/sha1lib
@@ -201,20 +200,22 @@ SET( EXTRA_SOURCES
 )
 
 # android has to force this off....
-if( ON )
-set( EXTRA_SOURCES ${EXTRA_SOURCES} 
-		#${SACK_BASE}/src/msgsvr/client/global.h
-		${SACK_BASE}/src/typelib/msgqueue.c
-		${SACK_BASE}/src/msgsvr/client/client_common.c
-		${SACK_BASE}/src/msgsvr/client/client_client.c
-		${SACK_BASE}/src/msgsvr/client/client_events.c
-		${SACK_BASE}/src/msgsvr/client/client_input.c
-		${SACK_BASE}/src/msgsvr/client/client_local.c
-		${SACK_BASE}/src/msgsvr/client/client_output.c
-		${SACK_BASE}/src/msgsvr/client/client_service.c 
-		${SACK_BASE}/src/msgsvr/summoner/construct.c
-)
-endif( ON )
+# Message service support - SYSV Message Queue IPC.  
+# Unused; network websocket connectivity suffices.
+#if( ON )
+#set( EXTRA_SOURCES ${EXTRA_SOURCES} 
+#		#${SACK_BASE}/src/msgsvr/client/global.h
+#		${SACK_BASE}/src/typelib/msgqueue.c
+#		${SACK_BASE}/src/msgsvr/client/client_common.c
+#		${SACK_BASE}/src/msgsvr/client/client_client.c
+#		${SACK_BASE}/src/msgsvr/client/client_events.c
+#		${SACK_BASE}/src/msgsvr/client/client_input.c
+#		${SACK_BASE}/src/msgsvr/client/client_local.c
+#		${SACK_BASE}/src/msgsvr/client/client_output.c
+#		${SACK_BASE}/src/msgsvr/client/client_service.c 
+#		${SACK_BASE}/src/msgsvr/summoner/construct.c
+#)
+#endif( ON )
 
 if( __ANDROID__ )
 	set( EXTRA_SOURCES ${EXTRA_SOURCES} 
@@ -223,35 +224,36 @@ if( __ANDROID__ )
 	)
 endif( __ANDROID__ )
 
-set( NEED_UUID OFF )
+set( NEED_UUID ON )
 
 set( UUID_SOURCES
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_md5.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_sha1.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_dce.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_mac.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_prng.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_str.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_time.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_ui128.c
-  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_ui64.c
+  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_amalg.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_md5.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_sha1.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_dce.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_mac.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_prng.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_str.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_time.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_ui128.c
+#  ${SACK_BASE}/src/contrib/uuid-1.6.2/uuid_ui64.c
 )
 
-if( NEED_UUID )
+#if( NEED_UUID )
   set( EXTRA_SOURCES ${EXTRA_SOURCES} ${UUID_SOURCES} )
-  if( MAKING_SACK_CORE )
-    add_definitions( -D__INTERNAL_UUID__ )
-  endif( MAKING_SACK_CORE )
-  add_definitions( -DUUID_SOURCE )
-endif( NEED_UUID )
+  #if( MAKING_SACK_CORE )
+  #  add_definitions( -D__INTERNAL_UUID__ )
+  #endif( MAKING_SACK_CORE )
+  #add_definitions( -DUUID_SOURCE )
+#endif( NEED_UUID )
 
 
 
 SET( BUILD_AMALGAM on )
 
 set( C_SOURCES
-        ${SACK_BASE}/src/contrib/sqlite/3.27.1-TableAlias/sqlite3.c
+        ${SACK_BASE}/src/contrib/sqlite/3.33.0-TableAlias/sqlite3.c
 )
 add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
 			COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
@@ -333,6 +335,12 @@ set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c PROP
 	COMPILE_DEFINITIONS "SQLITE_ENABLE_LOCKING_STYLE=0;SQLITE_THREADSAFE=0;SQLITE_OMIT_UTF16;SQLITE_ENABLE_COLUMN_METADATA;SQLITE_ENABLE_STAT4" )
 set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc PROPERTIES 
 	COMPILE_DEFINITIONS "USE_SACK_CUSTOM_MEMORY_ALLOCATION" )
+
+if( UNIX )
+  add_definitions( -D__INTERNAL_UUID__ )
+  add_definitions( -DUUID_SOURCE )
+  #add_definitions( -D__NO_ODBC__ )	
+endif( UNIX )
 
 set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
 if( CMAKE_COMPILER_IS_GNUCC )

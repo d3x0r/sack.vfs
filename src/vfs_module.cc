@@ -6,6 +6,22 @@
 #include "global.h"
 
 PLIST VolumeObject::volumes = NULL;
+PLIST VolumeObject::transportDestinations = NULL;
+
+
+struct volumeTransport {
+	class VolumeObject *wssi;
+};
+
+struct volumeUnloadStation {
+	Persistent<Object> this_;
+	String::Utf8Value* s;  // destination address
+	uv_async_t poster;
+	uv_loop_t  *targetThread;
+	Persistent<Function> cb; // callback to invoke 
+	PLIST transport;
+};
+
 
 static void fileDelete( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -23,10 +39,23 @@ class constructorSet * getConstructors( Isolate *isolate ){
 		}
 	}
 	c = new constructorSet();
+	c->thread = MakeThread();
 	c->isolate = isolate;
 	c->loop = node::GetCurrentEventLoop( isolate ); // one-time thread initializer for com? // uv_default_loop();
 	AddLink( &vl.constructors, c );
 	return c;
+}
+
+class constructorSet* getConstructorsByThread( void ) {
+	PTHREAD thread = MakeThread();
+	INDEX idx;
+	class constructorSet* c;
+	LIST_FORALL( vl.constructors, idx, class constructorSet*, c ) {
+		if( c->thread == thread ) {
+			return c;
+		}
+	}
+	return NULL;
 }
 
 Local<String> localString( Isolate *isolate, const char *data, int len ) {
@@ -99,7 +128,10 @@ struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate ) {
 }
 
 static void moduleExit( void *arg ) {
+	//DebugDumpMem();
 	//SaveTranslationDataEx( "^/strings.dat" );
+	vfs_global_data.shutdown = 1;
+
 	SaveTranslationDataEx( "@/../../strings.json" );
 	InvokeExits();
 }
@@ -147,11 +179,19 @@ static void idGenerator(const v8::FunctionCallbackInfo<Value>& args ){
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, r, v8::NewStringType::kNormal ).ToLocalChecked() );
 	Deallocate( char*, r );
 }
+static void idShortGenerator(const v8::FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	char *r = SRG_ID_ShortGenerator4();
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, r, v8::NewStringType::kNormal ).ToLocalChecked() );
+	Deallocate( char*, r );
+}
 
 static void loadComplete( const v8::FunctionCallbackInfo<Value>& args ) {
 #  if !defined( NODE_WANT_INTERNALS )
 	// static amalgamates omit message server stuff
-	LoadComplete();
+#ifndef __NO_MSGSVR__
+	//LoadComplete();
+#endif
 #endif
 }
 
@@ -184,8 +224,6 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 static void CleanupThreadResources( void* arg_ ) {
 	class constructorSet *c = (class constructorSet*)arg_;
 	//lprintf( "Shutdown called" );
-	delete c;
-
 	{
 		VolumeObject* vol;
 		INDEX idx;
@@ -195,6 +233,7 @@ static void CleanupThreadResources( void* arg_ ) {
 	}
 
 	DeleteLink( &vl.constructors, c );
+	delete c;
 	if( !GetLinkCount( vl.constructors ) )
 		moduleExit( NULL );
 	//lprintf( "Which things belonged to this thread?, is it isolate?" );
@@ -214,6 +253,9 @@ static void logString( const v8::FunctionCallbackInfo<Value>& args ) {
 		( "%s", *s );
 }
 
+static void postVolume( const v8::FunctionCallbackInfo<Value>& args );
+static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args );
+
 void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 {
 	static int runOnce = 1;
@@ -223,13 +265,15 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 
 		//SetAllocateLogging( TRUE );
 		//SetManualAllocateCheck( TRUE );
-		//SetAllocateDebug( TRUE );
+		//SetAllocateDebug( FALSE );
 		//lprintf( "Do Init in modules (shouldn't do some of this)");
 		SetSystemLog( SYSLOG_FILE, stdout );
 
 		//LoadTranslationDataEx( "^/strings.dat" );
 		LoadTranslationDataEx( "@/../../strings.json" );
 		runOnce = 0;
+	}else {
+		GetThisThreadID();
 	}
 	//else
 		//lprintf( "Init Exports for this new object?");
@@ -253,7 +297,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	ThreadObject::Init( exports );
 	FileObject::Init();
 	SqlObjectInit( exports );
-	ComObject::Init( exports );
+	ComObjectInit( exports );
 	InitJSOX( isolate, exports );
 	InitJSON( isolate, exports );
 	InitSRG( isolate, exports );
@@ -281,8 +325,10 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 
 	// Prepare constructor template
 	volumeTemplate = FunctionTemplate::New( isolate, New );
-	volumeTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.Volume", v8::NewStringType::kNormal ).ToLocalChecked() );
+	volumeTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.Volume" ) );
 	volumeTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
+
+
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "File", FileObject::openFile );
@@ -294,6 +340,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "readJSON", fileReadJSON );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "readJSOX", fileReadJSOX );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "write", fileWrite );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "flush", flush );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mkdir", makeDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "Sqlite", openVolDb );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "delete", fileVolDelete );
@@ -307,7 +354,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 
 	Local<Function> VolFunc = volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
-	(exports)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "memDump", v8::NewStringType::kNormal ).ToLocalChecked()
+	(exports)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8Literal(isolate, "memDump" )
 		, v8::Function::New( isolate->GetCurrentContext(), dumpMem ) .ToLocalChecked(), ReadOnlyProperty );
 	SET_READONLY_METHOD( exports, "log", logString );
 	SET_READONLY_METHOD( exports, "memDump", dumpMem );
@@ -315,7 +362,9 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	//SET_READONLY_METHOD( VolFunc, "rekey", volRekey );
 	SET_READONLY_METHOD( exports, "u8xor", vfs_u8xor );
 	SET_READONLY_METHOD( exports, "b64xor", vfs_b64xor );
+	// this is an export under SaltyRNG
 	SET_READONLY_METHOD( exports, "id", idGenerator );
+	SET_READONLY_METHOD( exports, "Id", idShortGenerator );
 	SET_READONLY_METHOD( VolFunc, "readAsString", fileReadString );
 	SET_READONLY_METHOD( VolFunc, "mapFile", fileReadMemory );
 
@@ -329,6 +378,12 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	SET_READONLY_METHOD( fileObject, "unlink", fileDelete );
 	SET_READONLY_METHOD( fileObject, "rm", fileDelete );
 	SET( exports, "Volume", volumeTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
+	{
+		Local<Object> threadObject = Object::New( isolate );
+		SET_READONLY_METHOD( threadObject, "post", postVolume );
+		SET_READONLY_METHOD( threadObject, "accept", setClientVolumeHandler );
+		SET_READONLY( VolFunc, "Thread", threadObject );
+	}
 
 	SET_READONLY_METHOD( exports, "loadComplete", loadComplete );
 	c->volConstructor.Reset( isolate, volumeTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -380,7 +435,6 @@ VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t v
 	AddLink( &VolumeObject::volumes, this );
 }
 
-
 #if 0
 void logBinary( char *x, int n )
 {
@@ -431,7 +485,7 @@ void VolumeObject::volRekey( const v8::FunctionCallbackInfo<Value>& args ){
 			key2 = new String::Utf8Value( USE_ISOLATE( isolate ) args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		else
 			key2 = NULL;
-		sack_vfs_encrypt_volume( vol->vol, 0, *key1[0], *key2[0] );
+		sack_vfs_encrypt_volume( vol->vol, 0, *key1[0], key2?*key2[0]:NULL );
 		delete key1;
 		if( key2 ) delete key2;
 	}
@@ -464,6 +518,15 @@ void VolumeObject::makeDirectory( const v8::FunctionCallbackInfo<Value>& args ){
 	}
 }
 
+
+void VolumeObject::flush( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+	if( vol ) {
+		// this is a noop.  mmap is assumed commited if the memory is written to; and the process exists and closes the handles.
+	}
+
+}
 
 void VolumeObject::isDirectory( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -541,7 +604,11 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 	char *output = NewArray( char, ab->ByteLength() );
 	int out_index = 0;
 	{
+#if ( NODE_MAJOR_VERSION >= 14 )
+		const char *input = (const char*)ab->GetBackingStore()->Data();
+#else
 		const char *input = (const char*)ab->GetContents().Data();
+#endif
 		size_t index = 0;
 		TEXTRUNE rune;
 		size_t len = ab->ByteLength();
@@ -760,6 +827,13 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 	}
 
+void releaseBufferBackingStore( void* data, size_t length, void* deleter_data ) {
+	(void)length;
+	(void)deleter_data;;
+	MakeThread();
+	Deallocate( void*, data );
+}
+
 
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 	PARRAY_BUFFER_HOLDER holder = info.GetParameter();
@@ -776,7 +850,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		holder->ab.ClearWeak();
 		holder->ab.Reset();
 	}
-	Deallocate( void*, holder->buffer );
+	Deallocate( const void*, holder->buffer );
 	DropHolder( holder );
 }
 
@@ -807,11 +881,16 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 						String::NewFromUtf8( isolate, TranslateText( "Short read; incomplete data." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 					return;
 				}
+#if ( NODE_MAJOR_VERSION >= 14 )
+				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
+				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs);
+#else
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
 				PARRAY_BUFFER_HOLDER holder = GetHolder();
 				holder->o.Reset( isolate, arrayBuffer );
 				holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 				holder->buffer = buf;
+#endif
 
 				NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
 				args.GetReturnValue().Set( arrayBuffer );
@@ -829,12 +908,17 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 					uint8_t *buf = NewArray( uint8_t, len );
 					len = sack_fread( buf, len, 1, file );
 
+#if ( NODE_MAJOR_VERSION >= 14 )
+					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
+					Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
+
+#else
 					Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
 					PARRAY_BUFFER_HOLDER holder = GetHolder();
 					holder->o.Reset( isolate, arrayBuffer );
 					holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 					holder->buffer = buf;
-					
+#endif
 					NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
 					args.GetReturnValue().Set( arrayBuffer );
 				}
@@ -932,12 +1016,18 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		size_t len = 0;
 		POINTER data = OpenSpace( NULL, *fName, &len );
 		if( data && len ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( data, len, releaseBufferBackingStore, NULL );
+			MaybeLocal<ArrayBuffer> _arrayBuffer = ArrayBuffer::New( isolate, bs );
+			Local<ArrayBuffer> arrayBuffer = _arrayBuffer.ToLocalChecked();
+#else
 			MaybeLocal<ArrayBuffer> _arrayBuffer = ArrayBuffer::New( isolate, data, len );
 			Local<ArrayBuffer> arrayBuffer = _arrayBuffer.ToLocalChecked();
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->ab.Reset( isolate, arrayBuffer );
 			holder->ab.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 			holder->buffer = data;
+#endif
 
 			args.GetReturnValue().Set( arrayBuffer );
 			if( args.Length() > 1 && args[1]->IsFunction() ) {
@@ -980,12 +1070,20 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			size_t length;
 			if( type == 1 ) {
 				Local<ArrayBuffer> myarr = args[1].As<ArrayBuffer>();
+#if ( NODE_MAJOR_VERSION >= 14 )
+				buf = (uint8_t*)myarr->GetBackingStore()->Data();
+#else
 				buf = (uint8_t*)myarr->GetContents().Data();
+#endif
 				length = myarr->ByteLength();
 			} else if( type == 2 ) {
 				Local<Uint8Array> _myarr = args[1].As<Uint8Array>();
 				Local<ArrayBuffer> buffer = _myarr->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+				buf = (uint8_t*)buffer->GetBackingStore()->Data();
+#else
 				buf = (uint8_t*)buffer->GetContents().Data();
+#endif
 				length = buffer->ByteLength();
 			}
 
@@ -1137,11 +1235,14 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		for( found = vol->fsInt->find_first( fi ); found; found = vol->fsInt->find_next( fi ) ) {
 			char *name = vol->fsInt->find_get_name( fi );
 			size_t length = vol->fsInt->find_get_size( fi );
+			bool isDir = vol->fsInt->find_is_directory( fi );
 			Local<Object> entry = Object::New( isolate );
 			SET( entry, "name", String::NewFromUtf8( isolate, name, v8::NewStringType::kNormal ).ToLocalChecked() );
-			if( length == ((size_t)-1) )
+			if( isDir ) {
+				// some file systems, directories might have length of file content
 				SET( entry, "folder", True(isolate) );
-			else {
+				SET( entry, "length", Number::New( isolate, (double)length ) );
+			} else {
 				SET( entry, "folder", False( isolate ) );
 				SET( entry, "length", Number::New( isolate, (double)length ) );
 			}
@@ -1167,10 +1268,10 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			if( argc == 0 ) {
 				VolumeObject* obj = new VolumeObject( NULL, NULL, 0, NULL, NULL, 0 );
 				if( !obj->fsMount ) {
-					isolate->ThrowException( Exception::Error(
-						String::NewFromUtf8( isolate, TranslateText( "Failed to load default mount." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
-					delete obj;
-					return;
+					//isolate->ThrowException( Exception::Error(
+					//	String::NewFromUtf8( isolate, TranslateText( "Failed to load default mount." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+					//delete obj;
+					//return;
 				}
 				obj->Wrap( args.This() );
 				args.GetReturnValue().Set( args.This() );
@@ -1257,12 +1358,155 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 	}
 
 
+static LOGICAL PostVolume( Isolate *isolate, String::Utf8Value *name, VolumeObject* obj ) {
+	struct volumeTransport* trans = new struct volumeTransport();
+	trans->wssi = obj;
+
+	{
+		struct volumeUnloadStation* station;
+		INDEX idx;
+		LIST_FORALL( VolumeObject::transportDestinations, idx, struct volumeUnloadStation*, station ) {
+			if( memcmp( *station->s[0], *(name[0]), (name[0]).length() ) == 0 ) {
+				AddLink( &station->transport, trans );
+				//lprintf( "Send Post Request %p", station->poster );
+				uv_async_send( &station->poster );
+				break;
+			}
+		}
+		if( !station ) {
+			return FALSE;
+			//isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Failed to find target accepting thread" ) ) );
+		}
+	}
+	return TRUE;
+}
+
+static void postVolume( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() < 2 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Required parameter missing: (unique,socket)" ) ) );
+		return;
+	}
+	VolumeObject* obj = VolumeObject::Unwrap<VolumeObject>( args[1].As<Object>() );
+	if( obj ){
+		String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		if( PostVolume( isolate, &s, obj ) ) 
+			args.GetReturnValue().Set( True(isolate) );
+		else
+			args.GetReturnValue().Set( False(isolate) );
+		
+	}
+	else {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Second parameter is not an accepted socket" ) ) );
+	}
+}
+
+
+
+static void postVolumeObject( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() < 1 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Required parameter missing: (unique)" ) ) );
+		return;
+	}
+	
+	VolumeObject* obj = VolumeObject::Unwrap<VolumeObject>( args.This() );
+	if( obj ){
+		String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		if( PostVolume( isolate, &s, obj ) ) 
+			args.GetReturnValue().Set( True(isolate) );
+		else
+			args.GetReturnValue().Set( False(isolate) );
+	}
+	else {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Object is not an accepted socket" ) ) );
+	}
+}
+
+
+static void finishPostClose( uv_handle_t *async ) {
+	struct volumeUnloadStation* unload = ( struct volumeUnloadStation* )async->data;
+	delete unload->s;
+	delete unload;
+}
+
+static void handlePostedVolume( uv_async_t* async ) {
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	struct volumeUnloadStation* unload = ( struct volumeUnloadStation* )async->data;
+	Local<Function> f = unload->cb.Get( isolate );
+	INDEX idx;
+	struct volumeTransport* trans;
+	LIST_FORALL( unload->transport, idx, struct volumeTransport*, trans ) {
+
+		class constructorSet* c = getConstructors( isolate );
+
+		Local<Function> cons = Local<Function>::New( isolate, c->volConstructor );
+		Local<Object> newThreadObject = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
+
+		Local<Value> args[] = { localStringExternal( isolate, **( unload->s ), unload->s->length() ), newThreadObject };
+		VolumeObject* obj = VolumeObject::Unwrap<VolumeObject>( newThreadObject );
+
+		obj->vol = trans->wssi->vol;
+		obj->volNative = trans->wssi->volNative;
+		obj->mountName = trans->wssi->mountName;
+		obj->fileName = trans->wssi->fileName;
+		obj->priority = trans->wssi->priority;
+		obj->fsInt = trans->wssi->fsInt;
+		obj->fsMount = trans->wssi->fsMount;
+		obj->thrown = trans->wssi->thrown = TRUE;
+
+		// just clearing this prevents deallocation of other members
+		trans->wssi->volNative = NULL;
+
+
+		MaybeLocal<Value> ml_result = f->Call( context, unload->this_.Get(isolate), 2, args );
+		if( !ml_result.IsEmpty() ) {
+			Local<Value> result = ml_result.ToLocalChecked();
+			if( result->TOBOOL(isolate) ) {
+			}
+		}
+		//lprintf( "Cleanup this event.." );
+		unload->cb.Reset();
+		unload->this_.Reset();
+		DeleteLink( &VolumeObject::transportDestinations, unload );
+		SetLink( &unload->transport, 0, NULL );
+		uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
+		break;
+	}
+}
+
+static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	class constructorSet* c = getConstructors( isolate );
+	String::Utf8Value unique( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+
+	Local<Function> f = args[1].As<Function>();
+	struct volumeUnloadStation* unloader = new struct volumeUnloadStation();
+	unloader->this_.Reset( isolate, args.This() );
+	unloader->s = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	unloader->cb.Reset( isolate, f );
+	unloader->targetThread = c->loop;
+	unloader->poster.data = unloader;
+	unloader->transport = NULL;
+	//lprintf( "New async event handler for this unloader%p", &unloader->clientSocketPoster );
+
+	uv_async_init( unloader->targetThread, &unloader->poster, handlePostedVolume );
+
+	AddLink( &VolumeObject::transportDestinations, unloader );
+}
+
+
+
+
+
 void FileObject::Emitter(const v8::FunctionCallbackInfo<Value>& args)
 {
 	Isolate* isolate = Isolate::GetCurrent();
 	//HandleScope scope;
 	Local<Value> argv[2] = {
-		v8::String::NewFromUtf8( isolate, "ping", v8::NewStringType::kNormal ).ToLocalChecked(), // event name
+		v8::String::NewFromUtf8Literal( isolate, "ping" ), // event name
 		args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  // argument
 	};
 
@@ -1287,11 +1531,16 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 			}
 		}
 		{
+#if ( NODE_MAJOR_VERSION >= 14 )
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( file->buf, file->size, releaseBufferBackingStore, NULL );
+			Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
+#else
 			Local<Object> arrayBuffer = ArrayBuffer::New( isolate, file->buf, file->size );
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->o.Reset( isolate, arrayBuffer );
 			holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 			holder->buffer = file->buf;
+#endif
 
 			NODE_SET_METHOD( arrayBuffer, "toString", fileBufToString );
 			args.GetReturnValue().Set( arrayBuffer );
@@ -1381,13 +1630,27 @@ void FileObject::writeFile(const v8::FunctionCallbackInfo<Value>& args) {
 	if( args.Length() == 1 ) {
 		if( args[0]->IsString() ) {
 			String::Utf8Value data( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-			sack_vfs_write( file->file, *data, data.length() );
+			if( file->vol->volNative )
+				sack_vfs_write( file->file, *data, data.length() );
+			else
+				sack_fwrite( *data, data.length(), 1, file->cfile );
 		} else if( args[0]->IsArrayBuffer() ) {
 			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+			std::shared_ptr<BackingStore> contents = ab->GetBackingStore();
+			if( file->vol->volNative )
+				sack_vfs_write( file->file, (char*)contents->Data(), contents->ByteLength() );
+			else
+				sack_fwrite( contents->Data(), contents->ByteLength(), 1, file->cfile );
+#else
 			ArrayBuffer::Contents contents = ab->GetContents();
 			//file->buf = (char*)contents.Data();
 			//file->size = contents.ByteLength();
-			sack_vfs_write( file->file, (char*)contents.Data(), contents.ByteLength() );
+			if( file->vol->volNative )
+				sack_vfs_write( file->file, (char*)contents.Data(), contents.ByteLength() );
+			else
+				sack_fwrite( contents.Data(), contents.ByteLength(), 1, file->cfile );
+#endif
 		}
 	}
 }
@@ -1426,6 +1689,14 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 			}
 		} else if( args[0]->IsArrayBuffer() ) {
 			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+			std::shared_ptr<BackingStore> contents = ab->GetBackingStore();
+			lprintf( "Really should complain about binary data being passed to writeLine." );
+			if( file->vol->volNative )
+				sack_vfs_write( file->file, (char*)contents->Data(), contents->ByteLength() );
+			else
+				sack_fwrite( contents->Data(), contents->ByteLength(), 1, file->cfile );
+#else
 			ArrayBuffer::Contents contents = ab->GetContents();
 			//file->buf = (char*)contents.Data();
 			//file->size = contents.ByteLength();
@@ -1434,6 +1705,7 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 				sack_vfs_write( file->file, (char*)contents.Data(), contents.ByteLength() );
 			else
 				sack_fwrite( contents.Data(), contents.ByteLength(), 1, file->cfile );
+#endif
 		}
 	}
 
@@ -1491,7 +1763,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		class constructorSet *c = getConstructors( isolate );
 		c->fileTpl.Reset( isolate, fileTemplate );
 
-		fileTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.vfs.File", v8::NewStringType::kNormal ).ToLocalChecked() );
+		fileTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.File" ) );
 		fileTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 		// Prototype
@@ -1518,7 +1790,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		//NODE_SET_PROTOTYPE_METHOD( fileTemplate, "isPaused", openFile );
 
 		c->fileConstructor.Reset( isolate, fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-		//exports->Set( String::NewFromUtf8( isolate, "File", v8::NewStringType::kNormal ).ToLocalChecked(),
+		//exports->Set( String::NewFromUtf8Literal( isolate, "File" ),
 		//	fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
 
@@ -1594,16 +1866,16 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 VolumeObject::~VolumeObject() {
 	//lprintf( "Garbage collected Volume" );
 	if( volNative ) {
+		// if not - this thread/process has shudown			
 		if( !cleanupHappened ) {
 			Deallocate( char*, mountName );
 			Deallocate( char*, fileName );
 			//printf( "Volume object evaporated.\n" );
 			sack_unmount_filesystem( fsMount );
 			sack_vfs_unload_volume( vol );
-		} else {
-			DeleteLink( &volumes, this );
-		}
+		} 
 	}
+	DeleteLink( &volumes, this );
 }
 
 FileObject::~FileObject() {

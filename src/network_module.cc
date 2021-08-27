@@ -200,19 +200,19 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check = NewArray( struct optionStrings, 1 );
 		AddLink( &l.strings, check );
 		check->isolate = isolate;
-		check->portString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "port", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->addressString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "address", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->broadcastString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "broadcast", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->messageString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "message", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->closeString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "close", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->familyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "family", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->v4String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "IPv4", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->v6String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "IPv6", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->toPortString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "toPort", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->toAddressString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "toAddress", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->readStringsString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "readStrings", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->reusePortString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "reusePort", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->reuseAddrString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "reuseAddress", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->portString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "port" ) );
+		check->addressString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "address" ) );
+		check->broadcastString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "broadcast" ) );
+		check->messageString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "message" ) );
+		check->closeString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "close" ) );
+		check->familyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "family" ) );
+		check->v4String = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "IPv4" ) );
+		check->v6String = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "IPv6" ) );
+		check->toPortString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "toPort" ) );
+		check->toAddressString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "toAddress" ) );
+		check->readStringsString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "readStrings" ) );
+		check->reusePortString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "reusePort" ) );
+		check->reuseAddrString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "reuseAddress" ) );
 	}
 	return check;
 }
@@ -224,7 +224,7 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 	{
 		Local<FunctionTemplate> udpTemplate;
 		udpTemplate = FunctionTemplate::New( isolate, udpObject::New );
-		udpTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.dgram.socket", v8::NewStringType::kNormal ).ToLocalChecked() );
+		udpTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.dgram.socket" ) );
 		udpTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( udpTemplate, "close", udpObject::close );
 		NODE_SET_PROTOTYPE_METHOD( udpTemplate, "on", udpObject::on );
@@ -240,7 +240,7 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 		Local<FunctionTemplate> addrTemplate;
 		addrTemplate = FunctionTemplate::New( isolate, addrObject::New );
 		c->addrTpl.Reset( isolate, addrTemplate );
-		addrTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.network.address", v8::NewStringType::kNormal ).ToLocalChecked() );
+		addrTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.network.address" ) );
 		addrTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		//NODE_SET_PROTOTYPE_METHOD( addrTemplate, "toString", addrObject::toString );
 		addrTemplate->ReadOnlyPrototype();
@@ -273,13 +273,16 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 			case UDP_EVENT_READ:
 				argv[1] = ::getAddressBySA( isolate, eventMessage->from );
 				if( !obj->readStrings ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+					ab = ArrayBuffer::New( isolate, bs );
+#else
 					ab = ArrayBuffer::New( isolate, (POINTER)eventMessage->buf, eventMessage->buflen );
-
 					PARRAY_BUFFER_HOLDER holder = GetHolder();
 					holder->o.Reset( isolate, ab );
 					holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 					holder->buffer = (void*)eventMessage->buf;
-
+#endif
 					argv[0] = ab;
 					obj->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
@@ -563,7 +566,11 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 	}
 	if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+		SendUDPEx( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength(), dest );
+#else
 		SendUDPEx( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
+#endif
 	}
 	else if( args[0]->IsString() ) {
 		String::Utf8Value buf( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );

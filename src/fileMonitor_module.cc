@@ -164,7 +164,7 @@ static void makeNewMonitor( const FunctionCallbackInfo<Value>& args ) {
 		for( n = 0; n < args.Length(); n++ )
 			passArgs[n] = args[n];
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), n, passArgs ).ToLocalChecked() );
-		delete passArgs;
+		delete[] passArgs;
 	}
 }
 
@@ -173,7 +173,7 @@ void fileMonitorInit( Isolate* isolate, Local<Object> exports ) {
 	Local<FunctionTemplate> monitorTemplate;
 
 	monitorTemplate = FunctionTemplate::New( isolate, makeNewMonitor );
-	monitorTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.FileMonitor", v8::NewStringType::kNormal ).ToLocalChecked() );
+	monitorTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.FileMonitor" ) );
 	monitorTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 internal field for wrap
 
 

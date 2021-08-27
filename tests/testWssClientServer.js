@@ -7,7 +7,21 @@ var certRoot = sack.TLS.gencert( { key:keys[0]
 	, state:"NV"
 	, locality:"Las Vegas"
 	, org:"Freedom Collective", unit:"Tests", name:"Root Cert", serial: 1001 }  )
-console.log( sack.TLS );
+
+//console.log( sack.TLS );
+/*
+{
+  seed: [Function (anonymous)],
+  genkey: [Function (anonymous)],
+  gencert: [Function (anonymous)],
+  genreq: [Function (anonymous)],
+  pubkey: [Function (anonymous)],
+  signreq: [Function (anonymous)],
+  validate: [Function (anonymous)],
+  expiration: [Function (anonymous)],
+  certToString: [Function (anonymous)]
+}
+*/
 var signer = ( sack.TLS.signreq( { 
 	request: sack.TLS.genreq( { key:keys[1]
 		, country:"US", state:"NV", locality:"Las Vegas"
@@ -30,7 +44,7 @@ console.log( "serving on 8080" );
 
 
 server.onrequest( function( req, res ) {
-	console.log( "Received request:", req );
+	//console.log( "HTTP Received request:", req );
 	if( req.url.endsWith( ".html" ) || req.url == "/" ) {
 		res.writeHead( 200 );
 		res.end( "<HTML><BODY>Success.</BODY></HTML>" );
@@ -41,7 +55,7 @@ server.onrequest( function( req, res ) {
 } );
 
 server.onaccept( function ( ws ) {
-	console.log( "connected:", ws);
+	//console.log( "connected:", ws);
 	console.log( "Connection received with : ", ws.headers['Sec-WebSocket-Protocol'], " path:", ws.url );
         if( process.argv[2] == "1" )
 		this.reject();
@@ -51,14 +65,14 @@ server.onaccept( function ( ws ) {
 } );
 
 server.onconnect( function (ws) {
-	console.log( "Connect:", ws );
-	console.log( "Connect:", this );
+	//console.log( "Connect:", ws );
 	
 	ws.onmessage( function( msg ) {
-        	console.log( "Received data:", msg );
-                ws.send( msg );
+		console.log( "Received data:", msg );
+		if( ws.readyStatus === 1 )
+			ws.send( msg );
 		//ws.close();
-        } );
+	} );
 	ws.onclose( function() {
         	console.log( "Remote closed" );
         } );
@@ -72,11 +86,11 @@ var clientOpts = {
 } 
 
 var client = sack.WebSocket.Client( "wss://localhost:8080", clientOpts );
-client.on( "message", (msg)=>{ console.log( "Got back:", msg ) } );
-client.on( "open", ()=>{ client.send( "Echo This." ) } );
+client.on( "message", (msg)=>{ console.log( "(1)Got back:", msg ) } );
+client.on( "open", ()=>{ client.send( "Echo This.(from1)" );client.close(); } );
 client.on( "error", (error)=>{ console.log( "Error:", err ) } );
 
 var client2 = sack.WebSocket.Client( "wss://localhost:8080/", ["chat", "present"], clientOpts );
-client2.on( "message", (msg)=>{ console.log( "Got back:", msg ) } );
-client2.on( "open", function(){ console.log( "This?", this ); this.send( "Echo This." ) } );
+client2.on( "message", (msg)=>{ console.log( "(2)Got back:", msg ) } );
+client2.on( "open", function(){ console.log( "This?", this ); this.send( "Echo This.(from2)" ) } );
 client2.on( "error", (error)=>{ console.log( "Error:", err ) } );

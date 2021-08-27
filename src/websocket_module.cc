@@ -73,8 +73,10 @@ enum wsEvents {
 	WS_EVENT_READ,   // onMessage callback (wssi,wsc)
 	WS_EVENT_ERROR,  // error event (unused)  (wssi,wss,wsc)
 	WS_EVENT_REQUEST,// websocket non-upgrade request
+	WS_EVENT_RESPONSE,// websocket non-upgrade request
 	WS_EVENT_ERROR_CLOSE, // illegal server connection
 	WS_EVENT_LOW_ERROR,
+	WS_EVENT_RELEASE_BUFFER,
 };
 
 struct optionStrings {
@@ -118,6 +120,7 @@ struct optionStrings {
 	Eternal<String> *redirectString;
 	Eternal<String> *keepAliveString;
 	Eternal<String> *versionString;
+	Eternal<String> *onReplyString;
 };
 
 static PLIST strings;
@@ -175,6 +178,7 @@ struct wssEvent {
 	enum wsEvents eventType;
 	class wssObject *_this;
 	union {
+		struct pendingWrite* write;
 		struct {
 			int accepted;
 			const char *protocol;
@@ -202,7 +206,9 @@ struct wssiEvent {
 	class wssiObject *_this;
 	//PLIST send;
 	//LOGICAL send_close; // need reason.
-	POINTER buf;
+	int code;
+
+	CPOINTER buf;
 	size_t buflen;
 	LOGICAL binary;
 	//PTHREAD waiter;
@@ -215,7 +221,7 @@ DeclareSet( WSSI_EVENT );
 struct wscEvent {
 	enum wsEvents eventType;
 	class wscObject *_this;
-	POINTER buf;
+	CPOINTER buf;
 	int code;
 	size_t buflen;
 	LOGICAL binary;
@@ -223,6 +229,16 @@ struct wscEvent {
 typedef struct wscEvent WSC_EVENT;
 #define MAXWSC_EVENTSPERSET 128
 DeclareSet( WSC_EVENT );
+
+struct httpRequestEvent {
+	enum wsEvents eventType;
+	class httpRequestObject *_this;
+	HTTPState state;
+};
+typedef struct httpRequestEvent HTTP_REQUEST_EVENT;
+#define MAXHTTP_REQUEST_EVENTSPERSET 128
+DeclareSet( HTTP_REQUEST_EVENT );
+
 
 struct socketTransport {
 	class wssiObject *wssi;
@@ -239,18 +255,29 @@ struct socketUnloadStation {
 	PLIST transport;
 };
 
+struct pendingWrite {
+	Persistent<ArrayBuffer> buffer;
+	CPOINTER data;
+	wssObject* wss;
+};
+
 static struct local {
 	int data;
 	//uv_loop_t* loop;
 	int waiting;
 	PTHREAD jsThread;
-	CRITICALSECTION csWssEvents;
-	PWSS_EVENTSET wssEvents;
-	CRITICALSECTION csWssiEvents;
-	PWSSI_EVENTSET wssiEvents;
-	CRITICALSECTION csWscEvents;
-	PWSC_EVENTSET wscEvents;
-	PLIST transportDestinations;
+        CRITICALSECTION csWssEvents;
+        PWSS_EVENTSET wssEvents;
+        CRITICALSECTION csWssiEvents;
+        PWSSI_EVENTSET wssiEvents;
+        CRITICALSECTION csWscEvents;
+        PWSC_EVENTSET wscEvents;
+
+        CRITICALSECTION csHttpRequestEvents;
+        PHTTP_REQUEST_EVENTSET httpRequestEvents;
+
+        PLIST transportDestinations;
+	PLIST pendingWrites;
 } l;
 
 
@@ -265,45 +292,47 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check = NewArray( struct optionStrings, 1 );
 		AddLink( &strings, check );
 		check->isolate = isolate;
-		check->readyStateString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "readyState", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->portString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "port", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->urlString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "url", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->localPortString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "localPort", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->remotePortString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "remotePort", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->addressString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "address", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->localAddrString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "localAddress", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->remoteAddrString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "remoteAddress", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->localFamilyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "localFamily", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->remoteFamilyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "remoteFamily", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->headerString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "headers", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->CGIString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "CGI", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->contentString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "content", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->certString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "cert", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->keyString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "key", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->pemString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "pem", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->passString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "passphrase", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->deflateString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "perMessageDeflate", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->deflateAllowString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "perMessageDeflateAllow", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->caString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "ca", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->v4String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "IPv4", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->v6String = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "IPv6", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->vUString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "unknown", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->connectionString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "connection", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->maskingString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "masking", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->bytesReadString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "bytesRead", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->bytesWrittenString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "bytesWritten", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->requestString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "request", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->bufferedAmountString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "bufferedAmount", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->readyStateString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "readyState" ) );
+		check->portString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "port" ) );
+		check->urlString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "url" ) );
+		check->localPortString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "localPort" ) );
+		check->remotePortString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "remotePort" ) );
+		check->addressString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "address" ) );
+		check->localAddrString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "localAddress" ) );
+		check->remoteAddrString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "remoteAddress" ) );
+		check->localFamilyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "localFamily" ) );
+		check->remoteFamilyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "remoteFamily" ) );
+		check->headerString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "headers" ) );
+		check->CGIString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "CGI" ) );
+		check->contentString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "content" ) );
+		check->certString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "cert" ) );
+		check->keyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "key" ) );
+		check->pemString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "pem" ) );
+		check->passString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "passphrase" ) );
+		check->deflateString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "perMessageDeflate" ) );
+		check->deflateAllowString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "perMessageDeflateAllow" ) );
+		check->caString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "ca" ) );
+		check->v4String = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "IPv4" ) );
+		check->v6String = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "IPv6" ) );
+		check->vUString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "unknown" ) );
+		check->connectionString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "connection" ) );
+		check->maskingString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "masking" ) );
+		check->bytesReadString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "bytesRead" ) );
+		check->bytesWrittenString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "bytesWritten" ) );
+		check->requestString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "request" ) );
+		check->bufferedAmountString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "bufferedAmount" ) );
 
-		check->hostnameString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "hostname", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->hostString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "host", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->hostsString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "hosts", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->pathString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "path", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->methodString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "method", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->redirectString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "redirect", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->rejectUnauthorizedString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "rejectUnauthorized", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->keepAliveString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "keepAlive", v8::NewStringType::kNormal ).ToLocalChecked() );
-		check->versionString = new Eternal<String>( isolate, String::NewFromUtf8( isolate, "version", v8::NewStringType::kNormal ).ToLocalChecked() );
+		check->hostnameString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "hostname" ) );
+		check->hostString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "host" ) );
+		check->hostsString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "hosts" ) );
+		check->pathString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "path" ) );
+		check->methodString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "method" ) );
+		check->redirectString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "redirect" ) );
+		check->rejectUnauthorizedString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "rejectUnauthorized" ) );
+		check->keepAliveString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "keepAlive" ) );
+		check->versionString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "version" ) );
+		check->onReplyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "onReply" ) );
+		
 	}
 	return check;
 }
@@ -362,13 +391,18 @@ public:
 	PCLIENT pc;
 	//static Persistent<Function> constructor;
 	Persistent<Object> _this;
+	struct HTTPRequestOptions* opts;
 	//PVARTEXT pvtResult;
 	bool ssl;
 	int port;
 	char *hostname;
-	char *method;
+	const char *method = "GET";
+	const char* content;
+	size_t contentLen;
+	PLIST headers = NULL;
 	char *ca;
 	char *path;
+
 	bool rejestUnauthorized;
 
 	bool firstDispatchDone;
@@ -379,6 +413,9 @@ public:
 	PTHREAD waiter;
 
 	PTEXT result;
+	HTTPState state;
+	// if set, will be called when content buffer has been sent.
+	//void ( *writeComplete )(void );
 public:
 
 	httpRequestObject();
@@ -390,10 +427,13 @@ public:
 	static void gets( const v8::FunctionCallbackInfo<Value>& args );
 	static void getRequest( const v8::FunctionCallbackInfo<Value>& args, bool secure );
 
+
+	Persistent<Object> resultObject;
 	Persistent<Function, CopyablePersistentTraits<Function>> resultCallback;
 	Persistent<Function, CopyablePersistentTraits<Function>> cbError;
 
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	PLINKQUEUE eventQueue;
 
 	~httpRequestObject();
 };
@@ -408,6 +448,7 @@ public:
 	bool ssl;
 	wssObject* wss;
 	Isolate *isolate;
+	bool headWritten = false;
 public:
 
 	httpObject();
@@ -421,7 +462,7 @@ public:
 
 // web sock client Object
 class wscObject : public node::ObjectWrap {
-	char *serverUrl;
+
 public:
 	PCLIENT pc;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
@@ -434,10 +475,14 @@ public:
 public:
 	//static Persistent<Function> constructor;
 	//static Persistent<FunctionTemplate> tpl;
-	Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
+	//Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
+	//Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
+	//Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
+	//Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
+	PLIST openCallbacks = NULL;
+	PLIST messageCallbacks = NULL;
+	PLIST closeCallbacks = NULL;
+	PLIST errorCallbacks = NULL;
 
 public:
 
@@ -461,6 +506,11 @@ public:
 	~wscObject();
 };
 
+class callbackFunction {
+public:
+	Persistent<Function, CopyablePersistentTraits<Function>> callback; //
+};
+
 // web sock server instance Object  (a connection from a remote)
 class wssiObject : public node::ObjectWrap {
 public:
@@ -481,10 +531,14 @@ public:
 public:
 	//static Persistent<Function> constructor;
 	//static Persistent<FunctionTemplate> tpl;
-	//Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
+	////Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
+	//Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
+	//Persistent<Function, CopyablePersistentTraits<Function>> messageCallback; //
+	//Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
+
+	PLIST messageCallbacks = NULL;
+	PLIST closeCallbacks = NULL;
+	PLIST errorCallbacks = NULL;
 
 public:
 
@@ -533,6 +587,14 @@ static WSC_EVENT *GetWscEvent() {
 	return evt;
 }
 
+static HTTP_REQUEST_EVENT *GetHttpRequestEvent() {
+	EnterCriticalSec( &l.csHttpRequestEvents );
+	HTTP_REQUEST_EVENT *evt = GetFromSet( HTTP_REQUEST_EVENT, &l.httpRequestEvents );
+	memset( evt, 0, sizeof( HTTP_REQUEST_EVENT ) );
+	LeaveCriticalSec( &l.csHttpRequestEvents );
+	return evt;
+}
+
 static void DropWssEvent( WSS_EVENT *evt ) {
 	EnterCriticalSec( &l.csWssEvents );
 	DeleteFromSet( WSS_EVENT, l.wssEvents, evt );
@@ -551,12 +613,21 @@ static void DropWscEvent( WSC_EVENT *evt ) {
 	LeaveCriticalSec( &l.csWscEvents );
 }
 
+static void DropHttpRequestEvent( HTTP_REQUEST_EVENT *evt ) {
+	EnterCriticalSec( &l.csHttpRequestEvents );
+	DeleteFromSet( HTTP_REQUEST_EVENT, l.httpRequestEvents, evt );
+	LeaveCriticalSec( &l.csHttpRequestEvents );
+}
+
+
 static void uv_closed_wssi( uv_handle_t* handle ) {
 	wssiObject* myself = (wssiObject*)handle->data;
-	myself->closeCallback.Reset();
 	//myself->openCallback.Reset();
-	myself->messageCallback.Reset();
-	myself->errorCallback.Reset();
+	INDEX idx;
+	callbackFunction* c;
+	LIST_FORALL( myself->messageCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
+	LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
+	LIST_FORALL( myself->errorCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
 	myself->_this.Reset();
 }
 static void uv_closed_wss( uv_handle_t* handle ) {
@@ -569,10 +640,12 @@ static void uv_closed_wss( uv_handle_t* handle ) {
 }
 static void uv_closed_wsc( uv_handle_t* handle ) {
 	wscObject* myself = (wscObject*)handle->data;
-	myself->closeCallback.Reset();
-	myself->openCallback.Reset();
-	myself->messageCallback.Reset();
-	myself->errorCallback.Reset();
+	INDEX idx;
+	callbackFunction* c;
+	LIST_FORALL( myself->messageCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
+	LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
+	LIST_FORALL( myself->errorCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
+	LIST_FORALL( myself->openCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
 	myself->_this.Reset();
 }
 
@@ -708,6 +781,104 @@ static void acceptRejected(const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+static void uv_closed_httpRequest( uv_handle_t* handle ) {
+	httpRequestObject* myself = (httpRequestObject*)handle->data;
+
+	myself->_this.Reset();
+	delete myself;
+}
+
+static void httpRequestAsyncMsg( uv_async_t* handle ) {
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    HandleScope scope( isolate );
+    httpRequestObject* myself = (httpRequestObject*)handle->data;
+    struct HTTPRequestOptions *opts = myself->opts;
+
+    Local<Context> context = isolate->GetCurrentContext();
+	{
+		struct httpRequestEvent* eventMessage;
+		while( eventMessage = (struct httpRequestEvent*)DequeLink( &myself->eventQueue ) ) {
+			Local<Value> argv[1];
+			Local<ArrayBuffer> ab;
+			switch( eventMessage->eventType ) {
+
+			case WS_EVENT_RESPONSE:
+			{
+				HTTPState state;
+				Local<Function> cb;
+
+				Local<Object> result; result = Object::New( isolate );
+
+				state = eventMessage->state;
+				{
+					HTTPRequestOptions* opts; opts = myself->opts;
+					char* header;
+					INDEX idx;
+					// cleanup what we allocated.
+					LIST_FORALL( opts->headers, idx, char*, header )
+						Release( header );
+					DeleteList( &opts->headers );
+				}
+				if( !state ) {
+					SET( result, "error",
+						state ? String::NewFromUtf8Literal( isolate, "No Content" ) : String::NewFromUtf8Literal( isolate, "Connect Error" ) );
+
+					cb = Local<Function>::New( isolate, myself->resultCallback );
+					argv[0] = result;
+					cb->Call( context, myself->_this.Get( isolate ), 1, argv );
+
+					//args.GetReturnValue().Set( result );
+
+					break;
+				}
+				PTEXT content; content = GetHttpContent( state );
+				if( state && GetHttpResponseCode( state ) ) {
+					if( content ) {
+						SET( result, "content"
+							, String::NewFromUtf8( isolate, GetText( content ), v8::NewStringType::kNormal ).ToLocalChecked() );
+					}
+					SET( result, "statusCode"
+						, Integer::New( isolate, GetHttpResponseCode( state ) ) );
+					const char* textCode = GetHttpResponseStatus( state );
+
+					SET( result, "status"
+						, String::NewFromUtf8( isolate, textCode ? textCode : "NO RESPONSE", v8::NewStringType::kNormal ).ToLocalChecked() );
+					Local<Array> arr = Array::New( isolate );
+					PLIST headers = GetHttpHeaderFields( state );
+					INDEX idx;
+					struct HttpField* header;
+					//headers
+					LIST_FORALL( headers, idx, struct HttpField*, header ) {
+						SETT( arr, header->name
+							, String::NewFromUtf8( isolate, (const char*)GetText( header->value )
+								, NewStringType::kNormal, (int)GetTextSize( header->value ) ).ToLocalChecked() );
+					}
+					SET( result, "headers", arr );
+
+					DestroyHttpState( state );
+				} else {
+					SET( result, "error",
+						state ? String::NewFromUtf8Literal( isolate, "No Content" )
+						: String::NewFromUtf8Literal( isolate, "Connect Error" ) );
+
+				}
+
+				LineRelease( opts->url );
+				cb = Local<Function>::New( isolate, myself->resultCallback );
+				argv[0] = result;
+				cb->Call( context, Undefined(isolate), 1, argv );
+				Deallocate( HTTPRequestOptions*, myself->opts);
+
+				DeleteLinkQueue(&myself->eventQueue);
+				uv_close( (uv_handle_t*)&myself->async, uv_closed_httpRequest );
+				DropHttpRequestEvent( eventMessage );
+				break;
+			}
+			}
+		}
+	}
+}
+
 static void wssiAsyncMsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
@@ -718,8 +889,10 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	{
 		struct wssiEvent* eventMessage;
+		INDEX idx;
+		callbackFunction* callback;
 		while( eventMessage = ( struct wssiEvent* )DequeLink( &myself->eventQueue ) ) {
-			Local<Value> argv[1];
+			Local<Value> argv[2];
 			Local<ArrayBuffer> ab;
 			switch( eventMessage->eventType ) {
 			case WS_EVENT_OPEN:
@@ -730,34 +903,47 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 				}
 				break;
 			case WS_EVENT_READ:
-				size_t length;
-				if( !myself->messageCallback.IsEmpty() ) {
+				LIST_FORALL( myself->messageCallbacks, idx, callbackFunction*, callback ) {
+					//if( !myself->messageCallback.IsEmpty() ) {
 					if( eventMessage->binary ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+						ab = ArrayBuffer::New( isolate, bs );
+#else
 						ab =
-							ArrayBuffer::New( isolate,
-							(void*)eventMessage->buf,
-								length = eventMessage->buflen );
-						argv[0] = ab;
+							ArrayBuffer::New( isolate
+								, (void*)eventMessage->buf
+								, eventMessage->buflen );
 
 						PARRAY_BUFFER_HOLDER holder = GetHolder();
 						holder->o.Reset( isolate, ab );
 						holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 						holder->buffer = eventMessage->buf;
+#endif
+						argv[0] = ab;
 
-						myself->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
 					}
 					else {
 						MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 						argv[0] = buf.ToLocalChecked();
 						//lprintf( "Message:', %s", eventMessage->buf );
-						myself->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
 					}
-					Deallocate( POINTER, eventMessage->buf );
+					Deallocate( CPOINTER, eventMessage->buf );
 				}
 				break;
 			case WS_EVENT_CLOSE:
-				if( !myself->closeCallback.IsEmpty() ) {
-					myself->closeCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+				argv[0] = Integer::New( isolate, eventMessage->code );
+				if( eventMessage->buf ) {
+					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
+					argv[1] = buf.ToLocalChecked();
+					Deallocate( CPOINTER, eventMessage->buf );
+				}
+				else
+					argv[1] = Undefined( isolate );
+				LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, callback ) {
+					callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
 				uv_close( (uv_handle_t*)&myself->async, uv_closed_wssi );
 				DropWssiEvent( eventMessage );
@@ -767,7 +953,9 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 				continue;
 				break;
 			case WS_EVENT_ERROR:
-				myself->errorCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+				LIST_FORALL( myself->errorCallbacks, idx, callbackFunction*, callback ) {
+					callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+				}
 				break;
 			}
 			DropWssiEvent( eventMessage );
@@ -800,17 +988,24 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				if( !myself->errorLowCallback.IsEmpty() ) {
 					argv[0] = Integer::New( isolate, eventMessage->data.error.error );
 					argv[1] = makeSocket( isolate, eventMessage->pc );
+					if( eventMessage->data.error.buffer ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (void*)eventMessage->data.error.buffer,
+							eventMessage->data.error.buflen, releaseBufferBackingStore, NULL );
+						argv[2] = ArrayBuffer::New( isolate, bs );
+#else
 					if( eventMessage->data.error.buffer )
 						argv[2] = ArrayBuffer::New( isolate,
 						(void*)eventMessage->data.error.buffer,
 							eventMessage->data.error.buflen );
-					else
+#endif
+					} else
 						argv[2] = Null( isolate );
-					myself->errorLowCallback.Get( isolate )->Call( context, myself->_this.Get( isolate ), 3, argv );
+						myself->errorLowCallback.Get( isolate )->Call( context, myself->_this.Get( isolate ), 3, argv );
 
-				}
-			}
-			else if( eventMessage->eventType == WS_EVENT_REQUEST ) {
+                 }
+
+			} else if( eventMessage->eventType == WS_EVENT_REQUEST ) {
 				//lprintf( "Comes in directly as a request; don't even get accept..." );
 				if( !myself->requestCallback.IsEmpty() ) {
 					class constructorSet *c = getConstructors( isolate );
@@ -840,12 +1035,12 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 						argv[1] = http;
 						Local<Function> cb = Local<Function>::New( isolate, myself->requestCallback );
 						cb->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
+						// and then even after this returns, the write might be pending...
 					}
 					//else
 					//	lprintf( "This request was a false alarm, and was empty." );
 				}
-			}
-			else if( eventMessage->eventType == WS_EVENT_ACCEPT ) {
+			} else if( eventMessage->eventType == WS_EVENT_ACCEPT ) {
 				//lprintf( "Dispatch open event because connect." );
 				class constructorSet *c = getConstructors( isolate );
 				Local<Function> cons = Local<Function>::New( isolate, c->wssiConstructor );
@@ -931,14 +1126,12 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 								continue;
 							}
 						}
-
 					}
 					uv_async_init( c->loop, &wssiInternal->async, wssiAsyncMsg );
 				}
 				else
 					eventMessage->data.request.accepted = 1;
-			}
-			else if( eventMessage->eventType == WS_EVENT_ERROR_CLOSE ) {
+			} else if( eventMessage->eventType == WS_EVENT_ERROR_CLOSE ) {
 				Local<Object> closingSock = makeSocket( isolate, eventMessage->pc );
 				if( !myself->errorCloseCallback.IsEmpty() ) {
 					Local<Function> cb = myself->errorCloseCallback.Get( isolate );
@@ -951,8 +1144,10 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				DropWssEvent( eventMessage );
 				//DeleteLinkQueue( &myself->eventQueue );
 				//return;
-			}
-			else if( eventMessage->eventType == WS_EVENT_CLOSE ) {
+			} else if( eventMessage->eventType == WS_EVENT_RELEASE_BUFFER ) {
+				// allow buffer to get freed through GC system.
+				eventMessage->data.write->buffer.Reset();
+			} else if( eventMessage->eventType == WS_EVENT_CLOSE ) {
 				myself->readyState = CLOSED;
 				uv_close( (uv_handle_t*)&myself->async, uv_closed_wss );
 				if( !myself->closeCallback.IsEmpty() ) {
@@ -994,57 +1189,78 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 			Local<ArrayBuffer> ab;
 			switch( eventMessage->eventType ) {
 			case WS_EVENT_OPEN:
-				cb = Local<Function>::New( isolate, wsc->openCallback );
-				if( !cb.IsEmpty() ) {
+				//cb = Local<Function>::New( isolate, wsc->openCallback );
+				//if( !cb.IsEmpty() ) 
+				{
 					struct optionStrings *strings;
 					strings = getStrings( isolate );
 					SETV( wsc->_this.Get( isolate ), strings->connectionString->Get( isolate ), makeSocket( isolate, wsc->pc ) );
-					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+
+					INDEX idx;
+					callbackFunction* callback;
+					LIST_FORALL( wsc->openCallbacks, idx, callbackFunction*, callback ) {
+						callback->callback.Get(isolate)->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+					}
 				}
 				break;
 			case WS_EVENT_READ:
-				size_t length;
 				if( eventMessage->binary ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+					ab = ArrayBuffer::New( isolate,bs );
+#else
 					ab =
 						ArrayBuffer::New( isolate,
 						(void*)eventMessage->buf,
-							length = eventMessage->buflen );
-					argv[0] = ab;
+							eventMessage->buflen );
 
 					PARRAY_BUFFER_HOLDER holder = GetHolder();
 					holder->o.Reset( isolate, ab );
 					holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 					holder->buffer = eventMessage->buf;
-
-					wsc->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+#endif
+					argv[0] = ab;
+					INDEX idx; callbackFunction* callback;
+					LIST_FORALL( wsc->messageCallbacks, idx, callbackFunction*, callback ) {
+						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+					}
 				}
 				else {
 					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 					argv[0] = buf.ToLocalChecked();
-					wsc->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+					INDEX idx; callbackFunction* callback;
+					LIST_FORALL( wsc->messageCallbacks, idx, callbackFunction*, callback ) {
+						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+					}
 				}
-				Deallocate( POINTER, eventMessage->buf );
+				Deallocate( CPOINTER, eventMessage->buf );
 				break;
 			case WS_EVENT_ERROR:
+				{
+					INDEX idx; callbackFunction* callback;
+					LIST_FORALL( wsc->errorCallbacks, idx, callbackFunction*, callback ) {
+						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+					}
+				}
+				break;
+			case WS_EVENT_CLOSE:
 				{
 					argv[0] = Integer::New( isolate, eventMessage->code );
 					if( eventMessage->buf ) {
 						MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 						argv[1] = buf.ToLocalChecked();
-						Deallocate( POINTER, eventMessage->buf );
+						Deallocate( CPOINTER, eventMessage->buf );
 					}
 					else
 						argv[1] = Undefined( isolate );
-					wsc->errorCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
+					INDEX idx; callbackFunction* callback;
+					LIST_FORALL( wsc->closeCallbacks, idx, callbackFunction*, callback ) {
+						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
+					}
+					uv_close( (uv_handle_t*)&wsc->async, uv_closed_wsc );
+					DeleteLinkQueue( &wsc->eventQueue );
+					wsc->readyState = CLOSED;
 				}
-				break;
-			case WS_EVENT_CLOSE:
-				cb = Local<Function>::New( isolate, wsc->closeCallback );
-				if( !cb.IsEmpty() )
-					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
-				uv_close( (uv_handle_t*)&wsc->async, uv_closed_wsc );
-				DeleteLinkQueue( &wsc->eventQueue );
-				wsc->readyState = CLOSED;
 				break;
 			}
 			DropWscEvent( eventMessage );
@@ -1061,19 +1277,23 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 
 
 static LOGICAL PostClientSocket( Isolate *isolate, String::Utf8Value *name, wssiObject* obj ) {
-	struct socketTransport* trans = new struct socketTransport();
-	trans->wssi = obj;
-	trans->acceptEventMessage = obj->acceptEventMessage;
-
-	obj->blockReturn = TRUE;
-	obj->acceptEventMessage = NULL;
-	trans->protocolResponse = obj->protocolResponse;
-	obj->protocolResponse = NULL;
+	if( !obj->acceptEventMessage ) {
+		lprintf( "Don't double post a socket." );
+		return TRUE; // success though.
+	}
 	{
 		struct socketUnloadStation* station;
 		INDEX idx;
 		LIST_FORALL( l.transportDestinations, idx, struct socketUnloadStation*, station ) {
 			if( memcmp( *station->s[0], *(name[0]), (name[0]).length() ) == 0 ) {
+				struct socketTransport* trans = new struct socketTransport();
+				trans->wssi = obj;
+				trans->acceptEventMessage = obj->acceptEventMessage;
+
+				obj->blockReturn = TRUE;
+				obj->acceptEventMessage = NULL;
+				trans->protocolResponse = obj->protocolResponse;
+				obj->protocolResponse = NULL;
 				AddLink( &station->transport, trans );
 				//lprintf( "Send Post Request %p", station->clientSocketPoster );
 				uv_async_send( &station->clientSocketPoster );
@@ -1083,7 +1303,7 @@ static LOGICAL PostClientSocket( Isolate *isolate, String::Utf8Value *name, wssi
 		}
 		if( !station ) {
 			return FALSE;
-			//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Failed to find target accepting thread", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			//isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Failed to find target accepting thread" ) ) );
 		}
 	}
 	return TRUE;
@@ -1092,7 +1312,7 @@ static LOGICAL PostClientSocket( Isolate *isolate, String::Utf8Value *name, wssi
 static void postClientSocket( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() < 2 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameter missing: (unique,socket)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Required parameter missing: (unique,socket)" ) ) );
 		return;
 	}
 	wssiObject* obj = wssObject::Unwrap<wssiObject>( args[1].As<Object>() );
@@ -1105,7 +1325,7 @@ static void postClientSocket( const v8::FunctionCallbackInfo<Value>& args ) {
 		
 	}
 	else {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Second paramter is not an accepted socket", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Second paramter is not an accepted socket" ) ) );
 	}
 }
 
@@ -1114,7 +1334,7 @@ static void postClientSocket( const v8::FunctionCallbackInfo<Value>& args ) {
 static void postClientSocketObject( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() < 1 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Required parameter missing: (unique)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Required parameter missing: (unique)" ) ) );
 		return;
 	}
 	wssiObject* obj = wssObject::Unwrap<wssiObject>( args.This() );
@@ -1126,7 +1346,7 @@ static void postClientSocketObject( const v8::FunctionCallbackInfo<Value>& args 
 			args.GetReturnValue().Set( False(isolate) );
 	}
 	else {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Object is not an accepted socket", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Object is not an accepted socket" ) ) );
 	}
 }
 
@@ -1258,7 +1478,7 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 	{
 		Local<FunctionTemplate> httpTemplate;
 		httpTemplate = FunctionTemplate::New( isolate, httpObject::New );
-		httpTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.http.requestHandler", v8::NewStringType::kNormal ).ToLocalChecked() );
+		httpTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.http.requestHandler" ) );
 		httpTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( httpTemplate, "writeHead", httpObject::writeHead );
 		NODE_SET_PROTOTYPE_METHOD( httpTemplate, "end", httpObject::end );
@@ -1272,7 +1492,7 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 	{
 		Local<FunctionTemplate> httpRequestTemplate;
 		httpRequestTemplate = FunctionTemplate::New( isolate, httpRequestObject::New );
-		httpRequestTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.HTTP[S]", v8::NewStringType::kNormal ).ToLocalChecked() );
+		httpRequestTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.HTTP[S]" ) );
 		httpRequestTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( httpRequestTemplate, "on", httpRequestObject::on );
 		NODE_SET_PROTOTYPE_METHOD( httpRequestTemplate, "wait", httpRequestObject::wait );
@@ -1299,28 +1519,48 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 	{
 		Local<FunctionTemplate> wssTemplate;
 		wssTemplate = FunctionTemplate::New( isolate, wssObject::New );
-		wssTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.ws.server", v8::NewStringType::kNormal ).ToLocalChecked() );
+		wssTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.ws.server" ) );
 		wssTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "close", wssObject::close );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "disableSSL", wssObject::disableSSL );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "on", wssObject::on );
-		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onconnect", wssObject::onConnect );
-		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onaccept", wssObject::onAccept );
-		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onrequest", wssObject::onRequest );
-		wssTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "onclose", v8::NewStringType::kNormal ).ToLocalChecked()
+
+		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onconnect", wssObject::onConnect );
+		wssTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onconnect" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssObject::onConnect )
+		);
+		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onaccept", wssObject::onAccept );
+		wssTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onaccept" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssObject::onAccept )
+		);
+		wssTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onrequest" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssObject::onRequest )
+		);
+		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onclose", wssObject::onClose );
+		wssTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onclose" )
 			, FunctionTemplate::New( isolate, wssObject::getOnClose )
 			, FunctionTemplate::New( isolate, wssObject::onClose )
 		);
-		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onclose", wssObject::onClose );
-		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onerror", wssObject::onError );
-		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onerrorlow", wssObject::onErrorLow );
+		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onerror", wssObject::onError );
+		wssTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onerror" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssObject::onError )
+		);
+		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onerrorlow", wssObject::onErrorLow );
+		wssTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onerrorlow" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssObject::onErrorLow )
+		);
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "accept", wssObject::accept );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "reject", wssObject::reject );
 
-		wssTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "readyState", v8::NewStringType::kNormal ).ToLocalChecked()
+		wssTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "readyState" )
 			, FunctionTemplate::New( isolate, wssObject::getReadyState )
 			, Local<FunctionTemplate>() );
-		//wssTemplate->SetNativeDataProperty( String::NewFromUtf8( isolate, "readyState", v8::NewStringType::kNormal ).ToLocalChecked()
+		//wssTemplate->SetNativeDataProperty( String::NewFromUtf8Literal( isolate, "readyState" )
 		//	, wssObject::getReadyState
 		//	, NULL );
 		wssTemplate->ReadOnlyPrototype();
@@ -1336,24 +1576,24 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 	{
 		Local<FunctionTemplate> wscTemplate;
 		wscTemplate = FunctionTemplate::New( isolate, wscObject::New );
-		wscTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.ws.client", v8::NewStringType::kNormal ).ToLocalChecked() );
+		wscTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.ws.client" ) );
 		wscTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "close", wscObject::close );
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "send", wscObject::write );
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "on", wscObject::on );
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "ping", wscObject::ping );
-		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "readyState", v8::NewStringType::kNormal ).ToLocalChecked()
+		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "readyState" )
 			, FunctionTemplate::New( isolate, wscObject::getReadyState )
 			, Local<FunctionTemplate>() );
-		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "onopen", v8::NewStringType::kNormal ).ToLocalChecked()
+		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onopen" )
 			, FunctionTemplate::New( isolate, wscObject::getOnOpen )
 			, FunctionTemplate::New( isolate, wscObject::onOpen )
 		);
-		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "onmessage", v8::NewStringType::kNormal ).ToLocalChecked()
+		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onmessage" )
 			, FunctionTemplate::New( isolate, wscObject::getOnMessage )
 			, FunctionTemplate::New( isolate, wscObject::onMessage )
 		);
-		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "onclose", v8::NewStringType::kNormal ).ToLocalChecked()
+		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onclose" )
 			, FunctionTemplate::New( isolate, wscObject::getOnClose )
 			, FunctionTemplate::New( isolate, wscObject::onClose )
 		);
@@ -1368,7 +1608,7 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 	{
 		Local<FunctionTemplate> wssiTemplate;
 		wssiTemplate = FunctionTemplate::New( isolate, wssiObject::New );
-		wssiTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.core.ws.connection", v8::NewStringType::kNormal ).ToLocalChecked() );
+		wssiTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.ws.connection" ) );
 		wssiTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "post", postClientSocketObject );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "block", blockClientSocketAccept );
@@ -1378,9 +1618,17 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "close", wssiObject::close );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "on", wssiObject::on );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "ping", wssiObject::ping );
-		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "onmessage", wssiObject::onmessage );
-		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "onclose", wssiObject::onclose );
-		wssiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8( isolate, "readyState", v8::NewStringType::kNormal ).ToLocalChecked()
+		wssiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onmessage" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssiObject::onmessage )
+			);
+		//NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "onmessage", wssiObject::onmessage );
+		wssiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "onclose" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssiObject::onclose )
+			);
+		//NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "onclose", wssiObject::onclose );
+		wssiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "readyState" )
 			, FunctionTemplate::New( isolate, wssiObject::getReadyState )
 			, Local<FunctionTemplate>() );
 		wssiTemplate->ReadOnlyPrototype();
@@ -1424,7 +1672,8 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 		(*pevt).eventType = WS_EVENT_OPEN;
 		(*pevt)._this = wssi;
 		EnqueLink( &wssi->eventQueue, pevt );
-		//lprintf( "Send Event:%p", &wss->async );
+                //lprintf( "Send Event:%p", &wss->async );
+                wssi->readyState = wsReadyStates::OPEN;
 		uv_async_send( &wssi->async );
 		// can't change this result later, so need to send 
 		// it as a refernence, in case the JS object changes
@@ -1432,6 +1681,7 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 	}
 	if( !wssi )
 		lprintf( "FAILED TO HAVE WSSI to open." );
+	wssi->readyState = wsReadyStates::OPEN;
 	return (uintptr_t)wssi->wssiRef;
 }
 
@@ -1464,6 +1714,9 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		//lprintf( "Server Websocket closed; post to javascript %p  %p", pc, wssi );
 		(*pevt).eventType = WS_EVENT_CLOSE;
 		(*pevt)._this = wssi;
+		(*pevt).code = code;
+		(*pevt).buf = StrDup(reason);
+		(*pevt).buflen = strlen( reason );
 		wssi->pc = NULL;
 		EnqueLink( &wssi->eventQueue, pevt );
 		uv_async_send( &wssi->async );
@@ -1542,7 +1795,7 @@ static void webSockServerEvent( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOIN
 	(*pevt)._this = wssi;
 	(*pevt).binary = binary;
 	(*pevt).buf = NewArray( uint8_t, msglen );
-	memcpy( (*pevt).buf, buffer, msglen );
+	memcpy( (char*)(*pevt).buf, buffer, msglen );
 	(*pevt).buflen = msglen;
 	EnqueLink( &wssi->eventQueue, pevt );
 	uv_async_send( &wssi->async );
@@ -1606,7 +1859,7 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 	PTEXT tmp;
 	tmp = VarTextPeek( obj->pvtResult );
 	if( tmp && GetTextSize( tmp ) ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Headers have already been set; cannot change resulting status or headers", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Headers have already been set; cannot change resulting status or headers" ) ) );
 		return;
 	}
 	int status = 404;
@@ -1617,6 +1870,7 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 	HTTPState http = GetWebSocketHttpState( obj->pc );
 	if( http ) {
 		int vers = GetHttpVersion( http );
+		obj->headWritten = true;
 		vtprintf( obj->pvtResult, "HTTP/%d.%d %d %s\r\n", vers / 100, vers % 100, status, "OK" );
 
 		if( args.Length() > 1 ) {
@@ -1639,6 +1893,8 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	bool doSend = true;
 	httpObject* obj = Unwrap<httpObject>( args.This() );
+	char* content = NULL;
+	size_t contentLen = 0;
 	int include_close = 1;
 	{
 		PLIST headers = GetWebSocketHeaders( obj->pc );
@@ -1654,12 +1910,11 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( !include_close )
 			vtprintf( obj->pvtResult, "Connection: keep-alive\r\n" );
 	}
-	if( args.Length() > 0 ) {
+	if( args.Length() > 0 && !args[0]->IsNull() ) {
 		if( args[0]->IsString() ) {
 			String::Utf8Value body( USE_ISOLATE( isolate ) args[0] );
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", body.length() );
 			vtprintf( obj->pvtResult, "\r\n" );
-
 			vtprintf( obj->pvtResult, "%*.*s", body.length(), body.length(), *body );
 		}
 		else if( args[0]->IsUint8Array() ) {
@@ -1667,13 +1922,43 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			Local<ArrayBuffer> bodybuf = body->Buffer();
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", body->ByteLength() );
 			vtprintf( obj->pvtResult, "\r\n" );
-			VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
+#if ( NODE_MAJOR_VERSION >= 14 )
+			content = (char*)bodybuf->GetBackingStore()->Data();
+			contentLen = bodybuf->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetBackingStore()->Data(), bodybuf->ByteLength() );
+#else
+			content = (char*)bodybuf->GetContents().Data();
+			contentLen = bodybuf->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
+#endif
+			{
+				struct pendingWrite* write = new struct pendingWrite();
+				write->wss = obj->wss;
+				write->buffer.Reset( isolate, bodybuf );
+				write->data = content;
+				AddLink( &l.pendingWrites, write );
+			}
 		}
 		else if( args[0]->IsArrayBuffer() ) {
 			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
 			vtprintf( obj->pvtResult, "content-length:%d\r\n", ab->ByteLength() );
 			vtprintf( obj->pvtResult, "\r\n" );
-			VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
+#if ( NODE_MAJOR_VERSION >= 14 )
+			content = (char*)ab->GetBackingStore()->Data();
+			contentLen = ab->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
+			content = (char*)ab->GetContents().Data();
+			contentLen = ab->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
+#endif
+			{
+				struct pendingWrite* write = new struct pendingWrite();
+				write->wss = obj->wss;
+				write->buffer.Reset( isolate, ab );
+				write->data = content;
+				AddLink( &l.pendingWrites, write );
+			}
 		} else if( args[0]->IsObject() ) {
 			class constructorSet *c = getConstructors( isolate );
 			Local<FunctionTemplate> wrapper_tpl = c->fileTpl.Get( isolate );
@@ -1682,6 +1967,14 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 				lprintf( "Incomplete; streaming file content to socket...." );
 				doSend = false;
 			}
+		} else if( args[0]->IsNumber() ){
+			if( !obj->headWritten ) 
+				writeHead( args );
+
+			vtprintf( obj->pvtResult, "\r\n" );
+		} else {
+			lprintf( "Unhandled argument type passed to http response.end(); just ending head" );
+			vtprintf( obj->pvtResult, "\r\n" );
 		}
 	}
 	else
@@ -1689,21 +1982,31 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	if( doSend ) {
 		PTEXT buffer = VarTextPeek( obj->pvtResult );
-		if( obj->ssl )
+		if( obj->ssl ) {
 			ssl_Send( obj->pc, GetText( buffer ), GetTextSize( buffer ) );
-		else
+			if( content && contentLen ) {
+				ssl_Send( obj->pc, content, contentLen );
+			}
+		} else {
 			SendTCP( obj->pc, GetText( buffer ), GetTextSize( buffer ) );
+			if( content && contentLen ) {
+				// allow network layer to keep this content buffer
+				SendTCPLong( obj->pc, content, contentLen );
+			}
+		}
 	}
+	ClearNetWork( obj->pc, (uintptr_t)obj->wss );
 	{
 		struct HttpState *pHttpState = GetWebSocketHttpState( obj->pc );
 		if( include_close ) {
 			//lprintf( "Close is included... is this a reset close?" );
 			RemoveClientEx( obj->pc, 0, 1 );
 		}
-		else {
+		//else {
+
 			if (pHttpState) {
 				int result;
-				//lprintf( "ending http on %p", obj->pc );
+				//lprintf( "ending http on %p, checking for more data", obj->pc );
 				EndHttp(pHttpState);
 				while ((result = ProcessHttp(obj->pc, pHttpState)))
 				{
@@ -1728,11 +2031,6 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 						break;
 					}
 				}
-				
-			}
-			else {
-				lprintf( "LOST HTTP STATE" );
-			}
 		}
 	}
 
@@ -1780,12 +2078,36 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 
 }
 
+static void webSocketWriteComplete( PCLIENT pc, CPOINTER buffer, size_t len ) {
+	if( buffer ) {
+		INDEX idx;
+		struct pendingWrite* write;
+		LIST_FORALL( l.pendingWrites, idx, struct pendingWrite*, write ) {
+			if( write->data == buffer ) {
+				// needs to be posted as an event
+				struct wssEvent* pevt = GetWssEvent();
+				//lprintf( "posting request event to JS  %s", GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) );
+				SetWebSocketHttpCloseCallback( pc, webSockHttpClose );
+				SetNetworkWriteComplete( pc, webSocketWriteComplete );
+				pevt->eventType = WS_EVENT_RELEASE_BUFFER;
+				pevt->data.write = write;
+				EnqueLink( &write->wss->eventQueue, pevt );
+				uv_async_send( &write->wss->async );
+				SetLink( &l.pendingWrites, idx, NULL );
+				break;
+			}	
+		}
+	}
+}
+
 static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 	wssObject *wss = (wssObject*)psv;
 	if( !wss->requestCallback.IsEmpty() ) {
+		AddNetWork( pc, psv );
 		struct wssEvent *pevt = GetWssEvent();
 		//lprintf( "posting request event to JS  %s", GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) );
 		SetWebSocketHttpCloseCallback( pc, webSockHttpClose );
+		SetNetworkWriteComplete( pc, webSocketWriteComplete );
 		(*pevt).eventType = WS_EVENT_REQUEST;
 		//(*pevt).waiter = MakeThread();
 		(*pevt). pc = pc;
@@ -1982,6 +2304,7 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 
 	Local<String> optName;
 	struct optionStrings *strings = getStrings( isolate );
+	MemSet( wssOpts, 0, sizeof( *wssOpts ) );
 	wssOpts->cert_chain = NULL;
 	wssOpts->cert_chain_len = 0;
 
@@ -2076,18 +2399,16 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must specify options for server.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must specify options for server." ) ) );
 		return;
 	}
 
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
 		struct wssOptions wssOpts;
+		MemSet( &wssOpts, 0, sizeof( wssOpts ) );
+
 		int argOfs = 0;
-		wssOpts.hostList = NULL;
-		wssOpts.url = NULL;
-		wssOpts.port = 0;
-		wssOpts.address = NULL;
 		if( args[argOfs]->IsString() ) {
 			String::Utf8Value url( USE_ISOLATE( isolate ) args[argOfs]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			wssOpts.url = StrDup( *url );
@@ -2122,7 +2443,7 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 			Deallocate( char *, wssOpts.url );
 		if( !obj->pc ) {
 			delete obj;
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Failed to create listener.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Failed to create listener." ) ) );
 			return;
 		}
 		if( args.Length() > 1 && args[1]->IsFunction() ) {
@@ -2176,7 +2497,7 @@ void wssObject::on( const FunctionCallbackInfo<Value>& args ) {
 		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if( !cb->IsFunction() ) {
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Argument is not a function" ) ) );
 			return;
 		}
 		if( StrCmp( *event, "request" ) == 0 ) {
@@ -2207,7 +2528,7 @@ void wssObject::onConnect( const FunctionCallbackInfo<Value>& args ) {
 		if( args[0]->IsFunction() )
 			obj->openCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
 		else
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Argument is not a function" ) ) );
 	}
 }
 
@@ -2218,7 +2539,7 @@ void wssObject::onAccept( const FunctionCallbackInfo<Value>& args ) {
 		if( args[0]->IsFunction() )
 			obj->acceptCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
 		else
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Argument is not a function" ) ) );
 	}
 }
 
@@ -2229,7 +2550,7 @@ void wssObject::onRequest( const FunctionCallbackInfo<Value>& args ) {
 		if( args[0]->IsFunction() )
 			obj->requestCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
 		else
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Argument is not a function" ) ) );
 	}
 }
 
@@ -2240,7 +2561,7 @@ void wssObject::onError( const FunctionCallbackInfo<Value>& args ) {
 		if( args[0]->IsFunction() )
 			obj->errorCloseCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
 		else
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Argument is not a function" ) ) );
 	}
 }
 
@@ -2251,7 +2572,7 @@ void wssObject::onErrorLow( const FunctionCallbackInfo<Value>& args ) {
 		if( args[0]->IsFunction() )
 			obj->errorLowCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
 		else
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Argument is not a function", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Argument is not a function" ) ) );
 	}
 }
 
@@ -2274,7 +2595,7 @@ void wssObject::accept( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
 	if( !obj->eventMessage ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Reject cannot be used outside of connection callback.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Reject cannot be used outside of connection callback." ) ) );
 		return;
 	}
 	if( args.Length() > 0 ) {
@@ -2288,7 +2609,7 @@ void wssObject::reject( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.Holder() );
 	if( !obj->eventMessage ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Reject cannot be used outside of connection callback.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Reject cannot be used outside of connection callback." ) ) );
 		return;
 	}
 	obj->eventMessage->data.request.accepted = 0;
@@ -2321,7 +2642,7 @@ void wssObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 
 wssiObject::wssiObject( ) {
 	eventQueue = CreateLinkQueue();
-	readyState = wsReadyStates::OPEN;
+	readyState = wsReadyStates::CONNECTING;
 	protocolResponse = NULL;
 	this->closed = 0;
 	this->thrown = FALSE;
@@ -2334,6 +2655,10 @@ wssiObject::~wssiObject() {
 		lprintf( "destruct, try to generate WebSockClose" );
 		RemoveClient( pc );
 	}
+	//all member would have been reset... in the event close
+	DeleteList( &closeCallbacks );
+	DeleteList( &messageCallbacks );
+	DeleteList( &errorCallbacks );
 }
 
 void wssiObject::New( const FunctionCallbackInfo<Value>& args ) {
@@ -2363,7 +2688,9 @@ void wssiObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 void wssiObject::ping( const v8::FunctionCallbackInfo<Value>& args ) {
 	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
-	WebSocketPing( obj->pc, 0 );
+	if (obj->pc) {
+		WebSocketPing(obj->pc, 0);
+	}
 }
 
 void wssiObject::on( const FunctionCallbackInfo<Value>& args){
@@ -2374,11 +2701,17 @@ void wssiObject::on( const FunctionCallbackInfo<Value>& args){
 		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if(  StrCmp( *event, "message" ) == 0 ) {
-			obj->messageCallback.Reset( isolate, cb);
+			callbackFunction* c = new callbackFunction();
+			c->callback.Reset( isolate, cb );
+			AddLink( &obj->messageCallbacks, c );
 		} else if(  StrCmp( *event, "error" ) == 0 ) {
-			obj->errorCallback.Reset(isolate,cb);
+			callbackFunction* c = new callbackFunction();
+			c->callback.Reset( isolate, cb );
+			AddLink( &obj->errorCallbacks, c );
 		} else if(  StrCmp( *event, "close" ) == 0 ){
-			obj->closeCallback.Reset(isolate,cb);
+			callbackFunction* c = new callbackFunction();
+			c->callback.Reset( isolate, cb );
+			AddLink( &obj->closeCallbacks, c );
 		}
 	}
 }
@@ -2389,7 +2722,9 @@ void wssiObject::onmessage( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 		Local<Function> cb = Local<Function>::Cast( args[0] );
-		obj->messageCallback.Reset( isolate, cb );
+		callbackFunction* c = new callbackFunction();
+		c->callback.Reset( isolate, cb );
+		AddLink( &obj->messageCallbacks, c );
 	}
 }
 
@@ -2399,7 +2734,9 @@ void wssiObject::onclose( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 		Local<Function> cb = Local<Function>::Cast( args[0] );
-		obj->closeCallback.Reset( isolate, cb );
+		callbackFunction* c = new callbackFunction();
+		c->callback.Reset( isolate, cb );
+		AddLink( &obj->closeCallbacks, c );
 	}
 }
 
@@ -2414,20 +2751,35 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 	if( !obj->pc ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Connection has already been closed.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Connection has already been closed." ) ) );
 		return;
 	}
+	while( obj->readyState == wsReadyStates::CONNECTING )
+		Relinquish();
+
 	if( args[0]->IsTypedArray() ) {
 		Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
 		Local<ArrayBuffer> ab = ta->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 	} else if( args[0]->IsUint8Array() ) {
 		Local<Uint8Array> body = args[0].As<Uint8Array>();
 		Local<ArrayBuffer> ab = body->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 	} else if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 	}
 	else if( args[0]->IsString() ) {
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -2485,6 +2837,9 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	struct wscEvent *pevt = GetWscEvent();
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wsc;
+	(*pevt).code = code;
+	(*pevt).buf = StrDup(reason);
+	(*pevt).buflen = strlen( reason );
 	EnqueLink( &wsc->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
 	lprintf( "Send Close Request" );
@@ -2513,7 +2868,7 @@ static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTE
 	struct wscEvent *pevt = GetWscEvent();
 	(*pevt).eventType = WS_EVENT_READ;
 	(*pevt).buf = NewArray( uint8_t, msglen );
-	memcpy( (*pevt).buf, buffer, msglen );
+	memcpy( (char*)(*pevt).buf, buffer, msglen );
 	(*pevt).buflen = msglen;
 	(*pevt).binary = type;
 	(*pevt)._this = wsc;
@@ -2543,7 +2898,7 @@ wscObject::wscObject( wscOptions *opts ) {
 		if( opts->ssl ) {
 			if( !ssl_BeginClientSession( pc, opts->key, opts->key_len, opts->pass, opts->pass_len
 				, opts->root_cert, opts->root_cert ? strlen( opts->root_cert ) : 0 ) ) {
-				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Error initializing SSL connection (bad key or passphrase?)", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+				isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Error initializing SSL connection (bad key or passphrase?)" ) ) );
 				//throw "Error initializing SSL connection (bad key or passphrase?)";
 			}
 		}
@@ -2558,6 +2913,11 @@ wscObject::~wscObject() {
 		//lprintf( "destruct, try to generate WebSockClose" );
 		RemoveClient( pc );
 	}
+	//all member would have been reset... in the event close
+	DeleteList( &openCallbacks );
+	DeleteList( &closeCallbacks );
+	DeleteList( &messageCallbacks );
+	DeleteList( &errorCallbacks );
 	DeleteLinkQueue( &eventQueue );
 }
 
@@ -2620,7 +2980,7 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must specify url and optionally protocols or options for client.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must specify url and optionally protocols or options for client." ) ) );
 		return;
 	}
 
@@ -2713,7 +3073,9 @@ void wscObject::onOpen( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 		Local<Function> cb = Local<Function>::Cast( args[0] );
-		obj->openCallback.Reset( isolate, cb );
+		callbackFunction* c = new callbackFunction();
+		c->callback.Reset( isolate, cb );
+		AddLink( &obj->openCallbacks, c );
 	}
 }
 
@@ -2723,7 +3085,10 @@ void wscObject::onMessage( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 		Local<Function> cb = Local<Function>::Cast( args[0] );
-		obj->messageCallback.Reset( isolate, cb );
+
+		callbackFunction* c = new callbackFunction();
+		c->callback.Reset( isolate, cb );
+		AddLink( &obj->messageCallbacks, c );
 	}
 }
 
@@ -2733,7 +3098,9 @@ void wscObject::onClose( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 		Local<Function> cb = Local<Function>::Cast( args[0] );
-		obj->closeCallback.Reset( isolate, cb );
+		callbackFunction* c = new callbackFunction();
+		c->callback.Reset( isolate, cb );
+		AddLink( &obj->closeCallbacks, c );
 	}
 }
 
@@ -2743,7 +3110,9 @@ void wscObject::onError( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 		Local<Function> cb = Local<Function>::Cast( args[0] );
-		obj->errorCallback.Reset( isolate, cb );
+		callbackFunction* c = new callbackFunction();
+		c->callback.Reset( isolate, cb );
+		AddLink( &obj->errorCallbacks, c );
 	}
 }
 
@@ -2751,25 +3120,25 @@ void wscObject::onError( const FunctionCallbackInfo<Value>& args ) {
 void wscObject::getOnOpen( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-	args.GetReturnValue().Set( obj->openCallback.Get( isolate ) );
+	//args.GetReturnValue().Set( obj->openCallback.Get( isolate ) );
 }
 
 void wscObject::getOnMessage( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-	args.GetReturnValue().Set( obj->messageCallback.Get( isolate ) );
+	//args.GetReturnValue().Set( obj->messageCallback.Get( isolate ) );
 }
 
 void wscObject::getOnClose( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-	args.GetReturnValue().Set( obj->closeCallback.Get( isolate ) );
+	//args.GetReturnValue().Set( obj->closeCallback.Get( isolate ) );
 }
 
 void wscObject::getOnError( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
-	args.GetReturnValue().Set( obj->errorCallback.Get( isolate ) );
+	//args.GetReturnValue().Set( obj->errorCallback.Get( isolate ) );
 }
 
 void wscObject::ping( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -2788,14 +3157,22 @@ void wscObject::on( const FunctionCallbackInfo<Value>& args){
 				cb->Call( isolate->GetCurrentContext(), obj->_this.Get( isolate ), 0, NULL );
 			}
 			else {
-				obj->openCallback.Reset( isolate, cb );
+				callbackFunction* c = new callbackFunction();
+				c->callback.Reset( isolate, cb );
+				AddLink( &obj->openCallbacks, c );
 			}
 		} else if(  StrCmp( *event, "message" ) == 0 ) {
-			obj->messageCallback.Reset(isolate,cb);
+			callbackFunction* c = new callbackFunction();
+			c->callback.Reset( isolate, cb );
+			AddLink( &obj->messageCallbacks, c );
 		} else if(  StrCmp( *event, "error" ) == 0 ) {
-			obj->errorCallback.Reset(isolate,cb);
+			callbackFunction* c = new callbackFunction();
+			c->callback.Reset( isolate, cb );
+			AddLink( &obj->errorCallbacks, c );
 		} else if(  StrCmp( *event, "close" ) == 0 ) {
-			obj->closeCallback.Reset(isolate,cb);
+			callbackFunction* c = new callbackFunction();
+			c->callback.Reset( isolate, cb );
+			AddLink( &obj->closeCallbacks, c );
 		} else
 			isolate->ThrowException( Exception::Error(
 				String::NewFromUtf8( isolate, TranslateText( "Event name specified is not supported or known." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -2853,10 +3230,18 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 	if( args[0]->IsTypedArray() ) {
 		Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
 		Local<ArrayBuffer> ab = ta->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 	} else if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+#endif
 	}
 	else if( args[0]->IsString() ) {
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -2908,10 +3293,12 @@ httpRequestObject::httpRequestObject():_this() {
 	finished = false;
 	waiter = NULL;
 	result = NULL;
+	eventQueue = NULL;
+
 }
 
 httpRequestObject::~httpRequestObject() {
-
+	
 }
 
 void httpRequestObject::New( const FunctionCallbackInfo<Value>& args ) {
@@ -2920,7 +3307,11 @@ void httpRequestObject::New( const FunctionCallbackInfo<Value>& args ) {
 		httpRequestObject *request = new httpRequestObject();
 		Local<Object> _this = args.This();
 		request->_this.Reset( isolate, _this );
-		request->Wrap( _this );
+                request->Wrap( _this );
+
+                class constructorSet* c = getConstructors( isolate );
+		uv_async_init( c->loop, &request->async, httpRequestAsyncMsg );
+
 		args.GetReturnValue().Set( _this );
 	}
 	else {
@@ -2952,6 +3343,64 @@ void httpRequestObject::on( const FunctionCallbackInfo<Value>& args ) {
 }
 
 
+
+static void 	readHeaders( Isolate *isolate, Local<Context> context, httpRequestObject* httpRequest, Local<Object> headers ) {
+	Local<Array> props = headers->GetPropertyNames( context ).ToLocalChecked();
+	for( uint32_t p = 0; p < props->Length(); p++ ) {
+		Local<Value> name = props->Get( context, p ).ToLocalChecked();
+		Local<Value> value = headers->Get( context, name ).ToLocalChecked();
+		String::Utf8Value localName( isolate,  name );
+		String::Utf8Value localValue( isolate, value );
+		const size_t len = localName.length() + localValue.length() + 2;
+		TEXTCHAR* field = NewArray( TEXTCHAR, len );
+		// HTTP header requirements dictate NO control characters are meant to be sent.
+		snprintf( field, len, "%s:%s", *localName, *localValue );
+		AddLink( &httpRequest->headers, field );
+	}
+}
+
+
+static void requestLongBufferWrite( uintptr_t userData ) {
+	//httpRequestObject* httpRequest = (httpRequestObject*)userData;
+
+}
+
+static uintptr_t DoRequest( PTHREAD thread ) {
+    uintptr_t psv = GetThreadParam( thread );
+    httpRequestObject *req = (httpRequestObject *)psv;
+    //struct HTTPRequestOptions *opts = (struct HTTPRequestOptions*)psv;
+    HTTPState state = NULL;
+    int retries;
+
+    for( retries = 0; !state && retries < 3; retries++ ) {
+    	//lprintf( "request: %s  %s", GetText( address ), GetText( url ) );
+
+    	//if( httpRequest->ssl )
+    	state = GetHttpsQueryEx( req->opts->address, req->opts->url, req->opts->certChain, req->opts );
+
+    }
+
+    struct httpRequestEvent *pevt = GetHttpRequestEvent();
+	//lprintf( "posting request event to JS  %s", GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) );
+//	SetWebSocketHttpCloseCallback( req->pc, webSockHttpClose );
+//	SetNetworkWriteComplete( req->pc, webSocketWriteComplete );
+	if (!req->resultCallback.IsEmpty()) {
+		(*pevt).eventType = WS_EVENT_RESPONSE;
+		//(*pevt).waiter = MakeThread();
+		(*pevt)._this = req;
+		(*pevt).state = state;
+		EnqueLink(&req->eventQueue, pevt);
+		uv_async_send(&req->async);
+	}
+	else {
+		req->state = state;
+		req->finished = true;
+		WakeThread(req->waiter);
+	}
+
+    return 0;
+}
+
 void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, bool secure ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
@@ -2977,11 +3426,41 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		int32_t x = GETV( options, optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		httpRequest->port = x;
 	}
+	if (options->Has(context, optName = strings->headerString->Get(isolate)).ToChecked()) {
+		Local<Object> headers = GETV( options, optName ).As<Object>();
+		readHeaders( isolate, context, httpRequest, headers );
+	}
 
 	if( options->Has( context, optName = strings->methodString->Get( isolate ) ).ToChecked() ) {
 		String::Utf8Value value( USE_ISOLATE( isolate ) GETV( options, optName ) );
 		httpRequest->method = StrDup( *value );
 	}
+
+	if (options->Has(context, optName = strings->contentString->Get(isolate)).ToChecked()) {
+		Local<Value> content = GETV( options, optName );
+		if( content->IsArrayBuffer() ) {
+			// zero copy method... content 
+			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+
+#if ( NODE_MAJOR_VERSION >= 14 )
+			httpRequest->content = (char*)ab->GetBackingStore()->Data();
+			httpRequest->contentLen = ab->GetBackingStore()->ByteLength();
+#else
+			httpRequest->content = (char*)ab->GetContents().Data();
+			httpRequest->contentLen = ab->ByteLength();
+#endif
+
+		} else {
+			// converted from JS widechar to utf8... (transform+copy)
+			String::Utf8Value value(USE_ISOLATE(isolate) GETV(options, optName));
+			// this is a tempary value, that we'll need to keep a copy of... (copy 2, copy 3 to nework)
+			httpRequest->content = StrDup( *value );
+			httpRequest->contentLen = value.length();
+		}
+        } else {
+            httpRequest->content = NULL;
+            httpRequest->contentLen = 0;
+        }
 
 	if( secure && options->Has( context, optName = strings->caString->Get( isolate ) ).ToChecked() ) {
 		if( GETV( options, optName )->IsString() ) {
@@ -2998,69 +3477,104 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		String::Utf8Value value( USE_ISOLATE( isolate ) GETV( options, optName ) );
 		httpRequest->path = StrDup( *value );
 	}
+	if( options->Has( context, optName = strings->onReplyString->Get( isolate ) ).ToChecked() ) {
+		httpRequest->resultCallback.Reset( isolate, GETV( options, optName ).As<Function>());
+	}
 
-	Local<Object> result = Object::New( isolate );
-	NetworkWait( NULL, 256, 2 );  // 1GB memory
+	NetworkWait( NULL, 256, 2 );
 
+	if (!httpRequest->resultCallback.IsEmpty()) {
+		class constructorSet* c = getConstructors(isolate);
+		uv_async_init(c->loop, &httpRequest->async, httpRequestAsyncMsg);
+		httpRequest->async.data = httpRequest;
+	}
 	{
 		PVARTEXT pvtAddress = VarTextCreate();
 		vtprintf( pvtAddress, "%s:%d", httpRequest->hostname, httpRequest->port );
 
-		PTEXT address = VarTextPeek( pvtAddress );
+		PTEXT address = VarTextGet( pvtAddress );
 		PTEXT url = SegCreateFromText( httpRequest->path );
 
 		HTTPState state = NULL;
-		int retries;
-		for( retries = 0; !state && retries < 3; retries++ ) {
-			//lprintf( "request: %s  %s", GetText( address ), GetText( url ) );
-			if( httpRequest->ssl )
-				state = GetHttpsQuery( address, url, httpRequest->ca );
-			else
-				state = GetHttpQuery( address, url );
-		}
-		if( !state ) {
-			SET( result, "error",
-				state ? String::NewFromUtf8( isolate, "No Content", v8::NewStringType::kNormal ).ToLocalChecked() : String::NewFromUtf8( isolate, "Connect Error", v8::NewStringType::kNormal ).ToLocalChecked() );
-			args.GetReturnValue().Set( result );
-			return;
-		}
-		PTEXT content = GetHttpContent(state);
-		if( state && content )
-		{
-			SET( result, "content"
-				, String::NewFromUtf8( isolate, GetText( content ), v8::NewStringType::kNormal ).ToLocalChecked() );
-			SET( result, "statusCode"
-				, Integer::New( isolate, GetHttpResponseCode( state ) ) );
-			SET( result, "status"
-				, String::NewFromUtf8( isolate, GetText( GetHttpResponce( state ) ), v8::NewStringType::kNormal ).ToLocalChecked() );
-			Local<Array> arr = Array::New( isolate );
-			PLIST headers = GetHttpHeaderFields( state );
-			INDEX idx;
-			struct HttpField *header;
-			//headers
-			LIST_FORALL( headers, idx, struct HttpField *, header ) {
-				SET( arr, (const char*)GetText( header->name )
-					, String::NewFromUtf8( isolate, (const char*)GetText( header->value )
-						, NewStringType::kNormal, (int)GetTextSize( header->value ) ).ToLocalChecked() );
-			}
-			SET( result, "headers", arr );
 
-			DestroyHttpState( state );
-		}
-		else
-		{
-			SET( result, "error",
-				state?String::NewFromUtf8( isolate, "No Content", v8::NewStringType::kNormal ).ToLocalChecked() 
-					:String::NewFromUtf8( isolate, "Connect Error", v8::NewStringType::kNormal ).ToLocalChecked() );
+        struct HTTPRequestOptions *opts = NewPlus( struct HTTPRequestOptions, 0 );
+		MemSet(opts, 0, sizeof(*opts ) );
+		httpRequest->opts = opts;
+        opts->url = url;
+        opts->address = address;
+		opts->ssl = httpRequest->ssl;
+		opts->headers = httpRequest->headers;
+		opts->certChain = httpRequest->ca;
+		opts->method = httpRequest->method;
+		//opts->agent = httpRequest->agent;
+		opts->contentLen = httpRequest->contentLen;
+		opts->content = httpRequest->content;
 
-		}
+		opts->writeComplete = requestLongBufferWrite;
+		opts->userData = (uintptr_t)httpRequest;
 
+        ThreadTo( DoRequest, (uintptr_t)httpRequest );
 		VarTextDestroy( &pvtAddress );
-		LineRelease( url );
 	}
 
+	if (httpRequest->resultCallback.IsEmpty()) {
+		// if no callback, block until response is 'finished'
+		httpRequest->waiter = MakeThread();
+		while (!httpRequest->finished)
+			WakeableSleep(1000);
 
-	args.GetReturnValue().Set( result );
+		{
+			HTTPState state = httpRequest->state;
+			Local<Object> result; result = Object::New(isolate);
+
+			{
+				HTTPRequestOptions* opts; opts = httpRequest->opts;
+				char* header;
+				INDEX idx;
+				// cleanup what we allocated.
+				LIST_FORALL(opts->headers, idx, char*, header)
+					Release(header);
+				DeleteList(&opts->headers);
+			}
+			if (!state) {
+				SET(result, "error",
+					state ? String::NewFromUtf8(isolate, "No Content", v8::NewStringType::kNormal).ToLocalChecked() : String::NewFromUtf8(isolate, "Connect Error", v8::NewStringType::kNormal).ToLocalChecked());
+			}
+			else {
+				PTEXT content; content = GetHttpContent( state );
+				if( GetHttpResponseCode( state ) ) {
+					if( content ) {
+						SET( result, "content"
+							, String::NewFromUtf8( isolate, GetText( content ), v8::NewStringType::kNormal ).ToLocalChecked() );
+					}
+					SET( result, "statusCode"
+						, Integer::New( isolate, GetHttpResponseCode( state ) ) );
+					const char* textCode = GetHttpResponseStatus( state );
+
+					SET( result, "status"
+						, String::NewFromUtf8( isolate, textCode ? textCode : "NO RESPONSE", v8::NewStringType::kNormal ).ToLocalChecked() );
+					Local<Array> arr = Array::New( isolate );
+					PLIST headers = GetHttpHeaderFields( state );
+					INDEX idx;
+					struct HttpField* header;
+					//headers
+					LIST_FORALL(headers, idx, struct HttpField*, header) {
+						SETT(arr, header->name
+							, String::NewFromUtf8(isolate, (const char*)GetText(header->value)
+								, NewStringType::kNormal, (int)GetTextSize(header->value)).ToLocalChecked());
+					}
+					SET( result, "headers", arr );
+				} else {
+					SET( result, "error", String::NewFromUtf8Literal( isolate, "Bad Parsing State" ) );
+				}
+				DestroyHttpState( state );
+			}
+			args.GetReturnValue().Set(result);
+		}
+		httpRequest->resultObject.Reset();
+	}
+	
+
 }
 
 void httpRequestObject::get( const FunctionCallbackInfo<Value>& args ) {

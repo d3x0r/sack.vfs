@@ -12,7 +12,7 @@ console.log( "serving on " + serverOpts.port );
 console.log( "with:", disk.dir() );
 
 
-server.onrequest( function( req, res ) {
+server.onrequest = function( req, res ) {
 	var ip = ( req.headers && req.headers['x-forwarded-for'] ) ||
 		 req.connection.remoteAddress ||
 		 req.socket.remoteAddress ||
@@ -26,10 +26,12 @@ server.onrequest( function( req, res ) {
 	var contentType = 'text/html';
 	console.log( ":", extname, filePath )
 	switch (extname) {
-		  case '.js':
-		  case '.mjs':
-			  contentType = 'text/javascript';
-			  break;
+		case '.js':
+		case '.mjs':
+		case '.js.gz':
+		case '.gz':
+			contentType = 'text/javascript';
+			break;
 		  case '.css':
 			  contentType = 'text/css';
 			  break;
@@ -64,28 +66,28 @@ server.onrequest( function( req, res ) {
 		res.writeHead( 404 );
 		res.end( "<HTML><HEAD>404</HEAD><BODY>404</BODY></HTML>");
 	}
-} );
+};
 
-server.onaccept( function ( ws ) {
+server.onaccept = function ( ws ) {
 	if( cb ) return cb(ws)
 //	console.log( "Connection received with : ", ws.protocols, " path:", resource );
         if( process.argv[2] == "1" )
 		this.reject();
         else
 		this.accept();
-} );
+};
 
-server.onconnect( function (ws) {
+server.onconnect = function (ws) {
 	//console.log( "Connect:", ws );
-	ws.onmessage( function( msg ) {
+	ws.onmessage = function( msg ) {
         	//console.log( "Received data:", msg );
                 ws.send( msg );
 		//ws.close();
-        } );
-	ws.onclose( function() {
+        };
+	ws.onclose = function() {
         	//console.log( "Remote closed" );
-        } );
-} );
+        };
+};
 
 }
 

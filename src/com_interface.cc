@@ -6,6 +6,40 @@ static struct local {
 
 } l;
 
+struct msgbuf {
+	int closeEvent;
+	size_t buflen;
+	uint8_t buf[1];
+};
+
+class ComObject : public node::ObjectWrap {
+public:
+	int handle;
+	char* name;
+	//static Persistent<Function> constructor;
+	bool rts = 1;
+	Persistent<Function, CopyablePersistentTraits<Function>>* readCallback; //
+	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	PLINKQUEUE readQueue;
+
+public:
+
+	static void Init( Local<Object> exports );
+	ComObject( char* name );
+	Persistent<Object> jsObject;
+
+private:
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+
+	static void getRTS( const v8::FunctionCallbackInfo<Value>& args );
+	static void setRTS( const v8::FunctionCallbackInfo<Value>& args );
+	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
+	static void writeCom( const v8::FunctionCallbackInfo<Value>& args );
+	static void closeCom( const v8::FunctionCallbackInfo<Value>& args );
+	~ComObject();
+};
+
+
 
 ComObject::ComObject( char *name ) : jsObject() {
 	this->readQueue = CreateLinkQueue();
@@ -14,12 +48,14 @@ ComObject::ComObject( char *name ) : jsObject() {
 }
 
 ComObject::~ComObject() {
-	lprintf( "Garbage collected" );
 	if( handle >=0 )
 		SackCloseComm( handle );
   	Deallocate( char*, name );
 }
 
+void ComObjectInit( Local<Object> exports ) {
+	ComObject::Init( exports );
+}
 
 void ComObject::Init( Local<Object> exports ) {
 		Isolate* isolate = Isolate::GetCurrent();
@@ -27,13 +63,18 @@ void ComObject::Init( Local<Object> exports ) {
 		Local<FunctionTemplate> comTemplate;
 
 		comTemplate = FunctionTemplate::New( isolate, New );
-		comTemplate->SetClassName( String::NewFromUtf8( isolate, "sack.ComPort", v8::NewStringType::kNormal ).ToLocalChecked() );
+		comTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.ComPort" ) );
 		comTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 		// Prototype
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "onRead", onRead );
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "write", writeCom );
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "close", closeCom );
+
+		comTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "rts" )
+			, FunctionTemplate::New( isolate, ComObject::getRTS )
+			, FunctionTemplate::New( isolate, ComObject::setRTS )
+		);
 
 
 		class constructorSet *c = getConstructors( isolate );
@@ -42,11 +83,24 @@ void ComObject::Init( Local<Object> exports ) {
 }
 
 
-struct msgbuf {
-	size_t buflen;
-	uint8_t buf[1];
-};
+void ComObject::getRTS( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
+	args.GetReturnValue().Set( Boolean::New( args.GetIsolate(), (int)obj->rts ) );
 
+}
+void ComObject::setRTS( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() > 0 ) {
+		ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
+		SetCommRTS( obj->handle, obj->rts = args[0].As<Boolean>()->BooleanValue( isolate ) );
+	}
+}
+
+void dont_releaseBufferBackingStore(void* data, size_t length, void* deleter_data) {
+	(void)length;
+	(void)deleter_data;;
+}
 
 static void asyncmsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
@@ -60,15 +114,22 @@ static void asyncmsg( uv_async_t* handle ) {
 		struct msgbuf *msg;
 		while( msg = (struct msgbuf *)DequeLink( &myself->readQueue ) ) {
 			size_t length;
+			if( msg->closeEvent ) {
+				myself->jsObject.Reset();
+				Release( msg );
+				uv_close( (uv_handle_t*)&myself->async, NULL ); // have to hold onto the handle until it's freed.
+				return;
+			}
+#if ( NODE_MAJOR_VERSION >= 14 )
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( msg->buf, length=msg->buflen, dont_releaseBufferBackingStore, NULL );
+			Local<ArrayBuffer> ab = ArrayBuffer::New( isolate, bs );
+#else
 			Local<ArrayBuffer> ab =
 				ArrayBuffer::New( isolate,
 											  msg->buf,
 											  length = msg->buflen );
 
-			//PARRAY_BUFFER_HOLDER holder = GetHolder();
-			//holder->o.Reset( isolate, ab );
-			//holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-			//holder->buffer = msg->buf;
+#endif
 
 			Local<Uint8Array> ui = Uint8Array::New( ab, 0, length );
 
@@ -105,7 +166,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				String::Utf8Value fName( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 				portName = StrDup( *fName );
 			} else {
-				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must specify port name to open.", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+				isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must specify port name to open." ) ) );
 				return;
 			}
 			// Invoked as constructor: `new MyObject(...)`
@@ -148,6 +209,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 static void CPROC dispatchRead( uintptr_t psv, int nCommId, POINTER buffer, int len ) {
 	struct msgbuf *msgbuf = NewPlus( struct msgbuf, len );
 	//lprintf( "got read: %p %d", buffer, len );
+	msgbuf->closeEvent = 0;
 	MemCpy( msgbuf->buf, buffer, len );
 	msgbuf->buflen = len;
 	ComObject *com = (ComObject*)psv;
@@ -162,7 +224,7 @@ void ComObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc < 1 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "Must pass callback to onRead handler", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must pass callback to onRead handler" ) ) );
 		return;
 	}
 
@@ -179,7 +241,7 @@ void ComObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 	int argc = args.Length();
 	if( argc < 1 ) {
-		//isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, "required parameter missing", v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		//isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "required parameter missing" ) ) );
 		return;
 	}
 	Isolate* isolate = args.GetIsolate();
@@ -189,14 +251,28 @@ void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 	if (args[0]->IsString()) {
 		String::Utf8Value u8str( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked());
 		SackWriteComm(com->handle, *u8str, u8str.length());
-
 	}
 	else if (args[0]->IsUint8Array()) {
 		Local<Uint8Array> myarr = args[0].As<Uint8Array>();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		std::shared_ptr<BackingStore> ab_c = myarr->Buffer()->GetBackingStore();
+		char *buf = static_cast<char*>(ab_c->Data()) + myarr->ByteOffset();
+#else
 		ArrayBuffer::Contents ab_c = myarr->Buffer()->GetContents();
 		char *buf = static_cast<char*>(ab_c.Data()) + myarr->ByteOffset();
-		//LogBinary( buf, myarr->Length() );
+#endif
 		SackWriteComm( com->handle, buf, (int)myarr->Length() );
+	}
+	else if (args[0]->IsArrayBuffer()) {
+		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+		std::shared_ptr<BackingStore> ab_c = ab->GetBackingStore();
+		char *buf = static_cast<char*>(ab_c->Data()) ;
+#else
+		ArrayBuffer::Contents ab_c = ab->GetContents();
+		char *buf = static_cast<char*>(ab_c.Data()) ;
+#endif
+		SackWriteComm( com->handle, buf, (int)ab->ByteLength() );
 	}
 
 }
@@ -204,7 +280,16 @@ void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 void ComObject::closeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 	
 	ComObject *com = ObjectWrap::Unwrap<ComObject>( args.This() );
-	com->jsObject.Reset();
-	SackCloseComm( com->handle );
+	if( com->handle >= 0 )
+		SackCloseComm( com->handle );
 	com->handle = -1;
+
+	{
+		//lprintf( "Garbage collected" );
+		struct msgbuf* msgbuf = NewPlus( struct msgbuf, 0 );
+		msgbuf->closeEvent = 1;
+		EnqueLink( &com->readQueue, msgbuf );
+		uv_async_send( &com->async );
+	}
+
 }
