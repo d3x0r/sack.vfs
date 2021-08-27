@@ -143,8 +143,8 @@ function makeSocket( sockid, from ) {
 			console.log( "this message", typeof msg, msg.op, msg ) ;
 			if( msg.op === "addMethod" ) {
                                 try {
-					const f = new AsyncFunction( "JSON", "config", "localStorage", "idGen", "Import", msg.code );
-					f.call( socket, JSOX, config, localStorage_, idGen, (n)=>import(n) ).then( ()=>{
+					const f = new AsyncFunction( "JSON", "config", "idGen", "Import", msg.code );
+					f.call( socket, JSOX, config, idGen, (n)=>import(n) ).then( ()=>{
 						console.log( "completed..." );
 						//socket.on("connect", socket );
 						const pending = l.connects.shift();
@@ -222,11 +222,7 @@ function handleMessage( event ) {
 		}
 	} else {
 		//console.log( "worker Event", msg );
-		if( msg.op === "getItem" ) {
-			event.source.postMessage( {op:"getItem", val:localStorage_.getItem( msg.key )} );
-		} else if( msg.op === "setItem" ) {
-			localStorage_.setItem( msg.key, msg.val );
-		} else if( msg.op === "connecting" ) {
+		if( msg.op === "connecting" ) {
 			let connect;
 			if( l.opens.length ) {
 				const sock = makeSocket( msg.id );

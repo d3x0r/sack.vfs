@@ -222,7 +222,10 @@ there's a conversion to string from binary and a copy of that string from JS to 
 
 ## Changelog
 - 1.1.1(in progress)
+<<<<<<< HEAD
    - fixed HTTP request chain handling.
+=======
+>>>>>>> 1.1.0
 - 1.1.0
    - Split README.md into multiple files, so each section can be expanded.
    - add parse() command to JSOX parser instances.

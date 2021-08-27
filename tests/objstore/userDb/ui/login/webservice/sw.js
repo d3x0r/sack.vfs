@@ -235,9 +235,6 @@ function handleMessage( event ) {
 		} else {
 			console.log( "Failed to find the requested request" + event.data );
 		}
-	}else if( msg.op === "getItem" ) {
-		// reply from getItem localStorage.
-		client.localStorage.respond( msg.val );
 	}else if( msg.op === "setUiLoader" ) {
 		client.uiSocket = msg.socket;
 	}else if( msg.op === "setLoader" ) {
