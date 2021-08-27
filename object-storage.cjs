@@ -16,6 +16,14 @@ const remoteExtensionsSrc = nativeVol.read( __dirname+"/object-storage-remote.js
 const remoteExtensions = remoteExtensionsSrc?remoteExtensionsSrc.toString():"// No COde Found";
 const jsonRemoteExtensions = JSON.stringify( remoteExtensions );
 
+const RNG= sack.SaltyRNG(  (saltbuf)=>saltbuf.push( "0" ), { mode:1 } );
+
+function shortId( s ) {
+      return base64ArrayBuffer( RNG.getBuffer(8*(12)) );
+}
+
+const getId = shortId;
+
 
 var allDangling = new Map();
 var dangling = [];
@@ -681,8 +689,8 @@ _objectStorage.prototype.put = function( obj, opts ) {
 				
 			}
 			_debug && console.log( "New bare object, create a container...", opts );
-                        if( !opts ) opts = { id : sack.id() }
-                        else opts.id = sack.id();
+                        if( !opts ) opts = { id : shortId() }
+                        else opts.id = shortId();
                         //console.log( "Storage ID is picked here:", opts );
                         if( "object" === typeof obj ) {
 				container = new this_.objectStorageContainer(obj,opts);
