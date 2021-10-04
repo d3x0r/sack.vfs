@@ -221,7 +221,10 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.1(in progress)
+- 1.1.3(in progress)
+- 1.1.2
+   - fix using strlen on potentially NULL value for websocket close reason.
+- 1.1.1
    - fixed HTTP request chain handling.
 - 1.1.0
    - Split README.md into multiple files, so each section can be expanded.
