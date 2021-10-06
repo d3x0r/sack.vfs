@@ -221,7 +221,9 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.3(in progress)
+- 1.1.4(in progress)
+- 1.1.3
+   - Fixed bad name comparison in object storage.
 - 1.1.2
    - fix using strlen on potentially NULL value for websocket close reason.
 - 1.1.1
