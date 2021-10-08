@@ -2,8 +2,8 @@ import {sack} from "sack.vfs";
 const StoredObject = sack.ObjectStorage.StoredObject;//import {StoredObject}
 
 //import {StoredObject} from "../commonDb.mjs"
-import { SlabArray } from "./SlabArray.mjs";
-import {BloomNHash} from "../bloomNHash.mjs"
+import { SlabArray } from "@d3x0r/slab-array";
+import {BloomNHash} from "@d3x0r/bloomnhash"
 
 
 const configObject = {
