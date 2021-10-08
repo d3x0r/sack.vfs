@@ -3,8 +3,9 @@ const count = Number( process.argv[3] ) || 100
 
 console.log( "Making from;", from );
 import {sack} from "../../../vfs_module.mjs"
-import {User,Device,UniqueIdentifier,go} from "./userDb.mjs"
+import {UserDb,User,Device,UniqueIdentifier,go} from "./userDb.mjs"
 
+const storage = sack.ObjectStorage( "data.os" );
 
 async function makeUsers() {
 	for( let i = 1; i < count; i++ ) {
@@ -42,3 +43,5 @@ go.then( ()=>{
 		getUsers();
 	} );
 } );
+
+UserDb.hook(storage )
