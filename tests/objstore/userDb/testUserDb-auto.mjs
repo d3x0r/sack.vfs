@@ -38,10 +38,12 @@ async function reloadConfig() {
 		config.commit = ()=>file.write(config);
 		Object.assign( config, obj );
 	} catch(err){
-		console.log( "Error is:", err );
+		console.log( "Error was:", err );
+		console.log( "Writing config..." );
 		const file = await root.create( "test.config.jsox" )
 		file.write( config );
 		config.commit = ()=>file.write(config);
+		
 	} ;
 
 }
@@ -56,11 +58,12 @@ async function makeUsers() {
 	const target =  config.lastUser+count;
 	for( let i = config.lastUser+1; i < target; i++ ) {
 		//console.log( "Tick:", i );
-		const unique = UserDb.getIdentifier();
+		const unique = await UserDb.getIdentifier();
 		unique.key = sack.Id();
 		if( i && i % ( count / 10 ) === 0 )
 			console.log( "user:", i );
 
+	console.log( "Unique:", unique );
 			await unique.store();
 
 			config.lastUser++;
@@ -83,20 +86,21 @@ async function makeUsers() {
 function getUsers() {
 	UserDb.getUser( 3 ).then( (user)=>{
 		
-		console.log( "Got 3 :", user.id, user );
+		console.log( "Got 3? :", user );
+		if( user )
 		AccountDb.getAccounts( user.id ).then( list=>{
 			console.log( "user 3's accounts:", list );
 		})
 	} );
 	UserDb.getUser( 203 ).then( (user)=>{
-		console.log( "Got 203:", user );
+		console.log( "Got 203?:", user );
 		if( user )
 		AccountDb.getAccounts( user.id ).then( list=>{
 			console.log( "user 203's accounts:", list );
 		})
 	} );
 	UserDb.getUser( 835 ).then( (user)=>{
-		console.log( "Got 835:", user );
+		console.log( "Got 835?:", user );
 		if( user )
 		AccountDb.getAccounts( user.id ).then( list=>{
 			console.log( "user 835's accounts:", list );
