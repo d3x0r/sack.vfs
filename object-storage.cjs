@@ -19,6 +19,7 @@ const jsonRemoteExtensions = JSON.stringify( remoteExtensions );
 const RNG= sack.SaltyRNG(  (saltbuf)=>saltbuf.push( "0" ), { mode:1 } );
 
 function shortId( s ) {
+	return sack.Id();
       return base64ArrayBuffer( RNG.getBuffer(8*(12)) );
 }
 
