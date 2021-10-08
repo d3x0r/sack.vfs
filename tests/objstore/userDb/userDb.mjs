@@ -12,11 +12,6 @@ const StoredObject = sack.ObjectStorage.StoredObject;
 
 let inited = false;
 let initResolve = null;
-let initializing = new Promise( (res,rej)=>{
-	initResolve = res;
-} ).then( ()=>{
-	inited = true;
-} );
 
 const configObject = {
 	accountId : null,
@@ -46,6 +41,16 @@ const l = {
 	registrations : [], // these are for orgs that do not exist yet... waiting for someone to ask for it.
 };
 
+
+let initializing = new Promise( (res,rej)=>{
+	initResolve = res;
+	if( l.storage ) {
+		res();
+		console.log( "Already initalized before...." );
+	}
+} ).then( ()=>{
+	inited = true;
+} );
 
 // - - -  - - - - - - - -  -- - - - - - - ---  -- - - - - - - - - - -  -- - - - - -- -
 
@@ -744,7 +749,7 @@ const eventMap = {};
 
 const UserDb = {
 	async hook( storage ) {
-        l.storage = storage;
+		l.storage = storage;
 		BloomNHash.hook( storage );
 		
 		//jsox.fromJSOX( "~T", TextureMsg, buildTexturefromJSOX );
@@ -815,6 +820,7 @@ const UserDb = {
 		}
                 	if( initResolve )
 	                	initResolve();
+		else console.log( "Init never resolves...." );
 	},
 	on( event, data ) {
 		if( "function" === typeof data ) {
