@@ -38,12 +38,10 @@ async function reloadConfig() {
 		config.commit = ()=>file.write(config);
 		Object.assign( config, obj );
 	} catch(err){
-		console.log( "Error was:", err );
-		console.log( "Writing config..." );
 		const file = await root.create( "test.config.jsox" )
+		// this 'file' is different from the 'file' above
 		file.write( config );
-		config.commit = ()=>file.write(config);
-		
+		config.commit = ()=>file.write(config);		
 	} ;
 
 }
@@ -63,18 +61,18 @@ async function makeUsers() {
 		if( i && i % ( count / 10 ) === 0 )
 			console.log( "user:", i );
 
-	console.log( "Unique:", unique );
-			await unique.store();
+		//console.log( "Unique:", unique );
+		await unique.store();
 
-			config.lastUser++;
- 			const user = unique.addUser( i, "User "+i, '' + i + "@email.com", Math.random()*(1<<54) );
-			//console.log( "Created user" );
-			await user.addDevice( sack.Id(), true )
-			//console.log( "created device" );
-			await user.store(); // have to wait for it to be stored to have an ID.
-			AccountDb.makeAccount( user.id );
-			//console.log( "something:", userId );
-			//console.log( "And stored user." );
+		config.lastUser++;
+ 		const user = unique.addUser( i, "User "+i, '' + i + "@email.com", Math.random()*(1<<54) );
+		//console.log( "Created user" );
+		await user.addDevice( sack.Id(), true )
+		//console.log( "created device" );
+		await user.store(); // have to wait for it to be stored to have an ID.
+		AccountDb.makeAccount( user.id );
+		//console.log( "something:", userId );
+		//console.log( "And stored user." );
 	}
 
 	//config.lastUser = config.lastUser+count;

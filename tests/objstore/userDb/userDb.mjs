@@ -3,8 +3,8 @@ import {sack} from "sack.vfs"
 const JSOX=sack.JSOX;
 const stringifier = JSOX.stringifier();
 
-import {BloomNHash} from "../../../node_modules/@d3x0r/bloomnhash/bloomNHash.mjs"
-import {SlabArray}  from "./accountDb/SlabArray.mjs"
+import {BloomNHash} from "@d3x0r/bloomnhash"
+import {SlabArray}  from "@d3x0r/slab-array"
 
 const StoredObject = sack.ObjectStorage.StoredObject;
 //import {StoredObject} from "../commonDb.mjs"
@@ -15,6 +15,7 @@ let initResolve = null;
 
 const configObject = {
 	accountId : null,
+	nameId : null,
 	emailId : null,
 	reconnectId : null,
 	clientId : null,
@@ -28,6 +29,7 @@ const configObject = {
 const l = {
 	ids : configObject,
 	account   : null,
+	name      : null,
 	email     : null,
 	reconnect : null,
 	clients : null,
@@ -62,12 +64,13 @@ export class UniqueIdentifier extends StoredObject {
 		super(l.storage);
 	}
 	addUser( user,account,email,pass ){
+		//if( "string" !== typeof pass ) throw new Error( "Please pass a string as a password" );
 		const newUser = new User();
 		newUser.hook( this );
-		newUser.account = account;
-		newUser.name = user;
-		newUser.email = email;
-		newUser.pass = pass;
+		newUser.account = ''+account;
+		newUser.name = ''+user;
+		newUser.email = ''+email;
+		newUser.pass = ''+pass;
 		newUser.unique = this;
 		return newUser;
 	}
@@ -582,6 +585,7 @@ export class User  extends StoredObject{
 			//console.log( "what about?", id, l );
 			//console.log( "Setting account to:", this.account, this );
 			await l.account.set( this.account, this );
+			await l.name.set( this.name, this );
 			//console.log( "Account was set" );
 			await l.email.set( this.email, this );
 			//console.log( "email was indexed" );
@@ -667,12 +671,20 @@ export class User  extends StoredObject{
 	}
 }
 
-User.get = function( account ) {
+User.get = async function( account ) {
+	// account should be a string, but get/set on bloomnhas will handle strings
+	const t = typeof account; if( t !== "number" && t!=="string" ) throw new Error( "Unsupported key type passed:" +  t + ":"+account );
+	//console.log( "lookingup", typeof account, account );
 	if( !account ) {
 		return Promise.resolve(null);//throw new Error( "Account must be specified");
 	}
 	//console.log( "l?", JSOX.stringify(l.account,null,"\t"), account );
-	return l.account.get( account );
+	const user1 = await l.account.get( account );
+	if( !user1 )  {
+		return l.name.get( account );
+	}
+	return user1;
+
 }
 
 User.getEmail = function( email ) {
@@ -786,6 +798,13 @@ const UserDb = {
 			l.clients   = await storage.get( l.ids.clientId );
 			l.email     = await storage.get( l.ids.emailId );
 			l.account   = await storage.get( l.ids.accountId );
+			if( l.ids.nameId) 
+				l.name      = await storage.get( l.ids.nameId );
+			else {
+				l.name      = new BloomNHash();
+				l.name.hook( storage );
+				l.ids.nameId      = await l.name.store();
+			}
 			l.reconnect = await storage.get( l.ids.reconnectId );
 
 			l.orgs      = await storage.get( l.ids.orgId );
@@ -799,6 +818,8 @@ const UserDb = {
 			l.clients.hook( storage );
 			l.account   = new BloomNHash();
 			l.account.hook( storage );
+			l.name      = new BloomNHash();
+			l.name.hook( storage );
 			l.email     = new BloomNHash();
 			l.email.hook( storage );
 			l.reconnect = new BloomNHash();
@@ -811,6 +832,7 @@ const UserDb = {
 
 			l.ids.clientId    = await l.clients.store();
 			l.ids.accountId   = await l.account.store();
+			l.ids.nameId      = await l.name.store();
 			l.ids.emailId     = await l.email.store();
 			l.ids.reconnectId = await l.reconnect.store();
 			l.ids.orgId       = await l.orgs.store();
@@ -845,7 +867,6 @@ const UserDb = {
 	},
 	User:User,
 	async getIdentifier( i ) {
-		console.log( "clients get:", i);
 		if( i ) return await l.clients.get( i );
 		return getIdentifier();
 	},
