@@ -36,7 +36,7 @@ class Transaction extends StoredObject {
 	
 	store() {
 		//console.log( "Transaction store... this does signing and can take a while" );
-		return super.store( { sign: {pad1:-9, pad2:-9}, read:null } ).then( async (id)=>{
+		return super.store( /*{ sign: {pad1:-9, pad2:-9}, read:null }*/ ).then( async (id)=>{
 
 			//await l.userMap.set( this.ledger.this.account, this );
 			//await l.email.set( this.email, this );
