@@ -10,6 +10,15 @@
   "module": "vfs_module.mjs",
   "type": "commonjs",
   "exports": {
+    ".":{
+    	"require":"./vfs_module.cjs",
+    	"import":"./vfs_module.mjs"
+    },
+    "./import.mjs":{
+    	"default":"./import.mjs"
+    }
+  },
+  "old_exports": {
     "index": "./vfs_module.mjs",
     "sack": "./vfs_module.mjs",
     "import": "./vfs_module.mjs",
@@ -83,6 +92,7 @@
     "mocha-lite": "mocha --experimental-loader=./import.mjs --require test/bootstrap/node test/json6 test/jsox",
     "mocha": "mocha --experimental-loader=./import.mjs --require test/bootstrap/node --recursive",
     "test": "node tests/vfsTest.js",
+    "install2": "cmake-js configure build",
     "install": "node-gyp configure build",
     "login-server": "cd tests/objstore/userDb && node userDbServer.mjs",
     "forum-server": "node tests/objstore/forum/forumServer.mjs",
