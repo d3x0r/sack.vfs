@@ -1,4 +1,6 @@
 
+let currentStorage = null;
+
 module.exports = function(sack) {
 const _debug = false;
 const _debug_dangling = false;
@@ -19,6 +21,7 @@ const jsonRemoteExtensions = JSON.stringify( remoteExtensions );
 const RNG= sack.SaltyRNG(  (saltbuf)=>saltbuf.push( "0" ), { mode:1 } );
 
 function shortId( s ) {
+	return sack.Id();
       return base64ArrayBuffer( RNG.getBuffer(8*(12)) );
 }
 
@@ -39,7 +42,7 @@ sack.ObjectStorage = function (...args) {
 // associates object data with storage data for later put(obj) to re-use the same informations.
 function objectStorageContainer(o,opts) {
 	if( !this instanceof objectStorageContainer ) return new newStorage.objectStorageContainer(o,opts);
-	_debug_object_convert && console.log( "Something creating a new container..", o, opts );
+	//_debug_object_convert && console.log( "Something creating a new container..", o, opts );
 	if( "string" === typeof o ){
 		if( !o ) throw new Error( "Blank string lookup" );
 		// still, if the proir didn't resolve, need to resolve this..
@@ -53,17 +56,28 @@ function objectStorageContainer(o,opts) {
 	if( o ) {
 		this.data = o; // reviving we get null opts.
 	} else {
+		//console.trace( "Hope this path fixes things up..." );
 		this.data = "pending reference"; // reviving we get null opts.
 	}
 
 	currentContainer = this;
 	Object.defineProperty( this, "encoding", { writable:true, value:false } );
 	if( opts && opts.sign ) {
-		var v = sack.SaltyRNG.verify( sack.JSOX.stringify(o), this.data.nonce, 3, 3 );
-		//console.log( "TEST:", v );
-		Object.defineProperty( this, "id", { value:v.key } );
-		v.key = this.data.nonce;
-		this.data.nonce = v;
+		if( !this.nonce ) {
+			//console.log( "SIGNING FAILS?" );
+			let s;
+			const signature = sack.SaltyRNG.sign( s = newStorage.stringifier.stringify(o), opts.sign.pad1, opts.sign.pad2 );
+			this.nonce = signature.key;
+			//console.log( "Signing returned:", signature );
+			this.sign = Object.assign( {e:signature.extent,c:signature.classifier},opts.sign );
+			//console.log( "MAKING A NONCE:", s );
+			//var v = sack.SaltyRNG.verify( newStorage.stringifier.stringify(o), this.nonce, opts.sign.pad1, opts.sign.pad2 );
+			Object.defineProperty( this, "id", { value:signature.id } );
+			//console.trace( "This makes it go boom?", opts, this.nonce, o, v.key );
+		} else {
+		//	var v = sack.SaltyRNG.verify( newStorage.stringifier.stringify(o), this.nonce, opts.sign.pad1, opts.sign.pad2 );
+		//	Object.defineProperty( this, "id", { value:v.key } );
+		}
 	} else {
 		if( opts && opts.id ) {
 			Object.defineProperty( this, "id", { value:opts.id } );
@@ -322,6 +336,7 @@ objectStorageContainer.prototype.map = async function( opts ) {
 		_debug_object_convert && console.trace( "THIS GOT CALLED?", this, Object.getPrototypeOf( this ) );
 		var exist = newStorage.stored.get( this );
 		if( exist ) {
+			console.log( "Think this already is existing?", exist );
 			if( exist[0] == '~' ) {
 				// is a pending promise... 
 				return exist;
@@ -339,7 +354,10 @@ objectStorageContainer.prototype.map = async function( opts ) {
 				//console.log( "THIS SHOULD ALREADY BE IN THE STORAGE!", this, newStorage.stored.get( this.data ) );
 				// this is probably the final result when encoding this object.
 				//newStorage.stored.set( this.data, this.id ); // maybe update the ID though.
-				return {data:this.data}; // this object will be stringified, and have our type prefix prepended.
+				if( this.nonce )
+					return {data:this.data,nonce:this.nonce,sign:this.sign}; // this object will be stringified, and have our type prefix prepended.
+				else
+					return {data:this.data}; // this object will be stringified, and have our type prefix prepended.
 			}
 		}
 		//console.log( "not a container...");
@@ -488,7 +506,7 @@ _objectStorage.prototype.index = function( obj, fieldName, opts ) {
 		//console.log( "Put found object?", container, obj, options );
 		if( container ) {
 			container = this_.cachedContainer.get( container );
-			if( container.data.nonce ) {
+			if( container.nonce ) {
 				rej( new Error( "Sealed records cannot be modified" ) );
 			}
 		}
@@ -624,7 +642,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 				//console.log( "Overwrite old data with new?", container.data, obj );
 				container.data = obj;
 			}
-			if( !container.data.nonce ) {
+			if( !container.nonce ) {
 				// make sure every item that is in an index
 				// has been written...
                             	
@@ -681,7 +699,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 				console.trace( "Container has no ID or is nUll", container );
 			}
 			_debug_output && console.trace( "WRite:", opts, storage );
-			console.log( "Storing with an ID already?", obj, opts );
+			//console.log( "Storing with an ID already?", obj, opts );
 			this_.writeRaw( opts.id, storage );
 			res && res( opts.id );
 		} else if( !opts || !opts.id ) {
@@ -694,6 +712,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
                         //console.log( "Storage ID is picked here:", opts );
                         if( "object" === typeof obj ) {
 				container = new this_.objectStorageContainer(obj,opts);
+				if( !container.id || "string" !== typeof container.id ) throw new Error( "Failed to get a conatiner ID for some reason" );
 				//console.log( "New container looks like... ", container.id, container );
 				
 				//console.log( "saving stored container.id", typeof obj, obj, container.id );
@@ -843,6 +862,7 @@ _objectStorage.prototype.get = function( opts ) {
 	}
 
 	function reviveContainer( field, val ) {
+		//console.log( "(JS)Revive container:", this, field, val );
 		if( !field ) {
 			// finished.
 			if( objectRefs ) {
@@ -860,6 +880,17 @@ _objectStorage.prototype.get = function( opts ) {
 			}
 
 			Object.defineProperty( this, "id", { value:currentReadId } );
+
+			//console.log( "handle object ??", this );
+			if( this.nonce ) {
+				let s = null;
+	       			var v = sack.SaltyRNG.verify( s = os.stringifier.stringify(this.data), this.nonce, this.sign.pad1, this.sign.pad2 );
+				if( v.key !== currentReadId )  {
+					throw new Error( `Data corrupted: s:'${s}' v:${v}, this Id:${currentReadId}` );
+				}
+				else console.log( "Valid record.", v, this.sign );
+
+			}
 
 			const request = allDangling.get( currentReadId );
 
@@ -891,10 +922,12 @@ _objectStorage.prototype.get = function( opts ) {
 				// a custom type might want something else...
 				if( field === "data" )
 				{
+					//console.log( "This should have fixed the 'pending value' value" );
 					this.data = val;
 					return undefined;
 				}
-				this.data[field] = val;
+		
+				this[field] = val;
 				return undefined;
 		}
 	}
@@ -946,11 +979,14 @@ _objectStorage.prototype.get = function( opts ) {
 
 		const priorReadId = currentReadId;
 		try {
+			currentStorage = os; // this part is synchronous... but leaves JS heap from os.read(), does callbacks using parser, but results with a parsed object
+				              // all synchronously.
 			os.read( currentReadId = opts.id
 				, parser, (obj,times)=>{
 					// with a new parser, only a partial decode before revive again...
-						_debug && console.log( "Read resulted with an object:", obj, times );
+					_debug && console.log( "Read resulted with an object:", obj, times );
 					let deleteId = -1;
+					currentStorage = null;
 					const extraResolutions = [];
 					for( let n = 0; n < os.decoding.length; n++ ) {
 						const decode = os.decoding[n];
@@ -977,23 +1013,24 @@ _objectStorage.prototype.get = function( opts ) {
 						}
 					} while( found >= 0 );
 
-				if( obj && ( obj instanceof os.objectStorageContainer ) ){
-					//console.log( "GOTzz:", obj, obj.id, obj.data );
-					if( !("id" in obj ))
-						Object.defineProperty( obj, "id", { value:currentReadId } );
-					
-					//console.log( " *** SETTING ID HERE");
-					os.stored.set( obj.data, obj.id );
-					os.cachedContainer.set( obj.id, obj );
-					currentReadId = priorReadId;
-					for( let res in extraResolutions ) res.res(obj.data);
-					resolve(obj.data);
-				} else {
-					currentReadId = priorReadId;
-					for( let res in extraResolutions ) res.res(obj);
-					//console.log( "RESOLVE WITH OBJECT NEED DATA?", ( obj instanceof os.objectStorageContainer ) );
-					resolve(obj)
-				}
+					if( obj && ( obj instanceof os.objectStorageContainer ) ){
+						//console.log( "GOTzz:", obj, obj.id, obj.data );
+						if( !("id" in obj ))
+							Object.defineProperty( obj, "id", { value:currentReadId } );
+
+						//console.log( "Object.data is bad?", obj.data, typeof obj.data, "\n!!!!!!!!!!", obj.id );
+						//console.log( " *** SETTING ID HERE");
+						os.stored.set( obj.data, obj.id );
+						os.cachedContainer.set( obj.id, obj );
+						currentReadId = priorReadId;
+						for( let res in extraResolutions ) res.res(obj.data);
+						resolve(obj.data);
+					} else {
+						currentReadId = priorReadId;
+						for( let res in extraResolutions ) res.res(obj);
+						//console.log( "RESOLVE WITH OBJECT NEED DATA?", ( obj instanceof os.objectStorageContainer ) );
+						resolve(obj)
+					}
 			} );
 		}catch(err) {
 			//console.log( "ERROR:", err );
@@ -1154,7 +1191,7 @@ fileDirectory.prototype.open = async function( fileName ) {
 	const _this = this;
 	//console.log( "OPEN?", file );
 	if( !file ) {
-      return Promise.reject( new Error( "File not found:" + fileName ) );
+		return Promise.reject( new Error( "File not found:" + fileName ) );
 	}
 	return Promise.resolve( file );
 }
@@ -1388,7 +1425,6 @@ class StoredObject {
 			const container = this.#storage.getContainer( this );
 			if( container ) this.#id = container.id;
 			opts = opts || {id:this.#id};
-			//console.trace( "Store is not a object??", opts );
 			opts.id = opts.id || this.#id;
 			const id = await this.#storage.put( this, opts );
 			if( !this.#id ) this.#id = id;
@@ -1414,8 +1450,13 @@ class StoredObject {
 		this.#id = id;
 	}
 	constructor( storage ) {
-        	if( !storage )
-	        	console.trace( "should have storage on create..", storage );
+        	if( !storage ) {
+	        	//console.trace( "should have storage on create..", storage, currentStorage );
+			storage = currentStorage;
+	        	if( !storage ) {
+		        	console.trace( "should have storage on create..", storage, currentStorage );
+			}
+		}
 		if( storage ) this.#storage = storage;
 	}
 	get storage() {

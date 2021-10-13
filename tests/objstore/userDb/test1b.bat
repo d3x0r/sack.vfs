@@ -1,5 +1,5 @@
-set NODE=M:\node\debug\node.exe
-:set NODE=node.exe
+:set NODE=M:\node\debug\node.exe
+set NODE=node.exe
 
 del data.os
 %NODE% testUserDb-auto.mjs 1  15000

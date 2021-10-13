@@ -38,10 +38,10 @@ async function reloadConfig() {
 		config.commit = ()=>file.write(config);
 		Object.assign( config, obj );
 	} catch(err){
-		console.log( "Error is:", err );
 		const file = await root.create( "test.config.jsox" )
+		// this 'file' is different from the 'file' above
 		file.write( config );
-		config.commit = ()=>file.write(config);
+		config.commit = ()=>file.write(config);		
 	} ;
 
 }
@@ -56,22 +56,23 @@ async function makeUsers() {
 	const target =  config.lastUser+count;
 	for( let i = config.lastUser+1; i < target; i++ ) {
 		//console.log( "Tick:", i );
-		const unique = UserDb.getIdentifier();
+		const unique = await UserDb.getIdentifier();
 		unique.key = sack.Id();
 		if( i && i % ( count / 10 ) === 0 )
 			console.log( "user:", i );
 
-			await unique.store();
+		//console.log( "Unique:", unique );
+		await unique.store();
 
-			config.lastUser++;
- 			const user = unique.addUser( i, "User "+i, '' + i + "@email.com", Math.random()*(1<<54) );
-			//console.log( "Created user" );
-			await user.addDevice( sack.Id(), true )
-			//console.log( "created device" );
-			await user.store(); // have to wait for it to be stored to have an ID.
-			AccountDb.makeAccount( user.id );
-			//console.log( "something:", userId );
-			//console.log( "And stored user." );
+		config.lastUser++;
+ 		const user = unique.addUser( i, "User "+i, '' + i + "@email.com", Math.random()*(1<<54) );
+		//console.log( "Created user" );
+		await user.addDevice( sack.Id(), true )
+		//console.log( "created device" );
+		await user.store(); // have to wait for it to be stored to have an ID.
+		AccountDb.makeAccount( user.id );
+		//console.log( "something:", userId );
+		//console.log( "And stored user." );
 	}
 
 	//config.lastUser = config.lastUser+count;
@@ -83,20 +84,21 @@ async function makeUsers() {
 function getUsers() {
 	UserDb.getUser( 3 ).then( (user)=>{
 		
-		console.log( "Got 3 :", user.id, user );
+		console.log( "Got 3? :", user );
+		if( user )
 		AccountDb.getAccounts( user.id ).then( list=>{
 			console.log( "user 3's accounts:", list );
 		})
 	} );
 	UserDb.getUser( 203 ).then( (user)=>{
-		console.log( "Got 203:", user );
+		console.log( "Got 203?:", user );
 		if( user )
 		AccountDb.getAccounts( user.id ).then( list=>{
 			console.log( "user 203's accounts:", list );
 		})
 	} );
 	UserDb.getUser( 835 ).then( (user)=>{
-		console.log( "Got 835:", user );
+		console.log( "Got 835?:", user );
 		if( user )
 		AccountDb.getAccounts( user.id ).then( list=>{
 			console.log( "user 835's accounts:", list );

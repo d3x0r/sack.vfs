@@ -344,7 +344,7 @@ endif( UNIX )
 
 set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
 if( CMAKE_COMPILER_IS_GNUCC )
-   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-std=c++11 -Wno-unused-result -Wno-address-of-packed-member")
+   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-std=c++14 -Wno-unused-result -Wno-address-of-packed-member")
 endif( CMAKE_COMPILER_IS_GNUCC )
 set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
 target_link_libraries(${PROJECT} ${CMAKE_JS_LIB})
