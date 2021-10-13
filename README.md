@@ -221,7 +221,10 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.4(in progress)
+- 1.1.5(in progress)
+- 1.1.4
+   - fix exporting import.mjs for others to use.
+   - Fixed name comparison for object storage.
 - 1.1.3
    - Fixed bad name comparison in object storage.
 - 1.1.2
