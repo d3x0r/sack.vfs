@@ -63,7 +63,7 @@
     "@rollup/plugin-commonjs": "latest",
     "@rollup/plugin-node-resolve": "^13.0.0",
     "@rollup/plugin-strip": "latest",
-    "JSOX": "latest",
+    "jsox": "latest",
     "acorn": "latest",
     "chai": "latest",
     "core-js": "latest",
