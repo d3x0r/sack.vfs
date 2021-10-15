@@ -24,6 +24,7 @@ matrix:
           packages:
             - g++-6
             - uuid-dev
+            - python3
     - os : mac
 #os:
 #  - windows
