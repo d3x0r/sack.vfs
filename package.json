@@ -1,6 +1,6 @@
 {
   "name": "sack.vfs",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "SACK abstraction library exposed to JS to provide low level system services.",
   "repository": {
     "type": "git",
@@ -63,7 +63,7 @@
     "@rollup/plugin-commonjs": "latest",
     "@rollup/plugin-node-resolve": "^13.0.0",
     "@rollup/plugin-strip": "latest",
-    "JSOX": "latest",
+    "jsox": "latest",
     "acorn": "latest",
     "chai": "latest",
     "core-js": "latest",

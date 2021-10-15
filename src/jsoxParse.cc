@@ -639,6 +639,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 									, pathVal->string
 									, NewStringType::kNormal
 									, (int)pathVal->stringLen).ToLocalChecked();
+								//lprintf( "path is:%s", pathVal->string);
 								{
 									// if it's in the stack, prefer that value which is more current.
 									if( idx >= revive->reviveStack->Top ) {
@@ -651,20 +652,28 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 									} else {
 										struct reviveStackMember* member = (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 );
 #ifdef DEBUG_REFERENCE_FOLLOW
-										lprintf( "Looking at reviveStack..." );
+										lprintf( "Looking at reviveStack...  %d  %.*s %p"
+												, member->nameLen
+												, member->nameLen
+												, member->name, member->name );
 #endif
 										if( ( member->nameLen == pathVal->stringLen )
 											&& ( StrCmpEx( pathVal->string, member->name, pathVal->stringLen ) == 0 )
 											) {
 											val_temp = member->object;
 										} else {
-											revive->isolate->ThrowException( Exception::TypeError(
-												String::NewFromUtf8( revive->isolate, TranslateText( "bad path specified with reference" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+											if( refObj->Has( revive->context, pathval ).ToChecked() ) {
+												val_temp = refObj->Get( revive->context, pathval ).ToLocalChecked();
+											} else {
+
+												revive->isolate->ThrowException( Exception::TypeError(
+													String::NewFromUtf8( revive->isolate, TranslateText( "bad path specified with reference" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 #ifdef DEBUG_REVIVAL_CALLBACKS
-											lprintf( "(5)Error at high level parse - throw it to JS..." );
+												lprintf( "(5)Error at high level parse - throw it to JS..." );
 #endif
-											revive->failed = TRUE;
-											return Undefined( revive->isolate );
+												revive->failed = TRUE;
+												return Undefined( revive->isolate );
+											}
 										}
 									}
 								}
