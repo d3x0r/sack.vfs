@@ -221,7 +221,13 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.5(in progress)
+- 1.1.6(in progress)
+- 1.1.5
+   - fix regression handling http get with content-length.
+   - fix loading SSL keys to verify certificates on linux (native OpenSSL config).
+   - fixes JSOX object revival with references of field names already revived.
+   - cleanup signing and verifying object storage content.
+   - fixes partial insenstive compare error in object storage hash lookup.
 - 1.1.4
    - fix exporting import.mjs for others to use.
    - Fixed name comparison for object storage.
