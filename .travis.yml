@@ -17,6 +17,7 @@ matrix:
   include:
     - os : windows
     - os : linux
+      dist:bionic
       addons:
         apt:
           sources:
@@ -24,7 +25,7 @@ matrix:
           packages:
             - g++-6
             - uuid-dev
-            - python36
+            - python3
     - os : mac
 #os:
 #  - windows
