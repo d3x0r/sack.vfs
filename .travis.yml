@@ -1,4 +1,4 @@
-dist : xenial
+dist : focal
 language: node_js
 node_js:
   - "node"
@@ -52,5 +52,3 @@ notifications:
     on_failure: always  # options: [always|never|change] default: always
     on_start: never     # options: [always|never|change] default: always
 
-python:
-  - "3.10"
