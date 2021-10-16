@@ -23,7 +23,7 @@ matrix:
           sources:
             - ubuntu-toolchain-r-test
           packages:
-            - g++-6
+            - g++-9
             - uuid-dev
             - python3
     - os : mac
