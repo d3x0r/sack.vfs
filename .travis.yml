@@ -14,12 +14,13 @@ node_js:
 #  - "5"
 #  - "4"
 
-python:
-  - "3.10"
-
 matrix:
   include:
     - os : windows
+      before_install:
+        - choco install python --version 3.10.0
+        - python -m pip install --upgrade pip
+      env: PATH=/c/Python310:/c/Python310/Scripts:$PATH
     - os : linux
       addons:
         apt:
