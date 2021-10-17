@@ -2,8 +2,9 @@ dist : focal
 language: node_js
 node_js:
   - "node"
+  - "16"
   - "14"
-  - "13"
+#  - "13" (odd numbers get deprecated early)
   - "12"
 #  - "11" (lack private class fields)
 #  - "10"
