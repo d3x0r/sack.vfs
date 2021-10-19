@@ -2,3 +2,5 @@
 /build
 *~
 /.vscode
+sql.config
+*.tgz
