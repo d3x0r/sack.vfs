@@ -65,7 +65,7 @@ function objectStorageContainerSync(o,opts) {
 	}
 */
 	if( opts && opts.sign ) {
-		var v = sack.SaltyRNG.verify( sack.JSOX.stringify(o), this.data.nonce, 3, 3 );
+		var v = sack.SaltyRNG.verify( sack.JSOX.stringify(o), this.nonce, 3, 3 );
 		//console.log( "TEST:", v );
 		Object.defineProperty( this, "id", { value:v.key } );
 		v.key = this.data.nonce;

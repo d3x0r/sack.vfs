@@ -1,6 +1,6 @@
 {
   "name": "sack.vfs",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "description": "SACK abstraction library exposed to JS to provide low level system services.",
   "repository": {
     "type": "git",
@@ -10,15 +10,15 @@
   "module": "vfs_module.mjs",
   "type": "commonjs",
   "exports": {
-	".": {
-		"require":"./vfs_module.cjs",
-		"import":"./vfs_module.mjs"
-	},
-        "./import.mjs": {
-		"import":"./import.mjs"
-	}
+    ".":{
+    	"require":"./vfs_module.cjs",
+    	"import":"./vfs_module.mjs"
+    },
+    "./import.mjs":{
+    	"default":"./import.mjs"
+    }
   },
-  "xexports": {
+  "old_exports": {
     "index": "./vfs_module.mjs",
     "sack": "./vfs_module.mjs",
     "import": "./vfs_module.mjs",
@@ -63,7 +63,7 @@
     "@rollup/plugin-commonjs": "latest",
     "@rollup/plugin-node-resolve": "^13.0.0",
     "@rollup/plugin-strip": "latest",
-    "JSOX": "git://github.com/d3x0r/jsox",
+    "jsox": "latest",
     "acorn": "latest",
     "chai": "latest",
     "core-js": "latest",
@@ -92,6 +92,7 @@
     "mocha-lite": "mocha --experimental-loader=./import.mjs --require test/bootstrap/node test/json6 test/jsox",
     "mocha": "mocha --experimental-loader=./import.mjs --require test/bootstrap/node --recursive",
     "test": "node tests/vfsTest.js",
+    "install2": "cmake-js configure build",
     "install": "node-gyp configure build",
     "login-server": "cd tests/objstore/userDb && node userDbServer.mjs",
     "forum-server": "node tests/objstore/forum/forumServer.mjs",
