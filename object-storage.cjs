@@ -560,6 +560,9 @@ _objectStorage.prototype.addDecoders = function(encoderList) {
 			return function redirect(field,val) {
 				if(f ) {
 					if( !field ) { 
+						if( this instanceof StoredObject ){
+							this.loaded( this_, currentReadId );
+						}
 						return f.call( this, field, this_ ); 
 					} else return f.call(this,field,val ) 
 				}else {
@@ -1019,7 +1022,7 @@ _objectStorage.prototype.get = function( opts ) {
 							Object.defineProperty( obj, "id", { value:currentReadId } );
 
 						//console.log( "Object.data is bad?", obj.data, typeof obj.data, "\n!!!!!!!!!!", obj.id );
-						//console.log( " *** SETTING ID HERE");
+						console.log( " *** SETTING ID HERE");
 						os.stored.set( obj.data, obj.id );
 						os.cachedContainer.set( obj.id, obj );
 						currentReadId = priorReadId;
@@ -1421,6 +1424,7 @@ class StoredObject {
 	} 
 	async store(opts) {
 		if( !this.#id ) {
+			console.log( "This doesn't have an ID??", this )
 			// might have been reloaded...
 			const container = this.#storage.getContainer( this );
 			if( container ) this.#id = container.id;
@@ -1431,6 +1435,7 @@ class StoredObject {
 			else if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
 			return id;
 		} else {
+			console.log( "This should be re-writingthis object....")
 			opts = opts || {id:this.#id};
 			opts.id = opts.id || this.#id;
 			const id = await this.#storage.put( this, opts );
@@ -1446,6 +1451,7 @@ class StoredObject {
 	}
 
 	loaded( storage,id ) {
+		console.trace( "LOADED EVENT CALLED FROM STORAAGE _------------------------");
 		this.#storage = storage;
 		this.#id = id;
 	}

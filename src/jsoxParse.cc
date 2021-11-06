@@ -478,8 +478,9 @@ static Local<Value> getArray( struct reviver_data* revive, struct jsox_value_con
 	else {
 		revive->fieldCb.Clear();
 	}
-	if( sub_o.IsEmpty() )
+	if( sub_o.IsEmpty() ) {
 		sub_o = Array::New( revive->isolate );
+	}
 	return sub_o;
 }
 
@@ -722,6 +723,8 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 	case JSOX_VALUE_ARRAY:
 		fieldCb = revive->fieldCb;
 		result = getArray( revive, val );
+		if( !result->IsUndefined() ) {
+
 		if(0) {
 	case JSOX_VALUE_STRING:
 			fieldCb = revive->fieldCb;
@@ -863,6 +866,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 						}
 
 			}
+		}
 		}
 		break;
 	case JSOX_VALUE_NUMBER:
