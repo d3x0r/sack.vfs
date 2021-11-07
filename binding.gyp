@@ -33,8 +33,9 @@
     'conditions': [
           ['OS=="linux"', {
             'defines': [
-              '__LINUX__', '__NO_ODBC__','__MANUAL_PRELOAD__','__INTERNAL_UUID__','UUID_SOURCE'
+              '__LINUX__','__MANUAL_PRELOAD__','__INTERNAL_UUID__','UUID_SOURCE'
             ],
+	#, '__NO_ODBC__'
             'cflags_cc': ['-Wno-misleading-indentation','-Wno-parentheses','-Wno-unused-result'
 			,'-Wno-char-subscripts'
 			,'-Wno-empty-body','-Wno-format', '-Wno-address'
