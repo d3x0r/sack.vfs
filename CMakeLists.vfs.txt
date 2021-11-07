@@ -67,6 +67,7 @@ set( DEFINITIONS   __STATIC__ __STATIC_GLOBALS__
 		SUPPORT_LOG_ALLOCATE  # lower level output; fputs
 		__DISABLE_UDP_SYSLOG__  # there's no options to enable this so just don't include it.
 		__DISABLE_SYSLOGD_SYSLOG__  # there's no options to enable this so just don't include it.
+		OPENSSL_MIN_API=10000
                  )
 
 set( MOREDEFS  "DEFAULT_OUTPUT_STDERR=1" )
