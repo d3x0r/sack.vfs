@@ -261,7 +261,7 @@ static EVP_PKEY *genKey( int kBits ) {
 		EVP_PKEY_free( keypair );
 		return NULL;
 	}
-#if 0
+#if OPENSSL_VERSION_MAJOR < 3
 	RSA* rsa = RSA_new_method( NULL );
 	RSA_generate_key_ex( rsa, kBits, bne, NULL );
 	EVP_PKEY_set1_RSA( keypair, rsa );
@@ -273,13 +273,6 @@ static EVP_PKEY *genKey( int kBits ) {
 
 	return keypair;
 
-	EVP_PKEY* keypair = EVP_PKEY_new();
-	//int keylen;
-	//char *pem_key;
-	//BN_GENCB cb = { }
-	BIGNUM* bne = BN_new();
-	int ret;
-	ret = BN_set_word( bne, kExp );
 #else
 	EVP_PKEY_CTX* ctx;
 	ctx = EVP_PKEY_CTX_new_from_name( NULL, "rsa", NULL );

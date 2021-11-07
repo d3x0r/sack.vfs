@@ -49,7 +49,6 @@
 #undef New
 
 //#include <openssl/ssl.h>
-#include <openssl/core_names.h>
 #include <openssl/safestack.h>  // STACK_OF
 #include <openssl/tls1.h>
 #include <openssl/err.h>
@@ -58,6 +57,10 @@
 #include <openssl/pem.h>
 #include <openssl/x509v3.h>
 //#include <openssl/>
+
+#if OPENSSL_VERSION_MAJOR >= 3 
+#include <openssl/core_names.h>
+#endif
 
 #ifdef INCLUDE_GUI
 #include "gui/gui_global.h"
