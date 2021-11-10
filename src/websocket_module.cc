@@ -2902,7 +2902,9 @@ wscObject::wscObject( wscOptions *opts ) {
 				//throw "Error initializing SSL connection (bad key or passphrase?)";
 			}
 		}
-		WebSocketConnect( pc );
+		if( WebSocketConnect( pc ) < 0 ){
+			lprintf( "websocket error" );
+		}
 		readyState = CONNECTING;
 	} else {
 		lprintf( "Socket returned Null?" );
