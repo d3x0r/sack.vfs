@@ -2903,10 +2903,10 @@ wscObject::wscObject( wscOptions *opts ) {
 			}
 		}
 		if( WebSocketConnect( pc ) < 0 ){
-			lprintf( "websocket error" );
+			pc = NULL;
+		} else {
+			readyState = CONNECTING;
 		}
-		lprintf( "all's well :( " );
-		readyState = CONNECTING;
 	} else {
 		lprintf( "Socket returned Null?" );
 	}
