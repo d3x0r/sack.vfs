@@ -2904,6 +2904,8 @@ wscObject::wscObject( wscOptions *opts ) {
 		}
 		WebSocketConnect( pc );
 		readyState = CONNECTING;
+	} else {
+		lprintf( "Socket returned Null?" );
 	}
 }
 
@@ -3256,6 +3258,9 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 void wscObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+	if( !obj->pc )
+		args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)-1 ) );
+	else
 	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->readyState ) );
 #if 0
 	Local<Object> h = args.Holder();
