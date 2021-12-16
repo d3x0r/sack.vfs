@@ -1022,7 +1022,7 @@ _objectStorage.prototype.get = function( opts ) {
 							Object.defineProperty( obj, "id", { value:currentReadId } );
 
 						//console.log( "Object.data is bad?", obj.data, typeof obj.data, "\n!!!!!!!!!!", obj.id );
-						console.log( " *** SETTING ID HERE");
+						//console.log( " *** SETTING ID HERE");
 						os.stored.set( obj.data, obj.id );
 						os.cachedContainer.set( obj.id, obj );
 						currentReadId = priorReadId;
