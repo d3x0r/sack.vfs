@@ -14,8 +14,15 @@
     	"require":"./vfs_module.cjs",
     	"import":"./vfs_module.mjs"
     },
+    "./sack":{
+    	"require":"./vfs_module.cjs",
+    	"import":"./vfs_module.mjs"
+    },
     "./import.mjs":{
     	"default":"./import.mjs"
+    },
+    "./object-storage":{
+    	"default":"./object-storage.mjs"
     }
   },
   "old_exports": {
