@@ -945,14 +945,15 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		if( data && len ) {
 			//ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
 
-			MaybeLocal<String> _arrayBuffer = String::NewFromUtf8( isolate, (char*)data, v8::NewStringType::kNormal, (int)len ).ToLocalChecked();
-			Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
-			PARRAY_BUFFER_HOLDER holder = GetHolder();
-			holder->s.Reset( isolate, arrayBuffer );
-			holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-			holder->buffer = data;
+			Local<String> _arrayBuffer = String::NewFromUtf8( isolate, (char*)data, v8::NewStringType::kNormal, (int)len ).ToLocalChecked();
+			Release( data );
+			//Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
+			//PARRAY_BUFFER_HOLDER holder = GetHolder();
+			//holder->s.Reset( isolate, arrayBuffer );
+			//holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+			//holder->buffer = data;
 
-			args.GetReturnValue().Set( arrayBuffer );
+			args.GetReturnValue().Set( _arrayBuffer );
 
 		} else {
 			isolate->ThrowException( Exception::TypeError(

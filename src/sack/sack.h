@@ -13157,7 +13157,7 @@ WEBSOCKET_EXPORT PCLIENT WebSocketOpen( CTEXTSTR address
                                       , const char *protocols );
 // if WS_DELAY_OPEN is used, WebSocketOpen does not do immediate connect.
 // calling this begins the connection sequence.
-WEBSOCKET_EXPORT void WebSocketConnect( PCLIENT );
+WEBSOCKET_EXPORT int WebSocketConnect( PCLIENT );
 // end a websocket connection nicely.
 // code must be 1000, or 3000-4999, and reason must be less than 123 characters (125 bytes with code)
 WEBSOCKET_EXPORT void WebSocketClose( PCLIENT, int code, const char *reason );
