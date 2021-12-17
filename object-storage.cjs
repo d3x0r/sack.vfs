@@ -1315,6 +1315,7 @@ fileDirectory.prototype.folder = function( fileName ) {
 		var here = _this;
 		function getOnePath() {
 			let part = path[pathIndex++];
+			console.log( "Getting path part?", part, path, pathIndex );
 			var file = here.files.find( (f)=>(f.name == part ) );
 			if( file ) {
 				if( file.contents ) {
@@ -1326,9 +1327,17 @@ fileDirectory.prototype.folder = function( fileName ) {
 							}
 							else
 								res( dir );
+						} )
+						.catch( (err)=>{
+							console.log( "File doesn't exist?", file.contents, err );
 						} );
-				} else
-					return Promise.reject( "Folder not found" );
+
+				} else {
+					console.log( "Found a file?, but? still need to add the contents ", file );
+					//res( file );
+					//here = file;//Promise.reject( new Error("Folder not found") );
+					//return getOnePath();
+				}
 			}else {
 				file = new fileEntry( this );
 				file.name = part;
@@ -1336,8 +1345,10 @@ fileDirectory.prototype.folder = function( fileName ) {
 				Object.defineProperty( file, "root", {value:newDir} );
 				_this.files.push(file);
 				newDir.store().then( (id)=>{
+					console.log( "Update contents ID from null?", file.contents, id );
 					file.contents = id;
 					_this.store().then( ()=>{
+						console.log( "Then stored myself?" );
 						if( pathIndex < path.length ) {
 							here = file.root;
 							return getOnePath();
