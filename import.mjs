@@ -68,6 +68,35 @@ export async function transformSource(source, context, defaultTransformSource) {
   return defaultTransformSource(source, context, defaultTransformSource);
 }
 
+export async function load(urlin, context, defaultLoad) {
+	const { format } = context;
+	const exten = path.extname( urlin );
+	console.log( "LOAD:", urlin, exten, context );
+	if( exten === ".jsox" || exten === '.json6' ){
+	  	const { format } = context;
+		console.log( "urlin is a string?", typeof urlin );
+		const file = url.fileURLToPath(urlin);
+		console.log( "FILE?:", file )
+		const result = fs.readFileSync(file).toString("utf8");
+   	 
+
+	if( exten === ".jsox" ){
+	    return {
+	      format:"module",
+	      source: "const data = JSOX.parse( '" + escape(result) + "'); export default data;",
+	    };
+	}
+	if( exten === ".json6" ){
+	    return {
+	      format:"module",
+	      source: "const data = JSON6.parse( '" + escape(result) + "'); export default data;",
+	    };
+	}
+	}
+	return defaultLoad(urlin, context, defaultLoad);
+
+}
+
 function escape(string) {
 	let output = '';
 	if( !string ) return string;
