@@ -49,6 +49,7 @@
 #undef New
 
 //#include <openssl/ssl.h>
+#include <openssl/configuration.h>
 #include <openssl/safestack.h>  // STACK_OF
 #include <openssl/tls1.h>
 #include <openssl/err.h>

@@ -690,8 +690,11 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		int arg = 0;
 		int argc = args.Length();
 		if( argc > 0 && args[0]->IsObject() ) {
-			vol = ObjectWrap::Unwrap<VolumeObject>( args[0].As<Object>() );
-			arg++;
+			class constructorSet* c = getConstructors( isolate );
+			if( args[0]->InstanceOf( isolate->GetCurrentContext(), c->ObjectStorageObject_constructor.Get( isolate ) ).ToChecked() ) {
+				vol = ObjectWrap::Unwrap<VolumeObject>( args[0].As<Object>() );
+				arg++;
+			}
 		}
 		if( argc == arg ) {
 			ObjectStorageObject* obj = new ObjectStorageObject( NULL, NULL, 0, NULL, NULL, NULL );
