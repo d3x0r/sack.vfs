@@ -221,7 +221,15 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.6(in progress)
+- 1.1.7(in progress)
+   - (TODO) Improve documentation/tutorials somewhere.
+
+- 1.1.6
+   - fix calling json, json6 `.write()` methods to use empty parameters as stream push.
+   - improve http regression fix.
+   - fix build with node 17's OpenSSL 3 (which is and isn't available depending on actual target platform).
+   - Simplify HTTP server example.
+   - updated object file api to be more predicable about open/create states; Create must not exist, and Open Must exist; otherwise resulting promises are rejected.
 - 1.1.5
    - fix regression handling http get with content-length.
    - fix loading SSL keys to verify certificates on linux (native OpenSSL config).
