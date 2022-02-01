@@ -2856,9 +2856,9 @@ static void webSockClientError( PCLIENT pc, uintptr_t psv, int error ) {
 	(*pevt)._this = wsc;
 	(*pevt).code = error;
 	EnqueLink( &wsc->eventQueue, pevt );
-//#ifdef DEBUG_EVENTS
+#ifdef DEBUG_EVENTS
 	lprintf( "Send Error Request" );
-//#endif
+#endif
 	uv_async_send( &wsc->async );
 }
 
