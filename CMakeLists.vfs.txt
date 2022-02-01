@@ -67,7 +67,8 @@ set( DEFINITIONS   __STATIC__ __STATIC_GLOBALS__
 		SUPPORT_LOG_ALLOCATE  # lower level output; fputs
 		__DISABLE_UDP_SYSLOG__  # there's no options to enable this so just don't include it.
 		__DISABLE_SYSLOGD_SYSLOG__  # there's no options to enable this so just don't include it.
-		OPENSSL_MIN_API=30000
+		xOPENSSL_API_LEVEL=10100 
+		OPENSSL_API_COMPAT=10101
                  )
 
 set( MOREDEFS  "DEFAULT_OUTPUT_STDERR=1" )
@@ -93,6 +94,7 @@ foreach( DEF ${DEFINITIONS} )
 ENDFOREACH()
 
 FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define NO_AUTO_VECTLIB_NAMES\n" )
+FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define NODE_ADDON_BUILD\n" )
 
 
 SET( EXTRA_HEADERS
