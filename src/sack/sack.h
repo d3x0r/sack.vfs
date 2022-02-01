@@ -1,5 +1,6 @@
 /*CMake Option defined*/
 #define NO_AUTO_VECTLIB_NAMES
+#define NODE_ADDON_BUILD
 /* Includes the system platform as required or appropriate. If
    under a linux system, include appropriate basic linux type
    headers, if under windows pull "windows.h".
