@@ -71,7 +71,7 @@ export async function transformSource(source, context, defaultTransformSource) {
 export async function load(urlin, context, defaultLoad) {
 	const { format } = context;
 	const exten = path.extname( urlin );
-	console.log( "LOAD:", urlin, exten, context );
+	//console.log( "LOAD:", urlin, exten, context );
 	if( exten === ".jsox" || exten === '.json6' ){
 	  	const { format } = context;
 		console.log( "urlin is a string?", typeof urlin );
@@ -120,6 +120,11 @@ function escape(string) {
  * @returns {string} Code to run before application startup
  */
 // Preloads JSON6 as a global resource; which is then used in the transformed source above.
+export function globalPreload() {
+	// this changes in 17+; check node version from process? and export the right thing?
+	return getGlobalPreloadCode();
+}
+
 export function getGlobalPreloadCode() {
   return `\
 const { createRequire } = getBuiltin('module');

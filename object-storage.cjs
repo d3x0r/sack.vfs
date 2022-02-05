@@ -938,6 +938,7 @@ _objectStorage.prototype.get = function( opts ) {
 	function reviveContainerRef( field, val ) {
 		//console.trace( "Revival of a container reference:", this, field, val );
 		if( !field ) {
+			//console.log( "this ID:", this.d.id );
 			const existing = os.cachedContainer.get( this.d.id );
 			if( existing ){
 				//console.log( "duplicate reference... return the existing promise(but this is still used later)", existing, this.d.id);
@@ -946,9 +947,10 @@ _objectStorage.prototype.get = function( opts ) {
 				const id = dangling.find( d=>d.d === this.d );
 				objectRefs--;
 				if( id >= 0 ) dangling.splice( id, 1 );
-				//console.log( "this is the real value anyway1...", existing.data );
+				//console.log( "this is the real value anyway1...(maybe it's still promised?)", existing.data );
 				return existing.data;
 			} 
+			//console.log( "Pending a promised objject ref?", this.d );
 			os.stored.set( this.d.p, '~or"'+this.d.id+'"' );
 			//console.log( "this is the real value anyway2...", this.d.p );
 			return this.d.p;
@@ -1435,7 +1437,7 @@ class StoredObject {
 	} 
 	async store(opts) {
 		if( !this.#id ) {
-			console.log( "This doesn't have an ID??", this )
+			//console.log( "This doesn't have an ID??", this )
 			// might have been reloaded...
 			const container = this.#storage.getContainer( this );
 			if( container ) this.#id = container.id;
@@ -1446,7 +1448,7 @@ class StoredObject {
 			else if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
 			return id;
 		} else {
-			console.log( "This should be re-writingthis object....")
+			//console.log( "This should be re-writingthis object....")
 			opts = opts || {id:this.#id};
 			opts.id = opts.id || this.#id;
 			const id = await this.#storage.put( this, opts );
@@ -1462,7 +1464,7 @@ class StoredObject {
 	}
 
 	loaded( storage,id ) {
-		console.trace( "LOADED EVENT CALLED FROM STORAAGE _------------------------");
+		//console.trace( "LOADED EVENT CALLED FROM STORAAGE _------------------------");
 		this.#storage = storage;
 		this.#id = id;
 	}

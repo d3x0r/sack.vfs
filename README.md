@@ -223,7 +223,7 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ## Changelog
 - 1.1.7(in progress)
    - (TODO) Improve documentation/tutorials somewhere.
-
+   - Add check for \ufeff as a whitespace character; legacy BOM usage requires treating this as a significant whitespace literal.
 - 1.1.6
    - fix calling json, json6 `.write()` methods to use empty parameters as stream push.
    - improve http regression fix.
@@ -278,7 +278,7 @@ there's a conversion to string from binary and a copy of that string from JS to 
    - fix reversion at quote after string before ':' in JSOX.
 - 1.0.1006
    - added remove() method for object storage directories.
-   - getRemoteFragment() get code fragment for this API to connect a remote.
+    - getRemoteFragment() get code fragment for this API to connect a remote.
    - Added idle flush for object storage directory updates.
    - Removed noisy debug logging.
 - 1.0.1005
