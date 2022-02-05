@@ -306,7 +306,9 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 			sub_o->SetPrototype( revive->context, po );
 		}
 		*/
-		//lprintf( "lookup up classname:%.*s", val->classNameLen, val->className );
+#ifdef DEBUG_REVIVAL_CALLBACKS
+		lprintf( "lookup up classname:%.*s", val->classNameLen, val->className );
+#endif
 		if( mprotoDef.IsEmpty() && revive->parser && !revive->parser->fromPrototypeMap.IsEmpty() ) {
 			mprotoDef = revive->parser->fromPrototypeMap.Get( revive->isolate )->Get( revive->context, className );
 			if( !mprotoDef.IsEmpty() && !mprotoDef.ToLocalChecked()->IsUndefined() ) {
@@ -608,9 +610,15 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 										struct reviveStackMember* member = (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 );
 										if( member->index == (uint32_t)pathVal->result_n ) {
 											LogObject( member->object );
-											if( member->object->IsObject() )
+											if( member->object->IsObject() ) {
 												refObj = member->object.As<Object>();
-											else
+												lprintf( "Saving replacement, maybe we can re-apply a fixup?" );
+												struct reviveMemberReplacement rep;
+												rep.object = revive->refObject;
+												rep.fieldName = revive->fieldName;
+												AddDataItem( &member->pdlSubsts, &rep );
+
+											} else
 												lprintf( "Unexpected value from member..." );
 
 										} else {
@@ -662,6 +670,11 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 											&& ( StrCmpEx( pathVal->string, member->name, pathVal->stringLen ) == 0 )
 											) {
 											val_temp = member->object;
+											lprintf( "Saving replacement(2), maybe we can re-apply a fixup?" );
+											struct reviveMemberReplacement rep;
+											rep.object = revive->refObject;
+											rep.fieldName = revive->fieldName;
+											AddDataItem( &member->pdlSubsts, &rep );
 										} else {
 											if( refObj->Has( revive->context, pathval ).ToChecked() ) {
 												val_temp = refObj->Get( revive->context, pathval ).ToLocalChecked();
@@ -1181,6 +1194,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 					buildObject( val->contains, sub_v.As<Object>(), revive );
 				else
 					lprintf( "Failed to build sub object, current value is not an object" ); // should not happen.
+
 				delete (struct reviveStackMember*)PopLink( &revive->reviveStack );
 #ifdef DEBUG_REVIVAL_CALLBACKS
 				if( revive->failed ) {
@@ -1229,6 +1243,27 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 					MaybeLocal<Value> r = finalCb->Call( revive->context, sub_v, 0, NULL );
 					if( !r.IsEmpty() ) {
 						sub_v = r.ToLocalChecked();
+						{
+							// This handles replacing values that were used when this was the old value
+#ifdef DEBUG_REVIVAL_CALLBACKS
+							lprintf( "Finall got the resolved value, let's check the stack?" );
+#endif
+							if( revive->reviveStack->Top )
+							{
+								struct reviveStackMember* member = (struct reviveStackMember*)PeekLink( &revive->reviveStack );
+								if( member->pdlSubsts->Cnt ) {
+									INDEX idx;
+									struct reviveMemberReplacement* rep;
+									DATA_FORALL( member->pdlSubsts, idx, struct reviveMemberReplacement*, rep ) {
+										Local<Object> o = rep->object.As<Object>();
+										o->Set( revive->context, rep->fieldName, sub_v );
+#ifdef DEBUG_REVIVAL_CALLBACKS
+										lprintf( "!!!!! REPLACED STUFF HERE(3)!" );
+#endif
+									}
+								}
+							}
+						}
 					} else {
 #ifdef DEBUG_REVIVAL_CALLBACKS
 						lprintf( "Callback threw an exception" );

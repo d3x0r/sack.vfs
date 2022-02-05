@@ -401,6 +401,11 @@ public:
 	~TLSObject();
 };
 
+struct reviveMemberReplacement {
+	Local<Value> object;
+	Local<Value> fieldName;
+};
+
 struct reviveStackMember {
 	LOGICAL isArray;
 	int index;
@@ -408,6 +413,22 @@ struct reviveStackMember {
 	Local<Value> object;
 	char* name;
 	size_t nameLen;
+	PDATALIST pdlSubsts;
+	reviveStackMember() {
+		pdlSubsts = CreateDataList( sizeof( struct reviveMemberReplacement ) );
+
+	}
+	~reviveStackMember() {
+		{
+			INDEX idx;
+			struct reviveMemberReplacement* rep;
+			DATA_FORALL( pdlSubsts, idx, struct reviveMemberReplacement*, rep ) {
+				rep->fieldName.Clear();
+				rep->object.Clear();
+			}
+		}
+		DeleteDataList( &pdlSubsts );
+	}
 };
 
 struct reviver_data {
