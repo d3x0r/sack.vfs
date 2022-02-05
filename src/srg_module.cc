@@ -5,6 +5,7 @@
 class SRGObject : public node::ObjectWrap {
 
 public:
+	bool seedSet = false;
 	char *seedBuf;
 	size_t seedLen;
 	struct random_context *entropy;
@@ -52,8 +53,8 @@ private:
 
 				/* Regenerator version 0 */
 				uint32_t buf[256 / 32];
-				SRG_FeedEntropy( ctx, (uint8_t*)"\0\0\0\0", 4 );
-				SRG_StepEntropy( ctx );
+				//SRG_FeedEntropy( ctx, (uint8_t*)"\0\0\0\0", 4 );
+				//SRG_StepEntropy( ctx );
 				SRG_FeedEntropy( ctx, (uint8_t*)* val, val.length() );
 				SRG_StepEntropy( ctx );
 				SRG_GetEntropyBuffer( ctx, buf, 256 );
@@ -97,32 +98,35 @@ private:
 		SRGObject* obj = (SRGObject*)psv;
 		Isolate* isolate = obj->isolate;
 		Local<Context> context = isolate->GetCurrentContext();
-		if( obj->seedBuf ) {
-			Deallocate( char *, obj->seedBuf );
-			obj->seedBuf = NULL;
-			obj->seedLen = 0;
-		}
-		if( obj->seedCallback ) {
-			Local<Function> cb = Local<Function>::New( obj->isolate, obj->seedCallback[0] );
-			Local<Array> ui = Array::New( obj->isolate );
-			Local<Value> argv[] = { ui };
-			{
-				// if the callback exceptions, this will blindly continue to generate random entropy....
-				MaybeLocal<Value> result = cb->Call( obj->isolate->GetCurrentContext(), obj->isolate->GetCurrentContext()->Global(), 1, argv );
-				if( result.IsEmpty() )
-					return;
+		if( !obj->seedSet ) {
+			if( obj->seedBuf ) {
+				Deallocate( char*, obj->seedBuf );
+				obj->seedBuf = NULL;
+				obj->seedLen = 0;
 			}
-			for( uint32_t n = 0; n < ui->Length(); n++ ) {
-				Local<Value> elem = GETN( ui, n );
-				String::Utf8Value val( USE_ISOLATE( obj->isolate ) elem->ToString(obj->isolate->GetCurrentContext() ).ToLocalChecked()  );
-				obj->seedBuf = (char*)Reallocate( obj->seedBuf, obj->seedLen + val.length() );
-				memcpy( obj->seedBuf + obj->seedLen, (*val), val.length() );
-				obj->seedLen += val.length();
+			if( obj->seedCallback ) {
+				Local<Function> cb = Local<Function>::New( obj->isolate, obj->seedCallback[0] );
+				Local<Array> ui = Array::New( obj->isolate );
+				Local<Value> argv[] = { ui };
+				{
+					// if the callback exceptions, this will blindly continue to generate random entropy....
+					MaybeLocal<Value> result = cb->Call( obj->isolate->GetCurrentContext(), obj->isolate->GetCurrentContext()->Global(), 1, argv );
+					if( result.IsEmpty() )
+						return;
+				}
+				for( uint32_t n = 0; n < ui->Length(); n++ ) {
+					Local<Value> elem = GETN( ui, n );
+					String::Utf8Value val( USE_ISOLATE( obj->isolate ) elem->ToString( obj->isolate->GetCurrentContext() ).ToLocalChecked() );
+					obj->seedBuf = (char*)Reallocate( obj->seedBuf, obj->seedLen + val.length() );
+					memcpy( obj->seedBuf + obj->seedLen, ( *val ), val.length() );
+					obj->seedLen += val.length();
+				}
 			}
 		}
 		if( obj->seedBuf ) {
 			salt[0] = (POINTER)obj->seedBuf;
 			salt_size[0] = obj->seedLen;
+			obj->seedSet = false;
 		}
 		else
 			salt_size[0] = 0;
@@ -142,6 +146,7 @@ private:
 					String::Utf8Value seed( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					obj = new SRGObject( *seed, seed.length() );
 				}
+				obj->isolate = isolate;
 				obj->Wrap( args.This() );
 				args.GetReturnValue().Set( args.This() );
 			}
@@ -193,8 +198,12 @@ private:
 			SRGObject *obj = ObjectWrap::Unwrap<SRGObject>( args.This() );
 			if( obj->seedBuf )
 				Deallocate( char *, obj->seedBuf );
-			obj->seedBuf = StrDup( *seed );
+			obj->seedBuf = NewArray( char, seed.length() );
+			MemCpy( obj->seedBuf, *seed, seed.length() );
 			obj->seedLen = seed.length();
+			obj->seedSet = true;
+			//obj->total_bits_used > K12_SQUEEZE_LENGTH;
+			SRG_StepEntropy( obj->entropy );
 		}
 	}
 	static void getBits( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -823,12 +832,12 @@ void SRGObject::Init( Isolate *isolate, Local<Object> exports )
 }
 
 SRGObject::SRGObject( Persistent<Function, CopyablePersistentTraits<Function>> *callback ) {
-	this->MakeEntropy = SRG_CreateEntropy2_256;
+	this->MakeEntropy = SRG_CreateEntropy4;
 	this->seedBuf = NULL;
 	this->seedLen = 0;
 	this->seedCallback = callback;
 
-	this->entropy = SRG_CreateEntropy2( SRGObject::getSeed, (uintptr_t) this );
+	this->entropy = SRG_CreateEntropy4( SRGObject::getSeed, (uintptr_t) this );
 }
 
 SRGObject::SRGObject() {
