@@ -396,6 +396,7 @@ sack.JSOX.stringifier = function() {
 		}
 		if( !s.length ) return useQuote+useQuote;
 		// should check also for if any non ident in string...
+		if( s.includes( "\u{FEFF}" ) ) return (useQuote + JSOX.escape(s) +useQuote);
 		return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
 			|| /([0-9\-])/.test(s[0])
 			|| /((\n|\r|\t)|[ \#\{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + escape(s) +useQuote):s )
