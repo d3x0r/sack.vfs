@@ -224,6 +224,7 @@ there's a conversion to string from binary and a copy of that string from JS to 
 - 1.1.7(in progress)
    - (TODO) Improve documentation/tutorials somewhere.
    - Add check for \ufeff as a whitespace character; legacy BOM usage requires treating this as a significant whitespace literal.
+   - Add JSOX.DateNS class that extends date to keep extended information that might have been encoded in a time value.
 - 1.1.6
    - fix calling json, json6 `.write()` methods to use empty parameters as stream push.
    - improve http regression fix.
