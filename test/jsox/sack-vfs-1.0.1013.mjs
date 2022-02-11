@@ -28,11 +28,13 @@ describe('Added in 1.0.1013', function () {
 			parser.fromJSOX( "O", MyObject );
 		const o1 = parser.parse( '{op:worlds}' );
 		const o2 = parser.parse( '{op:"world",world:O{name:"My World"}}' );
+		
+		JSOX.reset();
 		const o3 = JSOX.parse( '{op:"world",world:O{name:"My World"}}' );
-		//console.log( o1, o2 );
+		console.log( "WHAT IS THE THING?", o1, o2, o3 );
+
 		expect( o1 ).to.deep.equal( {op:"worlds"} );
-                const obj = new MyObject();
-				obj.name = "My World"
+                const obj = new MyObject(); obj.name = "My World"
 		expect( o2 ).to.deep.equal( {op:"world",world:obj} );
 		expect( o3 ).to.deep.equal( {op:"world",world:{name:"My World"}} );
         } );
