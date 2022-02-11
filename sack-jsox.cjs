@@ -1,5 +1,14 @@
 "use strict";
 
+class DateNS extends Date {
+	ns=0;
+	constructor(a,b ) {
+		super(a);
+		this.ns = b;
+	}	
+}
+
+console.log( "dateJS:", DateNS );
 module.exports = function(sack) {
 
 sack.JSON6.stringify = JSON.stringify;
@@ -57,6 +66,8 @@ function escape(string) {
 	return output;
 }
 
+sack.JSOX.DateNS = DateNS;
+
 initPrototypes();
 function initPrototypes()
 {
@@ -71,7 +82,7 @@ function initPrototypes()
 	fromProtoTypes = new Map();
 	commonClasses = [];
 
-	sack.JSOX.setFromPrototypeMap( fromProtoTypes );
+	sack.JSOX.setFromPrototypeMap( fromProtoTypes, DateNS );
 	pushToProto( Object.prototype, { external:false, name:Object.prototype.constructor.name, cb:null } );
 
 	function this_value() {_DEBUG_STRINGIFY&&console.log( "this:", this, "valueof:", this&&this.valueOf() ); return this&&this.valueOf(); }
@@ -96,6 +107,34 @@ function initPrototypes()
 				':' + pad(this.getMinutes()) +
 				':' + pad(this.getSeconds()) +
 				'.' + pad3(this.getMilliseconds()) +
+				dif + pad(tzo / 60) +
+				':' + pad(tzo % 60);
+		}
+	} );
+	pushToProto( DateNS.prototype, { external:false,
+		name : null, // this doesn't get a tag name, it returns a literal.
+		cb : function () {
+			var tzo = -this.getTimezoneOffset(),
+				dif = tzo >= 0 ? '+' : '-',
+				pad = function(num) {
+					var norm = Math.floor(Math.abs(num));
+					return (norm < 10 ? '0' : '') + norm;
+				},
+				pad3 = function(num) {
+					var norm = Math.floor(Math.abs(num));
+					return (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
+				},
+				pad6 = function(num) {
+					var norm = Math.floor(Math.abs(num));
+					return (norm < 100000 ? '0' : '') + (norm < 10000 ? '0' : '') + (norm < 1000 ? '0' : '') + (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
+				};
+			return this.getFullYear() +
+				'-' + pad(this.getMonth() + 1) +
+				'-' + pad(this.getDate()) +
+				'T' + pad(this.getHours()) +
+				':' + pad(this.getMinutes()) +
+				':' + pad(this.getSeconds()) +
+				'.' + pad3(this.getMilliseconds()) + pad6(this.ns) +
 				dif + pad(tzo / 60) +
 				':' + pad(tzo % 60);
 		}

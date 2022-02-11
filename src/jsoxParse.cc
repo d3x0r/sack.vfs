@@ -115,6 +115,7 @@ void InitJSOX( Isolate *isolate, Local<Object> exports ){
 
 }
 
+
 JSOXObject::JSOXObject() {
 	state = jsox_begin_parse();
 	prototypes = NULL;
@@ -612,12 +613,11 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 											LogObject( member->object );
 											if( member->object->IsObject() ) {
 												refObj = member->object.As<Object>();
-												lprintf( "Saving replacement, maybe we can re-apply a fixup?" );
+												//lprintf( "Saving replacement, maybe we can re-apply a fixup?" );
 												struct reviveMemberReplacement rep;
 												rep.object = revive->refObject;
 												rep.fieldName = revive->fieldName;
 												AddDataItem( &member->pdlSubsts, &rep );
-
 											} else
 												lprintf( "Unexpected value from member..." );
 
@@ -670,7 +670,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 											&& ( StrCmpEx( pathVal->string, member->name, pathVal->stringLen ) == 0 )
 											) {
 											val_temp = member->object;
-											lprintf( "Saving replacement(2), maybe we can re-apply a fixup?" );
+											//lprintf( "Saving replacement(2), maybe we can re-apply a fixup?" );
 											struct reviveMemberReplacement rep;
 											rep.object = revive->refObject;
 											rep.fieldName = revive->fieldName;
@@ -916,9 +916,43 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 	case JSOX_VALUE_DATE:
 		{
 			class constructorSet* c = getConstructors( revive->isolate );
-			static const int argc = 1;
-			Local<Value> argv[argc] = { String::NewFromUtf8( revive->isolate, val->string, NewStringType::kNormal, (int)val->stringLen ).ToLocalChecked() };
-			Local<Object> tmpResult = c->dateCons.Get( revive->isolate )->NewInstance( revive->context, argc, argv ).ToLocalChecked();
+			char* dot = StrChr( val->string, '.' );
+			char numdigits[16];
+			int digit = 0;
+			int nsVal = 0;
+			if( dot ) {
+				dot++;
+				while( digit < 3 && dot[0] >= '0' && dot[0] <= '9' ) {
+					dot++;
+					digit++;
+				}
+				digit = 0;
+				while( dot[0] >= '0' && dot[0] <= '9' && digit < 6 ) {
+					// only have space for millions...
+					numdigits[digit++] = (dot++)[0];
+				}
+				
+				if( digit < 6 ) {
+					numdigits[digit] = 0;
+					nsVal = atoi( numdigits );
+					while( digit < 6 ) {
+						digit++; nsVal *= 10;
+					}
+				} else {
+					numdigits[6] = 0;
+					nsVal = atoi( numdigits );
+				}
+			}
+			// val->string.matches( /\.( \d{ 6 }) / ) ) {
+			Local<Value> argv[2] = { String::NewFromUtf8( revive->isolate, val->string, NewStringType::kNormal, (int)val->stringLen ).ToLocalChecked()
+					, Number::New( revive->isolate, nsVal ) };
+			Local<Object> tmpResult;
+			if( nsVal )
+				tmpResult = c->dateNsCons.Get( revive->isolate )->NewInstance( revive->context, 2, argv ).ToLocalChecked();
+			else 
+				tmpResult = c->dateCons.Get( revive->isolate )->NewInstance( revive->context, 1, argv ).ToLocalChecked();
+		
+#if 0
 			MaybeLocal<Value> valid = tmpResult->Get( revive->context, String::NewFromUtf8Literal( revive->isolate, "getTime" ) );
 			if( !valid.IsEmpty() ) {
 				Local<Function> getTime = valid.ToLocalChecked().As<Function>();
@@ -935,6 +969,8 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 				}
 			}
 			result = tmpResult.As<Value>();
+#endif
+			result = tmpResult;
 		}
 		break;
 	}
@@ -1610,9 +1646,34 @@ void makeJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {
-	class constructorSet *c = getConstructors( args.GetIsolate() );
+	Isolate* isolate = args.GetIsolate();
+	class constructorSet *c = getConstructors( isolate );
 	//lprintf( "Setting protomap from external...");
 	c->fromPrototypeMap.Reset( args.GetIsolate(), args[0].As<Map>() );
+	{
+		Local<Context> context = isolate->GetCurrentContext();
+		class constructorSet* c = getConstructors( isolate );
+		if( c->dateNsCons.IsEmpty() ) {
+#if 0
+			Local<Script> script;
+			Local<String> string = String::NewFromUtf8Literal( isolate, "DateNS" );
+			script = Script::Compile( context, string
+#if ( NODE_MAJOR_VERSION >= 16 )
+				, new ScriptOrigin( isolate, String::NewFromUtf8Literal( isolate, "DateNSClassGetter" ) ) ).ToLocalChecked();
+#else
+				, new ScriptOrigin( String::NewFromUtf8Literal( isolate, "DateNSClassGetter" ) ) ).ToLocalChecked();
+#endif
+			MaybeLocal<Value> ml_result = script->Run( context );
+			if( !ml_result.IsEmpty() ) {
+				Local<Value> result = ml_result.ToLocalChecked();
+				Local<Function> cons = Local<Function>::Cast( result );
+				c->dateNsCons.Reset( isolate, cons );
+			} else if( !args[1].IsEmpty() ) {
+			}
+#endif
+			c->dateNsCons.Reset( isolate, args[1].As<Function>() );
+		}
+	}
 }
 
 void JSOXObject::setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {
