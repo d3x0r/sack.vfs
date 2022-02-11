@@ -132,6 +132,7 @@ class constructorSet {
 	Isolate *isolate;
 	PTHREAD thread;
 	Persistent<Function> dateCons; // Date constructor
+	Persistent<Function> dateNsCons; // Date constructor
 	Persistent<Function> ThreadObject_idleProc;
 
 	// constructor
@@ -181,6 +182,7 @@ class constructorSet {
 	v8::Persistent<v8::Function> SRGObject_constructor;
 	v8::Persistent<v8::Function> TaskObject_constructor;
 	v8::Persistent<v8::Function> ObjectStorageObject_constructor;
+	v8::Persistent<v8::Function> TimelineCursorObject_constructor;
 	v8::Persistent<v8::Function> monitorConstructor;
 	v8::Persistent<v8::Function> KeyHidObject_constructor;
 	//Persistent<Function> onCientPost;
