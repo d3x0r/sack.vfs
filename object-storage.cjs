@@ -34,6 +34,7 @@ var objectRefs = 0;
 var currentContainer = null;
 var preloadStorage = null; // storage thrown from main thread
 
+
 // manufacture a JS interface to _objectStorage.
 sack.ObjectStorage = function (...args) {
 
@@ -56,12 +57,12 @@ function objectStorageContainer(o,opts) {
 	if( o ) {
 		this.data = o; // reviving we get null opts.
 	} else {
-		//console.trace( "Hope this path fixes things up..." );
 		this.data = "pending reference"; // reviving we get null opts.
 	}
 
 	currentContainer = this;
 	Object.defineProperty( this, "encoding", { writable:true, value:false } );
+	Object.defineProperty( this, "time", { value:[] } );
 	if( opts && opts.sign ) {
 		if( !this.nonce ) {
 			//console.log( "SIGNING FAILS?" );
@@ -410,7 +411,7 @@ objectStorageContainer.prototype.map = async function( opts ) {
             try {
 		if( msg.op === "connect" ) {
 			ws.send( `{op:connected,code:${jsonRemoteExtensions}}` );
-		return true;
+			return true;
 		}
 		if( msg.op === "get" ) {
 			newStorage.readRaw( currentReadId = msg.opts.id
@@ -625,11 +626,12 @@ _objectStorage.prototype.put = function( obj, opts ) {
 
 	function saveObject(res,rej) {
 
+		//console.log( "PUT:", obj, opts );
 		if( "string" === typeof obj && opts.id ) {
-	                console.log( "SAVING A STRING OBJECT" );
+		        _debug && console.log( "SAVING A STRING OBJECT" );
 			// this isn't cached on this side.
         	        // we don't know the real object.
-			this_.writeRaw( opts.id, obj );
+			this_.writeRaw( opts, obj );
 			return res?res( opts.id ):null;
 		}
 		var container = this_.stored.get( obj );
@@ -677,6 +679,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 				}
 				_debug_output && console.trace( "WRite:", container.id, storage );
 				this_.writeRaw( container.id, storage );
+				container.time = storage.getTimes( container.id );
 				return res?res( container.id ):null;
 			} else {
 				throw new Error( "record is signed, cannot put" );
@@ -704,6 +707,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 			_debug_output && console.trace( "WRite:", opts, storage );
 			//console.log( "Storing with an ID already?", obj, opts );
 			this_.writeRaw( opts.id, storage );
+			//container.time = storage.getTimes( opts.id );
 			res && res( opts.id );
 		} else if( !opts || !opts.id ) {
 			if( opts && opts.mapObject ) {
@@ -753,6 +757,7 @@ _objectStorage.prototype.put = function( obj, opts ) {
 			try {
 				this_.writeRaw( container.id, storage );
 				if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
+				container.time = storage.getTimes( container.id );
 				this_.cached.set( container.id, container.data );
 				this_.cachedContainer.set( container.id, container );
 			}catch(err) { console.log( "WRITE RAW?", this_ )}
@@ -798,8 +803,7 @@ _objectStorage.prototype.get = function( opts ) {
 	}
 	//console.trace( "TEST going to get:", opts )
 	const priorDecode = this.decoding.find( d=>d.opts.id === opts.id );
-	if( priorDecode ){
-		
+	if( priorDecode ){		
 		console.trace( "already decoding...(use same promised result) things?", priorDecode );
 		return priorDecode.p;
 	}
@@ -881,7 +885,7 @@ _objectStorage.prototype.get = function( opts ) {
 				dangling = [];
 				objectRefs = 0;
 			}
-
+			console.log( "*!* Revive Container is setting currentReadId:", currentReadId );
 			Object.defineProperty( this, "id", { value:currentReadId } );
 
 			//console.log( "handle object ??", this );
@@ -1022,19 +1026,19 @@ _objectStorage.prototype.get = function( opts ) {
 						//console.log( "GOTzz:", obj, obj.id, obj.data );
 						if( !("id" in obj ))
 							Object.defineProperty( obj, "id", { value:currentReadId } );
+						Object.defineProperty( obj, "times", { value:times } );
 
-						//console.log( "Object.data is bad?", obj.data, typeof obj.data, "\n!!!!!!!!!!", obj.id );
+						console.log( "Object.data is bad?", obj.data, typeof obj.data, "\n!!!!!!!!!!", obj.id );
 						//console.log( " *** SETTING ID HERE");
 						os.stored.set( obj.data, obj.id );
 						os.cachedContainer.set( obj.id, obj );
 						currentReadId = priorReadId;
 						for( let res in extraResolutions ) res.res(obj.data);
-						resolve(obj.data);
+						resolve( obj.data );
 					} else {
 						currentReadId = priorReadId;
 						for( let res in extraResolutions ) res.res(obj);
-						//console.log( "RESOLVE WITH OBJECT NEED DATA?", ( obj instanceof os.objectStorageContainer ) );
-						resolve(obj)
+						resolve(obj);
 					}
 			} );
 		}catch(err) {
