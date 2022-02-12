@@ -3,12 +3,66 @@
 class DateNS extends Date {
 	ns=0;
 	constructor(a,b ) {
-		super(a);
-		this.ns = b;
-	}	
+		if( !a ) super();
+		else super(a);
+		this.ns = b || 0;
+	}
+	toString() {
+		return toISONS( this );
+	}
+	toISOString() {
+		return toISONS( this );
+	}
 }
 
-console.log( "dateJS:", DateNS );
+function toISO(this_) {
+	var tzo = -this_.getTimezoneOffset(),
+		dif = tzo >= 0 ? '+' : '-',
+		pad = function(num) {
+			var norm = Math.floor(Math.abs(num));
+			return (norm < 10 ? '0' : '') + norm;
+		},
+		pad3 = function(num) {
+			var norm = Math.floor(Math.abs(num));
+			return (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
+		};
+	return this_.getFullYear() +
+		'-' + pad(this_.getMonth() + 1) +
+		'-' + pad(this_.getDate()) +
+		'T' + pad(this_.getHours()) +
+		':' + pad(this_.getMinutes()) +
+		':' + pad(this_.getSeconds()) +
+		'.' + pad3(this_.getMilliseconds()) +
+		dif + pad(tzo / 60) +
+		':' + pad(tzo % 60);
+}
+
+function toISONS(this_) {
+	var tzo = -this_.getTimezoneOffset(),
+		dif = tzo >= 0 ? '+' : '-',
+		pad = function(num) {
+			var norm = Math.floor(Math.abs(num));
+			return (norm < 10 ? '0' : '') + norm;
+		},
+		pad3 = function(num) {
+			var norm = Math.floor(Math.abs(num));
+			return (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
+		},
+		pad6 = function(num) {
+			var norm = Math.floor(Math.abs(num));
+			return (norm < 100000 ? '0' : '') + (norm < 10000 ? '0' : '') + (norm < 1000 ? '0' : '') + (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
+		};
+	return this_.getFullYear() +
+		'-' + pad(this_.getMonth() + 1) +
+		'-' + pad(this_.getDate()) +
+		'T' + pad(this_.getHours()) +
+		':' + pad(this_.getMinutes()) +
+		':' + pad(this_.getSeconds()) +
+		'.' + pad3(this_.getMilliseconds()) + pad6(this_.ns) +
+		dif + pad(tzo / 60) +
+		':' + pad(tzo % 60);
+}
+
 module.exports = function(sack) {
 
 sack.JSON6.stringify = JSON.stringify;
@@ -89,55 +143,11 @@ function initPrototypes()
 	// function https://stackoverflow.com/a/17415677/4619267
 	pushToProto( Date.prototype, { external:false,
 		name : null, // this doesn't get a tag name, it returns a literal.
-		cb : function () {
-			var tzo = -this.getTimezoneOffset(),
-				dif = tzo >= 0 ? '+' : '-',
-				pad = function(num) {
-					var norm = Math.floor(Math.abs(num));
-					return (norm < 10 ? '0' : '') + norm;
-				},
-				pad3 = function(num) {
-					var norm = Math.floor(Math.abs(num));
-					return (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
-				};
-			return this.getFullYear() +
-				'-' + pad(this.getMonth() + 1) +
-				'-' + pad(this.getDate()) +
-				'T' + pad(this.getHours()) +
-				':' + pad(this.getMinutes()) +
-				':' + pad(this.getSeconds()) +
-				'.' + pad3(this.getMilliseconds()) +
-				dif + pad(tzo / 60) +
-				':' + pad(tzo % 60);
-		}
+		cb() { return toISO( this ) }
 	} );
 	pushToProto( DateNS.prototype, { external:false,
 		name : null, // this doesn't get a tag name, it returns a literal.
-		cb : function () {
-			var tzo = -this.getTimezoneOffset(),
-				dif = tzo >= 0 ? '+' : '-',
-				pad = function(num) {
-					var norm = Math.floor(Math.abs(num));
-					return (norm < 10 ? '0' : '') + norm;
-				},
-				pad3 = function(num) {
-					var norm = Math.floor(Math.abs(num));
-					return (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
-				},
-				pad6 = function(num) {
-					var norm = Math.floor(Math.abs(num));
-					return (norm < 100000 ? '0' : '') + (norm < 10000 ? '0' : '') + (norm < 1000 ? '0' : '') + (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
-				};
-			return this.getFullYear() +
-				'-' + pad(this.getMonth() + 1) +
-				'-' + pad(this.getDate()) +
-				'T' + pad(this.getHours()) +
-				':' + pad(this.getMinutes()) +
-				':' + pad(this.getSeconds()) +
-				'.' + pad3(this.getMilliseconds()) + pad6(this.ns) +
-				dif + pad(tzo / 60) +
-				':' + pad(tzo % 60);
-		}
+		cb() { return toISONS(this) }
 	} );
 	pushToProto( Boolean.prototype, { external:false, name:null, cb:this_value  } );
 	pushToProto( Number.prototype, { external:false, name:null
