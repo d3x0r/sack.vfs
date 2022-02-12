@@ -734,7 +734,12 @@ void TimelineCursorObject::read( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	int32_t limit = GETV( options, optName = strings->limitString->Get( isolate ) )->Int32Value(context).ToChecked();
 	bool doRead = GETV( options, optName = strings->readString->Get( isolate ) )->BooleanValue(isolate);
-	Local<Value> from = GETV( options, optName = strings->fromString->Get( isolate ) ).As<Value>();
+	Local<Value> from;
+	optName = strings->fromString->Get( isolate );
+	if( !(options->Has( context, optName ).ToChecked()) ) {
+		from.Clear();
+	}else
+		from = GETV( options, optName ).As<Value>();
 	TimelineCursorObject* tlc = ObjectWrap::Unwrap<TimelineCursorObject>( args.Holder() );
 	Local<Array> arr = Array::New( isolate, 0 );
 	const char* buffer;
@@ -744,19 +749,32 @@ void TimelineCursorObject::read( const v8::FunctionCallbackInfo<Value>& args ) {
 	const char* filename;
 	LOGICAL result;
 	int got = 0;
+	int stepMode = 0;
+	class constructorSet* c = getConstructors( isolate );
 	do {
-		if( !from.IsEmpty() ) {
-			if( from->IsDate() ) {
-				Local<Date> fd = from.As<Date>();
-				result = sack_vfs_os_read_time_cursor( tlc->cursor, 0, (uint64_t)( fd->ValueOf() * 1000.0 ) * 1000, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
+		if( got == 0 ) {
+			if( !from.IsEmpty() ) {
+				if( from->IsDate() ) {
+					Local<Date> fd = from.As<Date>();
+					result = sack_vfs_os_read_time_cursor( tlc->cursor, 0, (uint64_t)( fd->ValueOf() * 1000.0 ) * 1000, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
+				} else if( from->IsNumber() ) {
+					Local<Number> fd = from.As<Number>();
+					result = sack_vfs_os_read_time_cursor( tlc->cursor, 1, (int)fd->Value(), &filename, &time, &tz, doRead ? &buffer : NULL, &length );
+				} else if( from->InstanceOf( context, c->dateNsCons.Get( isolate ) ).ToChecked() ) {
+					Local<Date> fd = from.As<Date>();
+					Local<Value> ns = fd->Get( context, String::NewFromUtf8Literal( isolate, "ns" ) ).ToLocalChecked();
 
-			} else if( from->IsNumber() ) {
-				Local<Number> fd = from.As<Number>();
-				result = sack_vfs_os_read_time_cursor( tlc->cursor, 1, (int)fd->Value(), &filename, &time, &tz, doRead ? &buffer : NULL, &length );
+					result = sack_vfs_os_read_time_cursor( tlc->cursor, 0, (uint64_t)( fd->ValueOf() * 1000.0 ) * 1000, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
 
+				} else {
+					lprintf( "Unhandled from argument..." );
+					result = FALSE;
+				}
+			} else {
+				result = sack_vfs_os_read_time_cursor( tlc->cursor, 2, 0, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
 			}
 		} else {
-			result = sack_vfs_os_read_time_cursor( tlc->cursor, 0, 0, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
+			result = sack_vfs_os_read_time_cursor( tlc->cursor, 2, 0, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
 		}
 		if( result ) {
 
@@ -764,7 +782,7 @@ void TimelineCursorObject::read( const v8::FunctionCallbackInfo<Value>& args ) {
 			// time is stored as UTC so all times are universal and have no bias between them.
 			// though decoding a timestamp with a timezone requires the local time to be used along with the timezone code
 			// so this has to adjust the value before decoding to parts and building a resulting string.
-			uint64_t timeValue = ((time / 1000000 + ( tz * 900000LL ) ) << 8) | tz;
+			uint64_t timeValue = ((time / 1000000 + ( tz * 900000LL ) ) << 8) | (tz&0xFF);
 			ConvertTickToTime( timeValue, &st );
 			char buf[64];
 			int tz;
@@ -775,10 +793,13 @@ void TimelineCursorObject::read( const v8::FunctionCallbackInfo<Value>& args ) {
 			} else
 				tz = st.zhr;
 
-			class constructorSet* c = getConstructors( isolate );
-			snprintf( buf, 64, "%04d-%02d-%02dT%02d:%02d:%02d.%03d%06lld%c%02d:%02d", st.yr, st.mo, st.dy, st.hr, st.mn, st.sc, st.ms, time%1000000, negTz ? '-' : '+', tz, st.zmn );
-			Local<Value> args[1] = { String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked() };
-			Local<Value> newDate = Local<Function>::New( isolate, c->dateCons )->NewInstance( isolate->GetCurrentContext(), 1, args ).ToLocalChecked();
+			snprintf( buf, 64, "%04d-%02d-%02dT%02d:%02d:%02d.%03d%c%02d:%02d", st.yr, st.mo, st.dy, st.hr, st.mn, st.sc, st.ms, negTz ? '-' : '+', tz, st.zmn );
+			Local<Value> args[2] = { String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked(), Number::New( isolate, (double)(time%1000000) ) };
+			Local<Value> newDate;
+			if( time % 1000000 )
+				newDate = Local<Function>::New( isolate, c->dateNsCons )->NewInstance( isolate->GetCurrentContext(), 2, args ).ToLocalChecked();
+			else
+				newDate = Local<Function>::New( isolate, c->dateCons )->NewInstance( isolate->GetCurrentContext(), 1, args ).ToLocalChecked();
 			Local<Object> obj = Object::New( isolate );
 			obj->Set( context, String::NewFromUtf8Literal( isolate, "time" ), newDate );
 
@@ -1236,7 +1257,7 @@ void ObjectStorageObject::fileSetTime( const v8::FunctionCallbackInfo<Value>& ar
 		double dateVal = useTime->ValueOf();
 		//dateVal -= intVal * 900;
 		tzToUse = (int)-intVal;
-		dateValToUse = dateVal * 1000000;
+		dateValToUse = (uint64_t)(dateVal * 1000000);
 
 		struct objStore::sack_vfs_os_file* file = objStore::sack_vfs_os_openfile( vol->vol, ( *fName ) );
 		objStore::sack_vfs_os_set_time( file, dateValToUse, tzToUse );
@@ -1269,7 +1290,7 @@ Local<Array> makeTimes( Isolate* isolate, uint64_t* timeArray, int8_t* tzArray, 
 			tz = st.zhr;
 
 		snprintf( buf, 64, "%04d-%02d-%02dT%02d:%02d:%02d.%03d%c%02d:%02d", st.yr, st.mo, st.dy, st.hr, st.mn, st.sc, st.ms, negTz ? '-' : '+', tz, st.zmn );
-		Local<Value> args[2] = { String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked(), Number::New( isolate, timeArray[n] % 1000000 ) };
+		Local<Value> args[2] = { String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked(), Number::New( isolate, (double)(timeArray[n] % 1000000) ) };
 		Local<Value> newDate = Local<Function>::New( isolate, c->dateNsCons )->NewInstance( isolate->GetCurrentContext(), 2, args ).ToLocalChecked();
 		arr->Set( isolate->GetCurrentContext(), n, newDate );
 	}
