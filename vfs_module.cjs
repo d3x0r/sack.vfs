@@ -3,7 +3,8 @@ const util = require('util');
 
 var sack, errN = [];
 try {
-	sack = require('sack' );
+	//sack = require('sack' );
+	//console.log( "Got sack loaded?" );
 } catch( err ) {
 	errN.push(err);
 }
@@ -11,7 +12,9 @@ try {
 if( !sack )
   if( process.platform === 'win32' ) {
     try {
-      if( process.config.target_defaults.default_configuration === 'Debug' )
+      if( process.config.target_defaults.default_configuration === 'Debug' 
+		|| ( Number(process.version.split('.')[0].split('v')[1]) >= 16 ) 
+		|| ( Number(process.version.split('.')[0].split('v')[1]) < 12 ) )
         sack = require( "./build/Debug/sack_gui.node" );
     } catch( err ){
       errN.push(err);
@@ -55,6 +58,7 @@ if( !sack )
 
 require( "./sack-jsox.cjs" )(sack);
 require( "./object-storage.cjs" )(sack);
+require( "./object-storage-cb.cjs" )(sack);
 
 module.exports=exports=sack;
 

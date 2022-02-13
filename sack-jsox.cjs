@@ -1,5 +1,68 @@
 "use strict";
 
+class DateNS extends Date {
+	ns=0;
+	constructor(a,b ) {
+		if( !a ) super();
+		else super(a);
+		this.ns = b || 0;
+	}
+	toString() {
+		return toISONS( this );
+	}
+	toISOString() {
+		return toISONS( this );
+	}
+}
+
+function toISO(this_) {
+	var tzo = -this_.getTimezoneOffset(),
+		dif = tzo >= 0 ? '+' : '-',
+		pad = function(num) {
+			var norm = Math.floor(Math.abs(num));
+			return (norm < 10 ? '0' : '') + norm;
+		},
+		pad3 = function(num) {
+			var norm = Math.floor(Math.abs(num));
+			return (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
+		};
+	return this_.getFullYear() +
+		'-' + pad(this_.getMonth() + 1) +
+		'-' + pad(this_.getDate()) +
+		'T' + pad(this_.getHours()) +
+		':' + pad(this_.getMinutes()) +
+		':' + pad(this_.getSeconds()) +
+		'.' + pad3(this_.getMilliseconds()) +
+		dif + pad(tzo / 60) +
+		':' + pad(tzo % 60);
+}
+
+function toISONS(this_) {
+	var tzo = -this_.getTimezoneOffset(),
+		dif = tzo >= 0 ? '+' : '-',
+		pad = function(num) {
+			var norm = Math.floor(Math.abs(num));
+			return (norm < 10 ? '0' : '') + norm;
+		},
+		pad3 = function(num) {
+			var norm = Math.floor(Math.abs(num));
+			return (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
+		},
+		pad6 = function(num) {
+			var norm = Math.floor(Math.abs(num));
+			return (norm < 100000 ? '0' : '') + (norm < 10000 ? '0' : '') + (norm < 1000 ? '0' : '') + (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
+		};
+	return this_.getFullYear() +
+		'-' + pad(this_.getMonth() + 1) +
+		'-' + pad(this_.getDate()) +
+		'T' + pad(this_.getHours()) +
+		':' + pad(this_.getMinutes()) +
+		':' + pad(this_.getSeconds()) +
+		'.' + pad3(this_.getMilliseconds()) + pad6(this_.ns) +
+		dif + pad(tzo / 60) +
+		':' + pad(tzo % 60);
+}
+
 module.exports = function(sack) {
 
 sack.JSON6.stringify = JSON.stringify;
@@ -19,16 +82,20 @@ try {
 } catch(err) {
 	console.log( "JSOX Module could not register require support..." );
 }
+
+const _DEBUG_STRINGIFY_TIMING = false;
 const _DEBUG_STRINGIFY = false;
 const DEBUG_STRINGIFY_OUTPUT = _DEBUG_STRINGIFY|| false;
-var toProtoTypesByName = new Map();
-var toProtoTypes = new WeakMap();
-var toProtoTypeRegistrations = []; // external registrations may need to be updated too....
-const toObjectTypes = new Map();
-const fromProtoTypes = new Map();
-var commonClasses = [];
+let toProtoTypesByName = new Map();
+let toProtoTypes = new WeakMap();
+let toProtoTypeRegistrations = []; // external registrations may need to be updated too....
+let toObjectTypes = new Map();
+let fromProtoTypes = new Map();
+let commonClasses = [];
 
 sack.JSOX.fromProtoType = fromProtoTypes;
+
+sack.JSOX.reset = initPrototypes;
 
 function pushToProto(p,a) {
     if( !toProtoTypesByName.get( p.constructor.name ) )
@@ -38,39 +105,49 @@ function pushToProto(p,a) {
     toProtoTypes.set( p, a );
 }
 
+function escape(string) {
+	//return string.replace( "\\", "\\\\" ).replace( '\"', "\\\"" ).replace( "\'", "\\\'" );
+	let n;
+	let output = '';
+	if( !string ) return string;
+	//console.log( "escape:", string );
+	for( n = 0; n < string.length; n++ ) {
+		if( ( string[n] == '"' ) || ( string[n] == '\\' ) || ( string[n] == '`' )|| ( string[n] == '\'' )) {
+			output += '\\';
+		}
+		output += string[n];
+	}
+	return output;
+}
+
+sack.JSOX.DateNS = DateNS;
+
 initPrototypes();
 function initPrototypes()
 {
     	//console.log( "Doing setup of classes:", toProtoTypes.get( Object.getPrototypeOf( [] ) ) );
 	// hook module native code to JS interface.
-	sack.JSOX.setFromPrototypeMap( fromProtoTypes );
+
+
+	toProtoTypesByName = new Map();
+	toProtoTypes = new WeakMap();
+	toProtoTypeRegistrations = []; // external registrations may need to be updated too....
+	toObjectTypes = new Map();
+	fromProtoTypes = new Map();
+	commonClasses = [];
+
+	sack.JSOX.setFromPrototypeMap( fromProtoTypes, DateNS );
 	pushToProto( Object.prototype, { external:false, name:Object.prototype.constructor.name, cb:null } );
 
 	function this_value() {_DEBUG_STRINGIFY&&console.log( "this:", this, "valueof:", this&&this.valueOf() ); return this&&this.valueOf(); }
 	// function https://stackoverflow.com/a/17415677/4619267
 	pushToProto( Date.prototype, { external:false,
 		name : null, // this doesn't get a tag name, it returns a literal.
-		cb : function () {
-			var tzo = -this.getTimezoneOffset(),
-				dif = tzo >= 0 ? '+' : '-',
-				pad = function(num) {
-					var norm = Math.floor(Math.abs(num));
-					return (norm < 10 ? '0' : '') + norm;
-				},
-				pad3 = function(num) {
-					var norm = Math.floor(Math.abs(num));
-					return (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
-				};
-			return this.getFullYear() +
-				'-' + pad(this.getMonth() + 1) +
-				'-' + pad(this.getDate()) +
-				'T' + pad(this.getHours()) +
-				':' + pad(this.getMinutes()) +
-				':' + pad(this.getSeconds()) +
-				'.' + pad3(this.getMilliseconds()) +
-				dif + pad(tzo / 60) +
-				':' + pad(tzo % 60);
-		}
+		cb() { return toISO( this ) }
+	} );
+	pushToProto( DateNS.prototype, { external:false,
+		name : null, // this doesn't get a tag name, it returns a literal.
+		cb() { return toISONS(this) }
 	} );
 	pushToProto( Boolean.prototype, { external:false, name:null, cb:this_value  } );
 	pushToProto( Number.prototype, { external:false, name:null
@@ -83,54 +160,72 @@ function initPrototypes()
 	} );
 	pushToProto( String.prototype, { external:false
 	                                    , name : null
-	                                    , cb:function(){ return '"' + sack.JSOX.escape(this_value.apply(this)) + '"' } } );
+	                                    , cb:function(){ return '"' + escape(this_value.apply(this)) + '"' } } );
 	if( typeof BigInt === "function" )
 		pushToProto( BigInt.prototype
 		                , { external:false, name:null, cb:function() { console.log( "BIGINT TOSTR"); return this + 'n' } } );
+	const useQuote = '"';
+	function getIdentifier(s) {
+		if( !s.length ) return useQuote+useQuote;
+		// should check also for if any non ident in string...
+		return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
+			|| /([0-9\-])/.test(s[0]) ) ?(useQuote + escape(s) +useQuote):s )
+	}
 
 	pushToProto( ArrayBuffer.prototype, { external:true, name:"ab"
-		, cb:function() { return "["+base64ArrayBuffer(this)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this))+"]" }
 	} );
 
 	pushToProto( Uint8Array.prototype, { external:true, name:"u8"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Uint8ClampedArray.prototype, { external:true, name:"uc8"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Int8Array.prototype, { external:true, name:"s8"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Uint16Array.prototype, { external:true, name:"u16"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Int16Array.prototype, { external:true, name:"s16"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Uint32Array.prototype, { external:true, name:"u32"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Int32Array.prototype, { external:true, name:"s32"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	if( typeof Uint64Array !== "undefined" )
 		pushToProto( Uint64Array.prototype, { external:true, name:"u64"
-			, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+			, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 		} );
 	if( typeof Int64Array !== "undefined" )
 		pushToProto( Int64Array.prototype, { external:true, name:"s64"
-			, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+			, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 		} );
 	pushToProto( Float32Array.prototype, { external:true, name:"f32"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Float64Array.prototype, { external:true, name:"f64"
-		, cb:function() { return "["+base64ArrayBuffer(this.buffer)+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 
 	pushToProto( Symbol.prototype, { external:true, name:"sym"
 		, cb:function() { return '"'+this.description+'"' }
 	} );
+
+	pushToProto( RegExp.prototype, { external:true, name:"regex"
+	    , cb:function(o,stringifier){
+			return "'"+escape(this.source)+"'";
+		}
+	} );
+	fromProtoTypes.set( "regex", { protoCon:RegExp, cb:function (field,val){
+		return new RegExp( this );
+	} } );
+
+
 	pushToProto( Map.prototype, mapToJSOX = { external:true, name:"map"
 		, cb:null
 	} );
@@ -236,11 +331,12 @@ sack.JSOX.begin = function(cb, reviver) {
 		throw new Error("registerFromJSOX  was deprecated, please update to use 'fromJSOX'");
 	}
 	parser.fromJSOX = function( prototypeName, o, f ) {
-		if( localFromProtoTypes.get(prototypeName) ) throw new Error( "Existing fromJSOX has been registered for prototype" );
+                const existed = !! localFromProtoTypes.get(prototypeName);
 
 		if(o && !("constructor" in o))
 			throw new Error("Please pass a prototype like object...");
 		localFromProtoTypes.set( prototypeName, { protoCon:o && o.prototype.constructor, cb:f } );
+                return existed;
 	}
 	parser.registerPromiseFromJSOX = function( prototypeName, o, f ) {
 		throw new Error( "Deprecated 'registerPromiseFromJSOX', pluse use fromJSOX has been registered for prototype" );
@@ -254,6 +350,11 @@ var mapToJSOX;
 const keywords = {	["true"]:true,["false"]:false,["null"]:null,["NaN"]:NaN,["Infinity"]:Infinity,["undefined"]:undefined }
 var id = 1;
 sack.JSOX.stringifierActive = null;
+let timeIn = 0;
+let timeOut = 0;
+let lastTick = Date.now();
+let lastLog = Date.now();
+
 sack.JSOX.stringifier = function() {
 	var classes = [];
 	var useQuote = '"';
@@ -344,9 +445,10 @@ sack.JSOX.stringifier = function() {
 		}
 		if( !s.length ) return useQuote+useQuote;
 		// should check also for if any non ident in string...
+		if( s.includes( "\u{FEFF}" ) ) return (useQuote + JSOX.escape(s) +useQuote);
 		return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
 			|| /([0-9\-])/.test(s[0])
-			|| /((\n|\r|\t)|[ \#\{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + sack.JSOX.escape(s) +useQuote):s )
+			|| /((\n|\r|\t)|[ \#\{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + escape(s) +useQuote):s )
 	}
 
 
@@ -399,7 +501,12 @@ sack.JSOX.stringifier = function() {
 		var gap;
 		var indent;
 		var rep;
-
+		if( _DEBUG_STRINGIFY_TIMING ) {
+			let now = Date.now();
+			timeOut += now - lastTick;
+			lastTick = now;
+		}
+	
 		var i;
 		const spaceType = typeof space;
 		const repType = typeof replacer;
@@ -459,7 +566,16 @@ sack.JSOX.stringifier = function() {
 		}else{
 			//console.log( "Stringifier is still in a stack?", path);
 		}
-		DEBUG_STRINGIFY_OUTPUT && console.trace( "Stringify Result:", r );
+		DEBUG_STRINGIFY_OUTPUT && console.log( "Stringify Result:", r );
+      if(_DEBUG_STRINGIFY_TIMING) {
+			let now = Date.now();
+			timeIn += now - lastTick;
+			lastTick = now;
+			if( now - lastLog > 250 ) {
+				console.log( "stringify profile:", timeIn, timeOut );
+				lastLog = now;
+			}
+		}
 		return r;
 
 
@@ -510,6 +626,10 @@ sack.JSOX.stringifier = function() {
 				var first = true;
 				//console.log( "CONVERT:", map);
 				for (var [key, value] of this) {
+					if( key === undefined ) {
+						console.log( "Found a key 'undefined' in this?", this );
+						continue;
+					}
 					//if( "function" === typeof value ) continue;
 					//console.log( "er...", key, value )
 					tmp.tmp = value;
@@ -808,8 +928,8 @@ sack.JSOX.stringifier = function() {
 	// use window.btoa' step. According to my tests, this appears to be a faster approach:
 	// http://jsperf.com/encoding-xhr-image-data/5
 	// doesn't have to be reversable....
-	const encodings = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-	const decodings = { '=':-1 };
+	const encodings = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$_'
+	const decodings = { '=':-1, '+':62, '/':63, '.':62, ',':63 };
 
 	for( var x = 0; x < 256; x++ ) {
 		if( x < 64 ) {

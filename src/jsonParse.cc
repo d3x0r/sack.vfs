@@ -129,14 +129,13 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	parseObject *parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
 	int argc = args.Length();
-	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Missing data parameter." ) ) );
-		return;
-	}
 
-	String::Utf8Value data( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	String::Utf8Value* data_;
+	if( argc > 0 ) data_ = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	else data_ = NULL;
+	//String::Utf8Value data( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 	int result;
-	for( result = json6_parse_add_data( parser->state, *data, data.length() );
+	for( result = json6_parse_add_data( parser->state, data_?*data_[0]:NULL, data_?data_[0].length():0 );
 		result > 0;
 		result = json6_parse_add_data( parser->state, NULL, 0 )
 		) {
@@ -158,14 +157,17 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 			Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 			{
 				MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, argv );
-				if( result.IsEmpty() ) // if an exception occurred stop, and return it.
+				if( result.IsEmpty() ) { // if an exception occurred stop, and return it.
+					if( data_ ) delete data_;
 					return;
 			}
+		}
 		}
 		json_dispose_message( &elements );
 		if( result < 2 )
 			break;
 	}
+	if( data_ ) delete data_;
 	if( result < 0 ) {
 		PTEXT error = json_parse_get_error( parser->state );
 		if( error ) {
@@ -224,14 +226,12 @@ void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 	Isolate* isolate = args.GetIsolate();
 	parseObject *parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
 	int argc = args.Length();
-	if( argc == 0 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Missing data parameter." ) ) );
-		return;
-	}
-
-	String::Utf8Value data( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	String::Utf8Value* data_;
+	if( argc > 0 ) data_ = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	else data_ = NULL;
+	//String::Utf8Value data( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 	int result;
-	for( result = json6_parse_add_data( parser->state, *data, data.length() );
+	for( result = json6_parse_add_data( parser->state, data_ ? *data_[0] : NULL, data_ ? data_[0].length() : 0 );
 		result > 0;
 		result = json6_parse_add_data( parser->state, NULL, 0 )
 		) {
@@ -250,14 +250,17 @@ void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 			Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 			{
 				MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, argv );
-				if( result.IsEmpty() ) // if an exception occurred stop, and return it.
+				if( result.IsEmpty() ) { // if an exception occurred stop, and return it.
+					if( data_ ) delete data_;
 					return;
+			}
 			}
 			json_dispose_message( &elements );
 		}
 		if( result < 2 )
 			break;
 	}
+	if( data_ ) delete data_;
 	if( result < 0 ) {
 		PTEXT error = json_parse_get_error( parser->state );
 		if( error ) {
@@ -340,7 +343,7 @@ void parseObject::write6v( const v8::FunctionCallbackInfo<Value>& args ) {
 			{
 				MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, argv );
 				if( result.IsEmpty() ) { // if an exception occurred stop, and return it.
-					delete data_;
+					if( data_ ) delete data_;
 					return;
 				}
 			}
@@ -349,7 +352,7 @@ void parseObject::write6v( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( result < 2 )
 			break;
 	}
-	delete data_;
+	if( data_ ) delete data_;
 	if( result < 0 ) {
 		PTEXT error = json_parse_get_error( parser->state );
 		if( error ) {

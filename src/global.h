@@ -49,6 +49,9 @@
 #undef New
 
 //#include <openssl/ssl.h>
+#if NODE_MAJOR_VERSION >= 17
+#  include <openssl/configuration.h>
+#endif
 #include <openssl/safestack.h>  // STACK_OF
 #include <openssl/tls1.h>
 #include <openssl/err.h>
@@ -57,6 +60,10 @@
 #include <openssl/pem.h>
 #include <openssl/x509v3.h>
 //#include <openssl/>
+
+#if OPENSSL_VERSION_MAJOR >= 3 
+#include <openssl/core_names.h>
+#endif
 
 #ifdef INCLUDE_GUI
 #include "gui/gui_global.h"
@@ -125,6 +132,7 @@ class constructorSet {
 	Isolate *isolate;
 	PTHREAD thread;
 	Persistent<Function> dateCons; // Date constructor
+	Persistent<Function> dateNsCons; // Date constructor
 	Persistent<Function> ThreadObject_idleProc;
 
 	// constructor
@@ -174,6 +182,7 @@ class constructorSet {
 	v8::Persistent<v8::Function> SRGObject_constructor;
 	v8::Persistent<v8::Function> TaskObject_constructor;
 	v8::Persistent<v8::Function> ObjectStorageObject_constructor;
+	v8::Persistent<v8::Function> TimelineCursorObject_constructor;
 	v8::Persistent<v8::Function> monitorConstructor;
 	v8::Persistent<v8::Function> KeyHidObject_constructor;
 	//Persistent<Function> onCientPost;
@@ -394,6 +403,11 @@ public:
 	~TLSObject();
 };
 
+struct reviveMemberReplacement {
+	Local<Value> object;
+	Local<Value> fieldName;
+};
+
 struct reviveStackMember {
 	LOGICAL isArray;
 	int index;
@@ -401,6 +415,22 @@ struct reviveStackMember {
 	Local<Value> object;
 	char* name;
 	size_t nameLen;
+	PDATALIST pdlSubsts;
+	reviveStackMember() {
+		pdlSubsts = CreateDataList( sizeof( struct reviveMemberReplacement ) );
+
+	}
+	~reviveStackMember() {
+		{
+			INDEX idx;
+			struct reviveMemberReplacement* rep;
+			DATA_FORALL( pdlSubsts, idx, struct reviveMemberReplacement*, rep ) {
+				rep->fieldName.Clear();
+				rep->object.Clear();
+			}
+		}
+		DeleteDataList( &pdlSubsts );
+	}
 };
 
 struct reviver_data {

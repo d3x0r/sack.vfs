@@ -1,0 +1,6 @@
+// 
+
+{
+	storage : [ "ws://localhost:8088/" ],
+        
+}

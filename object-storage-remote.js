@@ -1,5 +1,5 @@
 
-const _debug_osr = true;
+const _debug_osr = false; // object storage remote ( general debugging added in forked copy)
 
 var dangling = [];
 var objectRefs = 0;
@@ -8,24 +8,37 @@ var preloadStorage = null;
 //let remote = null;
 let sack = null;
 let unique = 0;
-
+const _debug_ll = false; // /low level message receive
+const _debug_put = false;
+const _debug_get = false;
+const _debug_get_ll = false; // after read before parse
 const _debug_stringify = false;
+const _debug_danging = false;
+const _debug_map = false; // reloading related object debugging
 
+let util; import( "util" ).then( u=>{ util = u
+	decoder = new u.TextDecoder();
+} );
+//import util from "util";
+//import process from "process";
+//process.stdout.write( "blah?" );
 try {
 	JSOX.updateContext();
 }catch(err) {
 	console.log( "Let me guess.... no update?", err );
 }
 
-this.ObjectStorage = ObjectStorage;
+const this_ = this || globalThis;
 
+this_.ObjectStorage = ObjectStorage;
+console.log( "Updating this object to include ObjectStorage?", this_ );
 //this.storage = new ObjectStorage();
-const decoder = new TextDecoder();
 
 function ObjectStorage( sack_, ws ) {
-	sack = sack_;
+	const sack = sack_;
+        this.sack = sack_;
 	this.ws = ws;
-        ws.storage = this;
+	ws.storage = this;
 	//console.log( "Initialize as object storage?", this );
 	//const newStorage = await connect( remote );
 	const newStorage = this;
@@ -36,49 +49,53 @@ function ObjectStorage( sack_, ws ) {
 		if( !( this instanceof objectStorageContainer
                       ||  Object.getPrototypeOf( this ).constructor.name === "objectStorageContainer" )
                   ) return new newStorage.objectStorageContainer(o,opts);
-                console.log( "making a new storage container:-----------------------------------------------------", o );
-		//console.trace( "Something creating a new container..", o, opts );
-		try {
-		if( "string" === typeof o ){
-			// still, if the proir didn't resolve, need to resolve this..
-			let existing = newStorage.cachedContainer.get( o );
-			if( existing ) {
-				o = existing.data;
-				if( existing.resolve )
-					return ;
+                if( "undefined" !== typeof o ) {
+                        //  this callback is used often from JSOX, and all parameters are undefined....
+                        // content of the container is filed in later instead of in the constructor.
+                        //console.log( "making a new storage container:-----------------------------------------------------", o );
+			//console.trace( "Something creating a new container..", o, opts );
+			try {
+			if( "string" === typeof o ){
+				// still, if the proir didn't resolve, need to resolve this..
+				let existing = newStorage.cachedContainer.get( o );
+				if( existing ) {
+					o = existing.data;
+					if( existing.resolve )
+						return ;
+				}
 			}
-		}
 
-		var resolve = o && !opts;
-		this.data = o || {}; // reviving we get null opts.
-		if( !o && opts && opts.ref ) {
-			console.trace( "ref loading is deprecated.");
-			//resolve = opts.ref;
-		}
-		currentContainer = this;
-		Object.defineProperty( this, "encoding", { writable:true, value:false } );
-	/*
-		this.data = {
-			//nonce : opts?opts.sign?sack.SaltyRNG.sign( sack.JSOX.stringify(o), 3, 3 ):null:null,
-			data : o
-		}
-	*/
-		if( opts && opts.sign ) {
-			var v = sack.SaltyRNG.verify( sack.JSOX.stringify(o), this.data.nonce, 3, 3 );
-			//console.log( "TEST:", v );
-			Object.defineProperty( this, "id", { value:v.key } );
-			v.key = this.data.nonce;
-			this.data.nonce = v;
-		} else {
-			if( opts && opts.id ) {
-                            console.log( "SOMETHING", opts );
-				Object.defineProperty( this, "id", { value:opts.id } );
-                                console.log( "Conditioning THis with a ID:", opts.id, this.id );
+			var resolve = o && !opts;
+			this.data = o || {}; // reviving we get null opts.
+			if( !o && opts && opts.ref ) {
+				console.trace( "ref loading is deprecated.");
+				//resolve = opts.ref;
 			}
-		}
-		}catch(err) {
-			console.log( "Uncaught exception:", err );
-		}
+			currentContainer = this;
+			Object.defineProperty( this, "encoding", { writable:true, value:false } );
+		/*
+			this.data = {
+				//nonce : opts?opts.sign?sack.SaltyRNG.sign( JSOX.stringify(o), 3, 3 ):null:null,
+				data : o
+			}
+		*/
+			if( opts && opts.sign ) {
+				var v = this_.sack.SaltyRNG.verify( JSOX.stringify(o), this.data.nonce, 3, 3 );
+				//console.log( "TEST:", v );
+				Object.defineProperty( this, "id", { value:v.key } );
+				v.key = this.data.nonce;
+				this.data.nonce = v;
+			} else {
+				if( opts && opts.id ) {
+                                	_debug_get && console.log( "SOMETHING", opts );
+					Object.defineProperty( this, "id", { value:opts.id } );
+                                        _debug_get && console.log( "Conditioning THis with a ID:", opts.id, this.id );
+				}
+			}
+			}catch(err) {
+				console.log( "Uncaught exception:", err );
+			}
+                }
 		//console.log( "Container:", this );
 	}
 
@@ -91,6 +108,7 @@ function ObjectStorage( sack_, ws ) {
 
 	objectStorageContainer.prototype.map = async function( opts ) {
 		const pending = this.dangling;
+                _debug_get && console.log( "pending:", this, this.pending );
 		if( pending && pending.length )  {
 			opts = opts || { depth:0, paths:[] };
 			const rootMap = this;
@@ -239,7 +257,7 @@ function ObjectStorage( sack_, ws ) {
 	newStorage.decoding = [];
 	newStorage.pending = [];
 	newStorage.setupStringifier = setupStringifier;
-	newStorage.stringifier = sack.JSOX.stringifier();
+	newStorage.stringifier = JSOX.stringifier();
 	newStorage.parser = null; // this will be filled when .get() is called.
 	newStorage.currentParser = null;
 	newStorage.root = null; // this gets filled when the root file system is enabled.
@@ -266,7 +284,7 @@ function ObjectStorage( sack_, ws ) {
                             || Object.getPrototypeOf( this ).constructor.name === "objectStorageContainer"
                           ) {
 				//console.log( "THIS SHOULD ALREADY BE IN THE STORAGE!", this, newStorage.stored.get( this.data ) );
-                            console.log( "Storing object:", this.data, this.id );
+                            	_debug_put && console.log( "Storing object:", this.data, this.id );
 				newStorage.stored.set( this.data, this.id ); // maybe update the ID though.
 				//return thsi{data:this.data};
 			}
@@ -296,7 +314,7 @@ function ObjectStorage( sack_, ws ) {
 		//this.parser.
 		if( !opts ) opts = defaultOpts;
 		//if( opts && opts.depth === 0 ) return;
-		console.log( "External API invoked map...", o, newStorage.stored );
+		_debug_map && console.log( "External API invoked map...", o, newStorage.stored );
 		const rootId = newStorage.stored.get( o );
 		if( !rootId ) { console.log( "Object was not stored, cannot map" ); return Promise.resolve( o ); }
 		return newStorage.cachedContainer.get( rootId ).map( opts );
@@ -322,33 +340,37 @@ function ObjectStorage( sack_, ws ) {
 
 	
 	function handleMessage( msg ) {
-            console.log( "Storage Remote Handler:", msg );
+            _debug_ll && console.log( "Storage Remote Handler:", msg );
             try {
 		if( msg.op === "GET" ) {
 					const req = requests.get( msg.id );
                                         requests.delete(msg.id);
                                         //console.log( "Found request?", req );
+                                        _debug_get && console.log( "result:", msg );
 			const data = (msg.data && ( msg.data instanceof ArrayBuffer
                                       || Object.getPrototypeOf( msg.data ).constructor.name === "ArrayBuffer"
 
                                      ))?decoder.decode( msg.data )
                                             : msg.data;
                         		//if(
-                        		console.log( "Resolving request?", req, data );
+                        		
+                        		_debug_get && console.log( "Resolving request?", req, data, decoder.decode(msg.data) );
 					if( req ) req.res( data );
                                         return true;
 				}
 			if( msg.op === "Get" ) {
 					const req = requests.get( msg.id );
                                         requests.delete(msg.id);
+                                        _debug_get && console.log( "Rejecting get reply..", msg.err );
 					if( req ) req.rej( msg.err );
                                         return true;
 				}
-		if( msg.op === "PUT" ) {
+			if( msg.op === "PUT" ) {
 					const req = requests.get( msg.id );
                                         requests.delete(msg.id);
-					if( req ) {
-                                            console.log( "Something",req );
+					if( req && req.res ) {
+                                            // sometimes it's write-only?
+                                            _debug_put && console.log( "Something",req );
                                             req.res( msg.r );
                                         }
                                         return true;
@@ -357,7 +379,7 @@ function ObjectStorage( sack_, ws ) {
 					const req = requests.get( msg.id );
                                         requests.delete(msg.id);
 					if( req ) {
-                                            console.log( "Req:", req );
+                                            _debug_put && console.log( "Req:", req );
                                             req.rej( msg.err );
                                         }
                                         return true;
@@ -454,18 +476,29 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 
 		var container = this_.stored.get( obj );
 
+		if( !container && opts && opts.id ) {
+                	const oldObj = this_.cached.get( opts.id );
+                        if( oldObj )
+	                        container = this_.stored.get( oldObj );
+                        console.log( "new object, old ID, ..." );
+               	}
+
 		_debug_osr && console.log( "Server Put found object?", container, obj, opts );
 		if( container ) {
 			container = this_.cachedContainer.get( container );
+			if( obj !== container.data ) {
+                            	console.log( "Overwrite old data with new?", container.data, obj );
+                                coontainer.data = obj;
+                       	}
 
-			if( !container.data.nonce ) {
+			if( !container.nonce ) {
 				// make sure every item that is in an index
 				// has been written...
 
 				var stringifier;
 				if( opts && opts.extraEncoders ) {
                                     	_debug_stringify && console.log( "New stringifier because of optional encoders" );
-					stringifier = sack.JSOX.stringifier();
+					stringifier = JSOX.stringifier();
 					this_.setupStringifier( stringifier );
 					opts.extraEncoders.forEach( f=>{
 						stringifier.registerToJSOX( f.tag, f.p, f.f )
@@ -497,7 +530,7 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 		if( opts && opts.id ) {
 			var stringifier;
 			if( opts.extraEncoders ) {
-				stringifier = sack.JSOX.stringifier();
+				stringifier = JSOX.stringifier();
 				this_.setupStringifier( stringifier );
 				opts.extraEncoders.forEach( f=>{
 					stringifier.registerToJSOX( f.tag, f.p, f.f )
@@ -524,8 +557,8 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 			//res( opts.id );
 		} else if( !opts || !opts.id ) {
 			_debug_osr && console.log( "New bare object, create a container...", opts );
-                        if( !opts ) opts = { id : sack.id() }
-						else opts.id = sack.id();
+                        if( !opts ) opts = { id : this_.sack.id() }
+						else opts.id = this_.sack.id();
 
 			container = new this_.objectStorageContainer(obj,opts);
 			//console.log( "New container looks like... ", container.id, container );
@@ -533,7 +566,7 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 			//console.log( "saving stored container.id", obj, container.id );
 
 			//this.stored.delete( obj );
-                        console.log( "Created new container for object(2)", obj );
+                        _debug_put && console.log( "Created new container for object(2)", obj );
 			this_.stored.set( obj, container.id );
 			this_.cached.set( container.id, container.data );
 			this_.cachedContainer.set( container.id, container );
@@ -541,7 +574,7 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 			var stringifier;
 			if( opts.extraEncoders ) {
                             	_debug_stringify && console.log( "Need a custom stringifier because of options" );
-				stringifier = sack.JSOX.stringifier();
+				stringifier = JSOX.stringifier();
 				this_.setupStringifier( stringifier );
 				opts.extraEncoders.forEach( f=>{
 					stringifier.registerToJSOX( f.tag, f.p, f.f )
@@ -578,7 +611,7 @@ ObjectStorage.prototype.put = function( obj, opts ) {
 /*
 ObjectStorage.prototype.update( objId, obj ) {
 
-	var container = new this.objectStorageContainer(sack.JSOX.stringify(obj),sign);
+	var container = new this.objectStorageContainer(JSOX.stringify(obj),sign);
 	this.stored.set( obj, container.id );
 	this.cached.set( container.id, container );
 	return container.id;
@@ -593,13 +626,12 @@ const ackObjects = [];
 
 ObjectStorage.prototype.get = function( opts ) {
 	//this.parser.
-	var resolve;
-	var reject;
 	const os = this;
+        const extraDecoders = opts && opts.extraDecoders || null;
 	_debug_stringify && console.log( "This is the big get... ");
 	if( "string" === typeof opts ) {
 		opts = { id:opts
-		       , extraDecoders : null };
+		       };
 	}
 	if( !opts ){
 		console.trace( "Must specify options ", opts);
@@ -628,7 +660,7 @@ ObjectStorage.prototype.get = function( opts ) {
 	}
 
 	if( !this.parser ){
-		this.parser = sack.JSOX.begin(reviveObject);
+		this.parser = JSOX.begin(reviveObject);
 		this.parser.fromJSOX( "~os", this.objectStorageContainer, reviveContainer ); // I don't know ahead of time which this is.
 		this.parser.fromJSOX( "~or", objectStorageContainerRef, reviveContainerRef ); // I don't know ahead of time which this is.
 		for( let f of this.decoders )
@@ -641,7 +673,7 @@ ObjectStorage.prototype.get = function( opts ) {
             	// this is JSOX parse callback, called every time there is a object revived.
                 // this will be the next object to satisfy ack.
 
-		_debug_stringify && console.log( "Resolved buffer (pending):", ackObjects.length, o );
+		_debug_get_ll && console.log( "Resolved buffer (pending):", ackObjects.length, o, o.dangling );
 
 		const ackObject = ackObjects.shift();
 		if( ackObject ) {
@@ -652,7 +684,7 @@ ObjectStorage.prototype.get = function( opts ) {
 	}
 
 	function objectStorageContainerRef( s ) {
-		//console.trace( "Container ref:", s );
+		_debug_get && console.log( "Container ref:", s );
 		try {
 			const existing = os.cachedContainer.get(s);
 			const here = os.getCurrentParseRef();
@@ -663,13 +695,14 @@ ObjectStorage.prototype.get = function( opts ) {
 					this.d.res = res;
 					this.d.rej = rej;
 				}).then( (obj)=>{
-					console.log( "(DOES THIS HAPPEN?)OBJ REPLACE OBJECT WITH:", here, obj )
+					_debug_get && console.log( "(DOES THIS HAPPEN?)OBJ REPLACE OBJECT WITH:", here, obj )
 					return (here.o[here.f] = obj) 
 				});
 			} else {
 				this.d.p = Promise.resolve( existing.data );  // this will still have to be swapped.
 			}
 			dangling.push( this );
+                        _debug_get && console.log( "adding a dangling object...", dangling );
 			objectRefs++;
 		} catch(err) { console.log( "Init failed:", err)}
 	}
@@ -678,13 +711,13 @@ ObjectStorage.prototype.get = function( opts ) {
 		//console.trace( "Revival of a container's field:", this, field, val );
 		if( !field ) {
 			// finished.
+                    	_debug_get && console.log( "Final container revive:", objectRefs, this.id );
 			if( objectRefs ) {
-				
 				Object.defineProperty( this, "dangling", { value:dangling } );
 				dangling = [];
 				objectRefs = 0;
 			}
-                        console.log( "CURRENT READID:",currentReadId );
+                        _debug_get && console.log( "CURRENT READID:",currentReadId );
 			Object.defineProperty( this, "id", { value:currentReadId } );
 			return this;
 		}
@@ -730,7 +763,8 @@ ObjectStorage.prototype.get = function( opts ) {
 				return existing.data;
 			} 
 			// finished.
-			return this.d.p;
+                        _debug_get && console.log( "This promise is hung, this reference has..." );
+			return this.d.p; // set actual field to the promise
 		}
 		else {
 			// this is a sub-field of this object to revive...
@@ -741,16 +775,17 @@ ObjectStorage.prototype.get = function( opts ) {
 
 
 	let parser = this.parser;
-	if( opts.extraDecoders ) {
-		parser = sack.JSOX.begin(reviveObject  );
+	if( extraDecoders ) {
+            	// uses a specific parser for this instance...
+		parser = JSOX.begin(reviveObject  );
 		parser.fromJSOX( "~os", this.objectStorageContainer, reviveContainer ); // I don't know ahead of time which this is.
 		parser.fromJSOX( "~or", objectStorageContainerRef, reviveContainerRef ); // I don't know ahead of time which this is.
 		//console.log( "this has no decoders? ", this );
-		if( this.decoders && this.decoders.length )
-			this.decoders.forEach( f=>parser.fromJSOX( f.tag, f.p, f.f ) );
 		// allow extra to override default.
-		if( opts && opts.extraDecoders && opts.extraDecoders.length ) {
-			opts.extraDecoders.forEach( f=>parser.fromJSOX( f.tag, f.p, f.f ) );
+		if( this.decoders && this.decoders.length )
+			for( let f of this.decoders ) { parser.fromJSOX( f.tag, f.p, f.f ) };
+		if( extraDecoders.length ) {
+			for( let f of extraDecoders ) { parser.fromJSOX( f.tag, f.p, f.f ); }
 		}
 		//console.log( "Created a parser for revival..." );
 	}
@@ -759,7 +794,6 @@ ObjectStorage.prototype.get = function( opts ) {
 	this.currentParser = parser;
 	//console.log( "(get)Read Key:", os );
 	const p = new Promise( function(res,rej) {
-		resolve = res;  reject = rej;
 		//console.log( "doing read? (decodes json using a parser...", opts, parser, os );
 
 		const priorReadId = currentReadId;
@@ -769,12 +803,14 @@ ObjectStorage.prototype.get = function( opts ) {
 			}
 			//console.log( "LOADING : ", opts.id );
 			for( var remote of os.remotes ) {
-                        	console.log( "So for some remote... use ws.get" );
+                        	_debug_get && console.log( "So for some remote... use ws.get" );
 				remote.remote.get( opts ).then( (obj)=>{
 					const p = new Promise( (res,rej)=>{
 						ackObjects.push( {res:res,rej:rej,cb:resultCallback,id:opts.id } );
 					});
 					currentReadId = opts.id;
+                                        //_debug_get_ll &&
+                                        console.log( "RELOAD:", obj );
 					parser.write( obj );
 					return p
 			        } ).catch( err=>{
@@ -820,12 +856,14 @@ ObjectStorage.prototype.get = function( opts ) {
 					os.cachedContainer.set( obj.id, obj );
 					//currentReadId = priorReadId;
 					for( let res in extraResolutions ) res.res(obj.data);
+                                        _debug_get_ll && console.log( "calling resolve.1" );
 					res(obj.data);
 				} else {
                                     	//console.log( "Isn't a container..." );
 					//console.log( "Result object", obj );
 					currentReadId = priorReadId;
 					for( let res in extraResolutions ) res.res(obj);
+                                        _debug_get_ll && console.log( "calling resolve." );
 					res(obj)
 				}
 			}

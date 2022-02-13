@@ -59,9 +59,11 @@ describe('Added in 1.2.104; toJSOX, fromJSOX', function () {
                 }
 		const parser = JSOX.begin( parsed );
                 parser.fromJSOX( "X", X );
+                /*
 		expect( function() {
 				parser.fromJSOX( "X", X );
 			} ).to.throw( Error );
+		*/                        
                 parser.fromJSOX( "Y", Y, Y.fromString );
                 JSOX.fromJSOX( "A", A );
 		expect( function() {

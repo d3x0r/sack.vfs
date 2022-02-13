@@ -941,7 +941,7 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 					Deallocate( CPOINTER, eventMessage->buf );
 				}
 				else
-					argv[1] = Undefined( isolate );
+					argv[1] = Null( isolate );
 				LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, callback ) {
 					callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
@@ -1252,7 +1252,7 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 						Deallocate( CPOINTER, eventMessage->buf );
 					}
 					else
-						argv[1] = Undefined( isolate );
+						argv[1] = Null( isolate );
 					INDEX idx; callbackFunction* callback;
 					LIST_FORALL( wsc->closeCallbacks, idx, callbackFunction*, callback ) {
 						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
@@ -1716,7 +1716,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		(*pevt)._this = wssi;
 		(*pevt).code = code;
 		(*pevt).buf = StrDup(reason);
-		(*pevt).buflen = strlen( reason );
+		(*pevt).buflen = StrLen( reason );
 		wssi->pc = NULL;
 		EnqueLink( &wssi->eventQueue, pevt );
 		uv_async_send( &wssi->async );
@@ -2006,7 +2006,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 
 			if (pHttpState) {
 				int result;
-				//lprintf( "ending http on %p", obj->pc );
+				//lprintf( "ending http on %p, checking for more data", obj->pc );
 				EndHttp(pHttpState);
 				while ((result = ProcessHttp(obj->pc, pHttpState)))
 				{
@@ -2839,7 +2839,7 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	(*pevt)._this = wsc;
 	(*pevt).code = code;
 	(*pevt).buf = StrDup(reason);
-	(*pevt).buflen = strlen( reason );
+	(*pevt).buflen = StrLen( reason );
 	EnqueLink( &wsc->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
 	lprintf( "Send Close Request" );
@@ -2902,8 +2902,13 @@ wscObject::wscObject( wscOptions *opts ) {
 				//throw "Error initializing SSL connection (bad key or passphrase?)";
 			}
 		}
-		WebSocketConnect( pc );
+		if( WebSocketConnect( pc ) < 0 ){
+			pc = NULL;
+		} else {
 		readyState = CONNECTING;
+	}
+	} else {
+		lprintf( "Socket returned Null?" );
 	}
 }
 
@@ -3256,6 +3261,9 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 void wscObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+	if( !obj->pc )
+		args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)-1 ) );
+	else
 	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->readyState ) );
 #if 0
 	Local<Object> h = args.Holder();

@@ -23,6 +23,7 @@ describe('Added in 1.2.103', function () {
 
 
 	it( 'handles fromJSOX per field', function() {
+			JSOX.reset();
         
         	const content = 'O{a:123,b:345,c:[5,6,7]}'
                 const processed = [];
