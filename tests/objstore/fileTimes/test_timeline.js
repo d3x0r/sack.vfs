@@ -19,7 +19,7 @@ console.log( "Got:", records2 );
 
 
 console.log( "Passing no from" );
-const records3 = timeline.get( {limit:20} );
+const records3 = timeline.get( {read:true, limit:20} );
 console.log( "Got:", records3.length, records3 );
 
 
