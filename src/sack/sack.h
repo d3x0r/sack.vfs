@@ -12175,7 +12175,7 @@ SACK_VFS_PROC LOGICAL sack_vfs_os_get_times( struct sack_vfs_os_file* file, uint
 // set last time for object in storage. (overwrites current tick used to update on write)
 SACK_VFS_PROC LOGICAL sack_vfs_os_set_time( struct sack_vfs_os_file* file, uint64_t time, int8_t tz );
 SACK_VFS_PROC struct sack_vfs_os_time_cursor* sack_vfs_os_get_time_cursor( struct sack_vfs_os_volume* vol );
-SACK_VFS_PROC LOGICAL sack_vfs_os_read_time_cursor( struct sack_vfs_os_time_cursor* cursor, int step, uint64_t time_, const char** filename, uint64_t* result_timestamp, int8_t* result_tz, const char** buffer, size_t* size );
+SACK_VFS_PROC LOGICAL sack_vfs_os_read_time_cursor( struct sack_vfs_os_time_cursor* cursor, int step, uint64_t time_, uint64_t* entry, const char** filename, uint64_t* result_timestamp, int8_t* result_tz, const char** buffer, size_t* size );
 #ifdef __cplusplus
 }
 #endif

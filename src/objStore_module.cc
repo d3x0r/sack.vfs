@@ -745,6 +745,7 @@ void TimelineCursorObject::read( const v8::FunctionCallbackInfo<Value>& args ) {
 	const char* buffer;
 	size_t length;
 	uint64_t time;
+	uint64_t entry;
 	int8_t tz;
 	const char* filename;
 	LOGICAL result;
@@ -756,25 +757,25 @@ void TimelineCursorObject::read( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( !from.IsEmpty() ) {
 				if( from->IsDate() ) {
 					Local<Date> fd = from.As<Date>();
-					result = sack_vfs_os_read_time_cursor( tlc->cursor, 0, (uint64_t)( fd->ValueOf() * 1000.0 ) * 1000, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
+					result = sack_vfs_os_read_time_cursor( tlc->cursor, 0, (uint64_t)( fd->ValueOf() * 1000.0 ) * 1000, &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
 				} else if( from->IsNumber() ) {
 					Local<Number> fd = from.As<Number>();
-					result = sack_vfs_os_read_time_cursor( tlc->cursor, 1, (int)fd->Value(), &filename, &time, &tz, doRead ? &buffer : NULL, &length );
+					result = sack_vfs_os_read_time_cursor( tlc->cursor, 1, (int)fd->Value(), &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
 				} else if( from->InstanceOf( context, c->dateNsCons.Get( isolate ) ).ToChecked() ) {
 					Local<Date> fd = from.As<Date>();
 					Local<Value> ns = fd->Get( context, String::NewFromUtf8Literal( isolate, "ns" ) ).ToLocalChecked();
 
-					result = sack_vfs_os_read_time_cursor( tlc->cursor, 0, (uint64_t)( fd->ValueOf() * 1000.0 ) * 1000, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
+					result = sack_vfs_os_read_time_cursor( tlc->cursor, 0, (uint64_t)( fd->ValueOf() * 1000.0 ) * 1000, &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
 
 				} else {
 					lprintf( "Unhandled from argument..." );
 					result = FALSE;
 				}
 			} else {
-				result = sack_vfs_os_read_time_cursor( tlc->cursor, 2, 0, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
+				result = sack_vfs_os_read_time_cursor( tlc->cursor, 2, 0, &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
 			}
 		} else {
-			result = sack_vfs_os_read_time_cursor( tlc->cursor, 2, 0, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
+			result = sack_vfs_os_read_time_cursor( tlc->cursor, 2, 0, &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
 		}
 		if( result ) {
 
@@ -802,6 +803,7 @@ void TimelineCursorObject::read( const v8::FunctionCallbackInfo<Value>& args ) {
 				newDate = Local<Function>::New( isolate, c->dateCons )->NewInstance( isolate->GetCurrentContext(), 1, args ).ToLocalChecked();
 			Local<Object> obj = Object::New( isolate );
 			obj->Set( context, String::NewFromUtf8Literal( isolate, "time" ), newDate );
+			obj->Set( context, String::NewFromUtf8Literal( isolate, "entry" ), Number::New( isolate, (double)entry ) );
 
 			obj->Set( context, String::NewFromUtf8Literal( isolate, "id" ), String::NewFromUtf8( isolate, filename ).ToLocalChecked() );
 			obj->Set( context, String::NewFromUtf8Literal( isolate, "length" ), Number::New( isolate, (double)length ) );
