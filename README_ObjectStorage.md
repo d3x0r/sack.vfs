@@ -36,14 +36,26 @@ sack.ObjectStorage.
 | filename | Filename to use for object storage database.  If the filename includes '@' the part before the '@' is treated as a mount name; ie. 'vfsMount@object.store'.
 
 
-| Object methods | Return | Arguments | Description |
+| Object Storage methods | Return | Arguments | Description |
 |----------|------------|-------------|----|
 | getRoot | promise | () | Promise resolves with root directory |
 | put | unique ID | ( object \[, options\] ) | Stores or updates an object into storage.  If the object was not previously stored or loaded, a unique ID for the object is returned, otherwise the existing ID results.  The second parameter is an optional option object, see options below. |
 | get | promise |  ( [string] or [Option object] ) | Returns a promise; success is passed the object loaded from storage.  Loads an object using the specified ID. |
 | map | promise |  ( id ) | Same as get, but also loads any objects of specified ID. |
+| timeline | TimelineCursorObject[Native] | getter | gets an accessor to browse the timeline of the object storage. |
 | -- | | | |
 | delete |  | (id/object) | remove object from storage... (danging references in other stored records?) |
+
+| Timeline Cursor | Return | Arguments | Description |
+|----|-----|----|----|
+| get | array | ( option object ) | 
+
+| Timeline getter option | Description |
+|----|-----|
+| read | (true/false) whether records resulting from the search include the data associated with the record |
+| from | (integer) seeks to the timeline index specified |
+| from | (Date/JSOX.DateNS) seeks to the timeline index specified |
+| limit | (integer) number of records to limit the result set to |
 
 
 | Object get Options names | type | Description |
