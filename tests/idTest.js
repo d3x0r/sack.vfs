@@ -10,12 +10,6 @@ console.log( "ShortID:", vfs.Id());
 console.log( "ShortID:", vfs.Id());
 console.log( "ShortID:", vfs.Id());
 
-//console.log( "PASWORD:", vfs.SaltyRNG.id( "password", 0 ) );
-//console.log( "PASWORD:", vfs.SaltyRNG.id( "password", 1 ) );
-//console.log( "PASWORD:", vfs.SaltyRNG.id( "password", 2 ) );
-//console.log( "PASWORD:", vfs.SaltyRNG.id( "password", 3 ) );
-//console.log( "PASWORD:", vfs.SaltyRNG.id( "password", 4 ) );
-
 var now = Date.now();
 var n = 0;
 const length = 3000;

@@ -1,4 +1,4 @@
 
 var sack=require( '..');
 db = sack.Sqlite( "mySQL" );
-db.
+console.log( db.do( "show tables" ) );

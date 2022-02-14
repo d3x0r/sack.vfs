@@ -261,12 +261,18 @@ void ImageObject::getPng( const FunctionCallbackInfo<Value>& args ) {
 		size_t size;
 		if( PngImageFile( obj->image, &buf, &size ) )
 		{
-			Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, buf, size );
+			Local<ArrayBuffer> arrayBuffer;
+#if ( NODE_MAJOR_VERSION >= 14 )
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)buf, size, releaseBufferBackingStore, NULL );
+			arrayBuffer = ArrayBuffer::New( isolate, bs );
+#else
+			arrayBuffer = ArrayBuffer::New( isolate, buf, size );
 
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->o.Reset( isolate, arrayBuffer );
 			holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 			holder->buffer = buf;
+#endif
 			args.GetReturnValue().Set( arrayBuffer );
 		}
 	}
@@ -282,12 +288,18 @@ void ImageObject::getJpeg( const FunctionCallbackInfo<Value>&  args ) {
 		size_t size;
 		if( JpgImageFile( obj->image, &buf, &size, obj->jpegQuality ) )
 		{
-			Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, buf, size );
+			Local<ArrayBuffer> arrayBuffer;
+#if ( NODE_MAJOR_VERSION >= 14 )
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)buf, size, releaseBufferBackingStore, NULL );
+			arrayBuffer = ArrayBuffer::New( isolate, bs );
+#else
+			arrayBuffer = ArrayBuffer::New( isolate, buf, size );
 
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->o.Reset( isolate, arrayBuffer );
 			holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 			holder->buffer = buf;
+#endif
 			args.GetReturnValue().Set( arrayBuffer );
 		}
 	}
@@ -381,14 +393,26 @@ void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 			if( args[0]->IsUint8Array() ) {
 				Local<Uint8Array> u8arr = args[0].As<Uint8Array>();
 				Local<ArrayBuffer> myarr = u8arr->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+				obj = (ImageObject*)myarr->GetBackingStore()->Data();
+#else
 				obj = new ImageObject( (uint8_t*)myarr->GetContents().Data(), myarr->ByteLength() );
+#endif
 			} else if( args[0]->IsTypedArray() ) {
 				Local<TypedArray> u8arr = args[0].As<TypedArray>();
 				Local<ArrayBuffer> myarr = u8arr->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+				obj = (ImageObject*)myarr->GetBackingStore()->Data();
+#else
 				obj = new ImageObject( (uint8_t*)myarr->GetContents().Data(), myarr->ByteLength() );
+#endif
 			} else if( args[0]->IsArrayBuffer() ) {
 				Local<ArrayBuffer> myarr = args[0].As<ArrayBuffer>();
+#if ( NODE_MAJOR_VERSION >= 14 )
+				obj = (ImageObject*)myarr->GetBackingStore()->Data();
+#else
 				obj = new ImageObject( (uint8_t*)myarr->GetContents().Data(), myarr->ByteLength() );
+#endif
 			} else if( args[0]->IsNumber() )
 				w = (int)args[0]->NumberValue(context).ToChecked();
 			else {
@@ -849,10 +873,16 @@ void ImageObject::imageData( const FunctionCallbackInfo<Value>& args ) {
 
 	//Context::Global()
 	size_t length;
-	Local<SharedArrayBuffer> ab =
-		SharedArrayBuffer::New( isolate,
+	Local<SharedArrayBuffer> ab;
+
+#if ( NODE_MAJOR_VERSION >= 14 )
+	std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)GetImageSurface( io->image ), length = io->image->height*io->image->pwidth*4, releaseBufferBackingStore, NULL );
+	ab = SharedArrayBuffer::New( isolate, bs );
+#else
+	ab= SharedArrayBuffer::New( isolate,
 			GetImageSurface( io->image ),
 			length = io->image->height * io->image->pwidth*4 );
+#endif
 	Local<Uint8Array> ui = Uint8Array::New( ab, 0, length );
 
 	args.GetReturnValue().Set( ui );

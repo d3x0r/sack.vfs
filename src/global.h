@@ -50,7 +50,7 @@
 
 //#include <openssl/ssl.h>
 #if NODE_MAJOR_VERSION >= 17
-#  include <openssl/configuration.h>
+//#  include <openssl/configuration.h>
 #endif
 #include <openssl/safestack.h>  // STACK_OF
 #include <openssl/tls1.h>
