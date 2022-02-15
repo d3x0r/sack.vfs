@@ -9,12 +9,22 @@
   "description": "Node.js GUI Addon",
   "main": "vfs_module.cjs",
   "module": "vfs_module.mjs",
-  "type":"commonjs",
+  "type": "commonjs",
   "exports": {
-    "index": "./vfs_module.mjs",
-    "sack": "./vfs_module.mjs",
-    "import": "./vfs_module.mjs",
-    "require": "./vfs_module.cjs"
+    ".":{
+    	"require":"./vfs_module.cjs",
+    	"import":"./vfs_module.mjs"
+    },
+    "./sack":{
+    	"require":"./vfs_module.cjs",
+    	"import":"./vfs_module.mjs"
+    },
+    "./import.mjs":{
+    	"default":"./import.mjs"
+    },
+    "./object-storage":{
+    	"default":"./object-storage.mjs"
+    }
   },
   "private": false,
   "preferGlobal": false,
@@ -73,5 +83,42 @@
     "build-vfs-reldeb-run1": "cmake-js build --CDCMAKE_BUILD_TYPE=RelWithDebInfo",
 
     "build": "npm run build-gui"
+  },
+  "devDependencies": {
+    "cmake-js": "latest",
+    "@d3x0r/bloomnhash": "git://github.com/d3x0r/bloomnhash-js",
+    "@d3x0r/object-storage": "git://github.com/d3x0r/Objectstorage",
+    "@d3x0r/popups": "git://github.com/d3x0r/popups",
+    "@d3x0r/slab-array": "git://github.com/d3x0r/SlabArray",
+    "@d3x0r/srg": "git://github.com/d3x0r/srg",
+    "@babel/preset-env": "latest",
+    "@rollup/plugin-babel": "latest",
+    "@rollup/plugin-commonjs": "latest",
+    "@rollup/plugin-node-resolve": "^13.0.0",
+    "@rollup/plugin-strip": "latest",
+    "jsox": "latest",
+    "acorn": "latest",
+    "chai": "latest",
+    "core-js": "latest",
+    "eslint": "latest",
+    "husky": "latest",
+    "lint-staged": "latest",
+    "mocha": "latest",
+    "nyc": "latest",
+    "rollup": "latest",
+    "rollup-plugin-terser": "latest"
+  },
+  "nyc": {
+    "statements": 100,
+    "branches": 100,
+    "functions": 100,
+    "lines": 100,
+    "ignore-class-method": [
+      "log"
+    ],
+    "reporter": [
+      "lcov",
+      "text"
+    ]
   }
 }
