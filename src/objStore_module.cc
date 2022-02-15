@@ -869,19 +869,25 @@ void TimelineCursorObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.IsConstructCall() ) {
-		char *mount_name;
+		char *mount_name = NULL;
 		char *filename = (char*)"default.os";
 		LOGICAL defaultFilename = TRUE;
 		char *key = NULL;
 		char *key2 = NULL;
 		uintptr_t version = 0;
 		VolumeObject* vol = NULL;
+		ObjectStorageObject* oso = NULL;
 		int arg = 0;
 		int argc = args.Length();
 		if( argc > 0 && args[0]->IsObject() ) {
 			class constructorSet* c = getConstructors( isolate );
-			if( args[0]->InstanceOf( isolate->GetCurrentContext(), c->ObjectStorageObject_constructor.Get( isolate ) ).ToChecked() ) {
+			if( args[0]->InstanceOf( isolate->GetCurrentContext(), c->volConstructor.Get( isolate ) ).ToChecked() ) {
 				vol = ObjectWrap::Unwrap<VolumeObject>( args[0].As<Object>() );
+				arg++;
+			}
+			else if( args[0]->InstanceOf( isolate->GetCurrentContext(), c->ObjectStorageObject_constructor.Get( isolate ) ).ToChecked() ) {
+				oso = ObjectWrap::Unwrap<ObjectStorageObject>( args[0].As<Object>() );
+				//vol = oso->vol;
 				arg++;
 			}
 		}
@@ -896,12 +902,17 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 				//TooObject( isolate.getCurrentContext().FromMaybe( Local<Object>() )
 				String::Utf8Value fName( isolate,  args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-				mount_name = StrDup( *fName );
+				if( !vol && !oso && ( argc > 1 )  )
+					mount_name = StrDup( *fName );
+				else {
+					filename = StrDup( *fName );
+				}
+				arg++;
 			}
 			else {
 				if( argc > arg )
 					arg++; // assume null mount name
-				mount_name = SRG_ID_Generator();
+				mount_name = NULL;// SRG_ID_Generator();
 			}
 			if( argc > (arg) ) {
 				if( args[arg]->IsString() ) {
@@ -912,9 +923,9 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				else
 					filename = NULL;
 			}
-			else {
+			else if( arg==1 ){
 				char* sep;
-				if( sep = strchr( mount_name, '@' ) ) {
+				if( mount_name && (sep = strchr( mount_name, '@' )) ) {
 					lprintf( "find mount name to get volume..." );
 					sep[0] = 0;
 					filename = sep + 1;
