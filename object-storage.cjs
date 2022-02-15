@@ -60,7 +60,7 @@ function objectStorageContainer(o,opts) {
 		this.data = "pending reference"; // reviving we get null opts.
 	}
 
-   	currentContainer = this;
+	currentContainer = this;
 	Object.defineProperty( this, "encoding", { writable:true, value:false } );
 	Object.defineProperty( this, "time", { value:[] } );
 	if( opts && opts.sign ) {
@@ -75,7 +75,7 @@ function objectStorageContainer(o,opts) {
 			//var v = sack.SaltyRNG.verify( newStorage.stringifier.stringify(o), this.nonce, opts.sign.pad1, opts.sign.pad2 );
 			Object.defineProperty( this, "id", { value:signature.id } );
 			//console.trace( "This makes it go boom?", opts, this.nonce, o, v.key );
-	} else {
+		} else {
 		//	var v = sack.SaltyRNG.verify( newStorage.stringifier.stringify(o), this.nonce, opts.sign.pad1, opts.sign.pad2 );
 		//	Object.defineProperty( this, "id", { value:v.key } );
 		}
@@ -83,7 +83,7 @@ function objectStorageContainer(o,opts) {
 		if( opts && opts.id ) {
 			Object.defineProperty( this, "id", { value:opts.id } );
 		}		
-		}
+	}
 }
 
 objectStorageContainer.prototype.getStore = function() {
@@ -135,7 +135,7 @@ objectStorageContainer.prototype.map = async function( opts ) {
 								const ref = newStorage.storedIn.get( obj );
 								console.log( "Failed to find promise?", obj, ref );
 			
-					}
+						}
 						
 					}
 					else console.log( "Failed to find path in object:", this.data, path );
@@ -145,10 +145,10 @@ objectStorageContainer.prototype.map = async function( opts ) {
 						if( idx >= 0 ) {
 							dangling.splice( idx, 1 );
 							_debug_replace && console.log( "in map - removed dangling reference?" );
-					}
+						}
 						else _debug_replace && console.log( "resolved load was not found???" );
+					}
 				}
-			}
 			}
 			else{  // load everything that's pending on this object.
 				_debug_replace && console.log( "Load all dangling things anyway:", dangling );
@@ -167,7 +167,7 @@ objectStorageContainer.prototype.map = async function( opts ) {
 				//console.log( "Nothing scheduled to really wait, go ahead and resolve");
 				res( rootMap.data );
 			}
-							else {
+			else {
 				_debug_replace && console.log( "(AWAIT!)Waiting on some events to resolve...", waiting );
 				Promise.all( waiting ).then( ( last)=>{
 					_debug_replace && console.log( "And now we properly resolve.", last );
@@ -176,8 +176,8 @@ objectStorageContainer.prototype.map = async function( opts ) {
 			}
 			
 
-								})
-							}
+		})
+	}
 	if(0) // untested.
 	if( opts.paths ) {
 		// if the first level is a promised value - it would definitely be in dangling and have been checked above.
@@ -194,11 +194,11 @@ objectStorageContainer.prototype.map = async function( opts ) {
 					if( isObject ) {
 						console.log( "This thing should be loaded too?? (ignoring this promise, it is also probalby already handled above..." );
 						checks[n] = null;
-						}
 					}
 				}
 			}
-			}
+		}
+	}
 	_debug_dangling && console.log( "Nothing dangling found on object");
 	return this.data; // this function is async, just return.
 }
@@ -235,7 +235,7 @@ objectStorageContainer.prototype.map = async function( opts ) {
 						});
 					} else {
 						_debug_replace && console.log( "waiting for something, not resolving" );
-						}
+					}
 					//console.log( "This is just an object - from a then callback" );
 					return obj;
 				}).catch( (err)=>{
@@ -358,7 +358,7 @@ objectStorageContainer.prototype.map = async function( opts ) {
 				if( this.nonce )
 					return {data:this.data,nonce:this.nonce,sign:this.sign}; // this object will be stringified, and have our type prefix prepended.
 				else
-				return {data:this.data}; // this object will be stringified, and have our type prefix prepended.
+					return {data:this.data}; // this object will be stringified, and have our type prefix prepended.
 			}
 		}
 		//console.log( "not a container...");
@@ -411,7 +411,7 @@ objectStorageContainer.prototype.map = async function( opts ) {
             try {
 		if( msg.op === "connect" ) {
 			ws.send( `{op:connected,code:${jsonRemoteExtensions}}` );
-		return true;
+			return true;
 		}
 		if( msg.op === "get" ) {
 			newStorage.readRaw( currentReadId = msg.opts.id
@@ -614,8 +614,8 @@ _objectStorage.prototype.stringify = function( obj ) {
 _objectStorage.prototype.put = function( obj, opts ) {
 	const this_ = this;
 	if( currentContainer && currentContainer.data === this ) {
-			saveObject( null, null );
-			_debug && console.log( "Returning same id; queued save to background...")
+		saveObject( null, null );
+		_debug && console.log( "Returning same id; queued save to background...")
         	return Promise.resolve( currentContainer.id );
 	}else {
 
@@ -627,13 +627,13 @@ _objectStorage.prototype.put = function( obj, opts ) {
 	function saveObject(res,rej) {
 
 		//console.log( "PUT:", obj, opts );
-            if( "string" === typeof obj && opts.id ) {
+		if( "string" === typeof obj && opts.id ) {
 		        _debug && console.log( "SAVING A STRING OBJECT" );
-		// this isn't cached on this side.
-                // we don't know the real object.
+			// this isn't cached on this side.
+        	        // we don't know the real object.
 			this_.writeRaw( opts, obj );
 			return res?res( opts.id ):null;
-                }
+		}
 		var container = this_.stored.get( obj );
 		if( !container && opts && opts.id ) {
 			const oldObj = this_.cached.get( opts.id );
@@ -806,7 +806,7 @@ _objectStorage.prototype.get = function( opts ) {
 	if( priorDecode ){		
 		console.trace( "already decoding...(use same promised result) things?", priorDecode );
 		return priorDecode.p;
-				}
+	}
 
 	if( !this.parser ){
 		this.parser = sack.JSOX.begin();
@@ -848,7 +848,7 @@ _objectStorage.prototype.get = function( opts ) {
 					if(inObject >= 0 ) {
 						_debug_replace && console.log( "Removing request from container dangling" );
 						dangling.spice( inObject, 1 );
-						}
+					}
 					_debug_replace && console.log( "-------- REPLACE VALUE HERE:", this.d.r.o[this.d.r.f], this.d.r.o, this.d.r.f, obj );
 					return (this.d.r.o[this.d.r.f] = obj);
 				}).catch( (err)=>{
@@ -881,7 +881,7 @@ _objectStorage.prototype.get = function( opts ) {
 					this.dangling.push.apply(this.dangling, dangling )
 					//console.log( "Added more to the dangling things..." );
 				}
-                                // resets to store new objects for next load.
+				// resets to store new objects for next load.
 				dangling = [];
 				objectRefs = 0;
 			}
@@ -1022,28 +1022,28 @@ _objectStorage.prototype.get = function( opts ) {
 						}
 					} while( found >= 0 );
 
-				if( obj && ( obj instanceof os.objectStorageContainer ) ){
-					//console.log( "GOTzz:", obj, obj.id, obj.data );
-					if( !("id" in obj ))
-						Object.defineProperty( obj, "id", { value:currentReadId } );
+					if( obj && ( obj instanceof os.objectStorageContainer ) ){
+						//console.log( "GOTzz:", obj, obj.id, obj.data );
+						if( !("id" in obj ))
+							Object.defineProperty( obj, "id", { value:currentReadId } );
 						Object.defineProperty( obj, "times", { value:times } );
 
 						console.log( "Object.data is bad?", obj.data, typeof obj.data, "\n!!!!!!!!!!", obj.id );
 						//console.log( " *** SETTING ID HERE");
-					os.stored.set( obj.data, obj.id );
-					os.cachedContainer.set( obj.id, obj );
-					currentReadId = priorReadId;
-					for( let res in extraResolutions ) res.res(obj.data);
+						os.stored.set( obj.data, obj.id );
+						os.cachedContainer.set( obj.id, obj );
+						currentReadId = priorReadId;
+						for( let res in extraResolutions ) res.res(obj.data);
 						resolve( obj.data );
-				} else {
-					currentReadId = priorReadId;
-					for( let res in extraResolutions ) res.res(obj);
+					} else {
+						currentReadId = priorReadId;
+						for( let res in extraResolutions ) res.res(obj);
 						resolve(obj);
-				}
+					}
 			} );
 		}catch(err) {
 			//console.log( "ERROR:", err );
-				currentReadId = priorReadId;
+			currentReadId = priorReadId;
 			rej(err);
 		}
 	} );
