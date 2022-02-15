@@ -53,20 +53,20 @@ var server = sack.WebSocket.Server( serverOpts = {
 
 console.log( "serving on", serverOpts.port );
 
-server.onerrorlow( function( error, socket ) {
+server.onerrorlow= function( error, socket ) {
 	if( error === 1 ) {
         	//this.redirect = true;
 	        this.disableSSL();
         }
 	console.log( "Low Error:", this, error, socket );
-} )
+} 
 
-server.onerror( function( failedConnection ) {
+server.onerror= function( failedConnection ) {
 	console.log( "Failed SSL ConnectioN:", failedConnection );
         // ( failedConnection.remoteFamily, failedConnection.remoteAddress );
-} );
+} ;
 
-server.onrequest( function( req, res ) {
+server.onrequest=( function( req, res ) {
        	//console.log( "Received request:", res, req );
 	var ip = ( req.headers && req.headers['x-forwarded-for'] ) ||
 		 req.connection.remoteAddress ||
@@ -125,7 +125,7 @@ server.onrequest( function( req, res ) {
 	}
 } );
 
-server.onaccept( function ( protocols, resource ) {
+server.onaccept=( function ( protocols, resource ) {
 	console.log( "Connection received with : ", protocols, " path:", resource );
         if( process.argv[2] == "1" )
 		this.reject();
@@ -134,7 +134,7 @@ server.onaccept( function ( protocols, resource ) {
 		//this.accept( protocols );
 } );
 
-server.onconnect( function (ws) {
+server.onconnect=( function (ws) {
 	//console.log( "Connect:", ws );
 
 	ws.onmessage( function( msg ) {
