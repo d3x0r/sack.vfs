@@ -679,7 +679,8 @@ _objectStorage.prototype.put = function( obj, opts ) {
 				}
 				_debug_output && console.trace( "WRite:", container.id, storage );
 				this_.writeRaw( container.id, storage );
-				container.time = storage.getTimes( container.id );
+	//		console.log( "Why doesn't this straoge have gettime?", storage );
+				container.time = this_.getTimes( container.id );
 				return res?res( container.id ):null;
 			} else {
 				throw new Error( "record is signed, cannot put" );
@@ -757,10 +758,10 @@ _objectStorage.prototype.put = function( obj, opts ) {
 			try {
 				this_.writeRaw( container.id, storage );
 				if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
-				container.time = storage.getTimes( container.id );
+				container.time = this_.getTimes( container.id );
 				this_.cached.set( container.id, container.data );
 				this_.cachedContainer.set( container.id, container );
-			}catch(err) { console.log( "WRITE RAW?", this_ )}
+			}catch(err) { console.log( "WRITE RAW?", err, this_ )}
 			//console.log( "OUTPUT:", storage );
 			res && res(  container.id );
 		}

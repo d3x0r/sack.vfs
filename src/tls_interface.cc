@@ -261,8 +261,7 @@ static EVP_PKEY *genKey( int kBits ) {
 		EVP_PKEY_free( keypair );
 		return NULL;
 	}
-#if OPENSSL_API_COMPAT < 30000 
-//OPENSSL_VERSION_MAJOR < 3
+#if OPENSSL_VERSION_MAJOR < 3
 	RSA* rsa = RSA_new_method( NULL );
 	RSA_generate_key_ex( rsa, kBits, bne, NULL );
 	EVP_PKEY_set1_RSA( keypair, rsa );
