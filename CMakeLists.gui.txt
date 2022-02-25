@@ -99,14 +99,14 @@ foreach( DEF ${DEFINITIONS} )
 ENDFOREACH()
 
 
-include_directories(${CMAKE_JS_INC} )
 include_directories(${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/include/SACK )
 include_directories(${CMAKE_BINARY_DIR}/intershell-${CMAKE_BUILD_TYPE}/include/SACK )
+include_directories(${CMAKE_JS_INC} )
 
 if( WIN32 )
 	set( MORE_MODULE_SOURCES 
 		src/hid_module.cc
-		src/reg_access.cc 
+		src/reg_access.cc
 		src/playSound_module.cc
 		)
 endif( WIN32 )
@@ -149,7 +149,7 @@ add_library(${PROJECT} SHARED
 set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
 
 if( CMAKE_COMPILER_IS_GNUCC )
-   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result")
+   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -std=c++14")
 endif( CMAKE_COMPILER_IS_GNUCC )
 
 set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
@@ -164,17 +164,19 @@ else( UNIX )
 	set( VFSLIB sack_vfs.pp.module )
 endif( UNIX )
 
+  target_link_libraries( ${PROJECT} tls-20 ssl-48 crypto-46 )
 target_link_libraries(${PROJECT} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE_JS_LIB} )
 
-  add_custom_command( TARGET ${PROJECT} POST_BUILD
+  add_custom_target( finalTarget ALL #TARGET ${PROJECT} POST_BUILD
 			#COMMAND cmake -E echo ${AMALG_COMMAND}
    			COMMAND ${CMAKE_COMMAND} -E echo Updating deps....
    			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/bin ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
    			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/resources ${CMAKE_BINARY_DIR}/resources
 			${EXTRACOPY}
-                   DEPENDS ${PROJECT}
+		COMMENT "Updating Dependancies to build target"
+                   #DEPENDS ${PROJECT}
   )
-
+add_dependencies( finalTarget ${PROJECT} )
 
 if( WIN32 )
    target_link_libraries(${PROJECT} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll )
