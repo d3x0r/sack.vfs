@@ -809,7 +809,7 @@ void TimelineCursorObject::read( const v8::FunctionCallbackInfo<Value>& args ) {
 			obj->Set( context, String::NewFromUtf8Literal( isolate, "time" ), newDate );
 			obj->Set( context, String::NewFromUtf8Literal( isolate, "entry" ), Number::New( isolate, (double)entry ) );
 
-			obj->Set( context, String::NewFromUtf8Literal( isolate, "id" ), String::NewFromUtf8( isolate, filename ).ToLocalChecked() );
+			obj->Set( context, String::NewFromUtf8Literal( isolate, "id" ), String::NewFromUtf8( isolate, filename, NewStringType::kNormal ).ToLocalChecked() );
 			obj->Set( context, String::NewFromUtf8Literal( isolate, "length" ), Number::New( isolate, (double)length ) );
 			if( doRead ) {
 				Local<ArrayBuffer> ab;
