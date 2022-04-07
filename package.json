@@ -123,6 +123,7 @@
     "build-vfs-reldeb": "npm run build-vfs-reldeb-config && npm run build-vfs-reldeb-run1",
     "build-vfs-reldeb-config": "cmake-js --CDMAKE_GUI=0 --CDCMAKE_BUILD_TYPE=RelWithDebInfo configure",
     "build-vfs-reldeb-run1": "cmake-js build --CDCMAKE_BUILD_TYPE=RelWithDebInfo",
-    "build": "node-gyp configure build"
+    "build": "node-gyp configure build",
+    "link": "npm link @d3x0r/bloomnhash @d3x0r/popups jsox"
   }
 }
