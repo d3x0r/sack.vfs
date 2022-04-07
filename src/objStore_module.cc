@@ -821,13 +821,13 @@ void TimelineCursorObject::read( const v8::FunctionCallbackInfo<Value>& args ) {
 #else
 				ab =
 					ArrayBuffer::New( isolate
-						, (void*)eventMessage->buf
-						, eventMessage->buflen );
+						, (void*)newBuf
+						, length );
 
 				PARRAY_BUFFER_HOLDER holder = GetHolder();
 				holder->o.Reset( isolate, ab );
 				holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-				holder->buffer = eventMessage->buf;
+				holder->buffer = newBuf;
 #endif
 				obj->Set( context, String::NewFromUtf8Literal( isolate, "data" ), ab );
 
