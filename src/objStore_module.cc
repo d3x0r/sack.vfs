@@ -23,7 +23,7 @@ public:
 public:
 
 	static void Init( Isolate *isolate, Local<Object> exports );
-	ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, struct file_system_mounted_interface* useMount );
+	ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, struct file_system_mounted_interface* useMount, int flags );
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -43,6 +43,7 @@ public:
 	static void openObject( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void getTimeline( const v8::FunctionCallbackInfo<Value>& args );
+	static void haltVolume( const v8::FunctionCallbackInfo<Value>& args );
 	
 	// utility to remove the key so it can be diagnosed.
 	static void volDecrypt( const v8::FunctionCallbackInfo<Value>& args );
@@ -447,7 +448,7 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 	);
 	//NODE_SET_PROTOTYPE_METHOD( clsTemplate, "timeline", ObjectStorageObject::getTimelineCursor );
 
-
+	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "halt", ObjectStorageObject::haltVolume );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "readRaw", ObjectStorageObject::fileRead );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "writeRaw", ObjectStorageObject::fileWrite );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "createIndex", ObjectStorageObject::createIndex );
@@ -490,7 +491,7 @@ ObjectStorageObject::~ObjectStorageObject() {
 }
 
 ObjectStorageObject::ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key
-	, const char *key2, struct file_system_mounted_interface*useMount ) {
+	, const char *key2, struct file_system_mounted_interface*useMount, int flags ) {
 	mountName = (char *)mount;
 	if( !mount && !filename ) {
 		// no native storage.
@@ -507,7 +508,10 @@ ObjectStorageObject::ObjectStorageObject( const char *mount, const char *filenam
 		//lprintf( "sack_vfs_os_volume: %s %p %p", filename, key, key2 );
 		fileName = StrDup( filename );
 		volNative = true;
-		vol = objStore::sack_vfs_os_load_crypt_volume( filename, version, key, key2, useMount );
+
+		vol = objStore::sack_vfs_os_load_volume_v2( flags, filename, version, key, key2, useMount );
+		//vol = objStore::sack_vfs_os_load_crypt_volume( filename, version, key, key2, useMount );
+
 		AddLink( &osl.open, vol );
 		//lprintf( "VOL: %p for %s %d %p %p", vol, filename, version, key, key2 );
 		if( vol )
@@ -892,17 +896,22 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 		}
 		if( argc == arg ) {
-			ObjectStorageObject* obj = new ObjectStorageObject( NULL, NULL, 0, NULL, NULL, NULL );
+			ObjectStorageObject* obj = new ObjectStorageObject( NULL, NULL, 0, NULL, NULL, NULL, 0 );
 			obj->Wrap( args.This() );
 			args.GetReturnValue().Set( args.This() );
 		}
 		else {
+			int readonly = 0;
+			int namearg = 0;
 			//int arg = 0;
-			if( args[arg]->IsString() ) {
-
+			if( args[arg]->IsBoolean() ) {
+				readonly = args[arg]->BooleanValue(isolate);
+				arg++;
+			}
+			if( (arg < argc) && args[arg]->IsString() ) {
 				//TooObject( isolate.getCurrentContext().FromMaybe( Local<Object>() )
 				String::Utf8Value fName( isolate,  args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-				if( !vol && !oso && ( argc > 1 )  )
+				if( !vol && !oso && ( argc > (arg) )  )
 					mount_name = StrDup( *fName );
 				else {
 					filename = StrDup( *fName );
@@ -910,8 +919,10 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				arg++;
 			}
 			else {
-				if( argc > arg )
+				if( argc > arg ) {
 					arg++; // assume null mount name
+					namearg++;
+				}
 				mount_name = NULL;// SRG_ID_Generator();
 			}
 			if( argc > (arg) ) {
@@ -923,16 +934,17 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				else
 					filename = NULL;
 			}
-			else if( arg==1 ){
+			else if( namearg==0 ){
 				char* sep;
-				if( mount_name && (sep = strchr( mount_name, '@' )) ) {
+				if( filename && (sep = strchr( filename, '@' )) ) {
 					lprintf( "find mount name to get volume..." );
+					mount_name = filename;
 					sep[0] = 0;
 					filename = sep + 1;
 				}
 				else {
 					defaultFilename = FALSE;
-					filename = mount_name;
+					//filename = mount_name;
 					mount_name = SRG_ID_Generator();
 				}
 			}
@@ -954,13 +966,14 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				}
 				arg++;
 			}
+
 			// Invoked as constructor: `new MyObject(...)`
 			ObjectStorageObject* obj = new ObjectStorageObject( mount_name, filename, version, key, key2
 					, vol
 							?vol->fsMount
 							:mount_name
 								? sack_get_mounted_filesystem(mount_name)
-								:NULL );
+								:NULL, readonly?SACK_VFS_LOAD_FLAG_NO_REPLAY:0 );
 			if( !obj->vol ) {
 				isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText( "ObjectStorage failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -1246,7 +1259,11 @@ void ObjectStorageObject::getTimelineCursor( const v8::FunctionCallbackInfo<Valu
 	
 }
 
-
+void ObjectStorageObject::haltVolume( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
+	sack_vfs_os_halt( vol->vol );
+}
 
 void ObjectStorageObject::fileSetTime( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -1537,7 +1554,7 @@ ObjectStorageObject*  openInVFS( Isolate *isolate, const char *mount, const char
 //ObjectStorageObject*  ObjectStorageObject::openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 ) {
 
 	// Invoked as constructor: `new MyObject(...)`
-	ObjectStorageObject* obj = new ObjectStorageObject( mount, name, 0, key1, key2, useMount );
+	ObjectStorageObject* obj = new ObjectStorageObject( mount, name, 0, key1, key2, useMount, 0 );
 	if( !obj->vol ) {
 		isolate->ThrowException( Exception::Error(
 			String::NewFromUtf8( isolate, TranslateText( "ObjectStorage failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
