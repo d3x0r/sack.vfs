@@ -8,7 +8,7 @@
 import fs from "fs";
 import url from "url";
 import path from "path";
-
+const debug_ = false;
 /**
  * @param {string} url
  * @param {Object} context (currently empty)
@@ -74,9 +74,9 @@ export async function load(urlin, context, defaultLoad) {
 	//console.log( "LOAD:", urlin, exten, context );
 	if( exten === ".jsox" || exten === '.json6' ){
 	  	const { format } = context;
-		console.log( "urlin is a string?", typeof urlin );
+		debug_&&console.log( "urlin is a string?", typeof urlin );
 		const file = url.fileURLToPath(urlin);
-		console.log( "FILE?:", file )
+		debug_&&console.log( "FILE?:", file )
 		const result = fs.readFileSync(file).toString("utf8");
    	 
 
