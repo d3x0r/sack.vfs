@@ -71,7 +71,9 @@ set( DEFINITIONS   __STATIC__ __STATIC_GLOBALS__
 		OPENSSL_API_COMPAT=10101
                  )
 
-set( MOREDEFS  "DEFAULT_OUTPUT_STDERR=1" )
+# may need to be enabled for some early logging
+# vfs_module initialized system log to use the stderr FILE* anyway.
+#set( MOREDEFS  "DEFAULT_OUTPUT_STDERR=1" )
 
 if( APPLE )
   set( DEFINITIONS ${DEFINITIONS} __MAC__ )
