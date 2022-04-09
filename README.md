@@ -1,6 +1,11 @@
 # sack.vfs
 
-[![Join the chat at https://gitter.im/sack-vfs/Lobby](https://badges.gitter.im/sack-vfs/Lobby.svg)](https://gitter.im/sack-vfs/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)[![Build Status](https://travis-ci.com/d3x0r/sack.vfs.svg?branch=master)](https://app.travis-ci.com/github/d3x0r/sack.vfs)
+[![Join the chat at https://gitter.im/sack-vfs/Lobby](https://badges.gitter.im/sack-vfs/Lobby.svg)](https://gitter.im/sack-vfs/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge) Might have better luck on IRC; but leave an issue, start a discussion...
+
+[![buddy pipeline](https://app.buddy.works/d3ck0r/sack-vfs/pipelines/pipeline/385129/badge.svg?token=5f56dac42e120ee823fddcf7e2dfdb3d62d458c840d99b2502424f83cec81ca0 "buddy pipeline")](https://app.buddy.works/d3ck0r/sack-vfs/pipelines/pipeline/385129)
+
+(Deprecating; no free support - one shot 10k credits then 0) [![Build Status](https://travis-ci.com/d3x0r/sack.vfs.svg?branch=master)](https://app.travis-ci.com/github/d3x0r/sack.vfs)
+
 
 - WebSocket/HTTP/HTTPS network library.  UDP sockets (`http`,`UDP` replacment).
 - JSON/[JSON6](https://github.com/d3x0r/JSON6) (stream)parser,
