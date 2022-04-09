@@ -221,7 +221,8 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.7(in progress)
+- 1.1.8(in progress)
+- 1.1.7
    - (TODO) Improve documentation/tutorials somewhere.
    - Add check for \ufeff as a whitespace character; legacy BOM usage requires treating this as a significant whitespace literal.
    - Add JSOX.DateNS class that extends date to keep extended information that might have been encoded in a time value.
