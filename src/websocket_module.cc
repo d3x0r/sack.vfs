@@ -502,6 +502,7 @@ public:
 	static void write( const v8::FunctionCallbackInfo<Value>& args );
 	static void getReadyState( const FunctionCallbackInfo<Value>& args );
 	static void ping( const v8::FunctionCallbackInfo<Value>& args );
+	static void nodelay( const v8::FunctionCallbackInfo<Value>& args );
 
 	~wscObject();
 };
@@ -1598,6 +1599,10 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 			, FunctionTemplate::New( isolate, wscObject::getOnClose )
 			, FunctionTemplate::New( isolate, wscObject::onClose )
 		);
+		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "noDelay" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wscObject::nodelay )
+		);
 		wscTemplate->ReadOnlyPrototype();
 
 		c->wscConstructor.Reset( isolate, wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
@@ -1632,8 +1637,6 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		wssiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "readyState" )
 			, FunctionTemplate::New( isolate, wssiObject::getReadyState )
 			, Local<FunctionTemplate>() );
-		wssiTemplate->ReadOnlyPrototype();
-
 		wssiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "noDelay" )
 			, Local<FunctionTemplate>()
 			, FunctionTemplate::New( isolate, wssiObject::nodelay )
@@ -3138,6 +3141,15 @@ void wscObject::onError( const FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+void wscObject::nodelay( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+
+	if( args.Length() > 0 ) {
+		wscObject* obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+
+		SetTCPNoDelay( obj->pc, args[0]->BooleanValue( isolate ) );
+	}
+}
 
 void wscObject::getOnOpen( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();

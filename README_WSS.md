@@ -70,7 +70,7 @@ Connected Instance Methods
   | disableSSL | closes the SSL layer on the socket and resumes native TCP connection. |
   | close | closes the connection |
   | on | event handler for specified type `on(eventName, callback)` | 
-  | nodelay | setter that takes a boolean and enables/disables TCP_NODELAY. | 
+  | noDelay | setter that takes a boolean and enables/disables TCP_NODELAY. | 
 
 ## HTTP Fallback
 
