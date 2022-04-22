@@ -221,10 +221,19 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.7(in progress)
+- 1.1.9(in progress)
+- 1.1.8
+   - Fix dependancy references in published version.
+- 1.1.7
    - (TODO) Improve documentation/tutorials somewhere.
    - Add check for \ufeff as a whitespace character; legacy BOM usage requires treating this as a significant whitespace literal.
    - Add JSOX.DateNS class that extends date to keep extended information that might have been encoded in a time value.
+   - Fix closing stderr/stdout when changing syslog file output. (CRITICAL!)
+   - Fix some compatibility with early 12 versions.  LTS Should only include the last 12 not any 12.
+   - Fixed issue with journal on initialized object storage; also failed to commit file changes to BAT blocks involved with the journal.
+   - Improve/extend API around stored objects to get timestamp information.
+   - Added DateNS() extension of date class which keeps sub-millisecond time values.
+   - 
 - 1.1.6
    - fix calling json, json6 `.write()` methods to use empty parameters as stream push.
    - improve http regression fix.

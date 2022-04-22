@@ -760,6 +760,8 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 						data = jsox_parse_get_data( parser );
 						struct reviver_data r;
 						r.revive = FALSE;
+						r.failed = FALSE;
+						r.reviveStack = NULL;
 						r.isolate = isolate;
 						r.context = isolate->GetCurrentContext();
 						Local<Value> val = convertMessageToJS2( data, &r );
