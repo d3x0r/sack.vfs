@@ -226,7 +226,9 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.9(in progress)
+- 1.1.802(in progress)
+- 1.1.801
+   - expose network option TCP_NODELAY to connected server instances, and client websockets.
 - 1.1.8
    - Fix dependancy references in published version.
 - 1.1.7

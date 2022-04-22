@@ -56,8 +56,10 @@ Server Methods
   | disableSSL() | closes the SSL layer on the socket and resumes native TCP connection; is only valid during "lowerror" event type (6).  Uses the socket that triggered the event as the one to disable.  (The Websocket Server Client is not yet created). |
 
 
-Server Client Methods
-  this is a slightly different object than a client, although accepts the same events except for on( "open" ) and onOpen() method.
+Connected Instance Methods
+  This is a slightly different object than a client, although accepts the same events except for on( "open" ) and onOpen() method.  
+
+  
   
   | Method |  Description |
   |----|----|
@@ -68,6 +70,7 @@ Server Client Methods
   | disableSSL | closes the SSL layer on the socket and resumes native TCP connection. |
   | close | closes the connection |
   | on | event handler for specified type `on(eventName, callback)` | 
+  | nodelay | setter that takes a boolean and enables/disables TCP_NODELAY. | 
 
 ## HTTP Fallback
 
