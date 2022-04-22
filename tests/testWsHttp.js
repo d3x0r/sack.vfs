@@ -75,6 +75,7 @@ function openServer( opts, cb )
 
 	server.onconnect = function (ws) {
 		//console.log( "Connect:", ws );
+		ws.nodelay = true;
 		ws.onmessage = function( msg ) {
                 	// echo message.
                         ws.send( msg );

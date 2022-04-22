@@ -551,6 +551,7 @@ public:
 	static void onmessage( const v8::FunctionCallbackInfo<Value>& args );
 	static void onclose( const v8::FunctionCallbackInfo<Value>& args );
 	static void getReadyState( const FunctionCallbackInfo<Value>& args );
+	static void nodelay( const FunctionCallbackInfo<Value>& args );
 	static void ping( const v8::FunctionCallbackInfo<Value>& args );
 
 	~wssiObject();
@@ -1631,6 +1632,12 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		wssiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "readyState" )
 			, FunctionTemplate::New( isolate, wssiObject::getReadyState )
 			, Local<FunctionTemplate>() );
+		wssiTemplate->ReadOnlyPrototype();
+
+		wssiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "noDelay" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssiObject::nodelay )
+			);
 		wssiTemplate->ReadOnlyPrototype();
 
 		c->wssiConstructor.Reset( isolate, wssiTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
@@ -2737,6 +2744,16 @@ void wssiObject::onclose( const FunctionCallbackInfo<Value>& args ) {
 		callbackFunction* c = new callbackFunction();
 		c->callback.Reset( isolate, cb );
 		AddLink( &obj->closeCallbacks, c );
+	}
+}
+
+void wssiObject::nodelay( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+
+	if( args.Length() > 0 ) {
+		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
+		
+		SetTCPNoDelay( obj->pc, args[0]->BooleanValue(isolate) );
 	}
 }
 
