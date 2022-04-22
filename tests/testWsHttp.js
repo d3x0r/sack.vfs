@@ -2,10 +2,12 @@
 const sack = require( "sack.vfs" );
 const path = require( "path" );
 
+const encMap = {
+		'.gz':'gzip'
+};
+
 const extMap = { '.js': 'text/javascript'
               ,  '.mjs':'text/javascript'
-              , '.js.gz':'text/javascript'
-              , '.gz':'text/javascript'
               ,  '.css':'text/css'
               ,'.json':'application/json'
               ,'.png':'image/png'
@@ -28,22 +30,31 @@ function openServer( opts, cb )
 
 
 	server.onrequest = function( req, res ) {
-		var ip = ( req.headers && req.headers['x-forwarded-for'] ) ||
+		const ip = ( req.headers && req.headers['x-forwarded-for'] ) ||
 			 req.connection.remoteAddress ||
 			 req.socket.remoteAddress ||
 			 req.connection.socket.remoteAddress;
 
 		//console.log( "Received request:", req );
 		if( req.url === "/" ) req.url = "/index.html";
-		var filePath = "." + unescape(req.url);
+		let filePath = "." + unescape(req.url);
 		if( req.url.startsWith( "/node_modules/" ) && req.url.startsWith( "/node_modules/@d3x0r" ) )
 			filePath="." + unescape(req.url);
-		var extname = path.extname(filePath);
+		let extname = path.extname(filePath);
+
+		let contentEncoding = encMap[extname];
+		if( contentEncoding ) {
+			extname = path.extname(path.basename(filePath,extname));
+		}
+
+
 		var contentType = 'text/html';
 		console.log( ":", extname, filePath )
                 contentType = extMap[extname] || "text/plain";
 		if( disk.exists( filePath ) ) {
-			res.writeHead(200, { 'Content-Type': contentType });
+       			const headers = { 'Content-Type': contentType };
+       			if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
+			res.writeHead(200, headers );
 			console.log( "Read:", "." + req.url );
 			res.end( disk.read( filePath ) );
 		} else {
@@ -64,6 +75,7 @@ function openServer( opts, cb )
 
 	server.onconnect = function (ws) {
 		//console.log( "Connect:", ws );
+		ws.nodelay = true;
 		ws.onmessage = function( msg ) {
                 	// echo message.
                         ws.send( msg );

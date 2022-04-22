@@ -39,6 +39,7 @@ Client Methods
    | onerror | sets the callback to be called on an error (no supported errors at this time) |
    | onerrorlow | sets the callback to be called on a low level error event.  (SSL negotation failed), callback gets (error,connection,buffer), and maybe used to check the buffer, disable SSL, and possibly serve a redirect. |
    | on  | sets event callbacks by name.  First parameter is the event name, the second is the callback |
+   | noDelay | setter that sets network option TCP_NODELAY to the boolean specified. |
 
 
 
