@@ -49,6 +49,10 @@
 #undef New
 
 //#include <openssl/ssl.h>
+#ifndef OPENSSL_API_COMPAT
+#  define OPENSSL_API_COMPAT 10101
+#endif
+
 #if NODE_MAJOR_VERSION >= 17
 #  include <openssl/configuration.h>
 #endif
