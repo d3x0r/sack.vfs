@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.0)
 
-
 project (sack_vfs)
 
 ADD_DEFINITIONS( -DBUILD_NODE_ADDON )
@@ -36,6 +35,14 @@ endif( MSVC )
 if( NOT WIN32 )
     ADD_DEFINITIONS( -D__LINUX__ )
     ADD_DEFINITIONS( -D__MANUAL_PRELOAD__ )
+	string( REGEX MATCH "arch" os_version ${CMAKE_SYSTEM} )
+	if( ${os_version} STREQUAL "" ) 
+		set( ARCH_SYSTEM_DISTRO OFF )
+	else() 
+		set( ARCH_SYSTEM_DISTRO ON )
+	endif()
+	OPTION( USE_SYSTEM_SSL "Use System OpenSSL Library instead of node included (Arch)" ${ARCH_SYSTEM_DISTRO} )
+
 else( NOT WIN32 )
     ADD_DEFINITIONS( -D_CRT_NONSTDC_NO_DEPRECATE )
 endif( NOT WIN32 )
@@ -68,8 +75,18 @@ set( DEFINITIONS   __STATIC__ __STATIC_GLOBALS__
 		__DISABLE_UDP_SYSLOG__  # there's no options to enable this so just don't include it.
 		__DISABLE_SYSLOGD_SYSLOG__  # there's no options to enable this so just don't include it.
 		xOPENSSL_API_LEVEL=10100 
-		OPENSSL_API_COMPAT=10101
+		#OPENSSL_API_COMPAT=10101
                  )
+
+
+if( USE_SYSTEM_SSL ) 
+	add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/include/openssl
+			COMMAND ${CMAKE_COMMAND} -E create_symlink /usr/include/openssl ${CMAKE_CURRENT_SOURCE_DIR}/include/openssl
+		)			
+
+	add_custom_target( dossl DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/include/openssl )
+
+endif( USE_SYSTEM_SSL )
 
 # may need to be enabled for some early logging
 # vfs_module initialized system log to use the stderr FILE* anyway.
@@ -303,7 +320,7 @@ ENDFOREACH()
 
 endif( EXISTS ${SACK_BASE} )
 
-include_directories(${CMAKE_JS_INC} ${INCLUDES} src/sack )
+include_directories( ./include ${CMAKE_JS_INC} src/sack )
 
 if( WIN32 )
 	set( MORE_MODULE_SOURCES src/reg_access.cc
@@ -352,6 +369,12 @@ if( CMAKE_COMPILER_IS_GNUCC )
    set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-std=c++14 -Wno-unused-result -Wno-address-of-packed-member")
 endif( CMAKE_COMPILER_IS_GNUCC )
 set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
+
+if( USE_SYSTEM_SSL )
+	# make sure ssl is linked to be used locally
+	add_dependencies( ${PROJECT} dossl )
+endif( USE_SYSTEM_SSL )
+
 target_link_libraries(${PROJECT} ${CMAKE_JS_LIB})
 if( WIN32 )
    target_link_libraries(${PROJECT} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll crypt32 cryptui )
