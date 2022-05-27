@@ -58,7 +58,7 @@ else( WIN32 )
 endif( WIN32 )
 
 if( NOT EXISTS GIT_REPO )
-	set( GIT_REPO git://github.com/d3x0r/sack )
+	set( GIT_REPO https://github.com/d3x0r/sack )
 endif( NOT EXISTS GIT_REPO )
 
 ExternalProject_Add( sack
