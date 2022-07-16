@@ -655,7 +655,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 										if( refObj->Has( revive->context, pathval ).ToChecked() ) {
 											val_temp = refObj->Get( revive->context, pathval ).ToLocalChecked();
 										} else {
-											lprintf( "This fell off the stack, am assuming it's the current reference object..." );
+											//lprintf( "This fell off the stack, am assuming it's the current reference object..." );
 											val_temp = revive->refObject;
 										}
 									} else {
