@@ -34,7 +34,7 @@
           ['OS=="linux"', {
             'defines': [
               '__LINUX__','__MANUAL_PRELOAD__','__INTERNAL_UUID__','UUID_SOURCE'
-		, '__NO_ODBC__'
+	       # , '__NO_ODBC__'
             ],
 	#, '__NO_ODBC__'
             'cflags_cc': ['-Wno-misleading-indentation','-Wno-parentheses','-Wno-unused-result'
@@ -49,7 +49,7 @@
             'include_dirs': [
               'include/linux',
             ],
-            'libraries':[ ]
+            'libraries':[ 'odbc' ]
           }],
 	['node_shared_openssl=="false"', {
 	      'include_dirs': [
