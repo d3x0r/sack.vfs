@@ -5508,10 +5508,20 @@ namespace sack {
 /* Memory namespace contains functions for allocating and
    releasing memory. Also contains methods for accessing shared
    memory (if available on the target platform).
-   Allocate
-   Release
-   Hold
-   OpenSpace                                                    */
+   Allocate / New - get new memory
+   Release / Deallocate - allow others to use this memory
+   Hold - keep the memory; requires an additional Release.
+   Reallocate - given an existing block, allocate a new block, and copy the minimum of what's already in the block, and the new block size.  It is possible this is the same address, which is just extended into a free block.
+   OpenSpace - Low level system memory; requested by filename and region name and provides sharing;  NULL, NULL is just new memory.
+   GetHeapMemStats - Run diagnostics on the heap blocks.
+   SetAllocateLogging - enable allocate/deallocate loggging for debugging; returns the previous logging state.
+   SetAllocateDebug -  disables additional runtime checks compiled in for debug builds/
+   SetManualAllocateCheck - GetHeapMemStats is run every Allocate/Deallocate in debug mode; this disables that behavior, and expects the libary's user to check as required.
+   SetCriticalLogging - Enable/disable critical section logging; does of course influence timing when enabled.
+   SetMinAllocate - defines a minimum size that will be tracked internally; if every block is at least 100 bytes (for example), there is less chance at fragmentation when allocating 32-96 byte blocks.
+   SetHeapUnit - How much to expand the heap when more space is required.   Very large allocations will end up with their own memory mapped; but the sum of all small allocations will fill up a block of memory, and this controls the expansion rate.
+   AlignOfMemBlock - Get the alignment of a memory block; allows reallocate
+                                                */
 namespace memory {
 #endif
 typedef struct memory_block_tag* PMEM;
