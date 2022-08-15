@@ -80,18 +80,20 @@ export async function load(urlin, context, defaultLoad) {
 		const result = fs.readFileSync(file).toString("utf8");
    	 
 
-	if( exten === ".jsox" ){
-	    return {
-	      format:"module",
-	      source: "const data = JSOX.parse( '" + escape(result) + "'); export default data;",
-	    };
-	}
-	if( exten === ".json6" ){
-	    return {
-	      format:"module",
-	      source: "const data = JSON6.parse( '" + escape(result) + "'); export default data;",
-	    };
-	}
+		if( exten === ".jsox" ){
+			return {
+			   format:"module",
+			   source: "const data = JSOX.parse( '" + escape(result) + "'); export default data;",
+			   shortCircuit:true,
+			};
+		}
+		if( exten === ".json6" ){
+		    return {
+			   format:"module",
+			   source: "const data = JSON6.parse( '" + escape(result) + "'); export default data;",
+			   shortCircuit:true,
+			};
+		}
 	}
 	return defaultLoad(urlin, context, defaultLoad);
 
