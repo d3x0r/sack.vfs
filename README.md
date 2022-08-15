@@ -227,6 +227,8 @@ there's a conversion to string from binary and a copy of that string from JS to 
 
 ## Changelog
 - 1.1.803(in progress)
+   - include LibreSSL 3.5.3 to avoid conflicts/incompatibilities with Node's included OpenSSL versions.
+   - change npm install to use cmake-js to be able to use included LibreSSL
 - 1.1.802
    - task input handling failure on windows; if only one callback was issued.
 - 1.1.801
