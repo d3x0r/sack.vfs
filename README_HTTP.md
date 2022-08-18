@@ -16,6 +16,7 @@ var response2 = sack.HTTPS.get( { ca:&lt;extra cert(s)&gt;, path:"/index.html" }
 | method | "GET" should specify how to send the request (get/post/...) but for now I think GET is only option |
 | rejectUnauthorized | (HTTPS only) whether to accept unvalidated HTTPS certificates; true/false |
 | ca | (HTTPS) Additional certificate authorities to validate connection with |
+| headers | object with named values; copied to header object (no HTTP character escapes) |
 
 Results with an object with the following fields....
 
