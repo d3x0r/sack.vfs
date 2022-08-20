@@ -104,6 +104,7 @@ struct optionStrings {
 	Eternal<String> *nameString;
 	Eternal<String> *optsString;
 	Eternal<String>* idString;
+	Eternal<String>* versionString;
 	Eternal<String>* timeString;
 	Eternal<String>* readString;
 	Eternal<String>* limitString;
@@ -202,6 +203,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		DEFSTRING( data );
 		DEFSTRING( name );
 		DEFSTRING( id );
+		DEFSTRING( version );
 		DEFSTRING( time );
 		DEFSTRING( from );
 		DEFSTRING( limit );
@@ -1057,20 +1059,27 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 	Local<Date> useTime;
 	uint64_t dateValToUse = 0;
 	int tzToUse = 0;
+	bool version = false;
 	ObjectStorageObject *vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
 	Local<Value> nameArg = args[0];
 	if( args[0]->IsObject() ) {
 		opts = args[0].As<Object>();
+		Local<Context> ctx = isolate->GetCurrentContext();
 		struct optionStrings* strings = getStrings( isolate );
 		Local<String> name;
-		if( opts->Has( isolate->GetCurrentContext(), name = strings->idString->Get( isolate ) ).ToChecked() ) {
-			nameArg = opts->Get( isolate->GetCurrentContext(), name ).ToLocalChecked();
+		Local<Value> versionVal;
+		if( opts->Has( ctx, name = strings->versionString->Get( isolate ) ).ToChecked() ) {
+			versionVal = opts->Get( ctx, name ).ToLocalChecked();
+			version = versionVal->BooleanValue(isolate);
+		}
+		if( opts->Has( ctx, name = strings->idString->Get( isolate ) ).ToChecked() ) {
+			nameArg = opts->Get( ctx, name ).ToLocalChecked();
 		}
 		if(1)
-		if( opts->Has( isolate->GetCurrentContext(), name = strings->timeString->Get( isolate ) ).ToChecked() ) {
-			useTime = opts->Get( isolate->GetCurrentContext(), name ).ToLocalChecked().As<Date>();
-			Local<Value> offset = useTime->Get( isolate->GetCurrentContext(), strings->getTimezoneOffsetString->Get( isolate ) ).ToLocalChecked().As<Function>()->Call( isolate->GetCurrentContext(), useTime, 0, NULL ).ToLocalChecked();
-			int64_t intVal = offset.As<Number>()->IntegerValue(isolate->GetCurrentContext()).ToChecked();
+		if( opts->Has( ctx, name = strings->timeString->Get( isolate ) ).ToChecked() ) {
+			useTime = opts->Get( ctx, name ).ToLocalChecked().As<Date>();
+			Local<Value> offset = useTime->Get( ctx, strings->getTimezoneOffsetString->Get( isolate ) ).ToLocalChecked().As<Function>()->Call( ctx, useTime, 0, NULL ).ToLocalChecked();
+			int64_t intVal = offset.As<Number>()->IntegerValue(ctx).ToChecked();
 			double dateVal = useTime->ValueOf();
 			//dateVal -= intVal * 900;
 			tzToUse = (int)-intVal;
@@ -1110,7 +1119,9 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 	}
 
 	if( vol->volNative ) {
-		struct objStore::sack_vfs_os_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
+		struct objStore::sack_vfs_os_file *file = version
+			?(struct objStore::sack_vfs_os_file *)sack_vfs_os_system_ioctl( vol->vol, SOSFSSIO_NEW_VERSION, (*fName) )
+			:objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
 		// is  binary thing... or is a string buffer... or...
 
 		if( file ) {
@@ -1121,19 +1132,27 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 			Release( tmp );
 #endif
 			objStore::sack_vfs_os_truncate( file ); // allow new content to allocate in large blocks?
-			objStore::sack_vfs_os_write( file, *data, data.length() );
+
+			size_t lengthWritten = objStore::sack_vfs_os_write( file, *data, data.length() );
+			// compare lengthWritten with data.length() ?
+
 			if( dateValToUse )
 				objStore::sack_vfs_os_set_time( file, dateValToUse, tzToUse );
+			uint64_t lastTime = sack_vfs_os_ioctl_get_time( file );
+			Local<Number> lastTimeNum = Number::New( isolate, (double)lastTime );
 			objStore::sack_vfs_os_close( file );
 			sack_vfs_os_polish_volume( vol->vol );
+			args.GetReturnValue().Set( lastTimeNum );
+
 			//sack_vfs_os_flush_volume( vol->vol, FALSE );
 			if( !cb.IsEmpty() ) {
-				cb->Call( isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 0, NULL );
+				Local<Value> args[1] = {lastTimeNum};
+				cb->Call( isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 1, args );
 			}
 
 		}
 	} else {
-		lprintf( "Write to native volume not supported?" );
+		lprintf( "Write to mounted volume not supported?" );
 	}
 #ifdef LOG_DISK_TIME
 	{
@@ -1383,8 +1402,14 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 	Local<Function> cb;
 	String::Utf8Value fName( isolate,  args[0] );
 	int arg = 1;
+	uint64_t version = 0;
 	while( arg < args.Length() ) {
-		if( args[arg]->IsFunction() ) {
+		if( args[arg]->IsNumber() ) {
+			// maybe make sure (arg==1) ?
+			Local<Number> version_num = args[arg].As<Number>();
+			version = (uint64_t)version_num->Value();
+			arg++;
+		} else if( args[arg]->IsFunction() ) {
 			cb = Local<Function>::Cast( args[arg] );
 			arg++;
 		}
@@ -1411,7 +1436,10 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 		}
 
 		//lprintf( "OPEN FILE:%s", *fName );
-		struct objStore::sack_vfs_os_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
+		struct objStore::sack_vfs_os_file *file = 
+			version
+				?(struct objStore::sack_vfs_os_file*)objStore::sack_vfs_os_system_ioctl( vol->vol, SOSFSSIO_OPEN_VERSION, (*fName), version )
+				:objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
 		if( file ) {
 			char *buf = NewArray( char, 4096 );
 			size_t len = objStore::sack_vfs_os_size( file );
@@ -1421,9 +1449,14 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			LOGICAL resulted = FALSE;
 			uint64_t *timeArray;
 			int8_t* tzArray;
+			Local<Array> arr;
+			if( version )
+				arr = Array::New(isolate,0);
+			else {
+				objStore::sack_vfs_os_get_times( file, &timeArray, &tzArray, &timeCount );
+				arr = makeTimes( isolate, timeArray, tzArray, timeCount );
+			}
 
-			objStore::sack_vfs_os_get_times( file, &timeArray, &tzArray, &timeCount );
-			Local<Array> arr = makeTimes( isolate, timeArray, tzArray, timeCount );
 
 			// CAN open directories; and they have 7ffffffff sizes.
 			while( (read < len) && (newRead = objStore::sack_vfs_os_read( file, buf, 4096 )) ) {
@@ -1483,7 +1516,10 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 		}
 
 	} else {
+
+
 		FILE *file = sack_fopenEx( 0, (*fName), "rb", vol->fsMount );
+
 		if( file ) {
 			char *buf = NewArray( char, 4096 );
 			size_t len = sack_fsize( file );

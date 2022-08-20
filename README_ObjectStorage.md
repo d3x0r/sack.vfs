@@ -4,6 +4,12 @@
 (Added from 0.9.145)
 Object storage interface is a hybrid combination of virtual file system and JSOX for object encoding.
 
+The target usage is data storage; in an object relational format that supports lazy loading.
+
+Accessors substitued for variable fields would have been ideal; but there's still some funtionality that JS
+lacks to make that elegant...
+
+### History
 
 After making [JSOX](https://github.com/d3x0r/JSOX),
 I forked my VFS from a while ago and changed the directory structure so it's a combined radix/remainder of name structure; so as a directory block fills with strings, it finds common ones, and updates a byte-character reference for all the files that start with that... 
@@ -14,6 +20,8 @@ If the object is loaded from storage with `get(id)`, and no other objects were l
 records which have a nonce cannot be re-written.  other objects can be updated with their current state.
 Oh - (one last note) Added sort to JSOX encoding so objects are always encoded in the same order ( as according to JS `if( stringA > stringB )`
 
+### Example Usage (Setup)
+
 
 ``` js
 
@@ -21,6 +29,7 @@ const sack = require( "sack.vfs" );
 const objectStorage = sack.ObjectStorage( 'filename.data' );
 
 ```
+### Object Storage Method overview
 
 ```
 sack.ObjectStorage.
@@ -30,11 +39,15 @@ sack.ObjectStorage.
     }
 ```
 
+### Constructor arguments
 
 | Object Storage constructor arguments | Description  |
 |----|----|
-| filename | Filename to use for object storage database.  If the filename includes '@' the part before the '@' is treated as a mount name; ie. 'vfsMount@object.store'.
+| filename | Filename to use for object storage database.  If the filename includes '@' the part before the '@' is treated as a mount name; ie. 'vfsMount@object.store'. |
+| options | an object passed with configuration options for the volume |
 
+
+### Instance Methods
 
 | Object Storage methods | Return | Arguments | Description |
 |----------|------------|-------------|----|
@@ -46,9 +59,15 @@ sack.ObjectStorage.
 | -- | | | |
 | delete |  | (id/object) | remove object from storage... (danging references in other stored records?) |
 
+### Timeline browsing
+
 | Timeline Cursor | Return | Arguments | Description |
 |----|-----|----|----|
-| get | array | ( option object ) | 
+| get | array | ( option object ) | get an entry from the timeline |
+
+### Timeline Option Object
+
+These option fields are supported when getting information from the timeline
 
 | Timeline getter option | Description |
 |----|-----|
@@ -57,20 +76,28 @@ sack.ObjectStorage.
 | from | (Date/JSOX.DateNS) seeks to the timeline index specified |
 | limit | (integer) number of records to limit the result set to |
 
+### Instanct get() options
+
+These option fields are supported in the option object passed to a storage get, `storage.get( {option_object} )`.
 
 | Object get Options names | type | Description |
 |-----|-----|-----|
 | id | string | use this id for the object storage target |
 | extraDecoders | [ { tag:"tag", p:Type } ] | An array of optional object decoder(parse) types to use when getting objects. |
 
+### Instance put() options
 
 | Object put Options names | type | Description |
 |-----|-----|-----|
 | id | string | use this id for the object storage target |
+| version | boolean | like always create, but save old data if there was data |
 | sign | bool | whether this record should be digitally signed; makes record readonly |
 | key | string | (todo) use to make record readable only with specified key. |
 | extraEncoders | [ { tag:"tag", p:Type } ] | An array of optional object encoder(stringify) types to use when putting objects. |
 
+### Other options for put() 
+
+These are a work in progress, and are somewhat deprecated at the moment.
 
 | Object put Options names | type | Description |
 |-----|-----|-----|
@@ -79,8 +106,29 @@ sack.ObjectStorage.
 | sealant | string | data to encode object id |
 | objectHash | string | something |
 
+## file storage within object storage
 
+Since the ID is specified for any `get()` or `put()` a string may be passed for the data, and the literal
+value will be pushed at that ID. The browsing structure for this is only available as a timeline cursor; and
+browsing the identifiers is just a long list.
+
+A few simple objects can represent a file system that has directories that contain files and other directories.
+Furthermore directories can have data content just like a file; and they are almost the same.  A directory has
+an array of files (and directories) that are in that directory; usage would imply you sort of hold on to the point
+you have your files in and just create files in that spot.
+
+The following sections are about using a builtin file directory system, which is itself stored as objects in the
+object storage system with long unique identifiers.  The only exception is the root directory which has the identifier
+of '?'.  The unique identifiers are only semi-unique, in that they are base64 encoded long integer values, using `_` 
+and `$` for the 62 and 63 characters; this is one of the standard base64 character sets for encoding.  This means the
+identifiers are javascript literals that can be used as an identifier; other than they are suffixed with a `=` to 
+indicate the end of encoding.
+
+### file~~like~~ system directory interface
  
+This are the methods for the object `storage.getRoot()` results with.  It is a directory object that is returned.
+These are the methods of a `FileDirectory`.
+
 |Object Storage Directory Methods | Return | arguments | Description |
 |----|----|----|---|
 | create | FileEntry | (filename) | creates a new file, ready to be written into. |
@@ -91,6 +139,10 @@ sack.ObjectStorage.
 | remove | Promise | ( filename ) | delete specified file from the file directory. |
 
 
+### file~~like~~ system file interface
+
+These are the methods of a `FileEntry`. Files and directo
+
 |Object Storage File Methods | Return | arguments | Description |
 |----|----|----|---|
 | open | FileDirectory | ( pathane ) | opens a file within this file as a folder |
@@ -98,11 +150,30 @@ sack.ObjectStorage.
 | read | Promise | ( [pos,] length) | Takes optional parameters (length), or (position, length); returns a promise that resolves with an ArrayBuffer |
 | write | Promise | ( ArrayBuffer | String ) | Write this array buffer or string to the file.  Promise resolves with the id of the object written. |
 
-```
+### Filesystem example code.
+
+
+#### Exmaple 1
+``` js
 storage.getRoot().then( root=>root.open("filename").catch( ()=>root.create( "filename" ) ).then( (file)=>file.read().then( data=>{
    console.log( "File Data:", data );
 } ) ) )
+```
 
+
+#### Example 2
+
+same as above, but using await.
+
+``` js
+const data = await (await (await storage.getRoot()).open("filename")).read()
+```
+
+#### Example 3
+
+just example 1 reformatted in block code.
+
+``` js
 storage.getRoot().then( root=>
 	root.open("filename")
 		.catch( ()=>
@@ -118,3 +189,17 @@ storage.getRoot().then( root=>
 		)
 
 ```
+
+### Revision System
+
+A put option can be specified for files to version them, which keeps the history of their image in storage 
+exactly where it was.  The same ID when used for `get()` will get the latest version of that record, without
+additional options.  The same ID when used for `put()` will save the data specified, and update the timestamp, and
+link to the previously data in the time lines; the file will then have multiple times, other than the 
+creation and current times. 
+
+When using `map()` the same ID used above will return the oldest version of the record.  References that are updated
+with files that have a revision history, will have a time indicator appended to the identifier after a `.` character.
+So, a record which references the newst version of a file will have an indicator addtional to the base identifier.
+
+This might be a valid object for example: `{ref[AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=.1]}`.

@@ -249,244 +249,199 @@ export class ObjectStorage {
 	}
 
 
-// define a class... to be handled by stringification
-defineClasss (a,b) {
-	this.stringifier.defineClass(a,b);
-}
+	// define a class... to be handled by stringification
+	defineClasss (a,b) {
+		this.stringifier.defineClass(a,b);
+	}
 
-scan( from ) {
-	var fromTime = ( from.getTime() * 256 );
-	//this.loadSince( fromTime );
-}
+	scan( from ) {
+		var fromTime = ( from.getTime() * 256 );
+		//this.loadSince( fromTime );
+	}
 
-getContainerRef( obj, options ) {
-	var containerId = this.stored.get( obj );
-	if( containerId ) {
-		const container = this.storedIn.get( obj );
-		//console.log( "ID:", containerId, container );
-		return container;
+	getContainerRef( obj, options ) {
+		var containerId = this.stored.get( obj );
+		if( containerId ) {
+			const container = this.storedIn.get( obj );
+			//console.log( "ID:", containerId, container );
+			return container;
+			
+		}
+		return null;
+	}
+
+	getContainer( obj, options ) {
+		var container = this.stored.get( obj );
+		var storage;
+		if( container ) {
+			container = this.cachedContainer.get( container );
+			return container;
+		}
+		//console.trace( "Getting a new container...", options );
+		container = new ObjectStorageContainer(this,obj,options);
+		//console.log( " *** SETTING ID HERE", container.id);
+		//if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
+		if( container.id ) {
+			this.stored.set( obj, container.id );
+			this.cached.set( container.id, container.data );
+			this.cachedContainer.set( container.id, container );
+		}else {
+			// should fix 'undefined' as a index in stored
+			//console.log( "Storage still has to come from real storage operation... not setting cached ID");
+		}
+	}
+
+	delete( opts ) {
+		return this.storage.delete(opts);
+	}
+
+	remove( opts ) {
+		if( "string" === typeof opts )  {
+			var container = this.cached.get( opts );
+			if( !container ) throw new Error( "This is not a tracked object." );
+			this.delete( opts );
+		}
+		else if( "object" === typeof opts )  {
+			var container = this.stored.get( opts );
+			if( !container ) throw new Error( "This is not a tracked object." );
+			this.delete( container);
+		}
+	}
+	addEncoders(encoderList) {
+		const this_ = this;
+		encoderList.forEach( f=>{
+			this_.encoders.push( f );
+			//console.log( "encoders:", encoderList );
+			this_.stringifier.registerToJSOX( f.tag, f.p, f.f ) ;
+		});
+
+	}
+	addDecoders(encoderList) {
+		const this_ = this;
+		encoderList.forEach( f=>{
+			function redirect(f) {
+				return function redirect(field,val) {
+					if(f ) {
+						if( !field ) { 
+							return f.call( this, field, this_ ); 
+						} else return f.call(this,field,val ) 
+					}else {
+						if( !field ) {
+							if( this instanceof StoredObject ){
+								this.loaded( this_, currentReadId );
+							}
+							return this;
+						} else return val;
+					}
+				}
+			}
+			f.f = redirect(f.f);
+			this_.decoders.push( f );
+			if( this.parser )
+				this.parser.fromJSOX( f.tag, f.p, f.f );
+		});
+
+	}
+
+	getCurrentParseRef() {
+		if( this.currentParser ){
+			return this.currentParser.currentRef();
+		}
+		return null;
+	}
+
+	stringify( obj ) {
+		const containerId = this.stored.get( obj );
+		if( containerId ) {
+			const container = this.cachedContainer.get( containerId );
+			const stringifier = this.stringifier;
+			if( container ) {
+				container.encoding = true;
+				const storage = stringifier.stringify( container );
+				container.encoding = false;
+				return storage;
+			}
+		}
+		const output = stringifier.stringify( container );
+		//console.log( "stringify default:", output, container ) ;
+		return output;
+		
 		
 	}
-	return null;
-}
 
-getContainer( obj, options ) {
-	var container = this.stored.get( obj );
-	var storage;
-	if( container ) {
-		container = this.cachedContainer.get( container );
-		return container;
-	}
-	//console.trace( "Getting a new container...", options );
-	container = new ObjectStorageContainer(this,obj,options);
-	//console.log( " *** SETTING ID HERE", container.id);
-	//if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
-	if( container.id ) {
-		this.stored.set( obj, container.id );
-		this.cached.set( container.id, container.data );
-		this.cachedContainer.set( container.id, container );
-	}else {
-		// should fix 'undefined' as a index in stored
-		//console.log( "Storage still has to come from real storage operation... not setting cached ID");
-	}
-}
+	// this hides the original 'put'
+	put( obj, opts ) {
+		const this_ = this;
+		if( currentContainer && currentContainer.data === this ) {
+			saveObject( null, null );
+			_debug && console.log( "Returning same id; queued save to background...")
+				return Promise.resolve( currentContainer.id );
+		}else {
 
-delete( opts ) {
-	return this.storage.delete(opts);
-}
+		}
+		return new Promise( saveObject );
 
-remove( opts ) {
-	if( "string" === typeof opts )  {
-		var container = this.cached.get( opts );
-		if( !container ) throw new Error( "This is not a tracked object." );
-		this.delete( opts );
-	}
-	else if( "object" === typeof opts )  {
-		var container = this.stored.get( opts );
-		if( !container ) throw new Error( "This is not a tracked object." );
-		this.delete( container);
-	}
-}
-addEncoders(encoderList) {
-	const this_ = this;
-	encoderList.forEach( f=>{
-		this_.encoders.push( f );
-		//console.log( "encoders:", encoderList );
-		this_.stringifier.registerToJSOX( f.tag, f.p, f.f ) ;
-	});
+		function saveObject(res,rej) {
 
-}
-addDecoders(encoderList) {
-	const this_ = this;
-	encoderList.forEach( f=>{
-		function redirect(f) {
-			return function redirect(field,val) {
-				if(f ) {
-					if( !field ) { 
-						return f.call( this, field, this_ ); 
-					} else return f.call(this,field,val ) 
-				}else {
-					if( !field ) {
-						if( this instanceof StoredObject ){
-							this.loaded( this_, currentReadId );
-						}
-						return this;
-					} else return val;
+			if( "string" === typeof obj && opts.id ) {
+				console.log( "SAVING A STRING OBJECT" );
+				// this isn't cached on this side.
+				// we don't know the real object.
+				this_.storage.writeRaw( opts.id, obj );
+				return res?res( opts.id ):null;
+			}
+			var container = this_.stored.get( obj );
+			if( !container && opts && opts.id ) {
+				const oldObj = this_.cached.get( opts.id );
+				if( oldObj )
+					container = this_.stored.get( oldObj );
+			}
+			_debug && console.log( "Put found object?", container, obj, opts );
+			if( container ) {
+				container = this_.cachedContainer.get( container );
+				if( obj !== container.data ) {
+					//console.log( "Overwrite old data with new?", container.data, obj );
+					container.data = obj;
 				}
-			}
-		}
-		f.f = redirect(f.f);
-		this_.decoders.push( f );
-		if( this.parser )
-			this.parser.fromJSOX( f.tag, f.p, f.f );
-	});
+				if( !container.nonce ) {
+					// make sure every item that is in an index
+					// has been written...
+									
+					if( this_.def )
+						this_.def.indexes.forEach( index=>{
+							index.data.forEach( (item)=>{
+								this_.put( item );
+							});
+						})
 
-}
 
-getCurrentParseRef() {
-	if( this.currentParser ){
-		return this.currentParser.currentRef();
-	}
-	return null;
-}
-
-stringify( obj ) {
-	const containerId = this.stored.get( obj );
-	if( containerId ) {
-		const container = this.cachedContainer.get( containerId );
-		const stringifier = this.stringifier;
-		if( container ) {
-			container.encoding = true;
-			const storage = stringifier.stringify( container );
-			container.encoding = false;
-			return storage;
-		}
-	}
-	const output = stringifier.stringify( container );
-	//console.log( "stringify default:", output, container ) ;
-	return output;
-	
-	
-}
-
-// this hides the original 'put'
-put( obj, opts ) {
-	const this_ = this;
-	if( currentContainer && currentContainer.data === this ) {
-		saveObject( null, null );
-		_debug && console.log( "Returning same id; queued save to background...")
-        	return Promise.resolve( currentContainer.id );
-	}else {
-
-	}
-	return new Promise( function(res,rej){
-		saveObject(res,rej);
-	});
-
-	function saveObject(res,rej) {
-
-		if( "string" === typeof obj && opts.id ) {
-	                console.log( "SAVING A STRING OBJECT" );
-			// this isn't cached on this side.
-        	        // we don't know the real object.
-			this_.storage.writeRaw( opts.id, obj );
-			return res?res( opts.id ):null;
-		}
-		var container = this_.stored.get( obj );
-		if( !container && opts && opts.id ) {
-			const oldObj = this_.cached.get( opts.id );
-			if( oldObj )
-				container = this_.stored.get( oldObj );
-		}
-		_debug && console.log( "Put found object?", container, obj, opts );
-		if( container ) {
-			container = this_.cachedContainer.get( container );
-			if( obj !== container.data ) {
-				//console.log( "Overwrite old data with new?", container.data, obj );
-				container.data = obj;
-			}
-			if( !container.nonce ) {
-				// make sure every item that is in an index
-				// has been written...
-                            	
-				if( this_.def )
-					this_.def.indexes.forEach( index=>{
-						index.data.forEach( (item)=>{
-							this_.put( item );
+					var stringifier;
+					if( opts && opts.extraEncoders ) {
+						stringifier = sack.JSOX.stringifier();
+						this_.setupStringifier( stringifier );
+						opts.extraEncoders.forEach( f=>{
+							stringifier.registerToJSOX( f.tag, f.p, f.f )
 						});
-					})
+					}else {
+						stringifier = this_.stringifier;
+					}
+					container.encoding = true;
 
-
-				var stringifier;
-				if( opts && opts.extraEncoders ) {
-					stringifier = sack.JSOX.stringifier();
-					this_.setupStringifier( stringifier );
-					opts.extraEncoders.forEach( f=>{
-						stringifier.registerToJSOX( f.tag, f.p, f.f )
-					});
-				}else {
-					stringifier = this_.stringifier;
+					rootContainer = true;
+					storage = stringifier.stringify( container );
+					container.encoding = false;
+					if( !container.id || container.id === "null" ) {
+						console.trace( "0) Container has no ID or is nUll", container );
+					}
+					_debug_output && console.trace( "WRite:", container.id, storage );
+					this_.storage.writeRaw( { id:container.id, version:true }, storage );
+					return res?res( container.id ):null;
+				} else {
+					throw new Error( "record is signed, cannot put" );
 				}
-				container.encoding = true;
-
-				rootContainer = true;
-				storage = stringifier.stringify( container );
-				container.encoding = false;
-				if( !container.id || container.id === "null" ) {
-					console.trace( "0) Container has no ID or is nUll", container );
-				}
-				_debug_output && console.trace( "WRite:", container.id, storage );
-				this_.storage.writeRaw( container.id, storage );
-				return res?res( container.id ):null;
-			} else {
-				throw new Error( "record is signed, cannot put" );
-			}
-		}
-
-		if( opts && opts.id ) {
-			var stringifier;
-			if( opts.extraEncoders ) {
-				stringifier = sack.JSOX.stringifier();
-				this_.setupStringifier( stringifier );
-				opts.extraEncoders.forEach( f=>{
-					stringifier.registerToJSOX( f.tag, f.p, f.f )
-				});
-			}else {
-				stringifier = this_.stringifier;
 			}
 
-			// raw object; no encoding to set.
-			rootObjectSet = true;
-			let storage = stringifier.stringify( obj );
-			if( !opts.id || opts.id === "null" ) {
-				console.trace( "Container has no ID or is nUll", container );
-			}
-			_debug_output && console.trace( "WRite:", opts, storage );
-			//console.log( "Storing with an ID already?", obj, opts );
-			this_.storage.writeRaw( opts.id, storage );
-			res && res( opts.id );
-		} else if( !opts || !opts.id ) {
-			if( opts && opts.mapObject ) {
-				
-			}
-			_debug && console.log( "New bare object, create a container...", opts );
-                        if( !opts ) opts = { id : shortId() }
-                        else opts.id = shortId();
-                        //console.log( "Storage ID is picked here:", opts );
-                        if( "object" === typeof obj ) {
-				container = new ObjectStorageContainer(this_,obj,opts);
-				if( !container.id || "string" !== typeof container.id ) throw new Error( "Failed to get a conatiner ID for some reason" );
-				//console.log( "New container looks like... ", container.id, container );
-				
-				//console.log( "saving stored container.id", typeof obj, obj, container.id );
-			        
-				//this.stored.delete( obj );
-				//console.log( " *** SETTING ID HERE", container.id);
-				this_.stored.set( obj, container.id );
-				if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
-				this_.cached.set( container.id, container.data );
-				this_.cachedContainer.set( container.id, container );
-			        
+			if( opts && opts.id ) {
 				var stringifier;
 				if( opts.extraEncoders ) {
 					stringifier = sack.JSOX.stringifier();
@@ -497,324 +452,371 @@ put( obj, opts ) {
 				}else {
 					stringifier = this_.stringifier;
 				}
-			        
-				container.encoding = true;
-				rootContainer = true;
-				storage = stringifier.stringify( container );
-				container.encoding = false;
-			} else {
-				container = new ObjectStorageContainer(this_,obj,opts);
-				storage = obj;
+
+				// raw object; no encoding to set.
+				rootObjectSet = true;
+				let storage = stringifier.stringify( obj );
+				if( !opts.id || opts.id === "null" ) {
+					throw new Error( "Container has no ID or is null" );					
+				}
+				_debug_output && console.trace( "WRite:", opts, storage );
+				if( this.versioned ) {				
+					const id = opts.id.split( '.' );
+					//console.log( "Storing with an ID already?", obj, opts );
+					const newVersion = this_.storage.writeRaw( {id:id[0]}, storage );
+					opts.id = id[0] + '.' + newVersion;
+				} else 
+					this_.storage.writeRaw( opts, storage );
+				res && res( opts.id );
+			} else if( !opts || !opts.id ) {
+				// need a new ID for an object (not string)
+
+				_debug && console.log( "New bare object, create a container...", opts );
+							if( !opts ) opts = { id : shortId() }
+							else opts.id = shortId();
+							//console.log( "Storage ID is picked here:", opts );
+							if( "object" === typeof obj ) {
+					container = new ObjectStorageContainer(this_,obj,opts);
+					if( !container.id || "string" !== typeof container.id ) throw new Error( "Failed to get a conatiner ID for some reason" );
+					//console.log( "New container looks like... ", container.id, container );
+					
+					//console.log( "saving stored container.id", typeof obj, obj, container.id );
+						
+					//this.stored.delete( obj );
+					//console.log( " *** SETTING ID HERE", container.id);
+					this_.stored.set( obj, container.id );
+					if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
+					this_.cached.set( container.id, container.data );
+					this_.cachedContainer.set( container.id, container );
+						
+					var stringifier;
+					if( opts.extraEncoders ) {
+						stringifier = sack.JSOX.stringifier();
+						this_.setupStringifier( stringifier );
+						opts.extraEncoders.forEach( f=>{
+							stringifier.registerToJSOX( f.tag, f.p, f.f )
+						});
+					}else {
+						stringifier = this_.stringifier;
+					}
+					opts.id = container.id
+					container.encoding = true;
+					rootContainer = true;
+					storage = stringifier.stringify( container );
+					container.encoding = false;
+				} else {
+					container = new ObjectStorageContainer(this_,obj,opts);
+					storage = obj;
+				}
+				if( !container.id || container.id === "null" ) {
+					console.trace( "Container has no ID or is nUll", container );
+				}
+				_debug_output && console.trace( "Outut container to storage... ", container, storage );
+				try {
+					this_.storage.writeRaw( opts, storage );
+					if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
+					this_.cached.set( container.id, container.data );
+					this_.cachedContainer.set( container.id, container );
+				}catch(err) { console.log( "WRITE RAW?", this_ )}
+				//console.log( "OUTPUT:", storage );
+				res && res(  container.id );
 			}
-			if( !container.id || container.id === "null" ) {
-				console.trace( "Container has no ID or is nUll", container );
+		}
+
+		/*
+		sack.ObjectStorage.prototype.update( objId, obj ) {
+
+			var container = new ObjectStorageContainer(this,sack.JSOX.stringify(obj),sign);
+			this.stored.set( obj, container.id );
+			this.cached.set( container.id, container );
+			return container.id;
+		}
+
+		*/
+	}  // end of put() method
+
+	get( opts ) {
+		//this.parser.
+		let resolve;
+		//let reject;
+		const os = this;
+
+		if( "string" === typeof opts ) {
+			opts = { id:opts
+				, extraDecoders : null };
+		}
+		if( !opts ){
+			console.trace( "Must specify options ", opts);
+			return null;
+		}
+		{
+			const priorLoad = this.cachedContainer.get( opts.id );
+			//console.log( "already found?", priorLoad );
+			if( priorLoad ) return Promise.resolve( priorLoad.data );
+		}
+		//console.trace( "TEST going to get:", opts )
+		const priorDecode = this.decoding.find( d=>d.opts.id === opts.id );
+		if( priorDecode ){
+			
+			console.trace( "already decoding...(use same promised result) things?", priorDecode );
+			return priorDecode.p;
+		}
+
+		if( !this.parser ){
+			this.parser = sack.JSOX.begin();
+			//console.log( "ADDING ~os");
+			this.parser.fromJSOX( "~os", ObjectStorageContainer, reviveContainer ); // I don't know ahead of time which this is.
+			this.parser.fromJSOX( "~or", objectStorageContainerRef, reviveContainerRef ); // I don't know ahead of time which this is.
+			for( let f of this.decoders )
+				this.parser.fromJSOX( f.tag, f.p, f.f );
+		}
+
+		const parser = this.parser;
+		if( opts.extraDecoders ) {
+			parser = sack.JSOX.begin(  );
+			//console.log( "Adding ~os handler");
+			parser.fromJSOX( "~os", ObjectStorageContainer, reviveContainer ); // I don't know ahead of time which this is.
+			parser.fromJSOX( "~or", objectStorageContainerRef, reviveContainerRef ); // I don't know ahead of time which this is.
+			//console.log( "this has no decoders? ", this );
+			if( this.decoders && this.decoders.length )
+				this.decoders.forEach( f=>parser.fromJSOX( f.tag, f.p, f.f ) );
+			// allow extra to override default.
+			if( opts && opts.extraDecoders && opts.extraDecoders.length ) {
+				opts.extraDecoders.forEach( f=>parser.fromJSOX( f.tag, f.p, f.f ) );
 			}
-			_debug_output && console.trace( "Outut container to storage... ", container, storage );
+			//console.log( "Created a parser for revival..." );
+		}
+		this.currentParser = parser;
+		//console.log( "(get)Read Key:", opts.id );
+		const p = new Promise( function(res,rej) {
+			resolve = res;  //reject = rej;
+
+			const priorReadId = currentReadId;
 			try {
-				this_.storage.writeRaw( container.id, storage );
-				if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
-				this_.cached.set( container.id, container.data );
-				this_.cachedContainer.set( container.id, container );
-			}catch(err) { console.log( "WRITE RAW?", this_ )}
-			//console.log( "OUTPUT:", storage );
-			res && res(  container.id );
-		}
-	}
+				currentStorage = os; // this part is synchronous... but leaves JS heap from os.read(), does callbacks using parser, but results with a parsed object
+								// all synchronously.
+				const parts = opts.id.split('.');
+				os.storage.read( currentReadId = parts[0], Number( parts[1] )
+					, parser, (obj)=>{
+						// with a new parser, only a partial decode before revive again...
+						_debug && console.log( "Read resulted with an object:", obj );
+						let deleteId = -1;
+						currentStorage = null;
+						const extraResolutions = [];
+						for( let n = 0; n < os.decoding.length; n++ ) {
+							const decode = os.decoding[n];
+							//console.log( "pending decode?", decode, opts, decode.opts === opts )
+							if( decode.opts === opts )
+								deleteId = n;
+							else if( decode.opts.id === opts.id ) {
+								console.log( "pending decode resolve?");
+								decode.res( obj );
+							}
+						}
+						
+						if( deleteId >= 0 )  {
+							console.log( "Something else is alwso waiting for this result...", os.decoding, deleteId);
+							os.decoding.splice( deleteId, 1 );
+						}
+						
+						var found;
+						do {
+							var found = os.pending.findIndex( pending=>{ console.log( "what is in pending?", key, opts.id, pending ); return pending.id === opts.id } );
+							if( found >= 0 ) {
+								os.pending[found].ref.o[os.pending[found].ref.f] = obj.data;
+								os.pending.splice( found, 1 );
+							}
+						} while( found >= 0 );
 
-/*
-sack.ObjectStorage.prototype.update( objId, obj ) {
+						//console.log( "Object is what?", obj );
+						if( obj && ( obj instanceof ObjectStorageContainer ) ){
+							//console.log( "GOTzz:", obj, obj.id, obj.data );
+							if( !("id" in obj ))
+								Object.defineProperty( obj, "id", { value:currentReadId } );
 
-	var container = new ObjectStorageContainer(this,sack.JSOX.stringify(obj),sign);
-	this.stored.set( obj, container.id );
-	this.cached.set( container.id, container );
-	return container.id;
-}
-
-*/
-}
-
-get( opts ) {
-	//this.parser.
-	var resolve;
-	var reject;
-	const os = this;
-
-	if( "string" === typeof opts ) {
-		opts = { id:opts
-		       , extraDecoders : null };
-	}
-	if( !opts ){
-		console.trace( "Must specify options ", opts);
-		return null;
-	}
-	{
-		const priorLoad = this.cachedContainer.get( opts.id );
-		//console.log( "already found?", priorLoad );
-		if( priorLoad ) return Promise.resolve( priorLoad.data );
-	}
-	//console.trace( "TEST going to get:", opts )
-	const priorDecode = this.decoding.find( d=>d.opts.id === opts.id );
-	if( priorDecode ){
-		
-		console.trace( "already decoding...(use same promised result) things?", priorDecode );
-		return priorDecode.p;
-	}
-
-	if( !this.parser ){
-		this.parser = sack.JSOX.begin();
-		//console.log( "ADDING ~os");
-		this.parser.fromJSOX( "~os", ObjectStorageContainer, reviveContainer ); // I don't know ahead of time which this is.
-		this.parser.fromJSOX( "~or", objectStorageContainerRef, reviveContainerRef ); // I don't know ahead of time which this is.
-		for( let f of this.decoders )
-			this.parser.fromJSOX( f.tag, f.p, f.f );
-	}
-
-	function objectStorageContainerRef( s ) {
-		_debug_dangling && console.log( "Container ref:", s );
-		try {
-			const existing = this.cachedContainer.get(s);
-			const here = this.getCurrentParseRef();
-			const thisDangling = dangling;
-			//console.log( "Conainer ref, this will resolve in-place")
-			this.d = {id:s,p:null,res:null,rej:null,r:{o:here.o,f:here.f},rootMap:null };
-
-			if( !existing ) {
-				_debug_dangling && console.log( "PUSHING DANGLING REFERNCE", this );
-				const requests = allDangling.get( this.d.id ) || [];
-				if( !requests.length ) allDangling.set( this.d.id, requests );
-				const p = this.d.p = new Promise( (res,rej)=>{
-					_debug_dangling && console.log( "setting up pending promise to resolve:", s );
-					this.d.res = res;
-					this.d.rej = rej;
-				}).then( (obj)=>{
-					_debug_dangling && console.log( "replace value at reference with real value:", here, obj, thisDangling.length, s )
-
-					//const dr = thisDangling.findIndex( d=> d.d.id === s );
-					//if( dr >= 0 ) thisDangling.splice( dr, 1 );
-					//else _debug_dangling && console.log( "FAILED TO FIND DANGLING REFERENCE 1" );
-
-					// this is the last time the promise exists...
-					os.storedIn.delete( p );
-					os.stored.delete( p );
-					const inObject = dangling.find( d=>d === this );
-					if(inObject >= 0 ) {
-						_debug_replace && console.log( "Removing request from container dangling" );
-						dangling.spice( inObject, 1 );
-					}
-					_debug_replace && console.log( "-------- REPLACE VALUE HERE:", this.d.r.o[this.d.r.f], this.d.r.o, this.d.r.f, obj );
-					return (this.d.r.o[this.d.r.f] = obj);
-				}).catch( (err)=>{
-					console.log( "CATCH UNCAUGHT PLEASE DO", err);
-				});
-				os.storedIn.set( this.d.p, this );
-				//console.log( " *** SETTING ID HERE", s);
-				os.stored.set( this.d.p, '~or"'+s+'"' );
-				requests.push( this );
-				dangling.push( this );
-				objectRefs++;
-
-			} else {
-				_debug_dangling && console.log( "NOT DANGLING; existing object already exists... " );
-				this.d.p = Promise.resolve( existing.data );  // this will still have to be swapped.
+							//console.log( "Object.data is bad?", obj.data, typeof obj.data, "\n!!!!!!!!!!", obj.id );
+							//console.log( " *** SETTING ID HERE");
+							os.stored.set( obj.data, obj.id );
+							os.cachedContainer.set( obj.id, obj );
+							currentReadId = priorReadId;
+							for( let res in extraResolutions ) res.res(obj.data);
+							resolve(obj.data);
+						} else {
+							currentReadId = priorReadId;
+							for( let res in extraResolutions ) res.res(obj);
+							//console.log( "RESOLVE WITH OBJECT NEED DATA?", ( obj instanceof ObjectStorageContainer ) );
+							resolve(obj)
+						}
+				} );
+			}catch(err) {
+				//console.log( "ERROR:", err );
+				currentReadId = priorReadId;
+				rej(err);
 			}
-		} catch(err) { console.log( "Init failed:", err)}
-	}
+		} );
+		//console.log( "PUSHING THING TO LOAD LATER (decoding)?", opts );
 
-	function reviveContainer( field, val ) {
-		//console.log( "(JS)Revive container:", this, field, val );
-		if( !field ) {
-			// finished.
-			if( objectRefs ) {
-				/* sets dangling property on container */
-				_debug_dangling && console.log( "Collapse dangling:", dangling.length );
-				if( !this.dangling )
-					Object.defineProperty( this, "dangling", { value:dangling } );
-				else{
-					this.dangling.push.apply(this.dangling, dangling )
-					//console.log( "Added more to the dangling things..." );
-				}
-				// resets to store new objects for next load.
-				dangling = [];
-				objectRefs = 0;
-			}
+		this.decoding.push( { p:p, opts:opts } );
+		p.then( (r)=>{
+			//console.log( "Removing decoding object with then...");
+			const doneDecoding = os.decoding.findIndex( d=>d.opts === opts );
+			//console.log( "decode should already be resolved:", doneDecoding, os.decoding, opts, r );
 
-			Object.defineProperty( this, "id", { value:currentReadId } );
+			if( doneDecoding >=0 ) os.decoding.splice( doneDecoding, 1 );
+			else console.log( "Failed to find decoding object?" );
+			return r;
+		} );
+		return p;
 
-			//console.log( "handle object ??", this );
-			if( this.nonce ) {
-				let s = null;
-	       			var v = sack.SaltyRNG.verify( s = os.stringifier.stringify(this.data), this.nonce, this.sign.pad1, this.sign.pad2 );
-				if( v.key !== currentReadId )  {
-					throw new Error( `Data corrupted: s:'${s}' v:${v}, this Id:${currentReadId}` );
-				}
-				else console.log( "Valid record.", v, this.sign );
+		function objectStorageContainerRef( s ) {
+			_debug_dangling && console.log( "Container ref:", s );
+			try {
+				const existing = this.cachedContainer.get(s);
+				const here = this.getCurrentParseRef();
+				const thisDangling = dangling;
+				//console.log( "Conainer ref, this will resolve in-place")
+				this.d = {id:s,p:null,res:null,rej:null,r:{o:here.o,f:here.f},rootMap:null };
 
-			}
+				if( !existing ) {
+					_debug_dangling && console.log( "PUSHING DANGLING REFERNCE", this );
+					const requests = allDangling.get( this.d.id ) || [];
+					if( !requests.length ) allDangling.set( this.d.id, requests );
+					const p = this.d.p = new Promise( (res,rej)=>{
+						_debug_dangling && console.log( "setting up pending promise to resolve:", s );
+						this.d.res = res;
+						this.d.rej = rej;
+					}).then( (obj)=>{
+						_debug_dangling && console.log( "replace value at reference with real value:", here, obj, thisDangling.length, s )
 
-			const request = allDangling.get( currentReadId );
+						//const dr = thisDangling.findIndex( d=> d.d.id === s );
+						//if( dr >= 0 ) thisDangling.splice( dr, 1 );
+						//else _debug_dangling && console.log( "FAILED TO FIND DANGLING REFERENCE 1" );
 
-			//console.log( "Revive container final pass... does this resolve?", this, request, allDangling, currentReadId ); 
-			if( request ) {
-				_debug_replace && console.log( "Dispatching all resolutions waiting on this object..." );
-				allDangling.delete( currentReadId );
-				for( let load of request ) {
-					load.d.res( this.data );
-				}
-			}
-			return this;
-		}
-		else {
-				const this_ = this;
-				// new value isn't anything special; just set the value.
-				//console.log( "This sort of thing... val is just a thing - like a key part identifier...; but that should have been a container.");
-				if( val instanceof Promise ) {
-					//_debug_dangling && console.log( "Value is a promise, and needs resolution.")
-					var dangle = dangling.find( d=>d.d.p===val );
-					if( dangle )
-						dangle.d.n = field;
-					this_.data[field] = val
-					return val.then( (val)=>{
-						_debug_dangling && console.log( "(DOESN'T HAPPEN NOW?) THIS SHOULD BE WHAT REPLACES THE VALUE", field, val );
-						this_.data[field] = val 
+						// this is the last time the promise exists...
+						os.storedIn.delete( p );
+						os.stored.delete( p );
+						const inObject = dangling.find( d=>d === this );
+						if(inObject >= 0 ) {
+							_debug_replace && console.log( "Removing request from container dangling" );
+							dangling.spice( inObject, 1 );
+						}
+						_debug_replace && console.log( "-------- REPLACE VALUE HERE:", this.d.r.o[this.d.r.f], this.d.r.o, this.d.r.f, obj );
+						return (this.d.r.o[this.d.r.f] = obj);
+					}).catch( (err)=>{
+						console.log( "CATCH UNCAUGHT PLEASE DO", err);
 					});
+					os.storedIn.set( this.d.p, this );
+					//console.log( " *** SETTING ID HERE", s);
+					os.stored.set( this.d.p, '~or"'+s+'"' );
+					requests.push( this );
+					dangling.push( this );
+					objectRefs++;
+
+				} else {
+					_debug_dangling && console.log( "NOT DANGLING; existing object already exists... " );
+					this.d.p = Promise.resolve( existing.data );  // this will still have to be swapped.
 				}
-				// a custom type might want something else...
-				if( field === "data" )
-				{
-					//console.log( "This should have fixed the 'pending value' value" );
-					this.data = val;
+			} catch(err) { console.log( "Init failed:", err)}
+		}
+
+		function reviveContainer( field, val ) {
+			//console.log( "(JS)Revive container:", this, field, val );
+			if( !field ) {
+				// finished.
+				if( objectRefs ) {
+					/* sets dangling property on container */
+					_debug_dangling && console.log( "Collapse dangling:", dangling.length );
+					if( !this.dangling )
+						Object.defineProperty( this, "dangling", { value:dangling } );
+					else{
+						this.dangling.push.apply(this.dangling, dangling )
+						//console.log( "Added more to the dangling things..." );
+					}
+					// resets to store new objects for next load.
+					dangling = [];
+					objectRefs = 0;
+				}
+
+				Object.defineProperty( this, "id", { value:currentReadId } );
+
+				//console.log( "handle object ??", this );
+				if( this.nonce ) {
+					let s = null;
+						var v = sack.SaltyRNG.verify( s = os.stringifier.stringify(this.data), this.nonce, this.sign.pad1, this.sign.pad2 );
+					if( v.key !== currentReadId )  {
+						throw new Error( `Data corrupted: s:'${s}' v:${v}, this Id:${currentReadId}` );
+					}
+					else console.log( "Valid record.", v, this.sign );
+
+				}
+
+				const request = allDangling.get( currentReadId );
+
+				//console.log( "Revive container final pass... does this resolve?", this, request, allDangling, currentReadId ); 
+				if( request ) {
+					_debug_replace && console.log( "Dispatching all resolutions waiting on this object..." );
+					allDangling.delete( currentReadId );
+					for( let load of request ) {
+						load.d.res( this.data );
+					}
+				}
+				return this;
+			}
+			else {
+					const this_ = this;
+					// new value isn't anything special; just set the value.
+					//console.log( "This sort of thing... val is just a thing - like a key part identifier...; but that should have been a container.");
+					if( val instanceof Promise ) {
+						//_debug_dangling && console.log( "Value is a promise, and needs resolution.")
+						var dangle = dangling.find( d=>d.d.p===val );
+						if( dangle )
+							dangle.d.n = field;
+						this_.data[field] = val
+						return val.then( (val)=>{
+							_debug_dangling && console.log( "(DOESN'T HAPPEN NOW?) THIS SHOULD BE WHAT REPLACES THE VALUE", field, val );
+							this_.data[field] = val 
+						});
+					}
+					// a custom type might want something else...
+					if( field === "data" )
+					{
+						//console.log( "This should have fixed the 'pending value' value" );
+						this.data = val;
+						return undefined;
+					}
+			
+					this[field] = val;
 					return undefined;
-				}
-		
-				this[field] = val;
-				return undefined;
+			}
 		}
-	}
 
-	function reviveContainerRef( field, val ) {
-		//console.trace( "Revival of a container reference:", this, field, val );
-		if( !field ) {
-			const existing = os.cachedContainer.get( this.d.id );
-			if( existing ){
-				//console.log( "duplicate reference... return the existing promise(but this is still used later)", existing, this.d.id);
-				// even better, don't even store the reference, return the real
-				//console.log( "So, just return with the real object to assign. (and remove fom dangling)");
-				const id = dangling.find( d=>d.d === this.d );
-				objectRefs--;
-				if( id >= 0 ) dangling.splice( id, 1 );
-				//console.log( "this is the real value anyway1...", existing.data );
-				return existing.data;
-			} 
-			os.stored.set( this.d.p, '~or"'+this.d.id+'"' );
-			//console.log( "this is the real value anyway2...", this.d.p );
-			return this.d.p;
+		function reviveContainerRef( field, val ) {
+			//console.trace( "Revival of a container reference:", this, field, val );
+			if( !field ) {
+				const existing = os.cachedContainer.get( this.d.id );
+				if( existing ){
+					//console.log( "duplicate reference... return the existing promise(but this is still used later)", existing, this.d.id);
+					// even better, don't even store the reference, return the real
+					//console.log( "So, just return with the real object to assign. (and remove fom dangling)");
+					const id = dangling.find( d=>d.d === this.d );
+					objectRefs--;
+					if( id >= 0 ) dangling.splice( id, 1 );
+					//console.log( "this is the real value anyway1...", existing.data );
+					return existing.data;
+				} 
+				os.stored.set( this.d.p, '~or"'+this.d.id+'"' );
+				//console.log( "this is the real value anyway2...", this.d.p );
+				return this.d.p;
+			}
+			else {
+				//console.log( "this is the real value anyway3...", val );
+				return val;
+			}
 		}
-		else {
-			//console.log( "this is the real value anyway3...", val );
-			return val;
-		}
-	}
 
-
-	let parser = this.parser;
-	if( opts.extraDecoders ) {
-		parser = sack.JSOX.begin(  );
-		//console.log( "Adding ~os handler");
-		parser.fromJSOX( "~os", ObjectStorageContainer, reviveContainer ); // I don't know ahead of time which this is.
-		parser.fromJSOX( "~or", objectStorageContainerRef, reviveContainerRef ); // I don't know ahead of time which this is.
-		//console.log( "this has no decoders? ", this );
-		if( this.decoders && this.decoders.length )
-			this.decoders.forEach( f=>parser.fromJSOX( f.tag, f.p, f.f ) );
-		// allow extra to override default.
-		if( opts && opts.extraDecoders && opts.extraDecoders.length ) {
-			opts.extraDecoders.forEach( f=>parser.fromJSOX( f.tag, f.p, f.f ) );
-		}
-		//console.log( "Created a parser for revival..." );
-	}
-	this.currentParser = parser;
-	//console.log( "(get)Read Key:", opts.id );
-	const p = new Promise( function(res,rej) {
-		resolve = res;  reject = rej;
-
-		const priorReadId = currentReadId;
-		try {
-			currentStorage = os; // this part is synchronous... but leaves JS heap from os.read(), does callbacks using parser, but results with a parsed object
-				              // all synchronously.
-			os.storage.read( currentReadId = opts.id
-				, parser, (obj)=>{
-					// with a new parser, only a partial decode before revive again...
-					_debug && console.log( "Read resulted with an object:", obj );
-					let deleteId = -1;
-					currentStorage = null;
-					const extraResolutions = [];
-					for( let n = 0; n < os.decoding.length; n++ ) {
-						const decode = os.decoding[n];
-						//console.log( "pending decode?", decode, opts, decode.opts === opts )
-						if( decode.opts === opts )
-							deleteId = n;
-						else if( decode.opts.id === opts.id ) {
-							console.log( "pending decode resolve?");
-							decode.res( obj );
-						}
-					}
-					
-					if( deleteId >= 0 )  {
-						console.log( "Something else is alwso waiting for this result...", os.decoding, deleteId);
-						os.decoding.splice( deleteId, 1 );
-					}
-					
-					var found;
-					do {
-						var found = os.pending.findIndex( pending=>{ console.log( "what is in pending?", key, opts.id, pending ); return pending.id === opts.id } );
-						if( found >= 0 ) {
-							os.pending[found].ref.o[os.pending[found].ref.f] = obj.data;
-							os.pending.splice( found, 1 );
-						}
-					} while( found >= 0 );
-
-					//console.log( "Object is what?", obj );
-					if( obj && ( obj instanceof ObjectStorageContainer ) ){
-						//console.log( "GOTzz:", obj, obj.id, obj.data );
-						if( !("id" in obj ))
-							Object.defineProperty( obj, "id", { value:currentReadId } );
-
-						//console.log( "Object.data is bad?", obj.data, typeof obj.data, "\n!!!!!!!!!!", obj.id );
-						//console.log( " *** SETTING ID HERE");
-						os.stored.set( obj.data, obj.id );
-						os.cachedContainer.set( obj.id, obj );
-						currentReadId = priorReadId;
-						for( let res in extraResolutions ) res.res(obj.data);
-						resolve(obj.data);
-					} else {
-						currentReadId = priorReadId;
-						for( let res in extraResolutions ) res.res(obj);
-						//console.log( "RESOLVE WITH OBJECT NEED DATA?", ( obj instanceof ObjectStorageContainer ) );
-						resolve(obj)
-					}
-			} );
-		}catch(err) {
-			//console.log( "ERROR:", err );
-			currentReadId = priorReadId;
-			rej(err);
-		}
-	} );
-	//console.log( "PUSHING THING TO LOAD LATER (decoding)?", opts );
-
-	this.decoding.push( { p:p, opts:opts } );
-	p.then( (r)=>{
-		//console.log( "Removing decoding object with then...");
-		const doneDecoding = os.decoding.findIndex( d=>d.opts === opts );
-		//console.log( "decode should already be resolved:", doneDecoding, os.decoding, opts, r );
-
-		if( doneDecoding >=0 ) os.decoding.splice( doneDecoding, 1 );
-		else console.log( "Failed to find decoding object?" );
-		return r;
-	} );
-	return p;
-}
-
-
-}
+	} // end of get() method
+	
+} // end of ObjectStorage class
 
 
 

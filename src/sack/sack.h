@@ -11979,8 +11979,10 @@ namespace objStore {
 		SOSFSFIO_SET_BLOCKSIZE,
  // set the last updated time of a file
 		SOSFSFIO_SET_TIME,
- // set the last updated time of a file
+ // get the list of all times associated with a file
 		SOSFSFIO_GET_TIMES,
+ // get the last(current) time of the file
+		SOSFSFIO_GET_TIME,
 	};
 	enum sack_object_store_file_system_system_ioctl_ops {
  // get the resulting storage ID.  (Move ID creation into low level driver)
@@ -12097,9 +12099,12 @@ namespace objStore {
 //     sack_vfs_os_ioctl_patch_object( vol, oldResult, sizeof( oldResult )-1, data, sizeof( data ), seal, sizeof( seal ), result, 44 );
 // }
 #define sack_vfs_os_ioctl_patch_sealed_object( vol, objId,objIdLen, obj,objlen, seal,seallen, result, resultlen ) sack_fs_ioctl( vol, SOSFSSIO_PATCH_OBJECT, FALSE, FALSE, objId, objIdLen, authId, authIdLen, obj, objlen, seal, seallen, result, resultlen )
-#define sack_vfs_os_ioctl_create_index( file, indexName ) sack_vfs_os_fs_ioctl( file, SOSFSFIO_CREATE_INDEX, indexName )
-#define sack_vfs_os_ioctl_get_times( file, timeArray,tzArray,timeCount ) sack_vfs_os_fs_ioctl( file, SOSFSFIO_GET_TIMES, timeArray,tzArray,timeCount )
-#define sack_vfs_os_ioctl_set_time( file, timestamp,tz )            sack_vfs_os_fs_ioctl( file, SOSFSFIO_SETTIME, timestamp,tz )
+#define sack_vfs_os_ioctl_create_index( file, indexName ) sack_vfs_os_file_ioctl( file, SOSFSFIO_CREATE_INDEX, indexName )
+#define sack_vfs_os_ioctl_get_times( file, timeArray,tzArray,timeCount ) sack_vfs_os_file_ioctl( file, SOSFSFIO_GET_TIMES, timeArray,tzArray,timeCount )
+// get the last write timeline index of a file
+//     sack_vfs_os_ioctl_get_time( file )
+#define sack_vfs_os_ioctl_get_time( file ) sack_vfs_os_file_ioctl( file, SOSFSFIO_GET_TIME )
+#define sack_vfs_os_ioctl_set_time( file, timestamp,tz )            sack_vfs_os_file_ioctl( file, SOSFSFIO_SETTIME, timestamp,tz )
 // open a volume at the specified pathname.
 // if the volume does not exist, will create it.
 // if the volume does exist, a quick validity check is made on it, and then the result is opened
