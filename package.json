@@ -10,19 +10,19 @@
   "module": "vfs_module.mjs",
   "type": "commonjs",
   "exports": {
-    ".":{
-    	"require":"./vfs_module.cjs",
-    	"import":"./vfs_module.mjs"
+    ".": {
+      "require": "./vfs_module.cjs",
+      "import": "./vfs_module.mjs"
     },
-    "./sack":{
-    	"require":"./vfs_module.cjs",
-    	"import":"./vfs_module.mjs"
+    "./sack": {
+      "require": "./vfs_module.cjs",
+      "import": "./vfs_module.mjs"
     },
-    "./import.mjs":{
-    	"default":"./import.mjs"
+    "./import.mjs": {
+      "default": "./import.mjs"
     },
-    "./object-storage":{
-    	"default":"./object-storage.mjs"
+    "./object-storage": {
+      "default": "./object-storage.mjs"
     }
   },
   "old_exports": {

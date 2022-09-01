@@ -49,7 +49,7 @@
             'include_dirs': [
               'include/linux',
             ],
-            'libraries':[ 'odbc' ]
+            'libraries':[ '-lodbc', '-L/usr/lib/x86_64-linux/gnu' ]
           }],
 	['node_shared_openssl=="false"', {
 	      'include_dirs': [
