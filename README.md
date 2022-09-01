@@ -229,6 +229,9 @@ there's a conversion to string from binary and a copy of that string from JS to 
 - 1.1.803(in progress)
    - include LibreSSL 3.5.3 to avoid conflicts/incompatibilities with Node's included OpenSSL versions.
    - change npm install to use cmake-js to be able to use included LibreSSL
+   - handle SQL DATE type as a time(TIMESTAMP).
+   - fix for collecting trailing HTML reply without a length.
+   - fix linux lost close event; socket closed, without a next buffer, failed to read the close 0.
 - 1.1.802
    - task input handling failure on windows; if only one callback was issued.
 - 1.1.801
