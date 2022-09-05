@@ -379,7 +379,8 @@ to interact with the process.
 | firstArgIsArg | bool | If false, first argument in `args` is program name and not an argument (POSIX exec); default is true, and the first argument in `args` is the first argument |
 | env | object | key:value pairs to write to the environment before launching the process |
 | binary | bool | if true, buffer to input callback will be an ArrayBuffer else it will be a string |
-| input | callback(buffer) | A callback function which will receive output from the task(would have to update lower level library to split/identify if the input was stdout or stderr) | 
+| input | callback(buffer) | A callback function which will receive output from the task.  This only receives, and, when specified, redirects the stdoutput stream. | 
+| errorInput| callback(buffer) | A callback, which if specified, redirects stderr to this callback function; otherwise stderr is not captured. |
 | end | callback() | This callback will be triggered when the task exits. |
 | impersonate | bool | (Needs work;updated compatibility... this is for a service to launch a task as a user which is now impossible(?)) |
 | hidden | bool | set windows UI flags such that the next process is created with a hidden window.  Default: false |
