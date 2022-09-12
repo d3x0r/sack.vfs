@@ -1,6 +1,6 @@
 
-const sack = require( "sack.vfs" );
-const path = require( "path" );
+import {sack} from "sack.vfs";
+import path from "path";
 
 const encMap = {
 		'.gz':'gzip'
@@ -22,24 +22,29 @@ const extMap = { '.js': 'text/javascript'
 
 export function openServer( opts, cbAccept, cbConnect )
 {
-	var serverOpts = opts || {port:Number(process.argv[2])||8080} ;
-	var server = sack.WebSocket.Server( serverOpts )
-	var disk = sack.Volume();
-	console.log( "serving on " + serverOpts.port );
-	console.log( "with:", disk.dir() );
+	const serverOpts = opts || {port:process.env.PORT || 8080} ;
+	const server = sack.WebSocket.Server( serverOpts )
+	const disk = sack.Volume();
+	//console.log( "serving on " + serverOpts.port );
+	//console.log( "with:", disk.dir() );
 
 
 	server.onrequest = function( req, res ) {
+		/*
+			this is the request remote address if required....
 		const ip = ( req.headers && req.headers['x-forwarded-for'] ) ||
 			 req.connection.remoteAddress ||
 			 req.socket.remoteAddress ||
 			 req.connection.socket.remoteAddress;
+		*/
+		const npm_path = opts.npmPath || ".";
+		const resource_path = opts.resourcePath || ".";
 
 		//console.log( "Received request:", req );
 		if( req.url === "/" ) req.url = "/index.html";
-		let filePath = "." + unescape(req.url);
+		let filePath = resource_path + unescape(req.url);
 		if( req.url.startsWith( "/node_modules/" ) && req.url.startsWith( "/node_modules/@d3x0r" ) )
-			filePath="." + unescape(req.url);
+			filePath=npm_path  + unescape(req.url);
 		let extname = path.extname(filePath);
 
 		let contentEncoding = encMap[extname];
@@ -90,5 +95,3 @@ export function openServer( opts, cbAccept, cbConnect )
 
 //exports.open = openServer;
 
-if( !module.parent )
-	openServer();

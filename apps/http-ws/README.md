@@ -51,6 +51,16 @@ function connect(ws) {
 
 ```
 
+### Server Options
+
+|Name|Type|Default|Description|
+|---|---|---|---|
+| resourcePath | string | "." | Where static reousrce base path is |
+| npmPath | string | "." | Where node_modules for this project can be found |
+| port | number | process.env.PORT or 8080 | port to open server on |
+| sack. |  |  | [core socket server options](../../README_WSS.md) |
+
+
 Alternatively using require syntax, replace the imports at the top of the script.
 
 ``` js

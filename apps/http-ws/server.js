@@ -22,7 +22,7 @@ const extMap = { '.js': 'text/javascript'
 
 function openServer( opts, cb )
 {
-	var serverOpts = opts || {port:Number(process.argv[2])||8080} ;
+	var serverOpts = opts || {port:Number(process.env.PORT)||8080} ;
 	var server = sack.WebSocket.Server( serverOpts )
 	var disk = sack.Volume();
 	console.log( "serving on " + serverOpts.port );
@@ -30,10 +30,16 @@ function openServer( opts, cb )
 
 
 	server.onrequest = function( req, res ) {
+		/*
+			source ip if required 
 		const ip = ( req.headers && req.headers['x-forwarded-for'] ) ||
 			 req.connection.remoteAddress ||
 			 req.socket.remoteAddress ||
 			 req.connection.socket.remoteAddress;
+		*/
+
+		const npm_path = opts.npmPath || ".";
+		const resource_path = opts.resourcePath || ".";
 
 		//console.log( "Received request:", req );
 		if( req.url === "/" ) req.url = "/index.html";
