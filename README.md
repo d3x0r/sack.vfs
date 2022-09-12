@@ -199,6 +199,9 @@ import {SACK} from "sack.vfs";
  - [File Changes](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md)
  - [Misc...](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md)
 
+## Quick App Helpers
+
+ - [Http/Websocket](apps/http-ws) - simple script to handle basic resource requests, and provide a websocket endpoint interface.  User supplies `accept()` and `connect()` callbacks.  Also includes basic express-like interface addon.
 
 
 ## Node JS Loader Support
@@ -234,6 +237,7 @@ there's a conversion to string from binary and a copy of that string from JS to 
    - fix linux lost close event; socket closed, without a next buffer, failed to read the close 0.
    - handle stdout/stderr split logging better.
    - report websocket send parameter failures better.
+   - include application support `app/http-ws` simple module that can be included; see documentation in directory.
 - 1.1.802
    - task input handling failure on windows; if only one callback was issued.
 - 1.1.801
