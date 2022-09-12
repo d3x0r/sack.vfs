@@ -108,3 +108,25 @@ This might be encoded for transport using JSON, but a more complex object might 
 binary buffers, along with a variety of other types that self revive as appropriate core JS objects; additional
 user encoding/decoding can be registered to revive application specific classes directly.
 
+
+## Micro Express
+
+Includes a simple router which can be applied to a server mentioned above.
+
+Supports only most basic express-like interface.  Route matching can be done by String or RexExp.
+
+``` js
+import {uExpress} from "sack.vfs/apps/http-ws/uexpress.mjs"
+
+const app = uExpress();
+app.get( "/Token", (req,res)=>{
+	console.log( "Mapped reqeust to handler." );
+		res.writeHead( 200 );
+		res.end( "<HTML><HEAD><title>200</title></HEAD><BODY>Routed Successfully.</BODY></HTML>");
+
+	//res.send();
+} );
+
+```
+
+
