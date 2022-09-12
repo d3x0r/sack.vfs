@@ -17,7 +17,7 @@ Server events
   | error | callback is passed a closed socket object with remote and local addresses. |
 
 
-Server Options
+### Server Options
 
   When a server is created it accepts an option object with the following options specified.
 
@@ -41,7 +41,7 @@ Server Options
   | key  | &lt;string&gt;; uses PEM private key specified for encryption; used by clients to authenticate cerficates  |
   | passphrase | &lt;string&gt;; uses passphrase for key provided |
   
-Server Methods
+### Server Methods
 
   | Server Methods |   |
   |---|---|
@@ -56,7 +56,8 @@ Server Methods
   | disableSSL() | closes the SSL layer on the socket and resumes native TCP connection; is only valid during "lowerror" event type (6).  Uses the socket that triggered the event as the one to disable.  (The Websocket Server Client is not yet created). |
 
 
-Connected Instance Methods
+### Connected Instance Methods
+
   This is a slightly different object than a client, although accepts the same events except for on( "open" ) and onOpen() method.  
 
   
