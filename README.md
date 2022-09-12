@@ -232,6 +232,8 @@ there's a conversion to string from binary and a copy of that string from JS to 
    - handle SQL DATE type as a time(TIMESTAMP).
    - fix for collecting trailing HTML reply without a length.
    - fix linux lost close event; socket closed, without a next buffer, failed to read the close 0.
+   - handle stdout/stderr split logging better.
+   - report websocket send parameter failures better.
 - 1.1.802
    - task input handling failure on windows; if only one callback was issued.
 - 1.1.801
