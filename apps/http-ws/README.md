@@ -1,0 +1,98 @@
+
+# Http-ws application
+
+This is a shell static web resource server, and websocket endpoint.
+
+## Usage
+
+
+``` js
+import {openServer} from "/node_modules/sack.vfs/apps/server.mjs";
+import {JSOX} from "/node_modules/jsox/lib/jsox.mjs";  
+
+const server = openServer( { /* options */ }, accept, connect );
+
+function accept(ws ) {
+	/* `this` is the server socket handle.
+    */
+	const proto = ws.headers['Sec-WebSocket-Protocol'] || (ws.headers['Sec-Websocket-Protocol'] /* horray for heroku*/);
+	if( 'Sec-Websocket-Protocol' in ws.headers )
+		setTimeout( ()=>keepAlive( ws ), 15000 ); // keep alive for heroku
+
+	// check protocol(s) to see if this should be accepted.
+	this.accept();
+	// this.reject(); // do not accept; reject gracefully with an HTTP response.
+}
+
+function connect(ws) {
+	ws.onopen = opened;
+	ws.onmessage = handleMessage;
+
+	function opened() {
+		// this is a good place for the server to announce the current state.
+		const msg = { op: "init" /*, extra:"parameters" */ };
+		ws.send( JSOX.stringify( msg ) );
+	}
+
+	function handleMessage( msg ) {
+
+		// if msg is a string, it was text.
+		// if msg is an ArrayBuffer, it was a binary message.
+
+		const parsed = JSOX.parse( msg );
+		switch( parsed.op ) {
+		default:
+			console.log( "Unhandled message:", parsed );
+			break;
+		}
+	}
+}
+
+
+```
+
+Alternatively using require syntax, replace the imports at the top of the script.
+
+``` js
+
+const openServer = require( "sack.vfs/apps/server.js" );
+const JSOX = require( "jsox" );
+
+```
+
+## Protocol
+
+A simple protocol, as put forth by Mozilla's sample application https://hacks.mozilla.org/2012/03/browserquest, is described below.
+
+The first thing one needs is a message identifier. Something short like 'op' for the operation the message is 
+carying.  Could be 'do' or whatever, but 'op' is a nice standard that rarely conflicts with optional parameters.
+
+In addition to an operation, there are often additional parmeters associated with a request.  These additional parameters
+can be built into the message object, below is a sample.
+
+``` js
+
+const msg = { op: "doSomething",
+	delay: 5000,
+   text: "Hello World!" };
+
+```
+
+So for a command/event 'doSomething' it is probably expecting 2 arguments `delay` and `text` such that maybe that turns into
+a command to echo a string on the server.
+
+``` js
+
+switch( msg.op ) {
+case "doSomething":
+	setTimeout( ()=>console.log( msg.text ), msg.delay );
+	break;
+/* and your typical default handler */
+}
+
+```
+
+This might be encoded for transport using JSON, but a more complex object might use JSOX which can tranport `Date()` and, 
+binary buffers, along with a variety of other types that self revive as appropriate core JS objects; additional
+user encoding/decoding can be registered to revive application specific classes directly.
+
