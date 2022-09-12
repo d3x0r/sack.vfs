@@ -58,8 +58,10 @@ function connect(ws) {
 | resourcePath | string | "." | Where static reousrce base path is |
 | npmPath | string | "." | Where node_modules for this project can be found |
 | port | number | process.env.PORT or 8080 | port to open server on |
-| sack. |  |  | [core socket server options](../../README_WSS.md) |
+| - see also - |  |  | [core websocket server options](../../README_WSS.md#server-options) |
 
+
+## CJS loading
 
 Alternatively using require syntax, replace the imports at the top of the script.
 
