@@ -1,5 +1,8 @@
 
-import {sack} from "sack.vfs";
+//const sack = require( "sack.vfs" );
+//const path = require( "path" );
+
+import {sack} from "../../vfs_module.mjs";
 import path from "path";
 
 const encMap = {
@@ -20,6 +23,15 @@ const extMap = { '.js': 'text/javascript'
               ,'.wasm': 'application/wasm'
               , '.asm': 'application/wasm' }
 
+const requests = [];
+let reqTimeout = 0;
+function logRequests() {
+	const log = requests.join(', ');
+	requests.length = 0;
+	console.log( "Requests:", log );
+}
+
+//exports.open = openServer;
 export function openServer( opts, cbAccept, cbConnect )
 {
 	const serverOpts = opts || {port:process.env.PORT || 8080} ;
@@ -37,8 +49,8 @@ export function openServer( opts, cbAccept, cbConnect )
 			 req.socket.remoteAddress ||
 			 req.connection.socket.remoteAddress;
 		*/
-		const npm_path = opts.npmPath || ".";
-		const resource_path = opts.resourcePath || ".";
+		const npm_path = serverOpts.npmPath || ".";
+		const resource_path = serverOpts.resourcePath || ".";
 
 		//console.log( "Received request:", req );
 		if( req.url === "/" ) req.url = "/index.html";
@@ -53,17 +65,24 @@ export function openServer( opts, cbAccept, cbConnect )
 		}
 
 
-		var contentType = 'text/html';
-		console.log( ":", extname, filePath )
-                contentType = extMap[extname] || "text/plain";
+		const contentType = extMap[extname] || "text/plain";
+		//console.log( ":", extname, filePath )
+
 		if( disk.exists( filePath ) ) {
-       			const headers = { 'Content-Type': contentType };
-       			if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
+			const headers = { 'Content-Type': contentType };
+			if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
 			res.writeHead(200, headers );
-			console.log( "Read:", "." + req.url );
 			res.end( disk.read( filePath ) );
+			if( requests.length !== 0 )
+				clearTimeout( reqTimeout );
+			reqTimeout = setTimeout( logRequests, 100 );
+			requests.push( req.url );
 		} else {
-			console.log( "Failed request: ", req );
+			if( requests.length !== 0 )
+				clearTimeout( reqTimeout );
+			reqTimeout = setTimeout( logRequests, 100 );
+				
+			requests.push( "Failed request: " + req.url );
 			res.writeHead( 404 );
 			res.end( "<HTML><HEAD>404</HEAD><BODY>404</BODY></HTML>");
 		}
@@ -71,7 +90,6 @@ export function openServer( opts, cbAccept, cbConnect )
 
 	server.onaccept = function ( ws ) {
 		if( cbAccept ) return cbAccept.call(this,ws);
-	//	console.log( "Connection received with : ", ws.protocols, " path:", resource );
 		if( process.env.DEFAULT_REJECT_WEBSOCKET == "1" )
 			this.reject();
 		else
@@ -79,8 +97,7 @@ export function openServer( opts, cbAccept, cbConnect )
 	};
 
 	server.onconnect = function (ws) {
-		if( cbConnect) return cbConnect.call(this,ws);
-		//console.log( "Connect:", ws );
+		if( cbConnect ) return cbConnect.call(this,ws);
 		ws.nodelay = true;
 		ws.onmessage = function( msg ) {
                 	// echo message.
@@ -88,7 +105,7 @@ export function openServer( opts, cbAccept, cbConnect )
                 };
 		ws.onclose = function() {
                 	//console.log( "Remote closed" );
-	        };
+		};
 	};
 
 }
