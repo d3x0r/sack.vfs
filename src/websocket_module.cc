@@ -2769,7 +2769,7 @@ void wssiObject::close( const FunctionCallbackInfo<Value>& args ) {
 
 void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
+	wssiObject* obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 	if( !obj->pc ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Connection has already been closed." ) ) );
 		return;
@@ -2800,13 +2800,13 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 #else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
 #endif
-	}
-	else if( args[0]->IsString() ) {
+	} else if( args[0]->IsString() ) {
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		WebSocketSendText( obj->pc, *buf, buf.length() );
-	}
-	else {
-		lprintf( "Unhandled message format" );
+	} else if( args[0]->IsObject() ) {
+		lprintf( "Cannot send argument that is a type of object passed to websocket send." );
+	}  else {
+		lprintf( "Argument passed to send is not a String, ArrayBuffer or TypeAarray." );
 	}
 }
 
