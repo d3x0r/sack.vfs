@@ -23,6 +23,10 @@
     },
     "./object-storage": {
       "default": "./object-storage.mjs"
+    },
+    "./apps/http-ws": {
+      "require": "./apps/http-ws/server.js",
+      "import": "./apps/http-ws/server.mjs"
     }
   },
   "old_exports": {
