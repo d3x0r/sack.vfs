@@ -55,7 +55,9 @@ export function openServer( opts, cbAccept, cbConnect )
 		//console.log( "Received request:", req );
 		if( req.url === "/" ) req.url = "/index.html";
 		let filePath = resource_path + unescape(req.url);
-		if( req.url.startsWith( "/node_modules/" ) && req.url.startsWith( "/node_modules/@d3x0r" ) )
+		if( req.url.startsWith( "/node_modules/" ) 
+		   && ( req.url.startsWith( "/node_modules/@d3x0r" ) 
+		      || req.url.startsWith( "/node_modules/jsox" ) ) )
 			filePath=npm_path  + unescape(req.url);
 		let extname = path.extname(filePath);
 
@@ -82,7 +84,7 @@ export function openServer( opts, cbAccept, cbConnect )
 				clearTimeout( reqTimeout );
 			reqTimeout = setTimeout( logRequests, 100 );
 				
-			requests.push( "Failed request: " + req.url );
+			requests.push( "Failed request: " + req.url + " as " + filePath );
 			res.writeHead( 404 );
 			res.end( "<HTML><HEAD>404</HEAD><BODY>404</BODY></HTML>");
 		}
@@ -100,11 +102,11 @@ export function openServer( opts, cbAccept, cbConnect )
 		if( cbConnect ) return cbConnect.call(this,ws);
 		ws.nodelay = true;
 		ws.onmessage = function( msg ) {
-                	// echo message.
-                        ws.send( msg );
-                };
+			// echo message.
+			ws.send( msg );
+		};
 		ws.onclose = function() {
-                	//console.log( "Remote closed" );
+			console.log( "Remote closed" );
 		};
 	};
 
