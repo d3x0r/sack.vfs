@@ -109,6 +109,62 @@ binary buffers, along with a variety of other types that self revive as appropri
 user encoding/decoding can be registered to revive application specific classes directly.
 
 
+## Client
+
+This is an example client; the browser side code can of course take any form you desire, this is just a 
+quick summary that would work.
+
+### Client Protocol
+
+The protocol field can be any string; it can also be an array of strings. There are edge cases between what browsers
+encode for the argument and what the server receives. A string works on all browsers; while null, and arrays containing
+empty and null members might not work as expected(?).
+
+See also [JSOX](https://github.com/d3x0r/jsox#readme), which is an extended JSON and accepts any JSON, or JSON(5,6).
+Stringify encodes additional native tyeps like Date(); which should exist as a primitive.
+
+``` js
+
+import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
+
+const local = {
+ 	ws: null;
+}
+
+// this starts a local connection
+function connect() {
+	// this works generally to replace the http source with a ws source preserving the port.
+	// "Tasks" 
+  	const ws = new WebSocket(location.protocol.replace( "http", "ws" )+"//"+location.host+"/", "Protocol");
+	local.ws = ws;
+	ws.onopen = function() {
+    // Web Socket is connected. You can send data by send() method.
+    //ws.send("message to send"); 
+    //ws.send( JSOX.stringify( { op: "subscribe", group:"lobby" } ) );
+	};
+	ws.onmessage = function (evt) { 
+  		const received_msg = evt.data; 
+		processMessage( JSOX.parse( received_msg ) );
+	};
+	ws.onclose = function(evt) { 
+		// evt has 'code' and 'reason'
+		setTimeout( ()=>connect(), 5000 );  // reconnect after 5 seconds.
+		// websocket is closed. 
+	};
+
+	function processMessage( msg ) {
+		switch( msg.op ) {
+		default:
+			console.log( "Unhandled operation:", msg.op, "with details:", msg );
+		}
+	}
+
+
+}
+connect();
+
+```
+
 ## Micro Express
 
 Includes a simple router which can be applied to a server mentioned above.
