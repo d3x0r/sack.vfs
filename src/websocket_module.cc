@@ -1066,6 +1066,16 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 
 				SETV( wssi, strings->connectionString->Get(isolate), socket = makeSocket( isolate, eventMessage->pc ) );
 				SETV( wssi, strings->headerString->Get( isolate ), GETV( socket, strings->headerString->Get( isolate ) ) );
+
+				{
+					struct cgiParams cgi;
+					struct HttpState *pHttpState = GetWebSocketHttpState( wssiInternal->pc );
+					cgi.isolate = isolate;
+					cgi.cgi = Object::New( isolate );
+					ProcessCGIFields( pHttpState, cgiParamSave, (uintptr_t)&cgi );
+					SETV( wssi, strings->CGIString->Get( isolate ), cgi.cgi );
+				}
+
 				SETV( wssi, strings->urlString->Get( isolate )
 					, String::NewFromUtf8( isolate
 						, GetText( GetHttpRequest( GetWebSocketHttpState( wssiInternal->pc ) ) ), v8::NewStringType::kNormal ).ToLocalChecked() );

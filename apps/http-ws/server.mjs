@@ -12,7 +12,7 @@ const encMap = {
 const extMap = { '.js': 'text/javascript'
               ,  '.mjs':'text/javascript'
               ,  '.css':'text/css'
-              ,'.json':'application/json'
+              ,'.json':'text/javascript'
               ,'.png':'image/png'
               ,'.html':'text/html'
               ,'.htm':'text/html'
