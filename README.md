@@ -238,6 +238,7 @@ there's a conversion to string from binary and a copy of that string from JS to 
    - handle stdout/stderr split logging better.
    - report websocket send parameter failures better.
    - include application support `app/http-ws` simple module that can be included; see documentation in directory.
+   - include CGI parameters in WS server instance object.
 - 1.1.802
    - task input handling failure on windows; if only one callback was issued.
 - 1.1.801
