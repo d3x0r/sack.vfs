@@ -34,10 +34,13 @@ function logRequests() {
 //exports.open = openServer;
 export function openServer( opts, cbAccept, cbConnect )
 {
+	let handlers = [];
 	const serverOpts = opts || {port:process.env.PORT || 8080} ;
 	const server = sack.WebSocket.Server( serverOpts )
 	const disk = sack.Volume();
-	//console.log( "serving on " + serverOpts.port );
+	let resourcePath = serverOpts.resourcePath || ".";
+
+	//console.log( "serving on " + serverOpts.port, server );
 	//console.log( "with:", disk.dir() );
 
 
@@ -49,12 +52,18 @@ export function openServer( opts, cbAccept, cbConnect )
 			 req.socket.remoteAddress ||
 			 req.connection.socket.remoteAddress;
 		*/
+		for( let handler of handlers ) {
+			if( handler( req, res ) ) {
+				console.log( "handler accepted request..." );
+				return;
+			}
+		}
 		const npm_path = serverOpts.npmPath || ".";
-		const resource_path = serverOpts.resourcePath || ".";
+		//const resource_path = serverOpts.resourcePath || ".";
 
 		//console.log( "Received request:", req );
 		if( req.url === "/" ) req.url = "/index.html";
-		let filePath = resource_path + unescape(req.url);
+		let filePath = resourcePath + unescape(req.url);
 		if( req.url.startsWith( "/node_modules/" ) 
 		   && ( req.url.startsWith( "/node_modules/@d3x0r" ) 
 		      || req.url.startsWith( "/node_modules/jsox" ) ) )
@@ -110,6 +119,19 @@ export function openServer( opts, cbAccept, cbConnect )
 		};
 	};
 
+	return {
+		setResourcePath( path ) {
+			resourcePath = path;	
+		},
+		addHandler( handler ) {
+			handlers.push( handler );
+		},
+		removeHandler( handler ) {
+			const index = handlers.findIndex( h=>h===handler );
+			if( index >= 0 )
+				handlers.splice( index, 1 );
+		}
+	}
 }
 
 //exports.open = openServer;

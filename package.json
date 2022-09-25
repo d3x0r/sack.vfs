@@ -27,6 +27,10 @@
     "./apps/http-ws": {
       "require": "./apps/http-ws/server.js",
       "import": "./apps/http-ws/server.mjs"
+    },
+    "./apps/http-ws/uexpress": {
+      "require": "./apps/http-ws/uexpress.js",
+      "import": "./apps/http-ws/uexpress.mjs"
     }
   },
   "old_exports": {
