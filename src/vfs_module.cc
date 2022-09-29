@@ -1461,7 +1461,7 @@ static void handlePostedVolume( uv_async_t* async ) {
 		obj->thrown = trans->wssi->thrown = TRUE;
 
 		// just clearing this prevents deallocation of other members
-		trans->wssi->volNative = NULL;
+		trans->wssi->volNative = false;
 
 
 		MaybeLocal<Value> ml_result = f->Call( context, unload->this_.Get(isolate), 2, args );
