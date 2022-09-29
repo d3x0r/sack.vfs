@@ -1895,7 +1895,7 @@ TYPELIB_PROC  uintptr_t TYPELIB_CALLTYPE     ForAllLinks    ( PLIST *pList, ForP
    the list for something, then p will be non-null at the end of
    the loop.
                                                                                          */
-#define LIST_FORALL( l, i, t, v )  if(((v)=(t)NULL),(l))                                                        for( ((i)=0); ((i) < ((l)->Cnt))?                                         (((v)=(t)(uintptr_t)((l)->pNode[i])),1):(((v)=(t)NULL),0); (i)++ )  if( v )
+#define LIST_FORALL( l, i, t, v )  if(((v)=(t)(uintptr_t)NULL),(l))                                                        for( ((i)=0); ((i) < ((l)->Cnt))?                                         (((v)=(t)(uintptr_t)((l)->pNode[i])),1):(((v)=(t)(uintptr_t)NULL),0); (i)++ )  if( v )
 /* This can be used to continue iterating through a list after a
    LIST_FORALL has been interrupted.
    Parameters
