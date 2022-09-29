@@ -369,7 +369,7 @@ static void handlePostedObjectStorage( uv_async_t* async ) {
 
 	//lprintf( "having copied all the data to the new one, erase the old one. %p %p", trans->oso, obj );
 	trans->oso->vol = NULL;
-	trans->oso->volNative = NULL;
+	trans->oso->volNative = false;
 	trans->oso->mountName = NULL;
 	trans->oso->fileName = NULL;
 	trans->oso->fsInt = NULL;
