@@ -24,29 +24,29 @@ export function uExpress() {
 	const req_maps = defaultMap.req_maps;
         
 	return {
-        	all(a,b ) {
-                	if( "string" === typeof a )
-	                	pre_mappings.set( a, b ); // b(req,res,next /*next()*/ )
-                        else
-	                        pre_req_maps.push( { expr:a, cb:b } );
-                },
-        	get( a, b ) {
-                	if( "string" === typeof a )
-        	        	mappings.set( a, b );
-                        else
-	                        req_maps.push( { expr:a, cb:b } );
-                },
-        	post( a, b ) {
-                	if( "string" === typeof a ) 
-	                	mappings.set( a, b );
-                        else
-	                        req_maps.push( { expr:a, cb:b } );
-                },
-                handle( req, res) {
-			//console.log( "Look for request:", req, res );
+		all(a,b ) {
+			if( "string" === typeof a )
+				pre_mappings.set( a, b ); // b(req,res,next /*next()*/ )
+			else
+				pre_req_maps.push( { expr:a, cb:b } );
+		},
+		get( a, b ) {
+			if( "string" === typeof a )
+				mappings.set( a, b );
+			else
+				req_maps.push( { expr:a, cb:b } );
+		},
+		post( a, b ) {
+			if( "string" === typeof a ) 
+				mappings.set( a, b );
+			else
+				req_maps.push( { expr:a, cb:b } );
+		},
+		handle( req, res) {
+				console.log( "Look for request:", req, res );
 			const parts = req.url.split("?");
 			const url = unescape(parts[0]);
-			const filepath = path.dirname(url)+path.basename(url)+path.extname(url);
+			const filepath = path.dirname(url)+((path.dirname(url)&&path.basename(url))?"/":"")+path.basename(url)+path.extname(url);
 			const name = path.basename(url);
 			const type = path.extname(url);
                         
@@ -70,15 +70,15 @@ export function uExpress() {
 				}
 			}
 
-			//console.log( "mappings:", mappings );
-                	if( cb = mappings.get( filepath ) ) {
+			//console.log( "mappings:", mappings, filepath );
+			if( cb = mappings.get( filepath ) ) {
 				//console.log( "got cb?" );
 				ranOne = true;
-                       		handled = cb( req, res, ()=>{} );
+                handled = cb( req, res, ()=>{} );
 			}
 			
 			return handled;
 		}
-        }
+    }
 }
 
