@@ -43,7 +43,7 @@ export function uExpress() {
 				req_maps.push( { expr:a, cb:b } );
 		},
 		handle( req, res) {
-				console.log( "Look for request:", req, res );
+			//console.log( "Look for request:", req, res );
 			const parts = req.url.split("?");
 			const url = unescape(parts[0]);
 			const filepath = path.dirname(url)+((path.dirname(url)&&path.basename(url))?"/":"")+path.basename(url)+path.extname(url);
