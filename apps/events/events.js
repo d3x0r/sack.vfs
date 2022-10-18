@@ -6,10 +6,21 @@ class Events {
 			if( evt in this.#events ) this.#events[evt].push(d);
 			else this.#events[evt] = [d];
 		}else {
-			if( evt in this.#events ) for( let cb of this.#events[evt] ) { const r = cb(d); if(r) return r; }
+			if( evt in this.#events ) return this.#events[evt].map( cb=>cb(d) );
 		}
 	}
 	off( evt, d ) {
+		if( "function" === typeof d ) {
+			const a = this.#vents[evt];
+			for( let i = 0; i < a.length; i++ ) {
+				if( a[i] === d ) {
+					a.splice( i, 1 );
+					break;
+				}
+			}
+		} else {
+			console.log( "Unsupported parameter type to 'off'" );
+		}
 	}
 }
 
