@@ -31,6 +31,10 @@
     "./apps/http-ws/uexpress": {
       "require": "./apps/http-ws/uexpress.js",
       "import": "./apps/http-ws/uexpress.mjs"
+    },
+    "./Events": {
+      "require": "./apps/events/events.js",
+      "import": "./apps/events/events.mjs"
     }
   },
   "old_exports": {
@@ -131,7 +135,7 @@
     "build-vfs-reldeb": "npm run build-vfs-reldeb-config && npm run build-vfs-reldeb-run1",
     "build-vfs-reldeb-config": "cmake-js --CDMAKE_GUI=0 --CDCMAKE_BUILD_TYPE=RelWithDebInfo configure",
     "build-vfs-reldeb-run1": "cmake-js build --CDCMAKE_BUILD_TYPE=RelWithDebInfo",
-    "build": "node-gyp configure build",
+    "build": "cmake-js configure && cmake-js build",
     "link": "npm link @d3x0r/bloomnhash @d3x0r/popups @d3x0r/slab-array @d3x0r/srg jsox"
   }
 }
