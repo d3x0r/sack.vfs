@@ -53,8 +53,8 @@ export function openServer( opts, cbAccept, cbConnect )
 			 req.connection.socket.remoteAddress;
 		*/
 		for( let handler of handlers ) {
-			if( handler( req, res ) ) {
-				console.log( "handler accepted request..." );
+			if( handler( req, res, serverOpts ) ) {
+				//console.log( "handler accepted request..." );
 				return;
 			}
 		}
