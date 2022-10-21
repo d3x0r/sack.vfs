@@ -35,6 +35,10 @@
     "./Events": {
       "require": "./apps/events/events.js",
       "import": "./apps/events/events.mjs"
+    },
+    "./prng": {
+      "require": "./apps/prng_short/prng_short.js",
+      "import": "./apps/prng_short/prng_short.mjs"
     }
   },
   "old_exports": {
