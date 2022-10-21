@@ -925,14 +925,15 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 						argv[0] = ab;
 
 						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+						// buf will deallocate when the arraybuffer does.
 					}
 					else {
 						MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 						argv[0] = buf.ToLocalChecked();
 						//lprintf( "Message:', %s", eventMessage->buf );
 						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+						Deallocate( CPOINTER, eventMessage->buf );
 					}
-					Deallocate( CPOINTER, eventMessage->buf );
 				}
 				break;
 			case WS_EVENT_CLOSE:
