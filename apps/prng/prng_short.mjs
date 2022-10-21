@@ -100,11 +100,16 @@ function jsf32(a, b, c, d) {
 }
 
 export function getSeed(s) { return xmur3( s ); }
+export function getSeed4(seed) { const s = xmur3( seed ); return [s(),s(),s(),s()]; }
 
 export function SFC32( seed ) { const s = xmur3( seed ); return sfc32(s(),s(),s(),s()); }
 export function MUL32( seed ) { const s = xmur3( seed ); return mulberry32(s(),s(),s(),s()); }
 export function XOR32( seed ) { const s = xmur3( seed ); return xoshiro128ss(s(),s(),s(),s()); }
 export function JSF32( seed ) { const s = xmur3( seed ); return jsf32(s(),s(),s(),s()); }
+export function SFC32_( seed ) { return sfc32(...seed); }
+export function MUL32_( seed ) { return mulberry32(...seed); }
+export function XOR32_( seed ) { return xoshiro128ss(...seed); }
+export function JSF32_( seed ) { return jsf32(...seed); }
 
 /*
 function bench1() {

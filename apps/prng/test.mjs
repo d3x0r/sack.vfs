@@ -1,6 +1,9 @@
 
 import * as PRNG from "./prng_short.mjs"
 
+const s = PRNG.getSeed4( "Seed" );
+console.log( "Seeds:", s )
+
 const bits = [];
 
 function resetBits() {
@@ -10,7 +13,7 @@ function resetBits() {
 }
 
 function test( Rng ) {
-	const rng = Rng( "Seed" );	
+	const rng = Rng( s );	
 	const start = Date.now();
 	for( let i = 0; i < 1000000; i++ ) {
 		const val = rng()*0xFFFFFFFF;
@@ -25,10 +28,10 @@ function test( Rng ) {
 }
 
 resetBits();
-test( PRNG.SFC32 );
+test( PRNG.SFC32_ );
 resetBits();
-test( PRNG.MUL32 );
+test( PRNG.MUL32_ );
 resetBits();
-test( PRNG.XOR32 );
+test( PRNG.XOR32_ );
 resetBits();
-test( PRNG.JSF32 );
+test( PRNG.JSF32_ );

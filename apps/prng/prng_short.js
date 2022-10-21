@@ -99,18 +99,28 @@ function jsf32(a, b, c, d) {
     }
 }
 
-export function getSeed(s) { return xmur3( s ); }
+function getSeed(s) { return xmur3( s ); }
+function getSeed4(seed) { const s = xmur3( seed ); return [s(),s(),s(),s()]; }
 
-export function SFC32( seed ) { const s = xmur3( seed ); return sfc32(s(),s(),s(),s()); }
-export function MUL32( seed ) { const s = xmur3( seed ); return mulberry32(s(),s(),s(),s()); }
-export function XOR32( seed ) { const s = xmur3( seed ); return xoshiro128ss(s(),s(),s(),s()); }
-export function JSF32( seed ) { const s = xmur3( seed ); return jsf32(s(),s(),s(),s()); }
+function SFC32( seed ) { const s = xmur3( seed ); return sfc32(s(),s(),s(),s()); }
+function MUL32( seed ) { const s = xmur3( seed ); return mulberry32(s(),s(),s(),s()); }
+function XOR32( seed ) { const s = xmur3( seed ); return xoshiro128ss(s(),s(),s(),s()); }
+function JSF32( seed ) { const s = xmur3( seed ); return jsf32(s(),s(),s(),s()); }
+function SFC32_( seed ) { return sfc32(...seed); }
+function MUL32_( seed ) { return mulberry32(...seed); }
+function XOR32_( seed ) { return xoshiro128ss(...seed); }
+function JSF32_( seed ) { return jsf32(...seed); }
 
 exports.getSeed=getSeed;
+exports.getSeed4=getSeed4;
 exports.SFC32=SFC32;
 exports.MUL32=MUL32;
 exports.XOR32=XOR32;
 exports.JSF32=JSF32;
+exports.SFC32_=SFC32_;
+exports.MUL32_=MUL32_;
+exports.XOR32_=XOR32_;
+exports.JSF32_=JSF32_;
 
 /*
 function bench1() {
