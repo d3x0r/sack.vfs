@@ -886,7 +886,7 @@ _objectStorage.prototype.get = function( opts ) {
 				dangling = [];
 				objectRefs = 0;
 			}
-			console.log( "*!* Revive Container is setting currentReadId:", currentReadId );
+			//console.log( "*!* Revive Container is setting currentReadId:", currentReadId );
 			Object.defineProperty( this, "id", { value:currentReadId } );
 
 			//console.log( "handle object ??", this );
@@ -1029,7 +1029,7 @@ _objectStorage.prototype.get = function( opts ) {
 							Object.defineProperty( obj, "id", { value:currentReadId } );
 						Object.defineProperty( obj, "times", { value:times } );
 
-						console.log( "Object.data is bad?", obj.data, typeof obj.data, "\n!!!!!!!!!!", obj.id );
+						//console.log( "Object.data is bad?", obj.data, typeof obj.data, "\n!!!!!!!!!!", obj.id );
 						//console.log( " *** SETTING ID HERE");
 						os.stored.set( obj.data, obj.id );
 						os.cachedContainer.set( obj.id, obj );
