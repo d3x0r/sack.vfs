@@ -1,5 +1,6 @@
 {
 	port: 8089,
+	npmPath : "../..",
 	winroot : "C:\\Program Files\\nodejs\\",
 	winsuffix: ".exe",
 	tasks: [

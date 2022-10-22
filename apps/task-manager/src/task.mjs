@@ -1,12 +1,7 @@
 
 import {sack} from "sack.vfs"
 //import config from "../config.jsox";
-import {send} from "./main.mjs";
-
-let config ;
-sack.Volume().readJSOX( "config.jsox", (c)=>{
-	config=c ;
-});
+import {config,send} from "./main.mjs";
 
 export class Task {
 	started = new Date(0);
@@ -63,10 +58,10 @@ export class Task {
 		const this_ = this;
 		// log is a getter that returns the tail of the log really
 		const log = JSOX.stringify( {op:"log", id:this.id, log:this.log } );
-		console.log( "ws sends:", log );
+		//console.log( "ws sends:", log );
 		val.send( log );
 		function close( code, reason ) {
-			console.log( "task websocket closed; removing self" );
+			//console.log( "task websocket closed; removing self" );
 			const ws = this_.#ws.findIndex( ws=>ws===val );
 			if( ws > -1 ) this_.#ws.splice( ws, 1 );
 			else	console.log( "untracked socket closed:", ws );
@@ -75,7 +70,7 @@ export class Task {
 
 	start() {
 			if( this.running ) {
-				console.log( "Already started:", this.#task.name );
+				//console.log( "Already started:", this.#task.name );
 				return;
 			}
 		let bin;

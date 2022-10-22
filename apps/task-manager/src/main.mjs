@@ -24,17 +24,20 @@ const JSOX = sack.JSOX;
 import {openServer} from "sack.vfs/apps/http-ws"
 import {Task} from "./task.mjs"
 
-let config ;
-sack.Volume().readJSOX( "config.jsox", (c)=>{
+export let config ;
+const disk = sack.Volume();
+disk.readJSOX( "config.tasks.jsox", (c)=>{
 	config=c ;
 	config.tasks.forEach( (task)=>{
 		const newTask = Task.load( task );
 		local.tasks.push( newTask );
 		local.taskMap[newTask.id] = newTask;
 	} );
-	openServer( {resourcePath:programRoot+"/../ui", npmPath:"..", port:config.port || 8080}, accept, connect );
+	openServer( {resourcePath:programRoot+"/../ui", npmPath:config.npmPath, port:config.port || 8080}, accept, connect );
 	local.tasks.forEach( task=>task.start() );
 });
+
+if( !config ) throw new Error( "Configuration has an error, or doesn't exist" );
 
 export function send( msg_ ) {
 	const msg = JSOX.stringify( msg_ );
@@ -42,7 +45,7 @@ export function send( msg_ ) {
 }
 
 function accept( ws ) {
-	console.log( "Accept socket? Why am I stalling? shared ports?" );
+	//console.log( "Accept socket? Why am I stalling? shared ports?" );
 	this.accept();
 }
 
@@ -110,7 +113,7 @@ function connect( ws ) {
 				} else {
 					const backlog = task.getLog( msg.at );
 					const backLogMsg = { op:"backlog", id:task.id, backlog };
-					console.log( "Sending backlog", backLogMsg );
+					//console.log( "Sending backlog", backLogMsg );
 					ws.send( JSOX.stringify( backLogMsg ))
 				}
 			}
@@ -129,7 +132,7 @@ function connect( ws ) {
 	}
 
 	function handleClose( code, reason ) {
-		console.log( "Client disconnect:", code, reason );
+		//console.log( "Client disconnect:", code, reason );
 		const id = local.connections.findIndex( conn=>conn===ws );
 		if( id >=0 ) local.connections.splice( id, 1 );
 	}
