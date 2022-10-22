@@ -239,6 +239,16 @@ there's a conversion to string from binary and a copy of that string from JS to 
    - report websocket send parameter failures better.
    - include application support `app/http-ws` simple module that can be included; see documentation in directory.
    - include CGI parameters in WS server instance object.
+   - Fix crash when a launched windows task fails.
+   - Fix parsing state error for `Volume().readJSOX()`.
+   - Fixed parsing state after a failure in object storage; reset parsing state after error.
+   - Fixed a double free on binary websocket buffers.
+   - Added apps
+     - http-ws : A generic HTTP server with primary WS provision; used as a module for other apps.
+     - uExpress : A minimal Express() emulator that hooks to http-ws.
+     - task-manager : A multi-service launcher
+     - prng : Add some tiny seedable PRNGs.
+     - events : Utility class to provide `.on()`, `.off()`.
 - 1.1.802
    - task input handling failure on windows; if only one callback was issued.
 - 1.1.801

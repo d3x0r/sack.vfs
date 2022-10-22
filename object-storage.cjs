@@ -990,7 +990,7 @@ _objectStorage.prototype.get = function( opts ) {
 		const priorReadId = currentReadId;
 		try {
 			currentStorage = os; // this part is synchronous... but leaves JS heap from os.read(), does callbacks using parser, but results with a parsed object
-				              // all synchronously.
+			                     // all synchronously.
 			os.read( currentReadId = opts.id
 				, parser, (obj,times)=>{
 					// with a new parser, only a partial decode before revive again...
@@ -1043,7 +1043,7 @@ _objectStorage.prototype.get = function( opts ) {
 					}
 			} );
 		}catch(err) {
-			//console.log( "ERROR:", err );
+			console.log( "ERROR:", err );
 			currentReadId = priorReadId;
 			rej(err);
 		}
@@ -1059,6 +1059,9 @@ _objectStorage.prototype.get = function( opts ) {
 		if( doneDecoding >=0 ) os.decoding.splice( doneDecoding, 1 );
 		else console.log( "Failed to find decoding object?" );
 		return r;
+	} ).catch( (err)=>{
+		const thisp = os.decoding.findIndex( d=>d.p === p );
+		if( thisp >=0 ) os.decoding.splice( thisp, 1 );
 	} );
 	return p;
 }

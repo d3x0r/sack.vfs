@@ -2,6 +2,7 @@
 let currentStorage = null;
 
 import {sack} from "sack.vfs";
+module.exports = function( sack ) {
 
 const _debug = false;
 const _debug_dangling = false;
@@ -12,6 +13,7 @@ const _debug_map = false;
 const _debug_replace = false;
 
 import os from "os";
+//const os = require( "os" );
 sack.SaltyRNG.setSigningThreads( os.cpus().length );
 
 // save original object.
@@ -21,6 +23,7 @@ const nativeVol = sack.Volume();
 const path = import.meta.url.replace(/file\:\/\/\//, '' ).split("/");
 const root = (path.splice(path.length-1,1),path.join('/')+"/");
 const remoteExtensionsSrc = nativeVol.read( root+"/object-storage-remote.js" );
+//const remoteExtensionsSrc = nativeVol.read( __dirname+"/object-storage-remote.js" );
 const remoteExtensions = remoteExtensionsSrc?remoteExtensionsSrc.toString():"// No COde Found";
 const jsonRemoteExtensions = JSON.stringify( remoteExtensions );
 
@@ -460,7 +463,7 @@ export class ObjectStorage {
 					throw new Error( "Container has no ID or is null" );					
 				}
 				_debug_output && console.trace( "WRite:", opts, storage );
-				if( this.versioned ) {				
+				if( this_.versioned ) {				
 					const id = opts.id.split( '.' );
 					//console.log( "Storing with an ID already?", obj, opts );
 					const newVersion = this_.storage.writeRaw( {id:id[0]}, storage );
@@ -482,7 +485,7 @@ export class ObjectStorage {
 					
 					//console.log( "saving stored container.id", typeof obj, obj, container.id );
 						
-					//this.stored.delete( obj );
+					//this_.stored.delete( obj );
 					//console.log( " *** SETTING ID HERE", container.id);
 					this_.stored.set( obj, container.id );
 					if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
@@ -1505,3 +1508,4 @@ export class StoredObject {
 }
 
 ObjectStorage.StoredObject = StoredObject
+//}

@@ -66,7 +66,8 @@ export function openServer( opts, cbAccept, cbConnect )
 		let filePath = resourcePath + unescape(req.url);
 		if( req.url.startsWith( "/node_modules/" ) 
 		   && ( req.url.startsWith( "/node_modules/@d3x0r" ) 
-		      || req.url.startsWith( "/node_modules/jsox" ) ) )
+		      || req.url.startsWith( "/node_modules/jsox" )
+		      || req.url.startsWith( "/node_modules/sack.vfs/apps" ) ) )
 			filePath=npm_path  + unescape(req.url);
 		let extname = path.extname(filePath);
 
@@ -78,9 +79,8 @@ export function openServer( opts, cbAccept, cbConnect )
 
 		const contentType = extMap[extname] || "text/plain";
 		//console.log( ":", extname, filePath )
-
 		if( disk.exists( filePath ) ) {
-			const headers = { 'Content-Type': contentType };
+			const headers = { 'Content-Type': contentType, 'Access-Control-Allow-Origin' : req.connection.headers.Origin };
 			if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
 			res.writeHead(200, headers );
 			res.end( disk.read( filePath ) );

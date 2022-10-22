@@ -39,6 +39,9 @@
     "./prng": {
       "require": "./apps/prng_short/prng_short.js",
       "import": "./apps/prng_short/prng_short.mjs"
+    },
+    "./task-manager": {
+      "import": "./apps/task-manager/src/main.mjs"
     }
   },
   "old_exports": {
