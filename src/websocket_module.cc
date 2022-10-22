@@ -1661,6 +1661,8 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 }
 
 static void Wait( void ) {
+	IdleFor( 250 );
+	return;
 	uint32_t tick = GetTickCount();
 	WakeableSleep( 250 );
 	if( (GetTickCount() - tick) > 200 ) {
@@ -1668,7 +1670,7 @@ static void Wait( void ) {
 		lprintf( "slept %d", tick );
 	}
 }
-#define Wait() WakeableSleep( 100 )
+#define Wait() IdleFor( 100 )
 
 
 static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
