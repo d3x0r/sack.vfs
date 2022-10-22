@@ -1468,6 +1468,9 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0 || ( (read == len) && ( result = jsox_parse_add_data( parser, NULL, 0 ) ) );
 					result = jsox_parse_add_data( parser, NULL, 0 ) ) {
+					if( result < 0 ) {
+						break;
+					}
 					//Local<Object> obj = Object::New( isolate );
 					PDATALIST data;
 					data = jsox_parse_get_data( parser );
@@ -1499,7 +1502,9 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 						break;
 				}
 				if( result < 0 ) {
+					resulted = TRUE;
 					PTEXT error = jsox_parse_get_error( parser );
+					jsox_parse_clear_state(parser);
 					if( error )
 						isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 					else
