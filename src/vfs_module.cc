@@ -662,6 +662,8 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 						data = json_parse_get_data( parser );
 						struct reviver_data r;
 						r.revive = FALSE;
+						r.failed = FALSE;
+						r.reviveStack = NULL;
 						r.isolate = isolate;
 						r.context = isolate->GetCurrentContext();
 						Local<Value> val = convertMessageToJS( data, &r );
@@ -731,7 +733,6 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 	void VolumeObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
-
 		if( args.Length() < 2 ) {
 			isolate->ThrowException( Exception::TypeError(
 				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data callback" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -805,6 +806,8 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 						if( data->Cnt ) {
 							struct reviver_data r;
 							r.revive = FALSE;
+							r.failed = FALSE;
+							r.reviveStack = NULL;
 							r.isolate = isolate;
 							r.context = isolate->GetCurrentContext();
 							Local<Value> val = convertMessageToJS2( data, &r );
