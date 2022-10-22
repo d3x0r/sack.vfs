@@ -1,0 +1,21 @@
+{
+	port: 8089,
+	winroot : "C:\\Program Files\\nodejs\\",
+	winsuffix: ".exe",
+	tasks: [
+/*****
+   Test to make sure log is sent in order
+ ****/
+		{ name: "Log Test Program",
+		  bin: "node",
+		  //linbin: "node",
+		  //winbin: "C:\\Program Files\\nodejs\\node.exe",
+		  work: "test/test_logging",
+		  args: ["--experimental-loader=sack.vfs/import.mjs", "generate_log.mjs" ],
+		  restart: false,
+		  env: { },
+		},
+
+	]
+}
+
