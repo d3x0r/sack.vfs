@@ -35,6 +35,12 @@ function connect() {
 	};
 	ws.onclose = function() { 
 		local.statusDisplay.remove();
+		for( let taskid in local.logs ) {
+			const log = local.logs[taskid];
+			log.logFrame.remove();
+			log.logList.remove();
+			delete local.logs[taskid];
+		}
 		setTimeout( ()=>connect(), 5000 );
 		// websocket is closed. 
 	};
