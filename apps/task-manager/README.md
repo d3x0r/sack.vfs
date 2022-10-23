@@ -1,7 +1,13 @@
 
 # Task Launcher and Manager
 
-hosts an http/websocket service for launcher interfacing.  Default port is `process.env.PORT || 8080`.
+hosts an http/websocket service for launcher interfacing.  Default port is `process.env.PORT || config.PORT || 8080`.  `config` the file 
+read from the current directory to load a file 'config.tasks.jsox' which is in JSOX format(JSON+).
+
+Task entries are described below. 
+
+
+`node  --experimental-loader=sack.vfs/import.mjs node_modules\sack.vfs\apps\task-manager\src\main.mjs`
 
 ## Configuration
 

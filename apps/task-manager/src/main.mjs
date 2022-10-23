@@ -33,7 +33,7 @@ disk.readJSOX( "config.tasks.jsox", (c)=>{
 		local.tasks.push( newTask );
 		local.taskMap[newTask.id] = newTask;
 	} );
-	openServer( {resourcePath:programRoot+"/../ui", npmPath:config.npmPath, port:config.port || 8080}, accept, connect );
+	openServer( {resourcePath:programRoot+"/../ui", npmPath:config.npmPath, port:Number(process.env.PORT) || config.port || 8080}, accept, connect );
 	local.tasks.forEach( task=>task.start() );
 });
 
