@@ -714,6 +714,8 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 								if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
 									json_dispose_message( &data );
 									json_parse_dispose_state( &parser );
+									Deallocate( char *, buf );
+									sack_fclose( file );
 									return;
 								}
 							}
