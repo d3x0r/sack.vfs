@@ -771,6 +771,8 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 							if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
 								jsox_dispose_message( &data );
 								jsox_parse_dispose_state( &parser );
+								Deallocate( char *, buf );
+								sack_vfs_close( file );
 								return;
 							}
 						}
@@ -816,6 +818,8 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 								if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
 									jsox_dispose_message( &data );
 									jsox_parse_dispose_state( &parser );
+									Deallocate( char *, buf );
+									sack_fclose( file );
 									return;
 								}
 							}
