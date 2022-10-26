@@ -43,12 +43,12 @@ export function uExpress() {
 				req_maps.push( { expr:a, cb:b } );
 		},
 		handle( req, res) {
-			//console.log( "Look for request:", req, res );
 			const parts = req.url.split("?");
 			const url = unescape(parts[0]);
-			const filepath = path.dirname(url)+((path.dirname(url)&&path.basename(url))?"/":"")+path.basename(url)+path.extname(url);
-			const name = path.basename(url);
-			const type = path.extname(url);
+			//console.log( "Look for request:", url, path.basename(url) );
+			const filepath = url;//path.dirname(url)+((path.dirname(url)&&path.basename(url))?"/":"")+path.basename(url);
+			//const name = path.basename(url);
+			//const type = path.extname(url);
                         
 			//console.log( "Think parts is:", filepath, name, type, parts[1] );
 			let cb;
