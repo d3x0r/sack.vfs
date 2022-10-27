@@ -62,10 +62,11 @@ export function uExpress() {
 					return handled;
 			}
 			for( let map of req_maps ) {
-				if( map.expr.match( filepath ) ) {
+				if( map.expr.test( filepath ) ) {
+					console.log( "expr?", map, map.expr );
 					let runNext = false;
 					ranOne = true;
-					map.cb( req, res, ()=>(runNext = true) );
+					handled = map.cb( req, res, ()=>(runNext = true) );
 					if( !runNext ) break;
 				}
 			}
