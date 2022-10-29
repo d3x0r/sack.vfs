@@ -63,7 +63,7 @@ export function uExpress() {
 			}
 			for( let map of req_maps ) {
 				if( map.expr.test( filepath ) ) {
-					console.log( "expr?", map, map.expr );
+					//console.log( "expr?", map, map.expr );
 					let runNext = false;
 					ranOne = true;
 					handled = map.cb( req, res, ()=>(runNext = true) );
