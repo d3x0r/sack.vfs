@@ -42,6 +42,9 @@
     },
     "./task-manager": {
       "import": "./apps/task-manager/src/main.mjs"
+    },
+    "./dbUtil": {
+      "import": "./apps/dbUtil/db.mjs"
     }
   },
   "old_exports": {
