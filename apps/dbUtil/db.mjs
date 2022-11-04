@@ -16,7 +16,7 @@ class Db2 extends sack.Sqlite {
 
 class Sqlite {
 	static loadSchema( db, table ) {
-		const newtable = new Table(db, table);
+		const newtable = new Table(db, table, true);
 		return newtable;
 	}
 
@@ -39,10 +39,16 @@ class Table {
 	keys = {};
 
 	db = null;
-	constructor( db_, tableName ) {
+	sqlite = false;
+	constructor( db_, tableName, sqlite ) {
 		this.db = db_;
 		this.name = tableName;
-		if( db_ ) this.loadColumns(db_);
+		this.sqlite = sqlite;
+		if( db_ ) 
+			if( sqlite ) 
+				this.loadSqliteColumns( db_ )
+			else
+				this.loadColumns(db_);
 	}
 
 	has( col ) {
@@ -57,19 +63,19 @@ class Table {
 			newCol.name = name;
 			newCol.type = t[0];
 			newCol.precision = p;
-			if( extra.includes( "DEFAULT" ) ) {
+			if( extra && extra.includes( "DEFAULT" ) ) {
 				newCol.default = tokenAfter( extra, "DEFAULT" );				
 			}
-			if( extra.includes( "AUTO_INCREMENT" ) || extra.includes( "auto_increment" ) ) {
+			if( extra && (extra.includes( "AUTO_INCREMENT" ) || extra.includes( "auto_increment" )) ) {
 				newCol.auto_increment = true;
 				newCol.primary_key = true;
 			}
-			if( !extra.includes( "NOT NULL" ) )
+			if( extra && !extra.includes( "NOT NULL" ) )
 				newCol.nullable = false;
 
 			this.columns.push( newCol );
 			this.cols[name] = newCol;
-			this.db.do( `ALTER TABLE ADD COLUMN ${newCol.name} ${type} ${extra || ""}` );
+			this.db.do( `ALTER TABLE ${this.name} ADD COLUMN ${newCol.name} ${type} ${extra || ""}` );
 	}
 
 	loadColumns(db) {
@@ -99,11 +105,12 @@ class Table {
 		const keys = db.do( "select * from INFORMATION_SCHEMA.STATISTICS where TABLE_NAME=? and TABLE_SCHEMA=DATABASE()", this.name );
 		for( let key of keys ) {
 			const index = this.keys[key.INDEX_NAME] || new Index();
+			//console.log( "index?", index );
 			index.name = key.INDEX_NAME;
 			index.unique = !key.NON_UNIQUE;	
 			index.columns.push( key.COLUMN_NAME );
 			if( !this.keys[key.INDEX_NAME] ) {
-				this.keys[key.INDEX_NAME] = key;
+				this.keys[key.INDEX_NAME] = index;
 				this.indexes.push( index );
 			} else {
 				
@@ -112,14 +119,94 @@ class Table {
 
 	}	
 	
+	loadSqliteColumns(db) {
+		//const cols_ = db.do( "select * from sqlite_schema" );
+		const cols = db.do( `PRAGMA table_info(${this.name})` );
+		//const cols2 = db.do( `PRAGMA table_info('stuffkey')` );
+		/*
+  {
+    type: 'table',
+    name: 'table1',
+    tbl_name: 'table1',
+    rootpage: 2,
+    sql: 'CREATE TABLE `table1` (`id` INTEGER PRIMARY KEY,`stuff` int(11))'
+  }
+  {
+    type: 'index',
+    name: 'stuffkey',
+    tbl_name: 'table2',
+    rootpage: 4,
+    sql: "CREATE INDEX 'stuffkey' ON 'table2'('stuff')"
+  }
+
+  {
+    cid: 0,
+    name: 'id',
+    type: 'INTEGER',
+    notnull: 0,
+    dflt_value: null,
+    pk: 1
+  },
+
+*/
+		//console.log( "Sqlite info:", cols_ );
+		//console.log( "Sqlite info:", cols );
+		//console.log( "Sqlite info:", cols2 );
+		//process.exit(0)
+		for( let col of cols ) {
+			const newcol = new Column();
+			newcol.name = col.name;
+			const t = col.type.split( '(');
+			if( t.length > 1 ) {
+				newcol.precision = Number(t[1].slice( 0, -1 ));
+			}
+			newcol.nullable = !col.notnull;
+			newcol.default = col.dflt_value;
+			newcol.type = t[0];
+			newcol.type_ = col.type;
+
+			newcol.primary_key = !!col.pk;
+
+//			if( col.EXTRA ==="auto_incrememnt" )
+//				newcol.auto_increment = true
+
+			//console.log( "COL:", newcol );
+			this.columns.push( newcol );
+			this.cols[newcol.name] = newcol;
+			//const 
+			//col.COLUMN_NAME
+			//col.DATA_TYPE
+			//col.COLUMN_TYPE // includes DATA_TYPE + (precision)
+		}		
+/*
+		const keys = db.do( "select * from INFORMATION_SCHEMA.STATISTICS where TABLE_NAME=? and TABLE_SCHEMA=DATABASE()", this.name );
+		for( let key of keys ) {
+			const index = this.keys[key.INDEX_NAME] || new Index();
+			//console.log( "index?", index );
+			index.name = key.INDEX_NAME;
+			index.unique = !key.NON_UNIQUE;	
+			index.columns.push( key.COLUMN_NAME );
+			if( !this.keys[key.INDEX_NAME] ) {
+				this.keys[key.INDEX_NAME] = index;
+				this.indexes.push( index );
+			} else {
+				
+			}
+		}
+*/
+	}	
 }
 
 class Index {
+	name = null;
+	unique = false;
+	columns = [];
 }
 
 class Column {
 	name = null;
-	type = null;
+	type = null; // SQL expression for type
+	type_ = null; // sqlite idea of type
 	precision = 0;
 	default = null;
 	nullable = false;
