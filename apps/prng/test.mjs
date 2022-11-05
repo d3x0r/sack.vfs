@@ -4,6 +4,8 @@ import * as PRNG from "./prng_short.mjs"
 const s = PRNG.getSeed4( "Seed" );
 console.log( "Seeds:", s )
 
+const sf = PRNG.getSeed( "Seed" );
+console.log( "Seeds2:", sf(), sf(), sf(), sf() );
 const bits = [];
 
 function resetBits() {
