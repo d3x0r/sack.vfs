@@ -249,6 +249,8 @@ there's a conversion to string from binary and a copy of that string from JS to 
      - task-manager : A multi-service launcher
      - prng : Add some tiny seedable PRNGs.
      - events : Utility class to provide `.on()`, `.off()`.
+     - dbUtil : Utilities for database schema update and reading.
+   - Fix writing binary buffer that's a Uint8Array.
 - 1.1.802
    - task input handling failure on windows; if only one callback was issued.
 - 1.1.801
