@@ -1079,6 +1079,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		int type = 0;		
 		if( ( (type=1), args[1]->IsArrayBuffer()) || ((type=2),args[1]->IsUint8Array()) ) {
 			uint8_t *buf ;
+			size_t offset = 0;
 			size_t length;
 			if( type == 1 ) {
 				Local<ArrayBuffer> myarr = args[1].As<ArrayBuffer>();
@@ -1096,19 +1097,20 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 #else
 				buf = (uint8_t*)buffer->GetContents().Data();
 #endif
-				length = buffer->ByteLength();
+				offset = _myarr->ByteOffset();
+				length = _myarr->ByteLength(); // only the length of the view
 			}
 
 			if( vol->volNative ) {
 				struct sack_vfs_file *file = sack_vfs_openfile( vol->vol, *fName );
-				sack_vfs_write( file, (const char*)buf, length );
+				sack_vfs_write( file, (const char*)buf+offset, length );
 				sack_vfs_truncate( file );
 				sack_vfs_close( file );
 
 				args.GetReturnValue().Set( True(isolate) );
 			} else {
 				FILE *file = sack_fopenEx( 0, *fName, "wb", vol->fsMount );
-				sack_fwrite( buf, length, 1, file );
+				sack_fwrite( buf + offset, length, 1, file );
 				sack_fclose( file );
 
 				args.GetReturnValue().Set( True(isolate) );
@@ -1640,30 +1642,48 @@ void FileObject::writeFile(const v8::FunctionCallbackInfo<Value>& args) {
 
 	//SACK_VFS_PROC size_t CPROC sack_vfs_write( struct sack_vfs_file *file, char * data, size_t length );
 	if( args.Length() == 1 ) {
+		int type = 0;
 		if( args[0]->IsString() ) {
 			String::Utf8Value data( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			if( file->vol->volNative )
 				sack_vfs_write( file->file, *data, data.length() );
 			else
 				sack_fwrite( *data, data.length(), 1, file->cfile );
-		} else if( args[0]->IsArrayBuffer() ) {
-			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+		} else if( ( (type=1), args[0]->IsArrayBuffer()) || ((type=2),args[0]->IsUint8Array()) ) {
+			uint8_t* buf;
+			size_t offset = 0;
+			size_t length;
+			if (type == 1) {
+				Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast(args[0]);
 #if ( NODE_MAJOR_VERSION >= 14 )
-			std::shared_ptr<BackingStore> contents = ab->GetBackingStore();
-			if( file->vol->volNative )
-				sack_vfs_write( file->file, (char*)contents->Data(), contents->ByteLength() );
-			else
-				sack_fwrite( contents->Data(), contents->ByteLength(), 1, file->cfile );
+				std::shared_ptr<BackingStore> contents = ab->GetBackingStore();
+				buf = (uint8_t*)contents->Data();
+				length = ab->ByteLength();
 #else
-			ArrayBuffer::Contents contents = ab->GetContents();
-			//file->buf = (char*)contents.Data();
-			//file->size = contents.ByteLength();
-			if( file->vol->volNative )
-				sack_vfs_write( file->file, (char*)contents.Data(), contents.ByteLength() );
-			else
-				sack_fwrite( contents.Data(), contents.ByteLength(), 1, file->cfile );
+				ArrayBuffer::Contents contents = ab->GetContents();
+				//file->buf = (char*)contents.Data();
+				//file->size = contents.ByteLength();
+				buf = contents.Data();
+				length = contents.ByteLength();
 #endif
-		}
+			}
+			else if (type == 2) {
+				Local<Uint8Array> _myarr = args[0].As<Uint8Array>();
+				Local<ArrayBuffer> buffer = _myarr->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+				buf = (uint8_t*)buffer->GetBackingStore()->Data();
+#else
+				buf = (uint8_t*)buffer->GetContents().Data();
+#endif
+				offset = _myarr->ByteOffset();
+				length = _myarr->ByteLength();
+
+			}
+			if (file->vol->volNative)
+				sack_vfs_write(file->file, buf+offset, length );
+			else
+				sack_fwrite(buf + offset, length, 1, file->cfile);
+			}
 	}
 }
 
