@@ -25,26 +25,19 @@ const extMap = { '.js': 'text/javascript'
 
 const requests = [];
 let reqTimeout = 0;
+let lastFilePath = null;
 function logRequests() {
 	const log = requests.join(', ');
 	requests.length = 0;
 	console.log( "Requests:", log );
 }
 
-//exports.open = openServer;
-export function openServer( opts, cbAccept, cbConnect )
-{
-	let handlers = [];
-	const serverOpts = opts || {port:process.env.PORT || 8080} ;
-	const server = sack.WebSocket.Server( serverOpts )
-	const disk = sack.Volume();
+export function getRequestHandler( serverOpts ) {
 	let resourcePath = serverOpts.resourcePath || ".";
+	const npm_path = serverOpts.npmPath || ".";
+	const disk = sack.Volume();
 
-	//console.log( "serving on " + serverOpts.port, server );
-	//console.log( "with:", disk.dir() );
-
-
-	server.onrequest = function( req, res ) {
+	return function( req, res ) {
 		/*
 			this is the request remote address if required....
 		const ip = ( req.headers && req.headers['x-forwarded-for'] ) ||
@@ -52,13 +45,6 @@ export function openServer( opts, cbAccept, cbConnect )
 			 req.socket.remoteAddress ||
 			 req.connection.socket.remoteAddress;
 		*/
-		for( let handler of handlers ) {
-			if( handler( req, res, serverOpts ) ) {
-				//console.log( "handler accepted request..." );
-				return;
-			}
-		}
-		const npm_path = serverOpts.npmPath || ".";
 		//const resource_path = serverOpts.resourcePath || ".";
 
 		//console.log( "Received request:", req );
@@ -88,18 +74,47 @@ export function openServer( opts, cbAccept, cbConnect )
 				clearTimeout( reqTimeout );
 			reqTimeout = setTimeout( logRequests, 100 );
 			requests.push( req.url );
+			return true;
 		} else {
+			lastFilePath = filePath;
+			return false;
+		}
+	};
+
+}
+
+//exports.open = openServer;
+export function openServer( opts, cbAccept, cbConnect )
+{
+	let handlers = [];
+	const serverOpts = opts || {port:process.env.PORT || 8080} ;
+	const server = sack.WebSocket.Server( serverOpts )
+
+	//console.log( "serving on " + serverOpts.port, server );
+	//console.log( "with:", disk.dir() );
+
+	const reqHandler = getRequestHandler( opts );
+	server.onrequest = (req,res)=>{
+		for( let handler of handlers ) {
+			if( handler( req, res, serverOpts ) ) {
+				//console.log( "handler accepted request..." );
+				return true;
+			}
+		}
+
+		if( !reqHandler( req,res ) ) {
 			if( requests.length !== 0 )
 				clearTimeout( reqTimeout );
 			reqTimeout = setTimeout( logRequests, 100 );
 				
-			requests.push( "Failed request: " + req.url + " as " + filePath );
+			requests.push( "Failed request: " + req.url + " as " + lastFilePath );
 			res.writeHead( 404 );
 			res.end( "<HTML><HEAD>404</HEAD><BODY>404</BODY></HTML>");
 		}
-	};
+	}
 
 	server.onaccept = function ( ws ) {
+			console.log( "send accept?", cbAccept );
 		if( cbAccept ) return cbAccept.call(this,ws);
 		if( process.env.DEFAULT_REJECT_WEBSOCKET == "1" )
 			this.reject();
