@@ -11,7 +11,7 @@ export class Events {
 	}
 	off( evt, d ) {
 		if( "function" === typeof d ) {
-			const a = this.#vents[evt];
+			const a = this.#events[evt];
 			for( let i = 0; i < a.length; i++ ) {
 				if( a[i] === d ) {
 					a.splice( i, 1 );
