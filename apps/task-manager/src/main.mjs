@@ -22,8 +22,9 @@ const JSOX = sack.JSOX;
 
 import {openServer} from "sack.vfs/apps/http-ws"
 import {Task} from "./task.mjs"
-
-export const config = (await import( (process.platform==="win32"?"file://":"")+process.cwd()+"/config.jsox" )).default;
+export const pwdBare = process.cwd();
+export const pwd = (process.platform==="win32"?"file://":"")+pwdBare;
+export const config = (await import( pwd+"/config.tasks.jsox" )).default;
 
 config.tasks.forEach( (task)=>{
 	const newTask = Task.load( task );

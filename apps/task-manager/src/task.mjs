@@ -1,6 +1,6 @@
 
 import {sack} from "sack.vfs"
-import {config,send} from "./main.mjs";
+import {pwdBare as pwd,config,send} from "./main.mjs";
 
 export class Task {
 	started = new Date(0);
@@ -18,6 +18,8 @@ export class Task {
 	constructor(task) {
 		this.#task = task;
 		this.name = task.name;
+		task.work = pwd + "/" + task.work;
+		//console.log( "Making work:", task.work );
 	}
 
 	set resume(val) {
