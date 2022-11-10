@@ -1,6 +1,5 @@
 
 import {sack} from "sack.vfs"
-//import config from "../config.jsox";
 import {config,send} from "./main.mjs";
 
 export class Task {

@@ -4,8 +4,7 @@ const myPath = import.meta.url.split(/\/|\\/g);
 const tmpPath = myPath.slice();
 tmpPath.splice( 0, 3 );
 tmpPath.splice( tmpPath.length-1, 1 );
-const programRoot = (process.platform==="win32"?"":'/')+tmpPath.join( '/' );
-
+const appRoot = (process.platform==="win32"?"":'/')+tmpPath.slice(0,-1).join( '/' );
 //const appPath = process.argv[1].split(/\/|\\/g);
 //console.log( "myRoot:", programRoot );
 
@@ -24,20 +23,15 @@ const JSOX = sack.JSOX;
 import {openServer} from "sack.vfs/apps/http-ws"
 import {Task} from "./task.mjs"
 
-export let config ;
-const disk = sack.Volume();
-disk.readJSOX( "config.tasks.jsox", (c)=>{
-	config=c ;
-	config.tasks.forEach( (task)=>{
-		const newTask = Task.load( task );
-		local.tasks.push( newTask );
-		local.taskMap[newTask.id] = newTask;
-	} );
-	openServer( {resourcePath:programRoot+"/../ui", npmPath:config.npmPath, port:Number(process.env.PORT) || config.port || 8080}, accept, connect );
-	local.tasks.forEach( task=>task.start() );
-});
+export const config = (await import( (process.platform==="win32"?"file://":"")+process.cwd()+"/config.jsox" )).default;
 
-if( !config ) throw new Error( "Configuration has an error, or doesn't exist" );
+config.tasks.forEach( (task)=>{
+	const newTask = Task.load( task );
+	local.tasks.push( newTask );
+	local.taskMap[newTask.id] = newTask;
+} );
+openServer( {resourcePath:appRoot+"/ui", npmPath:config.npmPath, port:Number(process.env.PORT) || config.port || 8080}, accept, connect );
+local.tasks.forEach( task=>task.start() );
 
 export function send( msg_ ) {
 	const msg = JSOX.stringify( msg_ );
