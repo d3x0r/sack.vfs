@@ -229,7 +229,8 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.803(in progress)
+- 1.1.804(in progress)
+- 1.1.803  
    - include LibreSSL 3.5.3 to avoid conflicts/incompatibilities with Node's included OpenSSL versions.
    - change npm install to use cmake-js to be able to use included LibreSSL
    - handle SQL DATE type as a time(TIMESTAMP).
@@ -251,6 +252,7 @@ there's a conversion to string from binary and a copy of that string from JS to 
      - events : Utility class to provide `.on()`, `.off()`.
      - dbUtil : Utilities for database schema update and reading.
    - Fix writing binary buffer that's a Uint8Array.
+   - Reset environment variables after launching tasks.
 - 1.1.802
    - task input handling failure on windows; if only one callback was issued.
 - 1.1.801
