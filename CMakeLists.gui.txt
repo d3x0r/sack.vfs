@@ -164,6 +164,7 @@ else( UNIX )
 	set( VFSLIB sack_vfs.pp.module )
 endif( UNIX )
 
+  target_link_libraries( ${PROJECT} crypto-49 tls-25 ssl-52 )
 if( WIN32 )
   target_link_libraries( ${PROJECT} Bcrypt )
 endif( WIN32 )
