@@ -1,0 +1,71 @@
+
+<center>
+
+<ul id="choiceList">
+</ul>
+
+<div id="Cancel" class="button" tabindex="0" style="width: max-content;display:inline-block">
+	<div class="buttonInner" style="width: 12em">Cancel</div>
+</div>
+
+<div id="Ok" class="button" tabindex="0" style="width: max-content;display:inline-block">
+	<div class="buttonInner" style="width: 12em">Ok</div>
+</div>
+
+</center>
+
+
+
+<script type="module">
+
+const rootNode = document.getElementById( rootId ).parentNode;
+import {popups,AlertForm} from "/node_modules/@d3x0r/popups/popups.mjs"
+
+const okButton = rootNode.querySelector( "#ok" );
+const cancelButton = rootNode.querySelector( "#cancel" );
+
+const choices = {
+};
+
+const priorChoices = [];
+let lastChoice = null;
+
+okButton.addEventListener( "click", (evt)=>{
+	form.on( "ok", true );
+} );
+
+cancelButton.addEventListener( "click", (evt)=>{
+	lastChoice = null;
+	form.on( "cancel", true );
+} );
+
+export function getChoice() {
+	return lastChoice;
+}
+
+export function addChoice( choice ) {
+	choices[choice.name] = false;
+	const radio = popups.makeLeftRadioChoice( choiceList, choices, choice.name, choice.description, "choice" );
+	priorChoices.push( { el:radio, c:choice } );
+	radio.addEventListener( "change", (evt)=>{
+		if( radio.checked ) 
+			lastChoice = choice;
+	} );
+}
+
+export function setForm( form ) {
+	choiceForm = form;
+
+	form.on( "reset", ()=>{		
+		for( let c in priorChoices ) {
+			c.el.remove();
+			delete choices[c.c.name];
+		}
+		priorChoices.length = 0;
+		
+	} );
+}
+
+</script>
+
+

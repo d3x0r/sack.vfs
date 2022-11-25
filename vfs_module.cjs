@@ -3,7 +3,8 @@ const util = require('util');
 
 var sack, errN = [];
 try {
-	sack = require('sack' );
+	//sack = require('sack' );
+	//console.log( "Got sack loaded?" );
 } catch( err ) {
 	errN.push(err);
 }
@@ -57,6 +58,7 @@ if( !sack )
 
 require( "./sack-jsox.cjs" )(sack);
 require( "./object-storage.cjs" )(sack);
+require( "./object-storage-cb.cjs" )(sack);
 
 module.exports=exports=sack;
 

@@ -2943,6 +2943,9 @@ wscObject::wscObject( wscOptions *opts ) {
 	} else {
 		lprintf( "Socket returned Null?" );
 	}
+	} else {
+		lprintf( "Socket returned Null?" );
+	}
 }
 
 wscObject::~wscObject() {

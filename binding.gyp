@@ -28,13 +28,15 @@
            , "DEFAULT_OUTPUT_STDERR"
            , "USE_SQLITE","USE_SQLITE_INTERFACE","FORCE_COLOR_MACROS",
            "NO_OPEN_MACRO","NO_FILEOP_ALIAS","JSON_PARSER_MAIN_SOURCE", "SQLITE_ENABLE_LOCKING_STYLE=0","SQLITE_THREADSAFE=0","SQLITE_OMIT_UTF16","SQLITE_ENABLE_COLUMN_METADATA=1", "SQLITE_DEFAULT_FOREIGN_KEYS=1", "NO_MIN_MAX_MACROS",
-           "BUILD_NODE_ADDON"
+           "BUILD_NODE_ADDON","OPENSSL_API_COMPAT=10101","XOPENSSL_API_LEVEL=10100"
         ],
     'conditions': [
           ['OS=="linux"', {
             'defines': [
-              '__LINUX__', '__NO_ODBC__','__MANUAL_PRELOAD__','__INTERNAL_UUID__','UUID_SOURCE'
+              '__LINUX__','__MANUAL_PRELOAD__','__INTERNAL_UUID__','UUID_SOURCE'
+		, '__NO_ODBC__'
             ],
+	#, '__NO_ODBC__'
             'cflags_cc': ['-Wno-misleading-indentation','-Wno-parentheses','-Wno-unused-result'
 			,'-Wno-char-subscripts'
 			,'-Wno-empty-body','-Wno-format', '-Wno-address'

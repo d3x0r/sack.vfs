@@ -67,6 +67,8 @@ set( DEFINITIONS   __STATIC__ __STATIC_GLOBALS__
 		SUPPORT_LOG_ALLOCATE  # lower level output; fputs
 		__DISABLE_UDP_SYSLOG__  # there's no options to enable this so just don't include it.
 		__DISABLE_SYSLOGD_SYSLOG__  # there's no options to enable this so just don't include it.
+		xOPENSSL_API_LEVEL=10100 
+		OPENSSL_API_COMPAT=10101
                  )
 
 set( MOREDEFS  "DEFAULT_OUTPUT_STDERR=1" )
@@ -76,7 +78,6 @@ if( APPLE )
 endif( APPLE )
 
 if( EXISTS ${SACK_BASE} )
-
 set( INCLUDES
 	-I${SACK_BASE}/include
 	-I${SACK_BASE}/src/contrib/sha1lib
@@ -93,6 +94,7 @@ foreach( DEF ${DEFINITIONS} )
 ENDFOREACH()
 
 FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define NO_AUTO_VECTLIB_NAMES\n" )
+FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define NODE_ADDON_BUILD\n" )
 
 
 SET( EXTRA_HEADERS
@@ -201,20 +203,22 @@ SET( EXTRA_SOURCES
 )
 
 # android has to force this off....
-if( ON )
-set( EXTRA_SOURCES ${EXTRA_SOURCES} 
-		#${SACK_BASE}/src/msgsvr/client/global.h
-		${SACK_BASE}/src/typelib/msgqueue.c
-		${SACK_BASE}/src/msgsvr/client/client_common.c
-		${SACK_BASE}/src/msgsvr/client/client_client.c
-		${SACK_BASE}/src/msgsvr/client/client_events.c
-		${SACK_BASE}/src/msgsvr/client/client_input.c
-		${SACK_BASE}/src/msgsvr/client/client_local.c
-		${SACK_BASE}/src/msgsvr/client/client_output.c
-		${SACK_BASE}/src/msgsvr/client/client_service.c 
-		${SACK_BASE}/src/msgsvr/summoner/construct.c
-)
-endif( ON )
+# Message service support - SYSV Message Queue IPC.  
+# Unused; network websocket connectivity suffices.
+#if( ON )
+#set( EXTRA_SOURCES ${EXTRA_SOURCES} 
+#		#${SACK_BASE}/src/msgsvr/client/global.h
+#		${SACK_BASE}/src/typelib/msgqueue.c
+#		${SACK_BASE}/src/msgsvr/client/client_common.c
+#		${SACK_BASE}/src/msgsvr/client/client_client.c
+#		${SACK_BASE}/src/msgsvr/client/client_events.c
+#		${SACK_BASE}/src/msgsvr/client/client_input.c
+#		${SACK_BASE}/src/msgsvr/client/client_local.c
+#		${SACK_BASE}/src/msgsvr/client/client_output.c
+#		${SACK_BASE}/src/msgsvr/client/client_service.c 
+#		${SACK_BASE}/src/msgsvr/summoner/construct.c
+#)
+#endif( ON )
 
 if( __ANDROID__ )
 	set( EXTRA_SOURCES ${EXTRA_SOURCES} 
@@ -338,12 +342,12 @@ set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc PROPER
 if( UNIX )
   add_definitions( -D__INTERNAL_UUID__ )
   add_definitions( -DUUID_SOURCE )
-  add_definitions( -D__NO_ODBC__ )	
+  #add_definitions( -D__NO_ODBC__ )	
 endif( UNIX )
 
 set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
 if( CMAKE_COMPILER_IS_GNUCC )
-   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-std=c++11 -Wno-unused-result -Wno-address-of-packed-member")
+   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-std=c++14 -Wno-unused-result -Wno-address-of-packed-member")
 endif( CMAKE_COMPILER_IS_GNUCC )
 set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
 target_link_libraries(${PROJECT} ${CMAKE_JS_LIB})

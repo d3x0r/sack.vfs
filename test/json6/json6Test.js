@@ -28,9 +28,7 @@ describe('Basic parsing', function () {
 			expect(o).to.equal(123);
 		});
 		it('Decimal with bad character', function () {
-			expect(function () {
-				parse( "12\u{10FFFF}" );
-			}).to.throw(Error, /fault while parsing number/);
+			expect( parse( "12\u{10FFFF}" ) ).to.equal(12 );
 		});
 		it('Decimal with separators', function () {
 			const o = parse( "123_456_789" );

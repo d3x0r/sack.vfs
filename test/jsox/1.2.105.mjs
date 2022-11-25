@@ -34,35 +34,40 @@ World.fromString = function( field, value ) {
 		//return this.#internalField;
 	}else return this;
 }
-JSOX.addType( "~Wr", World, null, World.fromString );
-JSOX.fromJSOX( "~Wr2", World );
 
 function Line() {}
-JSOX.addType( "~L", Line );
 
 function Wall() {}
-JSOX.addType( "~Wl", Wall );
 
 function Sector() {}
-JSOX.addType( "~S", Sector );
 
 function Texture() {}
-JSOX.addType( "~T", Texture );
 
 function Name() { }
-JSOX.addType( "~N", Name );
 
 function Vector() { this.x = 0; this.y = 0; this.z = 0 }
-JSOX.addType( "v3", Vector );
 
 function Ray() { this.n = new Vector(); this.o = new Vector(); }
-JSOX.addType( "r", Ray );
 
 describe('Added in 1.2.105', function () {
 
+
+
 	it( 'Handles Arrays of Typed Items', function() {
+
+	JSOX.addType( "~Wr", World, null, World.fromString );
+	JSOX.fromJSOX( "~Wr2", World );
+	JSOX.addType( "~L", Line );
+	JSOX.addType( "~Wl", Wall );
+	JSOX.addType( "~S", Sector );
+	JSOX.addType( "~T", Texture );
+	JSOX.addType( "~N", Name );
+	JSOX.addType( "v3", Vector );
+	JSOX.addType( "r", Ray );
+
 		const str1 = '{op:world,world:~Wr{lines:[~L{from:-5,id:0,r:{n:v3{x:0,y:1,z:0},o:v3{x:-5,y:0,z:0}},to:5},~L{from:-5,id:1,r:{n:v3{x:1,y:0,z:0},o:v3{x:0,y:5,z:0}},to:5},~L{from:-5,id:2,r:{n:v3{x:1,y:0,z:0},o:v3{x:0,y:-5,z:0}},to:5},~L{from:-5,id:3,r:{n:v3{x:0,y:1,z:0},o:v3{x:5,y:0,z:0}},to:5}],names:[~N{flags:{vertical:false},id:0,name:Default}],sectors:[~S{id:0,name:null,r:{n:v3{x:0,y:0,z:1},o:v3{x:0,y:0,z:0}},texture:~T{flags:{color:true},name:ref["world","names",0]},wall:~Wl{end:~Wl{end:~Wl{end:ref["world","sectors",0,"wall","end"],end_at_end:true,id:3,into:null,line:ref["world","lines",3],start:~Wl{end:ref["world","sectors",0,"wall","end","end"],end_at_end:false,id:2,into:null,line:ref["world","lines",2],start:ref["world","sectors",0,"wall"],start_at_end:false},start_at_end:true},end_at_end:false,id:1,into:null,line:ref["world","lines",1],start:ref["world","sectors",0,"wall"],start_at_end:true},end_at_end:false,id:0,into:null,line:ref["world","lines",0],start:ref["world","sectors",0,"wall","end","end","start"],start_at_end:false}}],walls:[ref["world","sectors",0,"wall"],ref["world","sectors",0,"wall","end"],ref["world","sectors",0,"wall","end","end","start"],ref["world","sectors",0,"wall","end","end"]]}}'
 		const obj1 = JSOX.parse( str1 );
+console.log( "obj1:", obj1 );
 		const str2 = JSOX.stringify( obj1, null, '   ' );
 		// /need to form a similar object, with circular links to test... 
 		// will lose the type names?

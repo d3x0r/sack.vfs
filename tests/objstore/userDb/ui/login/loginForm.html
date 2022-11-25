@@ -1,0 +1,49 @@
+<center>
+<form id="loginForm" name="loginForm">
+	<div>Account Name</div>
+	<input id="user" class="loginUsername" autocomplete="username">
+        
+	<div>Password</div>
+	<input id="password" class="loginPassword" type="password">
+	<button type="submit" style="display:none"> </button>
+</form>
+
+<form id="createForm" name="loginForm">
+	<div>Display Name (shown)</div>
+	<input id="name" class="loginUsername" autocomplete="name"/>
+	<div>Account Name (login, private)</div>
+	<input id="user" class="loginUsername" autocomplete="username" />
+
+	<div>Email(account recovery)</div>
+	<input id="email" class="loginUsername" autocomplete="email"/>
+
+	<div>Password</div>
+		<input id="password" class="loginPassword" type="password"/>
+	<div>Password (again)</div>
+		<input id="password2" class="loginPassword" autocomplete="off" type="password"/>
+	<button type="submit" style="display:none"> </button>
+</form>
+
+
+<form id="guestForm" name="loginForm">
+	<div>Display Name</div> <input id="user" autocomplete="name" class="loginUsername" class="name"/>
+	<button type="submit" style="display:none"> </button>
+</form>
+
+<div style="height: 10px;"></div>
+
+<div id="doLogin" class="button" tabindex="0" style="width: max-content;">
+	<div class="buttonInner" style="width: max-content;">Login</div>
+</div>
+
+<div id="guestLogin" class="button" tabindex="0" style="width: max-content;">
+	<div id="guestLoginInner" class="buttonInner" style="width: max-content;">Use Guest Login</div>
+</div>
+
+<div id="createAccount" class="button" tabindex="0" style="width: max-content;">
+	<div id="createAccountInner" class="buttonInner" style="width: max-content;">Create Account</div>
+</div>
+</center>
+
+<script type="module" src="../login/webSocketClient.js" />
+

@@ -24,6 +24,11 @@ const storage = {
 const waiters = [];
 const waiters2 = [];
 
+process.on('unhandledRejection', error => {
+  // Will print "unhandledRejection err is not defined"
+  console.log('unhandledRejection', error.message, error);
+});
+
 
 function loadConfig() {
 	if( waiters.length > 0 ) {
@@ -41,6 +46,8 @@ return new Promise( (res,rej)=>{
 
 		directory.folder( "Subdirectory/fonts/modern" ).then( (newdir)=>{
 			console.log( "Subdirectory created?", newdir );
+		} ).catch( (err)=>{
+			console.log( "Failed to find directory?", err );
 		} );
 		
 		function setConfig(data){
@@ -65,10 +72,18 @@ return new Promise( (res,rej)=>{
 					saveConfig().then( (a)=>{
 						console.log( "SaveCOnfig got back:", a );
 						storage.configFile.read().then( setConfig ).catch((err)=>console.log( "Fatal Error:", err));
+					} ).catch( ()=>{
+						console.log( "So saveconfig failed?" );
 					} );
 				} );
 			} else
 				console.log( "throwing away a file:", file );
+		} ).catch( ()=>{
+			directory.create( "config.jsox" ).then( file=>{
+				file.write( "{config:'exists'}" );
+			} ).catch( ()=>{
+				console.log( "Cant open, can't create, WTH?" );
+			} );
 		} );
 	} );
 });

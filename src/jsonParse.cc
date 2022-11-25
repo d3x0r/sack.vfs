@@ -163,6 +163,7 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 				}
 			}
 		}
+		}
 		json_dispose_message( &elements );
 		if( result < 2 )
 			break;
@@ -254,6 +255,7 @@ void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 					if( data_ ) delete data_;
 					return;
 				}
+			}
 			}
 			json_dispose_message( &elements );
 		}

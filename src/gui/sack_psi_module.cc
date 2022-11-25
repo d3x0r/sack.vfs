@@ -359,7 +359,7 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 		e.data.size.w = va_arg( args, uint32_t );
 		e.data.size.h = va_arg( args, uint32_t );
 		e.data.size.start = va_arg( args, LOGICAL );
-		lprintf( "size:%d %d", e.data.size.w, e.data.size.h);
+		//lprintf( "size:%d %d", e.data.size.w, e.data.size.h);
 		break;
 	}
 
@@ -1630,7 +1630,7 @@ static void OnSizeCommon( CONTROL_FRAME_NAME )(PSI_CONTROL pc, LOGICAL startOrMo
 	if( control ) {
 		uint32_t w, h;
 		GetFrameSize( pc, &w, &h );
-		lprintf( "Console frame size:%d %d", w, h );
+		//lprintf( "Console frame size:%d %d", w, h );
 		MakePSIEvent( control, false, Event_Control_Resize, w, h, startOrMoved );
 	}
 }

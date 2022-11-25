@@ -58,7 +58,7 @@ else( WIN32 )
 endif( WIN32 )
 
 if( NOT EXISTS GIT_REPO )
-	set( GIT_REPO git://github.com/d3x0r/sack )
+	set( GIT_REPO https://github.com/d3x0r/sack )
 endif( NOT EXISTS GIT_REPO )
 
 ExternalProject_Add( sack
@@ -99,9 +99,9 @@ foreach( DEF ${DEFINITIONS} )
 ENDFOREACH()
 
 
-include_directories(${CMAKE_JS_INC} )
 include_directories(${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/include/SACK )
 include_directories(${CMAKE_BINARY_DIR}/intershell-${CMAKE_BUILD_TYPE}/include/SACK )
+include_directories(${CMAKE_JS_INC} )
 
 if( WIN32 )
 	set( MORE_MODULE_SOURCES 
@@ -164,6 +164,7 @@ else( UNIX )
 	set( VFSLIB sack_vfs.pp.module )
 endif( UNIX )
 
+  target_link_libraries( ${PROJECT} tls-20 ssl-48 crypto-46 )
 target_link_libraries(${PROJECT} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE_JS_LIB} )
 
   add_custom_command( TARGET ${PROJECT} POST_BUILD

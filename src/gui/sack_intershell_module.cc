@@ -329,9 +329,13 @@ static void configConvertArgs( arg_list args, Local<Value> **ppargv, int *argc )
 		case CONFIG_ARG_DATA_SIZE:
 			{
 				PARAM( args, size_t, value );
+#if ( NODE_MAJOR_VERSION >= 14 )
+				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)buffer, value, releaseBufferBackingStore, NULL );
+				argResult[n - nBias] = SharedArrayBuffer::New( isolate, bs );
+#else
 				argResult[n - nBias] = ArrayBuffer::New( isolate, buffer, value );
 				//result->Set( n-nBias, ArrayBuffer::New( isolate, buffer, value ) );
-
+#endif
 			}
 			break;
 		case CONFIG_ARG_LOGICAL:
