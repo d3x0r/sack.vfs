@@ -164,7 +164,10 @@ else( UNIX )
 	set( VFSLIB sack_vfs.pp.module )
 endif( UNIX )
 
-  target_link_libraries( ${PROJECT} tls-20 ssl-48 crypto-46 )
+if( WIN32 )
+  target_link_libraries( ${PROJECT} Bcrypt )
+endif( WIN32 )
+
 target_link_libraries(${PROJECT} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE_JS_LIB} )
 
   add_custom_command( TARGET ${PROJECT} POST_BUILD
