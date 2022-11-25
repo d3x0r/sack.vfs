@@ -662,6 +662,8 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 						data = json_parse_get_data( parser );
 						struct reviver_data r;
 						r.revive = FALSE;
+						r.failed = FALSE;
+						r.reviveStack = NULL;
 						r.isolate = isolate;
 						r.context = isolate->GetCurrentContext();
 						Local<Value> val = convertMessageToJS( data, &r );
@@ -712,6 +714,8 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 								if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
 									json_dispose_message( &data );
 									json_parse_dispose_state( &parser );
+									Deallocate( char *, buf );
+									sack_fclose( file );
 									return;
 								}
 							}
@@ -731,7 +735,6 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 	void VolumeObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
-
 		if( args.Length() < 2 ) {
 			isolate->ThrowException( Exception::TypeError(
 				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data callback" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -760,6 +763,8 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 						data = jsox_parse_get_data( parser );
 						struct reviver_data r;
 						r.revive = FALSE;
+						r.failed = FALSE;
+						r.reviveStack = NULL;
 						r.isolate = isolate;
 						r.context = isolate->GetCurrentContext();
 						Local<Value> val = convertMessageToJS2( data, &r );
@@ -768,6 +773,8 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 							if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
 								jsox_dispose_message( &data );
 								jsox_parse_dispose_state( &parser );
+								Deallocate( char *, buf );
+								sack_vfs_close( file );
 								return;
 							}
 						}
@@ -803,6 +810,8 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 						if( data->Cnt ) {
 							struct reviver_data r;
 							r.revive = FALSE;
+							r.failed = FALSE;
+							r.reviveStack = NULL;
 							r.isolate = isolate;
 							r.context = isolate->GetCurrentContext();
 							Local<Value> val = convertMessageToJS2( data, &r );
@@ -811,6 +820,8 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 								if( result.IsEmpty() ) { // if an exception occurred stop, and return it. 
 									jsox_dispose_message( &data );
 									jsox_parse_dispose_state( &parser );
+									Deallocate( char *, buf );
+									sack_fclose( file );
 									return;
 								}
 							}
@@ -945,14 +956,15 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		if( data && len ) {
 			//ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
 
-			MaybeLocal<String> _arrayBuffer = String::NewFromUtf8( isolate, (char*)data, v8::NewStringType::kNormal, (int)len ).ToLocalChecked();
-			Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
-			PARRAY_BUFFER_HOLDER holder = GetHolder();
-			holder->s.Reset( isolate, arrayBuffer );
-			holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-			holder->buffer = data;
+			Local<String> _arrayBuffer = String::NewFromUtf8( isolate, (char*)data, v8::NewStringType::kNormal, (int)len ).ToLocalChecked();
+			Release( data );
+			//Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
+			//PARRAY_BUFFER_HOLDER holder = GetHolder();
+			//holder->s.Reset( isolate, arrayBuffer );
+			//holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+			//holder->buffer = data;
 
-			args.GetReturnValue().Set( arrayBuffer );
+			args.GetReturnValue().Set( _arrayBuffer );
 
 		} else {
 			isolate->ThrowException( Exception::TypeError(
@@ -1067,6 +1079,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		int type = 0;		
 		if( ( (type=1), args[1]->IsArrayBuffer()) || ((type=2),args[1]->IsUint8Array()) ) {
 			uint8_t *buf ;
+			size_t offset = 0;
 			size_t length;
 			if( type == 1 ) {
 				Local<ArrayBuffer> myarr = args[1].As<ArrayBuffer>();
@@ -1084,19 +1097,20 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 #else
 				buf = (uint8_t*)buffer->GetContents().Data();
 #endif
-				length = buffer->ByteLength();
+				offset = _myarr->ByteOffset();
+				length = _myarr->ByteLength(); // only the length of the view
 			}
 
 			if( vol->volNative ) {
 				struct sack_vfs_file *file = sack_vfs_openfile( vol->vol, *fName );
-				sack_vfs_write( file, (const char*)buf, length );
+				sack_vfs_write( file, (const char*)buf+offset, length );
 				sack_vfs_truncate( file );
 				sack_vfs_close( file );
 
 				args.GetReturnValue().Set( True(isolate) );
 			} else {
 				FILE *file = sack_fopenEx( 0, *fName, "wb", vol->fsMount );
-				sack_fwrite( buf, length, 1, file );
+				sack_fwrite( buf + offset, length, 1, file );
 				sack_fclose( file );
 
 				args.GetReturnValue().Set( True(isolate) );
@@ -1458,7 +1472,7 @@ static void handlePostedVolume( uv_async_t* async ) {
 		obj->thrown = trans->wssi->thrown = TRUE;
 
 		// just clearing this prevents deallocation of other members
-		trans->wssi->volNative = NULL;
+		trans->wssi->volNative = false;
 
 
 		MaybeLocal<Value> ml_result = f->Call( context, unload->this_.Get(isolate), 2, args );
@@ -1628,30 +1642,48 @@ void FileObject::writeFile(const v8::FunctionCallbackInfo<Value>& args) {
 
 	//SACK_VFS_PROC size_t CPROC sack_vfs_write( struct sack_vfs_file *file, char * data, size_t length );
 	if( args.Length() == 1 ) {
+		int type = 0;
 		if( args[0]->IsString() ) {
 			String::Utf8Value data( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			if( file->vol->volNative )
 				sack_vfs_write( file->file, *data, data.length() );
 			else
 				sack_fwrite( *data, data.length(), 1, file->cfile );
-		} else if( args[0]->IsArrayBuffer() ) {
-			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+		} else if( ( (type=1), args[0]->IsArrayBuffer()) || ((type=2),args[0]->IsUint8Array()) ) {
+			uint8_t* buf;
+			size_t offset = 0;
+			size_t length;
+			if (type == 1) {
+				Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast(args[0]);
 #if ( NODE_MAJOR_VERSION >= 14 )
-			std::shared_ptr<BackingStore> contents = ab->GetBackingStore();
-			if( file->vol->volNative )
-				sack_vfs_write( file->file, (char*)contents->Data(), contents->ByteLength() );
-			else
-				sack_fwrite( contents->Data(), contents->ByteLength(), 1, file->cfile );
+				std::shared_ptr<BackingStore> contents = ab->GetBackingStore();
+				buf = (uint8_t*)contents->Data();
+				length = ab->ByteLength();
 #else
-			ArrayBuffer::Contents contents = ab->GetContents();
-			//file->buf = (char*)contents.Data();
-			//file->size = contents.ByteLength();
-			if( file->vol->volNative )
-				sack_vfs_write( file->file, (char*)contents.Data(), contents.ByteLength() );
-			else
-				sack_fwrite( contents.Data(), contents.ByteLength(), 1, file->cfile );
+				ArrayBuffer::Contents contents = ab->GetContents();
+				//file->buf = (char*)contents.Data();
+				//file->size = contents.ByteLength();
+				buf = contents.Data();
+				length = contents.ByteLength();
 #endif
-		}
+			}
+			else if (type == 2) {
+				Local<Uint8Array> _myarr = args[0].As<Uint8Array>();
+				Local<ArrayBuffer> buffer = _myarr->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+				buf = (uint8_t*)buffer->GetBackingStore()->Data();
+#else
+				buf = (uint8_t*)buffer->GetContents().Data();
+#endif
+				offset = _myarr->ByteOffset();
+				length = _myarr->ByteLength();
+
+			}
+			if (file->vol->volNative)
+				sack_vfs_write(file->file, buf+offset, length );
+			else
+				sack_fwrite(buf + offset, length, 1, file->cfile);
+			}
 	}
 }
 

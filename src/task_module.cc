@@ -116,25 +116,36 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 			Local<Value> argv[1];
 			Local<ArrayBuffer> ab;
 			if( task->binary ) {
+				if( output ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( isolate, output->size );
-				memcpy( bs->Data(), output->buffer, output->size );
-				ab = ArrayBuffer::New( isolate, bs );
+					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( isolate, output->size );
+					memcpy( bs->Data(), output->buffer, output->size );
+					ab = ArrayBuffer::New( isolate, bs );
 #else
-				ab = ArrayBuffer::New( isolate, (void*)output->buffer, output->size );
+					ab = ArrayBuffer::New( isolate, (void*)output->buffer, output->size );
 #endif
+				} else if( output2 ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( isolate, output2->size );
+					memcpy( bs->Data(), output2->buffer, output2->size );
+					ab = ArrayBuffer::New( isolate, bs );
+#else
+					ab = ArrayBuffer::New( isolate, (void*)output2->buffer, output2->size );
+#endif
+				}
 				argv[0] = ab;
 				if( output2 )
 					task->inputCallback2.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
-				else
+				if( output )
 					task->inputCallback.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
 			}
 			else {
-				MaybeLocal<String> buf = localStringExternal( isolate, (const char*)output->buffer, (int)output->size, (const char*)output );
+				MaybeLocal<String> buf = localStringExternal( isolate, (const char*)(output?output->buffer:output2->buffer)
+							, (int)(output?output->size:output2->size), (const char*)(output?output:output2) );
 				argv[0] = buf.ToLocalChecked();
 				if( output2 )
 					task->inputCallback2.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
-				else
+				if( output )
 					task->inputCallback.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
 			}
 			//task->buffer = NULL;
@@ -178,7 +189,6 @@ static void CPROC getTaskEnd( uintptr_t psvTask, PTASK_INFO task_ended ) {
 	task->ending = true;
 	task->exitCode = GetTaskExitCode( task_ended );
 	//task->waiter = NULL;
-	lprintf( "Task ended..." );
 	task->task = NULL;
 	//closes async
 	uv_async_send( &task->async );
@@ -341,7 +351,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				}
 			}
 
-			if( input || end ) {
+			if( input2 || input || end ) {
 				class constructorSet *c = getConstructors( isolate );
 				uv_async_init( c->loop, &newTask->async, taskAsyncMsg );
 				newTask->async.data = newTask;
@@ -370,7 +380,6 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				, (uintptr_t)newTask 
 				, envList
 				DBG_SRC );
-
 		}
 
 		args.GetReturnValue().Set( _this );

@@ -502,6 +502,7 @@ public:
 	static void write( const v8::FunctionCallbackInfo<Value>& args );
 	static void getReadyState( const FunctionCallbackInfo<Value>& args );
 	static void ping( const v8::FunctionCallbackInfo<Value>& args );
+	static void nodelay( const v8::FunctionCallbackInfo<Value>& args );
 
 	~wscObject();
 };
@@ -551,6 +552,7 @@ public:
 	static void onmessage( const v8::FunctionCallbackInfo<Value>& args );
 	static void onclose( const v8::FunctionCallbackInfo<Value>& args );
 	static void getReadyState( const FunctionCallbackInfo<Value>& args );
+	static void nodelay( const FunctionCallbackInfo<Value>& args );
 	static void ping( const v8::FunctionCallbackInfo<Value>& args );
 
 	~wssiObject();
@@ -923,14 +925,15 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 						argv[0] = ab;
 
 						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+						// buf will deallocate when the arraybuffer does.
 					}
 					else {
 						MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 						argv[0] = buf.ToLocalChecked();
 						//lprintf( "Message:', %s", eventMessage->buf );
 						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+						Deallocate( CPOINTER, eventMessage->buf );
 					}
-					Deallocate( CPOINTER, eventMessage->buf );
 				}
 				break;
 			case WS_EVENT_CLOSE:
@@ -941,7 +944,7 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 					Deallocate( CPOINTER, eventMessage->buf );
 				}
 				else
-					argv[1] = Undefined( isolate );
+					argv[1] = Null( isolate );
 				LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, callback ) {
 					callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
@@ -1064,6 +1067,16 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 
 				SETV( wssi, strings->connectionString->Get(isolate), socket = makeSocket( isolate, eventMessage->pc ) );
 				SETV( wssi, strings->headerString->Get( isolate ), GETV( socket, strings->headerString->Get( isolate ) ) );
+
+				{
+					struct cgiParams cgi;
+					struct HttpState *pHttpState = GetWebSocketHttpState( wssiInternal->pc );
+					cgi.isolate = isolate;
+					cgi.cgi = Object::New( isolate );
+					ProcessCGIFields( pHttpState, cgiParamSave, (uintptr_t)&cgi );
+					SETV( wssi, strings->CGIString->Get( isolate ), cgi.cgi );
+				}
+
 				SETV( wssi, strings->urlString->Get( isolate )
 					, String::NewFromUtf8( isolate
 						, GetText( GetHttpRequest( GetWebSocketHttpState( wssiInternal->pc ) ) ), v8::NewStringType::kNormal ).ToLocalChecked() );
@@ -1252,7 +1265,7 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 						Deallocate( CPOINTER, eventMessage->buf );
 					}
 					else
-						argv[1] = Undefined( isolate );
+						argv[1] = Null( isolate );
 					INDEX idx; callbackFunction* callback;
 					LIST_FORALL( wsc->closeCallbacks, idx, callbackFunction*, callback ) {
 						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
@@ -1597,6 +1610,10 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 			, FunctionTemplate::New( isolate, wscObject::getOnClose )
 			, FunctionTemplate::New( isolate, wscObject::onClose )
 		);
+		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "noDelay" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wscObject::nodelay )
+		);
 		wscTemplate->ReadOnlyPrototype();
 
 		c->wscConstructor.Reset( isolate, wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
@@ -1631,6 +1648,10 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		wssiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "readyState" )
 			, FunctionTemplate::New( isolate, wssiObject::getReadyState )
 			, Local<FunctionTemplate>() );
+		wssiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "noDelay" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssiObject::nodelay )
+			);
 		wssiTemplate->ReadOnlyPrototype();
 
 		c->wssiConstructor.Reset( isolate, wssiTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
@@ -1640,6 +1661,8 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 }
 
 static void Wait( void ) {
+	IdleFor( 250 );
+	return;
 	uint32_t tick = GetTickCount();
 	WakeableSleep( 250 );
 	if( (GetTickCount() - tick) > 200 ) {
@@ -1647,7 +1670,7 @@ static void Wait( void ) {
 		lprintf( "slept %d", tick );
 	}
 }
-#define Wait() WakeableSleep( 100 )
+#define Wait() IdleFor( 100 )
 
 
 static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
@@ -1716,7 +1739,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		(*pevt)._this = wssi;
 		(*pevt).code = code;
 		(*pevt).buf = StrDup(reason);
-		(*pevt).buflen = strlen( reason );
+		(*pevt).buflen = StrLen( reason );
 		wssi->pc = NULL;
 		EnqueLink( &wssi->eventQueue, pevt );
 		uv_async_send( &wssi->async );
@@ -2006,7 +2029,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 
 			if (pHttpState) {
 				int result;
-				//lprintf( "ending http on %p", obj->pc );
+				//lprintf( "ending http on %p, checking for more data", obj->pc );
 				EndHttp(pHttpState);
 				while ((result = ProcessHttp(obj->pc, pHttpState)))
 				{
@@ -2740,6 +2763,16 @@ void wssiObject::onclose( const FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+void wssiObject::nodelay( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+
+	if( args.Length() > 0 ) {
+		wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
+		
+		SetTCPNoDelay( obj->pc, args[0]->BooleanValue(isolate) );
+	}
+}
+
 void wssiObject::close( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
@@ -2749,7 +2782,7 @@ void wssiObject::close( const FunctionCallbackInfo<Value>& args ) {
 
 void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
+	wssiObject* obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 	if( !obj->pc ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Connection has already been closed." ) ) );
 		return;
@@ -2780,13 +2813,13 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 #else
 		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
 #endif
-	}
-	else if( args[0]->IsString() ) {
+	} else if( args[0]->IsString() ) {
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		WebSocketSendText( obj->pc, *buf, buf.length() );
-	}
-	else {
-		lprintf( "Unhandled message format" );
+	} else if( args[0]->IsObject() ) {
+		lprintf( "Cannot send argument that is a type of object passed to websocket send." );
+	}  else {
+		lprintf( "Argument passed to send is not a String, ArrayBuffer or TypeAarray." );
 	}
 }
 
@@ -2839,7 +2872,7 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	(*pevt)._this = wsc;
 	(*pevt).code = code;
 	(*pevt).buf = StrDup(reason);
-	(*pevt).buflen = strlen( reason );
+	(*pevt).buflen = StrLen( reason );
 	EnqueLink( &wsc->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
 	lprintf( "Send Close Request" );
@@ -2902,8 +2935,13 @@ wscObject::wscObject( wscOptions *opts ) {
 				//throw "Error initializing SSL connection (bad key or passphrase?)";
 			}
 		}
-		WebSocketConnect( pc );
-		readyState = CONNECTING;
+		if( WebSocketConnect( pc ) < 0 ){
+			pc = NULL;
+		} else {
+			readyState = CONNECTING;
+		}
+	} else {
+		lprintf( "Socket returned Null?" );
 	}
 }
 
@@ -3116,6 +3154,15 @@ void wscObject::onError( const FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+void wscObject::nodelay( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+
+	if( args.Length() > 0 ) {
+		wscObject* obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+
+		SetTCPNoDelay( obj->pc, args[0]->BooleanValue( isolate ) );
+	}
+}
 
 void wscObject::getOnOpen( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -3256,6 +3303,9 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 void wscObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
+	if( !obj->pc )
+		args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)-1 ) );
+	else
 	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->readyState ) );
 #if 0
 	Local<Object> h = args.Holder();

@@ -585,7 +585,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 			statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
 			for( ; arg < args.Length(); arg++ ) {
 				if( !PushValue( isolate, &pdlParams, args[arg], NULL, 0 ) )
-					lprintf( "Bad value is sql statement:%s", *sqlStmt );
+					lprintf( "Bad value in sql statement:%s", *sqlStmt );
 			}
 		}
 	}

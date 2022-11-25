@@ -7,6 +7,7 @@ using namespace sack::SACK_VFS::objStore;
 //#define DEBUG_LOG_PARSING
 //#define DEBUG_LOG_OUTPUT
 
+
 class ObjectStorageObject : public node::ObjectWrap {
 public:
 	uv_async_t async;
@@ -22,7 +23,7 @@ public:
 public:
 
 	static void Init( Isolate *isolate, Local<Object> exports );
-	ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, struct file_system_mounted_interface* useMount );
+	ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, struct file_system_mounted_interface* useMount, int flags );
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -41,10 +42,16 @@ public:
 	// pass object ID, get back a ObjectStorageFileObject ( support seek/read/write? )
 	static void openObject( const v8::FunctionCallbackInfo<Value>& args );
 
+	static void getTimeline( const v8::FunctionCallbackInfo<Value>& args );
+	static void haltVolume( const v8::FunctionCallbackInfo<Value>& args );
+	
 	// utility to remove the key so it can be diagnosed.
 	static void volDecrypt( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void fileReadJSOX( const v8::FunctionCallbackInfo<Value>& args );
+	static void fileGetTimes( const v8::FunctionCallbackInfo<Value>& args );
+	static void fileSetTime( const v8::FunctionCallbackInfo<Value>& args );
+	static void getTimelineCursor( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileRead( const v8::FunctionCallbackInfo<Value>& args );
 	static void flush( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -62,6 +69,19 @@ public:
 	~ObjectStorageObject();
 };
 
+class TimelineCursorObject : public node::ObjectWrap {
+public:
+	class ObjectStorageObject* oso;
+	struct sack_vfs_os_time_cursor* cursor;
+public:
+	TimelineCursorObject( class ObjectStorageObject* vol ) {
+		this->oso = vol;
+		cursor = sack_vfs_os_get_time_cursor( this->oso->vol );
+	}
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	static void read( const v8::FunctionCallbackInfo<Value>& args );
+
+};
 
 Local<Object> WrapObjectStorage( Isolate* isolate, class ObjectStorageObject* oso ) {
 	return oso->WrapObjectStorage( isolate );
@@ -83,6 +103,13 @@ struct optionStrings {
 	Eternal<String> *dataString;
 	Eternal<String> *nameString;
 	Eternal<String> *optsString;
+	Eternal<String>* idString;
+	Eternal<String>* versionString;
+	Eternal<String>* timeString;
+	Eternal<String>* readString;
+	Eternal<String>* limitString;
+	Eternal<String>* fromString;
+	Eternal<String>* getTimezoneOffsetString;
 };
 
 
@@ -175,7 +202,14 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		DEFSTRING( readKey );
 		DEFSTRING( data );
 		DEFSTRING( name );
+		DEFSTRING( id );
+		DEFSTRING( version );
+		DEFSTRING( time );
+		DEFSTRING( from );
+		DEFSTRING( limit );
+		DEFSTRING( read );
 		DEFSTRING( opts );
+		DEFSTRING( getTimezoneOffset );
 	}
 	return check;
 }
@@ -335,7 +369,7 @@ static void handlePostedObjectStorage( uv_async_t* async ) {
 
 	//lprintf( "having copied all the data to the new one, erase the old one. %p %p", trans->oso, obj );
 	trans->oso->vol = NULL;
-	trans->oso->volNative = NULL;
+	trans->oso->volNative = false;
 	trans->oso->mountName = NULL;
 	trans->oso->fileName = NULL;
 	trans->oso->fsInt = NULL;
@@ -393,12 +427,30 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 	//	l.loop = uv_default_loop();
 	Local<Context> context = isolate->GetCurrentContext();
 
+	Local<FunctionTemplate> clsTemplate_timelineCursor;
+	clsTemplate_timelineCursor = FunctionTemplate::New( isolate, TimelineCursorObject::New );
+	clsTemplate_timelineCursor->SetClassName( String::NewFromUtf8Literal( isolate, "sack.ObjectStorage.TimelineCursor" ) );
+	clsTemplate_timelineCursor->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
+
+	NODE_SET_PROTOTYPE_METHOD( clsTemplate_timelineCursor, "get", TimelineCursorObject::read );
+
+
 	Local<FunctionTemplate> clsTemplate;
 	clsTemplate = FunctionTemplate::New( isolate, New );
 	clsTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.ObjectStorage" ) );
 	clsTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "read", ObjectStorageObject::fileReadJSOX );
+	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "getTimes", ObjectStorageObject::fileGetTimes );
+	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "setTime", ObjectStorageObject::fileSetTime );
+
+	clsTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "timeline" )
+		, FunctionTemplate::New( isolate, ObjectStorageObject::getTimeline )
+		, Local<FunctionTemplate>()
+	);
+	//NODE_SET_PROTOTYPE_METHOD( clsTemplate, "timeline", ObjectStorageObject::getTimelineCursor );
+
+	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "halt", ObjectStorageObject::haltVolume );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "readRaw", ObjectStorageObject::fileRead );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "writeRaw", ObjectStorageObject::fileWrite );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "createIndex", ObjectStorageObject::createIndex );
@@ -412,7 +464,9 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 
 	class constructorSet* c = getConstructors( isolate );
 	Local<Function> objectStoreFunc = clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
+	Local<Function> timelineCursorFunc = clsTemplate_timelineCursor->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked();
 	c->ObjectStorageObject_constructor.Reset( isolate, objectStoreFunc );
+	c->TimelineCursorObject_constructor.Reset( isolate, timelineCursorFunc );
 
 	{
 		Local<Object> threadObject = Object::New( isolate );
@@ -439,7 +493,7 @@ ObjectStorageObject::~ObjectStorageObject() {
 }
 
 ObjectStorageObject::ObjectStorageObject( const char *mount, const char *filename, uintptr_t version, const char *key
-	, const char *key2, struct file_system_mounted_interface*useMount ) {
+	, const char *key2, struct file_system_mounted_interface*useMount, int flags ) {
 	mountName = (char *)mount;
 	if( !mount && !filename ) {
 		// no native storage.
@@ -456,7 +510,10 @@ ObjectStorageObject::ObjectStorageObject( const char *mount, const char *filenam
 		//lprintf( "sack_vfs_os_volume: %s %p %p", filename, key, key2 );
 		fileName = StrDup( filename );
 		volNative = true;
-		vol = objStore::sack_vfs_os_load_crypt_volume( filename, version, key, key2, useMount );
+
+		vol = objStore::sack_vfs_os_load_volume_v2( flags, filename, version, key, key2, useMount );
+		//vol = objStore::sack_vfs_os_load_crypt_volume( filename, version, key, key2, useMount );
+
 		AddLink( &osl.open, vol );
 		//lprintf( "VOL: %p for %s %d %p %p", vol, filename, version, key, key2 );
 		if( vol )
@@ -674,42 +731,201 @@ void ObjectStorageObject::getObject( const v8::FunctionCallbackInfo<Value>& args
 
 }
 
+void TimelineCursorObject::read( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	struct optionStrings* strings = getStrings( isolate );
+	Local<String> optName;
+	Local<Object> options = args[0].As<Object>();// ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 
+	int32_t limit = GETV( options, optName = strings->limitString->Get( isolate ) )->Int32Value(context).ToChecked();
+	bool doRead = GETV( options, optName = strings->readString->Get( isolate ) )->BooleanValue(isolate);
+	Local<Value> from;
+	optName = strings->fromString->Get( isolate );
+	if( !(options->Has( context, optName ).ToChecked()) ) {
+		from.Clear();
+	}else
+		from = GETV( options, optName ).As<Value>();
+	TimelineCursorObject* tlc = ObjectWrap::Unwrap<TimelineCursorObject>( args.Holder() );
+	Local<Array> arr = Array::New( isolate, 0 );
+	const char* buffer;
+	size_t length;
+	uint64_t time;
+	uint64_t entry;
+	int8_t tz;
+	const char* filename;
+	LOGICAL result;
+	int got = 0;
+	int stepMode = 0;
+	class constructorSet* c = getConstructors( isolate );
+	do {
+		if( got == 0 ) {
+			if( !from.IsEmpty() ) {
+				if( from->IsDate() ) {
+					Local<Date> fd = from.As<Date>();
+					result = sack_vfs_os_read_time_cursor( tlc->cursor, 0, (uint64_t)( fd->ValueOf() * 1000.0 ) * 1000, &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
+				} else if( from->IsNumber() ) {
+					Local<Number> fd = from.As<Number>();
+					result = sack_vfs_os_read_time_cursor( tlc->cursor, 1, (int)fd->Value(), &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
+				} else if( from->InstanceOf( context, c->dateNsCons.Get( isolate ) ).ToChecked() ) {
+					Local<Date> fd = from.As<Date>();
+					Local<Value> ns = fd->Get( context, String::NewFromUtf8Literal( isolate, "ns" ) ).ToLocalChecked();
+
+					result = sack_vfs_os_read_time_cursor( tlc->cursor, 0, (uint64_t)( fd->ValueOf() * 1000.0 ) * 1000, &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
+
+				} else {
+					lprintf( "Unhandled from argument..." );
+					result = FALSE;
+				}
+			} else {
+				result = sack_vfs_os_read_time_cursor( tlc->cursor, 2, 0, &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
+			}
+		} else {
+			result = sack_vfs_os_read_time_cursor( tlc->cursor, 2, 0, &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
+		}
+		if( result ) {
+
+			SACK_TIME st;
+			// time is stored as UTC so all times are universal and have no bias between them.
+			// though decoding a timestamp with a timezone requires the local time to be used along with the timezone code
+			// so this has to adjust the value before decoding to parts and building a resulting string.
+			uint64_t timeValue = ((time / 1000000 + ( tz * 900000LL ) ) << 8) | (tz&0xFF);
+			ConvertTickToTime( timeValue, &st );
+			char buf[64];
+			int tz;
+			int negTz = 0;
+			if( st.zhr < 0 ) {
+				tz = -st.zhr;
+				negTz = 1;
+			} else
+				tz = st.zhr;
+
+			snprintf( buf, 64, "%04d-%02d-%02dT%02d:%02d:%02d.%03d%c%02d:%02d", st.yr, st.mo, st.dy, st.hr, st.mn, st.sc, st.ms, negTz ? '-' : '+', tz, st.zmn );
+			Local<Value> args[2] = { String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked(), Number::New( isolate, (double)(time%1000000) ) };
+			Local<Value> newDate;
+			if( time % 1000000 )
+				newDate = Local<Function>::New( isolate, c->dateNsCons )->NewInstance( isolate->GetCurrentContext(), 2, args ).ToLocalChecked();
+			else
+				newDate = Local<Function>::New( isolate, c->dateCons )->NewInstance( isolate->GetCurrentContext(), 1, args ).ToLocalChecked();
+			Local<Object> obj = Object::New( isolate );
+			obj->Set( context, String::NewFromUtf8Literal( isolate, "time" ), newDate );
+			obj->Set( context, String::NewFromUtf8Literal( isolate, "entry" ), Number::New( isolate, (double)entry ) );
+
+			obj->Set( context, String::NewFromUtf8Literal( isolate, "id" ), String::NewFromUtf8( isolate, filename, NewStringType::kNormal ).ToLocalChecked() );
+			obj->Set( context, String::NewFromUtf8Literal( isolate, "length" ), Number::New( isolate, (double)length ) );
+			if( doRead ) {
+				Local<ArrayBuffer> ab;
+				POINTER newBuf = NewArray( uint8_t, length );
+				MemCpy( newBuf, buffer, length );
+#if ( NODE_MAJOR_VERSION >= 14 )
+				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)newBuf, length, releaseBufferBackingStore, NULL );
+				ab = ArrayBuffer::New( isolate, bs );
+#else
+				ab =
+					ArrayBuffer::New( isolate
+						, (void*)newBuf
+						, length );
+
+				PARRAY_BUFFER_HOLDER holder = GetHolder();
+				holder->o.Reset( isolate, ab );
+				holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+				holder->buffer = newBuf;
+#endif
+				obj->Set( context, String::NewFromUtf8Literal( isolate, "data" ), ab );
+
+			}
+			arr->Set( isolate->GetCurrentContext(), got, obj );
+			Deallocate( const char*, filename );
+		} else break;
+		got++;
+	} while( got < limit );
+	args.GetReturnValue().Set( arr );
+
+}
+
+void TimelineCursorObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
+
+	Isolate* isolate = args.GetIsolate();
+	if( args.IsConstructCall() ) {
+		// Invoked as constructor: `new MyObject(...)`
+		Local<Object> storage = args[0].As<Object>();
+		ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( storage );
+		TimelineCursorObject* obj = new TimelineCursorObject( vol );
+
+		obj->Wrap( args.This() );
+		args.GetReturnValue().Set( args.This() );
+
+	} else {
+		int argc = args.Length();
+		Local<Value>* argv = new Local<Value>[argc];
+		for( int n = 0; n < argc; n++ )
+			argv[n] = args[n];
+
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->ObjectStorageObject_constructor );
+		MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
+		if( !mo.IsEmpty() )
+			args.GetReturnValue().Set( mo.ToLocalChecked() );
+		delete[] argv;
+
+	}
+}
 
 
 void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.IsConstructCall() ) {
-		char *mount_name;
+		char *mount_name = NULL;
 		char *filename = (char*)"default.os";
 		LOGICAL defaultFilename = TRUE;
 		char *key = NULL;
 		char *key2 = NULL;
 		uintptr_t version = 0;
 		VolumeObject* vol = NULL;
+		ObjectStorageObject* oso = NULL;
 		int arg = 0;
 		int argc = args.Length();
 		if( argc > 0 && args[0]->IsObject() ) {
-			vol = ObjectWrap::Unwrap<VolumeObject>( args[0].As<Object>() );
-			arg++;
+			class constructorSet* c = getConstructors( isolate );
+			if( args[0]->InstanceOf( isolate->GetCurrentContext(), c->volConstructor.Get( isolate ) ).ToChecked() ) {
+				vol = ObjectWrap::Unwrap<VolumeObject>( args[0].As<Object>() );
+				arg++;
+			}
+			else if( args[0]->InstanceOf( isolate->GetCurrentContext(), c->ObjectStorageObject_constructor.Get( isolate ) ).ToChecked() ) {
+				oso = ObjectWrap::Unwrap<ObjectStorageObject>( args[0].As<Object>() );
+				//vol = oso->vol;
+				arg++;
+			}
 		}
 		if( argc == arg ) {
-			ObjectStorageObject* obj = new ObjectStorageObject( NULL, NULL, 0, NULL, NULL, NULL );
+			ObjectStorageObject* obj = new ObjectStorageObject( NULL, NULL, 0, NULL, NULL, NULL, 0 );
 			obj->Wrap( args.This() );
 			args.GetReturnValue().Set( args.This() );
 		}
 		else {
+			int readonly = 0;
+			int namearg = 0;
 			//int arg = 0;
-			if( args[arg]->IsString() ) {
-
+			if( args[arg]->IsBoolean() ) {
+				readonly = args[arg]->BooleanValue(isolate);
+				arg++;
+			}
+			if( (arg < argc) && args[arg]->IsString() ) {
 				//TooObject( isolate.getCurrentContext().FromMaybe( Local<Object>() )
 				String::Utf8Value fName( isolate,  args[arg++]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-				mount_name = StrDup( *fName );
+				if( !vol && !oso && ( argc > (arg) )  )
+					mount_name = StrDup( *fName );
+				else {
+					filename = StrDup( *fName );
+				}
+				arg++;
 			}
 			else {
-				if( argc > arg )
+				if( argc > arg ) {
 					arg++; // assume null mount name
-				mount_name = SRG_ID_Generator();
+					namearg++;
+				}
+				mount_name = NULL;// SRG_ID_Generator();
 			}
 			if( argc > (arg) ) {
 				if( args[arg]->IsString() ) {
@@ -720,16 +936,17 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				else
 					filename = NULL;
 			}
-			else {
+			else if( namearg==0 ){
 				char* sep;
-				if( sep = strchr( mount_name, '@' ) ) {
+				if( filename && (sep = strchr( filename, '@' )) ) {
 					lprintf( "find mount name to get volume..." );
+					mount_name = filename;
 					sep[0] = 0;
 					filename = sep + 1;
 				}
 				else {
 					defaultFilename = FALSE;
-					filename = mount_name;
+					//filename = mount_name;
 					mount_name = SRG_ID_Generator();
 				}
 			}
@@ -751,13 +968,14 @@ void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				}
 				arg++;
 			}
+
 			// Invoked as constructor: `new MyObject(...)`
 			ObjectStorageObject* obj = new ObjectStorageObject( mount_name, filename, version, key, key2
 					, vol
 							?vol->fsMount
 							:mount_name
 								? sack_get_mounted_filesystem(mount_name)
-								:NULL );
+								:NULL, readonly?SACK_VFS_LOAD_FLAG_NO_REPLAY:0 );
 			if( !obj->vol ) {
 				isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText( "ObjectStorage failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -837,8 +1055,41 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 		return;
 	}
 	Local<Function> cb;
+	Local<Object> opts;
+	Local<Date> useTime;
+	uint64_t dateValToUse = 0;
+	int tzToUse = 0;
+	bool version = false;
 	ObjectStorageObject *vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
-	String::Utf8Value fName( isolate,  args[0] );
+	Local<Value> nameArg = args[0];
+	if( args[0]->IsObject() ) {
+		opts = args[0].As<Object>();
+		Local<Context> ctx = isolate->GetCurrentContext();
+		struct optionStrings* strings = getStrings( isolate );
+		Local<String> name;
+		Local<Value> versionVal;
+		if( opts->Has( ctx, name = strings->versionString->Get( isolate ) ).ToChecked() ) {
+			versionVal = opts->Get( ctx, name ).ToLocalChecked();
+			version = versionVal->BooleanValue(isolate);
+		}
+		if( opts->Has( ctx, name = strings->idString->Get( isolate ) ).ToChecked() ) {
+			nameArg = opts->Get( ctx, name ).ToLocalChecked();
+		}
+		if(1)
+		if( opts->Has( ctx, name = strings->timeString->Get( isolate ) ).ToChecked() ) {
+			useTime = opts->Get( ctx, name ).ToLocalChecked().As<Date>();
+			Local<Value> offset = useTime->Get( ctx, strings->getTimezoneOffsetString->Get( isolate ) ).ToLocalChecked().As<Function>()->Call( ctx, useTime, 0, NULL ).ToLocalChecked();
+			int64_t intVal = offset.As<Number>()->IntegerValue(ctx).ToChecked();
+			double dateVal = useTime->ValueOf();
+			//dateVal -= intVal * 900;
+			tzToUse = (int)-intVal;
+			dateValToUse = ( ((uint64_t)( dateVal )<<8)| ( (tzToUse/15)&0xFF) );
+			//lprintf( " COnverted time val: %g, %d", dateVal, (int)intVal );
+		}
+	}
+
+
+	String::Utf8Value fName( isolate, nameArg );
 #ifdef LOG_DISK_TIME
 	{
 		uint64_t sTick = GetTickCount64();
@@ -850,16 +1101,27 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 #endif
 	int arg = 2;
 	while( arg < args.Length() ) {
+
 		if( args[arg]->IsFunction() ) {
 			cb = Local<Function>::Cast( args[arg] );
 			arg++;
-		}
-		else
+		} else if( args[arg]->IsObject() ) {
+			if( opts.IsEmpty() )
+				opts = args[arg].As<Object>();
 			arg++;
+		} else {
+			arg++;
+		}
+	}
+
+	if( !opts.IsEmpty() ) {
+
 	}
 
 	if( vol->volNative ) {
-		struct objStore::sack_vfs_os_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
+		struct objStore::sack_vfs_os_file *file = version
+			?(struct objStore::sack_vfs_os_file *)sack_vfs_os_system_ioctl( vol->vol, SOSFSSIO_NEW_VERSION, (*fName) )
+			:objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
 		// is  binary thing... or is a string buffer... or...
 
 		if( file ) {
@@ -870,17 +1132,27 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 			Release( tmp );
 #endif
 			objStore::sack_vfs_os_truncate( file ); // allow new content to allocate in large blocks?
-			objStore::sack_vfs_os_write( file, *data, data.length() );
+
+			size_t lengthWritten = objStore::sack_vfs_os_write( file, *data, data.length() );
+			// compare lengthWritten with data.length() ?
+
+			if( dateValToUse )
+				objStore::sack_vfs_os_set_time( file, dateValToUse, tzToUse );
+			uint64_t lastTime = sack_vfs_os_ioctl_get_time( file );
+			Local<Number> lastTimeNum = Number::New( isolate, (double)lastTime );
 			objStore::sack_vfs_os_close( file );
 			sack_vfs_os_polish_volume( vol->vol );
+			args.GetReturnValue().Set( lastTimeNum );
+
 			//sack_vfs_os_flush_volume( vol->vol, FALSE );
 			if( !cb.IsEmpty() ) {
-				cb->Call( isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 0, NULL );
+				Local<Value> args[1] = {lastTimeNum};
+				cb->Call( isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 1, args );
 			}
 
 		}
 	} else {
-		lprintf( "Write to native volume not supported?" );
+		lprintf( "Write to mounted volume not supported?" );
 	}
 #ifdef LOG_DISK_TIME
 	{
@@ -987,8 +1259,131 @@ void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args 
 			}
 		}
 	}
+}
+
+void ObjectStorageObject::getTimeline( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ObjectStorageObject* obj = ObjectWrap::Unwrap<ObjectStorageObject>( args.This() );
+	class constructorSet* c = getConstructors( isolate );
+	Local<Value> tl_args[] = { args.This() };
+	Local<Value> timeline = c->TimelineCursorObject_constructor.Get( isolate )->CallAsConstructor( isolate->GetCurrentContext(), 1, tl_args ).ToLocalChecked();
 
 
+	args.GetReturnValue().Set( timeline );
+}
+
+
+void ObjectStorageObject::getTimelineCursor( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	
+}
+
+void ObjectStorageObject::haltVolume( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
+	sack_vfs_os_halt( vol->vol );
+}
+
+void ObjectStorageObject::fileSetTime( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() < 2 ) {
+		isolate->ThrowException( Exception::TypeError(
+			String::NewFromUtf8( isolate, TranslateText( "Requires filename to and new time to use" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
+	String::Utf8Value fName( isolate, args[0] );
+
+	Local<Date> useTime;
+	uint64_t dateValToUse = 0;
+	int tzToUse = 0;
+	struct optionStrings* strings = getStrings( isolate );
+
+	useTime = args[1].As<Date>();
+	if( !useTime.IsEmpty() ) {
+		Local<Value> offset = useTime->Get( isolate->GetCurrentContext(), strings->getTimezoneOffsetString->Get( isolate ) ).ToLocalChecked().As<Function>()->Call( isolate->GetCurrentContext(), useTime, 0, NULL ).ToLocalChecked();
+		int64_t intVal = offset.As<Number>()->IntegerValue( isolate->GetCurrentContext() ).ToChecked();
+		double dateVal = useTime->ValueOf();
+		//dateVal -= intVal * 900;
+		tzToUse = (int)-intVal;
+		dateValToUse = (uint64_t)(dateVal * 1000000);
+
+		struct objStore::sack_vfs_os_file* file = objStore::sack_vfs_os_openfile( vol->vol, ( *fName ) );
+		objStore::sack_vfs_os_set_time( file, dateValToUse, tzToUse );
+		objStore::sack_vfs_os_close( file );
+		//lprintf( " COnverted time val: %g, %d", dateVal, (int)intVal );
+	}
+
+}
+
+Local<Array> makeTimes( Isolate* isolate, uint64_t* timeArray, int8_t* tzArray, size_t timeCount ) {
+	Local<Array> arr = Array::New( isolate, (int)timeCount );
+	class constructorSet* c = getConstructors( isolate );
+	for( int n = 0; n < timeCount; n++ ) {
+		SACK_TIME st;
+		int8_t use_tz = ( (int8_t)tzArray[n] );
+		// time is stored as UTC so all times are universal and have no bias between them.
+		// though decoding a timestamp with a timezone requires the local time to be used along with the timezone code
+		// so this has to adjust the value before decoding to parts and building a resulting string.
+		timeArray[n] += ( use_tz * 900000LL ) * 1000000;
+		
+		ConvertTickToTime( ( (timeArray[n]/1000000)<<8)| (use_tz&0xFF), &st );
+		Local<Script> script;
+		char buf[64];
+		int tz;
+		int negTz = 0;
+		if( st.zhr < 0 ) {
+			tz = -st.zhr;
+			negTz = 1;
+		} else
+			tz = st.zhr;
+
+		snprintf( buf, 64, "%04d-%02d-%02dT%02d:%02d:%02d.%03d%c%02d:%02d", st.yr, st.mo, st.dy, st.hr, st.mn, st.sc, st.ms, negTz ? '-' : '+', tz, st.zmn );
+		Local<Value> args[2] = { String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked(), Number::New( isolate, (double)(timeArray[n] % 1000000) ) };
+		Local<Value> newDate = Local<Function>::New( isolate, c->dateNsCons )->NewInstance( isolate->GetCurrentContext(), 2, args ).ToLocalChecked();
+		arr->Set( isolate->GetCurrentContext(), n, newDate );
+	}
+	return arr;
+}
+
+void ObjectStorageObject::fileGetTimes( const v8::FunctionCallbackInfo<Value>& args ) {
+
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() < 1 ) {
+		isolate->ThrowException( Exception::TypeError(
+			String::NewFromUtf8( isolate, TranslateText( "Requires filename to get time info for" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
+	String::Utf8Value fName( isolate, args[0] );
+
+	size_t timeCount;
+	uint64_t* timeArray;
+	int8_t* tzArray;
+
+	if( vol->volNative ) {
+		if( !objStore::sack_vfs_os_exists( vol->vol, ( *fName ) ) ) {
+			//lprintf( "object is not found: %s", *fName );
+
+			return;
+		}
+
+		//lprintf( "OPEN FILE:%s", *fName );
+		struct objStore::sack_vfs_os_file* file = objStore::sack_vfs_os_openfile( vol->vol, ( *fName ) );
+		if( file ) {
+
+			objStore::sack_vfs_os_get_times( file, &timeArray, &tzArray, &timeCount );
+			objStore::sack_vfs_os_close( file );
+		}
+	} else {
+		FILE* file = sack_fopenEx( 0, ( *fName ), "rb", vol->fsMount );
+		if( file ) {
+			sack_ioctl( file, SOSFSFIO_GET_TIMES, &timeArray, &tzArray, &timeCount );
+			sack_fclose( file );
+		}
+	}
+
+	args.GetReturnValue().Set( makeTimes( isolate, timeArray, tzArray, timeCount ) );
 
 }
 
@@ -1007,8 +1402,14 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 	Local<Function> cb;
 	String::Utf8Value fName( isolate,  args[0] );
 	int arg = 1;
+	uint64_t version = 0;
 	while( arg < args.Length() ) {
-		if( args[arg]->IsFunction() ) {
+		if( args[arg]->IsNumber() ) {
+			// maybe make sure (arg==1) ?
+			Local<Number> version_num = args[arg].As<Number>();
+			version = (uint64_t)version_num->Value();
+			arg++;
+		} else if( args[arg]->IsFunction() ) {
 			cb = Local<Function>::Cast( args[arg] );
 			arg++;
 		}
@@ -1035,7 +1436,10 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 		}
 
 		//lprintf( "OPEN FILE:%s", *fName );
-		struct objStore::sack_vfs_os_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
+		struct objStore::sack_vfs_os_file *file = 
+			version
+				?(struct objStore::sack_vfs_os_file*)objStore::sack_vfs_os_system_ioctl( vol->vol, SOSFSSIO_OPEN_VERSION, (*fName), version )
+				:objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
 		if( file ) {
 			char *buf = NewArray( char, 4096 );
 			size_t len = objStore::sack_vfs_os_size( file );
@@ -1044,47 +1448,29 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			size_t timeCount;
 			LOGICAL resulted = FALSE;
 			uint64_t *timeArray;
-
-			objStore::sack_vfs_os_get_times( file, &timeArray, &timeCount );
-			Local<Array> arr = Array::New( isolate, (int)timeCount );
-			for( int n = 0; n < timeCount; n++ ) {
-				//arr->Set( n, Date::New( isolate, timeArray[n] / 1000000000.0 ) );
-				{
-					SACK_TIME st;
-					ConvertTickToTime( timeArray[n], &st );
-					Local<Script> script;
-					char buf[64];
-					int tz;
-					int negTz = 0;
-					if( st.zhr < 0 ) {
-						tz = -st.zhr;
-						negTz = 1;
-					}
-					else
-						tz = st.zhr;
-
-					snprintf( buf, 64, "new Date('%04d-%02d-%02dT%02d:%02d:%02d.%03d%c%02d:%02d')", st.yr, st.mo, st.dy, st.hr, st.mn, st.sc, st.ms, negTz?'-':'+', tz, st.zmn );
-					script = Script::Compile( isolate->GetCurrentContext()
-						, String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
-#if ( NODE_MAJOR_VERSION >= 16 )
-						, new ScriptOrigin( isolate, String::NewFromUtf8Literal( isolate, "DateFormatter" ) ) ).ToLocalChecked();
-#else						
-						, new ScriptOrigin( String::NewFromUtf8Literal( isolate, "DateFormatter" ) ) ).ToLocalChecked();
-#endif						
-					arr->Set( isolate->GetCurrentContext(), n, script->Run( isolate->GetCurrentContext() ).ToLocalChecked() );
-				}
-
+			int8_t* tzArray;
+			Local<Array> arr;
+			if( version )
+				arr = Array::New(isolate,0);
+			else {
+				objStore::sack_vfs_os_get_times( file, &timeArray, &tzArray, &timeCount );
+				arr = makeTimes( isolate, timeArray, tzArray, timeCount );
 			}
+
+
 			// CAN open directories; and they have 7ffffffff sizes.
 			while( (read < len) && (newRead = objStore::sack_vfs_os_read( file, buf, 4096 )) ) {
 				read += newRead;
 				int result;
 #ifdef DEBUG_LOG_PARSING
-				printf( "B Parse file: %d %.*s\n", newRead, newRead, buf );
+				printf( "B Parse file: %d %.*s\n", (int)newRead, (int)newRead, buf );
 #endif
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
-					result > 0;
+					result > 0 || ( (read == len) && ( result = jsox_parse_add_data( parser, NULL, 0 ) ) );
 					result = jsox_parse_add_data( parser, NULL, 0 ) ) {
+					if( result < 0 ) {
+						break;
+					}
 					//Local<Object> obj = Object::New( isolate );
 					PDATALIST data;
 					data = jsox_parse_get_data( parser );
@@ -1116,7 +1502,9 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 						break;
 				}
 				if( result < 0 ) {
+					resulted = TRUE;
 					PTEXT error = jsox_parse_get_error( parser );
+					jsox_parse_clear_state(parser);
 					if( error )
 						isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 					else
@@ -1132,12 +1520,23 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			objStore::sack_vfs_os_close( file );
 		}
 
-	}
-	else {
+	} else {
+
+
 		FILE *file = sack_fopenEx( 0, (*fName), "rb", vol->fsMount );
+
 		if( file ) {
 			char *buf = NewArray( char, 4096 );
 			size_t len = sack_fsize( file );
+			
+			size_t timeCount;
+			uint64_t* timeArray;
+			int8_t* tzArray;
+
+			sack_ioctl( file, SOSFSFIO_GET_TIMES, &timeArray, &tzArray, &timeCount );
+
+			Local<Array> arr = makeTimes( isolate, timeArray, tzArray, timeCount );
+
 			size_t read = 0;
 			size_t newRead;
 			struct jsox_parse_state *parser = jsox_begin_parse();
@@ -1146,7 +1545,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 				read += newRead;
 				int result;
 #ifdef DEBUG_LOG_PARSING
-				printf( "A Parse file: %d %.*s\n", newRead, newRead, buf );
+				printf( "A Parse file: %d %.*s\n", (int)newRead, (int)newRead, buf );
 #endif
 				for( (result = jsox_parse_add_data( parser, buf, newRead ));
 					result > 0;
@@ -1162,8 +1561,10 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 						r_ = parserObject->currentReviver;
 						parserObject->currentReviver = &r;
 						Local<Value> val = convertMessageToJS2( data, &r );
+
 						{
-							MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 1, &val );
+							Local<Value> argv[2] = { val, arr };
+							MaybeLocal<Value> result = cb->Call( r.context, isolate->GetCurrentContext()->Global(), 2, argv );
 							if( result.IsEmpty() ) { // if an exception occurred stop, and return it.
 								parserObject->currentReviver = r_;
 								jsox_dispose_message( &data );
@@ -1194,7 +1595,7 @@ ObjectStorageObject*  openInVFS( Isolate *isolate, const char *mount, const char
 //ObjectStorageObject*  ObjectStorageObject::openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 ) {
 
 	// Invoked as constructor: `new MyObject(...)`
-	ObjectStorageObject* obj = new ObjectStorageObject( mount, name, 0, key1, key2, useMount );
+	ObjectStorageObject* obj = new ObjectStorageObject( mount, name, 0, key1, key2, useMount, 0 );
 	if( !obj->vol ) {
 		isolate->ThrowException( Exception::Error(
 			String::NewFromUtf8( isolate, TranslateText( "ObjectStorage failed to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
