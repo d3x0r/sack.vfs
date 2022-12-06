@@ -471,7 +471,7 @@ void MakeCert(  struct info_params *params )
 				//ASN1_OCTET_STRING *data;
 				{
 					ASN1_STRING *data = ASN1_STRING_new();
-					char *r = params->issuer?params->issuer:SRG_ID_Generator();
+					char *r = params->issuer?params->issuer:SRG_ID_ShortGenerator4();
 					ASN1_STRING_set( data, r, (int)strlen( r ) );
 					X509_add1_ext_i2d( x509, NID_subject_key_identifier, data, 0, X509V3_ADD_DEFAULT );
 
@@ -484,7 +484,7 @@ void MakeCert(  struct info_params *params )
 				}
 				{
 					BASIC_CONSTRAINTS bc;
-					bc.ca = 1;
+					bc.ca = 0xFF;
 					bc.pathlen = NULL;
 					X509_add1_ext_i2d( x509, NID_basic_constraints, &bc, 1, X509V3_ADD_DEFAULT );
 				}
@@ -690,6 +690,15 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 
 }
 
+static int add_ext(STACK_OF(X509_EXTENSION) *sk, int nid, char *value)
+	{
+	X509_EXTENSION *ex;
+	ex = X509V3_EXT_conf_nid(NULL, NULL, nid, value);
+	if (!ex)
+		return 0;
+	sk_X509_EXTENSION_push(sk, ex);
+	return 1;
+	}
 
 void MakeReq( struct info_params *params )
 {
@@ -742,6 +751,7 @@ void MakeReq( struct info_params *params )
 				(unsigned char *)params->common, params->commonlen, -1, 0 );
 
 			{
+				STACK_OF( X509_EXTENSION) *exts = sk_X509_EXTENSION_new_null();
 				if( params->altSubject.DNS || params->altSubject.IP ) {
 					INDEX idx;
 					GENERAL_NAMES *names = GENERAL_NAMES_new();
@@ -787,17 +797,20 @@ void MakeReq( struct info_params *params )
 					//STACK_OF( X509_EXTENSION ) *extensions = X509_REQ_get_extensions( req );// , NID_subject_alt_name, data, 0, X509V3_ADD_DEFAULT );
 					//X509_REQ_set_extension_nids
 
-					STACK_OF( X509_EXTENSION) *exts = sk_X509_EXTENSION_new_null();
 					//unsigned char *val;
 					//i2d_GENERAL_NAMES( )
 					//unsigned char *out = NULL;
-					;
 					X509_EXTENSION *ex = X509V3_EXT_i2d( NID_subject_alt_name, 0, names );// X509V3_EXT_conf_nid( NULL, NULL, NID_subject_alt_name, (char*)out );
 					if( !ex ) {
 						throwError( params, "Something" );
 					}
 					sk_X509_EXTENSION_push( exts, ex );
+				  	//X509_EXTENSION_free(ex);
+				}
 
+				{
+					X509_EXTENSION *ex;
+					STACK_OF( X509_EXTENSION) *exts = sk_X509_EXTENSION_new_null();
 					const X509V3_EXT_METHOD *method = X509V3_EXT_get_nid( NID_certificate_policies );
 					void *ext_struc = (X509_EXTENSION*)method->r2i( method, NULL, "2.5.29.32.0" );
 					ex = X509V3_EXT_i2d( NID_certificate_policies, 0, ext_struc );
@@ -805,10 +818,14 @@ void MakeReq( struct info_params *params )
 						throwError( params, "Failed to make certificate policy extension" );
 					}
 					sk_X509_EXTENSION_push( exts, ex );
-
-					X509_REQ_add_extensions( req, exts );
-					sk_X509_EXTENSION_pop_free( exts, X509_EXTENSION_free );
+				  	//X509_EXTENSION_free(ex);
+						
 				}
+
+					//add_ext(exts, NID_key_usage, "critical,digitalSignature,keyEncipherment");
+
+				X509_REQ_add_extensions( req, exts );
+				sk_X509_EXTENSION_pop_free( exts, X509_EXTENSION_free );
 			}
 
 			if( X509_REQ_sign( req, pkey, EVP_sha256() ) < 0 )
@@ -1111,7 +1128,7 @@ static void SignReq( struct info_params *params )
 	{
 		{
 			ASN1_STRING *data = ASN1_STRING_new();
-			char *r = params->subject?params->subject:SRG_ID_Generator();
+			char *r = params->subject?params->subject:SRG_ID_ShortGenerator4();
 			ASN1_STRING_set( data, r, (int)strlen( r ) );
 			X509_add1_ext_i2d( cert, NID_subject_key_identifier, data, 0, X509V3_ADD_DEFAULT );
 
@@ -1157,7 +1174,7 @@ static void SignReq( struct info_params *params )
 			pathlen = sbc->pathlen ? ASN1_INTEGER_get( sbc->pathlen ) : 1;
 			if( pathlen > 0 ) {
 				BASIC_CONSTRAINTS bc;
-				bc.ca = 1;
+				bc.ca = 0xFF;
 				bc.pathlen = ASN1_INTEGER_new();;
 				ASN1_INTEGER_set( bc.pathlen, pathlen - 1 );
 				if( sbc->pathlen && pathlen == 1 )
@@ -1169,6 +1186,7 @@ static void SignReq( struct info_params *params )
 					ASN1_INTEGER *usage = ASN1_INTEGER_new();
 					ASN1_INTEGER_set( usage, _usage );
 					X509_add1_ext_i2d( cert, NID_key_usage, usage, 1, X509V3_ADD_DEFAULT );
+
 				}
 				else {
 					//lprintf( "SET CA USAGE" );
@@ -1176,9 +1194,42 @@ static void SignReq( struct info_params *params )
 					ASN1_INTEGER *usage = ASN1_INTEGER_new();
 					ASN1_INTEGER_set( usage, _usage );
 					X509_add1_ext_i2d( cert, NID_key_usage, usage, 1, X509V3_ADD_DEFAULT );
+
+					X509_EXTENSION *ex = X509V3_EXT_conf_nid(NULL, NULL, NID_ext_key_usage, "serverAuth,clientAuth");
+					X509_add_ext(cert, ex, -1);
+				  	X509_EXTENSION_free(ex);
+
 				}
 			}
 			else {
+ 				BASIC_CONSTRAINTS bc;
+				bc.ca = 0;
+				
+				bc.pathlen = 0;
+				//lprintf( "This is actually terminal usage");
+				//ASN1_INTEGER_set( bc.pathlen, 0 );
+				X509_add1_ext_i2d( cert, NID_basic_constraints, &bc, 1, X509V3_ADD_DEFAULT );
+
+				//lprintf( "SET CA USAGE" );
+				int _usage = KU_KEY_ENCIPHERMENT | KU_DIGITAL_SIGNATURE;
+				ASN1_INTEGER *usage = ASN1_INTEGER_new();
+				ASN1_INTEGER_set( usage, _usage );
+				X509_add1_ext_i2d( cert, NID_key_usage, usage, 1, X509V3_ADD_DEFAULT );
+
+				//X509_set_extended_key_usage
+				//lprintf( "SET CA USAGE" );
+				//EXTENDED_KEY_USAGE
+				//
+				X509_EXTENSION *ex = X509V3_EXT_conf_nid(NULL, NULL, NID_ext_key_usage, "serverAuth,clientAuth");
+				 int result = X509_add_ext(cert, ex, -1);
+
+				  X509_EXTENSION_free(ex);
+				  /*
+				int _ext_usage = XKU_SSL_SERVER | XKU_SSL_CLIENT;
+				ASN1_INTEGER *ext_usage = ASN1_INTEGER_new();
+				ASN1_INTEGER_set( ext_usage, _ext_usage );
+				X509_add1_ext_i2d( cert, NID_ext_key_usage, ext_usage, 0, X509V3_ADD_DEFAULT );
+					*/
 
 			}
 		}
