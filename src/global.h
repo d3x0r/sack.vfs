@@ -506,6 +506,7 @@ typedef struct arrayBufferHolder ARRAY_BUFFER_HOLDER, *PARRAY_BUFFER_HOLDER;
 DeclareSet( ARRAY_BUFFER_HOLDER );
 
 void releaseBufferBackingStore( void* data, size_t length, void* deleter_data );
+void dontReleaseBufferBackingStore(void* data, size_t length, void* deleter_data);
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info );
 Local<String> localString( Isolate *isolate, const char *data, int len = -1 );
 Local<String> localStringExternal( Isolate *isolate, const char *data, int len = -1, const char *real_root = NULL );
