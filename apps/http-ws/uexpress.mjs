@@ -1,9 +1,5 @@
 
 
-import {sack} from "sack.vfs";
-import path from "path";
-import {openServer} from "./server.mjs";
-
 export function uExpress() {
 	/* router really */
 	function makeRouter() {
@@ -45,12 +41,8 @@ export function uExpress() {
 		handle( req, res) {
 			const parts = req.url.split("?");
 			const url = unescape(parts[0]);
-			//console.log( "Look for request:", url, path.basename(url) );
 			const filepath = url;//path.dirname(url)+((path.dirname(url)&&path.basename(url))?"/":"")+path.basename(url);
-			//const name = path.basename(url);
-			//const type = path.extname(url);
                         
-			//console.log( "Think parts is:", filepath, name, type, parts[1] );
 			let cb;
 			let ranOne = false;
 			let handled = false;
@@ -71,7 +63,6 @@ export function uExpress() {
 				}
 			}
 
-			//console.log( "mappings:", mappings, filepath );
 			if( cb = mappings.get( filepath ) ) {
 				//console.log( "got cb?" );
 				ranOne = true;
