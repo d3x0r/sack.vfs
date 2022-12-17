@@ -641,6 +641,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 			tables[usedTables].table = NULL;
 			tables[usedTables].alias = NULL;
 			usedTables++;
+			//lprintf( "adding a table usage NULL" );
 
 			DATA_FORALL( pdlRecord, idx, struct jsox_value_container *, jsval ) {
 				int m;
@@ -665,6 +666,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							tables[table].alias = colMap[idx].alias;
 							colMap[idx].t = tables + table;
 							usedTables++;
+							//lprintf( "adding a table usage %s", colMap[idx].alias, colMap[idx].table);
 						}
 						fields[m].used++;
 						break;
@@ -688,6 +690,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							tables[table].alias = colMap[idx].alias;
 							colMap[idx].t = tables + table;
 							usedTables++;
+							//lprintf( "adding a table usage %s", colMap[idx].alias, colMap[idx].table);
 						}
 					} else
 						colMap[idx].t = tables;
@@ -697,7 +700,8 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 					usedFields++;
 				}
 			}
-			if( usedTables > 1 )
+			// NULL and 1 is just 1 table still...
+			if( usedTables > 2 )
 				for( int m = 0; m < usedFields; m++ ) {
 					for( int t = 1; t < usedTables; t++ ) {
 						if( StrCaseCmp( fields[m].name, tables[t].alias ) == 0 ) {
@@ -718,7 +722,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 				do {
 					Local<Value> val;
 					tables[0].container = record = Object::New( isolate );
-					if( usedTables > 1 && maxDepth > 1 )
+					if( usedTables > 2 && maxDepth > 1 )
 						for( int n = 1; n < usedTables; n++ ) {
 							tables[n].container = Object::New( isolate );
 							SETVAR( record, tables[n].alias, tables[n].container );
@@ -815,7 +819,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							else
 								SETVAR( container, jsval->name, val );
 						}
-						else if( usedTables > 1 || ( fields[colMap[idx].col].used > 1 ) ) {
+						else if( usedTables > 2 || ( fields[colMap[idx].col].used > 1 ) ) {
 							if( fields[colMap[idx].col].used > 1 ) {
 								if( !jsval->name )
 									lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
