@@ -119,7 +119,7 @@ class Table {
 					if( !col.COLUMN_DEFAULT )
 						newcol.default = null;
 					else
-						newcol.default = Number(col.dflt_value);					
+						newcol.default = Number(col.COLUMN_DEFAULT);					
 					break;
 			}
 			newcol.type = t[0];
