@@ -622,6 +622,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 				const char *name;
 				int used;
 				int first;
+				int hasArray;
 				Local<Array> array;
 			} *fields = NewArray( struct fieldTypes, items ) ;
 			int usedTables = 0;
@@ -649,14 +650,17 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 
 				for( m = 0; m < usedFields; m++ ) {
 					if( StrCaseCmp( fields[m].name, jsval->name ) == 0 ) {
+						// this field duplicated a field already in the structure
 						colMap[idx].col = m;
 						colMap[idx].depth = fields[m].used;
 						if( colMap[idx].depth > maxDepth )
 							maxDepth = colMap[idx].depth+1;
-						colMap[idx].alias = PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx );
+						colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx ) );
+						//lprintf( "Alias:%s also in %s", jsval->name, colMap[idx].alias);
 						int table;
 						for( table = 0; table < usedTables; table++ ) {
 							if( StrCmp( tables[table].alias, colMap[idx].alias ) == 0 ) {
+								//lprintf( "Table already existed?");
 								colMap[idx].t = tables + table;
 								break;
 							}
@@ -672,11 +676,13 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 						break;
 					}
 				}
+				
 				if( m == usedFields ) {
 					colMap[idx].col = m;
 					colMap[idx].depth = 0;
-					colMap[idx].table = PSSQL_GetColumnTableName( sql->odbc, (int)idx );
-					colMap[idx].alias = PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx );
+					colMap[idx].table = StrDup( PSSQL_GetColumnTableName( sql->odbc, (int)idx ) );
+					colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx ) );
+					//lprintf( "Alias:%s in %s", jsval->name, colMap[idx].alias);
 					if( colMap[idx].table && colMap[idx].alias && colMap[idx].table[0] && colMap[idx].alias[0] ) {
 						int table;
 						for( table = 0; table < usedTables; table++ ) {
@@ -697,6 +703,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 					fields[usedFields].first = (int)idx;
 					fields[usedFields].name = jsval->name;// sql->fields[idx];
 					fields[usedFields].used = 1;
+					fields[usedFields].hasArray = FALSE;
 					usedFields++;
 				}
 			}
@@ -705,6 +712,9 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 				for( int m = 0; m < usedFields; m++ ) {
 					for( int t = 1; t < usedTables; t++ ) {
 						if( StrCaseCmp( fields[m].name, tables[t].alias ) == 0 ) {
+							// just have to make sure the column is in it's alias when output....
+							fields[m].used++;
+							/*
 							PVARTEXT pvtSafe = VarTextCreate();
 							vtprintf( pvtSafe, "%s : %s", TranslateText( "Column name overlaps table alias" ), tables[t].alias );
 							isolate->ThrowException( Exception::Error(
@@ -712,6 +722,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							VarTextDestroy( &pvtSafe );
 							DeleteDataList( &pdlParams );
 							return;
+							*/
 						}
 					}
 				}
@@ -736,13 +747,16 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 
 						Local<Object> container = colMap[idx].t->container;
 						if( fields[colMap[idx].col].used > 1 ) {
+							// add an array on the name for each result to be stored
 							if( fields[colMap[idx].col].first == idx ) {
 								if( !jsval->name )
 									lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
-								else
+								else {
 									SETVAR( record, jsval->name
 									           , fields[colMap[idx].col].array = Array::New( isolate )
 									           );
+									fields[colMap[idx].col].hasArray = TRUE;
+								}
 							}
 						}
 
@@ -812,19 +826,18 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							val = ab;
 							break;
 						}
-
 						if( fields[colMap[idx].col].used == 1 ){
 							if( !jsval->name )
 								lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
 							else
-								SETVAR( container, jsval->name, val );
+								SETVAR( record, jsval->name, val );
 						}
-						else if( usedTables > 2 || ( fields[colMap[idx].col].used > 1 ) ) {
-							if( fields[colMap[idx].col].used > 1 ) {
-								if( !jsval->name )
-									lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
-								else
-									SETVAR( colMap[idx].t->container, jsval->name, val );
+						else if( fields[colMap[idx].col].used > 1 ) {
+							if( !jsval->name )
+								lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
+							else
+								SETVAR( colMap[idx].t->container, jsval->name, val );
+							if( fields[colMap[idx].col].hasArray ) {
 								if( colMap[idx].alias )
 									SETVAR( fields[colMap[idx].col].array, colMap[idx].alias, val );
 								SETN( fields[colMap[idx].col].array, colMap[idx].depth, val );
