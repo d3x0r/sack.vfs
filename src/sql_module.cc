@@ -627,19 +627,19 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 			} *fields = NewArray( struct fieldTypes, items ) ;
 			int usedTables = 0;
 			struct tables {
-				const char *table;
+				//const char *table;
 				const char *alias;
 				Local<Object> container;
 			}  *tables = NewArray( struct tables, items + 1);
 			struct colMap {
 				int depth;
 				int col;
-				const char *table;
+				//const char *table;
 				const char *alias;
 				Local<Object> container;
 				struct tables *t;
 			}  *colMap = NewArray( struct colMap, items );
-			tables[usedTables].table = NULL;
+			//tables[usedTables].table = NULL;
 			tables[usedTables].alias = NULL;
 			usedTables++;
 			//lprintf( "adding a table usage NULL" );
@@ -666,7 +666,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							}
 						}
 						if( table == usedTables ) {
-							tables[table].table = colMap[idx].table;
+							//tables[table].table = colMap[idx].table;
 							tables[table].alias = colMap[idx].alias;
 							colMap[idx].t = tables + table;
 							usedTables++;
@@ -680,10 +680,10 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 				if( m == usedFields ) {
 					colMap[idx].col = m;
 					colMap[idx].depth = 0;
-					colMap[idx].table = StrDup( PSSQL_GetColumnTableName( sql->odbc, (int)idx ) );
+					//colMap[idx].table = StrDup( PSSQL_GetColumnTableName( sql->odbc, (int)idx ) );
 					colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx ) );
 					//lprintf( "Alias:%s in %s", jsval->name, colMap[idx].alias);
-					if( colMap[idx].table && colMap[idx].alias && colMap[idx].table[0] && colMap[idx].alias[0] ) {
+					if( colMap[idx].alias && colMap[idx].alias[0] ) {
 						int table;
 						for( table = 0; table < usedTables; table++ ) {
 							if( StrCmp( tables[table].alias, colMap[idx].alias ) == 0 ) {
@@ -692,7 +692,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							}
 						}
 						if( table == usedTables ) {
-							tables[table].table = colMap[idx].table;
+							//tables[table].table = colMap[idx].table;
 							tables[table].alias = colMap[idx].alias;
 							colMap[idx].t = tables + table;
 							usedTables++;
@@ -846,6 +846,13 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 					}
 					SETN( records, row++, record );
 				} while( FetchSQLRecordJS( sql->odbc, &pdlRecord ) );
+			}
+			{
+				int c;
+				for( c = 0; c < items; c++ ) {
+					if( colMap[c].alias ) Deallocate( const char*, colMap[c].alias );
+					//if( colMap[c].table ) Deallocate( char*, colMap[c].table );
+				}
 			}
 			Deallocate( struct fieldTypes*, fields );
 			Deallocate( struct tables*, tables );
