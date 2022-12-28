@@ -233,7 +233,9 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.806(in progress)
+- 1.1.807(in progress)
+- 1.1.806
+   - fix wide character directory creation on windows.
 - 1.1.805
    - fixed linux network stall.
    - improved SQL interface.
