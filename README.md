@@ -233,7 +233,13 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.805(in progress)
+- 1.1.806(in progress)
+- 1.1.805
+   - fixed linux network stall.
+   - improved SQL interface.
+   - TLS Certificate generation update/fix; true is 0xFF not `not 0`.
+   - fixed double Release() in error socket path.
+   - Improve Electron compatibility; electrons package system is still deficient to be useful thuogh.
 - 1.1.804
    - missing source in pack.
 - 1.1.803  
