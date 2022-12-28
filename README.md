@@ -229,7 +229,9 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.804(in progress)
+- 1.1.805(in progress)
+- 1.1.804
+   - missing source in pack.
 - 1.1.803  
    - include LibreSSL 3.5.3 to avoid conflicts/incompatibilities with Node's included OpenSSL versions.
    - change npm install to use cmake-js to be able to use included LibreSSL
