@@ -38,6 +38,8 @@ class Table {
 	indexes = [];
 	keys = {};
 
+	fkeys = [];
+
 	db = null;
 	sqlite = false;
 	constructor( db_, tableName, sqlite ) {
@@ -66,6 +68,7 @@ class Table {
 			if( extra && extra.includes( "DEFAULT" ) ) {
 				newCol.default = tokenAfter( extra, "DEFAULT" );				
 			}
+
 			if( extra && (extra.includes( "AUTO_INCREMENT" ) || extra.includes( "auto_increment" )) ) {
 				newCol.auto_increment = true;
 				newCol.primary_key = true;
@@ -88,11 +91,41 @@ class Table {
 				newcol.precision = Number(t[1].slice( 0, -1 ));
 			}
 			newcol.nullable = col.IS_NULLABLE==="YES";
-			newcol.default = col.COLUMN_DEFAULT;
+			//console.log( "dflt?", t, col );
+			switch( col.DATA_TYPE ) {
+				default:
+					console.log( "Unhandled column type to convert:", t[0] );
+					newcol.default = col.COLUMN_DEFAULT;
+					break;
+				case 'varchar':
+				case 'char':
+				case 'text':
+				case 'mediumtext':
+				case 'longtext':
+				case 'tinyblob':
+				case 'datetime':
+				case 'date':
+				case 'json':
+				case 'timestamp':
+					newcol.default = col.COLUMN_DEFAULT;
+					break;
+				case 'int':
+				case 'decimal':
+				case 'bigint':
+				case 'tinyint':
+				case 'double':
+				case 'float':
+					//console.log( "numeric default?", typeof( col.COLUMN_DEFAULT ), col.COLUMN_DEFAULT );
+					if( !col.COLUMN_DEFAULT )
+						newcol.default = null;
+					else
+						newcol.default = Number(col.COLUMN_DEFAULT);					
+					break;
+			}
 			newcol.type = t[0];
 			if( col.COLUMN_KEY==="PRI" ) 
 				newcol.primary_key = true;
-			if( col.EXTRA ==="auto_incrememnt" )
+			if( col.EXTRA ==="auto_increment" ||col.EXTRA ==="AUTO_INCREMENT")
 				newcol.auto_increment = true
 			//console.log( "COL:", newcol );
 			this.columns.push( newcol );
@@ -102,6 +135,7 @@ class Table {
 			//col.DATA_TYPE
 			//col.COLUMN_TYPE // includes DATA_TYPE + (precision)
 		}		
+
 		const keys = db.do( "select * from INFORMATION_SCHEMA.STATISTICS where TABLE_NAME=? and TABLE_SCHEMA=DATABASE()", this.name );
 		for( let key of keys ) {
 			const index = this.keys[key.INDEX_NAME] || new Index();
@@ -116,6 +150,25 @@ class Table {
 				
 			}
 		}
+
+		const fkeys = db.do( " \
+		SELECT TABLE_NAME,COLUMN_NAME,CONSTRAINT_NAME, REFERENCED_TABLE_NAME,REFERENCED_COLUMN_NAME \
+	  FROM \
+		INFORMATION_SCHEMA.KEY_COLUMN_USAGE \
+	  WHERE \
+		REFERENCED_TABLE_SCHEMA = DATABASE() AND \
+		TABLE_NAME = ? ", this.name );
+		//console.log( 'foreign keys:', fkeys );
+		for( let fkey of fkeys ) {
+			const fk = new ForeignKey();
+			fk.name = fkey.CONSTRAINT_NAME;
+			fk.refTable = fkey.REFERENCED_TABLE_NAME;
+			fk.refColumn = fkey.REFERENCED_COLUMN_NAME;
+			fk.srcColumn = fkey.COLUMN_NAME;
+			this.fkeys.push( fk );
+			//console.log( "again:", fk );
+		}
+
 
 	}	
 	
@@ -161,7 +214,26 @@ class Table {
 				newcol.precision = Number(t[1].slice( 0, -1 ));
 			}
 			newcol.nullable = !col.notnull;
-			newcol.default = col.dflt_value;
+			switch( t[0] ) {
+				default:
+					console.log( "Unhandled column type to convert:", t[0] );
+					newcol.default = col.dflt_value;
+					break;
+				case 'varchar':
+				case 'char':
+				case 'datetime':
+					newcol.default = col.dflt_value;
+					break;
+				case 'int':
+				case 'decimal':
+				case 'bigint':
+					if( !col.dflt_value )
+						newcol.default = null;
+					else
+						newcol.default = Number(col.dflt_value);
+					
+					break;
+			}
 			newcol.type = t[0];
 			newcol.type_ = col.type;
 
@@ -213,6 +285,13 @@ class Column {
 	auto_increment = false;
 	primary_key = false;
 	
+}
+
+class ForeignKey {
+	name = null;
+	refTable = null;
+	refColumn = null;
+	srcColumn = null;
 }
 
 //console.log( "TeST:", tokenAfter( "DEFAULT '0'", "DEFAULT" ) );

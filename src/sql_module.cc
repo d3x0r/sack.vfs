@@ -622,25 +622,27 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 				const char *name;
 				int used;
 				int first;
+				int hasArray;
 				Local<Array> array;
 			} *fields = NewArray( struct fieldTypes, items ) ;
 			int usedTables = 0;
 			struct tables {
-				const char *table;
+				//const char *table;
 				const char *alias;
 				Local<Object> container;
 			}  *tables = NewArray( struct tables, items + 1);
 			struct colMap {
 				int depth;
 				int col;
-				const char *table;
+				//const char *table;
 				const char *alias;
 				Local<Object> container;
 				struct tables *t;
 			}  *colMap = NewArray( struct colMap, items );
-			tables[usedTables].table = NULL;
+			//tables[usedTables].table = NULL;
 			tables[usedTables].alias = NULL;
 			usedTables++;
+			//lprintf( "adding a table usage NULL" );
 
 			DATA_FORALL( pdlRecord, idx, struct jsox_value_container *, jsval ) {
 				int m;
@@ -648,34 +650,40 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 
 				for( m = 0; m < usedFields; m++ ) {
 					if( StrCaseCmp( fields[m].name, jsval->name ) == 0 ) {
+						// this field duplicated a field already in the structure
 						colMap[idx].col = m;
 						colMap[idx].depth = fields[m].used;
 						if( colMap[idx].depth > maxDepth )
 							maxDepth = colMap[idx].depth+1;
-						colMap[idx].alias = PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx );
+						colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx ) );
+						//lprintf( "Alias:%s also in %s", jsval->name, colMap[idx].alias);
 						int table;
 						for( table = 0; table < usedTables; table++ ) {
 							if( StrCmp( tables[table].alias, colMap[idx].alias ) == 0 ) {
+								//lprintf( "Table already existed?");
 								colMap[idx].t = tables + table;
 								break;
 							}
 						}
 						if( table == usedTables ) {
-							tables[table].table = colMap[idx].table;
+							//tables[table].table = colMap[idx].table;
 							tables[table].alias = colMap[idx].alias;
 							colMap[idx].t = tables + table;
 							usedTables++;
+							//lprintf( "adding a table usage %s", colMap[idx].alias, colMap[idx].table);
 						}
 						fields[m].used++;
 						break;
 					}
 				}
+				
 				if( m == usedFields ) {
 					colMap[idx].col = m;
 					colMap[idx].depth = 0;
-					colMap[idx].table = PSSQL_GetColumnTableName( sql->odbc, (int)idx );
-					colMap[idx].alias = PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx );
-					if( colMap[idx].table && colMap[idx].alias && colMap[idx].table[0] && colMap[idx].alias[0] ) {
+					//colMap[idx].table = StrDup( PSSQL_GetColumnTableName( sql->odbc, (int)idx ) );
+					colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx ) );
+					//lprintf( "Alias:%s in %s", jsval->name, colMap[idx].alias);
+					if( colMap[idx].alias && colMap[idx].alias[0] ) {
 						int table;
 						for( table = 0; table < usedTables; table++ ) {
 							if( StrCmp( tables[table].alias, colMap[idx].alias ) == 0 ) {
@@ -684,23 +692,29 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							}
 						}
 						if( table == usedTables ) {
-							tables[table].table = colMap[idx].table;
+							//tables[table].table = colMap[idx].table;
 							tables[table].alias = colMap[idx].alias;
 							colMap[idx].t = tables + table;
 							usedTables++;
+							//lprintf( "adding a table usage %s", colMap[idx].alias, colMap[idx].table);
 						}
 					} else
 						colMap[idx].t = tables;
 					fields[usedFields].first = (int)idx;
 					fields[usedFields].name = jsval->name;// sql->fields[idx];
 					fields[usedFields].used = 1;
+					fields[usedFields].hasArray = FALSE;
 					usedFields++;
 				}
 			}
-			if( usedTables > 1 )
+			// NULL and 1 is just 1 table still...
+			if( usedTables > 2 )
 				for( int m = 0; m < usedFields; m++ ) {
 					for( int t = 1; t < usedTables; t++ ) {
 						if( StrCaseCmp( fields[m].name, tables[t].alias ) == 0 ) {
+							// just have to make sure the column is in it's alias when output....
+							fields[m].used++;
+							/*
 							PVARTEXT pvtSafe = VarTextCreate();
 							vtprintf( pvtSafe, "%s : %s", TranslateText( "Column name overlaps table alias" ), tables[t].alias );
 							isolate->ThrowException( Exception::Error(
@@ -708,6 +722,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							VarTextDestroy( &pvtSafe );
 							DeleteDataList( &pdlParams );
 							return;
+							*/
 						}
 					}
 				}
@@ -718,7 +733,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 				do {
 					Local<Value> val;
 					tables[0].container = record = Object::New( isolate );
-					if( usedTables > 1 && maxDepth > 1 )
+					if( usedTables > 2 && maxDepth > 1 )
 						for( int n = 1; n < usedTables; n++ ) {
 							tables[n].container = Object::New( isolate );
 							SETVAR( record, tables[n].alias, tables[n].container );
@@ -732,13 +747,16 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 
 						Local<Object> container = colMap[idx].t->container;
 						if( fields[colMap[idx].col].used > 1 ) {
+							// add an array on the name for each result to be stored
 							if( fields[colMap[idx].col].first == idx ) {
 								if( !jsval->name )
 									lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
-								else
+								else {
 									SETVAR( record, jsval->name
 									           , fields[colMap[idx].col].array = Array::New( isolate )
 									           );
+									fields[colMap[idx].col].hasArray = TRUE;
+								}
 							}
 						}
 
@@ -808,19 +826,18 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 							val = ab;
 							break;
 						}
-
 						if( fields[colMap[idx].col].used == 1 ){
 							if( !jsval->name )
 								lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
 							else
-								SETVAR( container, jsval->name, val );
+								SETVAR( record, jsval->name, val );
 						}
-						else if( usedTables > 1 || ( fields[colMap[idx].col].used > 1 ) ) {
-							if( fields[colMap[idx].col].used > 1 ) {
-								if( !jsval->name )
-									lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
-								else
-									SETVAR( colMap[idx].t->container, jsval->name, val );
+						else if( fields[colMap[idx].col].used > 1 ) {
+							if( !jsval->name )
+								lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( statement ) );
+							else
+								SETVAR( colMap[idx].t->container, jsval->name, val );
+							if( fields[colMap[idx].col].hasArray ) {
 								if( colMap[idx].alias )
 									SETVAR( fields[colMap[idx].col].array, colMap[idx].alias, val );
 								SETN( fields[colMap[idx].col].array, colMap[idx].depth, val );
@@ -829,6 +846,13 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 					}
 					SETN( records, row++, record );
 				} while( FetchSQLRecordJS( sql->odbc, &pdlRecord ) );
+			}
+			{
+				int c;
+				for( c = 0; c < items; c++ ) {
+					if( colMap[c].alias ) Deallocate( const char*, colMap[c].alias );
+					//if( colMap[c].table ) Deallocate( char*, colMap[c].table );
+				}
 			}
 			Deallocate( struct fieldTypes*, fields );
 			Deallocate( struct tables*, tables );

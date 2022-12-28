@@ -1,7 +1,5 @@
 
 
-const sack = require( "sack.vfs" );
-const path = require( "path" );
 module.exports = uExpress;
 
 function uExpress() {
@@ -46,9 +44,7 @@ function uExpress() {
 						//console.log( "Look for request:", req, res );
 						const parts = req.url.split("?");
 						const url = unescape(parts[0]);
-						const filepath = path.dirname(url)+path.basename(url)+path.extname(url);
-						const name = path.basename(url);
-						const type = path.extname(url);
+						const filepath = url;
                         
 						//console.log( "Think parts is:", filepath, name, type, parts[1] );
 						let cb;

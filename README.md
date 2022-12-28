@@ -1,8 +1,9 @@
 # sack.vfs
 
-[![Join the chat at https://gitter.im/sack-vfs/Lobby](https://badges.gitter.im/sack-vfs/Lobby.svg)](https://gitter.im/sack-vfs/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge) Might have better luck on IRC; but leave an issue, start a discussion...
+[![Join the chat at https://gitter.im/sack-vfs/Lobby](https://badges.gitter.im/sack-vfs/Lobby.svg)](https://gitter.im/sack-vfs/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge) 
 
-[![buddy pipeline](https://app.buddy.works/d3ck0r/sack-vfs/pipelines/pipeline/385129/badge.svg?token=5f56dac42e120ee823fddcf7e2dfdb3d62d458c840d99b2502424f83cec81ca0 "buddy pipeline")](https://app.buddy.works/d3ck0r/sack-vfs/pipelines/pipeline/385129)
+
+![buddy pipeline](https://app.buddy.works/d3ck0r/sack-vfs/pipelines/pipeline/385129/badge.svg?token=5f56dac42e120ee823fddcf7e2dfdb3d62d458c840d99b2502424f83cec81ca0 "buddy pipeline")](https://app.buddy.works/d3ck0r/sack-vfs/pipelines/pipeline/385129)
 
 (Deprecating; no free support - one shot 10k credits then 0) [![Build Status](https://travis-ci.com/d3x0r/sack.vfs.svg?branch=master)](https://app.travis-ci.com/github/d3x0r/sack.vfs)
 
@@ -28,7 +29,7 @@
 ## Requirements
 
 ### All Systems
-  * Node, NPM.
+  * Node.
   * `npm install -g node-gyp`
   * a working build environment
      * (win32) `npm install -g windows-build-tools` - if these are not initially installed, it will require a system restart, without any visible notice; but the install will not complete until restarted.
@@ -38,10 +39,7 @@
 
 ### ODBC and uuid support. (can be disabled)
 
-ODBC connectivity is provided as an alternative to the sqlite interface, providing connectivity
-with all existing databases.  It is not required; Sqlite itself is not 'required' but special steps
-have to be taken to disable it.  When enabled, the [SACK](https://github.com/d3x0r/sack) library uses
-it to configure some runtime options.  Options may be controlled by an 'interface.conf' configuration file.
+ODBC connectivity is provided as an alternative to the sqlite interface, providing connectivity with all existing databases.  It is not required; Sqlite itself is not 'required' but special steps have to be taken to disable it.  When enabled, the [SACK](https://github.com/d3x0r/sack) library uses it to configure some runtime options.  Options may be controlled by an 'interface.conf' configuration file.
 
 #### Various Linux
 
@@ -203,7 +201,13 @@ import {SACK} from "sack.vfs";
 
  - [Http/Websocket](apps/http-ws) - simple script to handle basic resource requests, and provide a websocket endpoint interface.  User supplies `accept()` and `connect()` callbacks.  Also includes basic express-like interface addon.
 
+ - PRNG - Small seedable RNGs.
+ - Events - Small event subscription/dispatch class
+ - dbUtil - database utilities to read schema from database; builds JS objects representing table structures which can be queried for structure.
+ - summoner - (experimental/example) this launches and tracks other tasks.  
+ - task-manager - Runs tasks, provides a simple UI which can get the tasks' logs and control run state of tasks.
 
+ 
 ## Node JS Loader Support
 
 Node loader hooks for [`.json6`](https://github.com/d3x0r/json6) and [`.jsox`](https://github.com/d3x0r/JSOX) file types.

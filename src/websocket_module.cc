@@ -994,7 +994,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					if( eventMessage->data.error.buffer ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
 						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (void*)eventMessage->data.error.buffer,
-							eventMessage->data.error.buflen, releaseBufferBackingStore, NULL );
+							eventMessage->data.error.buflen, dontReleaseBufferBackingStore, NULL );
 						argv[2] = ArrayBuffer::New( isolate, bs );
 #else
 					if( eventMessage->data.error.buffer )
