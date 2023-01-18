@@ -48,15 +48,15 @@ export function getRequestHandler( serverOpts ) {
 		//const resource_path = serverOpts.resourcePath || ".";
 
 		//console.log( "Received request:", req );
-		if( req.url === "/" ) req.url = "/index.html";
+		if( req.url[req.url.length-1] === "/" ) req.url += "index.html";
+
 		let filePath = resourcePath + unescape(req.url);
 		if( req.url.startsWith( "/node_modules/" ) 
 		   && ( req.url.startsWith( "/node_modules/@d3x0r" ) 
 		      || req.url.startsWith( "/node_modules/jsox" )
 		      || req.url.startsWith( "/node_modules/sack.vfs/apps" ) ) )
 			filePath=npm_path  + unescape(req.url);
-		let extname = path.extname(filePath);
-
+		let extname = path.extname(filePath);		
 		let contentEncoding = encMap[extname];
 		if( contentEncoding ) {
 			extname = path.extname(path.basename(filePath,extname));
@@ -69,11 +69,19 @@ export function getRequestHandler( serverOpts ) {
 			const headers = { 'Content-Type': contentType, 'Access-Control-Allow-Origin' : req.connection.headers.Origin };
 			if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
 			res.writeHead(200, headers );
-			res.end( disk.read( filePath ) );
-			if( requests.length !== 0 )
-				clearTimeout( reqTimeout );
-			reqTimeout = setTimeout( logRequests, 100 );
-			requests.push( req.url );
+			const fc = disk.read(filePath );
+
+			if( fc ) {
+				res.end( fc );
+
+				if( requests.length !== 0 )
+					clearTimeout( reqTimeout );
+				reqTimeout = setTimeout( logRequests, 100 );
+				requests.push( req.url );
+			} else {
+				console.log( 'file exists, but reading it returned nothing?', filePath );
+				return false;
+			}
 			return true;
 		} else {
 			lastFilePath = filePath;

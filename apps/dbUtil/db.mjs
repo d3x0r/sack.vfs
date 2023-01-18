@@ -121,6 +121,7 @@ class Table {
 					else
 						newcol.default = Number(col.COLUMN_DEFAULT);					
 					break;
+
 			}
 			newcol.type = t[0];
 			if( col.COLUMN_KEY==="PRI" ) 
