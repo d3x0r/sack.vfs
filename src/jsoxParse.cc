@@ -1085,6 +1085,8 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 
 					if( !sub_v->IsUndefined() )
 						o->Set( revive->context, revive->fieldName, newObj.ToLocalChecked() );
+					else
+						sub_v = o->Get( revive->context, revive->fieldName ).ToLocalChecked();
 				}
 				else {
 					isolate->ThrowException( Exception::Error(
