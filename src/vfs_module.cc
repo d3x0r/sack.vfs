@@ -1668,7 +1668,7 @@ void FileObject::writeFile(const v8::FunctionCallbackInfo<Value>& args) {
 				ArrayBuffer::Contents contents = ab->GetContents();
 				//file->buf = (char*)contents.Data();
 				//file->size = contents.ByteLength();
-				buf = contents.Data();
+				buf = (uint8_t*)contents.Data();
 				length = contents.ByteLength();
 #endif
 			}
