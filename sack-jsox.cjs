@@ -16,7 +16,12 @@ class DateNS extends Date {
 }
 
 function toISO(this_) {
-	var tzo = -this_.getTimezoneOffset(),
+	if( this_.getTime()=== -62167219200000) 
+	{
+		return "0000-01-01T00:00:00.000Z";
+	}
+	const yr = this_.getFullYear();
+	const tzo = -this_.getTimezoneOffset(),
 		dif = tzo >= 0 ? '+' : '-',
 		pad = function(num) {
 			var norm = Math.floor(Math.abs(num));
@@ -26,7 +31,7 @@ function toISO(this_) {
 			var norm = Math.floor(Math.abs(num));
 			return (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
 		};
-	return this_.getFullYear() +
+	return (( yr < 0 )? '-'+Math.abs(yr).toString().padStart( 6, '0' ):yr.toString().padStart( 4, "0" )) +
 		'-' + pad(this_.getMonth() + 1) +
 		'-' + pad(this_.getDate()) +
 		'T' + pad(this_.getHours()) +
@@ -34,7 +39,7 @@ function toISO(this_) {
 		':' + pad(this_.getSeconds()) +
 		'.' + pad3(this_.getMilliseconds()) +
 		dif + pad(tzo / 60) +
-		':' + pad(tzo % 60);
+		':' + pad(tzo % 60.0);
 }
 
 function toISONS(this_) {

@@ -121,6 +121,7 @@ class Table {
 					else
 						newcol.default = Number(col.COLUMN_DEFAULT);					
 					break;
+
 			}
 			newcol.type = t[0];
 			if( col.COLUMN_KEY==="PRI" ) 
@@ -324,8 +325,26 @@ class Db {
 	db = null;
 	MySQL=MySQL;
 	Sqlite=Sqlite;
+
 	constructor() {
 	}
+
+   getSqlDateTime(date) {
+	   if( date.getTime() === -62167219200000 ) return "0000-00-00 00:00:00";
+		const yr = date.getYear()+1900;
+		const mo = date.getMonth()+1;
+		const dy = date.getDate();
+		const h = date.getHours();
+		const m = date.getMinutes();
+		const s = date.getSeconds();
+		
+	   const string = yr.toString() + '-'+mo.toString().padStart(2,"0")+'-'+dy.toString(	).padStart(2,"0")
+			+" "+h.toString().padStart(2, '0')
+			+":"+m.toString().padStart(2, '0')
+			+":"+s.toString().padStart(2, '0');
+		return string;
+	}  	
+	
 }
 
 
