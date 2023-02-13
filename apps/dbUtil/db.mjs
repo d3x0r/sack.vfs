@@ -331,17 +331,18 @@ class Db {
 
    getSqlDateTime(date) {
 	   if( date.getTime() === -62167219200000 ) return "0000-00-00 00:00:00";
-		const yr = date.getYear()+1900;
-		const mo = date.getMonth()+1;
-		const dy = date.getDate();
-		const h = date.getHours();
-		const m = date.getMinutes();
-		const s = date.getSeconds();
+		const yr = date.getUTCFullYear();
+		const mo = date.getUTCMonth()+1;
+		const dy = date.getUTCDate();
+		const h = date.getUTCHours();
+		const m = date.getUTCMinutes();
+		const s = date.getUTCSeconds();
 		
 	   const string = yr.toString() + '-'+mo.toString().padStart(2,"0")+'-'+dy.toString(	).padStart(2,"0")
 			+" "+h.toString().padStart(2, '0')
 			+":"+m.toString().padStart(2, '0')
-			+":"+s.toString().padStart(2, '0');
+			+":"+s.toString().padStart(2, '0')
+			+"Z";
 		return string;
 	}  	
 	
