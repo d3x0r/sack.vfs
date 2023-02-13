@@ -502,7 +502,6 @@ sack.JSOX.stringifier = function() {
 	function stringify( stringifier, object, replacer, space, asField ) {
 		if( object === undefined ) return "undefined";
 		if( object === null ) return "null";
-		var firstRun = true;
 		var gap;
 		var indent;
 		var rep;
@@ -528,7 +527,6 @@ sack.JSOX.stringifier = function() {
 			encoding[pathBase] = object;
 		}
 
-
 		if( "object" === typeof object && stringifier_ ) {
 			var ref = stringifier_.getReference( object );
                         //console.log("This added object as ref", ref, object );
@@ -538,7 +536,7 @@ sack.JSOX.stringifier = function() {
 			}else { //if( asField )
 				fieldMap.delete(object)
 				//console.log( "Deleting object reference from fieldMap" );
-                        }
+            }
 		}
 
 		// If the space parameter is a number, make an indent string containing that
@@ -564,6 +562,7 @@ sack.JSOX.stringifier = function() {
 		}
 		
 		const r  = str( asField, {[asField]:object} );
+
 		sack.JSOX.stringifierActive = stringifier_;
 		commonClasses.length = 0;
 		if( !(path.length = encoding.length = pathBase ) ){
@@ -572,7 +571,7 @@ sack.JSOX.stringifier = function() {
 			//console.log( "Stringifier is still in a stack?", path);
 		}
 		DEBUG_STRINGIFY_OUTPUT && console.log( "Stringify Result:", r );
-      if(_DEBUG_STRINGIFY_TIMING) {
+		if(_DEBUG_STRINGIFY_TIMING) {
 			let now = Date.now();
 			timeIn += now - lastTick;
 			lastTick = now;
@@ -584,14 +583,17 @@ sack.JSOX.stringifier = function() {
 		return r;
 
 
-
-
-
-		// from https://github.com/douglascrockford/JSON-js/blob/master/json2.js#L181
-		// (highly modified since then)
 		function str(key, holder) {
-			//console.trace( "-------------------------------------- STR -----------------------", key, holder );
-			//console.log( "Encode object:", holder[key], "field:", key );
+			var mind = gap;
+			const doArrayToJSOX_ = arrayToJSOX.cb;
+			const mapToObject_ = mapToJSOX.cb;		 
+			arrayToJSOX.cb = doArrayToJSOX;
+			mapToJSOX.cb = mapToObject;
+			const v = str_(key,holder);
+			arrayToJSOX.cb = doArrayToJSOX_;
+			mapToJSOX.cb = mapToObject_;
+			return v;
+
 			function doArrayToJSOX() {
 				var v;
 				var partial = [];
@@ -608,7 +610,6 @@ sack.JSOX.stringifier = function() {
 					encoding.length = thisNodeNameIndex;
 					// Join all of the elements together, separated with commas, and wrap them in
 					// brackets.
-
 					v = ( partial.length === 0
 						? "[]"
 						: gap
@@ -648,278 +649,278 @@ sack.JSOX.stringifier = function() {
 				return out;
 			}
 
-			if( firstRun ) {
-				arrayToJSOX.cb = doArrayToJSOX;
-				mapToJSOX.cb = mapToObject;
-				firstRun = false;
-			}
 
-		// Produce a string from holder[key].
 
-			var i;          // The loop counter.
-			var k;          // The member key.
-			var v;          // The member value.
-			var length;
-			var mind = gap;
-			var partialClass;
-			var partial;
-			const thisNodeNameIndex = path.length;
-			var value = holder[key];
-			let isObject = (typeof value === "object");
-			if( "string" === typeof value ) value = getIdentifier( value );
-			_DEBUG_STRINGIFY &&
-				console.log( "Prototype lists:", localToProtoTypes.length, value && localToProtoTypes.get( Object.getPrototypeOf( value ) )
-					, value && Object.getPrototypeOf( value ), value && value.constructor.name
-					);
+			// from https://github.com/douglascrockford/JSON-js/blob/master/json2.js#L181
+			// (highly modified since then)
+			function str_(key, holder) {
+				//console.trace( "-------------------------------------- STR -----------------------", key, holder );
+				//console.log( "Encode object:", holder[key], "field:", key );
 
-			if( isObject && ( value !== null ) ) {
-				if( objectToJSOX ){
-                                    	_DEBUG_STRINGIFY &&
-						console.log( "doing generic object conversion phase..." );
+				// Produce a string from holder[key].
+				var i;          // The loop counter.
+				var k;          // The member key.
+				var v;          // The member value.
+				var length;
+				var partialClass;
+				var partial;
+				const thisNodeNameIndex = path.length;
+				var value = holder[key];
+				let isObject = (typeof value === "object");
+				if( "string" === typeof value ) value = getIdentifier( value );
+				_DEBUG_STRINGIFY &&
+					console.log( "Prototype lists:", localToProtoTypes.length, value && localToProtoTypes.get( Object.getPrototypeOf( value ) )
+						, value && Object.getPrototypeOf( value ), value && value.constructor.name
+						);
+
+				if( isObject && ( value !== null ) ) {
+					if( objectToJSOX ){
+						_DEBUG_STRINGIFY &&
+							console.log( "doing generic object conversion phase..." );
+						if( !stringifying.find( val=>val===value ) ) {
+							stringifying.push( value );
+							encoding[thisNodeNameIndex] = value;
+							value = objectToJSOX.apply(value, [stringifier]);
+							_DEBUG_STRINGIFY &&
+									console.log( "Value should still be value:", value );
+							/*
+							if( value !== encoding[thisNodeNameIndex] )
+								console.log( "Converted by object lookup -it's now a different type"
+									, Object.getPrototypeOf(encoding[thisNodeNameIndex])
+									, Object.getPrototypeOf(value )
+									, protoConverter, objectConverter );
+							*/
+							stringifying.pop();
+							encoding.length = thisNodeNameIndex;
+							isObject = (typeof value === "object");
+						}
+					}				
+				}
+				var protoConverter = (value !== undefined && value !== null)
+					&& ( localToProtoTypes.get( Object.getPrototypeOf( value ) )
+					|| toProtoTypes.get( Object.getPrototypeOf( value ) )
+									|| toProtoTypesByName.get( Object.getPrototypeOf( value ).constructor.name )
+					|| null )
+				var objectConverter = !protoConverter && (value !== undefined && value !== null)
+					&& ( localToObjectTypes.get( Object.keys( value ).toString() )
+					|| toObjectTypes.get( Object.keys( value ).toString() )
+					|| null )
+
+				// If we were called with a replacer function, then call the replacer to
+				// obtain a replacement value.
+
+				if (typeof rep === "function") {
+					value = rep.call(holder, key, value);
+				}
+
+				var toJSOX = ( protoConverter && protoConverter.cb )
+							|| ( objectConverter && objectConverter.cb )
+							//|| ( isObject && objectToJSOX )
+							;
+				// If the value has a toJSOX method, call it to obtain a replacement value.
+				//_DEBUG_STRINGIFY && console.log( "type:", typeof value, protoConverter, !!toJSOX, path, isObject );
+
+				if( value !== undefined
+					&& value !== null
+					&& typeof value === "object"
+					&& typeof toJSOX === "function"
+				) {
+					// is encoding?
 					if( !stringifying.find( val=>val===value ) ) {
+						if( typeof value === "object" ) {
+							v = getReference( value );
+							if( v ){
+								return v;
+							}
+						}
+						gap += indent;
+
 						stringifying.push( value );
 						encoding[thisNodeNameIndex] = value;
-						value = objectToJSOX.apply(value, [stringifier]);
-	                                    	_DEBUG_STRINGIFY &&
-        	                                        console.log( "Value should still be value:", value );
-						/*
-						if( value !== encoding[thisNodeNameIndex] )
-							console.log( "Converted by object lookup -it's now a different type"
-								, Object.getPrototypeOf(encoding[thisNodeNameIndex])
-								, Object.getPrototypeOf(value )
-								, protoConverter, objectConverter );
-						*/
+						value = toJSOX.call(value, stringifier);
 						stringifying.pop();
+						if( protoConverter && protoConverter.name ) {
+							// stringify may return a unquoted string
+							// which needs an extra space betwen its tag and value.
+							if( "string" === typeof value 
+								&& value[0] !== '"'
+								&& value[0] !== '\'' 
+								&& value[0] !== '`' 
+								&& value[0] !== '[' 
+								&& value[0] !== '{' 
+								){
+								value = ' ' + value;
+							}
+						}
+						//console.log( "Value converted:", value );
 						encoding.length = thisNodeNameIndex;
-						isObject = (typeof value === "object");
+					} else {
+						v = getReference( value );
 					}
-					//console.log( "Value convereted to:", key, value );
-				}				
-			}
-			var protoConverter = (value !== undefined && value !== null)
-				&& ( localToProtoTypes.get( Object.getPrototypeOf( value ) )
-				|| toProtoTypes.get( Object.getPrototypeOf( value ) )
-                                || toProtoTypesByName.get( Object.getPrototypeOf( value ).constructor.name )
-				|| null )
-			var objectConverter = !protoConverter && (value !== undefined && value !== null)
-				&& ( localToObjectTypes.get( Object.keys( value ).toString() )
-				|| toObjectTypes.get( Object.keys( value ).toString() )
-				|| null )
-
-			//_DEBUG_STRINGIFY && console.log( "TEST1()", value, protoConverter, objectConverter, localToProtoTypes );
-
-			var toJSOX = ( protoConverter && protoConverter.cb )
-			             || ( objectConverter && objectConverter.cb )
-						 //|| ( isObject && objectToJSOX )
-						 ;
-			// If the value has a toJSOX method, call it to obtain a replacement value.
-			//_DEBUG_STRINGIFY && console.log( "type:", typeof value, protoConverter, !!toJSOX, path, isObject );
-
-			if( value !== undefined
-				&& value !== null
-				&& typeof value === "object"
-			    && typeof toJSOX === "function"
-			) {
-				// is encoding?
-				if( !stringifying.find( val=>val===value ) ) {
-					gap += indent;
+					gap = mind;
+				} else
 					if( typeof value === "object" ) {
 						v = getReference( value );
-						if( v ) return v;
 					}
-					stringifying.push( value );
-					encoding[thisNodeNameIndex] = value;
-					value = toJSOX.call(value, stringifier);
-					stringifying.pop();
-					if( protoConverter && protoConverter.name ) {
-						// stringify may return a unquoted string
-						// which needs an extra space betwen its tag and value.
-						if( "string" === typeof value 
-							&& value[0] !== '"'
-							&& value[0] !== '\'' 
-							&& value[0] !== '`' 
-							&& value[0] !== '[' 
-							&& value[0] !== '{' 
-							){
-							value = ' ' + value;
+
+				_DEBUG_STRINGIFY && console.log( "Protoconverter leftover: ", protoConverter );
+
+				// What happens next depends on the value's type.
+				switch (typeof value) {
+				case "bigint":
+					return value + 'n';
+				case "string":
+				case "number":
+					{
+						let c = '';
+						//console.log( "outputting string result:", value, c );
+						if( key==="" ) {
+							c = classes.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"")
+								|| commonClasses.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
 						}
-					}
-					//console.log( "Value converted:", value );
-					encoding.length = thisNodeNameIndex;
-
-					gap = mind;
-				} else {
-					v = getReference( value );
-				}
-			} else
-				if( typeof value === "object" ) {
-					v = getReference( value );
-				}
-
-			_DEBUG_STRINGIFY && console.log( "Protoconverter leftover: ", protoConverter );
-			// If we were called with a replacer function, then call the replacer to
-			// obtain a replacement value.
-
-			if (typeof rep === "function") {
-				value = rep.call(holder, key, value);
-			}
-
-			// What happens next depends on the value's type.
-			switch (typeof value) {
-			case "bigint":
-				return value + 'n';
-				break;
-			case "string":
-			case "number":
-				{
-					let c = '';
-					//console.log( "outputting string result:", value, c );
-					if( key==="" ) {
-						c = classes.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"")
-						    || commonClasses.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
-					}
-					if( protoConverter && protoConverter.external ){
-						//  && protoConverter.proto === Object.getPrototypeOf(value) && protoConverter.name
-						return c + protoConverter.name + value;
-					}
-					if( objectConverter && objectConverter.external ) 
-						return c + objectConverter.name + value;
-					return c + value;//useQuote+JSOX.escape( value )+useQuote;
-				}
-			case "boolean":
-			case "null":
-
-				// If the value is a boolean or null, convert it to a string. Note:
-				// typeof null does not produce "null". The case is included here in
-				// the remote chance that this gets fixed someday.
-
-				return String(value);
-
-				// If the type is "object", we might be dealing with an object or an array or
-				// null.
-
-			case "object":
-
-				_DEBUG_STRINGIFY && console.log( "ENTERING OBJECT EMISSION WITH:", v, value );
-				if( v ) return v;
-
-				// Due to a specification blunder in ECMAScript, typeof null is "object",
-				// so watch out for that case.
-				if (!value) {
-					return "null";
-				}
-
-				// Make an array to hold the partial results of stringifying this object value.
-
-				gap += indent;
-				partialClass = null;
-				partial = [];
-
-				// If the replacer is an array, use it to select the members to be stringified.
-				if (rep && typeof rep === "object") {
-					length = rep.length;
-					_DEBUG_STRINGIFY && console.log( "Working through replacer" );
-					partialClass = matchObject( value, rep );
-					for (i = 0; i < length; i += 1) {
-						if (typeof rep[i] === "string") {
-							k = rep[i];
-							path[thisNodeNameIndex] = k;
-							//console.log( "set encoding item", thisNodeNameIndex, encoding.length);
-							encoding[thisNodeNameIndex] = value;
-							v = str(k, value);
-							if (v) {
-								if( partialClass ) {
-									partial.push(v);
-							} else
-									partial.push(getIdentifier(k) + (
-										(gap)
-											? ": "
-											: ":"
-									) + v);
-							}
+						if( protoConverter && protoConverter.external ){
+							//  && protoConverter.proto === Object.getPrototypeOf(value) && protoConverter.name
+							return c + protoConverter.name + value;
 						}
+						if( objectConverter && objectConverter.external ) 
+							return c + objectConverter.name + value;
+						return c + value;//useQuote+JSOX.escape( value )+useQuote;
 					}
-					path.length = thisNodeNameIndex;
-					//console.log( "remove encoding item", thisNodeNameIndex, encoding.length);
-					encoding.length = thisNodeNameIndex;
-				} else {
+				case "boolean":
+				case "null":
 
-					// Otherwise, iterate through all of the keys in the object.
-					partialClass = matchObject( value );
-					var keys = [];
-					_DEBUG_STRINGIFY && console.log( "is something in something?", k, value );
-					for (k in value) {
-						_DEBUG_STRINGIFY && console.log( "Ya...", k );
-						if( ignoreNonEnumerable )
-							if( !Object.prototype.propertyIsEnumerable.call( value, k ) ){
-								_DEBUG_STRINGIFY && console.log( "skipping non-enuerable?", k );
-								continue;
-							}
+					// If the value is a boolean or null, convert it to a string. Note:
+					// typeof null does not produce "null". The case is included here in
+					// the remote chance that this gets fixed someday.
 
-						// sort properties into keys.
-						if (Object.prototype.hasOwnProperty.call(value, k)) {
-							var n;
-							for( n = 0; n < keys.length; n++ )
-								if( keys[n] > k ) {
-									keys.splice(n,0,k );
-									break;
-								}
-							if( n === keys.length )
-								keys.push(k);
-						}
+					return String(value);
+
+					// If the type is "object", we might be dealing with an object or an array or
+					// null.
+
+				case "object":
+
+					_DEBUG_STRINGIFY && console.log( "ENTERING OBJECT EMISSION WITH:", v, value );
+					if( v ) return v;
+
+					// Due to a specification blunder in ECMAScript, typeof null is "object",
+					// so watch out for that case.
+					if (!value) {
+						return "null";
 					}
-					_DEBUG_STRINGIFY && console.log( "Expanding object keys:", v, keys );
-					for(let k of keys ) {
-						if (Object.prototype.hasOwnProperty.call(value, k)) {
-							path[thisNodeNameIndex] = k;
-							encoding[thisNodeNameIndex] = value;
-							v = str(k, value);
-							if (v) {
-								if( partialClass ) {
-									partial.push(v);
+
+					// Make an array to hold the partial results of stringifying this object value.
+
+					gap += indent;
+					partialClass = null;
+					partial = [];
+
+					// If the replacer is an array, use it to select the members to be stringified.
+					if (rep && typeof rep === "object") {
+						length = rep.length;
+						_DEBUG_STRINGIFY && console.log( "Working through replacer" );
+						partialClass = matchObject( value, rep );
+						for (i = 0; i < length; i += 1) {
+							if (typeof rep[i] === "string") {
+								k = rep[i];
+								path[thisNodeNameIndex] = k;
+								//console.log( "set encoding item", thisNodeNameIndex, encoding.length);
+								encoding[thisNodeNameIndex] = value;
+								v = str(k, value);
+								if (v) {
+									if( partialClass ) {
+										partial.push(v);
 								} else
-									partial.push(getIdentifier(k)+ (
-										(gap)
-											? ": "
-											: ":"
-									) + v);
+										partial.push(getIdentifier(k) + (
+											(gap)
+												? ": "
+												: ":"
+										) + v);
+								}
 							}
 						}
+						path.length = thisNodeNameIndex;
+						//console.log( "remove encoding item", thisNodeNameIndex, encoding.length);
+						encoding.length = thisNodeNameIndex;
+					} else {
+
+						// Otherwise, iterate through all of the keys in the object.
+						partialClass = matchObject( value );
+						var keys = [];
+						_DEBUG_STRINGIFY && console.log( "is something in something?", k, value );
+						for (k in value) {
+							_DEBUG_STRINGIFY && console.log( "Ya...", k );
+							if( ignoreNonEnumerable )
+								if( !Object.prototype.propertyIsEnumerable.call( value, k ) ){
+									_DEBUG_STRINGIFY && console.log( "skipping non-enuerable?", k );
+									continue;
+								}
+
+							// sort properties into keys.
+							if (Object.prototype.hasOwnProperty.call(value, k)) {
+								var n;
+								for( n = 0; n < keys.length; n++ )
+									if( keys[n] > k ) {
+										keys.splice(n,0,k );
+										break;
+									}
+								if( n === keys.length )
+									keys.push(k);
+							}
+						}
+						_DEBUG_STRINGIFY && console.log( "Expanding object keys:", v, keys );
+						for(let k of keys ) {
+							if (Object.prototype.hasOwnProperty.call(value, k)) {
+								path[thisNodeNameIndex] = k;
+								encoding[thisNodeNameIndex] = value;
+								v = str(k, value);
+								if (v) {
+									if( partialClass ) {
+										partial.push(v);
+									} else
+										partial.push(getIdentifier(k)+ (
+											(gap)
+												? ": "
+												: ":"
+										) + v);
+								}
+							}
+						}
+						path.length = thisNodeNameIndex;
+						//console.log( "remove encoding item", thisNodeNameIndex, encoding.length);
+						encoding.length = thisNodeNameIndex;
 					}
-					path.length = thisNodeNameIndex;
-					//console.log( "remove encoding item", thisNodeNameIndex, encoding.length);
-					encoding.length = thisNodeNameIndex;
-				}
 
-				// Join all of the member texts together, separated with commas,
-				// and wrap them in braces.
-				_DEBUG_STRINGIFY && console.log( "partial:", partial, protoConverter )
-				{
-				let c;
-				if( key==="" )
-					c = classes.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"")
-					    || commonClasses.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
-				else
-					c = '';
+					// Join all of the member texts together, separated with commas,
+					// and wrap them in braces.
+					_DEBUG_STRINGIFY && console.log( "partial:", partial, protoConverter )
+					{
+						let c;
+						if( key==="" )
+							c = classes.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"")
+								|| commonClasses.map( cls=> cls.name+"{"+cls.fields.join(",")+"}" ).join(gap?"\n":"")+(gap?"\n":"");
+						else
+							c = '';
 
-				if( protoConverter && protoConverter.external ) {
-					c = c + getIdentifier( protoConverter.name );
-				}
+						if( protoConverter && protoConverter.external ) {
+							c = c + getIdentifier( protoConverter.name );
+						}
 
-				var ident = null;
-				if( partialClass )
-					ident = getIdentifier( partialClass.name );
-				v = c +
-					( partial.length === 0
-					? "{}"
-					: gap
-							? (partialClass?ident:"")+"{\n" + gap + partial.join(",\n" + gap) + "\n" + mind + "}"
-							: (partialClass?ident:"")+"{" + partial.join(",") + "}"
-					);
+						var ident = null;
+						if( partialClass )
+							ident = getIdentifier( partialClass.name );
+						v = c +
+							( partial.length === 0
+							? "{}"
+							: gap
+									? (partialClass?ident:"")+"{\n" + gap + partial.join(",\n" + gap) + "\n" + mind + "}"
+									: (partialClass?ident:"")+"{" + partial.join(",") + "}"
+							);
+					}
+					gap = mind;
+					_DEBUG_STRINGIFY && console.log(" Resulting phrase from this part is:", v );
+					return v;
 				}
-				gap = mind;
-				_DEBUG_STRINGIFY && console.log(" Resulting phrase from this part is:", v );
-				return v;
 			}
 		}
 
