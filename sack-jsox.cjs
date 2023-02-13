@@ -729,11 +729,8 @@ sack.JSOX.stringifier = function() {
 					if( !stringifying.find( val=>val===value ) ) {
 						if( typeof value === "object" ) {
 							v = getReference( value );
-							if( v ){
-								return v;
-							}
+							if( v )	return v;
 						}
-						gap += indent;
 
 						stringifying.push( value );
 						encoding[thisNodeNameIndex] = value;
@@ -757,7 +754,6 @@ sack.JSOX.stringifier = function() {
 					} else {
 						v = getReference( value );
 					}
-					gap = mind;
 				} else
 					if( typeof value === "object" ) {
 						v = getReference( value );
