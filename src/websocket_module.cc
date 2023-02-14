@@ -1825,33 +1825,37 @@ static void webSockServerEvent( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOIN
 
 }
 
-static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char *protocols, const char *resource, char **protocolReply ) {
-	wssObject *wss = (wssObject*)psv;
-	struct wssEvent evt;
-	evt.data.request.protocol = protocols;
-	evt.data.request.resource = resource;
+static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char* protocols, const char* resource, char** protocolReply ) {
+	wssObject* wss = (wssObject*)psv;
+	struct wssEvent* pevt = GetWssEvent();
+	//struct wssEvent evt;
+	( *pevt ).data.request.protocol = protocols;
+	( *pevt ).data.request.resource = resource;
 	if( !pc ) lprintf( "FATALITY - ACCEPT EVENT RECEVIED ON A NON SOCKET!?" );
 
-	evt.pc = pc;
-	evt.data.request.accepted = 0;
+	( *pevt ).pc = pc;
+	( *pevt ).data.request.accepted = 0;
 	//lprintf( "Websocket accepted... (blocks until handled.)" );
-	evt.eventType = WS_EVENT_ACCEPT;
-	evt.done = FALSE;
-	evt.waiter = MakeThread();
-	evt._this = wss;
-	EnqueLink( &wss->eventQueue, &evt );
-	if( evt.waiter == l.jsThread ) {
+	( *pevt ).eventType = WS_EVENT_ACCEPT;
+	( *pevt ).done = FALSE;
+	( *pevt ).waiter = MakeThread();
+	( *pevt )._this = wss;
+	EnqueLink( &wss->eventQueue, pevt );
+	if( ( *pevt ).waiter == l.jsThread ) {
 		wssAsyncMsg( &wss->async );
-	}
-	else
+	} else
 		uv_async_send( &wss->async );
 
-	while( !evt.done )
+	while( !( *pevt ).done )
 		Wait();
-	if( evt.data.request.protocol != protocols )
-		evt.result->protocolResponse = evt.data.request.protocol;
-	(*protocolReply) = (char*)evt.data.request.protocol;
-	return (uintptr_t)evt.data.request.accepted;
+	if( ( *pevt ).data.request.protocol != protocols )
+		( *pevt ).result->protocolResponse = ( *pevt ).data.request.protocol;
+	( *protocolReply ) = (char*)( *pevt ).data.request.protocol;
+	{
+		LOGICAL result = (LOGICAL)( *pevt ).data.request.accepted;
+		DropWssEvent( pevt );
+		return result;
+	}
 }
 
 httpObject::httpObject() {

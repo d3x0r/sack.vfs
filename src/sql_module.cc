@@ -712,17 +712,7 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 				for( int m = 0; m < usedFields; m++ ) {
 					for( int t = 1; t < usedTables; t++ ) {
 						if( StrCaseCmp( fields[m].name, tables[t].alias ) == 0 ) {
-							// just have to make sure the column is in it's alias when output....
 							fields[m].used++;
-							/*
-							PVARTEXT pvtSafe = VarTextCreate();
-							vtprintf( pvtSafe, "%s : %s", TranslateText( "Column name overlaps table alias" ), tables[t].alias );
-							isolate->ThrowException( Exception::Error(
-								String::NewFromUtf8( isolate, GetText( VarTextPeek( pvtSafe ) ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
-							VarTextDestroy( &pvtSafe );
-							DeleteDataList( &pdlParams );
-							return;
-							*/
 						}
 					}
 				}
