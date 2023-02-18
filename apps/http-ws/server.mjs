@@ -32,6 +32,7 @@ function logRequests() {
 	console.log( "Requests:", log );
 }
 
+//exports.getRequestHandler = getRequestHandler;
 export function getRequestHandler( serverOpts ) {
 	let resourcePath = serverOpts.resourcePath || ".";
 	const npm_path = serverOpts.npmPath || ".";
@@ -91,6 +92,38 @@ export function getRequestHandler( serverOpts ) {
 
 }
 
+function hookJSOX( serverOpts, server ) {
+const app = uExpress();
+server.addHandler( app.handle );
+
+app.get( /.*\.jsox/, (req,res)=>{
+
+	console.log( "express hook?", req.url , serverOpts.resourcePath + req.url);
+	const headers = {
+		'Content-Type': "text/javascript",
+	}
+
+	let filePath;
+		if( req.url.startsWith( "/common/" ) ) {
+			filePath = commonRoot + decodeURI(req.url).replace( "/common", "" );
+		}else {
+			filePath = serverOpts.resourcePath + req.url;
+		}
+
+	const config = disk.read( filePath );
+	if( config ) {
+		res.writeHead( 200, headers );
+
+		const resultContent = "import {JSOX} from '/node_modules/jsox/lib/jsox.mjs';const config = JSOX.parse( `" + config.toString() + "`);export default config;";
+		res.end( resultContent );
+		return true;
+	}else {
+		console.log( "no file.." );
+		return false;
+	}
+} ) 
+}
+
 //exports.open = openServer;
 export function openServer( opts, cbAccept, cbConnect )
 {
@@ -117,7 +150,7 @@ export function openServer( opts, cbAccept, cbConnect )
 				
 			requests.push( "Failed request: " + req.url + " as " + lastFilePath );
 			res.writeHead( 404 );
-			res.end( "<HTML><HEAD>404</HEAD><BODY>404</BODY></HTML>");
+			res.end( "<HTML><HEAD><title>404</title></HEAD><BODY>404</BODY></HTML>");
 		}
 	}
 
@@ -142,7 +175,7 @@ export function openServer( opts, cbAccept, cbConnect )
 		};
 	};
 
-	return {
+	const serverResult = {
 		setResourcePath( path ) {
 			resourcePath = path;	
 		},
@@ -155,7 +188,7 @@ export function openServer( opts, cbAccept, cbConnect )
 				handlers.splice( index, 1 );
 		}
 	}
+	hookJSOX( serverOpts, serverResult );
+	return serverResult;
 }
-
-//exports.open = openServer;
 

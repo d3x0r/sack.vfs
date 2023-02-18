@@ -25,23 +25,20 @@ const extMap = { '.js': 'text/javascript'
 
 const requests = [];
 let reqTimeout = 0;
+let lastFilePath = null;
 function logRequests() {
 	const log = requests.join(', ');
 	requests.length = 0;
 	console.log( "Requests:", log );
 }
 
-exports.openServer = openServer;
-function openServer( opts, cbAccept, cbConnect )
-{
-	const serverOpts = opts || {port:process.env.PORT || 8080} ;
-	const server = sack.WebSocket.Server( serverOpts )
+exports.getRequestHandler = getRequestHandler;
+function getRequestHandler( serverOpts ) {
+	let resourcePath = serverOpts.resourcePath || ".";
+	const npm_path = serverOpts.npmPath || ".";
 	const disk = sack.Volume();
-	//console.log( "serving on " + serverOpts.port );
-	//console.log( "with:", disk.dir() );
 
-
-	server.onrequest = function( req, res ) {
+	return function( req, res ) {
 		/*
 			this is the request remote address if required....
 		const ip = ( req.headers && req.headers['x-forwarded-for'] ) ||
@@ -49,18 +46,18 @@ function openServer( opts, cbAccept, cbConnect )
 			 req.socket.remoteAddress ||
 			 req.connection.socket.remoteAddress;
 		*/
-		const npm_path = serverOpts.npmPath || ".";
-		const resource_path = serverOpts.resourcePath || ".";
+		//const resource_path = serverOpts.resourcePath || ".";
 
 		//console.log( "Received request:", req );
-		if( req.url === "/" ) req.url = "/index.html";
-		let filePath = resource_path + unescape(req.url);
+		if( req.url[req.url.length-1] === "/" ) req.url += "index.html";
+
+		let filePath = resourcePath + unescape(req.url);
 		if( req.url.startsWith( "/node_modules/" ) 
 		   && ( req.url.startsWith( "/node_modules/@d3x0r" ) 
-		      || req.url.startsWith( "/node_modules/jsox" ) ) )
+		      || req.url.startsWith( "/node_modules/jsox" )
+		      || req.url.startsWith( "/node_modules/sack.vfs/apps" ) ) )
 			filePath=npm_path  + unescape(req.url);
-		let extname = path.extname(filePath);
-
+		let extname = path.extname(filePath);		
 		let contentEncoding = encMap[extname];
 		if( contentEncoding ) {
 			extname = path.extname(path.basename(filePath,extname));
@@ -69,28 +66,96 @@ function openServer( opts, cbAccept, cbConnect )
 
 		const contentType = extMap[extname] || "text/plain";
 		//console.log( ":", extname, filePath )
-
 		if( disk.exists( filePath ) ) {
-			const headers = { 'Content-Type': contentType };
+			const headers = { 'Content-Type': contentType, 'Access-Control-Allow-Origin' : req.connection.headers.Origin };
 			if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
 			res.writeHead(200, headers );
-			res.end( disk.read( filePath ) );
-			if( requests.length !== 0 )
-				clearTimeout( reqTimeout );
-			reqTimeout = setTimeout( logRequests, 100 );
-			requests.push( req.url );
+			const fc = disk.read(filePath );
+
+			if( fc ) {
+				res.end( fc );
+
+				if( requests.length !== 0 )
+					clearTimeout( reqTimeout );
+				reqTimeout = setTimeout( logRequests, 100 );
+				requests.push( req.url );
+			} else {
+				console.log( 'file exists, but reading it returned nothing?', filePath );
+				return false;
+			}
+			return true;
 		} else {
+			lastFilePath = filePath;
+			return false;
+		}
+	};
+
+}
+
+function hookJSOX( serverOpts, server ) {
+const app = uExpress();
+server.addHandler( app.handle );
+
+app.get( /.*\.jsox/, (req,res)=>{
+
+	console.log( "express hook?", req.url , serverOpts.resourcePath + req.url);
+	const headers = {
+		'Content-Type': "text/javascript",
+	}
+
+	let filePath;
+		if( req.url.startsWith( "/common/" ) ) {
+			filePath = commonRoot + decodeURI(req.url).replace( "/common", "" );
+		}else {
+			filePath = serverOpts.resourcePath + req.url;
+		}
+
+	const config = disk.read( filePath );
+	if( config ) {
+		res.writeHead( 200, headers );
+
+		const resultContent = "import {JSOX} from '/node_modules/jsox/lib/jsox.mjs';const config = JSOX.parse( `" + config.toString() + "`);export default config;";
+		res.end( resultContent );
+		return true;
+	}else {
+		console.log( "no file.." );
+		return false;
+	}
+} ) 
+}
+
+exports.open = openServer;
+function openServer( opts, cbAccept, cbConnect )
+{
+	let handlers = [];
+	const serverOpts = opts || {port:process.env.PORT || 8080} ;
+	const server = sack.WebSocket.Server( serverOpts )
+
+	//console.log( "serving on " + serverOpts.port, server );
+	//console.log( "with:", disk.dir() );
+
+	const reqHandler = getRequestHandler( opts );
+	server.onrequest = (req,res)=>{
+		for( let handler of handlers ) {
+			if( handler( req, res, serverOpts ) ) {
+				//console.log( "handler accepted request..." );
+				return true;
+			}
+		}
+
+		if( !reqHandler( req,res ) ) {
 			if( requests.length !== 0 )
 				clearTimeout( reqTimeout );
 			reqTimeout = setTimeout( logRequests, 100 );
 				
-			requests.push( "Failed request: " + req.url + " as " + filePath );
+			requests.push( "Failed request: " + req.url + " as " + lastFilePath );
 			res.writeHead( 404 );
-			res.end( "<HTML><HEAD>404</HEAD><BODY>404</BODY></HTML>");
+			res.end( "<HTML><HEAD><title>404</title></HEAD><BODY>404</BODY></HTML>");
 		}
-	};
+	}
 
 	server.onaccept = function ( ws ) {
+			console.log( "send accept?", cbAccept );
 		if( cbAccept ) return cbAccept.call(this,ws);
 		if( process.env.DEFAULT_REJECT_WEBSOCKET == "1" )
 			this.reject();
@@ -110,7 +175,20 @@ function openServer( opts, cbAccept, cbConnect )
 		};
 	};
 
+	const serverResult = {
+		setResourcePath( path ) {
+			resourcePath = path;	
+		},
+		addHandler( handler ) {
+			handlers.push( handler );
+		},
+		removeHandler( handler ) {
+			const index = handlers.findIndex( h=>h===handler );
+			if( index >= 0 )
+				handlers.splice( index, 1 );
+		}
+	}
+	hookJSOX( serverOpts, serverResult );
+	return serverResult;
 }
-
-//exports.open = openServer;
 
