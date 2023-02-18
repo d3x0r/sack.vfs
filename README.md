@@ -235,6 +235,10 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ## Changelog
 - 1.1.808(in progress)
 - 1.1.807
+    - Update to build with node 19+ and stdc++17 option.
+    - Fix race condition in deallocation in accept event.
+    - Handle wide long varchar SQL type.
+    - Fix pretty print for JSOX stringify.
     - Fix parsing negative ISO-8601 Dates.
     - generate specific timestamp for `new Date( "0000-01-01T00:00:00.000Z" ).getTime()` to return that string anyway.
 - 1.1.806
