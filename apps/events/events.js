@@ -4,7 +4,7 @@ class Events {
 	static #log = false;
 	static set log(value) {
 		if( value )
-			this.#log = true;
+			this.#log = value;
 	}
 	on( evt, d ) {
 		if( "function" === typeof d ) {
