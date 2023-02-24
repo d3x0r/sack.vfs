@@ -74,3 +74,4 @@ export function uExpress() {
     }
 }
 
+export default uExpress;

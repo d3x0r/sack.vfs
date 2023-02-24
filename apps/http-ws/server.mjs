@@ -3,6 +3,7 @@
 //const path = require( "path" );
 
 import {sack} from "../../vfs_module.mjs";
+import {uExpress} from "./uexpress.mjs";
 import path from "path";
 
 const encMap = {
@@ -34,6 +35,7 @@ function logRequests() {
 
 //exports.getRequestHandler = getRequestHandler;
 export function getRequestHandler( serverOpts ) {
+	serverOpts = serverOpts || {};
 	let resourcePath = serverOpts.resourcePath || ".";
 	const npm_path = serverOpts.npmPath || ".";
 	const disk = sack.Volume();
