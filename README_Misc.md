@@ -11,6 +11,7 @@ Interface to the SACK System Library.  This provides some views into internal in
 |allowSpawn|  ()  | Return the status of whether spawning processes is allowed or not. |
 |disallowSpawn|  ()  | Disable spawning processes. |
 |enableThreadFileSystem|  () | Enable thread-local filesystem on this thread.  No filesystems will bemounted after this call |
+|reboot|  (mode)  | Reboot or shutdown the current system.  Mode can be 'reboot' or 'shutdown' or empty which defaults to reboot. |
 
 
 # File Monitor - provides event callbacks when directories in the file system change.\
