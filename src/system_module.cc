@@ -81,6 +81,63 @@ static void disallowSpawn( const v8::FunctionCallbackInfo<Value>& args ) {
 	sack_system_disallow_spawn();
 }
 
+static void do_reboot( const char *mode ) {
+#ifdef WIN32
+	HANDLE hToken, hProcess;
+	TOKEN_PRIVILEGES tp;
+
+	if( DuplicateHandle( GetCurrentProcess(), GetCurrentProcess()
+							 , GetCurrentProcess(), &hProcess, 0
+							 , FALSE, DUPLICATE_SAME_ACCESS  ) )
+	{
+		if( OpenProcessToken( hProcess, TOKEN_ADJUST_PRIVILEGES, &hToken ) )
+		{
+			tp.PrivilegeCount = 1;
+			if( LookupPrivilegeValue( NULL
+													 , SE_SHUTDOWN_NAME
+													 , &tp.Privileges[0].Luid ) )
+			{
+				tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+				AdjustTokenPrivileges( hToken, FALSE, &tp, 0, NULL, NULL );
+				{
+				// PTEXT temp;
+				// DECLTEXT( msg, "Initiating system shutdown..." );
+				// EnqueLink( &ps->Command->Output, &msg );
+				// if( !(temp = GetParam( ps, &param ) ) )
+            if( stricmp( mode, "shutdown" ) == 0 )
+					ExitWindowsEx( EWX_SHUTDOWN|EWX_FORCE, 0 );
+            else if( stricmp( mode, "reboot" ) == 0 )
+					ExitWindowsEx( EWX_REBOOT|EWX_FORCE, 0 );
+				else
+               lprintf( "Mode specified invalid! (reboot/shutdown)\n" );
+			}
+			else
+			{
+				lprintf( "Failed to find privilege for shutdown:%d", GetLastError() );
+			}
+			CloseHandle( hToken );
+		}
+		else
+		{
+			lprintf( "Failed to open process token for reboot:%d", GetLastError() );
+		}
+		CloseHandle( hProcess );
+	}
+	else
+		lprintf( "Failed to duplicate handle for reboot:%d", GetLastError() );
+#endif
+}
+
+static void reboot( const v8::FunctionCallbackInfo<Value>& args ) {
+  Isolate* isolate = args.GetIsolate();
+  int hasWhat = args.Length() > 0;
+	if( args.Length() > 0 )  {
+	  String::Utf8Value mode( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		do_reboot( *mode );
+	}else 
+		do_reboot( "reboot" );
+	
+}
 
 void SystemInit( Isolate* isolate, Local<Object> exports )
 {
@@ -95,6 +152,7 @@ void SystemInit( Isolate* isolate, Local<Object> exports )
   NODE_SET_METHOD( systemInterface, "openMemory", openMemory );
   NODE_SET_METHOD( systemInterface, "createMemory", createMemory );
   NODE_SET_METHOD( systemInterface, "dumpRegisteredNames", dumpNames );
+  NODE_SET_METHOD( systemInterface, "reboot", reboot );
 
   SET( exports, "system", systemInterface );
 
