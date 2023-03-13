@@ -234,6 +234,7 @@ there's a conversion to string from binary and a copy of that string from JS to 
 
 ## Changelog
 - 1.1.808(in progress)
+    - Fixed accept event premature deallocation.
 - 1.1.807
     - Convert SQL int to full size of target. (handle -1 int)
     - Update to build with node 19+ and stdc++17 option.
