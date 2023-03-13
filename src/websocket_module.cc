@@ -1183,7 +1183,6 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 			eventMessage->done = TRUE;
 			if( eventMessage->waiter )
 				WakeThread( eventMessage->waiter );
-	lprintf( "Drop event...(event thread)" );
 			DropWssEvent( eventMessage );
 		}
 		myself->last_count_handled = handled;
