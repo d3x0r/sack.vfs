@@ -196,6 +196,7 @@ struct wssEvent {
 	PTHREAD waiter;
 	LOGICAL done;
 	class wssiObject *result;
+	int uses;
 };
 typedef struct wssEvent WSS_EVENT;
 #define MAXWSS_EVENTSPERSET 64
@@ -569,6 +570,7 @@ static WSS_EVENT *GetWssEvent() {
 	EnterCriticalSec( &l.csWssEvents );
 	WSS_EVENT *evt = GetFromSet( WSS_EVENT, &l.wssEvents );
 	memset( evt, 0, sizeof( WSS_EVENT ) );
+	evt->uses = 1;
 	LeaveCriticalSec( &l.csWssEvents );
 	return evt;
 }
@@ -597,9 +599,16 @@ static HTTP_REQUEST_EVENT *GetHttpRequestEvent() {
 	return evt;
 }
 
+static void HoldWssEvent( WSS_EVENT *evt ) {
+	evt->uses++;
+}
+
 static void DropWssEvent( WSS_EVENT *evt ) {
 	EnterCriticalSec( &l.csWssEvents );
-	DeleteFromSet( WSS_EVENT, l.wssEvents, evt );
+	if( !(--evt->uses ) ) {
+		DeleteFromSet( WSS_EVENT, l.wssEvents, evt );
+	}
+	//lprintf( "Events outstanding:%d %d", evt->uses, CountUsedInSet( WSS_EVENT, l.wssEvents ) );
 	LeaveCriticalSec( &l.csWssEvents );
 }
 
@@ -1004,9 +1013,8 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 #endif
 					} else
 						argv[2] = Null( isolate );
-						myself->errorLowCallback.Get( isolate )->Call( context, myself->_this.Get( isolate ), 3, argv );
-
-                 }
+					myself->errorLowCallback.Get( isolate )->Call( context, myself->_this.Get( isolate ), 3, argv );
+				}
 
 			} else if( eventMessage->eventType == WS_EVENT_REQUEST ) {
 				//lprintf( "Comes in directly as a request; don't even get accept..." );
@@ -1154,7 +1162,6 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 
 				//myself->readyState = CLOSED;
 				//uv_close( (uv_handle_t*)&myself->async, uv_closed_wss );
-				DropWssEvent( eventMessage );
 				//DeleteLinkQueue( &myself->eventQueue );
 				//return;
 			} else if( eventMessage->eventType == WS_EVENT_RELEASE_BUFFER ) {
@@ -1176,6 +1183,8 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 			eventMessage->done = TRUE;
 			if( eventMessage->waiter )
 				WakeThread( eventMessage->waiter );
+	lprintf( "Drop event...(event thread)" );
+			DropWssEvent( eventMessage );
 		}
 		myself->last_count_handled = handled;
 	}
@@ -1794,7 +1803,6 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 				argv[0] = closingSock;
 				cb->Call( isolate->GetCurrentContext(), wss->_this.Get( isolate ), 1, argv );
 			}
-			DropWssEvent( pevt );
 		}
 	}
 }
@@ -1840,6 +1848,8 @@ static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char* proto
 	( *pevt ).done = FALSE;
 	( *pevt ).waiter = MakeThread();
 	( *pevt )._this = wss;
+	HoldWssEvent( pevt );
+
 	EnqueLink( &wss->eventQueue, pevt );
 	if( ( *pevt ).waiter == l.jsThread ) {
 		wssAsyncMsg( &wss->async );
@@ -2168,6 +2178,7 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkEr
 	(*pevt).pc = pc;
 	(*pevt)._this = wss;
 	(*pevt).waiter = MakeThread();
+	HoldWssEvent( pevt );
 	EnqueLink( &wss->eventQueue, pevt );
 	uv_async_send( &wss->async );
 	while( !(*pevt).done )

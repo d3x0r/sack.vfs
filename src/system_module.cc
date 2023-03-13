@@ -99,7 +99,6 @@ static void do_reboot( const char *mode ) {
 			{
 				tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 				AdjustTokenPrivileges( hToken, FALSE, &tp, 0, NULL, NULL );
-				{
 				// PTEXT temp;
 				// DECLTEXT( msg, "Initiating system shutdown..." );
 				// EnqueLink( &ps->Command->Output, &msg );
