@@ -164,7 +164,7 @@ import {SACK} from "sack.vfs";
         allowSpawn() - returns task allowed state
         disallowSpawn() - disble task spawns for this thread
 	dumpRegisteredNames() - dumps internal procedure/interface registry
-        
+        reboot() - on windows, trigger a reboot.
     Task(options) - an interface for createing and monitoring tasks.
         Task constructor takes an option object.
         end() - cause a task to exit..
@@ -235,6 +235,9 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ## Changelog
 - 1.1.808(in progress)
     - Fixed accept event premature deallocation.
+    - fixed parsing CGI options on requests. (didn't consume enough tokens).
+    - add reboot() command for windows under system.
+    - Improve uexpress/http server interface.
 - 1.1.807
     - Convert SQL int to full size of target. (handle -1 int)
     - Update to build with node 19+ and stdc++17 option.
