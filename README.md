@@ -233,7 +233,8 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.808(in progress)
+- 1.1.809(in progress)
+- 1.1.808
     - Fixed accept event premature deallocation.
     - fixed parsing CGI options on requests. (didn't consume enough tokens).
     - add reboot() command for windows under system.
