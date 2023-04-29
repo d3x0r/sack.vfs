@@ -233,7 +233,10 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.809(in progress)
+- 1.1.810(in progress)
+- 1.1.809
+    - fix struct name overlap that causes a error in C++ compilation.
+    - minor fixes to apps
 - 1.1.808
     - Fixed accept event premature deallocation.
     - fixed parsing CGI options on requests. (didn't consume enough tokens).
