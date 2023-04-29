@@ -5,6 +5,7 @@
 import {sack} from "../../vfs_module.mjs";
 import {uExpress} from "./uexpress.mjs";
 import path from "path";
+const disk = sack.Volume();
 
 const encMap = {
 		'.gz':'gzip'
@@ -38,7 +39,6 @@ export function getRequestHandler( serverOpts ) {
 	serverOpts = serverOpts || {};
 	let resourcePath = serverOpts.resourcePath || ".";
 	const npm_path = serverOpts.npmPath || ".";
-	const disk = sack.Volume();
 
 	return function( req, res ) {
 		/*
