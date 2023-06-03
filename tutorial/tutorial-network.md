@@ -274,3 +274,44 @@ It receives a standard browser event object.
 	}
 ```
 
+# HTTP GET
+
+This is an example GET.
+
+
+``` js
+		const opts = {  hostname: 'localhost',
+					  port : 80,
+					  method : "GET",
+					  ca : null,
+					  rejectUnauthorized: true,
+					  path : "/loginSomething"
+                 //, agent : false
+					};
+		const res = http.get( opts );
+
+
+```
+
+The result fields are defined [here](../README_HTTP.md).
+
+
+# HTTP POST
+
+This is an example POST.
+
+``` js
+		const opts = {  hostname: 'localhost',
+					  port : 80,
+					  method : "POST",
+					  content : "Content sent in post",
+					  ca : null,
+					  rejectUnauthorized: true,
+					  path : "/loginSomething"
+                 //, agent : false
+					};
+		const res = http.get( opts );
+
+```
+
+The result fields are defined [here](../README_HTTP.md).

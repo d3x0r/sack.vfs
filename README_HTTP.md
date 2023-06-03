@@ -13,7 +13,8 @@ var response2 = sack.HTTPS.get( { ca:&lt;extra cert(s)&gt;, path:"/index.html" }
 | host | address to request from |
 | path | resource path to request; "/app/index.html"  |
 | port | optional to override the port requested from |
-| method | "GET" should specify how to send the request (get/post/...) but for now I think GET is only option |
+| method | "GET"/"POST" specifies how to send the request.  If POST is used, then content should be filled in. |
+| content | This is the content to send with a POST. |
 | rejectUnauthorized | (HTTPS only) whether to accept unvalidated HTTPS certificates; true/false |
 | ca | (HTTPS) Additional certificate authorities to validate connection with |
 | headers | object with named values; copied to header object (no HTTP character escapes) |
