@@ -45,6 +45,9 @@
     },
     "./dbUtil": {
       "import": "./apps/dbUtil/db.mjs"
+    },
+    "./isTopLevel": {
+      "import": "./apps/isTopLevel/isTopLevel.mjs"
     }
   },
   "old_exports": {
