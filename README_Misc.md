@@ -12,6 +12,17 @@ Interface to the SACK System Library.  This provides some views into internal in
 |disallowSpawn|  ()  | Disable spawning processes. |
 |enableThreadFileSystem|  () | Enable thread-local filesystem on this thread.  No filesystems will bemounted after this call |
 |reboot|  (mode)  | Reboot or shutdown the current system.  Mode can be 'reboot' or 'shutdown' or empty which defaults to reboot. |
+|dumpMemory | (verbose,filename) | Dump C allocated memory.  `verbose` and `filename` are both optional.  `verbose` enables dumping each block. `filename` dumps the log to the specified file. |
+
+Some examples of using some of the system interfaces.
+
+``` js
+import {sack} from "sack.vfs"
+sack.system.dumpRegisteredNames();
+sack.system.reboot( "reboot" );
+sack.system.dumpMemory(); 
+```
+
 
 
 # File Monitor - provides event callbacks when directories in the file system change.\
@@ -20,7 +31,7 @@ This provides an interface to receive notifications when files are created, modi
 
 ``` js
 
-var sack = require( "." );
+var sack = require( "sack.vfs" );
 var monitor = sack.FileMonitor( <pathname>, idleDelay );
 monitor.addFilter( "*.jpg", /* imageChanged */ (info)=>{
 	// info.path, info.size, info.date, info.directory, info.created, info.deleted
