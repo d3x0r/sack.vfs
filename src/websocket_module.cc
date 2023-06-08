@@ -1877,6 +1877,7 @@ httpObject::~httpObject() {
 	if( idx != INVALID_INDEX ) {
 		SetLink( &wss->requests, idx, NULL );
 	}
+	VarTextDestroy( &pvtResult );
 }
 
 void httpObject::New( const FunctionCallbackInfo<Value>& args ) {
