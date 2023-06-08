@@ -1483,6 +1483,7 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 	InitializeCriticalSec( &l.csWssEvents );
 	InitializeCriticalSec( &l.csWssiEvents );
 	InitializeCriticalSec( &l.csWscEvents );
+	InitializeCriticalSec( &l.csHttpRequestEvents );
 	Local<Object> o = Object::New( isolate );
 
 	Local<Object> wsWebStatesObject = Object::New( isolate );
@@ -2034,39 +2035,41 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 	ClearNetWork( obj->pc, (uintptr_t)obj->wss );
 	{
 		struct HttpState *pHttpState = GetWebSocketHttpState( obj->pc );
+		Hold( pHttpState );
 		if( include_close ) {
 			//lprintf( "Close is included... is this a reset close?" );
 			RemoveClientEx( obj->pc, 0, 1 );
 		}
 		//else {
 
-			if (pHttpState) {
-				int result;
-				//lprintf( "ending http on %p, checking for more data", obj->pc );
-				EndHttp(pHttpState);
-				while ((result = ProcessHttp(obj->pc, pHttpState)))
+		if (pHttpState) {
+			int result;
+			//lprintf( "ending http %p on %p, checking for more data", pHttpState, obj->pc );
+			EndHttp(pHttpState);
+			while ((result = ProcessHttp(obj->pc, pHttpState)))
+			{
+				//lprintf("result = %d  %zd", result, HTTP_STATE_RESULT_CONTENT == result);
+				switch (result)
 				{
-					//lprintf("result = %d  %zd", result, HTTP_STATE_RESULT_CONTENT == result);
-					switch (result)
-					{
-					case HTTP_STATE_RESULT_CONTENT:
+				case HTTP_STATE_RESULT_CONTENT:
 
-						struct wssEvent *pevt = GetWssEvent();
-						//lprintf( "A posting request event to JS %p %s", obj->pc, GetText( GetHttpRequest( pHttpState ) ) );
-						(*pevt).eventType = WS_EVENT_REQUEST;
-						//(*pevt).waiter = MakeThread();
-						(*pevt).pc = obj->pc;
-						(*pevt)._this = obj->wss;
-						obj->ssl = ssl_IsClientSecure( obj->pc );
-						EnqueLink(&obj->wss->eventQueue, pevt);
-						//lprintf( "Send Request" );
-						if( (*pevt).waiter == l.jsThread ) {
-							wssAsyncMsg( &obj->wss->async );
-						} else
-							uv_async_send(&obj->wss->async);
-						break;
-					}
+					struct wssEvent *pevt = GetWssEvent();
+					//lprintf( "A posting request event to JS %p %s", obj->pc, GetText( GetHttpRequest( pHttpState ) ) );
+					(*pevt).eventType = WS_EVENT_REQUEST;
+					//(*pevt).waiter = MakeThread();
+					(*pevt).pc = obj->pc;
+					(*pevt)._this = obj->wss;
+					obj->ssl = ssl_IsClientSecure( obj->pc );
+					EnqueLink(&obj->wss->eventQueue, pevt);
+					//lprintf( "Send Request" );
+					if( (*pevt).waiter == l.jsThread ) {
+						wssAsyncMsg( &obj->wss->async );
+					} else
+						uv_async_send(&obj->wss->async);
+					break;
 				}
+			}
+			Release( pHttpState );
 		}
 	}
 
