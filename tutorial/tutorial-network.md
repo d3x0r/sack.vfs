@@ -283,12 +283,25 @@ This is an example GET.
 		const opts = {  hostname: 'localhost',
 					  port : 80,
 					  method : "GET",
-					  ca : null,
-					  rejectUnauthorized: true,
 					  path : "/loginSomething"
-                 //, agent : false
 					};
 		const res = http.get( opts );
+
+
+```
+
+Async get example.  This is the same as POST except for the `method` field.
+
+``` js
+		const opts = {  hostname: 'localhost',
+					  port : 80,
+					  method : "GET",
+					  path : "/loginSomething"
+                 onReply(res) {
+							console( "result:", res );
+						}
+					};
+		http.get( opts );
 
 
 ```
@@ -305,10 +318,7 @@ This is an example POST.
 					  port : 80,
 					  method : "POST",
 					  content : "Content sent in post",
-					  ca : null,
-					  rejectUnauthorized: true,
 					  path : "/loginSomething"
-                 //, agent : false
 					};
 		const res = http.get( opts );
 

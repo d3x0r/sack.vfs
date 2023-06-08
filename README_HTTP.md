@@ -18,6 +18,7 @@ var response2 = sack.HTTPS.get( { ca:&lt;extra cert(s)&gt;, path:"/index.html" }
 | rejectUnauthorized | (HTTPS only) whether to accept unvalidated HTTPS certificates; true/false |
 | ca | (HTTPS) Additional certificate authorities to validate connection with |
 | headers | object with named values; copied to header object (no HTTP character escapes) |
+| onReply | callback to call when response is done.  If this is specified, then the request is done asynchronously; otherwise the request is synchronous and completes before the function returns |
 
 Results with an object with the following fields....
 
