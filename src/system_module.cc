@@ -138,6 +138,24 @@ static void reboot( const v8::FunctionCallbackInfo<Value>& args ) {
 	
 }
 
+
+static void dumpMemory( const v8::FunctionCallbackInfo<Value>& args ) {
+	LOGICAL verbose = FALSE;
+	String::Utf8Value *file;
+	char *filename = NULL;
+	if( args.Length() > 0 )  {
+		verbose = args[0]->TOBOOL( args.GetIsolate() );
+	}
+	if( args.Length() > 1 ) {
+		file = new String::Utf8Value( args.GetIsolate(), args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+		filename = *file[0];
+	}
+	if( filename )
+		DebugDumpHeapMemFile( NULL, filename );
+	else
+		DebugDumpHeapMemEx( NULL, verbose );
+}
+
 void SystemInit( Isolate* isolate, Local<Object> exports )
 {
   Local<Context> context = isolate->GetCurrentContext();
@@ -152,6 +170,7 @@ void SystemInit( Isolate* isolate, Local<Object> exports )
   NODE_SET_METHOD( systemInterface, "createMemory", createMemory );
   NODE_SET_METHOD( systemInterface, "dumpRegisteredNames", dumpNames );
   NODE_SET_METHOD( systemInterface, "reboot", reboot );
+  NODE_SET_METHOD( systemInterface, "dumpMemory", dumpMemory );
 
   SET( exports, "system", systemInterface );
 
