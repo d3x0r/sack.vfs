@@ -86,7 +86,7 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "terminate", TaskObject::Terminate );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "isRunning", TaskObject::isRunning );
 	taskTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "exitCode" )
-		, FunctionTemplate::New( isolate, getExitCode )
+		, FunctionTemplate::New( isolate, TaskObject::getExitCode )
 		, Local<FunctionTemplate>() );
 	taskTemplate->ReadOnlyPrototype();
 	class constructorSet* c = getConstructors( isolate );
