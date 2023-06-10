@@ -85,6 +85,9 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "end", TaskObject::End );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "terminate", TaskObject::Terminate );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "isRunning", TaskObject::isRunning );
+	taskTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "exitCode" )
+		, FunctionTemplate::New( isolate, getExitCode )
+		, Local<FunctionTemplate>() );
 	taskTemplate->ReadOnlyPrototype();
 	class constructorSet* c = getConstructors( isolate );
 	c->TaskObject_constructor.Reset( isolate, taskTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
@@ -444,4 +447,11 @@ void TaskObject::isRunning( const v8::FunctionCallbackInfo<Value>& args ) {
 		args.GetReturnValue().Set( (!task->ended) ? True( isolate ) : False( isolate ) );
 	else
 		args.GetReturnValue().Set( False( isolate ) );
+}
+
+void TaskObject::getExitCode( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	TaskObject* task = Unwrap<TaskObject>( args.This() );
+	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)task->exitCode ) );
+		
 }
