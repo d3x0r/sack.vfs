@@ -400,6 +400,8 @@ to interact with the process.
 | newGroup | bool | create task as a new task group instead of a child of this group.  Default: false|
 | newConsole | bool | create a new console for the new task; instead of ineriting the existing console, default false |
 | suspend | bool | create task suspended.  Default: false |
+| useBreak | bool | set task to use ctrl-break instead of ctrl-c; if it's a window generates WM_CLOSE regardless.  default: false |
+
 
 
 ``` js

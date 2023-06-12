@@ -233,8 +233,11 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.813(in progress)
-- 1.1.812(in progress)
+- 1.1.814(in progress)
+- 1.1.813
+    - implement `useBreak` option to control how tasks are ended.
+    - fixed sack core handling of task termination.
+- 1.1.812
     - fix missing `exitCode` accessor for tasks.  Fixed file scan directory check.
 - 1.1.811
     - Add `dumpMemory` to system interface.
