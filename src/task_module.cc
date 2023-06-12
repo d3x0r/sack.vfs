@@ -15,6 +15,7 @@ struct optionStrings {
 	Eternal<String> *firstArgIsArgString;
 	Eternal<String>* groupString;
 	Eternal<String>* consoleString;
+	Eternal<String>* useBreakString;
 };
 
 
@@ -47,6 +48,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->inputString2 = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "errorInput" ) );
 		check->endString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "end" ) );
 		check->firstArgIsArgString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "firstArgIsArg" ) );
+		check->useBreakString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "useBreak" ) );
 	}
 	return check;
 }
@@ -256,6 +258,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			bool newGroup = false;
 			bool newConsole = false;
 			bool suspend = false;
+			bool useBreak = false;
 
 			newTask->killAtExit = true;
 
@@ -263,6 +266,12 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			PLIST envList = NULL;
 			int nArg;
 
+			
+			if( opts->Has( context, optName = strings->useBreakString->Get( isolate ) ).ToChecked() ) {
+				if( GETV( opts, optName )->IsBoolean() ) {
+					useBreak = GETV( opts, optName )->TOBOOL( isolate );
+				}
+			}
 			if( opts->Has( context, optName = strings->groupString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					newGroup = GETV( opts, optName )->TOBOOL( isolate );
@@ -377,6 +386,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				| (newGroup? LPP_OPTION_NEW_GROUP : 0)
 				| (newConsole ? LPP_OPTION_NEW_CONSOLE : 0)
 				| (suspend? LPP_OPTION_SUSPEND : 0)
+				| ( useBreak? LPP_OPTION_USE_CONTROL_BREAK :0 )
 				, input ? getTaskInput : NULL
 				, input2 ? getTaskInput2 : NULL
 				, (end||input) ? getTaskEnd : NULL
