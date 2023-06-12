@@ -5050,6 +5050,7 @@ typedef void (CPROC*TaskOutput)(uintptr_t, PTASK_INFO task, CTEXTSTR buffer, siz
 #define LPP_OPTION_NEW_CONSOLE          16
 #define LPP_OPTION_SUSPEND              32
 #define LPP_OPTION_ELEVATE              64
+#define LPP_OPTION_USE_CONTROL_BREAK   128
 struct environmentValue {
 	char* field;
 	char* value;
@@ -9971,6 +9972,11 @@ DEADSTART_PROC  void DEADSTART_CALLTYPE  MarkRootDeadstartComplete ( void );
 DEADSTART_PROC  LOGICAL DEADSTART_CALLTYPE  IsRootDeadstartStarted ( void );
 /* \returns whether MarkRootDeadstartComplete has been called. */
 DEADSTART_PROC  LOGICAL DEADSTART_CALLTYPE  IsRootDeadstartComplete ( void );
+/*
+   Setup flags to ignore control C Events on windows.  use 1 << (ControlType) or'd together to set ignore.
+   Use 0 to clear ignore.
+*/
+DEADSTART_PROC void DEADSTART_CALLTYPE IgnoreBreakHandler( int ignore );
 #if defined( __LINUX__ )
 // call this after a fork().  Otherwise, it will falsely invoke shutdown when it exits.
 DEADSTART_PROC  void DEADSTART_CALLTYPE  DispelDeadstart ( void );
