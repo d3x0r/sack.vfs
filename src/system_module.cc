@@ -163,7 +163,7 @@ static uintptr_t  ThreadWrapper( void* pThread ){
 	while( 1 ) {
 		POINTER p = Allocate( 100 );
 		EnterCriticalSecEx( &cs DBG_PASS );
-		xx[(int)pThread]++;
+		xx[(int)((uintptr_t)pThread)]++;
 		LeaveCriticalSecEx( &cs DBG_PASS );
 		Deallocate( POINTER, p );
 	}
