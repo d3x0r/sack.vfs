@@ -233,7 +233,10 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.814(in progress)
+- 1.1.815(in progress)
+- 1.1.814
+    - Apply volatile to fields of CriticalSection so code isn't badly optimized.
+    - Add internal test for critical sections.
 - 1.1.813
     - implement `useBreak` option to control how tasks are ended.
     - fixed sack core handling of task termination.
