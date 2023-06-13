@@ -5430,9 +5430,9 @@ typedef struct win_sockaddr_in SOCKADDR_IN;
    and probably failing to leave them.                          */
 struct critical_section_tag {
  // this is set when entering or leaving (updating)...
-	uint32_t dwUpdating;
+	volatile uint32_t dwUpdating;
   // count of locks entered.  (only low 24 bits may count for 16M entries, upper bits indicate internal statuses.
-	uint32_t dwLocks;
+	volatile uint32_t dwLocks;
  // windows upper 16 is process ID, lower is thread ID
 	THREAD_ID dwThreadID;
  // ID of thread waiting for this..
@@ -6702,8 +6702,17 @@ TIMER_PROC( void, DeleteCriticalSec )( PCRITICALSECTION pcs );
 	TIMER_PROC( pthread_t, GetThreadHandle )(PTHREAD thread);
 #endif
 #ifdef USE_NATIVE_CRITICAL_SECTION
-#define EnterCriticalSec(pcs) EnterCriticalSection( pcs )
-#define LeaveCriticalSec(pcs) LeaveCriticalSection( pcs )
+#  define EnterCriticalSec(pcs) EnterCriticalSection( pcs )
+#  define LeaveCriticalSec(pcs) LeaveCriticalSection( pcs )
+#  if DBG_AVAILABLE
+#    define EnterCriticalSecEx(pcs, a, b) EnterCriticalSection( pcs )
+#    define LeaveCriticalSecEx(pcs, a, b) LeaveCriticalSection( pcs )
+#    define InitializeCriticalSecEx(pcs, a, b) InitializeCriticalSection( pcs )
+#  else
+#    define EnterCriticalSecEx(pcs) EnterCriticalSection( pcs )
+#    define LeaveCriticalSecEx(pcs) LeaveCriticalSection( pcs )
+#    define InitializeCriticalSecEx(pcs) InitializeCriticalSection( pcs )
+#  endif
 #else
 /* <combine sack::timers::EnterCriticalSecEx@PCRITICALSECTION pcs>
    \ \                                                             */
