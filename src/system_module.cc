@@ -156,6 +156,58 @@ static void dumpMemory( const v8::FunctionCallbackInfo<Value>& args ) {
 		DebugDumpHeapMemEx( NULL, verbose );
 }
 
+CRITICALSECTION cs;
+volatile int xx[32];
+
+static uintptr_t  ThreadWrapper( void* pThread ){
+	while( 1 ) {
+		POINTER p = Allocate( 100 );
+		EnterCriticalSecEx( &cs DBG_PASS );
+		xx[(int)pThread]++;
+		LeaveCriticalSecEx( &cs DBG_PASS );
+		Deallocate( POINTER, p );
+	}
+	return 0;
+}
+
+namespace sack {
+	namespace timers {
+		LOGICAL LeaveCriticalSecNoWakeEx( PCRITICALSECTION pcs DBG_PASS );
+	}
+}
+static volatile int stopThread = 0;
+static uintptr_t  ThreadWrapper2( PTHREAD pThread ){
+	int id = (int)GetThreadParam( pThread );
+	while( !stopThread ) {
+		POINTER p = Allocate( 100 );
+		xx[(int)id]++;
+		/*
+		if( EnterCriticalSecNoWaitEx( &cs, NULL DBG_PASS ) > 0 ) {
+			LeaveCriticalSecNoWakeEx( &cs DBG_PASS );
+		} else Relinquish();
+		*/
+		Deallocate( POINTER, p );
+	}
+	xx[id] = -xx[id];
+	return 0;
+}
+#define TEST_THREADS 22
+static void testCritSec( const v8::FunctionCallbackInfo<Value>& args ) {
+	int n;
+	InitializeCriticalSec( &cs );
+	for( n = 0; n < TEST_THREADS; n++ )
+	{
+		ThreadTo( ThreadWrapper2, n );
+	}
+	Sleep( 5000 );
+	stopThread = 1;
+	for( n = 0; n < TEST_THREADS; n++ )
+		if( xx[n] > 0 ) 
+			n = -1;
+	for( n = 0; n < TEST_THREADS; n++ )
+		printf( "%d = %d\n", n, -xx[n] );
+}
+
 void SystemInit( Isolate* isolate, Local<Object> exports )
 {
   Local<Context> context = isolate->GetCurrentContext();
@@ -171,6 +223,7 @@ void SystemInit( Isolate* isolate, Local<Object> exports )
   NODE_SET_METHOD( systemInterface, "dumpRegisteredNames", dumpNames );
   NODE_SET_METHOD( systemInterface, "reboot", reboot );
   NODE_SET_METHOD( systemInterface, "dumpMemory", dumpMemory );
+  NODE_SET_METHOD( systemInterface, "testCritSec", testCritSec );
 
   SET( exports, "system", systemInterface );
 
