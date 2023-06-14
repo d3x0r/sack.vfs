@@ -260,6 +260,13 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 {
 	static int runOnce = 1;
 	Isolate* isolate = Isolate::GetCurrent();
+#ifdef _WIN32
+	{
+		SetHandleInformation( GetStdHandle( STD_INPUT_HANDLE  ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT) ;
+		SetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE  ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT) ;
+		SetHandleInformation( GetStdHandle( STD_ERROR_HANDLE  ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT) ;
+	}
+#endif
 	if( runOnce ) {
 		InvokeDeadstart();
 
