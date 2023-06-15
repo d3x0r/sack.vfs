@@ -380,6 +380,7 @@ to interact with the process.
  |write(buf) | Writes data to the task's stdin. |
  |send(buf) | Writes data to the task's stdin. |
  |exitCode | After/during the `end` callback, this may be queried to get the return code of the task |
+ |moveWindow(object) | Move the task's primary window to the specifed location.  See Move options below. |
 
  Task Option object may contain these options to control how the task is spawned.
 
@@ -401,6 +402,20 @@ to interact with the process.
 | newConsole | bool | create a new console for the new task; instead of ineriting the existing console, default false |
 | suspend | bool | create task suspended.  Default: false |
 | useBreak | bool | set task to use ctrl-break instead of ctrl-c; if it's a window generates WM_CLOSE regardless.  default: false |
+| moveTo | object | After the task is started, move its window to the specified location.  (See Move options below)
+
+### Task Move Options
+
+| Move options | Type | Description |
+|----|----|-----|
+| timeout | number | specifies milliseconds to wait for window to exist.  If no task window is found, status is `false`|
+| x | number | specifies the x/left position of the window. |
+| y | number | specifies the y/top position of the window. |
+| width | number | specifies the width position of the window. |
+| height | number | specifies the height position of the window. |
+| display | number | specifies the display number to move the display to. 0 is the primary display, 1-N are displays by ID number.  If display option is specified, then `x`,`y`,`width`, and `height` options are ignored.|
+| cb | function | callback function which receives `true`/`false` parameter indicating the result of the move operation.  `false` rsults if the display number is invalid, or if the timeout occurs before finding the window. |
+
 
 
 

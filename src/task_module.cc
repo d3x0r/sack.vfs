@@ -16,6 +16,19 @@ struct optionStrings {
 	Eternal<String>* groupString;
 	Eternal<String>* consoleString;
 	Eternal<String>* useBreakString;
+	Eternal<String>* noWindowString;
+	Eternal<String>* hiddenString;
+#if _WIN32
+	Eternal<String>* moveToString;
+	// for move window
+	Eternal<String>* timeoutString;
+	Eternal<String>* cbString;
+	Eternal<String>* xString;
+	Eternal<String>* yString;
+	Eternal<String>* widthString;
+	Eternal<String>* heightString;
+	Eternal<String>* displayString;
+#endif
 };
 
 
@@ -23,6 +36,7 @@ static struct local {
 	PLIST tasks;
 } l;
 
+static void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, Local<Object> opts );
 //v8::Persistent<v8::Function> TaskObject::constructor;
 
 static struct optionStrings *getStrings( Isolate *isolate ) {
@@ -49,6 +63,18 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->endString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "end" ) );
 		check->firstArgIsArgString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "firstArgIsArg" ) );
 		check->useBreakString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "useBreak" ) );
+		check->noWindowString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noWindow" ) );
+		check->hiddenString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "hidden" ) );
+#if _WIN32
+		check->moveToString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "moveTo" ) );
+		check->timeoutString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "timeout" ) );
+		check->cbString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "cb" ) );
+		check->xString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "x" ) );
+		check->yString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "y" ) );
+		check->widthString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "width" ) );
+		check->heightString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "height" ) );
+		check->displayString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "display" ) );
+#endif
 	}
 	return check;
 }
@@ -87,6 +113,10 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "end", TaskObject::End );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "terminate", TaskObject::Terminate );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "isRunning", TaskObject::isRunning );
+#if _WIN32
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "moveWindow", TaskObject::moveWindow );
+#endif
+
 	taskTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "exitCode" )
 		, FunctionTemplate::New( isolate, TaskObject::getExitCode )
 		, Local<FunctionTemplate>() );
@@ -104,6 +134,17 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
 
+#if _WIN32
+	if( task->moved ) {
+		Local<Value> argv[1];
+		if( !task->cbMove.IsEmpty() ) {
+			argv[0] = task->moveSuccess?True( isolate ):False( isolate );
+			task->cbMove.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
+			task->cbMove.Reset();
+		}
+		task->moved = FALSE;
+	}
+#endif
 	if( task->ending ) {
 		if( !task->endCallback.IsEmpty() )
 			task->endCallback.Get( isolate )->Call( context, task->_this.Get( isolate ), 0, NULL );
@@ -233,6 +274,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		AddLink( &l.tasks, newTask );
 
 		Local<Object> _this = args.This();
+		Local<Object> moveOpts;
 		//try {
 			newTask->_this.Reset( isolate, _this );
 			newTask->Wrap( _this );
@@ -259,6 +301,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			bool newConsole = false;
 			bool suspend = false;
 			bool useBreak = false;
+			bool noWindow = false;
 
 			newTask->killAtExit = true;
 
@@ -267,6 +310,21 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			int nArg;
 
 			
+			if( opts->Has( context, optName = strings->noWindowString->Get( isolate ) ).ToChecked() ) {
+				if( GETV( opts, optName )->IsBoolean() ) {
+					noWindow = GETV( opts, optName )->TOBOOL( isolate );
+				}
+			}
+			if( opts->Has( context, optName = strings->moveToString->Get( isolate ) ).ToChecked() ) {
+				if( GETV( opts, optName )->IsObject() ) {
+					moveOpts = GETV( opts, optName ).As<Object>();
+				}
+			}
+			if( opts->Has( context, optName = strings->hiddenString->Get( isolate ) ).ToChecked() ) {
+				if( GETV( opts, optName )->IsBoolean() ) {
+					hidden = GETV( opts, optName )->TOBOOL( isolate );
+				}
+			}
 			if( opts->Has( context, optName = strings->useBreakString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					useBreak = GETV( opts, optName )->TOBOOL( isolate );
@@ -387,12 +445,16 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				| (newConsole ? LPP_OPTION_NEW_CONSOLE : 0)
 				| (suspend? LPP_OPTION_SUSPEND : 0)
 				| ( useBreak? LPP_OPTION_USE_CONTROL_BREAK :0 )
+				| ( noWindow ? LPP_OPTION_NO_WINDOW : 0 )
+				| ( hidden ? 0 : LPP_OPTION_DO_NOT_HIDE )
 				, input ? getTaskInput : NULL
 				, input2 ? getTaskInput2 : NULL
 				, (end||input) ? getTaskEnd : NULL
 				, (uintptr_t)newTask 
 				, envList
 				DBG_SRC );
+			if( !moveOpts.IsEmpty() )
+				doMoveWindow( isolate, context, newTask, moveOpts );
 		}
 
 		args.GetReturnValue().Set( _this );
@@ -465,3 +527,81 @@ void TaskObject::getExitCode( const FunctionCallbackInfo<Value>& args ) {
 	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)task->exitCode ) );
 		
 }
+
+#if _WIN32
+static void moveTaskWindowResult( uintptr_t psv, LOGICAL success ){
+	TaskObject *task = (TaskObject*)psv;
+	task->moved = TRUE;
+	task->moveSuccess = success;		
+	uv_async_send( &task->async );
+}
+
+// is status in prototype above
+void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, Local<Object> opts ) {
+	struct optionStrings *strings = getStrings( isolate );
+	Local<String> optName;
+
+	int timeout = 500, left = 0, top = 0, width = 640, height = 480, display = -1;
+
+	if( opts->Has( context, optName = strings->cbString->Get( isolate ) ).ToChecked() ) {
+		if( GETV( opts, optName )->IsFunction() ) {
+			// should be reset to empty when not in use...
+			task->cbMove.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
+		}
+	}
+
+	if( opts->Has( context, optName = strings->timeoutString->Get( isolate ) ).ToChecked() ) {
+		if( GETV( opts, optName )->IsNumber() ) {
+			// should be reset to empty when not in use...
+			timeout = (int)GETV( opts, optName )->IntegerValue(isolate->GetCurrentContext()).FromMaybe(0);
+		}
+	}
+
+	if( opts->Has( context, optName = strings->displayString->Get( isolate ) ).ToChecked() ) {
+		if( GETV( opts, optName )->IsNumber() ) {
+			// should be reset to empty when not in use...
+			display = (int)GETV( opts, optName )->IntegerValue(isolate->GetCurrentContext()).FromMaybe(0);
+		}
+	} else {
+		if( opts->Has( context, optName = strings->xString->Get( isolate ) ).ToChecked() ) {
+			if( GETV( opts, optName )->IsNumber() ) {
+				// should be reset to empty when not in use...
+				left = (int)GETV( opts, optName )->IntegerValue(isolate->GetCurrentContext()).FromMaybe(0);
+			}
+		} 
+		if( opts->Has( context, optName = strings->yString->Get( isolate ) ).ToChecked() ) {
+			if( GETV( opts, optName )->IsNumber() ) {
+				// should be reset to empty when not in use...
+				top = (int)GETV( opts, optName )->IntegerValue(isolate->GetCurrentContext()).FromMaybe(0);
+			}
+		} 
+		if( opts->Has( context, optName = strings->widthString->Get( isolate ) ).ToChecked() ) {
+			if( GETV( opts, optName )->IsNumber() ) {
+				// should be reset to empty when not in use...
+				width = (int)GETV( opts, optName )->IntegerValue(isolate->GetCurrentContext()).FromMaybe(0);
+			}
+		} 
+		if( opts->Has( context, optName = strings->heightString->Get( isolate ) ).ToChecked() ) {
+			if( GETV( opts, optName )->IsNumber() ) {
+				// should be reset to empty when not in use...
+				height = (int)GETV( opts, optName )->IntegerValue(isolate->GetCurrentContext()).FromMaybe(0);
+			}
+		} 
+	}
+	if( display >= 0 ) 	
+		MoveTaskWindowToDisplay( task->task, timeout, display, moveTaskWindowResult, (uintptr_t)task );
+	else
+		MoveTaskWindow( task->task, timeout, left, top, width, height, moveTaskWindowResult, (uintptr_t)task );
+		
+}
+
+void TaskObject::moveWindow( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	TaskObject* task = Unwrap<TaskObject>( args.This() );
+
+	Local<Object> opts = args[0]->ToObject( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked();
+	doMoveWindow( isolate, context, task, opts );
+}
+
+#endif
