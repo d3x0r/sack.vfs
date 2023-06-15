@@ -408,12 +408,12 @@ to interact with the process.
 
 | Move options | Type | Description |
 |----|----|-----|
-| timeout | number | specifies milliseconds to wait for window to exist.  If no task window is found, status is `false`|
-| x | number | specifies the x/left position of the window. |
-| y | number | specifies the y/top position of the window. |
-| width | number | specifies the width position of the window. |
-| height | number | specifies the height position of the window. |
-| display | number | specifies the display number to move the display to. 0 is the primary display, 1-N are displays by ID number.  If display option is specified, then `x`,`y`,`width`, and `height` options are ignored.|
+| timeout | number | specifies milliseconds to wait for window to exist.  If no task window is found, status is `false`.  Default is 500.|
+| x | number | specifies the x/left position of the window. Default is 0.|
+| y | number | specifies the y/top position of the window. Default is 0.|
+| width | number | specifies the width position of the window. Default is 1920.|
+| height | number | specifies the height position of the window. Default is 1080.|
+| display | number | specifies the display number to move the display to. 0 is the primary display, 1-N are displays by ID number.  If display option is specified, then `x`,`y`,`width`, and `height` options are ignored. Default is -1.|
 | cb | function | callback function which receives `true`/`false` parameter indicating the result of the move operation.  `false` rsults if the display number is invalid, or if the timeout occurs before finding the window. |
 
 

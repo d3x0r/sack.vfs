@@ -541,7 +541,7 @@ void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, Lo
 	struct optionStrings *strings = getStrings( isolate );
 	Local<String> optName;
 
-	int timeout = 500, left = 0, top = 0, width = 640, height = 480, display = -1;
+	int timeout = 500, left = 0, top = 0, width = 1920, height = 1080, display = -1;
 
 	if( opts->Has( context, optName = strings->cbString->Get( isolate ) ).ToChecked() ) {
 		if( GETV( opts, optName )->IsFunction() ) {

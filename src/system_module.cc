@@ -208,6 +208,27 @@ static void testCritSec( const v8::FunctionCallbackInfo<Value>& args ) {
 		printf( "%d = %d\n", n, -xx[n] );
 }
 
+void create( const v8::FunctionCallbackInfo<Value>& args ) {
+	STARTUPINFO si;
+	PROCESS_INFORMATION pi;
+	memset( &si, 0, sizeof( STARTUPINFO ) );
+	si.cb = sizeof( STARTUPINFO );
+	memset( &pi, 0, sizeof( PROCESS_INFORMATION ) );
+
+	BOOL a = CreateProcess( NULL, "taskkill.exe /?"
+		, NULL, NULL, TRUE
+		, 0
+		//                            | CREATE_NO_WINDOW
+		//                            | DETACHED_PROCESS
+		//                            | CREATE_NEW_PROCESS_GROUP
+		, NULL
+		, NULL
+		, &si
+		, &pi );
+	printf( "Status:%d  %d", a, GetLastError() );
+}
+
+
 void SystemInit( Isolate* isolate, Local<Object> exports )
 {
   Local<Context> context = isolate->GetCurrentContext();
@@ -224,7 +245,8 @@ void SystemInit( Isolate* isolate, Local<Object> exports )
   NODE_SET_METHOD( systemInterface, "reboot", reboot );
   NODE_SET_METHOD( systemInterface, "dumpMemory", dumpMemory );
   NODE_SET_METHOD( systemInterface, "testCritSec", testCritSec );
-
+  NODE_SET_METHOD( systemInterface, "createConsole", create );
+  
   SET( exports, "system", systemInterface );
 
 }

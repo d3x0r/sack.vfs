@@ -5051,6 +5051,7 @@ typedef void (CPROC*TaskOutput)(uintptr_t, PTASK_INFO task, CTEXTSTR buffer, siz
 #define LPP_OPTION_SUSPEND              32
 #define LPP_OPTION_ELEVATE              64
 #define LPP_OPTION_USE_CONTROL_BREAK   128
+#define LPP_OPTION_NO_WINDOW           256
 struct environmentValue {
 	char* field;
 	char* value;
@@ -5183,6 +5184,21 @@ SYSTEM_PROC( LOGICAL, sack_system_allow_spawn )( void );
    Disallow task spawning.
 */
 SYSTEM_PROC( void, sack_system_disallow_spawn )( void );
+#if _WIN32
+/*
+* moves the window of the task; if there is a main window for the task within the timeout perioud.
+* callback is called when the window is moved; this allows a background thread to wait
+* until the task has created its window.
+*/
+SYSTEM_PROC( void, MoveTaskWindow )( PTASK_INFO task, int timeout, int left, int top, int width, int height, void cb( uintptr_t, LOGICAL ), uintptr_t psv );
+/*
+* Moves the window of the specified task to the specified display; using a lookup to get the display size.
+* -1 is an invalid display.
+* 0 is the default display
+* 1+ is the first display and subsequent displays - one of which may be the default
+*/
+SYSTEM_PROC( void, MoveTaskWindowToDisplay )( PTASK_INFO task, int timeout, int display, void cb( uintptr_t, LOGICAL ), uintptr_t psv );
+#endif
 SACK_SYSTEM_NAMESPACE_END
 #ifdef __cplusplus
 using namespace sack::system;
