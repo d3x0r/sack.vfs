@@ -191,6 +191,8 @@ class constructorSet {
 	v8::Persistent<v8::Function> KeyHidObject_constructor;
 	//Persistent<Function> onCientPost;
 	uv_loop_t* loop;
+	Persistent<Function> exitCallback;
+	uv_async_t exitAsync; // different modules might have different signal registrations
 #ifdef INCLUDE_GUI
 	uv_async_t psiLocal_async;
 	int eventLoopEnables = 0;
