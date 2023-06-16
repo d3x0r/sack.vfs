@@ -13,6 +13,7 @@ Interface to the SACK System Library.  This provides some views into internal in
 |enableThreadFileSystem|  () | Enable thread-local filesystem on this thread.  No filesystems will bemounted after this call |
 |reboot|  (mode)  | Reboot or shutdown the current system.  Mode can be 'reboot' or 'shutdown' or empty which defaults to reboot. |
 |dumpMemory | (verbose,filename) | Dump C allocated memory.  `verbose` and `filename` are both optional.  `verbose` enables dumping each block. `filename` dumps the log to the specified file. |
+|enableExitSignal | (cb) | Enable a callback which can be called when process exit event is triggered.  This disables the automatic exit, so this function should invoke process.exit() (The event cannot be triggered again). |
 
 Some examples of using some of the system interfaces.
 
@@ -402,6 +403,7 @@ to interact with the process.
 | newConsole | bool | create a new console for the new task; instead of ineriting the existing console, default false |
 | suspend | bool | create task suspended.  Default: false |
 | useBreak | bool | set task to use ctrl-break instead of ctrl-c; if it's a window generates WM_CLOSE regardless.  default: false |
+| useSignal | bool | set task to use exit signal instead of ctrl-c or ctrl-break.  default: false |
 | moveTo | object | After the task is started, move its window to the specified location.  (See Move options below)
 
 ### Task Move Options
