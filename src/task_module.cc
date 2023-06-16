@@ -16,6 +16,7 @@ struct optionStrings {
 	Eternal<String>* groupString;
 	Eternal<String>* consoleString;
 	Eternal<String>* useBreakString;
+	Eternal<String>* useSignalString;
 	Eternal<String>* noWindowString;
 	Eternal<String>* hiddenString;
 #if _WIN32
@@ -63,6 +64,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->endString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "end" ) );
 		check->firstArgIsArgString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "firstArgIsArg" ) );
 		check->useBreakString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "useBreak" ) );
+		check->useSignalString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "useSignal" ) );
 		check->noWindowString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noWindow" ) );
 		check->hiddenString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "hidden" ) );
 #if _WIN32
@@ -301,6 +303,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			bool newConsole = false;
 			bool suspend = false;
 			bool useBreak = false;
+			bool useSignal = false;
 			bool noWindow = false;
 
 			newTask->killAtExit = true;
@@ -330,6 +333,13 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 					useBreak = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
+			if( opts->Has( context, optName = strings->useSignalString->Get( isolate ) ).ToChecked() ) {
+				lprintf( "use Signal..." );
+				if( GETV( opts, optName )->IsBoolean() ) {
+					useSignal = GETV( opts, optName )->TOBOOL( isolate );
+				}
+			}
+			
 			if( opts->Has( context, optName = strings->groupString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					newGroup = GETV( opts, optName )->TOBOOL( isolate );
@@ -447,6 +457,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				| ( useBreak? LPP_OPTION_USE_CONTROL_BREAK :0 )
 				| ( noWindow ? LPP_OPTION_NO_WINDOW : 0 )
 				| ( hidden ? 0 : LPP_OPTION_DO_NOT_HIDE )
+				| ( useSignal ?LPP_OPTION_USE_SIGNAL:0 )
 				, input ? getTaskInput : NULL
 				, input2 ? getTaskInput2 : NULL
 				, (end||input) ? getTaskEnd : NULL

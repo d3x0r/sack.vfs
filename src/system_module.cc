@@ -1,6 +1,10 @@
 
 #include "global.h"
 
+static struct system_local {
+	LOGICAL enabledExit;
+	
+}local;
 
 static void openMemory( const v8::FunctionCallbackInfo<Value>& args ) {
   Isolate* isolate = args.GetIsolate();
@@ -208,7 +212,7 @@ static void testCritSec( const v8::FunctionCallbackInfo<Value>& args ) {
 		printf( "%d = %d\n", n, -xx[n] );
 }
 
-void create( const v8::FunctionCallbackInfo<Value>& args ) {
+static void create( const v8::FunctionCallbackInfo<Value>& args ) {
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
 	memset( &si, 0, sizeof( STARTUPINFO ) );
@@ -228,6 +232,43 @@ void create( const v8::FunctionCallbackInfo<Value>& args ) {
 	printf( "Status:%d  %d", a, GetLastError() );
 }
 
+static int exitEvent( uintptr_t psv ) {
+	FreeConsole(); AllocConsole();  // put stderr into a console since the host is closing it's pipes...
+	lprintf( "Event signaled addon... %p", psv );
+	class constructorSet* c = (class constructorSet*)psv;
+
+//	Isolate* isolate = (Isolate*)psv;
+//	HandleScope scope( isolate );
+//	class constructorSet* c = getConstructors( isolate );
+	lprintf( "Event signaled addon..." );
+	uv_async_send( &c->exitAsync );
+	return 1; // don't exit yet; dispatch the event instead.
+}
+
+static void exitAsyncMsg( uv_async_t* handle ) {
+	class constructorSet* c = (class constructorSet* )handle->data;
+	HandleScope scope( c->isolate );
+	if( !c->exitCallback.IsEmpty() ) {
+		lprintf( "And call JS handler..." );
+		c->exitCallback.Get( c->isolate )->Call( c->isolate->GetCurrentContext(), Null( c->isolate ), 0, NULL );
+		lprintf( "Returned from JS?" );
+	}
+}
+
+static void enableExitEvent( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( !local.enabledExit ) {
+		EnableExitEvent();
+		local.enabledExit = TRUE;
+	}
+	lprintf( "Setting callback with isolate:%p", isolate );
+	class constructorSet* c = getConstructors( isolate );
+	AddKillSignalCallback( exitEvent, (uintptr_t)c );
+	uv_async_init( c->loop, &c->exitAsync, exitAsyncMsg );
+	c->exitAsync.data = c;
+	if( args.Length() > 0 )
+		c->exitCallback.Reset( isolate, Local<Function>::Cast( args[0]) );
+}
 
 void SystemInit( Isolate* isolate, Local<Object> exports )
 {
@@ -246,6 +287,7 @@ void SystemInit( Isolate* isolate, Local<Object> exports )
   NODE_SET_METHOD( systemInterface, "dumpMemory", dumpMemory );
   NODE_SET_METHOD( systemInterface, "testCritSec", testCritSec );
   NODE_SET_METHOD( systemInterface, "createConsole", create );
+  NODE_SET_METHOD( systemInterface, "enableExitSignal", enableExitEvent );
   
   SET( exports, "system", systemInterface );
 
