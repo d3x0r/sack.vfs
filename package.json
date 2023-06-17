@@ -95,6 +95,7 @@
     "@rollup/plugin-commonjs": "latest",
     "@rollup/plugin-node-resolve": "^13.0.0",
     "@rollup/plugin-strip": "latest",
+    "@rollup/plugin-terser": "latest",
     "jsox": "latest",
     "acorn": "latest",
     "chai": "latest",
@@ -104,8 +105,7 @@
     "lint-staged": "latest",
     "mocha": "latest",
     "nyc": "latest",
-    "rollup": "latest",
-    "rollup-plugin-terser": "latest"
+    "rollup": "latest"
   },
   "nyc": {
     "statements": 100,
