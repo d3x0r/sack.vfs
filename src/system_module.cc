@@ -233,14 +233,7 @@ static void create( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 static int exitEvent( uintptr_t psv ) {
-	FreeConsole(); AllocConsole();  // put stderr into a console since the host is closing it's pipes...
-	lprintf( "Event signaled addon... %p", psv );
 	class constructorSet* c = (class constructorSet*)psv;
-
-//	Isolate* isolate = (Isolate*)psv;
-//	HandleScope scope( isolate );
-//	class constructorSet* c = getConstructors( isolate );
-	lprintf( "Event signaled addon..." );
 	uv_async_send( &c->exitAsync );
 	return 1; // don't exit yet; dispatch the event instead.
 }
@@ -249,9 +242,7 @@ static void exitAsyncMsg( uv_async_t* handle ) {
 	class constructorSet* c = (class constructorSet* )handle->data;
 	HandleScope scope( c->isolate );
 	if( !c->exitCallback.IsEmpty() ) {
-		lprintf( "And call JS handler..." );
 		c->exitCallback.Get( c->isolate )->Call( c->isolate->GetCurrentContext(), Null( c->isolate ), 0, NULL );
-		lprintf( "Returned from JS?" );
 	}
 }
 
@@ -261,7 +252,7 @@ static void enableExitEvent( const v8::FunctionCallbackInfo<Value>& args ) {
 		EnableExitEvent();
 		local.enabledExit = TRUE;
 	}
-	lprintf( "Setting callback with isolate:%p", isolate );
+	//lprintf( "Setting callback with isolate:%p", isolate );
 	class constructorSet* c = getConstructors( isolate );
 	AddKillSignalCallback( exitEvent, (uintptr_t)c );
 	uv_async_init( c->loop, &c->exitAsync, exitAsyncMsg );
