@@ -233,7 +233,13 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.815(in progress)
+- 1.1.816(in progress)
+- 1.1.815
+    - process fixes; add ability to register an event to terminate a process, and hook into it.
+    - Fix standard IO handles to be inheritable.
+    - Add options to terminate tasks (useBreak, useSignal).
+    - Made terminte task only terminate, not attempt stop.
+    - (Windows)Add method to move task window; Add option to task to move window.
 - 1.1.814
     - Apply volatile to fields of CriticalSection so code isn't badly optimized.
     - Add internal test for critical sections.
