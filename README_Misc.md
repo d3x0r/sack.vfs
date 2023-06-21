@@ -11,9 +11,10 @@ Interface to the SACK System Library.  This provides some views into internal in
 |allowSpawn|  ()  | Return the status of whether spawning processes is allowed or not. |
 |disallowSpawn|  ()  | Disable spawning processes. |
 |enableThreadFileSystem|  () | Enable thread-local filesystem on this thread.  No filesystems will bemounted after this call |
-|reboot|  (mode)  | Reboot or shutdown the current system.  Mode can be 'reboot' or 'shutdown' or empty which defaults to reboot. |
+|reboot|  (mode)  | (Windows Only) Reboot or shutdown the current system.  Mode can be 'reboot' or 'shutdown' or empty which defaults to reboot. |
 |dumpMemory | (verbose,filename) | Dump C allocated memory.  `verbose` and `filename` are both optional.  `verbose` enables dumping each block. `filename` dumps the log to the specified file. |
-|enableExitSignal | (cb) | Enable a callback which can be called when process exit event is triggered.  This disables the automatic exit, so this function should invoke process.exit() (The event cannot be triggered again). |
+|enableExitSignal | (cb) | (Windows Only) Enable a callback which can be called when process exit event is triggered.  This disables the automatic exit, so this function should invoke process.exit() (The event cannot be triggered again). |
+|hideCursor | (timeout) | (Windows Only) Enables hiding the mouse cursor if it is stationary for an amount of time. Timeout parameter is in milliseconds |
 
 Some examples of using some of the system interfaces.
 

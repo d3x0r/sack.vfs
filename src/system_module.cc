@@ -212,6 +212,7 @@ static void testCritSec( const v8::FunctionCallbackInfo<Value>& args ) {
 		printf( "%d = %d\n", n, -xx[n] );
 }
 
+#ifdef _WIN32
 static void create( const v8::FunctionCallbackInfo<Value>& args ) {
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
@@ -261,6 +262,44 @@ static void enableExitEvent( const v8::FunctionCallbackInfo<Value>& args ) {
 		c->exitCallback.Reset( isolate, Local<Function>::Cast( args[0]) );
 }
 
+uintptr_t hideCursorThread( PTHREAD thread ) {
+	int *timeout = (int*)GetThreadParam( thread );
+	int64_t now = timeGetTime();
+	POINT oldPoint;
+	POINT newPoint;
+	GetCursorPos( &oldPoint );
+	while( 1 ) {
+		int64_t newNow = timeGetTime();
+		if( ( newNow - now ) > timeout[0] ) {
+			GetCursorPos( &newPoint );
+			if( (newPoint.x != oldPoint.x) || (newPoint.y != oldPoint.y) ) {
+				oldPoint = newPoint;  // update the point position.
+				now = newNow;
+			} else {
+				ShowCursor( FALSE );
+				now = newNow;
+			}
+		}
+		WakeableSleep( (uint32_t)(( timeout[0] - ( newNow - now ) ) / 10) );
+	}
+}
+
+static void hideCursor( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	static PTHREAD hideThread;
+	static int defaultTimeout = 15000;
+	if( (args.Length() > 0) && args[0]->IsNumber() ) {
+		// should be reset to empty when not in use...
+		defaultTimeout = (int)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	}
+	if( !hideThread )
+		hideThread = ThreadTo( hideCursorThread, (uintptr_t)&defaultTimeout);
+}
+
+#endif
+
+
+
 void SystemInit( Isolate* isolate, Local<Object> exports )
 {
   Local<Context> context = isolate->GetCurrentContext();
@@ -277,9 +316,12 @@ void SystemInit( Isolate* isolate, Local<Object> exports )
   NODE_SET_METHOD( systemInterface, "reboot", reboot );
   NODE_SET_METHOD( systemInterface, "dumpMemory", dumpMemory );
   NODE_SET_METHOD( systemInterface, "testCritSec", testCritSec );
+#ifdef _WIN32
   NODE_SET_METHOD( systemInterface, "createConsole", create );
   NODE_SET_METHOD( systemInterface, "enableExitSignal", enableExitEvent );
-  
+  NODE_SET_METHOD( systemInterface, "hideCursor", hideCursor );
+#endif
+
   SET( exports, "system", systemInterface );
 
 }

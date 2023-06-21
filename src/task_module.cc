@@ -38,7 +38,9 @@ static struct local {
 	PLIST tasks;
 } l;
 
+#if _WIN32
 static void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, Local<Object> opts );
+#endif
 //v8::Persistent<v8::Function> TaskObject::constructor;
 
 static struct optionStrings *getStrings( Isolate *isolate ) {
@@ -477,8 +479,10 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				, (uintptr_t)newTask 
 				, envList
 				DBG_SRC );
+#if _WIN32
 			if( !moveOpts.IsEmpty() )
 				doMoveWindow( isolate, context, newTask, moveOpts );
+#endif
 		}
 
 		args.GetReturnValue().Set( _this );
