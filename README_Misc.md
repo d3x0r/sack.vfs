@@ -404,6 +404,7 @@ to interact with the process.
 | suspend | bool | create task suspended.  Default: false |
 | useBreak | bool | set task to use ctrl-break instead of ctrl-c; if it's a window generates WM_CLOSE regardless.  default: false |
 | useSignal | bool | set task to use exit signal instead of ctrl-c or ctrl-break.  default: false |
+| noKill | bool | allow task to continue running after the parent exits.  default: false (kills children at exit) |
 | moveTo | object | After the task is started, move its window to the specified location.  (See Move options below)
 
 ### Task Move Options

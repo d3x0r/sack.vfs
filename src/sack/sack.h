@@ -5056,6 +5056,8 @@ typedef void (CPROC*TaskOutput)(uintptr_t, PTASK_INFO task, CTEXTSTR buffer, siz
 #define LPP_OPTION_NO_WINDOW           256
 // use process signal to kill process instead of ctrl-c or ctrl-break
 #define LPP_OPTION_USE_SIGNAL          512
+// allow process to run after the parent exits
+#define LPP_OPTION_NO_KILL_ON_EXIT    1024
 struct environmentValue {
 	char* field;
 	char* value;
