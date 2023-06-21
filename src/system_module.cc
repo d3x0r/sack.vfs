@@ -262,32 +262,179 @@ static void enableExitEvent( const v8::FunctionCallbackInfo<Value>& args ) {
 		c->exitCallback.Reset( isolate, Local<Function>::Cast( args[0]) );
 }
 
+HCURSOR hCursor;
+int hidePos = 0;
+
 uintptr_t hideCursorThread( PTHREAD thread ) {
 	int *timeout = (int*)GetThreadParam( thread );
 	int64_t now = timeGetTime();
 	POINT oldPoint;
 	POINT newPoint;
 	GetCursorPos( &oldPoint );
+	//lprintf( "Cursor at: %d %d", oldPoint.x, oldPoint.y );
+	ShowCursor( TRUE );
 	while( 1 ) {
 		int64_t newNow = timeGetTime();
+		//lprintf( "Tick: %d %d", newNow, newNow - now );
+		GetCursorPos( &newPoint );
+		//lprintf( "Cursor at: %d %d", newPoint.x, newPoint.y );
+		if( ( newPoint.x != oldPoint.x ) || ( newPoint.y != oldPoint.y ) ) {
+			oldPoint = newPoint;  // update the point position.
+			now = newNow;
+		} else
+
 		if( ( newNow - now ) > timeout[0] ) {
-			GetCursorPos( &newPoint );
-			if( (newPoint.x != oldPoint.x) || (newPoint.y != oldPoint.y) ) {
-				oldPoint = newPoint;  // update the point position.
-				now = newNow;
-			} else {
-				ShowCursor( FALSE );
-				now = newNow;
-			}
+			//lprintf( "Do Hide?" );
+			//HCURSOR old = SetCursor( hCursor );
+			SetCursorPos( 0, hidePos );
+			//int r = ShowCursor( FALSE );
+			//DWORD dwError = GetLastError();
+			//lprintf( "Cursor R %d %d", old, dwError );
+			now = newNow;
 		}
-		WakeableSleep( (uint32_t)(( timeout[0] - ( newNow - now ) ) / 10) );
+		WakeableSleep( (uint32_t)( timeout[0] / 10 ) );
 	}
 }
+/*
+static void initBlankCursor( void ) {
 
+	BYTE ANDmaskCursor[] =
+	{
+		0xFF, 0xFC, 0x3F, 0xFF,   // line 1 
+		0xFF, 0xC0, 0x1F, 0xFF,   // line 2 
+		0xFF, 0x00, 0x3F, 0xFF,   // line 3 
+		0xFE, 0x00, 0xFF, 0xFF,   // line 4 
+
+		0xF7, 0x01, 0xFF, 0xFF,   // line 5 
+		0xF0, 0x03, 0xFF, 0xFF,   // line 6 
+		0xF0, 0x03, 0xFF, 0xFF,   // line 7 
+		0xE0, 0x07, 0xFF, 0xFF,   // line 8 
+
+		0xC0, 0x07, 0xFF, 0xFF,   // line 9 
+		0xC0, 0x0F, 0xFF, 0xFF,   // line 10 
+		0x80, 0x0F, 0xFF, 0xFF,   // line 11 
+		0x80, 0x0F, 0xFF, 0xFF,   // line 12 
+
+		0x80, 0x07, 0xFF, 0xFF,   // line 13 
+		0x00, 0x07, 0xFF, 0xFF,   // line 14 
+		0x00, 0x03, 0xFF, 0xFF,   // line 15 
+		0x00, 0x00, 0xFF, 0xFF,   // line 16 
+
+		0x00, 0x00, 0x7F, 0xFF,   // line 17 
+		0x00, 0x00, 0x1F, 0xFF,   // line 18 
+		0x00, 0x00, 0x0F, 0xFF,   // line 19 
+		0x80, 0x00, 0x0F, 0xFF,   // line 20 
+
+		0x80, 0x00, 0x07, 0xFF,   // line 21 
+		0x80, 0x00, 0x07, 0xFF,   // line 22 
+		0xC0, 0x00, 0x07, 0xFF,   // line 23 
+		0xC0, 0x00, 0x0F, 0xFF,   // line 24 
+
+		0xE0, 0x00, 0x0F, 0xFF,   // line 25 
+		0xF0, 0x00, 0x1F, 0xFF,   // line 26 
+		0xF0, 0x00, 0x1F, 0xFF,   // line 27 
+		0xF8, 0x00, 0x3F, 0xFF,   // line 28 
+
+		0xFE, 0x00, 0x7F, 0xFF,   // line 29 
+		0xFF, 0x00, 0xFF, 0xFF,   // line 30 
+		0xFF, 0xC3, 0xFF, 0xFF,   // line 31 
+		0xFF, 0xFF, 0xFF, 0xFF    // line 32 
+	};
+
+	// Yin-shaped cursor XOR mask 
+
+	BYTE XORmaskCursor[] =
+	{
+		0x00, 0x00, 0x00, 0x00,   // line 1 
+		0x00, 0x03, 0xC0, 0x00,   // line 2 
+		0x00, 0x3F, 0x00, 0x00,   // line 3 
+		0x00, 0xFE, 0x00, 0x00,   // line 4 
+
+		0x0E, 0xFC, 0x00, 0x00,   // line 5 
+		0x07, 0xF8, 0x00, 0x00,   // line 6 
+		0x07, 0xF8, 0x00, 0x00,   // line 7 
+		0x0F, 0xF0, 0x00, 0x00,   // line 8 
+
+		0x1F, 0xF0, 0x00, 0x00,   // line 9 
+		0x1F, 0xE0, 0x00, 0x00,   // line 10 
+		0x3F, 0xE0, 0x00, 0x00,   // line 11 
+		0x3F, 0xE0, 0x00, 0x00,   // line 12 
+
+		0x3F, 0xF0, 0x00, 0x00,   // line 13 
+		0x7F, 0xF0, 0x00, 0x00,   // line 14 
+		0x7F, 0xF8, 0x00, 0x00,   // line 15 
+		0x7F, 0xFC, 0x00, 0x00,   // line 16 
+
+		0x7F, 0xFF, 0x00, 0x00,   // line 17 
+		0x7F, 0xFF, 0x80, 0x00,   // line 18 
+		0x7F, 0xFF, 0xE0, 0x00,   // line 19 
+		0x3F, 0xFF, 0xE0, 0x00,   // line 20 
+
+		0x3F, 0xC7, 0xF0, 0x00,   // line 21 
+		0x3F, 0x83, 0xF0, 0x00,   // line 22 
+		0x1F, 0x83, 0xF0, 0x00,   // line 23 
+		0x1F, 0x83, 0xE0, 0x00,   // line 24 
+
+		0x0F, 0xC7, 0xE0, 0x00,   // line 25 
+		0x07, 0xFF, 0xC0, 0x00,   // line 26 
+		0x07, 0xFF, 0xC0, 0x00,   // line 27 
+		0x01, 0xFF, 0x80, 0x00,   // line 28 
+
+		0x00, 0xFF, 0x00, 0x00,   // line 29 
+		0x00, 0x3C, 0x00, 0x00,   // line 30 
+		0x00, 0x00, 0x00, 0x00,   // line 31 
+		0x00, 0x00, 0x00, 0x00    // line 32 
+	};
+
+	// Create a custom cursor at run time. 
+	return ;
+	hCursor = CreateCursor( GetModuleHandle( NULL ),   // app. instance 
+		19,                // horizontal position of hot spot 
+		2,                 // vertical position of hot spot 
+		32,                // cursor width 
+		32,                // cursor height 
+		ANDmaskCursor,     // AND mask 
+		XORmaskCursor );   // XOR mask 
+
+	return;
+	HBITMAP hBitmap = (HBITMAP)LoadImage( NULL,
+		"test.bmp",
+		IMAGE_BITMAP,
+		0, 0,
+		LR_LOADFROMFILE );
+	BITMAP bmp;
+	GetObject( hBitmap, sizeof( BITMAP ), &bmp );
+
+	HBITMAP hMask = ::CreateCompatibleBitmap( GetDC( NULL ),
+		bmp.bmWidth, bmp.bmHeight );
+	if( hMask == INVALID_HANDLE_VALUE ) {
+		lprintf( "Bad Handle" );
+	}
+
+	ICONINFO ii = { 0 };
+	ii.fIcon = FALSE;
+	ii.hbmColor = hBitmap;
+	ii.hbmMask = hMask;
+	ii.xHotspot = 0;
+	ii.yHotspot = 0;
+	//CreateCursor( GetInstance)
+	hCursor = CreateIconIndirect( &ii );
+	if( hCursor == INVALID_HANDLE_VALUE ) {
+		lprintf( "Cursor is BAD!" );
+	}
+}
+*/
 static void hideCursor( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	static PTHREAD hideThread;
 	static int defaultTimeout = 15000;
+	if( !hidePos ) {
+		RECT r;
+		GetWindowRect( GetDesktopWindow(), &r );
+		hidePos = r.bottom;
+	}
+
+	//if( !hCursor ) initBlankCursor();
 	if( (args.Length() > 0) && args[0]->IsNumber() ) {
 		// should be reset to empty when not in use...
 		defaultTimeout = (int)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );

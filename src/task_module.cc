@@ -146,7 +146,7 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 		if( !task->cbMove.IsEmpty() ) {
 			argv[0] = task->moveSuccess?True( isolate ):False( isolate );
 			task->cbMove.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
-			task->cbMove.Reset();
+			//task->cbMove.Reset();
 		}
 		task->moved = FALSE;
 	}
@@ -348,7 +348,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				}
 			}
 			if( opts->Has( context, optName = strings->useSignalString->Get( isolate ) ).ToChecked() ) {
-				lprintf( "use Signal..." );
+				//lprintf( "use Signal..." );
 				if( GETV( opts, optName )->IsBoolean() ) {
 					useSignal = GETV( opts, optName )->TOBOOL( isolate );
 				}
@@ -559,8 +559,9 @@ void TaskObject::getExitCode( const FunctionCallbackInfo<Value>& args ) {
 #if _WIN32
 static void moveTaskWindowResult( uintptr_t psv, LOGICAL success ){
 	TaskObject *task = (TaskObject*)psv;
+	//lprintf( "result... send event?" );
 	task->moved = TRUE;
-	task->moveSuccess = success;		
+	task->moveSuccess = success;
 	uv_async_send( &task->async );
 }
 
