@@ -44,6 +44,8 @@ public:
 	static void getExitCode( const v8::FunctionCallbackInfo<Value>& args );
 #if _WIN32
 	static void moveWindow( const v8::FunctionCallbackInfo<Value>& args );
+	static void refreshWindow( const v8::FunctionCallbackInfo<Value>& args );
+	
 #endif
 };
 

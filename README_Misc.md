@@ -383,6 +383,7 @@ to interact with the process.
  |send(buf) | Writes data to the task's stdin. |
  |exitCode | After/during the `end` callback, this may be queried to get the return code of the task |
  |moveWindow(object) | Move the task's primary window to the specifed location.  See Move options below. |
+ |refreshWindow() | Refresh the internal handle for the window. (Set for moveWindow, and used later for moveWindow() or end())|
 
  Task Option object may contain these options to control how the task is spawned.
 

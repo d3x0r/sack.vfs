@@ -121,6 +121,8 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "isRunning", TaskObject::isRunning );
 #if _WIN32
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "moveWindow", TaskObject::moveWindow );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "refreshWindow", TaskObject::refreshWindow );
+
 #endif
 
 	taskTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "exitCode" )
@@ -622,6 +624,13 @@ void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, Lo
 	else
 		MoveTaskWindow( task->task, timeout, left, top, width, height, moveTaskWindowResult, (uintptr_t)task );
 		
+}
+
+void TaskObject::refreshWindow( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	TaskObject* task = Unwrap<TaskObject>( args.This() );
+	RefreshTaskWindow( task->task );
 }
 
 void TaskObject::moveWindow( const FunctionCallbackInfo<Value>& args ) {

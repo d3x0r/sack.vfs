@@ -5218,6 +5218,10 @@ SYSTEM_PROC( void, AddKillSignalCallback )( int( *cb )( uintptr_t ), uintptr_t )
   Remove a callback which was added to event callback list.
 */
 SYSTEM_PROC( void, RemoveKillSignalCallback )( int( *cb )( uintptr_t ), uintptr_t );
+/*
+  Refresh internal window handle for task; uses internal handle as cached value for performance.
+*/
+SYSTEM_PROC( void, RefreshTaskWindow )( PTASK_INFO task );
 #endif
 SACK_SYSTEM_NAMESPACE_END
 #ifdef __cplusplus
