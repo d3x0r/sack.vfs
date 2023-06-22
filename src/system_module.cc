@@ -285,9 +285,10 @@ int oldCursors[ALL_CURSORS] = {
 };
 HCURSOR hOldCursors[ALL_CURSORS];
 int isHidden = 0;
+int cursorSize = 32;
 
 #undef CopyCursor
-#define CopyCursor(icon) (HCURSOR)CopyImage( icon,IMAGE_CURSOR,0,0,LR_COPYFROMRESOURCE)
+#define CopyCursor(icon) (HCURSOR)CopyImage( icon,IMAGE_CURSOR,0, 0,0)
 
 ATEXIT( ResetCursor ) {
 	if( isHidden ) {
@@ -295,6 +296,30 @@ ATEXIT( ResetCursor ) {
 			SetSystemCursor( hOldCursors[i], oldCursors[i]);
 	}
 }
+
+/*
+void GetCursorInfo( void ) {
+	DWORD dwStatus;
+	HKEY hTemp;
+	DWORD dwRetType;
+	char pValue[512];
+	DWORD dwBufSize;
+
+	dwStatus = RegOpenKeyEx( HKEY_CURRENT_USER,
+		"Control Panel\\Cursors", 0,
+		KEY_READ, &hTemp );
+	dwBufSize = 512;
+	dwStatus = RegQueryValueEx( hTemp, "CursorBaseSize", 0
+		, &dwRetType
+		, (PBYTE)&pValue
+		, &dwBufSize );
+	if( dwRetType == REG_DWORD ) {
+		DWORD size = ((DWORD*)pValue)[0];
+		cursorSize = size;
+		lprintf( "size:%d", size );
+	}
+}
+*/
 
 uintptr_t hideCursorThread( PTHREAD thread ) {
 	int *timeout = (int*)GetThreadParam( thread );
@@ -425,9 +450,20 @@ static void initBlankCursor( void ) {
 	// Create a custom cursor at run time. 
 	//return ;
 	{
+		//int x = SystemParametersInfo( )
+		//int x = GetSystemMetrics( SM_CXCURSOR );
+		//int y = GetSystemMetrics( SM_CYCURSOR );
+		//GetCursorInfo();
+		//SystemParametersInfo( )
+		//lprintf( "cursor is %d %d", x, y );
 		//hOldCursor = CopyCursor( LoadCursor( NULL, IDC_ARROW ) );
-		for( int i = 0; i < ALL_CURSORS; i++ )
+		for( int i = 0; i < ALL_CURSORS; i++ ) {
+			//if( i == 0 )
+			//	hOldCursors[i] = LoadCursorFromFile( "C:\\Users\\d3x0r\\AppData\\Local\\Microsoft\\Windows\\Cursors\\arrow_eoa.cur");
+			//else
 			hOldCursors[i] = CopyCursor( LoadCursor( NULL, (LPCSTR)(uintptr_t)oldCursors[i] ) );
+		}
+			//hOldCursors[i] = CopyCursor( LoadImage( NULL, (LPCSTR)(uintptr_t)oldCursors[i], IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE ) );
 	}
 	//lprintf( "Cursors: %p %p", hOldCursor, hOldCursor2 );
 	hCursor = CreateCursor( GetModuleHandle( NULL ),   // app. instance 
