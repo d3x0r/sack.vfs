@@ -286,6 +286,9 @@ int oldCursors[ALL_CURSORS] = {
 HCURSOR hOldCursors[ALL_CURSORS];
 int isHidden = 0;
 
+#undef CopyCursor
+#define CopyCursor(icon) (HCURSOR)CopyImage( icon,IMAGE_CURSOR,0,0,LR_COPYFROMRESOURCE)
+
 ATEXIT( ResetCursor ) {
 	if( isHidden ) {
 		for( int i = 0; i < ALL_CURSORS; i++ )
