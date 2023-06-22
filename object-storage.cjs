@@ -22,7 +22,7 @@ const _objectStorage = sack.ObjectStorage;
 const nativeVol = sack.Volume();
 
 const path = __dirname;//import.meta.url.replace(/file\:\/\/\//, '' ).split("/");
-console.log( "path?", path );
+//console.log( "path?", path );
 //const path = import.meta.url.replace(/file\:\/\/\//, '' ).split("/");
 const root = __dirname;//(path.splice(path.length-1,1),path.join('/')+"/");
 const remoteExtensionsSrc = nativeVol.read( root+"/object-storage-remote.js" );
