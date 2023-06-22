@@ -263,12 +263,34 @@ static void enableExitEvent( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 HCURSOR hCursor;
-HCURSOR hOldCursor = (HCURSOR)65539;
+#define ALL_CURSORS 17
+int oldCursors[ALL_CURSORS] = {
+ (int)(uintptr_t)IDC_ARROW,
+ (int)(uintptr_t)IDC_IBEAM,
+ (int)(uintptr_t)IDC_WAIT,
+ (int)(uintptr_t)IDC_CROSS,
+ (int)(uintptr_t)IDC_UPARROW,
+ (int)(uintptr_t)IDC_SIZE,  /* OBSOLETE: use IDC_SIZEALL */
+ (int)(uintptr_t)IDC_ICON,  /* OBSOLETE: use IDC_ARROW */
+ (int)(uintptr_t)IDC_SIZENWSE,
+ (int)(uintptr_t)IDC_SIZENESW,
+ (int)(uintptr_t)IDC_SIZEWE,
+ (int)(uintptr_t)IDC_SIZENS,
+ (int)(uintptr_t)IDC_SIZEALL,
+ (int)(uintptr_t)32647, /*not in win3.1 */
+ (int)(uintptr_t)IDC_NO, /*not in win3.1 */
+ (int)(uintptr_t)IDC_HAND,
+ (int)(uintptr_t)IDC_APPSTARTING, /*not in win3.1 */
+ (int)(uintptr_t)IDC_HELP,
+};
+HCURSOR hOldCursors[ALL_CURSORS];
 int isHidden = 0;
 
 ATEXIT( ResetCursor ) {
-	if( isHidden )
-		SetSystemCursor( hOldCursor, 32512/*OCR_NORMAL*/ );
+	if( isHidden ) {
+		for( int i = 0; i < ALL_CURSORS; i++ )
+			SetSystemCursor( hOldCursors[i], oldCursors[i]);
+	}
 }
 
 uintptr_t hideCursorThread( PTHREAD thread ) {
@@ -282,8 +304,11 @@ uintptr_t hideCursorThread( PTHREAD thread ) {
 		GetCursorPos( &newPoint );
 		if( ( newPoint.x != oldPoint.x ) || ( newPoint.y != oldPoint.y ) ) {
 			if( isHidden ) {
-				HCURSOR hPass = CopyCursor( hOldCursor );
-				SetSystemCursor( hPass, 32512/*OCR_NORMAL*/ );
+				for( int i = 0; i < ALL_CURSORS; i++ )
+					SetSystemCursor( CopyCursor( hOldCursors[i] ), oldCursors[i] );
+
+				//HCURSOR hPass = CopyCursor( hOldCursor );
+				//SetSystemCursor( hPass, 32512/*OCR_NORMAL*/ );
 				isHidden = FALSE;
 			}
 			oldPoint = newPoint;  // update the point position.
@@ -292,8 +317,10 @@ uintptr_t hideCursorThread( PTHREAD thread ) {
 
 		if( ( newNow - now ) > timeout[0] ) {
 			if( !isHidden ) {
-				HCURSOR hPass = CopyCursor( hCursor );
-				SetSystemCursor( hPass, 32512/*OCR_NORMAL*/ );
+				for( int i = 0; i < ALL_CURSORS; i++ )
+					SetSystemCursor( CopyCursor( hCursor ), oldCursors[i] );
+				//HCURSOR hPass = CopyCursor( hCursor );
+				//SetSystemCursor( hPass, 32512/*OCR_NORMAL*/ );
 				isHidden = TRUE;
 			}
 			now = newNow;
@@ -395,10 +422,9 @@ static void initBlankCursor( void ) {
 	// Create a custom cursor at run time. 
 	//return ;
 	{
-		CURSORINFO ci;
-		ci.cbSize = sizeof( CURSORINFO );
-		GetCursorInfo( &ci );
-		hOldCursor = CopyCursor( ci.hCursor );
+		//hOldCursor = CopyCursor( LoadCursor( NULL, IDC_ARROW ) );
+		for( int i = 0; i < ALL_CURSORS; i++ )
+			hOldCursors[i] = CopyCursor( LoadCursor( NULL, (LPCSTR)(uintptr_t)oldCursors[i] ) );
 	}
 	//lprintf( "Cursors: %p %p", hOldCursor, hOldCursor2 );
 	hCursor = CreateCursor( GetModuleHandle( NULL ),   // app. instance 
