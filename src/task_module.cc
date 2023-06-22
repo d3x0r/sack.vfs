@@ -630,7 +630,12 @@ void TaskObject::refreshWindow( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
-	RefreshTaskWindow( task->task );
+	HWND hWnd = RefreshTaskWindow( task->task );
+	Local<ArrayBuffer> ab;
+	std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( isolate, sizeof( hWnd ) );
+	memcpy( bs->Data(), &hWnd, sizeof( hWnd ) );
+	ab = ArrayBuffer::New( isolate, bs );
+	args.GetReturnValue().Set( ab );
 }
 
 void TaskObject::moveWindow( const FunctionCallbackInfo<Value>& args ) {

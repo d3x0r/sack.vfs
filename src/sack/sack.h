@@ -5221,7 +5221,7 @@ SYSTEM_PROC( void, RemoveKillSignalCallback )( int( *cb )( uintptr_t ), uintptr_
 /*
   Refresh internal window handle for task; uses internal handle as cached value for performance.
 */
-SYSTEM_PROC( void, RefreshTaskWindow )( PTASK_INFO task );
+SYSTEM_PROC( HWND, RefreshTaskWindow )( PTASK_INFO task );
 #endif
 SACK_SYSTEM_NAMESPACE_END
 #ifdef __cplusplus
