@@ -536,7 +536,7 @@ sack.JSOX.stringifier = function() {
 			}else { //if( asField )
 				fieldMap.delete(object)
 				//console.log( "Deleting object reference from fieldMap" );
-            }
+			}
 		}
 
 		// If the space parameter is a number, make an indent string containing that
@@ -570,7 +570,7 @@ sack.JSOX.stringifier = function() {
 		}else{
 			//console.log( "Stringifier is still in a stack?", path);
 		}
-		DEBUG_STRINGIFY_OUTPUT && console.log( "Stringify Result:", r );
+		DEBUG_STRINGIFY_OUTPUT && console.log( "Stringify Result:", object, "=",r );
 		if(_DEBUG_STRINGIFY_TIMING) {
 			let now = Date.now();
 			timeIn += now - lastTick;
@@ -718,7 +718,7 @@ sack.JSOX.stringifier = function() {
 							//|| ( isObject && objectToJSOX )
 							;
 				// If the value has a toJSOX method, call it to obtain a replacement value.
-				//_DEBUG_STRINGIFY && console.log( "type:", typeof value, protoConverter, !!toJSOX, path, isObject );
+				_DEBUG_STRINGIFY && console.log( "type:", typeof value, protoConverter, !!toJSOX, path, isObject );
 
 				if( value !== undefined
 					&& value !== null
