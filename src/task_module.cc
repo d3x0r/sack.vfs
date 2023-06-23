@@ -325,11 +325,13 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 					noWindow = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
+#ifdef _WIN32
 			if( opts->Has( context, optName = strings->moveToString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsObject() ) {
 					moveOpts = GETV( opts, optName ).As<Object>();
 				}
 			}
+#endif
 			if( opts->Has( context, optName = strings->hiddenString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					hidden = GETV( opts, optName )->TOBOOL( isolate );

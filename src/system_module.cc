@@ -166,9 +166,9 @@ volatile int xx[32];
 static uintptr_t  ThreadWrapper( void* pThread ){
 	while( 1 ) {
 		POINTER p = Allocate( 100 );
-		EnterCriticalSecEx( &cs DBG_PASS );
+		EnterCriticalSecEx( &cs DBG_SRC );
 		xx[(int)((uintptr_t)pThread)]++;
-		LeaveCriticalSecEx( &cs DBG_PASS );
+		LeaveCriticalSecEx( &cs DBG_SRC );
 		Deallocate( POINTER, p );
 	}
 	return 0;
@@ -186,8 +186,8 @@ static uintptr_t  ThreadWrapper2( PTHREAD pThread ){
 		POINTER p = Allocate( 100 );
 		xx[(int)id]++;
 		/*
-		if( EnterCriticalSecNoWaitEx( &cs, NULL DBG_PASS ) > 0 ) {
-			LeaveCriticalSecNoWakeEx( &cs DBG_PASS );
+		if( EnterCriticalSecNoWaitEx( &cs, NULL DBG_SRC ) > 0 ) {
+			LeaveCriticalSecNoWakeEx( &cs DBG_SRC );
 		} else Relinquish();
 		*/
 		Deallocate( POINTER, p );
