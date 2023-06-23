@@ -42,7 +42,8 @@ public:
 	static void isRunning( const v8::FunctionCallbackInfo<Value>& args );
 	static void loadLibrary( const v8::FunctionCallbackInfo<Value>& args );
 	static void getExitCode( const v8::FunctionCallbackInfo<Value>& args );
-#if _WIN32
+#if _WIN32	
+	static void getDisplays( const v8::FunctionCallbackInfo<Value>& args );
 	static void moveWindow( const v8::FunctionCallbackInfo<Value>& args );
 	static void refreshWindow( const v8::FunctionCallbackInfo<Value>& args );
 	

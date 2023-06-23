@@ -30,6 +30,10 @@ struct optionStrings {
 	Eternal<String>* widthString;
 	Eternal<String>* heightString;
 	Eternal<String>* displayString;
+	Eternal<String>* currentString;
+	Eternal<String>* primaryString;
+	Eternal<String>* deviceString;
+	Eternal<String>* monitorString;
 #endif
 };
 
@@ -80,6 +84,10 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->widthString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "width" ) );
 		check->heightString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "height" ) );
 		check->displayString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "display" ) );
+		check->currentString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "current" ) );
+		check->primaryString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "primary" ) );
+		check->deviceString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "device" ) );
+		check->monitorString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "monitor" ) );
 #endif
 	}
 	return check;
@@ -134,6 +142,9 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	Local<Function> taskF;
 	SET_READONLY( exports, "Task", taskF = taskTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	SET_READONLY_METHOD( taskF, "loadLibrary", TaskObject::loadLibrary );
+#ifdef _WIN32
+	SET_READONLY_METHOD( taskF, "getDisplays", TaskObject::getDisplays );
+#endif
 }
 
 static void taskAsyncMsg( uv_async_t* handle ) {
@@ -649,4 +660,122 @@ void TaskObject::moveWindow( const FunctionCallbackInfo<Value>& args ) {
 	doMoveWindow( isolate, context, task, opts );
 }
 
+struct monitor_data {
+	Isolate* isolate;
+	Local<Context> context;
+	Local<Array> array;
+	int arrayIndex;
+	struct optionStrings* strings;
+
+};
+
+static BOOL addMonitor( HMONITOR hMonitor,
+	HDC hDC_null,
+	LPRECT pRect,
+	LPARAM dwParam
+) {
+	struct monitor_data* data = (struct monitor_data*)dwParam;
+	Local<Context> context = data->context;
+	Local<Object> display = Object::New( data->isolate );
+
+	//SETV( display, data->strings->displayString->Get( data->isolate ), Number::New( data->isolate, data->arrayIndex+1 ) );
+	SETV( display, data->strings->xString->Get( data->isolate ), Number::New( data->isolate, pRect->left ) );
+	SETV( display, data->strings->yString->Get( data->isolate ), Number::New( data->isolate, pRect->top ) );
+	SETV( display, data->strings->widthString->Get( data->isolate ), Number::New( data->isolate, pRect->right-pRect->left ) );
+	SETV( display, data->strings->heightString->Get( data->isolate ), Number::New( data->isolate, pRect->bottom-pRect->top ) );
+	//SETV( display, data->strings->currentString->Get( data->isolate ), True( data->isolate ) );
+	//SETV( display, data->strings->primaryString->Get( isolate ), ( dev.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE ) ? True( isolate ) : False( isolate ) );
+
+	data->array->Set( context, data->arrayIndex++, display );
+
+	return TRUE;
+}
+
+void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	Local<Object> result = Object::New( isolate );
+
+	Local<Array> array_monitors = Array::New(isolate);
+	Local<Array> array = Array::New( isolate );
+	int arrayIndex = 0;
+	Local<Object> display;// = Array::New( isolate );
+	struct monitor_data data;
+	int i;
+	DISPLAY_DEVICE dev;
+	DEVMODE dm;
+	struct optionStrings* strings = getStrings( isolate );
+
+	SETV( result, strings->monitorString->Get( isolate ), array_monitors );
+	SETV( result, strings->deviceString->Get( isolate ), array );
+	data.strings = strings;
+	data.isolate = isolate;
+	data.context = context;
+	data.array = array_monitors;
+	data.arrayIndex = 0;
+	dm.dmSize = sizeof( DEVMODE );
+	dm.dmDriverExtra = 0;
+	dev.cb = sizeof( DISPLAY_DEVICE );
+	{
+		// go ahead and try to find V devices too... not sure what they are, but probably won't get to use them.
+		EnumDisplayMonitors( NULL
+			, NULL
+			, addMonitor
+			, (LPARAM)&data
+		);
+
+		for( i = 0;
+			// all devices
+			EnumDisplayDevices( NULL
+				, i
+				, &dev
+				, 0
+			); i++ ) {
+			int numStart;
+			if( EnumDisplaySettings( dev.DeviceName, ENUM_CURRENT_SETTINGS, &dm ) ) {
+				char* num;
+				if( dm.dmPelsWidth && dm.dmPelsHeight ) {
+					for( numStart = 0; dev.DeviceName[numStart]; numStart++ ) {
+						if( dev.DeviceName[numStart] >= '0' && dev.DeviceName[numStart] <= '9' ) break;
+					}
+					//if( l.flags.bLogDisplayEnumTest )
+					display = Object::New( isolate );
+					SETV( display, strings->displayString->Get( isolate ), Number::New( isolate, atoi( dev.DeviceName + numStart ) ) );
+					SETV( display, strings->xString->Get( isolate ), Number::New( isolate, dm.dmPosition.x ) );
+					SETV( display, strings->yString->Get( isolate ), Number::New( isolate, dm.dmPosition.y ) );
+					SETV( display, strings->widthString->Get( isolate ), Number::New( isolate, dm.dmPelsWidth ) );
+					SETV( display, strings->heightString->Get( isolate ), Number::New( isolate, dm.dmPelsHeight ) );			
+					SETV( display, strings->currentString->Get( isolate ), True( isolate ) );
+					SETV( display, strings->primaryString->Get( isolate ), (dev.StateFlags& DISPLAY_DEVICE_PRIMARY_DEVICE)?True( isolate ):False(isolate) );
+					array->Set( context, arrayIndex++, display );
+				}
+				//lprintf( "display(cur) %s is at %d,%d %dx%d", dev.DeviceName, dm.dmPosition.x, dm.dmPosition.y, dm.dmPelsWidth, dm.dmPelsHeight );
+			} else if( EnumDisplaySettings( dev.DeviceName, ENUM_REGISTRY_SETTINGS, &dm ) ) {
+				//if( l.flags.bLogDisplayEnumTest )
+				if( dm.dmPelsWidth && dm.dmPelsHeight ) {
+					for( numStart = 0; dev.DeviceName[numStart]; numStart++ ) {
+						if( dev.DeviceName[numStart] >= '0' && dev.DeviceName[numStart] <= '9' ) break;
+					}
+					//if( l.flags.bLogDisplayEnumTest )
+					display = Object::New( isolate );
+					SETV( display, strings->displayString->Get( isolate ), Number::New( isolate, atoi( dev.DeviceName + numStart ) ) );
+					SETV( display, strings->xString->Get( isolate ), Number::New( isolate, dm.dmPosition.x ) );
+					SETV( display, strings->yString->Get( isolate ), Number::New( isolate, dm.dmPosition.y ) );
+					SETV( display, strings->widthString->Get( isolate ), Number::New( isolate, dm.dmPelsWidth ) );
+					SETV( display, strings->heightString->Get( isolate ), Number::New( isolate, dm.dmPelsHeight ) );
+					SETV( display, strings->currentString->Get( isolate ), False( isolate ) );
+					SETV( display, strings->primaryString->Get( isolate ), ( dev.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE ) ? True( isolate ) : False( isolate ) );
+					array->Set( context, arrayIndex++, display );
+				}
+				//lprintf( "display(reg) %s is at %d,%d %dx%d", dev.DeviceName, dm.dmPosition.x, dm.dmPosition.y, dm.dmPelsWidth, dm.dmPelsHeight );
+			} else {
+				lprintf( "Found display name, but enum current settings failed? %d", GetLastError() );
+				continue;
+			}
+		}
+	}
+
+	args.GetReturnValue().Set( result );
+
+}
 #endif
