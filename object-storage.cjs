@@ -76,24 +76,43 @@ class DbStorage {
 	// need to update personality detection in C library.
 	#db = null;
 	#psql = false;
+	#mysql = false;
+	#sqlite = false;
 	constructor(db, opts ) {
-		if( opts ) {
-			if( opts.psql ) {
-				this.#db = db;
+		console.trace( "Options:", db, opts );
+		this.#db = db;
+		if( db.provider === 3 )
+			this.#psql = true;     
+		else if( db.provider === 2 )
+			this.#mysql = true;     
+		if( db.provider === 1 )
+			this.#sqlite = true;     
+
+		{
+			if( this.#psql ) {
 				const table1 = "create table if not exists os (id char(45) primary key,value varchar(4096))";
 				db.do( table1 );
-				this.#psql = true;
-			} else {
-				db.makeTable( "create table os (id char(45) primary key,value varchar(4096))" );
+			} if( this.#mysql ) {
+				const table1 = "create table if not exists os (id char(45) primary key,value LONGTEXT)";
+				db.do( table1 );
+			} else if( !this.#sqlite ) {
+				db.makeTable( "create table os (id char(45) primary key,value char)" );
 			}
-		} else {
-			this.#db = db;
-			this.#psql = true;
-			const table1 = "create table if not exists os (id char(45) primary key,value varchar(4096))";
-			db.do( table1 );
 		}
 	}
-	read( obj, parser, cb ) {
+	read( obj, ...args ) {
+		let version = 0;
+		let parser = null;
+		let cb = null;
+		for( let arg of args ) {
+		if( "function" === typeof arg ) {
+			cb = arg;
+		} else if( "object" === typeof arg ) {
+			parser = arg;
+		} else if( "number" === typeof arg ) {
+			version = arg;
+		}
+		}
 		const records = this.#db.do( "select value from os where id=?", obj );
 		if( records.length ) {
 			
@@ -102,10 +121,17 @@ class DbStorage {
 		} else	cb( undefined );
 	}
 	writeRaw( opts, obj ) {
+		console.log( "Write Raw:", opts, obj );
 		if( this.#psql ) 
-			this.#db.do( "insert into os (id,value)values(?,?) ON CONFLICT (id) DO UPDATE SET value=?", opts, obj,obj );
-		else
-			this.#db.do( "replace into os (id,value)values(?,?)", opts, obj );
+			this.#db.do( "insert into os (id,value)values(?,?) ON CONFLICT (id) DO UPDATE SET value=?", opts.id, obj,obj );
+		else if( this.#mysql ) {
+			try {
+				this.#db.do( "replace into os (id,value)values(?,?)", opts.id, obj );
+			} catch( err ) {
+				console.log( "Insert error:", err );
+			}
+		} else
+			this.#db.do( "replace into os (id,value)values(?,?)", opts.id, obj );
 	}
 }
 
@@ -134,7 +160,8 @@ class ObjectStorage {
 		if( arg0 instanceof sack.Sqlite ) {
 			_debug && console.log( "Using a db storage interface..." );
 			preloadStorage = new DbStorage( arg0 );
-		}
+		}else 
+			_debug && console.log( "Using a file interface?" );
 		const newStorage = preloadStorage || _objectStorage(...args);
 		if( newStorage === preloadStorage ) preloadStorage = null;
 		const thisStorage = this;
@@ -402,6 +429,7 @@ class ObjectStorage {
 				if( oldObj )
 					container = this_.stored.get( oldObj );
 			}
+			let storage;
 			_debug && console.log( "Put found object?", container, obj, opts );
 			if( container ) {
 				container = this_.cachedContainer.get( container );
@@ -461,7 +489,7 @@ class ObjectStorage {
 
 				// raw object; no encoding to set.
 				rootObjectSet = true;
-				let storage = stringifier.stringify( obj );
+				storage = stringifier.stringify( obj );
 				if( !opts.id || opts.id === "null" ) {
 					throw new Error( "Container has no ID or is null" );					
 				}
@@ -476,12 +504,11 @@ class ObjectStorage {
 				res && res( opts.id );
 			} else if( !opts || !opts.id ) {
 				// need a new ID for an object (not string)
-
 				_debug && console.log( "New bare object, create a container...", opts );
-							if( !opts ) opts = { id : shortId() }
-							else opts.id = shortId();
-							//console.log( "Storage ID is picked here:", opts );
-							if( "object" === typeof obj ) {
+				if( !opts ) opts = { id : shortId() }
+				else opts.id = shortId();
+				//console.log( "Storage ID is picked here:", opts );
+				if( "object" === typeof obj ) {
 					container = new ObjectStorageContainer(this_,obj,opts);
 					if( !container.id || "string" !== typeof container.id ) throw new Error( "Failed to get a conatiner ID for some reason" );
 					//console.log( "New container looks like... ", container.id, container );
@@ -517,7 +544,7 @@ class ObjectStorage {
 				if( !container.id || container.id === "null" ) {
 					console.trace( "Container has no ID or is nUll", container );
 				}
-				_debug_output && console.trace( "Outut container to storage... ", container, storage );
+				_debug_output && console.trace( "Outut container to storage... ", container, container.storage );
 				try {
 					this_.storage.writeRaw( opts, storage );
 					if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
@@ -870,80 +897,80 @@ class ObjectStorage {
 
 
 
-	function objectToJSOX( stringifier ){
-		_debug_object_convert && console.log( "Convert Any Object to JSOX:", !!rootObject, typeof this, this );
+	function objectToJSOX( stringifier, storage, obj ){
+		_debug_object_convert && console.log( "Convert Any Object to JSOX:", !!rootObject, typeof obj, obj );
 		if( rootContainer ) {
 			console.log( "know the next thing is is a new container, get the data..." );
 			rootContainer = false;
-			rootObject = this.data;
-			rootObjectContainer = this;
-			fullObjectMaps.set( rootObjectContainer, this.id );
+			rootObject = obj.data;
+			rootObjectContainer = obj;
+			fullObjectMaps.set( rootObjectContainer, obj.id );
 		}else {
 			if( rootObjectSet ) {
 				console.log( "know the next thing is is a new container, get the data..." );
-				rootObject = this;
-				rootObjectContainer = this;
+				rootObject = obj;
+				rootObjectContainer = obj;
 				fullObjectMaps.set( rootObjectContainer, "RootID?" );
 			}
 			//else
 			//	console.log( "Sub Object of something...", this !== rootObjectContainer );
 		}
 		if( mapFullObject ) 
-			if( this !== rootObjectContainer ) {
+			if( obj !== rootObjectContainer ) {
 				const curMap = fullObjectMaps.get( rootObjectContainer );
-				const ref = stringifier.getReference( this );
-				console.log( "(full map)saving internal reference:", ref, this );
-				fullObjectMaps.set( this, ref );
+				const ref = stringifier.getReference( obj );
+				console.log( "(full map)saving internal reference:", ref, obj );
+				fullObjectMaps.set( obj, ref );
 			}
-		const isRoot = (rootObjectContainer === this);
+		const isRoot = (rootObjectContainer === obj);
 		
-		if( this instanceof Promise ) {
-			_debug_object_convert && console.log( "This is still a pending object reference(?)", this );
+		if(obj instanceof Promise ) {
+			_debug_object_convert && console.log( "This is still a pending object reference(?)", obj );
 		}
 		//  see if we alread stored this... (or are currently storing this.) (back references container)
-	console.log( "this?", this, isRoot, rootObjectContainer );
+		console.log( "this?", obj, isRoot, rootObjectContainer );
 
-		var exist = !rootObjectSet && rootObjectContainer && this.stored.get( this );
-		_debug_object_convert && console.log( "THIS GOT CALLED?", this, Object.getPrototypeOf( this ), exist );
+		var exist = !rootObjectSet && rootObjectContainer && storage.stored.get( obj );
+		_debug_object_convert && console.log( "THIS GOT CALLED?", obj, Object.getPrototypeOf( obj ), exist );
 		if( exist ) {
 			if( exist[0] == '~' ) {
 				// this is a dangling promise
 				return exist;
 			} 
-			var obj = this.cachedContainer.get( exist );
+			var obj = storage.cachedContainer.get( exist );
 			_debug_object_convert && console.log( "Object stored independantly... RECOVERED:", exist, obj&&obj.encoding );
 			_debug_object_convert && console.log( "existing reference...", exist );
 			if( obj.encoding ) 
-				return this;
+				return obj;
 			else {
 				//console.log( "Why is this an ~or and not ~os?");
 				return '~or"'+exist+'"';
 			}
 		}
 		else {
-			exist = fullObjectMaps.get( this );
+			exist = fullObjectMaps.get( obj );
 			if( exist ) {
 				console.log( "Deep remote reference." );
 			} else {
 				 _debug_object_convert && console.log( "not a stored object, encode itself." );
 			}
 		}
-		return this;
+		return obj;
 	}
-	function storageObjectToJSOX( stringifier ){
+	function storageObjectToJSOX( stringifier, storage, obj ){
 		//  see if we alread stored this... (or are currently storing this.) (back references container)
-		_debug_object_convert && console.trace( "THIS GOT CALLED?", this, Object.getPrototypeOf( this ) );
-		var exist = this.stored.get( this );
+		_debug_object_convert && console.trace( "THIS GOT CALLED?", obj, Object.getPrototypeOf( obj ) );
+		var exist = storage.stored.get( obj );
 		if( exist ) {
 			console.log( "Think this already is existing?", exist );
 			if( exist[0] == '~' ) {
 				// is a pending promise... 
 				return exist;
 			}
-			var obj = this.cachedContainer.get( exist );
+			var obj = storage.cachedContainer.get( exist );
 			_debug_object_convert && console.log( "Object stored independantly... RECOVERED:", exist, obj.encoding );
 			if( obj.encoding ) 
-				return this;
+				return obj;
 			else {
 				//console.log( "Why is this an ~or and not ~os?");
 				return '~or"'+exist+'"';
@@ -953,20 +980,21 @@ class ObjectStorage {
 				//console.log( "THIS SHOULD ALREADY BE IN THE STORAGE!", this, this.stored.get( this.data ) );
 				// this is probably the final result when encoding this object.
 				//this.stored.set( this.data, this.id ); // maybe update the ID though.
-				if( this.nonce )
-					return {data:this.data,nonce:this.nonce,sign:this.sign}; // this object will be stringified, and have our type prefix prepended.
+				if( obj.nonce )
+					return {data:obj.data,nonce:obj.nonce,sign:obj.sign}; // this object will be stringified, and have our type prefix prepended.
 				else
-					return {data:this.data}; // this object will be stringified, and have our type prefix prepended.
+					return {data:obj.data}; // this object will be stringified, and have our type prefix prepended.
 			}
 		}
 		//console.log( "not a container...");
-		return this;
+		return obj;
 	}
 
 
 // associates object data with storage data for later put(obj) to re-use the same informations.
 class ObjectStorageContainer {
 	#storage = null;
+	#stored_data = null;
 	data = "pending reference"; // reviving we get null opts.
 
 	constructor(storage,o,opts) {
@@ -1008,7 +1036,7 @@ class ObjectStorageContainer {
 					Object.defineProperty( this, "id", { value:opts.id } );
 				}		
 			}
-                }
+		}
 		// pass this through a global for jsox fixup at end.        
 		// currentContainer = this;
 		Object.defineProperty( this, "encoding", { writable:true, value:false } );
@@ -1016,6 +1044,12 @@ class ObjectStorageContainer {
 
 	get stored() {
 		return this.#storage.stored;
+	}
+	set storage( val ) {
+		this.#stored_data = val++;
+	}
+	get storage( ) {
+		return this.#stored_data;
 	}
 
 	getStore () {
@@ -1138,8 +1172,12 @@ class ObjectStorageContainer {
 
 
 function setupStringifier( newStorage, stringifier ) {
-	stringifier.setDefaultObjectToJSOX( objectToJSOX );
-	stringifier.registerToJSOX( "~os", ObjectStorageContainer, storageObjectToJSOX );
+	stringifier.setDefaultObjectToJSOX( function tojsox(stringifier){
+		return objectToJSOX( stringifier, newStorage, this );
+	} );
+	stringifier.registerToJSOX( "~os", ObjectStorageContainer, function tojsox(stringifier) {
+		return storageObjectToJSOX( stringifier, newStorage, this )
+	} );
 	stringifier.store = newStorage;
 	for( let f of newStorage.encoders )
 		stringifier.registerToJSOX( f.tag, f.p, f.f ) ;
