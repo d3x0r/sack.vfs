@@ -39,6 +39,7 @@ There are methods on the Sqlite() function call...
 | commit | ()  |  end a transaction successfully. |
 | autoTransact | (&lt;bool&gt;) | enabled/disable auto transaction features.    A command will begin a transaction, a timer will be set such that if no other command between happens, then a commit will be generated. So merely doing ```do()``` commands are optimized into transactions.
 | makeTable | (tableString) | evalute a sql create table clause, and create or update a table based on its definitions.          Additional columns will be added, old columns are untouched, even if the type specified changes.    Additional indexes and constraints can be added to existing tables.
+| provider | accessor | Get the database provider for the connection. (1=SQLite, 2=MySQL, 3=PSSQL, 4=Access, -1=unknown) |
 | do | ( &lt;String&gt;) | execute a single sql command or query.  Results with null on error, or an array on success of a select, and true/false/scalar int on result of other commands.    If command generates no output, array length will be 0.  |
 | do | ( &lt;Format String&gt; [,bound parameters... ] ) | This varaition, if the first string contains '?', then the first string is taken as the sql statement, and all extra paramters are passed to be bound to 1-N.  |
 | do | ( &lt;Format String&gt; , object  [,bound parameters... ] ) | This varaition, if the first string contains ':','@', or '$', works like other format string, but second parameter must be an object with field names that match the names specified in the query.   (see examples below) |

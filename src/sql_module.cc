@@ -69,6 +69,7 @@ public:
 	static void findOptionNode( const v8::FunctionCallbackInfo<Value>& args );
 	static void getOptionNode( const v8::FunctionCallbackInfo<Value>& args );
 	static void error( const v8::FunctionCallbackInfo<Value>& args );
+	static void getProvider( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void getLogging( const v8::FunctionCallbackInfo<Value>& args );
 	static void setLogging( const v8::FunctionCallbackInfo<Value>& args );
@@ -180,6 +181,9 @@ void SqlObjectInit( Local<Object> exports ) {
 	// get the node.
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "go", SqlObject::getOptionNode );
 
+	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "provider" )
+		, FunctionTemplate::New( isolate, SqlObject::getProvider )
+		, Local<FunctionTemplate>() );
 	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "error" )
 			, FunctionTemplate::New( isolate, SqlObject::error )
 			, Local<FunctionTemplate>() );
@@ -1769,6 +1773,14 @@ void SqlObject::error( const v8::FunctionCallbackInfo<Value>& args ) {
 	const char *error;
 	FetchSQLError( sql->odbc, &error );
 	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), error, NewStringType::kNormal, (int)strlen(error) ).ToLocalChecked() );
+
+}
+
+void SqlObject::getProvider( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	SqlObject* sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	int provider = GetDatabaseProvider( sql->odbc );
+	args.GetReturnValue().Set( Number::New( isolate, provider ) );
 
 }
 
