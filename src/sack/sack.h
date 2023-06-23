@@ -6532,6 +6532,13 @@ typedef uintptr_t (*ThreadSimpleStartProc)( POINTER );
   after registering the callback.
 */
 TIMER_PROC( void, OnThreadCreate )( void ( *v )( void ) );
+/*
+  OnThreadExit allows registering a procedure to run
+  when a thread exits.
+  It is called once per thread, for each thread that exits
+  after registering the callback.
+*/
+TIMER_PROC( void, OnThreadExit )( void ( *v )( void ) );
 /* Create a separate thread that starts in the routine
    specified. The uintptr_t value (something that might be a
    pointer), is passed in the PTHREAD structure. (See
@@ -11525,8 +11532,11 @@ FILESYS_PROC  TEXTSTR FILESYS_API  sack_prepend_path ( INDEX group, CTEXTSTR fil
    </code>                                                      */
 FILESYS_PROC INDEX FILESYS_API  GetFileGroup ( CTEXTSTR groupname, CTEXTSTR default_path );
 FILESYS_PROC TEXTSTR FILESYS_API GetFileGroupText ( INDEX group, TEXTSTR path, int path_chars );
-FILESYS_PROC TEXTSTR FILESYS_API ExpandPathEx( CTEXTSTR path, struct file_system_interface *fsi );
-FILESYS_PROC TEXTSTR FILESYS_API ExpandPath( CTEXTSTR path );
+FILESYS_PROC TEXTSTR FILESYS_API ExpandPathExx( CTEXTSTR path, struct file_system_interface* fsi DBG_PASS );
+#define ExpandPathEx( path, fsi )  ExpandPathExx( path, fsi DBG_SRC )
+#define ExpandPath(path) ExpandPathExx( path, NULL DBG_SRC )
+//FILESYS_PROC TEXTSTR FILESYS_API ExpandPathEx( CTEXTSTR path, struct file_system_interface *fsi );
+//FILESYS_PROC TEXTSTR FILESYS_API ExpandPath( CTEXTSTR path );
 FILESYS_PROC LOGICAL FILESYS_API SetFileLength( CTEXTSTR path, size_t length );
 /* \Returns the size of the file.
    Parameters
