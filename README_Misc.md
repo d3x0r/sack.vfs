@@ -371,6 +371,7 @@ are left untouched otherwise.
 
 | Task Static Methods | description |
 | loadLibrary( libname ) | Load external shared library. ex: `sack.Task.loadLibrary( "xxx" );` |
+| getDisplays() | (Windows) returns an array of information about displays. |
 
 Having created a task instance with `sack.Task( {...} );` the following methods are available
 to interact with the process.
