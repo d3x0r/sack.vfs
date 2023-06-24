@@ -585,7 +585,7 @@ void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, Lo
 	struct optionStrings *strings = getStrings( isolate );
 	Local<String> optName;
 
-	int timeout = 500, left = 0, top = 0, width = 1920, height = 1080, display = -1;
+	int timeout = 500, left = 0, top = 0, width = 1920, height = 1080, display = -1, monitor = -1;
 
 	if( opts->Has( context, optName = strings->cbString->Get( isolate ) ).ToChecked() ) {
 		if( GETV( opts, optName )->IsFunction() ) {
@@ -605,6 +605,11 @@ void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, Lo
 		if( GETV( opts, optName )->IsNumber() ) {
 			// should be reset to empty when not in use...
 			display = (int)GETV( opts, optName )->IntegerValue(isolate->GetCurrentContext()).FromMaybe(0);
+		}
+	} else if( opts->Has( context, optName = strings->monitorString->Get( isolate ) ).ToChecked() ) {
+		if( GETV( opts, optName )->IsNumber() ) {
+			// should be reset to empty when not in use...
+			monitor = (int)GETV( opts, optName )->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		}
 	} else {
 		if( opts->Has( context, optName = strings->xString->Get( isolate ) ).ToChecked() ) {
@@ -634,6 +639,8 @@ void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, Lo
 	}
 	if( display >= 0 ) 	
 		MoveTaskWindowToDisplay( task->task, timeout, display, moveTaskWindowResult, (uintptr_t)task );
+	else if( monitor >= 0 )
+		MoveTaskWindowToMonitor( task->task, timeout, display, moveTaskWindowResult, (uintptr_t)task );
 	else
 		MoveTaskWindow( task->task, timeout, left, top, width, height, moveTaskWindowResult, (uintptr_t)task );
 		
@@ -733,7 +740,6 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 			); i++ ) {
 			int numStart;
 			if( EnumDisplaySettings( dev.DeviceName, ENUM_CURRENT_SETTINGS, &dm ) ) {
-				char* num;
 				if( dm.dmPelsWidth && dm.dmPelsHeight ) {
 					for( numStart = 0; dev.DeviceName[numStart]; numStart++ ) {
 						if( dev.DeviceName[numStart] >= '0' && dev.DeviceName[numStart] <= '9' ) break;

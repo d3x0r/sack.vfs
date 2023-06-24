@@ -5198,12 +5198,18 @@ SYSTEM_PROC( void, sack_system_disallow_spawn )( void );
 */
 SYSTEM_PROC( void, MoveTaskWindow )( PTASK_INFO task, int timeout, int left, int top, int width, int height, void cb( uintptr_t, LOGICAL ), uintptr_t psv );
 /*
-  Moves the window of the specified task to the specified display; using a lookup to get the display size.
+  Moves the window of the specified task to the specified display device; using a lookup to get the display size.
   -1 is an invalid display.
   0 is the default display
   1+ is the first display and subsequent displays - one of which may be the default
 */
 SYSTEM_PROC( void, MoveTaskWindowToDisplay )( PTASK_INFO task, int timeout, int display, void cb( uintptr_t, LOGICAL ), uintptr_t psv );
+/*
+  Moves the window of the specified task to the specified monitor; using a lookup to get the display size.
+  0 and less is an invalid display.
+  1+ is the first monitor and subsequent monitors
+*/
+SYSTEM_PROC( void, MoveTaskWindowToMonitor )( PTASK_INFO task, int timeout, int display, void cb( uintptr_t, LOGICAL ), uintptr_t psv );
 /*
 * Creates a process-identified exit event which can be signaled to terminate the process.
 */
