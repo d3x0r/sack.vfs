@@ -684,8 +684,20 @@ static BOOL addMonitor( HMONITOR hMonitor,
 	struct monitor_data* data = (struct monitor_data*)dwParam;
 	Local<Context> context = data->context;
 	Local<Object> display = Object::New( data->isolate );
+	MONITORINFOEX monitorInfo;
+	int devNum = 0;
+	monitorInfo.cbSize = sizeof( monitorInfo );
+	GetMonitorInfo( hMonitor, &monitorInfo );
+	
+	for( int numStart = 0; monitorInfo.szDevice[numStart]; numStart++ ) {
+		if( monitorInfo.szDevice[numStart] >= '0' && monitorInfo.szDevice[numStart] <= '9' ) {
+			devNum = atoi( monitorInfo.szDevice + numStart );
+			break;
+		}
+	}
 
 	//SETV( display, data->strings->displayString->Get( data->isolate ), Number::New( data->isolate, data->arrayIndex+1 ) );
+	SETV( display, data->strings->deviceString->Get( data->isolate ), Number::New( data->isolate, devNum ) );
 	SETV( display, data->strings->xString->Get( data->isolate ), Number::New( data->isolate, pRect->left ) );
 	SETV( display, data->strings->yString->Get( data->isolate ), Number::New( data->isolate, pRect->top ) );
 	SETV( display, data->strings->widthString->Get( data->isolate ), Number::New( data->isolate, pRect->right-pRect->left ) );
