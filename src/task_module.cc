@@ -697,7 +697,7 @@ static BOOL addMonitor( HMONITOR hMonitor,
 	}
 
 	//SETV( display, data->strings->displayString->Get( data->isolate ), Number::New( data->isolate, data->arrayIndex+1 ) );
-	SETV( display, data->strings->deviceString->Get( data->isolate ), Number::New( data->isolate, devNum ) );
+	SETV( display, data->strings->displayString->Get( data->isolate ), Number::New( data->isolate, devNum ) );
 	SETV( display, data->strings->xString->Get( data->isolate ), Number::New( data->isolate, pRect->left ) );
 	SETV( display, data->strings->yString->Get( data->isolate ), Number::New( data->isolate, pRect->top ) );
 	SETV( display, data->strings->widthString->Get( data->isolate ), Number::New( data->isolate, pRect->right-pRect->left ) );
