@@ -20,6 +20,7 @@ struct optionStrings {
 	Eternal<String>* noWindowString;
 	Eternal<String>* hiddenString;
 	Eternal<String>* noKillString;
+	Eternal<String>* noWaitString;
 #if _WIN32
 	Eternal<String>* moveToString;
 	// for move window
@@ -75,6 +76,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->noWindowString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noWindow" ) );
 		check->hiddenString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "hidden" ) );
 		check->noKillString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noKill" ) );
+		check->noWaitString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noWait" ) );
 #if _WIN32
 		check->moveToString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "moveTo" ) );
 		check->timeoutString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "timeout" ) );
@@ -218,6 +220,7 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 
 	}
 	{
+		// This is hook into Node to dispatch Promises() that are created... all event loops should have this.
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
@@ -323,6 +326,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			bool useSignal = false;
 			bool noWindow = false;
 			bool noKill = false;
+			bool noWait = true;
 
 			newTask->killAtExit = true;
 
@@ -355,6 +359,11 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 						newTask->killAtExit = false;
 					else
 						newTask->killAtExit = true;
+				}
+			}
+			if( opts->Has( context, optName = strings->noWaitString->Get( isolate ) ).ToChecked() ) {
+				if( GETV( opts, optName )->IsBoolean() ) {
+					noWait = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
 			if( opts->Has( context, optName = strings->useBreakString->Get( isolate ) ).ToChecked() ) {
@@ -465,6 +474,11 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				uv_async_init( c->loop, &newTask->async, taskAsyncMsg );
 				newTask->async.data = newTask;
 			}
+			else if( !noWait ) {
+				class constructorSet* c = getConstructors( isolate );
+				uv_async_init( c->loop, &newTask->async, taskAsyncMsg );
+				newTask->async.data = newTask;
+			}
 			/*
 			#define LPP_OPTION_DO_NOT_HIDE           1
 // for services to launch normal processes (never got it to work; used to work in XP/NT?)
@@ -490,7 +504,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				| ( noKill ?LPP_OPTION_NO_KILL_ON_EXIT:0 )
 				, input ? getTaskInput : NULL
 				, input2 ? getTaskInput2 : NULL
-				, (end||input) ? getTaskEnd : NULL
+				, (end||input||input2||!noWait) ? getTaskEnd : NULL
 				, (uintptr_t)newTask 
 				, envList
 				DBG_SRC );

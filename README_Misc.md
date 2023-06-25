@@ -408,6 +408,7 @@ to interact with the process.
 | useBreak | bool | set task to use ctrl-break instead of ctrl-c; if it's a window generates WM_CLOSE regardless.  default: false |
 | useSignal | bool | set task to use exit signal instead of ctrl-c or ctrl-break.  default: false |
 | noKill | bool | allow task to continue running after the parent exits.  default: false (kills children at exit) |
+| noWait | bool | Allow waiting for tasks that don't have an end() or input() callback specified.  default: true (don't wait if no callbacks) |
 | moveTo | object | After the task is started, move its window to the specified location.  (See Move options below)
 
 ### Task Move Options
