@@ -187,8 +187,11 @@ class constructorSet {
 	v8::Persistent<v8::Function> TaskObject_constructor;
 	v8::Persistent<v8::Function> ObjectStorageObject_constructor;
 	v8::Persistent<v8::Function> TimelineCursorObject_constructor;
-	v8::Persistent<v8::Function> monitorConstructor;
+	v8::Persistent<v8::Function> monitorConstructor;  // File Monitor
 	v8::Persistent<v8::Function> KeyHidObject_constructor;
+	v8::Persistent<v8::Function> MouseHidObject_constructor;
+
+
 	//Persistent<Function> onCientPost;
 	uv_loop_t* loop;
 	Persistent<Function> exitCallback;
