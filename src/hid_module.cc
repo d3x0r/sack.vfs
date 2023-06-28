@@ -7,7 +7,7 @@
 
 
 static uintptr_t InputThread( PTHREAD thread );
-static void CPROC dispatchKey( uintptr_t psv, RAWINPUT *event, WCHAR ch, int len );
+static void CPROC dispatchKey( uintptr_t psv, KBDLLHOOKSTRUCT*event, WCHAR ch, int len );
 
 class KeyHidObject : public node::ObjectWrap {
 public:
@@ -16,8 +16,8 @@ public:
 
 	Persistent<Object> this_;
 	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
-	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
-	PLINKQUEUE readQueue;
+	//uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	//PLINKQUEUE readQueue;
 	LOGICAL blocking = FALSE;
 public:
 
@@ -27,23 +27,16 @@ public:
 private:
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 
+	static void close( const v8::FunctionCallbackInfo<Value>& args );
 	static void lock( const v8::FunctionCallbackInfo<Value>& args );
 	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
-	static void writeCom( const v8::FunctionCallbackInfo<Value>& args );
-	static void closeCom( const v8::FunctionCallbackInfo<Value>& args );
 	~KeyHidObject();
 };
 
 class MouseObject : public node::ObjectWrap {
 public:
-	int handle;
-	char *name;
-	int buttons;
 	Persistent<Object> this_;
 	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
-	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
-	PLINKQUEUE readQueue;
-	LOGICAL blocking = FALSE;
 public:
 
 	static void Init( Isolate *isolate, Local<Object> exports );
@@ -64,7 +57,6 @@ struct input_data {
 
 struct msgbuf {
 	LOGICAL close;
-	RAWINPUT event;
 	KBDLLHOOKSTRUCT hookEvent;
 	WCHAR ch;
 };
@@ -73,25 +65,28 @@ struct mouse_msgbuf {
 	LOGICAL close;
 	MSLLHOOKSTRUCT data;
 	WPARAM msgid;
-	//RAWINPUT event;
-	//WCHAR ch;
 };
 
 
 
 typedef struct global_tag
 {
-	HWND hWnd;
-	uint32_t nWriteTimeout;
-	uv_loop_t* loop;
-	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
-	KeyHidObject *eventHandler;
-	MouseObject* mouseEventHandler;
+
+	PLIST keyEventHandlers;
+	uv_async_t keyAsync; // keep this instance around for as long as we might need to do the periodic callback
+	PLINKQUEUE keyEvents;
+	PTHREAD keyThread;
+
+	PLIST mouseEventHandlers;
+	uv_async_t mouseAsync; // keep this instance around for as long as we might need to do the periodic callback
+	PLINKQUEUE mouseEvents;
 	PTHREAD mouseThread;
-	PLIST inputs;
-	HHOOK hookHandle;
+	int buttons;
+
+	//PLIST inputs;
+	//HHOOK hookHandle;
 	HHOOK hookHandleLL;
-	HHOOK hookHandleM;
+	//HHOOK hookHandleM;
 	HHOOK hookHandleMLL;
 	int skipEvent;
 	LOGICAL blocking;
@@ -139,8 +134,8 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 	msgbuf->ch = ch;
 
 	//KeyHidObject* com = (KeyHidObject*)psv;
-	EnqueLink( &hidg.eventHandler->readQueue, msgbuf );
-	uv_async_send( &hidg.eventHandler->async );
+	EnqueLink( &hidg.keyEvents, msgbuf );
+	uv_async_send( &hidg.keyAsync );
 
 	return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
 
@@ -158,8 +153,8 @@ LRESULT WINAPI MouseProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 		input->msgid = wParam;
 		input->data = mhook[0];
 
-		EnqueLink( &hidg.mouseEventHandler->readQueue, input );
-		uv_async_send( &hidg.mouseEventHandler->async );
+		EnqueLink( &hidg.mouseEvents, input );
+		uv_async_send( &hidg.mouseAsync );
 	}
 	return CallNextHookEx( hidg.hookHandleMLL, code, wParam, lParam );
 }
@@ -172,7 +167,7 @@ uintptr_t InputThread( PTHREAD thread )
 	HMODULE xx;
 	xx = GetModuleHandle( "sack_vfs.node" );
 	hidg.hookHandleLL = SetWindowsHookEx( WH_KEYBOARD_LL, (HOOKPROC)KeyboardProcLL, xx, 0 );
-	hidg.nWriteTimeout = 150; // at 9600 == 144 characters
+	//hidg.nWriteTimeout = 150; // at 9600 == 144 characters
 	{
 		MSG msg;
 		//lprintf( "Err:%d",GetLastError());
@@ -202,18 +197,11 @@ uintptr_t MouseInputThread( PTHREAD thread )
 static void asyncmsg( uv_async_t* handle );
 
 KeyHidObject::KeyHidObject(  ) {
-	readQueue = CreateLinkQueue();
-	hidg.eventHandler = this;
-	//MSG msg;
-	// create message queue on main thread.
-	//PeekMessage( &msg, NULL, 0, 0, PM_NOREMOVE );
-	ThreadTo( InputThread, 0 );
+	if( !hidg.keyThread )
+		hidg.keyThread = ThreadTo( InputThread, 0 );
 }
 
 KeyHidObject::~KeyHidObject() {
-    hidg.eventHandler = NULL; // no longer have a handler.
-	DeleteLinkQueue( &this->readQueue );
-
 }
 
 
@@ -226,7 +214,6 @@ void KeyHidObject::Init( Isolate *isolate, Local<Object> exports ) {
 	keyTemplate = FunctionTemplate::New( isolate, New );
 	keyTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.KeyHidEvents" ) );
 	keyTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
-
 																 // Prototype
 	NODE_SET_PROTOTYPE_METHOD( keyTemplate, "onKey", onRead );
 	NODE_SET_PROTOTYPE_METHOD( keyTemplate, "lock", lock );
@@ -260,11 +247,21 @@ void KeyHidObjectInit( Isolate *isolate, Local<Object> exports ) {
 
 }
 
-static void uv_closed( uv_handle_t* handle ) {
-    KeyHidObject* myself = (KeyHidObject*)handle->data;
+static void uv_key_closed( uv_handle_t* handle ) {
+	PostThreadMessage( GetThreadID( hidg.keyThread ) & 0xFFFFFFFF, WM_QUIT, 0, 0 );
+	/*
+	KeyHidObject* myself;// = (KeyHidObject*)handle->data;
+	INDEX idx;
+	LIST_FORALL( hidg.keyEventHandlers, idx, KeyHidObject*, myself ) {
+		myself->readCallback.Reset();
+		myself->this_.Reset();
+	}
+	*/
+}
 
-    myself->readCallback.Reset();
-    myself->this_.Reset();
+static void uv_closed( uv_handle_t* handle ) {
+	PostThreadMessage( GetThreadID( hidg.mouseThread ) & 0xFFFFFFFF, WM_QUIT, 0, 0 );
+
 }
 
 void asyncmsg( uv_async_t* handle ) {
@@ -274,13 +271,13 @@ void asyncmsg( uv_async_t* handle ) {
 	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
 
-	KeyHidObject* myself = (KeyHidObject*)handle->data;
+	KeyHidObject* myself;// = (KeyHidObject*)handle->data;
 	{
 		struct msgbuf *msg;
-        while( msg = (struct msgbuf *)DequeLink( &myself->readQueue ) ) {
+        while( msg = (struct msgbuf *)DequeLink( &hidg.keyEvents ) ) {
             if( msg->close ) {
 				//lprintf( "Key async close" );
-                uv_close( (uv_handle_t*)&myself->async, uv_closed );
+                uv_close( (uv_handle_t*)&hidg.keyAsync, uv_key_closed );
 				break;
             }
 
@@ -302,9 +299,9 @@ void asyncmsg( uv_async_t* handle ) {
 				}
 			}
 			*/
-			SET( eventObj, "down", (msg->event.data.keyboard.Flags&RI_KEY_BREAK)?False(isolate):True(isolate) );
-			SET( eventObj, "scan", Integer::New( isolate, msg->event.data.keyboard.MakeCode ) );
-			SET( eventObj, "vkey", Integer::New( isolate, msg->event.data.keyboard.VKey ) );
+			SET( eventObj, "down", (msg->hookEvent.flags& LLKHF_UP )?False(isolate):True(isolate) );
+			SET( eventObj, "scan", Integer::New( isolate, msg->hookEvent.scanCode ) );
+			SET( eventObj, "vkey", Integer::New( isolate, msg->hookEvent.vkCode ) );
 
 			SET( eventObj, "char", String::NewFromTwoByte( isolate, (const uint16_t*)&msg->ch, NewStringType::kNormal, 1 ).ToLocalChecked() );
 			//SET( eventObj, "id", Number::New( isolate,(double)idx ) );
@@ -316,11 +313,15 @@ void asyncmsg( uv_async_t* handle ) {
 				*/
 
 			Local<Value> argv[] = { eventObj };
-			if( !myself->readCallback.IsEmpty() ) {
-				MaybeLocal<Value> result = myself->readCallback.Get(isolate)->Call(context, isolate->GetCurrentContext()->Global(), 1, argv);
-				if( result.IsEmpty() ) {
-					Deallocate( struct msgbuf*, msg );
-					return;
+			INDEX idx;
+
+			LIST_FORALL( hidg.keyEventHandlers, idx, class KeyHidObject*, myself ) {
+				if( !myself->readCallback.IsEmpty() ) {
+					MaybeLocal<Value> result = myself->readCallback.Get( isolate )->Call( context, isolate->GetCurrentContext()->Global(), 1, argv );
+					if( result.IsEmpty() ) {
+						Deallocate( struct msgbuf*, msg );
+						return;
+					}
 				}
 			}
 			Deallocate( struct msgbuf *, msg );
@@ -339,12 +340,16 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
 		KeyHidObject* obj = new KeyHidObject( );
+
 		{
 			//MemSet( &obj->async, 0, sizeof( obj->async ) );
 
 			class constructorSet *c = getConstructors( isolate );
-			uv_async_init( c->loop, &obj->async, asyncmsg );
-			obj->async.data = obj;
+			if( !hidg.keyEvents ) {
+				hidg.keyEvents = CreateLinkQueue();
+				uv_async_init( c->loop, &hidg.keyAsync, asyncmsg );
+			}
+			AddLink( &hidg.keyEventHandlers, obj );
 
 			obj->Wrap( args.This() );
 			obj->this_.Reset( isolate, args.This() );
@@ -356,7 +361,6 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 					obj->readCallback.Reset( isolate, arg0 );
 				}
 			}
-
 		}
 	}
 	else {
@@ -372,15 +376,28 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 
-void CPROC dispatchKey( uintptr_t psv, RAWINPUT *event, WCHAR ch, int len ) {
+void CPROC dispatchKey( uintptr_t psv, KBDLLHOOKSTRUCT*event, WCHAR ch, int len ) {
     struct msgbuf *msgbuf = NewPlus( struct msgbuf, len );
     msgbuf->close = FALSE;
-    msgbuf->event = event[0];
+    msgbuf->hookEvent = event[0];
     msgbuf->ch = ch;
 
     KeyHidObject *com = (KeyHidObject*)psv;
-    EnqueLink( &com->readQueue, msgbuf );
-    uv_async_send( &com->async );
+    EnqueLink( &hidg.keyEvents, msgbuf );
+    uv_async_send( &hidg.keyAsync );
+}
+
+void KeyHidObject::close( const v8::FunctionCallbackInfo<Value>& args ) {
+	KeyHidObject* com = ObjectWrap::Unwrap<KeyHidObject>( args.This() );
+	com->this_.Reset();
+	com->readCallback.Reset();
+
+	DeleteLink( &hidg.keyEventHandlers, com );
+	if( !GetLinkCount( hidg.keyEventHandlers ) ) {
+		struct msgbuf* msg = NewArray( struct msgbuf, 1 );
+		msg->close = TRUE;
+		EnqueLink( &hidg.keyEvents, msg );
+	}
 }
 
 void KeyHidObject::lock( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -407,6 +424,7 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 
 	KeyHidObject *com = ObjectWrap::Unwrap<KeyHidObject>( args.This() );
+	/*
         if( args[0]->IsNull() ) {
             if( argc > 1 ) {
                 if( args[1]->IsTrue() ) {
@@ -419,7 +437,9 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
             }
 			com->readCallback.Reset();
 		}
-	else if( args[0]->IsFunction() ) {
+	else
+	*/
+	if( args[0]->IsFunction() ) {
 		Local<Function> arg0 = Local<Function>::Cast( args[0] );
 		com->readCallback = Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 );
 	}
@@ -436,61 +456,60 @@ void mouse_asyncmsg( uv_async_t* handle ) {
 	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
 
-	MouseObject* myself = (MouseObject*)handle->data;
+	MouseObject* myself;
+	INDEX idx;
 	{
 		struct mouse_msgbuf *msg;
-        while( msg = (struct mouse_msgbuf *)DequeLink( &myself->readQueue ) ) {
+        while( msg = (struct mouse_msgbuf *)DequeLink( &hidg.mouseEvents ) ) {
             if( msg->close ) {
-				uv_close( (uv_handle_t*)&myself->async, uv_closed );
-				DeleteLinkQueue( &myself->readQueue );
+				uv_close( (uv_handle_t*)&hidg.mouseAsync, uv_closed );
+				DeleteLinkQueue( &hidg.mouseEvents );
                 break;
             }
-
-			if( !myself->readCallback.IsEmpty() ) {
-				Local<Object> eventObj = Object::New( isolate );
-				WPARAM hi_mdata = HIWORD( msg->data.mouseData );
-				int wheel = 0;
-				SET( eventObj, "op", Integer::New( isolate, (int)msg->msgid ) );
-				switch( msg->msgid ) {
+			Local<Object> eventObj = Object::New( isolate );
+			WPARAM hi_mdata = HIWORD( msg->data.mouseData );
+			int wheel = 0;
+			SET( eventObj, "op", Integer::New( isolate, (int)msg->msgid ) );
+			switch( msg->msgid ) {
 				//case WM_MOUSEHWHEEL:
 				//case WM_MOUSEVWHEEL:
-				case WM_MOUSEWHEEL:
-					wheel = HIWORD( msg->data.mouseData );
-					break;
-				case WM_XBUTTONDOWN:
-				case WM_NCXBUTTONDOWN:
-					if( hi_mdata & XBUTTON1 )
-						myself->buttons |= MK_XBUTTON1;
-					if( hi_mdata & XBUTTON2 )
-						myself->buttons |= MK_XBUTTON2;
-					break;
-				case WM_XBUTTONUP:
-				case WM_NCXBUTTONUP:
-					if( hi_mdata & XBUTTON1 )
-						myself->buttons &= ~MK_XBUTTON1;
-					if( hi_mdata & XBUTTON2 )
-						myself->buttons &= ~MK_XBUTTON2;
-					break;
+			case WM_MOUSEWHEEL:
+				wheel = HIWORD( msg->data.mouseData );
+				break;
+			case WM_XBUTTONDOWN:
+			case WM_NCXBUTTONDOWN:
+				if( hi_mdata & XBUTTON1 )
+					hidg.buttons |= MK_XBUTTON1;
+				if( hi_mdata & XBUTTON2 )
+					hidg.buttons |= MK_XBUTTON2;
+				break;
+			case WM_XBUTTONUP:
+			case WM_NCXBUTTONUP:
+				if( hi_mdata & XBUTTON1 )
+					hidg.buttons &= ~MK_XBUTTON1;
+				if( hi_mdata & XBUTTON2 )
+					hidg.buttons &= ~MK_XBUTTON2;
+				break;
 
-				case WM_NCLBUTTONDOWN:
-				case WM_LBUTTONDOWN: myself->buttons |= MK_LBUTTON; break;
-				case WM_NCMBUTTONDOWN:
-				case WM_MBUTTONDOWN: myself->buttons |= MK_MBUTTON; break;
-				case WM_NCRBUTTONDOWN:
-				case WM_RBUTTONDOWN: myself->buttons |= MK_RBUTTON; break;
-				case WM_NCLBUTTONUP:
-				case WM_LBUTTONUP:   myself->buttons &= ~MK_LBUTTON; break;
-				case WM_NCMBUTTONUP:
-				case WM_MBUTTONUP:   myself->buttons &= ~MK_MBUTTON; break;
-				case WM_NCRBUTTONUP:
-				case WM_RBUTTONUP:   myself->buttons &= ~MK_RBUTTON; break;
+			case WM_NCLBUTTONDOWN:
+			case WM_LBUTTONDOWN: hidg.buttons |= MK_LBUTTON; break;
+			case WM_NCMBUTTONDOWN:
+			case WM_MBUTTONDOWN: hidg.buttons |= MK_MBUTTON; break;
+			case WM_NCRBUTTONDOWN:
+			case WM_RBUTTONDOWN: hidg.buttons |= MK_RBUTTON; break;
+			case WM_NCLBUTTONUP:
+			case WM_LBUTTONUP:   hidg.buttons &= ~MK_LBUTTON; break;
+			case WM_NCMBUTTONUP:
+			case WM_MBUTTONUP:   hidg.buttons &= ~MK_MBUTTON; break;
+			case WM_NCRBUTTONUP:
+			case WM_RBUTTONUP:   hidg.buttons &= ~MK_RBUTTON; break;
 
-				case WM_MOUSEMOVE:
-					break;
+			case WM_MOUSEMOVE:
+				break;
 				//case WM_
-				default:
-					lprintf( "Unhandled op:%d", msg->msgid );
-					break;
+			default:
+				lprintf( "Unhandled op:%d", msg->msgid );
+				break;
 				/*
 				case WM_LBUTTONDBLCLK:
 				case WM_MBUTTONDBLCLK:
@@ -504,18 +523,22 @@ void mouse_asyncmsg( uv_async_t* handle ) {
 				case WM_NCXBUTTONDBLCLK:
 					break;
 				*/
-				}
-				SET( eventObj, "wheel", Integer::New( isolate, wheel ) );
-				SET( eventObj, "buttons", Integer::New( isolate, myself->buttons ) );
-				SET( eventObj, "x", Integer::New( isolate, msg->data.pt.x ) );
-				SET( eventObj, "y", Integer::New( isolate, msg->data.pt.y ) );
+			}
+			SET( eventObj, "wheel", Integer::New( isolate, wheel ) );
+			SET( eventObj, "buttons", Integer::New( isolate, hidg.buttons ) );
+			SET( eventObj, "x", Integer::New( isolate, msg->data.pt.x ) );
+			SET( eventObj, "y", Integer::New( isolate, msg->data.pt.y ) );
 
-				Local<Value> argv[] = { eventObj };
-				MaybeLocal<Value> result = myself->readCallback.Get( isolate )->Call( context, myself->this_.Get(isolate), 1, argv);
-				if( result.IsEmpty() ) {
-					// don't handle further events- allow processing the thrown exception.
-					Deallocate( struct msgbuf*, msg );
-					return;
+			Local<Value> argv[] = { eventObj };
+
+			LIST_FORALL( hidg.mouseEventHandlers, idx, MouseObject*, myself ) {
+				if( !myself->readCallback.IsEmpty() ) {
+					MaybeLocal<Value> result = myself->readCallback.Get( isolate )->Call( context, myself->this_.Get( isolate ), 1, argv );
+					if( result.IsEmpty() ) {
+						// don't handle further events- allow processing the thrown exception.
+						Deallocate( struct msgbuf*, msg );
+						return;
+					}
 				}
 			}
 			Deallocate( struct msgbuf *, msg );
@@ -531,19 +554,13 @@ void mouse_asyncmsg( uv_async_t* handle ) {
 
 
 MouseObject::MouseObject() {
-	readQueue = CreateLinkQueue();
-	buttons = 0;
-	hidg.mouseEventHandler = this;
-	hidg.mouseThread = ThreadTo( MouseInputThread, 0 );
+	if( !hidg.mouseThread )
+		hidg.mouseThread = ThreadTo( MouseInputThread, 0 );
 }
 
 MouseObject::~MouseObject() {
 	//lprintf( "need to cleanup mouse object async handler." );
-	PostThreadMessage( GetThreadID( hidg.mouseThread ) & 0xFFFFFFFF, WM_QUIT, 0, 0 );
-	hidg.mouseEventHandler = NULL; // no longer have a handler.
-	hidg.mouseThread = NULL;
-	DeleteLinkQueue( &this->readQueue );
-
+	//hidg.mouseEventHandler = NULL; // no longer have a handler.
 }
 
 void MouseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -553,8 +570,12 @@ void MouseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		MouseObject* obj = new MouseObject( );
 		{
 			class constructorSet *c = getConstructors( isolate );
-			uv_async_init( c->loop, &obj->async, mouse_asyncmsg );
-			obj->async.data = obj;
+			if( !hidg.mouseEvents ) {
+				hidg.mouseEvents = CreateLinkQueue();
+				uv_async_init( c->loop, &hidg.mouseAsync, mouse_asyncmsg );
+			}
+			AddLink( &hidg.mouseEventHandlers, obj );
+			//obj->async.data = obj;
 
 			obj->Wrap( args.This() );
 			obj->this_.Reset( isolate, args.This() );
@@ -587,10 +608,24 @@ void MouseObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 void MouseObject::close( const v8::FunctionCallbackInfo<Value>& args ) {
 	MouseObject* com = ObjectWrap::Unwrap<MouseObject>( args.This() );
 	com->this_.Reset();
+	com->readCallback.Reset();
+
+	DeleteLink( &hidg.mouseEventHandlers, com );
+	if( !GetLinkCount( hidg.mouseEventHandlers ) ) {
+		struct mouse_msgbuf* msg = NewArray( struct mouse_msgbuf, 1 );
+		msg->close = TRUE;
+		msg->msgid = 0;
+		EnqueLink( &hidg.mouseEvents, msg );
+		uv_async_send( &hidg.mouseAsync );
+		//hidg.mouseThread = NULL;
+	}
+
+	/*
 	struct mouse_msgbuf* msgbuf = NewPlus( struct mouse_msgbuf, 1 );
 	msgbuf->close = TRUE;
 	EnqueLink( &com->readQueue, msgbuf );
-	uv_async_send( &com->async );
+	uv_async_send( &hidg.mouseAsync );
+	*/
 }
 
 #endif
