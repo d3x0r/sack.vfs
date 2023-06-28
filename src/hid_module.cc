@@ -95,6 +95,28 @@ typedef struct global_tag
 static GLOBAL hidg;
 
 
+static void getCursor( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	const Local<String> x = String::NewFromUtf8Literal( isolate, "x" );
+	const Local<String> y = String::NewFromUtf8Literal( isolate, "y" );
+	Local<Object> obj = Object::New( isolate );
+	POINT point;
+	GetCursorPos( &point );
+	obj->Set( isolate->GetCurrentContext(), x, Number::New( isolate, point.x ) );
+	obj->Set( isolate->GetCurrentContext(), y, Number::New( isolate, point.y ) );
+	args.GetReturnValue().Set( obj );
+}
+static void setCursor( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	const Local<String> x = String::NewFromUtf8Literal( isolate, "x" );
+	const Local<String> y = String::NewFromUtf8Literal( isolate, "y" );
+	Local<Object> obj = args[0].As< Object>();
+	int64_t xnum = GETV( obj, x )->IntegerValue( context ).FromMaybe( 0 );
+	int64_t ynum = GETV( obj, y )->IntegerValue( context ).FromMaybe( 0 );
+	SetCursorPos( (int)xnum, (int)ynum );
+}
+
 LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 	KBDLLHOOKSTRUCT *kbhook = (KBDLLHOOKSTRUCT*)lParam;
 	static int resending;
@@ -235,8 +257,13 @@ void KeyHidObject::Init( Isolate *isolate, Local<Object> exports ) {
 	//NODE_SET_PROTOTYPE_METHOD( mouseTemplate, "lock", lock );
 
 	c->MouseHidObject_constructor.Reset( isolate, mouseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-	SET( exports, "Mouse"
-		, mouseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	Local<Function> mouseInterface = mouseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked();
+	SET( exports, "Mouse", mouseInterface );
+
+	mouseInterface->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "cursor" )
+		, Function::New( context, getCursor ).ToLocalChecked()
+		, Function::New( context, setCursor ).ToLocalChecked()
+	);
 
 	//----------------------------------------------------------------
 
@@ -627,5 +654,6 @@ void MouseObject::close( const v8::FunctionCallbackInfo<Value>& args ) {
 	uv_async_send( &hidg.mouseAsync );
 	*/
 }
+
 
 #endif
