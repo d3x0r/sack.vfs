@@ -35,6 +35,14 @@ if( MSVC )
 
 endif( MSVC )
 
+if( CMAKE_COMPILER_IS_GNUCC )
+  if( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 19 )
+	  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
+  else()
+      SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
+  endif( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 19 )
+endif( CMAKE_COMPILER_IS_GNUCC )
+
 
 if( NOT WIN32 )
     ADD_DEFINITIONS( -D__LINUX__ )
@@ -177,22 +185,24 @@ add_library(${PROJECT} SHARED
 set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
 
 if( CMAKE_COMPILER_IS_GNUCC )
-   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -std=c++14")
+   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result")
 endif( CMAKE_COMPILER_IS_GNUCC )
 
 set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
 add_dependencies( ${PROJECT} sack intershell )
 
 if( UNIX )
+  target_link_libraries( ${PROJECT} tls ssl crypto )
 	set( VFSLIB :sack_vfs.pp.module )
 	set( EXTRACOPY 
    			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/${CMAKE_INSTALL_LIBDIR} ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
 	)
 else( UNIX )
+  target_link_libraries( ${PROJECT} tls-20 ssl-48 crypto-46 )
 	set( VFSLIB sack_vfs.pp.module )
 endif( UNIX )
 
-  target_link_libraries( ${PROJECT} tls-20 ssl-48 crypto-46 )
+
 target_link_libraries(${PROJECT} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE_JS_LIB} )
 
   add_custom_target( finalTarget ALL #TARGET ${PROJECT} POST_BUILD
