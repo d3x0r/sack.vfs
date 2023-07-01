@@ -926,11 +926,12 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 								, (void*)eventMessage->buf
 								, eventMessage->buflen );
 
+#endif
+
 						PARRAY_BUFFER_HOLDER holder = GetHolder();
 						holder->o.Reset( isolate, ab );
 						holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 						holder->buffer = eventMessage->buf;
-#endif
 						argv[0] = ab;
 
 						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
