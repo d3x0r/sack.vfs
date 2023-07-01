@@ -563,12 +563,12 @@ void mouse_asyncmsg( uv_async_t* handle ) {
 					MaybeLocal<Value> result = myself->readCallback.Get( isolate )->Call( context, myself->this_.Get( isolate ), 1, argv );
 					if( result.IsEmpty() ) {
 						// don't handle further events- allow processing the thrown exception.
-						Deallocate( struct msgbuf*, msg );
+						Deallocate( struct mouse_msgbuf*, msg );
 						return;
 					}
 				}
 			}
-			Deallocate( struct msgbuf *, msg );
+			Deallocate( struct mouse_msgbuf *, msg );
 		}
 	}
 	{
