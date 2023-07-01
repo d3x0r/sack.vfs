@@ -139,6 +139,7 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "terminate", TaskObject::Terminate );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "isRunning", TaskObject::isRunning );
 #if _WIN32
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "windowTitle", TaskObject::getWindowTitle );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "moveWindow", TaskObject::moveWindow );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "refreshWindow", TaskObject::refreshWindow );
 
@@ -837,6 +838,17 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 	}
 
 	args.GetReturnValue().Set( result );
-
 }
+
+
+void TaskObject::getWindowTitle( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	TaskObject* task = Unwrap<TaskObject>( args.This() );
+	char *title = GetWindowTitle( task->task );
+	Local<String> result = String::NewFromUtf8( isolate, title ).ToLocalChecked();
+	Deallocate( char*, title );
+	args.GetReturnValue().Set( result );
+}
+	
 #endif

@@ -5228,6 +5228,12 @@ SYSTEM_PROC( void, RemoveKillSignalCallback )( int( *cb )( uintptr_t ), uintptr_
   Refresh internal window handle for task; uses internal handle as cached value for performance.
 */
 SYSTEM_PROC( HWND, RefreshTaskWindow )( PTASK_INFO task );
+/*
+  Returns a character string with the window title in it.  If the window is not found for
+  the task the string is "No Window".
+  The caller is responsible for releasing the string buffer;
+*/
+SYSTEM_PROC( char*, GetWindowTitle )( PTASK_INFO task );
 #endif
 SACK_SYSTEM_NAMESPACE_END
 #ifdef __cplusplus

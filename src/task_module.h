@@ -46,7 +46,7 @@ public:
 	static void getDisplays( const v8::FunctionCallbackInfo<Value>& args );
 	static void moveWindow( const v8::FunctionCallbackInfo<Value>& args );
 	static void refreshWindow( const v8::FunctionCallbackInfo<Value>& args );
-	
+	static void getWindowTitle( const v8::FunctionCallbackInfo<Value>& args );
 #endif
 };
 
