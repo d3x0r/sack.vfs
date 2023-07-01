@@ -110,6 +110,15 @@ TaskObject::TaskObject():_this(), endCallback(), inputCallback(), inputCallback2
 }
 
 TaskObject::~TaskObject() {
+	struct taskObjectOutputItem* outmsg;
+
+	while( outmsg = (struct taskObjectOutputItem*)DequeLink( &this->output ) ) {
+		Deallocate( struct taskObjectOutputItem*, outmsg );
+	}
+
+	while( outmsg = (struct taskObjectOutputItem*)DequeLink( &this->output2 ) )
+		Deallocate( struct taskObjectOutputItem*, outmsg );
+
 	DeleteLink( &l.tasks, this );
 	DeleteLinkQueue( &output );
 	DeleteLinkQueue( &output2 );
@@ -149,6 +158,12 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 #endif
 }
 
+static void taskAsyncClosed( uv_handle_t* async ) {
+	TaskObject* task = (TaskObject*)async->data;
+	task->_this.Reset();
+}
+
+
 static void taskAsyncMsg( uv_async_t* handle ) {
 	TaskObject *task = (TaskObject*)handle->data;
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
@@ -172,10 +187,10 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 		task->ending = FALSE;
 		task->ended = TRUE;
 		// these is a chance output will still come in?
-		uv_close( (uv_handle_t*)&task->async, NULL );
+		uv_close( (uv_handle_t*)&task->async, taskAsyncClosed );
 	}
 	{
-		struct taskObjectOutputItem *output;
+		struct taskObjectOutputItem* output;
 		struct taskObjectOutputItem* output2 = NULL;
 		while( ( output = (struct taskObjectOutputItem *)DequeLink( &task->output ) )
 			|| ( output2 = (struct taskObjectOutputItem*)DequeLink( &task->output2 ) )
@@ -200,6 +215,12 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 					ab = ArrayBuffer::New( isolate, (void*)output2->buffer, output2->size );
 #endif
 				}
+
+				PARRAY_BUFFER_HOLDER holder = GetHolder();
+				holder->o.Reset( isolate, ab );
+				holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+				holder->buffer = (void*)(output ? output : output2 ? output2 : NULL);
+
 				argv[0] = ab;
 				if( output2 )
 					task->inputCallback2.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
@@ -214,6 +235,10 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 					task->inputCallback2.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
 				if( output )
 					task->inputCallback.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
+				if( output )
+					Deallocate( struct taskObjectOutputItem*, output );
+				if( output2 )
+					Deallocate( struct taskObjectOutputItem*, output2 );
 			}
 			//task->buffer = NULL;
 		}
@@ -234,7 +259,8 @@ static void CPROC getTaskInput( uintptr_t psvTask, PTASK_INFO pTask, CTEXTSTR bu
 		memcpy( (char*)output->buffer, buffer, size );
 		output->size = size;
 		EnqueLink( &task->output, output );
-		uv_async_send( &task->async );
+		if( !task->ended )
+			uv_async_send( &task->async );
 	}
 
 }
@@ -246,7 +272,8 @@ static void CPROC getTaskInput2( uintptr_t psvTask, PTASK_INFO pTask, CTEXTSTR b
 		memcpy( (char*)output->buffer, buffer, size );
 		output->size = size;
 		EnqueLink( &task->output2, output );
-		uv_async_send( &task->async );
+		if( !task->ended )
+			uv_async_send( &task->async );
 	}
 
 }
@@ -259,7 +286,8 @@ static void CPROC getTaskEnd( uintptr_t psvTask, PTASK_INFO task_ended ) {
 	//task->waiter = NULL;
 	task->task = NULL;
 	//closes async
-	uv_async_send( &task->async );
+	if( !task->ended )
+		uv_async_send( &task->async );
 }
 
 static void 	readEnv( Isolate* isolate, Local<Context> context, Local<Object> headers, PLIST *env ) {
@@ -591,7 +619,8 @@ static void moveTaskWindowResult( uintptr_t psv, LOGICAL success ){
 	//lprintf( "result... send event?" );
 	task->moved = TRUE;
 	task->moveSuccess = success;
-	uv_async_send( &task->async );
+	if( !task->ended )
+		uv_async_send( &task->async );
 }
 
 // is status in prototype above
