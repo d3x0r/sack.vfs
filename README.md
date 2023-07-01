@@ -234,6 +234,14 @@ there's a conversion to string from binary and a copy of that string from JS to 
 
 ## Changelog
 - 1.1.816(in progress)
+    - (Windows)Add method to get task window title.
+    - Sqlite method added - `provider` - returns what the target database is from ODBC information.
+    - (Windows)Add mouse hook ability to get where the mouse is.  Improved Keyboard interface.
+    - Added `noKill` option to tasks - doesn't kill task on exit.
+    - Added `noWait` option to tasks - doesn't wait for task end (Default: true).
+    - (Windows)Added primary and current indicators to monitor/device information.
+    - (Windows)Added hide cursor method; failes to restore animated cursors.
+    - Some fixes for GUI build and latest node (Array buffer backing store).
 - 1.1.815
     - process fixes; add ability to register an event to terminate a process, and hook into it.
     - Fix standard IO handles to be inheritable.
