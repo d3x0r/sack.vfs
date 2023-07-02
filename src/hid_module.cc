@@ -7,7 +7,6 @@
 
 
 static uintptr_t InputThread( PTHREAD thread );
-static void CPROC dispatchKey( uintptr_t psv, KBDLLHOOKSTRUCT*event, WCHAR ch, int len );
 
 class KeyHidObject : public node::ObjectWrap {
 public:
@@ -59,6 +58,9 @@ struct msgbuf {
 	LOGICAL close;
 	KBDLLHOOKSTRUCT hookEvent;
 	WCHAR ch;
+	LOGICAL done;
+	LOGICAL used;
+	PTHREAD waiter;
 };
 
 struct mouse_msgbuf {
@@ -118,6 +120,8 @@ static void setCursor( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
+	if( code < 0 ) 	return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
+
 	KBDLLHOOKSTRUCT *kbhook = (KBDLLHOOKSTRUCT*)lParam;
 	static int resending;
 	static struct states {
@@ -150,6 +154,8 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 
 	char ch = MapVirtualKey( kbhook->vkCode, MAPVK_VK_TO_CHAR );
 	struct msgbuf* msgbuf = NewPlus( struct msgbuf, 0 );
+	msgbuf->waiter = MakeThread();
+	msgbuf->done = 0;
 	msgbuf->close = FALSE;
 	//msgbuf->event = event[0];
 	msgbuf->hookEvent = kbhook[0];
@@ -158,7 +164,9 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 	//KeyHidObject* com = (KeyHidObject*)psv;
 	EnqueLink( &hidg.keyEvents, msgbuf );
 	uv_async_send( &hidg.keyAsync );
-
+	while( !msgbuf->done ) Relinquish( 1 );
+	if( msgbuf->used )
+		return TRUE;
 	return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
 
 }
@@ -346,12 +354,27 @@ void asyncmsg( uv_async_t* handle ) {
 				if( !myself->readCallback.IsEmpty() ) {
 					MaybeLocal<Value> result = myself->readCallback.Get( isolate )->Call( context, isolate->GetCurrentContext()->Global(), 1, argv );
 					if( result.IsEmpty() ) {
-						Deallocate( struct msgbuf*, msg );
+						//Deallocate( struct msgbuf*, msg );
+						msg->done = TRUE;
+						msg->used = FALSE;
+						WakeThread( msg->waiter );
 						return;
+					}
+					else {
+						msg->used = result.ToLocalChecked()-> TOBOOL( isolate );
+						if( msg->used ) {
+							msg->done = TRUE;
+							WakeThread( msg->waiter );
+							break;
+						}
 					}
 				}
 			}
-			Deallocate( struct msgbuf *, msg );
+			if( !msg->done ) {
+				msg->done = TRUE;
+				msg->used = FALSE;
+				WakeThread( msg->waiter );
+			}
 		}
 	}
 	{
@@ -402,17 +425,6 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 
-
-void CPROC dispatchKey( uintptr_t psv, KBDLLHOOKSTRUCT*event, WCHAR ch, int len ) {
-    struct msgbuf *msgbuf = NewPlus( struct msgbuf, len );
-    msgbuf->close = FALSE;
-    msgbuf->hookEvent = event[0];
-    msgbuf->ch = ch;
-
-    KeyHidObject *com = (KeyHidObject*)psv;
-    EnqueLink( &hidg.keyEvents, msgbuf );
-    uv_async_send( &hidg.keyAsync );
-}
 
 void KeyHidObject::close( const v8::FunctionCallbackInfo<Value>& args ) {
 	KeyHidObject* com = ObjectWrap::Unwrap<KeyHidObject>( args.This() );
