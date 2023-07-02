@@ -242,6 +242,8 @@ there's a conversion to string from binary and a copy of that string from JS to 
     - (Windows)Added primary and current indicators to monitor/device information.
     - (Windows)Added hide cursor method; failes to restore animated cursors.
     - Some fixes for GUI build and latest node (Array buffer backing store).
+    - (Windows) Fixed some constant flags used with ShellExecute().
+    - Added ability to consume keyboard events.  (so they don't get sent to other things)
 - 1.1.815
     - process fixes; add ability to register an event to terminate a process, and hook into it.
     - Fix standard IO handles to be inheritable.
