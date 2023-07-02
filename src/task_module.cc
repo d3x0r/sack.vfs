@@ -21,6 +21,7 @@ struct optionStrings {
 	Eternal<String>* hiddenString;
 	Eternal<String>* noKillString;
 	Eternal<String>* noWaitString;
+	Eternal<String>* detachedString;
 #if _WIN32
 	Eternal<String>* moveToString;
 	// for move window
@@ -77,6 +78,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->hiddenString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "hidden" ) );
 		check->noKillString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noKill" ) );
 		check->noWaitString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noWait" ) );
+		check->detachedString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "detached" ) );
+		
 #if _WIN32
 		check->moveToString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "moveTo" ) );
 		check->timeoutString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "timeout" ) );
@@ -356,6 +359,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			bool noWindow = false;
 			bool noKill = false;
 			bool noWait = true;
+			bool detach = false;
 
 			newTask->killAtExit = true;
 
@@ -393,6 +397,11 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( context, optName = strings->noWaitString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					noWait = GETV( opts, optName )->TOBOOL( isolate );
+				}
+			}
+			if( opts->Has( context, optName = strings->detachedString->Get( isolate ) ).ToChecked() ) {
+				if( GETV( opts, optName )->IsBoolean() ) {
+					detach = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
 			if( opts->Has( context, optName = strings->useBreakString->Get( isolate ) ).ToChecked() ) {
@@ -517,7 +526,13 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 #define LPP_OPTION_NEW_CONSOLE          16
 #define LPP_OPTION_SUSPEND              32
 			*/
-
+			if( newConsole && noKill && !input && !input2 ) {
+				//lprintf( "setting handle no-inherit" );
+				SetHandleInformation( GetStdHandle( STD_INPUT_HANDLE ), HANDLE_FLAG_INHERIT, 0 );
+				SetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), HANDLE_FLAG_INHERIT, 0 );
+				SetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), HANDLE_FLAG_INHERIT, 0 );
+			}
+			//lprintf( "What is this? %d %d %d %d %d", ( end || input || input2 || !noWait ), end, input, input2, !noWait );
 			newTask->task = LaunchPeerProgram_v2( bin?*bin[0]:NULL
 				, work?*work[0]:NULL
 				, argArray
@@ -529,16 +544,22 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				| ( useBreak? LPP_OPTION_USE_CONTROL_BREAK :0 )
 				| ( noWindow ? LPP_OPTION_NO_WINDOW : 0 )
 				| ( hidden ? 0 : LPP_OPTION_DO_NOT_HIDE )
-				| ( useSignal ?LPP_OPTION_USE_SIGNAL:0 )
-				| ( noKill ?LPP_OPTION_NO_KILL_ON_EXIT:0 )
+				| ( useSignal ? LPP_OPTION_USE_SIGNAL:0 )
+				| ( detach ? LPP_OPTION_DETACH : 0 )
 				, input ? getTaskInput : NULL
 				, input2 ? getTaskInput2 : NULL
 				, (end||input||input2||!noWait) ? getTaskEnd : NULL
 				, (uintptr_t)newTask 
 				, envList
 				DBG_SRC );
+			if( newConsole && noKill && !input && !input2 ) {
+				//lprintf( "Resetting handles" );
+				SetHandleInformation( GetStdHandle( STD_INPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
+				SetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
+				SetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
+			}
 #if _WIN32
-			if( !moveOpts.IsEmpty() )
+			if( newTask->task && !moveOpts.IsEmpty() )
 				doMoveWindow( isolate, context, newTask, moveOpts );
 #endif
 		}
@@ -564,9 +585,13 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 ATEXIT( terminateStartedTasks ) {
 	TaskObject *task;
 	INDEX idx;
+	lprintf( "task_module atexit" );
 	LIST_FORALL( l.tasks, idx, TaskObject *, task ) {
-		if( task->killAtExit && ! task->ended && task->task )
+		lprintf( "Terminate task? %p %s %d", task, task->killAtExit?"Kill":"noKil", task->ended );
+		if( task->killAtExit && !task->ended && task->task ) {
+			lprintf( "Generate stop program to task" );
 			StopProgram( task->task );
+		}
 	}
 }
 
