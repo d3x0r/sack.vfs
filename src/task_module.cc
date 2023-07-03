@@ -195,7 +195,9 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 	}
 	{
 		struct taskObjectOutputItem* output;
-		struct taskObjectOutputItem* output2 = NULL;
+		struct taskObjectOutputItem* output2;
+		output = NULL;
+		output2 = NULL;
 		while( ( output = (struct taskObjectOutputItem *)DequeLink( &task->output ) )
 			|| ( output2 = (struct taskObjectOutputItem*)DequeLink( &task->output2 ) )
 			) {
@@ -239,8 +241,9 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 					task->inputCallback2.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
 				if( output )
 					task->inputCallback.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
-				if( output )
+				if( output ) {
 					Deallocate( struct taskObjectOutputItem*, output );
+				}
 				if( output2 )
 					Deallocate( struct taskObjectOutputItem*, output2 );
 			}
