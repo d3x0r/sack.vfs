@@ -1,0 +1,6 @@
+<control edit="1" border="4400" caption="console.frame" position="0,0" size="365,134" type="Frame">
+<control IDName="Button/core/BTN_OKAY" PrivateData="#00000000" caption="Done" position="286,105" size="66,18" type="Button"></control>
+<control caption="Incomplete Downloads" position="22,17" size="134,15" type="TextControl"></control>
+<control caption="Registered Users" position="22,38" size="116,15" type="TextControl"></control>
+<control caption="5900023" position="163,13" size="188,20" type="EditControl"></control>
+<control caption="Test Text" position="164,36" size="187,20" type="EditControl"></control></control>

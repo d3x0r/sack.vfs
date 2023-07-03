@@ -1,0 +1,9 @@
+<control border="4400" caption="console.frame" edit="0" position="0,0" size="366,137" type="Frame">
+<control IDName="Button/core/BTN_OKAY" PrivateData="#00000000" caption="Done" position="266,107" size="66,18" type="Button"></control>
+<control caption="Incomplete Downloads" position="22,17" size="134,15" type="TextControl"></control>
+<control caption="Registered Users" position="22,38" size="116,15" type="TextControl"></control>
+<control caption="5900023" position="162,13" size="188,20" type="EditControl"></control>
+<control caption="Test Text" position="164,36" size="186,20" type="EditControl"></control>
+<control PrivateData="#00000000" caption="B2" position="134,98" size="72,21" type="Button"></control>
+<control PrivateData="#00000000" position="225,70" size="73,21" type="Button"></control>
+<control caption="Text Goes Here" position="20,76" size="109,21" type="TextControl"></control></control>
