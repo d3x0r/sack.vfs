@@ -96,6 +96,10 @@ typedef struct global_tag
 
 static GLOBAL hidg;
 
+PRIORITY_ATEXIT( removeHooks, 100 ) {
+	UnhookWindowsHookEx( hidg.hookHandleLL );
+	UnhookWindowsHookEx( hidg.hookHandleMLL );
+}
 
 static void getCursor( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();

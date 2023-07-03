@@ -526,12 +526,14 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 #define LPP_OPTION_NEW_CONSOLE          16
 #define LPP_OPTION_SUSPEND              32
 			*/
+#ifdef _WIN32
 			if( newConsole && noKill && !input && !input2 ) {
 				//lprintf( "setting handle no-inherit" );
 				SetHandleInformation( GetStdHandle( STD_INPUT_HANDLE ), HANDLE_FLAG_INHERIT, 0 );
 				SetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), HANDLE_FLAG_INHERIT, 0 );
 				SetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), HANDLE_FLAG_INHERIT, 0 );
 			}
+#endif
 			//lprintf( "What is this? %d %d %d %d %d", ( end || input || input2 || !noWait ), end, input, input2, !noWait );
 			newTask->task = LaunchPeerProgram_v2( bin?*bin[0]:NULL
 				, work?*work[0]:NULL
@@ -552,13 +554,13 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				, (uintptr_t)newTask 
 				, envList
 				DBG_SRC );
+#if _WIN32
 			if( newConsole && noKill && !input && !input2 ) {
 				//lprintf( "Resetting handles" );
 				SetHandleInformation( GetStdHandle( STD_INPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
 				SetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
 				SetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
 			}
-#if _WIN32
 			if( newTask->task && !moveOpts.IsEmpty() )
 				doMoveWindow( isolate, context, newTask, moveOpts );
 #endif

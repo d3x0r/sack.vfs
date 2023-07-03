@@ -80,6 +80,7 @@ static InterShellObject *findControlType( CTEXTSTR type ) {
 	INDEX idx;
 	InterShellObject *o;
 	LIST_FORALL( isLocal.controlTypes, idx, InterShellObject*, o ) {
+		lprintf( "Is type found: %s %s", type, o->name );
 		if( StrCaseCmp( type, o->name ) == 0 )
 			break;
 	}
