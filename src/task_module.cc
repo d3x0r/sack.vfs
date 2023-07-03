@@ -243,9 +243,12 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 					task->inputCallback.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
 				if( output ) {
 					Deallocate( struct taskObjectOutputItem*, output );
+					output = NULL;
 				}
-				if( output2 )
+				if( output2 ) {
 					Deallocate( struct taskObjectOutputItem*, output2 );
+					output2 = NULL;
+				}
 			}
 			//task->buffer = NULL;
 		}
