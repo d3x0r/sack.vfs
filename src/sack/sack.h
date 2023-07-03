@@ -1204,10 +1204,6 @@ SACK_NAMESPACE
 #  define _64fx   PRIx64
 #  define _64fX   PRIX64
 #  define _64fs   PRId64
-#  define _64f    PRIu64
-#  define _64fx   PRIx64
-#  define _64fX   PRIX64
-#  define _64fs   PRId64
 // non-unicode strings
 #  define c_32f    PRIu32
 #  define c_32fx   PRIx32
