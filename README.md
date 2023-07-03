@@ -197,6 +197,14 @@ import {SACK} from "sack.vfs";
  - [File Changes](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md)
  - [Misc...](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md)
 
+### GUI Interfaces
+
+  These are available when building the GUI version.  
+  
+ - [PSI](https://github.com/d3x0r/sack.vfs/blob/master/README_PSI.md); Image, Image.Color, Render, Intershell, Frame, Registration.
+
+
+
 ## Quick App Helpers
 
  - [Http/Websocket](apps/http-ws) - simple script to handle basic resource requests, and provide a websocket endpoint interface.  User supplies `accept()` and `connect()` callbacks.  Also includes basic express-like interface addon.

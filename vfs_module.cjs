@@ -9,24 +9,27 @@ try {
 	errN.push(err);
 }
 
+function includeNative( gui ) {
+
+const name = gui?"sack_gui.node":"sack_vfs.node";
 if( !sack )
   if( process.platform === 'browser' ) { // electron
       try {
-          sack = require( "./build/Release/sack_vfs.node" );
+          sack = require( "./build/Release/" + name );
 			console.log( "Release loaded Yes.", sack );
       } catch( err ){
         errN.push(err);
       }
 		if( !sack )
           try {
-              sack = require( "./build/Debug/sack_vfs.node" );
+              sack = require( "./build/Debug/" + name );
 				console.log( "Debug loaded Yes.", sack );
           } catch( err ){
             errN.push(err);
           }
 		if( !sack )
           try {
-              sack = require( "./build/RelWithDebInfo/sack_vfs.node" );
+              sack = require( "./build/RelWithDebInfo/" + name );
           } catch( err ){
             errN.push(err);
           }
@@ -35,20 +38,20 @@ if( !sack )
       if( process.config.target_defaults.default_configuration === 'Debug' 
 		|| ( Number(process.version.split('.')[0].split('v')[1]) >= 16 ) 
 		|| ( Number(process.version.split('.')[0].split('v')[1]) < 12 ) )
-        sack = require( "./build/Debug/sack_vfs.node" );
+        sack = require( "./build/Debug/" + name );
     } catch( err ){
       errN.push(err);
     }	
 
     if( process.config.target_defaults.default_configuration === 'Release' ) {
       try {
-          sack = require( "./build/RelWithDebInfo/sack_vfs.node" );
+          sack = require( "./build/RelWithDebInfo/" + name );
       } catch( err ){
         errN.push(err);
       }
 		if( !sack )
       try {
-          sack = require( "./build/Release/sack_vfs.node" );
+          sack = require( "./build/Release/" + name );
       } catch( err ){
         errN.push(err);
       }
@@ -56,23 +59,26 @@ if( !sack )
   } else {
     if( !sack )
       try {
-          sack = require( "./build/RelWithDebInfo/sack_vfs.node" );
+          sack = require( "./build/RelWithDebInfo/" + name );
       } catch( err ){
         errN.push(err);
       }
     if( !sack )
       try {
-        sack = require( "./build/Debug/sack_vfs.node" );
+        sack = require( "./build/Debug/" + name );
       } catch( err ){
         errN.push(err);
       }
     if( !sack )
       try {
-          sack = require( "./build/Release/sack_vfs.node" );
+          sack = require( "./build/Release/" + name );
       } catch( err ){
         errN.push(err);
       }
   }
+	if( !sack && !gui ) includeNative( true );
+}
+includeNative( false );
 if( !sack )
   throw new Error( util.format( "Failed to match configuration:", process && process.config && process.config.target_defaults && process.config.target_defaults.default_configuration, "\n", errN.join(',') ) );
 

@@ -164,7 +164,7 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 	//KeyHidObject* com = (KeyHidObject*)psv;
 	EnqueLink( &hidg.keyEvents, msgbuf );
 	uv_async_send( &hidg.keyAsync );
-	while( !msgbuf->done ) Relinquish( 1 );
+	while( !msgbuf->done ) WakeableSleep( 1 );
 	if( msgbuf->used )
 		return TRUE;
 	return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
