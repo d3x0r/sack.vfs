@@ -275,6 +275,7 @@ static void onLoad( const FunctionCallbackInfo<Value>& args ) {
 
 static uintptr_t startMain( PTHREAD thread )
 {
+	InterShell = (struct intershell_interface*)GetInterfaceV4( "intershell", TRUE );
 	int(CPROC *Main)(int argc, TEXTCHAR **argv, int bConsole, struct volume* (CPROC *load)(CTEXTSTR filepath, CTEXTSTR userkey, CTEXTSTR devkey)
 		, void (CPROC*unload)(struct volume *));
 	Main = (int(CPROC*)(int, TEXTCHAR**, int, struct volume* (CPROC *load)(CTEXTSTR filepath, CTEXTSTR userkey, CTEXTSTR devkey)
@@ -921,6 +922,7 @@ static uintptr_t cbCreateControl( PSI_CONTROL parent, int32_t x, int32_t y, uint
 	c->isButton = FALSE;
 	c->caption = NULL;
 	c->type = io;
+
 	g.nextControlCreatePosition.x = x;
 	g.nextControlCreatePosition.y = y;
 	g.nextControlCreatePosition.w = w;
