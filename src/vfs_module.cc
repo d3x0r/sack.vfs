@@ -282,6 +282,8 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 #endif
 	if( runOnce ) {
 		InvokeDeadstart();
+		MarkRootDeadstartComplete();
+
 
 		//SetAllocateLogging( TRUE );
 		//SetManualAllocateCheck( TRUE );
