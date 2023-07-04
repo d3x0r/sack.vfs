@@ -198,7 +198,7 @@ if( UNIX )
    			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/${CMAKE_INSTALL_LIBDIR} ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
 	)
 else( UNIX )
-  target_link_libraries( ${PROJECT} tls-20 ssl-48 crypto-46 )
+  target_link_libraries( ${PROJECT} tls-25 ssl-52 crypto-49 bcrypt )
 	set( VFSLIB sack_vfs.pp.module )
 endif( UNIX )
 
