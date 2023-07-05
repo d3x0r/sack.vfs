@@ -2342,15 +2342,18 @@ static int CPROC onCreate( PSI_CONTROL pc ) {
 }
 
 RegistrationObject::RegistrationObject() {
+	MemSet( &r, 0, sizeof( r ) );
 }
 
 RegistrationObject::RegistrationObject( Isolate *isolate, const char *name ) {
 	struct registrationOpts opts;
+	MemSet( &r, 0, sizeof( r ) );
 	memset( &opts, 0, sizeof( struct registrationOpts ) );
 	opts.name = name;
 	InitRegistration( isolate, &opts );
 }
 RegistrationObject::RegistrationObject( Isolate *isolate, struct registrationOpts *opts ) {
+	MemSet( &r, 0, sizeof( r ) );
 	InitRegistration( isolate, opts );
 }
 
