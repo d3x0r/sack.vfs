@@ -122,6 +122,19 @@ ExternalProject_Add( intershell
 
 )
 
+ExternalProject_Add( dekware
+        PREFIX sack-src
+	DEPENDS sack
+	SOURCE_DIR ${CMAKE_BINARY_DIR}/sack-src/src/sack/src/games/dekware
+	INSTALL_DIR ${CMAKE_BINARY_DIR}/dekware-${CMAKE_BUILD_TYPE}
+	CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}
+		-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+		-DSACK_SDK_ROOT_PATH=${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}
+		-DINTERSHELL_SDK_ROOT_PATH=${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}
+		-DBUILD_INTO_SACK_INSTALL=1
+
+)
+
 LINK_DIRECTORIES( ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/${CMAKE_INSTALL_LIBDIR} )
 
 
@@ -189,7 +202,7 @@ if( CMAKE_COMPILER_IS_GNUCC )
 endif( CMAKE_COMPILER_IS_GNUCC )
 
 set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
-add_dependencies( ${PROJECT} sack intershell )
+add_dependencies( ${PROJECT} sack intershell dekware )
 
 if( UNIX )
   target_link_libraries( ${PROJECT} tls ssl crypto )
