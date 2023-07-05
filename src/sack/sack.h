@@ -3382,7 +3382,7 @@ TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateFrom_64Ex( int64_t value DBG_PASS
 /* \    See Also
    <link DBG_PASS>
    <link SegCreateFromFloat> */
-TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateFromFloatEx( float value DBG_PASS );
+TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateFromFloatEx( double value DBG_PASS );
 /* Creates a text segment from a floating point value. Probably
    uses something like '%g' to format output. Fairly limited.
    Example
