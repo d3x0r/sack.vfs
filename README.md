@@ -2,8 +2,7 @@
 
 [![Join the chat at https://gitter.im/sack-vfs/Lobby](https://badges.gitter.im/sack-vfs/Lobby.svg)](https://gitter.im/sack-vfs/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge) 
 
-
-![buddy pipeline](https://app.buddy.works/d3ck0r/sack-vfs/pipelines/pipeline/385129/badge.svg?token=5f56dac42e120ee823fddcf7e2dfdb3d62d458c840d99b2502424f83cec81ca0 "buddy pipeline")](https://app.buddy.works/d3ck0r/sack-vfs/pipelines/pipeline/385129)
+[![buddy pipeline](https://app.buddy.works/sackvfs/sack-vfs/pipelines/pipeline/457231/badge.svg?token=02218aba131a83da260fe88b34078c59e02303a7038ef0c7e36652ce2a7e5e4e "buddy pipeline")](https://app.buddy.works/sackvfs/sack-vfs/pipelines/pipeline/457231)
 
 (Deprecating; no free support - one shot 10k credits then 0) [![Build Status](https://travis-ci.com/d3x0r/sack.vfs.svg?branch=master)](https://app.travis-ci.com/github/d3x0r/sack.vfs)
 
