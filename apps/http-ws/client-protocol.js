@@ -6,40 +6,42 @@ import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
 export class Protocol extends Events {
 
 	static ws = null;
-	this.protocol = protocol;
+	protocol = null;
 	constructor( protocol ){
 		super();
 		this.protocol = protocol;
 		if( protocol )
-			Protocol.connect(protocol);
+			Protocol.connect(protocol, this);
 	}
 
-	static connect(protocol) {
+	static connect(protocol, this_) {
 		Protocol.ws = new WebSocket( location.origin.replace("http","ws"), protocol );
-		Protocol.ws.onmessage = Protocol.handleMessage;
-		Protocol.ws.onclose = Protocol.onclose;
-		Protocol.ws.onopen = Protocol.onopen;
+		Protocol.ws.onmessage = (evt)=>Protocol.onmessage.call( this_, evt) ;
+		Protocol.ws.onclose = (evt)=>Protocol.onclose.call( this_, evt) ;
+		Protocol.ws.onopen = (evt)=>Protocol.onopen.call( this_, evt) ;
 		return Protocol.ws;
 	}
 	
 	connect() {
-		return Protocol.connect( this.protocol );
+		return Protocol.connect( this.protocol, this );
 	}
 
 	static onopen( evt ) {
-		protocol.on( "open", true );
+		this.on( "open", true );
 	}
 
-	static close( evt ){
-		protocol.on( "close", [evt.code, evt.reason] );
+	static onclose( evt ){
+		console.log( "close?", this, evt );
+		this.on( "close", [evt.code, evt.reason] );
 		Protocol.ws = null;
-		if( evt.code === 1000 ) Protocol.connect();
-		else setTimeout( Protocol.connect, 5000 );
+		if( evt.code === 1000 ) this.connect();
+		else setTimeout( this.connect, 5000 );
 	}
 
-	static handleMessage( evt ) {
-		const msg = JSOX.parse( evt.message );
-		if( !protocol.on( msg.op, msg ) ){
+	static onmessage( evt ) {
+	console.log( "got:", this, evt );
+		const msg = JSOX.parse( evt.data );
+		if( !this.on( msg.op, msg ) ){
 			console.log( "Unhandled message:", msg );
 		}
 	}
