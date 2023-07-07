@@ -19,6 +19,11 @@ export class Protocol extends Events {
 		Protocol.ws.onmessage = Protocol.handleMessage;
 		Protocol.ws.onclose = Protocol.onclose;
 		Protocol.ws.onopen = Protocol.onopen;
+		return Protocol.ws;
+	}
+	
+	connect() {
+		return Protocol.connect( this.protocol );
 	}
 
 	static onopen( evt ) {
@@ -38,6 +43,17 @@ export class Protocol extends Events {
 			console.log( "Unhandled message:", msg );
 		}
 	}
+
+	send( msg ) {
+		if( Protocol.ws.readyState === 1 ) {
+			if( "object" === typeof msg ) 
+				Protocol.ws.send( JSOX.stringify(msg) ); 
+			else
+				Protocol.ws.send( msg );	
+		} else {
+			console.log( "Protocol socket is not in open readystate", Protocol.ws.readyState );
+		}
+	}
+
 } 
 
-export const protocol = new Protocol();
