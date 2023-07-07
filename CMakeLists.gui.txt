@@ -126,7 +126,7 @@ ExternalProject_Add( intershell
 
 ExternalProject_Add( dekware
         PREFIX sack-src
-	DEPENDS sack
+	DEPENDS sack intershell
 	SOURCE_DIR ${CMAKE_BINARY_DIR}/sack-src/src/sack/src/games/dekware
 	INSTALL_DIR ${CMAKE_BINARY_DIR}/dekware-${CMAKE_BUILD_TYPE}
 	CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}
