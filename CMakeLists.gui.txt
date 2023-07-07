@@ -227,7 +227,29 @@ target_link_libraries(${PROJECT} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE
 		COMMENT "Updating Dependancies to build target"
                    #DEPENDS ${PROJECT}
   )
+
 add_dependencies( finalTarget ${PROJECT} )
+
+if( UNIX) 
+
+  add_custom_target( finalTarget ALL #TARGET ${PROJECT} POST_BUILD
+			#COMMAND cmake -E echo ${AMALG_COMMAND}
+			FILE( GLOB libraries
+				RELATIVE ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
+				GLOB_RECURSE 
+				LIST_DIRECTORIES OFF   *.so *.nex *.isp )
+   		COMMAND ${CMAKE_COMMAND} -E echo patch libraries.... ${libraries}
+   		#COMMAND ${CMAKE_COMMAND} -E 
+   		#COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/resources ${CMAKE_BINARY_DIR}/resources
+			#${EXTRACOPY}
+			COMMENT "Updating library search paths"
+                   #DEPENDS ${PROJECT}
+  )
+
+  add_dependencies( patchLibraries finalTarget ) 
+
+endif( UNIX )
+
 
 if( WIN32 )
    target_link_libraries(${PROJECT} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll )
