@@ -4,10 +4,10 @@ class Event {
 	priority = 0;
 
 	#enableArrayArgs = true;
-	set enableCallbackArrays(value) {
+	set enableArrayArgs(value) {
 		this.#enableArrayArgs = value;
 	}
-	get enableCallbackArrays() {
+	get enableArrayArgs() {
 		return this.#enableArrayArgs;
 	}
 
@@ -50,7 +50,7 @@ export class Events {
 		}else if( "undefined" !== typeof d ) {
 			if( Events.#log ) console.log( "Emiting event handler for:", evt );
 			if( evt in this.#events ) return this.#events[evt].reduce( (arr,cb,idx)=>{
-	 			const isArray = cb.#enableArrayArgs && d instanceof Array;
+	 			const isArray = cb.enableArrayArgs && d instanceof Array;
 				if( isArray ) arr.push( (cb.cb)( ...d, arr ) );
 				else arr.push( (cb.cb)(d, arr) );
 				return arr;

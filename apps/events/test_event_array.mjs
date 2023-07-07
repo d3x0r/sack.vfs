@@ -11,13 +11,16 @@ function f(x,y,s,a) {
 
 
 events.on( "a", f );
-events.on( "a", f );
 
 let result;
 
 result = events.on( "a", 3 );
 console.log( "result", result );
 
+
+const disable = events.on( "a", f );
+disable.enableArrayArgs = false;
+
 result = events.on( "a", [5,3,"blah"] );
-console.log( "result", result );
+console.log( "disabled result", result );
 

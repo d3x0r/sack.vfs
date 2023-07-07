@@ -3,8 +3,8 @@ import {Events} from "./events.mjs"
 
 const events = new Events();
 
-function f(x,y, idx, arr) {
-	console.log( "run on", x,y, "at ", idx, "in",arr );
+function f(x,y, arr) {
+	console.log( "run on", x,y, "prior Results ", arr );
 	return x*x + x*3;
 }
 

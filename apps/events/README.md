@@ -1,21 +1,29 @@
 # Events
-This is a simple event class.
+
+This is a simple event class.  It offers `on` to define and dispatch events; and `off` to remove events.
+
+
 
 ## Methods
 |Name| Arguments | Description |
 |---|---|---|
-|on | (string, function [,priority]) | Register for an event notification.  The callback will receive a optional parameter passed to `on()` |
-| on | (string, data)| If the second parameter is an object, string, number (non function), then this event is triggered passing the argument to each subscription.|
-| on | (string, array)| If the second parameter is an array, then the callback is called with `.apply(array)`.|
-| on | (string)| If the second parameter is undefined then the result is true if at least one event handler has been registered.|
+|on  | (string, function [,priority]) | Register for an event notification.  The callback will receive a optional parameter passed to `on()`; results with an Event object. |
+|on  | (string, data)| If the second parameter is an object, string, number (non function), then this event is triggered passing the argument to each subscription.|
+|on  | (string, array)| If the second parameter is an array, then the callback is called with `.apply(array)`.|
+|on  | (string)| If the second parameter is undefined then the result is true if at least one event handler has been registered.|
 |off | (string,function) | Remove a subscription by name and function |
 
-## Accessors
+## Events Accessors
 
 |Name| Arguments | Description |
 |---|---|---|
 |log | true | enable debug logging, once enabled, cannot be disabled |
 |enablePriority | bool | The default behavior is to use an extra argument after function; this can be used to disable or re-enable this feature. |
+
+## Events Accessors
+
+|Name| Arguments | Description |
+|---|---|---|
 |enableArrayArgs | bool | The default behavior is to pass data that is an array as an argumnet list to the callback; this can be used to disable or re-enable this feature.
 
 
