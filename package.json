@@ -28,7 +28,19 @@
       "require": "./apps/http-ws/server.js",
       "import": "./apps/http-ws/server.mjs"
     },
+    "./http-ws": {
+      "require": "./apps/http-ws/server.js",
+      "import": "./apps/http-ws/server.mjs"
+    },
+    "./protocol": {
+      "require": "./apps/http-ws/protocol.js",
+      "import": "./apps/http-ws/protocol.mjs"
+    },
     "./apps/http-ws/uexpress": {
+      "require": "./apps/http-ws/uexpress.js",
+      "import": "./apps/http-ws/uexpress.mjs"
+    },
+    "./uexpress": {
       "require": "./apps/http-ws/uexpress.js",
       "import": "./apps/http-ws/uexpress.mjs"
     },
