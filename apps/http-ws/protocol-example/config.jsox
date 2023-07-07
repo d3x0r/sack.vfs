@@ -1,0 +1,5 @@
+{
+	xkb_configurations:[
+		"/usr/share/X11/xkb"
+	],
+}
