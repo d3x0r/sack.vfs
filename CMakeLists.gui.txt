@@ -83,7 +83,9 @@ if( NOT CMAKE_C_FLAGS_RELWITHDEBINFO MATCHES "-D_DEBUG_INFO" )
 endif( NOT CMAKE_C_FLAGS_RELWITHDEBINFO MATCHES "-D_DEBUG_INFO" )
 
 
-
+# SACK defaults this to ON because it doesn't expose it.
+# so the gui can set this here?
+set( LIBRESSL_SKIP_INSTALL OFF CACHE BOOL "" )
 
 include( ExternalProject )
 
@@ -221,8 +223,9 @@ target_link_libraries(${PROJECT} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE
   add_custom_target( finalTarget ALL #TARGET ${PROJECT} POST_BUILD
 			#COMMAND cmake -E echo ${AMALG_COMMAND}
    			COMMAND ${CMAKE_COMMAND} -E echo Updating deps....
+   			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/share ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
+   			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/lib ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
    			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/bin ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
-   			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/resources ${CMAKE_BINARY_DIR}/resources
 			${EXTRACOPY}
 		COMMENT "Updating Dependancies to build target"
                    #DEPENDS ${PROJECT}
