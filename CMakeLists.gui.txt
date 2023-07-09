@@ -85,7 +85,6 @@ endif( NOT CMAKE_C_FLAGS_RELWITHDEBINFO MATCHES "-D_DEBUG_INFO" )
 
 # SACK defaults this to ON because it doesn't expose it.
 # so the gui can set this here?
-set( LIBRESSL_SKIP_INSTALL OFF CACHE BOOL "" )
 
 include( ExternalProject )
 
@@ -110,6 +109,7 @@ ExternalProject_Add( sack
 		-DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
 		-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
 		-DINCLUDE_EXTRAS=1 -DINCLUDE_VULKAN=0
+     -DLIBRESSL_SKIP_INSTALL=OFF
 )
 if( EXISTS ${CMAKE_BINARY_DIR}/sack-src/src/sack/src/InterShell.stable )
 
@@ -141,7 +141,8 @@ ExternalProject_Add( dekware
 )
 
 LINK_DIRECTORIES( ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}/${CMAKE_INSTALL_LIBDIR} )
-
+message( "Using libs ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}/${CMAKE_INSTALL_LIBDIR}" )
+message( "Using libs ${SACK_LIBRARY_DIR}" )
 
 set( DEFINITIONS   USE_SQLITE USE_SQLITE_INTERFACE NO_FILEOP_ALIAS NO_OPEN_MACRO
                 _CRT_SECURE_NO_WARNINGS  NEED_SHLAPI NEED_SHLOBJ 
@@ -216,8 +217,9 @@ if( UNIX )
    			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/${CMAKE_INSTALL_LIBDIR} ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
 	)
 else( UNIX )
+  #target_link_libraries( ${PROJECT} tls ssl crypto )
   target_link_libraries( ${PROJECT} tls-25 ssl-52 crypto-49 bcrypt )
-	set( VFSLIB sack_vfs.pp.module )
+	set( VFSLIB sack_vfs.pp )
 endif( UNIX )
 
 
