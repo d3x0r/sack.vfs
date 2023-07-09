@@ -9,12 +9,17 @@ try {
 	errN.push(err);
 }
 
-function includeNative( gui ) {
+let basePath = ( process.platform === "win32" )?process.env.PATH:null;
 
+function includeNative( gui ) {
 const name = gui?"sack_gui.node":"sack_vfs.node";
 if( !sack )
   if( process.platform === 'browser' ) { // electron
       try {
+			if( gui && basePath )
+				process.env.PATH = basePath
+					+";"+__dirname+"\\build\\Release\\bin"
+					+";"+__dirname+"\\build\\Release\\share\\SACK\\plugins"
           sack = require( "./build/Release/" + name );
 			console.log( "Release loaded Yes.", sack );
       } catch( err ){
@@ -22,35 +27,56 @@ if( !sack )
       }
 		if( !sack )
           try {
+				if( gui && basePath )
+					process.env.PATH = basePath
+						+";"+__dirname+"\\build\\Debug\\bin"
+						+";"+__dirname+"\\build\\Debug\\share\\SACK\\plugins"
               sack = require( "./build/Debug/" + name );
 				console.log( "Debug loaded Yes.", sack );
           } catch( err ){
             errN.push(err);
           }
 		if( !sack )
-          try {
-              sack = require( "./build/RelWithDebInfo/" + name );
-          } catch( err ){
+			try {
+				if( gui && basePath )
+					process.env.PATH = basePath
+						+";"+__dirname+"\\build\\RelWithDebInfo\\bin"
+						+";"+__dirname+"\\build\\RelWithDebInfo\\share\\SACK\\plugins"
+				sack = require( "./build/RelWithDebInfo/" + name );
+			} catch( err ){
             errN.push(err);
           }
   } else if( process.platform === 'win32' ) {
     try {
       if( process.config.target_defaults.default_configuration === 'Debug' 
-		|| ( Number(process.version.split('.')[0].split('v')[1]) >= 16 ) 
-		|| ( Number(process.version.split('.')[0].split('v')[1]) < 12 ) )
-        sack = require( "./build/Debug/" + name );
+		   || ( Number(process.version.split('.')[0].split('v')[1]) >= 16 ) 
+		   || ( Number(process.version.split('.')[0].split('v')[1]) < 12 ) ) {
+			if( gui && basePath )
+				process.env.PATH = basePath
+					+";"+__dirname+"\\build\\Debug\\bin"
+					+";"+__dirname+"\\build\\Debug\\share\\SACK\\plugins"
+			sack = require( "./build/Debug/" + name );
+		}
     } catch( err ){
       errN.push(err);
     }	
 
-    if( process.config.target_defaults.default_configuration === 'Release' ) {
-      try {
+	if( process.config.target_defaults.default_configuration === 'Release' ) {
+		try {
+			if( gui && basePath )
+				process.env.PATH = basePath
+					+";"+__dirname+"\\build\\RelWithDebInfo\\bin"
+					+";"+__dirname+"\\build\\RelWithDebInfo\\share\\SACK\\plugins"
           sack = require( "./build/RelWithDebInfo/" + name );
       } catch( err ){
         errN.push(err);
       }
 		if( !sack )
       try {
+			if( gui && basePath )
+				process.env.PATH = basePath
+					+";"+__dirname+"\\build\\Release\\bin"
+					+";"+__dirname+"\\build\\Release\\share\\SACK\\plugins"
           sack = require( "./build/Release/" + name );
       } catch( err ){
         errN.push(err);
@@ -59,19 +85,31 @@ if( !sack )
   } else {
     if( !sack )
       try {
+			if( gui && basePath )
+				process.env.PATH = basePath
+					+";"+__dirname+"\\build\\RelWithDebInfo\\bin"
+					+";"+__dirname+"\\build\\RelWithDebINfo\\share\\SACK\\plugins"
           sack = require( "./build/RelWithDebInfo/" + name );
       } catch( err ){
         errN.push(err);
       }
     if( !sack )
       try {
+			if( gui && basePath )
+				process.env.PATH = basePath
+					+";"+__dirname+"\\build\\Debug\\bin"
+					+";"+__dirname+"\\build\\Debug\\share\\SACK\\plugins"
         sack = require( "./build/Debug/" + name );
       } catch( err ){
         errN.push(err);
       }
     if( !sack )
       try {
-          sack = require( "./build/Release/" + name );
+			if( gui && basePath )
+				process.env.PATH = basePath
+					+";"+__dirname+"\\build\\Release\\bin"
+					+";"+__dirname+"\\build\\Release\\share\\SACK\\plugins"
+			sack = require( "./build/Release/" + name );
       } catch( err ){
         errN.push(err);
       }
