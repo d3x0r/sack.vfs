@@ -285,7 +285,7 @@ static uintptr_t startMain( PTHREAD thread )
 }
 
 static void start( const FunctionCallbackInfo<Value>& args ) {
-	ThreadTo( startMain, (uintptr_t) LoadFunction( "*/applicationCore/InterShell.core", "Main" ) );
+	ThreadTo( startMain, (uintptr_t) LoadFunction( "?/applicationCore/InterShell.core", "Main" ) );
 }
 
 typedef Local<Value> _argv[];
@@ -617,7 +617,7 @@ void InterShellObject::NewApplication( const FunctionCallbackInfo<Value>& args )
 			LoadFunction( "bag.psi.dll", NULL );
 			LoadFunction( "sack_widgets.dll", NULL );
 #endif
-			LoadFunction( "InterShell.core", NULL );
+			LoadFunction( "?/applicationCore/InterShell.core", NULL );
 		}
 		if( !isLocal.core ) {
 			char *name;
