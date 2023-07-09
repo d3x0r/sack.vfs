@@ -285,7 +285,7 @@ static uintptr_t startMain( PTHREAD thread )
 }
 
 static void start( const FunctionCallbackInfo<Value>& args ) {
-	ThreadTo( startMain, (uintptr_t) LoadFunction( "intershell.core", "Main" ) );
+	ThreadTo( startMain, (uintptr_t) LoadFunction( "*/applicationCore/InterShell.core", "Main" ) );
 }
 
 typedef Local<Value> _argv[];
