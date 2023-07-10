@@ -1,5 +1,5 @@
 set_property(GLOBAL PROPERTY USE_FOLDERS On)
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.20)
 
 
 project (sack_gui)
@@ -239,16 +239,13 @@ target_link_libraries(${PROJECT} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE
 add_dependencies( finalTarget ${PROJECT} )
 
 if( UNIX) 
+  #set( testpath "${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}" )
+  #cmake_path( GET testpath RELATIVE_PART relpath )
+  file(RELATIVE_PATH relpath ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE} )
 
   add_custom_target( patchLibraries ALL #TARGET ${PROJECT} POST_BUILD
-			#COMMAND cmake -E echo ${AMALG_COMMAND}
-			#FILE( GLOB_RECURSE libraries
-			#	RELATIVE ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
-			#	LIST_DIRECTORIES OFF   *.so *.nex *.isp )
-   		COMMAND ${CMAKE_COMMAND} -E echo patch libraries.... ${libraries}
-   		COMMAND ${CMAKE_SOURCE_DIR}/patchLibraries.sh ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}
-   		#COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-${CMAKE_BUILD_TYPE}/resources ${CMAKE_BINARY_DIR}/resources
-			#${EXTRACOPY}
+   		COMMAND ${CMAKE_COMMAND} -E echo patch libraries...
+   		COMMAND ${CMAKE_SOURCE_DIR}/patchLibraries.sh ${relpath}
 			COMMENT "Updating library search paths"
                    #DEPENDS ${PROJECT}
   )
