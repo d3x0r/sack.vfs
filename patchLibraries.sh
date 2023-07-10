@@ -1,6 +1,7 @@
 #!/bin/bash
 
 cd "$(dirname "$0")"
+
 #echo arg: $1 in $PWD
 
 type patchelf >/dev/null 2>&1 || { echo >&2 "patchelf required but it's not installed.  Aborting."; exit 1; }
@@ -20,7 +21,7 @@ libs=$(ls -d $1/lib/*.so);#$(find $1/share/SACK/plugins -name *.so -o -name *.ne
 
 patchelf --set-rpath $PWD/$1/lib $bins; 
 patchelf --set-rpath $PWD/$1/lib:$PWD/build/share/SACK/plugins $apps; 
-patchelf --set-rpath $PWD/$1/lib:\$ORIGIN/../applicationCore $plugins; 
+patchelf --set-rpath $PWD/$1/lib:\$ORIGIN/../applicationCore:\$ORIGIN $plugins; 
 patchelf --set-rpath \$ORIGIN $libs; 
 
 <<skip-smart-patch
