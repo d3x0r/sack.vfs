@@ -7,17 +7,21 @@ type patchelf >/dev/null 2>&1 || { echo >&2 "patchelf required but it's not inst
 
 
 patchelf --set-rpath \$ORIGIN/lib $1/sack_gui.node
-#bin=$(ls $1/bin)
+#bin=$(ls -p bin | grep -v /)
+bins=$(ls -d $1/bin/*)
 apps=$(ls -d $1/share/SACK/applicationCore/*)
 plugins=$(ls -d $1/share/SACK/plugins/*)
 libs=$(ls -d $1/lib/*.so);#$(find $1/share/SACK/plugins -name *.so -o -name *.nex -o -name *.isp)
 
+#echo $apps
+#echo $bins
 #echo $plugins
 #echo $libs
 
-patchelf --set-rpath $pwd/build/:\$ORIGIN/../../lib $apps; 
-patchelf --set-rpath $pwd/build/:\$ORIGIN/../../lib $plugins; 
-patchelf --set-rpath $pwd/build/:\$ORIGIN $libs; 
+patchelf --set-rpath $PWD/$1/lib $bins; 
+patchelf --set-rpath $PWD/$1/lib:$PWD/build/share/SACK/plugins $apps; 
+patchelf --set-rpath $PWD/$1/lib:\$ORIGIN/../applicationCore $plugins; 
+patchelf --set-rpath \$ORIGIN $libs; 
 
 <<skip-smart-patch
 for lib in $libs; do
