@@ -3,24 +3,22 @@ import {sack} from "sack.vfs"
 
 
 const iAm = import.meta.url.substring( 0, import.meta.url.lastIndexOf( '/' ) );
-console.log( "I AM:", import.meta.url, iAm );
-
+//console.log( "I AM:", import.meta.url, iAm );
 
 const  {setupImports,resolveImports} = await( import(iAm + "/importLoader.mjs" ));
 
 const loadFrag = `
-console.log( "Can't load back in?" );
 import { _waitImports_ } from "${iAm}/importLoader.mjs";
-console.log( "wait?", _waitImports_ );
-//await wait;
+//console.log( "wait?", _waitImports_ );
 `;
 
-function processSource( src, imports ){
+function processSource( url, src, imports ){
 	const lines = src.replace( "\r\n", "\n" ).replace( "\r", "\n" ).split('\n' );
 	const output = [];
 	let sentFunction = false;
 	let nImport = 0;
 	const as = /\s*as\s*/;
+	output.push( '//# sourceURL='+url );
 	for( let line of lines ) {
 		if( !line.match( "import" ) ) {
 			output.push( line );
@@ -96,7 +94,7 @@ async function netImport_( file, base, imp ) {
 		if( imp === impChk ) continue; 
 		//console.log( "name?", impChk.name, file , impChk.url.href, fileUrl.href );
 		if( impChk.name === file || impChk.url.href === fileUrl.href ) {
-		console.log( "Return wait?",  impChk );
+			//console.log( "Return wait?",  impChk );
 			if( !impChk.module )  {
 				return impChk.wait;
 			}
@@ -104,7 +102,7 @@ async function netImport_( file, base, imp ) {
 		}
 	}
 
-	console.trace( ' --------- did dnot find existing? (or is self)', file, base, fileUrl, netImports);
+	//console.trace( ' --------- did dnot find existing? (or is self)', file, base, fileUrl, netImports);
 	const fileData = sack.HTTP.get( { hostname: fileUrl.hostname, port: fileUrl.port || 80, method : "get", path : fileUrl.pathname } );
 	//console.log( "fileData:", fileData );
 	if( fileData.statusCode === 200 ) {
@@ -113,26 +111,21 @@ async function netImport_( file, base, imp ) {
 		const imports = loader.imports;
 		let allImports;
 		//console.log( "Script WAS:", script );
-		const newScript = processSource( script, imports );
+		const newScript = processSource( fileUrl.href, script, imports );
 		if( imports.length ) {
 			allImports = imports.map( async impDo=>{ 
 				impDo.url = new URL( impDo.name, fileUrl.href );
 				return impDo.module = await netImport_( impDo.name, fileUrl.href, impDo );
 			} );
-			console.log( "Have imports to wait for...", file, allImports );
+			//console.log( "Have imports to wait for...", file, allImports );
 			allImports = await Promise.all( allImports );
 			resolveImports( loader, allImports );
-			console.log( "Had imports to wait for...", file, allImports );
+			//console.log( "Had imports to wait for...", file, allImports );
 		}
 		//console.log( "Script:", newScript );
-		console.log( "Do so import...." );
 		const pendingImport = import(`data:text/javascript;base64,${Buffer.from(newScript).toString(`base64`)}`);
-		console.log( "Import can't complete, right, because async?" );
 		imp.module = await pendingImport;
-		console.log( "And now I can do my own module:", imp.module );
 		if( imp.done ) { imp.done( imp.module ); imp.done = null }
-		console.log( "result?", imp );
-   	//instance.demo() // Hello World!
 	} else {
 		throw new Error( "Failed to load script:" + file + " " + fileData );
 	}
@@ -144,18 +137,17 @@ export async function netImport( file, base ) {
 	const fileUrl = new URL( file, base );
 
 	for( let impChk of netImports ) {
-		console.log( "is loaded name?", impChk.name, file , impChk.url.href, fileUrl.href,impChk.url.href=== fileUrl.href );
+		//console.log( "is loaded name?", impChk.name, file , impChk.url.href, fileUrl.href,impChk.url.href=== fileUrl.href );
 		if( (impChk.name === file) || (impChk.url.href === fileUrl.href) ) {
-			console.log( "This IS true...", impChk.module, impChk );
 			if( !impChk.module )  {
-				console.log( "return wait" );
+				//console.log( "return wait" );
 				return impChk.wait;
 			}
-			console.log( "return the module (in async)" );
+			//console.log( "return the module (in async)" );
 			return impChk.module;
 		}else console.log( "why is this false?" );
 	}
-	console.log( "External first load..................", netImports );
+	//console.log( "External first load..................", netImports );
 	const imp = new NetImport( file );
 	netImports.push( imp );
 	imp.url = fileUrl;
