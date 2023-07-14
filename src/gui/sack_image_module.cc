@@ -104,7 +104,7 @@ static uintptr_t fontPickThread( PTHREAD thread ) {
 	class constructorSet* c = (class constructorSet*)GetThreadParam( thread );
 	uv_async_init( uv_default_loop(), &c->fontAsync, imageAsyncmsg );
 	enableEventLoop( c );
-	imageLocal.fontResult = PickFont( 0, 0, NULL, NULL, NULL );
+	imageLocal.fontResult = PickFont( 0, 0, NULL, NULL, NULL, NULL, 0 );
 	uv_async_send( &c->fontAsync );
 	return 0;
 }

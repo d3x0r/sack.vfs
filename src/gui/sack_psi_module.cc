@@ -1617,7 +1617,7 @@ static void OnMoveCommon( CONTROL_FRAME_NAME )( PSI_CONTROL pc, LOGICAL startOrM
 	if( control ) {
 		int32_t x, y;
 		GetFramePosition( pc, &x, &y );
-		GetPhysicalCoordinate( pc, &x, &y, TRUE );
+		GetPhysicalCoordinate( pc, &x, &y, TRUE, FALSE );
 		MakePSIEvent( control, false, Event_Control_Move, x, y, startOrMoved );
 	}
 }
