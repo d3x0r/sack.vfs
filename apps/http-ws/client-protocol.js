@@ -4,9 +4,16 @@ import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
 
 
 export class Protocol extends Events {
-
 	static ws = null;
+	static debug = true;
 	protocol = null;
+
+	get debug() {
+		return Protocol.debug;
+	}
+	set debug(val) {
+		Protocol.debug = val;
+	}
 	constructor( protocol ){
 		super();
 		this.protocol = protocol;
@@ -31,7 +38,7 @@ export class Protocol extends Events {
 	}
 
 	static onclose( evt ){
-		console.log( "close?", this, evt );
+		Protocol.debug && console.log( "close?", this, evt );
 		this.on( "close", [evt.code, evt.reason] );
 		Protocol.ws = null;
 		if( evt.code === 1000 ) this.connect();
@@ -39,22 +46,25 @@ export class Protocol extends Events {
 	}
 
 	static onmessage( evt ) {
-	console.log( "got:", this, evt );
+		console.log( "got:", this, evt );
 		const msg = JSOX.parse( evt.data );
 		if( !this.on( msg.op, msg ) ){
-			console.log( "Unhandled message:", msg );
+			Protocol.debug && console.log( "Unhandled message:", msg );
 		}
 	}
 
 	send( msg ) {
 		if( Protocol.ws.readyState === 1 ) {
-			if( "object" === typeof msg ) 
+			if( "object" === typeof msg ) {
 				Protocol.ws.send( JSOX.stringify(msg) ); 
-			else
+			} else
 				Protocol.ws.send( msg );	
 		} else {
-			console.log( "Protocol socket is not in open readystate", Protocol.ws.readyState );
+			Protocol.debug && console.log( "Protocol socket is not in open readystate", Protocol.ws.readyState );
 		}
+	}
+	close( code, reason ) {
+		return this.ws.close( code, reason );
 	}
 
 } 
