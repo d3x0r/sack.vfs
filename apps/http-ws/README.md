@@ -185,4 +185,37 @@ app.get( "/Token", (req,res)=>{
 
 ```
 
+## Websocket quick service
+
+Importing protocol.mjs
+
+This defaults to using location.origin as where to connect back to. 
+Protocol supports 'on' events, and then the protocol can just implement send and receive events.
+
+See also apps/http-ws/protocol-example
+
+```
+import {Protocol} from "sack.vfs/client-protocol";
+
+class MyProtocol extends Protocol {
+	constructor(  ) {
+		super( "MyProtocol" );
+	}
+}
+
+```
+
+Server...
+
+```
+import {Protocol} from "sack.vfs/protocol";
+
+class MyProtocol extends Protocol {
+	constructor( opts ) {
+		super( opts );
+	}
+}
+
+// new MyProtocol( {port:5252 } );
+```
 
