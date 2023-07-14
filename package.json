@@ -33,8 +33,12 @@
       "import": "./apps/http-ws/server.mjs"
     },
     "./protocol": {
-      "require": "./apps/http-ws/protocol.js",
-      "import": "./apps/http-ws/protocol.mjs"
+      "require": "./apps/http-ws/server-protocol.js",
+      "import": "./apps/http-ws/server-protocol.mjs"
+    },
+    "./server-protocol": {
+      "require": "./apps/http-ws/server-protocol.js",
+      "import": "./apps/http-ws/server-protocol.mjs"
     },
     "./client-protocol": {
       "require": "./apps/http-ws/client-node-protocol.js",
