@@ -152,7 +152,7 @@ export function openServer( opts, cbAccept, cbConnect )
 				
 			requests.push( "Failed request: " + req.url + " as " + lastFilePath );
 			res.writeHead( 404 );
-			res.end( "<HTML><HEAD><title>404</title></HEAD><BODY>404</BODY></HTML>");
+			res.end( "<HTML><HEAD><title>404</title></HEAD><BODY>404<br>"+req.url+"</BODY></HTML>");
 		}
 	}
 
