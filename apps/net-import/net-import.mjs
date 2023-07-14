@@ -1,6 +1,7 @@
 
 import {sack} from "sack.vfs"
 
+const debug_ = false;
 
 const iAm = import.meta.url.substring( 0, import.meta.url.lastIndexOf( '/' ) );
 
@@ -20,20 +21,45 @@ function processSource( url, src, imports ){
 			output.push( line );
 			continue;
 		}
-		const parsename = line.match( /import\s*([^\s]*)\s*from\s*([^\s]*)/ );
+		const parsename = line.match( /import\s*([^{\s]*)\s*from\s*([^\s]*)/ );
 		const parse3 = (!parsename)?line.match( /import\s*(\*[^\s]*\s*as\s*[^\s]*)\s*from\s*([^\s;]*)/ ):null;
 		const parse2 = (!parse3)?line.match( /import\s*({[^\}]*})\s*from\s*([^\s;]*)/ ):null;
 		if( parsename ) {
-			const imp = new NetImport( parsename[2].substring(1,parsename[2].length-1) );
+			let end = parsename[2].length; if( parsename[2][end-1] == ';' ) end--; 
+			const imp = new NetImport( parsename[2].substring(1,end-1) );
+			//console.log( "qqpath..", parsename[2], imp.name );
+			if( parsename[2][1] !== '/' && parsename[2][1] !== '.' ) {
+				//console.log( "no path..", parsename[2] );
+				output.push( line );						
+				continue;
+			}
 			imports.push( imp );
+			if( !sentFunction ) {
+				output.push( loadFrag );
+				sentFunction = true;
+			}
 			output.push( [ "const ",parsename[1]," = (_waitImports_)[", nImport++, "].default;"].join('') );		
 		} else if( parse3 ) {
 			let assign = parse3[1];
-
+			let end = parse3[2].length; if( parse3[2][end-1] == ';' ) end--; 
+			//console.log( "zzpath..", parse3[2] );
+			if( parse3[2][1] !== '/' && parse3[2][1] !== '.' ) {
+				//console.log( "no path..", parse3[2] );
+				if( !sentFunction ) {
+					output.push( loadFrag );
+					sentFunction = true;
+				}
+				output.push( line );						
+				continue;
+			}
 			const parts = assign.split( as );
-			const imp = new NetImport( parse3[2].substring(1,parse3[2].length-1) )
+			const imp = new NetImport( parse3[2].substring(1,end-1) )
 			if( parts[0] === '*' ) {
 				imports.push( imp );
+				if( !sentFunction ) {
+					output.push( loadFrag );
+					sentFunction = true;
+				}
 				output.push( [ "const ",parts[1]," = (_waitImports_)[", nImport++, "];"].join('') );		
 			} else {
 				console.log( "ignoring an import...", line );
@@ -51,11 +77,18 @@ function processSource( url, src, imports ){
 					const parts = val.split( as );
 					assigns[a] = parts[0]+":"+parts[1];
 				}else{
-					console.log( "Unhandled destructure in : ", line );
+					//console.log( "Unhandled destructure in : ", line, assigns[a] );
 				}
 			}
 			if( a === assigns.length ) {
-				const from = parse[2].substring( 1, parse[2].length-1 );
+				let end = parse[2].length; if( parse[2][end-1] == ';' ) end--; 
+				if( parse[2][1] !== '/' && parse[2][1] !== '.' ) {
+					//console.log( "no path..", parse[2] );
+					output.push( line );						
+					continue;
+				}
+				const from = parse[2].substring( 1, end-1 );
+				//console.log( "path..", parse[2], from, sentFunction );
 				const imp = new NetImport( from );
 				imports.push( imp );
 				if( !sentFunction ) {
@@ -75,17 +108,21 @@ const netImports = [];
 
 async function netImport_( file, base, imp ) {
 	const fileUrl = new URL( file, base );
+	//console.log( "made name:", file, base, fileUrl.href );
 
 	for( let impChk of netImports ) {
 		if( imp === impChk ) continue; 
+		debug_ && console.log( "Chcking for import:", impChk.name, imp.name );
 		if( impChk.url.href === fileUrl.href ) {
 			if( !impChk.module )  {
+				debug_ && console.log( "return Wait", impChk.wait );
 				return impChk.wait;
 			}
+			debug_ && console.log( "return module" );
 			return impChk.module;
 		}
 	}
-
+	
 	const fileData = sack.HTTP.get( { hostname: fileUrl.hostname, port: fileUrl.port || 80, method : "get", path : fileUrl.pathname } );
 	if( fileData.statusCode === 200 ) {
 		const script = fileData.content;
@@ -94,16 +131,31 @@ async function netImport_( file, base, imp ) {
 		let allImports;
 		const newScript = processSource( fileUrl.href, script, imports );
 		if( imports.length ) {
+			debug_ && console.log( "imports:", imports.length, imports.map( imp=>imp.name ) );
 			allImports = imports.map( async impDo=>{ 
 				impDo.url = new URL( impDo.name, fileUrl.href );
-				return impDo.module = await netImport_( impDo.name, fileUrl.href, impDo );
+				debug_ && console.log( "import map:", impDo.name );
+				netImports.push( impDo );
+				impDo.wait = netImport_( impDo.name, fileUrl.href, impDo );
+				impDo.module = await impDo.wait;
+				if( impDo.done ) impDo.done( impDo.module );
+				debug_ && console.log( "resolve promisall wait:", impDo.module );
+				return impDo.module;
 			} );
+			debug_ && console.log( file, "Wait for imports", base, allImports );
 			allImports = await Promise.all( allImports );
+			debug_ && console.log( file, "Waited for imports" );
 			resolveImports( loader, allImports );
 		}
+		debug_ && console.log( "Run:", file, base, newScript );
 		imp.module = await import(`data:text/javascript;base64,${Buffer.from(newScript).toString(`base64`)}`);
-		if( imp.done ) imp.done( imp.module );
+		debug_ && console.log( "Ran:", file, !!imp.done );
+		if( imp.done ) { 
+			debug_ && console.log( "mark wait event complete too." );
+			imp.done( imp.module );
+		}
 	} else {
+		console.log( fileData );
 		throw new Error( "Failed to load script:" + file + " " + fileData );
 	}
 	return imp.module;
@@ -118,11 +170,15 @@ export async function netImport( file, base ) {
 				return impChk.wait;
 			}
 			return impChk.module;
-		}else console.log( "why is this false?" );
+		}else {
+			//console.log( "why is this false?", file, base, impChk.name );
+		}
 	}
+	debug_ && console.log( "import:", file )
 	const imp = new NetImport( file );
 	netImports.push( imp );
 	imp.url = fileUrl;
+	imp.wait = new Promise( (res,rej)=>{imp.done = res} );
 	return netImport_( file, base, imp );
 }
 
@@ -133,6 +189,5 @@ class NetImport {
 
 	constructor( name ) {
 		this.name = name;
-		this.wait = new Promise( (res,rej)=>{this.done = res} );
 	}
 }
