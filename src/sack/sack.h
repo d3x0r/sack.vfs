@@ -1753,17 +1753,17 @@ _LINKLIST_NAMESPACE
 //--------------------------------------------------------
 TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        CreateListEx   ( DBG_VOIDPASS );
 /* Destroy a PLIST. */
-TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        DeleteListEx   ( PLIST *plist DBG_PASS );
+TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        DeleteListEx   ( volatile PLIST *plist DBG_PASS );
 /* See <link AddLink>.
    See <link DBG_PASS>. */
-TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        AddLinkEx      ( PLIST *pList, POINTER p DBG_PASS );
+TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        AddLinkEx      ( volatile PLIST *pList, POINTER p DBG_PASS );
 /* Sets the value of a link at the specified index.
    Parameters
    pList :     address of a PLIST
    idx :       index of the element to set
    p :         new link value to be set at the specified index
    DBG_PASS :  debug file and line information                 */
-TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        SetLinkEx      ( PLIST *pList, INDEX idx, POINTER p DBG_PASS );
+TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        SetLinkEx      ( volatile PLIST *pList, INDEX idx, POINTER p DBG_PASS );
 /* Gets the link at the specified index.
    Parameters
    pList :  address of a PLIST pointer.
@@ -6094,6 +6094,30 @@ MEM_PROC  int MEM_API  StrCmp ( CTEXTSTR pOne, CTEXTSTR pTwo );
    if s2 is NULL and s1 is not NULL, return is 1.
    if s1 and s2 are NULL return is 0.              */
 MEM_PROC  int MEM_API  StrCaseCmp ( CTEXTSTR s1, CTEXTSTR s2 );
+/* Compares two strings, one utf8 and one utf16, case insensitively.
+	Parameters
+	s1 :  string to compare
+	s2 :  string to compare
+	Returns
+	0 if equal.
+	1 if (s1 \>s2)
+	\-1 if (s1 \< s2)
+	if s1 is NULL and s2 is not NULL, return is -1.
+	if s2 is NULL and s1 is not NULL, return is 1.
+	if s1 and s2 are NULL return is 0.              */
+MEM_PROC  int MEM_API  StrCaseCmp_u8u16( const char* s1, const wchar_t* s2 );
+/* Compares two strings, both utf16, case insensitively.
+	Parameters
+	s1 :  string to compare
+	s2 :  string to compare
+	Returns
+	0 if equal.
+	1 if (s1 \>s2)
+	\-1 if (s1 \< s2)
+	if s1 is NULL and s2 is not NULL, return is -1.
+	if s2 is NULL and s1 is not NULL, return is 1.
+	if s1 and s2 are NULL return is 0.              */
+MEM_PROC  int MEM_API  StrCaseCmpW( const wchar_t* s1, const wchar_t* s2 );
 /* String insensitive case comparison with maximum length
    specified.
    Parameters
@@ -6150,6 +6174,18 @@ MEM_PROC  TEXTSTR MEM_API  StrCpy ( TEXTSTR s1, CTEXTSTR s2 );
    Returns
    length of string.                             */
 MEM_PROC  size_t MEM_API  StrLen ( CTEXTSTR s );
+/* \Returns the count of bytes in a string, which includes the \u0000 at the end.
+	Parameters
+	s :  string to measure (with wide characters)
+	Returns
+	length of string.                             */
+MEM_PROC  size_t MEM_API  StrBytesW( wchar_t const* s );
+/* \Returns the count of bytes in a string, if converted to utf8.
+	Parameters
+	s : wide string to measure (with wide characters)
+	Returns
+	length of string.                             */
+MEM_PROC  size_t MEM_API  StrBytesWu8( wchar_t const* s );
 /* Get the length of a string in C chars.
    Parameters
    s :  char * to count.
@@ -6163,7 +6199,15 @@ MEM_PROC  size_t MEM_API  CStrLen ( char const*s );
    Returns
    NULL if character is not in the string.
    a pointer to the last character in s1 that matches c. */
-MEM_PROC  CTEXTSTR MEM_API  StrRChr ( CTEXTSTR s1, TEXTCHAR c );
+MEM_PROC  CTEXTSTR MEM_API  StrRChr ( CTEXTSTR s1, TEXTRUNE c );
+/* Finds the last instance of a character in a string.
+	Parameters
+	s1 :  String to search in
+	c :   character to find
+	Returns
+	NULL if character is not in the string.
+	a pointer to the last character in s1 that matches c. */
+MEM_PROC  const wchar_t* MEM_API  StrRChrW( const wchar_t* s1, TEXTRUNE c );
 #ifdef __cplusplus
 /* This searches a string for the first character that matches
    some specified character.
@@ -6206,6 +6250,7 @@ MEM_PROC  TEXTSTR MEM_API  StrRChr ( TEXTSTR s1, TEXTCHAR c );
 /* <combine sack::memory::StrCmp@CTEXTSTR@CTEXTSTR>
    \ \                                              */
 MEM_PROC  int MEM_API  StrCmp ( const char * s1, CTEXTSTR s2 );
+MEM_PROC  wchar_t* MEM_API  StrRChrW( wchar_t* s1, TEXTRUNE c );
 #endif
 /* <combine sack::memory::StrCmp@char *@CTEXTSTR>
    \ \                                            */
@@ -11432,6 +11477,8 @@ struct file_system_interface {
     int (CPROC* _lock)(void*);
               //file *
     int (CPROC* _unlock)(void*);
+ // set chmod( filename, 0777 )
+    int (CPROC* _make_public)( uintptr_t psvInstance, CTEXTSTR filename );
 };
 /* \ \
    Parameters
@@ -11483,11 +11530,22 @@ FILESYS_PROC struct find_cursor * FILESYS_API GetScanFileCursor( void *pInfo );
 FILESYS_PROC  int FILESYS_API  GetMatchingFileName ( CTEXTSTR filemask, enum ScanFileFlags flags, TEXTSTR pResult, int nResult );
 // searches a path for the last '/' or '\'
 FILESYS_PROC  CTEXTSTR FILESYS_API  pathrchr ( CTEXTSTR path );
+// searches a path for the last '/' or '\'
+FILESYS_PROC  const wchar_t* FILESYS_API  pathrchrW( const wchar_t* path );
 #ifdef __cplusplus
 FILESYS_PROC  TEXTSTR FILESYS_API  pathrchr ( TEXTSTR path );
+FILESYS_PROC  wchar_t* FILESYS_API pathrchrW( wchar_t* path );
 #endif
 // searches a path for the first '/' or '\'
 FILESYS_PROC  CTEXTSTR FILESYS_API  pathchr ( CTEXTSTR path );
+/*
+   compares filenames case insensitively and slash agnostic
+*/
+FILESYS_PROC int FILESYS_API PathCmpEx( CTEXTSTR s1, CTEXTSTR s2, int maxlen );
+/*
+   compares filenames case insensitively and slash agnostic.  Uses PathCmpEx() with maxlen=65535
+*/
+FILESYS_PROC int FILESYS_API PathCmp( CTEXTSTR s1, CTEXTSTR s2 );
 // returns pointer passed (if it worked?)
 FILESYS_PROC  TEXTSTR FILESYS_API  GetCurrentPath ( TEXTSTR path, int buffer_len );
 FILESYS_PROC  int FILESYS_API  SetCurrentPath ( CTEXTSTR path );
@@ -11543,12 +11601,38 @@ FILESYS_PROC  TEXTSTR FILESYS_API  sack_prepend_path ( INDEX group, CTEXTSTR fil
    int group = GetFileGroup( "fonts", "./fonts" );
    </code>                                                      */
 FILESYS_PROC INDEX FILESYS_API  GetFileGroup ( CTEXTSTR groupname, CTEXTSTR default_path );
+/*
+   Get the path the filegroup is defined as; or has been reloaded from option
+   database as.
+*/
 FILESYS_PROC TEXTSTR FILESYS_API GetFileGroupText ( INDEX group, TEXTSTR path, int path_chars );
+/*
+ExpandPath() returns a string, which the caller must release.  The path is insepcted to see if it is
+an absolute path ( '/' on unix or '?:/' on windows, where ? is any character).  All checks for slashes
+check both `\` and `/` as the same character.
+If it is absolute, it returns a copy of the path.
+If the path starts with a special character followed by a slash, then the character is replaced.
+|character| meaning|
+|---|----|
+|'./'| the current directory.  The dot is replaced with the full path to the current directory. |
+|'~/'|the home directory.  The `~` is replaced with `HOME` (on *nix) or `HOMEPATH`(on windows), and '.' (on android). This is also checked after all of these have previously been checked. so ';' can use '~'|
+|`@/`| the libraries path.  This is the path of the library or program currently running the filesystem abstraction. |
+|'?/'| %resources%.  This is defaulted to the install location, and is the common resources instealled with SACK. |
+|'^/'| Startup path.  This is the first path the application started in.  This is often the same as current directory, but current directoy can change. |
+|'*' '/'| on linux this is /var/Freedom Collective/<application>, on windows this is c:/programdata/Freedom Collective/<application.  This is actually (common writeable data/<provider>/<application>/ and it is possible to set/change the provider name.  The application name is determined by the name used to run the program.|
+|';/'| on linux this is ~/.[provider]/<application>, on windows this is c:/users/<user>/programdata/[provider]/[application].
+The default `[provider]` is Freedom Collective (shrug) needed to come up with a company name at some point.  To date
+there is no company other than in name only.
+Varibles bounded by `%` are replaced with file group path, if there is no filepath, then the name is looked up
+in the environment and that's used.
+The path characters `/` and `\` are then forced to the host system preferred type of slash.  Although windows
+has been agnositic, updating the interfaces on windows to the system to be unicode(since ascii isn't uft8),
+the wide APIs require `\`; and really linux requires `/`.
+Finally relative paths that are left are resolved, if there is a path part before the `..` to remove.
+*/
 FILESYS_PROC TEXTSTR FILESYS_API ExpandPathExx( CTEXTSTR path, struct file_system_interface* fsi DBG_PASS );
 #define ExpandPathEx( path, fsi )  ExpandPathExx( path, fsi DBG_SRC )
 #define ExpandPath(path) ExpandPathExx( path, NULL DBG_SRC )
-//FILESYS_PROC TEXTSTR FILESYS_API ExpandPathEx( CTEXTSTR path, struct file_system_interface *fsi );
-//FILESYS_PROC TEXTSTR FILESYS_API ExpandPath( CTEXTSTR path );
 FILESYS_PROC LOGICAL FILESYS_API SetFileLength( CTEXTSTR path, size_t length );
 /* \Returns the size of the file.
    Parameters
@@ -11712,6 +11796,17 @@ FILESYS_PROC  uintptr_t FILESYS_API  sack_ioctl( FILE *file, uintptr_t opCode, .
 FILESYS_PROC  uintptr_t FILESYS_API  sack_fs_ioctl( struct file_system_mounted_interface *mount, uintptr_t opCode, ... );
 FILESYS_PROC int FILESYS_API sack_flock( FILE* file );
 FILESYS_PROC int FILESYS_API sack_funlock( FILE* file );
+/*
+  change permissions so everyone can read and write the file.
+  result is < 0 and errno is set to ENOENT if there is no handler entry for the mount found.
+*/
+FILESYS_PROC int FILESYS_API make_public( CTEXTSTR filename );
+/*
+  change permissions so everyone can read and write the file; on a given mount.
+  many mounts do not support this yet.
+  result is < 0 and errno is set to ENOENT if there is no handler entry for the mount specified.
+*/
+FILESYS_PROC int FILESYS_API make_public_mount( CTEXTSTR filename, struct file_system_mounted_interface*mount );
 #ifndef NO_FILEOP_ALIAS
 #  ifndef NO_OPEN_MACRO
 # define open(a,...) sack_iopen(0,a,##__VA_ARGS__)
