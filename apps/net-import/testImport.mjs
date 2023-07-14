@@ -1,5 +1,5 @@
 
-import {import as netImport} from "./net-import.mjs"
+import {netImport} from "sack.vfs/net-import"
 
 const file = netImport( "http://localhost:4334/test.js" );
 

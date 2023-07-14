@@ -136,5 +136,3 @@ class NetImport {
 		this.wait = new Promise( (res,rej)=>{this.done = res} );
 	}
 }
-
-export {netImport as import};
