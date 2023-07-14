@@ -24,8 +24,8 @@ export class Protocol extends Events {
 
 	#accept( server, ws ) {
 		//console.log( "this, server, ws", this, server, ws );
-		const results;
-		if( results = this.on( "accept", ws ) && results.length > 0 ) {
+		const results = this.on( "accept", ws );
+		if( results.length > 0 ) {
 			if( results.includes( true ) ) server.accept();
 			else server.reject();
 			return;			
@@ -43,8 +43,8 @@ export class Protocol extends Events {
 	#connect(ws) {
 		const myWS = new WS( ws );
 		const this_ = this;
-		const results;
-		if( results = this.on( "connect", [ws, myWs] ) && results.length ) {
+		const results = this.on( "connect", [ws, myWs] );
+		if( results.length ) {
 			// assume the on-connect provdies its own open/close handlers
 			if( results.includes( true ) ) return;
 		}
