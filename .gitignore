@@ -4,3 +4,4 @@
 /.vscode
 sql.config
 *.tgz
+package-lock.json
