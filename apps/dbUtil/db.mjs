@@ -89,6 +89,7 @@ class Table {
 		//console.log( Date.now()-now, "selected 1" ); now = Date.now();
 		for( let col of cols ) {
 			const newcol = new Column();
+			const t = col.DATA_TYPE.split( '(');
 			newcol.name = col.COLUMN_NAME;
 			newcol.numeric_scale = col.NUMERIC_SCALE || 0;
 			newcol.string_length = col.CHARACTER_MAXIMUM_LENGTH || 0;
