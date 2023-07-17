@@ -82,14 +82,18 @@ class Table {
 	}
 
 	loadColumns(db) {
-		const cols = db.do( "select * from INFORMATION_SCHEMA.COLUMNS where TABLE_NAME=? and TABLE_SCHEMA=DATABASE() ORDER BY ORDINAL_POSITION", this.name );
+		let now = Date.now();
+		const {db:dbname} = db.do( "select DATABASE() db" )[0];
+		//console.log( Date.now()-now, "selected Db" ); now = Date.now();
+		const cols = db.do( "select COLUMN_NAME,COLUMN_TYPE,DATA_TYPE,COLUMN_DEFAULT,COLUMN_KEY,NUMERIC_PRECISION,NUMERIC_SCALE,CHARACTER_MAXIMUM_LENGTH,EXTRA from INFORMATION_SCHEMA.COLUMNS where TABLE_NAME=? and TABLE_SCHEMA=? ORDER BY ORDINAL_POSITION", this.name, dbname );
+		//console.log( Date.now()-now, "selected 1" ); now = Date.now();
 		for( let col of cols ) {
 			const newcol = new Column();
+			const t = col.DATA_TYPE.split( '(');
 			newcol.name = col.COLUMN_NAME;
-			const t = col.COLUMN_TYPE.split( '(');
-			if( t.length > 1 ) {
-				newcol.precision = Number(t[1].slice( 0, -1 ));
-			}
+			newcol.numeric_scale = col.NUMERIC_SCALE || 0;
+			newcol.string_length = col.CHARACTER_MAXIMUM_LENGTH || 0;
+			newcol.precision = (col.NUMERIC_PRECISION+1) || 0;
 			newcol.nullable = col.IS_NULLABLE==="YES";
 			//console.log( "dflt?", t, col );
 			switch( col.DATA_TYPE ) {
@@ -137,7 +141,8 @@ class Table {
 			//col.COLUMN_TYPE // includes DATA_TYPE + (precision)
 		}		
 
-		const keys = db.do( "select * from INFORMATION_SCHEMA.STATISTICS where TABLE_NAME=? and TABLE_SCHEMA=DATABASE()", this.name );
+		const keys = db.do( "select INDEX_NAME,NON_UNIQUE,COLUMN_NAME from INFORMATION_SCHEMA.STATISTICS where TABLE_NAME=? and TABLE_SCHEMA=?", this.name, dbname );
+		//console.log( Date.now()-now, "selected 2" ); now = Date.now();
 		for( let key of keys ) {
 			const index = this.keys[key.INDEX_NAME] || new Index();
 			//console.log( "index?", index );
@@ -157,8 +162,8 @@ class Table {
 	  FROM \
 		INFORMATION_SCHEMA.KEY_COLUMN_USAGE \
 	  WHERE \
-		REFERENCED_TABLE_SCHEMA = DATABASE() AND \
-		TABLE_NAME = ? ", this.name );
+		REFERENCED_TABLE_SCHEMA = ? AND \
+		TABLE_NAME = ? ", dbname, this.name );
 		//console.log( 'foreign keys:', fkeys );
 		for( let fkey of fkeys ) {
 			const fk = new ForeignKey();
@@ -281,6 +286,8 @@ class Column {
 	type = null; // SQL expression for type
 	type_ = null; // sqlite idea of type
 	precision = 0;
+	numeric_scale = 0; // used with decimal types
+	string_length = 0;
 	default = null;
 	nullable = false;
 	auto_increment = false;

@@ -1381,7 +1381,9 @@ void SqlObject::makeTable( const v8::FunctionCallbackInfo<Value>& args ) {
 		SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 
 		table = GetFieldsInSQLEx( tableCommand, false DBG_SRC );
-		if( CheckODBCTable( sql->odbc, table, CTO_MERGE ) )
+		if( !table ) 
+			args.GetReturnValue().Set( False( isolate ) );
+		else if( CheckODBCTable( sql->odbc, table, CTO_MERGE ) )
 			args.GetReturnValue().Set( True(isolate) );
 		else
 			args.GetReturnValue().Set( False( isolate ) );
