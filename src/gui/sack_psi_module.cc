@@ -187,6 +187,20 @@ static void dispatchEvent( 	v8::Isolate* isolate
 		else evt->success = 0;
 		break;
 	}
+	case Event_Control_Key: {
+		Local<Object> jsEvent = Object::New( isolate );
+		jsEvent->Set( context, localStringExternal( isolate, "key" ), Integer::New( isolate, evt->data.key.code ) );
+		{
+			Local<Value> argv[1] = { jsEvent };
+			cb = Local<Function>::New( isolate, evt->control->registration->cbKeyEvent );
+			r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
+			if( !r.IsEmpty() )
+				evt->success = (int)r->IntegerValue( context ).ToChecked();
+			else
+				evt->success = 1;
+		}
+		break;
+	}
 	case Event_Control_Mouse: {
 		//evt->data.controlMouse.target
 		Local<Object> jsEvent = Object::New( isolate );
@@ -327,7 +341,6 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 		e.data.mouse.b = va_arg( args, uint32_t );
 		break;
 	case Event_Control_Draw:
-
 		break;
 	case Event_Control_Key:
 		e.data.key.code = va_arg( args, uint32_t );
@@ -347,15 +360,11 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 		e.data.popup.pmi = va_arg( args, MenuItemObject * );
 		break;
 	case Event_Control_Move:
-		if( control->cbMoveEvent.IsEmpty() )
-			return false;
 		e.data.move.x = va_arg( args, int32_t );
 		e.data.move.y = va_arg( args, int32_t );
 		e.data.move.start = va_arg( args, LOGICAL );
 		break;
 	case Event_Control_Resize:
-		if( control->cbSizeEvent.IsEmpty() )
-			return false;
 		e.data.size.w = va_arg( args, uint32_t );
 		e.data.size.h = va_arg( args, uint32_t );
 		e.data.size.start = va_arg( args, LOGICAL );
@@ -1615,6 +1624,8 @@ void ControlObject::get( const FunctionCallbackInfo<Value>& args ) {
 static void OnMoveCommon( CONTROL_FRAME_NAME )( PSI_CONTROL pc, LOGICAL startOrMoved ) {
 	ControlObject *control = (ControlObject *)PSI_GetBindingData( pc, psiLocal.bindingDataId );
 	if( control ) {
+		if( control->cbMoveEvent.IsEmpty() )
+			return;
 		int32_t x, y;
 		GetFramePosition( pc, &x, &y );
 		GetPhysicalCoordinate( pc, &x, &y, TRUE, FALSE );
@@ -1625,6 +1636,8 @@ static void OnMoveCommon( CONTROL_FRAME_NAME )( PSI_CONTROL pc, LOGICAL startOrM
 static void OnSizeCommon( CONTROL_FRAME_NAME )(PSI_CONTROL pc, LOGICAL startOrMoved) {
 	ControlObject *control = (ControlObject *)PSI_GetBindingData( pc, psiLocal.bindingDataId );
 	if( control ) {
+		if( control->cbSizeEvent.IsEmpty() )
+			return;
 		uint32_t w, h;
 		GetFrameSize( pc, &w, &h );
 		lprintf( "Console frame size:%d %d", w, h );
@@ -2464,7 +2477,9 @@ static int CPROC onDraw( PSI_CONTROL pc ) {
 	CTEXTSTR name = GetControlTypeName( pc );
 	RegistrationObject *obj = findRegistration( name );
 	ControlObject **me = ControlData( ControlObject **, pc );
-
+	if( me[0]->registration->cbDrawEvent.IsEmpty() ){
+		return false;
+	}
 	return (int)MakePSIEvent( me[0], true, Event_Control_Draw, obj, me );
 }
 
@@ -2486,9 +2501,13 @@ void RegistrationObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
 
 
 static int CPROC cbMouse( PSI_CONTROL pc, int32_t x, int32_t y, uint32_t b ) {
+
 	CTEXTSTR name = GetControlTypeName( pc );
 	RegistrationObject *obj = findRegistration( name );
 	ControlObject **me = ControlData( ControlObject **, pc );
+	if( me[0]->registration->cbMouseEvent.IsEmpty() ){
+		return false;
+	}
 
 	return (int)MakePSIEvent( me[0], true, Event_Control_Mouse, x, y, b );
 }
@@ -2513,6 +2532,9 @@ static int CPROC cbKey( PSI_CONTROL pc, uint32_t key ) {
 	CTEXTSTR name = GetControlTypeName( pc );
 	RegistrationObject *obj = findRegistration( name );
 	ControlObject **me = ControlData( ControlObject **, pc );
+	if( me[0]->registration->cbKeyEvent.IsEmpty() ){
+		return false;
+	}
 
 	return (int)MakePSIEvent( me[0], true, Event_Control_Key, key );
 }
