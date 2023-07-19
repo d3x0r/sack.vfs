@@ -5109,6 +5109,8 @@ SYSTEM_PROC( uint32_t, GetTaskExitCode )( PTASK_INFO task );
 SYSTEM_PROC( CTEXTSTR, GetProgramName )( void );
 // returns the path of the executable that is this process
 SYSTEM_PROC( CTEXTSTR, GetProgramPath )( void );
+// this approximates the install path, as the parent of a program in /bin/ so GetProgramPath()/..; otherwise is CMAKE_INSTALL_PREFIX
+SYSTEM_PROC( CTEXTSTR, GetInstallPath )( void );
 // returns the path that was the working directory when the program started
 SYSTEM_PROC( CTEXTSTR, GetStartupPath )( void );
 // returns the path of the current sack library.
