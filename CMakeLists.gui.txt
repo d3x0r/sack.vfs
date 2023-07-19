@@ -227,6 +227,7 @@ endif( UNIX )
 
 target_link_libraries(${PROJECT} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE_JS_LIB} )
 
+if( WIN32 )
   add_custom_target( finalTarget ALL #TARGET ${PROJECT} POST_BUILD
 			#COMMAND cmake -E echo ${AMALG_COMMAND}
    			COMMAND ${CMAKE_COMMAND} -E echo Updating deps....
@@ -237,24 +238,9 @@ target_link_libraries(${PROJECT} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE
 		COMMENT "Updating Dependancies to build target"
                    #DEPENDS ${PROJECT}
   )
+endif( WIN32 )
 
 add_dependencies( finalTarget ${PROJECT} )
-
-if( UNIX) 
-  #set( testpath "${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}" )
-  #cmake_path( GET testpath RELATIVE_PART relpath )
-  file(RELATIVE_PATH relpath ${CMAKE_SOURCE_DIR} ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE} )
-
-  add_custom_target( patchLibraries ALL #TARGET ${PROJECT} POST_BUILD
-   		COMMAND ${CMAKE_COMMAND} -E echo patch libraries...
-  # 		COMMAND ${CMAKE_SOURCE_DIR}/patchLibraries.sh ${relpath}
-			COMMENT "Updating library search paths"
-                   #DEPENDS ${PROJECT}
-  )
-
-  add_dependencies( patchLibraries finalTarget ) 
-
-endif( UNIX )
 
 
 if( WIN32 )
