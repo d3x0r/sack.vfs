@@ -126,6 +126,7 @@ require( "./object-storage-cb.cjs" )(sack);
 
 module.exports=exports=sack;
 
+process.on('SIGINT', sack.sigint )
 
 // needed to dispatch promise resolutions that have been created in callbacks.
 if (process._tickDomainCallback || process._tickCallback)
