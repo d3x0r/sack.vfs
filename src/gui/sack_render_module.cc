@@ -1,7 +1,9 @@
 
 #include "../global.h"
 
-
+struct render_private_data {
+	PLIST renderers;
+} global;
 
 struct optionStrings {
 	Isolate* isolate;
@@ -153,7 +155,11 @@ static void asyncmsg( uv_async_t* handle ) {
 
 
 void RenderObject::sigint( void ) {
-	lprintf( "render gets a chance to shutdown gui...");
+	RenderObject *r;
+	INDEX idx;
+	LIST_FORALL( global.renderers, idx, RenderObject *, r ){
+		r->do_close();
+	}
 }
 
 void RenderObject::Init( Local<Object> exports ) {
@@ -208,6 +214,7 @@ void RenderObject::Init( Local<Object> exports ) {
 	}
 
 RenderObject::RenderObject( const char *title, int x, int y, int w, int h, RenderObject *over )  {
+	AddLink( &global.renderers, this );
 	if( title )
 		r = OpenDisplayAboveSizedAt( DISPLAY_ATTRIBUTE_LAYERED, w, h, x, y, over ? over->r : NULL );
 	else
@@ -221,6 +228,7 @@ void RenderObject::setRenderer(PRENDERER r) {
 }
 
 RenderObject::~RenderObject() {
+	DeleteLink( &global.renderers, this );
 }
 
 	void RenderObject::New( const FunctionCallbackInfo<Value>& args ) {
@@ -360,15 +368,18 @@ void RenderObject::setCoordinate( const FunctionCallbackInfo<Value>& args ) {
 
 }
 
+void RenderObject::do_close( void ) {
+	if( !this->closed ) {
+		this->closed = TRUE;
+		lprintf( "Close async" );
+		uv_close( (uv_handle_t*)&this->async, NULL );
+	}
+}
 
 
 void RenderObject::close( const FunctionCallbackInfo<Value>& args ) {
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
-	if( !r->closed ) {
-		r->closed = TRUE;
-		lprintf( "Close async" );
-		uv_close( (uv_handle_t*)&r->async, NULL );
-	}
+	r->do_close();
 }
 
 void RenderObject::getImage( const FunctionCallbackInfo<Value>& args ) {

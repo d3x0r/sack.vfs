@@ -185,7 +185,8 @@ static void idShortGenerator(const v8::FunctionCallbackInfo<Value>& args ){
 
 static void process_JS_sigint( const v8::FunctionCallbackInfo<Value>& args ) {
 #ifdef INCLUDE_GUI
-	ControlObject::sigint();
+	Isolate *isolate = args.GetIsolate();
+	ControlObject::sigint(isolate);
 	RenderObject::sigint();
 
 #endif

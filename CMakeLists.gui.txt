@@ -238,9 +238,9 @@ if( WIN32 )
 		COMMENT "Updating Dependancies to build target"
                    #DEPENDS ${PROJECT}
   )
+  add_dependencies( finalTarget ${PROJECT} )
 endif( WIN32 )
 
-add_dependencies( finalTarget ${PROJECT} )
 
 
 if( WIN32 )

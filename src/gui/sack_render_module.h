@@ -34,6 +34,7 @@ public:
 	static void setMouse( const FunctionCallbackInfo<Value>& args );
 	static void setKey( const FunctionCallbackInfo<Value>& args );
 	static void close( const FunctionCallbackInfo<Value>& args );
+	void do_close( void );
 	static void on( const FunctionCallbackInfo<Value>& args );
 	static void getImage( const FunctionCallbackInfo<Value>& args );
 	static void getDisplay( const FunctionCallbackInfo<Value>& args );

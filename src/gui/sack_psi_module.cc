@@ -310,6 +310,7 @@ static void asyncmsg( uv_async_t* handle ) {
 
 void enableEventLoop( class constructorSet *c ) {
 	if( !c->eventLoopRegistered ) {
+		psiLocal.c = c;
 		c->eventLoopRegistered = TRUE;
 		MemSet( &c->psiLocal_async, 0, sizeof( &c->psiLocal_async ) );
 		uv_async_init( c->loop, &c->psiLocal_async, asyncmsg );
@@ -399,8 +400,11 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 }
 
 void disableEventLoop( class constructorSet *c ) {
+	lprintf( "Disable PSI Events...");
 	if( c->eventLoopRegistered ) {
+		lprintf( "... %d", c->eventLoopEnables );
 		if( !(--c->eventLoopEnables) ) {
+			lprintf( "..." );
 			c->eventLoopRegistered = FALSE;
 			MakePSIEvent( NULL, false, Event_Control_Close_Loop );
 		}
@@ -604,8 +608,9 @@ void DeleteControlColors( Isolate *isolate, Local<Object> control, ControlObject
 }
 
 
-void ControlObject::sigint( void ) {
-	lprintf( "controls gets a chance to shutdown gui...");
+void ControlObject::sigint( Isolate *isolate ) {
+	if( psiLocal.c )
+		MakePSIEvent( NULL, false, Event_Control_Close_Loop );
 }
 
 void ControlObject::Init( Local<Object> _exports ) {

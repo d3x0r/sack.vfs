@@ -218,7 +218,7 @@ public:
 public:
 
 	static void Init( Local<Object> exports );
-	static void sigint( void );
+	static void sigint( Isolate *isolate );
 	ControlObject( const char *caption, int w, int h, int x, int y, int borderFlags, ControlObject *parent );
 	ControlObject( ControlObject *parent, const char *caption, const char *title, int w, int h, int x, int y );
 	ControlObject( const char *type, ControlObject *parent, int32_t x, int32_t y, uint32_t w, uint32_t h );

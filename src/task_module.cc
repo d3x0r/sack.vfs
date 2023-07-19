@@ -593,7 +593,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 ATEXIT( terminateStartedTasks ) {
 	TaskObject *task;
 	INDEX idx;
-	lprintf( "task_module atexit" );
+	//lprintf( "task_module atexit" );
 	LIST_FORALL( l.tasks, idx, TaskObject *, task ) {
 		lprintf( "Terminate task? %p %s %d", task, task->killAtExit?"Kill":"noKil", task->ended );
 		if( task->killAtExit && !task->ended && task->task ) {
