@@ -410,6 +410,7 @@ void disableEventLoop( class constructorSet *c ) {
 VoidObject::VoidObject( uintptr_t data ) {
 	this->data = data;
 }
+
 void VoidObject::Init( Isolate *isolate ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> voidTemplate;
@@ -600,6 +601,11 @@ void DeleteControlColors( Isolate *isolate, Local<Object> control, ControlObject
 
 	VoidObject *v = VoidObject::Unwrap<VoidObject>( colors );
 	VoidObject::releaseSelf( v );
+}
+
+
+void ControlObject::sigint( void ) {
+	lprintf( "controls gets a chance to shutdown gui...");
 }
 
 void ControlObject::Init( Local<Object> _exports ) {

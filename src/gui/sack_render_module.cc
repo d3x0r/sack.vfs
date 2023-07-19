@@ -152,7 +152,9 @@ static void asyncmsg( uv_async_t* handle ) {
 }
 
 
-
+void RenderObject::sigint( void ) {
+	lprintf( "render gets a chance to shutdown gui...");
+}
 
 void RenderObject::Init( Local<Object> exports ) {
 	{

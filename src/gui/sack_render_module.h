@@ -14,6 +14,7 @@ public:
 public:
 
 	static void Init( Local<Object> exports );
+	static void sigint( void );
 	RenderObject( const char *caption, int w, int h, int x, int y, RenderObject *parent );
 	void setRenderer( PRENDERER r );
 

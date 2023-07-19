@@ -122,9 +122,6 @@ struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate ) {
 	pw->reject.Reset( isolate, prjc.ToLocalChecked() );
 	return pw;
 	//Local<Value> args[] = { prsc.ToLocalChecked(), prjc.ToLocalChecked() };
-
-
-
 }
 
 static void moduleExit( void *arg ) {
@@ -184,6 +181,14 @@ static void idShortGenerator(const v8::FunctionCallbackInfo<Value>& args ){
 	char *r = SRG_ID_ShortGenerator4();
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, r, v8::NewStringType::kNormal ).ToLocalChecked() );
 	Deallocate( char*, r );
+}
+
+static void process_JS_sigint( const v8::FunctionCallbackInfo<Value>& args ) {
+#ifdef INCLUDE_GUI
+	ControlObject::sigint();
+	RenderObject::sigint();
+
+#endif
 }
 
 static void loadComplete( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -408,6 +413,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	}
 
 	SET_READONLY_METHOD( exports, "loadComplete", loadComplete );
+	SET_READONLY_METHOD( exports, "sigint", process_JS_sigint );
 	c->volConstructor.Reset( isolate, volumeTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	//NODE_SET_METHOD( exports, "InitFS", InitFS );
 }
