@@ -49,6 +49,7 @@ public:
 public:
 
 	static void Init( Local<Object> exports );
+	static void sigint( void );
 	InterShellObject( char *name, LOGICAL bControl );
 	InterShellObject( );
 	~InterShellObject();

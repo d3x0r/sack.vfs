@@ -188,7 +188,7 @@ static void process_JS_sigint( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate *isolate = args.GetIsolate();
 	ControlObject::sigint(isolate);
 	RenderObject::sigint();
-
+	InterShellObject::sigint();
 #endif
 }
 
