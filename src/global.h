@@ -203,8 +203,10 @@ class constructorSet {
 
 	Persistent<Function> ImageObject_constructor;
 	Persistent<FunctionTemplate> ImageObject_tpl;
+	LOGICAL fontAsyncActive;
 	uv_async_t fontAsync; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Function> FontObject_constructor;
+	LOGICAL colorAsyncActive;
 	uv_async_t colorAsync; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Function> ColorObject_constructor;
 	Persistent<FunctionTemplate> ColorObject_tpl;

@@ -102,7 +102,9 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 
 static uintptr_t fontPickThread( PTHREAD thread ) {
 	class constructorSet* c = (class constructorSet*)GetThreadParam( thread );
-	uv_async_init( uv_default_loop(), &c->fontAsync, imageAsyncmsg );
+	if(!c->fontAsyncActive) {
+		uv_async_init( uv_default_loop(), &c->fontAsync, imageAsyncmsg );
+	}
 	enableEventLoop( c );
 	imageLocal.fontResult = PickFont( 0, 0, NULL, NULL, NULL, NULL, 0 );
 	uv_async_send( &c->fontAsync );
@@ -119,13 +121,15 @@ static void pickFont( const FunctionCallbackInfo<Value>&  args ) {
 	ThreadTo( fontPickThread, (uintptr_t)c );
 }
 
+static void getColor( uintptr_t psv, CDATA color, LOGICAL ok ){
+	class constructorSet* c = (class constructorSet* )psv;
+	if( ok ){
+		imageLocal.color = color;
+		uv_async_send( &c->colorAsync );
+	}
+}
+
 static uintptr_t colorPickThread( PTHREAD thread ) {
-	class constructorSet* c = (class constructorSet*)GetThreadParam( thread );
-	uv_async_init( uv_default_loop(), &c->colorAsync, imageAsyncmsg );
-	CDATA color;
-	PickColor( &color, 0, NULL );
-	imageLocal.color = color;
-	uv_async_send( &c->colorAsync );
 	return 0;
 }
 
@@ -134,6 +138,13 @@ static void pickColor( const FunctionCallbackInfo<Value>&  args ) {
 	class constructorSet* c = getConstructors( isolate );
 	c->priorThis.Reset( isolate, args.This() );
 	c->imageResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
+
+	if( !c->colorAsyncActive) {
+		c->colorAsyncActive = TRUE;
+		uv_async_init( uv_default_loop(), &c->colorAsync, imageAsyncmsg );
+	}
+	PickColor( NULL, 0, NULL, getColor, (uintptr_t)c );
+
 	ThreadTo( colorPickThread, (uintptr_t)c );
 }
 
@@ -1184,4 +1195,14 @@ void ColorObject::setAlpha( const FunctionCallbackInfo<Value>&  args ) {
 	else if( val > 255 ) val = 255;
 	if( val > 0 && val <= 1.0 ) val = 255 * val;
 	co->color = SetAlphaValue( co->color, (COLOR_CHANNEL)val );
+}
+
+
+void ImageObject::shutdown( struct constructorSet* c ) {
+
+	if( c->colorAsyncActive )
+		uv_close( (uv_handle_t*)&c->colorAsync, NULL );
+	if( c->fontAsyncActive )
+		uv_close( (uv_handle_t*)&c->fontAsync, NULL );
+
 }
