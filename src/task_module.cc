@@ -104,6 +104,8 @@ TaskObject::TaskObject():_this(), endCallback(), inputCallback(), inputCallback2
     binary = false;
     ending = false;
     ended = false;
+	stopped = false;
+	killed = false;
     exitCode = 0;
     killAtExit = false;
 	output = CreateLinkQueue();
@@ -593,14 +595,29 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 ATEXIT( terminateStartedTasks ) {
 	TaskObject *task;
 	INDEX idx;
+	int start = timeGetTime();
+	int running;
 	//lprintf( "task_module atexit" );
-	LIST_FORALL( l.tasks, idx, TaskObject *, task ) {
-		lprintf( "Terminate task? %p %s %d", task, task->killAtExit?"Kill":"noKil", task->ended );
-		if( task->killAtExit && !task->ended && task->task ) {
-			lprintf( "Generate stop program to task" );
-			StopProgram( task->task );
+	do {
+		running = FALSE;
+		LIST_FORALL( l.tasks, idx, TaskObject*, task ) {
+			if( task->killAtExit && !task->ended && task->task ) {
+				//lprintf( "Terminate task? %p %s %d %d %d", task->task, task->killAtExit ? "Kill" : "noKil", task->ended, task->stopped, task->killed );
+				running = TRUE;
+				if( !task->stopped ) {
+					//lprintf( "Generate stop program to task" );
+					task->stopped = true;
+					StopProgram( task->task );
+				} else if( !task->killed ) {
+					//lprintf( "Terminating agressively" );
+					task->killed = TRUE;
+					TerminateProgramEx( task->task, TERMINATE_PROGRAM_CHAIN );
+				}
+			}
 		}
-	}
+		if( running ) WakeableSleep( 50 );
+	} while( running && ( ( timeGetTime() - start ) < 250 ) );
+	//lprintf( "Atexit terminate tasks finished" );
 }
 
 void TaskObject::loadLibrary( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -627,8 +644,10 @@ void TaskObject::End( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void TaskObject::Terminate( const v8::FunctionCallbackInfo<Value>& args ) {
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
-	if( task && task->task )
-		TerminateProgram( task->task );
+	if( task && task->task ) {
+		//TerminateProgram( task->task );
+		TerminateProgramEx( task->task, TERMINATE_PROGRAM_CHAIN );
+	}
 }
 
 void TaskObject::isRunning( const v8::FunctionCallbackInfo<Value>& args ) {

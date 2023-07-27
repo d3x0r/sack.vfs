@@ -28,6 +28,8 @@ public:
 	PLINKQUEUE output2;
 
 #if _WIN32
+	bool stopped;
+	bool killed;
 	int moved;
 	LOGICAL moveSuccess;
 #endif

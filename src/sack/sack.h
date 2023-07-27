@@ -5054,6 +5054,9 @@ typedef void (CPROC*TaskOutput)(uintptr_t, PTASK_INFO task, CTEXTSTR buffer, siz
 #define LPP_OPTION_USE_SIGNAL          512
 // This might be a useful windows option in some cases
 #define LPP_OPTION_DETACH             1024
+// this is a Linux option - uses forkpty() instead of just fork() to
+// start a process - meant for interactive processes.
+#define LPP_OPTION_INTERACTIVE        2048
 struct environmentValue {
 	char* field;
 	char* value;
@@ -5082,6 +5085,16 @@ SYSTEM_PROC( PTASK_INFO, LaunchProgram )( CTEXTSTR program, CTEXTSTR path, PCTEX
 // abort task, no kill signal, sigabort basically.  Use StopProgram for a more graceful terminate.
 // if (!StopProgram(task)) TerminateProgram(task) would be appropriate.
 SYSTEM_PROC( uintptr_t, TerminateProgram )( PTASK_INFO task );
+enum terminate_program_flags {
+	TERMINATE_PROGRAM_CHAIN = 1,
+	TERMINATE_PROGRAM_CHILDMOST = 2,
+};
+// abort task, no kill signal, sigabort basically.  Use StopProgram for a more graceful terminate.
+// if (!StopProgram(task)) TerminateProgram(task) would be appropriate.
+// additional flags from the enum terminate_program_flags may be used.
+//   _CHAIN = terminate the whole chain, starting from child-most task.
+//   _CHILDMOST = terminate the youngest child in the chain.
+SYSTEM_PROC( uintptr_t, TerminateProgramEx )( PTASK_INFO task, int options );
 SYSTEM_PROC( void, ResumeProgram )( PTASK_INFO task );
 // get first address of program startup code(?) Maybe first byte of program code?
 SYSTEM_PROC( uintptr_t, GetProgramAddress )( PTASK_INFO task );
@@ -5232,6 +5245,57 @@ SYSTEM_PROC( HWND, RefreshTaskWindow )( PTASK_INFO task );
   The caller is responsible for releasing the string buffer;
 */
 SYSTEM_PROC( char*, GetWindowTitle )( PTASK_INFO task );
+struct process_tree_pair {
+    int process_id;
+    int parent_id;
+    int child_id;
+    int next_id;
+};
+/*
+  returns a datalist of process_tree_pair members;
+    parent_id is an index into the datalist...
+    current = GetDataItem( &pdlResult, 0)
+    while( current->child_id >= 0 ) {
+      current = GetDataItem( &pdlResult,current->child_id );
+    }
+    // although that doesn't account for peers - and assumes a linear
+    // child list.
+    struct depth_node {
+      struct process_tree_pair *pair;
+      int level;
+    }
+    PDATASTACK stack = CreateDataStack( sizeof( struct depth_node ));
+    struct depth_node node;
+    struct depth_node deepest_node;
+    deepest_node.level = -1;
+    node.pair = GetDataItem( &pdlResult, 0);
+    node.level = 0;
+    PushData( &node );
+    while( current = PopData( &stack ) ) {
+      if( current->child_id >= 0 ){
+        node.pair = GetDataItem( &pdlResult, current->child_id );
+        node.level = current.level+1;
+        if( node.level > deepest_node.level ) {
+          deepest_node = node;
+        }
+        PushData( &node );
+      }
+      if( current->next_id >= 0 ){
+        node.pair = GetDataItem( &pdlResult, current->next_id );
+        node.level = current.level;
+        PushData( &node );
+      }
+    }
+*/
+SYSTEM_PROC( PDATALIST, GetProcessTree )( PTASK_INFO task );
+#endif
+#ifdef __LINUX__
+/*
+  Processes launched with LPP_OPTION_INTERACTIVE have a PTY handle.
+  This retrieves that handle so things like setting terminal size can
+  be done.
+*/
+SYSTEM_PROC( int, GetTaskPTY )( PTASK_INFO task );
 #endif
 SACK_SYSTEM_NAMESPACE_END
 #ifdef __cplusplus
