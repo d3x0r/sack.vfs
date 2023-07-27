@@ -1,2 +1,2 @@
 
-import( "./events.mjs" ).then( (module)=>Object.assign( module.exports, module ) );
+import( "./events.mjs" ).then( (m)=>Object.assign( module.exports, m ) );
