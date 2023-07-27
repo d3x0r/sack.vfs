@@ -4,7 +4,7 @@ import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
 
 
 export class Protocol extends Events {
-	static ws = null;
+	//static ws = null;
 	static debug = true;
 	protocol = null;
 
@@ -22,11 +22,12 @@ export class Protocol extends Events {
 	}
 
 	static connect(protocol, this_) {
-		Protocol.ws = new WebSocket( location.origin.replace("http","ws"), protocol );
-		Protocol.ws.onmessage = (evt)=>Protocol.onmessage.call( this_, evt) ;
-		Protocol.ws.onclose = (evt)=>Protocol.onclose.call( this_, evt) ;
-		Protocol.ws.onopen = (evt)=>Protocol.onopen.call( this_, evt) ;
-		return Protocol.ws;
+		const ThisProtocol = Object.getPrototypeOf( this ).constructor;
+		ThisProtocol.ws = new WebSocket( location.origin.replace("http","ws"), protocol );
+		ThisProtocol.ws.onmessage = (evt)=>Protocol.onmessage.call( this_, evt) ;
+		ThisProtocol.ws.onclose = (evt)=>Protocol.onclose.call( this_, evt) ;
+		ThisProtocol.ws.onopen = (evt)=>Protocol.onopen.call( this_, evt) ;
+		return ThisProtocol.ws;
 	}
 	
 	connect() {
@@ -34,12 +35,14 @@ export class Protocol extends Events {
 	}
 
 	static onopen( evt ) {
-		this.on( "open", true );
+		const ThisProtocol = Object.getPrototypeOf( this ).constructor;
+		ThisProtocol.on( "open", true );
 	}
 
 	static onclose( evt ){
+		const Protocol = Object.getPrototypeOf( this ).constructor;
 		Protocol.debug && console.log( "close?", this, evt );
-		this.on( "close", [evt.code, evt.reason] );
+		const event = this.on( "close", [evt.code, evt.reason] );
 		Protocol.ws = null;
 		if( evt.code === 1000 ) this.connect();
 		else setTimeout( this.connect, 5000 );
