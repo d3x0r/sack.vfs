@@ -104,8 +104,10 @@ TaskObject::TaskObject():_this(), endCallback(), inputCallback(), inputCallback2
     binary = false;
     ending = false;
     ended = false;
+#ifdef _WIN32
 	stopped = false;
 	killed = false;
+#endif
     exitCode = 0;
     killAtExit = false;
 	output = CreateLinkQueue();
