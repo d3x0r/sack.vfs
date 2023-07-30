@@ -309,6 +309,7 @@ static void asyncmsg( uv_async_t* handle ) {
 
 
 void enableEventLoop( class constructorSet *c ) {
+	//lprintf( "!!! Enable PSI Event Loop");
 	if( !c->eventLoopRegistered ) {
 		psiLocal.c = c;
 		c->eventLoopRegistered = TRUE;
@@ -324,8 +325,8 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 #define e (*pe)
 	va_list args;
 	va_start( args, type );
-	if( type != Event_Control_Close_Loop && control )
-		enableEventLoop( control->isolateCons );
+	//if( type != Event_Control_Close_Loop && control )
+	//	enableEventLoop( control->isolateCons );
 	pe = GetFromSet( IS_EVENT, &psiLocal.event_pool );
 	e.type = type;
 	e.control = control;
@@ -403,7 +404,8 @@ void disableEventLoop( class constructorSet *c ) {
 	lprintf( "Disable PSI Events...");
 	if( c->eventLoopRegistered ) {
 		lprintf( "... %d", c->eventLoopEnables );
-		if( !(--c->eventLoopEnables) ) {
+		if( !(--c->eventLoopEnables) ) 
+		{
 			lprintf( "..." );
 			c->eventLoopRegistered = FALSE;
 			MakePSIEvent( NULL, false, Event_Control_Close_Loop );
@@ -1070,12 +1072,15 @@ void ControlObject::setControlColor2( const FunctionCallbackInfo<Value>& args ) 
 }
 
 
-ControlObject::ControlObject( ControlObject *over, const char *type, const char *title, int x, int y, int w, int h ) {
+ControlObject::ControlObject( ControlObject *over, const char *type, const char *title, int x, int y, int w, int h, struct constructorSet*c ) {
 	registration = NULL;
 	image = NULL;
 	frame = over;
 	flags.tree = 0;
 	psiLocal.pendingCreate = this;
+	isolateCons = c;
+	enableEventLoop( c );
+
 	if( !title )
 		control = MakeNamedControl( over->control, type, x, y, w, h, 0 );
 	else
@@ -1083,29 +1088,34 @@ ControlObject::ControlObject( ControlObject *over, const char *type, const char 
 	psiLocal.pendingCreate = NULL;
 }
 
-ControlObject::ControlObject( const char *title, int x, int y, int w, int h, int border, ControlObject *over ) {
+ControlObject::ControlObject( const char *title, int x, int y, int w, int h, int border, ControlObject *over, struct constructorSet*c ) {
 	registration = NULL;
 	image = NULL;
 	frame = over;
 	flags.tree = 0;
 	psiLocal.pendingCreate = this;
+	
+	isolateCons = c;
+	enableEventLoop( c );
 	control = ::CreateFrame( title, x, y, w, h, border, over ? over->control : (PSI_CONTROL)NULL );
 	PSI_SetBindingData( control, psiLocal.bindingDataId, (uintptr_t)this );
 	psiLocal.pendingCreate = NULL;
 }
 
-ControlObject::ControlObject( const char *type, ControlObject *parent, int32_t x, int32_t y, uint32_t w, uint32_t h ) {
+ControlObject::ControlObject( const char *type, ControlObject *parent, int32_t x, int32_t y, uint32_t w, uint32_t h, struct constructorSet*c ) {
 	registration = NULL;
 	image = NULL;
 	flags.tree = 0;
 	psiLocal.pendingCreate = this;
+	isolateCons = c;
+	enableEventLoop( c );
 	control = ::MakeNamedControl( parent->control, type, x, y, w, h, -1 );
 	psiLocal.pendingCreate = NULL;
 }
 
 
 ControlObject::~ControlObject() {
-
+	disableEventLoop( this->isolateCons );
 }
 ControlObject::ControlObject( PSI_CONTROL control ) {
 	//memcpy( this, &_blankObject, sizeof( *this ) );
@@ -1169,7 +1179,7 @@ void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
 		*/
 		// Invoked as constructor: `new MyObject(...)`
 		
-		ControlObject* obj = new ControlObject( title?title:"Node Application", x, y, w, h, border, NULL );
+		ControlObject* obj = new ControlObject( title?title:"Node Application", x, y, w, h, border, NULL, getConstructors( isolate ) );
 		ControlObject::wrapSelf( isolate, obj, args.This() );
 		args.GetReturnValue().Set( args.This() );
 		if( title )
@@ -1469,7 +1479,7 @@ void ControlObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 
 		// Invoked as constructor: `new MyObject(...)`
 		psiLocal.newControl = newControl;
-		ControlObject* obj = new ControlObject( container, type, title, x, y, w, h );
+		ControlObject* obj = new ControlObject( container, type, title, x, y, w, h, c );
 		ControlObject::wrapSelf( isolate, obj, newControl );
 
 		args.GetReturnValue().Set( newControl );
@@ -1487,6 +1497,7 @@ void ControlObject::createFrame( const FunctionCallbackInfo<Value>& args ) {
 		char *title = NULL;
 		int x = 0, y = 0, w = 1024, h = 768, border = 0;
 		ControlObject *parent = NULL;
+		class constructorSet* c = getConstructors( isolate );
 
 		int argc = args.Length();
 		if( argc > 0 ) {
@@ -1514,7 +1525,7 @@ void ControlObject::createFrame( const FunctionCallbackInfo<Value>& args ) {
 			}
 			 */
 		// Invoked as constructor: `new MyObject(...)`
-		ControlObject* obj = new ControlObject( title?title:"Node Application", x, y, w, h, border, NULL );
+		ControlObject* obj = new ControlObject( title?title:"Node Application", x, y, w, h, border, NULL, c );
 		ControlObject::wrapSelf( isolate, obj, args.This() );
 		args.GetReturnValue().Set( args.This() );
 			if( title )

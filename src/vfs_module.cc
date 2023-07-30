@@ -237,6 +237,9 @@ static void CleanupThreadResources( void* arg_ ) {
 			vol->cleanupHappened = TRUE;
 		}
 	}
+#ifdef INCLUDE_GUI
+	ImageObject::shutdown( c );
+#endif	
 
 	DeleteLink( &vl.constructors, c );
 	delete c;

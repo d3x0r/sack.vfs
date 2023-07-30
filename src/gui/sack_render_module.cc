@@ -479,7 +479,7 @@ void RenderObject::setMouse( const FunctionCallbackInfo<Value>& args ) {
 	SetMouseHandler( r->r, doMouse, (uintptr_t)r );
 }
 
-static void CPROC doRedraw( uintptr_t psv, PRENDERER out ) {
+static int CPROC doRedraw( uintptr_t psv, PRENDERER out ) {
 	RenderObject *r = (RenderObject *)psv;
 	PTHREAD waiter = MakeThread();
 	// sometimes the redraw event can happen on the same thread.
@@ -490,10 +490,18 @@ static void CPROC doRedraw( uintptr_t psv, PRENDERER out ) {
 			Local<Value> argv[] = { Local<Object>::New( r->isolate, r->surface ) };
 			Local<Function> cb;
 			cb = Local<Function>::New( r->isolate, r->cbDraw );
-			cb->Call( r->isolate->GetCurrentContext(), Local<Object>::New( r->isolate, r->this_ ), 1, argv );
+			//lprintf( "Dispatch to JS callback (redraw)");
+			Local<Value> result = cb->Call( r->isolate->GetCurrentContext(), Local<Object>::New( r->isolate, r->this_ ), 1, argv ).ToLocalChecked();
+			//lprintf( "callback result: %d", result.IsEmpty() );
+			if( !result.IsEmpty() ) {
+				//lprintf( "callback result: %d", result->IntegerValue(r->isolate->GetCurrentContext()).ToChecked() );
+				return (int)result->IntegerValue(r->isolate->GetCurrentContext()).ToChecked();
+			}
+			return 0;
 		}
 		else
-			MakeEvent( r, Event_Render_Draw );
+			return MakeEvent( r, Event_Render_Draw );
+	return 0;
 }
 
 void RenderObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
