@@ -13,7 +13,7 @@ public:
 	Persistent<Object> _this;
 	int jpegQuality;
 public:
-	static void shutdown( struct constructorSet*c);
+	static void shutdown( class constructorSet*c);
 	static void Init( Local<Object> exports );
 	ImageObject( int w, int h, int x, int y, ImageObject *parent );
 	ImageObject( const char *filename );

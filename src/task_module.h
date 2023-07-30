@@ -27,9 +27,9 @@ public:
 	PLINKQUEUE output;
 	PLINKQUEUE output2;
 
-#if _WIN32
 	bool stopped;
 	bool killed;
+#if _WIN32
 	int moved;
 	LOGICAL moveSuccess;
 #endif
