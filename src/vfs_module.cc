@@ -230,6 +230,7 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 static void CleanupThreadResources( void* arg_ ) {
 	class constructorSet *c = (class constructorSet*)arg_;
 	//lprintf( "Shutdown called" );
+	//fprintf( stderr, "CleanupThreadResources (and Module exit if 0 left)\n" );
 	{
 		VolumeObject* vol;
 		INDEX idx;
