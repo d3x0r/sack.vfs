@@ -5,3 +5,5 @@
 sql.config
 *.tgz
 package-lock.json
+option.db
+
