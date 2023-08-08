@@ -10,9 +10,9 @@ try {
 }
 
 let basePath = ( process.platform === "win32" )?process.env.PATH:null;
-let isGui = false;
+let isGUI = false;
 function includeNative( gui ) {
-isGui = gui;
+isGUI = gui;
 const name = gui?"sack_gui.node":"sack_vfs.node";
 if( !sack )
   if( process.platform === 'browser' ) { // electron
