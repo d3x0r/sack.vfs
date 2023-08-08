@@ -10,8 +10,9 @@ try {
 }
 
 let basePath = ( process.platform === "win32" )?process.env.PATH:null;
-
+let isGui = false;
 function includeNative( gui ) {
+isGui = gui;
 const name = gui?"sack_gui.node":"sack_vfs.node";
 if( !sack )
   if( process.platform === 'browser' ) { // electron
@@ -126,7 +127,24 @@ require( "./object-storage-cb.cjs" )(sack);
 
 module.exports=exports=sack;
 
-process.on('SIGINT', sack.sigint )
+/*
+process.on('exit', ()=>{
+	console.log( "exit in sack.vfs addon" );
+} );
+process.on('beforeExit', ()=>{
+	console.log( "beforeExit in sack.vfs addon" );
+} );
+*/
+
+// this allowed ctrl-C to be a graceful exit...
+// not sure why it wasn't without this though... 
+if(isGUI)
+process.on('SIGINT', ()=>{
+	//console.log( "sigint (early?) in sack.vfs addon" );
+	sack.sigint();
+	//process.emit( "exit" );
+	//process.exit(0);
+} )
 
 // needed to dispatch promise resolutions that have been created in callbacks.
 if (process._tickDomainCallback || process._tickCallback)
