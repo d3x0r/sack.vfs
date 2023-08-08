@@ -172,7 +172,7 @@
     "build-vfs-reldeb": "npm run build-vfs-reldeb-config && npm run build-vfs-reldeb-run1",
     "build-vfs-reldeb-config": "npx cmake-js --CDMAKE_GUI=0 --CDCMAKE_BUILD_TYPE=RelWithDebInfo configure",
     "build-vfs-reldeb-run1": "npx cmake-js build --CDCMAKE_BUILD_TYPE=RelWithDebInfo",
-    "build": "cmake-js configure && cmake-js build",
+    "build": "npx cmake-js configure && npx cmake-js build",
     "link": "npm link @d3x0r/bloomnhash @d3x0r/popups @d3x0r/slab-array @d3x0r/srg jsox"
   }
 }
