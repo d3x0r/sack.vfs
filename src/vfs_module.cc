@@ -5,6 +5,8 @@
 #endif
 #include "global.h"
 
+//#define DEBUG_EXIT
+
 PLIST VolumeObject::volumes = NULL;
 PLIST VolumeObject::transportDestinations = NULL;
 
@@ -125,6 +127,9 @@ struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate ) {
 }
 
 static void moduleExit( void *arg ) {
+#ifdef DEBUG_EXIT
+	fprintf( stderr, "moduleExit()\n" );
+#endif
 	//DebugDumpMem();
 	//SaveTranslationDataEx( "^/strings.dat" );
 	vfs_global_data.shutdown = 1;
@@ -229,6 +234,9 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 #if ( NODE_MAJOR_VERSION > 9 )
 static void CleanupThreadResources( void* arg_ ) {
 	class constructorSet *c = (class constructorSet*)arg_;
+#ifdef DEBUG_EXIT
+	fprintf( stderr, "CleanupThreadResources() (module exit if threaded)\n" );
+#endif	
 	//lprintf( "Shutdown called" );
 	{
 		VolumeObject* vol;
