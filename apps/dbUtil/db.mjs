@@ -16,6 +16,8 @@ class Db2 extends sack.Sqlite {
 
 class Sqlite {
 	static loadSchema( db, table ) {
+		if( db.provider !== 1 )
+			return MySQL.loadSchema( db, table );
 		const newtable = new Table(db, table, true);
 		return newtable;
 	}
@@ -25,6 +27,8 @@ class Sqlite {
 class MySQL {
 	
 	static loadSchema( db, table ) {
+		if( db.provider === 1 )
+			return Sqlite.loadSchema( db, table );
 		const newtable = new Table(db, table);
 		return newtable;
 	}
@@ -83,7 +87,7 @@ class Table {
 
 	loadColumns(db) {
 		let now = Date.now();
-		const {db:dbname} = db.do( "select DATABASE() db" )[0];
+		const {db:dbname} = this.sqlite?"":db.do( "select DATABASE() db" )[0];
 		//console.log( Date.now()-now, "selected Db" ); now = Date.now();
 		const cols = db.do( "select COLUMN_NAME,COLUMN_TYPE,DATA_TYPE,COLUMN_DEFAULT,COLUMN_KEY,NUMERIC_PRECISION,NUMERIC_SCALE,CHARACTER_MAXIMUM_LENGTH,EXTRA from INFORMATION_SCHEMA.COLUMNS where TABLE_NAME=? and TABLE_SCHEMA=? ORDER BY ORDINAL_POSITION", this.name, dbname );
 		//console.log( Date.now()-now, "selected 1" ); now = Date.now();

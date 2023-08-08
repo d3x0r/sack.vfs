@@ -238,6 +238,7 @@ static void CleanupThreadResources( void* arg_ ) {
 	fprintf( stderr, "CleanupThreadResources() (module exit if threaded)\n" );
 #endif	
 	//lprintf( "Shutdown called" );
+	//fprintf( stderr, "CleanupThreadResources (and Module exit if 0 left)\n" );
 	{
 		VolumeObject* vol;
 		INDEX idx;

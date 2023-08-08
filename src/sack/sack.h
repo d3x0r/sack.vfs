@@ -5122,7 +5122,7 @@ SYSTEM_PROC( uint32_t, GetTaskExitCode )( PTASK_INFO task );
 SYSTEM_PROC( CTEXTSTR, GetProgramName )( void );
 // returns the path of the executable that is this process
 SYSTEM_PROC( CTEXTSTR, GetProgramPath )( void );
-// this approximates the install path, as the parent of a program in /bin/ so GetProgramPath()/..; otherwise is CMAKE_INSTALL_PREFIX
+// this approximates the install path, as the parent of a program in /bin/ so GetProgramPath()/..; otherwise is TARGET_INSTALL_PREFIX
 SYSTEM_PROC( CTEXTSTR, GetInstallPath )( void );
 // returns the path that was the working directory when the program started
 SYSTEM_PROC( CTEXTSTR, GetStartupPath )( void );
@@ -9906,7 +9906,7 @@ PSSQL_PROC( const char *, PSSQL_GetColumnTableAliasName )( PODBC odbc, int col )
 PSSQL_PROC( void, PSSQL_GetSqliteValue )( struct sqlite3_value *val, const char **text, int *textLen );
 /*
  Get Database Provider (type of database).
-   1=Sqlite, 2=MyQL, 3=PSQL, 4=Access, 5=?, -1=unknown
+   1=Sqlite, 2=MyQL, 3=PSQL, 4=Access, 5=MariaDB, 6=?, -1=unknown
 */
 PSSQL_PROC( int, GetDatabaseProvider )( PODBC odbc );
 #endif

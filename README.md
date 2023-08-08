@@ -240,7 +240,8 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.816(in progress)
+- 1.1.817(in progress)
+- 1.1.816
     - (Windows)Add method to get task window title.
     - Sqlite method added - `provider` - returns what the target database is from ODBC information.
     - (Windows)Add mouse hook ability to get where the mouse is.  Improved Keyboard interface.
@@ -251,6 +252,14 @@ there's a conversion to string from binary and a copy of that string from JS to 
     - Some fixes for GUI build and latest node (Array buffer backing store).
     - (Windows) Fixed some constant flags used with ShellExecute().
     - Added ability to consume keyboard events.  (so they don't get sent to other things)
+    - improve exit handling in linux.
+    - add SQL provider identifier for mariadb odbc driver.
+    - Add static methods for events that allow class-based events.
+    - Added scripts to make typescript types definitions (unvetted, but mostly work)
+    - Improved GUI Event loop registration to only register 1 uv_loop.
+    - Improved install path handling/features.
+    - Improved path expansion/substitution.
+    - Wide character system interface improved on windows. 
 - 1.1.815
     - process fixes; add ability to register an event to terminate a process, and hook into it.
     - Fix standard IO handles to be inheritable.
