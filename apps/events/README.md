@@ -26,7 +26,7 @@ Options for logging, and priority are also per type.
 
 |Name| Arguments | Description |
 |---|---|---|
-|enableArrayArgs | bool | The default behavior is to pass data that is an array as an argument list to the callback; this can be used to disable or re-enable this feature.
+|enableArrayArgs | bool | The default behavior is to pass data that is an array as an argument list to the callback; this can be used to disable or re-enable this feature.  Set to false to receive an array as an agument. |
 
 
 `on()` events which emit events (with a second data parameter), the result is an array of the result of all of the callbacks registered.
