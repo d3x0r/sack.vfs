@@ -36,6 +36,7 @@ struct optionStrings {
 	Eternal<String>* primaryString;
 	Eternal<String>* deviceString;
 	Eternal<String>* monitorString;
+	Eternal<String>* noInheritStdio;
 #endif
 };
 
@@ -93,6 +94,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->primaryString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "primary" ) );
 		check->deviceString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "device" ) );
 		check->monitorString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "monitor" ) );
+		check->noInheritStdio =  new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noInheritStdio" ) );
 #endif
 	}
 	return check;
@@ -368,6 +370,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			bool noKill = false;
 			bool noWait = true;
 			bool detach = false;
+			bool noInheritStdio = false;
 
 			newTask->killAtExit = true;
 
@@ -427,6 +430,11 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( context, optName = strings->groupString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					newGroup = GETV( opts, optName )->TOBOOL( isolate );
+				}
+			}
+			if( opts->Has( context, optName = strings->noInheritStdio->Get( isolate ) ).ToChecked() ) {
+				if( GETV( opts, optName )->IsBoolean() ) {
+					noInheritStdio = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
 			if( opts->Has( context, optName = strings->consoleString->Get( isolate ) ).ToChecked() ) {
@@ -535,7 +543,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 #define LPP_OPTION_SUSPEND              32
 			*/
 #ifdef _WIN32
-			if( newConsole && noKill && !input && !input2 ) {
+			if( noInheritStdio || ( newConsole && noKill && !input && !input2 ) ) {
 				//lprintf( "setting handle no-inherit" );
 				SetHandleInformation( GetStdHandle( STD_INPUT_HANDLE ), HANDLE_FLAG_INHERIT, 0 );
 				SetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), HANDLE_FLAG_INHERIT, 0 );
@@ -563,7 +571,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				, envList
 				DBG_SRC );
 #if _WIN32
-			if( newConsole && noKill && !input && !input2 ) {
+			if( noInheritStdio || ( newConsole && noKill && !input && !input2 ) ) {
 				//lprintf( "Resetting handles" );
 				SetHandleInformation( GetStdHandle( STD_INPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
 				SetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );

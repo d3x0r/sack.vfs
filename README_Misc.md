@@ -412,6 +412,7 @@ to interact with the process.
 | noWait | bool | Allow waiting for tasks that don't have an end() or input() callback specified.  default: true (don't wait if no callbacks) |
 | detach | bool | (Windows) option to create a detached console process (like newConsole, but no Console is created).  default: false |
 | moveTo | object | After the task is started, move its window to the specified location.  (See Move options below)
+| noInheritStdio | bool | (Windows) prevents task from inheriting stdio pipes |
 
 ### Task Move Options
 
