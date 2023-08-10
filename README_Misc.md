@@ -366,8 +366,11 @@ as processes, then as a shell execute (runs things like shortcut .lnk files), an
 a `cmd.exe /c ... ` command to run batch files.  Linux processes are attempted first to exec by the
 name directly, and then try for each path set in PATH.
 
-Pipes are connected to a task's stdin/stdout/stderr inputs if a output callback is specified.  The pipes
-are left untouched otherwise.
+Pipes are connected to a task's stdin/stdout/stderr inputs if a output callback is specified.  The standard IO
+pipes are left untouched otherwise.  If task options define overridden `input()` and `errorInput()` handlers, then
+inheritance on the the default standard IO handles is disabled.  If there are no input handlers, and it's a new console, 
+and noClose the standard IO handle inheritance is also disabled.  There is also an option to just prevent standard IO 
+handle inheritance.  (Many handles created by SACK have inheritance disabled by default).
 
 | Task Static Methods | description |
 | loadLibrary( libname ) | Load external shared library. ex: `sack.Task.loadLibrary( "xxx" );` |
@@ -412,7 +415,7 @@ to interact with the process.
 | noWait | bool | Allow waiting for tasks that don't have an end() or input() callback specified.  default: true (don't wait if no callbacks) |
 | detach | bool | (Windows) option to create a detached console process (like newConsole, but no Console is created).  default: false |
 | moveTo | object | After the task is started, move its window to the specified location.  (See Move options below)
-| noInheritStdio | bool | (Windows) prevents task from inheriting stdio pipes |
+| noInheritStdio | bool | prevents task from inheriting stdio pipes |
 
 ### Task Move Options
 
