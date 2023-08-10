@@ -22,6 +22,7 @@ struct optionStrings {
 	Eternal<String>* noKillString;
 	Eternal<String>* noWaitString;
 	Eternal<String>* detachedString;
+	Eternal<String>* noInheritStdio;
 #if _WIN32
 	Eternal<String>* moveToString;
 	// for move window
@@ -36,7 +37,6 @@ struct optionStrings {
 	Eternal<String>* primaryString;
 	Eternal<String>* deviceString;
 	Eternal<String>* monitorString;
-	Eternal<String>* noInheritStdio;
 #endif
 };
 
@@ -80,6 +80,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->noKillString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noKill" ) );
 		check->noWaitString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noWait" ) );
 		check->detachedString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "detached" ) );
+		check->noInheritStdio =  new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noInheritStdio" ) );
 		
 #if _WIN32
 		check->moveToString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "moveTo" ) );
@@ -94,7 +95,6 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->primaryString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "primary" ) );
 		check->deviceString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "device" ) );
 		check->monitorString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "monitor" ) );
-		check->noInheritStdio =  new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noInheritStdio" ) );
 #endif
 	}
 	return check;
