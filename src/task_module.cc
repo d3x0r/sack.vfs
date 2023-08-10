@@ -552,7 +552,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				SetHandleInformation( GetStdHandle( STD_INPUT_HANDLE ), HANDLE_FLAG_INHERIT, 0 );
 				SetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), HANDLE_FLAG_INHERIT, 0 );
 				SetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), HANDLE_FLAG_INHERIT, 0 );
-#elseif defined( __LINUX__ )
+#elif defined( __LINUX__ )
 				//lprintf( "setting handle no-inherit" );
 				int flags;
 				flags = fcntl(0, F_GETFD);
@@ -583,7 +583,6 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				, (uintptr_t)newTask 
 				, envList
 				DBG_SRC );
-#if _WIN32
 
 			// if the option is specified
 			// if both input methods are specified, the task has no stdio handles from this anyway
@@ -593,7 +592,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				SetHandleInformation( GetStdHandle( STD_INPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
 				SetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
 				SetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
-#elseif defined( __LINUX__ )
+#elif defined( __LINUX__ )
 				//lprintf( "setting handle no-inherit" );
 				int flags;
 				flags = fcntl(0, F_GETFD);
