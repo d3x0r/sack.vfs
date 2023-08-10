@@ -542,14 +542,27 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 #define LPP_OPTION_NEW_CONSOLE          16
 #define LPP_OPTION_SUSPEND              32
 			*/
+
+			// if the option is specified
+			// if both input methods are specified, the task has no stdio handles from this anyway
+			// if it's a new popup console, it doesn't get handles from me either.
+			if( noInheritStdio || ( input && input2 ) || ( newConsole && noKill && !input && !input2 ) ) {
 #ifdef _WIN32
-			if( noInheritStdio || ( newConsole && noKill && !input && !input2 ) ) {
 				//lprintf( "setting handle no-inherit" );
 				SetHandleInformation( GetStdHandle( STD_INPUT_HANDLE ), HANDLE_FLAG_INHERIT, 0 );
 				SetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), HANDLE_FLAG_INHERIT, 0 );
 				SetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), HANDLE_FLAG_INHERIT, 0 );
-			}
+#elseif defined( __LINUX__ )
+				//lprintf( "setting handle no-inherit" );
+				int flags;
+				flags = fcntl(0, F_GETFD);
+				if( flags >= 0 ) fcntl(0, F_SETFD, flags|FD_CLOEXEC);
+				flags = fcntl(1, F_GETFD);
+				if( flags >= 0 ) fcntl(1, F_SETFD, flags|FD_CLOEXEC);
+				flags = fcntl(2, F_GETFD);
+				if( flags >= 0 ) fcntl(2, F_SETFD, flags|FD_CLOEXEC);
 #endif
+			}
 			//lprintf( "What is this? %d %d %d %d %d", ( end || input || input2 || !noWait ), end, input, input2, !noWait );
 			newTask->task = LaunchPeerProgram_v2( bin?*bin[0]:NULL
 				, work?*work[0]:NULL
@@ -571,15 +584,32 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				, envList
 				DBG_SRC );
 #if _WIN32
-			if( noInheritStdio || ( newConsole && noKill && !input && !input2 ) ) {
+
+			// if the option is specified
+			// if both input methods are specified, the task has no stdio handles from this anyway
+			if( noInheritStdio || ( input && input2 ) || ( newConsole && noKill && !input && !input2 ) ) {
+#ifdef _WIN32
 				//lprintf( "Resetting handles" );
 				SetHandleInformation( GetStdHandle( STD_INPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
 				SetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
 				SetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
+#elseif defined( __LINUX__ )
+				//lprintf( "setting handle no-inherit" );
+				int flags;
+				flags = fcntl(0, F_GETFD);
+				if( flags >= 0 ) fcntl(0, F_SETFD, flags & ~FD_CLOEXEC);
+				flags = fcntl(1, F_GETFD);
+				if( flags >= 0 ) fcntl(1, F_SETFD, flags & ~FD_CLOEXEC);
+				flags = fcntl(2, F_GETFD);
+				if( flags >= 0 ) fcntl(2, F_SETFD, flags & ~FD_CLOEXEC);
+#endif
 			}
+
+#ifdef _WIN32
 			if( newTask->task && !moveOpts.IsEmpty() )
 				doMoveWindow( isolate, context, newTask, moveOpts );
 #endif
+
 		}
 
 		args.GetReturnValue().Set( _this );
