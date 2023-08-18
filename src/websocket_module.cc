@@ -121,6 +121,7 @@ struct optionStrings {
 	Eternal<String> *keepAliveString;
 	Eternal<String> *versionString;
 	Eternal<String> *onReplyString;
+	Eternal<String> *agentString;
 };
 
 static PLIST strings;
@@ -333,6 +334,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->keepAliveString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "keepAlive" ) );
 		check->versionString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "version" ) );
 		check->onReplyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "onReply" ) );
+		check->agentString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "agent" ) );
 		
 	}
 	return check;
@@ -398,11 +400,12 @@ public:
 	int port;
 	char *hostname;
 	const char *method = "GET";
-	const char* content;
-	size_t contentLen;
+	const char* content = NULL;
+	size_t contentLen = 0;
 	PLIST headers = NULL;
-	char *ca;
-	char *path;
+	char *ca = NULL;
+	char *path = NULL;
+	char *agent = NULL;
 
 	bool rejestUnauthorized;
 
@@ -3549,6 +3552,10 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	if( options->Has( context, optName = strings->onReplyString->Get( isolate ) ).ToChecked() ) {
 		httpRequest->resultCallback.Reset( isolate, GETV( options, optName ).As<Function>());
 	}
+	if( options->Has( context, optName = strings->agentString->Get( isolate ) ).ToChecked() ) {
+		String::Utf8Value value( USE_ISOLATE( isolate ) GETV( options, optName ) );
+		httpRequest->agent = StrDup( *value );
+	}
 
 	NetworkWait( NULL, 256, 2 );
 
@@ -3575,7 +3582,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		opts->headers = httpRequest->headers;
 		opts->certChain = httpRequest->ca;
 		opts->method = httpRequest->method;
-		//opts->agent = httpRequest->agent;
+		opts->agent = httpRequest->agent;
 		opts->contentLen = httpRequest->contentLen;
 		opts->content = httpRequest->content;
 
