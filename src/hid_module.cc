@@ -45,6 +45,8 @@ public:
 
 	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
 	static void close( const v8::FunctionCallbackInfo<Value>& args );
+	static void clickAt( const v8::FunctionCallbackInfo<Value>& args );
+	static void event( const v8::FunctionCallbackInfo<Value>& args );
 	~MouseObject();
 };
 
@@ -266,10 +268,24 @@ void KeyHidObject::Init( Isolate *isolate, Local<Object> exports ) {
 																 // Prototype
 	NODE_SET_PROTOTYPE_METHOD( mouseTemplate, "onMouse", MouseObject::onRead );
 	NODE_SET_PROTOTYPE_METHOD( mouseTemplate, "close", MouseObject::close );
+
 	//NODE_SET_PROTOTYPE_METHOD( mouseTemplate, "lock", lock );
 
 	c->MouseHidObject_constructor.Reset( isolate, mouseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	Local<Function> mouseInterface = mouseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked();
+	SET_READONLY_METHOD( mouseInterface, "event", MouseObject::event );
+	SET_READONLY_METHOD( mouseInterface, "clickAt", MouseObject::clickAt );
+
+	Local<Object> buttonFlags = Object::New( isolate );
+	SET_READONLY( buttonFlags, "left", Integer::New( isolate, MK_LBUTTON ) );
+	SET_READONLY( buttonFlags, "right", Integer::New( isolate, MK_RBUTTON ) );
+	SET_READONLY( buttonFlags, "middle", Integer::New( isolate, MK_MBUTTON ) );
+	SET_READONLY( buttonFlags, "x1", Integer::New( isolate, MK_XBUTTON1 ) );
+	SET_READONLY( buttonFlags, "x2", Integer::New( isolate, MK_XBUTTON2 ) );
+	SET_READONLY( buttonFlags, "relative", Integer::New( isolate, 0x1000000 ) );
+	//SET_READONLY( wsWebStatesObject, "", Integer::New( isolate, wsReadyStates::LISTENING ) );
+	SET_READONLY( mouseInterface, "buttons", buttonFlags );
+
 	SET( exports, "Mouse", mouseInterface );
 
 	mouseInterface->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "cursor" )
@@ -671,5 +687,174 @@ void MouseObject::close( const v8::FunctionCallbackInfo<Value>& args ) {
 	*/
 }
 
+void MouseObject::event( const v8::FunctionCallbackInfo<Value>& args ) {
+	int old_buttons;
+	//static int old_x; // save old x,y to know whether current is a move or just a click
+	//static int old_y; 
+	POINT curPos;
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() < 3 ) {
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "At least 3 arguments must be specified for a mouse event (x, y, buttons)." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+	Local<Context> context = isolate->GetCurrentContext();
+	GetCursorPos( &curPos );
+	old_buttons = ( GetAsyncKeyState( VK_LBUTTON ) ? MK_LBUTTON : 0 )
+		| ( GetAsyncKeyState( VK_RBUTTON ) ? MK_RBUTTON : 0 )
+		| ( GetAsyncKeyState( VK_MBUTTON ) ? MK_MBUTTON : 0 )
+		| ( GetAsyncKeyState( VK_XBUTTON1 ) ? MK_XBUTTON1 : 0 )
+		| ( GetAsyncKeyState( VK_XBUTTON2 ) ? MK_XBUTTON2 : 0 );
+	int64_t x = args[0]->IsNumber() ? args[0].As<Number>()->IntegerValue( context ).ToChecked():curPos.x;
+	int64_t y = args[1]->IsNumber() ? args[1].As<Number>()->IntegerValue( context ).ToChecked():curPos.y;
+	int64_t b = args[2]->IsNumber() ? args[2].As<Number>()->IntegerValue( context ).ToChecked():old_buttons;
+	int64_t realB = b; // we destroy b with certain button combinations...
+
+	bool hasScroll1 = (args.Length() > 3)?args[3]->IsNumber():false;
+	double down_up = hasScroll1?args[3].As<Number>()->Value():0;
+	// even if there's a parameter, it might not be a command
+	if( !down_up ) hasScroll1 = false;
+	bool hasScroll2 = ( args.Length() > 4 ) ? args[4]->IsNumber():false;
+	double right_left = hasScroll2?args[4].As<Number>()->Value():0;
+	// even if there's a parameter, it might not be a command
+	if( !right_left ) hasScroll1 = false;
+
+	INPUT inputs[4];
+	int used_inputs = 0;
+	bool has_x = false;
+	if( b & 0x1000000 ) {
+		x += curPos.x;
+		y += curPos.y;
+	}
+
+	do {
+		inputs[used_inputs].type = INPUT_MOUSE;
+		if( used_inputs ) {
+			// don't NEED to set dx,dy to 0, but it's cleaner if we do
+			inputs[used_inputs].mi.dx = 0;
+			inputs[used_inputs].mi.dy = 0;
+			inputs[used_inputs].mi.dwFlags = 0;
+		} else {
+			lprintf( "At event what is x,y?  %d,%d  %d,%d", x, y, curPos.x, curPos.y );
+			if( x != curPos.x || y != curPos.y ) {
+				double fScreenWidth = GetSystemMetrics( SM_CXSCREEN ) - 1;
+				double fScreenHeight = GetSystemMetrics( SM_CYSCREEN ) - 1;
+				double const sx = 65535.0f / fScreenWidth;
+				double const sy = 65535.0f / fScreenHeight;
+				inputs[used_inputs].mi.dx = (LONG)( x * sx );
+				inputs[used_inputs].mi.dy = (LONG)( y * sy );
+				inputs[used_inputs].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE;
+			} else {
+				// don't NEED to set dx,dy to 0, but it's cleaner if we do
+				inputs[used_inputs].mi.dx = 0;
+				inputs[used_inputs].mi.dy = 0;
+				inputs[used_inputs].mi.dwFlags = 0;
+				lprintf( "no motion needed..." );
+			}
+
+			// normal buttons have no extra data either - only include their states in the first message.
+			inputs[used_inputs].mi.dwFlags |=
+				( ( ( b & MK_LBUTTON ) && !( old_buttons & MK_LBUTTON ) ) ? MOUSEEVENTF_LEFTDOWN : 0 )
+				| ( ( ( b & MK_RBUTTON ) && !( old_buttons & MK_RBUTTON ) ) ? MOUSEEVENTF_RIGHTDOWN : 0 )
+				| ( ( ( b & MK_MBUTTON ) && !( old_buttons & MK_MBUTTON ) ) ? MOUSEEVENTF_MIDDLEDOWN : 0 )
+				| ( ( !( b & MK_LBUTTON ) && ( old_buttons & MK_LBUTTON ) ) ? MOUSEEVENTF_LEFTUP : 0 )
+				| ( ( !( b & MK_RBUTTON ) && ( old_buttons & MK_RBUTTON ) ) ? MOUSEEVENTF_RIGHTUP : 0 )
+				| ( ( !( b & MK_MBUTTON ) && ( old_buttons & MK_MBUTTON ) ) ? MOUSEEVENTF_MIDDLEUP : 0 )
+				;
+			// button messages are only on transition, not hold-states; update old_buttons
+			// x1 and x2 states are updated as they are built into an event
+			old_buttons = ( old_buttons & ( MK_XBUTTON1 | MK_XBUTTON2 ) )
+				| ( b & ( MK_LBUTTON | MK_RBUTTON | MK_MBUTTON ) );
+		}
+
+		if( b & MK_XBUTTON1 && !( old_buttons & MK_XBUTTON1 ) ) {
+			inputs[used_inputs].mi.dwFlags |= MOUSEEVENTF_XDOWN;
+			inputs[used_inputs].mi.mouseData = XBUTTON1; // scroll wheel
+			b &= ~MK_XBUTTON1;
+			has_x = true;
+		} else if( !(b & MK_XBUTTON1) && ( old_buttons & MK_XBUTTON1 ) ) {
+			inputs[used_inputs].mi.dwFlags |= MOUSEEVENTF_XUP;
+			inputs[used_inputs].mi.mouseData = XBUTTON1; // scroll wheel
+			old_buttons &= ~MK_XBUTTON1;
+			has_x = true;
+		} else if( b & MK_XBUTTON2 && !(old_buttons&MK_XBUTTON2) ) {
+			inputs[used_inputs].mi.dwFlags |= MOUSEEVENTF_XDOWN;
+			inputs[used_inputs].mi.mouseData = XBUTTON2; // scroll wheel
+			b &= ~MK_XBUTTON2;
+			has_x = true;
+		} else if( !(b& MK_XBUTTON2) && ( old_buttons& MK_XBUTTON2 ) ) {
+			inputs[used_inputs].mi.dwFlags |= MOUSEEVENTF_XUP;
+			inputs[used_inputs].mi.mouseData = XBUTTON2; // scroll wheel
+			old_buttons &= ~MK_XBUTTON2;
+			has_x = true;
+		} else {
+			has_x = false;
+			if( hasScroll1 ) {
+				inputs[used_inputs].mi.dwFlags |= MOUSEEVENTF_WHEEL;
+				inputs[used_inputs].mi.mouseData = (DWORD)(down_up * 120);
+				hasScroll1 = false;
+			} else if( hasScroll2 ) {
+				inputs[used_inputs].mi.dwFlags |= MOUSEEVENTF_HWHEEL;
+				inputs[used_inputs].mi.mouseData = (DWORD)(right_left * 120);
+				hasScroll2 = false;
+			} else {
+				inputs[used_inputs].mi.mouseData = 0;
+			}
+		}
+
+		inputs[used_inputs].mi.time = 0; // auto time
+		inputs[used_inputs].mi.dwExtraInfo = 0;
+
+		used_inputs++;
+	} while( ( b & ( MK_XBUTTON2 ) || ( old_buttons & MK_XBUTTON2 ) ) || hasScroll1 || hasScroll2 );
+	lprintf( "Generating events: %d %d %d", used_inputs, inputs[0].mi.dx, inputs[0].mi.dy  );
+	SendInput( used_inputs, inputs, sizeof( INPUT ) );
+}
+
+void MouseObject::clickAt( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	POINT pt;
+	GetCursorPos( &pt );
+	double fScreenWidth = GetSystemMetrics( SM_CXSCREEN ) - 1;
+	double fScreenHeight = GetSystemMetrics( SM_CYSCREEN ) - 1;
+
+	int64_t x = args[0].As<Number>()->IntegerValue( context ).ToChecked();
+	int64_t y = args[1].As<Number>()->IntegerValue( context ).ToChecked();
+
+	double const sx = 65535.0f / fScreenWidth;
+	double const sy = 65535.0f / fScreenHeight;
+	double fx = x * sx;
+	double fy = y * sy;
+	//lprintf( "Clicking at %d %d   %1.4g %1.4g", x, y, fx, fy );
+	INPUT inputs[3];
+
+	inputs[0].type = INPUT_MOUSE;
+	inputs[0].mi.dx = (LONG)fx;
+	inputs[0].mi.dy = (LONG)fy;
+	inputs[0].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN;
+	inputs[0].mi.mouseData = 0; // scroll wheel
+	inputs[0].mi.time = 0; // auto time
+	inputs[0].mi.dwExtraInfo = 0;
+	
+	inputs[1].type = INPUT_MOUSE;
+	inputs[1].mi.dx = 0;
+	inputs[1].mi.dy = 0;
+	inputs[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+	inputs[1].mi.mouseData = 0; // scroll wheel
+	inputs[1].mi.time = 0; // auto time
+	inputs[1].mi.dwExtraInfo = 0;
+
+	inputs[2].type = INPUT_MOUSE;
+	inputs[2].mi.dx = (LONG)(sx * pt.x);
+	inputs[2].mi.dy = (LONG)(sy * pt.y);
+	inputs[2].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE;
+	inputs[2].mi.mouseData = 0; // scroll wheel
+	inputs[2].mi.time = 0; // auto time
+	inputs[2].mi.dwExtraInfo = 0;
+	SendInput( 3, inputs, sizeof( INPUT ) );
+
+
+}
 
 #endif
