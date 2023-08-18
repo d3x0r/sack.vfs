@@ -2,7 +2,6 @@
 	"DEFAULT":{
 		"1":" issuer:"
 		,"2":" subject:"
-		,"30":"At least 3 arguments must be specified for a mouse event (x, y, buttons)."
 		,"3":"Bad Number Conversion"
 		,"4":"Column name overlaps table alias"
 		,"5":"Expected an object reference buf path lookup failed"
@@ -30,5 +29,6 @@
 		,"27":"validate: certificate signature failed:"
 		,"28":"validate: failed; unhandled error:"
 		,"29":"validate: unable to get issuer cert locally."
+		,"30":"At least 3 arguments must be specified for a mouse event (x, y, buttons)."
 	}
 }
