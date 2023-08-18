@@ -737,13 +737,13 @@ void MouseObject::event( const v8::FunctionCallbackInfo<Value>& args ) {
 		} else {
 			lprintf( "At event what is x,y?  %d,%d  %d,%d", x, y, curPos.x, curPos.y );
 			if( x != curPos.x || y != curPos.y ) {
-				double fScreenWidth = GetSystemMetrics( SM_CXSCREEN ) - 1;
-				double fScreenHeight = GetSystemMetrics( SM_CYSCREEN ) - 1;
+				double fScreenWidth = GetSystemMetrics( SM_CXVIRTUALSCREEN ) - 1;
+				double fScreenHeight = GetSystemMetrics( SM_CYVIRTUALSCREEN ) - 1;
 				double const sx = 65535.0f / fScreenWidth;
 				double const sy = 65535.0f / fScreenHeight;
 				inputs[used_inputs].mi.dx = (LONG)( x * sx );
 				inputs[used_inputs].mi.dy = (LONG)( y * sy );
-				inputs[used_inputs].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE;
+				inputs[used_inputs].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE;
 			} else {
 				// don't NEED to set dx,dy to 0, but it's cleaner if we do
 				inputs[used_inputs].mi.dx = 0;
@@ -791,11 +791,11 @@ void MouseObject::event( const v8::FunctionCallbackInfo<Value>& args ) {
 			has_x = false;
 			if( hasScroll1 ) {
 				inputs[used_inputs].mi.dwFlags |= MOUSEEVENTF_WHEEL;
-				inputs[used_inputs].mi.mouseData = (DWORD)(down_up * 120);
+				inputs[used_inputs].mi.mouseData = (DWORD)(down_up * WHEEL_DELTA );
 				hasScroll1 = false;
 			} else if( hasScroll2 ) {
 				inputs[used_inputs].mi.dwFlags |= MOUSEEVENTF_HWHEEL;
-				inputs[used_inputs].mi.mouseData = (DWORD)(right_left * 120);
+				inputs[used_inputs].mi.mouseData = (DWORD)(right_left * WHEEL_DELTA );
 				hasScroll2 = false;
 			} else {
 				inputs[used_inputs].mi.mouseData = 0;
@@ -816,8 +816,8 @@ void MouseObject::clickAt( const v8::FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	POINT pt;
 	GetCursorPos( &pt );
-	double fScreenWidth = GetSystemMetrics( SM_CXSCREEN ) - 1;
-	double fScreenHeight = GetSystemMetrics( SM_CYSCREEN ) - 1;
+	double fScreenWidth = GetSystemMetrics( SM_CXVIRTUALSCREEN ) - 1;
+	double fScreenHeight = GetSystemMetrics( SM_CYVIRTUALSCREEN ) - 1;
 
 	int64_t x = args[0].As<Number>()->IntegerValue( context ).ToChecked();
 	int64_t y = args[1].As<Number>()->IntegerValue( context ).ToChecked();
@@ -832,7 +832,7 @@ void MouseObject::clickAt( const v8::FunctionCallbackInfo<Value>& args ) {
 	inputs[0].type = INPUT_MOUSE;
 	inputs[0].mi.dx = (LONG)fx;
 	inputs[0].mi.dy = (LONG)fy;
-	inputs[0].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN;
+	inputs[0].mi.dwFlags = MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN;
 	inputs[0].mi.mouseData = 0; // scroll wheel
 	inputs[0].mi.time = 0; // auto time
 	inputs[0].mi.dwExtraInfo = 0;
@@ -848,7 +848,7 @@ void MouseObject::clickAt( const v8::FunctionCallbackInfo<Value>& args ) {
 	inputs[2].type = INPUT_MOUSE;
 	inputs[2].mi.dx = (LONG)(sx * pt.x);
 	inputs[2].mi.dy = (LONG)(sy * pt.y);
-	inputs[2].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE;
+	inputs[2].mi.dwFlags = MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE;
 	inputs[2].mi.mouseData = 0; // scroll wheel
 	inputs[2].mi.time = 0; // auto time
 	inputs[2].mi.dwExtraInfo = 0;
