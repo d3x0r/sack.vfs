@@ -49,7 +49,7 @@ export class Protocol extends Events {
 	}
 
 	static onmessage( evt ) {
-		console.log( "got:", this, evt );
+		Protocol.debug && console.log( "got:", this, evt );
 		const msg = JSOX.parse( evt.data );
 		if( !this.on( msg.op, msg ) ){
 			Protocol.debug && console.log( "Unhandled message:", msg );
