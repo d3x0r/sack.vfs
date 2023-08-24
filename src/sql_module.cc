@@ -5,6 +5,8 @@
 void editOptions( const v8::FunctionCallbackInfo<Value>& args );
 #endif
 
+static Local<Function> emptyFunction;
+
 struct SqlObjectUserFunction {
 	class SqlObject *sql;
 	Persistent<Function> cb;
@@ -39,12 +41,13 @@ public:
 	//Persistent<Object> volume;
 public:
 	PTHREAD thread;
+	Isolate *isolate; // this is constant for the life of the connection
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLIST userFunctions;
 	PLINKQUEUE messages;
 
 	//static void Init( Local<Object> exports );
-	SqlObject( const char *dsn );
+	SqlObject( const char *dsn, Isolate *isolate, Local<Object>, Local<Function> openCallback );
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void query( const v8::FunctionCallbackInfo<Value>& args );
@@ -73,6 +76,12 @@ public:
 
 	static void getLogging( const v8::FunctionCallbackInfo<Value>& args );
 	static void setLogging( const v8::FunctionCallbackInfo<Value>& args );
+
+	static void getRequire( const v8::FunctionCallbackInfo<Value>& args );
+	static void setRequire( const v8::FunctionCallbackInfo<Value>& args );
+
+	static void OnOpen( uintptr_t psv, PODBC odbc );
+	Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
 
 
 	static void doWrap( SqlObject *sql, Local<Object> o );
@@ -106,10 +115,18 @@ public:
 	~OptionTreeObject();
 };
 
-
+enum UserMessageModes {
+	OnOpen,
+	OnClose,
+	OnDeallocate, // used to also be same as close
+	OnSqliteFunction,
+	OnSqliteAggStep,
+	OnSqliteAggFinal,
+};
 
 struct userMessage{
-	int mode;
+	enum UserMessageModes mode;
+
 	struct sqlite3_context*onwhat;
 	int argc;
 	struct sqlite3_value**argv;
@@ -117,13 +134,15 @@ struct userMessage{
 	PTHREAD waiter;
 };
 
+static void sqlUserAsyncMsg( uv_async_t* handle );
 
+/*
 void createSqlObject( const char *name, Local<Object> into ) {
 	class SqlObject* obj;
-	obj = new SqlObject( name );
+	obj = new SqlObject( name, NULL, emptyFunction );
 	SqlObject::doWrap( obj, into );
-
 }
+*/
 
 Local<Value> newSqlObject(Isolate *isolate, int argc, Local<Value> *argv ) {
 	class constructorSet *c = getConstructors( isolate );
@@ -173,6 +192,11 @@ void SqlObjectInit( Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "aggregate", SqlObject::aggregateFunction );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "onCorruption", SqlObject::setOnCorruption );
 
+	sqlTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "require" )
+			, FunctionTemplate::New( isolate, SqlObject::getRequire )
+			, FunctionTemplate::New( isolate, SqlObject::setRequire )
+		);
+
 
 	// read a portion of the tree (passed to a callback)
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "eo", SqlObject::enumOptionNodes );
@@ -216,6 +240,8 @@ void SqlObjectInit( Local<Object> exports ) {
 #endif
 
 	SET( exports, "Sqlite", sqlfunc );
+	SET( exports, "ODBC", sqlfunc );
+	SET( exports, "DB", sqlfunc );
 }
 
 //-----------------------------------------------------------
@@ -226,21 +252,33 @@ void SqlObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		char *dsn;
 		SqlObject* obj;
 		if( args.Length() > 0 ) {
-			String::Utf8Value arg( USE_ISOLATE( isolate ) args[0] );
-			dsn = *arg;
-			obj = new SqlObject( dsn );
+			if( args[0]->IsString() ) {
+				String::Utf8Value arg( USE_ISOLATE( isolate ) args[0] );
+				Local<Function> callback = ( args.Length()>1 )?Local<Function>::Cast( args[1] ):emptyFunction;
+				dsn = *arg;
+				obj = new SqlObject( dsn, isolate, args.This(), callback );
+			} else if( args[0]->IsObject() ){
+				Local<Object> opts = Local<Object>::Cast( args[0] );
+				lprintf( "option object method for opening a database connection is not complete!");
+				isolate->ThrowException( Exception::Error(
+					String::NewFromUtf8( isolate, TranslateText( "option object method for opening a database connection is not complete!" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+				return;
+			} else {
+				isolate->ThrowException( Exception::Error(
+					String::NewFromUtf8( isolate, TranslateText( "First argument to Sqlite() must be an object or string." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+				return;
+			}
 		}
 		else {
-			obj = new SqlObject( ":memory:" );
+			obj = new SqlObject( ":memory:", NULL, args.This(), emptyFunction );
 		}
-		obj->_this.Reset( isolate, args.This() );
-		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
 	} else {
-		const int argc = 1;
-		Local<Value> argv[1];
+		Local<Value> argv[2];
 		if( args.Length() > 0 )
 			argv[0] = args[0];
+		if( args.Length() > 1 )
+			argv[1] = args[1];
 		class constructorSet *c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->sqlConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), args.Length(), argv ).ToLocalChecked() );
@@ -288,7 +326,7 @@ int IsTextAnyNumber( CTEXTSTR text, double *fNumber, int64_t *iNumber )
 			else {
 				digits++;
 				if( !decimal_count && digits > 11 )
-               return 0;
+					return 0;
 			}
 			begin = FALSE;
 			pCurrentCharacter++;
@@ -325,7 +363,7 @@ void SqlObject::closeDb( const v8::FunctionCallbackInfo<Value>& args ) {
 	CloseDatabase( sql->odbc );
 	if( sql->thread ) {
 		static struct userMessage msg;
-		msg.done = 0;
+		msg.done = OnClose;
 		EnqueLink( &sql->messages, &msg );
 		uv_async_send( &sql->async );
 		// cant' wait here.
@@ -866,13 +904,68 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 
 //-----------------------------------------------------------
 
-SqlObject::SqlObject( const char *dsn )
+void SqlObject::OnOpen( uintptr_t psv, PODBC odbc ){
+	SqlObject *this_ = (SqlObject*)psv;
+	if( this_->openCallback.IsEmpty() ) return;
+	PTHREAD thread = MakeThread();
+	struct userMessage msg;
+	this_->odbc = odbc;
+	msg.mode = UserMessageModes::OnOpen;
+	msg.onwhat = NULL;
+	msg.done = 0;
+	
+	if( thread != this_->thread ) {
+		msg.waiter = thread;
+		EnqueLink( &this_->messages, &msg );
+		uv_async_send( &this_->async );
+		while( !msg.done ) WakeableSleep( 1000 );
+	} else {
+		msg.waiter = NULL;
+		EnqueLink( &this_->messages, &msg );
+		// might be multiple things queued... (probably not)
+		while( !msg.done )
+			sqlUserAsyncMsg( &this_->async );
+	}
+}
+//-----------------------------------------------------------
+
+static void WeakReferenceReleased( const v8::WeakCallbackInfo<void> &info ){
+	//Persistent< Value > object
+	void *parameter = info.GetParameter();
+	//lprintf( "Sql object garbage collected (close UV)");
+	SqlObject *sql = (SqlObject*)parameter;
+	struct userMessage msg;
+	msg.mode = UserMessageModes::OnDeallocate;
+	msg.onwhat = NULL;
+	msg.done = 0;
+	msg.waiter = NULL;
+	EnqueLink( &sql->messages, &msg );
+	while( !msg.done ) sqlUserAsyncMsg( &sql->async );
+	sql->_this.Reset();
+}
+
+//-----------------------------------------------------------
+
+SqlObject::SqlObject( const char *dsn, Isolate *isolate, Local<Object>jsThis, Local<Function> _openCallback )
 {
+	memset( &async, 0, sizeof( async ) );
 	messages = NULL;
 	userFunctions = NULL;
 	thread = NULL;
-	memset( &async, 0, sizeof( async ) );
-	odbc = ConnectToDatabase( dsn );
+	this->isolate = isolate;
+	this->_this.Reset( isolate, jsThis );
+	this->_this.SetWeak( (void*)this, WeakReferenceReleased, WeakCallbackType::kParameter );
+	this->Wrap( jsThis );
+
+	if( !_openCallback.IsEmpty() ) {
+		thread = MakeThread();
+		class constructorSet *c = getConstructors( isolate );
+		this->async.data = this;
+		uv_async_init( c->loop, &this->async, sqlUserAsyncMsg );
+		this->isolate = isolate;
+		this->openCallback.Reset( isolate, _openCallback );
+	}
+	odbc = ConnectToDatabaseLoginCallback( dsn, NULL, NULL, FALSE, SqlObject::OnOpen, (uintptr_t)this DBG_SRC );
 	SetSQLThreadProtect( odbc, FALSE );
 	//SetSQLAutoClose( odbc, TRUE );
 	optionInitialized = FALSE;
@@ -887,7 +980,7 @@ SqlObject::~SqlObject() {
 	if( thread )
 	{
 		struct userMessage msg;
-		msg.mode = 0;
+		msg.mode = UserMessageModes::OnDeallocate;
 		msg.onwhat = NULL;
 		msg.done = 0;
 		msg.waiter = MakeThread();
@@ -1398,28 +1491,40 @@ static void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3
 static void callAggFinal( struct sqlite3_context*onwhat );
 
 static void sqlUserAsyncMsg( uv_async_t* handle ) {
+	LOGICAL closing = FALSE;
 	SqlObject* myself = (SqlObject*)handle->data;
+	Isolate *isolate = myself->isolate;
 	struct userMessage *msg = (struct userMessage*)DequeLink( &myself->messages );
-	struct SqlObjectUserFunction* userData = ( struct SqlObjectUserFunction* )PSSQL_GetSqliteFunctionData( msg->onwhat );
-	Isolate* isolate = userData->isolate;
-	if( msg->onwhat ) {
-		if( msg->mode == 1 )
+
+	if( msg->mode == UserMessageModes::OnOpen ) {
+		Local<Function> cb = myself->openCallback.Get( isolate );
+		Local<Value> args[1] = {myself->_this.Get( isolate )};
+		MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext(), args[0], 1, args );
+	}
+	else if( msg->onwhat ) {
+		struct SqlObjectUserFunction* userData = ( struct SqlObjectUserFunction* )PSSQL_GetSqliteFunctionData( msg->onwhat );
+		Isolate* isolate = userData->isolate;
+		if( msg->mode == UserMessageModes::OnSqliteFunction )
 			callUserFunction( msg->onwhat, msg->argc, msg->argv );
-		else if( msg->mode == 2 )
+		else if( msg->mode == UserMessageModes::OnSqliteAggStep )
 			callAggStep( msg->onwhat, msg->argc, msg->argv );
-		else if( msg->mode == 3 ) {
+		else if( msg->mode == UserMessageModes::OnSqliteAggFinal ) {
 			callAggFinal( msg->onwhat );
 			myself->thread = NULL;
 			uv_close( (uv_handle_t*)&myself->async, NULL );
 		}
 	} else {
+		closing = TRUE;
 		myself->thread = NULL;
 		uv_close( (uv_handle_t*)&myself->async, NULL );		
 	}	
 	msg->done = 1;
-	WakeThread( msg->waiter );
+	if( msg->waiter )
+		WakeThread( msg->waiter );
+
+	if( !closing )
 	{
-		class constructorSet* c = getConstructors( userData->isolate );
+		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
@@ -1433,7 +1538,7 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 	struct SqlObjectUserFunction *userData = (struct SqlObjectUserFunction*)PSSQL_GetSqliteFunctionData( onwhat );
 	if( userData->sql->thread != MakeThread() ) {
 		struct userMessage msg;
-		msg.mode = 1;
+		msg.mode = UserMessageModes::OnSqliteFunction;
 		msg.onwhat = onwhat;
 		msg.argc = argc;
 		msg.argv = argv;
@@ -1605,7 +1710,7 @@ void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3_value*
 	struct SqlObjectUserFunction *userData = ( struct SqlObjectUserFunction* )PSSQL_GetSqliteFunctionData( onwhat );
 	if( userData->sql->thread != MakeThread() ) {
 		struct userMessage msg;
-		msg.mode = 2;
+		msg.mode = UserMessageModes::OnSqliteAggStep;
 		msg.onwhat = onwhat;
 		msg.argc = argc;
 		msg.argv = argv;
@@ -1689,7 +1794,7 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 	struct SqlObjectUserFunction *userData = ( struct SqlObjectUserFunction* )PSSQL_GetSqliteFunctionData( onwhat );
 	if( userData->sql->thread != MakeThread() ) {
 		struct userMessage msg;
-		msg.mode = 3;
+		msg.mode = UserMessageModes::OnSqliteAggFinal;
 		msg.onwhat = onwhat;
 		msg.done = 0;
 		msg.waiter = MakeThread();
@@ -1703,7 +1808,7 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 		return;
 	} else {
 		struct userMessage msg;
-		msg.mode = 3;
+		msg.mode = OnSqliteAggFinal;
 		msg.onwhat = NULL;
 		msg.done = 0;
 		msg.waiter = MakeThread();
@@ -1752,9 +1857,21 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 		lprintf( "unhandled result type (object? array? function?)" );
 }
 
-void SqlObject::getLogging( const v8::FunctionCallbackInfo<Value>& args ) {
+void SqlObject::getRequire( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	args.GetReturnValue().Set( False( isolate ) );
+}
+
+void SqlObject::setRequire( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	SetConnectionRequired( sql->odbc, args[0]->TOBOOL( isolate ) );
+}
+
+void SqlObject::getLogging( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	args.GetReturnValue().Set( GetConnectionRequired( sql->odbc )?True(isolate):False( isolate ) );
 }
 
 void SqlObject::setLogging( const v8::FunctionCallbackInfo<Value>& args ) {

@@ -8794,6 +8794,13 @@ PSSQL_PROC( LOGICAL, CheckODBCTable)( PODBC odbc, PTABLE table, uint32_t options
    odbc :      connection to disable logging on
    bDisable :  if TRUE disables logging, else restores logging. */
 PSSQL_PROC( void, SetSQLLoggingDisable )( PODBC odbc, LOGICAL bDisable );
+/* Set required connection flag, this causes a connection that fails, to wait until
+   the connection is reconnected before continuing.
+*/
+PSSQL_PROC( void, SetConnectionRequired )( PODBC odbc, LOGICAL require );
+/* Get the required connection flag froma connection.
+*/
+PSSQL_PROC( LOGICAL, GetConnectionRequired )( PODBC odbc );
 #ifndef SQLPROXY_INCLUDE
 // result is FALSE on error
 // result is TRUE on success
@@ -9502,6 +9509,12 @@ PSSQL_PROC( PODBC, ConnectToDatabaseExx )( CTEXTSTR DSN, LOGICAL bRequireConnect
 PSSQL_PROC( PODBC, ConnectToDatabaseEx )( CTEXTSTR DSN, LOGICAL bRequireConnection );
 #define ConnectToDatabaseEx( dsn, required ) ConnectToDatabaseExx( dsn, required DBG_SRC )
 #define ConnectToDatabase( dsn ) ConnectToDatabaseExx( dsn, FALSE DBG_SRC )
+// Extended connect to database function; provides user and password separate from the DSN
+// which allows logging the SQL connection name, without dumping the username ans password.
+// adds onOpen Callback, which, especially on reconnection, triggers a callback to condition
+// the connection (issue pragmas, setup database options).
+PSSQL_PROC( PODBC, ConnectToDatabaseLoginCallback)( CTEXTSTR DSN, CTEXTSTR user, CTEXTSTR pass, LOGICAL bRequireConnection
+			, void (*onOpen)(uintptr_t,PODBC), uintptr_t psv DBG_PASS );
 /* Close a database connection. Releases all resources
    associated with the odbc connection.
    Parameters
