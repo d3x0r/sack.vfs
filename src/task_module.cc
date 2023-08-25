@@ -1103,9 +1103,9 @@ void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
 	}
 #else
 	if( code )
-		signal( id, SIGHUP );
+		kill( id, SIGHUP );
 	else
-		signal( id, SIGINT );
+		kill( id, SIGINT );
 #endif
 }
 
@@ -1128,6 +1128,6 @@ void TaskObject::KillProcess( const FunctionCallbackInfo<Value>& args ) {
 		lprintf( "Failed to open process %d:%d", id, dwError );
 	}
 #else
-	signal( id, SIGKILL );
+	kill( id, SIGKILL );
 #endif
 }
