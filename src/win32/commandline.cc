@@ -153,6 +153,7 @@ void ReleaseCommandLineResults( PLIST* ppResults ) {
 
 }
 
+#if 0
 void test( void ) {
 	PLIST results = GetCommandLine( NULL );// "chro" );
 	INDEX idx;
@@ -169,3 +170,4 @@ void test( void ) {
 	ReleaseCommandLineResults( &results );
 
 }
+#endif
