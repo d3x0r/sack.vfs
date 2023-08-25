@@ -274,8 +274,7 @@ static void logString( const v8::FunctionCallbackInfo<Value>& args ) {
 static void postVolume( const v8::FunctionCallbackInfo<Value>& args );
 static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args );
 
-void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
-{
+void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	static int runOnce = 1;
 	Isolate* isolate = Isolate::GetCurrent();
 #ifdef _WIN32
@@ -283,19 +282,19 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 #if 0
 		// debug attempt to figure out why ctrl-C event is not triggering node correctly.
 		DWORD dwInfoIn, dwInfoOut, dwInfoErr;
-		GetHandleInformation( GetStdHandle( STD_INPUT_HANDLE  ), &dwInfoIn );
-		GetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE  ), &dwInfoOut );
-		GetHandleInformation( GetStdHandle( STD_ERROR_HANDLE  ), &dwInfoErr );
+		GetHandleInformation( GetStdHandle( STD_INPUT_HANDLE ), &dwInfoIn );
+		GetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), &dwInfoOut );
+		GetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), &dwInfoErr );
 		fprintf( stderr, "Default handles (in service?) %p %d %p %d %p %d"
-			, GetStdHandle( STD_INPUT_HANDLE  ), dwInfoIn
-			, GetStdHandle( STD_OUTPUT_HANDLE  ), dwInfoOut
-			, GetStdHandle( STD_ERROR_HANDLE  ), dwInfoErr );
+		       , GetStdHandle( STD_INPUT_HANDLE ), dwInfoIn
+		       , GetStdHandle( STD_OUTPUT_HANDLE ), dwInfoOut
+		       , GetStdHandle( STD_ERROR_HANDLE ), dwInfoErr );
 		BOOL a = AllocConsole();
 		fprintf( stderr, "Alloc Console : %d", a );
 #endif
-		SetHandleInformation( GetStdHandle( STD_INPUT_HANDLE  ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT) ;
-		SetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE  ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT) ;
-		SetHandleInformation( GetStdHandle( STD_ERROR_HANDLE  ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT) ;
+		SetHandleInformation( GetStdHandle( STD_INPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
+		SetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
+		SetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
 	}
 #endif
 	if( runOnce ) {
@@ -312,7 +311,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 		//LoadTranslationDataEx( "^/strings.dat" );
 		LoadTranslationDataEx( "@/../../strings.json" );
 		runOnce = 0;
-	}else {
+	} else {
 		GetThisThreadID();
 	}
 	//else
@@ -610,7 +609,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 			char dbName[256];
  			snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
-			createSqlObject( dbName, args.This() );
+			createSqlObject( dbName, isolate, args.This() );
 
 			args.GetReturnValue().Set( args.This() );
 		}
