@@ -162,6 +162,8 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	SET_READONLY( exports, "Task", taskF = taskTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	SET_READONLY_METHOD( taskF, "loadLibrary", TaskObject::loadLibrary );
 	SET_READONLY_METHOD( taskF, "getProcessList", TaskObject::GetProcessList );
+	SET_READONLY_METHOD( taskF, "stop", TaskObject::StopProcess );
+	SET_READONLY_METHOD( taskF, "kill", TaskObject::KillProcess );
 #ifdef _WIN32
 	SET_READONLY_METHOD( taskF, "getDisplays", TaskObject::getDisplays );
 #endif
@@ -1004,6 +1006,127 @@ void TaskObject::GetProcessList( const FunctionCallbackInfo<Value>& args ) {
 #else
 	lprintf( "Process List is not available on this platform." );
 #endif
+}
 
 
+#ifdef _WIN32
+struct handle_data {
+	unsigned long process_id;
+	HWND window_handle;
+};
+
+static BOOL is_main_window( HWND handle ) {
+	return GetWindow( handle, GW_OWNER ) == (HWND)0 && IsWindowVisible( handle );
+}
+static BOOL CALLBACK enum_windows_callback( HWND handle, LPARAM lParam ) {
+	struct handle_data* data = (struct handle_data*)lParam;
+	unsigned long process_id = 0;
+	GetWindowThreadProcessId( handle, &process_id );
+	if( data->process_id != process_id || !is_main_window( handle ) )
+		return TRUE;
+	data->window_handle = handle;
+	return FALSE;
+}
+static HWND find_main_window( unsigned long process_id ) {
+	struct handle_data data;
+	data.process_id = process_id;
+	data.window_handle = 0;
+	EnumWindows( enum_windows_callback, (LPARAM)&data );
+	return data.window_handle;
+}
+#endif
+
+
+void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	if( args.Length() < 1 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must specify process ID to terminate." ) ) );
+		return;
+	}
+	int32_t id = (int32_t)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	int32_t code = (int32_t)(args.Length() > 1 ? args[1]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 ) : (int64_t)0);
+
+
+#ifdef _WIN32
+	char* name = NULL;
+	if( args.Length() > 2 ) {
+		String::Utf8Value s( USE_ISOLATE( isolate ) args[2]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+		name = StrDup( *s );
+	}
+	HWND hWndMain = find_main_window( id );
+	if( FALSE && hWndMain ) {
+		TEXTCHAR title[256];
+		GetWindowText( hWndMain, title, 256 );
+		//lprintf( "Sending WM_CLOSE to %d %p %s", id, hWndMain, title );
+		SendMessage( hWndMain, WM_CLOSE, 0, 0 );
+	} else if( !( code & 2 ) ) {
+		//lprintf( "Killing child %d? %d", id, code );
+		//MessageBox( NULL, "pause", "pause", MB_OK );
+		FreeConsole();
+		BOOL a = AttachConsole( id );
+		if( !a ) {
+			DWORD dwError = GetLastError();
+			lprintf( "Failed to attachConsole %d %d %d", a, dwError, id );
+		}
+		if( code == 0 )
+			if( !GenerateConsoleCtrlEvent( CTRL_C_EVENT, id ) ) {
+				DWORD error = GetLastError();
+				lprintf( "Failed to send CTRL_C_EVENT %d %d", id, error );
+			}// else lprintf( "Success sending ctrl C?" );
+		else
+			if( !GenerateConsoleCtrlEvent( CTRL_BREAK_EVENT, id ) ) {
+				DWORD error = GetLastError();
+				lprintf( "Failed to send CTRL_BREAK_EVENT %d %d", id, error );
+			}// else lprintf( "Success sending ctrl break?" );
+	}
+	// this is pretty niche; was an attempt to handle when ctrl-break and ctrl-c events failed.
+	if( code & 2 ) {
+		//lprintf ( "code?  %d %d %p", id, code, name );
+		if( !name ) {
+			lprintf( "To kill using signal, must include the process name as well as ID" );
+			return;
+		}
+		char eventName[256];
+		HANDLE hEvent;
+		snprintf( eventName, 256, "Global\\%s(%d):exit", name, id );
+		hEvent = OpenEvent( EVENT_MODIFY_STATE, FALSE, eventName );
+		//lprintf( "Signal process event: %s", eventName );
+		if( hEvent != NULL ) {
+			//lprintf( "Opened event:%p %s %d", hEvent, eventName, GetLastError() );
+			if( !SetEvent( hEvent ) ) {
+				lprintf( "Failed to set event? %d", GetLastError() );
+			}
+			CloseHandle( hEvent );
+		}
+	}
+#else
+	if( code )
+		signal( id, SIGHUP );
+	else
+		signal( id, SIGINT );
+#endif
+}
+
+void TaskObject::KillProcess( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	if( args.Length() < 1 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must specify process ID to terminate." ) ) );
+		return;
+	}
+	int32_t id = (int32_t)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	int64_t code = (int32_t)(args.Length() > 1 ? args[1]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 ) : (int64_t)0);
+#ifdef _WIN32
+	HANDLE hProcess = OpenProcess( PROCESS_ALL_ACCESS, FALSE, id );
+	if( hProcess ) {
+		TerminateProcess( hProcess, (UINT)code );
+		CloseHandle( hProcess );
+	} else {
+		DWORD dwError = GetLastError();
+		lprintf( "Failed to open process %d:%d", id, dwError );
+	}
+#else
+	signal( id, SIGKILL );
+#endif
 }
