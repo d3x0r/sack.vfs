@@ -547,6 +547,7 @@ struct command_line_result {
 	DWORD dwProcessId;
 	size_t length;
 	char* data;
+	char* processName;
 };
 
 // returns a PLIST of struct command_line_results

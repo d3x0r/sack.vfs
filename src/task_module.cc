@@ -982,12 +982,20 @@ void TaskObject::GetProcessList( const FunctionCallbackInfo<Value>& args ) {
 		while( bin[argStart] ) {
 			while( bin[argStart] == ' ' ) argStart++;
 			argEnd = argStart + 1;
-			while( bin[argEnd] && bin[argEnd] != ' ' ) argEnd++;
+			if( bin[argStart] == '"' ) {
+				argStart++;
+				while( bin[argEnd] && bin[argEnd] != '"' ) argEnd++;
+			}else
+				while( bin[argEnd] && bin[argEnd] != ' ' ) argEnd++;
 			args->Set( context, arg++, String::NewFromUtf8( isolate, bin + argStart, NewStringType::kNormal, (int)(argEnd - argStart) ).ToLocalChecked() );
-			argStart = argEnd;
+			if( bin[argEnd] == '"' )
+				argStart = argEnd+1;
+			else
+				argStart = argEnd;
 		}
 		info->Set( context, String::NewFromUtf8Literal( isolate, "id" ), Integer::New( isolate, proc->dwProcessId ) );
 		info->Set( context, strings->binString->Get( isolate ), String::NewFromUtf8( isolate, bin, NewStringType::kNormal, (int)binChars ).ToLocalChecked() );
+		info->Set( context, strings->binaryString->Get( isolate ), String::NewFromUtf8( isolate, proc->processName ).ToLocalChecked() );
 		info->Set( context, strings->argString->Get( isolate ), args );
 		result->Set( context, (uint32_t)idx, info );
 	}

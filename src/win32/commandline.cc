@@ -9,7 +9,7 @@
 #include <winternl.h>
 
 
-// missing value for getting command line found in Yet Another Process Montior https://sourceforge.net/p/yaprocmon/
+// missing value for getting command line found in Process Hacker https://sourceforge.net/p/yaprocmon/
 // NtQueryInformationProcess 
 // ProcessCommandLineInformation, // 60, q: UNICODE_STRING
 
@@ -109,6 +109,7 @@ PLIST GetProcessCommandLines( const char* process ) {
 						} else if( result == 0 ) {
 							struct command_line_result* result_val = NewArray( struct command_line_result, 1 );
 							result_val->dwProcessId = pe.th32ProcessID;
+							result_val->processName = WcharConvert( processFileName );
 							result_val->data = WcharConvert_v2( pInfo->chars, pInfo->uString.Length, &result_val->length DBG_SRC );
 							AddLink( &results, result_val );
 							//lprintf( "Adding result: %p %p %S", pInfo->uString.Buffer, pInfo->chars, pInfo->chars );
@@ -141,6 +142,7 @@ void ReleaseCommandLineResults( PLIST* ppResults ) {
 	INDEX idx;
 	struct command_line_result* result;
 	LIST_FORALL( ppResults[0], idx, struct command_line_result*, result ) {
+		ReleaseEx( result->processName DBG_SRC );
 		ReleaseEx( result->data DBG_SRC );
 		ReleaseEx( result DBG_SRC );
 	}
