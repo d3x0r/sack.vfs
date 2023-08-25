@@ -735,21 +735,20 @@ void MouseObject::event( const v8::FunctionCallbackInfo<Value>& args ) {
 			inputs[used_inputs].mi.dy = 0;
 			inputs[used_inputs].mi.dwFlags = 0;
 		} else {
-			lprintf( "At event what is x,y?  %d,%d  %d,%d", x, y, curPos.x, curPos.y );
 			if( x != curPos.x || y != curPos.y ) {
-				double fScreenWidth = GetSystemMetrics( SM_CXVIRTUALSCREEN ) - 1;
-				double fScreenHeight = GetSystemMetrics( SM_CYVIRTUALSCREEN ) - 1;
+				double fScreenWidth = GetSystemMetrics( SM_CXVIRTUALSCREEN )-1;
+				double fScreenHeight = GetSystemMetrics( SM_CYVIRTUALSCREEN )-1;
 				double const sx = 65535.0f / fScreenWidth;
 				double const sy = 65535.0f / fScreenHeight;
-				inputs[used_inputs].mi.dx = (LONG)( x * sx );
-				inputs[used_inputs].mi.dy = (LONG)( y * sy );
+				inputs[used_inputs].mi.dx = (LONG)ceil( x * sx );
+				inputs[used_inputs].mi.dy = (LONG)ceil( y * sy );
 				inputs[used_inputs].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE;
 			} else {
 				// don't NEED to set dx,dy to 0, but it's cleaner if we do
 				inputs[used_inputs].mi.dx = 0;
 				inputs[used_inputs].mi.dy = 0;
 				inputs[used_inputs].mi.dwFlags = 0;
-				lprintf( "no motion needed..." );
+				//lprintf( "no motion needed..." );
 			}
 
 			// normal buttons have no extra data either - only include their states in the first message.
@@ -807,7 +806,7 @@ void MouseObject::event( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		used_inputs++;
 	} while( ( b & ( MK_XBUTTON2 ) || ( old_buttons & MK_XBUTTON2 ) ) || hasScroll1 || hasScroll2 );
-	lprintf( "Generating events: %d %d %d", used_inputs, inputs[0].mi.dx, inputs[0].mi.dy  );
+	//lprintf( "Generating events: %d %d %d", used_inputs, inputs[0].mi.dx, inputs[0].mi.dy  );
 	SendInput( used_inputs, inputs, sizeof( INPUT ) );
 }
 
@@ -816,8 +815,8 @@ void MouseObject::clickAt( const v8::FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	POINT pt;
 	GetCursorPos( &pt );
-	double fScreenWidth = GetSystemMetrics( SM_CXVIRTUALSCREEN ) - 1;
-	double fScreenHeight = GetSystemMetrics( SM_CYVIRTUALSCREEN ) - 1;
+	double fScreenWidth = GetSystemMetrics( SM_CXVIRTUALSCREEN );
+	double fScreenHeight = GetSystemMetrics( SM_CYVIRTUALSCREEN );
 
 	int64_t x = args[0].As<Number>()->IntegerValue( context ).ToChecked();
 	int64_t y = args[1].As<Number>()->IntegerValue( context ).ToChecked();
@@ -830,8 +829,8 @@ void MouseObject::clickAt( const v8::FunctionCallbackInfo<Value>& args ) {
 	INPUT inputs[3];
 
 	inputs[0].type = INPUT_MOUSE;
-	inputs[0].mi.dx = (LONG)fx;
-	inputs[0].mi.dy = (LONG)fy;
+	inputs[0].mi.dx = (LONG)ceil(fx);
+	inputs[0].mi.dy = (LONG)ceil(fy);
 	inputs[0].mi.dwFlags = MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN;
 	inputs[0].mi.mouseData = 0; // scroll wheel
 	inputs[0].mi.time = 0; // auto time
@@ -846,8 +845,8 @@ void MouseObject::clickAt( const v8::FunctionCallbackInfo<Value>& args ) {
 	inputs[1].mi.dwExtraInfo = 0;
 
 	inputs[2].type = INPUT_MOUSE;
-	inputs[2].mi.dx = (LONG)(sx * pt.x);
-	inputs[2].mi.dy = (LONG)(sy * pt.y);
+	inputs[2].mi.dx = (LONG)ceil(sx * pt.x);
+	inputs[2].mi.dy = (LONG)ceil(sy * pt.y);
 	inputs[2].mi.dwFlags = MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE;
 	inputs[2].mi.mouseData = 0; // scroll wheel
 	inputs[2].mi.time = 0; // auto time
