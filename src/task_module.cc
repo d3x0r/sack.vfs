@@ -1055,7 +1055,7 @@ void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
 		name = StrDup( *s );
 	}
 	HWND hWndMain = find_main_window( id );
-	if( FALSE && hWndMain ) {
+	if( hWndMain ) {
 		TEXTCHAR title[256];
 		GetWindowText( hWndMain, title, 256 );
 		//lprintf( "Sending WM_CLOSE to %d %p %s", id, hWndMain, title );
@@ -1081,7 +1081,7 @@ void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
 			}// else lprintf( "Success sending ctrl break?" );
 	}
 	// this is pretty niche; was an attempt to handle when ctrl-break and ctrl-c events failed.
-	if( code & 2 ) {
+	else if( code & 2 ) {
 		//lprintf ( "code?  %d %d %p", id, code, name );
 		if( !name ) {
 			lprintf( "To kill using signal, must include the process name as well as ID" );
@@ -1090,6 +1090,7 @@ void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
 		char eventName[256];
 		HANDLE hEvent;
 		snprintf( eventName, 256, "Global\\%s(%d):exit", name, id );
+		ReleaseEx( name DBG_SRC );
 		hEvent = OpenEvent( EVENT_MODIFY_STATE, FALSE, eventName );
 		//lprintf( "Signal process event: %s", eventName );
 		if( hEvent != NULL ) {
