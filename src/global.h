@@ -525,7 +525,7 @@ void ObjectStorageInit( Isolate *isoalte, Local<Object> exports );
 
 
 void SqlObjectInit( Local<Object> exports );
-void createSqlObject( const char *name, Local<Object> into );
+void createSqlObject( const char* name, Isolate* isolate, Local<Object> into );
 Local<Value> newSqlObject( Isolate *isolate, int argc, Local<Value> *argv );
 
 class ObjectStorageObject*  openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 );
@@ -543,3 +543,5 @@ struct vfs_global_data {
 #define GetHolder() GetFromSet( ARRAY_BUFFER_HOLDER, &vfs_global_data.holders )
 #define DropHolder(h) DeleteFromSet( ARRAY_BUFFER_HOLDER, vfs_global_data.holders, h )
 
+PLIST GetCommandLine( const char* process );
+void ReleaseCommandLineResults( PLIST* ppResults );
