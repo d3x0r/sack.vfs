@@ -350,6 +350,7 @@ if( WIN32 )
 	set( MORE_MODULE_SOURCES src/reg_access.cc
 		src/hid_module.cc
 		src/playSound_module.cc
+		src/win32/commandline.cc
 #		src/fixup_windows_executable.cc
 		)
 endif( WIN32 )

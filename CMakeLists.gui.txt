@@ -165,6 +165,7 @@ if( WIN32 )
 		src/hid_module.cc
 		src/reg_access.cc
 		src/playSound_module.cc
+		src/win32/commandline.cc
 		)
 endif( WIN32 )
 
