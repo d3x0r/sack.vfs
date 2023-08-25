@@ -6171,7 +6171,20 @@ MEM_PROC  int MEM_API  StrCaseCmp ( CTEXTSTR s1, CTEXTSTR s2 );
 	if s1 is NULL and s2 is not NULL, return is -1.
 	if s2 is NULL and s1 is not NULL, return is 1.
 	if s1 and s2 are NULL return is 0.              */
-MEM_PROC  int MEM_API  StrCaseCmp_u8u16( const char* s1, const wchar_t* s2 );
+MEM_PROC  int MEM_API StrCaseCmp_u8u16( const char* s1, const wchar_t* s2 );
+/* Compares two strings, one utf8 and one utf16, case insensitively.
+	Parameters
+	s1 :  string to compare
+	s2 :  string to compare
+	maxlen : maximum characters to compare
+	Returns
+	0 if equal.
+	1 if (s1 \>s2)
+	\-1 if (s1 \< s2)
+	if s1 is NULL and s2 is not NULL, return is -1.
+	if s2 is NULL and s1 is not NULL, return is 1.
+	if s1 and s2 are NULL return is 0.              */
+MEM_PROC  int MEM_API StrCaseCmpEx_u8u16( const char* s1, const wchar_t* s2, size_t maxLen );
 /* Compares two strings, both utf16, case insensitively.
 	Parameters
 	s1 :  string to compare
