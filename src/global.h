@@ -543,5 +543,12 @@ struct vfs_global_data {
 #define GetHolder() GetFromSet( ARRAY_BUFFER_HOLDER, &vfs_global_data.holders )
 #define DropHolder(h) DeleteFromSet( ARRAY_BUFFER_HOLDER, vfs_global_data.holders, h )
 
-PLIST GetCommandLine( const char* process );
+struct command_line_result {
+	DWORD dwProcessId;
+	size_t length;
+	char* data;
+};
+
+// returns a PLIST of struct command_line_results
+PLIST GetProcessCommandLines( const char* process );
 void ReleaseCommandLineResults( PLIST* ppResults );

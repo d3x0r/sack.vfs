@@ -161,6 +161,7 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	Local<Function> taskF;
 	SET_READONLY( exports, "Task", taskF = taskTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	SET_READONLY_METHOD( taskF, "loadLibrary", TaskObject::loadLibrary );
+	SET_READONLY_METHOD( taskF, "getProcessList", TaskObject::GetProcessList );
 #ifdef _WIN32
 	SET_READONLY_METHOD( taskF, "getDisplays", TaskObject::getDisplays );
 #endif
@@ -940,4 +941,61 @@ void TaskObject::getWindowTitle( const FunctionCallbackInfo<Value>& args ) {
 	args.GetReturnValue().Set( result );
 }
 	
+
+
 #endif
+
+void TaskObject::GetProcessList( const FunctionCallbackInfo<Value>& args ) {
+#ifdef _WIN32
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	struct optionStrings* strings = getStrings( isolate );
+	PLIST procs;
+	struct command_line_result* proc;
+	INDEX idx;
+	if( args.Length() > 0 ) {
+		String::Utf8Value s( USE_ISOLATE( isolate ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+		procs = GetProcessCommandLines( *s );
+	} else
+		procs = GetProcessCommandLines( NULL );
+	Local<Array> result = Array::New( isolate );
+	LIST_FORALL( procs, idx, struct command_line_result*, proc ) {
+		Local<Object> info = Object::New( isolate );
+		Local<Array> args = Array::New( isolate );
+		char* bin = proc->data;
+		size_t binChars = 0;
+		size_t argStart;
+		size_t argEnd;
+		int arg = 0;
+		if( bin[0] == '"' ) {
+			binChars++;
+			while( bin[binChars] != '"' )
+				binChars++;
+		} else 
+			while( bin[binChars] && bin[binChars] != ' ' )
+				binChars++;
+		argStart = binChars;
+		if( bin[0] == '"' ) {
+			bin++;
+			binChars--;
+		}
+		while( bin[argStart] ) {
+			while( bin[argStart] == ' ' ) argStart++;
+			argEnd = argStart + 1;
+			while( bin[argEnd] && bin[argEnd] != ' ' ) argEnd++;
+			args->Set( context, arg++, String::NewFromUtf8( isolate, bin + argStart, NewStringType::kNormal, (int)(argEnd - argStart) ).ToLocalChecked() );
+			argStart = argEnd;
+		}
+		info->Set( context, String::NewFromUtf8Literal( isolate, "id" ), Integer::New( isolate, proc->dwProcessId ) );
+		info->Set( context, strings->binString->Get( isolate ), String::NewFromUtf8( isolate, bin, NewStringType::kNormal, (int)binChars ).ToLocalChecked() );
+		info->Set( context, strings->argString->Get( isolate ), args );
+		result->Set( context, (uint32_t)idx, info );
+	}
+	ReleaseCommandLineResults( &procs );
+	args.GetReturnValue().Set( result );
+#else
+	lprintf( "Process List is not available on this platform." );
+#endif
+
+
+}

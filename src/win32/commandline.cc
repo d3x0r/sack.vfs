@@ -1,11 +1,13 @@
 
 #define UMDF_USING_NTSTATUS 
 
-#include "sack.h"
+#include "../global.h"
+
 #include <ntstatus.h>
 #include <tlhelp32.h>
 #include <psapi.h>
 #include <winternl.h>
+
 
 // missing value for getting command line found in Yet Another Process Montior https://sourceforge.net/p/yaprocmon/
 // NtQueryInformationProcess 
@@ -14,18 +16,12 @@
 #define ProcessCommandLineInformation 60
 
 
-struct string_result {
-	DWORD dwProcessId;
-	size_t length;
-	char* data;
-};
-
 struct info {
 	UNICODE_STRING uString;
 	wchar_t chars[1];
 };
 
-PLIST GetCommandLine( const char* process ) {
+PLIST GetProcessCommandLines( const char* process ) {
 	PLIST results = NULL;
 	HANDLE hToken;
 	BOOL bOpenToken = OpenProcessToken( GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken );
@@ -111,7 +107,7 @@ PLIST GetCommandLine( const char* process ) {
 							zInfoSize = returnLength;
 							retry = TRUE;
 						} else if( result == 0 ) {
-							struct string_result* result_val = NewArray( struct string_result, 1 );
+							struct command_line_result* result_val = NewArray( struct command_line_result, 1 );
 							result_val->dwProcessId = pe.th32ProcessID;
 							result_val->data = WcharConvert_v2( pInfo->chars, pInfo->uString.Length, &result_val->length DBG_SRC );
 							AddLink( &results, result_val );
@@ -143,8 +139,8 @@ void ReleaseCommandLineResults( PLIST* ppResults ) {
 
 	PLIST results = ppResults[0];
 	INDEX idx;
-	struct string_result* result;
-	LIST_FORALL( ppResults[0], idx, struct string_result*, result ) {
+	struct command_line_result* result;
+	LIST_FORALL( ppResults[0], idx, struct command_line_result*, result ) {
 		ReleaseEx( result->data DBG_SRC );
 		ReleaseEx( result DBG_SRC );
 	}
@@ -157,14 +153,14 @@ void ReleaseCommandLineResults( PLIST* ppResults ) {
 void test( void ) {
 	PLIST results = GetCommandLine( NULL );// "chro" );
 	INDEX idx;
-	struct string_result* result;
-	LIST_FORALL( results, idx, struct string_result*, result ) {
+	struct command_line_result* result;
+	LIST_FORALL( results, idx, struct command_line_result*, result ) {
 		lprintf( "Found: %d %.*s", result->dwProcessId, result->length, result->data );
 	}
 	ReleaseCommandLineResults( &results );
 
 	results = GetCommandLine( NULL );
-	LIST_FORALL( results, idx, struct string_result*, result ) {
+	LIST_FORALL( results, idx, struct command_line_result*, result ) {
 		lprintf( "Found: %d %.*s", result->dwProcessId, result->length, result->data );
 	}
 	ReleaseCommandLineResults( &results );
