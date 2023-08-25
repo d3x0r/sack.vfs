@@ -136,13 +136,13 @@ struct userMessage{
 
 static void sqlUserAsyncMsg( uv_async_t* handle );
 
-/*
-void createSqlObject( const char *name, Local<Object> into ) {
+/* This is used from external code... */
+void createSqlObject( const char *name, Isolate *isolate, Local<Object> into ) {
 	class SqlObject* obj;
-	obj = new SqlObject( name, NULL, emptyFunction );
-	SqlObject::doWrap( obj, into );
+	obj = new SqlObject( name, isolate, into, emptyFunction );
+	//SqlObject::doWrap( obj, into );
 }
-*/
+
 
 Local<Value> newSqlObject(Isolate *isolate, int argc, Local<Value> *argv ) {
 	class constructorSet *c = getConstructors( isolate );
