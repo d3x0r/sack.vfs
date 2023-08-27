@@ -353,6 +353,10 @@ if( WIN32 )
 		src/win32/commandline.cc
 #		src/fixup_windows_executable.cc
 		)
+elseif( UNIX )
+	set( MORE_MODULE_SOURCES 
+		src/linux/commandline.cc
+	)
 endif( WIN32 )
 
 set( PROJECT sack_vfs )
