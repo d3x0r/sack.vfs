@@ -550,6 +550,13 @@ struct command_line_result {
 	char* data;
 	char* processName;
 };
+#else
+struct command_line_result {
+	pid_t dwProcessId;
+	size_t length;
+	char** cmd;
+};
+
 #endif
 // returns a PLIST of struct command_line_results
 PLIST GetProcessCommandLines( const char* process );

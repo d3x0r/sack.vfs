@@ -1004,7 +1004,41 @@ void TaskObject::GetProcessList( const FunctionCallbackInfo<Value>& args ) {
 	ReleaseCommandLineResults( &procs );
 	args.GetReturnValue().Set( result );
 #else
-	lprintf( "Process List is not available on this platform." );
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	struct optionStrings* strings = getStrings( isolate );
+	PLIST procs;
+	struct command_line_result* proc;
+	INDEX idx;
+	if( args.Length() > 0 ) {
+		String::Utf8Value s( USE_ISOLATE( isolate ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+		procs = GetProcessCommandLines( *s );
+	} else
+		procs = GetProcessCommandLines( NULL );
+	Local<Array> result = Array::New( isolate );
+	//lprintf( "procs:%p", procs );
+	LIST_FORALL( procs, idx, struct command_line_result*, proc ) {
+		Local<Object> info = Object::New( isolate );
+		Local<Array> args = Array::New( isolate );
+		char* bin = proc->cmd[0];
+		int arg;
+		for( arg = 1; arg < proc->length; arg++ ) {
+			if( proc->cmd[arg] )
+				args->Set( context, arg-1, String::NewFromUtf8( isolate, proc->cmd[arg] ).ToLocalChecked() );
+		}
+
+		info->Set( context, String::NewFromUtf8Literal( isolate, "id" ), Integer::New( isolate, proc->dwProcessId ) );
+		info->Set( context, strings->binString->Get( isolate ), String::NewFromUtf8( isolate, bin ).ToLocalChecked() );
+		info->Set( context, strings->binaryString->Get( isolate ), String::NewFromUtf8( isolate, bin ).ToLocalChecked() );
+		info->Set( context, strings->argString->Get( isolate ), args );
+		result->Set( context, (uint32_t)idx, info );
+
+	}	
+
+	ReleaseCommandLineResults( &procs );
+	args.GetReturnValue().Set( result );
+
+	//lprintf( "Process List is not available on this platform." );
 #endif
 }
 
