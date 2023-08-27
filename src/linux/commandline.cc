@@ -36,7 +36,15 @@ void addProc( uintptr_t psvUser, CTEXTSTR name, ScanFileProcessFlags flags ){
 			lprintf( "long command line...");
 
 		} else {
-			if( !params->matchlen || ( StrCaseCmpEx( data, params->match, params->matchlen ) == 0 ) ) {
+			char *cmpProg = data;
+			if( params->matchlen ) {
+				while( cmpProg[0] && cmpProg[0] != ' ' )cmpProg++;
+				while( cmpProg != data && cmpProg[0] != '/' )cmpProg--;
+				if( cmpProg != data ) cmpProg++;
+				//lprintf( "Compare: %s", cmpProg );
+			}
+
+			if( !params->matchlen || ( StrCaseCmpEx( cmpProg, params->match, params->matchlen ) == 0 ) ) {
 				int start = 0;
 				int ofs = 0;
 				int args = 0;
