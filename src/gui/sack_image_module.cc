@@ -1198,7 +1198,7 @@ void ColorObject::setAlpha( const FunctionCallbackInfo<Value>&  args ) {
 }
 
 
-void ImageObject::shutdown( struct constructorSet* c ) {
+void ImageObject::shutdown( class constructorSet* c ) {
 
 	if( c->colorAsyncActive )
 		uv_close( (uv_handle_t*)&c->colorAsync, NULL );
