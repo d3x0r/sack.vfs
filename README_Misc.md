@@ -375,6 +375,12 @@ handle inheritance.  (Many handles created by SACK have inheritance disabled by 
 | Task Static Methods | description |
 | loadLibrary( libname ) | Load external shared library. ex: `sack.Task.loadLibrary( "xxx" );` |
 | getDisplays() | (Windows) returns an array of information about displays. |
+| getStyles( processId ) | (Windows) returns an object with `window`, `windowEx` and `class` members that are the style values|
+| setStyles( processId, window, windowEx, class ) | (Windows) Sets the style of a window associated with the process ID, -1 does not set any bits |
+| getTitle( processId ) | (Windows) returns the title of the window associated with a process.
+| getPosition( processId ) | (Windows) returns an object with the current window x,y, width, height |
+| setPosition( processId, { x,y,width,height} ) | (Windows) Set the position of a window associated with the process ID. |
+
 
 Having created a task instance with `sack.Task( {...} );` the following methods are available
 to interact with the process.
@@ -389,6 +395,9 @@ to interact with the process.
  |moveWindow(object) | (Windows only) Move the task's primary window to the specifed location.  See Move options below. |
  |refreshWindow() | (Windows only) Refresh the internal handle for the window. (Set for moveWindow, and used later for moveWindow() or end())|
  |windowTitle() | (Windows only) Gets the current title of the window associated with the task. |
+ |getPosition() | (Windows only) Gets the current position of the window associated with a task. |
+ |getStyles() | (Windows only) Gets the current style of a window associated with a task. |
+ |setStyles(window,windowEx,class) | (Windows only) Sets the specified style bits of window associated with a task.|
 
  Task Option object may contain these options to control how the task is spawned.
 
@@ -416,8 +425,11 @@ to interact with the process.
 | detach | bool | (Windows) option to create a detached console process (like newConsole, but no Console is created).  default: false |
 | moveTo | object | After the task is started, move its window to the specified location.  (See Move options below)
 | noInheritStdio | bool | prevents task from inheriting stdio pipes |
+| style | object | After the task is started, set window style bits, then, if specified, move the window |
 
 ### Task Move Options
+
+Move options are applied after styles are set.
 
 | Move options | Type | Description |
 |----|----|-----|
@@ -427,9 +439,28 @@ to interact with the process.
 | width | number | specifies the width position of the window. Default is 1920.|
 | height | number | specifies the height position of the window. Default is 1080.|
 | display | number | specifies the display number to move the display to. 0 is the primary display, 1-N are displays by ID number.  If display option is specified, then `x`,`y`,`width`, and `height` options are ignored. Default is -1.|
-| cb | function | callback function which receives `true`/`false` parameter indicating the result of the move operation.  `false` rsults if the display number is invalid, or if the timeout occurs before finding the window. |
+| cb | function | callback function which receives `true`/`false` parameter indicating the result of the move operation.  `false` results if the display number is invalid, or if the timeout occurs before finding the window. |
 
 
+### Task Style Object Options
+
+Styles defined for the window of a task are applied first, and then any move options specified (otherwise the border of
+the window may disappear, and the client area of the window would result smaller than the position information specified).
+
+| Move options | Type | Description |
+|----|----|-----|
+| timeout | number | specifies milliseconds to wait for window to exist.  If no task window is found, status is `false`.  Default is 500.|
+| window | number | Specifies bits to set in window style.  If -1 or undefined, option is ignored.|
+| windowEx | number | Specifies bits to set in window Ex style.  If -1 or undefined, option is ignored.|
+| class | number | Specifies bits to set in window's class style.  If -1 or undefined, option is ignored.|
+| cb | function | callback function which receives 0-7 parameter indicating the result of the move operation.  `0` results if the display number is invalid, or if the timeout occurs before finding the window. |
+
+
+### Style Values
+
+There is a 'style' object on Task (`sack.Task.style`) which contains `window`, `windowEx` and `class` objects which
+have the names of the bits defined by windows for window and class styles.  These values may be used to create the 
+integer values associated with a task; for example `sack.Task.style.window.WS_POPUP|sack.Task.style.window.WS_BORDER`.
 
 
 ``` js
