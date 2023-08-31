@@ -5209,6 +5209,15 @@ SYSTEM_PROC( void, sack_system_disallow_spawn )( void );
 */
 SYSTEM_PROC( void, MoveTaskWindow )( PTASK_INFO task, int timeout, int left, int top, int width, int height, void cb( uintptr_t, LOGICAL ), uintptr_t psv );
 /*
+  sets styles for window (class and window style attributes)
+  runs a thread which is able to wait for the task's window to be created.  callback is called when completed.
+  If no callback is supplied, there is no notification of success or failure.
+  `int` status passed to the callback is a combination of statuses for window(1), windowEx(2), and class(4) styles
+  and is 7 if all styles are set successfully.
+  -1 can be passed as a style value to prevent updates to that style type.
+*/
+SYSTEM_PROC( void, StyleTaskWindow )( PTASK_INFO task, int timeout, int windowStyle, int windowExStyle, int classStyle, void cb( uintptr_t, int ), uintptr_t psv );
+/*
   Moves the window of the specified task to the specified display device; using a lookup to get the display size.
   -1 is an invalid display.
   0 is the default display
