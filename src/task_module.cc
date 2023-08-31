@@ -25,6 +25,12 @@ struct optionStrings {
 	Eternal<String>* noInheritStdio;
 #if _WIN32
 	Eternal<String>* moveToString;
+	Eternal<String>* styleString;
+
+	// for style window
+	Eternal<String>* windowString;
+	Eternal<String>* windowExString;
+	Eternal<String>* classString;
 	// for move window
 	Eternal<String>* timeoutString;
 	Eternal<String>* cbString;
@@ -33,10 +39,12 @@ struct optionStrings {
 	Eternal<String>* widthString;
 	Eternal<String>* heightString;
 	Eternal<String>* displayString;
+	Eternal<String>* monitorString;
+
+	// for display monitor information
 	Eternal<String>* currentString;
 	Eternal<String>* primaryString;
 	Eternal<String>* deviceString;
-	Eternal<String>* monitorString;
 #endif
 };
 
@@ -46,7 +54,14 @@ static struct local {
 } l;
 
 #if _WIN32
-static void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, Local<Object> opts );
+static void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, HWND hWnd, Local<Object> opts ); // move a task window
+static void doStyleWindow( Isolate* isolate, Local<Context> context, TaskObject* task, HWND hWnd, Local<Object> opts ); // style a task window
+
+static void getProcessWindowTitle( const FunctionCallbackInfo<Value>& args );  // get title by process ID
+static void setProcessWindowStyles( const FunctionCallbackInfo<Value>& args );  // set window and class styles
+static void getProcessWindowStyles( const FunctionCallbackInfo<Value>& args );  // get window and class styles
+static void getProcessWindowPos( const FunctionCallbackInfo<Value>& args );
+static void setProcessWindowPos( const FunctionCallbackInfo<Value>& args );
 #endif
 //v8::Persistent<v8::Function> TaskObject::constructor;
 
@@ -84,6 +99,11 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		
 #if _WIN32
 		check->moveToString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "moveTo" ) );
+		check->styleString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "style" ) );
+		check->windowString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "window" ) );
+		check->windowExString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "windowEx" ) );
+		check->classString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "class" ) );
+
 		check->timeoutString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "timeout" ) );
 		check->cbString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "cb" ) );
 		check->xString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "x" ) );
@@ -140,15 +160,19 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	taskTemplate = FunctionTemplate::New( isolate, TaskObject::New );
 	taskTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.task" ) );
 	taskTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
-	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "write", TaskObject::Write );
-	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "send", TaskObject::Write );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "end", TaskObject::End );
-	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "terminate", TaskObject::Terminate );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "isRunning", TaskObject::isRunning );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "send", TaskObject::Write );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "terminate", TaskObject::Terminate );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "write", TaskObject::Write );
 #if _WIN32
-	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "windowTitle", TaskObject::getWindowTitle );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "getStyles", TaskObject::getProcessWindowStyles );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "getPosition", TaskObject::getProcessWindowPos );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "moveWindow", TaskObject::moveWindow );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "refreshWindow", TaskObject::refreshWindow );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "setStyles", TaskObject::setProcessWindowStyles );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "styleWindow", TaskObject::styleWindow ); // this is the preferred method.
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "windowTitle", TaskObject::getWindowTitle );
 
 #endif
 
@@ -162,10 +186,97 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	SET_READONLY( exports, "Task", taskF = taskTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	SET_READONLY_METHOD( taskF, "loadLibrary", TaskObject::loadLibrary );
 	SET_READONLY_METHOD( taskF, "getProcessList", TaskObject::GetProcessList );
-	SET_READONLY_METHOD( taskF, "stop", TaskObject::StopProcess );
 	SET_READONLY_METHOD( taskF, "kill", TaskObject::KillProcess );
+	SET_READONLY_METHOD( taskF, "stop", TaskObject::StopProcess );
 #ifdef _WIN32
 	SET_READONLY_METHOD( taskF, "getDisplays", TaskObject::getDisplays );
+	SET_READONLY_METHOD( taskF, "getPosition", ::getProcessWindowPos );
+	SET_READONLY_METHOD( taskF, "getStyles", ::getProcessWindowStyles );
+	SET_READONLY_METHOD( taskF, "getTitle", getProcessWindowTitle );
+	SET_READONLY_METHOD( taskF, "setPosition", ::setProcessWindowPos );
+	SET_READONLY_METHOD( taskF, "setStyles", ::setProcessWindowStyles );
+
+	Local<Object> styles = Object::New( isolate );
+	Local<Object> windowStyles = Object::New( isolate );
+	Local<Object> windowExStyles = Object::New( isolate );
+	Local<Object> classStyles = Object::New( isolate );
+	SET_READONLY( taskF, "style", styles );
+	SET_READONLY( styles, "window", windowStyles );
+#define SetStyle( object, style ) SET_READONLY( object, #style, Integer::New( isolate, style ) );
+
+	SetStyle( windowStyles, WS_BORDER );
+	SetStyle( windowStyles, WS_CAPTION );
+	SetStyle( windowStyles, WS_CHILD );
+	SetStyle( windowStyles, WS_CHILDWINDOW );
+	SetStyle( windowStyles, WS_CLIPCHILDREN );
+	SetStyle( windowStyles, WS_CLIPSIBLINGS );
+	SetStyle( windowStyles, WS_DISABLED );
+	SetStyle( windowStyles, WS_DLGFRAME );
+	SetStyle( windowStyles, WS_GROUP );
+	SetStyle( windowStyles, WS_HSCROLL );
+	SetStyle( windowStyles, WS_ICONIC );
+	SetStyle( windowStyles, WS_MAXIMIZE );
+	SetStyle( windowStyles, WS_MAXIMIZEBOX );
+	SetStyle( windowStyles, WS_MINIMIZE );
+	SetStyle( windowStyles, WS_MINIMIZEBOX );
+	SetStyle( windowStyles, WS_OVERLAPPED );
+	SetStyle( windowStyles, WS_OVERLAPPEDWINDOW );
+	SetStyle( windowStyles, WS_POPUP );
+	SetStyle( windowStyles, WS_POPUPWINDOW );
+	SetStyle( windowStyles, WS_SIZEBOX );
+	SetStyle( windowStyles, WS_SYSMENU );
+	SetStyle( windowStyles, WS_TABSTOP );
+	SetStyle( windowStyles, WS_THICKFRAME );
+	SetStyle( windowStyles, WS_TILED );
+	SetStyle( windowStyles, WS_TILEDWINDOW );
+	SetStyle( windowStyles, WS_VISIBLE );
+	SetStyle( windowStyles, WS_VSCROLL );
+
+	SetStyle( windowExStyles, WS_EX_ACCEPTFILES );
+	SetStyle( windowExStyles, WS_EX_APPWINDOW );
+	SetStyle( windowExStyles, WS_EX_CLIENTEDGE );
+	SetStyle( windowExStyles, WS_EX_COMPOSITED );
+	SetStyle( windowExStyles, WS_EX_CONTEXTHELP );
+	SetStyle( windowExStyles, WS_EX_CONTROLPARENT );
+	SetStyle( windowExStyles, WS_EX_DLGMODALFRAME );
+	SetStyle( windowExStyles, WS_EX_LAYERED );
+	SetStyle( windowExStyles, WS_EX_LEFT );
+	SetStyle( windowExStyles, WS_EX_LEFTSCROLLBAR );
+	SetStyle( windowExStyles, WS_EX_LTRREADING );
+	SetStyle( windowExStyles, WS_EX_MDICHILD );
+	SetStyle( windowExStyles, WS_EX_NOACTIVATE );
+	SetStyle( windowExStyles, WS_EX_NOINHERITLAYOUT );
+	SetStyle( windowExStyles, WS_EX_NOPARENTNOTIFY );
+#if(WINVER >= 0x0602)
+	SetStyle( windowExStyles, WS_EX_NOREDIRECTIONBITMAP );
+#endif
+	SetStyle( windowExStyles, WS_EX_OVERLAPPEDWINDOW );
+	SetStyle( windowExStyles, WS_EX_PALETTEWINDOW );
+	SetStyle( windowExStyles, WS_EX_RIGHT );
+	SetStyle( windowExStyles, WS_EX_RIGHTSCROLLBAR );
+	SetStyle( windowExStyles, WS_EX_RTLREADING );
+	SetStyle( windowExStyles, WS_EX_TOOLWINDOW );
+	SetStyle( windowExStyles, WS_EX_TOPMOST );
+	SetStyle( windowExStyles, WS_EX_TRANSPARENT );
+	SetStyle( windowExStyles, WS_EX_WINDOWEDGE );
+
+
+	SET_READONLY( styles, "windowEx", windowExStyles );
+	SET_READONLY( styles, "class", classStyles );
+
+	SetStyle( classStyles, CS_BYTEALIGNCLIENT );
+	SetStyle( classStyles, CS_BYTEALIGNWINDOW );
+	SetStyle( classStyles, CS_CLASSDC );
+	SetStyle( classStyles, CS_DBLCLKS );
+	SetStyle( classStyles, CS_DROPSHADOW );
+	SetStyle( classStyles, CS_GLOBALCLASS );
+	SetStyle( classStyles, CS_HREDRAW );
+	SetStyle( classStyles, CS_NOCLOSE );
+	SetStyle( classStyles, CS_OWNDC );
+	SetStyle( classStyles, CS_PARENTDC );
+	SetStyle( classStyles, CS_SAVEBITS );
+	SetStyle( classStyles, CS_VREDRAW );
+
 #endif
 }
 
@@ -186,10 +297,28 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 		Local<Value> argv[1];
 		if( !task->cbMove.IsEmpty() ) {
 			argv[0] = task->moveSuccess?True( isolate ):False( isolate );
-			task->cbMove.Get( isolate )->Call( context, task->_this.Get( isolate ), 1, argv );
-			//task->cbMove.Reset();
+			Local<Function> cb = task->cbMove.Get( isolate );
+			task->cbMove.Reset();
+			cb->Call( context, task->_this.Get( isolate ), 1, argv );
 		}
 		task->moved = FALSE;
+	}
+	if( task->styled ){
+		Local<Value> argv[1];
+
+		if( !task->cbStyle.IsEmpty() ){
+			argv[0] = Integer::New( isolate, task->styleSuccess );
+			Local<Function> cb = task->cbStyle.Get( isolate );
+			task->cbStyle.Reset();
+			cb->Call( context, task->_this.Get( isolate ), 1, argv );
+		}
+
+		if( task->cbStyle.IsEmpty() && !task->moveOpts.IsEmpty() ){
+			Local<Object> moveOpts = task->moveOpts.Get( isolate );
+			task->moveOpts.Reset();
+			doMoveWindow( isolate, context, task, NULL, moveOpts );
+		}
+		task->styled = FALSE;
 	}
 #endif
 	if( task->ending ) {
@@ -342,6 +471,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		Local<Object> _this = args.This();
 		Local<Object> moveOpts;
+		Local<Object> styleOpts;
 		//try {
 			newTask->_this.Reset( isolate, _this );
 			newTask->Wrap( _this );
@@ -391,6 +521,11 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( context, optName = strings->moveToString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsObject() ) {
 					moveOpts = GETV( opts, optName ).As<Object>();
+				}
+			}
+			if( opts->Has( context, optName = strings->styleString->Get( isolate ) ).ToChecked() ){
+				if( GETV( opts, optName )->IsObject() ){
+					styleOpts = GETV( opts, optName ).As<Object>();
 				}
 			}
 #endif
@@ -608,8 +743,12 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 
 #ifdef _WIN32
-			if( newTask->task && !moveOpts.IsEmpty() )
-				doMoveWindow( isolate, context, newTask, moveOpts );
+			if( newTask->task && !styleOpts.IsEmpty() ){
+				// hold move options until style completes...
+				if( !moveOpts.IsEmpty() ) newTask->moveOpts.Reset( isolate, moveOpts );
+				doStyleWindow( isolate, context, newTask, NULL, styleOpts );
+			} else if( newTask->task && !moveOpts.IsEmpty() )
+				doMoveWindow( isolate, context, newTask, NULL, moveOpts );
 #endif
 
 		}
@@ -716,8 +855,9 @@ static void moveTaskWindowResult( uintptr_t psv, LOGICAL success ){
 		uv_async_send( &task->async );
 }
 
-// is status in prototype above
-void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, Local<Object> opts ) {
+
+// is static in prototype above
+void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, HWND hWnd, Local<Object> opts ) {
 	struct optionStrings *strings = getStrings( isolate );
 	Local<String> optName;
 
@@ -773,13 +913,70 @@ void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, Lo
 			}
 		} 
 	}
-	if( display >= 0 ) 	
-		MoveTaskWindowToDisplay( task->task, timeout, display, moveTaskWindowResult, (uintptr_t)task );
-	else if( monitor >= 0 )
-		MoveTaskWindowToMonitor( task->task, timeout, display, moveTaskWindowResult, (uintptr_t)task );
-	else
-		MoveTaskWindow( task->task, timeout, left, top, width, height, moveTaskWindowResult, (uintptr_t)task );
-		
+	if( task ){
+		if( display >= 0 )
+			MoveTaskWindowToDisplay( task->task, timeout, display, moveTaskWindowResult, (uintptr_t)task );
+		else if( monitor >= 0 )
+			MoveTaskWindowToMonitor( task->task, timeout, display, moveTaskWindowResult, (uintptr_t)task );
+		else
+			MoveTaskWindow( task->task, timeout, left, top, width, height, moveTaskWindowResult, (uintptr_t)task );
+	} else{
+		SetWindowPos( hWnd, NULL, left, top, width, height, SWP_NOZORDER | SWP_NOOWNERZORDER );
+	}
+}
+
+static void styleTaskWindowResult( uintptr_t psv, int success ){
+	TaskObject* task = (TaskObject*)psv;
+	//lprintf( "result... send event?" );
+	task->styled = TRUE;
+	task->styleSuccess = success;
+	if( !task->ended )
+		uv_async_send( &task->async );
+}
+
+static void doStyleWindow( Isolate* isolate, Local<Context> context, TaskObject* task, HWND hWnd, Local<Object> opts ){
+	struct optionStrings* strings = getStrings( isolate );
+	Local<String> optName;
+
+	int timeout = 500, window = -1, windowEx = -1, classStyle = -1;
+
+	if( opts->Has( context, optName = strings->cbString->Get( isolate ) ).ToChecked() ){
+		if( GETV( opts, optName )->IsFunction() ){
+			// should be reset to empty when not in use...
+			task->cbStyle.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
+		}
+	}
+
+	if( opts->Has( context, optName = strings->timeoutString->Get( isolate ) ).ToChecked() ){
+		if( GETV( opts, optName )->IsNumber() ){
+			// should be reset to empty when not in use...
+			timeout = (int)GETV( opts, optName )->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+		}
+	}
+
+	if( opts->Has( context, optName = strings->windowString->Get( isolate ) ).ToChecked() ){
+		if( GETV( opts, optName )->IsNumber() ){
+			// should be reset to empty when not in use...
+			window = (int)GETV( opts, optName )->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+		}
+	}
+	if( opts->Has( context, optName = strings->windowExString->Get( isolate ) ).ToChecked() ){
+		if( GETV( opts, optName )->IsNumber() ){
+			// should be reset to empty when not in use...
+			windowEx = (int)GETV( opts, optName )->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+		}
+	}
+	if( opts->Has( context, optName = strings->classString->Get( isolate ) ).ToChecked() ){
+		if( GETV( opts, optName )->IsNumber() ){
+			// should be reset to empty when not in use...
+			classStyle = (int)GETV( opts, optName )->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+		}
+	}
+	if( task ){
+		StyleTaskWindow( task->task, timeout, window, windowEx, classStyle, styleTaskWindowResult, (uintptr_t)task );
+	} else{
+	}
+
 }
 
 void TaskObject::refreshWindow( const FunctionCallbackInfo<Value>& args ) {
@@ -800,7 +997,7 @@ void TaskObject::moveWindow( const FunctionCallbackInfo<Value>& args ) {
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
 
 	Local<Object> opts = args[0]->ToObject( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked();
-	doMoveWindow( isolate, context, task, opts );
+	doMoveWindow( isolate, context, task, NULL, opts );
 }
 
 struct monitor_data {
@@ -931,7 +1128,6 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 
 	args.GetReturnValue().Set( result );
 }
-
 
 void TaskObject::getWindowTitle( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -1068,7 +1264,147 @@ static HWND find_main_window( unsigned long process_id ) {
 	EnumWindows( enum_windows_callback, (LPARAM)&data );
 	return data.window_handle;
 }
+
+static void setProcessWindowStyles( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	if( !args[0]->IsInt32() ) return;
+	int32_t id = (int32_t)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	int64_t winStyles = args[1]->IsNumber() ? args[1]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
+	int64_t winStylesEx = args[2]->IsNumber() ? args[2]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
+	int64_t classStyles = args[3]->IsNumber() ? args[3]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
+	HWND hWnd = find_main_window( id );
+	//lprintf( "Set Values: %08x %08x %08x", winStyles, winStylesEx, classStyles );
+	if( winStyles != -1 )
+		SetWindowLongPtr( hWnd, GWL_STYLE, winStyles );
+	if( winStylesEx != -1 )
+		SetWindowLongPtr( hWnd, GWL_EXSTYLE, winStylesEx );
+	if( classStyles != -1 )
+		SetClassLongPtr( hWnd, GCL_STYLE, classStyles );
+	SetWindowPos( hWnd, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER );
+	InvalidateRect( hWnd, NULL, TRUE );
+}
+
+static void getProcessWindowStyles( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	if( !args[0]->IsInt32() ) return;
+	int32_t id = (int32_t)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	HWND hWnd = find_main_window( id );
+	int32_t winStyles = (int32_t)GetWindowLongPtr( hWnd, GWL_STYLE );
+	int32_t winStylesEx = (int32_t)GetWindowLongPtr( hWnd, GWL_EXSTYLE );
+	int32_t classStyles = (int32_t)GetClassLongPtr( hWnd, GCL_STYLE );
+	Local<Object> styles = Object::New( isolate );
+	SET_READONLY( styles, "window", Integer::New( isolate, winStyles ) );
+	SET_READONLY( styles, "windowEx", Integer::New( isolate, winStylesEx ) );
+	SET_READONLY( styles, "class", Integer::New( isolate, classStyles ) );
+	args.GetReturnValue().Set( styles );
+}
+
+static void getProcessWindowPos( const FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	if( !args[0]->IsInt32() ) return;
+	int32_t id = (int32_t)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	HWND hWnd = find_main_window( id );
+	Local<Object> position = Object::New( isolate );
+	RECT rect;
+	GetWindowRect( hWnd, &rect );
+	SETVAR( position, "x", Integer::New( isolate, rect.left ) );
+	SETVAR( position, "y", Integer::New( isolate, rect.top ) );
+	SETVAR( position, "width", Integer::New( isolate, rect.right-rect.left ) );
+	SETVAR( position, "height", Integer::New( isolate, rect.bottom-rect.top ) );
+	args.GetReturnValue().Set( position );
+}
+
+static void setProcessWindowPos( const FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	if( !args[0]->IsInt32() ) return;
+	int32_t id = (int32_t)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	Local<Object> opts = Local<Object>::Cast( args[1] );
+	HWND hWnd = find_main_window( id );
+	doMoveWindow( isolate, context, NULL, hWnd, opts );
+
+}
+
+void TaskObject::styleWindow( const FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	TaskObject* task = Unwrap<TaskObject>( args.This() );
+
+	Local<Object> opts = args[0]->ToObject( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked();
+	doStyleWindow( isolate, context, task, NULL, opts );
+}
+
+void TaskObject::getProcessWindowPos( const FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	TaskObject* task = Unwrap<TaskObject>( args.This() );
+	HWND hWnd = RefreshTaskWindow( task->task );
+	Local<Object> position = Object::New( isolate );
+	RECT rect;
+	GetWindowRect( hWnd, &rect );
+	SETVAR( position, "x", Integer::New( isolate, rect.left ) );
+	SETVAR( position, "y", Integer::New( isolate, rect.top ) );
+	SETVAR( position, "width", Integer::New( isolate, rect.right - rect.left ) );
+	SETVAR( position, "height", Integer::New( isolate, rect.bottom - rect.top ) );
+	args.GetReturnValue().Set( position );
+}
+
+void TaskObject::setProcessWindowStyles( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	int64_t winStyles = args[1]->IsNumber() ? args[1]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
+	int64_t winStylesEx = args[2]->IsNumber() ? args[2]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
+	int64_t classStyles = args[3]->IsNumber() ? args[3]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
+	TaskObject* task = Unwrap<TaskObject>( args.This() );
+	HWND hWnd = RefreshTaskWindow( task->task );
+	if( winStyles != -1 )
+		SetWindowLongPtr( hWnd, GWL_STYLE, winStyles );
+	if( winStylesEx != -1 )
+		SetWindowLongPtr( hWnd, GWL_EXSTYLE, winStylesEx );
+	if( classStyles != -1 )
+		SetClassLongPtr( hWnd, GCL_STYLE, classStyles );
+
+	SetWindowPos( hWnd, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER );
+	InvalidateRect( hWnd, NULL, TRUE );
+}
+
+void TaskObject::getProcessWindowStyles( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	TaskObject* task = Unwrap<TaskObject>( args.This() );
+	HWND hWnd = RefreshTaskWindow( task->task );
+	int32_t winStyles = (int32_t)GetWindowLongPtr( hWnd, GWL_STYLE );
+	int32_t winStylesEx = (int32_t)GetWindowLongPtr( hWnd, GWL_EXSTYLE );
+	int32_t classStyles = (int32_t)GetClassLongPtr( hWnd, GCL_STYLE );
+	Local<Object> styles = Object::New( isolate );
+	SET_READONLY( styles, "window", Integer::New( isolate, winStyles ) );
+	SET_READONLY( styles, "windowEx", Integer::New( isolate, winStylesEx ) );
+	SET_READONLY( styles, "class", Integer::New( isolate, classStyles ) );
+	args.GetReturnValue().Set( styles );
+}
+
+static void getProcessWindowTitle( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	int32_t id = (int32_t)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	HWND hWnd = find_main_window( id );
+	char* str = NewArray( char, 256 );
+	if( hWnd ) {
+		GetWindowText( hWnd, str, 256 );
+	} else
+		StrCpy( str, "No Window" );
+
+	Local<String> result = String::NewFromUtf8( isolate, str ).ToLocalChecked();
+	Deallocate( char*, str );
+	args.GetReturnValue().Set( result );
+}
+
+
 #endif
+
 
 
 void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
