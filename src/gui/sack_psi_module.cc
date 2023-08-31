@@ -1072,7 +1072,7 @@ void ControlObject::setControlColor2( const FunctionCallbackInfo<Value>& args ) 
 }
 
 
-ControlObject::ControlObject( ControlObject *over, const char *type, const char *title, int x, int y, int w, int h, struct constructorSet*c ) {
+ControlObject::ControlObject( ControlObject *over, const char *type, const char *title, int x, int y, int w, int h, class constructorSet*c ) {
 	registration = NULL;
 	image = NULL;
 	frame = over;
@@ -1088,7 +1088,7 @@ ControlObject::ControlObject( ControlObject *over, const char *type, const char 
 	psiLocal.pendingCreate = NULL;
 }
 
-ControlObject::ControlObject( const char *title, int x, int y, int w, int h, int border, ControlObject *over, struct constructorSet*c ) {
+ControlObject::ControlObject( const char *title, int x, int y, int w, int h, int border, ControlObject *over, class constructorSet*c ) {
 	registration = NULL;
 	image = NULL;
 	frame = over;
@@ -1102,7 +1102,7 @@ ControlObject::ControlObject( const char *title, int x, int y, int w, int h, int
 	psiLocal.pendingCreate = NULL;
 }
 
-ControlObject::ControlObject( const char *type, ControlObject *parent, int32_t x, int32_t y, uint32_t w, uint32_t h, struct constructorSet*c ) {
+ControlObject::ControlObject( const char *type, ControlObject *parent, int32_t x, int32_t y, uint32_t w, uint32_t h, class constructorSet*c ) {
 	registration = NULL;
 	image = NULL;
 	flags.tree = 0;

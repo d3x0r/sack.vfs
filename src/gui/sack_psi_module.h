@@ -219,9 +219,9 @@ public:
 
 	static void Init( Local<Object> exports );
 	static void sigint( Isolate *isolate );
-	ControlObject( const char *caption, int w, int h, int x, int y, int borderFlags, ControlObject *parent, struct constructorSet*c );
-	ControlObject( ControlObject *parent, const char *caption, const char *title, int w, int h, int x, int y, struct constructorSet*c );
-	ControlObject( const char *type, ControlObject *parent, int32_t x, int32_t y, uint32_t w, uint32_t h, struct constructorSet*c );
+	ControlObject( const char *caption, int w, int h, int x, int y, int borderFlags, ControlObject *parent, class constructorSet*c );
+	ControlObject( ControlObject *parent, const char *caption, const char *title, int w, int h, int x, int y, class constructorSet*c );
+	ControlObject( const char *type, ControlObject *parent, int32_t x, int32_t y, uint32_t w, uint32_t h, class constructorSet*c );
 	ControlObject( PSI_CONTROL control = NULL );
 	~ControlObject();
 
