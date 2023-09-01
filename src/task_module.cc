@@ -122,17 +122,20 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 
 TaskObject::TaskObject():_this(), endCallback(), inputCallback(), inputCallback2()
 {
-    task = NULL;
-    binary = false;
-    ending = false;
-    ended = false;
+	task = NULL;
+	binary = false;
+	ending = false;
+	ended = false;
 	stopped = false;
 	killed = false;
-    exitCode = 0;
-    killAtExit = false;
+	exitCode = 0;
+	killAtExit = false;
 	output = CreateLinkQueue();
 	output2 = CreateLinkQueue();
-
+#ifdef _WIN32
+	moved = 0;
+	styled = 0;
+#endif
 	//this[0] = _blankTask;
 }
 
@@ -294,6 +297,7 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 
 #if _WIN32
 	if( task->moved ) {
+		//lprintf( "Event moved to callback..." );
 		Local<Value> argv[1];
 		if( !task->cbMove.IsEmpty() ) {
 			argv[0] = task->moveSuccess?True( isolate ):False( isolate );
@@ -918,9 +922,11 @@ void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, HW
 			MoveTaskWindowToDisplay( task->task, timeout, display, moveTaskWindowResult, (uintptr_t)task );
 		else if( monitor >= 0 )
 			MoveTaskWindowToMonitor( task->task, timeout, display, moveTaskWindowResult, (uintptr_t)task );
-		else
+		else {
 			MoveTaskWindow( task->task, timeout, left, top, width, height, moveTaskWindowResult, (uintptr_t)task );
+		}
 	} else{
+		//ShowWindow( hWnd, SW_RESTORE );
 		SetWindowPos( hWnd, NULL, left, top, width, height, SWP_NOZORDER | SWP_NOOWNERZORDER );
 	}
 }
@@ -1243,6 +1249,7 @@ void TaskObject::GetProcessList( const FunctionCallbackInfo<Value>& args ) {
 struct handle_data {
 	unsigned long process_id;
 	HWND window_handle;
+	PLIST handles;
 };
 
 static BOOL is_main_window( HWND handle ) {
@@ -1252,13 +1259,27 @@ static BOOL CALLBACK enum_windows_callback( HWND handle, LPARAM lParam ) {
 	struct handle_data* data = (struct handle_data*)lParam;
 	unsigned long process_id = 0;
 	GetWindowThreadProcessId( handle, &process_id );
-	if( data->process_id != process_id || !is_main_window( handle ) )
+	//if( data->process_id == process_id ) lprintf( "Found a window for process: %p %d %p", handle, IsWindowVisible( handle),  GetWindow( handle, GW_OWNER ) );
+	if( data->process_id != process_id || !is_main_window( handle ) ) {
+		//if( data->process_id == process_id && IsWindowVisible( handle ) )
+		//	AddLink( &data->handles, handle );
 		return TRUE;
+	}
+	//AddLink( &data->handles, handle );
 	data->window_handle = handle;
 	return FALSE;
 }
+static PLIST find_main_windows( unsigned long process_id ) {
+	struct handle_data data;
+	data.handles = NULL;
+	data.process_id = process_id;
+	data.window_handle = 0;
+	EnumWindows( enum_windows_callback, (LPARAM)&data );
+	return data.handles;
+}
 static HWND find_main_window( unsigned long process_id ) {
 	struct handle_data data;
+	data.handles = NULL;
 	data.process_id = process_id;
 	data.window_handle = 0;
 	EnumWindows( enum_windows_callback, (LPARAM)&data );
@@ -1325,6 +1346,15 @@ static void setProcessWindowPos( const FunctionCallbackInfo<Value>& args ){
 	Local<Object> opts = Local<Object>::Cast( args[1] );
 	HWND hWnd = find_main_window( id );
 	doMoveWindow( isolate, context, NULL, hWnd, opts );
+	/*
+	PLIST handles = find_main_windows( id );
+	HWND hWnd;
+	INDEX idx;
+	LIST_FORALL( handles, idx, HWND, hWnd )  {
+		//lprintf( "Moving handle %p", hWnd );
+		doMoveWindow( isolate, context, NULL, hWnd, opts );
+	}
+	*/
 
 }
 
