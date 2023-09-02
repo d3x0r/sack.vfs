@@ -3355,7 +3355,7 @@ httpRequestObject::httpRequestObject():_this() {
 	ssl = false;
 	port = 0;
 	hostname = NULL;
-	method = NULL;
+	method = "GET";
 	ca = NULL;
 	path = NULL;
 	rejestUnauthorized = false;
