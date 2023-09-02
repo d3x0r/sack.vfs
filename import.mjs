@@ -8,6 +8,8 @@
 import fs from "fs";
 import url from "url";
 import path from "path";
+import util from "node:util";
+import {sack} from "sack.vfs";
 const debug_ = false;
 /**
  * @param {string} url
@@ -18,6 +20,7 @@ const debug_ = false;
 export async function getFormat(url, context, defaultGetFormat) {
 	const exten = path.extname( url );
 	//if( exten === '' ) return { format:'module' }
+	console.log( "Format of:", url, context, defaultGetFormat );
 	if( exten === ".jsox" || exten === ".json6" ){
 	    return { format: 'module' };
 	}
@@ -71,8 +74,22 @@ export async function transformSource(source, context, defaultTransformSource) {
 export async function load(urlin, context, defaultLoad) {
 	const { format } = context;
 	const exten = path.extname( urlin );
-	//console.log( "LOAD:", urlin, exten, context );
-	if( exten === ".jsox" || exten === '.json6' ){
+	debug_&&console.log( "LOAD:", urlin, exten, context );
+	if( urlin.startsWith( "http://" ) || urlin.startsWith( "https://" ) ) {
+		const url = new URL( urlin );
+		const request = { hostname:url.hostname, path:url.pathname, port:Number(url.port) };
+		const result = sack.HTTP.get( request );
+		if( result.statusCode === 200  )
+			return {
+				format:exten===".js"?"commonjs":"module",
+				source:result.content,
+				shortCircuit:true,
+			}
+		else {
+			sack.log( util.format( "request failed:", result ) );
+		}
+	}
+	else if( exten === ".jsox" || exten === '.json6' ){
 	  	const { format } = context;
 		debug_&&console.log( "urlin is a string?", typeof urlin );
 		const file = url.fileURLToPath(urlin);
