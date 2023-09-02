@@ -934,13 +934,16 @@ static void WeakReferenceReleased( const v8::WeakCallbackInfo<void> &info ){
 	void *parameter = info.GetParameter();
 	//lprintf( "Sql object garbage collected (close UV)");
 	SqlObject *sql = (SqlObject*)parameter;
-	struct userMessage msg;
-	msg.mode = UserMessageModes::OnDeallocate;
-	msg.onwhat = NULL;
-	msg.done = 0;
-	msg.waiter = NULL;
-	EnqueLink( &sql->messages, &msg );
-	while( !msg.done ) sqlUserAsyncMsg( &sql->async );
+	if( sql->async.data ){
+		// only do this if we started an async callback on it.
+		struct userMessage msg;
+		msg.mode = UserMessageModes::OnDeallocate;
+		msg.onwhat = NULL;
+		msg.done = 0;
+		msg.waiter = NULL;
+		EnqueLink( &sql->messages, &msg );
+		while( !msg.done ) sqlUserAsyncMsg( &sql->async );
+	}
 	sql->_this.Reset();
 }
 

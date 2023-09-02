@@ -307,6 +307,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 		//SetAllocateDebug( FALSE );
 		//lprintf( "Do Init in modules (shouldn't do some of this)");
 		SetSystemLog( SYSLOG_FILE, stdout );
+		SetSystemLoggingLevel( 2000 ); // always log everything.
 
 		//LoadTranslationDataEx( "^/strings.dat" );
 		LoadTranslationDataEx( "@/../../strings.json" );
