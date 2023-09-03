@@ -10,7 +10,7 @@ var response2 = sack.HTTPS.get( { ca:&lt;extra cert(s)&gt;, path:"/index.html" }
 
 | HTTP(S) get option | Description |
 |----|-----|
-| host | address to request from |
+| hostname | address to request from |
 | path | resource path to request; "/app/index.html"  |
 | port | optional to override the port requested from |
 | method | "GET"/"POST" specifies how to send the request.  If POST is used, then content should be filled in. |
