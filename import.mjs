@@ -5,12 +5,14 @@
 //
 // Usage:
 // import {default as config} from "config.jsox";
-import fs from "fs";
-import url from "url";
-import path from "path";
+import fs from "node:fs";
+import url from "node:url";
+import path from "node:path";
 import util from "node:util";
 import {sack} from "sack.vfs";
+
 const debug_ = false;
+const forceModule = ( process.env.FORCE_IMPORT_MODULE ) || false;
 /**
  * @param {string} url
  * @param {Object} context (currently empty)
@@ -81,12 +83,12 @@ export async function load(urlin, context, defaultLoad) {
 		const result = sack.HTTP.get( request );
 		if( result.statusCode === 200  )
 			return {
-				format:exten===".js"?"commonjs":"module",
+				format:( !forceModule && exten===".js" )?"commonjs":"module",
 				source:result.content,
 				shortCircuit:true,
 			}
 		else {
-			sack.log( util.format( "request failed:", result ) );
+			sack.log( util.format( "request for (", urlin, ") failed:", result ) );
 		}
 	}
 	else if( exten === ".jsox" || exten === '.json6' ){
@@ -111,6 +113,8 @@ export async function load(urlin, context, defaultLoad) {
 			   shortCircuit:true,
 			};
 		}
+	} else {
+		if( forceModule && exten === ".js" ) context.format="module";
 	}
 	return defaultLoad(urlin, context, defaultLoad);
 
