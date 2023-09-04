@@ -407,7 +407,7 @@ public:
 	char *path = NULL;
 	char *agent = NULL;
 
-	bool rejestUnauthorized;
+	bool rejectUnauthorized;
 
 	bool firstDispatchDone;
 	bool dataDispatch;
@@ -803,12 +803,12 @@ static void uv_closed_httpRequest( uv_handle_t* handle ) {
 }
 
 static void httpRequestAsyncMsg( uv_async_t* handle ) {
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    HandleScope scope( isolate );
-    httpRequestObject* myself = (httpRequestObject*)handle->data;
-    struct HTTPRequestOptions *opts = myself->opts;
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	httpRequestObject* myself = (httpRequestObject*)handle->data;
+	struct HTTPRequestOptions *opts = myself->opts;
 
-    Local<Context> context = isolate->GetCurrentContext();
+	Local<Context> context = isolate->GetCurrentContext();
 	{
 		struct httpRequestEvent* eventMessage;
 		while( eventMessage = (struct httpRequestEvent*)DequeLink( &myself->eventQueue ) ) {
@@ -3358,7 +3358,7 @@ httpRequestObject::httpRequestObject():_this() {
 	method = "GET";
 	ca = NULL;
 	path = NULL;
-	rejestUnauthorized = false;
+	rejectUnauthorized = true;
 	firstDispatchDone = false;
 	dataDispatch = false;
 	endDispatch = false;
@@ -3379,9 +3379,9 @@ void httpRequestObject::New( const FunctionCallbackInfo<Value>& args ) {
 		httpRequestObject *request = new httpRequestObject();
 		Local<Object> _this = args.This();
 		request->_this.Reset( isolate, _this );
-                request->Wrap( _this );
+		request->Wrap( _this );
 
-                class constructorSet* c = getConstructors( isolate );
+		class constructorSet* c = getConstructors( isolate );
 		uv_async_init( c->loop, &request->async, httpRequestAsyncMsg );
 
 		args.GetReturnValue().Set( _this );
@@ -3542,7 +3542,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	}
 
 	if( options->Has( context, optName = strings->rejectUnauthorizedString->Get( isolate ) ).ToChecked() ) {
-		httpRequest->rejestUnauthorized = GETV( options, optName )->ToBoolean( isolate )->Value();
+		httpRequest->rejectUnauthorized = GETV( options, optName )->ToBoolean( isolate )->Value();
 	}
 
 	if( options->Has( context, optName = strings->pathString->Get( isolate ) ).ToChecked() ) {
@@ -3573,11 +3573,12 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 
 		HTTPState state = NULL;
 
-        struct HTTPRequestOptions *opts = NewPlus( struct HTTPRequestOptions, 0 );
+		struct HTTPRequestOptions *opts = NewPlus( struct HTTPRequestOptions, 0 );
 		MemSet(opts, 0, sizeof(*opts ) );
 		httpRequest->opts = opts;
-        opts->url = url;
-        opts->address = address;
+		opts->url = url;
+		opts->rejectUnauthorized = httpRequest->rejectUnauthorized;
+		opts->address = address;
 		opts->ssl = httpRequest->ssl;
 		opts->headers = httpRequest->headers;
 		opts->certChain = httpRequest->ca;
@@ -3589,7 +3590,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		opts->writeComplete = requestLongBufferWrite;
 		opts->userData = (uintptr_t)httpRequest;
 
-        ThreadTo( DoRequest, (uintptr_t)httpRequest );
+		ThreadTo( DoRequest, (uintptr_t)httpRequest );
 		VarTextDestroy( &pvtAddress );
 	}
 
