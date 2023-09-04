@@ -2,8 +2,9 @@
 var sack = require( '..' );
 var https = sack.HTTPS;
 
+function getPage( addr ) {
 		var opts = {  hostname:  //'216.58.192.142',
-                			 'google.com',
+                			 addr,//'google.com',
 					  //port : 443,
 					  method : "GET",
 					  ca : null,
@@ -23,7 +24,10 @@ var https = sack.HTTPS;
 			const contentType = res.headers['content-type'] || res.headers['Content-Type'];
 			let error;
                         console.log( "http get response happened...", contentType );
-			if (statusCode !== 200) {
+			if (statusCode === 301) { 
+				return getPage( res.headers.Location.substring( 8, res.headers.Location.length-1 ) );	
+			}
+			else if (statusCode !== 200) {
 				error = new Error(`Request Failed.\n` +
 						`Status Code: ${statusCode}` + JSON.stringify( opts ) );
 			} else if (/^text\/javascript/.test(contentType)) {
@@ -45,6 +49,7 @@ var https = sack.HTTPS;
 			}
         
 		};
-
+}
+getPage( "google.com" );
 		
 console.log( "completed" );
