@@ -7,7 +7,7 @@ export class Protocol extends Events {
 	//static ws = null;
 	static debug = true;
 	protocol = null;
-
+	#Protocol = Protocol; // this is the proper class container of the implemented protocol
 	get debug() {
 		return Protocol.debug;
 	}
@@ -16,13 +16,15 @@ export class Protocol extends Events {
 	}
 	constructor( protocol ){
 		super();
+		this.#Protocol = Object.getPrototypeOf( this ).constructor;
+		this.#Protocol.ws = null; // allocate static ws member.
 		this.protocol = protocol;
 		if( protocol )
 			Protocol.connect(protocol, this);
 	}
 
 	static connect(protocol, this_) {
-		const ThisProtocol = Object.getPrototypeOf( this ).constructor;
+		const ThisProtocol = this_.#Protocol;//Object.getPrototypeOf( this ).constructor;
 		ThisProtocol.ws = new WebSocket( location.origin.replace("http","ws"), protocol );
 		ThisProtocol.ws.onmessage = (evt)=>Protocol.onmessage.call( this_, evt) ;
 		ThisProtocol.ws.onclose = (evt)=>Protocol.onclose.call( this_, evt) ;
@@ -57,13 +59,14 @@ export class Protocol extends Events {
 	}
 
 	send( msg ) {
-		if( Protocol.ws.readyState === 1 ) {
+		const ws = this.#Protocol.ws;
+		if( ws.readyState === 1 ) {
 			if( "object" === typeof msg ) {
-				Protocol.ws.send( JSOX.stringify(msg) ); 
+				ws.send( JSOX.stringify(msg) ); 
 			} else
-				Protocol.ws.send( msg );	
+				ws.send( msg );	
 		} else {
-			Protocol.debug && console.log( "Protocol socket is not in open readystate", Protocol.ws.readyState );
+			Protocol.debug && console.log( "Protocol socket is not in open readystate", ws.readyState );
 		}
 	}
 	close( code, reason ) {
