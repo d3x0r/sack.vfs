@@ -114,6 +114,7 @@ export async function load(urlin, context, defaultLoad) {
 			};
 		}
 	} else {
+		debug_ && console.log( "forcing .js to be module?", process.env.FORCE_IMPORT_MODULE, forceModule, exten );
 		if( forceModule && exten === ".js" ) context.format="module";
 	}
 	return defaultLoad(urlin, context, defaultLoad);
